@@ -86,7 +86,7 @@ impl<F: Field> SparseRlwe<F> {
         [data_a, data_b].concat()
     }
 
-    /// Converts [`SparseRlwe<F>`] into bytes, stored in `data``.
+    /// Converts [`SparseRlwe<F>`] into bytes, stored in `data`.
     #[inline]
     pub fn into_bytes_inplace(&self, data: &mut [u8]) {
         let data_a: &[u8] = bytemuck::cast_slice(self.a.as_slice());

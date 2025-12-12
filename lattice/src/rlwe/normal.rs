@@ -102,7 +102,7 @@ impl<F: Field> Rlwe<F> {
         [data_a, data_b].concat()
     }
 
-    /// Converts [`Rlwe<F>`] into bytes, stored in `data``.
+    /// Converts [`Rlwe<F>`] into bytes, stored in `data`.
     #[inline]
     pub fn into_bytes_inplace(&self, data: &mut [u8]) {
         let data_a: &[u8] = bytemuck::cast_slice(self.a.as_slice());
@@ -429,23 +429,21 @@ impl<F: NttField> Rlwe<F> {
 
         if r < dimension {
             #[inline]
-            fn rotate<F: NttField>(x: &mut FieldPolynomial<F>, r: usize, n_sub_r: usize) {
+            fn rotate<F: NttField>(x: &mut FieldPolynomial<F>, r: usize) {
                 x.as_mut_slice().rotate_right(r);
-                x[0..n_sub_r].iter_mut().for_each(<F as Field>::neg_assign);
+                x[0..r].iter_mut().for_each(<F as Field>::neg_assign);
             }
-            let n_sub_r = dimension - r;
-            rotate(self.a_mut(), r, n_sub_r);
-            rotate(self.b_mut(), r, n_sub_r);
+            rotate(self.a_mut(), r);
+            rotate(self.b_mut(), r);
         } else {
             #[inline]
-            fn rotate<F: NttField>(x: &mut FieldPolynomial<F>, r: usize, n_sub_r: usize) {
-                x.as_mut_slice().rotate_left(r);
-                x[n_sub_r..].iter_mut().for_each(<F as Field>::neg_assign);
+            fn rotate<F: NttField>(x: &mut FieldPolynomial<F>, r: usize) {
+                x.as_mut_slice().rotate_right(r);
+                x[r..].iter_mut().for_each(<F as Field>::neg_assign);
             }
-            let r = (dimension << 1) - r;
-            let n_sub_r = dimension.checked_sub(r).expect("r > 2N !");
-            rotate(self.a_mut(), r, n_sub_r);
-            rotate(self.b_mut(), r, n_sub_r);
+            let r = r - dimension;
+            rotate(self.a_mut(), r);
+            rotate(self.b_mut(), r);
         }
         self
     }
@@ -456,23 +454,23 @@ impl<F: NttField> Rlwe<F> {
 
         if r < dimension {
             #[inline]
-            fn rotate<F: NttField>(x: &mut FieldPolynomial<F>, r: usize, n_sub_r: usize) {
+            fn rotate<F: NttField>(x: &mut FieldPolynomial<F>, r: usize) {
                 x.as_mut_slice().rotate_right(r);
-                x[0..n_sub_r].iter_mut().for_each(<F as Field>::neg_assign);
+                x[0..r].iter_mut().for_each(<F as Field>::neg_assign);
             }
-            let n_sub_r = dimension - r;
-            rotate(self.a_mut(), r, n_sub_r);
-            rotate(self.b_mut(), r, n_sub_r);
+
+            rotate(self.a_mut(), r);
+            rotate(self.b_mut(), r);
         } else {
             #[inline]
-            fn rotate<F: NttField>(x: &mut FieldPolynomial<F>, r: usize, n_sub_r: usize) {
-                x.as_mut_slice().rotate_left(r);
-                x[n_sub_r..].iter_mut().for_each(<F as Field>::neg_assign);
+            fn rotate<F: NttField>(x: &mut FieldPolynomial<F>, r: usize) {
+                x.as_mut_slice().rotate_right(r);
+                x[r..].iter_mut().for_each(<F as Field>::neg_assign);
             }
-            let r = (dimension << 1) - r;
-            let n_sub_r = dimension.checked_sub(r).expect("r > 2N !");
-            rotate(self.a_mut(), r, n_sub_r);
-            rotate(self.b_mut(), r, n_sub_r);
+            let r = r - dimension;
+
+            rotate(self.a_mut(), r);
+            rotate(self.b_mut(), r);
         }
     }
 

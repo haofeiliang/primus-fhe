@@ -57,7 +57,7 @@ impl<T: Copy + Pod + ByteCount> Lwe<T> {
         [data_a, data_b].concat()
     }
 
-    /// Converts [`Lwe<T>`] into bytes, stored in `data``.
+    /// Converts [`Lwe<T>`] into bytes, stored in `data`.
     #[inline]
     pub fn into_bytes_inplace(&self, data: &mut [u8]) {
         let b = &[self.b];

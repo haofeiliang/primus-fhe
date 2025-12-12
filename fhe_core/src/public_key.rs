@@ -186,7 +186,7 @@ impl<C: UnsignedInteger> LwePublicKeyRlweMode<C> {
         self.public_key.into_bytes()
     }
 
-    /// Converts [`LwePublicKeyRlweMode<C>`] into bytes, stored in `data``.
+    /// Converts [`LwePublicKeyRlweMode<C>`] into bytes, stored in `data`.
     #[inline]
     pub fn into_bytes_inplace(&self, data: &mut [u8]) {
         self.public_key.into_bytes_inplace(data);
@@ -474,7 +474,7 @@ impl<F: NttField> NttRlwePublicKey<F> {
         self.key.into_bytes()
     }
 
-    /// Converts [`NttRlwePublicKey<F>`] into bytes, stored in `data``.
+    /// Converts [`NttRlwePublicKey<F>`] into bytes, stored in `data`.
     #[inline]
     pub fn into_bytes_inplace(&self, data: &mut [u8]) {
         self.key.into_bytes_inplace(data);
@@ -557,18 +557,15 @@ impl<F: NttField> NttRlwePublicKey<F> {
 
         let v = <FieldPolynomial<F>>::random_binary(dimension, rng);
         let e0 = <FieldPolynomial<F>>::random_gaussian(dimension, gaussian, rng);
-        let e1 = <FieldPolynomial<F>>::random_gaussian(dimension, gaussian, rng);
+        let mut e1 = <FieldPolynomial<F>>::random_gaussian(dimension, gaussian, rng);
+        e1 += message;
 
-        let mut v = ntt_table.transform_inplace(v);
+        let v = ntt_table.transform_inplace(v);
         let mut e0 = ntt_table.transform_inplace(e0);
         let mut e1 = ntt_table.transform_inplace(e1);
 
         e0.add_mul_assign(self.key().a(), &v);
         e1.add_mul_assign(self.key().b(), &v);
-
-        v.copy_from(message);
-        ntt_table.transform_slice(v.as_mut_slice());
-        e1 += v;
 
         NttRlwe::new(e0, e1)
     }

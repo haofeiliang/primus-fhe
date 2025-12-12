@@ -11,9 +11,11 @@ mod wrapping;
 
 use core::{
     fmt::{Debug, Display},
-    ops::{BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, Not, Shl, ShlAssign, Shr, ShrAssign},
+    ops::{
+        BitAnd, BitAndAssign, BitOr, BitOrAssign, BitXor, BitXorAssign, Not, Shl, ShlAssign, Shr,
+        ShrAssign,
+    },
 };
-use std::ops::BitXorAssign;
 
 use bigdecimal::BigDecimal;
 use bytemuck::Pod;

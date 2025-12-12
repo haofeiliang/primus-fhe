@@ -100,7 +100,7 @@ impl<F: NttField> GadgetRlwe<F> {
         result
     }
 
-    /// Converts [`GadgetRlwe<F>`] into bytes, stored in `data``.
+    /// Converts [`GadgetRlwe<F>`] into bytes, stored in `data`.
     #[inline]
     pub fn into_bytes_inplace(&self, data: &mut [u8], dimension: usize) {
         let poly_bytes_count = dimension * <F::ValueT as ByteCount>::BYTES_COUNT;
