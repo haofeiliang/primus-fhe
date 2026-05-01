@@ -1,6 +1,6 @@
 #![cfg_attr(docsrs, feature(doc_auto_cfg))]
 #![deny(missing_docs)]
-#![cfg_attr(feature = "nightly", feature(bigint_helper_methods))]
+#![cfg_attr(feature = "nightly", feature(widening_mul))]
 
 //! Basic algebra abstract and some operations for it.
 
