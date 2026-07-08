@@ -1,3 +1,4 @@
+use std::cell::UnsafeCell;
 use std::f64::consts::PI;
 use std::sync::Arc;
 
@@ -8,24 +9,15 @@ use crate::error::FftError;
 use crate::table::FftTable;
 use crate::torus::TorusFftValue;
 
-/// Full-length complex negacyclic FFT table backed by `rustfft`.
+/// Negacyclic FFT table backed by `rustfft` with split `[re | im]` output.
 ///
-/// This is the **reference backend**: it stores the full `N` complex values
-/// (`fourier_length == poly_length == N`). It is simple and correct, making it
-/// suitable for testing and for verifying correctness of optimized backends.
-///
-/// # TFHE storage note
-///
-/// Production TFHE typically stores only `N / 2` complex values by exploiting
-/// real-input conjugate symmetry. A `PackedComplex64FftTable` backend will be
-/// added later to match this convention. Until then, Fourier ciphertext types
-/// that use this table will carry the full-length representation.
-///
-/// Pre-computes twist factors `psi^j` for `j = 0..N-1` where
-/// `psi = exp(pi * i / N)`, together with the scaled inverse twist factors
-/// `conj(psi^j) / N` so the inverse transform only needs a single complex
-/// multiply per coefficient.
-pub struct FullComplex64FftTable {
+/// Uses a pre-allocated `Complex64` scratch buffer (guarded by [`UnsafeCell`])
+/// so no heap allocation occurs in the hot path.  The scratch is shared across
+/// calls — the methods take `&self` (not `&mut self`) for thread-safety of
+/// the read-only pre-computed tables, but the caller must ensure that no two
+/// threads concurrently call `forward_torus_slice` / `inverse_torus_slice` on
+/// the same table instance.
+pub struct FftTableImpl {
     log_n: u32,
     poly_length: usize,
     fourier_length: usize,
@@ -33,9 +25,18 @@ pub struct FullComplex64FftTable {
     inverse: Arc<dyn Fft<f64>>,
     twist: Vec<Complex64>,
     inv_twist_scaled: Vec<Complex64>,
+    /// Pre-allocated scratch (length = fourier_length).  Wrapped in
+    /// [`UnsafeCell`] so the `&self` methods can mutate it.
+    scratch: UnsafeCell<Vec<Complex64>>,
 }
 
-impl FullComplex64FftTable {
+// Safety: the scratch buffer is only accessed from `&self` methods that are
+// never called concurrently on the same instance.  (The trait requires
+// `Send + Sync` so the table can be *shared*; concurrent *use* must be
+// synchronised externally.)
+unsafe impl Sync for FftTableImpl {}
+
+impl FftTableImpl {
     /// Returns `log2(N)`.
     #[inline]
     pub fn log_n(&self) -> u32 {
@@ -43,9 +44,8 @@ impl FullComplex64FftTable {
     }
 }
 
-impl FftTable for FullComplex64FftTable {
+impl FftTable for FftTableImpl {
     fn new(log_n: u32) -> Result<Self, FftError> {
-        // Guard against overflow: 1usize << log_n must be valid.
         if log_n >= usize::BITS {
             return Err(FftError::InvalidLogN {
                 log_n,
@@ -59,20 +59,16 @@ impl FftTable for FullComplex64FftTable {
         let forward = planner.plan_fft_forward(n);
         let inverse = planner.plan_fft_inverse(n);
 
-        // Twist factors: psi^j where psi = exp(pi * i / N).
-        // Using cis(PI * j / N) gives one rounding (the division) instead of
-        // two (pre-rounding PI/N, then multiplying by j).  The iterative
-        // z * psi approach is avoided because its round-off accumulates
-        // over O(N) steps.
         let n_f64 = n as f64;
         let twist: Vec<Complex64> = (0..n)
             .map(|j| Complex64::cis(PI * j as f64 / n_f64))
             .collect();
 
-        // Scaled inverse twist: conj(psi^j) / N = cis(-PI * j / N) / N.
         let inv_twist_scaled: Vec<Complex64> = (0..n)
             .map(|j| Complex64::cis(-PI * j as f64 / n_f64) / n_f64)
             .collect();
+
+        let scratch = UnsafeCell::new(vec![Complex64::new(0.0, 0.0); n]);
 
         Ok(Self {
             log_n,
@@ -82,6 +78,7 @@ impl FftTable for FullComplex64FftTable {
             inverse,
             twist,
             inv_twist_scaled,
+            scratch,
         })
     }
 
@@ -95,34 +92,51 @@ impl FftTable for FullComplex64FftTable {
         self.fourier_length
     }
 
-    fn forward_torus_slice<T: TorusFftValue>(&self, input: &[T], output: &mut [Complex64]) {
+    fn forward_torus_slice<T: TorusFftValue>(&self, input: &[T], output: &mut [f64]) {
         debug_assert_eq!(input.len(), self.poly_length);
-        debug_assert_eq!(output.len(), self.fourier_length);
+        let m = self.fourier_length;
+        debug_assert_eq!(output.len(), 2 * m);
 
-        // Step 1: center and twist, writing directly into the output buffer.
+        // SAFETY: caller guarantees no concurrent access.
+        let scratch = unsafe { &mut *self.scratch.get() };
+
+        // Step 1: center + twist → Complex64 scratch.
         for (j, &val) in input.iter().enumerate() {
             let centered = val.into_f64_centered();
-            output[j] = Complex64::new(centered, 0.0) * self.twist[j];
+            scratch[j] = Complex64::new(centered, 0.0) * self.twist[j];
         }
 
-        // Step 2: in-place FFT on the twisted values.
-        self.forward.process(output);
+        // Step 2: in-place FFT on scratch.
+        self.forward.process(scratch);
+
+        // Step 3: gather → split [re | im] output.
+        let (re, im) = output.split_at_mut(m);
+        for (j, c) in scratch.iter().enumerate() {
+            re[j] = c.re;
+            im[j] = c.im;
+        }
     }
 
-    fn inverse_torus_slice<T: TorusFftValue>(&self, input: &[Complex64], output: &mut [T]) {
-        debug_assert_eq!(input.len(), self.fourier_length);
+    fn inverse_torus_slice<T: TorusFftValue>(&self, input: &[f64], output: &mut [T]) {
+        let m = self.fourier_length;
+        debug_assert_eq!(input.len(), 2 * m);
         debug_assert_eq!(output.len(), self.poly_length);
 
-        // Step 1: copy input to a temporary buffer for in-place IFFT.
-        // Allocation is acceptable for Milestone 1 correctness; future
-        // milestones will add caller-provided scratch space.
-        let mut buf: Vec<Complex64> = input.to_vec();
+        // SAFETY: caller guarantees no concurrent access.
+        let scratch = unsafe { &mut *self.scratch.get() };
 
-        // Step 2: in-place inverse FFT (rustfft does NOT scale by 1/N).
-        self.inverse.process(&mut buf);
+        // Step 1: scatter split [re | im] → Complex64 scratch.
+        let (re, im) = input.split_at(m);
+        for (j, c) in scratch.iter_mut().enumerate() {
+            c.re = re[j];
+            c.im = im[j];
+        }
 
-        // Step 3: untwist, take real part, round, and store as torus integer.
-        for (j, val) in buf.iter().enumerate() {
+        // Step 2: in-place inverse FFT.
+        self.inverse.process(scratch);
+
+        // Step 3: untwist + round.
+        for (j, val) in scratch.iter().enumerate() {
             let v = *val * self.inv_twist_scaled[j];
             output[j] = T::from_f64_wrapping_rounded(v.re);
         }

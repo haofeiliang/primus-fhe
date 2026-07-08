@@ -1,6 +1,5 @@
 use primus_data::{Data, RawData};
 
-use num_complex::Complex64;
 use primus_poly::{FourierPolynomial, FourierPolynomialIter, FourierPolynomialIterMut};
 
 /// Fourier-domain GLWE ciphertext.
@@ -16,7 +15,7 @@ use primus_poly::{FourierPolynomial, FourierPolynomialIter, FourierPolynomialIte
 #[derive(Clone)]
 pub struct FourierGlwe<S>(pub S)
 where
-    S: RawData<Elem = Complex64>;
+    S: RawData<Elem = f64>;
 
 impl_fourier_iters!(FourierGlwe);
 impl_fourier_core!(FourierGlwe);
@@ -33,25 +32,25 @@ impl_fourier_iter_sub!(
 
 impl<S> FourierGlwe<S>
 where
-    S: RawData<Elem = Complex64> + primus_data::Data,
+    S: RawData<Elem = f64> + primus_data::Data,
 {
     /// Returns the `a` components and `b` component as immutable slices.
     ///
     /// `mid = k * fourier_length` splits the mask from the body.
     /// `mid` must be `<= self.0.len()`.
     #[inline]
-    pub fn a_b_slices(&self, mid: usize) -> (&[Complex64], &[Complex64]) {
+    pub fn a_b_slices(&self, mid: usize) -> (&[f64], &[f64]) {
         self.0.split_at(mid)
     }
 }
 
 impl<S> FourierGlwe<S>
 where
-    S: RawData<Elem = Complex64> + primus_data::DataMut,
+    S: RawData<Elem = f64> + primus_data::DataMut,
 {
     /// Returns the `a` components and `b` component as mutable slices.
     #[inline]
-    pub fn a_b_mut_slices(&mut self, mid: usize) -> (&mut [Complex64], &mut [Complex64]) {
+    pub fn a_b_mut_slices(&mut self, mid: usize) -> (&mut [f64], &mut [f64]) {
         self.0.split_at_mut(mid)
     }
 
@@ -66,8 +65,8 @@ where
         poly: &FourierPolynomial<A>,
         rhs: &FourierGlwe<B>,
     ) where
-        A: RawData<Elem = Complex64> + Data,
-        B: RawData<Elem = Complex64> + Data,
+        A: RawData<Elem = f64> + Data,
+        B: RawData<Elem = f64> + Data,
     {
         let flen = poly.fourier_length();
         for (mut acc, key_poly) in self

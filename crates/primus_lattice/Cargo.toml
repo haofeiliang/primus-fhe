@@ -16,12 +16,19 @@ primus_rns = { path = "../primus_rns" }
 primus_decompose = { path = "../primus_decompose" }
 primus_fft = { path = "../primus_fft" }
 
-num-complex = { workspace = true }
 serde = { workspace = true }
 bytemuck = { workspace = true }
 rand = { workspace = true }
 paste = { workspace = true }
 itertools = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+rand = { workspace = true }
+
+[[bench]]
+name = "external_product"
+harness = false
 
 [features]
 default = []

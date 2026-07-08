@@ -1,6 +1,4 @@
-use num_complex::Complex64;
-use primus_fft::complex64::arithmetic;
-use primus_fft::{FftTable, FullComplex64FftTable};
+use primus_fft::{FftTable, FftTableImpl};
 
 // ---------------------------------------------------------------------------
 // Helper: naive negacyclic convolution (X^N + 1)
@@ -14,7 +12,6 @@ use primus_fft::{FftTable, FullComplex64FftTable};
 /// u32 with centered semantics.
 fn naive_negacyclic_convolve_u32(a: &[u32], b: &[u32]) -> Vec<u32> {
     let n = a.len();
-    // Use i64 to accumulate; the max magnitude in tests is small enough.
     let mut c = vec![0i64; n];
 
     for (i, &ai) in a.iter().enumerate() {
@@ -31,14 +28,10 @@ fn naive_negacyclic_convolve_u32(a: &[u32], b: &[u32]) -> Vec<u32> {
         }
     }
 
-    // Wrap i64 back to u32 with centered semantics: reinterpret as i32, then as u32.
     c.iter().map(|&x| (x as i32) as u32).collect()
 }
 
 /// Compute `a * b mod (X^N - 1)` (cyclic convolution) using direct O(N^2).
-///
-/// Used to demonstrate that raw cyclic FFT (without negacyclic twist) produces
-/// a different product.
 fn naive_cyclic_convolve_u32(a: &[u32], b: &[u32]) -> Vec<u32> {
     let n = a.len();
     let mut c = vec![0i64; n];
@@ -56,21 +49,40 @@ fn naive_cyclic_convolve_u32(a: &[u32], b: &[u32]) -> Vec<u32> {
     c.iter().map(|&x| (x as i32) as u32).collect()
 }
 
+/// Pointwise complex multiply on split layout: `out = a * b`.
+///
+/// Layout: `[re_0..re_{m-1}, im_0..im_{m-1}]`.
+fn split_mul_to(a: &[f64], b: &[f64], out: &mut [f64]) {
+    let m = a.len() / 2;
+    debug_assert_eq!(a.len(), 2 * m);
+    debug_assert_eq!(b.len(), 2 * m);
+    debug_assert_eq!(out.len(), 2 * m);
+
+    let (a_re, a_im) = a.split_at(m);
+    let (b_re, b_im) = b.split_at(m);
+    let (out_re, out_im) = out.split_at_mut(m);
+
+    for i in 0..m {
+        out_re[i] = a_re[i] * b_re[i] - a_im[i] * b_im[i];
+        out_im[i] = a_re[i] * b_im[i] + a_im[i] * b_re[i];
+    }
+}
+
 /// Negacyclic product via FFT: forward → pointwise mul → inverse.
-fn fft_negacyclic_product(table: &FullComplex64FftTable, a: &[u32], b: &[u32]) -> Vec<u32> {
+fn fft_negacyclic_product(table: &FftTableImpl, a: &[u32], b: &[u32]) -> Vec<u32> {
     let n = table.poly_length();
-    let flen = table.fourier_length();
+    let blen = table.buffer_len();
     assert_eq!(a.len(), n);
     assert_eq!(b.len(), n);
 
-    let mut fa = vec![Complex64::new(0.0, 0.0); flen];
-    let mut fb = vec![Complex64::new(0.0, 0.0); flen];
+    let mut fa = vec![0.0f64; blen];
+    let mut fb = vec![0.0f64; blen];
 
     table.forward_torus_slice(a, &mut fa);
     table.forward_torus_slice(b, &mut fb);
 
-    let mut fc = vec![Complex64::new(0.0, 0.0); flen];
-    arithmetic::mul_to(&fa, &fb, &mut fc);
+    let mut fc = vec![0.0f64; blen];
+    split_mul_to(&fa, &fb, &mut fc);
 
     let mut c = vec![0u32; n];
     table.inverse_torus_slice(&fc, &mut c);
@@ -81,12 +93,11 @@ fn fft_negacyclic_product(table: &FullComplex64FftTable, a: &[u32], b: &[u32]) -
 // Tests
 // ---------------------------------------------------------------------------
 
-/// FFT-based negacyclic product must match the naive O(N^2) X^N+1 convolution
-/// for small coefficients across a range of sizes.
+/// FFT-based negacyclic product must match the naive O(N^2) X^N+1 convolution.
 #[test]
 fn negacyclic_mul_matches_naive_u32() {
     for log_n in 1..=6 {
-        let table = FullComplex64FftTable::new(log_n).unwrap();
+        let table = FftTableImpl::new(log_n).unwrap();
         let n = table.poly_length();
 
         // Coefficients in [-2, -1, 0, 1, 2] (centered), wrapped to u32
@@ -125,7 +136,7 @@ fn negacyclic_mul_matches_naive_u32() {
 #[test]
 fn raw_cyclic_fft_is_not_used() {
     let log_n = 4;
-    let table = FullComplex64FftTable::new(log_n).unwrap();
+    let table = FftTableImpl::new(log_n).unwrap();
     let n = table.poly_length();
 
     // Non-trivial polynomials
@@ -141,12 +152,11 @@ fn raw_cyclic_fft_is_not_used() {
     );
 }
 
-/// Multiplying by `X^d` (monomial with coefficient 1 at position `d`) should
-/// rotate coefficients and flip signs on wrap-around past degree `N-1`.
+/// Multiplying by `X^d` should rotate coefficients and flip signs on wrap.
 #[test]
 fn monomial_mul_matches_negacyclic_rotation() {
     let log_n = 4;
-    let table = FullComplex64FftTable::new(log_n).unwrap();
+    let table = FftTableImpl::new(log_n).unwrap();
     let n = table.poly_length();
 
     // Polynomial a(x) = 1 + 2*x + 3*x^2 + 4*x^3 + ...
@@ -156,16 +166,12 @@ fn monomial_mul_matches_negacyclic_rotation() {
     }
 
     for d in [0, 1, 3, n - 1] {
-        // Monomial X^d
         let mut monomial = vec![0u32; n];
         monomial[d] = 1;
 
         let result = fft_negacyclic_product(&table, &monomial, &a);
 
         // Expected: X^d * a(x) mod (X^N + 1)
-        // For each i where a[i] != 0:
-        //   result[i + d] = a[i] if i + d < n
-        //   result[i + d - n] = -a[i] if i + d >= n (sign flips on wrap)
         let mut expected = vec![0u32; n];
         for (i, &ai) in a.iter().enumerate() {
             if ai != 0 {
@@ -182,13 +188,11 @@ fn monomial_mul_matches_negacyclic_rotation() {
     }
 }
 
-/// Zero polynomial times anything = zero.
-/// Constant-1 polynomial is the multiplicative identity.
-/// Constant (u32::MAX) = -1 should negate the polynomial.
+/// Zero polynomial times anything = zero. Constant-1 = identity. (-1) negates.
 #[test]
 fn zero_and_one_polynomials() {
     let log_n = 4;
-    let table = FullComplex64FftTable::new(log_n).unwrap();
+    let table = FftTableImpl::new(log_n).unwrap();
     let n = table.poly_length();
 
     let a: Vec<u32> = (0..n)
@@ -214,7 +218,7 @@ fn zero_and_one_polynomials() {
 
     // (-1) * a == -a (wrapping negation)
     let mut minus_one = vec![0u32; n];
-    minus_one[0] = 0u32.wrapping_sub(1); // u32::MAX, representing -1
+    minus_one[0] = 0u32.wrapping_sub(1);
     let result_minus_one = fft_negacyclic_product(&table, &minus_one, &a);
     let neg_a: Vec<u32> = a.iter().map(|&x| 0u32.wrapping_sub(x)).collect();
     assert_eq!(
@@ -227,7 +231,7 @@ fn zero_and_one_polynomials() {
 #[test]
 fn monomial_degree_zero_is_identity() {
     let log_n = 4;
-    let table = FullComplex64FftTable::new(log_n).unwrap();
+    let table = FftTableImpl::new(log_n).unwrap();
     let n = table.poly_length();
 
     let a: Vec<u32> = (0..n).map(|i| (i as i32) as u32).collect();

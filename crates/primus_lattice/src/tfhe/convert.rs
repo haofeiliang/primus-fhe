@@ -1,13 +1,11 @@
-//! Coefficient ↔ Fourier domain conversion for GLWE, GLev, and GGSW
-//! ciphertexts.
+//! Coefficient ↔ Fourier domain conversion for GLWE, GLev, and GGSW.
 //!
-//! Each method iterates over the flat storage by polynomial-sized chunks
+//! Each method iterates over flat storage by polynomial-sized chunks
 //! and calls [`FftTable::forward_torus_slice`] or
-//! [`FftTable::inverse_torus_slice`] per chunk.
-//! The GLev/Ggsw variants chunk at the individual-polynomial level
-//! and do not need to know about sub-component boundaries.
+//! [`FftTable::inverse_torus_slice`] per chunk.  Fourier data is stored
+//! in split `[re | im]` f64 layout, which matches the FFT table's native
+//! format — no intermediate conversion is needed.
 
-use num_complex::Complex64;
 use primus_data::{Data, DataMut, RawData};
 use primus_fft::{FftTable, TorusFftValue};
 
@@ -19,7 +17,7 @@ use crate::glwe::Glwe;
 use crate::glwe::fourier::FourierGlwe;
 
 // ---------------------------------------------------------------------------
-// Forward: coefficient (torus) → Fourier (Complex64)
+// Forward: coefficient (torus) → Fourier (split f64)
 // ---------------------------------------------------------------------------
 
 impl<S, T> Glwe<S>
@@ -27,12 +25,12 @@ where
     S: RawData<Elem = T> + Data,
     T: TorusFftValue,
 {
-    /// Writes this coefficient-domain GLWE into a Fourier-domain [`FourierGlwe`].
+    /// Writes this GLWE into a Fourier-domain [`FourierGlwe`].
     #[inline]
     pub fn write_fourier_form<Table, A>(&self, result: &mut FourierGlwe<A>, fft: &Table)
     where
         Table: FftTable,
-        A: RawData<Elem = Complex64> + DataMut,
+        A: RawData<Elem = f64> + DataMut,
     {
         for (coeff, fourier) in self
             .iter_poly(fft.poly_length())
@@ -48,17 +46,18 @@ where
     S: RawData<Elem = T> + Data,
     T: TorusFftValue,
 {
-    /// Writes this coefficient-domain GLev into a Fourier-domain [`FourierGlev`].
+    /// Writes this GLev into a Fourier-domain [`FourierGlev`].
     #[inline]
     pub fn write_fourier_form<Table, A>(&self, result: &mut FourierGlev<A>, fft: &Table)
     where
         Table: FftTable,
-        A: RawData<Elem = Complex64> + DataMut,
+        A: RawData<Elem = f64> + DataMut,
     {
+        let poly_len = fft.poly_length();
         for (coeff, fourier) in self
             .as_ref()
-            .chunks_exact(fft.poly_length())
-            .zip(result.as_mut().chunks_exact_mut(fft.fourier_length()))
+            .chunks_exact(poly_len)
+            .zip(result.as_mut().chunks_exact_mut(fft.buffer_len()))
         {
             fft.forward_torus_slice(coeff, fourier);
         }
@@ -70,17 +69,18 @@ where
     S: RawData<Elem = T> + Data,
     T: TorusFftValue,
 {
-    /// Writes this coefficient-domain GGSW into a Fourier-domain [`FourierGgsw`].
+    /// Writes this GGSW into a Fourier-domain [`FourierGgsw`].
     #[inline]
     pub fn write_fourier_form<Table, A>(&self, result: &mut FourierGgsw<A>, fft: &Table)
     where
         Table: FftTable,
-        A: RawData<Elem = Complex64> + DataMut,
+        A: RawData<Elem = f64> + DataMut,
     {
+        let poly_len = fft.poly_length();
         for (coeff, fourier) in self
             .as_ref()
-            .chunks_exact(fft.poly_length())
-            .zip(result.as_mut().chunks_exact_mut(fft.fourier_length()))
+            .chunks_exact(poly_len)
+            .zip(result.as_mut().chunks_exact_mut(fft.buffer_len()))
         {
             fft.forward_torus_slice(coeff, fourier);
         }
@@ -88,14 +88,14 @@ where
 }
 
 // ---------------------------------------------------------------------------
-// Inverse: Fourier (Complex64) → coefficient (torus)
+// Inverse: Fourier (split f64) → coefficient (torus)
 // ---------------------------------------------------------------------------
 
 impl<S> FourierGlwe<S>
 where
-    S: RawData<Elem = Complex64> + Data,
+    S: RawData<Elem = f64> + Data,
 {
-    /// Writes this Fourier-domain GLWE back into a coefficient-domain [`Glwe`].
+    /// Writes this Fourier GLWE back into a coefficient-domain [`Glwe`].
     #[inline]
     pub fn write_torus_form<Table, A, T>(&self, result: &mut Glwe<A>, fft: &Table)
     where
@@ -114,9 +114,9 @@ where
 
 impl<S> FourierGlev<S>
 where
-    S: RawData<Elem = Complex64> + Data,
+    S: RawData<Elem = f64> + Data,
 {
-    /// Writes this Fourier-domain GLev back into a coefficient-domain [`Glev`].
+    /// Writes this Fourier GLev back into a coefficient-domain [`Glev`].
     #[inline]
     pub fn write_torus_form<Table, A, T>(&self, result: &mut Glev<A>, fft: &Table)
     where
@@ -124,10 +124,11 @@ where
         A: RawData<Elem = T> + DataMut,
         T: TorusFftValue,
     {
+        let poly_len = fft.poly_length();
         for (fourier, coeff) in self
             .as_ref()
-            .chunks_exact(fft.fourier_length())
-            .zip(result.as_mut().chunks_exact_mut(fft.poly_length()))
+            .chunks_exact(fft.buffer_len())
+            .zip(result.as_mut().chunks_exact_mut(poly_len))
         {
             fft.inverse_torus_slice(fourier, coeff);
         }
@@ -136,9 +137,9 @@ where
 
 impl<S> FourierGgsw<S>
 where
-    S: RawData<Elem = Complex64> + Data,
+    S: RawData<Elem = f64> + Data,
 {
-    /// Writes this Fourier-domain GGSW back into a coefficient-domain [`Ggsw`].
+    /// Writes this Fourier GGSW back into a coefficient-domain [`Ggsw`].
     #[inline]
     pub fn write_torus_form<Table, A, T>(&self, result: &mut Ggsw<A>, fft: &Table)
     where
@@ -146,10 +147,11 @@ where
         A: RawData<Elem = T> + DataMut,
         T: TorusFftValue,
     {
+        let poly_len = fft.poly_length();
         for (fourier, coeff) in self
             .as_ref()
-            .chunks_exact(fft.fourier_length())
-            .zip(result.as_mut().chunks_exact_mut(fft.poly_length()))
+            .chunks_exact(fft.buffer_len())
+            .zip(result.as_mut().chunks_exact_mut(poly_len))
         {
             fft.inverse_torus_slice(fourier, coeff);
         }

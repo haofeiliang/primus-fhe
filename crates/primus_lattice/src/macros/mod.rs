@@ -668,11 +668,11 @@ macro_rules! impl_crt_ntt {
 }
 
 // --------------------------------------------------------------------------
-// Fourier-domain macros (Complex64 element, no FheUint requirement)
+// Fourier-domain macros (split f64 element, no FheUint requirement)
 // --------------------------------------------------------------------------
 
 /// Generates `{Cipher}Iter<'a>` and `{Cipher}IterMut<'a>` chunked iterator
-/// types for a Fourier ciphertext over `Complex64` elements.
+/// types for a Fourier ciphertext over split `f64` elements.
 macro_rules! impl_fourier_iters {
     ($cipher:ident) => {
         paste::paste! {
@@ -683,7 +683,7 @@ macro_rules! impl_fourier_iters {
             )]
             #[derive(Debug, Clone)]
             pub struct [<$cipher Iter>]<'a> {
-                iter: core::slice::ChunksExact<'a, num_complex::Complex64>,
+                iter: core::slice::ChunksExact<'a, f64>,
             }
 
             impl<'a> [<$cipher Iter>]<'a> {
@@ -693,7 +693,7 @@ macro_rules! impl_fourier_iters {
                     "` chunks of `chunk_len` elements each."
                 )]
                 #[inline]
-                pub fn new(data: &'a [num_complex::Complex64], chunk_len: usize) -> Self {
+                pub fn new(data: &'a [f64], chunk_len: usize) -> Self {
                     Self {
                         iter: data.chunks_exact(chunk_len),
                     }
@@ -701,7 +701,7 @@ macro_rules! impl_fourier_iters {
             }
 
             impl<'a> Iterator for [<$cipher Iter>]<'a> {
-                type Item = $cipher<&'a [num_complex::Complex64]>;
+                type Item = $cipher<&'a [f64]>;
 
                 #[inline]
                 fn next(&mut self) -> Option<Self::Item> {
@@ -726,7 +726,7 @@ macro_rules! impl_fourier_iters {
             )]
             #[derive(Debug)]
             pub struct [<$cipher IterMut>]<'a> {
-                iter: core::slice::ChunksExactMut<'a, num_complex::Complex64>,
+                iter: core::slice::ChunksExactMut<'a, f64>,
             }
 
             impl<'a> [<$cipher IterMut>]<'a> {
@@ -736,7 +736,7 @@ macro_rules! impl_fourier_iters {
                     "` chunks of `chunk_len` elements each."
                 )]
                 #[inline]
-                pub fn new(data: &'a mut [num_complex::Complex64], chunk_len: usize) -> Self {
+                pub fn new(data: &'a mut [f64], chunk_len: usize) -> Self {
                     Self {
                         iter: data.chunks_exact_mut(chunk_len),
                     }
@@ -744,7 +744,7 @@ macro_rules! impl_fourier_iters {
             }
 
             impl<'a> Iterator for [<$cipher IterMut>]<'a> {
-                type Item = $cipher<&'a mut [num_complex::Complex64]>;
+                type Item = $cipher<&'a mut [f64]>;
 
                 #[inline]
                 fn next(&mut self) -> Option<Self::Item> {
@@ -769,12 +769,12 @@ macro_rules! impl_fourier_core {
     ($cipher:ident) => {
         paste::paste! {
             #[doc = concat!("Owned [`", stringify!($cipher), "`] backed by a [`Vec`].")]
-            pub type [<$cipher Owned>] = $cipher<Vec<num_complex::Complex64>>;
+            pub type [<$cipher Owned>] = $cipher<Vec<f64>>;
         }
 
         impl<S> $cipher<S>
         where
-            S: primus_data::RawData<Elem = num_complex::Complex64>,
+            S: primus_data::RawData<Elem = f64>,
         {
             #[doc = concat!("Creates a new [`", stringify!($cipher), "`].")]
             #[inline]
@@ -785,15 +785,18 @@ macro_rules! impl_fourier_core {
 
         impl<S> $cipher<S>
         where
-            S: primus_data::RawData<Elem = num_complex::Complex64> + primus_data::DataOwned,
+            S: primus_data::RawData<Elem = f64> + primus_data::DataOwned,
         {
             paste::paste! {
                 #[doc = concat!("Creates a zero-initialized [`", stringify!($cipher), "`].")]
                 #[inline]
+                /// `len` is the logical complex count (number of Fourier
+                /// polynomials × `fourier_length`).  The allocated buffer
+                /// holds `2 * len` f64 elements in split `[re | im]` layout.
                 pub fn zero([< $cipher:snake _len >]: usize) -> Self {
                     Self(S::from_vec(vec![
-                        num_complex::Complex64::new(0.0, 0.0);
-                        [< $cipher:snake _len >]
+                        0.0f64;
+                        2 * [< $cipher:snake _len >]
                     ]))
                 }
             }
@@ -801,42 +804,42 @@ macro_rules! impl_fourier_core {
 
         impl<S> $cipher<S>
         where
-            S: primus_data::RawData<Elem = num_complex::Complex64> + primus_data::DataMut,
+            S: primus_data::RawData<Elem = f64> + primus_data::DataMut,
         {
             /// Sets all elements to zero.
             #[inline]
             pub fn set_zero(&mut self) {
-                self.0.fill(num_complex::Complex64::new(0.0, 0.0));
+                self.0.fill(0.0f64);
             }
         }
 
         impl<S> $cipher<S>
         where
-            S: primus_data::RawData<Elem = num_complex::Complex64> + primus_data::Data,
+            S: primus_data::RawData<Elem = f64> + primus_data::Data,
         {
             /// Returns the total byte count.
             #[inline]
             pub fn byte_count(&self) -> usize {
-                self.0.len() * core::mem::size_of::<num_complex::Complex64>()
+                self.0.len() * core::mem::size_of::<f64>()
             }
         }
 
-        impl<S> core::convert::AsRef<[num_complex::Complex64]> for $cipher<S>
+        impl<S> core::convert::AsRef<[f64]> for $cipher<S>
         where
-            S: primus_data::RawData<Elem = num_complex::Complex64> + primus_data::Data,
+            S: primus_data::RawData<Elem = f64> + primus_data::Data,
         {
             #[inline]
-            fn as_ref(&self) -> &[num_complex::Complex64] {
+            fn as_ref(&self) -> &[f64] {
                 self.0.as_slice()
             }
         }
 
-        impl<S> core::convert::AsMut<[num_complex::Complex64]> for $cipher<S>
+        impl<S> core::convert::AsMut<[f64]> for $cipher<S>
         where
-            S: primus_data::RawData<Elem = num_complex::Complex64> + primus_data::DataMut,
+            S: primus_data::RawData<Elem = f64> + primus_data::DataMut,
         {
             #[inline]
-            fn as_mut(&mut self) -> &mut [num_complex::Complex64] {
+            fn as_mut(&mut self) -> &mut [f64] {
                 self.0.as_mut_slice()
             }
         }
@@ -852,7 +855,7 @@ macro_rules! impl_fourier_iter_sub {
         paste::paste! {
             impl<S> $cipher<S>
             where
-                S: primus_data::RawData<Elem = num_complex::Complex64> + primus_data::Data,
+                S: primus_data::RawData<Elem = f64> + primus_data::Data,
             {
                 #[doc = concat!(
                     "Returns an iterator over the [`",
@@ -870,7 +873,7 @@ macro_rules! impl_fourier_iter_sub {
 
             impl<S> $cipher<S>
             where
-                S: primus_data::RawData<Elem = num_complex::Complex64> + primus_data::DataMut,
+                S: primus_data::RawData<Elem = f64> + primus_data::DataMut,
             {
                 #[doc = concat!(
                     "Returns a mutable iterator over the [`",

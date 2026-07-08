@@ -1,4 +1,4 @@
-use primus_fft::{FftTable, FullComplex64FftTable};
+use primus_fft::{FftTable, FftTableImpl};
 use primus_lattice::ggsw::Ggsw;
 use primus_lattice::ggsw::fourier::FourierGgswOwned;
 use primus_lattice::glev::Glev;
@@ -13,13 +13,13 @@ use primus_lattice::glwe::fourier::FourierGlweOwned;
 #[test]
 fn roundtrip_glwe_u32() {
     for log_n in 1..=4 {
-        let fft = FullComplex64FftTable::new(log_n).unwrap();
+        let fft = FftTableImpl::new(log_n).unwrap();
         let poly_len = fft.poly_length();
-        let fourier_len = fft.fourier_length();
+        let _fourier_len = fft.fourier_length();
 
         let k = 2;
         let glwe_len = (k + 1) * poly_len;
-        let fourier_glwe_len = (k + 1) * fourier_len;
+        let fourier_glwe_len = (k + 1) * fft.fourier_length();
 
         // Coefficient GLWE with small centered values
         let coeff: Vec<u32> = (0..glwe_len)
@@ -52,13 +52,13 @@ fn roundtrip_glwe_u32() {
 #[test]
 fn roundtrip_glwe_u64() {
     for log_n in 1..=3 {
-        let fft = FullComplex64FftTable::new(log_n).unwrap();
+        let fft = FftTableImpl::new(log_n).unwrap();
         let poly_len = fft.poly_length();
-        let fourier_len = fft.fourier_length();
+        let _fourier_len = fft.fourier_length();
 
         let k = 1;
         let glwe_len = (k + 1) * poly_len;
-        let fourier_glwe_len = (k + 1) * fourier_len;
+        let fourier_glwe_len = (k + 1) * fft.fourier_length();
 
         let coeff: Vec<u64> = (0..glwe_len)
             .map(|i| match i % 5 {
@@ -92,7 +92,7 @@ fn roundtrip_glwe_u64() {
 #[test]
 fn roundtrip_glev_u32() {
     let log_n = 3;
-    let fft = FullComplex64FftTable::new(log_n).unwrap();
+    let fft = FftTableImpl::new(log_n).unwrap();
     let poly_len = fft.poly_length();
     let fourier_len = fft.fourier_length();
 
@@ -100,7 +100,7 @@ fn roundtrip_glev_u32() {
     let level = 2;
     let glwe_len = (k + 1) * poly_len; // 2 * 8 = 16
     let glev_len = level * glwe_len; // 2 * 16 = 32
-    let fourier_glwe_len = (k + 1) * fourier_len;
+    let fourier_glwe_len = (k + 1) * fft.fourier_length();
     let fourier_glev_len = level * fourier_glwe_len;
 
     let coeff: Vec<u32> = (0..glev_len)
@@ -130,7 +130,7 @@ fn roundtrip_glev_u32() {
 #[test]
 fn roundtrip_ggsw_u32() {
     let log_n = 2;
-    let fft = FullComplex64FftTable::new(log_n).unwrap();
+    let fft = FftTableImpl::new(log_n).unwrap();
     let poly_len = fft.poly_length();
     let fourier_len = fft.fourier_length();
 
@@ -139,7 +139,7 @@ fn roundtrip_ggsw_u32() {
     let glwe_len = (k + 1) * poly_len; // 2 * 4 = 8
     let glev_len = level * glwe_len; // 1 * 8 = 8
     let ggsw_len = (k + 1) * glev_len; // 2 * 8 = 16
-    let fourier_glwe_len = (k + 1) * fourier_len;
+    let fourier_glwe_len = (k + 1) * fft.fourier_length();
     let fourier_glev_len = level * fourier_glwe_len;
     let fourier_ggsw_len = (k + 1) * fourier_glev_len;
 
@@ -170,32 +170,32 @@ fn roundtrip_ggsw_u32() {
 #[test]
 fn glwe_shape_matches_fourier_shape() {
     let log_n = 3;
-    let fft = FullComplex64FftTable::new(log_n).unwrap();
+    let fft = FftTableImpl::new(log_n).unwrap();
     let poly_len = fft.poly_length();
     let fourier_len = fft.fourier_length();
 
     for k in 1..=3 {
         let glwe_len = (k + 1) * poly_len;
-        let fourier_glwe_len = (k + 1) * fourier_len;
+        let fourier_glwe_len = (k + 1) * fft.fourier_length();
 
         let glwe = Glwe::<Vec<u32>>::zero(glwe_len);
         let mut fourier = FourierGlweOwned::zero(fourier_glwe_len);
         glwe.write_fourier_form(&mut fourier, &fft);
 
-        assert_eq!(fourier.byte_count(), fourier_glwe_len * 16);
+        assert_eq!(fourier.byte_count(), 2 * fourier_glwe_len * 8);
     }
 }
 
 #[test]
 fn zero_glwe_roundtrip() {
     let log_n = 3;
-    let fft = FullComplex64FftTable::new(log_n).unwrap();
+    let fft = FftTableImpl::new(log_n).unwrap();
     let poly_len = fft.poly_length();
     let fourier_len = fft.fourier_length();
 
     let k = 2;
     let glwe_len = (k + 1) * poly_len;
-    let fourier_glwe_len = (k + 1) * fourier_len;
+    let fourier_glwe_len = (k + 1) * fft.fourier_length();
 
     let glwe = Glwe::<Vec<u32>>::zero(glwe_len);
     let mut fourier = FourierGlweOwned::zero(fourier_glwe_len);
@@ -205,7 +205,7 @@ fn zero_glwe_roundtrip() {
     // (all-zero input → all-zero Fourier output)
     for &c in fourier.as_ref() {
         assert!(
-            c.re.abs() < 1e-12 && c.im.abs() < 1e-12,
+            c.abs() < 1e-12,
             "zero input should produce zero Fourier output"
         );
     }

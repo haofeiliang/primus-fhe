@@ -1,5 +1,5 @@
 use primus_decompose::primitive::ApproxSignedBasis;
-use primus_fft::{FftTable, FullComplex64FftTable};
+use primus_fft::{FftTable, FftTableImpl};
 use primus_lattice::context::tfhe::TfheFftContext;
 use primus_lattice::ggsw::Ggsw;
 use primus_lattice::ggsw::fourier::FourierGgswOwned;
@@ -68,9 +68,9 @@ fn naive_external_product_u32(
 #[test]
 fn external_product_smoke_test() {
     let log_n = 3;
-    let fft = FullComplex64FftTable::new(log_n).unwrap();
+    let fft = FftTableImpl::new(log_n).unwrap();
     let poly_len = fft.poly_length();
-    let fourier_len = fft.fourier_length();
+    let blen = fft.buffer_len(); // 2 * fourier_len (split f64 per polynomial)
 
     // Parameters: k=1, level=2
     let glwe_dimension = 1; // mask count k
@@ -88,10 +88,10 @@ fn external_product_smoke_test() {
     let ggsw_coeff: Vec<u32> = (0..ggsw_len).map(|i| ((i % 7) as i32 - 3) as u32).collect();
     let ggsw_coeff = Ggsw::new(ggsw_coeff);
 
-    // Convert to Fourier
-    let fourier_glwe_len = total_components * fourier_len; // 2 * 8 = 16
-    let fourier_glev_len = level * fourier_glwe_len; // 2 * 16 = 32
-    let fourier_ggsw_len = total_components * fourier_glev_len; // 2 * 32 = 64
+    // Convert to Fourier (split f64 layout: blen per polynomial)
+    let fourier_glwe_len = total_components * fft.fourier_length(); // 2 * 16 = 32
+    let fourier_glev_len = level * fourier_glwe_len; // 2 * 32 = 64
+    let fourier_ggsw_len = total_components * fourier_glev_len; // 2 * 64 = 128
     let mut fourier_key = FourierGgswOwned::zero(fourier_ggsw_len);
     ggsw_coeff.write_fourier_form(&mut fourier_key, &fft);
 
@@ -100,7 +100,7 @@ fn external_product_smoke_test() {
     let input_glwe = Glwe::new(input);
 
     // External product (FFT-based)
-    let mut ctx = TfheFftContext::<u32>::new(poly_len, fourier_len, glwe_dimension);
+    let mut ctx = TfheFftContext::<u32>::new(poly_len, fft.fourier_length(), glwe_dimension);
     let mut output_fft = Glwe::<Vec<u32>>::zero(glwe_len);
     external_product_to(
         &input_glwe,
@@ -133,14 +133,14 @@ fn external_product_smoke_test() {
 #[test]
 fn external_product_zero_input() {
     let log_n = 2;
-    let fft = FullComplex64FftTable::new(log_n).unwrap();
+    let fft = FftTableImpl::new(log_n).unwrap();
     let poly_len = fft.poly_length();
-    let fourier_len = fft.fourier_length();
+    let _fourier_len = fft.fourier_length();
     let glwe_dimension = 1; // mask count k = 1
     let total_components = glwe_dimension + 1; // = 2
     let level = 1;
     let glwe_len = total_components * poly_len;
-    let fourier_glwe_len = total_components * fourier_len;
+    let fourier_glwe_len = total_components * fft.fourier_length();
     let fourier_glev_len = level * fourier_glwe_len;
     let fourier_ggsw_len = total_components * fourier_glev_len;
 
@@ -148,12 +148,11 @@ fn external_product_zero_input() {
 
     // Arbitrary Fourier key
     let mut key = FourierGgswOwned::zero(fourier_ggsw_len);
-    key.as_mut()
-        .fill_with(|| num_complex::Complex64::new(1.0, 0.0));
+    key.as_mut().fill_with(|| 1.0f64);
 
     let input = Glwe::<Vec<u32>>::zero(glwe_len);
     let mut output = Glwe::<Vec<u32>>::zero(glwe_len);
-    let mut ctx = TfheFftContext::<u32>::new(poly_len, fourier_len, glwe_dimension);
+    let mut ctx = TfheFftContext::<u32>::new(poly_len, fft.fourier_length(), glwe_dimension);
 
     external_product_to(
         &input,
@@ -176,21 +175,20 @@ fn context_sizes() {
     let poly_len = 1024;
     let fourier_len = 1024;
     let glwe_dimension = 2; // k = 2, total = 3
+    let blen = 2 * fourier_len;
 
     let ctx = TfheFftContext::<u32>::new(poly_len, fourier_len, glwe_dimension);
     assert_eq!(ctx.carries.len(), poly_len);
     assert_eq!(ctx.decomposed_poly.len(), poly_len);
-    assert_eq!(ctx.decomposed_fourier.len(), fourier_len);
-    // k + 1 = 3
-    assert_eq!(
-        ctx.fourier_accumulator.len(),
-        (glwe_dimension + 1) * fourier_len
-    );
+    assert_eq!(ctx.decomposed_fourier.len(), blen);
+    // k + 1 = 3, each polynomial = blen (split f64)
+    assert_eq!(ctx.fourier_accumulator.len(), (glwe_dimension + 1) * blen);
 
     let mut ctx = ctx;
     ctx.resize(512, 256, 3); // k=3, total=4
+    let blen2 = 2 * 256;
     assert_eq!(ctx.carries.len(), 512);
     assert_eq!(ctx.decomposed_poly.len(), 512);
-    assert_eq!(ctx.decomposed_fourier.len(), 256);
-    assert_eq!(ctx.fourier_accumulator.len(), (3 + 1) * 256);
+    assert_eq!(ctx.decomposed_fourier.len(), blen2);
+    assert_eq!(ctx.fourier_accumulator.len(), (3 + 1) * blen2);
 }

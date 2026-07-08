@@ -1,5 +1,3 @@
-use num_complex::Complex64;
-
 use crate::error::FftError;
 use crate::torus::TorusFftValue;
 
@@ -7,6 +5,12 @@ use crate::torus::TorusFftValue;
 ///
 /// Implementations provide forward and inverse negacyclic transforms for
 /// polynomial multiplication in `Z[X] / (X^N + 1)`.
+///
+/// # Buffer layout
+///
+/// Fourier data is stored in split real/imaginary format:
+/// `[re_0, ..., re_{m-1}, im_0, ..., im_{m-1}]` where `m = fourier_length()`.
+/// Total buffer size is `buffer_len() = 2 * fourier_length()`.
 ///
 /// # Thread safety
 ///
@@ -21,30 +25,30 @@ pub trait FftTable: Send + Sync {
     /// The polynomial length `N`.
     fn poly_length(&self) -> usize;
 
-    /// The length of the Fourier representation.
+    /// The number of logical complex frequency values.
     ///
-    /// The relationship between `poly_length` and `fourier_length` depends on
-    /// the backend:
-    ///
-    /// - [`FullComplex64FftTable`](crate::complex64::FullComplex64FftTable) stores the full `N` complex values
-    ///   (`fourier_length == poly_length`). This is the reference backend.
-    /// - A future packed backend will exploit real-input symmetry to store only
-    ///   `N / 2` complex values (`fourier_length == poly_length / 2`).
-    ///
-    /// Callers must always allocate Fourier buffers using this value, never
-    /// derive it from `poly_length` directly.
+    /// For the full-length backend this equals `poly_length()`.
+    /// A future packed backend may return `poly_length() / 2`.
     fn fourier_length(&self) -> usize;
 
-    /// Forward negacyclic transform: torus coefficients → Fourier domain.
+    /// Total buffer length in `f64` elements.
+    ///
+    /// Equals `2 * fourier_length()` for the split `[re | im]` layout.
+    #[inline]
+    fn buffer_len(&self) -> usize {
+        2 * self.fourier_length()
+    }
+
+    /// Forward negacyclic transform: torus coefficients → split Fourier domain.
     ///
     /// `input` must have length [`poly_length()`](FftTable::poly_length).
-    /// `output` receives [`fourier_length()`](FftTable::fourier_length) complex
-    /// values.
-    fn forward_torus_slice<T: TorusFftValue>(&self, input: &[T], output: &mut [Complex64]);
+    /// `output` receives `buffer_len()` f64 values in split `[re | im]` layout.
+    fn forward_torus_slice<T: TorusFftValue>(&self, input: &[T], output: &mut [f64]);
 
-    /// Inverse negacyclic transform: Fourier domain → torus coefficients.
+    /// Inverse negacyclic transform: split Fourier domain → torus coefficients.
     ///
-    /// `input` must have length [`fourier_length()`](FftTable::fourier_length).
+    /// `input` must have length [`buffer_len()`](FftTable::buffer_len) in split
+    /// `[re | im]` layout.
     /// `output` receives [`poly_length()`](FftTable::poly_length) torus values.
-    fn inverse_torus_slice<T: TorusFftValue>(&self, input: &[Complex64], output: &mut [T]);
+    fn inverse_torus_slice<T: TorusFftValue>(&self, input: &[f64], output: &mut [T]);
 }

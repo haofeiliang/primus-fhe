@@ -6,8 +6,7 @@
 //! - Message encoding is independent of FFT conversion — the same codec works
 //!   with any FFT size, and the same FFT works with any message modulus.
 
-use num_complex::Complex64;
-use primus_fft::{FftTable, FullComplex64FftTable};
+use primus_fft::{FftTable, FftTableImpl};
 use primus_fhe_core::{PlaintextCodec, PlaintextEmbedding};
 use primus_integer::FheUint;
 
@@ -63,12 +62,12 @@ fn assert_roundtrip<T: FheUint>(codec: &PlaintextCodec<T>, t: T) {
 }
 
 /// Run a polynomial through FFT forward-then-inverse and return the result.
-fn fft_roundtrip_u32(values: &[u32], fft: &FullComplex64FftTable) -> Vec<u32> {
+fn fft_roundtrip_u32(values: &[u32], fft: &FftTableImpl) -> Vec<u32> {
     let n = fft.poly_length();
-    let flen = fft.fourier_length();
+    let blen = fft.buffer_len();
     assert_eq!(values.len(), n);
 
-    let mut fourier = vec![Complex64::new(0.0, 0.0); flen];
+    let mut fourier = vec![0.0f64; blen];
     fft.forward_torus_slice(values, &mut fourier);
     let mut recovered = vec![0u32; n];
     fft.inverse_torus_slice(&fourier, &mut recovered);
@@ -126,7 +125,7 @@ fn fft_independence_same_codec_different_fft() {
     let codec = PlaintextCodec::new(t, None);
 
     for log_n in [2u32, 3, 4] {
-        let fft = FullComplex64FftTable::new(log_n).unwrap();
+        let fft = FftTableImpl::new(log_n).unwrap();
         let n = fft.poly_length();
 
         // Create a polynomial of messages: [0, 1, 2, ..., t-1, 0, 1, ...]
@@ -156,7 +155,7 @@ fn fft_independence_same_codec_different_fft() {
 
 #[test]
 fn fft_independence_different_moduli_same_fft() {
-    let fft = FullComplex64FftTable::new(3).unwrap();
+    let fft = FftTableImpl::new(3).unwrap();
     let n = fft.poly_length();
 
     // Power-of-two message modulus

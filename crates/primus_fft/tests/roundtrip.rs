@@ -1,16 +1,15 @@
-use num_complex::Complex64;
-use primus_fft::{FftTable, FullComplex64FftTable};
+use primus_fft::{FftTable, FftTableImpl};
 
 /// Small centered coefficients should roundtrip exactly through
 /// forward + inverse transform for all N from 2 to 64.
 #[test]
 fn roundtrip_u32_small() {
     for log_n in 1..=6 {
-        let table = FullComplex64FftTable::new(log_n).unwrap();
+        let table = FftTableImpl::new(log_n).unwrap();
         let n = table.poly_length();
-        let flen = table.fourier_length();
+        let blen = table.buffer_len();
 
-        let mut fourier = vec![Complex64::new(0.0, 0.0); flen];
+        let mut fourier = vec![0.0f64; blen];
         let mut output = vec![0u32; n];
 
         // Test pattern: small centered values [-2, -1, 0, 1, 2] (wrapped to u32)
@@ -37,18 +36,18 @@ fn roundtrip_u32_small() {
 #[test]
 fn roundtrip_u32_monomial() {
     for log_n in 1..=6 {
-        let table = FullComplex64FftTable::new(log_n).unwrap();
+        let table = FftTableImpl::new(log_n).unwrap();
         let n = table.poly_length();
-        let flen = table.fourier_length();
+        let blen = table.buffer_len();
 
-        let mut fourier = vec![Complex64::new(0.0, 0.0); flen];
+        let mut fourier = vec![0.0f64; blen];
         let mut output = vec![0u32; n];
 
         for pos in [0, 1, n / 2, n - 1] {
             let mut input = vec![0u32; n];
             input[pos] = 1;
 
-            fourier.fill(Complex64::new(0.0, 0.0));
+            fourier.fill(0.0);
             output.fill(0);
 
             table.forward_torus_slice(&input, &mut fourier);
@@ -65,12 +64,12 @@ fn roundtrip_u32_monomial() {
 #[test]
 fn roundtrip_zero_polynomial() {
     for log_n in 1..=6 {
-        let table = FullComplex64FftTable::new(log_n).unwrap();
+        let table = FftTableImpl::new(log_n).unwrap();
         let n = table.poly_length();
-        let flen = table.fourier_length();
+        let blen = table.buffer_len();
 
         let input = vec![0u32; n];
-        let mut fourier = vec![Complex64::new(0.0, 0.0); flen];
+        let mut fourier = vec![0.0f64; blen];
         let mut output = vec![1u32; n]; // start with non-zero to catch failures
 
         table.forward_torus_slice(&input, &mut fourier);
@@ -86,14 +85,14 @@ fn roundtrip_zero_polynomial() {
 #[test]
 fn roundtrip_one_polynomial() {
     for log_n in 1..=6 {
-        let table = FullComplex64FftTable::new(log_n).unwrap();
+        let table = FftTableImpl::new(log_n).unwrap();
         let n = table.poly_length();
-        let flen = table.fourier_length();
+        let blen = table.buffer_len();
 
         let mut input = vec![0u32; n];
         input[0] = 1;
 
-        let mut fourier = vec![Complex64::new(0.0, 0.0); flen];
+        let mut fourier = vec![0.0f64; blen];
         let mut output = vec![0u32; n];
 
         table.forward_torus_slice(&input, &mut fourier);
@@ -109,11 +108,11 @@ fn roundtrip_one_polynomial() {
 #[test]
 fn roundtrip_u64_small() {
     for log_n in 1..=4 {
-        let table = FullComplex64FftTable::new(log_n).unwrap();
+        let table = FftTableImpl::new(log_n).unwrap();
         let n = table.poly_length();
-        let flen = table.fourier_length();
+        let blen = table.buffer_len();
 
-        let mut fourier = vec![Complex64::new(0.0, 0.0); flen];
+        let mut fourier = vec![0.0f64; blen];
         let mut output = vec![0u64; n];
 
         // Small values that fit exactly in f64 (53-bit mantissa)
@@ -140,11 +139,11 @@ fn roundtrip_u64_small() {
 #[test]
 fn roundtrip_u16_small() {
     for log_n in 1..=4 {
-        let table = FullComplex64FftTable::new(log_n).unwrap();
+        let table = FftTableImpl::new(log_n).unwrap();
         let n = table.poly_length();
-        let flen = table.fourier_length();
+        let blen = table.buffer_len();
 
-        let mut fourier = vec![Complex64::new(0.0, 0.0); flen];
+        let mut fourier = vec![0.0f64; blen];
         let mut output = vec![0u16; n];
 
         let input: Vec<u16> = (0..n)

@@ -1,28 +1,24 @@
 #![deny(missing_docs)]
 //! Torus negacyclic FFT transforms for `Z[X] / (X^N + 1)`.
 //!
-//! Provides the [`FftTable`] trait and the [`FullComplex64FftTable`] reference
-//! backend backed by the `rustfft` crate. The forward transform centers torus
-//! coefficients, applies a negacyclic twist, and performs a standard complex
-//! FFT. The inverse applies an IFFT, untwists, and rounds back to the torus
-//! representation.
+//! Provides the [`FftTable`] trait and the [`FftTableImpl`] backend backed by
+//! the `rustfft` crate with pre-allocated scratch. The forward transform
+//! centres torus coefficients, applies a negacyclic twist, performs a complex
+//! FFT, and gathers the result into split `[re | im]` f64 layout.
 //!
-//! # Backends
+//! # Fourier data layout
 //!
-//! - [`FullComplex64FftTable`]: stores the full `N` complex values
-//!   (`fourier_length == poly_length`). Simple and correct — suitable as a
-//!   reference and for testing.
-//! - A future `PackedComplex64FftTable` will exploit real-input conjugate
-//!   symmetry to store only `N / 2` complex values, matching the storage
-//!   convention of production TFHE implementations.
+//! Fourier buffers use a split real/imaginary format:
+//! `[re_0, ..., re_{m-1}, im_0, ..., im_{m-1}]` where `m = fourier_length()`.
+//! Total buffer size is `buffer_len() = 2 * fourier_length()`.
 
-/// Interleaved `Complex64` FFT backend.
+/// FFT backend backed by `rustfft` with pre-allocated scratch.
 pub mod complex64;
 mod error;
 mod table;
 mod torus;
 
-pub use complex64::FullComplex64FftTable;
+pub use complex64::FftTableImpl;
 pub use error::FftError;
 pub use table::FftTable;
 pub use torus::TorusFftValue;

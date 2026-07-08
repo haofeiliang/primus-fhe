@@ -10,5 +10,13 @@ num-complex = { workspace = true }
 rustfft = { workspace = true }
 thiserror = { workspace = true }
 
+[dev-dependencies]
+criterion = { workspace = true }
+rand = { workspace = true }
+
+[[bench]]
+name = "fft"
+harness = false
+
 [features]
 default = []
