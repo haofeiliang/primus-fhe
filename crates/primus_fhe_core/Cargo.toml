@@ -26,7 +26,9 @@ itertools = { workspace = true }
 zeroize = { workspace = true }
 
 [dev-dependencies]
+primus_fft = { path = "../primus_fft" }
 criterion = { workspace = true }
+num-complex = { workspace = true }
 
 [[bench]]
 name = "lwe_enc"
