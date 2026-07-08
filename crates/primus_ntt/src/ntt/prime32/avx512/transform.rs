@@ -22,7 +22,7 @@ impl U32NttTable {
     ///
     /// # Preconditions (caller MUST uphold; not checked)
     ///
-    /// - `values.len()` is a power of two and ≥ 64.
+    /// - `values.len()` is a power of two and >= 32.
     /// - `roots.len() == values.len()` and `roots_precon.len() == values.len()`.
     /// - `q < 2^30`.
     #[target_feature(enable = "avx512f")]
@@ -180,7 +180,7 @@ impl U32NttTable {
     ///
     /// # Preconditions (caller MUST uphold; not checked)
     ///
-    /// - `values.len()` is a power of two.
+    /// - `values.len()` is a power of two and >= 32.
     /// - `inv_roots.len() == values.len()` and `inv_roots_precon.len() == values.len()`.
     /// - `q < 2^30`.
     #[target_feature(enable = "avx512f")]
@@ -332,7 +332,7 @@ impl U32NttTable {
         }
 
         // --- Final stage: fused with inv_n multiply (inv_n_w precomputed) ---
-        // --- 512-bit final stage: n/2 ≥ 32 (guaranteed since n ≥ 64) ---
+        // --- 512-bit final stage: n/2 >= 16 (guaranteed since n >= 32) ---
         let v_inv_n = _mm512_set1_epi32(inv_n as i32);
         let v_inv_n_w = _mm512_set1_epi32(inv_n_w as i32);
         let v_inv_n_precon = _mm512_set1_epi32(inv_n_precon as i32);

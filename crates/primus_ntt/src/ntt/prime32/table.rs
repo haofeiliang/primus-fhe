@@ -140,27 +140,20 @@ impl U32NttTable {
 
     /// Dispatch forward transform to the selected backend.
     ///
-    /// AVX2 supports `n >= 32`; the AVX-512 pre-expanded tables currently
-    /// support `n >= 64`, so `n = 32` falls back to AVX2 when available.
+    /// SIMD paths require `n >= 32`; smaller transforms go directly to scalar.
     #[inline]
     fn dispatch_forward(&self, values: &mut [u32], output_mod_factor: u32) {
         if self.n >= 32 {
             match self.backend {
                 #[cfg(target_arch = "x86_64")]
-                U32Backend::Avx512 if self.n >= 64 => unsafe {
-                    return self.avx512_forward_transform(values, output_mod_factor);
-                },
-                #[cfg(target_arch = "x86_64")]
-                U32Backend::Avx512 if *HAS_AVX2 => unsafe {
-                    return self.avx2_forward_transform(values, output_mod_factor);
-                },
-                #[cfg(target_arch = "x86_64")]
                 U32Backend::Avx2 => unsafe {
                     return self.avx2_forward_transform(values, output_mod_factor);
                 },
-                U32Backend::Scalar => {}
                 #[cfg(target_arch = "x86_64")]
-                U32Backend::Avx512 => {}
+                U32Backend::Avx512 => unsafe {
+                    return self.avx512_forward_transform(values, output_mod_factor);
+                },
+                U32Backend::Scalar => {}
             }
         }
         self.scalar_forward_transform(values, output_mod_factor);
@@ -172,20 +165,14 @@ impl U32NttTable {
         if self.n >= 32 {
             match self.backend {
                 #[cfg(target_arch = "x86_64")]
-                U32Backend::Avx512 if self.n >= 64 => unsafe {
-                    return self.avx512_inverse_transform(values, output_mod_factor);
-                },
-                #[cfg(target_arch = "x86_64")]
-                U32Backend::Avx512 if *HAS_AVX2 => unsafe {
-                    return self.avx2_inverse_transform(values, output_mod_factor);
-                },
-                #[cfg(target_arch = "x86_64")]
                 U32Backend::Avx2 => unsafe {
                     return self.avx2_inverse_transform(values, output_mod_factor);
                 },
-                U32Backend::Scalar => {}
                 #[cfg(target_arch = "x86_64")]
-                U32Backend::Avx512 => {}
+                U32Backend::Avx512 => unsafe {
+                    return self.avx512_inverse_transform(values, output_mod_factor);
+                },
+                U32Backend::Scalar => {}
             }
         }
         self.scalar_inverse_transform(values, output_mod_factor);

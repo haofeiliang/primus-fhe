@@ -307,6 +307,38 @@ fn test_builder_lane_order() {
     assert_eq!(avx2_inv[inv_t2_off + 6], inv_roots[36]);
     assert_eq!(avx2_inv.len(), 96); // T1 + T2 + T4: 3 × 4 vec × 8 u32
 
+    // AVX512 N=32 lower bound: T8/T4/T2/T1 are all pre-expanded.
+    let n32 = 32;
+    let roots32: Vec<u32> = (0..n32).map(|i| i as u32).collect();
+    let inv_roots32: Vec<u32> = (0..n32).map(|i| (i + 100) as u32).collect();
+
+    let avx512_fwd32 =
+        crate::ntt::prime32::avx512::precompute::build_avx512_roots_u32(n32, &roots32, false);
+    assert_eq!(avx512_fwd32.len(), 64);
+    assert_eq!(avx512_fwd32[0], roots32[2]);
+    assert_eq!(avx512_fwd32[8], roots32[3]);
+    assert_eq!(avx512_fwd32[16], roots32[4]);
+    assert_eq!(avx512_fwd32[20], roots32[5]);
+    assert_eq!(avx512_fwd32[32], roots32[8]);
+    assert_eq!(avx512_fwd32[34], roots32[12]);
+    assert_eq!(avx512_fwd32[36], roots32[9]);
+    assert_eq!(avx512_fwd32[38], roots32[13]);
+    assert_eq!(avx512_fwd32[48], roots32[16]);
+    assert_eq!(avx512_fwd32[49], roots32[17]);
+    assert_eq!(avx512_fwd32[50], roots32[24]);
+    assert_eq!(avx512_fwd32[63], roots32[31]);
+
+    let avx512_inv32 =
+        crate::ntt::prime32::avx512::precompute::build_avx512_roots_u32(n32, &inv_roots32, true);
+    assert_eq!(avx512_inv32.len(), 64);
+    assert_eq!(avx512_inv32[0], inv_roots32[1]);
+    assert_eq!(avx512_inv32[2], inv_roots32[9]);
+    assert_eq!(avx512_inv32[16], inv_roots32[17]);
+    assert_eq!(avx512_inv32[18], inv_roots32[21]);
+    assert_eq!(avx512_inv32[32], inv_roots32[25]);
+    assert_eq!(avx512_inv32[36], inv_roots32[26]);
+    assert_eq!(avx512_inv32[48], inv_roots32[29]);
+    assert_eq!(avx512_inv32[56], inv_roots32[30]);
     // AVX512 forward: T16 (t=32,16) skip, ri=4. T8 at ri=4, 2 chunks.
     // Chunk 0: [roots[4]×8, roots[5]×8]
     let avx512_fwd =

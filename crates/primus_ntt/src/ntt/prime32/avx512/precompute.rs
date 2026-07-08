@@ -8,8 +8,8 @@ pub(in crate::ntt::prime32) fn build_avx512_roots_u32(
     roots: &[u32],
     inverse: bool,
 ) -> AVec<u32> {
-    // n < 64 -> scalar fallback, no pre-expanded data needed.
-    if n < 64 {
+    // n < 32 -> scalar fallback, no pre-expanded data needed.
+    if n < 32 {
         return AVec::with_capacity(64, 0);
     }
     let mut out = AVec::with_capacity(64, (n / 8) * 16);
