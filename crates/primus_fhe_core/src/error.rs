@@ -1,0 +1,38 @@
+use core::fmt::Debug;
+
+/// Errors that may occur.
+#[derive(thiserror::Error, Debug)]
+pub enum FheError<T> {
+    /// Error that occurs when the given polynomial modulus degree of ring is not valid.
+    #[error("Polynoomial dimension of Ring is not valid!:{0}")]
+    PolynomialLengthUnValid(
+        /// Polynomial length of Ring.
+        usize,
+    ),
+    /// Error that occurs when the given lwe modulus
+    /// is not compatible with polynomial modulus dimension of ring.
+    #[error(
+        "LWE modulus {lwe_modulus:?} is not compatible with polynomial modulus dimension {ring_dimension:?}!"
+    )]
+    LweModulusRingDimensionNotCompatible {
+        /// LWE modulus.
+        lwe_modulus: T,
+        /// Polynomial modulus dimension of ring.
+        ring_dimension: T,
+    },
+    /// Error that occurs when the given coefficients modulus
+    /// is not compatible with polynomial modulus dimension of ring.
+    #[error(
+        "Coefficients modulus {coeff_modulus:?} is not compatible with polynomial modulus dimension {ring_dimension:?}!"
+    )]
+    RingModulusAndDimensionNotCompatible {
+        /// Coefficients modulus of ring.
+        coeff_modulus: T,
+        /// Polynomial modulus dimension of ring.
+        ring_dimension: T,
+    },
+    /// Error that occurs when the given steps after blind rotation
+    /// is not compatible with other parameters.
+    #[error("Steps after blind rotation is not compatible with other parameters!")]
+    StepsParametersNotCompatible,
+}
