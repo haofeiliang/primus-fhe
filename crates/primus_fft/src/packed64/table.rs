@@ -11,37 +11,41 @@ use crate::torus::TorusFftValue;
 
 /// Packed negacyclic FFT table with `fourier_length = N / 2`.
 ///
-/// Uses a decimation-in-frequency (DIF) decomposition: the real `N`-point
-/// polynomial is split into even and odd parts, each of length `N/2`.  Two
-/// `N/2`-point FFTs produce the half-length Fourier representation
-/// `P_k = Σ a_j * exp(iπ(2k+1)j/N)` for `k = 0..N/2-1`.
+/// This backend keeps the fast rustfft half-size FFT core. Forward
+/// pre/post-processing uses split `f64` twiddle tables to avoid temporary
+/// `Complex64` arithmetic in the hot decomposition path. The inverse keeps
+/// precomputed complex roots/twists, which currently benchmarks better for the
+/// reconstruction and rounding path.
 ///
-/// The inverse reconstructs the full evaluation via conjugate symmetry,
-/// then runs two `N/2`-point inverse FFTs in decimation-in-time (DIT) style.
+/// All Fourier buffers use split `[re | im]` f64 layout.
 ///
 /// # Scratch buffers
 ///
-/// Pre-allocated scratch is guarded by [`UnsafeCell`] — same safety contract as
+/// Pre-allocated scratch is guarded by [`UnsafeCell`] -- same safety contract as
 /// [`crate::complex64::FftTableImpl`]: the caller must not call the transform
 /// methods concurrently on the same instance.
 pub struct PackedFftTable {
     log_n: u32,
     poly_length: usize,
     fourier_length: usize,
-    /// N/2-point FFT (rustfft inverse planner: exp(+i…) convention).
+    /// N/2-point FFT with exp(+i...) convention.
     fft_half: Arc<dyn Fft<f64>>,
-    /// N/2-point FFT (rustfft forward planner: exp(−i…) convention).
+    /// N/2-point FFT with exp(-i...) convention.
     ifft_half: Arc<dyn Fft<f64>>,
-    /// `ω_k = exp(iπ(2k+1)/N)` for `k = 0..N/2-1`.
+    /// `omega_k = exp(i*pi*(2k+1)/N)` for the final combine.
+    roots_re: Vec<f64>,
+    roots_im: Vec<f64>,
     roots_half: Vec<Complex64>,
-    /// `ψ_m = exp(i2πm/N)` for `m = 0..N/2-1` (split twist for even/odd).
-    twist_split: Vec<Complex64>,
-    /// `ψ_m^{-1} = exp(-i2πm/N)` for `m = 0..N/2-1` (inverse split twist).
-    inv_twist_split: Vec<Complex64>,
-    /// Scratch for even part (length N/2).
+    /// `psi_m = exp(i*2*pi*m/N)` for even/odd split twisting.
+    twist_re: Vec<f64>,
+    twist_im: Vec<f64>,
+    inv_twist_scaled: Vec<Complex64>,
+    /// Scratch for even part, length N/2.
     scratch_a: UnsafeCell<Vec<Complex64>>,
-    /// Scratch for odd part (length N/2).
+    /// Scratch for odd part, length N/2.
     scratch_b: UnsafeCell<Vec<Complex64>>,
+    /// Scratch required by rustfft plans.
+    fft_scratch: UnsafeCell<Vec<Complex64>>,
 }
 
 // SAFETY: scratch buffers are only accessed from &self methods that are never
@@ -58,7 +62,6 @@ impl PackedFftTable {
 
 impl FftTable for PackedFftTable {
     fn new(log_n: u32) -> Result<Self, FftError> {
-        // N must be at least 4 so N/2 >= 2 (rustfft requires length >= 2).
         if log_n < 2 {
             return Err(FftError::InvalidLogN {
                 log_n,
@@ -70,27 +73,43 @@ impl FftTable for PackedFftTable {
         let half_n = n / 2;
 
         let mut planner = FftPlanner::new();
-        // Swapped: use "inverse" planner to get exp(+i2πkn/N') sign in the
-        // forward DIF decomposition, and "forward" planner for the DIT inverse.
+        // Swapped: rustfft inverse gives the positive-sign convention needed
+        // for forward packed decomposition; forward gives the inverse pass.
         let fft_half = planner.plan_fft_inverse(half_n);
         let ifft_half = planner.plan_fft_forward(half_n);
+        let fft_scratch_len = fft_half
+            .get_inplace_scratch_len()
+            .max(ifft_half.get_inplace_scratch_len());
 
         let n_f64 = n as f64;
+        let scale = 1.0 / (half_n as f64);
 
-        let roots_half: Vec<Complex64> = (0..half_n)
-            .map(|k| Complex64::cis(PI * (2 * k + 1) as f64 / n_f64))
-            .collect();
+        let mut roots_re = Vec::with_capacity(half_n);
+        let mut roots_im = Vec::with_capacity(half_n);
+        let mut roots_half = Vec::with_capacity(half_n);
+        for k in 0..half_n {
+            let theta = PI * (2 * k + 1) as f64 / n_f64;
+            let root = Complex64::new(theta.cos(), theta.sin());
+            roots_re.push(root.re);
+            roots_im.push(root.im);
+            roots_half.push(root);
+        }
 
-        let twist_split: Vec<Complex64> = (0..half_n)
-            .map(|m| Complex64::cis(2.0 * PI * m as f64 / n_f64))
-            .collect();
-
-        let inv_twist_split: Vec<Complex64> = (0..half_n)
-            .map(|m| Complex64::cis(-2.0 * PI * m as f64 / n_f64))
-            .collect();
+        let mut twist_re = Vec::with_capacity(half_n);
+        let mut twist_im = Vec::with_capacity(half_n);
+        let mut inv_twist_scaled = Vec::with_capacity(half_n);
+        for m in 0..half_n {
+            let theta = 2.0 * PI * m as f64 / n_f64;
+            let tr = theta.cos();
+            let ti = theta.sin();
+            twist_re.push(tr);
+            twist_im.push(ti);
+            inv_twist_scaled.push(Complex64::new(tr, -ti) * scale);
+        }
 
         let scratch_a = UnsafeCell::new(vec![Complex64::new(0.0, 0.0); half_n]);
         let scratch_b = UnsafeCell::new(vec![Complex64::new(0.0, 0.0); half_n]);
+        let fft_scratch = UnsafeCell::new(vec![Complex64::new(0.0, 0.0); fft_scratch_len]);
 
         Ok(Self {
             log_n,
@@ -98,11 +117,15 @@ impl FftTable for PackedFftTable {
             fourier_length: half_n,
             fft_half,
             ifft_half,
+            roots_re,
+            roots_im,
             roots_half,
-            twist_split,
-            inv_twist_split,
+            twist_re,
+            twist_im,
+            inv_twist_scaled,
             scratch_a,
             scratch_b,
+            fft_scratch,
         })
     }
 
@@ -125,29 +148,31 @@ impl FftTable for PackedFftTable {
         // SAFETY: caller guarantees no concurrent access.
         let scratch_a = unsafe { &mut *self.scratch_a.get() };
         let scratch_b = unsafe { &mut *self.scratch_b.get() };
+        let fft_scratch = unsafe { &mut *self.fft_scratch.get() };
 
-        // Step 1: split even/odd and twist.
-        //   b'_m = centered(a_{2m})   * exp(i2πm/N)
-        //   c'_m = centered(a_{2m+1}) * exp(i2πm/N)
         for m in 0..half_n {
+            let tr = self.twist_re[m];
+            let ti = self.twist_im[m];
             let even = input[2 * m].into_f64_centered();
             let odd = input[2 * m + 1].into_f64_centered();
-            scratch_a[m] = Complex64::new(even, 0.0) * self.twist_split[m];
-            scratch_b[m] = Complex64::new(odd, 0.0) * self.twist_split[m];
+
+            scratch_a[m].re = even * tr;
+            scratch_a[m].im = even * ti;
+            scratch_b[m].re = odd * tr;
+            scratch_b[m].im = odd * ti;
         }
 
-        // Step 2: N/2-point FFT on each part (uses "inverse" planner for +i sign).
-        self.fft_half.process(scratch_a);
-        self.fft_half.process(scratch_b);
+        self.fft_half.process_with_scratch(scratch_a, fft_scratch);
+        self.fft_half.process_with_scratch(scratch_b, fft_scratch);
 
-        // Step 3: combine — P_k = B_k + ω_k * C_k.
-        // Store in split [re | im] layout.
-        let (re, im) = output.split_at_mut(half_n);
-        for k in 0..half_n {
-            let p = scratch_a[k] + self.roots_half[k] * scratch_b[k];
-            re[k] = p.re;
-            im[k] = p.im;
-        }
+        combine_split(
+            scratch_a,
+            scratch_b,
+            &self.roots_re,
+            &self.roots_im,
+            output,
+            half_n,
+        );
     }
 
     fn forward_centered_f64_slice(&self, input: &[f64], output: &mut [f64]) {
@@ -159,24 +184,31 @@ impl FftTable for PackedFftTable {
         // SAFETY: caller guarantees no concurrent access.
         let scratch_a = unsafe { &mut *self.scratch_a.get() };
         let scratch_b = unsafe { &mut *self.scratch_b.get() };
+        let fft_scratch = unsafe { &mut *self.fft_scratch.get() };
 
-        // Step 1: split even/odd and twist (values already centered f64).
         for m in 0..half_n {
-            scratch_a[m] = Complex64::new(input[2 * m], 0.0) * self.twist_split[m];
-            scratch_b[m] = Complex64::new(input[2 * m + 1], 0.0) * self.twist_split[m];
+            let tr = self.twist_re[m];
+            let ti = self.twist_im[m];
+            let even = input[2 * m];
+            let odd = input[2 * m + 1];
+
+            scratch_a[m].re = even * tr;
+            scratch_a[m].im = even * ti;
+            scratch_b[m].re = odd * tr;
+            scratch_b[m].im = odd * ti;
         }
 
-        // Step 2: N/2-point FFT on each part.
-        self.fft_half.process(scratch_a);
-        self.fft_half.process(scratch_b);
+        self.fft_half.process_with_scratch(scratch_a, fft_scratch);
+        self.fft_half.process_with_scratch(scratch_b, fft_scratch);
 
-        // Step 3: combine — P_k = B_k + ω_k * C_k.
-        let (re, im) = output.split_at_mut(half_n);
-        for k in 0..half_n {
-            let p = scratch_a[k] + self.roots_half[k] * scratch_b[k];
-            re[k] = p.re;
-            im[k] = p.im;
-        }
+        combine_split(
+            scratch_a,
+            scratch_b,
+            &self.roots_re,
+            &self.roots_im,
+            output,
+            half_n,
+        );
     }
 
     fn inverse_torus_slice<T: TorusFftValue>(&self, input: &[f64], output: &mut [T]) {
@@ -188,38 +220,49 @@ impl FftTable for PackedFftTable {
         // SAFETY: caller guarantees no concurrent access.
         let scratch_a = unsafe { &mut *self.scratch_a.get() };
         let scratch_b = unsafe { &mut *self.scratch_b.get() };
+        let fft_scratch = unsafe { &mut *self.fft_scratch.get() };
 
         let (re, im) = input.split_at(half_n);
-        let scale = 1.0 / (half_n as f64);
-
-        // Step 1: recover B_k and C_k from P_k using conjugate symmetry:
-        //   B_k = (P_k + conj(P_{N/2-1-k})) / 2
-        //   C_k = (P_k - conj(P_{N/2-1-k})) / (2 * ω_k)
         for k in 0..half_n {
             let pk = Complex64::new(re[k], im[k]);
             let conj_partner = Complex64::new(re[half_n - 1 - k], -im[half_n - 1 - k]);
 
             scratch_a[k] = (pk + conj_partner) * 0.5;
             let diff = pk - conj_partner;
-            // diff / (2 * ω_k) = diff * conj(ω_k) / (2 * |ω_k|²) = diff * conj(ω_k) / 2
-            // since |ω_k| = 1.
             scratch_b[k] = diff * self.roots_half[k].conj() * 0.5;
         }
 
-        // Step 2: N/2-point inverse FFT on B and C (uses "forward" planner for −i sign).
-        // rustfft forward FFT is unnormalized, so output is (N/2)× too large.
-        self.ifft_half.process(scratch_a);
-        self.ifft_half.process(scratch_b);
+        self.ifft_half.process_with_scratch(scratch_a, fft_scratch);
+        self.ifft_half.process_with_scratch(scratch_b, fft_scratch);
 
-        // Step 3: untwist and round.
-        //   a_{2m}   = Re[b'_m * exp(-i2πm/N)]
-        //   a_{2m+1} = Re[c'_m * exp(-i2πm/N)]
-        // Both are scaled by N/2 (from the unnormalized FFT), so divide.
         for m in 0..half_n {
-            let even = (scratch_a[m] * self.inv_twist_split[m] * scale).re;
-            let odd = (scratch_b[m] * self.inv_twist_split[m] * scale).re;
+            let even = (scratch_a[m] * self.inv_twist_scaled[m]).re;
+            let odd = (scratch_b[m] * self.inv_twist_scaled[m]).re;
             output[2 * m] = T::from_f64_wrapping_rounded(even);
             output[2 * m + 1] = T::from_f64_wrapping_rounded(odd);
         }
+    }
+}
+
+#[inline]
+fn combine_split(
+    scratch_a: &[Complex64],
+    scratch_b: &[Complex64],
+    roots_re: &[f64],
+    roots_im: &[f64],
+    output: &mut [f64],
+    half_n: usize,
+) {
+    let (re, im) = output.split_at_mut(half_n);
+    for k in 0..half_n {
+        let ar = scratch_a[k].re;
+        let ai = scratch_a[k].im;
+        let br = scratch_b[k].re;
+        let bi = scratch_b[k].im;
+        let rr = roots_re[k];
+        let ri = roots_im[k];
+
+        re[k] = ar + rr * br - ri * bi;
+        im[k] = ai + rr * bi + ri * br;
     }
 }

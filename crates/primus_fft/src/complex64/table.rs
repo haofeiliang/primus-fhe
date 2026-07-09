@@ -28,6 +28,8 @@ pub struct FftTableImpl {
     /// Pre-allocated scratch (length = fourier_length).  Wrapped in
     /// [`UnsafeCell`] so the `&self` methods can mutate it.
     scratch: UnsafeCell<Vec<Complex64>>,
+    /// Scratch required by rustfft plans.
+    fft_scratch: UnsafeCell<Vec<Complex64>>,
 }
 
 // Safety: the scratch buffer is only accessed from `&self` methods that are
@@ -58,6 +60,9 @@ impl FftTable for FftTableImpl {
         let mut planner = FftPlanner::new();
         let forward = planner.plan_fft_forward(n);
         let inverse = planner.plan_fft_inverse(n);
+        let fft_scratch_len = forward
+            .get_inplace_scratch_len()
+            .max(inverse.get_inplace_scratch_len());
 
         let n_f64 = n as f64;
         let twist: Vec<Complex64> = (0..n)
@@ -69,6 +74,7 @@ impl FftTable for FftTableImpl {
             .collect();
 
         let scratch = UnsafeCell::new(vec![Complex64::new(0.0, 0.0); n]);
+        let fft_scratch = UnsafeCell::new(vec![Complex64::new(0.0, 0.0); fft_scratch_len]);
 
         Ok(Self {
             log_n,
@@ -79,6 +85,7 @@ impl FftTable for FftTableImpl {
             twist,
             inv_twist_scaled,
             scratch,
+            fft_scratch,
         })
     }
 
@@ -99,6 +106,7 @@ impl FftTable for FftTableImpl {
 
         // SAFETY: caller guarantees no concurrent access.
         let scratch = unsafe { &mut *self.scratch.get() };
+        let fft_scratch = unsafe { &mut *self.fft_scratch.get() };
 
         // Step 1: center + twist → Complex64 scratch.
         for (j, &val) in input.iter().enumerate() {
@@ -107,7 +115,7 @@ impl FftTable for FftTableImpl {
         }
 
         // Step 2: in-place FFT on scratch.
-        self.forward.process(scratch);
+        self.forward.process_with_scratch(scratch, fft_scratch);
 
         // Step 3: gather → split [re | im] output.
         let (re, im) = output.split_at_mut(m);
@@ -124,6 +132,7 @@ impl FftTable for FftTableImpl {
 
         // SAFETY: caller guarantees no concurrent access.
         let scratch = unsafe { &mut *self.scratch.get() };
+        let fft_scratch = unsafe { &mut *self.fft_scratch.get() };
 
         // Step 1: twist only (values already centered f64) → Complex64 scratch.
         for (j, &val) in input.iter().enumerate() {
@@ -131,7 +140,7 @@ impl FftTable for FftTableImpl {
         }
 
         // Step 2: in-place FFT on scratch.
-        self.forward.process(scratch);
+        self.forward.process_with_scratch(scratch, fft_scratch);
 
         // Step 3: gather → split [re | im] output.
         let (re, im) = output.split_at_mut(m);
@@ -148,6 +157,7 @@ impl FftTable for FftTableImpl {
 
         // SAFETY: caller guarantees no concurrent access.
         let scratch = unsafe { &mut *self.scratch.get() };
+        let fft_scratch = unsafe { &mut *self.fft_scratch.get() };
 
         // Step 1: scatter split [re | im] → Complex64 scratch.
         let (re, im) = input.split_at(m);
@@ -157,7 +167,7 @@ impl FftTable for FftTableImpl {
         }
 
         // Step 2: in-place inverse FFT.
-        self.inverse.process(scratch);
+        self.inverse.process_with_scratch(scratch, fft_scratch);
 
         // Step 3: untwist + round.
         for (j, val) in scratch.iter().enumerate() {
