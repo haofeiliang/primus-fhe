@@ -45,6 +45,29 @@ pub trait FftTable: Send + Sync {
     /// `output` receives `buffer_len()` f64 values in split `[re | im]` layout.
     fn forward_torus_slice<T: TorusFftValue>(&self, input: &[T], output: &mut [f64]);
 
+    /// Forward transform from already-centered `f64` values.
+    ///
+    /// This is the hot-path variant of [`forward_torus_slice`]: it skips the
+    /// `T::into_f64_centered()` call and assumes the input values are already
+    /// in centered floating-point representation (as produced by
+    /// [`TorusFftValue::into_f64_centered`]).  The twist and FFT are applied
+    /// directly.
+    ///
+    /// `input` must have length [`poly_length()`](FftTable::poly_length).
+    /// `output` receives [`buffer_len()`](FftTable::buffer_len) f64 values in
+    /// split `[re | im]` layout.
+    ///
+    /// # Equivalence
+    ///
+    /// For any `T: TorusFftValue` and coefficient slice `coeff: &[T]`:
+    /// ```text
+    /// let centered: Vec<f64> = coeff.iter().map(|&v| v.into_f64_centered()).collect();
+    /// fft.forward_centered_f64_slice(&centered, &mut out1);
+    /// fft.forward_torus_slice(coeff, &mut out2);
+    /// assert!(out1 ≈ out2);
+    /// ```
+    fn forward_centered_f64_slice(&self, input: &[f64], output: &mut [f64]);
+
     /// Inverse negacyclic transform: split Fourier domain → torus coefficients.
     ///
     /// `input` must have length [`buffer_len()`](FftTable::buffer_len) in split

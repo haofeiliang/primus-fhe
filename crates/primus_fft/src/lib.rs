@@ -14,11 +14,15 @@
 
 /// FFT backend backed by `rustfft` with pre-allocated scratch.
 pub mod complex64;
+pub mod cpu;
 mod error;
+/// Packed negacyclic FFT backend (rustfft-backed reference, `fourier_length = N/2`).
+pub mod packed64;
 mod table;
 mod torus;
 
 pub use complex64::FftTableImpl;
 pub use error::FftError;
+pub use packed64::PackedFftTable;
 pub use table::FftTable;
 pub use torus::TorusFftValue;

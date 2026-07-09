@@ -117,6 +117,30 @@ impl FftTable for FftTableImpl {
         }
     }
 
+    fn forward_centered_f64_slice(&self, input: &[f64], output: &mut [f64]) {
+        debug_assert_eq!(input.len(), self.poly_length);
+        let m = self.fourier_length;
+        debug_assert_eq!(output.len(), 2 * m);
+
+        // SAFETY: caller guarantees no concurrent access.
+        let scratch = unsafe { &mut *self.scratch.get() };
+
+        // Step 1: twist only (values already centered f64) → Complex64 scratch.
+        for (j, &val) in input.iter().enumerate() {
+            scratch[j] = Complex64::new(val, 0.0) * self.twist[j];
+        }
+
+        // Step 2: in-place FFT on scratch.
+        self.forward.process(scratch);
+
+        // Step 3: gather → split [re | im] output.
+        let (re, im) = output.split_at_mut(m);
+        for (j, c) in scratch.iter().enumerate() {
+            re[j] = c.re;
+            im[j] = c.im;
+        }
+    }
+
     fn inverse_torus_slice<T: TorusFftValue>(&self, input: &[f64], output: &mut [T]) {
         let m = self.fourier_length;
         debug_assert_eq!(input.len(), 2 * m);

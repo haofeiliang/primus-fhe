@@ -10,8 +10,9 @@ use primus_poly::{FourierPolynomial, FourierPolynomialIter, FourierPolynomialIte
 /// |--a1--| ... |--ak--|--b--|
 /// ```
 ///
-/// Each component is a Fourier polynomial of length `fourier_length`.
-/// Total data length: `(k + 1) * fourier_length`.
+/// Each component is a Fourier polynomial stored in split `[re|im]` layout
+/// (`2 * fourier_length` f64 values).
+/// Total data length: `(k + 1) * 2 * fourier_length` f64.
 #[derive(Clone)]
 pub struct FourierGlwe<S>(pub S)
 where
@@ -36,7 +37,8 @@ where
 {
     /// Returns the `a` components and `b` component as immutable slices.
     ///
-    /// `mid = k * fourier_length` splits the mask from the body.
+    /// `mid = k * 2 * fourier_length` (i.e. `k * buffer_len()`) splits the
+    /// mask from the body in raw f64 split `[re|im]` layout.
     /// `mid` must be `<= self.0.len()`.
     #[inline]
     pub fn a_b_slices(&self, mid: usize) -> (&[f64], &[f64]) {

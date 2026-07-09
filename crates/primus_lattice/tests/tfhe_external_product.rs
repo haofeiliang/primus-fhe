@@ -1,5 +1,5 @@
 use primus_decompose::primitive::ApproxSignedBasis;
-use primus_fft::{FftTable, FftTableImpl};
+use primus_fft::{FftTable, FftTableImpl, PackedFftTable};
 use primus_lattice::context::tfhe::TfheFftContext;
 use primus_lattice::ggsw::Ggsw;
 use primus_lattice::ggsw::fourier::FourierGgswOwned;
@@ -191,4 +191,446 @@ fn context_sizes() {
     assert_eq!(ctx.decomposed_poly.len(), 512);
     assert_eq!(ctx.decomposed_fourier.len(), blen2);
     assert_eq!(ctx.fourier_accumulator.len(), (3 + 1) * blen2);
+}
+
+// ---------------------------------------------------------------------------
+// Additional parameter combinations
+// ---------------------------------------------------------------------------
+
+#[test]
+fn external_product_n32_k2_level2() {
+    let log_n = 5; // N = 32
+    let fft = FftTableImpl::new(log_n).unwrap();
+    let poly_len = fft.poly_length();
+    let flen = fft.fourier_length();
+    let _blen = fft.buffer_len();
+
+    let k = 2; // mask count
+    let total_components = k + 1; // = 3
+    let level = 2;
+
+    let glwe_len = total_components * poly_len; // 3 * 32 = 96
+    let glev_len = level * glwe_len; // 2 * 96 = 192
+    let ggsw_len = total_components * glev_len; // 3 * 192 = 576
+
+    let fourier_glwe_len = total_components * flen;
+    let fourier_glev_len = level * fourier_glwe_len;
+    let fourier_ggsw_len = total_components * fourier_glev_len;
+
+    let basis = ApproxSignedBasis::<u32>::new(None, 4, Some(level));
+
+    // Coefficient GGSW key with small values
+    let ggsw_coeff: Vec<u32> = (0..ggsw_len).map(|i| ((i % 7) as i32 - 3) as u32).collect();
+    let ggsw_coeff = Ggsw::new(ggsw_coeff);
+
+    // Convert to Fourier
+    let mut fourier_key = FourierGgswOwned::zero(fourier_ggsw_len);
+    ggsw_coeff.write_fourier_form(&mut fourier_key, &fft);
+
+    // Input GLWE
+    let input: Vec<u32> = (0..glwe_len).map(|i| ((i as i32 % 5) - 2) as u32).collect();
+    let input_glwe = Glwe::new(input);
+
+    // FFT-based external product
+    let mut ctx = TfheFftContext::<u32>::new(poly_len, flen, k);
+    let mut output_fft = Glwe::<Vec<u32>>::zero(glwe_len);
+    external_product_to(
+        &input_glwe,
+        &fourier_key,
+        &mut output_fft,
+        &basis,
+        &fft,
+        &mut ctx,
+        k,
+    );
+
+    // Naive coefficient-domain reference
+    let mut output_naive = Glwe::<Vec<u32>>::zero(glwe_len);
+    naive_external_product_u32(
+        &input_glwe,
+        &ggsw_coeff,
+        &mut output_naive,
+        &basis,
+        k,
+        poly_len,
+    );
+
+    assert_eq!(
+        output_fft.as_ref(),
+        output_naive.as_ref(),
+        "FFT external product must match naive reference for N=32,k=2,level=2"
+    );
+}
+
+#[test]
+fn external_product_zero_key() {
+    let log_n = 3; // N = 8
+    let fft = FftTableImpl::new(log_n).unwrap();
+    let poly_len = fft.poly_length();
+    let flen = fft.fourier_length();
+
+    let k = 1;
+    let total_components = k + 1;
+    let level = 2;
+
+    let glwe_len = total_components * poly_len;
+    let fourier_glwe_len = total_components * flen;
+    let fourier_glev_len = level * fourier_glwe_len;
+    let fourier_ggsw_len = total_components * fourier_glev_len;
+
+    let basis = ApproxSignedBasis::<u32>::new(None, 4, Some(level));
+
+    // All-zero Fourier key
+    let fourier_key = FourierGgswOwned::zero(fourier_ggsw_len);
+
+    // Arbitrary non-zero input
+    let input: Vec<u32> = (0..glwe_len).map(|i| ((i as i32 % 7) - 3) as u32).collect();
+    let input_glwe = Glwe::new(input);
+
+    let mut ctx = TfheFftContext::<u32>::new(poly_len, flen, k);
+    let mut output = Glwe::<Vec<u32>>::zero(glwe_len);
+    external_product_to(
+        &input_glwe,
+        &fourier_key,
+        &mut output,
+        &basis,
+        &fft,
+        &mut ctx,
+        k,
+    );
+
+    // Zero key → all products are zero → output should be all zeros
+    for &v in output.as_ref() {
+        assert_eq!(v, 0u32, "zero key must produce zero output");
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Fourier key length structure
+// ---------------------------------------------------------------------------
+
+/// Verify that the Fourier GGSW key has the correct structure:
+/// - Logical complex count = (k+1) × level × (k+1) × fourier_length()
+/// - Physical f64 count = 2 × logical count = (k+1) × level × (k+1) × buffer_len()
+#[test]
+fn fourier_key_length_structure() {
+    for log_n in 1..=5 {
+        let fft = FftTableImpl::new(log_n).unwrap();
+        let flen = fft.fourier_length();
+        let blen = fft.buffer_len();
+
+        assert_eq!(blen, 2 * flen);
+
+        for k in 1..=3 {
+            for level in 1..=3 {
+                let total_components = k + 1;
+
+                // Logical complex count: rows × levels × polynomials-per-row × fourier_length
+                let expected_logical = total_components * level * total_components * flen;
+
+                // Physical f64 count (split [re|im]): 2 × logical
+                let expected_physical = 2 * expected_logical;
+
+                let key = FourierGgswOwned::zero(expected_logical);
+
+                assert_eq!(
+                    key.as_ref().len(),
+                    expected_physical,
+                    "Fourier GGSW physical f64 length mismatch: \
+                     log_n={log_n}, k={k}, level={level}"
+                );
+
+                // Also verify directly using buffer_len:
+                assert_eq!(
+                    key.as_ref().len(),
+                    total_components * level * total_components * blen,
+                    "Fourier GGSW length = rows×levels×polys×buffer_len: \
+                     log_n={log_n}, k={k}, level={level}"
+                );
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Packed backend — external product
+// ---------------------------------------------------------------------------
+
+#[test]
+fn packed_external_product_smoke_test() {
+    let log_n = 3; // N = 8
+    let fft = PackedFftTable::new(log_n).unwrap();
+    let poly_len = fft.poly_length();
+    let flen = fft.fourier_length(); // N/2 = 4
+    let _blen = fft.buffer_len(); // N = 8
+
+    let k = 1; // mask count
+    let total_components = k + 1;
+    let level = 2;
+
+    let glwe_len = total_components * poly_len; // 16
+    let glev_len = level * glwe_len; // 32
+    let ggsw_len = total_components * glev_len; // 64
+
+    let basis = ApproxSignedBasis::<u32>::new(None, 4, Some(level));
+
+    // Coefficient GGSW key
+    let ggsw_coeff: Vec<u32> = (0..ggsw_len).map(|i| ((i % 7) as i32 - 3) as u32).collect();
+    let ggsw_coeff = Ggsw::new(ggsw_coeff);
+
+    // Convert to packed Fourier (half the size of full).
+    let fourier_glwe_len = total_components * flen;
+    let fourier_glev_len = level * fourier_glwe_len;
+    let fourier_ggsw_len = total_components * fourier_glev_len;
+    let mut fourier_key = FourierGgswOwned::zero(fourier_ggsw_len);
+    ggsw_coeff.write_fourier_form(&mut fourier_key, &fft);
+
+    // Packed: key is half the size of full.
+    let full_blen = 2 * poly_len; // full backend buffer_len
+    assert_eq!(
+        fourier_key.as_ref().len(),
+        total_components * level * total_components * fft.buffer_len()
+    );
+    assert_eq!(fft.buffer_len(), full_blen / 2);
+
+    // Input GLWE
+    let input: Vec<u32> = (0..glwe_len).map(|i| ((i as i32 % 5) - 2) as u32).collect();
+    let input_glwe = Glwe::new(input);
+
+    // FFT-based external product with packed backend
+    let mut ctx = TfheFftContext::<u32>::new(poly_len, flen, k);
+    let mut output_fft = Glwe::<Vec<u32>>::zero(glwe_len);
+    external_product_to(
+        &input_glwe,
+        &fourier_key,
+        &mut output_fft,
+        &basis,
+        &fft,
+        &mut ctx,
+        k,
+    );
+
+    // Naive coefficient-domain reference
+    let mut output_naive = Glwe::<Vec<u32>>::zero(glwe_len);
+    naive_external_product_u32(
+        &input_glwe,
+        &ggsw_coeff,
+        &mut output_naive,
+        &basis,
+        k,
+        poly_len,
+    );
+
+    assert_eq!(
+        output_fft.as_ref(),
+        output_naive.as_ref(),
+        "packed external product must match naive reference"
+    );
+}
+
+#[test]
+fn packed_external_product_n32_k2_level2() {
+    let log_n = 5; // N = 32
+    let fft = PackedFftTable::new(log_n).unwrap();
+    let poly_len = fft.poly_length();
+    let flen = fft.fourier_length(); // N/2 = 16
+
+    let k = 2;
+    let total_components = k + 1;
+    let level = 2;
+
+    let glwe_len = total_components * poly_len;
+    let glev_len = level * glwe_len;
+    let ggsw_len = total_components * glev_len;
+
+    let basis = ApproxSignedBasis::<u32>::new(None, 4, Some(level));
+
+    let ggsw_coeff: Vec<u32> = (0..ggsw_len).map(|i| ((i % 7) as i32 - 3) as u32).collect();
+    let ggsw_coeff = Ggsw::new(ggsw_coeff);
+
+    let fourier_glwe_len = total_components * flen;
+    let fourier_glev_len = level * fourier_glwe_len;
+    let fourier_ggsw_len = total_components * fourier_glev_len;
+    let mut fourier_key = FourierGgswOwned::zero(fourier_ggsw_len);
+    ggsw_coeff.write_fourier_form(&mut fourier_key, &fft);
+
+    let input: Vec<u32> = (0..glwe_len).map(|i| ((i as i32 % 5) - 2) as u32).collect();
+    let input_glwe = Glwe::new(input);
+
+    let mut ctx = TfheFftContext::<u32>::new(poly_len, flen, k);
+    let mut output_fft = Glwe::<Vec<u32>>::zero(glwe_len);
+    external_product_to(
+        &input_glwe,
+        &fourier_key,
+        &mut output_fft,
+        &basis,
+        &fft,
+        &mut ctx,
+        k,
+    );
+
+    let mut output_naive = Glwe::<Vec<u32>>::zero(glwe_len);
+    naive_external_product_u32(
+        &input_glwe,
+        &ggsw_coeff,
+        &mut output_naive,
+        &basis,
+        k,
+        poly_len,
+    );
+
+    assert_eq!(
+        output_fft.as_ref(),
+        output_naive.as_ref(),
+        "packed external product for N=32,k=2,level=2 must match naive"
+    );
+}
+
+#[test]
+fn packed_external_product_zero_key() {
+    let log_n = 3;
+    let fft = PackedFftTable::new(log_n).unwrap();
+    let poly_len = fft.poly_length();
+    let flen = fft.fourier_length();
+
+    let k = 1;
+    let total_components = k + 1;
+    let level = 2;
+
+    let glwe_len = total_components * poly_len;
+    let fourier_glwe_len = total_components * flen;
+    let fourier_glev_len = level * fourier_glwe_len;
+    let fourier_ggsw_len = total_components * fourier_glev_len;
+
+    let basis = ApproxSignedBasis::<u32>::new(None, 4, Some(level));
+
+    // All-zero packed Fourier key
+    let fourier_key = FourierGgswOwned::zero(fourier_ggsw_len);
+
+    let input: Vec<u32> = (0..glwe_len).map(|i| ((i as i32 % 7) - 3) as u32).collect();
+    let input_glwe = Glwe::new(input);
+
+    let mut ctx = TfheFftContext::<u32>::new(poly_len, flen, k);
+    let mut output = Glwe::<Vec<u32>>::zero(glwe_len);
+    external_product_to(
+        &input_glwe,
+        &fourier_key,
+        &mut output,
+        &basis,
+        &fft,
+        &mut ctx,
+        k,
+    );
+
+    for &v in output.as_ref() {
+        assert_eq!(v, 0u32, "packed: zero key must produce zero output");
+    }
+}
+
+#[test]
+fn packed_external_product_zero_input() {
+    let log_n = 2;
+    let fft = PackedFftTable::new(log_n).unwrap();
+    let poly_len = fft.poly_length();
+    let flen = fft.fourier_length();
+
+    let k = 1;
+    let total_components = k + 1;
+    let level = 1;
+
+    let glwe_len = total_components * poly_len;
+    let fourier_glwe_len = total_components * flen;
+    let fourier_glev_len = level * fourier_glwe_len;
+    let fourier_ggsw_len = total_components * fourier_glev_len;
+
+    let basis = ApproxSignedBasis::<u32>::new(None, 8, Some(level));
+
+    let mut key = FourierGgswOwned::zero(fourier_ggsw_len);
+    key.as_mut().fill_with(|| 1.0f64);
+
+    let input = Glwe::<Vec<u32>>::zero(glwe_len);
+    let mut output = Glwe::<Vec<u32>>::zero(glwe_len);
+    let mut ctx = TfheFftContext::<u32>::new(poly_len, flen, k);
+
+    external_product_to(&input, &key, &mut output, &basis, &fft, &mut ctx, k);
+
+    for &v in output.as_ref() {
+        assert_eq!(v, 0u32, "packed: zero input must produce zero output");
+    }
+}
+
+#[test]
+fn packed_and_full_produce_same_external_product() {
+    for log_n in 2..=4 {
+        let full_fft = FftTableImpl::new(log_n).unwrap();
+        let packed_fft = PackedFftTable::new(log_n).unwrap();
+
+        let poly_len = full_fft.poly_length();
+        let k = 1;
+        let total_components = k + 1;
+        let level = 2;
+
+        let glwe_len = total_components * poly_len;
+        let glev_len = level * glwe_len;
+        let ggsw_len = total_components * glev_len;
+
+        let basis = ApproxSignedBasis::<u32>::new(None, 4, Some(level));
+
+        let ggsw_coeff: Vec<u32> = (0..ggsw_len).map(|i| ((i % 7) as i32 - 3) as u32).collect();
+        let ggsw_coeff = Ggsw::new(ggsw_coeff);
+
+        // Full backend key
+        let full_flen = full_fft.fourier_length();
+        let full_fourier_glwe_len = total_components * full_flen;
+        let full_fourier_glev_len = level * full_fourier_glwe_len;
+        let full_fourier_ggsw_len = total_components * full_fourier_glev_len;
+        let mut full_key = FourierGgswOwned::zero(full_fourier_ggsw_len);
+        ggsw_coeff.write_fourier_form(&mut full_key, &full_fft);
+
+        // Packed backend key
+        let packed_flen = packed_fft.fourier_length();
+        let packed_fourier_glwe_len = total_components * packed_flen;
+        let packed_fourier_glev_len = level * packed_fourier_glwe_len;
+        let packed_fourier_ggsw_len = total_components * packed_fourier_glev_len;
+        let mut packed_key = FourierGgswOwned::zero(packed_fourier_ggsw_len);
+        ggsw_coeff.write_fourier_form(&mut packed_key, &packed_fft);
+
+        // Verify packed key is half the size
+        assert_eq!(full_key.as_ref().len(), 2 * packed_key.as_ref().len());
+
+        let input: Vec<u32> = (0..glwe_len).map(|i| ((i as i32 % 5) - 2) as u32).collect();
+        let input_glwe = Glwe::new(input);
+
+        // Full backend external product
+        let mut full_ctx = TfheFftContext::<u32>::new(poly_len, full_flen, k);
+        let mut full_output = Glwe::<Vec<u32>>::zero(glwe_len);
+        external_product_to(
+            &input_glwe,
+            &full_key,
+            &mut full_output,
+            &basis,
+            &full_fft,
+            &mut full_ctx,
+            k,
+        );
+
+        // Packed backend external product
+        let mut packed_ctx = TfheFftContext::<u32>::new(poly_len, packed_flen, k);
+        let mut packed_output = Glwe::<Vec<u32>>::zero(glwe_len);
+        external_product_to(
+            &input_glwe,
+            &packed_key,
+            &mut packed_output,
+            &basis,
+            &packed_fft,
+            &mut packed_ctx,
+            k,
+        );
+
+        assert_eq!(
+            full_output.as_ref(),
+            packed_output.as_ref(),
+            "full and packed backends must produce same result for log_n={log_n}"
+        );
+    }
 }

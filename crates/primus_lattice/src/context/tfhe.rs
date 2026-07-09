@@ -21,7 +21,13 @@ pub struct TfheFftContext<T: TorusFftValue> {
     /// Carry bits, one per coefficient (length = `poly_length`).
     pub carries: Vec<bool>,
     /// Decomposed (signed) digits for one polynomial (length = `poly_length`).
+    /// Kept for backward compatibility; the fused path uses
+    /// [`decomposed_centered_f64`](Self::decomposed_centered_f64) instead.
     pub decomposed_poly: Vec<T>,
+    /// Decomposed digits as centered `f64` (length = `poly_length`).
+    /// Used by the fused decomposition→FFT path to avoid an intermediate
+    /// `u32` → `f64` conversion inside the FFT twist loop.
+    pub decomposed_centered_f64: Vec<f64>,
     /// FFT of the decomposed polynomial, split [re | im] layout
     /// (length = `2 * fourier_length`).
     pub decomposed_fourier: Vec<f64>,
@@ -41,6 +47,7 @@ impl<T: TorusFftValue> TfheFftContext<T> {
         Self {
             carries: vec![false; poly_length],
             decomposed_poly: vec![T::ZERO; poly_length],
+            decomposed_centered_f64: vec![0.0f64; poly_length],
             decomposed_fourier: vec![0.0f64; blen],
             fourier_accumulator: vec![0.0f64; total_polys * blen],
         }
@@ -52,6 +59,7 @@ impl<T: TorusFftValue> TfheFftContext<T> {
         let blen = 2 * fourier_length;
         self.carries.resize(poly_length, false);
         self.decomposed_poly.resize(poly_length, T::ZERO);
+        self.decomposed_centered_f64.resize(poly_length, 0.0f64);
         self.decomposed_fourier.resize(blen, 0.0f64);
         self.fourier_accumulator.resize(total_polys * blen, 0.0f64);
     }
