@@ -13,6 +13,8 @@ thiserror = { workspace = true }
 [dev-dependencies]
 criterion = { workspace = true }
 rand = { workspace = true }
+tfhe-fft = "0.10.1"
+dyn-stack = "0.13.2"
 
 [[bench]]
 name = "fft"
