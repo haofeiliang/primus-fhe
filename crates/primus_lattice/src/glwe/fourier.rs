@@ -3,6 +3,9 @@ use primus_data::{Data, DataMut, RawData};
 
 use primus_poly::{FourierPolynomial, FourierPolynomialIter, FourierPolynomialIterMut};
 
+#[allow(unused_imports)]
+use super::Glwe;
+
 /// Fourier-domain GLWE ciphertext.
 ///
 /// ## Layout
@@ -27,6 +30,8 @@ impl_fourier_iter_sub!(
     FourierPolynomialIterMut,
     fourier_poly
 );
+impl_fourier_forward!(Glwe, FourierGlwe);
+impl_fourier_backward!(FourierGlwe, Glwe);
 
 // ---------------------------------------------------------------------------
 // GLWE-specific methods

@@ -2,6 +2,8 @@ use num_complex::Complex64;
 use primus_data::RawData;
 
 #[allow(unused_imports)]
+use super::Ggsw;
+#[allow(unused_imports)]
 use crate::glev::{FourierGlev, FourierGlevIter, FourierGlevIterMut};
 
 /// Fourier-domain GGSW ciphertext — matrix of
@@ -30,3 +32,5 @@ impl_fourier_iter_sub!(
     FourierGlevIterMut,
     glev
 );
+impl_fourier_forward!(Ggsw, FourierGgsw);
+impl_fourier_backward!(FourierGgsw, Ggsw);

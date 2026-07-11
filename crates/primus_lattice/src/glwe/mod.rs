@@ -16,3 +16,9 @@ pub use ntt::{NttGlwe, NttGlweIter, NttGlweIterMut};
 pub use crt::{CrtGlwe, CrtGlweIter, CrtGlweIterMut};
 pub use dcrt::{DcrtGlwe, DcrtGlweIter, DcrtGlweIterMut};
 pub use fourier::{FourierGlwe, FourierGlweIter, FourierGlweIterMut, FourierGlweOwned};
+
+/// TFHE torus GLWE ciphertext (coefficient domain).
+///
+/// Layout: `|--a1--| ... |--ak--|--b--|` where each `a_i` and `b` is a
+/// polynomial of degree `N-1`.
+pub type TorusGlwe<S> = Glwe<S>;

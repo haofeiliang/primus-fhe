@@ -2,6 +2,8 @@ use num_complex::Complex64;
 use primus_data::RawData;
 
 #[allow(unused_imports)]
+use super::Glev;
+#[allow(unused_imports)]
 use crate::glwe::{FourierGlwe, FourierGlweIter, FourierGlweIterMut};
 
 /// Fourier-domain GLev ciphertext — list of
@@ -30,3 +32,5 @@ impl_fourier_iter_sub!(
     FourierGlweIterMut,
     glwe
 );
+impl_fourier_forward!(Glev, FourierGlev);
+impl_fourier_backward!(FourierGlev, Glev);
