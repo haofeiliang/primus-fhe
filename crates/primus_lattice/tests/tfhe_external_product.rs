@@ -1,7 +1,7 @@
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{FftTable, RustFftTable};
 use primus_lattice::{
-    context::tfhe::TfheFftContext, ggsw::FourierGgswOwned, glwe::Glwe,
+    context::TfheFftContext, ggsw::FourierGgswOwned, glwe::Glwe,
     tfhe::external_product::external_product_to,
 };
 

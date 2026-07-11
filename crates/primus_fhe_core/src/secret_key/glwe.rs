@@ -384,7 +384,7 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
 
     /// Encrypts an already-decomposed CRT plaintext polynomial.
     ///
-    /// The message should be the result of [`RnsCoeffCodec::unsigned_encode_coeffs`]
+    /// The message should be the result of [`crate::RnsCoeffCodec::unsigned_encode_coeffs`]
     /// or a hand-constructed [`CrtPolynomial`] whose coefficients are in `[0, q_i)`.
     /// Delta scaling is applied using Shoup factors from the codec.
     pub fn encrypt_inplace<R, M, Table, A, B>(

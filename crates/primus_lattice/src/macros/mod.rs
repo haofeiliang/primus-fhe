@@ -137,7 +137,7 @@ macro_rules! impl_iters {
             }
 
             impl<'a, T: FheUint> [<$cipher Iter>]<'a, T> {
-                #[doc = concat!("Creates an iterator yielding `", stringify!($cipher), "` chunks of `", stringify!([<$cipher:snake _len>]), "` elements each.")]
+                #[doc = concat!("Creates an iterator yielding [`", stringify!($cipher), "`] chunks of `", stringify!([<$cipher:snake _len>]), "` elements each.")]
                 #[inline]
                 pub fn new(data:&'a [T], [<$cipher:snake _len>]:usize) -> Self{
                     Self {
@@ -168,7 +168,7 @@ macro_rules! impl_iters {
             }
 
             impl<'a, T: FheUint> [<$cipher IterMut>]<'a, T> {
-                #[doc = concat!("Creates a mutable iterator yielding `", stringify!($cipher), "` chunks of `", stringify!([<$cipher:snake _len>]), "` elements each.")]
+                #[doc = concat!("Creates a mutable iterator yielding [`", stringify!($cipher), "`] chunks of `", stringify!([<$cipher:snake _len>]), "` elements each.")]
                 #[inline]
                 pub fn new(data:&'a mut [T], [<$cipher:snake _len>]:usize) -> Self{
                     Self {
@@ -199,7 +199,7 @@ macro_rules! impl_iter_sub_structure {
             T: FheUint,
         {
             paste::paste! {
-                #[doc = concat!("Returns an iterator over the `", stringify!($sub), "` sub-components of this `", stringify!($cipher), "`.")]
+                #[doc = concat!("Returns an iterator over the [`", stringify!($sub), "`] sub-components of this `", stringify!($cipher), "`.")]
                 #[inline]
                 pub fn [<iter_ $sub:snake>]<'a>(&'a self, [<$sub:snake _len>]: usize) -> [<$sub Iter>]<'a, T> {
                     [<$sub Iter>] {
@@ -216,7 +216,7 @@ macro_rules! impl_iter_sub_structure {
             T: FheUint,
         {
             paste::paste! {
-                #[doc = concat!("Returns a mutable iterator over the `", stringify!($sub), "` sub-components of this `", stringify!($cipher), "`.")]
+                #[doc = concat!("Returns a mutable iterator over the [`", stringify!($sub), "`] sub-components of this `", stringify!($cipher), "`.")]
                 #[inline]
                 pub fn [<iter_ $sub:snake _mut>]<'a>(
                     &'a mut self,
@@ -236,7 +236,7 @@ macro_rules! impl_iter_sub_structure {
             T: FheUint,
         {
             paste::paste! {
-                #[doc = concat!("Returns an iterator over the `", stringify!($sub), "` sub-components of this `", stringify!($cipher), "`.")]
+                #[doc = concat!("Returns an iterator over the [`", stringify!($sub), "`] sub-components of this `", stringify!($cipher), "`.")]
                 #[inline]
                 pub fn [<iter_ $sub_short>]<'a>(&'a self, [<$sub_short _len>]: usize) -> [<$sub Iter>]<'a, T> {
                     [<$sub Iter>] {
@@ -253,7 +253,7 @@ macro_rules! impl_iter_sub_structure {
             T: FheUint,
         {
             paste::paste! {
-                #[doc = concat!("Returns a mutable iterator over the `", stringify!($sub), "` sub-components of this `", stringify!($cipher), "`.")]
+                #[doc = concat!("Returns a mutable iterator over the [`", stringify!($sub), "`] sub-components of this `", stringify!($cipher), "`.")]
                 #[inline]
                 pub fn [<iter_ $sub_short _mut>]<'a>(
                     &'a mut self,
@@ -688,21 +688,21 @@ macro_rules! impl_fourier_iters {
 
             impl<'a> [<$cipher Iter>]<'a> {
                 #[doc = concat!(
-                    "Creates an iterator yielding `",
+                    "Creates an iterator yielding [`",
                     stringify!($cipher),
-                    "` views containing `chunk_len` complex values each.",
-                    "\n\n# Panics\n\nPanics if `chunk_len` is zero or does not divide `data.len()`."
+                    "`] views containing `", stringify!([<$cipher:snake _len>]), "` complex values each.",
+                    "\n\n# Panics\n\nPanics if `", stringify!([<$cipher:snake _len>]), "` is zero or does not divide `data.len()`."
                 )]
                 #[inline]
-                pub fn new(data: &'a [num_complex::Complex64], chunk_len: usize) -> Self {
-                    assert!(chunk_len != 0, "Fourier chunk length must be non-zero");
+                pub fn new(data: &'a [num_complex::Complex64], [<$cipher:snake _len>]: usize) -> Self {
+                    assert!([<$cipher:snake _len>] != 0, "Fourier chunk length must be non-zero");
                     assert_eq!(
-                        data.len() % chunk_len,
+                        data.len() % [<$cipher:snake _len>],
                         0,
                         "Fourier data length must be divisible by the chunk length"
                     );
                     Self {
-                        iter: data.chunks_exact(chunk_len),
+                        iter: data.chunks_exact([<$cipher:snake _len>]),
                     }
                 }
             }
@@ -744,21 +744,21 @@ macro_rules! impl_fourier_iters {
 
             impl<'a> [<$cipher IterMut>]<'a> {
                 #[doc = concat!(
-                    "Creates a mutable iterator yielding `",
+                    "Creates a mutable iterator yielding [`",
                     stringify!($cipher),
-                    "` views containing `chunk_len` complex values each.",
-                    "\n\n# Panics\n\nPanics if `chunk_len` is zero or does not divide `data.len()`."
+                    "`] views containing `", stringify!([<$cipher:snake _len>]), "` complex values each.",
+                    "\n\n# Panics\n\nPanics if `", stringify!([<$cipher:snake _len>]), "` is zero or does not divide `data.len()`."
                 )]
                 #[inline]
-                pub fn new(data: &'a mut [num_complex::Complex64], chunk_len: usize) -> Self {
-                    assert!(chunk_len != 0, "Fourier chunk length must be non-zero");
+                pub fn new(data: &'a mut [num_complex::Complex64], [<$cipher:snake _len>]: usize) -> Self {
+                    assert!([<$cipher:snake _len>] != 0, "Fourier chunk length must be non-zero");
                     assert_eq!(
-                        data.len() % chunk_len,
+                        data.len() % [<$cipher:snake _len>],
                         0,
                         "Fourier data length must be divisible by the chunk length"
                     );
                     Self {
-                        iter: data.chunks_exact_mut(chunk_len),
+                        iter: data.chunks_exact_mut([<$cipher:snake _len>]),
                     }
                 }
             }
@@ -884,17 +884,15 @@ macro_rules! impl_fourier_iter_sub {
                 S: primus_data::RawData<Elem = num_complex::Complex64> + primus_data::Data,
             {
                 #[doc = concat!(
-                    "Returns an iterator over the [`",
-                    stringify!($sub),
-                    "`] sub-components, each containing `sub_len` complex values.",
-                    "\n\n# Panics\n\nPanics if `sub_len` is zero or does not divide the ciphertext length."
+                    "Returns an iterator over the [`", stringify!($sub), "`] sub-components, each containing `", stringify!([<$method _len>]), "` complex values.",
+                    "\n\n# Panics\n\nPanics if `", stringify!([<$method _len>]), "` is zero or does not divide the ciphertext length."
                 )]
                 #[inline]
                 pub fn [<iter_ $method>](
                     &self,
-                    sub_len: usize,
+                    [<$method _len>]: usize,
                 ) -> $sub_iter<'_> {
-                    $sub_iter::new(self.as_ref(), sub_len)
+                    $sub_iter::new(self.as_ref(), [<$method _len>])
                 }
             }
 
@@ -905,15 +903,15 @@ macro_rules! impl_fourier_iter_sub {
                 #[doc = concat!(
                     "Returns a mutable iterator over the [`",
                     stringify!($sub),
-                    "`] sub-components, each containing `sub_len` complex values.",
-                    "\n\n# Panics\n\nPanics if `sub_len` is zero or does not divide the ciphertext length."
+                    "`] sub-components, each containing `", stringify!([<$method _len>]), "` complex values.",
+                    "\n\n# Panics\n\nPanics if `", stringify!([<$method _len>]), "` is zero or does not divide the ciphertext length."
                 )]
                 #[inline]
                 pub fn [<iter_ $method _mut>](
                     &mut self,
-                    sub_len: usize,
+                    [<$method _len>]: usize,
                 ) -> $sub_iter_mut<'_> {
-                    $sub_iter_mut::new(self.0.as_mut_slice(), sub_len)
+                    $sub_iter_mut::new(self.0.as_mut_slice(), [<$method _len>])
                 }
             }
         }

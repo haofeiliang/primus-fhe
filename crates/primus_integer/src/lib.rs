@@ -5,8 +5,7 @@
 //! with [`BigUint`] for arbitrary-precision unsigned integers.
 //!
 //! When the `simd` feature is enabled (requires nightly), SIMD vector
-//! abstractions ([`SimdArray`], [`SimdInteger`], [`SimdMaskArray`],
-//! [`SimdUnsignedInteger`])
+//! abstractions (SimdArray, SimdInteger, SimdMaskArray, SimdUnsignedInteger)
 //! are also available.
 
 #![cfg_attr(feature = "simd", feature(portable_simd))]

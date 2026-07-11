@@ -2,7 +2,10 @@ use itertools::izip;
 use primus_data::{Data, DataMut, DataOwned, RawData};
 use primus_integer::FheUint;
 use primus_ntt::DcrtTable;
-use primus_poly::{ArrayBase, CrtPolynomialIter, CrtPolynomialIterMut, DcrtPolynomial};
+#[allow(unused_imports)]
+use primus_poly::{
+    ArrayBase, CrtPolynomial, CrtPolynomialIter, CrtPolynomialIterMut, DcrtPolynomial,
+};
 use primus_reduce::FieldContext;
 
 use super::DcrtRlwe;

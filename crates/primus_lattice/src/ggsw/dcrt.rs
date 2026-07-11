@@ -5,7 +5,8 @@ use primus_ntt::DcrtTable;
 use primus_poly::ArrayBase;
 use primus_reduce::FieldContext;
 
-use crate::glev::{DcrtGlevIter, DcrtGlevIterMut};
+#[allow(unused_imports)]
+use crate::glev::{DcrtGlev, DcrtGlevIter, DcrtGlevIterMut};
 
 use super::CrtGgsw;
 

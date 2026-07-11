@@ -11,7 +11,7 @@ pub mod context;
 pub mod ggsw;
 /// GLev gadget-decomposed ciphertexts.
 pub mod glev;
-/// Module-LWE (GLWE) ciphertexts: [`coeff`](glwe), [`ntt`](crate::glwe::NttGlwe), [`fourier`](glwe::fourier).
+/// Module-LWE (GLWE) ciphertexts: [`coeff`](crate::glwe::Glwe), [`ntt`](crate::glwe::NttGlwe), [`fourier`](crate::glwe::FourierGlwe).
 pub mod glwe;
 /// Standard LWE ciphertexts.
 pub mod lwe;

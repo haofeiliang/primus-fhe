@@ -4,7 +4,8 @@ use primus_ntt::NttTable;
 use primus_poly::ArrayBase;
 use primus_reduce::FieldContext;
 
-use crate::rlev::{NttRlevIter, NttRlevIterMut};
+#[allow(unused_imports)]
+use crate::rlev::{NttRlev, NttRlevIter, NttRlevIterMut};
 
 use super::Rgsw;
 

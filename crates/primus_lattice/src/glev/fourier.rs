@@ -1,10 +1,11 @@
 use num_complex::Complex64;
 use primus_data::RawData;
 
-use crate::glwe::{FourierGlweIter, FourierGlweIterMut};
+#[allow(unused_imports)]
+use crate::glwe::{FourierGlwe, FourierGlweIter, FourierGlweIterMut};
 
 /// Fourier-domain GLev ciphertext — list of
-/// [`crate::glwe::fourier::FourierGlwe`] per decomposition level.
+/// [`FourierGlwe`] per decomposition level.
 ///
 /// ## Layout
 ///
@@ -12,7 +13,7 @@ use crate::glwe::{FourierGlweIter, FourierGlweIterMut};
 /// |--glwe_level_0--| ... |--glwe_level_{level-1}--|
 /// ```
 ///
-/// Each level is a [`FourierGlwe`](crate::glwe::fourier::FourierGlwe) of length
+/// Each level is a [`FourierGlwe`] of length
 /// `fourier_glwe_len`.
 /// Total data length: `level * fourier_glwe_len`.
 #[derive(Clone)]
