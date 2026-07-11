@@ -4,7 +4,7 @@ use criterion::{Criterion, criterion_group, criterion_main};
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{FftTable, RustFftTable};
 use primus_lattice::{
-    context::tfhe::TfheFftContext, ggsw::fourier::FourierGgswOwned, glwe::Glwe,
+    context::tfhe::TfheFftContext, ggsw::FourierGgswOwned, glwe::Glwe,
     tfhe::external_product::external_product_to,
 };
 

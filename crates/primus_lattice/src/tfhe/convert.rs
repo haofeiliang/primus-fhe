@@ -4,9 +4,9 @@ use primus_data::{Data, DataMut, RawData};
 use primus_fft::{Complex64, FftTable, TorusFftValue};
 
 use crate::{
-    ggsw::{Ggsw, fourier::FourierGgsw},
-    glev::{Glev, fourier::FourierGlev},
-    glwe::{Glwe, fourier::FourierGlwe},
+    ggsw::{FourierGgsw, Ggsw},
+    glev::{FourierGlev, Glev},
+    glwe::{FourierGlwe, Glwe},
 };
 
 macro_rules! impl_forward {

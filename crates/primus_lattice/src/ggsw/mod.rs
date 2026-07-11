@@ -4,7 +4,7 @@ mod ntt;
 mod crt;
 mod dcrt;
 /// Fourier-domain GGSW ciphertexts.
-pub mod fourier;
+mod fourier;
 
 pub use coeff::{Ggsw, GgswIter, GgswIterMut};
 pub use ntt::{NttGgsw, NttGgswIter, NttGgswIterMut};

@@ -5,10 +5,7 @@ use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{Complex64, FftTable, TorusFftValue};
 use primus_poly::FourierPolynomial;
 
-use crate::{
-    context::tfhe::TfheFftContext, ggsw::fourier::FourierGgsw, glwe::fourier::FourierGlwe,
-    tfhe::TorusGlwe,
-};
+use crate::{context::tfhe::TfheFftContext, ggsw::FourierGgsw, glwe::FourierGlwe, tfhe::TorusGlwe};
 
 /// Computes `output = input external_product key`.
 pub fn external_product_to<T, Table, A, B, C>(

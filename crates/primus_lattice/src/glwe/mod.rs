@@ -6,7 +6,7 @@ mod ntt;
 mod crt;
 mod dcrt;
 /// Fourier-domain GLWE ciphertexts.
-pub mod fourier;
+mod fourier;
 
 pub use big_uint::{BigUintGlwe, BigUintGlweIter, BigUintGlweIterMut};
 

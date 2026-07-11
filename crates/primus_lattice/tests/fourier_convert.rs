@@ -1,5 +1,5 @@
 use primus_fft::{FftTable, RustFftTable, TfheFftTable};
-use primus_lattice::glwe::{Glwe, fourier::FourierGlweOwned};
+use primus_lattice::glwe::{FourierGlweOwned, Glwe};
 
 fn roundtrip<Table: FftTable>() {
     let fft = Table::new(5).unwrap();

@@ -1,7 +1,7 @@
 use num_complex::Complex64;
 use primus_data::RawData;
 
-use crate::glwe::fourier::{FourierGlweIter, FourierGlweIterMut};
+use crate::glwe::{FourierGlweIter, FourierGlweIterMut};
 
 /// Fourier-domain GLev ciphertext — list of
 /// [`crate::glwe::fourier::FourierGlwe`] per decomposition level.

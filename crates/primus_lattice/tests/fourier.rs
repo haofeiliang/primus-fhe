@@ -1,8 +1,5 @@
 use primus_fft::Complex64;
-use primus_lattice::{
-    ggsw::fourier::FourierGgswOwned, glev::fourier::FourierGlevOwned,
-    glwe::fourier::FourierGlweOwned,
-};
+use primus_lattice::{ggsw::FourierGgswOwned, glev::FourierGlevOwned, glwe::FourierGlweOwned};
 
 #[test]
 fn fourier_ciphertexts_store_complex_values() {
