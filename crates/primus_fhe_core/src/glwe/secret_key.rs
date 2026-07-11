@@ -11,9 +11,8 @@ use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::{
     CrtGlevParameters, CrtGlweParameters, DcrtGlweCiphertext, GlweParameters, NttGlweCiphertext,
+    RingSecretKeyType,
 };
-
-use super::RingSecretKeyType;
 
 /// Represents a secret key for the Module Learning with Errors (MLWE) cryptographic scheme.
 #[derive(Clone)]

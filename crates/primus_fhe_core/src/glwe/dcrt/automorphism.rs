@@ -29,9 +29,7 @@ use primus_poly::DcrtPolynomial;
 use primus_reduce::{FieldContext, ReduceMul};
 use primus_rns::RNSBase;
 
-use crate::{CrtGlevParameters, DcrtGlweCiphertext, DcrtGlweSecretKey};
-
-use super::CrtGlweAutoContext;
+use crate::{CrtGlevParameters, DcrtGlweCiphertext, DcrtGlweSecretKey, glwe::crt::CrtGlweAutoContext};
 
 // ---------------------------------------------------------------------------
 // NTT-domain permutation generation
@@ -428,7 +426,7 @@ mod tests {
 
             // Path A: coeff_auto → NTT
             let mut path_a = vec![V::default(); crt_poly_len];
-            crate::automorphism::glwe::crt::crt_poly_auto_inplace(
+            crate::crt_poly_auto_inplace(
                 &input,
                 &mut path_a,
                 &coeff_helper,

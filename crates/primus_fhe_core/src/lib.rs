@@ -2,28 +2,26 @@ mod error;
 
 mod parameter;
 
-mod public_key;
-mod secret_key;
+mod glwe;
+mod lwe;
+mod ntru;
+mod rlwe;
 
 mod ciphertext;
 mod plaintext;
 
-mod automorphism;
-mod expand_coeff;
-mod key_switch;
-mod trace;
+mod secret_key_type;
 
 pub use error::FheError;
 
 pub use parameter::*;
 
-pub use public_key::*;
-pub use secret_key::*;
+pub use glwe::*;
+pub use lwe::*;
+pub use ntru::*;
+pub use rlwe::*;
 
 pub use ciphertext::*;
 pub use plaintext::*;
 
-pub use automorphism::*;
-pub use expand_coeff::*;
-pub use key_switch::*;
-pub use trace::*;
+pub use secret_key_type::{LweSecretKeyType, RingSecretKeyType};

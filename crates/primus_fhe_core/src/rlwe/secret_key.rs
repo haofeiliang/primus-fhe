@@ -8,9 +8,10 @@ use primus_poly::{NttPolynomial, NttPolynomialOwned, Polynomial, PolynomialOwned
 use primus_reduce::FieldContext;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
-use crate::{NttRlweCiphertext, PlaintextEmbedding, RlweParameters};
-
-use super::{LweSecretKey, LweSecretKeyType, RingSecretKeyType};
+use crate::{
+    LweSecretKey, LweSecretKeyType, NttRlweCiphertext, PlaintextEmbedding, RingSecretKeyType,
+    RlweParameters,
+};
 
 /// Represents a secret key for the Ring Learning with Errors (RLWE) cryptographic scheme.
 #[derive(Clone)]

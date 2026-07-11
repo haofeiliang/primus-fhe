@@ -3,7 +3,7 @@ use std::sync::Arc;
 use itertools::izip;
 use primus_data::{Data, DataMut, RawData};
 use primus_integer::FheUint;
-use primus_lattice::glev::{DcrtGlevIter, DcrtGlevIterMut};
+use primus_lattice::{context::DcrtGlevContext, glev::{DcrtGlevIter, DcrtGlevIterMut}};
 use primus_modulus::PowOf2Modulus;
 use primus_ntt::DcrtTable;
 use primus_poly::CrtPolynomial;
@@ -15,7 +15,36 @@ use crate::{
     CrtGlevParameters, CrtGlweCiphertext, CrtGlweSecretKey, DcrtGlweCiphertext, DcrtGlweSecretKey,
 };
 
-use super::CrtGlweAutoContext;
+/// Pre-allocated scratch buffer for CRT automorphism operations.
+pub struct CrtGlweAutoContext<T: FheUint> {
+    auto_crt_poly: CrtPolynomial<Vec<T>>,
+    glev_context: DcrtGlevContext<T>,
+}
+
+impl<T: FheUint> CrtGlweAutoContext<T> {
+    pub fn new(
+        poly_length: usize,
+        crt_poly_len: usize,
+        big_uint_poly_len: usize,
+        moduli_count: usize,
+    ) -> Self {
+        let auto_crt_poly = CrtPolynomial::zero(crt_poly_len);
+        let glev_context =
+            DcrtGlevContext::new(poly_length, crt_poly_len, big_uint_poly_len, moduli_count);
+        Self {
+            auto_crt_poly,
+            glev_context,
+        }
+    }
+
+    pub fn as_mut(&mut self) -> (&mut CrtPolynomial<Vec<T>>, &mut DcrtGlevContext<T>) {
+        (&mut self.auto_crt_poly, &mut self.glev_context)
+    }
+
+    pub fn compose_buffer_mut(&mut self) -> &mut [T] {
+        self.glev_context.compose_buffer_mut()
+    }
+}
 
 /// Packed source index + negate flag for coefficient automorphism.
 /// The high bit stores the negate flag; the lower 31 bits store the source index.
