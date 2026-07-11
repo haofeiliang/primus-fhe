@@ -1,328 +1,26 @@
+//! DCRT-domain (NTT within CRT, multi-modulus) GLWE secret key with full
+//! encryption/decryption and GLev encryption.
+
 use primus_data::{Data, DataMut, RawData};
 use primus_integer::FheUint;
 use primus_lattice::glev::DcrtGlev;
-use primus_ntt::{DcrtTable, NttTable};
+use primus_ntt::DcrtTable;
 use primus_poly::{
-    CrtPolynomial, CrtPolynomialIter, CrtPolynomialIterMut, DcrtPolynomial, DcrtPolynomialIter,
-    DcrtPolynomialIterMut, NttPolynomial, NttPolynomialIter, Polynomial, PolynomialOwned,
+    CrtPolynomial, DcrtPolynomial, DcrtPolynomialIter, DcrtPolynomialIterMut, Polynomial,
+    PolynomialOwned,
 };
 use primus_reduce::FieldContext;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
-use crate::{
-    CrtGlevParameters, CrtGlweParameters, DcrtGlweCiphertext, GlweParameters, NttGlweCiphertext,
-    RingSecretKeyType,
-};
+use crate::{CrtGlevParameters, CrtGlweParameters, DcrtGlweCiphertext, RingSecretKeyType};
 
-/// Represents a secret key for the Module Learning with Errors (MLWE) cryptographic scheme.
-#[derive(Clone)]
-pub struct GlweSecretKey<T: FheUint> {
-    key: Vec<T>,
-    dimension: usize,
-    poly_length: usize,
-    distr: RingSecretKeyType,
-}
-
-impl<T: FheUint> Zeroize for GlweSecretKey<T> {
-    #[inline]
-    fn zeroize(&mut self) {
-        self.key.zeroize();
-    }
-}
-
-impl<T: FheUint> ZeroizeOnDrop for GlweSecretKey<T> {}
-
-impl<T: FheUint> GlweSecretKey<T> {
-    /// Creates a new [`GlweSecretKey<T>`].
-    #[inline]
-    pub fn new(
-        key: Vec<T>,
-        dimension: usize,
-        poly_length: usize,
-        distr: RingSecretKeyType,
-    ) -> Self {
-        debug_assert!(poly_length.is_power_of_two());
-        debug_assert_eq!(key.len(), poly_length * dimension);
-        Self {
-            key,
-            dimension,
-            poly_length,
-            distr,
-        }
-    }
-
-    /// Returns the poly length of this [`GlweSecretKey<T>`].
-    #[inline]
-    pub fn poly_length(&self) -> usize {
-        self.poly_length
-    }
-
-    /// Returns the dimension of this [`GlweSecretKey<T>`].
-    #[inline]
-    pub fn dimension(&self) -> usize {
-        self.dimension
-    }
-
-    /// Returns the distr of this [`GlweSecretKey<T>`].
-    #[inline]
-    pub fn distr(&self) -> RingSecretKeyType {
-        self.distr
-    }
-
-    #[inline]
-    pub fn generate<R, M>(params: &GlweParameters<T, M>, rng: &mut R) -> Self
-    where
-        R: rand::Rng + rand::CryptoRng,
-        M: FieldContext<T>,
-    {
-        let dimension = params.dimension();
-        let poly_length = params.poly_length();
-
-        let key_len = poly_length * dimension;
-        let mut key = PolynomialOwned::zero(key_len);
-        let distr = params.secret_key_type();
-        match distr {
-            RingSecretKeyType::Binary => key.random_binary_assign(rng),
-            RingSecretKeyType::Ternary => {
-                key.random_ternary_assign(params.cipher_modulus_minus_one(), rng)
-            }
-            RingSecretKeyType::Gaussian(_) => {
-                key.random_gaussian_assign(params.secret_key_distribution().unwrap(), rng)
-            }
-        };
-
-        Self {
-            key: key.into_owned(),
-            poly_length,
-            dimension,
-            distr,
-        }
-    }
-}
-
-/// Represents a secret key for the (NTT) Ring Learning with Errors (RLWE) cryptographic scheme.
-#[derive(Clone)]
-pub struct NttGlweSecretKey<T: FheUint> {
-    key: Vec<T>,
-    poly_length: usize,
-    dimension: usize,
-    distr: RingSecretKeyType,
-}
-
-impl<T: FheUint> Zeroize for NttGlweSecretKey<T> {
-    #[inline]
-    fn zeroize(&mut self) {
-        self.key.zeroize();
-    }
-}
-
-impl<T: FheUint> ZeroizeOnDrop for NttGlweSecretKey<T> {}
-
-impl<T: FheUint> NttGlweSecretKey<T> {
-    /// Creates a new [`NttGlweSecretKey<T>`].
-    #[inline]
-    pub fn new(
-        key: Vec<T>,
-        poly_length: usize,
-        dimension: usize,
-        distr: RingSecretKeyType,
-    ) -> Self {
-        debug_assert!(poly_length.is_power_of_two());
-        debug_assert_eq!(key.len(), poly_length * dimension);
-        Self {
-            key,
-            poly_length,
-            dimension,
-            distr,
-        }
-    }
-
-    /// Returns the poly length of this [`NttGlweSecretKey<T>`].
-    #[inline]
-    pub fn poly_length(&self) -> usize {
-        self.poly_length
-    }
-
-    /// Returns the dimension of this [`NttGlweSecretKey<T>`].
-    #[inline]
-    pub fn dimension(&self) -> usize {
-        self.dimension
-    }
-
-    /// Returns the distr of this [`NttGlweSecretKey<T>`].
-    #[inline]
-    pub fn distr(&self) -> RingSecretKeyType {
-        self.distr
-    }
-
-    #[inline]
-    pub fn iter(&self) -> NttPolynomialIter<'_, T> {
-        NttPolynomialIter::new(self.key.as_ref(), self.poly_length)
-    }
-
-    /// Creates a new [`NttGlweSecretKey`] from [`GlweSecretKey`].
-    #[inline]
-    pub fn from_coeff_secret_key<Table>(secret_key: &GlweSecretKey<T>, ntt_table: &Table) -> Self
-    where
-        Table: NttTable<ValueT = T>,
-    {
-        let poly_length = secret_key.poly_length;
-
-        let mut key = secret_key.key.clone();
-        key.chunks_exact_mut(poly_length)
-            .for_each(|poly| ntt_table.transform_slice(poly));
-
-        Self {
-            key,
-            poly_length,
-            dimension: secret_key.dimension,
-            distr: secret_key.distr,
-        }
-    }
-
-    /// Performs `b-as`.
-    pub fn phase_inplace<Table, M, S>(
-        &self,
-        cipher: &NttGlweCiphertext<S>,
-        result: &mut PolynomialOwned<T>,
-        ntt_table: &Table,
-        modulus: M,
-    ) where
-        M: FieldContext<T>,
-        Table: NttTable<ValueT = T>,
-        S: RawData<Elem = T> + Data,
-    {
-        let mid = self.poly_length * self.dimension;
-        let (a, b) = cipher.a_b(mid);
-
-        result.set_zero();
-
-        let mut result_poly = NttPolynomial(result.as_mut());
-
-        self.iter().zip(a).for_each(|(si, ai)| {
-            result_poly.add_mul_assign(&ai, &si, modulus);
-        });
-        b.sub_rev_assign(&mut result_poly, modulus);
-
-        ntt_table.inverse_transform_slice(result.as_mut())
-    }
-}
-
-#[derive(Clone)]
-pub struct CrtGlweSecretKey<T: FheUint> {
-    key: Vec<T>,
-    distr: RingSecretKeyType,
-    rns_poly_len: usize,
-}
-
-impl<T: FheUint> Zeroize for CrtGlweSecretKey<T> {
-    #[inline]
-    fn zeroize(&mut self) {
-        self.key.zeroize();
-    }
-}
-
-impl<T: FheUint> ZeroizeOnDrop for CrtGlweSecretKey<T> {}
-
-impl<T: FheUint> CrtGlweSecretKey<T> {
-    /// Creates a new [`CrtGlweSecretKey<T>`].
-    #[inline]
-    pub fn new(key: Vec<T>, distr: RingSecretKeyType, rns_poly_len: usize) -> Self {
-        Self {
-            key,
-            distr,
-            rns_poly_len,
-        }
-    }
-
-    #[inline]
-    pub fn zero(dimension: usize, crt_poly_len: usize, distr: RingSecretKeyType) -> Self {
-        Self {
-            key: vec![T::ZERO; dimension * crt_poly_len],
-            distr,
-            rns_poly_len: crt_poly_len,
-        }
-    }
-
-    pub fn key(&self) -> &[T] {
-        &self.key
-    }
-
-    pub fn key_mut(&mut self) -> &mut Vec<T> {
-        &mut self.key
-    }
-
-    pub fn iter_crt_poly(&self) -> CrtPolynomialIter<'_, T> {
-        CrtPolynomialIter::new(self.key.as_ref(), self.rns_poly_len)
-    }
-
-    pub fn iter_crt_poly_mut(&mut self) -> CrtPolynomialIterMut<'_, T> {
-        CrtPolynomialIterMut::new(self.key.as_mut_slice(), self.rns_poly_len)
-    }
-
-    /// Returns the distr of this [`CrtGlweSecretKey<T>`].
-    #[inline]
-    pub fn distr(&self) -> RingSecretKeyType {
-        self.distr
-    }
-
-    pub fn generate<R, M>(params: &CrtGlweParameters<T, M>, rng: &mut R) -> Self
-    where
-        R: rand::Rng + rand::CryptoRng,
-        M: FieldContext<T>,
-    {
-        let poly_length = params.poly_length();
-        let rns_poly_len = params.rns_poly_len();
-
-        let secret_key_type = params.secret_key_type();
-
-        let mut key = vec![T::ZERO; params.secret_key_len()];
-
-        match secret_key_type {
-            RingSecretKeyType::Binary => {
-                key.chunks_exact_mut(rns_poly_len).for_each(|crt_poly| {
-                    primus_distr::sample_crt_binary_values_to(crt_poly, poly_length, rng);
-                });
-            }
-            RingSecretKeyType::Ternary => {
-                let moduli_minus_one = params.cipher_moduli_minus_one();
-                key.chunks_exact_mut(rns_poly_len).for_each(|crt_poly| {
-                    primus_distr::sample_crt_ternary_values_to(
-                        crt_poly,
-                        poly_length,
-                        moduli_minus_one,
-                        rng,
-                    );
-                });
-            }
-            RingSecretKeyType::Gaussian(_) => {
-                let moduli_value = params.cipher_moduli_value();
-                let secret_key_distribution = params.secret_key_distribution().unwrap();
-                key.chunks_exact_mut(rns_poly_len).for_each(|crt_poly| {
-                    primus_distr::sample_crt_gaussian_values_to(
-                        crt_poly,
-                        poly_length,
-                        moduli_value,
-                        secret_key_distribution,
-                        rng,
-                    );
-                });
-            }
-        };
-
-        Self {
-            key,
-            distr: secret_key_type,
-            rns_poly_len,
-        }
-    }
-}
+use super::CrtGlweSecretKey;
 
 #[derive(Clone)]
 pub struct DcrtGlweSecretKey<T: FheUint> {
-    key: Vec<T>,
-    distr: RingSecretKeyType,
-    rns_poly_len: usize,
+    pub(crate) key: Vec<T>,
+    pub(crate) distr: RingSecretKeyType,
+    pub(crate) rns_poly_len: usize,
 }
 
 impl<T: FheUint> Zeroize for DcrtGlweSecretKey<T> {
@@ -369,7 +67,6 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
         let rns_poly_len = secret_key.rns_poly_len;
 
         let mut key = secret_key.key.clone();
-
         key.chunks_exact_mut(rns_poly_len).for_each(|crt_poly| {
             table.transform_slice(crt_poly);
         });
@@ -380,6 +77,10 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
             rns_poly_len,
         }
     }
+
+    // -------------------------------------------------------------------------
+    // Encryption
+    // -------------------------------------------------------------------------
 
     /// Encrypts an already-decomposed CRT plaintext polynomial.
     ///
@@ -549,10 +250,13 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
 
         self.iter_dcrt_poly().zip(a).for_each(|(si, ai)| {
             primus_distr::sample_crt_uniform_values_to(ai.0, poly_length, uniform_distrs, rng);
-
             b.add_mul_assign(&ai, &si, poly_length, moduli);
         });
     }
+
+    // -------------------------------------------------------------------------
+    // GLev encryption helpers (for key-switching key generation)
+    // -------------------------------------------------------------------------
 
     fn encrypt_dcrt_msg_to_dcrt_glwe_inplace_with_custom_delta<R, M, Table, A, B>(
         &self,
@@ -699,6 +403,10 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
             });
     }
 
+    // -------------------------------------------------------------------------
+    // Phase / Decryption
+    // -------------------------------------------------------------------------
+
     /// Performs `b - ∑ a*s`.
     pub fn phase_inplace<M, A, B>(
         &self,
@@ -717,12 +425,10 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
 
         msg_mod_q.set_zero();
 
-        // msg_mod_q = ∑a*s
         self.iter_dcrt_poly().zip(a).for_each(|(si, ai)| {
             msg_mod_q.add_mul_assign(&ai, &si, poly_length, moduli);
         });
 
-        // msg_mod_q = b - ∑ a*s
         b.sub_rev_assign(msg_mod_q, poly_length, moduli);
     }
 
@@ -744,7 +450,6 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
 
         msg_mod_q.set_zero();
 
-        // msg_mod_q = ∑a*s
         self.iter_dcrt_poly().zip(a).for_each(|(si, ai)| {
             msg_mod_q.add_mul_assign(&ai, &si, poly_length, moduli);
         });
@@ -798,6 +503,10 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
             .decode_coeffs(msg_mod_q, msg, poly_length, fast_convert_buffer);
     }
 }
+
+// ---------------------------------------------------------------------------
+// Decryption context
+// ---------------------------------------------------------------------------
 
 pub struct DcrtGlweDecryptContext<T: FheUint> {
     msg_mod_q: DcrtPolynomial<Vec<T>>,

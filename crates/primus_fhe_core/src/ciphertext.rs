@@ -16,6 +16,9 @@ pub type GlweCiphertext<T> = primus_lattice::glwe::Glwe<T>;
 /// Ntt version Glwe Ciphertext
 pub type NttGlweCiphertext<T> = primus_lattice::glwe::NttGlwe<T>;
 
+/// Fourier-domain Glwe Ciphertext
+pub type FourierGlweCiphertext<S> = primus_lattice::glwe::FourierGlwe<S>;
+
 /// Glwe Ciphertext
 pub type CrtGlweCiphertext<T> = primus_lattice::glwe::CrtGlwe<T>;
 

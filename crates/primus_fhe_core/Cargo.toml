@@ -17,6 +17,7 @@ primus_ntt = { path = "../primus_ntt" }
 primus_rns = { path = "../primus_rns" }
 primus_decompose = { path = "../primus_decompose" }
 primus_lattice = { path = "../primus_lattice" }
+primus_fft = { path = "../primus_fft" }
 
 rayon = { workspace = true }
 
@@ -26,7 +27,6 @@ itertools = { workspace = true }
 zeroize = { workspace = true }
 
 [dev-dependencies]
-primus_fft = { path = "../primus_fft" }
 criterion = { workspace = true }
 [[bench]]
 name = "lwe_enc"
