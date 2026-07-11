@@ -5,9 +5,7 @@ mod expand_coeff;
 mod rev_trace;
 mod trace;
 
-pub use automorphism::{
-    dcrt_poly_ntt_auto_inplace, DcrtGlweAutoKey, NttAutoHelper,
-};
+pub use automorphism::{DcrtGlweAutoKey, NttAutoHelper, dcrt_poly_ntt_auto_inplace};
 pub use expand_coeff::{
     DcrtGlweExpandCoeffContext, DcrtGlweExpandCoeffKey, DcrtGlweExpandCoeffSyncPool,
 };

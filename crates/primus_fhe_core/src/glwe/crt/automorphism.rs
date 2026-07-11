@@ -3,7 +3,10 @@ use std::sync::Arc;
 use itertools::izip;
 use primus_data::{Data, DataMut, RawData};
 use primus_integer::FheUint;
-use primus_lattice::{context::DcrtGlevContext, glev::{DcrtGlevIter, DcrtGlevIterMut}};
+use primus_lattice::{
+    context::DcrtGlevContext,
+    glev::{DcrtGlevIter, DcrtGlevIterMut},
+};
 use primus_modulus::PowOf2Modulus;
 use primus_ntt::DcrtTable;
 use primus_poly::CrtPolynomial;

@@ -6,7 +6,7 @@ mod key_switch;
 mod trace;
 
 pub use automorphism::{
-    crt_poly_auto_inplace, CoeffAutoHelper, CrtGlweAutoContext, CrtGlweAutoKey,
+    CoeffAutoHelper, CrtGlweAutoContext, CrtGlweAutoKey, crt_poly_auto_inplace,
 };
 pub use expand_coeff::{
     CrtGlweExpandCoeffContext, CrtGlweExpandCoeffKey, CrtGlweExpandCoeffSyncPool,
