@@ -1,116 +1,63 @@
+use num_complex::Complex64;
 use primus_data::{Data, DataMut, RawData};
 
 use super::FourierPolynomial;
 
 impl<S> FourierPolynomial<S>
 where
-    S: RawData<Elem = f64> + DataMut,
+    S: RawData<Elem = Complex64> + DataMut,
 {
-    /// Performs `self - rhs` (pointwise complex subtraction).
+    /// Subtracts `rhs` pointwise from this Fourier polynomial.
+    #[inline]
+    pub fn sub_assign<A>(&mut self, rhs: &FourierPolynomial<A>)
+    where
+        A: RawData<Elem = Complex64> + Data,
+    {
+        assert_eq!(self.0.len(), rhs.0.len());
+        for (value, rhs) in self.0.iter_mut().zip(rhs.0.iter()) {
+            *value -= *rhs;
+        }
+    }
+
+    /// Subtracts `rhs` pointwise and returns this Fourier polynomial.
     #[inline]
     #[allow(clippy::should_implement_trait)]
     pub fn sub<A>(mut self, rhs: &FourierPolynomial<A>) -> Self
     where
-        A: RawData<Elem = f64> + Data,
+        A: RawData<Elem = Complex64> + Data,
     {
         self.sub_assign(rhs);
         self
-    }
-
-    /// Performs `self -= rhs` (pointwise complex subtraction in place).
-    #[inline]
-    pub fn sub_assign<A>(&mut self, rhs: &FourierPolynomial<A>)
-    where
-        A: RawData<Elem = f64> + Data,
-    {
-        debug_assert_eq!(self.fourier_length(), rhs.fourier_length());
-        let len = 2 * self.fourier_length();
-        let a = &mut self.0.as_mut_slice()[..len];
-        let b = &rhs.0.as_slice()[..len];
-        #[cfg(target_arch = "x86_64")]
-        {
-            if *super::constants::HAS_AVX512F {
-                unsafe {
-                    super::simd::avx512::sub_assign(a, b, len);
-                    return;
-                }
-            }
-            if *super::constants::HAS_AVX2_FMA {
-                unsafe {
-                    super::simd::avx2::sub_assign(a, b, len);
-                    return;
-                }
-            }
-        }
-        for (x, &y) in a.iter_mut().zip(b) {
-            *x -= y;
-        }
     }
 }
 
 impl<S> FourierPolynomial<S>
 where
-    S: RawData<Elem = f64> + Data,
+    S: RawData<Elem = Complex64> + Data,
 {
-    /// Performs `rhs = self - rhs` (reverse subtraction in place).
+    /// Replaces `rhs` with the pointwise difference `self - rhs`.
     #[inline]
     pub fn sub_rev_assign<A>(&self, rhs: &mut FourierPolynomial<A>)
     where
-        A: RawData<Elem = f64> + DataMut,
+        A: RawData<Elem = Complex64> + DataMut,
     {
-        debug_assert_eq!(self.fourier_length(), rhs.fourier_length());
-        for (b, &a) in rhs.iter_mut().zip(self.iter()) {
-            *b = a - *b;
+        assert_eq!(self.0.len(), rhs.0.len());
+        for (rhs, lhs) in rhs.0.iter_mut().zip(self.0.iter()) {
+            *rhs = *lhs - *rhs;
         }
     }
 
-    /// Performs `output = self - rhs` (pointwise complex subtraction).
+    /// Writes the pointwise difference `self - rhs` to `output`.
     #[inline]
     pub fn sub_to<A, B>(&self, rhs: &FourierPolynomial<A>, output: &mut FourierPolynomial<B>)
     where
-        A: RawData<Elem = f64> + Data,
-        B: RawData<Elem = f64> + DataMut,
+        A: RawData<Elem = Complex64> + Data,
+        B: RawData<Elem = Complex64> + DataMut,
     {
-        debug_assert_eq!(self.fourier_length(), rhs.fourier_length());
-        debug_assert_eq!(self.fourier_length(), output.fourier_length());
-        for ((&a, &b), out) in self.iter().zip(rhs.iter()).zip(output.iter_mut()) {
-            *out = a - b;
+        assert_eq!(self.0.len(), rhs.0.len());
+        assert_eq!(self.0.len(), output.0.len());
+        for ((output, lhs), rhs) in output.0.iter_mut().zip(self.0.iter()).zip(rhs.0.iter()) {
+            *output = *lhs - *rhs;
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::fourier::FourierPolynomialOwned;
-
-    #[test]
-    fn test_sub_assign() {
-        // a = [5+2i, 3+1i] → [5, 3, 2, 1]
-        let a = FourierPolynomialOwned::from_slice(&[5.0, 3.0, 2.0, 1.0]);
-        // b = [2+0i, 1+1i] → [2, 1, 0, 1]
-        let b = FourierPolynomialOwned::from_slice(&[2.0, 1.0, 0.0, 1.0]);
-        let mut result = a;
-        result.sub_assign(&b);
-        // result = [3, 2, 2, 0]
-        assert_eq!(result.as_slice(), &[3.0, 2.0, 2.0, 0.0]);
-    }
-
-    #[test]
-    fn test_sub_rev_assign() {
-        let a = FourierPolynomialOwned::from_slice(&[5.0, 3.0, 0.0, 0.0]);
-        let mut b = FourierPolynomialOwned::from_slice(&[2.0, 1.0, 0.0, 0.0]);
-        a.sub_rev_assign(&mut b);
-        // b = a - b: [3, 2, 0, 0]
-        assert_eq!(b.as_slice(), &[3.0, 2.0, 0.0, 0.0]);
-    }
-
-    #[test]
-    fn test_sub_to() {
-        let a = FourierPolynomialOwned::from_slice(&[5.0, 3.0, 0.0, 0.0]);
-        let b = FourierPolynomialOwned::from_slice(&[2.0, 1.0, 0.0, 0.0]);
-        let mut output = FourierPolynomialOwned::zero(2);
-        a.sub_to(&b, &mut output);
-        assert_eq!(output.as_slice(), &[3.0, 2.0, 0.0, 0.0]);
     }
 }

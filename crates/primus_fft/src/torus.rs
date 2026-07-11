@@ -1,70 +1,48 @@
 use primus_integer::FheUint;
 
-/// Conversion between torus (integer) values and centered floating-point
-/// representation for negacyclic FFT.
-///
-/// # Centered representation
-///
-/// A torus value `x` in `[0, 2^BITS)` is mapped to the centered range
-/// `[-2^(BITS-1), 2^(BITS-1) - 1]` by reinterpreting the bit pattern as a
-/// signed integer of the same width, then widening to `f64`.
-///
-/// # Precision notes
-///
-/// - `u32`: exact, because `f64` has 53 mantissa bits so every `u32` value
-///   is representable.
-/// - `u64`: values above `2^53` lose integer precision in `f64`. This is
-///   acceptable for noise terms in FHE but users should be aware of the limit.
-///   A future split/high-low or double-double precision backend can strengthen
-///   this without changing the high-level lattice APIs.
+/// Conversion between unsigned torus bit patterns and `f64`.
 pub trait TorusFftValue: FheUint {
-    /// Convert `self` (a torus/unsigned value) to a centered `f64`.
-    ///
-    /// Maps `[0, 2^BITS)` to `[-2^(BITS-1), 2^(BITS-1) - 1]` via a
-    /// signed-integer reinterpret cast.
-    fn into_f64_centered(self) -> f64;
+    /// Exact `2^-BITS` scaling factor used by the forward torus conversion.
+    const TORUS_SCALE: f64;
+    /// Exact `2^BITS` scaling factor used by the backward torus conversion.
+    const TORUS_SCALE_INVERSE: f64;
 
-    /// Convert a centered `f64` back to the torus value, rounding to nearest
-    /// integer and wrapping modulo `2^BITS`.
-    fn from_f64_wrapping_rounded(value: f64) -> Self;
+    /// Reinterprets the bit pattern as a signed integer and converts it to `f64`.
+    fn into_signed_f64(self) -> f64;
+    /// Converts the bit pattern to a normalized torus value in `[-0.5, 0.5)`.
+    #[inline]
+    fn into_torus_f64(self) -> f64 {
+        self.into_signed_f64() * Self::TORUS_SCALE
+    }
+    /// Converts a normalized torus value back to its unsigned bit pattern.
+    fn from_torus_f64(value: f64) -> Self;
 }
 
-impl TorusFftValue for u32 {
-    #[inline]
-    fn into_f64_centered(self) -> f64 {
-        (self as i32) as f64
-    }
+macro_rules! impl_torus_fft_value {
+    ($unsigned:ty, $signed:ty, $wide:ty, $scale:expr, $scale_inverse:expr) => {
+        impl TorusFftValue for $unsigned {
+            const TORUS_SCALE: f64 = $scale;
+            const TORUS_SCALE_INVERSE: f64 = $scale_inverse;
 
-    #[inline]
-    fn from_f64_wrapping_rounded(value: f64) -> Self {
-        // Use i64 intermediate so values that round to i32::MIN (as an i64)
-        // are correctly cast back to u32 without going through i32 overflow.
-        (value.round() as i64) as u32
-    }
+            #[inline]
+            fn into_signed_f64(self) -> f64 {
+                (self as $signed) as f64
+            }
+            #[inline]
+            fn from_torus_f64(value: f64) -> Self {
+                let scaled = value * Self::TORUS_SCALE_INVERSE;
+                (scaled.round() as $wide) as Self
+            }
+        }
+    };
 }
 
-impl TorusFftValue for u64 {
-    #[inline]
-    fn into_f64_centered(self) -> f64 {
-        // WARNING: f64 has 53-bit mantissa; values above 2^53 lose precision.
-        (self as i64) as f64
-    }
-
-    #[inline]
-    fn from_f64_wrapping_rounded(value: f64) -> Self {
-        // Use i128 intermediate to avoid truncation issues at the i64 boundary.
-        (value.round() as i128) as u64
-    }
-}
-
-impl TorusFftValue for u16 {
-    #[inline]
-    fn into_f64_centered(self) -> f64 {
-        (self as i16) as f64
-    }
-
-    #[inline]
-    fn from_f64_wrapping_rounded(value: f64) -> Self {
-        (value.round() as i32) as u16
-    }
-}
+impl_torus_fft_value!(u16, i16, i32, 1.0 / 65_536.0, 65_536.0);
+impl_torus_fft_value!(u32, i32, i64, 1.0 / 4_294_967_296.0, 4_294_967_296.0);
+impl_torus_fft_value!(
+    u64,
+    i64,
+    i128,
+    1.0 / 18_446_744_073_709_551_616.0,
+    18_446_744_073_709_551_616.0
+);

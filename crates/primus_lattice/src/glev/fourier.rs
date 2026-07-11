@@ -1,3 +1,4 @@
+use num_complex::Complex64;
 use primus_data::RawData;
 
 use crate::glwe::fourier::{FourierGlweIter, FourierGlweIterMut};
@@ -17,8 +18,14 @@ use crate::glwe::fourier::{FourierGlweIter, FourierGlweIterMut};
 #[derive(Clone)]
 pub struct FourierGlev<S>(pub S)
 where
-    S: RawData<Elem = f64>;
+    S: RawData<Elem = Complex64>;
 
 impl_fourier_iters!(FourierGlev);
 impl_fourier_core!(FourierGlev);
-impl_fourier_iter_sub!(FourierGlev, FourierGlweIter, FourierGlweIterMut, glwe);
+impl_fourier_iter_sub!(
+    FourierGlev,
+    FourierGlwe,
+    FourierGlweIter,
+    FourierGlweIterMut,
+    glwe
+);

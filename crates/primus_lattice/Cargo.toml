@@ -21,6 +21,7 @@ bytemuck = { workspace = true }
 rand = { workspace = true }
 paste = { workspace = true }
 itertools = { workspace = true }
+num-complex = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true }

@@ -1,77 +1,23 @@
-use crate::error::FftError;
-use crate::torus::TorusFftValue;
+use num_complex::Complex64;
 
-/// Abstract interface for torus negacyclic FFT tables.
-///
-/// Implementations provide forward and inverse negacyclic transforms for
-/// polynomial multiplication in `Z[X] / (X^N + 1)`.
-///
-/// # Buffer layout
-///
-/// Fourier data is stored in split real/imaginary format:
-/// `[re_0, ..., re_{m-1}, im_0, ..., im_{m-1}]` where `m = fourier_length()`.
-/// Total buffer size is `buffer_len() = 2 * fourier_length()`.
-///
-/// # Thread safety
-///
-/// Implementations must be `Send + Sync` so tables can be shared across
-/// threads (read-only) without additional synchronization.
+use crate::{FftError, TorusFftValue};
+
+/// Negacyclic FFT wrapper for polynomials modulo `X^N + 1`.
 pub trait FftTable: Send + Sync {
-    /// Create a new FFT table for the negacyclic transform of size `N = 2^log_n`.
+    /// Creates a table for `N = 2^log_n` coefficients.
     fn new(log_n: u32) -> Result<Self, FftError>
     where
         Self: Sized;
-
-    /// The polynomial length `N`.
+    /// Returns the coefficient polynomial length `N`.
     fn poly_length(&self) -> usize;
-
-    /// The number of logical complex frequency values.
-    ///
-    /// For the full-length backend this equals `poly_length()`.
-    /// A future packed backend may return `poly_length() / 2`.
+    /// Returns the number of complex Fourier values, `N / 2`.
     fn fourier_length(&self) -> usize;
-
-    /// Total buffer length in `f64` elements.
-    ///
-    /// Equals `2 * fourier_length()` for the split `[re | im]` layout.
-    #[inline]
-    fn buffer_len(&self) -> usize {
-        2 * self.fourier_length()
-    }
-
-    /// Forward negacyclic transform: torus coefficients → split Fourier domain.
-    ///
-    /// `input` must have length [`poly_length()`](FftTable::poly_length).
-    /// `output` receives `buffer_len()` f64 values in split `[re | im]` layout.
-    fn forward_torus_slice<T: TorusFftValue>(&self, input: &[T], output: &mut [f64]);
-
-    /// Forward transform from already-centered `f64` values.
-    ///
-    /// This is the hot-path variant of [`forward_torus_slice`]: it skips the
-    /// `T::into_f64_centered()` call and assumes the input values are already
-    /// in centered floating-point representation (as produced by
-    /// [`TorusFftValue::into_f64_centered`]).  The twist and FFT are applied
-    /// directly.
-    ///
-    /// `input` must have length [`poly_length()`](FftTable::poly_length).
-    /// `output` receives [`buffer_len()`](FftTable::buffer_len) f64 values in
-    /// split `[re | im]` layout.
-    ///
-    /// # Equivalence
-    ///
-    /// For any `T: TorusFftValue` and coefficient slice `coeff: &[T]`:
-    /// ```text
-    /// let centered: Vec<f64> = coeff.iter().map(|&v| v.into_f64_centered()).collect();
-    /// fft.forward_centered_f64_slice(&centered, &mut out1);
-    /// fft.forward_torus_slice(coeff, &mut out2);
-    /// assert!(out1 ≈ out2);
-    /// ```
-    fn forward_centered_f64_slice(&self, input: &[f64], output: &mut [f64]);
-
-    /// Inverse negacyclic transform: split Fourier domain → torus coefficients.
-    ///
-    /// `input` must have length [`buffer_len()`](FftTable::buffer_len) in split
-    /// `[re | im]` layout.
-    /// `output` receives [`poly_length()`](FftTable::poly_length) torus values.
-    fn inverse_torus_slice<T: TorusFftValue>(&self, input: &[f64], output: &mut [T]);
+    /// Transforms torus coefficients, scaled by `2^-BITS`, to Fourier form.
+    fn forward_as_torus<T: TorusFftValue>(&self, input: &[T], output: &mut [Complex64]);
+    /// Transforms signed integer bit patterns without torus scaling.
+    fn forward_as_integer<T: TorusFftValue>(&self, input: &[T], output: &mut [Complex64]);
+    /// Transforms ordinary integer-valued floating point coefficients.
+    fn forward_integer_f64(&self, input: &[f64], output: &mut [Complex64]);
+    /// Converts Fourier form back to torus coefficients.
+    fn backward_as_torus<T: TorusFftValue>(&self, input: &[Complex64], output: &mut [T]);
 }

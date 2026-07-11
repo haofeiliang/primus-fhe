@@ -1,4 +1,5 @@
-use primus_data::{Data, RawData};
+use num_complex::Complex64;
+use primus_data::{Data, DataMut, RawData};
 
 use primus_poly::{FourierPolynomial, FourierPolynomialIter, FourierPolynomialIterMut};
 
@@ -10,18 +11,18 @@ use primus_poly::{FourierPolynomial, FourierPolynomialIter, FourierPolynomialIte
 /// |--a1--| ... |--ak--|--b--|
 /// ```
 ///
-/// Each component is a Fourier polynomial stored in split `[re|im]` layout
-/// (`2 * fourier_length` f64 values).
-/// Total data length: `(k + 1) * 2 * fourier_length` f64.
+/// Each component contains `fourier_length` complex values.
+/// Total data length: `(k + 1) * fourier_length` complex values.
 #[derive(Clone)]
 pub struct FourierGlwe<S>(pub S)
 where
-    S: RawData<Elem = f64>;
+    S: RawData<Elem = Complex64>;
 
 impl_fourier_iters!(FourierGlwe);
 impl_fourier_core!(FourierGlwe);
 impl_fourier_iter_sub!(
     FourierGlwe,
+    FourierPolynomial,
     FourierPolynomialIter,
     FourierPolynomialIterMut,
     fourier_poly
@@ -33,26 +34,25 @@ impl_fourier_iter_sub!(
 
 impl<S> FourierGlwe<S>
 where
-    S: RawData<Elem = f64> + primus_data::Data,
+    S: RawData<Elem = Complex64> + Data,
 {
     /// Returns the `a` components and `b` component as immutable slices.
     ///
-    /// `mid = k * 2 * fourier_length` (i.e. `k * buffer_len()`) splits the
-    /// mask from the body in raw f64 split `[re|im]` layout.
+    /// `mid = k * fourier_length` splits the mask from the body.
     /// `mid` must be `<= self.0.len()`.
     #[inline]
-    pub fn a_b_slices(&self, mid: usize) -> (&[f64], &[f64]) {
+    pub fn a_b_slices(&self, mid: usize) -> (&[Complex64], &[Complex64]) {
         self.0.split_at(mid)
     }
 }
 
 impl<S> FourierGlwe<S>
 where
-    S: RawData<Elem = f64> + primus_data::DataMut,
+    S: RawData<Elem = Complex64> + DataMut,
 {
     /// Returns the `a` components and `b` component as mutable slices.
     #[inline]
-    pub fn a_b_mut_slices(&mut self, mid: usize) -> (&mut [f64], &mut [f64]) {
+    pub fn a_b_mut_slices(&mut self, mid: usize) -> (&mut [Complex64], &mut [Complex64]) {
         self.0.split_at_mut(mid)
     }
 
@@ -67,13 +67,13 @@ where
         poly: &FourierPolynomial<A>,
         rhs: &FourierGlwe<B>,
     ) where
-        A: RawData<Elem = f64> + Data,
-        B: RawData<Elem = f64> + Data,
+        A: RawData<Elem = Complex64> + Data,
+        B: RawData<Elem = Complex64> + Data,
     {
-        let flen = poly.fourier_length();
+        let fourier_length = poly.fourier_length();
         for (mut acc, key_poly) in self
-            .iter_fourier_poly_mut(flen)
-            .zip(rhs.iter_fourier_poly(flen))
+            .iter_fourier_poly_mut(fourier_length)
+            .zip(rhs.iter_fourier_poly(fourier_length))
         {
             acc.add_mul_assign(poly, &key_poly);
         }

@@ -9,12 +9,12 @@ primus_integer = { path = "../primus_integer" }
 num-complex = { workspace = true }
 rustfft = { workspace = true }
 thiserror = { workspace = true }
+tfhe-fft = "0.10.1"
+dyn-stack = "0.13.2"
 
 [dev-dependencies]
 criterion = { workspace = true }
 rand = { workspace = true }
-tfhe-fft = "0.10.1"
-dyn-stack = "0.13.2"
 
 [[bench]]
 name = "fft"

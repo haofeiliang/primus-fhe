@@ -1,4 +1,4 @@
-use primus_fft::TorusFftValue;
+use primus_fft::{Complex64, TorusFftValue};
 
 /// Pre-allocated scratch buffers for the TFHE external product.
 ///
@@ -14,9 +14,7 @@ use primus_fft::TorusFftValue;
 ///
 /// # Fourier buffer layout
 ///
-/// Fourier buffers use split real/imaginary format:
-/// `[re_0..re_{m-1}, im_0..im_{m-1}]` where `m = fourier_length`.
-/// Each buffer has `2 * fourier_length` elements.
+/// Fourier buffers contain interleaved [`primus_fft::Complex64`] values.
 pub struct TfheFftContext<T: TorusFftValue> {
     /// Carry bits, one per coefficient (length = `poly_length`).
     pub carries: Vec<bool>,
@@ -28,12 +26,10 @@ pub struct TfheFftContext<T: TorusFftValue> {
     /// Used by the fused decomposition→FFT path to avoid an intermediate
     /// `u32` → `f64` conversion inside the FFT twist loop.
     pub decomposed_centered_f64: Vec<f64>,
-    /// FFT of the decomposed polynomial, split [re | im] layout
-    /// (length = `2 * fourier_length`).
-    pub decomposed_fourier: Vec<f64>,
-    /// Accumulator in Fourier domain, split [re | im] layout
-    /// (length = `(glwe_dimension + 1) * 2 * fourier_length`).
-    pub fourier_accumulator: Vec<f64>,
+    /// FFT of the decomposed polynomial (length = `fourier_length`).
+    pub decomposed_fourier: Vec<Complex64>,
+    /// Accumulator in Fourier domain.
+    pub fourier_accumulator: Vec<Complex64>,
 }
 
 impl<T: TorusFftValue> TfheFftContext<T> {
@@ -43,24 +39,25 @@ impl<T: TorusFftValue> TfheFftContext<T> {
     /// `k + 1` polynomials.
     pub fn new(poly_length: usize, fourier_length: usize, glwe_dimension: usize) -> Self {
         let total_polys = glwe_dimension + 1;
-        let blen = 2 * fourier_length;
+        let blen = fourier_length;
         Self {
             carries: vec![false; poly_length],
             decomposed_poly: vec![T::ZERO; poly_length],
             decomposed_centered_f64: vec![0.0f64; poly_length],
-            decomposed_fourier: vec![0.0f64; blen],
-            fourier_accumulator: vec![0.0f64; total_polys * blen],
+            decomposed_fourier: vec![Complex64::default(); blen],
+            fourier_accumulator: vec![Complex64::default(); total_polys * blen],
         }
     }
 
     /// Resizes all buffers to the given dimensions.
     pub fn resize(&mut self, poly_length: usize, fourier_length: usize, glwe_dimension: usize) {
         let total_polys = glwe_dimension + 1;
-        let blen = 2 * fourier_length;
+        let blen = fourier_length;
         self.carries.resize(poly_length, false);
         self.decomposed_poly.resize(poly_length, T::ZERO);
         self.decomposed_centered_f64.resize(poly_length, 0.0f64);
-        self.decomposed_fourier.resize(blen, 0.0f64);
-        self.fourier_accumulator.resize(total_polys * blen, 0.0f64);
+        self.decomposed_fourier.resize(blen, Complex64::default());
+        self.fourier_accumulator
+            .resize(total_polys * blen, Complex64::default());
     }
 }
