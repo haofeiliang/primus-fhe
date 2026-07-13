@@ -2,8 +2,8 @@ use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{FftTable, RustFftTable};
 use primus_fhe_core::{
     FourierGadgetEncryptContext, FourierGlweDecryptContext, FourierGlweEncryptContext,
-    FourierGlweSecretKey, GlevParameters, GlweParameters, GlweSecretKey, NttGadgetEncryptContext,
-    NttGlweSecretKey, RingSecretKeyType,
+    FourierGlweSecretKey, GlevCommonSize, GlevParameters, GlweCommonSize, GlweParameters,
+    GlweSecretKey, NttGadgetEncryptContext, NttGlweSecretKey, RingSecretKeyType,
 };
 use primus_lattice::{
     context::tfhe::TfheFftContext,
@@ -19,6 +19,29 @@ use primus_reduce::{ReduceMul, ReduceNeg};
 
 const DIMENSION: usize = 2;
 const POLY_LENGTH: usize = 256;
+
+#[test]
+fn single_modulus_common_sizes_match_layout() {
+    let glwe = GlweCommonSize::new(DIMENSION, POLY_LENGTH);
+    assert_eq!(glwe.dimension(), DIMENSION);
+    assert_eq!(glwe.poly_length(), POLY_LENGTH);
+    assert_eq!(glwe.glwe_mid(), DIMENSION * POLY_LENGTH);
+    assert_eq!(glwe.secret_key_len(), DIMENSION * POLY_LENGTH);
+    assert_eq!(glwe.glwe_len(), (DIMENSION + 1) * POLY_LENGTH);
+    assert_eq!(glwe.fourier_glwe_mid(), DIMENSION * POLY_LENGTH / 2);
+    assert_eq!(glwe.fourier_glwe_len(), (DIMENSION + 1) * POLY_LENGTH / 2);
+
+    let glev = GlevCommonSize::new(glwe, 4);
+    assert_eq!(glev.glwe_common_size(), glwe);
+    assert_eq!(glev.decompose_length(), 4);
+    assert_eq!(glev.glev_len(), 4 * glwe.glwe_len());
+    assert_eq!(glev.ggsw_len(), (DIMENSION + 1) * glev.glev_len());
+    assert_eq!(glev.fourier_glev_len(), 4 * glwe.fourier_glwe_len());
+    assert_eq!(
+        glev.fourier_ggsw_len(),
+        (DIMENSION + 1) * glev.fourier_glev_len()
+    );
+}
 
 fn native_distance(lhs: u32, rhs: u32) -> u32 {
     lhs.wrapping_sub(rhs).min(rhs.wrapping_sub(lhs))
