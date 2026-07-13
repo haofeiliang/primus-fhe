@@ -41,7 +41,7 @@ pub fn external_product_to<T, Table, A, B, C>(
     let glev_len = basis.decompose_length() * glwe_fourier_len;
 
     debug_assert_eq!(fft.poly_length(), poly_len);
-    debug_assert_eq!(fourier_len, poly_len / 2);
+    debug_assert_eq!(fft.fourier_length(), fourier_len);
     debug_assert_eq!(basis.modulus(), None);
     debug_assert_eq!(input.as_ref().len(), size.glwe_len());
     debug_assert_eq!(output.as_ref().len(), size.glwe_len());

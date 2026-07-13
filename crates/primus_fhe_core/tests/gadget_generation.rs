@@ -111,6 +111,18 @@ fn fourier_glev_generation_and_ggsw_external_product() {
 
     let plaintext_values: Vec<u32> = (0..POLY_LENGTH).map(|index| (index % 16) as u32).collect();
     let plaintext = Polynomial::new(plaintext_values.clone());
+
+    let mut monomial_message = vec![0u32; POLY_LENGTH];
+    monomial_message[1] = 1;
+    secret_key.encrypt_ggsw_to(
+        &Polynomial::new(monomial_message),
+        &mut ggsw,
+        &params,
+        &fft,
+        &mut rng,
+        &mut gadget_context,
+    );
+
     let mut input_fourier = FourierGlweOwned::zero(params.fourier_glwe_len());
     let mut glwe_context = FourierGlweEncryptContext::new(POLY_LENGTH);
     secret_key.encrypt_to(
@@ -137,11 +149,14 @@ fn fourier_glev_generation_and_ggsw_external_product() {
 
     let mut output_fourier = FourierGlweOwned::zero(params.fourier_glwe_len());
     output.write_fourier_form(&mut output_fourier, &fft);
+    let mut expected = vec![0u32; POLY_LENGTH];
+    expected[0] = (16 - plaintext_values[POLY_LENGTH - 1]) % 16;
+    expected[1..].copy_from_slice(&plaintext_values[..POLY_LENGTH - 1]);
     assert_eq!(
         secret_key
             .decrypt(&output_fourier, &glwe_params, &fft, &mut decrypt_context,)
             .as_ref(),
-        plaintext_values
+        expected
     );
 }
 
@@ -238,6 +253,18 @@ fn ntt_glev_and_ggsw_generation() {
 
     let plaintext_values: Vec<u32> = (0..POLY_LENGTH).map(|index| (index % 16) as u32).collect();
     let plaintext = Polynomial::new(plaintext_values.clone());
+
+    let mut monomial_message = vec![0u32; POLY_LENGTH];
+    monomial_message[1] = 1;
+    secret_key.encrypt_ggsw_to(
+        &Polynomial::new(monomial_message),
+        &mut ggsw,
+        &params,
+        &ntt,
+        &mut rng,
+        &mut context,
+    );
+
     let mut input_ntt: NttGlwe<Vec<u32>> = NttGlwe::zero(params.glwe_len());
     secret_key.encrypt_to(&plaintext, &mut input_ntt, &glwe_params, &ntt, &mut rng);
     let input = input_ntt.into_coeff_form(&ntt);
@@ -253,8 +280,11 @@ fn ntt_glev_and_ggsw_generation() {
         &mut external_product_context,
     );
     let output_ntt = output.into_ntt_form(&ntt);
+    let mut expected = vec![0u32; POLY_LENGTH];
+    expected[0] = (16 - plaintext_values[POLY_LENGTH - 1]) % 16;
+    expected[1..].copy_from_slice(&plaintext_values[..POLY_LENGTH - 1]);
     assert_eq!(
         secret_key.decrypt(&output_ntt, &glwe_params, &ntt).as_ref(),
-        plaintext_values
+        expected
     );
 }
