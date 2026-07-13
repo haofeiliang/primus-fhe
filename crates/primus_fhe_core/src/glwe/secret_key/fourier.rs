@@ -50,6 +50,7 @@ impl<T: FheUint> FourierGlweSecretKey<T> {
     ) -> Self {
         assert!(poly_length.is_power_of_two());
         assert!(poly_length >= 2);
+        assert!(dimension > 0);
         assert_eq!(key.len(), dimension * (poly_length / 2));
         Self {
             key,
@@ -173,8 +174,8 @@ impl<T: FheUint> FourierGlweSecretKey<T> {
         B: RawData<Elem = Complex64> + DataMut,
         T: TorusFftValue,
     {
-        self.encrypt_to_with_embedding(
-            Some((msg.as_ref(), PlaintextEmbedding::Unsigned)),
+        self.encrypt_to_with_message(
+            FourierEncryptionMessage::Plaintext(msg.as_ref(), PlaintextEmbedding::Unsigned),
             result,
             params,
             fft,
@@ -199,8 +200,8 @@ impl<T: FheUint> FourierGlweSecretKey<T> {
         B: RawData<Elem = Complex64> + DataMut,
         T: TorusFftValue,
     {
-        self.encrypt_to_with_embedding(
-            Some((msg.as_ref(), PlaintextEmbedding::Centered)),
+        self.encrypt_to_with_message(
+            FourierEncryptionMessage::Plaintext(msg.as_ref(), PlaintextEmbedding::Centered),
             result,
             params,
             fft,
@@ -209,9 +210,36 @@ impl<T: FheUint> FourierGlweSecretKey<T> {
         );
     }
 
-    fn encrypt_to_with_embedding<Table, R, B>(
+    /// Encrypts a polynomial whose coefficients are already encoded in the
+    /// native torus ciphertext space.
+    pub fn encrypt_encoded_to<Table, R, A, B>(
         &self,
-        message: Option<(&[T], PlaintextEmbedding)>,
+        encoded: &Polynomial<A>,
+        result: &mut FourierGlweCiphertext<B>,
+        params: &GlweParameters<T, NativeModulus<T>>,
+        fft: &Table,
+        rng: &mut R,
+        context: &mut FourierGlweEncryptContext<T>,
+    ) where
+        Table: FftTable,
+        R: rand::Rng + rand::CryptoRng,
+        A: RawData<Elem = T> + Data,
+        B: RawData<Elem = Complex64> + DataMut,
+        T: TorusFftValue,
+    {
+        self.encrypt_to_with_message(
+            FourierEncryptionMessage::Encoded(encoded.as_ref()),
+            result,
+            params,
+            fft,
+            rng,
+            context,
+        );
+    }
+
+    fn encrypt_to_with_message<Table, R, B>(
+        &self,
+        message: FourierEncryptionMessage<'_, T>,
         result: &mut FourierGlweCiphertext<B>,
         params: &GlweParameters<T, NativeModulus<T>>,
         fft: &Table,
@@ -225,7 +253,7 @@ impl<T: FheUint> FourierGlweSecretKey<T> {
     {
         self.assert_parameter_shape(params);
         self.assert_fft_and_cipher_shape(result.as_ref().len(), fft);
-        if let Some((message, _)) = message {
+        if let Some(message) = message.as_slice() {
             assert_eq!(message.len(), self.poly_length);
         }
 
@@ -236,10 +264,17 @@ impl<T: FheUint> FourierGlweSecretKey<T> {
         let coeff = context.coeff.as_mut();
         assert_eq!(coeff.len(), self.poly_length);
         primus_distr::sample_gaussian_values_to(coeff, params.noise_distribution(), rng);
-        if let Some((message, embedding)) = message {
-            params
-                .plaintext_codec()
-                .add_encode_slice_assign_with_delta(coeff, message, embedding);
+        match message {
+            FourierEncryptionMessage::Zero => {}
+            FourierEncryptionMessage::Plaintext(message, embedding) => {
+                params
+                    .plaintext_codec()
+                    .add_encode_slice_assign_with_delta(coeff, message, embedding);
+            }
+            FourierEncryptionMessage::Encoded(encoded) => {
+                Polynomial::new(&mut *coeff)
+                    .add_assign(&Polynomial::new(encoded), NativeModulus::new());
+            }
         }
         fft.forward_as_torus(coeff, b);
 
@@ -270,7 +305,14 @@ impl<T: FheUint> FourierGlweSecretKey<T> {
         B: RawData<Elem = Complex64> + DataMut,
         T: TorusFftValue,
     {
-        self.encrypt_to_with_embedding(None, result, params, fft, rng, context);
+        self.encrypt_to_with_message(
+            FourierEncryptionMessage::Zero,
+            result,
+            params,
+            fft,
+            rng,
+            context,
+        );
     }
 
     /// Decrypts a native-torus Fourier-domain GLWE ciphertext.
@@ -323,6 +365,22 @@ impl<T: FheUint> FourierGlweSecretKey<T> {
     fn assert_fft_and_cipher_shape<Table: FftTable>(&self, cipher_len: usize, fft: &Table) {
         assert_eq!(fft.poly_length(), self.poly_length);
         assert_eq!(cipher_len, (self.dimension + 1) * fft.fourier_length());
+    }
+}
+
+enum FourierEncryptionMessage<'a, T> {
+    Zero,
+    Plaintext(&'a [T], PlaintextEmbedding),
+    Encoded(&'a [T]),
+}
+
+impl<'a, T> FourierEncryptionMessage<'a, T> {
+    #[inline]
+    fn as_slice(&self) -> Option<&'a [T]> {
+        match self {
+            Self::Zero => None,
+            Self::Plaintext(message, _) | Self::Encoded(message) => Some(message),
+        }
     }
 }
 

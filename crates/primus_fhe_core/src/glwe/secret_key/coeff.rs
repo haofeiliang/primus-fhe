@@ -1,7 +1,7 @@
 //! Single-modulus coefficient-domain GLWE secret key.
 
 use primus_integer::FheUint;
-use primus_poly::PolynomialOwned;
+use primus_poly::{PolynomialIter, PolynomialOwned};
 use primus_reduce::RingContext;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
@@ -34,8 +34,10 @@ impl<T: FheUint> GlweSecretKey<T> {
         poly_length: usize,
         distr: RingSecretKeyType,
     ) -> Self {
-        debug_assert!(poly_length.is_power_of_two());
-        debug_assert_eq!(key.len(), poly_length * dimension);
+        assert!(poly_length.is_power_of_two());
+        assert!(poly_length >= 2);
+        assert!(dimension > 0);
+        assert_eq!(key.len(), poly_length * dimension);
         Self {
             key,
             dimension,
@@ -62,6 +64,18 @@ impl<T: FheUint> GlweSecretKey<T> {
         self.distr
     }
 
+    /// Returns all coefficient-domain secret-key values.
+    #[inline]
+    pub fn as_slice(&self) -> &[T] {
+        &self.key
+    }
+
+    /// Iterates over the coefficient-domain secret polynomials.
+    #[inline]
+    pub fn iter(&self) -> PolynomialIter<'_, T> {
+        PolynomialIter::new(&self.key, self.poly_length)
+    }
+
     #[inline]
     pub fn generate<R, M>(params: &GlweParameters<T, M>, rng: &mut R) -> Self
     where
@@ -84,11 +98,6 @@ impl<T: FheUint> GlweSecretKey<T> {
             }
         };
 
-        Self {
-            key: key.into_owned(),
-            poly_length,
-            dimension,
-            distr,
-        }
+        Self::new(key.into_owned(), dimension, poly_length, distr)
     }
 }

@@ -39,8 +39,10 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         dimension: usize,
         distr: RingSecretKeyType,
     ) -> Self {
-        debug_assert!(poly_length.is_power_of_two());
-        debug_assert_eq!(key.len(), poly_length * dimension);
+        assert!(poly_length.is_power_of_two());
+        assert!(poly_length >= 2);
+        assert!(dimension > 0);
+        assert_eq!(key.len(), poly_length * dimension);
         Self {
             key,
             poly_length,
@@ -79,17 +81,13 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         Table: NttTable<ValueT = T>,
     {
         let poly_length = secret_key.poly_length;
+        assert_eq!(ntt_table.poly_length(), poly_length);
 
         let mut key = secret_key.key.clone();
         key.chunks_exact_mut(poly_length)
             .for_each(|poly| ntt_table.transform_slice(poly));
 
-        Self {
-            key,
-            poly_length,
-            dimension: secret_key.dimension,
-            distr: secret_key.distr,
-        }
+        Self::new(key, poly_length, secret_key.dimension, secret_key.distr)
     }
 
     /// Generates a new [`NttGlweSecretKey<T>`] from parameters.
@@ -108,24 +106,30 @@ impl<T: FheUint> NttGlweSecretKey<T> {
     }
 
     /// Performs `b - ∑ a_i * s_i` (phase), leaving result in coefficient domain.
-    pub fn phase_to<Table, M, S>(
+    pub fn phase_to<Table, M, S, B>(
         &self,
         cipher: &NttGlweCiphertext<S>,
-        result: &mut PolynomialOwned<T>,
+        result: &mut Polynomial<B>,
         ntt_table: &Table,
         modulus: M,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
         S: RawData<Elem = T> + Data,
+        B: RawData<Elem = T> + DataMut,
     {
+        self.assert_table_and_cipher_shape(cipher.as_ref().len(), ntt_table);
+        assert_eq!(result.as_ref().len(), self.poly_length);
+
         let mid = self.poly_length * self.dimension;
-        let (a, b) = cipher.a_b(mid);
+        let (mut a, b) = cipher.a_b(mid);
+        let mut secret = self.iter();
 
-        result.set_zero();
         let mut result_poly = NttPolynomial(result.as_mut());
-
-        self.iter().zip(a).for_each(|(si, ai)| {
+        let si = secret.next().expect("GLWE dimension must be non-zero");
+        let ai = a.next().expect("GLWE ciphertext mask is missing");
+        ai.mul_to(&si, &mut result_poly, modulus);
+        secret.zip(a).for_each(|(si, ai)| {
             result_poly.add_mul_assign(&ai, &si, modulus);
         });
         b.sub_rev_assign(&mut result_poly, modulus);
@@ -152,13 +156,12 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         A: RawData<Elem = T> + Data,
         B: RawData<Elem = T> + DataMut,
     {
-        self.encrypt_to_with_embedding(
-            msg,
+        self.encrypt_to_with_message(
+            NttEncryptionMessage::Plaintext(msg.as_ref(), PlaintextEmbedding::Unsigned),
             result,
             params,
             ntt_table,
             rng,
-            PlaintextEmbedding::Unsigned,
         )
     }
 
@@ -177,25 +180,24 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         A: RawData<Elem = T> + Data,
         B: RawData<Elem = T> + DataMut,
     {
-        self.encrypt_to_with_embedding(
-            msg,
+        self.encrypt_to_with_message(
+            NttEncryptionMessage::Plaintext(msg.as_ref(), PlaintextEmbedding::Centered),
             result,
             params,
             ntt_table,
             rng,
-            PlaintextEmbedding::Centered,
         )
     }
 
-    /// Encrypts a polynomial using the selected plaintext embedding.
-    pub fn encrypt_to_with_embedding<M, Table, R, A, B>(
+    /// Encrypts a polynomial whose coefficients are already encoded in
+    /// `[0, q)`. The plaintext codec and delta scaling are not applied.
+    pub fn encrypt_encoded_to<M, Table, R, A, B>(
         &self,
-        msg: &Polynomial<A>,
+        encoded: &Polynomial<A>,
         result: &mut NttGlweCiphertext<B>,
         params: &GlweParameters<T, M>,
         ntt_table: &Table,
         rng: &mut R,
-        embedding: PlaintextEmbedding,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
@@ -203,6 +205,34 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         A: RawData<Elem = T> + Data,
         B: RawData<Elem = T> + DataMut,
     {
+        self.encrypt_to_with_message(
+            NttEncryptionMessage::Encoded(encoded.as_ref()),
+            result,
+            params,
+            ntt_table,
+            rng,
+        );
+    }
+
+    fn encrypt_to_with_message<M, Table, R, B>(
+        &self,
+        message: NttEncryptionMessage<'_, T>,
+        result: &mut NttGlweCiphertext<B>,
+        params: &GlweParameters<T, M>,
+        ntt_table: &Table,
+        rng: &mut R,
+    ) where
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+        R: rand::Rng + rand::CryptoRng,
+        B: RawData<Elem = T> + DataMut,
+    {
+        self.assert_parameter_shape(params);
+        self.assert_table_and_cipher_shape(result.as_ref().len(), ntt_table);
+        if let Some(message) = message.as_slice() {
+            assert_eq!(message.len(), self.poly_length);
+        }
+
         let poly_length = params.poly_length();
         let modulus = params.cipher_modulus();
         let mid = self.dimension * poly_length;
@@ -212,21 +242,22 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         // Sample noise into b
         primus_distr::sample_gaussian_values_to(b, params.noise_distribution(), rng);
 
-        // Add message with delta scaling
-        match embedding {
-            PlaintextEmbedding::Unsigned => {
+        match message {
+            NttEncryptionMessage::Zero => {}
+            NttEncryptionMessage::Plaintext(message, PlaintextEmbedding::Unsigned) => {
                 Polynomial(&mut *b).add_mul_factor_assign(
-                    msg,
+                    &Polynomial::new(message),
                     params.delta_factor(),
                     params.cipher_modulus_value(),
                 );
             }
-            PlaintextEmbedding::Centered => {
-                params.plaintext_codec().add_encode_slice_assign_with_delta(
-                    b,
-                    msg.as_ref(),
-                    embedding,
-                );
+            NttEncryptionMessage::Plaintext(message, embedding) => {
+                params
+                    .plaintext_codec()
+                    .add_encode_slice_assign_with_delta(b, message, embedding);
+            }
+            NttEncryptionMessage::Encoded(encoded) => {
+                Polynomial::new(&mut *b).add_assign(&Polynomial::new(encoded), modulus);
             }
         }
         ntt_table.transform_slice(b);
@@ -272,21 +303,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         R: rand::Rng + rand::CryptoRng,
         A: RawData<Elem = T> + DataMut,
     {
-        let poly_length = params.poly_length();
-        let modulus = params.cipher_modulus();
-        let mid = self.dimension * poly_length;
-
-        let (a, b) = result.as_mut().split_at_mut(mid);
-
-        primus_distr::sample_gaussian_values_to(b, params.noise_distribution(), rng);
-        ntt_table.transform_slice(b);
-
-        primus_distr::sample_uniform_values_to(a, &params.cipher_modulus_uniform_distr(), rng);
-
-        let mut b_ntt = NttPolynomial(b);
-        for (si, ai) in self.iter().zip(a.chunks_exact(poly_length)) {
-            b_ntt.add_mul_assign(&NttPolynomial(ai), &si, modulus);
-        }
+        self.encrypt_to_with_message(NttEncryptionMessage::Zero, result, params, ntt_table, rng);
     }
 
     // -------------------------------------------------------------------------
@@ -321,21 +338,44 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         A: RawData<Elem = T> + Data,
         B: RawData<Elem = T> + DataMut,
     {
-        let modulus = params.cipher_modulus();
-        let mid = self.dimension * self.poly_length;
-        let (a, b) = cipher.a_b_slices(mid);
-
-        let mut temp = NttPolynomial(result.as_mut());
-
-        for (si, ai) in self.iter().zip(a.chunks_exact(self.poly_length)) {
-            temp.add_mul_assign(&NttPolynomial(ai), &si, modulus);
-        }
-        NttPolynomial(b).sub_rev_assign(&mut temp, modulus);
-
-        ntt_table.inverse_transform_slice(result.as_mut());
+        self.assert_parameter_shape(params);
+        self.phase_to(cipher, result, ntt_table, params.cipher_modulus());
 
         params
             .plaintext_codec()
             .decode_slice_inplace(result.as_mut());
+    }
+
+    #[inline]
+    fn assert_parameter_shape<M: FieldContext<T>>(&self, params: &GlweParameters<T, M>) {
+        assert_eq!(params.poly_length(), self.poly_length);
+        assert_eq!(params.dimension(), self.dimension);
+        assert_eq!(params.secret_key_type(), self.distr);
+    }
+
+    #[inline]
+    fn assert_table_and_cipher_shape<Table: NttTable<ValueT = T>>(
+        &self,
+        cipher_len: usize,
+        ntt_table: &Table,
+    ) {
+        assert_eq!(ntt_table.poly_length(), self.poly_length);
+        assert_eq!(cipher_len, (self.dimension + 1) * self.poly_length);
+    }
+}
+
+enum NttEncryptionMessage<'a, T> {
+    Zero,
+    Plaintext(&'a [T], PlaintextEmbedding),
+    Encoded(&'a [T]),
+}
+
+impl<'a, T> NttEncryptionMessage<'a, T> {
+    #[inline]
+    fn as_slice(&self) -> Option<&'a [T]> {
+        match self {
+            Self::Zero => None,
+            Self::Plaintext(message, _) | Self::Encoded(message) => Some(message),
+        }
     }
 }

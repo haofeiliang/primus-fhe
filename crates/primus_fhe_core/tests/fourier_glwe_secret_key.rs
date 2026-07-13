@@ -1,7 +1,7 @@
 use primus_fft::{FftTable, RustFftTable, TorusFftValue};
 use primus_fhe_core::{
     FourierGlweDecryptContext, FourierGlweEncryptContext, FourierGlweSecretKey, GlweParameters,
-    RingSecretKeyType,
+    PlaintextEmbedding, RingSecretKeyType,
 };
 use primus_integer::FheUint;
 use primus_lattice::glwe::FourierGlweOwned;
@@ -73,6 +73,27 @@ where
                 .decrypt(&cipher, &params, &fft, &mut decrypt_context)
                 .as_ref(),
             vec![T::ZERO; POLY_LENGTH]
+        );
+
+        let mut encoded = vec![T::ZERO; POLY_LENGTH];
+        params.plaintext_codec().add_encode_slice_assign_with_delta(
+            &mut encoded,
+            &messages,
+            PlaintextEmbedding::Unsigned,
+        );
+        secret_key.encrypt_encoded_to(
+            &Polynomial::new(encoded),
+            &mut cipher,
+            &params,
+            &fft,
+            &mut rng,
+            &mut encrypt_context,
+        );
+        assert_eq!(
+            secret_key
+                .decrypt(&cipher, &params, &fft, &mut decrypt_context)
+                .as_ref(),
+            messages
         );
     }
 }
