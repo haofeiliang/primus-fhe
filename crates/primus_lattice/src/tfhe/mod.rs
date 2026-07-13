@@ -9,4 +9,5 @@
 //! `impl_fourier_forward!` / `impl_fourier_backward!` in each
 //! Fourier variant module.
 
+pub mod cmux;
 pub mod external_product;

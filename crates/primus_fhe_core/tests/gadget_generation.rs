@@ -10,7 +10,7 @@ use primus_lattice::{
     ggsw::{FourierGgswOwned, NttGgsw},
     glev::{FourierGlevOwned, NttGlev},
     glwe::{FourierGlweOwned, Glwe, NttGlwe, TorusGlwe},
-    tfhe::external_product::{external_product_to, ntt_external_product_to},
+    tfhe::external_product::{fourier_external_product_to, ntt_external_product_to},
 };
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntt::{NttTable, UintNttTable};
@@ -138,7 +138,7 @@ fn fourier_glev_generation_and_ggsw_external_product() {
 
     let mut output: TorusGlwe<Vec<u32>> = TorusGlwe::zero(params.glwe_len());
     let mut external_product_context = TfheFftContext::new(DIMENSION, POLY_LENGTH);
-    external_product_to(
+    fourier_external_product_to(
         &input,
         &ggsw,
         &mut output,

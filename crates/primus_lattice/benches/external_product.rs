@@ -5,7 +5,7 @@ use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{FftTable, RustFftTable};
 use primus_lattice::{
     context::tfhe::TfheFftContext, ggsw::FourierGgswOwned, glwe::Glwe,
-    tfhe::external_product::external_product_to,
+    tfhe::external_product::fourier_external_product_to,
 };
 
 fn external_product(c: &mut Criterion) {
@@ -21,7 +21,7 @@ fn external_product(c: &mut Criterion) {
     let mut context = TfheFftContext::new(dimension, fft.poly_length());
     c.bench_function("external_product/rustfft/n1024/k1/l4", |b| {
         b.iter(|| {
-            external_product_to(
+            fourier_external_product_to(
                 black_box(&input),
                 black_box(&key),
                 black_box(&mut output),

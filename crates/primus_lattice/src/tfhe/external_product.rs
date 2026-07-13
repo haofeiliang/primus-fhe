@@ -20,7 +20,7 @@ use crate::{
 /// `output` are coefficient-domain torus GLWE ciphertexts. The context binds
 /// the validated layout; `basis` must be the decomposition basis used by
 /// `key`.
-pub fn external_product_to<T, Table, A, B, C>(
+pub fn fourier_external_product_to<T, Table, A, B, C>(
     input: &TorusGlwe<A>,
     key: &FourierGgsw<B>,
     output: &mut TorusGlwe<C>,
@@ -34,6 +34,23 @@ pub fn external_product_to<T, Table, A, B, C>(
     B: RawData<Elem = Complex64> + Data,
     C: RawData<Elem = T> + DataMut,
 {
+    debug_assert_eq!(output.as_ref().len(), context.size().glwe_len());
+    fourier_external_product_accumulate(input, key, basis, fft, context);
+    context.fourier_accumulator.write_torus_form(output, fft);
+}
+
+pub(super) fn fourier_external_product_accumulate<T, Table, A, B>(
+    input: &TorusGlwe<A>,
+    key: &FourierGgsw<B>,
+    basis: &ApproxSignedBasis<T>,
+    fft: &Table,
+    context: &mut TfheFftContext<T>,
+) where
+    T: TorusFftValue,
+    Table: FftTable,
+    A: RawData<Elem = T> + Data,
+    B: RawData<Elem = Complex64> + Data,
+{
     let size = context.size();
     let poly_len = size.poly_length();
     let fourier_len = poly_len / 2;
@@ -44,7 +61,6 @@ pub fn external_product_to<T, Table, A, B, C>(
     debug_assert_eq!(fft.fourier_length(), fourier_len);
     debug_assert_eq!(basis.modulus(), None);
     debug_assert_eq!(input.as_ref().len(), size.glwe_len());
-    debug_assert_eq!(output.as_ref().len(), size.glwe_len());
     debug_assert_eq!(key.as_ref().len(), size.component_count() * glev_len);
     debug_assert_eq!(context.carries.len(), poly_len);
     debug_assert_eq!(context.decomposed_poly.len(), poly_len);
@@ -71,8 +87,6 @@ pub fn external_product_to<T, Table, A, B, C>(
             );
         }
     }
-
-    context.fourier_accumulator.write_torus_form(output, fft);
 }
 
 /// Computes `output = input external_product key` with an NTT GGSW key.
@@ -96,6 +110,25 @@ pub fn ntt_external_product_to<T, M, Table, A, B, C>(
     B: RawData<Elem = T> + Data,
     C: RawData<Elem = T> + DataMut,
 {
+    debug_assert_eq!(output.as_ref().len(), context.size().glwe_len());
+    ntt_external_product_accumulate(input, key, basis, modulus, ntt, context);
+    context.ntt_accumulator.write_coeff_form(output, ntt);
+}
+
+pub(super) fn ntt_external_product_accumulate<T, M, Table, A, B>(
+    input: &Glwe<A>,
+    key: &NttGgsw<B>,
+    basis: &ApproxSignedBasis<T>,
+    modulus: M,
+    ntt: &Table,
+    context: &mut TfheNttContext<T>,
+) where
+    T: FheUint,
+    M: FieldContext<T>,
+    Table: NttTable<ValueT = T>,
+    A: RawData<Elem = T> + Data,
+    B: RawData<Elem = T> + Data,
+{
     let size = context.size();
     let poly_len = size.poly_length();
     let glwe_len = size.glwe_len();
@@ -105,7 +138,6 @@ pub fn ntt_external_product_to<T, M, Table, A, B, C>(
     debug_assert_eq!(basis.modulus(), modulus.value());
     debug_assert!(modulus.value().is_some());
     debug_assert_eq!(input.as_ref().len(), glwe_len);
-    debug_assert_eq!(output.as_ref().len(), glwe_len);
     debug_assert_eq!(key.as_ref().len(), size.component_count() * glev_len);
     debug_assert_eq!(context.adjusted_poly.len(), poly_len);
     debug_assert_eq!(context.carries.len(), poly_len);
@@ -133,6 +165,4 @@ pub fn ntt_external_product_to<T, M, Table, A, B, C>(
                 .add_mul_ntt_polynomial_assign(&digit, &key_glwe, modulus);
         }
     }
-
-    context.ntt_accumulator.write_coeff_form(output, ntt);
 }

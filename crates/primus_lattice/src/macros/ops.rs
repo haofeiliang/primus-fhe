@@ -14,7 +14,7 @@ macro_rules! impl_basic_operation_single_modulus {
             #[inline]
             pub fn add_element_wise<M, A>(mut self, rhs: &$cipher<A>, modulus: M) -> Self
             where
-                M: FieldContext<T>,
+                M: primus_reduce::RingContext<T>,
                 A: RawData<Elem = T> + Data,
             {
                 ArrayBase(self.as_mut()).add_element_wise_assign(&ArrayBase(rhs.as_ref()), modulus);
@@ -25,7 +25,7 @@ macro_rules! impl_basic_operation_single_modulus {
             #[inline]
             pub fn sub_element_wise<M, A>(mut self, rhs: &$cipher<A>, modulus: M) -> Self
             where
-                M: FieldContext<T>,
+                M: primus_reduce::RingContext<T>,
                 A: RawData<Elem = T> + Data,
             {
                 ArrayBase(self.as_mut()).sub_element_wise_assign(&ArrayBase(rhs.as_ref()), modulus);
@@ -36,7 +36,7 @@ macro_rules! impl_basic_operation_single_modulus {
             #[inline]
             pub fn add_element_wise_assign<M, A>(&mut self, rhs: &$cipher<A>, modulus: M)
             where
-                M: FieldContext<T>,
+                M: primus_reduce::RingContext<T>,
                 A: RawData<Elem = T> + Data,
             {
                 ArrayBase(self.as_mut()).add_element_wise_assign(&ArrayBase(rhs.as_ref()), modulus);
@@ -46,7 +46,7 @@ macro_rules! impl_basic_operation_single_modulus {
             #[inline]
             pub fn sub_element_wise_assign<M, A>(&mut self, rhs: &$cipher<A>, modulus: M)
             where
-                M: FieldContext<T>,
+                M: primus_reduce::RingContext<T>,
                 A: RawData<Elem = T> + Data,
             {
                 ArrayBase(self.as_mut()).sub_element_wise_assign(&ArrayBase(rhs.as_ref()), modulus);
@@ -66,7 +66,7 @@ macro_rules! impl_basic_operation_single_modulus {
                 result: &mut $cipher<B>,
                 modulus: M,
             ) where
-                M: FieldContext<T>,
+                M: primus_reduce::RingContext<T>,
                 A: RawData<Elem = T> + Data,
                 B: RawData<Elem = T> + DataMut,
             {
@@ -85,7 +85,7 @@ macro_rules! impl_basic_operation_single_modulus {
                 result: &mut $cipher<B>,
                 modulus: M,
             ) where
-                M: FieldContext<T>,
+                M: primus_reduce::RingContext<T>,
                 A: RawData<Elem = T> + Data,
                 B: RawData<Elem = T> + DataMut,
             {

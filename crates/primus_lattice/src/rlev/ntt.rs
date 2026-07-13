@@ -2,7 +2,6 @@ use primus_data::{Data, DataMut, DataOwned, RawData};
 use primus_integer::FheUint;
 use primus_ntt::NttTable;
 use primus_poly::ArrayBase;
-use primus_reduce::FieldContext;
 
 #[allow(unused_imports)]
 use crate::rlwe::{NttRlwe, NttRlweIter, NttRlweIterMut};

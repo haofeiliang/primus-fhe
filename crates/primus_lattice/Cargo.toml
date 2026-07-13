@@ -7,6 +7,7 @@ edition = "2024"
 primus_data = { path = "../primus_data" }
 primus_integer = { path = "../primus_integer" }
 primus_reduce = { path = "../primus_reduce" }
+primus_modulus = { path = "../primus_modulus" }
 primus_modulo = { path = "../primus_modulo" }
 primus_factor = { path = "../primus_factor" }
 primus_distr = { path = "../primus_distr" }
@@ -29,6 +30,10 @@ rand = { workspace = true }
 
 [[bench]]
 name = "external_product"
+harness = false
+
+[[bench]]
+name = "cmux"
 harness = false
 
 [features]
