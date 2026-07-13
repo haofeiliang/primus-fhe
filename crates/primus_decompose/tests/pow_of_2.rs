@@ -4,7 +4,7 @@ mod tests {
     use primus_decompose::primitive::ApproxSignedBasis;
     use primus_modulus::PowOf2Modulus;
     use primus_reduce::{ReduceMulAdd, ReduceSub};
-    use rand::{RngExt, distr::Uniform};
+    use rand::{RngExt, SeedableRng, distr::Uniform, rngs::StdRng};
 
     type ValueT = u32;
     type SignedT = i64;
@@ -14,7 +14,7 @@ mod tests {
 
     #[test]
     fn test_pow_of_2_approx_signed_decompose() {
-        let rng = rand::rng();
+        let rng = StdRng::seed_from_u64(0x504f_5732);
 
         let modulus = <PowOf2Modulus<ValueT>>::with_mask(MODULUS_MINUS_ONE);
         let basis = ApproxSignedBasis::new(Some(1 << LOG_MODULUS), 6, None);

@@ -266,6 +266,9 @@ impl<T: FheUint> OnceSignedDecomposer<T> {
         decomposed_values: &mut [T],
         carries: &mut [bool],
     ) {
+        assert_eq!(values.len(), decomposed_values.len());
+        assert_eq!(values.len(), carries.len());
+
         for ((&value, decomposed_value), carry) in values.iter().zip(decomposed_values).zip(carries)
         {
             self.decompose_to(value, decomposed_value, carry);

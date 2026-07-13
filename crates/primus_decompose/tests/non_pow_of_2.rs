@@ -4,7 +4,7 @@ mod tests {
     use primus_decompose::primitive::ApproxSignedBasis;
     use primus_modulus::BarrettModulus;
     use primus_reduce::{ReduceAdd, ReduceMulAdd, ReduceSub};
-    use rand::{RngExt, distr::Uniform};
+    use rand::{RngExt, SeedableRng, distr::Uniform, rngs::StdRng};
 
     type ValueT = u32;
     type SignedT = i64;
@@ -105,7 +105,7 @@ mod tests {
 
     #[test]
     fn test_approx_signed_decompose() {
-        let mut rng = rand::rng();
+        let mut rng = StdRng::seed_from_u64(0x004e_4f4e_504f_5732);
         let modulus_value: ValueT = rng.random_range(512..(1 << 30));
         let modulus = <BarrettModulus<ValueT>>::new(modulus_value);
         let basis = ApproxSignedBasis::new(Some(modulus_value), 4, None);
@@ -190,7 +190,7 @@ mod tests {
     #[test]
     fn test_decompose_slice() {
         const N: usize = 32;
-        let mut rng = rand::rng();
+        let mut rng = StdRng::seed_from_u64(0x0053_4c49_4345);
         let modulus_value: ValueT = rng.random_range(128..(1 << 30));
         let modulus = <BarrettModulus<ValueT>>::new(modulus_value);
         let distr = Uniform::new(0, modulus_value).unwrap();
@@ -198,7 +198,7 @@ mod tests {
         let basis = ApproxSignedBasis::new(Some(modulus_value), 3, None);
         let differ_max = basis.approximate_error_bound();
 
-        let input: Vec<ValueT> = rand::rng().sample_iter(distr).take(N).collect();
+        let input: Vec<ValueT> = rng.sample_iter(distr).take(N).collect();
 
         let mut carries = vec![false; N];
         let mut adjust_input = input.clone();
@@ -223,11 +223,10 @@ mod tests {
 
         std::iter::zip(input, result).for_each(|(i, o)| {
             let difference = modulus.reduce_sub(i, o).min(modulus.reduce_sub(o, i));
-            if difference > differ_max {
-                println!("i ={}", i);
-                println!("o ={}", o);
-                println!("differ={}", difference);
-            }
+            assert!(
+                difference <= differ_max,
+                "input={i}, output={o}, difference={difference}, bound={differ_max}"
+            );
         });
     }
 }
