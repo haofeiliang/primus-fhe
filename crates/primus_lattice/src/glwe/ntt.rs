@@ -45,6 +45,32 @@ where
             poly.mul_assign(ntt_poly, modulus);
         });
     }
+
+    /// Performs `self += ntt_poly * rhs` component-wise.
+    ///
+    /// This is the NTT-domain multiply-accumulate used by the TFHE external
+    /// product hot loop.
+    #[inline]
+    pub fn add_mul_ntt_polynomial_assign<M, A, B>(
+        &mut self,
+        ntt_poly: &NttPolynomial<A>,
+        rhs: &NttGlwe<B>,
+        modulus: M,
+    ) where
+        M: FieldContext<T>,
+        A: RawData<Elem = T> + Data,
+        B: RawData<Elem = T> + Data,
+    {
+        let poly_length = ntt_poly.poly_length();
+        debug_assert_eq!(self.as_ref().len(), rhs.as_ref().len());
+        debug_assert_eq!(self.as_ref().len() % poly_length, 0);
+
+        self.iter_ntt_poly_mut(poly_length)
+            .zip(rhs.iter_ntt_poly(poly_length))
+            .for_each(|(mut accumulator, rhs)| {
+                accumulator.add_mul_assign(ntt_poly, &rhs, modulus);
+            });
+    }
 }
 
 impl<S, T> NttGlwe<S>

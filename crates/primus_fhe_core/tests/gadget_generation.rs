@@ -6,11 +6,11 @@ use primus_fhe_core::{
     GlweSecretKey, NttGadgetEncryptContext, NttGlweSecretKey, RingSecretKeyType,
 };
 use primus_lattice::{
-    context::tfhe::TfheFftContext,
+    context::tfhe::{TfheFftContext, TfheNttContext},
     ggsw::{FourierGgswOwned, NttGgsw},
     glev::{FourierGlevOwned, NttGlev},
-    glwe::{FourierGlweOwned, TorusGlwe},
-    tfhe::external_product::external_product_to,
+    glwe::{FourierGlweOwned, Glwe, NttGlwe, TorusGlwe},
+    tfhe::external_product::{external_product_to, ntt_external_product_to},
 };
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntt::{NttTable, UintNttTable};
@@ -125,8 +125,7 @@ fn fourier_glev_generation_and_ggsw_external_product() {
     input_fourier.write_torus_form(&mut input, &fft);
 
     let mut output: TorusGlwe<Vec<u32>> = TorusGlwe::zero(params.glwe_len());
-    let mut external_product_context =
-        TfheFftContext::new(POLY_LENGTH, fft.fourier_length(), DIMENSION);
+    let mut external_product_context = TfheFftContext::new(DIMENSION, POLY_LENGTH);
     external_product_to(
         &input,
         &ggsw,
@@ -134,7 +133,6 @@ fn fourier_glev_generation_and_ggsw_external_product() {
         params.basis(),
         &fft,
         &mut external_product_context,
-        DIMENSION,
     );
 
     let mut output_fourier = FourierGlweOwned::zero(params.fourier_glwe_len());
@@ -237,4 +235,26 @@ fn ntt_glev_and_ggsw_generation() {
             );
         }
     }
+
+    let plaintext_values: Vec<u32> = (0..POLY_LENGTH).map(|index| (index % 16) as u32).collect();
+    let plaintext = Polynomial::new(plaintext_values.clone());
+    let mut input_ntt: NttGlwe<Vec<u32>> = NttGlwe::zero(params.glwe_len());
+    secret_key.encrypt_to(&plaintext, &mut input_ntt, &glwe_params, &ntt, &mut rng);
+    let input = input_ntt.into_coeff_form(&ntt);
+    let mut output: Glwe<Vec<u32>> = Glwe::zero(params.glwe_len());
+    let mut external_product_context = TfheNttContext::new(DIMENSION, POLY_LENGTH);
+    ntt_external_product_to(
+        &input,
+        &ggsw,
+        &mut output,
+        params.basis(),
+        modulus,
+        &ntt,
+        &mut external_product_context,
+    );
+    let output_ntt = output.into_ntt_form(&ntt);
+    assert_eq!(
+        secret_key.decrypt(&output_ntt, &glwe_params, &ntt).as_ref(),
+        plaintext_values
+    );
 }

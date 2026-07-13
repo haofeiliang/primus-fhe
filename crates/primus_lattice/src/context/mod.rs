@@ -3,4 +3,4 @@ mod glev;
 pub mod tfhe;
 
 pub use glev::{DcrtGlevContext, DcrtGlevContextRefMut};
-pub use tfhe::TfheFftContext;
+pub use tfhe::{GlweSize, TfheFftContext, TfheNttContext};

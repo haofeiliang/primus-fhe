@@ -228,6 +228,12 @@ impl<T: FheUint> ApproxSignedBasis<T> {
         })
     }
 
+    /// Returns the explicit modulus, or `None` for the implicit native modulus.
+    #[inline]
+    pub fn modulus(&self) -> Option<T> {
+        self.modulus
+    }
+
     /// Checks whether the modulus of this [`ApproxSignedBasis<T>`] is power of 2.
     #[inline]
     pub fn modulus_is_power_of_2(&self) -> bool {

@@ -16,15 +16,7 @@ fn zero_fourier_ggsw_produces_zero() {
     let key =
         FourierGgswOwned::zero(component_count * level * component_count * fft.fourier_length());
     let mut output = Glwe::new(vec![u32::MAX; component_count * fft.poly_length()]);
-    let mut context = TfheFftContext::new(fft.poly_length(), fft.fourier_length(), dimension);
-    external_product_to(
-        &input,
-        &key,
-        &mut output,
-        &basis,
-        &fft,
-        &mut context,
-        dimension,
-    );
+    let mut context = TfheFftContext::new(dimension, fft.poly_length());
+    external_product_to(&input, &key, &mut output, &basis, &fft, &mut context);
     assert!(output.as_ref().iter().all(|x| *x == 0));
 }

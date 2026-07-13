@@ -18,7 +18,7 @@ fn external_product(c: &mut Criterion) {
         components * basis.decompose_length() * components * fft.fourier_length(),
     );
     let mut output = Glwe::new(vec![0u64; components * fft.poly_length()]);
-    let mut context = TfheFftContext::new(fft.poly_length(), fft.fourier_length(), dimension);
+    let mut context = TfheFftContext::new(dimension, fft.poly_length());
     c.bench_function("external_product/rustfft/n1024/k1/l4", |b| {
         b.iter(|| {
             external_product_to(
@@ -28,7 +28,6 @@ fn external_product(c: &mut Criterion) {
                 black_box(&basis),
                 black_box(&fft),
                 black_box(&mut context),
-                dimension,
             )
         });
     });
