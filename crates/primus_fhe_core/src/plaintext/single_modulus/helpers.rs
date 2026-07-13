@@ -52,20 +52,6 @@ where
 }
 
 #[inline]
-pub(super) fn lift_centered<T>(message: T, t: T) -> (T, bool)
-where
-    T: FheUint,
-{
-    let half = centered_half(t);
-
-    if message < half {
-        (message, false)
-    } else {
-        (t - message, true)
-    }
-}
-
-#[inline]
 pub(super) fn lift_centered_from_raw<T: FheUint>(message: T, t: T, half: T) -> (T, bool) {
     if message < half {
         (message, false)
