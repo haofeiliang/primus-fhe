@@ -4,7 +4,7 @@ use primus_decompose::primitive::ApproxSignedBasis;
 use primus_distr::DiscreteGaussian;
 use primus_factor::{FactorBase, ShoupFactor};
 use primus_integer::FheUint;
-use primus_reduce::FieldContext;
+use primus_reduce::{FieldContext, RingContext};
 use rand::distr::Uniform;
 
 use crate::{PlaintextCodec, RingSecretKeyType};
@@ -14,7 +14,7 @@ use crate::{PlaintextCodec, RingSecretKeyType};
 pub struct GlweParameters<T, M>
 where
     T: FheUint,
-    M: FieldContext<T>,
+    M: RingContext<T>,
 {
     /// The dimension, refers to **k** in the paper.
     dimension: usize,
@@ -29,7 +29,7 @@ where
     cipher_modulus: M,
     cipher_modulus_uniform_distr: Uniform<T>,
     delta: T,
-    delta_factor: ShoupFactor<T>,
+    delta_factor: Option<ShoupFactor<T>>,
     /// The distribution type of the secret key.
     secret_key_type: RingSecretKeyType,
     secret_key_distribution: Option<DiscreteGaussian<T>>,
@@ -40,7 +40,7 @@ where
 impl<T, M> GlweParameters<T, M>
 where
     T: FheUint,
-    M: FieldContext<T>,
+    M: RingContext<T>,
 {
     /// Creates a new [`GlweParameters<T, M>`].
     pub fn new(
@@ -57,18 +57,24 @@ where
             DiscreteGaussian::new(noise_standard_deviation, cipher_modulus_minus_one).unwrap();
 
         let cipher_modulus_uniform_distr = cipher_modulus.uniform_distribution();
-        let plaintext_codec = PlaintextCodec::new(plain_modulus_value, cipher_modulus.value());
+        let cipher_modulus_value = cipher_modulus.value();
+        let plaintext_codec = PlaintextCodec::new(plain_modulus_value, cipher_modulus_value);
 
-        let (mut delta, rem) = unsafe {
-            cipher_modulus
-                .value_unchecked()
-                .div_rem(plain_modulus_value)
+        let delta = match cipher_modulus_value {
+            Some(q) => {
+                let (mut delta, rem) = q.div_rem(plain_modulus_value);
+                if rem > (plain_modulus_value - T::ONE) / T::TWO {
+                    delta += T::ONE;
+                }
+                delta
+            }
+            None => {
+                // round(2^BITS / t), represented without materializing 2^BITS
+                T::div_wide(plain_modulus_value >> 1u32, T::ONE, plain_modulus_value)
+            }
         };
-        if rem > (plain_modulus_value - T::ONE) / T::TWO {
-            delta += T::ONE;
-        }
 
-        let delta_factor = ShoupFactor::new(delta, unsafe { cipher_modulus.value_unchecked() });
+        let delta_factor = cipher_modulus_value.map(|q| ShoupFactor::new(delta, q));
 
         let secret_key_distribution =
             if let RingSecretKeyType::Gaussian(standard_deviation) = secret_key_type {
@@ -124,7 +130,9 @@ where
     /// Returns the cipher modulus of this [`GlweParameters<T, M>`].
     #[inline]
     pub fn cipher_modulus_value(&self) -> T {
-        unsafe { self.cipher_modulus.value_unchecked() }
+        self.cipher_modulus
+            .value()
+            .expect("native cipher modulus has no representable modulus value")
     }
 
     /// Returns the cipher modulus minus one of this [`GlweParameters<T, M>`].
@@ -145,6 +153,7 @@ where
     /// Returns the delta factor of this [`GlweParameters<T, M>`].
     pub fn delta_factor(&self) -> ShoupFactor<T> {
         self.delta_factor
+            .expect("Shoup delta factor is unavailable for the native cipher modulus")
     }
 
     /// Returns the secret key type of this [`GlweParameters<T, M>`].

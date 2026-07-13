@@ -1,211 +1,377 @@
-//! Fourier-domain GLWE secret key for TFHE-style encryption.
-//!
-//! Encryption is performed in coefficient domain and then converted to
-//! Fourier domain for use in the TFHE external product.
+//! Native-torus Fourier-domain GLWE secret key with encryption and decryption.
+
+use core::marker::PhantomData;
 
 use primus_data::{Data, DataMut, RawData};
 use primus_fft::{Complex64, FftTable, TorusFftValue};
 use primus_integer::FheUint;
-use primus_ntt::NttTable;
-use primus_poly::Polynomial;
-use primus_reduce::FieldContext;
+use primus_modulus::NativeModulus;
+use primus_poly::{
+    FourierPolynomial, FourierPolynomialIter, FourierPolynomialOwned, Polynomial, PolynomialOwned,
+};
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
-use crate::{
-    FourierGlweCiphertext, GlweParameters, NttGlweCiphertext, PlaintextEmbedding, RingSecretKeyType,
-};
+use crate::{FourierGlweCiphertext, GlweParameters, PlaintextEmbedding, RingSecretKeyType};
 
 use super::GlweSecretKey;
 
-/// Fourier-domain GLWE secret key for TFHE operations.
+/// A native-torus GLWE secret key represented in the Fourier domain.
 ///
-/// Wraps a coefficient-domain [`GlweSecretKey`]. Encryption is performed
-/// in coefficient form and the result is FFT-converted to Fourier domain.
+/// Each coefficient-domain secret polynomial is transformed with
+/// [`FftTable::forward_as_integer`]. Ciphertext polynomials use torus-scaled
+/// Fourier values instead, so their pointwise product has the correct torus
+/// scale.
 #[derive(Clone)]
 pub struct FourierGlweSecretKey<T: FheUint> {
-    inner: GlweSecretKey<T>,
+    key: Vec<Complex64>,
+    poly_length: usize,
+    dimension: usize,
+    distr: RingSecretKeyType,
+    value_type: PhantomData<T>,
 }
 
 impl<T: FheUint> Zeroize for FourierGlweSecretKey<T> {
+    #[inline]
     fn zeroize(&mut self) {
-        self.inner.zeroize();
+        self.key.fill(Complex64::default());
     }
 }
 
 impl<T: FheUint> ZeroizeOnDrop for FourierGlweSecretKey<T> {}
 
 impl<T: FheUint> FourierGlweSecretKey<T> {
-    /// Creates a [`FourierGlweSecretKey`] from a coefficient-domain secret key.
+    /// Creates a Fourier-domain GLWE secret key from its raw Fourier values.
     #[inline]
-    pub fn new(inner: GlweSecretKey<T>) -> Self {
-        Self { inner }
-    }
-
-    /// Returns the inner coefficient-domain secret key.
-    #[inline]
-    pub fn inner(&self) -> &GlweSecretKey<T> {
-        &self.inner
-    }
-
-    /// Returns the dimension.
-    #[inline]
-    pub fn dimension(&self) -> usize {
-        self.inner.dimension
-    }
-
-    /// Returns the polynomial length.
-    #[inline]
-    pub fn poly_length(&self) -> usize {
-        self.inner.poly_length
-    }
-
-    /// Returns the distribution.
-    #[inline]
-    pub fn distr(&self) -> RingSecretKeyType {
-        self.inner.distr
-    }
-
-    /// Generates a new [`FourierGlweSecretKey<T>`] from parameters.
-    #[inline]
-    pub fn generate<R, M>(params: &GlweParameters<T, M>, rng: &mut R) -> Self
-    where
-        R: rand::Rng + rand::CryptoRng,
-        M: FieldContext<T>,
-    {
+    pub fn new(
+        key: Vec<Complex64>,
+        poly_length: usize,
+        dimension: usize,
+        distr: RingSecretKeyType,
+    ) -> Self {
+        assert!(poly_length.is_power_of_two());
+        assert!(poly_length >= 2);
+        assert_eq!(key.len(), dimension * (poly_length / 2));
         Self {
-            inner: GlweSecretKey::generate(params, rng),
+            key,
+            poly_length,
+            dimension,
+            distr,
+            value_type: PhantomData,
         }
     }
 
-    // -------------------------------------------------------------------------
-    // Encryption
-    // -------------------------------------------------------------------------
+    /// Returns the coefficient polynomial length.
+    #[inline]
+    pub fn poly_length(&self) -> usize {
+        self.poly_length
+    }
 
-    /// Encrypts a polynomial message into a Fourier-domain GLWE ciphertext.
-    ///
-    /// Encryption is performed in coefficient domain using NTT arithmetic,
-    /// then the result is FFT-converted to Fourier domain.
-    pub fn encrypt_inplace<M, NttTableT, FftTableT, R, A, B>(
-        &self,
-        msg: &Polynomial<A>,
-        result: &mut FourierGlweCiphertext<B>,
-        params: &GlweParameters<T, M>,
-        ntt_table: &NttTableT,
-        fft_table: &FftTableT,
-        rng: &mut R,
-    ) where
-        M: FieldContext<T>,
-        NttTableT: NttTable<ValueT = T>,
-        FftTableT: FftTable,
-        R: rand::Rng + rand::CryptoRng,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = Complex64> + DataMut,
+    /// Returns the GLWE dimension.
+    #[inline]
+    pub fn dimension(&self) -> usize {
+        self.dimension
+    }
+
+    /// Returns the secret-key distribution.
+    #[inline]
+    pub fn distr(&self) -> RingSecretKeyType {
+        self.distr
+    }
+
+    /// Iterates over the Fourier-domain secret polynomials.
+    #[inline]
+    pub fn iter(&self) -> FourierPolynomialIter<'_> {
+        FourierPolynomialIter::new(&self.key, self.poly_length / 2)
+    }
+
+    /// Converts a native coefficient-domain secret key to Fourier form.
+    pub fn from_coeff_secret_key<Table>(secret_key: &GlweSecretKey<T>, fft: &Table) -> Self
+    where
+        Table: FftTable,
         T: TorusFftValue,
     {
-        self.encrypt_inplace_with_embedding(
-            msg,
-            result,
-            params,
-            ntt_table,
-            fft_table,
-            rng,
-            PlaintextEmbedding::Unsigned,
+        assert_eq!(secret_key.poly_length, fft.poly_length());
+
+        let fourier_length = fft.fourier_length();
+        let mut key = vec![Complex64::default(); secret_key.dimension * fourier_length];
+        for (coeff, fourier) in secret_key
+            .key
+            .chunks_exact(secret_key.poly_length)
+            .zip(key.chunks_exact_mut(fourier_length))
+        {
+            fft.forward_as_integer(coeff, fourier);
+        }
+
+        Self::new(
+            key,
+            secret_key.poly_length,
+            secret_key.dimension,
+            secret_key.distr,
         )
     }
 
-    /// Encrypts using centered plaintext embedding.
-    pub fn encrypt_centered_inplace<M, NttTableT, FftTableT, R, A, B>(
+    /// Generates a native-torus coefficient key and converts it to Fourier form.
+    #[inline]
+    pub fn generate<R, Table>(
+        params: &GlweParameters<T, NativeModulus<T>>,
+        fft: &Table,
+        rng: &mut R,
+    ) -> Self
+    where
+        R: rand::Rng + rand::CryptoRng,
+        Table: FftTable,
+        T: TorusFftValue,
+    {
+        let coeff_sk = GlweSecretKey::generate(params, rng);
+        Self::from_coeff_secret_key(&coeff_sk, fft)
+    }
+
+    /// Computes `b - sum(a_i * s_i)` and writes the encoded torus phase in
+    /// coefficient form.
+    pub fn phase_to<Table, A, B>(
+        &self,
+        cipher: &FourierGlweCiphertext<A>,
+        result: &mut Polynomial<B>,
+        fft: &Table,
+        context: &mut FourierGlweDecryptContext,
+    ) where
+        Table: FftTable,
+        A: RawData<Elem = Complex64> + Data,
+        B: RawData<Elem = T> + DataMut,
+        T: TorusFftValue,
+    {
+        self.assert_fft_and_cipher_shape(cipher.as_ref().len(), fft);
+        assert_eq!(result.as_ref().len(), self.poly_length);
+
+        let fourier_length = fft.fourier_length();
+        let mid = self.dimension * fourier_length;
+        let (a, b) = cipher.a_b_slices(mid);
+        assert_eq!(context.phase.fourier_length(), fourier_length);
+        let phase = &mut context.phase;
+        phase.set_zero();
+
+        for (si, ai) in self.iter().zip(a.chunks_exact(fourier_length)) {
+            phase.add_mul_assign(&FourierPolynomial::new(ai), &si);
+        }
+        FourierPolynomial::new(b).sub_rev_assign(phase);
+        fft.backward_as_torus(phase.as_ref(), result.as_mut());
+    }
+
+    /// Encrypts a polynomial into a native-torus Fourier-domain GLWE ciphertext.
+    pub fn encrypt_to<Table, R, A, B>(
         &self,
         msg: &Polynomial<A>,
         result: &mut FourierGlweCiphertext<B>,
-        params: &GlweParameters<T, M>,
-        ntt_table: &NttTableT,
-        fft_table: &FftTableT,
+        params: &GlweParameters<T, NativeModulus<T>>,
+        fft: &Table,
         rng: &mut R,
+        context: &mut FourierGlweEncryptContext<T>,
     ) where
-        M: FieldContext<T>,
-        NttTableT: NttTable<ValueT = T>,
-        FftTableT: FftTable,
+        Table: FftTable,
         R: rand::Rng + rand::CryptoRng,
         A: RawData<Elem = T> + Data,
         B: RawData<Elem = Complex64> + DataMut,
         T: TorusFftValue,
     {
-        self.encrypt_inplace_with_embedding(
-            msg,
+        self.encrypt_to_with_embedding(
+            Some((msg.as_ref(), PlaintextEmbedding::Unsigned)),
             result,
             params,
-            ntt_table,
-            fft_table,
+            fft,
             rng,
-            PlaintextEmbedding::Centered,
-        )
+            context,
+        );
     }
 
-    /// Encrypts using the selected plaintext embedding, then FFT-converts.
-    fn encrypt_inplace_with_embedding<M, NttTableT, FftTableT, R, A, B>(
+    /// Encrypts a polynomial using centered plaintext embedding.
+    pub fn encrypt_centered_to<Table, R, A, B>(
         &self,
         msg: &Polynomial<A>,
         result: &mut FourierGlweCiphertext<B>,
-        params: &GlweParameters<T, M>,
-        ntt_table: &NttTableT,
-        fft_table: &FftTableT,
+        params: &GlweParameters<T, NativeModulus<T>>,
+        fft: &Table,
         rng: &mut R,
-        embedding: PlaintextEmbedding,
+        context: &mut FourierGlweEncryptContext<T>,
     ) where
-        M: FieldContext<T>,
-        NttTableT: NttTable<ValueT = T>,
-        FftTableT: FftTable,
+        Table: FftTable,
         R: rand::Rng + rand::CryptoRng,
         A: RawData<Elem = T> + Data,
         B: RawData<Elem = Complex64> + DataMut,
         T: TorusFftValue,
     {
-        use primus_lattice::glwe::Glwe;
-
-        let ntt_sk = super::NttGlweSecretKey::from_coeff_secret_key(&self.inner, ntt_table);
-
-        let glwe_len = (self.inner.dimension + 1) * self.inner.poly_length;
-        let mut ntt_ct: NttGlweCiphertext<Vec<T>> = NttGlweCiphertext::zero(glwe_len);
-
-        ntt_sk.encrypt_inplace_with_embedding(msg, &mut ntt_ct, params, ntt_table, rng, embedding);
-
-        // INTT: NTT domain → coefficient domain
-        let mut coeff_ct: Glwe<Vec<T>> = Glwe::zero(glwe_len);
-        ntt_ct.write_coeff_form(&mut coeff_ct, ntt_table);
-
-        // FFT: coefficient domain → Fourier domain
-        coeff_ct.write_fourier_form(result, fft_table);
+        self.encrypt_to_with_embedding(
+            Some((msg.as_ref(), PlaintextEmbedding::Centered)),
+            result,
+            params,
+            fft,
+            rng,
+            context,
+        );
     }
 
-    /// Encrypts zeros into a Fourier-domain ciphertext.
-    pub fn encrypt_zeros_inplace<M, NttTableT, FftTableT, R, B>(
+    fn encrypt_to_with_embedding<Table, R, B>(
         &self,
+        message: Option<(&[T], PlaintextEmbedding)>,
         result: &mut FourierGlweCiphertext<B>,
-        params: &GlweParameters<T, M>,
-        ntt_table: &NttTableT,
-        fft_table: &FftTableT,
+        params: &GlweParameters<T, NativeModulus<T>>,
+        fft: &Table,
         rng: &mut R,
+        context: &mut FourierGlweEncryptContext<T>,
     ) where
-        M: FieldContext<T>,
-        NttTableT: NttTable<ValueT = T>,
-        FftTableT: FftTable,
+        Table: FftTable,
         R: rand::Rng + rand::CryptoRng,
         B: RawData<Elem = Complex64> + DataMut,
         T: TorusFftValue,
     {
-        use primus_lattice::glwe::Glwe;
+        self.assert_parameter_shape(params);
+        self.assert_fft_and_cipher_shape(result.as_ref().len(), fft);
+        if let Some((message, _)) = message {
+            assert_eq!(message.len(), self.poly_length);
+        }
 
-        let ntt_sk = super::NttGlweSecretKey::from_coeff_secret_key(&self.inner, ntt_table);
+        let fourier_length = fft.fourier_length();
+        let mid = self.dimension * fourier_length;
+        let (a, b) = result.a_b_mut_slices(mid);
 
-        let glwe_len = (self.inner.dimension + 1) * self.inner.poly_length;
-        let mut ntt_ct: NttGlweCiphertext<Vec<T>> = NttGlweCiphertext::zero(glwe_len);
+        let coeff = context.coeff.as_mut();
+        assert_eq!(coeff.len(), self.poly_length);
+        primus_distr::sample_gaussian_values_to(coeff, params.noise_distribution(), rng);
+        if let Some((message, embedding)) = message {
+            params
+                .plaintext_codec()
+                .add_encode_slice_assign_with_delta(coeff, message, embedding);
+        }
+        fft.forward_as_torus(coeff, b);
 
-        ntt_sk.encrypt_zeros_inplace(&mut ntt_ct, params, ntt_table, rng);
+        let uniform = params.cipher_modulus_uniform_distr();
+        let mut b_poly = FourierPolynomial::new(b);
+        for (mut ai, si) in a
+            .chunks_exact_mut(fourier_length)
+            .map(FourierPolynomial::new)
+            .zip(self.iter())
+        {
+            primus_distr::sample_uniform_values_to(coeff, &uniform, rng);
+            fft.forward_as_torus(coeff, ai.as_mut_slice());
+            b_poly.add_mul_assign(&ai, &si);
+        }
+    }
 
-        let mut coeff_ct: Glwe<Vec<T>> = Glwe::zero(glwe_len);
-        ntt_ct.write_coeff_form(&mut coeff_ct, ntt_table);
+    /// Encrypts zero into a native-torus Fourier-domain GLWE ciphertext.
+    pub fn encrypt_zeros_to<Table, R, B>(
+        &self,
+        result: &mut FourierGlweCiphertext<B>,
+        params: &GlweParameters<T, NativeModulus<T>>,
+        fft: &Table,
+        rng: &mut R,
+        context: &mut FourierGlweEncryptContext<T>,
+    ) where
+        Table: FftTable,
+        R: rand::Rng + rand::CryptoRng,
+        B: RawData<Elem = Complex64> + DataMut,
+        T: TorusFftValue,
+    {
+        self.encrypt_to_with_embedding(None, result, params, fft, rng, context);
+    }
 
-        coeff_ct.write_fourier_form(result, fft_table);
+    /// Decrypts a native-torus Fourier-domain GLWE ciphertext.
+    pub fn decrypt<Table, A>(
+        &self,
+        cipher: &FourierGlweCiphertext<A>,
+        params: &GlweParameters<T, NativeModulus<T>>,
+        fft: &Table,
+        context: &mut FourierGlweDecryptContext,
+    ) -> PolynomialOwned<T>
+    where
+        Table: FftTable,
+        A: RawData<Elem = Complex64> + Data,
+        T: TorusFftValue,
+    {
+        let mut result = PolynomialOwned::zero(self.poly_length);
+        self.decrypt_to(cipher, &mut result, params, fft, context);
+        result
+    }
+
+    /// Decrypts into an existing plaintext polynomial.
+    pub fn decrypt_to<Table, A, B>(
+        &self,
+        cipher: &FourierGlweCiphertext<A>,
+        result: &mut Polynomial<B>,
+        params: &GlweParameters<T, NativeModulus<T>>,
+        fft: &Table,
+        context: &mut FourierGlweDecryptContext,
+    ) where
+        Table: FftTable,
+        A: RawData<Elem = Complex64> + Data,
+        B: RawData<Elem = T> + DataMut,
+        T: TorusFftValue,
+    {
+        self.assert_parameter_shape(params);
+        self.phase_to(cipher, result, fft, context);
+        params
+            .plaintext_codec()
+            .decode_slice_inplace(result.as_mut());
+    }
+
+    #[inline]
+    fn assert_parameter_shape(&self, params: &GlweParameters<T, NativeModulus<T>>) {
+        assert_eq!(params.poly_length(), self.poly_length);
+        assert_eq!(params.dimension(), self.dimension);
+        assert_eq!(params.secret_key_type(), self.distr);
+    }
+
+    #[inline]
+    fn assert_fft_and_cipher_shape<Table: FftTable>(&self, cipher_len: usize, fft: &Table) {
+        assert_eq!(fft.poly_length(), self.poly_length);
+        assert_eq!(cipher_len, (self.dimension + 1) * fft.fourier_length());
     }
 }
+
+/// Reusable coefficient-domain workspace for Fourier GLWE encryption.
+pub struct FourierGlweEncryptContext<T: FheUint> {
+    coeff: PolynomialOwned<T>,
+}
+
+impl<T: FheUint> FourierGlweEncryptContext<T> {
+    /// Creates an encryption workspace for coefficient polynomials of length `poly_length`.
+    #[inline]
+    pub fn new(poly_length: usize) -> Self {
+        Self {
+            coeff: PolynomialOwned::zero(poly_length),
+        }
+    }
+}
+
+impl<T: FheUint> Zeroize for FourierGlweEncryptContext<T> {
+    #[inline]
+    fn zeroize(&mut self) {
+        self.coeff.as_mut().fill(T::ZERO);
+    }
+}
+
+impl<T: FheUint> ZeroizeOnDrop for FourierGlweEncryptContext<T> {}
+
+/// Reusable Fourier-domain workspace for Fourier GLWE decryption.
+pub struct FourierGlweDecryptContext {
+    phase: FourierPolynomialOwned,
+}
+
+impl FourierGlweDecryptContext {
+    /// Creates a decryption workspace for coefficient polynomials of length `poly_length`.
+    #[inline]
+    pub fn new(poly_length: usize) -> Self {
+        assert!(poly_length.is_power_of_two());
+        assert!(poly_length >= 2);
+        Self {
+            phase: FourierPolynomialOwned::zero(poly_length / 2),
+        }
+    }
+}
+
+impl Zeroize for FourierGlweDecryptContext {
+    #[inline]
+    fn zeroize(&mut self) {
+        self.phase.as_mut().fill(Complex64::default());
+    }
+}
+
+impl ZeroizeOnDrop for FourierGlweDecryptContext {}

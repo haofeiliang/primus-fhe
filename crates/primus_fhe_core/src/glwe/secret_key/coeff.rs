@@ -2,7 +2,7 @@
 
 use primus_integer::FheUint;
 use primus_poly::PolynomialOwned;
-use primus_reduce::FieldContext;
+use primus_reduce::RingContext;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::{GlweParameters, RingSecretKeyType};
@@ -66,7 +66,7 @@ impl<T: FheUint> GlweSecretKey<T> {
     pub fn generate<R, M>(params: &GlweParameters<T, M>, rng: &mut R) -> Self
     where
         R: rand::Rng + rand::CryptoRng,
-        M: FieldContext<T>,
+        M: RingContext<T>,
     {
         let dimension = params.dimension();
         let poly_length = params.poly_length();
