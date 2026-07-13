@@ -108,7 +108,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
     }
 
     /// Performs `b - ∑ a_i * s_i` (phase), leaving result in coefficient domain.
-    pub fn phase_inplace<Table, M, S>(
+    pub fn phase_to<Table, M, S>(
         &self,
         cipher: &NttGlweCiphertext<S>,
         result: &mut PolynomialOwned<T>,
@@ -138,7 +138,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
     // -------------------------------------------------------------------------
 
     /// Encrypts a polynomial message into an NTT-domain GLWE ciphertext.
-    pub fn encrypt_inplace<M, Table, R, A, B>(
+    pub fn encrypt_to<M, Table, R, A, B>(
         &self,
         msg: &Polynomial<A>,
         result: &mut NttGlweCiphertext<B>,
@@ -152,7 +152,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         A: RawData<Elem = T> + Data,
         B: RawData<Elem = T> + DataMut,
     {
-        self.encrypt_inplace_with_embedding(
+        self.encrypt_to_with_embedding(
             msg,
             result,
             params,
@@ -163,7 +163,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
     }
 
     /// Encrypts a polynomial using centered plaintext embedding.
-    pub fn encrypt_centered_inplace<M, Table, R, A, B>(
+    pub fn encrypt_centered_to<M, Table, R, A, B>(
         &self,
         msg: &Polynomial<A>,
         result: &mut NttGlweCiphertext<B>,
@@ -177,7 +177,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         A: RawData<Elem = T> + Data,
         B: RawData<Elem = T> + DataMut,
     {
-        self.encrypt_inplace_with_embedding(
+        self.encrypt_to_with_embedding(
             msg,
             result,
             params,
@@ -188,7 +188,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
     }
 
     /// Encrypts a polynomial using the selected plaintext embedding.
-    pub fn encrypt_inplace_with_embedding<M, Table, R, A, B>(
+    pub fn encrypt_to_with_embedding<M, Table, R, A, B>(
         &self,
         msg: &Polynomial<A>,
         result: &mut NttGlweCiphertext<B>,
@@ -255,12 +255,12 @@ impl<T: FheUint> NttGlweSecretKey<T> {
     {
         let len = (self.dimension + 1) * self.poly_length;
         let mut result: NttGlweCiphertext<Vec<T>> = NttGlweCiphertext::zero(len);
-        self.encrypt_zeros_inplace(&mut result, params, ntt_table, rng);
+        self.encrypt_zeros_to(&mut result, params, ntt_table, rng);
         result
     }
 
     /// Encrypts zeros in-place.
-    pub fn encrypt_zeros_inplace<M, Table, R, A>(
+    pub fn encrypt_zeros_to<M, Table, R, A>(
         &self,
         result: &mut NttGlweCiphertext<A>,
         params: &GlweParameters<T, M>,
@@ -305,11 +305,11 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         A: RawData<Elem = T> + Data,
     {
         let mut result = PolynomialOwned::zero(self.poly_length);
-        self.decrypt_inplace(cipher, &mut result, params, ntt_table);
+        self.decrypt_to(cipher, &mut result, params, ntt_table);
         result
     }
 
-    pub fn decrypt_inplace<M, Table, A, B>(
+    pub fn decrypt_to<M, Table, A, B>(
         &self,
         cipher: &NttGlweCiphertext<A>,
         result: &mut Polynomial<B>,
