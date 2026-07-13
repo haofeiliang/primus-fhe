@@ -60,9 +60,7 @@ impl<T: FheUint> NtruSecretKey<T> {
     {
         let key = match distr {
             RingSecretKeyType::Binary => PolynomialOwned::random_binary(poly_length, rng),
-            RingSecretKeyType::Ternary => {
-                PolynomialOwned::random_ternary(T::MAX, poly_length, rng)
-            }
+            RingSecretKeyType::Ternary => PolynomialOwned::random_ternary(T::MAX, poly_length, rng),
             RingSecretKeyType::Gaussian(_std_dev) => {
                 // NTRU keys are typically binary/ternary; Gaussian is unusual but supported
                 PolynomialOwned::random_binary(poly_length, rng)

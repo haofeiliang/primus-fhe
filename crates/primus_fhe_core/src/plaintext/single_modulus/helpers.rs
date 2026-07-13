@@ -2,7 +2,7 @@ use primus_integer::FheUint;
 
 /// Computes `round(lhs * rhs / divisor)`.
 #[inline]
-pub(super) fn div_round<T>(lhs: T, rhs: T, divisor: T) -> T
+pub(super) fn mul_div_round<T>(lhs: T, rhs: T, divisor: T) -> T
 where
     T: FheUint,
 {
@@ -12,7 +12,7 @@ where
 
 /// Computes `round(lhs * rhs / divisor)` when the product fits in one limb.
 #[inline]
-pub(super) fn div_round_narrow<T>(lhs: T, rhs: T, divisor: T) -> T
+pub(super) fn narrow_mul_div_round<T>(lhs: T, rhs: T, divisor: T) -> T
 where
     T: FheUint,
 {

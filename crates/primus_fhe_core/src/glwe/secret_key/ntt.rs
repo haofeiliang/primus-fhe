@@ -94,7 +94,11 @@ impl<T: FheUint> NttGlweSecretKey<T> {
 
     /// Generates a new [`NttGlweSecretKey<T>`] from parameters.
     #[inline]
-    pub fn generate<R, M>(params: &GlweParameters<T, M>, ntt_table: &impl NttTable<ValueT = T>, rng: &mut R) -> Self
+    pub fn generate<R, M>(
+        params: &GlweParameters<T, M>,
+        ntt_table: &impl NttTable<ValueT = T>,
+        rng: &mut R,
+    ) -> Self
     where
         R: rand::Rng + rand::CryptoRng,
         M: FieldContext<T>,
@@ -228,11 +232,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         ntt_table.transform_slice(b);
 
         // Sample uniform a_i
-        primus_distr::sample_uniform_values_to(
-            a,
-            &params.cipher_modulus_uniform_distr(),
-            rng,
-        );
+        primus_distr::sample_uniform_values_to(a, &params.cipher_modulus_uniform_distr(), rng);
 
         // b += sum a_i * s_i (pointwise in NTT domain)
         let mut b_ntt = NttPolynomial(b);
@@ -281,11 +281,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         primus_distr::sample_gaussian_values_to(b, params.noise_distribution(), rng);
         ntt_table.transform_slice(b);
 
-        primus_distr::sample_uniform_values_to(
-            a,
-            &params.cipher_modulus_uniform_distr(),
-            rng,
-        );
+        primus_distr::sample_uniform_values_to(a, &params.cipher_modulus_uniform_distr(), rng);
 
         let mut b_ntt = NttPolynomial(b);
         for (si, ai) in self.iter().zip(a.chunks_exact(poly_length)) {

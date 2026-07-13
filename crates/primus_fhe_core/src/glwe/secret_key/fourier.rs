@@ -11,7 +11,9 @@ use primus_poly::Polynomial;
 use primus_reduce::FieldContext;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
-use crate::{FourierGlweCiphertext, GlweParameters, NttGlweCiphertext, PlaintextEmbedding, RingSecretKeyType};
+use crate::{
+    FourierGlweCiphertext, GlweParameters, NttGlweCiphertext, PlaintextEmbedding, RingSecretKeyType,
+};
 
 use super::GlweSecretKey;
 

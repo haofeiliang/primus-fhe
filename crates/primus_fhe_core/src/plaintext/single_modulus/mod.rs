@@ -4,7 +4,7 @@ use primus_integer::FheUint;
 mod helpers;
 
 use helpers::{
-    centered_half, checked_message, div_round, div_round_narrow, lift_centered,
+    centered_half, checked_message, mul_div_round, narrow_mul_div_round, lift_centered,
     lift_centered_from_raw, try_from_decoded,
 };
 
@@ -142,7 +142,7 @@ impl<T: FheUint> PlaintextCodec<T> {
                     }
                     Self::Scaled { t, q, .. } => {
                         assert!(magnitude < t);
-                        let encoded = div_round(magnitude, q, t);
+                        let encoded = mul_div_round(magnitude, q, t);
                         if is_negative {
                             if encoded.is_zero() {
                                 T::ZERO
@@ -155,7 +155,7 @@ impl<T: FheUint> PlaintextCodec<T> {
                     }
                     Self::ScaledNarrow { t, q, .. } => {
                         assert!(magnitude < t);
-                        let encoded = div_round_narrow(magnitude, q, t);
+                        let encoded = narrow_mul_div_round(magnitude, q, t);
                         if is_negative {
                             if encoded.is_zero() {
                                 T::ZERO
@@ -236,7 +236,7 @@ impl<T: FheUint> PlaintextCodec<T> {
                             let (magnitude, is_negative) =
                                 lift_centered_from_raw(*message, t, half);
                             assert!(magnitude < t);
-                            let encoded = div_round(magnitude, q, t);
+                            let encoded = mul_div_round(magnitude, q, t);
                             *output = if is_negative {
                                 if encoded.is_zero() {
                                     T::ZERO
@@ -253,7 +253,7 @@ impl<T: FheUint> PlaintextCodec<T> {
                             let (magnitude, is_negative) =
                                 lift_centered_from_raw(*message, t, half);
                             assert!(magnitude < t);
-                            let encoded = div_round_narrow(magnitude, q, t);
+                            let encoded = narrow_mul_div_round(magnitude, q, t);
                             *output = if is_negative {
                                 if encoded.is_zero() {
                                     T::ZERO
@@ -329,7 +329,7 @@ impl<T: FheUint> PlaintextCodec<T> {
                         for value in values.iter_mut() {
                             let (magnitude, is_negative) = lift_centered_from_raw(*value, t, half);
                             assert!(magnitude < t);
-                            let encoded = div_round(magnitude, q, t);
+                            let encoded = mul_div_round(magnitude, q, t);
                             *value = if is_negative {
                                 if encoded.is_zero() {
                                     T::ZERO
@@ -345,7 +345,7 @@ impl<T: FheUint> PlaintextCodec<T> {
                         for value in values.iter_mut() {
                             let (magnitude, is_negative) = lift_centered_from_raw(*value, t, half);
                             assert!(magnitude < t);
-                            let encoded = div_round_narrow(magnitude, q, t);
+                            let encoded = narrow_mul_div_round(magnitude, q, t);
                             *value = if is_negative {
                                 if encoded.is_zero() {
                                     T::ZERO
@@ -563,14 +563,14 @@ impl<T: FheUint> PlaintextCodec<T> {
                     for (acc, &message) in accumulator.iter_mut().zip(messages) {
                         let v: T = checked_message(message);
                         assert!(v < t);
-                        Self::reduce_add_mod(acc, div_round(v, q, t), q);
+                        Self::reduce_add_mod(acc, mul_div_round(v, q, t), q);
                     }
                 }
                 Self::ScaledNarrow { t, q, .. } => {
                     for (acc, &message) in accumulator.iter_mut().zip(messages) {
                         let v: T = checked_message(message);
                         assert!(v < t);
-                        Self::reduce_add_mod(acc, div_round_narrow(v, q, t), q);
+                        Self::reduce_add_mod(acc, narrow_mul_div_round(v, q, t), q);
                     }
                 }
             },
@@ -643,7 +643,7 @@ impl<T: FheUint> PlaintextCodec<T> {
                             let (magnitude, is_negative) = lift_centered_from_raw(v, t, half);
                             let encoded = {
                                 assert!(magnitude < t);
-                                div_round(magnitude, q, t)
+                                mul_div_round(magnitude, q, t)
                             };
                             let encoded = if is_negative {
                                 if encoded.is_zero() {
@@ -663,7 +663,7 @@ impl<T: FheUint> PlaintextCodec<T> {
                             let (magnitude, is_negative) = lift_centered_from_raw(v, t, half);
                             let encoded = {
                                 assert!(magnitude < t);
-                                div_round_narrow(magnitude, q, t)
+                                narrow_mul_div_round(magnitude, q, t)
                             };
                             let encoded = if is_negative {
                                 if encoded.is_zero() {
@@ -766,11 +766,11 @@ impl<T: FheUint> PlaintextCodec<T> {
             }
             Self::Scaled { t, q, .. } => {
                 assert!(message < t);
-                div_round(message, q, t)
+                mul_div_round(message, q, t)
             }
             Self::ScaledNarrow { t, q, .. } => {
                 assert!(message < t);
-                div_round_narrow(message, q, t)
+                narrow_mul_div_round(message, q, t)
             }
         }
     }
@@ -798,13 +798,13 @@ impl<T: FheUint> PlaintextCodec<T> {
             Self::Scaled { t, q, .. } => {
                 for (message, output) in messages.iter().zip(output) {
                     assert!(*message < t);
-                    *output = div_round(*message, q, t);
+                    *output = mul_div_round(*message, q, t);
                 }
             }
             Self::ScaledNarrow { t, q, .. } => {
                 for (message, output) in messages.iter().zip(output) {
                     assert!(*message < t);
-                    *output = div_round_narrow(*message, q, t);
+                    *output = narrow_mul_div_round(*message, q, t);
                 }
             }
         }
@@ -833,13 +833,13 @@ impl<T: FheUint> PlaintextCodec<T> {
             Self::Scaled { t, q, .. } => {
                 for value in values.iter_mut() {
                     assert!(*value < t);
-                    *value = div_round(*value, q, t);
+                    *value = mul_div_round(*value, q, t);
                 }
             }
             Self::ScaledNarrow { t, q, .. } => {
                 for value in values.iter_mut() {
                     assert!(*value < t);
-                    *value = div_round_narrow(*value, q, t);
+                    *value = narrow_mul_div_round(*value, q, t);
                 }
             }
         }
@@ -868,7 +868,7 @@ impl<T: FheUint> PlaintextCodec<T> {
                 decoded
             }
             Self::Scaled { t, q, .. } => {
-                let mut decoded = div_round(value, t, q);
+                let mut decoded = mul_div_round(value, t, q);
                 if decoded >= t {
                     decoded -= t;
                 }
@@ -876,7 +876,7 @@ impl<T: FheUint> PlaintextCodec<T> {
             }
             Self::ScaledNarrow { t, q, .. } => {
                 debug_assert!(value <= q);
-                let mut decoded = div_round_narrow(value, t, q);
+                let mut decoded = narrow_mul_div_round(value, t, q);
                 if decoded >= t {
                     decoded -= t;
                 }
@@ -912,7 +912,7 @@ impl<T: FheUint> PlaintextCodec<T> {
             }
             Self::Scaled { t, q, .. } => {
                 for value in values {
-                    let mut decoded = div_round(*value, t, q);
+                    let mut decoded = mul_div_round(*value, t, q);
                     if decoded >= t {
                         decoded -= t;
                     }
@@ -922,7 +922,7 @@ impl<T: FheUint> PlaintextCodec<T> {
             Self::ScaledNarrow { t, q, .. } => {
                 for value in values {
                     debug_assert!(*value <= q);
-                    let mut decoded = div_round_narrow(*value, t, q);
+                    let mut decoded = narrow_mul_div_round(*value, t, q);
                     if decoded >= t {
                         decoded -= t;
                     }
@@ -962,7 +962,7 @@ impl<T: FheUint> PlaintextCodec<T> {
             }
             Self::Scaled { t, q, .. } => {
                 for (&value, output) in input.iter().zip(output) {
-                    let mut decoded = div_round(value, t, q);
+                    let mut decoded = mul_div_round(value, t, q);
                     if decoded >= t {
                         decoded -= t;
                     }
@@ -972,7 +972,7 @@ impl<T: FheUint> PlaintextCodec<T> {
             Self::ScaledNarrow { t, q, .. } => {
                 for (&value, output) in input.iter().zip(output) {
                     debug_assert!(value <= q);
-                    let mut decoded = div_round_narrow(value, t, q);
+                    let mut decoded = narrow_mul_div_round(value, t, q);
                     if decoded >= t {
                         decoded -= t;
                     }
