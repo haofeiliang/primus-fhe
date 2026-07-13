@@ -4,7 +4,7 @@ use primus_decompose::primitive::ApproxSignedBasis;
 use primus_distr::DiscreteGaussian;
 use primus_factor::{FactorBase, ShoupFactor};
 use primus_integer::FheUint;
-use primus_reduce::{FieldContext, RingContext};
+use primus_reduce::RingContext;
 use rand::distr::Uniform;
 
 use crate::{PlaintextCodec, RingSecretKeyType};
@@ -187,20 +187,9 @@ where
 pub struct GlevParameters<T, M>
 where
     T: FheUint,
-    M: FieldContext<T>,
+    M: RingContext<T>,
 {
-    /// The dimension, refers to **k** in the paper.
-    dimension: usize,
-    /// The dimension, refers to **N** in the paper.
-    poly_length: usize,
-    /// cipher modulus minus one, refers to **Q-1**.
-    cipher_modulus_minus_one: T,
-    /// The modulus, refers to **Q** in the paper.
-    cipher_modulus: M,
-    /// The distribution type of the secret key.
-    secret_key_type: RingSecretKeyType,
-    /// The noise's distribution.
-    noise_distribution: DiscreteGaussian<T>,
+    glwe_params: GlweParameters<T, M>,
     /// Decompose basis for `Q`.
     basis: ApproxSignedBasis<T>,
 }
@@ -208,77 +197,108 @@ where
 impl<T, M> GlevParameters<T, M>
 where
     T: FheUint,
-    M: FieldContext<T>,
+    M: RingContext<T>,
 {
     /// Creates a new [`GlevParameters<T, M>`].
     #[inline]
-    pub fn new(
-        dimension: usize,
-        poly_length: usize,
-        cipher_modulus: M,
-        secret_key_type: RingSecretKeyType,
-        noise_standard_deviation: f64,
+    pub fn new(glwe_params: GlweParameters<T, M>, basis: ApproxSignedBasis<T>) -> Self {
+        Self { glwe_params, basis }
+    }
+
+    /// Creates GLev/GGSW parameters from matching GLWE parameters.
+    #[inline]
+    pub fn with_glwe_params(
+        glwe_params: &GlweParameters<T, M>,
         basis: ApproxSignedBasis<T>,
     ) -> Self {
-        let cipher_modulus_minus_one = cipher_modulus.minus_one();
+        Self::new(glwe_params.clone(), basis)
+    }
 
-        let noise_distribution =
-            DiscreteGaussian::new(noise_standard_deviation, cipher_modulus_minus_one).unwrap();
-
-        Self {
-            dimension,
-            poly_length,
-            cipher_modulus_minus_one,
-            cipher_modulus,
-            secret_key_type,
-            basis,
-            noise_distribution,
-        }
+    /// Returns the underlying GLWE parameters.
+    #[inline]
+    pub fn glwe_params(&self) -> &GlweParameters<T, M> {
+        &self.glwe_params
     }
 
     /// Returns the dimension of this [`GlevParameters<T, M>`].
     #[inline]
     pub fn dimension(&self) -> usize {
-        self.dimension
+        self.glwe_params.dimension()
     }
 
     /// Returns the poly length of this [`GlevParameters<T, M>`].
     #[inline]
     pub fn poly_length(&self) -> usize {
-        self.poly_length
+        self.glwe_params.poly_length()
     }
 
     /// Returns the cipher modulus minus one of this [`GlevParameters<T, M>`].
     pub fn cipher_modulus_minus_one(&self) -> T {
-        self.cipher_modulus_minus_one
+        self.glwe_params.cipher_modulus_minus_one()
     }
 
     /// Returns the modulus of this [`GlevParameters<T, M>`].
     #[inline]
     pub fn cipher_modulus(&self) -> M {
-        self.cipher_modulus
+        self.glwe_params.cipher_modulus()
     }
 
     /// Returns the secret key type of this [`GlevParameters<T, M>`].
     pub fn secret_key_type(&self) -> RingSecretKeyType {
-        self.secret_key_type
+        self.glwe_params.secret_key_type()
     }
 
     /// Returns a reference to the noise distribution of this [`GlevParameters<T, M>`].
     #[inline]
     pub fn noise_distribution(&self) -> &DiscreteGaussian<T> {
-        &self.noise_distribution
+        self.glwe_params.noise_distribution()
     }
 
     /// Returns the noise standard deviation of this [`GlevParameters<T, M>`].
     pub fn noise_standard_deviation(&self) -> f64 {
-        self.noise_distribution.standard_deviation()
+        self.glwe_params.noise_distribution().standard_deviation()
     }
 
     /// Returns a reference to the basis of this [`GlevParameters<T, M>`].
     #[inline]
     pub fn basis(&self) -> &ApproxSignedBasis<T> {
         &self.basis
+    }
+
+    /// Returns the number of values in one coefficient/NTT-domain GLWE ciphertext.
+    #[inline]
+    pub fn glwe_len(&self) -> usize {
+        (self.dimension() + 1) * self.poly_length()
+    }
+
+    /// Returns the number of values in one coefficient/NTT-domain GLev ciphertext.
+    #[inline]
+    pub fn glev_len(&self) -> usize {
+        self.basis.decompose_length() * self.glwe_len()
+    }
+
+    /// Returns the number of values in one coefficient/NTT-domain GGSW ciphertext.
+    #[inline]
+    pub fn ggsw_len(&self) -> usize {
+        (self.dimension() + 1) * self.glev_len()
+    }
+
+    /// Returns the number of complex values in one Fourier-domain GLWE ciphertext.
+    #[inline]
+    pub fn fourier_glwe_len(&self) -> usize {
+        (self.dimension() + 1) * (self.poly_length() / 2)
+    }
+
+    /// Returns the number of complex values in one Fourier-domain GLev ciphertext.
+    #[inline]
+    pub fn fourier_glev_len(&self) -> usize {
+        self.basis.decompose_length() * self.fourier_glwe_len()
+    }
+
+    /// Returns the number of complex values in one Fourier-domain GGSW ciphertext.
+    #[inline]
+    pub fn fourier_ggsw_len(&self) -> usize {
+        (self.dimension() + 1) * self.fourier_glev_len()
     }
 }
 

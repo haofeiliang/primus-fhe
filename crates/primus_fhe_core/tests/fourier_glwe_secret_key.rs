@@ -23,7 +23,11 @@ where
         .collect();
     let message = Polynomial::new(messages.clone());
 
-    for secret_key_type in [RingSecretKeyType::Binary, RingSecretKeyType::Ternary] {
+    for secret_key_type in [
+        RingSecretKeyType::Binary,
+        RingSecretKeyType::Ternary,
+        RingSecretKeyType::Gaussian(3.2),
+    ] {
         let params = GlweParameters::new(
             DIMENSION,
             POLY_LENGTH,

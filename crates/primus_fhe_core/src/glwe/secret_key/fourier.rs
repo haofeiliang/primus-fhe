@@ -149,9 +149,12 @@ impl<T: FheUint> FourierGlweSecretKey<T> {
         let (a, b) = cipher.a_b_slices(mid);
         assert_eq!(context.phase.fourier_length(), fourier_length);
         let phase = &mut context.phase;
-        phase.set_zero();
-
-        for (si, ai) in self.iter().zip(a.chunks_exact(fourier_length)) {
+        let mut secret = self.iter();
+        let mut mask = a.chunks_exact(fourier_length);
+        let si = secret.next().expect("GLWE dimension must be non-zero");
+        let ai = mask.next().expect("GLWE ciphertext mask is missing");
+        FourierPolynomial::new(ai).mul_to(&si, phase);
+        for (si, ai) in secret.zip(mask) {
             phase.add_mul_assign(&FourierPolynomial::new(ai), &si);
         }
         FourierPolynomial::new(b).sub_rev_assign(phase);
@@ -292,6 +295,24 @@ impl<T: FheUint> FourierGlweSecretKey<T> {
     }
 
     /// Encrypts zero into a native-torus Fourier-domain GLWE ciphertext.
+    pub fn encrypt_zeros<Table, R>(
+        &self,
+        params: &GlweParameters<T, NativeModulus<T>>,
+        fft: &Table,
+        rng: &mut R,
+        context: &mut FourierGlweEncryptContext<T>,
+    ) -> FourierGlweCiphertext<Vec<Complex64>>
+    where
+        Table: FftTable,
+        R: rand::Rng + rand::CryptoRng,
+        T: TorusFftValue,
+    {
+        let mut result = FourierGlweCiphertext::zero((self.dimension + 1) * fft.fourier_length());
+        self.encrypt_zeros_to(&mut result, params, fft, rng, context);
+        result
+    }
+
+    /// Encrypts zero into an existing native-torus Fourier-domain GLWE ciphertext.
     pub fn encrypt_zeros_to<Table, R, B>(
         &self,
         result: &mut FourierGlweCiphertext<B>,
@@ -393,6 +414,8 @@ impl<T: FheUint> FourierGlweEncryptContext<T> {
     /// Creates an encryption workspace for coefficient polynomials of length `poly_length`.
     #[inline]
     pub fn new(poly_length: usize) -> Self {
+        assert!(poly_length.is_power_of_two());
+        assert!(poly_length >= 2);
         Self {
             coeff: PolynomialOwned::zero(poly_length),
         }
