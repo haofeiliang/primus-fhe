@@ -14,6 +14,15 @@ pub enum TfheEvaluationError {
         actual: usize,
     },
 
+    /// The output ciphertext has an unexpected LWE dimension.
+    #[error("output LWE dimension mismatch: expected {expected}, got {actual}")]
+    OutputDimensionMismatch {
+        /// Dimension required by the evaluator.
+        expected: usize,
+        /// Dimension carried by the output ciphertext.
+        actual: usize,
+    },
+
     /// The lookup-table accumulator has an unexpected coefficient count.
     #[error("lookup-table length mismatch: expected {expected}, got {actual}")]
     LookupTableLengthMismatch {

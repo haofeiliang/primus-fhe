@@ -5,16 +5,28 @@ use primus_fhe_core::{
 use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, U32NttTable, U64NttTable, UintNttTable};
 use primus_tfhe_glwe_ntt::{
-    Decryptor, Encryptor, Evaluator, KeyGenerator, TfheContext, TfheContextError, TfheParameters,
+    Decryptor, Encryptor, Evaluator, KeyGenerator, TfheClientError, TfheContext, TfheContextError,
+    TfheParameters,
 };
 
 const POLY_LENGTH: usize = 256;
 const MODULUS: u32 = 132_120_577;
 
 fn parameters_u32() -> TfheParameters<u32> {
+    parameters_u32_with_plain_modulus(4)
+}
+
+fn parameters_u32_with_plain_modulus(plain_modulus: u32) -> TfheParameters<u32> {
     let modulus = BarrettModulus::new(MODULUS);
-    let lwe = LweParameters::new(4, 4, modulus, LweSecretKeyType::Binary, 0.7);
-    let glwe = GlweParameters::new(1, POLY_LENGTH, 4, modulus, RingSecretKeyType::Binary, 0.7);
+    let lwe = LweParameters::new(4, plain_modulus, modulus, LweSecretKeyType::Binary, 0.7);
+    let glwe = GlweParameters::new(
+        1,
+        POLY_LENGTH,
+        plain_modulus,
+        modulus,
+        RingSecretKeyType::Binary,
+        0.7,
+    );
     let bootstrapping =
         GgswParameters::with_glwe_params(&glwe, ApproxSignedBasis::new(Some(MODULUS), 8, Some(3)));
     TfheParameters::with_key_switching_basis(
@@ -207,4 +219,35 @@ fn evaluates_a_complete_programmable_bootstrap_pipeline() {
         let output = evaluator.apply_lookup_table(&input, &lookup_table).unwrap();
         assert_eq!(decryptor.decrypt::<u32>(&output).unwrap(), expected);
     }
+
+    let input = encryptor.encrypt(1u32, &mut rng).unwrap();
+    let mut output = input.clone();
+    evaluator
+        .apply_lookup_table_to(&input, &lookup_table, &mut output)
+        .unwrap();
+    assert_eq!(decryptor.decrypt::<u32>(&output).unwrap(), 2);
+}
+
+#[test]
+fn evaluates_an_arbitrary_lookup_table_with_odd_plaintext_modulus() {
+    let modulus = BarrettModulus::new(MODULUS);
+    let table = U32NttTable::new(POLY_LENGTH.trailing_zeros(), modulus).unwrap();
+    let context = TfheContext::try_new(parameters_u32_with_plain_modulus(5), table).unwrap();
+    let mut rng = rand::rng();
+    let mut generator = KeyGenerator::new(&context);
+    let (client_key, server_key) = generator.generate(&mut rng).unwrap();
+    let encryptor = Encryptor::with_client_key(context.parameters(), &client_key).unwrap();
+    let decryptor = Decryptor::new(context.parameters(), &client_key).unwrap();
+    let lookup_table = context.compile_lookup_table_slice(&[2u32, 0, 1]).unwrap();
+    let mut evaluator = Evaluator::try_new(&context, &server_key).unwrap();
+
+    for (input, expected) in [2u32, 0, 1].into_iter().enumerate() {
+        let input = encryptor.encrypt_padded(input as u32, &mut rng).unwrap();
+        let output = evaluator.apply_lookup_table(&input, &lookup_table).unwrap();
+        assert_eq!(decryptor.decrypt::<u32>(&output).unwrap(), expected);
+    }
+    assert_eq!(
+        encryptor.encrypt_padded(3u32, &mut rng).unwrap_err(),
+        TfheClientError::MessageOutsidePaddedDomain
+    );
 }

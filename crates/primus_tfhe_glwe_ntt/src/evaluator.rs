@@ -62,12 +62,30 @@ where
         input: &Ciphertext<T>,
         lookup_table: &LookupTable<T>,
     ) -> Result<Ciphertext<T>, TfheEvaluationError> {
+        let mut output = input.clone();
+        self.apply_lookup_table_to(input, lookup_table, &mut output)?;
+        Ok(output)
+    }
+
+    /// Applies a compiled lookup table into an existing ciphertext allocation.
+    pub fn apply_lookup_table_to(
+        &mut self,
+        input: &Ciphertext<T>,
+        lookup_table: &LookupTable<T>,
+        output: &mut Ciphertext<T>,
+    ) -> Result<(), TfheEvaluationError> {
         let parameters = self.context.parameters();
         let expected_dimension = parameters.lwe().dimension();
         if input.dimension() != expected_dimension {
             return Err(TfheEvaluationError::InputDimensionMismatch {
                 expected: expected_dimension,
                 actual: input.dimension(),
+            });
+        }
+        if output.dimension() != expected_dimension {
+            return Err(TfheEvaluationError::OutputDimensionMismatch {
+                expected: expected_dimension,
+                actual: output.dimension(),
             });
         }
 
@@ -95,11 +113,11 @@ where
             parameters.glwe().poly_length(),
             parameters.glwe().cipher_modulus(),
         );
-        let output = self
-            .server_key
-            .key_switching_key()
-            .key_switch(&self.extracted, parameters.lwe().cipher_modulus());
-        Ciphertext::try_from_lwe(output, expected_dimension)
-            .map_err(|_| TfheEvaluationError::IncompatibleServerKey)
+        self.server_key.key_switching_key().key_switch_to(
+            &self.extracted,
+            output.as_lwe_mut(),
+            parameters.lwe().cipher_modulus(),
+        );
+        Ok(())
     }
 }

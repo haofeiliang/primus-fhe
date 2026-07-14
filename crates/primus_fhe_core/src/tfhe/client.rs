@@ -33,6 +33,12 @@ impl<T: FheUint> Ciphertext<T> {
         &self.0
     }
 
+    /// Returns the underlying mutable LWE ciphertext.
+    #[inline]
+    pub fn as_lwe_mut(&mut self) -> &mut LweCiphertext<T> {
+        &mut self.0
+    }
+
     /// Decomposes this wrapper into its underlying LWE ciphertext.
     #[inline]
     pub fn into_lwe(self) -> LweCiphertext<T> {
@@ -95,6 +101,32 @@ where
         Msg: TryInto<T>,
     {
         let message = self.checked_message(message)?;
+        Ok(Ciphertext::from_lwe(self.key.lwe_secret_key().encrypt(
+            message,
+            self.parameters,
+            rng,
+        )))
+    }
+
+    /// Encrypts a message in the front half `[0, ceil(t / 2))`.
+    ///
+    /// This preserves the input-padding invariant required by an arbitrary
+    /// (not necessarily negacyclic) programmable-bootstrap lookup table.
+    pub fn encrypt_padded<R, Msg>(
+        &self,
+        message: Msg,
+        rng: &mut R,
+    ) -> Result<Ciphertext<T>, TfheClientError>
+    where
+        R: rand::Rng + rand::CryptoRng,
+        Msg: TryInto<T>,
+    {
+        let message = self.checked_message(message)?;
+        let modulus = self.parameters.plain_modulus_value();
+        let front_domain_len = (modulus >> 1u32) + (modulus & T::ONE);
+        if message >= front_domain_len {
+            return Err(TfheClientError::MessageOutsidePaddedDomain);
+        }
         Ok(Ciphertext::from_lwe(self.key.lwe_secret_key().encrypt(
             message,
             self.parameters,
@@ -201,6 +233,10 @@ pub enum TfheClientError {
     /// The input message is outside the plaintext domain `[0, t)`.
     #[error("message is outside the plaintext domain")]
     MessageOutOfRange,
+
+    /// The input message sets the padding half of the plaintext domain.
+    #[error("message is outside the padded plaintext domain")]
+    MessageOutsidePaddedDomain,
 
     /// The requested LWE dimension cannot be represented as a ciphertext
     /// coefficient count.
