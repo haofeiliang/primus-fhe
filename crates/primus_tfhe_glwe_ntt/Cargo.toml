@@ -1,0 +1,6 @@
+[package]
+name = "primus_tfhe_glwe_ntt"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]

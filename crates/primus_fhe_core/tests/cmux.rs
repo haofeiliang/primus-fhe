@@ -1,5 +1,5 @@
 use primus_decompose::primitive::ApproxSignedBasis;
-use primus_fft::{FftTable, RustFftTable};
+use primus_fft::{FftEngine, FftTable, RustFftTable};
 use primus_fhe_core::{
     FourierGadgetEncryptContext, FourierGlweDecryptContext, FourierGlweEncryptContext,
     FourierGlweSecretKey, GlevParameters, GlweParameters, GlweSecretKey, NttGadgetEncryptContext,
@@ -27,7 +27,8 @@ fn plaintext(offset: u32) -> Vec<u32> {
 
 #[test]
 fn fourier_cmux_selects_requested_glwe() {
-    let fft = RustFftTable::new(POLY_LENGTH.trailing_zeros()).unwrap();
+    let table = RustFftTable::new(POLY_LENGTH.trailing_zeros()).unwrap();
+    let mut fft = FftEngine::new(&table);
     let mut rng = rand::rng();
     let glwe_params = GlweParameters::new(
         DIMENSION,
@@ -39,7 +40,7 @@ fn fourier_cmux_selects_requested_glwe() {
     );
     let params =
         GlevParameters::with_glwe_params(&glwe_params, ApproxSignedBasis::new(None, 8, None));
-    let secret_key = FourierGlweSecretKey::generate(&glwe_params, &fft, &mut rng);
+    let secret_key = FourierGlweSecretKey::generate(&glwe_params, &mut fft, &mut rng);
     let mut encrypt_context = FourierGlweEncryptContext::new(POLY_LENGTH);
     let mut decrypt_context = FourierGlweDecryptContext::new(POLY_LENGTH);
     let mut gadget_context =
@@ -57,11 +58,11 @@ fn fourier_cmux_selects_requested_glwe() {
             &Polynomial::new(message.as_slice()),
             &mut fourier,
             &glwe_params,
-            &fft,
+            &mut fft,
             &mut rng,
             &mut encrypt_context,
         );
-        fourier.write_torus_form(ciphertext, &fft);
+        fourier.write_torus_form(ciphertext, &mut fft);
     }
 
     let mut control = FourierGgswOwned::zero(params.fourier_ggsw_len());
@@ -73,7 +74,7 @@ fn fourier_cmux_selects_requested_glwe() {
             &Polynomial::new(control_message),
             &mut control,
             &params,
-            &fft,
+            &mut fft,
             &mut rng,
             &mut gadget_context,
         );
@@ -84,15 +85,20 @@ fn fourier_cmux_selects_requested_glwe() {
             &ciphertexts[1],
             &mut output,
             params.basis(),
-            &fft,
+            &mut fft,
             &mut cmux_context,
         );
 
         let mut output_fourier = FourierGlweOwned::zero(params.fourier_glwe_len());
-        output.write_fourier_form(&mut output_fourier, &fft);
+        output.write_fourier_form(&mut output_fourier, &mut fft);
         assert_eq!(
             secret_key
-                .decrypt(&output_fourier, &glwe_params, &fft, &mut decrypt_context,)
+                .decrypt(
+                    &output_fourier,
+                    &glwe_params,
+                    &mut fft,
+                    &mut decrypt_context,
+                )
                 .as_ref(),
             messages[bit]
         );

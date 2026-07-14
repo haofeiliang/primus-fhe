@@ -1,5 +1,5 @@
 use primus_decompose::primitive::ApproxSignedBasis;
-use primus_fft::{FftTable, RustFftTable};
+use primus_fft::{FftEngine, FftTable, RustFftTable};
 use primus_fhe_core::{
     FourierBlindRotationContext, FourierFunctionalBootstrappingKey, FourierGadgetEncryptContext,
     FourierGlweDecryptContext, FourierGlweEncryptContext, FourierGlweSecretKey, GlevParameters,
@@ -47,7 +47,8 @@ fn rotate_plaintext(input: &[u32], exponent: usize) -> Vec<u32> {
 
 #[test]
 fn fourier_functional_bootstrapping_key_blind_rotates() {
-    let fft = RustFftTable::new(POLY_LENGTH.trailing_zeros()).unwrap();
+    let table = RustFftTable::new(POLY_LENGTH.trailing_zeros()).unwrap();
+    let mut fft = FftEngine::new(&table);
     let mut rng = rand::rng();
     let lwe_params = LweParameters::new(
         LWE_DIMENSION,
@@ -67,14 +68,14 @@ fn fourier_functional_bootstrapping_key_blind_rotates() {
     let ggsw_params =
         GlevParameters::with_glwe_params(&glwe_params, ApproxSignedBasis::new(None, 8, None));
     let input_secret_key = LweSecretKey::new(vec![1u32, 0, 1, 1], LweSecretKeyType::Binary);
-    let output_secret_key = FourierGlweSecretKey::generate(&glwe_params, &fft, &mut rng);
+    let output_secret_key = FourierGlweSecretKey::generate(&glwe_params, &mut fft, &mut rng);
     let mut gadget_context =
         FourierGadgetEncryptContext::new(POLY_LENGTH, ggsw_params.basis().decompose_length());
     let key = FourierFunctionalBootstrappingKey::generate_fourier(
         &input_secret_key,
         &output_secret_key,
         &ggsw_params,
-        &fft,
+        &mut fft,
         &mut rng,
         &mut gadget_context,
     );
@@ -96,12 +97,12 @@ fn fourier_functional_bootstrapping_key_blind_rotates() {
         &Polynomial::new(message.as_slice()),
         &mut accumulator_fourier,
         &glwe_params,
-        &fft,
+        &mut fft,
         &mut rng,
         &mut encrypt_context,
     );
     let mut accumulator: TorusGlwe<Vec<u32>> = TorusGlwe::zero(ggsw_params.glwe_len());
-    accumulator_fourier.write_torus_form(&mut accumulator, &fft);
+    accumulator_fourier.write_torus_form(&mut accumulator, &mut fft);
 
     let mut output: TorusGlwe<Vec<u32>> = TorusGlwe::zero(ggsw_params.glwe_len());
     let mut blind_rotation_context = FourierBlindRotationContext::new(GLWE_DIMENSION, POLY_LENGTH);
@@ -112,17 +113,22 @@ fn fourier_functional_bootstrapping_key_blind_rotates() {
         &key,
         &lwe_params,
         &ggsw_params,
-        &fft,
+        &mut fft,
         &mut blind_rotation_context,
     );
 
     let expected_exponent = (TWO_N + 3 + 7 + 11 - switched_b) & (TWO_N - 1);
     let mut output_fourier = FourierGlweOwned::zero(ggsw_params.fourier_glwe_len());
-    output.write_fourier_form(&mut output_fourier, &fft);
+    output.write_fourier_form(&mut output_fourier, &mut fft);
     let mut decrypt_context = FourierGlweDecryptContext::new(POLY_LENGTH);
     assert_eq!(
         output_secret_key
-            .decrypt(&output_fourier, &glwe_params, &fft, &mut decrypt_context,)
+            .decrypt(
+                &output_fourier,
+                &glwe_params,
+                &mut fft,
+                &mut decrypt_context,
+            )
             .as_ref(),
         rotate_plaintext(&message, expected_exponent)
     );
@@ -134,13 +140,18 @@ fn fourier_functional_bootstrapping_key_blind_rotates() {
         &mut output,
         &key,
         &ggsw_params,
-        &fft,
+        &mut fft,
         &mut blind_rotation_context,
     );
-    output.write_fourier_form(&mut output_fourier, &fft);
+    output.write_fourier_form(&mut output_fourier, &mut fft);
     assert_eq!(
         output_secret_key
-            .decrypt(&output_fourier, &glwe_params, &fft, &mut decrypt_context,)
+            .decrypt(
+                &output_fourier,
+                &glwe_params,
+                &mut fft,
+                &mut decrypt_context,
+            )
             .as_ref(),
         rotate_plaintext(&message, expected_exponent)
     );

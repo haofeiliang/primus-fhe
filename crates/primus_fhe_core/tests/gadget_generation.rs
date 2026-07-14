@@ -1,5 +1,5 @@
 use primus_decompose::primitive::ApproxSignedBasis;
-use primus_fft::{FftTable, RustFftTable};
+use primus_fft::{FftEngine, FftTable, RustFftTable};
 use primus_fhe_core::{
     FourierGadgetEncryptContext, FourierGlweDecryptContext, FourierGlweEncryptContext,
     FourierGlweSecretKey, GlevCommonSize, GlevParameters, GlweCommonSize, GlweParameters,
@@ -54,7 +54,8 @@ fn explicit_distance(lhs: u32, rhs: u32, modulus: u32) -> u32 {
 
 #[test]
 fn fourier_glev_generation_and_ggsw_external_product() {
-    let fft = RustFftTable::new(POLY_LENGTH.trailing_zeros()).unwrap();
+    let table = RustFftTable::new(POLY_LENGTH.trailing_zeros()).unwrap();
+    let mut fft = FftEngine::new(&table);
     let mut rng = rand::rng();
     let glwe_params = GlweParameters::new(
         DIMENSION,
@@ -66,7 +67,7 @@ fn fourier_glev_generation_and_ggsw_external_product() {
     );
     let basis = ApproxSignedBasis::new(None, 8, None);
     let params = GlevParameters::with_glwe_params(&glwe_params, basis);
-    let secret_key = FourierGlweSecretKey::generate(&glwe_params, &fft, &mut rng);
+    let secret_key = FourierGlweSecretKey::generate(&glwe_params, &mut fft, &mut rng);
     let mut gadget_context =
         FourierGadgetEncryptContext::new(POLY_LENGTH, params.basis().decompose_length());
     let mut decrypt_context = FourierGlweDecryptContext::new(POLY_LENGTH);
@@ -79,7 +80,7 @@ fn fourier_glev_generation_and_ggsw_external_product() {
         &raw_message,
         &mut glev,
         &params,
-        &fft,
+        &mut fft,
         &mut rng,
         &mut gadget_context,
     );
@@ -90,7 +91,7 @@ fn fourier_glev_generation_and_ggsw_external_product() {
         .zip(glev.iter_glwe(params.fourier_glwe_len()))
     {
         let mut phase = PolynomialOwned::zero(POLY_LENGTH);
-        secret_key.phase_to(&glwe, &mut phase, &fft, &mut decrypt_context);
+        secret_key.phase_to(&glwe, &mut phase, &mut fft, &mut decrypt_context);
         assert!(native_distance(phase.as_ref()[0], scalar) <= 8);
         assert!(
             phase.as_ref()[1..]
@@ -104,7 +105,7 @@ fn fourier_glev_generation_and_ggsw_external_product() {
         &raw_message,
         &mut ggsw,
         &params,
-        &fft,
+        &mut fft,
         &mut rng,
         &mut gadget_context,
     );
@@ -118,7 +119,7 @@ fn fourier_glev_generation_and_ggsw_external_product() {
         &Polynomial::new(monomial_message),
         &mut ggsw,
         &params,
-        &fft,
+        &mut fft,
         &mut rng,
         &mut gadget_context,
     );
@@ -129,12 +130,12 @@ fn fourier_glev_generation_and_ggsw_external_product() {
         &plaintext,
         &mut input_fourier,
         &glwe_params,
-        &fft,
+        &mut fft,
         &mut rng,
         &mut glwe_context,
     );
     let mut input: TorusGlwe<Vec<u32>> = TorusGlwe::zero(params.glwe_len());
-    input_fourier.write_torus_form(&mut input, &fft);
+    input_fourier.write_torus_form(&mut input, &mut fft);
 
     let mut output: TorusGlwe<Vec<u32>> = TorusGlwe::zero(params.glwe_len());
     let mut external_product_context = TfheFftContext::new(DIMENSION, POLY_LENGTH);
@@ -143,18 +144,23 @@ fn fourier_glev_generation_and_ggsw_external_product() {
         &ggsw,
         &mut output,
         params.basis(),
-        &fft,
+        &mut fft,
         &mut external_product_context,
     );
 
     let mut output_fourier = FourierGlweOwned::zero(params.fourier_glwe_len());
-    output.write_fourier_form(&mut output_fourier, &fft);
+    output.write_fourier_form(&mut output_fourier, &mut fft);
     let mut expected = vec![0u32; POLY_LENGTH];
     expected[0] = (16 - plaintext_values[POLY_LENGTH - 1]) % 16;
     expected[1..].copy_from_slice(&plaintext_values[..POLY_LENGTH - 1]);
     assert_eq!(
         secret_key
-            .decrypt(&output_fourier, &glwe_params, &fft, &mut decrypt_context,)
+            .decrypt(
+                &output_fourier,
+                &glwe_params,
+                &mut fft,
+                &mut decrypt_context,
+            )
             .as_ref(),
         expected
     );

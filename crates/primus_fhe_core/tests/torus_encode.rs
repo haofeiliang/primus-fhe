@@ -6,7 +6,7 @@
 //! - Message encoding is independent of FFT conversion — the same codec works
 //!   with any FFT size, and the same FFT works with any message modulus.
 
-use primus_fft::{FftTable, RustFftTable};
+use primus_fft::{FftEngine, FftTable, RustFftTable};
 use primus_fhe_core::{PlaintextCodec, PlaintextEmbedding};
 use primus_integer::FheUint;
 
@@ -63,13 +63,14 @@ fn assert_roundtrip<T: FheUint>(codec: &PlaintextCodec<T>, t: T) {
 
 /// Run a polynomial through FFT forward-then-inverse and return the result.
 fn fft_roundtrip_u32(values: &[u32], fft: &RustFftTable) -> Vec<u32> {
+    let mut engine = FftEngine::new(fft);
     let n = fft.poly_length();
     assert_eq!(values.len(), n);
 
     let mut fourier = vec![primus_fft::Complex64::default(); fft.fourier_length()];
-    fft.forward_as_torus(values, &mut fourier);
+    engine.forward_as_torus(values, &mut fourier);
     let mut recovered = vec![0u32; n];
-    fft.backward_as_torus(&fourier, &mut recovered);
+    engine.backward_as_torus(&fourier, &mut recovered);
     recovered
 }
 

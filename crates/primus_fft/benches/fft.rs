@@ -1,19 +1,20 @@
 use std::hint::black_box;
 
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
-use primus_fft::{Complex64, FftTable, RustFftTable, TfheFftTable};
+use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable, TfheFftTable};
 
 fn bench_forward<Table: FftTable>(c: &mut Criterion, name: &str) {
     let mut group = c.benchmark_group(name);
     for log_n in [9, 10, 11, 12] {
         let fft = Table::new(log_n).unwrap();
+        let mut engine = FftEngine::new(&fft);
         let input = vec![1u64; fft.poly_length()];
         let mut output = vec![Complex64::default(); fft.fourier_length()];
         group.bench_with_input(
             BenchmarkId::from_parameter(fft.poly_length()),
             &log_n,
             |b, _| {
-                b.iter(|| fft.forward_as_torus(black_box(&input), black_box(&mut output)));
+                b.iter(|| engine.forward_as_torus(black_box(&input), black_box(&mut output)));
             },
         );
     }
@@ -24,15 +25,16 @@ fn bench_inverse<Table: FftTable>(c: &mut Criterion, name: &str) {
     let mut group = c.benchmark_group(name);
     for log_n in [9, 10, 11, 12] {
         let fft = Table::new(log_n).unwrap();
+        let mut engine = FftEngine::new(&fft);
         let input = vec![1u64; fft.poly_length()];
         let mut fourier = vec![Complex64::default(); fft.fourier_length()];
         let mut output = vec![0u64; fft.poly_length()];
-        fft.forward_as_torus(&input, &mut fourier);
+        engine.forward_as_torus(&input, &mut fourier);
         group.bench_with_input(
             BenchmarkId::from_parameter(fft.poly_length()),
             &log_n,
             |b, _| {
-                b.iter(|| fft.backward_as_torus(black_box(&fourier), black_box(&mut output)));
+                b.iter(|| engine.backward_as_torus(black_box(&fourier), black_box(&mut output)));
             },
         );
     }

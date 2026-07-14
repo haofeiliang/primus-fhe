@@ -1,4 +1,4 @@
-use primus_fft::{Complex64, FftTable, RustFftTable, TfheFftTable};
+use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable, TfheFftTable};
 
 fn negacyclic_reference(torus: &[u32], integer: &[u32]) -> Vec<u32> {
     let n = torus.len();
@@ -19,17 +19,18 @@ fn negacyclic_reference(torus: &[u32], integer: &[u32]) -> Vec<u32> {
 
 fn convolution<Table: FftTable>() {
     let fft = Table::new(4).unwrap();
+    let mut engine = FftEngine::new(&fft);
     let torus: Vec<u32> = (0..16).map(|i| (1000i32 - 31 * i) as u32).collect();
-    let integer: Vec<u32> = (0..16).map(|i| (i as i32 % 5 - 2) as u32).collect();
+    let integer: Vec<u32> = (0..16).map(|i| (i % 5 - 2) as u32).collect();
     let mut lhs = vec![Complex64::default(); 8];
     let mut rhs = vec![Complex64::default(); 8];
-    fft.forward_as_torus(&torus, &mut lhs);
-    fft.forward_as_integer(&integer, &mut rhs);
+    engine.forward_as_torus(&torus, &mut lhs);
+    engine.forward_as_integer(&integer, &mut rhs);
     for (x, y) in lhs.iter_mut().zip(rhs) {
         *x *= y;
     }
     let mut output = vec![0u32; 16];
-    fft.backward_as_torus(&lhs, &mut output);
+    engine.backward_as_torus(&lhs, &mut output);
     assert_eq!(output, negacyclic_reference(&torus, &integer));
 }
 

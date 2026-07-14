@@ -2,7 +2,7 @@
 
 use primus_data::{Data, DataMut, RawData};
 use primus_decompose::primitive::ApproxSignedBasis;
-use primus_fft::{Complex64, FftTable, TorusFftValue};
+use primus_fft::{Complex64, FftEngine, FftTable, TorusFftValue};
 use primus_integer::FheUint;
 use primus_modulus::NativeModulus;
 use primus_ntt::NttTable;
@@ -29,7 +29,7 @@ pub fn fourier_cmux_to<T, Table, A, B, C, D>(
     ct1: &TorusGlwe<C>,
     output: &mut TorusGlwe<D>,
     basis: &ApproxSignedBasis<T>,
-    fft: &Table,
+    fft: &mut FftEngine<'_, Table>,
     context: &mut TfheFftContext<T>,
 ) where
     T: TorusFftValue,
@@ -95,7 +95,7 @@ pub fn fourier_cmux_monomial_to<T, Table, A, B, C>(
     exponent: usize,
     output: &mut TorusGlwe<C>,
     basis: &ApproxSignedBasis<T>,
-    fft: &Table,
+    fft: &mut FftEngine<'_, Table>,
     context: &mut TfheFftContext<T>,
 ) where
     T: TorusFftValue,

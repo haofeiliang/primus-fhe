@@ -9,7 +9,7 @@ mod backend;
 
 pub use error::FftError;
 pub use num_complex::Complex64;
-pub use table::FftTable;
+pub use table::{FftEngine, FftTable};
 pub use torus::TorusFftValue;
 
-pub use backend::{RustFftTable, TfheFftTable};
+pub use backend::{RustFftScratch, RustFftTable, TfheFftScratch, TfheFftTable};

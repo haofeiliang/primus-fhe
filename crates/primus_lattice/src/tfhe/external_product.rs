@@ -2,7 +2,7 @@
 
 use primus_data::{Data, DataMut, RawData};
 use primus_decompose::primitive::ApproxSignedBasis;
-use primus_fft::{Complex64, FftTable, TorusFftValue};
+use primus_fft::{Complex64, FftEngine, FftTable, TorusFftValue};
 use primus_integer::FheUint;
 use primus_ntt::NttTable;
 use primus_poly::{FourierPolynomial, NttPolynomial};
@@ -25,7 +25,7 @@ pub fn fourier_external_product_to<T, Table, A, B, C>(
     key: &FourierGgsw<B>,
     output: &mut TorusGlwe<C>,
     basis: &ApproxSignedBasis<T>,
-    fft: &Table,
+    fft: &mut FftEngine<'_, Table>,
     context: &mut TfheFftContext<T>,
 ) where
     T: TorusFftValue,
@@ -43,7 +43,7 @@ pub(super) fn fourier_external_product_accumulate<T, Table, A, B>(
     input: &TorusGlwe<A>,
     key: &FourierGgsw<B>,
     basis: &ApproxSignedBasis<T>,
-    fft: &Table,
+    fft: &mut FftEngine<'_, Table>,
     context: &mut TfheFftContext<T>,
 ) where
     T: TorusFftValue,

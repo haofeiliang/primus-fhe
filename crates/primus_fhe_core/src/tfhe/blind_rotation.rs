@@ -1,5 +1,5 @@
 use primus_data::{Data, DataMut, RawData};
-use primus_fft::{FftTable, TorusFftValue};
+use primus_fft::{FftEngine, FftTable, TorusFftValue};
 use primus_integer::FheUint;
 use primus_modulus::NativeModulus;
 use primus_ntt::NttTable;
@@ -81,7 +81,7 @@ pub fn fourier_blind_rotate_to<T, LM, Table, A, B, C>(
     key: &FourierFunctionalBootstrappingKey<T>,
     lwe_params: &LweParameters<T, LM>,
     ggsw_params: &GlevParameters<T, NativeModulus<T>>,
-    fft: &Table,
+    fft: &mut FftEngine<'_, Table>,
     context: &mut FourierBlindRotationContext<T>,
 ) where
     T: TorusFftValue,
@@ -146,7 +146,7 @@ pub fn fourier_blind_rotate_exponents_to<T, Table, A, B, C>(
     output: &mut TorusGlwe<C>,
     key: &FourierFunctionalBootstrappingKey<T>,
     ggsw_params: &GlevParameters<T, NativeModulus<T>>,
-    fft: &Table,
+    fft: &mut FftEngine<'_, Table>,
     context: &mut FourierBlindRotationContext<T>,
 ) where
     T: TorusFftValue,
@@ -276,7 +276,7 @@ fn fourier_blind_rotate_with<T, Table, A, B, C, F>(
     output: &mut TorusGlwe<C>,
     key: &FourierFunctionalBootstrappingKey<T>,
     ggsw_params: &GlevParameters<T, NativeModulus<T>>,
-    fft: &Table,
+    fft: &mut FftEngine<'_, Table>,
     context: &mut FourierBlindRotationContext<T>,
     exponent_of: F,
 ) where

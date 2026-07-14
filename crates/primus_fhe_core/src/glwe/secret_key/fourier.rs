@@ -3,7 +3,7 @@
 use core::marker::PhantomData;
 
 use primus_data::{Data, DataMut, RawData};
-use primus_fft::{Complex64, FftTable, TorusFftValue};
+use primus_fft::{Complex64, FftEngine, FftTable, TorusFftValue};
 use primus_integer::FheUint;
 use primus_modulus::NativeModulus;
 use primus_poly::{
@@ -86,7 +86,10 @@ impl<T: FheUint> FourierGlweSecretKey<T> {
     }
 
     /// Converts a native coefficient-domain secret key to Fourier form.
-    pub fn from_coeff_secret_key<Table>(secret_key: &GlweSecretKey<T>, fft: &Table) -> Self
+    pub fn from_coeff_secret_key<Table>(
+        secret_key: &GlweSecretKey<T>,
+        fft: &mut FftEngine<'_, Table>,
+    ) -> Self
     where
         Table: FftTable,
         T: TorusFftValue,
@@ -115,7 +118,7 @@ impl<T: FheUint> FourierGlweSecretKey<T> {
     #[inline]
     pub fn generate<R, Table>(
         params: &GlweParameters<T, NativeModulus<T>>,
-        fft: &Table,
+        fft: &mut FftEngine<'_, Table>,
         rng: &mut R,
     ) -> Self
     where
@@ -133,7 +136,7 @@ impl<T: FheUint> FourierGlweSecretKey<T> {
         &self,
         cipher: &FourierGlweCiphertext<A>,
         result: &mut Polynomial<B>,
-        fft: &Table,
+        fft: &mut FftEngine<'_, Table>,
         context: &mut FourierGlweDecryptContext,
     ) where
         Table: FftTable,
@@ -167,7 +170,7 @@ impl<T: FheUint> FourierGlweSecretKey<T> {
         msg: &Polynomial<A>,
         result: &mut FourierGlweCiphertext<B>,
         params: &GlweParameters<T, NativeModulus<T>>,
-        fft: &Table,
+        fft: &mut FftEngine<'_, Table>,
         rng: &mut R,
         context: &mut FourierGlweEncryptContext<T>,
     ) where
@@ -193,7 +196,7 @@ impl<T: FheUint> FourierGlweSecretKey<T> {
         msg: &Polynomial<A>,
         result: &mut FourierGlweCiphertext<B>,
         params: &GlweParameters<T, NativeModulus<T>>,
-        fft: &Table,
+        fft: &mut FftEngine<'_, Table>,
         rng: &mut R,
         context: &mut FourierGlweEncryptContext<T>,
     ) where
@@ -220,7 +223,7 @@ impl<T: FheUint> FourierGlweSecretKey<T> {
         encoded: &Polynomial<A>,
         result: &mut FourierGlweCiphertext<B>,
         params: &GlweParameters<T, NativeModulus<T>>,
-        fft: &Table,
+        fft: &mut FftEngine<'_, Table>,
         rng: &mut R,
         context: &mut FourierGlweEncryptContext<T>,
     ) where
@@ -245,7 +248,7 @@ impl<T: FheUint> FourierGlweSecretKey<T> {
         message: FourierEncryptionMessage<'_, T>,
         result: &mut FourierGlweCiphertext<B>,
         params: &GlweParameters<T, NativeModulus<T>>,
-        fft: &Table,
+        fft: &mut FftEngine<'_, Table>,
         rng: &mut R,
         context: &mut FourierGlweEncryptContext<T>,
     ) where
@@ -298,7 +301,7 @@ impl<T: FheUint> FourierGlweSecretKey<T> {
     pub fn encrypt_zeros<Table, R>(
         &self,
         params: &GlweParameters<T, NativeModulus<T>>,
-        fft: &Table,
+        fft: &mut FftEngine<'_, Table>,
         rng: &mut R,
         context: &mut FourierGlweEncryptContext<T>,
     ) -> FourierGlweCiphertext<Vec<Complex64>>
@@ -317,7 +320,7 @@ impl<T: FheUint> FourierGlweSecretKey<T> {
         &self,
         result: &mut FourierGlweCiphertext<B>,
         params: &GlweParameters<T, NativeModulus<T>>,
-        fft: &Table,
+        fft: &mut FftEngine<'_, Table>,
         rng: &mut R,
         context: &mut FourierGlweEncryptContext<T>,
     ) where
@@ -341,7 +344,7 @@ impl<T: FheUint> FourierGlweSecretKey<T> {
         &self,
         cipher: &FourierGlweCiphertext<A>,
         params: &GlweParameters<T, NativeModulus<T>>,
-        fft: &Table,
+        fft: &mut FftEngine<'_, Table>,
         context: &mut FourierGlweDecryptContext,
     ) -> PolynomialOwned<T>
     where
@@ -360,7 +363,7 @@ impl<T: FheUint> FourierGlweSecretKey<T> {
         cipher: &FourierGlweCiphertext<A>,
         result: &mut Polynomial<B>,
         params: &GlweParameters<T, NativeModulus<T>>,
-        fft: &Table,
+        fft: &mut FftEngine<'_, Table>,
         context: &mut FourierGlweDecryptContext,
     ) where
         Table: FftTable,
@@ -383,7 +386,11 @@ impl<T: FheUint> FourierGlweSecretKey<T> {
     }
 
     #[inline]
-    fn assert_fft_and_cipher_shape<Table: FftTable>(&self, cipher_len: usize, fft: &Table) {
+    fn assert_fft_and_cipher_shape<Table: FftTable>(
+        &self,
+        cipher_len: usize,
+        fft: &FftEngine<'_, Table>,
+    ) {
         assert_eq!(fft.poly_length(), self.poly_length);
         assert_eq!(cipher_len, (self.dimension + 1) * fft.fourier_length());
     }

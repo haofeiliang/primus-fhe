@@ -1,7 +1,7 @@
 use core::marker::PhantomData;
 
 use primus_data::{Data, RawData};
-use primus_fft::{Complex64, FftTable, TorusFftValue};
+use primus_fft::{Complex64, FftEngine, FftTable, TorusFftValue};
 use primus_integer::FheUint;
 use primus_modulus::NativeModulus;
 use primus_ntt::NttTable;
@@ -78,7 +78,7 @@ where
         input_secret_key: &LweSecretKey<T>,
         output_secret_key: &FourierGlweSecretKey<T>,
         params: &GlevParameters<T, NativeModulus<T>>,
-        fft: &Table,
+        fft: &mut FftEngine<'_, Table>,
         rng: &mut R,
         context: &mut FourierGadgetEncryptContext<T>,
     ) -> Self

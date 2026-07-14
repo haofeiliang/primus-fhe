@@ -2,7 +2,7 @@ use std::hint::black_box;
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use primus_decompose::primitive::ApproxSignedBasis;
-use primus_fft::{FftTable, RustFftTable};
+use primus_fft::{FftEngine, FftTable, RustFftTable};
 use primus_lattice::{
     context::{TfheFftContext, TfheNttContext},
     ggsw::{FourierGgswOwned, NttGgsw},
@@ -14,6 +14,7 @@ use primus_ntt::{NttTable, UintNttTable};
 
 fn fourier_cmux(c: &mut Criterion) {
     let fft = RustFftTable::new(10).unwrap();
+    let mut engine = FftEngine::new(&fft);
     let dimension = 1;
     let components = dimension + 1;
     let basis = ApproxSignedBasis::<u64>::new(None, 8, Some(4));
@@ -33,7 +34,7 @@ fn fourier_cmux(c: &mut Criterion) {
                 black_box(&ct1),
                 black_box(&mut output),
                 black_box(&basis),
-                black_box(&fft),
+                black_box(&mut engine),
                 black_box(&mut context),
             )
         });

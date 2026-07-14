@@ -1,7 +1,7 @@
 //! Single-modulus GLev and GGSW generation with GLWE secret keys.
 
 use primus_data::{Data, DataMut, RawData};
-use primus_fft::{Complex64, FftTable, TorusFftValue};
+use primus_fft::{Complex64, FftEngine, FftTable, TorusFftValue};
 use primus_integer::FheUint;
 use primus_modulus::NativeModulus;
 use primus_ntt::NttTable;
@@ -85,7 +85,7 @@ where
         message: &Polynomial<A>,
         result: &mut FourierGlevCiphertext<B>,
         params: &GlevParameters<T, NativeModulus<T>>,
-        fft: &Table,
+        fft: &mut FftEngine<'_, Table>,
         rng: &mut R,
         context: &mut FourierGadgetEncryptContext<T>,
     ) where
@@ -121,7 +121,7 @@ where
         message: &Polynomial<A>,
         result: &mut FourierGgswCiphertext<B>,
         params: &GlevParameters<T, NativeModulus<T>>,
-        fft: &Table,
+        fft: &mut FftEngine<'_, Table>,
         rng: &mut R,
         context: &mut FourierGadgetEncryptContext<T>,
     ) where
@@ -168,7 +168,7 @@ where
         &self,
         message_len: usize,
         params: &GlevParameters<T, NativeModulus<T>>,
-        fft: &Table,
+        fft: &FftEngine<'_, Table>,
     ) {
         assert_eq!(params.dimension(), self.dimension());
         assert_eq!(params.poly_length(), self.poly_length());

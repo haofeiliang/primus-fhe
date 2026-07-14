@@ -261,8 +261,11 @@ macro_rules! impl_fourier_forward {
             T: primus_fft::TorusFftValue,
         {
             /// Writes this ciphertext in normalized torus Fourier form.
-            pub fn write_fourier_form<Table, A>(&self, result: &mut $fourier<A>, fft: &Table)
-            where
+            pub fn write_fourier_form<Table, A>(
+                &self,
+                result: &mut $fourier<A>,
+                fft: &mut primus_fft::FftEngine<'_, Table>,
+            ) where
                 Table: primus_fft::FftTable,
                 A: primus_data::RawData<Elem = num_complex::Complex64> + primus_data::DataMut,
             {
@@ -287,8 +290,11 @@ macro_rules! impl_fourier_backward {
             S: primus_data::RawData<Elem = num_complex::Complex64> + primus_data::Data,
         {
             /// Writes this Fourier ciphertext back to torus coefficient form.
-            pub fn write_torus_form<Table, A, T>(&self, result: &mut $coeff<A>, fft: &Table)
-            where
+            pub fn write_torus_form<Table, A, T>(
+                &self,
+                result: &mut $coeff<A>,
+                fft: &mut primus_fft::FftEngine<'_, Table>,
+            ) where
                 Table: primus_fft::FftTable,
                 A: primus_data::RawData<Elem = T> + primus_data::DataMut,
                 T: primus_fft::TorusFftValue,
