@@ -25,6 +25,9 @@ pub trait NttTable: Sized + Send + Sync {
     /// Get the polynomial length.
     fn poly_length(&self) -> usize;
 
+    /// Returns the coefficient modulus used to build this table.
+    fn modulus(&self) -> Self::ValueT;
+
     /// Perform a fast number theory transform in place.
     ///
     /// This function transforms a polynomial to a ntt polynomial.

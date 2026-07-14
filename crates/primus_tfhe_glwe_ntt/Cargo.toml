@@ -5,3 +5,11 @@ edition = "2024"
 
 [dependencies]
 primus_fhe_core = { path = "../primus_fhe_core" }
+primus_integer = { path = "../primus_integer" }
+primus_modulus = { path = "../primus_modulus" }
+primus_ntt = { path = "../primus_ntt" }
+
+thiserror = { workspace = true }
+
+[dev-dependencies]
+primus_decompose = { path = "../primus_decompose" }

@@ -521,6 +521,11 @@ impl NttTable for U64NttTable {
     }
 
     #[inline]
+    fn modulus(&self) -> Self::ValueT {
+        self.q
+    }
+
+    #[inline]
     fn transform_inplace<S: RawData<Elem = Self::ValueT> + DataMut>(
         &self,
         mut poly: Polynomial<S>,

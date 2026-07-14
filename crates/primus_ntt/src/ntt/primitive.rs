@@ -189,6 +189,11 @@ impl<T: FheUint> NttTable for UintNttTable<T> {
     }
 
     #[inline]
+    fn modulus(&self) -> Self::ValueT {
+        self.modulus
+    }
+
+    #[inline]
     fn transform_inplace<S: RawData<Elem = Self::ValueT> + DataMut>(
         &self,
         mut poly: Polynomial<S>,
