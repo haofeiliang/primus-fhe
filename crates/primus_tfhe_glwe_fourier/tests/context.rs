@@ -275,6 +275,17 @@ fn evaluates_a_complete_programmable_bootstrap_pipeline() {
         .apply_lookup_table_to(&input, &lookup_table, &mut output)
         .unwrap();
     assert_eq!(decryptor.decrypt::<u32>(&output).unwrap(), 2);
+
+    let toggle = context.compile_lookup_table_slice(&[1u32, 0]).unwrap();
+    let mut current = encryptor.encrypt_padded(0u32, &mut rng).unwrap();
+    let mut next = current.clone();
+    for _ in 0..16 {
+        evaluator
+            .apply_lookup_table_to(&current, &toggle, &mut next)
+            .unwrap();
+        core::mem::swap(&mut current, &mut next);
+    }
+    assert_eq!(decryptor.decrypt::<u32>(&current).unwrap(), 0);
 }
 
 #[test]
@@ -286,16 +297,29 @@ fn evaluates_an_arbitrary_lookup_table_with_odd_plaintext_modulus() {
     let (client_key, server_key) = generator.generate(&mut rng).unwrap();
     let encryptor = Encryptor::with_client_key(context.parameters(), &client_key).unwrap();
     let decryptor = Decryptor::new(context.parameters(), &client_key).unwrap();
-    let lookup_table = context.compile_lookup_table_slice(&[2u32, 0, 1]).unwrap();
+    // For odd t, the last front-half interval touches the negacyclic boundary
+    // and acts as an explicit guard: -f(0) mod t = 3.
+    let lookup_table = context.compile_lookup_table_slice(&[2u32, 0, 3]).unwrap();
     let mut evaluator = Evaluator::try_new(&context, &server_key).unwrap();
 
-    for (input, expected) in [2u32, 0, 1].into_iter().enumerate() {
+    for (input, expected) in [2u32, 0].into_iter().enumerate() {
         let input = encryptor.encrypt_padded(input as u32, &mut rng).unwrap();
         let output = evaluator.apply_lookup_table(&input, &lookup_table).unwrap();
         assert_eq!(decryptor.decrypt::<u32>(&output).unwrap(), expected);
     }
     assert_eq!(
-        encryptor.encrypt_padded(3u32, &mut rng).unwrap_err(),
+        encryptor.encrypt_padded(2u32, &mut rng).unwrap_err(),
         TfheClientError::MessageOutsidePaddedDomain
     );
+
+    let chain_lookup_table = context.compile_lookup_table_slice(&[1u32, 0, 4]).unwrap();
+    let mut current = encryptor.encrypt_padded(0u32, &mut rng).unwrap();
+    let mut next = current.clone();
+    for _ in 0..16 {
+        evaluator
+            .apply_lookup_table_to(&current, &chain_lookup_table, &mut next)
+            .unwrap();
+        core::mem::swap(&mut current, &mut next);
+    }
+    assert_eq!(decryptor.decrypt::<u32>(&current).unwrap(), 0);
 }

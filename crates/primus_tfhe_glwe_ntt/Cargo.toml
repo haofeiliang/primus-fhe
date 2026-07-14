@@ -14,3 +14,8 @@ thiserror = { workspace = true }
 
 [dev-dependencies]
 primus_decompose = { path = "../primus_decompose" }
+criterion = { workspace = true }
+
+[[bench]]
+name = "pbs"
+harness = false

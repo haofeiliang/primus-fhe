@@ -108,7 +108,7 @@ where
         )))
     }
 
-    /// Encrypts a message in the front half `[0, ceil(t / 2))`.
+    /// Encrypts a message in the padded domain `[0, floor(t / 2))`.
     ///
     /// This preserves the input-padding invariant required by an arbitrary
     /// (not necessarily negacyclic) programmable-bootstrap lookup table.
@@ -123,7 +123,7 @@ where
     {
         let message = self.checked_message(message)?;
         let modulus = self.parameters.plain_modulus_value();
-        let front_domain_len = (modulus >> 1u32) + (modulus & T::ONE);
+        let front_domain_len = modulus >> 1u32;
         if message >= front_domain_len {
             return Err(TfheClientError::MessageOutsidePaddedDomain);
         }
