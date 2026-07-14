@@ -1,7 +1,7 @@
 use primus_fft::{FftEngine, FftTable, TorusFftValue};
 use primus_fhe_core::{
     Ciphertext, FourierBlindRotationContext, GlweCiphertext, LookupTable, LweCiphertext,
-    TfheEvaluationError, fourier_blind_rotate_to,
+    ProgrammableBootstrap, TfheEvaluationError, fourier_blind_rotate_to,
 };
 
 use crate::{ServerKey, TfheContext};
@@ -18,6 +18,22 @@ where
     blind_rotation: FourierBlindRotationContext<T>,
     rotated: GlweCiphertext<Vec<T>>,
     extracted: LweCiphertext<T>,
+}
+
+impl<T, Table> ProgrammableBootstrap<T> for Evaluator<'_, T, Table>
+where
+    T: TorusFftValue,
+    Table: FftTable,
+{
+    #[inline]
+    fn apply_lookup_table_to(
+        &mut self,
+        input: &Ciphertext<T>,
+        lookup_table: &LookupTable<T>,
+        output: &mut Ciphertext<T>,
+    ) -> Result<(), TfheEvaluationError> {
+        Evaluator::apply_lookup_table_to(self, input, lookup_table, output)
+    }
 }
 
 impl<'a, T, Table> Evaluator<'a, T, Table>

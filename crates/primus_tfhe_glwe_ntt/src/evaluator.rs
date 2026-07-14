@@ -1,6 +1,6 @@
 use primus_fhe_core::{
     Ciphertext, GlweCiphertext, LookupTable, LweCiphertext, NttBlindRotationContext,
-    TfheEvaluationError, ntt_blind_rotate_to,
+    ProgrammableBootstrap, TfheEvaluationError, ntt_blind_rotate_to,
 };
 use primus_integer::FheUint;
 use primus_ntt::NttTable;
@@ -18,6 +18,22 @@ where
     blind_rotation: NttBlindRotationContext<T>,
     rotated: GlweCiphertext<Vec<T>>,
     extracted: LweCiphertext<T>,
+}
+
+impl<T, Table> ProgrammableBootstrap<T> for Evaluator<'_, T, Table>
+where
+    T: FheUint,
+    Table: NttTable<ValueT = T>,
+{
+    #[inline]
+    fn apply_lookup_table_to(
+        &mut self,
+        input: &Ciphertext<T>,
+        lookup_table: &LookupTable<T>,
+        output: &mut Ciphertext<T>,
+    ) -> Result<(), TfheEvaluationError> {
+        Evaluator::apply_lookup_table_to(self, input, lookup_table, output)
+    }
 }
 
 impl<'a, T, Table> Evaluator<'a, T, Table>

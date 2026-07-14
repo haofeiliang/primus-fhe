@@ -10,7 +10,9 @@ use primus_fhe_core::{
 };
 use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, U32NttTable};
-use primus_tfhe_glwe_ntt::{Encryptor, Evaluator, KeyGenerator, TfheContext, TfheParameters};
+use primus_tfhe_glwe_ntt::{
+    BooleanEncryptor, BooleanGate, Encryptor, Evaluator, KeyGenerator, TfheContext, TfheParameters,
+};
 
 // Performance-comparison profile, not a security recommendation.
 const LWE_DIMENSION: usize = 256;
@@ -80,6 +82,11 @@ fn bench_pbs(c: &mut Criterion) {
         parameters.glwe().cipher_modulus(),
     );
     let mut switched: LweCiphertext<u32> = LweCiphertext::zero(parameters.lwe().dimension());
+    let boolean_encryptor = BooleanEncryptor::new(parameters, &client_key).unwrap();
+    let boolean_lhs = boolean_encryptor.encrypt(true, &mut rng).unwrap();
+    let boolean_rhs = boolean_encryptor.encrypt(false, &mut rng).unwrap();
+    let mut boolean_output = boolean_lhs.clone();
+    let mut boolean_evaluator = context.new_boolean_evaluator(&server_key).unwrap();
 
     let mut group = c.benchmark_group("tfhe_pbs/ntt/u32/n1024/k1/lwe256");
     group.sample_size(10);
@@ -137,6 +144,49 @@ fn bench_pbs(c: &mut Criterion) {
                     .apply_lookup_table(black_box(&input), black_box(&lookup_table))
                     .unwrap(),
             );
+        });
+    });
+    for gate in [
+        BooleanGate::And,
+        BooleanGate::Nand,
+        BooleanGate::Or,
+        BooleanGate::Nor,
+        BooleanGate::Xor,
+        BooleanGate::Xnor,
+    ] {
+        group.bench_function(format!("boolean_{gate:?}").to_lowercase(), |b| {
+            b.iter(|| {
+                boolean_evaluator
+                    .evaluate_binary_to(
+                        gate,
+                        black_box(&boolean_lhs),
+                        black_box(&boolean_rhs),
+                        black_box(&mut boolean_output),
+                    )
+                    .unwrap();
+                black_box(&boolean_output);
+            });
+        });
+    }
+    group.bench_function("boolean_not", |b| {
+        b.iter(|| {
+            boolean_evaluator
+                .not_to(black_box(&boolean_lhs), black_box(&mut boolean_output))
+                .unwrap();
+            black_box(&boolean_output);
+        });
+    });
+    group.bench_function("boolean_mux", |b| {
+        b.iter(|| {
+            boolean_evaluator
+                .mux_to(
+                    black_box(&boolean_lhs),
+                    black_box(&boolean_lhs),
+                    black_box(&boolean_rhs),
+                    black_box(&mut boolean_output),
+                )
+                .unwrap();
+            black_box(&boolean_output);
         });
     });
     group.finish();

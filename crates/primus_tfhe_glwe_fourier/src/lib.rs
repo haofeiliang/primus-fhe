@@ -9,8 +9,9 @@ mod key;
 pub use evaluator::Evaluator;
 pub use key::{KeyGenerator, ServerKey};
 pub use primus_fhe_core::{
-    Ciphertext, ClientKey, LookupTable, LookupTableError, LweKeySwitchingParameters,
-    TfheClientError, TfheEvaluationError, TfheKeyError, TfheParameterError,
+    BooleanCiphertext, BooleanError, BooleanGate, Ciphertext, ClientKey, LookupTable,
+    LookupTableError, LweKeySwitchingParameters, TfheClientError, TfheEvaluationError,
+    TfheKeyError, TfheParameterError,
 };
 
 /// Encryptor role for the native-torus Fourier backend.
@@ -22,6 +23,21 @@ pub type Encryptor<'a, T, Key = ClientKey<T>> =
 
 /// Client-key decryptor for the native-torus Fourier backend.
 pub type Decryptor<'a, T> = primus_fhe_core::Decryptor<'a, T, NativeModulus<T>>;
+
+/// Boolean encryptor for the native-torus Fourier backend.
+pub type BooleanEncryptor<'a, T> = primus_fhe_core::BooleanEncryptor<'a, T, NativeModulus<T>>;
+
+/// Boolean decryptor for the native-torus Fourier backend.
+pub type BooleanDecryptor<'a, T> = primus_fhe_core::BooleanDecryptor<'a, T, NativeModulus<T>>;
+
+/// Boolean gate evaluator backed by Fourier programmable bootstrapping.
+pub type BooleanEvaluator<'a, T, Table> = primus_fhe_core::BooleanEvaluator<
+    'a,
+    T,
+    NativeModulus<T>,
+    NativeModulus<T>,
+    Evaluator<'a, T, Table>,
+>;
 
 /// GLWE-TFHE parameters for the native-torus Fourier backend.
 pub type TfheParameters<T> = primus_fhe_core::TfheParameters<T, NativeModulus<T>, NativeModulus<T>>;
@@ -84,6 +100,15 @@ where
     #[inline]
     pub fn new_fft_engine(&self) -> FftEngine<'_, Table> {
         FftEngine::new(&self.table)
+    }
+
+    /// Creates a Boolean gate evaluator with an independent FFT workspace.
+    pub fn new_boolean_evaluator<'a>(
+        &'a self,
+        server_key: &'a ServerKey<T>,
+    ) -> Result<BooleanEvaluator<'a, T, Table>, BooleanError> {
+        let evaluator = Evaluator::try_new(self, server_key)?;
+        primus_fhe_core::BooleanEvaluator::try_new(&self.parameters, evaluator)
     }
 
     /// Compiles a unary function into a coefficient-domain GLWE accumulator.

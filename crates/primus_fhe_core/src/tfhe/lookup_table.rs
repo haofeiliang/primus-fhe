@@ -2,7 +2,6 @@ use core::fmt;
 
 use primus_integer::FheUint;
 use primus_lattice::glwe::Glwe;
-use primus_modulus::common::uint::reduce_neg;
 use primus_reduce::RingContext;
 
 use super::blind_rotation::modulus_switch;
@@ -109,6 +108,25 @@ where
         F: Fn(usize) -> T,
     {
         let plaintext_modulus = self.plain_modulus_value();
+        let codec = self.glwe().plaintext_codec();
+        self.compile_encoded_lookup_table(domain_len, |input| {
+            let output = output_at(input);
+            if output >= plaintext_modulus {
+                Err(LookupTableError::OutputOutOfRange { input })
+            } else {
+                Ok(codec.encode_value(output, PlaintextEmbedding::Unsigned))
+            }
+        })
+    }
+
+    pub(crate) fn compile_encoded_lookup_table<F>(
+        &self,
+        domain_len: usize,
+        encoded_output_at: F,
+    ) -> Result<LookupTable<T>, LookupTableError>
+    where
+        F: Fn(usize) -> Result<T, LookupTableError>,
+    {
         let poly_length = self.glwe().poly_length();
         let two_n = poly_length
             .checked_mul(2)
@@ -125,17 +143,8 @@ where
         let mut accumulator = Glwe::zero(self.glwe().glwe_len());
         let body_start = self.glwe().glwe_mid();
         let body = &mut accumulator.as_mut()[body_start..];
-        let codec = self.glwe().plaintext_codec();
-        let encode_output = |input: usize, output: T| {
-            if output >= plaintext_modulus {
-                Err(LookupTableError::OutputOutOfRange { input })
-            } else {
-                Ok(codec.encode_value(output, PlaintextEmbedding::Unsigned))
-            }
-        };
-
-        let first_output = output_at(0);
-        let mut encoded_output = encode_output(0, first_output)?;
+        let first_output = encoded_output_at(0)?;
+        let mut encoded_output = first_output;
         let mut previous_center = 0;
         let mut cursor = 0;
         for input in 1..domain_len {
@@ -150,7 +159,7 @@ where
             let boundary = upper_midpoint(previous_center, center);
             body[cursor..boundary].fill(encoded_output);
             cursor = boundary;
-            encoded_output = encode_output(input, output_at(input))?;
+            encoded_output = encoded_output_at(input)?;
             previous_center = center;
         }
         let next_center = rotation_center(domain_len)?;
@@ -163,8 +172,7 @@ where
         }
         let boundary = upper_midpoint(previous_center, next_center).min(poly_length);
         body[cursor..boundary].fill(encoded_output);
-        let opposite_first = reduce_neg(plaintext_modulus, first_output);
-        body[boundary..].fill(codec.encode_value(opposite_first, PlaintextEmbedding::Unsigned));
+        body[boundary..].fill(self.glwe().cipher_modulus().reduce_neg(first_output));
 
         Ok(LookupTable { accumulator })
     }
