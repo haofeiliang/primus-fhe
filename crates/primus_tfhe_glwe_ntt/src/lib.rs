@@ -4,12 +4,14 @@ use primus_integer::FheUint;
 use primus_modulus::BarrettModulus;
 use primus_ntt::NttTable;
 
+mod evaluator;
 mod key;
 
+pub use evaluator::Evaluator;
 pub use key::{KeyGenerator, ServerKey};
 pub use primus_fhe_core::{
     Ciphertext, ClientKey, LookupTable, LookupTableError, LweKeySwitchingParameters,
-    TfheClientError, TfheKeyError, TfheParameterError,
+    TfheClientError, TfheEvaluationError, TfheKeyError, TfheParameterError,
 };
 
 /// Encryptor role for the explicit-modulus NTT backend.

@@ -5,8 +5,8 @@ use primus_fhe_core::{
 };
 use primus_modulus::NativeModulus;
 use primus_tfhe_glwe_fourier::{
-    Ciphertext, ClientKey, Decryptor, Encryptor, KeyGenerator, LookupTableError, TfheClientError,
-    TfheContext, TfheContextError, TfheKeyError, TfheParameters,
+    Ciphertext, ClientKey, Decryptor, Encryptor, Evaluator, KeyGenerator, LookupTableError,
+    TfheClientError, TfheContext, TfheContextError, TfheKeyError, TfheParameters,
 };
 
 const POLY_LENGTH: usize = 256;
@@ -244,4 +244,23 @@ fn supports_an_odd_complete_encoding_modulus() {
     let codec = context.parameters().glwe().plaintext_codec();
     assert_eq!(codec.decode_value::<u32>(body[0]), 1);
     assert_eq!(codec.decode_value::<u32>(body[POLY_LENGTH - 1]), 3);
+}
+
+#[test]
+fn evaluates_a_complete_programmable_bootstrap_pipeline() {
+    let table = RustFftTable::new(POLY_LENGTH.trailing_zeros()).unwrap();
+    let context = TfheContext::try_new(parameters(), table).unwrap();
+    let mut rng = rand::rng();
+    let mut generator = KeyGenerator::new(&context);
+    let (client_key, server_key) = generator.generate(&mut rng).unwrap();
+    let encryptor = Encryptor::with_client_key(context.parameters(), &client_key).unwrap();
+    let decryptor = Decryptor::new(context.parameters(), &client_key).unwrap();
+    let lookup_table = context.compile_lookup_table_slice(&[1u32, 2]).unwrap();
+    let mut evaluator = Evaluator::try_new(&context, &server_key).unwrap();
+
+    for (input, expected) in [1u32, 2, 3, 2].into_iter().enumerate() {
+        let input = encryptor.encrypt(input as u32, &mut rng).unwrap();
+        let output = evaluator.apply_lookup_table(&input, &lookup_table).unwrap();
+        assert_eq!(decryptor.decrypt::<u32>(&output).unwrap(), expected);
+    }
 }

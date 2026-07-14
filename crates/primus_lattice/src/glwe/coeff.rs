@@ -6,6 +6,7 @@ use primus_poly::{ArrayBase, NttPolynomial, Polynomial, PolynomialIter, Polynomi
 use primus_reduce::{FieldContext, RingContext};
 
 use super::NttGlwe;
+use crate::lwe::Lwe;
 
 /// A cryptographic structure for Module(General) Learning with Errors (MLWE, GLWE).
 ///
@@ -33,6 +34,36 @@ where
     S: RawData<Elem = T> + Data,
     T: FheUint,
 {
+    /// Extracts the constant coefficient as an LWE sample.
+    ///
+    /// A GLWE with `k` mask polynomials of length `N` produces an LWE of
+    /// dimension `kN`. `output` must therefore have length `kN + 1`.
+    pub fn extract_lwe_to<M, B>(&self, output: &mut Lwe<B>, poly_length: usize, modulus: M)
+    where
+        M: RingContext<T>,
+        B: RawData<Elem = T> + DataMut,
+    {
+        assert!(poly_length > 0);
+        assert_eq!(self.as_ref().len() % poly_length, 0);
+
+        let component_count = self.as_ref().len() / poly_length;
+        assert!(component_count >= 2);
+        let mask_len = (component_count - 1) * poly_length;
+        assert_eq!(output.dimension(), mask_len);
+
+        let (output_mask, output_body) = output.a_b_mut();
+        for (mask, extracted) in self.as_ref()[..mask_len]
+            .chunks_exact(poly_length)
+            .zip(output_mask.chunks_exact_mut(poly_length))
+        {
+            extracted[0] = mask[0];
+            for index in 1..poly_length {
+                extracted[index] = modulus.reduce_neg(mask[poly_length - index]);
+            }
+        }
+        *output_body = self.as_ref()[mask_len];
+    }
+
     /// Multiplies every GLWE component by `X^exponent` in
     /// `Z_q[X]/(X^N + 1)` and writes the result to `output`.
     ///
@@ -158,5 +189,40 @@ where
             ntt_table.transform_slice(poly.0);
             poly.mul_assign(ntt_poly, modulus);
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use primus_modulus::NativeModulus;
+
+    use super::Glwe;
+    use crate::lwe::Lwe;
+
+    #[test]
+    fn extracts_all_glwe_mask_polynomials_into_one_lwe() {
+        let glwe = Glwe(vec![
+            1u32, 2, 3, 4, // first mask
+            5, 6, 7, 8, // second mask
+            9, 10, 11, 12, // body
+        ]);
+        let mut lwe: Lwe<Vec<u32>> = Lwe::zero(8);
+
+        glwe.extract_lwe_to(&mut lwe, 4, NativeModulus::new());
+
+        assert_eq!(
+            lwe.0,
+            vec![
+                1,
+                4u32.wrapping_neg(),
+                3u32.wrapping_neg(),
+                2u32.wrapping_neg(),
+                5,
+                8u32.wrapping_neg(),
+                7u32.wrapping_neg(),
+                6u32.wrapping_neg(),
+                9,
+            ]
+        );
     }
 }

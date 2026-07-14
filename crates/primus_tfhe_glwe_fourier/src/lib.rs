@@ -3,12 +3,14 @@
 use primus_fft::{FftEngine, FftTable, TorusFftValue};
 use primus_modulus::NativeModulus;
 
+mod evaluator;
 mod key;
 
+pub use evaluator::Evaluator;
 pub use key::{KeyGenerator, ServerKey};
 pub use primus_fhe_core::{
     Ciphertext, ClientKey, LookupTable, LookupTableError, LweKeySwitchingParameters,
-    TfheClientError, TfheKeyError, TfheParameterError,
+    TfheClientError, TfheEvaluationError, TfheKeyError, TfheParameterError,
 };
 
 /// Encryptor role for the native-torus Fourier backend.
