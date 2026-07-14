@@ -170,3 +170,21 @@ fn encrypts_and_decrypts_raw_messages() {
     let ciphertext = encryptor.encrypt_centered(3u8, &mut rng).unwrap();
     assert_eq!(decryptor.decrypt::<u8>(&ciphertext).unwrap(), 3);
 }
+
+#[test]
+fn compiles_lookup_tables_for_the_explicit_modulus() {
+    let modulus = BarrettModulus::new(MODULUS);
+    let table = U32NttTable::new(POLY_LENGTH.trailing_zeros(), modulus).unwrap();
+    let context = TfheContext::try_new(parameters_u32(), table).unwrap();
+    let lookup_table = context
+        .compile_lookup_table_fn(|input| [1u32, 2][input])
+        .unwrap();
+
+    let accumulator = lookup_table.accumulator().as_ref();
+    let body_start = context.parameters().glwe().dimension() * POLY_LENGTH;
+    assert!(accumulator[..body_start].iter().all(|&value| value == 0));
+    let body = &accumulator[body_start..];
+    let codec = context.parameters().glwe().plaintext_codec();
+    assert_eq!(codec.decode_value::<u32>(body[0]), 1);
+    assert_eq!(codec.decode_value::<u32>(body[POLY_LENGTH / 2]), 2);
+}

@@ -7,8 +7,8 @@ mod key;
 
 pub use key::{KeyGenerator, ServerKey};
 pub use primus_fhe_core::{
-    Ciphertext, ClientKey, LweKeySwitchingParameters, TfheClientError, TfheKeyError,
-    TfheParameterError,
+    Ciphertext, ClientKey, LookupTable, LookupTableError, LweKeySwitchingParameters,
+    TfheClientError, TfheKeyError, TfheParameterError,
 };
 
 /// Encryptor role for the native-torus Fourier backend.
@@ -82,6 +82,27 @@ where
     #[inline]
     pub fn new_fft_engine(&self) -> FftEngine<'_, Table> {
         FftEngine::new(&self.table)
+    }
+
+    /// Compiles a unary function into a coefficient-domain GLWE accumulator.
+    #[inline]
+    pub fn compile_lookup_table_fn<F>(
+        &self,
+        function: F,
+    ) -> Result<LookupTable<T>, LookupTableError>
+    where
+        F: Fn(usize) -> T,
+    {
+        self.parameters.compile_lookup_table_fn(function)
+    }
+
+    /// Compiles one output per plaintext input into a GLWE accumulator.
+    #[inline]
+    pub fn compile_lookup_table_slice(
+        &self,
+        outputs: &[T],
+    ) -> Result<LookupTable<T>, LookupTableError> {
+        self.parameters.compile_lookup_table_slice(outputs)
     }
 
     /// Decomposes this context into its parameters and Fourier table.

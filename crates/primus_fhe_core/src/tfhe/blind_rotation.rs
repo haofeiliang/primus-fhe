@@ -93,47 +93,19 @@ pub fn fourier_blind_rotate_to<T, LM, Table, A, B, C>(
 {
     let poly_length = ggsw_params.poly_length();
     let two_n = poly_length * 2;
-    let direct_modulus = T::try_from(two_n).ok();
     debug_assert_eq!(lwe_params.secret_key_type(), LweSecretKeyType::Binary);
     debug_assert_eq!(input.dimension(), lwe_params.dimension());
-    match lwe_params.cipher_modulus().value() {
-        Some(modulus) if Some(modulus) == direct_modulus => {
-            fourier_blind_rotate_with(
-                input,
-                accumulator,
-                output,
-                key,
-                ggsw_params,
-                fft,
-                context,
-                |x| direct_exponent(x, two_n),
-            );
-        }
-        Some(modulus) => {
-            fourier_blind_rotate_with(
-                input,
-                accumulator,
-                output,
-                key,
-                ggsw_params,
-                fft,
-                context,
-                |x| explicit_modulus_switch(x, modulus, two_n),
-            );
-        }
-        None => {
-            fourier_blind_rotate_with(
-                input,
-                accumulator,
-                output,
-                key,
-                ggsw_params,
-                fft,
-                context,
-                |x| native_modulus_switch(x, two_n),
-            );
-        }
-    }
+    let modulus = lwe_params.cipher_modulus().value();
+    fourier_blind_rotate_with(
+        input,
+        accumulator,
+        output,
+        key,
+        ggsw_params,
+        fft,
+        context,
+        |x| modulus_switch(x, modulus, two_n),
+    );
 }
 
 /// Blind-rotates a native-torus GLWE accumulator from an LWE whose
@@ -193,47 +165,19 @@ pub fn ntt_blind_rotate_to<T, LM, GM, Table, A, B, C>(
 {
     let poly_length = ggsw_params.poly_length();
     let two_n = poly_length * 2;
-    let direct_modulus = T::try_from(two_n).ok();
     debug_assert_eq!(lwe_params.secret_key_type(), LweSecretKeyType::Binary);
     debug_assert_eq!(input.dimension(), lwe_params.dimension());
-    match lwe_params.cipher_modulus().value() {
-        Some(modulus) if Some(modulus) == direct_modulus => {
-            ntt_blind_rotate_with(
-                input,
-                accumulator,
-                output,
-                key,
-                ggsw_params,
-                ntt,
-                context,
-                |x| direct_exponent(x, two_n),
-            );
-        }
-        Some(modulus) => {
-            ntt_blind_rotate_with(
-                input,
-                accumulator,
-                output,
-                key,
-                ggsw_params,
-                ntt,
-                context,
-                |x| explicit_modulus_switch(x, modulus, two_n),
-            );
-        }
-        None => {
-            ntt_blind_rotate_with(
-                input,
-                accumulator,
-                output,
-                key,
-                ggsw_params,
-                ntt,
-                context,
-                |x| native_modulus_switch(x, two_n),
-            );
-        }
-    }
+    let modulus = lwe_params.cipher_modulus().value();
+    ntt_blind_rotate_with(
+        input,
+        accumulator,
+        output,
+        key,
+        ggsw_params,
+        ntt,
+        context,
+        |x| modulus_switch(x, modulus, two_n),
+    );
 }
 
 /// Blind-rotates an explicit-modulus GLWE accumulator from an LWE whose
@@ -415,6 +359,16 @@ fn direct_exponent<T: FheUint>(value: T, two_n: usize) -> usize {
     let exponent = value.try_into().unwrap();
     debug_assert!(exponent < two_n);
     exponent
+}
+
+/// Applies the same modulus switch used by blind rotation to one LWE
+/// coefficient.
+pub(crate) fn modulus_switch<T: FheUint>(value: T, modulus: Option<T>, two_n: usize) -> usize {
+    match modulus {
+        Some(modulus) if T::try_from(two_n).ok() == Some(modulus) => direct_exponent(value, two_n),
+        Some(modulus) => explicit_modulus_switch(value, modulus, two_n),
+        None => native_modulus_switch(value, two_n),
+    }
 }
 
 #[inline]

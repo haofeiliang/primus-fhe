@@ -5,18 +5,28 @@ use primus_fhe_core::{
 };
 use primus_modulus::NativeModulus;
 use primus_tfhe_glwe_fourier::{
-    Ciphertext, ClientKey, Decryptor, Encryptor, KeyGenerator, TfheClientError, TfheContext,
-    TfheContextError, TfheKeyError, TfheParameters,
+    Ciphertext, ClientKey, Decryptor, Encryptor, KeyGenerator, LookupTableError, TfheClientError,
+    TfheContext, TfheContextError, TfheKeyError, TfheParameters,
 };
 
 const POLY_LENGTH: usize = 256;
 
 fn parameters() -> TfheParameters<u32> {
-    let lwe = LweParameters::new(4, 4, NativeModulus::new(), LweSecretKeyType::Binary, 0.7);
+    parameters_with_plain_modulus(4)
+}
+
+fn parameters_with_plain_modulus(plain_modulus: u32) -> TfheParameters<u32> {
+    let lwe = LweParameters::new(
+        4,
+        plain_modulus,
+        NativeModulus::new(),
+        LweSecretKeyType::Binary,
+        0.7,
+    );
     let glwe = GlweParameters::new(
         1,
         POLY_LENGTH,
-        4,
+        plain_modulus,
         NativeModulus::new(),
         RingSecretKeyType::Binary,
         0.7,
@@ -153,4 +163,85 @@ fn rejects_invalid_client_inputs() {
             actual: 3,
         }
     );
+}
+
+#[test]
+fn compiles_negacyclic_lookup_tables() {
+    let table = RustFftTable::new(POLY_LENGTH.trailing_zeros()).unwrap();
+    let context = TfheContext::try_new(parameters(), table).unwrap();
+    let outputs = [1u32, 2];
+
+    let from_slice = context.compile_lookup_table_slice(&outputs).unwrap();
+    let from_fn = context
+        .compile_lookup_table_fn(|input| outputs[input])
+        .unwrap();
+    assert_eq!(
+        from_slice.accumulator().as_ref(),
+        from_fn.accumulator().as_ref()
+    );
+
+    let accumulator = from_slice.accumulator().as_ref();
+    let body_start = context.parameters().glwe().dimension() * POLY_LENGTH;
+    assert!(accumulator[..body_start].iter().all(|&value| value == 0));
+    let body = &accumulator[body_start..];
+    let codec = context.parameters().glwe().plaintext_codec();
+    assert_eq!(codec.decode_value::<u32>(body[0]), 1);
+    assert_eq!(codec.decode_value::<u32>(body[POLY_LENGTH / 2]), 2);
+
+    for exponent in 0..(2 * POLY_LENGTH) {
+        let encoded = if exponent < POLY_LENGTH {
+            body[exponent]
+        } else {
+            body[exponent - POLY_LENGTH].wrapping_neg()
+        };
+        let expected = [1u32, 2, 3, 2][((exponent * 4 + POLY_LENGTH) / (2 * POLY_LENGTH)) % 4];
+        assert_eq!(codec.decode_value::<u32>(encoded), expected);
+    }
+}
+
+#[test]
+fn validates_lookup_table_sources() {
+    let table = RustFftTable::new(POLY_LENGTH.trailing_zeros()).unwrap();
+    let context = TfheContext::try_new(parameters(), table).unwrap();
+
+    context.compile_lookup_table_slice(&[0u32, 1]).unwrap();
+    assert_eq!(
+        context.compile_lookup_table_slice(&[1u32]).unwrap_err(),
+        LookupTableError::DomainLengthMismatch {
+            expected: 2,
+            actual: 1,
+        }
+    );
+    assert_eq!(
+        context.compile_lookup_table_slice(&[1u32, 4]).unwrap_err(),
+        LookupTableError::OutputOutOfRange { input: 1 }
+    );
+}
+
+#[test]
+fn supports_an_odd_message_modulus_with_one_padding_bit() {
+    let table = RustFftTable::new(POLY_LENGTH.trailing_zeros()).unwrap();
+    let context = TfheContext::try_new(parameters_with_plain_modulus(10), table).unwrap();
+
+    let lookup_table = context.compile_lookup_table_slice(&[0u32; 5]).unwrap();
+    assert!(
+        lookup_table
+            .accumulator()
+            .as_ref()
+            .iter()
+            .all(|&coefficient| coefficient == 0)
+    );
+}
+
+#[test]
+fn supports_an_odd_complete_encoding_modulus() {
+    let table = RustFftTable::new(POLY_LENGTH.trailing_zeros()).unwrap();
+    let context = TfheContext::try_new(parameters_with_plain_modulus(5), table).unwrap();
+
+    let lookup_table = context.compile_lookup_table_slice(&[1u32, 2, 3]).unwrap();
+    let body_start = context.parameters().glwe().dimension() * POLY_LENGTH;
+    let body = &lookup_table.accumulator().as_ref()[body_start..];
+    let codec = context.parameters().glwe().plaintext_codec();
+    assert_eq!(codec.decode_value::<u32>(body[0]), 1);
+    assert_eq!(codec.decode_value::<u32>(body[POLY_LENGTH - 1]), 3);
 }
