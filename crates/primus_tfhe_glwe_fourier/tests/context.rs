@@ -5,7 +5,8 @@ use primus_fhe_core::{
 };
 use primus_modulus::NativeModulus;
 use primus_tfhe_glwe_fourier::{
-    ClientKey, KeyGenerator, TfheContext, TfheContextError, TfheKeyError, TfheParameters,
+    Ciphertext, ClientKey, Decryptor, Encryptor, KeyGenerator, TfheClientError, TfheContext,
+    TfheContextError, TfheKeyError, TfheParameters,
 };
 
 const POLY_LENGTH: usize = 256;
@@ -87,5 +88,69 @@ fn generates_complete_client_and_server_keys() {
             expected: 4,
             actual: 3,
         })
+    );
+}
+
+#[test]
+fn encrypts_and_decrypts_raw_messages() {
+    let table = RustFftTable::new(POLY_LENGTH.trailing_zeros()).unwrap();
+    let context = TfheContext::try_new(parameters(), table).unwrap();
+    let generator = KeyGenerator::new(&context);
+    let mut rng = rand::rng();
+    let client_key = generator.generate_client_key(&mut rng);
+    let encryptor = Encryptor::with_client_key(context.parameters(), &client_key).unwrap();
+    let decryptor = Decryptor::new(context.parameters(), &client_key).unwrap();
+
+    let ciphertext = encryptor.encrypt(2u8, &mut rng).unwrap();
+    assert_eq!(decryptor.decrypt::<u8>(&ciphertext).unwrap(), 2);
+
+    // With t = 4, the canonical representative 3 denotes centered value -1.
+    let ciphertext = encryptor.encrypt_centered(3u8, &mut rng).unwrap();
+    assert_eq!(decryptor.decrypt::<u8>(&ciphertext).unwrap(), 3);
+}
+
+#[test]
+fn rejects_invalid_client_inputs() {
+    let table = RustFftTable::new(POLY_LENGTH.trailing_zeros()).unwrap();
+    let context = TfheContext::try_new(parameters(), table).unwrap();
+    let generator = KeyGenerator::new(&context);
+    let mut rng = rand::rng();
+    let client_key = generator.generate_client_key(&mut rng);
+    let encryptor = Encryptor::with_client_key(context.parameters(), &client_key).unwrap();
+    let decryptor = Decryptor::new(context.parameters(), &client_key).unwrap();
+
+    assert_eq!(
+        encryptor.encrypt(4u8, &mut rng).unwrap_err(),
+        TfheClientError::MessageOutOfRange
+    );
+    assert_eq!(
+        encryptor.encrypt(-1i8, &mut rng).unwrap_err(),
+        TfheClientError::MessageConversion
+    );
+    assert_eq!(
+        Ciphertext::try_from_lwe(primus_fhe_core::LweCiphertext::new(vec![0u32; 4]), 4)
+            .unwrap_err(),
+        TfheClientError::CiphertextLengthMismatch {
+            expected: 5,
+            actual: 4,
+        }
+    );
+    assert_eq!(
+        Ciphertext::try_from_lwe(
+            primus_fhe_core::LweCiphertext::new(vec![0u32; 1]),
+            usize::MAX,
+        )
+        .unwrap_err(),
+        TfheClientError::CiphertextDimensionTooLarge
+    );
+
+    let wrong_dimension =
+        Ciphertext::try_from_lwe(primus_fhe_core::LweCiphertext::new(vec![0u32; 4]), 3).unwrap();
+    assert_eq!(
+        decryptor.decrypt::<u8>(&wrong_dimension).unwrap_err(),
+        TfheClientError::CiphertextDimensionMismatch {
+            expected: 4,
+            actual: 3,
+        }
     );
 }

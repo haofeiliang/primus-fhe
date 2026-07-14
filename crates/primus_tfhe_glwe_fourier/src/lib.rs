@@ -6,7 +6,20 @@ use primus_modulus::NativeModulus;
 mod key;
 
 pub use key::{KeyGenerator, ServerKey};
-pub use primus_fhe_core::{ClientKey, LweKeySwitchingParameters, TfheKeyError, TfheParameterError};
+pub use primus_fhe_core::{
+    Ciphertext, ClientKey, LweKeySwitchingParameters, TfheClientError, TfheKeyError,
+    TfheParameterError,
+};
+
+/// Encryptor role for the native-torus Fourier backend.
+///
+/// Only client-key encryption is implemented currently; the key type is kept
+/// generic so public-key encryption can be added without replacing this type.
+pub type Encryptor<'a, T, Key = ClientKey<T>> =
+    primus_fhe_core::Encryptor<'a, T, NativeModulus<T>, Key>;
+
+/// Client-key decryptor for the native-torus Fourier backend.
+pub type Decryptor<'a, T> = primus_fhe_core::Decryptor<'a, T, NativeModulus<T>>;
 
 /// GLWE-TFHE parameters for the native-torus Fourier backend.
 pub type TfheParameters<T> = primus_fhe_core::TfheParameters<T, NativeModulus<T>, NativeModulus<T>>;

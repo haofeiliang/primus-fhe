@@ -4,7 +4,9 @@ use primus_fhe_core::{
 };
 use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, U32NttTable, U64NttTable, UintNttTable};
-use primus_tfhe_glwe_ntt::{KeyGenerator, TfheContext, TfheContextError, TfheParameters};
+use primus_tfhe_glwe_ntt::{
+    Decryptor, Encryptor, KeyGenerator, TfheContext, TfheContextError, TfheParameters,
+};
 
 const POLY_LENGTH: usize = 256;
 const MODULUS: u32 = 132_120_577;
@@ -149,4 +151,22 @@ fn generates_complete_client_and_server_keys() {
         POLY_LENGTH
     );
     assert_eq!(server_key.key_switching_key().output_dimension(), 4);
+}
+
+#[test]
+fn encrypts_and_decrypts_raw_messages() {
+    let modulus = BarrettModulus::new(MODULUS);
+    let table = U32NttTable::new(POLY_LENGTH.trailing_zeros(), modulus).unwrap();
+    let context = TfheContext::try_new(parameters_u32(), table).unwrap();
+    let generator = KeyGenerator::new(&context);
+    let mut rng = rand::rng();
+    let client_key = generator.generate_client_key(&mut rng);
+    let encryptor = Encryptor::with_client_key(context.parameters(), &client_key).unwrap();
+    let decryptor = Decryptor::new(context.parameters(), &client_key).unwrap();
+
+    let ciphertext = encryptor.encrypt(2u8, &mut rng).unwrap();
+    assert_eq!(decryptor.decrypt::<u8>(&ciphertext).unwrap(), 2);
+
+    let ciphertext = encryptor.encrypt_centered(3u8, &mut rng).unwrap();
+    assert_eq!(decryptor.decrypt::<u8>(&ciphertext).unwrap(), 3);
 }
