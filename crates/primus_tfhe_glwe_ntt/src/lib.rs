@@ -4,7 +4,10 @@ use primus_integer::FheUint;
 use primus_modulus::BarrettModulus;
 use primus_ntt::NttTable;
 
-pub use primus_fhe_core::{LweKeySwitchingParameters, TfheParameterError};
+mod key;
+
+pub use key::{KeyGenerator, ServerKey};
+pub use primus_fhe_core::{ClientKey, LweKeySwitchingParameters, TfheKeyError, TfheParameterError};
 
 /// GLWE-TFHE parameters for the explicit-modulus NTT backend.
 pub type TfheParameters<T> =
@@ -29,6 +32,16 @@ pub enum TfheContextError<T: FheUint> {
         expected: T,
         /// Coefficient modulus supported by the NTT table.
         actual: T,
+    },
+
+    /// The current LWE key-switching implementation requires the small-LWE
+    /// and sample-extracted GLWE ciphertexts to use the same modulus.
+    #[error("LWE/GLWE ciphertext modulus mismatch: LWE uses {lwe:?}, GLWE uses {glwe:?}")]
+    CiphertextModulusMismatch {
+        /// Small-LWE ciphertext modulus.
+        lwe: T,
+        /// GLWE ciphertext modulus.
+        glwe: T,
     },
 }
 
@@ -63,6 +76,14 @@ where
         let actual = table.modulus();
         if actual != expected {
             return Err(TfheContextError::ModulusMismatch { expected, actual });
+        }
+
+        let lwe = parameters.lwe().cipher_modulus().value();
+        if lwe != expected {
+            return Err(TfheContextError::CiphertextModulusMismatch {
+                lwe,
+                glwe: expected,
+            });
         }
 
         Ok(Self { parameters, table })

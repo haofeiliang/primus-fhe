@@ -4,7 +4,9 @@ use primus_fhe_core::{
     GgswParameters, GlweParameters, LweParameters, LweSecretKeyType, RingSecretKeyType,
 };
 use primus_modulus::NativeModulus;
-use primus_tfhe_glwe_fourier::{TfheContext, TfheContextError, TfheParameters};
+use primus_tfhe_glwe_fourier::{
+    ClientKey, KeyGenerator, TfheContext, TfheContextError, TfheKeyError, TfheParameters,
+};
 
 const POLY_LENGTH: usize = 256;
 
@@ -52,5 +54,38 @@ fn rejects_a_fourier_table_with_the_wrong_length() {
             expected: POLY_LENGTH,
             actual: POLY_LENGTH * 2,
         }
+    );
+}
+
+#[test]
+fn generates_complete_client_and_server_keys() {
+    let table = RustFftTable::new(POLY_LENGTH.trailing_zeros()).unwrap();
+    let context = TfheContext::try_new(parameters(), table).unwrap();
+    let mut generator = KeyGenerator::new(&context);
+    let mut rng = rand::rng();
+    let (client_key, server_key) = generator.generate(&mut rng).unwrap();
+
+    assert_eq!(client_key.lwe_secret_key().dimension(), 4);
+    assert_eq!(client_key.glwe_secret_key().dimension(), 1);
+    assert_eq!(client_key.glwe_secret_key().poly_length(), POLY_LENGTH);
+    assert_eq!(server_key.bootstrapping_key().input_dimension(), 4);
+    assert_eq!(
+        server_key.key_switching_key().input_dimension(),
+        POLY_LENGTH
+    );
+    assert_eq!(server_key.key_switching_key().output_dimension(), 4);
+
+    let incompatible = ClientKey::new(
+        primus_fhe_core::LweSecretKey::new(vec![0u32; 3], LweSecretKeyType::Binary),
+        client_key.glwe_secret_key().clone(),
+    );
+    assert_eq!(
+        generator
+            .try_generate_server_key(&incompatible, &mut rng)
+            .err(),
+        Some(TfheKeyError::LweDimensionMismatch {
+            expected: 4,
+            actual: 3,
+        })
     );
 }

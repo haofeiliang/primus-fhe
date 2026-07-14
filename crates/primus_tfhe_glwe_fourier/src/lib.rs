@@ -3,7 +3,10 @@
 use primus_fft::{FftEngine, FftTable, TorusFftValue};
 use primus_modulus::NativeModulus;
 
-pub use primus_fhe_core::{LweKeySwitchingParameters, TfheParameterError};
+mod key;
+
+pub use key::{KeyGenerator, ServerKey};
+pub use primus_fhe_core::{ClientKey, LweKeySwitchingParameters, TfheKeyError, TfheParameterError};
 
 /// GLWE-TFHE parameters for the native-torus Fourier backend.
 pub type TfheParameters<T> = primus_fhe_core::TfheParameters<T, NativeModulus<T>, NativeModulus<T>>;

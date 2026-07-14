@@ -9,6 +9,7 @@ primus_fhe_core = { path = "../primus_fhe_core" }
 primus_integer = { path = "../primus_integer" }
 primus_modulus = { path = "../primus_modulus" }
 
+rand = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]

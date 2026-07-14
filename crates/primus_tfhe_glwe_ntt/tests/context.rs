@@ -4,7 +4,7 @@ use primus_fhe_core::{
 };
 use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, U32NttTable, U64NttTable, UintNttTable};
-use primus_tfhe_glwe_ntt::{TfheContext, TfheContextError, TfheParameters};
+use primus_tfhe_glwe_ntt::{KeyGenerator, TfheContext, TfheContextError, TfheParameters};
 
 const POLY_LENGTH: usize = 256;
 const MODULUS: u32 = 132_120_577;
@@ -92,4 +92,61 @@ fn rejects_an_ntt_table_with_the_wrong_modulus() {
             actual: OTHER_MODULUS,
         }
     );
+}
+
+#[test]
+fn rejects_different_lwe_and_glwe_moduli_for_key_switching() {
+    const LWE_MODULUS: u32 = 998_244_353;
+    let lwe = LweParameters::new(
+        4,
+        4,
+        BarrettModulus::new(LWE_MODULUS),
+        LweSecretKeyType::Binary,
+        0.7,
+    );
+    let glwe_modulus = BarrettModulus::new(MODULUS);
+    let glwe = GlweParameters::new(
+        1,
+        POLY_LENGTH,
+        4,
+        glwe_modulus,
+        RingSecretKeyType::Binary,
+        0.7,
+    );
+    let bootstrapping =
+        GgswParameters::with_glwe_params(&glwe, ApproxSignedBasis::new(Some(MODULUS), 8, Some(3)));
+    let parameters = TfheParameters::with_key_switching_basis(
+        lwe,
+        bootstrapping,
+        ApproxSignedBasis::new(Some(MODULUS), 4, Some(4)),
+    )
+    .unwrap();
+    let table = U32NttTable::new(POLY_LENGTH.trailing_zeros(), glwe_modulus).unwrap();
+
+    assert_eq!(
+        TfheContext::try_new(parameters, table).err(),
+        Some(TfheContextError::CiphertextModulusMismatch {
+            lwe: LWE_MODULUS,
+            glwe: MODULUS,
+        })
+    );
+}
+
+#[test]
+fn generates_complete_client_and_server_keys() {
+    let modulus = BarrettModulus::new(MODULUS);
+    let table = U32NttTable::new(POLY_LENGTH.trailing_zeros(), modulus).unwrap();
+    let context = TfheContext::try_new(parameters_u32(), table).unwrap();
+    let mut generator = KeyGenerator::new(&context);
+    let mut rng = rand::rng();
+    let (client_key, server_key) = generator.generate(&mut rng).unwrap();
+
+    assert_eq!(client_key.lwe_secret_key().dimension(), 4);
+    assert_eq!(client_key.glwe_secret_key().poly_length(), POLY_LENGTH);
+    assert_eq!(server_key.bootstrapping_key().input_dimension(), 4);
+    assert_eq!(
+        server_key.key_switching_key().input_dimension(),
+        POLY_LENGTH
+    );
+    assert_eq!(server_key.key_switching_key().output_dimension(), 4);
 }
