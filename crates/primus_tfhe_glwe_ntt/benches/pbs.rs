@@ -9,12 +9,24 @@ use primus_fhe_core::{
 };
 use primus_ntt::{NttTable, U32NttTable};
 use primus_tfhe_glwe_ntt::{
-    BooleanEncryptor, BooleanGate, Encryptor, Evaluator, KeyGenerator, TfheContext,
-    boolean_parameters,
+    BooleanEncryptor, BooleanGate, Encryptor, Evaluator, KeyGenerator, PbsOrder, TfheContext,
+    TfheParameters, boolean_parameters,
 };
 
-fn bench_pbs(c: &mut Criterion) {
-    let parameters = boolean_parameters();
+fn parameters_with_order(order: PbsOrder) -> TfheParameters<u32> {
+    let (small_lwe, glwe, bootstrapping, glwe_key_switching, _) = boolean_parameters().into_parts();
+    TfheParameters::try_new(small_lwe, glwe, bootstrapping, glwe_key_switching, order).unwrap()
+}
+
+fn order_name(order: PbsOrder) -> &'static str {
+    match order {
+        PbsOrder::BootstrapKeyswitch => "bootstrap_keyswitch",
+        PbsOrder::KeyswitchBootstrap => "keyswitch_bootstrap",
+    }
+}
+
+fn bench_order(c: &mut Criterion, order: PbsOrder) {
+    let parameters = parameters_with_order(order);
     let modulus = parameters.glwe().cipher_modulus();
     let poly_length = parameters.glwe().poly_length();
     let table = U32NttTable::new(poly_length.trailing_zeros(), modulus).unwrap();
@@ -22,44 +34,53 @@ fn bench_pbs(c: &mut Criterion) {
     let mut rng = rand::rng();
     let mut key_generator = KeyGenerator::new(&context);
     let (client_key, server_key) = key_generator.generate(&mut rng).unwrap();
-    let encryptor = Encryptor::with_client_key(context.parameters(), &client_key).unwrap();
+    let parameters = context.parameters();
+    let encryptor = Encryptor::with_client_key(parameters, &client_key).unwrap();
     let input = encryptor.encrypt_padded(1u32, &mut rng).unwrap();
     let lookup_table = context.compile_lookup_table_slice(&[1u32, 0]).unwrap();
     let mut evaluator = Evaluator::try_new(&context, &server_key).unwrap();
     let mut output = input.clone();
-    let parameters = context.parameters();
+
     let glwe_dimension = parameters.glwe().dimension();
     let mut blind_rotation = NttBlindRotationContext::new(glwe_dimension, poly_length);
-    let mut rotated: GlweCiphertext<Vec<u32>> = GlweCiphertext::zero(parameters.glwe().glwe_len());
-    ntt_blind_rotate_to(
-        input.as_lwe(),
-        lookup_table.accumulator(),
-        &mut rotated,
-        server_key.bootstrapping_key(),
-        parameters.small_lwe(),
-        parameters.bootstrapping(),
-        context.table(),
-        &mut blind_rotation,
-    );
     let mut key_switching = NttGlweKeySwitchingContext::new(
         parameters.glwe_key_switching().output_dimension(),
         poly_length,
     );
+    let mut main_glwe: GlweCiphertext<Vec<u32>> =
+        GlweCiphertext::zero(parameters.glwe().glwe_len());
     let mut switched: GlweCiphertext<Vec<u32>> =
         GlweCiphertext::zero(parameters.glwe_key_switching().output().glwe_len());
+    let mut small_lwe: LweCiphertext<u32> = LweCiphertext::zero(parameters.small_lwe().dimension());
+    let mut external_lwe: LweCiphertext<u32> =
+        LweCiphertext::zero(parameters.ciphertext_lwe_dimension());
+
+    match order {
+        PbsOrder::BootstrapKeyswitch => ntt_blind_rotate_to(
+            input.as_lwe(),
+            lookup_table.accumulator(),
+            &mut main_glwe,
+            server_key.bootstrapping_key(),
+            parameters.small_lwe(),
+            parameters.bootstrapping(),
+            context.table(),
+            &mut blind_rotation,
+        ),
+        PbsOrder::KeyswitchBootstrap => {
+            input
+                .as_lwe()
+                .inverse_extract_glwe_to(&mut main_glwe, poly_length, modulus)
+        }
+    }
     server_key.glwe_key_switching_key().key_switch_to(
-        &rotated,
+        &main_glwe,
         &mut switched,
         parameters.glwe_key_switching(),
         context.table(),
         &mut key_switching,
     );
-    let mut extracted: LweCiphertext<u32> = LweCiphertext::zero(parameters.small_lwe().dimension());
-    switched.extract_compact_lwe_to(
-        &mut extracted,
-        poly_length,
-        parameters.glwe().cipher_modulus(),
-    );
+    switched.extract_compact_lwe_to(&mut small_lwe, poly_length, modulus);
+
     let boolean_encryptor = BooleanEncryptor::new(parameters, &client_key).unwrap();
     let boolean_lhs = boolean_encryptor.encrypt(true, &mut rng).unwrap();
     let boolean_rhs = boolean_encryptor.encrypt(false, &mut rng).unwrap();
@@ -67,39 +88,30 @@ fn bench_pbs(c: &mut Criterion) {
     let mut boolean_evaluator = context.new_boolean_evaluator(&server_key).unwrap();
 
     let mut group = c.benchmark_group(format!(
-        "tfhe_pbs/ntt/u32/n{poly_length}/k{glwe_dimension}/lwe{}",
+        "tfhe_pbs/ntt/u32/{}/n{poly_length}/k{glwe_dimension}/small_lwe{}/external_lwe{}",
+        order_name(order),
         parameters.small_lwe().dimension(),
+        parameters.ciphertext_lwe_dimension(),
     ));
     group.sample_size(10);
-    group.bench_function("blind_rotation", |b| {
-        b.iter(|| {
-            ntt_blind_rotate_to(
-                black_box(input.as_lwe()),
-                black_box(lookup_table.accumulator()),
-                black_box(&mut rotated),
-                black_box(server_key.bootstrapping_key()),
-                parameters.small_lwe(),
-                parameters.bootstrapping(),
-                context.table(),
-                &mut blind_rotation,
-            );
-            black_box(&rotated);
+
+    if order == PbsOrder::KeyswitchBootstrap {
+        group.bench_function("inverse_sample_extraction", |b| {
+            b.iter(|| {
+                input.as_lwe().inverse_extract_glwe_to(
+                    black_box(&mut main_glwe),
+                    poly_length,
+                    modulus,
+                );
+                black_box(&main_glwe);
+            });
         });
-    });
-    group.bench_function("sample_extraction", |b| {
-        b.iter(|| {
-            switched.extract_compact_lwe_to(
-                black_box(&mut extracted),
-                poly_length,
-                parameters.glwe().cipher_modulus(),
-            );
-            black_box(&extracted);
-        });
-    });
-    group.bench_function("key_switching", |b| {
+    }
+
+    group.bench_function("glwe_key_switching", |b| {
         b.iter(|| {
             server_key.glwe_key_switching_key().key_switch_to(
-                black_box(&rotated),
+                black_box(&main_glwe),
                 black_box(&mut switched),
                 parameters.glwe_key_switching(),
                 context.table(),
@@ -108,6 +120,41 @@ fn bench_pbs(c: &mut Criterion) {
             black_box(&switched);
         });
     });
+    group.bench_function("compact_sample_extraction", |b| {
+        b.iter(|| {
+            switched.extract_compact_lwe_to(black_box(&mut small_lwe), poly_length, modulus);
+            black_box(&small_lwe);
+        });
+    });
+    group.bench_function("blind_rotation", |b| {
+        let blind_rotation_input = match order {
+            PbsOrder::BootstrapKeyswitch => input.as_lwe(),
+            PbsOrder::KeyswitchBootstrap => &small_lwe,
+        };
+        b.iter(|| {
+            ntt_blind_rotate_to(
+                black_box(blind_rotation_input),
+                black_box(lookup_table.accumulator()),
+                black_box(&mut main_glwe),
+                black_box(server_key.bootstrapping_key()),
+                parameters.small_lwe(),
+                parameters.bootstrapping(),
+                context.table(),
+                &mut blind_rotation,
+            );
+            black_box(&main_glwe);
+        });
+    });
+
+    if order == PbsOrder::KeyswitchBootstrap {
+        group.bench_function("full_sample_extraction", |b| {
+            b.iter(|| {
+                main_glwe.extract_lwe_to(black_box(&mut external_lwe), poly_length, modulus);
+                black_box(&external_lwe);
+            });
+        });
+    }
+
     group.bench_function("complete_pbs_reused_output", |b| {
         b.iter(|| {
             evaluator
@@ -173,6 +220,12 @@ fn bench_pbs(c: &mut Criterion) {
         });
     });
     group.finish();
+}
+
+fn bench_pbs(c: &mut Criterion) {
+    for order in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
+        bench_order(c, order);
+    }
 }
 
 criterion_group!(benches, bench_pbs);
