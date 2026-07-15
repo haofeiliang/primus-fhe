@@ -45,13 +45,13 @@ impl<T: FheUint> ClientKey<T> {
         LM: RingContext<T>,
         GM: RingContext<T>,
     {
-        if self.lwe_secret_key.dimension() != parameters.lwe().dimension() {
+        if self.lwe_secret_key.dimension() != parameters.small_lwe().dimension() {
             return Err(TfheKeyError::LweDimensionMismatch {
-                expected: parameters.lwe().dimension(),
+                expected: parameters.small_lwe().dimension(),
                 actual: self.lwe_secret_key.dimension(),
             });
         }
-        if self.lwe_secret_key.distr() != parameters.lwe().secret_key_type() {
+        if self.lwe_secret_key.distr() != parameters.small_lwe().secret_key_type() {
             return Err(TfheKeyError::LweSecretKeyDistributionMismatch);
         }
         if self.glwe_secret_key.dimension() != parameters.glwe().dimension() {

@@ -6,7 +6,7 @@ use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, U32NttTable, U64NttTable, UintNttTable};
 use primus_tfhe_glwe_ntt::{
     Decryptor, Encryptor, Evaluator, KeyGenerator, TfheClientError, TfheContext, TfheContextError,
-    TfheParameters,
+    TfheParameterError, TfheParameters,
 };
 
 const POLY_LENGTH: usize = 256;
@@ -131,22 +131,15 @@ fn rejects_different_lwe_and_glwe_moduli_for_key_switching() {
     );
     let bootstrapping =
         GgswParameters::with_glwe_params(&glwe, ApproxSignedBasis::new(Some(MODULUS), 8, Some(3)));
-    let parameters = TfheParameters::with_key_switching_basis(
+    let error = TfheParameters::with_key_switching_basis(
         lwe,
         glwe,
         bootstrapping,
         ApproxSignedBasis::new(Some(MODULUS), 4, Some(4)),
     )
-    .unwrap();
-    let table = U32NttTable::new(POLY_LENGTH.trailing_zeros(), glwe_modulus).unwrap();
+    .err();
 
-    assert_eq!(
-        TfheContext::try_new(parameters, table).err(),
-        Some(TfheContextError::CiphertextModulusMismatch {
-            lwe: LWE_MODULUS,
-            glwe: MODULUS,
-        })
-    );
+    assert_eq!(error, Some(TfheParameterError::CipherModulusMismatch));
 }
 
 #[test]
@@ -161,11 +154,8 @@ fn generates_complete_client_and_server_keys() {
     assert_eq!(client_key.lwe_secret_key().dimension(), 4);
     assert_eq!(client_key.glwe_secret_key().poly_length(), POLY_LENGTH);
     assert_eq!(server_key.bootstrapping_key().input_dimension(), 4);
-    assert_eq!(
-        server_key.key_switching_key().input_dimension(),
-        POLY_LENGTH
-    );
-    assert_eq!(server_key.key_switching_key().output_dimension(), 4);
+    assert_eq!(server_key.key_switching_key().input_dimension(), 1);
+    assert_eq!(server_key.key_switching_key().output_dimension(), 1);
 }
 
 #[test]

@@ -18,7 +18,9 @@ pub use error::{
 pub use evaluator::Evaluator;
 pub use key::{KeyGenerator, ServerKey};
 pub use parameters::TfheParameters;
-pub use primus_fhe_core::{Ciphertext, ClientKey, LookupTable, LweKeySwitchingParameters};
+pub use primus_fhe_core::{
+    Ciphertext, ClientKey, GlweKeySwitchingParameters, LookupTable, PbsOrder,
+};
 
 // Boolean API. Keep this group separate from future high-level APIs such as
 // `small_int`.

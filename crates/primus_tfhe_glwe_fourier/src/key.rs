@@ -1,7 +1,7 @@
 use primus_fft::{FftEngine, FftTable, TorusFftValue};
 use primus_fhe_core::{
     ClientKey, FourierFunctionalBootstrappingKey, FourierGadgetEncryptContext,
-    FourierGlweSecretKey, GlweSecretKey, LweKeySwitchingKey, LweSecretKey,
+    FourierGlweKeySwitchingKey, FourierGlweSecretKey, GlweSecretKey, LweSecretKey,
 };
 
 use crate::{TfheContext, error::TfheKeyError};
@@ -9,7 +9,7 @@ use crate::{TfheContext, error::TfheKeyError};
 /// Fourier-domain evaluation keys used by a TFHE server.
 pub struct ServerKey<T: TorusFftValue> {
     bootstrapping_key: FourierFunctionalBootstrappingKey<T>,
-    key_switching_key: LweKeySwitchingKey<T>,
+    key_switching_key: FourierGlweKeySwitchingKey<T>,
 }
 
 impl<T: TorusFftValue> ServerKey<T> {
@@ -19,16 +19,21 @@ impl<T: TorusFftValue> ServerKey<T> {
         &self.bootstrapping_key
     }
 
-    /// Returns the LWE key-switching key.
+    /// Returns the Fourier GLWE key-switching key.
     #[inline]
-    pub fn key_switching_key(&self) -> &LweKeySwitchingKey<T> {
+    pub fn key_switching_key(&self) -> &FourierGlweKeySwitchingKey<T> {
         &self.key_switching_key
     }
 
     /// Decomposes this server key into its bootstrapping and key-switching
     /// keys.
     #[inline]
-    pub fn into_parts(self) -> (FourierFunctionalBootstrappingKey<T>, LweKeySwitchingKey<T>) {
+    pub fn into_parts(
+        self,
+    ) -> (
+        FourierFunctionalBootstrappingKey<T>,
+        FourierGlweKeySwitchingKey<T>,
+    ) {
         (self.bootstrapping_key, self.key_switching_key)
     }
 }
@@ -69,7 +74,7 @@ where
     {
         let parameters = self.context.parameters();
         ClientKey::new(
-            LweSecretKey::generate(parameters.lwe(), rng),
+            LweSecretKey::generate(parameters.small_lwe(), rng),
             GlweSecretKey::generate(parameters.glwe(), rng),
         )
     }
@@ -98,12 +103,20 @@ where
             rng,
             &mut self.gadget,
         );
-        let key_switching_key = LweKeySwitchingKey::generate(
-            client_key.glwe_secret_key().as_slice(),
+        let padded_secret_key = GlweSecretKey::from_padded_lwe(
             client_key.lwe_secret_key(),
-            parameters.lwe(),
+            parameters.glwe().poly_length(),
+        )
+        .expect("validated TFHE parameters must admit a padded small-LWE key");
+        let fourier_padded_secret_key =
+            FourierGlweSecretKey::from_coeff_secret_key(&padded_secret_key, &mut self.fft);
+        let key_switching_key = FourierGlweKeySwitchingKey::generate(
+            client_key.glwe_secret_key(),
+            &fourier_padded_secret_key,
             parameters.key_switching(),
+            &mut self.fft,
             rng,
+            &mut self.gadget,
         );
 
         Ok(ServerKey {

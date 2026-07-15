@@ -12,6 +12,11 @@ use crate::{ClientKey, LweCiphertext, LweParameters, TfheKeyError, TfheParameter
 pub struct Ciphertext<T: FheUint>(LweCiphertext<T>);
 
 impl<T: FheUint> Ciphertext<T> {
+    #[inline]
+    fn from_lwe(ciphertext: LweCiphertext<T>) -> Self {
+        Self(ciphertext)
+    }
+
     /// Creates a ciphertext from an LWE sample after checking its dimension.
     pub fn try_from_lwe(
         ciphertext: LweCiphertext<T>,
@@ -50,11 +55,6 @@ impl<T: FheUint> Ciphertext<T> {
     pub fn dimension(&self) -> usize {
         self.0.dimension()
     }
-
-    #[inline]
-    fn from_lwe(ciphertext: LweCiphertext<T>) -> Self {
-        Self(ciphertext)
-    }
 }
 
 /// Encrypts raw TFHE messages with a particular encryption key.
@@ -85,7 +85,7 @@ where
     {
         key.check_compatible(parameters)?;
         Ok(Self {
-            parameters: parameters.lwe(),
+            parameters: parameters.small_lwe(),
             key,
         })
     }
@@ -195,7 +195,7 @@ where
     {
         key.check_compatible(parameters)?;
         Ok(Self {
-            parameters: parameters.lwe(),
+            parameters: parameters.small_lwe(),
             key,
         })
     }

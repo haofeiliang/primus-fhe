@@ -6,8 +6,9 @@ use criterion::{Criterion, criterion_group, criterion_main};
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{FftTable, RustFftTable};
 use primus_fhe_core::{
-    FourierBlindRotationContext, GgswParameters, GlweCiphertext, GlweParameters, LweCiphertext,
-    LweParameters, LweSecretKeyType, RingSecretKeyType, fourier_blind_rotate_to,
+    FourierBlindRotationContext, FourierGlweKeySwitchingContext, GgswParameters, GlweCiphertext,
+    GlweParameters, LweCiphertext, LweParameters, LweSecretKeyType, RingSecretKeyType,
+    fourier_blind_rotate_to,
 };
 use primus_modulus::NativeModulus;
 use primus_tfhe_glwe_fourier::{
@@ -67,18 +68,30 @@ fn bench_pbs(c: &mut Criterion) {
         lookup_table.accumulator(),
         &mut rotated,
         server_key.bootstrapping_key(),
-        parameters.lwe(),
+        parameters.small_lwe(),
         parameters.bootstrapping(),
         &mut fft,
         &mut blind_rotation,
     );
-    let mut extracted: LweCiphertext<u32> = LweCiphertext::zero(parameters.glwe().secret_key_len());
-    rotated.extract_lwe_to(
+    let mut key_switching = FourierGlweKeySwitchingContext::new(
+        parameters.key_switching().output_dimension(),
+        POLY_LENGTH,
+    );
+    let mut switched: GlweCiphertext<Vec<u32>> =
+        GlweCiphertext::zero(parameters.key_switching().output().glwe_len());
+    server_key.key_switching_key().key_switch_to(
+        &rotated,
+        &mut switched,
+        parameters.key_switching(),
+        &mut fft,
+        &mut key_switching,
+    );
+    let mut extracted: LweCiphertext<u32> = LweCiphertext::zero(parameters.small_lwe().dimension());
+    switched.extract_compact_lwe_to(
         &mut extracted,
         POLY_LENGTH,
         parameters.glwe().cipher_modulus(),
     );
-    let mut switched: LweCiphertext<u32> = LweCiphertext::zero(parameters.lwe().dimension());
     let boolean_encryptor = BooleanEncryptor::new(parameters, &client_key).unwrap();
     let boolean_lhs = boolean_encryptor.encrypt(true, &mut rng).unwrap();
     let boolean_rhs = boolean_encryptor.encrypt(false, &mut rng).unwrap();
@@ -94,7 +107,7 @@ fn bench_pbs(c: &mut Criterion) {
                 black_box(lookup_table.accumulator()),
                 black_box(&mut rotated),
                 black_box(server_key.bootstrapping_key()),
-                parameters.lwe(),
+                parameters.small_lwe(),
                 parameters.bootstrapping(),
                 &mut fft,
                 &mut blind_rotation,
@@ -104,7 +117,7 @@ fn bench_pbs(c: &mut Criterion) {
     });
     group.bench_function("sample_extraction", |b| {
         b.iter(|| {
-            rotated.extract_lwe_to(
+            switched.extract_compact_lwe_to(
                 black_box(&mut extracted),
                 POLY_LENGTH,
                 parameters.glwe().cipher_modulus(),
@@ -115,9 +128,11 @@ fn bench_pbs(c: &mut Criterion) {
     group.bench_function("key_switching", |b| {
         b.iter(|| {
             server_key.key_switching_key().key_switch_to(
-                black_box(&extracted),
+                black_box(&rotated),
                 black_box(&mut switched),
-                parameters.lwe().cipher_modulus(),
+                parameters.key_switching(),
+                &mut fft,
+                &mut key_switching,
             );
             black_box(&switched);
         });

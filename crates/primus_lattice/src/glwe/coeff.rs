@@ -44,8 +44,8 @@ where
         B: RawData<Elem = T> + DataMut,
     {
         assert!(poly_length > 0);
-        assert!(self.as_ref().len().is_multiple_of(poly_length));
-        assert!(output.dimension().is_multiple_of(poly_length));
+        debug_assert!(self.as_ref().len().is_multiple_of(poly_length));
+        debug_assert!(output.dimension().is_multiple_of(poly_length));
 
         let mask_len = output.dimension();
 
@@ -76,12 +76,11 @@ where
         B: RawData<Elem = T> + DataMut,
     {
         assert!(poly_length > 0);
-        assert!(self.as_ref().len().is_multiple_of(poly_length));
+        debug_assert!(self.as_ref().len().is_multiple_of(poly_length));
 
         let mask_len = self.as_ref().len() - poly_length;
         let active_key_len = output.dimension();
-        assert!(active_key_len > 0);
-        assert!(active_key_len <= mask_len);
+        assert!((1..mask_len).contains(&active_key_len));
 
         let (output_mask, output_body) = output.a_b_mut();
         for (mask, extracted) in self.as_ref()[..mask_len]

@@ -1,6 +1,6 @@
 use primus_fhe_core::{
     Ciphertext, GlweCiphertext, LookupTable, LweCiphertext, NttBlindRotationContext,
-    ProgrammableBootstrap, ntt_blind_rotate_to,
+    NttGlweKeySwitchingContext, PbsOrder, ProgrammableBootstrap, ntt_blind_rotate_to,
 };
 use primus_integer::FheUint;
 use primus_ntt::NttTable;
@@ -16,7 +16,9 @@ where
     context: &'a TfheContext<T, Table>,
     server_key: &'a ServerKey<T>,
     blind_rotation: NttBlindRotationContext<T>,
+    key_switching: NttGlweKeySwitchingContext<T>,
     rotated: GlweCiphertext<Vec<T>>,
+    switched: GlweCiphertext<Vec<T>>,
     extracted: LweCiphertext<T>,
 }
 
@@ -50,12 +52,15 @@ where
         let bootstrapping_key = server_key.bootstrapping_key();
         let common_size = bootstrapping_key.common_size();
         let key_switching_key = server_key.key_switching_key();
-        if bootstrapping_key.input_dimension() != parameters.lwe().dimension()
+        let key_switching = parameters.key_switching();
+        if parameters.pbs_order() != PbsOrder::BootstrapKeyswitch
+            || bootstrapping_key.input_dimension() != parameters.small_lwe().dimension()
             || common_size.dimension() != parameters.glwe().dimension()
             || common_size.poly_length() != parameters.glwe().poly_length()
             || bootstrapping_key.cipher_modulus() != Some(parameters.glwe().cipher_modulus_value())
-            || key_switching_key.input_dimension() != parameters.glwe().secret_key_len()
-            || key_switching_key.output_dimension() != parameters.lwe().dimension()
+            || key_switching_key.input_dimension() != key_switching.input_dimension()
+            || key_switching_key.output_dimension() != key_switching.output_dimension()
+            || key_switching_key.poly_length() != key_switching.poly_length()
         {
             return Err(TfheEvaluationError::IncompatibleServerKey);
         }
@@ -66,8 +71,13 @@ where
             context,
             server_key,
             blind_rotation: NttBlindRotationContext::new(glwe_dimension, poly_length),
+            key_switching: NttGlweKeySwitchingContext::new(
+                parameters.key_switching().output_dimension(),
+                poly_length,
+            ),
             rotated: GlweCiphertext::zero(parameters.glwe().glwe_len()),
-            extracted: LweCiphertext::zero(parameters.glwe().secret_key_len()),
+            switched: GlweCiphertext::zero(parameters.key_switching().output().glwe_len()),
+            extracted: LweCiphertext::zero(parameters.small_lwe().dimension()),
         })
     }
 
@@ -91,7 +101,7 @@ where
         output: &mut Ciphertext<T>,
     ) -> Result<(), TfheEvaluationError> {
         let parameters = self.context.parameters();
-        let expected_dimension = parameters.lwe().dimension();
+        let expected_dimension = parameters.small_lwe().dimension();
         if input.dimension() != expected_dimension {
             return Err(TfheEvaluationError::InputDimensionMismatch {
                 expected: expected_dimension,
@@ -119,21 +129,24 @@ where
             lookup_table.accumulator(),
             &mut self.rotated,
             self.server_key.bootstrapping_key(),
-            parameters.lwe(),
+            parameters.small_lwe(),
             parameters.bootstrapping(),
             self.context.table(),
             &mut self.blind_rotation,
         );
-        self.rotated.extract_lwe_to(
+        self.server_key.key_switching_key().key_switch_to(
+            &self.rotated,
+            &mut self.switched,
+            parameters.key_switching(),
+            self.context.table(),
+            &mut self.key_switching,
+        );
+        self.switched.extract_compact_lwe_to(
             &mut self.extracted,
             parameters.glwe().poly_length(),
             parameters.glwe().cipher_modulus(),
         );
-        self.server_key.key_switching_key().key_switch_to(
-            &self.extracted,
-            output.as_lwe_mut(),
-            parameters.lwe().cipher_modulus(),
-        );
+        output.as_lwe_mut().0.copy_from_slice(&self.extracted.0);
         Ok(())
     }
 }

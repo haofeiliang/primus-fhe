@@ -4,7 +4,8 @@ use std::hint::black_box;
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use primus_fhe_core::{
-    GlweCiphertext, LweCiphertext, NttBlindRotationContext, ntt_blind_rotate_to,
+    GlweCiphertext, LweCiphertext, NttBlindRotationContext, NttGlweKeySwitchingContext,
+    ntt_blind_rotate_to,
 };
 use primus_ntt::{NttTable, U32NttTable};
 use primus_tfhe_glwe_ntt::{
@@ -35,18 +36,28 @@ fn bench_pbs(c: &mut Criterion) {
         lookup_table.accumulator(),
         &mut rotated,
         server_key.bootstrapping_key(),
-        parameters.lwe(),
+        parameters.small_lwe(),
         parameters.bootstrapping(),
         context.table(),
         &mut blind_rotation,
     );
-    let mut extracted: LweCiphertext<u32> = LweCiphertext::zero(parameters.glwe().secret_key_len());
-    rotated.extract_lwe_to(
+    let mut key_switching =
+        NttGlweKeySwitchingContext::new(parameters.key_switching().output_dimension(), poly_length);
+    let mut switched: GlweCiphertext<Vec<u32>> =
+        GlweCiphertext::zero(parameters.key_switching().output().glwe_len());
+    server_key.key_switching_key().key_switch_to(
+        &rotated,
+        &mut switched,
+        parameters.key_switching(),
+        context.table(),
+        &mut key_switching,
+    );
+    let mut extracted: LweCiphertext<u32> = LweCiphertext::zero(parameters.small_lwe().dimension());
+    switched.extract_compact_lwe_to(
         &mut extracted,
         poly_length,
         parameters.glwe().cipher_modulus(),
     );
-    let mut switched: LweCiphertext<u32> = LweCiphertext::zero(parameters.lwe().dimension());
     let boolean_encryptor = BooleanEncryptor::new(parameters, &client_key).unwrap();
     let boolean_lhs = boolean_encryptor.encrypt(true, &mut rng).unwrap();
     let boolean_rhs = boolean_encryptor.encrypt(false, &mut rng).unwrap();
@@ -55,7 +66,7 @@ fn bench_pbs(c: &mut Criterion) {
 
     let mut group = c.benchmark_group(format!(
         "tfhe_pbs/ntt/u32/n{poly_length}/k{glwe_dimension}/lwe{}",
-        parameters.lwe().dimension(),
+        parameters.small_lwe().dimension(),
     ));
     group.sample_size(10);
     group.bench_function("blind_rotation", |b| {
@@ -65,7 +76,7 @@ fn bench_pbs(c: &mut Criterion) {
                 black_box(lookup_table.accumulator()),
                 black_box(&mut rotated),
                 black_box(server_key.bootstrapping_key()),
-                parameters.lwe(),
+                parameters.small_lwe(),
                 parameters.bootstrapping(),
                 context.table(),
                 &mut blind_rotation,
@@ -75,7 +86,7 @@ fn bench_pbs(c: &mut Criterion) {
     });
     group.bench_function("sample_extraction", |b| {
         b.iter(|| {
-            rotated.extract_lwe_to(
+            switched.extract_compact_lwe_to(
                 black_box(&mut extracted),
                 poly_length,
                 parameters.glwe().cipher_modulus(),
@@ -86,9 +97,11 @@ fn bench_pbs(c: &mut Criterion) {
     group.bench_function("key_switching", |b| {
         b.iter(|| {
             server_key.key_switching_key().key_switch_to(
-                black_box(&extracted),
+                black_box(&rotated),
                 black_box(&mut switched),
-                parameters.lwe().cipher_modulus(),
+                parameters.key_switching(),
+                context.table(),
+                &mut key_switching,
             );
             black_box(&switched);
         });

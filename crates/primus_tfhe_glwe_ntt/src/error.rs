@@ -28,8 +28,8 @@ pub enum TfheContextError<T: FheUint> {
         actual: T,
     },
 
-    /// The current LWE key-switching implementation requires the small-LWE
-    /// and sample-extracted GLWE ciphertexts to use the same modulus.
+    /// GLWE key switching followed by compact extraction requires the
+    /// small-LWE and GLWE ciphertexts to use the same modulus.
     #[error("LWE/GLWE ciphertext modulus mismatch: LWE uses {lwe:?}, GLWE uses {glwe:?}")]
     CiphertextModulusMismatch {
         /// Small-LWE ciphertext modulus.

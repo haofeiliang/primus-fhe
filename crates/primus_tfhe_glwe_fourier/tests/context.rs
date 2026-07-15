@@ -81,11 +81,8 @@ fn generates_complete_client_and_server_keys() {
     assert_eq!(client_key.glwe_secret_key().dimension(), 1);
     assert_eq!(client_key.glwe_secret_key().poly_length(), POLY_LENGTH);
     assert_eq!(server_key.bootstrapping_key().input_dimension(), 4);
-    assert_eq!(
-        server_key.key_switching_key().input_dimension(),
-        POLY_LENGTH
-    );
-    assert_eq!(server_key.key_switching_key().output_dimension(), 4);
+    assert_eq!(server_key.key_switching_key().input_dimension(), 1);
+    assert_eq!(server_key.key_switching_key().output_dimension(), 1);
 
     let incompatible = ClientKey::new(
         primus_fhe_core::LweSecretKey::new(vec![0u32; 3], LweSecretKeyType::Binary),

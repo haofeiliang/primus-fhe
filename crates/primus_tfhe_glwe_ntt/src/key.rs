@@ -1,6 +1,6 @@
 use primus_fhe_core::{
-    ClientKey, GlweSecretKey, LweKeySwitchingKey, LweSecretKey, NttFunctionalBootstrappingKey,
-    NttGadgetEncryptContext, NttGlweSecretKey,
+    ClientKey, GlweSecretKey, LweSecretKey, NttFunctionalBootstrappingKey, NttGadgetEncryptContext,
+    NttGlweKeySwitchingKey, NttGlweSecretKey,
 };
 use primus_integer::FheUint;
 use primus_ntt::NttTable;
@@ -10,7 +10,7 @@ use crate::{TfheContext, error::TfheKeyError};
 /// NTT-domain evaluation keys used by a TFHE server.
 pub struct ServerKey<T: FheUint> {
     bootstrapping_key: NttFunctionalBootstrappingKey<T>,
-    key_switching_key: LweKeySwitchingKey<T>,
+    key_switching_key: NttGlweKeySwitchingKey<T>,
 }
 
 impl<T: FheUint> ServerKey<T> {
@@ -20,16 +20,16 @@ impl<T: FheUint> ServerKey<T> {
         &self.bootstrapping_key
     }
 
-    /// Returns the LWE key-switching key.
+    /// Returns the NTT GLWE key-switching key.
     #[inline]
-    pub fn key_switching_key(&self) -> &LweKeySwitchingKey<T> {
+    pub fn key_switching_key(&self) -> &NttGlweKeySwitchingKey<T> {
         &self.key_switching_key
     }
 
     /// Decomposes this server key into its bootstrapping and key-switching
     /// keys.
     #[inline]
-    pub fn into_parts(self) -> (NttFunctionalBootstrappingKey<T>, LweKeySwitchingKey<T>) {
+    pub fn into_parts(self) -> (NttFunctionalBootstrappingKey<T>, NttGlweKeySwitchingKey<T>) {
         (self.bootstrapping_key, self.key_switching_key)
     }
 }
@@ -68,7 +68,7 @@ where
     {
         let parameters = self.context.parameters();
         ClientKey::new(
-            LweSecretKey::generate(parameters.lwe(), rng),
+            LweSecretKey::generate(parameters.small_lwe(), rng),
             GlweSecretKey::generate(parameters.glwe(), rng),
         )
     }
@@ -97,12 +97,20 @@ where
             rng,
             &mut self.gadget,
         );
-        let key_switching_key = LweKeySwitchingKey::generate(
-            client_key.glwe_secret_key().as_slice(),
+        let padded_secret_key = GlweSecretKey::from_padded_lwe(
             client_key.lwe_secret_key(),
-            parameters.lwe(),
+            parameters.glwe().poly_length(),
+        )
+        .expect("validated TFHE parameters must admit a padded small-LWE key");
+        let ntt_padded_secret_key =
+            NttGlweSecretKey::from_coeff_secret_key(&padded_secret_key, self.context.table());
+        let key_switching_key = NttGlweKeySwitchingKey::generate(
+            client_key.glwe_secret_key(),
+            &ntt_padded_secret_key,
             parameters.key_switching(),
+            self.context.table(),
             rng,
+            &mut self.gadget,
         );
 
         Ok(ServerKey {

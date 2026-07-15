@@ -209,10 +209,10 @@ where
         ];
         let output_shift = PlaintextCodec::new(
             boolean_accumulator_plaintext_modulus::<T>(),
-            parameters.lwe().cipher_modulus().value(),
+            parameters.small_lwe().cipher_modulus().value(),
         )
         .encode_value(T::ONE, PlaintextEmbedding::Unsigned);
-        let dimension = parameters.lwe().dimension();
+        let dimension = parameters.small_lwe().dimension();
         let gate_input = Ciphertext::try_from_lwe(LweCiphertext::zero(dimension), dimension)?;
         let mux_branch = BooleanCiphertext::from_raw(Ciphertext::try_from_lwe(
             LweCiphertext::zero(dimension),
@@ -256,7 +256,7 @@ where
             output.as_raw_mut(),
         )?;
         self.parameters
-            .lwe()
+            .small_lwe()
             .cipher_modulus()
             .reduce_add_assign(output.as_raw_mut().as_lwe_mut().b_mut(), self.output_shift);
         Ok(())
@@ -357,7 +357,7 @@ where
             &self.gate_lookup_tables[BooleanGate::And.lookup_table_index()],
             self.mux_branch.as_raw_mut(),
         )?;
-        let modulus = self.parameters.lwe().cipher_modulus();
+        let modulus = self.parameters.small_lwe().cipher_modulus();
         modulus.reduce_add_assign(
             self.mux_branch.as_raw_mut().as_lwe_mut().b_mut(),
             self.output_shift,
@@ -375,7 +375,7 @@ where
             .sub_component_wise_assign(condition.as_raw().as_lwe(), modulus);
         let encoded_one = self
             .parameters
-            .lwe()
+            .small_lwe()
             .plaintext_codec()
             .encode_value(T::ONE, PlaintextEmbedding::Unsigned);
         modulus.reduce_add_assign(self.gate_input.as_lwe_mut().b_mut(), encoded_one);
@@ -413,11 +413,11 @@ where
             .as_lwe_mut()
             .0
             .copy_from_slice(input.as_raw().as_lwe().0.as_slice());
-        let modulus = self.parameters.lwe().cipher_modulus();
+        let modulus = self.parameters.small_lwe().cipher_modulus();
         output.as_raw_mut().as_lwe_mut().neg_assign(modulus);
         let encoded_one = self
             .parameters
-            .lwe()
+            .small_lwe()
             .plaintext_codec()
             .encode_value(T::ONE, PlaintextEmbedding::Unsigned);
         modulus.reduce_add_assign(output.as_raw_mut().as_lwe_mut().b_mut(), encoded_one);
@@ -463,7 +463,7 @@ where
         .as_lwe_mut()
         .0
         .copy_from_slice(lhs.as_raw().as_lwe().0.as_slice());
-    let modulus = parameters.lwe().cipher_modulus();
+    let modulus = parameters.small_lwe().cipher_modulus();
 
     match gate {
         BooleanGate::And | BooleanGate::Nand | BooleanGate::Or | BooleanGate::Nor => {
@@ -515,7 +515,7 @@ where
     LM: RingContext<T>,
     GM: RingContext<T>,
 {
-    let expected = parameters.lwe().dimension();
+    let expected = parameters.small_lwe().dimension();
     let actual = ciphertext.dimension();
     if actual == expected {
         Ok(())
@@ -533,7 +533,7 @@ where
     LM: RingContext<T>,
     GM: RingContext<T>,
 {
-    let expected = parameters.lwe().dimension();
+    let expected = parameters.small_lwe().dimension();
     let actual = ciphertext.dimension();
     if actual == expected {
         Ok(())

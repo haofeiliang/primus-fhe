@@ -131,8 +131,8 @@ where
         let two_n = poly_length
             .checked_mul(2)
             .ok_or(LookupTableError::PolynomialLengthTooLarge)?;
-        let lwe_codec = self.lwe().plaintext_codec();
-        let lwe_modulus = self.lwe().cipher_modulus().value();
+        let lwe_codec = self.small_lwe().plaintext_codec();
+        let lwe_modulus = self.small_lwe().cipher_modulus().value();
         let rotation_center = |input: usize| -> Result<usize, LookupTableError> {
             let input =
                 T::try_from(input).map_err(|_| LookupTableError::PlaintextModulusTooLarge)?;
