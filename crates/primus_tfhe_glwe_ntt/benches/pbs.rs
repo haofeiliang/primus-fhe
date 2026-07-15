@@ -45,7 +45,7 @@ fn bench_pbs(c: &mut Criterion) {
         NttGlweKeySwitchingContext::new(parameters.key_switching().output_dimension(), poly_length);
     let mut switched: GlweCiphertext<Vec<u32>> =
         GlweCiphertext::zero(parameters.key_switching().output().glwe_len());
-    server_key.key_switching_key().key_switch_to(
+    server_key.glwe_key_switching_key().key_switch_to(
         &rotated,
         &mut switched,
         parameters.key_switching(),
@@ -96,7 +96,7 @@ fn bench_pbs(c: &mut Criterion) {
     });
     group.bench_function("key_switching", |b| {
         b.iter(|| {
-            server_key.key_switching_key().key_switch_to(
+            server_key.glwe_key_switching_key().key_switch_to(
                 black_box(&rotated),
                 black_box(&mut switched),
                 parameters.key_switching(),

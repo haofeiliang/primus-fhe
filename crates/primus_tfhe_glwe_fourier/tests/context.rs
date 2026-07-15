@@ -6,7 +6,7 @@ use primus_fhe_core::{
 use primus_modulus::NativeModulus;
 use primus_tfhe_glwe_fourier::{
     Ciphertext, ClientKey, Decryptor, Encryptor, Evaluator, KeyGenerator, LookupTableError,
-    TfheClientError, TfheContext, TfheContextError, TfheKeyError, TfheParameters,
+    PbsOrder, TfheClientError, TfheContext, TfheContextError, TfheKeyError, TfheParameters,
 };
 
 const POLY_LENGTH: usize = 256;
@@ -16,6 +16,13 @@ fn parameters() -> TfheParameters<u32> {
 }
 
 fn parameters_with_plain_modulus(plain_modulus: u32) -> TfheParameters<u32> {
+    parameters_with_plain_modulus_and_order(plain_modulus, PbsOrder::BootstrapKeyswitch)
+}
+
+fn parameters_with_plain_modulus_and_order(
+    plain_modulus: u32,
+    pbs_order: PbsOrder,
+) -> TfheParameters<u32> {
     let lwe = LweParameters::new(
         4,
         plain_modulus,
@@ -33,10 +40,11 @@ fn parameters_with_plain_modulus(plain_modulus: u32) -> TfheParameters<u32> {
     );
     let bootstrapping =
         GgswParameters::with_glwe_params(&glwe, ApproxSignedBasis::new(None, 8, Some(3)));
-    TfheParameters::with_key_switching_basis(
+    TfheParameters::with_pbs_order_and_key_switching_basis(
         lwe,
         glwe,
         bootstrapping,
+        pbs_order,
         ApproxSignedBasis::new(None, 4, Some(4)),
     )
     .unwrap()
@@ -71,18 +79,27 @@ fn rejects_a_fourier_table_with_the_wrong_length() {
 
 #[test]
 fn generates_complete_client_and_server_keys() {
+    for pbs_order in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
+        let table = RustFftTable::new(POLY_LENGTH.trailing_zeros()).unwrap();
+        let parameters = parameters_with_plain_modulus_and_order(4, pbs_order);
+        let context = TfheContext::try_new(parameters, table).unwrap();
+        let mut generator = KeyGenerator::new(&context);
+        let mut rng = rand::rng();
+        let (client_key, server_key) = generator.generate(&mut rng).unwrap();
+
+        assert_eq!(client_key.lwe_secret_key().dimension(), 4);
+        assert_eq!(client_key.glwe_secret_key().dimension(), 1);
+        assert_eq!(client_key.glwe_secret_key().poly_length(), POLY_LENGTH);
+        assert_eq!(server_key.bootstrapping_key().input_dimension(), 4);
+        assert_eq!(server_key.glwe_key_switching_key().input_dimension(), 1);
+        assert_eq!(server_key.glwe_key_switching_key().output_dimension(), 1);
+    }
+
     let table = RustFftTable::new(POLY_LENGTH.trailing_zeros()).unwrap();
     let context = TfheContext::try_new(parameters(), table).unwrap();
     let mut generator = KeyGenerator::new(&context);
     let mut rng = rand::rng();
-    let (client_key, server_key) = generator.generate(&mut rng).unwrap();
-
-    assert_eq!(client_key.lwe_secret_key().dimension(), 4);
-    assert_eq!(client_key.glwe_secret_key().dimension(), 1);
-    assert_eq!(client_key.glwe_secret_key().poly_length(), POLY_LENGTH);
-    assert_eq!(server_key.bootstrapping_key().input_dimension(), 4);
-    assert_eq!(server_key.key_switching_key().input_dimension(), 1);
-    assert_eq!(server_key.key_switching_key().output_dimension(), 1);
+    let client_key = generator.generate_client_key(&mut rng);
 
     let incompatible = ClientKey::new(
         primus_fhe_core::LweSecretKey::new(vec![0u32; 3], LweSecretKeyType::Binary),

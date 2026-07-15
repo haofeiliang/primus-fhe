@@ -51,7 +51,7 @@ where
         let parameters = context.parameters();
         let bootstrapping_key = server_key.bootstrapping_key();
         let common_size = bootstrapping_key.common_size();
-        let key_switching_key = server_key.key_switching_key();
+        let key_switching_key = server_key.glwe_key_switching_key();
         let key_switching = parameters.key_switching();
         if parameters.pbs_order() != PbsOrder::BootstrapKeyswitch
             || bootstrapping_key.input_dimension() != parameters.small_lwe().dimension()
@@ -134,7 +134,7 @@ where
             &mut self.fft,
             &mut self.blind_rotation,
         );
-        self.server_key.key_switching_key().key_switch_to(
+        self.server_key.glwe_key_switching_key().key_switch_to(
             &self.rotated,
             &mut self.switched,
             parameters.key_switching(),

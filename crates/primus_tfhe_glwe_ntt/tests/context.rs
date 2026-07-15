@@ -5,8 +5,8 @@ use primus_fhe_core::{
 use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, U32NttTable, U64NttTable, UintNttTable};
 use primus_tfhe_glwe_ntt::{
-    Decryptor, Encryptor, Evaluator, KeyGenerator, TfheClientError, TfheContext, TfheContextError,
-    TfheParameterError, TfheParameters,
+    Decryptor, Encryptor, Evaluator, KeyGenerator, PbsOrder, TfheClientError, TfheContext,
+    TfheContextError, TfheParameterError, TfheParameters,
 };
 
 const POLY_LENGTH: usize = 256;
@@ -17,6 +17,13 @@ fn parameters_u32() -> TfheParameters<u32> {
 }
 
 fn parameters_u32_with_plain_modulus(plain_modulus: u32) -> TfheParameters<u32> {
+    parameters_u32_with_plain_modulus_and_order(plain_modulus, PbsOrder::BootstrapKeyswitch)
+}
+
+fn parameters_u32_with_plain_modulus_and_order(
+    plain_modulus: u32,
+    pbs_order: PbsOrder,
+) -> TfheParameters<u32> {
     let modulus = BarrettModulus::new(MODULUS);
     let lwe = LweParameters::new(4, plain_modulus, modulus, LweSecretKeyType::Binary, 0.7);
     let glwe = GlweParameters::new(
@@ -29,10 +36,11 @@ fn parameters_u32_with_plain_modulus(plain_modulus: u32) -> TfheParameters<u32> 
     );
     let bootstrapping =
         GgswParameters::with_glwe_params(&glwe, ApproxSignedBasis::new(Some(MODULUS), 8, Some(3)));
-    TfheParameters::with_key_switching_basis(
+    TfheParameters::with_pbs_order_and_key_switching_basis(
         lwe,
         glwe,
         bootstrapping,
+        pbs_order,
         ApproxSignedBasis::new(Some(MODULUS), 4, Some(4)),
     )
     .unwrap()
@@ -144,18 +152,21 @@ fn rejects_different_lwe_and_glwe_moduli_for_key_switching() {
 
 #[test]
 fn generates_complete_client_and_server_keys() {
-    let modulus = BarrettModulus::new(MODULUS);
-    let table = U32NttTable::new(POLY_LENGTH.trailing_zeros(), modulus).unwrap();
-    let context = TfheContext::try_new(parameters_u32(), table).unwrap();
-    let mut generator = KeyGenerator::new(&context);
-    let mut rng = rand::rng();
-    let (client_key, server_key) = generator.generate(&mut rng).unwrap();
+    for pbs_order in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
+        let modulus = BarrettModulus::new(MODULUS);
+        let table = U32NttTable::new(POLY_LENGTH.trailing_zeros(), modulus).unwrap();
+        let parameters = parameters_u32_with_plain_modulus_and_order(4, pbs_order);
+        let context = TfheContext::try_new(parameters, table).unwrap();
+        let mut generator = KeyGenerator::new(&context);
+        let mut rng = rand::rng();
+        let (client_key, server_key) = generator.generate(&mut rng).unwrap();
 
-    assert_eq!(client_key.lwe_secret_key().dimension(), 4);
-    assert_eq!(client_key.glwe_secret_key().poly_length(), POLY_LENGTH);
-    assert_eq!(server_key.bootstrapping_key().input_dimension(), 4);
-    assert_eq!(server_key.key_switching_key().input_dimension(), 1);
-    assert_eq!(server_key.key_switching_key().output_dimension(), 1);
+        assert_eq!(client_key.lwe_secret_key().dimension(), 4);
+        assert_eq!(client_key.glwe_secret_key().poly_length(), POLY_LENGTH);
+        assert_eq!(server_key.bootstrapping_key().input_dimension(), 4);
+        assert_eq!(server_key.glwe_key_switching_key().input_dimension(), 1);
+        assert_eq!(server_key.glwe_key_switching_key().output_dimension(), 1);
+    }
 }
 
 #[test]

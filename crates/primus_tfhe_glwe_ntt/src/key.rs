@@ -8,9 +8,12 @@ use primus_ntt::NttTable;
 use crate::{TfheContext, error::TfheKeyError};
 
 /// NTT-domain evaluation keys used by a TFHE server.
+///
+/// Both PBS orders share these key materials. [`crate::PbsOrder`] only changes
+/// the order in which the evaluator applies them.
 pub struct ServerKey<T: FheUint> {
     bootstrapping_key: NttFunctionalBootstrappingKey<T>,
-    key_switching_key: NttGlweKeySwitchingKey<T>,
+    glwe_key_switching_key: NttGlweKeySwitchingKey<T>,
 }
 
 impl<T: FheUint> ServerKey<T> {
@@ -22,15 +25,15 @@ impl<T: FheUint> ServerKey<T> {
 
     /// Returns the NTT GLWE key-switching key.
     #[inline]
-    pub fn key_switching_key(&self) -> &NttGlweKeySwitchingKey<T> {
-        &self.key_switching_key
+    pub fn glwe_key_switching_key(&self) -> &NttGlweKeySwitchingKey<T> {
+        &self.glwe_key_switching_key
     }
 
     /// Decomposes this server key into its bootstrapping and key-switching
     /// keys.
     #[inline]
     pub fn into_parts(self) -> (NttFunctionalBootstrappingKey<T>, NttGlweKeySwitchingKey<T>) {
-        (self.bootstrapping_key, self.key_switching_key)
+        (self.bootstrapping_key, self.glwe_key_switching_key)
     }
 }
 
@@ -85,28 +88,30 @@ where
         let parameters = self.context.parameters();
         client_key.check_compatible(parameters)?;
 
-        let ntt_glwe_secret_key = NttGlweSecretKey::from_coeff_secret_key(
+        let main_glwe_secret_key = NttGlweSecretKey::from_coeff_secret_key(
             client_key.glwe_secret_key(),
             self.context.table(),
         );
         let bootstrapping_key = NttFunctionalBootstrappingKey::generate_ntt(
             client_key.lwe_secret_key(),
-            &ntt_glwe_secret_key,
+            &main_glwe_secret_key,
             parameters.bootstrapping(),
             self.context.table(),
             rng,
             &mut self.gadget,
         );
-        let padded_secret_key = GlweSecretKey::from_padded_lwe(
+        let padded_small_glwe_secret_key = GlweSecretKey::from_padded_lwe(
             client_key.lwe_secret_key(),
             parameters.glwe().poly_length(),
         )
         .expect("validated TFHE parameters must admit a padded small-LWE key");
-        let ntt_padded_secret_key =
-            NttGlweSecretKey::from_coeff_secret_key(&padded_secret_key, self.context.table());
-        let key_switching_key = NttGlweKeySwitchingKey::generate(
+        let padded_small_glwe_secret_key = NttGlweSecretKey::from_coeff_secret_key(
+            &padded_small_glwe_secret_key,
+            self.context.table(),
+        );
+        let glwe_key_switching_key = NttGlweKeySwitchingKey::generate(
             client_key.glwe_secret_key(),
-            &ntt_padded_secret_key,
+            &padded_small_glwe_secret_key,
             parameters.key_switching(),
             self.context.table(),
             rng,
@@ -115,7 +120,7 @@ where
 
         Ok(ServerKey {
             bootstrapping_key,
-            key_switching_key,
+            glwe_key_switching_key,
         })
     }
 

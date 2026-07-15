@@ -80,7 +80,7 @@ where
 
         let mask_len = self.as_ref().len() - poly_length;
         let active_key_len = output.dimension();
-        assert!((1..mask_len).contains(&active_key_len));
+        assert!((1..=mask_len).contains(&active_key_len));
 
         let (output_mask, output_body) = output.a_b_mut();
         for (mask, extracted) in self.as_ref()[..mask_len]
@@ -223,9 +223,55 @@ where
     }
 }
 
+impl<S, T> Lwe<S>
+where
+    S: RawData<Elem = T> + Data,
+    T: FheUint,
+{
+    /// Inserts this LWE sample into a GLWE ciphertext so that compact sample
+    /// extraction recovers the original LWE sample exactly.
+    ///
+    /// For an LWE dimension `n` and `N = poly_length`, the output must contain
+    /// `ceil(n / N) + 1` polynomials of length `N`. Unused coefficients in the
+    /// final mask polynomial and all non-constant body coefficients are set to
+    /// zero.
+    pub fn inverse_extract_glwe_to<M, B>(
+        &self,
+        output: &mut Glwe<B>,
+        poly_length: usize,
+        modulus: M,
+    ) where
+        M: RingContext<T>,
+        B: RawData<Elem = T> + DataMut,
+    {
+        assert!(poly_length > 0);
+        assert!(self.dimension() > 0);
+
+        let output_mask_len = self.dimension().next_multiple_of(poly_length);
+        assert_eq!(output.as_ref().len(), output_mask_len + poly_length);
+
+        let (input_mask, input_body) = self.a_b();
+        let (output_mask, output_body) = output.as_mut().split_at_mut(output_mask_len);
+        output_mask.fill(T::ZERO);
+
+        for (input, mask) in input_mask
+            .chunks(poly_length)
+            .zip(output_mask.chunks_exact_mut(poly_length))
+        {
+            mask[0] = input[0];
+            for (output, &input) in mask[1..].iter_mut().rev().zip(&input[1..]) {
+                *output = modulus.reduce_neg(input);
+            }
+        }
+
+        output_body.fill(T::ZERO);
+        output_body[0] = input_body;
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use primus_modulus::NativeModulus;
+    use primus_modulus::{BarrettModulus, NativeModulus};
 
     use super::Glwe;
     use crate::lwe::Lwe;
@@ -275,5 +321,50 @@ mod tests {
             assert_eq!(compact.a(), &full.a()[..active_key_len]);
             assert_eq!(compact.b(), full.b());
         }
+    }
+
+    #[test]
+    fn inverse_extraction_is_the_exact_inverse_of_sample_extraction() {
+        let lwe = Lwe(vec![1u32, 2, 3, 4, 5, 6, 7, 8, 9]);
+        let mut glwe = Glwe(vec![u32::MAX; 12]);
+
+        lwe.inverse_extract_glwe_to(&mut glwe, 4, NativeModulus::new());
+
+        assert_eq!(
+            glwe.0,
+            vec![
+                1,
+                4u32.wrapping_neg(),
+                3u32.wrapping_neg(),
+                2u32.wrapping_neg(),
+                5,
+                8u32.wrapping_neg(),
+                7u32.wrapping_neg(),
+                6u32.wrapping_neg(),
+                9,
+                0,
+                0,
+                0,
+            ]
+        );
+
+        let mut extracted = Lwe::zero(8);
+        glwe.extract_lwe_to(&mut extracted, 4, NativeModulus::new());
+        assert_eq!(extracted, lwe);
+    }
+
+    #[test]
+    fn inverse_extraction_round_trips_with_an_explicit_modulus() {
+        let modulus = BarrettModulus::new(257u32);
+        let lwe = Lwe(vec![1u32, 2, 128, 256, 5, 17, 42]);
+        let mut glwe: Glwe<Vec<u32>> = Glwe::zero(12);
+
+        lwe.inverse_extract_glwe_to(&mut glwe, 4, modulus);
+
+        assert_eq!(glwe.0, vec![1, 1, 129, 255, 5, 0, 0, 240, 42, 0, 0, 0]);
+
+        let mut extracted = Lwe::zero(6);
+        glwe.extract_compact_lwe_to(&mut extracted, 4, modulus);
+        assert_eq!(extracted, lwe);
     }
 }
