@@ -120,6 +120,8 @@ impl<T: FheUint> LweKeySwitchingKey<T> {
         *output.b_mut() = modulus.reduce_neg(input.b());
 
         let output_lwe_len = self.output_dimension + 1;
+        let negative_one = modulus.reduce_neg(T::ONE);
+        let negative_two = modulus.reduce_neg(T::TWO);
         let mut entries = self.data.chunks_exact(output_lwe_len);
         for &coefficient in input.a() {
             let (adjusted, mut carry) = self.basis.init_value_carry(coefficient);
@@ -127,7 +129,27 @@ impl<T: FheUint> LweKeySwitchingKey<T> {
                 let (digit, next_carry) = decomposer.decompose(adjusted, carry);
                 carry = next_carry;
                 let key_entry = Lwe(entries.next().expect("invalid key-switching key length"));
-                output.add_mul_scalar_assign(&key_entry, digit, modulus);
+                if digit.is_zero() {
+                    continue;
+                }
+
+                // Signed decomposition produces small digits. Avoid an
+                // expensive modular multiply for the most common values;
+                // in particular, a base-four decomposition consists only of
+                // 0, 1, -1, and -2.
+                if digit == T::ONE {
+                    output.add_component_wise_assign(&key_entry, modulus);
+                } else if digit == negative_one {
+                    output.sub_component_wise_assign(&key_entry, modulus);
+                } else if digit == T::TWO {
+                    output.add_component_wise_assign(&key_entry, modulus);
+                    output.add_component_wise_assign(&key_entry, modulus);
+                } else if digit == negative_two {
+                    output.sub_component_wise_assign(&key_entry, modulus);
+                    output.sub_component_wise_assign(&key_entry, modulus);
+                } else {
+                    output.add_mul_scalar_assign(&key_entry, digit, modulus);
+                }
             }
         }
         debug_assert!(entries.next().is_none());
