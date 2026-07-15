@@ -10,7 +10,7 @@ pub use blind_rotation::*;
 pub use client::{Ciphertext, Decryptor, Encryptor, TfheClientError};
 pub use evaluator::TfheEvaluationError;
 pub use functional_bootstrapping_key::*;
-pub use key::{ClientKey, TfheKeyError};
+pub use key::{ClientKey, LweSecretKeyRef, TfheKeyError};
 pub use lookup_table::{LookupTable, LookupTableError};
 
 pub use boolean::{

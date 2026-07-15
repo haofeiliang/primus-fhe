@@ -73,6 +73,7 @@ where
         ClientKey::new(
             LweSecretKey::generate(parameters.small_lwe(), rng),
             GlweSecretKey::generate(parameters.glwe(), rng),
+            parameters.pbs_order(),
         )
     }
 
@@ -93,7 +94,7 @@ where
             self.context.table(),
         );
         let bootstrapping_key = NttFunctionalBootstrappingKey::generate_ntt(
-            client_key.lwe_secret_key(),
+            client_key.small_lwe_secret_key(),
             &main_glwe_secret_key,
             parameters.bootstrapping(),
             self.context.table(),
@@ -101,7 +102,7 @@ where
             &mut self.gadget,
         );
         let padded_small_glwe_secret_key = GlweSecretKey::from_padded_lwe(
-            client_key.lwe_secret_key(),
+            client_key.small_lwe_secret_key(),
             parameters.glwe().poly_length(),
         )
         .expect("validated TFHE parameters must admit a padded small-LWE key");

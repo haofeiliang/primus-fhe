@@ -182,12 +182,19 @@ where
         R: rand::Rng + rand::CryptoRng,
     {
         match self.parameters.pbs_order() {
-            PbsOrder::BootstrapKeyswitch => self.key.lwe_secret_key().encrypt_with_embedding(
-                message,
-                self.parameters.small_lwe(),
-                rng,
-                embedding,
-            ),
+            PbsOrder::BootstrapKeyswitch => {
+                let parameters = self.parameters.small_lwe();
+                encrypt_lwe_with_secret(
+                    self.key.small_lwe_secret_key().as_ref(),
+                    message,
+                    parameters.cipher_modulus(),
+                    parameters.cipher_modulus_uniform_distr(),
+                    parameters.noise_distribution(),
+                    parameters.plaintext_codec(),
+                    embedding,
+                    rng,
+                )
+            }
             PbsOrder::KeyswitchBootstrap => {
                 let parameters = self.parameters.glwe();
                 encrypt_lwe_with_secret(
@@ -243,10 +250,15 @@ where
         }
 
         let message: T = match self.parameters.pbs_order() {
-            PbsOrder::BootstrapKeyswitch => self
-                .key
-                .lwe_secret_key()
-                .decrypt(ciphertext.as_lwe(), self.parameters.small_lwe()),
+            PbsOrder::BootstrapKeyswitch => {
+                let parameters = self.parameters.small_lwe();
+                decrypt_lwe_with_secret(
+                    self.key.small_lwe_secret_key().as_ref(),
+                    ciphertext.as_lwe(),
+                    parameters.cipher_modulus(),
+                    parameters.plaintext_codec(),
+                )
+            }
             PbsOrder::KeyswitchBootstrap => {
                 let parameters = self.parameters.glwe();
                 decrypt_lwe_with_secret(

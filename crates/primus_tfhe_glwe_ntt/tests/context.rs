@@ -163,7 +163,11 @@ fn generates_complete_client_and_server_keys() {
         let mut rng = rand::rng();
         let (client_key, server_key) = generator.generate(&mut rng).unwrap();
 
-        assert_eq!(client_key.lwe_secret_key().dimension(), 4);
+        assert_eq!(client_key.small_lwe_secret_key().dimension(), 4);
+        assert_eq!(
+            client_key.lwe_secret_key().dimension(),
+            context.parameters().ciphertext_lwe_dimension()
+        );
         assert_eq!(client_key.glwe_secret_key().poly_length(), POLY_LENGTH);
         assert_eq!(server_key.bootstrapping_key().input_dimension(), 4);
         assert_eq!(server_key.glwe_key_switching_key().input_dimension(), 1);

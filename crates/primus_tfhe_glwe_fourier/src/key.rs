@@ -79,6 +79,7 @@ where
         ClientKey::new(
             LweSecretKey::generate(parameters.small_lwe(), rng),
             GlweSecretKey::generate(parameters.glwe(), rng),
+            parameters.pbs_order(),
         )
     }
 
@@ -99,7 +100,7 @@ where
             &mut self.fft,
         );
         let bootstrapping_key = FourierFunctionalBootstrappingKey::generate_fourier(
-            client_key.lwe_secret_key(),
+            client_key.small_lwe_secret_key(),
             &main_glwe_secret_key,
             parameters.bootstrapping(),
             &mut self.fft,
@@ -107,7 +108,7 @@ where
             &mut self.gadget,
         );
         let padded_small_glwe_secret_key = GlweSecretKey::from_padded_lwe(
-            client_key.lwe_secret_key(),
+            client_key.small_lwe_secret_key(),
             parameters.glwe().poly_length(),
         )
         .expect("validated TFHE parameters must admit a padded small-LWE key");
