@@ -3,57 +3,19 @@
 //! The small dimensions below keep the example fast. They are not a security
 //! recommendation.
 
-use primus_decompose::primitive::ApproxSignedBasis;
-use primus_fhe_core::{
-    GgswParameters, GlweParameters, LweParameters, LweSecretKeyType, RingSecretKeyType,
-};
-use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, U32NttTable};
 use primus_tfhe_glwe_ntt::{
     BooleanDecryptor, BooleanEncryptor, Decryptor, Encryptor, Evaluator, KeyGenerator, TfheContext,
-    TfheParameters,
+    boolean_parameters,
 };
-
-const LWE_DIMENSION: usize = 4;
-const GLWE_DIMENSION: usize = 1;
-const POLY_LENGTH: usize = 256;
-const PLAINTEXT_MODULUS: u32 = 4;
-const CIPHERTEXT_MODULUS: u32 = 132_120_577;
-
-fn parameters() -> TfheParameters<u32> {
-    let modulus = BarrettModulus::new(CIPHERTEXT_MODULUS);
-    let lwe = LweParameters::new(
-        LWE_DIMENSION,
-        PLAINTEXT_MODULUS,
-        modulus,
-        LweSecretKeyType::Binary,
-        0.7,
-    );
-    let glwe = GlweParameters::new(
-        GLWE_DIMENSION,
-        POLY_LENGTH,
-        PLAINTEXT_MODULUS,
-        modulus,
-        RingSecretKeyType::Binary,
-        0.7,
-    );
-    let bootstrapping = GgswParameters::with_glwe_params(
-        &glwe,
-        ApproxSignedBasis::new(Some(CIPHERTEXT_MODULUS), 8, Some(3)),
-    );
-    TfheParameters::with_key_switching_basis(
-        lwe,
-        bootstrapping,
-        ApproxSignedBasis::new(Some(CIPHERTEXT_MODULUS), 4, Some(4)),
-    )
-    .unwrap()
-}
 
 fn main() {
     // A context validates both the NTT length and its explicit modulus.
-    let modulus = BarrettModulus::new(CIPHERTEXT_MODULUS);
-    let table = U32NttTable::new(POLY_LENGTH.trailing_zeros(), modulus).unwrap();
-    let context = TfheContext::try_new(parameters(), table).unwrap();
+    let parameters = boolean_parameters();
+    let modulus = parameters.glwe().cipher_modulus();
+    let poly_length = parameters.glwe().poly_length();
+    let table = U32NttTable::new(poly_length.trailing_zeros(), modulus).unwrap();
+    let context = TfheContext::try_new(boolean_parameters(), table).unwrap();
 
     // The client key decrypts; the server key only evaluates homomorphically.
     let mut rng = rand::rng();

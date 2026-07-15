@@ -3,57 +3,21 @@
 use std::hint::black_box;
 
 use criterion::{Criterion, criterion_group, criterion_main};
-use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fhe_core::{
-    GgswParameters, GlweCiphertext, GlweParameters, LweCiphertext, LweParameters, LweSecretKeyType,
-    NttBlindRotationContext, RingSecretKeyType, ntt_blind_rotate_to,
+    GlweCiphertext, LweCiphertext, NttBlindRotationContext, ntt_blind_rotate_to,
 };
-use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, U32NttTable};
 use primus_tfhe_glwe_ntt::{
-    BooleanEncryptor, BooleanGate, Encryptor, Evaluator, KeyGenerator, TfheContext, TfheParameters,
+    BooleanEncryptor, BooleanGate, Encryptor, Evaluator, KeyGenerator, TfheContext,
+    boolean_parameters,
 };
 
-// Performance-comparison profile, not a security recommendation.
-const LWE_DIMENSION: usize = 256;
-const GLWE_DIMENSION: usize = 1;
-const POLY_LENGTH: usize = 1024;
-const PLAINTEXT_MODULUS: u32 = 4;
-const CIPHERTEXT_MODULUS: u32 = 132_120_577;
-
-fn parameters() -> TfheParameters<u32> {
-    let modulus = BarrettModulus::new(CIPHERTEXT_MODULUS);
-    let lwe = LweParameters::new(
-        LWE_DIMENSION,
-        PLAINTEXT_MODULUS,
-        modulus,
-        LweSecretKeyType::Binary,
-        3.2,
-    );
-    let glwe = GlweParameters::new(
-        GLWE_DIMENSION,
-        POLY_LENGTH,
-        PLAINTEXT_MODULUS,
-        modulus,
-        RingSecretKeyType::Binary,
-        3.2,
-    );
-    let bootstrapping = GgswParameters::with_glwe_params(
-        &glwe,
-        ApproxSignedBasis::new(Some(CIPHERTEXT_MODULUS), 8, Some(3)),
-    );
-    TfheParameters::with_key_switching_basis(
-        lwe,
-        bootstrapping,
-        ApproxSignedBasis::new(Some(CIPHERTEXT_MODULUS), 4, Some(4)),
-    )
-    .unwrap()
-}
-
 fn bench_pbs(c: &mut Criterion) {
-    let modulus = BarrettModulus::new(CIPHERTEXT_MODULUS);
-    let table = U32NttTable::new(POLY_LENGTH.trailing_zeros(), modulus).unwrap();
-    let context = TfheContext::try_new(parameters(), table).unwrap();
+    let parameters = boolean_parameters();
+    let modulus = parameters.glwe().cipher_modulus();
+    let poly_length = parameters.glwe().poly_length();
+    let table = U32NttTable::new(poly_length.trailing_zeros(), modulus).unwrap();
+    let context = TfheContext::try_new(parameters, table).unwrap();
     let mut rng = rand::rng();
     let mut key_generator = KeyGenerator::new(&context);
     let (client_key, server_key) = key_generator.generate(&mut rng).unwrap();
@@ -63,7 +27,8 @@ fn bench_pbs(c: &mut Criterion) {
     let mut evaluator = Evaluator::try_new(&context, &server_key).unwrap();
     let mut output = input.clone();
     let parameters = context.parameters();
-    let mut blind_rotation = NttBlindRotationContext::new(GLWE_DIMENSION, POLY_LENGTH);
+    let glwe_dimension = parameters.glwe().dimension();
+    let mut blind_rotation = NttBlindRotationContext::new(glwe_dimension, poly_length);
     let mut rotated: GlweCiphertext<Vec<u32>> = GlweCiphertext::zero(parameters.glwe().glwe_len());
     ntt_blind_rotate_to(
         input.as_lwe(),
@@ -78,7 +43,7 @@ fn bench_pbs(c: &mut Criterion) {
     let mut extracted: LweCiphertext<u32> = LweCiphertext::zero(parameters.glwe().secret_key_len());
     rotated.extract_lwe_to(
         &mut extracted,
-        POLY_LENGTH,
+        poly_length,
         parameters.glwe().cipher_modulus(),
     );
     let mut switched: LweCiphertext<u32> = LweCiphertext::zero(parameters.lwe().dimension());
@@ -88,7 +53,10 @@ fn bench_pbs(c: &mut Criterion) {
     let mut boolean_output = boolean_lhs.clone();
     let mut boolean_evaluator = context.new_boolean_evaluator(&server_key).unwrap();
 
-    let mut group = c.benchmark_group("tfhe_pbs/ntt/u32/n1024/k1/lwe256");
+    let mut group = c.benchmark_group(format!(
+        "tfhe_pbs/ntt/u32/n{poly_length}/k{glwe_dimension}/lwe{}",
+        parameters.lwe().dimension(),
+    ));
     group.sample_size(10);
     group.bench_function("blind_rotation", |b| {
         b.iter(|| {
@@ -109,7 +77,7 @@ fn bench_pbs(c: &mut Criterion) {
         b.iter(|| {
             rotated.extract_lwe_to(
                 black_box(&mut extracted),
-                POLY_LENGTH,
+                poly_length,
                 parameters.glwe().cipher_modulus(),
             );
             black_box(&extracted);

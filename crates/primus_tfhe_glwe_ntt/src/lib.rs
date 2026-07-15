@@ -1,170 +1,27 @@
 //! NTT backend for GLWE-based TFHE.
 
-use primus_integer::FheUint;
-use primus_modulus::BarrettModulus;
-use primus_ntt::NttTable;
-
+pub mod boolean;
+mod client;
+mod context;
 mod evaluator;
 mod key;
+pub mod parameters;
 
+// Common TFHE API.
+pub use client::{Decryptor, Encryptor};
+pub use context::{TfheContext, TfheContextError};
 pub use evaluator::Evaluator;
 pub use key::{KeyGenerator, ServerKey};
+pub use parameters::TfheParameters;
 pub use primus_fhe_core::{
-    BooleanCiphertext, BooleanError, BooleanGate, Ciphertext, ClientKey, LookupTable,
-    LookupTableError, LweKeySwitchingParameters, TfheClientError, TfheEvaluationError,
-    TfheKeyError, TfheParameterError,
+    Ciphertext, ClientKey, LookupTable, LookupTableError, LweKeySwitchingParameters,
+    TfheClientError, TfheEvaluationError, TfheKeyError, TfheParameterError,
 };
 
-/// Encryptor role for the explicit-modulus NTT backend.
-///
-/// Only client-key encryption is implemented currently; the key type is kept
-/// generic so public-key encryption can be added without replacing this type.
-pub type Encryptor<'a, T, Key = ClientKey<T>> =
-    primus_fhe_core::Encryptor<'a, T, BarrettModulus<T>, Key>;
-
-/// Client-key decryptor for the explicit-modulus NTT backend.
-pub type Decryptor<'a, T> = primus_fhe_core::Decryptor<'a, T, BarrettModulus<T>>;
-
-/// Boolean encryptor for the explicit-modulus NTT backend.
-pub type BooleanEncryptor<'a, T> = primus_fhe_core::BooleanEncryptor<'a, T, BarrettModulus<T>>;
-
-/// Boolean decryptor for the explicit-modulus NTT backend.
-pub type BooleanDecryptor<'a, T> = primus_fhe_core::BooleanDecryptor<'a, T, BarrettModulus<T>>;
-
-/// Boolean gate evaluator backed by NTT programmable bootstrapping.
-pub type BooleanEvaluator<'a, T, Table> = primus_fhe_core::BooleanEvaluator<
-    'a,
-    T,
-    BarrettModulus<T>,
-    BarrettModulus<T>,
-    Evaluator<'a, T, Table>,
->;
-
-/// GLWE-TFHE parameters for the explicit-modulus NTT backend.
-pub type TfheParameters<T> =
-    primus_fhe_core::TfheParameters<T, BarrettModulus<T>, BarrettModulus<T>>;
-
-/// An incompatibility between TFHE parameters and an NTT table.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum TfheContextError<T: FheUint> {
-    /// The NTT table was built for a different polynomial length.
-    #[error("NTT polynomial length mismatch: expected {expected}, got {actual}")]
-    PolynomialLengthMismatch {
-        /// Polynomial length required by the GLWE parameters.
-        expected: usize,
-        /// Polynomial length supported by the NTT table.
-        actual: usize,
-    },
-
-    /// The NTT table was built for a different coefficient modulus.
-    #[error("NTT modulus mismatch: expected {expected:?}, got {actual:?}")]
-    ModulusMismatch {
-        /// Coefficient modulus required by the GLWE parameters.
-        expected: T,
-        /// Coefficient modulus supported by the NTT table.
-        actual: T,
-    },
-
-    /// The current LWE key-switching implementation requires the small-LWE
-    /// and sample-extracted GLWE ciphertexts to use the same modulus.
-    #[error("LWE/GLWE ciphertext modulus mismatch: LWE uses {lwe:?}, GLWE uses {glwe:?}")]
-    CiphertextModulusMismatch {
-        /// Small-LWE ciphertext modulus.
-        lwe: T,
-        /// GLWE ciphertext modulus.
-        glwe: T,
-    },
-}
-
-/// A validated binding between explicit-modulus TFHE parameters and an NTT
-/// table.
-pub struct TfheContext<T, Table>
-where
-    T: FheUint,
-    Table: NttTable<ValueT = T>,
-{
-    parameters: TfheParameters<T>,
-    table: Table,
-}
-
-impl<T, Table> TfheContext<T, Table>
-where
-    T: FheUint,
-    Table: NttTable<ValueT = T>,
-{
-    /// Binds TFHE parameters to a compatible NTT table.
-    pub fn try_new(
-        parameters: TfheParameters<T>,
-        table: Table,
-    ) -> Result<Self, TfheContextError<T>> {
-        let expected = parameters.glwe().poly_length();
-        let actual = table.poly_length();
-        if actual != expected {
-            return Err(TfheContextError::PolynomialLengthMismatch { expected, actual });
-        }
-
-        let expected = parameters.glwe().cipher_modulus_value();
-        let actual = table.modulus();
-        if actual != expected {
-            return Err(TfheContextError::ModulusMismatch { expected, actual });
-        }
-
-        let lwe = parameters.lwe().cipher_modulus().value();
-        if lwe != expected {
-            return Err(TfheContextError::CiphertextModulusMismatch {
-                lwe,
-                glwe: expected,
-            });
-        }
-
-        Ok(Self { parameters, table })
-    }
-
-    /// Returns the validated TFHE parameters.
-    #[inline]
-    pub fn parameters(&self) -> &TfheParameters<T> {
-        &self.parameters
-    }
-
-    /// Returns the immutable NTT table.
-    #[inline]
-    pub fn table(&self) -> &Table {
-        &self.table
-    }
-
-    /// Creates a Boolean gate evaluator.
-    pub fn new_boolean_evaluator<'a>(
-        &'a self,
-        server_key: &'a ServerKey<T>,
-    ) -> Result<BooleanEvaluator<'a, T, Table>, BooleanError> {
-        let evaluator = Evaluator::try_new(self, server_key)?;
-        primus_fhe_core::BooleanEvaluator::try_new(&self.parameters, evaluator)
-    }
-
-    /// Compiles a unary function into a coefficient-domain GLWE accumulator.
-    #[inline]
-    pub fn compile_lookup_table_fn<F>(
-        &self,
-        function: F,
-    ) -> Result<LookupTable<T>, LookupTableError>
-    where
-        F: Fn(usize) -> T,
-    {
-        self.parameters.compile_lookup_table_fn(function)
-    }
-
-    /// Compiles one output per plaintext input into a GLWE accumulator.
-    #[inline]
-    pub fn compile_lookup_table_slice(
-        &self,
-        outputs: &[T],
-    ) -> Result<LookupTable<T>, LookupTableError> {
-        self.parameters.compile_lookup_table_slice(outputs)
-    }
-
-    /// Decomposes this context into its parameters and NTT table.
-    #[inline]
-    pub fn into_parts(self) -> (TfheParameters<T>, Table) {
-        (self.parameters, self.table)
-    }
-}
+// Boolean API. Keep this group separate from future high-level APIs such as
+// `small_int`.
+pub use boolean::{
+    BooleanCiphertext, BooleanDecryptor, BooleanEncryptor, BooleanError, BooleanEvaluator,
+    BooleanGate,
+};
+pub use parameters::boolean_parameters;
