@@ -35,6 +35,7 @@ fn parameters_with_plain_modulus(plain_modulus: u32) -> TfheParameters<u32> {
         GgswParameters::with_glwe_params(&glwe, ApproxSignedBasis::new(None, 8, Some(3)));
     TfheParameters::with_key_switching_basis(
         lwe,
+        glwe,
         bootstrapping,
         ApproxSignedBasis::new(None, 4, Some(4)),
     )

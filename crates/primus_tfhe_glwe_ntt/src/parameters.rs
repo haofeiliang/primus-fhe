@@ -47,6 +47,7 @@ pub fn boolean_parameters()
     );
     TfheParameters::with_key_switching_basis(
         lwe,
+        glwe,
         bootstrapping,
         ApproxSignedBasis::new(Some(CIPHERTEXT_MODULUS), 2, Some(13)),
     )

@@ -13,6 +13,7 @@ const MISMATCHED_MODULUS: u32 = 16_777_217;
 
 type NativeComponents = (
     LweParameters<u32, NativeModulus<u32>>,
+    GlweParameters<u32, NativeModulus<u32>>,
     GgswParameters<u32, NativeModulus<u32>>,
     LweKeySwitchingParameters<u32>,
 );
@@ -49,12 +50,12 @@ fn native_components(
         key_switching_output_dimension,
         ApproxSignedBasis::new(key_switching_basis_modulus, 4, Some(4)),
     );
-    (lwe, bootstrapping, key_switching)
+    (lwe, glwe, bootstrapping, key_switching)
 }
 
 #[test]
 fn accepts_native_torus_parameters_and_exposes_components() {
-    let (lwe, bootstrapping, _) = native_components(
+    let (lwe, glwe, bootstrapping, _) = native_components(
         LweSecretKeyType::Binary,
         PLAIN_MODULUS,
         None,
@@ -65,6 +66,7 @@ fn accepts_native_torus_parameters_and_exposes_components() {
 
     let parameters = TfheParameters::with_key_switching_basis(
         lwe,
+        glwe,
         bootstrapping,
         ApproxSignedBasis::new(None, 4, Some(4)),
     )
@@ -76,8 +78,9 @@ fn accepts_native_torus_parameters_and_exposes_components() {
     assert_eq!(parameters.plain_modulus_value(), PLAIN_MODULUS);
     assert_eq!(parameters.key_switching().decompose_length(), 4);
 
-    let (lwe, bootstrapping, key_switching) = parameters.into_parts();
+    let (lwe, glwe, bootstrapping, key_switching) = parameters.into_parts();
     assert_eq!(lwe.dimension(), LWE_DIMENSION);
+    assert_eq!(glwe.dimension(), GLWE_DIMENSION);
     assert_eq!(bootstrapping.poly_length(), POLY_LENGTH);
     assert_eq!(key_switching.input_dimension(), POLY_LENGTH);
 }
@@ -109,7 +112,7 @@ fn accepts_explicit_modulus_parameters() {
         ApproxSignedBasis::new(Some(MODULUS), 4, Some(4)),
     );
 
-    assert!(TfheParameters::try_new(lwe, bootstrapping, key_switching).is_ok());
+    assert!(TfheParameters::try_new(lwe, glwe, bootstrapping, key_switching).is_ok());
 }
 
 #[test]
@@ -189,8 +192,8 @@ fn rejects_incompatible_component_parameters() {
         ),
     ];
 
-    for ((lwe, bootstrapping, key_switching), expected) in cases {
-        let actual = TfheParameters::try_new(lwe, bootstrapping, key_switching)
+    for ((lwe, glwe, bootstrapping, key_switching), expected) in cases {
+        let actual = TfheParameters::try_new(lwe, glwe, bootstrapping, key_switching)
             .err()
             .expect("the parameter combination must be rejected");
         assert_eq!(actual, expected);

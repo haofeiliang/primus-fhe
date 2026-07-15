@@ -2,7 +2,7 @@ use primus_decompose::primitive::ApproxSignedBasis;
 use primus_integer::FheUint;
 use primus_reduce::RingContext;
 
-use crate::{GgswParameters, LweParameters, LweSecretKeyType};
+use crate::{GgswParameters, GlweParameters, LweParameters, LweSecretKeyType};
 
 /// Parameters controlling an LWE key-switching key.
 ///
@@ -77,6 +77,11 @@ pub enum TfheParameterError {
     #[error("LWE and GLWE plaintext moduli must match")]
     PlainModulusMismatch,
 
+    /// The GGSW parameters were not derived from the configured accumulator
+    /// GLWE parameters.
+    #[error("bootstrapping GLWE parameters do not match the accumulator GLWE parameters")]
+    BootstrappingGlweParametersMismatch,
+
     /// The GGSW decomposition basis was created for a different GLWE modulus.
     #[error("bootstrapping decomposition basis does not match the GLWE ciphertext modulus")]
     BootstrappingBasisModulusMismatch,
@@ -126,9 +131,18 @@ where
     GM: RingContext<T>,
 {
     lwe: LweParameters<T, LM>,
+    glwe: GlweParameters<T, GM>,
     bootstrapping: GgswParameters<T, GM>,
     key_switching: LweKeySwitchingParameters<T>,
 }
+
+/// Component parameter objects owned by a [`TfheParameters`] value.
+pub type TfheParameterParts<T, LM, GM> = (
+    LweParameters<T, LM>,
+    GlweParameters<T, GM>,
+    GgswParameters<T, GM>,
+    LweKeySwitchingParameters<T>,
+);
 
 impl<T, LM, GM> TfheParameters<T, LM, GM>
 where
@@ -144,20 +158,22 @@ where
     /// key-switching parameter set.
     pub fn with_key_switching_basis(
         lwe: LweParameters<T, LM>,
+        glwe: GlweParameters<T, GM>,
         bootstrapping: GgswParameters<T, GM>,
         key_switching_basis: ApproxSignedBasis<T>,
     ) -> Result<Self, TfheParameterError> {
         let key_switching = LweKeySwitchingParameters::new(
-            bootstrapping.glwe_params().secret_key_len(),
+            glwe.secret_key_len(),
             lwe.dimension(),
             key_switching_basis,
         );
-        Self::try_new(lwe, bootstrapping, key_switching)
+        Self::try_new(lwe, glwe, bootstrapping, key_switching)
     }
 
     /// Creates and validates a GLWE-based TFHE parameter set.
     pub fn try_new(
         lwe: LweParameters<T, LM>,
+        glwe: GlweParameters<T, GM>,
         bootstrapping: GgswParameters<T, GM>,
         key_switching: LweKeySwitchingParameters<T>,
     ) -> Result<Self, TfheParameterError> {
@@ -165,15 +181,24 @@ where
             return Err(TfheParameterError::InputLweSecretKeyMustBeBinary);
         }
 
-        if lwe.plain_modulus_value() != bootstrapping.glwe_params().plain_modulus_value() {
+        if lwe.plain_modulus_value() != glwe.plain_modulus_value() {
             return Err(TfheParameterError::PlainModulusMismatch);
+        }
+
+        if glwe.common_size() != bootstrapping.glwe_common_size()
+            || glwe.cipher_modulus().value() != bootstrapping.cipher_modulus().value()
+            || glwe.secret_key_type() != bootstrapping.secret_key_type()
+            || glwe.noise_distribution().standard_deviation()
+                != bootstrapping.noise_distribution().standard_deviation()
+        {
+            return Err(TfheParameterError::BootstrappingGlweParametersMismatch);
         }
 
         if bootstrapping.basis().modulus() != bootstrapping.cipher_modulus().value() {
             return Err(TfheParameterError::BootstrappingBasisModulusMismatch);
         }
 
-        let extracted_dimension = bootstrapping.glwe_params().secret_key_len();
+        let extracted_dimension = glwe.secret_key_len();
         if key_switching.input_dimension() != extracted_dimension {
             return Err(TfheParameterError::KeySwitchingInputDimensionMismatch {
                 expected: extracted_dimension,
@@ -194,6 +219,7 @@ where
 
         Ok(Self {
             lwe,
+            glwe,
             bootstrapping,
             key_switching,
         })
@@ -214,7 +240,7 @@ where
     /// Returns the GLWE accumulator parameters.
     #[inline]
     pub fn glwe(&self) -> &crate::GlweParameters<T, GM> {
-        self.bootstrapping.glwe_params()
+        &self.glwe
     }
 
     /// Returns the LWE key-switching parameters.
@@ -232,13 +258,7 @@ where
 
     /// Decomposes this parameter set into its component parameter objects.
     #[inline]
-    pub fn into_parts(
-        self,
-    ) -> (
-        LweParameters<T, LM>,
-        GgswParameters<T, GM>,
-        LweKeySwitchingParameters<T>,
-    ) {
-        (self.lwe, self.bootstrapping, self.key_switching)
+    pub fn into_parts(self) -> TfheParameterParts<T, LM, GM> {
+        (self.lwe, self.glwe, self.bootstrapping, self.key_switching)
     }
 }

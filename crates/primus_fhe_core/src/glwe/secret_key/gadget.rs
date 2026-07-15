@@ -104,10 +104,10 @@ where
             .zip(result.iter_glwe_mut(params.fourier_glwe_len()))
         {
             message.mul_scalar_to(scalar, &mut context.encoded, NativeModulus::new());
-            self.encrypt_encoded_to(
+            self.encrypt_gadget_encoded_to(
                 &context.encoded,
                 &mut glwe,
-                params.glwe_params(),
+                params,
                 fft,
                 rng,
                 &mut context.glwe,
@@ -153,7 +153,7 @@ where
                 .chunks_exact(fourier_length)
                 .zip(glev.iter_glwe_mut(params.fourier_glwe_len()))
             {
-                self.encrypt_zeros_to(&mut glwe, params.glwe_params(), fft, rng, &mut context.glwe);
+                self.encrypt_gadget_zeros_to(&mut glwe, params, fft, rng, &mut context.glwe);
                 let diagonal = glwe
                     .as_mut()
                     .chunks_exact_mut(fourier_length)
@@ -206,7 +206,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
             .zip(result.iter_ntt_glwe_mut(params.glwe_len()))
         {
             message.mul_scalar_to(scalar, &mut context.encoded, modulus);
-            self.encrypt_encoded_to(&context.encoded, &mut glwe, params.glwe_params(), ntt, rng);
+            self.encrypt_gadget_encoded_to(&context.encoded, &mut glwe, params, ntt, rng);
         }
     }
 
@@ -240,8 +240,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
             .scalar_iter()
             .zip(context.level_transforms.chunks_exact_mut(poly_length))
         {
-            message.mul_scalar_to(scalar, &mut context.encoded, modulus);
-            transformed.copy_from_slice(context.encoded.as_ref());
+            message.mul_scalar_to(scalar, &mut Polynomial(&mut *transformed), modulus);
             ntt.transform_slice(transformed);
         }
 
@@ -251,7 +250,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
                 .chunks_exact(poly_length)
                 .zip(glev.iter_ntt_glwe_mut(params.glwe_len()))
             {
-                self.encrypt_zeros_to(&mut glwe, params.glwe_params(), ntt, rng);
+                self.encrypt_gadget_zeros_to(&mut glwe, params, ntt, rng);
                 let diagonal = glwe
                     .as_mut()
                     .chunks_exact_mut(poly_length)

@@ -2,7 +2,6 @@
 
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_distr::DiscreteGaussian;
-use primus_factor::{FactorBase, ShoupFactor};
 use primus_integer::FheUint;
 use primus_reduce::RingContext;
 use rand::distr::Uniform;
@@ -201,7 +200,116 @@ impl GlevCommonSize {
     }
 }
 
-/// Glwe Parameters.
+/// GLWE encryption parameters shared by ordinary and gadget ciphertexts.
+///
+/// Ciphertext sizes and plaintext encoding intentionally live in their
+/// respective outer parameter types.
+#[derive(Clone)]
+pub struct GlweParametersInner<T, M>
+where
+    T: FheUint,
+    M: RingContext<T>,
+{
+    /// **RLWE** cipher modulus minus one, refers to **Q-1**.
+    cipher_modulus_minus_one: T,
+    /// The modulus, refers to **Q** in the paper.
+    cipher_modulus: M,
+    cipher_modulus_uniform_distr: Uniform<T>,
+    /// The distribution type of the secret key.
+    secret_key_type: RingSecretKeyType,
+    secret_key_distribution: Option<DiscreteGaussian<T>>,
+    /// The noise's distribution.
+    noise_distribution: DiscreteGaussian<T>,
+}
+
+impl<T, M> GlweParametersInner<T, M>
+where
+    T: FheUint,
+    M: RingContext<T>,
+{
+    /// Creates GLWE encryption and secret-key parameters without ciphertext
+    /// sizes or plaintext encoding.
+    pub fn new(
+        cipher_modulus: M,
+        secret_key_type: RingSecretKeyType,
+        noise_standard_deviation: f64,
+    ) -> Self {
+        let cipher_modulus_minus_one = cipher_modulus.minus_one();
+
+        let noise_distribution =
+            DiscreteGaussian::new(noise_standard_deviation, cipher_modulus_minus_one).unwrap();
+
+        let cipher_modulus_uniform_distr = cipher_modulus.uniform_distribution();
+        let secret_key_distribution =
+            if let RingSecretKeyType::Gaussian(standard_deviation) = secret_key_type {
+                Some(DiscreteGaussian::new(standard_deviation, cipher_modulus_minus_one).unwrap())
+            } else {
+                None
+            };
+
+        Self {
+            cipher_modulus_minus_one,
+            cipher_modulus,
+            cipher_modulus_uniform_distr,
+            secret_key_type,
+            secret_key_distribution,
+            noise_distribution,
+        }
+    }
+
+    /// Returns the cipher modulus.
+    #[inline]
+    pub fn cipher_modulus(&self) -> M {
+        self.cipher_modulus
+    }
+
+    /// Returns the representable cipher modulus value, when one exists.
+    #[inline]
+    pub fn cipher_modulus_value(&self) -> Option<T> {
+        self.cipher_modulus.value()
+    }
+
+    /// Returns the cipher modulus minus one.
+    #[inline]
+    pub fn cipher_modulus_minus_one(&self) -> T {
+        self.cipher_modulus_minus_one
+    }
+
+    /// Returns the uniform distribution over the ciphertext modulus.
+    #[inline]
+    pub fn cipher_modulus_uniform_distr(&self) -> Uniform<T> {
+        self.cipher_modulus_uniform_distr
+    }
+
+    /// Returns the secret-key distribution type.
+    #[inline]
+    pub fn secret_key_type(&self) -> RingSecretKeyType {
+        self.secret_key_type
+    }
+
+    /// Returns the Gaussian secret-key distribution, when configured.
+    #[inline]
+    pub fn secret_key_distribution(&self) -> Option<&DiscreteGaussian<T>> {
+        self.secret_key_distribution.as_ref()
+    }
+
+    /// Returns the noise distribution.
+    #[inline]
+    pub fn noise_distribution(&self) -> &DiscreteGaussian<T> {
+        &self.noise_distribution
+    }
+
+    /// Returns a noise distribution whose variance is divided by `count`.
+    #[inline]
+    pub fn noise_distribution_div_count(&self, count: u32, min_sigma: f64) -> DiscreteGaussian<T> {
+        let noise_standard_deviation = self.noise_distribution.standard_deviation();
+        let var = noise_standard_deviation * noise_standard_deviation;
+        let sigma = (var / count as f64).sqrt().max(min_sigma);
+        DiscreteGaussian::new(sigma, self.cipher_modulus_minus_one).unwrap()
+    }
+}
+
+/// GLWE parameters including ciphertext sizes and plaintext encoding.
 #[derive(Clone)]
 pub struct GlweParameters<T, M>
 where
@@ -209,21 +317,8 @@ where
     M: RingContext<T>,
 {
     common_size: GlweCommonSize,
-    /// **RLWE** message modulus, refers to **t** in the paper.
-    plain_modulus_value: T,
+    inner: GlweParametersInner<T, M>,
     plaintext_codec: PlaintextCodec<T>,
-    /// **RLWE** cipher modulus minus one, refers to **Q-1**.
-    cipher_modulus_minus_one: T,
-    /// The modulus, refers to **Q** in the paper.
-    cipher_modulus: M,
-    cipher_modulus_uniform_distr: Uniform<T>,
-    delta: T,
-    delta_factor: Option<ShoupFactor<T>>,
-    /// The distribution type of the secret key.
-    secret_key_type: RingSecretKeyType,
-    secret_key_distribution: Option<DiscreteGaussian<T>>,
-    /// The noise's distribution.
-    noise_distribution: DiscreteGaussian<T>,
 }
 
 impl<T, M> GlweParameters<T, M>
@@ -241,51 +336,23 @@ where
         noise_standard_deviation: f64,
     ) -> Self {
         let common_size = GlweCommonSize::new(dimension, poly_length);
-        let cipher_modulus_minus_one = cipher_modulus.minus_one();
-
-        let noise_distribution =
-            DiscreteGaussian::new(noise_standard_deviation, cipher_modulus_minus_one).unwrap();
-
-        let cipher_modulus_uniform_distr = cipher_modulus.uniform_distribution();
         let cipher_modulus_value = cipher_modulus.value();
         let plaintext_codec = PlaintextCodec::new(plain_modulus_value, cipher_modulus_value);
 
-        let delta = match cipher_modulus_value {
-            Some(q) => {
-                let (mut delta, rem) = q.div_rem(plain_modulus_value);
-                if rem > (plain_modulus_value - T::ONE) / T::TWO {
-                    delta += T::ONE;
-                }
-                delta
-            }
-            None => {
-                // round(2^BITS / t), represented without materializing 2^BITS
-                T::div_wide(plain_modulus_value >> 1u32, T::ONE, plain_modulus_value)
-            }
-        };
-
-        let delta_factor = cipher_modulus_value.map(|q| ShoupFactor::new(delta, q));
-
-        let secret_key_distribution =
-            if let RingSecretKeyType::Gaussian(standard_deviation) = secret_key_type {
-                Some(DiscreteGaussian::new(standard_deviation, cipher_modulus_minus_one).unwrap())
-            } else {
-                None
-            };
+        let inner =
+            GlweParametersInner::new(cipher_modulus, secret_key_type, noise_standard_deviation);
 
         Self {
             common_size,
-            plain_modulus_value,
+            inner,
             plaintext_codec,
-            cipher_modulus_minus_one,
-            cipher_modulus,
-            cipher_modulus_uniform_distr,
-            delta,
-            delta_factor,
-            secret_key_type,
-            secret_key_distribution,
-            noise_distribution,
         }
+    }
+
+    /// Returns the parameters shared by GLWE and its gadget ciphertexts.
+    #[inline]
+    pub fn inner(&self) -> &GlweParametersInner<T, M> {
+        &self.inner
     }
 
     /// Returns the dimension of this [`GlweParameters<T, M>`].
@@ -338,7 +405,7 @@ where
 
     /// Returns the plain modulus value of this [`GlweParameters<T, M>`].
     pub fn plain_modulus_value(&self) -> T {
-        self.plain_modulus_value
+        self.plaintext_codec.t()
     }
 
     /// Returns the preselected plaintext codec strategy.
@@ -349,61 +416,47 @@ where
 
     /// Returns the cipher modulus of this [`GlweParameters<T, M>`].
     pub fn cipher_modulus(&self) -> M {
-        self.cipher_modulus
+        self.inner.cipher_modulus()
     }
 
     /// Returns the cipher modulus of this [`GlweParameters<T, M>`].
     #[inline]
     pub fn cipher_modulus_value(&self) -> T {
-        self.cipher_modulus
-            .value()
+        self.inner
+            .cipher_modulus_value()
             .expect("native cipher modulus has no representable modulus value")
     }
 
     /// Returns the cipher modulus minus one of this [`GlweParameters<T, M>`].
     pub fn cipher_modulus_minus_one(&self) -> T {
-        self.cipher_modulus_minus_one
+        self.inner.cipher_modulus_minus_one()
     }
 
     /// Returns the cipher modulus uniform distr of this [`GlweParameters<T, M>`].
     pub fn cipher_modulus_uniform_distr(&self) -> Uniform<T> {
-        self.cipher_modulus_uniform_distr
-    }
-
-    /// Returns the delta of this [`GlweParameters<T, M>`].
-    pub fn delta(&self) -> T {
-        self.delta
-    }
-
-    /// Returns the delta factor of this [`GlweParameters<T, M>`].
-    pub fn delta_factor(&self) -> ShoupFactor<T> {
-        self.delta_factor
-            .expect("Shoup delta factor is unavailable for the native cipher modulus")
+        self.inner.cipher_modulus_uniform_distr()
     }
 
     /// Returns the secret key type of this [`GlweParameters<T, M>`].
     pub fn secret_key_type(&self) -> RingSecretKeyType {
-        self.secret_key_type
+        self.inner.secret_key_type()
     }
 
     /// Returns the secret key distribution of this [`GlweParameters<T, M>`].
     pub fn secret_key_distribution(&self) -> Option<&DiscreteGaussian<T>> {
-        self.secret_key_distribution.as_ref()
+        self.inner.secret_key_distribution()
     }
 
     /// Returns a reference to the noise distribution of this [`GlweParameters<T, M>`].
     #[inline]
     pub fn noise_distribution(&self) -> &DiscreteGaussian<T> {
-        &self.noise_distribution
+        self.inner.noise_distribution()
     }
 
     /// Returns the noise distribution.
     #[inline]
     pub fn noise_distribution_div_count(&self, count: u32, min_sigma: f64) -> DiscreteGaussian<T> {
-        let noise_standard_deviation = self.noise_distribution.standard_deviation();
-        let var = noise_standard_deviation * noise_standard_deviation;
-        let sigma = (var / count as f64).sqrt().max(min_sigma);
-        DiscreteGaussian::new(sigma, self.cipher_modulus_minus_one).unwrap()
+        self.inner.noise_distribution_div_count(count, min_sigma)
     }
 }
 
@@ -414,8 +467,8 @@ where
     T: FheUint,
     M: RingContext<T>,
 {
-    glwe_params: GlweParameters<T, M>,
     common_size: GlevCommonSize,
+    inner: GlweParametersInner<T, M>,
     /// Decompose basis for `Q`.
     basis: ApproxSignedBasis<T>,
 }
@@ -427,11 +480,15 @@ where
 {
     /// Creates a new [`GlevParameters<T, M>`].
     #[inline]
-    pub fn new(glwe_params: GlweParameters<T, M>, basis: ApproxSignedBasis<T>) -> Self {
-        let common_size = GlevCommonSize::new(glwe_params.common_size(), basis.decompose_length());
+    pub fn new(
+        glwe_common_size: GlweCommonSize,
+        inner: GlweParametersInner<T, M>,
+        basis: ApproxSignedBasis<T>,
+    ) -> Self {
+        let common_size = GlevCommonSize::new(glwe_common_size, basis.decompose_length());
         Self {
-            glwe_params,
             common_size,
+            inner,
             basis,
         }
     }
@@ -442,13 +499,23 @@ where
         glwe_params: &GlweParameters<T, M>,
         basis: ApproxSignedBasis<T>,
     ) -> Self {
-        Self::new(glwe_params.clone(), basis)
+        Self::new(
+            glwe_params.common_size(),
+            glwe_params.inner().clone(),
+            basis,
+        )
     }
 
-    /// Returns the underlying GLWE parameters.
+    /// Returns the underlying GLWE size constants.
     #[inline]
-    pub fn glwe_params(&self) -> &GlweParameters<T, M> {
-        &self.glwe_params
+    pub fn glwe_common_size(&self) -> GlweCommonSize {
+        self.common_size.glwe_common_size()
+    }
+
+    /// Returns the parameters shared by GLWE and its gadget ciphertexts.
+    #[inline]
+    pub fn inner(&self) -> &GlweParametersInner<T, M> {
+        &self.inner
     }
 
     /// Returns the pre-computed GLev/GGSW size constants.
@@ -471,29 +538,29 @@ where
 
     /// Returns the cipher modulus minus one of this [`GlevParameters<T, M>`].
     pub fn cipher_modulus_minus_one(&self) -> T {
-        self.glwe_params.cipher_modulus_minus_one()
+        self.inner.cipher_modulus_minus_one()
     }
 
     /// Returns the modulus of this [`GlevParameters<T, M>`].
     #[inline]
     pub fn cipher_modulus(&self) -> M {
-        self.glwe_params.cipher_modulus()
+        self.inner.cipher_modulus()
     }
 
     /// Returns the secret key type of this [`GlevParameters<T, M>`].
     pub fn secret_key_type(&self) -> RingSecretKeyType {
-        self.glwe_params.secret_key_type()
+        self.inner.secret_key_type()
     }
 
     /// Returns a reference to the noise distribution of this [`GlevParameters<T, M>`].
     #[inline]
     pub fn noise_distribution(&self) -> &DiscreteGaussian<T> {
-        self.glwe_params.noise_distribution()
+        self.inner.noise_distribution()
     }
 
     /// Returns the noise standard deviation of this [`GlevParameters<T, M>`].
     pub fn noise_standard_deviation(&self) -> f64 {
-        self.glwe_params.noise_distribution().standard_deviation()
+        self.inner.noise_distribution().standard_deviation()
     }
 
     /// Returns a reference to the basis of this [`GlevParameters<T, M>`].

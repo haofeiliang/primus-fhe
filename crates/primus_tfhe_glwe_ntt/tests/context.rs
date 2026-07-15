@@ -31,6 +31,7 @@ fn parameters_u32_with_plain_modulus(plain_modulus: u32) -> TfheParameters<u32> 
         GgswParameters::with_glwe_params(&glwe, ApproxSignedBasis::new(Some(MODULUS), 8, Some(3)));
     TfheParameters::with_key_switching_basis(
         lwe,
+        glwe,
         bootstrapping,
         ApproxSignedBasis::new(Some(MODULUS), 4, Some(4)),
     )
@@ -61,6 +62,7 @@ fn supports_the_specialized_u64_table() {
     );
     let parameters = TfheParameters::with_key_switching_basis(
         lwe,
+        glwe,
         bootstrapping,
         ApproxSignedBasis::new(Some(modulus_value), 4, Some(4)),
     )
@@ -131,6 +133,7 @@ fn rejects_different_lwe_and_glwe_moduli_for_key_switching() {
         GgswParameters::with_glwe_params(&glwe, ApproxSignedBasis::new(Some(MODULUS), 8, Some(3)));
     let parameters = TfheParameters::with_key_switching_basis(
         lwe,
+        glwe,
         bootstrapping,
         ApproxSignedBasis::new(Some(MODULUS), 4, Some(4)),
     )

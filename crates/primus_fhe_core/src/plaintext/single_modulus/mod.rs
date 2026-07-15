@@ -92,6 +92,12 @@ impl<T: FheUint> PlaintextCodec<T> {
         }
     }
 
+    /// Returns the plaintext modulus `t` used by this codec.
+    #[inline]
+    pub fn t(&self) -> T {
+        self.t
+    }
+
     #[inline]
     pub fn kind(&self) -> PlaintextCodecKind {
         match self.strategy {
