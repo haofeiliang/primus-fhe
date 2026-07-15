@@ -17,7 +17,6 @@ fn bench_key_switch(c: &mut Criterion) {
     let poly_length = parameters.glwe().poly_length();
     let input_glwe_dimension = parameters.glwe().dimension();
     let lwe_dimension = parameters.lwe().dimension();
-    let output_glwe_dimension = lwe_dimension.div_ceil(poly_length);
     let table = U32NttTable::new(poly_length.trailing_zeros(), modulus).unwrap();
     let mut rng = rand::rng();
 
@@ -32,18 +31,9 @@ fn bench_key_switch(c: &mut Criterion) {
         &mut rng,
     );
 
-    // The KeyswitchBootstrap output key is the small LWE key followed by
-    // zeros, reinterpreted as a GLWE key of dimension k'. This construction
-    // remains local to the benchmark until `GlweSecretKey::from_padded_lwe`
-    // is implemented.
-    let mut padded_key = vec![0u32; output_glwe_dimension * poly_length];
-    padded_key[..lwe_dimension].copy_from_slice(lwe_secret_key.as_ref());
-    let padded_glwe_secret_key = GlweSecretKey::new(
-        padded_key,
-        output_glwe_dimension,
-        poly_length,
-        RingSecretKeyType::Binary,
-    );
+    let padded_glwe_secret_key =
+        GlweSecretKey::from_padded_lwe(&lwe_secret_key, poly_length).unwrap();
+    let output_glwe_dimension = padded_glwe_secret_key.dimension();
     let output_ntt_secret_key =
         NttGlweSecretKey::from_coeff_secret_key(&padded_glwe_secret_key, &table);
 
