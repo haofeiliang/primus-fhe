@@ -77,6 +77,11 @@ fn natural_secret_order_matches_the_current_sample_extraction_layout() {
     let glwe = Glwe::new(glwe_values);
     let mut extracted: Lwe<Vec<u32>> = Lwe::zero(glwe_secret_key.as_slice().len());
     glwe.extract_lwe_to(&mut extracted, POLY_LENGTH, modulus);
+    let mut compact: Lwe<Vec<u32>> = Lwe::zero(lwe_secret_key.dimension());
+    glwe.extract_compact_lwe_to(&mut compact, POLY_LENGTH, modulus);
+
+    assert_eq!(compact.a(), &extracted.a()[..lwe_secret_key.dimension()]);
+    assert_eq!(compact.b(), extracted.b());
 
     let q = u64::from(MODULUS);
     let dot = extracted
@@ -87,6 +92,14 @@ fn natural_secret_order_matches_the_current_sample_extraction_layout() {
             (sum + u64::from(a) * u64::from(s)) % q
         });
     let extracted_phase = (u64::from(extracted.b()) + q - dot) % q;
+    let compact_dot = compact
+        .a()
+        .iter()
+        .zip(lwe_secret_key.as_ref())
+        .fold(0u64, |sum, (&a, &s)| {
+            (sum + u64::from(a) * u64::from(s)) % q
+        });
+    let compact_phase = (u64::from(compact.b()) + q - compact_dot) % q;
 
     let glwe_mid = glwe_secret_key.dimension() * POLY_LENGTH;
     let mut product_constant = 0u64;
@@ -103,6 +116,7 @@ fn natural_secret_order_matches_the_current_sample_extraction_layout() {
     let glwe_phase = (u64::from(glwe.as_ref()[glwe_mid]) + q - product_constant) % q;
 
     assert_eq!(extracted_phase, glwe_phase);
+    assert_eq!(compact_phase, glwe_phase);
 }
 
 #[test]

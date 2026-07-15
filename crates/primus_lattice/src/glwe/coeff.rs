@@ -44,12 +44,10 @@ where
         B: RawData<Elem = T> + DataMut,
     {
         assert!(poly_length > 0);
-        assert_eq!(self.as_ref().len() % poly_length, 0);
+        assert!(self.as_ref().len().is_multiple_of(poly_length));
+        assert!(output.dimension().is_multiple_of(poly_length));
 
-        let component_count = self.as_ref().len() / poly_length;
-        assert!(component_count >= 2);
-        let mask_len = (component_count - 1) * poly_length;
-        assert_eq!(output.dimension(), mask_len);
+        let mask_len = output.dimension();
 
         let (output_mask, output_body) = output.a_b_mut();
         for (mask, extracted) in self.as_ref()[..mask_len]
@@ -57,8 +55,42 @@ where
             .zip(output_mask.chunks_exact_mut(poly_length))
         {
             extracted[0] = mask[0];
-            for index in 1..poly_length {
-                extracted[index] = modulus.reduce_neg(mask[poly_length - index]);
+            for (output, &input) in extracted[1..].iter_mut().zip(mask[1..].iter().rev()) {
+                *output = modulus.reduce_neg(input);
+            }
+        }
+        *output_body = self.as_ref()[mask_len];
+    }
+
+    /// Extracts the constant coefficient as an LWE sample while omitting mask
+    /// coefficients paired with a zero-padded secret-key suffix.
+    ///
+    /// The active secret-key length is inferred from `output.dimension()` and
+    /// must not exceed the full extracted dimension `kN`. For a GLWE key whose
+    /// coefficient layout is `[s_lwe..., 0...]`, this directly produces an LWE
+    /// sample under `s_lwe` without allocating an intermediate `kN`-dimension
+    /// ciphertext.
+    pub fn extract_compact_lwe_to<M, B>(&self, output: &mut Lwe<B>, poly_length: usize, modulus: M)
+    where
+        M: RingContext<T>,
+        B: RawData<Elem = T> + DataMut,
+    {
+        assert!(poly_length > 0);
+        assert!(self.as_ref().len().is_multiple_of(poly_length));
+
+        let mask_len = self.as_ref().len() - poly_length;
+        let active_key_len = output.dimension();
+        assert!(active_key_len > 0);
+        assert!(active_key_len <= mask_len);
+
+        let (output_mask, output_body) = output.a_b_mut();
+        for (mask, extracted) in self.as_ref()[..mask_len]
+            .chunks_exact(poly_length)
+            .zip(output_mask.chunks_mut(poly_length))
+        {
+            extracted[0] = mask[0];
+            for (output, &input) in extracted[1..].iter_mut().zip(mask[1..].iter().rev()) {
+                *output = modulus.reduce_neg(input);
             }
         }
         *output_body = self.as_ref()[mask_len];
@@ -224,5 +256,25 @@ mod tests {
                 9,
             ]
         );
+    }
+
+    #[test]
+    fn compact_extraction_matches_the_active_prefix_of_full_extraction() {
+        let glwe = Glwe(vec![
+            1u32, 2, 3, 4, // first mask
+            5, 6, 7, 8, // second mask
+            9, 10, 11, 12, // body
+        ]);
+        let modulus = NativeModulus::new();
+        let mut full: Lwe<Vec<u32>> = Lwe::zero(8);
+        glwe.extract_lwe_to(&mut full, 4, modulus);
+
+        for active_key_len in [1, 4, 5, 7, 8] {
+            let mut compact: Lwe<Vec<u32>> = Lwe::zero(active_key_len);
+            glwe.extract_compact_lwe_to(&mut compact, 4, modulus);
+
+            assert_eq!(compact.a(), &full.a()[..active_key_len]);
+            assert_eq!(compact.b(), full.b());
+        }
     }
 }
