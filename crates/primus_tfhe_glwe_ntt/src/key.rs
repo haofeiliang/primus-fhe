@@ -1,11 +1,11 @@
 use primus_fhe_core::{
     ClientKey, GlweSecretKey, LweKeySwitchingKey, LweSecretKey, NttFunctionalBootstrappingKey,
-    NttGadgetEncryptContext, NttGlweSecretKey, TfheKeyError,
+    NttGadgetEncryptContext, NttGlweSecretKey,
 };
 use primus_integer::FheUint;
 use primus_ntt::NttTable;
 
-use crate::TfheContext;
+use crate::{TfheContext, error::TfheKeyError};
 
 /// NTT-domain evaluation keys used by a TFHE server.
 pub struct ServerKey<T: FheUint> {

@@ -4,7 +4,8 @@ use primus_modulus::BarrettModulus;
 
 use crate::Evaluator;
 
-pub use primus_fhe_core::{BooleanCiphertext, BooleanError, BooleanGate};
+pub use crate::error::BooleanError;
+pub use primus_fhe_core::{BooleanCiphertext, BooleanGate};
 
 /// Boolean encryptor for the explicit-modulus NTT backend.
 pub type BooleanEncryptor<'a, T> = primus_fhe_core::BooleanEncryptor<'a, T, BarrettModulus<T>>;

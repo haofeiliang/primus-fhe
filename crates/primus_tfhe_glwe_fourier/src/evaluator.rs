@@ -1,10 +1,10 @@
 use primus_fft::{FftEngine, FftTable, TorusFftValue};
 use primus_fhe_core::{
     Ciphertext, FourierBlindRotationContext, GlweCiphertext, LookupTable, LweCiphertext,
-    ProgrammableBootstrap, TfheEvaluationError, fourier_blind_rotate_to,
+    ProgrammableBootstrap, fourier_blind_rotate_to,
 };
 
-use crate::{ServerKey, TfheContext};
+use crate::{ServerKey, TfheContext, error::TfheEvaluationError};
 
 /// Reusable Fourier workspace for programmable bootstrapping.
 pub struct Evaluator<'a, T, Table>

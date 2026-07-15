@@ -1,10 +1,10 @@
 use primus_fft::{FftEngine, FftTable, TorusFftValue};
 use primus_fhe_core::{
     ClientKey, FourierFunctionalBootstrappingKey, FourierGadgetEncryptContext,
-    FourierGlweSecretKey, GlweSecretKey, LweKeySwitchingKey, LweSecretKey, TfheKeyError,
+    FourierGlweSecretKey, GlweSecretKey, LweKeySwitchingKey, LweSecretKey,
 };
 
-use crate::TfheContext;
+use crate::{TfheContext, error::TfheKeyError};
 
 /// Fourier-domain evaluation keys used by a TFHE server.
 pub struct ServerKey<T: TorusFftValue> {

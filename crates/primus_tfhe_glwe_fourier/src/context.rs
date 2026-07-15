@@ -1,20 +1,10 @@
 use primus_fft::{FftEngine, FftTable, TorusFftValue};
-use primus_fhe_core::{BooleanError, LookupTable, LookupTableError};
+use primus_fhe_core::LookupTable;
 
-use crate::{BooleanEvaluator, Evaluator, ServerKey, TfheParameters};
-
-/// An incompatibility between TFHE parameters and a Fourier table.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum TfheContextError {
-    /// The Fourier table was built for a different polynomial length.
-    #[error("FFT polynomial length mismatch: expected {expected}, got {actual}")]
-    PolynomialLengthMismatch {
-        /// Polynomial length required by the GLWE parameters.
-        expected: usize,
-        /// Polynomial length supported by the Fourier table.
-        actual: usize,
-    },
-}
+use crate::{
+    BooleanEvaluator, Evaluator, ServerKey, TfheParameters,
+    error::{BooleanError, LookupTableError, TfheContextError},
+};
 
 /// A validated binding between native-torus TFHE parameters and an FFT table.
 ///
