@@ -13,6 +13,6 @@ pub use rns::{
     CrtGgswParameters, CrtGlevParameters, CrtGlweParameters, RNSGlevCommonSize, RNSGlweCommonSize,
 };
 pub use single::{
-    GgswParameters, GlevCommonSize, GlevParameters, GlweCommonSize, GlweParameters,
-    GlweParametersInner,
+    GgswParameters, GlevCommonSize, GlevParameters, GlweCommonSize, GlweKeySwitchingParameters,
+    GlweParameters, GlweParametersInner,
 };

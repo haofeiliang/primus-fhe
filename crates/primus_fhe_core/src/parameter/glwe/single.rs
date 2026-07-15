@@ -473,6 +473,82 @@ where
     basis: ApproxSignedBasis<T>,
 }
 
+/// Parameters for switching a GLWE ciphertext from an input secret key to an
+/// output secret key.
+///
+/// Each input secret polynomial is encrypted as one GLev ciphertext under the
+/// output key. Consequently, the output GLWE layout, encryption noise and
+/// decomposition basis are all described by [`GlevParameters`].
+#[derive(Clone)]
+pub struct GlweKeySwitchingParameters<T, M>
+where
+    T: FheUint,
+    M: RingContext<T>,
+{
+    input_dimension: usize,
+    output: GlevParameters<T, M>,
+}
+
+impl<T, M> GlweKeySwitchingParameters<T, M>
+where
+    T: FheUint,
+    M: RingContext<T>,
+{
+    /// Creates GLWE key-switching parameters.
+    ///
+    /// `input_dimension` is the number of mask polynomials in the input GLWE
+    /// key. The output dimension and polynomial length are taken from
+    /// `output`.
+    #[inline]
+    pub fn new(input_dimension: usize, output: GlevParameters<T, M>) -> Self {
+        assert!(input_dimension > 0, "input GLWE dimension must be non-zero");
+        Self {
+            input_dimension,
+            output,
+        }
+    }
+
+    /// Returns the input GLWE dimension.
+    #[inline]
+    pub fn input_dimension(&self) -> usize {
+        self.input_dimension
+    }
+
+    /// Returns the output GLWE dimension.
+    #[inline]
+    pub fn output_dimension(&self) -> usize {
+        self.output.dimension()
+    }
+
+    /// Returns the common polynomial length of the input and output keys.
+    #[inline]
+    pub fn poly_length(&self) -> usize {
+        self.output.poly_length()
+    }
+
+    /// Returns the GLev parameters used for every key-switching entry.
+    #[inline]
+    pub fn output(&self) -> &GlevParameters<T, M> {
+        &self.output
+    }
+
+    /// Returns the coefficient/NTT-domain key length.
+    #[inline]
+    pub fn key_len(&self) -> usize {
+        self.input_dimension
+            .checked_mul(self.output.glev_len())
+            .expect("GLWE key-switching key length overflow")
+    }
+
+    /// Returns the Fourier-domain key length.
+    #[inline]
+    pub fn fourier_key_len(&self) -> usize {
+        self.input_dimension
+            .checked_mul(self.output.fourier_glev_len())
+            .expect("Fourier GLWE key-switching key length overflow")
+    }
+}
+
 impl<T, M> GlevParameters<T, M>
 where
     T: FheUint,

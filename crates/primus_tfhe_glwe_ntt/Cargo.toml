@@ -20,3 +20,7 @@ criterion = { workspace = true }
 [[bench]]
 name = "pbs"
 harness = false
+
+[[bench]]
+name = "key_switch"
+harness = false
