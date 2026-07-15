@@ -43,28 +43,27 @@ impl<T: FheUint> BooleanCiphertext<T> {
 }
 
 /// Encrypts Boolean values under the standard 0/1 encoding modulo 4.
-pub struct BooleanEncryptor<'a, T, M>
+pub struct BooleanEncryptor<'a, T, LM, GM>
 where
     T: FheUint,
-    M: RingContext<T>,
+    LM: RingContext<T>,
+    GM: RingContext<T>,
 {
-    inner: Encryptor<'a, T, M, ClientKey<T>>,
+    inner: Encryptor<'a, T, LM, GM, ClientKey<T>>,
 }
 
-impl<'a, T, M> BooleanEncryptor<'a, T, M>
+impl<'a, T, LM, GM> BooleanEncryptor<'a, T, LM, GM>
 where
     T: FheUint,
-    M: RingContext<T>,
+    LM: RingContext<T>,
+    GM: RingContext<T>,
 {
     /// Creates a Boolean encryptor and validates the required plaintext
     /// modulus.
-    pub fn new<GM>(
-        parameters: &'a TfheParameters<T, M, GM>,
+    pub fn new(
+        parameters: &'a TfheParameters<T, LM, GM>,
         key: &'a ClientKey<T>,
-    ) -> Result<Self, BooleanError>
-    where
-        GM: RingContext<T>,
-    {
+    ) -> Result<Self, BooleanError> {
         validate_boolean_parameters(parameters)?;
         Ok(Self {
             inner: Encryptor::with_client_key(parameters, key)?,
@@ -88,28 +87,27 @@ where
 }
 
 /// Decrypts ciphertexts using the standard 0/1 Boolean encoding.
-pub struct BooleanDecryptor<'a, T, M>
+pub struct BooleanDecryptor<'a, T, LM, GM>
 where
     T: FheUint,
-    M: RingContext<T>,
+    LM: RingContext<T>,
+    GM: RingContext<T>,
 {
-    inner: Decryptor<'a, T, M>,
+    inner: Decryptor<'a, T, LM, GM>,
 }
 
-impl<'a, T, M> BooleanDecryptor<'a, T, M>
+impl<'a, T, LM, GM> BooleanDecryptor<'a, T, LM, GM>
 where
     T: FheUint,
-    M: RingContext<T>,
+    LM: RingContext<T>,
+    GM: RingContext<T>,
 {
     /// Creates a Boolean decryptor and validates the required plaintext
     /// modulus.
-    pub fn new<GM>(
-        parameters: &'a TfheParameters<T, M, GM>,
+    pub fn new(
+        parameters: &'a TfheParameters<T, LM, GM>,
         key: &'a ClientKey<T>,
-    ) -> Result<Self, BooleanError>
-    where
-        GM: RingContext<T>,
-    {
+    ) -> Result<Self, BooleanError> {
         validate_boolean_parameters(parameters)?;
         Ok(Self {
             inner: Decryptor::new(parameters, key)?,
@@ -212,7 +210,7 @@ where
             parameters.small_lwe().cipher_modulus().value(),
         )
         .encode_value(T::ONE, PlaintextEmbedding::Unsigned);
-        let dimension = parameters.small_lwe().dimension();
+        let dimension = parameters.ciphertext_lwe_dimension();
         let gate_input = Ciphertext::try_from_lwe(LweCiphertext::zero(dimension), dimension)?;
         let mux_branch = BooleanCiphertext::from_raw(Ciphertext::try_from_lwe(
             LweCiphertext::zero(dimension),
@@ -515,7 +513,7 @@ where
     LM: RingContext<T>,
     GM: RingContext<T>,
 {
-    let expected = parameters.small_lwe().dimension();
+    let expected = parameters.ciphertext_lwe_dimension();
     let actual = ciphertext.dimension();
     if actual == expected {
         Ok(())
@@ -533,7 +531,7 @@ where
     LM: RingContext<T>,
     GM: RingContext<T>,
 {
-    let expected = parameters.small_lwe().dimension();
+    let expected = parameters.ciphertext_lwe_dimension();
     let actual = ciphertext.dimension();
     if actual == expected {
         Ok(())

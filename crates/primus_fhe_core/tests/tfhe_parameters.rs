@@ -57,10 +57,16 @@ fn both_orders_share_the_same_glwe_key_switching_shape() {
             TfheParameters::try_new(small_lwe, glwe, bootstrapping, key_switching, order).unwrap();
 
         assert_eq!(parameters.pbs_order(), order);
-        assert_eq!(parameters.key_switching().input_dimension(), GLWE_DIMENSION);
-        assert_eq!(parameters.key_switching().output_dimension(), 1);
-        assert_eq!(parameters.key_switching().poly_length(), POLY_LENGTH);
-        assert_eq!(parameters.key_switching().output().decompose_length(), 4);
+        assert_eq!(
+            parameters.glwe_key_switching().input_dimension(),
+            GLWE_DIMENSION
+        );
+        assert_eq!(parameters.glwe_key_switching().output_dimension(), 1);
+        assert_eq!(parameters.glwe_key_switching().poly_length(), POLY_LENGTH);
+        assert_eq!(
+            parameters.glwe_key_switching().output().decompose_length(),
+            4
+        );
         assert_eq!(parameters.blind_rotation_input_dimension(), LWE_DIMENSION);
         assert_eq!(
             parameters.ciphertext_lwe_dimension(),
@@ -76,19 +82,20 @@ fn both_orders_share_the_same_glwe_key_switching_shape() {
 }
 
 #[test]
-fn convenience_constructor_builds_a_binary_padded_output() {
+fn derived_key_switching_layout_uses_a_binary_padded_output() {
     let (small_lwe, glwe, bootstrapping, _) = components();
-    let parameters = TfheParameters::with_key_switching_basis(
+    let parameters = TfheParameters::with_pbs_order_and_key_switching_basis(
         small_lwe,
         glwe,
         bootstrapping,
+        PbsOrder::BootstrapKeyswitch,
         ApproxSignedBasis::new(None, 4, Some(4)),
     )
     .unwrap();
 
     assert_eq!(parameters.pbs_order(), PbsOrder::BootstrapKeyswitch);
     assert_eq!(
-        parameters.key_switching().output().secret_key_type(),
+        parameters.glwe_key_switching().output().secret_key_type(),
         RingSecretKeyType::Binary
     );
 }

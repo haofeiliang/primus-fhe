@@ -25,7 +25,7 @@ fn bench_key_switch(c: &mut Criterion) {
     let lwe_key_switching_parameters = LweKeySwitchingParameters::new(
         parameters.glwe().secret_key_len(),
         lwe_dimension,
-        parameters.key_switching().output().basis().clone(),
+        parameters.glwe_key_switching().output().basis().clone(),
     );
     let lwe_key_switching_key = LweKeySwitchingKey::generate(
         input_glwe_secret_key.as_slice(),
@@ -41,7 +41,7 @@ fn bench_key_switch(c: &mut Criterion) {
     let output_ntt_secret_key =
         NttGlweSecretKey::from_coeff_secret_key(&padded_glwe_secret_key, &table);
 
-    let glwe_key_switching_parameters = parameters.key_switching();
+    let glwe_key_switching_parameters = parameters.glwe_key_switching();
     let mut gadget_context = NttGadgetEncryptContext::new(
         poly_length,
         glwe_key_switching_parameters.output().decompose_length(),

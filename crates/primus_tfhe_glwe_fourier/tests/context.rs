@@ -304,6 +304,30 @@ fn evaluates_a_complete_programmable_bootstrap_pipeline() {
 }
 
 #[test]
+fn evaluates_a_keyswitch_then_bootstrap_pipeline() {
+    let table = RustFftTable::new(POLY_LENGTH.trailing_zeros()).unwrap();
+    let parameters = parameters_with_plain_modulus_and_order(4, PbsOrder::KeyswitchBootstrap);
+    let context = TfheContext::try_new(parameters, table).unwrap();
+    let mut rng = rand::rng();
+    let mut generator = KeyGenerator::new(&context);
+    let (client_key, server_key) = generator.generate(&mut rng).unwrap();
+    let encryptor = Encryptor::with_client_key(context.parameters(), &client_key).unwrap();
+    let decryptor = Decryptor::new(context.parameters(), &client_key).unwrap();
+    let external_dimension = context.parameters().ciphertext_lwe_dimension();
+    let lookup_table = context.compile_lookup_table_slice(&[1u32, 2]).unwrap();
+    let mut evaluator = Evaluator::try_new(&context, &server_key).unwrap();
+
+    for (message, expected) in [1u32, 2, 3, 2].into_iter().enumerate() {
+        let input = encryptor.encrypt(message as u32, &mut rng).unwrap();
+        let output = evaluator.apply_lookup_table(&input, &lookup_table).unwrap();
+
+        assert_eq!(input.dimension(), external_dimension);
+        assert_eq!(output.dimension(), external_dimension);
+        assert_eq!(decryptor.decrypt::<u32>(&output).unwrap(), expected);
+    }
+}
+
+#[test]
 fn evaluates_an_arbitrary_lookup_table_with_odd_plaintext_modulus() {
     let table = RustFftTable::new(POLY_LENGTH.trailing_zeros()).unwrap();
     let context = TfheContext::try_new(parameters_with_plain_modulus(5), table).unwrap();

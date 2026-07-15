@@ -2,7 +2,7 @@
 
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fhe_core::{
-    GgswParameters, GlweParameters, LweParameters, LweSecretKeyType, RingSecretKeyType,
+    GgswParameters, GlweParameters, LweParameters, LweSecretKeyType, PbsOrder, RingSecretKeyType,
 };
 use primus_modulus::BarrettModulus;
 
@@ -45,10 +45,11 @@ pub fn boolean_parameters()
         &glwe,
         ApproxSignedBasis::new(Some(CIPHERTEXT_MODULUS), 7, Some(3)),
     );
-    TfheParameters::with_key_switching_basis(
+    TfheParameters::with_pbs_order_and_key_switching_basis(
         lwe,
         glwe,
         bootstrapping,
+        PbsOrder::BootstrapKeyswitch,
         ApproxSignedBasis::new(Some(CIPHERTEXT_MODULUS), 2, Some(13)),
     )
     .unwrap()

@@ -12,7 +12,8 @@ use primus_fhe_core::{
 };
 use primus_modulus::NativeModulus;
 use primus_tfhe_glwe_fourier::{
-    BooleanEncryptor, BooleanGate, Encryptor, Evaluator, KeyGenerator, TfheContext, TfheParameters,
+    BooleanEncryptor, BooleanGate, Encryptor, Evaluator, KeyGenerator, PbsOrder, TfheContext,
+    TfheParameters,
 };
 
 // Performance-comparison profile, not a security recommendation.
@@ -39,10 +40,11 @@ fn parameters() -> TfheParameters<u32> {
     );
     let bootstrapping =
         GgswParameters::with_glwe_params(&glwe, ApproxSignedBasis::new(None, 8, Some(3)));
-    TfheParameters::with_key_switching_basis(
+    TfheParameters::with_pbs_order_and_key_switching_basis(
         lwe,
         glwe,
         bootstrapping,
+        PbsOrder::BootstrapKeyswitch,
         ApproxSignedBasis::new(None, 4, Some(4)),
     )
     .unwrap()
@@ -74,15 +76,15 @@ fn bench_pbs(c: &mut Criterion) {
         &mut blind_rotation,
     );
     let mut key_switching = FourierGlweKeySwitchingContext::new(
-        parameters.key_switching().output_dimension(),
+        parameters.glwe_key_switching().output_dimension(),
         POLY_LENGTH,
     );
     let mut switched: GlweCiphertext<Vec<u32>> =
-        GlweCiphertext::zero(parameters.key_switching().output().glwe_len());
+        GlweCiphertext::zero(parameters.glwe_key_switching().output().glwe_len());
     server_key.glwe_key_switching_key().key_switch_to(
         &rotated,
         &mut switched,
-        parameters.key_switching(),
+        parameters.glwe_key_switching(),
         &mut fft,
         &mut key_switching,
     );
@@ -130,7 +132,7 @@ fn bench_pbs(c: &mut Criterion) {
             server_key.glwe_key_switching_key().key_switch_to(
                 black_box(&rotated),
                 black_box(&mut switched),
-                parameters.key_switching(),
+                parameters.glwe_key_switching(),
                 &mut fft,
                 &mut key_switching,
             );

@@ -68,10 +68,11 @@ fn supports_the_specialized_u64_table() {
         &glwe,
         ApproxSignedBasis::new(Some(modulus_value), 8, Some(3)),
     );
-    let parameters = TfheParameters::with_key_switching_basis(
+    let parameters = TfheParameters::with_pbs_order_and_key_switching_basis(
         lwe,
         glwe,
         bootstrapping,
+        PbsOrder::BootstrapKeyswitch,
         ApproxSignedBasis::new(Some(modulus_value), 4, Some(4)),
     )
     .unwrap();
@@ -139,10 +140,11 @@ fn rejects_different_lwe_and_glwe_moduli_for_key_switching() {
     );
     let bootstrapping =
         GgswParameters::with_glwe_params(&glwe, ApproxSignedBasis::new(Some(MODULUS), 8, Some(3)));
-    let error = TfheParameters::with_key_switching_basis(
+    let error = TfheParameters::with_pbs_order_and_key_switching_basis(
         lwe,
         glwe,
         bootstrapping,
+        PbsOrder::BootstrapKeyswitch,
         ApproxSignedBasis::new(Some(MODULUS), 4, Some(4)),
     )
     .err();
@@ -241,6 +243,35 @@ fn evaluates_a_complete_programmable_bootstrap_pipeline() {
         core::mem::swap(&mut current, &mut next);
     }
     assert_eq!(decryptor.decrypt::<u32>(&current).unwrap(), 0);
+}
+
+#[test]
+fn evaluates_a_keyswitch_then_bootstrap_pipeline() {
+    let modulus = BarrettModulus::new(MODULUS);
+    let table = U32NttTable::new(POLY_LENGTH.trailing_zeros(), modulus).unwrap();
+    let parameters = parameters_u32_with_plain_modulus_and_order(4, PbsOrder::KeyswitchBootstrap);
+    let context = TfheContext::try_new(parameters, table).unwrap();
+    let mut rng = rand::rng();
+    let mut generator = KeyGenerator::new(&context);
+    let (client_key, server_key) = generator.generate(&mut rng).unwrap();
+    let encryptor = Encryptor::with_client_key(context.parameters(), &client_key).unwrap();
+    let decryptor = Decryptor::new(context.parameters(), &client_key).unwrap();
+    let external_dimension = context.parameters().ciphertext_lwe_dimension();
+    let lookup_table = context.compile_lookup_table_slice(&[1u32, 2]).unwrap();
+    let mut evaluator = Evaluator::try_new(&context, &server_key).unwrap();
+
+    for (message, expected) in [1u32, 2, 3, 2].into_iter().enumerate() {
+        let input = encryptor.encrypt(message as u32, &mut rng).unwrap();
+        let output = evaluator.apply_lookup_table(&input, &lookup_table).unwrap();
+
+        assert_eq!(input.dimension(), external_dimension);
+        assert_eq!(output.dimension(), external_dimension);
+        assert_eq!(decryptor.decrypt::<u32>(&output).unwrap(), expected);
+    }
+
+    let centered = encryptor.encrypt_centered(3u32, &mut rng).unwrap();
+    assert_eq!(centered.dimension(), external_dimension);
+    assert_eq!(decryptor.decrypt::<u32>(&centered).unwrap(), 3);
 }
 
 #[test]

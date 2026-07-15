@@ -173,7 +173,7 @@ where
     small_lwe: LweParameters<T, LM>,
     glwe: GlweParameters<T, GM>,
     bootstrapping: GgswParameters<T, GM>,
-    key_switching: GlweKeySwitchingParameters<T, GM>,
+    glwe_key_switching: GlweKeySwitchingParameters<T, GM>,
     pbs_order: PbsOrder,
 }
 
@@ -192,23 +192,6 @@ where
     LM: RingContext<T>,
     GM: RingContext<T>,
 {
-    /// Creates bootstrap-then-key-switch parameters while deriving the GLWE
-    /// key-switching layout from the main GLWE and small-LWE parameter sets.
-    pub fn with_key_switching_basis(
-        small_lwe: LweParameters<T, LM>,
-        glwe: GlweParameters<T, GM>,
-        bootstrapping: GgswParameters<T, GM>,
-        key_switching_basis: ApproxSignedBasis<T>,
-    ) -> Result<Self, TfheParameterError> {
-        Self::with_pbs_order_and_key_switching_basis(
-            small_lwe,
-            glwe,
-            bootstrapping,
-            PbsOrder::BootstrapKeyswitch,
-            key_switching_basis,
-        )
-    }
-
     /// Creates parameters for the selected PBS order while deriving the GLWE
     /// key-switching layout.
     pub fn with_pbs_order_and_key_switching_basis(
@@ -229,8 +212,14 @@ where
             output_inner,
             key_switching_basis,
         );
-        let key_switching = GlweKeySwitchingParameters::new(glwe.dimension(), output);
-        Self::try_new(small_lwe, glwe, bootstrapping, key_switching, pbs_order)
+        let glwe_key_switching = GlweKeySwitchingParameters::new(glwe.dimension(), output);
+        Self::try_new(
+            small_lwe,
+            glwe,
+            bootstrapping,
+            glwe_key_switching,
+            pbs_order,
+        )
     }
 
     /// Creates and validates a GLWE-based TFHE parameter set.
@@ -238,7 +227,7 @@ where
         small_lwe: LweParameters<T, LM>,
         glwe: GlweParameters<T, GM>,
         bootstrapping: GgswParameters<T, GM>,
-        key_switching: GlweKeySwitchingParameters<T, GM>,
+        glwe_key_switching: GlweKeySwitchingParameters<T, GM>,
         pbs_order: PbsOrder,
     ) -> Result<Self, TfheParameterError> {
         Self::validate_common(&small_lwe, &glwe, &bootstrapping)?;
@@ -253,37 +242,37 @@ where
         if small_lwe.cipher_modulus().value() != glwe.cipher_modulus().value() {
             return Err(TfheParameterError::CipherModulusMismatch);
         }
-        if key_switching.input_dimension() != glwe.dimension() {
+        if glwe_key_switching.input_dimension() != glwe.dimension() {
             return Err(TfheParameterError::GlweKeySwitchingInputDimensionMismatch {
                 expected: glwe.dimension(),
-                actual: key_switching.input_dimension(),
+                actual: glwe_key_switching.input_dimension(),
             });
         }
 
         let expected_output_dimension = small_lwe.dimension().div_ceil(glwe.poly_length());
-        if key_switching.output_dimension() != expected_output_dimension {
+        if glwe_key_switching.output_dimension() != expected_output_dimension {
             return Err(
                 TfheParameterError::GlweKeySwitchingOutputDimensionMismatch {
                     expected: expected_output_dimension,
-                    actual: key_switching.output_dimension(),
+                    actual: glwe_key_switching.output_dimension(),
                 },
             );
         }
-        if key_switching.poly_length() != glwe.poly_length() {
+        if glwe_key_switching.poly_length() != glwe.poly_length() {
             return Err(
                 TfheParameterError::GlweKeySwitchingPolynomialLengthMismatch {
                     expected: glwe.poly_length(),
-                    actual: key_switching.poly_length(),
+                    actual: glwe_key_switching.poly_length(),
                 },
             );
         }
-        if key_switching.output().cipher_modulus().value() != glwe.cipher_modulus().value() {
+        if glwe_key_switching.output().cipher_modulus().value() != glwe.cipher_modulus().value() {
             return Err(TfheParameterError::GlweKeySwitchingCipherModulusMismatch);
         }
-        if key_switching.output().secret_key_type() != RingSecretKeyType::Binary {
+        if glwe_key_switching.output().secret_key_type() != RingSecretKeyType::Binary {
             return Err(TfheParameterError::GlweKeySwitchingOutputSecretKeyMustBeBinary);
         }
-        if key_switching.output().basis().modulus() != glwe.cipher_modulus().value() {
+        if glwe_key_switching.output().basis().modulus() != glwe.cipher_modulus().value() {
             return Err(TfheParameterError::GlweKeySwitchingBasisModulusMismatch);
         }
 
@@ -291,7 +280,7 @@ where
             small_lwe,
             glwe,
             bootstrapping,
-            key_switching,
+            glwe_key_switching,
             pbs_order,
         })
     }
@@ -303,13 +292,13 @@ where
         small_lwe: LweParameters<T, LM>,
         glwe: GlweParameters<T, GM>,
         bootstrapping: GgswParameters<T, GM>,
-        key_switching: GlweKeySwitchingParameters<T, GM>,
+        glwe_key_switching: GlweKeySwitchingParameters<T, GM>,
     ) -> Result<Self, TfheParameterError> {
         Self::try_new(
             small_lwe,
             glwe,
             bootstrapping,
-            key_switching,
+            glwe_key_switching,
             PbsOrder::BootstrapKeyswitch,
         )
     }
@@ -321,13 +310,13 @@ where
         small_lwe: LweParameters<T, LM>,
         glwe: GlweParameters<T, GM>,
         bootstrapping: GgswParameters<T, GM>,
-        key_switching: GlweKeySwitchingParameters<T, GM>,
+        glwe_key_switching: GlweKeySwitchingParameters<T, GM>,
     ) -> Result<Self, TfheParameterError> {
         Self::try_new(
             small_lwe,
             glwe,
             bootstrapping,
-            key_switching,
+            glwe_key_switching,
             PbsOrder::KeyswitchBootstrap,
         )
     }
@@ -360,12 +349,6 @@ where
         Ok(())
     }
 
-    /// Returns the small-LWE parameters used for input and output ciphertexts.
-    #[inline]
-    pub fn lwe(&self) -> &LweParameters<T, LM> {
-        self.small_lwe()
-    }
-
     /// Returns the small-LWE parameters used by the bootstrapping key.
     #[inline]
     pub fn small_lwe(&self) -> &LweParameters<T, LM> {
@@ -386,14 +369,8 @@ where
 
     /// Returns the GLWE key-switching parameters shared by both PBS orders.
     #[inline]
-    pub fn key_switching(&self) -> &GlweKeySwitchingParameters<T, GM> {
-        &self.key_switching
-    }
-
-    /// Returns the GLWE key-switching parameters shared by both PBS orders.
-    #[inline]
     pub fn glwe_key_switching(&self) -> &GlweKeySwitchingParameters<T, GM> {
-        &self.key_switching
+        &self.glwe_key_switching
     }
 
     /// Returns the selected PBS execution order.
@@ -434,7 +411,7 @@ where
             self.small_lwe,
             self.glwe,
             self.bootstrapping,
-            self.key_switching,
+            self.glwe_key_switching,
             self.pbs_order,
         )
     }

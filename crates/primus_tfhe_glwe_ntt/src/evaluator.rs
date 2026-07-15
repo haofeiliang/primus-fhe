@@ -17,9 +17,9 @@ where
     server_key: &'a ServerKey<T>,
     blind_rotation: NttBlindRotationContext<T>,
     key_switching: NttGlweKeySwitchingContext<T>,
-    rotated: GlweCiphertext<Vec<T>>,
+    main_glwe: GlweCiphertext<Vec<T>>,
     switched: GlweCiphertext<Vec<T>>,
-    extracted: LweCiphertext<T>,
+    small_lwe: LweCiphertext<T>,
 }
 
 impl<T, Table> ProgrammableBootstrap<T> for Evaluator<'_, T, Table>
@@ -52,9 +52,8 @@ where
         let bootstrapping_key = server_key.bootstrapping_key();
         let common_size = bootstrapping_key.common_size();
         let key_switching_key = server_key.glwe_key_switching_key();
-        let key_switching = parameters.key_switching();
-        if parameters.pbs_order() != PbsOrder::BootstrapKeyswitch
-            || bootstrapping_key.input_dimension() != parameters.small_lwe().dimension()
+        let key_switching = parameters.glwe_key_switching();
+        if bootstrapping_key.input_dimension() != parameters.small_lwe().dimension()
             || common_size.dimension() != parameters.glwe().dimension()
             || common_size.poly_length() != parameters.glwe().poly_length()
             || bootstrapping_key.cipher_modulus() != Some(parameters.glwe().cipher_modulus_value())
@@ -72,17 +71,17 @@ where
             server_key,
             blind_rotation: NttBlindRotationContext::new(glwe_dimension, poly_length),
             key_switching: NttGlweKeySwitchingContext::new(
-                parameters.key_switching().output_dimension(),
+                parameters.glwe_key_switching().output_dimension(),
                 poly_length,
             ),
-            rotated: GlweCiphertext::zero(parameters.glwe().glwe_len()),
-            switched: GlweCiphertext::zero(parameters.key_switching().output().glwe_len()),
-            extracted: LweCiphertext::zero(parameters.small_lwe().dimension()),
+            main_glwe: GlweCiphertext::zero(parameters.glwe().glwe_len()),
+            switched: GlweCiphertext::zero(parameters.glwe_key_switching().output().glwe_len()),
+            small_lwe: LweCiphertext::zero(parameters.small_lwe().dimension()),
         })
     }
 
-    /// Applies a compiled lookup table and returns a refreshed small-LWE
-    /// ciphertext.
+    /// Applies a compiled lookup table and returns a refreshed ciphertext in
+    /// the external LWE dimension selected by the PBS order.
     pub fn apply_lookup_table(
         &mut self,
         input: &Ciphertext<T>,
@@ -101,7 +100,7 @@ where
         output: &mut Ciphertext<T>,
     ) -> Result<(), TfheEvaluationError> {
         let parameters = self.context.parameters();
-        let expected_dimension = parameters.small_lwe().dimension();
+        let expected_dimension = parameters.ciphertext_lwe_dimension();
         if input.dimension() != expected_dimension {
             return Err(TfheEvaluationError::InputDimensionMismatch {
                 expected: expected_dimension,
@@ -124,29 +123,57 @@ where
             });
         }
 
-        ntt_blind_rotate_to(
-            input.as_lwe(),
-            lookup_table.accumulator(),
-            &mut self.rotated,
-            self.server_key.bootstrapping_key(),
-            parameters.small_lwe(),
-            parameters.bootstrapping(),
-            self.context.table(),
-            &mut self.blind_rotation,
-        );
-        self.server_key.glwe_key_switching_key().key_switch_to(
-            &self.rotated,
-            &mut self.switched,
-            parameters.key_switching(),
-            self.context.table(),
-            &mut self.key_switching,
-        );
-        self.switched.extract_compact_lwe_to(
-            &mut self.extracted,
-            parameters.glwe().poly_length(),
-            parameters.glwe().cipher_modulus(),
-        );
-        output.as_lwe_mut().0.copy_from_slice(&self.extracted.0);
+        let poly_length = parameters.glwe().poly_length();
+        let modulus = parameters.glwe().cipher_modulus();
+        match parameters.pbs_order() {
+            PbsOrder::BootstrapKeyswitch => {
+                ntt_blind_rotate_to(
+                    input.as_lwe(),
+                    lookup_table.accumulator(),
+                    &mut self.main_glwe,
+                    self.server_key.bootstrapping_key(),
+                    parameters.small_lwe(),
+                    parameters.bootstrapping(),
+                    self.context.table(),
+                    &mut self.blind_rotation,
+                );
+                self.server_key.glwe_key_switching_key().key_switch_to(
+                    &self.main_glwe,
+                    &mut self.switched,
+                    parameters.glwe_key_switching(),
+                    self.context.table(),
+                    &mut self.key_switching,
+                );
+                self.switched
+                    .extract_compact_lwe_to(output.as_lwe_mut(), poly_length, modulus);
+            }
+            PbsOrder::KeyswitchBootstrap => {
+                input
+                    .as_lwe()
+                    .inverse_extract_glwe_to(&mut self.main_glwe, poly_length, modulus);
+                self.server_key.glwe_key_switching_key().key_switch_to(
+                    &self.main_glwe,
+                    &mut self.switched,
+                    parameters.glwe_key_switching(),
+                    self.context.table(),
+                    &mut self.key_switching,
+                );
+                self.switched
+                    .extract_compact_lwe_to(&mut self.small_lwe, poly_length, modulus);
+                ntt_blind_rotate_to(
+                    &self.small_lwe,
+                    lookup_table.accumulator(),
+                    &mut self.main_glwe,
+                    self.server_key.bootstrapping_key(),
+                    parameters.small_lwe(),
+                    parameters.bootstrapping(),
+                    self.context.table(),
+                    &mut self.blind_rotation,
+                );
+                self.main_glwe
+                    .extract_lwe_to(output.as_lwe_mut(), poly_length, modulus);
+            }
+        }
         Ok(())
     }
 }

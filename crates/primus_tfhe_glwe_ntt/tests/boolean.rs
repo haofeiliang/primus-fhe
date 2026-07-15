@@ -5,25 +5,67 @@ use primus_fhe_core::{
 use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, U32NttTable};
 use primus_tfhe_glwe_ntt::{
-    BooleanDecryptor, BooleanEncryptor, BooleanGate, KeyGenerator, TfheContext, TfheParameters,
+    BooleanDecryptor, BooleanEncryptor, BooleanGate, KeyGenerator, PbsOrder, TfheContext,
+    TfheParameters,
 };
 
 const POLY_LENGTH: usize = 256;
 const MODULUS: u32 = 132_120_577;
 
 fn parameters() -> TfheParameters<u32> {
+    parameters_with_order(PbsOrder::BootstrapKeyswitch)
+}
+
+fn parameters_with_order(pbs_order: PbsOrder) -> TfheParameters<u32> {
     let modulus = BarrettModulus::new(MODULUS);
     let lwe = LweParameters::new(4, 4, modulus, LweSecretKeyType::Binary, 0.7);
     let glwe = GlweParameters::new(1, POLY_LENGTH, 4, modulus, RingSecretKeyType::Binary, 0.7);
     let bootstrapping =
         GgswParameters::with_glwe_params(&glwe, ApproxSignedBasis::new(Some(MODULUS), 8, Some(3)));
-    TfheParameters::with_key_switching_basis(
+    TfheParameters::with_pbs_order_and_key_switching_basis(
         lwe,
         glwe,
         bootstrapping,
+        pbs_order,
         ApproxSignedBasis::new(Some(MODULUS), 4, Some(4)),
     )
     .unwrap()
+}
+
+#[test]
+fn evaluates_boolean_gates_with_keyswitch_then_bootstrap() {
+    let modulus = BarrettModulus::new(MODULUS);
+    let table = U32NttTable::new(POLY_LENGTH.trailing_zeros(), modulus).unwrap();
+    let context =
+        TfheContext::try_new(parameters_with_order(PbsOrder::KeyswitchBootstrap), table).unwrap();
+    let mut rng = rand::rng();
+    let mut generator = KeyGenerator::new(&context);
+    let (client_key, server_key) = generator.generate(&mut rng).unwrap();
+    let encryptor = BooleanEncryptor::new(context.parameters(), &client_key).unwrap();
+    let decryptor = BooleanDecryptor::new(context.parameters(), &client_key).unwrap();
+    let mut evaluator = context.new_boolean_evaluator(&server_key).unwrap();
+    let dimension = context.parameters().ciphertext_lwe_dimension();
+
+    for lhs in [false, true] {
+        for rhs in [false, true] {
+            let lhs_ciphertext = encryptor.encrypt(lhs, &mut rng).unwrap();
+            let rhs_ciphertext = encryptor.encrypt(rhs, &mut rng).unwrap();
+            assert_eq!(lhs_ciphertext.as_raw().dimension(), dimension);
+            for (gate, expected) in [
+                (BooleanGate::And, lhs & rhs),
+                (BooleanGate::Nand, !(lhs & rhs)),
+                (BooleanGate::Or, lhs | rhs),
+                (BooleanGate::Nor, !(lhs | rhs)),
+                (BooleanGate::Xor, lhs ^ rhs),
+                (BooleanGate::Xnor, !(lhs ^ rhs)),
+            ] {
+                let output = evaluator
+                    .evaluate_binary(gate, &lhs_ciphertext, &rhs_ciphertext)
+                    .unwrap();
+                assert_eq!(decryptor.decrypt(&output).unwrap(), expected, "{gate:?}");
+            }
+        }
+    }
 }
 
 #[test]

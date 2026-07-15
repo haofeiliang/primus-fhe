@@ -118,7 +118,7 @@ where
         let glwe_key_switching_key = FourierGlweKeySwitchingKey::generate(
             client_key.glwe_secret_key(),
             &padded_small_glwe_secret_key,
-            parameters.key_switching(),
+            parameters.glwe_key_switching(),
             &mut self.fft,
             rng,
             &mut self.gadget,

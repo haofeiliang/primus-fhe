@@ -112,7 +112,7 @@ where
         let glwe_key_switching_key = NttGlweKeySwitchingKey::generate(
             client_key.glwe_secret_key(),
             &padded_small_glwe_secret_key,
-            parameters.key_switching(),
+            parameters.glwe_key_switching(),
             self.context.table(),
             rng,
             &mut self.gadget,
