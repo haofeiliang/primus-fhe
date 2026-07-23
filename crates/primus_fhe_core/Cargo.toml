@@ -52,6 +52,10 @@ harness = false
 name = "expand_coeff_components"
 harness = false
 
+[[bench]]
+name = "key_switching"
+harness = false
+
 [features]
 default = []
 simd = [

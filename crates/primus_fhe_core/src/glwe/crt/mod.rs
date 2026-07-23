@@ -11,5 +11,8 @@ pub use automorphism::{
 pub use expand_coeff::{
     CrtGlweExpandCoeffContext, CrtGlweExpandCoeffKey, CrtGlweExpandCoeffSyncPool,
 };
-pub use key_switch::{CrtGlweKeySwitchingContext, CrtGlweKeySwitchingKey};
+pub use key_switch::{
+    CrtGlweKeySwitchingContext, CrtGlweKeySwitchingKey, HybridCrtGlweKeySwitchingContext,
+    HybridCrtGlweKeySwitchingKey,
+};
 pub use trace::{CrtGlweTraceContext, CrtGlweTraceKey};

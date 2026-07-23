@@ -22,8 +22,10 @@ mod error;
 
 mod base;
 mod converter;
+pub mod hybrid;
 
 pub use error::RNSError;
 
 pub use base::RNSBase;
 pub use converter::BaseConverter;
+pub use hybrid::HybridRNS;

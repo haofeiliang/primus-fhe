@@ -2,7 +2,7 @@ use primus_decompose::big_integer::BigUintApproxSignedBasis;
 use primus_fhe_core::{
     CrtGlevParameters, CrtGlweKeySwitchingContext, CrtGlweKeySwitchingKey, CrtGlweParameters,
     CrtGlweSecretKey, DcrtGlweCiphertext, DcrtGlweDecryptContext, DcrtGlweSecretKey,
-    RingSecretKeyType,
+    HybridCrtGlweKeySwitchingContext, HybridCrtGlweKeySwitchingKey, RingSecretKeyType,
 };
 use primus_lattice::glwe::DcrtGlwe;
 use primus_modulus::BarrettModulus;
@@ -100,4 +100,152 @@ fn test_rns_glwe_ksk() {
     let output = dcrt_sk_2.decrypt(&c2, &glwe_params, &table, &mut decrypt_context);
 
     assert_eq!(input.as_ref(), output.as_ref());
+}
+
+/// Test hybrid RNS gadget GLWE key switching end-to-end:
+/// encrypt under sk_1 → hybrid key-switch → decrypt under sk_2 → assert same
+/// plaintext.
+#[test]
+fn test_rns_glwe_ksk_hybrid() {
+    type ValueT = u64;
+
+    let dimension = 1; // Use dim=1 for simplicity with hybrid KSK
+    let poly_length: usize = 512;
+    let log_n = poly_length.trailing_zeros();
+
+    let t: ValueT = 12289;
+    let mod_t = <BarrettModulus<ValueT>>::new(t);
+
+    let gamma: ValueT = 2305843009213554689;
+    let mod_gamma = <BarrettModulus<ValueT>>::new(gamma);
+
+    // Two 50-bit Q moduli + one 50-bit P modulus
+    let q_values: [ValueT; 2] = [1125899906826241, 1125899906629633];
+    let p_values: [ValueT; 1] = [1125899906031617]; // 50-bit prime ≡ 1 mod 1024
+    let q_moduli = q_values.map(<BarrettModulus<ValueT>>::new);
+    let p_moduli = p_values.map(<BarrettModulus<ValueT>>::new);
+
+    let qp_moduli_vals: Vec<BarrettModulus<ValueT>> =
+        q_moduli.iter().chain(p_moduli.iter()).copied().collect();
+    let qp_table = UintDcrtTable::new(log_n, &qp_moduli_vals).unwrap();
+    let q_table = UintDcrtTable::new(log_n, &q_moduli).unwrap();
+
+    let mut rng = rand::rng();
+
+    // ── Parameters ──────────────────────────────────────────────
+    let glwe_params = CrtGlweParameters::new(
+        dimension,
+        poly_length,
+        mod_t,
+        mod_gamma,
+        &q_moduli,
+        RingSecretKeyType::Ternary,
+        3.20,
+    );
+
+    // ── Hybrid RNS parameters ───────────────────────────────────
+    let num_part_q = 2; // singleton partitions (one per Q modulus)
+    let hybrid_params = primus_rns::HybridRNS::new(&q_moduli, &p_moduli, num_part_q).unwrap();
+
+    println!(
+        "Hybrid: Q={}, P={}, QP={}, parts={}",
+        hybrid_params.q_moduli_count(),
+        hybrid_params.p_moduli_count(),
+        hybrid_params.qp_moduli_count(),
+        hybrid_params.num_parts()
+    );
+
+    // ── Two independent secret keys ─────────────────────────────
+    let sk_1 = CrtGlweSecretKey::generate(&glwe_params, &mut rng);
+    let dcrt_sk_2 = DcrtGlweSecretKey::from_coeff_secret_key(
+        &CrtGlweSecretKey::generate(&glwe_params, &mut rng),
+        &q_table,
+    );
+
+    let dcrt_sk_1 = DcrtGlweSecretKey::from_coeff_secret_key(&sk_1, &q_table);
+
+    // ── Hybrid KSK: encrypt sk_1 under sk_2 ─────────────────────
+    let key_switching_key = HybridCrtGlweKeySwitchingKey::new(
+        &sk_1,
+        &glwe_params,
+        &dcrt_sk_2,
+        &hybrid_params,
+        &qp_table,
+        &mut rng,
+    );
+
+    // ── Sanity: verify KSK structure ─────────────────────────────
+    let qp_count = hybrid_params.qp_moduli_count();
+    let qp_rns_poly_len = poly_length * qp_count;
+    assert_eq!(
+        key_switching_key.qp_rns_poly_len(),
+        qp_rns_poly_len,
+        "KSK qp_rns_poly_len mismatch"
+    );
+    assert_eq!(
+        key_switching_key.num_parts(),
+        num_part_q,
+        "KSK num_parts mismatch"
+    );
+
+    // ── Encrypt random plaintext under sk_1 ─────────────────────
+    let rns_glwe_len = glwe_params.rns_glwe_len();
+    let moduli_count = glwe_params.cipher_moduli_count();
+
+    let input: Polynomial<Vec<ValueT>> = Polynomial::random(poly_length, mod_t, &mut rng);
+    let mut c1: DcrtGlwe<Vec<ValueT>> = DcrtGlweCiphertext::zero(rns_glwe_len);
+    let mut c2: DcrtGlwe<Vec<ValueT>> = DcrtGlweCiphertext::zero(rns_glwe_len);
+
+    let mut decrypt_context = DcrtGlweDecryptContext::new(moduli_count, poly_length);
+
+    dcrt_sk_1.encrypt_plaintext_inplace(&input, &mut c1, &glwe_params, &q_table, &mut rng);
+
+    // Sanity: decrypt back under sk_1
+    let m_dec = dcrt_sk_1.decrypt(&c1, &glwe_params, &q_table, &mut decrypt_context);
+    assert_eq!(m_dec, input);
+
+    // ── Hybrid key-switch: c1 (under sk_1) → c2 (under sk_2) ───
+    let c1_coeff = c1.into_coeff_form(&q_table);
+
+    let qp_count = hybrid_params.qp_moduli_count();
+    let max_part = hybrid_params
+        .partitions()
+        .iter()
+        .map(|p| p.q_indices.len())
+        .max()
+        .unwrap_or(1);
+    let mut hybrid_context =
+        HybridCrtGlweKeySwitchingContext::new(max_part, moduli_count, 1, poly_length, 1);
+
+    key_switching_key.key_switch_hybrid_inplace(
+        &c1_coeff,
+        &mut c2,
+        &hybrid_params,
+        &qp_table,
+        &mut hybrid_context,
+    );
+
+    // ── Decrypt under sk_2 ─────────────────────────────────────
+    let output = dcrt_sk_2.decrypt(&c2, &glwe_params, &q_table, &mut decrypt_context);
+
+    // For debugging: print first few values
+    let input_slice = input.as_ref();
+    let output_slice = output.as_ref();
+    let mut error_count = 0;
+    for i in 0..input_slice.len().min(10) {
+        if input_slice[i] != output_slice[i] {
+            error_count += 1;
+            eprintln!(
+                "  mismatch at {}: expected {}, got {}",
+                i, input_slice[i], output_slice[i]
+            );
+        }
+    }
+    eprintln!("Total mismatches in first 10: {}", error_count);
+
+    assert_eq!(
+        input.as_ref(),
+        output.as_ref(),
+        "hybrid KSK decryption mismatch"
+    );
 }
