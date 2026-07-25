@@ -104,19 +104,7 @@ fn bench_key_switching(c: &mut Criterion) {
             glwe_params.big_uint_poly_len(),
             glwe_params.cipher_moduli_count(),
         );
-        let max_partition_size = hybrid_params
-            .partitions()
-            .iter()
-            .map(|partition| partition.q_indices.len())
-            .max()
-            .unwrap();
-        let mut hybrid_context = HybridCrtGlweKeySwitchingContext::new(
-            max_partition_size,
-            hybrid_params.q_moduli_count(),
-            hybrid_params.p_moduli_count(),
-            poly_length,
-            DIMENSION, // max output dimension
-        );
+        let mut hybrid_context = HybridCrtGlweKeySwitchingContext::new(&hybrid_ksk, &hybrid_params);
 
         // Validate both paths before measuring them.
         crt_ksk.key_swithching_inplace(
@@ -127,7 +115,7 @@ fn bench_key_switching(c: &mut Criterion) {
             base_q,
             &mut crt_context,
         );
-        hybrid_ksk.key_switch_hybrid_inplace(
+        hybrid_ksk.key_switch_inplace(
             &input_coeff,
             &mut hybrid_output,
             &hybrid_params,
@@ -167,7 +155,7 @@ fn bench_key_switching(c: &mut Criterion) {
 
         group.bench_with_input(BenchmarkId::new("Hybrid-RNS", &n_label), &(), |b, _| {
             b.iter(|| {
-                hybrid_ksk.key_switch_hybrid_inplace(
+                hybrid_ksk.key_switch_inplace(
                     black_box(&input_coeff),
                     black_box(&mut hybrid_output),
                     black_box(&hybrid_params),

@@ -8,6 +8,9 @@ pub enum RNSError {
     /// The input basis does not contain any modulus.
     #[error("rns base must contain at least one modulus")]
     EmptyBase,
+    /// A hybrid decomposition must request at least one partition.
+    #[error("hybrid RNS decomposition must request at least one partition")]
+    InvalidPartitionCount,
     /// The modulus at this index cannot be represented as a scalar value.
     #[error("modulus at index {index} cannot be represented as a scalar value")]
     UnrepresentableModulus {

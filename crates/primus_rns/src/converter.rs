@@ -31,16 +31,22 @@ pub struct BaseConverter<T: FheUint, M: FieldContext<T>> {
 }
 
 impl<T: FheUint, M: FieldContext<T>> BaseConverter<T, M> {
-    /// Creates a converter from `input_base` to `output_base`.
+    /// Creates a converter from references; clones both bases.
     ///
-    /// The bases are cloned into the converter so the returned value can be
-    /// used independently from the inputs. The precomputed matrix contains one
-    /// row per output modulus and one column per input modulus.
+    /// See [`from_owned_bases`](Self::from_owned_bases) for the owned variant.
+    pub fn new(input_base: &RNSBase<T, M>, output_base: &RNSBase<T, M>) -> Self {
+        Self::from_owned_bases(input_base.clone(), output_base.clone())
+    }
+
+    /// Creates a converter from owned bases.
+    ///
+    /// Takes ownership of `input_base` and `output_base` instead of cloning,
+    /// avoiding two `RNSBase` allocations when the caller already owns them.
     ///
     /// # Panics
     ///
     /// Panics if the base-change matrix length overflows `usize`.
-    pub fn new(input_base: &RNSBase<T, M>, output_base: &RNSBase<T, M>) -> Self {
+    pub fn from_owned_bases(input_base: RNSBase<T, M>, output_base: RNSBase<T, M>) -> Self {
         let input_moduli_count = input_base.moduli_count();
         let output_moduli_count = output_base.moduli_count();
 
@@ -63,8 +69,8 @@ impl<T: FheUint, M: FieldContext<T>> BaseConverter<T, M> {
         }
 
         Self {
-            input_base: input_base.clone(),
-            output_base: output_base.clone(),
+            input_base,
+            output_base,
             base_change_matrix,
         }
     }
@@ -214,6 +220,41 @@ impl<T: FheUint, M: FieldContext<T>> BaseConverter<T, M> {
             izip!(poly, scratch.chunks_exact(input_moduli_count)).for_each(|(ele, product)| {
                 *ele = modulus.reduce_dot_product(product, inv_punctured_product_mod_modulus);
             });
+        });
+    }
+
+    /// Converts an array into a caller-provided sequence of output polynomials.
+    ///
+    /// This is the scatter-output counterpart of [`fast_convert_array`](Self::fast_convert_array).
+    /// It lets composite RNS operations write converted limbs directly into a
+    /// non-contiguous destination without allocating an intermediate array.
+    pub(crate) fn fast_convert_array_to_polynomials<'a, I>(
+        &self,
+        crt_poly_in: &[T],
+        mut crt_poly_out: I,
+        poly_length: usize,
+        scratch: &mut [T],
+    ) where
+        T: 'a,
+        I: Iterator<Item = &'a mut [T]>,
+    {
+        let (minimum_outputs, maximum_outputs) = crt_poly_out.size_hint();
+        assert_eq!(maximum_outputs, Some(minimum_outputs));
+        assert_eq!(minimum_outputs, self.output_moduli_count());
+        self.fill_fast_convert_array_scratch(crt_poly_in, poly_length, scratch);
+
+        izip!(
+            crt_poly_out.by_ref(),
+            self.iter_base_change_matrix(),
+            self.output_base.moduli()
+        )
+        .for_each(|(poly, base_change_row, modulus)| {
+            assert_eq!(poly.len(), poly_length);
+            izip!(poly, scratch.chunks_exact(self.input_moduli_count())).for_each(
+                |(coefficient, adjusted_residues)| {
+                    *coefficient = modulus.reduce_dot_product(adjusted_residues, base_change_row);
+                },
+            );
         });
     }
 

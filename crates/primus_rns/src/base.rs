@@ -74,6 +74,14 @@ where
     /// Returns [`RNSError::CoPrimeError`] when any two moduli are not coprime.
     #[inline]
     pub fn new(moduli: &[M]) -> Result<Self, RNSError> {
+        Self::from_owned_moduli(moduli.to_vec())
+    }
+
+    /// Creates an RNS basis from an owned `Vec<M>`, avoiding a clone.
+    ///
+    /// See [`new`](Self::new) for error conditions.
+    #[inline]
+    pub fn from_owned_moduli(moduli: Vec<M>) -> Result<Self, RNSError> {
         if moduli.is_empty() {
             return Err(RNSError::EmptyBase);
         }
@@ -84,14 +92,14 @@ where
                 .value()
                 .ok_or(RNSError::UnrepresentableModulus { index: 0 })?;
             return Ok(Self {
-                moduli: moduli.to_vec(),
+                moduli,
                 moduli_product: BigUint(vec![value]),
                 punctured_product: vec![T::ONE],
                 inv_punctured_product_mod_modulus: vec![ShoupFactor::new(T::ONE, value)],
             });
         }
 
-        let moduli_values = checked_moduli_values(moduli)?;
+        let moduli_values = checked_moduli_values(&moduli)?;
 
         if moduli_values
             .iter()
@@ -103,8 +111,9 @@ where
 
         let moduli_product = multiply_many_values(&moduli_values);
 
+        let count = moduli.len();
         let big_uint_len = moduli_product.len();
-        let mut punctured_product = vec![T::ZERO; big_uint_len * moduli.len()];
+        let mut punctured_product = vec![T::ZERO; big_uint_len * count];
         punctured_product
             .chunks_exact_mut(big_uint_len)
             .enumerate()
@@ -114,7 +123,7 @@ where
 
         let inv_punctured_product_mod_modulus = punctured_product
             .chunks_exact(big_uint_len)
-            .zip(moduli)
+            .zip(&moduli)
             .zip(moduli_values.iter().copied())
             .map(|((q_div_qi, &qi), qi_value)| {
                 let inv_q_div_qi_mod_qi = q_div_qi.modulo(qi).try_inv_modulo(qi).unwrap();
@@ -123,7 +132,7 @@ where
             .collect::<Vec<ShoupFactor<T>>>();
 
         Ok(Self {
-            moduli: moduli.to_vec(),
+            moduli,
             moduli_product,
             punctured_product,
             inv_punctured_product_mod_modulus,

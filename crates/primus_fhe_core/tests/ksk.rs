@@ -109,7 +109,7 @@ fn test_rns_glwe_ksk() {
 fn test_rns_glwe_ksk_hybrid() {
     type ValueT = u64;
 
-    let dimension = 1; // Use dim=1 for simplicity with hybrid KSK
+    let dimension = 2;
     let poly_length: usize = 512;
     let log_n = poly_length.trailing_zeros();
 
@@ -119,9 +119,9 @@ fn test_rns_glwe_ksk_hybrid() {
     let gamma: ValueT = 2305843009213554689;
     let mod_gamma = <BarrettModulus<ValueT>>::new(gamma);
 
-    // Two 50-bit Q moduli + one 50-bit P modulus
-    let q_values: [ValueT; 2] = [1125899906826241, 1125899906629633];
-    let p_values: [ValueT; 1] = [1125899906031617]; // 50-bit prime ≡ 1 mod 1024
+    // Three 50-bit Q moduli + one 50-bit P modulus.
+    let q_values: [ValueT; 3] = [1125899906826241, 1125899906629633, 1125899906031617];
+    let p_values: [ValueT; 1] = [1125899905036289];
     let q_moduli = q_values.map(<BarrettModulus<ValueT>>::new);
     let p_moduli = p_values.map(<BarrettModulus<ValueT>>::new);
 
@@ -144,16 +144,8 @@ fn test_rns_glwe_ksk_hybrid() {
     );
 
     // ── Hybrid RNS parameters ───────────────────────────────────
-    let num_part_q = 2; // singleton partitions (one per Q modulus)
+    let num_part_q = 2;
     let hybrid_params = primus_rns::HybridRNS::new(&q_moduli, &p_moduli, num_part_q).unwrap();
-
-    println!(
-        "Hybrid: Q={}, P={}, QP={}, parts={}",
-        hybrid_params.q_moduli_count(),
-        hybrid_params.p_moduli_count(),
-        hybrid_params.qp_moduli_count(),
-        hybrid_params.num_parts()
-    );
 
     // ── Two independent secret keys ─────────────────────────────
     let sk_1 = CrtGlweSecretKey::generate(&glwe_params, &mut rng);
@@ -183,9 +175,9 @@ fn test_rns_glwe_ksk_hybrid() {
         "KSK qp_rns_poly_len mismatch"
     );
     assert_eq!(
-        key_switching_key.num_parts(),
-        num_part_q,
-        "KSK num_parts mismatch"
+        key_switching_key.partition_count(),
+        hybrid_params.partition_count(),
+        "KSK partition count mismatch"
     );
 
     // ── Encrypt random plaintext under sk_1 ─────────────────────
@@ -207,17 +199,10 @@ fn test_rns_glwe_ksk_hybrid() {
     // ── Hybrid key-switch: c1 (under sk_1) → c2 (under sk_2) ───
     let c1_coeff = c1.into_coeff_form(&q_table);
 
-    let qp_count = hybrid_params.qp_moduli_count();
-    let max_part = hybrid_params
-        .partitions()
-        .iter()
-        .map(|p| p.q_indices.len())
-        .max()
-        .unwrap_or(1);
     let mut hybrid_context =
-        HybridCrtGlweKeySwitchingContext::new(max_part, moduli_count, 1, poly_length, 1);
+        HybridCrtGlweKeySwitchingContext::new(&key_switching_key, &hybrid_params);
 
-    key_switching_key.key_switch_hybrid_inplace(
+    key_switching_key.key_switch_inplace(
         &c1_coeff,
         &mut c2,
         &hybrid_params,
@@ -227,21 +212,6 @@ fn test_rns_glwe_ksk_hybrid() {
 
     // ── Decrypt under sk_2 ─────────────────────────────────────
     let output = dcrt_sk_2.decrypt(&c2, &glwe_params, &q_table, &mut decrypt_context);
-
-    // For debugging: print first few values
-    let input_slice = input.as_ref();
-    let output_slice = output.as_ref();
-    let mut error_count = 0;
-    for i in 0..input_slice.len().min(10) {
-        if input_slice[i] != output_slice[i] {
-            error_count += 1;
-            eprintln!(
-                "  mismatch at {}: expected {}, got {}",
-                i, input_slice[i], output_slice[i]
-            );
-        }
-    }
-    eprintln!("Total mismatches in first 10: {}", error_count);
 
     assert_eq!(
         input.as_ref(),

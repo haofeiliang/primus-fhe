@@ -341,3 +341,113 @@ fn base_converter_slice_apis_match_scalar_and_exact_reference() {
         .collect();
     assert_eq!(exact_out, expected_exact);
 }
+
+// ---------------------------------------------------------------------------
+// extend / extend_with
+// ---------------------------------------------------------------------------
+
+#[test]
+fn extend_via_single_modulus_matches_new() {
+    let q_primes = [1125899906826241u64, 1125899906629633];
+    let p_prime = 1125899906031617u64;
+    let q_moduli: Vec<_> = q_primes.iter().copied().map(BarrettModulus::new).collect();
+    let p_modulus = BarrettModulus::new(p_prime);
+
+    let base_q = RNSBase::new(&q_moduli).unwrap();
+    let base_qp_extended = base_q.extend(p_modulus).unwrap();
+
+    let combined: Vec<_> = q_moduli.iter().copied().chain([p_modulus]).collect();
+    let base_qp_direct = RNSBase::new(&combined).unwrap();
+
+    assert_eq!(
+        base_qp_extended.moduli_count(),
+        base_qp_direct.moduli_count()
+    );
+    assert_eq!(
+        base_qp_extended.moduli_product().0,
+        base_qp_direct.moduli_product().0,
+    );
+    assert_eq!(
+        base_qp_extended.punctured_product(),
+        base_qp_direct.punctured_product(),
+    );
+    // ShoupFactors can't be compared directly, but the values should match
+    for (a, b) in base_qp_extended
+        .inv_punctured_product_mod_modulus()
+        .iter()
+        .zip(base_qp_direct.inv_punctured_product_mod_modulus())
+    {
+        assert_eq!(a.value(), b.value());
+    }
+}
+
+#[test]
+fn extend_with_matches_new_single_p() {
+    let q_primes = [1125899906826241u64, 1125899906629633];
+    let p_primes = [1125899906031617u64];
+    let q_moduli: Vec<_> = q_primes.iter().copied().map(BarrettModulus::new).collect();
+    let p_moduli: Vec<_> = p_primes.iter().copied().map(BarrettModulus::new).collect();
+
+    let base_q = RNSBase::new(&q_moduli).unwrap();
+    let base_p = RNSBase::new(&p_moduli).unwrap();
+    let base_qp_extended = base_q.extend_with(&base_p).unwrap();
+
+    let combined: Vec<_> = q_moduli.iter().chain(p_moduli.iter()).copied().collect();
+    let base_qp_direct = RNSBase::new(&combined).unwrap();
+
+    assert_eq!(
+        base_qp_extended.moduli_count(),
+        base_qp_direct.moduli_count()
+    );
+    assert_eq!(
+        base_qp_extended.moduli_product().0,
+        base_qp_direct.moduli_product().0,
+    );
+    assert_eq!(
+        base_qp_extended.punctured_product(),
+        base_qp_direct.punctured_product(),
+    );
+    for (a, b) in base_qp_extended
+        .inv_punctured_product_mod_modulus()
+        .iter()
+        .zip(base_qp_direct.inv_punctured_product_mod_modulus())
+    {
+        assert_eq!(a.value(), b.value());
+    }
+}
+
+#[test]
+fn extend_with_matches_new_multiple_p() {
+    // K > 1: extend_with should be consistent with constructing from scratch.
+    let q_primes = [1125899906826241u64, 1125899906629633];
+    let p_primes = [1125899906031617u64, 1125899906588673];
+    let q_moduli: Vec<_> = q_primes.iter().copied().map(BarrettModulus::new).collect();
+    let p_moduli: Vec<_> = p_primes.iter().copied().map(BarrettModulus::new).collect();
+
+    let base_q = RNSBase::new(&q_moduli).unwrap();
+    let base_p = RNSBase::new(&p_moduli).unwrap();
+    let base_qp_extended = base_q.extend_with(&base_p).unwrap();
+
+    let combined: Vec<_> = q_moduli.iter().chain(p_moduli.iter()).copied().collect();
+    let base_qp_direct = RNSBase::new(&combined).unwrap();
+
+    assert_eq!(
+        base_qp_extended.moduli_count(),
+        base_qp_direct.moduli_count()
+    );
+    assert_eq!(
+        base_qp_extended.moduli_product().0,
+        base_qp_direct.moduli_product().0,
+    );
+    assert_eq!(
+        base_qp_extended.punctured_product(),
+        base_qp_direct.punctured_product(),
+    );
+    for (a, b) in base_qp_extended
+        .inv_punctured_product_mod_modulus()
+        .iter()
+        .zip(base_qp_direct.inv_punctured_product_mod_modulus())
+    {
+        assert_eq!(a.value(), b.value());
+    }
+}

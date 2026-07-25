@@ -28,4 +28,4 @@ pub use error::RNSError;
 
 pub use base::RNSBase;
 pub use converter::BaseConverter;
-pub use hybrid::HybridRNS;
+pub use hybrid::{HybridRNS, HybridRNSPartition};

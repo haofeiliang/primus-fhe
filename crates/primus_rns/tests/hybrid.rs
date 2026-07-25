@@ -1,194 +1,147 @@
-//! Unit tests for the hybrid RNS gadget infrastructure.
+//! Tests for hybrid RNS gadget decomposition.
 
 use primus_modulo::prelude::*;
 use primus_modulus::BarrettModulus;
-use primus_reduce::Modulus;
 use primus_rns::HybridRNS;
 
 type ValueT = u64;
 type ModulusT = BarrettModulus<ValueT>;
 
-fn make_hybrid(q: &[ValueT], p: &[ValueT], num_parts: usize) -> HybridRNS<ValueT, ModulusT> {
+fn make_hybrid(q: &[ValueT], p: &[ValueT], partitions: usize) -> HybridRNS<ValueT, ModulusT> {
     let q_moduli: Vec<_> = q.iter().copied().map(ModulusT::new).collect();
     let p_moduli: Vec<_> = p.iter().copied().map(ModulusT::new).collect();
-    HybridRNS::new(&q_moduli, &p_moduli, num_parts).unwrap()
+    HybridRNS::new(&q_moduli, &p_moduli, partitions).unwrap()
 }
 
 #[test]
-fn hybrid_construction() {
-    let q = [1125899906826241u64, 1125899906629633];
-    let p = [1125899906031617u64];
-    let h = make_hybrid(&q, &p, 2);
+fn construction_uses_only_non_empty_partitions() {
+    let hybrid = make_hybrid(&[17, 41, 73, 89, 97], &[113], 4);
+    let ranges: Vec<_> = hybrid
+        .partitions()
+        .map(|partition| partition.q_range())
+        .collect();
 
-    assert_eq!(h.q_moduli_count(), 2);
-    assert_eq!(h.p_moduli_count(), 1);
-    assert_eq!(h.qp_moduli_count(), 3);
-    assert_eq!(h.num_parts(), 2);
-
-    let rows: Vec<_> = h.iter_gadget_scalar_residues().collect();
-    assert_eq!(rows.len(), 2);
-    assert_eq!(rows[0].len(), 3);
-    // Partition 0: q_0 has P, q_1=0, p_0=0
-    assert_ne!(rows[0][0], 0);
-    assert_eq!(rows[0][1], 0);
-    assert_eq!(rows[0][2], 0);
-    // Partition 1: q_0=0, q_1 has P, p_0=0
-    assert_eq!(rows[1][0], 0);
-    assert_ne!(rows[1][1], 0);
-    assert_eq!(rows[1][2], 0);
+    assert_eq!(hybrid.q_moduli_count(), 5);
+    assert_eq!(hybrid.p_moduli_count(), 1);
+    assert_eq!(hybrid.qp_moduli_count(), 6);
+    assert_eq!(hybrid.partition_count(), 3);
+    assert_eq!(hybrid.max_partition_moduli_count(), 2);
+    assert_eq!(ranges, [0..2, 2..4, 4..5]);
 }
 
 #[test]
-fn p_mod_and_inv() {
-    let q = [1125899906826241u64, 1125899906629633];
-    let p = [1125899906031617u64];
-    let h = make_hybrid(&q, &p, 1);
+fn construction_rejects_zero_partitions() {
+    let q_moduli = [ModulusT::new(17)];
+    let p_moduli = [ModulusT::new(41)];
 
-    let p_val = p[0];
-    for (i, &qi) in q.iter().enumerate() {
-        assert_eq!(h.p_mod_q()[i], p_val % qi);
-        let qi_mod = ModulusT::new(qi);
-        let expected_inv = (p_val % qi).try_inv_modulo(qi_mod).unwrap();
-        assert_eq!(h.p_inv_mod_q()[i], expected_inv);
-    }
+    assert!(matches!(
+        HybridRNS::new(&q_moduli, &p_moduli, 0),
+        Err(primus_rns::RNSError::InvalidPartitionCount),
+    ));
 }
 
-/// Test the scalar hybrid gadget identity:
-/// ModDown( Σ_j ModUp_j(x) * λ_j ) = x mod Q
-/// (using NON-centered r in ModDown, matching OpenFHE)
 #[test]
-fn scalar_hybrid_gadget_identity() {
-    let q = [1125899906826241u64, 1125899906629633];
-    let p = [1125899906031617u64];
-    let h = make_hybrid(&q, &p, 2);
+fn p_mod_q_and_inverse_are_precomputed_in_basis_order() {
+    let q = [17, 41, 73];
+    let p = [89, 97];
+    let hybrid = make_hybrid(&q, &p, 2);
+    let p_product = p.into_iter().product::<u64>();
 
-    let q_count = h.q_moduli_count();
-    let p_count = h.p_moduli_count();
-    let qp_count = h.qp_moduli_count();
-
-    let test_values = [0u64, 1, 12345, q[0] - 1];
-
-    for &x in &test_values {
-        let x_q = [x % q[0], x % q[1]];
-
-        // Σ_j ModUp_j(x) * λ_j
-        let mut sum_qp = vec![0u64; qp_count];
-
-        for (j, part) in h.partitions().iter().enumerate() {
-            let part_size = part.q_indices.len();
-            let mut part_res = vec![0u64; part_size];
-            for (local, global) in part.q_indices.clone().enumerate() {
-                part_res[local] = x_q[global];
-            }
-
-            let converter = &h.mod_up_converters()[j];
-            let compl_count = converter.output_moduli_count();
-            let mut compl_res = vec![0u64; compl_count];
-            {
-                let mut sc = vec![0u64; part_size];
-                h.mod_up_scalar(j, &part_res, &mut compl_res, &mut sc);
-            }
-
-            // Assemble QP digit
-            let mut digit_qp = vec![0u64; qp_count];
-            for (local, global) in part.q_indices.clone().enumerate() {
-                digit_qp[global] = part_res[local];
-            }
-            for (out_idx, &value) in compl_res.iter().enumerate() {
-                let qp_pos = if out_idx < part.q_indices.start {
-                    out_idx
-                } else if out_idx < q_count - part_size {
-                    out_idx + part_size
-                } else {
-                    q_count + (out_idx - (q_count - part_size))
-                };
-                digit_qp[qp_pos] = value;
-            }
-
-            let gadget = h.iter_gadget_scalar_residues().nth(j).unwrap();
-            for qi in 0..qp_count {
-                let m = unsafe { h.qp_base().moduli()[qi].value_unchecked() };
-                let prod = ((digit_qp[qi] as u128) * (gadget[qi] as u128) % (m as u128)) as u64;
-                sum_qp[qi] = ((sum_qp[qi] as u128 + prod as u128) % (m as u128)) as u64;
-            }
-        }
-
-        // ModDown: QP → Q (matching OpenFHE: NO centering)
-        let p_res = &sum_qp[q_count..];
-        let mut r_p = vec![0u64; p_count];
-        r_p.copy_from_slice(p_res);
-
-        let mut r_q = vec![0u64; q_count];
-        {
-            let mut sc = vec![0u64; p_count];
-            h.mod_down_converter().fast_convert(&r_p, &mut r_q, &mut sc);
-        }
-
-        let p_inv = h.p_inv_mod_q();
-        let q_moduli = h.q_base().moduli();
-        for qi in 0..q_count {
-            let z = sum_qp[qi];
-            let r = r_q[qi];
-            let m = unsafe { q_moduli[qi].value_unchecked() };
-            let diff = if z >= r { z - r } else { m - r + z };
-            // Use u128 to avoid overflow (values are up to ~2^100)
-            let result = ((diff as u128) * (p_inv[qi] as u128) % (m as u128)) as u64;
-
-            assert_eq!(
-                result, x_q[qi],
-                "x={}: ModDown mismatch at q[{}]: expected {} got {}",
-                x, qi, x_q[qi], result
-            );
-        }
+    for ((&qi, &p_mod_qi), &inv_p_mod_qi) in
+        q.iter().zip(hybrid.p_mod_q()).zip(hybrid.inv_p_mod_q())
+    {
+        let modulus = ModulusT::new(qi);
+        let expected = p_product % qi;
+        assert_eq!(p_mod_qi, expected);
+        assert_eq!(inv_p_mod_qi, expected.try_inv_modulo(modulus).unwrap());
     }
 }
 
 #[test]
-fn polynomial_mod_up_uses_modulus_major_layout() {
-    let q = [1125899906826241u64, 1125899906629633];
-    let p = [1125899906031617u64];
-    let h = make_hybrid(&q, &p, 2);
+fn approximate_mod_up_writes_a_complete_qp_digit() {
+    let hybrid = make_hybrid(&[17, 41, 73], &[89, 97], 2);
     let poly_length = 4;
-
-    let input = [
+    let polynomial_q = [
         1, 2, 3, 4, // q_0
         11, 12, 13, 14, // q_1
+        21, 22, 23, 24, // q_2
     ];
 
-    for (part_idx, part) in h.partitions().iter().enumerate() {
-        let converter = &h.mod_up_converters()[part_idx];
-        let output_count = converter.output_moduli_count();
-        let mut polynomial_output = vec![0; output_count * poly_length];
-        let mut polynomial_scratch = vec![0; part.q_indices.len()];
-        h.mod_up_polynomial_coeff(
-            part_idx,
-            &input,
-            &mut polynomial_output,
-            poly_length,
-            &mut polynomial_scratch,
+    for partition in hybrid.partitions() {
+        let range = partition.q_range();
+        let mut digit_qp = vec![0; hybrid.qp_moduli_count() * poly_length];
+        let mut scratch = vec![0; partition.moduli_count() * poly_length];
+        partition.approx_mod_up(&polynomial_q, &mut digit_qp, poly_length, &mut scratch);
+
+        assert_eq!(
+            &digit_qp[range.start * poly_length..range.end * poly_length],
+            &polynomial_q[range.start * poly_length..range.end * poly_length],
         );
 
         for coefficient in 0..poly_length {
-            let scalar_input: Vec<_> = part
-                .q_indices
+            let scalar_input: Vec<_> = range
                 .clone()
-                .map(|q_idx| input[q_idx * poly_length + coefficient])
+                .map(|q_index| polynomial_q[q_index * poly_length + coefficient])
                 .collect();
-            let mut scalar_output = vec![0; output_count];
-            let mut scalar_scratch = vec![0; part.q_indices.len()];
-            h.mod_up_scalar(
-                part_idx,
+            let mut scalar_output = vec![0; partition.mod_up_converter().output_moduli_count()];
+            let mut scalar_scratch = vec![0; partition.moduli_count()];
+            partition.mod_up_converter().fast_convert(
                 &scalar_input,
                 &mut scalar_output,
                 &mut scalar_scratch,
             );
 
-            for output_modulus in 0..output_count {
-                assert_eq!(
-                    polynomial_output[output_modulus * poly_length + coefficient],
-                    scalar_output[output_modulus],
-                );
-            }
+            let scattered_output = digit_qp
+                .chunks_exact(poly_length)
+                .enumerate()
+                .filter(|(index, _)| !range.contains(index))
+                .map(|(_, limb)| limb[coefficient]);
+            assert!(scattered_output.eq(scalar_output));
         }
+    }
+}
+
+#[test]
+fn polynomial_mod_down_matches_scalar_conversion_with_multiple_p_moduli() {
+    let hybrid = make_hybrid(&[17, 41, 73], &[89, 97], 2);
+    let poly_length = 5;
+    let mut polynomial_qp = vec![0; hybrid.qp_moduli_count() * poly_length];
+    let qp_moduli = [17, 41, 73, 89, 97];
+
+    for (modulus_index, (limb, &modulus)) in polynomial_qp
+        .chunks_exact_mut(poly_length)
+        .zip(&qp_moduli)
+        .enumerate()
+    {
+        for (coefficient, value) in limb.iter_mut().enumerate() {
+            *value = (7 * modulus_index + 11 * coefficient + 3) as u64 % modulus;
+        }
+    }
+
+    let original = polynomial_qp.clone();
+    let mut converted_p = vec![0; hybrid.q_moduli_count() * poly_length];
+    let mut scratch = vec![0; hybrid.p_moduli_count() * poly_length];
+    hybrid.approx_mod_down(
+        &mut polynomial_qp,
+        poly_length,
+        &mut converted_p,
+        &mut scratch,
+    );
+
+    for coefficient in 0..poly_length {
+        let residues_qp: Vec<_> = original
+            .chunks_exact(poly_length)
+            .map(|limb| limb[coefficient])
+            .collect();
+        let mut residues_q = vec![0; hybrid.q_moduli_count()];
+        let mut scalar_scratch = vec![0; hybrid.p_moduli_count()];
+        hybrid.approx_mod_down_scalar(&residues_qp, &mut residues_q, &mut scalar_scratch);
+
+        assert!(
+            polynomial_qp[..hybrid.q_moduli_count() * poly_length]
+                .chunks_exact(poly_length)
+                .map(|limb| limb[coefficient])
+                .eq(residues_q),
+        );
     }
 }
