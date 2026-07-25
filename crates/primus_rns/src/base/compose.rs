@@ -36,9 +36,15 @@ where
             &self.moduli
         )
         .for_each(
-            |(&ri, &inv_mi, mi, &modulus): (&T, &ShoupFactor<T>, BigUint<&[T]>, &M)| {
-                let product = inv_mi.factor_mul_modulo(ri, unsafe { modulus.value_unchecked() });
-                let carry = mi.mul_value_add_to(product, &mut value);
+            |(&ai, &inv_q_div_qi_mod_qi, q_div_qi, &qi): (
+                &T,
+                &ShoupFactor<T>,
+                BigUint<&[T]>,
+                &M,
+            )| {
+                let qi_val = unsafe { qi.value_unchecked() };
+                let product = inv_q_div_qi_mod_qi.factor_mul_modulo(ai, qi_val);
+                let carry = q_div_qi.mul_value_add_to(product, &mut value);
                 if !carry.is_zero() || value.cmp(moduli_product).is_ge() {
                     let _ = value.sub_assign(moduli_product);
                 }
@@ -72,9 +78,15 @@ where
             &self.moduli
         )
         .for_each(
-            |(&ri, &inv_mi, mi, &modulus): (&T, &ShoupFactor<T>, BigUint<&[T]>, &M)| {
-                let product = inv_mi.factor_mul_modulo(ri, unsafe { modulus.value_unchecked() });
-                let carry = mi.mul_value_add_to(product, value);
+            |(&ai, &inv_q_div_qi_mod_qi, q_div_qi, &qi): (
+                &T,
+                &ShoupFactor<T>,
+                BigUint<&[T]>,
+                &M,
+            )| {
+                let qi_val = unsafe { qi.value_unchecked() };
+                let product = inv_q_div_qi_mod_qi.factor_mul_modulo(ai, qi_val);
+                let carry = q_div_qi.mul_value_add_to(product, value);
                 if !carry.is_zero() || value.cmp(moduli_product).is_ge() {
                     let _ = value.sub_assign(moduli_product);
                 }

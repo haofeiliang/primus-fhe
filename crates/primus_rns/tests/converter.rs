@@ -1,5 +1,5 @@
 use primus_modulus::BarrettModulus;
-use primus_rns::{BaseConverter, RNSBase};
+use primus_rns::{BaseConverter, ExactConversionContext, RNSBase};
 
 type Value = u64;
 type Modulus = BarrettModulus<Value>;
@@ -52,18 +52,29 @@ fn fast_array_conversion_matches_scalar_conversion() {
 }
 
 #[test]
-fn exact_array_conversion_matches_canonical_values() {
-    let input_base = base(&[17, 19, 23]);
+fn exact_array_conversion_uses_centered_values_and_reuses_context() {
+    let input_moduli = [17, 19, 23];
+    let input_base = base(&input_moduli);
     let output_base = base(&[37]);
     let converter = BaseConverter::new(&input_base, &output_base);
-    let values = [0, 1, 2, 7, 16];
+    let values = [0, 1, 2, 7, 16, 7_428];
     let residues: Vec<_> = values
         .iter()
-        .map(|&value| vec![value; input_base.moduli_count()])
+        .map(|&value| {
+            input_moduli
+                .iter()
+                .map(|&modulus| value % modulus)
+                .collect()
+        })
         .collect();
     let input = pack_modulus_major(&residues, input_base.moduli_count());
     let mut output = vec![Value::MAX; values.len()];
+    let mut context = ExactConversionContext::new(input_base.moduli_count(), values.len());
 
-    converter.exact_convert_array(&input, &mut output, values.len());
-    assert_eq!(output, values);
+    converter.exact_convert_array(&input, &mut output, values.len(), &mut context);
+    assert_eq!(output, [0, 1, 2, 7, 16, 36]);
+
+    output.fill(Value::MAX);
+    converter.exact_convert_array(&input, &mut output, values.len(), &mut context);
+    assert_eq!(output, [0, 1, 2, 7, 16, 36]);
 }

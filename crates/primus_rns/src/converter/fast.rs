@@ -1,7 +1,6 @@
 use itertools::izip;
 use primus_factor::FactorMul;
 use primus_integer::FheUint;
-use primus_modulo::Modulo;
 use primus_reduce::FieldContext;
 
 use super::BaseConverter;
@@ -28,19 +27,19 @@ impl<T: FheUint, M: FieldContext<T>> BaseConverter<T, M> {
             self.input_base.moduli(),
             scratch.iter_mut()
         )
-        .for_each(|(&value, &inv, modulus, result)| {
-            *result = inv.factor_mul_modulo(value, unsafe { modulus.value_unchecked() });
+        .for_each(|(&ai, &inv_q_div_qi_mod_qi, qi, result)| {
+            *result = inv_q_div_qi_mod_qi.factor_mul_modulo(ai, unsafe { qi.value_unchecked() });
         });
 
-        let buf = &*scratch;
+        let ai_mul_inv_q_div_qi_mod_qi = &*scratch;
 
         izip!(
             residues_out,
             self.iter_base_change_matrix(),
             self.output_base.moduli()
         )
-        .for_each(|(ele, base_change_row, modulus)| {
-            *ele = modulus.reduce_dot_product(buf, base_change_row);
+        .for_each(|(ele, q_div_qi_mod_pj, pj)| {
+            *ele = pj.reduce_dot_product(ai_mul_inv_q_div_qi_mod_qi, q_div_qi_mod_pj);
         });
     }
 
@@ -66,24 +65,26 @@ impl<T: FheUint, M: FieldContext<T>> BaseConverter<T, M> {
             self.input_base.moduli()
         )
         .enumerate()
-        .for_each(
-            |(i, (poly, &inv_punctured_product_mod_modulus, &modulus))| {
-                if inv_punctured_product_mod_modulus.value().is_one() {
-                    izip!(poly, scratch.iter_mut().skip(i).step_by(input_moduli_count)).for_each(
-                        |(&x, ele)| {
-                            *ele = x.modulo(modulus);
-                        },
-                    );
-                } else {
-                    let modulus = unsafe { modulus.value_unchecked() };
-                    izip!(poly, scratch.iter_mut().skip(i).step_by(input_moduli_count)).for_each(
-                        |(&x, ele)| {
-                            *ele = inv_punctured_product_mod_modulus.factor_mul_modulo(x, modulus);
-                        },
-                    );
-                }
-            },
-        );
+        .for_each(|(i, (poly_mod_qi, &inv_q_div_qi_mod_qi, &qi))| {
+            if inv_q_div_qi_mod_qi.value().is_one() {
+                izip!(
+                    poly_mod_qi,
+                    scratch.iter_mut().skip(i).step_by(input_moduli_count)
+                )
+                .for_each(|(&ai, ele)| {
+                    *ele = ai;
+                });
+            } else {
+                let qi_val = unsafe { qi.value_unchecked() };
+                izip!(
+                    poly_mod_qi,
+                    scratch.iter_mut().skip(i).step_by(input_moduli_count)
+                )
+                .for_each(|(&ai, ele)| {
+                    *ele = inv_q_div_qi_mod_qi.factor_mul_modulo(ai, qi_val);
+                });
+            }
+        });
     }
 
     /// Converts a modulus-major array of residue vectors between bases.
@@ -119,10 +120,12 @@ impl<T: FheUint, M: FieldContext<T>> BaseConverter<T, M> {
             self.iter_base_change_matrix(),
             self.output_base.moduli()
         )
-        .for_each(|(poly, inv_punctured_product_mod_modulus, modulus)| {
-            izip!(poly, scratch.chunks_exact(input_moduli_count)).for_each(|(ele, product)| {
-                *ele = modulus.reduce_dot_product(product, inv_punctured_product_mod_modulus);
-            });
+        .for_each(|(poly_mod_pj, q_div_qi_mod_pj, pj)| {
+            izip!(poly_mod_pj, scratch.chunks_exact(input_moduli_count)).for_each(
+                |(ele, ai_mul_inv_q_div_qi_mod_qi)| {
+                    *ele = pj.reduce_dot_product(ai_mul_inv_q_div_qi_mod_qi, q_div_qi_mod_pj);
+                },
+            );
         });
     }
 
@@ -151,11 +154,12 @@ impl<T: FheUint, M: FieldContext<T>> BaseConverter<T, M> {
             self.iter_base_change_matrix(),
             self.output_base.moduli()
         )
-        .for_each(|(poly, base_change_row, modulus)| {
-            assert_eq!(poly.len(), poly_length);
-            izip!(poly, scratch.chunks_exact(self.input_moduli_count())).for_each(
-                |(coefficient, adjusted_residues)| {
-                    *coefficient = modulus.reduce_dot_product(adjusted_residues, base_change_row);
+        .for_each(|(poly_mod_pj, q_div_qi_mod_pj, pj)| {
+            assert_eq!(poly_mod_pj.len(), poly_length);
+            izip!(poly_mod_pj, scratch.chunks_exact(self.input_moduli_count())).for_each(
+                |(coefficient, ai_mul_inv_q_div_qi_mod_qi)| {
+                    *coefficient =
+                        pj.reduce_dot_product(ai_mul_inv_q_div_qi_mod_qi, q_div_qi_mod_pj);
                 },
             );
         });
@@ -188,18 +192,22 @@ impl<T: FheUint, M: FieldContext<T>> BaseConverter<T, M> {
         let input_moduli_count = self.input_moduli_count();
         self.fill_fast_convert_array_scratch(crt_poly_in, poly_length, scratch);
 
-        let mut rows = self.iter_base_change_matrix();
-        let row_0 = rows.next().expect("missing first output-base row");
-        let row_1 = rows.next().expect("missing second output-base row");
-        let modulus_0 = self.output_base.moduli()[0];
-        let modulus_1 = self.output_base.moduli()[1];
+        let mut q_div_qi_mod_pj_rows = self.iter_base_change_matrix();
+        let q_div_qi_mod_p0 = q_div_qi_mod_pj_rows
+            .next()
+            .expect("missing first output-base row");
+        let q_div_qi_mod_p1 = q_div_qi_mod_pj_rows
+            .next()
+            .expect("missing second output-base row");
+        let p0 = self.output_base.moduli()[0];
+        let p1 = self.output_base.moduli()[1];
 
         scratch
             .chunks_exact(input_moduli_count)
-            .map(move |product| {
+            .map(move |ai_mul_inv_q_div_qi_mod_qi| {
                 (
-                    modulus_0.reduce_dot_product(product, row_0),
-                    modulus_1.reduce_dot_product(product, row_1),
+                    p0.reduce_dot_product(ai_mul_inv_q_div_qi_mod_qi, q_div_qi_mod_p0),
+                    p1.reduce_dot_product(ai_mul_inv_q_div_qi_mod_qi, q_div_qi_mod_p1),
                 )
             })
     }

@@ -1,5 +1,7 @@
 mod exact;
 mod fast;
+pub use exact::ExactConversionContext;
+
 use primus_integer::FheUint;
 use primus_modulo::Modulo;
 use primus_reduce::FieldContext;
@@ -58,12 +60,14 @@ impl<T: FheUint, M: FieldContext<T>> BaseConverter<T, M> {
 
         let mut base_change_matrix = vec![T::ZERO; input_moduli_count * output_moduli_count];
 
-        for (row, &modulus) in base_change_matrix
+        for (row, &pj) in base_change_matrix
             .chunks_exact_mut(input_moduli_count)
             .zip(output_base.moduli())
         {
-            for (ele, m_i) in row.iter_mut().zip(input_base.iter_punctured_product()) {
-                *ele = m_i.modulo(modulus);
+            for (q_div_qi_mod_pj, q_div_qi) in
+                row.iter_mut().zip(input_base.iter_punctured_product())
+            {
+                *q_div_qi_mod_pj = q_div_qi.modulo(pj);
             }
         }
 

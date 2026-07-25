@@ -3,7 +3,7 @@ use std::hint::black_box;
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use primus_factor::{FactorBase, ShoupFactor};
 use primus_modulus::BarrettModulus;
-use primus_rns::{BaseConverter, RNSBase};
+use primus_rns::{BaseConverter, ExactConversionContext, RNSBase};
 
 // Benchmarks intentionally focus on the slice-level APIs used by polynomial
 // paths. Single-value compose/decompose is only a correctness primitive here.
@@ -206,12 +206,14 @@ fn bench_slice_base_convert(c: &mut Criterion) {
     });
 
     let mut exact_out = vec![0; POLY_LENGTH];
+    let mut exact_context = ExactConversionContext::new(input_base.moduli_count(), POLY_LENGTH);
     group.bench_function("exact_convert_array/3mod_to_1mod", |b| {
         b.iter(|| {
             exact_converter.exact_convert_array(
                 black_box(&crt_in),
                 black_box(&mut exact_out),
                 POLY_LENGTH,
+                black_box(&mut exact_context),
             );
         });
     });

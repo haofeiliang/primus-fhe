@@ -27,5 +27,5 @@ pub mod hybrid;
 pub use error::RNSError;
 
 pub use base::RNSBase;
-pub use converter::BaseConverter;
+pub use converter::{BaseConverter, ExactConversionContext};
 pub use hybrid::{HybridRNS, HybridRNSPartition};

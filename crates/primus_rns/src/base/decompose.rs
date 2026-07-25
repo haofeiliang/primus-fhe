@@ -56,9 +56,7 @@ where
     pub fn wrapping_decompose(&self, value: T, small_value_modulus: T) -> Vec<T> {
         if small_value_modulus != T::TWO {
             let half = (small_value_modulus + T::ONE) / T::TWO;
-            self.moduli
-                .iter()
-                .map(|m| unsafe { m.value_unchecked() })
+            self.moduli_values()
                 .map(|modulus| {
                     if value < half {
                         value
@@ -96,9 +94,7 @@ where
 
         if small_value_modulus != T::TWO {
             let half = (small_value_modulus + T::ONE) / T::TWO;
-            self.moduli
-                .iter()
-                .map(|m| unsafe { m.value_unchecked() })
+            self.moduli_values()
                 .zip(residues)
                 .for_each(|(modulus, residue)| {
                     *residue = if value < half {
@@ -131,16 +127,12 @@ where
     ) {
         debug_assert_eq!(multi_residues.len(), self.moduli_count() * value_count);
         debug_assert_eq!(small_values.len(), value_count);
-        debug_assert!(
-            self.moduli
-                .iter()
-                .all(|m| unsafe { m.value_unchecked() } > small_value_modulus)
-        );
+        debug_assert!(self.moduli_values().all(|m| m > small_value_modulus));
         if small_value_modulus != T::TWO {
             let half = (small_value_modulus + T::ONE) / T::TWO;
             for (residues, modulus) in multi_residues
                 .chunks_exact_mut(value_count)
-                .zip(self.moduli().iter().map(|m| unsafe { m.value_unchecked() }))
+                .zip(self.moduli_values())
             {
                 let temp = modulus - small_value_modulus;
 
@@ -155,6 +147,33 @@ where
                 residues.copy_from_slice(small_values);
             }
         }
+    }
+
+    /// Decomposes a small polynomial into CRT form with centered wrapping semantics.
+    ///
+    /// `small_poly.as_slice().len()` must equal `poly_length`. Coefficients are
+    /// expected to be reduced modulo `small_poly_modulus`.
+    ///
+    /// `crt_poly.as_mut_slice().len()` must equal `moduli_count() * poly_length`
+    /// and is written in modulus-major layout: chunk `i` of length
+    /// `poly_length` receives coefficients reduced modulo `moduli()[i]`.
+    #[inline]
+    pub fn wrapping_decompose_small_polynomial_to<A, B>(
+        &self,
+        small_poly: &Polynomial<A>,
+        crt_poly: &mut CrtPolynomial<B>,
+        poly_length: usize,
+        small_poly_modulus: T,
+    ) where
+        A: RawData<Elem = T> + Data,
+        B: RawData<Elem = T> + DataMut,
+    {
+        self.wrapping_decompose_small_values_to(
+            small_poly.as_slice(),
+            crt_poly.as_mut_slice(),
+            poly_length,
+            small_poly_modulus,
+        );
     }
 
     /// Fused centered decomposition, scaling, and accumulation for small values.
@@ -180,24 +199,20 @@ where
         debug_assert_eq!(acc.len(), self.moduli_count() * value_count);
         debug_assert_eq!(small_values.len(), value_count);
         debug_assert_eq!(factors.len(), self.moduli_count());
-        debug_assert!(
-            self.moduli
-                .iter()
-                .all(|m| unsafe { m.value_unchecked() } > small_value_modulus)
-        );
+        debug_assert!(self.moduli_values().all(|m| m > small_value_modulus));
 
         if small_value_modulus != T::TWO {
             let half = (small_value_modulus + T::ONE) / T::TWO;
             izip!(
                 acc.chunks_exact_mut(value_count),
-                self.moduli().iter().map(|m| unsafe { m.value_unchecked() }),
+                self.moduli_values(),
                 factors,
             )
             .for_each(|(acc_chunk, modulus, &factor)| {
                 let temp = modulus - small_value_modulus;
 
                 #[cfg(not(feature = "simd"))]
-                slice::wrapping_decompose_chunk_scaled_to(
+                slice::add_wrapping_decompose_chunk_scaled_assign(
                     small_values,
                     acc_chunk,
                     half,
@@ -207,7 +222,7 @@ where
                 );
 
                 #[cfg(feature = "simd")]
-                simd::wrapping_decompose_chunk_scaled_to(
+                simd::add_wrapping_decompose_chunk_scaled_assign(
                     small_values,
                     acc_chunk,
                     half,
@@ -219,13 +234,45 @@ where
         } else {
             izip!(
                 acc.chunks_exact_mut(value_count),
-                self.moduli().iter().map(|m| unsafe { m.value_unchecked() }),
+                self.moduli_values(),
                 factors,
             )
             .for_each(|(acc_chunk, _modulus, &factor)| {
                 factor.add_factor_mul_slice_assign(acc_chunk, small_values, _modulus);
             });
         }
+    }
+
+    /// Adds a centered small-polynomial decomposition scaled by per-modulus factors.
+    ///
+    /// `small_poly.as_slice().len()` must equal `poly_length`. Coefficients are
+    /// expected to be reduced modulo `small_poly_modulus`.
+    ///
+    /// `acc.as_mut_slice().len()` must equal `moduli_count() * poly_length` and
+    /// uses modulus-major CRT polynomial layout. The function accumulates into
+    /// `acc` without clearing it first.
+    ///
+    /// `factors.len()` must equal `moduli_count()`. Factor `i` is used for the
+    /// chunk modulo `moduli()[i]`.
+    #[inline]
+    pub fn add_wrapping_decompose_small_polynomial_scaled<F: Factor<T>, A, C>(
+        &self,
+        small_poly: &Polynomial<A>,
+        acc: &mut CrtPolynomial<C>,
+        poly_length: usize,
+        small_poly_modulus: T,
+        factors: &[F],
+    ) where
+        A: RawData<Elem = T> + Data,
+        C: RawData<Elem = T> + DataMut,
+    {
+        self.add_wrapping_decompose_small_values_scaled(
+            small_poly.as_slice(),
+            acc.as_mut_slice(),
+            poly_length,
+            small_poly_modulus,
+            factors,
+        );
     }
 
     /// Fused unsigned decomposition, scaling, and accumulation for small values.
@@ -254,7 +301,7 @@ where
 
         izip!(
             acc.chunks_exact_mut(value_count),
-            self.moduli().iter().map(|m| unsafe { m.value_unchecked() }),
+            self.moduli_values(),
             factors,
         )
         .for_each(|(acc_chunk, modulus, &factor)| {
@@ -324,65 +371,6 @@ where
                 *residue = value.modulo(modulus);
             }
         }
-    }
-
-    /// Decomposes a small polynomial into CRT form with centered wrapping semantics.
-    ///
-    /// `small_poly.as_slice().len()` must equal `poly_length`. Coefficients are
-    /// expected to be reduced modulo `small_poly_modulus`.
-    ///
-    /// `crt_poly.as_mut_slice().len()` must equal `moduli_count() * poly_length`
-    /// and is written in modulus-major layout: chunk `i` of length
-    /// `poly_length` receives coefficients reduced modulo `moduli()[i]`.
-    #[inline]
-    pub fn wrapping_decompose_small_polynomial_to<A, B>(
-        &self,
-        small_poly: &Polynomial<A>,
-        crt_poly: &mut CrtPolynomial<B>,
-        poly_length: usize,
-        small_poly_modulus: T,
-    ) where
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + DataMut,
-    {
-        self.wrapping_decompose_small_values_to(
-            small_poly.as_slice(),
-            crt_poly.as_mut_slice(),
-            poly_length,
-            small_poly_modulus,
-        );
-    }
-
-    /// Adds a centered small-polynomial decomposition scaled by per-modulus factors.
-    ///
-    /// `small_poly.as_slice().len()` must equal `poly_length`. Coefficients are
-    /// expected to be reduced modulo `small_poly_modulus`.
-    ///
-    /// `acc.as_mut_slice().len()` must equal `moduli_count() * poly_length` and
-    /// uses modulus-major CRT polynomial layout. The function accumulates into
-    /// `acc` without clearing it first.
-    ///
-    /// `factors.len()` must equal `moduli_count()`. Factor `i` is used for the
-    /// chunk modulo `moduli()[i]`.
-    #[inline]
-    pub fn add_wrapping_decompose_small_polynomial_scaled<F: Factor<T>, A, C>(
-        &self,
-        small_poly: &Polynomial<A>,
-        acc: &mut CrtPolynomial<C>,
-        poly_length: usize,
-        small_poly_modulus: T,
-        factors: &[F],
-    ) where
-        A: RawData<Elem = T> + Data,
-        C: RawData<Elem = T> + DataMut,
-    {
-        self.add_wrapping_decompose_small_values_scaled(
-            small_poly.as_slice(),
-            acc.as_mut_slice(),
-            poly_length,
-            small_poly_modulus,
-            factors,
-        );
     }
 
     /// Decomposes a polynomial with big-integer coefficients into CRT form.

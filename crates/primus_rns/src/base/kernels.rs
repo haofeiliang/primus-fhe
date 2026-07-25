@@ -29,7 +29,7 @@ pub(super) mod slice {
     /// factor for `modulus`. `half` and `temp` have the same meaning as in
     /// [`wrapping_decompose_chunk_to`].
     #[inline]
-    pub(in crate::base) fn wrapping_decompose_chunk_scaled_to<T, F>(
+    pub(in crate::base) fn add_wrapping_decompose_chunk_scaled_assign<T, F>(
         small_values: &[T],
         acc: &mut [T],
         half: T,
@@ -89,7 +89,7 @@ pub(super) mod simd {
     /// accumulated here and any remainder is delegated to the scalar helper.
     /// `factor` must be a factor for `modulus`.
     #[inline]
-    pub(in crate::base) fn wrapping_decompose_chunk_scaled_to<T, F>(
+    pub(in crate::base) fn add_wrapping_decompose_chunk_scaled_assign<T, F>(
         small_values: &[T],
         acc: &mut [T],
         half: T,
@@ -118,7 +118,7 @@ pub(super) mod simd {
             *acc_chunk = sum.simd_min(sum - sm).to_array();
         }
 
-        super::slice::wrapping_decompose_chunk_scaled_to(
+        super::slice::add_wrapping_decompose_chunk_scaled_assign(
             val_rem, acc_rem, half, temp, modulus, factor,
         );
     }
