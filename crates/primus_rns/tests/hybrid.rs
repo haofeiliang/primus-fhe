@@ -1,8 +1,6 @@
-//! Tests for hybrid RNS gadget decomposition.
-
 use primus_modulo::prelude::*;
 use primus_modulus::BarrettModulus;
-use primus_rns::HybridRNS;
+use primus_rns::{HybridRNS, RNSError};
 
 type ValueT = u64;
 type ModulusT = BarrettModulus<ValueT>;
@@ -14,37 +12,26 @@ fn make_hybrid(q: &[ValueT], p: &[ValueT], partitions: usize) -> HybridRNS<Value
 }
 
 #[test]
-fn construction_uses_only_non_empty_partitions() {
-    let hybrid = make_hybrid(&[17, 41, 73, 89, 97], &[113], 4);
+fn construction_partitions_q_and_precomputes_p() {
+    let q = [17, 41, 73, 89, 97];
+    let p = [101, 103];
+    let hybrid = make_hybrid(&q, &p, 4);
     let ranges: Vec<_> = hybrid
         .partitions()
         .map(|partition| partition.q_range())
         .collect();
 
     assert_eq!(hybrid.q_moduli_count(), 5);
-    assert_eq!(hybrid.p_moduli_count(), 1);
-    assert_eq!(hybrid.qp_moduli_count(), 6);
+    assert_eq!(hybrid.p_moduli_count(), 2);
+    assert_eq!(hybrid.qp_moduli_count(), 7);
     assert_eq!(hybrid.partition_count(), 3);
     assert_eq!(hybrid.max_partition_moduli_count(), 2);
     assert_eq!(ranges, [0..2, 2..4, 4..5]);
-}
-
-#[test]
-fn construction_rejects_zero_partitions() {
-    let q_moduli = [ModulusT::new(17)];
-    let p_moduli = [ModulusT::new(41)];
 
     assert!(matches!(
-        HybridRNS::new(&q_moduli, &p_moduli, 0),
-        Err(primus_rns::RNSError::InvalidPartitionCount),
+        HybridRNS::new(&[ModulusT::new(17)], &[ModulusT::new(41)], 0),
+        Err(RNSError::InvalidPartitionCount),
     ));
-}
-
-#[test]
-fn p_mod_q_and_inverse_are_precomputed_in_basis_order() {
-    let q = [17, 41, 73];
-    let p = [89, 97];
-    let hybrid = make_hybrid(&q, &p, 2);
     let p_product = p.into_iter().product::<u64>();
 
     for ((&qi, &p_mod_qi), &inv_p_mod_qi) in
