@@ -1,10 +1,6 @@
 use std::slice::{Iter, IterMut};
 
-/// Sealed marker at the root of the storage trait hierarchy.
-///
-/// Every storage backend exposes its element type via [`Elem`](RawData::Elem).
-/// Concrete capabilities — read access, mutation, and ownership — are added by
-/// [`Data`], [`DataMut`], and [`DataOwned`] respectively.
+/// Base trait associating a storage backend with its element type.
 pub trait RawData: Sized {
     /// The element type stored in this buffer.
     type Elem;
@@ -25,10 +21,10 @@ pub trait Data: RawData {
         self.as_slice().len()
     }
 
-    /// Returns `true` if the buffer has length 0.
+    /// Returns `true` if the buffer is empty.
     #[inline(always)]
     fn is_empty(&self) -> bool {
-        self.as_slice().is_empty()
+        self.len() == 0
     }
 
     /// Returns an iterator over the elements.
@@ -62,7 +58,7 @@ pub trait Data: RawData {
     /// Divides the buffer into two slices at `mid`, without bounds checking.
     ///
     /// # Safety
-    /// The caller must ensure `0 <= mid <= self.len()`.
+    /// The caller must ensure `mid <= self.len()`.
     #[inline(always)]
     unsafe fn split_at_unchecked(&self, mid: usize) -> (&[Self::Elem], &[Self::Elem]) {
         unsafe { self.as_slice().split_at_unchecked(mid) }
@@ -143,7 +139,7 @@ pub trait DataMut: Data {
     /// Divides the mutable buffer into two slices at `mid`, without bounds checking.
     ///
     /// # Safety
-    /// The caller must ensure `0 <= mid <= self.len()`.
+    /// The caller must ensure `mid <= self.len()`.
     #[inline(always)]
     unsafe fn split_at_mut_unchecked(
         &mut self,
@@ -191,7 +187,7 @@ pub trait DataOwned: Data + FromIterator<Self::Elem> {
     where
         Self::Elem: Clone;
 
-    /// Wraps a `Vec<T>` into the owned buffer type.
+    /// Creates an owned buffer from a `Vec`, reusing its allocation when possible.
     fn from_vec(data: Vec<Self::Elem>) -> Self;
 
     /// Consumes the buffer and returns an iterator over its elements.

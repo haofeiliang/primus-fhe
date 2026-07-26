@@ -1,9 +1,9 @@
 //! Polymorphic storage traits for contiguous buffers.
 //!
-//! `primus_data` provides [`RawData`], [`Data`], [`DataMut`], and
-//! [`DataOwned`] — a sealed hierarchy of traits that abstract over how a
-//! contiguous sequence of elements is stored. Eight backends are supported
-//! out of the box:
+//! The traits in this crate let algorithms work with contiguous storage
+//! without committing to a particular container. [`Data`] provides shared
+//! access, [`DataMut`] adds mutable access, and [`DataOwned`] adds construction
+//! and consumption.
 //!
 //! | Backend         | `RawData` | `Data` | `DataMut` | `DataOwned` |
 //! |-----------------|-----------|--------|-----------|-------------|
@@ -15,17 +15,24 @@
 //! | `Vec<T>`        | ✓         | ✓      | ✓         | ✓           |
 //! | `Box<[T]>`      | ✓         | ✓      | ✓         | ✓           |
 //! | `Arc<[T]>`      | ✓         | ✓      | —         | —           |
+//! | `AVec<T, A>`¹   | ✓         | ✓      | ✓         | —           |
+//! | `ABox<[T], A>`¹ | ✓         | ✓      | ✓         | —           |
 //!
-//! # Usage
+//! ¹ Requires the `aligned-vec` feature. They do not implement [`DataOwned`]
+//! because the current trait requires `FromIterator` and a consuming iterator,
+//! which `aligned-vec` does not provide; runtime alignment also needs an
+//! explicit value during construction.
 //!
-//! Generic code that needs read-only access to a contiguous buffer bounds on
-//! `Data`. Code that writes (fill, copy, split) also requires `DataMut`.
-//! Callers that need to create a new owned buffer use `DataOwned`.
+//! # Example
 //!
-//! ```ignore
+//! ```
+//! use primus_data::Data;
+//!
 //! fn sum<D: Data<Elem = u64>>(buf: &D) -> u64 {
-//!     buf.as_slice().iter().sum()
+//!     buf.iter().sum()
 //! }
+//!
+//! assert_eq!(sum(&vec![1, 2, 3]), 6);
 //! ```
 
 #![deny(missing_docs)]

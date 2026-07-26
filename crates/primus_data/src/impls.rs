@@ -2,9 +2,7 @@ use std::sync::Arc;
 
 use crate::traits::{Data, DataMut, DataOwned, RawData};
 
-// ---------------------------------------------------------------------------
-// &[T] — borrowed slice (read-only)
-// ---------------------------------------------------------------------------
+// Borrowed slices.
 
 impl<T> RawData for &[T] {
     type Elem = T;
@@ -16,10 +14,6 @@ impl<T> Data for &[T] {
         self
     }
 }
-
-// ---------------------------------------------------------------------------
-// &mut [T] — mutably borrowed slice
-// ---------------------------------------------------------------------------
 
 impl<T> RawData for &mut [T] {
     type Elem = T;
@@ -39,9 +33,7 @@ impl<T> DataMut for &mut [T] {
     }
 }
 
-// ---------------------------------------------------------------------------
-// [T; N] — owning fixed-size array
-// ---------------------------------------------------------------------------
+// Fixed-size arrays and their references.
 
 impl<T, const N: usize> RawData for [T; N] {
     type Elem = T;
@@ -71,10 +63,6 @@ impl<T, const N: usize> DataMut for [T; N] {
     }
 }
 
-// ---------------------------------------------------------------------------
-// &[T; N] — shared reference to fixed-size array
-// ---------------------------------------------------------------------------
-
 impl<T, const N: usize> RawData for &[T; N] {
     type Elem = T;
 }
@@ -95,10 +83,6 @@ impl<T, const N: usize> Data for &[T; N] {
         N == 0
     }
 }
-
-// ---------------------------------------------------------------------------
-// &mut [T; N] — exclusive reference to fixed-size array
-// ---------------------------------------------------------------------------
 
 impl<T, const N: usize> RawData for &mut [T; N] {
     type Elem = T;
@@ -128,9 +112,7 @@ impl<T, const N: usize> DataMut for &mut [T; N] {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Vec<T> — owned heap-allocated buffer
-// ---------------------------------------------------------------------------
+// Standard owned storage.
 
 impl<T> RawData for Vec<T> {
     type Elem = T;
@@ -140,6 +122,11 @@ impl<T> Data for Vec<T> {
     #[inline(always)]
     fn as_slice(&self) -> &[T] {
         self
+    }
+
+    #[inline(always)]
+    fn len(&self) -> usize {
+        self.len()
     }
 }
 
@@ -171,10 +158,6 @@ impl<T> DataOwned for Vec<T> {
         <Vec<T> as IntoIterator>::into_iter(self)
     }
 }
-
-// ---------------------------------------------------------------------------
-// Box<[T]> — owned boxed slice
-// ---------------------------------------------------------------------------
 
 impl<T> RawData for Box<[T]> {
     type Elem = T;
@@ -216,10 +199,6 @@ impl<T> DataOwned for Box<[T]> {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Arc<[T]> — shared owned slice
-// ---------------------------------------------------------------------------
-
 impl<T> RawData for Arc<[T]> {
     type Elem = T;
 }
@@ -228,5 +207,53 @@ impl<T> Data for Arc<[T]> {
     #[inline(always)]
     fn as_slice(&self) -> &[T] {
         self
+    }
+}
+
+#[cfg(feature = "aligned-vec")]
+mod aligned {
+    use aligned_vec::{ABox, AVec, Alignment};
+
+    use super::{Data, DataMut, RawData};
+
+    impl<T, A: Alignment> RawData for AVec<T, A> {
+        type Elem = T;
+    }
+
+    impl<T, A: Alignment> Data for AVec<T, A> {
+        #[inline(always)]
+        fn as_slice(&self) -> &[T] {
+            AVec::as_slice(self)
+        }
+
+        #[inline(always)]
+        fn len(&self) -> usize {
+            AVec::len(self)
+        }
+    }
+
+    impl<T, A: Alignment> DataMut for AVec<T, A> {
+        #[inline(always)]
+        fn as_mut_slice(&mut self) -> &mut [T] {
+            AVec::as_mut_slice(self)
+        }
+    }
+
+    impl<T, A: Alignment> RawData for ABox<[T], A> {
+        type Elem = T;
+    }
+
+    impl<T, A: Alignment> Data for ABox<[T], A> {
+        #[inline(always)]
+        fn as_slice(&self) -> &[T] {
+            self
+        }
+    }
+
+    impl<T, A: Alignment> DataMut for ABox<[T], A> {
+        #[inline(always)]
+        fn as_mut_slice(&mut self) -> &mut [T] {
+            self
+        }
     }
 }
