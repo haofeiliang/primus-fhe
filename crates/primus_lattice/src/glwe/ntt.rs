@@ -32,6 +32,32 @@ where
     S: RawData<Elem = T> + DataMut,
     T: FheUint,
 {
+    /// Splits this GLWE into its mutable mask and body slices.
+    ///
+    /// The body is the final NTT polynomial and therefore has exactly
+    /// `poly_length` coefficients.
+    #[inline]
+    pub fn a_b_mut_slices(&mut self, poly_length: usize) -> (&mut [T], &mut [T]) {
+        let glwe_len = self.as_ref().len();
+        debug_assert!(poly_length > 0);
+        debug_assert!(glwe_len > poly_length);
+        debug_assert!(glwe_len.is_multiple_of(poly_length));
+        self.as_mut().split_at_mut(glwe_len - poly_length)
+    }
+
+    /// Splits this GLWE into its mutable mask polynomials and body polynomial.
+    #[inline]
+    pub fn a_b_mut(
+        &mut self,
+        poly_length: usize,
+    ) -> (NttPolynomialIterMut<'_, T>, NttPolynomial<&mut [T]>) {
+        let (mask, body) = self.a_b_mut_slices(poly_length);
+        (
+            NttPolynomialIterMut::new(mask, poly_length),
+            NttPolynomial(body),
+        )
+    }
+
     /// Performs a modular multiplication on the `self` [`NttGlwe<S>`] with another `ntt_poly` [`NttPolynomial<A>`].
     #[inline]
     pub fn mul_ntt_polynomial_assign<M, A>(&mut self, ntt_poly: &NttPolynomial<A>, modulus: M)
@@ -78,17 +104,27 @@ where
     S: RawData<Elem = T> + Data,
     T: FheUint,
 {
-    /// Extracts slice of `a` and `b` of this [`NttGlwe<S>`].
+    /// Splits this GLWE into its mask and body slices.
+    ///
+    /// The body is the final NTT polynomial and therefore has exactly
+    /// `poly_length` coefficients.
     #[inline]
-    pub fn a_b_slices(&self, mid: usize) -> (&[T], &[T]) {
-        self.0.split_at(mid)
+    pub fn a_b_slices(&self, poly_length: usize) -> (&[T], &[T]) {
+        let glwe_len = self.as_ref().len();
+        debug_assert!(poly_length > 0);
+        debug_assert!(glwe_len > poly_length);
+        debug_assert!(glwe_len.is_multiple_of(poly_length));
+        self.0.split_at(glwe_len - poly_length)
     }
 
-    /// Extracts `a` and `b` of this [`NttGlwe<S>`].
+    /// Splits this GLWE into its mask polynomials and body polynomial.
     #[inline]
-    pub fn a_b(&self, mid: usize) -> (NttPolynomialIter<'_, T>, NttPolynomial<&[T]>) {
-        let (a, b) = self.0.split_at(mid);
-        (NttPolynomialIter::new(a, b.len()), NttPolynomial(b))
+    pub fn a_b(&self, poly_length: usize) -> (NttPolynomialIter<'_, T>, NttPolynomial<&[T]>) {
+        let (mask, body) = self.a_b_slices(poly_length);
+        (
+            NttPolynomialIter::new(mask, poly_length),
+            NttPolynomial(body),
+        )
     }
 
     /// Performs a modular multiplication on the `self` [`NttGlwe<S>`] with another `ntt_poly` [`NttPolynomial`],

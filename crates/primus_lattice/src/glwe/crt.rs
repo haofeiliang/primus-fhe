@@ -40,20 +40,27 @@ where
     S: RawData<Elem = T> + DataMut,
     T: FheUint,
 {
-    /// Extracts mutable slice of `a` and `b` of this [`CrtGlwe<S>`].
+    /// Splits this GLWE into its mutable mask and body slices.
     #[inline]
-    pub fn a_b_mut_slices(&mut self, mid: usize) -> (&mut [T], &mut [T]) {
-        self.0.split_at_mut(mid)
+    pub fn a_b_mut_slices(&mut self, crt_poly_len: usize) -> (&mut [T], &mut [T]) {
+        let glwe_len = self.as_ref().len();
+        debug_assert!(crt_poly_len > 0);
+        debug_assert!(glwe_len > crt_poly_len);
+        debug_assert!(glwe_len.is_multiple_of(crt_poly_len));
+        self.as_mut().split_at_mut(glwe_len - crt_poly_len)
     }
 
-    /// Extracts mutable `a` and `b` of this [`CrtGlwe<S>`].
+    /// Splits this GLWE into its mutable mask polynomials and body polynomial.
     #[inline]
     pub fn a_b_mut(
         &mut self,
-        mid: usize,
+        crt_poly_len: usize,
     ) -> (CrtPolynomialIterMut<'_, T>, CrtPolynomial<&mut [T]>) {
-        let (a, b) = self.0.split_at_mut(mid);
-        (CrtPolynomialIterMut::new(a, b.len()), CrtPolynomial(b))
+        let (mask, body) = self.a_b_mut_slices(crt_poly_len);
+        (
+            CrtPolynomialIterMut::new(mask, crt_poly_len),
+            CrtPolynomial(body),
+        )
     }
 
     /// Multiplies each CRT polynomial component by `scalar_residue` in place.
@@ -119,17 +126,24 @@ where
     S: RawData<Elem = T> + Data,
     T: FheUint,
 {
-    /// Extracts slice of `a` and `b` of this [`CrtGlwe<S>`].
+    /// Splits this GLWE into its mask and body slices.
     #[inline]
-    pub fn a_b_slices(&self, mid: usize) -> (&[T], &[T]) {
-        self.0.split_at(mid)
+    pub fn a_b_slices(&self, crt_poly_len: usize) -> (&[T], &[T]) {
+        let glwe_len = self.as_ref().len();
+        debug_assert!(crt_poly_len > 0);
+        debug_assert!(glwe_len > crt_poly_len);
+        debug_assert!(glwe_len.is_multiple_of(crt_poly_len));
+        self.as_ref().split_at(glwe_len - crt_poly_len)
     }
 
-    /// Extracts slice of `a` and `b` of this [`CrtGlwe<S>`].
+    /// Splits this GLWE into its mask polynomials and body polynomial.
     #[inline]
-    pub fn a_b(&self, mid: usize) -> (CrtPolynomialIter<'_, T>, CrtPolynomial<&[T]>) {
-        let (a, b) = self.0.split_at(mid);
-        (CrtPolynomialIter::new(a, b.len()), CrtPolynomial(b))
+    pub fn a_b(&self, crt_poly_len: usize) -> (CrtPolynomialIter<'_, T>, CrtPolynomial<&[T]>) {
+        let (mask, body) = self.a_b_slices(crt_poly_len);
+        (
+            CrtPolynomialIter::new(mask, crt_poly_len),
+            CrtPolynomial(body),
+        )
     }
 
     /// Multiplies this CRT GLWE by a scalar residue and writes the result into `result`.

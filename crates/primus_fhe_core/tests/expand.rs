@@ -3,9 +3,9 @@ use std::sync::Arc;
 use primus_decompose::big_integer::BigUintApproxSignedBasis;
 use primus_fhe_core::{
     CrtGlevParameters, CrtGlweExpandCoeffContext, CrtGlweExpandCoeffKey,
-    CrtGlweExpandCoeffSyncPool, CrtGlweParameters, CrtGlweSecretKey, DcrtGlweCiphertext,
-    DcrtGlweDecryptContext, DcrtGlweExpandCoeffContext, DcrtGlweExpandCoeffKey,
-    DcrtGlweExpandCoeffSyncPool, DcrtGlweSecretKey, RingSecretKeyType,
+    CrtGlweExpandCoeffSyncPool, CrtGlweParameters, DcrtGlweCiphertext, DcrtGlweDecryptContext,
+    DcrtGlweExpandCoeffContext, DcrtGlweExpandCoeffKey, DcrtGlweExpandCoeffSyncPool,
+    DcrtGlweSecretKey, GlweSecretKey, RingSecretKeyType,
 };
 use primus_lattice::glwe::CrtGlwe;
 use primus_modulus::BarrettModulus;
@@ -53,7 +53,7 @@ fn test_crt_glwe_expand_coefficients() {
     let big_uint_poly_len = glwe_params.big_uint_poly_len();
     let rns_glwe_len = glwe_params.rns_glwe_len();
 
-    let sk = CrtGlweSecretKey::generate(&glwe_params, &mut rng);
+    let sk = GlweSecretKey::generate(&glwe_params, &mut rng);
     let dcrt_sk = DcrtGlweSecretKey::from_coeff_secret_key(&sk, &table);
 
     // ── Expansion key (CRT domain) ──────────────────────────────
@@ -178,7 +178,7 @@ fn test_dcrt_glwe_expand_coefficients() {
     let big_uint_poly_len = glwe_params.big_uint_poly_len();
     let rns_glwe_len = glwe_params.rns_glwe_len();
 
-    let sk = CrtGlweSecretKey::generate(&glwe_params, &mut rng);
+    let sk = GlweSecretKey::generate(&glwe_params, &mut rng);
     let dcrt_sk = DcrtGlweSecretKey::from_coeff_secret_key(&sk, &table);
 
     let basis =
@@ -293,7 +293,7 @@ fn test_dcrt_glwe_expand_coefficients_parallel() {
     let big_uint_poly_len = glwe_params.big_uint_poly_len();
     let rns_glwe_len = glwe_params.rns_glwe_len();
 
-    let sk = CrtGlweSecretKey::generate(&glwe_params, &mut rng);
+    let sk = GlweSecretKey::generate(&glwe_params, &mut rng);
     let dcrt_sk = DcrtGlweSecretKey::from_coeff_secret_key(&sk, &table);
 
     let basis =
@@ -410,7 +410,7 @@ fn test_crt_glwe_expand_coefficients_parallel() {
     let big_uint_poly_len = glwe_params.big_uint_poly_len();
     let rns_glwe_len = glwe_params.rns_glwe_len();
 
-    let sk = CrtGlweSecretKey::generate(&glwe_params, &mut rng);
+    let sk = GlweSecretKey::generate(&glwe_params, &mut rng);
     let dcrt_sk = DcrtGlweSecretKey::from_coeff_secret_key(&sk, &table);
 
     let basis =

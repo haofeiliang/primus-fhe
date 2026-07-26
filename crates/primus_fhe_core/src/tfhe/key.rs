@@ -1,31 +1,26 @@
 use primus_integer::FheUint;
 use primus_reduce::RingContext;
 
-use crate::{GlweSecretKey, LweSecretKey, PbsOrder, TfheParameters};
+use crate::{GlweSecretKey, LweSecretKey, PbsOrder, SecretCoefficient, TfheParameters};
 
 /// Borrowed coefficients of the LWE secret key used by external TFHE
 /// ciphertexts.
 #[derive(Clone, Copy)]
-pub struct LweSecretKeyRef<'a, T: FheUint>(&'a [T]);
+pub enum LweSecretKeyRef<'a, T: FheUint> {
+    /// Modulus-encoded LWE coefficients.
+    Encoded(&'a [T]),
+    /// Canonical signed GLWE coefficients viewed as an expanded LWE key.
+    Signed(&'a [SecretCoefficient<T>]),
+}
 
 impl<T: FheUint> LweSecretKeyRef<'_, T> {
     /// Returns the LWE dimension.
     #[inline]
     pub fn dimension(&self) -> usize {
-        self.0.len()
-    }
-
-    /// Returns the secret-key coefficients.
-    #[inline]
-    pub fn as_slice(&self) -> &[T] {
-        self.0
-    }
-}
-
-impl<T: FheUint> AsRef<[T]> for LweSecretKeyRef<'_, T> {
-    #[inline]
-    fn as_ref(&self) -> &[T] {
-        self.0
+        match self {
+            Self::Encoded(coefficients) => coefficients.len(),
+            Self::Signed(coefficients) => coefficients.len(),
+        }
     }
 }
 
@@ -62,8 +57,12 @@ impl<T: FheUint> ClientKey<T> {
     #[inline]
     pub fn lwe_secret_key(&self) -> LweSecretKeyRef<'_, T> {
         match self.pbs_order {
-            PbsOrder::BootstrapKeyswitch => LweSecretKeyRef(self.small_lwe_secret_key.as_ref()),
-            PbsOrder::KeyswitchBootstrap => LweSecretKeyRef(self.glwe_secret_key.as_slice()),
+            PbsOrder::BootstrapKeyswitch => {
+                LweSecretKeyRef::Encoded(self.small_lwe_secret_key.as_ref())
+            }
+            PbsOrder::KeyswitchBootstrap => {
+                LweSecretKeyRef::Signed(self.glwe_secret_key.as_slice())
+            }
         }
     }
 

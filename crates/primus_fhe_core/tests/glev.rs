@@ -1,8 +1,8 @@
 use itertools::izip;
 use primus_decompose::big_integer::BigUintApproxSignedBasis;
 use primus_fhe_core::{
-    CrtGlevParameters, CrtGlweParameters, CrtGlweSecretKey, DcrtGlweDecryptContext,
-    DcrtGlweSecretKey, RingSecretKeyType,
+    CrtGlevParameters, CrtGlweParameters, DcrtGlweDecryptContext, DcrtGlweSecretKey, GlweSecretKey,
+    RingSecretKeyType,
 };
 use primus_lattice::{context::DcrtGlevContext, glev::DcrtGlev, glwe::DcrtGlwe};
 use primus_modulus::BarrettModulus;
@@ -54,7 +54,7 @@ fn test_rns_glev() {
     let big_uint_poly_len = glwe_params.big_uint_poly_len();
     let base_q = glwe_params.base_q();
 
-    let sk = CrtGlweSecretKey::generate(&glwe_params, &mut rng);
+    let sk = GlweSecretKey::generate(&glwe_params, &mut rng);
     let dcrt_sk = DcrtGlweSecretKey::from_coeff_secret_key(&sk, &table);
 
     let basis = BigUintApproxSignedBasis::new(glwe_params.cipher_modulus(), 20, None, base_q);
@@ -176,7 +176,7 @@ fn test_key_switching() {
     let rns_glev_len = glev_params.rns_glev_len();
     let uniform_distrs = glev_params.cipher_moduli_uniform_distr();
 
-    let sk = CrtGlweSecretKey::generate(&glwe_params, &mut rng);
+    let sk = GlweSecretKey::generate(&glwe_params, &mut rng);
     let dcrt_sk = DcrtGlweSecretKey::from_coeff_secret_key(&sk, &table);
 
     // ── Encrypt each CRT polynomial of sk as a GLev gadget ──────
@@ -188,9 +188,13 @@ fn test_key_switching() {
         .map(|_| CrtPolynomial::zero(rns_poly_len))
         .collect();
 
-    sk.iter_crt_poly()
+    dcrt_sk
+        .iter_dcrt_poly()
         .zip(msgs.iter_mut())
-        .for_each(|(a, b)| b.as_mut().copy_from_slice(a.0));
+        .for_each(|(a, b)| {
+            b.as_mut().copy_from_slice(a.0);
+            table.inverse_transform_slice(b.as_mut());
+        });
 
     msgs.iter()
         .zip(dcrt_glevs.iter_mut())
@@ -264,7 +268,7 @@ fn test_key_switching() {
     // ── result = (a, b) − Σ GLev(a_i) ⊡ GLev(s_i) ───────────────
     let mut res: DcrtGlwe<Vec<ValueT>> = DcrtGlwe::zero(rns_glwe_len);
 
-    let (_, b_) = res.a_b_mut_slices(glev_params.rns_glwe_mid());
+    let (_, b_) = res.a_b_mut_slices(glev_params.rns_poly_len());
     b_.copy_from_slice(b.as_ref());
 
     let result = cs.iter().fold(res, |mut acc, x| {

@@ -41,13 +41,27 @@ impl<S> FourierGlwe<S>
 where
     S: RawData<Elem = Complex64> + Data,
 {
-    /// Returns the `a` components and `b` component as immutable slices.
-    ///
-    /// `mid = k * fourier_length` splits the mask from the body.
-    /// `mid` must be `<= self.0.len()`.
+    /// Splits this GLWE into its mask and body slices.
     #[inline]
-    pub fn a_b_slices(&self, mid: usize) -> (&[Complex64], &[Complex64]) {
-        self.0.split_at(mid)
+    pub fn a_b_slices(&self, fourier_length: usize) -> (&[Complex64], &[Complex64]) {
+        let glwe_len = self.as_ref().len();
+        debug_assert!(fourier_length > 0);
+        debug_assert!(glwe_len > fourier_length);
+        debug_assert!(glwe_len.is_multiple_of(fourier_length));
+        self.as_ref().split_at(glwe_len - fourier_length)
+    }
+
+    /// Splits this GLWE into its mask polynomials and body polynomial.
+    #[inline]
+    pub fn a_b(
+        &self,
+        fourier_length: usize,
+    ) -> (FourierPolynomialIter<'_>, FourierPolynomial<&[Complex64]>) {
+        let (mask, body) = self.a_b_slices(fourier_length);
+        (
+            FourierPolynomialIter::new(mask, fourier_length),
+            FourierPolynomial(body),
+        )
     }
 }
 
@@ -55,10 +69,33 @@ impl<S> FourierGlwe<S>
 where
     S: RawData<Elem = Complex64> + DataMut,
 {
-    /// Returns the `a` components and `b` component as mutable slices.
+    /// Splits this GLWE into its mutable mask and body slices.
     #[inline]
-    pub fn a_b_mut_slices(&mut self, mid: usize) -> (&mut [Complex64], &mut [Complex64]) {
-        self.0.split_at_mut(mid)
+    pub fn a_b_mut_slices(
+        &mut self,
+        fourier_length: usize,
+    ) -> (&mut [Complex64], &mut [Complex64]) {
+        let glwe_len = self.as_ref().len();
+        debug_assert!(fourier_length > 0);
+        debug_assert!(glwe_len > fourier_length);
+        debug_assert!(glwe_len.is_multiple_of(fourier_length));
+        self.as_mut().split_at_mut(glwe_len - fourier_length)
+    }
+
+    /// Splits this GLWE into its mutable mask polynomials and body polynomial.
+    #[inline]
+    pub fn a_b_mut(
+        &mut self,
+        fourier_length: usize,
+    ) -> (
+        FourierPolynomialIterMut<'_>,
+        FourierPolynomial<&mut [Complex64]>,
+    ) {
+        let (mask, body) = self.a_b_mut_slices(fourier_length);
+        (
+            FourierPolynomialIterMut::new(mask, fourier_length),
+            FourierPolynomial(body),
+        )
     }
 
     /// Performs `self += poly * rhs` for each component (pointwise FMA).

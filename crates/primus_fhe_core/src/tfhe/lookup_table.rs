@@ -141,8 +141,7 @@ where
         };
 
         let mut accumulator = Glwe::zero(self.glwe().glwe_len());
-        let body_start = self.glwe().glwe_mid();
-        let body = &mut accumulator.as_mut()[body_start..];
+        let (_, body) = accumulator.a_b_mut_slices(poly_length);
         let first_output = encoded_output_at(0)?;
         let mut encoded_output = first_output;
         let mut previous_center = 0;

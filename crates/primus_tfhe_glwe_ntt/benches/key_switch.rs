@@ -27,7 +27,7 @@ fn bench_key_switch(c: &mut Criterion) {
         lwe_dimension,
         parameters.glwe_key_switching().output().basis().clone(),
     );
-    let lwe_key_switching_key = LweKeySwitchingKey::generate(
+    let lwe_key_switching_key = LweKeySwitchingKey::generate_from_signed(
         input_glwe_secret_key.as_slice(),
         &lwe_secret_key,
         parameters.small_lwe(),
@@ -35,8 +35,12 @@ fn bench_key_switch(c: &mut Criterion) {
         &mut rng,
     );
 
-    let padded_glwe_secret_key =
-        GlweSecretKey::from_padded_lwe(&lwe_secret_key, poly_length).unwrap();
+    let padded_glwe_secret_key = GlweSecretKey::from_padded_lwe(
+        &lwe_secret_key,
+        poly_length,
+        parameters.small_lwe().cipher_modulus_minus_one(),
+    )
+    .unwrap();
     let output_glwe_dimension = padded_glwe_secret_key.dimension();
     let output_ntt_secret_key =
         NttGlweSecretKey::from_coeff_secret_key(&padded_glwe_secret_key, &table);

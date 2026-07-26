@@ -242,9 +242,15 @@ fn ntt_glev_and_ggsw_generation() {
                     .iter()
                     .nth(row)
                     .unwrap()
-                    .as_ref()
                     .iter()
-                    .map(|&coefficient| modulus.reduce_neg(modulus.reduce_mul(coefficient, scalar)))
+                    .map(|&coefficient| {
+                        let coefficient = if coefficient < 0 {
+                            modulus.reduce_neg(coefficient.unsigned_abs())
+                        } else {
+                            coefficient as u32
+                        };
+                        modulus.reduce_neg(modulus.reduce_mul(coefficient, scalar))
+                    })
                     .collect()
             };
             assert!(

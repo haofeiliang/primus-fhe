@@ -5,9 +5,9 @@ use std::hint::black_box;
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use primus_decompose::big_integer::BigUintApproxSignedBasis;
 use primus_fhe_core::{
-    CrtGlevParameters, CrtGlweKeySwitchingContext, CrtGlweKeySwitchingKey, CrtGlweParameters,
-    CrtGlweSecretKey, DcrtGlweCiphertext, DcrtGlweDecryptContext, DcrtGlweSecretKey,
-    HybridCrtGlweKeySwitchingContext, HybridCrtGlweKeySwitchingKey, RingSecretKeyType,
+    CrtGlevParameters, CrtGlweParameters, DcrtGlweCiphertext, DcrtGlweDecryptContext,
+    DcrtGlweKeySwitchingContext, DcrtGlweKeySwitchingKey, DcrtGlweSecretKey, GlweSecretKey,
+    HybridRnsGlweKeySwitchingContext, HybridRnsGlweKeySwitchingKey, RingSecretKeyType,
 };
 use primus_lattice::glwe::DcrtGlwe;
 use primus_modulus::BarrettModulus;
@@ -50,9 +50,9 @@ fn bench_key_switching(c: &mut Criterion) {
             RingSecretKeyType::Ternary,
             3.20,
         );
-        let input_sk = CrtGlweSecretKey::generate(&glwe_params, &mut rng);
+        let input_sk = GlweSecretKey::generate(&glwe_params, &mut rng);
         let input_dcrt_sk = DcrtGlweSecretKey::from_coeff_secret_key(&input_sk, &q_table);
-        let output_sk = CrtGlweSecretKey::generate(&glwe_params, &mut rng);
+        let output_sk = GlweSecretKey::generate(&glwe_params, &mut rng);
         let output_dcrt_sk = DcrtGlweSecretKey::from_coeff_secret_key(&output_sk, &q_table);
 
         let base_q = glwe_params.base_q();
@@ -65,7 +65,7 @@ fn bench_key_switching(c: &mut Criterion) {
         let glev_params = CrtGlevParameters::with_glwe_params(&glwe_params, basis);
 
         // Key generation is intentionally outside the timed region.
-        let crt_ksk = CrtGlweKeySwitchingKey::new(
+        let crt_ksk = DcrtGlweKeySwitchingKey::generate(
             &input_sk,
             &glwe_params,
             &output_dcrt_sk,
@@ -86,14 +86,14 @@ fn bench_key_switching(c: &mut Criterion) {
         let input_coeff = input_ciphertext.clone().into_coeff_form(&q_table);
 
         let mut crt_output: DcrtGlwe<Vec<Value>> = DcrtGlweCiphertext::zero(rns_glwe_len);
-        let mut crt_context = CrtGlweKeySwitchingContext::new(
+        let mut crt_context = DcrtGlweKeySwitchingContext::new(
             poly_length,
             glwe_params.rns_poly_len(),
             glwe_params.big_uint_poly_len(),
             glwe_params.cipher_moduli_count(),
         );
         // Validate the CRT path before measuring it.
-        crt_ksk.key_swithching_inplace(
+        crt_ksk.key_switch_to(
             &input_coeff,
             &mut crt_output,
             glev_params.basis(),
@@ -115,7 +115,7 @@ fn bench_key_switching(c: &mut Criterion) {
             &(),
             |b, _| {
                 b.iter(|| {
-                    crt_ksk.key_swithching_inplace(
+                    crt_ksk.key_switch_to(
                         black_box(&input_coeff),
                         black_box(&mut crt_output),
                         black_box(glev_params.basis()),
@@ -129,19 +129,19 @@ fn bench_key_switching(c: &mut Criterion) {
 
         for (partition_label, decomposition_count) in HYBRID_CASES {
             let hybrid_params = HybridRNS::new(&q_moduli, &p_moduli, decomposition_count).unwrap();
-            let hybrid_ksk = HybridCrtGlweKeySwitchingKey::new(
+            let hybrid_ksk = HybridRnsGlweKeySwitchingKey::generate(
                 &input_sk,
                 &glwe_params,
-                &output_dcrt_sk,
+                &output_sk,
                 &hybrid_params,
                 &qp_table,
                 &mut rng,
             );
             let mut hybrid_output: DcrtGlwe<Vec<Value>> = DcrtGlweCiphertext::zero(rns_glwe_len);
             let mut hybrid_context =
-                HybridCrtGlweKeySwitchingContext::new(&hybrid_ksk, &hybrid_params);
+                HybridRnsGlweKeySwitchingContext::new(&hybrid_ksk, &hybrid_params);
 
-            hybrid_ksk.key_switch_inplace(
+            hybrid_ksk.key_switch_to(
                 &input_ciphertext,
                 &mut hybrid_output,
                 &hybrid_params,
@@ -163,7 +163,7 @@ fn bench_key_switching(c: &mut Criterion) {
                 &(),
                 |b, _| {
                     b.iter(|| {
-                        hybrid_ksk.key_switch_inplace(
+                        hybrid_ksk.key_switch_to(
                             black_box(&input_ciphertext),
                             black_box(&mut hybrid_output),
                             black_box(&hybrid_params),

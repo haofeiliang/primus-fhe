@@ -7,8 +7,8 @@ use primus_reduce::FieldContext;
 use primus_rns::RNSBase;
 
 use crate::{
-    CrtGlevParameters, CrtGlweAutoContext, CrtGlweAutoKey, CrtGlweCiphertext, CrtGlweSecretKey,
-    DcrtGlweSecretKey,
+    CrtGlevParameters, CrtGlweAutoContext, CrtGlweAutoKey, CrtGlweCiphertext, DcrtGlweSecretKey,
+    GlweSecretKey,
 };
 
 pub struct CrtGlweTraceContext<T: FheUint> {
@@ -58,7 +58,7 @@ where
 {
     pub fn new<M, R>(
         params: &CrtGlevParameters<T, M>,
-        sk: &CrtGlweSecretKey<T>,
+        sk: &GlweSecretKey<T>,
         dcrt_sk: &DcrtGlweSecretKey<T>,
         table: Arc<Table>,
         rng: &mut R,

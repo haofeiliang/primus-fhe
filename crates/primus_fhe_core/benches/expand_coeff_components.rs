@@ -5,8 +5,8 @@ use criterion::{BatchSize, BenchmarkId, Criterion, criterion_group, criterion_ma
 use primus_decompose::big_integer::BigUintApproxSignedBasis;
 use primus_factor::{FactorBase, ShoupFactor};
 use primus_fhe_core::{
-    CrtGlevParameters, CrtGlweAutoContext, CrtGlweAutoKey, CrtGlweParameters, CrtGlweSecretKey,
-    DcrtGlweAutoKey, DcrtGlweCiphertext, DcrtGlweSecretKey, RingSecretKeyType,
+    CrtGlevParameters, CrtGlweAutoContext, CrtGlweAutoKey, CrtGlweParameters, DcrtGlweAutoKey,
+    DcrtGlweCiphertext, DcrtGlweSecretKey, GlweSecretKey, RingSecretKeyType,
 };
 use primus_integer::BigUint;
 use primus_lattice::glwe::{CrtGlwe, DcrtGlwe};
@@ -51,7 +51,7 @@ fn bench_expand_coeff_components(c: &mut Criterion) {
         let rns_glwe_len = glwe_params.rns_glwe_len();
         let base_q = glwe_params.base_q();
 
-        let sk = CrtGlweSecretKey::generate(&glwe_params, &mut rng);
+        let sk = GlweSecretKey::generate(&glwe_params, &mut rng);
         let dcrt_sk = DcrtGlweSecretKey::from_coeff_secret_key(&sk, &table);
 
         let basis = BigUintApproxSignedBasis::new(glwe_params.cipher_modulus(), 20, None, base_q);

@@ -1,4 +1,5 @@
 use core::fmt::Debug;
+use std::ops::Neg;
 
 use primus_gcd::Xgcd;
 
@@ -39,7 +40,7 @@ pub trait UnsignedInteger:
     + TryInto<usize, Error: Debug>
 {
     /// The matching signed type (e.g. `i64` for `u64`).
-    type SignedInteger: Integer;
+    type SignedInteger: Integer + Neg<Output = Self::SignedInteger>;
 
     /// Returns `true` if and only if `self == 2^k` for some `k`.
     #[must_use]
@@ -57,6 +58,12 @@ pub trait UnsignedInteger:
     /// the result modulo `2^BITS`.
     fn cast_from_signed(value: Self::SignedInteger) -> Self;
 
+    /// Reinterprets this unsigned value as its signed companion using `as`.
+    ///
+    /// Values with the high bit set become negative, preserving the underlying
+    /// two's-complement bit pattern.
+    fn cast_to_signed(self) -> Self::SignedInteger;
+
     /// Wrapping (modular) addition with a signed integer. Computes `self + rhs`, wrapping around at the boundary of the type.
     fn wrapping_add_signed(self, rhs: Self::SignedInteger) -> Self;
 }
@@ -69,6 +76,11 @@ macro_rules! impl_unsigned_integer {
             #[inline]
             fn cast_from_signed(value: Self::SignedInteger) -> Self {
                 value as $t
+            }
+
+            #[inline]
+            fn cast_to_signed(self) -> Self::SignedInteger {
+                self as $i
             }
 
             #[inline(always)]

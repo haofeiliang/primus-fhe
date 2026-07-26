@@ -1,6 +1,6 @@
 use primus_fhe_core::{
-    CrtGlweParameters, CrtGlweSecretKey, DcrtGlweCiphertext, DcrtGlweDecryptContext,
-    DcrtGlweSecretKey, RingSecretKeyType,
+    CrtGlweParameters, DcrtGlweCiphertext, DcrtGlweDecryptContext, DcrtGlweSecretKey,
+    GlweSecretKey, RingSecretKeyType,
 };
 use primus_lattice::glwe::DcrtGlwe;
 use primus_modulus::BarrettModulus;
@@ -76,7 +76,7 @@ fn assert_dcrt_glwe_secret_key_enc_dec(secret_key_type: RingSecretKeyType, plain
         NOISE_STANDARD_DEVIATION,
     );
 
-    let secret_key = CrtGlweSecretKey::generate(&params, &mut rng);
+    let secret_key = GlweSecretKey::generate(&params, &mut rng);
     let secret_key = DcrtGlweSecretKey::from_coeff_secret_key(&secret_key, &table);
     let mut decrypt_context = DcrtGlweDecryptContext::new(moduli.len(), POLY_LENGTH);
 
@@ -163,7 +163,7 @@ fn test_dcrt_glwe_secret_key_ciphertext_ops_crt_modulus() {
 
     let rns_poly_len = params.rns_poly_len();
     let rns_glwe_len = params.rns_glwe_len();
-    let secret_key = CrtGlweSecretKey::generate(&params, &mut rng);
+    let secret_key = GlweSecretKey::generate(&params, &mut rng);
     let secret_key = DcrtGlweSecretKey::from_coeff_secret_key(&secret_key, &table);
     let mut decrypt_context = DcrtGlweDecryptContext::new(moduli.len(), POLY_LENGTH);
 

@@ -4,9 +4,9 @@ use itertools::izip;
 use primus_decompose::big_integer::BigUintApproxSignedBasis;
 use primus_factor::FactorMul;
 use primus_fhe_core::{
-    CrtGlevParameters, CrtGlweParameters, CrtGlweSecretKey, CrtGlweTraceContext, CrtGlweTraceKey,
-    DcrtGlweCiphertext, DcrtGlweDecryptContext, DcrtGlweRevTraceContext, DcrtGlweRevTraceKey,
-    DcrtGlweSecretKey, DcrtGlweTraceContext, DcrtGlweTraceKey, RingSecretKeyType,
+    CrtGlevParameters, CrtGlweParameters, CrtGlweTraceContext, CrtGlweTraceKey, DcrtGlweCiphertext,
+    DcrtGlweDecryptContext, DcrtGlweRevTraceContext, DcrtGlweRevTraceKey, DcrtGlweSecretKey,
+    DcrtGlweTraceContext, DcrtGlweTraceKey, GlweSecretKey, RingSecretKeyType,
 };
 use primus_integer::BigUint;
 use primus_lattice::glwe::CrtGlwe;
@@ -60,7 +60,7 @@ fn test_crt_glwe_trace() {
     let rns_glwe_len = glwe_params.rns_glwe_len();
     let base_q = glwe_params.base_q();
 
-    let sk = CrtGlweSecretKey::generate(&glwe_params, &mut rng);
+    let sk = GlweSecretKey::generate(&glwe_params, &mut rng);
     let dcrt_sk = DcrtGlweSecretKey::from_coeff_secret_key(&sk, &table);
 
     // ── Trace key (CRT domain) ──────────────────────────────────
@@ -167,7 +167,7 @@ fn test_dcrt_glwe_trace() {
     let rns_glwe_len = glwe_params.rns_glwe_len();
     let base_q = glwe_params.base_q();
 
-    let sk = CrtGlweSecretKey::generate(&glwe_params, &mut rng);
+    let sk = GlweSecretKey::generate(&glwe_params, &mut rng);
     let dcrt_sk = DcrtGlweSecretKey::from_coeff_secret_key(&sk, &table);
 
     let basis = BigUintApproxSignedBasis::new(glwe_params.cipher_modulus(), 20, None, base_q);
@@ -265,7 +265,7 @@ fn test_dcrt_glwe_rev_trace() {
     let rns_glwe_len = glwe_params.rns_glwe_len();
     let base_q = glwe_params.base_q();
 
-    let sk = CrtGlweSecretKey::generate(&glwe_params, &mut rng);
+    let sk = GlweSecretKey::generate(&glwe_params, &mut rng);
     let dcrt_sk = DcrtGlweSecretKey::from_coeff_secret_key(&sk, &table);
 
     let basis = BigUintApproxSignedBasis::new(glwe_params.cipher_modulus(), 20, None, base_q);
@@ -346,7 +346,7 @@ fn test_dcrt_glwe_rev_trace_noise() {
     let big_uint_value_len = glwe_params.big_uint_value_len();
     let base_q = glwe_params.base_q();
 
-    let sk = CrtGlweSecretKey::generate(&glwe_params, &mut rng);
+    let sk = GlweSecretKey::generate(&glwe_params, &mut rng);
     let dcrt_sk = DcrtGlweSecretKey::from_coeff_secret_key(&sk, &table);
 
     let basis = BigUintApproxSignedBasis::new(glwe_params.cipher_modulus(), 20, None, base_q);

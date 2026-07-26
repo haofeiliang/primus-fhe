@@ -1,7 +1,7 @@
 use primus_decompose::big_integer::BigUintApproxSignedBasis;
 use primus_fhe_core::{
-    CrtGlevParameters, CrtGlweParameters, CrtGlweSecretKey, DcrtGlweCiphertext,
-    DcrtGlweDecryptContext, DcrtGlwePublicKey, DcrtGlweSecretKey, RingSecretKeyType,
+    CrtGlevParameters, CrtGlweParameters, DcrtGlweCiphertext, DcrtGlweDecryptContext,
+    DcrtGlwePublicKey, DcrtGlweSecretKey, GlweSecretKey, RingSecretKeyType,
 };
 use primus_lattice::{context::DcrtGlevContext, glwe::DcrtGlwe};
 use primus_modulus::BarrettModulus;
@@ -52,7 +52,7 @@ fn test_external_product() {
     let rns_glwe_len = glwe_params.rns_glwe_len();
     let base_q = glwe_params.base_q();
 
-    let sk = CrtGlweSecretKey::generate(&glwe_params, &mut rng);
+    let sk = GlweSecretKey::generate(&glwe_params, &mut rng);
     let dcrt_sk = DcrtGlweSecretKey::from_coeff_secret_key(&sk, &table);
 
     // ── Decomposition basis and public key ──────────────────────

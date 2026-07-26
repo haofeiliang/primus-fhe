@@ -31,6 +31,55 @@ impl_ntt!(Glwe<S>, NttGlwe);
 
 impl<S, T> Glwe<S>
 where
+    S: RawData<Elem = T> + DataMut,
+    T: FheUint,
+{
+    /// Splits this GLWE into its mutable mask and body slices.
+    #[inline]
+    pub fn a_b_mut_slices(&mut self, poly_length: usize) -> (&mut [T], &mut [T]) {
+        let glwe_len = self.as_ref().len();
+        debug_assert!(poly_length > 0);
+        debug_assert!(glwe_len > poly_length);
+        debug_assert!(glwe_len.is_multiple_of(poly_length));
+        self.as_mut().split_at_mut(glwe_len - poly_length)
+    }
+
+    /// Splits this GLWE into its mutable mask polynomials and body polynomial.
+    #[inline]
+    pub fn a_b_mut(
+        &mut self,
+        poly_length: usize,
+    ) -> (PolynomialIterMut<'_, T>, Polynomial<&mut [T]>) {
+        let (mask, body) = self.a_b_mut_slices(poly_length);
+        (PolynomialIterMut::new(mask, poly_length), Polynomial(body))
+    }
+}
+
+impl<S, T> Glwe<S>
+where
+    S: RawData<Elem = T> + Data,
+    T: FheUint,
+{
+    /// Splits this GLWE into its mask and body slices.
+    #[inline]
+    pub fn a_b_slices(&self, poly_length: usize) -> (&[T], &[T]) {
+        let glwe_len = self.as_ref().len();
+        debug_assert!(poly_length > 0);
+        debug_assert!(glwe_len > poly_length);
+        debug_assert!(glwe_len.is_multiple_of(poly_length));
+        self.as_ref().split_at(glwe_len - poly_length)
+    }
+
+    /// Splits this GLWE into its mask polynomials and body polynomial.
+    #[inline]
+    pub fn a_b(&self, poly_length: usize) -> (PolynomialIter<'_, T>, Polynomial<&[T]>) {
+        let (mask, body) = self.a_b_slices(poly_length);
+        (PolynomialIter::new(mask, poly_length), Polynomial(body))
+    }
+}
+
+impl<S, T> Glwe<S>
+where
     S: RawData<Elem = T> + Data,
     T: FheUint,
 {

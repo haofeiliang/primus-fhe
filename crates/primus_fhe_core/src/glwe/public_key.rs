@@ -52,7 +52,7 @@ impl<T: FheUint> DcrtGlwePublicKey<T> {
 
         let mut data: DcrtGlwe<Vec<T>> = DcrtGlwe::zero(dcrt_glwe_len);
 
-        let (a, mut b) = data.a_b_mut(params.rns_glwe_mid());
+        let (a, mut b) = data.a_b_mut(params.rns_poly_len());
 
         primus_distr::sample_crt_gaussian_values_to(
             b.0,

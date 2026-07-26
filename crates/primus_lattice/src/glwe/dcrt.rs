@@ -44,20 +44,27 @@ where
     S: RawData<Elem = T> + DataMut,
     T: FheUint,
 {
-    /// Extracts mutable slice of `a` and `b` of this [`DcrtGlwe<S>`].
+    /// Splits this GLWE into its mutable mask and body slices.
     #[inline]
-    pub fn a_b_mut_slices(&mut self, mid: usize) -> (&mut [T], &mut [T]) {
-        self.as_mut().split_at_mut(mid)
+    pub fn a_b_mut_slices(&mut self, dcrt_poly_len: usize) -> (&mut [T], &mut [T]) {
+        let glwe_len = self.as_ref().len();
+        debug_assert!(dcrt_poly_len > 0);
+        debug_assert!(glwe_len > dcrt_poly_len);
+        debug_assert!(glwe_len.is_multiple_of(dcrt_poly_len));
+        self.as_mut().split_at_mut(glwe_len - dcrt_poly_len)
     }
 
-    /// Extracts mutable `a` and `b` of this [`DcrtGlwe<S>`].
+    /// Splits this GLWE into its mutable mask polynomials and body polynomial.
     #[inline]
     pub fn a_b_mut(
         &mut self,
-        mid: usize,
+        dcrt_poly_len: usize,
     ) -> (DcrtPolynomialIterMut<'_, T>, DcrtPolynomial<&mut [T]>) {
-        let (a, b) = self.as_mut().split_at_mut(mid);
-        (DcrtPolynomialIterMut::new(a, b.len()), DcrtPolynomial(b))
+        let (mask, body) = self.a_b_mut_slices(dcrt_poly_len);
+        (
+            DcrtPolynomialIterMut::new(mask, dcrt_poly_len),
+            DcrtPolynomial(body),
+        )
     }
 
     /// Negates each DCRT polynomial component in place.
@@ -339,17 +346,24 @@ where
     S: RawData<Elem = T> + Data,
     T: FheUint,
 {
-    /// Extracts slice of `a` and `b` of this [`DcrtGlwe<S, T>`].
+    /// Splits this GLWE into its mask and body slices.
     #[inline]
-    pub fn a_b_slices(&self, mid: usize) -> (&[T], &[T]) {
-        self.0.split_at(mid)
+    pub fn a_b_slices(&self, dcrt_poly_len: usize) -> (&[T], &[T]) {
+        let glwe_len = self.as_ref().len();
+        debug_assert!(dcrt_poly_len > 0);
+        debug_assert!(glwe_len > dcrt_poly_len);
+        debug_assert!(glwe_len.is_multiple_of(dcrt_poly_len));
+        self.as_ref().split_at(glwe_len - dcrt_poly_len)
     }
 
-    /// Extracts `a` and `b` of this [`DcrtGlwe<S, T>`].
+    /// Splits this GLWE into its mask polynomials and body polynomial.
     #[inline]
-    pub fn a_b(&self, mid: usize) -> (DcrtPolynomialIter<'_, T>, DcrtPolynomial<&[T]>) {
-        let (a, b) = self.0.split_at(mid);
-        (DcrtPolynomialIter::new(a, b.len()), DcrtPolynomial(b))
+    pub fn a_b(&self, dcrt_poly_len: usize) -> (DcrtPolynomialIter<'_, T>, DcrtPolynomial<&[T]>) {
+        let (mask, body) = self.a_b_slices(dcrt_poly_len);
+        (
+            DcrtPolynomialIter::new(mask, dcrt_poly_len),
+            DcrtPolynomial(body),
+        )
     }
 
     /// Multiplies this DCRT GLWE by a Shoup factor and writes the result into `result`.

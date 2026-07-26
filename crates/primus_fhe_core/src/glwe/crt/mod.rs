@@ -2,19 +2,12 @@
 
 mod automorphism;
 mod expand_coeff;
-mod hybrid_layout;
-mod hybrid_mod_down;
-mod key_switch;
 mod trace;
 
 pub use automorphism::{
-    CoeffAutoHelper, CrtGlweAutoContext, CrtGlweAutoKey, crt_poly_auto_inplace,
+    CoeffAutoHelper, CrtGlweAutoContext, CrtGlweAutoKey, crt_poly_auto_inplace, secret_poly_auto_to,
 };
 pub use expand_coeff::{
     CrtGlweExpandCoeffContext, CrtGlweExpandCoeffKey, CrtGlweExpandCoeffSyncPool,
-};
-pub use key_switch::{
-    CrtGlweKeySwitchingContext, CrtGlweKeySwitchingKey, HybridCrtGlweKeySwitchingContext,
-    HybridCrtGlweKeySwitchingKey,
 };
 pub use trace::{CrtGlweTraceContext, CrtGlweTraceKey};

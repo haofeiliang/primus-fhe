@@ -10,7 +10,7 @@ use primus_rns::HybridRNS;
 /// `P` limbs are inverse-transformed for the cross-basis conversion. The
 /// converted `P` polynomial is transformed one `Q` limb at a time and reused
 /// as the subtraction operand in the NTT domain.
-pub(super) fn approx_mod_down_ntt<T, M, Table>(
+pub(in crate::glwe::key_switch) fn approx_mod_down_ntt<T, M, Table>(
     hybrid_params: &HybridRNS<T, M>,
     table: &Table,
     polynomial_mod_qp: &mut [T],

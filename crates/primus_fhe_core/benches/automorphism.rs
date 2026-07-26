@@ -4,8 +4,8 @@ use std::sync::Arc;
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use primus_decompose::big_integer::BigUintApproxSignedBasis;
 use primus_fhe_core::{
-    CrtGlevParameters, CrtGlweAutoContext, CrtGlweAutoKey, CrtGlweParameters, CrtGlweSecretKey,
-    DcrtGlweAutoKey, DcrtGlweCiphertext, DcrtGlweSecretKey, RingSecretKeyType,
+    CrtGlevParameters, CrtGlweAutoContext, CrtGlweAutoKey, CrtGlweParameters, DcrtGlweAutoKey,
+    DcrtGlweCiphertext, DcrtGlweSecretKey, GlweSecretKey, RingSecretKeyType,
 };
 use primus_lattice::glwe::{CrtGlwe, DcrtGlwe};
 use primus_modulus::BarrettModulus;
@@ -48,7 +48,7 @@ fn bench_automorphism(c: &mut Criterion) {
         let rns_glwe_len = glwe_params.rns_glwe_len();
         let base_q = glwe_params.base_q();
 
-        let sk = CrtGlweSecretKey::generate(&glwe_params, &mut rng);
+        let sk = GlweSecretKey::generate(&glwe_params, &mut rng);
         let dcrt_sk = DcrtGlweSecretKey::from_coeff_secret_key(&sk, &table);
 
         let basis = BigUintApproxSignedBasis::new(glwe_params.cipher_modulus(), 20, None, base_q);

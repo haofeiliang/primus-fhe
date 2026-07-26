@@ -1,8 +1,9 @@
 use std::sync::Arc;
 
 use itertools::izip;
+use num_traits::ConstZero;
 use primus_data::{Data, DataMut, RawData};
-use primus_integer::FheUint;
+use primus_integer::{FheUint, WrappingNeg};
 use primus_lattice::{
     context::DcrtGlevContext,
     glev::{DcrtGlevIter, DcrtGlevIterMut},
@@ -14,8 +15,10 @@ use primus_reduce::FieldContext;
 use primus_reduce::ReduceMul;
 use primus_rns::RNSBase;
 
+use crate::glwe::secret_key::encode_secret_polynomial_to_rns;
 use crate::{
-    CrtGlevParameters, CrtGlweCiphertext, CrtGlweSecretKey, DcrtGlweCiphertext, DcrtGlweSecretKey,
+    CrtGlevParameters, CrtGlweCiphertext, DcrtGlweCiphertext, DcrtGlweSecretKey, GlweSecretKey,
+    SecretCoefficient,
 };
 
 /// Pre-allocated scratch buffer for CRT automorphism operations.
@@ -113,7 +116,7 @@ fn generate_permutate_ops(degree: usize, poly_length: usize) -> Vec<FromOp> {
 fn generate_auto_key_data<T, M, Table, R>(
     params: &CrtGlevParameters<T, M>,
     coeff_auto_helper: &CoeffAutoHelper,
-    sk: &CrtGlweSecretKey<T>,
+    sk: &GlweSecretKey<T>,
     dcrt_sk: &DcrtGlweSecretKey<T>,
     table: &Table,
     rng: &mut R,
@@ -127,26 +130,25 @@ where
     let poly_length = params.poly_length();
     let rns_poly_len = params.rns_poly_len();
     let dcrt_glev_len = params.rns_glev_len();
-    let moduli = params.cipher_moduli();
+    assert_eq!(sk.dimension(), params.dimension());
+    assert_eq!(sk.poly_length(), poly_length);
 
     let mut key = vec![T::ZERO; params.dimension() * dcrt_glev_len];
     let mut auto_si: CrtPolynomial<Vec<T>> = CrtPolynomial::zero(rns_poly_len);
+    let mut auto_signed = vec![SecretCoefficient::<T>::ZERO; poly_length];
 
     let key_iter = DcrtGlevIterMut::new(key.as_mut_slice(), dcrt_glev_len);
 
-    sk.iter_crt_poly()
-        .zip(key_iter)
-        .for_each(|(si, mut dcrt_glev)| {
-            crt_poly_auto_inplace(si.0, &mut auto_si.0, coeff_auto_helper, poly_length, moduli);
+    sk.iter().zip(key_iter).for_each(|(si, mut dcrt_glev)| {
+        secret_poly_auto_to::<T>(si, &mut auto_signed, coeff_auto_helper);
+        encode_secret_polynomial_to_rns(
+            &auto_signed,
+            auto_si.as_mut(),
+            params.cipher_moduli_value(),
+        );
 
-            dcrt_sk.encrypt_crt_msg_to_dcrt_glev_inplace(
-                &auto_si,
-                &mut dcrt_glev,
-                params,
-                table,
-                rng,
-            );
-        });
+        dcrt_sk.encrypt_crt_msg_to_dcrt_glev_inplace(&auto_si, &mut dcrt_glev, params, table, rng);
+    });
 
     key
 }
@@ -173,7 +175,7 @@ where
     pub fn new<M, R>(
         params: &CrtGlevParameters<T, M>,
         degree: usize,
-        sk: &CrtGlweSecretKey<T>,
+        sk: &GlweSecretKey<T>,
         dcrt_sk: &DcrtGlweSecretKey<T>,
         table: Arc<Table>,
         rng: &mut R,
@@ -227,7 +229,7 @@ where
         B: RawData<Elem = T> + DataMut,
     {
         let poly_length = params.poly_length();
-        let rns_glwe_mid = params.rns_glwe_mid();
+        let rns_poly_len = params.rns_poly_len();
         let moduli = params.cipher_moduli();
 
         let auto_helper = &self.auto_helper;
@@ -239,7 +241,7 @@ where
         result.set_zero();
         let mut temp = DcrtGlweCiphertext::new(result.as_mut());
 
-        let (a_in, b_in) = ciphertext.a_b(rns_glwe_mid);
+        let (a_in, b_in) = ciphertext.a_b(rns_poly_len);
 
         self.iter_dcrt_glev()
             .zip(a_in)
@@ -272,11 +274,45 @@ where
 
         let _ = temp.into_coeff_form(self.table());
 
-        let (a_out, mut b_out) = result.a_b_mut(rns_glwe_mid);
+        let (a_out, mut b_out) = result.a_b_mut(rns_poly_len);
 
         a_out.for_each(|mut ai| ai.neg_assign(poly_length, moduli));
 
         auto_crt_poly.sub_rev_assign(&mut b_out, poly_length, moduli);
+    }
+}
+
+/// Applies a coefficient automorphism to one canonical signed secret
+/// polynomial.
+pub fn secret_poly_auto_to<T: FheUint>(
+    polynomial: &[SecretCoefficient<T>],
+    output: &mut [SecretCoefficient<T>],
+    auto_helper: &CoeffAutoHelper,
+) {
+    assert_eq!(polynomial.len(), output.len());
+    match auto_helper {
+        CoeffAutoHelper::Permutation(from_ops) => {
+            output.iter_mut().zip(from_ops).for_each(|(output, &op)| {
+                let coefficient = polynomial[op.index()];
+                *output = if op.is_neg() {
+                    coefficient.wrapping_neg()
+                } else {
+                    coefficient
+                };
+            });
+        }
+        CoeffAutoHelper::PolyLengthPlusOne => {
+            polynomial
+                .as_chunks::<2>()
+                .0
+                .iter()
+                .zip(output.as_chunks_mut::<2>().0)
+                .for_each(|(input, output)| {
+                    output[0] = input[0];
+                    output[1] = input[1].wrapping_neg();
+                });
+        }
+        CoeffAutoHelper::One => output.copy_from_slice(polynomial),
     }
 }
 

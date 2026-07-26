@@ -22,7 +22,7 @@ fn derives_the_smallest_glwe_layout_and_zero_pads_the_tail() {
     ] {
         let values: Vec<u32> = (0..lwe_dimension as u32).collect();
         let lwe = LweSecretKey::new(values.clone(), LweSecretKeyType::Binary);
-        let glwe = GlweSecretKey::from_padded_lwe(&lwe, poly_length).unwrap();
+        let glwe = GlweSecretKey::from_padded_lwe(&lwe, poly_length, u32::MAX).unwrap();
 
         assert_eq!(glwe.dimension(), expected_glwe_dimension);
         assert_eq!(glwe.poly_length(), poly_length);
@@ -31,7 +31,8 @@ fn derives_the_smallest_glwe_layout_and_zero_pads_the_tail() {
             lwe_dimension.next_multiple_of(poly_length)
         );
         assert_eq!(glwe.distr(), RingSecretKeyType::Binary);
-        assert_eq!(&glwe.as_slice()[..lwe_dimension], values);
+        let signed_values: Vec<i32> = values.into_iter().map(|value| value as i32).collect();
+        assert_eq!(&glwe.as_slice()[..lwe_dimension], signed_values);
         assert!(glwe.as_slice()[lwe_dimension..].iter().all(|&x| x == 0));
     }
 }
@@ -40,10 +41,10 @@ fn derives_the_smallest_glwe_layout_and_zero_pads_the_tail() {
 fn preserves_ternary_coefficients_and_maps_distribution() {
     let values = vec![0u32, 1, u32::MAX, 0, u32::MAX];
     let lwe = LweSecretKey::new(values.clone(), LweSecretKeyType::Ternary);
-    let glwe = GlweSecretKey::from_padded_lwe(&lwe, 8).unwrap();
+    let glwe = GlweSecretKey::from_padded_lwe(&lwe, 8, u32::MAX).unwrap();
 
     assert_eq!(glwe.distr(), RingSecretKeyType::Ternary);
-    assert_eq!(&glwe.as_slice()[..values.len()], values);
+    assert_eq!(&glwe.as_slice()[..values.len()], &[0, 1, -1, 0, -1]);
     assert_eq!(&glwe.as_slice()[values.len()..], &[0, 0, 0]);
 }
 
@@ -69,7 +70,8 @@ fn natural_secret_order_matches_the_current_sample_extraction_layout() {
         1,
     ];
     let lwe_secret_key = LweSecretKey::new(lwe_values, LweSecretKeyType::Ternary);
-    let glwe_secret_key = GlweSecretKey::from_padded_lwe(&lwe_secret_key, POLY_LENGTH).unwrap();
+    let glwe_secret_key =
+        GlweSecretKey::from_padded_lwe(&lwe_secret_key, POLY_LENGTH, MODULUS - 1).unwrap();
 
     let glwe_values: Vec<u32> = (0..(glwe_secret_key.dimension() + 1) * POLY_LENGTH)
         .map(|index| (index as u32 * 1_234_567 + 89) % MODULUS)
@@ -89,7 +91,12 @@ fn natural_secret_order_matches_the_current_sample_extraction_layout() {
         .iter()
         .zip(glwe_secret_key.as_slice())
         .fold(0u64, |sum, (&a, &s)| {
-            (sum + u64::from(a) * u64::from(s)) % q
+            let s = if s < 0 {
+                q - u64::from(s.unsigned_abs())
+            } else {
+                s as u64
+            };
+            (sum + u64::from(a) * s) % q
         });
     let extracted_phase = (u64::from(extracted.b()) + q - dot) % q;
     let compact_dot = compact
@@ -107,9 +114,20 @@ fn natural_secret_order_matches_the_current_sample_extraction_layout() {
         .chunks_exact(POLY_LENGTH)
         .zip(glwe_secret_key.as_slice().chunks_exact(POLY_LENGTH))
     {
-        product_constant = (product_constant + u64::from(mask[0]) * u64::from(secret[0])) % q;
+        let secret_zero = if secret[0] < 0 {
+            q - u64::from(secret[0].unsigned_abs())
+        } else {
+            secret[0] as u64
+        };
+        product_constant = (product_constant + u64::from(mask[0]) * secret_zero) % q;
         for index in 1..POLY_LENGTH {
-            let product = u64::from(mask[index]) * u64::from(secret[POLY_LENGTH - index]) % q;
+            let secret = secret[POLY_LENGTH - index];
+            let secret = if secret < 0 {
+                q - u64::from(secret.unsigned_abs())
+            } else {
+                secret as u64
+            };
+            let product = u64::from(mask[index]) * secret % q;
             product_constant = (product_constant + q - product) % q;
         }
     }
@@ -125,11 +143,11 @@ fn rejects_invalid_source_and_polynomial_length() {
     let lwe = LweSecretKey::new(vec![1u32; 1], LweSecretKeyType::Binary);
 
     assert_eq!(
-        padded_error(GlweSecretKey::from_padded_lwe(&empty, 8)),
+        padded_error(GlweSecretKey::from_padded_lwe(&empty, 8, u32::MAX)),
         GlweSecretKeyError::ZeroLweDimension
     );
     assert_eq!(
-        padded_error(GlweSecretKey::from_padded_lwe(&lwe, 6)),
+        padded_error(GlweSecretKey::from_padded_lwe(&lwe, 6, u32::MAX)),
         GlweSecretKeyError::InvalidPolynomialLength { poly_length: 6 }
     );
 }

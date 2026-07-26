@@ -1,8 +1,8 @@
 use primus_decompose::big_integer::BigUintApproxSignedBasis;
 use primus_fhe_core::{
-    CrtGlevParameters, CrtGlweKeySwitchingContext, CrtGlweKeySwitchingKey, CrtGlweParameters,
-    CrtGlweSecretKey, DcrtGlweCiphertext, DcrtGlweDecryptContext, DcrtGlweSecretKey,
-    HybridCrtGlweKeySwitchingContext, HybridCrtGlweKeySwitchingKey, RingSecretKeyType,
+    CrtGlevParameters, CrtGlweParameters, DcrtGlweCiphertext, DcrtGlweDecryptContext,
+    DcrtGlweKeySwitchingContext, DcrtGlweKeySwitchingKey, DcrtGlweSecretKey, GlweSecretKey,
+    HybridRnsGlweKeySwitchingContext, HybridRnsGlweKeySwitchingKey, RingSecretKeyType,
 };
 use primus_lattice::glwe::DcrtGlwe;
 use primus_modulus::BarrettModulus;
@@ -50,17 +50,17 @@ fn test_rns_glwe_ksk() {
     let base_q = glwe_params.base_q();
 
     // ── Two independent secret keys ─────────────────────────────
-    let sk_1 = CrtGlweSecretKey::generate(&glwe_params, &mut rng);
+    let sk_1 = GlweSecretKey::generate(&glwe_params, &mut rng);
     let dcrt_sk_1 = DcrtGlweSecretKey::from_coeff_secret_key(&sk_1, &table);
 
-    let sk_2 = CrtGlweSecretKey::generate(&glwe_params, &mut rng);
+    let sk_2 = GlweSecretKey::generate(&glwe_params, &mut rng);
     let dcrt_sk_2 = DcrtGlweSecretKey::from_coeff_secret_key(&sk_2, &table);
 
     // ── Key-switching key: encrypt sk_1 under sk_2 ──────────────
     let basis = BigUintApproxSignedBasis::new(glwe_params.cipher_modulus(), 20, None, base_q);
     let glev_params = CrtGlevParameters::with_glwe_params(&glwe_params, basis);
 
-    let key_switching_key = CrtGlweKeySwitchingKey::new(
+    let key_switching_key = DcrtGlweKeySwitchingKey::generate(
         &sk_1,
         &glwe_params,
         &dcrt_sk_2,
@@ -73,8 +73,12 @@ fn test_rns_glwe_ksk() {
     let input: Polynomial<Vec<ValueT>> = Polynomial::random(poly_length, mod_t, &mut rng);
     let mut c1: DcrtGlwe<Vec<ValueT>> = DcrtGlweCiphertext::zero(rns_glwe_len);
     let mut c2: DcrtGlwe<Vec<ValueT>> = DcrtGlweCiphertext::zero(rns_glwe_len);
-    let mut ksk_context =
-        CrtGlweKeySwitchingContext::new(poly_length, rns_poly_len, big_uint_poly_len, moduli_count);
+    let mut ksk_context = DcrtGlweKeySwitchingContext::new(
+        poly_length,
+        rns_poly_len,
+        big_uint_poly_len,
+        moduli_count,
+    );
     let mut decrypt_context = DcrtGlweDecryptContext::new(moduli_count, poly_length);
 
     dcrt_sk_1.encrypt_plaintext_inplace(&input, &mut c1, &glwe_params, &table, &mut rng);
@@ -87,7 +91,7 @@ fn test_rns_glwe_ksk() {
     // Requires conversion to coefficient domain first.
     let c1 = c1.into_coeff_form(&table);
 
-    key_switching_key.key_swithching_inplace(
+    key_switching_key.key_switch_to(
         &c1,
         &mut c2,
         glev_params.basis(),
@@ -149,19 +153,17 @@ fn test_rns_glwe_ksk_hybrid() {
         primus_rns::HybridRNS::new(&q_moduli, &p_moduli, decomposition_count).unwrap();
 
     // ── Two independent secret keys ─────────────────────────────
-    let sk_1 = CrtGlweSecretKey::generate(&glwe_params, &mut rng);
-    let dcrt_sk_2 = DcrtGlweSecretKey::from_coeff_secret_key(
-        &CrtGlweSecretKey::generate(&glwe_params, &mut rng),
-        &q_table,
-    );
+    let sk_1 = GlweSecretKey::generate(&glwe_params, &mut rng);
+    let sk_2 = GlweSecretKey::generate(&glwe_params, &mut rng);
+    let dcrt_sk_2 = DcrtGlweSecretKey::from_coeff_secret_key(&sk_2, &q_table);
 
     let dcrt_sk_1 = DcrtGlweSecretKey::from_coeff_secret_key(&sk_1, &q_table);
 
     // ── Hybrid KSK: encrypt sk_1 under sk_2 ─────────────────────
-    let key_switching_key = HybridCrtGlweKeySwitchingKey::new(
+    let key_switching_key = HybridRnsGlweKeySwitchingKey::generate(
         &sk_1,
         &glwe_params,
-        &dcrt_sk_2,
+        &sk_2,
         &hybrid_params,
         &qp_table,
         &mut rng,
@@ -202,18 +204,12 @@ fn test_rns_glwe_ksk_hybrid() {
     let c1_coeff = c1.clone().into_coeff_form(&q_table);
 
     let mut hybrid_context =
-        HybridCrtGlweKeySwitchingContext::new(&key_switching_key, &hybrid_params);
+        HybridRnsGlweKeySwitchingContext::new(&key_switching_key, &hybrid_params);
     let mut coefficient_context =
-        HybridCrtGlweKeySwitchingContext::new(&key_switching_key, &hybrid_params);
+        HybridRnsGlweKeySwitchingContext::new(&key_switching_key, &hybrid_params);
 
-    key_switching_key.key_switch_inplace(
-        &c1,
-        &mut c2,
-        &hybrid_params,
-        &qp_table,
-        &mut hybrid_context,
-    );
-    key_switching_key.key_switch_coeff_inplace(
+    key_switching_key.key_switch_to(&c1, &mut c2, &hybrid_params, &qp_table, &mut hybrid_context);
+    key_switching_key.key_switch_coeff_to(
         &c1_coeff,
         &mut c2_from_coeff,
         &hybrid_params,

@@ -4,7 +4,10 @@ use primus_integer::FheUint;
 use primus_lattice::lwe::Lwe;
 use primus_reduce::RingContext;
 
-use crate::{LweKeySwitchingParameters, LweParameters, LweSecretKey};
+use crate::{
+    LweKeySwitchingParameters, LweParameters, LweSecretKey, SecretCoefficient,
+    encode_secret_coefficient,
+};
 
 /// An LWE key-switching key from one secret-key vector to another.
 ///
@@ -32,7 +35,58 @@ impl<T: FheUint> LweKeySwitchingKey<T> {
         R: rand::Rng + rand::CryptoRng,
         M: RingContext<T>,
     {
-        assert_eq!(input_secret_key.len(), parameters.input_dimension());
+        Self::generate_from_residues(
+            input_secret_key.iter().copied(),
+            input_secret_key.len(),
+            output_secret_key,
+            output_parameters,
+            parameters,
+            rng,
+        )
+    }
+
+    /// Generates a key switching from canonical signed input coefficients.
+    pub fn generate_from_signed<R, M>(
+        input_secret_key: &[SecretCoefficient<T>],
+        output_secret_key: &LweSecretKey<T>,
+        output_parameters: &LweParameters<T, M>,
+        parameters: &LweKeySwitchingParameters<T>,
+        rng: &mut R,
+    ) -> Self
+    where
+        R: rand::Rng + rand::CryptoRng,
+        M: RingContext<T>,
+    {
+        let modulus = output_parameters.cipher_modulus();
+        Self::generate_from_residues(
+            input_secret_key.iter().copied().map(|coefficient| {
+                if let Some(modulus) = modulus.value() {
+                    encode_secret_coefficient(coefficient, modulus)
+                } else {
+                    T::cast_from_signed(coefficient)
+                }
+            }),
+            input_secret_key.len(),
+            output_secret_key,
+            output_parameters,
+            parameters,
+            rng,
+        )
+    }
+
+    fn generate_from_residues<R, M>(
+        input_secret_key: impl IntoIterator<Item = T>,
+        input_dimension: usize,
+        output_secret_key: &LweSecretKey<T>,
+        output_parameters: &LweParameters<T, M>,
+        parameters: &LweKeySwitchingParameters<T>,
+        rng: &mut R,
+    ) -> Self
+    where
+        R: rand::Rng + rand::CryptoRng,
+        M: RingContext<T>,
+    {
+        assert_eq!(input_dimension, parameters.input_dimension());
         assert_eq!(output_secret_key.dimension(), parameters.output_dimension());
         assert_eq!(output_parameters.dimension(), parameters.output_dimension());
         assert_eq!(
@@ -58,7 +112,7 @@ impl<T: FheUint> LweKeySwitchingKey<T> {
         let modulus = output_parameters.cipher_modulus();
         let uniform = output_parameters.cipher_modulus_uniform_distr();
         let gaussian = output_parameters.noise_distribution();
-        for &secret in input_secret_key {
+        for secret in input_secret_key {
             for scalar in parameters.basis().scalar_iter() {
                 let mut ciphertext = Lwe::generate_random_zero_sample(
                     output_secret_key.as_ref(),

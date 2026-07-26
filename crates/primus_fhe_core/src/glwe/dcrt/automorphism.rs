@@ -276,7 +276,7 @@ where
         B: RawData<Elem = T> + DataMut,
     {
         let poly_length = params.poly_length();
-        let rns_glwe_mid = params.rns_glwe_mid();
+        let rns_poly_len = params.rns_poly_len();
         let moduli = params.cipher_moduli();
 
         debug_assert_eq!(ciphertext.as_ref().len(), params.rns_glwe_len());
@@ -285,7 +285,7 @@ where
 
         result.set_zero();
 
-        let (a_in, b_in) = ciphertext.a_b(rns_glwe_mid);
+        let (a_in, b_in) = ciphertext.a_b(rns_poly_len);
 
         // ----- Process a polynomials: NTT permutation → INTT → key switch -----
         self.iter_dcrt_glev()
@@ -322,7 +322,7 @@ where
         );
 
         // ----- Combine: result = (−a', σ(b) − b') -----
-        let (a_out, mut b_out) = result.a_b_mut(rns_glwe_mid);
+        let (a_out, mut b_out) = result.a_b_mut(rns_poly_len);
 
         a_out.for_each(|mut ai| ai.neg_assign(poly_length, moduli));
 

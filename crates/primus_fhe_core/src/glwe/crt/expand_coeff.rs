@@ -9,8 +9,8 @@ use primus_rns::RNSBase;
 use rayon::prelude::*;
 
 use crate::{
-    CrtGlevParameters, CrtGlweAutoContext, CrtGlweAutoKey, CrtGlweCiphertext, CrtGlweSecretKey,
-    CrtGlweTraceContext, DcrtGlweSecretKey,
+    CrtGlevParameters, CrtGlweAutoContext, CrtGlweAutoKey, CrtGlweCiphertext, CrtGlweTraceContext,
+    DcrtGlweSecretKey, GlweSecretKey,
 };
 
 pub type CrtGlweExpandCoeffContext<T> = CrtGlweTraceContext<T>;
@@ -152,7 +152,7 @@ where
     pub fn new<M, R>(
         params: &CrtGlevParameters<T, M>,
         rns_base: &RNSBase<T, M>,
-        sk: &CrtGlweSecretKey<T>,
+        sk: &GlweSecretKey<T>,
         dcrt_sk: &DcrtGlweSecretKey<T>,
         table: Arc<Table>,
         rng: &mut R,

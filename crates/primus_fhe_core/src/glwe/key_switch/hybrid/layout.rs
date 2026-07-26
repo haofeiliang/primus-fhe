@@ -1,6 +1,6 @@
 /// Immutable view of a polynomial-major `QP`-basis GLWE ciphertext.
 #[derive(Clone, Copy)]
-pub(super) struct QpGlweRef<'a, T> {
+pub(in crate::glwe::key_switch) struct QpGlweRef<'a, T> {
     data: &'a [T],
     poly_length: usize,
     moduli_count: usize,
@@ -9,7 +9,11 @@ pub(super) struct QpGlweRef<'a, T> {
 
 impl<'a, T> QpGlweRef<'a, T> {
     /// Creates a checked view over complete `QP`-basis polynomials.
-    pub(super) fn new(data: &'a [T], poly_length: usize, moduli_count: usize) -> Self {
+    pub(in crate::glwe::key_switch) fn new(
+        data: &'a [T],
+        poly_length: usize,
+        moduli_count: usize,
+    ) -> Self {
         let rns_poly_len = poly_length
             .checked_mul(moduli_count)
             .expect("QP polynomial length overflow");
@@ -24,7 +28,7 @@ impl<'a, T> QpGlweRef<'a, T> {
     }
 
     /// Iterates over the same modulus limb of every GLWE polynomial.
-    pub(super) fn modulus_limbs(
+    pub(in crate::glwe::key_switch) fn modulus_limbs(
         self,
         modulus_index: usize,
     ) -> impl ExactSizeIterator<Item = &'a [T]> {
@@ -38,7 +42,7 @@ impl<'a, T> QpGlweRef<'a, T> {
 }
 
 /// Mutable view of a polynomial-major `QP`-basis GLWE ciphertext.
-pub(super) struct QpGlweMut<'a, T> {
+pub(in crate::glwe::key_switch) struct QpGlweMut<'a, T> {
     data: &'a mut [T],
     poly_length: usize,
     moduli_count: usize,
@@ -47,7 +51,11 @@ pub(super) struct QpGlweMut<'a, T> {
 
 impl<'a, T> QpGlweMut<'a, T> {
     /// Creates a checked view over complete `QP`-basis polynomials.
-    pub(super) fn new(data: &'a mut [T], poly_length: usize, moduli_count: usize) -> Self {
+    pub(in crate::glwe::key_switch) fn new(
+        data: &'a mut [T],
+        poly_length: usize,
+        moduli_count: usize,
+    ) -> Self {
         let rns_poly_len = poly_length
             .checked_mul(moduli_count)
             .expect("QP polynomial length overflow");
@@ -62,7 +70,7 @@ impl<'a, T> QpGlweMut<'a, T> {
     }
 
     /// Iterates mutably over the same modulus limb of every GLWE polynomial.
-    pub(super) fn modulus_limbs_mut(
+    pub(in crate::glwe::key_switch) fn modulus_limbs_mut(
         self,
         modulus_index: usize,
     ) -> impl ExactSizeIterator<Item = &'a mut [T]> {

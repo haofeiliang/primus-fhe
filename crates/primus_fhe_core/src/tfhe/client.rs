@@ -1,11 +1,11 @@
 use primus_distr::DiscreteGaussian;
 use primus_integer::FheUint;
 use primus_reduce::RingContext;
-use rand::distr::Uniform;
+use rand::distr::{Distribution, Uniform};
 
 use crate::{
-    ClientKey, LweCiphertext, PbsOrder, PlaintextCodec, PlaintextEmbedding, TfheKeyError,
-    TfheParameters,
+    ClientKey, LweCiphertext, PbsOrder, PlaintextCodec, PlaintextEmbedding, SecretCoefficient,
+    TfheKeyError, TfheParameters, encode_secret_coefficient,
 };
 
 /// A raw external LWE ciphertext used by GLWE-based TFHE.
@@ -197,7 +197,7 @@ where
             }
             PbsOrder::KeyswitchBootstrap => {
                 let parameters = self.parameters.glwe();
-                encrypt_lwe_with_secret(
+                encrypt_lwe_with_signed_secret(
                     self.key.glwe_secret_key().as_slice(),
                     message,
                     parameters.cipher_modulus(),
@@ -261,7 +261,7 @@ where
             }
             PbsOrder::KeyswitchBootstrap => {
                 let parameters = self.parameters.glwe();
-                decrypt_lwe_with_secret(
+                decrypt_lwe_with_signed_secret(
                     self.key.glwe_secret_key().as_slice(),
                     ciphertext.as_lwe(),
                     parameters.cipher_modulus(),
@@ -309,6 +309,74 @@ where
     debug_assert_eq!(mask.len(), secret_key.len());
     let plaintext = modulus.reduce_sub(body, modulus.reduce_dot_product(mask, secret_key));
     codec.decode_value(plaintext)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn encrypt_lwe_with_signed_secret<T, M, R>(
+    secret_key: &[SecretCoefficient<T>],
+    message: T,
+    modulus: M,
+    uniform: Uniform<T>,
+    gaussian: &DiscreteGaussian<T>,
+    codec: &PlaintextCodec<T>,
+    embedding: PlaintextEmbedding,
+    rng: &mut R,
+) -> LweCiphertext<T>
+where
+    T: FheUint,
+    M: RingContext<T>,
+    R: rand::Rng + rand::CryptoRng,
+{
+    let mut ciphertext = LweCiphertext::zero(secret_key.len());
+    ciphertext
+        .a_mut()
+        .iter_mut()
+        .zip(uniform.sample_iter(&mut *rng))
+        .for_each(|(output, sample)| *output = sample);
+    let dot_product = modulus.reduce_dot_product_iter(
+        ciphertext.a().iter().copied(),
+        secret_key
+            .iter()
+            .copied()
+            .map(|coefficient| encode_for_ring(coefficient, modulus)),
+    );
+    *ciphertext.b_mut() = modulus.reduce_add(dot_product, gaussian.sample(rng));
+    codec.add_encode_value(ciphertext.b_mut(), message, embedding);
+    ciphertext
+}
+
+fn decrypt_lwe_with_signed_secret<T, M>(
+    secret_key: &[SecretCoefficient<T>],
+    ciphertext: &LweCiphertext<T>,
+    modulus: M,
+    codec: &PlaintextCodec<T>,
+) -> T
+where
+    T: FheUint,
+    M: RingContext<T>,
+{
+    let (mask, body) = ciphertext.a_b();
+    debug_assert_eq!(mask.len(), secret_key.len());
+    let dot_product = modulus.reduce_dot_product_iter(
+        mask.iter().copied(),
+        secret_key
+            .iter()
+            .copied()
+            .map(|coefficient| encode_for_ring(coefficient, modulus)),
+    );
+    codec.decode_value(modulus.reduce_sub(body, dot_product))
+}
+
+#[inline]
+fn encode_for_ring<T, M>(coefficient: SecretCoefficient<T>, modulus: M) -> T
+where
+    T: FheUint,
+    M: RingContext<T>,
+{
+    match modulus.value() {
+        Some(modulus) => encode_secret_coefficient(coefficient, modulus),
+        None => T::cast_from_signed(coefficient),
+    }
 }
 
 /// An error produced by the raw TFHE client API.

@@ -6,10 +6,7 @@ use primus_data::{Data, DataMut, RawData};
 use primus_fft::{Complex64, FftEngine, FftTable, TorusFftValue};
 use primus_integer::FheUint;
 use primus_modulus::NativeModulus;
-use primus_poly::{
-    FourierPolynomial, FourierPolynomialIter, FourierPolynomialIterMut, FourierPolynomialOwned,
-    Polynomial, PolynomialOwned,
-};
+use primus_poly::{FourierPolynomialIter, FourierPolynomialOwned, Polynomial, PolynomialOwned};
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::{
@@ -52,8 +49,7 @@ impl<T: FheUint> FourierGlweSecretKey<T> {
         dimension: usize,
         distr: RingSecretKeyType,
     ) -> Self {
-        assert!(poly_length.is_power_of_two());
-        assert!(poly_length >= 2);
+        assert!(poly_length >= 2 && poly_length.is_power_of_two());
         assert!(dimension > 0);
         assert_eq!(key.len(), dimension * (poly_length / 2));
         Self {
@@ -102,12 +98,15 @@ impl<T: FheUint> FourierGlweSecretKey<T> {
 
         let fourier_length = fft.fourier_length();
         let mut key = vec![Complex64::default(); secret_key.dimension * fourier_length];
-        for (coeff, fourier) in secret_key
-            .key
-            .chunks_exact(secret_key.poly_length)
-            .zip(key.chunks_exact_mut(fourier_length))
-        {
-            fft.forward_as_integer(coeff, fourier);
+        let mut native_coefficients = vec![T::ZERO; secret_key.poly_length];
+        for (coefficients, fourier) in secret_key.iter().zip(key.chunks_exact_mut(fourier_length)) {
+            native_coefficients
+                .iter_mut()
+                .zip(coefficients)
+                .for_each(|(output, &coefficient)| {
+                    *output = T::cast_from_signed(coefficient);
+                });
+            fft.forward_as_integer(&native_coefficients, fourier);
         }
 
         Self::new(
@@ -331,8 +330,7 @@ impl<T: FheUint> FourierGlweSecretKey<T> {
         }
 
         let fourier_length = fft.fourier_length();
-        let mid = self.dimension * fourier_length;
-        let (a, b) = result.a_b_mut_slices(mid);
+        let (mask, mut body) = result.a_b_mut(fourier_length);
 
         let coeff = context.coeff.as_mut();
         assert_eq!(coeff.len(), self.poly_length);
@@ -351,15 +349,14 @@ impl<T: FheUint> FourierGlweSecretKey<T> {
                     .add_assign(&Polynomial::new(encoded), NativeModulus::new());
             }
         }
-        fft.forward_as_torus(coeff, b);
+        fft.forward_as_torus(coeff, body.as_mut());
 
         let uniform = params.inner.cipher_modulus_uniform_distr();
-        let mut b_poly = FourierPolynomial::new(b);
 
-        for (mut ai, si) in FourierPolynomialIterMut::new(a, fourier_length).zip(self.iter()) {
+        for (mut ai, si) in mask.zip(self.iter()) {
             primus_distr::sample_uniform_values_to(coeff, &uniform, rng);
             fft.forward_as_torus(coeff, ai.as_mut_slice());
-            b_poly.add_mul_assign(&ai, &si);
+            body.add_mul_assign(&ai, &si);
         }
     }
 
@@ -381,25 +378,22 @@ impl<T: FheUint> FourierGlweSecretKey<T> {
         assert_eq!(result.as_ref().len(), self.poly_length);
 
         let fourier_length = fft.fourier_length();
-        let mid = self.dimension * fourier_length;
-        let (a, b) = cipher.a_b_slices(mid);
+        let (mut mask, body) = cipher.a_b(fourier_length);
 
         assert_eq!(context.phase.fourier_length(), fourier_length);
         let phase = &mut context.phase;
 
         let mut secret = self.iter();
-        let mut mask = a.chunks_exact(fourier_length);
-
         let si = secret.next().expect("GLWE dimension must be non-zero");
         let ai = mask.next().expect("GLWE ciphertext mask is missing");
 
-        FourierPolynomial::new(ai).mul_to(&si, phase);
+        ai.mul_to(&si, phase);
 
         for (si, ai) in secret.zip(mask) {
-            phase.add_mul_assign(&FourierPolynomial::new(ai), &si);
+            phase.add_mul_assign(&ai, &si);
         }
 
-        FourierPolynomial::new(b).sub_rev_assign(phase);
+        body.sub_rev_assign(phase);
 
         fft.backward_as_torus(phase.as_ref(), result.as_mut());
     }

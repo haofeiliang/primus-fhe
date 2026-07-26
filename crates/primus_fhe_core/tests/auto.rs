@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use primus_decompose::big_integer::BigUintApproxSignedBasis;
 use primus_fhe_core::{
-    CrtGlevParameters, CrtGlweAutoContext, CrtGlweAutoKey, CrtGlweParameters, CrtGlweSecretKey,
-    DcrtGlweAutoKey, DcrtGlweCiphertext, DcrtGlweDecryptContext, DcrtGlweSecretKey,
+    CrtGlevParameters, CrtGlweAutoContext, CrtGlweAutoKey, CrtGlweParameters, DcrtGlweAutoKey,
+    DcrtGlweCiphertext, DcrtGlweDecryptContext, DcrtGlweSecretKey, GlweSecretKey,
     RingSecretKeyType, crt_poly_auto_inplace, dcrt_poly_ntt_auto_inplace,
 };
 use primus_lattice::glwe::{CrtGlwe, DcrtGlwe};
@@ -56,7 +56,7 @@ fn test_crt_glwe_auto() {
     let rns_glwe_len = glwe_params.rns_glwe_len();
     let base_q = glwe_params.base_q();
 
-    let sk = CrtGlweSecretKey::generate(&glwe_params, &mut rng);
+    let sk = GlweSecretKey::generate(&glwe_params, &mut rng);
     let dcrt_sk = DcrtGlweSecretKey::from_coeff_secret_key(&sk, &table);
 
     // ── Auto key: KSK for an odd-degree automorphism ────────────
@@ -115,18 +115,17 @@ fn test_crt_glwe_auto() {
             );
         });
 
-    let mut auto_sk = CrtGlweSecretKey::zero(dimension, crt_poly_length, sk.distr());
-    sk.iter_crt_poly()
-        .zip(auto_sk.iter_crt_poly_mut())
-        .for_each(|(in_crt_poly, auto_crt_poly)| {
-            crt_poly_auto_inplace(
-                in_crt_poly.0,
-                auto_crt_poly.0,
+    let mut auto_sk_values = vec![0i64; dimension * poly_length];
+    sk.iter()
+        .zip(auto_sk_values.chunks_exact_mut(poly_length))
+        .for_each(|(secret_poly, auto_secret_poly)| {
+            primus_fhe_core::secret_poly_auto_to::<ValueT>(
+                secret_poly,
+                auto_secret_poly,
                 auto_key.auto_helper(),
-                poly_length,
-                &moduli,
             );
         });
+    let auto_sk = GlweSecretKey::new(auto_sk_values, dimension, poly_length, sk.distr());
     let dcrt_auto_sk = DcrtGlweSecretKey::from_coeff_secret_key(&auto_sk, table);
 
     let auto_c1 = auto_c1.into_ntt_form(table);
@@ -188,7 +187,7 @@ fn test_dcrt_glwe_auto() {
     let rns_glwe_len = glwe_params.rns_glwe_len();
     let base_q = glwe_params.base_q();
 
-    let sk = CrtGlweSecretKey::generate(&glwe_params, &mut rng);
+    let sk = GlweSecretKey::generate(&glwe_params, &mut rng);
     let dcrt_sk = DcrtGlweSecretKey::from_coeff_secret_key(&sk, &table);
 
     let basis = BigUintApproxSignedBasis::new(glwe_params.cipher_modulus(), 20, None, base_q);

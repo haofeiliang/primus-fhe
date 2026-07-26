@@ -4,7 +4,7 @@
 use primus_data::{Data, DataMut, RawData};
 use primus_integer::FheUint;
 use primus_lattice::glev::DcrtGlev;
-use primus_ntt::DcrtTable;
+use primus_ntt::{DcrtTable, NttTable};
 use primus_poly::{
     CrtPolynomial, DcrtPolynomial, DcrtPolynomialIter, DcrtPolynomialIterMut, Polynomial,
     PolynomialOwned,
@@ -14,7 +14,7 @@ use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::{CrtGlevParameters, CrtGlweParameters, DcrtGlweCiphertext, RingSecretKeyType};
 
-use super::CrtGlweSecretKey;
+use super::{GlweSecretKey, encode_secret_polynomial_to};
 
 #[derive(Clone)]
 pub struct DcrtGlweSecretKey<T: FheUint> {
@@ -58,22 +58,31 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
         DcrtPolynomialIterMut::new(self.key.as_mut_slice(), self.rns_poly_len)
     }
 
-    /// Creates a new [`DcrtGlweSecretKey<T>`] from [`CrtGlweSecretKey<T>`].
+    /// Creates a modulus-specific DCRT representation of a canonical signed
+    /// [`GlweSecretKey<T>`].
     #[inline]
-    pub fn from_coeff_secret_key<Table>(secret_key: &CrtGlweSecretKey<T>, table: &Table) -> Self
+    pub fn from_coeff_secret_key<Table>(secret_key: &GlweSecretKey<T>, table: &Table) -> Self
     where
         Table: DcrtTable<ValueT = T>,
     {
-        let rns_poly_len = secret_key.rns_poly_len;
-
-        let mut key = secret_key.key.clone();
-        key.chunks_exact_mut(rns_poly_len).for_each(|crt_poly| {
-            table.transform_slice(crt_poly);
-        });
+        assert_eq!(secret_key.poly_length(), table.poly_length());
+        let rns_poly_len = table.moduli_count() * secret_key.poly_length();
+        let mut key = vec![T::ZERO; secret_key.dimension() * rns_poly_len];
+        for (coefficients, dcrt_secret) in secret_key.iter().zip(key.chunks_exact_mut(rns_poly_len))
+        {
+            for (ntt_table, modulus_limb) in table
+                .ntt_tables()
+                .iter()
+                .zip(dcrt_secret.chunks_exact_mut(secret_key.poly_length()))
+            {
+                encode_secret_polynomial_to(coefficients, modulus_limb, ntt_table.modulus());
+                ntt_table.transform_slice(modulus_limb);
+            }
+        }
 
         Self {
             key,
-            distr: secret_key.distr,
+            distr: secret_key.distr(),
             rns_poly_len,
         }
     }
@@ -102,11 +111,11 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
         B: RawData<Elem = T> + DataMut,
     {
         let poly_length = params.poly_length();
-        let rns_glwe_mid = params.rns_glwe_mid();
+        let rns_poly_len = params.rns_poly_len();
         let moduli = params.cipher_moduli();
         let uniform_distrs = params.cipher_moduli_uniform_distr();
 
-        let (a, mut b) = result.a_b_mut(rns_glwe_mid);
+        let (a, mut b) = result.a_b_mut(rns_poly_len);
 
         primus_distr::sample_crt_gaussian_values_to(
             b.0,
@@ -147,11 +156,11 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
         B: RawData<Elem = T> + DataMut,
     {
         let poly_length = params.poly_length();
-        let rns_glwe_mid = params.rns_glwe_mid();
+        let rns_poly_len = params.rns_poly_len();
         let moduli = params.cipher_moduli();
         let uniform_distrs = params.cipher_moduli_uniform_distr();
 
-        let (a, mut b) = result.a_b_mut(rns_glwe_mid);
+        let (a, mut b) = result.a_b_mut(rns_poly_len);
 
         primus_distr::sample_crt_gaussian_values_to(
             b.0,
@@ -191,11 +200,11 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
         B: RawData<Elem = T> + DataMut,
     {
         let poly_length = params.poly_length();
-        let rns_glwe_mid = params.rns_glwe_mid();
+        let rns_poly_len = params.rns_poly_len();
         let moduli = params.cipher_moduli();
         let uniform_distrs = params.cipher_moduli_uniform_distr();
 
-        let (a, mut b) = result.a_b_mut(rns_glwe_mid);
+        let (a, mut b) = result.a_b_mut(rns_poly_len);
 
         primus_distr::sample_crt_gaussian_values_to(
             b.0,
@@ -232,11 +241,11 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
         A: RawData<Elem = T> + DataMut,
     {
         let poly_length = params.poly_length();
-        let rns_glwe_mid = params.rns_glwe_mid();
+        let rns_poly_len = params.rns_poly_len();
         let moduli = params.cipher_moduli();
         let uniform_distrs = params.cipher_moduli_uniform_distr();
 
-        let (a, mut b) = result.a_b_mut(rns_glwe_mid);
+        let (a, mut b) = result.a_b_mut(rns_poly_len);
 
         primus_distr::sample_crt_gaussian_values_to(
             b.0,
@@ -277,7 +286,7 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
         let moduli = params.cipher_moduli();
         let uniform_distrs = params.cipher_moduli_uniform_distr();
 
-        let (a, mut b) = result.a_b_mut(params.rns_glwe_mid());
+        let (a, mut b) = result.a_b_mut(params.rns_poly_len());
 
         primus_distr::sample_crt_gaussian_values_to(
             b.0,
@@ -349,7 +358,7 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
         let moduli = params.cipher_moduli();
         let uniform_distrs = params.cipher_moduli_uniform_distr();
 
-        let (a, mut b) = result.a_b_mut(params.rns_glwe_mid());
+        let (a, mut b) = result.a_b_mut(params.rns_poly_len());
 
         primus_distr::sample_crt_gaussian_values_to(
             b.0,
@@ -421,7 +430,7 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
         let poly_length = params.poly_length();
         let moduli = params.cipher_moduli();
 
-        let (a, b) = ciphertext.a_b(params.rns_glwe_mid());
+        let (a, b) = ciphertext.a_b(params.rns_poly_len());
 
         msg_mod_q.set_zero();
 
@@ -446,7 +455,7 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
         let poly_length = params.poly_length();
         let moduli = params.cipher_moduli();
 
-        let (a, _b) = ciphertext.a_b(params.rns_glwe_mid());
+        let (a, _b) = ciphertext.a_b(params.rns_poly_len());
 
         msg_mod_q.set_zero();
 
