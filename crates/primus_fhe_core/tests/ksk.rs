@@ -188,6 +188,7 @@ fn test_rns_glwe_ksk_hybrid() {
     let input: Polynomial<Vec<ValueT>> = Polynomial::random(poly_length, mod_t, &mut rng);
     let mut c1: DcrtGlwe<Vec<ValueT>> = DcrtGlweCiphertext::zero(rns_glwe_len);
     let mut c2: DcrtGlwe<Vec<ValueT>> = DcrtGlweCiphertext::zero(rns_glwe_len);
+    let mut c2_from_coeff: DcrtGlwe<Vec<ValueT>> = DcrtGlweCiphertext::zero(rns_glwe_len);
 
     let mut decrypt_context = DcrtGlweDecryptContext::new(moduli_count, poly_length);
 
@@ -198,18 +199,28 @@ fn test_rns_glwe_ksk_hybrid() {
     assert_eq!(m_dec, input);
 
     // ── Hybrid key-switch: c1 (under sk_1) → c2 (under sk_2) ───
-    let c1_coeff = c1.into_coeff_form(&q_table);
+    let c1_coeff = c1.clone().into_coeff_form(&q_table);
 
     let mut hybrid_context =
         HybridCrtGlweKeySwitchingContext::new(&key_switching_key, &hybrid_params);
+    let mut coefficient_context =
+        HybridCrtGlweKeySwitchingContext::new(&key_switching_key, &hybrid_params);
 
     key_switching_key.key_switch_inplace(
-        &c1_coeff,
+        &c1,
         &mut c2,
         &hybrid_params,
         &qp_table,
         &mut hybrid_context,
     );
+    key_switching_key.key_switch_coeff_inplace(
+        &c1_coeff,
+        &mut c2_from_coeff,
+        &hybrid_params,
+        &qp_table,
+        &mut coefficient_context,
+    );
+    assert_eq!(c2.as_ref(), c2_from_coeff.as_ref());
 
     // ── Decrypt under sk_2 ─────────────────────────────────────
     let output = dcrt_sk_2.decrypt(&c2, &glwe_params, &q_table, &mut decrypt_context);

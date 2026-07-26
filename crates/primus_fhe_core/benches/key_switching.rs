@@ -83,7 +83,7 @@ fn bench_key_switching(c: &mut Criterion) {
             &q_table,
             &mut rng,
         );
-        let input_coeff = input_ciphertext.into_coeff_form(&q_table);
+        let input_coeff = input_ciphertext.clone().into_coeff_form(&q_table);
 
         let mut crt_output: DcrtGlwe<Vec<Value>> = DcrtGlweCiphertext::zero(rns_glwe_len);
         let mut crt_context = CrtGlweKeySwitchingContext::new(
@@ -142,7 +142,7 @@ fn bench_key_switching(c: &mut Criterion) {
                 HybridCrtGlweKeySwitchingContext::new(&hybrid_ksk, &hybrid_params);
 
             hybrid_ksk.key_switch_inplace(
-                &input_coeff,
+                &input_ciphertext,
                 &mut hybrid_output,
                 &hybrid_params,
                 &qp_table,
@@ -164,7 +164,7 @@ fn bench_key_switching(c: &mut Criterion) {
                 |b, _| {
                     b.iter(|| {
                         hybrid_ksk.key_switch_inplace(
-                            black_box(&input_coeff),
+                            black_box(&input_ciphertext),
                             black_box(&mut hybrid_output),
                             black_box(&hybrid_params),
                             black_box(&qp_table),
