@@ -273,29 +273,6 @@ impl<T: FheUint, M: FieldContext<T>> BaseConverter<T, M> {
             .for_each(|(output, limb)| limb.write_to(output));
     }
 
-    /// Converts an array into a caller-provided sequence of output polynomials.
-    ///
-    /// This is the scatter-output counterpart of [`fast_convert_array`](Self::fast_convert_array).
-    /// It lets composite RNS operations write converted limbs directly into a
-    /// non-contiguous destination without allocating an intermediate array.
-    pub(crate) fn fast_convert_array_to_polynomials<'a, I>(
-        &self,
-        crt_poly_in: &[T],
-        crt_poly_out: I,
-        poly_length: usize,
-        scratch: &mut [T],
-    ) where
-        T: 'a,
-        I: Iterator<Item = &'a mut [T]>,
-    {
-        let (minimum_outputs, maximum_outputs) = crt_poly_out.size_hint();
-        assert_eq!(maximum_outputs, Some(minimum_outputs));
-        assert_eq!(minimum_outputs, self.output_moduli_count());
-        crt_poly_out
-            .zip(self.fast_convert_array_limbs(crt_poly_in, poly_length, scratch))
-            .for_each(|(output, limb)| limb.write_to(output));
-    }
-
     /// Converts an array and returns output residues as pairs.
     ///
     /// The output basis must contain exactly two moduli. `crt_poly_in.len()`

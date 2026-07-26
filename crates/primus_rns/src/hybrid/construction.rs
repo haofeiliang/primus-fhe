@@ -49,6 +49,7 @@ where
 
             partitions.push(HybridRNSPartition {
                 q_range: (start..end).into(),
+                q_moduli_count: q_moduli.len(),
                 mod_up_converter: BaseConverter::from_owned_bases(partition_base, complement_base),
             });
             start = end;

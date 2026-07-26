@@ -19,12 +19,12 @@ fn bench_key_switching(c: &mut Criterion) {
     type Value = u64;
 
     const DIMENSION: usize = 1;
-    const PLAINTEXT_MODULUS: Value = 12_289;
+    const PLAINTEXT_MODULUS: Value = 2;
     const GAMMA: Value = 2_305_843_009_213_554_689;
     const Q_VALUES: [Value; 2] = [1_125_899_906_826_241, 1_125_899_906_629_633];
-    const P_VALUES: [Value; 1] = [1_125_899_906_031_617];
+    const P_VALUES: [Value; 2] = [1_125_899_906_031_617, 1_125_899_904_679_937];
     const DECOMPOSITION_BASE_LOG: u32 = 20;
-    const HYBRID_DECOMPOSITION_COUNT: usize = 2;
+    const HYBRID_CASES: [(&str, usize); 2] = [("grouped", 1), ("singleton", 2)];
 
     let mod_t = BarrettModulus::new(PLAINTEXT_MODULUS);
     let mod_gamma = BarrettModulus::new(GAMMA);
@@ -50,9 +50,6 @@ fn bench_key_switching(c: &mut Criterion) {
             RingSecretKeyType::Ternary,
             3.20,
         );
-        let hybrid_params =
-            HybridRNS::new(&q_moduli, &p_moduli, HYBRID_DECOMPOSITION_COUNT).unwrap();
-
         let input_sk = CrtGlweSecretKey::generate(&glwe_params, &mut rng);
         let input_dcrt_sk = DcrtGlweSecretKey::from_coeff_secret_key(&input_sk, &q_table);
         let output_sk = CrtGlweSecretKey::generate(&glwe_params, &mut rng);
@@ -76,15 +73,6 @@ fn bench_key_switching(c: &mut Criterion) {
             &q_table,
             &mut rng,
         );
-        let hybrid_ksk = HybridCrtGlweKeySwitchingKey::new(
-            &input_sk,
-            &glwe_params,
-            &output_dcrt_sk,
-            &hybrid_params,
-            &qp_table,
-            &mut rng,
-        );
-
         let rns_glwe_len = glwe_params.rns_glwe_len();
         let input: Polynomial<Vec<Value>> = Polynomial::random(poly_length, mod_t, &mut rng);
         let mut input_ciphertext: DcrtGlwe<Vec<Value>> = DcrtGlweCiphertext::zero(rns_glwe_len);
@@ -98,16 +86,13 @@ fn bench_key_switching(c: &mut Criterion) {
         let input_coeff = input_ciphertext.into_coeff_form(&q_table);
 
         let mut crt_output: DcrtGlwe<Vec<Value>> = DcrtGlweCiphertext::zero(rns_glwe_len);
-        let mut hybrid_output: DcrtGlwe<Vec<Value>> = DcrtGlweCiphertext::zero(rns_glwe_len);
         let mut crt_context = CrtGlweKeySwitchingContext::new(
             poly_length,
             glwe_params.rns_poly_len(),
             glwe_params.big_uint_poly_len(),
             glwe_params.cipher_moduli_count(),
         );
-        let mut hybrid_context = HybridCrtGlweKeySwitchingContext::new(&hybrid_ksk, &hybrid_params);
-
-        // Validate both paths before measuring them.
+        // Validate the CRT path before measuring it.
         crt_ksk.key_swithching_inplace(
             &input_coeff,
             &mut crt_output,
@@ -116,24 +101,12 @@ fn bench_key_switching(c: &mut Criterion) {
             base_q,
             &mut crt_context,
         );
-        hybrid_ksk.key_switch_inplace(
-            &input_coeff,
-            &mut hybrid_output,
-            &hybrid_params,
-            &qp_table,
-            &mut hybrid_context,
-        );
         let mut decrypt_context =
             DcrtGlweDecryptContext::new(glwe_params.cipher_moduli_count(), poly_length);
         assert_eq!(
             output_dcrt_sk.decrypt(&crt_output, &glwe_params, &q_table, &mut decrypt_context),
             input,
         );
-        assert_eq!(
-            output_dcrt_sk.decrypt(&hybrid_output, &glwe_params, &q_table, &mut decrypt_context),
-            input,
-        );
-
         group.throughput(Throughput::Elements(poly_length as u64));
         let n_label = format!("N={poly_length}");
 
@@ -154,17 +127,53 @@ fn bench_key_switching(c: &mut Criterion) {
             },
         );
 
-        group.bench_with_input(BenchmarkId::new("Hybrid-RNS", &n_label), &(), |b, _| {
-            b.iter(|| {
-                hybrid_ksk.key_switch_inplace(
-                    black_box(&input_coeff),
-                    black_box(&mut hybrid_output),
-                    black_box(&hybrid_params),
-                    black_box(&qp_table),
-                    black_box(&mut hybrid_context),
-                );
-            });
-        });
+        for (partition_label, decomposition_count) in HYBRID_CASES {
+            let hybrid_params = HybridRNS::new(&q_moduli, &p_moduli, decomposition_count).unwrap();
+            let hybrid_ksk = HybridCrtGlweKeySwitchingKey::new(
+                &input_sk,
+                &glwe_params,
+                &output_dcrt_sk,
+                &hybrid_params,
+                &qp_table,
+                &mut rng,
+            );
+            let mut hybrid_output: DcrtGlwe<Vec<Value>> = DcrtGlweCiphertext::zero(rns_glwe_len);
+            let mut hybrid_context =
+                HybridCrtGlweKeySwitchingContext::new(&hybrid_ksk, &hybrid_params);
+
+            hybrid_ksk.key_switch_inplace(
+                &input_coeff,
+                &mut hybrid_output,
+                &hybrid_params,
+                &qp_table,
+                &mut hybrid_context,
+            );
+            assert_eq!(
+                output_dcrt_sk.decrypt(
+                    &hybrid_output,
+                    &glwe_params,
+                    &q_table,
+                    &mut decrypt_context,
+                ),
+                input,
+            );
+
+            group.bench_with_input(
+                BenchmarkId::new(format!("Hybrid-RNS-{partition_label}"), &n_label),
+                &(),
+                |b, _| {
+                    b.iter(|| {
+                        hybrid_ksk.key_switch_inplace(
+                            black_box(&input_coeff),
+                            black_box(&mut hybrid_output),
+                            black_box(&hybrid_params),
+                            black_box(&qp_table),
+                            black_box(&mut hybrid_context),
+                        );
+                    });
+                },
+            );
+        }
     }
 
     group.finish();

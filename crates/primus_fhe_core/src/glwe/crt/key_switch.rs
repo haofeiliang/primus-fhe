@@ -17,7 +17,10 @@ use crate::{
     DcrtGlweSecretKey,
 };
 
-use super::hybrid_mod_down::approx_mod_down_ntt;
+use super::{
+    hybrid_layout::{QpGlweMut, QpGlweRef},
+    hybrid_mod_down::approx_mod_down_ntt,
+};
 
 pub struct CrtGlweKeySwitchingKey<T: FheUint> {
     key: Vec<T>,
@@ -408,31 +411,38 @@ impl<T: FheUint> HybridCrtGlweKeySwitchingKey<T> {
         context.accumulator_qp.fill(T::ZERO);
 
         // --- Phase 1: ModUp + QP MAC ---
+        let qp_moduli_count = hybrid_params.qp_moduli_count();
+        let qp_moduli = hybrid_params.qp_base().moduli();
         for (a_u, key_for_secret) in a_in.zip(self.key.chunks_exact(self.qp_rns_gadget_len)) {
             for (partition, glwe) in hybrid_params
                 .partitions()
                 .zip(key_for_secret.chunks_exact(self.qp_rns_glwe_len))
             {
                 let scratch_len = partition.mod_up_scratch_len(poly_length);
-                partition.approx_mod_up(
+                let mod_up_limbs = partition.approx_mod_up_limbs(
                     a_u.as_slice(),
-                    &mut context.digit_qp,
                     poly_length,
                     &mut context.mod_up_scratch[..scratch_len],
                 );
-                table.transform_slice(&mut context.digit_qp);
+                let key_glwe = QpGlweRef::new(glwe, poly_length, qp_moduli_count);
 
-                for (accumulator, key_polynomial) in context
-                    .accumulator_qp
-                    .chunks_exact_mut(qp_rns_poly_len)
-                    .zip(glwe.chunks_exact(qp_rns_poly_len))
-                {
-                    DcrtPolynomial(accumulator).add_mul_assign(
-                        &DcrtPolynomial(context.digit_qp.as_slice()),
-                        &DcrtPolynomial(key_polynomial),
-                        poly_length,
-                        hybrid_params.qp_base().moduli(),
-                    );
+                for mod_up_limb in mod_up_limbs {
+                    let modulus_index = mod_up_limb.qp_modulus_index();
+                    let mod_up_limb_buffer = &mut context.polynomial_scratch[..poly_length];
+                    mod_up_limb.write_to(mod_up_limb_buffer);
+                    table.ntt_tables()[modulus_index].transform_slice(mod_up_limb_buffer);
+
+                    let modulus = qp_moduli[modulus_index];
+                    QpGlweMut::new(&mut context.accumulator_qp, poly_length, qp_moduli_count)
+                        .modulus_limbs_mut(modulus_index)
+                        .zip(key_glwe.modulus_limbs(modulus_index))
+                        .for_each(|(accumulator_limb, key_limb)| {
+                            modulus.reduce_add_mul_slice_assign(
+                                accumulator_limb,
+                                mod_up_limb_buffer,
+                                key_limb,
+                            );
+                        });
                 }
             }
         }
@@ -445,7 +455,7 @@ impl<T: FheUint> HybridCrtGlweKeySwitchingKey<T> {
                 table,
                 accumulator,
                 poly_length,
-                &mut context.digit_qp[..q_rns_poly_len],
+                &mut context.polynomial_scratch,
                 &mut context.mod_down_scratch,
             );
         }
@@ -473,7 +483,7 @@ impl<T: FheUint> HybridCrtGlweKeySwitchingKey<T> {
         c_out.neg_assign(q_rns_poly_len, poly_length, moduli_q);
 
         // NTT input body and add (reuse context buffer)
-        let body_q = &mut context.digit_qp[..q_rns_poly_len];
+        let body_q = context.polynomial_scratch.as_mut_slice();
         body_q.copy_from_slice(b_in.as_slice());
         table.ntt_tables()[..q_count]
             .iter()
@@ -490,7 +500,7 @@ impl<T: FheUint> HybridCrtGlweKeySwitchingKey<T> {
 /// and reused across [`HybridCrtGlweKeySwitchingKey::key_switch_inplace`] calls.
 pub struct HybridCrtGlweKeySwitchingContext<T: FheUint> {
     accumulator_qp: Vec<T>,
-    digit_qp: Vec<T>,
+    polynomial_scratch: Vec<T>,
     mod_up_scratch: Vec<T>,
     mod_down_scratch: Vec<T>,
     poly_length: usize,
@@ -526,7 +536,7 @@ impl<T: FheUint> HybridCrtGlweKeySwitchingContext<T> {
 
         Self {
             accumulator_qp: vec![T::ZERO; (output_dimension + 1) * qp_poly_len],
-            digit_qp: vec![T::ZERO; qp_poly_len],
+            polynomial_scratch: vec![T::ZERO; q_moduli_count * poly_length],
             mod_up_scratch: vec![T::ZERO; hybrid_params.max_mod_up_scratch_len(poly_length)],
             mod_down_scratch: vec![T::ZERO; hybrid_params.mod_down_scratch_len(poly_length)],
             poly_length,

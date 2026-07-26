@@ -24,6 +24,8 @@ mod mod_down;
 mod mod_up;
 mod partition;
 
+pub use mod_up::HybridModUpLimb;
+
 use primus_integer::FheUint;
 use primus_reduce::FieldContext;
 
@@ -37,6 +39,7 @@ where
     M: FieldContext<T>,
 {
     q_range: Range<usize>,
+    q_moduli_count: usize,
     mod_up_converter: BaseConverter<T, M>,
 }
 

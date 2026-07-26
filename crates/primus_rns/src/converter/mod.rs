@@ -1,6 +1,7 @@
 mod exact;
 mod fast;
 pub use exact::ExactConversionContext;
+pub(crate) use fast::FastConversionLimb;
 
 use primus_integer::FheUint;
 use primus_modulo::Modulo;
