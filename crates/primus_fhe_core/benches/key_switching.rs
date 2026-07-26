@@ -24,7 +24,7 @@ fn bench_key_switching(c: &mut Criterion) {
     const Q_VALUES: [Value; 2] = [1_125_899_906_826_241, 1_125_899_906_629_633];
     const P_VALUES: [Value; 1] = [1_125_899_906_031_617];
     const DECOMPOSITION_BASE_LOG: u32 = 20;
-    const HYBRID_PARTITIONS: usize = 2;
+    const HYBRID_DECOMPOSITION_COUNT: usize = 2;
 
     let mod_t = BarrettModulus::new(PLAINTEXT_MODULUS);
     let mod_gamma = BarrettModulus::new(GAMMA);
@@ -50,7 +50,8 @@ fn bench_key_switching(c: &mut Criterion) {
             RingSecretKeyType::Ternary,
             3.20,
         );
-        let hybrid_params = HybridRNS::new(&q_moduli, &p_moduli, HYBRID_PARTITIONS).unwrap();
+        let hybrid_params =
+            HybridRNS::new(&q_moduli, &p_moduli, HYBRID_DECOMPOSITION_COUNT).unwrap();
 
         let input_sk = CrtGlweSecretKey::generate(&glwe_params, &mut rng);
         let input_dcrt_sk = DcrtGlweSecretKey::from_coeff_secret_key(&input_sk, &q_table);

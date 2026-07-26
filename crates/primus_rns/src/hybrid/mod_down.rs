@@ -9,6 +9,32 @@ where
     T: FheUint,
     M: FieldContext<T>,
 {
+    /// Approximately converts a coefficient-domain polynomial from `P` to
+    /// `Q` for ModDown.
+    ///
+    /// `polynomial_mod_p` must contain `p_moduli_count() * poly_length`
+    /// elements in modulus-major order. `polynomial_mod_q` must contain
+    /// `q_moduli_count() * poly_length` elements. `scratch.len()` must be at
+    /// least [`mod_down_scratch_len`](Self::mod_down_scratch_len). A
+    /// single-prime `P` ignores scratch.
+    pub fn approx_convert_p_to_q(
+        &self,
+        polynomial_mod_p: &[T],
+        polynomial_mod_q: &mut [T],
+        poly_length: usize,
+        scratch: &mut [T],
+    ) {
+        assert_eq!(polynomial_mod_p.len(), self.p_moduli_count() * poly_length);
+        assert_eq!(polynomial_mod_q.len(), self.q_moduli_count() * poly_length);
+
+        self.mod_down_converter.fast_convert_array(
+            polynomial_mod_p,
+            polynomial_mod_q,
+            poly_length,
+            scratch,
+        );
+    }
+
     /// Approximately divides a coefficient-domain `QP` polynomial by `P` and
     /// leaves the result in its `Q` limbs.
     ///
@@ -29,13 +55,8 @@ where
         assert_eq!(polynomial_mod_qp.len(), q_len + p_len);
         assert_eq!(converted_p_mod_q.len(), q_len);
 
-        let (polynomial_mod_q, input_mod_p) = polynomial_mod_qp.split_at_mut(q_len);
-        self.mod_down_converter.fast_convert_array(
-            input_mod_p,
-            converted_p_mod_q,
-            poly_length,
-            scratch,
-        );
+        let (polynomial_mod_q, polynomial_mod_p) = polynomial_mod_qp.split_at_mut(q_len);
+        self.approx_convert_p_to_q(polynomial_mod_p, converted_p_mod_q, poly_length, scratch);
 
         izip!(
             polynomial_mod_q.chunks_exact_mut(poly_length),

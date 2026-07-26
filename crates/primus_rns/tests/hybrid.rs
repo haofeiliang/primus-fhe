@@ -7,10 +7,14 @@ use primus_rns::{HybridRNS, RNSError};
 type ValueT = u64;
 type ModulusT = BarrettModulus<ValueT>;
 
-fn make_hybrid(q: &[ValueT], p: &[ValueT], partitions: usize) -> HybridRNS<ValueT, ModulusT> {
+fn make_hybrid(
+    q: &[ValueT],
+    p: &[ValueT],
+    decomposition_count: usize,
+) -> HybridRNS<ValueT, ModulusT> {
     let q_moduli: Vec<_> = q.iter().copied().map(ModulusT::new).collect();
     let p_moduli: Vec<_> = p.iter().copied().map(ModulusT::new).collect();
-    HybridRNS::new(&q_moduli, &p_moduli, partitions).unwrap()
+    HybridRNS::new(&q_moduli, &p_moduli, decomposition_count).unwrap()
 }
 
 #[test]
@@ -26,8 +30,9 @@ fn construction_partitions_q_and_precomputes_p() {
     assert_eq!(hybrid.q_moduli_count(), 5);
     assert_eq!(hybrid.p_moduli_count(), 2);
     assert_eq!(hybrid.qp_moduli_count(), 7);
+    assert_eq!(hybrid.decomposition_count(), 4);
+    assert_eq!(hybrid.partition_moduli_count(), 2);
     assert_eq!(hybrid.partition_count(), 3);
-    assert_eq!(hybrid.max_partition_moduli_count(), 2);
     assert_eq!(
         ranges,
         [Range::from(0..2), Range::from(2..4), Range::from(4..5)],
@@ -35,7 +40,7 @@ fn construction_partitions_q_and_precomputes_p() {
 
     assert!(matches!(
         HybridRNS::new(&[ModulusT::new(17)], &[ModulusT::new(41)], 0),
-        Err(RNSError::InvalidPartitionCount),
+        Err(RNSError::InvalidDecompositionCount),
     ));
     let p_product = p.into_iter().product::<u64>();
 
@@ -58,39 +63,28 @@ fn approximate_mod_up_writes_a_complete_qp_digit() {
         11, 12, 13, 14, // q_1
         21, 22, 23, 24, // q_2
     ];
+    let expected_digits: [[ValueT; 20]; 2] = [
+        [
+            1, 2, 3, 4, // q_0: copied
+            11, 12, 13, 14, // q_1: copied
+            19, 20, 21, 22, // q_2: converted
+            37, 38, 39, 40, // p_0: converted
+            70, 71, 72, 73, // p_1: converted
+        ],
+        [
+            4, 5, 6, 7, // q_0: converted
+            21, 22, 23, 24, // q_1: converted
+            21, 22, 23, 24, // q_2: copied
+            21, 22, 23, 24, // p_0: converted
+            21, 22, 23, 24, // p_1: converted
+        ],
+    ];
 
-    for partition in hybrid.partitions() {
-        let range = partition.q_range();
+    for (partition, expected_digit) in hybrid.partitions().zip(&expected_digits) {
         let mut digit_qp = vec![0; hybrid.qp_moduli_count() * poly_length];
         let mut scratch = vec![0; partition.mod_up_scratch_len(poly_length)];
         partition.approx_mod_up(&polynomial_q, &mut digit_qp, poly_length, &mut scratch);
-
-        assert_eq!(
-            &digit_qp[range.start * poly_length..range.end * poly_length],
-            &polynomial_q[range.start * poly_length..range.end * poly_length],
-        );
-
-        for coefficient in 0..poly_length {
-            let scalar_input: Vec<_> = range
-                .iter()
-                .map(|q_index| polynomial_q[q_index * poly_length + coefficient])
-                .collect();
-            let mut scalar_output = vec![0; partition.mod_up_converter().output_moduli_count()];
-            let mut scalar_scratch =
-                vec![0; partition.mod_up_converter().fast_convert_scratch_len()];
-            partition.mod_up_converter().fast_convert(
-                &scalar_input,
-                &mut scalar_output,
-                &mut scalar_scratch,
-            );
-
-            let scattered_output = digit_qp
-                .chunks_exact(poly_length)
-                .enumerate()
-                .filter(|(index, _)| !range.contains(index))
-                .map(|(_, limb)| limb[coefficient]);
-            assert!(scattered_output.eq(scalar_output));
-        }
+        assert_eq!(digit_qp, expected_digit);
     }
 }
 

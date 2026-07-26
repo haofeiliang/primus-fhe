@@ -54,7 +54,7 @@ fn fast_array_conversion_matches_scalar_conversion() {
 }
 
 #[test]
-fn single_input_conversion_uses_direct_reduction_semantics() {
+fn single_input_fast_and_exact_conversion_use_distinct_lifts() {
     let input_base = base(&[17]);
     let fast_output_base = base(&[13, 19]);
     let fast_converter = BaseConverter::new(&input_base, &fast_output_base);

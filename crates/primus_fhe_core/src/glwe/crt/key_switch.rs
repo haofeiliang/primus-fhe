@@ -17,6 +17,8 @@ use crate::{
     DcrtGlweSecretKey,
 };
 
+use super::hybrid_mod_down::approx_mod_down_ntt;
+
 pub struct CrtGlweKeySwitchingKey<T: FheUint> {
     key: Vec<T>,
     poly_length: usize,
@@ -190,9 +192,9 @@ pub struct HybridCrtGlweKeySwitchingKey<T: FheUint> {
     qp_rns_poly_len: usize,
     /// GLWE length (mask + body) in QP basis
     qp_rns_glwe_len: usize,
-    /// Total KSK entry length: `num_partitions * qp_rns_glwe_len`
-    qp_rns_glev_len: usize,
-    num_partitions: usize,
+    /// Total KSK entry length: `partition_count * qp_rns_glwe_len`
+    qp_rns_gadget_len: usize,
+    partition_count: usize,
     input_rns_glwe_mid: usize,
     output_qp_rns_glwe_mid: usize,
 }
@@ -245,7 +247,7 @@ impl<T: FheUint> HybridCrtGlweKeySwitchingKey<T> {
             .map(|m| unsafe { m.value_unchecked() })
             .collect();
         let p_mod_q = hybrid_params.p_mod_q();
-        let num_partitions = hybrid_params.partition_count();
+        let partition_count = hybrid_params.partition_count();
         let input_dim = input_sk.key.len() / input_sk.rns_poly_len;
         let output_dim = output_sk.key.len() / output_sk.rns_poly_len;
 
@@ -269,13 +271,13 @@ impl<T: FheUint> HybridCrtGlweKeySwitchingKey<T> {
         // QP-basis GLWE len = (output_dim + 1) * poly_length * qp_count
         let qp_rns_poly_len = poly_length * qp_count;
         let qp_rns_glwe_len = (output_dim + 1) * qp_rns_poly_len;
-        let qp_rns_glev_len = num_partitions * qp_rns_glwe_len;
+        let qp_rns_gadget_len = partition_count * qp_rns_glwe_len;
 
-        let mut key = vec![T::ZERO; input_dim * qp_rns_glev_len];
+        let mut key = vec![T::ZERO; input_dim * qp_rns_gadget_len];
 
         for (s_u, key_for_secret) in input_sk
             .iter_crt_poly()
-            .zip(key.chunks_exact_mut(qp_rns_glev_len))
+            .zip(key.chunks_exact_mut(qp_rns_gadget_len))
         {
             for (partition, glwe) in hybrid_params
                 .partitions()
@@ -300,7 +302,7 @@ impl<T: FheUint> HybridCrtGlweKeySwitchingKey<T> {
                 for (((s_u_q, b_q), modulus), &scalar) in s_u.as_slice()[partition_elements.clone()]
                     .chunks_exact(poly_length)
                     .zip(b_region[partition_elements].chunks_exact_mut(poly_length))
-                    .zip(&qp_moduli[partition_range.clone()])
+                    .zip(&qp_moduli[partition_range])
                     .zip(&p_mod_q[partition_range])
                 {
                     for (bv, &sv) in b_q.iter_mut().zip(s_u_q.iter()) {
@@ -337,8 +339,8 @@ impl<T: FheUint> HybridCrtGlweKeySwitchingKey<T> {
             poly_length,
             qp_rns_poly_len,
             qp_rns_glwe_len,
-            qp_rns_glev_len,
-            num_partitions,
+            qp_rns_gadget_len,
+            partition_count,
             input_rns_glwe_mid,
             output_qp_rns_glwe_mid,
         }
@@ -351,7 +353,7 @@ impl<T: FheUint> HybridCrtGlweKeySwitchingKey<T> {
 
     /// Returns the number of partitions (gadget levels).
     pub fn partition_count(&self) -> usize {
-        self.num_partitions
+        self.partition_count
     }
 
     /// Hybrid RNS key switching.
@@ -381,11 +383,19 @@ impl<T: FheUint> HybridCrtGlweKeySwitchingKey<T> {
 
         assert_eq!(table.poly_length(), poly_length);
         assert_eq!(table.moduli_count(), hybrid_params.qp_moduli_count());
+        assert!(
+            table
+                .ntt_tables()
+                .iter()
+                .zip(hybrid_params.qp_base().moduli())
+                .all(|(ntt_table, modulus)| ntt_table.modulus()
+                    == unsafe { modulus.value_unchecked() })
+        );
         assert_eq!(
             qp_rns_poly_len,
             poly_length * hybrid_params.qp_moduli_count()
         );
-        assert_eq!(self.num_partitions, hybrid_params.partition_count());
+        assert_eq!(self.partition_count, hybrid_params.partition_count());
         assert_eq!(context.output_dimension, output_dim);
         assert_eq!(context.poly_length, poly_length);
         assert_eq!(context.q_moduli_count, q_count);
@@ -393,12 +403,12 @@ impl<T: FheUint> HybridCrtGlweKeySwitchingKey<T> {
 
         // Split input into mask and body (coefficient domain, Q basis)
         let (a_in, b_in) = c_in.a_b(self.input_rns_glwe_mid);
-        assert_eq!(a_in.len(), self.key.len() / self.qp_rns_glev_len);
+        assert_eq!(a_in.len(), self.key.len() / self.qp_rns_gadget_len);
 
         context.accumulator_qp.fill(T::ZERO);
 
         // --- Phase 1: ModUp + QP MAC ---
-        for (a_u, key_for_secret) in a_in.zip(self.key.chunks_exact(self.qp_rns_glev_len)) {
+        for (a_u, key_for_secret) in a_in.zip(self.key.chunks_exact(self.qp_rns_gadget_len)) {
             for (partition, glwe) in hybrid_params
                 .partitions()
                 .zip(key_for_secret.chunks_exact(self.qp_rns_glwe_len))
@@ -430,17 +440,14 @@ impl<T: FheUint> HybridCrtGlweKeySwitchingKey<T> {
         // --- Phase 2: ModDown QP → Q ---
         let moduli_q = hybrid_params.q_base().moduli();
         for accumulator in context.accumulator_qp.chunks_exact_mut(qp_rns_poly_len) {
-            table.inverse_transform_slice(accumulator);
-            hybrid_params.approx_mod_down(
+            approx_mod_down_ntt(
+                hybrid_params,
+                table,
                 accumulator,
                 poly_length,
                 &mut context.digit_qp[..q_rns_poly_len],
                 &mut context.mod_down_scratch,
             );
-            table.ntt_tables()[..q_count]
-                .iter()
-                .zip(accumulator[..q_rns_poly_len].chunks_exact_mut(poly_length))
-                .for_each(|(ntt_table, q_limb)| ntt_table.transform_slice(q_limb));
         }
 
         // --- Phase 3: Finalize output ---
@@ -502,7 +509,7 @@ impl<T: FheUint> HybridCrtGlweKeySwitchingContext<T> {
         M: FieldContext<T>,
     {
         assert_eq!(
-            key_switching_key.num_partitions,
+            key_switching_key.partition_count,
             hybrid_params.partition_count()
         );
         assert_eq!(

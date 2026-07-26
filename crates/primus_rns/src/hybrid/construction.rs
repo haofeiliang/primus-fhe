@@ -12,29 +12,31 @@ where
 {
     /// Creates hybrid RNS precomputations for bases `Q` and `P`.
     ///
-    /// `requested_partitions` is an upper bound. The actual number can be
-    /// smaller because all partitions are non-empty and have the same maximum
-    /// size, matching OpenFHE's `alpha`/`beta` partitioning rule.
+    /// `decomposition_count` (`dnum`) is the requested number of digits and an
+    /// upper bound on the actual number of non-empty partitions. Each
+    /// partition contains at most `partition_moduli_count` (`alpha`) moduli;
+    /// the actual `partition_count` (`beta`) can be smaller than `dnum`.
     pub fn new(
         q_moduli: &[M],
         p_moduli: &[M],
-        requested_partitions: usize,
+        decomposition_count: usize,
     ) -> Result<Self, RNSError> {
-        if requested_partitions == 0 {
-            return Err(RNSError::InvalidPartitionCount);
+        if decomposition_count == 0 {
+            return Err(RNSError::InvalidDecompositionCount);
         }
 
         let q_base = RNSBase::new(q_moduli)?;
         let p_base = RNSBase::new(p_moduli)?;
         let qp_base = q_base.extend_with(&p_base)?;
 
-        let partition_size = q_moduli
+        let partition_moduli_count = q_moduli
             .len()
-            .div_ceil(requested_partitions.min(q_moduli.len()));
-        let mut partitions = Vec::with_capacity(q_moduli.len().div_ceil(partition_size));
+            .div_ceil(decomposition_count.min(q_moduli.len()));
+        let partition_count = q_moduli.len().div_ceil(partition_moduli_count);
+        let mut partitions = Vec::with_capacity(partition_count);
 
-        for (partition_index, partition_moduli) in q_moduli.chunks(partition_size).enumerate() {
-            let start = partition_index * partition_size;
+        let mut start = 0;
+        for partition_moduli in q_moduli.chunks(partition_moduli_count) {
             let end = start + partition_moduli.len();
             let partition_base = RNSBase::from_owned_moduli(partition_moduli.to_vec())?;
             let complement_moduli = q_moduli[..start]
@@ -49,7 +51,10 @@ where
                 q_range: (start..end).into(),
                 mod_up_converter: BaseConverter::from_owned_bases(partition_base, complement_base),
             });
+            start = end;
         }
+
+        debug_assert_eq!(partitions.len(), partition_count);
 
         let BigUint(p) = p_base.moduli_product();
         let mut p_mod_q = Vec::with_capacity(q_moduli.len());
@@ -66,6 +71,8 @@ where
             q_base,
             p_base,
             qp_base,
+            decomposition_count,
+            partition_moduli_count,
             partitions,
             p_mod_q,
             inv_p_mod_q,

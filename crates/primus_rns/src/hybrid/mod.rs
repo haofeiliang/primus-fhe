@@ -4,6 +4,10 @@
 //! partitions. Each [`HybridRNSPartition`] owns the precomputation for the
 //! approximate basis extension from that partition to its complement and the
 //! auxiliary basis `P`. The resulting digits live in the combined `QP` basis.
+//! `decomposition_count` (`dnum`) is the requested digit count,
+//! `partition_moduli_count` (`alpha`) is the maximum number of `Q` moduli in a
+//! digit, and `partition_count` (`beta`) is the actual number of non-empty
+//! digits.
 //!
 //! The polynomial APIs use modulus-major storage and caller-owned scratch
 //! buffers. They do not allocate in the online key-switching path.
@@ -17,6 +21,7 @@ use core::range::Range;
 
 mod construction;
 mod mod_down;
+mod mod_up;
 mod partition;
 
 use primus_integer::FheUint;
@@ -45,6 +50,8 @@ where
     q_base: RNSBase<T, M>,
     p_base: RNSBase<T, M>,
     qp_base: RNSBase<T, M>,
+    decomposition_count: usize,
+    partition_moduli_count: usize,
     partitions: Vec<HybridRNSPartition<T, M>>,
     p_mod_q: Vec<T>,
     inv_p_mod_q: Vec<T>,
@@ -92,6 +99,22 @@ where
         self.qp_base.moduli_count()
     }
 
+    /// Returns the requested number of decomposition digits (`dnum`).
+    ///
+    /// This is an upper bound; [`partition_count`](Self::partition_count) can
+    /// be smaller because every partition is non-empty and all but the last
+    /// have the same size.
+    #[inline]
+    pub fn decomposition_count(&self) -> usize {
+        self.decomposition_count
+    }
+
+    /// Returns the maximum number of `Q` moduli per partition (`alpha`).
+    #[inline]
+    pub fn partition_moduli_count(&self) -> usize {
+        self.partition_moduli_count
+    }
+
     /// Iterates over the non-empty `Q` partitions in basis order.
     #[inline]
     pub fn partitions(&self) -> impl ExactSizeIterator<Item = &HybridRNSPartition<T, M>> {
@@ -102,14 +125,6 @@ where
     #[inline]
     pub fn partition_count(&self) -> usize {
         self.partitions.len()
-    }
-
-    /// Returns the largest partition size.
-    #[inline]
-    pub fn max_partition_moduli_count(&self) -> usize {
-        self.partitions
-            .first()
-            .map_or(0, HybridRNSPartition::moduli_count)
     }
 
     /// Returns the largest minimum ModUp scratch length among all partitions.
@@ -145,11 +160,5 @@ where
     #[inline]
     pub fn inv_p_mod_q(&self) -> &[T] {
         &self.inv_p_mod_q
-    }
-
-    /// Returns the approximate base converter from `P` to `Q`.
-    #[inline]
-    pub fn mod_down_converter(&self) -> &BaseConverter<T, M> {
-        &self.mod_down_converter
     }
 }

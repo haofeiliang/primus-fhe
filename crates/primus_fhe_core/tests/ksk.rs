@@ -144,8 +144,9 @@ fn test_rns_glwe_ksk_hybrid() {
     );
 
     // ── Hybrid RNS parameters ───────────────────────────────────
-    let num_part_q = 2;
-    let hybrid_params = primus_rns::HybridRNS::new(&q_moduli, &p_moduli, num_part_q).unwrap();
+    let decomposition_count = 2;
+    let hybrid_params =
+        primus_rns::HybridRNS::new(&q_moduli, &p_moduli, decomposition_count).unwrap();
 
     // ── Two independent secret keys ─────────────────────────────
     let sk_1 = CrtGlweSecretKey::generate(&glwe_params, &mut rng);

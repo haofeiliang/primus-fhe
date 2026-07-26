@@ -2,6 +2,7 @@
 
 mod automorphism;
 mod expand_coeff;
+mod hybrid_mod_down;
 mod key_switch;
 mod trace;
 
