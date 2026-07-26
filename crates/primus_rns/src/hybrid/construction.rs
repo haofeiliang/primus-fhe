@@ -46,7 +46,7 @@ where
             let complement_base = RNSBase::from_owned_moduli(complement_moduli)?;
 
             partitions.push(HybridRNSPartition {
-                q_range: start..end,
+                q_range: (start..end).into(),
                 mod_up_converter: BaseConverter::from_owned_bases(partition_base, complement_base),
             });
         }

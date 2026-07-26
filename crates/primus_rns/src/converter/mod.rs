@@ -8,11 +8,24 @@ use primus_reduce::FieldContext;
 
 use crate::RNSBase;
 
+/// Precomputation selected from the source-base shape.
+///
+/// For a one-modulus source base, both the inverse punctured product and every
+/// base-change matrix entry are one. Storing the general matrix in that case
+/// would only allocate a vector of ones and route conversion through
+/// one-element dot products.
+#[derive(Clone)]
+enum BaseConversionKernel<T> {
+    SingleInput,
+    General { base_change_matrix: Vec<T> },
+}
+
 /// Precomputed converter between two RNS bases.
 ///
-/// The converter owns cloned input and output bases and stores the matrix
-/// `(Q / q_i) mod p_j`, where `q_i` are input-base moduli, `p_j` are output-base
-/// moduli, and `Q` is the input-base product.
+/// The converter owns cloned input and output bases. A multi-modulus source
+/// stores the matrix `(Q / q_i) mod p_j`, where `q_i` are input-base moduli,
+/// `p_j` are output-base moduli, and `Q` is the input-base product. A
+/// one-modulus source uses a direct-reduction kernel and stores no matrix.
 ///
 /// Batched conversion APIs take input and output residue arrays in modulus-major
 /// layout. Their scratch buffer uses a different coefficient-major layout:
@@ -24,11 +37,7 @@ pub struct BaseConverter<T: FheUint, M: FieldContext<T>> {
     input_base: RNSBase<T, M>,
     /// Destination basis for converted residues.
     output_base: RNSBase<T, M>,
-    /// Row-major output-by-input base-change matrix.
-    ///
-    /// The slice length is `input_moduli_count() * output_moduli_count()`.
-    /// Row `j` contains coefficients for output modulus `output_base.moduli()[j]`.
-    base_change_matrix: Vec<T>,
+    kernel: BaseConversionKernel<T>,
 }
 
 impl<T: FheUint, M: FieldContext<T>> BaseConverter<T, M> {
@@ -58,23 +67,29 @@ impl<T: FheUint, M: FieldContext<T>> BaseConverter<T, M> {
             "the len can not be too large!"
         );
 
-        let mut base_change_matrix = vec![T::ZERO; input_moduli_count * output_moduli_count];
+        let kernel = if input_moduli_count == 1 {
+            BaseConversionKernel::SingleInput
+        } else {
+            let mut base_change_matrix = vec![T::ZERO; input_moduli_count * output_moduli_count];
 
-        for (row, &pj) in base_change_matrix
-            .chunks_exact_mut(input_moduli_count)
-            .zip(output_base.moduli())
-        {
-            for (q_div_qi_mod_pj, q_div_qi) in
-                row.iter_mut().zip(input_base.iter_punctured_product())
+            for (row, &pj) in base_change_matrix
+                .chunks_exact_mut(input_moduli_count)
+                .zip(output_base.moduli())
             {
-                *q_div_qi_mod_pj = q_div_qi.modulo(pj);
+                for (q_div_qi_mod_pj, q_div_qi) in
+                    row.iter_mut().zip(input_base.iter_punctured_product())
+                {
+                    *q_div_qi_mod_pj = q_div_qi.modulo(pj);
+                }
             }
-        }
+
+            BaseConversionKernel::General { base_change_matrix }
+        };
 
         Self {
             input_base,
             output_base,
-            base_change_matrix,
+            kernel,
         }
     }
 
@@ -102,8 +117,22 @@ impl<T: FheUint, M: FieldContext<T>> BaseConverter<T, M> {
     ///
     /// The iterator yields `output_moduli_count()` rows. Each row has
     /// `input_moduli_count()` entries and corresponds to one output modulus.
+    ///
+    /// # Panics
+    ///
+    /// Panics when called for the single-input kernel, which has no matrix.
     fn iter_base_change_matrix(&self) -> std::slice::ChunksExact<'_, T> {
-        self.base_change_matrix
-            .chunks_exact(self.input_moduli_count())
+        let base_change_matrix = match &self.kernel {
+            BaseConversionKernel::SingleInput => {
+                panic!("single-input base conversion has no base-change matrix")
+            }
+            BaseConversionKernel::General { base_change_matrix } => base_change_matrix,
+        };
+        base_change_matrix.chunks_exact(self.input_moduli_count())
+    }
+
+    #[inline]
+    fn uses_single_input_kernel(&self) -> bool {
+        matches!(&self.kernel, BaseConversionKernel::SingleInput)
     }
 }

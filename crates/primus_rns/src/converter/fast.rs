@@ -1,4 +1,4 @@
-use itertools::izip;
+use itertools::{Either, izip};
 use primus_factor::FactorMul;
 use primus_integer::FheUint;
 use primus_reduce::FieldContext;
@@ -6,6 +6,30 @@ use primus_reduce::FieldContext;
 use super::BaseConverter;
 
 impl<T: FheUint, M: FieldContext<T>> BaseConverter<T, M> {
+    /// Returns the minimum scratch length required by
+    /// [`fast_convert`](Self::fast_convert).
+    #[inline]
+    pub fn fast_convert_scratch_len(&self) -> usize {
+        if self.uses_single_input_kernel() {
+            0
+        } else {
+            self.input_moduli_count()
+        }
+    }
+
+    /// Returns the minimum scratch length required by the batched
+    /// fast-conversion APIs.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the required length overflows `usize`.
+    #[inline]
+    pub fn fast_convert_array_scratch_len(&self, poly_length: usize) -> usize {
+        self.fast_convert_scratch_len()
+            .checked_mul(poly_length)
+            .expect("fast conversion scratch length overflow")
+    }
+
     /// Converts one residue vector from the input basis to the output basis.
     ///
     /// `residues_in.len()` must equal `input_moduli_count()`. Element `i` is
@@ -14,21 +38,35 @@ impl<T: FheUint, M: FieldContext<T>> BaseConverter<T, M> {
     /// `residues_out.len()` must equal `output_moduli_count()`. Element `j`
     /// receives the converted residue modulo `output_base().moduli()[j]`.
     ///
-    /// `scratch.len()` must equal `input_moduli_count()`. It stores the
-    /// adjusted input residues and is overwritten by the conversion.
+    /// `scratch.len()` must be at least
+    /// [`fast_convert_scratch_len`](Self::fast_convert_scratch_len). The
+    /// general conversion kernel overwrites only the required prefix with the
+    /// adjusted input residues. A single-modulus input basis ignores scratch.
     pub fn fast_convert(&self, residues_in: &[T], residues_out: &mut [T], scratch: &mut [T]) {
         debug_assert_eq!(residues_in.len(), self.input_moduli_count());
-        debug_assert_eq!(scratch.len(), self.input_moduli_count());
         debug_assert_eq!(residues_out.len(), self.output_moduli_count());
+
+        if self.uses_single_input_kernel() {
+            let ai = residues_in[0];
+            residues_out
+                .iter_mut()
+                .zip(self.output_base.moduli())
+                .for_each(|(result, modulus)| *result = modulus.reduce(ai));
+            return;
+        }
+
+        let required_scratch_len = self.fast_convert_scratch_len();
+        assert!(scratch.len() >= required_scratch_len);
+        let scratch = &mut scratch[..required_scratch_len];
 
         izip!(
             residues_in,
             self.input_base.inv_punctured_product_mod_modulus(),
-            self.input_base.moduli(),
+            self.input_base.moduli_values(),
             scratch.iter_mut()
         )
         .for_each(|(&ai, &inv_q_div_qi_mod_qi, qi, result)| {
-            *result = inv_q_div_qi_mod_qi.factor_mul_modulo(ai, unsafe { qi.value_unchecked() });
+            *result = inv_q_div_qi_mod_qi.factor_mul_modulo(ai, qi);
         });
 
         let ai_mul_inv_q_div_qi_mod_qi = &*scratch;
@@ -56,6 +94,7 @@ impl<T: FheUint, M: FieldContext<T>> BaseConverter<T, M> {
         scratch: &mut [T],
     ) {
         let input_moduli_count = self.input_moduli_count();
+        debug_assert!(!self.uses_single_input_kernel());
         debug_assert_eq!(crt_poly_in.len(), input_moduli_count * poly_length);
         debug_assert_eq!(scratch.len(), input_moduli_count * poly_length);
 
@@ -96,9 +135,10 @@ impl<T: FheUint, M: FieldContext<T>> BaseConverter<T, M> {
     /// `crt_poly_out.len()` must equal `output_moduli_count() * poly_length`
     /// and is written in the same modulus-major layout for the output basis.
     ///
-    /// `scratch.len()` must equal `input_moduli_count() * poly_length`. It is
-    /// overwritten in coefficient-major layout before the output chunks are
-    /// computed.
+    /// `scratch.len()` must be at least
+    /// [`fast_convert_array_scratch_len`](Self::fast_convert_array_scratch_len).
+    /// The general conversion kernel overwrites only the required prefix in
+    /// coefficient-major layout. A single-modulus input basis ignores scratch.
     pub fn fast_convert_array(
         &self,
         crt_poly_in: &[T],
@@ -107,12 +147,33 @@ impl<T: FheUint, M: FieldContext<T>> BaseConverter<T, M> {
         scratch: &mut [T],
     ) {
         let input_moduli_count = self.input_moduli_count();
+        let expected_input_len = input_moduli_count
+            .checked_mul(poly_length)
+            .expect("RNS input length overflow");
         let expected_out_len = self
             .output_moduli_count()
             .checked_mul(poly_length)
             .expect("RNS output length overflow");
 
+        assert_eq!(crt_poly_in.len(), expected_input_len);
         assert_eq!(crt_poly_out.len(), expected_out_len);
+        if self.uses_single_input_kernel() {
+            crt_poly_out
+                .chunks_exact_mut(poly_length)
+                .zip(self.output_base.moduli())
+                .for_each(|(poly_out, modulus)| {
+                    poly_out
+                        .iter_mut()
+                        .zip(crt_poly_in)
+                        .for_each(|(result, &ai)| *result = modulus.reduce(ai));
+                });
+            return;
+        }
+
+        let required_scratch_len = self.fast_convert_array_scratch_len(poly_length);
+        assert!(scratch.len() >= required_scratch_len);
+        let scratch = &mut scratch[..required_scratch_len];
+
         self.fill_fast_convert_array_scratch(crt_poly_in, poly_length, scratch);
 
         izip!(
@@ -147,6 +208,30 @@ impl<T: FheUint, M: FieldContext<T>> BaseConverter<T, M> {
         let (minimum_outputs, maximum_outputs) = crt_poly_out.size_hint();
         assert_eq!(maximum_outputs, Some(minimum_outputs));
         assert_eq!(minimum_outputs, self.output_moduli_count());
+        assert_eq!(
+            crt_poly_in.len(),
+            self.input_moduli_count()
+                .checked_mul(poly_length)
+                .expect("RNS input length overflow")
+        );
+        if self.uses_single_input_kernel() {
+            crt_poly_out
+                .by_ref()
+                .zip(self.output_base.moduli())
+                .for_each(|(poly_out, modulus)| {
+                    assert_eq!(poly_out.len(), poly_length);
+                    poly_out
+                        .iter_mut()
+                        .zip(crt_poly_in)
+                        .for_each(|(result, &ai)| *result = modulus.reduce(ai));
+                });
+            return;
+        }
+
+        let required_scratch_len = self.fast_convert_array_scratch_len(poly_length);
+        assert!(scratch.len() >= required_scratch_len);
+        let scratch = &mut scratch[..required_scratch_len];
+
         self.fill_fast_convert_array_scratch(crt_poly_in, poly_length, scratch);
 
         izip!(
@@ -171,15 +256,17 @@ impl<T: FheUint, M: FieldContext<T>> BaseConverter<T, M> {
     /// must equal `input_moduli_count() * poly_length` and uses modulus-major
     /// layout.
     ///
-    /// `scratch.len()` must equal `input_moduli_count() * poly_length`. It is
-    /// overwritten in coefficient-major layout and is borrowed by the returned
-    /// iterator.
+    /// `scratch.len()` must be at least
+    /// [`fast_convert_array_scratch_len`](Self::fast_convert_array_scratch_len).
+    /// A general conversion overwrites and borrows only the required prefix in
+    /// coefficient-major layout. A single-input conversion borrows the input
+    /// directly and ignores scratch.
     ///
     /// The iterator yields exactly `poly_length` items, one `(mod p_0, mod p_1)`
     /// pair per coefficient.
     pub fn fast_convert_array_to_pair_iter<'a>(
         &'a self,
-        crt_poly_in: &[T],
+        crt_poly_in: &'a [T],
         poly_length: usize,
         scratch: &'a mut [T],
     ) -> impl Iterator<Item = (T, T)> + 'a {
@@ -190,25 +277,32 @@ impl<T: FheUint, M: FieldContext<T>> BaseConverter<T, M> {
         );
 
         let input_moduli_count = self.input_moduli_count();
-        self.fill_fast_convert_array_scratch(crt_poly_in, poly_length, scratch);
-
-        let mut q_div_qi_mod_pj_rows = self.iter_base_change_matrix();
-        let q_div_qi_mod_p0 = q_div_qi_mod_pj_rows
-            .next()
-            .expect("missing first output-base row");
-        let q_div_qi_mod_p1 = q_div_qi_mod_pj_rows
-            .next()
-            .expect("missing second output-base row");
+        assert_eq!(crt_poly_in.len(), input_moduli_count * poly_length);
         let p0 = self.output_base.moduli()[0];
         let p1 = self.output_base.moduli()[1];
+        if self.uses_single_input_kernel() {
+            Either::Left(
+                crt_poly_in
+                    .iter()
+                    .map(move |&ai| (p0.reduce(ai), p1.reduce(ai))),
+            )
+        } else {
+            let required_scratch_len = self.fast_convert_array_scratch_len(poly_length);
+            assert!(scratch.len() >= required_scratch_len);
+            let scratch = &mut scratch[..required_scratch_len];
+            self.fill_fast_convert_array_scratch(crt_poly_in, poly_length, scratch);
+            let mut rows = self.iter_base_change_matrix();
+            let q_div_qi_mod_p0 = rows.next().expect("missing first output-base row");
+            let q_div_qi_mod_p1 = rows.next().expect("missing second output-base row");
 
-        scratch
-            .chunks_exact(input_moduli_count)
-            .map(move |ai_mul_inv_q_div_qi_mod_qi| {
-                (
-                    p0.reduce_dot_product(ai_mul_inv_q_div_qi_mod_qi, q_div_qi_mod_p0),
-                    p1.reduce_dot_product(ai_mul_inv_q_div_qi_mod_qi, q_div_qi_mod_p1),
-                )
-            })
+            Either::Right(scratch.chunks_exact(input_moduli_count).map(
+                move |ai_mul_inv_q_div_qi_mod_qi| {
+                    (
+                        p0.reduce_dot_product(ai_mul_inv_q_div_qi_mod_qi, q_div_qi_mod_p0),
+                        p1.reduce_dot_product(ai_mul_inv_q_div_qi_mod_qi, q_div_qi_mod_p1),
+                    )
+                },
+            ))
+        }
     }
 }

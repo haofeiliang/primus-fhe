@@ -1,3 +1,5 @@
+use core::range::Range;
+
 use primus_modulo::prelude::*;
 use primus_modulus::BarrettModulus;
 use primus_rns::{HybridRNS, RNSError};
@@ -26,7 +28,10 @@ fn construction_partitions_q_and_precomputes_p() {
     assert_eq!(hybrid.qp_moduli_count(), 7);
     assert_eq!(hybrid.partition_count(), 3);
     assert_eq!(hybrid.max_partition_moduli_count(), 2);
-    assert_eq!(ranges, [0..2, 2..4, 4..5]);
+    assert_eq!(
+        ranges,
+        [Range::from(0..2), Range::from(2..4), Range::from(4..5)],
+    );
 
     assert!(matches!(
         HybridRNS::new(&[ModulusT::new(17)], &[ModulusT::new(41)], 0),
@@ -57,7 +62,7 @@ fn approximate_mod_up_writes_a_complete_qp_digit() {
     for partition in hybrid.partitions() {
         let range = partition.q_range();
         let mut digit_qp = vec![0; hybrid.qp_moduli_count() * poly_length];
-        let mut scratch = vec![0; partition.moduli_count() * poly_length];
+        let mut scratch = vec![0; partition.mod_up_scratch_len(poly_length)];
         partition.approx_mod_up(&polynomial_q, &mut digit_qp, poly_length, &mut scratch);
 
         assert_eq!(
@@ -67,11 +72,12 @@ fn approximate_mod_up_writes_a_complete_qp_digit() {
 
         for coefficient in 0..poly_length {
             let scalar_input: Vec<_> = range
-                .clone()
+                .iter()
                 .map(|q_index| polynomial_q[q_index * poly_length + coefficient])
                 .collect();
             let mut scalar_output = vec![0; partition.mod_up_converter().output_moduli_count()];
-            let mut scalar_scratch = vec![0; partition.moduli_count()];
+            let mut scalar_scratch =
+                vec![0; partition.mod_up_converter().fast_convert_scratch_len()];
             partition.mod_up_converter().fast_convert(
                 &scalar_input,
                 &mut scalar_output,
@@ -107,7 +113,7 @@ fn polynomial_mod_down_matches_scalar_conversion_with_multiple_p_moduli() {
 
     let original = polynomial_qp.clone();
     let mut converted_p = vec![0; hybrid.q_moduli_count() * poly_length];
-    let mut scratch = vec![0; hybrid.p_moduli_count() * poly_length];
+    let mut scratch = vec![0; hybrid.mod_down_scratch_len(poly_length)];
     hybrid.approx_mod_down(
         &mut polynomial_qp,
         poly_length,
@@ -120,15 +126,15 @@ fn polynomial_mod_down_matches_scalar_conversion_with_multiple_p_moduli() {
             .chunks_exact(poly_length)
             .map(|limb| limb[coefficient])
             .collect();
-        let mut residues_q = vec![0; hybrid.q_moduli_count()];
-        let mut scalar_scratch = vec![0; hybrid.p_moduli_count()];
-        hybrid.approx_mod_down_scalar(&residues_qp, &mut residues_q, &mut scalar_scratch);
+        let mut output_q = vec![0; hybrid.q_moduli_count()];
+        let mut scalar_scratch = vec![0; hybrid.mod_down_scalar_scratch_len()];
+        hybrid.approx_mod_down_scalar(&residues_qp, &mut output_q, &mut scalar_scratch);
 
         assert!(
             polynomial_qp[..hybrid.q_moduli_count() * poly_length]
                 .chunks_exact(poly_length)
                 .map(|limb| limb[coefficient])
-                .eq(residues_q),
+                .eq(output_q),
         );
     }
 }

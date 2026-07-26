@@ -304,8 +304,15 @@ where
 
         msg_mod_q.mul_factor_assign(&self.t_gamma_factor_mod_q, poly_length, &self.moduli_values);
 
+        let conversion_scratch_len = self
+            .converter_q_to_t_gamma
+            .fast_convert_array_scratch_len(poly_length);
         self.converter_q_to_t_gamma
-            .fast_convert_array_to_pair_iter(msg_mod_q.as_ref(), poly_length, fast_convert_buffer)
+            .fast_convert_array_to_pair_iter(
+                msg_mod_q.as_ref(),
+                poly_length,
+                &mut fast_convert_buffer[..conversion_scratch_len],
+            )
             .zip(msg.iter_mut())
             .for_each(|((y_t, y_gamma), m)| {
                 let y_t = t_modulus.reduce_mul(y_t, minus_inv_q_mod_t);

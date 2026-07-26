@@ -13,7 +13,7 @@
 //! - OpenFHE `KeySwitchHYBRID` and `DCRTPoly::ApproxModDown`
 //! - SEAL `BaseConverter`
 
-use core::ops::Range;
+use core::range::Range;
 
 mod construction;
 mod mod_down;
@@ -110,6 +110,29 @@ where
         self.partitions
             .first()
             .map_or(0, HybridRNSPartition::moduli_count)
+    }
+
+    /// Returns the largest minimum ModUp scratch length among all partitions.
+    #[inline]
+    pub fn max_mod_up_scratch_len(&self, poly_length: usize) -> usize {
+        self.partitions
+            .iter()
+            .map(|partition| partition.mod_up_scratch_len(poly_length))
+            .max()
+            .unwrap_or(0)
+    }
+
+    /// Returns the minimum scratch length required by polynomial ModDown.
+    #[inline]
+    pub fn mod_down_scratch_len(&self, poly_length: usize) -> usize {
+        self.mod_down_converter
+            .fast_convert_array_scratch_len(poly_length)
+    }
+
+    /// Returns the minimum scratch length required by scalar ModDown.
+    #[inline]
+    pub fn mod_down_scalar_scratch_len(&self) -> usize {
+        self.mod_down_converter.fast_convert_scratch_len()
     }
 
     /// Returns `P mod q_i` in `Q`-basis order.

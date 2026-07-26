@@ -8,9 +8,10 @@ use super::BaseConverter;
 
 /// Reusable scratch space for exact batched RNS base conversion.
 ///
-/// A context is tied to an input modulus count and polynomial length. Reusing
-/// it across conversions with the same dimensions avoids allocations in
-/// [`BaseConverter::exact_convert_array`].
+/// For a multi-modulus input, a context is tied to an input modulus count and
+/// polynomial length. Reusing it across conversions with the same dimensions
+/// avoids allocations in [`BaseConverter::exact_convert_array`]. A
+/// single-modulus input uses direct centered reduction and ignores the context.
 pub struct ExactConversionContext<T: FheUint> {
     adjusted_residues: Vec<T>,
     correction_terms: Vec<f64>,
@@ -49,8 +50,9 @@ impl<T: FheUint, M: FieldContext<T>> BaseConverter<T, M> {
     /// representative in `[-Q/2, Q/2)`, where `Q` is the input-base product.
     /// `crt_poly_out.len()` must equal `poly_length`; it receives that centered
     /// representative reduced modulo the single output modulus.
-    /// `context` must be constructed for `input_moduli_count()` and the same
-    /// `poly_length`.
+    /// For a multi-modulus input, `context` must be constructed for
+    /// `input_moduli_count()` and the same `poly_length`. A single-modulus
+    /// input ignores `context`.
     ///
     /// This uses the floating-point correction term common in centered exact
     /// RNS base conversion. Input coefficients must be canonical residues in
@@ -68,14 +70,35 @@ impl<T: FheUint, M: FieldContext<T>> BaseConverter<T, M> {
             .expect("exact conversion input length overflow");
         assert_eq!(crt_poly_in.len(), expected_input_len);
         assert_eq!(crt_poly_out.len(), poly_length);
-        assert_eq!(context.input_moduli_count, input_moduli_count);
-        assert_eq!(context.poly_length, poly_length);
-
         assert_eq!(
             self.output_moduli_count(),
             1,
             "output base in exact_convert_array must be one."
         );
+
+        if self.uses_single_input_kernel() {
+            let qi = self.input_base.moduli()[0];
+            let qi_value = unsafe { qi.value_unchecked() };
+            let max_nonnegative = (qi_value - T::ONE) / T::TWO;
+            let p = self.output_base.moduli()[0];
+            let qi_mod_p = p.reduce(qi_value);
+
+            crt_poly_out
+                .iter_mut()
+                .zip(crt_poly_in)
+                .for_each(|(result, &ai)| {
+                    let ai_mod_p = p.reduce(ai);
+                    *result = if ai > max_nonnegative {
+                        p.reduce_sub(ai_mod_p, qi_mod_p)
+                    } else {
+                        ai_mod_p
+                    };
+                });
+            return;
+        }
+
+        assert_eq!(context.input_moduli_count, input_moduli_count);
+        assert_eq!(context.poly_length, poly_length);
 
         let adjusted_residues = &mut context.adjusted_residues;
         let correction_terms = &mut context.correction_terms;

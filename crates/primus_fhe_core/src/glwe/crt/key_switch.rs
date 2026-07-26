@@ -403,7 +403,7 @@ impl<T: FheUint> HybridCrtGlweKeySwitchingKey<T> {
                 .partitions()
                 .zip(key_for_secret.chunks_exact(self.qp_rns_glwe_len))
             {
-                let scratch_len = partition.moduli_count() * poly_length;
+                let scratch_len = partition.mod_up_scratch_len(poly_length);
                 partition.approx_mod_up(
                     a_u.as_slice(),
                     &mut context.digit_qp,
@@ -514,15 +514,14 @@ impl<T: FheUint> HybridCrtGlweKeySwitchingContext<T> {
         let output_dimension =
             key_switching_key.output_qp_rns_glwe_mid / key_switching_key.qp_rns_poly_len;
         let q_moduli_count = hybrid_params.q_moduli_count();
-        let p_moduli_count = hybrid_params.p_moduli_count();
         let qp_moduli_count = hybrid_params.qp_moduli_count();
         let qp_poly_len = qp_moduli_count * poly_length;
 
         Self {
             accumulator_qp: vec![T::ZERO; (output_dimension + 1) * qp_poly_len],
             digit_qp: vec![T::ZERO; qp_poly_len],
-            mod_up_scratch: vec![T::ZERO; hybrid_params.max_partition_moduli_count() * poly_length],
-            mod_down_scratch: vec![T::ZERO; p_moduli_count * poly_length],
+            mod_up_scratch: vec![T::ZERO; hybrid_params.max_mod_up_scratch_len(poly_length)],
+            mod_down_scratch: vec![T::ZERO; hybrid_params.mod_down_scratch_len(poly_length)],
             poly_length,
             q_moduli_count,
             qp_moduli_count,

@@ -46,9 +46,35 @@ fn fast_array_conversion_matches_scalar_conversion() {
     }
 
     let mut output = vec![0; expected.len()];
-    let mut scratch = vec![0; input_base.moduli_count() * value_count];
+    let required_scratch_len = converter.fast_convert_array_scratch_len(value_count);
+    let mut scratch = vec![Value::MAX; required_scratch_len + 3];
     converter.fast_convert_array(&input, &mut output, value_count, &mut scratch);
     assert_eq!(output, expected);
+    assert_eq!(&scratch[required_scratch_len..], &[Value::MAX; 3]);
+}
+
+#[test]
+fn single_input_conversion_uses_direct_reduction_semantics() {
+    let input_base = base(&[17]);
+    let fast_output_base = base(&[13, 19]);
+    let fast_converter = BaseConverter::new(&input_base, &fast_output_base);
+    let input = [0, 1, 8, 9, 16];
+    let mut fast_output = [Value::MAX; 10];
+    let mut fast_scratch = [Value::MAX; 5];
+
+    fast_converter.fast_convert_array(&input, &mut fast_output, input.len(), &mut fast_scratch);
+
+    assert_eq!(fast_output, [0, 1, 8, 9, 3, 0, 1, 8, 9, 16]);
+    assert_eq!(fast_scratch, [Value::MAX; 5]);
+
+    let exact_output_base = base(&[13]);
+    let exact_converter = BaseConverter::new(&input_base, &exact_output_base);
+    let mut exact_output = [Value::MAX; 5];
+    let mut context = ExactConversionContext::new(0, 0);
+
+    exact_converter.exact_convert_array(&input, &mut exact_output, input.len(), &mut context);
+
+    assert_eq!(exact_output, [0, 1, 8, 5, 12]);
 }
 
 #[test]

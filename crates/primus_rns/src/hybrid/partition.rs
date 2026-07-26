@@ -1,4 +1,4 @@
-use core::ops::Range;
+use core::range::Range;
 
 use primus_integer::FheUint;
 use primus_reduce::FieldContext;
@@ -15,13 +15,13 @@ where
     /// Returns the indices of this partition in the full `Q` basis.
     #[inline]
     pub fn q_range(&self) -> Range<usize> {
-        self.q_range.clone()
+        self.q_range
     }
 
     /// Returns the number of `Q` moduli in this partition.
     #[inline]
     pub fn moduli_count(&self) -> usize {
-        self.q_range.len()
+        self.q_range.end - self.q_range.start
     }
 
     /// Returns the approximate base converter from this partition to
@@ -31,13 +31,21 @@ where
         &self.mod_up_converter
     }
 
+    /// Returns the minimum scratch length required by
+    /// [`approx_mod_up`](Self::approx_mod_up).
+    #[inline]
+    pub fn mod_up_scratch_len(&self, poly_length: usize) -> usize {
+        self.mod_up_converter
+            .fast_convert_array_scratch_len(poly_length)
+    }
+
     /// Extends this partition of a `Q`-basis polynomial into one full `QP`
     /// hybrid digit.
     ///
-    /// Both input and output use modulus-major layout. `scratch` uses
-    /// coefficient-major layout and must have `moduli_count() * poly_length`
-    /// elements. The partition limbs are copied exactly; the other limbs are
-    /// produced by approximate RNS base conversion.
+    /// Both input and output use modulus-major layout. `scratch.len()` must be
+    /// at least [`mod_up_scratch_len`](Self::mod_up_scratch_len). The partition
+    /// limbs are copied exactly; the other limbs are produced by approximate
+    /// RNS base conversion. A singleton partition ignores scratch.
     pub fn approx_mod_up(
         &self,
         polynomial_q: &[T],
@@ -57,8 +65,6 @@ where
 
         assert!(input_end <= polynomial_q.len());
         assert_eq!(digit_qp.len(), expected_qp_len);
-        assert_eq!(scratch.len(), partition_elements);
-
         let partition_q = &polynomial_q[input_start..input_end];
         let (prefix_q, partition_and_suffix) = digit_qp.split_at_mut(input_start);
         let (partition_out, suffix_qp) = partition_and_suffix.split_at_mut(partition_elements);
