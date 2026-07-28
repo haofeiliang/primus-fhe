@@ -109,6 +109,6 @@ where
     /// Extracts slice of `a` and `b` of this [`TruncatedRlwe<S>`].
     #[inline]
     pub fn a_b_slices(&self, poly_length: usize) -> (&[T], &[T]) {
-        unsafe { self.0.split_at_unchecked(poly_length) }
+        self.0.split_at(poly_length)
     }
 }
