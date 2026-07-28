@@ -7,7 +7,12 @@ use primus_reduce::FieldContext;
 
 #[cfg(target_arch = "x86_64")]
 use crate::constants::{HAS_AVX2, HAS_AVX512DQ, HAS_AVX512IFMA};
-use crate::{NttError, ntt::NttTable, reverse::ReverseLsbs, root::PrimitiveRoot};
+use crate::{
+    NttError,
+    ntt::{NttTable, assert_ntt_length},
+    reverse::ReverseLsbs,
+    root::PrimitiveRoot,
+};
 
 #[cfg(target_arch = "x86_64")]
 use super::avx2::precompute::build_avx2_roots_u64;
@@ -117,19 +122,12 @@ pub struct U64NttTable {
 /// Uses `primus_gcd::Xgcd::gcdinv` — an optimized binary GCD
 /// that avoids division instructions.
 fn mod_inv(a: u64, q: u64) -> u64 {
-    debug_assert!(a < q);
     let (inv, gcd) = u64::gcdinv(a, q);
     assert_eq!(gcd, 1, "a={a} is not invertible modulo q={q}");
     inv
 }
 
 impl U64NttTable {
-    /// Returns the modulus `q`.
-    #[inline]
-    pub fn modulus(&self) -> u64 {
-        self.q
-    }
-
     /// Returns `log2(N)`.
     #[inline]
     pub fn log_n(&self) -> u32 {
@@ -164,6 +162,8 @@ impl U64NttTable {
     ///
     /// Priority: IFMA → DQ → AVX2 → scalar.
     fn dispatch_forward(&self, values: &mut [u64], output_mod_factor: u32) {
+        assert_ntt_length(values.len(), self.n);
+
         #[cfg(target_arch = "x86_64")]
         if self.n >= 16 {
             use super::avx512::{
@@ -224,9 +224,13 @@ impl U64NttTable {
         }
 
         if self.low_q {
-            self.scalar_forward_transform::<32>(values, output_mod_factor);
+            unsafe {
+                self.scalar_forward_transform_unchecked::<32>(values, output_mod_factor);
+            }
         } else {
-            self.scalar_forward_transform::<64>(values, output_mod_factor);
+            unsafe {
+                self.scalar_forward_transform_unchecked::<64>(values, output_mod_factor);
+            }
         }
     }
 
@@ -234,6 +238,8 @@ impl U64NttTable {
     ///
     /// Priority: IFMA → DQ → AVX2 → scalar.
     fn dispatch_inverse(&self, values: &mut [u64], output_mod_factor: u32) {
+        assert_ntt_length(values.len(), self.n);
+
         #[cfg(target_arch = "x86_64")]
         if self.n >= 16 {
             use super::avx512::{
@@ -295,9 +301,13 @@ impl U64NttTable {
         }
 
         if self.low_q {
-            self.scalar_inverse_transform::<32>(values, output_mod_factor);
+            unsafe {
+                self.scalar_inverse_transform_unchecked::<32>(values, output_mod_factor);
+            }
         } else {
-            self.scalar_inverse_transform::<64>(values, output_mod_factor);
+            unsafe {
+                self.scalar_inverse_transform_unchecked::<64>(values, output_mod_factor);
+            }
         }
     }
 }
@@ -545,29 +555,27 @@ impl NttTable for U64NttTable {
 
     #[inline]
     fn lazy_transform_slice(&self, poly: &mut [u64]) {
-        debug_assert_eq!(poly.len(), self.n);
         self.dispatch_forward(poly, 4);
     }
 
     #[inline]
     fn transform_slice(&self, poly: &mut [u64]) {
-        debug_assert_eq!(poly.len(), self.n);
         self.dispatch_forward(poly, 1);
     }
 
     #[inline]
     fn lazy_inverse_transform_slice(&self, values: &mut [u64]) {
-        debug_assert_eq!(values.len(), self.n);
         self.dispatch_inverse(values, 2);
     }
 
     #[inline]
     fn inverse_transform_slice(&self, values: &mut [u64]) {
-        debug_assert_eq!(values.len(), self.n);
         self.dispatch_inverse(values, 1);
     }
 
     fn transform_monomial(&self, coeff: u64, degree: usize, values: &mut [u64]) {
+        assert_ntt_length(values.len(), self.n);
+
         if coeff == 0 {
             values.fill(0);
             return;
@@ -580,8 +588,6 @@ impl NttTable for U64NttTable {
 
         let n = self.n;
         let log_n = self.log_n;
-        debug_assert_eq!(values.len(), n);
-
         let mask = usize::MAX >> (usize::BITS - log_n - 1);
 
         if coeff == 1 {
@@ -614,15 +620,14 @@ impl NttTable for U64NttTable {
     }
 
     fn transform_coeff_one_monomial(&self, degree: usize, values: &mut [u64]) {
+        assert_ntt_length(values.len(), self.n);
+
         if degree == 0 {
             values.fill(1);
             return;
         }
 
-        let n = self.n;
         let log_n = self.log_n;
-        debug_assert_eq!(values.len(), n);
-
         let mask = usize::MAX >> (usize::BITS - log_n - 1);
 
         values
@@ -635,6 +640,8 @@ impl NttTable for U64NttTable {
     }
 
     fn transform_coeff_minus_one_monomial(&self, degree: usize, values: &mut [u64]) {
+        assert_ntt_length(values.len(), self.n);
+
         if degree == 0 {
             values.fill(self.q - 1);
             return;
@@ -642,8 +649,6 @@ impl NttTable for U64NttTable {
 
         let n = self.n;
         let log_n = self.log_n;
-        debug_assert_eq!(values.len(), n);
-
         let mask = usize::MAX >> (usize::BITS - log_n - 1);
 
         values
@@ -655,7 +660,3 @@ impl NttTable for U64NttTable {
             });
     }
 }
-
-#[cfg(test)]
-#[path = "tests.rs"]
-mod tests;

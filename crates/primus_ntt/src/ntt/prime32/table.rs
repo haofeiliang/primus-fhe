@@ -7,7 +7,12 @@ use primus_reduce::FieldContext;
 
 #[cfg(target_arch = "x86_64")]
 use crate::constants::{HAS_AVX2, HAS_AVX512F};
-use crate::{NttError, ntt::NttTable, reverse::ReverseLsbs, root::PrimitiveRoot};
+use crate::{
+    NttError,
+    ntt::{NttTable, assert_ntt_length},
+    reverse::ReverseLsbs,
+    root::PrimitiveRoot,
+};
 
 use super::scalar;
 #[cfg(target_arch = "x86_64")]
@@ -95,19 +100,12 @@ pub struct U32NttTable {
 /// Uses `primus_gcd::Xgcd::gcdinv` — an optimized binary GCD
 /// that avoids division instructions.
 fn mod_inv(a: u32, q: u32) -> u32 {
-    debug_assert!(a < q);
     let (inv, gcd) = u32::gcdinv(a, q);
     assert_eq!(gcd, 1, "a={a} is not invertible modulo q={q}");
     inv
 }
 
 impl U32NttTable {
-    /// Returns the modulus `q`.
-    #[inline]
-    pub fn modulus(&self) -> u32 {
-        self.q
-    }
-
     /// Returns `log2(N)`.
     #[inline]
     pub fn log_n(&self) -> u32 {
@@ -143,6 +141,8 @@ impl U32NttTable {
     /// SIMD paths require `n >= 32`; smaller transforms go directly to scalar.
     #[inline]
     fn dispatch_forward(&self, values: &mut [u32], output_mod_factor: u32) {
+        assert_ntt_length(values.len(), self.n);
+
         if self.n >= 32 {
             match self.backend {
                 #[cfg(target_arch = "x86_64")]
@@ -156,12 +156,16 @@ impl U32NttTable {
                 U32Backend::Scalar => {}
             }
         }
-        self.scalar_forward_transform(values, output_mod_factor);
+        unsafe {
+            self.scalar_forward_transform_unchecked(values, output_mod_factor);
+        }
     }
 
     /// Dispatch inverse transform to the selected backend.
     #[inline]
     fn dispatch_inverse(&self, values: &mut [u32], output_mod_factor: u32) {
+        assert_ntt_length(values.len(), self.n);
+
         if self.n >= 32 {
             match self.backend {
                 #[cfg(target_arch = "x86_64")]
@@ -175,7 +179,9 @@ impl U32NttTable {
                 U32Backend::Scalar => {}
             }
         }
-        self.scalar_inverse_transform(values, output_mod_factor);
+        unsafe {
+            self.scalar_inverse_transform_unchecked(values, output_mod_factor);
+        }
     }
 }
 
@@ -372,26 +378,24 @@ impl NttTable for U32NttTable {
     }
 
     fn lazy_transform_slice(&self, poly: &mut [u32]) {
-        debug_assert_eq!(poly.len(), self.n);
         self.dispatch_forward(poly, 4);
     }
 
     fn transform_slice(&self, poly: &mut [u32]) {
-        debug_assert_eq!(poly.len(), self.n);
         self.dispatch_forward(poly, 1);
     }
 
     fn lazy_inverse_transform_slice(&self, values: &mut [u32]) {
-        debug_assert_eq!(values.len(), self.n);
         self.dispatch_inverse(values, 2);
     }
 
     fn inverse_transform_slice(&self, values: &mut [u32]) {
-        debug_assert_eq!(values.len(), self.n);
         self.dispatch_inverse(values, 1);
     }
 
     fn transform_monomial(&self, coeff: u32, degree: usize, values: &mut [u32]) {
+        assert_ntt_length(values.len(), self.n);
+
         if coeff == 0 {
             values.fill(0);
             return;
@@ -404,8 +408,6 @@ impl NttTable for U32NttTable {
 
         let n = self.n;
         let log_n = self.log_n;
-        debug_assert_eq!(values.len(), n);
-
         let mask = usize::MAX >> (usize::BITS - log_n - 1);
 
         if coeff == 1 {
@@ -438,15 +440,14 @@ impl NttTable for U32NttTable {
     }
 
     fn transform_coeff_one_monomial(&self, degree: usize, values: &mut [u32]) {
+        assert_ntt_length(values.len(), self.n);
+
         if degree == 0 {
             values.fill(1);
             return;
         }
 
-        let n = self.n;
         let log_n = self.log_n;
-        debug_assert_eq!(values.len(), n);
-
         let mask = usize::MAX >> (usize::BITS - log_n - 1);
 
         values
@@ -459,6 +460,8 @@ impl NttTable for U32NttTable {
     }
 
     fn transform_coeff_minus_one_monomial(&self, degree: usize, values: &mut [u32]) {
+        assert_ntt_length(values.len(), self.n);
+
         if degree == 0 {
             values.fill(self.q - 1);
             return;
@@ -466,8 +469,6 @@ impl NttTable for U32NttTable {
 
         let n = self.n;
         let log_n = self.log_n;
-        debug_assert_eq!(values.len(), n);
-
         let mask = usize::MAX >> (usize::BITS - log_n - 1);
 
         values
@@ -479,7 +480,3 @@ impl NttTable for U32NttTable {
             });
     }
 }
-
-#[cfg(test)]
-#[path = "tests.rs"]
-mod tests;

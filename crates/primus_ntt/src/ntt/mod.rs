@@ -13,6 +13,12 @@ pub use prime64::U64NttTable;
 pub use primitive::UintNttTable;
 
 /// Abstract interface for Number Theory Transform (NTT).
+///
+/// # Slice length contract
+///
+/// Every input or output slice must contain exactly [`Self::poly_length`]
+/// coefficients. Implementations must enforce this contract in release builds
+/// before mutating the slice or entering an unchecked transform kernel.
 pub trait NttTable: Sized + Send + Sync {
     /// The value type.
     type ValueT: PrimitiveRoot;
@@ -112,5 +118,14 @@ pub trait NttTable: Sized + Send + Sync {
         &self,
         degree: usize,
         values: &mut [<Self as NttTable>::ValueT],
+    );
+}
+
+#[track_caller]
+#[inline]
+fn assert_ntt_length(actual: usize, expected: usize) {
+    assert_eq!(
+        actual, expected,
+        "NTT polynomial length mismatch: expected {expected}, got {actual}"
     );
 }

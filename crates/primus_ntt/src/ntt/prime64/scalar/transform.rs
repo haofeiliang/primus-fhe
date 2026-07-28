@@ -10,7 +10,13 @@ impl U64NttTable {
     /// Output: bit-reversed order.
     ///
     /// `BIT_SHIFT` selects the Barrett width: 32 for `q < 2^30`, 64 otherwise.
-    pub fn scalar_forward_transform<const BIT_SHIFT: u32>(
+    /// # Safety
+    ///
+    /// `values` must contain exactly `self.n` coefficients, and `BIT_SHIFT`
+    /// must select a populated preconditioner table compatible with `self.q`.
+    pub(in crate::ntt::prime64) unsafe fn scalar_forward_transform_unchecked<
+        const BIT_SHIFT: u32,
+    >(
         &self,
         values: &mut [u64],
         output_mod_factor: u32,
@@ -148,7 +154,13 @@ impl U64NttTable {
     /// The final stage fuses multiplication by `inv_n` for both halves.
     ///
     /// `BIT_SHIFT` selects Barrett-32 (32) or Barrett-64 (64) throughout.
-    pub fn scalar_inverse_transform<const BIT_SHIFT: u32>(
+    /// # Safety
+    ///
+    /// `values` must contain exactly `self.n` coefficients, and `BIT_SHIFT`
+    /// must select populated preconditioner values compatible with `self.q`.
+    pub(in crate::ntt::prime64) unsafe fn scalar_inverse_transform_unchecked<
+        const BIT_SHIFT: u32,
+    >(
         &self,
         values: &mut [u64],
         output_mod_factor: u32,

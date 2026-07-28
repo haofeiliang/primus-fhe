@@ -1,16 +1,13 @@
 use primus_data::{DataMut, RawData};
-use primus_factor::FactorBase;
-use primus_factor::{FactorMul, LazyFactorMul, ShoupFactor};
+use primus_factor::{FactorBase, FactorMul, LazyFactorMul, ShoupFactor};
 use primus_integer::FheUint;
-use primus_modulo::{AddModulo, ModuloOnce, ModuloOnceAssign};
-use primus_modulus::CompactModulus;
+use primus_modulus::common::compact;
 use primus_poly::{NttPolynomial, Polynomial};
 use primus_reduce::FieldContext;
-use primus_reduce::prelude::*;
 
 use crate::{NttError, reverse::ReverseLsbs, root::PrimitiveRoot};
 
-use super::NttTable;
+use super::{NttTable, assert_ntt_length};
 
 /// This struct store the pre-computed data for number theory transform and
 /// inverse number theory transform.
@@ -41,6 +38,8 @@ pub struct UintNttTable<T: FheUint> {
     log_n: u32,
     n: usize,
     inv_n: ShoupFactor<T>,
+    /// `inv_n * inv_root_powers[n-1] mod q` — precomputed for the inverse final stage.
+    inv_n_r: ShoupFactor<T>,
     root_powers: Vec<ShoupFactor<T>>,
     inv_root_powers: Vec<ShoupFactor<T>>,
     ordinal_root_powers: Vec<ShoupFactor<T>>,
@@ -84,6 +83,12 @@ impl<T: FheUint> UintNttTable<T> {
         self.inv_n
     }
 
+    /// Returns `inv_n * inv_root_powers[n-1] mod q` — precomputed for the inverse final stage..
+    #[inline]
+    pub fn inv_n_r(&self) -> ShoupFactor<T> {
+        self.inv_n_r
+    }
+
     /// Returns a reference to the root powers of this [`UintNttTable<T>`].
     #[inline]
     pub fn root_powers(&self) -> &[ShoupFactor<T>] {
@@ -119,7 +124,9 @@ impl<T: FheUint> NttTable for UintNttTable<T> {
     {
         let root = <T as PrimitiveRoot>::try_minimal_primitive_root(log_n + 1, modulus)?;
 
-        let modulus = unsafe { modulus.value_unchecked() };
+        let Some(modulus) = modulus.value() else {
+            return Err(NttError::NttTableErr);
+        };
 
         let n = 1usize << log_n;
         let to_root_type = |x| -> ShoupFactor<T> { <ShoupFactor<T>>::new(x, modulus) };
@@ -167,7 +174,13 @@ impl<T: FheUint> NttTable for UintNttTable<T> {
             return Err(NttError::DegreeTooLarge { degree: n, modulus });
         }
 
-        let inv_n = to_root_type(CompactModulus(modulus).reduce_inv(n_cast));
+        let inv_n = to_root_type(compact::reduce_inv(modulus, n_cast));
+
+        let inv_n_r = inv_root_powers
+            .last()
+            .unwrap()
+            .factor_mul_modulo(inv_n.value(), modulus);
+        let inv_n_r = ShoupFactor::new(inv_n_r, modulus);
 
         Ok(Self {
             root,
@@ -176,6 +189,7 @@ impl<T: FheUint> NttTable for UintNttTable<T> {
             log_n,
             n,
             inv_n,
+            inv_n_r,
             root_powers,
             inv_root_powers,
             ordinal_root_powers,
@@ -213,7 +227,7 @@ impl<T: FheUint> NttTable for UintNttTable<T> {
 
     #[inline]
     fn lazy_transform_slice(&self, poly: &mut [<Self as NttTable>::ValueT]) {
-        debug_assert_eq!(poly.len(), self.n);
+        assert_ntt_length(poly.len(), self.n);
 
         let modulus = self.modulus();
         let twice_modulus = modulus << 1u32;
@@ -226,7 +240,7 @@ impl<T: FheUint> NttTable for UintNttTable<T> {
                 let root = root_iter.next().unwrap();
                 let (v0, v1) = vc.split_at_mut(gap);
                 for (i, j) in core::iter::zip(v0, v1) {
-                    let u = (*i).modulo_once(CompactModulus(twice_modulus));
+                    let u = compact::reduce_once(twice_modulus, *i);
                     let v = root.lazy_factor_mul_modulo(*j, modulus);
                     *i = u + v;
                     *j = u + twice_modulus - v;
@@ -241,14 +255,12 @@ impl<T: FheUint> NttTable for UintNttTable<T> {
         let modulus = self.modulus();
         let twice_modulus = modulus << 1u32;
         poly.iter_mut().for_each(|v| {
-            *v = (*v)
-                .modulo_once(CompactModulus(twice_modulus))
-                .modulo_once(CompactModulus(modulus));
+            *v = compact::reduce_once(modulus, compact::reduce_once(twice_modulus, *v));
         });
     }
 
     fn lazy_inverse_transform_slice(&self, values: &mut [<Self as NttTable>::ValueT]) {
-        debug_assert_eq!(values.len(), self.n);
+        assert_ntt_length(values.len(), self.n);
 
         let log_n = self.log_n;
 
@@ -265,7 +277,7 @@ impl<T: FheUint> NttTable for UintNttTable<T> {
                 for (i, j) in core::iter::zip(v0, v1) {
                     let u = *i;
                     let v = *j;
-                    *i = u.add_modulo(v, CompactModulus(twice_modulus));
+                    *i = compact::reduce_add(twice_modulus, u, v);
                     *j = root.lazy_factor_mul_modulo(u + twice_modulus - v, modulus);
                 }
             }
@@ -274,11 +286,7 @@ impl<T: FheUint> NttTable for UintNttTable<T> {
         let gap = 1 << (log_n - 1);
 
         let scalar = self.inv_n();
-        let scaled_r = root_iter
-            .next()
-            .unwrap()
-            .factor_mul_modulo(scalar.value(), modulus);
-        let scaled_r = ShoupFactor::new(scaled_r, modulus);
+        let scaled_r = self.inv_n_r();
 
         let (v0, v1) = values.split_at_mut(gap);
         for (i, j) in core::iter::zip(v0, v1) {
@@ -294,7 +302,7 @@ impl<T: FheUint> NttTable for UintNttTable<T> {
 
         let modulus = self.modulus();
         values.iter_mut().for_each(|v| {
-            v.modulo_once_assign(CompactModulus(modulus));
+            compact::reduce_once_assign(modulus, v);
         });
     }
 
@@ -304,6 +312,8 @@ impl<T: FheUint> NttTable for UintNttTable<T> {
         degree: usize,
         values: &mut [<Self as NttTable>::ValueT],
     ) {
+        assert_ntt_length(values.len(), self.n);
+
         if coeff.is_zero() {
             values.fill(T::ZERO);
             return;
@@ -316,7 +326,6 @@ impl<T: FheUint> NttTable for UintNttTable<T> {
 
         let n = self.n;
         let log_n = self.log_n;
-        debug_assert_eq!(values.len(), n);
         let modulus = self.modulus();
 
         let mask = usize::MAX >> (usize::BITS - log_n - 1);
@@ -354,15 +363,14 @@ impl<T: FheUint> NttTable for UintNttTable<T> {
         degree: usize,
         values: &mut [<Self as NttTable>::ValueT],
     ) {
+        assert_ntt_length(values.len(), self.n);
+
         if degree == 0 {
             values.fill(T::ONE);
             return;
         }
 
-        let n = self.n;
         let log_n = self.log_n;
-        debug_assert_eq!(values.len(), n);
-
         let mask = usize::MAX >> (usize::BITS - log_n - 1);
 
         values
@@ -379,6 +387,8 @@ impl<T: FheUint> NttTable for UintNttTable<T> {
         degree: usize,
         values: &mut [<Self as NttTable>::ValueT],
     ) {
+        assert_ntt_length(values.len(), self.n);
+
         if degree == 0 {
             values.fill(self.modulus() - T::ONE);
             return;
@@ -386,8 +396,6 @@ impl<T: FheUint> NttTable for UintNttTable<T> {
 
         let n = self.n;
         let log_n = self.log_n;
-        debug_assert_eq!(values.len(), n);
-
         let mask = usize::MAX >> (usize::BITS - log_n - 1);
 
         values
