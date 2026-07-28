@@ -80,6 +80,11 @@ impl<T: FheUint> Rlwe<Vec<T>> {
         let mut data = self.0;
         let poly_len = data.len() / 2;
 
+        assert!(
+            count <= poly_len,
+            "message count must not exceed polynomial length"
+        );
+
         data.truncate(poly_len + count);
 
         data[1..poly_len].reverse();
@@ -230,33 +235,27 @@ where
     #[inline]
     pub fn extract_first_few_lwe<M>(&self, count: usize, modulus: M) -> MultiMsgLwe<Vec<T>>
     where
-        M: Copy + ReduceNeg<T, Output = T> + ReduceNegAssign<T>,
+        M: Copy + ReduceNeg<T, Output = T>,
     {
         let poly_len = self.0.len() / 2;
         let src = self.0.as_slice();
 
-        let mut data: Vec<MaybeUninit<T>> = Vec::with_capacity(poly_len + count);
-        unsafe {
-            data.set_len(poly_len + count);
-        }
+        assert!(
+            count <= poly_len,
+            "message count must not exceed polynomial length"
+        );
 
-        data[0].write(src[0]);
+        let mut data = Vec::with_capacity(poly_len + count);
+        data.push(src[0]);
+        data.extend(
+            src[1..poly_len]
+                .iter()
+                .rev()
+                .map(|&value| modulus.reduce_neg(value)),
+        );
+        data.extend_from_slice(&src[poly_len..poly_len + count]);
 
-        data[1..poly_len]
-            .iter_mut()
-            .zip(src[1..poly_len].iter().rev())
-            .for_each(|(x, &y)| {
-                x.write(modulus.reduce_neg(y));
-            });
-
-        data[poly_len..]
-            .iter_mut()
-            .zip(src[poly_len..].iter())
-            .for_each(|(x, &y)| {
-                x.write(y);
-            });
-
-        MultiMsgLwe::new(unsafe { std::mem::transmute::<Vec<MaybeUninit<T>>, Vec<T>>(data) })
+        MultiMsgLwe::new(data)
     }
 
     /// Extract an LWE sample from RLWE.

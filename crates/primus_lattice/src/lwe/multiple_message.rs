@@ -1,5 +1,3 @@
-use std::mem::MaybeUninit;
-
 use primus_data::{Data, DataMut, DataOwned, RawData};
 use primus_integer::{FheUint, Size};
 use primus_reduce::prelude::*;
@@ -194,16 +192,8 @@ where
 
         debug_assert_eq!(self.0.len(), rhs.0.len());
 
-        let mut data: Vec<MaybeUninit<T>> = Vec::with_capacity(len);
-        unsafe {
-            data.set_len(len);
-        }
-
-        modulus.reduce_add_slice_to(self.0.as_slice(), rhs.0.as_slice(), unsafe {
-            data.as_mut_slice().assume_init_mut()
-        });
-
-        let data = unsafe { std::mem::transmute::<Vec<MaybeUninit<T>>, Vec<T>>(data) };
+        let mut data = vec![T::ZERO; len];
+        modulus.reduce_add_slice_to(self.0.as_slice(), rhs.0.as_slice(), &mut data);
 
         MultiMsgLwe::new(B::from_vec(data))
     }
@@ -229,16 +219,8 @@ where
 
         debug_assert_eq!(self.0.len(), rhs.0.len());
 
-        let mut data: Vec<MaybeUninit<T>> = Vec::with_capacity(len);
-        unsafe {
-            data.set_len(len);
-        }
-
-        modulus.reduce_sub_slice_to(self.0.as_slice(), rhs.0.as_slice(), unsafe {
-            data.as_mut_slice().assume_init_mut()
-        });
-
-        let data = unsafe { std::mem::transmute::<Vec<MaybeUninit<T>>, Vec<T>>(data) };
+        let mut data = vec![T::ZERO; len];
+        modulus.reduce_sub_slice_to(self.0.as_slice(), rhs.0.as_slice(), &mut data);
 
         MultiMsgLwe::new(B::from_vec(data))
     }
