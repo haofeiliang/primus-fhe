@@ -108,7 +108,7 @@ where
             );
 
             // Automorphism on the halved ciphertext
-            auto_key.automorphism_inplace(result, dcrt_glwe, params, rns_base, auto_context);
+            auto_key.automorphism_to(result, dcrt_glwe, params, rns_base, auto_context);
 
             // result = result + auto(result)  [both already halved]
             result.add_element_wise_assign(dcrt_glwe, poly_length, rns_poly_len, moduli);

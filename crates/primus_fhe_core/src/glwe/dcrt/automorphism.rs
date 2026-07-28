@@ -29,6 +29,7 @@ use primus_poly::DcrtPolynomial;
 use primus_reduce::{FieldContext, ReduceMul};
 use primus_rns::RNSBase;
 
+use crate::glwe::validate_automorphism;
 use crate::{
     CrtGlevParameters, DcrtGlweCiphertext, DcrtGlweSecretKey, glwe::crt::CrtGlweAutoContext,
 };
@@ -72,20 +73,44 @@ fn generate_ntt_permutation(degree: usize, poly_length: usize) -> Vec<u32> {
 /// Stores a precomputed permutation table that maps evaluation-point indices
 /// in bit-reversed NTT storage order.
 #[derive(Clone)]
-pub enum NttAutoHelper {
+enum NttAutoOperation {
     /// Permutation table: `out[i] = in[perm[i]]` in bit-reversed storage.
     Permutation(Vec<u32>),
     /// Identity mapping (degree = 1).
     Identity,
 }
 
+#[derive(Clone)]
+struct NttAutoHelper {
+    degree: usize,
+    poly_length: usize,
+    operation: NttAutoOperation,
+}
+
 impl NttAutoHelper {
-    pub fn new(degree: usize, poly_length: usize) -> Self {
-        if degree == 1 {
-            NttAutoHelper::Identity
+    fn new(degree: usize, poly_length: usize) -> Self {
+        validate_automorphism(degree, poly_length);
+        let operation = if degree == 1 {
+            NttAutoOperation::Identity
         } else {
-            NttAutoHelper::Permutation(generate_ntt_permutation(degree, poly_length))
+            NttAutoOperation::Permutation(generate_ntt_permutation(degree, poly_length))
+        };
+
+        Self {
+            degree,
+            poly_length,
+            operation,
         }
+    }
+
+    #[inline]
+    fn degree(&self) -> usize {
+        self.degree
+    }
+
+    #[inline]
+    fn poly_length(&self) -> usize {
+        self.poly_length
     }
 }
 
@@ -95,16 +120,17 @@ impl NttAutoHelper {
 
 /// Apply NTT-domain automorphism permutation to a single polynomial.
 #[inline]
-fn ntt_poly_auto_inplace<T: FheUint>(poly: &[T], result: &mut [T], auto_helper: &NttAutoHelper) {
-    match auto_helper {
-        NttAutoHelper::Permutation(perm) => {
-            debug_assert_eq!(poly.len(), perm.len());
-            debug_assert_eq!(result.len(), perm.len());
+fn ntt_poly_auto_inplace<T: FheUint>(poly: &[T], result: &mut [T], operation: &NttAutoOperation) {
+    match operation {
+        NttAutoOperation::Permutation(perm) => {
             for (dst, &src) in result.iter_mut().zip(perm.iter()) {
+                // SAFETY: for a validated odd degree modulo `2N`, the generated
+                // target lies in `0..N`; reversing its `log2(N)` low bits keeps
+                // it in that range. The DCRT wrapper passes exact-length chunks.
                 *dst = unsafe { *poly.get_unchecked(src as usize) };
             }
         }
-        NttAutoHelper::Identity => {
+        NttAutoOperation::Identity => {
             result.copy_from_slice(poly);
         }
     }
@@ -114,17 +140,20 @@ fn ntt_poly_auto_inplace<T: FheUint>(poly: &[T], result: &mut [T], auto_helper: 
 ///
 /// The same permutation is applied independently to each modulus component.
 #[inline]
-pub fn dcrt_poly_ntt_auto_inplace<T: FheUint>(
+fn dcrt_poly_ntt_auto_to<T: FheUint>(
     dcrt_poly: &[T],
     result: &mut [T],
     auto_helper: &NttAutoHelper,
-    poly_length: usize,
 ) {
+    let poly_length = auto_helper.poly_length();
+    assert_eq!(dcrt_poly.len(), result.len());
+    assert!(dcrt_poly.len().is_multiple_of(poly_length));
+
     dcrt_poly
         .chunks_exact(poly_length)
         .zip(result.chunks_exact_mut(poly_length))
         .for_each(|(poly, auto_poly)| {
-            ntt_poly_auto_inplace(poly, auto_poly, auto_helper);
+            ntt_poly_auto_inplace(poly, auto_poly, &auto_helper.operation);
         });
 }
 
@@ -152,7 +181,6 @@ where
     R: rand::Rng + rand::CryptoRng,
     M: FieldContext<T>,
 {
-    let poly_length = params.poly_length();
     let rns_poly_len = params.rns_poly_len();
     let dcrt_glev_len = params.rns_glev_len();
 
@@ -165,7 +193,7 @@ where
         .iter_dcrt_poly()
         .zip(key_iter)
         .for_each(|(si, mut dcrt_glev)| {
-            dcrt_poly_ntt_auto_inplace(si.0, auto_si.as_mut(), ntt_auto_helper, poly_length);
+            dcrt_poly_ntt_auto_to(si.0, auto_si.as_mut(), ntt_auto_helper);
 
             dcrt_sk.encrypt_dcrt_msg_to_dcrt_glev_inplace(
                 &auto_si,
@@ -201,7 +229,6 @@ where
     Table: DcrtTable<ValueT = T>,
 {
     key: Vec<T>,
-    degree: usize,
     rns_glev_len: usize,
     auto_helper: NttAutoHelper,
     table: Arc<Table>,
@@ -217,6 +244,11 @@ where
     /// Key generation applies the NTT-domain permutation to each secret key
     /// polynomial and encrypts the result under a GLEV ciphertext. Only the
     /// NTT-domain secret key is needed.
+    ///
+    /// # Panics
+    ///
+    /// Panics unless the polynomial length is a nonzero power of two and
+    /// `degree` is odd and less than twice the polynomial length.
     pub fn new<M, R>(
         params: &CrtGlevParameters<T, M>,
         degree: usize,
@@ -237,7 +269,6 @@ where
 
         Self {
             key,
-            degree,
             rns_glev_len: dcrt_glev_len,
             auto_helper,
             table: Arc::clone(&table),
@@ -245,11 +276,7 @@ where
     }
 
     pub fn degree(&self) -> usize {
-        self.degree
-    }
-
-    pub fn auto_helper(&self) -> &NttAutoHelper {
-        &self.auto_helper
+        self.auto_helper.degree()
     }
 
     pub fn table(&self) -> &Table {
@@ -263,7 +290,7 @@ where
     /// Perform NTT-domain automorphism on a DCRT GLWE ciphertext.
     ///
     /// Both input `ciphertext` and output `result` are in NTT (evaluation) domain.
-    pub fn automorphism_inplace<M, A, B>(
+    pub fn automorphism_to<M, A, B>(
         &self,
         ciphertext: &DcrtGlweCiphertext<A>,
         result: &mut DcrtGlweCiphertext<B>,
@@ -279,6 +306,11 @@ where
         let rns_poly_len = params.rns_poly_len();
         let moduli = params.cipher_moduli();
 
+        assert_eq!(
+            self.auto_helper.poly_length(),
+            poly_length,
+            "automorphism key and parameters must use the same polynomial length"
+        );
         debug_assert_eq!(ciphertext.as_ref().len(), params.rns_glwe_len());
 
         let (auto_dcrt_poly, glev_context) = context.as_mut();
@@ -292,12 +324,7 @@ where
             .zip(a_in)
             .for_each(|(auto_key_i, in_dcrt_poly)| {
                 // 1. NTT-domain permutation (evaluation-point reordering)
-                dcrt_poly_ntt_auto_inplace(
-                    in_dcrt_poly.0,
-                    auto_dcrt_poly.as_mut(),
-                    &self.auto_helper,
-                    poly_length,
-                );
+                dcrt_poly_ntt_auto_to(in_dcrt_poly.0, auto_dcrt_poly.as_mut(), &self.auto_helper);
 
                 // 2. INTT → coefficient domain (required for key-switch decomposition)
                 self.table.inverse_transform_slice(auto_dcrt_poly.as_mut());
@@ -314,12 +341,7 @@ where
             });
 
         // ----- Process b polynomial: NTT permutation only (no transform needed) -----
-        dcrt_poly_ntt_auto_inplace(
-            b_in.0,
-            auto_dcrt_poly.as_mut(),
-            &self.auto_helper,
-            poly_length,
-        );
+        dcrt_poly_ntt_auto_to(b_in.0, auto_dcrt_poly.as_mut(), &self.auto_helper);
 
         // ----- Combine: result = (−a', σ(b) − b') -----
         let (a_out, mut b_out) = result.a_b_mut(rns_poly_len);
@@ -327,117 +349,5 @@ where
         a_out.for_each(|mut ai| ai.neg_assign(poly_length, moduli));
 
         DcrtPolynomial(auto_dcrt_poly.as_ref()).sub_rev_assign(&mut b_out, poly_length, moduli);
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::CoeffAutoHelper;
-
-    #[test]
-    fn test_ntt_permutation_identity() {
-        for log_n in 2..12 {
-            let n = 1 << log_n;
-            let perm = generate_ntt_permutation(1, n);
-
-            for (i, &item) in perm.iter().enumerate() {
-                assert_eq!(item, i as u32, "identity failed at index {i} for N={n}");
-            }
-        }
-    }
-
-    #[test]
-    fn test_ntt_permutation_is_valid() {
-        let test_cases: &[(usize, usize)] = &[
-            (3, 8),
-            (5, 8),
-            (7, 8),
-            (3, 16),
-            (5, 16),
-            (3, 1024),
-            (5, 4096),
-        ];
-
-        for &(degree, n) in test_cases {
-            let perm = generate_ntt_permutation(degree, n);
-            assert_eq!(perm.len(), n);
-
-            // Every source index must appear exactly once (valid permutation).
-            let mut seen = vec![false; n];
-            for &src in &perm {
-                let src = src as usize;
-                assert!(
-                    src < n,
-                    "out-of-range index {src} for degree={degree}, N={n}"
-                );
-                assert!(
-                    !seen[src],
-                    "duplicate source index {src} for degree={degree}, N={n}"
-                );
-                seen[src] = true;
-            }
-            assert!(seen.iter().all(|&s| s));
-        }
-    }
-
-    /// Verify NTT-domain automorphism against coefficient-domain automorphism
-    /// using a real NTT round-trip.
-    ///
-    /// For a random CRT polynomial f the two paths must produce identical results:
-    ///   Path A: coeff_auto(f) → NTT
-    ///   Path B: NTT(f)        → ntt_auto
-    #[test]
-    fn test_ntt_auto_equivalence_with_coefficient_auto() {
-        use primus_modulus::BarrettModulus;
-        use primus_ntt::{DcrtTable, UintDcrtTable};
-        use rand::RngExt;
-
-        type V = u64;
-
-        let poly_length: usize = 512;
-        let log_n = poly_length.trailing_zeros();
-
-        let moduli_values: [V; 2] = [1125899906826241, 1125899906629633];
-        let moduli = moduli_values.map(BarrettModulus::new);
-        let table = UintDcrtTable::new(log_n, &moduli).unwrap();
-
-        let crt_poly_len = moduli.len() * poly_length;
-
-        let mut rng = rand::rng();
-
-        // Random CRT polynomial with coefficients well below every modulus.
-        let input: Vec<V> = (0..crt_poly_len)
-            .map(|_| rng.random::<u32>() as V)
-            .collect();
-
-        for degree in [3, 5, 7, poly_length + 1, 2 * poly_length - 1] {
-            // Coefficient-domain helper
-            let coeff_helper = CoeffAutoHelper::new(degree, poly_length);
-
-            // NTT-domain helper
-            let ntt_helper = if degree == 1 {
-                NttAutoHelper::Identity
-            } else {
-                NttAutoHelper::Permutation(generate_ntt_permutation(degree, poly_length))
-            };
-
-            // Path A: coeff_auto → NTT
-            let mut path_a = vec![V::default(); crt_poly_len];
-            crate::crt_poly_auto_inplace(&input, &mut path_a, &coeff_helper, poly_length, &moduli);
-            table.transform_slice(&mut path_a);
-
-            // Path B: NTT → ntt_auto
-            let mut ntt_input = input.clone();
-            table.transform_slice(&mut ntt_input);
-            let mut path_b = vec![V::default(); crt_poly_len];
-            dcrt_poly_ntt_auto_inplace(&ntt_input, &mut path_b, &ntt_helper, poly_length);
-
-            assert_eq!(path_a, path_b, "paths diverge for degree={degree}");
-        }
     }
 }

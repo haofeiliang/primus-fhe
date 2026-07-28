@@ -103,7 +103,7 @@ where
         result.as_mut().copy_from_slice(ciphertext.as_ref());
 
         for auto_key in self.auto_keys.iter() {
-            auto_key.automorphism_inplace(result, dcrt_glwe, params, rns_base, auto_context);
+            auto_key.automorphism_to(result, dcrt_glwe, params, rns_base, auto_context);
             result.add_element_wise_assign(dcrt_glwe, poly_length, rns_poly_len, moduli);
         }
     }

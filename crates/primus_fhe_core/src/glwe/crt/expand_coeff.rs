@@ -274,7 +274,7 @@ where
             let (x, y) = unsafe { result[..two_pow_i * 2].split_at_mut_unchecked(two_pow_i) };
 
             x.iter_mut().zip(y.iter_mut()).for_each(|(a_0, b_0)| {
-                auto_key.automorphism_inplace(a_0, crt_glwe, params, rns_base, auto_context);
+                auto_key.automorphism_to(a_0, crt_glwe, params, rns_base, auto_context);
 
                 a_0.sub_element_wise_to(crt_glwe, b_0, poly_length, rns_poly_len, moduli);
                 b_0.mul_monic_monomial_assign(
@@ -363,7 +363,7 @@ where
                 |guard, (a_0, b_0)| {
                     let (crt_glwe, auto_context) = guard.as_mut();
 
-                    auto_key.automorphism_inplace(a_0, crt_glwe, params, rns_base, auto_context);
+                    auto_key.automorphism_to(a_0, crt_glwe, params, rns_base, auto_context);
 
                     a_0.sub_element_wise_to(crt_glwe, b_0, poly_length, rns_poly_len, moduli);
                     b_0.mul_monic_monomial_assign(

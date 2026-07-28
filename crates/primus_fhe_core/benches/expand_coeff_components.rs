@@ -121,14 +121,14 @@ fn bench_expand_coeff_components(c: &mut Criterion) {
         let mut dcrt_auto_result: DcrtGlweCiphertext<Vec<V>> =
             DcrtGlweCiphertext::zero(rns_glwe_len);
 
-        crt_auto_key.automorphism_inplace(
+        crt_auto_key.automorphism_to(
             &c_coeff,
             &mut crt_auto_result,
             &glev_params,
             base_q,
             &mut crt_auto_context,
         );
-        dcrt_auto_key.automorphism_inplace(
+        dcrt_auto_key.automorphism_to(
             &c_ntt,
             &mut dcrt_auto_result,
             &glev_params,
@@ -168,7 +168,7 @@ fn bench_expand_coeff_components(c: &mut Criterion) {
                     moduli_count,
                 );
                 b.iter(|| {
-                    crt_auto_key.automorphism_inplace(
+                    crt_auto_key.automorphism_to(
                         black_box(&c_coeff),
                         black_box(&mut result),
                         &glev_params,
@@ -191,7 +191,7 @@ fn bench_expand_coeff_components(c: &mut Criterion) {
                     moduli_count,
                 );
                 b.iter(|| {
-                    dcrt_auto_key.automorphism_inplace(
+                    dcrt_auto_key.automorphism_to(
                         black_box(&c_ntt),
                         black_box(&mut result),
                         &glev_params,

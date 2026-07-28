@@ -310,7 +310,7 @@ where
             let (x, y) = unsafe { result[..two_pow_i * 2].split_at_mut_unchecked(two_pow_i) };
 
             x.iter_mut().zip(y.iter_mut()).for_each(|(a_0, b_0)| {
-                auto_key.automorphism_inplace(a_0, dcrt_glwe, params, rns_base, auto_context);
+                auto_key.automorphism_to(a_0, dcrt_glwe, params, rns_base, auto_context);
 
                 a_0.butterfly_mul_factor_to(
                     dcrt_glwe,
@@ -403,7 +403,7 @@ where
                 |guard, (a_0, b_0)| {
                     let (dcrt_glwe, auto_context) = guard.as_mut();
 
-                    auto_key.automorphism_inplace(a_0, dcrt_glwe, params, rns_base, auto_context);
+                    auto_key.automorphism_to(a_0, dcrt_glwe, params, rns_base, auto_context);
 
                     a_0.butterfly_mul_factor_to(
                         dcrt_glwe,

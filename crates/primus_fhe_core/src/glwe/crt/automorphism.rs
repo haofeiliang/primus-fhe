@@ -16,6 +16,7 @@ use primus_reduce::ReduceMul;
 use primus_rns::RNSBase;
 
 use crate::glwe::secret_key::encode_secret_polynomial_to_rns;
+use crate::glwe::validate_automorphism;
 use crate::{
     CrtGlevParameters, CrtGlweCiphertext, DcrtGlweCiphertext, DcrtGlweSecretKey, GlweSecretKey,
     SecretCoefficient,
@@ -55,13 +56,12 @@ impl<T: FheUint> CrtGlweAutoContext<T> {
 /// Packed source index + negate flag for coefficient automorphism.
 /// The high bit stores the negate flag; the lower 31 bits store the source index.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct FromOp(u32);
+struct FromOp(u32);
 
 impl FromOp {
     const NEG_FLAG: u32 = 1 << 31;
 
     fn new(index: usize, negate: bool) -> Self {
-        debug_assert!(index < Self::NEG_FLAG as usize);
         Self(index as u32 | if negate { Self::NEG_FLAG } else { 0 })
     }
 
@@ -75,21 +75,45 @@ impl FromOp {
 }
 
 #[derive(Debug, Clone)]
-pub enum CoeffAutoHelper {
+enum CoeffAutoOperation {
     Permutation(Vec<FromOp>),
     PolyLengthPlusOne,
-    One,
+    Identity,
+}
+
+#[derive(Debug, Clone)]
+struct CoeffAutoHelper {
+    degree: usize,
+    poly_length: usize,
+    operation: CoeffAutoOperation,
 }
 
 impl CoeffAutoHelper {
-    pub fn new(degree: usize, poly_length: usize) -> CoeffAutoHelper {
-        if degree == 1 {
-            CoeffAutoHelper::One
+    fn new(degree: usize, poly_length: usize) -> Self {
+        validate_automorphism(degree, poly_length);
+        let operation = if degree == 1 {
+            CoeffAutoOperation::Identity
         } else if degree == poly_length + 1 {
-            CoeffAutoHelper::PolyLengthPlusOne
+            CoeffAutoOperation::PolyLengthPlusOne
         } else {
-            CoeffAutoHelper::Permutation(generate_permutate_ops(degree, poly_length))
+            CoeffAutoOperation::Permutation(generate_permutate_ops(degree, poly_length))
+        };
+
+        Self {
+            degree,
+            poly_length,
+            operation,
         }
+    }
+
+    #[inline]
+    fn degree(&self) -> usize {
+        self.degree
+    }
+
+    #[inline]
+    fn poly_length(&self) -> usize {
+        self.poly_length
     }
 }
 
@@ -161,7 +185,6 @@ where
     Table: DcrtTable<ValueT = T>,
 {
     key: Vec<T>,
-    degree: usize,
     rns_glev_len: usize,
     auto_helper: CoeffAutoHelper,
     table: Arc<Table>,
@@ -172,6 +195,12 @@ where
     T: FheUint,
     Table: DcrtTable<ValueT = T>,
 {
+    /// Creates an automorphism key for `X -> X^degree`.
+    ///
+    /// # Panics
+    ///
+    /// Panics unless the polynomial length is a nonzero power of two and
+    /// `degree` is odd and less than twice the polynomial length.
     pub fn new<M, R>(
         params: &CrtGlevParameters<T, M>,
         degree: usize,
@@ -193,7 +222,6 @@ where
 
         Self {
             key,
-            degree,
             rns_glev_len: dcrt_glev_len,
             auto_helper,
             table: Arc::clone(&table),
@@ -201,11 +229,7 @@ where
     }
 
     pub fn degree(&self) -> usize {
-        self.degree
-    }
-
-    pub fn auto_helper(&self) -> &CoeffAutoHelper {
-        &self.auto_helper
+        self.auto_helper.degree()
     }
 
     pub fn table(&self) -> &Table {
@@ -216,7 +240,7 @@ where
         DcrtGlevIter::new(self.key.as_slice(), self.rns_glev_len)
     }
 
-    pub fn automorphism_inplace<M, A, B>(
+    pub fn automorphism_to<M, A, B>(
         &self,
         ciphertext: &CrtGlweCiphertext<A>,
         result: &mut CrtGlweCiphertext<B>,
@@ -234,6 +258,11 @@ where
 
         let auto_helper = &self.auto_helper;
 
+        assert_eq!(
+            auto_helper.poly_length(),
+            poly_length,
+            "automorphism key and parameters must use the same polynomial length"
+        );
         debug_assert_eq!(ciphertext.as_ref().len(), params.rns_glwe_len());
 
         let (auto_crt_poly, glev_context) = context.as_mut();
@@ -246,13 +275,7 @@ where
         self.iter_dcrt_glev()
             .zip(a_in)
             .for_each(|(auto_key_i, in_crt_poly)| {
-                crt_poly_auto_inplace(
-                    in_crt_poly.0,
-                    auto_crt_poly.as_mut(),
-                    auto_helper,
-                    poly_length,
-                    moduli,
-                );
+                crt_poly_auto_inplace(in_crt_poly.0, auto_crt_poly.as_mut(), auto_helper, moduli);
 
                 temp.add_dcrt_glev_mul_crt_poly_assign(
                     &auto_key_i,
@@ -264,13 +287,7 @@ where
                 );
             });
 
-        crt_poly_auto_inplace(
-            b_in.0,
-            auto_crt_poly.as_mut(),
-            auto_helper,
-            poly_length,
-            moduli,
-        );
+        crt_poly_auto_inplace(b_in.0, auto_crt_poly.as_mut(), auto_helper, moduli);
 
         let _ = temp.into_coeff_form(self.table());
 
@@ -284,14 +301,15 @@ where
 
 /// Applies a coefficient automorphism to one canonical signed secret
 /// polynomial.
-pub fn secret_poly_auto_to<T: FheUint>(
+fn secret_poly_auto_to<T: FheUint>(
     polynomial: &[SecretCoefficient<T>],
     output: &mut [SecretCoefficient<T>],
     auto_helper: &CoeffAutoHelper,
 ) {
-    assert_eq!(polynomial.len(), output.len());
-    match auto_helper {
-        CoeffAutoHelper::Permutation(from_ops) => {
+    assert_eq!(polynomial.len(), auto_helper.poly_length());
+    assert_eq!(output.len(), auto_helper.poly_length());
+    match &auto_helper.operation {
+        CoeffAutoOperation::Permutation(from_ops) => {
             output.iter_mut().zip(from_ops).for_each(|(output, &op)| {
                 let coefficient = polynomial[op.index()];
                 *output = if op.is_neg() {
@@ -301,7 +319,7 @@ pub fn secret_poly_auto_to<T: FheUint>(
                 };
             });
         }
-        CoeffAutoHelper::PolyLengthPlusOne => {
+        CoeffAutoOperation::PolyLengthPlusOne => {
             polynomial
                 .as_chunks::<2>()
                 .0
@@ -312,27 +330,33 @@ pub fn secret_poly_auto_to<T: FheUint>(
                     output[1] = input[1].wrapping_neg();
                 });
         }
-        CoeffAutoHelper::One => output.copy_from_slice(polynomial),
+        CoeffAutoOperation::Identity => output.copy_from_slice(polynomial),
     }
 }
 
-pub fn crt_poly_auto_inplace<T, M>(
+fn crt_poly_auto_inplace<T, M>(
     crt_poly: &[T],
     auto_crt_poly: &mut [T],
     auto_helper: &CoeffAutoHelper,
-    poly_length: usize,
     moduli: &[M],
 ) where
     T: FheUint,
     M: FieldContext<T>,
 {
+    let poly_length = auto_helper.poly_length();
+    let expected_len = poly_length
+        .checked_mul(moduli.len())
+        .expect("CRT polynomial length must fit in usize");
+    assert_eq!(crt_poly.len(), expected_len);
+    assert_eq!(auto_crt_poly.len(), expected_len);
+
     izip!(
         crt_poly.chunks_exact(poly_length),
         auto_crt_poly.chunks_exact_mut(poly_length),
         moduli
     )
     .for_each(|(poly, auto_poly, &modulus)| {
-        poly_auto_inplace(poly, auto_poly, auto_helper, modulus);
+        poly_auto_inplace(poly, auto_poly, &auto_helper.operation, modulus);
     });
 }
 
@@ -340,20 +364,20 @@ pub fn crt_poly_auto_inplace<T, M>(
 fn poly_auto_inplace<T, M>(
     poly: &[T],
     auto_poly: &mut [T],
-    auto_helper: &CoeffAutoHelper,
+    operation: &CoeffAutoOperation,
     modulus: M,
 ) where
     T: FheUint,
     M: FieldContext<T>,
 {
-    match auto_helper {
-        CoeffAutoHelper::Permutation(from_ops) => {
+    match operation {
+        CoeffAutoOperation::Permutation(from_ops) => {
             poly_auto_inplace_for_permutation(poly, auto_poly, from_ops, modulus);
         }
-        CoeffAutoHelper::PolyLengthPlusOne => {
-            poly_auto_inplace_for_dimension_plus_one(poly, auto_poly, modulus);
+        CoeffAutoOperation::PolyLengthPlusOne => {
+            poly_auto_inplace_for_poly_length_plus_one(poly, auto_poly, modulus);
         }
-        CoeffAutoHelper::One => poly_auto_inplace_for_one(poly, auto_poly),
+        CoeffAutoOperation::Identity => poly_auto_inplace_for_identity(poly, auto_poly),
     }
 }
 
@@ -368,17 +392,20 @@ fn poly_auto_inplace_for_permutation<T, M>(
     M: FieldContext<T>,
 {
     for (d, from_op) in result.iter_mut().zip(from_ops.iter()) {
-        let c = unsafe { poly.get_unchecked(from_op.index()) };
+        // SAFETY: `generate_permutate_ops` only stores source indices from
+        // `0..poly_length`, and `crt_poly_auto_inplace` requires each input
+        // chunk to have exactly that length.
+        let c = unsafe { *poly.get_unchecked(from_op.index()) };
         if from_op.is_neg() {
-            *d = modulus.reduce_neg(*c);
+            *d = modulus.reduce_neg(c);
         } else {
-            *d = *c;
+            *d = c;
         }
     }
 }
 
 #[inline]
-fn poly_auto_inplace_for_dimension_plus_one<T, M>(poly: &[T], result: &mut [T], modulus: M)
+fn poly_auto_inplace_for_poly_length_plus_one<T, M>(poly: &[T], result: &mut [T], modulus: M)
 where
     T: FheUint,
     M: FieldContext<T>,
@@ -394,7 +421,7 @@ where
 }
 
 #[inline]
-fn poly_auto_inplace_for_one<T>(poly: &[T], result: &mut [T])
+fn poly_auto_inplace_for_identity<T>(poly: &[T], result: &mut [T])
 where
     T: FheUint,
 {
