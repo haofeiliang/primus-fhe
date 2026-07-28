@@ -79,6 +79,9 @@ pub trait Data: RawData {
     /// Splits the buffer into a prefix of `N`-element chunks and a remainder.
     ///
     /// The remainder has fewer than `N` elements.
+    ///
+    /// # Panics
+    /// Panics if `N` is zero.
     #[inline(always)]
     fn as_chunks<const N: usize>(&self) -> (&[[Self::Elem; N]], &[Self::Elem]) {
         self.as_slice().as_chunks()
@@ -110,6 +113,9 @@ pub trait DataMut: Data {
     }
 
     /// Copies all elements from `src` into `self`. Lengths must match.
+    ///
+    /// # Panics
+    /// Panics if `src.len() != self.len()`.
     #[inline(always)]
     fn copy_from_slice(&mut self, src: &[Self::Elem])
     where
@@ -119,6 +125,9 @@ pub trait DataMut: Data {
     }
 
     /// Returns a mutable iterator over `chunk_size` elements at a time.
+    ///
+    /// # Panics
+    /// Panics if `chunk_size` is zero.
     #[inline(always)]
     fn chunks_exact_mut(
         &mut self,
@@ -170,6 +179,9 @@ pub trait DataMut: Data {
     /// remainder.
     ///
     /// The remainder has fewer than `N` elements.
+    ///
+    /// # Panics
+    /// Panics if `N` is zero.
     #[inline(always)]
     fn as_chunks_mut<const N: usize>(&mut self) -> (&mut [[Self::Elem; N]], &mut [Self::Elem]) {
         self.as_mut_slice().as_chunks_mut()
