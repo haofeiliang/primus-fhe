@@ -1,11 +1,12 @@
-/// Generate `<BigUint>Iter` / `<BigUint>IterMut` chunk-iterators for a wrapper type.
+/// Generates immutable and mutable fixed-size chunk iterators for a wrapper type.
 ///
 /// Given a wrapper `$big_uint` of the form `pub struct $big_uint<S>(S)` over slice
 /// storage, expands to two iterator types — `<$big_uint>Iter` and
 /// `<$big_uint>IterMut` — that walk the underlying buffer in fixed-size chunks of
 /// `[<$short_name _len>]` elements and yield `$big_uint<&[T]>` / `$big_uint<&mut [T]>`
-/// items. Used to give big-integer/polynomial wrappers row-iteration without
-/// duplicating boilerplate per wrapper type.
+/// items. Only complete chunks are yielded; trailing elements that do not fill a
+/// chunk are ignored. Callers that require complete coverage are responsible for
+/// validating divisibility before constructing the iterator.
 ///
 /// # Arguments
 ///
@@ -27,20 +28,18 @@ macro_rules! impl_iters {
             }
 
             impl<'a, T: UnsignedInteger> [<$big_uint Iter>]<'a, T> {
-                /// Creates a new iterator over `$big_uint` chunks of the given length.
+                /// Creates an iterator over complete `$big_uint` chunks of the given length.
+                ///
+                /// A trailing partial chunk is not yielded. Callers that require
+                /// complete coverage must ensure that `data.len()` is divisible by
+                /// the chunk length.
                 ///
                 /// # Panics
                 ///
-                /// Panics if the chunk length is zero or does not divide the
-                /// data length exactly.
+                /// Panics if the chunk length is zero.
                 #[inline]
                 pub fn new(data:&'a [T], [<$short_name _len>]:usize) -> Self{
-                    let iter = data.chunks_exact([<$short_name _len>]);
-                    assert!(
-                        iter.remainder().is_empty(),
-                        "data length must be divisible by chunk length"
-                    );
-                    Self { iter }
+                    Self { iter: data.chunks_exact([<$short_name _len>]) }
                 }
             }
 
@@ -100,19 +99,17 @@ macro_rules! impl_iters {
             }
 
             impl<'a, T: UnsignedInteger> [<$big_uint IterMut>]<'a, T> {
-                /// Creates a new mutable iterator over `$big_uint` chunks of the given length.
+                /// Creates a mutable iterator over complete `$big_uint` chunks of the given length.
+                ///
+                /// A trailing partial chunk is not yielded. Callers that require
+                /// complete coverage must ensure that `data.len()` is divisible by
+                /// the chunk length.
                 ///
                 /// # Panics
                 ///
-                /// Panics if the chunk length is zero or does not divide the
-                /// data length exactly.
+                /// Panics if the chunk length is zero.
                 #[inline]
                 pub fn new(data:&'a mut [T], [<$short_name _len>]:usize) -> Self{
-                    assert_eq!(
-                        data.len() % [<$short_name _len>],
-                        0,
-                        "data length must be divisible by chunk length"
-                    );
                     Self {
                         iter: data.chunks_exact_mut([<$short_name _len>])
                     }

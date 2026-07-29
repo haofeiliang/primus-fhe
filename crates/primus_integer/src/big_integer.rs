@@ -9,32 +9,13 @@ use serde::{Deserialize, Serialize};
 
 use crate::{UnsignedInteger, impl_iters};
 
-/// A big unsigned integer backed by externally provided limb storage.
+/// A fixed-width unsigned integer backed by little-endian limb storage.
 ///
-/// `BigUint<S>` is designed to work as a lightweight view or container over an
-/// existing limb buffer instead of as a normalized arbitrary-precision integer.
-/// The storage backend `S` can therefore be borrowed or owned, for example:
-///
-/// - `BigUint<&[T]>`
-/// - `BigUint<&mut [T]>`
-/// - `BigUint<Vec<T>>`
-/// - `BigUint<Box<[T]>>`
-///
-/// The limb order is little-endian: index `0` stores the least significant
-/// limb.
-///
-/// # Design note
-///
-/// Most arithmetic and comparison methods in this type are intended for
-/// buffer-based, fixed-width style usage in higher-level crates, where
-/// operands are expected to have the same limb length. This type does not try
-/// to canonicalize away leading zero limbs automatically.
-///
-/// Equality compares the complete fixed-width representation, so values with
-/// different storage lengths are not equal even when their extra high limbs
-/// are zero. [`cmp`](BigUint::cmp) and the arithmetic methods require all
-/// participating [`BigUint`]s to have the same storage length. Public batch
-/// operations validate this once before entering their per-value kernels.
+/// `BigUint<S>` is a lightweight view or container over borrowed or owned
+/// storage. It does not remove leading zero limbs: the limb count is part of
+/// the representation and equality. Operations involving multiple `BigUint`s
+/// require matching limb counts; higher-level callers are responsible for
+/// validating their buffer layouts.
 #[derive(Debug, Serialize, Deserialize)]
 #[repr(transparent)]
 pub struct BigUint<S>(pub S)
@@ -148,7 +129,7 @@ where
     /// Returns an iterator over the limbs from least significant to most
     /// significant.
     #[inline(always)]
-    pub fn iter<'a>(&'a self) -> std::slice::Iter<'a, T> {
+    pub fn iter<'a>(&'a self) -> core::slice::Iter<'a, T> {
         self.0.iter()
     }
 
@@ -177,7 +158,7 @@ where
         BigUint(self.0.as_slice())
     }
 
-    /// Adds a value to the big integer, returning true if there was a carry.
+    /// Writes `self + value` to `output` and returns the carry beyond its fixed width.
     #[must_use]
     #[inline]
     pub fn add_value_to<A>(&self, value: T, output: &mut BigUint<A>) -> bool
@@ -214,7 +195,7 @@ where
         carry
     }
 
-    /// Subtracts a value to the big integer, returning true if there was a borrow.
+    /// Writes `self - value` to `output` and returns the final borrow.
     #[must_use]
     #[inline]
     pub fn sub_value_to<A>(&self, value: T, output: &mut BigUint<A>) -> bool
@@ -251,7 +232,7 @@ where
         borrow
     }
 
-    /// Multiplies the big integer by a value, storing the result in another big integer.
+    /// Writes the low limbs of `self * value` to `output` and returns the high limb.
     #[must_use]
     #[inline]
     pub fn mul_value_to<A>(&self, value: T, output: &mut BigUint<A>) -> T
@@ -273,7 +254,7 @@ where
         carry
     }
 
-    /// Multiplies the big integer by a value, then add to another big integer.
+    /// Accumulates `self * value` into `acc` and returns the carry beyond its fixed width.
     #[must_use]
     #[inline]
     pub fn mul_value_add_to<A>(&self, value: T, acc: &mut BigUint<A>) -> T
@@ -294,7 +275,7 @@ where
         carry
     }
 
-    /// Adds two big integers to the result, returning true if there was a carry.
+    /// Writes `self + other` to `output` and returns the carry beyond its fixed width.
     #[must_use]
     #[inline]
     pub fn add_to<A, B>(&self, other: &BigUint<A>, output: &mut BigUint<B>) -> bool
@@ -313,7 +294,7 @@ where
         carry
     }
 
-    /// Subtracts another big integer from this one, returning true if there was a borrow.
+    /// Writes `self - other` to `output` and returns the final borrow.
     #[must_use]
     #[inline]
     pub fn sub_to<A, B>(&self, other: &BigUint<A>, output: &mut BigUint<B>) -> bool
@@ -354,9 +335,8 @@ where
 
     /// Adds two reduced big integers and writes the result modulo `modulus`.
     ///
-    /// This single-correction kernel requires `self` and `other` to be
-    /// strictly less than `modulus`. All operands must have the same limb
-    /// length.
+    /// Requires `self` and `other` to be less than `modulus` and all operands
+    /// to have the same limb count.
     #[inline]
     pub fn add_modulo_to<A, B, C>(
         &self,
@@ -378,12 +358,10 @@ where
         }
     }
 
-    /// Subtracts two reduced big integers and writes the result modulo
-    /// `modulus`.
+    /// Subtracts two reduced big integers and writes the result modulo `modulus`.
     ///
-    /// This single-correction kernel requires `self` and `other` to be
-    /// strictly less than `modulus`. All operands must have the same limb
-    /// length.
+    /// Requires `self` and `other` to be less than `modulus` and all operands
+    /// to have the same limb count.
     #[inline]
     pub fn sub_modulo_to<A, B, C>(
         &self,
@@ -406,8 +384,8 @@ where
 
     /// Negates a reduced big integer modulo `modulus`.
     ///
-    /// This kernel requires `self` to be strictly less than `modulus`. The
-    /// input, output, and modulus must have the same limb length.
+    /// Requires `self < modulus` and equal limb counts for the input, output,
+    /// and modulus.
     #[inline]
     pub fn neg_modulo_to<A, B>(&self, output: &mut BigUint<A>, modulus: &BigUint<B>)
     where
@@ -457,15 +435,10 @@ where
         BigUint(self.0.as_mut_slice())
     }
 
-    /// Left shifts the big integer by fewer than one limb.
+    /// Shifts left within the fixed width and returns the bits shifted out.
     ///
-    /// This is a carry-propagating limb kernel rather than a general
-    /// arbitrary-width shift. `bits` must be less than `T::BITS`; a zero
-    /// shift leaves the value unchanged. The returned limb contains the bits
-    /// shifted out of the most-significant limb.
-    ///
-    /// Values greater than or equal to `T::BITS` are unsupported and may
-    /// panic.
+    /// `bits` must be less than `T::BITS`; larger shifts are unsupported and
+    /// may panic. A zero shift leaves the value unchanged.
     #[must_use]
     #[inline]
     pub fn left_shift_assign(&mut self, bits: u32) -> T {
@@ -484,14 +457,10 @@ where
         }
     }
 
-    /// Right shifts the big integer by fewer than one limb.
+    /// Shifts right within the fixed width, discarding the low bits.
     ///
-    /// This is a carry-propagating limb kernel rather than a general
-    /// arbitrary-width shift. `bits` must be less than `T::BITS`; a zero
-    /// shift leaves the value unchanged.
-    ///
-    /// Values greater than or equal to `T::BITS` are unsupported and may
-    /// panic.
+    /// `bits` must be less than `T::BITS`; larger shifts are unsupported and
+    /// may panic. A zero shift leaves the value unchanged.
     #[inline]
     pub fn right_shift_assign(&mut self, bits: u32) {
         if bits != 0 {
@@ -506,7 +475,7 @@ where
         }
     }
 
-    /// Adds a value to the big integer, returning true if there was a carry.
+    /// Adds `value` and returns the carry beyond the fixed width.
     #[must_use]
     #[inline]
     pub fn add_value_assign(&mut self, value: T) -> bool {
@@ -526,7 +495,7 @@ where
         }
     }
 
-    /// Subtracts a value from the big integer, returning true if there was a borrow.
+    /// Subtracts `value` and returns the final borrow.
     #[must_use]
     #[inline]
     pub fn sub_value_assign(&mut self, value: T) -> bool {
@@ -546,7 +515,7 @@ where
         }
     }
 
-    /// Multiplies the big integer by a value, returning any carry that results.
+    /// Multiplies by `value` and returns the high limb beyond the fixed width.
     #[must_use]
     #[inline]
     pub fn mul_value_assign(&mut self, value: T) -> T {
@@ -563,7 +532,7 @@ where
         carry
     }
 
-    /// Adds another big integer to this one, returning true if there was a carry.
+    /// Adds `other` and returns the carry beyond the fixed width.
     #[must_use]
     #[inline]
     pub fn add_assign<A>(&mut self, other: &BigUint<A>) -> bool
@@ -581,7 +550,7 @@ where
         carry
     }
 
-    /// Subtracts another big integer from this one, returning true if there was a borrow.
+    /// Subtracts `other` and returns the final borrow.
     #[must_use]
     #[inline]
     pub fn sub_assign<A>(&mut self, other: &BigUint<A>) -> bool
@@ -601,9 +570,8 @@ where
 
     /// Adds another reduced big integer to this one modulo `modulus`.
     ///
-    /// This single-correction kernel requires both operands to be strictly
-    /// less than `modulus`. Both operands and the modulus must have the same
-    /// limb length.
+    /// Requires both operands to be less than `modulus` and to have the same
+    /// limb count as the modulus.
     #[inline]
     pub fn add_modulo_assign<A, B>(&mut self, other: &BigUint<A>, modulus: &BigUint<B>)
     where
@@ -620,9 +588,8 @@ where
 
     /// Performs `self = other - self` modulo `modulus`.
     ///
-    /// This single-correction kernel requires both operands to be strictly
-    /// less than `modulus`. Both operands and the modulus must have the same
-    /// limb length.
+    /// Requires both operands to be less than `modulus` and to have the same
+    /// limb count as the modulus.
     #[inline]
     pub fn sub_modulo_rev_assign<A, B>(&mut self, other: &BigUint<A>, modulus: &BigUint<B>)
     where
@@ -644,9 +611,8 @@ where
 
     /// Subtracts another reduced big integer from this one modulo `modulus`.
     ///
-    /// This single-correction kernel requires both operands to be strictly
-    /// less than `modulus`. Both operands and the modulus must have the same
-    /// limb length.
+    /// Requires both operands to be less than `modulus` and to have the same
+    /// limb count as the modulus.
     #[inline]
     pub fn sub_modulo_assign<A, B>(&mut self, other: &BigUint<A>, modulus: &BigUint<B>)
     where
@@ -662,8 +628,7 @@ where
 
     /// Negates this reduced big integer modulo `modulus`.
     ///
-    /// This kernel requires `self` to be strictly less than `modulus`. The
-    /// value and modulus must have the same limb length.
+    /// Requires `self < modulus` and matching limb counts.
     #[inline]
     pub fn neg_modulo_assign<A>(&mut self, modulus: &BigUint<A>)
     where
@@ -680,7 +645,7 @@ where
     }
 }
 
-/// Multiplies many values together, returning the result as a big integer slice.
+/// Multiplies the values and returns their product as an owned [`BigUint`].
 ///
 /// # Panics
 ///
@@ -728,37 +693,17 @@ mod tests {
         result
     }
 
-    /// Verifies that the public product helper rejects an undefined empty
-    /// product instead of relying on a debug-only precondition.
     #[test]
     #[should_panic(expected = "values must be nonempty")]
     fn multiply_many_values_rejects_empty_input() {
         let _ = multiply_many_values::<u32>(&[]);
     }
 
-    /// Verifies that equality includes the fixed limb width rather than only
-    /// comparing the shared low-limb prefix.
     #[test]
     fn fixed_width_equality_includes_limb_count() {
         assert_eq!(BigUint(&[1u32, 2][..]), BigUint(vec![1u32, 2]));
         assert_ne!(BigUint(&[1u32][..]), BigUint(&[1u32, 0][..]));
         assert_ne!(BigUint(&[1u32, 2][..]), BigUint(&[1u32, 3][..]));
-    }
-
-    /// Verifies that chunk iterators reject zero-width or truncated layouts at
-    /// construction instead of silently omitting data.
-    #[test]
-    fn big_uint_iter_rejects_inexact_chunks() {
-        assert!(std::panic::catch_unwind(|| BigUintIter::new(&[0u32; 2], 0)).is_err());
-        assert!(std::panic::catch_unwind(|| BigUintIter::new(&[0u32; 3], 2)).is_err());
-
-        let mut values = [0u32; 3];
-        assert!(
-            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                let _ = BigUintIterMut::new(&mut values, 2);
-            }))
-            .is_err()
-        );
     }
 
     #[test]
@@ -896,15 +841,12 @@ mod tests {
         assert_eq!(result, [u32::MAX, u32::MAX]);
     }
 
-    // Coverage for u64 BigUint multi-limb operations.
-    // Builds 2-limb u64 BigUints by decomposing u128 values, so we always
-    // exercise the multi-limb path and can cross-check against u128 arithmetic.
-    // `mul_value` is omitted because a 2-limb u64 * u64 value can exceed u128.
+    // Cross-check two-limb u64 operations against u128 arithmetic. Multiplication
+    // by a limb is omitted because its result may exceed u128.
     #[test]
     fn test_big_uint_ops_u64_two_limbs() {
         let mut rng = StdRng::seed_from_u64(0xCAFE_BABE_0000_0005);
 
-        // Modulus: a 2-limb u64 value strictly less than 2^128.
         let m_raw: u128 = 0xc0ff_ee15_dead_beef_face_b00c_1337_4242;
         let modulus = BigUint::<Vec<u64>>(vec![m_raw as u64, (m_raw >> 64) as u64]);
 
@@ -918,7 +860,6 @@ mod tests {
         let mut a = BigUint::<Vec<u64>>(split(a_raw));
         let b = BigUint::<Vec<u64>>(split(b_raw));
 
-        // shift
         let mut a_shifted = a.clone();
         a_shifted.right_shift_assign(5);
         assert_eq!(a_raw >> 5, compose_u64(a_shifted.digits()));
@@ -926,7 +867,6 @@ mod tests {
         assert_eq!(carry, 0);
         assert_eq!((a_raw >> 5) << 5, compose_u64(a_shifted.digits()));
 
-        // add_value / sub_value within range that doesn't overflow the BigUint
         let v: u64 = rng.random_range(0u64..(1 << 32));
         let mut a_av = a.clone();
         let _r = a_av.add_value_assign(v);
@@ -934,7 +874,6 @@ mod tests {
         let _r = a_av.sub_value_assign(v);
         assert_eq!(a_raw, compose_u64(a_av.digits()));
 
-        // add_modulo / sub_modulo / neg_modulo
         // Compute expected results without intermediate u128 overflow.
         let (sum, sum_overflow) = a_raw.overflowing_add(b_raw);
         let expected_add = if sum_overflow || sum >= m_raw {

@@ -2,7 +2,7 @@
 //!
 //! `primus_integer` provides [`Integer`] and [`UnsignedInteger`] — the core
 //! numeric trait hierarchies used throughout the primus workspace — together
-//! with [`BigUint`] for arbitrary-precision unsigned integers.
+//! with [`BigUint`] for fixed-width, multi-limb unsigned integers.
 //!
 //! When the `simd` feature is enabled (requires nightly), SIMD vector
 //! abstractions (SimdArray, SimdInteger, SimdMaskArray, SimdUnsignedInteger)
