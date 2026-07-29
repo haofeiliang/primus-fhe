@@ -297,7 +297,7 @@ pub(crate) fn ops(name: &Ident, modulus: &TokenStream, ty: &syn::Path) -> TokenS
             }
         }
 
-        impl ::primus_modulus::reduce::ReduceExpPowOf2<#ty> for #name {
+        impl ::primus_modulus::reduce::ReduceExpPowerOf2<#ty> for #name {
             #[inline]
             fn reduce_exp_power_of_2(self, base: #ty, exp_log: u32) -> #ty {
                 use ::primus_modulus::reduce::ReduceSquareAssign;

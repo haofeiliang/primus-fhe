@@ -58,25 +58,25 @@ where
 }
 
 /// Value-side mirror of [`ReduceAddSlice`].
-pub trait AddModuloSlice<M, B: ?Sized = Self> {
+pub trait AddModuloSlice<M> {
     /// Calculates `self[i] = (self[i] + b[i]) (mod modulus)` element-wise.
-    fn add_modulo_slice_assign(&mut self, b: &B, modulus: M);
+    fn add_modulo_slice_assign(&mut self, b: &Self, modulus: M);
 
     /// Writes `self[i] + b[i] (mod modulus)` into `output[i]`.
-    fn add_modulo_slice_to(&self, b: &B, output: &mut Self, modulus: M);
+    fn add_modulo_slice_to(&self, b: &Self, output: &mut Self, modulus: M);
 }
 
-impl<T, M, B> AddModuloSlice<M, [B]> for [T]
+impl<T, M> AddModuloSlice<M> for [T]
 where
-    M: ReduceAddSlice<T, B> + Copy,
+    M: ReduceAddSlice<T> + Copy,
 {
     #[inline(always)]
-    fn add_modulo_slice_assign(&mut self, b: &[B], modulus: M) {
+    fn add_modulo_slice_assign(&mut self, b: &[T], modulus: M) {
         modulus.reduce_add_slice_assign(self, b);
     }
 
     #[inline(always)]
-    fn add_modulo_slice_to(&self, b: &[B], output: &mut [T], modulus: M) {
+    fn add_modulo_slice_to(&self, b: &[T], output: &mut [T], modulus: M) {
         modulus.reduce_add_slice_to(self, b, output);
     }
 }
@@ -106,29 +106,29 @@ where
 }
 
 /// Value-side mirror of [`ReduceSubSlice`].
-pub trait SubModuloSlice<M, B: ?Sized = Self> {
+pub trait SubModuloSlice<M> {
     /// Calculates `self[i] = (self[i] - b[i]) (mod modulus)` element-wise.
-    fn sub_modulo_slice_assign(&mut self, b: &B, modulus: M);
+    fn sub_modulo_slice_assign(&mut self, b: &Self, modulus: M);
 
     /// Writes `self[i] - b[i] (mod modulus)` into `output[i]`.
-    fn sub_modulo_slice_to(&self, b: &B, output: &mut Self, modulus: M);
+    fn sub_modulo_slice_to(&self, b: &Self, output: &mut Self, modulus: M);
 
     /// Calculates `b[i] = (self[i] - b[i]) (mod modulus)` element-wise
     /// — reverse direction. The second slice is mutated instead of the first.
     fn sub_modulo_slice_rev_assign(&self, b: &mut Self, modulus: M);
 }
 
-impl<T, M, B> SubModuloSlice<M, [B]> for [T]
+impl<T, M> SubModuloSlice<M> for [T]
 where
-    M: ReduceSubSlice<T, B> + Copy,
+    M: ReduceSubSlice<T> + Copy,
 {
     #[inline(always)]
-    fn sub_modulo_slice_assign(&mut self, b: &[B], modulus: M) {
+    fn sub_modulo_slice_assign(&mut self, b: &[T], modulus: M) {
         modulus.reduce_sub_slice_assign(self, b);
     }
 
     #[inline(always)]
-    fn sub_modulo_slice_to(&self, b: &[B], output: &mut [T], modulus: M) {
+    fn sub_modulo_slice_to(&self, b: &[T], output: &mut [T], modulus: M) {
         modulus.reduce_sub_slice_to(self, b, output);
     }
 
@@ -271,6 +271,11 @@ where
 {
     /// Try to compute `self[i] = self[i]^(-1) (mod modulus)` in-place.
     ///
+    /// # Preconditions
+    ///
+    /// - Every value in `self` is less than `modulus`
+    /// - `scratch` satisfies the modulus implementation's requirement
+    ///
     /// # Errors
     ///
     /// Returns [`ReduceError::NoInverse`](primus_reduce::ReduceError::NoInverse)
@@ -283,6 +288,11 @@ where
     ) -> Result<(), primus_reduce::ReduceError<T>>;
 
     /// Try to compute `output[i] = self[i]^(-1) (mod modulus)`.
+    ///
+    /// # Preconditions
+    ///
+    /// - `self.as_ref().len() == output.len()`
+    /// - Every value in `self` is less than `modulus`
     ///
     /// # Errors
     ///
@@ -319,49 +329,35 @@ where
     }
 }
 
-/// The modular dot product.
-///
-/// This is always used for slice. For example, `u64` slice `[u64]`.
-///
-/// For two same length slice `a = (a₀, a₁, ..., an)` and `b = (b₀, b₁, ..., bn)`.
-///
-/// This trait will calculate `a₀×b₀ + a₁×b₁ + ... + an×bn mod modulus`.
-pub trait DotProductModulo<M, T>
-where
-    Self: AsRef<[T]>,
-{
-    /// Calculate `∑a_i×b_i (mod modulus)`.
-    fn dot_product_modulo<B>(self, b: B, modulus: M) -> T
-    where
-        B: AsRef<[T]>;
+/// Modular dot product of two slices.
+pub trait DotProductModulo<M, T> {
+    /// Calculates `∑ self[i] * b[i] (mod modulus)`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `self.len() != b.len()`.
+    fn dot_product_modulo(&self, b: &[T], modulus: M) -> T;
 }
 
-impl<M, T, A> DotProductModulo<M, T> for A
+impl<M, T> DotProductModulo<M, T> for [T]
 where
-    A: AsRef<[T]>,
     M: ReduceDotProduct<T, Output = T>,
 {
     #[inline(always)]
-    fn dot_product_modulo<B>(self, b: B, modulus: M) -> T
-    where
-        B: AsRef<[T]>,
-    {
+    fn dot_product_modulo(&self, b: &[T], modulus: M) -> T {
         modulus.reduce_dot_product(self, b)
     }
 }
 
-/// The modular dot product.
-///
-/// This is always used for slice. For example, `u64` slice `[u64]`.
-///
-/// For two same length slice `a = (a₀, a₁, ..., an)` and `b = (b₀, b₁, ..., bn)`.
-///
-/// This trait will calculate `a₀×b₀ + a₁×b₁ + ... + an×bn mod modulus`.
+/// Modular dot product of two iterators.
 pub trait DotProductModuloIter<M, T>
 where
     Self: IntoIterator<Item = T>,
 {
-    /// Calculate `∑a_i×b_i (mod modulus)`.
+    /// Calculates `∑ a_i * b_i (mod modulus)` using standard `zip` semantics.
+    ///
+    /// If the iterators have different lengths, iteration stops at the shorter
+    /// one.
     fn dot_product_modulo_iter<B>(self, b: B, modulus: M) -> T
     where
         B: IntoIterator<Item = T>;

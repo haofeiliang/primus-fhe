@@ -168,9 +168,7 @@ impl<T: FheUint> ReduceDoubleSlice<T> for NativeModulus<T> {
 impl<T: FheUint> ReduceDotProduct<T> for NativeModulus<T> {
     type Output = T;
     #[inline]
-    fn reduce_dot_product(self, a: impl AsRef<[T]>, b: impl AsRef<[T]>) -> T {
-        let a = a.as_ref();
-        let b = b.as_ref();
+    fn reduce_dot_product(self, a: &[T], b: &[T]) -> T {
         assert_eq!(a.len(), b.len(), "reduce_dot_product: length mismatch");
 
         let (a_chunks, a_rem) = T::simd_as_chunks(a);

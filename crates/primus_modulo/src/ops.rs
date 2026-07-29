@@ -39,7 +39,7 @@ where
     }
 }
 
-/// At most one minus operation.
+/// A single-correction modular reduction.
 pub trait ModuloOnce<M> {
     /// Output type.
     type Output;
@@ -60,7 +60,7 @@ where
     }
 }
 
-/// At most one minus operation assignment.
+/// In-place single-correction modular reduction.
 pub trait ModuloOnceAssign<M> {
     /// Calculates `self -= modulus` if `self >= modulus`.
     fn modulo_once_assign(&mut self, modulus: M);
@@ -77,7 +77,7 @@ where
 }
 
 /// The modular addition.
-pub trait AddModulo<M, B = Self> {
+pub trait AddModulo<M>: Sized {
     /// Output type.
     type Output;
 
@@ -87,38 +87,38 @@ pub trait AddModulo<M, B = Self> {
     ///
     /// - `self < modulus`
     /// - `b < modulus`
-    fn add_modulo(self, b: B, modulus: M) -> Self::Output;
+    fn add_modulo(self, b: Self, modulus: M) -> Self::Output;
 }
 
-impl<T, M, B> AddModulo<M, B> for T
+impl<T, M> AddModulo<M> for T
 where
-    M: ReduceAdd<T, B>,
+    M: ReduceAdd<T>,
 {
-    type Output = <M as ReduceAdd<T, B>>::Output;
+    type Output = <M as ReduceAdd<T>>::Output;
 
     #[inline(always)]
-    fn add_modulo(self, b: B, modulus: M) -> Self::Output {
+    fn add_modulo(self, b: T, modulus: M) -> Self::Output {
         modulus.reduce_add(self, b)
     }
 }
 
 /// The modular addition assignment.
-pub trait AddModuloAssign<M, B = Self> {
+pub trait AddModuloAssign<M>: Sized {
     /// Calculates `self += b (mod modulus)`.
     ///
     /// # Correctness
     ///
     /// - `self < modulus`
     /// - `b < modulus`
-    fn add_modulo_assign(&mut self, b: B, modulus: M);
+    fn add_modulo_assign(&mut self, b: Self, modulus: M);
 }
 
-impl<T, M, B> AddModuloAssign<M, B> for T
+impl<T, M> AddModuloAssign<M> for T
 where
-    M: ReduceAddAssign<T, B>,
+    M: ReduceAddAssign<T>,
 {
     #[inline(always)]
-    fn add_modulo_assign(&mut self, b: B, modulus: M) {
+    fn add_modulo_assign(&mut self, b: T, modulus: M) {
         modulus.reduce_add_assign(self, b)
     }
 }
@@ -169,7 +169,7 @@ where
 }
 
 /// The modular subtraction.
-pub trait SubModulo<M, B = Self> {
+pub trait SubModulo<M>: Sized {
     /// Output type.
     type Output;
 
@@ -179,38 +179,38 @@ pub trait SubModulo<M, B = Self> {
     ///
     /// - `self < modulus`
     /// - `b < modulus`
-    fn sub_modulo(self, b: B, modulus: M) -> Self::Output;
+    fn sub_modulo(self, b: Self, modulus: M) -> Self::Output;
 }
 
-impl<T, M, B> SubModulo<M, B> for T
+impl<T, M> SubModulo<M> for T
 where
-    M: ReduceSub<T, B>,
+    M: ReduceSub<T>,
 {
-    type Output = <M as ReduceSub<T, B>>::Output;
+    type Output = <M as ReduceSub<T>>::Output;
 
     #[inline(always)]
-    fn sub_modulo(self, b: B, modulus: M) -> Self::Output {
+    fn sub_modulo(self, b: T, modulus: M) -> Self::Output {
         modulus.reduce_sub(self, b)
     }
 }
 
 /// The modular subtraction assignment.
-pub trait SubModuloAssign<M, B = Self> {
+pub trait SubModuloAssign<M>: Sized {
     /// Calculates `self -= b (mod modulus)`.
     ///
     /// # Correctness
     ///
     /// - `self < modulus`
     /// - `b < modulus`
-    fn sub_modulo_assign(&mut self, b: B, modulus: M);
+    fn sub_modulo_assign(&mut self, b: Self, modulus: M);
 }
 
-impl<T, M, B> SubModuloAssign<M, B> for T
+impl<T, M> SubModuloAssign<M> for T
 where
-    M: ReduceSubAssign<T, B>,
+    M: ReduceSubAssign<T>,
 {
     #[inline(always)]
-    fn sub_modulo_assign(&mut self, b: B, modulus: M) {
+    fn sub_modulo_assign(&mut self, b: T, modulus: M) {
         modulus.reduce_sub_assign(self, b)
     }
 }
@@ -261,7 +261,7 @@ where
 }
 
 /// The modular multiplication.
-pub trait MulModulo<M, B = Self> {
+pub trait MulModulo<M>: Sized {
     /// Output type.
     type Output;
 
@@ -270,37 +270,37 @@ pub trait MulModulo<M, B = Self> {
     /// # Correctness
     ///
     /// - `self*b < modulus²`
-    fn mul_modulo(self, b: B, modulus: M) -> Self::Output;
+    fn mul_modulo(self, b: Self, modulus: M) -> Self::Output;
 }
 
-impl<T, M, B> MulModulo<M, B> for T
+impl<T, M> MulModulo<M> for T
 where
-    M: ReduceMul<T, B>,
+    M: ReduceMul<T>,
 {
-    type Output = <M as ReduceMul<T, B>>::Output;
+    type Output = <M as ReduceMul<T>>::Output;
 
     #[inline(always)]
-    fn mul_modulo(self, b: B, modulus: M) -> Self::Output {
+    fn mul_modulo(self, b: T, modulus: M) -> Self::Output {
         modulus.reduce_mul(self, b)
     }
 }
 
 /// The modular multiplication assignment.
-pub trait MulModuloAssign<M, B = Self> {
+pub trait MulModuloAssign<M>: Sized {
     /// Calculates `self *= b (mod modulus)`.
     ///
     /// # Correctness
     ///
     /// - `self*b < modulus²`
-    fn mul_modulo_assign(&mut self, b: B, modulus: M);
+    fn mul_modulo_assign(&mut self, b: Self, modulus: M);
 }
 
-impl<T, M, B> MulModuloAssign<M, B> for T
+impl<T, M> MulModuloAssign<M> for T
 where
-    M: ReduceMulAssign<T, B>,
+    M: ReduceMulAssign<T>,
 {
     #[inline(always)]
-    fn mul_modulo_assign(&mut self, b: B, modulus: M) {
+    fn mul_modulo_assign(&mut self, b: T, modulus: M) {
         modulus.reduce_mul_assign(self, b)
     }
 }
@@ -351,7 +351,7 @@ where
 }
 
 /// The modular multiply-add.
-pub trait MulAddModulo<M, B = Self, C = Self> {
+pub trait MulAddModulo<M>: Sized {
     /// Output type.
     type Output;
 
@@ -362,23 +362,23 @@ pub trait MulAddModulo<M, B = Self, C = Self> {
     /// - `self < modulus`
     /// - `b < modulus`
     /// - `c < modulus`
-    fn mul_add_modulo(self, b: B, c: C, modulus: M) -> Self::Output;
+    fn mul_add_modulo(self, b: Self, c: Self, modulus: M) -> Self::Output;
 }
 
-impl<T, M, B, C> MulAddModulo<M, B, C> for T
+impl<T, M> MulAddModulo<M> for T
 where
-    M: ReduceMulAdd<T, B, C>,
+    M: ReduceMulAdd<T>,
 {
-    type Output = <M as ReduceMulAdd<T, B, C>>::Output;
+    type Output = <M as ReduceMulAdd<T>>::Output;
 
     #[inline(always)]
-    fn mul_add_modulo(self, b: B, c: C, modulus: M) -> Self::Output {
+    fn mul_add_modulo(self, b: T, c: T, modulus: M) -> Self::Output {
         modulus.reduce_mul_add(self, b, c)
     }
 }
 
 /// The modular multiply-add assignment.
-pub trait MulAddModuloAssign<M, B = Self, C = Self> {
+pub trait MulAddModuloAssign<M>: Sized {
     /// Calculates `(self * b) + c (mod modulus)`.
     ///
     /// # Correctness
@@ -386,20 +386,20 @@ pub trait MulAddModuloAssign<M, B = Self, C = Self> {
     /// - `self < modulus`
     /// - `b < modulus`
     /// - `c < modulus`
-    fn mul_add_modulo_assign(&mut self, b: B, c: C, modulus: M);
+    fn mul_add_modulo_assign(&mut self, b: Self, c: Self, modulus: M);
 }
 
-impl<T, M, B, C> MulAddModuloAssign<M, B, C> for T
+impl<T, M> MulAddModuloAssign<M> for T
 where
-    M: ReduceMulAddAssign<T, B, C>,
+    M: ReduceMulAddAssign<T>,
 {
     #[inline(always)]
-    fn mul_add_modulo_assign(&mut self, b: B, c: C, modulus: M) {
+    fn mul_add_modulo_assign(&mut self, b: T, c: T, modulus: M) {
         modulus.reduce_mul_add_assign(self, b, c)
     }
 }
 
-/// Calculate the inverse element for a field.
+/// Modular multiplicative inversion.
 pub trait InvModulo<M> {
     /// Output type.
     type Output;
@@ -420,7 +420,7 @@ where
     }
 }
 
-/// The modular inversion assignment for a field.
+/// In-place modular multiplicative inversion.
 pub trait InvModuloAssign<M> {
     /// Calculates `self^(-1) (mod modulus)`.
     fn inv_modulo_assign(&mut self, modulus: M);
@@ -436,7 +436,7 @@ where
     }
 }
 
-/// Try to calculate the inverse element when there may be not a field.
+/// Fallible modular multiplicative inversion.
 pub trait TryInvModulo<M>
 where
     Self: Sized,
@@ -444,7 +444,12 @@ where
     /// Output type.
     type Output;
 
-    /// Try to calculate the multiplicative inverse of `self modulo modulus`.
+    /// Attempts to calculate the multiplicative inverse of `self` modulo
+    /// `modulus`.
+    ///
+    /// # Preconditions
+    ///
+    /// - `self < modulus`
     ///
     /// # Errors
     ///
@@ -465,38 +470,38 @@ where
 }
 
 /// The modular division.
-pub trait DivModulo<M, B = Self> {
+pub trait DivModulo<M>: Sized {
     /// Output type.
     type Output;
 
     /// Calculates `self / b (mod modulus)`.
-    fn div_modulo(self, b: B, modulus: M) -> Self::Output;
+    fn div_modulo(self, b: Self, modulus: M) -> Self::Output;
 }
 
-impl<T, M, B> DivModulo<M, B> for T
+impl<T, M> DivModulo<M> for T
 where
-    M: ReduceDiv<T, B>,
+    M: ReduceDiv<T>,
 {
-    type Output = <M as ReduceDiv<T, B>>::Output;
+    type Output = <M as ReduceDiv<T>>::Output;
 
     #[inline(always)]
-    fn div_modulo(self, b: B, modulus: M) -> Self::Output {
+    fn div_modulo(self, b: T, modulus: M) -> Self::Output {
         modulus.reduce_div(self, b)
     }
 }
 
 /// The modular division assignment.
-pub trait DivModuloAssign<M, B = Self> {
+pub trait DivModuloAssign<M>: Sized {
     /// Calculates `self /= b (mod modulus)`.
-    fn div_modulo_assign(&mut self, b: B, modulus: M);
+    fn div_modulo_assign(&mut self, b: Self, modulus: M);
 }
 
-impl<T, M, B> DivModuloAssign<M, B> for T
+impl<T, M> DivModuloAssign<M> for T
 where
-    M: ReduceDivAssign<T, B>,
+    M: ReduceDivAssign<T>,
 {
     #[inline(always)]
-    fn div_modulo_assign(&mut self, b: B, modulus: M) {
+    fn div_modulo_assign(&mut self, b: T, modulus: M) {
         modulus.reduce_div_assign(self, b)
     }
 }
@@ -518,14 +523,14 @@ where
 }
 
 /// The modular power-of-two exponentiation.
-pub trait ExpPowOf2Modulo<M> {
+pub trait ExpPowerOf2Modulo<M> {
     /// Calculates `self^(2^exp_log) (mod modulus)`.
     fn exp_power_of_2_modulo(self, exp_log: u32, modulus: M) -> Self;
 }
 
-impl<T, M> ExpPowOf2Modulo<M> for T
+impl<T, M> ExpPowerOf2Modulo<M> for T
 where
-    M: ReduceExpPowOf2<T>,
+    M: ReduceExpPowerOf2<T>,
 {
     #[inline(always)]
     fn exp_power_of_2_modulo(self, exp_log: u32, modulus: M) -> Self {

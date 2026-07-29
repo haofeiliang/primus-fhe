@@ -455,8 +455,8 @@ mod dot_product {
         type Output = T;
 
         #[inline]
-        fn reduce_dot_product(self, a: impl AsRef<[T]>, b: impl AsRef<[T]>) -> Self::Output {
-            slice::reduce_dot_product(self, a.as_ref(), b.as_ref())
+        fn reduce_dot_product(self, a: &[T], b: &[T]) -> Self::Output {
+            slice::reduce_dot_product(self, a, b)
         }
 
         #[inline]
@@ -481,8 +481,8 @@ mod dot_product {
         type Output = T;
 
         #[inline]
-        fn reduce_dot_product(self, a: impl AsRef<[T]>, b: impl AsRef<[T]>) -> Self::Output {
-            crate::barrett_simd_reduce_dot_product(self, a.as_ref(), b.as_ref())
+        fn reduce_dot_product(self, a: &[T], b: &[T]) -> Self::Output {
+            crate::barrett_simd_reduce_dot_product(self, a, b)
         }
 
         #[inline]

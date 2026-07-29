@@ -8,7 +8,7 @@ use super::BarrettModulus;
 impl<T: UnsignedInteger> LazyReduce<T> for BarrettModulus<T> {
     type Output = T;
 
-    /// Calculates `value (mod 2*modulus)`.
+    /// Returns a representative congruent to `value` modulo the modulus.
     #[inline(always)]
     fn lazy_reduce(self, value: T) -> T {
         // Step 1.
@@ -54,7 +54,7 @@ impl<T: UnsignedInteger> LazyReduce<(T, T)> for BarrettModulus<T> {
 impl<T: UnsignedInteger> LazyReduce<&[T]> for BarrettModulus<T> {
     type Output = T;
 
-    /// Calculates `value (mod 2*modulus)` when value's length > 0.
+    /// Returns a lazy representative of a nonempty multi-limb value.
     #[inline]
     fn lazy_reduce(self, value: &[T]) -> Self::Output {
         match value {
@@ -74,7 +74,7 @@ impl<T: UnsignedInteger> LazyReduce<&[T]> for BarrettModulus<T> {
 }
 
 impl<T: UnsignedInteger> LazyReduceAssign<T> for BarrettModulus<T> {
-    /// Calculates `value (mod 2*modulus)`.
+    /// Replaces `value` with a congruent representative in `[0, 2 * modulus)`.
     #[inline]
     fn lazy_reduce_assign(self, value: &mut T) {
         *value = self.lazy_reduce(*value);
@@ -404,7 +404,7 @@ where
     }
 }
 
-impl<T: UnsignedInteger> ReduceExpPowOf2<T> for BarrettModulus<T> {
+impl<T: UnsignedInteger> ReduceExpPowerOf2<T> for BarrettModulus<T> {
     #[inline]
     fn reduce_exp_power_of_2(self, base: T, exp_log: u32) -> T {
         if base.is_zero() {

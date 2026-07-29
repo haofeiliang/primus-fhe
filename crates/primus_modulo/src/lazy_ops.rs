@@ -5,11 +5,11 @@ pub trait LazyModulo<M> {
     /// Output type.
     type Output;
 
-    /// Calculates `self (mod 2*modulus)`.
+    /// Calculates a representative congruent to `self` modulo `modulus`.
     ///
     /// # Correctness
     ///
-    /// The result is only guaranteed to be in `[0, 2*modulus)`, not the
+    /// The result is only guaranteed to be in `[0, 2 * modulus)`, not the
     /// canonical `[0, modulus)`.
     ///
     /// If the modulus type does not natively support lazy reduction,
@@ -31,7 +31,7 @@ where
 
 /// The lazy modulo assignment operation.
 pub trait LazyModuloAssign<M> {
-    /// Calculates `self (mod 2*modulus)`.
+    /// Replaces `self` with a congruent value in `[0, 2 * modulus)`.
     ///
     /// If modulus doesn't support this special case,
     /// just fall back to [crate::ops::ModuloAssign] trait.
@@ -49,11 +49,11 @@ where
 }
 
 /// The lazy modular multiplication.
-pub trait LazyMulModulo<M, B = Self> {
+pub trait LazyMulModulo<M>: Sized {
     /// Output type.
     type Output;
 
-    /// Calculates `self * b (mod 2*modulus)`.
+    /// Calculates a lazy representative of `self * b` modulo `modulus`.
     ///
     /// # Correctness
     ///
@@ -61,24 +61,24 @@ pub trait LazyMulModulo<M, B = Self> {
     ///
     /// If modulus doesn't support this special case,
     /// just fall back to [crate::ops::MulModulo] trait.
-    fn lazy_mul_modulo(self, b: B, modulus: M) -> Self::Output;
+    fn lazy_mul_modulo(self, b: Self, modulus: M) -> Self::Output;
 }
 
-impl<T, M, B> LazyMulModulo<M, B> for T
+impl<T, M> LazyMulModulo<M> for T
 where
-    M: LazyReduceMul<T, B>,
+    M: LazyReduceMul<T>,
 {
-    type Output = <M as LazyReduceMul<T, B>>::Output;
+    type Output = <M as LazyReduceMul<T>>::Output;
 
     #[inline(always)]
-    fn lazy_mul_modulo(self, b: B, modulus: M) -> Self::Output {
+    fn lazy_mul_modulo(self, b: T, modulus: M) -> Self::Output {
         modulus.lazy_reduce_mul(self, b)
     }
 }
 
 /// The lazy modular multiplication assignment.
-pub trait LazyMulModuloAssign<M, B = Self> {
-    /// Calculates `self *= b (mod 2*modulus)`.
+pub trait LazyMulModuloAssign<M>: Sized {
+    /// Replaces `self` with a lazy representative of `self * b` modulo `modulus`.
     ///
     /// # Correctness
     ///
@@ -86,25 +86,25 @@ pub trait LazyMulModuloAssign<M, B = Self> {
     ///
     /// If modulus doesn't support this special case,
     /// just fall back to [crate::ops::MulModuloAssign] trait.
-    fn lazy_mul_modulo_assign(&mut self, b: B, modulus: M);
+    fn lazy_mul_modulo_assign(&mut self, b: Self, modulus: M);
 }
 
-impl<T, M, B> LazyMulModuloAssign<M, B> for T
+impl<T, M> LazyMulModuloAssign<M> for T
 where
-    M: LazyReduceMulAssign<T, B>,
+    M: LazyReduceMulAssign<T>,
 {
     #[inline(always)]
-    fn lazy_mul_modulo_assign(&mut self, b: B, modulus: M) {
+    fn lazy_mul_modulo_assign(&mut self, b: T, modulus: M) {
         modulus.lazy_reduce_mul_assign(self, b)
     }
 }
 
 /// The lazy modular multiply-add.
-pub trait LazyMulAddModulo<M, B = Self, C = Self> {
+pub trait LazyMulAddModulo<M>: Sized {
     /// Output type.
     type Output;
 
-    /// Calculates `self * b + c (mod 2*modulus)`.
+    /// Calculates a lazy representative of `self * b + c` modulo `modulus`.
     ///
     /// # Correctness
     ///
@@ -114,24 +114,24 @@ pub trait LazyMulAddModulo<M, B = Self, C = Self> {
     ///
     /// If modulus doesn't support this special case,
     /// just fall back to [crate::ops::MulAddModulo] trait.
-    fn lazy_mul_add_modulo(self, b: B, c: C, modulus: M) -> Self::Output;
+    fn lazy_mul_add_modulo(self, b: Self, c: Self, modulus: M) -> Self::Output;
 }
 
-impl<T, M, B, C> LazyMulAddModulo<M, B, C> for T
+impl<T, M> LazyMulAddModulo<M> for T
 where
-    M: LazyReduceMulAdd<T, B, C>,
+    M: LazyReduceMulAdd<T>,
 {
-    type Output = <M as LazyReduceMulAdd<T, B, C>>::Output;
+    type Output = <M as LazyReduceMulAdd<T>>::Output;
 
     #[inline(always)]
-    fn lazy_mul_add_modulo(self, b: B, c: C, modulus: M) -> Self::Output {
+    fn lazy_mul_add_modulo(self, b: T, c: T, modulus: M) -> Self::Output {
         modulus.lazy_reduce_mul_add(self, b, c)
     }
 }
 
 /// The lazy modular multiply-add assignment.
-pub trait LazyMulAddModuloAssign<M, B = Self, C = Self> {
-    /// Calculates `self * b + c (mod 2*modulus)`.
+pub trait LazyMulAddModuloAssign<M>: Sized {
+    /// Replaces `self` with a lazy representative of `self * b + c` modulo `modulus`.
     ///
     /// # Correctness
     ///
@@ -141,25 +141,25 @@ pub trait LazyMulAddModuloAssign<M, B = Self, C = Self> {
     ///
     /// If modulus doesn't support this special case,
     /// just fall back to [crate::ops::MulAddModuloAssign] trait.
-    fn lazy_mul_add_modulo_assign(&mut self, b: B, c: C, modulus: M);
+    fn lazy_mul_add_modulo_assign(&mut self, b: Self, c: Self, modulus: M);
 }
 
-impl<T, M, B, C> LazyMulAddModuloAssign<M, B, C> for T
+impl<T, M> LazyMulAddModuloAssign<M> for T
 where
-    M: LazyReduceMulAddAssign<T, B, C>,
+    M: LazyReduceMulAddAssign<T>,
 {
     #[inline(always)]
-    fn lazy_mul_add_modulo_assign(&mut self, b: B, c: C, modulus: M) {
+    fn lazy_mul_add_modulo_assign(&mut self, b: T, c: T, modulus: M) {
         modulus.lazy_reduce_mul_add_assign(self, b, c)
     }
 }
 
 /// The lazy modular subtraction.
-pub trait LazySubModulo<M, B = Self> {
+pub trait LazySubModulo<M>: Sized {
     /// Output type.
     type Output;
 
-    /// Calculates `self - b (mod 2*modulus)`.
+    /// Calculates a lazy representative of `self - b` modulo `modulus`.
     ///
     /// # Correctness
     ///
@@ -168,24 +168,24 @@ pub trait LazySubModulo<M, B = Self> {
     ///
     /// If modulus doesn't support this special case,
     /// just fall back to [crate::ops::SubModulo] trait.
-    fn lazy_sub_modulo(self, b: B, modulus: M) -> Self::Output;
+    fn lazy_sub_modulo(self, b: Self, modulus: M) -> Self::Output;
 }
 
-impl<T, M, B> LazySubModulo<M, B> for T
+impl<T, M> LazySubModulo<M> for T
 where
-    M: LazyReduceSub<T, B>,
+    M: LazyReduceSub<T>,
 {
-    type Output = <M as LazyReduceSub<T, B>>::Output;
+    type Output = <M as LazyReduceSub<T>>::Output;
 
     #[inline(always)]
-    fn lazy_sub_modulo(self, b: B, modulus: M) -> Self::Output {
+    fn lazy_sub_modulo(self, b: T, modulus: M) -> Self::Output {
         modulus.lazy_reduce_sub(self, b)
     }
 }
 
 /// The lazy modular subtraction assignment.
-pub trait LazySubModuloAssign<M, B = Self> {
-    /// Calculates `self -= b (mod 2*modulus)`.
+pub trait LazySubModuloAssign<M>: Sized {
+    /// Replaces `self` with a lazy representative of `self - b` modulo `modulus`.
     ///
     /// # Correctness
     ///
@@ -194,15 +194,15 @@ pub trait LazySubModuloAssign<M, B = Self> {
     ///
     /// If modulus doesn't support this special case,
     /// just fall back to [crate::ops::SubModuloAssign] trait.
-    fn lazy_sub_modulo_assign(&mut self, b: B, modulus: M);
+    fn lazy_sub_modulo_assign(&mut self, b: Self, modulus: M);
 }
 
-impl<T, M, B> LazySubModuloAssign<M, B> for T
+impl<T, M> LazySubModuloAssign<M> for T
 where
-    M: LazyReduceSubAssign<T, B>,
+    M: LazyReduceSubAssign<T>,
 {
     #[inline(always)]
-    fn lazy_sub_modulo_assign(&mut self, b: B, modulus: M) {
+    fn lazy_sub_modulo_assign(&mut self, b: T, modulus: M) {
         modulus.lazy_reduce_sub_assign(self, b)
     }
 }
@@ -212,7 +212,7 @@ pub trait LazyNegModulo<M> {
     /// Output type.
     type Output;
 
-    /// Calculates `-self (mod 2*modulus)`.
+    /// Calculates a lazy representative of `-self` modulo `modulus`.
     ///
     /// # Correctness
     ///
@@ -237,7 +237,7 @@ where
 
 /// The lazy modular negation assignment.
 pub trait LazyNegModuloAssign<M> {
-    /// Calculates `self = -self (mod 2*modulus)`.
+    /// Replaces `self` with a lazy representative of `-self` modulo `modulus`.
     ///
     /// # Correctness
     ///

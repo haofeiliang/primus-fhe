@@ -144,9 +144,9 @@ pub(crate) fn slice_ops(name: &Ident, modulus: &TokenStream, ty: &syn::Path) -> 
             type Output = #ty;
 
             #[inline]
-            fn reduce_dot_product(self, a: impl AsRef<[#ty]>, b: impl AsRef<[#ty]>) -> Self::Output {
+            fn reduce_dot_product(self, a: &[#ty], b: &[#ty]) -> Self::Output {
                 use ::primus_modulus::common::compact::slice;
-                slice::reduce_dot_product(self, a.as_ref(), b.as_ref())
+                slice::reduce_dot_product(self, a, b)
             }
 
             #[inline]
@@ -337,8 +337,8 @@ pub(crate) fn slice_ops(name: &Ident, modulus: &TokenStream, ty: &syn::Path) -> 
             type Output = #ty;
 
             #[inline]
-            fn reduce_dot_product(self, a: impl AsRef<[#ty]>, b: impl AsRef<[#ty]>) -> Self::Output {
-                ::primus_modulus::barrett_simd_reduce_dot_product(self, a.as_ref(), b.as_ref())
+            fn reduce_dot_product(self, a: &[#ty], b: &[#ty]) -> Self::Output {
+                ::primus_modulus::barrett_simd_reduce_dot_product(self, a, b)
             }
 
             #[inline]

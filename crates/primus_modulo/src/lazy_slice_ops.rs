@@ -1,23 +1,24 @@
 //! Value-side mirror of `primus_reduce::lazy_slice_ops`.
 //!
-//! Results are in `[0, 2 * modulus)`; callers must perform a final
-//! reduction (e.g. via [`crate::slice_ops::OnceModuloSlice`]) when a
-//! canonical representative is required.
+//! Results remain congruent modulo `modulus` and lie in `[0, 2 * modulus)`.
+//! Callers must perform a final reduction, for example via
+//! [`crate::slice_ops::OnceModuloSlice`], when a canonical representative is
+//! required.
 
 use primus_reduce::prelude::*;
 
 /// Value-side mirror of [`LazyReduceMulSlice`].
 pub trait LazyMulModuloSlice<M, T> {
-    /// `self[i] = self[i] * b[i] (mod 2 * modulus)` element-wise.
+    /// Replaces each value with a lazy representative of `self[i] * b[i]`.
     fn lazy_mul_modulo_slice_assign(&mut self, b: &[T], modulus: M);
 
-    /// `output[i] = self[i] * b[i] (mod 2 * modulus)`.
+    /// Writes lazy representatives of `self[i] * b[i]` to `output`.
     fn lazy_mul_modulo_slice_to(&self, b: &[T], output: &mut [T], modulus: M);
 
-    /// `self[i] = self[i] * scalar (mod 2 * modulus)` element-wise.
+    /// Replaces each value with a lazy representative of `self[i] * scalar`.
     fn lazy_mul_scalar_modulo_slice_assign(&mut self, scalar: T, modulus: M);
 
-    /// `output[i] = self[i] * scalar (mod 2 * modulus)`.
+    /// Writes lazy representatives of `self[i] * scalar` to `output`.
     fn lazy_mul_scalar_modulo_slice_to(&self, scalar: T, output: &mut [T], modulus: M);
 }
 
@@ -48,19 +49,19 @@ where
 
 /// Value-side mirror of [`LazyReduceMulAddSlice`].
 pub trait LazyMulAddModuloSlice<M, T> {
-    /// `self[i] += a[i] * b[i] (mod 2 * modulus)`.
+    /// Replaces each value with a lazy representative of `self[i] + a[i] * b[i]`.
     fn lazy_add_mul_modulo_slice_assign(&mut self, a: &[T], b: &[T], modulus: M);
 
-    /// `self[i] -= a[i] * b[i] (mod 2 * modulus)`.
+    /// Replaces each value with a lazy representative of `self[i] - a[i] * b[i]`.
     fn lazy_sub_mul_modulo_slice_assign(&mut self, a: &[T], b: &[T], modulus: M);
 
-    /// `self[i] += a[i] * scalar (mod 2 * modulus)` — scalar FMAC accumulate.
+    /// Replaces each value with a lazy representative of `self[i] + a[i] * scalar`.
     fn lazy_add_mul_scalar_modulo_slice_assign(&mut self, a: &[T], scalar: T, modulus: M);
 
-    /// `output[i] = self[i] * b[i] + c[i] (mod 2 * modulus)`.
+    /// Writes lazy representatives of `self[i] * b[i] + c[i]` to `output`.
     fn lazy_mul_add_modulo_slice_to(&self, b: &[T], c: &[T], output: &mut [T], modulus: M);
 
-    /// `output[i] = self[i] * scalar + c[i] (mod 2 * modulus)`.
+    /// Writes lazy representatives of `self[i] * scalar + c[i]` to `output`.
     fn lazy_mul_scalar_add_modulo_slice_to(&self, scalar: T, c: &[T], output: &mut [T], modulus: M);
 }
 
@@ -101,28 +102,28 @@ where
 }
 
 /// Value-side mirror of [`LazyReduceSubSlice`].
-pub trait LazySubModuloSlice<M, B: ?Sized = Self> {
-    /// `self[i] = self[i] - b[i] (mod 2 * modulus)` element-wise.
-    fn lazy_sub_modulo_slice_assign(&mut self, b: &B, modulus: M);
+pub trait LazySubModuloSlice<M> {
+    /// Replaces each value with a lazy representative of `self[i] - b[i]`.
+    fn lazy_sub_modulo_slice_assign(&mut self, b: &Self, modulus: M);
 
-    /// `output[i] = self[i] - b[i] (mod 2 * modulus)`.
-    fn lazy_sub_modulo_slice_to(&self, b: &B, output: &mut Self, modulus: M);
+    /// Writes lazy representatives of `self[i] - b[i]` to `output`.
+    fn lazy_sub_modulo_slice_to(&self, b: &Self, output: &mut Self, modulus: M);
 
-    /// `b[i] = self[i] - b[i] (mod 2 * modulus)` — reverse direction.
+    /// Replaces `b[i]` with a lazy representative of `self[i] - b[i]`.
     fn lazy_sub_modulo_slice_rev_assign(&self, b: &mut Self, modulus: M);
 }
 
-impl<T, M, B> LazySubModuloSlice<M, [B]> for [T]
+impl<T, M> LazySubModuloSlice<M> for [T]
 where
-    M: LazyReduceSubSlice<T, B> + Copy,
+    M: LazyReduceSubSlice<T> + Copy,
 {
     #[inline(always)]
-    fn lazy_sub_modulo_slice_assign(&mut self, b: &[B], modulus: M) {
+    fn lazy_sub_modulo_slice_assign(&mut self, b: &[T], modulus: M) {
         modulus.lazy_reduce_sub_slice_assign(self, b);
     }
 
     #[inline(always)]
-    fn lazy_sub_modulo_slice_to(&self, b: &[B], output: &mut [T], modulus: M) {
+    fn lazy_sub_modulo_slice_to(&self, b: &[T], output: &mut [T], modulus: M) {
         modulus.lazy_reduce_sub_slice_to(self, b, output);
     }
 
@@ -134,10 +135,10 @@ where
 
 /// Value-side mirror of [`LazyReduceNegSlice`].
 pub trait LazyNegModuloSlice<M> {
-    /// `v = -v (mod 2 * modulus)` for each element in-place.
+    /// Replaces each value with a lazy representative of its negation.
     fn lazy_neg_modulo_slice_assign(&mut self, modulus: M);
 
-    /// `output[i] = -self[i] (mod 2 * modulus)`.
+    /// Writes lazy representatives of `-self[i]` to `output`.
     fn lazy_neg_modulo_slice_to(&self, output: &mut Self, modulus: M);
 }
 

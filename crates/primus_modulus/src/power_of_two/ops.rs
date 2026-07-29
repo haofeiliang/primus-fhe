@@ -202,7 +202,7 @@ where
     }
 }
 
-impl<T: UnsignedInteger> ReduceExpPowOf2<T> for PowOf2Modulus<T> {
+impl<T: UnsignedInteger> ReduceExpPowerOf2<T> for PowOf2Modulus<T> {
     #[inline]
     fn reduce_exp_power_of_2(self, base: T, exp_log: u32) -> T {
         if base.is_zero() {

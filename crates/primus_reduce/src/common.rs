@@ -1,5 +1,3 @@
-use std::fmt::Debug;
-
 use primus_integer::UnsignedInteger;
 
 use super::Modulus;
@@ -11,13 +9,7 @@ use super::prelude::*;
 /// Granted automatically (blanket impl) when the type implements every
 /// listed `Reduce*` trait with `Output = T`.
 pub trait RingContext<T>:
-    Sized
-    + Debug
-    + Clone
-    + Copy
-    + Send
-    + Sync
-    + Modulus<ValueT = T>
+    Modulus<ValueT = T>
     + Reduce<T, Output = T>
     + ReduceAssign<T>
     + ReduceOnce<T>
@@ -44,19 +36,13 @@ pub trait RingContext<T>:
     + ReduceSquare<T, Output = T>
     + ReduceSquareAssign<T>
     + ReduceExp<T>
-    + ReduceExpPowOf2<T>
+    + ReduceExpPowerOf2<T>
     + ReduceDotProduct<T, Output = T>
 {
 }
 
 impl<T: UnsignedInteger, M> RingContext<T> for M where
-    M: Sized
-        + Debug
-        + Clone
-        + Copy
-        + Send
-        + Sync
-        + Modulus<ValueT = T>
+    M: Modulus<ValueT = T>
         + Reduce<T, Output = T>
         + ReduceAssign<T>
         + ReduceOnce<T>
@@ -83,7 +69,7 @@ impl<T: UnsignedInteger, M> RingContext<T> for M where
         + ReduceSquare<T, Output = T>
         + ReduceSquareAssign<T>
         + ReduceExp<T>
-        + ReduceExpPowOf2<T>
+        + ReduceExpPowerOf2<T>
         + ReduceDotProduct<T, Output = T>
 {
 }

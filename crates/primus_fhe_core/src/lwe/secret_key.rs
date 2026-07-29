@@ -287,7 +287,7 @@ impl<T: FheUint> LweSecretKey<T> {
         debug_assert_eq!(self.dimension(), params.dimension());
         debug_assert_eq!(a.len(), params.dimension());
 
-        let a_mul_s = modulus.reduce_dot_product(a, self);
+        let a_mul_s = modulus.reduce_dot_product(a, self.as_ref());
         let plaintext = modulus.reduce_sub(b, a_mul_s);
 
         params.plaintext_codec().decode_value(plaintext)
@@ -340,7 +340,7 @@ impl<T: FheUint> LweSecretKey<T> {
         debug_assert_eq!(self.dimension(), params.dimension());
         debug_assert_eq!(a.len(), params.dimension());
 
-        let a_mul_s = modulus.reduce_dot_product(a, self);
+        let a_mul_s = modulus.reduce_dot_product(a, self.as_ref());
         let plaintext = modulus.reduce_sub(b, a_mul_s);
 
         let message: T = params.plaintext_codec().decode_value(plaintext);
@@ -403,7 +403,7 @@ impl<T: FheUint> LweSecretKey<T> {
         M: RingContext<T>,
     {
         if index == 0 {
-            modulus.reduce_dot_product(a, self)
+            modulus.reduce_dot_product(a, self.as_ref())
         } else {
             modulus.reduce_dot_product_iter(
                 a.iter()
