@@ -8,7 +8,6 @@ primus_data = { path = "../primus_data" }
 primus_integer = { path = "../primus_integer" }
 primus_reduce = { path = "../primus_reduce" }
 primus_modulus = { path = "../primus_modulus" }
-primus_modulo = { path = "../primus_modulo" }
 primus_factor = { path = "../primus_factor" }
 primus_distr = { path = "../primus_distr" }
 primus_poly = { path = "../primus_poly" }
