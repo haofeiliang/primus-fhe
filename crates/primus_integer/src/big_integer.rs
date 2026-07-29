@@ -450,7 +450,15 @@ where
         BigUint(self.0.as_mut_slice())
     }
 
-    /// Left shifts the big integer.
+    /// Left shifts the big integer by fewer than one limb.
+    ///
+    /// This is a carry-propagating limb kernel rather than a general
+    /// arbitrary-width shift. `bits` must be less than `T::BITS`; a zero
+    /// shift leaves the value unchanged. The returned limb contains the bits
+    /// shifted out of the most-significant limb.
+    ///
+    /// Values greater than or equal to `T::BITS` are unsupported and may
+    /// panic.
     #[must_use]
     #[inline]
     pub fn left_shift_assign(&mut self, bits: u32) -> T {
@@ -469,7 +477,14 @@ where
         }
     }
 
-    /// Right shifts the big integer.
+    /// Right shifts the big integer by fewer than one limb.
+    ///
+    /// This is a carry-propagating limb kernel rather than a general
+    /// arbitrary-width shift. `bits` must be less than `T::BITS`; a zero
+    /// shift leaves the value unchanged.
+    ///
+    /// Values greater than or equal to `T::BITS` are unsupported and may
+    /// panic.
     #[inline]
     pub fn right_shift_assign(&mut self, bits: u32) {
         if bits != 0 {
