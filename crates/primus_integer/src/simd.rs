@@ -437,7 +437,7 @@ mod tests {
     fn test_add<T: SimdUnsignedInteger>() {
         let a: Vec<T> = (0..1027).map(|a| a.as_into()).collect();
         let b: Vec<T> = (0..1027).rev().map(|b| b.as_into()).collect();
-        let mut c: Vec<T> = vec![T::ZERO; 1024];
+        let mut c: Vec<T> = vec![T::ZERO; 1027];
 
         let (a_chunks, a_rem) = T::simd_as_chunks(&a);
         let (b_chunks, b_rem) = T::simd_as_chunks(&b);

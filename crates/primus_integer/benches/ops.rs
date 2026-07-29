@@ -82,8 +82,8 @@ pub fn criterion_benchmark(c: &mut Criterion) {
                     let a_simd = Simd::<ValueT, M>::from_array(*a);
                     let b_simd = Simd::<ValueT, M>::from_array(*b);
                     let (t, u) = WideningMul::widening_mul(a_simd, b_simd);
-                    *h = t.to_array();
-                    *l = u.to_array();
+                    *h = u.to_array();
+                    *l = t.to_array();
                 });
         })
     });
