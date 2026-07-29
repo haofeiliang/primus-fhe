@@ -42,7 +42,7 @@ where
         A: RawData<Elem = T> + DataMut,
         B: RawData<Elem = T> + Data,
     {
-        debug_assert_eq!(self.len(), output.len());
+        assert_eq!(self.len(), output.len());
         let value_len = modulus.len();
         output
             .iter_mut(value_len)

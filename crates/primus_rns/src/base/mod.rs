@@ -177,14 +177,17 @@ where
         &self.punctured_product
     }
 
-    /// Iterates over punctured products `Q / q_i` as big-integer limb slices.
+    /// Iterates over punctured products `Q / q_i` as fixed-width big integers.
     ///
     /// The iterator yields `moduli_count()` chunks. Each chunk has exactly
     /// [`big_uint_value_len`](Self::big_uint_value_len) limbs.
     #[inline]
-    pub fn iter_punctured_product(&self) -> core::slice::ChunksExact<'_, T> {
+    pub fn iter_punctured_product(
+        &self,
+    ) -> impl ExactSizeIterator<Item = BigUint<&[T]>> + DoubleEndedIterator {
         self.punctured_product
             .chunks_exact(self.big_uint_value_len())
+            .map(BigUint)
     }
 
     /// Returns precomputed factors for `(Q / q_i)^-1 mod q_i`.

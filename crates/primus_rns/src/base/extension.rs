@@ -56,7 +56,7 @@ where
                 .iter_punctured_product()
                 .zip(&mut qp_punctured_product_chunks)
             {
-                let _carry = BigUint(q_div_qi).mul_value_to(p_val, &mut BigUint(qp_div_qi));
+                let _carry = q_div_qi.mul_value_to(p_val, &mut BigUint(qp_div_qi));
                 debug_assert!(_carry.is_zero());
             }
 
@@ -79,7 +79,7 @@ where
                 .zip(&mut qp_punctured_product_chunks)
             {
                 let (high_limb, low_limbs) = qp_div_qi.split_last_mut().unwrap();
-                *high_limb = BigUint(q_div_qi).mul_value_to(p_val, &mut BigUint(low_limbs));
+                *high_limb = q_div_qi.mul_value_to(p_val, &mut BigUint(low_limbs));
             }
 
             let qp_div_p = qp_punctured_product_chunks.next().unwrap();
@@ -166,7 +166,7 @@ where
             .iter_punctured_product()
             .zip(&mut qp_punctured_product_chunks)
         {
-            qp_div_qi[..q_big_uint_len].copy_from_slice(q_div_qi);
+            qp_div_qi[..q_big_uint_len].copy_from_slice(q_div_qi.digits());
             let mut qp_div_qi = BigUint(qp_div_qi);
             for &pi in &p_moduli_values {
                 let _carry = qp_div_qi.mul_value_assign(pi);

@@ -30,13 +30,11 @@ use crate::{UnsignedInteger, impl_iters};
 /// operands are expected to have the same limb length. This type does not try
 /// to canonicalize away leading zero limbs automatically.
 ///
-/// In particular, [`PartialEq::eq`], [`cmp`](BigUint::cmp), and the arithmetic
-/// in-place methods all require that all participating [`BigUint`]s share the
-/// same storage length. Calling them on operands of differing length is a
-/// programmer error and triggers a `debug_assert!` in debug builds; in release
-/// builds the comparison/operation iterates the shorter common prefix and any
-/// extra trailing limbs are ignored, so prefer to enforce length equality at
-/// the call site.
+/// Equality compares the complete fixed-width representation, so values with
+/// different storage lengths are not equal even when their extra high limbs
+/// are zero. [`cmp`](BigUint::cmp) and the arithmetic methods require all
+/// participating [`BigUint`]s to have the same storage length. Public batch
+/// operations validate this once before entering their per-value kernels.
 #[derive(Debug, Serialize, Deserialize)]
 #[repr(transparent)]
 pub struct BigUint<S>(pub S)
@@ -103,8 +101,7 @@ where
 {
     #[inline]
     fn eq(&self, other: &BigUint<A>) -> bool {
-        debug_assert_eq!(self.len(), other.len());
-        self.iter().zip(other.iter()).all(|(&a, &b)| a == b)
+        self.digits() == other.digits()
     }
 }
 
@@ -759,6 +756,31 @@ mod tests {
             result |= r as u128;
         }
         result
+    }
+
+    /// Verifies that equality includes the fixed limb width rather than only
+    /// comparing the shared low-limb prefix.
+    #[test]
+    fn fixed_width_equality_includes_limb_count() {
+        assert_eq!(BigUint(&[1u32, 2][..]), BigUint(vec![1u32, 2]));
+        assert_ne!(BigUint(&[1u32][..]), BigUint(&[1u32, 0][..]));
+        assert_ne!(BigUint(&[1u32, 2][..]), BigUint(&[1u32, 3][..]));
+    }
+
+    /// Verifies that chunk iterators reject zero-width or truncated layouts at
+    /// construction instead of silently omitting data.
+    #[test]
+    fn big_uint_iter_rejects_inexact_chunks() {
+        assert!(std::panic::catch_unwind(|| BigUintIter::new(&[0u32; 2], 0)).is_err());
+        assert!(std::panic::catch_unwind(|| BigUintIter::new(&[0u32; 3], 2)).is_err());
+
+        let mut values = [0u32; 3];
+        assert!(
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                let _ = BigUintIterMut::new(&mut values, 2);
+            }))
+            .is_err()
+        );
     }
 
     #[test]

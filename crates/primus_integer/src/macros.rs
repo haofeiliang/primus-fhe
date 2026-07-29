@@ -28,11 +28,19 @@ macro_rules! impl_iters {
 
             impl<'a, T: UnsignedInteger> [<$big_uint Iter>]<'a, T> {
                 /// Creates a new iterator over `$big_uint` chunks of the given length.
+                ///
+                /// # Panics
+                ///
+                /// Panics if the chunk length is zero or does not divide the
+                /// data length exactly.
                 #[inline]
                 pub fn new(data:&'a [T], [<$short_name _len>]:usize) -> Self{
-                    Self {
-                        iter: data.chunks_exact([<$short_name _len>])
-                    }
+                    let iter = data.chunks_exact([<$short_name _len>]);
+                    assert!(
+                        iter.remainder().is_empty(),
+                        "data length must be divisible by chunk length"
+                    );
+                    Self { iter }
                 }
             }
 
@@ -93,8 +101,18 @@ macro_rules! impl_iters {
 
             impl<'a, T: UnsignedInteger> [<$big_uint IterMut>]<'a, T> {
                 /// Creates a new mutable iterator over `$big_uint` chunks of the given length.
+                ///
+                /// # Panics
+                ///
+                /// Panics if the chunk length is zero or does not divide the
+                /// data length exactly.
                 #[inline]
                 pub fn new(data:&'a mut [T], [<$short_name _len>]:usize) -> Self{
+                    assert_eq!(
+                        data.len() % [<$short_name _len>],
+                        0,
+                        "data length must be divisible by chunk length"
+                    );
                     Self {
                         iter: data.chunks_exact_mut([<$short_name _len>])
                     }

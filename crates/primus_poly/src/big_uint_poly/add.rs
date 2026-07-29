@@ -27,7 +27,7 @@ where
         A: RawData<Elem = T> + Data,
         B: RawData<Elem = T> + Data,
     {
-        debug_assert_eq!(self.len(), rhs.len());
+        assert_eq!(self.len(), rhs.len());
         let value_len = modulus.len();
         self.iter_mut(value_len)
             .zip(rhs.iter(value_len))
@@ -54,8 +54,8 @@ where
         B: RawData<Elem = T> + DataMut,
         C: RawData<Elem = T> + Data,
     {
-        debug_assert_eq!(self.len(), rhs.len());
-        debug_assert_eq!(self.len(), output.len());
+        assert_eq!(self.len(), rhs.len());
+        assert_eq!(self.len(), output.len());
         let value_len = modulus.len();
         izip!(
             self.iter(value_len),

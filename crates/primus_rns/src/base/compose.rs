@@ -2,8 +2,8 @@ use core::slice::Iter;
 
 use itertools::izip;
 use primus_data::{Data, DataMut, RawData};
-use primus_factor::{FactorMul, ShoupFactor};
-use primus_integer::{BigUint, BigUintIter, BigUintIterMut, FheUint};
+use primus_factor::FactorMul;
+use primus_integer::{BigUint, BigUintIterMut, FheUint};
 use primus_poly::{BigUintPolynomial, CrtPolynomial};
 use primus_reduce::FieldContext;
 
@@ -22,36 +22,36 @@ where
     /// The returned value has [`big_uint_value_len`](Self::big_uint_value_len)
     /// little-endian limbs and is reduced modulo the product of the basis moduli.
     pub fn compose(&self, residues: &[T]) -> BigUint<Vec<T>> {
-        debug_assert_eq!(self.moduli_count(), residues.len());
+        assert_eq!(self.moduli_count(), residues.len());
 
         let value_len = self.big_uint_value_len();
+        let mut value = BigUint(vec![T::ZERO; value_len]);
+        self.compose_to_kernel(residues, &mut value);
+        value
+    }
+
+    #[inline]
+    fn compose_to_kernel<A>(&self, residues: &[T], value: &mut BigUint<A>)
+    where
+        A: DataMut<Elem = T>,
+    {
         let moduli_product = &self.moduli_product();
 
-        let mut value = BigUint(vec![T::ZERO; value_len]);
+        value.set_zero();
 
         izip!(
             residues,
             &self.inv_punctured_product_mod_modulus,
-            BigUintIter::new(&self.punctured_product, value_len),
-            &self.moduli
+            self.iter_punctured_product(),
+            self.moduli_values()
         )
-        .for_each(
-            |(&ai, &inv_q_div_qi_mod_qi, q_div_qi, &qi): (
-                &T,
-                &ShoupFactor<T>,
-                BigUint<&[T]>,
-                &M,
-            )| {
-                let qi_val = unsafe { qi.value_unchecked() };
-                let product = inv_q_div_qi_mod_qi.factor_mul_modulo(ai, qi_val);
-                let carry = q_div_qi.mul_value_add_to(product, &mut value);
-                if !carry.is_zero() || value.cmp(moduli_product).is_ge() {
-                    let _ = value.sub_assign(moduli_product);
-                }
-            },
-        );
-
-        value
+        .for_each(|(&ai, &inv_q_div_qi_mod_qi, q_div_qi, qi_val)| {
+            let product = inv_q_div_qi_mod_qi.factor_mul_modulo(ai, qi_val);
+            let carry = q_div_qi.mul_value_add_to(product, value);
+            if !carry.is_zero() || value.cmp(moduli_product).is_ge() {
+                let _ = value.sub_assign(moduli_product);
+            }
+        });
     }
 
     /// Reconstructs one residue vector into caller-provided big-integer storage.
@@ -60,38 +60,11 @@ where
     /// modulo `moduli()[i]`.
     ///
     /// `value.len()` must equal [`big_uint_value_len`](Self::big_uint_value_len).
-    /// The buffer is cleared before the composed canonical representative is
-    /// written into it.
+    /// The previous contents of the buffer are fully overwritten.
     pub fn compose_to(&self, residues: &[T], value: &mut BigUint<&mut [T]>) {
-        debug_assert_eq!(self.moduli_count(), residues.len());
-        debug_assert_eq!(self.big_uint_value_len(), value.len());
-
-        let value_len = self.moduli_product.len();
-        let moduli_product = &self.moduli_product();
-
-        value.set_zero();
-
-        izip!(
-            residues,
-            &self.inv_punctured_product_mod_modulus,
-            BigUintIter::new(&self.punctured_product, value_len),
-            &self.moduli
-        )
-        .for_each(
-            |(&ai, &inv_q_div_qi_mod_qi, q_div_qi, &qi): (
-                &T,
-                &ShoupFactor<T>,
-                BigUint<&[T]>,
-                &M,
-            )| {
-                let qi_val = unsafe { qi.value_unchecked() };
-                let product = inv_q_div_qi_mod_qi.factor_mul_modulo(ai, qi_val);
-                let carry = q_div_qi.mul_value_add_to(product, value);
-                if !carry.is_zero() || value.cmp(moduli_product).is_ge() {
-                    let _ = value.sub_assign(moduli_product);
-                }
-            },
-        );
+        assert_eq!(self.moduli_count(), residues.len());
+        assert_eq!(self.big_uint_value_len(), value.len());
+        self.compose_to_kernel(residues, value);
     }
 
     /// Reconstructs many values from a flattened multi-residue layout.
@@ -114,12 +87,12 @@ where
         value_count: usize,
         scratch: &mut [T],
     ) {
-        debug_assert_eq!(multi_residues.len(), self.moduli_count() * value_count);
-        debug_assert_eq!(
+        assert_eq!(multi_residues.len(), self.moduli_count() * value_count);
+        assert_eq!(
             big_uint_values.len(),
             self.big_uint_value_len() * value_count
         );
-        debug_assert_eq!(scratch.len(), self.moduli_count());
+        assert_eq!(scratch.len(), self.moduli_count());
 
         let big_uint_value_len = self.big_uint_value_len();
 
@@ -132,7 +105,7 @@ where
             for (iter, residue) in iters.iter_mut().zip(scratch.iter_mut()) {
                 *residue = *iter.next().unwrap();
             }
-            self.compose_to(scratch, value);
+            self.compose_to_kernel(scratch, value);
         }
     }
 

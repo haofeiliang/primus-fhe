@@ -6,9 +6,11 @@ use primus_modulo::prelude::*;
 use primus_poly::{BigUintPolynomial, CrtPolynomial, Polynomial};
 use primus_reduce::FieldContext;
 
+use super::RNSBase;
 #[cfg(feature = "simd")]
 use super::kernels::simd;
-use super::{RNSBase, kernels::slice};
+#[cfg(not(feature = "simd"))]
+use super::kernels::slice;
 
 impl<T, M> RNSBase<T, M>
 where
@@ -77,7 +79,7 @@ where
     /// `value mod moduli()[i]`.
     #[inline]
     pub fn decompose_to(&self, BigUint(value): BigUint<&[T]>, residues: &mut [T]) {
-        debug_assert_eq!(self.moduli_count(), residues.len());
+        assert_eq!(self.moduli_count(), residues.len());
 
         for (&modulus, residue) in self.moduli.iter().zip(residues) {
             *residue = value.modulo(modulus);
@@ -353,8 +355,8 @@ where
         multi_residues: &mut [T],
         value_count: usize,
     ) {
-        debug_assert_eq!(multi_residues.len(), self.moduli_count() * value_count);
-        debug_assert_eq!(
+        assert_eq!(multi_residues.len(), self.moduli_count() * value_count);
+        assert_eq!(
             big_uint_values.len(),
             self.big_uint_value_len() * value_count
         );

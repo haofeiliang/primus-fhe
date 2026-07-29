@@ -230,7 +230,7 @@ where
             compose_buffer,
         );
 
-        basis.init_value_carry_slice_inplace(adjust_big_uint_values, carries, big_uint_value_len);
+        basis.init_value_carry_slice_inplace(adjust_big_uint_values, carries);
 
         dcrt_glev
             .iter_dcrt_glwe(dcrt_glwe_len)
@@ -240,7 +240,6 @@ where
                     adjust_big_uint_values.as_ref(),
                     decomposed_unsigned_values,
                     carries,
-                    big_uint_value_len,
                 );
 
                 rns_base.wrapping_decompose_small_values_to(
@@ -304,12 +303,7 @@ where
             dcrt_glwe_len * basis.decompose_length()
         );
 
-        basis.init_value_carry_slice_to(
-            big_uint_poly.as_slice(),
-            adjust_big_uint_values,
-            carries,
-            big_uint_value_len,
-        );
+        basis.init_value_carry_slice_to(big_uint_poly.as_slice(), adjust_big_uint_values, carries);
 
         dcrt_glev
             .iter_dcrt_glwe(dcrt_glwe_len)
@@ -319,7 +313,6 @@ where
                     adjust_big_uint_values.as_ref(),
                     decomposed_unsigned_values,
                     carries,
-                    big_uint_value_len,
                 );
 
                 rns_base.wrapping_decompose_small_values_to(

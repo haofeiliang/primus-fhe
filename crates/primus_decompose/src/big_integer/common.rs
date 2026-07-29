@@ -222,9 +222,17 @@ pub struct OnceBigUintSignedDecomposer<'a, T: FheUint> {
 }
 
 impl<'a, T: FheUint> OnceBigUintSignedDecomposer<'a, T> {
+    #[inline]
+    fn big_uint_value_len(&self) -> usize {
+        // `modulus_minus_basis` is computed in-place from the fixed-width modulus,
+        // so it always has the same number of limbs as an input value.
+        self.modulus_minus_basis.len()
+    }
+
     /// Execute once decomposition and return the decomposed value and carry for next decomposition.
     #[inline]
     pub fn decompose(&self, value: &[T], carry: bool) -> (Vec<T>, bool) {
+        assert_eq!(value.len(), self.big_uint_value_len());
         let temp = self.value_mask.get_value(value) + T::as_from(carry);
 
         let next_carry = !(temp & self.carry_mask).is_zero();
@@ -243,6 +251,7 @@ impl<'a, T: FheUint> OnceBigUintSignedDecomposer<'a, T> {
     /// Execute once unsigned decomposition and return the decomposed value and carry.
     #[inline]
     pub fn unsigned_decompose(&self, value: &[T], carry: bool) -> (T, bool) {
+        assert_eq!(value.len(), self.big_uint_value_len());
         let temp = self.value_mask.get_value(value) + T::as_from(carry);
 
         let next_carry = !(temp & self.carry_mask).is_zero();
@@ -253,6 +262,13 @@ impl<'a, T: FheUint> OnceBigUintSignedDecomposer<'a, T> {
     /// Execute once decomposition, store carry for next decomposition back to `carry`.
     #[inline]
     pub fn decompose_to(&self, value: &[T], decomposed_value: &mut [T], carry: &mut bool) {
+        assert_eq!(value.len(), self.big_uint_value_len());
+        assert_eq!(decomposed_value.len(), self.big_uint_value_len());
+        self.decompose_to_kernel(value, decomposed_value, carry);
+    }
+
+    #[inline]
+    fn decompose_to_kernel(&self, value: &[T], decomposed_value: &mut [T], carry: &mut bool) {
         let temp = self.value_mask.get_value(value) + T::as_from(*carry);
         *carry = !(temp & self.carry_mask).is_zero();
 
@@ -278,6 +294,17 @@ impl<'a, T: FheUint> OnceBigUintSignedDecomposer<'a, T> {
         decomposed_unsigned_value: &mut T,
         carry: &mut bool,
     ) {
+        assert_eq!(value.len(), self.big_uint_value_len());
+        self.unsigned_decompose_to_kernel(value, decomposed_unsigned_value, carry);
+    }
+
+    #[inline]
+    fn unsigned_decompose_to_kernel(
+        &self,
+        value: &[T],
+        decomposed_unsigned_value: &mut T,
+        carry: &mut bool,
+    ) {
         let temp = self.value_mask.get_value(value) + T::as_from(*carry);
         *carry = !(temp & self.carry_mask).is_zero();
 
@@ -291,16 +318,16 @@ impl<'a, T: FheUint> OnceBigUintSignedDecomposer<'a, T> {
         big_uint_values: &[T],
         decomposed_big_uint_values: &mut [T],
         carries: &mut [bool],
-        big_uint_value_len: usize,
     ) {
-        debug_assert_eq!(decomposed_big_uint_values.len(), big_uint_values.len());
-        debug_assert_eq!(big_uint_values.len(), carries.len() * big_uint_value_len);
+        let big_uint_value_len = self.big_uint_value_len();
+        assert_eq!(decomposed_big_uint_values.len(), big_uint_values.len());
+        assert_eq!(big_uint_values.len(), carries.len() * big_uint_value_len);
         for ((value, decomposed_value), carry) in big_uint_values
             .chunks_exact(big_uint_value_len)
             .zip(decomposed_big_uint_values.chunks_exact_mut(big_uint_value_len))
             .zip(carries)
         {
-            self.decompose_to(value, decomposed_value, carry);
+            self.decompose_to_kernel(value, decomposed_value, carry);
         }
     }
 
@@ -311,16 +338,16 @@ impl<'a, T: FheUint> OnceBigUintSignedDecomposer<'a, T> {
         big_uint_values: &[T],
         decomposed_unsigned_values: &mut [T],
         carries: &mut [bool],
-        big_uint_value_len: usize,
     ) {
-        debug_assert_eq!(carries.len(), decomposed_unsigned_values.len());
-        debug_assert_eq!(big_uint_values.len(), carries.len() * big_uint_value_len);
+        let big_uint_value_len = self.big_uint_value_len();
+        assert_eq!(carries.len(), decomposed_unsigned_values.len());
+        assert_eq!(big_uint_values.len(), carries.len() * big_uint_value_len);
         for ((value, decomposed_unsigned_value), carry) in big_uint_values
             .chunks_exact(big_uint_value_len)
             .zip(decomposed_unsigned_values.iter_mut())
             .zip(carries)
         {
-            self.unsigned_decompose_to(value, decomposed_unsigned_value, carry);
+            self.unsigned_decompose_to_kernel(value, decomposed_unsigned_value, carry);
         }
     }
 }

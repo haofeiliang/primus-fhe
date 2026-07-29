@@ -247,12 +247,7 @@ mod tests {
 
         let mut adjust_big_uint_values = vec![0; N * big_uint_value_len];
         let mut carries = vec![false; N];
-        basis.init_value_carry_slice_to(
-            &input_values,
-            &mut adjust_big_uint_values,
-            &mut carries,
-            big_uint_value_len,
-        );
+        basis.init_value_carry_slice_to(&input_values, &mut adjust_big_uint_values, &mut carries);
 
         let mut residues: Vec<ValueT> = vec![0; N * moduli_count];
         let mut decomposed_unsigned_values = vec![0; N];
@@ -266,7 +261,6 @@ mod tests {
                     &adjust_big_uint_values,
                     &mut decomposed_unsigned_values,
                     &mut carries,
-                    big_uint_value_len,
                 );
 
                 assert!(decomposed_unsigned_values.iter().all(|&v| v < basis_value));
@@ -362,7 +356,6 @@ mod tests {
                 &input_big_uint_value,
                 &mut adjust_big_uint_values,
                 &mut carries,
-                big_uint_value_len,
             );
 
             basis.decomposer_iter().for_each(|once_decomposer| {
@@ -371,7 +364,6 @@ mod tests {
                     &adjust_big_uint_values,
                     &mut decomposed_unsigned_values,
                     &mut temp,
-                    big_uint_value_len,
                 );
 
                 rns_base.wrapping_decompose_small_values_to(
@@ -385,7 +377,6 @@ mod tests {
                     &adjust_big_uint_values,
                     &mut decomposed_big_uint_values,
                     &mut carries,
-                    big_uint_value_len,
                 );
 
                 rns_base.decompose_big_uint_values_to(
@@ -407,7 +398,6 @@ mod tests {
         let moduli = moduli_value.map(BarrettModulus::new);
 
         let rns_base = RNSBase::new(&moduli).unwrap();
-        let big_uint_value_len = rns_base.big_uint_value_len();
         let composed_modulus = rns_base.moduli_product();
         let basis = BigUintApproxSignedBasis::new(composed_modulus, 5, None, &rns_base);
 
@@ -430,7 +420,6 @@ mod tests {
                 &input_big_uint_value,
                 &mut adjust_big_uint_values,
                 &mut carries,
-                big_uint_value_len,
             );
 
             assert_eq!(adjust_big_uint_values.as_slice(), adjust_value.as_slice());

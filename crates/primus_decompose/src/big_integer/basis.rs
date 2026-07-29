@@ -51,12 +51,12 @@ impl<T: FheUint> BigUintApproxSignedBasis<T> {
         assert!(log_basis > 0 && T::BITS > log_basis);
         assert_eq!(modulus, rns_base.moduli_product());
 
-        let modulus_value_len = modulus.len();
+        let big_uint_value_len = modulus.len();
         let unused_bits = modulus.0.last().unwrap().leading_zeros();
 
         let basis = <T as ConstOne>::ONE << log_basis;
         let basis_minus_one = basis - <T as ConstOne>::ONE;
-        let modulus_bits_count = T::BITS * (modulus_value_len as u32) - unused_bits;
+        let modulus_bits_count = T::BITS * (big_uint_value_len as u32) - unused_bits;
         let decompose_length = modulus_bits_count / log_basis;
         let mut drop_bits = modulus_bits_count - decompose_length * log_basis;
         let mut decompose_length = decompose_length as usize;
@@ -88,7 +88,7 @@ impl<T: FheUint> BigUintApproxSignedBasis<T> {
             if drop_bits == 0 {
                 None
             } else {
-                let mut value = BigUint(vec![T::ZERO; modulus_value_len]);
+                let mut value = BigUint(vec![T::ZERO; big_uint_value_len]);
                 for _ in 0..decompose_length {
                     let carry = value.left_shift_assign(1);
                     assert_eq!(carry, T::ZERO);
@@ -106,7 +106,7 @@ impl<T: FheUint> BigUintApproxSignedBasis<T> {
                 }
             }
         } else {
-            let mut value = BigUint(vec![T::ZERO; modulus_value_len]);
+            let mut value = BigUint(vec![T::ZERO; big_uint_value_len]);
             for _ in 0..decompose_length {
                 let carry = value.left_shift_assign(log_basis);
                 assert_eq!(carry, T::ZERO);
@@ -135,8 +135,8 @@ impl<T: FheUint> BigUintApproxSignedBasis<T> {
         assert!(!borrow);
 
         let make_adjust_add = || {
-            let mut next_pow_of_2_minus_one = BigUint(vec![T::MAX; modulus_value_len]);
-            next_pow_of_2_minus_one[modulus_value_len - 1] >>= unused_bits;
+            let mut next_pow_of_2_minus_one = BigUint(vec![T::MAX; big_uint_value_len]);
+            next_pow_of_2_minus_one[big_uint_value_len - 1] >>= unused_bits;
 
             let mut modulus_minus_one = BigUint(modulus.0.to_vec());
             let _ = modulus_minus_one.sub_value_assign(T::ONE);
@@ -146,10 +146,10 @@ impl<T: FheUint> BigUintApproxSignedBasis<T> {
             next_pow_of_2_minus_one
         };
 
-        let mut scalars = vec![T::ZERO; modulus_value_len * decompose_length];
+        let mut scalars = vec![T::ZERO; big_uint_value_len * decompose_length];
         let mut prev: Option<BigUint<Vec<T>>> = None;
 
-        BigUintIterMut::new(&mut scalars, modulus_value_len).for_each(|mut scalar| {
+        BigUintIterMut::new(&mut scalars, big_uint_value_len).for_each(|mut scalar| {
             if let Some(pre) = prev.as_mut() {
                 let carry = pre.left_shift_assign(log_basis);
                 assert_eq!(carry, T::ZERO);
@@ -165,7 +165,7 @@ impl<T: FheUint> BigUintApproxSignedBasis<T> {
         let moduli_count = rns_base.moduli_count();
         let mut scalars_residue = vec![T::ZERO; moduli_count * decompose_length];
 
-        BigUintIter::new(&scalars, modulus_value_len)
+        BigUintIter::new(&scalars, big_uint_value_len)
             .zip(scalars_residue.chunks_exact_mut(moduli_count))
             .for_each(|(scalar, residues)| {
                 rns_base.decompose_to(scalar, residues);
@@ -216,6 +216,12 @@ impl<T: FheUint> BigUintApproxSignedBasis<T> {
         &self.modulus
     }
 
+    /// Returns the number of limbs in each fixed-width [`BigUint`] value.
+    #[inline]
+    pub fn big_uint_value_len(&self) -> usize {
+        self.modulus.len()
+    }
+
     /// Returns the basis of this [`BigUintApproxSignedBasis<T>`].
     #[inline]
     pub fn basis_value(&self) -> T {
@@ -252,7 +258,7 @@ impl<T: FheUint> BigUintApproxSignedBasis<T> {
     #[inline]
     pub fn approximate_error_bound(&self) -> BigUint<Vec<T>> {
         self.value_carry_init_mode
-            .approximate_error_bound(self.modulus.len())
+            .approximate_error_bound(self.big_uint_value_len())
     }
 
     /// Returns a reference to the modulus sub basis of this [`BigUintApproxSignedBasis<T>`].
@@ -281,7 +287,7 @@ impl<T: FheUint> BigUintApproxSignedBasis<T> {
     /// Returns an iterator over scalars of this [`BigUintApproxSignedBasis<T>`].
     #[inline]
     pub fn scalar_iter(&self) -> std::slice::ChunksExact<'_, T> {
-        self.scalars.chunks_exact(self.modulus().len())
+        self.scalars.chunks_exact(self.big_uint_value_len())
     }
 
     /// Init carry and adjusted value for a value.
@@ -290,6 +296,7 @@ impl<T: FheUint> BigUintApproxSignedBasis<T> {
     where
         A: Data<Elem = T>,
     {
+        assert_eq!(value.len(), self.big_uint_value_len());
         let value_digits = value.0.as_slice();
 
         match &self.value_carry_init_mode {
@@ -323,13 +330,9 @@ impl<T: FheUint> BigUintApproxSignedBasis<T> {
 
     /// Init carries and adjusted values for a slice and store the adjusted values back to `values`.
     #[inline]
-    pub fn init_value_carry_slice_inplace(
-        &self,
-        values: &mut [T],
-        carries: &mut [bool],
-        big_uint_value_len: usize,
-    ) {
-        debug_assert_eq!(values.len(), carries.len() * big_uint_value_len);
+    pub fn init_value_carry_slice_inplace(&self, values: &mut [T], carries: &mut [bool]) {
+        let big_uint_value_len = self.big_uint_value_len();
+        assert_eq!(values.len(), carries.len() * big_uint_value_len);
 
         match &self.value_carry_init_mode {
             BigUintValueCarryInitMode::AdjustAndCarry {
@@ -373,10 +376,10 @@ impl<T: FheUint> BigUintApproxSignedBasis<T> {
         big_uint_values: &[T],
         adjust_big_uint_values: &mut [T],
         carries: &mut [bool],
-        big_uint_value_len: usize,
     ) {
-        debug_assert_eq!(big_uint_values.len(), adjust_big_uint_values.len());
-        debug_assert_eq!(big_uint_values.len(), carries.len() * big_uint_value_len);
+        let big_uint_value_len = self.big_uint_value_len();
+        assert_eq!(big_uint_values.len(), adjust_big_uint_values.len());
+        assert_eq!(big_uint_values.len(), carries.len() * big_uint_value_len);
 
         match &self.value_carry_init_mode {
             BigUintValueCarryInitMode::AdjustAndCarry {

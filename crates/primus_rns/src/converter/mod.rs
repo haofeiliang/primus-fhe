@@ -80,7 +80,7 @@ impl<T: FheUint, M: FieldContext<T>> BaseConverter<T, M> {
                 for (q_div_qi_mod_pj, q_div_qi) in
                     row.iter_mut().zip(input_base.iter_punctured_product())
                 {
-                    *q_div_qi_mod_pj = q_div_qi.modulo(pj);
+                    *q_div_qi_mod_pj = q_div_qi.digits().modulo(pj);
                 }
             }
 

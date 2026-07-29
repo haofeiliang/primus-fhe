@@ -57,7 +57,6 @@ where
         B: RawData<Elem = T> + DataMut,
     {
         let poly_length = table.poly_length();
-        let big_uint_value_len = rns_base.big_uint_value_len();
         let basis_value = basis.basis_value();
         let moduli = rns_base.moduli();
         let dcrt_glwe_len = result.0.len();
@@ -77,7 +76,7 @@ where
             compose_buffer,
         );
 
-        basis.init_value_carry_slice_inplace(adjust_big_uint_values, carries, big_uint_value_len);
+        basis.init_value_carry_slice_inplace(adjust_big_uint_values, carries);
 
         result.set_zero();
 
@@ -88,7 +87,6 @@ where
                     adjust_big_uint_values,
                     decomposed_unsigned_values,
                     carries,
-                    big_uint_value_len,
                 );
 
                 rns_base.wrapping_decompose_small_values_to(
@@ -125,7 +123,6 @@ where
         B: RawData<Elem = T> + DataMut,
     {
         let poly_length = table.poly_length();
-        let big_uint_value_len = rns_base.big_uint_value_len();
         let dcrt_glwe_len = result.0.len();
         let basis_value = basis.basis_value();
         let moduli = rns_base.moduli();
@@ -138,12 +135,7 @@ where
             compose_buffer: _,
         } = context.as_mut();
 
-        basis.init_value_carry_slice_to(
-            big_uint_poly.as_slice(),
-            adjust_big_uint_values,
-            carries,
-            big_uint_value_len,
-        );
+        basis.init_value_carry_slice_to(big_uint_poly.as_slice(), adjust_big_uint_values, carries);
 
         result.set_zero();
 
@@ -154,7 +146,6 @@ where
                     adjust_big_uint_values,
                     decomposed_unsigned_values,
                     carries,
-                    big_uint_value_len,
                 );
 
                 rns_base.wrapping_decompose_small_values_to(
