@@ -352,7 +352,11 @@ where
         Ordering::Equal
     }
 
-    /// Adds two big integers to the result modulo a given modulus.
+    /// Adds two reduced big integers and writes the result modulo `modulus`.
+    ///
+    /// This single-correction kernel requires `self` and `other` to be
+    /// strictly less than `modulus`. All operands must have the same limb
+    /// length.
     #[inline]
     pub fn add_modulo_to<A, B, C>(
         &self,
@@ -367,8 +371,6 @@ where
         debug_assert!(
             self.len() == other.len() && self.len() == output.len() && self.len() == modulus.len()
         );
-        debug_assert!(self.cmp(modulus).is_lt());
-        debug_assert!(other.cmp(modulus).is_lt());
 
         let carry = self.add_to(other, output);
         if carry || output.cmp(modulus).is_ge() {
@@ -376,7 +378,12 @@ where
         }
     }
 
-    /// Subs another big integer to this one modulo a given modulus.
+    /// Subtracts two reduced big integers and writes the result modulo
+    /// `modulus`.
+    ///
+    /// This single-correction kernel requires `self` and `other` to be
+    /// strictly less than `modulus`. All operands must have the same limb
+    /// length.
     #[inline]
     pub fn sub_modulo_to<A, B, C>(
         &self,
@@ -391,15 +398,16 @@ where
         debug_assert!(
             self.len() == other.len() && self.len() == output.len() && self.len() == modulus.len()
         );
-        debug_assert!(self.cmp(modulus).is_lt());
-        debug_assert!(other.cmp(modulus).is_lt());
 
         if self.sub_to(other, output) {
             let _ = output.add_assign(modulus);
         }
     }
 
-    /// Negates the big integer modulo a given modulus.
+    /// Negates a reduced big integer modulo `modulus`.
+    ///
+    /// This kernel requires `self` to be strictly less than `modulus`. The
+    /// input, output, and modulus must have the same limb length.
     #[inline]
     pub fn neg_modulo_to<A, B>(&self, output: &mut BigUint<A>, modulus: &BigUint<B>)
     where
@@ -407,7 +415,6 @@ where
         B: Data<Elem = T>,
     {
         debug_assert!(self.len() == output.len() && self.len() == modulus.len());
-        debug_assert!(self.cmp(modulus).is_lt());
 
         if self.is_zero() {
             output.set_zero();
@@ -592,7 +599,11 @@ where
         borrow
     }
 
-    /// Adds another big integer to this one modulo a given modulus.
+    /// Adds another reduced big integer to this one modulo `modulus`.
+    ///
+    /// This single-correction kernel requires both operands to be strictly
+    /// less than `modulus`. Both operands and the modulus must have the same
+    /// limb length.
     #[inline]
     pub fn add_modulo_assign<A, B>(&mut self, other: &BigUint<A>, modulus: &BigUint<B>)
     where
@@ -600,8 +611,6 @@ where
         B: Data<Elem = T>,
     {
         debug_assert!(self.len() == other.len() && self.len() == modulus.len());
-        debug_assert!(self.cmp(modulus).is_lt());
-        debug_assert!(other.cmp(modulus).is_lt());
 
         let carry = self.add_assign(other);
         if carry || self.cmp(modulus).is_ge() {
@@ -611,10 +620,9 @@ where
 
     /// Performs `self = other - self` modulo `modulus`.
     ///
-    /// # Panics
-    ///
-    /// Panics if any operand has a different length, or if `self` or `other` is
-    /// not strictly less than `modulus`.
+    /// This single-correction kernel requires both operands to be strictly
+    /// less than `modulus`. Both operands and the modulus must have the same
+    /// limb length.
     #[inline]
     pub fn sub_modulo_rev_assign<A, B>(&mut self, other: &BigUint<A>, modulus: &BigUint<B>)
     where
@@ -622,8 +630,6 @@ where
         B: Data<Elem = T>,
     {
         debug_assert!(self.len() == other.len() && self.len() == modulus.len());
-        debug_assert!(self.cmp(modulus).is_lt());
-        debug_assert!(other.cmp(modulus).is_lt());
 
         let mut borrow = false;
         for (self_limb, &other_limb) in self.iter_mut().zip(other.iter()) {
@@ -636,7 +642,11 @@ where
         }
     }
 
-    /// Subs another big integer from this one modulo a given modulus.
+    /// Subtracts another reduced big integer from this one modulo `modulus`.
+    ///
+    /// This single-correction kernel requires both operands to be strictly
+    /// less than `modulus`. Both operands and the modulus must have the same
+    /// limb length.
     #[inline]
     pub fn sub_modulo_assign<A, B>(&mut self, other: &BigUint<A>, modulus: &BigUint<B>)
     where
@@ -644,32 +654,22 @@ where
         B: Data<Elem = T>,
     {
         debug_assert!(self.len() == other.len() && self.len() == modulus.len());
-        debug_assert!(
-            self.cmp(modulus).is_lt(),
-            "self: {:?}\nmodulus: {:?}",
-            self.0.as_slice(),
-            modulus.0.as_slice()
-        );
-        debug_assert!(
-            other.cmp(modulus).is_lt(),
-            "other: {:?}\nmodulus: {:?}",
-            other.0.as_slice(),
-            modulus.0.as_slice()
-        );
 
         if self.sub_assign(other) {
             let _ = self.add_assign(modulus);
         }
     }
 
-    /// Negates the big integer modulo a given modulus.
+    /// Negates this reduced big integer modulo `modulus`.
+    ///
+    /// This kernel requires `self` to be strictly less than `modulus`. The
+    /// value and modulus must have the same limb length.
     #[inline]
     pub fn neg_modulo_assign<A>(&mut self, modulus: &BigUint<A>)
     where
         A: Data<Elem = T>,
     {
         debug_assert!(self.len() == modulus.len());
-        debug_assert!(self.cmp(modulus).is_lt());
 
         if !self.is_zero() {
             let mut borrow = false;
