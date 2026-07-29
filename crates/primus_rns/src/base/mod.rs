@@ -5,7 +5,7 @@ mod kernels;
 
 use itertools::Itertools;
 use primus_factor::{FactorBase, ShoupFactor};
-use primus_integer::{BigUint, FheUint, multiply_many_values, multiply_many_values_except_to};
+use primus_integer::{BigUint, FheUint, multiply_many_values};
 use primus_modulo::prelude::*;
 use primus_reduce::{FieldContext, Modulus};
 
@@ -51,6 +51,27 @@ where
                 .ok_or(RNSError::UnrepresentableModulus { index })
         })
         .collect()
+}
+
+fn compute_punctured_product_to<T: FheUint>(
+    moduli_values: &[T],
+    excluded_index: usize,
+    output: &mut [T],
+) {
+    output.fill(T::ZERO);
+    output[0] = T::ONE;
+    let mut product_len = 1;
+
+    for &modulus in moduli_values[..excluded_index]
+        .iter()
+        .chain(&moduli_values[excluded_index + 1..])
+    {
+        let carry = BigUint(&mut output[..product_len]).mul_value_assign(modulus);
+        if !carry.is_zero() {
+            output[product_len] = carry;
+            product_len += 1;
+        }
+    }
 }
 
 impl<T, M> RNSBase<T, M>
@@ -116,7 +137,7 @@ where
             .chunks_exact_mut(big_uint_len)
             .enumerate()
             .for_each(|(i, q_div_qi)| {
-                multiply_many_values_except_to(&moduli_values, i, q_div_qi);
+                compute_punctured_product_to(&moduli_values, i, q_div_qi);
             });
 
         let inv_punctured_product_mod_modulus = punctured_product

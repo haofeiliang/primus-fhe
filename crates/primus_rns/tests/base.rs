@@ -34,6 +34,19 @@ fn construction_rejects_invalid_bases() {
     ));
 }
 
+/// Verifies the singleton representation and independently checks the
+/// punctured products constructed for a multi-modulus base.
+#[test]
+fn construction_computes_punctured_products() {
+    let singleton = base(&[3]);
+    assert_eq!(singleton.moduli_product().digits(), &[3]);
+    assert_eq!(singleton.punctured_product(), &[1]);
+
+    let base = base(&[3, 5, 7]);
+    assert_eq!(base.moduli_product().digits(), &[105]);
+    assert_eq!(base.punctured_product(), &[35, 21, 15]);
+}
+
 #[test]
 fn compose_and_decompose_preserve_the_modulus_major_layout() {
     let base = base(&[1_125_899_906_826_241, 1_125_899_906_629_633]);

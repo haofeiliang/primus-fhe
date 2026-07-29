@@ -679,68 +679,23 @@ where
         }
     }
 }
+
 /// Multiplies many values together, returning the result as a big integer slice.
 ///
-/// # Panics if
+/// # Panics
 ///
-/// - `values` is empty
+/// Panics if `values` is empty.
 pub fn multiply_many_values<T: UnsignedInteger>(values: &[T]) -> BigUint<Vec<T>> {
-    debug_assert!(!values.is_empty());
+    let (&first, remaining) = values.split_first().expect("values must be nonempty");
     let mut result = BigUint(Vec::with_capacity(values.len()));
-    result.0.push(values[0]);
-    for &v in values.iter().skip(1) {
+    result.0.push(first);
+    for &v in remaining {
         let carry = result.mul_value_assign(v);
         if !carry.is_zero() {
             result.0.push(carry);
         }
     }
     result
-}
-
-/// Multiplies many values together, except for one specified by index, returning the result as a big integer slice.
-///
-/// # Panics if
-///
-/// - `values` is empty
-/// - `except >= values.len()`
-pub fn multiply_many_values_except<T: UnsignedInteger>(values: &[T], except: usize) -> Vec<T> {
-    debug_assert!(!values.is_empty() && except < values.len());
-    let mut result = BigUint(Vec::with_capacity(values.len() - 1));
-    result.0.push(T::ONE);
-
-    for (_, &v) in values.iter().enumerate().filter(|(i, _)| *i != except) {
-        let carry = result.mul_value_assign(v);
-        if !carry.is_zero() {
-            result.0.push(carry);
-        }
-    }
-
-    result.0
-}
-
-/// Multiplies many values together, except for one specified by index, returning the result as a big integer slice.
-///
-/// # Panics if
-///
-/// - `values` is empty
-/// - `except >= values.len()`
-pub fn multiply_many_values_except_to<T: UnsignedInteger>(
-    values: &[T],
-    except: usize,
-    output: &mut [T],
-) {
-    debug_assert!(!values.is_empty() && except < values.len());
-    output.fill(T::ZERO);
-    output[0] = T::ONE;
-    let mut len = 1;
-
-    for (_, &v) in values.iter().enumerate().filter(|(i, _)| *i != except) {
-        let carry = BigUint(&mut output[0..len]).mul_value_assign(v);
-        if !carry.is_zero() {
-            output[len] = carry;
-            len += 1;
-        }
-    }
 }
 
 #[cfg(test)]
@@ -771,6 +726,14 @@ mod tests {
             result |= r as u128;
         }
         result
+    }
+
+    /// Verifies that the public product helper rejects an undefined empty
+    /// product instead of relying on a debug-only precondition.
+    #[test]
+    #[should_panic(expected = "values must be nonempty")]
+    fn multiply_many_values_rejects_empty_input() {
+        let _ = multiply_many_values::<u32>(&[]);
     }
 
     /// Verifies that equality includes the fixed limb width rather than only
