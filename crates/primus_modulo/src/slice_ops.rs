@@ -273,8 +273,9 @@ where
     ///
     /// # Errors
     ///
-    /// Returns [`ReduceError::NoInverseAtIndex`](primus_reduce::ReduceError::NoInverseAtIndex)
-    /// for the first element that has no inverse.
+    /// Returns [`ReduceError::NoInverse`](primus_reduce::ReduceError::NoInverse)
+    /// if one or more values have no inverse. `self` and `scratch` may be
+    /// modified when an error is returned.
     fn try_inv_modulo_slice_assign(
         &mut self,
         scratch: &mut [T],
@@ -285,8 +286,9 @@ where
     ///
     /// # Errors
     ///
-    /// Returns [`ReduceError::NoInverseAtIndex`](primus_reduce::ReduceError::NoInverseAtIndex)
-    /// for the first element that has no inverse.
+    /// Returns [`ReduceError::NoInverse`](primus_reduce::ReduceError::NoInverse)
+    /// if one or more values have no inverse. `output` may be modified when an
+    /// error is returned.
     fn try_inv_modulo_slice_to(
         &self,
         output: &mut [T],

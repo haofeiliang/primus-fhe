@@ -233,18 +233,20 @@ pub trait ReduceMulAddSlice<T> {
 ///
 /// # Scratch buffer
 ///
-/// `reduce_inv_slice_assign` requires a scratch buffer of length >=
-/// `values.len()`. The scratch buffer is used for prefix-product
-/// computation in batch-inversion algorithms (e.g. Montgomery batch
-/// inversion). It is not needed by `reduce_inv_slice_to`, which can
-/// reuse `output` as working space.
+/// The scratch-buffer requirement of [`reduce_inv_slice_assign`](Self::reduce_inv_slice_assign)
+/// depends on the modulus implementation. `UintModulus` and `CompactModulus`
+/// do not use scratch space, while Barrett implementations require
+/// `scratch.len() == values.len()` (the polynomial length for polynomial
+/// callers). The out-of-place method does not need a separate scratch buffer
+/// because it can reuse `output` as working space.
 pub trait ReduceInvSlice<T> {
     /// Calculates `values[i] = values[i]^(-1) (mod modulus)` in-place,
     /// where `self` is the modulus.
     ///
     /// # Correctness
     ///
-    /// - `scratch.len() >= values.len()`
+    /// - `scratch` satisfies the modulus implementation's requirement described
+    ///   in this trait's [scratch-buffer section](Self#scratch-buffer)
     /// - Each `values[i] < modulus`
     /// - Each `values[i]` and `modulus` must be coprime
     ///
@@ -271,14 +273,28 @@ pub trait ReduceInvSlice<T> {
 }
 
 /// Fallible slice form of [`crate::TryReduceInv`].
+///
+/// # Scratch buffer
+///
+/// [`try_reduce_inv_slice_assign`](Self::try_reduce_inv_slice_assign) has the
+/// same implementation-specific scratch-buffer requirement as
+/// [`ReduceInvSlice::reduce_inv_slice_assign`]. `UintModulus` and
+/// `CompactModulus` do not use scratch space, while Barrett implementations
+/// require `scratch.len() == values.len()`.
 pub trait TryReduceInvSlice<T> {
     /// Try to calculate `values[i] = values[i]^(-1) (mod modulus)` in-place,
     /// where `self` is the modulus.
     ///
+    /// # Correctness
+    ///
+    /// - `scratch` satisfies the modulus implementation's requirement described
+    ///   in this trait's [scratch-buffer section](Self#scratch-buffer)
+    ///
     /// # Errors
     ///
-    /// Returns [`ReduceError::NoInverseAtIndex`](crate::ReduceError::NoInverseAtIndex)
-    /// for the first element that has no inverse.
+    /// Returns [`ReduceError::NoInverse`](crate::ReduceError::NoInverse) if one
+    /// or more values have no inverse. `values` and `scratch` may be modified
+    /// when an error is returned.
     fn try_reduce_inv_slice_assign(
         self,
         values: &mut [T],
@@ -290,8 +306,9 @@ pub trait TryReduceInvSlice<T> {
     ///
     /// # Errors
     ///
-    /// Returns [`ReduceError::NoInverseAtIndex`](crate::ReduceError::NoInverseAtIndex)
-    /// for the first element that has no inverse.
+    /// Returns [`ReduceError::NoInverse`](crate::ReduceError::NoInverse) if one
+    /// or more input values have no inverse. `output` may be modified when an
+    /// error is returned.
     fn try_reduce_inv_slice_to(
         self,
         input: &[T],

@@ -16,16 +16,4 @@ pub enum ReduceError<T> {
         /// The modulus.
         modulus: T,
     },
-    /// Error that occurs when a value at a specific index has no inverse element.
-    #[error(
-        "Value at index {index} ({value:?}) has no inverse element with the modulus {modulus:?}!"
-    )]
-    NoInverseAtIndex {
-        /// The zero-based index of the failing element.
-        index: usize,
-        /// The value being inverted.
-        value: T,
-        /// The modulus.
-        modulus: T,
-    },
 }

@@ -146,12 +146,8 @@ pub fn try_reduce_inv_slice_assign<T: UnsignedInteger>(
     modulus: T,
     values: &mut [T],
 ) -> Result<(), ReduceError<T>> {
-    for (i, v) in values.iter_mut().enumerate() {
-        *v = super::try_reduce_inv(modulus, *v).map_err(|_| ReduceError::NoInverseAtIndex {
-            index: i,
-            value: *v,
-            modulus,
-        })?;
+    for value in values {
+        *value = super::try_reduce_inv(modulus, *value)?;
     }
     Ok(())
 }
@@ -163,12 +159,8 @@ pub fn try_reduce_inv_slice_to<T: UnsignedInteger>(
     output: &mut [T],
 ) -> Result<(), ReduceError<T>> {
     debug_assert_eq!(input.len(), output.len());
-    for (i, (&y, x)) in input.iter().zip(output.iter_mut()).enumerate() {
-        *x = super::try_reduce_inv(modulus, y).map_err(|_| ReduceError::NoInverseAtIndex {
-            index: i,
-            value: y,
-            modulus,
-        })?;
+    for (&value, output) in input.iter().zip(output.iter_mut()) {
+        *output = super::try_reduce_inv(modulus, value)?;
     }
     Ok(())
 }
