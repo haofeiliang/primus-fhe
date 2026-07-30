@@ -172,6 +172,47 @@ macro_rules! impl_extended_gcd {
                 lhs.wrapping_sub(factor.wrapping_mul(rhs))
             }
 
+            #[inline(always)]
+            fn lift_inverse(a: $SelfT, x: $SelfT) -> $SelfT {
+                const TWO: $SelfT = 2;
+
+                x.wrapping_mul(TWO.wrapping_sub(a.wrapping_mul(x)))
+            }
+
+            #[inline(always)]
+            fn inverse_odd_mod_native(a: $SelfT) -> $SelfT {
+                let mut x = INV_TABLE[((a >> 1) & 0x7F) as usize] as $SelfT;
+                for _ in 3..<$SelfT>::BITS.ilog2() {
+                    x = lift_inverse(a, x);
+                }
+                x
+            }
+
+            #[inline(always)]
+            fn inverse_odd_mod_mask(a: $SelfT, mask: $SelfT) -> $SelfT {
+                let mut x = INV_TABLE[((a >> 1) & 0x7F) as usize] as $SelfT;
+                if mask <= u8::MAX as $SelfT {
+                    return x & mask;
+                }
+
+                x = lift_inverse(a, x);
+                if mask <= u16::MAX as $SelfT {
+                    return x & mask;
+                }
+
+                x = lift_inverse(a, x);
+                if mask <= u32::MAX as $SelfT {
+                    return x & mask;
+                }
+
+                x = lift_inverse(a, x);
+                if mask <= u64::MAX as $SelfT {
+                    return x & mask;
+                }
+
+                lift_inverse(a, x) & mask
+            }
+
             impl Xgcd for $SelfT {
                 #[inline]
                 fn gcd(self, other: Self) -> Self {
@@ -447,7 +488,6 @@ macro_rules! impl_extended_gcd {
 
                 #[inline]
                 fn gcdinv_pow_of_2(a: Self, mask: Self) -> Option<Self> {
-                    const TWO: $SelfT = 2;
                     assert!(
                         mask != 0 && (mask & mask.wrapping_add(1)) == 0,
                         "mask must be of the form 2^k - 1 for 1 <= k <= Self::BITS"
@@ -456,25 +496,20 @@ macro_rules! impl_extended_gcd {
                         return None;
                     }
 
-                    let mut x: $SelfT = INV_TABLE[((a >> 1) & 0x7F) as usize] as $SelfT;
-                    for _ in 2..Self::BITS.ilog2() {
-                        x = x.wrapping_mul(TWO.wrapping_sub(a.wrapping_mul(x)));
+                    if mask == Self::MAX {
+                        Some(inverse_odd_mod_native(a))
+                    } else {
+                        Some(inverse_odd_mod_mask(a, mask))
                     }
-                    Some(x & mask)
                 }
 
                 #[inline]
                 fn gcdinv_native(a: Self) -> Option<Self> {
-                    const TWO: $SelfT = 2;
                     if a & 0b1 == 0 {
                         return None;
                     }
 
-                    let mut x: $SelfT = INV_TABLE[((a >> 1) & 0x7F) as usize] as $SelfT;
-                    for _ in 2..Self::BITS.ilog2() {
-                        x = x.wrapping_mul(TWO.wrapping_sub(a.wrapping_mul(x)));
-                    }
-                    Some(x)
+                    Some(inverse_odd_mod_native(a))
                 }
             }
         };
