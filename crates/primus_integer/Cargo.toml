@@ -24,5 +24,13 @@ default = []
 simd = ["rand/simd_support"]
 
 [[bench]]
-name = "ops"
+name = "word_ops"
+harness = false
+
+[[bench]]
+name = "big_uint"
+harness = false
+
+[[bench]]
+name = "div_rem_scalar"
 harness = false
