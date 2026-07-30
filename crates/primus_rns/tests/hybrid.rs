@@ -1,7 +1,7 @@
 use core::range::Range;
 
-use primus_modulo::prelude::*;
 use primus_modulus::BarrettModulus;
+use primus_reduce::TryReduceInv;
 use primus_rns::{HybridRNS, RNSError};
 
 type ValueT = u64;
@@ -50,7 +50,7 @@ fn construction_partitions_q_and_precomputes_p() {
         let modulus = ModulusT::new(qi);
         let expected = p_product % qi;
         assert_eq!(p_mod_qi, expected);
-        assert_eq!(inv_p_mod_qi, expected.try_inv_modulo(modulus).unwrap());
+        assert_eq!(inv_p_mod_qi, modulus.try_reduce_inv(expected).unwrap());
     }
 }
 

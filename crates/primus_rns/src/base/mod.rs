@@ -6,7 +6,6 @@ mod kernels;
 use itertools::Itertools;
 use primus_factor::{FactorBase, ShoupFactor};
 use primus_integer::{BigUint, FheUint, multiply_many_values};
-use primus_modulo::prelude::*;
 use primus_reduce::{FieldContext, Modulus};
 
 use crate::RNSError;
@@ -145,7 +144,7 @@ where
             .zip(&moduli)
             .zip(moduli_values.iter().copied())
             .map(|((q_div_qi, &qi), qi_value)| {
-                let inv_q_div_qi_mod_qi = q_div_qi.modulo(qi).try_inv_modulo(qi).unwrap();
+                let inv_q_div_qi_mod_qi = qi.try_reduce_inv(qi.reduce(q_div_qi)).unwrap();
                 ShoupFactor::new(inv_q_div_qi_mod_qi, qi_value)
             })
             .collect::<Vec<ShoupFactor<T>>>();

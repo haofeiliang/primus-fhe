@@ -2,7 +2,6 @@ use itertools::izip;
 use primus_data::{Data, DataMut, RawData};
 use primus_factor::{Factor, FactorBase};
 use primus_integer::{BigUint, FheUint};
-use primus_modulo::prelude::*;
 use primus_poly::{BigUintPolynomial, CrtPolynomial, Polynomial};
 use primus_reduce::FieldContext;
 
@@ -25,7 +24,7 @@ where
     pub fn decompose(&self, BigUint(value): BigUint<&[T]>) -> Vec<T> {
         self.moduli
             .iter()
-            .map(|&modulus| value.modulo(modulus))
+            .map(|&modulus| modulus.reduce(value))
             .collect()
     }
 
@@ -41,7 +40,7 @@ where
     {
         self.moduli
             .iter()
-            .map(|&modulus| F::new(value.modulo(modulus), unsafe { modulus.value_unchecked() }))
+            .map(|&modulus| F::new(modulus.reduce(value), unsafe { modulus.value_unchecked() }))
             .collect()
     }
 
@@ -82,7 +81,7 @@ where
         assert_eq!(self.moduli_count(), residues.len());
 
         for (&modulus, residue) in self.moduli.iter().zip(residues) {
-            *residue = value.modulo(modulus);
+            *residue = modulus.reduce(value);
         }
     }
 
@@ -370,7 +369,7 @@ where
                 .iter_mut()
                 .zip(big_uint_values.chunks_exact(value_len))
             {
-                *residue = value.modulo(modulus);
+                *residue = modulus.reduce(value);
             }
         }
     }

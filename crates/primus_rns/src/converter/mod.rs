@@ -4,7 +4,6 @@ pub use exact::ExactConversionContext;
 pub(crate) use fast::FastConversionLimb;
 
 use primus_integer::FheUint;
-use primus_modulo::Modulo;
 use primus_reduce::FieldContext;
 
 use crate::RNSBase;
@@ -80,7 +79,7 @@ impl<T: FheUint, M: FieldContext<T>> BaseConverter<T, M> {
                 for (q_div_qi_mod_pj, q_div_qi) in
                     row.iter_mut().zip(input_base.iter_punctured_product())
                 {
-                    *q_div_qi_mod_pj = q_div_qi.digits().modulo(pj);
+                    *q_div_qi_mod_pj = pj.reduce(q_div_qi.digits());
                 }
             }
 

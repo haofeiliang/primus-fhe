@@ -1,7 +1,6 @@
 use itertools::izip;
 use primus_factor::FactorMul;
 use primus_integer::{AsInto, FheUint};
-use primus_modulo::Modulo;
 use primus_reduce::FieldContext;
 
 use super::BaseConverter;
@@ -147,7 +146,7 @@ impl<T: FheUint, M: FieldContext<T>> BaseConverter<T, M> {
         });
 
         let p = self.output_base.moduli()[0];
-        let q_mod_p = self.input_base.moduli_product().0.modulo(p);
+        let q_mod_p = p.reduce(self.input_base.moduli_product().0);
         let q_div_qi_mod_p = self.iter_base_change_matrix().next().unwrap();
 
         // Final multiplication

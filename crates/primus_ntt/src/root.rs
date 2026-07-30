@@ -1,6 +1,5 @@
 use primus_factor::{FactorBase, FactorMul, ShoupFactor};
 use primus_integer::FheUint;
-use primus_modulo::*;
 use primus_reduce::FieldContext;
 use rand::{distr::Uniform, prelude::*};
 
@@ -54,7 +53,7 @@ impl<T: FheUint> PrimitiveRoot for T {
             return false;
         }
 
-        self.exp_power_of_2_modulo(log_degree - 1, modulus) == modulus.minus_one()
+        modulus.reduce_exp_power_of_2(self, log_degree - 1) == modulus.minus_one()
     }
 
     fn try_primitive_root<M>(log_degree: u32, modulus: M) -> Result<Self, NttError<Self>>
@@ -88,7 +87,7 @@ impl<T: FheUint> PrimitiveRoot for T {
         if (0..200).any(|_| {
             let r = distr.sample(&mut rng);
 
-            w = r.exp_modulo(quotient, modulus);
+            w = modulus.reduce_exp(r, quotient);
             w.is_primitive_root(log_degree, modulus)
         }) {
             Ok(w)
@@ -108,7 +107,7 @@ impl<T: FheUint> PrimitiveRoot for T {
 
         let modulus_value = unsafe { modulus.value_unchecked() };
 
-        let generator_sq = root.square_modulo(modulus);
+        let generator_sq = modulus.reduce_square(root);
         let generator_sq = ShoupFactor::new(generator_sq, modulus_value);
         let mut current_generator = root;
 

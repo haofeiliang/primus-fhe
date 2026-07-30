@@ -23,7 +23,6 @@
 use primus_data::{Data, DataMut, RawData};
 use primus_factor::{FactorBase, FactorSliceOps, ShoupFactor};
 use primus_integer::{BigUint, DivRemScalar, FheUint, multiply_many_values};
-use primus_modulo::*;
 use primus_poly::{CrtPolynomial, DcrtPolynomial, Polynomial};
 use primus_reduce::FieldContext;
 use primus_rns::{BaseConverter, RNSBase};
@@ -97,7 +96,7 @@ where
             .zip(&t_gamma)
             .map(|(&x, modulus)| modulus.reduce_neg(modulus.reduce_inv(x)))
             .collect();
-        let inv_gamma_mod_t = ShoupFactor::new(gamma.modulo(t_modulus).inv_modulo(t_modulus), t);
+        let inv_gamma_mod_t = ShoupFactor::new(t_modulus.reduce_inv(t_modulus.reduce(gamma)), t);
         let t_gamma_value = multiply_many_values(&[t, gamma]);
         let t_gamma_factor_mod_q = base_q.decompose_to_rns_factor(t_gamma_value.view());
 
