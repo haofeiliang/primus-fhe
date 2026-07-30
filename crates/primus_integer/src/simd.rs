@@ -427,39 +427,3 @@ impl_mask_array! {u16}
 impl_mask_array! {u32}
 impl_mask_array! {u64}
 impl_mask_array! {usize}
-
-#[cfg(test)]
-mod tests {
-    use crate::AsInto;
-
-    use super::*;
-
-    fn test_add<T: SimdUnsignedInteger>() {
-        let a: Vec<T> = (0..1027).map(|a| a.as_into()).collect();
-        let b: Vec<T> = (0..1027).rev().map(|b| b.as_into()).collect();
-        let mut c: Vec<T> = vec![T::ZERO; 1027];
-
-        let (a_chunks, a_rem) = T::simd_as_chunks(&a);
-        let (b_chunks, b_rem) = T::simd_as_chunks(&b);
-        let (c_chunks, c_rem) = T::simd_as_chunks_mut(&mut c);
-        for ((&ac, &bc), cc) in a_chunks.iter().zip(b_chunks).zip(c_chunks) {
-            let av = T::SimdT::from(ac);
-            let bv = T::SimdT::from(bc);
-            *cc = (av + bv).into();
-        }
-
-        for ((&a, &b), c) in a_rem.iter().zip(b_rem).zip(c_rem) {
-            *c = a + b;
-        }
-
-        assert!(c.iter().copied().all(|a| a == 1026.as_into()));
-    }
-
-    #[test]
-    fn test_simd_traits() {
-        test_add::<u16>();
-        test_add::<u32>();
-        test_add::<u64>();
-        test_add::<usize>();
-    }
-}

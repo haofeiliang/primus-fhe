@@ -76,38 +76,3 @@ overflowing_impl!(OverflowingMul, overflowing_mul, i32);
 overflowing_impl!(OverflowingMul, overflowing_mul, i64);
 overflowing_impl!(OverflowingMul, overflowing_mul, isize);
 overflowing_impl!(OverflowingMul, overflowing_mul, i128);
-
-#[test]
-fn test_overflowing_traits() {
-    fn overflowing_add<T: OverflowingAdd>(a: T, b: T) -> (T, bool) {
-        a.overflowing_add(b)
-    }
-    fn overflowing_sub<T: OverflowingSub>(a: T, b: T) -> (T, bool) {
-        a.overflowing_sub(b)
-    }
-    fn overflowing_mul<T: OverflowingMul>(a: T, b: T) -> (T, bool) {
-        a.overflowing_mul(b)
-    }
-    assert_eq!(overflowing_add(5i16, 2), (7, false));
-    assert_eq!(overflowing_add(i16::MAX, 1), (i16::MIN, true));
-    assert_eq!(overflowing_sub(5i16, 2), (3, false));
-    assert_eq!(overflowing_sub(i16::MIN, 1), (i16::MAX, true));
-    assert_eq!(overflowing_mul(5i16, 2), (10, false));
-    assert_eq!(overflowing_mul(1_000_000_000i32, 10), (1410065408, true));
-
-    assert_eq!(overflowing_add(0u32, 0), (0, false));
-    assert_eq!(overflowing_add(u32::MAX, 1), (0, true));
-    assert_eq!(overflowing_add(u32::MAX, u32::MAX), (u32::MAX - 1, true));
-    assert_eq!(overflowing_sub(0u32, 1), (u32::MAX, true));
-    assert_eq!(overflowing_sub(u32::MAX, u32::MAX), (0, false));
-    assert_eq!(overflowing_mul(u32::MAX, 2), (u32::MAX - 1, true));
-    assert_eq!(overflowing_mul(0u32, u32::MAX), (0, false));
-
-    assert_eq!(overflowing_add(u64::MAX, 1), (0, true));
-    assert_eq!(overflowing_sub(0u64, u64::MAX), (1, true));
-    assert_eq!(overflowing_mul(u64::MAX, u64::MAX), (1, true));
-
-    assert_eq!(overflowing_add(i64::MAX, 1), (i64::MIN, true));
-    assert_eq!(overflowing_sub(i64::MIN, 1), (i64::MAX, true));
-    assert_eq!(overflowing_mul(i64::MIN, -1), (i64::MIN, true));
-}
