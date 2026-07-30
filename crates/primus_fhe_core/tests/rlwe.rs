@@ -27,7 +27,7 @@ where
     T: FheUint,
     M: FieldContext<T>,
 {
-    let q: f64 = unsafe { cipher_modulus.value_unchecked().as_into() };
+    let q: f64 = cipher_modulus.value().as_into();
     (q * NOISE_ALPHA).max(0.7)
 }
 

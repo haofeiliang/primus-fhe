@@ -41,7 +41,7 @@ impl<T: FheUint> PrimitiveRoot for T {
     where
         M: FieldContext<Self>,
     {
-        let modulus_value = unsafe { modulus.value_unchecked() };
+        let modulus_value = modulus.value();
 
         debug_assert!(self < modulus_value);
         debug_assert!(
@@ -62,7 +62,7 @@ impl<T: FheUint> PrimitiveRoot for T {
     {
         assert!(log_degree < T::BITS);
 
-        let modulus_value = unsafe { modulus.value_unchecked() };
+        let modulus_value = modulus.value();
 
         // p-1
         let modulus_minus_one = modulus.minus_one();
@@ -105,7 +105,7 @@ impl<T: FheUint> PrimitiveRoot for T {
     {
         let mut root = T::try_primitive_root(log_degree, modulus)?;
 
-        let modulus_value = unsafe { modulus.value_unchecked() };
+        let modulus_value = modulus.value();
 
         let generator_sq = modulus.reduce_square(root);
         let generator_sq = ShoupFactor::new(generator_sq, modulus_value);

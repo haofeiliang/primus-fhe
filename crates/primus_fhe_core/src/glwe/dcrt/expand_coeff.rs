@@ -232,9 +232,7 @@ where
                 n_residue
                     .iter()
                     .zip(rns_base.moduli())
-                    .map(|(&n, m)| {
-                        ShoupFactor::new(m.reduce_inv(n), unsafe { m.value_unchecked() })
-                    })
+                    .map(|(&n, m)| ShoupFactor::new(m.reduce_inv(n), m.value()))
                     .collect()
             })
             .collect()

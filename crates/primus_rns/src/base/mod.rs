@@ -6,7 +6,7 @@ mod kernels;
 use itertools::Itertools;
 use primus_factor::{FactorBase, ShoupFactor};
 use primus_integer::{BigUint, FheUint, multiply_many_values};
-use primus_reduce::{FieldContext, Modulus};
+use primus_reduce::FieldContext;
 
 use crate::RNSError;
 
@@ -33,23 +33,6 @@ where
     punctured_product: Vec<T>,
     /// One Shoup factor for `(Q / q_i)^-1 mod q_i` per modulus.
     inv_punctured_product_mod_modulus: Vec<ShoupFactor<T>>,
-}
-
-fn checked_moduli_values<T, M>(moduli: &[M]) -> Result<Vec<T>, RNSError>
-where
-    T: FheUint,
-    M: Modulus<ValueT = T>,
-{
-    moduli
-        .iter()
-        .copied()
-        .enumerate()
-        .map(|(index, modulus)| {
-            modulus
-                .value()
-                .ok_or(RNSError::UnrepresentableModulus { index })
-        })
-        .collect()
 }
 
 fn compute_punctured_product_to<T: FheUint>(
@@ -87,8 +70,6 @@ where
     /// # Errors
     ///
     /// Returns [`RNSError::EmptyBase`] when `moduli` is empty.
-    /// Returns [`RNSError::UnrepresentableModulus`] when a modulus cannot be
-    /// represented as a scalar value.
     /// Returns [`RNSError::CoPrimeError`] when any two moduli are not coprime.
     #[inline]
     pub fn new(moduli: &[M]) -> Result<Self, RNSError> {
@@ -106,9 +87,7 @@ where
 
         if moduli.len() == 1 {
             let modulus = moduli[0];
-            let value = modulus
-                .value()
-                .ok_or(RNSError::UnrepresentableModulus { index: 0 })?;
+            let value = modulus.value();
             return Ok(Self {
                 moduli,
                 moduli_product: BigUint(vec![value]),
@@ -117,7 +96,10 @@ where
             });
         }
 
-        let moduli_values = checked_moduli_values(&moduli)?;
+        let moduli_values = moduli
+            .iter()
+            .map(|modulus| modulus.value())
+            .collect::<Vec<_>>();
 
         if moduli_values
             .iter()
@@ -166,7 +148,7 @@ where
     /// Returns the moduli values in basis order.
     #[inline]
     pub fn moduli_values(&self) -> impl Iterator<Item = T> {
-        self.moduli.iter().map(|m| unsafe { m.value_unchecked() })
+        self.moduli.iter().map(|m| m.value())
     }
 
     /// Returns the number of moduli in this basis.
@@ -217,46 +199,5 @@ where
     #[inline]
     pub fn inv_punctured_product_mod_modulus(&self) -> &[ShoupFactor<T>] {
         &self.inv_punctured_product_mod_modulus
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use core::fmt;
-
-    use super::*;
-
-    #[derive(Clone, Copy)]
-    struct UnrepresentableModulus;
-
-    impl fmt::Debug for UnrepresentableModulus {
-        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-            f.write_str("UnrepresentableModulus")
-        }
-    }
-
-    impl Modulus for UnrepresentableModulus {
-        type ValueT = u64;
-
-        fn value(self) -> Option<Self::ValueT> {
-            None
-        }
-
-        unsafe fn value_unchecked(self) -> Self::ValueT {
-            panic!("unrepresentable modulus")
-        }
-
-        fn minus_one(self) -> Self::ValueT {
-            u64::MAX
-        }
-    }
-
-    #[test]
-    fn checked_moduli_values_rejects_unrepresentable_modulus() {
-        let moduli = [UnrepresentableModulus];
-        assert!(matches!(
-            checked_moduli_values(&moduli),
-            Err(RNSError::UnrepresentableModulus { index: 0 })
-        ));
     }
 }

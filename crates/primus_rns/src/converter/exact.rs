@@ -77,7 +77,7 @@ impl<T: FheUint, M: FieldContext<T>> BaseConverter<T, M> {
 
         if self.uses_single_input_kernel() {
             let qi = self.input_base.moduli()[0];
-            let qi_value = unsafe { qi.value_unchecked() };
+            let qi_value = qi.value();
             let max_nonnegative = (qi_value - T::ONE) / T::TWO;
             let p = self.output_base.moduli()[0];
             let qi_mod_p = p.reduce(qi_value);
@@ -112,7 +112,7 @@ impl<T: FheUint, M: FieldContext<T>> BaseConverter<T, M> {
         )
         .enumerate()
         .for_each(|(i, (poly_mod_qi, &inv_q_div_qi_mod_qi, &qi))| {
-            let qi_val = unsafe { qi.value_unchecked() };
+            let qi_val = qi.value();
             let divisor: f64 = qi_val.as_into();
             if inv_q_div_qi_mod_qi.value().is_one() {
                 izip!(

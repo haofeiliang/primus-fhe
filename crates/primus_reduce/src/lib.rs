@@ -12,8 +12,9 @@
 //! # Implementing [`RingContext`] / [`FieldContext`]
 //!
 //! Both are *marker* traits with blanket impls: implement every listed
-//! `Reduce*` (and `LazyReduce*`) trait for your modulus type and the
-//! corresponding context trait is granted automatically.
+//! `Reduce*` trait for your modulus type to obtain [`RingContext`]. Implement
+//! [`ExplicitModulus`] and the additional `LazyReduce*` / field traits to
+//! obtain [`FieldContext`].
 
 #![deny(missing_docs)]
 
@@ -45,21 +46,11 @@ pub trait Modulus: Copy + Debug + Send + Sync {
     /// The scalar type that values are reduced into (e.g. `u64`).
     type ValueT: FheUint;
 
-    /// Returns the modulus value, or `None` when the modulus is implicit
+    /// Returns the explicit modulus value, or `None` when the modulus is implicit
     /// (e.g. a native power-of-two modulus where the value is `2^BITS` and
     /// cannot be represented in `ValueT`).
     #[must_use]
-    fn value(self) -> Option<Self::ValueT>;
-
-    /// Returns the modulus value without checking that it fits in `ValueT`.
-    ///
-    /// # Safety
-    ///
-    /// The caller must ensure that the modulus value can be represented in
-    /// `ValueT`, or must be prepared to handle any implementation-defined
-    /// sentinel value (such as `0`) returned for implicit moduli.
-    #[must_use]
-    unsafe fn value_unchecked(self) -> Self::ValueT;
+    fn explicit_value(self) -> Option<Self::ValueT>;
 
     /// Returns the value of the modulus minus one.
     ///
@@ -80,4 +71,11 @@ pub trait Modulus: Copy + Debug + Send + Sync {
         Uniform::new_inclusive(<Self::ValueT as ConstZero>::ZERO, self.minus_one())
             .expect("uniform_distribution: invalid modulus range")
     }
+}
+
+/// Trait for moduli whose value can be represented in [`Modulus::ValueT`].
+pub trait ExplicitModulus: Modulus {
+    /// Returns the modulus value.
+    #[must_use]
+    fn value(self) -> Self::ValueT;
 }

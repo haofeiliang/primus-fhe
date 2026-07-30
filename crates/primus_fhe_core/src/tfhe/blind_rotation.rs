@@ -95,7 +95,7 @@ pub fn fourier_blind_rotate_to<T, LM, Table, A, B, C>(
     let two_n = poly_length * 2;
     debug_assert_eq!(lwe_params.secret_key_type(), LweSecretKeyType::Binary);
     debug_assert_eq!(input.dimension(), lwe_params.dimension());
-    let modulus = lwe_params.cipher_modulus().value();
+    let modulus = lwe_params.cipher_modulus().explicit_value();
     fourier_blind_rotate_with(
         input,
         accumulator,
@@ -167,7 +167,7 @@ pub fn ntt_blind_rotate_to<T, LM, GM, Table, A, B, C>(
     let two_n = poly_length * 2;
     debug_assert_eq!(lwe_params.secret_key_type(), LweSecretKeyType::Binary);
     debug_assert_eq!(input.dimension(), lwe_params.dimension());
-    let modulus = lwe_params.cipher_modulus().value();
+    let modulus = lwe_params.cipher_modulus().explicit_value();
     ntt_blind_rotate_with(
         input,
         accumulator,
@@ -305,7 +305,7 @@ fn ntt_blind_rotate_with<T, M, Table, A, B, C, F>(
     let two_n = 2 * poly_length;
     debug_assert_eq!(input.dimension(), key.input_dimension());
     debug_assert_eq!(key.common_size(), ggsw_params.common_size());
-    debug_assert_eq!(key.cipher_modulus(), modulus.value());
+    debug_assert_eq!(key.cipher_modulus(), Some(modulus.value()));
     debug_assert_eq!(ntt.poly_length(), poly_length);
     debug_assert_eq!(accumulator.as_ref().len(), ggsw_params.glwe_len());
     debug_assert_eq!(output.as_ref().len(), ggsw_params.glwe_len());

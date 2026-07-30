@@ -239,7 +239,7 @@ where
                 capacity,
             });
         }
-        if small_lwe.cipher_modulus().value() != glwe.cipher_modulus().value() {
+        if small_lwe.cipher_modulus().explicit_value() != glwe.cipher_modulus().explicit_value() {
             return Err(TfheParameterError::CipherModulusMismatch);
         }
         if glwe_key_switching.input_dimension() != glwe.dimension() {
@@ -266,13 +266,18 @@ where
                 },
             );
         }
-        if glwe_key_switching.output().cipher_modulus().value() != glwe.cipher_modulus().value() {
+        if glwe_key_switching
+            .output()
+            .cipher_modulus()
+            .explicit_value()
+            != glwe.cipher_modulus().explicit_value()
+        {
             return Err(TfheParameterError::GlweKeySwitchingCipherModulusMismatch);
         }
         if glwe_key_switching.output().secret_key_type() != RingSecretKeyType::Binary {
             return Err(TfheParameterError::GlweKeySwitchingOutputSecretKeyMustBeBinary);
         }
-        if glwe_key_switching.output().basis().modulus() != glwe.cipher_modulus().value() {
+        if glwe_key_switching.output().basis().modulus() != glwe.cipher_modulus().explicit_value() {
             return Err(TfheParameterError::GlweKeySwitchingBasisModulusMismatch);
         }
 
@@ -335,7 +340,8 @@ where
         }
 
         if glwe.common_size() != bootstrapping.glwe_common_size()
-            || glwe.cipher_modulus().value() != bootstrapping.cipher_modulus().value()
+            || glwe.cipher_modulus().explicit_value()
+                != bootstrapping.cipher_modulus().explicit_value()
             || glwe.secret_key_type() != bootstrapping.secret_key_type()
             || glwe.noise_distribution().standard_deviation()
                 != bootstrapping.noise_distribution().standard_deviation()
@@ -343,7 +349,7 @@ where
             return Err(TfheParameterError::BootstrappingGlweParametersMismatch);
         }
 
-        if bootstrapping.basis().modulus() != bootstrapping.cipher_modulus().value() {
+        if bootstrapping.basis().modulus() != bootstrapping.cipher_modulus().explicit_value() {
             return Err(TfheParameterError::BootstrappingBasisModulusMismatch);
         }
         Ok(())

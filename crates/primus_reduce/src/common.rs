@@ -1,7 +1,7 @@
 use primus_integer::UnsignedInteger;
 
-use super::Modulus;
 use super::prelude::*;
+use super::{ExplicitModulus, Modulus};
 
 /// A marker trait indicating the modulus can perform ring operations
 /// (reduce, add, sub, double, neg, mul, mul-add, square, exp, dot-product).
@@ -74,14 +74,15 @@ impl<T: UnsignedInteger, M> RingContext<T> for M where
 {
 }
 
-/// A marker trait indicating the modulus can perform field operations
-/// (ring + lazy reduce, multiplicative inverse, division).
+/// A marker trait indicating the modulus has an explicit value and can perform
+/// field operations (ring + lazy reduce, multiplicative inverse, division).
 ///
 /// Granted automatically (blanket impl) when the type already satisfies
-/// [`RingContext`] and additionally implements the listed
-/// `LazyReduce*` / inverse / division / slice traits.
+/// [`RingContext`] and [`ExplicitModulus`], and additionally implements the
+/// listed `LazyReduce*` / inverse / division / slice traits.
 pub trait FieldContext<T>:
     RingContext<T>
+    + ExplicitModulus<ValueT = T>
     + LazyReduce<T, Output = T>
     + LazyReduceAssign<T>
     + LazyReduceSub<T, Output = T>
@@ -110,6 +111,7 @@ pub trait FieldContext<T>:
 
 impl<T: UnsignedInteger, M> FieldContext<T> for M where
     M: RingContext<T>
+        + ExplicitModulus<ValueT = T>
         + LazyReduce<T, Output = T>
         + LazyReduceAssign<T>
         + LazyReduceSub<T, Output = T>

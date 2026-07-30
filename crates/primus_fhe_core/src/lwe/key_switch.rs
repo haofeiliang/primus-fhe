@@ -60,7 +60,7 @@ impl<T: FheUint> LweKeySwitchingKey<T> {
         let modulus = output_parameters.cipher_modulus();
         Self::generate_from_residues(
             input_secret_key.iter().copied().map(|coefficient| {
-                if let Some(modulus) = modulus.value() {
+                if let Some(modulus) = modulus.explicit_value() {
                     encode_secret_coefficient(coefficient, modulus)
                 } else {
                     T::cast_from_signed(coefficient)
@@ -91,7 +91,7 @@ impl<T: FheUint> LweKeySwitchingKey<T> {
         assert_eq!(output_parameters.dimension(), parameters.output_dimension());
         assert_eq!(
             parameters.basis().modulus(),
-            output_parameters.cipher_modulus().value(),
+            output_parameters.cipher_modulus().explicit_value(),
             "LWE key switching currently requires matching input and output ciphertext moduli"
         );
 
@@ -168,7 +168,7 @@ impl<T: FheUint> LweKeySwitchingKey<T> {
     {
         assert_eq!(input.dimension(), self.input_dimension);
         assert_eq!(output.dimension(), self.output_dimension);
-        assert_eq!(self.basis.modulus(), modulus.value());
+        assert_eq!(self.basis.modulus(), modulus.explicit_value());
 
         output.set_zero();
         *output.b_mut() = modulus.reduce_neg(input.b());

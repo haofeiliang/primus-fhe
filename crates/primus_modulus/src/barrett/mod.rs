@@ -149,17 +149,19 @@ impl<T: FheUint> primus_reduce::Modulus for BarrettModulus<T> {
     type ValueT = T;
 
     #[inline]
-    fn value(self) -> Option<Self::ValueT> {
+    fn explicit_value(self) -> Option<Self::ValueT> {
         Some(self.value)
-    }
-
-    #[inline(always)]
-    unsafe fn value_unchecked(self) -> Self::ValueT {
-        self.value
     }
 
     #[inline(always)]
     fn minus_one(self) -> Self::ValueT {
         self.value - T::ONE
+    }
+}
+
+impl<T: FheUint> primus_reduce::ExplicitModulus for BarrettModulus<T> {
+    #[inline(always)]
+    fn value(self) -> Self::ValueT {
+        self.value
     }
 }

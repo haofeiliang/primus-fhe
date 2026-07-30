@@ -1,5 +1,5 @@
 use primus_integer::{FheUint, UnsignedInteger};
-use primus_reduce::{Modulus, prelude::*};
+use primus_reduce::{ExplicitModulus, prelude::*};
 
 pub use crate::common::uint::slice::{
     lazy_reduce_neg_slice_assign, lazy_reduce_neg_slice_to, reduce_inv_slice_assign,
@@ -305,11 +305,11 @@ where
 pub fn lazy_reduce_sub_mul_slice_assign<T, M>(modulus: M, acc: &mut [T], a: &[T], b: &[T])
 where
     T: FheUint,
-    M: Copy + Modulus<ValueT = T> + ReduceMul<T, Output = T>,
+    M: Copy + ExplicitModulus<ValueT = T> + ReduceMul<T, Output = T>,
 {
     debug_assert_eq!(acc.len(), a.len());
     debug_assert_eq!(acc.len(), b.len());
-    let m = unsafe { modulus.value_unchecked() };
+    let m = modulus.value();
     acc.iter_mut().zip(a).zip(b).for_each(|((acc, &a), &b)| {
         let prod = modulus.reduce_mul(a, b);
         *acc = acc.wrapping_add(m - prod);

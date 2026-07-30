@@ -63,17 +63,19 @@ impl<T: FheUint> primus_reduce::Modulus for PowOf2Modulus<T> {
     type ValueT = T;
 
     #[inline]
-    fn value(self) -> Option<Self::ValueT> {
+    fn explicit_value(self) -> Option<Self::ValueT> {
         Some(self.mask + T::ONE)
-    }
-
-    #[inline(always)]
-    unsafe fn value_unchecked(self) -> Self::ValueT {
-        self.mask + T::ONE
     }
 
     #[inline(always)]
     fn minus_one(self) -> Self::ValueT {
         self.mask
+    }
+}
+
+impl<T: FheUint> primus_reduce::ExplicitModulus for PowOf2Modulus<T> {
+    #[inline(always)]
+    fn value(self) -> Self::ValueT {
+        self.mask + T::ONE
     }
 }

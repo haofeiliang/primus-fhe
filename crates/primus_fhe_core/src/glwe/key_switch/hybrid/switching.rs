@@ -43,8 +43,7 @@ impl<T: FheUint> HybridRnsGlweKeySwitchingKey<T> {
                 .ntt_tables()
                 .iter()
                 .zip(hybrid_params.qp_base().moduli())
-                .all(|(ntt_table, modulus)| ntt_table.modulus()
-                    == unsafe { modulus.value_unchecked() })
+                .all(|(ntt_table, modulus)| ntt_table.modulus() == modulus.value())
         );
         assert_eq!(
             qp_rns_poly_len,

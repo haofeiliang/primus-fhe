@@ -53,18 +53,16 @@ where
             DiscreteGaussian::new(noise_standard_deviation, cipher_modulus_minus_one).unwrap();
 
         let cipher_modulus_uniform_distr = cipher_modulus.uniform_distribution();
-        let plaintext_codec = PlaintextCodec::new(plain_modulus_value, cipher_modulus.value());
+        let plaintext_codec =
+            PlaintextCodec::new(plain_modulus_value, Some(cipher_modulus.value()));
 
-        let (mut delta, rem) = unsafe {
-            cipher_modulus
-                .value_unchecked()
-                .div_rem(plain_modulus_value)
-        };
+        let cipher_modulus_value = cipher_modulus.value();
+        let (mut delta, rem) = cipher_modulus_value.div_rem(plain_modulus_value);
         if rem > (plain_modulus_value - T::ONE) / T::TWO {
             delta += T::ONE;
         }
 
-        let delta_factor = ShoupFactor::new(delta, unsafe { cipher_modulus.value_unchecked() });
+        let delta_factor = ShoupFactor::new(delta, cipher_modulus_value);
 
         let secret_key_distribution =
             if let RingSecretKeyType::Gaussian(standard_deviation) = secret_key_type {
@@ -113,7 +111,7 @@ where
     /// Returns the cipher modulus of this [`RlweParameters<T, M>`].
     #[inline]
     pub fn cipher_modulus_value(&self) -> T {
-        unsafe { self.cipher_modulus.value_unchecked() }
+        self.cipher_modulus.value()
     }
 
     /// Returns the cipher modulus minus one of this [`RlweParameters<T, M>`].

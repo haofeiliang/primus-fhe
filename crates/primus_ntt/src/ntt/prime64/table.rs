@@ -320,9 +320,7 @@ impl NttTable for U64NttTable {
         M: FieldContext<Self::ValueT>,
     {
         let root = <u64 as PrimitiveRoot>::try_minimal_primitive_root(log_n + 1, modulus)?;
-        let Some(q) = modulus.value() else {
-            return Err(NttError::NttTableErr);
-        };
+        let q = modulus.value();
 
         // Reject unsupported moduli: q < 2^62 required for lazy [0, 4q) range.
         if q >= 1 << 62 {

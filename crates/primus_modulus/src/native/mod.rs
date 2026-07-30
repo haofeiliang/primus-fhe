@@ -37,13 +37,8 @@ impl<T: FheUint> primus_reduce::Modulus for NativeModulus<T> {
     type ValueT = T;
 
     #[inline(always)]
-    fn value(self) -> Option<Self::ValueT> {
+    fn explicit_value(self) -> Option<Self::ValueT> {
         None
-    }
-
-    #[inline(always)]
-    unsafe fn value_unchecked(self) -> Self::ValueT {
-        panic!("The value of the Native Modulus can not be represented.");
     }
 
     #[inline(always)]

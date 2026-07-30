@@ -48,7 +48,8 @@ where
             DiscreteGaussian::new(noise_standard_deviation, cipher_modulus_minus_one).unwrap();
 
         let cipher_modulus_uniform_distr = cipher_modulus.uniform_distribution();
-        let plaintext_codec = PlaintextCodec::new(plain_modulus_value, cipher_modulus.value());
+        let plaintext_codec =
+            PlaintextCodec::new(plain_modulus_value, cipher_modulus.explicit_value());
 
         Self {
             dimension,

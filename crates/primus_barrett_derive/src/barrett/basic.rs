@@ -28,18 +28,20 @@ pub(crate) fn basic(
             type ValueT = #ty;
 
             #[inline(always)]
-            fn value(self) -> Option<Self::ValueT> {
+            fn explicit_value(self) -> Option<Self::ValueT> {
                 Some(#modulus)
-            }
-
-            #[inline(always)]
-            unsafe fn value_unchecked(self) -> Self::ValueT {
-                #modulus
             }
 
             #[inline(always)]
             fn minus_one(self) -> Self::ValueT {
                 #modulus - 1
+            }
+        }
+
+        impl ::primus_modulus::reduce::ExplicitModulus for #name {
+            #[inline(always)]
+            fn value(self) -> Self::ValueT {
+                #modulus
             }
         }
 

@@ -178,7 +178,7 @@ impl<T: FheUint> FunctionalBootstrappingKey<T, Vec<T>> {
             data,
             input_dimension,
             common_size: params.common_size(),
-            cipher_modulus: params.cipher_modulus().value(),
+            cipher_modulus: Some(params.cipher_modulus().value()),
             value_type: PhantomData,
         }
     }

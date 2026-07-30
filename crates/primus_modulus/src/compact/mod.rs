@@ -33,17 +33,19 @@ impl<T: FheUint> primus_reduce::Modulus for CompactModulus<T> {
     type ValueT = T;
 
     #[inline(always)]
-    fn value(self) -> Option<Self::ValueT> {
+    fn explicit_value(self) -> Option<Self::ValueT> {
         Some(self.0)
-    }
-
-    #[inline(always)]
-    unsafe fn value_unchecked(self) -> Self::ValueT {
-        self.0
     }
 
     #[inline(always)]
     fn minus_one(self) -> Self::ValueT {
         self.0 - T::ONE
+    }
+}
+
+impl<T: FheUint> primus_reduce::ExplicitModulus for CompactModulus<T> {
+    #[inline(always)]
+    fn value(self) -> Self::ValueT {
+        self.0
     }
 }

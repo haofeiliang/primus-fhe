@@ -24,12 +24,8 @@ where
     ///
     /// Returns [`RNSError::CoPrimeError`] when the new modulus is not coprime
     /// with at least one existing modulus.
-    /// Returns [`RNSError::UnrepresentableModulus`] when the new modulus
-    /// cannot be represented as a scalar value.
     pub fn extend(&self, p: M) -> Result<Self, RNSError> {
-        let p_val = p
-            .value()
-            .ok_or(RNSError::UnrepresentableModulus { index: 0 })?;
+        let p_val = p.value();
 
         // Check coprimality between p and every q_i.
         for qi in self.moduli_values() {

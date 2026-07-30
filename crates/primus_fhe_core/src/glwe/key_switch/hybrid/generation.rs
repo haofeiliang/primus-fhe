@@ -37,23 +37,18 @@ impl<T: FheUint> HybridRnsGlweKeySwitchingKey<T> {
                 .cipher_moduli()
                 .iter()
                 .zip(hybrid_parameters.q_base().moduli())
-                .all(|(input_modulus, hybrid_modulus)| unsafe {
-                    input_modulus.value_unchecked() == hybrid_modulus.value_unchecked()
-                })
+                .all(|(input_modulus, hybrid_modulus)| input_modulus.value()
+                    == hybrid_modulus.value())
         );
         assert!(
             qp_table
                 .ntt_tables()
                 .iter()
                 .zip(qp_moduli)
-                .all(|(ntt_table, modulus)| ntt_table.modulus()
-                    == unsafe { modulus.value_unchecked() })
+                .all(|(ntt_table, modulus)| ntt_table.modulus() == modulus.value())
         );
 
-        let qp_moduli_values: Vec<T> = qp_moduli
-            .iter()
-            .map(|modulus| unsafe { modulus.value_unchecked() })
-            .collect();
+        let qp_moduli_values: Vec<T> = qp_moduli.iter().map(|modulus| modulus.value()).collect();
         let p_mod_q = hybrid_parameters.p_mod_q();
         let partition_count = hybrid_parameters.partition_count();
         let input_dimension = input_secret_key.dimension();
@@ -98,7 +93,7 @@ impl<T: FheUint> HybridRnsGlweKeySwitchingKey<T> {
                     .zip(&qp_moduli[q_range])
                     .zip(&p_mod_q[q_range])
                 {
-                    let modulus_value = unsafe { modulus.value_unchecked() };
+                    let modulus_value = modulus.value();
                     for (body_coefficient, &secret_coefficient) in
                         body_limb.iter_mut().zip(secret_polynomial)
                     {

@@ -23,7 +23,7 @@ where
     M: RingContext<T>,
 {
     let q = cipher_modulus
-        .value()
+        .explicit_value()
         .map_or(2.0_f64.powi(T::BITS as i32), |q| q.as_into());
     noise_standard_deviation_from_q(q)
 }

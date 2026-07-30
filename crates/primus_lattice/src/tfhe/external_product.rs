@@ -135,8 +135,7 @@ pub(super) fn ntt_external_product_accumulate<T, M, Table, A, B>(
     let glev_len = basis.decompose_length() * glwe_len;
 
     debug_assert_eq!(ntt.poly_length(), poly_len);
-    debug_assert_eq!(basis.modulus(), modulus.value());
-    debug_assert!(modulus.value().is_some());
+    debug_assert_eq!(basis.modulus(), Some(modulus.value()));
     debug_assert_eq!(input.as_ref().len(), glwe_len);
     debug_assert_eq!(key.as_ref().len(), size.component_count() * glev_len);
     debug_assert_eq!(context.adjusted_poly.len(), poly_len);

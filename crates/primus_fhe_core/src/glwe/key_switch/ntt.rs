@@ -56,10 +56,7 @@ impl<T: FheUint> NttGlweKeySwitchingKey<T> {
             encode_secret_polynomial_to(
                 secret_poly,
                 encoded_secret.as_mut(),
-                output
-                    .cipher_modulus()
-                    .value()
-                    .expect("NTT key switching requires an explicit modulus"),
+                output.cipher_modulus().value(),
             );
             output_secret_key.encrypt_glev_to(
                 &encoded_secret,
@@ -195,7 +192,7 @@ impl<T: FheUint> NttGlweKeySwitchingKey<T> {
         assert_eq!(ntt.poly_length(), self.poly_length);
         assert_eq!(
             parameters.output().basis().modulus(),
-            parameters.output().cipher_modulus().value()
+            Some(parameters.output().cipher_modulus().value())
         );
         assert_eq!(input_len, (self.input_dimension + 1) * self.poly_length);
         assert_eq!(output_len, (self.output_dimension + 1) * self.poly_length);

@@ -66,14 +66,10 @@ where
     /// - `t` not coprime with `gamma` or any `q_i`
     /// - `gamma <= t` (HPS requires that γ > t)
     pub fn new(t_modulus: M, base_q: RNSBase<T, M>, gamma_modulus: M) -> Self {
-        let t = unsafe { t_modulus.value_unchecked() };
-        let gamma = unsafe { gamma_modulus.value_unchecked() };
+        let t = t_modulus.value();
+        let gamma = gamma_modulus.value();
 
-        let moduli_values: Vec<T> = base_q
-            .moduli()
-            .iter()
-            .map(|m| unsafe { m.value_unchecked() })
-            .collect();
+        let moduli_values: Vec<T> = base_q.moduli().iter().map(|m| m.value()).collect();
 
         Self::validate_moduli(t, &moduli_values, gamma);
 

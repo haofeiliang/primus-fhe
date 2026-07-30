@@ -266,7 +266,7 @@ where
     /// Returns the representable cipher modulus value, when one exists.
     #[inline]
     pub fn cipher_modulus_value(&self) -> Option<T> {
-        self.cipher_modulus.value()
+        self.cipher_modulus.explicit_value()
     }
 
     /// Returns the cipher modulus minus one.
@@ -336,7 +336,7 @@ where
         noise_standard_deviation: f64,
     ) -> Self {
         let common_size = GlweCommonSize::new(dimension, poly_length);
-        let cipher_modulus_value = cipher_modulus.value();
+        let cipher_modulus_value = cipher_modulus.explicit_value();
         let plaintext_codec = PlaintextCodec::new(plain_modulus_value, cipher_modulus_value);
 
         let inner =

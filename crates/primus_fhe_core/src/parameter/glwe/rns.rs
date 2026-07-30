@@ -135,10 +135,7 @@ where
         secret_key_type: RingSecretKeyType,
         noise_standard_deviation: f64,
     ) -> Self {
-        let cipher_moduli_value: Vec<T> = cipher_moduli
-            .iter()
-            .map(|qi| unsafe { qi.value_unchecked() })
-            .collect();
+        let cipher_moduli_value: Vec<T> = cipher_moduli.iter().map(|qi| qi.value()).collect();
 
         let cipher_moduli_minus_one = cipher_moduli_value.iter().map(|&qi| qi - T::ONE).collect();
         let base_q = RNSBase::new(cipher_moduli).unwrap();
@@ -464,10 +461,7 @@ where
         noise_standard_deviation: f64,
         basis: BigUintApproxSignedBasis<T>,
     ) -> Self {
-        let cipher_moduli_value: Vec<T> = cipher_moduli
-            .iter()
-            .map(|qi| unsafe { qi.value_unchecked() })
-            .collect();
+        let cipher_moduli_value: Vec<T> = cipher_moduli.iter().map(|qi| qi.value()).collect();
         let cipher_moduli_minus_one = cipher_moduli_value.iter().map(|&qi| qi - T::ONE).collect();
         let cipher_modulus = multiply_many_values(&cipher_moduli_value);
         let cipher_modulus_minus_one = {

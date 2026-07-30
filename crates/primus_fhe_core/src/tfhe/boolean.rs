@@ -207,7 +207,7 @@ where
         ];
         let output_shift = PlaintextCodec::new(
             boolean_accumulator_plaintext_modulus::<T>(),
-            parameters.small_lwe().cipher_modulus().value(),
+            parameters.small_lwe().cipher_modulus().explicit_value(),
         )
         .encode_value(T::ONE, PlaintextEmbedding::Unsigned);
         let dimension = parameters.ciphertext_lwe_dimension();
@@ -491,7 +491,7 @@ where
     let modulus = parameters.glwe().cipher_modulus();
     let positive_value = PlaintextCodec::new(
         boolean_accumulator_plaintext_modulus::<T>(),
-        modulus.value(),
+        modulus.explicit_value(),
     )
     .encode_value(T::ONE, PlaintextEmbedding::Unsigned);
     let negative_value = modulus.reduce_neg(positive_value);

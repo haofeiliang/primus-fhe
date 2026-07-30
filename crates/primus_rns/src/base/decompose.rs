@@ -40,7 +40,7 @@ where
     {
         self.moduli
             .iter()
-            .map(|&modulus| F::new(modulus.reduce(value), unsafe { modulus.value_unchecked() }))
+            .map(|&modulus| F::new(modulus.reduce(value), modulus.value()))
             .collect()
     }
 

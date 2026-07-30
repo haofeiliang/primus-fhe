@@ -165,7 +165,7 @@ impl<T: FheUint, M: FieldContext<T>> BaseConverter<T, M> {
                     *ele = ai;
                 });
             } else {
-                let qi_val = unsafe { qi.value_unchecked() };
+                let qi_val = qi.value();
                 izip!(
                     poly_mod_qi,
                     scratch.iter_mut().skip(i).step_by(input_moduli_count)

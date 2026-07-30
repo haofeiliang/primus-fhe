@@ -35,8 +35,7 @@ pub(in crate::glwe::key_switch) fn approx_mod_down_ntt<T, M, Table>(
             .ntt_tables()
             .iter()
             .zip(hybrid_params.qp_base().moduli())
-            .all(|(ntt_table, modulus)| ntt_table.modulus()
-                == unsafe { modulus.value_unchecked() })
+            .all(|(ntt_table, modulus)| ntt_table.modulus() == modulus.value())
     );
 
     let (polynomial_mod_q, polynomial_mod_p) = polynomial_mod_qp.split_at_mut(q_len);

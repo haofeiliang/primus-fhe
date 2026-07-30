@@ -373,7 +373,7 @@ where
     T: FheUint,
     M: RingContext<T>,
 {
-    match modulus.value() {
+    match modulus.explicit_value() {
         Some(modulus) => encode_secret_coefficient(coefficient, modulus),
         None => T::cast_from_signed(coefficient),
     }

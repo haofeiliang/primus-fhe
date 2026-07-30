@@ -124,9 +124,7 @@ impl<T: FheUint> NttTable for UintNttTable<T> {
     {
         let root = <T as PrimitiveRoot>::try_minimal_primitive_root(log_n + 1, modulus)?;
 
-        let Some(modulus) = modulus.value() else {
-            return Err(NttError::NttTableErr);
-        };
+        let modulus = modulus.value();
 
         let n = 1usize << log_n;
         let to_root_type = |x| -> ShoupFactor<T> { <ShoupFactor<T>>::new(x, modulus) };

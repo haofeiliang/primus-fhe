@@ -11,12 +11,6 @@ pub enum RNSError {
     /// A hybrid decomposition must request at least one digit.
     #[error("hybrid RNS decomposition count must be at least one")]
     InvalidDecompositionCount,
-    /// The modulus at this index cannot be represented as a scalar value.
-    #[error("modulus at index {index} cannot be represented as a scalar value")]
-    UnrepresentableModulus {
-        /// Index of the modulus in the input basis.
-        index: usize,
-    },
     /// The input basis contains at least one pair of moduli with gcd greater than one.
     #[error("moduli must be pairwise coprime")]
     CoPrimeError,
