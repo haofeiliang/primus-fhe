@@ -17,6 +17,22 @@ num-traits = { workspace = true }
 criterion = { workspace = true }
 rand = { workspace = true }
 
+[[bench]]
+name = "scalar_moduli"
+harness = false
+
+[[bench]]
+name = "barrett_scalar"
+harness = false
+
+[[bench]]
+name = "slice_moduli"
+harness = false
+
+[[bench]]
+name = "barrett_slice"
+harness = false
+
 [features]
 default = ["derive"]
 derive = ["dep:primus_barrett_derive"]
