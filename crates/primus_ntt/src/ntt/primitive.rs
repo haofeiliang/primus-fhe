@@ -31,6 +31,11 @@ use super::{NttTable, assert_ntt_length};
 /// scrambled order:     0  1  5  3  7  2  6  4
 ///                         ----------  ----  -
 /// ```
+///
+/// # Constraints
+///
+/// The modulus must satisfy `1 < modulus < 2^(T::BITS - 2)` so every lazy
+/// intermediate in `[0, 4 * modulus)` is representable by `T`.
 pub struct UintNttTable<T: FheUint> {
     root: T,
     inv_root: T,
@@ -122,9 +127,17 @@ impl<T: FheUint> NttTable for UintNttTable<T> {
     where
         M: FieldContext<Self::ValueT>,
     {
-        let root = <T as PrimitiveRoot>::try_minimal_primitive_root(log_n + 1, modulus)?;
+        let modulus_value = modulus.value();
+        let max_bits = T::BITS - 2;
+        if modulus_value >= T::ONE << max_bits {
+            return Err(NttError::ModulusTooLarge {
+                modulus: modulus_value,
+                max_bits,
+            });
+        }
 
-        let modulus = modulus.value();
+        let root = <T as PrimitiveRoot>::try_minimal_primitive_root(log_n + 1, modulus)?;
+        let modulus = modulus_value;
 
         let n = 1usize << log_n;
         let to_root_type = |x| -> ShoupFactor<T> { <ShoupFactor<T>>::new(x, modulus) };
