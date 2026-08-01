@@ -16,7 +16,7 @@ mod slice_ops;
 #[inline]
 pub(super) fn derive(input: &BarrettModulusInput) -> Result<TokenStream> {
     let modulus = Modulus::from_syn(&input.value, &input.ty)?;
-    modulus.validate_two_spare_bits(&input.value)?;
+    modulus.validate_range(&input.value)?;
 
     Ok(impl_barrett(input, modulus))
 }

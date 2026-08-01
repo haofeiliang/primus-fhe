@@ -35,7 +35,19 @@ impl Modulus {
         }
     }
 
-    pub(crate) fn validate_two_spare_bits(&self, value: &syn::LitInt) -> syn::Result<()> {
+    pub(crate) fn validate_range(&self, value: &syn::LitInt) -> syn::Result<()> {
+        let is_too_small = match self {
+            Modulus::U16(value) => *value <= 1,
+            Modulus::U32(value) => *value <= 1,
+            Modulus::U64(value) => *value <= 1,
+        };
+        if is_too_small {
+            return Err(syn::Error::new_spanned(
+                value,
+                "The modulus must be greater than 1.",
+            ));
+        }
+
         let n = match self {
             Modulus::U16(v) => v.leading_zeros(),
             Modulus::U32(v) => v.leading_zeros(),
