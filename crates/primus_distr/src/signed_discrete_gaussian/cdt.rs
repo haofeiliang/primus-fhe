@@ -3,7 +3,7 @@ use std::marker::PhantomData;
 use primus_integer::{AsInto, Integer};
 use rand::distr::Distribution;
 
-use crate::utils::log_sum_exp;
+use crate::utils::{cdt_index_by, log_sum_exp};
 
 /// CDT sampler using log-space computation
 #[derive(Debug, Clone)]
@@ -97,7 +97,7 @@ impl<T: Integer> Distribution<T> for SignedCDTSampler<T> {
         let positive = (r & 1) == 1;
 
         // Binary search to find the right bin
-        let idx = self.cdt.partition_point(|&x| x <= r) - 1;
+        let idx = cdt_index_by(&self.cdt, &r, Ord::cmp);
 
         let v: T = idx.as_into();
 

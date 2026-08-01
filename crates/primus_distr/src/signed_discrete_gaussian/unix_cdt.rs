@@ -4,6 +4,8 @@ use primus_integer::{AsInto, Integer};
 use rand::{RngExt, distr::Distribution};
 use rug::{Float, az::Cast};
 
+use crate::utils::cdt_index_by;
+
 const PRECISION: u32 = 512;
 
 /// High-precision signed CDT sampler using 256-bit arithmetic (Unix only).
@@ -106,7 +108,7 @@ impl<T: Integer> Distribution<T> for SignedUnixCDTSampler<T> {
         rng.fill(&mut r);
         let positive = (r[0] & 1) == 1;
 
-        let idx = self.cdt.partition_point(|x| cmp_u256(x, &r).is_le()) - 1;
+        let idx = cdt_index_by(&self.cdt, &r, cmp_u256);
         let v: T = idx.as_into();
 
         if v.is_zero() {
