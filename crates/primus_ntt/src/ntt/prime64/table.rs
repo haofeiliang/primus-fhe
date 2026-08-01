@@ -374,11 +374,6 @@ impl NttTable for U64NttTable {
         } else {
             AVec::with_capacity(64, 0)
         };
-        let inv_roots_precon32 = if low_q {
-            super::avx512::precompute::build_barrett_vector(&inv_roots, 32, q)
-        } else {
-            AVec::with_capacity(64, 0)
-        };
         let roots_precon64 = AVec::from_iter(
             64,
             roots
@@ -428,6 +423,24 @@ impl NttTable for U64NttTable {
         #[cfg(not(target_arch = "x86_64"))]
         let backend = U64Backend::Scalar;
 
+        // Scalar Barrett-32 needs this table below 2^30. AVX-512DQ uses the
+        // same layout for its wider inverse-only range below 2^31.
+        #[cfg(target_arch = "x86_64")]
+        let needs_inv_roots_precon32 = low_q
+            || (n >= 16
+                && matches!(backend, U64Backend::Avx512Dq)
+                && q < super::avx512::internal::MAX_INV_32_MODULUS);
+        #[cfg(not(target_arch = "x86_64"))]
+        let needs_inv_roots_precon32 = low_q;
+
+        let inv_roots_precon32 = if needs_inv_roots_precon32 {
+            super::avx512::precompute::build_barrett_vector(&inv_roots, 32, q)
+        } else {
+            AVec::with_capacity(64, 0)
+        };
+
+        debug_assert!(!needs_inv_roots_precon32 || inv_roots_precon32.len() == n);
+
         // --- backend-specific pre-expanded root tables ---
         // AVX2 tables: needed for Avx2 (and kept empty for higher backends
         // since AVX-512 paths don't use the AVX2 root layout).
@@ -454,8 +467,6 @@ impl NttTable for U64NttTable {
         #[cfg(target_arch = "x86_64")]
         let use_avx512 = matches!(backend, U64Backend::Avx512Ifma | U64Backend::Avx512Dq);
         #[cfg(target_arch = "x86_64")]
-        // Reuse the scalar inv_roots_precon32 if already built; otherwise
-        // build it here for the AVX-512 DQ-32 inverse path.
         let (
             avx512_roots,
             avx512_roots_precon32,
