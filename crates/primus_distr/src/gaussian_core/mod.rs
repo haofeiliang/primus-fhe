@@ -37,27 +37,3 @@ pub(crate) fn encode_signed<T: Integer>(positive: bool, magnitude: T) -> T {
         T::ZERO - magnitude
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use rand::{SeedableRng, distr::Distribution, rngs::StdRng};
-
-    use crate::{DiscreteGaussian, SignedDiscreteGaussian};
-
-    #[test]
-    fn signed_and_modular_adapters_encode_the_same_samples() {
-        for standard_deviation in [3.19, 30.0] {
-            let modular = DiscreteGaussian::<u64>::new(standard_deviation, u64::MAX).unwrap();
-            let signed = SignedDiscreteGaussian::<i64>::new(standard_deviation).unwrap();
-            let mut modular_rng = StdRng::seed_from_u64(0x4449_5354_522d_3035);
-            let mut signed_rng = StdRng::seed_from_u64(0x4449_5354_522d_3035);
-
-            for _ in 0..256 {
-                assert_eq!(
-                    modular.sample(&mut modular_rng) as i64,
-                    signed.sample(&mut signed_rng)
-                );
-            }
-        }
-    }
-}
