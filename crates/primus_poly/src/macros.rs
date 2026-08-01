@@ -8,7 +8,7 @@ macro_rules! impl_iters {
                 T: FheUint,
             {
                 /// The underlying chunked iterator.
-                pub iter: core::slice::ChunksExact<'a, T>
+                iter: core::slice::ChunksExact<'a, T>
             }
 
             impl<'a, T: FheUint> [<$poly Iter>]<'a, T> {
@@ -73,7 +73,7 @@ macro_rules! impl_iters {
                 T: FheUint,
             {
                 /// The underlying mutable chunked iterator.
-                pub iter: core::slice::ChunksExactMut<'a, T>
+                iter: core::slice::ChunksExactMut<'a, T>
             }
 
             impl<'a, T: FheUint> [<$poly IterMut>]<'a, T> {

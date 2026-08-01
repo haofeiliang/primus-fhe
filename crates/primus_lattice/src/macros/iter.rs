@@ -81,10 +81,7 @@ macro_rules! impl_iter_sub_structure {
                 #[doc = concat!("Returns an iterator over the [`", stringify!($sub), "`] sub-components of this `", stringify!($cipher), "`.")]
                 #[inline]
                 pub fn [<iter_ $sub:snake>]<'a>(&'a self, [<$sub:snake _len>]: usize) -> [<$sub Iter>]<'a, T> {
-                    [<$sub Iter>] {
-                        iter: self.0.chunks_exact([<$sub:snake _len>])
-                    }
-
+                    [<$sub Iter>]::new(self.0.as_slice(), [<$sub:snake _len>])
                 }
             }
         }
@@ -101,9 +98,7 @@ macro_rules! impl_iter_sub_structure {
                     &'a mut self,
                     [<$sub:snake _len>]: usize,
                 ) -> [<$sub IterMut>]<'a, T> {
-                    [<$sub IterMut>] {
-                        iter: self.0.chunks_exact_mut([<$sub:snake _len>])
-                    }
+                    [<$sub IterMut>]::new(self.0.as_mut_slice(), [<$sub:snake _len>])
                 }
             }
         }
@@ -118,10 +113,7 @@ macro_rules! impl_iter_sub_structure {
                 #[doc = concat!("Returns an iterator over the [`", stringify!($sub), "`] sub-components of this `", stringify!($cipher), "`.")]
                 #[inline]
                 pub fn [<iter_ $sub_short>]<'a>(&'a self, [<$sub_short _len>]: usize) -> [<$sub Iter>]<'a, T> {
-                    [<$sub Iter>] {
-                        iter: self.0.chunks_exact([<$sub_short _len>])
-                    }
-
+                    [<$sub Iter>]::new(self.0.as_slice(), [<$sub_short _len>])
                 }
             }
         }
@@ -138,9 +130,7 @@ macro_rules! impl_iter_sub_structure {
                     &'a mut self,
                     [<$sub_short _len>]: usize,
                 ) -> [<$sub IterMut>]<'a, T> {
-                    [<$sub IterMut>] {
-                        iter: self.0.chunks_exact_mut([<$sub_short _len>])
-                    }
+                    [<$sub IterMut>]::new(self.0.as_mut_slice(), [<$sub_short _len>])
                 }
             }
         }
