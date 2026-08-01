@@ -34,8 +34,6 @@ where
     where
         M: Copy + ReduceInvSlice<T>,
     {
-        debug_assert!(scratch.len() >= poly_length);
-
         izip!(self.iter_each_modulus_mut(poly_length), moduli)
             .for_each(|(poly, &modulus)| modulus.reduce_inv_slice_assign(poly, scratch));
     }
