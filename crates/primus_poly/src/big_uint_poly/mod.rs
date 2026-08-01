@@ -21,6 +21,7 @@ where
     T: FheUint,
 {
     /// Creates a new [`BigUintPolynomial<T>`].
+    #[must_use]
     #[inline]
     pub fn new(big_uint_poly: S) -> Self {
         Self(big_uint_poly)
@@ -33,18 +34,21 @@ where
     T: FheUint,
 {
     /// Creates a [`BigUintPolynomial<S>`] with all coefficients equal to zero.
+    #[must_use]
     #[inline]
     pub fn zero(big_uint_poly_len: usize) -> Self {
         Self(S::from_vec(vec![T::ZERO; big_uint_poly_len]))
     }
 
     /// Drop self, and return the vector.
+    #[must_use]
     #[inline]
     pub fn into_owned(self) -> S {
         self.0
     }
 
     /// Constructs a new polynomial from a slice.
+    #[must_use]
     #[inline]
     pub fn from_slice(polynomial: &[T]) -> Self {
         Self(S::from_slice(polynomial))

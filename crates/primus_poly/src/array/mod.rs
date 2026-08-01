@@ -33,6 +33,7 @@ where
     <S as RawData>::Elem: FheUint,
 {
     /// Creates a new [`ArrayBase<S>`].
+    #[must_use]
     #[inline]
     pub fn new(data: S) -> Self {
         Self(data)
@@ -45,12 +46,14 @@ where
     T: FheUint,
 {
     /// Constructs a new array from a slice.
+    #[must_use]
     #[inline]
     pub fn from_slice(data: &[T]) -> Self {
         Self(S::from_slice(data))
     }
 
     /// Constructs a new array from a vector.
+    #[must_use]
     #[inline(always)]
     pub fn from_vec(data: Vec<T>) -> Self {
         Self(S::from_vec(data))

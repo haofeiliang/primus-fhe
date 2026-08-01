@@ -13,6 +13,13 @@ macro_rules! impl_iters {
 
             impl<'a, T: FheUint> [<$poly Iter>]<'a, T> {
                 #[doc = concat!("Creates a new [`", stringify!($poly), "Iter`] from the data slice and chunk size.")]
+                #[doc = ""]
+                #[doc = "Any trailing elements that do not fill a complete chunk are not yielded."]
+                #[doc = ""]
+                #[doc = "# Panics"]
+                #[doc = ""]
+                #[doc = "Panics if the chunk size is zero."]
+                #[must_use]
                 #[inline]
                 pub fn new(data:&'a [T], [<$short_name _len>]:usize) -> Self{
                     Self {
@@ -78,6 +85,13 @@ macro_rules! impl_iters {
 
             impl<'a, T: FheUint> [<$poly IterMut>]<'a, T> {
                 #[doc = concat!("Creates a new mutable [`", stringify!($poly), "IterMut`] from the data slice and chunk size.")]
+                #[doc = ""]
+                #[doc = "Any trailing elements that do not fill a complete chunk are not yielded."]
+                #[doc = ""]
+                #[doc = "# Panics"]
+                #[doc = ""]
+                #[doc = "Panics if the chunk size is zero."]
+                #[must_use]
                 #[inline]
                 pub fn new(data:&'a mut [T], [<$short_name _len>]:usize) -> Self{
                     Self {

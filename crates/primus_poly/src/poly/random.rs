@@ -14,6 +14,7 @@ where
     T: FheUint,
 {
     /// Generate a random [`Polynomial<S>`].
+    #[must_use]
     #[inline]
     pub fn random<M, R>(poly_length: usize, modulus: M, rng: &mut R) -> Self
     where
@@ -30,6 +31,7 @@ where
     }
 
     /// Generate a random [`Polynomial<S>`] with a specified `distribution`.
+    #[must_use]
     #[inline]
     pub fn random_with_distribution<R, D>(poly_length: usize, distribution: &D, rng: &mut R) -> Self
     where
@@ -40,6 +42,7 @@ where
     }
 
     /// Generate a random [`Polynomial<S>`] with discrete gaussian distribution.
+    #[must_use]
     #[inline]
     pub fn random_gaussian<R>(
         poly_length: usize,
@@ -55,6 +58,7 @@ where
 
 impl<T: FheUint> PolynomialOwned<T> {
     /// Generate a random binary [`PolynomialOwned<T>`].
+    #[must_use]
     #[inline]
     pub fn random_binary<R>(poly_length: usize, rng: &mut R) -> Self
     where
@@ -64,6 +68,7 @@ impl<T: FheUint> PolynomialOwned<T> {
     }
 
     /// Generate a random ternary [`PolynomialOwned<T>`].
+    #[must_use]
     #[inline]
     pub fn random_ternary<R>(minus_one: T, poly_length: usize, rng: &mut R) -> Self
     where

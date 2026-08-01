@@ -35,6 +35,7 @@ where
     T: FheUint,
 {
     /// Creates a new [`NttPolynomial<T>`].
+    #[must_use]
     #[inline]
     pub fn new(values: S) -> Self {
         Self(values)
@@ -46,19 +47,22 @@ where
     S: RawData<Elem = T> + DataOwned,
     T: FheUint,
 {
-    /// Creates a [`NttPolynomial<T>`] with all coefficients equal to zero.
+    /// Creates a [`NttPolynomial<T>`] with all NTT values equal to zero.
+    #[must_use]
     #[inline]
     pub fn zero(poly_length: usize) -> Self {
         Self(S::from_vec(vec![T::ZERO; poly_length]))
     }
 
     /// Drop self, and return the data.
+    #[must_use]
     #[inline]
     pub fn into_owned(self) -> S {
         self.0
     }
 
     /// Constructs a new ntt polynomial from a slice.
+    #[must_use]
     #[inline]
     pub fn from_slice(polynomial: &[T]) -> Self {
         Self::new(S::from_slice(polynomial))
@@ -78,13 +82,13 @@ where
         self.0.as_mut_slice()
     }
 
-    /// Returns an iterator that allows modifying each value or coefficient of the polynomial.
+    /// Returns an iterator over mutable NTT values.
     #[inline]
     pub fn iter_mut(&mut self) -> core::slice::IterMut<'_, T> {
         self.0.iter_mut()
     }
 
-    /// Copy the coefficients from another slice.
+    /// Copies NTT values from another slice.
     #[inline]
     pub fn copy_from(&mut self, src: impl AsRef<[T]>) {
         self.0.copy_from_slice(src.as_ref())
@@ -140,19 +144,19 @@ where
         self.0.as_slice()
     }
 
-    /// Get the `coefficient counts`/`polynomial length` of polynomial.
+    /// Returns the number of NTT values, equal to the polynomial length.
     #[inline]
     pub fn poly_length(&self) -> usize {
         self.0.len()
     }
 
-    /// Returns an iterator that allows reading each value or coefficient of the polynomial.
+    /// Returns an iterator over NTT values.
     #[inline]
     pub fn iter(&self) -> core::slice::Iter<'_, T> {
         self.0.iter()
     }
 
-    /// Returns an iterator that allows reading each value or coefficient of the polynomial.
+    /// Returns a copying iterator over NTT values.
     #[inline]
     pub fn copied_iter(&self) -> core::iter::Copied<core::slice::Iter<'_, T>> {
         self.0.iter().copied()

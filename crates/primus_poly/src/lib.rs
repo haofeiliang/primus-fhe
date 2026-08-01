@@ -8,6 +8,12 @@
 //! - [`CrtPolynomial`]: polynomial under Chinese Remainder Theorem decomposition.
 //! - [`DcrtPolynomial`]: double-CRT polynomial (CRT + NTT).
 //! - [`FourierPolynomial`]: polynomial in the Fourier domain (complex values).
+//!
+//! The polynomial wrappers are generic over their backing storage. Methods that
+//! take `self` consume the wrapper and return it after updating its storage. If
+//! the storage is a mutable borrow, the caller's backing slice is updated as
+//! well; use the corresponding `*_assign` method when that side effect should
+//! be explicit.
 
 #![deny(missing_docs)]
 

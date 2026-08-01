@@ -11,6 +11,7 @@ where
     T: FheUint,
 {
     /// Generate a random [`NttPolynomial<S>`].
+    #[must_use]
     #[inline]
     pub fn random<M, R>(poly_length: usize, modulus: M, rng: &mut R) -> Self
     where
@@ -27,6 +28,7 @@ where
     }
 
     /// Generate a random [`NttPolynomial<S>`]  with a specified distribution `distribution`.
+    #[must_use]
     #[inline]
     pub fn random_with_distribution<R, D>(poly_length: usize, distribution: &D, rng: &mut R) -> Self
     where

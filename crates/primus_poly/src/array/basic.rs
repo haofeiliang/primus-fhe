@@ -51,6 +51,7 @@ where
     T: FheUint,
 {
     /// Creates a new [`ArrayBase`] with all elements equal to zero.
+    #[must_use]
     #[inline]
     pub fn zero(len: usize) -> Self {
         Self(S::from_vec(vec![T::ZERO; len]))

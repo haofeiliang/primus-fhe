@@ -6,6 +6,7 @@ use super::DcrtPolynomial;
 
 impl<T: FheUint> DcrtPolynomial<Vec<T>> {
     /// Generate a random uniform [`DcrtPolynomial<Vec<T>, T>`].
+    #[must_use]
     #[inline]
     pub fn random_uniform<R>(length: usize, uniform_distrs: &[Uniform<T>], rng: &mut R) -> Self
     where

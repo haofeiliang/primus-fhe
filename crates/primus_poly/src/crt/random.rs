@@ -8,6 +8,7 @@ use super::CrtPolynomial;
 
 impl<T: FheUint> CrtPolynomial<Vec<T>> {
     /// Generate a random binary [`CrtPolynomial<Vec<T>, T>`].
+    #[must_use]
     #[inline]
     pub fn random_binary<R>(poly_length: usize, moduli_count: usize, rng: &mut R) -> Self
     where
@@ -21,6 +22,7 @@ impl<T: FheUint> CrtPolynomial<Vec<T>> {
     }
 
     /// Generate a random ternary [`CrtPolynomial<Vec<T>, T>`].
+    #[must_use]
     #[inline]
     pub fn random_ternary<R>(poly_length: usize, moduli_minus_one: &[T], rng: &mut R) -> Self
     where
@@ -34,6 +36,7 @@ impl<T: FheUint> CrtPolynomial<Vec<T>> {
     }
 
     /// Generate a random uniform [`CrtPolynomial<Vec<T>, T>`].
+    #[must_use]
     #[inline]
     pub fn random_uniform<R>(poly_length: usize, uniform_distrs: &[Uniform<T>], rng: &mut R) -> Self
     where
@@ -47,6 +50,7 @@ impl<T: FheUint> CrtPolynomial<Vec<T>> {
     }
 
     /// Generate a random gaussian [`CrtPolynomial<Vec<T>, T>`].
+    #[must_use]
     #[inline]
     pub fn random_gaussian<R>(
         poly_length: usize,

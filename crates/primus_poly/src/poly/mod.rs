@@ -33,6 +33,7 @@ where
     T: FheUint,
 {
     /// Creates a new [`Polynomial<T>`].
+    #[must_use]
     #[inline]
     pub fn new(poly: S) -> Self {
         Self(poly)
@@ -45,18 +46,21 @@ where
     T: FheUint,
 {
     /// Creates a [`Polynomial<T>`] with all coefficients equal to zero.
+    #[must_use]
     #[inline]
     pub fn zero(poly_length: usize) -> Self {
         Self(S::from_vec(vec![T::ZERO; poly_length]))
     }
 
     /// Drop self, and return the vector.
+    #[must_use]
     #[inline]
     pub fn into_owned(self) -> S {
         self.0
     }
 
     /// Constructs a new polynomial from a slice.
+    #[must_use]
     #[inline]
     pub fn from_slice(polynomial: &[T]) -> Self {
         Self::new(S::from_slice(polynomial))

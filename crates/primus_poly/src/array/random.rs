@@ -7,6 +7,7 @@ use super::{Array, ArrayMut};
 
 impl<T: FheUint> Array<T> {
     /// Generate a random [`Array<T>`].
+    #[must_use]
     #[inline]
     pub fn random<M, R>(n: usize, modulus: M, rng: &mut R) -> Self
     where
@@ -23,6 +24,7 @@ impl<T: FheUint> Array<T> {
     }
 
     /// Generate a random [`Array<T>`] with a specified `distribution`.
+    #[must_use]
     #[inline]
     pub fn random_with_distribution<R, D>(n: usize, distribution: &D, rng: &mut R) -> Self
     where
@@ -33,6 +35,7 @@ impl<T: FheUint> Array<T> {
     }
 
     /// Generate a random binary [`Array<T>`].
+    #[must_use]
     #[inline]
     pub fn random_binary<R>(length: usize, rng: &mut R) -> Self
     where
@@ -42,6 +45,7 @@ impl<T: FheUint> Array<T> {
     }
 
     /// Generate a random ternary [`Array<T>`].
+    #[must_use]
     #[inline]
     pub fn random_ternary<R>(minus_one: T, length: usize, rng: &mut R) -> Self
     where
@@ -51,6 +55,7 @@ impl<T: FheUint> Array<T> {
     }
 
     /// Generate a random [`Array<T>`] with discrete gaussian distribution.
+    #[must_use]
     #[inline]
     pub fn random_gaussian<R>(length: usize, gaussian: &DiscreteGaussian<T>, rng: &mut R) -> Self
     where

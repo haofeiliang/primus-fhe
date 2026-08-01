@@ -73,7 +73,7 @@ where
     S: RawData<Elem = T> + DataMut,
     T: FheUint,
 {
-    /// Performs `self * scalar` according to `moduli`.
+    /// Performs `self * scalars` according to `moduli`.
     #[inline]
     pub fn mul_scalar<M>(mut self, scalars: &[T], poly_length: usize, moduli: &[M]) -> Self
     where
@@ -83,7 +83,7 @@ where
         self
     }
 
-    /// Performs `self *= scalar` according to `moduli`.
+    /// Performs `self *= scalars` according to `moduli`.
     #[inline]
     pub fn mul_scalar_assign<M>(&mut self, scalars: &[T], poly_length: usize, moduli: &[M])
     where
@@ -94,7 +94,7 @@ where
         )
     }
 
-    /// Performs `self += scalar * rhs` according to `moduli`.
+    /// Performs `self += scalars * rhs` according to `moduli`.
     #[inline]
     pub fn add_mul_scalar_assign<M, A>(
         &mut self,
@@ -117,7 +117,7 @@ where
         });
     }
 
-    /// Performs `self * scalar` according to `moduli`.
+    /// Performs `self * factors` according to `moduli`.
     #[inline]
     pub fn mul_factor<F>(mut self, factors: &[F], poly_length: usize, moduli: &[T]) -> Self
     where
@@ -127,7 +127,7 @@ where
         self
     }
 
-    /// Performs `self *= scalar` according to `moduli`.
+    /// Performs `self *= factors` according to `moduli`.
     #[inline]
     pub fn mul_factor_assign<F>(&mut self, factors: &[F], poly_length: usize, moduli: &[T])
     where
@@ -137,7 +137,7 @@ where
             .for_each(|(poly, &factor, &modulus)| factor.factor_mul_slice_assign(poly, modulus))
     }
 
-    /// Performs `self += scalar * rhs` according to `moduli`.
+    /// Performs `self += factors * rhs` according to `moduli`.
     #[inline]
     pub fn add_mul_factor_assign<F, A>(
         &mut self,
@@ -249,7 +249,7 @@ where
         .for_each(|(a, b, output, modulus)| modulus.reduce_mul_slice_to(a, b, output))
     }
 
-    /// Performs `result = self * scalar` according to `moduli`.
+    /// Performs `result = self * scalars` according to `moduli`.
     #[inline]
     pub fn mul_scalar_to<M, A>(
         &self,
@@ -272,7 +272,7 @@ where
         })
     }
 
-    /// Performs `result = self * scalar` according to `moduli`.
+    /// Performs `result = self * factors` according to `moduli`.
     #[inline]
     pub fn mul_factor_to<F, A>(
         &self,

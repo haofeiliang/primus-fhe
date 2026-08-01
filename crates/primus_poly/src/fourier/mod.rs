@@ -26,6 +26,13 @@ pub struct FourierPolynomialIter<'a> {
 }
 impl<'a> FourierPolynomialIter<'a> {
     /// Creates an iterator with `fourier_len` values per polynomial.
+    ///
+    /// Any trailing values that do not fill a complete polynomial are not yielded.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `fourier_len` is zero.
+    #[must_use]
     pub fn new(data: &'a [Complex64], fourier_len: usize) -> Self {
         Self {
             iter: data.chunks_exact(fourier_len),
@@ -56,6 +63,13 @@ pub struct FourierPolynomialIterMut<'a> {
 }
 impl<'a> FourierPolynomialIterMut<'a> {
     /// Creates an iterator with `fourier_len` values per polynomial.
+    ///
+    /// Any trailing values that do not fill a complete polynomial are not yielded.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `fourier_len` is zero.
+    #[must_use]
     pub fn new(data: &'a mut [Complex64], fourier_len: usize) -> Self {
         Self {
             iter: data.chunks_exact_mut(fourier_len),
@@ -81,20 +95,24 @@ impl core::iter::FusedIterator for FourierPolynomialIterMut<'_> {}
 
 impl<S: RawData<Elem = Complex64>> FourierPolynomial<S> {
     /// Creates a Fourier polynomial.
+    #[must_use]
     pub fn new(values: S) -> Self {
         Self(values)
     }
 }
 impl<S: RawData<Elem = Complex64> + DataOwned> FourierPolynomial<S> {
     /// Creates a zero polynomial.
+    #[must_use]
     pub fn zero(fourier_length: usize) -> Self {
         Self(S::from_vec(vec![Complex64::default(); fourier_length]))
     }
     /// Clones a Fourier polynomial from a slice.
+    #[must_use]
     pub fn from_slice(data: &[Complex64]) -> Self {
         Self(S::from_slice(data))
     }
     /// Returns the underlying owned storage.
+    #[must_use]
     pub fn into_owned(self) -> S {
         self.0
     }

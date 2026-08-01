@@ -39,6 +39,7 @@ where
     T: FheUint,
 {
     /// Creates a new [`DcrtPolynomial<T>`].
+    #[must_use]
     #[inline]
     pub fn new(polys: S) -> Self {
         Self(polys)
@@ -51,12 +52,14 @@ where
     T: FheUint,
 {
     /// Creates a [`DcrtPolynomial<T>`] with all coefficients equal to zero.
+    #[must_use]
     #[inline]
     pub fn zero(dcrt_poly_length: usize) -> Self {
         Self(S::from_vec(vec![T::ZERO; dcrt_poly_length]))
     }
 
     /// Drop self, and return the underlying storage.
+    #[must_use]
     #[inline]
     pub fn into_owned(self) -> S {
         self.0

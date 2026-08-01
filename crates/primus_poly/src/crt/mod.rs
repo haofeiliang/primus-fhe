@@ -30,6 +30,7 @@ where
     T: FheUint,
 {
     /// Creates a new [`CrtPolynomial<T>`].
+    #[must_use]
     #[inline]
     pub fn new(polys: S) -> Self {
         Self(polys)
@@ -42,12 +43,14 @@ where
     T: FheUint,
 {
     /// Creates a [`CrtPolynomial<T>`] with all coefficients equal to zero.
+    #[must_use]
     #[inline]
     pub fn zero(crt_poly_len: usize) -> Self {
         Self(S::from_vec(vec![T::ZERO; crt_poly_len]))
     }
 
     /// Drop self, and return the underlying storage.
+    #[must_use]
     #[inline]
     pub fn into_owned(self) -> S {
         self.0

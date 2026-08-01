@@ -20,7 +20,7 @@ where
         self
     }
 
-    /// Performs `self * scalar` according to `modulus`.
+    /// Performs `self * factor` according to `modulus`.
     #[inline]
     pub fn mul_factor<F>(mut self, factor: F, modulus: T) -> Self
     where
@@ -60,7 +60,7 @@ where
         modulus.reduce_add_mul_scalar_slice_assign(self.as_mut_slice(), rhs.as_slice(), scalar);
     }
 
-    /// Performs `self *= scalar` according to `modulus`.
+    /// Performs `self *= factor` according to `modulus`.
     #[inline]
     pub fn mul_factor_assign<F>(&mut self, factor: F, modulus: T)
     where
@@ -69,7 +69,7 @@ where
         factor.factor_mul_slice_assign(self.as_mut_slice(), modulus)
     }
 
-    /// Performs `self += scalar * rhs` according to `modulus`.
+    /// Performs `self += factor * rhs` according to `modulus`.
     #[inline]
     pub fn add_mul_factor_assign<F, A>(&mut self, rhs: &NttPolynomial<A>, factor: F, modulus: T)
     where
@@ -116,7 +116,7 @@ where
         modulus.reduce_mul_scalar_slice_to(self.as_slice(), scalar, output.as_mut_slice());
     }
 
-    /// Performs `result = self * scalar` according to `modulus`.
+    /// Performs `result = self * factor` according to `modulus`.
     #[inline]
     pub fn mul_factor_to<F, A>(&self, factor: F, output: &mut NttPolynomial<A>, modulus: T)
     where
