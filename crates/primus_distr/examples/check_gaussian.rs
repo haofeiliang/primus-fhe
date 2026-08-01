@@ -1,17 +1,17 @@
 // cargo r -r -p primus_distr --example check_gaussian
 //
-// Validates discrete Gaussian sampler implementations by checking:
+// Exploratory accuracy analysis for one discrete Gaussian sampler:
 // - Standard deviation accuracy across multiple sigma values
 // - Cumulative probability distribution P(|X| <= n*sigma) for n = 1..6
 // - Convolution property: sum of CHUNK_SIZE independent N(0, sigma^2)
 //   samples should follow N(0, CHUNK_SIZE * sigma^2)
 //
-// Edit main() to choose which sampler to validate (CDTSampler or
-// DiscreteZiggurat), or uncomment blocks to test side by side.
+// Results are descriptive and non-gating. Use the Criterion benchmarks for
+// sampler construction and throughput measurements.
 
 use comfy_table::{Attribute, Cell, Color, ContentArrangement, Table, presets::UTF8_FULL};
 use primus_distr::stats;
-use rand::distr::Distribution;
+use rand::{SeedableRng, distr::Distribution, rngs::StdRng};
 
 type ValueT = u64;
 
@@ -241,10 +241,10 @@ where
 // ---------------------------------------------------------------------------
 
 fn main() {
-    let mut rng = rand::rng();
+    let mut rng = StdRng::seed_from_u64(0x4348_4543_4b2d_4741);
 
     println!("\n{}", "═".repeat(80));
-    println!("Discrete Gaussian Sampler Validation");
+    println!("Discrete Gaussian Sampler Accuracy Analysis (non-gating)");
     println!("Samples per test: {}", N);
     println!("{}\n", "═".repeat(80));
 
@@ -269,6 +269,6 @@ fn main() {
     // }
 
     println!("\n{}", "═".repeat(80));
-    println!("All tests completed!");
+    println!("Exploratory analysis completed (non-gating).");
     println!("{}", "═".repeat(80));
 }
