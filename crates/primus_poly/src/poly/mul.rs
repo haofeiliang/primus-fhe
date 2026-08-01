@@ -103,7 +103,7 @@ where
     S: RawData<Elem = T> + Data,
     T: FheUint,
 {
-    /// A naive multiplication over polynomial.
+    /// Performs a naive negacyclic multiplication and overwrites `output`.
     pub fn naive_mul_to<M, A, B>(&self, rhs: &Polynomial<A>, output: &mut Polynomial<B>, modulus: M)
     where
         M: Copy + ReduceSubAssign<T> + ReduceMul<T, Output = T> + ReduceMulAdd<T, Output = T>,
@@ -118,8 +118,13 @@ where
         debug_assert_eq!(coeff_count, b.len());
         debug_assert_eq!(coeff_count, c.len());
 
+        if coeff_count == 0 {
+            return;
+        }
+
         for i in 0..coeff_count {
-            for j in 0..=i {
+            c[i] = modulus.reduce_mul(a[0], b[i]);
+            for j in 1..=i {
                 c[i] = modulus.reduce_mul_add(a[j], b[i - j], c[i]);
             }
         }
