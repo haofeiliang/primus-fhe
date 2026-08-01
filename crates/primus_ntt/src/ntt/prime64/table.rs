@@ -1,6 +1,6 @@
 use aligned_vec::{AVec, avec};
 use primus_data::{DataMut, RawData};
-use primus_factor::{FactorBase, FactorMul, ShoupFactor};
+use primus_factor::{FactorMul, ShoupFactor};
 use primus_gcd::Xgcd;
 use primus_poly::{NttPolynomial, Polynomial};
 use primus_reduce::FieldContext;

@@ -4,7 +4,7 @@ mod extension;
 mod kernels;
 
 use itertools::Itertools;
-use primus_factor::{FactorBase, ShoupFactor};
+use primus_factor::ShoupFactor;
 use primus_integer::{BigUint, FheUint, multiply_many_values};
 use primus_reduce::FieldContext;
 

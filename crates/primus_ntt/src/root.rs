@@ -1,4 +1,4 @@
-use primus_factor::{FactorBase, FactorMul, ShoupFactor};
+use primus_factor::{FactorMul, ShoupFactor};
 use primus_integer::FheUint;
 use primus_reduce::FieldContext;
 use rand::{distr::Uniform, prelude::*};

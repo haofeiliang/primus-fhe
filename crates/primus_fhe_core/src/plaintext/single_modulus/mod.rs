@@ -1,4 +1,4 @@
-use primus_factor::{FactorBase, ShoupFactor};
+use primus_factor::ShoupFactor;
 use primus_integer::FheUint;
 use primus_modulus::PowOf2Modulus;
 

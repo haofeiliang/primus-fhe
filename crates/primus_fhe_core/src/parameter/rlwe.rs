@@ -1,6 +1,6 @@
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_distr::DiscreteGaussian;
-use primus_factor::{FactorBase, ShoupFactor};
+use primus_factor::ShoupFactor;
 use primus_integer::FheUint;
 use primus_reduce::FieldContext;
 use rand::distr::Uniform;

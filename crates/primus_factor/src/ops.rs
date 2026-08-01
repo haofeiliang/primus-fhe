@@ -11,6 +11,7 @@ use primus_integer::SimdUnsignedInteger;
 /// call.
 pub trait LazyFactorMul<T> {
     /// Calculates `self * b (mod 2 * modulus)` for canonical `b`.
+    #[must_use]
     fn lazy_factor_mul_modulo(self, b: T, modulus: T) -> T;
 }
 
@@ -20,6 +21,7 @@ pub trait LazyFactorMul<T> {
 /// call, and the result is in `[0, modulus)`.
 pub trait FactorMul<T>: LazyFactorMul<T> {
     /// Calculates `self * b (mod modulus)` for canonical `b`.
+    #[must_use]
     fn factor_mul_modulo(self, b: T, modulus: T) -> T;
 }
 
@@ -37,6 +39,7 @@ where
     type SimdFactor: Copy + FactorMul<T::SimdT>;
 
     /// Broadcasts one scalar factor into every SIMD lane.
+    #[must_use]
     fn simd_from_factor(factor: Self) -> Self::SimdFactor;
 
     /// Packs one SIMD chunk of scalar factors into a SIMD factor.
@@ -44,6 +47,7 @@ where
     /// # Panics
     ///
     /// Implementations may panic if `factors.len()` is not the SIMD lane count.
+    #[must_use]
     fn simd_from_factor_slice(factors: &[Self]) -> Self::SimdFactor;
 }
 

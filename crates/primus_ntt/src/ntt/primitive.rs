@@ -1,5 +1,5 @@
 use primus_data::{DataMut, RawData};
-use primus_factor::{FactorBase, FactorMul, LazyFactorMul, ShoupFactor};
+use primus_factor::{FactorMul, LazyFactorMul, ShoupFactor};
 use primus_integer::FheUint;
 use primus_modulus::common::compact;
 use primus_poly::{NttPolynomial, Polynomial};

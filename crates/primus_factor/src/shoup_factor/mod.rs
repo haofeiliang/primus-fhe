@@ -26,13 +26,14 @@ pub struct ShoupFactor<T: UnsignedInteger> {
     quotient: T,
 }
 
-impl<T: UnsignedInteger> FactorBase<T> for ShoupFactor<T> {
-    /// Constructs a [`ShoupFactor<T>`].
+impl<T: UnsignedInteger> ShoupFactor<T> {
+    /// Constructs a [`ShoupFactor<T>`] for `value` modulo `modulus`.
     ///
     /// * `value` must be less than `modulus`.
     /// * `modulus` must be less than `2^(T::BITS - 1)`.
+    #[must_use]
     #[inline]
-    fn new(value: T, modulus: T) -> Self {
+    pub fn new(value: T, modulus: T) -> Self {
         debug_assert!(value < modulus);
 
         // Calculate the quotient of `value * 2^T::BITS / modulus`.
@@ -40,9 +41,7 @@ impl<T: UnsignedInteger> FactorBase<T> for ShoupFactor<T> {
 
         Self { value, quotient }
     }
-}
 
-impl<T: UnsignedInteger> ShoupFactor<T> {
     /// Constructs a [`ShoupFactor<T>`] from an already-computed value and
     /// quotient pair.
     ///
@@ -51,6 +50,7 @@ impl<T: UnsignedInteger> ShoupFactor<T> {
     ///
     /// This is useful when value and quotient are stored in separate
     /// structure-of-arrays layouts (e.g. for SIMD).
+    #[must_use]
     #[inline]
     pub const fn from_raw(value: T, quotient: T) -> Self {
         Self { value, quotient }
@@ -61,6 +61,7 @@ impl<T: UnsignedInteger> ShoupFactor<T> {
     ///
     /// This is equivalent to `ShoupFactor::new(value, modulus).quotient()`
     /// but avoids discarding the value field.
+    #[must_use]
     #[inline]
     pub fn quotient_for(value: T, modulus: T) -> T {
         DivWide::div_wide(T::ZERO, value, modulus)
@@ -89,15 +90,24 @@ impl<T: UnsignedInteger> ShoupFactor<T> {
     }
 
     /// Returns the value of this [`ShoupFactor<T>`].
+    #[must_use]
     #[inline]
     pub const fn value(self) -> T {
         self.value
     }
 
     /// Returns the quotient of this [`ShoupFactor<T>`].
+    #[must_use]
     #[inline]
     pub const fn quotient(self) -> T {
         self.quotient
+    }
+}
+
+impl<T: UnsignedInteger> FactorBase<T> for ShoupFactor<T> {
+    #[inline]
+    fn new(value: T, modulus: T) -> Self {
+        Self::new(value, modulus)
     }
 }
 

@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use criterion::{BatchSize, BenchmarkId, Criterion, criterion_group, criterion_main};
 use primus_decompose::big_integer::BigUintApproxSignedBasis;
-use primus_factor::{FactorBase, ShoupFactor};
+use primus_factor::ShoupFactor;
 use primus_fhe_core::{
     CrtGlevParameters, CrtGlweAutoContext, CrtGlweAutoKey, CrtGlweParameters, DcrtGlweAutoKey,
     DcrtGlweCiphertext, DcrtGlweSecretKey, GlweSecretKey, RingSecretKeyType,

@@ -15,6 +15,7 @@ impl MultiplyFactor {
     /// Note: passing `operand = 1` can be used to precompute a scaled quotient for
     /// multiplications of the form `(x * y) mod modulus`, where only the `modulus`
     /// is reused across calls.
+    #[must_use]
     pub fn new(operand: u64, bit_shift: u32, modulus: u64) -> Self {
         assert!(
             operand < modulus,
@@ -38,6 +39,7 @@ impl MultiplyFactor {
     }
 
     /// Returns the fixed operand represented by this factor.
+    #[must_use]
     pub fn operand(&self) -> u64 {
         self.operand
     }
@@ -46,6 +48,7 @@ impl MultiplyFactor {
     ///
     /// This is floor((operand << bit_shift) / modulus), where bit_shift
     /// and modulus are the values passed to Self::new.
+    #[must_use]
     pub fn quotient(&self) -> u64 {
         self.quotient
     }
@@ -55,6 +58,7 @@ impl MultiplyFactor {
     /// BIT_SHIFT must match the bit_shift value used to construct this
     /// factor, and modulus must match the modulus used to construct it.
     /// Inputs are expected to be canonical modulo modulus.
+    #[must_use]
     #[inline]
     pub fn lazy_mul_modulo<const BIT_SHIFT: u32>(self, b: u64, modulus: u64) -> u64 {
         let hw = if BIT_SHIFT == 32 {
@@ -72,6 +76,7 @@ impl MultiplyFactor {
     /// BIT_SHIFT must match the bit_shift value used to construct this
     /// factor, and modulus must match the modulus used to construct it.
     /// Inputs are expected to be canonical modulo modulus.
+    #[must_use]
     #[inline]
     pub fn mul_modulo<const BIT_SHIFT: u32>(self, b: u64, modulus: u64) -> u64 {
         let r = self.lazy_mul_modulo::<BIT_SHIFT>(b, modulus);

@@ -1,4 +1,4 @@
-use primus_factor::{FactorBase, ShoupFactor};
+use primus_factor::ShoupFactor;
 use primus_modulus::BarrettModulus;
 use primus_reduce::prelude::*;
 use primus_rns::{RNSBase, RNSError};

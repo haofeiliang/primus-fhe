@@ -61,7 +61,7 @@ impl<T: UnsignedInteger> LazyReduce<&[T]> for BarrettModulus<T> {
     #[inline]
     fn lazy_reduce(self, value: &[T]) -> Self::Output {
         match value {
-            &[] => unreachable!(),
+            &[] => panic!("Barrett reduction requires at least one limb"),
             &[v] => {
                 if v < self.value << 1u32 {
                     v

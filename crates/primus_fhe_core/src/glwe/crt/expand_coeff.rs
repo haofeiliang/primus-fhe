@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 
 use primus_data::{Data, DataMut, RawData};
-use primus_factor::{FactorBase, ShoupFactor};
+use primus_factor::ShoupFactor;
 use primus_integer::{AsInto, BigUint, FheUint};
 use primus_ntt::DcrtTable;
 use primus_reduce::FieldContext;

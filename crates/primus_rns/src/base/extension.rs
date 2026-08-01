@@ -1,4 +1,4 @@
-use primus_factor::{FactorBase, FactorMul, ShoupFactor};
+use primus_factor::{FactorMul, ShoupFactor};
 use primus_integer::{BigUint, FheUint};
 use primus_reduce::FieldContext;
 

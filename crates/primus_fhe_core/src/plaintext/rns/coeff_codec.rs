@@ -21,7 +21,7 @@
 //!   recovered m: `Polynomial<T>`
 
 use primus_data::{Data, DataMut, RawData};
-use primus_factor::{FactorBase, FactorSliceOps, ShoupFactor};
+use primus_factor::{FactorSliceOps, ShoupFactor};
 use primus_integer::{BigUint, DivRemScalar, FheUint, multiply_many_values};
 use primus_poly::{CrtPolynomial, DcrtPolynomial, Polynomial};
 use primus_reduce::FieldContext;
