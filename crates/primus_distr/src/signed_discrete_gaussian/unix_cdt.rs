@@ -1,19 +1,19 @@
 use std::marker::PhantomData;
 
 use primus_integer::{AsInto, Integer};
-use rand::distr::Distribution;
+use rand::{RngExt, distr::Distribution};
 
 use crate::{
     DistrErr,
-    gaussian_core::{
-        GaussianParameters, UNIX_CDT_MAX_MAGNITUDE, UnixCdtMagnitudeSampler, encode_signed,
-    },
+    gaussian_core::{GaussianParameters, UNIX_CDT_MAX_MAGNITUDE, build_unix_cdt, compare_u256},
+    utils::cdt_index_by,
 };
 
 /// High-precision signed CDT sampler using 256-bit arithmetic (Unix only).
 #[derive(Debug, Clone)]
 pub struct SignedUnixCDTSampler<T: Integer> {
-    core: UnixCdtMagnitudeSampler,
+    std_dev: f64,
+    cdt: Vec<[u64; 4]>,
     output: PhantomData<T>,
 }
 
@@ -31,8 +31,10 @@ impl<T: Integer> SignedUnixCDTSampler<T> {
         let parameters = parameters
             .validate_cdt_size(UNIX_CDT_MAX_MAGNITUDE)?
             .validate_signed_output::<T>()?;
+        let (std_dev, cdt) = build_unix_cdt(parameters);
         Ok(Self {
-            core: UnixCdtMagnitudeSampler::new(parameters),
+            std_dev,
+            cdt,
             output: PhantomData,
         })
     }
@@ -40,14 +42,23 @@ impl<T: Integer> SignedUnixCDTSampler<T> {
     /// Returns the standard deviation of this sampler.
     #[inline]
     pub fn std_dev(&self) -> f64 {
-        self.core.standard_deviation()
+        self.std_dev
     }
 }
 
 impl<T: Integer> Distribution<T> for SignedUnixCDTSampler<T> {
     #[inline]
     fn sample<R: rand::Rng + ?Sized>(&self, rng: &mut R) -> T {
-        let (positive, magnitude) = self.core.sample(rng);
-        encode_signed(positive, magnitude.as_into())
+        let mut random = [0; 4];
+        rng.fill(&mut random);
+        let positive = random[0] & 1 == 1;
+        let index = cdt_index_by(&self.cdt, &random, compare_u256);
+        let value: T = index.as_into();
+
+        if value.is_zero() {
+            return T::ZERO;
+        }
+
+        if positive { value } else { T::ZERO - value }
     }
 }

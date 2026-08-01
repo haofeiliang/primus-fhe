@@ -3,14 +3,16 @@ use rand::distr::Distribution;
 
 use crate::{
     DistrErr,
-    gaussian_core::{CDT_MAX_MAGNITUDE, CdtMagnitudeSampler, GaussianParameters, encode_modular},
+    gaussian_core::{CDT_MAX_MAGNITUDE, GaussianParameters, build_cdt},
+    utils::cdt_index_by,
 };
 
 /// CDT sampler using log-space computation.
 #[derive(Debug, Clone)]
 pub struct CDTSampler<T: FheUint> {
-    core: CdtMagnitudeSampler,
+    std_dev: f64,
     modulus_minus_one: T,
+    cdt: Vec<u64>,
 }
 
 impl<T: FheUint> CDTSampler<T> {
@@ -30,23 +32,37 @@ impl<T: FheUint> CDTSampler<T> {
         let parameters = parameters
             .validate_cdt_size(CDT_MAX_MAGNITUDE)?
             .validate_modular_output(modulus_minus_one)?;
+        let (std_dev, cdt) = build_cdt(parameters);
         Ok(Self {
-            core: CdtMagnitudeSampler::new(parameters),
+            std_dev,
             modulus_minus_one,
+            cdt,
         })
     }
 
     /// Returns the standard deviation of this sampler.
     #[inline]
     pub fn std_dev(&self) -> f64 {
-        self.core.standard_deviation()
+        self.std_dev
     }
 }
 
 impl<T: FheUint> Distribution<T> for CDTSampler<T> {
     #[inline]
     fn sample<R: rand::Rng + ?Sized>(&self, rng: &mut R) -> T {
-        let (positive, magnitude) = self.core.sample(rng);
-        encode_modular(positive, magnitude.as_into(), self.modulus_minus_one)
+        let random: u64 = rng.next_u64();
+        let positive = random & 1 == 1;
+        let index = cdt_index_by(&self.cdt, &random, Ord::cmp);
+        let value: T = index.as_into();
+
+        if value.is_zero() {
+            return T::ZERO;
+        }
+
+        if positive {
+            value
+        } else {
+            self.modulus_minus_one - value + T::ONE
+        }
     }
 }

@@ -5,13 +5,15 @@ use rand::distr::Distribution;
 
 use crate::{
     DistrErr,
-    gaussian_core::{CDT_MAX_MAGNITUDE, CdtMagnitudeSampler, GaussianParameters, encode_signed},
+    gaussian_core::{CDT_MAX_MAGNITUDE, GaussianParameters, build_cdt},
+    utils::cdt_index_by,
 };
 
 /// Signed CDT sampler using log-space computation.
 #[derive(Debug, Clone)]
 pub struct SignedCDTSampler<T: Integer> {
-    core: CdtMagnitudeSampler,
+    std_dev: f64,
+    cdt: Vec<u64>,
     output: PhantomData<T>,
 }
 
@@ -29,8 +31,10 @@ impl<T: Integer> SignedCDTSampler<T> {
         let parameters = parameters
             .validate_cdt_size(CDT_MAX_MAGNITUDE)?
             .validate_signed_output::<T>()?;
+        let (std_dev, cdt) = build_cdt(parameters);
         Ok(Self {
-            core: CdtMagnitudeSampler::new(parameters),
+            std_dev,
+            cdt,
             output: PhantomData,
         })
     }
@@ -38,14 +42,22 @@ impl<T: Integer> SignedCDTSampler<T> {
     /// Returns the standard deviation of this sampler.
     #[inline]
     pub fn std_dev(&self) -> f64 {
-        self.core.standard_deviation()
+        self.std_dev
     }
 }
 
 impl<T: Integer> Distribution<T> for SignedCDTSampler<T> {
     #[inline]
     fn sample<R: rand::Rng + ?Sized>(&self, rng: &mut R) -> T {
-        let (positive, magnitude) = self.core.sample(rng);
-        encode_signed(positive, magnitude.as_into())
+        let random: u64 = rng.next_u64();
+        let positive = random & 1 == 1;
+        let index = cdt_index_by(&self.cdt, &random, Ord::cmp);
+        let value: T = index.as_into();
+
+        if value.is_zero() {
+            return T::ZERO;
+        }
+
+        if positive { value } else { T::ZERO - value }
     }
 }

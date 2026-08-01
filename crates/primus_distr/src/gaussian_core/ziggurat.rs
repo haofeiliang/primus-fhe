@@ -47,8 +47,10 @@ impl<T: FheInt> ZigguratMagnitudeSampler<T> {
         };
 
         'construction: loop {
-            let mut x = vec![0.0; rectangle_count];
-            let mut y = vec![0.0; rectangle_count];
+            let mut x = Vec::with_capacity(rectangle_count + 1);
+            let mut y = Vec::with_capacity(rectangle_count + 1);
+            x.resize(rectangle_count, 0.0);
+            y.resize(rectangle_count, 0.0);
             let initial_area =
                 standard_deviation * FRAC_1_SQRT_2 * FRAC_2_SQRT_PI / rectangle_count as f64;
 
