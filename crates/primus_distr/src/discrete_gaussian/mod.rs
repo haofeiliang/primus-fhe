@@ -13,7 +13,7 @@ pub use ziggurat::DiscreteZiggurat;
 
 use crate::{
     DistrErr,
-    gaussian::{CDT_STANDARD_DEVIATION_THRESHOLD, DEFAULT_TAIL_CUT, GaussianParameters},
+    gaussian_core::{CDT_STANDARD_DEVIATION_THRESHOLD, DEFAULT_TAIL_CUT, GaussianParameters},
 };
 
 /// A centered discrete Gaussian distribution over unsigned integers.

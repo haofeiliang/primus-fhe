@@ -29,7 +29,7 @@
 //! values are replicated across multiple modulus slots.
 
 mod error;
-mod gaussian;
+mod gaussian_core;
 
 mod utils;
 

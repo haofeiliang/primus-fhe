@@ -3,7 +3,7 @@ use rand::distr::Distribution;
 
 use crate::{
     DistrErr,
-    gaussian::{CDT_STANDARD_DEVIATION_THRESHOLD, DEFAULT_TAIL_CUT, GaussianParameters},
+    gaussian_core::{CDT_STANDARD_DEVIATION_THRESHOLD, DEFAULT_TAIL_CUT, GaussianParameters},
 };
 
 mod cdt;

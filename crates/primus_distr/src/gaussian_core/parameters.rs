@@ -40,7 +40,7 @@ pub(crate) struct GaussianParameters {
     standard_deviation: f64,
     /// Number of standard deviations retained on each side of zero.
     tail_cut: f64,
-    /// Largest non-negative magnitude that a sampler may emit.
+    /// Cached inclusive upper bound of the truncated support.
     maximum_magnitude: u64,
 }
 
@@ -95,6 +95,10 @@ impl GaussianParameters {
     }
 
     /// Returns the inclusive maximum magnitude in the truncated support.
+    ///
+    /// This cached bound is derived once during construction as
+    /// `max(1, floor(standard_deviation * tail_cut))`; it is not an independent
+    /// caller-supplied parameter.
     #[inline]
     pub(crate) fn maximum_magnitude(self) -> u64 {
         self.maximum_magnitude
@@ -106,9 +110,10 @@ impl GaussianParameters {
     /// Returning `Self` allows this proof to be chained with output-domain
     /// validation before allocating the table.
     pub(crate) fn validate_cdt_size(self, maximum: u64) -> Result<Self, DistrErr> {
-        if self.maximum_magnitude > maximum {
+        let maximum_magnitude = self.maximum_magnitude();
+        if maximum_magnitude > maximum {
             return Err(DistrErr::CdtTableTooLarge {
-                maximum_magnitude: self.maximum_magnitude,
+                maximum_magnitude,
                 supported_maximum: maximum,
             });
         }
@@ -126,9 +131,10 @@ impl GaussianParameters {
         modulus_minus_one: T,
     ) -> Result<Self, DistrErr> {
         let modulus_minus_one: u128 = modulus_minus_one.as_into();
-        if u128::from(self.maximum_magnitude) > modulus_minus_one {
+        let maximum_magnitude = self.maximum_magnitude();
+        if u128::from(maximum_magnitude) > modulus_minus_one {
             return Err(DistrErr::ModulusTooSmall {
-                maximum_magnitude: self.maximum_magnitude,
+                maximum_magnitude,
                 modulus_minus_one,
             });
         }
@@ -146,9 +152,10 @@ impl GaussianParameters {
         }
 
         let output_maximum: u128 = T::MAX.as_into();
-        if u128::from(self.maximum_magnitude) > output_maximum {
+        let maximum_magnitude = self.maximum_magnitude();
+        if u128::from(maximum_magnitude) > output_maximum {
             return Err(DistrErr::OutputTypeTooNarrow {
-                maximum_magnitude: self.maximum_magnitude,
+                maximum_magnitude,
                 output_maximum,
             });
         }

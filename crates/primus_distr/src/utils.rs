@@ -42,12 +42,25 @@ pub(crate) fn log_sum_exp(log_values: &[f64]) -> f64 {
 
 #[cfg(test)]
 mod tests {
-    use super::cdt_index_by;
+    use super::{cdt_index_by, log_sum_exp};
 
     #[test]
     fn terminal_sentinel_maps_to_last_supported_index() {
         let cdt = [0_u8, 2, 5, u8::MAX];
 
         assert_eq!(cdt_index_by(&cdt, &u8::MAX, Ord::cmp), cdt.len() - 2);
+    }
+
+    #[test]
+    fn log_sum_exp_handles_separated_and_equal_values() {
+        let separated = log_sum_exp(&[-1000.0, -1100.0, -1200.0]);
+        assert!((separated + 1000.0).abs() < 1e-30);
+
+        let equal = log_sum_exp(&[0.0, 0.0, 0.0]);
+        assert!((equal - 3.0f64.ln()).abs() < 1e-10);
+
+        let moderate = log_sum_exp(&[-1000.0, -1001.0, -1002.0]);
+        let expected = -1000.0 + (1.0 + (-1.0f64).exp() + (-2.0f64).exp()).ln();
+        assert!((moderate - expected).abs() < 1e-10);
     }
 }
