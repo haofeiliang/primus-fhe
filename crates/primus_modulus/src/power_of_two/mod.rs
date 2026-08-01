@@ -6,20 +6,20 @@ mod slice;
 #[cfg(feature = "simd")]
 mod simd;
 
-/// Power of 2 modulus.
+/// An explicit, representable power-of-two modulus.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
 pub struct PowOf2Modulus<T: UnsignedInteger> {
-    /// The special value for performing `reduce`.
-    ///
-    /// It's equal to modulus value sub one.
+    /// The reduction mask, equal to the modulus minus one.
     mask: T,
 }
 
 impl<T: UnsignedInteger> PowOf2Modulus<T> {
-    /// Creates a [`PowOf2Modulus<T>`].
+    /// Creates a [`PowOf2Modulus<T>`] for the given modulus.
     ///
-    /// - `value`: The value of the modulus.
+    /// # Panics
+    ///
+    /// Panics unless `value` is a representable power of two greater than one.
     #[inline]
     pub fn new(value: T) -> Self {
         assert!(
@@ -31,9 +31,11 @@ impl<T: UnsignedInteger> PowOf2Modulus<T> {
         }
     }
 
-    /// Creates a [`PowOf2Modulus<T>`].
+    /// Creates a [`PowOf2Modulus<T>`] from a precomputed reduction mask.
     ///
-    /// - `mask`: modulus value minus one.
+    /// # Panics
+    ///
+    /// Panics unless `mask = 2^k - 1` for some `1 ≤ k < T::BITS`.
     #[inline]
     pub fn with_mask(mask: T) -> Self {
         let leading_zeros = mask.leading_zeros();
@@ -45,14 +47,13 @@ impl<T: UnsignedInteger> PowOf2Modulus<T> {
         Self { mask }
     }
 
-    /// Returns the value of this [`PowOf2Modulus<T>`].
+    /// Returns the modulus.
     #[inline]
     pub fn value(self) -> T {
         self.mask + T::ONE
     }
 
-    /// Returns the mask of this [`PowOf2Modulus<T>`],
-    /// which is equal to modulus value sub one.
+    /// Returns the reduction mask, which is the modulus minus one.
     #[inline]
     pub const fn mask(self) -> T {
         self.mask

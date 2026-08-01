@@ -7,10 +7,8 @@ use primus_integer::{SimdArray, SimdMaskArray, SimdUnsignedInteger};
 /// Reduces each SIMD lane by subtracting `m` at most once.
 #[inline]
 pub fn reduce_once<T: SimdUnsignedInteger>(m: T::SimdT, v: T::SimdT) -> T::SimdT {
-    // `min(v, v - m)` trick: when `v < m`, `v - m` wraps to a huge value so
-    // unsigned min picks `v`; when `v >= m`, `v - m` is the canonical form
-    // and is smaller than `v`. Lowers to a single `vpminuq` on AVX-512
-    // (vs. compare + blend + sub).
+    // When `v < m`, `v - m` wraps above `v`; otherwise the subtraction is the
+    // smaller, reduced value.
     v.simd_min(v - m)
 }
 
@@ -39,10 +37,6 @@ pub fn reduce_neg<T: SimdUnsignedInteger>(m: T::SimdT, v: T::SimdT) -> T::SimdT 
 pub fn lazy_reduce_neg<T: SimdUnsignedInteger>(m: T::SimdT, v: T::SimdT) -> T::SimdT {
     m - v
 }
-
-// ===========================================================================
-// SIMD slice kernels.
-// ===========================================================================
 
 /// Reduces each value in place by subtracting `modulus` at most once.
 #[inline]

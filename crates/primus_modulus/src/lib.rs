@@ -5,11 +5,11 @@
 //!
 //! | Type | Reduction | Use case |
 //! |------|-----------|----------|
-//! | [`NativeModulus`] | Wrapping arithmetic (mod 2^BITS) | Native integer overflow |
-//! | [`PowOf2Modulus`] | Bitwise mask (mod 2^k) | Explicit power-of-two |
-//! | [`BarrettModulus`] | Barrett reduction (`m < 2^{BITS-1}`) | General prime modulus |
-//! | [`CompactModulus`] | Wrapping add/sub (`m < 2^{BITS-2}`) | Optimized basic ops |
-//! | [`UintModulus`] | Compare-and-subtract (any m) | Fallback |
+//! | [`NativeModulus`] | Wrapping arithmetic | Implicit modulus `2^BITS` |
+//! | [`PowOf2Modulus`] | Bit masking | Representable power-of-two modulus |
+//! | [`BarrettModulus`] | Barrett reduction (`m < 2^(BITS - 2)`) | Repeated multiplication and reduction |
+//! | [`CompactModulus`] | Bounded arithmetic (`m < 2^(BITS - 2)`) | Basic operations without precomputation |
+//! | [`UintModulus`] | Generic unsigned arithmetic | Basic operations for any representable `m > 1` |
 
 pub use primus_integer as integer;
 pub use primus_reduce as reduce;

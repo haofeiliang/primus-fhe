@@ -1,4 +1,4 @@
-//! Tests for `CompactModulus` — basic ops cross-validated against `UintModulus`.
+//! Cross-validates `CompactModulus` against `UintModulus`.
 
 use primus_modulus::{CompactModulus, UintModulus};
 use primus_reduce::prelude::*;

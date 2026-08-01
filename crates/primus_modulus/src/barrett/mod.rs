@@ -15,27 +15,25 @@ pub mod simd;
 #[cfg(feature = "simd")]
 pub use simd::{SimdBarrettModulus, simd_reduce_dot_product};
 
-/// A modulus, using barrett reduction algorithm.
+/// A Barrett reduction context for an explicit unsigned-integer modulus.
 ///
-/// The struct stores the modulus number and some precomputed
-/// data. Here, `b` = 2^T::BITS
-///
-/// It's efficient if many reductions are performed with a single modulus.
+/// For `B = 2^(T::BITS)`, the context stores the modulus and the reciprocal
+/// `µ = floor(B² / modulus)`. The modulus must satisfy
+/// `1 < modulus < 2^(T::BITS - 2)`; the two spare bits allow 16 products to be
+/// accumulated before reduction.
 #[derive(Debug, Clone, Copy)]
 pub struct BarrettModulus<T: UnsignedInteger> {
-    /// the value to indicate the modulus
     value: T,
-    /// ratio `µ` = floor(b²/value)
     ratio: [T; 2],
 }
 
 impl<T: UnsignedInteger> BarrettModulus<T> {
-    /// Creates a new [`BarrettModulus<T>`] with the given value.
+    /// Creates a [`BarrettModulus<T>`] for `value`.
     ///
     /// # Panics
     ///
-    /// Panics if `value ≤ 1` or if the bit-width of `value` is too large
-    /// (≥ `T::BITS - 1`).  For a fallible variant see [`try_new`](Self::try_new).
+    /// Panics unless `1 < value < 2^(T::BITS - 2)`. For a fallible variant, see
+    /// [`try_new`](Self::try_new).
     pub fn new(value: T) -> Self {
         assert!(value > T::ONE, "modulus can't be 0 or 1.");
         let leading_zeros = value.leading_zeros();
@@ -43,11 +41,11 @@ impl<T: UnsignedInteger> BarrettModulus<T> {
         Self::new_unchecked(value)
     }
 
-    /// Creates a new [`BarrettModulus<T>`] without validating the modulus value.
+    /// Creates a [`BarrettModulus<T>`] without validating `value`.
     ///
     /// # Correctness
     ///
-    /// `value` must satisfy `1 < value < 2^(T::BITS - 1)`.
+    /// `value` must satisfy `1 < value < 2^(T::BITS - 2)`.
     #[inline]
     pub fn new_unchecked(value: T) -> Self {
         let mut quotient = [T::ZERO; 3];
@@ -60,13 +58,17 @@ impl<T: UnsignedInteger> BarrettModulus<T> {
 
     /// Creates a [`BarrettModulus<T>`] from precomputed parts.
     ///
-    /// The `ratio` must equal `floor(b² / value)` where `b = 2^T::BITS`.
+    /// # Correctness
+    ///
+    /// `value` must satisfy `1 < value < 2^(T::BITS - 2)`, and `ratio` must
+    /// equal `floor(B² / value)` where `B = 2^(T::BITS)`.
     #[inline]
     pub const fn from_parts(value: T, ratio: [T; 2]) -> Self {
         Self { value, ratio }
     }
 
-    /// Fallible constructor returning `None` if the value is out of range.
+    /// Creates a [`BarrettModulus<T>`] when `1 < value < 2^(T::BITS - 2)`, or
+    /// returns `None` otherwise.
     #[inline]
     pub fn try_new(value: T) -> Option<Self> {
         if value <= T::ONE {
@@ -79,22 +81,19 @@ impl<T: UnsignedInteger> BarrettModulus<T> {
         Some(Self::new_unchecked(value))
     }
 
-    /// Returns the value of this [`BarrettModulus<T>`].
+    /// Returns the modulus.
     #[inline]
     pub const fn value(&self) -> T {
         self.value
     }
 
-    /// Returns the ratio of this [`BarrettModulus<T>`].
+    /// Returns the precomputed reciprocal `floor(B² / modulus)`.
     #[inline]
     pub const fn ratio(&self) -> [T; 2] {
         self.ratio
     }
 
-    /// Barrett reduction for a 2-limb value `(hi·B + lo)`.
-    ///
-    /// Step 1: `q = floor((hi·B + lo) · µ / B²)`
-    /// Step 2: `r = lo - q · modulus`
+    // Lazily reduces the two-limb value `hi * B + lo`.
     #[inline]
     fn lazy_reduce_wide(&self, lo: T, hi: T) -> T {
         //                        ratio[1]  ratio[0]
@@ -116,6 +115,9 @@ impl<T: UnsignedInteger> BarrettModulus<T> {
         //             +--------+
         //             |   q₃   |
         //             +--------+
+
+        // Compute the quotient estimate from the upper limbs of
+        // `(hi * B + lo) * ratio`, including carries from the lower limbs.
         let ah = lo.widening_mul_hw(self.ratio[0]);
 
         let b = lo.carrying_mul(self.ratio[1], ah);
@@ -127,7 +129,7 @@ impl<T: UnsignedInteger> BarrettModulus<T> {
 
         let q = d.wrapping_add(bch);
 
-        // Step 2.
+        // Subtract the estimated multiple modulo `B`.
         lo.wrapping_sub(q.wrapping_mul(self.value))
     }
 

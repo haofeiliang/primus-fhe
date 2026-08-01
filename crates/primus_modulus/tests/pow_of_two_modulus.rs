@@ -1,4 +1,4 @@
-//! Tests for `PowOf2Modulus` — basic ops cross-validated against `UintModulus`.
+//! Cross-validates `PowOf2Modulus` against `UintModulus`.
 
 use primus_modulus::{PowOf2Modulus, UintModulus};
 use primus_reduce::prelude::*;

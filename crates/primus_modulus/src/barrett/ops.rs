@@ -8,10 +8,8 @@ use super::BarrettModulus;
 impl<T: UnsignedInteger> LazyReduce<T> for BarrettModulus<T> {
     type Output = T;
 
-    /// Returns a representative congruent to `value` modulo the modulus.
     #[inline(always)]
     fn lazy_reduce(self, value: T) -> T {
-        // Step 1.
         //              ratio[1]  ratio[0]
         //         *               value
         //   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -25,11 +23,12 @@ impl<T: UnsignedInteger> LazyReduce<T> for BarrettModulus<T> {
         //   +--------+
         //   |   q₃   |
         //   +--------+
-        let tmp = value.widening_mul_hw(self.ratio[0]); // tmp1
-        let q = value.carrying_mul_hw(self.ratio[1], tmp); // q₃
 
-        // Step 2.
-        value.wrapping_sub(q.wrapping_mul(self.value)) // r = r₁ - r₂
+        // Approximate `value / modulus` from the high half of `value * ratio`.
+        let tmp = value.widening_mul_hw(self.ratio[0]);
+        let q = value.carrying_mul_hw(self.ratio[1], tmp);
+
+        value.wrapping_sub(q.wrapping_mul(self.value))
     }
 }
 
@@ -54,7 +53,11 @@ impl<T: UnsignedInteger> LazyReduce<(T, T)> for BarrettModulus<T> {
 impl<T: UnsignedInteger> LazyReduce<&[T]> for BarrettModulus<T> {
     type Output = T;
 
-    /// Returns a lazy representative of a nonempty multi-limb value.
+    /// Reduces a nonempty little-endian limb slice to a lazy representative.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `value` is empty.
     #[inline]
     fn lazy_reduce(self, value: &[T]) -> Self::Output {
         match value {
@@ -74,7 +77,6 @@ impl<T: UnsignedInteger> LazyReduce<&[T]> for BarrettModulus<T> {
 }
 
 impl<T: UnsignedInteger> LazyReduceAssign<T> for BarrettModulus<T> {
-    /// Replaces `value` with a congruent representative in `[0, 2 * modulus)`.
     #[inline]
     fn lazy_reduce_assign(self, value: &mut T) {
         *value = self.lazy_reduce(*value);
@@ -148,7 +150,6 @@ impl<T: UnsignedInteger> LazyReduceNegAssign<T> for BarrettModulus<T> {
 impl<T: UnsignedInteger> Reduce<T> for BarrettModulus<T> {
     type Output = T;
 
-    /// Calculates `value (mod modulus)`.
     #[inline(always)]
     fn reduce(self, value: T) -> Self::Output {
         compact::reduce_once(self.value, self.lazy_reduce(value))
@@ -158,7 +159,6 @@ impl<T: UnsignedInteger> Reduce<T> for BarrettModulus<T> {
 impl<T: UnsignedInteger> Reduce<[T; 2]> for BarrettModulus<T> {
     type Output = T;
 
-    /// Calculates `value (mod modulus)`.
     #[inline(always)]
     fn reduce(self, value: [T; 2]) -> Self::Output {
         compact::reduce_once(self.value, self.lazy_reduce(value))
@@ -168,7 +168,6 @@ impl<T: UnsignedInteger> Reduce<[T; 2]> for BarrettModulus<T> {
 impl<T: UnsignedInteger> Reduce<(T, T)> for BarrettModulus<T> {
     type Output = T;
 
-    /// Calculates `value (mod modulus)`.
     #[inline(always)]
     fn reduce(self, value: (T, T)) -> Self::Output {
         compact::reduce_once(self.value, self.lazy_reduce(value))
@@ -178,7 +177,11 @@ impl<T: UnsignedInteger> Reduce<(T, T)> for BarrettModulus<T> {
 impl<T: UnsignedInteger> Reduce<&[T]> for BarrettModulus<T> {
     type Output = T;
 
-    /// Calculates `value (mod modulus)` when value's length > 0.
+    /// Reduces a nonempty little-endian limb slice to its canonical residue.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `value` is empty.
     #[inline(always)]
     fn reduce(self, value: &[T]) -> Self::Output {
         compact::reduce_once(self.value, self.lazy_reduce(value))
@@ -186,7 +189,6 @@ impl<T: UnsignedInteger> Reduce<&[T]> for BarrettModulus<T> {
 }
 
 impl<T: UnsignedInteger> ReduceAssign<T> for BarrettModulus<T> {
-    /// Calculates `value (mod modulus)`.
     #[inline]
     fn reduce_assign(self, value: &mut T) {
         *value = self.reduce(*value);

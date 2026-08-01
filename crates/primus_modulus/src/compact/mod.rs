@@ -3,21 +3,19 @@ use primus_integer::{FheUint, UnsignedInteger};
 mod scalar;
 mod slice;
 
-/// Compact unsigned integer modulus.
+/// An explicit modulus with a restricted range for compact arithmetic kernels.
 ///
-/// Just store the modulus value and only support some basic operations.
+/// This context stores only the modulus and does not precompute reduction data.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
 pub struct CompactModulus<T>(pub T);
 
 impl<T: UnsignedInteger> CompactModulus<T> {
-    /// Creates a new [`CompactModulus<T>`].
+    /// Creates a [`CompactModulus<T>`] for the given modulus.
     ///
     /// # Panics
     ///
-    /// Panics if `value >= 2^{T::BITS - 2}` or `value ≤ 1`. The SIMD `reduce_sub` kernel
-    /// relies on `modulus < 2^{BITS-2}` to avoid overflow in the wrapping
-    /// subtraction path. All FHE parameter sets satisfy this bound.
+    /// Panics unless `1 < value < 2^(T::BITS - 2)`.
     #[inline(always)]
     pub fn new(value: T) -> Self {
         assert!(

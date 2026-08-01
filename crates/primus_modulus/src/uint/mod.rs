@@ -3,15 +3,15 @@ use primus_integer::{FheUint, UnsignedInteger};
 mod scalar;
 mod slice;
 
-/// Unsigned integer modulus.
+/// An explicit unsigned-integer modulus for basic modular arithmetic.
 ///
-/// Just store the modulus value and only support some basic operations.
+/// This context stores only the modulus and does not precompute reduction data.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(transparent)]
 pub struct UintModulus<T>(pub T);
 
 impl<T: UnsignedInteger> UintModulus<T> {
-    /// Creates a new [`UintModulus<T>`].
+    /// Creates a [`UintModulus<T>`] for the given modulus.
     ///
     /// # Panics
     ///

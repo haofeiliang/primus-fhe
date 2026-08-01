@@ -8,13 +8,7 @@ mod slice;
 #[cfg(feature = "simd")]
 mod simd;
 
-/// Native modulus.
-///
-/// - For `u8`, this type acts as `2⁸`
-/// - For `u16`, this type acts as `2¹⁶`
-/// - For `u32`, this type acts as `2³²`
-/// - For `u64`, this type acts as `2⁶⁴`
-/// - For `u128`, this type acts as `2¹²⁸`
+/// The implicit modulus `2^(T::BITS)`, implemented with wrapping arithmetic.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct NativeModulus<T: UnsignedInteger>(PhantomData<T>);
 
@@ -26,7 +20,7 @@ impl<T: UnsignedInteger> Default for NativeModulus<T> {
 }
 
 impl<T: UnsignedInteger> NativeModulus<T> {
-    /// Creates a new [`NativeModulus<T>`].
+    /// Creates a [`NativeModulus<T>`].
     #[inline(always)]
     pub fn new() -> Self {
         Self(PhantomData)

@@ -35,7 +35,7 @@ impl Modulus {
         }
     }
 
-    pub(crate) fn check_leading_zeros(&self, value: &syn::LitInt) -> syn::Result<u32> {
+    pub(crate) fn validate_two_spare_bits(&self, value: &syn::LitInt) -> syn::Result<()> {
         let n = match self {
             Modulus::U16(v) => v.leading_zeros(),
             Modulus::U32(v) => v.leading_zeros(),
@@ -44,10 +44,10 @@ impl Modulus {
         if n < 2 {
             return Err(syn::Error::new_spanned(
                 value,
-                "The modulus must have at least two leading zeros.",
+                "The modulus must be less than 2^(BITS - 2).",
             ));
         }
-        Ok(n)
+        Ok(())
     }
 
     pub(crate) fn into_token_stream(self) -> proc_macro2::TokenStream {

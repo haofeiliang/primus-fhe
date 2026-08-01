@@ -7,12 +7,10 @@ use super::BarrettModulus;
 
 use crate::common::compact;
 
-/// A modulus, using barrett reduction algorithm.
+/// A lane-wise Barrett context used by SIMD kernels.
 ///
-/// The struct stores the modulus number and some precomputed
-/// data. Here, `b` = 2^T::BITS
-///
-/// It's efficient if many reductions are performed with a single modulus.
+/// It broadcasts a scalar modulus and its reciprocal to every SIMD lane. The
+/// scalar modulus must satisfy `1 < value < 2^(T::BITS - 2)`.
 #[derive(Debug, Clone, Copy)]
 pub struct SimdBarrettModulus<T: SimdUnsignedInteger> {
     value: T::SimdT,
@@ -20,7 +18,13 @@ pub struct SimdBarrettModulus<T: SimdUnsignedInteger> {
 }
 
 impl<T: SimdUnsignedInteger> SimdBarrettModulus<T> {
-    /// Creates a new [`SimdBarrettModulus<T>`].
+    /// Creates a [`SimdBarrettModulus<T>`] from a modulus and its precomputed reciprocal.
+    ///
+    /// # Correctness
+    ///
+    /// `value` must satisfy `1 < value < 2^(T::BITS - 2)`, and `ratio` must
+    /// equal `floor(B² / value)` where `B = 2^(T::BITS)`. Prefer converting a
+    /// validated [`BarrettModulus`] when runtime construction is sufficient.
     pub fn new(value: T, ratio: [T; 2]) -> Self {
         Self {
             value: T::SimdT::splat(value),
@@ -44,7 +48,7 @@ impl<T: SimdUnsignedInteger> SimdBarrettModulus<T> {
 
         let q = d + bch;
 
-        // Step 2.
+        // Subtract the estimated multiple modulo `B` lane-wise.
         lo - (q * self.value)
     }
 
@@ -71,11 +75,10 @@ impl<T: SimdUnsignedInteger> LazyReduce<T::SimdT> for SimdBarrettModulus<T> {
 
     #[inline]
     fn lazy_reduce(self, value: T::SimdT) -> Self::Output {
-        let tmp = value.widening_mul_hw(self.ratio[0]); // tmp1
-        let q = value.carrying_mul_hw(self.ratio[1], tmp); // q₃
+        let tmp = value.widening_mul_hw(self.ratio[0]);
+        let q = value.carrying_mul_hw(self.ratio[1], tmp);
 
-        // Step 2.
-        value - (q * self.value) // r = r₁ - r₂
+        value - (q * self.value)
     }
 }
 
@@ -174,25 +177,23 @@ impl<T: SimdUnsignedInteger> ReduceMulAddAssign<T::SimdT> for SimdBarrettModulus
     }
 }
 
-// ---------------------------------------------------------------------------
-// SIMD dot_product
+// Each outer chunk contains `K = DOT_PRODUCT_INNER_CHUNK` SIMD vectors. Every
+// lane accumulates `K` widening products, is reduced, and is then added to the
+// running lane-wise residue. The final horizontal sum and scalar tail complete
+// the dot product.
 //
-// Outer chunk size = `K * N`, where `K = super::slice::DOT_PRODUCT_INNER_CHUNK`
-// (currently 16). Inside each outer chunk we accumulate `K` SIMD widening
-// products into a `[T::SimdT; 2]` double-word per lane, then collapse the
-// double-word back into a single SIMD word in `[0, m)` via Barrett + the
-// `min(v, v - m)` reduce_once trick. Cross-chunk accumulation stays in `[0, m)`
-// lane-wise via `simd_reduce_add`, so the running SIMD accumulator never grows.
-// After the chunked loop, a horizontal modular sum collapses the N lanes to a
-// scalar, and any tail shorter than `K * N` is handled by the scalar helper.
-//
-// Hi-limb safety: each scalar widening product has `hi < m^2 / 2^BITS`, and the
-// lo-limb's running sum can carry at most `K - 1` extra units into hi. With
-// `m < 2^(BITS - 1)` enforced by `BarrettModulus::new` and `K ≤ 16`, both
-// limbs stay strictly below `2^BITS` — identical bound to the scalar path.
-// ---------------------------------------------------------------------------
-
+// Accumulator safety: `m < 2^(BITS - 2)` and each input is less than `m`, so
+// each product is less than `2^(2 * BITS - 4)`. With `K = 16`, their sum is
+// less than `2^(2 * BITS)` and fits in the two-limb accumulator.
 /// Computes the dot product of `a` and `b` modulo `modulus` using SIMD chunks.
+///
+/// # Correctness
+///
+/// Every input element must be less than the modulus.
+///
+/// # Panics
+///
+/// Panics if `a` and `b` have different lengths.
 #[inline]
 pub fn simd_reduce_dot_product<T: SimdUnsignedInteger, M>(modulus: M, a: &[T], b: &[T]) -> T
 where
@@ -200,7 +201,7 @@ where
 {
     assert_eq!(a.len(), b.len(), "reduce_dot_product: length mismatch");
 
-    let k = 16;
+    let k = compact::DOT_PRODUCT_INNER_CHUNK;
     let outer = k * T::LANE_COUNT;
 
     let sm: SimdBarrettModulus<T> = modulus.into();
@@ -212,9 +213,7 @@ where
     let mut b_outer = b.chunks_exact(outer);
 
     for (a_chunk, b_chunk) in (&mut a_outer).zip(&mut b_outer) {
-        // Each outer chunk is exactly `K * N` elements, so the inner
-        // `as_chunks::<N>` always splits into `K` lane-wide subchunks with
-        // an empty tail.
+        // An outer chunk contains exactly `K` full SIMD vectors.
         let (a_lanes, _) = T::simd_as_chunks(a_chunk);
         let (b_lanes, _) = T::simd_as_chunks(b_chunk);
         let mut c = [T::SimdT::splat(T::ZERO); 2];

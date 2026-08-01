@@ -1,6 +1,4 @@
-//! Cross-validation tests for `BarrettModulus`.
-//!
-//! All basic ops (add/sub/neg/once) are checked against `UintModulus`.
+//! Cross-validates `BarrettModulus` against `UintModulus` and wide arithmetic.
 
 use primus_modulus::{BarrettModulus, UintModulus};
 use primus_reduce::{FieldContext, prelude::*};
@@ -15,9 +13,13 @@ fn constructor_bounds() {
     assert!(std::panic::catch_unwind(|| BarrettModulus::<ValueT>::new(0)).is_err());
     assert!(std::panic::catch_unwind(|| BarrettModulus::<ValueT>::new(1)).is_err());
 
-    let limit = (1u32) << (ValueT::BITS - 2);
-    assert!(BarrettModulus::<ValueT>::try_new(limit - 1).is_some());
-    assert!(BarrettModulus::<ValueT>::try_new(limit).is_none());
+    let u32_limit = 1u32 << (u32::BITS - 2);
+    assert!(BarrettModulus::<u32>::try_new(u32_limit - 1).is_some());
+    assert!(BarrettModulus::<u32>::try_new(u32_limit).is_none());
+
+    let u64_limit = 1u64 << (u64::BITS - 2);
+    assert!(BarrettModulus::<u64>::try_new(u64_limit - 1).is_some());
+    assert!(BarrettModulus::<u64>::try_new(u64_limit).is_none());
 }
 
 fn field_trait<M: FieldContext<ValueT>>(_modulus: M) {}
@@ -97,10 +99,6 @@ fn slice_ops_against_uint() {
     }
 }
 
-// ===========================================================================
-// Barrett-specific mul ops — validated against wide-integer (u64) reference
-// ===========================================================================
-
 fn mul_mod(a: u32, b: u32) -> u32 {
     ((a as u64 * b as u64) % MODULUS as u64) as u32
 }
@@ -122,7 +120,7 @@ fn mul_ops() {
         let expected_fma = ((a as u64 * b as u64 + d as u64) % MODULUS as u64) as u32;
         assert_eq!(m.reduce_mul_add(a, b, d), expected_fma);
 
-        // lazy_reduce_mul: result in [0, 2M), canonical after reduce_once
+        // A lazy product becomes canonical after one correction.
         let lazy = m.lazy_reduce_mul(a, b);
         assert!(lazy < MODULUS * 2);
         assert_eq!(m.reduce_once(lazy), mul_mod(a, b));
@@ -156,6 +154,36 @@ fn dot_product() {
 }
 
 #[test]
+fn dot_product_accumulator_boundary() {
+    let modulus = (1u64 << (u64::BITS - 2)) - 1;
+    let operand = modulus - 1;
+    let values = [operand; 16];
+
+    // Each product is one modulo `modulus`; this also exercises the largest
+    // supported unreduced 16-term accumulator.
+    assert_eq!(
+        BarrettModulus::new(modulus).reduce_dot_product(&values, &values),
+        16
+    );
+}
+
+#[cfg(feature = "simd")]
+#[test]
+fn simd_dot_product_accumulator_boundary() {
+    use primus_modulus::integer::SimdInteger;
+
+    let modulus = (1u64 << (u64::BITS - 2)) - 1;
+    let operand = modulus - 1;
+    let len = 16 * <u64 as SimdInteger>::LANE_COUNT;
+    let values = vec![operand; len];
+
+    assert_eq!(
+        BarrettModulus::new(modulus).reduce_dot_product(&values, &values),
+        len as u64
+    );
+}
+
+#[test]
 fn mul_slice_ops() {
     let m = BarrettModulus::<u32>::new(MODULUS);
     let distr = Uniform::new(0, MODULUS).unwrap();
@@ -168,7 +196,6 @@ fn mul_slice_ops() {
         let scalar: u32 = distr.sample(&mut rng);
         let expected_mul: Vec<u32> = a.iter().zip(&b).map(|(&x, &y)| mul_mod(x, y)).collect();
 
-        // reduce_mul_slice_assign / to
         let mut assign = a.clone();
         m.reduce_mul_slice_assign(&mut assign, &b);
         assert_eq!(assign, expected_mul, "mul_slice_assign len={len}");
@@ -176,7 +203,6 @@ fn mul_slice_ops() {
         m.reduce_mul_slice_to(&a, &b, &mut to);
         assert_eq!(to, expected_mul, "mul_slice_to len={len}");
 
-        // scalar_mul variant
         let expected_scalar: Vec<u32> = a.iter().map(|&x| mul_mod(x, scalar)).collect();
         let mut assign = a.clone();
         m.reduce_mul_scalar_slice_assign(&mut assign, scalar);
@@ -185,7 +211,6 @@ fn mul_slice_ops() {
         m.reduce_mul_scalar_slice_to(&a, scalar, &mut to);
         assert_eq!(to, expected_scalar, "scalar_mul_slice_to len={len}");
 
-        // lazy_reduce_mul_slice_assign / to
         let mut lazy_assign = a.clone();
         m.lazy_reduce_mul_slice_assign(&mut lazy_assign, &b);
         for v in lazy_assign.iter() {
@@ -203,7 +228,6 @@ fn mul_slice_ops() {
         }
         assert_eq!(lazy_to, expected_mul, "lazy_mul_slice_to len={len}");
 
-        // reduce_add_mul_slice_assign: acc += a * b
         let expected_acc: Vec<u32> = c
             .iter()
             .zip(&a)
@@ -214,7 +238,6 @@ fn mul_slice_ops() {
         m.reduce_add_mul_slice_assign(&mut acc, &a, &b);
         assert_eq!(acc, expected_acc, "add_mul_slice_assign len={len}");
 
-        // reduce_sub_mul_slice_assign: acc -= a * b
         let expected_sub: Vec<u32> = c
             .iter()
             .zip(&a)
@@ -232,7 +255,6 @@ fn mul_slice_ops() {
         m.reduce_sub_mul_slice_assign(&mut acc, &a, &b);
         assert_eq!(acc, expected_sub, "sub_mul_slice_assign len={len}");
 
-        // reduce_mul_add_slice_to: output = a * b + c
         let expected_abc: Vec<u32> = a
             .iter()
             .zip(&b)
@@ -243,7 +265,6 @@ fn mul_slice_ops() {
         m.reduce_mul_add_slice_to(&a, &b, &c, &mut out);
         assert_eq!(out, expected_abc, "mul_add_slice_to len={len}");
 
-        // reduce_scalar_mul_add_slice_to: output = scalar * b + c
         let expected_sbc: Vec<u32> = b
             .iter()
             .zip(&c)
@@ -253,7 +274,6 @@ fn mul_slice_ops() {
         m.reduce_mul_scalar_add_slice_to(&b, scalar, &c, &mut out);
         assert_eq!(out, expected_sbc, "scalar_mul_add_slice_to len={len}");
 
-        // reduce_add_scalar_mul_slice_assign: acc += scalar * b
         let expected_asc: Vec<u32> = c
             .iter()
             .zip(&b)

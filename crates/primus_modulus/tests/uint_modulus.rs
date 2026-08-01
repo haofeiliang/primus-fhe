@@ -1,4 +1,4 @@
-//! Tests for `UintModulus` — scalar ops, slice ops.
+//! Cross-validates `UintModulus` scalar and slice operations.
 
 use primus_modulus::UintModulus;
 use primus_reduce::prelude::*;
@@ -7,10 +7,6 @@ use rand::{RngExt, distr::Uniform, prelude::*};
 type ValueT = u32;
 type WideT = u64;
 const MODULUS: ValueT = 536_813_569;
-
-// type ValueT = u64;
-// type WideT = u128;
-// const MODULUS: ValueT = 18_446_744_073_709_551_557;
 
 const MODULUS_W: WideT = MODULUS as WideT;
 

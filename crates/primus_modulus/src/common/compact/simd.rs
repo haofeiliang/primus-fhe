@@ -10,7 +10,7 @@ mod mul;
 
 pub use mul::*;
 
-/// Adds SIMD lanes modulo `m` using compact-modulus bounds.
+/// Adds SIMD lanes modulo `m`.
 #[inline]
 pub fn reduce_add<T>(m: T::SimdT, a: T::SimdT, b: T::SimdT) -> T::SimdT
 where
@@ -20,7 +20,7 @@ where
     sum.simd_min(sum - m)
 }
 
-/// Doubles SIMD lanes modulo `m` using compact-modulus bounds.
+/// Doubles SIMD lanes modulo `m`.
 #[inline]
 pub fn reduce_double<T>(m: T::SimdT, a: T::SimdT) -> T::SimdT
 where
@@ -30,17 +30,15 @@ where
     sum.simd_min(sum - m)
 }
 
-/// Subtracts SIMD lanes modulo `m` using compact-modulus bounds.
+/// Subtracts SIMD lanes modulo `m`.
 #[inline]
 pub fn reduce_sub<T>(m: T::SimdT, a: T::SimdT, b: T::SimdT) -> T::SimdT
 where
     T: SimdUnsignedInteger,
 {
-    // `a, b ∈ [0, m)`. When `a >= b`, `diff = a - b < m` and `diff + m < 2m`
-    // does not wrap (provided `m < 2^{BITS-1}`), so `min` picks `diff`.
-    // When `a < b`, `diff` wraps to a huge value and `diff + m` wraps back to
-    // the canonical `(a - b) mod m`, so `min` picks the wrapped-back result.
-    // Lowers to a single `vpminuq` on AVX-512.
+    // If `a >= b`, `a - b` is canonical and adding `m` makes it larger without
+    // overflow. Otherwise, adding `m` to the wrapped difference produces the
+    // canonical value. Unsigned minimum selects the canonical case.
     let diff = a - b;
     diff.simd_min(diff + m)
 }
@@ -54,7 +52,11 @@ where
     m - b + a
 }
 
-/// Adds the lane-wise product `a * b` into a double-word SIMD accumulator.
+/// Adds the lane-wise product `a * b` to the two-limb SIMD accumulator `c`.
+///
+/// # Correctness
+///
+/// Every lane-wise sum must fit in two limbs.
 #[inline]
 pub fn multiply_add<T: SimdUnsignedInteger>(c: &mut [T::SimdT; 2], a: T::SimdT, b: T::SimdT) {
     let (lw, hw) = a.widening_mul(b);
@@ -62,10 +64,6 @@ pub fn multiply_add<T: SimdUnsignedInteger>(c: &mut [T::SimdT; 2], a: T::SimdT, 
     (c[0], carry) = c[0].overflowing_add(lw);
     (c[1], _) = c[1].carrying_add(hw, carry);
 }
-
-// ===========================================================================
-// SIMD slice kernels.
-// ===========================================================================
 
 pub use crate::common::uint::simd::{
     lazy_reduce_neg_slice_assign, lazy_reduce_neg_slice_to, reduce_neg_slice_assign,

@@ -9,7 +9,7 @@ pub use crate::common::uint::slice::{
 
 use super::DOT_PRODUCT_INNER_CHUNK;
 
-/// Adds `b` into `a` element-wise modulo `modulus` using compact-modulus bounds.
+/// Adds `b` into `a` element-wise modulo `modulus`.
 #[inline]
 pub fn reduce_add_slice_assign<T: UnsignedInteger>(modulus: T, a: &mut [T], b: &[T]) {
     debug_assert_eq!(a.len(), b.len());
@@ -366,7 +366,11 @@ pub fn lazy_reduce_mul_scalar_add_slice_to<T, M>(
         .for_each(|((&a, &c), o)| *o = modulus.lazy_reduce_mul_add(a, scalar, c));
 }
 
-/// `c += a * b` on a double-word accumulator.
+/// Adds `a * b` to the two-limb accumulator `c`.
+///
+/// # Correctness
+///
+/// The sum must fit in two limbs.
 #[inline]
 pub fn multiply_add<T: UnsignedInteger>(c: &mut [T; 2], a: T, b: T) {
     let (lw, hw) = a.widening_mul(b);
@@ -375,7 +379,11 @@ pub fn multiply_add<T: UnsignedInteger>(c: &mut [T; 2], a: T, b: T) {
     (c[1], _) = c[1].carrying_add(hw, carry);
 }
 
-/// Computes the dot product of `a` and `b` modulo `modulus`.
+/// Computes the dot product of equally sized slices modulo `modulus`.
+///
+/// # Panics
+///
+/// Panics if the slices have different lengths.
 #[inline]
 pub fn reduce_dot_product<T, M>(modulus: M, a: &[T], b: &[T]) -> T
 where
@@ -405,6 +413,8 @@ where
 }
 
 /// Computes the dot product of two iterators modulo `modulus`.
+///
+/// Iteration stops when either iterator ends.
 #[inline]
 pub fn reduce_dot_product_iter<T, M>(
     modulus: M,
