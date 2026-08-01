@@ -1,7 +1,11 @@
 use primus_integer::{AsInto, FheUint};
 use rand::distr::Distribution;
 
-use crate::utils::{cdt_index_by, log_sum_exp};
+use crate::{
+    DistrErr,
+    gaussian::{CDT_MAX_MAGNITUDE, GaussianParameters},
+    utils::{cdt_index_by, log_sum_exp},
+};
 
 /// CDT sampler using log-space computation
 #[derive(Debug, Clone)]
@@ -12,15 +16,24 @@ pub struct CDTSampler<T: FheUint> {
 }
 
 impl<T: FheUint> CDTSampler<T> {
-    /// Generate a CDT sampler using log-space arithmetic
-    pub fn new(std_dev: f64, tail_cut: f64, modulus_minus_one: T) -> Self {
-        let max_std_dev = std_dev * tail_cut;
-        let mut length = max_std_dev.floor() as usize + 1;
+    /// Generate a CDT sampler using log-space arithmetic.
+    ///
+    /// Returns an error when the parameters are invalid, the support exceeds
+    /// the portable CDT limit, or the modulus cannot encode every magnitude.
+    pub fn new(std_dev: f64, tail_cut: f64, modulus_minus_one: T) -> Result<Self, DistrErr> {
+        let parameters = GaussianParameters::new(std_dev, tail_cut)?;
+        Self::from_parameters(parameters, modulus_minus_one)
+    }
 
-        assert!(length <= 256, "CDT table too large: {}", length);
-        if length <= 1 {
-            length = 2;
-        }
+    pub(crate) fn from_parameters(
+        parameters: GaussianParameters,
+        modulus_minus_one: T,
+    ) -> Result<Self, DistrErr> {
+        let parameters = parameters
+            .validate_cdt_size(CDT_MAX_MAGNITUDE)?
+            .validate_modular_output(modulus_minus_one)?;
+        let std_dev = parameters.standard_deviation();
+        let length = parameters.maximum_magnitude() as usize + 1;
 
         // Compute PDF in log-space to avoid underflow
         // log(pdf[i]) = log(exp(-i²/(2σ²))) = -i²/(2σ²)
@@ -73,11 +86,11 @@ impl<T: FheUint> CDTSampler<T> {
 
         assert_eq!(cdt.len(), length + 1, "CDT length mismatch");
 
-        Self {
+        Ok(Self {
             std_dev,
             modulus_minus_one,
             cdt,
-        }
+        })
     }
 
     /// Returns the standard deviation of this sampler
@@ -141,7 +154,7 @@ mod tests {
 
     #[test]
     fn test_sampler_creation() {
-        let sampler = CDTSampler::<u64>::new(3.19, 12.0, u64::MAX - 1);
+        let sampler = CDTSampler::<u64>::new(3.19, 12.0, u64::MAX - 1).unwrap();
         assert!(!sampler.cdt.is_empty());
 
         // First value should be 0

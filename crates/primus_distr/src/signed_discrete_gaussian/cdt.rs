@@ -3,7 +3,11 @@ use std::marker::PhantomData;
 use primus_integer::{AsInto, Integer};
 use rand::distr::Distribution;
 
-use crate::utils::{cdt_index_by, log_sum_exp};
+use crate::{
+    DistrErr,
+    gaussian::{CDT_MAX_MAGNITUDE, GaussianParameters},
+    utils::{cdt_index_by, log_sum_exp},
+};
 
 /// CDT sampler using log-space computation
 #[derive(Debug, Clone)]
@@ -14,15 +18,21 @@ pub struct SignedCDTSampler<T: Integer> {
 }
 
 impl<T: Integer> SignedCDTSampler<T> {
-    /// Generate a CDT sampler using log-space arithmetic
-    pub fn new(std_dev: f64, tail_cut: f64) -> Self {
-        let max_std_dev = std_dev * tail_cut;
-        let mut length = max_std_dev.floor() as usize + 1;
+    /// Generate a CDT sampler using log-space arithmetic.
+    ///
+    /// Returns an error when the parameters are invalid, the support exceeds
+    /// the portable CDT limit, or `T` cannot represent every signed sample.
+    pub fn new(std_dev: f64, tail_cut: f64) -> Result<Self, DistrErr> {
+        let parameters = GaussianParameters::new(std_dev, tail_cut)?;
+        Self::from_parameters(parameters)
+    }
 
-        assert!(length <= 256, "CDT table too large: {}", length);
-        if length <= 1 {
-            length = 2;
-        }
+    pub(crate) fn from_parameters(parameters: GaussianParameters) -> Result<Self, DistrErr> {
+        let parameters = parameters
+            .validate_cdt_size(CDT_MAX_MAGNITUDE)?
+            .validate_signed_output::<T>()?;
+        let std_dev = parameters.standard_deviation();
+        let length = parameters.maximum_magnitude() as usize + 1;
 
         // Compute PDF in log-space to avoid underflow
         // log(pdf[i]) = log(exp(-i²/(2σ²))) = -i²/(2σ²)
@@ -75,11 +85,11 @@ impl<T: Integer> SignedCDTSampler<T> {
 
         assert_eq!(cdt.len(), length + 1, "CDT length mismatch");
 
-        Self {
+        Ok(Self {
             std_dev,
             cdt,
             phantom: PhantomData,
-        }
+        })
     }
 
     /// Returns the standard deviation of this sampler
@@ -115,7 +125,7 @@ mod tests {
 
     #[test]
     fn test_sampler_creation() {
-        let sampler = SignedCDTSampler::<i64>::new(3.19, 12.0);
+        let sampler = SignedCDTSampler::<i64>::new(3.19, 12.0).unwrap();
 
         // First value should be 0
         assert_eq!(sampler.cdt[0], 0);

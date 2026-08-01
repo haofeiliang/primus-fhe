@@ -1,7 +1,10 @@
 use primus_integer::FheInt;
 use rand::distr::Distribution;
 
-use crate::DistrErr;
+use crate::{
+    DistrErr,
+    gaussian::{CDT_STANDARD_DEVIATION_THRESHOLD, DEFAULT_TAIL_CUT, GaussianParameters},
+};
 
 mod cdt;
 #[cfg(all(target_os = "linux", feature = "high_precision"))]
@@ -31,40 +34,22 @@ impl<T: FheInt> SignedDiscreteGaussian<T> {
     /// Automatically selects the CDT or Ziggurat backend based on `std_dev`.
     ///
     /// # Parameters
-    /// - `std_dev` — standard deviation (`σ`).
+    /// - `std_dev` — standard deviation (`σ`), which must be finite and at
+    ///   least 0.7.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when `std_dev` is invalid or the truncated support
+    /// cannot be represented by `T`.
     #[inline]
-    pub fn new(std_dev: f64) -> Result<SignedDiscreteGaussian<T>, DistrErr<T>> {
-        if std_dev <= 20.0 {
-            Ok(SignedDiscreteGaussian::Cdt(SignedCDTSampler::new(
-                std_dev, 12.0,
-            )))
+    pub fn new(std_dev: f64) -> Result<SignedDiscreteGaussian<T>, DistrErr> {
+        let parameters = GaussianParameters::new(std_dev, DEFAULT_TAIL_CUT)?;
+        if std_dev <= CDT_STANDARD_DEVIATION_THRESHOLD {
+            SignedCDTSampler::from_parameters(parameters).map(SignedDiscreteGaussian::Cdt)
         } else {
-            Ok(SignedDiscreteGaussian::Ziggurat(
-                SignedDiscreteZiggurat::new(std_dev, 12.0),
-            ))
+            SignedDiscreteZiggurat::from_parameters(parameters)
+                .map(SignedDiscreteGaussian::Ziggurat)
         }
-    }
-
-    /// Construct with an explicit upper bound on the standard deviation.
-    ///
-    /// Returns an error if `std_dev` is outside the range
-    /// `[0.7, max_std_dev)`.
-    ///
-    /// # Panics
-    /// Currently panics (via `unimplemented!()`) when the parameters are
-    /// valid — this constructor is reserved for future use.
-    #[inline]
-    pub fn new_with_max_limit(
-        std_dev: f64,
-        max_std_dev: f64,
-    ) -> Result<SignedDiscreteGaussian<T>, DistrErr<T>> {
-        if max_std_dev <= std_dev || std_dev < 0.7 {
-            return Err(DistrErr::InvalidStdDev {
-                std_dev,
-                modulus_minus_one: T::ZERO,
-            });
-        }
-        unimplemented!()
     }
 
     /// Returns the standard deviation of this [`SignedDiscreteGaussian<T>`].

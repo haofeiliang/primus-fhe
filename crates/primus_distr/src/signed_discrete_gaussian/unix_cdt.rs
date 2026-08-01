@@ -4,7 +4,11 @@ use primus_integer::{AsInto, Integer};
 use rand::{RngExt, distr::Distribution};
 use rug::{Float, az::Cast};
 
-use crate::utils::cdt_index_by;
+use crate::{
+    DistrErr,
+    gaussian::{GaussianParameters, UNIX_CDT_MAX_MAGNITUDE},
+    utils::cdt_index_by,
+};
 
 const PRECISION: u32 = 512;
 
@@ -20,14 +24,21 @@ pub struct SignedUnixCDTSampler<T: Integer> {
 }
 
 impl<T: Integer> SignedUnixCDTSampler<T> {
-    /// Generate UnixCDTSampler
-    pub fn new(std_dev: f64, tail_cut: f64) -> Self {
-        let mut length = (std_dev * tail_cut).floor() as usize + 1;
+    /// Generate a high-precision signed CDT sampler.
+    ///
+    /// Returns an error when the parameters are invalid, the support exceeds
+    /// the high-precision CDT limit, or `T` cannot represent it.
+    pub fn new(std_dev: f64, tail_cut: f64) -> Result<Self, DistrErr> {
+        let parameters = GaussianParameters::new(std_dev, tail_cut)?;
+        Self::from_parameters(parameters)
+    }
 
-        assert!(length <= 1024);
-        if length <= 1 {
-            length = 2;
-        }
+    pub(crate) fn from_parameters(parameters: GaussianParameters) -> Result<Self, DistrErr> {
+        let parameters = parameters
+            .validate_cdt_size(UNIX_CDT_MAX_MAGNITUDE)?
+            .validate_signed_output::<T>()?;
+        let std_dev = parameters.standard_deviation();
+        let length = parameters.maximum_magnitude() as usize + 1;
 
         let std_dev_hp = Float::with_val(PRECISION, std_dev);
         let var_hp = std_dev_hp.square();
@@ -87,11 +98,11 @@ impl<T: Integer> SignedUnixCDTSampler<T> {
             })
             .collect();
 
-        Self {
+        Ok(Self {
             std_dev,
             cdt,
             phantom: PhantomData,
-        }
+        })
     }
 
     /// Returns the standard deviation of this [`SignedUnixCDTSampler<T>`].

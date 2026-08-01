@@ -26,21 +26,25 @@ fn bench_different_sampler(c: &mut Criterion) {
         // CDTSampler — sigma ≤ 20
         if sigma <= 20.0 {
             group.bench_function(format!("CDTSampler/σ={sigma}"), |b| {
-                b.iter(|| black_box(CDTSampler::new(sigma, TAIL_CUT, MODULUS_MINUS_ONE)))
+                b.iter(|| black_box(CDTSampler::new(sigma, TAIL_CUT, MODULUS_MINUS_ONE).unwrap()))
             });
         }
 
         #[cfg(all(target_os = "linux", feature = "high_precision"))]
         if sigma <= 20.0 {
             group.bench_function(format!("UnixCDTSampler/σ={sigma}"), |b| {
-                b.iter(|| black_box(UnixCDTSampler::new(sigma, TAIL_CUT, MODULUS_MINUS_ONE)))
+                b.iter(|| {
+                    black_box(UnixCDTSampler::new(sigma, TAIL_CUT, MODULUS_MINUS_ONE).unwrap())
+                })
             });
         }
 
         // DiscreteZiggurat — sigma ≥ 10
         if sigma >= 10.0 {
             group.bench_function(format!("DiscreteZiggurat/σ={sigma}"), |b| {
-                b.iter(|| black_box(DiscreteZiggurat::new(sigma, TAIL_CUT, MODULUS_MINUS_ONE)))
+                b.iter(|| {
+                    black_box(DiscreteZiggurat::new(sigma, TAIL_CUT, MODULUS_MINUS_ONE).unwrap())
+                })
             });
         }
     }

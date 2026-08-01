@@ -254,7 +254,7 @@ fn main() {
     {
         let sigmas = [0.7, 0.8, 0.9, 1.0, 3.19, 10.0, 15.0, 20.0];
         for &sigma in &sigmas {
-            let distr = primus_distr::CDTSampler::<ValueT>::new(sigma, TAIL_CUT, Q - 1);
+            let distr = primus_distr::CDTSampler::<ValueT>::new(sigma, TAIL_CUT, Q - 1).unwrap();
             validate_sampler("CDTSampler", sigma, &distr, &mut rng);
         }
     }
@@ -263,7 +263,7 @@ fn main() {
     // {
     //     let sigmas = [10.0, 20.0, 30.0, 40.0];
     //     for &sigma in &sigmas {
-    //         let distr = primus_distr::DiscreteZiggurat::<ValueT>::new(sigma, TAIL_CUT, Q - 1);
+    //         let distr = primus_distr::DiscreteZiggurat::<ValueT>::new(sigma, TAIL_CUT, Q - 1).unwrap();
     //         validate_sampler("DiscreteZiggurat", sigma, &distr, &mut rng);
     //     }
     // }

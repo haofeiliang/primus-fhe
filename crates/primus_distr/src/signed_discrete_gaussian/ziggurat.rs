@@ -6,6 +6,8 @@ use rand::{
     distr::{Distribution, Uniform},
 };
 
+use crate::{DistrErr, gaussian::GaussianParameters};
+
 #[derive(Clone, Copy)]
 enum FallRegion {
     Left,   // x[i] + 1.0 <= std_dev
@@ -28,9 +30,19 @@ pub struct SignedDiscreteZiggurat<T: FheInt> {
 }
 
 impl<T: FheInt> SignedDiscreteZiggurat<T> {
-    /// Generate a [`SignedDiscreteZiggurat<T>`]
-    pub fn new(std_dev: f64, tail_cut: f64) -> Self {
-        let x_m = (tail_cut * std_dev).floor();
+    /// Generate a [`SignedDiscreteZiggurat<T>`].
+    ///
+    /// Returns an error when the parameters are invalid, `T` cannot represent
+    /// the signed support, or Ziggurat setup cannot represent the distribution.
+    pub fn new(std_dev: f64, tail_cut: f64) -> Result<Self, DistrErr> {
+        let parameters = GaussianParameters::new(std_dev, tail_cut)?;
+        Self::from_parameters(parameters)
+    }
+
+    pub(crate) fn from_parameters(parameters: GaussianParameters) -> Result<Self, DistrErr> {
+        let parameters = parameters.validate_signed_output::<T>()?;
+        let std_dev = parameters.standard_deviation();
+        let x_m = parameters.maximum_magnitude() as f64;
         let neg_two_std_dev_sq = std_dev * std_dev * (-2.0f64);
 
         let mut m = if x_m < 20.0 {
@@ -143,10 +155,10 @@ impl<T: FheInt> SignedDiscreteZiggurat<T> {
                 // Need more rectangles
                 m *= 2;
                 if m > 512 {
-                    panic!(
-                        "Cannot construct Ziggurat with m > 512 for std_dev={}, tail_cut={}",
-                        std_dev, tail_cut
-                    );
+                    return Err(DistrErr::ZigguratConstructionFailed {
+                        standard_deviation: std_dev,
+                        tail_cut: parameters.tail_cut(),
+                    });
                 }
                 continue 'outer;
             }
@@ -208,7 +220,7 @@ impl<T: FheInt> SignedDiscreteZiggurat<T> {
                 strategies.push(strategy);
             }
 
-            break Self {
+            break Ok(Self {
                 std_dev,
                 inv_neg_two_std_dev_sq: neg_two_std_dev_sq.recip(),
                 x,
@@ -218,7 +230,7 @@ impl<T: FheInt> SignedDiscreteZiggurat<T> {
                 sample_m: Uniform::new_inclusive(1, m).unwrap(),
                 sample_x,
                 strategies,
-            };
+            });
         }
     }
 

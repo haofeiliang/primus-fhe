@@ -2,7 +2,11 @@ use primus_integer::{AsInto, FheUint};
 use rand::{RngExt, distr::Distribution};
 use rug::{Float, az::Cast};
 
-use crate::utils::cdt_index_by;
+use crate::{
+    DistrErr,
+    gaussian::{GaussianParameters, UNIX_CDT_MAX_MAGNITUDE},
+    utils::cdt_index_by,
+};
 
 const PRECISION: u32 = 512;
 
@@ -18,14 +22,24 @@ pub struct UnixCDTSampler<T: FheUint> {
 }
 
 impl<T: FheUint> UnixCDTSampler<T> {
-    /// Generate UnixCDTSampler
-    pub fn new(std_dev: f64, tail_cut: f64, modulus_minus_one: T) -> Self {
-        let mut length = (std_dev * tail_cut).floor() as usize + 1;
+    /// Generate a high-precision CDT sampler.
+    ///
+    /// Returns an error when the parameters are invalid, the support exceeds
+    /// the high-precision CDT limit, or the modulus cannot encode it.
+    pub fn new(std_dev: f64, tail_cut: f64, modulus_minus_one: T) -> Result<Self, DistrErr> {
+        let parameters = GaussianParameters::new(std_dev, tail_cut)?;
+        Self::from_parameters(parameters, modulus_minus_one)
+    }
 
-        assert!(length <= 1024);
-        if length <= 1 {
-            length = 2;
-        }
+    pub(crate) fn from_parameters(
+        parameters: GaussianParameters,
+        modulus_minus_one: T,
+    ) -> Result<Self, DistrErr> {
+        let parameters = parameters
+            .validate_cdt_size(UNIX_CDT_MAX_MAGNITUDE)?
+            .validate_modular_output(modulus_minus_one)?;
+        let std_dev = parameters.standard_deviation();
+        let length = parameters.maximum_magnitude() as usize + 1;
 
         let std_dev_hp = Float::with_val(PRECISION, std_dev);
         let var_hp = std_dev_hp.square();
@@ -85,11 +99,11 @@ impl<T: FheUint> UnixCDTSampler<T> {
             })
             .collect();
 
-        Self {
+        Ok(Self {
             std_dev,
             modulus_minus_one,
             cdt,
-        }
+        })
     }
 
     /// Returns the standard deviation of this [`UnixCDTSampler<T>`].

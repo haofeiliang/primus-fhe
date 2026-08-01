@@ -203,7 +203,7 @@ fn compare_samplers_at_sigma(sigma: f64) {
     // CDTSampler
     {
         println!("  Testing CDTSampler (f64 precision)...");
-        let sampler = CDTSampler::<ValueT>::new(sigma, TAIL_CUT, Q - 1);
+        let sampler = CDTSampler::<ValueT>::new(sigma, TAIL_CUT, Q - 1).unwrap();
         let start = Instant::now();
         let data: Vec<ValueT> = sampler.sample_iter(&mut rng).take(N).collect();
         let elapsed = start.elapsed().as_secs_f64() * 1000.0;
@@ -225,7 +225,7 @@ fn compare_samplers_at_sigma(sigma: f64) {
     // Discrete Ziggurat
     {
         println!("  Testing Discrete Ziggurat...");
-        let sampler = DiscreteZiggurat::<ValueT>::new(sigma, TAIL_CUT, Q - 1);
+        let sampler = DiscreteZiggurat::<ValueT>::new(sigma, TAIL_CUT, Q - 1).unwrap();
         let start = Instant::now();
         let data: Vec<ValueT> = sampler.sample_iter(&mut rng).take(N).collect();
         let elapsed = start.elapsed().as_secs_f64() * 1000.0;
@@ -248,7 +248,7 @@ fn compare_samplers_at_sigma(sigma: f64) {
     #[cfg(all(target_os = "linux", feature = "high_precision"))]
     {
         println!("  Testing UnixCDTSampler (256-bit precision)...");
-        let sampler = UnixCDTSampler::<ValueT>::new(sigma, TAIL_CUT, Q - 1);
+        let sampler = UnixCDTSampler::<ValueT>::new(sigma, TAIL_CUT, Q - 1).unwrap();
         let start = Instant::now();
         let data: Vec<ValueT> = sampler.sample_iter(&mut rng).take(N).collect();
         let elapsed = start.elapsed().as_secs_f64() * 1000.0;

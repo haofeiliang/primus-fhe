@@ -24,7 +24,7 @@ fn bench_sample(c: &mut Criterion) {
     for sigma in [1.0, 3.19, 10.0, 20.0, 30.0] {
         if sigma <= 20.0 {
             let mut rng = rand::rng();
-            let sampler = CDTSampler::new(sigma, TAIL_CUT, MODULUS_MINUS_ONE);
+            let sampler = CDTSampler::new(sigma, TAIL_CUT, MODULUS_MINUS_ONE).unwrap();
             let sampler = &sampler;
             let mut buf = vec![0u64; N];
             group.bench_function(format!("CDTSampler/σ={sigma}"), |b| {
@@ -40,7 +40,7 @@ fn bench_sample(c: &mut Criterion) {
         #[cfg(all(target_os = "linux", feature = "high_precision"))]
         if sigma <= 20.0 {
             let mut rng = rand::rng();
-            let sampler = UnixCDTSampler::new(sigma, TAIL_CUT, MODULUS_MINUS_ONE);
+            let sampler = UnixCDTSampler::new(sigma, TAIL_CUT, MODULUS_MINUS_ONE).unwrap();
             let sampler = &sampler;
             let mut buf = vec![0u64; N];
             group.bench_function(format!("UnixCDTSampler/σ={sigma}"), |b| {
@@ -56,7 +56,7 @@ fn bench_sample(c: &mut Criterion) {
         // DiscreteZiggurat — large sigma only
         if sigma >= 10.0 {
             let mut rng = rand::rng();
-            let sampler = DiscreteZiggurat::new(sigma, TAIL_CUT, MODULUS_MINUS_ONE);
+            let sampler = DiscreteZiggurat::new(sigma, TAIL_CUT, MODULUS_MINUS_ONE).unwrap();
             let sampler = &sampler;
             let mut buf = vec![0u64; N];
             group.bench_function(format!("DiscreteZiggurat/σ={sigma}"), |b| {

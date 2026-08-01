@@ -11,7 +11,10 @@ pub use cdt::CDTSampler;
 pub use unix_cdt::UnixCDTSampler;
 pub use ziggurat::DiscreteZiggurat;
 
-use crate::DistrErr;
+use crate::{
+    DistrErr,
+    gaussian::{CDT_STANDARD_DEVIATION_THRESHOLD, DEFAULT_TAIL_CUT, GaussianParameters},
+};
 
 /// A centered discrete Gaussian distribution over unsigned integers.
 ///
@@ -38,49 +41,21 @@ impl<T: FheUint> DiscreteGaussian<T> {
     /// - `std_dev` — standard deviation (`σ`), must be at least 0.7.
     /// - `modulus_minus_one` — the modulus minus one, used to wrap negative
     ///   samples into the unsigned range.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when `std_dev` is smaller than 0.7 or cannot be used by
+    /// the floating-point kernels, or when the truncated support does not fit
+    /// below the supplied modulus.
     #[inline]
-    pub fn new(std_dev: f64, modulus_minus_one: T) -> Result<DiscreteGaussian<T>, DistrErr<T>> {
-        if std_dev < 0.7 {
-            Err(DistrErr::InvalidStdDev {
-                std_dev,
-                modulus_minus_one,
-            })
-        } else if std_dev <= 20.0 {
-            Ok(DiscreteGaussian::Cdt(CDTSampler::new(
-                std_dev,
-                12.0,
-                modulus_minus_one,
-            )))
+    pub fn new(std_dev: f64, modulus_minus_one: T) -> Result<DiscreteGaussian<T>, DistrErr> {
+        let parameters = GaussianParameters::new(std_dev, DEFAULT_TAIL_CUT)?;
+        if std_dev <= CDT_STANDARD_DEVIATION_THRESHOLD {
+            CDTSampler::from_parameters(parameters, modulus_minus_one).map(DiscreteGaussian::Cdt)
         } else {
-            Ok(DiscreteGaussian::Ziggurat(DiscreteZiggurat::new(
-                std_dev,
-                12.0,
-                modulus_minus_one,
-            )))
+            DiscreteZiggurat::from_parameters(parameters, modulus_minus_one)
+                .map(DiscreteGaussian::Ziggurat)
         }
-    }
-
-    /// Construct with an explicit upper bound on the standard deviation.
-    ///
-    /// Returns an error if `std_dev` is outside the range
-    /// `[0.7, max_std_dev)`.
-    ///
-    /// # Panics
-    /// Currently panics (via `unimplemented!()`) when the parameters are
-    /// valid — this constructor is reserved for future use.
-    #[inline]
-    pub fn new_with_max_limit(
-        std_dev: f64,
-        max_std_dev: f64,
-        modulus_minus_one: T,
-    ) -> Result<DiscreteGaussian<T>, DistrErr<T>> {
-        if max_std_dev <= std_dev || std_dev < 0.7 {
-            return Err(DistrErr::InvalidStdDev {
-                std_dev,
-                modulus_minus_one,
-            });
-        }
-        unimplemented!()
     }
 
     /// Returns the standard deviation of this [`DiscreteGaussian<T>`].
