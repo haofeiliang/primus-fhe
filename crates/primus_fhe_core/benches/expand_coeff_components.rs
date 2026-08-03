@@ -54,7 +54,7 @@ fn bench_expand_coeff_components(c: &mut Criterion) {
         let sk = GlweSecretKey::generate(&glwe_params, &mut rng);
         let dcrt_sk = DcrtGlweSecretKey::from_coeff_secret_key(&sk, &table);
 
-        let basis = BigUintApproxSignedBasis::new(glwe_params.cipher_modulus(), 20, None, base_q);
+        let basis = BigUintApproxSignedBasis::new(base_q, 20, None);
         let glev_params = CrtGlevParameters::with_glwe_params(&glwe_params, basis);
 
         let table = Arc::new(table);

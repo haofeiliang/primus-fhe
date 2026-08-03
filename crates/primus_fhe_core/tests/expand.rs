@@ -57,8 +57,7 @@ fn test_crt_glwe_expand_coefficients() {
     let dcrt_sk = DcrtGlweSecretKey::from_coeff_secret_key(&sk, &table);
 
     // ── Expansion key (CRT domain) ──────────────────────────────
-    let basis =
-        BigUintApproxSignedBasis::new(glwe_params.cipher_modulus(), 20, None, glwe_params.base_q());
+    let basis = BigUintApproxSignedBasis::new(glwe_params.base_q(), 20, None);
     let glev_params = CrtGlevParameters::with_glwe_params(&glwe_params, basis);
 
     let expand_key = CrtGlweExpandCoeffKey::new(
@@ -181,8 +180,7 @@ fn test_dcrt_glwe_expand_coefficients() {
     let sk = GlweSecretKey::generate(&glwe_params, &mut rng);
     let dcrt_sk = DcrtGlweSecretKey::from_coeff_secret_key(&sk, &table);
 
-    let basis =
-        BigUintApproxSignedBasis::new(glwe_params.cipher_modulus(), 20, None, glwe_params.base_q());
+    let basis = BigUintApproxSignedBasis::new(glwe_params.base_q(), 20, None);
     let glev_params = CrtGlevParameters::with_glwe_params(&glwe_params, basis);
 
     // ── Expansion key (DCRT domain) ─────────────────────────────
@@ -296,8 +294,7 @@ fn test_dcrt_glwe_expand_coefficients_parallel() {
     let sk = GlweSecretKey::generate(&glwe_params, &mut rng);
     let dcrt_sk = DcrtGlweSecretKey::from_coeff_secret_key(&sk, &table);
 
-    let basis =
-        BigUintApproxSignedBasis::new(glwe_params.cipher_modulus(), 20, None, glwe_params.base_q());
+    let basis = BigUintApproxSignedBasis::new(glwe_params.base_q(), 20, None);
     let glev_params = CrtGlevParameters::with_glwe_params(&glwe_params, basis);
 
     let expand_key = DcrtGlweExpandCoeffKey::new(
@@ -413,8 +410,7 @@ fn test_crt_glwe_expand_coefficients_parallel() {
     let sk = GlweSecretKey::generate(&glwe_params, &mut rng);
     let dcrt_sk = DcrtGlweSecretKey::from_coeff_secret_key(&sk, &table);
 
-    let basis =
-        BigUintApproxSignedBasis::new(glwe_params.cipher_modulus(), 20, None, glwe_params.base_q());
+    let basis = BigUintApproxSignedBasis::new(glwe_params.base_q(), 20, None);
     let glev_params = CrtGlevParameters::with_glwe_params(&glwe_params, basis);
 
     let expand_key = CrtGlweExpandCoeffKey::new(

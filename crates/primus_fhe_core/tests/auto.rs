@@ -82,7 +82,7 @@ fn test_crt_glwe_auto() {
     let dcrt_sk = DcrtGlweSecretKey::from_coeff_secret_key(&sk, &table);
 
     // ── Auto key: KSK for an odd-degree automorphism ────────────
-    let basis = BigUintApproxSignedBasis::new(glwe_params.cipher_modulus(), 20, None, base_q);
+    let basis = BigUintApproxSignedBasis::new(base_q, 20, None);
     let glev_params = CrtGlevParameters::with_glwe_params(&glwe_params, basis);
 
     let mut auto_degree = rng.random_range(0..poly_length * 2);
@@ -179,7 +179,7 @@ fn test_dcrt_glwe_auto() {
     let sk = GlweSecretKey::generate(&glwe_params, &mut rng);
     let dcrt_sk = DcrtGlweSecretKey::from_coeff_secret_key(&sk, &table);
 
-    let basis = BigUintApproxSignedBasis::new(glwe_params.cipher_modulus(), 20, None, base_q);
+    let basis = BigUintApproxSignedBasis::new(base_q, 20, None);
     let glev_params = CrtGlevParameters::with_glwe_params(&glwe_params, basis);
 
     let mut auto_degree = rng.random_range(0..poly_length * 2);

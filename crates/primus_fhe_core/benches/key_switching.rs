@@ -56,12 +56,7 @@ fn bench_key_switching(c: &mut Criterion) {
         let output_dcrt_sk = DcrtGlweSecretKey::from_coeff_secret_key(&output_sk, &q_table);
 
         let base_q = glwe_params.base_q();
-        let basis = BigUintApproxSignedBasis::new(
-            glwe_params.cipher_modulus(),
-            DECOMPOSITION_BASE_LOG,
-            None,
-            base_q,
-        );
+        let basis = BigUintApproxSignedBasis::new(base_q, DECOMPOSITION_BASE_LOG, None);
         let glev_params = CrtGlevParameters::with_glwe_params(&glwe_params, basis);
 
         // Key generation is intentionally outside the timed region.

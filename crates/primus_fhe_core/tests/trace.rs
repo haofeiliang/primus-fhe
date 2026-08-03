@@ -64,7 +64,7 @@ fn test_crt_glwe_trace() {
     let dcrt_sk = DcrtGlweSecretKey::from_coeff_secret_key(&sk, &table);
 
     // ── Trace key (CRT domain) ──────────────────────────────────
-    let basis = BigUintApproxSignedBasis::new(glwe_params.cipher_modulus(), 20, None, base_q);
+    let basis = BigUintApproxSignedBasis::new(base_q, 20, None);
     let glev_params = CrtGlevParameters::with_glwe_params(&glwe_params, basis);
 
     let trace_key = CrtGlweTraceKey::new(&glev_params, &sk, &dcrt_sk, Arc::new(table), &mut rng);
@@ -170,7 +170,7 @@ fn test_dcrt_glwe_trace() {
     let sk = GlweSecretKey::generate(&glwe_params, &mut rng);
     let dcrt_sk = DcrtGlweSecretKey::from_coeff_secret_key(&sk, &table);
 
-    let basis = BigUintApproxSignedBasis::new(glwe_params.cipher_modulus(), 20, None, base_q);
+    let basis = BigUintApproxSignedBasis::new(base_q, 20, None);
     let glev_params = CrtGlevParameters::with_glwe_params(&glwe_params, basis);
 
     // ── Trace key (DCRT domain) ─────────────────────────────────
@@ -268,7 +268,7 @@ fn test_dcrt_glwe_rev_trace() {
     let sk = GlweSecretKey::generate(&glwe_params, &mut rng);
     let dcrt_sk = DcrtGlweSecretKey::from_coeff_secret_key(&sk, &table);
 
-    let basis = BigUintApproxSignedBasis::new(glwe_params.cipher_modulus(), 20, None, base_q);
+    let basis = BigUintApproxSignedBasis::new(base_q, 20, None);
     let glev_params = CrtGlevParameters::with_glwe_params(&glwe_params, basis);
 
     let rev_trace_key = DcrtGlweRevTraceKey::new(&glev_params, &dcrt_sk, Arc::new(table), &mut rng);
@@ -349,7 +349,7 @@ fn test_dcrt_glwe_rev_trace_noise() {
     let sk = GlweSecretKey::generate(&glwe_params, &mut rng);
     let dcrt_sk = DcrtGlweSecretKey::from_coeff_secret_key(&sk, &table);
 
-    let basis = BigUintApproxSignedBasis::new(glwe_params.cipher_modulus(), 20, None, base_q);
+    let basis = BigUintApproxSignedBasis::new(base_q, 20, None);
     let glev_params = CrtGlevParameters::with_glwe_params(&glwe_params, basis);
 
     let table_arc = Arc::new(table);

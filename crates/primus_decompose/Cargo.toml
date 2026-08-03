@@ -11,6 +11,7 @@ primus_rns = { path = "../primus_rns" }
 
 num-traits = { workspace = true }
 serde = { workspace = true }
+thiserror = { workspace = true }
 
 [dev-dependencies]
 primus_modulus = { path = "../primus_modulus" }

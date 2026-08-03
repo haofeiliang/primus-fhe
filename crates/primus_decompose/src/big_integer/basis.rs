@@ -7,7 +7,7 @@ use primus_reduce::FieldContext;
 use primus_rns::RNSBase;
 use serde::{Deserialize, Serialize};
 
-use crate::big_integer::BigUintSignedDecomposerIter;
+use crate::big_integer::{BigUintApproxSignedBasisError, BigUintSignedDecomposerIter};
 
 use super::{BigUintValueCarryInitMode, ValueMask};
 
@@ -31,43 +31,78 @@ pub struct BigUintApproxSignedBasis<T: FheUint> {
 }
 
 impl<T: FheUint> BigUintApproxSignedBasis<T> {
-    /// Creates a decomposition basis for the given modulus.
+    /// Creates a decomposition basis for the product of the given RNS base.
     ///
     /// `log_basis` is the base-2 logarithm of the decomposition basis
     /// (`basis = 2^log_basis`). `reverse_length`, when provided, limits
     /// the number of decomposition steps to a prefix of the full chain.
+    ///
+    /// # Panics
+    ///
+    /// Panics when [`try_new`](Self::try_new) returns an error.
     #[inline]
-    pub fn new<M>(
-        modulus: BigUint<&[T]>,
-        log_basis: u32,
-        reverse_length: Option<usize>,
-        rns_base: &RNSBase<T, M>,
-    ) -> Self
+    pub fn new<M>(rns_base: &RNSBase<T, M>, log_basis: u32, reverse_length: Option<usize>) -> Self
     where
         M: FieldContext<T>,
     {
-        // FIXME: log_basis may be bigger than T::BITS
-        assert!(!modulus.0.last().unwrap().is_zero());
-        assert!(log_basis > 0 && T::BITS > log_basis);
-        assert_eq!(modulus, rns_base.moduli_product());
+        Self::try_new(rns_base, log_basis, reverse_length).unwrap_or_else(|error| {
+            panic!("failed to construct BigUint approximate signed basis: {error}")
+        })
+    }
 
+    /// Tries to create a decomposition basis for the given modulus.
+    ///
+    /// The decomposition modulus is the product of `rns_base`. `log_basis`
+    /// must satisfy `0 < log_basis < T::BITS`, and `2^log_basis` must not
+    /// exceed that modulus. `reverse_length`, when provided, must be in the
+    /// range `1..=full_decomposition_length`.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BigUintApproxSignedBasisError`] when any parameter is invalid.
+    #[inline]
+    pub fn try_new<M>(
+        rns_base: &RNSBase<T, M>,
+        log_basis: u32,
+        reverse_length: Option<usize>,
+    ) -> Result<Self, BigUintApproxSignedBasisError>
+    where
+        M: FieldContext<T>,
+    {
+        if log_basis == 0 || log_basis >= T::BITS {
+            return Err(BigUintApproxSignedBasisError::InvalidLogBasis {
+                log_basis,
+                limb_bits: T::BITS,
+            });
+        }
+
+        let modulus = rns_base.moduli_product();
         let big_uint_value_len = modulus.len();
         let unused_bits = modulus.0.last().unwrap().leading_zeros();
+        let modulus_bits_count = T::BITS * (big_uint_value_len as u32) - unused_bits;
+        if modulus_bits_count <= log_basis {
+            return Err(BigUintApproxSignedBasisError::BasisExceedsModulus);
+        }
 
         let basis = <T as ConstOne>::ONE << log_basis;
         let basis_minus_one = basis - <T as ConstOne>::ONE;
-        let modulus_bits_count = T::BITS * (big_uint_value_len as u32) - unused_bits;
         let decompose_length = modulus_bits_count / log_basis;
         let mut drop_bits = modulus_bits_count - decompose_length * log_basis;
         let mut decompose_length = decompose_length as usize;
 
         if let Some(reverse_len) = reverse_length {
-            assert!(decompose_length >= reverse_len);
+            if reverse_len == 0 {
+                return Err(BigUintApproxSignedBasisError::ZeroReverseLength);
+            }
+            if reverse_len > decompose_length {
+                return Err(BigUintApproxSignedBasisError::ReverseLengthTooLarge {
+                    reverse_length: reverse_len,
+                    full_length: decompose_length,
+                });
+            }
             decompose_length = reverse_len;
             drop_bits = modulus_bits_count - (reverse_len as u32) * log_basis;
         }
-
-        assert!(decompose_length > 0);
 
         let init_carry_mask = if drop_bits > 0 {
             let bits = drop_bits - 1;
@@ -193,7 +228,7 @@ impl<T: FheUint> BigUintApproxSignedBasis<T> {
             (None, None) => BigUintValueCarryInitMode::Plain,
         };
 
-        Self {
+        Ok(Self {
             modulus: modulus.0.to_vec(),
             basis,
             basis_minus_one,
@@ -207,7 +242,7 @@ impl<T: FheUint> BigUintApproxSignedBasis<T> {
             scalars_residue,
             moduli_count,
             value_masks,
-        }
+        })
     }
 
     /// Returns a reference to the modulus of this [`BigUintApproxSignedBasis<T>`].

@@ -56,7 +56,7 @@ fn test_external_product() {
     let dcrt_sk = DcrtGlweSecretKey::from_coeff_secret_key(&sk, &table);
 
     // ── Decomposition basis and public key ──────────────────────
-    let basis = BigUintApproxSignedBasis::new(glwe_params.cipher_modulus(), 30, None, base_q);
+    let basis = BigUintApproxSignedBasis::new(base_q, 30, None);
     let glev_params = CrtGlevParameters::with_glwe_params(&glwe_params, basis);
 
     let pk = DcrtGlwePublicKey::new(&dcrt_sk, &glwe_params, &table, &mut rng);

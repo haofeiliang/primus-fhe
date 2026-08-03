@@ -57,7 +57,7 @@ fn test_rns_glwe_ksk() {
     let dcrt_sk_2 = DcrtGlweSecretKey::from_coeff_secret_key(&sk_2, &table);
 
     // ── Key-switching key: encrypt sk_1 under sk_2 ──────────────
-    let basis = BigUintApproxSignedBasis::new(glwe_params.cipher_modulus(), 20, None, base_q);
+    let basis = BigUintApproxSignedBasis::new(base_q, 20, None);
     let glev_params = CrtGlevParameters::with_glwe_params(&glwe_params, basis);
 
     let key_switching_key = DcrtGlweKeySwitchingKey::generate(

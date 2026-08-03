@@ -26,7 +26,7 @@ mod tests {
         let rns_base = RNSBase::new(&moduli).unwrap();
         let composed_modulus = rns_base.moduli_product();
         let unused_bits = composed_modulus.0.last().unwrap().leading_zeros();
-        let basis = BigUintApproxSignedBasis::new(composed_modulus, 7, None, &rns_base);
+        let basis = BigUintApproxSignedBasis::new(&rns_base, 7, None);
 
         println!("decompose_length: {}", basis.decompose_length());
 
@@ -146,7 +146,7 @@ mod tests {
 
         let rns_base = RNSBase::new(&moduli).unwrap();
         let composed_modulus = rns_base.moduli_product();
-        let basis = BigUintApproxSignedBasis::new(composed_modulus, 7, None, &rns_base);
+        let basis = BigUintApproxSignedBasis::new(&rns_base, 7, None);
 
         // make test simple
         assert!(basis.drop_bits() < ValueT::BITS);
@@ -215,7 +215,7 @@ mod tests {
         let rns_base = RNSBase::new(&moduli).unwrap();
         let modulus = rns_base.moduli_product();
         let big_uint_value_len = modulus.len();
-        let basis = BigUintApproxSignedBasis::new(modulus, 5, None, &rns_base);
+        let basis = BigUintApproxSignedBasis::new(&rns_base, 5, None);
         let basis_value = basis.basis_value();
 
         let difference_bound = basis.approximate_error_bound();
@@ -325,8 +325,7 @@ mod tests {
 
         let rns_base = RNSBase::new(&moduli).unwrap();
         let big_uint_value_len = rns_base.big_uint_value_len();
-        let composed_modulus = rns_base.moduli_product();
-        let basis = BigUintApproxSignedBasis::new(composed_modulus, 5, None, &rns_base);
+        let basis = BigUintApproxSignedBasis::new(&rns_base, 5, None);
 
         assert_eq!(moduli_count, 2);
         assert_eq!(big_uint_value_len, 2);
@@ -398,8 +397,7 @@ mod tests {
         let moduli = moduli_value.map(BarrettModulus::new);
 
         let rns_base = RNSBase::new(&moduli).unwrap();
-        let composed_modulus = rns_base.moduli_product();
-        let basis = BigUintApproxSignedBasis::new(composed_modulus, 5, None, &rns_base);
+        let basis = BigUintApproxSignedBasis::new(&rns_base, 5, None);
 
         let modulus: WideT = 134215681 * 134176769;
         let random_values: Vec<WideT> = Uniform::new(0, modulus)
