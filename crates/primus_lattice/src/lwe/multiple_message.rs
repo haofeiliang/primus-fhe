@@ -245,15 +245,24 @@ impl<T: FheUint> MultiMsgLwe<Vec<T>> {
     }
 
     /// Sample extract all [`Lwe<T>`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if `msg_count` is zero or exceeds the LWE dimension.
     #[inline]
     pub fn extract_all<M>(&self, msg_count: usize, modulus: M) -> Vec<Lwe<Vec<T>>>
     where
         M: Copy + ReduceNegAssign<T>,
     {
+        assert!(
+            (1..=self.0.len() / 2).contains(&msg_count),
+            "message count must be positive and not exceed the LWE dimension"
+        );
+
         let dimension = self.0.len() - msg_count;
         let mut result = Vec::with_capacity(msg_count);
 
-        let mut data = self.0[..dimension].to_vec();
+        let mut data = self.0[..dimension + 1].to_vec();
         self.0[dimension + 1..].iter().for_each(|&b| {
             let lwe = Lwe::new(data.clone());
             result.push(lwe);
