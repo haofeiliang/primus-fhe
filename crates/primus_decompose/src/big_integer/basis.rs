@@ -307,7 +307,7 @@ impl<T: FheUint> BigUintApproxSignedBasis<T> {
     where
         A: Data<Elem = T>,
     {
-        assert_eq!(value.len(), self.big_uint_value_len());
+        debug_assert_eq!(value.len(), self.big_uint_value_len());
         let value_digits = value.0.as_slice();
 
         match &self.value_carry_init_mode {
@@ -343,7 +343,7 @@ impl<T: FheUint> BigUintApproxSignedBasis<T> {
     #[inline]
     pub fn init_value_carry_slice_inplace(&self, values: &mut [T], carries: &mut [bool]) {
         let big_uint_value_len = self.big_uint_value_len();
-        assert_eq!(values.len(), carries.len() * big_uint_value_len);
+        debug_assert_eq!(values.len(), carries.len() * big_uint_value_len);
 
         match &self.value_carry_init_mode {
             BigUintValueCarryInitMode::AdjustAndCarry {
@@ -389,8 +389,8 @@ impl<T: FheUint> BigUintApproxSignedBasis<T> {
         carries: &mut [bool],
     ) {
         let big_uint_value_len = self.big_uint_value_len();
-        assert_eq!(big_uint_values.len(), adjust_big_uint_values.len());
-        assert_eq!(big_uint_values.len(), carries.len() * big_uint_value_len);
+        debug_assert_eq!(big_uint_values.len(), adjust_big_uint_values.len());
+        debug_assert_eq!(big_uint_values.len(), carries.len() * big_uint_value_len);
 
         match &self.value_carry_init_mode {
             BigUintValueCarryInitMode::AdjustAndCarry {

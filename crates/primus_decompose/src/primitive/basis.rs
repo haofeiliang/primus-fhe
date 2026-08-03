@@ -347,7 +347,7 @@ impl<T: FheUint> ApproxSignedBasis<T> {
     /// `[0, q)`. With the implicit native modulus, every value of `T` is valid.
     #[inline]
     pub fn init_value_carry_slice_in_place(&self, values: &mut [T], carries: &mut [bool]) {
-        assert_eq!(values.len(), carries.len());
+        debug_assert_eq!(values.len(), carries.len());
 
         match self.value_carry_init_mode {
             // When both adjustment and carry extraction are needed, do them in
@@ -393,8 +393,8 @@ impl<T: FheUint> ApproxSignedBasis<T> {
         adjust_values: &mut [T],
         carries: &mut [bool],
     ) {
-        assert_eq!(values.len(), adjust_values.len());
-        assert_eq!(values.len(), carries.len());
+        debug_assert_eq!(values.len(), adjust_values.len());
+        debug_assert_eq!(values.len(), carries.len());
 
         match self.value_carry_init_mode {
             // Compute the adjusted value once, then use that same value for the
@@ -462,7 +462,7 @@ impl<T: FheUint> ApproxSignedBasis<T> {
     /// or [`ValueCarryInitMode::Plain`]).
     #[inline]
     pub fn init_carry_slice(&self, values: &[T], carries: &mut [bool]) {
-        assert_eq!(values.len(), carries.len());
+        debug_assert_eq!(values.len(), carries.len());
         match self.value_carry_init_mode {
             ValueCarryInitMode::CarryOnly { mask } => {
                 values

@@ -92,7 +92,7 @@ where
         M: RingContext<T>,
         B: RawData<Elem = T> + DataMut,
     {
-        assert!(poly_length > 0);
+        debug_assert!(poly_length > 0);
         debug_assert!(self.as_ref().len().is_multiple_of(poly_length));
         debug_assert!(output.dimension().is_multiple_of(poly_length));
 
@@ -124,12 +124,12 @@ where
         M: RingContext<T>,
         B: RawData<Elem = T> + DataMut,
     {
-        assert!(poly_length > 0);
+        debug_assert!(poly_length > 0);
         debug_assert!(self.as_ref().len().is_multiple_of(poly_length));
 
         let mask_len = self.as_ref().len() - poly_length;
         let active_key_len = output.dimension();
-        assert!((1..=mask_len).contains(&active_key_len));
+        debug_assert!((1..=mask_len).contains(&active_key_len));
 
         let (output_mask, output_body) = output.a_b_mut();
         for (mask, extracted) in self.as_ref()[..mask_len]
@@ -193,7 +193,7 @@ where
         debug_assert!(poly_length >= 2 && poly_length.is_power_of_two());
         debug_assert!(exponent < 2 * poly_length);
         debug_assert_eq!(self.as_ref().len(), output.as_ref().len());
-        debug_assert_eq!(self.as_ref().len() % poly_length, 0);
+        debug_assert!(self.as_ref().len().is_multiple_of(poly_length));
 
         let shift = exponent & (poly_length - 1);
         let negate_rotation = exponent >= poly_length;
@@ -293,11 +293,11 @@ where
         M: RingContext<T>,
         B: RawData<Elem = T> + DataMut,
     {
-        assert!(poly_length > 0);
-        assert!(self.dimension() > 0);
+        debug_assert!(poly_length > 0);
+        debug_assert!(self.dimension() > 0);
 
         let output_mask_len = self.dimension().next_multiple_of(poly_length);
-        assert_eq!(output.as_ref().len(), output_mask_len + poly_length);
+        debug_assert_eq!(output.as_ref().len(), output_mask_len + poly_length);
 
         let (input_mask, input_body) = self.a_b();
         let (output_mask, output_body) = output.as_mut().split_at_mut(output_mask_len);
