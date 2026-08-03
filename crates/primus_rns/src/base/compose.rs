@@ -1,5 +1,3 @@
-use core::slice::Iter;
-
 use itertools::izip;
 use primus_data::{Data, DataMut, RawData};
 use primus_factor::FactorMul;
@@ -96,16 +94,15 @@ where
 
         let big_uint_value_len = self.big_uint_value_len();
 
-        let mut iters: Vec<Iter<'_, T>> = multi_residues
-            .chunks_exact(value_count)
-            .map(|s| s.iter())
-            .collect();
-
-        for ref mut value in BigUintIterMut::new(big_uint_values, big_uint_value_len) {
-            for (iter, residue) in iters.iter_mut().zip(scratch.iter_mut()) {
-                *residue = *iter.next().unwrap();
+        for (value_index, mut value) in
+            BigUintIterMut::new(big_uint_values, big_uint_value_len).enumerate()
+        {
+            let mut input_index = value_index;
+            for residue in scratch.iter_mut() {
+                *residue = multi_residues[input_index];
+                input_index += value_count;
             }
-            self.compose_to_kernel(scratch, value);
+            self.compose_to_kernel(scratch, &mut value);
         }
     }
 
