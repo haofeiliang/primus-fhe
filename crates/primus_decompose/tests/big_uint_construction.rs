@@ -9,6 +9,13 @@ fn try_new_validates_big_uint_basis_parameters() {
 
     assert!(BigUintApproxSignedBasis::try_new(&rns_base, 4, None).is_ok());
     assert_eq!(
+        BigUintApproxSignedBasis::try_new(&rns_base, 1, None).unwrap_err(),
+        BigUintApproxSignedBasisError::InvalidLogBasis {
+            log_basis: 1,
+            limb_bits: 32,
+        }
+    );
+    assert_eq!(
         BigUintApproxSignedBasis::try_new(&rns_base, 32, None).unwrap_err(),
         BigUintApproxSignedBasisError::InvalidLogBasis {
             log_basis: 32,

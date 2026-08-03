@@ -2,7 +2,7 @@
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum BigUintApproxSignedBasisError {
     /// The logarithm of the decomposition basis is outside the supported range.
-    #[error("log_basis must satisfy 0 < log_basis < {limb_bits}, got {log_basis}")]
+    #[error("log_basis must satisfy 2 <= log_basis < {limb_bits}, got {log_basis}")]
     InvalidLogBasis {
         /// Requested base-2 logarithm.
         log_basis: u32,

@@ -34,8 +34,9 @@ impl<T: FheUint> BigUintApproxSignedBasis<T> {
     /// Creates a decomposition basis for the product of the given RNS base.
     ///
     /// `log_basis` is the base-2 logarithm of the decomposition basis
-    /// (`basis = 2^log_basis`). `reverse_length`, when provided, limits
-    /// the number of decomposition steps to a prefix of the full chain.
+    /// (`basis = 2^log_basis`) and must satisfy `2 <= log_basis < T::BITS`.
+    /// `reverse_length`, when provided, limits the number of decomposition
+    /// steps to a prefix of the full chain.
     ///
     /// # Panics
     ///
@@ -53,7 +54,7 @@ impl<T: FheUint> BigUintApproxSignedBasis<T> {
     /// Tries to create a decomposition basis for the given modulus.
     ///
     /// The decomposition modulus is the product of `rns_base`. `log_basis`
-    /// must satisfy `0 < log_basis < T::BITS`, and `2^log_basis` must not
+    /// must satisfy `2 <= log_basis < T::BITS`, and `2^log_basis` must not
     /// exceed that modulus. `reverse_length`, when provided, must be in the
     /// range `1..=full_decomposition_length`.
     ///
@@ -69,7 +70,7 @@ impl<T: FheUint> BigUintApproxSignedBasis<T> {
     where
         M: FieldContext<T>,
     {
-        if log_basis == 0 || log_basis >= T::BITS {
+        if log_basis < 2 || log_basis >= T::BITS {
             return Err(BigUintApproxSignedBasisError::InvalidLogBasis {
                 log_basis,
                 limb_bits: T::BITS,
@@ -113,34 +114,9 @@ impl<T: FheUint> BigUintApproxSignedBasis<T> {
             None
         };
 
-        let carry_mask = if log_basis == 1 {
-            T::ONE << 1u32
-        } else {
-            (T::ONE << log_basis) | (T::ONE << (log_basis - 1))
-        };
+        let carry_mask = (T::ONE << log_basis) | (T::ONE << (log_basis - 1));
 
-        let split_value: Option<BigUint<Vec<T>>> = if log_basis == 1 {
-            if drop_bits == 0 {
-                None
-            } else {
-                let mut value = BigUint(vec![T::ZERO; big_uint_value_len]);
-                for _ in 0..decompose_length {
-                    let carry = value.left_shift_assign(1);
-                    assert_eq!(carry, T::ZERO);
-                    value[0] |= T::ONE;
-                }
-                let carry = value.left_shift_assign(1);
-                assert_eq!(carry, T::ZERO);
-                value[0] |= T::ONE;
-                let carry = value.left_shift_assign(drop_bits - 1);
-                assert_eq!(carry, T::ZERO);
-                if value.cmp(&modulus).is_ge() {
-                    None
-                } else {
-                    Some(value)
-                }
-            }
-        } else {
+        let split_value: Option<BigUint<Vec<T>>> = {
             let mut value = BigUint(vec![T::ZERO; big_uint_value_len]);
             for _ in 0..decompose_length {
                 let carry = value.left_shift_assign(log_basis);
