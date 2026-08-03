@@ -23,5 +23,3 @@ pub mod rgsw;
 pub mod rlev;
 /// Ring-LWE (RLWE) ciphertexts.
 pub mod rlwe;
-/// TFHE semantic aliases and Fourier-domain operations.
-pub mod tfhe;

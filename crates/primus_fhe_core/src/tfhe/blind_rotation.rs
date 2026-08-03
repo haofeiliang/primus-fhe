@@ -6,10 +6,9 @@ use primus_ntt::NttTable;
 use primus_reduce::{FieldContext, RingContext};
 
 use primus_lattice::{
-    context::{TfheFftContext, TfheNttContext},
+    context::{FourierExternalProductContext, NttExternalProductContext},
     glwe::{Glwe, TorusGlwe},
     lwe::Lwe,
-    tfhe::cmux::{fourier_cmux_monomial_to, ntt_cmux_monomial_to},
 };
 
 use crate::{
@@ -20,13 +19,13 @@ use crate::{
 /// Reusable workspace for Fourier blind rotation.
 pub struct FourierBlindRotationContext<T: TorusFftValue> {
     scratch: TorusGlwe<Vec<T>>,
-    external_product: TfheFftContext<T>,
+    external_product: FourierExternalProductContext<T>,
 }
 
 impl<T: TorusFftValue> FourierBlindRotationContext<T> {
     /// Creates a workspace for a GLWE dimension and polynomial length.
     pub fn new(glwe_dimension: usize, poly_length: usize) -> Self {
-        let external_product = TfheFftContext::new(glwe_dimension, poly_length);
+        let external_product = FourierExternalProductContext::new(glwe_dimension, poly_length);
         let scratch = TorusGlwe::zero(external_product.size().glwe_len());
         Self {
             scratch,
@@ -46,13 +45,13 @@ impl<T: TorusFftValue> FourierBlindRotationContext<T> {
 /// Reusable workspace for NTT blind rotation.
 pub struct NttBlindRotationContext<T: FheUint> {
     scratch: Glwe<Vec<T>>,
-    external_product: TfheNttContext<T>,
+    external_product: NttExternalProductContext<T>,
 }
 
 impl<T: FheUint> NttBlindRotationContext<T> {
     /// Creates a workspace for a GLWE dimension and polynomial length.
     pub fn new(glwe_dimension: usize, poly_length: usize) -> Self {
-        let external_product = TfheNttContext::new(glwe_dimension, poly_length);
+        let external_product = NttExternalProductContext::new(glwe_dimension, poly_length);
         let scratch = Glwe::zero(external_product.size().glwe_len());
         Self {
             scratch,
@@ -255,8 +254,7 @@ fn fourier_blind_rotate_with<T, Table, A, B, C, F>(
             continue;
         }
         if output_is_current {
-            fourier_cmux_monomial_to(
-                &control,
+            control.cmux_monomial_to(
                 output,
                 exponent,
                 scratch,
@@ -265,8 +263,7 @@ fn fourier_blind_rotate_with<T, Table, A, B, C, F>(
                 external_product,
             );
         } else {
-            fourier_cmux_monomial_to(
-                &control,
+            control.cmux_monomial_to(
                 scratch,
                 exponent,
                 output,
@@ -325,8 +322,7 @@ fn ntt_blind_rotate_with<T, M, Table, A, B, C, F>(
             continue;
         }
         if output_is_current {
-            ntt_cmux_monomial_to(
-                &control,
+            control.cmux_monomial_to(
                 output,
                 exponent,
                 scratch,
@@ -336,8 +332,7 @@ fn ntt_blind_rotate_with<T, M, Table, A, B, C, F>(
                 external_product,
             );
         } else {
-            ntt_cmux_monomial_to(
-                &control,
+            control.cmux_monomial_to(
                 scratch,
                 exponent,
                 output,

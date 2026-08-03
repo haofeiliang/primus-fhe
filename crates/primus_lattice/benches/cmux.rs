@@ -4,10 +4,9 @@ use criterion::{Criterion, criterion_group, criterion_main};
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{FftEngine, FftTable, RustFftTable};
 use primus_lattice::{
-    context::{TfheFftContext, TfheNttContext},
+    context::{FourierExternalProductContext, NttExternalProductContext},
     ggsw::{FourierGgswOwned, NttGgsw},
     glwe::{Glwe, TorusGlwe},
-    tfhe::cmux::{fourier_cmux_to, ntt_cmux_to},
 };
 use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, UintNttTable};
@@ -24,12 +23,11 @@ fn fourier_cmux(c: &mut Criterion) {
     let ct0 = TorusGlwe::new(vec![1u64; components * fft.poly_length()]);
     let ct1 = TorusGlwe::new(vec![2u64; components * fft.poly_length()]);
     let mut output: TorusGlwe<Vec<u64>> = TorusGlwe::zero(components * fft.poly_length());
-    let mut context = TfheFftContext::new(dimension, fft.poly_length());
+    let mut context = FourierExternalProductContext::new(dimension, fft.poly_length());
 
     c.bench_function("cmux/fourier/n1024/k1/l4", |b| {
         b.iter(|| {
-            fourier_cmux_to(
-                black_box(&control),
+            black_box(&control).cmux_to(
                 black_box(&ct0),
                 black_box(&ct1),
                 black_box(&mut output),
@@ -54,12 +52,11 @@ fn ntt_cmux(c: &mut Criterion) {
     let ct0 = Glwe::new(vec![1u32; components * ntt.poly_length()]);
     let ct1 = Glwe::new(vec![2u32; components * ntt.poly_length()]);
     let mut output: Glwe<Vec<u32>> = Glwe::zero(components * ntt.poly_length());
-    let mut context = TfheNttContext::new(dimension, ntt.poly_length());
+    let mut context = NttExternalProductContext::new(dimension, ntt.poly_length());
 
     c.bench_function("cmux/ntt/n1024/k1/l4", |b| {
         b.iter(|| {
-            ntt_cmux_to(
-                black_box(&control),
+            black_box(&control).cmux_to(
                 black_box(&ct0),
                 black_box(&ct1),
                 black_box(&mut output),

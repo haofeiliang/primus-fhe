@@ -1,0 +1,180 @@
+//! GGSW external products in the Fourier and NTT domains.
+
+use primus_data::{Data, DataMut, RawData};
+use primus_decompose::primitive::ApproxSignedBasis;
+use primus_fft::{Complex64, FftEngine, FftTable, TorusFftValue};
+use primus_integer::FheUint;
+use primus_ntt::NttTable;
+use primus_poly::{FourierPolynomial, NttPolynomial};
+use primus_reduce::FieldContext;
+
+use crate::{
+    context::{FourierExternalProductContext, NttExternalProductContext},
+    glwe::{Glwe, TorusGlwe},
+};
+
+use super::{FourierGgsw, NttGgsw};
+
+impl<S> FourierGgsw<S>
+where
+    S: RawData<Elem = Complex64>,
+{
+    /// Computes `output = self external_product input`.
+    ///
+    /// This operation uses the implicit native torus modulus. `input` and
+    /// `output` are coefficient-domain torus GLWE ciphertexts. `basis` must be
+    /// the decomposition basis used to construct `self`.
+    pub fn external_product_to<T, Table, A, C>(
+        &self,
+        input: &TorusGlwe<A>,
+        output: &mut TorusGlwe<C>,
+        basis: &ApproxSignedBasis<T>,
+        fft: &mut FftEngine<'_, Table>,
+        context: &mut FourierExternalProductContext<T>,
+    ) where
+        T: TorusFftValue,
+        Table: FftTable,
+        A: RawData<Elem = T> + Data,
+        C: RawData<Elem = T> + DataMut,
+        S: RawData<Elem = Complex64> + Data,
+    {
+        debug_assert_eq!(output.as_ref().len(), context.size().glwe_len());
+        self.external_product_accumulate(input, basis, fft, context);
+        context.fourier_accumulator.write_torus_form(output, fft);
+    }
+
+    pub(super) fn external_product_accumulate<T, Table, A>(
+        &self,
+        input: &TorusGlwe<A>,
+        basis: &ApproxSignedBasis<T>,
+        fft: &mut FftEngine<'_, Table>,
+        context: &mut FourierExternalProductContext<T>,
+    ) where
+        T: TorusFftValue,
+        Table: FftTable,
+        A: RawData<Elem = T> + Data,
+        S: RawData<Elem = Complex64> + Data,
+    {
+        let size = context.size();
+        let poly_len = size.poly_length();
+        let fourier_len = poly_len / 2;
+        let glwe_fourier_len = size.fourier_glwe_len();
+        let glev_len = basis.decompose_length() * glwe_fourier_len;
+
+        debug_assert_eq!(fft.poly_length(), poly_len);
+        debug_assert_eq!(fft.fourier_length(), fourier_len);
+        debug_assert_eq!(basis.modulus(), None);
+        debug_assert_eq!(input.as_ref().len(), size.glwe_len());
+        debug_assert_eq!(self.as_ref().len(), size.component_count() * glev_len);
+        debug_assert_eq!(context.carries.len(), poly_len);
+        debug_assert_eq!(context.decomposed_poly.len(), poly_len);
+        debug_assert_eq!(context.decomposed_fourier.len(), fourier_len);
+        debug_assert_eq!(context.fourier_accumulator.0.len(), glwe_fourier_len);
+
+        context.fourier_accumulator.set_zero();
+
+        for (coeff_poly, key_row) in input.iter_poly(poly_len).zip(self.iter_glev(glev_len)) {
+            basis.init_carry_slice(coeff_poly.0, &mut context.carries);
+            for (decomposer, key_glwe) in basis
+                .decompose_iter()
+                .zip(key_row.iter_glwe(glwe_fourier_len))
+            {
+                decomposer.decompose_slice_to(
+                    coeff_poly.0,
+                    &mut context.decomposed_poly,
+                    &mut context.carries,
+                );
+                fft.forward_as_integer(&context.decomposed_poly, &mut context.decomposed_fourier);
+                context.fourier_accumulator.add_mul_fourier_poly_assign(
+                    &FourierPolynomial::new(context.decomposed_fourier.as_slice()),
+                    &key_glwe,
+                );
+            }
+        }
+    }
+}
+
+impl<S> NttGgsw<S>
+where
+    S: RawData,
+    S::Elem: FheUint,
+{
+    /// Computes `output = self external_product input`.
+    ///
+    /// The input and output are coefficient-domain GLWE ciphertexts with every
+    /// coefficient reduced to `[0, q)`. `basis` and `modulus` must match those
+    /// used to construct `self`.
+    pub fn external_product_to<T, M, Table, A, C>(
+        &self,
+        input: &Glwe<A>,
+        output: &mut Glwe<C>,
+        basis: &ApproxSignedBasis<T>,
+        modulus: M,
+        ntt: &Table,
+        context: &mut NttExternalProductContext<T>,
+    ) where
+        T: FheUint,
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+        A: RawData<Elem = T> + Data,
+        C: RawData<Elem = T> + DataMut,
+        S: RawData<Elem = T> + Data,
+    {
+        debug_assert_eq!(output.as_ref().len(), context.size().glwe_len());
+        self.external_product_accumulate(input, basis, modulus, ntt, context);
+        context.ntt_accumulator.write_coeff_form(output, ntt);
+    }
+
+    pub(super) fn external_product_accumulate<T, M, Table, A>(
+        &self,
+        input: &Glwe<A>,
+        basis: &ApproxSignedBasis<T>,
+        modulus: M,
+        ntt: &Table,
+        context: &mut NttExternalProductContext<T>,
+    ) where
+        T: FheUint,
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+        A: RawData<Elem = T> + Data,
+        S: RawData<Elem = T> + Data,
+    {
+        let size = context.size();
+        let poly_len = size.poly_length();
+        let glwe_len = size.glwe_len();
+        let glev_len = basis.decompose_length() * glwe_len;
+
+        debug_assert_eq!(ntt.poly_length(), poly_len);
+        debug_assert_eq!(basis.modulus(), Some(modulus.value()));
+        debug_assert_eq!(input.as_ref().len(), glwe_len);
+        debug_assert_eq!(self.as_ref().len(), size.component_count() * glev_len);
+        debug_assert_eq!(context.adjusted_poly.len(), poly_len);
+        debug_assert_eq!(context.carries.len(), poly_len);
+        debug_assert_eq!(context.decomposed_ntt.len(), poly_len);
+        debug_assert_eq!(context.ntt_accumulator.as_ref().len(), glwe_len);
+
+        context.ntt_accumulator.set_zero();
+
+        for (coeff_poly, key_row) in input.iter_poly(poly_len).zip(self.iter_ntt_glev(glev_len)) {
+            basis.init_value_carry_slice_to(
+                coeff_poly.as_ref(),
+                &mut context.adjusted_poly,
+                &mut context.carries,
+            );
+            for (decomposer, key_glwe) in
+                basis.decompose_iter().zip(key_row.iter_ntt_glwe(glwe_len))
+            {
+                decomposer.decompose_slice_to(
+                    &context.adjusted_poly,
+                    &mut context.decomposed_ntt,
+                    &mut context.carries,
+                );
+                ntt.transform_slice(&mut context.decomposed_ntt);
+                let digit = NttPolynomial::new(context.decomposed_ntt.as_slice());
+                context
+                    .ntt_accumulator
+                    .add_mul_ntt_polynomial_assign(&digit, &key_glwe, modulus);
+            }
+        }
+    }
+}

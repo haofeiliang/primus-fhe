@@ -1,6 +1,5 @@
+mod external_product;
 mod glev;
-/// Scratch buffers for TFHE external product.
-pub mod tfhe;
 
+pub use external_product::{FourierExternalProductContext, GlweSize, NttExternalProductContext};
 pub use glev::{DcrtGlevContext, DcrtGlevContextRefMut};
-pub use tfhe::{GlweSize, TfheFftContext, TfheNttContext};

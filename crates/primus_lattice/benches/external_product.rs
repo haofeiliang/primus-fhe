@@ -3,10 +3,7 @@ use std::hint::black_box;
 use criterion::{Criterion, criterion_group, criterion_main};
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{FftEngine, FftTable, RustFftTable};
-use primus_lattice::{
-    context::tfhe::TfheFftContext, ggsw::FourierGgswOwned, glwe::Glwe,
-    tfhe::external_product::fourier_external_product_to,
-};
+use primus_lattice::{context::FourierExternalProductContext, ggsw::FourierGgswOwned, glwe::Glwe};
 
 fn external_product(c: &mut Criterion) {
     let fft = RustFftTable::new(10).unwrap();
@@ -19,12 +16,11 @@ fn external_product(c: &mut Criterion) {
         components * basis.decompose_length() * components * fft.fourier_length(),
     );
     let mut output = Glwe::new(vec![0u64; components * fft.poly_length()]);
-    let mut context = TfheFftContext::new(dimension, fft.poly_length());
+    let mut context = FourierExternalProductContext::new(dimension, fft.poly_length());
     c.bench_function("external_product/rustfft/n1024/k1/l4", |b| {
         b.iter(|| {
-            fourier_external_product_to(
+            black_box(&key).external_product_to(
                 black_box(&input),
-                black_box(&key),
                 black_box(&mut output),
                 black_box(&basis),
                 black_box(&mut engine),

@@ -14,14 +14,10 @@ pub struct GlweSize {
 impl GlweSize {
     /// Creates and validates a GLWE layout.
     pub fn new(poly_length: usize, glwe_dimension: usize) -> Self {
-        assert!(poly_length >= 2);
-        assert!(poly_length.is_power_of_two());
-        let component_count = glwe_dimension
-            .checked_add(1)
-            .expect("GLWE component count overflow");
-        let glwe_len = component_count
-            .checked_mul(poly_length)
-            .expect("GLWE length overflow");
+        debug_assert!(poly_length >= 2 && poly_length.is_power_of_two());
+
+        let glwe_len = (glwe_dimension + 1) * poly_length;
+
         Self {
             poly_length,
             glwe_dimension,
@@ -60,7 +56,7 @@ impl GlweSize {
     }
 }
 
-/// Pre-allocated scratch buffers for the TFHE external product.
+/// Pre-allocated scratch buffers for a native-torus Fourier external product.
 ///
 /// All allocations and contract checks happen when the context is constructed
 /// or resized. The external-product hot path only mutates its internal buffers.
@@ -69,7 +65,7 @@ impl GlweSize {
 ///
 /// `glwe_dimension` is the count of *mask* polynomials (`k`). The
 /// accumulator is sized for `glwe_dimension + 1` polynomials (k mask + 1 body).
-pub struct TfheFftContext<T: TorusFftValue> {
+pub struct FourierExternalProductContext<T: TorusFftValue> {
     size: GlweSize,
     /// Carry bits, one per coefficient (length = `poly_length`).
     pub(crate) carries: Vec<bool>,
@@ -81,7 +77,7 @@ pub struct TfheFftContext<T: TorusFftValue> {
     pub(crate) fourier_accumulator: FourierGlwe<Vec<Complex64>>,
 }
 
-impl<T: TorusFftValue> TfheFftContext<T> {
+impl<T: TorusFftValue> FourierExternalProductContext<T> {
     /// Creates a new context with all buffers pre-allocated.
     ///
     /// `glwe_dimension` is the mask count `k`; the accumulator is sized for
@@ -121,11 +117,11 @@ impl<T: TorusFftValue> TfheFftContext<T> {
     }
 }
 
-/// Pre-allocated scratch buffers for the NTT TFHE external product.
+/// Pre-allocated scratch buffers for an NTT external product.
 ///
 /// `glwe_dimension` is the number of mask polynomials. The accumulator holds
 /// `glwe_dimension + 1` NTT polynomials, including the body.
-pub struct TfheNttContext<T: FheUint> {
+pub struct NttExternalProductContext<T: FheUint> {
     size: GlweSize,
     /// Adjusted coefficients used by decomposition (length = `poly_length`).
     pub(crate) adjusted_poly: Vec<T>,
@@ -137,7 +133,7 @@ pub struct TfheNttContext<T: FheUint> {
     pub(crate) ntt_accumulator: NttGlwe<Vec<T>>,
 }
 
-impl<T: FheUint> TfheNttContext<T> {
+impl<T: FheUint> NttExternalProductContext<T> {
     /// Creates a context with all buffers pre-allocated.
     pub fn new(glwe_dimension: usize, poly_length: usize) -> Self {
         let size = GlweSize::new(poly_length, glwe_dimension);

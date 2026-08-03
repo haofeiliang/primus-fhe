@@ -6,11 +6,10 @@ use primus_fhe_core::{
     GlweSecretKey, NttGadgetEncryptContext, NttGlweSecretKey, RingSecretKeyType,
 };
 use primus_lattice::{
-    context::tfhe::{TfheFftContext, TfheNttContext},
+    context::{FourierExternalProductContext, NttExternalProductContext},
     ggsw::{FourierGgswOwned, NttGgsw},
     glev::{FourierGlevOwned, NttGlev},
     glwe::{FourierGlweOwned, Glwe, NttGlwe, TorusGlwe},
-    tfhe::external_product::{fourier_external_product_to, ntt_external_product_to},
 };
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntt::{NttTable, UintNttTable};
@@ -138,10 +137,9 @@ fn fourier_glev_generation_and_ggsw_external_product() {
     input_fourier.write_torus_form(&mut input, &mut fft);
 
     let mut output: TorusGlwe<Vec<u32>> = TorusGlwe::zero(params.glwe_len());
-    let mut external_product_context = TfheFftContext::new(DIMENSION, POLY_LENGTH);
-    fourier_external_product_to(
+    let mut external_product_context = FourierExternalProductContext::new(DIMENSION, POLY_LENGTH);
+    ggsw.external_product_to(
         &input,
-        &ggsw,
         &mut output,
         params.basis(),
         &mut fft,
@@ -281,10 +279,9 @@ fn ntt_glev_and_ggsw_generation() {
     secret_key.encrypt_to(&plaintext, &mut input_ntt, &glwe_params, &ntt, &mut rng);
     let input = input_ntt.into_coeff_form(&ntt);
     let mut output: Glwe<Vec<u32>> = Glwe::zero(params.glwe_len());
-    let mut external_product_context = TfheNttContext::new(DIMENSION, POLY_LENGTH);
-    ntt_external_product_to(
+    let mut external_product_context = NttExternalProductContext::new(DIMENSION, POLY_LENGTH);
+    ggsw.external_product_to(
         &input,
-        &ggsw,
         &mut output,
         params.basis(),
         modulus,

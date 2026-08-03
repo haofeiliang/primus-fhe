@@ -6,10 +6,9 @@ use primus_fhe_core::{
     NttGlweSecretKey, RingSecretKeyType,
 };
 use primus_lattice::{
-    context::{TfheFftContext, TfheNttContext},
+    context::{FourierExternalProductContext, NttExternalProductContext},
     ggsw::{FourierGgswOwned, NttGgsw},
     glwe::{FourierGlweOwned, Glwe, NttGlwe, TorusGlwe},
-    tfhe::cmux::{fourier_cmux_to, ntt_cmux_to},
 };
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntt::{NttTable, UintNttTable};
@@ -45,7 +44,7 @@ fn fourier_cmux_selects_requested_glwe() {
     let mut decrypt_context = FourierGlweDecryptContext::new(POLY_LENGTH);
     let mut gadget_context =
         FourierGadgetEncryptContext::new(POLY_LENGTH, params.basis().decompose_length());
-    let mut cmux_context = TfheFftContext::new(DIMENSION, POLY_LENGTH);
+    let mut cmux_context = FourierExternalProductContext::new(DIMENSION, POLY_LENGTH);
 
     let messages = [plaintext(1), plaintext(7)];
     let mut ciphertexts: [TorusGlwe<Vec<u32>>; 2] = [
@@ -79,8 +78,7 @@ fn fourier_cmux_selects_requested_glwe() {
             &mut gadget_context,
         );
 
-        fourier_cmux_to(
-            &control,
+        control.cmux_to(
             &ciphertexts[0],
             &ciphertexts[1],
             &mut output,
@@ -128,7 +126,7 @@ fn ntt_cmux_selects_requested_glwe() {
     let secret_key = NttGlweSecretKey::from_coeff_secret_key(&coeff_secret_key, &ntt);
     let mut gadget_context =
         NttGadgetEncryptContext::new(POLY_LENGTH, params.basis().decompose_length());
-    let mut cmux_context = TfheNttContext::new(DIMENSION, POLY_LENGTH);
+    let mut cmux_context = NttExternalProductContext::new(DIMENSION, POLY_LENGTH);
 
     let messages = [plaintext(2), plaintext(11)];
     let mut ciphertexts: [Glwe<Vec<u32>>; 2] =
@@ -159,8 +157,7 @@ fn ntt_cmux_selects_requested_glwe() {
             &mut gadget_context,
         );
 
-        ntt_cmux_to(
-            &control,
+        control.cmux_to(
             &ciphertexts[0],
             &ciphertexts[1],
             &mut output,
