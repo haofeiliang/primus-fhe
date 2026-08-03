@@ -1,23 +1,46 @@
+// cargo bench -p primus_lattice --bench external_product
+
 use std::hint::black_box;
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use primus_decompose::primitive::ApproxSignedBasis;
-use primus_fft::{FftEngine, FftTable, RustFftTable};
-use primus_lattice::{context::FourierExternalProductContext, ggsw::FourierGgswOwned, glwe::Glwe};
+use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable};
+use primus_lattice::{
+    context::{FourierExternalProductContext, NttExternalProductContext},
+    ggsw::{FourierGgswOwned, NttGgsw},
+    glwe::Glwe,
+};
+use primus_modulus::BarrettModulus;
+use primus_ntt::{NttTable, UintNttTable};
 
-fn external_product(c: &mut Criterion) {
+fn fourier_external_product(c: &mut Criterion) {
     let fft = RustFftTable::new(10).unwrap();
     let mut engine = FftEngine::new(&fft);
     let dimension = 1;
     let components = dimension + 1;
-    let basis = ApproxSignedBasis::<u64>::new(None, 8, Some(4));
-    let input = Glwe::new(vec![1u64; components * fft.poly_length()]);
-    let key = FourierGgswOwned::zero(
-        components * basis.decompose_length() * components * fft.fourier_length(),
+    let basis = ApproxSignedBasis::<u64>::new(None, 8, Some(3));
+    let glwe_len = components * fft.poly_length();
+    let input: Glwe<Vec<u64>> = Glwe::new(
+        (0..glwe_len)
+            .map(|i| {
+                (i as u64)
+                    .wrapping_mul(0x9e37_79b9_7f4a_7c15)
+                    .wrapping_add(1)
+            })
+            .collect(),
+    );
+    let key_len = components * basis.decompose_length() * components * fft.fourier_length();
+    let key = FourierGgswOwned::new(
+        (0..key_len)
+            .map(|i| {
+                let value = (i % 31 + 1) as f64 / 32.0;
+                Complex64::new(value, -value * 0.5)
+            })
+            .collect(),
     );
     let mut output = Glwe::new(vec![0u64; components * fft.poly_length()]);
     let mut context = FourierExternalProductContext::new(dimension, fft.poly_length());
-    c.bench_function("external_product/rustfft/n1024/k1/l4", |b| {
+    c.bench_function("external_product/fourier/n1024/k1/logb8/l3", |b| {
         b.iter(|| {
             black_box(&key).external_product_to(
                 black_box(&input),
@@ -30,5 +53,42 @@ fn external_product(c: &mut Criterion) {
     });
 }
 
-criterion_group!(benches, external_product);
+fn ntt_external_product(c: &mut Criterion) {
+    const MODULUS: u32 = 132_120_577;
+
+    let modulus = BarrettModulus::new(MODULUS);
+    let ntt = UintNttTable::new(10, modulus).unwrap();
+    let dimension = 1;
+    let components = dimension + 1;
+    let basis = ApproxSignedBasis::new(Some(MODULUS), 8, Some(3));
+    let glwe_len = components * ntt.poly_length();
+    let input: Glwe<Vec<u32>> = Glwe::new(
+        (0..glwe_len)
+            .map(|i| ((i as u64 * 17 + 1) % MODULUS as u64) as u32)
+            .collect(),
+    );
+    let key_len = components * basis.decompose_length() * components * ntt.poly_length();
+    let key: NttGgsw<Vec<u32>> = NttGgsw::new(
+        (0..key_len)
+            .map(|i| ((i as u64 * 65_537 + 1) % MODULUS as u64) as u32)
+            .collect(),
+    );
+    let mut output = Glwe::new(vec![0u32; glwe_len]);
+    let mut context = NttExternalProductContext::new(dimension, ntt.poly_length());
+
+    c.bench_function("external_product/ntt/n1024/k1/logb8/l3", |b| {
+        b.iter(|| {
+            black_box(&key).external_product_to(
+                black_box(&input),
+                black_box(&mut output),
+                black_box(&basis),
+                black_box(modulus),
+                black_box(&ntt),
+                black_box(&mut context),
+            )
+        });
+    });
+}
+
+criterion_group!(benches, fourier_external_product, ntt_external_product);
 criterion_main!(benches);
