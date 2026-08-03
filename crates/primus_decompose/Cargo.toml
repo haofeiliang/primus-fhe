@@ -16,10 +16,15 @@ thiserror = { workspace = true }
 [dev-dependencies]
 primus_modulus = { path = "../primus_modulus" }
 
+criterion = { workspace = true }
 rand = { workspace = true }
 itertools = { workspace = true }
 rayon = { workspace = true }
 serde_json = "1"
+
+[[bench]]
+name = "decompose"
+harness = false
 
 [features]
 default = []
