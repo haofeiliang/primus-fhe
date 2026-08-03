@@ -27,6 +27,24 @@ enum BaseConversionKernel<T> {
 /// `p_j` are output-base moduli, and `Q` is the input-base product. A
 /// one-modulus source uses a direct-reduction kernel and stores no matrix.
 ///
+/// # Fast conversion semantics
+///
+/// Let `a_i` be the input residues and define
+/// `u_i = [a_i (Q / q_i)^(-1)] mod q_i`. For an input base with more than one
+/// modulus, the [`Self::fast_convert`], [`Self::fast_convert_array`], and
+/// [`Self::fast_convert_array_to_pair_iter`] methods compute
+///
+/// ```text
+/// y_j = [sum_i u_i (Q / q_i)] mod p_j = [x + kQ] mod p_j
+/// ```
+///
+/// for some integer `k`, where `x` has residues `a_i` in the input base. These
+/// methods omit the quotient correction needed to select the canonical lift of
+/// `x`, so `y_j` is not generally equal to `x mod p_j`. This SEAL-style
+/// approximate conversion is intended for algorithms such as Hybrid ModDown
+/// that cancel the multiple-of-`Q` term. For a one-modulus input base, the
+/// specialized kernel directly reduces the input residue and is exact.
+///
 /// Batched conversion APIs take input and output residue arrays in modulus-major
 /// layout. Their scratch buffer uses a different coefficient-major layout:
 /// chunk `j` of length `input_moduli_count()` stores all adjusted input

@@ -83,6 +83,13 @@ impl<T: FheUint, M: FieldContext<T>> BaseConverter<T, M> {
 
     /// Converts one residue vector from the input basis to the output basis.
     ///
+    /// With multiple input moduli, this performs the approximate CRT lift
+    /// described in [`BaseConverter`]: the output represents `x + kQ` for some
+    /// integer `k`, rather than necessarily the canonical lift `x`. The caller
+    /// must use it in a construction that cancels or otherwise accepts the
+    /// multiple-of-`Q` term. With one input modulus, conversion is an exact
+    /// direct reduction.
+    ///
     /// `residues_in.len()` must equal `input_moduli_count()`. Element `i` is
     /// interpreted modulo `input_base().moduli()[i]`.
     ///
@@ -243,6 +250,10 @@ impl<T: FheUint, M: FieldContext<T>> BaseConverter<T, M> {
 
     /// Converts a modulus-major array of residue vectors between bases.
     ///
+    /// Each coefficient is converted with the same approximate semantics as
+    /// [`Self::fast_convert`]. A multi-modulus input may retain a
+    /// multiple-of-`Q` term; a one-modulus input is reduced exactly.
+    ///
     /// `crt_poly_in.len()` must equal `input_moduli_count() * poly_length` and
     /// uses modulus-major layout: chunk `i` of length `poly_length` stores all
     /// coefficients modulo `input_base().moduli()[i]`.
@@ -274,6 +285,10 @@ impl<T: FheUint, M: FieldContext<T>> BaseConverter<T, M> {
     }
 
     /// Converts an array and returns output residues as pairs.
+    ///
+    /// Each coefficient is converted with the same approximate semantics as
+    /// [`Self::fast_convert`]. A multi-modulus input may retain a
+    /// multiple-of-`Q` term; a one-modulus input is reduced exactly.
     ///
     /// The output basis must contain exactly two moduli. `crt_poly_in.len()`
     /// must equal `input_moduli_count() * poly_length` and uses modulus-major
