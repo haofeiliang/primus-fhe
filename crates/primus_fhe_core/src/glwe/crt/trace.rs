@@ -1,39 +1,45 @@
-use std::sync::Arc;
-
 use primus_data::{Data, DataMut, RawData};
 use primus_integer::FheUint;
+use primus_lattice::RnsGadgetSize;
 use primus_ntt::DcrtTable;
 use primus_reduce::FieldContext;
-use primus_rns::RNSBase;
 
 use crate::{
-    CrtGlevParameters, CrtGlweAutoContext, CrtGlweAutoKey, CrtGlweCiphertext, DcrtGlweSecretKey,
-    GlweSecretKey,
+    CrtGlevParameters, CrtGlweAutoContext, CrtGlweAutoKey, CrtGlweCiphertext, DcrtGadgetDomain,
+    DcrtGlweSecretKey, GlweKeySwitchingError, GlweSecretKey,
 };
 
+/// Reusable workspace for CRT trace and coefficient-expansion operations.
+///
+/// Each operation overwrites the internal ciphertext and automorphism buffers.
 pub struct CrtGlweTraceContext<T: FheUint> {
     crt_glwe: CrtGlweCiphertext<Vec<T>>,
     auto_context: CrtGlweAutoContext<T>,
 }
 
 impl<T: FheUint> CrtGlweTraceContext<T> {
-    pub fn new(
-        dimension: usize,
-        poly_length: usize,
-        crt_poly_len: usize,
-        big_uint_poly_len: usize,
-        moduli_count: usize,
-    ) -> Self {
-        let crt_glwe = CrtGlweCiphertext::zero((dimension + 1) * crt_poly_len);
-        let auto_context =
-            CrtGlweAutoContext::new(poly_length, crt_poly_len, big_uint_poly_len, moduli_count);
+    /// Creates reusable workspace from one complete RNS gadget parameter set.
+    pub fn new<M, Table>(domain: &DcrtGadgetDomain<'_, T, M, Table>) -> Self
+    where
+        M: FieldContext<T>,
+        Table: DcrtTable<ValueT = T>,
+    {
+        Self::from_parameters(domain.parameters())
+    }
+
+    pub(crate) fn from_parameters<M>(parameters: &CrtGlevParameters<T, M>) -> Self
+    where
+        M: FieldContext<T>,
+    {
+        let crt_glwe = CrtGlweCiphertext::zero(parameters.rns_glwe_len());
+        let auto_context = CrtGlweAutoContext::from_parameters(parameters);
         Self {
             crt_glwe,
             auto_context,
         }
     }
 
-    pub fn as_mut(
+    pub(crate) fn as_mut(
         &mut self,
     ) -> (
         &mut primus_lattice::glwe::CrtGlwe<Vec<T>>,
@@ -41,59 +47,54 @@ impl<T: FheUint> CrtGlweTraceContext<T> {
     ) {
         (&mut self.crt_glwe, &mut self.auto_context)
     }
+
+    pub fn size(&self) -> RnsGadgetSize {
+        self.auto_context.size()
+    }
 }
 
 #[derive(Clone)]
-pub struct CrtGlweTraceKey<T: FheUint, Table>
-where
-    Table: DcrtTable<ValueT = T>,
-{
-    auto_keys: Vec<CrtGlweAutoKey<T, Table>>,
-    table: Arc<Table>,
+pub struct CrtGlweTraceKey<T: FheUint> {
+    auto_keys: Vec<CrtGlweAutoKey<T>>,
 }
 
-impl<T: FheUint, Table> CrtGlweTraceKey<T, Table>
-where
-    Table: DcrtTable<ValueT = T>,
-{
-    pub fn new<M, R>(
-        params: &CrtGlevParameters<T, M>,
+impl<T: FheUint> CrtGlweTraceKey<T> {
+    pub fn new<M, Table, R>(
+        domain: &DcrtGadgetDomain<'_, T, M, Table>,
         sk: &GlweSecretKey<T>,
         dcrt_sk: &DcrtGlweSecretKey<T>,
-        table: Arc<Table>,
         rng: &mut R,
     ) -> Self
     where
         R: rand::Rng + rand::CryptoRng,
         M: FieldContext<T>,
+        Table: DcrtTable<ValueT = T>,
     {
-        let log_n = params.poly_length().trailing_zeros();
-        let auto_keys: Vec<CrtGlweAutoKey<T, Table>> = (1..=log_n)
+        let log_n = domain.parameters().poly_length().trailing_zeros();
+        let auto_keys: Vec<CrtGlweAutoKey<T>> = (1..=log_n)
             .rev()
             .map(|x| (1usize << x) + 1)
-            .map(|degree| CrtGlweAutoKey::new(params, degree, sk, dcrt_sk, Arc::clone(&table), rng))
+            .map(|degree| CrtGlweAutoKey::new(domain, degree, sk, dcrt_sk, rng))
             .collect();
-        Self { auto_keys, table }
+        Self { auto_keys }
     }
 
-    pub fn table(&self) -> &Table {
-        &self.table
-    }
-
-    pub fn trace_inplace<M, A, B>(
+    pub fn trace_inplace<M, Table, A, B>(
         &self,
         ciphertext: &CrtGlweCiphertext<A>,
         result: &mut CrtGlweCiphertext<B>,
-        params: &CrtGlevParameters<T, M>,
-        rns_base: &RNSBase<T, M>,
+        domain: &DcrtGadgetDomain<'_, T, M, Table>,
         context: &mut CrtGlweTraceContext<T>,
-    ) where
+    ) -> Result<(), GlweKeySwitchingError>
+    where
         M: FieldContext<T>,
+        Table: DcrtTable<ValueT = T>,
         A: RawData<Elem = T> + Data,
         B: RawData<Elem = T> + DataMut,
     {
+        let params = domain.parameters();
         let poly_length = params.poly_length();
-        let rns_poly_len = params.rns_poly_len();
+        let crt_poly_length = params.rns_poly_len();
         let moduli = params.cipher_moduli();
 
         let (crt_glwe, auto_context) = context.as_mut();
@@ -101,8 +102,9 @@ where
         result.as_mut().copy_from_slice(ciphertext.as_ref());
 
         for auto_key in self.auto_keys.iter() {
-            auto_key.automorphism_to(result, crt_glwe, params, rns_base, auto_context);
-            result.add_element_wise_assign(crt_glwe, poly_length, rns_poly_len, moduli);
+            auto_key.automorphism_kernel(result, crt_glwe, domain, auto_context);
+            result.add_element_wise_assign(crt_glwe, poly_length, crt_poly_length, moduli);
         }
+        Ok(())
     }
 }

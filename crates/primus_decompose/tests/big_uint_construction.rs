@@ -1,4 +1,4 @@
-use primus_decompose::big_integer::{BigUintApproxSignedBasis, BigUintApproxSignedBasisError};
+use primus_decompose::{ApproxSignedBasisError, big_integer::BigUintApproxSignedBasis};
 use primus_modulus::BarrettModulus;
 use primus_rns::RNSBase;
 
@@ -10,25 +10,25 @@ fn try_new_validates_big_uint_basis_parameters() {
     assert!(BigUintApproxSignedBasis::try_new(&rns_base, 4, None).is_ok());
     assert_eq!(
         BigUintApproxSignedBasis::try_new(&rns_base, 1, None).unwrap_err(),
-        BigUintApproxSignedBasisError::InvalidLogBasis {
+        ApproxSignedBasisError::InvalidLogBasis {
             log_basis: 1,
             limb_bits: 32,
         }
     );
     assert_eq!(
         BigUintApproxSignedBasis::try_new(&rns_base, 32, None).unwrap_err(),
-        BigUintApproxSignedBasisError::InvalidLogBasis {
+        ApproxSignedBasisError::InvalidLogBasis {
             log_basis: 32,
             limb_bits: 32,
         }
     );
     assert_eq!(
         BigUintApproxSignedBasis::try_new(&rns_base, 4, Some(0)).unwrap_err(),
-        BigUintApproxSignedBasisError::ZeroReverseLength
+        ApproxSignedBasisError::ZeroReverseLength
     );
     assert_eq!(
         BigUintApproxSignedBasis::try_new(&rns_base, 4, Some(3)).unwrap_err(),
-        BigUintApproxSignedBasisError::ReverseLengthTooLarge {
+        ApproxSignedBasisError::ReverseLengthTooLarge {
             reverse_length: 3,
             full_length: 2,
         }
@@ -37,6 +37,6 @@ fn try_new_validates_big_uint_basis_parameters() {
     let small_base = RNSBase::new(&[BarrettModulus::new(3_u32)]).unwrap();
     assert_eq!(
         BigUintApproxSignedBasis::try_new(&small_base, 2, None).unwrap_err(),
-        BigUintApproxSignedBasisError::BasisExceedsModulus
+        ApproxSignedBasisError::BasisExceedsModulus
     );
 }

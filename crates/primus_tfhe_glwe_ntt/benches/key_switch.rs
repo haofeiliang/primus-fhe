@@ -5,7 +5,8 @@ use std::hint::black_box;
 use criterion::{Criterion, criterion_group, criterion_main};
 use primus_fhe_core::{
     GlweCiphertext, GlweSecretKey, LweCiphertext, LweKeySwitchingKey, LweKeySwitchingParameters,
-    NttGadgetEncryptContext, NttGlweKeySwitchingContext, NttGlweKeySwitchingKey, NttGlweSecretKey,
+    NttGadgetDomain, NttGadgetEncryptContext, NttGlweKeySwitchingContext, NttGlweKeySwitchingKey,
+    NttGlweSecretKey,
 };
 use primus_ntt::{NttTable, U32NttTable};
 use primus_tfhe_glwe_ntt::boolean_parameters;
@@ -41,20 +42,16 @@ fn bench_key_switch(c: &mut Criterion) {
         parameters.small_lwe().cipher_modulus_minus_one(),
     )
     .unwrap();
-    let output_glwe_dimension = padded_glwe_secret_key.dimension();
     let output_ntt_secret_key =
         NttGlweSecretKey::from_coeff_secret_key(&padded_glwe_secret_key, &table);
 
     let glwe_key_switching_parameters = parameters.glwe_key_switching();
-    let mut gadget_context = NttGadgetEncryptContext::new(
-        poly_length,
-        glwe_key_switching_parameters.output().decompose_length(),
-    );
+    let domain = NttGadgetDomain::try_new(glwe_key_switching_parameters.output(), &table).unwrap();
+    let mut gadget_context = NttGadgetEncryptContext::new(domain.size());
     let glwe_key_switching_key = NttGlweKeySwitchingKey::generate(
         &input_glwe_secret_key,
         &output_ntt_secret_key,
-        glwe_key_switching_parameters,
-        &table,
+        &domain,
         &mut rng,
         &mut gadget_context,
     );
@@ -70,7 +67,7 @@ fn bench_key_switch(c: &mut Criterion) {
     let mut lwe_output = LweCiphertext::zero(lwe_dimension);
     let mut glwe_output: GlweCiphertext<Vec<u32>> =
         GlweCiphertext::zero(glwe_key_switching_parameters.output().glwe_len());
-    let mut glwe_context = NttGlweKeySwitchingContext::new(output_glwe_dimension, poly_length);
+    let mut glwe_context = NttGlweKeySwitchingContext::new(&domain);
 
     let mut group = c.benchmark_group(format!(
         "tfhe_key_switch/ntt/u32/n{poly_length}/k{input_glwe_dimension}/lwe{lwe_dimension}"
@@ -88,13 +85,14 @@ fn bench_key_switch(c: &mut Criterion) {
     });
     group.bench_function("glwe_k_to_k_prime", |b| {
         b.iter(|| {
-            glwe_key_switching_key.key_switch_to(
-                black_box(&input),
-                black_box(&mut glwe_output),
-                glwe_key_switching_parameters,
-                &table,
-                &mut glwe_context,
-            );
+            glwe_key_switching_key
+                .key_switch_to(
+                    black_box(&input),
+                    black_box(&mut glwe_output),
+                    &domain,
+                    &mut glwe_context,
+                )
+                .unwrap();
             black_box(&glwe_output);
         });
     });

@@ -1,11 +1,10 @@
-use std::sync::Arc;
-
 use itertools::izip;
 use num_traits::ConstZero;
 use primus_data::{Data, DataMut, RawData};
 use primus_integer::{FheUint, WrappingNeg};
 use primus_lattice::{
-    context::DcrtGlevContext,
+    RnsGadgetSize,
+    context::DcrtGlevMulContext,
     glev::{DcrtGlevIter, DcrtGlevIterMut},
 };
 use primus_modulus::PowOf2Modulus;
@@ -13,43 +12,54 @@ use primus_ntt::DcrtTable;
 use primus_poly::CrtPolynomial;
 use primus_reduce::FieldContext;
 use primus_reduce::ReduceMul;
-use primus_rns::RNSBase;
 
 use crate::glwe::secret_key::encode_secret_polynomial_to_rns;
-use crate::glwe::validate_automorphism;
 use crate::{
-    CrtGlevParameters, CrtGlweCiphertext, DcrtGlweCiphertext, DcrtGlweSecretKey, GlweSecretKey,
-    SecretCoefficient,
+    CrtGlevParameters, CrtGlweCiphertext, DcrtGadgetDomain, DcrtGlweCiphertext, DcrtGlweSecretKey,
+    GlweKeySwitchingError, GlweSecretKey, SecretCoefficient,
 };
 
-/// Pre-allocated scratch buffer for CRT automorphism operations.
+/// Reusable workspace for CRT and DCRT automorphism operations.
+///
+/// Each operation overwrites the internal polynomial and GLev buffers.
 pub struct CrtGlweAutoContext<T: FheUint> {
     auto_crt_poly: CrtPolynomial<Vec<T>>,
-    glev_context: DcrtGlevContext<T>,
+    glev_context: DcrtGlevMulContext<T>,
 }
 
 impl<T: FheUint> CrtGlweAutoContext<T> {
-    pub fn new(
-        poly_length: usize,
-        crt_poly_len: usize,
-        big_uint_poly_len: usize,
-        moduli_count: usize,
-    ) -> Self {
+    /// Creates reusable workspace from one complete RNS gadget parameter set.
+    pub fn new<M, Table>(domain: &DcrtGadgetDomain<'_, T, M, Table>) -> Self
+    where
+        M: FieldContext<T>,
+        Table: DcrtTable<ValueT = T>,
+    {
+        Self::from_parameters(domain.parameters())
+    }
+
+    pub(crate) fn from_parameters<M>(parameters: &CrtGlevParameters<T, M>) -> Self
+    where
+        M: FieldContext<T>,
+    {
+        let size = parameters.size();
+        let glwe_size = size.rns_glwe_size();
+        let crt_poly_len = glwe_size.rns_poly_len();
+
         let auto_crt_poly = CrtPolynomial::zero(crt_poly_len);
-        let glev_context =
-            DcrtGlevContext::new(poly_length, crt_poly_len, big_uint_poly_len, moduli_count);
+        let glev_context = DcrtGlevMulContext::new(size, parameters.base_q());
+
         Self {
             auto_crt_poly,
             glev_context,
         }
     }
 
-    pub fn as_mut(&mut self) -> (&mut CrtPolynomial<Vec<T>>, &mut DcrtGlevContext<T>) {
+    pub(crate) fn as_mut(&mut self) -> (&mut CrtPolynomial<Vec<T>>, &mut DcrtGlevMulContext<T>) {
         (&mut self.auto_crt_poly, &mut self.glev_context)
     }
 
-    pub fn compose_buffer_mut(&mut self) -> &mut [T] {
-        self.glev_context.compose_buffer_mut()
+    pub fn size(&self) -> RnsGadgetSize {
+        self.glev_context.size()
     }
 }
 
@@ -90,7 +100,6 @@ struct CoeffAutoHelper {
 
 impl CoeffAutoHelper {
     fn new(degree: usize, poly_length: usize) -> Self {
-        validate_automorphism(degree, poly_length);
         let operation = if degree == 1 {
             CoeffAutoOperation::Identity
         } else if degree == poly_length + 1 {
@@ -138,11 +147,10 @@ fn generate_permutate_ops(degree: usize, poly_length: usize) -> Vec<FromOp> {
 /// Generate automorphism key data in the coefficient domain: for each
 /// secret-key polynomial s_i, encrypt σ_k(s_i) under a GLEV ciphertext.
 fn generate_auto_key_data<T, M, Table, R>(
-    params: &CrtGlevParameters<T, M>,
+    domain: &DcrtGadgetDomain<'_, T, M, Table>,
     coeff_auto_helper: &CoeffAutoHelper,
     sk: &GlweSecretKey<T>,
     dcrt_sk: &DcrtGlweSecretKey<T>,
-    table: &Table,
     rng: &mut R,
 ) -> Vec<T>
 where
@@ -151,11 +159,11 @@ where
     R: rand::Rng + rand::CryptoRng,
     M: FieldContext<T>,
 {
+    let params = domain.parameters();
     let poly_length = params.poly_length();
     let rns_poly_len = params.rns_poly_len();
     let dcrt_glev_len = params.rns_glev_len();
-    assert_eq!(sk.dimension(), params.dimension());
-    assert_eq!(sk.poly_length(), poly_length);
+    assert_eq!(sk.size(), params.size().rns_glwe_size().glwe_size());
 
     let mut key = vec![T::ZERO; params.dimension() * dcrt_glev_len];
     let mut auto_si: CrtPolynomial<Vec<T>> = CrtPolynomial::zero(rns_poly_len);
@@ -171,7 +179,7 @@ where
             params.cipher_moduli_value(),
         );
 
-        dcrt_sk.encrypt_crt_msg_to_dcrt_glev_inplace(&auto_si, &mut dcrt_glev, params, table, rng);
+        dcrt_sk.encrypt_crt_msg_to_dcrt_glev_inplace(&auto_si, &mut dcrt_glev, domain, rng);
     });
 
     key
@@ -179,52 +187,44 @@ where
 
 /// Automorphism key
 #[derive(Clone)]
-pub struct CrtGlweAutoKey<T, Table>
-where
-    T: FheUint,
-    Table: DcrtTable<ValueT = T>,
-{
+pub struct CrtGlweAutoKey<T: FheUint> {
     key: Vec<T>,
-    rns_glev_len: usize,
     auto_helper: CoeffAutoHelper,
-    table: Arc<Table>,
+    size: RnsGadgetSize,
 }
 
-impl<T, Table> CrtGlweAutoKey<T, Table>
-where
-    T: FheUint,
-    Table: DcrtTable<ValueT = T>,
-{
+impl<T: FheUint> CrtGlweAutoKey<T> {
     /// Creates an automorphism key for `X -> X^degree`.
     ///
     /// # Panics
     ///
-    /// Panics unless the polynomial length is a nonzero power of two and
-    /// `degree` is odd and less than twice the polynomial length.
-    pub fn new<M, R>(
-        params: &CrtGlevParameters<T, M>,
+    /// Panics if `degree` is not odd and less than twice the polynomial length.
+    pub fn new<M, Table, R>(
+        domain: &DcrtGadgetDomain<'_, T, M, Table>,
         degree: usize,
         sk: &GlweSecretKey<T>,
         dcrt_sk: &DcrtGlweSecretKey<T>,
-        table: Arc<Table>,
         rng: &mut R,
     ) -> Self
     where
         R: rand::Rng + rand::CryptoRng,
         M: FieldContext<T>,
+        Table: DcrtTable<ValueT = T>,
     {
+        let params = domain.parameters();
         let poly_length = params.poly_length();
-        let dcrt_glev_len = params.rns_glev_len();
-
+        assert!(
+            degree < poly_length * 2 && degree % 2 == 1,
+            "automorphism degree must be odd and less than twice the polynomial length"
+        );
         let auto_helper = CoeffAutoHelper::new(degree, poly_length);
 
-        let key = generate_auto_key_data(params, &auto_helper, sk, dcrt_sk, table.as_ref(), rng);
+        let key = generate_auto_key_data(domain, &auto_helper, sk, dcrt_sk, rng);
 
         Self {
             key,
-            rns_glev_len: dcrt_glev_len,
             auto_helper,
-            table: Arc::clone(&table),
+            size: domain.size(),
         }
     }
 
@@ -232,38 +232,56 @@ where
         self.auto_helper.degree()
     }
 
-    pub fn table(&self) -> &Table {
-        &self.table
-    }
-
     pub fn iter_dcrt_glev(&self) -> DcrtGlevIter<'_, T> {
-        DcrtGlevIter::new(self.key.as_slice(), self.rns_glev_len)
+        DcrtGlevIter::new(self.key.as_slice(), self.size.rns_glev_len())
     }
 
-    pub fn automorphism_to<M, A, B>(
+    pub fn automorphism_to<M, Table, A, B>(
         &self,
         ciphertext: &CrtGlweCiphertext<A>,
         result: &mut CrtGlweCiphertext<B>,
-        params: &CrtGlevParameters<T, M>,
-        rns_base: &RNSBase<T, M>,
+        domain: &DcrtGadgetDomain<'_, T, M, Table>,
         context: &mut CrtGlweAutoContext<T>,
-    ) where
+    ) -> Result<(), GlweKeySwitchingError>
+    where
         M: FieldContext<T>,
+        Table: DcrtTable<ValueT = T>,
         A: RawData<Elem = T> + Data,
         B: RawData<Elem = T> + DataMut,
     {
+        assert_eq!(self.size, domain.size());
+        assert_eq!(self.size, context.size());
+
+        let rns_glwe_len = self.size.rns_glwe_size().rns_glwe_len();
+
+        assert_eq!(ciphertext.as_ref().len(), rns_glwe_len);
+        assert_eq!(result.as_ref().len(), rns_glwe_len);
+
+        self.automorphism_kernel(ciphertext, result, domain, context);
+        Ok(())
+    }
+
+    /// Applies the automorphism after the caller has validated all operands.
+    pub(crate) fn automorphism_kernel<M, Table, A, B>(
+        &self,
+        ciphertext: &CrtGlweCiphertext<A>,
+        result: &mut CrtGlweCiphertext<B>,
+        domain: &DcrtGadgetDomain<'_, T, M, Table>,
+        context: &mut CrtGlweAutoContext<T>,
+    ) where
+        M: FieldContext<T>,
+        Table: DcrtTable<ValueT = T>,
+        A: RawData<Elem = T> + Data,
+        B: RawData<Elem = T> + DataMut,
+    {
+        let params = domain.parameters();
+        let table = domain.table();
+        let rns_base = domain.rns_base();
         let poly_length = params.poly_length();
         let rns_poly_len = params.rns_poly_len();
         let moduli = params.cipher_moduli();
 
         let auto_helper = &self.auto_helper;
-
-        assert_eq!(
-            auto_helper.poly_length(),
-            poly_length,
-            "automorphism key and parameters must use the same polynomial length"
-        );
-        debug_assert_eq!(ciphertext.as_ref().len(), params.rns_glwe_len());
 
         let (auto_crt_poly, glev_context) = context.as_mut();
 
@@ -281,7 +299,7 @@ where
                     &auto_key_i,
                     auto_crt_poly,
                     params.basis(),
-                    self.table(),
+                    table,
                     rns_base,
                     glev_context,
                 );
@@ -289,7 +307,7 @@ where
 
         crt_poly_auto_inplace(b_in.0, auto_crt_poly.as_mut(), auto_helper, moduli);
 
-        let _ = temp.into_coeff_form(self.table());
+        let _ = temp.into_coeff_form(table);
 
         let (a_out, mut b_out) = result.a_b_mut(rns_poly_len);
 
@@ -344,11 +362,6 @@ fn crt_poly_auto_inplace<T, M>(
     M: FieldContext<T>,
 {
     let poly_length = auto_helper.poly_length();
-    let expected_len = poly_length
-        .checked_mul(moduli.len())
-        .expect("CRT polynomial length must fit in usize");
-    assert_eq!(crt_poly.len(), expected_len);
-    assert_eq!(auto_crt_poly.len(), expected_len);
 
     izip!(
         crt_poly.chunks_exact(poly_length),

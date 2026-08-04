@@ -1,11 +1,9 @@
 use std::hint::black_box;
-use std::sync::Arc;
 
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
-use primus_decompose::big_integer::BigUintApproxSignedBasis;
 use primus_fhe_core::{
-    CrtGlevParameters, CrtGlweAutoContext, CrtGlweAutoKey, CrtGlweParameters, DcrtGlweAutoKey,
-    DcrtGlweCiphertext, DcrtGlweSecretKey, GlweSecretKey, RingSecretKeyType,
+    CrtGlevParameters, CrtGlweAutoContext, CrtGlweAutoKey, CrtGlweParameters, DcrtGadgetDomain,
+    DcrtGlweAutoKey, DcrtGlweCiphertext, DcrtGlweSecretKey, GlweSecretKey, RingSecretKeyType,
 };
 use primus_lattice::glwe::{CrtGlwe, DcrtGlwe};
 use primus_modulus::BarrettModulus;
@@ -22,7 +20,6 @@ fn bench_automorphism(c: &mut Criterion) {
     let mod_gamma = BarrettModulus::new(gamma);
     let moduli_values: [V; 2] = [1125899906826241, 1125899906629633];
     let moduli = moduli_values.map(BarrettModulus::new);
-    let moduli_count = moduli_values.len();
     let auto_degree = 5;
 
     let mut rng = rand::rng();
@@ -44,37 +41,21 @@ fn bench_automorphism(c: &mut Criterion) {
         );
 
         let crt_poly_len = glwe_params.rns_poly_len();
-        let big_uint_poly_len = glwe_params.big_uint_poly_len();
         let rns_glwe_len = glwe_params.rns_glwe_len();
         let base_q = glwe_params.base_q();
 
         let sk = GlweSecretKey::generate(&glwe_params, &mut rng);
         let dcrt_sk = DcrtGlweSecretKey::from_coeff_secret_key(&sk, &table);
 
-        let basis = BigUintApproxSignedBasis::new(base_q, 20, None);
-        let glev_params = CrtGlevParameters::with_glwe_params(&glwe_params, basis);
+        let glev_params = CrtGlevParameters::with_glwe_params(&glwe_params, 20, None);
 
-        // Keys
-        let table = Arc::new(table);
+        let domain = DcrtGadgetDomain::try_new(&glev_params, &table).unwrap();
 
-        let crt_auto_key = CrtGlweAutoKey::new(
-            &glev_params,
-            auto_degree,
-            &sk,
-            &dcrt_sk,
-            Arc::clone(&table),
-            &mut rng,
-        );
+        let crt_auto_key = CrtGlweAutoKey::new(&domain, auto_degree, &sk, &dcrt_sk, &mut rng);
 
-        let dcrt_auto_key = DcrtGlweAutoKey::new(
-            &glev_params,
-            auto_degree,
-            &dcrt_sk,
-            Arc::clone(&table),
-            &mut rng,
-        );
+        let dcrt_auto_key = DcrtGlweAutoKey::new(&domain, auto_degree, &dcrt_sk, &mut rng);
 
-        let table_ref = table.as_ref();
+        let table_ref = &table;
 
         // Ciphertexts
         let input: Polynomial<Vec<V>> = Polynomial::random(poly_length, mod_t, &mut rng);
@@ -92,32 +73,33 @@ fn bench_automorphism(c: &mut Criterion) {
         // Buffers
         let mut crt_result: CrtGlwe<Vec<V>> = CrtGlwe::zero(rns_glwe_len);
         let mut dcrt_result: DcrtGlweCiphertext<Vec<V>> = DcrtGlweCiphertext::zero(rns_glwe_len);
-        let mut auto_context =
-            CrtGlweAutoContext::new(poly_length, crt_poly_len, big_uint_poly_len, moduli_count);
+        let mut auto_context = CrtGlweAutoContext::new(&domain);
 
         let n_label = format!("N={poly_length}");
 
         group.bench_with_input(BenchmarkId::new("CRT", &n_label), &(), |b, _| {
             b.iter(|| {
-                crt_auto_key.automorphism_to(
-                    black_box(&c_coeff),
-                    black_box(&mut crt_result),
-                    &glev_params,
-                    base_q,
-                    &mut auto_context,
-                );
+                crt_auto_key
+                    .automorphism_to(
+                        black_box(&c_coeff),
+                        black_box(&mut crt_result),
+                        &domain,
+                        &mut auto_context,
+                    )
+                    .unwrap();
             });
         });
 
         group.bench_with_input(BenchmarkId::new("DCRT", &n_label), &(), |b, _| {
             b.iter(|| {
-                dcrt_auto_key.automorphism_to(
-                    black_box(&c_ntt),
-                    black_box(&mut dcrt_result),
-                    &glev_params,
-                    base_q,
-                    &mut auto_context,
-                );
+                dcrt_auto_key
+                    .automorphism_to(
+                        black_box(&c_ntt),
+                        black_box(&mut dcrt_result),
+                        &domain,
+                        &mut auto_context,
+                    )
+                    .unwrap();
             });
         });
     }

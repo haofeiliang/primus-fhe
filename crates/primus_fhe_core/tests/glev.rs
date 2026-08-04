@@ -1,10 +1,9 @@
 use itertools::izip;
-use primus_decompose::big_integer::BigUintApproxSignedBasis;
 use primus_fhe_core::{
-    CrtGlevParameters, CrtGlweParameters, DcrtGlweDecryptContext, DcrtGlweSecretKey, GlweSecretKey,
-    RingSecretKeyType,
+    CrtGlevParameters, CrtGlweParameters, DcrtGadgetDomain, DcrtGlweDecryptContext,
+    DcrtGlweSecretKey, GlweSecretKey, RingSecretKeyType,
 };
-use primus_lattice::{context::DcrtGlevContext, glev::DcrtGlev, glwe::DcrtGlwe};
+use primus_lattice::{context::DcrtGlevMulContext, glev::DcrtGlev, glwe::DcrtGlwe};
 use primus_modulus::BarrettModulus;
 use primus_ntt::{DcrtTable, UintDcrtTable};
 use primus_poly::{BigUintPolynomial, CrtPolynomial, DcrtPolynomial, Polynomial};
@@ -49,7 +48,6 @@ fn test_rns_glev() {
     );
 
     let rns_glwe_len = glwe_params.rns_glwe_len();
-    let moduli_count = glwe_params.cipher_moduli_count();
     let rns_poly_len = glwe_params.rns_poly_len();
     let big_uint_poly_len = glwe_params.big_uint_poly_len();
     let base_q = glwe_params.base_q();
@@ -57,13 +55,12 @@ fn test_rns_glev() {
     let sk = GlweSecretKey::generate(&glwe_params, &mut rng);
     let dcrt_sk = DcrtGlweSecretKey::from_coeff_secret_key(&sk, &table);
 
-    let basis = BigUintApproxSignedBasis::new(base_q, 20, None);
-    let glev_params = CrtGlevParameters::with_glwe_params(&glwe_params, basis);
+    let glev_params = CrtGlevParameters::with_glwe_params(&glwe_params, 20, None);
+    let domain = DcrtGadgetDomain::try_new(&glev_params, &table).unwrap();
     let rns_glev_len = glev_params.rns_glev_len();
 
-    let mut decrypt_context = DcrtGlweDecryptContext::new(moduli_count, poly_length);
-    let mut glev_context =
-        DcrtGlevContext::new(poly_length, rns_poly_len, big_uint_poly_len, moduli_count);
+    let mut decrypt_context = DcrtGlweDecryptContext::new(glwe_params.size());
+    let mut glev_context = DcrtGlevMulContext::new(glev_params.size(), glev_params.base_q());
 
     let mut dcrt_glev: DcrtGlev<Vec<ValueT>> = DcrtGlev::zero(rns_glev_len);
 
@@ -80,13 +77,7 @@ fn test_rns_glev() {
     let mut msg1: CrtPolynomial<Vec<ValueT>> = CrtPolynomial::zero(rns_poly_len);
     base_q.wrapping_decompose_small_polynomial_to(&input1, &mut msg1, poly_length, t);
 
-    dcrt_sk.encrypt_crt_msg_to_dcrt_glev_inplace(
-        &msg1,
-        &mut dcrt_glev,
-        &glev_params,
-        &table,
-        &mut rng,
-    );
+    dcrt_sk.encrypt_crt_msg_to_dcrt_glev_inplace(&msg1, &mut dcrt_glev, &domain, &mut rng);
 
     // ── Build BigUint polynomial encoding m₂ ────────────────────
     // m₂ is decomposed into CRT, then scaled by δ (so it represents
@@ -165,13 +156,11 @@ fn test_key_switching() {
         3.20,
     );
 
-    let basis = BigUintApproxSignedBasis::new(glwe_params.base_q(), 20, None);
-    let glev_params = CrtGlevParameters::with_glwe_params(&glwe_params, basis);
+    let glev_params = CrtGlevParameters::with_glwe_params(&glwe_params, 20, None);
+    let domain = DcrtGadgetDomain::try_new(&glev_params, &table).unwrap();
 
     let rns_poly_len = glwe_params.rns_poly_len();
     let rns_glwe_len = glwe_params.rns_glwe_len();
-    let moduli_count = glwe_params.cipher_moduli_count();
-    let big_uint_poly_len = glwe_params.big_uint_poly_len();
     let rns_glev_len = glev_params.rns_glev_len();
     let uniform_distrs = glev_params.cipher_moduli_uniform_distr();
 
@@ -198,7 +187,7 @@ fn test_key_switching() {
     msgs.iter()
         .zip(dcrt_glevs.iter_mut())
         .for_each(|(msg, glev)| {
-            dcrt_sk.encrypt_crt_msg_to_dcrt_glev_inplace(msg, glev, &glev_params, &table, &mut rng);
+            dcrt_sk.encrypt_crt_msg_to_dcrt_glev_inplace(msg, glev, &domain, &mut rng);
         });
 
     // ── Manually build ciphertext c = (a, b) where b = noise + a·s ──
@@ -251,8 +240,7 @@ fn test_key_switching() {
         .map(|_| DcrtGlwe::zero(rns_glwe_len))
         .collect();
 
-    let mut glev_context =
-        DcrtGlevContext::new(poly_length, rns_poly_len, big_uint_poly_len, moduli_count);
+    let mut glev_context = DcrtGlevMulContext::new(glev_params.size(), glev_params.base_q());
     izip!(dcrt_glevs.iter(), cipher.iter(), cs.iter_mut()).for_each(|(glev, ai, result)| {
         glev.mul_crt_poly_to(
             ai,
@@ -276,7 +264,7 @@ fn test_key_switching() {
     });
 
     // ── Decrypt: should be zero (noise only) ────────────────────
-    let mut decrypt_context = DcrtGlweDecryptContext::new(moduli_count, poly_length);
+    let mut decrypt_context = DcrtGlweDecryptContext::new(glwe_params.size());
     let m_dec = dcrt_sk.decrypt(&result, &glwe_params, &table, &mut decrypt_context);
 
     println!("{:?}", m_dec.as_ref());

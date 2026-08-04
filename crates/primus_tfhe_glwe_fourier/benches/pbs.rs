@@ -3,12 +3,10 @@
 use std::hint::black_box;
 
 use criterion::{Criterion, criterion_group, criterion_main};
-use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{FftTable, RustFftTable};
 use primus_fhe_core::{
     FourierBlindRotationContext, FourierGlweKeySwitchingContext, GgswParameters, GlweCiphertext,
     GlweParameters, LweCiphertext, LweParameters, LweSecretKeyType, RingSecretKeyType,
-    fourier_blind_rotate_to,
 };
 use primus_modulus::NativeModulus;
 use primus_tfhe_glwe_fourier::{
@@ -38,14 +36,14 @@ fn parameters(order: PbsOrder) -> TfheParameters<u32> {
         RingSecretKeyType::Binary,
         3.2,
     );
-    let bootstrapping =
-        GgswParameters::with_glwe_params(&glwe, ApproxSignedBasis::new(None, 8, Some(3)));
-    TfheParameters::with_pbs_order_and_key_switching_basis(
+    let bootstrapping = GgswParameters::with_glwe_params(&glwe, 8, Some(3));
+    TfheParameters::try_with_derived_glwe_key_switching(
         lwe,
         glwe,
         bootstrapping,
+        2,
+        Some(13),
         order,
-        ApproxSignedBasis::new(None, 2, Some(13)),
     )
     .unwrap()
 }
@@ -72,11 +70,10 @@ fn bench_order(c: &mut Criterion, order: PbsOrder) {
 
     let modulus = parameters.glwe().cipher_modulus();
     let mut fft = context.new_fft_engine();
-    let mut blind_rotation = FourierBlindRotationContext::new(GLWE_DIMENSION, POLY_LENGTH);
-    let mut key_switching = FourierGlweKeySwitchingContext::new(
-        parameters.glwe_key_switching().output_dimension(),
-        POLY_LENGTH,
-    );
+    let bootstrapping = parameters.bootstrapping();
+    let mut blind_rotation = FourierBlindRotationContext::new(bootstrapping.size());
+    let key_switching_parameters = parameters.glwe_key_switching().output();
+    let mut key_switching = FourierGlweKeySwitchingContext::new(key_switching_parameters);
     let mut main_glwe: GlweCiphertext<Vec<u32>> =
         GlweCiphertext::zero(parameters.glwe().glwe_len());
     let mut switched: GlweCiphertext<Vec<u32>> =
@@ -86,13 +83,11 @@ fn bench_order(c: &mut Criterion, order: PbsOrder) {
         LweCiphertext::zero(parameters.ciphertext_lwe_dimension());
 
     match order {
-        PbsOrder::BootstrapKeyswitch => fourier_blind_rotate_to(
+        PbsOrder::BootstrapKeyswitch => server_key.bootstrapping_key().fourier_blind_rotate_to(
             input.as_lwe(),
             lookup_table.accumulator(),
             &mut main_glwe,
-            server_key.bootstrapping_key(),
-            parameters.small_lwe(),
-            parameters.bootstrapping(),
+            bootstrapping,
             &mut fft,
             &mut blind_rotation,
         ),
@@ -102,13 +97,16 @@ fn bench_order(c: &mut Criterion, order: PbsOrder) {
                 .inverse_extract_glwe_to(&mut main_glwe, POLY_LENGTH, modulus)
         }
     }
-    server_key.glwe_key_switching_key().key_switch_to(
-        &main_glwe,
-        &mut switched,
-        parameters.glwe_key_switching(),
-        &mut fft,
-        &mut key_switching,
-    );
+    server_key
+        .glwe_key_switching_key()
+        .key_switch_to(
+            &main_glwe,
+            &mut switched,
+            key_switching_parameters,
+            &mut fft,
+            &mut key_switching,
+        )
+        .unwrap();
     switched.extract_compact_lwe_to(&mut small_lwe, POLY_LENGTH, modulus);
 
     let boolean_encryptor = BooleanEncryptor::new(parameters, &client_key).unwrap();
@@ -140,13 +138,16 @@ fn bench_order(c: &mut Criterion, order: PbsOrder) {
 
     group.bench_function("glwe_key_switching", |b| {
         b.iter(|| {
-            server_key.glwe_key_switching_key().key_switch_to(
-                black_box(&main_glwe),
-                black_box(&mut switched),
-                parameters.glwe_key_switching(),
-                &mut fft,
-                &mut key_switching,
-            );
+            server_key
+                .glwe_key_switching_key()
+                .key_switch_to(
+                    black_box(&main_glwe),
+                    black_box(&mut switched),
+                    key_switching_parameters,
+                    &mut fft,
+                    &mut key_switching,
+                )
+                .unwrap();
             black_box(&switched);
         });
     });
@@ -162,13 +163,11 @@ fn bench_order(c: &mut Criterion, order: PbsOrder) {
             PbsOrder::KeyswitchBootstrap => &small_lwe,
         };
         b.iter(|| {
-            fourier_blind_rotate_to(
+            black_box(server_key.bootstrapping_key()).fourier_blind_rotate_to(
                 black_box(blind_rotation_input),
                 black_box(lookup_table.accumulator()),
                 black_box(&mut main_glwe),
-                black_box(server_key.bootstrapping_key()),
-                parameters.small_lwe(),
-                parameters.bootstrapping(),
+                bootstrapping,
                 &mut fft,
                 &mut blind_rotation,
             );

@@ -1,12 +1,10 @@
 use std::hint::black_box;
-use std::sync::Arc;
 
 use criterion::{BatchSize, BenchmarkId, Criterion, criterion_group, criterion_main};
-use primus_decompose::big_integer::BigUintApproxSignedBasis;
 use primus_factor::ShoupFactor;
 use primus_fhe_core::{
-    CrtGlevParameters, CrtGlweAutoContext, CrtGlweAutoKey, CrtGlweParameters, DcrtGlweAutoKey,
-    DcrtGlweCiphertext, DcrtGlweSecretKey, GlweSecretKey, RingSecretKeyType,
+    CrtGlevParameters, CrtGlweAutoContext, CrtGlweAutoKey, CrtGlweParameters, DcrtGadgetDomain,
+    DcrtGlweAutoKey, DcrtGlweCiphertext, DcrtGlweSecretKey, GlweSecretKey, RingSecretKeyType,
 };
 use primus_integer::BigUint;
 use primus_lattice::glwe::{CrtGlwe, DcrtGlwe};
@@ -25,7 +23,6 @@ fn bench_expand_coeff_components(c: &mut Criterion) {
     let mod_gamma = BarrettModulus::new(gamma);
     let moduli_values: [V; 2] = [1125899906826241, 1125899906629633];
     let moduli = moduli_values.map(BarrettModulus::new);
-    let moduli_count = moduli_values.len();
 
     let mut rng = rand::rng();
 
@@ -47,35 +44,20 @@ fn bench_expand_coeff_components(c: &mut Criterion) {
         );
 
         let crt_poly_len = glwe_params.rns_poly_len();
-        let big_uint_poly_len = glwe_params.big_uint_poly_len();
         let rns_glwe_len = glwe_params.rns_glwe_len();
         let base_q = glwe_params.base_q();
 
         let sk = GlweSecretKey::generate(&glwe_params, &mut rng);
         let dcrt_sk = DcrtGlweSecretKey::from_coeff_secret_key(&sk, &table);
 
-        let basis = BigUintApproxSignedBasis::new(base_q, 20, None);
-        let glev_params = CrtGlevParameters::with_glwe_params(&glwe_params, basis);
+        let glev_params = CrtGlevParameters::with_glwe_params(&glwe_params, 20, None);
 
-        let table = Arc::new(table);
-        let table_ref = table.as_ref();
+        let domain = DcrtGadgetDomain::try_new(&glev_params, &table).unwrap();
+        let table_ref = &table;
 
         let auto_degree = poly_length + 1;
-        let crt_auto_key = CrtGlweAutoKey::new(
-            &glev_params,
-            auto_degree,
-            &sk,
-            &dcrt_sk,
-            Arc::clone(&table),
-            &mut rng,
-        );
-        let dcrt_auto_key = DcrtGlweAutoKey::new(
-            &glev_params,
-            auto_degree,
-            &dcrt_sk,
-            Arc::clone(&table),
-            &mut rng,
-        );
+        let crt_auto_key = CrtGlweAutoKey::new(&domain, auto_degree, &sk, &dcrt_sk, &mut rng);
+        let dcrt_auto_key = DcrtGlweAutoKey::new(&domain, auto_degree, &dcrt_sk, &mut rng);
 
         let input: Polynomial<Vec<V>> = Polynomial::random(poly_length, mod_t, &mut rng);
         let mut msg: CrtPolynomial<Vec<V>> = CrtPolynomial::zero(crt_poly_len);
@@ -113,28 +95,28 @@ fn bench_expand_coeff_components(c: &mut Criterion) {
                 .collect::<Vec<_>>()
         };
 
-        let mut crt_auto_context =
-            CrtGlweAutoContext::new(poly_length, crt_poly_len, big_uint_poly_len, moduli_count);
-        let mut dcrt_auto_context =
-            CrtGlweAutoContext::new(poly_length, crt_poly_len, big_uint_poly_len, moduli_count);
+        let mut crt_auto_context = CrtGlweAutoContext::new(&domain);
+        let mut dcrt_auto_context = CrtGlweAutoContext::new(&domain);
         let mut crt_auto_result: CrtGlwe<Vec<V>> = CrtGlwe::zero(rns_glwe_len);
         let mut dcrt_auto_result: DcrtGlweCiphertext<Vec<V>> =
             DcrtGlweCiphertext::zero(rns_glwe_len);
 
-        crt_auto_key.automorphism_to(
-            &c_coeff,
-            &mut crt_auto_result,
-            &glev_params,
-            base_q,
-            &mut crt_auto_context,
-        );
-        dcrt_auto_key.automorphism_to(
-            &c_ntt,
-            &mut dcrt_auto_result,
-            &glev_params,
-            base_q,
-            &mut dcrt_auto_context,
-        );
+        crt_auto_key
+            .automorphism_to(
+                &c_coeff,
+                &mut crt_auto_result,
+                &domain,
+                &mut crt_auto_context,
+            )
+            .unwrap();
+        dcrt_auto_key
+            .automorphism_to(
+                &c_ntt,
+                &mut dcrt_auto_result,
+                &domain,
+                &mut dcrt_auto_context,
+            )
+            .unwrap();
 
         let n_label = format!("N={poly_length}");
 
@@ -161,20 +143,16 @@ fn bench_expand_coeff_components(c: &mut Criterion) {
             &(),
             |b, _| {
                 let mut result: CrtGlwe<Vec<V>> = CrtGlwe::zero(rns_glwe_len);
-                let mut context = CrtGlweAutoContext::new(
-                    poly_length,
-                    crt_poly_len,
-                    big_uint_poly_len,
-                    moduli_count,
-                );
+                let mut context = CrtGlweAutoContext::new(&domain);
                 b.iter(|| {
-                    crt_auto_key.automorphism_to(
-                        black_box(&c_coeff),
-                        black_box(&mut result),
-                        &glev_params,
-                        base_q,
-                        &mut context,
-                    );
+                    crt_auto_key
+                        .automorphism_to(
+                            black_box(&c_coeff),
+                            black_box(&mut result),
+                            &domain,
+                            &mut context,
+                        )
+                        .unwrap();
                 });
             },
         );
@@ -184,20 +162,16 @@ fn bench_expand_coeff_components(c: &mut Criterion) {
             &(),
             |b, _| {
                 let mut result: DcrtGlweCiphertext<Vec<V>> = DcrtGlweCiphertext::zero(rns_glwe_len);
-                let mut context = CrtGlweAutoContext::new(
-                    poly_length,
-                    crt_poly_len,
-                    big_uint_poly_len,
-                    moduli_count,
-                );
+                let mut context = CrtGlweAutoContext::new(&domain);
                 b.iter(|| {
-                    dcrt_auto_key.automorphism_to(
-                        black_box(&c_ntt),
-                        black_box(&mut result),
-                        &glev_params,
-                        base_q,
-                        &mut context,
-                    );
+                    dcrt_auto_key
+                        .automorphism_to(
+                            black_box(&c_ntt),
+                            black_box(&mut result),
+                            &domain,
+                            &mut context,
+                        )
+                        .unwrap();
                 });
             },
         );

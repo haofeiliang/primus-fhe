@@ -12,7 +12,7 @@ use primus_reduce::FieldContext;
 use primus_rns::RNSBase;
 
 use crate::{
-    context::{DcrtGlevContext, DcrtGlevContextRefMut},
+    context::{DcrtGlevMulContext, DcrtGlevMulContextRefMut},
     glev::DcrtGlev,
 };
 
@@ -189,7 +189,7 @@ where
         basis: &BigUintApproxSignedBasis<T>,
         table: &Table,
         rns_base: &RNSBase<T, M>,
-        context: &mut DcrtGlevContext<T>,
+        context: &mut DcrtGlevMulContext<T>,
     ) where
         M: FieldContext<T>,
         Table: DcrtTable<ValueT = T>,
@@ -203,7 +203,7 @@ where
         let moduli = rns_base.moduli();
         let dcrt_glwe_len = self.0.len();
 
-        let DcrtGlevContextRefMut {
+        let DcrtGlevMulContextRefMut {
             adjust_big_uint_values,
             decomposed_unsigned_values,
             carries,
@@ -268,7 +268,7 @@ where
         basis: &BigUintApproxSignedBasis<T>,
         table: &Table,
         rns_base: &RNSBase<T, M>,
-        context: &mut DcrtGlevContext<T>,
+        context: &mut DcrtGlevMulContext<T>,
     ) where
         M: FieldContext<T>,
         Table: DcrtTable<ValueT = T>,
@@ -286,7 +286,7 @@ where
         let dcrt_glwe_len = self.0.len();
 
         context.clear();
-        let DcrtGlevContextRefMut {
+        let DcrtGlevMulContextRefMut {
             adjust_big_uint_values,
             decomposed_unsigned_values,
             carries,

@@ -1,18 +1,19 @@
-use core::marker::PhantomData;
-
 use primus_data::{Data, RawData};
 use primus_fft::{Complex64, FftEngine, FftTable, TorusFftValue};
 use primus_integer::FheUint;
 use primus_modulus::NativeModulus;
 use primus_ntt::NttTable;
 use primus_poly::PolynomialOwned;
-use primus_reduce::FieldContext;
+use primus_reduce::{FieldContext, RingContext};
 
-use primus_lattice::ggsw::{FourierGgsw, FourierGgswIter, NttGgsw, NttGgswIter};
+use primus_lattice::{
+    GadgetSize,
+    ggsw::{FourierGgsw, FourierGgswIter, NttGgsw, NttGgswIter},
+};
 
 use crate::{
-    FourierGadgetEncryptContext, FourierGlweSecretKey, GlevCommonSize, GlevParameters,
-    LweSecretKey, LweSecretKeyType, NttGadgetEncryptContext, NttGlweSecretKey,
+    FourierGadgetEncryptContext, FourierGlweSecretKey, GlevParameters, LweParameters, LweSecretKey,
+    LweSecretKeyType, NttGadgetDomain, NttGadgetEncryptContext, NttGlweSecretKey,
 };
 
 /// A bootstrapping key containing one GGSW encryption per input LWE secret
@@ -24,9 +25,9 @@ use crate::{
 pub struct FunctionalBootstrappingKey<T: FheUint, S> {
     data: S,
     input_dimension: usize,
-    common_size: GlevCommonSize,
+    input_modulus: Option<T>,
+    size: GadgetSize,
     cipher_modulus: Option<T>,
-    value_type: PhantomData<T>,
 }
 
 /// Fourier-domain functional bootstrapping key for a native torus.
@@ -42,10 +43,16 @@ impl<T: FheUint, S> FunctionalBootstrappingKey<T, S> {
         self.input_dimension
     }
 
+    /// Returns the explicit input LWE modulus, or `None` for a native torus.
+    #[inline]
+    pub fn input_modulus(&self) -> Option<T> {
+        self.input_modulus
+    }
+
     /// Returns the GGSW/GLWE layout bound to this key.
     #[inline]
-    pub fn common_size(&self) -> GlevCommonSize {
-        self.common_size
+    pub fn size(&self) -> GadgetSize {
+        self.size
     }
 
     /// Returns the explicit ciphertext modulus, or `None` for the native
@@ -74,21 +81,25 @@ where
 {
     /// Generates a Fourier bootstrapping key encrypting every binary input
     /// LWE secret coefficient under `output_secret_key`.
-    pub fn generate_fourier<Table, R>(
+    pub fn generate_fourier<LM, Table, R>(
         input_secret_key: &LweSecretKey<T>,
-        output_secret_key: &FourierGlweSecretKey<T>,
-        params: &GlevParameters<T, NativeModulus<T>>,
+        input_parameters: &LweParameters<T, LM>,
+        output_secret_key: &FourierGlweSecretKey,
+        parameters: &GlevParameters<T, NativeModulus<T>>,
         fft: &mut FftEngine<'_, Table>,
         rng: &mut R,
         context: &mut FourierGadgetEncryptContext<T>,
     ) -> Self
     where
+        LM: RingContext<T>,
         Table: FftTable,
         R: rand::Rng + rand::CryptoRng,
     {
+        let params = parameters;
         assert_eq!(input_secret_key.distr(), LweSecretKeyType::Binary);
-        assert_eq!(output_secret_key.dimension(), params.dimension());
-        assert_eq!(output_secret_key.poly_length(), params.poly_length());
+        assert_eq!(input_secret_key.dimension(), input_parameters.dimension());
+        assert_eq!(input_parameters.secret_key_type(), LweSecretKeyType::Binary);
+        assert_eq!(output_secret_key.glwe_size(), params.glwe_size());
 
         let input_dimension = input_secret_key.dimension();
         let ggsw_len = params.fourier_ggsw_len();
@@ -117,38 +128,41 @@ where
         Self {
             data,
             input_dimension,
-            common_size: params.common_size(),
+            input_modulus: input_parameters.cipher_modulus().explicit_value(),
+            size: params.size(),
             cipher_modulus: None,
-            value_type: PhantomData,
         }
     }
 
     /// Iterates over the Fourier GGSW encryptions.
     #[inline]
     pub fn iter_fourier_ggsw(&self) -> FourierGgswIter<'_> {
-        FourierGgswIter::new(&self.data, self.common_size.fourier_ggsw_len())
+        FourierGgswIter::new(&self.data, self.size.fourier_ggsw_len())
     }
 }
 
 impl<T: FheUint> FunctionalBootstrappingKey<T, Vec<T>> {
     /// Generates an NTT bootstrapping key encrypting every binary input LWE
     /// secret coefficient under `output_secret_key`.
-    pub fn generate_ntt<M, Table, R>(
+    pub fn generate_ntt<LM, M, Table, R>(
         input_secret_key: &LweSecretKey<T>,
+        input_parameters: &LweParameters<T, LM>,
         output_secret_key: &NttGlweSecretKey<T>,
-        params: &GlevParameters<T, M>,
-        ntt: &Table,
+        domain: &NttGadgetDomain<'_, T, M, Table>,
         rng: &mut R,
         context: &mut NttGadgetEncryptContext<T>,
     ) -> Self
     where
+        LM: RingContext<T>,
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
         R: rand::Rng + rand::CryptoRng,
     {
+        let params = domain.parameters();
         assert_eq!(input_secret_key.distr(), LweSecretKeyType::Binary);
-        assert_eq!(output_secret_key.dimension(), params.dimension());
-        assert_eq!(output_secret_key.poly_length(), params.poly_length());
+        assert_eq!(input_secret_key.dimension(), input_parameters.dimension());
+        assert_eq!(input_parameters.secret_key_type(), LweSecretKeyType::Binary);
+        assert_eq!(output_secret_key.glwe_size(), params.glwe_size());
 
         let input_dimension = input_secret_key.dimension();
         let ggsw_len = params.ggsw_len();
@@ -167,8 +181,7 @@ impl<T: FheUint> FunctionalBootstrappingKey<T, Vec<T>> {
             output_secret_key.encrypt_ggsw_to(
                 &message,
                 &mut NttGgsw::new(chunk),
-                params,
-                ntt,
+                domain,
                 rng,
                 context,
             );
@@ -177,15 +190,15 @@ impl<T: FheUint> FunctionalBootstrappingKey<T, Vec<T>> {
         Self {
             data,
             input_dimension,
-            common_size: params.common_size(),
+            input_modulus: input_parameters.cipher_modulus().explicit_value(),
+            size: params.size(),
             cipher_modulus: Some(params.cipher_modulus().value()),
-            value_type: PhantomData,
         }
     }
 
     /// Iterates over the NTT GGSW encryptions.
     #[inline]
     pub fn iter_ntt_ggsw(&self) -> NttGgswIter<'_, T> {
-        NttGgswIter::new(&self.data, self.common_size.ggsw_len())
+        NttGgswIter::new(&self.data, self.size.ggsw_len())
     }
 }

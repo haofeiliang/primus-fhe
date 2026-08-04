@@ -40,10 +40,10 @@ where
         C: RawData<Elem = T> + Data,
         D: RawData<Elem = T> + DataMut,
     {
-        let size = context.size();
-        debug_assert_eq!(ct0.as_ref().len(), size.glwe_len());
-        debug_assert_eq!(ct1.as_ref().len(), size.glwe_len());
-        debug_assert_eq!(output.as_ref().len(), size.glwe_len());
+        let glwe_len = context.size().glwe_size().glwe_len();
+        debug_assert_eq!(ct0.as_ref().len(), glwe_len);
+        debug_assert_eq!(ct1.as_ref().len(), glwe_len);
+        debug_assert_eq!(output.as_ref().len(), glwe_len);
 
         ct1.sub_element_wise_to(ct0, output, NativeModulus::new());
         self.external_product_accumulate(output, basis, fft, context);
@@ -71,7 +71,7 @@ where
         B: RawData<Elem = T> + Data,
         C: RawData<Elem = T> + DataMut,
     {
-        let poly_length = context.size().poly_length();
+        let poly_length = context.size().glwe_size().poly_length();
 
         input.mul_monomial_sub_one_to(exponent, output, poly_length, NativeModulus::new());
         self.external_product_accumulate(output, basis, fft, context);
@@ -108,10 +108,10 @@ where
         C: RawData<Elem = T> + Data,
         D: RawData<Elem = T> + DataMut,
     {
-        let size = context.size();
-        debug_assert_eq!(ct0.as_ref().len(), size.glwe_len());
-        debug_assert_eq!(ct1.as_ref().len(), size.glwe_len());
-        debug_assert_eq!(output.as_ref().len(), size.glwe_len());
+        let glwe_len = context.size().glwe_size().glwe_len();
+        debug_assert_eq!(ct0.as_ref().len(), glwe_len);
+        debug_assert_eq!(ct1.as_ref().len(), glwe_len);
+        debug_assert_eq!(output.as_ref().len(), glwe_len);
 
         ct1.sub_element_wise_to(ct0, output, modulus);
         self.external_product_accumulate(output, basis, modulus, ntt, context);
@@ -141,7 +141,7 @@ where
         B: RawData<Elem = T> + Data,
         C: RawData<Elem = T> + DataMut,
     {
-        let poly_length = context.size().poly_length();
+        let poly_length = context.size().glwe_size().poly_length();
 
         input.mul_monomial_sub_one_to(exponent, output, poly_length, modulus);
         self.external_product_accumulate(output, basis, modulus, ntt, context);

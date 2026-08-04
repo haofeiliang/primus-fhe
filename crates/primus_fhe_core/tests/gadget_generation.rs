@@ -1,9 +1,8 @@
-use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{FftEngine, FftTable, RustFftTable};
 use primus_fhe_core::{
     FourierGadgetEncryptContext, FourierGlweDecryptContext, FourierGlweEncryptContext,
-    FourierGlweSecretKey, GlevCommonSize, GlevParameters, GlweCommonSize, GlweParameters,
-    GlweSecretKey, NttGadgetEncryptContext, NttGlweSecretKey, RingSecretKeyType,
+    FourierGlweSecretKey, GadgetSize, GlevParameters, GlweParameters, GlweSecretKey, GlweSize,
+    NttGadgetDomain, NttGadgetEncryptContext, NttGlweSecretKey, RingSecretKeyType,
 };
 use primus_lattice::{
     context::{FourierExternalProductContext, NttExternalProductContext},
@@ -21,25 +20,17 @@ const POLY_LENGTH: usize = 256;
 
 #[test]
 fn single_modulus_common_sizes_match_layout() {
-    let glwe = GlweCommonSize::new(DIMENSION, POLY_LENGTH);
+    let glwe = GlweSize::new(DIMENSION, POLY_LENGTH);
     assert_eq!(glwe.dimension(), DIMENSION);
     assert_eq!(glwe.poly_length(), POLY_LENGTH);
-    assert_eq!(glwe.glwe_mid(), DIMENSION * POLY_LENGTH);
-    assert_eq!(glwe.secret_key_len(), DIMENSION * POLY_LENGTH);
+    assert_eq!(glwe.mask_len(), DIMENSION * POLY_LENGTH);
     assert_eq!(glwe.glwe_len(), (DIMENSION + 1) * POLY_LENGTH);
-    assert_eq!(glwe.fourier_glwe_mid(), DIMENSION * POLY_LENGTH / 2);
-    assert_eq!(glwe.fourier_glwe_len(), (DIMENSION + 1) * POLY_LENGTH / 2);
 
-    let glev = GlevCommonSize::new(glwe, 4);
-    assert_eq!(glev.glwe_common_size(), glwe);
+    let glev = GadgetSize::new(glwe, 4);
+    assert_eq!(glev.glwe_size(), glwe);
     assert_eq!(glev.decompose_length(), 4);
     assert_eq!(glev.glev_len(), 4 * glwe.glwe_len());
     assert_eq!(glev.ggsw_len(), (DIMENSION + 1) * glev.glev_len());
-    assert_eq!(glev.fourier_glev_len(), 4 * glwe.fourier_glwe_len());
-    assert_eq!(
-        glev.fourier_ggsw_len(),
-        (DIMENSION + 1) * glev.fourier_glev_len()
-    );
 }
 
 fn native_distance(lhs: u32, rhs: u32) -> u32 {
@@ -64,11 +55,9 @@ fn fourier_glev_generation_and_ggsw_external_product() {
         RingSecretKeyType::Binary,
         0.7,
     );
-    let basis = ApproxSignedBasis::new(None, 8, None);
-    let params = GlevParameters::with_glwe_params(&glwe_params, basis);
+    let params = GlevParameters::with_glwe_params(&glwe_params, 8, None);
     let secret_key = FourierGlweSecretKey::generate(&glwe_params, &mut fft, &mut rng);
-    let mut gadget_context =
-        FourierGadgetEncryptContext::new(POLY_LENGTH, params.basis().decompose_length());
+    let mut gadget_context = FourierGadgetEncryptContext::new(params.size());
     let mut decrypt_context = FourierGlweDecryptContext::new(POLY_LENGTH);
 
     let mut raw_message = vec![0u32; POLY_LENGTH];
@@ -137,7 +126,7 @@ fn fourier_glev_generation_and_ggsw_external_product() {
     input_fourier.write_torus_form(&mut input, &mut fft);
 
     let mut output: TorusGlwe<Vec<u32>> = TorusGlwe::zero(params.glwe_len());
-    let mut external_product_context = FourierExternalProductContext::new(DIMENSION, POLY_LENGTH);
+    let mut external_product_context = FourierExternalProductContext::new(params.size());
     ggsw.external_product_to(
         &input,
         &mut output,
@@ -179,24 +168,17 @@ fn ntt_glev_and_ggsw_generation() {
         RingSecretKeyType::Ternary,
         0.7,
     );
-    let basis = ApproxSignedBasis::new(Some(MODULUS), 8, None);
-    let params = GlevParameters::with_glwe_params(&glwe_params, basis);
+    let params = GlevParameters::with_glwe_params(&glwe_params, 8, None);
+    let domain = NttGadgetDomain::try_new(&params, &ntt).unwrap();
     let coeff_secret_key = GlweSecretKey::generate(&glwe_params, &mut rng);
     let secret_key = NttGlweSecretKey::from_coeff_secret_key(&coeff_secret_key, &ntt);
-    let mut context = NttGadgetEncryptContext::new(POLY_LENGTH, params.basis().decompose_length());
+    let mut context = NttGadgetEncryptContext::new(domain.size());
 
     let mut raw_message = vec![0u32; POLY_LENGTH];
     raw_message[0] = 1;
     let raw_message = Polynomial::new(raw_message);
     let mut glev: NttGlev<Vec<u32>> = NttGlev::zero(params.glev_len());
-    secret_key.encrypt_glev_to(
-        &raw_message,
-        &mut glev,
-        &params,
-        &ntt,
-        &mut rng,
-        &mut context,
-    );
+    secret_key.encrypt_glev_to(&raw_message, &mut glev, &domain, &mut rng, &mut context);
 
     for (scalar, glwe) in params
         .basis()
@@ -214,14 +196,7 @@ fn ntt_glev_and_ggsw_generation() {
     }
 
     let mut ggsw: NttGgsw<Vec<u32>> = NttGgsw::zero(params.ggsw_len());
-    secret_key.encrypt_ggsw_to(
-        &raw_message,
-        &mut ggsw,
-        &params,
-        &ntt,
-        &mut rng,
-        &mut context,
-    );
+    secret_key.encrypt_ggsw_to(&raw_message, &mut ggsw, &domain, &mut rng, &mut context);
 
     for (row, glev) in ggsw.iter_ntt_glev(params.glev_len()).enumerate() {
         for (scalar, glwe) in params
@@ -269,8 +244,7 @@ fn ntt_glev_and_ggsw_generation() {
     secret_key.encrypt_ggsw_to(
         &Polynomial::new(monomial_message),
         &mut ggsw,
-        &params,
-        &ntt,
+        &domain,
         &mut rng,
         &mut context,
     );
@@ -279,7 +253,7 @@ fn ntt_glev_and_ggsw_generation() {
     secret_key.encrypt_to(&plaintext, &mut input_ntt, &glwe_params, &ntt, &mut rng);
     let input = input_ntt.into_coeff_form(&ntt);
     let mut output: Glwe<Vec<u32>> = Glwe::zero(params.glwe_len());
-    let mut external_product_context = NttExternalProductContext::new(DIMENSION, POLY_LENGTH);
+    let mut external_product_context = NttExternalProductContext::new(domain.size());
     ggsw.external_product_to(
         &input,
         &mut output,

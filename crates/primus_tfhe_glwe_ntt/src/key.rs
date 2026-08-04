@@ -57,10 +57,7 @@ where
         let parameters = context.parameters().bootstrapping();
         Self {
             context,
-            gadget: NttGadgetEncryptContext::new(
-                parameters.poly_length(),
-                parameters.decompose_length(),
-            ),
+            gadget: NttGadgetEncryptContext::new(parameters.size()),
         }
     }
 
@@ -93,11 +90,13 @@ where
             client_key.glwe_secret_key(),
             self.context.table(),
         );
+        let bootstrapping_domain = self.context.bootstrapping_domain();
+        self.gadget.resize(bootstrapping_domain.size());
         let bootstrapping_key = NttFunctionalBootstrappingKey::generate_ntt(
             client_key.small_lwe_secret_key(),
+            parameters.small_lwe(),
             &main_glwe_secret_key,
-            parameters.bootstrapping(),
-            self.context.table(),
+            &bootstrapping_domain,
             rng,
             &mut self.gadget,
         );
@@ -111,11 +110,12 @@ where
             &padded_small_glwe_secret_key,
             self.context.table(),
         );
+        let key_switching_domain = self.context.key_switching_domain();
+        self.gadget.resize(key_switching_domain.size());
         let glwe_key_switching_key = NttGlweKeySwitchingKey::generate(
             client_key.glwe_secret_key(),
             &padded_small_glwe_secret_key,
-            parameters.glwe_key_switching(),
-            self.context.table(),
+            &key_switching_domain,
             rng,
             &mut self.gadget,
         );

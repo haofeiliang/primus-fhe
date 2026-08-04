@@ -54,6 +54,15 @@ pub(crate) fn basic(
             }
         }
 
+        impl ::std::cmp::PartialEq for #name {
+            #[inline]
+            fn eq(&self, _other: &Self) -> bool {
+                true
+            }
+        }
+
+        impl ::std::cmp::Eq for #name {}
+
         impl ::std::fmt::Debug for #name {
             #[inline]
             fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {

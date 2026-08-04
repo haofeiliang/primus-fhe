@@ -1,72 +1,20 @@
 use primus_fft::{Complex64, TorusFftValue};
 use primus_integer::FheUint;
 
-use crate::glwe::{FourierGlwe, NttGlwe};
-
-/// Precomputed coefficient-domain GLWE layout.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct GlweSize {
-    poly_length: usize,
-    glwe_dimension: usize,
-    glwe_len: usize,
-}
-
-impl GlweSize {
-    /// Creates and validates a GLWE layout.
-    pub fn new(poly_length: usize, glwe_dimension: usize) -> Self {
-        debug_assert!(poly_length >= 2 && poly_length.is_power_of_two());
-
-        let glwe_len = (glwe_dimension + 1) * poly_length;
-
-        Self {
-            poly_length,
-            glwe_dimension,
-            glwe_len,
-        }
-    }
-
-    /// Returns the polynomial length.
-    #[inline]
-    pub fn poly_length(self) -> usize {
-        self.poly_length
-    }
-
-    /// Returns the GLWE dimension (the number of mask polynomials).
-    #[inline]
-    pub fn glwe_dimension(self) -> usize {
-        self.glwe_dimension
-    }
-
-    /// Returns the number of GLWE components, including the body.
-    #[inline]
-    pub fn component_count(self) -> usize {
-        self.glwe_dimension + 1
-    }
-
-    /// Returns the coefficient-domain GLWE length.
-    #[inline]
-    pub fn glwe_len(self) -> usize {
-        self.glwe_len
-    }
-
-    /// Returns the Fourier GLWE length.
-    #[inline]
-    pub fn fourier_glwe_len(self) -> usize {
-        self.glwe_len / 2
-    }
-}
+use crate::{
+    GadgetSize,
+    glwe::{FourierGlwe, NttGlwe},
+};
 
 /// Pre-allocated scratch buffers for a native-torus Fourier external product.
 ///
 /// All allocations and contract checks happen when the context is constructed
 /// or resized. The external-product hot path only mutates its internal buffers.
 ///
-/// # GLWE dimension convention
-///
-/// `glwe_dimension` is the count of *mask* polynomials (`k`). The
-/// accumulator is sized for `glwe_dimension + 1` polynomials (k mask + 1 body).
+/// The bound [`GadgetSize`] includes the mask and body polynomial counts plus
+/// the decomposition length. Each operation overwrites every internal buffer.
 pub struct FourierExternalProductContext<T: TorusFftValue> {
-    size: GlweSize,
+    size: GadgetSize,
     /// Carry bits, one per coefficient (length = `poly_length`).
     pub(crate) carries: Vec<bool>,
     /// Decomposed (signed) digits for one polynomial (length = `poly_length`).
@@ -80,25 +28,48 @@ pub struct FourierExternalProductContext<T: TorusFftValue> {
 impl<T: TorusFftValue> FourierExternalProductContext<T> {
     /// Creates a new context with all buffers pre-allocated.
     ///
-    /// `glwe_dimension` is the mask count `k`; the accumulator is sized for
-    /// `k + 1` polynomials.
-    pub fn new(glwe_dimension: usize, poly_length: usize) -> Self {
-        let fourier_length = poly_length / 2;
-        let size = GlweSize::new(poly_length, glwe_dimension);
+    /// The accumulator is sized for all mask polynomials and the body.
+    pub fn new(size: GadgetSize) -> Self {
+        let glwe_size = size.glwe_size();
+        let poly_length = glwe_size.poly_length();
+        let fourier_length = glwe_size.fourier_poly_len();
 
         Self {
             size,
             carries: vec![false; poly_length],
             decomposed_poly: vec![T::ZERO; poly_length],
             decomposed_fourier: vec![Complex64::default(); fourier_length],
-            fourier_accumulator: FourierGlwe(vec![Complex64::default(); size.fourier_glwe_len()]),
+            fourier_accumulator: FourierGlwe(vec![
+                Complex64::default();
+                glwe_size.fourier_glwe_len()
+            ]),
         }
     }
 
-    /// Rebinds the context and resizes its scratch buffers.
-    pub fn resize(&mut self, glwe_dimension: usize, poly_length: usize) {
-        let fourier_length = poly_length / 2;
-        let size = GlweSize::new(poly_length, glwe_dimension);
+    /// Rebinds the context to another decomposition layout without reallocating.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `size` has a different GLWE dimension or polynomial length.
+    pub fn rebind(&mut self, size: GadgetSize) {
+        assert_eq!(
+            self.size.glwe_size(),
+            size.glwe_size(),
+            "cannot rebind Fourier external-product context to a different GLWE layout"
+        );
+        self.size = size;
+    }
+
+    /// Rebinds the context and resizes its scratch buffers when the GLWE layout changes.
+    pub fn resize(&mut self, size: GadgetSize) {
+        if self.size.glwe_size() == size.glwe_size() {
+            self.size = size;
+            return;
+        }
+
+        let glwe_size = size.glwe_size();
+        let poly_length = glwe_size.poly_length();
+        let fourier_length = glwe_size.fourier_poly_len();
 
         self.size = size;
         self.carries.resize(poly_length, false);
@@ -107,22 +78,23 @@ impl<T: TorusFftValue> FourierExternalProductContext<T> {
             .resize(fourier_length, Complex64::default());
         self.fourier_accumulator
             .0
-            .resize(size.fourier_glwe_len(), Complex64::default());
+            .resize(glwe_size.fourier_glwe_len(), Complex64::default());
     }
 
     /// Returns the bound external-product layout.
+    #[must_use]
     #[inline]
-    pub fn size(&self) -> GlweSize {
+    pub fn size(&self) -> GadgetSize {
         self.size
     }
 }
 
 /// Pre-allocated scratch buffers for an NTT external product.
 ///
-/// `glwe_dimension` is the number of mask polynomials. The accumulator holds
-/// `glwe_dimension + 1` NTT polynomials, including the body.
+/// The bound [`GadgetSize`] includes the mask and body polynomial counts plus
+/// the decomposition length. Each operation overwrites every internal buffer.
 pub struct NttExternalProductContext<T: FheUint> {
-    size: GlweSize,
+    size: GadgetSize,
     /// Adjusted coefficients used by decomposition (length = `poly_length`).
     pub(crate) adjusted_poly: Vec<T>,
     /// Carry bits, one per coefficient (length = `poly_length`).
@@ -135,32 +107,54 @@ pub struct NttExternalProductContext<T: FheUint> {
 
 impl<T: FheUint> NttExternalProductContext<T> {
     /// Creates a context with all buffers pre-allocated.
-    pub fn new(glwe_dimension: usize, poly_length: usize) -> Self {
-        let size = GlweSize::new(poly_length, glwe_dimension);
+    pub fn new(size: GadgetSize) -> Self {
+        let glwe_size = size.glwe_size();
+        let poly_length = glwe_size.poly_length();
 
         Self {
             size,
             adjusted_poly: vec![T::ZERO; poly_length],
             carries: vec![false; poly_length],
             decomposed_ntt: vec![T::ZERO; poly_length],
-            ntt_accumulator: NttGlwe::zero(size.glwe_len()),
+            ntt_accumulator: NttGlwe::zero(glwe_size.glwe_len()),
         }
     }
 
-    /// Rebinds the context and resizes its scratch buffers.
-    pub fn resize(&mut self, glwe_dimension: usize, poly_length: usize) {
-        let size = GlweSize::new(poly_length, glwe_dimension);
+    /// Rebinds the context to another decomposition layout without reallocating.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `size` has a different GLWE dimension or polynomial length.
+    pub fn rebind(&mut self, size: GadgetSize) {
+        assert_eq!(
+            self.size.glwe_size(),
+            size.glwe_size(),
+            "cannot rebind NTT external-product context to a different GLWE layout"
+        );
+        self.size = size;
+    }
+
+    /// Rebinds the context and resizes its scratch buffers when the GLWE layout changes.
+    pub fn resize(&mut self, size: GadgetSize) {
+        if self.size.glwe_size() == size.glwe_size() {
+            self.size = size;
+            return;
+        }
+
+        let glwe_size = size.glwe_size();
+        let poly_length = glwe_size.poly_length();
 
         self.size = size;
         self.adjusted_poly.resize(poly_length, T::ZERO);
         self.carries.resize(poly_length, false);
         self.decomposed_ntt.resize(poly_length, T::ZERO);
-        self.ntt_accumulator.0.resize(size.glwe_len(), T::ZERO);
+        self.ntt_accumulator.0.resize(glwe_size.glwe_len(), T::ZERO);
     }
 
     /// Returns the bound external-product layout.
+    #[must_use]
     #[inline]
-    pub fn size(&self) -> GlweSize {
+    pub fn size(&self) -> GadgetSize {
         self.size
     }
 }

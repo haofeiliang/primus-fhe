@@ -5,6 +5,13 @@
 #[macro_use]
 mod macros;
 
+mod size;
+
+pub use size::{
+    GadgetSize, GlweSize, GlweSizeError, MAX_POLY_LENGTH, MIN_POLY_LENGTH, RnsGadgetSize,
+    RnsGlweSize,
+};
+
 /// Context types and scratch buffers.
 pub mod context;
 /// GGSW matrix ciphertexts.

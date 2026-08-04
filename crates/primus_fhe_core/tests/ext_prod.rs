@@ -1,9 +1,8 @@
-use primus_decompose::big_integer::BigUintApproxSignedBasis;
 use primus_fhe_core::{
     CrtGlevParameters, CrtGlweParameters, DcrtGlweCiphertext, DcrtGlweDecryptContext,
     DcrtGlwePublicKey, DcrtGlweSecretKey, GlweSecretKey, RingSecretKeyType,
 };
-use primus_lattice::{context::DcrtGlevContext, glwe::DcrtGlwe};
+use primus_lattice::{context::DcrtGlevMulContext, glwe::DcrtGlwe};
 use primus_modulus::BarrettModulus;
 use primus_ntt::{DcrtTable, UintDcrtTable};
 use primus_poly::Polynomial;
@@ -46,9 +45,6 @@ fn test_external_product() {
         3.20,
     );
 
-    let moduli_count = glwe_params.cipher_moduli_count();
-    let rns_poly_len = glwe_params.rns_poly_len();
-    let big_uint_poly_len = glwe_params.big_uint_poly_len();
     let rns_glwe_len = glwe_params.rns_glwe_len();
     let base_q = glwe_params.base_q();
 
@@ -56,8 +52,7 @@ fn test_external_product() {
     let dcrt_sk = DcrtGlweSecretKey::from_coeff_secret_key(&sk, &table);
 
     // ── Decomposition basis and public key ──────────────────────
-    let basis = BigUintApproxSignedBasis::new(base_q, 30, None);
-    let glev_params = CrtGlevParameters::with_glwe_params(&glwe_params, basis);
+    let glev_params = CrtGlevParameters::with_glwe_params(&glwe_params, 30, None);
 
     let pk = DcrtGlwePublicKey::new(&dcrt_sk, &glwe_params, &table, &mut rng);
 
@@ -73,9 +68,8 @@ fn test_external_product() {
         let mut c1: DcrtGlwe<Vec<ValueT>> = DcrtGlweCiphertext::zero(rns_glwe_len);
         let mut c2: DcrtGlwe<Vec<ValueT>> = DcrtGlweCiphertext::zero(rns_glwe_len);
 
-        let mut glev_context =
-            DcrtGlevContext::new(poly_length, rns_poly_len, big_uint_poly_len, moduli_count);
-        let mut decrypt_context = DcrtGlweDecryptContext::new(moduli_count, poly_length);
+        let mut glev_context = DcrtGlevMulContext::new(glev_params.size(), glev_params.base_q());
+        let mut decrypt_context = DcrtGlweDecryptContext::new(glwe_params.size());
 
         dcrt_sk.encrypt_plaintext_inplace(&input, &mut c1, &glwe_params, &table, &mut rng);
 

@@ -1,4 +1,4 @@
-use primus_fhe_core::LookupTable;
+use primus_fhe_core::{LookupTable, NttGadgetDomain};
 use primus_integer::FheUint;
 use primus_ntt::NttTable;
 
@@ -61,6 +61,24 @@ where
     #[inline]
     pub fn table(&self) -> &Table {
         &self.table
+    }
+
+    /// Returns the checked NTT domain used by GLWE key switching.
+    #[inline]
+    pub fn key_switching_domain(
+        &self,
+    ) -> NttGadgetDomain<'_, T, primus_modulus::BarrettModulus<T>, Table> {
+        NttGadgetDomain::try_new(self.parameters.glwe_key_switching().output(), &self.table)
+            .expect("TfheContext must contain a compatible key-switching domain")
+    }
+
+    /// Returns the checked NTT domain used by bootstrapping.
+    #[inline]
+    pub fn bootstrapping_domain(
+        &self,
+    ) -> NttGadgetDomain<'_, T, primus_modulus::BarrettModulus<T>, Table> {
+        NttGadgetDomain::try_new(self.parameters.bootstrapping(), &self.table)
+            .expect("TfheContext must contain a compatible bootstrapping domain")
     }
 
     /// Creates a Boolean gate evaluator.

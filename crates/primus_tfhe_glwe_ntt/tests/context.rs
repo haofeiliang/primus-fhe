@@ -1,4 +1,3 @@
-use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fhe_core::{
     GgswParameters, GlweParameters, LweParameters, LweSecretKeyType, RingSecretKeyType,
 };
@@ -34,14 +33,14 @@ fn parameters_u32_with_plain_modulus_and_order(
         RingSecretKeyType::Binary,
         0.7,
     );
-    let bootstrapping =
-        GgswParameters::with_glwe_params(&glwe, ApproxSignedBasis::new(Some(MODULUS), 8, Some(3)));
-    TfheParameters::with_pbs_order_and_key_switching_basis(
+    let bootstrapping = GgswParameters::with_glwe_params(&glwe, 8, Some(3));
+    TfheParameters::try_with_derived_glwe_key_switching(
         lwe,
         glwe,
         bootstrapping,
+        4,
+        Some(4),
         pbs_order,
-        ApproxSignedBasis::new(Some(MODULUS), 4, Some(4)),
     )
     .unwrap()
 }
@@ -64,16 +63,14 @@ fn supports_the_specialized_u64_table() {
     let modulus = BarrettModulus::new(modulus_value);
     let lwe = LweParameters::new(4, 4, modulus, LweSecretKeyType::Binary, 0.7);
     let glwe = GlweParameters::new(1, POLY_LENGTH, 4, modulus, RingSecretKeyType::Binary, 0.7);
-    let bootstrapping = GgswParameters::with_glwe_params(
-        &glwe,
-        ApproxSignedBasis::new(Some(modulus_value), 8, Some(3)),
-    );
-    let parameters = TfheParameters::with_pbs_order_and_key_switching_basis(
+    let bootstrapping = GgswParameters::with_glwe_params(&glwe, 8, Some(3));
+    let parameters = TfheParameters::try_with_derived_glwe_key_switching(
         lwe,
         glwe,
         bootstrapping,
+        4,
+        Some(4),
         PbsOrder::BootstrapKeyswitch,
-        ApproxSignedBasis::new(Some(modulus_value), 4, Some(4)),
     )
     .unwrap();
     let table = U64NttTable::new(POLY_LENGTH.trailing_zeros(), modulus).unwrap();
@@ -138,14 +135,14 @@ fn rejects_different_lwe_and_glwe_moduli_for_key_switching() {
         RingSecretKeyType::Binary,
         0.7,
     );
-    let bootstrapping =
-        GgswParameters::with_glwe_params(&glwe, ApproxSignedBasis::new(Some(MODULUS), 8, Some(3)));
-    let error = TfheParameters::with_pbs_order_and_key_switching_basis(
+    let bootstrapping = GgswParameters::with_glwe_params(&glwe, 8, Some(3));
+    let error = TfheParameters::try_with_derived_glwe_key_switching(
         lwe,
         glwe,
         bootstrapping,
+        4,
+        Some(4),
         PbsOrder::BootstrapKeyswitch,
-        ApproxSignedBasis::new(Some(MODULUS), 4, Some(4)),
     )
     .err();
 

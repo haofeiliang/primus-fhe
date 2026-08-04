@@ -1,12 +1,12 @@
-/// Errors returned when constructing a multi-limb approximate signed basis.
+/// Errors returned when constructing an approximate signed decomposition basis.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum BigUintApproxSignedBasisError {
+pub enum ApproxSignedBasisError {
     /// The logarithm of the decomposition basis is outside the supported range.
     #[error("log_basis must satisfy 2 <= log_basis < {limb_bits}, got {log_basis}")]
     InvalidLogBasis {
         /// Requested base-2 logarithm.
         log_basis: u32,
-        /// Bit width of one modulus limb.
+        /// Bit width of the primitive value or one multi-limb value limb.
         limb_bits: u32,
     },
     /// The decomposition basis is larger than the modulus.

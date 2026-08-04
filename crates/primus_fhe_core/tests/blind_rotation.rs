@@ -1,12 +1,10 @@
-use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{FftEngine, FftTable, RustFftTable};
 use primus_fhe_core::{
     FourierBlindRotationContext, FourierFunctionalBootstrappingKey, FourierGadgetEncryptContext,
     FourierGlweDecryptContext, FourierGlweEncryptContext, FourierGlweSecretKey, GlevParameters,
     GlweParameters, GlweSecretKey, LweParameters, LweSecretKey, LweSecretKeyType,
-    NttBlindRotationContext, NttFunctionalBootstrappingKey, NttGadgetEncryptContext,
-    NttGlweSecretKey, RingSecretKeyType, fourier_blind_rotate_exponents_to,
-    fourier_blind_rotate_to, ntt_blind_rotate_exponents_to, ntt_blind_rotate_to,
+    NttBlindRotationContext, NttFunctionalBootstrappingKey, NttGadgetDomain,
+    NttGadgetEncryptContext, NttGlweSecretKey, RingSecretKeyType,
 };
 use primus_lattice::{
     glwe::{FourierGlweOwned, Glwe, NttGlwe, TorusGlwe},
@@ -65,14 +63,13 @@ fn fourier_functional_bootstrapping_key_blind_rotates() {
         RingSecretKeyType::Binary,
         0.7,
     );
-    let ggsw_params =
-        GlevParameters::with_glwe_params(&glwe_params, ApproxSignedBasis::new(None, 8, None));
+    let ggsw_params = GlevParameters::with_glwe_params(&glwe_params, 8, None);
     let input_secret_key = LweSecretKey::new(vec![1u32, 0, 1, 1], LweSecretKeyType::Binary);
     let output_secret_key = FourierGlweSecretKey::generate(&glwe_params, &mut fft, &mut rng);
-    let mut gadget_context =
-        FourierGadgetEncryptContext::new(POLY_LENGTH, ggsw_params.basis().decompose_length());
+    let mut gadget_context = FourierGadgetEncryptContext::new(ggsw_params.size());
     let key = FourierFunctionalBootstrappingKey::generate_fourier(
         &input_secret_key,
+        &lwe_params,
         &output_secret_key,
         &ggsw_params,
         &mut fft,
@@ -105,13 +102,11 @@ fn fourier_functional_bootstrapping_key_blind_rotates() {
     accumulator_fourier.write_torus_form(&mut accumulator, &mut fft);
 
     let mut output: TorusGlwe<Vec<u32>> = TorusGlwe::zero(ggsw_params.glwe_len());
-    let mut blind_rotation_context = FourierBlindRotationContext::new(GLWE_DIMENSION, POLY_LENGTH);
-    fourier_blind_rotate_to(
+    let mut blind_rotation_context = FourierBlindRotationContext::new(ggsw_params.size());
+    key.fourier_blind_rotate_to(
         &input,
         &accumulator,
         &mut output,
-        &key,
-        &lwe_params,
         &ggsw_params,
         &mut fft,
         &mut blind_rotation_context,
@@ -134,11 +129,10 @@ fn fourier_functional_bootstrapping_key_blind_rotates() {
     );
 
     let exponent_input = Lwe::new(vec![3u32, 0, 7, 11, 23]);
-    fourier_blind_rotate_exponents_to(
+    key.fourier_blind_rotate_exponents_to(
         &exponent_input,
         &accumulator,
         &mut output,
-        &key,
         &ggsw_params,
         &mut fft,
         &mut blind_rotation_context,
@@ -179,20 +173,17 @@ fn ntt_functional_bootstrapping_key_blind_rotates() {
         RingSecretKeyType::Ternary,
         0.7,
     );
-    let ggsw_params = GlevParameters::with_glwe_params(
-        &glwe_params,
-        ApproxSignedBasis::new(Some(MODULUS), 8, None),
-    );
+    let ggsw_params = GlevParameters::with_glwe_params(&glwe_params, 8, None);
+    let domain = NttGadgetDomain::try_new(&ggsw_params, &ntt).unwrap();
     let input_secret_key = LweSecretKey::new(vec![1u32, 0, 1, 1], LweSecretKeyType::Binary);
     let coeff_output_secret_key = GlweSecretKey::generate(&glwe_params, &mut rng);
     let output_secret_key = NttGlweSecretKey::from_coeff_secret_key(&coeff_output_secret_key, &ntt);
-    let mut gadget_context =
-        NttGadgetEncryptContext::new(POLY_LENGTH, ggsw_params.basis().decompose_length());
+    let mut gadget_context = NttGadgetEncryptContext::new(domain.size());
     let key = NttFunctionalBootstrappingKey::generate_ntt(
         &input_secret_key,
+        &lwe_params,
         &output_secret_key,
-        &ggsw_params,
-        &ntt,
+        &domain,
         &mut rng,
         &mut gadget_context,
     );
@@ -220,15 +211,12 @@ fn ntt_functional_bootstrapping_key_blind_rotates() {
     let accumulator = accumulator_ntt.into_coeff_form(&ntt);
 
     let mut output: Glwe<Vec<u32>> = Glwe::zero(ggsw_params.glwe_len());
-    let mut blind_rotation_context = NttBlindRotationContext::new(GLWE_DIMENSION, POLY_LENGTH);
-    ntt_blind_rotate_to(
+    let mut blind_rotation_context = NttBlindRotationContext::new(domain.size());
+    key.ntt_blind_rotate_to(
         &input,
         &accumulator,
         &mut output,
-        &key,
-        &lwe_params,
-        &ggsw_params,
-        &ntt,
+        &domain,
         &mut blind_rotation_context,
     );
 
@@ -243,13 +231,11 @@ fn ntt_functional_bootstrapping_key_blind_rotates() {
 
     let exponent_input = Lwe::new(vec![3u32, 0, 7, 11, 23]);
     let mut direct_output: Glwe<Vec<u32>> = Glwe::zero(ggsw_params.glwe_len());
-    ntt_blind_rotate_exponents_to(
+    key.ntt_blind_rotate_exponents_to(
         &exponent_input,
         &accumulator,
         &mut direct_output,
-        &key,
-        &ggsw_params,
-        &ntt,
+        &domain,
         &mut blind_rotation_context,
     );
     let direct_output_ntt = direct_output.into_ntt_form(&ntt);

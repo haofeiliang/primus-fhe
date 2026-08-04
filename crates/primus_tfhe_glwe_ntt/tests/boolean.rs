@@ -1,4 +1,3 @@
-use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fhe_core::{
     GgswParameters, GlweParameters, LweParameters, LweSecretKeyType, RingSecretKeyType,
 };
@@ -20,14 +19,14 @@ fn parameters_with_order(pbs_order: PbsOrder) -> TfheParameters<u32> {
     let modulus = BarrettModulus::new(MODULUS);
     let lwe = LweParameters::new(4, 4, modulus, LweSecretKeyType::Binary, 0.7);
     let glwe = GlweParameters::new(1, POLY_LENGTH, 4, modulus, RingSecretKeyType::Binary, 0.7);
-    let bootstrapping =
-        GgswParameters::with_glwe_params(&glwe, ApproxSignedBasis::new(Some(MODULUS), 8, Some(3)));
-    TfheParameters::with_pbs_order_and_key_switching_basis(
+    let bootstrapping = GgswParameters::with_glwe_params(&glwe, 8, Some(3));
+    TfheParameters::try_with_derived_glwe_key_switching(
         lwe,
         glwe,
         bootstrapping,
+        4,
+        Some(4),
         pbs_order,
-        ApproxSignedBasis::new(Some(MODULUS), 4, Some(4)),
     )
     .unwrap()
 }

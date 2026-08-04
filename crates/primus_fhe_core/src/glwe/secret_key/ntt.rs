@@ -2,6 +2,7 @@
 
 use primus_data::{Data, DataMut, RawData};
 use primus_integer::FheUint;
+use primus_lattice::GlweSize;
 use primus_ntt::NttTable;
 use primus_poly::{NttPolynomial, NttPolynomialIter, Polynomial, PolynomialOwned};
 use primus_reduce::FieldContext;
@@ -19,8 +20,7 @@ use super::{GlweSecretKey, encode_secret_polynomial_to};
 #[derive(Clone)]
 pub struct NttGlweSecretKey<T: FheUint> {
     key: Vec<T>,
-    poly_length: usize,
-    dimension: usize,
+    size: GlweSize,
     distr: RingSecretKeyType,
 }
 
@@ -36,33 +36,27 @@ impl<T: FheUint> ZeroizeOnDrop for NttGlweSecretKey<T> {}
 impl<T: FheUint> NttGlweSecretKey<T> {
     /// Creates a new [`NttGlweSecretKey<T>`].
     #[inline]
-    pub fn new(
-        key: Vec<T>,
-        poly_length: usize,
-        dimension: usize,
-        distr: RingSecretKeyType,
-    ) -> Self {
-        assert!(poly_length >= 2 && poly_length.is_power_of_two());
-        assert!(dimension > 0);
-        assert_eq!(key.len(), poly_length * dimension);
-        Self {
-            key,
-            poly_length,
-            dimension,
-            distr,
-        }
+    pub fn new(key: Vec<T>, size: GlweSize, distr: RingSecretKeyType) -> Self {
+        assert_eq!(key.len(), size.mask_len());
+        Self { key, size, distr }
+    }
+
+    /// Returns the coefficient-domain GLWE layout.
+    #[inline]
+    pub fn glwe_size(&self) -> GlweSize {
+        self.size
     }
 
     /// Returns the poly length of this [`NttGlweSecretKey<T>`].
     #[inline]
     pub fn poly_length(&self) -> usize {
-        self.poly_length
+        self.size.poly_length()
     }
 
     /// Returns the dimension of this [`NttGlweSecretKey<T>`].
     #[inline]
     pub fn dimension(&self) -> usize {
-        self.dimension
+        self.size.dimension()
     }
 
     /// Returns the distr of this [`NttGlweSecretKey<T>`].
@@ -73,7 +67,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
 
     #[inline]
     pub fn iter(&self) -> NttPolynomialIter<'_, T> {
-        NttPolynomialIter::new(self.key.as_slice(), self.poly_length)
+        NttPolynomialIter::new(self.key.as_slice(), self.size.poly_length())
     }
 
     /// Creates a new [`NttGlweSecretKey`] from [`GlweSecretKey`].
@@ -82,16 +76,17 @@ impl<T: FheUint> NttGlweSecretKey<T> {
     where
         Table: NttTable<ValueT = T>,
     {
-        let poly_length = secret_key.poly_length;
+        let size = secret_key.size();
+        let poly_length = size.poly_length();
         assert_eq!(ntt_table.poly_length(), poly_length);
 
-        let mut key = vec![T::ZERO; secret_key.dimension * poly_length];
+        let mut key = vec![T::ZERO; size.mask_len()];
         for (coefficients, ntt_secret) in secret_key.iter().zip(key.chunks_exact_mut(poly_length)) {
             encode_secret_polynomial_to(coefficients, ntt_secret, ntt_table.modulus());
             ntt_table.transform_slice(ntt_secret);
         }
 
-        Self::new(key, poly_length, secret_key.dimension, secret_key.distr)
+        Self::new(key, size, secret_key.distr)
     }
 
     /// Generates a new [`NttGlweSecretKey<T>`] from parameters.
@@ -206,8 +201,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         Table: NttTable<ValueT = T>,
         R: rand::Rng + rand::CryptoRng,
     {
-        let len = (self.dimension + 1) * self.poly_length;
-        let mut result: NttGlweCiphertext<Vec<T>> = NttGlweCiphertext::zero(len);
+        let mut result: NttGlweCiphertext<Vec<T>> = NttGlweCiphertext::zero(self.size.glwe_len());
         self.encrypt_zeros_to(&mut result, params, ntt_table, rng);
         result
     }
@@ -291,17 +285,14 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         R: rand::Rng + rand::CryptoRng,
         B: RawData<Elem = T> + DataMut,
     {
-        assert_eq!(ntt_table.poly_length(), self.poly_length);
-        assert_eq!(
-            result.as_ref().len(),
-            (self.dimension + 1) * self.poly_length
-        );
+        let poly_length = self.size.poly_length();
+        assert_eq!(ntt_table.poly_length(), poly_length);
+        assert_eq!(result.as_ref().len(), self.size.glwe_len());
 
         if let Some(message) = message.as_slice() {
-            assert_eq!(message.len(), self.poly_length);
+            assert_eq!(message.len(), poly_length);
         }
 
-        let poly_length = self.poly_length;
         let modulus = params.inner.cipher_modulus();
         let (a, mut b) = result.a_b_mut(poly_length);
 
@@ -348,14 +339,12 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         S: RawData<Elem = T> + Data,
         B: RawData<Elem = T> + DataMut,
     {
-        debug_assert_eq!(ntt_table.poly_length(), self.poly_length);
-        debug_assert_eq!(result.as_ref().len(), self.poly_length);
-        debug_assert_eq!(
-            cipher.as_ref().len(),
-            (self.dimension + 1) * self.poly_length
-        );
+        let poly_length = self.size.poly_length();
+        debug_assert_eq!(ntt_table.poly_length(), poly_length);
+        debug_assert_eq!(result.as_ref().len(), poly_length);
+        debug_assert_eq!(cipher.as_ref().len(), self.size.glwe_len());
 
-        let (mut a, b) = cipher.a_b(self.poly_length);
+        let (mut a, b) = cipher.a_b(poly_length);
         let mut secret = self.iter();
 
         let mut result_poly = NttPolynomial(result.as_mut());
@@ -383,7 +372,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         Table: NttTable<ValueT = T>,
         A: RawData<Elem = T> + Data,
     {
-        let mut result = PolynomialOwned::zero(self.poly_length);
+        let mut result = PolynomialOwned::zero(self.size.poly_length());
         self.decrypt_to(cipher, &mut result, params, ntt_table);
         result
     }

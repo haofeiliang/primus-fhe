@@ -1,4 +1,3 @@
-use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fhe_core::{
     GgswParameters, GlevParameters, GlweKeySwitchingParameters, GlweParameters, LweParameters,
     LweSecretKeyType, PbsOrder, RingSecretKeyType, TfheParameterError, TfheParameters,
@@ -33,8 +32,7 @@ fn components() -> Components {
         RingSecretKeyType::Ternary,
         3.2,
     );
-    let bootstrapping =
-        GgswParameters::with_glwe_params(&glwe, ApproxSignedBasis::new(None, 8, Some(3)));
+    let bootstrapping = GgswParameters::with_glwe_params(&glwe, 8, Some(3));
     let output_glwe = GlweParameters::new(
         LWE_DIMENSION.div_ceil(POLY_LENGTH),
         POLY_LENGTH,
@@ -43,8 +41,7 @@ fn components() -> Components {
         RingSecretKeyType::Binary,
         3.2,
     );
-    let output =
-        GlevParameters::with_glwe_params(&output_glwe, ApproxSignedBasis::new(None, 4, Some(4)));
+    let output = GlevParameters::with_glwe_params(&output_glwe, 4, Some(4));
     let key_switching = GlweKeySwitchingParameters::new(GLWE_DIMENSION, output);
     (small_lwe, glwe, bootstrapping, key_switching)
 }
@@ -84,12 +81,13 @@ fn both_orders_share_the_same_glwe_key_switching_shape() {
 #[test]
 fn derived_key_switching_layout_uses_a_binary_padded_output() {
     let (small_lwe, glwe, bootstrapping, _) = components();
-    let parameters = TfheParameters::with_pbs_order_and_key_switching_basis(
+    let parameters = TfheParameters::try_with_derived_glwe_key_switching(
         small_lwe,
         glwe,
         bootstrapping,
+        4,
+        Some(4),
         PbsOrder::BootstrapKeyswitch,
-        ApproxSignedBasis::new(None, 4, Some(4)),
     )
     .unwrap();
 
@@ -129,8 +127,7 @@ fn rejects_invalid_glwe_key_switching_dimensions() {
         RingSecretKeyType::Binary,
         3.2,
     );
-    let output =
-        GlevParameters::with_glwe_params(&output_glwe, ApproxSignedBasis::new(None, 4, Some(4)));
+    let output = GlevParameters::with_glwe_params(&output_glwe, 4, Some(4));
     let bad = GlweKeySwitchingParameters::new(1, output);
     assert_eq!(
         TfheParameters::try_new(

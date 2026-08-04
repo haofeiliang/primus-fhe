@@ -128,7 +128,7 @@ impl<T: FheUint> NttTable for UintNttTable<T> {
         M: FieldContext<Self::ValueT>,
     {
         let modulus_value = modulus.value();
-        let max_bits = T::BITS - 2;
+        let max_bits = T::BITS - crate::NTT_LAZY_REDUCTION_HEADROOM_BITS;
         if modulus_value >= T::ONE << max_bits {
             return Err(NttError::ModulusTooLarge {
                 modulus: modulus_value,

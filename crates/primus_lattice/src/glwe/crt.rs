@@ -10,7 +10,7 @@ use primus_poly::{
 use primus_reduce::FieldContext;
 use primus_rns::RNSBase;
 
-use crate::{context::DcrtGlevContext, ggsw::DcrtGgsw};
+use crate::{context::DcrtGlevMulContext, ggsw::DcrtGgsw};
 
 use super::DcrtGlwe;
 
@@ -218,7 +218,7 @@ where
         basis: &BigUintApproxSignedBasis<T>,
         table: &Table,
         rns_base: &RNSBase<T, M>,
-        context: &mut DcrtGlevContext<T>,
+        context: &mut DcrtGlevMulContext<T>,
     ) where
         M: FieldContext<T>,
         Table: DcrtTable<ValueT = T>,

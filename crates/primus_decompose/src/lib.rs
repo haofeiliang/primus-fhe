@@ -10,6 +10,13 @@
 
 #![deny(missing_docs)]
 
+mod error;
+
+pub use error::ApproxSignedBasisError;
+
+/// Smallest supported base-2 logarithm of a decomposition basis.
+pub const MIN_DECOMPOSITION_LOG_BASIS: u32 = 2;
+
 /// Multi-limb decomposition operators and basis.
 pub mod big_integer;
 /// Single-limb (primitive) decomposition operators and basis.

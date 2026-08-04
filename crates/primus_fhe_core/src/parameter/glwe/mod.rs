@@ -2,17 +2,17 @@
 //!
 //! - [`single`] — single-modulus parameters (`GlweParametersInner`, `GlweParameters`,
 //!   `GlevParameters`, `GgswParameters`)
-//!   and size helpers (`GlweCommonSize`, `GlevCommonSize`)
+//!   and shared checked size helpers
 //! - [`rns`]   — RNS multi-modulus parameters (`CrtGlweParameters`, `CrtGlevParameters`,
-//!   `CrtGgswParameters`, plus size helpers `RNSGlweCommonSize`, `RNSGlevCommonSize`)
+//!   `CrtGgswParameters`)
 
+mod domain;
 mod rns;
 mod single;
 
-pub use rns::{
-    CrtGgswParameters, CrtGlevParameters, CrtGlweParameters, RNSGlevCommonSize, RNSGlweCommonSize,
-};
+pub use domain::{DcrtGadgetDomain, GadgetDomainError, HybridRnsKeySwitchDomain, NttGadgetDomain};
+pub use primus_lattice::{GadgetSize, GlweSize, GlweSizeError, RnsGadgetSize, RnsGlweSize};
+pub use rns::{CrtGgswParameters, CrtGlevParameters, CrtGlweParameters};
 pub use single::{
-    GgswParameters, GlevCommonSize, GlevParameters, GlweCommonSize, GlweKeySwitchingParameters,
-    GlweParameters, GlweParametersInner,
+    GgswParameters, GlevParameters, GlweKeySwitchingParameters, GlweParameters, GlweParametersInner,
 };

@@ -1,6 +1,5 @@
 //! Parameter types and built-in parameter sets for the NTT backend.
 
-use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fhe_core::{
     GgswParameters, GlweParameters, LweParameters, LweSecretKeyType, PbsOrder, RingSecretKeyType,
 };
@@ -41,16 +40,14 @@ pub fn boolean_parameters()
         RingSecretKeyType::Ternary,
         6.4,
     );
-    let bootstrapping = GgswParameters::with_glwe_params(
-        &glwe,
-        ApproxSignedBasis::new(Some(CIPHERTEXT_MODULUS), 7, Some(3)),
-    );
-    TfheParameters::with_pbs_order_and_key_switching_basis(
+    let bootstrapping = GgswParameters::with_glwe_params(&glwe, 7, Some(3));
+    TfheParameters::try_with_derived_glwe_key_switching(
         lwe,
         glwe,
         bootstrapping,
+        2,
+        Some(13),
         PbsOrder::BootstrapKeyswitch,
-        ApproxSignedBasis::new(Some(CIPHERTEXT_MODULUS), 2, Some(13)),
     )
     .unwrap()
 }

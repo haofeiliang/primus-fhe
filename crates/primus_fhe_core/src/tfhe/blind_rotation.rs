@@ -1,20 +1,18 @@
 use primus_data::{Data, DataMut, RawData};
-use primus_fft::{FftEngine, FftTable, TorusFftValue};
+use primus_fft::{Complex64, FftEngine, FftTable, TorusFftValue};
 use primus_integer::FheUint;
 use primus_modulus::NativeModulus;
 use primus_ntt::NttTable;
-use primus_reduce::{FieldContext, RingContext};
+use primus_reduce::FieldContext;
 
 use primus_lattice::{
+    GadgetSize,
     context::{FourierExternalProductContext, NttExternalProductContext},
     glwe::{Glwe, TorusGlwe},
     lwe::Lwe,
 };
 
-use crate::{
-    FourierFunctionalBootstrappingKey, GlevParameters, LweParameters, LweSecretKeyType,
-    NttFunctionalBootstrappingKey,
-};
+use crate::{FunctionalBootstrappingKey, GlevParameters, NttGadgetDomain};
 
 /// Reusable workspace for Fourier blind rotation.
 pub struct FourierBlindRotationContext<T: TorusFftValue> {
@@ -23,22 +21,34 @@ pub struct FourierBlindRotationContext<T: TorusFftValue> {
 }
 
 impl<T: TorusFftValue> FourierBlindRotationContext<T> {
-    /// Creates a workspace for a GLWE dimension and polynomial length.
-    pub fn new(glwe_dimension: usize, poly_length: usize) -> Self {
-        let external_product = FourierExternalProductContext::new(glwe_dimension, poly_length);
-        let scratch = TorusGlwe::zero(external_product.size().glwe_len());
+    /// Creates a workspace for a checked GLWE size.
+    pub fn new(size: GadgetSize) -> Self {
+        let scratch = TorusGlwe::zero(size.glwe_len());
+        let external_product = FourierExternalProductContext::new(size);
         Self {
             scratch,
             external_product,
         }
     }
 
+    /// Rebinds the workspace to another decomposition layout without reallocating.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `size` has a different GLWE dimension or polynomial length.
+    pub fn rebind(&mut self, size: GadgetSize) {
+        self.external_product.rebind(size);
+    }
+
     /// Rebinds the workspace to a new GLWE layout.
-    pub fn resize(&mut self, glwe_dimension: usize, poly_length: usize) {
-        self.external_product.resize(glwe_dimension, poly_length);
-        self.scratch
-            .0
-            .resize(self.external_product.size().glwe_len(), T::ZERO);
+    pub fn resize(&mut self, size: GadgetSize) {
+        if self.external_product.size().glwe_size() == size.glwe_size() {
+            self.rebind(size);
+            return;
+        }
+
+        self.external_product.resize(size);
+        self.scratch.0.resize(size.glwe_len(), T::ZERO);
     }
 }
 
@@ -49,303 +59,288 @@ pub struct NttBlindRotationContext<T: FheUint> {
 }
 
 impl<T: FheUint> NttBlindRotationContext<T> {
-    /// Creates a workspace for a GLWE dimension and polynomial length.
-    pub fn new(glwe_dimension: usize, poly_length: usize) -> Self {
-        let external_product = NttExternalProductContext::new(glwe_dimension, poly_length);
-        let scratch = Glwe::zero(external_product.size().glwe_len());
+    /// Creates a workspace for a checked GLWE size.
+    pub fn new(size: GadgetSize) -> Self {
+        let scratch = Glwe::zero(size.glwe_len());
+        let external_product = NttExternalProductContext::new(size);
         Self {
             scratch,
             external_product,
         }
     }
 
+    /// Rebinds the workspace to another decomposition layout without reallocating.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `size` has a different GLWE dimension or polynomial length.
+    pub fn rebind(&mut self, size: GadgetSize) {
+        self.external_product.rebind(size);
+    }
+
     /// Rebinds the workspace to a new GLWE layout.
-    pub fn resize(&mut self, glwe_dimension: usize, poly_length: usize) {
-        self.external_product.resize(glwe_dimension, poly_length);
-        self.scratch
-            .0
-            .resize(self.external_product.size().glwe_len(), T::ZERO);
+    pub fn resize(&mut self, size: GadgetSize) {
+        if self.external_product.size().glwe_size() == size.glwe_size() {
+            self.rebind(size);
+            return;
+        }
+
+        self.external_product.resize(size);
+        self.scratch.0.resize(size.glwe_len(), T::ZERO);
     }
 }
 
-/// Blind-rotates a native-torus GLWE accumulator using a Fourier functional
-/// bootstrapping key.
-///
-/// With LWE input `(a, b)`, the resulting accumulator is rotated by
-/// `X^(-MS(b) + sum_i MS(a_i) s_i)`, where `MS` rounds into `[0, 2N)`.
-pub fn fourier_blind_rotate_to<T, LM, Table, A, B, C>(
-    input: &Lwe<A>,
-    accumulator: &TorusGlwe<B>,
-    output: &mut TorusGlwe<C>,
-    key: &FourierFunctionalBootstrappingKey<T>,
-    lwe_params: &LweParameters<T, LM>,
-    ggsw_params: &GlevParameters<T, NativeModulus<T>>,
-    fft: &mut FftEngine<'_, Table>,
-    context: &mut FourierBlindRotationContext<T>,
-) where
-    T: TorusFftValue,
-    LM: RingContext<T>,
-    Table: FftTable,
-    A: RawData<Elem = T> + Data,
-    B: RawData<Elem = T> + Data,
-    C: RawData<Elem = T> + DataMut,
-{
-    let poly_length = ggsw_params.poly_length();
-    let two_n = poly_length * 2;
-    debug_assert_eq!(lwe_params.secret_key_type(), LweSecretKeyType::Binary);
-    debug_assert_eq!(input.dimension(), lwe_params.dimension());
-    let modulus = lwe_params.cipher_modulus().explicit_value();
-    fourier_blind_rotate_with(
-        input,
-        accumulator,
-        output,
-        key,
-        ggsw_params,
-        fft,
-        context,
-        |x| modulus_switch(x, modulus, two_n),
-    );
-}
-
-/// Blind-rotates a native-torus GLWE accumulator from an LWE whose
-/// coefficients are already rotation exponents in `[0, 2N)`.
-///
-/// This entry point performs no modulus switching.
-pub fn fourier_blind_rotate_exponents_to<T, Table, A, B, C>(
-    input: &Lwe<A>,
-    accumulator: &TorusGlwe<B>,
-    output: &mut TorusGlwe<C>,
-    key: &FourierFunctionalBootstrappingKey<T>,
-    ggsw_params: &GlevParameters<T, NativeModulus<T>>,
-    fft: &mut FftEngine<'_, Table>,
-    context: &mut FourierBlindRotationContext<T>,
-) where
-    T: TorusFftValue,
-    Table: FftTable,
-    A: RawData<Elem = T> + Data,
-    B: RawData<Elem = T> + Data,
-    C: RawData<Elem = T> + DataMut,
-{
-    let two_n = 2 * ggsw_params.poly_length();
-    fourier_blind_rotate_with(
-        input,
-        accumulator,
-        output,
-        key,
-        ggsw_params,
-        fft,
-        context,
-        |x| direct_exponent(x, two_n),
-    );
-}
-
-/// Blind-rotates an explicit-modulus GLWE accumulator using an NTT functional
-/// bootstrapping key.
-///
-/// The input LWE modulus is independent of the NTT GLWE modulus. Coefficients
-/// are switched to `[0, 2N)` unless the LWE modulus is already `2N`.
-pub fn ntt_blind_rotate_to<T, LM, GM, Table, A, B, C>(
-    input: &Lwe<A>,
-    accumulator: &Glwe<B>,
-    output: &mut Glwe<C>,
-    key: &NttFunctionalBootstrappingKey<T>,
-    lwe_params: &LweParameters<T, LM>,
-    ggsw_params: &GlevParameters<T, GM>,
-    ntt: &Table,
-    context: &mut NttBlindRotationContext<T>,
-) where
-    T: FheUint,
-    LM: RingContext<T>,
-    GM: FieldContext<T>,
-    Table: NttTable<ValueT = T>,
-    A: RawData<Elem = T> + Data,
-    B: RawData<Elem = T> + Data,
-    C: RawData<Elem = T> + DataMut,
-{
-    let poly_length = ggsw_params.poly_length();
-    let two_n = poly_length * 2;
-    debug_assert_eq!(lwe_params.secret_key_type(), LweSecretKeyType::Binary);
-    debug_assert_eq!(input.dimension(), lwe_params.dimension());
-    let modulus = lwe_params.cipher_modulus().explicit_value();
-    ntt_blind_rotate_with(
-        input,
-        accumulator,
-        output,
-        key,
-        ggsw_params,
-        ntt,
-        context,
-        |x| modulus_switch(x, modulus, two_n),
-    );
-}
-
-/// Blind-rotates an explicit-modulus GLWE accumulator from an LWE whose
-/// coefficients are already rotation exponents in `[0, 2N)`.
-///
-/// This entry point performs no modulus switching. The LWE modulus may be
-/// `2N`, independently of the NTT GLWE modulus.
-pub fn ntt_blind_rotate_exponents_to<T, M, Table, A, B, C>(
-    input: &Lwe<A>,
-    accumulator: &Glwe<B>,
-    output: &mut Glwe<C>,
-    key: &NttFunctionalBootstrappingKey<T>,
-    ggsw_params: &GlevParameters<T, M>,
-    ntt: &Table,
-    context: &mut NttBlindRotationContext<T>,
-) where
-    T: FheUint,
-    M: FieldContext<T>,
-    Table: NttTable<ValueT = T>,
-    A: RawData<Elem = T> + Data,
-    B: RawData<Elem = T> + Data,
-    C: RawData<Elem = T> + DataMut,
-{
-    let two_n = 2 * ggsw_params.poly_length();
-    ntt_blind_rotate_with(
-        input,
-        accumulator,
-        output,
-        key,
-        ggsw_params,
-        ntt,
-        context,
-        |x| direct_exponent(x, two_n),
-    );
-}
-
-fn fourier_blind_rotate_with<T, Table, A, B, C, F>(
-    input: &Lwe<A>,
-    accumulator: &TorusGlwe<B>,
-    output: &mut TorusGlwe<C>,
-    key: &FourierFunctionalBootstrappingKey<T>,
-    ggsw_params: &GlevParameters<T, NativeModulus<T>>,
-    fft: &mut FftEngine<'_, Table>,
-    context: &mut FourierBlindRotationContext<T>,
-    exponent_of: F,
-) where
-    T: TorusFftValue,
-    Table: FftTable,
-    A: RawData<Elem = T> + Data,
-    B: RawData<Elem = T> + Data,
-    C: RawData<Elem = T> + DataMut,
-    F: Fn(T) -> usize,
-{
-    let poly_length = ggsw_params.poly_length();
-    let two_n = 2 * poly_length;
-    debug_assert_eq!(input.dimension(), key.input_dimension());
-    debug_assert_eq!(key.common_size(), ggsw_params.common_size());
-    debug_assert_eq!(key.cipher_modulus(), None);
-    debug_assert_eq!(fft.poly_length(), poly_length);
-    debug_assert_eq!(accumulator.as_ref().len(), ggsw_params.glwe_len());
-    debug_assert_eq!(output.as_ref().len(), ggsw_params.glwe_len());
-    debug_assert_eq!(context.scratch.as_ref().len(), ggsw_params.glwe_len());
-
-    let initial_exponent = exponent_of(input.b()).wrapping_neg() & (two_n - 1);
-    accumulator.mul_monomial_to(initial_exponent, output, poly_length, NativeModulus::new());
-
-    let FourierBlindRotationContext {
-        scratch,
-        external_product,
-    } = context;
-    let mut output_is_current = true;
-    for (&coefficient, control) in input.a().iter().zip(key.iter_fourier_ggsw()) {
-        let exponent = exponent_of(coefficient);
-        if exponent == 0 {
-            continue;
-        }
-        if output_is_current {
-            control.cmux_monomial_to(
-                output,
-                exponent,
-                scratch,
-                ggsw_params.basis(),
-                fft,
-                external_product,
-            );
-        } else {
-            control.cmux_monomial_to(
-                scratch,
-                exponent,
-                output,
-                ggsw_params.basis(),
-                fft,
-                external_product,
-            );
-        }
-        output_is_current = !output_is_current;
+impl<T: TorusFftValue> FunctionalBootstrappingKey<T, Vec<Complex64>> {
+    /// Blind-rotates a native-torus GLWE accumulator using this Fourier key.
+    ///
+    /// With LWE input `(a, b)`, the resulting accumulator is rotated by
+    /// `X^(-MS(b) + sum_i MS(a_i) s_i)`, where `MS` rounds into `[0, 2N)`.
+    pub fn fourier_blind_rotate_to<Table, A, B, C>(
+        &self,
+        input: &Lwe<A>,
+        accumulator: &TorusGlwe<B>,
+        output: &mut TorusGlwe<C>,
+        parameters: &GlevParameters<T, NativeModulus<T>>,
+        fft: &mut FftEngine<'_, Table>,
+        context: &mut FourierBlindRotationContext<T>,
+    ) where
+        Table: FftTable,
+        A: RawData<Elem = T> + Data,
+        B: RawData<Elem = T> + Data,
+        C: RawData<Elem = T> + DataMut,
+    {
+        let two_n = parameters.poly_length() * 2;
+        debug_assert_eq!(input.dimension(), self.input_dimension());
+        let modulus = self.input_modulus();
+        self.fourier_blind_rotate_with(
+            input,
+            accumulator,
+            output,
+            parameters,
+            (fft, context),
+            |x| modulus_switch(x, modulus, two_n),
+        );
     }
-    if !output_is_current {
-        output.as_mut().copy_from_slice(scratch.as_ref());
+
+    /// Blind-rotates from an LWE whose coefficients are exponents in `[0, 2N)`.
+    ///
+    /// This entry point performs no modulus switching.
+    pub fn fourier_blind_rotate_exponents_to<Table, A, B, C>(
+        &self,
+        input: &Lwe<A>,
+        accumulator: &TorusGlwe<B>,
+        output: &mut TorusGlwe<C>,
+        parameters: &GlevParameters<T, NativeModulus<T>>,
+        fft: &mut FftEngine<'_, Table>,
+        context: &mut FourierBlindRotationContext<T>,
+    ) where
+        Table: FftTable,
+        A: RawData<Elem = T> + Data,
+        B: RawData<Elem = T> + Data,
+        C: RawData<Elem = T> + DataMut,
+    {
+        let two_n = 2 * parameters.poly_length();
+        self.fourier_blind_rotate_with(
+            input,
+            accumulator,
+            output,
+            parameters,
+            (fft, context),
+            |x| direct_exponent(x, two_n),
+        );
     }
 }
 
-fn ntt_blind_rotate_with<T, M, Table, A, B, C, F>(
-    input: &Lwe<A>,
-    accumulator: &Glwe<B>,
-    output: &mut Glwe<C>,
-    key: &NttFunctionalBootstrappingKey<T>,
-    ggsw_params: &GlevParameters<T, M>,
-    ntt: &Table,
-    context: &mut NttBlindRotationContext<T>,
-    exponent_of: F,
-) where
-    T: FheUint,
-    M: FieldContext<T>,
-    Table: NttTable<ValueT = T>,
-    A: RawData<Elem = T> + Data,
-    B: RawData<Elem = T> + Data,
-    C: RawData<Elem = T> + DataMut,
-    F: Fn(T) -> usize,
-{
-    let modulus = ggsw_params.cipher_modulus();
-    let poly_length = ggsw_params.poly_length();
-    let two_n = 2 * poly_length;
-    debug_assert_eq!(input.dimension(), key.input_dimension());
-    debug_assert_eq!(key.common_size(), ggsw_params.common_size());
-    debug_assert_eq!(key.cipher_modulus(), Some(modulus.value()));
-    debug_assert_eq!(ntt.poly_length(), poly_length);
-    debug_assert_eq!(accumulator.as_ref().len(), ggsw_params.glwe_len());
-    debug_assert_eq!(output.as_ref().len(), ggsw_params.glwe_len());
-    debug_assert_eq!(context.scratch.as_ref().len(), ggsw_params.glwe_len());
-
-    let initial_exponent = exponent_of(input.b()).wrapping_neg() & (two_n - 1);
-    accumulator.mul_monomial_to(initial_exponent, output, poly_length, modulus);
-
-    let NttBlindRotationContext {
-        scratch,
-        external_product,
-    } = context;
-    let mut output_is_current = true;
-    for (&coefficient, control) in input.a().iter().zip(key.iter_ntt_ggsw()) {
-        let exponent = exponent_of(coefficient);
-        if exponent == 0 {
-            continue;
-        }
-        if output_is_current {
-            control.cmux_monomial_to(
-                output,
-                exponent,
-                scratch,
-                ggsw_params.basis(),
-                modulus,
-                ntt,
-                external_product,
-            );
-        } else {
-            control.cmux_monomial_to(
-                scratch,
-                exponent,
-                output,
-                ggsw_params.basis(),
-                modulus,
-                ntt,
-                external_product,
-            );
-        }
-        output_is_current = !output_is_current;
+impl<T: FheUint> FunctionalBootstrappingKey<T, Vec<T>> {
+    /// Blind-rotates an explicit-modulus GLWE accumulator using this NTT key.
+    ///
+    /// The input LWE modulus is independent of the NTT GLWE modulus.
+    pub fn ntt_blind_rotate_to<GM, Table, A, B, C>(
+        &self,
+        input: &Lwe<A>,
+        accumulator: &Glwe<B>,
+        output: &mut Glwe<C>,
+        domain: &NttGadgetDomain<'_, T, GM, Table>,
+        context: &mut NttBlindRotationContext<T>,
+    ) where
+        GM: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+        A: RawData<Elem = T> + Data,
+        B: RawData<Elem = T> + Data,
+        C: RawData<Elem = T> + DataMut,
+    {
+        let two_n = domain.parameters().poly_length() * 2;
+        debug_assert_eq!(input.dimension(), self.input_dimension());
+        let modulus = self.input_modulus();
+        self.ntt_blind_rotate_with(input, accumulator, output, domain, context, |x| {
+            modulus_switch(x, modulus, two_n)
+        });
     }
-    if !output_is_current {
-        output.as_mut().copy_from_slice(scratch.as_ref());
+
+    /// Blind-rotates from an LWE whose coefficients are exponents in `[0, 2N)`.
+    ///
+    /// This entry point performs no modulus switching. The LWE modulus may be
+    /// `2N`, independently of the NTT GLWE modulus.
+    pub fn ntt_blind_rotate_exponents_to<M, Table, A, B, C>(
+        &self,
+        input: &Lwe<A>,
+        accumulator: &Glwe<B>,
+        output: &mut Glwe<C>,
+        domain: &NttGadgetDomain<'_, T, M, Table>,
+        context: &mut NttBlindRotationContext<T>,
+    ) where
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+        A: RawData<Elem = T> + Data,
+        B: RawData<Elem = T> + Data,
+        C: RawData<Elem = T> + DataMut,
+    {
+        let two_n = 2 * domain.parameters().poly_length();
+        self.ntt_blind_rotate_with(input, accumulator, output, domain, context, |x| {
+            direct_exponent(x, two_n)
+        });
+    }
+}
+
+impl<T: TorusFftValue> FunctionalBootstrappingKey<T, Vec<Complex64>> {
+    fn fourier_blind_rotate_with<Table, A, B, C, F>(
+        &self,
+        input: &Lwe<A>,
+        accumulator: &TorusGlwe<B>,
+        output: &mut TorusGlwe<C>,
+        ggsw_params: &GlevParameters<T, NativeModulus<T>>,
+        workspace: (
+            &mut FftEngine<'_, Table>,
+            &mut FourierBlindRotationContext<T>,
+        ),
+        exponent_of: F,
+    ) where
+        Table: FftTable,
+        A: RawData<Elem = T> + Data,
+        B: RawData<Elem = T> + Data,
+        C: RawData<Elem = T> + DataMut,
+        F: Fn(T) -> usize,
+    {
+        let (fft, context) = workspace;
+        let poly_length = ggsw_params.poly_length();
+        let two_n = 2 * poly_length;
+        debug_assert_eq!(input.dimension(), self.input_dimension());
+        debug_assert_eq!(self.size(), ggsw_params.size());
+        debug_assert_eq!(self.cipher_modulus(), None);
+        debug_assert_eq!(fft.poly_length(), poly_length);
+        debug_assert_eq!(accumulator.as_ref().len(), ggsw_params.glwe_len());
+        debug_assert_eq!(output.as_ref().len(), ggsw_params.glwe_len());
+        debug_assert_eq!(context.external_product.size(), ggsw_params.size());
+
+        let initial_exponent = exponent_of(input.b()).wrapping_neg() & (two_n - 1);
+        accumulator.mul_monomial_to(initial_exponent, output, poly_length, NativeModulus::new());
+
+        let FourierBlindRotationContext {
+            scratch,
+            external_product,
+        } = context;
+        let mut output_is_current = true;
+        for (&coefficient, control) in input.a().iter().zip(self.iter_fourier_ggsw()) {
+            let exponent = exponent_of(coefficient);
+            if exponent == 0 {
+                continue;
+            }
+            if output_is_current {
+                control.cmux_monomial_to(
+                    output,
+                    exponent,
+                    scratch,
+                    ggsw_params.basis(),
+                    fft,
+                    external_product,
+                );
+            } else {
+                control.cmux_monomial_to(
+                    scratch,
+                    exponent,
+                    output,
+                    ggsw_params.basis(),
+                    fft,
+                    external_product,
+                );
+            }
+            output_is_current = !output_is_current;
+        }
+        if !output_is_current {
+            output.as_mut().copy_from_slice(scratch.as_ref());
+        }
+    }
+}
+
+impl<T: FheUint> FunctionalBootstrappingKey<T, Vec<T>> {
+    fn ntt_blind_rotate_with<M, Table, A, B, C, F>(
+        &self,
+        input: &Lwe<A>,
+        accumulator: &Glwe<B>,
+        output: &mut Glwe<C>,
+        domain: &NttGadgetDomain<'_, T, M, Table>,
+        context: &mut NttBlindRotationContext<T>,
+        exponent_of: F,
+    ) where
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+        A: RawData<Elem = T> + Data,
+        B: RawData<Elem = T> + Data,
+        C: RawData<Elem = T> + DataMut,
+        F: Fn(T) -> usize,
+    {
+        let ggsw_params = domain.parameters();
+        let ntt = domain.table();
+        let modulus = ggsw_params.cipher_modulus();
+        let poly_length = ggsw_params.poly_length();
+        let two_n = 2 * poly_length;
+        debug_assert_eq!(input.dimension(), self.input_dimension());
+        debug_assert_eq!(self.size(), ggsw_params.size());
+        debug_assert_eq!(self.cipher_modulus(), Some(modulus.value()));
+        debug_assert_eq!(ntt.poly_length(), poly_length);
+        debug_assert_eq!(accumulator.as_ref().len(), ggsw_params.glwe_len());
+        debug_assert_eq!(output.as_ref().len(), ggsw_params.glwe_len());
+        debug_assert_eq!(context.external_product.size(), domain.size());
+
+        let initial_exponent = exponent_of(input.b()).wrapping_neg() & (two_n - 1);
+        accumulator.mul_monomial_to(initial_exponent, output, poly_length, modulus);
+
+        let NttBlindRotationContext {
+            scratch,
+            external_product,
+        } = context;
+        let mut output_is_current = true;
+        for (&coefficient, control) in input.a().iter().zip(self.iter_ntt_ggsw()) {
+            let exponent = exponent_of(coefficient);
+            if exponent == 0 {
+                continue;
+            }
+            if output_is_current {
+                control.cmux_monomial_to(
+                    output,
+                    exponent,
+                    scratch,
+                    ggsw_params.basis(),
+                    modulus,
+                    ntt,
+                    external_product,
+                );
+            } else {
+                control.cmux_monomial_to(
+                    scratch,
+                    exponent,
+                    output,
+                    ggsw_params.basis(),
+                    modulus,
+                    ntt,
+                    external_product,
+                );
+            }
+            output_is_current = !output_is_current;
+        }
+        if !output_is_current {
+            output.as_mut().copy_from_slice(scratch.as_ref());
+        }
     }
 }
 

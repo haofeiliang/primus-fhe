@@ -1,7 +1,6 @@
 mod basis;
 mod common;
-mod error;
 
+pub use crate::ApproxSignedBasisError;
 pub use basis::BigUintApproxSignedBasis;
 pub use common::*;
-pub use error::BigUintApproxSignedBasisError;

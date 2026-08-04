@@ -1,9 +1,8 @@
-use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{FftEngine, FftTable, RustFftTable};
 use primus_fhe_core::{
     FourierGadgetEncryptContext, FourierGlweDecryptContext, FourierGlweEncryptContext,
     FourierGlweKeySwitchingContext, FourierGlweKeySwitchingKey, FourierGlweSecretKey,
-    GlevParameters, GlweKeySwitchingParameters, GlweParameters, GlweSecretKey,
+    GlevParameters, GlweKeySwitchingParameters, GlweParameters, GlweSecretKey, NttGadgetDomain,
     NttGadgetEncryptContext, NttGlweKeySwitchingContext, NttGlweKeySwitchingKey, NttGlweSecretKey,
     RingSecretKeyType,
 };
@@ -62,28 +61,19 @@ fn ntt_glwe_key_switches_for_equal_and_smaller_output_dimensions() {
             let mut padded = vec![0; POLY_LENGTH];
             padded[..active_key_len]
                 .copy_from_slice(&generated_output_key.as_slice()[..active_key_len]);
-            GlweSecretKey::new(
-                padded,
-                output_dimension,
-                POLY_LENGTH,
-                RingSecretKeyType::Binary,
-            )
+            GlweSecretKey::new(padded, output_params.size(), RingSecretKeyType::Binary)
         } else {
             generated_output_key
         };
         let output_key = NttGlweSecretKey::from_coeff_secret_key(&output_coeff_key, &ntt);
-        let glev = GlevParameters::with_glwe_params(
-            &output_params,
-            ApproxSignedBasis::new(Some(MODULUS), 8, None),
-        );
+        let glev = GlevParameters::with_glwe_params(&output_params, 8, None);
         let parameters = GlweKeySwitchingParameters::new(INPUT_DIMENSION, glev);
-        let mut encrypt_context =
-            NttGadgetEncryptContext::new(POLY_LENGTH, parameters.output().decompose_length());
+        let domain = NttGadgetDomain::try_new(parameters.output(), &ntt).unwrap();
+        let mut encrypt_context = NttGadgetEncryptContext::new(domain.size());
         let key = NttGlweKeySwitchingKey::generate(
             &input_coeff_key,
             &output_key,
-            &parameters,
-            &ntt,
+            &domain,
             &mut rng,
             &mut encrypt_context,
         );
@@ -92,8 +82,8 @@ fn ntt_glwe_key_switches_for_equal_and_smaller_output_dimensions() {
         assert_eq!(key.output_dimension(), output_dimension);
         assert_eq!(key.as_slice().len(), parameters.key_len());
 
-        let mut context = NttGlweKeySwitchingContext::new(output_dimension, POLY_LENGTH);
-        let switched = key.key_switch(&input, &parameters, &ntt, &mut context);
+        let mut context = NttGlweKeySwitchingContext::new(&domain);
+        let switched = key.key_switch(&input, &domain, &mut context).unwrap();
         let switched_ntt = switched.into_ntt_form(&ntt);
         assert_eq!(
             output_key
@@ -149,25 +139,18 @@ fn fourier_glwe_key_switches_for_equal_and_smaller_output_dimensions() {
             let mut padded = vec![0; POLY_LENGTH];
             padded[..active_key_len]
                 .copy_from_slice(&generated_output_key.as_slice()[..active_key_len]);
-            GlweSecretKey::new(
-                padded,
-                output_dimension,
-                POLY_LENGTH,
-                RingSecretKeyType::Binary,
-            )
+            GlweSecretKey::new(padded, output_params.size(), RingSecretKeyType::Binary)
         } else {
             generated_output_key
         };
         let output_key = FourierGlweSecretKey::from_coeff_secret_key(&output_coeff_key, &mut fft);
-        let glev =
-            GlevParameters::with_glwe_params(&output_params, ApproxSignedBasis::new(None, 8, None));
+        let glev = GlevParameters::with_glwe_params(&output_params, 8, None);
         let parameters = GlweKeySwitchingParameters::new(INPUT_DIMENSION, glev);
-        let mut encrypt_context =
-            FourierGadgetEncryptContext::new(POLY_LENGTH, parameters.output().decompose_length());
+        let mut encrypt_context = FourierGadgetEncryptContext::new(parameters.output().size());
         let key = FourierGlweKeySwitchingKey::generate(
             &input_coeff_key,
             &output_key,
-            &parameters,
+            parameters.output(),
             &mut fft,
             &mut rng,
             &mut encrypt_context,
@@ -177,8 +160,10 @@ fn fourier_glwe_key_switches_for_equal_and_smaller_output_dimensions() {
         assert_eq!(key.output_dimension(), output_dimension);
         assert_eq!(key.as_slice().len(), parameters.fourier_key_len());
 
-        let mut context = FourierGlweKeySwitchingContext::new(output_dimension, POLY_LENGTH);
-        let switched = key.key_switch(&input, &parameters, &mut fft, &mut context);
+        let mut context = FourierGlweKeySwitchingContext::new(parameters.output());
+        let switched = key
+            .key_switch(&input, parameters.output(), &mut fft, &mut context)
+            .unwrap();
         let mut switched_fourier = FourierGlweOwned::zero(output_params.fourier_glwe_len());
         switched.write_fourier_form(&mut switched_fourier, &mut fft);
         let mut decrypt_context = FourierGlweDecryptContext::new(POLY_LENGTH);

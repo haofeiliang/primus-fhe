@@ -21,10 +21,17 @@ pub use simd::{SimdBarrettModulus, simd_reduce_dot_product};
 /// `µ = floor(B² / modulus)`. The modulus must satisfy
 /// `1 < modulus < 2^(T::BITS - 2)`; the two spare bits allow 16 products to be
 /// accumulated before reduction.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Eq)]
 pub struct BarrettModulus<T: UnsignedInteger> {
     value: T,
     ratio: [T; 2],
+}
+
+impl<T: UnsignedInteger> PartialEq for BarrettModulus<T> {
+    #[inline]
+    fn eq(&self, other: &Self) -> bool {
+        self.value == other.value
+    }
 }
 
 impl<T: UnsignedInteger> BarrettModulus<T> {

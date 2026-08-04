@@ -1,72 +1,10 @@
-use primus_decompose::primitive::ApproxSignedBasis;
 use primus_integer::FheUint;
 use primus_reduce::RingContext;
 
 use crate::{
-    GgswParameters, GlevParameters, GlweCommonSize, GlweKeySwitchingParameters, GlweParameters,
-    GlweParametersInner, LweParameters, LweSecretKeyType, RingSecretKeyType,
+    GgswParameters, GlevParameters, GlweKeySwitchingParameters, GlweParameters, LweParameters,
+    LweSecretKeyType, RingSecretKeyType,
 };
-
-/// Parameters controlling an LWE key-switching key.
-///
-/// The input and output ciphertext moduli are supplied by the corresponding
-/// [`LweParameters`] at key generation or evaluation time. Keeping them out of
-/// this type avoids cloning complete LWE parameter sets when it is embedded in
-/// a higher-level scheme parameter set.
-#[derive(Debug, Clone)]
-pub struct LweKeySwitchingParameters<T: FheUint> {
-    input_dimension: usize,
-    output_dimension: usize,
-    basis: ApproxSignedBasis<T>,
-}
-
-impl<T: FheUint> LweKeySwitchingParameters<T> {
-    /// Creates LWE key-switching parameters.
-    ///
-    /// # Panics
-    ///
-    /// Panics if either LWE dimension is zero.
-    pub fn new(
-        input_dimension: usize,
-        output_dimension: usize,
-        basis: ApproxSignedBasis<T>,
-    ) -> Self {
-        assert!(input_dimension > 0, "input LWE dimension must be non-zero");
-        assert!(
-            output_dimension > 0,
-            "output LWE dimension must be non-zero"
-        );
-        Self {
-            input_dimension,
-            output_dimension,
-            basis,
-        }
-    }
-
-    /// Returns the dimension of ciphertexts before key switching.
-    #[inline]
-    pub fn input_dimension(&self) -> usize {
-        self.input_dimension
-    }
-
-    /// Returns the dimension of ciphertexts after key switching.
-    #[inline]
-    pub fn output_dimension(&self) -> usize {
-        self.output_dimension
-    }
-
-    /// Returns the decomposition basis used by key switching.
-    #[inline]
-    pub fn basis(&self) -> &ApproxSignedBasis<T> {
-        &self.basis
-    }
-
-    /// Returns the decomposition length.
-    #[inline]
-    pub fn decompose_length(&self) -> usize {
-        self.basis.decompose_length()
-    }
-}
 
 /// Execution order of programmable bootstrapping and key switching.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -156,6 +94,10 @@ pub enum TfheParameterError {
     /// The GLWE key-switch decomposition basis uses a different modulus.
     #[error("GLWE key-switching decomposition basis does not match the GLWE ciphertext modulus")]
     GlweKeySwitchingBasisModulusMismatch,
+
+    /// The requested GLWE key-switch decomposition cannot be constructed.
+    #[error("invalid GLWE key-switching decomposition: {0}")]
+    InvalidGlweKeySwitchingDecomposition(#[source] primus_decompose::ApproxSignedBasisError),
 }
 
 /// Mathematical parameters for GLWE-based TFHE.
@@ -192,27 +134,24 @@ where
     LM: RingContext<T>,
     GM: RingContext<T>,
 {
-    /// Creates parameters for the selected PBS order while deriving the GLWE
-    /// key-switching layout.
-    pub fn with_pbs_order_and_key_switching_basis(
+    /// Creates parameters while deriving the padded GLWE key-switching layout.
+    ///
+    /// `key_switching_level_count`, when provided, limits the number of GLWE
+    /// key-switching decomposition levels. `None` uses the full decomposition.
+    pub fn try_with_derived_glwe_key_switching(
         small_lwe: LweParameters<T, LM>,
         glwe: GlweParameters<T, GM>,
         bootstrapping: GgswParameters<T, GM>,
+        key_switching_log_basis: u32,
+        key_switching_level_count: Option<usize>,
         pbs_order: PbsOrder,
-        key_switching_basis: ApproxSignedBasis<T>,
     ) -> Result<Self, TfheParameterError> {
-        let output_dimension = small_lwe.dimension().div_ceil(glwe.poly_length());
-        let output_inner = GlweParametersInner::new(
-            glwe.cipher_modulus(),
-            RingSecretKeyType::Binary,
-            glwe.noise_distribution().standard_deviation(),
-        );
-        let output = GlevParameters::new(
-            GlweCommonSize::new(output_dimension, glwe.poly_length()),
-            output_inner,
-            key_switching_basis,
-        );
-        let glwe_key_switching = GlweKeySwitchingParameters::new(glwe.dimension(), output);
+        let glwe_key_switching = Self::derive_glwe_key_switching(
+            small_lwe.dimension(),
+            &glwe,
+            key_switching_log_basis,
+            key_switching_level_count,
+        )?;
         Self::try_new(
             small_lwe,
             glwe,
@@ -220,6 +159,30 @@ where
             glwe_key_switching,
             pbs_order,
         )
+    }
+
+    fn derive_glwe_key_switching(
+        small_lwe_dimension: usize,
+        glwe: &GlweParameters<T, GM>,
+        key_switching_log_basis: u32,
+        key_switching_level_count: Option<usize>,
+    ) -> Result<GlweKeySwitchingParameters<T, GM>, TfheParameterError> {
+        let output_dimension = small_lwe_dimension.div_ceil(glwe.poly_length());
+        let output_glwe = GlweParameters::new(
+            output_dimension,
+            glwe.poly_length(),
+            glwe.plain_modulus_value(),
+            glwe.cipher_modulus(),
+            RingSecretKeyType::Binary,
+            glwe.noise_distribution().standard_deviation(),
+        );
+        let output = GlevParameters::try_with_glwe_params(
+            &output_glwe,
+            key_switching_log_basis,
+            key_switching_level_count,
+        )
+        .map_err(TfheParameterError::InvalidGlweKeySwitchingDecomposition)?;
+        Ok(GlweKeySwitchingParameters::new(glwe.dimension(), output))
     }
 
     /// Creates and validates a GLWE-based TFHE parameter set.
@@ -339,13 +302,7 @@ where
             return Err(TfheParameterError::PlainModulusMismatch);
         }
 
-        if glwe.common_size() != bootstrapping.glwe_common_size()
-            || glwe.cipher_modulus().explicit_value()
-                != bootstrapping.cipher_modulus().explicit_value()
-            || glwe.secret_key_type() != bootstrapping.secret_key_type()
-            || glwe.noise_distribution().standard_deviation()
-                != bootstrapping.noise_distribution().standard_deviation()
-        {
+        if glwe.size() != bootstrapping.glwe_size() || glwe.inner() != bootstrapping.inner() {
             return Err(TfheParameterError::BootstrappingGlweParametersMismatch);
         }
 

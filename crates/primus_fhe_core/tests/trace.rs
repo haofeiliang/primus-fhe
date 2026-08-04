@@ -1,12 +1,9 @@
-use std::sync::Arc;
-
 use itertools::izip;
-use primus_decompose::big_integer::BigUintApproxSignedBasis;
 use primus_factor::FactorMul;
 use primus_fhe_core::{
-    CrtGlevParameters, CrtGlweParameters, CrtGlweTraceContext, CrtGlweTraceKey, DcrtGlweCiphertext,
-    DcrtGlweDecryptContext, DcrtGlweRevTraceContext, DcrtGlweRevTraceKey, DcrtGlweSecretKey,
-    DcrtGlweTraceContext, DcrtGlweTraceKey, GlweSecretKey, RingSecretKeyType,
+    CrtGlevParameters, CrtGlweParameters, CrtGlweTraceContext, CrtGlweTraceKey, DcrtGadgetDomain,
+    DcrtGlweCiphertext, DcrtGlweDecryptContext, DcrtGlweRevTraceContext, DcrtGlweRevTraceKey,
+    DcrtGlweSecretKey, DcrtGlweTraceContext, DcrtGlweTraceKey, GlweSecretKey, RingSecretKeyType,
 };
 use primus_integer::BigUint;
 use primus_lattice::glwe::CrtGlwe;
@@ -54,9 +51,7 @@ fn test_crt_glwe_trace() {
         3.20,
     );
 
-    let moduli_count = glwe_params.cipher_moduli_count();
     let rns_poly_len = glwe_params.rns_poly_len();
-    let big_uint_poly_len = glwe_params.big_uint_poly_len();
     let rns_glwe_len = glwe_params.rns_glwe_len();
     let base_q = glwe_params.base_q();
 
@@ -64,38 +59,33 @@ fn test_crt_glwe_trace() {
     let dcrt_sk = DcrtGlweSecretKey::from_coeff_secret_key(&sk, &table);
 
     // ── Trace key (CRT domain) ──────────────────────────────────
-    let basis = BigUintApproxSignedBasis::new(base_q, 20, None);
-    let glev_params = CrtGlevParameters::with_glwe_params(&glwe_params, basis);
+    let glev_params = CrtGlevParameters::with_glwe_params(&glwe_params, 20, None);
+    let domain = DcrtGadgetDomain::try_new(&glev_params, &table).unwrap();
 
-    let trace_key = CrtGlweTraceKey::new(&glev_params, &sk, &dcrt_sk, Arc::new(table), &mut rng);
-    let table = trace_key.table();
+    let trace_key = CrtGlweTraceKey::new(&domain, &sk, &dcrt_sk, &mut rng);
 
     // ── Encrypt ─────────────────────────────────────────────────
     let input1: Polynomial<Vec<ValueT>> = Polynomial::random(poly_length, mod_t, &mut rng);
     let mut c1: DcrtGlweCiphertext<Vec<ValueT>> = DcrtGlweCiphertext::zero(rns_glwe_len);
     let mut c2: CrtGlwe<Vec<ValueT>> = CrtGlwe::zero(rns_glwe_len);
-    let mut trace_context = CrtGlweTraceContext::new(
-        dimension,
-        poly_length,
-        rns_poly_len,
-        big_uint_poly_len,
-        moduli_count,
-    );
-    let mut decrypt_context = DcrtGlweDecryptContext::new(moduli_count, poly_length);
+    let mut trace_context = CrtGlweTraceContext::new(&domain);
+    let mut decrypt_context = DcrtGlweDecryptContext::new(glwe_params.size());
 
-    dcrt_sk.encrypt_plaintext_inplace(&input1, &mut c1, &glwe_params, table, &mut rng);
+    dcrt_sk.encrypt_plaintext_inplace(&input1, &mut c1, &glwe_params, &table, &mut rng);
 
-    let m_dec = dcrt_sk.decrypt(&c1, &glwe_params, table, &mut decrypt_context);
+    let m_dec = dcrt_sk.decrypt(&c1, &glwe_params, &table, &mut decrypt_context);
     assert_eq!(m_dec, input1);
 
     // ── Standard trace: output encrypts N · m₀ ──────────────────
-    let mut c1 = c1.into_coeff_form(table);
+    let mut c1 = c1.into_coeff_form(&table);
 
-    trace_key.trace_inplace(&c1, &mut c2, &glev_params, base_q, &mut trace_context);
+    trace_key
+        .trace_inplace(&c1, &mut c2, &domain, &mut trace_context)
+        .unwrap();
 
-    let c2 = c2.into_ntt_form(table);
+    let c2 = c2.into_ntt_form(&table);
 
-    let trace_msg = dcrt_sk.decrypt(&c2, &glwe_params, table, &mut decrypt_context);
+    let trace_msg = dcrt_sk.decrypt(&c2, &glwe_params, &table, &mut decrypt_context);
 
     // trace_msg[0] = N · input1[0]  (mod t)
     assert_eq!(
@@ -117,11 +107,13 @@ fn test_crt_glwe_trace() {
 
     let mut c2: CrtGlwe<Vec<ValueT>> = CrtGlwe::new(c2.0);
 
-    trace_key.trace_inplace(&c1, &mut c2, &glev_params, base_q, &mut trace_context);
+    trace_key
+        .trace_inplace(&c1, &mut c2, &domain, &mut trace_context)
+        .unwrap();
 
-    let c2 = c2.into_ntt_form(table);
+    let c2 = c2.into_ntt_form(&table);
 
-    let trace_msg = dcrt_sk.decrypt(&c2, &glwe_params, table, &mut decrypt_context);
+    let trace_msg = dcrt_sk.decrypt(&c2, &glwe_params, &table, &mut decrypt_context);
 
     assert_eq!(input1[0], trace_msg[0]);
     assert!(trace_msg[1..].iter().all(|&v| v == 0));
@@ -161,44 +153,37 @@ fn test_dcrt_glwe_trace() {
         3.20,
     );
 
-    let moduli_count = glwe_params.cipher_moduli_count();
     let rns_poly_len = glwe_params.rns_poly_len();
-    let big_uint_poly_len = glwe_params.big_uint_poly_len();
     let rns_glwe_len = glwe_params.rns_glwe_len();
     let base_q = glwe_params.base_q();
 
     let sk = GlweSecretKey::generate(&glwe_params, &mut rng);
     let dcrt_sk = DcrtGlweSecretKey::from_coeff_secret_key(&sk, &table);
 
-    let basis = BigUintApproxSignedBasis::new(base_q, 20, None);
-    let glev_params = CrtGlevParameters::with_glwe_params(&glwe_params, basis);
+    let glev_params = CrtGlevParameters::with_glwe_params(&glwe_params, 20, None);
+    let domain = DcrtGadgetDomain::try_new(&glev_params, &table).unwrap();
 
     // ── Trace key (DCRT domain) ─────────────────────────────────
-    let trace_key = DcrtGlweTraceKey::new(&glev_params, &dcrt_sk, Arc::new(table), &mut rng);
-    let table = trace_key.table();
+    let trace_key = DcrtGlweTraceKey::new(&domain, &dcrt_sk, &mut rng);
 
     // ── Encrypt ─────────────────────────────────────────────────
     let input1: Polynomial<Vec<ValueT>> = Polynomial::random(poly_length, mod_t, &mut rng);
     let mut c1: DcrtGlweCiphertext<Vec<ValueT>> = DcrtGlweCiphertext::zero(rns_glwe_len);
     let mut c2: DcrtGlweCiphertext<Vec<ValueT>> = DcrtGlweCiphertext::zero(rns_glwe_len);
-    let mut trace_context = DcrtGlweTraceContext::new(
-        dimension,
-        poly_length,
-        rns_poly_len,
-        big_uint_poly_len,
-        moduli_count,
-    );
-    let mut decrypt_context = DcrtGlweDecryptContext::new(moduli_count, poly_length);
+    let mut trace_context = DcrtGlweTraceContext::new(&domain);
+    let mut decrypt_context = DcrtGlweDecryptContext::new(glwe_params.size());
 
-    dcrt_sk.encrypt_plaintext_inplace(&input1, &mut c1, &glwe_params, table, &mut rng);
+    dcrt_sk.encrypt_plaintext_inplace(&input1, &mut c1, &glwe_params, &table, &mut rng);
 
-    let m_dec = dcrt_sk.decrypt(&c1, &glwe_params, table, &mut decrypt_context);
+    let m_dec = dcrt_sk.decrypt(&c1, &glwe_params, &table, &mut decrypt_context);
     assert_eq!(m_dec, input1);
 
     // ── Standard trace: output encrypts N · m₀ ──────────────────
-    trace_key.trace_inplace(&c1, &mut c2, &glev_params, base_q, &mut trace_context);
+    trace_key
+        .trace_inplace(&c1, &mut c2, &domain, &mut trace_context)
+        .unwrap();
 
-    let trace_msg = dcrt_sk.decrypt(&c2, &glwe_params, table, &mut decrypt_context);
+    let trace_msg = dcrt_sk.decrypt(&c2, &glwe_params, &table, &mut decrypt_context);
 
     assert_eq!(
         mod_t.reduce_mul(input1[0], poly_length as ValueT),
@@ -216,9 +201,11 @@ fn test_dcrt_glwe_trace() {
 
     c1.mul_scalar_assign(&scalar_residue, poly_length, rns_poly_len, &moduli);
 
-    trace_key.trace_inplace(&c1, &mut c2, &glev_params, base_q, &mut trace_context);
+    trace_key
+        .trace_inplace(&c1, &mut c2, &domain, &mut trace_context)
+        .unwrap();
 
-    let trace_msg = dcrt_sk.decrypt(&c2, &glwe_params, table, &mut decrypt_context);
+    let trace_msg = dcrt_sk.decrypt(&c2, &glwe_params, &table, &mut decrypt_context);
 
     assert_eq!(input1[0], trace_msg[0]);
     assert!(trace_msg[1..].iter().all(|&v| v == 0));
@@ -259,43 +246,34 @@ fn test_dcrt_glwe_rev_trace() {
         3.20,
     );
 
-    let moduli_count = glwe_params.cipher_moduli_count();
-    let rns_poly_len = glwe_params.rns_poly_len();
-    let big_uint_poly_len = glwe_params.big_uint_poly_len();
     let rns_glwe_len = glwe_params.rns_glwe_len();
-    let base_q = glwe_params.base_q();
 
     let sk = GlweSecretKey::generate(&glwe_params, &mut rng);
     let dcrt_sk = DcrtGlweSecretKey::from_coeff_secret_key(&sk, &table);
 
-    let basis = BigUintApproxSignedBasis::new(base_q, 20, None);
-    let glev_params = CrtGlevParameters::with_glwe_params(&glwe_params, basis);
+    let glev_params = CrtGlevParameters::with_glwe_params(&glwe_params, 20, None);
+    let domain = DcrtGadgetDomain::try_new(&glev_params, &table).unwrap();
 
-    let rev_trace_key = DcrtGlweRevTraceKey::new(&glev_params, &dcrt_sk, Arc::new(table), &mut rng);
-    let table = rev_trace_key.table();
+    let rev_trace_key = DcrtGlweRevTraceKey::new(&domain, &dcrt_sk, &mut rng);
 
     // ── Encrypt ─────────────────────────────────────────────────
     let input1: Polynomial<Vec<ValueT>> = Polynomial::random(poly_length, mod_t, &mut rng);
     let mut c1: DcrtGlweCiphertext<Vec<ValueT>> = DcrtGlweCiphertext::zero(rns_glwe_len);
     let mut c2: DcrtGlweCiphertext<Vec<ValueT>> = DcrtGlweCiphertext::zero(rns_glwe_len);
-    let mut trace_context = DcrtGlweRevTraceContext::new(
-        dimension,
-        poly_length,
-        rns_poly_len,
-        big_uint_poly_len,
-        moduli_count,
-    );
-    let mut decrypt_context = DcrtGlweDecryptContext::new(moduli_count, poly_length);
+    let mut trace_context = DcrtGlweRevTraceContext::new(&domain);
+    let mut decrypt_context = DcrtGlweDecryptContext::new(glwe_params.size());
 
-    dcrt_sk.encrypt_plaintext_inplace(&input1, &mut c1, &glwe_params, table, &mut rng);
+    dcrt_sk.encrypt_plaintext_inplace(&input1, &mut c1, &glwe_params, &table, &mut rng);
 
-    let m_dec = dcrt_sk.decrypt(&c1, &glwe_params, table, &mut decrypt_context);
+    let m_dec = dcrt_sk.decrypt(&c1, &glwe_params, &table, &mut decrypt_context);
     assert_eq!(m_dec, input1);
 
     // ── RevHomTrace: output encrypts m₀ directly (no N factor) ──
-    rev_trace_key.trace_inplace(&c1, &mut c2, &glev_params, base_q, &mut trace_context);
+    rev_trace_key
+        .trace_inplace(&c1, &mut c2, &domain, &mut trace_context)
+        .unwrap();
 
-    let trace_msg = dcrt_sk.decrypt(&c2, &glwe_params, table, &mut decrypt_context);
+    let trace_msg = dcrt_sk.decrypt(&c2, &glwe_params, &table, &mut decrypt_context);
 
     assert_eq!(input1[0], trace_msg[0]);
     assert!(trace_msg[1..].iter().all(|&v| v == 0));
@@ -349,28 +327,20 @@ fn test_dcrt_glwe_rev_trace_noise() {
     let sk = GlweSecretKey::generate(&glwe_params, &mut rng);
     let dcrt_sk = DcrtGlweSecretKey::from_coeff_secret_key(&sk, &table);
 
-    let basis = BigUintApproxSignedBasis::new(base_q, 20, None);
-    let glev_params = CrtGlevParameters::with_glwe_params(&glwe_params, basis);
+    let glev_params = CrtGlevParameters::with_glwe_params(&glwe_params, 20, None);
+    let domain = DcrtGadgetDomain::try_new(&glev_params, &table).unwrap();
 
-    let table_arc = Arc::new(table);
-    let trace_key = DcrtGlweTraceKey::new(&glev_params, &dcrt_sk, Arc::clone(&table_arc), &mut rng);
-    let rev_trace_key = DcrtGlweRevTraceKey::new(&glev_params, &dcrt_sk, table_arc, &mut rng);
-    let table = rev_trace_key.table();
+    let trace_key = DcrtGlweTraceKey::new(&domain, &dcrt_sk, &mut rng);
+    let rev_trace_key = DcrtGlweRevTraceKey::new(&domain, &dcrt_sk, &mut rng);
 
     // ── Encrypt ─────────────────────────────────────────────────
     let input1: Polynomial<Vec<ValueT>> = Polynomial::random(poly_length, mod_t, &mut rng);
     let mut c1: DcrtGlweCiphertext<Vec<ValueT>> = DcrtGlweCiphertext::zero(rns_glwe_len);
     let mut c2: DcrtGlweCiphertext<Vec<ValueT>> = DcrtGlweCiphertext::zero(rns_glwe_len);
-    let mut trace_context = DcrtGlweRevTraceContext::new(
-        dimension,
-        poly_length,
-        rns_poly_len,
-        big_uint_poly_len,
-        moduli_count,
-    );
-    let mut decrypt_context = DcrtGlweDecryptContext::new(moduli_count, poly_length);
+    let mut trace_context = DcrtGlweRevTraceContext::new(&domain);
+    let mut decrypt_context = DcrtGlweDecryptContext::new(glwe_params.size());
 
-    dcrt_sk.encrypt_plaintext_inplace(&input1, &mut c1, &glwe_params, table, &mut rng);
+    dcrt_sk.encrypt_plaintext_inplace(&input1, &mut c1, &glwe_params, &table, &mut rng);
 
     // ═══════════════════════════════════════════════════════════════
     //  Noise measurement helpers
@@ -482,10 +452,12 @@ fn test_dcrt_glwe_rev_trace_noise() {
 
     c1_clone.mul_scalar_assign(&scalar_residue, poly_length, rns_poly_len, &moduli);
 
-    trace_key.trace_inplace(&c1_clone, &mut c2, &glev_params, base_q, &mut trace_context);
+    trace_key
+        .trace_inplace(&c1_clone, &mut c2, &domain, &mut trace_context)
+        .unwrap();
 
     // Verify correctness
-    let trace_msg = dcrt_sk.decrypt(&c2, &glwe_params, table, &mut decrypt_context);
+    let trace_msg = dcrt_sk.decrypt(&c2, &glwe_params, &table, &mut decrypt_context);
     assert_eq!(input1[0], trace_msg[0]);
     assert!(trace_msg[1..].iter().all(|&v| v == 0));
 
@@ -501,10 +473,12 @@ fn test_dcrt_glwe_rev_trace_noise() {
     // ═══════════════════════════════════════════════════════════════
     //  RevHomTrace noise
     // ═══════════════════════════════════════════════════════════════
-    rev_trace_key.trace_inplace(&c1, &mut c2, &glev_params, base_q, &mut trace_context);
+    rev_trace_key
+        .trace_inplace(&c1, &mut c2, &domain, &mut trace_context)
+        .unwrap();
 
     // Verify correctness
-    let trace_msg = dcrt_sk.decrypt(&c2, &glwe_params, table, &mut decrypt_context);
+    let trace_msg = dcrt_sk.decrypt(&c2, &glwe_params, &table, &mut decrypt_context);
     assert_eq!(input1[0], trace_msg[0]);
     assert!(trace_msg[1..].iter().all(|&v| v == 0));
 

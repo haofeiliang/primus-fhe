@@ -1,28 +1,53 @@
 //! GLWE key switching with signed digit decomposition over an RNS basis.
 
 use primus_data::{Data, DataMut, RawData};
-use primus_decompose::big_integer::BigUintApproxSignedBasis;
 use primus_integer::FheUint;
 use primus_lattice::{
-    context::DcrtGlevContext,
+    RnsGadgetSize, RnsGlweSize,
+    context::DcrtGlevMulContext,
     glev::{DcrtGlevIter, DcrtGlevIterMut},
 };
 use primus_ntt::DcrtTable;
 use primus_poly::{BigUintPolynomial, CrtPolynomial, DcrtPolynomial};
 use primus_reduce::FieldContext;
-use primus_rns::RNSBase;
 
 use crate::glwe::secret_key::encode_secret_polynomial_to_rns;
 use crate::{
-    CrtGlevParameters, CrtGlweCiphertext, CrtGlweParameters, DcrtGlweCiphertext, DcrtGlweSecretKey,
+    CrtGlweCiphertext, CrtGlweParameters, DcrtGadgetDomain, DcrtGlweCiphertext, DcrtGlweSecretKey,
     GlweSecretKey,
 };
 
+/// An incompatibility detected before DCRT GLWE key switching.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum DcrtGlweKeySwitchingError {
+    /// The key and evaluation domain were built from different parameters.
+    #[error("DCRT key-switching key and evaluation domain are incompatible")]
+    IncompatibleKeyDomain,
+    /// The input ciphertext has the wrong flattened length.
+    #[error("input ciphertext length mismatch: expected {expected}, got {actual}")]
+    InputLengthMismatch {
+        /// Required input length.
+        expected: usize,
+        /// Supplied input length.
+        actual: usize,
+    },
+    /// The output ciphertext has the wrong flattened length.
+    #[error("output ciphertext length mismatch: expected {expected}, got {actual}")]
+    OutputLengthMismatch {
+        /// Required output length.
+        expected: usize,
+        /// Supplied output length.
+        actual: usize,
+    },
+    /// The reusable context was created for another key or domain.
+    #[error("DCRT key-switching context is incompatible")]
+    IncompatibleContext,
+}
+
 pub struct DcrtGlweKeySwitchingKey<T: FheUint> {
     key: Vec<T>,
-    poly_length: usize,
-    rns_poly_len: usize,
-    rns_glev_len: usize,
+    input_size: RnsGlweSize,
+    output_size: RnsGadgetSize,
 }
 
 impl<T: FheUint> DcrtGlweKeySwitchingKey<T> {
@@ -30,8 +55,7 @@ impl<T: FheUint> DcrtGlweKeySwitchingKey<T> {
         input_sk: &GlweSecretKey<T>,
         input_params: &CrtGlweParameters<T, M>,
         output_sk: &DcrtGlweSecretKey<T>,
-        ksk_params: &CrtGlevParameters<T, M>,
-        table: &Table,
+        domain: &DcrtGadgetDomain<'_, T, M, Table>,
         rng: &mut R,
     ) -> Self
     where
@@ -39,10 +63,11 @@ impl<T: FheUint> DcrtGlweKeySwitchingKey<T> {
         M: FieldContext<T>,
         Table: DcrtTable<ValueT = T>,
     {
+        let ksk_params = domain.parameters();
         debug_assert_eq!(input_params.poly_length(), ksk_params.poly_length());
         debug_assert_eq!(input_params.cipher_modulus(), ksk_params.cipher_modulus());
-        assert_eq!(input_sk.dimension(), input_params.dimension());
-        assert_eq!(input_sk.poly_length(), input_params.poly_length());
+        assert_eq!(input_sk.size(), input_params.size().glwe_size());
+        assert_eq!(output_sk.rns_glwe_size(), ksk_params.size().rns_glwe_size());
 
         let dcrt_glev_len = ksk_params.rns_glev_len();
         let mut key = vec![T::ZERO; input_params.dimension() * dcrt_glev_len];
@@ -63,40 +88,76 @@ impl<T: FheUint> DcrtGlweKeySwitchingKey<T> {
                 output_sk.encrypt_crt_msg_to_dcrt_glev_inplace(
                     &secret_mod_q,
                     &mut dcrt_glev,
-                    ksk_params,
-                    table,
+                    domain,
                     rng,
                 );
             });
 
         Self {
             key,
-            poly_length: input_params.poly_length(),
-            rns_poly_len: input_params.rns_poly_len(),
-            rns_glev_len: dcrt_glev_len,
+            input_size: input_params.size(),
+            output_size: ksk_params.size(),
         }
     }
 
+    /// Returns the input ciphertext sizes bound to this key.
+    #[inline]
+    pub fn input_size(&self) -> RnsGlweSize {
+        self.input_size
+    }
+
+    /// Returns the output gadget sizes bound to this key.
+    #[inline]
+    pub fn output_size(&self) -> RnsGadgetSize {
+        self.output_size
+    }
+
     pub fn iter_dcrt_glev(&self) -> DcrtGlevIter<'_, T> {
-        DcrtGlevIter::new(self.key.as_slice(), self.rns_glev_len)
+        DcrtGlevIter::new(self.key.as_slice(), self.output_size.rns_glev_len())
     }
 
     pub fn key_switch_to<M, Table, A, B>(
         &self,
         input: &CrtGlweCiphertext<A>,
         output: &mut DcrtGlweCiphertext<B>,
-        basis: &BigUintApproxSignedBasis<T>,
-        table: &Table,
-        rns_base: &RNSBase<T, M>,
+        domain: &DcrtGadgetDomain<'_, T, M, Table>,
         context: &mut DcrtGlweKeySwitchingContext<T>,
-    ) where
+    ) -> Result<(), DcrtGlweKeySwitchingError>
+    where
         M: FieldContext<T>,
         Table: DcrtTable<ValueT = T>,
         A: RawData<Elem = T> + Data,
         B: RawData<Elem = T> + DataMut,
     {
-        let (input_mask, input_body) = input.a_b(self.rns_poly_len);
+        let parameters = domain.parameters();
+        if self.output_size != parameters.size() {
+            return Err(DcrtGlweKeySwitchingError::IncompatibleKeyDomain);
+        }
+
+        let actual = input.as_ref().len();
+        let expected = self.input_size.rns_glwe_len();
+        if actual != expected {
+            return Err(DcrtGlweKeySwitchingError::InputLengthMismatch { expected, actual });
+        }
+
+        let actual = output.as_ref().len();
+        let expected = self.output_size.rns_glwe_size().rns_glwe_len();
+        if actual != expected {
+            return Err(DcrtGlweKeySwitchingError::OutputLengthMismatch { expected, actual });
+        }
+
+        if context.input_size != self.input_size || context.output_size != self.output_size {
+            return Err(DcrtGlweKeySwitchingError::IncompatibleContext);
+        }
+
+        let table = domain.table();
+        let rns_base = domain.rns_base();
+        let basis = parameters.basis();
+        let poly_length = self.input_size.poly_length();
+        let rns_poly_len = self.input_size.rns_poly_len();
         let (composed_polynomial, transformed_polynomial, glev_context) = context.as_mut();
+
+        let (input_mask, input_body) = input.a_b(rns_poly_len);
 
         output.set_zero();
         self.iter_dcrt_glev()
@@ -105,7 +166,7 @@ impl<T: FheUint> DcrtGlweKeySwitchingKey<T> {
                 rns_base.compose_polynomial_to(
                     &mask_polynomial,
                     composed_polynomial,
-                    self.poly_length,
+                    poly_length,
                     glev_context.compose_buffer_mut(),
                 );
 
@@ -121,39 +182,50 @@ impl<T: FheUint> DcrtGlweKeySwitchingKey<T> {
 
         transformed_polynomial.copy_from(&input_body);
         table.transform_slice(transformed_polynomial.as_mut());
-        output.neg_assign(self.rns_poly_len, self.poly_length, rns_base.moduli());
+        output.neg_assign(rns_poly_len, poly_length, rns_base.moduli());
 
-        let (_, output_body) = output.a_b_mut_slices(self.rns_poly_len);
+        let (_, output_body) = output.a_b_mut_slices(rns_poly_len);
         DcrtPolynomial(output_body).add_assign(
             &DcrtPolynomial(transformed_polynomial.as_ref()),
-            self.poly_length,
+            poly_length,
             rns_base.moduli(),
         );
+        Ok(())
     }
 }
 
+/// Reusable workspace for DCRT GLWE key switching.
+///
+/// Key switching overwrites every internal polynomial and decomposition buffer.
 pub struct DcrtGlweKeySwitchingContext<T: FheUint> {
+    input_size: RnsGlweSize,
+    output_size: RnsGadgetSize,
     composed_polynomial: BigUintPolynomial<Vec<T>>,
     transformed_polynomial: CrtPolynomial<Vec<T>>,
-    glev_context: DcrtGlevContext<T>,
+    glev_context: DcrtGlevMulContext<T>,
 }
 
 impl<T: FheUint> DcrtGlweKeySwitchingContext<T> {
-    pub fn new(
-        poly_length: usize,
-        crt_poly_len: usize,
-        big_uint_poly_len: usize,
-        moduli_count: usize,
-    ) -> Self {
+    /// Allocates workspace bound to `domain` and the input ciphertext layout.
+    pub fn new<M, Table>(
+        domain: &DcrtGadgetDomain<'_, T, M, Table>,
+        input_size: RnsGlweSize,
+    ) -> Self
+    where
+        M: FieldContext<T>,
+        Table: DcrtTable<ValueT = T>,
+    {
+        let output_size = domain.parameters().size();
+        let rns_glwe_size = output_size.rns_glwe_size();
+        assert_eq!(input_size.poly_length(), rns_glwe_size.poly_length());
+        assert_eq!(input_size.moduli_count(), rns_glwe_size.moduli_count());
+        let big_uint_poly_len = input_size.poly_length() * domain.rns_base().big_uint_value_len();
         Self {
+            input_size,
+            output_size,
             composed_polynomial: BigUintPolynomial::zero(big_uint_poly_len),
-            transformed_polynomial: CrtPolynomial::zero(crt_poly_len),
-            glev_context: DcrtGlevContext::new(
-                poly_length,
-                crt_poly_len,
-                big_uint_poly_len,
-                moduli_count,
-            ),
+            transformed_polynomial: CrtPolynomial::zero(input_size.rns_poly_len()),
+            glev_context: DcrtGlevMulContext::new(output_size, domain.rns_base()),
         }
     }
 
@@ -162,7 +234,7 @@ impl<T: FheUint> DcrtGlweKeySwitchingContext<T> {
     ) -> (
         &mut BigUintPolynomial<Vec<T>>,
         &mut CrtPolynomial<Vec<T>>,
-        &mut DcrtGlevContext<T>,
+        &mut DcrtGlevMulContext<T>,
     ) {
         (
             &mut self.composed_polynomial,

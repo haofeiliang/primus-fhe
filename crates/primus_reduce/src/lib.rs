@@ -42,7 +42,7 @@ use primus_integer::FheUint;
 use rand::distr::Uniform;
 
 /// Trait for types that represent a modulus.
-pub trait Modulus: Copy + Debug + Send + Sync {
+pub trait Modulus: Copy + Debug + Eq + Send + Sync {
     /// The scalar type that values are reduced into (e.g. `u64`).
     type ValueT: FheUint;
 

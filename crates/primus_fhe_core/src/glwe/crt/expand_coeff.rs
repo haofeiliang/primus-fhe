@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex};
+use std::sync::Mutex;
 
 use primus_data::{Data, DataMut, RawData};
 use primus_factor::ShoupFactor;
@@ -10,40 +10,30 @@ use rayon::prelude::*;
 
 use crate::{
     CrtGlevParameters, CrtGlweAutoContext, CrtGlweAutoKey, CrtGlweCiphertext, CrtGlweTraceContext,
-    DcrtGlweSecretKey, GlweSecretKey,
+    DcrtGadgetDomain, DcrtGlweSecretKey, GlweKeySwitchingError, GlweSecretKey,
 };
 
 pub type CrtGlweExpandCoeffContext<T> = CrtGlweTraceContext<T>;
 
 /// Thread-safe context pool for parallel coefficient expansion.
 ///
-/// Contexts are lazily allocated on demand and reused via `acquire`/`release`.
-/// The pool grows up to the number of concurrent worker threads.
-pub struct CrtGlweExpandCoeffSyncPool<T: FheUint> {
+/// Contexts are lazily allocated and returned internally after each worker
+/// finishes. The pool grows up to the number of concurrent worker threads.
+pub struct CrtGlweExpandCoeffSyncPool<T: FheUint, M: FieldContext<T>> {
     contexts: Mutex<Vec<CrtGlweExpandCoeffContext<T>>>,
-    dimension: usize,
-    poly_length: usize,
-    moduli_count: usize,
-    crt_poly_len: usize,
-    big_uint_poly_len: usize,
+    parameters: CrtGlevParameters<T, M>,
 }
 
-impl<T: FheUint> CrtGlweExpandCoeffSyncPool<T> {
+impl<T: FheUint, M: FieldContext<T>> CrtGlweExpandCoeffSyncPool<T, M> {
     /// Creates an empty pool. Contexts are allocated lazily on first [`Self::acquire`].
-    pub fn new(
-        dimension: usize,
-        poly_length: usize,
-        crt_poly_len: usize,
-        big_uint_poly_len: usize,
-        moduli_count: usize,
-    ) -> Self {
+    pub fn new<Table>(domain: &DcrtGadgetDomain<'_, T, M, Table>) -> Self
+    where
+        Table: DcrtTable<ValueT = T>,
+    {
+        let parameters = domain.parameters();
         Self {
             contexts: Mutex::new(Vec::new()),
-            dimension,
-            poly_length,
-            moduli_count,
-            crt_poly_len,
-            big_uint_poly_len,
+            parameters: parameters.clone(),
         }
     }
 
@@ -51,55 +41,42 @@ impl<T: FheUint> CrtGlweExpandCoeffSyncPool<T> {
     ///
     /// Use `rayon::current_num_threads()` as `capacity` to avoid any allocation
     /// during parallel computation.
-    pub fn with_capacity(
-        capacity: usize,
-        dimension: usize,
-        poly_length: usize,
-        crt_poly_len: usize,
-        big_uint_poly_len: usize,
-        moduli_count: usize,
-    ) -> Self {
+    pub fn with_capacity<Table>(capacity: usize, domain: &DcrtGadgetDomain<'_, T, M, Table>) -> Self
+    where
+        Table: DcrtTable<ValueT = T>,
+    {
+        let parameters = domain.parameters();
         let contexts = (0..capacity)
-            .map(|_| {
-                CrtGlweExpandCoeffContext::new(
-                    dimension,
-                    poly_length,
-                    crt_poly_len,
-                    big_uint_poly_len,
-                    moduli_count,
-                )
-            })
+            .map(|_| CrtGlweExpandCoeffContext::from_parameters(parameters))
             .collect();
         Self {
             contexts: Mutex::new(contexts),
-            dimension,
-            poly_length,
-            moduli_count,
-            crt_poly_len,
-            big_uint_poly_len,
+            parameters: parameters.clone(),
         }
     }
 
-    /// Pop a context from the pool, or create a new one if empty.
-    pub fn acquire(&self) -> CrtGlweExpandCoeffContext<T> {
-        self.contexts.lock().unwrap().pop().unwrap_or_else(|| {
-            CrtGlweExpandCoeffContext::new(
-                self.dimension,
-                self.poly_length,
-                self.crt_poly_len,
-                self.big_uint_poly_len,
-                self.moduli_count,
-            )
-        })
+    fn acquire(&self) -> CrtGlweExpandCoeffContext<T> {
+        self.contexts
+            .lock()
+            .unwrap()
+            .pop()
+            .unwrap_or_else(|| CrtGlweExpandCoeffContext::from_parameters(&self.parameters))
     }
 
-    /// Return a context to the pool for reuse.
-    pub fn release(&self, ctx: CrtGlweExpandCoeffContext<T>) {
+    fn release(&self, ctx: CrtGlweExpandCoeffContext<T>) {
         self.contexts.lock().unwrap().push(ctx);
     }
 
+    fn is_compatible<Table>(&self, domain: &DcrtGadgetDomain<'_, T, M, Table>) -> bool
+    where
+        Table: DcrtTable<ValueT = T>,
+    {
+        self.parameters.size().rns_glwe_size() == domain.size().rns_glwe_size()
+            && self.parameters.big_uint_value_len() == domain.parameters().big_uint_value_len()
+    }
+
     /// Acquire a context wrapped in a guard that auto-releases on drop.
-    fn acquire_guard(&self) -> PoolGuard<'_, T> {
+    fn acquire_guard(&self) -> PoolGuard<'_, T, M> {
         PoolGuard {
             ctx: Some(self.acquire()),
             pool: self,
@@ -111,12 +88,12 @@ impl<T: FheUint> CrtGlweExpandCoeffSyncPool<T> {
 ///
 /// Each rayon worker thread holds one guard (via `for_each_init`), so the total
 /// number of mutex lock operations per level is O(threads) instead of O(pairs).
-struct PoolGuard<'a, T: FheUint> {
+struct PoolGuard<'a, T: FheUint, M: FieldContext<T>> {
     ctx: Option<CrtGlweExpandCoeffContext<T>>,
-    pool: &'a CrtGlweExpandCoeffSyncPool<T>,
+    pool: &'a CrtGlweExpandCoeffSyncPool<T, M>,
 }
 
-impl<T: FheUint> PoolGuard<'_, T> {
+impl<T: FheUint, M: FieldContext<T>> PoolGuard<'_, T, M> {
     fn as_mut(
         &mut self,
     ) -> (
@@ -127,7 +104,7 @@ impl<T: FheUint> PoolGuard<'_, T> {
     }
 }
 
-impl<T: FheUint> Drop for PoolGuard<'_, T> {
+impl<T: FheUint, M: FieldContext<T>> Drop for PoolGuard<'_, T, M> {
     fn drop(&mut self) {
         if let Some(ctx) = self.ctx.take() {
             self.pool.release(ctx);
@@ -136,49 +113,38 @@ impl<T: FheUint> Drop for PoolGuard<'_, T> {
 }
 
 #[derive(Clone)]
-pub struct CrtGlweExpandCoeffKey<T: FheUint, Table>
-where
-    Table: DcrtTable<ValueT = T>,
-{
-    auto_keys: Vec<CrtGlweAutoKey<T, Table>>,
+pub struct CrtGlweExpandCoeffKey<T: FheUint> {
+    auto_keys: Vec<CrtGlweAutoKey<T>>,
     inv_count_residues_by_level: Vec<Vec<ShoupFactor<T>>>,
-    table: Arc<Table>,
 }
 
-impl<T: FheUint, Table> CrtGlweExpandCoeffKey<T, Table>
-where
-    Table: DcrtTable<ValueT = T>,
-{
-    pub fn new<M, R>(
-        params: &CrtGlevParameters<T, M>,
-        rns_base: &RNSBase<T, M>,
+impl<T: FheUint> CrtGlweExpandCoeffKey<T> {
+    pub fn new<M, Table, R>(
+        domain: &DcrtGadgetDomain<'_, T, M, Table>,
         sk: &GlweSecretKey<T>,
         dcrt_sk: &DcrtGlweSecretKey<T>,
-        table: Arc<Table>,
         rng: &mut R,
     ) -> Self
     where
         R: rand::Rng + rand::CryptoRng,
         M: FieldContext<T>,
+        Table: DcrtTable<ValueT = T>,
     {
+        let params = domain.parameters();
         let log_n = params.poly_length().trailing_zeros();
-        let auto_keys: Vec<CrtGlweAutoKey<T, Table>> = (1..=log_n)
+        let auto_keys: Vec<CrtGlweAutoKey<T>> = (1..=log_n)
             .rev()
             .map(|x| (1usize << x) + 1)
-            .map(|degree| CrtGlweAutoKey::new(params, degree, sk, dcrt_sk, Arc::clone(&table), rng))
+            .map(|degree| CrtGlweAutoKey::new(domain, degree, sk, dcrt_sk, rng))
             .collect();
 
-        let inv_count_residues_by_level = Self::precompute_inv_count_residues(params, rns_base);
+        let inv_count_residues_by_level =
+            Self::precompute_inv_count_residues(params, domain.rns_base());
 
         Self {
             auto_keys,
             inv_count_residues_by_level,
-            table,
         }
-    }
-
-    pub fn table(&self) -> &Table {
-        &self.table
     }
 
     fn precompute_inv_count_residues<M>(
@@ -188,15 +154,13 @@ where
     where
         M: FieldContext<T>,
     {
-        let big_uint_value_len = params.big_uint_value_len();
         let log_n = params.poly_length().trailing_zeros() as usize;
 
         (0..=log_n)
             .map(|log_count| {
                 let count = 1usize << log_count;
-                let mut n = vec![T::ZERO; big_uint_value_len];
-                n[0] = count.as_into();
-                let n_residue = rns_base.decompose(BigUint(&n));
+                let n = count.as_into();
+                let n_residue = rns_base.decompose(BigUint(&[n]));
 
                 n_residue
                     .iter()
@@ -211,40 +175,56 @@ where
     ///
     /// Expands all `poly_length` coefficients.
     /// (Alg. 1)<https://eprint.iacr.org/2024/266.pdf>
-    pub fn expand_coefficients_inplace<M, A, B>(
+    pub fn expand_coefficients_inplace<M, Table, A, B>(
         &self,
         ciphertext: &CrtGlweCiphertext<A>,
         result: &mut [CrtGlweCiphertext<B>],
-        params: &CrtGlevParameters<T, M>,
-        rns_base: &RNSBase<T, M>,
+        domain: &DcrtGadgetDomain<'_, T, M, Table>,
         context: &mut CrtGlweExpandCoeffContext<T>,
-    ) where
+    ) -> Result<(), GlweKeySwitchingError>
+    where
         M: FieldContext<T>,
+        Table: DcrtTable<ValueT = T>,
         A: RawData<Elem = T> + Data,
         B: RawData<Elem = T> + DataMut,
     {
-        debug_assert_eq!(result.len(), params.poly_length());
-        self.expand_partial_coefficients_inplace(ciphertext, result, params, rns_base, context);
+        let expected = domain.parameters().poly_length();
+        if result.len() != expected {
+            return Err(GlweKeySwitchingError::OutputCountMismatch {
+                expected,
+                actual: result.len(),
+            });
+        }
+        self.expand_partial_coefficients_inplace(ciphertext, result, domain, context)
     }
 
     /// Coefficient Expansion Algorithm.
     ///
     /// (Alg. 1)<https://eprint.iacr.org/2024/266.pdf>
-    pub fn expand_partial_coefficients_inplace<M, A, B>(
+    pub fn expand_partial_coefficients_inplace<M, Table, A, B>(
         &self,
         ciphertext: &CrtGlweCiphertext<A>,
         result: &mut [CrtGlweCiphertext<B>],
-        params: &CrtGlevParameters<T, M>,
-        rns_base: &RNSBase<T, M>,
+        domain: &DcrtGadgetDomain<'_, T, M, Table>,
         context: &mut CrtGlweExpandCoeffContext<T>,
-    ) where
+    ) -> Result<(), GlweKeySwitchingError>
+    where
         M: FieldContext<T>,
+        Table: DcrtTable<ValueT = T>,
         A: RawData<Elem = T> + Data,
         B: RawData<Elem = T> + DataMut,
     {
+        let params = domain.parameters();
         let poly_length = params.poly_length();
         let count = result.len();
-        assert!(count.is_power_of_two() && count <= poly_length);
+        if !count.is_power_of_two() || count > poly_length {
+            return Err(GlweKeySwitchingError::InvalidExpansionCount {
+                maximum: poly_length,
+                actual: count,
+            });
+        }
+
+        let (crt_glwe, auto_context) = context.as_mut();
 
         let rns_poly_len = params.rns_poly_len();
         let moduli = params.cipher_moduli();
@@ -262,8 +242,6 @@ where
             moduli_value,
         );
 
-        let (crt_glwe, auto_context) = context.as_mut();
-
         for (i, auto_key) in self.auto_keys.iter().enumerate().take(log_d) {
             let two_pow_i = 1 << i;
 
@@ -272,7 +250,7 @@ where
             let (x, y) = unsafe { result[..two_pow_i * 2].split_at_mut_unchecked(two_pow_i) };
 
             x.iter_mut().zip(y.iter_mut()).for_each(|(a_0, b_0)| {
-                auto_key.automorphism_to(a_0, crt_glwe, params, rns_base, auto_context);
+                auto_key.automorphism_kernel(a_0, crt_glwe, domain, auto_context);
 
                 a_0.sub_element_wise_to(crt_glwe, b_0, poly_length, rns_poly_len, moduli);
                 b_0.mul_monic_monomial_assign(
@@ -284,54 +262,64 @@ where
                 a_0.add_element_wise_assign(crt_glwe, poly_length, rns_poly_len, moduli);
             });
         }
+        Ok(())
     }
 
     /// Parallel Coefficient Expansion Algorithm.
     ///
     /// Expands all `poly_length` coefficients using rayon parallelism.
     /// (Alg. 1)<https://eprint.iacr.org/2024/266.pdf>
-    pub fn expand_coefficients_inplace_parallel<M, A, B>(
+    pub fn expand_coefficients_inplace_parallel<M, Table, A, B>(
         &self,
         ciphertext: &CrtGlweCiphertext<A>,
         result: &mut [CrtGlweCiphertext<B>],
-        params: &CrtGlevParameters<T, M>,
-        rns_base: &RNSBase<T, M>,
-        context_pool: &CrtGlweExpandCoeffSyncPool<T>,
-    ) where
+        domain: &DcrtGadgetDomain<'_, T, M, Table>,
+        context_pool: &CrtGlweExpandCoeffSyncPool<T, M>,
+    ) -> Result<(), GlweKeySwitchingError>
+    where
         M: FieldContext<T> + Sync,
         A: RawData<Elem = T> + Data + Sync,
         B: RawData<Elem = T> + DataMut + Send,
-        Table: Send + Sync,
+        Table: DcrtTable<ValueT = T> + Send + Sync,
     {
-        debug_assert_eq!(result.len(), params.poly_length());
-        self.expand_partial_coefficients_inplace_parallel(
-            ciphertext,
-            result,
-            params,
-            rns_base,
-            context_pool,
-        );
+        let expected = domain.parameters().poly_length();
+        if result.len() != expected {
+            return Err(GlweKeySwitchingError::OutputCountMismatch {
+                expected,
+                actual: result.len(),
+            });
+        }
+        self.expand_partial_coefficients_inplace_parallel(ciphertext, result, domain, context_pool)
     }
 
     /// Parallel Coefficient Expansion Algorithm.
     ///
     /// (Alg. 1)<https://eprint.iacr.org/2024/266.pdf>
-    pub fn expand_partial_coefficients_inplace_parallel<M, A, B>(
+    pub fn expand_partial_coefficients_inplace_parallel<M, Table, A, B>(
         &self,
         ciphertext: &CrtGlweCiphertext<A>,
         result: &mut [CrtGlweCiphertext<B>],
-        params: &CrtGlevParameters<T, M>,
-        rns_base: &RNSBase<T, M>,
-        context_pool: &CrtGlweExpandCoeffSyncPool<T>,
-    ) where
+        domain: &DcrtGadgetDomain<'_, T, M, Table>,
+        context_pool: &CrtGlweExpandCoeffSyncPool<T, M>,
+    ) -> Result<(), GlweKeySwitchingError>
+    where
         M: FieldContext<T> + Sync,
         A: RawData<Elem = T> + Data + Sync,
         B: RawData<Elem = T> + DataMut + Send,
-        Table: Send + Sync,
+        Table: DcrtTable<ValueT = T> + Send + Sync,
     {
+        let params = domain.parameters();
         let poly_length = params.poly_length();
         let count = result.len();
-        assert!(count.is_power_of_two() && count <= poly_length);
+        if !count.is_power_of_two() || count > poly_length {
+            return Err(GlweKeySwitchingError::InvalidExpansionCount {
+                maximum: poly_length,
+                actual: count,
+            });
+        }
+        if !context_pool.is_compatible(domain) {
+            return Err(GlweKeySwitchingError::ContextMismatch);
+        }
 
         let rns_poly_len = params.rns_poly_len();
         let moduli = params.cipher_moduli();
@@ -361,7 +349,7 @@ where
                 |guard, (a_0, b_0)| {
                     let (crt_glwe, auto_context) = guard.as_mut();
 
-                    auto_key.automorphism_to(a_0, crt_glwe, params, rns_base, auto_context);
+                    auto_key.automorphism_kernel(a_0, crt_glwe, domain, auto_context);
 
                     a_0.sub_element_wise_to(crt_glwe, b_0, poly_length, rns_poly_len, moduli);
                     b_0.mul_monic_monomial_assign(
@@ -374,5 +362,6 @@ where
                 },
             );
         }
+        Ok(())
     }
 }

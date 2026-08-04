@@ -38,7 +38,7 @@ where
         C: RawData<Elem = T> + DataMut,
         S: RawData<Elem = Complex64> + Data,
     {
-        debug_assert_eq!(output.as_ref().len(), context.size().glwe_len());
+        debug_assert_eq!(output.as_ref().len(), context.size().glwe_size().glwe_len());
         self.external_product_accumulate(input, basis, fft, context);
         context.fourier_accumulator.write_torus_form(output, fft);
     }
@@ -56,28 +56,29 @@ where
         S: RawData<Elem = Complex64> + Data,
     {
         let size = context.size();
-        let poly_len = size.poly_length();
-        let fourier_len = poly_len / 2;
-        let glwe_fourier_len = size.fourier_glwe_len();
-        let glev_len = basis.decompose_length() * glwe_fourier_len;
+        let glwe_size = size.glwe_size();
+        let poly_len = glwe_size.poly_length();
+        let fourier_poly_len = glwe_size.fourier_poly_len();
+        let fourier_glwe_len = glwe_size.fourier_glwe_len();
+        let fourier_glev_len = size.fourier_glev_len();
 
         debug_assert_eq!(fft.poly_length(), poly_len);
-        debug_assert_eq!(fft.fourier_length(), fourier_len);
+        debug_assert_eq!(fft.fourier_length(), fourier_poly_len);
         debug_assert_eq!(basis.modulus(), None);
-        debug_assert_eq!(input.as_ref().len(), size.glwe_len());
-        debug_assert_eq!(self.as_ref().len(), size.component_count() * glev_len);
-        debug_assert_eq!(context.carries.len(), poly_len);
-        debug_assert_eq!(context.decomposed_poly.len(), poly_len);
-        debug_assert_eq!(context.decomposed_fourier.len(), fourier_len);
-        debug_assert_eq!(context.fourier_accumulator.0.len(), glwe_fourier_len);
+        debug_assert_eq!(basis.decompose_length(), size.decompose_length());
+        debug_assert_eq!(input.as_ref().len(), glwe_size.glwe_len());
+        debug_assert_eq!(self.as_ref().len(), size.fourier_ggsw_len());
 
         context.fourier_accumulator.set_zero();
 
-        for (coeff_poly, key_row) in input.iter_poly(poly_len).zip(self.iter_glev(glev_len)) {
+        for (coeff_poly, key_row) in input
+            .iter_poly(poly_len)
+            .zip(self.iter_glev(fourier_glev_len))
+        {
             basis.init_carry_slice(coeff_poly.0, &mut context.carries);
             for (decomposer, key_glwe) in basis
                 .decompose_iter()
-                .zip(key_row.iter_glwe(glwe_fourier_len))
+                .zip(key_row.iter_glwe(fourier_glwe_len))
             {
                 decomposer.decompose_slice_to(
                     coeff_poly.0,
@@ -120,7 +121,7 @@ where
         C: RawData<Elem = T> + DataMut,
         S: RawData<Elem = T> + Data,
     {
-        debug_assert_eq!(output.as_ref().len(), context.size().glwe_len());
+        debug_assert_eq!(output.as_ref().len(), context.size().glwe_size().glwe_len());
         self.external_product_accumulate(input, basis, modulus, ntt, context);
         context.ntt_accumulator.write_coeff_form(output, ntt);
     }
@@ -140,18 +141,16 @@ where
         S: RawData<Elem = T> + Data,
     {
         let size = context.size();
-        let poly_len = size.poly_length();
-        let glwe_len = size.glwe_len();
-        let glev_len = basis.decompose_length() * glwe_len;
+        let glwe_size = size.glwe_size();
+        let poly_len = glwe_size.poly_length();
+        let glwe_len = glwe_size.glwe_len();
+        let glev_len = size.glev_len();
 
         debug_assert_eq!(ntt.poly_length(), poly_len);
         debug_assert_eq!(basis.modulus(), Some(modulus.value()));
+        debug_assert_eq!(basis.decompose_length(), size.decompose_length());
         debug_assert_eq!(input.as_ref().len(), glwe_len);
-        debug_assert_eq!(self.as_ref().len(), size.component_count() * glev_len);
-        debug_assert_eq!(context.adjusted_poly.len(), poly_len);
-        debug_assert_eq!(context.carries.len(), poly_len);
-        debug_assert_eq!(context.decomposed_ntt.len(), poly_len);
-        debug_assert_eq!(context.ntt_accumulator.as_ref().len(), glwe_len);
+        debug_assert_eq!(self.as_ref().len(), size.ggsw_len());
 
         context.ntt_accumulator.set_zero();
 

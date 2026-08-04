@@ -3,7 +3,7 @@
 
 use primus_data::{Data, DataMut, RawData};
 use primus_integer::FheUint;
-use primus_lattice::glev::DcrtGlev;
+use primus_lattice::{RnsGlweSize, glev::DcrtGlev};
 use primus_ntt::{DcrtTable, NttTable};
 use primus_poly::{
     CrtPolynomial, DcrtPolynomial, DcrtPolynomialIter, DcrtPolynomialIterMut, Polynomial,
@@ -12,7 +12,9 @@ use primus_poly::{
 use primus_reduce::FieldContext;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
-use crate::{CrtGlevParameters, CrtGlweParameters, DcrtGlweCiphertext, RingSecretKeyType};
+use crate::{
+    CrtGlevParameters, CrtGlweParameters, DcrtGadgetDomain, DcrtGlweCiphertext, RingSecretKeyType,
+};
 
 use super::{GlweSecretKey, encode_secret_polynomial_to};
 
@@ -20,7 +22,7 @@ use super::{GlweSecretKey, encode_secret_polynomial_to};
 pub struct DcrtGlweSecretKey<T: FheUint> {
     pub(crate) key: Vec<T>,
     pub(crate) distr: RingSecretKeyType,
-    pub(crate) rns_poly_len: usize,
+    pub(crate) size: RnsGlweSize,
 }
 
 impl<T: FheUint> Zeroize for DcrtGlweSecretKey<T> {
@@ -33,11 +35,11 @@ impl<T: FheUint> Zeroize for DcrtGlweSecretKey<T> {
 impl<T: FheUint> ZeroizeOnDrop for DcrtGlweSecretKey<T> {}
 
 impl<T: FheUint> DcrtGlweSecretKey<T> {
-    pub fn zero(dimension: usize, crt_poly_len: usize, distr: RingSecretKeyType) -> Self {
+    pub fn zero(size: RnsGlweSize, distr: RingSecretKeyType) -> Self {
         Self {
-            key: vec![T::ZERO; dimension * crt_poly_len],
+            key: vec![T::ZERO; size.rns_mask_len()],
             distr,
-            rns_poly_len: crt_poly_len,
+            size,
         }
     }
 
@@ -50,12 +52,18 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
         self.distr
     }
 
+    /// Returns the RNS GLWE layout of this secret key.
+    #[inline]
+    pub fn rns_glwe_size(&self) -> RnsGlweSize {
+        self.size
+    }
+
     pub fn iter_dcrt_poly(&self) -> DcrtPolynomialIter<'_, T> {
-        DcrtPolynomialIter::new(self.key.as_slice(), self.rns_poly_len)
+        DcrtPolynomialIter::new(self.key.as_slice(), self.size.rns_poly_len())
     }
 
     pub fn iter_dcrt_poly_mut(&mut self) -> DcrtPolynomialIterMut<'_, T> {
-        DcrtPolynomialIterMut::new(self.key.as_mut_slice(), self.rns_poly_len)
+        DcrtPolynomialIterMut::new(self.key.as_mut_slice(), self.size.rns_poly_len())
     }
 
     /// Creates a modulus-specific DCRT representation of a canonical signed
@@ -65,9 +73,12 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
     where
         Table: DcrtTable<ValueT = T>,
     {
-        assert_eq!(secret_key.poly_length(), table.poly_length());
-        let rns_poly_len = table.moduli_count() * secret_key.poly_length();
-        let mut key = vec![T::ZERO; secret_key.dimension() * rns_poly_len];
+        assert_eq!(secret_key.size().poly_length(), table.poly_length());
+
+        let size = RnsGlweSize::new(secret_key.size(), table.moduli_count());
+        let rns_poly_len = size.rns_poly_len();
+        let mut key = vec![T::ZERO; size.rns_mask_len()];
+
         for (coefficients, dcrt_secret) in secret_key.iter().zip(key.chunks_exact_mut(rns_poly_len))
         {
             for (ntt_table, modulus_limb) in table
@@ -83,7 +94,7 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
         Self {
             key,
             distr: secret_key.distr(),
-            rns_poly_len,
+            size,
         }
     }
 
@@ -314,8 +325,7 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
         &self,
         dcrt_msg: &DcrtPolynomial<A>,
         result: &mut DcrtGlev<B>,
-        params: &CrtGlevParameters<T, M>,
-        table: &Table,
+        domain: &DcrtGadgetDomain<'_, T, M, Table>,
         rng: &mut R,
     ) where
         R: rand::Rng + rand::CryptoRng,
@@ -324,6 +334,9 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
         A: RawData<Elem = T> + Data,
         B: RawData<Elem = T> + DataMut,
     {
+        let params = domain.parameters();
+        let table = domain.table();
+        assert_eq!(result.as_ref().len(), params.rns_glev_len());
         result
             .iter_dcrt_glwe_mut(params.rns_glwe_len())
             .zip(params.basis().iter_scalar_residues())
@@ -387,8 +400,7 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
         &self,
         crt_msg: &CrtPolynomial<A>,
         result: &mut DcrtGlev<B>,
-        params: &CrtGlevParameters<T, M>,
-        table: &Table,
+        domain: &DcrtGadgetDomain<'_, T, M, Table>,
         rng: &mut R,
     ) where
         R: rand::Rng + rand::CryptoRng,
@@ -397,6 +409,9 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
         A: RawData<Elem = T> + Data,
         B: RawData<Elem = T> + DataMut,
     {
+        let params = domain.parameters();
+        let table = domain.table();
+        assert_eq!(result.as_ref().len(), params.rns_glev_len());
         result
             .iter_dcrt_glwe_mut(params.rns_glwe_len())
             .zip(params.basis().iter_scalar_residues())
@@ -496,6 +511,7 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
         A: RawData<Elem = T> + Data,
         B: RawData<Elem = T> + DataMut,
     {
+        assert_eq!(context.size(), params.size());
         let poly_length = params.poly_length();
 
         let DcrtGlweDecryptContextRefMut {
@@ -517,12 +533,16 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
 // Decryption context
 // ---------------------------------------------------------------------------
 
+/// Reusable workspace for DCRT GLWE decryption.
+///
+/// Decryption overwrites both internal buffers.
 pub struct DcrtGlweDecryptContext<T: FheUint> {
+    size: RnsGlweSize,
     msg_mod_q: DcrtPolynomial<Vec<T>>,
     fast_convert_buffer: Vec<T>,
 }
 
-pub struct DcrtGlweDecryptContextRefMut<'a, T: FheUint> {
+struct DcrtGlweDecryptContextRefMut<'a, T: FheUint> {
     msg_mod_q: &'a mut DcrtPolynomial<Vec<T>>,
     fast_convert_buffer: &'a mut [T],
 }
@@ -530,21 +550,29 @@ pub struct DcrtGlweDecryptContextRefMut<'a, T: FheUint> {
 impl<T: FheUint> DcrtGlweDecryptContext<T> {
     /// Creates a new [`DcrtGlweDecryptContext<T>`].
     #[inline]
-    pub fn new(moduli_count: usize, poly_length: usize) -> Self {
-        let msg_mod_q: DcrtPolynomial<Vec<T>> = DcrtPolynomial::zero(moduli_count * poly_length);
-        let fast_convert_buffer = vec![T::ZERO; moduli_count * poly_length];
+    pub fn new(size: RnsGlweSize) -> Self {
+        let msg_mod_q: DcrtPolynomial<Vec<T>> = DcrtPolynomial::zero(size.rns_poly_len());
+        let fast_convert_buffer = vec![T::ZERO; size.rns_poly_len()];
 
         Self {
+            size,
             msg_mod_q,
             fast_convert_buffer,
         }
     }
 
     #[inline]
-    pub fn as_mut(&mut self) -> DcrtGlweDecryptContextRefMut<'_, T> {
+    fn as_mut(&mut self) -> DcrtGlweDecryptContextRefMut<'_, T> {
         DcrtGlweDecryptContextRefMut {
             msg_mod_q: &mut self.msg_mod_q,
             fast_convert_buffer: &mut self.fast_convert_buffer,
         }
+    }
+
+    /// Returns the RNS GLWE layout bound to this workspace.
+    #[must_use]
+    #[inline]
+    pub fn size(&self) -> RnsGlweSize {
+        self.size
     }
 }

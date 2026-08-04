@@ -6,6 +6,7 @@ use criterion::{Criterion, criterion_group, criterion_main};
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable};
 use primus_lattice::{
+    GadgetSize, GlweSize,
     context::{FourierExternalProductContext, NttExternalProductContext},
     ggsw::{FourierGgswOwned, NttGgsw},
     glwe::{Glwe, TorusGlwe},
@@ -44,7 +45,10 @@ fn fourier_cmux(c: &mut Criterion) {
             .collect(),
     );
     let mut output: TorusGlwe<Vec<u64>> = TorusGlwe::zero(components * fft.poly_length());
-    let mut context = FourierExternalProductContext::new(dimension, fft.poly_length());
+    let mut context = FourierExternalProductContext::new(GadgetSize::new(
+        GlweSize::new(dimension, fft.poly_length()),
+        basis.decompose_length(),
+    ));
 
     c.bench_function("cmux/fourier/n1024/k1/logb8/l3", |b| {
         b.iter(|| {
@@ -86,7 +90,10 @@ fn ntt_cmux(c: &mut Criterion) {
             .collect(),
     );
     let mut output: Glwe<Vec<u32>> = Glwe::zero(components * ntt.poly_length());
-    let mut context = NttExternalProductContext::new(dimension, ntt.poly_length());
+    let mut context = NttExternalProductContext::new(GadgetSize::new(
+        GlweSize::new(dimension, ntt.poly_length()),
+        basis.decompose_length(),
+    ));
 
     c.bench_function("cmux/ntt/n1024/k1/logb8/l3", |b| {
         b.iter(|| {

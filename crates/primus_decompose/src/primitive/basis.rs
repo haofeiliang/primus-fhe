@@ -4,6 +4,8 @@ use num_traits::ConstOne;
 use primus_integer::FheUint;
 use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error};
 
+use crate::{ApproxSignedBasisError, MIN_DECOMPOSITION_LOG_BASIS};
+
 use super::{ScalarIter, SignedDecomposeIter, ValueCarryInitMode, ValueMask};
 
 /// The basis for approximate signed decomposition.
@@ -99,14 +101,19 @@ impl<T: FheUint> ApproxSignedBasis<T> {
             .unwrap_or_else(|message| panic!("{message}"))
     }
 
+    /// Tries to create a decomposition basis with the same validity rules as
+    /// [`Self::new`].
     #[inline]
-    fn try_new(
+    pub fn try_new(
         modulus: Option<T>,
         log_basis: u32,
         reverse_length: Option<usize>,
-    ) -> Result<Self, &'static str> {
-        if log_basis < 2 || log_basis >= T::BITS {
-            return Err("log_basis must satisfy 2 <= log_basis < T::BITS");
+    ) -> Result<Self, ApproxSignedBasisError> {
+        if log_basis < MIN_DECOMPOSITION_LOG_BASIS || log_basis >= T::BITS {
+            return Err(ApproxSignedBasisError::InvalidLogBasis {
+                log_basis,
+                limb_bits: T::BITS,
+            });
         }
 
         let basis = <T as ConstOne>::ONE << log_basis;
@@ -121,13 +128,13 @@ impl<T: FheUint> ApproxSignedBasis<T> {
                 modulus_is_power_of_2 = true;
                 value_bits = modulus.trailing_zeros();
                 if value_bits < log_basis {
-                    return Err("decomposition basis must not exceed modulus");
+                    return Err(ApproxSignedBasisError::BasisExceedsModulus);
                 }
             } else {
                 modulus_is_power_of_2 = false;
                 value_bits = T::BITS - modulus.leading_zeros();
                 if value_bits <= log_basis {
-                    return Err("decomposition basis must not exceed modulus");
+                    return Err(ApproxSignedBasisError::BasisExceedsModulus);
                 }
             }
             modulus_minus_basis = modulus - basis;
@@ -143,17 +150,16 @@ impl<T: FheUint> ApproxSignedBasis<T> {
 
         if let Some(reverse_len) = reverse_length {
             if reverse_len == 0 {
-                return Err("reverse_length must be greater than zero");
+                return Err(ApproxSignedBasisError::ZeroReverseLength);
             }
             if reverse_len > decompose_length {
-                return Err("reverse_length must not exceed the full decomposition length");
+                return Err(ApproxSignedBasisError::ReverseLengthTooLarge {
+                    reverse_length: reverse_len,
+                    full_length: decompose_length,
+                });
             }
             decompose_length = reverse_len;
             drop_bits = value_bits - (reverse_len as u32) * log_basis;
-        }
-
-        if decompose_length == 0 {
-            return Err("decomposition length must be greater than zero");
         }
 
         let init_carry_mask = if drop_bits > 0 {

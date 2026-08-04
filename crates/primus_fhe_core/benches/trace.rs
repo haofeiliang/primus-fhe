@@ -1,12 +1,10 @@
 use std::hint::black_box;
-use std::sync::Arc;
 
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
-use primus_decompose::big_integer::BigUintApproxSignedBasis;
 use primus_fhe_core::{
-    CrtGlevParameters, CrtGlweParameters, CrtGlweTraceContext, CrtGlweTraceKey, DcrtGlweCiphertext,
-    DcrtGlweRevTraceContext, DcrtGlweRevTraceKey, DcrtGlweSecretKey, DcrtGlweTraceContext,
-    DcrtGlweTraceKey, GlweSecretKey, RingSecretKeyType,
+    CrtGlevParameters, CrtGlweParameters, CrtGlweTraceContext, CrtGlweTraceKey, DcrtGadgetDomain,
+    DcrtGlweCiphertext, DcrtGlweRevTraceContext, DcrtGlweRevTraceKey, DcrtGlweSecretKey,
+    DcrtGlweTraceContext, DcrtGlweTraceKey, GlweSecretKey, RingSecretKeyType,
 };
 use primus_lattice::glwe::{CrtGlwe, DcrtGlwe};
 use primus_modulus::BarrettModulus;
@@ -23,7 +21,6 @@ fn bench_trace(c: &mut Criterion) {
     let mod_gamma = BarrettModulus::new(gamma);
     let moduli_values: [V; 2] = [1125899906826241, 1125899906629633];
     let moduli = moduli_values.map(BarrettModulus::new);
-    let moduli_count = moduli_values.len();
 
     let mut rng = rand::rng();
 
@@ -44,29 +41,24 @@ fn bench_trace(c: &mut Criterion) {
         );
 
         let crt_poly_len = glwe_params.rns_poly_len();
-        let big_uint_poly_len = glwe_params.big_uint_poly_len();
         let rns_glwe_len = glwe_params.rns_glwe_len();
         let base_q = glwe_params.base_q();
 
         let sk = GlweSecretKey::generate(&glwe_params, &mut rng);
         let dcrt_sk = DcrtGlweSecretKey::from_coeff_secret_key(&sk, &table);
 
-        let basis = BigUintApproxSignedBasis::new(base_q, 20, None);
-        let glev_params = CrtGlevParameters::with_glwe_params(&glwe_params, basis);
+        let glev_params = CrtGlevParameters::with_glwe_params(&glwe_params, 20, None);
 
-        let table = Arc::new(table);
+        let domain = DcrtGadgetDomain::try_new(&glev_params, &table).unwrap();
 
         // Trace keys
-        let crt_trace_key =
-            CrtGlweTraceKey::new(&glev_params, &sk, &dcrt_sk, Arc::clone(&table), &mut rng);
+        let crt_trace_key = CrtGlweTraceKey::new(&domain, &sk, &dcrt_sk, &mut rng);
 
-        let dcrt_trace_key =
-            DcrtGlweTraceKey::new(&glev_params, &dcrt_sk, Arc::clone(&table), &mut rng);
+        let dcrt_trace_key = DcrtGlweTraceKey::new(&domain, &dcrt_sk, &mut rng);
 
-        let dcrt_rev_trace_key =
-            DcrtGlweRevTraceKey::new(&glev_params, &dcrt_sk, Arc::clone(&table), &mut rng);
+        let dcrt_rev_trace_key = DcrtGlweRevTraceKey::new(&domain, &dcrt_sk, &mut rng);
 
-        let table_ref = table.as_ref();
+        let table_ref = &table;
 
         // Ciphertexts
         let input: Polynomial<Vec<V>> = Polynomial::random(poly_length, mod_t, &mut rng);
@@ -84,63 +76,48 @@ fn bench_trace(c: &mut Criterion) {
         // Buffers
         let mut crt_result: CrtGlwe<Vec<V>> = CrtGlwe::zero(rns_glwe_len);
         let mut dcrt_result: DcrtGlweCiphertext<Vec<V>> = DcrtGlweCiphertext::zero(rns_glwe_len);
-        let mut crt_trace_ctx = CrtGlweTraceContext::new(
-            dimension,
-            poly_length,
-            crt_poly_len,
-            big_uint_poly_len,
-            moduli_count,
-        );
-        let mut dcrt_trace_ctx = DcrtGlweTraceContext::new(
-            dimension,
-            poly_length,
-            crt_poly_len,
-            big_uint_poly_len,
-            moduli_count,
-        );
-        let mut dcrt_rev_trace_ctx = DcrtGlweRevTraceContext::new(
-            dimension,
-            poly_length,
-            crt_poly_len,
-            big_uint_poly_len,
-            moduli_count,
-        );
+        let mut crt_trace_ctx = CrtGlweTraceContext::new(&domain);
+        let mut dcrt_trace_ctx = DcrtGlweTraceContext::new(&domain);
+        let mut dcrt_rev_trace_ctx = DcrtGlweRevTraceContext::new(&domain);
 
         let n_label = format!("N={poly_length}");
 
         group.bench_with_input(BenchmarkId::new("CRT", &n_label), &(), |b, _| {
             b.iter(|| {
-                crt_trace_key.trace_inplace(
-                    black_box(&c_coeff),
-                    black_box(&mut crt_result),
-                    &glev_params,
-                    base_q,
-                    &mut crt_trace_ctx,
-                );
+                crt_trace_key
+                    .trace_inplace(
+                        black_box(&c_coeff),
+                        black_box(&mut crt_result),
+                        &domain,
+                        &mut crt_trace_ctx,
+                    )
+                    .unwrap();
             });
         });
 
         group.bench_with_input(BenchmarkId::new("DCRT", &n_label), &(), |b, _| {
             b.iter(|| {
-                dcrt_trace_key.trace_inplace(
-                    black_box(&c_ntt),
-                    black_box(&mut dcrt_result),
-                    &glev_params,
-                    base_q,
-                    &mut dcrt_trace_ctx,
-                );
+                dcrt_trace_key
+                    .trace_inplace(
+                        black_box(&c_ntt),
+                        black_box(&mut dcrt_result),
+                        &domain,
+                        &mut dcrt_trace_ctx,
+                    )
+                    .unwrap();
             });
         });
 
         group.bench_with_input(BenchmarkId::new("RevHomTrace", &n_label), &(), |b, _| {
             b.iter(|| {
-                dcrt_rev_trace_key.trace_inplace(
-                    black_box(&c_ntt),
-                    black_box(&mut dcrt_result),
-                    &glev_params,
-                    base_q,
-                    &mut dcrt_rev_trace_ctx,
-                );
+                dcrt_rev_trace_key
+                    .trace_inplace(
+                        black_box(&c_ntt),
+                        black_box(&mut dcrt_result),
+                        &domain,
+                        &mut dcrt_rev_trace_ctx,
+                    )
+                    .unwrap();
             });
         });
     }

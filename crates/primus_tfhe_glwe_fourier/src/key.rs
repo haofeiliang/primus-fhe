@@ -12,7 +12,7 @@ use crate::{TfheContext, error::TfheKeyError};
 /// the order in which the evaluator applies them.
 pub struct ServerKey<T: TorusFftValue> {
     bootstrapping_key: FourierFunctionalBootstrappingKey<T>,
-    glwe_key_switching_key: FourierGlweKeySwitchingKey<T>,
+    glwe_key_switching_key: FourierGlweKeySwitchingKey,
 }
 
 impl<T: TorusFftValue> ServerKey<T> {
@@ -24,7 +24,7 @@ impl<T: TorusFftValue> ServerKey<T> {
 
     /// Returns the Fourier GLWE key-switching key.
     #[inline]
-    pub fn glwe_key_switching_key(&self) -> &FourierGlweKeySwitchingKey<T> {
+    pub fn glwe_key_switching_key(&self) -> &FourierGlweKeySwitchingKey {
         &self.glwe_key_switching_key
     }
 
@@ -35,7 +35,7 @@ impl<T: TorusFftValue> ServerKey<T> {
         self,
     ) -> (
         FourierFunctionalBootstrappingKey<T>,
-        FourierGlweKeySwitchingKey<T>,
+        FourierGlweKeySwitchingKey,
     ) {
         (self.bootstrapping_key, self.glwe_key_switching_key)
     }
@@ -59,14 +59,11 @@ where
 {
     /// Creates a key generator with reusable Fourier scratch.
     pub fn new(context: &'a TfheContext<T, Table>) -> Self {
-        let parameters = context.parameters().bootstrapping();
+        let bootstrapping_parameters = context.parameters().bootstrapping();
         Self {
             context,
             fft: context.new_fft_engine(),
-            gadget: FourierGadgetEncryptContext::new(
-                parameters.poly_length(),
-                parameters.decompose_length(),
-            ),
+            gadget: FourierGadgetEncryptContext::new(bootstrapping_parameters.size()),
         }
     }
 
@@ -99,10 +96,13 @@ where
             client_key.glwe_secret_key(),
             &mut self.fft,
         );
+        let bootstrapping_parameters = parameters.bootstrapping();
+        self.gadget.resize(bootstrapping_parameters.size());
         let bootstrapping_key = FourierFunctionalBootstrappingKey::generate_fourier(
             client_key.small_lwe_secret_key(),
+            parameters.small_lwe(),
             &main_glwe_secret_key,
-            parameters.bootstrapping(),
+            bootstrapping_parameters,
             &mut self.fft,
             rng,
             &mut self.gadget,
@@ -117,10 +117,12 @@ where
             &padded_small_glwe_secret_key,
             &mut self.fft,
         );
+        let key_switching = parameters.glwe_key_switching().output();
+        self.gadget.resize(key_switching.size());
         let glwe_key_switching_key = FourierGlweKeySwitchingKey::generate(
             client_key.glwe_secret_key(),
             &padded_small_glwe_secret_key,
-            parameters.glwe_key_switching(),
+            key_switching,
             &mut self.fft,
             rng,
             &mut self.gadget,

@@ -1,9 +1,6 @@
 /// Maximum power of 2 in degree
 pub(crate) const MAX_DEGREE_BITS: u32 = 20;
 
-/// Maximum number of bits in modulus
-pub(crate) const MAX_MODULUS_BITS: u32 = 62;
-
 /// Default bit shift used in Barrett precomputation
 pub(crate) const DEFAULT_SHIFT_BITS: u32 = 64;
 
@@ -37,7 +34,7 @@ pub(crate) fn max_fwd_modulus(bit_shift: u32) -> u64 {
     } else if bit_shift == 52 {
         MAX_FWD_IFMA_MODULUS
     } else if bit_shift == 64 {
-        1u64 << MAX_MODULUS_BITS
+        1u64 << crate::U64_NTT_MAX_MODULUS_BITS
     } else {
         debug_assert!(false, "Invalid bit_shift {}", bit_shift);
         0
@@ -64,8 +61,9 @@ pub fn check_arguments(n: usize, modulus: u64) {
         "n should be less than 2^{MAX_DEGREE_BITS} got {n}"
     );
     debug_assert!(
-        modulus < (1u64 << MAX_MODULUS_BITS),
-        "modulus should be less than 2^{MAX_MODULUS_BITS} got {modulus}",
+        modulus < (1u64 << crate::U64_NTT_MAX_MODULUS_BITS),
+        "modulus should be less than 2^{} got {modulus}",
+        crate::U64_NTT_MAX_MODULUS_BITS,
     );
     debug_assert!(modulus % (2 * n as u64) == 1, "modulus mod 2n != 1",);
     // FIXME: verifying primality at table construction time would catch

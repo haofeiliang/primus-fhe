@@ -1,9 +1,70 @@
+use primus_decompose::primitive::ApproxSignedBasis;
 use primus_distr::DiscreteGaussian;
 use primus_integer::FheUint;
 use primus_reduce::RingContext;
 use rand::distr::Uniform;
 
 use crate::{LweSecretKeyType, PlaintextCodec};
+
+/// Parameters controlling an LWE key-switching key.
+///
+/// The input and output ciphertext moduli are supplied by the corresponding
+/// [`LweParameters`] at key generation or evaluation time. Keeping them out of
+/// this type avoids cloning complete LWE parameter sets.
+#[derive(Debug, Clone)]
+pub struct LweKeySwitchingParameters<T: FheUint> {
+    input_dimension: usize,
+    output_dimension: usize,
+    basis: ApproxSignedBasis<T>,
+}
+
+impl<T: FheUint> LweKeySwitchingParameters<T> {
+    /// Creates LWE key-switching parameters.
+    ///
+    /// # Panics
+    ///
+    /// Panics if either LWE dimension is zero.
+    pub fn new(
+        input_dimension: usize,
+        output_dimension: usize,
+        basis: ApproxSignedBasis<T>,
+    ) -> Self {
+        assert!(input_dimension > 0, "input LWE dimension must be non-zero");
+        assert!(
+            output_dimension > 0,
+            "output LWE dimension must be non-zero"
+        );
+        Self {
+            input_dimension,
+            output_dimension,
+            basis,
+        }
+    }
+
+    /// Returns the dimension of ciphertexts before key switching.
+    #[inline]
+    pub fn input_dimension(&self) -> usize {
+        self.input_dimension
+    }
+
+    /// Returns the dimension of ciphertexts after key switching.
+    #[inline]
+    pub fn output_dimension(&self) -> usize {
+        self.output_dimension
+    }
+
+    /// Returns the decomposition basis used by key switching.
+    #[inline]
+    pub fn basis(&self) -> &ApproxSignedBasis<T> {
+        &self.basis
+    }
+
+    /// Returns the decomposition length.
+    #[inline]
+    pub fn decompose_length(&self) -> usize {
+        self.basis.decompose_length()
+    }
+}
 
 /// Lwe Parameters.
 #[derive(Clone)]
@@ -16,12 +77,12 @@ where
     dimension: usize,
     /// **LWE** message modulus, refers to **t** in the paper.
     plain_modulus_value: T,
-    plaintext_codec: PlaintextCodec<T>,
-    /// **LWE** cipher modulus minus one, refers to **q-1** in the paper.
-    cipher_modulus_minus_one: T,
     /// **LWE** cipher modulus, refers to **q** in the paper.
     cipher_modulus: M,
+    /// **LWE** cipher modulus minus one, refers to **q-1** in the paper.
+    cipher_modulus_minus_one: T,
     cipher_modulus_uniform_distr: Uniform<T>,
+    plaintext_codec: PlaintextCodec<T>,
     /// The distribution type of the LWE Secret Key.
     secret_key_type: LweSecretKeyType,
     /// The noise distribution.
@@ -54,10 +115,10 @@ where
         Self {
             dimension,
             plain_modulus_value,
-            plaintext_codec,
-            cipher_modulus_minus_one,
             cipher_modulus,
+            cipher_modulus_minus_one,
             cipher_modulus_uniform_distr,
+            plaintext_codec,
             secret_key_type,
             noise_distribution,
         }
@@ -75,10 +136,17 @@ where
         self.plain_modulus_value
     }
 
-    /// Returns the preselected plaintext codec strategy.
+    /// Returns the cipher modulus of this [`LweParameters<T, M>`].
     #[inline]
-    pub fn plaintext_codec(&self) -> &PlaintextCodec<T> {
-        &self.plaintext_codec
+    pub fn cipher_modulus(&self) -> M {
+        self.cipher_modulus
+    }
+
+    /// Returns the representable ciphertext modulus, or `None` for a native torus.
+    #[must_use]
+    #[inline]
+    pub fn cipher_modulus_value(&self) -> Option<T> {
+        self.cipher_modulus.explicit_value()
     }
 
     /// Returns the cipher modulus minus one of this [`LweParameters<T, M>`].
@@ -87,15 +155,15 @@ where
         self.cipher_modulus_minus_one
     }
 
-    /// Returns the cipher modulus of this [`LweParameters<T, M>`].
-    #[inline]
-    pub fn cipher_modulus(&self) -> M {
-        self.cipher_modulus
-    }
-
     /// Returns the cipher modulus uniform distr of this [`LweParameters<T, M>`].
     pub fn cipher_modulus_uniform_distr(&self) -> Uniform<T> {
         self.cipher_modulus_uniform_distr
+    }
+
+    /// Returns the preselected plaintext codec strategy.
+    #[inline]
+    pub fn plaintext_codec(&self) -> &PlaintextCodec<T> {
+        &self.plaintext_codec
     }
 
     /// Returns the secret key type of this [`LweParameters<T, M>`].

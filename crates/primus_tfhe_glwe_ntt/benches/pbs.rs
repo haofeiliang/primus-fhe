@@ -5,7 +5,6 @@ use std::hint::black_box;
 use criterion::{Criterion, criterion_group, criterion_main};
 use primus_fhe_core::{
     GlweCiphertext, LweCiphertext, NttBlindRotationContext, NttGlweKeySwitchingContext,
-    ntt_blind_rotate_to,
 };
 use primus_ntt::{NttTable, U32NttTable};
 use primus_tfhe_glwe_ntt::{
@@ -41,12 +40,10 @@ fn bench_order(c: &mut Criterion, order: PbsOrder) {
     let mut evaluator = Evaluator::try_new(&context, &server_key).unwrap();
     let mut output = input.clone();
 
-    let glwe_dimension = parameters.glwe().dimension();
-    let mut blind_rotation = NttBlindRotationContext::new(glwe_dimension, poly_length);
-    let mut key_switching = NttGlweKeySwitchingContext::new(
-        parameters.glwe_key_switching().output_dimension(),
-        poly_length,
-    );
+    let bootstrapping_domain = context.bootstrapping_domain();
+    let mut blind_rotation = NttBlindRotationContext::new(bootstrapping_domain.size());
+    let key_switching_domain = context.key_switching_domain();
+    let mut key_switching = NttGlweKeySwitchingContext::new(&key_switching_domain);
     let mut main_glwe: GlweCiphertext<Vec<u32>> =
         GlweCiphertext::zero(parameters.glwe().glwe_len());
     let mut switched: GlweCiphertext<Vec<u32>> =
@@ -56,14 +53,11 @@ fn bench_order(c: &mut Criterion, order: PbsOrder) {
         LweCiphertext::zero(parameters.ciphertext_lwe_dimension());
 
     match order {
-        PbsOrder::BootstrapKeyswitch => ntt_blind_rotate_to(
+        PbsOrder::BootstrapKeyswitch => server_key.bootstrapping_key().ntt_blind_rotate_to(
             input.as_lwe(),
             lookup_table.accumulator(),
             &mut main_glwe,
-            server_key.bootstrapping_key(),
-            parameters.small_lwe(),
-            parameters.bootstrapping(),
-            context.table(),
+            &bootstrapping_domain,
             &mut blind_rotation,
         ),
         PbsOrder::KeyswitchBootstrap => {
@@ -72,13 +66,15 @@ fn bench_order(c: &mut Criterion, order: PbsOrder) {
                 .inverse_extract_glwe_to(&mut main_glwe, poly_length, modulus)
         }
     }
-    server_key.glwe_key_switching_key().key_switch_to(
-        &main_glwe,
-        &mut switched,
-        parameters.glwe_key_switching(),
-        context.table(),
-        &mut key_switching,
-    );
+    server_key
+        .glwe_key_switching_key()
+        .key_switch_to(
+            &main_glwe,
+            &mut switched,
+            &key_switching_domain,
+            &mut key_switching,
+        )
+        .unwrap();
     switched.extract_compact_lwe_to(&mut small_lwe, poly_length, modulus);
 
     let boolean_encryptor = BooleanEncryptor::new(parameters, &client_key).unwrap();
@@ -87,6 +83,7 @@ fn bench_order(c: &mut Criterion, order: PbsOrder) {
     let mut boolean_output = boolean_lhs.clone();
     let mut boolean_evaluator = context.new_boolean_evaluator(&server_key).unwrap();
 
+    let glwe_dimension = parameters.glwe().dimension();
     let mut group = c.benchmark_group(format!(
         "tfhe_pbs/ntt/u32/{}/n{poly_length}/k{glwe_dimension}/small_lwe{}/external_lwe{}",
         order_name(order),
@@ -110,13 +107,15 @@ fn bench_order(c: &mut Criterion, order: PbsOrder) {
 
     group.bench_function("glwe_key_switching", |b| {
         b.iter(|| {
-            server_key.glwe_key_switching_key().key_switch_to(
-                black_box(&main_glwe),
-                black_box(&mut switched),
-                parameters.glwe_key_switching(),
-                context.table(),
-                &mut key_switching,
-            );
+            server_key
+                .glwe_key_switching_key()
+                .key_switch_to(
+                    black_box(&main_glwe),
+                    black_box(&mut switched),
+                    &key_switching_domain,
+                    &mut key_switching,
+                )
+                .unwrap();
             black_box(&switched);
         });
     });
@@ -132,14 +131,11 @@ fn bench_order(c: &mut Criterion, order: PbsOrder) {
             PbsOrder::KeyswitchBootstrap => &small_lwe,
         };
         b.iter(|| {
-            ntt_blind_rotate_to(
+            black_box(server_key.bootstrapping_key()).ntt_blind_rotate_to(
                 black_box(blind_rotation_input),
                 black_box(lookup_table.accumulator()),
                 black_box(&mut main_glwe),
-                black_box(server_key.bootstrapping_key()),
-                parameters.small_lwe(),
-                parameters.bootstrapping(),
-                context.table(),
+                &bootstrapping_domain,
                 &mut blind_rotation,
             );
             black_box(&main_glwe);

@@ -2,6 +2,7 @@
 
 use num_traits::ConstZero;
 use primus_integer::FheUint;
+use primus_lattice::{GlweSize, MAX_POLY_LENGTH, MIN_POLY_LENGTH};
 use primus_reduce::RingContext;
 use rand::distr::Distribution;
 use zeroize::{Zeroize, ZeroizeOnDrop};
@@ -15,11 +16,8 @@ use super::SecretCoefficient;
 
 /// Common secret-key shape exposed by single-modulus and RNS GLWE parameters.
 pub trait GlweSecretKeyParameterSet<T: FheUint> {
-    /// Returns the GLWE dimension.
-    fn secret_key_dimension(&self) -> usize;
-
-    /// Returns the polynomial length.
-    fn secret_key_poly_length(&self) -> usize;
+    /// Returns the GLWE secret-key layout.
+    fn secret_key_size(&self) -> GlweSize;
 
     /// Returns the coefficient distribution.
     fn secret_key_distribution_type(&self) -> RingSecretKeyType;
@@ -30,12 +28,8 @@ where
     T: FheUint,
     M: RingContext<T>,
 {
-    fn secret_key_dimension(&self) -> usize {
-        self.dimension()
-    }
-
-    fn secret_key_poly_length(&self) -> usize {
-        self.poly_length()
+    fn secret_key_size(&self) -> GlweSize {
+        self.size()
     }
 
     fn secret_key_distribution_type(&self) -> RingSecretKeyType {
@@ -48,12 +42,8 @@ where
     T: FheUint,
     M: primus_reduce::FieldContext<T>,
 {
-    fn secret_key_dimension(&self) -> usize {
-        self.dimension()
-    }
-
-    fn secret_key_poly_length(&self) -> usize {
-        self.poly_length()
+    fn secret_key_size(&self) -> GlweSize {
+        self.size().glwe_size()
     }
 
     fn secret_key_distribution_type(&self) -> RingSecretKeyType {
@@ -65,8 +55,7 @@ where
 #[derive(Clone)]
 pub struct GlweSecretKey<T: FheUint> {
     pub(crate) key: Vec<SecretCoefficient<T>>,
-    pub(crate) poly_length: usize,
-    pub(crate) dimension: usize,
+    pub(crate) size: GlweSize,
     pub(crate) distr: RingSecretKeyType,
 }
 
@@ -82,21 +71,9 @@ impl<T: FheUint> ZeroizeOnDrop for GlweSecretKey<T> {}
 impl<T: FheUint> GlweSecretKey<T> {
     /// Creates a new [`GlweSecretKey<T>`].
     #[inline]
-    pub fn new(
-        key: Vec<SecretCoefficient<T>>,
-        dimension: usize,
-        poly_length: usize,
-        distr: RingSecretKeyType,
-    ) -> Self {
-        assert!(poly_length >= 2 && poly_length.is_power_of_two());
-        assert!(dimension > 0);
-        assert_eq!(key.len(), poly_length * dimension);
-        Self {
-            key,
-            dimension,
-            poly_length,
-            distr,
-        }
+    pub fn new(key: Vec<SecretCoefficient<T>>, size: GlweSize, distr: RingSecretKeyType) -> Self {
+        assert_eq!(key.len(), size.mask_len());
+        Self { key, size, distr }
     }
 
     /// Creates a GLWE secret key by copying an LWE secret key into its prefix
@@ -113,7 +90,9 @@ impl<T: FheUint> GlweSecretKey<T> {
         poly_length: usize,
         cipher_modulus_minus_one: T,
     ) -> Result<Self, GlweSecretKeyError> {
-        if poly_length < 2 || !poly_length.is_power_of_two() {
+        if !(MIN_POLY_LENGTH..=MAX_POLY_LENGTH).contains(&poly_length)
+            || !poly_length.is_power_of_two()
+        {
             return Err(GlweSecretKeyError::InvalidPolynomialLength { poly_length });
         }
 
@@ -154,19 +133,25 @@ impl<T: FheUint> GlweSecretKey<T> {
                 RingSecretKeyType::Ternary
             }
         };
-        Ok(Self::new(key, dimension, poly_length, distr))
+        Ok(Self::new(key, GlweSize::new(dimension, poly_length), distr))
+    }
+
+    /// Returns the GLWE layout of this [`GlweSecretKey<T>`].
+    #[inline]
+    pub fn size(&self) -> GlweSize {
+        self.size
     }
 
     /// Returns the poly length of this [`GlweSecretKey<T>`].
     #[inline]
     pub fn poly_length(&self) -> usize {
-        self.poly_length
+        self.size.poly_length()
     }
 
     /// Returns the dimension of this [`GlweSecretKey<T>`].
     #[inline]
     pub fn dimension(&self) -> usize {
-        self.dimension
+        self.size.dimension()
     }
 
     /// Returns the distr of this [`GlweSecretKey<T>`].
@@ -186,7 +171,7 @@ impl<T: FheUint> GlweSecretKey<T> {
     pub fn iter(
         &self,
     ) -> impl ExactSizeIterator<Item = &[SecretCoefficient<T>]> + DoubleEndedIterator {
-        self.key.chunks_exact(self.poly_length)
+        self.key.chunks_exact(self.size.poly_length())
     }
 
     #[inline]
@@ -196,8 +181,7 @@ impl<T: FheUint> GlweSecretKey<T> {
         P: GlweSecretKeyParameterSet<T>,
     {
         Self::generate_with_distribution(
-            params.secret_key_dimension(),
-            params.secret_key_poly_length(),
+            params.secret_key_size(),
             params.secret_key_distribution_type(),
             rng,
         )
@@ -206,17 +190,14 @@ impl<T: FheUint> GlweSecretKey<T> {
     /// Generates a canonical signed GLWE secret key from its shape and
     /// coefficient distribution.
     pub fn generate_with_distribution<R>(
-        dimension: usize,
-        poly_length: usize,
+        size: GlweSize,
         distr: RingSecretKeyType,
         rng: &mut R,
     ) -> Self
     where
         R: rand::Rng + rand::CryptoRng,
     {
-        assert!(poly_length >= 2 && poly_length.is_power_of_two());
-        assert!(dimension > 0);
-        let key_len = poly_length * dimension;
+        let key_len = size.mask_len();
         let key = match distr {
             RingSecretKeyType::Binary => primus_distr::sample_binary_values(key_len, rng),
             RingSecretKeyType::Ternary => {
@@ -231,6 +212,6 @@ impl<T: FheUint> GlweSecretKey<T> {
             }
         };
 
-        Self::new(key, dimension, poly_length, distr)
+        Self { key, size, distr }
     }
 }

@@ -6,6 +6,7 @@ use criterion::{Criterion, criterion_group, criterion_main};
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable};
 use primus_lattice::{
+    GadgetSize, GlweSize,
     context::{FourierExternalProductContext, NttExternalProductContext},
     ggsw::{FourierGgswOwned, NttGgsw},
     glwe::Glwe,
@@ -39,7 +40,10 @@ fn fourier_external_product(c: &mut Criterion) {
             .collect(),
     );
     let mut output = Glwe::new(vec![0u64; components * fft.poly_length()]);
-    let mut context = FourierExternalProductContext::new(dimension, fft.poly_length());
+    let mut context = FourierExternalProductContext::new(GadgetSize::new(
+        GlweSize::new(dimension, fft.poly_length()),
+        basis.decompose_length(),
+    ));
     c.bench_function("external_product/fourier/n1024/k1/logb8/l3", |b| {
         b.iter(|| {
             black_box(&key).external_product_to(
@@ -74,7 +78,10 @@ fn ntt_external_product(c: &mut Criterion) {
             .collect(),
     );
     let mut output = Glwe::new(vec![0u32; glwe_len]);
-    let mut context = NttExternalProductContext::new(dimension, ntt.poly_length());
+    let mut context = NttExternalProductContext::new(GadgetSize::new(
+        GlweSize::new(dimension, ntt.poly_length()),
+        basis.decompose_length(),
+    ));
 
     c.bench_function("external_product/ntt/n1024/k1/logb8/l3", |b| {
         b.iter(|| {

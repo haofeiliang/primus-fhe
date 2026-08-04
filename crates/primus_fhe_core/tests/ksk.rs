@@ -1,8 +1,8 @@
-use primus_decompose::big_integer::BigUintApproxSignedBasis;
 use primus_fhe_core::{
-    CrtGlevParameters, CrtGlweParameters, DcrtGlweCiphertext, DcrtGlweDecryptContext,
-    DcrtGlweKeySwitchingContext, DcrtGlweKeySwitchingKey, DcrtGlweSecretKey, GlweSecretKey,
-    HybridRnsGlweKeySwitchingContext, HybridRnsGlweKeySwitchingKey, RingSecretKeyType,
+    CrtGlevParameters, CrtGlweParameters, DcrtGadgetDomain, DcrtGlweCiphertext,
+    DcrtGlweDecryptContext, DcrtGlweKeySwitchingContext, DcrtGlweKeySwitchingKey,
+    DcrtGlweSecretKey, GlweSecretKey, HybridRnsGlweKeySwitchingContext,
+    HybridRnsGlweKeySwitchingKey, HybridRnsKeySwitchDomain, RingSecretKeyType,
 };
 use primus_lattice::glwe::DcrtGlwe;
 use primus_modulus::BarrettModulus;
@@ -43,11 +43,7 @@ fn test_rns_glwe_ksk() {
         3.20,
     );
 
-    let moduli_count = glwe_params.cipher_moduli_count();
-    let big_uint_poly_len = glwe_params.big_uint_poly_len();
-    let rns_poly_len = glwe_params.rns_poly_len();
     let rns_glwe_len = glwe_params.rns_glwe_len();
-    let base_q = glwe_params.base_q();
 
     // ── Two independent secret keys ─────────────────────────────
     let sk_1 = GlweSecretKey::generate(&glwe_params, &mut rng);
@@ -57,29 +53,18 @@ fn test_rns_glwe_ksk() {
     let dcrt_sk_2 = DcrtGlweSecretKey::from_coeff_secret_key(&sk_2, &table);
 
     // ── Key-switching key: encrypt sk_1 under sk_2 ──────────────
-    let basis = BigUintApproxSignedBasis::new(base_q, 20, None);
-    let glev_params = CrtGlevParameters::with_glwe_params(&glwe_params, basis);
+    let glev_params = CrtGlevParameters::with_glwe_params(&glwe_params, 20, None);
+    let domain = DcrtGadgetDomain::try_new(&glev_params, &table).unwrap();
 
-    let key_switching_key = DcrtGlweKeySwitchingKey::generate(
-        &sk_1,
-        &glwe_params,
-        &dcrt_sk_2,
-        &glev_params,
-        &table,
-        &mut rng,
-    );
+    let key_switching_key =
+        DcrtGlweKeySwitchingKey::generate(&sk_1, &glwe_params, &dcrt_sk_2, &domain, &mut rng);
 
     // ── Encrypt random plaintext under sk_1 ─────────────────────
     let input: Polynomial<Vec<ValueT>> = Polynomial::random(poly_length, mod_t, &mut rng);
     let mut c1: DcrtGlwe<Vec<ValueT>> = DcrtGlweCiphertext::zero(rns_glwe_len);
     let mut c2: DcrtGlwe<Vec<ValueT>> = DcrtGlweCiphertext::zero(rns_glwe_len);
-    let mut ksk_context = DcrtGlweKeySwitchingContext::new(
-        poly_length,
-        rns_poly_len,
-        big_uint_poly_len,
-        moduli_count,
-    );
-    let mut decrypt_context = DcrtGlweDecryptContext::new(moduli_count, poly_length);
+    let mut ksk_context = DcrtGlweKeySwitchingContext::new(&domain, key_switching_key.input_size());
+    let mut decrypt_context = DcrtGlweDecryptContext::new(glwe_params.size());
 
     dcrt_sk_1.encrypt_plaintext_inplace(&input, &mut c1, &glwe_params, &table, &mut rng);
 
@@ -91,14 +76,9 @@ fn test_rns_glwe_ksk() {
     // Requires conversion to coefficient domain first.
     let c1 = c1.into_coeff_form(&table);
 
-    key_switching_key.key_switch_to(
-        &c1,
-        &mut c2,
-        glev_params.basis(),
-        &table,
-        base_q,
-        &mut ksk_context,
-    );
+    key_switching_key
+        .key_switch_to(&c1, &mut c2, &domain, &mut ksk_context)
+        .unwrap();
 
     // ── Decrypt under sk_2 ─────────────────────────────────────
     let output = dcrt_sk_2.decrypt(&c2, &glwe_params, &table, &mut decrypt_context);
@@ -151,6 +131,7 @@ fn test_rns_glwe_ksk_hybrid() {
     let decomposition_count = 2;
     let hybrid_params =
         primus_rns::HybridRNS::new(&q_moduli, &p_moduli, decomposition_count).unwrap();
+    let hybrid_domain = HybridRnsKeySwitchDomain::try_new(&hybrid_params, &qp_table).unwrap();
 
     // ── Two independent secret keys ─────────────────────────────
     let sk_1 = GlweSecretKey::generate(&glwe_params, &mut rng);
@@ -164,8 +145,7 @@ fn test_rns_glwe_ksk_hybrid() {
         &sk_1,
         &glwe_params,
         &sk_2,
-        &hybrid_params,
-        &qp_table,
+        &hybrid_domain,
         &mut rng,
     );
 
@@ -185,14 +165,13 @@ fn test_rns_glwe_ksk_hybrid() {
 
     // ── Encrypt random plaintext under sk_1 ─────────────────────
     let rns_glwe_len = glwe_params.rns_glwe_len();
-    let moduli_count = glwe_params.cipher_moduli_count();
 
     let input: Polynomial<Vec<ValueT>> = Polynomial::random(poly_length, mod_t, &mut rng);
     let mut c1: DcrtGlwe<Vec<ValueT>> = DcrtGlweCiphertext::zero(rns_glwe_len);
     let mut c2: DcrtGlwe<Vec<ValueT>> = DcrtGlweCiphertext::zero(rns_glwe_len);
     let mut c2_from_coeff: DcrtGlwe<Vec<ValueT>> = DcrtGlweCiphertext::zero(rns_glwe_len);
 
-    let mut decrypt_context = DcrtGlweDecryptContext::new(moduli_count, poly_length);
+    let mut decrypt_context = DcrtGlweDecryptContext::new(glwe_params.size());
 
     dcrt_sk_1.encrypt_plaintext_inplace(&input, &mut c1, &glwe_params, &q_table, &mut rng);
 
@@ -204,18 +183,21 @@ fn test_rns_glwe_ksk_hybrid() {
     let c1_coeff = c1.clone().into_coeff_form(&q_table);
 
     let mut hybrid_context =
-        HybridRnsGlweKeySwitchingContext::new(&key_switching_key, &hybrid_params);
+        HybridRnsGlweKeySwitchingContext::new(&key_switching_key, &hybrid_domain);
     let mut coefficient_context =
-        HybridRnsGlweKeySwitchingContext::new(&key_switching_key, &hybrid_params);
+        HybridRnsGlweKeySwitchingContext::new(&key_switching_key, &hybrid_domain);
 
-    key_switching_key.key_switch_to(&c1, &mut c2, &hybrid_params, &qp_table, &mut hybrid_context);
-    key_switching_key.key_switch_coeff_to(
-        &c1_coeff,
-        &mut c2_from_coeff,
-        &hybrid_params,
-        &qp_table,
-        &mut coefficient_context,
-    );
+    key_switching_key
+        .key_switch_to(&c1, &mut c2, &hybrid_domain, &mut hybrid_context)
+        .unwrap();
+    key_switching_key
+        .key_switch_coeff_to(
+            &c1_coeff,
+            &mut c2_from_coeff,
+            &hybrid_domain,
+            &mut coefficient_context,
+        )
+        .unwrap();
     assert_eq!(c2.as_ref(), c2_from_coeff.as_ref());
 
     // ── Decrypt under sk_2 ─────────────────────────────────────

@@ -3,7 +3,6 @@
 //! These small parameters keep the example fast and are not suitable for
 //! production use.
 
-use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{FftTable, RustFftTable};
 use primus_fhe_core::{
     GgswParameters, GlweParameters, LweParameters, LweSecretKeyType, RingSecretKeyType,
@@ -35,14 +34,14 @@ fn parameters() -> TfheParameters<u32> {
         RingSecretKeyType::Binary,
         0.7,
     );
-    let bootstrapping =
-        GgswParameters::with_glwe_params(&glwe, ApproxSignedBasis::new(None, 8, Some(3)));
-    TfheParameters::with_pbs_order_and_key_switching_basis(
+    let bootstrapping = GgswParameters::with_glwe_params(&glwe, 8, Some(3));
+    TfheParameters::try_with_derived_glwe_key_switching(
         lwe,
         glwe,
         bootstrapping,
+        4,
+        Some(4),
         PbsOrder::KeyswitchBootstrap,
-        ApproxSignedBasis::new(None, 4, Some(4)),
     )
     .unwrap()
 }

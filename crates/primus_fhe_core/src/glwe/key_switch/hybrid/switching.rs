@@ -1,5 +1,6 @@
 use primus_data::{Data, DataMut, RawData};
 use primus_integer::FheUint;
+use primus_lattice::RnsGlweSize;
 use primus_ntt::{DcrtTable, NttTable};
 use primus_poly::DcrtPolynomial;
 use primus_reduce::FieldContext;
@@ -10,7 +11,9 @@ use super::{
     layout::{QpGlweMut, QpGlweRef},
     mod_down::approx_mod_down_ntt,
 };
-use crate::{CrtGlweCiphertext, DcrtGlweCiphertext};
+use crate::{
+    CrtGlweCiphertext, DcrtGlweCiphertext, GlweKeySwitchingError, HybridRnsKeySwitchDomain,
+};
 
 impl<T: FheUint> HybridRnsGlweKeySwitchingKey<T> {
     /// Returns the number of QP-basis moduli per polynomial.
@@ -25,35 +28,42 @@ impl<T: FheUint> HybridRnsGlweKeySwitchingKey<T> {
 
     fn validate_key_switch<M, Table>(
         &self,
-        hybrid_params: &HybridRNS<T, M>,
-        table: &Table,
+        input_len: usize,
+        output_len: usize,
+        domain: &HybridRnsKeySwitchDomain<'_, T, M, Table>,
         context: &HybridRnsGlweKeySwitchingContext<T>,
-    ) where
+    ) -> Result<(), GlweKeySwitchingError>
+    where
         M: FieldContext<T>,
         Table: DcrtTable<ValueT = T>,
     {
-        let poly_length = self.poly_length;
+        let hybrid_params = domain.parameters();
+        let table = domain.table();
+        let poly_length = self.input_size.poly_length();
         let q_moduli_count = hybrid_params.q_moduli_count();
-        let qp_rns_poly_len = self.qp_rns_poly_len;
 
-        assert_eq!(table.poly_length(), poly_length);
-        assert_eq!(table.moduli_count(), hybrid_params.qp_moduli_count());
-        assert!(
-            table
-                .ntt_tables()
-                .iter()
-                .zip(hybrid_params.qp_base().moduli())
-                .all(|(ntt_table, modulus)| ntt_table.modulus() == modulus.value())
-        );
-        assert_eq!(
-            qp_rns_poly_len,
-            poly_length * hybrid_params.qp_moduli_count()
-        );
-        assert_eq!(self.partition_count, hybrid_params.partition_count());
-        assert_eq!(context.output_dimension, self.output_dimension);
-        assert_eq!(context.poly_length, poly_length);
-        assert_eq!(context.q_moduli_count, q_moduli_count);
-        assert_eq!(context.qp_moduli_count, hybrid_params.qp_moduli_count());
+        if table.poly_length() != poly_length
+            || self.input_size.moduli_count() != q_moduli_count
+            || self.output_size.moduli_count() != q_moduli_count
+        {
+            return Err(GlweKeySwitchingError::KeyDomainMismatch);
+        }
+        if context.input_size != self.input_size || context.output_size != self.output_size {
+            return Err(GlweKeySwitchingError::ContextMismatch);
+        }
+        if input_len != self.input_size.rns_glwe_len() {
+            return Err(GlweKeySwitchingError::InputLengthMismatch {
+                expected: self.input_size.rns_glwe_len(),
+                actual: input_len,
+            });
+        }
+        if output_len != self.output_size.rns_glwe_len() {
+            return Err(GlweKeySwitchingError::OutputLengthMismatch {
+                expected: self.output_size.rns_glwe_len(),
+                actual: output_len,
+            });
+        }
+        Ok(())
     }
 
     fn accumulate_coefficient_mask<M, Table>(
@@ -67,7 +77,7 @@ impl<T: FheUint> HybridRnsGlweKeySwitchingKey<T> {
         M: FieldContext<T>,
         Table: DcrtTable<ValueT = T>,
     {
-        let poly_length = self.poly_length;
+        let poly_length = self.input_size.poly_length();
         let qp_moduli_count = hybrid_params.qp_moduli_count();
         let qp_moduli = hybrid_params.qp_base().moduli();
         let HybridRnsGlweKeySwitchingContext {
@@ -117,7 +127,7 @@ impl<T: FheUint> HybridRnsGlweKeySwitchingKey<T> {
         M: FieldContext<T>,
         Table: DcrtTable<ValueT = T>,
     {
-        let poly_length = self.poly_length;
+        let poly_length = self.input_size.poly_length();
         let q_moduli_count = hybrid_params.q_moduli_count();
         let qp_moduli_count = hybrid_params.qp_moduli_count();
         let qp_moduli = hybrid_params.qp_base().moduli();
@@ -192,7 +202,7 @@ impl<T: FheUint> HybridRnsGlweKeySwitchingKey<T> {
         Table: DcrtTable<ValueT = T>,
         B: RawData<Elem = T> + DataMut,
     {
-        let poly_length = self.poly_length;
+        let poly_length = self.input_size.poly_length();
         let q_moduli_count = hybrid_params.q_moduli_count();
         let qp_rns_poly_len = self.qp_rns_poly_len;
         let q_rns_poly_len = poly_length * q_moduli_count;
@@ -233,18 +243,20 @@ impl<T: FheUint> HybridRnsGlweKeySwitchingKey<T> {
         &self,
         c_in: &DcrtGlweCiphertext<A>,
         c_out: &mut DcrtGlweCiphertext<B>,
-        hybrid_params: &HybridRNS<T, M>,
-        table: &Table,
+        domain: &HybridRnsKeySwitchDomain<'_, T, M, Table>,
         context: &mut HybridRnsGlweKeySwitchingContext<T>,
-    ) where
+    ) -> Result<(), GlweKeySwitchingError>
+    where
         M: FieldContext<T>,
         Table: DcrtTable<ValueT = T>,
         A: RawData<Elem = T> + Data,
         B: RawData<Elem = T> + DataMut,
     {
-        self.validate_key_switch(hybrid_params, table, context);
+        self.validate_key_switch(c_in.as_ref().len(), c_out.as_ref().len(), domain, context)?;
+        let hybrid_params = domain.parameters();
+        let table = domain.table();
 
-        let (mask_in, body_in) = c_in.a_b(self.input_rns_poly_len);
+        let (mask_in, body_in) = c_in.a_b(self.input_size.rns_poly_len());
         assert_eq!(mask_in.len(), self.key.len() / self.qp_rns_gadget_len);
 
         context.accumulator_qp.fill(T::ZERO);
@@ -265,9 +277,10 @@ impl<T: FheUint> HybridRnsGlweKeySwitchingKey<T> {
         let (_, b_out) = c_out.a_b_mut_slices(q_rns_poly_len);
         DcrtPolynomial(b_out).add_assign(
             &body_in,
-            self.poly_length,
+            self.input_size.poly_length(),
             hybrid_params.q_base().moduli(),
         );
+        Ok(())
     }
 
     /// Reference hybrid RNS key switching from coefficient-domain input.
@@ -277,18 +290,20 @@ impl<T: FheUint> HybridRnsGlweKeySwitchingKey<T> {
         &self,
         c_in: &CrtGlweCiphertext<A>,
         c_out: &mut DcrtGlweCiphertext<B>,
-        hybrid_params: &HybridRNS<T, M>,
-        table: &Table,
+        domain: &HybridRnsKeySwitchDomain<'_, T, M, Table>,
         context: &mut HybridRnsGlweKeySwitchingContext<T>,
-    ) where
+    ) -> Result<(), GlweKeySwitchingError>
+    where
         M: FieldContext<T>,
         Table: DcrtTable<ValueT = T>,
         A: RawData<Elem = T> + Data,
         B: RawData<Elem = T> + DataMut,
     {
-        self.validate_key_switch(hybrid_params, table, context);
+        self.validate_key_switch(c_in.as_ref().len(), c_out.as_ref().len(), domain, context)?;
+        let hybrid_params = domain.parameters();
+        let table = domain.table();
 
-        let (mask_in, body_in) = c_in.a_b(self.input_rns_poly_len);
+        let (mask_in, body_in) = c_in.a_b(self.input_size.rns_poly_len());
         assert_eq!(mask_in.len(), self.key.len() / self.qp_rns_gadget_len);
 
         context.accumulator_qp.fill(T::ZERO);
@@ -311,14 +326,15 @@ impl<T: FheUint> HybridRnsGlweKeySwitchingKey<T> {
         body_scratch.copy_from_slice(body_in.as_slice());
         table.ntt_tables()[..q_moduli_count]
             .iter()
-            .zip(body_scratch.chunks_exact_mut(self.poly_length))
+            .zip(body_scratch.chunks_exact_mut(self.input_size.poly_length()))
             .for_each(|(ntt_table, q_limb)| ntt_table.transform_slice(q_limb));
         let (_, b_out) = c_out.a_b_mut_slices(q_rns_poly_len);
         DcrtPolynomial(b_out).add_assign(
             &DcrtPolynomial(body_scratch),
-            self.poly_length,
+            self.input_size.poly_length(),
             hybrid_params.q_base().moduli(),
         );
+        Ok(())
     }
 }
 
@@ -355,46 +371,43 @@ pub struct HybridRnsGlweKeySwitchingContext<T: FheUint> {
     mod_up_limb: Vec<T>,
     mod_up_scratch: Vec<T>,
     mod_down_scratch: Vec<T>,
-    poly_length: usize,
-    q_moduli_count: usize,
-    qp_moduli_count: usize,
-    output_dimension: usize,
+    input_size: RnsGlweSize,
+    output_size: RnsGlweSize,
 }
 
 impl<T: FheUint> HybridRnsGlweKeySwitchingContext<T> {
     /// Creates reusable scratch space sized from the hybrid parameters.
-    pub fn new<M>(
+    pub fn new<M, Table>(
         key_switching_key: &HybridRnsGlweKeySwitchingKey<T>,
-        hybrid_params: &HybridRNS<T, M>,
+        domain: &HybridRnsKeySwitchDomain<'_, T, M, Table>,
     ) -> Self
     where
         M: FieldContext<T>,
+        Table: DcrtTable<ValueT = T>,
     {
+        let hybrid_params = domain.parameters();
         assert_eq!(
             key_switching_key.partition_count,
             hybrid_params.partition_count()
         );
-        assert_eq!(
-            key_switching_key.qp_rns_poly_len % hybrid_params.qp_moduli_count(),
-            0
-        );
 
-        let poly_length = key_switching_key.poly_length;
-        let output_dimension = key_switching_key.output_dimension;
+        let poly_length = key_switching_key.input_size.poly_length();
         let q_moduli_count = hybrid_params.q_moduli_count();
         let qp_moduli_count = hybrid_params.qp_moduli_count();
         let qp_poly_len = qp_moduli_count * poly_length;
 
         Self {
-            accumulator_qp: vec![T::ZERO; (output_dimension + 1) * qp_poly_len],
+            accumulator_qp: vec![
+                T::ZERO;
+                key_switching_key.output_size.glwe_size().component_count()
+                    * qp_poly_len
+            ],
             q_scratch: vec![T::ZERO; q_moduli_count * poly_length],
             mod_up_limb: vec![T::ZERO; poly_length],
             mod_up_scratch: vec![T::ZERO; hybrid_params.max_mod_up_scratch_len(poly_length)],
             mod_down_scratch: vec![T::ZERO; hybrid_params.mod_down_scratch_len(poly_length)],
-            poly_length,
-            q_moduli_count,
-            qp_moduli_count,
-            output_dimension,
+            input_size: key_switching_key.input_size,
+            output_size: key_switching_key.output_size,
         }
     }
 }

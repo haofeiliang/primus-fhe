@@ -1,14 +1,14 @@
 use primus_distr::{sample_crt_gaussian_values_to, sample_crt_uniform_values_to};
 use primus_integer::FheUint;
-use primus_ntt::{DcrtTable, NttTable};
+use primus_lattice::RnsGlweSize;
+use primus_ntt::DcrtTable;
 use primus_poly::DcrtPolynomial;
 use primus_reduce::FieldContext;
-use primus_rns::HybridRNS;
 use rand::distr::Uniform;
 
 use super::HybridRnsGlweKeySwitchingKey;
 use crate::glwe::secret_key::encode_secret_coefficient;
-use crate::{CrtGlweParameters, DcrtGlweSecretKey, GlweSecretKey};
+use crate::{CrtGlweParameters, DcrtGlweSecretKey, GlweSecretKey, HybridRnsKeySwitchDomain};
 
 impl<T: FheUint> HybridRnsGlweKeySwitchingKey<T> {
     /// Generates a hybrid-RNS key-switching key in the NTT domain over `QP`.
@@ -16,8 +16,7 @@ impl<T: FheUint> HybridRnsGlweKeySwitchingKey<T> {
         input_secret_key: &GlweSecretKey<T>,
         input_parameters: &CrtGlweParameters<T, M>,
         output_secret_key: &GlweSecretKey<T>,
-        hybrid_parameters: &HybridRNS<T, M>,
-        qp_table: &QpTable,
+        domain: &HybridRnsKeySwitchDomain<'_, T, M, QpTable>,
         rng: &mut R,
     ) -> Self
     where
@@ -25,28 +24,13 @@ impl<T: FheUint> HybridRnsGlweKeySwitchingKey<T> {
         M: FieldContext<T>,
         QpTable: DcrtTable<ValueT = T>,
     {
-        let poly_length = input_parameters.poly_length();
+        let hybrid_parameters = domain.parameters();
+        let qp_table = domain.table();
+        let poly_length = qp_table.poly_length();
         let qp_moduli = hybrid_parameters.qp_base().moduli();
-        assert_eq!(input_secret_key.dimension(), input_parameters.dimension());
-        assert_eq!(input_secret_key.poly_length(), poly_length);
+        assert_eq!(input_parameters.poly_length(), poly_length);
+        assert_eq!(input_secret_key.size(), input_parameters.glwe_size());
         assert_eq!(output_secret_key.poly_length(), poly_length);
-        assert_eq!(qp_table.poly_length(), poly_length);
-        assert_eq!(qp_table.moduli_count(), hybrid_parameters.qp_moduli_count());
-        assert!(
-            input_parameters
-                .cipher_moduli()
-                .iter()
-                .zip(hybrid_parameters.q_base().moduli())
-                .all(|(input_modulus, hybrid_modulus)| input_modulus.value()
-                    == hybrid_modulus.value())
-        );
-        assert!(
-            qp_table
-                .ntt_tables()
-                .iter()
-                .zip(qp_moduli)
-                .all(|(ntt_table, modulus)| ntt_table.modulus() == modulus.value())
-        );
 
         let qp_moduli_values: Vec<T> = qp_moduli.iter().map(|modulus| modulus.value()).collect();
         let p_mod_q = hybrid_parameters.p_mod_q();
@@ -64,10 +48,22 @@ impl<T: FheUint> HybridRnsGlweKeySwitchingKey<T> {
             DcrtGlweSecretKey::from_coeff_secret_key(output_secret_key, qp_table);
         let output_secret_key_qp = output_secret_key_qp.key();
         let noise_distribution = input_parameters.noise_distribution().clone();
-        let qp_rns_poly_len = poly_length * qp_moduli_count;
-        let qp_rns_glwe_len = (output_dimension + 1) * qp_rns_poly_len;
-        let qp_rns_gadget_len = partition_count * qp_rns_glwe_len;
-        let mut key = vec![T::ZERO; input_dimension * qp_rns_gadget_len];
+        let input_size = input_parameters.size();
+        let output_size =
+            RnsGlweSize::new(output_secret_key.size(), hybrid_parameters.q_moduli_count());
+        let qp_rns_poly_len = poly_length
+            .checked_mul(qp_moduli_count)
+            .expect("hybrid QP polynomial length overflow");
+        let qp_rns_glwe_len = (output_dimension + 1)
+            .checked_mul(qp_rns_poly_len)
+            .expect("hybrid QP GLWE length overflow");
+        let qp_rns_gadget_len = partition_count
+            .checked_mul(qp_rns_glwe_len)
+            .expect("hybrid QP gadget length overflow");
+        let key_len = input_dimension
+            .checked_mul(qp_rns_gadget_len)
+            .expect("hybrid key-switching key length overflow");
+        let mut key = vec![T::ZERO; key_len];
 
         for (secret_polynomial, key_for_secret) in input_secret_key
             .iter()
@@ -130,13 +126,12 @@ impl<T: FheUint> HybridRnsGlweKeySwitchingKey<T> {
 
         Self {
             key,
-            poly_length,
             qp_rns_poly_len,
             qp_rns_glwe_len,
             qp_rns_gadget_len,
             partition_count,
-            input_rns_poly_len: input_parameters.rns_poly_len(),
-            output_dimension,
+            input_size,
+            output_size,
         }
     }
 }

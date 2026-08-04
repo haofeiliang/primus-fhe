@@ -10,30 +10,55 @@ use primus_reduce::FieldContext;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::{
-    FourierGgswCiphertext, FourierGlevCiphertext, GlevParameters, NttGgswCiphertext,
-    NttGlevCiphertext,
+    FourierGgswCiphertext, FourierGlevCiphertext, GlevParameters, NttGadgetDomain,
+    NttGgswCiphertext, NttGlevCiphertext,
 };
+use primus_lattice::GadgetSize;
 
 use super::{FourierGlweEncryptContext, FourierGlweSecretKey, NttGlweSecretKey};
 
 /// Reusable workspace for Fourier GLev/GGSW generation.
 pub struct FourierGadgetEncryptContext<T: FheUint> {
+    size: GadgetSize,
     encoded: PolynomialOwned<T>,
     level_transforms: Vec<Complex64>,
     glwe: FourierGlweEncryptContext<T>,
 }
 
 impl<T: FheUint> FourierGadgetEncryptContext<T> {
-    /// Creates a workspace for `poly_length` and `decompose_length`.
-    pub fn new(poly_length: usize, decompose_length: usize) -> Self {
-        assert!(poly_length.is_power_of_two());
-        assert!(poly_length >= 2);
-        assert!(decompose_length > 0);
+    /// Creates reusable workspace for a checked gadget layout.
+    pub fn new(size: GadgetSize) -> Self {
+        let glwe_size = size.glwe_size();
+        let poly_length = glwe_size.poly_length();
+        let decompose_length = size.decompose_length();
         Self {
+            size,
             encoded: PolynomialOwned::zero(poly_length),
-            level_transforms: vec![Complex64::default(); decompose_length * (poly_length / 2)],
+            level_transforms: vec![
+                Complex64::default();
+                decompose_length * glwe_size.fourier_poly_len()
+            ],
             glwe: FourierGlweEncryptContext::new(poly_length),
         }
+    }
+
+    /// Returns the gadget layout bound to this workspace.
+    #[inline]
+    pub fn size(&self) -> GadgetSize {
+        self.size
+    }
+
+    /// Rebinds this workspace to another checked gadget layout.
+    pub fn resize(&mut self, size: GadgetSize) {
+        let glwe_size = size.glwe_size();
+        let poly_length = glwe_size.poly_length();
+        self.size = size;
+        self.encoded.0.resize(poly_length, T::ZERO);
+        self.level_transforms.resize(
+            size.decompose_length() * glwe_size.fourier_poly_len(),
+            Complex64::default(),
+        );
+        self.glwe.resize(poly_length);
     }
 }
 
@@ -49,20 +74,36 @@ impl<T: FheUint> ZeroizeOnDrop for FourierGadgetEncryptContext<T> {}
 
 /// Reusable workspace for NTT GLev/GGSW generation.
 pub struct NttGadgetEncryptContext<T: FheUint> {
+    size: GadgetSize,
     encoded: PolynomialOwned<T>,
     level_transforms: Vec<T>,
 }
 
 impl<T: FheUint> NttGadgetEncryptContext<T> {
-    /// Creates a workspace for `poly_length` and `decompose_length`.
-    pub fn new(poly_length: usize, decompose_length: usize) -> Self {
-        assert!(poly_length.is_power_of_two());
-        assert!(poly_length >= 2);
-        assert!(decompose_length > 0);
+    /// Creates reusable workspace for a checked gadget layout.
+    pub fn new(size: GadgetSize) -> Self {
+        let poly_length = size.glwe_size().poly_length();
+        let decompose_length = size.decompose_length();
         Self {
+            size,
             encoded: PolynomialOwned::zero(poly_length),
             level_transforms: vec![T::ZERO; decompose_length * poly_length],
         }
+    }
+
+    /// Returns the gadget layout bound to this workspace.
+    #[inline]
+    pub fn size(&self) -> GadgetSize {
+        self.size
+    }
+
+    /// Rebinds this workspace to another checked gadget layout.
+    pub fn resize(&mut self, size: GadgetSize) {
+        let poly_length = size.glwe_size().poly_length();
+        self.size = size;
+        self.encoded.0.resize(poly_length, T::ZERO);
+        self.level_transforms
+            .resize(size.decompose_length() * poly_length, T::ZERO);
     }
 }
 
@@ -75,12 +116,9 @@ impl<T: FheUint> Zeroize for NttGadgetEncryptContext<T> {
 
 impl<T: FheUint> ZeroizeOnDrop for NttGadgetEncryptContext<T> {}
 
-impl<T> FourierGlweSecretKey<T>
-where
-    T: FheUint + TorusFftValue,
-{
+impl FourierGlweSecretKey {
     /// Generates a Fourier GLev encryption of an already encoded torus polynomial.
-    pub fn encrypt_glev_to<Table, R, A, B>(
+    pub fn encrypt_glev_to<T, Table, R, A, B>(
         &self,
         message: &Polynomial<A>,
         result: &mut FourierGlevCiphertext<B>,
@@ -89,21 +127,23 @@ where
         rng: &mut R,
         context: &mut FourierGadgetEncryptContext<T>,
     ) where
+        T: TorusFftValue,
         Table: FftTable,
         R: rand::Rng + rand::CryptoRng,
         A: RawData<Elem = T> + Data,
         B: RawData<Elem = Complex64> + DataMut,
     {
-        self.assert_gadget_shapes(message.as_ref().len(), params, fft);
         assert_eq!(result.as_ref().len(), params.fourier_glev_len());
-        assert_eq!(context.encoded.as_ref().len(), self.poly_length());
+        assert_eq!(context.size(), params.size());
+        let modulus = params.cipher_modulus();
+        let fourier_glwe_len = params.fourier_glwe_len();
 
         for (scalar, mut glwe) in params
             .basis()
             .scalar_iter()
-            .zip(result.iter_glwe_mut(params.fourier_glwe_len()))
+            .zip(result.iter_glwe_mut(fourier_glwe_len))
         {
-            message.mul_scalar_to(scalar, &mut context.encoded, NativeModulus::new());
+            message.mul_scalar_to(scalar, &mut context.encoded, modulus);
             self.encrypt_gadget_encoded_to(
                 &context.encoded,
                 &mut glwe,
@@ -116,7 +156,7 @@ where
     }
 
     /// Generates a Fourier GGSW encryption of an already encoded torus polynomial.
-    pub fn encrypt_ggsw_to<Table, R, A, B>(
+    pub fn encrypt_ggsw_to<T, Table, R, A, B>(
         &self,
         message: &Polynomial<A>,
         result: &mut FourierGgswCiphertext<B>,
@@ -125,33 +165,38 @@ where
         rng: &mut R,
         context: &mut FourierGadgetEncryptContext<T>,
     ) where
+        T: TorusFftValue,
         Table: FftTable,
         R: rand::Rng + rand::CryptoRng,
         A: RawData<Elem = T> + Data,
         B: RawData<Elem = Complex64> + DataMut,
     {
-        self.assert_gadget_shapes(message.as_ref().len(), params, fft);
         assert_eq!(result.as_ref().len(), params.fourier_ggsw_len());
+        assert_eq!(context.size(), params.size());
 
         let fourier_length = fft.fourier_length();
+        let fourier_glwe_len = params.fourier_glwe_len();
+        let fourier_glev_len = params.fourier_glev_len();
+        let modulus = params.cipher_modulus();
         assert_eq!(
-            context.level_transforms.len(),
-            params.basis().decompose_length() * fourier_length
+            context.size().glwe_size().fourier_poly_len(),
+            fourier_length
         );
+
         for (scalar, transformed) in params
             .basis()
             .scalar_iter()
             .zip(context.level_transforms.chunks_exact_mut(fourier_length))
         {
-            message.mul_scalar_to(scalar, &mut context.encoded, NativeModulus::new());
+            message.mul_scalar_to(scalar, &mut context.encoded, modulus);
             fft.forward_as_torus(context.encoded.as_ref(), transformed);
         }
 
-        for (row, mut glev) in result.iter_glev_mut(params.fourier_glev_len()).enumerate() {
+        for (row, mut glev) in result.iter_glev_mut(fourier_glev_len).enumerate() {
             for (transformed, mut glwe) in context
                 .level_transforms
                 .chunks_exact(fourier_length)
-                .zip(glev.iter_glwe_mut(params.fourier_glwe_len()))
+                .zip(glev.iter_glwe_mut(fourier_glwe_len))
             {
                 self.encrypt_gadget_zeros_to(&mut glwe, params, fft, rng, &mut context.glwe);
                 let diagonal = glwe
@@ -163,19 +208,6 @@ where
             }
         }
     }
-
-    fn assert_gadget_shapes<Table: FftTable>(
-        &self,
-        message_len: usize,
-        params: &GlevParameters<T, NativeModulus<T>>,
-        fft: &FftEngine<'_, Table>,
-    ) {
-        assert_eq!(params.dimension(), self.dimension());
-        assert_eq!(params.poly_length(), self.poly_length());
-        assert_eq!(params.secret_key_type(), self.distr());
-        assert_eq!(fft.poly_length(), self.poly_length());
-        assert_eq!(message_len, self.poly_length());
-    }
 }
 
 impl<T: FheUint> NttGlweSecretKey<T> {
@@ -184,8 +216,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         &self,
         message: &Polynomial<A>,
         result: &mut NttGlevCiphertext<B>,
-        params: &GlevParameters<T, M>,
-        ntt: &Table,
+        domain: &NttGadgetDomain<'_, T, M, Table>,
         rng: &mut R,
         context: &mut NttGadgetEncryptContext<T>,
     ) where
@@ -195,9 +226,10 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         A: RawData<Elem = T> + Data,
         B: RawData<Elem = T> + DataMut,
     {
-        self.assert_gadget_shapes(message.as_ref().len(), params, ntt);
+        let params = domain.parameters();
+        let ntt = domain.table();
         assert_eq!(result.as_ref().len(), params.glev_len());
-        assert_eq!(context.encoded.as_ref().len(), self.poly_length());
+        assert_eq!(context.size(), domain.size());
 
         let modulus = params.cipher_modulus();
         for (scalar, mut glwe) in params
@@ -215,8 +247,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         &self,
         message: &Polynomial<A>,
         result: &mut NttGgswCiphertext<B>,
-        params: &GlevParameters<T, M>,
-        ntt: &Table,
+        domain: &NttGadgetDomain<'_, T, M, Table>,
         rng: &mut R,
         context: &mut NttGadgetEncryptContext<T>,
     ) where
@@ -226,15 +257,15 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         A: RawData<Elem = T> + Data,
         B: RawData<Elem = T> + DataMut,
     {
-        self.assert_gadget_shapes(message.as_ref().len(), params, ntt);
+        let params = domain.parameters();
+        let ntt = domain.table();
         assert_eq!(result.as_ref().len(), params.ggsw_len());
+        assert_eq!(context.size(), domain.size());
 
         let poly_length = self.poly_length();
         let modulus = params.cipher_modulus();
-        assert_eq!(
-            context.level_transforms.len(),
-            params.basis().decompose_length() * poly_length
-        );
+        let glwe_len = params.glwe_len();
+
         for (scalar, transformed) in params
             .basis()
             .scalar_iter()
@@ -248,7 +279,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
             for (transformed, mut glwe) in context
                 .level_transforms
                 .chunks_exact(poly_length)
-                .zip(glev.iter_ntt_glwe_mut(params.glwe_len()))
+                .zip(glev.iter_ntt_glwe_mut(glwe_len))
             {
                 self.encrypt_gadget_zeros_to(&mut glwe, params, ntt, rng);
                 let diagonal = glwe
@@ -259,21 +290,5 @@ impl<T: FheUint> NttGlweSecretKey<T> {
                 NttPolynomial::new(diagonal).add_assign(&NttPolynomial::new(transformed), modulus);
             }
         }
-    }
-
-    fn assert_gadget_shapes<M, Table>(
-        &self,
-        message_len: usize,
-        params: &GlevParameters<T, M>,
-        ntt: &Table,
-    ) where
-        M: FieldContext<T>,
-        Table: NttTable<ValueT = T>,
-    {
-        assert_eq!(params.dimension(), self.dimension());
-        assert_eq!(params.poly_length(), self.poly_length());
-        assert_eq!(params.secret_key_type(), self.distr());
-        assert_eq!(ntt.poly_length(), self.poly_length());
-        assert_eq!(message_len, self.poly_length());
     }
 }

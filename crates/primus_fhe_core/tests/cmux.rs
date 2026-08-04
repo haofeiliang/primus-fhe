@@ -1,9 +1,8 @@
-use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{FftEngine, FftTable, RustFftTable};
 use primus_fhe_core::{
     FourierGadgetEncryptContext, FourierGlweDecryptContext, FourierGlweEncryptContext,
-    FourierGlweSecretKey, GlevParameters, GlweParameters, GlweSecretKey, NttGadgetEncryptContext,
-    NttGlweSecretKey, RingSecretKeyType,
+    FourierGlweSecretKey, GlevParameters, GlweParameters, GlweSecretKey, NttGadgetDomain,
+    NttGadgetEncryptContext, NttGlweSecretKey, RingSecretKeyType,
 };
 use primus_lattice::{
     context::{FourierExternalProductContext, NttExternalProductContext},
@@ -37,14 +36,12 @@ fn fourier_cmux_selects_requested_glwe() {
         RingSecretKeyType::Binary,
         0.7,
     );
-    let params =
-        GlevParameters::with_glwe_params(&glwe_params, ApproxSignedBasis::new(None, 8, None));
+    let params = GlevParameters::with_glwe_params(&glwe_params, 8, None);
     let secret_key = FourierGlweSecretKey::generate(&glwe_params, &mut fft, &mut rng);
     let mut encrypt_context = FourierGlweEncryptContext::new(POLY_LENGTH);
     let mut decrypt_context = FourierGlweDecryptContext::new(POLY_LENGTH);
-    let mut gadget_context =
-        FourierGadgetEncryptContext::new(POLY_LENGTH, params.basis().decompose_length());
-    let mut cmux_context = FourierExternalProductContext::new(DIMENSION, POLY_LENGTH);
+    let mut gadget_context = FourierGadgetEncryptContext::new(params.size());
+    let mut cmux_context = FourierExternalProductContext::new(params.size());
 
     let messages = [plaintext(1), plaintext(7)];
     let mut ciphertexts: [TorusGlwe<Vec<u32>>; 2] = [
@@ -118,15 +115,12 @@ fn ntt_cmux_selects_requested_glwe() {
         RingSecretKeyType::Ternary,
         0.7,
     );
-    let params = GlevParameters::with_glwe_params(
-        &glwe_params,
-        ApproxSignedBasis::new(Some(MODULUS), 8, None),
-    );
+    let params = GlevParameters::with_glwe_params(&glwe_params, 8, None);
+    let domain = NttGadgetDomain::try_new(&params, &ntt).unwrap();
     let coeff_secret_key = GlweSecretKey::generate(&glwe_params, &mut rng);
     let secret_key = NttGlweSecretKey::from_coeff_secret_key(&coeff_secret_key, &ntt);
-    let mut gadget_context =
-        NttGadgetEncryptContext::new(POLY_LENGTH, params.basis().decompose_length());
-    let mut cmux_context = NttExternalProductContext::new(DIMENSION, POLY_LENGTH);
+    let mut gadget_context = NttGadgetEncryptContext::new(domain.size());
+    let mut cmux_context = NttExternalProductContext::new(domain.size());
 
     let messages = [plaintext(2), plaintext(11)];
     let mut ciphertexts: [Glwe<Vec<u32>>; 2] =
@@ -151,8 +145,7 @@ fn ntt_cmux_selects_requested_glwe() {
         secret_key.encrypt_ggsw_to(
             &Polynomial::new(control_message),
             &mut control,
-            &params,
-            &ntt,
+            &domain,
             &mut rng,
             &mut gadget_context,
         );

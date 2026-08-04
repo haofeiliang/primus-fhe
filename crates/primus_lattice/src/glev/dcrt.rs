@@ -8,7 +8,7 @@ use primus_reduce::FieldContext;
 use primus_rns::RNSBase;
 
 use crate::{
-    context::{DcrtGlevContext, DcrtGlevContextRefMut},
+    context::{DcrtGlevMulContext, DcrtGlevMulContextRefMut},
     glwe::{DcrtGlwe, DcrtGlweIter, DcrtGlweIterMut},
 };
 
@@ -49,7 +49,7 @@ where
         basis: &BigUintApproxSignedBasis<T>,
         table: &Table,
         rns_base: &RNSBase<T, M>,
-        context: &mut DcrtGlevContext<T>,
+        context: &mut DcrtGlevMulContext<T>,
     ) where
         M: FieldContext<T>,
         Table: DcrtTable<ValueT = T>,
@@ -61,7 +61,7 @@ where
         let moduli = rns_base.moduli();
         let dcrt_glwe_len = result.0.len();
 
-        let DcrtGlevContextRefMut {
+        let DcrtGlevMulContextRefMut {
             adjust_big_uint_values,
             decomposed_unsigned_values,
             carries,
@@ -115,7 +115,7 @@ where
         basis: &BigUintApproxSignedBasis<T>,
         table: &Table,
         rns_base: &RNSBase<T, M>,
-        context: &mut DcrtGlevContext<T>,
+        context: &mut DcrtGlevMulContext<T>,
     ) where
         M: FieldContext<T>,
         Table: DcrtTable<ValueT = T>,
@@ -127,7 +127,7 @@ where
         let basis_value = basis.basis_value();
         let moduli = rns_base.moduli();
 
-        let DcrtGlevContextRefMut {
+        let DcrtGlevMulContextRefMut {
             adjust_big_uint_values,
             decomposed_unsigned_values,
             carries,

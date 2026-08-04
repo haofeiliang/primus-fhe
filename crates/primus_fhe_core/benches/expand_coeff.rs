@@ -1,13 +1,11 @@
 use std::hint::black_box;
-use std::sync::Arc;
 
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
-use primus_decompose::big_integer::BigUintApproxSignedBasis;
 use primus_fhe_core::{
     CrtGlevParameters, CrtGlweExpandCoeffContext, CrtGlweExpandCoeffKey,
-    CrtGlweExpandCoeffSyncPool, CrtGlweParameters, DcrtGlweCiphertext, DcrtGlweExpandCoeffContext,
-    DcrtGlweExpandCoeffKey, DcrtGlweExpandCoeffSyncPool, DcrtGlweSecretKey, GlweSecretKey,
-    RingSecretKeyType,
+    CrtGlweExpandCoeffSyncPool, CrtGlweParameters, DcrtGadgetDomain, DcrtGlweCiphertext,
+    DcrtGlweExpandCoeffContext, DcrtGlweExpandCoeffKey, DcrtGlweExpandCoeffSyncPool,
+    DcrtGlweSecretKey, GlweSecretKey, RingSecretKeyType,
 };
 use primus_lattice::glwe::{CrtGlwe, DcrtGlwe};
 use primus_modulus::BarrettModulus;
@@ -24,7 +22,6 @@ fn bench_expand_coeff(c: &mut Criterion) {
     let mod_gamma = BarrettModulus::new(gamma);
     let moduli_values: [V; 2] = [1125899906826241, 1125899906629633];
     let moduli = moduli_values.map(BarrettModulus::new);
-    let moduli_count = moduli_values.len();
 
     let mut rng = rand::rng();
 
@@ -50,37 +47,22 @@ fn bench_expand_coeff(c: &mut Criterion) {
         );
 
         let crt_poly_len = glwe_params.rns_poly_len();
-        let big_uint_poly_len = glwe_params.big_uint_poly_len();
         let rns_glwe_len = glwe_params.rns_glwe_len();
         let base_q = glwe_params.base_q();
 
         let sk = GlweSecretKey::generate(&glwe_params, &mut rng);
         let dcrt_sk = DcrtGlweSecretKey::from_coeff_secret_key(&sk, &table);
 
-        let basis = BigUintApproxSignedBasis::new(base_q, 20, None);
-        let glev_params = CrtGlevParameters::with_glwe_params(&glwe_params, basis);
+        let glev_params = CrtGlevParameters::with_glwe_params(&glwe_params, 20, None);
 
-        let table = Arc::new(table);
+        let domain = DcrtGadgetDomain::try_new(&glev_params, &table).unwrap();
 
         // Expand keys
-        let crt_expand_key = CrtGlweExpandCoeffKey::new(
-            &glev_params,
-            base_q,
-            &sk,
-            &dcrt_sk,
-            Arc::clone(&table),
-            &mut rng,
-        );
+        let crt_expand_key = CrtGlweExpandCoeffKey::new(&domain, &sk, &dcrt_sk, &mut rng);
 
-        let dcrt_expand_key = DcrtGlweExpandCoeffKey::new(
-            &glev_params,
-            base_q,
-            &dcrt_sk,
-            Arc::clone(&table),
-            &mut rng,
-        );
+        let dcrt_expand_key = DcrtGlweExpandCoeffKey::new(&domain, &dcrt_sk, &mut rng);
 
-        let table_ref = table.as_ref();
+        let table_ref = &table;
 
         // Ciphertexts
         let input: Polynomial<Vec<V>> = Polynomial::random(poly_length, mod_t, &mut rng);
@@ -100,87 +82,65 @@ fn bench_expand_coeff(c: &mut Criterion) {
         let mut dcrt_result: Vec<DcrtGlweCiphertext<Vec<V>>> =
             vec![DcrtGlweCiphertext::zero(rns_glwe_len); poly_length];
 
-        let mut crt_ctx = CrtGlweExpandCoeffContext::new(
-            dimension,
-            poly_length,
-            crt_poly_len,
-            big_uint_poly_len,
-            moduli_count,
-        );
-        let mut dcrt_ctx = DcrtGlweExpandCoeffContext::new(
-            dimension,
-            poly_length,
-            crt_poly_len,
-            big_uint_poly_len,
-            moduli_count,
-        );
+        let mut crt_ctx = CrtGlweExpandCoeffContext::new(&domain);
+        let mut dcrt_ctx = DcrtGlweExpandCoeffContext::new(&domain);
 
-        let crt_pool = CrtGlweExpandCoeffSyncPool::with_capacity(
-            current_num_threads,
-            dimension,
-            poly_length,
-            crt_poly_len,
-            big_uint_poly_len,
-            moduli_count,
-        );
-        let dcrt_pool = DcrtGlweExpandCoeffSyncPool::with_capacity(
-            current_num_threads,
-            dimension,
-            poly_length,
-            crt_poly_len,
-            big_uint_poly_len,
-            moduli_count,
-        );
+        let crt_pool = CrtGlweExpandCoeffSyncPool::with_capacity(current_num_threads, &domain);
+        let dcrt_pool = DcrtGlweExpandCoeffSyncPool::with_capacity(current_num_threads, &domain);
 
         let n_label = format!("N={poly_length}");
 
         // ---- Single-threaded ----
         group.bench_with_input(BenchmarkId::new("CRT/single", &n_label), &(), |b, _| {
             b.iter(|| {
-                crt_expand_key.expand_coefficients_inplace(
-                    black_box(&c_coeff),
-                    black_box(&mut crt_result),
-                    &glev_params,
-                    base_q,
-                    &mut crt_ctx,
-                );
+                crt_expand_key
+                    .expand_coefficients_inplace(
+                        black_box(&c_coeff),
+                        black_box(&mut crt_result),
+                        &domain,
+                        &mut crt_ctx,
+                    )
+                    .unwrap();
             });
         });
 
         group.bench_with_input(BenchmarkId::new("DCRT/single", &n_label), &(), |b, _| {
             b.iter(|| {
-                dcrt_expand_key.expand_coefficients_inplace(
-                    black_box(&c_ntt),
-                    black_box(&mut dcrt_result),
-                    &glev_params,
-                    base_q,
-                    &mut dcrt_ctx,
-                );
+                dcrt_expand_key
+                    .expand_coefficients_inplace(
+                        black_box(&c_ntt),
+                        black_box(&mut dcrt_result),
+                        &domain,
+                        &mut dcrt_ctx,
+                    )
+                    .unwrap();
             });
         });
 
         // ---- Multi-threaded ----
         group.bench_with_input(BenchmarkId::new("CRT/parallel", &n_label), &(), |b, _| {
             b.iter(|| {
-                crt_expand_key.expand_coefficients_inplace_parallel(
-                    black_box(&c_coeff),
-                    black_box(&mut crt_result),
-                    &glev_params,
-                    base_q,
-                    &crt_pool,
-                );
+                crt_expand_key
+                    .expand_coefficients_inplace_parallel(
+                        black_box(&c_coeff),
+                        black_box(&mut crt_result),
+                        &domain,
+                        &crt_pool,
+                    )
+                    .unwrap();
             });
         });
 
         group.bench_with_input(BenchmarkId::new("DCRT/parallel", &n_label), &(), |b, _| {
             b.iter(|| {
-                dcrt_expand_key.expand_coefficients_inplace_parallel(
-                    black_box(&c_ntt),
-                    black_box(&mut dcrt_result),
-                    &glev_params,
-                    base_q,
-                    &dcrt_pool,
-                );
+                dcrt_expand_key
+                    .expand_coefficients_inplace_parallel(
+                        black_box(&c_ntt),
+                        black_box(&mut dcrt_result),
+                        &domain,
+                        &dcrt_pool,
+                    )
+                    .unwrap();
             });
         });
     }

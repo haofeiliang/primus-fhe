@@ -196,10 +196,10 @@ impl NttTable for U32NttTable {
         let q = modulus.value();
 
         // Reject unsupported moduli: q < 2^30 required for lazy [0, 4q) range.
-        if q >= 1 << 30 {
+        if q >= 1 << crate::U32_NTT_MAX_MODULUS_BITS {
             return Err(NttError::ModulusTooLarge {
                 modulus: q,
-                max_bits: 30,
+                max_bits: crate::U32_NTT_MAX_MODULUS_BITS,
             });
         }
 

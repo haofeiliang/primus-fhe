@@ -12,7 +12,7 @@ pub(crate) use signed::{
 };
 
 pub use coeff::{GlweSecretKey, GlweSecretKeyParameterSet};
-pub use dcrt::{DcrtGlweDecryptContext, DcrtGlweDecryptContextRefMut, DcrtGlweSecretKey};
+pub use dcrt::{DcrtGlweDecryptContext, DcrtGlweSecretKey};
 pub use fourier::{FourierGlweDecryptContext, FourierGlweEncryptContext, FourierGlweSecretKey};
 pub use gadget::{FourierGadgetEncryptContext, NttGadgetEncryptContext};
 pub use ntt::NttGlweSecretKey;

@@ -190,7 +190,10 @@ where
         M: RingContext<T>,
         B: RawData<Elem = T> + DataMut,
     {
-        debug_assert!(poly_length >= 2 && poly_length.is_power_of_two());
+        debug_assert!(
+            (crate::MIN_POLY_LENGTH..=crate::MAX_POLY_LENGTH).contains(&poly_length)
+                && poly_length.is_power_of_two()
+        );
         debug_assert!(exponent < 2 * poly_length);
         debug_assert_eq!(self.as_ref().len(), output.as_ref().len());
         debug_assert!(self.as_ref().len().is_multiple_of(poly_length));

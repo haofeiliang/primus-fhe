@@ -18,20 +18,20 @@
 //! `br(i)` stores the evaluation at ω^(2i+1). The permutation table accounts
 //! for this: `out[br(i)] = in[br(i')]` where `i' = ((k·(2i+1)) mod 2N − 1) / 2`.
 
-use std::sync::Arc;
-
 use primus_data::{Data, DataMut, RawData};
 use primus_integer::FheUint;
-use primus_lattice::glev::{DcrtGlevIter, DcrtGlevIterMut};
+use primus_lattice::{
+    RnsGadgetSize,
+    glev::{DcrtGlevIter, DcrtGlevIterMut},
+};
 use primus_modulus::PowOf2Modulus;
 use primus_ntt::{DcrtTable, ReverseLsbs};
 use primus_poly::DcrtPolynomial;
 use primus_reduce::{FieldContext, ReduceMul};
-use primus_rns::RNSBase;
 
-use crate::glwe::validate_automorphism;
 use crate::{
-    CrtGlevParameters, DcrtGlweCiphertext, DcrtGlweSecretKey, glwe::crt::CrtGlweAutoContext,
+    DcrtGadgetDomain, DcrtGlweCiphertext, DcrtGlweSecretKey, GlweKeySwitchingError,
+    glwe::crt::CrtGlweAutoContext,
 };
 
 // ---------------------------------------------------------------------------
@@ -89,7 +89,6 @@ struct NttAutoHelper {
 
 impl NttAutoHelper {
     fn new(degree: usize, poly_length: usize) -> Self {
-        validate_automorphism(degree, poly_length);
         let operation = if degree == 1 {
             NttAutoOperation::Identity
         } else {
@@ -146,8 +145,6 @@ fn dcrt_poly_ntt_auto_to<T: FheUint>(
     auto_helper: &NttAutoHelper,
 ) {
     let poly_length = auto_helper.poly_length();
-    assert_eq!(dcrt_poly.len(), result.len());
-    assert!(dcrt_poly.len().is_multiple_of(poly_length));
 
     dcrt_poly
         .chunks_exact(poly_length)
@@ -169,10 +166,9 @@ fn dcrt_poly_ntt_auto_to<T: FheUint>(
 /// Unlike `super::crt::generate_auto_key_data` which requires a coefficient-domain
 /// secret key, this only needs the NTT-domain secret key.
 fn generate_ntt_auto_key_data<T, M, Table, R>(
-    params: &CrtGlevParameters<T, M>,
+    domain: &DcrtGadgetDomain<'_, T, M, Table>,
     ntt_auto_helper: &NttAutoHelper,
     dcrt_sk: &DcrtGlweSecretKey<T>,
-    table: &Table,
     rng: &mut R,
 ) -> Vec<T>
 where
@@ -181,6 +177,7 @@ where
     R: rand::Rng + rand::CryptoRng,
     M: FieldContext<T>,
 {
+    let params = domain.parameters();
     let rns_poly_len = params.rns_poly_len();
     let dcrt_glev_len = params.rns_glev_len();
 
@@ -195,13 +192,7 @@ where
         .for_each(|(si, mut dcrt_glev)| {
             dcrt_poly_ntt_auto_to(si.0, auto_si.as_mut(), ntt_auto_helper);
 
-            dcrt_sk.encrypt_dcrt_msg_to_dcrt_glev_inplace(
-                &auto_si,
-                &mut dcrt_glev,
-                params,
-                table,
-                rng,
-            );
+            dcrt_sk.encrypt_dcrt_msg_to_dcrt_glev_inplace(&auto_si, &mut dcrt_glev, domain, rng);
         });
 
     key
@@ -223,22 +214,13 @@ where
 /// For the `b` polynomial:
 /// 1. NTT-domain permutation — O(N), stays in NTT domain
 #[derive(Clone)]
-pub struct DcrtGlweAutoKey<T, Table>
-where
-    T: FheUint,
-    Table: DcrtTable<ValueT = T>,
-{
+pub struct DcrtGlweAutoKey<T: FheUint> {
     key: Vec<T>,
-    rns_glev_len: usize,
     auto_helper: NttAutoHelper,
-    table: Arc<Table>,
+    size: RnsGadgetSize,
 }
 
-impl<T, Table> DcrtGlweAutoKey<T, Table>
-where
-    T: FheUint,
-    Table: DcrtTable<ValueT = T>,
-{
+impl<T: FheUint> DcrtGlweAutoKey<T> {
     /// Create a new NTT-domain automorphism key for the mapping x → x^degree.
     ///
     /// Key generation applies the NTT-domain permutation to each secret key
@@ -247,31 +229,35 @@ where
     ///
     /// # Panics
     ///
-    /// Panics unless the polynomial length is a nonzero power of two and
-    /// `degree` is odd and less than twice the polynomial length.
-    pub fn new<M, R>(
-        params: &CrtGlevParameters<T, M>,
+    /// Panics if `degree` is not odd and less than twice the polynomial length.
+    pub fn new<M, Table, R>(
+        domain: &DcrtGadgetDomain<'_, T, M, Table>,
         degree: usize,
         dcrt_sk: &DcrtGlweSecretKey<T>,
-        table: Arc<Table>,
         rng: &mut R,
     ) -> Self
     where
         R: rand::Rng + rand::CryptoRng,
         M: FieldContext<T>,
+        Table: DcrtTable<ValueT = T>,
     {
+        let params = domain.parameters();
+        assert_eq!(dcrt_sk.rns_glwe_size(), params.size().rns_glwe_size());
+
         let poly_length = params.poly_length();
-        let dcrt_glev_len = params.rns_glev_len();
+        assert!(
+            degree < poly_length * 2 && degree % 2 == 1,
+            "automorphism degree must be odd and less than twice the polynomial length"
+        );
 
         let auto_helper = NttAutoHelper::new(degree, poly_length);
 
-        let key = generate_ntt_auto_key_data(params, &auto_helper, dcrt_sk, table.as_ref(), rng);
+        let key = generate_ntt_auto_key_data(domain, &auto_helper, dcrt_sk, rng);
 
         Self {
             key,
-            rns_glev_len: dcrt_glev_len,
             auto_helper,
-            table: Arc::clone(&table),
+            size: domain.size(),
         }
     }
 
@@ -279,39 +265,49 @@ where
         self.auto_helper.degree()
     }
 
-    pub fn table(&self) -> &Table {
-        &self.table
-    }
-
     pub fn iter_dcrt_glev(&self) -> DcrtGlevIter<'_, T> {
-        DcrtGlevIter::new(self.key.as_slice(), self.rns_glev_len)
+        DcrtGlevIter::new(self.key.as_slice(), self.size.rns_glev_len())
     }
 
     /// Perform NTT-domain automorphism on a DCRT GLWE ciphertext.
     ///
     /// Both input `ciphertext` and output `result` are in NTT (evaluation) domain.
-    pub fn automorphism_to<M, A, B>(
+    pub fn automorphism_to<M, Table, A, B>(
         &self,
         ciphertext: &DcrtGlweCiphertext<A>,
         result: &mut DcrtGlweCiphertext<B>,
-        params: &CrtGlevParameters<T, M>,
-        rns_base: &RNSBase<T, M>,
+        domain: &DcrtGadgetDomain<'_, T, M, Table>,
         context: &mut CrtGlweAutoContext<T>,
-    ) where
+    ) -> Result<(), GlweKeySwitchingError>
+    where
         M: FieldContext<T>,
+        Table: DcrtTable<ValueT = T>,
         A: RawData<Elem = T> + Data,
         B: RawData<Elem = T> + DataMut,
     {
+        self.automorphism_kernel(ciphertext, result, domain, context);
+        Ok(())
+    }
+
+    /// Applies the automorphism after the caller has validated all operands.
+    pub(crate) fn automorphism_kernel<M, Table, A, B>(
+        &self,
+        ciphertext: &DcrtGlweCiphertext<A>,
+        result: &mut DcrtGlweCiphertext<B>,
+        domain: &DcrtGadgetDomain<'_, T, M, Table>,
+        context: &mut CrtGlweAutoContext<T>,
+    ) where
+        M: FieldContext<T>,
+        Table: DcrtTable<ValueT = T>,
+        A: RawData<Elem = T> + Data,
+        B: RawData<Elem = T> + DataMut,
+    {
+        let params = domain.parameters();
+        let table = domain.table();
+        let rns_base = domain.rns_base();
         let poly_length = params.poly_length();
         let rns_poly_len = params.rns_poly_len();
         let moduli = params.cipher_moduli();
-
-        assert_eq!(
-            self.auto_helper.poly_length(),
-            poly_length,
-            "automorphism key and parameters must use the same polynomial length"
-        );
-        debug_assert_eq!(ciphertext.as_ref().len(), params.rns_glwe_len());
 
         let (auto_dcrt_poly, glev_context) = context.as_mut();
 
@@ -327,14 +323,14 @@ where
                 dcrt_poly_ntt_auto_to(in_dcrt_poly.0, auto_dcrt_poly.as_mut(), &self.auto_helper);
 
                 // 2. INTT → coefficient domain (required for key-switch decomposition)
-                self.table.inverse_transform_slice(auto_dcrt_poly.as_mut());
+                table.inverse_transform_slice(auto_dcrt_poly.as_mut());
 
                 // 3. Key switch via external product
                 result.add_dcrt_glev_mul_crt_poly_assign(
                     &auto_key_i,
                     auto_dcrt_poly,
                     params.basis(),
-                    self.table(),
+                    table,
                     rns_base,
                     glev_context,
                 );

@@ -1,6 +1,6 @@
 use primus_fhe_core::{
     Ciphertext, GlweCiphertext, LookupTable, LweCiphertext, NttBlindRotationContext,
-    NttGlweKeySwitchingContext, PbsOrder, ProgrammableBootstrap, ntt_blind_rotate_to,
+    NttGadgetDomain, NttGlweKeySwitchingContext, PbsOrder, ProgrammableBootstrap,
 };
 use primus_integer::FheUint;
 use primus_ntt::NttTable;
@@ -15,6 +15,8 @@ where
 {
     context: &'a TfheContext<T, Table>,
     server_key: &'a ServerKey<T>,
+    key_switching_domain: NttGadgetDomain<'a, T, primus_modulus::BarrettModulus<T>, Table>,
+    bootstrapping_domain: NttGadgetDomain<'a, T, primus_modulus::BarrettModulus<T>, Table>,
     blind_rotation: NttBlindRotationContext<T>,
     key_switching: NttGlweKeySwitchingContext<T>,
     main_glwe: GlweCiphertext<Vec<T>>,
@@ -50,12 +52,14 @@ where
     ) -> Result<Self, TfheEvaluationError> {
         let parameters = context.parameters();
         let bootstrapping_key = server_key.bootstrapping_key();
-        let common_size = bootstrapping_key.common_size();
+        let common_size = bootstrapping_key.size();
         let key_switching_key = server_key.glwe_key_switching_key();
         let key_switching = parameters.glwe_key_switching();
         if bootstrapping_key.input_dimension() != parameters.small_lwe().dimension()
-            || common_size.dimension() != parameters.glwe().dimension()
-            || common_size.poly_length() != parameters.glwe().poly_length()
+            || bootstrapping_key.input_modulus() != parameters.small_lwe().cipher_modulus_value()
+            || common_size.glwe_size().dimension() != parameters.glwe().dimension()
+            || common_size.glwe_size().poly_length() != parameters.glwe().poly_length()
+            || common_size != parameters.bootstrapping().size()
             || bootstrapping_key.cipher_modulus() != Some(parameters.glwe().cipher_modulus_value())
             || key_switching_key.input_dimension() != key_switching.input_dimension()
             || key_switching_key.output_dimension() != key_switching.output_dimension()
@@ -64,16 +68,16 @@ where
             return Err(TfheEvaluationError::IncompatibleServerKey);
         }
 
-        let glwe_dimension = parameters.glwe().dimension();
-        let poly_length = parameters.glwe().poly_length();
+        let key_switching_domain = context.key_switching_domain();
+        let bootstrapping_domain = context.bootstrapping_domain();
+        let key_switching_context = NttGlweKeySwitchingContext::new(&key_switching_domain);
         Ok(Self {
             context,
             server_key,
-            blind_rotation: NttBlindRotationContext::new(glwe_dimension, poly_length),
-            key_switching: NttGlweKeySwitchingContext::new(
-                parameters.glwe_key_switching().output_dimension(),
-                poly_length,
-            ),
+            key_switching_domain,
+            blind_rotation: NttBlindRotationContext::new(bootstrapping_domain.size()),
+            bootstrapping_domain,
+            key_switching: key_switching_context,
             main_glwe: GlweCiphertext::zero(parameters.glwe().glwe_len()),
             switched: GlweCiphertext::zero(parameters.glwe_key_switching().output().glwe_len()),
             small_lwe: LweCiphertext::zero(parameters.small_lwe().dimension()),
@@ -127,23 +131,22 @@ where
         let modulus = parameters.glwe().cipher_modulus();
         match parameters.pbs_order() {
             PbsOrder::BootstrapKeyswitch => {
-                ntt_blind_rotate_to(
+                self.server_key.bootstrapping_key().ntt_blind_rotate_to(
                     input.as_lwe(),
                     lookup_table.accumulator(),
                     &mut self.main_glwe,
-                    self.server_key.bootstrapping_key(),
-                    parameters.small_lwe(),
-                    parameters.bootstrapping(),
-                    self.context.table(),
+                    &self.bootstrapping_domain,
                     &mut self.blind_rotation,
                 );
-                self.server_key.glwe_key_switching_key().key_switch_to(
-                    &self.main_glwe,
-                    &mut self.switched,
-                    parameters.glwe_key_switching(),
-                    self.context.table(),
-                    &mut self.key_switching,
-                );
+                self.server_key
+                    .glwe_key_switching_key()
+                    .key_switch_to(
+                        &self.main_glwe,
+                        &mut self.switched,
+                        &self.key_switching_domain,
+                        &mut self.key_switching,
+                    )
+                    .map_err(|_| TfheEvaluationError::IncompatibleServerKey)?;
                 self.switched
                     .extract_compact_lwe_to(output.as_lwe_mut(), poly_length, modulus);
             }
@@ -151,23 +154,22 @@ where
                 input
                     .as_lwe()
                     .inverse_extract_glwe_to(&mut self.main_glwe, poly_length, modulus);
-                self.server_key.glwe_key_switching_key().key_switch_to(
-                    &self.main_glwe,
-                    &mut self.switched,
-                    parameters.glwe_key_switching(),
-                    self.context.table(),
-                    &mut self.key_switching,
-                );
+                self.server_key
+                    .glwe_key_switching_key()
+                    .key_switch_to(
+                        &self.main_glwe,
+                        &mut self.switched,
+                        &self.key_switching_domain,
+                        &mut self.key_switching,
+                    )
+                    .map_err(|_| TfheEvaluationError::IncompatibleServerKey)?;
                 self.switched
                     .extract_compact_lwe_to(&mut self.small_lwe, poly_length, modulus);
-                ntt_blind_rotate_to(
+                self.server_key.bootstrapping_key().ntt_blind_rotate_to(
                     &self.small_lwe,
                     lookup_table.accumulator(),
                     &mut self.main_glwe,
-                    self.server_key.bootstrapping_key(),
-                    parameters.small_lwe(),
-                    parameters.bootstrapping(),
-                    self.context.table(),
+                    &self.bootstrapping_domain,
                     &mut self.blind_rotation,
                 );
                 self.main_glwe

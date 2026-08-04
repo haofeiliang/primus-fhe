@@ -4,8 +4,6 @@ mod rlwe;
 mod tfhe;
 
 pub use glwe::*;
-pub use lwe::LweParameters;
+pub use lwe::{LweKeySwitchingParameters, LweParameters};
 pub use rlwe::*;
-pub use tfhe::{
-    LweKeySwitchingParameters, PbsOrder, TfheParameterError, TfheParameterParts, TfheParameters,
-};
+pub use tfhe::{PbsOrder, TfheParameterError, TfheParameterParts, TfheParameters};

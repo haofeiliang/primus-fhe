@@ -3,202 +3,11 @@
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_distr::DiscreteGaussian;
 use primus_integer::FheUint;
+use primus_lattice::{GadgetSize, GlweSize};
 use primus_reduce::RingContext;
 use rand::distr::Uniform;
 
 use crate::{PlaintextCodec, RingSecretKeyType};
-
-/// Pre-computed size constants for a single-modulus GLWE ciphertext.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct GlweCommonSize {
-    dimension: usize,
-    poly_length: usize,
-    glwe_mid: usize,
-    glwe_len: usize,
-}
-
-impl GlweCommonSize {
-    /// Creates GLWE size constants for dimension `k` and polynomial length `N`.
-    pub fn new(dimension: usize, poly_length: usize) -> Self {
-        assert!(dimension > 0, "GLWE dimension must be non-zero");
-        assert!(
-            poly_length.is_power_of_two() && poly_length >= 2,
-            "GLWE polynomial length must be a power of two greater than one"
-        );
-
-        let component_count = dimension
-            .checked_add(1)
-            .expect("GLWE component count overflow");
-        let glwe_mid = dimension
-            .checked_mul(poly_length)
-            .expect("GLWE mask length overflow");
-        let glwe_len = component_count
-            .checked_mul(poly_length)
-            .expect("GLWE ciphertext length overflow");
-        Self {
-            dimension,
-            poly_length,
-            glwe_mid,
-            glwe_len,
-        }
-    }
-
-    /// Returns the GLWE dimension `k`.
-    #[inline]
-    pub fn dimension(self) -> usize {
-        self.dimension
-    }
-
-    /// Returns the polynomial length `N`.
-    #[inline]
-    pub fn poly_length(self) -> usize {
-        self.poly_length
-    }
-
-    /// Returns the coefficient/NTT mask length `kN`.
-    #[inline]
-    pub fn glwe_mid(self) -> usize {
-        self.glwe_mid
-    }
-
-    /// Returns the coefficient/NTT GLWE ciphertext length `(k + 1)N`.
-    #[inline]
-    pub fn glwe_len(self) -> usize {
-        self.glwe_len
-    }
-
-    /// Returns the coefficient-domain secret-key length `kN`.
-    #[inline]
-    pub fn secret_key_len(self) -> usize {
-        self.glwe_mid
-    }
-
-    /// Returns the Fourier mask length `kN/2`.
-    #[inline]
-    pub fn fourier_glwe_mid(self) -> usize {
-        self.glwe_mid / 2
-    }
-
-    /// Returns the Fourier GLWE ciphertext length `(k + 1)N/2`.
-    #[inline]
-    pub fn fourier_glwe_len(self) -> usize {
-        self.glwe_len / 2
-    }
-}
-
-/// Pre-computed size constants for single-modulus GLev and GGSW ciphertexts.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct GlevCommonSize {
-    glwe_common_size: GlweCommonSize,
-    decompose_length: usize,
-    glev_len: usize,
-    ggsw_len: usize,
-}
-
-impl GlevCommonSize {
-    /// Creates GLev/GGSW size constants from GLWE sizes and decomposition length.
-    pub fn new(glwe_common_size: GlweCommonSize, decompose_length: usize) -> Self {
-        assert!(
-            decompose_length > 0,
-            "GLev decomposition length must be non-zero"
-        );
-
-        let component_count = glwe_common_size
-            .dimension()
-            .checked_add(1)
-            .expect("GGSW row count overflow");
-        let glev_len = decompose_length
-            .checked_mul(glwe_common_size.glwe_len())
-            .expect("GLev ciphertext length overflow");
-        let ggsw_len = component_count
-            .checked_mul(glev_len)
-            .expect("GGSW ciphertext length overflow");
-        Self {
-            glwe_common_size,
-            decompose_length,
-            glev_len,
-            ggsw_len,
-        }
-    }
-
-    /// Returns the underlying GLWE size constants.
-    #[inline]
-    pub fn glwe_common_size(self) -> GlweCommonSize {
-        self.glwe_common_size
-    }
-
-    /// Returns the GLWE dimension `k`.
-    #[inline]
-    pub fn dimension(self) -> usize {
-        self.glwe_common_size.dimension()
-    }
-
-    /// Returns the polynomial length `N`.
-    #[inline]
-    pub fn poly_length(self) -> usize {
-        self.glwe_common_size.poly_length()
-    }
-
-    /// Returns the coefficient/NTT mask length `kN`.
-    #[inline]
-    pub fn glwe_mid(self) -> usize {
-        self.glwe_common_size.glwe_mid()
-    }
-
-    /// Returns the coefficient/NTT GLWE ciphertext length.
-    #[inline]
-    pub fn glwe_len(self) -> usize {
-        self.glwe_common_size.glwe_len()
-    }
-
-    /// Returns the coefficient-domain secret-key length `kN`.
-    #[inline]
-    pub fn secret_key_len(self) -> usize {
-        self.glwe_common_size.secret_key_len()
-    }
-
-    /// Returns the Fourier mask length `kN/2`.
-    #[inline]
-    pub fn fourier_glwe_mid(self) -> usize {
-        self.glwe_common_size.fourier_glwe_mid()
-    }
-
-    /// Returns the Fourier GLWE ciphertext length.
-    #[inline]
-    pub fn fourier_glwe_len(self) -> usize {
-        self.glwe_common_size.fourier_glwe_len()
-    }
-
-    /// Returns the decomposition length.
-    #[inline]
-    pub fn decompose_length(self) -> usize {
-        self.decompose_length
-    }
-
-    /// Returns the coefficient/NTT GLev ciphertext length.
-    #[inline]
-    pub fn glev_len(self) -> usize {
-        self.glev_len
-    }
-
-    /// Returns the coefficient/NTT GGSW ciphertext length.
-    #[inline]
-    pub fn ggsw_len(self) -> usize {
-        self.ggsw_len
-    }
-
-    /// Returns the Fourier GLev ciphertext length.
-    #[inline]
-    pub fn fourier_glev_len(self) -> usize {
-        self.glev_len / 2
-    }
-
-    /// Returns the Fourier GGSW ciphertext length.
-    #[inline]
-    pub fn fourier_ggsw_len(self) -> usize {
-        self.ggsw_len / 2
-    }
-}
 
 /// GLWE encryption parameters shared by ordinary and gadget ciphertexts.
 ///
@@ -210,16 +19,30 @@ where
     T: FheUint,
     M: RingContext<T>,
 {
-    /// **RLWE** cipher modulus minus one, refers to **Q-1**.
-    cipher_modulus_minus_one: T,
     /// The modulus, refers to **Q** in the paper.
     cipher_modulus: M,
+    /// **RLWE** cipher modulus minus one, refers to **Q-1**.
+    cipher_modulus_minus_one: T,
     cipher_modulus_uniform_distr: Uniform<T>,
     /// The distribution type of the secret key.
     secret_key_type: RingSecretKeyType,
     secret_key_distribution: Option<DiscreteGaussian<T>>,
     /// The noise's distribution.
     noise_distribution: DiscreteGaussian<T>,
+}
+
+impl<T, M> PartialEq for GlweParametersInner<T, M>
+where
+    T: FheUint,
+    M: RingContext<T>,
+{
+    #[inline]
+    fn eq(&self, other: &Self) -> bool {
+        self.cipher_modulus == other.cipher_modulus
+            && self.secret_key_type == other.secret_key_type
+            && self.noise_distribution.standard_deviation()
+                == other.noise_distribution.standard_deviation()
+    }
 }
 
 impl<T, M> GlweParametersInner<T, M>
@@ -248,8 +71,8 @@ where
             };
 
         Self {
-            cipher_modulus_minus_one,
             cipher_modulus,
+            cipher_modulus_minus_one,
             cipher_modulus_uniform_distr,
             secret_key_type,
             secret_key_distribution,
@@ -316,7 +139,7 @@ where
     T: FheUint,
     M: RingContext<T>,
 {
-    common_size: GlweCommonSize,
+    size: GlweSize,
     inner: GlweParametersInner<T, M>,
     plaintext_codec: PlaintextCodec<T>,
 }
@@ -335,7 +158,7 @@ where
         secret_key_type: RingSecretKeyType,
         noise_standard_deviation: f64,
     ) -> Self {
-        let common_size = GlweCommonSize::new(dimension, poly_length);
+        let size = GlweSize::new(dimension, poly_length);
         let cipher_modulus_value = cipher_modulus.explicit_value();
         let plaintext_codec = PlaintextCodec::new(plain_modulus_value, cipher_modulus_value);
 
@@ -343,7 +166,7 @@ where
             GlweParametersInner::new(cipher_modulus, secret_key_type, noise_standard_deviation);
 
         Self {
-            common_size,
+            size,
             inner,
             plaintext_codec,
         }
@@ -358,49 +181,49 @@ where
     /// Returns the dimension of this [`GlweParameters<T, M>`].
     #[inline]
     pub fn dimension(&self) -> usize {
-        self.common_size.dimension()
+        self.size.dimension()
     }
 
     /// Returns the poly length of this [`GlweParameters<T, M>`].
     #[inline]
     pub fn poly_length(&self) -> usize {
-        self.common_size.poly_length()
+        self.size.poly_length()
     }
 
     /// Returns the pre-computed GLWE size constants.
     #[inline]
-    pub fn common_size(&self) -> GlweCommonSize {
-        self.common_size
+    pub fn size(&self) -> GlweSize {
+        self.size
     }
 
     /// Returns the coefficient/NTT mask length `kN`.
     #[inline]
     pub fn glwe_mid(&self) -> usize {
-        self.common_size.glwe_mid()
+        self.size.mask_len()
     }
 
     /// Returns the coefficient/NTT GLWE ciphertext length `(k + 1)N`.
     #[inline]
     pub fn glwe_len(&self) -> usize {
-        self.common_size.glwe_len()
+        self.size.glwe_len()
     }
 
     /// Returns the coefficient-domain secret-key length `kN`.
     #[inline]
     pub fn secret_key_len(&self) -> usize {
-        self.common_size.secret_key_len()
+        self.size.mask_len()
     }
 
     /// Returns the Fourier mask length `kN/2`.
     #[inline]
     pub fn fourier_glwe_mid(&self) -> usize {
-        self.common_size.fourier_glwe_mid()
+        self.size.fourier_mask_len()
     }
 
     /// Returns the Fourier GLWE ciphertext length `(k + 1)N/2`.
     #[inline]
     pub fn fourier_glwe_len(&self) -> usize {
-        self.common_size.fourier_glwe_len()
+        self.size.fourier_glwe_len()
     }
 
     /// Returns the plain modulus value of this [`GlweParameters<T, M>`].
@@ -467,7 +290,7 @@ where
     T: FheUint,
     M: RingContext<T>,
 {
-    common_size: GlevCommonSize,
+    size: GadgetSize,
     inner: GlweParametersInner<T, M>,
     /// Decompose basis for `Q`.
     basis: ApproxSignedBasis<T>,
@@ -514,6 +337,12 @@ where
         self.input_dimension
     }
 
+    /// Returns the input GLWE layout.
+    #[inline]
+    pub fn input_size(&self) -> GlweSize {
+        GlweSize::new(self.input_dimension, self.poly_length())
+    }
+
     /// Returns the output GLWE dimension.
     #[inline]
     pub fn output_dimension(&self) -> usize {
@@ -530,6 +359,12 @@ where
     #[inline]
     pub fn output(&self) -> &GlevParameters<T, M> {
         &self.output
+    }
+
+    /// Returns the output gadget layout.
+    #[inline]
+    pub fn output_size(&self) -> GadgetSize {
+        self.output.size()
     }
 
     /// Returns the coefficient/NTT-domain key length.
@@ -554,16 +389,18 @@ where
     T: FheUint,
     M: RingContext<T>,
 {
-    /// Creates a new [`GlevParameters<T, M>`].
-    #[inline]
-    pub fn new(
-        glwe_common_size: GlweCommonSize,
+    pub(crate) fn from_parts(
+        size: GlweSize,
         inner: GlweParametersInner<T, M>,
         basis: ApproxSignedBasis<T>,
     ) -> Self {
-        let common_size = GlevCommonSize::new(glwe_common_size, basis.decompose_length());
+        assert_eq!(
+            basis.modulus(),
+            inner.cipher_modulus_value(),
+            "GLev decomposition basis must match the GLWE ciphertext modulus"
+        );
         Self {
-            common_size,
+            size: GadgetSize::new(size, basis.decompose_length()),
             inner,
             basis,
         }
@@ -573,19 +410,31 @@ where
     #[inline]
     pub fn with_glwe_params(
         glwe_params: &GlweParameters<T, M>,
-        basis: ApproxSignedBasis<T>,
+        log_basis: u32,
+        reverse_length: Option<usize>,
     ) -> Self {
-        Self::new(
-            glwe_params.common_size(),
-            glwe_params.inner().clone(),
-            basis,
-        )
+        Self::try_with_glwe_params(glwe_params, log_basis, reverse_length)
+            .unwrap_or_else(|message| panic!("failed to construct GLev parameters: {message}"))
     }
 
-    /// Returns the underlying GLWE size constants.
+    /// Tries to create GLev/GGSW parameters and their decomposition basis from
+    /// one GLWE modulus domain.
     #[inline]
-    pub fn glwe_common_size(&self) -> GlweCommonSize {
-        self.common_size.glwe_common_size()
+    pub fn try_with_glwe_params(
+        glwe_params: &GlweParameters<T, M>,
+        log_basis: u32,
+        reverse_length: Option<usize>,
+    ) -> Result<Self, primus_decompose::ApproxSignedBasisError> {
+        let basis = ApproxSignedBasis::try_new(
+            glwe_params.inner().cipher_modulus_value(),
+            log_basis,
+            reverse_length,
+        )?;
+        Ok(Self::from_parts(
+            glwe_params.size(),
+            glwe_params.inner().clone(),
+            basis,
+        ))
     }
 
     /// Returns the parameters shared by GLWE and its gadget ciphertexts.
@@ -596,20 +445,26 @@ where
 
     /// Returns the pre-computed GLev/GGSW size constants.
     #[inline]
-    pub fn common_size(&self) -> GlevCommonSize {
-        self.common_size
+    pub fn size(&self) -> GadgetSize {
+        self.size
+    }
+
+    /// Returns the underlying GLWE size constants.
+    #[inline]
+    pub fn glwe_size(&self) -> GlweSize {
+        self.size.glwe_size()
     }
 
     /// Returns the dimension of this [`GlevParameters<T, M>`].
     #[inline]
     pub fn dimension(&self) -> usize {
-        self.common_size.dimension()
+        self.size.glwe_size().dimension()
     }
 
     /// Returns the poly length of this [`GlevParameters<T, M>`].
     #[inline]
     pub fn poly_length(&self) -> usize {
-        self.common_size.poly_length()
+        self.size.glwe_size().poly_length()
     }
 
     /// Returns the cipher modulus minus one of this [`GlevParameters<T, M>`].
@@ -648,55 +503,55 @@ where
     /// Returns the decomposition length.
     #[inline]
     pub fn decompose_length(&self) -> usize {
-        self.common_size.decompose_length()
+        self.size.decompose_length()
     }
 
     /// Returns the coefficient/NTT mask length `kN`.
     #[inline]
     pub fn glwe_mid(&self) -> usize {
-        self.common_size.glwe_mid()
+        self.size.glwe_size().mask_len()
     }
 
     /// Returns the number of values in one coefficient/NTT-domain GLWE ciphertext.
     #[inline]
     pub fn glwe_len(&self) -> usize {
-        self.common_size.glwe_len()
+        self.size.glwe_size().glwe_len()
     }
 
     /// Returns the number of values in one coefficient/NTT-domain GLev ciphertext.
     #[inline]
     pub fn glev_len(&self) -> usize {
-        self.common_size.glev_len()
+        self.size.glev_len()
     }
 
     /// Returns the number of values in one coefficient/NTT-domain GGSW ciphertext.
     #[inline]
     pub fn ggsw_len(&self) -> usize {
-        self.common_size.ggsw_len()
+        self.size.ggsw_len()
     }
 
     /// Returns the number of complex values in one Fourier-domain GLWE ciphertext.
     #[inline]
     pub fn fourier_glwe_len(&self) -> usize {
-        self.common_size.fourier_glwe_len()
+        self.size.glwe_size().fourier_glwe_len()
     }
 
     /// Returns the Fourier mask length `kN/2`.
     #[inline]
     pub fn fourier_glwe_mid(&self) -> usize {
-        self.common_size.fourier_glwe_mid()
+        self.size.glwe_size().fourier_mask_len()
     }
 
     /// Returns the number of complex values in one Fourier-domain GLev ciphertext.
     #[inline]
     pub fn fourier_glev_len(&self) -> usize {
-        self.common_size.fourier_glev_len()
+        self.size.fourier_glev_len()
     }
 
     /// Returns the number of complex values in one Fourier-domain GGSW ciphertext.
     #[inline]
     pub fn fourier_ggsw_len(&self) -> usize {
-        self.common_size.fourier_ggsw_len()
+        self.size.fourier_ggsw_len()
     }
 }
 

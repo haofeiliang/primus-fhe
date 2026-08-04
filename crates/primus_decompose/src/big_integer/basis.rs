@@ -7,7 +7,9 @@ use primus_reduce::FieldContext;
 use primus_rns::RNSBase;
 use serde::{Deserialize, Serialize};
 
-use crate::big_integer::{BigUintApproxSignedBasisError, BigUintSignedDecomposerIter};
+use crate::{
+    ApproxSignedBasisError, MIN_DECOMPOSITION_LOG_BASIS, big_integer::BigUintSignedDecomposerIter,
+};
 
 use super::{BigUintValueCarryInitMode, ValueMask};
 
@@ -60,18 +62,18 @@ impl<T: FheUint> BigUintApproxSignedBasis<T> {
     ///
     /// # Errors
     ///
-    /// Returns [`BigUintApproxSignedBasisError`] when any parameter is invalid.
+    /// Returns [`ApproxSignedBasisError`] when any parameter is invalid.
     #[inline]
     pub fn try_new<M>(
         rns_base: &RNSBase<T, M>,
         log_basis: u32,
         reverse_length: Option<usize>,
-    ) -> Result<Self, BigUintApproxSignedBasisError>
+    ) -> Result<Self, ApproxSignedBasisError>
     where
         M: FieldContext<T>,
     {
-        if log_basis < 2 || log_basis >= T::BITS {
-            return Err(BigUintApproxSignedBasisError::InvalidLogBasis {
+        if log_basis < MIN_DECOMPOSITION_LOG_BASIS || log_basis >= T::BITS {
+            return Err(ApproxSignedBasisError::InvalidLogBasis {
                 log_basis,
                 limb_bits: T::BITS,
             });
@@ -82,7 +84,7 @@ impl<T: FheUint> BigUintApproxSignedBasis<T> {
         let unused_bits = modulus.0.last().unwrap().leading_zeros();
         let modulus_bits_count = T::BITS * (big_uint_value_len as u32) - unused_bits;
         if modulus_bits_count <= log_basis {
-            return Err(BigUintApproxSignedBasisError::BasisExceedsModulus);
+            return Err(ApproxSignedBasisError::BasisExceedsModulus);
         }
 
         let basis = <T as ConstOne>::ONE << log_basis;
@@ -93,10 +95,10 @@ impl<T: FheUint> BigUintApproxSignedBasis<T> {
 
         if let Some(reverse_len) = reverse_length {
             if reverse_len == 0 {
-                return Err(BigUintApproxSignedBasisError::ZeroReverseLength);
+                return Err(ApproxSignedBasisError::ZeroReverseLength);
             }
             if reverse_len > decompose_length {
-                return Err(BigUintApproxSignedBasisError::ReverseLengthTooLarge {
+                return Err(ApproxSignedBasisError::ReverseLengthTooLarge {
                     reverse_length: reverse_len,
                     full_length: decompose_length,
                 });
