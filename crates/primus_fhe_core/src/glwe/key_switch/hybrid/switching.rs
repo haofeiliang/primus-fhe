@@ -7,36 +7,12 @@ use primus_reduce::FieldContext;
 use primus_rns::{HybridRNS, HybridRNSPartition};
 
 use super::{HybridRnsGlweKeySwitchingKey, mod_down::approx_mod_down_ntt};
-use crate::{DcrtGlweCiphertext, GlweKeySwitchingError, HybridRnsKeySwitchDomain};
+use crate::{DcrtGlweCiphertext, HybridRnsKeySwitchDomain};
 
 #[cfg(test)]
 use crate::CrtGlweCiphertext;
 
 impl<T: FheUint> HybridRnsGlweKeySwitchingKey<T> {
-    fn validate_operands(
-        &self,
-        input_len: usize,
-        output_len: usize,
-        context: &HybridRnsGlweKeySwitchingContext<T>,
-    ) -> Result<(), GlweKeySwitchingError> {
-        if context.input_size != self.input_size || context.output_size != self.output_size {
-            return Err(GlweKeySwitchingError::ContextMismatch);
-        }
-        if input_len != self.input_size.rns_glwe_len() {
-            return Err(GlweKeySwitchingError::InputLengthMismatch {
-                expected: self.input_size.rns_glwe_len(),
-                actual: input_len,
-            });
-        }
-        if output_len != self.output_size.rns_glwe_len() {
-            return Err(GlweKeySwitchingError::OutputLengthMismatch {
-                expected: self.output_size.rns_glwe_len(),
-                actual: output_len,
-            });
-        }
-        Ok(())
-    }
-
     fn accumulate_ntt_mask<M, Table>(
         &self,
         mask_mod_q_ntt: &[T],
@@ -125,20 +101,29 @@ impl<T: FheUint> HybridRnsGlweKeySwitchingKey<T> {
     /// Each input mask polynomial is transformed to coefficient form once for
     /// cross-modulus conversion. Its partition-owned limbs and the input body
     /// remain in the NTT domain and are consumed directly.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the input, output, or reusable context has a layout that is
+    /// incompatible with this key.
     pub fn key_switch_to<M, Table, A, B>(
         &self,
         c_in: &DcrtGlweCiphertext<A>,
         c_out: &mut DcrtGlweCiphertext<B>,
         domain: &HybridRnsKeySwitchDomain<'_, T, M, Table>,
         context: &mut HybridRnsGlweKeySwitchingContext<T>,
-    ) -> Result<(), GlweKeySwitchingError>
-    where
+    ) where
         M: FieldContext<T>,
         Table: DcrtTable<ValueT = T>,
         A: RawData<Elem = T> + Data,
         B: RawData<Elem = T> + DataMut,
     {
-        self.validate_operands(c_in.as_ref().len(), c_out.as_ref().len(), context)?;
+        assert_eq!(c_in.as_ref().len(), self.input_size.rns_glwe_len());
+        assert_eq!(c_out.as_ref().len(), self.output_size.rns_glwe_len());
+        assert!(
+            context.input_size == self.input_size && context.output_size == self.output_size,
+            "hybrid key-switching key and context use incompatible layouts"
+        );
         let hybrid_rns = domain.hybrid_rns();
         let table = domain.table();
         let qp_gadget_len = self
@@ -165,7 +150,6 @@ impl<T: FheUint> HybridRnsGlweKeySwitchingKey<T> {
             self.input_size.poly_length(),
             hybrid_rns.q_base().moduli(),
         );
-        Ok(())
     }
 
     #[cfg(test)]
@@ -468,9 +452,7 @@ mod tests {
         let mut ntt_context = HybridRnsGlweKeySwitchingContext::new(&switching_key, &domain);
         let mut coeff_context = HybridRnsGlweKeySwitchingContext::new(&switching_key, &domain);
 
-        switching_key
-            .key_switch_to(&input, &mut from_ntt, &domain, &mut ntt_context)
-            .unwrap();
+        switching_key.key_switch_to(&input, &mut from_ntt, &domain, &mut ntt_context);
         switching_key.key_switch_coeff_reference_to(
             &input_coeff,
             &mut from_coeff,

@@ -12,10 +12,7 @@ use primus_poly::{NttPolynomial, PolynomialOwned};
 use primus_reduce::FieldContext;
 
 use crate::glwe::secret_key::encode_secret_polynomial_to;
-use crate::{
-    GlweKeySwitchingError, GlweSecretKey, NttGadgetDomain, NttGadgetEncryptContext,
-    NttGlweSecretKey,
-};
+use crate::{GlweSecretKey, NttGadgetDomain, NttGadgetEncryptContext, NttGlweSecretKey};
 
 /// An NTT-domain GLWE key-switching key.
 ///
@@ -110,14 +107,14 @@ impl<T: FheUint> NttGlweKeySwitchingKey<T> {
         output: &mut Glwe<B>,
         domain: &NttGadgetDomain<'_, T, M, Table>,
         context: &mut NttGlweKeySwitchingContext<T>,
-    ) -> Result<(), GlweKeySwitchingError>
-    where
+    ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
         A: RawData<Elem = T> + Data,
         B: RawData<Elem = T> + DataMut,
     {
-        self.validate(input.as_ref().len(), output.as_ref().len(), domain, context)?;
+        assert_eq!(input.as_ref().len(), self.input_size.glwe_len());
+        assert_eq!(output.as_ref().len(), self.output_size.glwe_len());
 
         let parameters = domain.parameters();
         let ntt = domain.table();
@@ -155,7 +152,6 @@ impl<T: FheUint> NttGlweKeySwitchingKey<T> {
         modulus.reduce_neg_slice_assign(output.as_mut());
         let (_, output_body) = output.a_b_mut_slices(poly_length);
         modulus.reduce_add_slice_assign(output_body, input_body);
-        Ok(())
     }
 
     /// Key-switches into a newly allocated coefficient-domain ciphertext.
@@ -164,54 +160,20 @@ impl<T: FheUint> NttGlweKeySwitchingKey<T> {
         input: &Glwe<A>,
         domain: &NttGadgetDomain<'_, T, M, Table>,
         context: &mut NttGlweKeySwitchingContext<T>,
-    ) -> Result<Glwe<Vec<T>>, GlweKeySwitchingError>
+    ) -> Glwe<Vec<T>>
     where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
         A: RawData<Elem = T> + Data,
     {
         let mut output = Glwe::zero(self.output_size.glwe_len());
-        self.key_switch_to(input, &mut output, domain, context)?;
-        Ok(output)
-    }
-
-    fn validate<M, Table>(
-        &self,
-        input_len: usize,
-        output_len: usize,
-        domain: &NttGadgetDomain<'_, T, M, Table>,
-        context: &NttGlweKeySwitchingContext<T>,
-    ) -> Result<(), GlweKeySwitchingError>
-    where
-        M: FieldContext<T>,
-        Table: NttTable<ValueT = T>,
-    {
-        if self.output_size != domain.size() {
-            return Err(GlweKeySwitchingError::KeyDomainMismatch);
-        }
-        if self.output_size != context.size {
-            return Err(GlweKeySwitchingError::ContextMismatch);
-        }
-        if input_len != self.input_size.glwe_len() {
-            return Err(GlweKeySwitchingError::InputLengthMismatch {
-                expected: self.input_size.glwe_len(),
-                actual: input_len,
-            });
-        }
-        let expected = self.output_size.glwe_size().glwe_len();
-        if output_len != expected {
-            return Err(GlweKeySwitchingError::OutputLengthMismatch {
-                expected,
-                actual: output_len,
-            });
-        }
-        Ok(())
+        self.key_switch_to(input, &mut output, domain, context);
+        output
     }
 }
 
 /// Reusable NTT GLWE key-switching workspace.
 pub struct NttGlweKeySwitchingContext<T: FheUint> {
-    size: GadgetSize,
     adjusted_poly: Vec<T>,
     carries: Vec<bool>,
     decomposed_ntt: Vec<T>,
@@ -220,16 +182,9 @@ pub struct NttGlweKeySwitchingContext<T: FheUint> {
 
 impl<T: FheUint> NttGlweKeySwitchingContext<T> {
     /// Creates a workspace for the output GLWE layout.
-    pub fn new<M, Table>(domain: &NttGadgetDomain<'_, T, M, Table>) -> Self
-    where
-        M: FieldContext<T>,
-        Table: NttTable<ValueT = T>,
-    {
-        let size = domain.size();
-        let glwe_size = size.glwe_size();
+    pub fn new(glwe_size: GlweSize) -> Self {
         let poly_length = glwe_size.poly_length();
         Self {
-            size,
             adjusted_poly: vec![T::ZERO; poly_length],
             carries: vec![false; poly_length],
             decomposed_ntt: vec![T::ZERO; poly_length],

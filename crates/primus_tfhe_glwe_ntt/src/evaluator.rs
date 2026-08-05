@@ -70,7 +70,8 @@ where
 
         let key_switching_domain = context.key_switching_domain();
         let bootstrapping_domain = context.bootstrapping_domain();
-        let key_switching_context = NttGlweKeySwitchingContext::new(&key_switching_domain);
+        let key_switching_context =
+            NttGlweKeySwitchingContext::new(key_switching_domain.size().glwe_size());
         Ok(Self {
             context,
             server_key,
@@ -138,15 +139,12 @@ where
                     &self.bootstrapping_domain,
                     &mut self.blind_rotation,
                 );
-                self.server_key
-                    .glwe_key_switching_key()
-                    .key_switch_to(
-                        &self.main_glwe,
-                        &mut self.switched,
-                        &self.key_switching_domain,
-                        &mut self.key_switching,
-                    )
-                    .map_err(|_| TfheEvaluationError::IncompatibleServerKey)?;
+                self.server_key.glwe_key_switching_key().key_switch_to(
+                    &self.main_glwe,
+                    &mut self.switched,
+                    &self.key_switching_domain,
+                    &mut self.key_switching,
+                );
                 self.switched
                     .extract_compact_lwe_to(output.as_lwe_mut(), poly_length, modulus);
             }
@@ -154,15 +152,12 @@ where
                 input
                     .as_lwe()
                     .inverse_extract_glwe_to(&mut self.main_glwe, poly_length, modulus);
-                self.server_key
-                    .glwe_key_switching_key()
-                    .key_switch_to(
-                        &self.main_glwe,
-                        &mut self.switched,
-                        &self.key_switching_domain,
-                        &mut self.key_switching,
-                    )
-                    .map_err(|_| TfheEvaluationError::IncompatibleServerKey)?;
+                self.server_key.glwe_key_switching_key().key_switch_to(
+                    &self.main_glwe,
+                    &mut self.switched,
+                    &self.key_switching_domain,
+                    &mut self.key_switching,
+                );
                 self.switched
                     .extract_compact_lwe_to(&mut self.small_lwe, poly_length, modulus);
                 self.server_key.bootstrapping_key().ntt_blind_rotate_to(

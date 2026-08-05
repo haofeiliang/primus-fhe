@@ -82,8 +82,8 @@ fn ntt_glwe_key_switches_for_equal_and_smaller_output_dimensions() {
         assert_eq!(key.output_dimension(), output_dimension);
         assert_eq!(key.as_slice().len(), parameters.key_len());
 
-        let mut context = NttGlweKeySwitchingContext::new(&domain);
-        let switched = key.key_switch(&input, &domain, &mut context).unwrap();
+        let mut context = NttGlweKeySwitchingContext::new(domain.size().glwe_size());
+        let switched = key.key_switch(&input, &domain, &mut context);
         let switched_ntt = switched.into_ntt_form(&ntt);
         assert_eq!(
             output_key
@@ -160,10 +160,8 @@ fn fourier_glwe_key_switches_for_equal_and_smaller_output_dimensions() {
         assert_eq!(key.output_dimension(), output_dimension);
         assert_eq!(key.as_slice().len(), parameters.fourier_key_len());
 
-        let mut context = FourierGlweKeySwitchingContext::new(parameters.output());
-        let switched = key
-            .key_switch(&input, parameters.output(), &mut fft, &mut context)
-            .unwrap();
+        let mut context = FourierGlweKeySwitchingContext::new(parameters.output().glwe_size());
+        let switched = key.key_switch(&input, parameters.output(), &mut fft, &mut context);
         let mut switched_fourier = FourierGlweOwned::zero(output_params.fourier_glwe_len());
         switched.write_fourier_form(&mut switched_fourier, &mut fft);
         let mut decrypt_context = FourierGlweDecryptContext::new(POLY_LENGTH);

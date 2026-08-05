@@ -1,7 +1,12 @@
+use num_traits::ConstZero;
 use primus_integer::FheUint;
+use primus_lattice::GlweSize;
 use primus_reduce::RingContext;
 
-use crate::{GlweSecretKey, LweSecretKey, PbsOrder, SecretCoefficient, TfheParameters};
+use crate::{
+    GlweSecretKey, LweSecretKey, LweSecretKeyType, PbsOrder, RingSecretKeyType, SecretCoefficient,
+    TfheParameters,
+};
 
 /// Borrowed coefficients of the LWE secret key used by external TFHE
 /// ciphertexts.
@@ -76,6 +81,60 @@ impl<T: FheUint> ClientKey<T> {
     #[inline]
     pub fn glwe_secret_key(&self) -> &GlweSecretKey<T> {
         &self.glwe_secret_key
+    }
+
+    /// Returns the padded GLWE key used as the target of TFHE GLWE key switching.
+    ///
+    /// The small LWE coefficients occupy the prefix in their natural order;
+    /// the remaining coefficients are zero. `parameters` must already have
+    /// passed [`Self::check_compatible`].
+    pub fn padded_small_glwe_secret_key<LM, GM>(
+        &self,
+        parameters: &TfheParameters<T, LM, GM>,
+    ) -> GlweSecretKey<T>
+    where
+        LM: RingContext<T>,
+        GM: RingContext<T>,
+    {
+        let lwe_secret_key = &self.small_lwe_secret_key;
+        let lwe_dimension = lwe_secret_key.dimension();
+        let poly_length = parameters.glwe().poly_length();
+        let capacity = lwe_dimension
+            .checked_next_multiple_of(poly_length)
+            .expect("validated TFHE dimensions must fit in usize");
+
+        let mut key = vec![SecretCoefficient::<T>::ZERO; capacity];
+        let distribution = match lwe_secret_key.distr() {
+            LweSecretKeyType::Binary => {
+                key[..lwe_dimension]
+                    .iter_mut()
+                    .zip(lwe_secret_key.as_ref())
+                    .for_each(|(output, &coefficient)| {
+                        *output = coefficient.cast_to_signed();
+                    });
+                RingSecretKeyType::Binary
+            }
+            LweSecretKeyType::Ternary => {
+                let minus_one = parameters.small_lwe().cipher_modulus_minus_one();
+                key[..lwe_dimension]
+                    .iter_mut()
+                    .zip(lwe_secret_key.as_ref())
+                    .for_each(|(output, &coefficient)| {
+                        *output = if coefficient == minus_one {
+                            -T::ONE.cast_to_signed()
+                        } else {
+                            coefficient.cast_to_signed()
+                        };
+                    });
+                RingSecretKeyType::Ternary
+            }
+        };
+
+        GlweSecretKey::new(
+            key,
+            GlweSize::new(capacity / poly_length, poly_length),
+            distribution,
+        )
     }
 
     /// Returns the PBS order that determines the external LWE key.

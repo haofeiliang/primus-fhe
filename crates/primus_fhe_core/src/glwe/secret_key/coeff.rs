@@ -1,16 +1,12 @@
 //! Single-modulus coefficient-domain GLWE secret key.
 
-use num_traits::ConstZero;
 use primus_integer::FheUint;
-use primus_lattice::{GlweSize, MAX_POLY_LENGTH, MIN_POLY_LENGTH};
+use primus_lattice::GlweSize;
 use primus_reduce::RingContext;
 use rand::distr::Distribution;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
-use crate::{
-    CrtGlweParameters, GlweParameters, GlweSecretKeyError, LweSecretKey, LweSecretKeyType,
-    RingSecretKeyType,
-};
+use crate::{CrtGlweParameters, GlweParameters, RingSecretKeyType};
 
 use super::SecretCoefficient;
 
@@ -82,66 +78,6 @@ impl<T: FheUint> GlweSecretKey<T> {
             glwe_size,
             distr,
         }
-    }
-
-    /// Creates a GLWE secret key by copying an LWE secret key into its prefix
-    /// and padding every remaining coefficient with zero.
-    ///
-    /// The resulting coefficient layout is
-    /// `[s_lwe[0], ..., s_lwe[n - 1], 0, ..., 0]`, with total length
-    /// `lwe_dimension.next_multiple_of(poly_length)`. The GLWE dimension is
-    /// therefore the smallest one that can contain the LWE key. A ternary LWE
-    /// coefficient represented by `cipher_modulus_minus_one` is normalized to
-    /// the signed coefficient `-1`.
-    pub fn from_padded_lwe(
-        lwe_secret_key: &LweSecretKey<T>,
-        poly_length: usize,
-        cipher_modulus_minus_one: T,
-    ) -> Result<Self, GlweSecretKeyError> {
-        if !(MIN_POLY_LENGTH..=MAX_POLY_LENGTH).contains(&poly_length)
-            || !poly_length.is_power_of_two()
-        {
-            return Err(GlweSecretKeyError::InvalidPolynomialLength { poly_length });
-        }
-
-        let lwe_dimension = lwe_secret_key.dimension();
-        if lwe_dimension == 0 {
-            return Err(GlweSecretKeyError::ZeroLweDimension);
-        }
-        let capacity = lwe_dimension.checked_next_multiple_of(poly_length).ok_or(
-            GlweSecretKeyError::CapacityOverflow {
-                lwe_dimension,
-                poly_length,
-            },
-        )?;
-        let dimension = capacity / poly_length;
-
-        let mut key = vec![SecretCoefficient::<T>::ZERO; capacity];
-        let distr = match lwe_secret_key.distr() {
-            LweSecretKeyType::Binary => {
-                key[..lwe_dimension]
-                    .iter_mut()
-                    .zip(lwe_secret_key.as_ref())
-                    .for_each(|(output, &coefficient)| {
-                        *output = coefficient.cast_to_signed();
-                    });
-                RingSecretKeyType::Binary
-            }
-            LweSecretKeyType::Ternary => {
-                key[..lwe_dimension]
-                    .iter_mut()
-                    .zip(lwe_secret_key.as_ref())
-                    .for_each(|(output, &coefficient)| {
-                        *output = if coefficient == cipher_modulus_minus_one {
-                            -T::ONE.cast_to_signed()
-                        } else {
-                            coefficient.cast_to_signed()
-                        };
-                    });
-                RingSecretKeyType::Ternary
-            }
-        };
-        Ok(Self::new(key, GlweSize::new(dimension, poly_length), distr))
     }
 
     /// Returns the GLWE layout of this [`GlweSecretKey<T>`].

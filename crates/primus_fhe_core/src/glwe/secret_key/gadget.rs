@@ -19,7 +19,6 @@ use super::{FourierGlweEncryptContext, FourierGlweSecretKey, NttGlweSecretKey};
 
 /// Reusable workspace for Fourier GLev/GGSW generation.
 pub struct FourierGadgetEncryptContext<T: FheUint> {
-    size: GadgetSize,
     encoded: PolynomialOwned<T>,
     level_transforms: Vec<Complex64>,
     glwe: FourierGlweEncryptContext<T>,
@@ -32,7 +31,6 @@ impl<T: FheUint> FourierGadgetEncryptContext<T> {
         let poly_length = glwe_size.poly_length();
         let decompose_length = size.decompose_length();
         Self {
-            size,
             encoded: PolynomialOwned::zero(poly_length),
             level_transforms: vec![
                 Complex64::default();
@@ -42,17 +40,10 @@ impl<T: FheUint> FourierGadgetEncryptContext<T> {
         }
     }
 
-    /// Returns the gadget layout bound to this workspace.
-    #[inline]
-    pub fn size(&self) -> GadgetSize {
-        self.size
-    }
-
     /// Rebinds this workspace to another checked gadget layout.
     pub fn resize(&mut self, size: GadgetSize) {
         let glwe_size = size.glwe_size();
         let poly_length = glwe_size.poly_length();
-        self.size = size;
         self.encoded.0.resize(poly_length, T::ZERO);
         self.level_transforms.resize(
             size.decompose_length() * glwe_size.fourier_poly_len(),
@@ -74,7 +65,6 @@ impl<T: FheUint> ZeroizeOnDrop for FourierGadgetEncryptContext<T> {}
 
 /// Reusable workspace for NTT GLev/GGSW generation.
 pub struct NttGadgetEncryptContext<T: FheUint> {
-    size: GadgetSize,
     encoded: PolynomialOwned<T>,
     level_transforms: Vec<T>,
 }
@@ -85,22 +75,14 @@ impl<T: FheUint> NttGadgetEncryptContext<T> {
         let poly_length = size.glwe_size().poly_length();
         let decompose_length = size.decompose_length();
         Self {
-            size,
             encoded: PolynomialOwned::zero(poly_length),
             level_transforms: vec![T::ZERO; decompose_length * poly_length],
         }
     }
 
-    /// Returns the gadget layout bound to this workspace.
-    #[inline]
-    pub fn size(&self) -> GadgetSize {
-        self.size
-    }
-
     /// Rebinds this workspace to another checked gadget layout.
     pub fn resize(&mut self, size: GadgetSize) {
         let poly_length = size.glwe_size().poly_length();
-        self.size = size;
         self.encoded.0.resize(poly_length, T::ZERO);
         self.level_transforms
             .resize(size.decompose_length() * poly_length, T::ZERO);
@@ -134,7 +116,6 @@ impl FourierGlweSecretKey {
         B: RawData<Elem = Complex64> + DataMut,
     {
         assert_eq!(result.as_ref().len(), params.fourier_glev_len());
-        assert_eq!(context.size(), params.size());
         let modulus = params.cipher_modulus();
         let fourier_glwe_len = params.fourier_glwe_len();
 
@@ -172,17 +153,11 @@ impl FourierGlweSecretKey {
         B: RawData<Elem = Complex64> + DataMut,
     {
         assert_eq!(result.as_ref().len(), params.fourier_ggsw_len());
-        assert_eq!(context.size(), params.size());
 
         let fourier_length = fft.fourier_length();
         let fourier_glwe_len = params.fourier_glwe_len();
         let fourier_glev_len = params.fourier_glev_len();
         let modulus = params.cipher_modulus();
-        assert_eq!(
-            context.size().glwe_size().fourier_poly_len(),
-            fourier_length
-        );
-
         for (scalar, transformed) in params
             .basis()
             .scalar_iter()
@@ -229,7 +204,6 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         let params = domain.parameters();
         let ntt = domain.table();
         assert_eq!(result.as_ref().len(), params.glev_len());
-        assert_eq!(context.size(), domain.size());
 
         let modulus = params.cipher_modulus();
         for (scalar, mut glwe) in params
@@ -260,7 +234,6 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         let params = domain.parameters();
         let ntt = domain.table();
         assert_eq!(result.as_ref().len(), params.ggsw_len());
-        assert_eq!(context.size(), domain.size());
 
         let poly_length = self.poly_length();
         let modulus = params.cipher_modulus();

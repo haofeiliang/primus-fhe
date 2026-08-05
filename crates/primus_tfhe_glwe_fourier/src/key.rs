@@ -107,12 +107,7 @@ where
             rng,
             &mut self.gadget,
         );
-        let padded_small_glwe_secret_key = GlweSecretKey::from_padded_lwe(
-            client_key.small_lwe_secret_key(),
-            parameters.glwe().poly_length(),
-            parameters.small_lwe().cipher_modulus_minus_one(),
-        )
-        .expect("validated TFHE parameters must admit a padded small-LWE key");
+        let padded_small_glwe_secret_key = client_key.padded_small_glwe_secret_key(parameters);
         let padded_small_glwe_secret_key = FourierGlweSecretKey::from_coeff_secret_key(
             &padded_small_glwe_secret_key,
             &mut self.fft,

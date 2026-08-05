@@ -100,6 +100,7 @@ where
         assert_eq!(input_secret_key.dimension(), input_parameters.dimension());
         assert_eq!(input_parameters.secret_key_type(), LweSecretKeyType::Binary);
         assert_eq!(output_secret_key.glwe_size(), params.glwe_size());
+        assert_eq!(fft.poly_length(), params.poly_length());
 
         let input_dimension = input_secret_key.dimension();
         let ggsw_len = params.fourier_ggsw_len();

@@ -17,30 +17,6 @@ use crate::{
     GlweSecretKey,
 };
 
-/// An incompatibility detected before DCRT GLWE key switching.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
-pub enum DcrtGlweKeySwitchingError {
-    /// The reusable context was created for another key or domain.
-    #[error("DCRT key-switching context is incompatible")]
-    IncompatibleContext,
-    /// The input ciphertext has the wrong flattened length.
-    #[error("input ciphertext length mismatch: expected {expected}, got {actual}")]
-    InputLengthMismatch {
-        /// Required input length.
-        expected: usize,
-        /// Supplied input length.
-        actual: usize,
-    },
-    /// The output ciphertext has the wrong flattened length.
-    #[error("output ciphertext length mismatch: expected {expected}, got {actual}")]
-    OutputLengthMismatch {
-        /// Required output length.
-        expected: usize,
-        /// Supplied output length.
-        actual: usize,
-    },
-}
-
 pub struct DcrtGlweKeySwitchingKey<T: FheUint> {
     key: Vec<T>,
     input_size: RnsGlweSize,
@@ -113,34 +89,33 @@ impl<T: FheUint> DcrtGlweKeySwitchingKey<T> {
         DcrtGlevIter::new(self.key.as_slice(), self.output_size.rns_glev_len())
     }
 
+    /// Applies DCRT GLWE key switching to `input` and writes `output`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the input, output, or reusable context has a layout that is
+    /// incompatible with this key.
     pub fn key_switch_to<M, Table, A, B>(
         &self,
         input: &CrtGlweCiphertext<A>,
         output: &mut DcrtGlweCiphertext<B>,
         domain: &DcrtGadgetDomain<'_, T, M, Table>,
         context: &mut DcrtGlweKeySwitchingContext<T>,
-    ) -> Result<(), DcrtGlweKeySwitchingError>
-    where
+    ) where
         M: FieldContext<T>,
         Table: DcrtTable<ValueT = T>,
         A: RawData<Elem = T> + Data,
         B: RawData<Elem = T> + DataMut,
     {
-        let actual = input.as_ref().len();
-        let expected = self.input_size.rns_glwe_len();
-        if actual != expected {
-            return Err(DcrtGlweKeySwitchingError::InputLengthMismatch { expected, actual });
-        }
-
-        let actual = output.as_ref().len();
-        let expected = self.output_size.rns_glwe_size().rns_glwe_len();
-        if actual != expected {
-            return Err(DcrtGlweKeySwitchingError::OutputLengthMismatch { expected, actual });
-        }
-
-        if context.input_size != self.input_size || context.output_size != self.output_size {
-            return Err(DcrtGlweKeySwitchingError::IncompatibleContext);
-        }
+        assert_eq!(input.as_ref().len(), self.input_size.rns_glwe_len());
+        assert_eq!(
+            output.as_ref().len(),
+            self.output_size.rns_glwe_size().rns_glwe_len()
+        );
+        assert!(
+            context.input_size == self.input_size && context.output_size == self.output_size,
+            "DCRT key-switching key and context use incompatible layouts"
+        );
 
         let parameters = domain.parameters();
         let table = domain.table();
@@ -188,7 +163,6 @@ impl<T: FheUint> DcrtGlweKeySwitchingKey<T> {
             poly_length,
             rns_base.moduli(),
         );
-        Ok(())
     }
 }
 

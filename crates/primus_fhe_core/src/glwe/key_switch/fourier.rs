@@ -11,10 +11,7 @@ use primus_modulus::NativeModulus;
 use primus_poly::{FourierPolynomial, PolynomialOwned};
 use primus_reduce::{ReduceAddSlice, ReduceNegSlice};
 
-use crate::{
-    FourierGadgetEncryptContext, FourierGlweSecretKey, GlevParameters, GlweKeySwitchingError,
-    GlweSecretKey,
-};
+use crate::{FourierGadgetEncryptContext, FourierGlweSecretKey, GlevParameters, GlweSecretKey};
 
 /// A Fourier-domain GLWE key-switching key for the native torus modulus.
 #[derive(Clone)]
@@ -111,19 +108,14 @@ impl FourierGlweKeySwitchingKey {
         parameters: &GlevParameters<T, NativeModulus<T>>,
         fft: &mut FftEngine<'_, Table>,
         context: &mut FourierGlweKeySwitchingContext<T>,
-    ) -> Result<(), GlweKeySwitchingError>
-    where
+    ) where
         T: TorusFftValue,
         Table: FftTable,
         A: RawData<Elem = T> + Data,
         B: RawData<Elem = T> + DataMut,
     {
-        self.validate(
-            input.as_ref().len(),
-            output.as_ref().len(),
-            parameters,
-            context,
-        )?;
+        assert_eq!(input.as_ref().len(), self.input_size.glwe_len());
+        assert_eq!(output.as_ref().len(), self.output_size.glwe_len());
 
         let basis = parameters.basis();
         let poly_length = self.input_size.poly_length();
@@ -159,7 +151,6 @@ impl FourierGlweKeySwitchingKey {
         modulus.reduce_neg_slice_assign(output.as_mut());
         let (_, output_body) = output.a_b_mut_slices(poly_length);
         modulus.reduce_add_slice_assign(output_body, input_body);
-        Ok(())
     }
 
     /// Key-switches into a newly allocated coefficient-domain ciphertext.
@@ -169,53 +160,20 @@ impl FourierGlweKeySwitchingKey {
         parameters: &GlevParameters<T, NativeModulus<T>>,
         fft: &mut FftEngine<'_, Table>,
         context: &mut FourierGlweKeySwitchingContext<T>,
-    ) -> Result<Glwe<Vec<T>>, GlweKeySwitchingError>
+    ) -> Glwe<Vec<T>>
     where
         T: TorusFftValue,
         Table: FftTable,
         A: RawData<Elem = T> + Data,
     {
         let mut output = Glwe::zero(self.output_size.glwe_len());
-        self.key_switch_to(input, &mut output, parameters, fft, context)?;
-        Ok(output)
-    }
-
-    fn validate<T>(
-        &self,
-        input_len: usize,
-        output_len: usize,
-        parameters: &GlevParameters<T, NativeModulus<T>>,
-        context: &FourierGlweKeySwitchingContext<T>,
-    ) -> Result<(), GlweKeySwitchingError>
-    where
-        T: TorusFftValue,
-    {
-        if self.output_size != parameters.size() {
-            return Err(GlweKeySwitchingError::KeyDomainMismatch);
-        }
-        if self.output_size != context.size {
-            return Err(GlweKeySwitchingError::ContextMismatch);
-        }
-        if input_len != self.input_size.glwe_len() {
-            return Err(GlweKeySwitchingError::InputLengthMismatch {
-                expected: self.input_size.glwe_len(),
-                actual: input_len,
-            });
-        }
-        let expected = self.output_size.glwe_len();
-        if output_len != expected {
-            return Err(GlweKeySwitchingError::OutputLengthMismatch {
-                expected,
-                actual: output_len,
-            });
-        }
-        Ok(())
+        self.key_switch_to(input, &mut output, parameters, fft, context);
+        output
     }
 }
 
 /// Reusable Fourier GLWE key-switching workspace.
 pub struct FourierGlweKeySwitchingContext<T: TorusFftValue> {
-    size: GadgetSize,
     carries: Vec<bool>,
     decomposed_poly: Vec<T>,
     decomposed_fourier: Vec<Complex64>,
@@ -224,15 +182,9 @@ pub struct FourierGlweKeySwitchingContext<T: TorusFftValue> {
 
 impl<T: TorusFftValue> FourierGlweKeySwitchingContext<T> {
     /// Creates a workspace for the output GLWE layout.
-    pub fn new<M>(parameters: &GlevParameters<T, M>) -> Self
-    where
-        M: primus_reduce::RingContext<T>,
-    {
-        let size = parameters.size();
-        let glwe_size = size.glwe_size();
+    pub fn new(glwe_size: GlweSize) -> Self {
         let poly_length = glwe_size.poly_length();
         Self {
-            size,
             carries: vec![false; poly_length],
             decomposed_poly: vec![T::ZERO; poly_length],
             decomposed_fourier: vec![Complex64::default(); glwe_size.fourier_poly_len()],

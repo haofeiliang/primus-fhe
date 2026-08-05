@@ -4,9 +4,9 @@ use std::hint::black_box;
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use primus_fhe_core::{
-    GlweCiphertext, GlweSecretKey, LweCiphertext, LweKeySwitchingKey, LweKeySwitchingParameters,
-    NttGadgetDomain, NttGadgetEncryptContext, NttGlweKeySwitchingContext, NttGlweKeySwitchingKey,
-    NttGlweSecretKey,
+    ClientKey, GlweCiphertext, GlweSecretKey, LweCiphertext, LweKeySwitchingKey,
+    LweKeySwitchingParameters, NttGadgetDomain, NttGadgetEncryptContext,
+    NttGlweKeySwitchingContext, NttGlweKeySwitchingKey, NttGlweSecretKey,
 };
 use primus_ntt::{NttTable, U32NttTable};
 use primus_tfhe_glwe_ntt::boolean_parameters;
@@ -20,8 +20,13 @@ fn bench_key_switch(c: &mut Criterion) {
     let table = U32NttTable::new(poly_length.trailing_zeros(), modulus).unwrap();
     let mut rng = rand::rng();
 
-    let lwe_secret_key = primus_fhe_core::LweSecretKey::generate(parameters.small_lwe(), &mut rng);
-    let input_glwe_secret_key = GlweSecretKey::generate(parameters.glwe(), &mut rng);
+    let client_key = ClientKey::new(
+        primus_fhe_core::LweSecretKey::generate(parameters.small_lwe(), &mut rng),
+        GlweSecretKey::generate(parameters.glwe(), &mut rng),
+        parameters.pbs_order(),
+    );
+    let lwe_secret_key = client_key.small_lwe_secret_key();
+    let input_glwe_secret_key = client_key.glwe_secret_key();
 
     let lwe_key_switching_parameters = LweKeySwitchingParameters::new(
         parameters.glwe().secret_key_len(),
@@ -30,18 +35,13 @@ fn bench_key_switch(c: &mut Criterion) {
     );
     let lwe_key_switching_key = LweKeySwitchingKey::generate_from_signed(
         input_glwe_secret_key.as_slice(),
-        &lwe_secret_key,
+        lwe_secret_key,
         parameters.small_lwe(),
         &lwe_key_switching_parameters,
         &mut rng,
     );
 
-    let padded_glwe_secret_key = GlweSecretKey::from_padded_lwe(
-        &lwe_secret_key,
-        poly_length,
-        parameters.small_lwe().cipher_modulus_minus_one(),
-    )
-    .unwrap();
+    let padded_glwe_secret_key = client_key.padded_small_glwe_secret_key(&parameters);
     let output_ntt_secret_key =
         NttGlweSecretKey::from_coeff_secret_key(&padded_glwe_secret_key, &table);
 
@@ -49,7 +49,7 @@ fn bench_key_switch(c: &mut Criterion) {
     let domain = NttGadgetDomain::try_new(glwe_key_switching_parameters.output(), &table).unwrap();
     let mut gadget_context = NttGadgetEncryptContext::new(domain.size());
     let glwe_key_switching_key = NttGlweKeySwitchingKey::generate(
-        &input_glwe_secret_key,
+        input_glwe_secret_key,
         &output_ntt_secret_key,
         &domain,
         &mut rng,
@@ -57,7 +57,7 @@ fn bench_key_switch(c: &mut Criterion) {
     );
 
     let input_ntt_secret_key =
-        NttGlweSecretKey::from_coeff_secret_key(&input_glwe_secret_key, &table);
+        NttGlweSecretKey::from_coeff_secret_key(input_glwe_secret_key, &table);
     let input = input_ntt_secret_key
         .encrypt_zeros(parameters.glwe(), &table, &mut rng)
         .into_coeff_form(&table);
@@ -67,7 +67,7 @@ fn bench_key_switch(c: &mut Criterion) {
     let mut lwe_output = LweCiphertext::zero(lwe_dimension);
     let mut glwe_output: GlweCiphertext<Vec<u32>> =
         GlweCiphertext::zero(glwe_key_switching_parameters.output().glwe_len());
-    let mut glwe_context = NttGlweKeySwitchingContext::new(&domain);
+    let mut glwe_context = NttGlweKeySwitchingContext::new(domain.size().glwe_size());
 
     let mut group = c.benchmark_group(format!(
         "tfhe_key_switch/ntt/u32/n{poly_length}/k{input_glwe_dimension}/lwe{lwe_dimension}"
@@ -85,14 +85,12 @@ fn bench_key_switch(c: &mut Criterion) {
     });
     group.bench_function("glwe_k_to_k_prime", |b| {
         b.iter(|| {
-            glwe_key_switching_key
-                .key_switch_to(
-                    black_box(&input),
-                    black_box(&mut glwe_output),
-                    &domain,
-                    &mut glwe_context,
-                )
-                .unwrap();
+            glwe_key_switching_key.key_switch_to(
+                black_box(&input),
+                black_box(&mut glwe_output),
+                &domain,
+                &mut glwe_context,
+            );
             black_box(&glwe_output);
         });
     });

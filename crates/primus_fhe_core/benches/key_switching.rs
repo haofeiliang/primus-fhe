@@ -82,14 +82,12 @@ fn bench_key_switching(c: &mut Criterion) {
         let mut crt_output: DcrtGlwe<Vec<Value>> = DcrtGlweCiphertext::zero(rns_glwe_len);
         let mut crt_context = DcrtGlweKeySwitchingContext::new(&dcrt_domain, glwe_params.size());
         // Validate the CRT path before measuring it.
-        crt_ksk
-            .key_switch_to(
-                &input_coeff,
-                &mut crt_output,
-                &dcrt_domain,
-                &mut crt_context,
-            )
-            .unwrap();
+        crt_ksk.key_switch_to(
+            &input_coeff,
+            &mut crt_output,
+            &dcrt_domain,
+            &mut crt_context,
+        );
         let mut decrypt_context = DcrtGlweDecryptContext::new(glwe_params.size());
         assert_eq!(
             output_dcrt_sk.decrypt(&crt_output, &glwe_params, &q_table, &mut decrypt_context),
@@ -103,14 +101,12 @@ fn bench_key_switching(c: &mut Criterion) {
             &(),
             |b, _| {
                 b.iter(|| {
-                    crt_ksk
-                        .key_switch_to(
-                            black_box(&input_coeff),
-                            black_box(&mut crt_output),
-                            black_box(&dcrt_domain),
-                            black_box(&mut crt_context),
-                        )
-                        .unwrap();
+                    crt_ksk.key_switch_to(
+                        black_box(&input_coeff),
+                        black_box(&mut crt_output),
+                        black_box(&dcrt_domain),
+                        black_box(&mut crt_context),
+                    );
                 });
             },
         );
@@ -129,14 +125,12 @@ fn bench_key_switching(c: &mut Criterion) {
             let mut hybrid_context =
                 HybridRnsGlweKeySwitchingContext::new(&hybrid_ksk, &hybrid_domain);
 
-            hybrid_ksk
-                .key_switch_to(
-                    &input_ciphertext,
-                    &mut hybrid_output,
-                    &hybrid_domain,
-                    &mut hybrid_context,
-                )
-                .unwrap();
+            hybrid_ksk.key_switch_to(
+                &input_ciphertext,
+                &mut hybrid_output,
+                &hybrid_domain,
+                &mut hybrid_context,
+            );
             assert_eq!(
                 output_dcrt_sk.decrypt(
                     &hybrid_output,
@@ -152,14 +146,12 @@ fn bench_key_switching(c: &mut Criterion) {
                 &(),
                 |b, _| {
                     b.iter(|| {
-                        hybrid_ksk
-                            .key_switch_to(
-                                black_box(&input_ciphertext),
-                                black_box(&mut hybrid_output),
-                                black_box(&hybrid_domain),
-                                black_box(&mut hybrid_context),
-                            )
-                            .unwrap();
+                        hybrid_ksk.key_switch_to(
+                            black_box(&input_ciphertext),
+                            black_box(&mut hybrid_output),
+                            black_box(&hybrid_domain),
+                            black_box(&mut hybrid_context),
+                        );
                     });
                 },
             );

@@ -64,9 +64,7 @@ fn main() {
 
     // The context owns all reusable workspace needed by online key switching.
     let mut key_switch_context = HybridRnsGlweKeySwitchingContext::new(&switching_key, &domain);
-    switching_key
-        .key_switch_to(&input, &mut output, &domain, &mut key_switch_context)
-        .unwrap();
+    switching_key.key_switch_to(&input, &mut output, &domain, &mut key_switch_context);
 
     let mut decrypt_context = DcrtGlweDecryptContext::new(glwe_parameters.size());
     let decrypted =

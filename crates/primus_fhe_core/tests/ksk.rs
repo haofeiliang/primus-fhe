@@ -77,9 +77,7 @@ fn test_rns_glwe_ksk() {
     // Requires conversion to coefficient domain first.
     let c1 = c1.into_coeff_form(&table);
 
-    key_switching_key
-        .key_switch_to(&c1, &mut c2, &domain, &mut ksk_context)
-        .unwrap();
+    key_switching_key.key_switch_to(&c1, &mut c2, &domain, &mut ksk_context);
 
     // ── Decrypt under sk_2 ─────────────────────────────────────
     let output = dcrt_sk_2.decrypt(&c2, &glwe_params, &table, &mut decrypt_context);
@@ -168,9 +166,7 @@ fn test_rns_glwe_ksk_hybrid() {
     let mut hybrid_context =
         HybridRnsGlweKeySwitchingContext::new(&key_switching_key, &hybrid_domain);
 
-    key_switching_key
-        .key_switch_to(&c1, &mut c2, &hybrid_domain, &mut hybrid_context)
-        .unwrap();
+    key_switching_key.key_switch_to(&c1, &mut c2, &hybrid_domain, &mut hybrid_context);
 
     // ── Decrypt under sk_2 ─────────────────────────────────────
     let output = dcrt_sk_2.decrypt(&c2, &glwe_params, &q_table, &mut decrypt_context);

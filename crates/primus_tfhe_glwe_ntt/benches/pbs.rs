@@ -43,7 +43,8 @@ fn bench_order(c: &mut Criterion, order: PbsOrder) {
     let bootstrapping_domain = context.bootstrapping_domain();
     let mut blind_rotation = NttBlindRotationContext::new(bootstrapping_domain.size());
     let key_switching_domain = context.key_switching_domain();
-    let mut key_switching = NttGlweKeySwitchingContext::new(&key_switching_domain);
+    let mut key_switching =
+        NttGlweKeySwitchingContext::new(key_switching_domain.size().glwe_size());
     let mut main_glwe: GlweCiphertext<Vec<u32>> =
         GlweCiphertext::zero(parameters.glwe().glwe_len());
     let mut switched: GlweCiphertext<Vec<u32>> =
@@ -66,15 +67,12 @@ fn bench_order(c: &mut Criterion, order: PbsOrder) {
                 .inverse_extract_glwe_to(&mut main_glwe, poly_length, modulus)
         }
     }
-    server_key
-        .glwe_key_switching_key()
-        .key_switch_to(
-            &main_glwe,
-            &mut switched,
-            &key_switching_domain,
-            &mut key_switching,
-        )
-        .unwrap();
+    server_key.glwe_key_switching_key().key_switch_to(
+        &main_glwe,
+        &mut switched,
+        &key_switching_domain,
+        &mut key_switching,
+    );
     switched.extract_compact_lwe_to(&mut small_lwe, poly_length, modulus);
 
     let boolean_encryptor = BooleanEncryptor::new(parameters, &client_key).unwrap();
@@ -107,15 +105,12 @@ fn bench_order(c: &mut Criterion, order: PbsOrder) {
 
     group.bench_function("glwe_key_switching", |b| {
         b.iter(|| {
-            server_key
-                .glwe_key_switching_key()
-                .key_switch_to(
-                    black_box(&main_glwe),
-                    black_box(&mut switched),
-                    &key_switching_domain,
-                    &mut key_switching,
-                )
-                .unwrap();
+            server_key.glwe_key_switching_key().key_switch_to(
+                black_box(&main_glwe),
+                black_box(&mut switched),
+                &key_switching_domain,
+                &mut key_switching,
+            );
             black_box(&switched);
         });
     });

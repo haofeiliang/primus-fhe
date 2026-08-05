@@ -110,7 +110,6 @@ impl<T: TorusFftValue> FunctionalBootstrappingKey<T, Vec<Complex64>> {
         C: RawData<Elem = T> + DataMut,
     {
         let two_n = parameters.poly_length() * 2;
-        debug_assert_eq!(input.dimension(), self.input_dimension());
         let modulus = self.input_modulus();
         self.fourier_blind_rotate_with(
             input,
@@ -170,7 +169,6 @@ impl<T: FheUint> FunctionalBootstrappingKey<T, Vec<T>> {
         C: RawData<Elem = T> + DataMut,
     {
         let two_n = domain.parameters().poly_length() * 2;
-        debug_assert_eq!(input.dimension(), self.input_dimension());
         let modulus = self.input_modulus();
         self.ntt_blind_rotate_with(input, accumulator, output, domain, context, |x| {
             modulus_switch(x, modulus, two_n)
@@ -224,13 +222,18 @@ impl<T: TorusFftValue> FunctionalBootstrappingKey<T, Vec<Complex64>> {
         let (fft, context) = workspace;
         let poly_length = ggsw_params.poly_length();
         let two_n = 2 * poly_length;
-        debug_assert_eq!(input.dimension(), self.input_dimension());
-        debug_assert_eq!(self.size(), ggsw_params.size());
-        debug_assert_eq!(self.cipher_modulus(), None);
-        debug_assert_eq!(fft.poly_length(), poly_length);
-        debug_assert_eq!(accumulator.as_ref().len(), ggsw_params.glwe_len());
-        debug_assert_eq!(output.as_ref().len(), ggsw_params.glwe_len());
-        debug_assert_eq!(context.external_product.size(), ggsw_params.size());
+        debug_assert_eq!(
+            (
+                input.dimension(),
+                accumulator.as_ref().len(),
+                output.as_ref().len(),
+            ),
+            (
+                self.input_dimension(),
+                self.size().glwe_len(),
+                self.size().glwe_len(),
+            )
+        );
 
         let initial_exponent = exponent_of(input.b()).wrapping_neg() & (two_n - 1);
         accumulator.mul_monomial_to(initial_exponent, output, poly_length, NativeModulus::new());
@@ -294,13 +297,18 @@ impl<T: FheUint> FunctionalBootstrappingKey<T, Vec<T>> {
         let modulus = ggsw_params.cipher_modulus();
         let poly_length = ggsw_params.poly_length();
         let two_n = 2 * poly_length;
-        debug_assert_eq!(input.dimension(), self.input_dimension());
-        debug_assert_eq!(self.size(), ggsw_params.size());
-        debug_assert_eq!(self.cipher_modulus(), Some(modulus.value()));
-        debug_assert_eq!(ntt.poly_length(), poly_length);
-        debug_assert_eq!(accumulator.as_ref().len(), ggsw_params.glwe_len());
-        debug_assert_eq!(output.as_ref().len(), ggsw_params.glwe_len());
-        debug_assert_eq!(context.external_product.size(), domain.size());
+        debug_assert_eq!(
+            (
+                input.dimension(),
+                accumulator.as_ref().len(),
+                output.as_ref().len(),
+            ),
+            (
+                self.input_dimension(),
+                self.size().glwe_len(),
+                self.size().glwe_len(),
+            )
+        );
 
         let initial_exponent = exponent_of(input.b()).wrapping_neg() & (two_n - 1);
         accumulator.mul_monomial_to(initial_exponent, output, poly_length, modulus);
