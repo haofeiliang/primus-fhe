@@ -30,14 +30,6 @@ pub enum GlweKeySwitchingError {
         /// Supplied ciphertext length.
         actual: usize,
     },
-    /// A full expansion was given the wrong number of output ciphertexts.
-    #[error("output ciphertext count mismatch: expected {expected}, got {actual}")]
-    OutputCountMismatch {
-        /// Number of output ciphertexts required by the operation.
-        expected: usize,
-        /// Number of output ciphertexts supplied by the caller.
-        actual: usize,
-    },
     /// A partial expansion count is not a supported power of two.
     #[error("invalid expansion count {actual}; expected a power of two no greater than {maximum}")]
     InvalidExpansionCount {

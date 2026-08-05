@@ -64,7 +64,7 @@ fn test_rns_glwe_ksk() {
     let input: Polynomial<Vec<ValueT>> = Polynomial::random(poly_length, mod_t, &mut rng);
     let mut c1: DcrtGlwe<Vec<ValueT>> = DcrtGlweCiphertext::zero(rns_glwe_len);
     let mut c2: DcrtGlwe<Vec<ValueT>> = DcrtGlweCiphertext::zero(rns_glwe_len);
-    let mut ksk_context = DcrtGlweKeySwitchingContext::new(&domain, key_switching_key.input_size());
+    let mut ksk_context = DcrtGlweKeySwitchingContext::new(&domain, glwe_params.size());
     let mut decrypt_context = DcrtGlweDecryptContext::new(glwe_params.size());
 
     dcrt_sk_1.encrypt_plaintext_inplace(&input, &mut c1, &glwe_params, &table, &mut rng);

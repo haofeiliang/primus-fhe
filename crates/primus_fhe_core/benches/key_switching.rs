@@ -80,7 +80,7 @@ fn bench_key_switching(c: &mut Criterion) {
         let input_coeff = input_ciphertext.clone().into_coeff_form(&q_table);
 
         let mut crt_output: DcrtGlwe<Vec<Value>> = DcrtGlweCiphertext::zero(rns_glwe_len);
-        let mut crt_context = DcrtGlweKeySwitchingContext::new(&dcrt_domain, crt_ksk.input_size());
+        let mut crt_context = DcrtGlweKeySwitchingContext::new(&dcrt_domain, glwe_params.size());
         // Validate the CRT path before measuring it.
         crt_ksk
             .key_switch_to(

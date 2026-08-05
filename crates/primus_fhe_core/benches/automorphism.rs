@@ -79,27 +79,23 @@ fn bench_automorphism(c: &mut Criterion) {
 
         group.bench_with_input(BenchmarkId::new("CRT", &n_label), &(), |b, _| {
             b.iter(|| {
-                crt_auto_key
-                    .automorphism_to(
-                        black_box(&c_coeff),
-                        black_box(&mut crt_result),
-                        &domain,
-                        &mut auto_context,
-                    )
-                    .unwrap();
+                crt_auto_key.automorphism_to(
+                    black_box(&c_coeff),
+                    black_box(&mut crt_result),
+                    &domain,
+                    &mut auto_context,
+                );
             });
         });
 
         group.bench_with_input(BenchmarkId::new("DCRT", &n_label), &(), |b, _| {
             b.iter(|| {
-                dcrt_auto_key
-                    .automorphism_to(
-                        black_box(&c_ntt),
-                        black_box(&mut dcrt_result),
-                        &domain,
-                        &mut auto_context,
-                    )
-                    .unwrap();
+                dcrt_auto_key.automorphism_to(
+                    black_box(&c_ntt),
+                    black_box(&mut dcrt_result),
+                    &domain,
+                    &mut auto_context,
+                );
             });
         });
     }

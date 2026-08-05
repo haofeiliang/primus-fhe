@@ -84,40 +84,34 @@ fn bench_trace(c: &mut Criterion) {
 
         group.bench_with_input(BenchmarkId::new("CRT", &n_label), &(), |b, _| {
             b.iter(|| {
-                crt_trace_key
-                    .trace_inplace(
-                        black_box(&c_coeff),
-                        black_box(&mut crt_result),
-                        &domain,
-                        &mut crt_trace_ctx,
-                    )
-                    .unwrap();
+                crt_trace_key.trace_inplace(
+                    black_box(&c_coeff),
+                    black_box(&mut crt_result),
+                    &domain,
+                    &mut crt_trace_ctx,
+                );
             });
         });
 
         group.bench_with_input(BenchmarkId::new("DCRT", &n_label), &(), |b, _| {
             b.iter(|| {
-                dcrt_trace_key
-                    .trace_inplace(
-                        black_box(&c_ntt),
-                        black_box(&mut dcrt_result),
-                        &domain,
-                        &mut dcrt_trace_ctx,
-                    )
-                    .unwrap();
+                dcrt_trace_key.trace_inplace(
+                    black_box(&c_ntt),
+                    black_box(&mut dcrt_result),
+                    &domain,
+                    &mut dcrt_trace_ctx,
+                );
             });
         });
 
         group.bench_with_input(BenchmarkId::new("RevHomTrace", &n_label), &(), |b, _| {
             b.iter(|| {
-                dcrt_rev_trace_key
-                    .trace_inplace(
-                        black_box(&c_ntt),
-                        black_box(&mut dcrt_result),
-                        &domain,
-                        &mut dcrt_rev_trace_ctx,
-                    )
-                    .unwrap();
+                dcrt_rev_trace_key.trace_inplace(
+                    black_box(&c_ntt),
+                    black_box(&mut dcrt_result),
+                    &domain,
+                    &mut dcrt_rev_trace_ctx,
+                );
             });
         });
     }

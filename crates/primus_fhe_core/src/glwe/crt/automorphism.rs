@@ -16,7 +16,7 @@ use primus_reduce::ReduceMul;
 use crate::glwe::secret_key::encode_secret_polynomial_to_rns;
 use crate::{
     CrtGlevParameters, CrtGlweCiphertext, DcrtGadgetDomain, DcrtGlweCiphertext, DcrtGlweSecretKey,
-    GlweKeySwitchingError, GlweSecretKey, SecretCoefficient,
+    GlweSecretKey, SecretCoefficient,
 };
 
 /// Reusable workspace for CRT and DCRT automorphism operations.
@@ -56,10 +56,6 @@ impl<T: FheUint> CrtGlweAutoContext<T> {
 
     pub(crate) fn as_mut(&mut self) -> (&mut CrtPolynomial<Vec<T>>, &mut DcrtGlevMulContext<T>) {
         (&mut self.auto_crt_poly, &mut self.glev_context)
-    }
-
-    pub fn size(&self) -> RnsGadgetSize {
-        self.glev_context.size()
     }
 }
 
@@ -242,26 +238,21 @@ impl<T: FheUint> CrtGlweAutoKey<T> {
         result: &mut CrtGlweCiphertext<B>,
         domain: &DcrtGadgetDomain<'_, T, M, Table>,
         context: &mut CrtGlweAutoContext<T>,
-    ) -> Result<(), GlweKeySwitchingError>
-    where
+    ) where
         M: FieldContext<T>,
         Table: DcrtTable<ValueT = T>,
         A: RawData<Elem = T> + Data,
         B: RawData<Elem = T> + DataMut,
     {
-        assert_eq!(self.size, domain.size());
-        assert_eq!(self.size, context.size());
-
         let rns_glwe_len = self.size.rns_glwe_size().rns_glwe_len();
 
         assert_eq!(ciphertext.as_ref().len(), rns_glwe_len);
         assert_eq!(result.as_ref().len(), rns_glwe_len);
 
         self.automorphism_kernel(ciphertext, result, domain, context);
-        Ok(())
     }
 
-    /// Applies the automorphism after the caller has validated all operands.
+    /// Internal kernel used by composed operations.
     pub(crate) fn automorphism_kernel<M, Table, A, B>(
         &self,
         ciphertext: &CrtGlweCiphertext<A>,

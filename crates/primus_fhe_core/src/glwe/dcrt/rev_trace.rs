@@ -6,7 +6,6 @@ use primus_reduce::FieldContext;
 
 use crate::{
     DcrtGadgetDomain, DcrtGlweAutoKey, DcrtGlweCiphertext, DcrtGlweSecretKey, DcrtGlweTraceContext,
-    GlweKeySwitchingError,
 };
 
 pub type DcrtGlweRevTraceContext<T> = DcrtGlweTraceContext<T>;
@@ -70,8 +69,7 @@ impl<T: FheUint> DcrtGlweRevTraceKey<T> {
         result: &mut DcrtGlweCiphertext<B>,
         domain: &DcrtGadgetDomain<'_, T, M, Table>,
         context: &mut DcrtGlweRevTraceContext<T>,
-    ) -> Result<(), GlweKeySwitchingError>
-    where
+    ) where
         M: FieldContext<T>,
         Table: DcrtTable<ValueT = T>,
         A: RawData<Elem = T> + Data,
@@ -102,6 +100,5 @@ impl<T: FheUint> DcrtGlweRevTraceKey<T> {
             // result = result + auto(result)  [both already halved]
             result.add_element_wise_assign(dcrt_glwe, poly_length, rns_poly_len, moduli);
         }
-        Ok(())
     }
 }

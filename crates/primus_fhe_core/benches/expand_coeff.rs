@@ -93,54 +93,46 @@ fn bench_expand_coeff(c: &mut Criterion) {
         // ---- Single-threaded ----
         group.bench_with_input(BenchmarkId::new("CRT/single", &n_label), &(), |b, _| {
             b.iter(|| {
-                crt_expand_key
-                    .expand_coefficients_inplace(
-                        black_box(&c_coeff),
-                        black_box(&mut crt_result),
-                        &domain,
-                        &mut crt_ctx,
-                    )
-                    .unwrap();
+                crt_expand_key.expand_coefficients_inplace(
+                    black_box(&c_coeff),
+                    black_box(&mut crt_result),
+                    &domain,
+                    &mut crt_ctx,
+                );
             });
         });
 
         group.bench_with_input(BenchmarkId::new("DCRT/single", &n_label), &(), |b, _| {
             b.iter(|| {
-                dcrt_expand_key
-                    .expand_coefficients_inplace(
-                        black_box(&c_ntt),
-                        black_box(&mut dcrt_result),
-                        &domain,
-                        &mut dcrt_ctx,
-                    )
-                    .unwrap();
+                dcrt_expand_key.expand_coefficients_inplace(
+                    black_box(&c_ntt),
+                    black_box(&mut dcrt_result),
+                    &domain,
+                    &mut dcrt_ctx,
+                );
             });
         });
 
         // ---- Multi-threaded ----
         group.bench_with_input(BenchmarkId::new("CRT/parallel", &n_label), &(), |b, _| {
             b.iter(|| {
-                crt_expand_key
-                    .expand_coefficients_inplace_parallel(
-                        black_box(&c_coeff),
-                        black_box(&mut crt_result),
-                        &domain,
-                        &crt_pool,
-                    )
-                    .unwrap();
+                crt_expand_key.expand_coefficients_inplace_parallel(
+                    black_box(&c_coeff),
+                    black_box(&mut crt_result),
+                    &domain,
+                    &crt_pool,
+                );
             });
         });
 
         group.bench_with_input(BenchmarkId::new("DCRT/parallel", &n_label), &(), |b, _| {
             b.iter(|| {
-                dcrt_expand_key
-                    .expand_coefficients_inplace_parallel(
-                        black_box(&c_ntt),
-                        black_box(&mut dcrt_result),
-                        &domain,
-                        &dcrt_pool,
-                    )
-                    .unwrap();
+                dcrt_expand_key.expand_coefficients_inplace_parallel(
+                    black_box(&c_ntt),
+                    black_box(&mut dcrt_result),
+                    &domain,
+                    &dcrt_pool,
+                );
             });
         });
     }

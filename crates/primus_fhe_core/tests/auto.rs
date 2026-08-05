@@ -100,9 +100,7 @@ fn test_crt_glwe_auto() {
     let c1 = c1.into_coeff_form(&table);
 
     // ── Key-switched automorphism ───────────────────────────────
-    auto_key
-        .automorphism_to(&c1, &mut c2, &domain, &mut auto_context)
-        .unwrap();
+    auto_key.automorphism_to(&c1, &mut c2, &domain, &mut auto_context);
 
     let c2 = c2.into_ntt_form(&table);
 
@@ -178,9 +176,7 @@ fn test_dcrt_glwe_auto() {
     assert_eq!(m_dec, input1);
 
     // ── Key-switched automorphism ───────────────────────────────
-    auto_key
-        .automorphism_to(&c1, &mut c2, &domain, &mut auto_context)
-        .unwrap();
+    auto_key.automorphism_to(&c1, &mut c2, &domain, &mut auto_context);
 
     let auto_msg_2 = dcrt_sk.decrypt(&c2, &glwe_params, &table, &mut decrypt_context);
 

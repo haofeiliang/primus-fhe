@@ -73,9 +73,7 @@ fn test_crt_glwe_expand_coefficients() {
     // Requires conversion to coefficient domain first.
     let c1 = c1.into_coeff_form(&table);
 
-    expand_key
-        .expand_coefficients_inplace(&c1, &mut c_expand, &domain, &mut expand_context)
-        .unwrap();
+    expand_key.expand_coefficients_inplace(&c1, &mut c_expand, &domain, &mut expand_context);
 
     // Each output decrypts to (m_i, 0, …, 0)
     for (cipher, &input) in c_expand.into_iter().zip(input1.iter()) {
@@ -97,9 +95,12 @@ fn test_crt_glwe_expand_coefficients() {
 
     let mut c_expand: Vec<CrtGlwe<Vec<ValueT>>> = vec![CrtGlwe::zero(rns_glwe_len); 256];
 
-    expand_key
-        .expand_partial_coefficients_inplace(&c1, &mut c_expand, &domain, &mut expand_context)
-        .unwrap();
+    expand_key.expand_partial_coefficients_inplace(
+        &c1,
+        &mut c_expand,
+        &domain,
+        &mut expand_context,
+    );
 
     for (cipher, &input) in c_expand.into_iter().zip(input1.iter()) {
         let cipher = cipher.into_ntt_form(&table);
@@ -169,9 +170,7 @@ fn test_dcrt_glwe_expand_coefficients() {
     assert_eq!(m_dec, input1);
 
     // ── Full expansion (input stays in NTT domain) ──────────────
-    expand_key
-        .expand_coefficients_inplace(&c1, &mut c_expand, &domain, &mut expand_context)
-        .unwrap();
+    expand_key.expand_coefficients_inplace(&c1, &mut c_expand, &domain, &mut expand_context);
 
     // Results are already in NTT domain — decrypt directly.
     for (cipher, &input) in c_expand.iter().zip(input1.iter()) {
@@ -188,9 +187,12 @@ fn test_dcrt_glwe_expand_coefficients() {
     let mut c_expand: Vec<DcrtGlweCiphertext<Vec<ValueT>>> =
         vec![DcrtGlweCiphertext::zero(rns_glwe_len); 256];
 
-    expand_key
-        .expand_partial_coefficients_inplace(&c1, &mut c_expand, &domain, &mut expand_context)
-        .unwrap();
+    expand_key.expand_partial_coefficients_inplace(
+        &c1,
+        &mut c_expand,
+        &domain,
+        &mut expand_context,
+    );
 
     for (cipher, &input) in c_expand.iter().zip(input1.iter()) {
         let m_dec = dcrt_sk.decrypt(cipher, &glwe_params, &table, &mut decrypt_context);
@@ -246,7 +248,7 @@ fn test_dcrt_glwe_expand_coefficients_parallel() {
 
     // ── Thread-safe context pool for parallel expansion ─────────
     let context_pool =
-        DcrtGlweExpandCoeffSyncPool::with_capacity(poly_length.trailing_zeros() as usize, &domain);
+        DcrtGlweExpandCoeffSyncPool::with_capacity(rayon::current_num_threads(), &domain);
 
     // ── Encrypt ─────────────────────────────────────────────────
     let mut input1: Polynomial<Vec<ValueT>> = Polynomial::random(poly_length, mod_t, &mut rng);
@@ -261,9 +263,7 @@ fn test_dcrt_glwe_expand_coefficients_parallel() {
     assert_eq!(m_dec, input1);
 
     // ── Full parallel expansion ─────────────────────────────────
-    expand_key
-        .expand_coefficients_inplace_parallel(&c1, &mut c_expand, &domain, &context_pool)
-        .unwrap();
+    expand_key.expand_coefficients_inplace_parallel(&c1, &mut c_expand, &domain, &context_pool);
 
     for (cipher, &input) in c_expand.iter().zip(input1.iter()) {
         let m_dec = dcrt_sk.decrypt(cipher, &glwe_params, &table, &mut decrypt_context);
@@ -279,9 +279,12 @@ fn test_dcrt_glwe_expand_coefficients_parallel() {
     let mut c_expand: Vec<DcrtGlweCiphertext<Vec<ValueT>>> =
         vec![DcrtGlweCiphertext::zero(rns_glwe_len); 256];
 
-    expand_key
-        .expand_partial_coefficients_inplace_parallel(&c1, &mut c_expand, &domain, &context_pool)
-        .unwrap();
+    expand_key.expand_partial_coefficients_inplace_parallel(
+        &c1,
+        &mut c_expand,
+        &domain,
+        &context_pool,
+    );
 
     for (cipher, &input) in c_expand.iter().zip(input1.iter()) {
         let m_dec = dcrt_sk.decrypt(cipher, &glwe_params, &table, &mut decrypt_context);
@@ -337,7 +340,7 @@ fn test_crt_glwe_expand_coefficients_parallel() {
     let expand_key = CrtGlweExpandCoeffKey::new(&domain, &sk, &dcrt_sk, &mut rng);
 
     let context_pool =
-        CrtGlweExpandCoeffSyncPool::with_capacity(poly_length.trailing_zeros() as usize, &domain);
+        CrtGlweExpandCoeffSyncPool::with_capacity(rayon::current_num_threads(), &domain);
 
     // ── Encrypt ─────────────────────────────────────────────────
     let mut input1: Polynomial<Vec<ValueT>> = Polynomial::random(poly_length, mod_t, &mut rng);
@@ -353,9 +356,7 @@ fn test_crt_glwe_expand_coefficients_parallel() {
     // ── Full parallel expansion (requires coefficient domain) ───
     let c1 = c1.into_coeff_form(&table);
 
-    expand_key
-        .expand_coefficients_inplace_parallel(&c1, &mut c_expand, &domain, &context_pool)
-        .unwrap();
+    expand_key.expand_coefficients_inplace_parallel(&c1, &mut c_expand, &domain, &context_pool);
 
     for (cipher, &input) in c_expand.into_iter().zip(input1.iter()) {
         let cipher = cipher.into_ntt_form(&table);
@@ -375,9 +376,12 @@ fn test_crt_glwe_expand_coefficients_parallel() {
 
     let mut c_expand: Vec<CrtGlwe<Vec<ValueT>>> = vec![CrtGlwe::zero(rns_glwe_len); 256];
 
-    expand_key
-        .expand_partial_coefficients_inplace_parallel(&c1, &mut c_expand, &domain, &context_pool)
-        .unwrap();
+    expand_key.expand_partial_coefficients_inplace_parallel(
+        &c1,
+        &mut c_expand,
+        &domain,
+        &context_pool,
+    );
 
     for (cipher, &input) in c_expand.into_iter().zip(input1.iter()) {
         let cipher = cipher.into_ntt_form(&table);

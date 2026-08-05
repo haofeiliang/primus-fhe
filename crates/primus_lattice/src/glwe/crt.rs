@@ -84,7 +84,7 @@ where
         &mut self,
         r: usize,
         poly_length: usize,
-        crt_poly_len: usize,
+        crt_poly_length: usize,
         moduli: &[M],
     ) where
         M: FieldContext<T>,
@@ -95,7 +95,7 @@ where
                 modulus.reduce_neg_slice_assign(&mut poly[0..r]);
             };
 
-            self.iter_crt_poly_mut(crt_poly_len)
+            self.iter_crt_poly_mut(crt_poly_length)
                 .for_each(|mut crt_poly| {
                     crt_poly
                         .iter_each_modulus_mut(poly_length)
@@ -110,7 +110,7 @@ where
                 modulus.reduce_neg_slice_assign(&mut poly[r..]);
             };
 
-            self.iter_crt_poly_mut(crt_poly_len)
+            self.iter_crt_poly_mut(crt_poly_length)
                 .for_each(|mut crt_poly| {
                     crt_poly
                         .iter_each_modulus_mut(poly_length)

@@ -1,12 +1,11 @@
 use primus_data::{Data, DataMut, RawData};
 use primus_integer::FheUint;
-use primus_lattice::RnsGadgetSize;
 use primus_ntt::DcrtTable;
 use primus_reduce::FieldContext;
 
 use crate::{
     CrtGlevParameters, CrtGlweAutoContext, CrtGlweAutoKey, CrtGlweCiphertext, DcrtGadgetDomain,
-    DcrtGlweSecretKey, GlweKeySwitchingError, GlweSecretKey,
+    DcrtGlweSecretKey, GlweSecretKey,
 };
 
 /// Reusable workspace for CRT trace and coefficient-expansion operations.
@@ -47,10 +46,6 @@ impl<T: FheUint> CrtGlweTraceContext<T> {
     ) {
         (&mut self.crt_glwe, &mut self.auto_context)
     }
-
-    pub fn size(&self) -> RnsGadgetSize {
-        self.auto_context.size()
-    }
 }
 
 #[derive(Clone)]
@@ -85,8 +80,7 @@ impl<T: FheUint> CrtGlweTraceKey<T> {
         result: &mut CrtGlweCiphertext<B>,
         domain: &DcrtGadgetDomain<'_, T, M, Table>,
         context: &mut CrtGlweTraceContext<T>,
-    ) -> Result<(), GlweKeySwitchingError>
-    where
+    ) where
         M: FieldContext<T>,
         Table: DcrtTable<ValueT = T>,
         A: RawData<Elem = T> + Data,
@@ -105,6 +99,5 @@ impl<T: FheUint> CrtGlweTraceKey<T> {
             auto_key.automorphism_kernel(result, crt_glwe, domain, auto_context);
             result.add_element_wise_assign(crt_glwe, poly_length, crt_poly_length, moduli);
         }
-        Ok(())
     }
 }

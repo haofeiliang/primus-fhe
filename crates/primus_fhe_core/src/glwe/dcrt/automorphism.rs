@@ -30,8 +30,7 @@ use primus_poly::DcrtPolynomial;
 use primus_reduce::{FieldContext, ReduceMul};
 
 use crate::{
-    DcrtGadgetDomain, DcrtGlweCiphertext, DcrtGlweSecretKey, GlweKeySwitchingError,
-    glwe::crt::CrtGlweAutoContext,
+    DcrtGadgetDomain, DcrtGlweCiphertext, DcrtGlweSecretKey, glwe::crt::CrtGlweAutoContext,
 };
 
 // ---------------------------------------------------------------------------
@@ -278,18 +277,16 @@ impl<T: FheUint> DcrtGlweAutoKey<T> {
         result: &mut DcrtGlweCiphertext<B>,
         domain: &DcrtGadgetDomain<'_, T, M, Table>,
         context: &mut CrtGlweAutoContext<T>,
-    ) -> Result<(), GlweKeySwitchingError>
-    where
+    ) where
         M: FieldContext<T>,
         Table: DcrtTable<ValueT = T>,
         A: RawData<Elem = T> + Data,
         B: RawData<Elem = T> + DataMut,
     {
         self.automorphism_kernel(ciphertext, result, domain, context);
-        Ok(())
     }
 
-    /// Applies the automorphism after the caller has validated all operands.
+    /// Internal kernel used by composed operations.
     pub(crate) fn automorphism_kernel<M, Table, A, B>(
         &self,
         ciphertext: &DcrtGlweCiphertext<A>,

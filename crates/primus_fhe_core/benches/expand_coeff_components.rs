@@ -101,22 +101,18 @@ fn bench_expand_coeff_components(c: &mut Criterion) {
         let mut dcrt_auto_result: DcrtGlweCiphertext<Vec<V>> =
             DcrtGlweCiphertext::zero(rns_glwe_len);
 
-        crt_auto_key
-            .automorphism_to(
-                &c_coeff,
-                &mut crt_auto_result,
-                &domain,
-                &mut crt_auto_context,
-            )
-            .unwrap();
-        dcrt_auto_key
-            .automorphism_to(
-                &c_ntt,
-                &mut dcrt_auto_result,
-                &domain,
-                &mut dcrt_auto_context,
-            )
-            .unwrap();
+        crt_auto_key.automorphism_to(
+            &c_coeff,
+            &mut crt_auto_result,
+            &domain,
+            &mut crt_auto_context,
+        );
+        dcrt_auto_key.automorphism_to(
+            &c_ntt,
+            &mut dcrt_auto_result,
+            &domain,
+            &mut dcrt_auto_context,
+        );
 
         let n_label = format!("N={poly_length}");
 
@@ -145,14 +141,12 @@ fn bench_expand_coeff_components(c: &mut Criterion) {
                 let mut result: CrtGlwe<Vec<V>> = CrtGlwe::zero(rns_glwe_len);
                 let mut context = CrtGlweAutoContext::new(&domain);
                 b.iter(|| {
-                    crt_auto_key
-                        .automorphism_to(
-                            black_box(&c_coeff),
-                            black_box(&mut result),
-                            &domain,
-                            &mut context,
-                        )
-                        .unwrap();
+                    crt_auto_key.automorphism_to(
+                        black_box(&c_coeff),
+                        black_box(&mut result),
+                        &domain,
+                        &mut context,
+                    );
                 });
             },
         );
@@ -164,14 +158,12 @@ fn bench_expand_coeff_components(c: &mut Criterion) {
                 let mut result: DcrtGlweCiphertext<Vec<V>> = DcrtGlweCiphertext::zero(rns_glwe_len);
                 let mut context = CrtGlweAutoContext::new(&domain);
                 b.iter(|| {
-                    dcrt_auto_key
-                        .automorphism_to(
-                            black_box(&c_ntt),
-                            black_box(&mut result),
-                            &domain,
-                            &mut context,
-                        )
-                        .unwrap();
+                    dcrt_auto_key.automorphism_to(
+                        black_box(&c_ntt),
+                        black_box(&mut result),
+                        &domain,
+                        &mut context,
+                    );
                 });
             },
         );

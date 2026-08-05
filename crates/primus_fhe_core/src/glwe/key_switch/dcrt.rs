@@ -20,9 +20,9 @@ use crate::{
 /// An incompatibility detected before DCRT GLWE key switching.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum DcrtGlweKeySwitchingError {
-    /// The key and evaluation domain were built from different parameters.
-    #[error("DCRT key-switching key and evaluation domain are incompatible")]
-    IncompatibleKeyDomain,
+    /// The reusable context was created for another key or domain.
+    #[error("DCRT key-switching context is incompatible")]
+    IncompatibleContext,
     /// The input ciphertext has the wrong flattened length.
     #[error("input ciphertext length mismatch: expected {expected}, got {actual}")]
     InputLengthMismatch {
@@ -39,9 +39,6 @@ pub enum DcrtGlweKeySwitchingError {
         /// Supplied output length.
         actual: usize,
     },
-    /// The reusable context was created for another key or domain.
-    #[error("DCRT key-switching context is incompatible")]
-    IncompatibleContext,
 }
 
 pub struct DcrtGlweKeySwitchingKey<T: FheUint> {
@@ -129,11 +126,6 @@ impl<T: FheUint> DcrtGlweKeySwitchingKey<T> {
         A: RawData<Elem = T> + Data,
         B: RawData<Elem = T> + DataMut,
     {
-        let parameters = domain.parameters();
-        if self.output_size != parameters.size() {
-            return Err(DcrtGlweKeySwitchingError::IncompatibleKeyDomain);
-        }
-
         let actual = input.as_ref().len();
         let expected = self.input_size.rns_glwe_len();
         if actual != expected {
@@ -150,12 +142,18 @@ impl<T: FheUint> DcrtGlweKeySwitchingKey<T> {
             return Err(DcrtGlweKeySwitchingError::IncompatibleContext);
         }
 
+        let parameters = domain.parameters();
         let table = domain.table();
         let rns_base = domain.rns_base();
         let basis = parameters.basis();
         let poly_length = self.input_size.poly_length();
         let rns_poly_len = self.input_size.rns_poly_len();
-        let (composed_polynomial, transformed_polynomial, glev_context) = context.as_mut();
+        let DcrtGlweKeySwitchingContext {
+            composed_polynomial,
+            transformed_polynomial,
+            glev_context,
+            ..
+        } = context;
 
         let (input_mask, input_body) = input.a_b(rns_poly_len);
 
@@ -206,7 +204,7 @@ pub struct DcrtGlweKeySwitchingContext<T: FheUint> {
 }
 
 impl<T: FheUint> DcrtGlweKeySwitchingContext<T> {
-    /// Allocates workspace bound to `domain` and the input ciphertext layout.
+    /// Allocates workspace for a DCRT key-switching Domain.
     pub fn new<M, Table>(
         domain: &DcrtGadgetDomain<'_, T, M, Table>,
         input_size: RnsGlweSize,
@@ -227,19 +225,5 @@ impl<T: FheUint> DcrtGlweKeySwitchingContext<T> {
             transformed_polynomial: CrtPolynomial::zero(input_size.rns_poly_len()),
             glev_context: DcrtGlevMulContext::new(output_size, domain.rns_base()),
         }
-    }
-
-    fn as_mut(
-        &mut self,
-    ) -> (
-        &mut BigUintPolynomial<Vec<T>>,
-        &mut CrtPolynomial<Vec<T>>,
-        &mut DcrtGlevMulContext<T>,
-    ) {
-        (
-            &mut self.composed_polynomial,
-            &mut self.transformed_polynomial,
-            &mut self.glev_context,
-        )
     }
 }

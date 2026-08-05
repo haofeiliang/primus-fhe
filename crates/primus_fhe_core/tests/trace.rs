@@ -79,9 +79,7 @@ fn test_crt_glwe_trace() {
     // ── Standard trace: output encrypts N · m₀ ──────────────────
     let mut c1 = c1.into_coeff_form(&table);
 
-    trace_key
-        .trace_inplace(&c1, &mut c2, &domain, &mut trace_context)
-        .unwrap();
+    trace_key.trace_inplace(&c1, &mut c2, &domain, &mut trace_context);
 
     let c2 = c2.into_ntt_form(&table);
 
@@ -107,9 +105,7 @@ fn test_crt_glwe_trace() {
 
     let mut c2: CrtGlwe<Vec<ValueT>> = CrtGlwe::new(c2.0);
 
-    trace_key
-        .trace_inplace(&c1, &mut c2, &domain, &mut trace_context)
-        .unwrap();
+    trace_key.trace_inplace(&c1, &mut c2, &domain, &mut trace_context);
 
     let c2 = c2.into_ntt_form(&table);
 
@@ -179,9 +175,7 @@ fn test_dcrt_glwe_trace() {
     assert_eq!(m_dec, input1);
 
     // ── Standard trace: output encrypts N · m₀ ──────────────────
-    trace_key
-        .trace_inplace(&c1, &mut c2, &domain, &mut trace_context)
-        .unwrap();
+    trace_key.trace_inplace(&c1, &mut c2, &domain, &mut trace_context);
 
     let trace_msg = dcrt_sk.decrypt(&c2, &glwe_params, &table, &mut decrypt_context);
 
@@ -201,9 +195,7 @@ fn test_dcrt_glwe_trace() {
 
     c1.mul_scalar_assign(&scalar_residue, poly_length, rns_poly_len, &moduli);
 
-    trace_key
-        .trace_inplace(&c1, &mut c2, &domain, &mut trace_context)
-        .unwrap();
+    trace_key.trace_inplace(&c1, &mut c2, &domain, &mut trace_context);
 
     let trace_msg = dcrt_sk.decrypt(&c2, &glwe_params, &table, &mut decrypt_context);
 
@@ -269,9 +261,7 @@ fn test_dcrt_glwe_rev_trace() {
     assert_eq!(m_dec, input1);
 
     // ── RevHomTrace: output encrypts m₀ directly (no N factor) ──
-    rev_trace_key
-        .trace_inplace(&c1, &mut c2, &domain, &mut trace_context)
-        .unwrap();
+    rev_trace_key.trace_inplace(&c1, &mut c2, &domain, &mut trace_context);
 
     let trace_msg = dcrt_sk.decrypt(&c2, &glwe_params, &table, &mut decrypt_context);
 
@@ -452,9 +442,7 @@ fn test_dcrt_glwe_rev_trace_noise() {
 
     c1_clone.mul_scalar_assign(&scalar_residue, poly_length, rns_poly_len, &moduli);
 
-    trace_key
-        .trace_inplace(&c1_clone, &mut c2, &domain, &mut trace_context)
-        .unwrap();
+    trace_key.trace_inplace(&c1_clone, &mut c2, &domain, &mut trace_context);
 
     // Verify correctness
     let trace_msg = dcrt_sk.decrypt(&c2, &glwe_params, &table, &mut decrypt_context);
@@ -473,9 +461,7 @@ fn test_dcrt_glwe_rev_trace_noise() {
     // ═══════════════════════════════════════════════════════════════
     //  RevHomTrace noise
     // ═══════════════════════════════════════════════════════════════
-    rev_trace_key
-        .trace_inplace(&c1, &mut c2, &domain, &mut trace_context)
-        .unwrap();
+    rev_trace_key.trace_inplace(&c1, &mut c2, &domain, &mut trace_context);
 
     // Verify correctness
     let trace_msg = dcrt_sk.decrypt(&c2, &glwe_params, &table, &mut decrypt_context);
