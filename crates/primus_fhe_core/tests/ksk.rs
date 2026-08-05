@@ -8,6 +8,7 @@ use primus_lattice::glwe::DcrtGlwe;
 use primus_modulus::BarrettModulus;
 use primus_ntt::{DcrtTable, UintDcrtTable};
 use primus_poly::Polynomial;
+use rand::{SeedableRng, rngs::StdRng};
 
 /// Test RNS-based GLWE key switching end-to-end:
 /// encrypt under sk_1 → key-switch → decrypt under sk_2 → assert same plaintext.
@@ -30,7 +31,7 @@ fn test_rns_glwe_ksk() {
     let moduli = moduli_values.map(<BarrettModulus<ValueT>>::new);
     let table = UintDcrtTable::new(log_n, &moduli).unwrap();
 
-    let mut rng = rand::rng();
+    let mut rng = StdRng::seed_from_u64(0x5eed_4b53_4b);
 
     // ── Parameters ──────────────────────────────────────────────
     let glwe_params = CrtGlweParameters::new(
