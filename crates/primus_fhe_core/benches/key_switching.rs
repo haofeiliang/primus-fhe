@@ -116,9 +116,8 @@ fn bench_key_switching(c: &mut Criterion) {
         );
 
         for (partition_label, decomposition_count) in HYBRID_CASES {
-            let hybrid_params = HybridRNS::new(&q_moduli, &p_moduli, decomposition_count).unwrap();
-            let hybrid_domain =
-                HybridRnsKeySwitchDomain::try_new(&hybrid_params, &qp_table).unwrap();
+            let hybrid_rns = HybridRNS::new(&q_moduli, &p_moduli, decomposition_count).unwrap();
+            let hybrid_domain = HybridRnsKeySwitchDomain::try_new(&hybrid_rns, &qp_table).unwrap();
             let hybrid_ksk = HybridRnsGlweKeySwitchingKey::generate(
                 &input_sk,
                 &glwe_params,

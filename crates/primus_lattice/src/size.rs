@@ -36,7 +36,6 @@ pub enum GlweSizeError {
 pub struct GlweSize {
     dimension: usize,
     poly_length: usize,
-    component_count: usize,
     mask_len: usize,
     glwe_len: usize,
 }
@@ -71,14 +70,13 @@ impl GlweSize {
         let mask_len = dimension
             .checked_mul(poly_length)
             .ok_or(GlweSizeError::LengthOverflow("GLWE mask"))?;
-        let glwe_len = mask_len
-            .checked_add(poly_length)
+        let glwe_len = component_count
+            .checked_mul(poly_length)
             .ok_or(GlweSizeError::LengthOverflow("GLWE ciphertext"))?;
 
         Ok(Self {
             dimension,
             poly_length,
-            component_count,
             mask_len,
             glwe_len,
         })
@@ -115,7 +113,7 @@ impl GlweSize {
     #[must_use]
     #[inline]
     pub const fn component_count(self) -> usize {
-        self.component_count
+        self.dimension + 1
     }
 
     /// Returns the flattened mask length.

@@ -73,9 +73,10 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
     where
         Table: DcrtTable<ValueT = T>,
     {
-        assert_eq!(secret_key.size().poly_length(), table.poly_length());
+        assert_eq!(secret_key.poly_length(), table.poly_length());
 
-        let size = RnsGlweSize::new(secret_key.size(), table.moduli_count());
+        let size = RnsGlweSize::new(secret_key.glwe_size(), table.moduli_count());
+        let poly_length = size.poly_length();
         let rns_poly_len = size.rns_poly_len();
         let mut key = vec![T::ZERO; size.rns_mask_len()];
 
@@ -84,7 +85,7 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
             for (ntt_table, modulus_limb) in table
                 .ntt_tables()
                 .iter()
-                .zip(dcrt_secret.chunks_exact_mut(secret_key.poly_length()))
+                .zip(dcrt_secret.chunks_exact_mut(poly_length))
             {
                 encode_secret_polynomial_to(coefficients, modulus_limb, ntt_table.modulus());
                 ntt_table.transform_slice(modulus_limb);

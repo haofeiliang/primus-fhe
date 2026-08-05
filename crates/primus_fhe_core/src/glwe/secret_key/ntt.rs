@@ -76,7 +76,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
     where
         Table: NttTable<ValueT = T>,
     {
-        let size = secret_key.size();
+        let size = secret_key.glwe_size();
         let poly_length = size.poly_length();
         assert_eq!(ntt_table.poly_length(), poly_length);
 

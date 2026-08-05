@@ -66,7 +66,7 @@ impl<T: FheUint> DcrtGlweKeySwitchingKey<T> {
         let ksk_params = domain.parameters();
         debug_assert_eq!(input_params.poly_length(), ksk_params.poly_length());
         debug_assert_eq!(input_params.cipher_modulus(), ksk_params.cipher_modulus());
-        assert_eq!(input_sk.size(), input_params.size().glwe_size());
+        assert_eq!(input_sk.glwe_size(), input_params.size().glwe_size());
         assert_eq!(output_sk.rns_glwe_size(), ksk_params.size().rns_glwe_size());
 
         let dcrt_glev_len = ksk_params.rns_glev_len();

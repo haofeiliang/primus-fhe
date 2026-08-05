@@ -163,7 +163,7 @@ where
     let poly_length = params.poly_length();
     let rns_poly_len = params.rns_poly_len();
     let dcrt_glev_len = params.rns_glev_len();
-    assert_eq!(sk.size(), params.size().rns_glwe_size().glwe_size());
+    assert_eq!(sk.glwe_size(), params.size().rns_glwe_size().glwe_size());
 
     let mut key = vec![T::ZERO; params.dimension() * dcrt_glev_len];
     let mut auto_si: CrtPolynomial<Vec<T>> = CrtPolynomial::zero(rns_poly_len);

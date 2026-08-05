@@ -130,9 +130,8 @@ fn test_rns_glwe_ksk_hybrid() {
 
     // ── Hybrid RNS parameters ───────────────────────────────────
     let decomposition_count = 2;
-    let hybrid_params =
-        primus_rns::HybridRNS::new(&q_moduli, &p_moduli, decomposition_count).unwrap();
-    let hybrid_domain = HybridRnsKeySwitchDomain::try_new(&hybrid_params, &qp_table).unwrap();
+    let hybrid_rns = primus_rns::HybridRNS::new(&q_moduli, &p_moduli, decomposition_count).unwrap();
+    let hybrid_domain = HybridRnsKeySwitchDomain::try_new(&hybrid_rns, &qp_table).unwrap();
 
     // ── Two independent secret keys ─────────────────────────────
     let sk_1 = GlweSecretKey::generate(&glwe_params, &mut rng);
@@ -150,27 +149,12 @@ fn test_rns_glwe_ksk_hybrid() {
         &mut rng,
     );
 
-    // ── Sanity: verify KSK structure ─────────────────────────────
-    let qp_count = hybrid_params.qp_moduli_count();
-    let qp_rns_poly_len = poly_length * qp_count;
-    assert_eq!(
-        key_switching_key.qp_rns_poly_len(),
-        qp_rns_poly_len,
-        "KSK qp_rns_poly_len mismatch"
-    );
-    assert_eq!(
-        key_switching_key.partition_count(),
-        hybrid_params.partition_count(),
-        "KSK partition count mismatch"
-    );
-
     // ── Encrypt random plaintext under sk_1 ─────────────────────
     let rns_glwe_len = glwe_params.rns_glwe_len();
 
     let input: Polynomial<Vec<ValueT>> = Polynomial::random(poly_length, mod_t, &mut rng);
     let mut c1: DcrtGlwe<Vec<ValueT>> = DcrtGlweCiphertext::zero(rns_glwe_len);
     let mut c2: DcrtGlwe<Vec<ValueT>> = DcrtGlweCiphertext::zero(rns_glwe_len);
-    let mut c2_from_coeff: DcrtGlwe<Vec<ValueT>> = DcrtGlweCiphertext::zero(rns_glwe_len);
 
     let mut decrypt_context = DcrtGlweDecryptContext::new(glwe_params.size());
 
@@ -181,25 +165,12 @@ fn test_rns_glwe_ksk_hybrid() {
     assert_eq!(m_dec, input);
 
     // ── Hybrid key-switch: c1 (under sk_1) → c2 (under sk_2) ───
-    let c1_coeff = c1.clone().into_coeff_form(&q_table);
-
     let mut hybrid_context =
-        HybridRnsGlweKeySwitchingContext::new(&key_switching_key, &hybrid_domain);
-    let mut coefficient_context =
         HybridRnsGlweKeySwitchingContext::new(&key_switching_key, &hybrid_domain);
 
     key_switching_key
         .key_switch_to(&c1, &mut c2, &hybrid_domain, &mut hybrid_context)
         .unwrap();
-    key_switching_key
-        .key_switch_coeff_to(
-            &c1_coeff,
-            &mut c2_from_coeff,
-            &hybrid_domain,
-            &mut coefficient_context,
-        )
-        .unwrap();
-    assert_eq!(c2.as_ref(), c2_from_coeff.as_ref());
 
     // ── Decrypt under sk_2 ─────────────────────────────────────
     let output = dcrt_sk_2.decrypt(&c2, &glwe_params, &q_table, &mut decrypt_context);

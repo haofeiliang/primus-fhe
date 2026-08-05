@@ -44,7 +44,7 @@ impl FourierGlweKeySwitchingKey {
         assert_eq!(output_secret_key.glwe_size(), output.glwe_size());
         assert_eq!(fft.poly_length(), output.poly_length());
 
-        let input_size = input_secret_key.size();
+        let input_size = input_secret_key.glwe_size();
         let output_size = output.size();
         let fourier_glev_len = output_size.fourier_glev_len();
 

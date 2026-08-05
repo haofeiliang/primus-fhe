@@ -84,7 +84,7 @@ impl FourierGlweSecretKey {
         T: TorusFftValue,
         Table: FftTable,
     {
-        let size = secret_key.size();
+        let size = secret_key.glwe_size();
         assert_eq!(size.poly_length(), fft.poly_length());
 
         let fourier_length = fft.fourier_length();

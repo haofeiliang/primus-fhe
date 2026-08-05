@@ -46,7 +46,7 @@ impl<T: FheUint> NttGlweKeySwitchingKey<T> {
         assert_eq!(input_secret_key.poly_length(), output.poly_length());
         assert_eq!(output_secret_key.glwe_size(), output.glwe_size());
 
-        let input_size = input_secret_key.size();
+        let input_size = input_secret_key.glwe_size();
         let output_size = output.size();
         let glev_len = output_size.glev_len();
 

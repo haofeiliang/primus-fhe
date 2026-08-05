@@ -201,14 +201,14 @@ where
     }
 }
 
-/// A checked, read-only binding of a partitioned `Q/P` basis and its DCRT table.
+/// A checked binding of hybrid-RNS bases and converters to their DCRT table.
 pub struct HybridRnsKeySwitchDomain<'a, T, M, Table>
 where
     T: FheUint,
     M: FieldContext<T>,
     Table: DcrtTable<ValueT = T>,
 {
-    parameters: &'a HybridRNS<T, M>,
+    hybrid_rns: &'a HybridRNS<T, M>,
     table: &'a Table,
 }
 
@@ -220,15 +220,15 @@ where
 {
     /// Binds a complete ordered `Q/P` basis to a matching DCRT table.
     pub fn try_new(
-        parameters: &'a HybridRNS<T, M>,
+        hybrid_rns: &'a HybridRNS<T, M>,
         table: &'a Table,
     ) -> Result<Self, GadgetDomainError<T>> {
-        let expected = parameters.qp_moduli_count();
+        let expected = hybrid_rns.qp_moduli_count();
         let actual = table.moduli_count();
         if actual != expected {
             return Err(GadgetDomainError::ModuliCountMismatch { expected, actual });
         }
-        for (index, (modulus, ntt_table)) in parameters
+        for (index, (modulus, ntt_table)) in hybrid_rns
             .qp_base()
             .moduli()
             .iter()
@@ -250,14 +250,14 @@ where
                 return Err(GadgetDomainError::PolynomialLengthMismatch { expected, actual });
             }
         }
-        Ok(Self { parameters, table })
+        Ok(Self { hybrid_rns, table })
     }
 
-    /// Returns the complete hybrid-RNS precomputation.
+    /// Returns the bound hybrid-RNS bases and converters.
     #[must_use]
     #[inline]
-    pub fn parameters(&self) -> &'a HybridRNS<T, M> {
-        self.parameters
+    pub fn hybrid_rns(&self) -> &'a HybridRNS<T, M> {
+        self.hybrid_rns
     }
 
     /// Returns the bound DCRT table.
@@ -271,21 +271,21 @@ where
     #[must_use]
     #[inline]
     pub fn q_base(&self) -> &'a RNSBase<T, M> {
-        self.parameters.q_base()
+        self.hybrid_rns.q_base()
     }
 
     /// Returns the ordered auxiliary `P` basis.
     #[must_use]
     #[inline]
     pub fn p_base(&self) -> &'a RNSBase<T, M> {
-        self.parameters.p_base()
+        self.hybrid_rns.p_base()
     }
 
     /// Returns the complete ordered `Q || P` basis.
     #[must_use]
     #[inline]
     pub fn qp_base(&self) -> &'a RNSBase<T, M> {
-        self.parameters.qp_base()
+        self.hybrid_rns.qp_base()
     }
 }
 

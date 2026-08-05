@@ -24,61 +24,57 @@ impl<T: FheUint> HybridRnsGlweKeySwitchingKey<T> {
         M: FieldContext<T>,
         QpTable: DcrtTable<ValueT = T>,
     {
-        let hybrid_parameters = domain.parameters();
-        let qp_table = domain.table();
-        let poly_length = qp_table.poly_length();
-        let qp_moduli = hybrid_parameters.qp_base().moduli();
-        assert_eq!(input_parameters.poly_length(), poly_length);
-        assert_eq!(input_secret_key.size(), input_parameters.glwe_size());
-        assert_eq!(output_secret_key.poly_length(), poly_length);
+        let input_size = input_parameters.size();
+        let input_dimension = input_size.dimension();
+        let poly_length = input_size.poly_length();
+        let q_moduli_count = input_size.moduli_count();
 
+        let hybrid_rns = domain.hybrid_rns();
+        let qp_table = domain.table();
+
+        assert_eq!(input_size.glwe_size(), input_parameters.glwe_size());
+        assert_eq!(q_moduli_count, hybrid_rns.q_moduli_count());
+        assert_eq!(output_secret_key.poly_length(), poly_length);
+        assert_eq!(qp_table.poly_length(), poly_length);
+
+        let qp_moduli = hybrid_rns.qp_base().moduli();
+        let p_mod_q = hybrid_rns.p_mod_q();
+        let partition_count = hybrid_rns.partition_count();
         let qp_moduli_values: Vec<T> = qp_moduli.iter().map(|modulus| modulus.value()).collect();
-        let p_mod_q = hybrid_parameters.p_mod_q();
-        let partition_count = hybrid_parameters.partition_count();
-        let input_dimension = input_secret_key.dimension();
-        let output_dimension = output_secret_key.dimension();
-        let qp_moduli_count =
-            hybrid_parameters.q_moduli_count() + hybrid_parameters.p_moduli_count();
-        let qp_uniform_distributions: Vec<Uniform<T>> = qp_moduli_values
+        let qp_uniform_distributions: Vec<Uniform<T>> = qp_moduli
             .iter()
-            .map(|&modulus| Uniform::new(T::ZERO, modulus).expect("the QP moduli must be nonzero"))
+            .map(|modulus| modulus.uniform_distribution())
             .collect();
 
         let output_secret_key_qp =
             DcrtGlweSecretKey::from_coeff_secret_key(output_secret_key, qp_table);
         let output_secret_key_qp = output_secret_key_qp.key();
-        let noise_distribution = input_parameters.noise_distribution().clone();
-        let input_size = input_parameters.size();
-        let output_size =
-            RnsGlweSize::new(output_secret_key.size(), hybrid_parameters.q_moduli_count());
-        let qp_rns_poly_len = poly_length
-            .checked_mul(qp_moduli_count)
-            .expect("hybrid QP polynomial length overflow");
-        let qp_rns_glwe_len = (output_dimension + 1)
-            .checked_mul(qp_rns_poly_len)
-            .expect("hybrid QP GLWE length overflow");
-        let qp_rns_gadget_len = partition_count
-            .checked_mul(qp_rns_glwe_len)
+        let noise_distribution = input_parameters.noise_distribution();
+
+        let output_size = RnsGlweSize::new(output_secret_key.glwe_size(), q_moduli_count);
+        let qp_size = RnsGlweSize::new(output_secret_key.glwe_size(), hybrid_rns.qp_moduli_count());
+        let qp_gadget_len = partition_count
+            .checked_mul(qp_size.rns_glwe_len())
             .expect("hybrid QP gadget length overflow");
         let key_len = input_dimension
-            .checked_mul(qp_rns_gadget_len)
+            .checked_mul(qp_gadget_len)
             .expect("hybrid key-switching key length overflow");
         let mut key = vec![T::ZERO; key_len];
 
         for (secret_polynomial, key_for_secret) in input_secret_key
             .iter()
-            .zip(key.chunks_exact_mut(qp_rns_gadget_len))
+            .zip(key.chunks_exact_mut(qp_gadget_len))
         {
-            for (partition, key_entry) in hybrid_parameters
+            for (partition, key_entry) in hybrid_rns
                 .partitions()
-                .zip(key_for_secret.chunks_exact_mut(qp_rns_glwe_len))
+                .zip(key_for_secret.chunks_exact_mut(qp_size.rns_glwe_len()))
             {
-                let (mask, body) = key_entry.split_at_mut(output_dimension * qp_rns_poly_len);
+                let (mask, body) = key_entry.split_at_mut(qp_size.rns_mask_len());
                 sample_crt_gaussian_values_to(
                     body,
                     poly_length,
                     &qp_moduli_values,
-                    &noise_distribution,
+                    noise_distribution,
                     rng,
                 );
 
@@ -105,8 +101,8 @@ impl<T: FheUint> HybridRnsGlweKeySwitchingKey<T> {
                 qp_table.transform_slice(body);
                 let mut body = DcrtPolynomial(body);
                 for (mask_polynomial, output_secret_polynomial) in mask
-                    .chunks_exact_mut(qp_rns_poly_len)
-                    .zip(output_secret_key_qp.chunks_exact(qp_rns_poly_len))
+                    .chunks_exact_mut(qp_size.rns_poly_len())
+                    .zip(output_secret_key_qp.chunks_exact(qp_size.rns_poly_len()))
                 {
                     sample_crt_uniform_values_to(
                         mask_polynomial,
@@ -126,12 +122,10 @@ impl<T: FheUint> HybridRnsGlweKeySwitchingKey<T> {
 
         Self {
             key,
-            qp_rns_poly_len,
-            qp_rns_glwe_len,
-            qp_rns_gadget_len,
-            partition_count,
             input_size,
             output_size,
+            qp_size,
+            partition_count,
         }
     }
 }
