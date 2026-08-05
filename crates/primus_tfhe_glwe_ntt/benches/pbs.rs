@@ -3,13 +3,14 @@
 use std::hint::black_box;
 
 use criterion::{Criterion, criterion_group, criterion_main};
+use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fhe_core::{
     GlweCiphertext, LweCiphertext, NttBlindRotationContext, NttGlweKeySwitchingContext,
 };
 use primus_ntt::{NttTable, U32NttTable};
 use primus_tfhe_glwe_ntt::{
-    BooleanEncryptor, BooleanGate, Encryptor, Evaluator, KeyGenerator, PbsOrder, TfheContext,
-    TfheParameters, boolean_parameters,
+    BooleanEncryptor, BooleanEvaluator, BooleanGate, PbsOrder, TfheContext, TfheParameters,
+    boolean_parameters,
 };
 
 fn parameters_with_order(order: PbsOrder) -> TfheParameters<u32> {
@@ -21,8 +22,11 @@ fn parameters_with_order(order: PbsOrder) -> TfheParameters<u32> {
         parameters.small_lwe().clone(),
         parameters.glwe().clone(),
         parameters.bootstrapping().clone(),
-        log_basis,
-        Some(level_count),
+        ApproxSignedBasis::new(
+            Some(parameters.glwe().cipher_modulus_value()),
+            log_basis,
+            Some(level_count),
+        ),
         order,
     )
     .unwrap()
@@ -42,13 +46,12 @@ fn bench_order(c: &mut Criterion, order: PbsOrder) {
     let table = U32NttTable::new(poly_length.trailing_zeros(), modulus).unwrap();
     let context = TfheContext::try_new(parameters, table).unwrap();
     let mut rng = rand::rng();
-    let mut key_generator = KeyGenerator::new(&context);
-    let (client_key, server_key) = key_generator.generate(&mut rng).unwrap();
+    let (client_key, server_key) = context.generate_keys(&mut rng).unwrap();
     let parameters = context.parameters();
-    let encryptor = Encryptor::with_client_key(parameters, &client_key).unwrap();
+    let encryptor = context.encryptor(&client_key).unwrap();
     let input = encryptor.encrypt_padded(1u32, &mut rng).unwrap();
     let lookup_table = context.compile_lookup_table_slice(&[1u32, 0]).unwrap();
-    let mut evaluator = Evaluator::try_new(&context, &server_key).unwrap();
+    let mut evaluator = context.evaluator(&server_key).unwrap();
     let mut output = input.clone();
 
     let bootstrapping_domain = context.bootstrapping_domain();
@@ -90,7 +93,9 @@ fn bench_order(c: &mut Criterion, order: PbsOrder) {
     let boolean_lhs = boolean_encryptor.encrypt(true, &mut rng).unwrap();
     let boolean_rhs = boolean_encryptor.encrypt(false, &mut rng).unwrap();
     let mut boolean_output = boolean_lhs.clone();
-    let mut boolean_evaluator = context.new_boolean_evaluator(&server_key).unwrap();
+    let pbs_evaluator = context.evaluator(&server_key).unwrap();
+    let mut boolean_evaluator =
+        BooleanEvaluator::try_new(context.parameters(), pbs_evaluator).unwrap();
 
     let glwe_dimension = parameters.glwe().dimension();
     let mut group = c.benchmark_group(format!(

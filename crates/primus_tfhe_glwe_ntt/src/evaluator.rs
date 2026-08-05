@@ -51,20 +51,7 @@ where
         server_key: &'a ServerKey<T>,
     ) -> Result<Self, TfheEvaluationError> {
         let parameters = context.parameters();
-        let bootstrapping_key = server_key.bootstrapping_key();
-        let common_size = bootstrapping_key.size();
-        let key_switching_key = server_key.glwe_key_switching_key();
-        let key_switching = parameters.glwe_key_switching();
-        if bootstrapping_key.input_dimension() != parameters.small_lwe().dimension()
-            || bootstrapping_key.input_modulus() != parameters.small_lwe().cipher_modulus_value()
-            || common_size.glwe_size().dimension() != parameters.glwe().dimension()
-            || common_size.glwe_size().poly_length() != parameters.glwe().poly_length()
-            || common_size != parameters.bootstrapping().size()
-            || bootstrapping_key.cipher_modulus() != Some(parameters.glwe().cipher_modulus_value())
-            || key_switching_key.input_dimension() != key_switching.input_dimension()
-            || key_switching_key.output_dimension() != key_switching.output_dimension()
-            || key_switching_key.poly_length() != key_switching.poly_length()
-        {
+        if !server_key.is_compatible(parameters) {
             return Err(TfheEvaluationError::IncompatibleServerKey);
         }
 
@@ -90,8 +77,7 @@ where
     ///
     /// # Panics
     ///
-    /// Panics if the input dimension or lookup-table accumulator length does
-    /// not match this evaluator's context.
+    /// Panics if the input dimension does not match this evaluator's context.
     pub fn apply_lookup_table(
         &mut self,
         input: &Ciphertext<T>,
@@ -106,8 +92,8 @@ where
     ///
     /// # Panics
     ///
-    /// Panics if either ciphertext dimension or the lookup-table accumulator
-    /// length does not match this evaluator's context.
+    /// Panics if either ciphertext dimension does not match this evaluator's
+    /// context.
     pub fn apply_lookup_table_to(
         &mut self,
         input: &Ciphertext<T>,
@@ -119,51 +105,77 @@ where
         assert_eq!(input.dimension(), expected_dimension);
         assert_eq!(output.dimension(), expected_dimension);
 
-        let expected_len = parameters.glwe().glwe_len();
-        assert_eq!(lookup_table.accumulator().as_ref().len(), expected_len);
-
-        let poly_length = parameters.glwe().poly_length();
-        let modulus = parameters.glwe().cipher_modulus();
         match parameters.pbs_order() {
             PbsOrder::BootstrapKeyswitch => {
-                self.server_key.bootstrapping_key().ntt_blind_rotate_to(
-                    input.as_lwe(),
-                    lookup_table.accumulator(),
-                    &mut self.main_glwe,
-                    &self.bootstrapping_domain,
-                    &mut self.blind_rotation,
-                );
-                self.server_key.glwe_key_switching_key().key_switch_to(
-                    &self.main_glwe,
-                    &mut self.switched,
-                    &self.key_switching_domain,
-                    &mut self.key_switching,
-                );
-                self.switched
-                    .extract_compact_lwe_to(output.as_lwe_mut(), poly_length, modulus);
+                self.bootstrap_then_keyswitch(input, lookup_table, output)
             }
             PbsOrder::KeyswitchBootstrap => {
-                input
-                    .as_lwe()
-                    .inverse_extract_glwe_to(&mut self.main_glwe, poly_length, modulus);
-                self.server_key.glwe_key_switching_key().key_switch_to(
-                    &self.main_glwe,
-                    &mut self.switched,
-                    &self.key_switching_domain,
-                    &mut self.key_switching,
-                );
-                self.switched
-                    .extract_compact_lwe_to(&mut self.small_lwe, poly_length, modulus);
-                self.server_key.bootstrapping_key().ntt_blind_rotate_to(
-                    &self.small_lwe,
-                    lookup_table.accumulator(),
-                    &mut self.main_glwe,
-                    &self.bootstrapping_domain,
-                    &mut self.blind_rotation,
-                );
-                self.main_glwe
-                    .extract_lwe_to(output.as_lwe_mut(), poly_length, modulus);
+                self.keyswitch_then_bootstrap(input, lookup_table, output)
             }
         }
+    }
+
+    fn bootstrap_then_keyswitch(
+        &mut self,
+        input: &Ciphertext<T>,
+        lookup_table: &LookupTable<T>,
+        output: &mut Ciphertext<T>,
+    ) {
+        let glwe = self.context.parameters().glwe();
+        self.server_key.bootstrapping_key().ntt_blind_rotate_to(
+            input.as_lwe(),
+            lookup_table.accumulator(),
+            &mut self.main_glwe,
+            &self.bootstrapping_domain,
+            &mut self.blind_rotation,
+        );
+        self.server_key.glwe_key_switching_key().key_switch_to(
+            &self.main_glwe,
+            &mut self.switched,
+            &self.key_switching_domain,
+            &mut self.key_switching,
+        );
+        self.switched.extract_compact_lwe_to(
+            output.as_lwe_mut(),
+            glwe.poly_length(),
+            glwe.cipher_modulus(),
+        );
+    }
+
+    fn keyswitch_then_bootstrap(
+        &mut self,
+        input: &Ciphertext<T>,
+        lookup_table: &LookupTable<T>,
+        output: &mut Ciphertext<T>,
+    ) {
+        let glwe = self.context.parameters().glwe();
+        input.as_lwe().inverse_extract_glwe_to(
+            &mut self.main_glwe,
+            glwe.poly_length(),
+            glwe.cipher_modulus(),
+        );
+        self.server_key.glwe_key_switching_key().key_switch_to(
+            &self.main_glwe,
+            &mut self.switched,
+            &self.key_switching_domain,
+            &mut self.key_switching,
+        );
+        self.switched.extract_compact_lwe_to(
+            &mut self.small_lwe,
+            glwe.poly_length(),
+            glwe.cipher_modulus(),
+        );
+        self.server_key.bootstrapping_key().ntt_blind_rotate_to(
+            &self.small_lwe,
+            lookup_table.accumulator(),
+            &mut self.main_glwe,
+            &self.bootstrapping_domain,
+            &mut self.blind_rotation,
+        );
+        self.main_glwe.extract_lwe_to(
+            output.as_lwe_mut(),
+            glwe.poly_length(),
+            glwe.cipher_modulus(),
+        );
     }
 }

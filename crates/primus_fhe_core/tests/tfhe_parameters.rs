@@ -1,3 +1,4 @@
+use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fhe_core::{
     GgswParameters, GlweParameters, LweParameters, LweSecretKeyType, PbsOrder, RingSecretKeyType,
     TfheParameters,
@@ -39,8 +40,14 @@ fn components() -> Components {
 fn derives_the_same_key_switching_layout_for_both_orders() {
     for order in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
         let (small_lwe, glwe, bootstrapping) = components();
-        let parameters =
-            TfheParameters::try_new(small_lwe, glwe, bootstrapping, 4, Some(4), order).unwrap();
+        let parameters = TfheParameters::try_new(
+            small_lwe,
+            glwe,
+            bootstrapping,
+            ApproxSignedBasis::new(None, 4, Some(4)),
+            order,
+        )
+        .unwrap();
 
         assert_eq!(parameters.pbs_order(), order);
         assert_eq!(
@@ -55,6 +62,10 @@ fn derives_the_same_key_switching_layout_for_both_orders() {
         );
         assert_eq!(
             parameters.glwe_key_switching().output().decompose_length(),
+            4
+        );
+        assert_eq!(
+            parameters.glwe_key_switching().output().basis().log_basis(),
             4
         );
         assert_eq!(

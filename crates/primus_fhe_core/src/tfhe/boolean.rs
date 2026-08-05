@@ -160,10 +160,13 @@ impl BooleanGate {
 pub trait ProgrammableBootstrap<T: FheUint> {
     /// Applies a compiled lookup table into an existing ciphertext allocation.
     ///
+    /// The lookup table must have been compiled for the same parameter set as
+    /// the backend evaluator.
+    ///
     /// # Panics
     ///
     /// Panics if an operand does not have the dimensions required by the
-    /// backend context or the lookup-table accumulator has an invalid length.
+    /// backend context.
     fn apply_lookup_table_to(
         &mut self,
         input: &Ciphertext<T>,

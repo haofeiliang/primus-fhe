@@ -1,10 +1,12 @@
-use primus_fhe_core::{LookupTable, NttGadgetDomain};
+use primus_fhe_core::{ClientKey, LookupTable, NttGadgetDomain};
 use primus_integer::FheUint;
 use primus_ntt::NttTable;
 
 use crate::{
-    BooleanEvaluator, Evaluator, ServerKey, TfheParameters,
-    error::{BooleanError, LookupTableError, TfheContextError},
+    Decryptor, Encryptor, Evaluator, KeyGenerator, ServerKey, TfheParameters,
+    error::{
+        LookupTableError, TfheClientError, TfheContextError, TfheEvaluationError, TfheKeyError,
+    },
 };
 
 /// A validated binding between explicit-modulus TFHE parameters and an NTT
@@ -73,13 +75,39 @@ where
             .expect("TfheContext must contain a compatible bootstrapping domain")
     }
 
-    /// Creates a Boolean gate evaluator.
-    pub fn new_boolean_evaluator<'a>(
+    /// Generates a fresh compatible client/server key pair.
+    pub fn generate_keys<R>(
+        &self,
+        rng: &mut R,
+    ) -> Result<(ClientKey<T>, ServerKey<T>), TfheKeyError>
+    where
+        R: rand::Rng + rand::CryptoRng,
+    {
+        KeyGenerator::new(self).generate(rng)
+    }
+
+    /// Creates a client-key encryptor after checking the key once.
+    pub fn encryptor<'a>(
+        &'a self,
+        client_key: &'a ClientKey<T>,
+    ) -> Result<Encryptor<'a, T>, TfheClientError> {
+        Encryptor::with_client_key(&self.parameters, client_key)
+    }
+
+    /// Creates a decryptor after checking the client key once.
+    pub fn decryptor<'a>(
+        &'a self,
+        client_key: &'a ClientKey<T>,
+    ) -> Result<Decryptor<'a, T>, TfheClientError> {
+        Decryptor::new(&self.parameters, client_key)
+    }
+
+    /// Creates a programmable-bootstrap evaluator with reusable NTT workspace.
+    pub fn evaluator<'a>(
         &'a self,
         server_key: &'a ServerKey<T>,
-    ) -> Result<BooleanEvaluator<'a, T, Table>, BooleanError> {
-        let evaluator = Evaluator::try_new(self, server_key)?;
-        primus_fhe_core::BooleanEvaluator::try_new(&self.parameters, evaluator)
+    ) -> Result<Evaluator<'a, T, Table>, TfheEvaluationError> {
+        Evaluator::try_new(self, server_key)
     }
 
     /// Compiles a unary function into a coefficient-domain GLWE accumulator.

@@ -3,6 +3,7 @@
 use std::hint::black_box;
 
 use criterion::{Criterion, criterion_group, criterion_main};
+use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{FftTable, RustFftTable};
 use primus_fhe_core::{
     FourierBlindRotationContext, FourierGlweKeySwitchingContext, GgswParameters, GlweCiphertext,
@@ -10,8 +11,7 @@ use primus_fhe_core::{
 };
 use primus_modulus::NativeModulus;
 use primus_tfhe_glwe_fourier::{
-    BooleanEncryptor, BooleanGate, Encryptor, Evaluator, KeyGenerator, PbsOrder, TfheContext,
-    TfheParameters,
+    BooleanEncryptor, BooleanEvaluator, BooleanGate, PbsOrder, TfheContext, TfheParameters,
 };
 
 // Performance-comparison profile, not a security recommendation.
@@ -37,7 +37,14 @@ fn parameters(order: PbsOrder) -> TfheParameters<u32> {
         3.2,
     );
     let bootstrapping = GgswParameters::with_glwe_params(&glwe, 8, Some(3));
-    TfheParameters::try_new(lwe, glwe, bootstrapping, 2, Some(13), order).unwrap()
+    TfheParameters::try_new(
+        lwe,
+        glwe,
+        bootstrapping,
+        ApproxSignedBasis::new(None, 2, Some(13)),
+        order,
+    )
+    .unwrap()
 }
 
 fn order_name(order: PbsOrder) -> &'static str {
@@ -51,13 +58,12 @@ fn bench_order(c: &mut Criterion, order: PbsOrder) {
     let table = RustFftTable::new(POLY_LENGTH.trailing_zeros()).unwrap();
     let context = TfheContext::try_new(parameters(order), table).unwrap();
     let mut rng = rand::rng();
-    let mut key_generator = KeyGenerator::new(&context);
-    let (client_key, server_key) = key_generator.generate(&mut rng).unwrap();
+    let (client_key, server_key) = context.generate_keys(&mut rng).unwrap();
     let parameters = context.parameters();
-    let encryptor = Encryptor::with_client_key(parameters, &client_key).unwrap();
+    let encryptor = context.encryptor(&client_key).unwrap();
     let input = encryptor.encrypt_padded(1u32, &mut rng).unwrap();
     let lookup_table = context.compile_lookup_table_slice(&[1u32, 0]).unwrap();
-    let mut evaluator = Evaluator::try_new(&context, &server_key).unwrap();
+    let mut evaluator = context.evaluator(&server_key).unwrap();
     let mut output = input.clone();
 
     let modulus = parameters.glwe().cipher_modulus();
@@ -103,7 +109,9 @@ fn bench_order(c: &mut Criterion, order: PbsOrder) {
     let boolean_lhs = boolean_encryptor.encrypt(true, &mut rng).unwrap();
     let boolean_rhs = boolean_encryptor.encrypt(false, &mut rng).unwrap();
     let mut boolean_output = boolean_lhs.clone();
-    let mut boolean_evaluator = context.new_boolean_evaluator(&server_key).unwrap();
+    let pbs_evaluator = context.evaluator(&server_key).unwrap();
+    let mut boolean_evaluator =
+        BooleanEvaluator::try_new(context.parameters(), pbs_evaluator).unwrap();
 
     let mut group = c.benchmark_group(format!(
         "tfhe_pbs/fourier/u32/{}/n{POLY_LENGTH}/k{GLWE_DIMENSION}/small_lwe{}/external_lwe{}",

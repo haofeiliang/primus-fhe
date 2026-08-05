@@ -1,5 +1,6 @@
 //! Parameter types and built-in parameter sets for the NTT backend.
 
+use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fhe_core::{
     GgswParameters, GlweParameters, LweParameters, LweSecretKeyType, PbsOrder, RingSecretKeyType,
 };
@@ -45,8 +46,7 @@ pub fn boolean_parameters()
         lwe,
         glwe,
         bootstrapping,
-        2,
-        Some(13),
+        ApproxSignedBasis::new(Some(CIPHERTEXT_MODULUS), 2, Some(13)),
         PbsOrder::BootstrapKeyswitch,
     )
     .unwrap()

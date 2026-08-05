@@ -1,10 +1,11 @@
+use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{FftTable, RustFftTable};
 use primus_fhe_core::{
     GgswParameters, GlweParameters, LweParameters, LweSecretKeyType, RingSecretKeyType,
 };
 use primus_modulus::NativeModulus;
 use primus_tfhe_glwe_fourier::{
-    BooleanDecryptor, BooleanEncryptor, BooleanGate, KeyGenerator, PbsOrder, TfheContext,
+    BooleanDecryptor, BooleanEncryptor, BooleanEvaluator, BooleanGate, PbsOrder, TfheContext,
     TfheParameters,
 };
 
@@ -25,7 +26,14 @@ fn parameters_with_order(pbs_order: PbsOrder) -> TfheParameters<u32> {
         0.7,
     );
     let bootstrapping = GgswParameters::with_glwe_params(&glwe, 8, Some(3));
-    TfheParameters::try_new(lwe, glwe, bootstrapping, 4, Some(4), pbs_order).unwrap()
+    TfheParameters::try_new(
+        lwe,
+        glwe,
+        bootstrapping,
+        ApproxSignedBasis::new(None, 4, Some(4)),
+        pbs_order,
+    )
+    .unwrap()
 }
 
 #[test]
@@ -34,11 +42,11 @@ fn evaluates_boolean_gates_with_keyswitch_then_bootstrap() {
     let context =
         TfheContext::try_new(parameters_with_order(PbsOrder::KeyswitchBootstrap), table).unwrap();
     let mut rng = rand::rng();
-    let mut generator = KeyGenerator::new(&context);
-    let (client_key, server_key) = generator.generate(&mut rng).unwrap();
+    let (client_key, server_key) = context.generate_keys(&mut rng).unwrap();
     let encryptor = BooleanEncryptor::new(context.parameters(), &client_key).unwrap();
     let decryptor = BooleanDecryptor::new(context.parameters(), &client_key).unwrap();
-    let mut evaluator = context.new_boolean_evaluator(&server_key).unwrap();
+    let pbs_evaluator = context.evaluator(&server_key).unwrap();
+    let mut evaluator = BooleanEvaluator::try_new(context.parameters(), pbs_evaluator).unwrap();
     let dimension = context.parameters().ciphertext_lwe_dimension();
 
     for lhs in [false, true] {
@@ -66,11 +74,11 @@ fn evaluates_boolean_helpers_and_reused_output() {
     let table = RustFftTable::new(POLY_LENGTH.trailing_zeros()).unwrap();
     let context = TfheContext::try_new(parameters(), table).unwrap();
     let mut rng = rand::rng();
-    let mut generator = KeyGenerator::new(&context);
-    let (client_key, server_key) = generator.generate(&mut rng).unwrap();
+    let (client_key, server_key) = context.generate_keys(&mut rng).unwrap();
     let encryptor = BooleanEncryptor::new(context.parameters(), &client_key).unwrap();
     let decryptor = BooleanDecryptor::new(context.parameters(), &client_key).unwrap();
-    let mut evaluator = context.new_boolean_evaluator(&server_key).unwrap();
+    let pbs_evaluator = context.evaluator(&server_key).unwrap();
+    let mut evaluator = BooleanEvaluator::try_new(context.parameters(), pbs_evaluator).unwrap();
 
     for value in [false, true] {
         let input = encryptor.encrypt(value, &mut rng).unwrap();

@@ -5,7 +5,7 @@ use primus_fhe_core::{
 use primus_integer::FheUint;
 use primus_ntt::NttTable;
 
-use crate::{TfheContext, error::TfheKeyError};
+use crate::{TfheContext, TfheParameters, error::TfheKeyError};
 
 /// NTT-domain evaluation keys used by a TFHE server.
 ///
@@ -17,6 +17,20 @@ pub struct ServerKey<T: FheUint> {
 }
 
 impl<T: FheUint> ServerKey<T> {
+    pub(crate) fn is_compatible(&self, parameters: &TfheParameters<T>) -> bool {
+        let bootstrapping = parameters.bootstrapping();
+        let key_switching = parameters.glwe_key_switching();
+        self.bootstrapping_key.input_dimension() == parameters.small_lwe().dimension()
+            && self.bootstrapping_key.input_modulus()
+                == parameters.small_lwe().cipher_modulus_value()
+            && self.bootstrapping_key.size() == bootstrapping.size()
+            && self.bootstrapping_key.cipher_modulus()
+                == Some(parameters.glwe().cipher_modulus_value())
+            && self.glwe_key_switching_key.input_dimension() == key_switching.input_dimension()
+            && self.glwe_key_switching_key.output_dimension() == key_switching.output_dimension()
+            && self.glwe_key_switching_key.poly_length() == key_switching.poly_length()
+    }
+
     /// Returns the NTT functional bootstrapping key.
     #[inline]
     pub fn bootstrapping_key(&self) -> &NttFunctionalBootstrappingKey<T> {
@@ -86,20 +100,49 @@ where
         let parameters = self.context.parameters();
         client_key.check_compatible(parameters)?;
 
+        let bootstrapping_key = self.generate_bootstrapping_key(client_key, rng);
+        let glwe_key_switching_key = self.generate_glwe_key_switching_key(client_key, rng);
+
+        Ok(ServerKey {
+            bootstrapping_key,
+            glwe_key_switching_key,
+        })
+    }
+
+    fn generate_bootstrapping_key<R>(
+        &mut self,
+        client_key: &ClientKey<T>,
+        rng: &mut R,
+    ) -> NttFunctionalBootstrappingKey<T>
+    where
+        R: rand::Rng + rand::CryptoRng,
+    {
+        let parameters = self.context.parameters();
         let main_glwe_secret_key = NttGlweSecretKey::from_coeff_secret_key(
             client_key.glwe_secret_key(),
             self.context.table(),
         );
         let bootstrapping_domain = self.context.bootstrapping_domain();
         self.gadget.resize(bootstrapping_domain.size());
-        let bootstrapping_key = NttFunctionalBootstrappingKey::generate_ntt(
+        NttFunctionalBootstrappingKey::generate_ntt(
             client_key.small_lwe_secret_key(),
             parameters.small_lwe(),
             &main_glwe_secret_key,
             &bootstrapping_domain,
             rng,
             &mut self.gadget,
-        );
+        )
+    }
+
+    fn generate_glwe_key_switching_key<R>(
+        &mut self,
+        client_key: &ClientKey<T>,
+        rng: &mut R,
+    ) -> NttGlweKeySwitchingKey<T>
+    where
+        R: rand::Rng + rand::CryptoRng,
+    {
+        let parameters = self.context.parameters();
         let padded_small_glwe_secret_key = client_key.padded_small_glwe_secret_key(parameters);
         let padded_small_glwe_secret_key = NttGlweSecretKey::from_coeff_secret_key(
             &padded_small_glwe_secret_key,
@@ -107,18 +150,13 @@ where
         );
         let key_switching_domain = self.context.key_switching_domain();
         self.gadget.resize(key_switching_domain.size());
-        let glwe_key_switching_key = NttGlweKeySwitchingKey::generate(
+        NttGlweKeySwitchingKey::generate(
             client_key.glwe_secret_key(),
             &padded_small_glwe_secret_key,
             &key_switching_domain,
             rng,
             &mut self.gadget,
-        );
-
-        Ok(ServerKey {
-            bootstrapping_key,
-            glwe_key_switching_key,
-        })
+        )
     }
 
     /// Generates a fresh compatible client/server key pair.

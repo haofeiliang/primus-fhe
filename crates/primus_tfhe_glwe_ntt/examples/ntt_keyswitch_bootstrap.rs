@@ -3,14 +3,14 @@
 //! These small parameters keep the example fast and are not suitable for
 //! production use.
 
+use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fhe_core::{
     GgswParameters, GlweParameters, LweParameters, LweSecretKeyType, RingSecretKeyType,
 };
 use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, U32NttTable};
 use primus_tfhe_glwe_ntt::{
-    BooleanDecryptor, BooleanEncryptor, Decryptor, Encryptor, Evaluator, KeyGenerator, PbsOrder,
-    TfheContext, TfheParameters,
+    BooleanDecryptor, BooleanEncryptor, BooleanEvaluator, PbsOrder, TfheContext, TfheParameters,
 };
 
 const LWE_DIMENSION: usize = 4;
@@ -41,8 +41,7 @@ fn parameters() -> TfheParameters<u32> {
         lwe,
         glwe,
         bootstrapping,
-        4,
-        Some(4),
+        ApproxSignedBasis::new(Some(CIPHERTEXT_MODULUS), 4, Some(4)),
         PbsOrder::KeyswitchBootstrap,
     )
     .unwrap()
@@ -58,11 +57,10 @@ fn main() {
     let context = TfheContext::try_new(parameters, table).unwrap();
 
     let mut rng = rand::rng();
-    let mut key_generator = KeyGenerator::new(&context);
-    let (client_key, server_key) = key_generator.generate(&mut rng).unwrap();
-    let encryptor = Encryptor::with_client_key(context.parameters(), &client_key).unwrap();
-    let decryptor = Decryptor::new(context.parameters(), &client_key).unwrap();
-    let mut evaluator = Evaluator::try_new(&context, &server_key).unwrap();
+    let (client_key, server_key) = context.generate_keys(&mut rng).unwrap();
+    let encryptor = context.encryptor(&client_key).unwrap();
+    let decryptor = context.decryptor(&client_key).unwrap();
+    let mut evaluator = context.evaluator(&server_key).unwrap();
 
     // In this order, external ciphertexts use the main GLWE key expanded as
     // an LWE key, so their dimension is kN rather than the small dimension n.
@@ -77,7 +75,9 @@ fn main() {
     let boolean_decryptor = BooleanDecryptor::new(context.parameters(), &client_key).unwrap();
     let lhs = boolean_encryptor.encrypt(true, &mut rng).unwrap();
     let rhs = boolean_encryptor.encrypt(false, &mut rng).unwrap();
-    let mut boolean_evaluator = context.new_boolean_evaluator(&server_key).unwrap();
+    let pbs_evaluator = context.evaluator(&server_key).unwrap();
+    let mut boolean_evaluator =
+        BooleanEvaluator::try_new(context.parameters(), pbs_evaluator).unwrap();
     let xor = boolean_evaluator.xor(&lhs, &rhs);
     assert!(boolean_decryptor.decrypt(&xor).unwrap());
 
