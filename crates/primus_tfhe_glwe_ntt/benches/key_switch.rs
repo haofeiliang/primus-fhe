@@ -9,10 +9,9 @@ use primus_fhe_core::{
         NttGlweKeySwitchingContext, NttGlweKeySwitchingKey, NttGlweSecretKey,
     },
     lwe::{LweCiphertext, LweKeySwitchingKey, LweKeySwitchingParameters},
-    tfhe::ClientKey,
 };
 use primus_ntt::{NttTable, U32NttTable};
-use primus_tfhe_glwe_ntt::boolean_parameters;
+use primus_tfhe_glwe_ntt::{ClientKey, boolean_parameters};
 
 fn bench_key_switch(c: &mut Criterion) {
     let parameters = boolean_parameters();

@@ -1,12 +1,12 @@
 use primus_fhe_core::{
     glwe::{GlweSecretKey, NttGadgetEncryptContext, NttGlweKeySwitchingKey, NttGlweSecretKey},
     lwe::LweSecretKey,
-    tfhe::{ClientKey, NttFunctionalBootstrappingKey},
 };
 use primus_integer::FheUint;
 use primus_ntt::NttTable;
+use primus_tfhe::ClientKey;
 
-use crate::{TfheContext, TfheParameters, error::TfheKeyError};
+use crate::{NttFunctionalBootstrappingKey, TfheContext, TfheParameters, error::TfheKeyError};
 
 /// NTT-domain evaluation keys used by a TFHE server.
 ///

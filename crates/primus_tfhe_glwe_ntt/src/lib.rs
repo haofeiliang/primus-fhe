@@ -4,6 +4,7 @@
 
 mod error;
 
+mod bootstrapping_key;
 mod client;
 mod context;
 mod evaluator;
@@ -19,11 +20,12 @@ pub use error::{
     TfheParameterError,
 };
 
+pub use bootstrapping_key::{NttBlindRotationContext, NttFunctionalBootstrappingKey};
 pub use client::{Decryptor, Encryptor};
 pub use context::TfheContext;
 pub use evaluator::Evaluator;
 pub use key::{KeyGenerator, ServerKey};
-pub use primus_fhe_core::tfhe::{Ciphertext, ClientKey, LookupTable, LweSecretKeyRef, PbsOrder};
+pub use primus_tfhe::{Ciphertext, ClientKey, LookupTable, LweSecretKeyRef, PbsOrder};
 
 pub use parameters::TfheParameters;
 

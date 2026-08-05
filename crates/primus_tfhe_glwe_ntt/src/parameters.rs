@@ -5,13 +5,12 @@ use primus_fhe_core::{
     SecretKeyDistr,
     glwe::{GgswParameters, GlweParameters},
     lwe::LweParameters,
-    tfhe::PbsOrder,
 };
 use primus_modulus::BarrettModulus;
+use primus_tfhe::PbsOrder;
 
 /// GLWE-TFHE parameters for the explicit-modulus NTT backend.
-pub type TfheParameters<T> =
-    primus_fhe_core::tfhe::TfheParameters<T, BarrettModulus<T>, BarrettModulus<T>>;
+pub type TfheParameters<T> = primus_tfhe::TfheParameters<T, BarrettModulus<T>, BarrettModulus<T>>;
 
 /// Returns the temporary Boolean parameter set used by tests and benchmarks.
 ///
@@ -21,7 +20,7 @@ pub type TfheParameters<T> =
 /// failure probability. They are intended only for development, testing, and
 /// benchmarking, and must not be used in production.
 pub fn boolean_parameters()
--> primus_fhe_core::tfhe::TfheParameters<u32, BarrettModulus<u32>, BarrettModulus<u32>> {
+-> primus_tfhe::TfheParameters<u32, BarrettModulus<u32>, BarrettModulus<u32>> {
     const LWE_DIMENSION: usize = 512;
     const GLWE_DIMENSION: usize = 1;
     const POLY_LENGTH: usize = 1024;

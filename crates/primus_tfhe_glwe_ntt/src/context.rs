@@ -1,9 +1,7 @@
-use primus_fhe_core::{
-    glwe::NttGadgetDomain,
-    tfhe::{ClientKey, LookupTable},
-};
+use primus_fhe_core::glwe::NttGadgetDomain;
 use primus_integer::FheUint;
 use primus_ntt::NttTable;
+use primus_tfhe::{ClientKey, LookupTable};
 
 use crate::{
     Decryptor, Encryptor, Evaluator, KeyGenerator, ServerKey, TfheParameters,

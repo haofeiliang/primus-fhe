@@ -1,5 +1,5 @@
 use primus_fft::{FftEngine, FftTable, TorusFftValue};
-use primus_fhe_core::tfhe::{ClientKey, LookupTable};
+use primus_tfhe::{ClientKey, LookupTable};
 
 use crate::{
     Decryptor, Encryptor, Evaluator, KeyGenerator, ServerKey, TfheParameters,

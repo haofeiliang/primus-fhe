@@ -5,10 +5,10 @@ use primus_fhe_core::{
         GlweSecretKey,
     },
     lwe::LweSecretKey,
-    tfhe::{ClientKey, FourierFunctionalBootstrappingKey},
 };
+use primus_tfhe::ClientKey;
 
-use crate::{TfheContext, TfheParameters, error::TfheKeyError};
+use crate::{FourierFunctionalBootstrappingKey, TfheContext, TfheParameters, error::TfheKeyError};
 
 /// Fourier-domain evaluation keys used by a TFHE server.
 ///

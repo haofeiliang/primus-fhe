@@ -3,9 +3,9 @@ use primus_fhe_core::{
     SecretKeyDistr,
     glwe::{GgswParameters, GlweParameters},
     lwe::LweParameters,
-    tfhe::{PbsOrder, TfheParameters},
 };
 use primus_modulus::NativeModulus;
+use primus_tfhe::{PbsOrder, TfheParameters};
 
 const LWE_DIMENSION: usize = 630;
 const GLWE_DIMENSION: usize = 1;

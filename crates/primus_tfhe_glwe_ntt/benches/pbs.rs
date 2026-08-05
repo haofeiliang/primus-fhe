@@ -7,12 +7,11 @@ use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fhe_core::{
     glwe::{GlweCiphertext, NttGlweKeySwitchingContext},
     lwe::LweCiphertext,
-    tfhe::NttBlindRotationContext,
 };
 use primus_ntt::{NttTable, U32NttTable};
 use primus_tfhe_glwe_ntt::{
-    BooleanEncryptor, BooleanEvaluator, BooleanGate, PbsOrder, TfheContext, TfheParameters,
-    boolean_parameters,
+    BooleanEncryptor, BooleanEvaluator, BooleanGate, NttBlindRotationContext, PbsOrder,
+    TfheContext, TfheParameters, boolean_parameters,
 };
 
 fn parameters_with_order(order: PbsOrder) -> TfheParameters<u32> {

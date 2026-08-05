@@ -141,8 +141,11 @@ where
             SecretKeyDistr::Binary,
             glwe.noise_distribution().standard_deviation(),
         );
+        let full_decompose_length = (basis.value_bits() / basis.log_basis()) as usize;
+        let reverse_length =
+            (basis.decompose_length() != full_decompose_length).then_some(basis.decompose_length());
         let output =
-            GlevParameters::from_parts(output_glwe.size(), output_glwe.inner().clone(), basis);
+            GlevParameters::with_glwe_params(&output_glwe, basis.log_basis(), reverse_length);
         GlweKeySwitchingParameters::new(glwe.dimension(), output)
     }
 

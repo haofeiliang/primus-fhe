@@ -3,5 +3,4 @@
 use primus_modulus::NativeModulus;
 
 /// GLWE-TFHE parameters for the native-torus Fourier backend.
-pub type TfheParameters<T> =
-    primus_fhe_core::tfhe::TfheParameters<T, NativeModulus<T>, NativeModulus<T>>;
+pub type TfheParameters<T> = primus_tfhe::TfheParameters<T, NativeModulus<T>, NativeModulus<T>>;

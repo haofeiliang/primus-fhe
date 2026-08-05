@@ -1,12 +1,12 @@
 use primus_fhe_core::{
     glwe::{GlweCiphertext, NttGadgetDomain, NttGlweKeySwitchingContext},
     lwe::LweCiphertext,
-    tfhe::{Ciphertext, LookupTable, NttBlindRotationContext, PbsOrder, ProgrammableBootstrap},
 };
 use primus_integer::FheUint;
 use primus_ntt::NttTable;
+use primus_tfhe::{Ciphertext, LookupTable, PbsOrder, ProgrammableBootstrap};
 
-use crate::{ServerKey, TfheContext, error::TfheEvaluationError};
+use crate::{NttBlindRotationContext, ServerKey, TfheContext, error::TfheEvaluationError};
 
 /// Reusable NTT workspace for programmable bootstrapping.
 pub struct Evaluator<'a, T, Table>

@@ -1,0 +1,27 @@
+[package]
+name = "primus_tfhe"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+primus_decompose = { path = "../primus_decompose" }
+primus_distr = { path = "../primus_distr" }
+primus_fhe_core = { path = "../primus_fhe_core" }
+primus_integer = { path = "../primus_integer" }
+primus_lattice = { path = "../primus_lattice" }
+primus_reduce = { path = "../primus_reduce" }
+
+num-traits = { workspace = true }
+rand = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+primus_modulus = { path = "../primus_modulus" }
+
+[features]
+default = []
+simd = [
+    "primus_fhe_core/simd",
+    "primus_integer/simd",
+    "primus_lattice/simd",
+]

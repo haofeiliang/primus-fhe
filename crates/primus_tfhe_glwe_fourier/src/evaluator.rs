@@ -2,10 +2,10 @@ use primus_fft::{FftEngine, FftTable, TorusFftValue};
 use primus_fhe_core::{
     glwe::{FourierGlweKeySwitchingContext, GlweCiphertext},
     lwe::LweCiphertext,
-    tfhe::{Ciphertext, FourierBlindRotationContext, LookupTable, PbsOrder, ProgrammableBootstrap},
 };
+use primus_tfhe::{Ciphertext, LookupTable, PbsOrder, ProgrammableBootstrap};
 
-use crate::{ServerKey, TfheContext, error::TfheEvaluationError};
+use crate::{FourierBlindRotationContext, ServerKey, TfheContext, error::TfheEvaluationError};
 
 /// Reusable Fourier workspace for programmable bootstrapping.
 pub struct Evaluator<'a, T, Table>

@@ -9,11 +9,11 @@ use primus_fhe_core::{
     SecretKeyDistr,
     glwe::{FourierGlweKeySwitchingContext, GgswParameters, GlweCiphertext, GlweParameters},
     lwe::{LweCiphertext, LweParameters},
-    tfhe::FourierBlindRotationContext,
 };
 use primus_modulus::NativeModulus;
 use primus_tfhe_glwe_fourier::{
-    BooleanEncryptor, BooleanEvaluator, BooleanGate, PbsOrder, TfheContext, TfheParameters,
+    BooleanEncryptor, BooleanEvaluator, BooleanGate, FourierBlindRotationContext, PbsOrder,
+    TfheContext, TfheParameters,
 };
 
 // Performance-comparison profile, not a security recommendation.
