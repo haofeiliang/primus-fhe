@@ -5,7 +5,8 @@
 
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fhe_core::{
-    GgswParameters, GlweParameters, LweParameters, LweSecretKeyType, RingSecretKeyType,
+    glwe::{GgswParameters, GlweParameters, RingSecretKeyType},
+    lwe::{LweParameters, LweSecretKeyType},
 };
 use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, U32NttTable};

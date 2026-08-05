@@ -7,6 +7,11 @@ use super::{
 };
 
 impl<T: FheUint> PlaintextCodec<T> {
+    /// Decodes one ciphertext-modulus value into a plaintext value.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the decoded value cannot be represented by `M`.
     #[inline]
     pub fn decode_value<M>(&self, value: T) -> M
     where
@@ -18,6 +23,7 @@ impl<T: FheUint> PlaintextCodec<T> {
         try_from_decoded(decoded)
     }
 
+    /// Decodes all values in place.
     #[inline]
     pub fn decode_slice_inplace(&self, values: &mut [T]) {
         let t = self.t;
@@ -28,6 +34,12 @@ impl<T: FheUint> PlaintextCodec<T> {
         });
     }
 
+    /// Decodes `input` into `output`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the slices differ in length or a decoded value cannot be
+    /// represented by `M`.
     #[inline]
     pub fn decode_slice_to<M>(&self, input: &[T], output: &mut [M])
     where

@@ -1,29 +1,37 @@
-mod error;
+//! Core types and operations for lattice-based homomorphic encryption.
+//!
+//! The public API is grouped by mathematical family. Use [`lwe`] for LWE,
+//! [`glwe`] for single-modulus GLWE and RLWE, [`rns_fhe`] for CRT/DCRT and
+//! Hybrid-RNS operations, [`ntru`] for NTRU, and [`tfhe`] for the backend-neutral
+//! TFHE workflow.
 
-mod parameter;
-
-mod glwe;
-mod lwe;
-mod ntru;
-mod rlwe;
+#![deny(missing_docs)]
 
 mod ciphertext;
-mod plaintext;
-
+mod error;
+mod parameter;
+mod rlwe;
 mod secret_key_type;
-mod tfhe;
+
+pub mod glwe;
+pub mod lwe;
+pub mod ntru;
+pub mod plaintext;
+pub mod rns_fhe;
+pub mod tfhe;
 
 pub use error::FheError;
 
-pub use parameter::*;
-
-pub use glwe::*;
-pub use lwe::*;
-pub use ntru::*;
-pub use rlwe::*;
-
-pub use ciphertext::*;
-pub use plaintext::*;
-
-pub use secret_key_type::{LweSecretKeyType, RingSecretKeyType};
-pub use tfhe::*;
+// Keep implementation imports concise without exposing the former flat public
+// facade. These names are visible only inside this crate.
+pub(crate) use ciphertext::*;
+pub(crate) use glwe::*;
+pub(crate) use lwe::*;
+pub(crate) use parameter::*;
+pub(crate) use plaintext::*;
+pub(crate) use rlwe::*;
+pub(crate) use rns_fhe::*;
+pub(crate) use secret_key_type::{
+    LweSecretKeyType, RingSecretKeyType, SecretCoefficient, encode_secret_coefficient,
+};
+pub(crate) use tfhe::*;

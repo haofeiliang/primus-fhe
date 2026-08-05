@@ -5,7 +5,9 @@ use std::hint::black_box;
 use criterion::{Criterion, criterion_group, criterion_main};
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fhe_core::{
-    GlweCiphertext, LweCiphertext, NttBlindRotationContext, NttGlweKeySwitchingContext,
+    glwe::{GlweCiphertext, NttGlweKeySwitchingContext},
+    lwe::LweCiphertext,
+    tfhe::NttBlindRotationContext,
 };
 use primus_ntt::{NttTable, U32NttTable};
 use primus_tfhe_glwe_ntt::{

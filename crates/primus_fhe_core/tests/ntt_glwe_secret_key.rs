@@ -1,5 +1,6 @@
 use primus_fhe_core::{
-    GlweParameters, GlweSecretKey, NttGlweSecretKey, PlaintextEmbedding, RingSecretKeyType,
+    glwe::{GlweParameters, GlweSecretKey, NttGlweSecretKey, RingSecretKeyType},
+    plaintext::PlaintextEmbedding,
 };
 use primus_integer::FheUint;
 use primus_lattice::glwe::NttGlwe;

@@ -1,13 +1,15 @@
 //! NTT backend for GLWE-based TFHE.
 
-pub mod error;
+#![deny(missing_docs)]
+
+mod error;
 
 mod client;
 mod context;
 mod evaluator;
 mod key;
 
-pub mod parameters;
+mod parameters;
 
 pub mod boolean;
 
@@ -21,7 +23,7 @@ pub use client::{Decryptor, Encryptor};
 pub use context::TfheContext;
 pub use evaluator::Evaluator;
 pub use key::{KeyGenerator, ServerKey};
-pub use primus_fhe_core::{Ciphertext, ClientKey, LookupTable, LweSecretKeyRef, PbsOrder};
+pub use primus_fhe_core::tfhe::{Ciphertext, ClientKey, LookupTable, LweSecretKeyRef, PbsOrder};
 
 pub use parameters::TfheParameters;
 

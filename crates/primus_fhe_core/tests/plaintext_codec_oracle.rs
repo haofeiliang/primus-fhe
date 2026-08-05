@@ -5,7 +5,7 @@
 
 use core::fmt::Debug;
 
-use primus_fhe_core::{PlaintextCodec, PlaintextEmbedding};
+use primus_fhe_core::plaintext::{PlaintextCodec, PlaintextEmbedding};
 use primus_integer::FheUint;
 
 const POWER_OF_TWO_PLAINTEXT_MODULI: [u128; 5] = [2, 4, 8, 16, 256];
@@ -17,7 +17,7 @@ fn round_half_up(numerator: u128, denominator: u128) -> u128 {
 
 #[inline]
 fn centered_lift(message: u128, t: u128) -> (u128, bool) {
-    let centered_half = (t + 1) / 2;
+    let centered_half = t.div_ceil(2);
     if message < centered_half {
         (message, false)
     } else {

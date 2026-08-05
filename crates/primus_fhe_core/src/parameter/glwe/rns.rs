@@ -6,7 +6,7 @@ use primus_factor::ShoupFactor;
 use primus_integer::{BigUint, FheUint, UnsignedInteger};
 use primus_lattice::{GlweSize, RnsGadgetSize, RnsGlweSize};
 use primus_reduce::FieldContext;
-use primus_rns::{BaseConverter, RNSBase};
+use primus_rns::RNSBase;
 use rand::distr::Uniform;
 
 use crate::{RingSecretKeyType, RnsCoeffCodec};
@@ -19,8 +19,6 @@ where
     M: FieldContext<T>,
 {
     size: RnsGlweSize,
-    /// The message modulus, refers to **t** in the paper.
-    plain_modulus: M,
     /// The cipher modulus minus one, refers to **Q-1**.
     cipher_modulus_minus_one: BigUint<Vec<T>>,
     /// Refers to `Q1-1`, `Q2-1` ...
@@ -89,7 +87,6 @@ where
 
         Self {
             size,
-            plain_modulus,
             cipher_modulus_minus_one,
             cipher_moduli_minus_one,
             cipher_moduli_uniform_distr,
@@ -116,10 +113,6 @@ where
     /// Returns the plain modulus value of this [`CrtGlweParameters<T, M>`].
     pub fn plain_modulus_value(&self) -> T {
         self.codec.t()
-    }
-
-    pub fn plain_modulus(&self) -> M {
-        self.plain_modulus
     }
 
     /// Returns a reference to the cipher modulus of this [`CrtGlweParameters<T, M>`].
@@ -203,62 +196,42 @@ where
         self.codec.delta_factor_mod_q()
     }
 
-    pub fn converter(&self) -> &BaseConverter<T, M> {
-        self.codec.converter()
-    }
-
-    pub fn minus_inv_q_mod_t_gamma(&self) -> &[T] {
-        self.codec.minus_inv_q_mod_t_gamma()
-    }
-
-    pub fn t_gamma(&self) -> &[M] {
-        self.codec.base_t_gamma().moduli()
-    }
-
-    pub fn gamma(&self) -> T {
-        self.codec.gamma()
-    }
-
-    pub fn inv_gamma_mod_t(&self) -> ShoupFactor<T> {
-        self.codec.inv_gamma_mod_t()
-    }
-
+    /// Returns the ordered ciphertext RNS basis Q.
     pub fn base_q(&self) -> &RNSBase<T, M> {
         self.codec.base_q()
     }
 
+    /// Returns the plaintext coefficient codec bound to this RNS basis.
     pub fn codec(&self) -> &RnsCoeffCodec<T, M> {
         &self.codec
     }
 
+    /// Returns the cached RNS GLWE layout.
     pub fn size(&self) -> RnsGlweSize {
         self.size
     }
 
+    /// Returns the limb length of one polynomial in big-integer representation.
     pub fn big_uint_poly_len(&self) -> usize {
         self.poly_length() * self.big_uint_value_len()
     }
 
+    /// Returns the coefficient count of one RNS polynomial.
     pub fn rns_poly_len(&self) -> usize {
         self.size.rns_poly_len()
     }
 
-    pub fn rns_glwe_mid(&self) -> usize {
-        self.size.rns_mask_len()
-    }
-
+    /// Returns the coefficient count of one RNS GLWE ciphertext.
     pub fn rns_glwe_len(&self) -> usize {
         self.size.rns_glwe_len()
     }
 
+    /// Returns the coefficient count of the RNS secret-key mask.
     pub fn secret_key_len(&self) -> usize {
         self.size.rns_mask_len()
     }
 
-    pub fn public_key_len(&self) -> usize {
-        self.size.rns_glwe_len()
-    }
-
+    /// Returns the underlying single-modulus GLWE layout.
     pub const fn glwe_size(&self) -> GlweSize {
         self.size.glwe_size()
     }
@@ -416,34 +389,37 @@ where
         &self.basis
     }
 
+    /// Returns the cached RNS gadget layout.
     pub fn size(&self) -> RnsGadgetSize {
         self.size
     }
 
+    /// Returns the coefficient count of one RNS GLev ciphertext.
     pub fn rns_glev_len(&self) -> usize {
         self.size.rns_glev_len()
     }
 
+    /// Returns the coefficient count of one RNS GGSW ciphertext.
     pub fn rns_ggsw_len(&self) -> usize {
         self.size.rns_ggsw_len()
     }
 
+    /// Returns the coefficient count of one RNS polynomial.
     pub fn rns_poly_len(&self) -> usize {
         self.size.rns_glwe_size().rns_poly_len()
     }
 
-    pub fn rns_glwe_mid(&self) -> usize {
-        self.size.rns_glwe_size().rns_mask_len()
-    }
-
+    /// Returns the coefficient count of one RNS GLWE ciphertext.
     pub fn rns_glwe_len(&self) -> usize {
         self.size.rns_glwe_size().rns_glwe_len()
     }
 
+    /// Returns the number of decomposition levels.
     pub fn decompose_length(&self) -> usize {
         self.basis.decompose_length()
     }
 
+    /// Returns the limb length of one polynomial in big-integer representation.
     pub fn big_uint_poly_len(&self) -> usize {
         self.poly_length() * self.big_uint_value_len()
     }

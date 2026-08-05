@@ -89,7 +89,6 @@ enum CoeffAutoOperation {
 
 #[derive(Debug, Clone)]
 struct CoeffAutoHelper {
-    degree: usize,
     poly_length: usize,
     operation: CoeffAutoOperation,
 }
@@ -105,15 +104,9 @@ impl CoeffAutoHelper {
         };
 
         Self {
-            degree,
             poly_length,
             operation,
         }
-    }
-
-    #[inline]
-    fn degree(&self) -> usize {
-        self.degree
     }
 
     #[inline]
@@ -224,14 +217,14 @@ impl<T: FheUint> CrtGlweAutoKey<T> {
         }
     }
 
-    pub fn degree(&self) -> usize {
-        self.auto_helper.degree()
-    }
-
-    pub fn iter_dcrt_glev(&self) -> DcrtGlevIter<'_, T> {
+    pub(crate) fn iter_dcrt_glev(&self) -> DcrtGlevIter<'_, T> {
         DcrtGlevIter::new(self.key.as_slice(), self.size.rns_glev_len())
     }
 
+    /// Applies this automorphism key to a CRT coefficient-domain ciphertext.
+    ///
+    /// `result` may not alias `ciphertext`; both must match the domain's RNS
+    /// GLWE layout. The reusable context is overwritten.
     pub fn automorphism_to<M, Table, A, B>(
         &self,
         ciphertext: &CrtGlweCiphertext<A>,

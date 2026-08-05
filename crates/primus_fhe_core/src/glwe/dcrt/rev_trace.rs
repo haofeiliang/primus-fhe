@@ -8,15 +8,18 @@ use crate::{
     DcrtGadgetDomain, DcrtGlweAutoKey, DcrtGlweCiphertext, DcrtGlweSecretKey, DcrtGlweTraceContext,
 };
 
+/// Reusable workspace for a DCRT reverse trace.
 pub type DcrtGlweRevTraceContext<T> = DcrtGlweTraceContext<T>;
 
 #[derive(Clone)]
+/// Automorphism keys for reverse tracing a DCRT GLWE ciphertext.
 pub struct DcrtGlweRevTraceKey<T: FheUint> {
     auto_keys: Vec<DcrtGlweAutoKey<T>>,
     inv_2_residues: Vec<ShoupFactor<T>>,
 }
 
 impl<T: FheUint> DcrtGlweRevTraceKey<T> {
+    /// Generates the automorphism keys required by the reverse trace.
     pub fn new<M, Table, R>(
         domain: &DcrtGadgetDomain<'_, T, M, Table>,
         dcrt_sk: &DcrtGlweSecretKey<T>,

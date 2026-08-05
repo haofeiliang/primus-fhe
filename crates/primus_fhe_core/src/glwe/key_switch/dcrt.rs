@@ -17,6 +17,7 @@ use crate::{
     GlweSecretKey,
 };
 
+/// A DCRT GLWE key-switching key stored as input-mask-ordered GLev entries.
 pub struct DcrtGlweKeySwitchingKey<T: FheUint> {
     key: Vec<T>,
     input_size: RnsGlweSize,
@@ -24,6 +25,7 @@ pub struct DcrtGlweKeySwitchingKey<T: FheUint> {
 }
 
 impl<T: FheUint> DcrtGlweKeySwitchingKey<T> {
+    /// Generates a key from a coefficient-domain input key to a DCRT output key.
     pub fn generate<R, M, Table>(
         input_sk: &GlweSecretKey<T>,
         input_params: &CrtGlweParameters<T, M>,
@@ -85,7 +87,7 @@ impl<T: FheUint> DcrtGlweKeySwitchingKey<T> {
         self.output_size
     }
 
-    pub fn iter_dcrt_glev(&self) -> DcrtGlevIter<'_, T> {
+    pub(crate) fn iter_dcrt_glev(&self) -> DcrtGlevIter<'_, T> {
         DcrtGlevIter::new(self.key.as_slice(), self.output_size.rns_glev_len())
     }
 

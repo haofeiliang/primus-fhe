@@ -8,6 +8,12 @@ use super::{
 use crate::PlaintextEmbedding;
 
 impl<T: FheUint> PlaintextCodec<T> {
+    /// Encodes one message using the selected embedding.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the message cannot be represented by `T` or lies outside the
+    /// plaintext domain.
     #[inline]
     pub fn encode_value<M>(&self, message: M, embedding: PlaintextEmbedding) -> T
     where
@@ -31,6 +37,12 @@ impl<T: FheUint> PlaintextCodec<T> {
         })
     }
 
+    /// Encodes `messages` into `output` using the selected embedding.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the slices differ in length or a message lies outside the
+    /// plaintext domain.
     #[inline]
     pub fn encode_slice_to(&self, messages: &[T], output: &mut [T], embedding: PlaintextEmbedding) {
         assert_eq!(messages.len(), output.len());
@@ -59,6 +71,11 @@ impl<T: FheUint> PlaintextCodec<T> {
         });
     }
 
+    /// Encodes all values in place using the selected embedding.
+    ///
+    /// # Panics
+    ///
+    /// Panics if a value lies outside the plaintext domain.
     #[inline]
     pub fn encode_slice_inplace(&self, values: &mut [T], embedding: PlaintextEmbedding) {
         let t = self.t;

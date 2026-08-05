@@ -81,7 +81,6 @@ enum NttAutoOperation {
 
 #[derive(Clone)]
 struct NttAutoHelper {
-    degree: usize,
     poly_length: usize,
     operation: NttAutoOperation,
 }
@@ -95,15 +94,9 @@ impl NttAutoHelper {
         };
 
         Self {
-            degree,
             poly_length,
             operation,
         }
-    }
-
-    #[inline]
-    fn degree(&self) -> usize {
-        self.degree
     }
 
     #[inline]
@@ -260,11 +253,7 @@ impl<T: FheUint> DcrtGlweAutoKey<T> {
         }
     }
 
-    pub fn degree(&self) -> usize {
-        self.auto_helper.degree()
-    }
-
-    pub fn iter_dcrt_glev(&self) -> DcrtGlevIter<'_, T> {
+    pub(crate) fn iter_dcrt_glev(&self) -> DcrtGlevIter<'_, T> {
         DcrtGlevIter::new(self.key.as_slice(), self.size.rns_glev_len())
     }
 

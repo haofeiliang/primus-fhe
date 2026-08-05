@@ -96,7 +96,7 @@ impl<T: FheUint> NttGlweKeySwitchingKey<T> {
         &self.data
     }
 
-    pub fn iter(&self) -> NttGlevIter<'_, T> {
+    fn iter(&self) -> NttGlevIter<'_, T> {
         NttGlevIter::new(&self.data, self.output_size.glev_len())
     }
 

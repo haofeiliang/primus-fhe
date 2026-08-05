@@ -2,9 +2,12 @@ use std::hint::black_box;
 
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use primus_fhe_core::{
-    CrtGlevParameters, CrtGlweParameters, CrtGlweTraceContext, CrtGlweTraceKey, DcrtGadgetDomain,
-    DcrtGlweCiphertext, DcrtGlweRevTraceContext, DcrtGlweRevTraceKey, DcrtGlweSecretKey,
-    DcrtGlweTraceContext, DcrtGlweTraceKey, GlweSecretKey, RingSecretKeyType,
+    glwe::{GlweSecretKey, RingSecretKeyType},
+    rns_fhe::{
+        CrtGlevParameters, CrtGlweParameters, CrtGlweTraceContext, CrtGlweTraceKey,
+        DcrtGadgetDomain, DcrtGlweCiphertext, DcrtGlweRevTraceContext, DcrtGlweRevTraceKey,
+        DcrtGlweSecretKey, DcrtGlweTraceContext, DcrtGlweTraceKey,
+    },
 };
 use primus_lattice::glwe::{CrtGlwe, DcrtGlwe};
 use primus_modulus::BarrettModulus;

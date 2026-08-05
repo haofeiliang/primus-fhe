@@ -7,7 +7,7 @@
 //!   with any FFT size, and the same FFT works with any message modulus.
 
 use primus_fft::{FftEngine, FftTable, RustFftTable};
-use primus_fhe_core::{PlaintextCodec, PlaintextEmbedding};
+use primus_fhe_core::plaintext::{PlaintextCodec, PlaintextEmbedding};
 use primus_integer::FheUint;
 
 // ---------------------------------------------------------------------------

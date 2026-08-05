@@ -147,50 +147,42 @@ where
         }
     }
 
+    /// Returns the plaintext modulus `t`.
     pub fn t(&self) -> T {
         self.t
     }
 
+    /// Returns the ordered ciphertext RNS basis Q.
     pub fn base_q(&self) -> &RNSBase<T, M> {
         &self.base_q
     }
 
+    /// Returns the number of ciphertext moduli.
     pub fn moduli_count(&self) -> usize {
         self.base_q.moduli_count()
     }
 
+    /// Returns the ordered numeric values of the ciphertext moduli.
     pub fn moduli_values(&self) -> &[T] {
         &self.moduli_values
     }
 
+    /// Returns the Shoup factors for `floor(Q / t)` in every Q limb.
     pub fn delta_factor_mod_q(&self) -> &[ShoupFactor<T>] {
         &self.delta_factor_mod_q
     }
 
+    /// Returns `floor(Q / t)` as a multi-limb integer.
     pub fn delta(&self) -> BigUint<&[T]> {
         self.delta.view()
     }
 
-    pub fn gamma(&self) -> T {
-        self.gamma
-    }
-
-    pub fn minus_inv_q_mod_t_gamma(&self) -> &[T] {
-        &self.minus_inv_q_mod_t_gamma
-    }
-
-    pub fn base_t_gamma(&self) -> &RNSBase<T, M> {
-        &self.base_t_gamma
-    }
-
-    pub fn inv_gamma_mod_t(&self) -> ShoupFactor<T> {
-        self.inv_gamma_mod_t
-    }
-
-    pub fn converter(&self) -> &BaseConverter<T, M> {
-        &self.converter_q_to_t_gamma
-    }
-
+    /// Encodes centered coefficients into CRT form, scaled by `floor(Q / t)`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if either polynomial does not contain exactly `poly_length`
+    /// coefficients per required modulus limb.
     pub fn centered_encode_coeffs<A, B>(
         &self,
         message: &Polynomial<A>,
@@ -210,6 +202,12 @@ where
         crt_message.mul_factor_assign(&self.delta_factor_mod_q, poly_length, &self.moduli_values);
     }
 
+    /// Adds centered, scaled plaintext coefficients to a CRT polynomial.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the source or destination layout does not match
+    /// `poly_length` and this codec's RNS basis.
     pub fn add_centered_encode_coeffs_assign<A, B>(
         &self,
         message: &Polynomial<A>,
@@ -228,6 +226,12 @@ where
         );
     }
 
+    /// Encodes unsigned coefficients into CRT form, scaled by `floor(Q / t)`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the source or destination layout does not match
+    /// `poly_length` and this codec's RNS basis.
     pub fn unsigned_encode_coeffs<A, B>(
         &self,
         message: &Polynomial<A>,
@@ -246,6 +250,12 @@ where
         crt_message.mul_factor_assign(&self.delta_factor_mod_q, poly_length, &self.moduli_values);
     }
 
+    /// Adds unsigned, scaled plaintext coefficients to a CRT polynomial.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the source or destination layout does not match
+    /// `poly_length` and this codec's RNS basis.
     pub fn add_unsigned_encode_coeffs_assign<A, B>(
         &self,
         message: &Polynomial<A>,
@@ -263,6 +273,15 @@ where
         );
     }
 
+    /// Decodes one DCRT polynomial into coefficients modulo `t`.
+    ///
+    /// `msg_mod_q` is used as mutable workspace and is overwritten. The
+    /// conversion buffer must contain one RNS polynomial.
+    ///
+    /// # Panics
+    ///
+    /// Panics when an input, output, or workspace length is incompatible with
+    /// `poly_length` and this codec's RNS basis.
     pub fn decode_coeffs<A, B>(
         &self,
         msg_mod_q: &mut DcrtPolynomial<A>,

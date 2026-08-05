@@ -1,10 +1,15 @@
 use primus_fft::{FftEngine, FftTable, RustFftTable};
 use primus_fhe_core::{
-    FourierBlindRotationContext, FourierFunctionalBootstrappingKey, FourierGadgetEncryptContext,
-    FourierGlweDecryptContext, FourierGlweEncryptContext, FourierGlweSecretKey, GlevParameters,
-    GlweParameters, GlweSecretKey, LweParameters, LweSecretKey, LweSecretKeyType,
-    NttBlindRotationContext, NttFunctionalBootstrappingKey, NttGadgetDomain,
-    NttGadgetEncryptContext, NttGlweSecretKey, RingSecretKeyType,
+    glwe::{
+        FourierGadgetEncryptContext, FourierGlweDecryptContext, FourierGlweEncryptContext,
+        FourierGlweSecretKey, GlevParameters, GlweParameters, GlweSecretKey, NttGadgetDomain,
+        NttGadgetEncryptContext, NttGlweSecretKey, RingSecretKeyType,
+    },
+    lwe::{LweParameters, LweSecretKey, LweSecretKeyType},
+    tfhe::{
+        FourierBlindRotationContext, FourierFunctionalBootstrappingKey, NttBlindRotationContext,
+        NttFunctionalBootstrappingKey,
+    },
 };
 use primus_lattice::{
     glwe::{FourierGlweOwned, Glwe, NttGlwe, TorusGlwe},

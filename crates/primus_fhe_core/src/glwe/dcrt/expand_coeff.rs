@@ -13,6 +13,7 @@ use crate::{
 use super::{DcrtGlweExpandCoeffContext, DcrtGlweExpandCoeffSyncPool};
 
 #[derive(Clone)]
+/// Automorphism keys used to expand DCRT GLWE coefficients into ciphertexts.
 pub struct DcrtGlweExpandCoeffKey<T: FheUint> {
     auto_keys: Vec<DcrtGlweAutoKey<T>>,
     ntt_monomial_factors: Vec<Vec<ShoupFactor<T>>>,
@@ -20,6 +21,7 @@ pub struct DcrtGlweExpandCoeffKey<T: FheUint> {
 }
 
 impl<T: FheUint> DcrtGlweExpandCoeffKey<T> {
+    /// Generates the automorphism keys required for coefficient expansion.
     pub fn new<M, Table, R>(
         domain: &DcrtGadgetDomain<'_, T, M, Table>,
         dcrt_sk: &DcrtGlweSecretKey<T>,

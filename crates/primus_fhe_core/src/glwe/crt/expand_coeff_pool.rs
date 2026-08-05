@@ -7,6 +7,7 @@ use primus_reduce::FieldContext;
 
 use crate::{CrtGlweAutoContext, CrtGlweTraceContext, DcrtGadgetDomain};
 
+/// Reusable workspace for serial CRT coefficient expansion.
 pub type CrtGlweExpandCoeffContext<T> = CrtGlweTraceContext<T>;
 
 /// Preallocated, thread-safe workspace pool for parallel coefficient expansion.

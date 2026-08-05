@@ -12,12 +12,14 @@ use crate::{
 use super::{CrtGlweExpandCoeffContext, CrtGlweExpandCoeffSyncPool};
 
 #[derive(Clone)]
+/// Automorphism keys used to expand CRT GLWE coefficients into ciphertexts.
 pub struct CrtGlweExpandCoeffKey<T: FheUint> {
     auto_keys: Vec<CrtGlweAutoKey<T>>,
     inv_count_residues_by_level: Vec<Vec<ShoupFactor<T>>>,
 }
 
 impl<T: FheUint> CrtGlweExpandCoeffKey<T> {
+    /// Generates the automorphism keys required for coefficient expansion.
     pub fn new<M, Table, R>(
         domain: &DcrtGadgetDomain<'_, T, M, Table>,
         sk: &GlweSecretKey<T>,

@@ -1,7 +1,7 @@
 use std::hint::black_box;
 
 use criterion::{Criterion, criterion_group, criterion_main};
-use primus_fhe_core::{LweCiphertext, LweParameters, LweSecretKey, LweSecretKeyType};
+use primus_fhe_core::lwe::{LweCiphertext, LweParameters, LweSecretKey, LweSecretKeyType};
 use primus_modulus::NativeModulus;
 
 fn bench_encrypt(c: &mut Criterion) {

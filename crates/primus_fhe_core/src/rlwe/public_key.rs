@@ -7,6 +7,7 @@ use primus_reduce::FieldContext;
 
 use crate::{NttRlweCiphertext, NttRlweSecretKey, RlweParameters};
 
+/// An RLWE public key stored as one NTT-domain RLWE encryption of zero.
 #[derive(Clone)]
 pub struct NttRlwePublicKey<S>
 where
@@ -50,6 +51,7 @@ where
 }
 
 impl<T: FheUint> NttRlwePublicKey<Vec<T>> {
+    /// Generates a public key for `secret_key` using the supplied NTT table.
     pub fn new<M, Table, R>(
         secret_key: &NttRlweSecretKey<T>,
         params: &RlweParameters<T, M>,
@@ -79,13 +81,6 @@ impl<T: FheUint> NttRlwePublicKey<Vec<T>> {
             key: NttRlwe::new(data),
         }
     }
-
-    #[inline]
-    pub fn zero(key_len: usize) -> Self {
-        Self {
-            key: NttRlwe::zero(key_len),
-        }
-    }
 }
 
 impl<S, T> NttRlwePublicKey<S>
@@ -112,11 +107,6 @@ where
     pub fn read_bytes(&mut self, data: &[u8]) {
         self.key.read_bytes(data);
     }
-
-    #[inline]
-    pub fn key_mut(&mut self) -> &mut NttRlwe<S> {
-        &mut self.key
-    }
 }
 
 impl<S, T> NttRlwePublicKey<S>
@@ -142,6 +132,9 @@ where
         self.key.byte_count()
     }
 
+    /// Encrypts `msg` into an existing NTT RLWE allocation.
+    ///
+    /// The message and result must use the polynomial length in `params`.
     pub fn encrypt_inplace<M, Table, R, A, B>(
         &self,
         msg: &Polynomial<A>,
@@ -179,6 +172,7 @@ where
         NttPolynomial(b_out).add_mul_assign(&NttPolynomial(b_in), v_poly, modulus);
     }
 
+    /// Encrypts `msg` into a newly allocated NTT RLWE ciphertext.
     pub fn encrypt<M, Table, R, A>(
         &self,
         msg: &Polynomial<A>,
@@ -197,6 +191,7 @@ where
         result
     }
 
+    /// Encrypts zero into an existing NTT RLWE allocation.
     pub fn encrypt_zeros_inplace<M, Table, R, A>(
         &self,
         result: &mut NttRlweCiphertext<A>,
@@ -229,6 +224,7 @@ where
         NttPolynomial(b_out).add_mul_assign(&b_in, v_poly, modulus);
     }
 
+    /// Encrypts zero into a newly allocated NTT RLWE ciphertext.
     pub fn encrypt_zeros<M, Table, R>(
         &self,
         params: &RlweParameters<T, M>,
@@ -243,9 +239,5 @@ where
         let mut result = NttRlweCiphertext::zero(params.poly_length() * 2);
         self.encrypt_zeros_inplace(&mut result, params, ntt_table, rng);
         result
-    }
-
-    pub fn key(&self) -> &NttRlwe<S> {
-        &self.key
     }
 }

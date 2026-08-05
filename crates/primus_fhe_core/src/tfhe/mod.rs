@@ -1,3 +1,6 @@
+//! Backend-neutral TFHE parameters, client keys, ciphertexts, lookup tables,
+//! and Boolean evaluation helpers.
+
 mod backend;
 mod boolean;
 mod client;

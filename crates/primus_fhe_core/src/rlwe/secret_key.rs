@@ -8,10 +8,7 @@ use primus_poly::{NttPolynomial, NttPolynomialOwned, Polynomial, PolynomialOwned
 use primus_reduce::FieldContext;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
-use crate::{
-    LweSecretKey, LweSecretKeyType, NttRlweCiphertext, PlaintextEmbedding, RingSecretKeyType,
-    RlweParameters,
-};
+use crate::{NttRlweCiphertext, PlaintextEmbedding, RingSecretKeyType, RlweParameters};
 
 /// Represents a secret key for the Ring Learning with Errors (RLWE) cryptographic scheme.
 #[derive(Clone)]
@@ -53,6 +50,7 @@ impl<T: FheUint> RlweSecretKey<T> {
     }
 
     #[inline]
+    /// Samples a secret key using the distribution and length in `params`.
     pub fn generate<R, M>(params: &RlweParameters<T, M>, rng: &mut R) -> Self
     where
         R: rand::Rng + rand::CryptoRng,
@@ -75,31 +73,6 @@ impl<T: FheUint> RlweSecretKey<T> {
         };
 
         Self { key, distr }
-    }
-
-    #[inline]
-    pub fn from_lwe_secret_key<C: FheUint>(
-        lwe_secret_key: &LweSecretKey<C>,
-        modulus_minus_one: T,
-    ) -> Self {
-        let convert = |v: &C| {
-            if v.is_zero() {
-                T::ZERO
-            } else if v.is_one() {
-                T::ONE
-            } else {
-                modulus_minus_one
-            }
-        };
-        let distr = match lwe_secret_key.distr() {
-            LweSecretKeyType::Binary => RingSecretKeyType::Binary,
-            LweSecretKeyType::Ternary => RingSecretKeyType::Ternary,
-        };
-
-        RlweSecretKey {
-            key: Polynomial::new(lwe_secret_key.as_ref().iter().map(convert).collect()),
-            distr,
-        }
     }
 }
 
@@ -193,6 +166,9 @@ impl<T: FheUint> NttRlweSecretKey<T> {
         ntt_table.inverse_transform_slice(result.as_mut())
     }
 
+    /// Encrypts `msg` into an existing NTT RLWE allocation.
+    ///
+    /// The message and result must use the polynomial length in `params`.
     pub fn encrypt_inplace<M, Table, R, A, B>(
         &self,
         msg: &Polynomial<A>,
@@ -286,6 +262,7 @@ impl<T: FheUint> NttRlweSecretKey<T> {
         NttPolynomial(b).add_mul_assign(&NttPolynomial(a), self, modulus);
     }
 
+    /// Encrypts zero into a newly allocated NTT RLWE ciphertext.
     pub fn encrypt_zeros<M, Table, R>(
         &self,
         params: &RlweParameters<T, M>,
@@ -303,6 +280,7 @@ impl<T: FheUint> NttRlweSecretKey<T> {
         result
     }
 
+    /// Encrypts zero into an existing NTT RLWE allocation.
     pub fn encrypt_zeros_inplace<M, Table, R, A>(
         &self,
         result: &mut NttRlweCiphertext<A>,
@@ -349,6 +327,9 @@ impl<T: FheUint> NttRlweSecretKey<T> {
         )
     }
 
+    /// Decrypts an NTT RLWE ciphertext into `result`.
+    ///
+    /// The ciphertext and result must use the polynomial length in `params`.
     pub fn decrypt_inplace<M, Table, A, B>(
         &self,
         cipher: &NttRlweCiphertext<A>,
@@ -375,6 +356,7 @@ impl<T: FheUint> NttRlweSecretKey<T> {
             .decode_slice_inplace(result.as_mut());
     }
 
+    /// Decrypts an NTT RLWE ciphertext into a newly allocated plaintext polynomial.
     pub fn decrypt<M, Table, A>(
         &self,
         cipher: &NttRlweCiphertext<A>,

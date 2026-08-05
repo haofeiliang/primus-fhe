@@ -1,6 +1,9 @@
 use primus_fhe_core::{
-    NttRlweCiphertext, NttRlweSecretKey, PlaintextEmbedding, RingSecretKeyType, RlweParameters,
-    RlweSecretKey,
+    glwe::{
+        RingSecretKeyType,
+        rlwe::{NttRlweCiphertext, NttRlweSecretKey, RlweParameters, RlweSecretKey},
+    },
+    plaintext::PlaintextEmbedding,
 };
 use primus_integer::FheUint;
 use primus_modulus::BarrettModulus;

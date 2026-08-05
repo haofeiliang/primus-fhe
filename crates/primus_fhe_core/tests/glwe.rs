@@ -1,6 +1,6 @@
 use primus_fhe_core::{
-    CrtGlweParameters, DcrtGlweCiphertext, DcrtGlweDecryptContext, DcrtGlweSecretKey,
-    GlweSecretKey, RingSecretKeyType,
+    glwe::{GlweSecretKey, RingSecretKeyType},
+    rns_fhe::{CrtGlweParameters, DcrtGlweCiphertext, DcrtGlweDecryptContext, DcrtGlweSecretKey},
 };
 use primus_lattice::glwe::DcrtGlwe;
 use primus_modulus::BarrettModulus;

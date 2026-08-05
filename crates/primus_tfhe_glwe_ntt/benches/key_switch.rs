@@ -4,9 +4,12 @@ use std::hint::black_box;
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use primus_fhe_core::{
-    ClientKey, GlweCiphertext, GlweSecretKey, LweCiphertext, LweKeySwitchingKey,
-    LweKeySwitchingParameters, NttGadgetDomain, NttGadgetEncryptContext,
-    NttGlweKeySwitchingContext, NttGlweKeySwitchingKey, NttGlweSecretKey,
+    glwe::{
+        GlweCiphertext, GlweSecretKey, NttGadgetDomain, NttGadgetEncryptContext,
+        NttGlweKeySwitchingContext, NttGlweKeySwitchingKey, NttGlweSecretKey,
+    },
+    lwe::{LweCiphertext, LweKeySwitchingKey, LweKeySwitchingParameters},
+    tfhe::ClientKey,
 };
 use primus_ntt::{NttTable, U32NttTable};
 use primus_tfhe_glwe_ntt::boolean_parameters;
@@ -21,7 +24,7 @@ fn bench_key_switch(c: &mut Criterion) {
     let mut rng = rand::rng();
 
     let client_key = ClientKey::new(
-        primus_fhe_core::LweSecretKey::generate(parameters.small_lwe(), &mut rng),
+        primus_fhe_core::lwe::LweSecretKey::generate(parameters.small_lwe(), &mut rng),
         GlweSecretKey::generate(parameters.glwe(), &mut rng),
         parameters.pbs_order(),
     );

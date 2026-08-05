@@ -1,8 +1,11 @@
 use primus_fhe_core::{
-    CrtGlevParameters, CrtGlweParameters, DcrtGadgetDomain, DcrtGlweCiphertext,
-    DcrtGlweDecryptContext, DcrtGlweKeySwitchingContext, DcrtGlweKeySwitchingKey,
-    DcrtGlweSecretKey, GlweSecretKey, HybridRnsGlweKeySwitchingContext,
-    HybridRnsGlweKeySwitchingKey, HybridRnsKeySwitchDomain, RingSecretKeyType,
+    glwe::{GlweSecretKey, RingSecretKeyType},
+    rns_fhe::{
+        CrtGlevParameters, CrtGlweParameters, DcrtGadgetDomain, DcrtGlweCiphertext,
+        DcrtGlweDecryptContext, DcrtGlweKeySwitchingContext, DcrtGlweKeySwitchingKey,
+        DcrtGlweSecretKey, HybridRnsGlweKeySwitchingContext, HybridRnsGlweKeySwitchingKey,
+        HybridRnsKeySwitchDomain,
+    },
 };
 use primus_lattice::glwe::DcrtGlwe;
 use primus_modulus::BarrettModulus;
@@ -31,7 +34,7 @@ fn test_rns_glwe_ksk() {
     let moduli = moduli_values.map(<BarrettModulus<ValueT>>::new);
     let table = UintDcrtTable::new(log_n, &moduli).unwrap();
 
-    let mut rng = StdRng::seed_from_u64(0x5eed_4b53_4b);
+    let mut rng = StdRng::seed_from_u64(0x005e_ed4b_534b);
 
     // ── Parameters ──────────────────────────────────────────────
     let glwe_params = CrtGlweParameters::new(

@@ -16,10 +16,15 @@ use strategy::{
 /// Broad encoding strategy selected by [`PlaintextCodec::new`].
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PlaintextCodecKind {
+    /// Native power-of-two torus encoding implemented with shifts.
     NativePow2,
+    /// Explicit power-of-two modulus encoding implemented with shifts.
     ExplicitPow2,
+    /// Native torus encoding using a rounded scale factor.
     NativeScaled,
+    /// Explicit scaled encoding whose intermediate product fits in one limb.
     ExplicitScaledNarrow,
+    /// Explicit scaled encoding requiring wide intermediate arithmetic.
     ExplicitScaledWide,
 }
 
@@ -35,6 +40,14 @@ pub struct PlaintextCodec<T: FheUint> {
 }
 
 impl<T: FheUint> PlaintextCodec<T> {
+    /// Creates a codec for plaintext modulus `t` and ciphertext modulus `q`.
+    ///
+    /// `q = None` selects the native wrapping modulus `2^T::BITS`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `t <= 1`, if an explicit `q` is not greater than `t`, or if
+    /// a power-of-two pair leaves fewer than two encoding bits.
     #[inline]
     pub fn new(t: T, q: Option<T>) -> Self {
         assert!(t > T::ONE);
@@ -98,6 +111,7 @@ impl<T: FheUint> PlaintextCodec<T> {
         self.t
     }
 
+    /// Returns the preselected arithmetic strategy.
     #[inline]
     pub fn kind(&self) -> PlaintextCodecKind {
         match self.strategy {

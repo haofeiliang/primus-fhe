@@ -1,5 +1,5 @@
 use primus_fft::{FftEngine, FftTable, RustFftTable};
-use primus_fhe_core::{
+use primus_fhe_core::glwe::{
     FourierGadgetEncryptContext, FourierGlweDecryptContext, FourierGlweEncryptContext,
     FourierGlweSecretKey, GlevParameters, GlweParameters, GlweSecretKey, NttGadgetDomain,
     NttGadgetEncryptContext, NttGlweSecretKey, RingSecretKeyType,
@@ -63,7 +63,7 @@ fn fourier_cmux_selects_requested_glwe() {
 
     let mut control = FourierGgswOwned::zero(params.fourier_ggsw_len());
     let mut output: TorusGlwe<Vec<u32>> = TorusGlwe::zero(params.glwe_len());
-    for bit in 0..=1usize {
+    for (bit, expected) in messages.iter().enumerate() {
         let mut control_message = vec![0u32; POLY_LENGTH];
         control_message[0] = bit as u32;
         secret_key.encrypt_ggsw_to(
@@ -95,7 +95,7 @@ fn fourier_cmux_selects_requested_glwe() {
                     &mut decrypt_context,
                 )
                 .as_ref(),
-            messages[bit]
+            expected.as_slice()
         );
     }
 }
@@ -139,7 +139,7 @@ fn ntt_cmux_selects_requested_glwe() {
 
     let mut control: NttGgsw<Vec<u32>> = NttGgsw::zero(params.ggsw_len());
     let mut output: Glwe<Vec<u32>> = Glwe::zero(params.glwe_len());
-    for bit in 0..=1usize {
+    for (bit, expected) in messages.iter().enumerate() {
         let mut control_message = vec![0u32; POLY_LENGTH];
         control_message[0] = bit as u32;
         secret_key.encrypt_ggsw_to(
@@ -164,7 +164,7 @@ fn ntt_cmux_selects_requested_glwe() {
         output.write_ntt_form(&mut output_ntt, &ntt);
         assert_eq!(
             secret_key.decrypt(&output_ntt, &glwe_params, &ntt).as_ref(),
-            messages[bit]
+            expected.as_slice()
         );
     }
 }

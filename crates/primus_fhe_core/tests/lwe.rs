@@ -1,4 +1,4 @@
-use primus_fhe_core::{LweParameters, LweSecretKey, LweSecretKeyType};
+use primus_fhe_core::lwe::{LweParameters, LweSecretKey, LweSecretKeyType};
 use primus_integer::FheUint;
 use primus_modulus::{BarrettModulus, NativeModulus, PowOf2Modulus};
 use primus_reduce::RingContext;

@@ -1,4 +1,4 @@
-use primus_fhe_core::{PlaintextCodec, PlaintextCodecKind, PlaintextEmbedding};
+use primus_fhe_core::plaintext::{PlaintextCodec, PlaintextCodecKind, PlaintextEmbedding};
 use primus_integer::FheUint;
 
 fn message_values<T: FheUint>(t: T) -> Vec<T> {

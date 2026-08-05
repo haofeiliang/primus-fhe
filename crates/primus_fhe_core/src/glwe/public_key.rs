@@ -9,6 +9,7 @@ use primus_reduce::FieldContext;
 use crate::{CrtGgswParameters, CrtGlevParameters, CrtGlweParameters, DcrtGlweSecretKey};
 
 #[derive(Clone)]
+/// A public GLWE encryption key stored in DCRT form.
 pub struct DcrtGlwePublicKey<T: FheUint> {
     key: DcrtGlwe<Vec<T>>,
 }
@@ -32,6 +33,7 @@ impl<T: FheUint> DcrtGlwePublicKey<T> {
         self.key.byte_count()
     }
 
+    /// Generates a public key for `secret_key` using the supplied DCRT table.
     pub fn new<Table, R, M>(
         secret_key: &DcrtGlweSecretKey<T>,
         params: &CrtGlweParameters<T, M>,
@@ -72,6 +74,7 @@ impl<T: FheUint> DcrtGlwePublicKey<T> {
         Self { key: data }
     }
 
+    /// Encrypts one CRT plaintext polynomial into a newly allocated ciphertext.
     pub fn encrypt<R, M, Table, A>(
         &self,
         message: &CrtPolynomial<A>,

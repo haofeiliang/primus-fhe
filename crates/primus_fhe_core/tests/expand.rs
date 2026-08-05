@@ -1,8 +1,11 @@
 use primus_fhe_core::{
-    CrtGlevParameters, CrtGlweExpandCoeffContext, CrtGlweExpandCoeffKey,
-    CrtGlweExpandCoeffSyncPool, CrtGlweParameters, DcrtGadgetDomain, DcrtGlweCiphertext,
-    DcrtGlweDecryptContext, DcrtGlweExpandCoeffContext, DcrtGlweExpandCoeffKey,
-    DcrtGlweExpandCoeffSyncPool, DcrtGlweSecretKey, GlweSecretKey, RingSecretKeyType,
+    glwe::{GlweSecretKey, RingSecretKeyType},
+    rns_fhe::{
+        CrtGlevParameters, CrtGlweExpandCoeffContext, CrtGlweExpandCoeffKey,
+        CrtGlweExpandCoeffSyncPool, CrtGlweParameters, DcrtGadgetDomain, DcrtGlweCiphertext,
+        DcrtGlweDecryptContext, DcrtGlweExpandCoeffContext, DcrtGlweExpandCoeffKey,
+        DcrtGlweExpandCoeffSyncPool, DcrtGlweSecretKey,
+    },
 };
 use primus_lattice::glwe::CrtGlwe;
 use primus_modulus::BarrettModulus;

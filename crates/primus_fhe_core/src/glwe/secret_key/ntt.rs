@@ -66,6 +66,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
     }
 
     #[inline]
+    /// Iterates over the NTT-domain secret polynomials in GLWE component order.
     pub fn iter(&self) -> NttPolynomialIter<'_, T> {
         NttPolynomialIter::new(self.key.as_slice(), self.size.poly_length())
     }
@@ -361,6 +362,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         ntt_table.inverse_transform_slice(result.as_mut())
     }
 
+    /// Decrypts an NTT GLWE ciphertext into a newly allocated plaintext polynomial.
     pub fn decrypt<M, Table, A>(
         &self,
         cipher: &NttGlweCiphertext<A>,
@@ -377,6 +379,9 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         result
     }
 
+    /// Decrypts an NTT GLWE ciphertext into `result`.
+    ///
+    /// The ciphertext and result must match the polynomial length in `params`.
     pub fn decrypt_to<M, Table, A, B>(
         &self,
         cipher: &NttGlweCiphertext<A>,

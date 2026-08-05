@@ -3,8 +3,11 @@ use std::hint::black_box;
 use criterion::{BatchSize, BenchmarkId, Criterion, criterion_group, criterion_main};
 use primus_factor::ShoupFactor;
 use primus_fhe_core::{
-    CrtGlevParameters, CrtGlweAutoContext, CrtGlweAutoKey, CrtGlweParameters, DcrtGadgetDomain,
-    DcrtGlweAutoKey, DcrtGlweCiphertext, DcrtGlweSecretKey, GlweSecretKey, RingSecretKeyType,
+    glwe::{GlweSecretKey, RingSecretKeyType},
+    rns_fhe::{
+        CrtGlevParameters, CrtGlweAutoContext, CrtGlweAutoKey, CrtGlweParameters, DcrtGadgetDomain,
+        DcrtGlweAutoKey, DcrtGlweCiphertext, DcrtGlweSecretKey,
+    },
 };
 use primus_integer::BigUint;
 use primus_lattice::glwe::{CrtGlwe, DcrtGlwe};

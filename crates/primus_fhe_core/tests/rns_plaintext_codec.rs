@@ -1,4 +1,4 @@
-use primus_fhe_core::RnsCoeffCodec;
+use primus_fhe_core::rns_fhe::RnsCoeffCodec;
 use primus_modulus::BarrettModulus;
 use primus_poly::{CrtPolynomial, DcrtPolynomial, Polynomial};
 use primus_rns::RNSBase;

@@ -1,7 +1,8 @@
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fhe_core::{
-    GgswParameters, GlweParameters, LweParameters, LweSecretKeyType, PbsOrder, RingSecretKeyType,
-    TfheParameters,
+    glwe::{GgswParameters, GlweParameters, RingSecretKeyType},
+    lwe::{LweParameters, LweSecretKeyType},
+    tfhe::{PbsOrder, TfheParameters},
 };
 use primus_modulus::NativeModulus;
 

@@ -6,9 +6,9 @@ use primus_reduce::RingContext;
 use rand::distr::Distribution;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
-use crate::{CrtGlweParameters, GlweParameters, RingSecretKeyType};
+use crate::{GlweParameters, RingSecretKeyType};
 
-use super::SecretCoefficient;
+use crate::SecretCoefficient;
 
 /// Common secret-key shape exposed by single-modulus and RNS GLWE parameters.
 pub trait GlweSecretKeyParameterSet<T: FheUint> {
@@ -26,20 +26,6 @@ where
 {
     fn secret_key_size(&self) -> GlweSize {
         self.size()
-    }
-
-    fn secret_key_distribution_type(&self) -> RingSecretKeyType {
-        self.secret_key_type()
-    }
-}
-
-impl<T, M> GlweSecretKeyParameterSet<T> for CrtGlweParameters<T, M>
-where
-    T: FheUint,
-    M: primus_reduce::FieldContext<T>,
-{
-    fn secret_key_size(&self) -> GlweSize {
-        self.size().glwe_size()
     }
 
     fn secret_key_distribution_type(&self) -> RingSecretKeyType {
@@ -119,6 +105,7 @@ impl<T: FheUint> GlweSecretKey<T> {
     }
 
     #[inline]
+    /// Samples a canonical coefficient-domain key from `params`.
     pub fn generate<R, P>(params: &P, rng: &mut R) -> Self
     where
         R: rand::Rng + rand::CryptoRng,

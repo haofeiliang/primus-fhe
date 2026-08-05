@@ -1,5 +1,5 @@
 use primus_fft::{FftEngine, FftTable, RustFftTable};
-use primus_fhe_core::{
+use primus_fhe_core::glwe::{
     FourierGadgetEncryptContext, FourierGlweDecryptContext, FourierGlweEncryptContext,
     FourierGlweKeySwitchingContext, FourierGlweKeySwitchingKey, FourierGlweSecretKey,
     GlevParameters, GlweKeySwitchingParameters, GlweParameters, GlweSecretKey, NttGadgetDomain,
@@ -80,7 +80,10 @@ fn ntt_glwe_key_switches_for_equal_and_smaller_output_dimensions() {
 
         assert_eq!(key.input_dimension(), INPUT_DIMENSION);
         assert_eq!(key.output_dimension(), output_dimension);
-        assert_eq!(key.as_slice().len(), parameters.key_len());
+        assert_eq!(
+            key.as_slice().len(),
+            parameters.input_dimension() * parameters.output_size().glev_len()
+        );
 
         let mut context = NttGlweKeySwitchingContext::new(domain.size().glwe_size());
         let switched = key.key_switch(&input, &domain, &mut context);
@@ -158,7 +161,10 @@ fn fourier_glwe_key_switches_for_equal_and_smaller_output_dimensions() {
 
         assert_eq!(key.input_dimension(), INPUT_DIMENSION);
         assert_eq!(key.output_dimension(), output_dimension);
-        assert_eq!(key.as_slice().len(), parameters.fourier_key_len());
+        assert_eq!(
+            key.as_slice().len(),
+            parameters.input_dimension() * parameters.output_size().fourier_glev_len()
+        );
 
         let mut context = FourierGlweKeySwitchingContext::new(parameters.output().glwe_size());
         let switched = key.key_switch(&input, parameters.output(), &mut fft, &mut context);

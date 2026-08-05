@@ -1,6 +1,7 @@
 use primus_fhe_core::{
-    Ciphertext, GlweCiphertext, LookupTable, LweCiphertext, NttBlindRotationContext,
-    NttGadgetDomain, NttGlweKeySwitchingContext, PbsOrder, ProgrammableBootstrap,
+    glwe::{GlweCiphertext, NttGadgetDomain, NttGlweKeySwitchingContext},
+    lwe::LweCiphertext,
+    tfhe::{Ciphertext, LookupTable, NttBlindRotationContext, PbsOrder, ProgrammableBootstrap},
 };
 use primus_integer::FheUint;
 use primus_ntt::NttTable;

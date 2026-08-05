@@ -1,4 +1,7 @@
-use primus_fhe_core::{ClientKey, LookupTable, NttGadgetDomain};
+use primus_fhe_core::{
+    glwe::NttGadgetDomain,
+    tfhe::{ClientKey, LookupTable},
+};
 use primus_integer::FheUint;
 use primus_ntt::NttTable;
 

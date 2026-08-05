@@ -2,8 +2,11 @@ use std::hint::black_box;
 
 use criterion::{BatchSize, BenchmarkId, Criterion, criterion_group, criterion_main};
 use primus_fhe_core::{
-    NttRlweCiphertext, NttRlweSecretKey, PlaintextCodec, PlaintextEmbedding, RingSecretKeyType,
-    RlweParameters, RlweSecretKey,
+    glwe::{
+        RingSecretKeyType,
+        rlwe::{NttRlweCiphertext, NttRlweSecretKey, RlweParameters, RlweSecretKey},
+    },
+    plaintext::{PlaintextCodec, PlaintextEmbedding},
 };
 use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, UintNttTable};

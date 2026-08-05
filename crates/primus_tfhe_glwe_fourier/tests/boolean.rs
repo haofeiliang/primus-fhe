@@ -1,7 +1,8 @@
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{FftTable, RustFftTable};
 use primus_fhe_core::{
-    GgswParameters, GlweParameters, LweParameters, LweSecretKeyType, RingSecretKeyType,
+    glwe::{GgswParameters, GlweParameters, RingSecretKeyType},
+    lwe::{LweParameters, LweSecretKeyType},
 };
 use primus_modulus::NativeModulus;
 use primus_tfhe_glwe_fourier::{

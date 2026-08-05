@@ -540,20 +540,4 @@ where
     pub fn output_size(&self) -> GadgetSize {
         self.output.size()
     }
-
-    /// Returns the coefficient/NTT-domain key length.
-    #[inline]
-    pub fn key_len(&self) -> usize {
-        self.input_dimension
-            .checked_mul(self.output.glev_len())
-            .expect("GLWE key-switching key length overflow")
-    }
-
-    /// Returns the Fourier-domain key length.
-    #[inline]
-    pub fn fourier_key_len(&self) -> usize {
-        self.input_dimension
-            .checked_mul(self.output.fourier_glev_len())
-            .expect("Fourier GLWE key-switching key length overflow")
-    }
 }

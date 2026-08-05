@@ -5,10 +5,7 @@ use primus_data::{Data, DataMut, RawData};
 use primus_integer::FheUint;
 use primus_lattice::{RnsGlweSize, glev::DcrtGlev};
 use primus_ntt::{DcrtTable, NttTable};
-use primus_poly::{
-    CrtPolynomial, DcrtPolynomial, DcrtPolynomialIter, DcrtPolynomialIterMut, Polynomial,
-    PolynomialOwned,
-};
+use primus_poly::{CrtPolynomial, DcrtPolynomial, DcrtPolynomialIter, Polynomial, PolynomialOwned};
 use primus_reduce::FieldContext;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
@@ -18,6 +15,7 @@ use crate::{
 
 use super::{GlweSecretKey, encode_secret_polynomial_to};
 
+/// A GLWE secret key represented in NTT form for every ordered RNS modulus.
 #[derive(Clone)]
 pub struct DcrtGlweSecretKey<T: FheUint> {
     pub(crate) key: Vec<T>,
@@ -35,15 +33,7 @@ impl<T: FheUint> Zeroize for DcrtGlweSecretKey<T> {
 impl<T: FheUint> ZeroizeOnDrop for DcrtGlweSecretKey<T> {}
 
 impl<T: FheUint> DcrtGlweSecretKey<T> {
-    pub fn zero(size: RnsGlweSize, distr: RingSecretKeyType) -> Self {
-        Self {
-            key: vec![T::ZERO; size.rns_mask_len()],
-            distr,
-            size,
-        }
-    }
-
-    pub fn key(&self) -> &[T] {
+    pub(crate) fn key(&self) -> &[T] {
         &self.key
     }
 
@@ -58,12 +48,9 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
         self.size
     }
 
+    /// Iterates over the DCRT secret polynomials in GLWE component order.
     pub fn iter_dcrt_poly(&self) -> DcrtPolynomialIter<'_, T> {
         DcrtPolynomialIter::new(self.key.as_slice(), self.size.rns_poly_len())
-    }
-
-    pub fn iter_dcrt_poly_mut(&mut self) -> DcrtPolynomialIterMut<'_, T> {
-        DcrtPolynomialIterMut::new(self.key.as_mut_slice(), self.size.rns_poly_len())
     }
 
     /// Creates a modulus-specific DCRT representation of a canonical signed
@@ -240,6 +227,9 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
         });
     }
 
+    /// Encrypts zero into an existing DCRT GLWE allocation.
+    ///
+    /// The result is overwritten and must match `params` and `table`.
     pub fn encrypt_zeros_inplace<R, M, Table, A>(
         &self,
         result: &mut DcrtGlweCiphertext<A>,
@@ -322,6 +312,10 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
         });
     }
 
+    /// Encrypts a DCRT plaintext polynomial into an existing DCRT GLev allocation.
+    ///
+    /// The plaintext, result, parameters, and table must share the same ordered
+    /// RNS basis and polynomial length.
     pub fn encrypt_dcrt_msg_to_dcrt_glev_inplace<R, M, Table, A, B>(
         &self,
         dcrt_msg: &DcrtPolynomial<A>,
@@ -397,6 +391,9 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
         });
     }
 
+    /// Encrypts a CRT plaintext polynomial into an existing DCRT GLev allocation.
+    ///
+    /// The result is overwritten and must match the domain's gadget layout.
     pub fn encrypt_crt_msg_to_dcrt_glev_inplace<R, M, Table, A, B>(
         &self,
         crt_msg: &CrtPolynomial<A>,
@@ -482,6 +479,7 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
         msg_mod_q.neg_assign(poly_length, moduli);
     }
 
+    /// Decrypts a DCRT GLWE ciphertext into a newly allocated plaintext polynomial.
     pub fn decrypt<M, Table, A>(
         &self,
         ciphertext: &DcrtGlweCiphertext<A>,
@@ -499,6 +497,10 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
         msg
     }
 
+    /// Decrypts a DCRT GLWE ciphertext into `msg` using reusable workspace.
+    ///
+    /// The ciphertext, output, parameters, table, and context must share the
+    /// same polynomial length and ordered RNS basis.
     pub fn decrypt_inplace<M, Table, A, B>(
         &self,
         ciphertext: &DcrtGlweCiphertext<A>,

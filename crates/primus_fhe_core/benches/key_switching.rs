@@ -4,10 +4,13 @@ use std::hint::black_box;
 
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use primus_fhe_core::{
-    CrtGlevParameters, CrtGlweParameters, DcrtGadgetDomain, DcrtGlweCiphertext,
-    DcrtGlweDecryptContext, DcrtGlweKeySwitchingContext, DcrtGlweKeySwitchingKey,
-    DcrtGlweSecretKey, GlweSecretKey, HybridRnsGlweKeySwitchingContext,
-    HybridRnsGlweKeySwitchingKey, HybridRnsKeySwitchDomain, RingSecretKeyType,
+    glwe::{GlweSecretKey, RingSecretKeyType},
+    rns_fhe::{
+        CrtGlevParameters, CrtGlweParameters, DcrtGadgetDomain, DcrtGlweCiphertext,
+        DcrtGlweDecryptContext, DcrtGlweKeySwitchingContext, DcrtGlweKeySwitchingKey,
+        DcrtGlweSecretKey, HybridRnsGlweKeySwitchingContext, HybridRnsGlweKeySwitchingKey,
+        HybridRnsKeySwitchDomain,
+    },
 };
 use primus_lattice::glwe::DcrtGlwe;
 use primus_modulus::BarrettModulus;

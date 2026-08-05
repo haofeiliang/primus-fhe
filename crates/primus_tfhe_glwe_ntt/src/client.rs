@@ -7,7 +7,8 @@ use crate::ClientKey;
 /// Only client-key encryption is implemented currently; the key type is kept
 /// generic so public-key encryption can be added without replacing this type.
 pub type Encryptor<'a, T, Key = ClientKey<T>> =
-    primus_fhe_core::Encryptor<'a, T, BarrettModulus<T>, BarrettModulus<T>, Key>;
+    primus_fhe_core::tfhe::Encryptor<'a, T, BarrettModulus<T>, BarrettModulus<T>, Key>;
 
 /// Client-key decryptor for the explicit-modulus NTT backend.
-pub type Decryptor<'a, T> = primus_fhe_core::Decryptor<'a, T, BarrettModulus<T>, BarrettModulus<T>>;
+pub type Decryptor<'a, T> =
+    primus_fhe_core::tfhe::Decryptor<'a, T, BarrettModulus<T>, BarrettModulus<T>>;

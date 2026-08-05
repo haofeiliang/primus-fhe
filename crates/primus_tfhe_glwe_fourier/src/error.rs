@@ -1,6 +1,6 @@
 //! Errors produced by the Fourier TFHE backend.
 
-pub use primus_fhe_core::{
+pub use primus_fhe_core::tfhe::{
     BooleanError, LookupTableError, TfheClientError, TfheEvaluationError, TfheKeyError,
     TfheParameterError,
 };

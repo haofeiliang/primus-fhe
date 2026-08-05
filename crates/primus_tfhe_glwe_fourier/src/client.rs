@@ -7,7 +7,8 @@ use crate::ClientKey;
 /// Only client-key encryption is implemented currently; the key type is kept
 /// generic so public-key encryption can be added without replacing this type.
 pub type Encryptor<'a, T, Key = ClientKey<T>> =
-    primus_fhe_core::Encryptor<'a, T, NativeModulus<T>, NativeModulus<T>, Key>;
+    primus_fhe_core::tfhe::Encryptor<'a, T, NativeModulus<T>, NativeModulus<T>, Key>;
 
 /// Client-key decryptor for the native-torus Fourier backend.
-pub type Decryptor<'a, T> = primus_fhe_core::Decryptor<'a, T, NativeModulus<T>, NativeModulus<T>>;
+pub type Decryptor<'a, T> =
+    primus_fhe_core::tfhe::Decryptor<'a, T, NativeModulus<T>, NativeModulus<T>>;

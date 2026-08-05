@@ -49,11 +49,13 @@ impl<T: FheUint> CrtGlweTraceContext<T> {
 }
 
 #[derive(Clone)]
+/// Automorphism keys for tracing CRT GLWE ciphertexts to a subring.
 pub struct CrtGlweTraceKey<T: FheUint> {
     auto_keys: Vec<CrtGlweAutoKey<T>>,
 }
 
 impl<T: FheUint> CrtGlweTraceKey<T> {
+    /// Generates the automorphism keys required by the trace.
     pub fn new<M, Table, R>(
         domain: &DcrtGadgetDomain<'_, T, M, Table>,
         sk: &GlweSecretKey<T>,
@@ -74,6 +76,10 @@ impl<T: FheUint> CrtGlweTraceKey<T> {
         Self { auto_keys }
     }
 
+    /// Applies the trace and writes the resulting CRT ciphertext to `result`.
+    ///
+    /// The input, output, domain, and context must share the same RNS GLWE
+    /// layout. The context is reusable and overwritten by the operation.
     pub fn trace_inplace<M, Table, A, B>(
         &self,
         ciphertext: &CrtGlweCiphertext<A>,

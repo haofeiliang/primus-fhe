@@ -2,7 +2,7 @@
 
 use primus_integer::FheUint;
 
-pub use primus_fhe_core::{
+pub use primus_fhe_core::tfhe::{
     BooleanError, LookupTableError, TfheClientError, TfheEvaluationError, TfheKeyError,
     TfheParameterError,
 };

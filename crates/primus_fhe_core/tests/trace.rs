@@ -1,9 +1,12 @@
 use itertools::izip;
 use primus_factor::FactorMul;
 use primus_fhe_core::{
-    CrtGlevParameters, CrtGlweParameters, CrtGlweTraceContext, CrtGlweTraceKey, DcrtGadgetDomain,
-    DcrtGlweCiphertext, DcrtGlweDecryptContext, DcrtGlweRevTraceContext, DcrtGlweRevTraceKey,
-    DcrtGlweSecretKey, DcrtGlweTraceContext, DcrtGlweTraceKey, GlweSecretKey, RingSecretKeyType,
+    glwe::{GlweSecretKey, RingSecretKeyType},
+    rns_fhe::{
+        CrtGlevParameters, CrtGlweParameters, CrtGlweTraceContext, CrtGlweTraceKey,
+        DcrtGadgetDomain, DcrtGlweCiphertext, DcrtGlweDecryptContext, DcrtGlweRevTraceContext,
+        DcrtGlweRevTraceKey, DcrtGlweSecretKey, DcrtGlweTraceContext, DcrtGlweTraceKey,
+    },
 };
 use primus_integer::BigUint;
 use primus_lattice::glwe::CrtGlwe;

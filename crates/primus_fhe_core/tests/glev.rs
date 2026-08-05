@@ -1,7 +1,10 @@
 use itertools::izip;
 use primus_fhe_core::{
-    CrtGlevParameters, CrtGlweParameters, DcrtGadgetDomain, DcrtGlweDecryptContext,
-    DcrtGlweSecretKey, GlweSecretKey, RingSecretKeyType,
+    glwe::{GlweSecretKey, RingSecretKeyType},
+    rns_fhe::{
+        CrtGlevParameters, CrtGlweParameters, DcrtGadgetDomain, DcrtGlweDecryptContext,
+        DcrtGlweSecretKey,
+    },
 };
 use primus_lattice::{context::DcrtGlevMulContext, glev::DcrtGlev, glwe::DcrtGlwe};
 use primus_modulus::BarrettModulus;
