@@ -2,8 +2,9 @@
 
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fhe_core::{
-    glwe::{GgswParameters, GlweParameters, RingSecretKeyType},
-    lwe::{LweParameters, LweSecretKeyType},
+    SecretKeyDistr,
+    glwe::{GgswParameters, GlweParameters},
+    lwe::LweParameters,
     tfhe::PbsOrder,
 };
 use primus_modulus::BarrettModulus;
@@ -32,7 +33,7 @@ pub fn boolean_parameters()
         LWE_DIMENSION,
         PLAINTEXT_MODULUS,
         modulus,
-        LweSecretKeyType::Binary,
+        SecretKeyDistr::Binary,
         3.2 * (CIPHERTEXT_MODULUS as f64 / 2.0f64.powi(14)),
     );
     let glwe = GlweParameters::new(
@@ -40,7 +41,7 @@ pub fn boolean_parameters()
         POLY_LENGTH,
         PLAINTEXT_MODULUS,
         modulus,
-        RingSecretKeyType::Ternary,
+        SecretKeyDistr::Ternary,
         6.4,
     );
     let bootstrapping = GgswParameters::with_glwe_params(&glwe, 7, Some(3));

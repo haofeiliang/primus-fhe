@@ -1,5 +1,5 @@
 use primus_fhe_core::{
-    glwe::{GlweParameters, GlweSecretKey, NttGlweSecretKey, RingSecretKeyType},
+    glwe::{GlweParameters, GlweSecretKey, NttGlweSecretKey, SecretKeyDistr},
     plaintext::PlaintextEmbedding,
 };
 use primus_integer::FheUint;
@@ -24,17 +24,17 @@ where
         .collect();
     let message = Polynomial::new(messages.clone());
 
-    for secret_key_type in [
-        RingSecretKeyType::Binary,
-        RingSecretKeyType::Ternary,
-        RingSecretKeyType::Gaussian(3.2),
+    for secret_key_distr in [
+        SecretKeyDistr::Binary,
+        SecretKeyDistr::Ternary,
+        SecretKeyDistr::Gaussian(3.2),
     ] {
         let params = GlweParameters::new(
             DIMENSION,
             POLY_LENGTH,
             T::try_from(PLAIN_MODULUS).unwrap(),
             modulus,
-            secret_key_type,
+            secret_key_distr,
             0.7,
         );
         let coeff_secret_key = GlweSecretKey::generate(&params, &mut rng);

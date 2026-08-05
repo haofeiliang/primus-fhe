@@ -6,7 +6,7 @@ use primus_reduce::RingContext;
 use rand::distr::Distribution;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
-use crate::{GlweParameters, RingSecretKeyType};
+use crate::{GlweParameters, SecretKeyDistr};
 
 use crate::SecretCoefficient;
 
@@ -16,7 +16,7 @@ pub trait GlweSecretKeyParameterSet<T: FheUint> {
     fn secret_key_size(&self) -> GlweSize;
 
     /// Returns the coefficient distribution.
-    fn secret_key_distribution_type(&self) -> RingSecretKeyType;
+    fn secret_key_distr(&self) -> SecretKeyDistr;
 }
 
 impl<T, M> GlweSecretKeyParameterSet<T> for GlweParameters<T, M>
@@ -28,8 +28,8 @@ where
         self.size()
     }
 
-    fn secret_key_distribution_type(&self) -> RingSecretKeyType {
-        self.secret_key_type()
+    fn secret_key_distr(&self) -> SecretKeyDistr {
+        self.secret_key_distr()
     }
 }
 
@@ -38,7 +38,7 @@ where
 pub struct GlweSecretKey<T: FheUint> {
     pub(crate) key: Vec<SecretCoefficient<T>>,
     pub(crate) glwe_size: GlweSize,
-    pub(crate) distr: RingSecretKeyType,
+    pub(crate) distr: SecretKeyDistr,
 }
 
 impl<T: FheUint> Zeroize for GlweSecretKey<T> {
@@ -53,11 +53,7 @@ impl<T: FheUint> ZeroizeOnDrop for GlweSecretKey<T> {}
 impl<T: FheUint> GlweSecretKey<T> {
     /// Creates a new [`GlweSecretKey<T>`].
     #[inline]
-    pub fn new(
-        key: Vec<SecretCoefficient<T>>,
-        glwe_size: GlweSize,
-        distr: RingSecretKeyType,
-    ) -> Self {
+    pub fn new(key: Vec<SecretCoefficient<T>>, glwe_size: GlweSize, distr: SecretKeyDistr) -> Self {
         assert_eq!(key.len(), glwe_size.mask_len());
         Self {
             key,
@@ -86,7 +82,7 @@ impl<T: FheUint> GlweSecretKey<T> {
 
     /// Returns the distr of this [`GlweSecretKey<T>`].
     #[inline]
-    pub fn distr(&self) -> RingSecretKeyType {
+    pub fn distr(&self) -> SecretKeyDistr {
         self.distr
     }
 
@@ -111,18 +107,14 @@ impl<T: FheUint> GlweSecretKey<T> {
         R: rand::Rng + rand::CryptoRng,
         P: GlweSecretKeyParameterSet<T>,
     {
-        Self::generate_with_distribution(
-            params.secret_key_size(),
-            params.secret_key_distribution_type(),
-            rng,
-        )
+        Self::generate_with_distribution(params.secret_key_size(), params.secret_key_distr(), rng)
     }
 
     /// Generates a canonical signed GLWE secret key from its shape and
     /// coefficient distribution.
     pub fn generate_with_distribution<R>(
         glwe_size: GlweSize,
-        distr: RingSecretKeyType,
+        distr: SecretKeyDistr,
         rng: &mut R,
     ) -> Self
     where
@@ -130,11 +122,11 @@ impl<T: FheUint> GlweSecretKey<T> {
     {
         let key_len = glwe_size.mask_len();
         let key = match distr {
-            RingSecretKeyType::Binary => primus_distr::sample_binary_values(key_len, rng),
-            RingSecretKeyType::Ternary => {
+            SecretKeyDistr::Binary => primus_distr::sample_binary_values(key_len, rng),
+            SecretKeyDistr::Ternary => {
                 primus_distr::sample_ternary_values(-T::ONE.cast_to_signed(), key_len, rng)
             }
-            RingSecretKeyType::Gaussian(standard_deviation) => {
+            SecretKeyDistr::Gaussian(standard_deviation) => {
                 primus_distr::SignedDiscreteGaussian::new(standard_deviation)
                     .expect("validated GLWE secret Gaussian distribution")
                     .sample_iter(rng)

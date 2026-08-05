@@ -9,7 +9,7 @@ use primus_reduce::FieldContext;
 use primus_rns::RNSBase;
 use rand::distr::Uniform;
 
-use crate::{RingSecretKeyType, RnsCoeffCodec};
+use crate::{RnsCoeffCodec, SecretKeyDistr};
 
 /// Big Unsigned Integer Glwe Parameters.
 #[derive(Clone)]
@@ -29,7 +29,7 @@ where
     codec: RnsCoeffCodec<T, M>,
     delta_mod_q: Vec<T>,
     /// The distribution type of the secret key.
-    secret_key_type: RingSecretKeyType,
+    secret_key_distr: SecretKeyDistr,
     secret_key_distribution: Option<SignedDiscreteGaussian<<T as UnsignedInteger>::SignedInteger>>,
     /// The noise distribution
     noise_distribution: SignedDiscreteGaussian<<T as UnsignedInteger>::SignedInteger>,
@@ -47,7 +47,7 @@ where
         plain_modulus: M,
         gamma_modulus: M,
         cipher_moduli: &[M],
-        secret_key_type: RingSecretKeyType,
+        secret_key_distr: SecretKeyDistr,
         noise_standard_deviation: f64,
     ) -> Self {
         let cipher_moduli_value: Vec<T> = cipher_moduli.iter().map(|qi| qi.value()).collect();
@@ -79,7 +79,7 @@ where
         let size = RnsGlweSize::new(GlweSize::new(dimension, poly_length), cipher_moduli.len());
 
         let secret_key_distribution =
-            if let RingSecretKeyType::Gaussian(standard_deviation) = secret_key_type {
+            if let SecretKeyDistr::Gaussian(standard_deviation) = secret_key_distr {
                 SignedDiscreteGaussian::new(standard_deviation).ok()
             } else {
                 None
@@ -92,7 +92,7 @@ where
             cipher_moduli_uniform_distr,
             codec,
             delta_mod_q,
-            secret_key_type,
+            secret_key_distr,
             secret_key_distribution,
             noise_distribution,
         }
@@ -158,8 +158,8 @@ where
     }
 
     /// Returns the secret key type of this [`CrtGlweParameters<T, M>`].
-    pub fn secret_key_type(&self) -> RingSecretKeyType {
-        self.secret_key_type
+    pub fn secret_key_distr(&self) -> SecretKeyDistr {
+        self.secret_key_distr
     }
 
     /// Returns the secret key distribution of this [`CrtGlweParameters<T, M>`].
@@ -256,7 +256,7 @@ where
 
     cipher_moduli_uniform_distr: Vec<Uniform<T>>,
     /// The distribution type of the secret key.
-    secret_key_type: RingSecretKeyType,
+    secret_key_distr: SecretKeyDistr,
     /// The noise's distribution.
     noise_distribution: SignedDiscreteGaussian<<T as UnsignedInteger>::SignedInteger>,
     /// Decompose basis for `Q`.
@@ -295,7 +295,7 @@ where
             cipher_moduli_value: glwe_params.cipher_moduli_value().to_vec(),
             cipher_moduli_minus_one: glwe_params.cipher_moduli_minus_one().to_vec(),
             cipher_moduli_uniform_distr: glwe_params.cipher_moduli_uniform_distr().to_vec(),
-            secret_key_type: glwe_params.secret_key_type,
+            secret_key_distr: glwe_params.secret_key_distr,
             noise_distribution: glwe_params.noise_distribution().clone(),
             basis,
             size: RnsGadgetSize::new(glwe_params.size(), decompose_length),
@@ -366,8 +366,8 @@ where
 
     /// Returns the secret key type of this [`CrtGlevParameters<T, M>`].
     #[inline]
-    pub fn secret_key_type(&self) -> RingSecretKeyType {
-        self.secret_key_type
+    pub fn secret_key_distr(&self) -> SecretKeyDistr {
+        self.secret_key_distr
     }
 
     /// Returns a reference to the noise distribution of this [`CrtGlevParameters<T, M>`].

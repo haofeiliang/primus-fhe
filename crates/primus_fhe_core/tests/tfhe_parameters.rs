@@ -1,7 +1,8 @@
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fhe_core::{
-    glwe::{GgswParameters, GlweParameters, RingSecretKeyType},
-    lwe::{LweParameters, LweSecretKeyType},
+    SecretKeyDistr,
+    glwe::{GgswParameters, GlweParameters},
+    lwe::LweParameters,
     tfhe::{PbsOrder, TfheParameters},
 };
 use primus_modulus::NativeModulus;
@@ -22,7 +23,7 @@ fn components() -> Components {
         LWE_DIMENSION,
         PLAIN_MODULUS,
         NativeModulus::new(),
-        LweSecretKeyType::Binary,
+        SecretKeyDistr::Binary,
         3.2,
     );
     let glwe = GlweParameters::new(
@@ -30,7 +31,7 @@ fn components() -> Components {
         POLY_LENGTH,
         PLAIN_MODULUS,
         NativeModulus::new(),
-        RingSecretKeyType::Ternary,
+        SecretKeyDistr::Ternary,
         3.2,
     );
     let bootstrapping = GgswParameters::with_glwe_params(&glwe, 8, Some(3));
@@ -58,8 +59,8 @@ fn derives_the_same_key_switching_layout_for_both_orders() {
         assert_eq!(parameters.glwe_key_switching().output_dimension(), 1);
         assert_eq!(parameters.glwe_key_switching().poly_length(), POLY_LENGTH);
         assert_eq!(
-            parameters.glwe_key_switching().output().secret_key_type(),
-            RingSecretKeyType::Binary
+            parameters.glwe_key_switching().output().secret_key_distr(),
+            SecretKeyDistr::Binary
         );
         assert_eq!(
             parameters.glwe_key_switching().output().decompose_length(),

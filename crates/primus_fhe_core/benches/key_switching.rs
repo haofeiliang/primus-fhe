@@ -4,7 +4,7 @@ use std::hint::black_box;
 
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use primus_fhe_core::{
-    glwe::{GlweSecretKey, RingSecretKeyType},
+    glwe::{GlweSecretKey, SecretKeyDistr},
     rns_fhe::{
         CrtGlevParameters, CrtGlweParameters, DcrtGadgetDomain, DcrtGlweCiphertext,
         DcrtGlweDecryptContext, DcrtGlweKeySwitchingContext, DcrtGlweKeySwitchingKey,
@@ -50,7 +50,7 @@ fn bench_key_switching(c: &mut Criterion) {
             mod_t,
             mod_gamma,
             &q_moduli,
-            RingSecretKeyType::Ternary,
+            SecretKeyDistr::Ternary,
             3.20,
         );
         let input_sk = GlweSecretKey::generate(&glwe_params, &mut rng);

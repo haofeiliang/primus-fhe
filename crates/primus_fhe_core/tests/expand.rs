@@ -1,5 +1,5 @@
 use primus_fhe_core::{
-    glwe::{GlweSecretKey, RingSecretKeyType},
+    glwe::{GlweSecretKey, SecretKeyDistr},
     rns_fhe::{
         CrtGlevParameters, CrtGlweExpandCoeffContext, CrtGlweExpandCoeffKey,
         CrtGlweExpandCoeffSyncPool, CrtGlweParameters, DcrtGadgetDomain, DcrtGlweCiphertext,
@@ -44,7 +44,7 @@ fn test_crt_glwe_expand_coefficients() {
         mod_t,
         mod_gamma,
         &moduli,
-        RingSecretKeyType::Ternary,
+        SecretKeyDistr::Ternary,
         3.20,
     );
 
@@ -144,7 +144,7 @@ fn test_dcrt_glwe_expand_coefficients() {
         mod_t,
         mod_gamma,
         &moduli,
-        RingSecretKeyType::Ternary,
+        SecretKeyDistr::Ternary,
         3.20,
     );
 
@@ -235,7 +235,7 @@ fn test_dcrt_glwe_expand_coefficients_parallel() {
         mod_t,
         mod_gamma,
         &moduli,
-        RingSecretKeyType::Ternary,
+        SecretKeyDistr::Ternary,
         3.20,
     );
 
@@ -328,7 +328,7 @@ fn test_crt_glwe_expand_coefficients_parallel() {
         mod_t,
         mod_gamma,
         &moduli,
-        RingSecretKeyType::Ternary,
+        SecretKeyDistr::Ternary,
         3.20,
     );
 

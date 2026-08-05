@@ -17,7 +17,7 @@ pub use crate::parameter::{
     GadgetDomainError, GadgetSize, GgswParameters, GlevParameters, GlweKeySwitchingParameters,
     GlweParameters, GlweParametersInner, GlweSize, GlweSizeError, NttGadgetDomain,
 };
-pub use crate::secret_key_type::{RingSecretKeyType, SecretCoefficient};
+pub use crate::secret_key_type::{SecretCoefficient, SecretKeyDistr};
 pub use key_switch::{
     FourierGlweKeySwitchingContext, FourierGlweKeySwitchingKey, NttGlweKeySwitchingContext,
     NttGlweKeySwitchingKey,

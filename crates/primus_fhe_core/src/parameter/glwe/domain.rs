@@ -296,14 +296,14 @@ mod tests {
 
     use super::{DcrtGadgetDomain, GadgetDomainError, NttGadgetDomain};
     use crate::{
-        CrtGlevParameters, CrtGlweParameters, GlevParameters, GlweParameters, RingSecretKeyType,
+        CrtGlevParameters, CrtGlweParameters, GlevParameters, GlweParameters, SecretKeyDistr,
     };
 
     #[test]
     fn domains_reject_transform_shape_and_modulus_order_mismatches() {
         const Q: u32 = 132_120_577;
         let modulus = BarrettModulus::new(Q);
-        let glwe = GlweParameters::new(1, 256, 16, modulus, RingSecretKeyType::Binary, 0.7);
+        let glwe = GlweParameters::new(1, 256, 16, modulus, SecretKeyDistr::Binary, 0.7);
         let gadget = GlevParameters::with_glwe_params(&glwe, 8, Some(3));
         let wrong_length_table = UintNttTable::new(9, modulus).unwrap();
         assert!(matches!(
@@ -322,7 +322,7 @@ mod tests {
             BarrettModulus::new(12_289),
             BarrettModulus::new(2_199_023_190_017),
             &moduli,
-            RingSecretKeyType::Ternary,
+            SecretKeyDistr::Ternary,
             3.2,
         );
         let crt_gadget = CrtGlevParameters::with_glwe_params(&crt_glwe, 20, None);

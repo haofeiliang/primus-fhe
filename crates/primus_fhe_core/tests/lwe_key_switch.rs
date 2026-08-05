@@ -1,14 +1,14 @@
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fhe_core::lwe::{
-    LweKeySwitchingKey, LweKeySwitchingParameters, LweParameters, LweSecretKey, LweSecretKeyType,
+    LweKeySwitchingKey, LweKeySwitchingParameters, LweParameters, LweSecretKey, SecretKeyDistr,
 };
 use primus_modulus::{BarrettModulus, NativeModulus};
 
 #[test]
 fn key_switches_between_lwe_secret_keys() {
     let modulus = NativeModulus::<u32>::new();
-    let input_parameters = LweParameters::new(8, 4u32, modulus, LweSecretKeyType::Binary, 3.2);
-    let output_parameters = LweParameters::new(5, 4u32, modulus, LweSecretKeyType::Binary, 3.2);
+    let input_parameters = LweParameters::new(8, 4u32, modulus, SecretKeyDistr::Binary, 3.2);
+    let output_parameters = LweParameters::new(5, 4u32, modulus, SecretKeyDistr::Binary, 3.2);
     let key_switching_parameters = LweKeySwitchingParameters::new(
         input_parameters.dimension(),
         output_parameters.dimension(),
@@ -40,8 +40,8 @@ fn key_switches_with_base_four_signed_digits() {
     const MODULUS: u32 = 132_120_577;
 
     let modulus = BarrettModulus::new(MODULUS);
-    let input_parameters = LweParameters::new(8, 4u32, modulus, LweSecretKeyType::Binary, 0.7);
-    let output_parameters = LweParameters::new(5, 4u32, modulus, LweSecretKeyType::Binary, 0.7);
+    let input_parameters = LweParameters::new(8, 4u32, modulus, SecretKeyDistr::Binary, 0.7);
+    let output_parameters = LweParameters::new(5, 4u32, modulus, SecretKeyDistr::Binary, 0.7);
     let key_switching_parameters = LweKeySwitchingParameters::new(
         input_parameters.dimension(),
         output_parameters.dimension(),

@@ -49,25 +49,16 @@ pub(crate) fn encode_secret_polynomial_to_rns<T: FheUint>(
         });
 }
 
-/// The distribution type of the LWE Secret Key.
+/// Distribution used to sample secret-key coefficients.
+///
+/// Individual cryptosystems may support only a subset of these distributions.
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
-#[non_exhaustive]
-pub enum LweSecretKeyType {
-    /// Binary SecretKey Distribution.
+pub enum SecretKeyDistr {
+    /// Uniform binary coefficients in `{0, 1}`.
     Binary,
-    /// Ternary SecretKey Distribution.
+    /// Uniform ternary coefficients in `{-1, 0, 1}`.
     #[default]
     Ternary,
-}
-
-/// The distribution type of the Ring Secret Key.
-#[derive(Debug, Default, Clone, Copy, PartialEq)]
-pub enum RingSecretKeyType {
-    /// Binary SecretKey Distribution.
-    Binary,
-    /// Ternary SecretKey Distribution.
-    #[default]
-    Ternary,
-    /// Gaussian SecretKey Distribution.
+    /// Centered discrete Gaussian coefficients with the given standard deviation.
     Gaussian(f64),
 }

@@ -2,7 +2,7 @@ use primus_fft::{FftEngine, FftTable, RustFftTable};
 use primus_fhe_core::glwe::{
     FourierGadgetEncryptContext, FourierGlweDecryptContext, FourierGlweEncryptContext,
     FourierGlweSecretKey, GadgetSize, GlevParameters, GlweParameters, GlweSecretKey, GlweSize,
-    NttGadgetDomain, NttGadgetEncryptContext, NttGlweSecretKey, RingSecretKeyType,
+    NttGadgetDomain, NttGadgetEncryptContext, NttGlweSecretKey, SecretKeyDistr,
 };
 use primus_lattice::{
     context::{FourierExternalProductContext, NttExternalProductContext},
@@ -52,7 +52,7 @@ fn fourier_glev_generation_and_ggsw_external_product() {
         POLY_LENGTH,
         16u32,
         NativeModulus::new(),
-        RingSecretKeyType::Binary,
+        SecretKeyDistr::Binary,
         0.7,
     );
     let params = GlevParameters::with_glwe_params(&glwe_params, 8, None);
@@ -165,7 +165,7 @@ fn ntt_glev_and_ggsw_generation() {
         POLY_LENGTH,
         16u32,
         modulus,
-        RingSecretKeyType::Ternary,
+        SecretKeyDistr::Ternary,
         0.7,
     );
     let params = GlevParameters::with_glwe_params(&glwe_params, 8, None);

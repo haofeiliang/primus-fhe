@@ -1,5 +1,5 @@
 use primus_fhe_core::{
-    glwe::{GlweSecretKey, RingSecretKeyType},
+    glwe::{GlweSecretKey, SecretKeyDistr},
     rns_fhe::{
         CrtGlevParameters, CrtGlweParameters, DcrtGlweCiphertext, DcrtGlweDecryptContext,
         DcrtGlwePublicKey, DcrtGlweSecretKey,
@@ -44,7 +44,7 @@ fn test_external_product() {
         mod_t,
         mod_gamma,
         &moduli,
-        RingSecretKeyType::Ternary,
+        SecretKeyDistr::Ternary,
         3.20,
     );
 

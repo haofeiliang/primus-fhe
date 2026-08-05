@@ -1,6 +1,6 @@
 use itertools::izip;
 use primus_fhe_core::{
-    glwe::{GlweSecretKey, RingSecretKeyType},
+    glwe::{GlweSecretKey, SecretKeyDistr},
     rns_fhe::{
         CrtGlevParameters, CrtGlweParameters, DcrtGadgetDomain, DcrtGlweDecryptContext,
         DcrtGlweSecretKey,
@@ -46,7 +46,7 @@ fn test_rns_glev() {
         mod_t,
         mod_gamma,
         &moduli,
-        RingSecretKeyType::Ternary,
+        SecretKeyDistr::Ternary,
         3.20,
     );
 
@@ -155,7 +155,7 @@ fn test_key_switching() {
         mod_t,
         mod_gamma,
         &moduli,
-        RingSecretKeyType::Ternary,
+        SecretKeyDistr::Ternary,
         3.20,
     );
 

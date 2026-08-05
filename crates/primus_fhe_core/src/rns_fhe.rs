@@ -35,7 +35,7 @@ where
         self.size().glwe_size()
     }
 
-    fn secret_key_distribution_type(&self) -> crate::glwe::RingSecretKeyType {
-        self.secret_key_type()
+    fn secret_key_distr(&self) -> crate::glwe::SecretKeyDistr {
+        self.secret_key_distr()
     }
 }

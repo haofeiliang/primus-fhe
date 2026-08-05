@@ -7,7 +7,7 @@ use primus_lattice::{GadgetSize, GlweSize};
 use primus_reduce::RingContext;
 use rand::distr::Uniform;
 
-use crate::{PlaintextCodec, RingSecretKeyType};
+use crate::{PlaintextCodec, SecretKeyDistr};
 
 /// GLWE encryption parameters shared by ordinary and gadget ciphertexts.
 ///
@@ -25,7 +25,7 @@ where
     cipher_modulus_minus_one: T,
     cipher_modulus_uniform_distr: Uniform<T>,
     /// The distribution type of the secret key.
-    secret_key_type: RingSecretKeyType,
+    secret_key_distr: SecretKeyDistr,
     secret_key_distribution: Option<DiscreteGaussian<T>>,
     /// The noise's distribution.
     noise_distribution: DiscreteGaussian<T>,
@@ -39,7 +39,7 @@ where
     #[inline]
     fn eq(&self, other: &Self) -> bool {
         self.cipher_modulus == other.cipher_modulus
-            && self.secret_key_type == other.secret_key_type
+            && self.secret_key_distr == other.secret_key_distr
             && self.noise_distribution.standard_deviation()
                 == other.noise_distribution.standard_deviation()
     }
@@ -54,7 +54,7 @@ where
     /// sizes or plaintext encoding.
     pub fn new(
         cipher_modulus: M,
-        secret_key_type: RingSecretKeyType,
+        secret_key_distr: SecretKeyDistr,
         noise_standard_deviation: f64,
     ) -> Self {
         let cipher_modulus_minus_one = cipher_modulus.minus_one();
@@ -64,7 +64,7 @@ where
 
         let cipher_modulus_uniform_distr = cipher_modulus.uniform_distribution();
         let secret_key_distribution =
-            if let RingSecretKeyType::Gaussian(standard_deviation) = secret_key_type {
+            if let SecretKeyDistr::Gaussian(standard_deviation) = secret_key_distr {
                 Some(DiscreteGaussian::new(standard_deviation, cipher_modulus_minus_one).unwrap())
             } else {
                 None
@@ -74,7 +74,7 @@ where
             cipher_modulus,
             cipher_modulus_minus_one,
             cipher_modulus_uniform_distr,
-            secret_key_type,
+            secret_key_distr,
             secret_key_distribution,
             noise_distribution,
         }
@@ -106,8 +106,8 @@ where
 
     /// Returns the secret-key distribution type.
     #[inline]
-    pub fn secret_key_type(&self) -> RingSecretKeyType {
-        self.secret_key_type
+    pub fn secret_key_distr(&self) -> SecretKeyDistr {
+        self.secret_key_distr
     }
 
     /// Returns the Gaussian secret-key distribution, when configured.
@@ -155,7 +155,7 @@ where
         poly_length: usize,
         plain_modulus_value: T,
         cipher_modulus: M,
-        secret_key_type: RingSecretKeyType,
+        secret_key_distr: SecretKeyDistr,
         noise_standard_deviation: f64,
     ) -> Self {
         let size = GlweSize::new(dimension, poly_length);
@@ -163,7 +163,7 @@ where
         let plaintext_codec = PlaintextCodec::new(plain_modulus_value, cipher_modulus_value);
 
         let inner =
-            GlweParametersInner::new(cipher_modulus, secret_key_type, noise_standard_deviation);
+            GlweParametersInner::new(cipher_modulus, secret_key_distr, noise_standard_deviation);
 
         Self {
             size,
@@ -261,8 +261,8 @@ where
     }
 
     /// Returns the secret key type of this [`GlweParameters<T, M>`].
-    pub fn secret_key_type(&self) -> RingSecretKeyType {
-        self.inner.secret_key_type()
+    pub fn secret_key_distr(&self) -> SecretKeyDistr {
+        self.inner.secret_key_distr()
     }
 
     /// Returns the secret key distribution of this [`GlweParameters<T, M>`].
@@ -391,8 +391,8 @@ where
     }
 
     /// Returns the secret key type of this [`GlevParameters<T, M>`].
-    pub fn secret_key_type(&self) -> RingSecretKeyType {
-        self.inner.secret_key_type()
+    pub fn secret_key_distr(&self) -> SecretKeyDistr {
+        self.inner.secret_key_distr()
     }
 
     /// Returns a reference to the noise distribution of this [`GlevParameters<T, M>`].

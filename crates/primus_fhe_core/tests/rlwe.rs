@@ -1,6 +1,6 @@
 use primus_fhe_core::{
     glwe::{
-        RingSecretKeyType,
+        SecretKeyDistr,
         rlwe::{NttRlweCiphertext, NttRlweSecretKey, RlweParameters, RlweSecretKey},
     },
     plaintext::PlaintextEmbedding,
@@ -15,10 +15,10 @@ const POLY_LENGTH: usize = 1024;
 const NOISE_ALPHA: f64 = 2.980_232_238_769_531_2e-8; // 2^-25
 const SECRET_KEY_GAUSSIAN_STANDARD_DEVIATION: f64 = 3.2;
 const PLAIN_MODULI: [usize; 2] = [256, 257];
-const SECRET_KEY_TYPES: [RingSecretKeyType; 3] = [
-    RingSecretKeyType::Binary,
-    RingSecretKeyType::Ternary,
-    RingSecretKeyType::Gaussian(SECRET_KEY_GAUSSIAN_STANDARD_DEVIATION),
+const SECRET_KEY_TYPES: [SecretKeyDistr; 3] = [
+    SecretKeyDistr::Binary,
+    SecretKeyDistr::Ternary,
+    SecretKeyDistr::Gaussian(SECRET_KEY_GAUSSIAN_STANDARD_DEVIATION),
 ];
 
 fn from_usize<T: FheUint>(value: usize) -> T {
@@ -73,13 +73,13 @@ where
     let table = UintNttTable::new(POLY_LENGTH.trailing_zeros(), cipher_modulus).unwrap();
     let noise_standard_deviation = noise_standard_deviation(cipher_modulus);
 
-    for secret_key_type in SECRET_KEY_TYPES {
+    for secret_key_distr in SECRET_KEY_TYPES {
         for plain_modulus_usize in PLAIN_MODULI {
             let params = RlweParameters::new(
                 POLY_LENGTH,
                 from_usize(plain_modulus_usize),
                 cipher_modulus,
-                secret_key_type,
+                secret_key_distr,
                 noise_standard_deviation,
             );
             let secret_key = RlweSecretKey::generate(&params, &mut rng);

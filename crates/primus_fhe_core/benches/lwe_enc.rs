@@ -1,7 +1,7 @@
 use std::hint::black_box;
 
 use criterion::{Criterion, criterion_group, criterion_main};
-use primus_fhe_core::lwe::{LweCiphertext, LweParameters, LweSecretKey, LweSecretKeyType};
+use primus_fhe_core::lwe::{LweCiphertext, LweParameters, LweSecretKey, SecretKeyDistr};
 use primus_modulus::NativeModulus;
 
 fn bench_encrypt(c: &mut Criterion) {
@@ -12,7 +12,7 @@ fn bench_encrypt(c: &mut Criterion) {
 
     let mut rng = rand::rng();
 
-    let params = LweParameters::new(dimension, 2, mod_t, LweSecretKeyType::Binary, 16.0);
+    let params = LweParameters::new(dimension, 2, mod_t, SecretKeyDistr::Binary, 16.0);
 
     let sk = LweSecretKey::generate(&params, &mut rng);
 

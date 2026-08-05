@@ -3,7 +3,7 @@ use std::hint::black_box;
 use criterion::{BatchSize, BenchmarkId, Criterion, criterion_group, criterion_main};
 use primus_fhe_core::{
     glwe::{
-        RingSecretKeyType,
+        SecretKeyDistr,
         rlwe::{NttRlweCiphertext, NttRlweSecretKey, RlweParameters, RlweSecretKey},
     },
     plaintext::{PlaintextCodec, PlaintextEmbedding},
@@ -46,7 +46,7 @@ fn bench_plaintext_codec_u64(c: &mut Criterion) {
     let ciphertexts = ciphertext_values(q);
     let messages = message_values(t);
     let modulus = BarrettModulus::new(q);
-    let params = RlweParameters::new(BATCH_LEN, t, modulus, RingSecretKeyType::Binary, 3.2);
+    let params = RlweParameters::new(BATCH_LEN, t, modulus, SecretKeyDistr::Binary, 3.2);
     let scaled_codec = *params.plaintext_codec();
     let native_scaled_codec = PlaintextCodec::new(t, None);
     let mut encoded = vec![0u64; BATCH_LEN];
@@ -142,7 +142,7 @@ fn bench_plaintext_codec_u32(c: &mut Criterion) {
     let ciphertexts = ciphertext_values_u32(q);
     let messages = message_values_u32(t);
     let modulus = BarrettModulus::new(q);
-    let params = RlweParameters::new(BATCH_LEN, t, modulus, RingSecretKeyType::Binary, 3.2);
+    let params = RlweParameters::new(BATCH_LEN, t, modulus, SecretKeyDistr::Binary, 3.2);
     let scaled_codec = *params.plaintext_codec();
     let mut encoded = vec![0u32; BATCH_LEN];
 
@@ -190,7 +190,7 @@ fn bench_rlwe_decrypt_arbitrary_modulus(c: &mut Criterion) {
             poly_length,
             PLAIN_MODULUS,
             cipher_modulus,
-            RingSecretKeyType::Binary,
+            SecretKeyDistr::Binary,
             3.2,
         );
 

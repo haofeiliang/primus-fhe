@@ -4,7 +4,7 @@ use primus_integer::FheUint;
 use primus_reduce::RingContext;
 use rand::distr::Uniform;
 
-use crate::{LweSecretKeyType, PlaintextCodec};
+use crate::{PlaintextCodec, SecretKeyDistr};
 
 /// Parameters controlling an LWE key-switching key.
 ///
@@ -84,7 +84,8 @@ where
     cipher_modulus_uniform_distr: Uniform<T>,
     plaintext_codec: PlaintextCodec<T>,
     /// The distribution type of the LWE Secret Key.
-    secret_key_type: LweSecretKeyType,
+    secret_key_distr: SecretKeyDistr,
+    secret_key_distribution: Option<DiscreteGaussian<T>>,
     /// The noise distribution.
     noise_distribution: DiscreteGaussian<T>,
 }
@@ -100,13 +101,19 @@ where
         dimension: usize,
         plain_modulus_value: T,
         cipher_modulus: M,
-        secret_key_type: LweSecretKeyType,
+        secret_key_distr: SecretKeyDistr,
         noise_standard_deviation: f64,
     ) -> Self {
         let cipher_modulus_minus_one = cipher_modulus.minus_one();
 
         let noise_distribution =
             DiscreteGaussian::new(noise_standard_deviation, cipher_modulus_minus_one).unwrap();
+        let secret_key_distribution = match secret_key_distr {
+            SecretKeyDistr::Gaussian(standard_deviation) => {
+                Some(DiscreteGaussian::new(standard_deviation, cipher_modulus_minus_one).unwrap())
+            }
+            SecretKeyDistr::Binary | SecretKeyDistr::Ternary => None,
+        };
 
         let cipher_modulus_uniform_distr = cipher_modulus.uniform_distribution();
         let plaintext_codec =
@@ -119,7 +126,8 @@ where
             cipher_modulus_minus_one,
             cipher_modulus_uniform_distr,
             plaintext_codec,
-            secret_key_type,
+            secret_key_distr,
+            secret_key_distribution,
             noise_distribution,
         }
     }
@@ -168,8 +176,13 @@ where
 
     /// Returns the secret key type of this [`LweParameters<T, M>`].
     #[inline]
-    pub fn secret_key_type(&self) -> LweSecretKeyType {
-        self.secret_key_type
+    pub fn secret_key_distr(&self) -> SecretKeyDistr {
+        self.secret_key_distr
+    }
+
+    #[inline]
+    pub(crate) fn secret_key_distribution(&self) -> Option<&DiscreteGaussian<T>> {
+        self.secret_key_distribution.as_ref()
     }
 
     /// Returns the noise standard deviation of this [`LweParameters<T, M>`].

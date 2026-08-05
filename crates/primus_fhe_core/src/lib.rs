@@ -21,6 +21,7 @@ pub mod rns_fhe;
 pub mod tfhe;
 
 pub use error::FheError;
+pub use secret_key_type::SecretKeyDistr;
 
 // Keep implementation imports concise without exposing the former flat public
 // facade. These names are visible only inside this crate.
@@ -31,7 +32,5 @@ pub(crate) use parameter::*;
 pub(crate) use plaintext::*;
 pub(crate) use rlwe::*;
 pub(crate) use rns_fhe::*;
-pub(crate) use secret_key_type::{
-    LweSecretKeyType, RingSecretKeyType, SecretCoefficient, encode_secret_coefficient,
-};
+pub(crate) use secret_key_type::{SecretCoefficient, encode_secret_coefficient};
 pub(crate) use tfhe::*;

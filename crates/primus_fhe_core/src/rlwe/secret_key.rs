@@ -8,13 +8,13 @@ use primus_poly::{NttPolynomial, NttPolynomialOwned, Polynomial, PolynomialOwned
 use primus_reduce::FieldContext;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
-use crate::{NttRlweCiphertext, PlaintextEmbedding, RingSecretKeyType, RlweParameters};
+use crate::{NttRlweCiphertext, PlaintextEmbedding, RlweParameters, SecretKeyDistr};
 
 /// Represents a secret key for the Ring Learning with Errors (RLWE) cryptographic scheme.
 #[derive(Clone)]
 pub struct RlweSecretKey<T: FheUint> {
     key: PolynomialOwned<T>,
-    distr: RingSecretKeyType,
+    distr: SecretKeyDistr,
 }
 
 impl<T: FheUint> Zeroize for RlweSecretKey<T> {
@@ -38,14 +38,14 @@ impl<T: FheUint> Deref for RlweSecretKey<T> {
 impl<T: FheUint> RlweSecretKey<T> {
     /// Creates a new [`RlweSecretKey<T>`].
     #[inline]
-    pub fn new(key: PolynomialOwned<T>, distr: RingSecretKeyType) -> Self {
+    pub fn new(key: PolynomialOwned<T>, distr: SecretKeyDistr) -> Self {
         debug_assert!(key.poly_length().is_power_of_two());
         Self { key, distr }
     }
 
     /// Returns the distribution type of the secret key.
     #[inline]
-    pub fn distr(&self) -> RingSecretKeyType {
+    pub fn distr(&self) -> SecretKeyDistr {
         self.distr
     }
 
@@ -56,16 +56,16 @@ impl<T: FheUint> RlweSecretKey<T> {
         R: rand::Rng + rand::CryptoRng,
         M: FieldContext<T>,
     {
-        let distr = params.secret_key_type();
+        let distr = params.secret_key_distr();
         let poly_length = params.poly_length();
         let modulus_minus_one = params.cipher_modulus_minus_one();
 
         let key = match distr {
-            RingSecretKeyType::Binary => Polynomial::random_binary(poly_length, rng),
-            RingSecretKeyType::Ternary => {
+            SecretKeyDistr::Binary => Polynomial::random_binary(poly_length, rng),
+            SecretKeyDistr::Ternary => {
                 Polynomial::random_ternary(modulus_minus_one, poly_length, rng)
             }
-            RingSecretKeyType::Gaussian(_) => Polynomial::random_gaussian(
+            SecretKeyDistr::Gaussian(_) => Polynomial::random_gaussian(
                 poly_length,
                 params.secret_key_distribution().unwrap(),
                 rng,
@@ -80,7 +80,7 @@ impl<T: FheUint> RlweSecretKey<T> {
 #[derive(Clone)]
 pub struct NttRlweSecretKey<T: FheUint> {
     key: NttPolynomialOwned<T>,
-    distr: RingSecretKeyType,
+    distr: SecretKeyDistr,
 }
 
 impl<T: FheUint> Zeroize for NttRlweSecretKey<T> {
@@ -104,13 +104,13 @@ impl<T: FheUint> Deref for NttRlweSecretKey<T> {
 impl<T: FheUint> NttRlweSecretKey<T> {
     /// Creates a new [`NttRlweSecretKey<T>`].
     #[inline]
-    pub fn new(key: NttPolynomialOwned<T>, distr: RingSecretKeyType) -> Self {
+    pub fn new(key: NttPolynomialOwned<T>, distr: SecretKeyDistr) -> Self {
         Self { key, distr }
     }
 
     /// Returns the distribution type of the secret key.
     #[inline]
-    pub fn distr(&self) -> RingSecretKeyType {
+    pub fn distr(&self) -> SecretKeyDistr {
         self.distr
     }
 

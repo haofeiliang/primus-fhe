@@ -1,7 +1,7 @@
 use itertools::izip;
 use primus_factor::FactorMul;
 use primus_fhe_core::{
-    glwe::{GlweSecretKey, RingSecretKeyType},
+    glwe::{GlweSecretKey, SecretKeyDistr},
     rns_fhe::{
         CrtGlevParameters, CrtGlweParameters, CrtGlweTraceContext, CrtGlweTraceKey,
         DcrtGadgetDomain, DcrtGlweCiphertext, DcrtGlweDecryptContext, DcrtGlweRevTraceContext,
@@ -50,7 +50,7 @@ fn test_crt_glwe_trace() {
         mod_t,
         mod_gamma,
         &moduli,
-        RingSecretKeyType::Ternary,
+        SecretKeyDistr::Ternary,
         3.20,
     );
 
@@ -148,7 +148,7 @@ fn test_dcrt_glwe_trace() {
         mod_t,
         mod_gamma,
         &moduli,
-        RingSecretKeyType::Ternary,
+        SecretKeyDistr::Ternary,
         3.20,
     );
 
@@ -237,7 +237,7 @@ fn test_dcrt_glwe_rev_trace() {
         mod_t,
         mod_gamma,
         &moduli,
-        RingSecretKeyType::Ternary,
+        SecretKeyDistr::Ternary,
         3.20,
     );
 
@@ -306,7 +306,7 @@ fn test_dcrt_glwe_rev_trace_noise() {
         mod_t,
         mod_gamma,
         &moduli,
-        RingSecretKeyType::Ternary,
+        SecretKeyDistr::Ternary,
         3.20,
     );
 

@@ -1,7 +1,7 @@
 //! Hybrid-RNS GLWE key switching from one secret key to another.
 
 use primus_fhe_core::{
-    glwe::{GlweSecretKey, RingSecretKeyType},
+    glwe::{GlweSecretKey, SecretKeyDistr},
     rns_fhe::{
         CrtGlweParameters, DcrtGlweCiphertext, DcrtGlweDecryptContext, DcrtGlweSecretKey,
         HybridRnsGlweKeySwitchingContext, HybridRnsGlweKeySwitchingKey, HybridRnsKeySwitchDomain,
@@ -33,7 +33,7 @@ fn main() {
         plaintext_modulus,
         gamma,
         &q_moduli,
-        RingSecretKeyType::Ternary,
+        SecretKeyDistr::Ternary,
         3.20,
     );
     let hybrid_rns = HybridRNS::new(&q_moduli, &p_moduli, 2).unwrap();

@@ -10,7 +10,7 @@ use primus_reduce::FieldContext;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::{
-    CrtGlevParameters, CrtGlweParameters, DcrtGadgetDomain, DcrtGlweCiphertext, RingSecretKeyType,
+    CrtGlevParameters, CrtGlweParameters, DcrtGadgetDomain, DcrtGlweCiphertext, SecretKeyDistr,
 };
 
 use super::{GlweSecretKey, encode_secret_polynomial_to};
@@ -19,7 +19,7 @@ use super::{GlweSecretKey, encode_secret_polynomial_to};
 #[derive(Clone)]
 pub struct DcrtGlweSecretKey<T: FheUint> {
     pub(crate) key: Vec<T>,
-    pub(crate) distr: RingSecretKeyType,
+    pub(crate) distr: SecretKeyDistr,
     pub(crate) size: RnsGlweSize,
 }
 
@@ -38,7 +38,7 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
     }
 
     /// Returns the distr of this [`DcrtGlweSecretKey<T>`].
-    pub fn distr(&self) -> RingSecretKeyType {
+    pub fn distr(&self) -> SecretKeyDistr {
         self.distr
     }
 

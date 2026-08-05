@@ -4,14 +4,14 @@ use rand::distr::Distribution;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::{
-    LweCiphertext, LweParameters, LweSecretKeyType, MultiMsgLweCiphertext, PlaintextEmbedding,
+    LweCiphertext, LweParameters, MultiMsgLweCiphertext, PlaintextEmbedding, SecretKeyDistr,
 };
 
 /// Represents a secret key for the Learning with Errors (LWE) cryptographic scheme.
 #[derive(Clone)]
 pub struct LweSecretKey<T: FheUint> {
     data: Vec<T>,
-    distr: LweSecretKeyType,
+    distr: SecretKeyDistr,
 }
 
 impl<T: FheUint> Zeroize for LweSecretKey<T> {
@@ -40,7 +40,7 @@ impl<T: FheUint> Size for LweSecretKey<T> {
 impl<T: FheUint> LweSecretKey<T> {
     /// Creates a new [`LweSecretKey<T>`].
     #[inline]
-    pub fn new(key: Vec<T>, distr: LweSecretKeyType) -> Self {
+    pub fn new(key: Vec<T>, distr: SecretKeyDistr) -> Self {
         Self { data: key, distr }
     }
 
@@ -52,7 +52,7 @@ impl<T: FheUint> LweSecretKey<T> {
 
     /// Returns the distribution of this [`LweSecretKey<T>`].
     #[inline]
-    pub fn distr(&self) -> LweSecretKeyType {
+    pub fn distr(&self) -> SecretKeyDistr {
         self.distr
     }
 
@@ -63,14 +63,20 @@ impl<T: FheUint> LweSecretKey<T> {
         R: rand::Rng + rand::CryptoRng,
         M: RingContext<T>,
     {
-        let distr = params.secret_key_type();
+        let distr = params.secret_key_distr();
         let key = match distr {
-            LweSecretKeyType::Binary => primus_distr::sample_binary_values(params.dimension(), rng),
-            LweSecretKeyType::Ternary => primus_distr::sample_ternary_values(
+            SecretKeyDistr::Binary => primus_distr::sample_binary_values(params.dimension(), rng),
+            SecretKeyDistr::Ternary => primus_distr::sample_ternary_values(
                 params.cipher_modulus_minus_one(),
                 params.dimension(),
                 rng,
             ),
+            SecretKeyDistr::Gaussian(_) => params
+                .secret_key_distribution()
+                .expect("validated Gaussian LWE secret-key distribution")
+                .sample_iter(rng)
+                .take(params.dimension())
+                .collect(),
         };
         Self { data: key, distr }
     }

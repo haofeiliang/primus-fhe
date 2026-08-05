@@ -3,7 +3,7 @@ use std::hint::black_box;
 use criterion::{BatchSize, BenchmarkId, Criterion, criterion_group, criterion_main};
 use primus_factor::ShoupFactor;
 use primus_fhe_core::{
-    glwe::{GlweSecretKey, RingSecretKeyType},
+    glwe::{GlweSecretKey, SecretKeyDistr},
     rns_fhe::{
         CrtGlevParameters, CrtGlweAutoContext, CrtGlweAutoKey, CrtGlweParameters, DcrtGadgetDomain,
         DcrtGlweAutoKey, DcrtGlweCiphertext, DcrtGlweSecretKey,
@@ -42,7 +42,7 @@ fn bench_expand_coeff_components(c: &mut Criterion) {
             mod_t,
             mod_gamma,
             &moduli,
-            RingSecretKeyType::Ternary,
+            SecretKeyDistr::Ternary,
             3.20,
         );
 

@@ -10,7 +10,7 @@ use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::{
     GlevParameters, GlweParameters, GlweParametersInner, NttGlweCiphertext, PlaintextCodec,
-    PlaintextEmbedding, RingSecretKeyType,
+    PlaintextEmbedding, SecretKeyDistr,
 };
 
 use super::{GlweSecretKey, encode_secret_polynomial_to};
@@ -21,7 +21,7 @@ use super::{GlweSecretKey, encode_secret_polynomial_to};
 pub struct NttGlweSecretKey<T: FheUint> {
     key: Vec<T>,
     size: GlweSize,
-    distr: RingSecretKeyType,
+    distr: SecretKeyDistr,
 }
 
 impl<T: FheUint> Zeroize for NttGlweSecretKey<T> {
@@ -36,7 +36,7 @@ impl<T: FheUint> ZeroizeOnDrop for NttGlweSecretKey<T> {}
 impl<T: FheUint> NttGlweSecretKey<T> {
     /// Creates a new [`NttGlweSecretKey<T>`].
     #[inline]
-    pub fn new(key: Vec<T>, size: GlweSize, distr: RingSecretKeyType) -> Self {
+    pub fn new(key: Vec<T>, size: GlweSize, distr: SecretKeyDistr) -> Self {
         assert_eq!(key.len(), size.mask_len());
         Self { key, size, distr }
     }
@@ -61,7 +61,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
 
     /// Returns the distr of this [`NttGlweSecretKey<T>`].
     #[inline]
-    pub fn distr(&self) -> RingSecretKeyType {
+    pub fn distr(&self) -> SecretKeyDistr {
         self.distr
     }
 

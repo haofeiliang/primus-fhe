@@ -6,7 +6,7 @@ use primus_reduce::RingContext;
 
 use crate::{
     GgswParameters, GlevParameters, GlweKeySwitchingParameters, GlweParameters, LweParameters,
-    LweSecretKeyType, RingSecretKeyType,
+    SecretKeyDistr,
 };
 
 /// Execution order of programmable bootstrapping and key switching.
@@ -138,7 +138,7 @@ where
             glwe.poly_length(),
             glwe.plain_modulus_value(),
             glwe.cipher_modulus(),
-            RingSecretKeyType::Binary,
+            SecretKeyDistr::Binary,
             glwe.noise_distribution().standard_deviation(),
         );
         let output =
@@ -151,7 +151,7 @@ where
         glwe: &GlweParameters<T, GM>,
         bootstrapping: &GgswParameters<T, GM>,
     ) -> Result<(), TfheParameterError> {
-        if small_lwe.secret_key_type() != LweSecretKeyType::Binary {
+        if small_lwe.secret_key_distr() != SecretKeyDistr::Binary {
             return Err(TfheParameterError::InputLweSecretKeyMustBeBinary);
         }
 

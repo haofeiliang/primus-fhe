@@ -10,7 +10,7 @@ use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::{
     FourierGlweCiphertext, GlevParameters, GlweParameters, GlweParametersInner, PlaintextCodec,
-    PlaintextEmbedding, RingSecretKeyType,
+    PlaintextEmbedding, SecretKeyDistr,
 };
 
 use super::GlweSecretKey;
@@ -25,7 +25,7 @@ use super::GlweSecretKey;
 pub struct FourierGlweSecretKey {
     key: Vec<Complex64>,
     size: GlweSize,
-    distr: RingSecretKeyType,
+    distr: SecretKeyDistr,
 }
 
 impl Zeroize for FourierGlweSecretKey {
@@ -40,7 +40,7 @@ impl ZeroizeOnDrop for FourierGlweSecretKey {}
 impl FourierGlweSecretKey {
     /// Creates a Fourier-domain GLWE secret key from its raw Fourier values.
     #[inline]
-    pub fn new(key: Vec<Complex64>, size: GlweSize, distr: RingSecretKeyType) -> Self {
+    pub fn new(key: Vec<Complex64>, size: GlweSize, distr: SecretKeyDistr) -> Self {
         assert_eq!(key.len(), size.fourier_mask_len());
         Self { key, size, distr }
     }
@@ -65,7 +65,7 @@ impl FourierGlweSecretKey {
 
     /// Returns the secret-key distribution.
     #[inline]
-    pub fn distr(&self) -> RingSecretKeyType {
+    pub fn distr(&self) -> SecretKeyDistr {
         self.distr
     }
 

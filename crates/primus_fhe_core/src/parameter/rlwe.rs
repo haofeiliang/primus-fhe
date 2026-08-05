@@ -5,7 +5,7 @@ use primus_integer::FheUint;
 use primus_reduce::FieldContext;
 use rand::distr::Uniform;
 
-use crate::{PlaintextCodec, RingSecretKeyType};
+use crate::{PlaintextCodec, SecretKeyDistr};
 
 /// Rlwe Parameters.
 #[derive(Clone)]
@@ -27,7 +27,7 @@ where
     delta: T,
     delta_factor: ShoupFactor<T>,
     /// The distribution type of the secret key.
-    secret_key_type: RingSecretKeyType,
+    secret_key_distr: SecretKeyDistr,
     secret_key_distribution: Option<DiscreteGaussian<T>>,
     /// The noise's distribution.
     noise_distribution: DiscreteGaussian<T>,
@@ -44,7 +44,7 @@ where
         poly_length: usize,
         plain_modulus_value: T,
         cipher_modulus: M,
-        secret_key_type: RingSecretKeyType,
+        secret_key_distr: SecretKeyDistr,
         noise_standard_deviation: f64,
     ) -> Self {
         let cipher_modulus_minus_one = cipher_modulus.minus_one();
@@ -65,7 +65,7 @@ where
         let delta_factor = ShoupFactor::new(delta, cipher_modulus_value);
 
         let secret_key_distribution =
-            if let RingSecretKeyType::Gaussian(standard_deviation) = secret_key_type {
+            if let SecretKeyDistr::Gaussian(standard_deviation) = secret_key_distr {
                 Some(DiscreteGaussian::new(standard_deviation, cipher_modulus_minus_one).unwrap())
             } else {
                 None
@@ -80,7 +80,7 @@ where
             cipher_modulus_uniform_distr,
             delta,
             delta_factor,
-            secret_key_type,
+            secret_key_distr,
             secret_key_distribution,
             noise_distribution,
         }
@@ -135,8 +135,8 @@ where
     }
 
     /// Returns the secret key type of this [`RlweParameters<T, M>`].
-    pub fn secret_key_type(&self) -> RingSecretKeyType {
-        self.secret_key_type
+    pub fn secret_key_distr(&self) -> SecretKeyDistr {
+        self.secret_key_distr
     }
 
     /// Returns the secret key distribution of this [`RlweParameters<T, M>`].
@@ -179,7 +179,7 @@ where
     /// The modulus, refers to **Q** in the paper.
     pub cipher_modulus: M,
     /// The distribution type of the secret key.
-    pub secret_key_type: RingSecretKeyType,
+    pub secret_key_distr: SecretKeyDistr,
     /// The noise's distribution.
     pub noise_distribution: DiscreteGaussian<T>,
     /// Decompose basis for `Q`.
@@ -208,8 +208,8 @@ where
     }
 
     /// Returns the secret key type of this [`RlevParameters<T, M>`].
-    pub fn secret_key_type(&self) -> RingSecretKeyType {
-        self.secret_key_type
+    pub fn secret_key_distr(&self) -> SecretKeyDistr {
+        self.secret_key_distr
     }
 
     /// Returns the noise standard deviation of this [`RlevParameters<T, M>`].

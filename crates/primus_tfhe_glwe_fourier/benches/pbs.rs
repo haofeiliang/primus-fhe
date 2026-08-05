@@ -6,11 +6,9 @@ use criterion::{Criterion, criterion_group, criterion_main};
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{FftTable, RustFftTable};
 use primus_fhe_core::{
-    glwe::{
-        FourierGlweKeySwitchingContext, GgswParameters, GlweCiphertext, GlweParameters,
-        RingSecretKeyType,
-    },
-    lwe::{LweCiphertext, LweParameters, LweSecretKeyType},
+    SecretKeyDistr,
+    glwe::{FourierGlweKeySwitchingContext, GgswParameters, GlweCiphertext, GlweParameters},
+    lwe::{LweCiphertext, LweParameters},
     tfhe::FourierBlindRotationContext,
 };
 use primus_modulus::NativeModulus;
@@ -29,7 +27,7 @@ fn parameters(order: PbsOrder) -> TfheParameters<u32> {
         LWE_DIMENSION,
         PLAINTEXT_MODULUS,
         NativeModulus::new(),
-        LweSecretKeyType::Binary,
+        SecretKeyDistr::Binary,
         3.2,
     );
     let glwe = GlweParameters::new(
@@ -37,7 +35,7 @@ fn parameters(order: PbsOrder) -> TfheParameters<u32> {
         POLY_LENGTH,
         PLAINTEXT_MODULUS,
         NativeModulus::new(),
-        RingSecretKeyType::Binary,
+        SecretKeyDistr::Binary,
         3.2,
     );
     let bootstrapping = GgswParameters::with_glwe_params(&glwe, 8, Some(3));

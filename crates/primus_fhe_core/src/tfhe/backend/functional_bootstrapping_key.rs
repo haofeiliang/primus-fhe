@@ -15,7 +15,7 @@ use primus_lattice::{
 
 use crate::{
     FourierGadgetEncryptContext, FourierGlweSecretKey, GlevParameters, LweParameters, LweSecretKey,
-    LweSecretKeyType, NttGadgetDomain, NttGadgetEncryptContext, NttGlweSecretKey,
+    NttGadgetDomain, NttGadgetEncryptContext, NttGlweSecretKey, SecretKeyDistr,
 };
 
 /// A bootstrapping key containing one GGSW encryption per input LWE secret
@@ -98,9 +98,9 @@ where
         R: rand::Rng + rand::CryptoRng,
     {
         let params = parameters;
-        assert_eq!(input_secret_key.distr(), LweSecretKeyType::Binary);
+        assert_eq!(input_secret_key.distr(), SecretKeyDistr::Binary);
         assert_eq!(input_secret_key.dimension(), input_parameters.dimension());
-        assert_eq!(input_parameters.secret_key_type(), LweSecretKeyType::Binary);
+        assert_eq!(input_parameters.secret_key_distr(), SecretKeyDistr::Binary);
         assert_eq!(output_secret_key.glwe_size(), params.glwe_size());
         assert_eq!(fft.poly_length(), params.poly_length());
 
@@ -162,9 +162,9 @@ impl<T: FheUint> FunctionalBootstrappingKey<T, Vec<T>> {
         R: rand::Rng + rand::CryptoRng,
     {
         let params = domain.parameters();
-        assert_eq!(input_secret_key.distr(), LweSecretKeyType::Binary);
+        assert_eq!(input_secret_key.distr(), SecretKeyDistr::Binary);
         assert_eq!(input_secret_key.dimension(), input_parameters.dimension());
-        assert_eq!(input_parameters.secret_key_type(), LweSecretKeyType::Binary);
+        assert_eq!(input_parameters.secret_key_distr(), SecretKeyDistr::Binary);
         assert_eq!(output_secret_key.glwe_size(), params.glwe_size());
 
         let input_dimension = input_secret_key.dimension();

@@ -4,8 +4,7 @@ use primus_lattice::GlweSize;
 use primus_reduce::RingContext;
 
 use crate::{
-    GlweSecretKey, LweSecretKey, LweSecretKeyType, PbsOrder, RingSecretKeyType, SecretCoefficient,
-    TfheParameters,
+    GlweSecretKey, LweSecretKey, PbsOrder, SecretCoefficient, SecretKeyDistr, TfheParameters,
 };
 
 /// Borrowed coefficients of the LWE secret key used by external TFHE
@@ -105,16 +104,16 @@ impl<T: FheUint> ClientKey<T> {
 
         let mut key = vec![SecretCoefficient::<T>::ZERO; capacity];
         let distribution = match lwe_secret_key.distr() {
-            LweSecretKeyType::Binary => {
+            SecretKeyDistr::Binary => {
                 key[..lwe_dimension]
                     .iter_mut()
                     .zip(lwe_secret_key.as_ref())
                     .for_each(|(output, &coefficient)| {
                         *output = coefficient.cast_to_signed();
                     });
-                RingSecretKeyType::Binary
+                SecretKeyDistr::Binary
             }
-            LweSecretKeyType::Ternary => {
+            SecretKeyDistr::Ternary => {
                 let minus_one = parameters.small_lwe().cipher_modulus_minus_one();
                 key[..lwe_dimension]
                     .iter_mut()
@@ -126,7 +125,10 @@ impl<T: FheUint> ClientKey<T> {
                             coefficient.cast_to_signed()
                         };
                     });
-                RingSecretKeyType::Ternary
+                SecretKeyDistr::Ternary
+            }
+            SecretKeyDistr::Gaussian(_) => {
+                panic!("TFHE small LWE secret keys must use the binary distribution")
             }
         };
 
@@ -165,7 +167,7 @@ impl<T: FheUint> ClientKey<T> {
                 actual: self.small_lwe_secret_key.dimension(),
             });
         }
-        if self.small_lwe_secret_key.distr() != parameters.small_lwe().secret_key_type() {
+        if self.small_lwe_secret_key.distr() != parameters.small_lwe().secret_key_distr() {
             return Err(TfheKeyError::LweSecretKeyDistributionMismatch);
         }
         if self.glwe_secret_key.dimension() != parameters.glwe().dimension() {
@@ -180,7 +182,7 @@ impl<T: FheUint> ClientKey<T> {
                 actual: self.glwe_secret_key.poly_length(),
             });
         }
-        if self.glwe_secret_key.distr() != parameters.glwe().secret_key_type() {
+        if self.glwe_secret_key.distr() != parameters.glwe().secret_key_distr() {
             return Err(TfheKeyError::GlweSecretKeyDistributionMismatch);
         }
         Ok(())

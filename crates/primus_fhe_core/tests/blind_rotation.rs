@@ -1,11 +1,12 @@
 use primus_fft::{FftEngine, FftTable, RustFftTable};
 use primus_fhe_core::{
+    SecretKeyDistr,
     glwe::{
         FourierGadgetEncryptContext, FourierGlweDecryptContext, FourierGlweEncryptContext,
         FourierGlweSecretKey, GlevParameters, GlweParameters, GlweSecretKey, NttGadgetDomain,
-        NttGadgetEncryptContext, NttGlweSecretKey, RingSecretKeyType,
+        NttGadgetEncryptContext, NttGlweSecretKey,
     },
-    lwe::{LweParameters, LweSecretKey, LweSecretKeyType},
+    lwe::{LweParameters, LweSecretKey},
     tfhe::{
         FourierBlindRotationContext, FourierFunctionalBootstrappingKey, NttBlindRotationContext,
         NttFunctionalBootstrappingKey,
@@ -57,7 +58,7 @@ fn fourier_functional_bootstrapping_key_blind_rotates() {
         LWE_DIMENSION,
         PLAINTEXT_MODULUS,
         NativeModulus::new(),
-        LweSecretKeyType::Binary,
+        SecretKeyDistr::Binary,
         0.7,
     );
     let glwe_params = GlweParameters::new(
@@ -65,11 +66,11 @@ fn fourier_functional_bootstrapping_key_blind_rotates() {
         POLY_LENGTH,
         PLAINTEXT_MODULUS,
         NativeModulus::new(),
-        RingSecretKeyType::Binary,
+        SecretKeyDistr::Binary,
         0.7,
     );
     let ggsw_params = GlevParameters::with_glwe_params(&glwe_params, 8, None);
-    let input_secret_key = LweSecretKey::new(vec![1u32, 0, 1, 1], LweSecretKeyType::Binary);
+    let input_secret_key = LweSecretKey::new(vec![1u32, 0, 1, 1], SecretKeyDistr::Binary);
     let output_secret_key = FourierGlweSecretKey::generate(&glwe_params, &mut fft, &mut rng);
     let mut gadget_context = FourierGadgetEncryptContext::new(ggsw_params.size());
     let key = FourierFunctionalBootstrappingKey::generate_fourier(
@@ -167,7 +168,7 @@ fn ntt_functional_bootstrapping_key_blind_rotates() {
         LWE_DIMENSION,
         PLAINTEXT_MODULUS,
         modulus,
-        LweSecretKeyType::Binary,
+        SecretKeyDistr::Binary,
         0.7,
     );
     let glwe_params = GlweParameters::new(
@@ -175,12 +176,12 @@ fn ntt_functional_bootstrapping_key_blind_rotates() {
         POLY_LENGTH,
         PLAINTEXT_MODULUS,
         modulus,
-        RingSecretKeyType::Ternary,
+        SecretKeyDistr::Ternary,
         0.7,
     );
     let ggsw_params = GlevParameters::with_glwe_params(&glwe_params, 8, None);
     let domain = NttGadgetDomain::try_new(&ggsw_params, &ntt).unwrap();
-    let input_secret_key = LweSecretKey::new(vec![1u32, 0, 1, 1], LweSecretKeyType::Binary);
+    let input_secret_key = LweSecretKey::new(vec![1u32, 0, 1, 1], SecretKeyDistr::Binary);
     let coeff_output_secret_key = GlweSecretKey::generate(&glwe_params, &mut rng);
     let output_secret_key = NttGlweSecretKey::from_coeff_secret_key(&coeff_output_secret_key, &ntt);
     let mut gadget_context = NttGadgetEncryptContext::new(domain.size());

@@ -2,7 +2,7 @@ use primus_fft::{FftEngine, FftTable, RustFftTable, TorusFftValue};
 use primus_fhe_core::{
     glwe::{
         FourierGlweDecryptContext, FourierGlweEncryptContext, FourierGlweSecretKey, GlweParameters,
-        RingSecretKeyType,
+        SecretKeyDistr,
     },
     plaintext::PlaintextEmbedding,
 };
@@ -27,17 +27,17 @@ where
         .collect();
     let message = Polynomial::new(messages.clone());
 
-    for secret_key_type in [
-        RingSecretKeyType::Binary,
-        RingSecretKeyType::Ternary,
-        RingSecretKeyType::Gaussian(3.2),
+    for secret_key_distr in [
+        SecretKeyDistr::Binary,
+        SecretKeyDistr::Ternary,
+        SecretKeyDistr::Gaussian(3.2),
     ] {
         let params = GlweParameters::new(
             DIMENSION,
             POLY_LENGTH,
             T::try_from(PLAIN_MODULUS).unwrap(),
             NativeModulus::new(),
-            secret_key_type,
+            secret_key_distr,
             0.7,
         );
         let secret_key = FourierGlweSecretKey::generate(&params, &mut fft, &mut rng);

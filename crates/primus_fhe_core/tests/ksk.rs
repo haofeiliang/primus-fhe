@@ -1,5 +1,5 @@
 use primus_fhe_core::{
-    glwe::{GlweSecretKey, RingSecretKeyType},
+    glwe::{GlweSecretKey, SecretKeyDistr},
     rns_fhe::{
         CrtGlevParameters, CrtGlweParameters, DcrtGadgetDomain, DcrtGlweCiphertext,
         DcrtGlweDecryptContext, DcrtGlweKeySwitchingContext, DcrtGlweKeySwitchingKey,
@@ -43,7 +43,7 @@ fn test_rns_glwe_ksk() {
         mod_t,
         mod_gamma,
         &moduli,
-        RingSecretKeyType::Ternary,
+        SecretKeyDistr::Ternary,
         3.20,
     );
 
@@ -125,7 +125,7 @@ fn test_rns_glwe_ksk_hybrid() {
         mod_t,
         mod_gamma,
         &q_moduli,
-        RingSecretKeyType::Ternary,
+        SecretKeyDistr::Ternary,
         3.20,
     );
 

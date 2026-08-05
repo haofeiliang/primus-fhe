@@ -1,4 +1,4 @@
-use primus_fhe_core::lwe::{LweParameters, LweSecretKey, LweSecretKeyType};
+use primus_fhe_core::lwe::{LweParameters, LweSecretKey, SecretKeyDistr};
 use primus_integer::FheUint;
 use primus_modulus::{BarrettModulus, NativeModulus, PowOf2Modulus};
 use primus_reduce::RingContext;
@@ -6,8 +6,11 @@ use primus_reduce::RingContext;
 const DIMENSION: usize = 670;
 const NOISE_ALPHA: f64 = 2.980_232_238_769_531_2e-8; // 2^-25
 const PLAIN_MODULI: [usize; 2] = [256, 257];
-const SECRET_KEY_TYPES: [LweSecretKeyType; 2] =
-    [LweSecretKeyType::Binary, LweSecretKeyType::Ternary];
+const SECRET_KEY_TYPES: [SecretKeyDistr; 3] = [
+    SecretKeyDistr::Binary,
+    SecretKeyDistr::Ternary,
+    SecretKeyDistr::Gaussian(3.2),
+];
 
 fn noise_standard_deviation_from_q(q: f64) -> f64 {
     (q * NOISE_ALPHA).max(0.7)
@@ -36,14 +39,14 @@ where
     let mut rng = rand::rng();
     let noise_standard_deviation = noise_standard_deviation(cipher_modulus);
 
-    for secret_key_type in SECRET_KEY_TYPES {
+    for secret_key_distr in SECRET_KEY_TYPES {
         for plain_modulus_usize in PLAIN_MODULI {
             let plain_modulus = from_usize(plain_modulus_usize);
             let params = LweParameters::new(
                 DIMENSION,
                 plain_modulus,
                 cipher_modulus,
-                secret_key_type,
+                secret_key_distr,
                 noise_standard_deviation,
             );
             let secret_key = LweSecretKey::generate(&params, &mut rng);

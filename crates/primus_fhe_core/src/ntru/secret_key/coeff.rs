@@ -6,7 +6,7 @@ use primus_integer::FheUint;
 use primus_poly::PolynomialOwned;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
-use crate::RingSecretKeyType;
+use crate::SecretKeyDistr;
 
 /// Represents a secret key for the NTRU cryptographic scheme.
 ///
@@ -16,7 +16,7 @@ use crate::RingSecretKeyType;
 #[derive(Clone)]
 pub struct NtruSecretKey<T: FheUint> {
     pub(crate) key: PolynomialOwned<T>,
-    pub(crate) distr: RingSecretKeyType,
+    pub(crate) distr: SecretKeyDistr,
 }
 
 impl<T: FheUint> Zeroize for NtruSecretKey<T> {
@@ -39,12 +39,12 @@ impl<T: FheUint> Deref for NtruSecretKey<T> {
 
 impl<T: FheUint> NtruSecretKey<T> {
     /// Creates a new [`NtruSecretKey<T>`].
-    pub fn new(key: PolynomialOwned<T>, distr: RingSecretKeyType) -> Self {
+    pub fn new(key: PolynomialOwned<T>, distr: SecretKeyDistr) -> Self {
         Self { key, distr }
     }
 
     /// Returns the distribution of this [`NtruSecretKey<T>`].
-    pub fn distr(&self) -> RingSecretKeyType {
+    pub fn distr(&self) -> SecretKeyDistr {
         self.distr
     }
 
@@ -53,17 +53,22 @@ impl<T: FheUint> NtruSecretKey<T> {
     /// The key is sampled from the configured distribution (binary, ternary,
     /// or discrete Gaussian). For NTRU, binary and ternary are the typical
     /// choices that guarantee small coefficients for correct decryption.
+    ///
+    /// # Panics
+    ///
+    /// Panics if a Gaussian distribution has invalid parameters.
     #[inline]
-    pub fn generate<R>(distr: RingSecretKeyType, poly_length: usize, rng: &mut R) -> Self
+    pub fn generate<R>(distr: SecretKeyDistr, poly_length: usize, rng: &mut R) -> Self
     where
         R: rand::Rng + rand::CryptoRng,
     {
         let key = match distr {
-            RingSecretKeyType::Binary => PolynomialOwned::random_binary(poly_length, rng),
-            RingSecretKeyType::Ternary => PolynomialOwned::random_ternary(T::MAX, poly_length, rng),
-            RingSecretKeyType::Gaussian(_std_dev) => {
-                // NTRU keys are typically binary/ternary; Gaussian is unusual but supported
-                PolynomialOwned::random_binary(poly_length, rng)
+            SecretKeyDistr::Binary => PolynomialOwned::random_binary(poly_length, rng),
+            SecretKeyDistr::Ternary => PolynomialOwned::random_ternary(T::MAX, poly_length, rng),
+            SecretKeyDistr::Gaussian(standard_deviation) => {
+                let gaussian = primus_distr::DiscreteGaussian::new(standard_deviation, T::MAX)
+                    .expect("invalid Gaussian NTRU secret-key distribution");
+                PolynomialOwned::random_gaussian(poly_length, &gaussian, rng)
             }
         };
         Self { key, distr }

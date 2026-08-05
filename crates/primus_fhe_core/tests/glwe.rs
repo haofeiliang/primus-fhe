@@ -1,5 +1,5 @@
 use primus_fhe_core::{
-    glwe::{GlweSecretKey, RingSecretKeyType},
+    glwe::{GlweSecretKey, SecretKeyDistr},
     rns_fhe::{CrtGlweParameters, DcrtGlweCiphertext, DcrtGlweDecryptContext, DcrtGlweSecretKey},
 };
 use primus_lattice::glwe::DcrtGlwe;
@@ -18,10 +18,10 @@ const SECRET_KEY_GAUSSIAN_STANDARD_DEVIATION: f64 = 3.2;
 const PLAIN_MODULI: [ValueT; 3] = [256, 257, 12_289];
 const GAMMA_MODULUS: ValueT = 2_305_843_009_213_554_689;
 const CIPHER_MODULI: [ValueT; 2] = [1_125_899_906_826_241, 1_125_899_906_629_633];
-const SECRET_KEY_TYPES: [RingSecretKeyType; 3] = [
-    RingSecretKeyType::Binary,
-    RingSecretKeyType::Ternary,
-    RingSecretKeyType::Gaussian(SECRET_KEY_GAUSSIAN_STANDARD_DEVIATION),
+const SECRET_KEY_TYPES: [SecretKeyDistr; 3] = [
+    SecretKeyDistr::Binary,
+    SecretKeyDistr::Ternary,
+    SecretKeyDistr::Gaussian(SECRET_KEY_GAUSSIAN_STANDARD_DEVIATION),
 ];
 
 /// Construct a deterministic test pattern: m_i = i mod t
@@ -59,7 +59,7 @@ where
 /// 2. `encrypt_centered_plaintext_inplace` — centered encoding (codec-managed)
 /// 3. `encrypt_inplace` with manual `decompose_message` — low-level API
 /// 4. `encrypt_zeros_inplace` — zero plaintext
-fn assert_dcrt_glwe_secret_key_enc_dec(secret_key_type: RingSecretKeyType, plain_modulus: ValueT) {
+fn assert_dcrt_glwe_secret_key_enc_dec(secret_key_distr: SecretKeyDistr, plain_modulus: ValueT) {
     let mod_t = BarrettModulus::new(plain_modulus);
     let mod_gamma = BarrettModulus::new(GAMMA_MODULUS);
     let moduli = CIPHER_MODULI.map(BarrettModulus::new);
@@ -72,7 +72,7 @@ fn assert_dcrt_glwe_secret_key_enc_dec(secret_key_type: RingSecretKeyType, plain
         mod_t,
         mod_gamma,
         &moduli,
-        secret_key_type,
+        secret_key_distr,
         NOISE_STANDARD_DEVIATION,
     );
 
@@ -128,9 +128,9 @@ fn assert_dcrt_glwe_secret_key_enc_dec(secret_key_type: RingSecretKeyType, plain
 
 #[test]
 fn test_dcrt_glwe_secret_key_enc_dec_crt_modulus() {
-    for secret_key_type in SECRET_KEY_TYPES {
+    for secret_key_distr in SECRET_KEY_TYPES {
         for plain_modulus in PLAIN_MODULI {
-            assert_dcrt_glwe_secret_key_enc_dec(secret_key_type, plain_modulus);
+            assert_dcrt_glwe_secret_key_enc_dec(secret_key_distr, plain_modulus);
         }
     }
 }
@@ -157,7 +157,7 @@ fn test_dcrt_glwe_secret_key_ciphertext_ops_crt_modulus() {
         mod_t,
         mod_gamma,
         &moduli,
-        RingSecretKeyType::Ternary,
+        SecretKeyDistr::Ternary,
         NOISE_STANDARD_DEVIATION,
     );
 

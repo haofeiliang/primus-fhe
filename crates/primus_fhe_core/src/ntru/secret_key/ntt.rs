@@ -7,7 +7,7 @@ use primus_poly::{NttPolynomial, NttPolynomialOwned, PolynomialOwned};
 use primus_reduce::FieldContext;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
-use crate::{NttNtruCiphertext, RingSecretKeyType};
+use crate::{NttNtruCiphertext, SecretKeyDistr};
 
 use super::NtruSecretKey;
 
@@ -20,7 +20,7 @@ use super::NtruSecretKey;
 pub struct NttNtruSecretKey<T: FheUint> {
     pub(crate) key: NttPolynomialOwned<T>,
     pub(crate) inv_key: NttPolynomialOwned<T>,
-    pub(crate) distr: RingSecretKeyType,
+    pub(crate) distr: SecretKeyDistr,
 }
 
 impl<T: FheUint> Zeroize for NttNtruSecretKey<T> {
@@ -38,7 +38,7 @@ impl<T: FheUint> NttNtruSecretKey<T> {
     pub fn new(
         key: NttPolynomialOwned<T>,
         inv_key: NttPolynomialOwned<T>,
-        distr: RingSecretKeyType,
+        distr: SecretKeyDistr,
     ) -> Self {
         Self {
             key,
@@ -48,7 +48,7 @@ impl<T: FheUint> NttNtruSecretKey<T> {
     }
 
     /// Returns the distribution of this [`NttNtruSecretKey<T>`].
-    pub fn distr(&self) -> RingSecretKeyType {
+    pub fn distr(&self) -> SecretKeyDistr {
         self.distr
     }
 
