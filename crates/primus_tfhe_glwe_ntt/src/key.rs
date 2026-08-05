@@ -1,6 +1,6 @@
-use primus_fhe_core::{
-    glwe::{GlweSecretKey, NttGadgetEncryptContext, NttGlweKeySwitchingKey, NttGlweSecretKey},
-    lwe::LweSecretKey,
+use primus_fhe_core::lwe::LweSecretKey;
+use primus_glwe::{
+    GlweSecretKey, NttGadgetEncryptContext, NttGlweKeySwitchingKey, NttGlweSecretKey,
 };
 use primus_integer::FheUint;
 use primus_ntt::NttTable;

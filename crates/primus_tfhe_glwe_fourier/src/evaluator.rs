@@ -1,8 +1,6 @@
 use primus_fft::{FftEngine, FftTable, TorusFftValue};
-use primus_fhe_core::{
-    glwe::{FourierGlweKeySwitchingContext, GlweCiphertext},
-    lwe::LweCiphertext,
-};
+use primus_fhe_core::lwe::LweCiphertext;
+use primus_glwe::{FourierGlweKeySwitchingContext, GlweCiphertext};
 use primus_tfhe::{Ciphertext, LookupTable, PbsOrder, ProgrammableBootstrap};
 
 use crate::{FourierBlindRotationContext, ServerKey, TfheContext, error::TfheEvaluationError};

@@ -11,7 +11,7 @@ use primus_ntt::NttTable;
 use primus_poly::{NttPolynomial, PolynomialOwned};
 use primus_reduce::FieldContext;
 
-use crate::glwe::secret_key::encode_secret_polynomial_to;
+use crate::secret_key::encode_secret_polynomial_to;
 use crate::{GlweSecretKey, NttGadgetDomain, NttGadgetEncryptContext, NttGlweSecretKey};
 
 /// An NTT-domain GLWE key-switching key.

@@ -1,10 +1,7 @@
-use primus_fhe_core::{
-    SecretKeyDistr,
-    glwe::{
-        GlevParameters, GlweParameters, GlweSecretKey, NttGadgetDomain, NttGadgetEncryptContext,
-        NttGlweSecretKey,
-    },
-    lwe::{LweParameters, LweSecretKey},
+use primus_fhe_core::lwe::{LweParameters, LweSecretKey};
+use primus_glwe::{
+    GlevParameters, GlweParameters, GlweSecretKey, NttGadgetDomain, NttGadgetEncryptContext,
+    NttGlweSecretKey, SecretKeyDistr,
 };
 use primus_lattice::{
     glwe::{Glwe, NttGlwe},

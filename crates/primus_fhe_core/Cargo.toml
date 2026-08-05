@@ -10,11 +10,8 @@ primus_reduce = { path = "../primus_reduce" }
 primus_modulus = { path = "../primus_modulus" }
 primus_factor = { path = "../primus_factor" }
 primus_distr = { path = "../primus_distr" }
-primus_poly = { path = "../primus_poly" }
-primus_ntt = { path = "../primus_ntt" }
 primus_decompose = { path = "../primus_decompose" }
 primus_lattice = { path = "../primus_lattice" }
-primus_fft = { path = "../primus_fft" }
 
 thiserror = { workspace = true }
 rand = { workspace = true }
@@ -22,13 +19,10 @@ zeroize = { workspace = true }
 num-traits = { workspace = true }
 
 [dev-dependencies]
+primus_fft = { path = "../primus_fft" }
 criterion = { workspace = true }
 [[bench]]
 name = "lwe_enc"
-harness = false
-
-[[bench]]
-name = "plaintext_codec"
 harness = false
 
 [features]
@@ -37,8 +31,6 @@ simd = [
     "primus_integer/simd",
     "primus_modulus/simd",
     "primus_factor/simd",
-    "primus_poly/simd",
-    "primus_ntt/simd",
     "primus_decompose/simd",
     "primus_lattice/simd",
 ]

@@ -10,7 +10,7 @@ use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::{
     GlevParameters, GlweParameters, GlweParametersInner, NttGlweCiphertext, PlaintextCodec,
-    PlaintextEmbedding, SecretKeyDistr,
+    PlaintextEmbedding, SecretKeyDistr, TruncatedGlweCiphertext,
 };
 
 use super::{GlweSecretKey, encode_secret_polynomial_to};
@@ -399,6 +399,220 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         params
             .plaintext_codec()
             .decode_slice_inplace(result.as_mut());
+    }
+
+    /// Decrypts a ciphertext and returns both its message and the absolute
+    /// coefficient-wise noise modulo `q`.
+    pub fn decrypt_with_noise<M, Table, A>(
+        &self,
+        cipher: &NttGlweCiphertext<A>,
+        params: &GlweParameters<T, M>,
+        ntt_table: &Table,
+    ) -> (PolynomialOwned<T>, PolynomialOwned<T>)
+    where
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+        A: RawData<Elem = T> + Data,
+    {
+        self.decrypt_with_noise_and_embedding(
+            cipher,
+            params,
+            ntt_table,
+            PlaintextEmbedding::Unsigned,
+        )
+    }
+
+    /// Decrypts a centered ciphertext and returns both its message and the
+    /// absolute coefficient-wise noise modulo `q`.
+    pub fn decrypt_centered_with_noise<M, Table, A>(
+        &self,
+        cipher: &NttGlweCiphertext<A>,
+        params: &GlweParameters<T, M>,
+        ntt_table: &Table,
+    ) -> (PolynomialOwned<T>, PolynomialOwned<T>)
+    where
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+        A: RawData<Elem = T> + Data,
+    {
+        self.decrypt_with_noise_and_embedding(
+            cipher,
+            params,
+            ntt_table,
+            PlaintextEmbedding::Centered,
+        )
+    }
+
+    /// Decrypts a ciphertext and measures its coefficient-wise noise using
+    /// the selected plaintext embedding.
+    pub fn decrypt_with_noise_and_embedding<M, Table, A>(
+        &self,
+        cipher: &NttGlweCiphertext<A>,
+        params: &GlweParameters<T, M>,
+        ntt_table: &Table,
+        embedding: PlaintextEmbedding,
+    ) -> (PolynomialOwned<T>, PolynomialOwned<T>)
+    where
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+        A: RawData<Elem = T> + Data,
+    {
+        let modulus = params.cipher_modulus();
+        let mut message = PolynomialOwned::zero(self.size.poly_length());
+        self.phase_to(cipher, &mut message, ntt_table, modulus);
+
+        let mut noise = PolynomialOwned::zero(self.size.poly_length());
+        message
+            .iter_mut()
+            .zip(noise.iter_mut())
+            .for_each(|(phase, noise)| {
+                let phase_mod_q = *phase;
+                let decoded = params.plaintext_codec().decode_value(phase_mod_q);
+                let encoded = params
+                    .plaintext_codec()
+                    .encode_value_with_delta(decoded, embedding);
+
+                *phase = decoded;
+                *noise = modulus
+                    .reduce_sub(phase_mod_q, encoded)
+                    .min(modulus.reduce_sub(encoded, phase_mod_q));
+            });
+
+        (message, noise)
+    }
+
+    /// Encrypts several zero messages in one coefficient-domain GLWE sample
+    /// whose body is truncated to `message_count` coefficients.
+    ///
+    /// This is useful when only the first few coefficient extractions are
+    /// needed. `message_count` must not exceed the polynomial length.
+    pub fn encrypt_multi_zeros<R, M, Table>(
+        &self,
+        message_count: usize,
+        params: &GlweParameters<T, M>,
+        ntt_table: &Table,
+        rng: &mut R,
+    ) -> TruncatedGlweCiphertext<Vec<T>>
+    where
+        R: rand::Rng + rand::CryptoRng,
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+    {
+        let size = params.size();
+        let poly_length = size.poly_length();
+        assert_eq!(self.size, size);
+        assert_eq!(ntt_table.poly_length(), poly_length);
+        assert!(message_count <= poly_length);
+
+        let mask_len = size.mask_len();
+        let mut data = vec![T::ZERO; mask_len + poly_length];
+        let (mask, body) = data.split_at_mut(mask_len);
+        primus_distr::sample_uniform_values_to(mask, &params.cipher_modulus_uniform_distr(), rng);
+
+        let modulus = params.cipher_modulus();
+        let mut masks = mask.chunks_exact(poly_length);
+        let mut secrets = self.iter();
+        let first_mask = masks.next().expect("GLWE dimension must be non-zero");
+        let first_secret = secrets.next().expect("GLWE dimension must be non-zero");
+        body.copy_from_slice(first_mask);
+        ntt_table.transform_slice(body);
+        NttPolynomial(&mut *body).mul_assign(&first_secret, modulus);
+
+        if masks.len() != 0 {
+            let mut transformed_mask = vec![T::ZERO; poly_length];
+            for (mask, secret) in masks.zip(secrets) {
+                transformed_mask.copy_from_slice(mask);
+                ntt_table.transform_slice(&mut transformed_mask);
+                NttPolynomial(&mut *body).add_mul_assign(
+                    &NttPolynomial(transformed_mask.as_slice()),
+                    &secret,
+                    modulus,
+                );
+            }
+        }
+        ntt_table.inverse_transform_slice(body);
+        Polynomial(&mut *body).add_random_gaussian_assign(
+            params.noise_distribution(),
+            modulus,
+            rng,
+        );
+
+        data.truncate(mask_len + message_count);
+        TruncatedGlweCiphertext::new(data)
+    }
+
+    /// Returns the retained coefficient phases of a truncated GLWE
+    /// ciphertext.
+    pub fn phase_multi_messages<M, Table, A>(
+        &self,
+        cipher: &TruncatedGlweCiphertext<A>,
+        modulus: M,
+        ntt_table: &Table,
+    ) -> Vec<T>
+    where
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+        A: RawData<Elem = T> + Data,
+    {
+        let size = self.size;
+        let poly_length = size.poly_length();
+        assert_eq!(ntt_table.poly_length(), poly_length);
+        let (mask, body) = cipher.a_b_slices(size);
+        assert!(body.len() <= poly_length);
+
+        let mut masks = mask.chunks_exact(poly_length);
+        let mut secrets = self.iter();
+        let first_mask = masks.next().expect("GLWE dimension must be non-zero");
+        let first_secret = secrets.next().expect("GLWE dimension must be non-zero");
+        let mut phase_mask = first_mask.to_vec();
+        ntt_table.transform_slice(&mut phase_mask);
+        NttPolynomial(phase_mask.as_mut_slice()).mul_assign(&first_secret, modulus);
+
+        if masks.len() != 0 {
+            let mut transformed_mask = vec![T::ZERO; poly_length];
+            for (mask, secret) in masks.zip(secrets) {
+                transformed_mask.copy_from_slice(mask);
+                ntt_table.transform_slice(&mut transformed_mask);
+                NttPolynomial(phase_mask.as_mut_slice()).add_mul_assign(
+                    &NttPolynomial(transformed_mask.as_slice()),
+                    &secret,
+                    modulus,
+                );
+            }
+        }
+        ntt_table.inverse_transform_slice(&mut phase_mask);
+
+        body.iter()
+            .zip(phase_mask)
+            .map(|(&body, mask)| modulus.reduce_sub(body, mask))
+            .collect()
+    }
+
+    /// Decrypts all retained messages in a truncated GLWE ciphertext.
+    pub fn decrypt_multi_messages<Msg, M, Table, A>(
+        &self,
+        cipher: &TruncatedGlweCiphertext<A>,
+        params: &GlweParameters<T, M>,
+        ntt_table: &Table,
+    ) -> Vec<Msg>
+    where
+        Msg: TryFrom<T>,
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+        A: RawData<Elem = T> + Data,
+    {
+        assert_eq!(self.size, params.size());
+        let mut messages = self.phase_multi_messages(cipher, params.cipher_modulus(), ntt_table);
+        params.plaintext_codec().decode_slice_inplace(&mut messages);
+
+        messages
+            .into_iter()
+            .map(|message| {
+                Msg::try_from(message)
+                    .map_err(|_| "out of range integral type conversion attempted")
+                    .unwrap()
+            })
+            .collect()
     }
 }
 

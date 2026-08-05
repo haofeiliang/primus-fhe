@@ -34,8 +34,9 @@ pub use parameter::{
     HybridRnsKeySwitchDomain,
 };
 pub use plaintext::RnsCoeffCodec;
-pub use primus_fhe_core::SecretKeyDistr;
-pub use primus_fhe_core::glwe::{GlweSecretKey, GlweSecretKeyParameterSet, SecretCoefficient};
+pub use primus_glwe::{
+    GlweSecretKey, GlweSecretKeyParameterSet, SecretCoefficient, SecretKeyDistr,
+};
 pub use primus_lattice::{RnsGadgetSize, RnsGlweSize};
 pub use public_key::DcrtGlwePublicKey;
 pub use secret_key::{DcrtGlweDecryptContext, DcrtGlweSecretKey};

@@ -1,11 +1,8 @@
 //! NTT-domain functional bootstrapping key and blind rotation.
 
 use primus_data::{Data, DataMut, RawData};
-use primus_fhe_core::{
-    SecretKeyDistr,
-    glwe::{NttGadgetDomain, NttGadgetEncryptContext, NttGlweSecretKey},
-    lwe::{LweParameters, LweSecretKey},
-};
+use primus_fhe_core::lwe::{LweParameters, LweSecretKey};
+use primus_glwe::{NttGadgetDomain, NttGadgetEncryptContext, NttGlweSecretKey, SecretKeyDistr};
 use primus_integer::FheUint;
 use primus_lattice::{
     GadgetSize,

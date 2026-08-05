@@ -15,12 +15,12 @@ pub mod backend_support;
 
 use num_traits::identities::ConstZero;
 use primus_fhe_core::{
-    glwe::{
-        GgswParameters, GlevParameters, GlweKeySwitchingParameters, GlweParameters, GlweSecretKey,
-        SecretCoefficient,
-    },
     lwe::{LweCiphertext, LweParameters, LweSecretKey},
     plaintext::{PlaintextCodec, PlaintextEmbedding},
+};
+use primus_glwe::{
+    GgswParameters, GlevParameters, GlweKeySwitchingParameters, GlweParameters, GlweSecretKey,
+    SecretCoefficient,
 };
 use primus_integer::{FheUint, WrappingNeg};
 
@@ -34,7 +34,7 @@ pub use key::{ClientKey, LweSecretKeyRef, TfheKeyError};
 pub use lookup_table::{LookupTable, LookupTableError};
 pub use parameters::{PbsOrder, TfheParameterError, TfheParameters};
 
-pub use primus_fhe_core::SecretKeyDistr;
+pub use primus_glwe::SecretKeyDistr;
 
 #[inline]
 fn encode_secret_coefficient<T: FheUint>(coefficient: SecretCoefficient<T>, modulus: T) -> T {

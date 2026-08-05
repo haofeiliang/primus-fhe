@@ -2,10 +2,9 @@
 
 use primus_data::{Data, DataMut, RawData};
 use primus_fft::{Complex64, FftEngine, FftTable, TorusFftValue};
-use primus_fhe_core::{
-    SecretKeyDistr,
-    glwe::{FourierGadgetEncryptContext, FourierGlweSecretKey, GlevParameters},
-    lwe::{LweParameters, LweSecretKey},
+use primus_fhe_core::lwe::{LweParameters, LweSecretKey};
+use primus_glwe::{
+    FourierGadgetEncryptContext, FourierGlweSecretKey, GlevParameters, SecretKeyDistr,
 };
 use primus_lattice::{
     GadgetSize,

@@ -21,20 +21,6 @@ pub(crate) fn encode_secret_coefficient<T: FheUint>(
     }
 }
 
-pub(crate) fn encode_secret_polynomial_to<T: FheUint>(
-    coefficients: &[SecretCoefficient<T>],
-    output: &mut [T],
-    modulus: T,
-) {
-    assert_eq!(output.len(), coefficients.len());
-    output
-        .iter_mut()
-        .zip(coefficients)
-        .for_each(|(output, &coefficient)| {
-            *output = encode_secret_coefficient::<T>(coefficient, modulus);
-        });
-}
-
 /// Distribution used to sample secret-key coefficients.
 ///
 /// Individual cryptosystems may support only a subset of these distributions.

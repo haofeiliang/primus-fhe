@@ -1,10 +1,8 @@
 use primus_fft::{FftEngine, FftTable, RustFftTable, TorusFftValue};
-use primus_fhe_core::{
-    glwe::{
-        FourierGlweDecryptContext, FourierGlweEncryptContext, FourierGlweSecretKey, GlweParameters,
-        SecretKeyDistr,
-    },
-    plaintext::PlaintextEmbedding,
+use primus_fhe_core::plaintext::PlaintextEmbedding;
+use primus_glwe::{
+    FourierGlweDecryptContext, FourierGlweEncryptContext, FourierGlweSecretKey, GlweParameters,
+    SecretKeyDistr,
 };
 use primus_integer::FheUint;
 use primus_lattice::glwe::FourierGlweOwned;

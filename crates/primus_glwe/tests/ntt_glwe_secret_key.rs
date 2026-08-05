@@ -1,7 +1,5 @@
-use primus_fhe_core::{
-    glwe::{GlweParameters, GlweSecretKey, NttGlweSecretKey, SecretKeyDistr},
-    plaintext::PlaintextEmbedding,
-};
+use primus_fhe_core::plaintext::PlaintextEmbedding;
+use primus_glwe::{GlweParameters, GlweSecretKey, NttGlweSecretKey, SecretKeyDistr};
 use primus_integer::FheUint;
 use primus_lattice::glwe::NttGlwe;
 use primus_modulus::BarrettModulus;

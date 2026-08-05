@@ -1,5 +1,5 @@
 use primus_fft::{FftEngine, FftTable, RustFftTable};
-use primus_fhe_core::glwe::{
+use primus_glwe::{
     FourierGadgetEncryptContext, FourierGlweDecryptContext, FourierGlweEncryptContext,
     FourierGlweSecretKey, GlevParameters, GlweParameters, GlweSecretKey, NttGadgetDomain,
     NttGadgetEncryptContext, NttGlweSecretKey, SecretKeyDistr,

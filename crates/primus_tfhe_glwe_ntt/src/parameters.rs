@@ -1,11 +1,8 @@
 //! Parameter types and built-in parameter sets for the NTT backend.
 
 use primus_decompose::primitive::ApproxSignedBasis;
-use primus_fhe_core::{
-    SecretKeyDistr,
-    glwe::{GgswParameters, GlweParameters},
-    lwe::LweParameters,
-};
+use primus_fhe_core::lwe::LweParameters;
+use primus_glwe::{GgswParameters, GlweParameters, SecretKeyDistr};
 use primus_modulus::BarrettModulus;
 use primus_tfhe::PbsOrder;
 

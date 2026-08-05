@@ -1,10 +1,7 @@
 use primus_fft::{FftEngine, FftTable, TorusFftValue};
-use primus_fhe_core::{
-    glwe::{
-        FourierGadgetEncryptContext, FourierGlweKeySwitchingKey, FourierGlweSecretKey,
-        GlweSecretKey,
-    },
-    lwe::LweSecretKey,
+use primus_fhe_core::lwe::LweSecretKey;
+use primus_glwe::{
+    FourierGadgetEncryptContext, FourierGlweKeySwitchingKey, FourierGlweSecretKey, GlweSecretKey,
 };
 use primus_tfhe::ClientKey;
 

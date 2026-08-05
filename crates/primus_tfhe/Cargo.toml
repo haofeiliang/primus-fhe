@@ -7,6 +7,7 @@ edition = "2024"
 primus_decompose = { path = "../primus_decompose" }
 primus_distr = { path = "../primus_distr" }
 primus_fhe_core = { path = "../primus_fhe_core" }
+primus_glwe = { path = "../primus_glwe" }
 primus_integer = { path = "../primus_integer" }
 primus_lattice = { path = "../primus_lattice" }
 primus_reduce = { path = "../primus_reduce" }
@@ -22,6 +23,7 @@ primus_modulus = { path = "../primus_modulus" }
 default = []
 simd = [
     "primus_fhe_core/simd",
+    "primus_glwe/simd",
     "primus_integer/simd",
     "primus_lattice/simd",
 ]

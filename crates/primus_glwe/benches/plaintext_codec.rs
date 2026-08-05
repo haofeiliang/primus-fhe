@@ -1,12 +1,9 @@
 use std::hint::black_box;
 
 use criterion::{BatchSize, BenchmarkId, Criterion, criterion_group, criterion_main};
-use primus_fhe_core::{
-    glwe::{
-        SecretKeyDistr,
-        rlwe::{NttRlweCiphertext, NttRlweSecretKey, RlweParameters, RlweSecretKey},
-    },
-    plaintext::{PlaintextCodec, PlaintextEmbedding},
+use primus_fhe_core::plaintext::{PlaintextCodec, PlaintextEmbedding};
+use primus_glwe::{
+    GlweParameters, GlweSecretKey, NttGlweCiphertext, NttGlweSecretKey, SecretKeyDistr,
 };
 use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, UintNttTable};
@@ -46,7 +43,7 @@ fn bench_plaintext_codec_u64(c: &mut Criterion) {
     let ciphertexts = ciphertext_values(q);
     let messages = message_values(t);
     let modulus = BarrettModulus::new(q);
-    let params = RlweParameters::new(BATCH_LEN, t, modulus, SecretKeyDistr::Binary, 3.2);
+    let params = GlweParameters::new(1, BATCH_LEN, t, modulus, SecretKeyDistr::Binary, 3.2);
     let scaled_codec = *params.plaintext_codec();
     let native_scaled_codec = PlaintextCodec::new(t, None);
     let mut encoded = vec![0u64; BATCH_LEN];
@@ -142,7 +139,7 @@ fn bench_plaintext_codec_u32(c: &mut Criterion) {
     let ciphertexts = ciphertext_values_u32(q);
     let messages = message_values_u32(t);
     let modulus = BarrettModulus::new(q);
-    let params = RlweParameters::new(BATCH_LEN, t, modulus, SecretKeyDistr::Binary, 3.2);
+    let params = GlweParameters::new(1, BATCH_LEN, t, modulus, SecretKeyDistr::Binary, 3.2);
     let scaled_codec = *params.plaintext_codec();
     let mut encoded = vec![0u32; BATCH_LEN];
 
@@ -177,16 +174,17 @@ fn bench_plaintext_codec_u32(c: &mut Criterion) {
     group.finish();
 }
 
-fn bench_rlwe_decrypt_arbitrary_modulus(c: &mut Criterion) {
+fn bench_glwe_decrypt_arbitrary_modulus(c: &mut Criterion) {
     type Value = u64;
-    let mut group = c.benchmark_group("rlwe_decrypt/arbitrary_modulus");
+    let mut group = c.benchmark_group("glwe_decrypt/arbitrary_modulus");
     let mut rng = rand::rng();
 
     for log_n in [12u32, 13] {
         let poly_length = 1usize << log_n;
         let cipher_modulus = BarrettModulus::new(CIPHER_MODULUS);
         let table = UintNttTable::new(log_n, cipher_modulus).unwrap();
-        let params = RlweParameters::new(
+        let params = GlweParameters::new(
+            1,
             poly_length,
             PLAIN_MODULUS,
             cipher_modulus,
@@ -194,16 +192,16 @@ fn bench_rlwe_decrypt_arbitrary_modulus(c: &mut Criterion) {
             3.2,
         );
 
-        let secret_key = RlweSecretKey::generate(&params, &mut rng);
-        let secret_key = NttRlweSecretKey::from_coeff_secret_key(&secret_key, &table);
+        let secret_key = GlweSecretKey::generate(&params, &mut rng);
+        let secret_key = NttGlweSecretKey::from_coeff_secret_key(&secret_key, &table);
         let message = Polynomial::new(
             (0..poly_length)
                 .map(|index| index as Value % PLAIN_MODULUS)
                 .collect::<Vec<_>>(),
         );
-        let mut ciphertext: NttRlweCiphertext<Vec<Value>> =
-            NttRlweCiphertext::zero(poly_length * 2);
-        secret_key.encrypt_inplace(&message, &mut ciphertext, &params, &table, &mut rng);
+        let mut ciphertext: NttGlweCiphertext<Vec<Value>> =
+            NttGlweCiphertext::zero(poly_length * 2);
+        secret_key.encrypt_to(&message, &mut ciphertext, &params, &table, &mut rng);
 
         let decrypted = secret_key.decrypt(&ciphertext, &params, &table);
         assert_eq!(decrypted.as_ref(), message.as_ref());
@@ -227,6 +225,6 @@ criterion_group!(
     benches,
     bench_plaintext_codec_u64,
     bench_plaintext_codec_u32,
-    bench_rlwe_decrypt_arbitrary_modulus,
+    bench_glwe_decrypt_arbitrary_modulus,
 );
 criterion_main!(benches);
