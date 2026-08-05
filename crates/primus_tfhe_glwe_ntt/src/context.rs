@@ -40,14 +40,6 @@ where
             return Err(TfheContextError::ModulusMismatch { expected, actual });
         }
 
-        let lwe = parameters.small_lwe().cipher_modulus().value();
-        if lwe != expected {
-            return Err(TfheContextError::CiphertextModulusMismatch {
-                lwe,
-                glwe: expected,
-            });
-        }
-
         Ok(Self { parameters, table })
     }
 

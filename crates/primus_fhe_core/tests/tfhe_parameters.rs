@@ -1,6 +1,6 @@
 use primus_fhe_core::{
-    GgswParameters, GlevParameters, GlweKeySwitchingParameters, GlweParameters, LweParameters,
-    LweSecretKeyType, PbsOrder, RingSecretKeyType, TfheParameterError, TfheParameters,
+    GgswParameters, GlweParameters, LweParameters, LweSecretKeyType, PbsOrder, RingSecretKeyType,
+    TfheParameters,
 };
 use primus_modulus::NativeModulus;
 
@@ -13,7 +13,6 @@ type Components = (
     LweParameters<u32, NativeModulus<u32>>,
     GlweParameters<u32, NativeModulus<u32>>,
     GgswParameters<u32, NativeModulus<u32>>,
-    GlweKeySwitchingParameters<u32, NativeModulus<u32>>,
 );
 
 fn components() -> Components {
@@ -33,25 +32,15 @@ fn components() -> Components {
         3.2,
     );
     let bootstrapping = GgswParameters::with_glwe_params(&glwe, 8, Some(3));
-    let output_glwe = GlweParameters::new(
-        LWE_DIMENSION.div_ceil(POLY_LENGTH),
-        POLY_LENGTH,
-        PLAIN_MODULUS,
-        NativeModulus::new(),
-        RingSecretKeyType::Binary,
-        3.2,
-    );
-    let output = GlevParameters::with_glwe_params(&output_glwe, 4, Some(4));
-    let key_switching = GlweKeySwitchingParameters::new(GLWE_DIMENSION, output);
-    (small_lwe, glwe, bootstrapping, key_switching)
+    (small_lwe, glwe, bootstrapping)
 }
 
 #[test]
-fn both_orders_share_the_same_glwe_key_switching_shape() {
+fn derives_the_same_key_switching_layout_for_both_orders() {
     for order in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
-        let (small_lwe, glwe, bootstrapping, key_switching) = components();
+        let (small_lwe, glwe, bootstrapping) = components();
         let parameters =
-            TfheParameters::try_new(small_lwe, glwe, bootstrapping, key_switching, order).unwrap();
+            TfheParameters::try_new(small_lwe, glwe, bootstrapping, 4, Some(4), order).unwrap();
 
         assert_eq!(parameters.pbs_order(), order);
         assert_eq!(
@@ -61,10 +50,13 @@ fn both_orders_share_the_same_glwe_key_switching_shape() {
         assert_eq!(parameters.glwe_key_switching().output_dimension(), 1);
         assert_eq!(parameters.glwe_key_switching().poly_length(), POLY_LENGTH);
         assert_eq!(
+            parameters.glwe_key_switching().output().secret_key_type(),
+            RingSecretKeyType::Binary
+        );
+        assert_eq!(
             parameters.glwe_key_switching().output().decompose_length(),
             4
         );
-        assert_eq!(parameters.blind_rotation_input_dimension(), LWE_DIMENSION);
         assert_eq!(
             parameters.ciphertext_lwe_dimension(),
             match order {
@@ -72,76 +64,5 @@ fn both_orders_share_the_same_glwe_key_switching_shape() {
                 PbsOrder::KeyswitchBootstrap => GLWE_DIMENSION * POLY_LENGTH,
             }
         );
-
-        let (_, _, _, _, actual_order) = parameters.into_parts();
-        assert_eq!(actual_order, order);
     }
-}
-
-#[test]
-fn derived_key_switching_layout_uses_a_binary_padded_output() {
-    let (small_lwe, glwe, bootstrapping, _) = components();
-    let parameters = TfheParameters::try_with_derived_glwe_key_switching(
-        small_lwe,
-        glwe,
-        bootstrapping,
-        4,
-        Some(4),
-        PbsOrder::BootstrapKeyswitch,
-    )
-    .unwrap();
-
-    assert_eq!(parameters.pbs_order(), PbsOrder::BootstrapKeyswitch);
-    assert_eq!(
-        parameters.glwe_key_switching().output().secret_key_type(),
-        RingSecretKeyType::Binary
-    );
-}
-
-#[test]
-fn rejects_invalid_glwe_key_switching_dimensions() {
-    let (small_lwe, glwe, bootstrapping, key_switching) = components();
-    let bad = GlweKeySwitchingParameters::new(2, key_switching.output().clone());
-    assert_eq!(
-        TfheParameters::try_new(
-            small_lwe,
-            glwe,
-            bootstrapping,
-            bad,
-            PbsOrder::BootstrapKeyswitch,
-        )
-        .err()
-        .unwrap(),
-        TfheParameterError::GlweKeySwitchingInputDimensionMismatch {
-            expected: 1,
-            actual: 2,
-        }
-    );
-
-    let (small_lwe, glwe, bootstrapping, _) = components();
-    let output_glwe = GlweParameters::new(
-        2,
-        POLY_LENGTH,
-        PLAIN_MODULUS,
-        NativeModulus::new(),
-        RingSecretKeyType::Binary,
-        3.2,
-    );
-    let output = GlevParameters::with_glwe_params(&output_glwe, 4, Some(4));
-    let bad = GlweKeySwitchingParameters::new(1, output);
-    assert_eq!(
-        TfheParameters::try_new(
-            small_lwe,
-            glwe,
-            bootstrapping,
-            bad,
-            PbsOrder::KeyswitchBootstrap,
-        )
-        .err()
-        .unwrap(),
-        TfheParameterError::GlweKeySwitchingOutputDimensionMismatch {
-            expected: 1,
-            actual: 2,
-        }
-    );
 }

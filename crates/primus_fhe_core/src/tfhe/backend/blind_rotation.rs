@@ -1,3 +1,5 @@
+//! Fourier and NTT blind-rotation implementations.
+
 use primus_data::{Data, DataMut, RawData};
 use primus_fft::{Complex64, FftEngine, FftTable, TorusFftValue};
 use primus_integer::FheUint;

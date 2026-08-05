@@ -34,15 +34,7 @@ fn parameters_u32_with_plain_modulus_and_order(
         0.7,
     );
     let bootstrapping = GgswParameters::with_glwe_params(&glwe, 8, Some(3));
-    TfheParameters::try_with_derived_glwe_key_switching(
-        lwe,
-        glwe,
-        bootstrapping,
-        4,
-        Some(4),
-        pbs_order,
-    )
-    .unwrap()
+    TfheParameters::try_new(lwe, glwe, bootstrapping, 4, Some(4), pbs_order).unwrap()
 }
 
 #[test]
@@ -64,7 +56,7 @@ fn supports_the_specialized_u64_table() {
     let lwe = LweParameters::new(4, 4, modulus, LweSecretKeyType::Binary, 0.7);
     let glwe = GlweParameters::new(1, POLY_LENGTH, 4, modulus, RingSecretKeyType::Binary, 0.7);
     let bootstrapping = GgswParameters::with_glwe_params(&glwe, 8, Some(3));
-    let parameters = TfheParameters::try_with_derived_glwe_key_switching(
+    let parameters = TfheParameters::try_new(
         lwe,
         glwe,
         bootstrapping,
@@ -136,7 +128,7 @@ fn rejects_different_lwe_and_glwe_moduli_for_key_switching() {
         0.7,
     );
     let bootstrapping = GgswParameters::with_glwe_params(&glwe, 8, Some(3));
-    let error = TfheParameters::try_with_derived_glwe_key_switching(
+    let error = TfheParameters::try_new(
         lwe,
         glwe,
         bootstrapping,
@@ -223,24 +215,20 @@ fn evaluates_a_complete_programmable_bootstrap_pipeline() {
 
     for (input, expected) in [1u32, 2, 3, 2].into_iter().enumerate() {
         let input = encryptor.encrypt(input as u32, &mut rng).unwrap();
-        let output = evaluator.apply_lookup_table(&input, &lookup_table).unwrap();
+        let output = evaluator.apply_lookup_table(&input, &lookup_table);
         assert_eq!(decryptor.decrypt::<u32>(&output).unwrap(), expected);
     }
 
     let input = encryptor.encrypt(1u32, &mut rng).unwrap();
     let mut output = input.clone();
-    evaluator
-        .apply_lookup_table_to(&input, &lookup_table, &mut output)
-        .unwrap();
+    evaluator.apply_lookup_table_to(&input, &lookup_table, &mut output);
     assert_eq!(decryptor.decrypt::<u32>(&output).unwrap(), 2);
 
     let toggle = context.compile_lookup_table_slice(&[1u32, 0]).unwrap();
     let mut current = encryptor.encrypt_padded(0u32, &mut rng).unwrap();
     let mut next = current.clone();
     for _ in 0..16 {
-        evaluator
-            .apply_lookup_table_to(&current, &toggle, &mut next)
-            .unwrap();
+        evaluator.apply_lookup_table_to(&current, &toggle, &mut next);
         core::mem::swap(&mut current, &mut next);
     }
     assert_eq!(decryptor.decrypt::<u32>(&current).unwrap(), 0);
@@ -263,7 +251,7 @@ fn evaluates_a_keyswitch_then_bootstrap_pipeline() {
 
     for (message, expected) in [1u32, 2, 3, 2].into_iter().enumerate() {
         let input = encryptor.encrypt(message as u32, &mut rng).unwrap();
-        let output = evaluator.apply_lookup_table(&input, &lookup_table).unwrap();
+        let output = evaluator.apply_lookup_table(&input, &lookup_table);
 
         assert_eq!(input.dimension(), external_dimension);
         assert_eq!(output.dimension(), external_dimension);
@@ -292,7 +280,7 @@ fn evaluates_an_arbitrary_lookup_table_with_odd_plaintext_modulus() {
 
     for (input, expected) in [2u32, 0].into_iter().enumerate() {
         let input = encryptor.encrypt_padded(input as u32, &mut rng).unwrap();
-        let output = evaluator.apply_lookup_table(&input, &lookup_table).unwrap();
+        let output = evaluator.apply_lookup_table(&input, &lookup_table);
         assert_eq!(decryptor.decrypt::<u32>(&output).unwrap(), expected);
     }
     assert_eq!(
@@ -304,9 +292,7 @@ fn evaluates_an_arbitrary_lookup_table_with_odd_plaintext_modulus() {
     let mut current = encryptor.encrypt_padded(0u32, &mut rng).unwrap();
     let mut next = current.clone();
     for _ in 0..16 {
-        evaluator
-            .apply_lookup_table_to(&current, &chain_lookup_table, &mut next)
-            .unwrap();
+        evaluator.apply_lookup_table_to(&current, &chain_lookup_table, &mut next);
         core::mem::swap(&mut current, &mut next);
     }
     assert_eq!(decryptor.decrypt::<u32>(&current).unwrap(), 0);

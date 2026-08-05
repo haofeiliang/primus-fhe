@@ -27,14 +27,4 @@ pub enum TfheContextError<T: FheUint> {
         /// Coefficient modulus supported by the NTT table.
         actual: T,
     },
-
-    /// GLWE key switching followed by compact extraction requires the
-    /// small-LWE and GLWE ciphertexts to use the same modulus.
-    #[error("LWE/GLWE ciphertext modulus mismatch: LWE uses {lwe:?}, GLWE uses {glwe:?}")]
-    CiphertextModulusMismatch {
-        /// Small-LWE ciphertext modulus.
-        lwe: T,
-        /// GLWE ciphertext modulus.
-        glwe: T,
-    },
 }

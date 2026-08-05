@@ -1,3 +1,5 @@
+//! Fourier- and NTT-domain functional bootstrapping keys.
+
 use primus_data::{Data, RawData};
 use primus_fft::{Complex64, FftEngine, FftTable, TorusFftValue};
 use primus_integer::FheUint;

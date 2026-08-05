@@ -33,7 +33,7 @@ where
         input: &Ciphertext<T>,
         lookup_table: &LookupTable<T>,
         output: &mut Ciphertext<T>,
-    ) -> Result<(), TfheEvaluationError> {
+    ) {
         Evaluator::apply_lookup_table_to(self, input, lookup_table, output)
     }
 }
@@ -80,46 +80,40 @@ where
 
     /// Applies a compiled lookup table and returns a refreshed ciphertext in
     /// the external LWE dimension selected by the PBS order.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the input dimension or lookup-table accumulator length does
+    /// not match this evaluator's context.
     pub fn apply_lookup_table(
         &mut self,
         input: &Ciphertext<T>,
         lookup_table: &LookupTable<T>,
-    ) -> Result<Ciphertext<T>, TfheEvaluationError> {
+    ) -> Ciphertext<T> {
         let mut output = input.clone();
-        self.apply_lookup_table_to(input, lookup_table, &mut output)?;
-        Ok(output)
+        self.apply_lookup_table_to(input, lookup_table, &mut output);
+        output
     }
 
     /// Applies a compiled lookup table into an existing ciphertext allocation.
+    ///
+    /// # Panics
+    ///
+    /// Panics if either ciphertext dimension or the lookup-table accumulator
+    /// length does not match this evaluator's context.
     pub fn apply_lookup_table_to(
         &mut self,
         input: &Ciphertext<T>,
         lookup_table: &LookupTable<T>,
         output: &mut Ciphertext<T>,
-    ) -> Result<(), TfheEvaluationError> {
+    ) {
         let parameters = self.context.parameters();
         let expected_dimension = parameters.ciphertext_lwe_dimension();
-        if input.dimension() != expected_dimension {
-            return Err(TfheEvaluationError::InputDimensionMismatch {
-                expected: expected_dimension,
-                actual: input.dimension(),
-            });
-        }
-        if output.dimension() != expected_dimension {
-            return Err(TfheEvaluationError::OutputDimensionMismatch {
-                expected: expected_dimension,
-                actual: output.dimension(),
-            });
-        }
+        assert_eq!(input.dimension(), expected_dimension);
+        assert_eq!(output.dimension(), expected_dimension);
 
         let expected_len = parameters.glwe().glwe_len();
-        let actual_len = lookup_table.accumulator().as_ref().len();
-        if actual_len != expected_len {
-            return Err(TfheEvaluationError::LookupTableLengthMismatch {
-                expected: expected_len,
-                actual: actual_len,
-            });
-        }
+        assert_eq!(lookup_table.accumulator().as_ref().len(), expected_len);
 
         let poly_length = parameters.glwe().poly_length();
         let modulus = parameters.glwe().cipher_modulus();
@@ -168,6 +162,5 @@ where
                     .extract_lwe_to(output.as_lwe_mut(), poly_length, modulus);
             }
         }
-        Ok(())
     }
 }

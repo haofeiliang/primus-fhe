@@ -21,9 +21,7 @@ pub use client::{Decryptor, Encryptor};
 pub use context::TfheContext;
 pub use evaluator::Evaluator;
 pub use key::{KeyGenerator, ServerKey};
-pub use primus_fhe_core::{
-    Ciphertext, ClientKey, GlweKeySwitchingParameters, LookupTable, LweSecretKeyRef, PbsOrder,
-};
+pub use primus_fhe_core::{Ciphertext, ClientKey, LookupTable, LweSecretKeyRef, PbsOrder};
 
 pub use parameters::TfheParameters;
 

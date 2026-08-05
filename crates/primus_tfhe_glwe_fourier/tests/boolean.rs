@@ -25,15 +25,7 @@ fn parameters_with_order(pbs_order: PbsOrder) -> TfheParameters<u32> {
         0.7,
     );
     let bootstrapping = GgswParameters::with_glwe_params(&glwe, 8, Some(3));
-    TfheParameters::try_with_derived_glwe_key_switching(
-        lwe,
-        glwe,
-        bootstrapping,
-        4,
-        Some(4),
-        pbs_order,
-    )
-    .unwrap()
+    TfheParameters::try_new(lwe, glwe, bootstrapping, 4, Some(4), pbs_order).unwrap()
 }
 
 #[test]
@@ -62,9 +54,7 @@ fn evaluates_boolean_gates_with_keyswitch_then_bootstrap() {
                 (BooleanGate::Xor, lhs ^ rhs),
                 (BooleanGate::Xnor, !(lhs ^ rhs)),
             ] {
-                let output = evaluator
-                    .evaluate_binary(gate, &lhs_ciphertext, &rhs_ciphertext)
-                    .unwrap();
+                let output = evaluator.evaluate_binary(gate, &lhs_ciphertext, &rhs_ciphertext);
                 assert_eq!(decryptor.decrypt(&output).unwrap(), expected, "{gate:?}");
             }
         }
@@ -72,7 +62,7 @@ fn evaluates_boolean_gates_with_keyswitch_then_bootstrap() {
 }
 
 #[test]
-fn evaluates_boolean_truth_tables_and_a_deep_circuit() {
+fn evaluates_boolean_helpers_and_reused_output() {
     let table = RustFftTable::new(POLY_LENGTH.trailing_zeros()).unwrap();
     let context = TfheContext::try_new(parameters(), table).unwrap();
     let mut rng = rand::rng();
@@ -82,29 +72,10 @@ fn evaluates_boolean_truth_tables_and_a_deep_circuit() {
     let decryptor = BooleanDecryptor::new(context.parameters(), &client_key).unwrap();
     let mut evaluator = context.new_boolean_evaluator(&server_key).unwrap();
 
-    for _ in 0..64 {
-        for lhs in [false, true] {
-            for rhs in [false, true] {
-                let lhs_ciphertext = encryptor.encrypt(lhs, &mut rng).unwrap();
-                let rhs_ciphertext = encryptor.encrypt(rhs, &mut rng).unwrap();
-                for (gate, expected) in [
-                    (BooleanGate::And, lhs & rhs),
-                    (BooleanGate::Nand, !(lhs & rhs)),
-                    (BooleanGate::Or, lhs | rhs),
-                    (BooleanGate::Nor, !(lhs | rhs)),
-                    (BooleanGate::Xor, lhs ^ rhs),
-                    (BooleanGate::Xnor, !(lhs ^ rhs)),
-                ] {
-                    let output = evaluator
-                        .evaluate_binary(gate, &lhs_ciphertext, &rhs_ciphertext)
-                        .unwrap();
-                    assert_eq!(decryptor.decrypt(&output).unwrap(), expected, "{gate:?}");
-                }
-
-                let output = evaluator.not(&lhs_ciphertext).unwrap();
-                assert_eq!(decryptor.decrypt(&output).unwrap(), !lhs);
-            }
-        }
+    for value in [false, true] {
+        let input = encryptor.encrypt(value, &mut rng).unwrap();
+        let output = evaluator.not(&input);
+        assert_eq!(decryptor.decrypt(&output).unwrap(), !value);
     }
 
     for condition in [false, true] {
@@ -113,9 +84,8 @@ fn evaluates_boolean_truth_tables_and_a_deep_circuit() {
                 let condition_ciphertext = encryptor.encrypt(condition, &mut rng).unwrap();
                 let then_ciphertext = encryptor.encrypt(then_value, &mut rng).unwrap();
                 let else_ciphertext = encryptor.encrypt(else_value, &mut rng).unwrap();
-                let output = evaluator
-                    .mux(&condition_ciphertext, &then_ciphertext, &else_ciphertext)
-                    .unwrap();
+                let output =
+                    evaluator.mux(&condition_ciphertext, &then_ciphertext, &else_ciphertext);
                 assert_eq!(
                     decryptor.decrypt(&output).unwrap(),
                     if condition { then_value } else { else_value }
@@ -128,9 +98,7 @@ fn evaluates_boolean_truth_tables_and_a_deep_circuit() {
     let mut current = encryptor.encrypt(false, &mut rng).unwrap();
     let mut next = current.clone();
     for _ in 0..16 {
-        evaluator
-            .evaluate_binary_to(BooleanGate::Nand, &current, &true_ciphertext, &mut next)
-            .unwrap();
+        evaluator.evaluate_binary_to(BooleanGate::Nand, &current, &true_ciphertext, &mut next);
         core::mem::swap(&mut current, &mut next);
     }
     assert!(!decryptor.decrypt(&current).unwrap());

@@ -13,8 +13,19 @@ use primus_tfhe_glwe_ntt::{
 };
 
 fn parameters_with_order(order: PbsOrder) -> TfheParameters<u32> {
-    let (small_lwe, glwe, bootstrapping, glwe_key_switching, _) = boolean_parameters().into_parts();
-    TfheParameters::try_new(small_lwe, glwe, bootstrapping, glwe_key_switching, order).unwrap()
+    let parameters = boolean_parameters();
+    let basis = parameters.glwe_key_switching().output().basis();
+    let log_basis = basis.log_basis();
+    let level_count = basis.decompose_length();
+    TfheParameters::try_new(
+        parameters.small_lwe().clone(),
+        parameters.glwe().clone(),
+        parameters.bootstrapping().clone(),
+        log_basis,
+        Some(level_count),
+        order,
+    )
+    .unwrap()
 }
 
 fn order_name(order: PbsOrder) -> &'static str {
@@ -148,23 +159,17 @@ fn bench_order(c: &mut Criterion, order: PbsOrder) {
 
     group.bench_function("complete_pbs_reused_output", |b| {
         b.iter(|| {
-            evaluator
-                .apply_lookup_table_to(
-                    black_box(&input),
-                    black_box(&lookup_table),
-                    black_box(&mut output),
-                )
-                .unwrap();
+            evaluator.apply_lookup_table_to(
+                black_box(&input),
+                black_box(&lookup_table),
+                black_box(&mut output),
+            );
             black_box(&output);
         });
     });
     group.bench_function("complete_pbs_allocating", |b| {
         b.iter(|| {
-            black_box(
-                evaluator
-                    .apply_lookup_table(black_box(&input), black_box(&lookup_table))
-                    .unwrap(),
-            );
+            black_box(evaluator.apply_lookup_table(black_box(&input), black_box(&lookup_table)));
         });
     });
     for gate in [
@@ -177,36 +182,30 @@ fn bench_order(c: &mut Criterion, order: PbsOrder) {
     ] {
         group.bench_function(format!("boolean_{gate:?}").to_lowercase(), |b| {
             b.iter(|| {
-                boolean_evaluator
-                    .evaluate_binary_to(
-                        gate,
-                        black_box(&boolean_lhs),
-                        black_box(&boolean_rhs),
-                        black_box(&mut boolean_output),
-                    )
-                    .unwrap();
+                boolean_evaluator.evaluate_binary_to(
+                    gate,
+                    black_box(&boolean_lhs),
+                    black_box(&boolean_rhs),
+                    black_box(&mut boolean_output),
+                );
                 black_box(&boolean_output);
             });
         });
     }
     group.bench_function("boolean_not", |b| {
         b.iter(|| {
-            boolean_evaluator
-                .not_to(black_box(&boolean_lhs), black_box(&mut boolean_output))
-                .unwrap();
+            boolean_evaluator.not_to(black_box(&boolean_lhs), black_box(&mut boolean_output));
             black_box(&boolean_output);
         });
     });
     group.bench_function("boolean_mux", |b| {
         b.iter(|| {
-            boolean_evaluator
-                .mux_to(
-                    black_box(&boolean_lhs),
-                    black_box(&boolean_lhs),
-                    black_box(&boolean_rhs),
-                    black_box(&mut boolean_output),
-                )
-                .unwrap();
+            boolean_evaluator.mux_to(
+                black_box(&boolean_lhs),
+                black_box(&boolean_lhs),
+                black_box(&boolean_rhs),
+                black_box(&mut boolean_output),
+            );
             black_box(&boolean_output);
         });
     });

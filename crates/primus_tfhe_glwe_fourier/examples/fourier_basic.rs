@@ -35,7 +35,7 @@ fn parameters() -> TfheParameters<u32> {
         0.7,
     );
     let bootstrapping = GgswParameters::with_glwe_params(&glwe, 8, Some(3));
-    TfheParameters::try_with_derived_glwe_key_switching(
+    TfheParameters::try_new(
         lwe,
         glwe,
         bootstrapping,
@@ -62,7 +62,7 @@ fn main() {
     let toggle = context.compile_lookup_table_slice(&[1u32, 0]).unwrap();
     let input = encryptor.encrypt_padded(0u32, &mut rng).unwrap();
     let mut evaluator = Evaluator::try_new(&context, &server_key).unwrap();
-    let output = evaluator.apply_lookup_table(&input, &toggle).unwrap();
+    let output = evaluator.apply_lookup_table(&input, &toggle);
     assert_eq!(decryptor.decrypt::<u32>(&output).unwrap(), 1);
 
     // The Boolean layer uses the paper's t=4 encoding and hides its special
@@ -73,9 +73,9 @@ fn main() {
     let rhs = boolean_encryptor.encrypt(false, &mut rng).unwrap();
     let mut boolean_evaluator = context.new_boolean_evaluator(&server_key).unwrap();
 
-    let and = boolean_evaluator.and(&lhs, &rhs).unwrap();
-    let xor = boolean_evaluator.xor(&lhs, &rhs).unwrap();
-    let selected = boolean_evaluator.mux(&lhs, &xor, &and).unwrap();
+    let and = boolean_evaluator.and(&lhs, &rhs);
+    let xor = boolean_evaluator.xor(&lhs, &rhs);
+    let selected = boolean_evaluator.mux(&lhs, &xor, &and);
     assert!(!boolean_decryptor.decrypt(&and).unwrap());
     assert!(boolean_decryptor.decrypt(&xor).unwrap());
     assert!(boolean_decryptor.decrypt(&selected).unwrap());

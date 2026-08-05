@@ -4,7 +4,7 @@ use primus_integer::FheUint;
 use primus_lattice::glwe::Glwe;
 use primus_reduce::RingContext;
 
-use super::blind_rotation::modulus_switch;
+use super::backend::modulus_switch;
 use crate::{PlaintextEmbedding, TfheParameters};
 
 /// A lookup table compiled into a trivial GLWE accumulator.

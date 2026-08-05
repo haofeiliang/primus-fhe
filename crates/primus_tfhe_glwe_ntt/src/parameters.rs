@@ -41,7 +41,7 @@ pub fn boolean_parameters()
         6.4,
     );
     let bootstrapping = GgswParameters::with_glwe_params(&glwe, 7, Some(3));
-    TfheParameters::try_with_derived_glwe_key_switching(
+    TfheParameters::try_new(
         lwe,
         glwe,
         bootstrapping,
