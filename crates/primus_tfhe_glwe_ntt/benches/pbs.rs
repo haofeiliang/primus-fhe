@@ -4,8 +4,8 @@ use std::hint::black_box;
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use primus_decompose::primitive::ApproxSignedBasis;
-use primus_fhe_core::lwe::LweCiphertext;
 use primus_glwe::{GlweCiphertext, NttGlweKeySwitchingContext};
+use primus_lwe::LweCiphertext;
 use primus_ntt::{NttTable, U32NttTable};
 use primus_tfhe_glwe_ntt::{
     BooleanEncryptor, BooleanEvaluator, BooleanGate, NttBlindRotationContext, PbsOrder,

@@ -1,13 +1,24 @@
+use num_traits::ConstZero;
 use primus_data::{Data, DataMut, RawData};
 use primus_decompose::primitive::ApproxSignedBasis;
-use primus_integer::FheUint;
+use primus_integer::{FheUint, WrappingNeg};
 use primus_lattice::lwe::Lwe;
 use primus_reduce::RingContext;
 
-use crate::{
-    LweKeySwitchingParameters, LweParameters, LweSecretKey, SecretCoefficient,
-    encode_secret_coefficient,
-};
+use crate::{LweKeySwitchingParameters, LweParameters, LweSecretKey, SecretCoefficient};
+
+#[inline]
+fn encode_secret_coefficient<T: FheUint>(coefficient: SecretCoefficient<T>, modulus: T) -> T {
+    if coefficient < SecretCoefficient::<T>::ZERO {
+        let magnitude = T::cast_from_signed(coefficient.wrapping_neg());
+        debug_assert!(magnitude < modulus);
+        modulus - magnitude
+    } else {
+        let coefficient = T::cast_from_signed(coefficient);
+        debug_assert!(coefficient < modulus);
+        coefficient
+    }
+}
 
 /// An LWE key-switching key from one secret-key vector to another.
 ///

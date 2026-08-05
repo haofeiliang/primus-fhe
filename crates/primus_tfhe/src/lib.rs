@@ -14,15 +14,13 @@ mod parameters;
 pub mod backend_support;
 
 use num_traits::identities::ConstZero;
-use primus_fhe_core::{
-    lwe::{LweCiphertext, LweParameters, LweSecretKey},
-    plaintext::{PlaintextCodec, PlaintextEmbedding},
-};
+use primus_fhe_core::plaintext::{PlaintextCodec, PlaintextEmbedding};
 use primus_glwe::{
     GgswParameters, GlevParameters, GlweKeySwitchingParameters, GlweParameters, GlweSecretKey,
     SecretCoefficient,
 };
 use primus_integer::{FheUint, WrappingNeg};
+use primus_lwe::{LweCiphertext, LweParameters, LweSecretKey};
 
 pub use boolean::{
     BOOLEAN_PLAINTEXT_BITS, BooleanCiphertext, BooleanDecryptor, BooleanEncryptor, BooleanError,

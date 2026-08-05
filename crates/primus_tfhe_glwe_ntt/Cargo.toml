@@ -5,10 +5,10 @@ edition = "2024"
 
 [dependencies]
 primus_data = { path = "../primus_data" }
-primus_fhe_core = { path = "../primus_fhe_core" }
 primus_glwe = { path = "../primus_glwe" }
 primus_integer = { path = "../primus_integer" }
 primus_lattice = { path = "../primus_lattice" }
+primus_lwe = { path = "../primus_lwe" }
 primus_modulus = { path = "../primus_modulus" }
 primus_ntt = { path = "../primus_ntt" }
 primus_decompose = { path = "../primus_decompose" }

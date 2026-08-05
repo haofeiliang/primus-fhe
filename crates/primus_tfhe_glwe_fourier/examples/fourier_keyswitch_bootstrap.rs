@@ -5,8 +5,8 @@
 
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{FftTable, RustFftTable};
-use primus_fhe_core::lwe::LweParameters;
 use primus_glwe::{GgswParameters, GlweParameters, SecretKeyDistr};
+use primus_lwe::LweParameters;
 use primus_modulus::NativeModulus;
 use primus_tfhe_glwe_fourier::{
     BooleanDecryptor, BooleanEncryptor, BooleanEvaluator, PbsOrder, TfheContext, TfheParameters,

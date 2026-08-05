@@ -1,4 +1,3 @@
-use primus_fhe_core::lwe::{LweParameters, LweSecretKey};
 use primus_glwe::{
     GlevParameters, GlweParameters, GlweSecretKey, NttGadgetDomain, NttGadgetEncryptContext,
     NttGlweSecretKey, SecretKeyDistr,
@@ -7,6 +6,7 @@ use primus_lattice::{
     glwe::{Glwe, NttGlwe},
     lwe::Lwe,
 };
+use primus_lwe::{LweParameters, LweSecretKey};
 use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, UintNttTable};
 use primus_poly::Polynomial;

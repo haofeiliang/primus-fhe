@@ -5,10 +5,10 @@ use std::hint::black_box;
 use criterion::{Criterion, criterion_group, criterion_main};
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{FftTable, RustFftTable};
-use primus_fhe_core::lwe::{LweCiphertext, LweParameters};
 use primus_glwe::{
     FourierGlweKeySwitchingContext, GgswParameters, GlweCiphertext, GlweParameters, SecretKeyDistr,
 };
+use primus_lwe::{LweCiphertext, LweParameters};
 use primus_modulus::NativeModulus;
 use primus_tfhe_glwe_fourier::{
     BooleanEncryptor, BooleanEvaluator, BooleanGate, FourierBlindRotationContext, PbsOrder,

@@ -1,6 +1,6 @@
-use primus_fhe_core::lwe::LweCiphertext;
 use primus_glwe::{GlweCiphertext, NttGadgetDomain, NttGlweKeySwitchingContext};
 use primus_integer::FheUint;
+use primus_lwe::LweCiphertext;
 use primus_ntt::NttTable;
 use primus_tfhe::{Ciphertext, LookupTable, PbsOrder, ProgrammableBootstrap};
 

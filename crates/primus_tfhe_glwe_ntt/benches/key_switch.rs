@@ -3,13 +3,11 @@
 use std::hint::black_box;
 
 use criterion::{Criterion, criterion_group, criterion_main};
-use primus_fhe_core::lwe::{
-    LweCiphertext, LweKeySwitchingKey, LweKeySwitchingParameters, LweSecretKey,
-};
 use primus_glwe::{
     GlweCiphertext, GlweSecretKey, NttGadgetDomain, NttGadgetEncryptContext,
     NttGlweKeySwitchingContext, NttGlweKeySwitchingKey, NttGlweSecretKey,
 };
+use primus_lwe::{LweCiphertext, LweKeySwitchingKey, LweKeySwitchingParameters, LweSecretKey};
 use primus_ntt::{NttTable, U32NttTable};
 use primus_tfhe_glwe_ntt::{ClientKey, boolean_parameters};
 

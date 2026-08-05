@@ -1,5 +1,5 @@
 use primus_decompose::primitive::ApproxSignedBasis;
-use primus_fhe_core::lwe::{
+use primus_lwe::{
     LweKeySwitchingKey, LweKeySwitchingParameters, LweParameters, LweSecretKey, SecretKeyDistr,
 };
 use primus_modulus::{BarrettModulus, NativeModulus};

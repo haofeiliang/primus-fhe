@@ -4,8 +4,8 @@
 //! production use.
 
 use primus_decompose::primitive::ApproxSignedBasis;
-use primus_fhe_core::lwe::LweParameters;
 use primus_glwe::{GgswParameters, GlweParameters, SecretKeyDistr};
+use primus_lwe::LweParameters;
 use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, U32NttTable};
 use primus_tfhe_glwe_ntt::{
