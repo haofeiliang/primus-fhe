@@ -3,10 +3,7 @@
 //! GLWE operations are the primary implementations. RLWE operations
 //! are thin wrappers that delegate to GLWE with dimension = 1.
 
-pub(crate) mod crt;
-pub(crate) mod dcrt;
 pub(crate) mod key_switch;
-pub(crate) mod public_key;
 pub(crate) mod secret_key;
 
 pub use crate::ciphertext::{

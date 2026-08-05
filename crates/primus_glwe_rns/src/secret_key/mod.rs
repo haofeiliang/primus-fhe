@@ -1,10 +1,14 @@
+//! DCRT-domain GLWE secret keys.
+
+mod dcrt;
+
 use num_traits::identities::ConstZero;
-use primus_integer::{FheUint, UnsignedInteger, WrappingNeg};
+use primus_integer::{FheUint, WrappingNeg};
 
-/// Signed coefficient type used by canonical ring secret keys.
-pub type SecretCoefficient<T> = <T as UnsignedInteger>::SignedInteger;
+use crate::{GlweSecretKey, SecretCoefficient};
 
-/// Encodes one small signed secret coefficient in `[0, modulus)`.
+pub use dcrt::{DcrtGlweDecryptContext, DcrtGlweSecretKey};
+
 #[inline]
 pub(crate) fn encode_secret_coefficient<T: FheUint>(
     coefficient: SecretCoefficient<T>,
@@ -21,7 +25,7 @@ pub(crate) fn encode_secret_coefficient<T: FheUint>(
     }
 }
 
-pub(crate) fn encode_secret_polynomial_to<T: FheUint>(
+fn encode_secret_polynomial_to<T: FheUint>(
     coefficients: &[SecretCoefficient<T>],
     output: &mut [T],
     modulus: T,
@@ -35,16 +39,16 @@ pub(crate) fn encode_secret_polynomial_to<T: FheUint>(
         });
 }
 
-/// Distribution used to sample secret-key coefficients.
-///
-/// Individual cryptosystems may support only a subset of these distributions.
-#[derive(Debug, Default, Clone, Copy, PartialEq)]
-pub enum SecretKeyDistr {
-    /// Uniform binary coefficients in `{0, 1}`.
-    Binary,
-    /// Uniform ternary coefficients in `{-1, 0, 1}`.
-    #[default]
-    Ternary,
-    /// Centered discrete Gaussian coefficients with the given standard deviation.
-    Gaussian(f64),
+pub(crate) fn encode_secret_polynomial_to_rns<T: FheUint>(
+    coefficients: &[SecretCoefficient<T>],
+    output: &mut [T],
+    moduli: &[T],
+) {
+    assert_eq!(output.len(), coefficients.len() * moduli.len());
+    output
+        .chunks_exact_mut(coefficients.len())
+        .zip(moduli)
+        .for_each(|(modulus_limb, &modulus)| {
+            encode_secret_polynomial_to(coefficients, modulus_limb, modulus);
+        });
 }

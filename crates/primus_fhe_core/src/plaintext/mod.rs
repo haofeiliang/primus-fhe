@@ -2,10 +2,8 @@
 //!
 //! The [`PlaintextCodec`] is the recommended API for parameter-level usage.
 
-mod rns;
 mod single_modulus;
 
-pub use rns::RnsCoeffCodec;
 pub use single_modulus::{PlaintextCodec, PlaintextCodecKind};
 
 /// Plaintext embedding used when lifting residues from `Z_t` into the ciphertext modulus.

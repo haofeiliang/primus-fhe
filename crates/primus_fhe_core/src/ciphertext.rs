@@ -27,9 +27,3 @@ pub type NttGgswCiphertext<S> = primus_lattice::ggsw::NttGgsw<S>;
 
 /// Fourier-domain GGSW ciphertext.
 pub type FourierGgswCiphertext<S> = primus_lattice::ggsw::FourierGgsw<S>;
-
-/// Glwe Ciphertext
-pub type CrtGlweCiphertext<T> = primus_lattice::glwe::CrtGlwe<T>;
-
-/// Ntt version Glwe Ciphertext
-pub type DcrtGlweCiphertext<T> = primus_lattice::glwe::DcrtGlwe<T>;

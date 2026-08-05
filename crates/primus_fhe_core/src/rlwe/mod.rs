@@ -1,7 +1,5 @@
 //! RLWE (Ring-LWE) ciphertext operations — delegates to GLWE.
 
-mod crt;
-mod dcrt;
 mod public_key;
 mod secret_key;
 

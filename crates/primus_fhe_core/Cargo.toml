@@ -5,7 +5,6 @@ edition = "2024"
 
 [dependencies]
 primus_data = { path = "../primus_data" }
-primus_gcd = { path = "../primus_gcd" }
 primus_integer = { path = "../primus_integer" }
 primus_reduce = { path = "../primus_reduce" }
 primus_modulus = { path = "../primus_modulus" }
@@ -13,16 +12,12 @@ primus_factor = { path = "../primus_factor" }
 primus_distr = { path = "../primus_distr" }
 primus_poly = { path = "../primus_poly" }
 primus_ntt = { path = "../primus_ntt" }
-primus_rns = { path = "../primus_rns" }
 primus_decompose = { path = "../primus_decompose" }
 primus_lattice = { path = "../primus_lattice" }
 primus_fft = { path = "../primus_fft" }
 
-rayon = { workspace = true }
-
 thiserror = { workspace = true }
 rand = { workspace = true }
-itertools = { workspace = true }
 zeroize = { workspace = true }
 num-traits = { workspace = true }
 
@@ -36,26 +31,6 @@ harness = false
 name = "plaintext_codec"
 harness = false
 
-[[bench]]
-name = "automorphism"
-harness = false
-
-[[bench]]
-name = "trace"
-harness = false
-
-[[bench]]
-name = "expand_coeff"
-harness = false
-
-[[bench]]
-name = "expand_coeff_components"
-harness = false
-
-[[bench]]
-name = "key_switching"
-harness = false
-
 [features]
 default = []
 simd = [
@@ -64,7 +39,6 @@ simd = [
     "primus_factor/simd",
     "primus_poly/simd",
     "primus_ntt/simd",
-    "primus_rns/simd",
     "primus_decompose/simd",
     "primus_lattice/simd",
 ]
