@@ -2,8 +2,7 @@
 //!
 //! The public API is grouped by mathematical family. Use [`lwe`] for LWE,
 //! [`glwe`] for single-modulus GLWE and RLWE, [`rns_fhe`] for CRT/DCRT and
-//! Hybrid-RNS operations, [`ntru`] for NTRU, and [`tfhe`] for the backend-neutral
-//! TFHE workflow.
+//! Hybrid-RNS operations, and [`tfhe`] for the backend-neutral TFHE workflow.
 
 #![deny(missing_docs)]
 
@@ -15,7 +14,6 @@ mod secret_key_type;
 
 pub mod glwe;
 pub mod lwe;
-pub mod ntru;
 pub mod plaintext;
 pub mod rns_fhe;
 pub mod tfhe;

@@ -1,6 +1,6 @@
 //! NTT-domain NTRU secret key with encryption and decryption.
 
-use primus_data::{Data, RawData};
+use primus_data::{Data, DataMut};
 use primus_integer::FheUint;
 use primus_ntt::NttTable;
 use primus_poly::{NttPolynomial, NttPolynomialOwned, PolynomialOwned};
@@ -85,7 +85,7 @@ impl<T: FheUint> NttNtruSecretKey<T> {
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: RawData<Elem = T> + Data,
+        A: Data<Elem = T>,
     {
         let h = cipher.as_ref();
         let mut temp = NttPolynomial(result.as_mut());
@@ -115,7 +115,7 @@ impl<T: FheUint> NttNtruSecretKey<T> {
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
         R: rand::Rng + rand::CryptoRng,
-        B: RawData<Elem = T> + primus_data::DataMut,
+        B: DataMut<Elem = T>,
     {
         let poly_length = ntt_table.poly_length();
 
@@ -154,16 +154,15 @@ impl<T: FheUint> NttNtruSecretKey<T> {
     ///
     /// NTRU decryption: compute `c * f mod q`, INTT to coefficient domain,
     /// then reduce modulo the plaintext modulus.
-    pub fn decrypt_inplace<M, Table, B>(
+    pub fn decrypt_inplace<M, Table>(
         &self,
-        cipher: &NttNtruCiphertext<impl RawData<Elem = T> + Data>,
+        cipher: &NttNtruCiphertext<impl Data<Elem = T>>,
         result: &mut PolynomialOwned<T>,
         modulus: M,
         ntt_table: &Table,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        B: RawData<Elem = T> + primus_data::Data,
     {
         // c * f in NTT domain
         let h = cipher.as_ref();
