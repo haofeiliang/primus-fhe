@@ -74,11 +74,6 @@ pub struct U64NttTable {
     /// Barrett-64 preconditioners for `inv_roots` (size `n`).
     pub(super) inv_roots_precon64: AVec<u64>,
 
-    /// Ordinal powers: `[1, w, w^2, ..., w^(2n-1)]` (size `2n`).
-    ordinal_roots: Vec<u64>,
-    /// Bit-reversed index mapping (size `n`).
-    reverse_lsbs: Vec<usize>,
-
     // ── AVX2 pre-expanded tables ───────────────────────────────────────
     /// AVX2 forward roots pre-expanded for T2/T1 vector loads (size ≈ n).
     #[cfg(target_arch = "x86_64")]
@@ -334,35 +329,26 @@ impl NttTable for U64NttTable {
         let two_q = q << 1;
         let low_q = q < (1u64 << 30);
 
-        // --- ordinal roots: [1, w, w^2, ..., w^(2n-1)] ---
-        let root_sf = ShoupFactor::<u64>::new(root, q);
-        let mut ordinal_roots = vec![0u64; n * 2];
-        ordinal_roots[0] = 1;
-        ordinal_roots[1] = root;
-        let mut power = root;
-        for dst in &mut ordinal_roots[2..] {
-            power = root_sf.factor_mul_modulo(power, q);
-            *dst = power;
-        }
-
-        let inv_root = *ordinal_roots.last().unwrap();
+        let inv_root = mod_inv(root, q);
         debug_assert_eq!(modulus.reduce_mul(root, inv_root), 1);
 
-        // --- bit-reversed index mapping ---
-        let reverse_lsbs: Vec<usize> = (0..n).map(|i| i.reverse_lsbs(log_n)).collect();
-
         // --- forward roots (bit-reversed) ---
+        let root_sf = ShoupFactor::<u64>::new(root, q);
         let mut roots = avec![0u64; n];
-        roots[0] = 1;
-        for (&rp, &i) in ordinal_roots[0..n].iter().zip(reverse_lsbs.iter()) {
-            roots[i] = rp;
+        let mut power = 1;
+        for i in 0..n {
+            roots[i.reverse_lsbs(log_n)] = power;
+            power = root_sf.factor_mul_modulo(power, q);
         }
 
         // --- inverse roots (bit-reversed, scrambled order) ---
+        let inv_root_sf = ShoupFactor::<u64>::new(inv_root, q);
         let mut inv_roots = avec![0u64; n];
         inv_roots[0] = 1;
-        for (&irp, &i) in ordinal_roots[n + 1..].iter().rev().zip(reverse_lsbs.iter()) {
-            inv_roots[i + 1] = irp;
+        let mut inv_power = inv_root;
+        for i in 0..n - 1 {
+            inv_roots[i.reverse_lsbs(log_n) + 1] = inv_power;
+            inv_power = inv_root_sf.factor_mul_modulo(inv_power, q);
         }
 
         // --- Shoup preconditioners ---
@@ -509,8 +495,6 @@ impl NttTable for U64NttTable {
             roots_precon64,
             inv_roots,
             inv_roots_precon64,
-            ordinal_roots,
-            reverse_lsbs,
             #[cfg(target_arch = "x86_64")]
             avx2_roots,
             #[cfg(target_arch = "x86_64")]
@@ -585,12 +569,12 @@ impl NttTable for U64NttTable {
 
 impl MonomialNttTable for U64NttTable {
     #[inline]
-    fn ordinal_root_powers(&self) -> &[Self::ValueT] {
-        &self.ordinal_roots
+    fn root_powers(&self) -> &[Self::ValueT] {
+        &self.roots
     }
 
     #[inline]
-    fn reverse_lsbs(&self) -> &[usize] {
-        &self.reverse_lsbs
+    fn inv_root_powers(&self) -> &[Self::ValueT] {
+        &self.inv_roots
     }
 }

@@ -18,8 +18,9 @@ use super::{MonomialNttTable, NttTable, assert_ntt_length};
 /// 1. `root^{n} ≡ -1 (mod modulus)`
 /// 1. `root * inv_root ≡ 1 (mod modulus)`
 /// 1. `n * inv_n ≡ 1 (mod modulus)`
-/// 1. `root_powers` holds 1~(n-1)-th powers of root in bit-reversed order, the 0-th power is left unset.
-/// 1. `inv_root_powers` holds 1~(n-1)-th powers of inverse root in scrambled order, the 0-th power is left unset.
+/// 1. `root_powers` holds 0~(n-1)-th powers of root in bit-reversed order.
+/// 1. `inv_root_powers` holds 0~(n-1)-th powers of inverse root in scrambled order.
+/// 1. Root values and their Shoup preconditioners use separate, equally sized arrays.
 ///
 /// ## Compare three orders:
 ///
@@ -45,10 +46,10 @@ pub struct UintNttTable<T: FheUint> {
     inv_n: ShoupFactor<T>,
     /// `inv_n * inv_root_powers[n-1] mod q` — precomputed for the inverse final stage.
     inv_n_r: ShoupFactor<T>,
-    root_powers: Vec<ShoupFactor<T>>,
-    inv_root_powers: Vec<ShoupFactor<T>>,
-    ordinal_root_powers: Vec<T>,
-    reverse_lsbs: Vec<usize>,
+    root_powers: Vec<T>,
+    root_powers_precon: Vec<T>,
+    inv_root_powers: Vec<T>,
+    inv_root_powers_precon: Vec<T>,
 }
 
 impl<T: FheUint> UintNttTable<T> {
@@ -96,26 +97,26 @@ impl<T: FheUint> UintNttTable<T> {
 
     /// Returns a reference to the root powers of this [`UintNttTable<T>`].
     #[inline]
-    pub fn root_powers(&self) -> &[ShoupFactor<T>] {
+    pub fn root_powers(&self) -> &[T] {
         &self.root_powers
+    }
+
+    /// Returns the Shoup preconditioners for [`Self::root_powers`].
+    #[inline]
+    pub fn root_powers_precon(&self) -> &[T] {
+        &self.root_powers_precon
     }
 
     /// Returns a reference to the inverse elements of the root powers of this [`UintNttTable<T>`].
     #[inline]
-    pub fn inv_root_powers(&self) -> &[ShoupFactor<T>] {
+    pub fn inv_root_powers(&self) -> &[T] {
         &self.inv_root_powers
     }
 
-    /// Returns a reference to the ordinal root powers of this [`UintNttTable<T>`].
+    /// Returns the Shoup preconditioners for [`Self::inv_root_powers`].
     #[inline]
-    pub fn ordinal_root_powers(&self) -> &[T] {
-        &self.ordinal_root_powers
-    }
-
-    /// Returns a reference to the reverse lsbs of this [`UintNttTable<T>`].
-    #[inline]
-    pub fn reverse_lsbs(&self) -> &[usize] {
-        &self.reverse_lsbs
+    pub fn inv_root_powers_precon(&self) -> &[T] {
+        &self.inv_root_powers_precon
     }
 }
 
@@ -142,41 +143,34 @@ impl<T: FheUint> NttTable for UintNttTable<T> {
         let n = 1usize << log_n;
         let to_root_type = |x| -> ShoupFactor<T> { <ShoupFactor<T>>::new(x, modulus) };
 
-        let root_one = to_root_type(T::ONE);
         let root_factor = to_root_type(root);
-
-        let mut power = root;
-
-        let mut ordinal_root_powers = vec![T::ZERO; n * 2];
-        let mut iter = ordinal_root_powers.iter_mut();
-        *iter.next().unwrap() = T::ONE;
-        *iter.next().unwrap() = root;
-        for root_power in iter {
-            power = root_factor.factor_mul_modulo(power, modulus);
-            *root_power = power;
-        }
-
-        let inv_root = *ordinal_root_powers.last().unwrap();
+        let inv_root = compact::reduce_inv(modulus, root);
 
         debug_assert_eq!(root_factor.factor_mul_modulo(inv_root, modulus), T::ONE);
 
-        let reverse_lsbs: Vec<usize> = (0..n).map(|i| i.reverse_lsbs(log_n)).collect();
-
-        let mut root_powers = vec![<ShoupFactor<T>>::default(); n];
-        root_powers[0] = root_one;
-        for (&root_power, &i) in ordinal_root_powers[0..n].iter().zip(reverse_lsbs.iter()) {
-            root_powers[i] = to_root_type(root_power);
+        let mut root_powers = vec![T::ZERO; n];
+        let mut power = T::ONE;
+        for i in 0..n {
+            root_powers[i.reverse_lsbs(log_n)] = power;
+            power = root_factor.factor_mul_modulo(power, modulus);
         }
-
-        let mut inv_root_powers = vec![<ShoupFactor<T>>::default(); n];
-        inv_root_powers[0] = root_one;
-        for (&inv_root_power, &i) in ordinal_root_powers[n + 1..]
+        let root_powers_precon = root_powers
             .iter()
-            .rev()
-            .zip(reverse_lsbs.iter())
-        {
-            inv_root_powers[i + 1] = to_root_type(inv_root_power);
+            .map(|&root| ShoupFactor::quotient_for(root, modulus))
+            .collect();
+
+        let inv_root_factor = to_root_type(inv_root);
+        let mut inv_root_powers = vec![T::ZERO; n];
+        inv_root_powers[0] = T::ONE;
+        let mut inv_power = inv_root;
+        for i in 0..n - 1 {
+            inv_root_powers[i.reverse_lsbs(log_n) + 1] = inv_power;
+            inv_power = inv_root_factor.factor_mul_modulo(inv_power, modulus);
         }
+        let inv_root_powers_precon = inv_root_powers
+            .iter()
+            .map(|&root| ShoupFactor::quotient_for(root, modulus))
+            .collect::<Vec<_>>();
 
         let n_cast =
             T::try_from(n).map_err(|_| NttError::DegreeConversionErr { degree: n, modulus })?;
@@ -187,10 +181,11 @@ impl<T: FheUint> NttTable for UintNttTable<T> {
 
         let inv_n = to_root_type(compact::reduce_inv(modulus, n_cast));
 
-        let inv_n_r = inv_root_powers
-            .last()
-            .unwrap()
-            .factor_mul_modulo(inv_n.value(), modulus);
+        let inv_n_r = ShoupFactor::from_raw(
+            *inv_root_powers.last().unwrap(),
+            *inv_root_powers_precon.last().unwrap(),
+        )
+        .factor_mul_modulo(inv_n.value(), modulus);
         let inv_n_r = ShoupFactor::new(inv_n_r, modulus);
 
         Ok(Self {
@@ -202,9 +197,9 @@ impl<T: FheUint> NttTable for UintNttTable<T> {
             inv_n,
             inv_n_r,
             root_powers,
+            root_powers_precon,
             inv_root_powers,
-            ordinal_root_powers,
-            reverse_lsbs,
+            inv_root_powers_precon,
         })
     }
 
@@ -244,11 +239,19 @@ impl<T: FheUint> NttTable for UintNttTable<T> {
         let twice_modulus = modulus << 1u32;
 
         let roots = self.root_powers();
-        let mut root_iter = roots[1..].iter().copied();
+        let roots_precon = self.root_powers_precon();
+        let mut root_index = 1usize;
 
         for gap in (0..self.log_n).rev().map(|x| 1usize << x) {
             for vc in poly.chunks_exact_mut(gap << 1) {
-                let root = root_iter.next().unwrap();
+                // The transform consumes roots 1..N exactly once.
+                let root = unsafe {
+                    ShoupFactor::from_raw(
+                        *roots.get_unchecked(root_index),
+                        *roots_precon.get_unchecked(root_index),
+                    )
+                };
+                root_index += 1;
                 let (v0, v1) = vc.split_at_mut(gap);
                 for (i, j) in core::iter::zip(v0, v1) {
                     let u = compact::reduce_once(twice_modulus, *i);
@@ -279,11 +282,19 @@ impl<T: FheUint> NttTable for UintNttTable<T> {
         let twice_modulus = modulus << 1u32;
 
         let roots = self.inv_root_powers();
-        let mut root_iter = roots[1..].iter().copied();
+        let roots_precon = self.inv_root_powers_precon();
+        let mut root_index = 1usize;
 
         for gap in (0..log_n - 1).map(|x| 1usize << x) {
             for vc in values.chunks_exact_mut(gap << 1) {
-                let root = root_iter.next().unwrap();
+                // The non-final stages consume roots 1..N/2 exactly once.
+                let root = unsafe {
+                    ShoupFactor::from_raw(
+                        *roots.get_unchecked(root_index),
+                        *roots_precon.get_unchecked(root_index),
+                    )
+                };
+                root_index += 1;
                 let (v0, v1) = vc.split_at_mut(gap);
                 for (i, j) in core::iter::zip(v0, v1) {
                     let u = *i;
@@ -320,12 +331,12 @@ impl<T: FheUint> NttTable for UintNttTable<T> {
 
 impl<T: FheUint> MonomialNttTable for UintNttTable<T> {
     #[inline]
-    fn ordinal_root_powers(&self) -> &[Self::ValueT] {
-        &self.ordinal_root_powers
+    fn root_powers(&self) -> &[Self::ValueT] {
+        &self.root_powers
     }
 
     #[inline]
-    fn reverse_lsbs(&self) -> &[usize] {
-        &self.reverse_lsbs
+    fn inv_root_powers(&self) -> &[Self::ValueT] {
+        &self.inv_root_powers
     }
 }

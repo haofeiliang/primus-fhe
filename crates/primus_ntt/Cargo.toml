@@ -30,9 +30,5 @@ simd = [
 ]
 
 [[bench]]
-name = "bench_u32"
-harness = false
-
-[[bench]]
-name = "bench_u64"
+name = "bench_ntt"
 harness = false
