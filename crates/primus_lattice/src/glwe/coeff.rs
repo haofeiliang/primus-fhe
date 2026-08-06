@@ -198,53 +198,19 @@ where
         debug_assert_eq!(self.as_ref().len(), output.as_ref().len());
         debug_assert!(self.as_ref().len().is_multiple_of(poly_length));
 
-        let shift = exponent & (poly_length - 1);
-        let negate_rotation = exponent >= poly_length;
-        let tail_len = poly_length - shift;
-
-        if SUBTRACT_SELF {
-            for (input, output) in self
-                .as_ref()
-                .chunks_exact(poly_length)
-                .zip(output.as_mut().chunks_exact_mut(poly_length))
-            {
-                if negate_rotation {
-                    for destination in 0..shift {
-                        output[destination] =
-                            modulus.reduce_sub(input[tail_len + destination], input[destination]);
-                    }
-                    for destination in shift..poly_length {
-                        output[destination] = modulus.reduce_sub(
-                            modulus.reduce_neg(input[destination - shift]),
-                            input[destination],
-                        );
-                    }
-                } else {
-                    for destination in 0..shift {
-                        output[destination] = modulus.reduce_sub(
-                            modulus.reduce_neg(input[tail_len + destination]),
-                            input[destination],
-                        );
-                    }
-                    for destination in shift..poly_length {
-                        output[destination] =
-                            modulus.reduce_sub(input[destination - shift], input[destination]);
-                    }
-                }
-            }
-        } else {
-            for (input, output) in self
-                .as_ref()
-                .chunks_exact(poly_length)
-                .zip(output.as_mut().chunks_exact_mut(poly_length))
-            {
-                output[..shift].copy_from_slice(&input[tail_len..]);
-                output[shift..].copy_from_slice(&input[..tail_len]);
-                if negate_rotation {
-                    modulus.reduce_neg_slice_assign(&mut output[shift..]);
-                } else {
-                    modulus.reduce_neg_slice_assign(&mut output[..shift]);
-                }
+        for (input, output) in self
+            .as_ref()
+            .chunks_exact(poly_length)
+            .zip(output.as_mut().chunks_exact_mut(poly_length))
+        {
+            if SUBTRACT_SELF {
+                Polynomial(input).mul_monomial_sub_one_to(
+                    exponent,
+                    &mut Polynomial(output),
+                    modulus,
+                );
+            } else {
+                Polynomial(input).mul_monomial_to(exponent, &mut Polynomial(output), modulus);
             }
         }
     }

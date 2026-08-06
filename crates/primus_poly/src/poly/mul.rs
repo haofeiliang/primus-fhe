@@ -3,6 +3,7 @@ use primus_factor::FactorSliceOps;
 use primus_integer::FheUint;
 use primus_reduce::{
     ReduceMul, ReduceMulAdd, ReduceMulAddSlice, ReduceMulSlice, ReduceNegSlice, ReduceSubAssign,
+    RingContext,
 };
 
 use super::Polynomial;
@@ -103,6 +104,92 @@ where
     S: RawData<Elem = T> + Data,
     T: FheUint,
 {
+    /// Multiplies `self` by `X^exponent` in `Z_q[X]/(X^N + 1)` and writes the result.
+    ///
+    /// `exponent` must belong to `[0, 2N)`.
+    #[inline]
+    pub fn mul_monomial_to<M, A>(&self, exponent: usize, output: &mut Polynomial<A>, modulus: M)
+    where
+        M: RingContext<T>,
+        A: RawData<Elem = T> + DataMut,
+    {
+        self.monomial_to::<false, M, A>(exponent, output, modulus);
+    }
+
+    /// Computes `output = self * (X^exponent - 1)` in `Z_q[X]/(X^N + 1)`.
+    ///
+    /// `exponent` must belong to `[0, 2N)`. Rotation and subtraction are
+    /// fused into one coefficient pass.
+    #[inline]
+    pub fn mul_monomial_sub_one_to<M, A>(
+        &self,
+        exponent: usize,
+        output: &mut Polynomial<A>,
+        modulus: M,
+    ) where
+        M: RingContext<T>,
+        A: RawData<Elem = T> + DataMut,
+    {
+        self.monomial_to::<true, M, A>(exponent, output, modulus);
+    }
+
+    #[inline]
+    fn monomial_to<const SUBTRACT_SELF: bool, M, A>(
+        &self,
+        exponent: usize,
+        output: &mut Polynomial<A>,
+        modulus: M,
+    ) where
+        M: RingContext<T>,
+        A: RawData<Elem = T> + DataMut,
+    {
+        let input = self.as_ref();
+        let output = output.as_mut();
+        let poly_length = input.len();
+
+        debug_assert!(poly_length > 0 && poly_length.is_power_of_two());
+        debug_assert!(exponent < 2 * poly_length);
+        debug_assert_eq!(output.len(), poly_length);
+
+        let shift = exponent & (poly_length - 1);
+        let negate_rotation = exponent >= poly_length;
+        let tail_len = poly_length - shift;
+
+        if SUBTRACT_SELF {
+            if negate_rotation {
+                for destination in 0..shift {
+                    output[destination] =
+                        modulus.reduce_sub(input[tail_len + destination], input[destination]);
+                }
+                for destination in shift..poly_length {
+                    output[destination] = modulus.reduce_sub(
+                        modulus.reduce_neg(input[destination - shift]),
+                        input[destination],
+                    );
+                }
+            } else {
+                for destination in 0..shift {
+                    output[destination] = modulus.reduce_sub(
+                        modulus.reduce_neg(input[tail_len + destination]),
+                        input[destination],
+                    );
+                }
+                for destination in shift..poly_length {
+                    output[destination] =
+                        modulus.reduce_sub(input[destination - shift], input[destination]);
+                }
+            }
+        } else {
+            output[..shift].copy_from_slice(&input[tail_len..]);
+            output[shift..].copy_from_slice(&input[..tail_len]);
+            if negate_rotation {
+                modulus.reduce_neg_slice_assign(&mut output[shift..]);
+            } else {
+                modulus.reduce_neg_slice_assign(&mut output[..shift]);
+            }
+        }
+    }
+
     /// Performs a naive negacyclic multiplication and overwrites `output`.
     pub fn naive_mul_to<M, A, B>(&self, rhs: &Polynomial<A>, output: &mut Polynomial<B>, modulus: M)
     where

@@ -6,9 +6,13 @@ use crate::ntru::{FourierNtru, NttNtru};
 /// Pre-allocated scratch buffers for a native-torus Fourier NGSW external product.
 pub struct FourierNtruExternalProductContext<T: TorusFftValue> {
     poly_length: usize,
+    /// Carry bits reused while decomposing one coefficient polynomial.
     pub(crate) carries: Vec<bool>,
+    /// Coefficient-domain digits produced for one decomposition level.
     pub(crate) decomposed_poly: Vec<T>,
+    /// Fourier transform of `decomposed_poly`.
     pub(crate) decomposed_fourier: Vec<Complex64>,
+    /// Transform-domain sum of the current external products.
     pub(crate) fourier_accumulator: FourierNtru<Vec<Complex64>>,
 }
 
@@ -38,9 +42,13 @@ impl<T: TorusFftValue> FourierNtruExternalProductContext<T> {
 /// Pre-allocated scratch buffers for an exact NTT NGSW external product.
 pub struct NttNtruExternalProductContext<T: FheUint> {
     poly_length: usize,
+    /// Modulus-adjusted coefficients reused as decomposition input.
     pub(crate) adjusted_poly: Vec<T>,
+    /// Carry bits reused while decomposing `adjusted_poly`.
     pub(crate) carries: Vec<bool>,
+    /// Digits for one decomposition level, transformed in place to NTT form.
     pub(crate) decomposed_ntt: Vec<T>,
+    /// Transform-domain sum of the current external products.
     pub(crate) ntt_accumulator: NttNtru<Vec<T>>,
 }
 

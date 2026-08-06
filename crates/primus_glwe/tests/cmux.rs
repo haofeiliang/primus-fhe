@@ -6,7 +6,7 @@ use primus_glwe::{
 };
 use primus_lattice::{
     context::{FourierExternalProductContext, NttExternalProductContext},
-    ggsw::{FourierGgswOwned, NttGgsw},
+    ggsw::{FourierGgswOwned, NttGgsw, NttGgswIter},
     glwe::{FourierGlweOwned, Glwe, NttGlwe, TorusGlwe},
 };
 use primus_modulus::{BarrettModulus, NativeModulus};
@@ -43,8 +43,9 @@ fn fourier_cmux_selects_requested_glwe() {
     let mut gadget_context = FourierGadgetEncryptContext::new(params.size());
     let mut cmux_context = FourierExternalProductContext::new(params.size());
 
-    let messages = [plaintext(1), plaintext(7)];
-    let mut ciphertexts: [TorusGlwe<Vec<u32>>; 2] = [
+    let messages = [plaintext(1), plaintext(7), plaintext(12)];
+    let mut ciphertexts: [TorusGlwe<Vec<u32>>; 3] = [
+        TorusGlwe::zero(params.glwe_len()),
         TorusGlwe::zero(params.glwe_len()),
         TorusGlwe::zero(params.glwe_len()),
     ];
@@ -63,7 +64,7 @@ fn fourier_cmux_selects_requested_glwe() {
 
     let mut control = FourierGgswOwned::zero(params.fourier_ggsw_len());
     let mut output: TorusGlwe<Vec<u32>> = TorusGlwe::zero(params.glwe_len());
-    for (bit, expected) in messages.iter().enumerate() {
+    for (bit, expected) in messages[..2].iter().enumerate() {
         let mut control_message = vec![0u32; POLY_LENGTH];
         control_message[0] = bit as u32;
         secret_key.encrypt_ggsw_to(
@@ -78,6 +79,47 @@ fn fourier_cmux_selects_requested_glwe() {
         control.cmux_to(
             &ciphertexts[0],
             &ciphertexts[1],
+            &mut output,
+            params.basis(),
+            &mut fft,
+            &mut cmux_context,
+        );
+
+        let mut output_fourier = FourierGlweOwned::zero(params.fourier_glwe_len());
+        output.write_fourier_form(&mut output_fourier, &mut fft);
+        assert_eq!(
+            secret_key
+                .decrypt(
+                    &output_fourier,
+                    &glwe_params,
+                    &mut fft,
+                    &mut decrypt_context,
+                )
+                .as_ref(),
+            expected.as_slice()
+        );
+    }
+
+    let mut controls: [FourierGgswOwned; 2] =
+        core::array::from_fn(|_| FourierGgswOwned::zero(params.fourier_ggsw_len()));
+    for (selected, expected) in messages.iter().enumerate() {
+        for (index, control) in controls.iter_mut().enumerate() {
+            let mut control_message = vec![0u32; POLY_LENGTH];
+            control_message[0] = u32::from(selected == index + 1);
+            secret_key.encrypt_ggsw_to(
+                &Polynomial::new(control_message),
+                control,
+                &params,
+                &mut fft,
+                &mut rng,
+                &mut gadget_context,
+            );
+        }
+
+        FourierGgswOwned::cmux_k_to(
+            &controls,
+            &ciphertexts[0],
+            &ciphertexts[1..],
             &mut output,
             params.basis(),
             &mut fft,
@@ -122,9 +164,9 @@ fn ntt_cmux_selects_requested_glwe() {
     let mut gadget_context = NttGadgetEncryptContext::new(domain.size());
     let mut cmux_context = NttExternalProductContext::new(domain.size());
 
-    let messages = [plaintext(2), plaintext(11)];
-    let mut ciphertexts: [Glwe<Vec<u32>>; 2] =
-        [Glwe::zero(params.glwe_len()), Glwe::zero(params.glwe_len())];
+    let messages = [plaintext(2), plaintext(7), plaintext(11)];
+    let mut ciphertexts: [Glwe<Vec<u32>>; 3] =
+        core::array::from_fn(|_| Glwe::zero(params.glwe_len()));
     for (message, ciphertext) in messages.iter().zip(&mut ciphertexts) {
         let mut ntt_ciphertext: NttGlwe<Vec<u32>> = NttGlwe::zero(params.glwe_len());
         secret_key.encrypt_to(
@@ -139,7 +181,7 @@ fn ntt_cmux_selects_requested_glwe() {
 
     let mut control: NttGgsw<Vec<u32>> = NttGgsw::zero(params.ggsw_len());
     let mut output: Glwe<Vec<u32>> = Glwe::zero(params.glwe_len());
-    for (bit, expected) in messages.iter().enumerate() {
+    for (bit, expected) in messages[..2].iter().enumerate() {
         let mut control_message = vec![0u32; POLY_LENGTH];
         control_message[0] = bit as u32;
         secret_key.encrypt_ggsw_to(
@@ -153,6 +195,40 @@ fn ntt_cmux_selects_requested_glwe() {
         control.cmux_to(
             &ciphertexts[0],
             &ciphertexts[1],
+            &mut output,
+            params.basis(),
+            modulus,
+            &ntt,
+            &mut cmux_context,
+        );
+
+        let mut output_ntt: NttGlwe<Vec<u32>> = NttGlwe::zero(params.glwe_len());
+        output.write_ntt_form(&mut output_ntt, &ntt);
+        assert_eq!(
+            secret_key.decrypt(&output_ntt, &glwe_params, &ntt).as_ref(),
+            expected.as_slice()
+        );
+    }
+
+    let ggsw_len = params.ggsw_len();
+    let mut controls = vec![0u32; 2 * ggsw_len];
+    for (selected, expected) in messages.iter().enumerate() {
+        for (index, control) in controls.chunks_exact_mut(ggsw_len).enumerate() {
+            let mut control_message = vec![0u32; POLY_LENGTH];
+            control_message[0] = u32::from(selected == index + 1);
+            secret_key.encrypt_ggsw_to(
+                &Polynomial::new(control_message),
+                &mut NttGgsw::new(control),
+                &domain,
+                &mut rng,
+                &mut gadget_context,
+            );
+        }
+
+        NttGgsw::cmux_k_to(
+            NttGgswIter::new(&controls, ggsw_len),
+            &ciphertexts[0],
+            &ciphertexts[1..],
             &mut output,
             params.basis(),
             modulus,

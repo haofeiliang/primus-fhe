@@ -9,7 +9,10 @@ use primus_reduce::FieldContext;
 
 use crate::{
     context::{FourierNtruExternalProductContext, NttNtruExternalProductContext},
-    nlev::{Nlev, fourier_gadget_product_accumulate, ntt_gadget_product_accumulate},
+    nlev::{
+        Nlev, fourier_gadget_product_accumulate, fourier_gadget_product_add_assign,
+        ntt_gadget_product_accumulate, ntt_gadget_product_add_assign,
+    },
     ntru::Ntru,
 };
 
@@ -43,6 +46,8 @@ where
         context.fourier_accumulator.write_torus_form(output, fft);
     }
 
+    /// Clears the Fourier accumulator, then stores `self external_product input` in it.
+    /// The result remains in Fourier form for the caller to combine or transform back.
     pub(super) fn external_product_accumulate<T, Table, A>(
         &self,
         input: &Ntru<A>,
@@ -56,6 +61,23 @@ where
         S: Data,
     {
         fourier_gadget_product_accumulate(self.as_ref(), input.as_ref(), basis, fft, context);
+    }
+
+    /// Adds `self external_product input` to the existing Fourier accumulator.
+    /// This does not clear the accumulator; the caller must initialize it first.
+    pub(super) fn external_product_add_assign<T, Table, A>(
+        &self,
+        input: &Ntru<A>,
+        basis: &ApproxSignedBasis<T>,
+        fft: &mut FftEngine<'_, Table>,
+        context: &mut FourierNtruExternalProductContext<T>,
+    ) where
+        T: TorusFftValue,
+        Table: FftTable,
+        A: RawData<Elem = T> + Data,
+        S: Data,
+    {
+        fourier_gadget_product_add_assign(self.as_ref(), input.as_ref(), basis, fft, context);
     }
 
     /// Applies this NGSW external product to every NTRU level in `input`.
@@ -124,6 +146,8 @@ where
         context.ntt_accumulator.write_coeff_form(output, ntt);
     }
 
+    /// Clears the NTT accumulator, then stores `self external_product input` in it.
+    /// The result remains in NTT form for the caller to combine or transform back.
     pub(super) fn external_product_accumulate<T, M, Table, A>(
         &self,
         input: &Ntru<A>,
@@ -139,6 +163,25 @@ where
         S: RawData<Elem = T> + Data,
     {
         ntt_gadget_product_accumulate(self.as_ref(), input.as_ref(), basis, modulus, ntt, context);
+    }
+
+    /// Adds `self external_product input` to the existing NTT accumulator.
+    /// This does not clear the accumulator; the caller must initialize it first.
+    pub(super) fn external_product_add_assign<T, M, Table, A>(
+        &self,
+        input: &Ntru<A>,
+        basis: &ApproxSignedBasis<T>,
+        modulus: M,
+        ntt: &Table,
+        context: &mut NttNtruExternalProductContext<T>,
+    ) where
+        T: FheUint,
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+        A: RawData<Elem = T> + Data,
+        S: RawData<Elem = T> + Data,
+    {
+        ntt_gadget_product_add_assign(self.as_ref(), input.as_ref(), basis, modulus, ntt, context);
     }
 
     /// Applies this NGSW external product to every NTRU level in `input`.

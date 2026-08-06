@@ -15,7 +15,24 @@ use crate::{
 
 use super::{FourierNlev, NttNlev};
 
+/// Clears the Fourier accumulator, then stores the gadget product of `gadget` and `input` in it.
 pub(crate) fn fourier_gadget_product_accumulate<T, Table>(
+    gadget: &[Complex64],
+    input: &[T],
+    basis: &ApproxSignedBasis<T>,
+    fft: &mut FftEngine<'_, Table>,
+    context: &mut FourierNtruExternalProductContext<T>,
+) where
+    T: TorusFftValue,
+    Table: FftTable,
+{
+    context.fourier_accumulator.set_zero();
+    fourier_gadget_product_add_assign(gadget, input, basis, fft, context);
+}
+
+/// Adds the gadget product of `gadget` and `input` to the existing Fourier accumulator.
+/// This does not clear the accumulator; the caller must initialize it first.
+pub(crate) fn fourier_gadget_product_add_assign<T, Table>(
     gadget: &[Complex64],
     input: &[T],
     basis: &ApproxSignedBasis<T>,
@@ -34,7 +51,6 @@ pub(crate) fn fourier_gadget_product_accumulate<T, Table>(
     debug_assert_eq!(input.len(), poly_length);
     debug_assert_eq!(gadget.len(), basis.decompose_length() * fourier_length);
 
-    context.fourier_accumulator.set_zero();
     basis.init_carry_slice(input, &mut context.carries);
 
     for (decomposer, key_level) in basis
@@ -50,7 +66,26 @@ pub(crate) fn fourier_gadget_product_accumulate<T, Table>(
     }
 }
 
+/// Clears the NTT accumulator, then stores the gadget product of `gadget` and `input` in it.
 pub(crate) fn ntt_gadget_product_accumulate<T, M, Table>(
+    gadget: &[T],
+    input: &[T],
+    basis: &ApproxSignedBasis<T>,
+    modulus: M,
+    ntt: &Table,
+    context: &mut NttNtruExternalProductContext<T>,
+) where
+    T: FheUint,
+    M: FieldContext<T>,
+    Table: NttTable<ValueT = T>,
+{
+    context.ntt_accumulator.set_zero();
+    ntt_gadget_product_add_assign(gadget, input, basis, modulus, ntt, context);
+}
+
+/// Adds the gadget product of `gadget` and `input` to the existing NTT accumulator.
+/// This does not clear the accumulator; the caller must initialize it first.
+pub(crate) fn ntt_gadget_product_add_assign<T, M, Table>(
     gadget: &[T],
     input: &[T],
     basis: &ApproxSignedBasis<T>,
@@ -70,7 +105,6 @@ pub(crate) fn ntt_gadget_product_accumulate<T, M, Table>(
     debug_assert_eq!(input.len(), poly_length);
     debug_assert_eq!(gadget.len(), basis.decompose_length() * poly_length);
 
-    context.ntt_accumulator.set_zero();
     basis.init_value_carry_slice_to(input, &mut context.adjusted_poly, &mut context.carries);
 
     for (decomposer, key_level) in basis.decompose_iter().zip(gadget.chunks_exact(poly_length)) {

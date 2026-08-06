@@ -43,7 +43,27 @@ where
         context.fourier_accumulator.write_torus_form(output, fft);
     }
 
+    /// Clears the Fourier accumulator, then stores `self external_product input` in it.
+    /// The result remains in Fourier form for the caller to combine or transform back.
     pub(super) fn external_product_accumulate<T, Table, A>(
+        &self,
+        input: &TorusGlwe<A>,
+        basis: &ApproxSignedBasis<T>,
+        fft: &mut FftEngine<'_, Table>,
+        context: &mut FourierExternalProductContext<T>,
+    ) where
+        T: TorusFftValue,
+        Table: FftTable,
+        A: RawData<Elem = T> + Data,
+        S: RawData<Elem = Complex64> + Data,
+    {
+        context.fourier_accumulator.set_zero();
+        self.external_product_add_assign(input, basis, fft, context);
+    }
+
+    /// Adds `self external_product input` to the existing Fourier accumulator.
+    /// This does not clear the accumulator; the caller must initialize it first.
+    pub(super) fn external_product_add_assign<T, Table, A>(
         &self,
         input: &TorusGlwe<A>,
         basis: &ApproxSignedBasis<T>,
@@ -68,8 +88,6 @@ where
         debug_assert_eq!(basis.decompose_length(), size.decompose_length());
         debug_assert_eq!(input.as_ref().len(), glwe_size.glwe_len());
         debug_assert_eq!(self.as_ref().len(), size.fourier_ggsw_len());
-
-        context.fourier_accumulator.set_zero();
 
         for (coeff_poly, key_row) in input
             .iter_poly(poly_len)
@@ -126,7 +144,29 @@ where
         context.ntt_accumulator.write_coeff_form(output, ntt);
     }
 
+    /// Clears the NTT accumulator, then stores `self external_product input` in it.
+    /// The result remains in NTT form for the caller to combine or transform back.
     pub(super) fn external_product_accumulate<T, M, Table, A>(
+        &self,
+        input: &Glwe<A>,
+        basis: &ApproxSignedBasis<T>,
+        modulus: M,
+        ntt: &Table,
+        context: &mut NttExternalProductContext<T>,
+    ) where
+        T: FheUint,
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+        A: RawData<Elem = T> + Data,
+        S: RawData<Elem = T> + Data,
+    {
+        context.ntt_accumulator.set_zero();
+        self.external_product_add_assign(input, basis, modulus, ntt, context);
+    }
+
+    /// Adds `self external_product input` to the existing NTT accumulator.
+    /// This does not clear the accumulator; the caller must initialize it first.
+    pub(super) fn external_product_add_assign<T, M, Table, A>(
         &self,
         input: &Glwe<A>,
         basis: &ApproxSignedBasis<T>,
@@ -151,8 +191,6 @@ where
         debug_assert_eq!(basis.decompose_length(), size.decompose_length());
         debug_assert_eq!(input.as_ref().len(), glwe_len);
         debug_assert_eq!(self.as_ref().len(), size.ggsw_len());
-
-        context.ntt_accumulator.set_zero();
 
         for (coeff_poly, key_row) in input.iter_poly(poly_len).zip(self.iter_ntt_glev(glev_len)) {
             basis.init_value_carry_slice_to(

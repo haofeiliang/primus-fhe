@@ -12,6 +12,7 @@ macro_rules! impl_iters {
             where
                 T: FheUint,
             {
+                /// Exact chunks backing this immutable ciphertext iterator.
                 pub(crate) iter: core::slice::ChunksExact<'a, T>
             }
 
@@ -32,9 +33,15 @@ macro_rules! impl_iters {
                 fn next(&mut self) -> Option<Self::Item> {
                     self.iter.next().map(|slice| $cipher(slice))
                 }
+
+                #[inline]
+                fn size_hint(&self) -> (usize, Option<usize>) {
+                    self.iter.size_hint()
+                }
             }
 
             impl<'a, T: FheUint> core::iter::FusedIterator for [<$cipher Iter>]<'a, T> {}
+            impl<'a, T: FheUint> core::iter::ExactSizeIterator for [<$cipher Iter>]<'a, T> {}
         }
 
         paste::paste! {
@@ -43,6 +50,7 @@ macro_rules! impl_iters {
             where
                 T: FheUint,
             {
+                /// Exact chunks backing this mutable ciphertext iterator.
                 pub(crate) iter: core::slice::ChunksExactMut<'a, T>
             }
 
@@ -63,9 +71,15 @@ macro_rules! impl_iters {
                 fn next(&mut self) -> Option<Self::Item> {
                     self.iter.next().map(|slice| $cipher(slice))
                 }
+
+                #[inline]
+                fn size_hint(&self) -> (usize, Option<usize>) {
+                    self.iter.size_hint()
+                }
             }
 
             impl<'a, T: FheUint> core::iter::FusedIterator for [<$cipher IterMut>]<'a, T> {}
+            impl<'a, T: FheUint> core::iter::ExactSizeIterator for [<$cipher IterMut>]<'a, T> {}
         }
     };
 }

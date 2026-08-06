@@ -46,6 +46,38 @@ where
     S: RawData<Elem = T> + Data,
     T: FheUint,
 {
+    /// Multiplies this ciphertext by `X^exponent` and writes the result.
+    ///
+    /// `exponent` must belong to `[0, 2N)`.
+    #[inline]
+    pub fn mul_monomial_to<M, A>(&self, exponent: usize, output: &mut Ntru<A>, modulus: M)
+    where
+        M: primus_reduce::RingContext<T>,
+        A: RawData<Elem = T> + DataMut,
+    {
+        Polynomial(self.as_ref()).mul_monomial_to(
+            exponent,
+            &mut Polynomial(output.as_mut()),
+            modulus,
+        );
+    }
+
+    /// Computes `output = self * (X^exponent - 1)`.
+    ///
+    /// `exponent` must belong to `[0, 2N)`.
+    #[inline]
+    pub fn mul_monomial_sub_one_to<M, A>(&self, exponent: usize, output: &mut Ntru<A>, modulus: M)
+    where
+        M: primus_reduce::RingContext<T>,
+        A: RawData<Elem = T> + DataMut,
+    {
+        Polynomial(self.as_ref()).mul_monomial_sub_one_to(
+            exponent,
+            &mut Polynomial(output.as_mut()),
+            modulus,
+        );
+    }
+
     /// Transforms `self` to ntt form and stores in `result`.
     #[inline]
     pub fn write_ntt_form<Table, A>(&self, result: &mut NttNtru<A>, ntt_table: &Table)
