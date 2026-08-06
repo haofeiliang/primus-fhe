@@ -2,6 +2,7 @@
 
 mod coeff;
 mod fourier;
+mod gadget;
 mod ntt;
 
 use primus_integer::{FheUint, WrappingNeg};
@@ -11,6 +12,7 @@ use crate::SecretCoefficient;
 
 pub use coeff::NtruSecretKey;
 pub use fourier::{FourierNtruDecryptContext, FourierNtruEncryptContext, FourierNtruSecretKey};
+pub use gadget::{FourierNtruGadgetEncryptContext, NttNtruGadgetEncryptContext};
 pub use ntt::NttNtruSecretKey;
 
 pub(crate) fn encode_secret_polynomial_to<T: FheUint, M: RingContext<T>>(

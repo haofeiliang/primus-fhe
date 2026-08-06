@@ -22,6 +22,10 @@ pub mod glev;
 pub mod glwe;
 /// Standard LWE ciphertexts.
 pub mod lwe;
+/// GSW-style NTRU ciphertexts.
+pub mod ngsw;
+/// Gadget-decomposed NTRU ciphertexts.
+pub mod nlev;
 /// NTRU ciphertexts.
 pub mod ntru;
 /// RGSW matrix ciphertexts (ring variant).

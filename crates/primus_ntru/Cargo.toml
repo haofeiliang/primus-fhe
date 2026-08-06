@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 primus_data = { path = "../primus_data" }
+primus_decompose = { path = "../primus_decompose" }
 primus_distr = { path = "../primus_distr" }
 primus_fft = { path = "../primus_fft" }
 primus_fhe_core = { path = "../primus_fhe_core" }

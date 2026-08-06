@@ -226,14 +226,11 @@ impl FourierNtruSecretKey {
         A: RawData<Elem = T> + Data,
         B: RawData<Elem = Complex64> + DataMut,
     {
-        self.encrypt_to_with_message(
-            FourierEncryptionMessage::Encoded(encoded.as_ref()),
-            result,
-            params,
-            fft,
-            rng,
-            context,
-        );
+        self.assert_domain(params, fft);
+        assert_eq!(encoded.as_ref().len(), self.poly_length());
+        assert_eq!(result.as_ref().len(), fft.fourier_length());
+        assert_eq!(context.coeff.as_ref().len(), self.poly_length());
+        self.encrypt_encoded_to_unchecked(encoded, result, params, fft, rng, context);
     }
 
     /// Encrypts zero into a freshly allocated Fourier ciphertext.
@@ -282,6 +279,74 @@ impl FourierNtruSecretKey {
             assert_eq!(values.len(), self.poly_length());
         }
 
+        self.encrypt_to_with_message_unchecked(message, result, params, fft, rng, context);
+    }
+
+    pub(super) fn encrypt_encoded_to_unchecked<T, Table, R, A, B>(
+        &self,
+        encoded: &Polynomial<A>,
+        result: &mut FourierNtruCiphertext<B>,
+        params: &NtruParameters<T, NativeModulus<T>>,
+        fft: &mut FftEngine<'_, Table>,
+        rng: &mut R,
+        context: &mut FourierNtruEncryptContext<T>,
+    ) where
+        T: TorusFftValue,
+        Table: FftTable,
+        R: rand::Rng + rand::CryptoRng,
+        A: RawData<Elem = T> + Data,
+        B: RawData<Elem = Complex64> + DataMut,
+    {
+        debug_assert_eq!(encoded.as_ref().len(), self.poly_length());
+        debug_assert_eq!(result.as_ref().len(), fft.fourier_length());
+        self.encrypt_to_with_message_unchecked(
+            FourierEncryptionMessage::Encoded(encoded.as_ref()),
+            result,
+            params,
+            fft,
+            rng,
+            context,
+        );
+    }
+
+    pub(super) fn encrypt_zero_to_unchecked<T, Table, R, B>(
+        &self,
+        result: &mut FourierNtruCiphertext<B>,
+        params: &NtruParameters<T, NativeModulus<T>>,
+        fft: &mut FftEngine<'_, Table>,
+        rng: &mut R,
+        context: &mut FourierNtruEncryptContext<T>,
+    ) where
+        T: TorusFftValue,
+        Table: FftTable,
+        R: rand::Rng + rand::CryptoRng,
+        B: RawData<Elem = Complex64> + DataMut,
+    {
+        debug_assert_eq!(result.as_ref().len(), fft.fourier_length());
+        self.encrypt_to_with_message_unchecked(
+            FourierEncryptionMessage::Zero,
+            result,
+            params,
+            fft,
+            rng,
+            context,
+        );
+    }
+
+    fn encrypt_to_with_message_unchecked<T, Table, R, B>(
+        &self,
+        message: FourierEncryptionMessage<'_, T>,
+        result: &mut FourierNtruCiphertext<B>,
+        params: &NtruParameters<T, NativeModulus<T>>,
+        fft: &mut FftEngine<'_, Table>,
+        rng: &mut R,
+        context: &mut FourierNtruEncryptContext<T>,
+    ) where
+        T: TorusFftValue,
+        Table: FftTable,
+        R: rand::Rng + rand::CryptoRng,
+        B: RawData<Elem = Complex64> + DataMut,
+    {
         let coefficients = context.coeff.as_mut();
         primus_distr::sample_gaussian_values_to(coefficients, params.noise_distribution(), rng);
         match message {
@@ -391,7 +456,7 @@ impl FourierNtruSecretKey {
         (message, noise)
     }
 
-    fn assert_domain<T, Table>(
+    pub(super) fn assert_domain<T, Table>(
         &self,
         params: &NtruParameters<T, NativeModulus<T>>,
         fft: &FftEngine<'_, Table>,

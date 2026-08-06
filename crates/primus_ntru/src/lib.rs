@@ -6,19 +6,22 @@
 
 #![deny(missing_docs)]
 
+mod ciphertext;
 mod error;
 mod parameter;
 mod secret_key;
 
-/// Fourier-domain NTRU ciphertext.
-pub type FourierNtruCiphertext<T> = primus_lattice::ntru::FourierNtru<T>;
-/// NTT-domain NTRU ciphertext.
-pub type NttNtruCiphertext<T> = primus_lattice::ntru::NttNtru<T>;
-
+pub use ciphertext::{
+    FourierNgswCiphertext, FourierNlevCiphertext, FourierNtruCiphertext, NgswCiphertext,
+    NlevCiphertext, NtruCiphertext, NttNgswCiphertext, NttNlevCiphertext, NttNtruCiphertext,
+};
 pub use error::NtruError;
 pub use parameter::NtruParameters;
 pub use primus_fhe_core::{SecretCoefficient, SecretKeyDistr};
+pub use primus_lattice::context::{
+    FourierNtruExternalProductContext, NttNtruExternalProductContext,
+};
 pub use secret_key::{
-    FourierNtruDecryptContext, FourierNtruEncryptContext, FourierNtruSecretKey, NtruSecretKey,
-    NttNtruSecretKey,
+    FourierNtruDecryptContext, FourierNtruEncryptContext, FourierNtruGadgetEncryptContext,
+    FourierNtruSecretKey, NtruSecretKey, NttNtruGadgetEncryptContext, NttNtruSecretKey,
 };

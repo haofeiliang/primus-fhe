@@ -203,13 +203,10 @@ impl<T: FheUint> NttNtruSecretKey<T> {
         A: RawData<Elem = T> + Data,
         B: RawData<Elem = T> + DataMut,
     {
-        self.encrypt_to_with_message(
-            NttEncryptionMessage::Encoded(encoded.as_ref()),
-            result,
-            params,
-            ntt_table,
-            rng,
-        );
+        self.assert_domain(params, ntt_table);
+        assert_eq!(encoded.as_ref().len(), self.poly_length());
+        assert_eq!(result.as_ref().len(), self.poly_length());
+        self.encrypt_encoded_to_unchecked(encoded, result, params, ntt_table, rng);
     }
 
     /// Encrypts zero into a freshly allocated NTT ciphertext.
@@ -254,6 +251,69 @@ impl<T: FheUint> NttNtruSecretKey<T> {
             assert_eq!(values.len(), self.poly_length());
         }
 
+        self.encrypt_to_with_message_unchecked(message, result, params, ntt_table, rng);
+    }
+
+    pub(super) fn encrypt_encoded_to_unchecked<M, Table, R, A, B>(
+        &self,
+        encoded: &Polynomial<A>,
+        result: &mut NttNtruCiphertext<B>,
+        params: &NtruParameters<T, M>,
+        ntt_table: &Table,
+        rng: &mut R,
+    ) where
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+        R: rand::Rng + rand::CryptoRng,
+        A: RawData<Elem = T> + Data,
+        B: RawData<Elem = T> + DataMut,
+    {
+        debug_assert_eq!(encoded.as_ref().len(), self.poly_length());
+        debug_assert_eq!(result.as_ref().len(), self.poly_length());
+        self.encrypt_to_with_message_unchecked(
+            NttEncryptionMessage::Encoded(encoded.as_ref()),
+            result,
+            params,
+            ntt_table,
+            rng,
+        );
+    }
+
+    pub(super) fn encrypt_zero_to_unchecked<M, Table, R, B>(
+        &self,
+        result: &mut NttNtruCiphertext<B>,
+        params: &NtruParameters<T, M>,
+        ntt_table: &Table,
+        rng: &mut R,
+    ) where
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+        R: rand::Rng + rand::CryptoRng,
+        B: RawData<Elem = T> + DataMut,
+    {
+        debug_assert_eq!(result.as_ref().len(), self.poly_length());
+        self.encrypt_to_with_message_unchecked(
+            NttEncryptionMessage::Zero,
+            result,
+            params,
+            ntt_table,
+            rng,
+        );
+    }
+
+    fn encrypt_to_with_message_unchecked<M, Table, R, B>(
+        &self,
+        message: NttEncryptionMessage<'_, T>,
+        result: &mut NttNtruCiphertext<B>,
+        params: &NtruParameters<T, M>,
+        ntt_table: &Table,
+        rng: &mut R,
+    ) where
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+        R: rand::Rng + rand::CryptoRng,
+        B: RawData<Elem = T> + DataMut,
+    {
         let coefficients = result.as_mut();
         primus_distr::sample_gaussian_values_to(coefficients, params.noise_distribution(), rng);
         match message {
@@ -361,7 +421,7 @@ impl<T: FheUint> NttNtruSecretKey<T> {
         (message, noise)
     }
 
-    fn assert_domain<M, Table>(&self, params: &NtruParameters<T, M>, ntt_table: &Table)
+    pub(super) fn assert_domain<M, Table>(&self, params: &NtruParameters<T, M>, ntt_table: &Table)
     where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
