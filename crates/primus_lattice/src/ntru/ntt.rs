@@ -64,6 +64,15 @@ where
     S: RawData<Elem = T> + DataMut,
     T: FheUint,
 {
+    /// Negates this NTT-domain ciphertext coefficient-wise modulo `modulus`.
+    #[inline]
+    pub fn neg_assign<M>(&mut self, modulus: M)
+    where
+        M: FieldContext<T>,
+    {
+        NttPolynomial(self.as_mut()).neg_assign(modulus);
+    }
+
     /// Transforms `self` to coefficient form.
     #[inline]
     pub fn into_coeff_form<Table>(mut self, ntt_table: &Table) -> Ntru<S>

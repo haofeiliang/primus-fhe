@@ -6,14 +6,17 @@ edition = "2024"
 [dependencies]
 primus_data = { path = "../primus_data" }
 primus_distr = { path = "../primus_distr" }
+primus_fft = { path = "../primus_fft" }
 primus_fhe_core = { path = "../primus_fhe_core" }
 primus_integer = { path = "../primus_integer" }
 primus_lattice = { path = "../primus_lattice" }
+primus_modulus = { path = "../primus_modulus" }
 primus_ntt = { path = "../primus_ntt" }
 primus_poly = { path = "../primus_poly" }
 primus_reduce = { path = "../primus_reduce" }
 
 rand = { workspace = true }
+thiserror = { workspace = true }
 zeroize = { workspace = true }
 
 [features]

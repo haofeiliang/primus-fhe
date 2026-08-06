@@ -1,76 +1,84 @@
-//! Coefficient-domain NTRU secret key with key generation.
-
-use std::ops::Deref;
+//! Canonical coefficient-domain NTRU secret key.
 
 use primus_integer::FheUint;
-use primus_poly::PolynomialOwned;
+use rand::distr::Distribution;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
-use crate::SecretKeyDistr;
+use crate::{NtruParameters, SecretCoefficient, SecretKeyDistr};
 
-/// Represents a secret key for the NTRU cryptographic scheme.
+/// A small signed polynomial `f` shared by all NTRU transform backends.
 ///
-/// The secret key `f` is a small polynomial (typically binary or ternary
-/// coefficients) used during decryption to recover the message:
-/// `f * c = f * (r * h + m) = r * g + f * m mod q`.
+/// Signed coefficients are intentionally stored independently of a ciphertext
+/// modulus: `-1` is encoded as `q - 1` for NTT and as the native two's-complement
+/// bit pattern for Fourier only when the key is converted to that backend.
 #[derive(Clone)]
 pub struct NtruSecretKey<T: FheUint> {
-    pub(crate) key: PolynomialOwned<T>,
+    pub(crate) key: Vec<SecretCoefficient<T>>,
     pub(crate) distr: SecretKeyDistr,
 }
 
 impl<T: FheUint> Zeroize for NtruSecretKey<T> {
     #[inline]
     fn zeroize(&mut self) {
-        self.key.0.zeroize();
+        self.key.zeroize();
     }
 }
 
 impl<T: FheUint> ZeroizeOnDrop for NtruSecretKey<T> {}
 
-impl<T: FheUint> Deref for NtruSecretKey<T> {
-    type Target = PolynomialOwned<T>;
-
-    #[inline]
-    fn deref(&self) -> &Self::Target {
-        &self.key
-    }
-}
-
 impl<T: FheUint> NtruSecretKey<T> {
-    /// Creates a new [`NtruSecretKey<T>`].
-    pub fn new(key: PolynomialOwned<T>, distr: SecretKeyDistr) -> Self {
+    /// Creates a coefficient-domain NTRU key from canonical signed values.
+    #[inline]
+    pub fn new(key: Vec<SecretCoefficient<T>>, distr: SecretKeyDistr) -> Self {
+        assert!(!key.is_empty(), "NTRU secret key must not be empty");
         Self { key, distr }
     }
 
-    /// Returns the distribution of this [`NtruSecretKey<T>`].
+    /// Returns the coefficient polynomial length.
+    #[inline]
+    pub fn poly_length(&self) -> usize {
+        self.key.len()
+    }
+
+    /// Returns the distribution used to sample this key.
+    #[inline]
     pub fn distr(&self) -> SecretKeyDistr {
         self.distr
     }
 
-    /// Generates a new random NTRU secret key from parameters.
-    ///
-    /// The key is sampled from the configured distribution (binary, ternary,
-    /// or discrete Gaussian). For NTRU, binary and ternary are the typical
-    /// choices that guarantee small coefficients for correct decryption.
-    ///
-    /// # Panics
-    ///
-    /// Panics if a Gaussian distribution has invalid parameters.
+    /// Returns the canonical signed coefficients of `f`.
     #[inline]
-    pub fn generate<R>(distr: SecretKeyDistr, poly_length: usize, rng: &mut R) -> Self
+    pub fn as_slice(&self) -> &[SecretCoefficient<T>] {
+        &self.key
+    }
+
+    /// Samples a coefficient key from `params`.
+    ///
+    /// This method does not impose backend-specific invertibility. Use
+    /// [`crate::NttNtruSecretKey::generate`] or
+    /// [`crate::FourierNtruSecretKey::generate`] when an immediately usable
+    /// encryption key is required.
+    pub fn generate<R, M>(params: &NtruParameters<T, M>, rng: &mut R) -> Self
     where
         R: rand::Rng + rand::CryptoRng,
+        M: primus_reduce::RingContext<T>,
     {
-        let key = match distr {
-            SecretKeyDistr::Binary => PolynomialOwned::random_binary(poly_length, rng),
-            SecretKeyDistr::Ternary => PolynomialOwned::random_ternary(T::MAX, poly_length, rng),
-            SecretKeyDistr::Gaussian(standard_deviation) => {
-                let gaussian = primus_distr::DiscreteGaussian::new(standard_deviation, T::MAX)
-                    .expect("invalid Gaussian NTRU secret-key distribution");
-                PolynomialOwned::random_gaussian(poly_length, &gaussian, rng)
+        let poly_length = params.poly_length();
+        let key = match params.secret_key_distr() {
+            SecretKeyDistr::Binary => primus_distr::sample_binary_values(poly_length, rng),
+            SecretKeyDistr::Ternary => {
+                primus_distr::sample_ternary_values(-T::ONE.cast_to_signed(), poly_length, rng)
             }
+            SecretKeyDistr::Gaussian(_) => params
+                .secret_key_distribution()
+                .expect("Gaussian NTRU key distribution must be precomputed")
+                .sample_iter(rng)
+                .take(poly_length)
+                .collect(),
         };
-        Self { key, distr }
+        Self {
+            key,
+            distr: params.secret_key_distr(),
+        }
     }
 }

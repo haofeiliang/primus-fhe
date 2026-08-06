@@ -1,26 +1,23 @@
-//! NTT-domain NTRU secret key with encryption and decryption.
+//! Exact explicit-modulus NTT NTRU secret key.
 
-use primus_data::{Data, DataMut};
+use primus_data::{Data, DataMut, RawData};
+use primus_fhe_core::plaintext::PlaintextEmbedding;
 use primus_integer::FheUint;
 use primus_ntt::NttTable;
-use primus_poly::{NttPolynomial, NttPolynomialOwned, PolynomialOwned};
+use primus_poly::{NttPolynomial, NttPolynomialOwned, Polynomial, PolynomialOwned};
 use primus_reduce::FieldContext;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
-use crate::{NttNtruCiphertext, SecretKeyDistr};
+use crate::{NtruError, NtruParameters, NttNtruCiphertext, SecretKeyDistr};
 
-use super::NtruSecretKey;
+use super::{NtruSecretKey, encode_secret_polynomial_to};
 
-/// Represents a secret key for the NTT-domain NTRU cryptographic scheme.
-///
-/// Contains both the NTT-transformed secret key `NTT(f)` and its inverse
-/// `inv_key = NTT(1/f mod q)`. The inverse is used for key generation
-/// (computing the public key `h = g * f^(-1)`).
+/// An NTRU secret key represented by `NTT(f)` and its exact pointwise inverse.
 #[derive(Clone)]
 pub struct NttNtruSecretKey<T: FheUint> {
-    pub(crate) key: NttPolynomialOwned<T>,
-    pub(crate) inv_key: NttPolynomialOwned<T>,
-    pub(crate) distr: SecretKeyDistr,
+    key: NttPolynomialOwned<T>,
+    inv_key: NttPolynomialOwned<T>,
+    distr: SecretKeyDistr,
 }
 
 impl<T: FheUint> Zeroize for NttNtruSecretKey<T> {
@@ -34,145 +31,361 @@ impl<T: FheUint> Zeroize for NttNtruSecretKey<T> {
 impl<T: FheUint> ZeroizeOnDrop for NttNtruSecretKey<T> {}
 
 impl<T: FheUint> NttNtruSecretKey<T> {
-    /// Creates a new [`NttNtruSecretKey<T>`].
-    pub fn new(
-        key: NttPolynomialOwned<T>,
-        inv_key: NttPolynomialOwned<T>,
-        distr: SecretKeyDistr,
-    ) -> Self {
-        Self {
-            key,
-            inv_key,
-            distr,
-        }
+    /// Returns the polynomial length.
+    #[inline]
+    pub fn poly_length(&self) -> usize {
+        self.key.as_ref().len()
     }
 
-    /// Returns the distribution of this [`NttNtruSecretKey<T>`].
+    /// Returns the distribution used to sample the coefficient key.
+    #[inline]
     pub fn distr(&self) -> SecretKeyDistr {
         self.distr
     }
 
-    /// Creates a new [`NttNtruSecretKey`] from a coefficient secret key.
+    /// Converts a coefficient key to NTT form and computes `NTT(f)^(-1)`.
     ///
-    /// Transforms `f` to NTT domain and computes `inv_key = NTT(1/f mod q)`.
-    #[inline]
-    pub fn from_coeff_secret_key<Table>(
-        secret_key: NtruSecretKey<T>,
-        inv_key: NttPolynomialOwned<T>,
-        ntt_table: &Table,
-    ) -> Self
-    where
-        Table: NttTable<ValueT = T>,
-    {
-        let key = ntt_table.transform_inplace(secret_key.key);
-        Self {
-            key,
-            inv_key,
-            distr: secret_key.distr,
-        }
-    }
-
-    /// Performs `h * f` (phase computation).
+    /// # Errors
     ///
-    /// Multiplies the ciphertext `h` by the secret key `f` in NTT domain,
-    /// then INTT-converts to coefficient domain.
-    pub fn phase_inplace<Table, M, A>(
-        &self,
-        cipher: &NttNtruCiphertext<A>,
-        result: &mut PolynomialOwned<T>,
+    /// Returns [`NtruError::NonInvertibleSecretKey`] if an NTT evaluation of
+    /// `f` is zero.
+    pub fn try_from_coeff_secret_key<M, Table>(
+        secret_key: &NtruSecretKey<T>,
         modulus: M,
         ntt_table: &Table,
-    ) where
+    ) -> Result<Self, NtruError>
+    where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: Data<Elem = T>,
     {
-        let h = cipher.as_ref();
-        let mut temp = NttPolynomial(result.as_mut());
-        NttPolynomial(h).mul_to(&self.key, &mut temp, modulus);
-        ntt_table.inverse_transform_slice(result.as_mut())
+        let poly_length = secret_key.poly_length();
+        assert_eq!(ntt_table.poly_length(), poly_length);
+        assert_eq!(ntt_table.modulus(), modulus.value());
+
+        let mut key = NttPolynomialOwned::zero(poly_length);
+        encode_secret_polynomial_to(secret_key.as_slice(), key.as_mut(), modulus);
+        ntt_table.transform_slice(key.as_mut());
+
+        let mut inv_key = NttPolynomialOwned::zero(poly_length);
+        modulus
+            .try_reduce_inv_slice_to(key.as_ref(), inv_key.as_mut())
+            .map_err(|_| NtruError::NonInvertibleSecretKey)?;
+
+        debug_assert!(
+            key.as_ref()
+                .iter()
+                .zip(inv_key.as_ref())
+                .all(|(&value, &inverse)| modulus.reduce_mul(value, inverse) == T::ONE)
+        );
+
+        Ok(Self {
+            key,
+            inv_key,
+            distr: secret_key.distr(),
+        })
     }
 
-    // -------------------------------------------------------------------------
-    // Encryption
-    // -------------------------------------------------------------------------
+    /// Rejection-samples an invertible coefficient key and converts it to NTT
+    /// form.
+    pub fn generate<M, Table, R>(
+        params: &NtruParameters<T, M>,
+        ntt_table: &Table,
+        rng: &mut R,
+    ) -> Result<Self, NtruError>
+    where
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+        R: rand::Rng + rand::CryptoRng,
+    {
+        assert_eq!(ntt_table.poly_length(), params.poly_length());
+        assert_eq!(ntt_table.modulus(), params.cipher_modulus().value());
 
-    /// Encrypts a polynomial message into an NTT-domain NTRU ciphertext.
-    ///
-    /// NTRU encryption: `c = r * h + m mod q` where `r` is a random small
-    /// polynomial, `h` is the public key, and `m` is the message.
-    ///
-    /// In this implementation, the public key `h = g * f^(-1)` is implicit
-    /// in the encryption operations.
-    pub fn encrypt_inplace<M, Table, R, B>(
+        for _ in 0..crate::parameter::KEY_GENERATION_ATTEMPTS {
+            let coefficient_key = NtruSecretKey::generate(params, rng);
+            match Self::try_from_coeff_secret_key(
+                &coefficient_key,
+                params.cipher_modulus(),
+                ntt_table,
+            ) {
+                Ok(key) => return Ok(key),
+                Err(NtruError::NonInvertibleSecretKey) => {}
+                Err(error) => return Err(error),
+            }
+        }
+        Err(NtruError::KeyGenerationExhausted)
+    }
+
+    /// Encrypts a polynomial with unsigned plaintext embedding.
+    pub fn encrypt<M, Table, R, A>(
         &self,
-        msg: &PolynomialOwned<T>,
+        message: &Polynomial<A>,
+        params: &NtruParameters<T, M>,
+        ntt_table: &Table,
+        rng: &mut R,
+    ) -> NttNtruCiphertext<Vec<T>>
+    where
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+        R: rand::Rng + rand::CryptoRng,
+        A: RawData<Elem = T> + Data,
+    {
+        let mut result = NttNtruCiphertext::zero(self.poly_length());
+        self.encrypt_to(message, &mut result, params, ntt_table, rng);
+        result
+    }
+
+    /// Encrypts a polynomial with unsigned plaintext embedding into `result`.
+    pub fn encrypt_to<M, Table, R, A, B>(
+        &self,
+        message: &Polynomial<A>,
         result: &mut NttNtruCiphertext<B>,
-        modulus: M,
+        params: &NtruParameters<T, M>,
         ntt_table: &Table,
         rng: &mut R,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
         R: rand::Rng + rand::CryptoRng,
-        B: DataMut<Elem = T>,
+        A: RawData<Elem = T> + Data,
+        B: RawData<Elem = T> + DataMut,
     {
-        let poly_length = ntt_table.poly_length();
-
-        // Sample a random small polynomial r (binary for NTRU)
-        let r = PolynomialOwned::random_binary(poly_length, rng);
-
-        // r * h in NTT domain: NTT(r) * NTT(h) = NTT(r) * NTT(g * f^(-1))
-        // This is equivalent to: encrypt_with_r(msg, r, ...)
-        // For simplicity: c = r * inv_key^(-1) + msg  (where inv_key = f^(-1))
-
-        // Compute NTT(r) * NTT(h) = NTT(r) * inv_key^(-1)
-        // Actually h = g * f^(-1), NTT(h) = NTT(g) * NTT(f^(-1))
-        // So r*h = NTT(r) * NTT(h) = NTT(r) * NTT(g) * inv_key
-        //
-        // For encrypt, we don't have g. Instead we directly use the
-        // plain NTRU encryption: c = r * h + m (all in NTT domain).
-
-        // Fill result with NTT(r)
-        let r_ntt = ntt_table.transform_inplace(r);
-        result.as_mut().copy_from_slice(r_ntt.as_slice());
-
-        // Add the message (already in NTT form or NTT-transform it)
-        let msg_ntt = ntt_table.transform_inplace(msg.clone());
-        result
-            .as_mut()
-            .iter_mut()
-            .zip(msg_ntt.as_slice().iter())
-            .for_each(|(c, &m)| {
-                modulus.reduce_add_assign(c, m);
-            });
-
-        // c = NTT(r) + NTT(m) = NTT(r + m) — this is the ciphertext
+        self.encrypt_to_with_message(
+            NttEncryptionMessage::Plaintext {
+                values: message.as_ref(),
+                embedding: PlaintextEmbedding::Unsigned,
+            },
+            result,
+            params,
+            ntt_table,
+            rng,
+        );
     }
 
-    /// Decrypts an NTT-domain NTRU ciphertext.
-    ///
-    /// NTRU decryption: compute `c * f mod q`, INTT to coefficient domain,
-    /// then reduce modulo the plaintext modulus.
-    pub fn decrypt_inplace<M, Table>(
+    /// Encrypts a polynomial with centered plaintext embedding into `result`.
+    pub fn encrypt_centered_to<M, Table, R, A, B>(
         &self,
-        cipher: &NttNtruCiphertext<impl Data<Elem = T>>,
-        result: &mut PolynomialOwned<T>,
-        modulus: M,
+        message: &Polynomial<A>,
+        result: &mut NttNtruCiphertext<B>,
+        params: &NtruParameters<T, M>,
+        ntt_table: &Table,
+        rng: &mut R,
+    ) where
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+        R: rand::Rng + rand::CryptoRng,
+        A: RawData<Elem = T> + Data,
+        B: RawData<Elem = T> + DataMut,
+    {
+        self.encrypt_to_with_message(
+            NttEncryptionMessage::Plaintext {
+                values: message.as_ref(),
+                embedding: PlaintextEmbedding::Centered,
+            },
+            result,
+            params,
+            ntt_table,
+            rng,
+        );
+    }
+
+    /// Encrypts coefficients already encoded modulo `q` into `result`.
+    pub fn encrypt_encoded_to<M, Table, R, A, B>(
+        &self,
+        encoded: &Polynomial<A>,
+        result: &mut NttNtruCiphertext<B>,
+        params: &NtruParameters<T, M>,
+        ntt_table: &Table,
+        rng: &mut R,
+    ) where
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+        R: rand::Rng + rand::CryptoRng,
+        A: RawData<Elem = T> + Data,
+        B: RawData<Elem = T> + DataMut,
+    {
+        self.encrypt_to_with_message(
+            NttEncryptionMessage::Encoded(encoded.as_ref()),
+            result,
+            params,
+            ntt_table,
+            rng,
+        );
+    }
+
+    /// Encrypts zero into a freshly allocated NTT ciphertext.
+    pub fn encrypt_zero<M, Table, R>(
+        &self,
+        params: &NtruParameters<T, M>,
+        ntt_table: &Table,
+        rng: &mut R,
+    ) -> NttNtruCiphertext<Vec<T>>
+    where
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+        R: rand::Rng + rand::CryptoRng,
+    {
+        let mut result = NttNtruCiphertext::zero(self.poly_length());
+        self.encrypt_to_with_message(
+            NttEncryptionMessage::Zero,
+            &mut result,
+            params,
+            ntt_table,
+            rng,
+        );
+        result
+    }
+
+    fn encrypt_to_with_message<M, Table, R, B>(
+        &self,
+        message: NttEncryptionMessage<'_, T>,
+        result: &mut NttNtruCiphertext<B>,
+        params: &NtruParameters<T, M>,
+        ntt_table: &Table,
+        rng: &mut R,
+    ) where
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+        R: rand::Rng + rand::CryptoRng,
+        B: RawData<Elem = T> + DataMut,
+    {
+        self.assert_domain(params, ntt_table);
+        assert_eq!(result.as_ref().len(), self.poly_length());
+        if let Some(values) = message.as_slice() {
+            assert_eq!(values.len(), self.poly_length());
+        }
+
+        let coefficients = result.as_mut();
+        primus_distr::sample_gaussian_values_to(coefficients, params.noise_distribution(), rng);
+        match message {
+            NttEncryptionMessage::Zero => {}
+            NttEncryptionMessage::Plaintext { values, embedding } => params
+                .plaintext_codec()
+                .add_encode_slice_assign_with_delta(coefficients, values, embedding),
+            NttEncryptionMessage::Encoded(values) => Polynomial(&mut *coefficients)
+                .add_assign(&Polynomial(values), params.cipher_modulus()),
+        }
+
+        ntt_table.transform_slice(coefficients);
+        NttPolynomial(coefficients).mul_assign(&self.inv_key, params.cipher_modulus());
+    }
+
+    /// Computes `f * c` and writes `e + Delta * m` in coefficient form.
+    pub fn phase_to<M, Table, A, B>(
+        &self,
+        cipher: &NttNtruCiphertext<A>,
+        result: &mut Polynomial<B>,
+        params: &NtruParameters<T, M>,
         ntt_table: &Table,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
+        A: RawData<Elem = T> + Data,
+        B: RawData<Elem = T> + DataMut,
     {
-        // c * f in NTT domain
-        let h = cipher.as_ref();
-        let mut temp = NttPolynomial(result.as_mut());
-        NttPolynomial(h).mul_to(&self.key, &mut temp, modulus);
+        self.assert_domain(params, ntt_table);
+        assert_eq!(cipher.as_ref().len(), self.poly_length());
+        assert_eq!(result.as_ref().len(), self.poly_length());
 
-        // INTT
+        NttPolynomial(cipher.as_ref()).mul_to(
+            &self.key,
+            &mut NttPolynomial(result.as_mut()),
+            params.cipher_modulus(),
+        );
         ntt_table.inverse_transform_slice(result.as_mut());
+    }
 
-        // c * f = (r * h + m) * f = r * g + f * m mod q
-        // Since r, g, f, m are all small, this recovers the plaintext
+    /// Decrypts a ciphertext with unsigned plaintext embedding.
+    pub fn decrypt<M, Table, A>(
+        &self,
+        cipher: &NttNtruCiphertext<A>,
+        params: &NtruParameters<T, M>,
+        ntt_table: &Table,
+    ) -> PolynomialOwned<T>
+    where
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+        A: RawData<Elem = T> + Data,
+    {
+        let mut result = PolynomialOwned::zero(self.poly_length());
+        self.decrypt_to(cipher, &mut result, params, ntt_table);
+        result
+    }
+
+    /// Decrypts a ciphertext into `result`.
+    pub fn decrypt_to<M, Table, A, B>(
+        &self,
+        cipher: &NttNtruCiphertext<A>,
+        result: &mut Polynomial<B>,
+        params: &NtruParameters<T, M>,
+        ntt_table: &Table,
+    ) where
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+        A: RawData<Elem = T> + Data,
+        B: RawData<Elem = T> + DataMut,
+    {
+        self.phase_to(cipher, result, params, ntt_table);
+        params
+            .plaintext_codec()
+            .decode_slice_inplace(result.as_mut());
+    }
+
+    /// Decrypts and returns the absolute coefficient-wise error modulo `q`.
+    pub fn decrypt_with_noise<M, Table, A>(
+        &self,
+        cipher: &NttNtruCiphertext<A>,
+        params: &NtruParameters<T, M>,
+        ntt_table: &Table,
+    ) -> (PolynomialOwned<T>, PolynomialOwned<T>)
+    where
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+        A: RawData<Elem = T> + Data,
+    {
+        let modulus = params.cipher_modulus();
+        let mut message = PolynomialOwned::zero(self.poly_length());
+        self.phase_to(cipher, &mut message, params, ntt_table);
+        let mut noise = PolynomialOwned::zero(self.poly_length());
+
+        for (phase, noise) in message.iter_mut().zip(noise.iter_mut()) {
+            let phase_mod_q = *phase;
+            let decoded = params.plaintext_codec().decode_value(phase_mod_q);
+            let encoded = params
+                .plaintext_codec()
+                .encode_value_with_delta(decoded, PlaintextEmbedding::Unsigned);
+            *phase = decoded;
+            *noise = modulus
+                .reduce_sub(phase_mod_q, encoded)
+                .min(modulus.reduce_sub(encoded, phase_mod_q));
+        }
+        (message, noise)
+    }
+
+    fn assert_domain<M, Table>(&self, params: &NtruParameters<T, M>, ntt_table: &Table)
+    where
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+    {
+        assert_eq!(params.poly_length(), self.poly_length());
+        assert_eq!(ntt_table.poly_length(), self.poly_length());
+        assert_eq!(ntt_table.modulus(), params.cipher_modulus().value());
+    }
+}
+
+enum NttEncryptionMessage<'a, T: FheUint> {
+    Zero,
+    Plaintext {
+        values: &'a [T],
+        embedding: PlaintextEmbedding,
+    },
+    Encoded(&'a [T]),
+}
+
+impl<'a, T: FheUint> NttEncryptionMessage<'a, T> {
+    fn as_slice(&self) -> Option<&'a [T]> {
+        match self {
+            Self::Zero => None,
+            Self::Plaintext { values, .. } | Self::Encoded(values) => Some(values),
+        }
     }
 }
