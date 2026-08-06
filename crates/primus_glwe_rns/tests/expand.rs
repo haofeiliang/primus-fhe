@@ -6,7 +6,7 @@ use primus_glwe_rns::{
 };
 use primus_lattice::glwe::CrtGlwe;
 use primus_modulus::BarrettModulus;
-use primus_ntt::{DcrtTable, UintDcrtTable};
+use primus_ntt::UintDcrtTable;
 use primus_poly::Polynomial;
 
 /// Test coefficient expansion in the coefficient (CRT) domain.

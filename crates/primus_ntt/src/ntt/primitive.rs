@@ -7,7 +7,7 @@ use primus_reduce::FieldContext;
 
 use crate::{NttError, reverse::ReverseLsbs, root::PrimitiveRoot};
 
-use super::{NttTable, assert_ntt_length};
+use super::{MonomialNttTable, NttTable, assert_ntt_length};
 
 /// This struct store the pre-computed data for number theory transform and
 /// inverse number theory transform.
@@ -47,7 +47,7 @@ pub struct UintNttTable<T: FheUint> {
     inv_n_r: ShoupFactor<T>,
     root_powers: Vec<ShoupFactor<T>>,
     inv_root_powers: Vec<ShoupFactor<T>>,
-    ordinal_root_powers: Vec<ShoupFactor<T>>,
+    ordinal_root_powers: Vec<T>,
     reverse_lsbs: Vec<usize>,
 }
 
@@ -108,7 +108,7 @@ impl<T: FheUint> UintNttTable<T> {
 
     /// Returns a reference to the ordinal root powers of this [`UintNttTable<T>`].
     #[inline]
-    pub fn ordinal_root_powers(&self) -> &[ShoupFactor<T>] {
+    pub fn ordinal_root_powers(&self) -> &[T] {
         &self.ordinal_root_powers
     }
 
@@ -147,16 +147,16 @@ impl<T: FheUint> NttTable for UintNttTable<T> {
 
         let mut power = root;
 
-        let mut ordinal_root_powers = vec![<ShoupFactor<T>>::default(); n * 2];
+        let mut ordinal_root_powers = vec![T::ZERO; n * 2];
         let mut iter = ordinal_root_powers.iter_mut();
-        *iter.next().unwrap() = root_one;
-        *iter.next().unwrap() = root_factor;
+        *iter.next().unwrap() = T::ONE;
+        *iter.next().unwrap() = root;
         for root_power in iter {
             power = root_factor.factor_mul_modulo(power, modulus);
-            *root_power = to_root_type(power);
+            *root_power = power;
         }
 
-        let inv_root = ordinal_root_powers.last().unwrap().value();
+        let inv_root = *ordinal_root_powers.last().unwrap();
 
         debug_assert_eq!(root_factor.factor_mul_modulo(inv_root, modulus), T::ONE);
 
@@ -165,7 +165,7 @@ impl<T: FheUint> NttTable for UintNttTable<T> {
         let mut root_powers = vec![<ShoupFactor<T>>::default(); n];
         root_powers[0] = root_one;
         for (&root_power, &i) in ordinal_root_powers[0..n].iter().zip(reverse_lsbs.iter()) {
-            root_powers[i] = root_power;
+            root_powers[i] = to_root_type(root_power);
         }
 
         let mut inv_root_powers = vec![<ShoupFactor<T>>::default(); n];
@@ -175,7 +175,7 @@ impl<T: FheUint> NttTable for UintNttTable<T> {
             .rev()
             .zip(reverse_lsbs.iter())
         {
-            inv_root_powers[i + 1] = inv_root_power;
+            inv_root_powers[i + 1] = to_root_type(inv_root_power);
         }
 
         let n_cast =
@@ -316,105 +316,16 @@ impl<T: FheUint> NttTable for UintNttTable<T> {
             compact::reduce_once_assign(modulus, v);
         });
     }
+}
 
-    fn transform_monomial(
-        &self,
-        coeff: Self::ValueT,
-        degree: usize,
-        values: &mut [<Self as NttTable>::ValueT],
-    ) {
-        assert_ntt_length(values.len(), self.n);
-
-        if coeff.is_zero() {
-            values.fill(T::ZERO);
-            return;
-        }
-
-        if degree == 0 {
-            values.fill(coeff);
-            return;
-        }
-
-        let n = self.n;
-        let log_n = self.log_n;
-        let modulus = self.modulus();
-
-        let mask = usize::MAX >> (usize::BITS - log_n - 1);
-
-        if coeff.is_one() {
-            values
-                .iter_mut()
-                .zip(&self.reverse_lsbs)
-                .for_each(|(v, &i)| {
-                    let index = ((2 * i + 1) * degree) & mask;
-                    *v = unsafe { *self.ordinal_root_powers.get_unchecked(index) }.value();
-                });
-        } else if coeff == self.modulus() - T::ONE {
-            values
-                .iter_mut()
-                .zip(&self.reverse_lsbs)
-                .for_each(|(v, &i)| {
-                    let index = (((2 * i + 1) * degree) & mask) ^ n;
-                    *v = unsafe { *self.ordinal_root_powers.get_unchecked(index) }.value();
-                });
-        } else {
-            values
-                .iter_mut()
-                .zip(&self.reverse_lsbs)
-                .for_each(|(v, &i)| {
-                    let index = ((2 * i + 1) * degree) & mask;
-                    *v = unsafe { *self.ordinal_root_powers.get_unchecked(index) }
-                        .factor_mul_modulo(coeff, modulus);
-                });
-        }
+impl<T: FheUint> MonomialNttTable for UintNttTable<T> {
+    #[inline]
+    fn ordinal_root_powers(&self) -> &[Self::ValueT] {
+        &self.ordinal_root_powers
     }
 
-    fn transform_coeff_one_monomial(
-        &self,
-        degree: usize,
-        values: &mut [<Self as NttTable>::ValueT],
-    ) {
-        assert_ntt_length(values.len(), self.n);
-
-        if degree == 0 {
-            values.fill(T::ONE);
-            return;
-        }
-
-        let log_n = self.log_n;
-        let mask = usize::MAX >> (usize::BITS - log_n - 1);
-
-        values
-            .iter_mut()
-            .zip(&self.reverse_lsbs)
-            .for_each(|(v, &i)| {
-                let index = ((2 * i + 1) * degree) & mask;
-                *v = unsafe { *self.ordinal_root_powers.get_unchecked(index) }.value();
-            });
-    }
-
-    fn transform_coeff_minus_one_monomial(
-        &self,
-        degree: usize,
-        values: &mut [<Self as NttTable>::ValueT],
-    ) {
-        assert_ntt_length(values.len(), self.n);
-
-        if degree == 0 {
-            values.fill(self.modulus() - T::ONE);
-            return;
-        }
-
-        let n = self.n;
-        let log_n = self.log_n;
-        let mask = usize::MAX >> (usize::BITS - log_n - 1);
-
-        values
-            .iter_mut()
-            .zip(&self.reverse_lsbs)
-            .for_each(|(v, &i)| {
-                let index = (((2 * i + 1) * degree) & mask) ^ n;
-                *v = unsafe { *self.ordinal_root_powers.get_unchecked(index) }.value();
-            });
+    #[inline]
+    fn reverse_lsbs(&self) -> &[usize] {
+        &self.reverse_lsbs
     }
 }

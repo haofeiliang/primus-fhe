@@ -2,7 +2,7 @@ use itertools::izip;
 use primus_data::{Data, DataMut, RawData};
 use primus_integer::FheUint;
 use primus_lattice::{ggsw::DcrtGgsw, glev::DcrtGlev, glwe::DcrtGlwe};
-use primus_ntt::DcrtTable;
+use primus_ntt::{DcrtTable, NttTable};
 use primus_poly::{CrtPolynomial, DcrtPolynomial};
 use primus_reduce::FieldContext;
 
@@ -37,11 +37,11 @@ impl<T: FheUint> DcrtGlwePublicKey<T> {
     pub fn new<Table, R, M>(
         secret_key: &DcrtGlweSecretKey<T>,
         params: &CrtGlweParameters<T, M>,
-        table: &Table,
+        table: &DcrtTable<Table>,
         rng: &mut R,
     ) -> DcrtGlwePublicKey<T>
     where
-        Table: DcrtTable<ValueT = T>,
+        Table: NttTable<ValueT = T>,
         R: rand::Rng + rand::CryptoRng,
         M: FieldContext<T>,
     {
@@ -79,13 +79,13 @@ impl<T: FheUint> DcrtGlwePublicKey<T> {
         &self,
         message: &CrtPolynomial<A>,
         params: &CrtGlweParameters<T, M>,
-        table: &Table,
+        table: &DcrtTable<Table>,
         rng: &mut R,
     ) -> DcrtGlwe<Vec<T>>
     where
         R: rand::Rng + rand::CryptoRng,
         M: FieldContext<T>,
-        Table: DcrtTable<ValueT = T>,
+        Table: NttTable<ValueT = T>,
         A: RawData<Elem = T> + Data,
     {
         let dimension = params.dimension();
@@ -138,12 +138,12 @@ impl<T: FheUint> DcrtGlwePublicKey<T> {
         degree: usize,
         dcrt_glev: &mut DcrtGlev<&mut [T]>,
         params: &CrtGlevParameters<T, M>,
-        table: &Table,
+        table: &DcrtTable<Table>,
         v: &mut [T],
         rng: &mut R,
     ) where
         R: rand::Rng + rand::CryptoRng,
-        Table: DcrtTable<ValueT = T>,
+        Table: NttTable<ValueT = T>,
         M: FieldContext<T>,
     {
         let poly_length = params.poly_length();
@@ -209,12 +209,12 @@ impl<T: FheUint> DcrtGlwePublicKey<T> {
         coeff_residues: &[T],
         degree: usize,
         params: &CrtGgswParameters<T, M>,
-        table: &Table,
+        table: &DcrtTable<Table>,
         rng: &mut R,
     ) -> DcrtGgsw<Vec<T>>
     where
         R: rand::Rng + rand::CryptoRng,
-        Table: DcrtTable<ValueT = T>,
+        Table: NttTable<ValueT = T>,
         M: FieldContext<T>,
     {
         let dcrt_ggsw_len = params.rns_ggsw_len();
@@ -233,11 +233,11 @@ impl<T: FheUint> DcrtGlwePublicKey<T> {
         degree: usize,
         result: &mut DcrtGgsw<A>,
         params: &CrtGgswParameters<T, M>,
-        table: &Table,
+        table: &DcrtTable<Table>,
         rng: &mut R,
     ) where
         R: rand::Rng + rand::CryptoRng,
-        Table: DcrtTable<ValueT = T>,
+        Table: NttTable<ValueT = T>,
         M: FieldContext<T>,
         A: RawData<Elem = T> + DataMut,
     {

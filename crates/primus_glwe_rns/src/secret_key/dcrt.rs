@@ -56,9 +56,12 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
     /// Creates a modulus-specific DCRT representation of a canonical signed
     /// [`GlweSecretKey<T>`].
     #[inline]
-    pub fn from_coeff_secret_key<Table>(secret_key: &GlweSecretKey<T>, table: &Table) -> Self
+    pub fn from_coeff_secret_key<Table>(
+        secret_key: &GlweSecretKey<T>,
+        table: &DcrtTable<Table>,
+    ) -> Self
     where
-        Table: DcrtTable<ValueT = T>,
+        Table: NttTable<ValueT = T>,
     {
         assert_eq!(secret_key.poly_length(), table.poly_length());
 
@@ -100,12 +103,12 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
         msg: &CrtPolynomial<A>,
         result: &mut DcrtGlweCiphertext<B>,
         params: &CrtGlweParameters<T, M>,
-        table: &Table,
+        table: &DcrtTable<Table>,
         rng: &mut R,
     ) where
         R: rand::Rng + rand::CryptoRng,
         M: FieldContext<T>,
-        Table: DcrtTable<ValueT = T>,
+        Table: NttTable<ValueT = T>,
         A: RawData<Elem = T> + Data,
         B: RawData<Elem = T> + DataMut,
     {
@@ -145,12 +148,12 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
         msg: &Polynomial<A>,
         result: &mut DcrtGlweCiphertext<B>,
         params: &CrtGlweParameters<T, M>,
-        table: &Table,
+        table: &DcrtTable<Table>,
         rng: &mut R,
     ) where
         R: rand::Rng + rand::CryptoRng,
         M: FieldContext<T>,
-        Table: DcrtTable<ValueT = T>,
+        Table: NttTable<ValueT = T>,
         A: RawData<Elem = T> + Data,
         B: RawData<Elem = T> + DataMut,
     {
@@ -189,12 +192,12 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
         msg: &Polynomial<A>,
         result: &mut DcrtGlweCiphertext<B>,
         params: &CrtGlweParameters<T, M>,
-        table: &Table,
+        table: &DcrtTable<Table>,
         rng: &mut R,
     ) where
         R: rand::Rng + rand::CryptoRng,
         M: FieldContext<T>,
-        Table: DcrtTable<ValueT = T>,
+        Table: NttTable<ValueT = T>,
         A: RawData<Elem = T> + Data,
         B: RawData<Elem = T> + DataMut,
     {
@@ -234,12 +237,12 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
         &self,
         result: &mut DcrtGlweCiphertext<A>,
         params: &CrtGlweParameters<T, M>,
-        table: &Table,
+        table: &DcrtTable<Table>,
         rng: &mut R,
     ) where
         R: rand::Rng + rand::CryptoRng,
         M: FieldContext<T>,
-        Table: DcrtTable<ValueT = T>,
+        Table: NttTable<ValueT = T>,
         A: RawData<Elem = T> + DataMut,
     {
         let poly_length = params.poly_length();
@@ -275,12 +278,12 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
         delta_residues: &[T],
         result: &mut DcrtGlweCiphertext<B>,
         params: &CrtGlevParameters<T, M>,
-        table: &Table,
+        table: &DcrtTable<Table>,
         rng: &mut R,
     ) where
         R: rand::Rng + rand::CryptoRng,
         M: FieldContext<T>,
-        Table: DcrtTable<ValueT = T>,
+        Table: NttTable<ValueT = T>,
         A: RawData<Elem = T> + Data,
         B: RawData<Elem = T> + DataMut,
     {
@@ -325,7 +328,7 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
     ) where
         R: rand::Rng + rand::CryptoRng,
         M: FieldContext<T>,
-        Table: DcrtTable<ValueT = T>,
+        Table: NttTable<ValueT = T>,
         A: RawData<Elem = T> + Data,
         B: RawData<Elem = T> + DataMut,
     {
@@ -353,12 +356,12 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
         delta_residues: &[T],
         result: &mut DcrtGlweCiphertext<B>,
         params: &CrtGlevParameters<T, M>,
-        table: &Table,
+        table: &DcrtTable<Table>,
         rng: &mut R,
     ) where
         R: rand::Rng + rand::CryptoRng,
         M: FieldContext<T>,
-        Table: DcrtTable<ValueT = T>,
+        Table: NttTable<ValueT = T>,
         A: RawData<Elem = T> + Data,
         B: RawData<Elem = T> + DataMut,
     {
@@ -403,7 +406,7 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
     ) where
         R: rand::Rng + rand::CryptoRng,
         M: FieldContext<T>,
-        Table: DcrtTable<ValueT = T>,
+        Table: NttTable<ValueT = T>,
         A: RawData<Elem = T> + Data,
         B: RawData<Elem = T> + DataMut,
     {
@@ -484,12 +487,12 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
         &self,
         ciphertext: &DcrtGlweCiphertext<A>,
         params: &CrtGlweParameters<T, M>,
-        table: &Table,
+        table: &DcrtTable<Table>,
         context: &mut DcrtGlweDecryptContext<T>,
     ) -> PolynomialOwned<T>
     where
         M: FieldContext<T>,
-        Table: DcrtTable<ValueT = T>,
+        Table: NttTable<ValueT = T>,
         A: RawData<Elem = T> + Data,
     {
         let mut msg = PolynomialOwned::zero(params.poly_length());
@@ -506,11 +509,11 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
         ciphertext: &DcrtGlweCiphertext<A>,
         msg: &mut Polynomial<B>,
         params: &CrtGlweParameters<T, M>,
-        table: &Table,
+        table: &DcrtTable<Table>,
         context: &mut DcrtGlweDecryptContext<T>,
     ) where
         M: FieldContext<T>,
-        Table: DcrtTable<ValueT = T>,
+        Table: NttTable<ValueT = T>,
         A: RawData<Elem = T> + Data,
         B: RawData<Elem = T> + DataMut,
     {

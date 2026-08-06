@@ -5,7 +5,7 @@ use primus_glwe_rns::{
 };
 use primus_lattice::{context::DcrtGlevMulContext, glev::DcrtGlev, glwe::DcrtGlwe};
 use primus_modulus::BarrettModulus;
-use primus_ntt::{DcrtTable, UintDcrtTable};
+use primus_ntt::UintDcrtTable;
 use primus_poly::{BigUintPolynomial, CrtPolynomial, DcrtPolynomial, Polynomial};
 
 /// Test GLev–BigUint multiplication correctness.

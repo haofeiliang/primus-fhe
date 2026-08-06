@@ -99,9 +99,12 @@ macro_rules! impl_crt_ntt {
         {
             /// Transforms `self` to ntt form.
             #[inline]
-            pub fn into_ntt_form<Table>(self, table: &Table) -> $ntt_cipher<$s>
+            pub fn into_ntt_form<Table>(
+                self,
+                table: &primus_ntt::DcrtTable<Table>,
+            ) -> $ntt_cipher<$s>
             where
-                Table: DcrtTable<ValueT = T>,
+                Table: primus_ntt::NttTable<ValueT = T>,
             {
                 let crt_poly_length = table.crt_poly_length();
                 let Self(mut data) = self;
@@ -119,9 +122,12 @@ macro_rules! impl_crt_ntt {
         {
             /// Transforms `self` to ntt form and stores in `result`.
             #[inline]
-            pub fn write_ntt_form<Table, A>(&self, result: &mut $ntt_cipher<A>, table: &Table)
-            where
-                Table: DcrtTable<ValueT = T>,
+            pub fn write_ntt_form<Table, A>(
+                &self,
+                result: &mut $ntt_cipher<A>,
+                table: &primus_ntt::DcrtTable<Table>,
+            ) where
+                Table: primus_ntt::NttTable<ValueT = T>,
                 A: RawData<Elem = T> + DataMut,
             {
                 let crt_poly_length = table.crt_poly_length();
@@ -146,9 +152,9 @@ macro_rules! impl_crt_intt {
         {
             /// Transforms `self` to coefficient form.
             #[inline]
-            pub fn into_coeff_form<Table>(self, table: &Table) -> $cipher<$s>
+            pub fn into_coeff_form<Table>(self, table: &primus_ntt::DcrtTable<Table>) -> $cipher<$s>
             where
-                Table: DcrtTable<ValueT = T>,
+                Table: primus_ntt::NttTable<ValueT = T>,
             {
                 let crt_poly_length = table.crt_poly_length();
                 let Self(mut data) = self;
@@ -166,9 +172,12 @@ macro_rules! impl_crt_intt {
         {
             /// Transforms `self` to coefficient form and stores in `result`.
             #[inline]
-            pub fn write_coeff_form<Table, A>(&self, result: &mut $cipher<A>, table: &Table)
-            where
-                Table: DcrtTable<ValueT = T>,
+            pub fn write_coeff_form<Table, A>(
+                &self,
+                result: &mut $cipher<A>,
+                table: &primus_ntt::DcrtTable<Table>,
+            ) where
+                Table: primus_ntt::NttTable<ValueT = T>,
                 A: RawData<Elem = T> + DataMut,
             {
                 let crt_poly_length = table.crt_poly_length();

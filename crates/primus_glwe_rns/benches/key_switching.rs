@@ -11,7 +11,7 @@ use primus_glwe_rns::{
 };
 use primus_lattice::glwe::DcrtGlwe;
 use primus_modulus::BarrettModulus;
-use primus_ntt::{DcrtTable, U64DcrtTable};
+use primus_ntt::U64DcrtTable;
 use primus_poly::Polynomial;
 use primus_rns::HybridRNS;
 

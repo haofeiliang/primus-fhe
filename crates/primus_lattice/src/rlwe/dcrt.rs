@@ -1,7 +1,6 @@
 use itertools::izip;
 use primus_data::{Data, DataMut, DataOwned, RawData};
 use primus_integer::FheUint;
-use primus_ntt::DcrtTable;
 use primus_poly::{ArrayBase, DcrtPolynomial, DcrtPolynomialIter, DcrtPolynomialIterMut};
 use primus_reduce::FieldContext;
 

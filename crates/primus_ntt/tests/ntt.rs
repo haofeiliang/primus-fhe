@@ -3,7 +3,7 @@
 #[cfg(test)]
 mod tests {
     use primus_modulus::BarrettModulus;
-    use primus_ntt::{NttTable, U64NttTable, UintNttTable};
+    use primus_ntt::{MonomialNttTable, NttTable, U64NttTable, UintNttTable};
     use rand::{
         RngExt,
         distr::{Distribution, Uniform},

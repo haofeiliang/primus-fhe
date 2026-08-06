@@ -1,6 +1,6 @@
 use primus_data::{Data, DataMut, RawData};
 use primus_integer::FheUint;
-use primus_ntt::DcrtTable;
+use primus_ntt::NttTable;
 use primus_reduce::FieldContext;
 
 use crate::{
@@ -21,7 +21,7 @@ impl<T: FheUint> CrtGlweTraceContext<T> {
     pub fn new<M, Table>(domain: &DcrtGadgetDomain<'_, T, M, Table>) -> Self
     where
         M: FieldContext<T>,
-        Table: DcrtTable<ValueT = T>,
+        Table: NttTable<ValueT = T>,
     {
         Self::from_parameters(domain.parameters())
     }
@@ -65,7 +65,7 @@ impl<T: FheUint> CrtGlweTraceKey<T> {
     where
         R: rand::Rng + rand::CryptoRng,
         M: FieldContext<T>,
-        Table: DcrtTable<ValueT = T>,
+        Table: NttTable<ValueT = T>,
     {
         let log_n = domain.parameters().poly_length().trailing_zeros();
         let auto_keys: Vec<CrtGlweAutoKey<T>> = (1..=log_n)
@@ -88,7 +88,7 @@ impl<T: FheUint> CrtGlweTraceKey<T> {
         context: &mut CrtGlweTraceContext<T>,
     ) where
         M: FieldContext<T>,
-        Table: DcrtTable<ValueT = T>,
+        Table: NttTable<ValueT = T>,
         A: RawData<Elem = T> + Data,
         B: RawData<Elem = T> + DataMut,
     {

@@ -2,7 +2,7 @@ use itertools::izip;
 use primus_data::{Data, DataMut, DataOwned, RawData};
 use primus_decompose::big_integer::BigUintApproxSignedBasis;
 use primus_integer::FheUint;
-use primus_ntt::DcrtTable;
+use primus_ntt::{DcrtTable, NttTable};
 use primus_poly::{ArrayBase, BigUintPolynomial, CrtPolynomial, DcrtPolynomial};
 use primus_reduce::FieldContext;
 use primus_rns::RNSBase;
@@ -47,12 +47,12 @@ where
         crt_poly: &CrtPolynomial<A>,
         result: &mut DcrtGlwe<B>,
         basis: &BigUintApproxSignedBasis<T>,
-        table: &Table,
+        table: &DcrtTable<Table>,
         rns_base: &RNSBase<T, M>,
         context: &mut DcrtGlevMulContext<T>,
     ) where
         M: FieldContext<T>,
-        Table: DcrtTable<ValueT = T>,
+        Table: NttTable<ValueT = T>,
         A: RawData<Elem = T> + Data,
         B: RawData<Elem = T> + DataMut,
     {
@@ -113,12 +113,12 @@ where
         big_uint_poly: &BigUintPolynomial<A>,
         result: &mut DcrtGlwe<B>,
         basis: &BigUintApproxSignedBasis<T>,
-        table: &Table,
+        table: &DcrtTable<Table>,
         rns_base: &RNSBase<T, M>,
         context: &mut DcrtGlevMulContext<T>,
     ) where
         M: FieldContext<T>,
-        Table: DcrtTable<ValueT = T>,
+        Table: NttTable<ValueT = T>,
         A: RawData<Elem = T> + Data,
         B: RawData<Elem = T> + DataMut,
     {

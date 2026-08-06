@@ -18,11 +18,11 @@ impl<T: FheUint> HybridRnsGlweKeySwitchingKey<T> {
         mask_mod_q_ntt: &[T],
         key_for_secret: &[T],
         hybrid_rns: &HybridRNS<T, M>,
-        table: &Table,
+        table: &DcrtTable<Table>,
         context: &mut HybridRnsGlweKeySwitchingContext<T>,
     ) where
         M: FieldContext<T>,
-        Table: DcrtTable<ValueT = T>,
+        Table: NttTable<ValueT = T>,
     {
         let poly_length = self.input_size.poly_length();
         let q_moduli_count = self.input_size.moduli_count();
@@ -61,11 +61,11 @@ impl<T: FheUint> HybridRnsGlweKeySwitchingKey<T> {
         &self,
         c_out: &mut DcrtGlweCiphertext<B>,
         hybrid_rns: &HybridRNS<T, M>,
-        table: &Table,
+        table: &DcrtTable<Table>,
         context: &mut HybridRnsGlweKeySwitchingContext<T>,
     ) where
         M: FieldContext<T>,
-        Table: DcrtTable<ValueT = T>,
+        Table: NttTable<ValueT = T>,
         B: RawData<Elem = T> + DataMut,
     {
         let poly_length = self.input_size.poly_length();
@@ -114,7 +114,7 @@ impl<T: FheUint> HybridRnsGlweKeySwitchingKey<T> {
         context: &mut HybridRnsGlweKeySwitchingContext<T>,
     ) where
         M: FieldContext<T>,
-        Table: DcrtTable<ValueT = T>,
+        Table: NttTable<ValueT = T>,
         A: RawData<Elem = T> + Data,
         B: RawData<Elem = T> + DataMut,
     {
@@ -161,7 +161,7 @@ impl<T: FheUint> HybridRnsGlweKeySwitchingKey<T> {
         context: &mut HybridRnsGlweKeySwitchingContext<T>,
     ) where
         M: FieldContext<T>,
-        Table: DcrtTable<ValueT = T>,
+        Table: NttTable<ValueT = T>,
         A: RawData<Elem = T> + Data,
         B: RawData<Elem = T> + DataMut,
     {
@@ -220,7 +220,7 @@ fn accumulate_partitions<T, M, Table>(
     mask_mod_q_ntt: Option<&[T]>,
     key_for_secret: &[T],
     hybrid_rns: &HybridRNS<T, M>,
-    table: &Table,
+    table: &DcrtTable<Table>,
     accumulator_qp: &mut [T],
     mod_up_limb: &mut [T],
     mod_up_scratch: &mut [T],
@@ -230,7 +230,7 @@ fn accumulate_partitions<T, M, Table>(
 ) where
     T: FheUint,
     M: FieldContext<T>,
-    Table: DcrtTable<ValueT = T>,
+    Table: NttTable<ValueT = T>,
 {
     let qp_moduli = hybrid_rns.qp_base().moduli();
     for (partition, key_glwe) in hybrid_rns
@@ -259,7 +259,7 @@ fn accumulate_partition<T, M, Table>(
     mask_mod_q: &[T],
     mask_mod_q_ntt: Option<&[T]>,
     key_glwe: &[T],
-    table: &Table,
+    table: &DcrtTable<Table>,
     accumulator_qp: &mut [T],
     mod_up_limb: &mut [T],
     mod_up_scratch: &mut [T],
@@ -269,7 +269,7 @@ fn accumulate_partition<T, M, Table>(
 ) where
     T: FheUint,
     M: FieldContext<T>,
-    Table: DcrtTable<ValueT = T>,
+    Table: NttTable<ValueT = T>,
 {
     let partition_range = partition.q_range();
     let scratch_len = partition.mod_up_scratch_len(poly_length);
@@ -358,7 +358,7 @@ impl<T: FheUint> HybridRnsGlweKeySwitchingContext<T> {
     ) -> Self
     where
         M: FieldContext<T>,
-        Table: DcrtTable<ValueT = T>,
+        Table: NttTable<ValueT = T>,
     {
         let hybrid_rns = domain.hybrid_rns();
         assert!(
@@ -387,7 +387,7 @@ impl<T: FheUint> HybridRnsGlweKeySwitchingContext<T> {
 mod tests {
     use primus_lattice::glwe::DcrtGlwe;
     use primus_modulus::BarrettModulus;
-    use primus_ntt::{DcrtTable, UintDcrtTable};
+    use primus_ntt::UintDcrtTable;
     use primus_poly::Polynomial;
     use rand::{SeedableRng, rngs::StdRng};
 

@@ -43,22 +43,22 @@ pub struct DcrtGadgetDomain<'a, T, M, Table>
 where
     T: FheUint,
     M: FieldContext<T>,
-    Table: DcrtTable<ValueT = T>,
+    Table: NttTable<ValueT = T>,
 {
     parameters: &'a CrtGlevParameters<T, M>,
-    table: &'a Table,
+    table: &'a DcrtTable<Table>,
 }
 
 impl<'a, T, M, Table> DcrtGadgetDomain<'a, T, M, Table>
 where
     T: FheUint,
     M: FieldContext<T>,
-    Table: DcrtTable<ValueT = T>,
+    Table: NttTable<ValueT = T>,
 {
     /// Binds compatible RNS gadget parameters and a DCRT table.
     pub fn try_new(
         parameters: &'a CrtGlevParameters<T, M>,
-        table: &'a Table,
+        table: &'a DcrtTable<Table>,
     ) -> Result<Self, GadgetDomainError<T>> {
         let expected = parameters.poly_length();
         let actual = table.poly_length();
@@ -116,7 +116,7 @@ where
     /// Returns the bound DCRT table.
     #[must_use]
     #[inline]
-    pub fn table(&self) -> &'a Table {
+    pub fn table(&self) -> &'a DcrtTable<Table> {
         self.table
     }
 
@@ -133,22 +133,22 @@ pub struct HybridRnsKeySwitchDomain<'a, T, M, Table>
 where
     T: FheUint,
     M: FieldContext<T>,
-    Table: DcrtTable<ValueT = T>,
+    Table: NttTable<ValueT = T>,
 {
     hybrid_rns: &'a HybridRNS<T, M>,
-    table: &'a Table,
+    table: &'a DcrtTable<Table>,
 }
 
 impl<'a, T, M, Table> HybridRnsKeySwitchDomain<'a, T, M, Table>
 where
     T: FheUint,
     M: FieldContext<T>,
-    Table: DcrtTable<ValueT = T>,
+    Table: NttTable<ValueT = T>,
 {
     /// Binds a complete ordered `Q/P` basis to a matching DCRT table.
     pub fn try_new(
         hybrid_rns: &'a HybridRNS<T, M>,
-        table: &'a Table,
+        table: &'a DcrtTable<Table>,
     ) -> Result<Self, GadgetDomainError<T>> {
         let expected = hybrid_rns.qp_moduli_count();
         let actual = table.moduli_count();
@@ -190,7 +190,7 @@ where
     /// Returns the bound DCRT table.
     #[must_use]
     #[inline]
-    pub fn table(&self) -> &'a Table {
+    pub fn table(&self) -> &'a DcrtTable<Table> {
         self.table
     }
 
@@ -219,7 +219,7 @@ where
 #[cfg(test)]
 mod tests {
     use primus_modulus::BarrettModulus;
-    use primus_ntt::{DcrtTable, U64DcrtTable};
+    use primus_ntt::U64DcrtTable;
 
     use super::{DcrtGadgetDomain, GadgetDomainError};
     use crate::{CrtGlevParameters, CrtGlweParameters, SecretKeyDistr};

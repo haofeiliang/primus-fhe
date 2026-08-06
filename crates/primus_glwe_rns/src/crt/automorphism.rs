@@ -8,7 +8,7 @@ use primus_lattice::{
     glev::{DcrtGlevIter, DcrtGlevIterMut},
 };
 use primus_modulus::PowOf2Modulus;
-use primus_ntt::DcrtTable;
+use primus_ntt::NttTable;
 use primus_poly::CrtPolynomial;
 use primus_reduce::FieldContext;
 use primus_reduce::ReduceMul;
@@ -32,7 +32,7 @@ impl<T: FheUint> CrtGlweAutoContext<T> {
     pub fn new<M, Table>(domain: &DcrtGadgetDomain<'_, T, M, Table>) -> Self
     where
         M: FieldContext<T>,
-        Table: DcrtTable<ValueT = T>,
+        Table: NttTable<ValueT = T>,
     {
         Self::from_parameters(domain.parameters())
     }
@@ -144,7 +144,7 @@ fn generate_auto_key_data<T, M, Table, R>(
 ) -> Vec<T>
 where
     T: FheUint,
-    Table: DcrtTable<ValueT = T>,
+    Table: NttTable<ValueT = T>,
     R: rand::Rng + rand::CryptoRng,
     M: FieldContext<T>,
 {
@@ -198,7 +198,7 @@ impl<T: FheUint> CrtGlweAutoKey<T> {
     where
         R: rand::Rng + rand::CryptoRng,
         M: FieldContext<T>,
-        Table: DcrtTable<ValueT = T>,
+        Table: NttTable<ValueT = T>,
     {
         let params = domain.parameters();
         let poly_length = params.poly_length();
@@ -233,7 +233,7 @@ impl<T: FheUint> CrtGlweAutoKey<T> {
         context: &mut CrtGlweAutoContext<T>,
     ) where
         M: FieldContext<T>,
-        Table: DcrtTable<ValueT = T>,
+        Table: NttTable<ValueT = T>,
         A: RawData<Elem = T> + Data,
         B: RawData<Elem = T> + DataMut,
     {
@@ -254,7 +254,7 @@ impl<T: FheUint> CrtGlweAutoKey<T> {
         context: &mut CrtGlweAutoContext<T>,
     ) where
         M: FieldContext<T>,
-        Table: DcrtTable<ValueT = T>,
+        Table: NttTable<ValueT = T>,
         A: RawData<Elem = T> + Data,
         B: RawData<Elem = T> + DataMut,
     {

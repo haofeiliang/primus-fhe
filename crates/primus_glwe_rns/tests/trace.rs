@@ -8,7 +8,7 @@ use primus_glwe_rns::{
 use primus_integer::BigUint;
 use primus_lattice::glwe::CrtGlwe;
 use primus_modulus::BarrettModulus;
-use primus_ntt::{DcrtTable, UintDcrtTable};
+use primus_ntt::UintDcrtTable;
 use primus_poly::{BigUintPolynomial, CrtPolynomial, DcrtPolynomial, Polynomial};
 use primus_reduce::prelude::*;
 

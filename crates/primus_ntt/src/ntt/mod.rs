@@ -1,4 +1,6 @@
+use num_traits::{ConstOne, ConstZero};
 use primus_data::{DataMut, RawData};
+use primus_factor::{FactorMul, ShoupFactor};
 use primus_poly::{NttPolynomial, Polynomial};
 use primus_reduce::FieldContext;
 
@@ -97,28 +99,93 @@ pub trait NttTable: Sized + Send + Sync {
     ///
     /// * `values` - inputs in bit-reversed order, outputs in normal order
     fn inverse_transform_slice(&self, values: &mut [<Self as NttTable>::ValueT]);
+}
 
-    /// Perform a fast number theory transform for **monomial** `coeff*X^degree` in place.
-    fn transform_monomial(
-        &self,
-        coeff: Self::ValueT,
-        degree: usize,
-        values: &mut [<Self as NttTable>::ValueT],
-    );
+/// NTT table data required to transform monomials directly.
+///
+/// This capability is separate from [`NttTable`] because a full polynomial
+/// transform does not require ordinal root powers or a bit-reversed index map.
+/// Implementations only expose those two tables; the monomial algorithms are
+/// shared by every implementation through the default methods below.
+pub trait MonomialNttTable: NttTable {
+    /// Returns `[1, w, w^2, ..., w^(2N-1)]` in ordinal order.
+    ///
+    /// Implementations must return exactly `2 * self.poly_length()` entries.
+    fn ordinal_root_powers(&self) -> &[Self::ValueT];
 
-    /// Perform a fast number theory transform for **monomial** `X^degree` in place.
-    fn transform_coeff_one_monomial(
-        &self,
-        degree: usize,
-        values: &mut [<Self as NttTable>::ValueT],
-    );
+    /// Returns the bit-reversal of each index in `0..N`.
+    ///
+    /// Implementations must return exactly `self.poly_length()` entries.
+    fn reverse_lsbs(&self) -> &[usize];
 
-    /// Perform a fast number theory transform for **monomial** `-X^degree` in place.
-    fn transform_coeff_minus_one_monomial(
-        &self,
-        degree: usize,
-        values: &mut [<Self as NttTable>::ValueT],
-    );
+    /// Transforms the monomial `coeff * X^degree` directly into NTT form.
+    fn transform_monomial(&self, coeff: Self::ValueT, degree: usize, values: &mut [Self::ValueT]) {
+        let n = self.poly_length();
+        assert_ntt_length(values.len(), n);
+
+        if coeff == Self::ValueT::ZERO {
+            values.fill(Self::ValueT::ZERO);
+            return;
+        }
+
+        if degree == 0 {
+            values.fill(coeff);
+            return;
+        }
+
+        let ordinal_root_powers = self.ordinal_root_powers();
+        let reverse_lsbs = self.reverse_lsbs();
+        assert!(n.is_power_of_two());
+        let ordinal_root_count = n.checked_mul(2).expect("NTT polynomial length overflow");
+        assert_eq!(ordinal_root_powers.len(), ordinal_root_count);
+        assert_eq!(reverse_lsbs.len(), n);
+
+        let modulus = self.modulus();
+        let mask = ordinal_root_count - 1;
+
+        if coeff == Self::ValueT::ONE {
+            values
+                .iter_mut()
+                .zip(reverse_lsbs)
+                .for_each(|(value, &index)| {
+                    let root_index = ((2 * index + 1) * degree) & mask;
+                    // `root_index <= mask == ordinal_root_powers.len() - 1`.
+                    *value = unsafe { *ordinal_root_powers.get_unchecked(root_index) };
+                });
+        } else if coeff == modulus - Self::ValueT::ONE {
+            values
+                .iter_mut()
+                .zip(reverse_lsbs)
+                .for_each(|(value, &index)| {
+                    let root_index = (((2 * index + 1) * degree) & mask) ^ n;
+                    // XOR toggles the `n` bit, so the index remains below `2 * n`.
+                    *value = unsafe { *ordinal_root_powers.get_unchecked(root_index) };
+                });
+        } else {
+            let coeff = ShoupFactor::new(coeff, modulus);
+            values
+                .iter_mut()
+                .zip(reverse_lsbs)
+                .for_each(|(value, &index)| {
+                    let root_index = ((2 * index + 1) * degree) & mask;
+                    // `root_index <= mask == ordinal_root_powers.len() - 1`.
+                    let root = unsafe { *ordinal_root_powers.get_unchecked(root_index) };
+                    *value = coeff.factor_mul_modulo(root, modulus);
+                });
+        }
+    }
+
+    /// Transforms the monomial `X^degree` directly into NTT form.
+    #[inline]
+    fn transform_coeff_one_monomial(&self, degree: usize, values: &mut [Self::ValueT]) {
+        self.transform_monomial(Self::ValueT::ONE, degree, values);
+    }
+
+    /// Transforms the monomial `-X^degree` directly into NTT form.
+    #[inline]
+    fn transform_coeff_minus_one_monomial(&self, degree: usize, values: &mut [Self::ValueT]) {
+        self.transform_monomial(self.modulus() - Self::ValueT::ONE, degree, values);
+    }
 }
 
 #[track_caller]

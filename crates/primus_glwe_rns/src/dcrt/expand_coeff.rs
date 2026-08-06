@@ -1,7 +1,7 @@
 use primus_data::{Data, DataMut, RawData};
 use primus_factor::ShoupFactor;
 use primus_integer::{AsInto, BigUint, FheUint};
-use primus_ntt::DcrtTable;
+use primus_ntt::{DcrtTable, MonomialNttTable, NttTable};
 use primus_reduce::FieldContext;
 use primus_rns::RNSBase;
 use rayon::prelude::*;
@@ -30,7 +30,7 @@ impl<T: FheUint> DcrtGlweExpandCoeffKey<T> {
     where
         R: rand::Rng + rand::CryptoRng,
         M: FieldContext<T>,
-        Table: DcrtTable<ValueT = T>,
+        Table: MonomialNttTable<ValueT = T>,
     {
         let params = domain.parameters();
         let log_n = params.poly_length().trailing_zeros();
@@ -53,11 +53,11 @@ impl<T: FheUint> DcrtGlweExpandCoeffKey<T> {
 
     fn precompute_monomial_factors<M, Table>(
         params: &CrtGlevParameters<T, M>,
-        table: &Table,
+        table: &DcrtTable<Table>,
     ) -> Vec<Vec<ShoupFactor<T>>>
     where
         M: FieldContext<T>,
-        Table: DcrtTable<ValueT = T>,
+        Table: MonomialNttTable<ValueT = T>,
     {
         let poly_length = params.poly_length();
         let rns_poly_len = params.rns_poly_len();
@@ -120,7 +120,7 @@ impl<T: FheUint> DcrtGlweExpandCoeffKey<T> {
         context: &mut DcrtGlweExpandCoeffContext<T>,
     ) where
         M: FieldContext<T>,
-        Table: DcrtTable<ValueT = T>,
+        Table: NttTable<ValueT = T>,
         A: RawData<Elem = T> + Data,
         B: RawData<Elem = T> + DataMut,
     {
@@ -139,7 +139,7 @@ impl<T: FheUint> DcrtGlweExpandCoeffKey<T> {
         context: &mut DcrtGlweExpandCoeffContext<T>,
     ) where
         M: FieldContext<T>,
-        Table: DcrtTable<ValueT = T>,
+        Table: NttTable<ValueT = T>,
         A: RawData<Elem = T> + Data,
         B: RawData<Elem = T> + DataMut,
     {
@@ -191,7 +191,7 @@ impl<T: FheUint> DcrtGlweExpandCoeffKey<T> {
         M: FieldContext<T> + Sync,
         A: RawData<Elem = T> + Data + Sync,
         B: RawData<Elem = T> + DataMut + Send,
-        Table: DcrtTable<ValueT = T> + Send + Sync,
+        Table: NttTable<ValueT = T>,
     {
         assert_eq!(result.len(), domain.parameters().poly_length());
         self.expand_partial_coefficients_inplace_parallel(ciphertext, result, domain, context_pool)
@@ -210,7 +210,7 @@ impl<T: FheUint> DcrtGlweExpandCoeffKey<T> {
         M: FieldContext<T> + Sync,
         A: RawData<Elem = T> + Data + Sync,
         B: RawData<Elem = T> + DataMut + Send,
-        Table: DcrtTable<ValueT = T> + Send + Sync,
+        Table: NttTable<ValueT = T>,
     {
         let params = domain.parameters();
         let poly_length = params.poly_length();

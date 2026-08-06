@@ -1,7 +1,7 @@
 use primus_distr::{sample_crt_gaussian_values_to, sample_crt_uniform_values_to};
 use primus_integer::FheUint;
 use primus_lattice::RnsGlweSize;
-use primus_ntt::DcrtTable;
+use primus_ntt::NttTable;
 use primus_poly::DcrtPolynomial;
 use primus_reduce::FieldContext;
 use rand::distr::Uniform;
@@ -22,7 +22,7 @@ impl<T: FheUint> HybridRnsGlweKeySwitchingKey<T> {
     where
         R: rand::Rng + rand::CryptoRng,
         M: FieldContext<T>,
-        QpTable: DcrtTable<ValueT = T>,
+        QpTable: NttTable<ValueT = T>,
     {
         let input_size = input_parameters.size();
         let input_dimension = input_size.dimension();

@@ -1,7 +1,7 @@
 use primus_data::{Data, DataMut, RawData};
 use primus_factor::ShoupFactor;
 use primus_integer::FheUint;
-use primus_ntt::DcrtTable;
+use primus_ntt::NttTable;
 use primus_reduce::FieldContext;
 
 use crate::{
@@ -28,7 +28,7 @@ impl<T: FheUint> DcrtGlweRevTraceKey<T> {
     where
         R: rand::Rng + rand::CryptoRng,
         M: FieldContext<T>,
-        Table: DcrtTable<ValueT = T>,
+        Table: NttTable<ValueT = T>,
     {
         let params = domain.parameters();
         let log_n = params.poly_length().trailing_zeros();
@@ -74,7 +74,7 @@ impl<T: FheUint> DcrtGlweRevTraceKey<T> {
         context: &mut DcrtGlweRevTraceContext<T>,
     ) where
         M: FieldContext<T>,
-        Table: DcrtTable<ValueT = T>,
+        Table: NttTable<ValueT = T>,
         A: RawData<Elem = T> + Data,
         B: RawData<Elem = T> + DataMut,
     {

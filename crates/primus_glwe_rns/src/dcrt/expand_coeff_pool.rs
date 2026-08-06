@@ -1,7 +1,7 @@
 use std::sync::Mutex;
 
 use primus_integer::FheUint;
-use primus_ntt::DcrtTable;
+use primus_ntt::NttTable;
 use primus_reduce::FieldContext;
 
 use crate::{CrtGlweAutoContext, DcrtGadgetDomain, DcrtGlweTraceContext};
@@ -22,7 +22,7 @@ impl<T: FheUint> DcrtGlweExpandCoeffSyncPool<T> {
     pub fn new<M, Table>(domain: &DcrtGadgetDomain<'_, T, M, Table>) -> Self
     where
         M: FieldContext<T>,
-        Table: DcrtTable<ValueT = T>,
+        Table: NttTable<ValueT = T>,
     {
         Self::with_capacity(rayon::current_num_threads(), domain)
     }
@@ -37,7 +37,7 @@ impl<T: FheUint> DcrtGlweExpandCoeffSyncPool<T> {
     ) -> Self
     where
         M: FieldContext<T>,
-        Table: DcrtTable<ValueT = T>,
+        Table: NttTable<ValueT = T>,
     {
         let parameters = domain.parameters();
         let contexts = (0..capacity)

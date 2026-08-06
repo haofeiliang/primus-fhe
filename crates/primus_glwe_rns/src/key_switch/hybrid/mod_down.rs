@@ -12,7 +12,7 @@ use primus_rns::HybridRNS;
 /// as the subtraction operand in the NTT domain.
 pub(super) fn approx_mod_down_ntt<T, M, Table>(
     hybrid_rns: &HybridRNS<T, M>,
-    table: &Table,
+    table: &DcrtTable<Table>,
     polynomial_mod_qp: &mut [T],
     poly_length: usize,
     converted_p_mod_q: &mut [T],
@@ -20,7 +20,7 @@ pub(super) fn approx_mod_down_ntt<T, M, Table>(
 ) where
     T: FheUint,
     M: FieldContext<T>,
-    Table: DcrtTable<ValueT = T>,
+    Table: NttTable<ValueT = T>,
 {
     let q_moduli_count = hybrid_rns.q_moduli_count();
     let q_len = q_moduli_count * poly_length;
@@ -54,7 +54,7 @@ pub(super) fn approx_mod_down_ntt<T, M, Table>(
 #[cfg(test)]
 mod tests {
     use primus_modulus::BarrettModulus;
-    use primus_ntt::{DcrtTable, NttTable, UintDcrtTable};
+    use primus_ntt::{NttTable, UintDcrtTable};
 
     use super::*;
 

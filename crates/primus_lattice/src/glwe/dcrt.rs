@@ -3,7 +3,7 @@ use primus_data::{Data, DataMut, DataOwned, RawData};
 use primus_decompose::big_integer::BigUintApproxSignedBasis;
 use primus_factor::{FactorSliceOps, ShoupFactor};
 use primus_integer::FheUint;
-use primus_ntt::DcrtTable;
+use primus_ntt::{DcrtTable, NttTable};
 use primus_poly::{
     ArrayBase, BigUintPolynomial, CrtPolynomial, DcrtPolynomial, DcrtPolynomialIter,
     DcrtPolynomialIterMut,
@@ -187,12 +187,12 @@ where
         dcrt_glev: &DcrtGlev<A>,
         crt_poly: &CrtPolynomial<B>,
         basis: &BigUintApproxSignedBasis<T>,
-        table: &Table,
+        table: &DcrtTable<Table>,
         rns_base: &RNSBase<T, M>,
         context: &mut DcrtGlevMulContext<T>,
     ) where
         M: FieldContext<T>,
-        Table: DcrtTable<ValueT = T>,
+        Table: NttTable<ValueT = T>,
         A: RawData<Elem = T> + Data,
         B: RawData<Elem = T> + Data,
     {
@@ -266,12 +266,12 @@ where
         dcrt_glev: &DcrtGlev<A>,
         big_uint_poly: &BigUintPolynomial<B>,
         basis: &BigUintApproxSignedBasis<T>,
-        table: &Table,
+        table: &DcrtTable<Table>,
         rns_base: &RNSBase<T, M>,
         context: &mut DcrtGlevMulContext<T>,
     ) where
         M: FieldContext<T>,
-        Table: DcrtTable<ValueT = T>,
+        Table: NttTable<ValueT = T>,
         A: RawData<Elem = T> + Data,
         B: RawData<Elem = T> + Data,
     {

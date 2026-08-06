@@ -7,7 +7,7 @@ use primus_lattice::{
     context::DcrtGlevMulContext,
     glev::{DcrtGlevIter, DcrtGlevIterMut},
 };
-use primus_ntt::DcrtTable;
+use primus_ntt::NttTable;
 use primus_poly::{BigUintPolynomial, CrtPolynomial, DcrtPolynomial};
 use primus_reduce::FieldContext;
 
@@ -36,7 +36,7 @@ impl<T: FheUint> DcrtGlweKeySwitchingKey<T> {
     where
         R: rand::Rng + rand::CryptoRng,
         M: FieldContext<T>,
-        Table: DcrtTable<ValueT = T>,
+        Table: NttTable<ValueT = T>,
     {
         let ksk_params = domain.parameters();
         debug_assert_eq!(input_params.poly_length(), ksk_params.poly_length());
@@ -105,7 +105,7 @@ impl<T: FheUint> DcrtGlweKeySwitchingKey<T> {
         context: &mut DcrtGlweKeySwitchingContext<T>,
     ) where
         M: FieldContext<T>,
-        Table: DcrtTable<ValueT = T>,
+        Table: NttTable<ValueT = T>,
         A: RawData<Elem = T> + Data,
         B: RawData<Elem = T> + DataMut,
     {
@@ -187,7 +187,7 @@ impl<T: FheUint> DcrtGlweKeySwitchingContext<T> {
     ) -> Self
     where
         M: FieldContext<T>,
-        Table: DcrtTable<ValueT = T>,
+        Table: NttTable<ValueT = T>,
     {
         let output_size = domain.parameters().size();
         let rns_glwe_size = output_size.rns_glwe_size();

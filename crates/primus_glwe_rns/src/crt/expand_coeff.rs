@@ -1,7 +1,7 @@
 use primus_data::{Data, DataMut, RawData};
 use primus_factor::ShoupFactor;
 use primus_integer::{AsInto, BigUint, FheUint};
-use primus_ntt::DcrtTable;
+use primus_ntt::NttTable;
 use primus_reduce::FieldContext;
 use rayon::prelude::*;
 
@@ -29,7 +29,7 @@ impl<T: FheUint> CrtGlweExpandCoeffKey<T> {
     where
         R: rand::Rng + rand::CryptoRng,
         M: FieldContext<T>,
-        Table: DcrtTable<ValueT = T>,
+        Table: NttTable<ValueT = T>,
     {
         let params = domain.parameters();
         let log_n = params.poly_length().trailing_zeros();
@@ -73,7 +73,7 @@ impl<T: FheUint> CrtGlweExpandCoeffKey<T> {
         context: &mut CrtGlweExpandCoeffContext<T>,
     ) where
         M: FieldContext<T>,
-        Table: DcrtTable<ValueT = T>,
+        Table: NttTable<ValueT = T>,
         A: RawData<Elem = T> + Data,
         B: RawData<Elem = T> + DataMut,
     {
@@ -92,7 +92,7 @@ impl<T: FheUint> CrtGlweExpandCoeffKey<T> {
         context: &mut CrtGlweExpandCoeffContext<T>,
     ) where
         M: FieldContext<T>,
-        Table: DcrtTable<ValueT = T>,
+        Table: NttTable<ValueT = T>,
         A: RawData<Elem = T> + Data,
         B: RawData<Elem = T> + DataMut,
     {
@@ -142,7 +142,7 @@ impl<T: FheUint> CrtGlweExpandCoeffKey<T> {
         M: FieldContext<T> + Sync,
         A: RawData<Elem = T> + Data + Sync,
         B: RawData<Elem = T> + DataMut + Send,
-        Table: DcrtTable<ValueT = T> + Send + Sync,
+        Table: NttTable<ValueT = T>,
     {
         assert_eq!(result.len(), domain.parameters().poly_length());
         self.expand_partial_coefficients_inplace_parallel(ciphertext, result, domain, context_pool)
@@ -161,7 +161,7 @@ impl<T: FheUint> CrtGlweExpandCoeffKey<T> {
         M: FieldContext<T> + Sync,
         A: RawData<Elem = T> + Data + Sync,
         B: RawData<Elem = T> + DataMut + Send,
-        Table: DcrtTable<ValueT = T> + Send + Sync,
+        Table: NttTable<ValueT = T>,
     {
         let params = domain.parameters();
         let poly_length = params.poly_length();

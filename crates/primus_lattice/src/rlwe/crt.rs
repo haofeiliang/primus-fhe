@@ -1,7 +1,7 @@
 use itertools::izip;
 use primus_data::{Data, DataMut, DataOwned, RawData};
 use primus_integer::FheUint;
-use primus_ntt::DcrtTable;
+use primus_ntt::{DcrtTable, NttTable};
 #[allow(unused_imports)]
 use primus_poly::{
     ArrayBase, CrtPolynomial, CrtPolynomialIter, CrtPolynomialIterMut, DcrtPolynomial,
@@ -47,10 +47,10 @@ where
         dcrt_poly: &DcrtPolynomial<A>,
         result: &mut DcrtRlwe<B>,
         moduli: &[M],
-        table: &Table,
+        table: &DcrtTable<Table>,
     ) where
         M: FieldContext<T>,
-        Table: DcrtTable<ValueT = T>,
+        Table: NttTable<ValueT = T>,
         A: RawData<Elem = T> + Data,
         B: RawData<Elem = T> + DataMut,
     {

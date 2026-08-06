@@ -2,7 +2,7 @@ use std::{hint::black_box, time::Duration};
 
 use criterion::{BatchSize, Criterion};
 use primus_modulus::BarrettModulus;
-use primus_ntt::{NttTable, U32NttTable, UintNttTable};
+use primus_ntt::{MonomialNttTable, NttTable, U32NttTable, UintNttTable};
 use rand::distr::{Distribution, Uniform};
 
 const CASES: [(u32, usize); 1] = [(268369921, 4096)];
@@ -62,7 +62,7 @@ fn bench_inverse<T: NttTable<ValueT = u32>>(
     });
 }
 
-fn bench_monomial<T: NttTable<ValueT = u32>>(
+fn bench_monomial<T: MonomialNttTable<ValueT = u32>>(
     c: &mut Criterion,
     name: &str,
     table: &T,
@@ -75,7 +75,7 @@ fn bench_monomial<T: NttTable<ValueT = u32>>(
     });
 }
 
-fn bench_monomial_one<T: NttTable<ValueT = u32>>(
+fn bench_monomial_one<T: MonomialNttTable<ValueT = u32>>(
     c: &mut Criterion,
     name: &str,
     table: &T,
@@ -87,7 +87,7 @@ fn bench_monomial_one<T: NttTable<ValueT = u32>>(
     });
 }
 
-fn bench_monomial_minus_one<T: NttTable<ValueT = u32>>(
+fn bench_monomial_minus_one<T: MonomialNttTable<ValueT = u32>>(
     c: &mut Criterion,
     name: &str,
     table: &T,

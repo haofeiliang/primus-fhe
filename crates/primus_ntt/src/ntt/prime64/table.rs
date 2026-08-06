@@ -9,7 +9,7 @@ use primus_reduce::FieldContext;
 use crate::constants::{HAS_AVX2, HAS_AVX512DQ, HAS_AVX512IFMA};
 use crate::{
     NttError,
-    ntt::{NttTable, assert_ntt_length},
+    ntt::{MonomialNttTable, NttTable, assert_ntt_length},
     reverse::ReverseLsbs,
     root::PrimitiveRoot,
 };
@@ -581,91 +581,16 @@ impl NttTable for U64NttTable {
     fn inverse_transform_slice(&self, values: &mut [u64]) {
         self.dispatch_inverse(values, 1);
     }
+}
 
-    fn transform_monomial(&self, coeff: u64, degree: usize, values: &mut [u64]) {
-        assert_ntt_length(values.len(), self.n);
-
-        if coeff == 0 {
-            values.fill(0);
-            return;
-        }
-
-        if degree == 0 {
-            values.fill(coeff);
-            return;
-        }
-
-        let n = self.n;
-        let log_n = self.log_n;
-        let mask = usize::MAX >> (usize::BITS - log_n - 1);
-
-        if coeff == 1 {
-            values
-                .iter_mut()
-                .zip(&self.reverse_lsbs)
-                .for_each(|(v, &i)| {
-                    let index = ((2 * i + 1) * degree) & mask;
-                    *v = unsafe { *self.ordinal_roots.get_unchecked(index) };
-                });
-        } else if coeff == self.q - 1 {
-            values
-                .iter_mut()
-                .zip(&self.reverse_lsbs)
-                .for_each(|(v, &i)| {
-                    let index = (((2 * i + 1) * degree) & mask) ^ n;
-                    *v = unsafe { *self.ordinal_roots.get_unchecked(index) };
-                });
-        } else {
-            let coeff_sf = ShoupFactor::<u64>::new(coeff, self.q);
-            values
-                .iter_mut()
-                .zip(&self.reverse_lsbs)
-                .for_each(|(v, &i)| {
-                    let index = ((2 * i + 1) * degree) & mask;
-                    let w = unsafe { *self.ordinal_roots.get_unchecked(index) };
-                    *v = coeff_sf.factor_mul_modulo(w, self.q);
-                });
-        }
+impl MonomialNttTable for U64NttTable {
+    #[inline]
+    fn ordinal_root_powers(&self) -> &[Self::ValueT] {
+        &self.ordinal_roots
     }
 
-    fn transform_coeff_one_monomial(&self, degree: usize, values: &mut [u64]) {
-        assert_ntt_length(values.len(), self.n);
-
-        if degree == 0 {
-            values.fill(1);
-            return;
-        }
-
-        let log_n = self.log_n;
-        let mask = usize::MAX >> (usize::BITS - log_n - 1);
-
-        values
-            .iter_mut()
-            .zip(&self.reverse_lsbs)
-            .for_each(|(v, &i)| {
-                let index = ((2 * i + 1) * degree) & mask;
-                *v = unsafe { *self.ordinal_roots.get_unchecked(index) };
-            });
-    }
-
-    fn transform_coeff_minus_one_monomial(&self, degree: usize, values: &mut [u64]) {
-        assert_ntt_length(values.len(), self.n);
-
-        if degree == 0 {
-            values.fill(self.q - 1);
-            return;
-        }
-
-        let n = self.n;
-        let log_n = self.log_n;
-        let mask = usize::MAX >> (usize::BITS - log_n - 1);
-
-        values
-            .iter_mut()
-            .zip(&self.reverse_lsbs)
-            .for_each(|(v, &i)| {
-                let index = (((2 * i + 1) * degree) & mask) ^ n;
-                *v = unsafe { *self.ordinal_roots.get_unchecked(index) };
-            });
+    #[inline]
+    fn reverse_lsbs(&self) -> &[usize] {
+        &self.reverse_lsbs
     }
 }
