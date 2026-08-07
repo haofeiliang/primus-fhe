@@ -11,7 +11,7 @@ use crate::{
 
 /// Execution order of programmable bootstrapping and key switching.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum PbsOrder {
+pub enum GlwePbsOrder {
     /// Blind rotation is followed by a GLWE key switch and compact sample
     /// extraction back to the small LWE key.
     BootstrapKeyswitch,
@@ -22,7 +22,7 @@ pub enum PbsOrder {
 
 /// An invalid combination of GLWE-based TFHE parameters.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum TfheParameterError {
+pub enum GlweParameterError {
     /// The current functional bootstrapping-key implementation requires a
     /// binary input LWE secret key.
     #[error("TFHE bootstrapping requires a binary input LWE secret key")]
@@ -65,7 +65,7 @@ pub enum TfheParameterError {
 /// backend-specific context binds it to an FFT/NTT table and validates the
 /// table separately.
 #[derive(Clone)]
-pub struct TfheParameters<T, LM, GM>
+pub struct GlweTfheParameters<T, LM, GM>
 where
     T: FheUint,
     LM: RingContext<T>,
@@ -75,10 +75,10 @@ where
     glwe: GlweParameters<T, GM>,
     bootstrapping: GgswParameters<T, GM>,
     glwe_key_switching: GlweKeySwitchingParameters<T, GM>,
-    pbs_order: PbsOrder,
+    pbs_order: GlwePbsOrder,
 }
 
-impl<T, LM, GM> TfheParameters<T, LM, GM>
+impl<T, LM, GM> GlweTfheParameters<T, LM, GM>
 where
     T: FheUint,
     LM: RingContext<T>,
@@ -98,22 +98,22 @@ where
         glwe: GlweParameters<T, GM>,
         bootstrapping: GgswParameters<T, GM>,
         key_switching_basis: ApproxSignedBasis<T>,
-        pbs_order: PbsOrder,
-    ) -> Result<Self, TfheParameterError> {
+        pbs_order: GlwePbsOrder,
+    ) -> Result<Self, GlweParameterError> {
         Self::validate_common(&small_lwe, &glwe, &bootstrapping)?;
 
         let capacity = glwe.secret_key_len();
         if small_lwe.dimension() > capacity {
-            return Err(TfheParameterError::SmallLweDimensionExceedsGlweCapacity {
+            return Err(GlweParameterError::SmallLweDimensionExceedsGlweCapacity {
                 small_lwe_dimension: small_lwe.dimension(),
                 capacity,
             });
         }
         if small_lwe.cipher_modulus().explicit_value() != glwe.cipher_modulus().explicit_value() {
-            return Err(TfheParameterError::CipherModulusMismatch);
+            return Err(GlweParameterError::CipherModulusMismatch);
         }
         if key_switching_basis.modulus() != glwe.inner().cipher_modulus_value() {
-            return Err(TfheParameterError::KeySwitchingBasisModulusMismatch);
+            return Err(GlweParameterError::KeySwitchingBasisModulusMismatch);
         }
 
         let glwe_key_switching =
@@ -153,17 +153,17 @@ where
         small_lwe: &LweParameters<T, LM>,
         glwe: &GlweParameters<T, GM>,
         bootstrapping: &GgswParameters<T, GM>,
-    ) -> Result<(), TfheParameterError> {
+    ) -> Result<(), GlweParameterError> {
         if small_lwe.secret_key_distr() != SecretKeyDistr::Binary {
-            return Err(TfheParameterError::InputLweSecretKeyMustBeBinary);
+            return Err(GlweParameterError::InputLweSecretKeyMustBeBinary);
         }
 
         if small_lwe.plain_modulus_value() != glwe.plain_modulus_value() {
-            return Err(TfheParameterError::PlainModulusMismatch);
+            return Err(GlweParameterError::PlainModulusMismatch);
         }
 
         if glwe.size() != bootstrapping.glwe_size() || glwe.inner() != bootstrapping.inner() {
-            return Err(TfheParameterError::BootstrappingGlweParametersMismatch);
+            return Err(GlweParameterError::BootstrappingGlweParametersMismatch);
         }
 
         Ok(())
@@ -195,7 +195,7 @@ where
 
     /// Returns the selected PBS execution order.
     #[inline]
-    pub fn pbs_order(&self) -> PbsOrder {
+    pub fn pbs_order(&self) -> GlwePbsOrder {
         self.pbs_order
     }
 
@@ -203,8 +203,8 @@ where
     #[inline]
     pub fn ciphertext_lwe_dimension(&self) -> usize {
         match self.pbs_order() {
-            PbsOrder::BootstrapKeyswitch => self.small_lwe.dimension(),
-            PbsOrder::KeyswitchBootstrap => self.glwe.secret_key_len(),
+            GlwePbsOrder::BootstrapKeyswitch => self.small_lwe.dimension(),
+            GlwePbsOrder::KeyswitchBootstrap => self.glwe.secret_key_len(),
         }
     }
 

@@ -27,6 +27,27 @@ impl<T: FheUint> Zeroize for NtruSecretKey<T> {
 impl<T: FheUint> ZeroizeOnDrop for NtruSecretKey<T> {}
 
 impl<T: FheUint> NtruSecretKey<T> {
+    /// Samples a binary prefix and pads the remaining coefficients with zero.
+    ///
+    /// This is kept internal because transform backends must still reject
+    /// candidates that are not invertible in their ciphertext ring.
+    pub(crate) fn generate_padded_binary<R>(
+        poly_length: usize,
+        active_length: usize,
+        rng: &mut R,
+    ) -> Self
+    where
+        R: rand::Rng + rand::CryptoRng,
+    {
+        assert!((1..=poly_length).contains(&active_length));
+        let mut key = primus_distr::sample_binary_values(active_length, rng);
+        key.resize(poly_length, T::ZERO.cast_to_signed());
+        Self {
+            key,
+            distr: SecretKeyDistr::Binary,
+        }
+    }
+
     /// Creates a coefficient-domain NTRU key from canonical signed values.
     #[inline]
     pub fn new(key: Vec<SecretCoefficient<T>>, distr: SecretKeyDistr) -> Self {

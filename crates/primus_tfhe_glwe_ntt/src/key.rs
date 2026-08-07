@@ -4,16 +4,16 @@ use primus_glwe::{
 use primus_integer::FheUint;
 use primus_lwe::LweSecretKey;
 use primus_ntt::NttTable;
-use primus_tfhe::ClientKey;
+use primus_tfhe_glwe::GlweClientKey as ClientKey;
 
-use crate::{NttFunctionalBootstrappingKey, TfheContext, TfheParameters, error::TfheKeyError};
+use crate::{NttGlweBootstrappingKey, TfheContext, TfheParameters, error::TfheKeyError};
 
 /// NTT-domain evaluation keys used by a TFHE server.
 ///
 /// Both PBS orders share these key materials. [`crate::PbsOrder`] only changes
 /// the order in which the evaluator applies them.
 pub struct ServerKey<T: FheUint> {
-    bootstrapping_key: NttFunctionalBootstrappingKey<T>,
+    bootstrapping_key: NttGlweBootstrappingKey<T>,
     glwe_key_switching_key: NttGlweKeySwitchingKey<T>,
 }
 
@@ -34,7 +34,7 @@ impl<T: FheUint> ServerKey<T> {
 
     /// Returns the NTT functional bootstrapping key.
     #[inline]
-    pub fn bootstrapping_key(&self) -> &NttFunctionalBootstrappingKey<T> {
+    pub fn bootstrapping_key(&self) -> &NttGlweBootstrappingKey<T> {
         &self.bootstrapping_key
     }
 
@@ -47,7 +47,7 @@ impl<T: FheUint> ServerKey<T> {
     /// Decomposes this server key into its bootstrapping and key-switching
     /// keys.
     #[inline]
-    pub fn into_parts(self) -> (NttFunctionalBootstrappingKey<T>, NttGlweKeySwitchingKey<T>) {
+    pub fn into_parts(self) -> (NttGlweBootstrappingKey<T>, NttGlweKeySwitchingKey<T>) {
         (self.bootstrapping_key, self.glwe_key_switching_key)
     }
 }
@@ -114,7 +114,7 @@ where
         &mut self,
         client_key: &ClientKey<T>,
         rng: &mut R,
-    ) -> NttFunctionalBootstrappingKey<T>
+    ) -> NttGlweBootstrappingKey<T>
     where
         R: rand::Rng + rand::CryptoRng,
     {
@@ -125,7 +125,7 @@ where
         );
         let bootstrapping_domain = self.context.bootstrapping_domain();
         self.gadget.resize(bootstrapping_domain.size());
-        NttFunctionalBootstrappingKey::generate_ntt(
+        NttGlweBootstrappingKey::generate_ntt(
             client_key.small_lwe_secret_key(),
             parameters.small_lwe(),
             &main_glwe_secret_key,

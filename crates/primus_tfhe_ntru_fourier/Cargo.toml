@@ -1,0 +1,37 @@
+[package]
+name = "primus_tfhe_ntru_fourier"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+primus_data = { path = "../primus_data" }
+primus_fft = { path = "../primus_fft" }
+primus_integer = { path = "../primus_integer" }
+primus_lattice = { path = "../primus_lattice" }
+primus_modulus = { path = "../primus_modulus" }
+primus_ntru = { path = "../primus_ntru" }
+primus_poly = { path = "../primus_poly" }
+primus_tfhe = { path = "../primus_tfhe" }
+primus_tfhe_ntru = { path = "../primus_tfhe_ntru" }
+
+rand = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+criterion = { workspace = true }
+primus_lwe = { path = "../primus_lwe" }
+primus_ntt = { path = "../primus_ntt" }
+primus_tfhe_ntru_ntt = { path = "../primus_tfhe_ntru_ntt" }
+
+[[bench]]
+name = "pbs"
+harness = false
+
+[features]
+default = []
+simd = [
+    "primus_integer/simd",
+    "primus_lattice/simd",
+    "primus_ntru/simd",
+    "primus_tfhe_ntru/simd",
+]

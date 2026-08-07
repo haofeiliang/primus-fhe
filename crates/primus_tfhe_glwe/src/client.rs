@@ -1,83 +1,30 @@
 use primus_distr::DiscreteGaussian;
 use primus_integer::FheUint;
 use primus_reduce::RingContext;
+use primus_tfhe::Ciphertext;
 use rand::distr::{Distribution, Uniform};
 
 use crate::{
-    ClientKey, LweCiphertext, PbsOrder, PlaintextCodec, PlaintextEmbedding, SecretCoefficient,
-    TfheKeyError, TfheParameters, encode_secret_coefficient,
+    GlweClientKey, GlweKeyError, GlwePbsOrder, GlweTfheParameters, LweCiphertext, PlaintextCodec,
+    PlaintextEmbedding, SecretCoefficient, encode_secret_coefficient,
 };
-
-/// A raw external LWE ciphertext used by GLWE-based TFHE.
-///
-/// Encoding and higher-level state belong to wrappers such as boolean or
-/// short-integer ciphertexts rather than to this raw container.
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[repr(transparent)]
-pub struct Ciphertext<T: FheUint>(LweCiphertext<T>);
-
-impl<T: FheUint> Ciphertext<T> {
-    #[inline]
-    fn from_lwe(ciphertext: LweCiphertext<T>) -> Self {
-        Self(ciphertext)
-    }
-
-    /// Creates a ciphertext from an LWE sample after checking its dimension.
-    pub fn try_from_lwe(
-        ciphertext: LweCiphertext<T>,
-        expected_dimension: usize,
-    ) -> Result<Self, TfheClientError> {
-        let expected = expected_dimension
-            .checked_add(1)
-            .ok_or(TfheClientError::CiphertextDimensionTooLarge)?;
-        let actual = ciphertext.0.len();
-        if actual != expected {
-            return Err(TfheClientError::CiphertextLengthMismatch { expected, actual });
-        }
-        Ok(Self(ciphertext))
-    }
-
-    /// Returns the underlying LWE ciphertext.
-    #[inline]
-    pub fn as_lwe(&self) -> &LweCiphertext<T> {
-        &self.0
-    }
-
-    /// Returns the underlying mutable LWE ciphertext.
-    #[inline]
-    pub fn as_lwe_mut(&mut self) -> &mut LweCiphertext<T> {
-        &mut self.0
-    }
-
-    /// Decomposes this wrapper into its underlying LWE ciphertext.
-    #[inline]
-    pub fn into_lwe(self) -> LweCiphertext<T> {
-        self.0
-    }
-
-    /// Returns the LWE dimension of this ciphertext.
-    #[inline]
-    pub fn dimension(&self) -> usize {
-        self.0.dimension()
-    }
-}
 
 /// Encrypts raw TFHE messages with a particular encryption key.
 ///
 /// The LWE and GLWE modulus context types are part of the type, but FFT/NTT
 /// tables are not: client-side LWE encryption does not use a transform
 /// backend.
-pub struct Encryptor<'a, T, LM, GM, Key>
+pub struct GlweEncryptor<'a, T, LM, GM, Key>
 where
     T: FheUint,
     LM: RingContext<T>,
     GM: RingContext<T>,
 {
-    parameters: &'a TfheParameters<T, LM, GM>,
+    parameters: &'a GlweTfheParameters<T, LM, GM>,
     key: &'a Key,
 }
 
-impl<'a, T, LM, GM> Encryptor<'a, T, LM, GM, ClientKey<T>>
+impl<'a, T, LM, GM> GlweEncryptor<'a, T, LM, GM, GlweClientKey<T>>
 where
     T: FheUint,
     LM: RingContext<T>,
@@ -85,9 +32,9 @@ where
 {
     /// Creates a secret-key encryptor after checking key compatibility.
     pub fn with_client_key(
-        parameters: &'a TfheParameters<T, LM, GM>,
-        key: &'a ClientKey<T>,
-    ) -> Result<Self, TfheClientError> {
+        parameters: &'a GlweTfheParameters<T, LM, GM>,
+        key: &'a GlweClientKey<T>,
+    ) -> Result<Self, GlweClientError> {
         key.check_compatible(parameters)?;
         Ok(Self { parameters, key })
     }
@@ -97,7 +44,7 @@ where
         &self,
         message: Msg,
         rng: &mut R,
-    ) -> Result<Ciphertext<T>, TfheClientError>
+    ) -> Result<Ciphertext<T>, GlweClientError>
     where
         R: rand::Rng + rand::CryptoRng,
         Msg: TryInto<T>,
@@ -118,7 +65,7 @@ where
         &self,
         message: Msg,
         rng: &mut R,
-    ) -> Result<Ciphertext<T>, TfheClientError>
+    ) -> Result<Ciphertext<T>, GlweClientError>
     where
         R: rand::Rng + rand::CryptoRng,
         Msg: TryInto<T>,
@@ -127,7 +74,7 @@ where
         let modulus = self.parameters.plain_modulus_value();
         let front_domain_len = modulus >> 1u32;
         if message >= front_domain_len {
-            return Err(TfheClientError::MessageOutsidePaddedDomain);
+            return Err(GlweClientError::MessageOutsidePaddedDomain);
         }
         Ok(Ciphertext::from_lwe(self.encrypt_with_embedding(
             message,
@@ -144,7 +91,7 @@ where
         &self,
         message: Msg,
         rng: &mut R,
-    ) -> Result<Ciphertext<T>, TfheClientError>
+    ) -> Result<Ciphertext<T>, GlweClientError>
     where
         R: rand::Rng + rand::CryptoRng,
         Msg: TryInto<T>,
@@ -158,15 +105,15 @@ where
     }
 
     #[inline]
-    fn checked_message<Msg>(&self, message: Msg) -> Result<T, TfheClientError>
+    fn checked_message<Msg>(&self, message: Msg) -> Result<T, GlweClientError>
     where
         Msg: TryInto<T>,
     {
         let message = message
             .try_into()
-            .map_err(|_| TfheClientError::MessageConversion)?;
+            .map_err(|_| GlweClientError::MessageConversion)?;
         if message >= self.parameters.plain_modulus_value() {
-            return Err(TfheClientError::MessageOutOfRange);
+            return Err(GlweClientError::MessageOutOfRange);
         }
         Ok(message)
     }
@@ -182,7 +129,7 @@ where
         R: rand::Rng + rand::CryptoRng,
     {
         match self.parameters.pbs_order() {
-            PbsOrder::BootstrapKeyswitch => {
+            GlwePbsOrder::BootstrapKeyswitch => {
                 let parameters = self.parameters.small_lwe();
                 encrypt_lwe_with_secret(
                     self.key.small_lwe_secret_key().as_ref(),
@@ -195,7 +142,7 @@ where
                     rng,
                 )
             }
-            PbsOrder::KeyswitchBootstrap => {
+            GlwePbsOrder::KeyswitchBootstrap => {
                 let parameters = self.parameters.glwe();
                 encrypt_lwe_with_signed_secret(
                     self.key.glwe_secret_key().as_slice(),
@@ -213,17 +160,17 @@ where
 }
 
 /// Decrypts raw TFHE ciphertexts with the client key.
-pub struct Decryptor<'a, T, LM, GM>
+pub struct GlweDecryptor<'a, T, LM, GM>
 where
     T: FheUint,
     LM: RingContext<T>,
     GM: RingContext<T>,
 {
-    parameters: &'a TfheParameters<T, LM, GM>,
-    key: &'a ClientKey<T>,
+    parameters: &'a GlweTfheParameters<T, LM, GM>,
+    key: &'a GlweClientKey<T>,
 }
 
-impl<'a, T, LM, GM> Decryptor<'a, T, LM, GM>
+impl<'a, T, LM, GM> GlweDecryptor<'a, T, LM, GM>
 where
     T: FheUint,
     LM: RingContext<T>,
@@ -231,26 +178,26 @@ where
 {
     /// Creates a decryptor after checking key compatibility.
     pub fn new(
-        parameters: &'a TfheParameters<T, LM, GM>,
-        key: &'a ClientKey<T>,
-    ) -> Result<Self, TfheClientError> {
+        parameters: &'a GlweTfheParameters<T, LM, GM>,
+        key: &'a GlweClientKey<T>,
+    ) -> Result<Self, GlweClientError> {
         key.check_compatible(parameters)?;
         Ok(Self { parameters, key })
     }
 
     /// Decrypts to the canonical representative in `[0, t)`.
-    pub fn decrypt<Msg>(&self, ciphertext: &Ciphertext<T>) -> Result<Msg, TfheClientError>
+    pub fn decrypt<Msg>(&self, ciphertext: &Ciphertext<T>) -> Result<Msg, GlweClientError>
     where
         Msg: TryFrom<T>,
     {
         let expected = self.parameters.ciphertext_lwe_dimension();
         let actual = ciphertext.dimension();
         if actual != expected {
-            return Err(TfheClientError::CiphertextDimensionMismatch { expected, actual });
+            return Err(GlweClientError::CiphertextDimensionMismatch { expected, actual });
         }
 
         let message: T = match self.parameters.pbs_order() {
-            PbsOrder::BootstrapKeyswitch => {
+            GlwePbsOrder::BootstrapKeyswitch => {
                 let parameters = self.parameters.small_lwe();
                 decrypt_lwe_with_secret(
                     self.key.small_lwe_secret_key().as_ref(),
@@ -259,7 +206,7 @@ where
                     parameters.plaintext_codec(),
                 )
             }
-            PbsOrder::KeyswitchBootstrap => {
+            GlwePbsOrder::KeyswitchBootstrap => {
                 let parameters = self.parameters.glwe();
                 decrypt_lwe_with_signed_secret(
                     self.key.glwe_secret_key().as_slice(),
@@ -269,7 +216,7 @@ where
                 )
             }
         };
-        Msg::try_from(message).map_err(|_| TfheClientError::PlaintextConversion)
+        Msg::try_from(message).map_err(|_| GlweClientError::PlaintextConversion)
     }
 }
 
@@ -381,10 +328,10 @@ where
 
 /// An error produced by the raw TFHE client API.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum TfheClientError {
+pub enum GlweClientError {
     /// The client key does not match the parameter set.
     #[error(transparent)]
-    IncompatibleKey(#[from] TfheKeyError),
+    IncompatibleKey(#[from] GlweKeyError),
 
     /// The input message cannot be represented by the ciphertext integer type.
     #[error("message cannot be represented by the ciphertext integer type")]
@@ -397,20 +344,6 @@ pub enum TfheClientError {
     /// The input message sets the padding half of the plaintext domain.
     #[error("message is outside the padded plaintext domain")]
     MessageOutsidePaddedDomain,
-
-    /// The requested LWE dimension cannot be represented as a ciphertext
-    /// coefficient count.
-    #[error("LWE ciphertext dimension is too large")]
-    CiphertextDimensionTooLarge,
-
-    /// An imported LWE ciphertext has the wrong coefficient count.
-    #[error("LWE ciphertext length mismatch: expected {expected}, got {actual}")]
-    CiphertextLengthMismatch {
-        /// Required coefficient count, including the body.
-        expected: usize,
-        /// Actual coefficient count.
-        actual: usize,
-    },
 
     /// A ciphertext belongs to a different LWE dimension.
     #[error("LWE ciphertext dimension mismatch: expected {expected}, got {actual}")]

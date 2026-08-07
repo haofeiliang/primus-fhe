@@ -10,7 +10,7 @@ use primus_lattice::{
 use primus_lwe::{LweParameters, LweSecretKey};
 use primus_modulus::NativeModulus;
 use primus_poly::Polynomial;
-use primus_tfhe_glwe_fourier::{FourierBlindRotationContext, FourierFunctionalBootstrappingKey};
+use primus_tfhe_glwe_fourier::{FourierGlweBlindRotationContext, FourierGlweBootstrappingKey};
 
 const LWE_DIMENSION: usize = 4;
 const GLWE_DIMENSION: usize = 1;
@@ -65,7 +65,7 @@ fn functional_bootstrapping_key_blind_rotates() {
     let input_secret_key = LweSecretKey::new(vec![1u32, 0, 1, 1], SecretKeyDistr::Binary);
     let output_secret_key = FourierGlweSecretKey::generate(&glwe_params, &mut fft, &mut rng);
     let mut gadget_context = FourierGadgetEncryptContext::new(ggsw_params.size());
-    let key = FourierFunctionalBootstrappingKey::generate_fourier(
+    let key = FourierGlweBootstrappingKey::generate_fourier(
         &input_secret_key,
         &lwe_params,
         &output_secret_key,
@@ -100,7 +100,7 @@ fn functional_bootstrapping_key_blind_rotates() {
     accumulator_fourier.write_torus_form(&mut accumulator, &mut fft);
 
     let mut output: TorusGlwe<Vec<u32>> = TorusGlwe::zero(ggsw_params.glwe_len());
-    let mut blind_rotation_context = FourierBlindRotationContext::new(ggsw_params.size());
+    let mut blind_rotation_context = FourierGlweBlindRotationContext::new(ggsw_params.size());
     key.fourier_blind_rotate_to(
         &input,
         &accumulator,

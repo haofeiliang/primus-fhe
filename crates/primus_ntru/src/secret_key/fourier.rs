@@ -120,11 +120,67 @@ impl FourierNtruSecretKey {
         Table: FftTable,
         R: rand::Rng + rand::CryptoRng,
     {
+        Self::generate_pair(params, fft, rng).map(|(_, transformed_key)| transformed_key)
+    }
+
+    /// Rejection-samples a native-ring unit and returns both its coefficient
+    /// and Fourier representations.
+    ///
+    /// Returning the pair lets callers retain the binary coefficient key used
+    /// by an external LWE interface while reusing the same invertibility
+    /// search for Fourier NTRU encryption.
+    pub fn generate_pair<T, Table, R>(
+        params: &NtruParameters<T, NativeModulus<T>>,
+        fft: &mut FftEngine<'_, Table>,
+        rng: &mut R,
+    ) -> Result<(NtruSecretKey<T>, Self), NtruError>
+    where
+        T: TorusFftValue,
+        Table: FftTable,
+        R: rand::Rng + rand::CryptoRng,
+    {
         assert_eq!(fft.poly_length(), params.poly_length());
         for _ in 0..crate::parameter::KEY_GENERATION_ATTEMPTS {
             let coefficient_key = NtruSecretKey::generate(params, rng);
             match Self::try_from_coeff_secret_key(&coefficient_key, fft) {
-                Ok(key) => return Ok(key),
+                Ok(key) => return Ok((coefficient_key, key)),
+                Err(NtruError::NonInvertibleSecretKey | NtruError::UnstableFourierInverse) => {}
+                Err(error) => return Err(error),
+            }
+        }
+        Err(NtruError::KeyGenerationExhausted)
+    }
+
+    /// Rejection-samples a stable binary prefix padded to the NTRU ring.
+    ///
+    /// The coefficient key contains `active_length` independently sampled
+    /// binary coefficients followed by zeros. The same key can therefore be
+    /// viewed as a smaller external LWE secret after compact extraction.
+    ///
+    /// # Panics
+    ///
+    /// Panics unless the parameter distribution is binary and
+    /// `active_length` belongs to `1..=N`.
+    pub fn generate_padded_binary_pair<T, Table, R>(
+        params: &NtruParameters<T, NativeModulus<T>>,
+        active_length: usize,
+        fft: &mut FftEngine<'_, Table>,
+        rng: &mut R,
+    ) -> Result<(NtruSecretKey<T>, Self), NtruError>
+    where
+        T: TorusFftValue,
+        Table: FftTable,
+        R: rand::Rng + rand::CryptoRng,
+    {
+        assert_eq!(params.secret_key_distr(), SecretKeyDistr::Binary);
+        assert!((1..=params.poly_length()).contains(&active_length));
+        assert_eq!(fft.poly_length(), params.poly_length());
+
+        for _ in 0..crate::parameter::KEY_GENERATION_ATTEMPTS {
+            let coefficient_key =
+                NtruSecretKey::generate_padded_binary(params.poly_length(), active_length, rng);
+            match Self::try_from_coeff_secret_key(&coefficient_key, fft) {
+                Ok(key) => return Ok((coefficient_key, key)),
                 Err(NtruError::NonInvertibleSecretKey | NtruError::UnstableFourierInverse) => {}
                 Err(error) => return Err(error),
             }

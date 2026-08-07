@@ -21,14 +21,14 @@ use primus_tfhe::backend_support::{direct_exponent, modulus_switch};
 /// A Fourier bootstrapping key containing one GGSW encryption per input LWE
 /// secret coefficient.
 #[derive(Clone)]
-pub struct FourierFunctionalBootstrappingKey<T: TorusFftValue> {
+pub struct FourierGlweBootstrappingKey<T: TorusFftValue> {
     data: Vec<Complex64>,
     input_dimension: usize,
     input_modulus: Option<T>,
     size: GadgetSize,
 }
 
-impl<T: TorusFftValue> FourierFunctionalBootstrappingKey<T> {
+impl<T: TorusFftValue> FourierGlweBootstrappingKey<T> {
     /// Returns the input LWE dimension.
     #[inline]
     pub fn input_dimension(&self) -> usize {
@@ -127,7 +127,7 @@ impl<T: TorusFftValue> FourierFunctionalBootstrappingKey<T> {
         output: &mut TorusGlwe<C>,
         parameters: &GlevParameters<T, NativeModulus<T>>,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierBlindRotationContext<T>,
+        context: &mut FourierGlweBlindRotationContext<T>,
     ) where
         Table: FftTable,
         A: RawData<Elem = T> + Data,
@@ -155,7 +155,7 @@ impl<T: TorusFftValue> FourierFunctionalBootstrappingKey<T> {
         output: &mut TorusGlwe<C>,
         parameters: &GlevParameters<T, NativeModulus<T>>,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierBlindRotationContext<T>,
+        context: &mut FourierGlweBlindRotationContext<T>,
     ) where
         Table: FftTable,
         A: RawData<Elem = T> + Data,
@@ -194,7 +194,7 @@ impl<T: TorusFftValue> FourierFunctionalBootstrappingKey<T> {
         output: &mut TorusGlwe<C>,
         parameters: &GlevParameters<T, NativeModulus<T>>,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierBlindRotationContext<T>,
+        context: &mut FourierGlweBlindRotationContext<T>,
     ) where
         Table: FftTable,
         A: RawData<Elem = T> + Data,
@@ -220,7 +220,7 @@ impl<T: TorusFftValue> FourierFunctionalBootstrappingKey<T> {
         parameters: &GlevParameters<T, NativeModulus<T>>,
         workspace: (
             &mut FftEngine<'_, Table>,
-            &mut FourierBlindRotationContext<T>,
+            &mut FourierGlweBlindRotationContext<T>,
         ),
         exponent_of: F,
     ) where
@@ -258,7 +258,7 @@ impl<T: TorusFftValue> FourierFunctionalBootstrappingKey<T> {
         parameters: &GlevParameters<T, NativeModulus<T>>,
         workspace: (
             &mut FftEngine<'_, Table>,
-            &mut FourierBlindRotationContext<T>,
+            &mut FourierGlweBlindRotationContext<T>,
         ),
         exponent_of: F,
     ) where
@@ -269,7 +269,7 @@ impl<T: TorusFftValue> FourierFunctionalBootstrappingKey<T> {
     {
         let (fft, context) = workspace;
 
-        let FourierBlindRotationContext {
+        let FourierGlweBlindRotationContext {
             scratch,
             external_product,
         } = context;
@@ -307,12 +307,12 @@ impl<T: TorusFftValue> FourierFunctionalBootstrappingKey<T> {
 }
 
 /// Reusable workspace for Fourier blind rotation.
-pub struct FourierBlindRotationContext<T: TorusFftValue> {
+pub struct FourierGlweBlindRotationContext<T: TorusFftValue> {
     scratch: TorusGlwe<Vec<T>>,
     external_product: FourierExternalProductContext<T>,
 }
 
-impl<T: TorusFftValue> FourierBlindRotationContext<T> {
+impl<T: TorusFftValue> FourierGlweBlindRotationContext<T> {
     /// Creates a workspace for a checked GLWE size.
     pub fn new(size: GadgetSize) -> Self {
         Self {

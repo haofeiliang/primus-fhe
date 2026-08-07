@@ -2,7 +2,7 @@ use primus_decompose::primitive::ApproxSignedBasis;
 use primus_glwe::{GgswParameters, GlweParameters, SecretKeyDistr};
 use primus_lwe::LweParameters;
 use primus_modulus::NativeModulus;
-use primus_tfhe::{PbsOrder, TfheParameters};
+use primus_tfhe_glwe::{GlwePbsOrder, GlweTfheParameters};
 
 const LWE_DIMENSION: usize = 630;
 const GLWE_DIMENSION: usize = 1;
@@ -37,9 +37,12 @@ fn components() -> Components {
 
 #[test]
 fn derives_the_same_key_switching_layout_for_both_orders() {
-    for order in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
+    for order in [
+        GlwePbsOrder::BootstrapKeyswitch,
+        GlwePbsOrder::KeyswitchBootstrap,
+    ] {
         let (small_lwe, glwe, bootstrapping) = components();
-        let parameters = TfheParameters::try_new(
+        let parameters = GlweTfheParameters::try_new(
             small_lwe,
             glwe,
             bootstrapping,
@@ -70,8 +73,8 @@ fn derives_the_same_key_switching_layout_for_both_orders() {
         assert_eq!(
             parameters.ciphertext_lwe_dimension(),
             match order {
-                PbsOrder::BootstrapKeyswitch => LWE_DIMENSION,
-                PbsOrder::KeyswitchBootstrap => GLWE_DIMENSION * POLY_LENGTH,
+                GlwePbsOrder::BootstrapKeyswitch => LWE_DIMENSION,
+                GlwePbsOrder::KeyswitchBootstrap => GLWE_DIMENSION * POLY_LENGTH,
             }
         );
     }

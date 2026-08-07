@@ -2,9 +2,10 @@ use primus_glwe::{GlweCiphertext, NttGadgetDomain, NttGlweKeySwitchingContext};
 use primus_integer::FheUint;
 use primus_lwe::LweCiphertext;
 use primus_ntt::NttTable;
-use primus_tfhe::{Ciphertext, LookupTable, PbsOrder, ProgrammableBootstrap};
+use primus_tfhe::{Ciphertext, LookupTable, ProgrammableBootstrap};
+use primus_tfhe_glwe::GlwePbsOrder as PbsOrder;
 
-use crate::{NttBlindRotationContext, ServerKey, TfheContext, error::TfheEvaluationError};
+use crate::{NttGlweBlindRotationContext, ServerKey, TfheContext, error::TfheEvaluationError};
 
 /// Reusable NTT workspace for programmable bootstrapping.
 pub struct Evaluator<'a, T, Table>
@@ -16,7 +17,7 @@ where
     server_key: &'a ServerKey<T>,
     key_switching_domain: NttGadgetDomain<'a, T, primus_modulus::BarrettModulus<T>, Table>,
     bootstrapping_domain: NttGadgetDomain<'a, T, primus_modulus::BarrettModulus<T>, Table>,
-    blind_rotation: NttBlindRotationContext<T>,
+    blind_rotation: NttGlweBlindRotationContext<T>,
     key_switching: NttGlweKeySwitchingContext<T>,
     main_glwe: GlweCiphertext<Vec<T>>,
     switched: GlweCiphertext<Vec<T>>,
@@ -62,7 +63,7 @@ where
             context,
             server_key,
             key_switching_domain,
-            blind_rotation: NttBlindRotationContext::new(bootstrapping_domain.size()),
+            blind_rotation: NttGlweBlindRotationContext::new(bootstrapping_domain.size()),
             bootstrapping_domain,
             key_switching: key_switching_context,
             main_glwe: GlweCiphertext::zero(parameters.glwe().glwe_len()),

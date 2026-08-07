@@ -1,8 +1,9 @@
 //! Errors produced by the Fourier TFHE backend.
 
-pub use primus_tfhe::{
-    BooleanError, LookupTableError, TfheClientError, TfheEvaluationError, TfheKeyError,
-    TfheParameterError,
+pub use primus_tfhe::{LookupTableError, TfheEvaluationError};
+pub use primus_tfhe_glwe::{
+    BooleanError, GlweClientError as TfheClientError, GlweKeyError as TfheKeyError,
+    GlweParameterError as TfheParameterError,
 };
 
 /// An incompatibility between TFHE parameters and a Fourier table.

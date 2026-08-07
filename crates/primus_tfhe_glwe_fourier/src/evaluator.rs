@@ -1,9 +1,10 @@
 use primus_fft::{FftEngine, FftTable, TorusFftValue};
 use primus_glwe::{FourierGlweKeySwitchingContext, GlweCiphertext};
 use primus_lwe::LweCiphertext;
-use primus_tfhe::{Ciphertext, LookupTable, PbsOrder, ProgrammableBootstrap};
+use primus_tfhe::{Ciphertext, LookupTable, ProgrammableBootstrap};
+use primus_tfhe_glwe::GlwePbsOrder as PbsOrder;
 
-use crate::{FourierBlindRotationContext, ServerKey, TfheContext, error::TfheEvaluationError};
+use crate::{FourierGlweBlindRotationContext, ServerKey, TfheContext, error::TfheEvaluationError};
 
 /// Reusable Fourier workspace for programmable bootstrapping.
 pub struct Evaluator<'a, T, Table>
@@ -14,7 +15,7 @@ where
     context: &'a TfheContext<T, Table>,
     server_key: &'a ServerKey<T>,
     fft: FftEngine<'a, Table>,
-    blind_rotation: FourierBlindRotationContext<T>,
+    blind_rotation: FourierGlweBlindRotationContext<T>,
     key_switching: FourierGlweKeySwitchingContext<T>,
     main_glwe: GlweCiphertext<Vec<T>>,
     switched: GlweCiphertext<Vec<T>>,
@@ -59,7 +60,7 @@ where
             context,
             server_key,
             fft: context.new_fft_engine(),
-            blind_rotation: FourierBlindRotationContext::new(parameters.bootstrapping().size()),
+            blind_rotation: FourierGlweBlindRotationContext::new(parameters.bootstrapping().size()),
             key_switching: key_switching_context,
             main_glwe: GlweCiphertext::zero(parameters.glwe().glwe_len()),
             switched: GlweCiphertext::zero(parameters.glwe_key_switching().output().glwe_len()),

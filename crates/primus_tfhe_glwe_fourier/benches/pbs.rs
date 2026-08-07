@@ -11,7 +11,7 @@ use primus_glwe::{
 use primus_lwe::{LweCiphertext, LweParameters};
 use primus_modulus::NativeModulus;
 use primus_tfhe_glwe_fourier::{
-    BooleanEncryptor, BooleanEvaluator, BooleanGate, FourierBlindRotationContext, PbsOrder,
+    BooleanEncryptor, BooleanEvaluator, BooleanGate, FourierGlweBlindRotationContext, PbsOrder,
     TfheContext, TfheParameters,
 };
 
@@ -70,7 +70,7 @@ fn bench_order(c: &mut Criterion, order: PbsOrder) {
     let modulus = parameters.glwe().cipher_modulus();
     let mut fft = context.new_fft_engine();
     let bootstrapping = parameters.bootstrapping();
-    let mut blind_rotation = FourierBlindRotationContext::new(bootstrapping.size());
+    let mut blind_rotation = FourierGlweBlindRotationContext::new(bootstrapping.size());
     let key_switching_parameters = parameters.glwe_key_switching().output();
     let mut key_switching =
         FourierGlweKeySwitchingContext::new(key_switching_parameters.glwe_size());

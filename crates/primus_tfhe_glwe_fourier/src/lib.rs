@@ -20,12 +20,13 @@ pub use error::{
     TfheParameterError,
 };
 
-pub use bootstrapping_key::{FourierBlindRotationContext, FourierFunctionalBootstrappingKey};
+pub use bootstrapping_key::{FourierGlweBlindRotationContext, FourierGlweBootstrappingKey};
 pub use client::{Decryptor, Encryptor};
 pub use context::TfheContext;
 pub use evaluator::Evaluator;
 pub use key::{KeyGenerator, ServerKey};
-pub use primus_tfhe::{Ciphertext, ClientKey, LookupTable, LweSecretKeyRef, PbsOrder};
+pub use primus_tfhe::{Ciphertext, LookupTable, LweSecretKeyRef};
+pub use primus_tfhe_glwe::{GlweClientKey as ClientKey, GlwePbsOrder as PbsOrder};
 
 pub use parameters::TfheParameters;
 

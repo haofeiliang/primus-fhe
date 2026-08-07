@@ -1,0 +1,28 @@
+[package]
+name = "primus_tfhe_ntru"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+primus_distr = { path = "../primus_distr" }
+primus_fhe_core = { path = "../primus_fhe_core" }
+primus_integer = { path = "../primus_integer" }
+primus_lwe = { path = "../primus_lwe" }
+primus_ntru = { path = "../primus_ntru" }
+primus_reduce = { path = "../primus_reduce" }
+primus_tfhe = { path = "../primus_tfhe" }
+
+num-traits = { workspace = true }
+rand = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+primus_modulus = { path = "../primus_modulus" }
+
+[features]
+default = []
+simd = [
+    "primus_integer/simd",
+    "primus_lwe/simd",
+    "primus_ntru/simd",
+]

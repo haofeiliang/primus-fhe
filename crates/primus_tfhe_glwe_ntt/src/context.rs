@@ -1,7 +1,8 @@
 use primus_glwe::NttGadgetDomain;
 use primus_integer::FheUint;
 use primus_ntt::NttTable;
-use primus_tfhe::{ClientKey, LookupTable};
+use primus_tfhe::LookupTable;
+use primus_tfhe_glwe::GlweClientKey as ClientKey;
 
 use crate::{
     Decryptor, Encryptor, Evaluator, KeyGenerator, ServerKey, TfheParameters,

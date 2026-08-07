@@ -1,9 +1,10 @@
 use primus_integer::FheUint;
 use primus_reduce::RingContext;
+use primus_tfhe::{Ciphertext, LookupTable, LookupTableError, ProgrammableBootstrap};
 
 use crate::{
-    Ciphertext, ClientKey, Decryptor, Encryptor, LookupTable, LookupTableError, LweCiphertext,
-    PlaintextCodec, PlaintextEmbedding, TfheClientError, TfheEvaluationError, TfheParameters,
+    GlweClientError, GlweClientKey, GlweDecryptor, GlweEncryptor, GlweTfheParameters,
+    LweCiphertext, PlaintextCodec, PlaintextEmbedding, TfheEvaluationError,
 };
 
 /// The complete plaintext modulus used by the Boolean gate encoding.
@@ -49,7 +50,7 @@ where
     LM: RingContext<T>,
     GM: RingContext<T>,
 {
-    inner: Encryptor<'a, T, LM, GM, ClientKey<T>>,
+    inner: GlweEncryptor<'a, T, LM, GM, GlweClientKey<T>>,
 }
 
 impl<'a, T, LM, GM> BooleanEncryptor<'a, T, LM, GM>
@@ -61,12 +62,12 @@ where
     /// Creates a Boolean encryptor and validates the required plaintext
     /// modulus.
     pub fn new(
-        parameters: &'a TfheParameters<T, LM, GM>,
-        key: &'a ClientKey<T>,
+        parameters: &'a GlweTfheParameters<T, LM, GM>,
+        key: &'a GlweClientKey<T>,
     ) -> Result<Self, BooleanError> {
         validate_boolean_parameters(parameters)?;
         Ok(Self {
-            inner: Encryptor::with_client_key(parameters, key)?,
+            inner: GlweEncryptor::with_client_key(parameters, key)?,
         })
     }
 
@@ -93,7 +94,7 @@ where
     LM: RingContext<T>,
     GM: RingContext<T>,
 {
-    inner: Decryptor<'a, T, LM, GM>,
+    inner: GlweDecryptor<'a, T, LM, GM>,
 }
 
 impl<'a, T, LM, GM> BooleanDecryptor<'a, T, LM, GM>
@@ -105,12 +106,12 @@ where
     /// Creates a Boolean decryptor and validates the required plaintext
     /// modulus.
     pub fn new(
-        parameters: &'a TfheParameters<T, LM, GM>,
-        key: &'a ClientKey<T>,
+        parameters: &'a GlweTfheParameters<T, LM, GM>,
+        key: &'a GlweClientKey<T>,
     ) -> Result<Self, BooleanError> {
         validate_boolean_parameters(parameters)?;
         Ok(Self {
-            inner: Decryptor::new(parameters, key)?,
+            inner: GlweDecryptor::new(parameters, key)?,
         })
     }
 
@@ -156,25 +157,6 @@ impl BooleanGate {
     }
 }
 
-/// Minimal interface required by the backend-independent Boolean layer.
-pub trait ProgrammableBootstrap<T: FheUint> {
-    /// Applies a compiled lookup table into an existing ciphertext allocation.
-    ///
-    /// The lookup table must have been compiled for the same parameter set as
-    /// the backend evaluator.
-    ///
-    /// # Panics
-    ///
-    /// Panics if an operand does not have the dimensions required by the
-    /// backend context.
-    fn apply_lookup_table_to(
-        &mut self,
-        input: &Ciphertext<T>,
-        lookup_table: &LookupTable<T>,
-        output: &mut Ciphertext<T>,
-    );
-}
-
 /// Backend-independent Boolean gate evaluator.
 ///
 /// The backend supplies only programmable bootstrapping; Boolean encodings,
@@ -188,7 +170,7 @@ where
     GM: RingContext<T>,
     E: ProgrammableBootstrap<T>,
 {
-    parameters: &'a TfheParameters<T, LM, GM>,
+    parameters: &'a GlweTfheParameters<T, LM, GM>,
     bootstrapper: E,
     gate_lookup_tables: [LookupTable<T>; 4],
     output_shift: T,
@@ -205,7 +187,7 @@ where
 {
     /// Creates a Boolean evaluator from a backend PBS implementation.
     pub fn try_new(
-        parameters: &'a TfheParameters<T, LM, GM>,
+        parameters: &'a GlweTfheParameters<T, LM, GM>,
         bootstrapper: E,
     ) -> Result<Self, BooleanError> {
         validate_boolean_parameters(parameters)?;
@@ -221,11 +203,9 @@ where
         )
         .encode_value(T::ONE, PlaintextEmbedding::Unsigned);
         let dimension = parameters.ciphertext_lwe_dimension();
-        let gate_input = Ciphertext::try_from_lwe(LweCiphertext::zero(dimension), dimension)?;
-        let mux_branch = BooleanCiphertext::from_raw(Ciphertext::try_from_lwe(
-            LweCiphertext::zero(dimension),
-            dimension,
-        )?);
+        let gate_input = Ciphertext::from_lwe(LweCiphertext::zero(dimension));
+        let mux_branch =
+            BooleanCiphertext::from_raw(Ciphertext::from_lwe(LweCiphertext::zero(dimension)));
         Ok(Self {
             parameters,
             bootstrapper,
@@ -447,7 +427,7 @@ fn prepare_binary_gate<T, LM, GM>(
     lhs: &BooleanCiphertext<T>,
     rhs: &BooleanCiphertext<T>,
     output: &mut Ciphertext<T>,
-    parameters: &TfheParameters<T, LM, GM>,
+    parameters: &GlweTfheParameters<T, LM, GM>,
 ) where
     T: FheUint,
     LM: RingContext<T>,
@@ -477,7 +457,7 @@ fn prepare_binary_gate<T, LM, GM>(
 }
 
 fn compile_boolean_lookup_table<T, LM, GM>(
-    parameters: &TfheParameters<T, LM, GM>,
+    parameters: &GlweTfheParameters<T, LM, GM>,
     positive: [bool; 2],
 ) -> Result<LookupTable<T>, LookupTableError>
 where
@@ -501,8 +481,10 @@ where
     })
 }
 
-fn assert_dimension<T, LM, GM>(ciphertext: &Ciphertext<T>, parameters: &TfheParameters<T, LM, GM>)
-where
+fn assert_dimension<T, LM, GM>(
+    ciphertext: &Ciphertext<T>,
+    parameters: &GlweTfheParameters<T, LM, GM>,
+) where
     T: FheUint,
     LM: RingContext<T>,
     GM: RingContext<T>,
@@ -512,7 +494,7 @@ where
 }
 
 fn validate_boolean_parameters<T, LM, GM>(
-    parameters: &TfheParameters<T, LM, GM>,
+    parameters: &GlweTfheParameters<T, LM, GM>,
 ) -> Result<(), BooleanError>
 where
     T: FheUint,
@@ -549,7 +531,7 @@ pub enum BooleanError {
 
     /// Raw client-side encryption or decryption failed.
     #[error(transparent)]
-    Client(#[from] TfheClientError),
+    Client(#[from] GlweClientError),
 
     /// Lookup-table compilation failed.
     #[error(transparent)]

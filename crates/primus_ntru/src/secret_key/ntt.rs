@@ -97,6 +97,25 @@ impl<T: FheUint> NttNtruSecretKey<T> {
         Table: NttTable<ValueT = T>,
         R: rand::Rng + rand::CryptoRng,
     {
+        Self::generate_pair(params, ntt_table, rng).map(|(_, transformed_key)| transformed_key)
+    }
+
+    /// Rejection-samples an invertible key and returns both its coefficient
+    /// and NTT representations.
+    ///
+    /// Returning the pair lets callers use the same sampled polynomial for
+    /// coefficient-domain protocols and NTT encryption without repeating the
+    /// invertibility search.
+    pub fn generate_pair<M, Table, R>(
+        params: &NtruParameters<T, M>,
+        ntt_table: &Table,
+        rng: &mut R,
+    ) -> Result<(NtruSecretKey<T>, Self), NtruError>
+    where
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+        R: rand::Rng + rand::CryptoRng,
+    {
         assert_eq!(ntt_table.poly_length(), params.poly_length());
         assert_eq!(ntt_table.modulus(), params.cipher_modulus().value());
 
@@ -107,7 +126,49 @@ impl<T: FheUint> NttNtruSecretKey<T> {
                 params.cipher_modulus(),
                 ntt_table,
             ) {
-                Ok(key) => return Ok(key),
+                Ok(key) => return Ok((coefficient_key, key)),
+                Err(NtruError::NonInvertibleSecretKey) => {}
+                Err(error) => return Err(error),
+            }
+        }
+        Err(NtruError::KeyGenerationExhausted)
+    }
+
+    /// Rejection-samples an invertible binary prefix padded to the NTRU ring.
+    ///
+    /// The returned coefficient key has `active_length` independently sampled
+    /// binary coefficients followed by zeros. This supports compact extraction
+    /// into a smaller LWE dimension while retaining an NTRU key switch.
+    ///
+    /// # Panics
+    ///
+    /// Panics unless the parameter distribution is binary and
+    /// `active_length` belongs to `1..=N`.
+    pub fn generate_padded_binary_pair<M, Table, R>(
+        params: &NtruParameters<T, M>,
+        active_length: usize,
+        ntt_table: &Table,
+        rng: &mut R,
+    ) -> Result<(NtruSecretKey<T>, Self), NtruError>
+    where
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+        R: rand::Rng + rand::CryptoRng,
+    {
+        assert_eq!(params.secret_key_distr(), SecretKeyDistr::Binary);
+        assert!((1..=params.poly_length()).contains(&active_length));
+        assert_eq!(ntt_table.poly_length(), params.poly_length());
+        assert_eq!(ntt_table.modulus(), params.cipher_modulus().value());
+
+        for _ in 0..crate::parameter::KEY_GENERATION_ATTEMPTS {
+            let coefficient_key =
+                NtruSecretKey::generate_padded_binary(params.poly_length(), active_length, rng);
+            match Self::try_from_coeff_secret_key(
+                &coefficient_key,
+                params.cipher_modulus(),
+                ntt_table,
+            ) {
+                Ok(key) => return Ok((coefficient_key, key)),
                 Err(NtruError::NonInvertibleSecretKey) => {}
                 Err(error) => return Err(error),
             }

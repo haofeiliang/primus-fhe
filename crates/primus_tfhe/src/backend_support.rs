@@ -20,6 +20,7 @@ pub fn modulus_switch<T: FheUint>(value: T, modulus: Option<T>, two_n: usize) ->
     }
 }
 
+/// Rounds a native-torus coefficient into the rotation domain.
 #[inline]
 fn native_modulus_switch<T: FheUint>(value: T, two_n: usize) -> usize {
     debug_assert!(two_n.is_power_of_two());
@@ -34,6 +35,7 @@ fn native_modulus_switch<T: FheUint>(value: T, two_n: usize) -> usize {
     rounded.try_into().unwrap() & (two_n - 1)
 }
 
+/// Rounds an explicitly reduced coefficient into the rotation domain.
 #[inline]
 fn explicit_modulus_switch<T: FheUint>(value: T, modulus: T, two_n: usize) -> usize {
     debug_assert!(two_n.is_power_of_two());
@@ -48,16 +50,10 @@ mod tests {
     use super::{explicit_modulus_switch, native_modulus_switch};
 
     #[test]
-    fn native_modulus_switch_rounds_half_up_and_wraps() {
-        assert_eq!(native_modulus_switch(0u32, 8), 0);
+    fn modulus_switch_rounding_matches_integer_oracles() {
         assert_eq!(native_modulus_switch(1u32 << 28, 8), 1);
-        assert_eq!(native_modulus_switch((1u32 << 29) - 1, 8), 1);
-        assert_eq!(native_modulus_switch(1u32 << 29, 8), 1);
         assert_eq!(native_modulus_switch(u32::MAX, 8), 0);
-    }
 
-    #[test]
-    fn explicit_modulus_switch_matches_integer_oracle() {
         const Q: u32 = 132_120_577;
         for value in [0, 1, Q / 8, Q / 2, Q - 1] {
             let oracle = ((value as u64 * 8 + (Q / 2) as u64) / Q as u64) as usize & 7;

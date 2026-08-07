@@ -3,7 +3,9 @@ use primus_factor::FactorSliceOps;
 use primus_integer::FheUint;
 use primus_ntt::NttTable;
 use primus_poly::{ArrayBase, NttPolynomial, Polynomial};
-use primus_reduce::FieldContext;
+use primus_reduce::{FieldContext, RingContext};
+
+use crate::lwe::Lwe;
 
 use super::NttNtru;
 
@@ -46,13 +48,62 @@ where
     S: RawData<Elem = T> + Data,
     T: FheUint,
 {
+    /// Extracts the constant-term NTRU phase as an LWE ciphertext.
+    ///
+    /// For an NTRU ciphertext `c` encrypted under `f`, this writes
+    /// `a[0] = -c[0]`, `a[i] = c[N - i]` for `i > 0`, and `b = 0`. Hence the
+    /// LWE phase `b - <a, f>` equals the constant coefficient of `f * c` in
+    /// `Z_q[X] / (X^N + 1)`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `output` does not have LWE dimension `N`.
+    #[inline]
+    pub fn extract_lwe_to<M, A>(&self, output: &mut Lwe<A>, modulus: M)
+    where
+        M: RingContext<T>,
+        A: RawData<Elem = T> + DataMut,
+    {
+        let coefficients = self.as_ref();
+        assert_eq!(output.dimension(), coefficients.len());
+        self.extract_compact_lwe_to(output, modulus);
+    }
+
+    /// Extracts the constant-term phase while omitting a zero-padded suffix.
+    ///
+    /// If the NTRU secret is `[s_lwe..., 0...]`, an output of dimension
+    /// `s_lwe.len()` has the same phase as full extraction without allocating
+    /// or processing the omitted mask coefficients.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the output dimension is zero or exceeds the NTRU polynomial
+    /// length.
+    #[inline]
+    pub fn extract_compact_lwe_to<M, A>(&self, output: &mut Lwe<A>, modulus: M)
+    where
+        M: primus_reduce::RingContext<T>,
+        A: RawData<Elem = T> + DataMut,
+    {
+        let coefficients = self.as_ref();
+        let (a, b) = output.a_b_mut();
+        assert!((1..=coefficients.len()).contains(&a.len()));
+
+        *b = T::ZERO;
+        a[0] = modulus.reduce_neg(coefficients[0]);
+        a[1..]
+            .iter_mut()
+            .zip(coefficients[1..].iter().rev())
+            .for_each(|(output, &coefficient)| *output = coefficient);
+    }
+
     /// Multiplies this ciphertext by `X^exponent` and writes the result.
     ///
     /// `exponent` must belong to `[0, 2N)`.
     #[inline]
     pub fn mul_monomial_to<M, A>(&self, exponent: usize, output: &mut Ntru<A>, modulus: M)
     where
-        M: primus_reduce::RingContext<T>,
+        M: RingContext<T>,
         A: RawData<Elem = T> + DataMut,
     {
         Polynomial(self.as_ref()).mul_monomial_to(
@@ -68,7 +119,7 @@ where
     #[inline]
     pub fn mul_monomial_sub_one_to<M, A>(&self, exponent: usize, output: &mut Ntru<A>, modulus: M)
     where
-        M: primus_reduce::RingContext<T>,
+        M: RingContext<T>,
         A: RawData<Elem = T> + DataMut,
     {
         Polynomial(self.as_ref()).mul_monomial_sub_one_to(

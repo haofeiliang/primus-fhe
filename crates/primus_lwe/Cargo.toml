@@ -24,10 +24,15 @@ criterion = { workspace = true }
 name = "lwe_enc"
 harness = false
 
+[[bench]]
+name = "key_switch"
+harness = false
+
 [features]
 default = []
 simd = [
     "primus_fhe_core/simd",
     "primus_integer/simd",
     "primus_lattice/simd",
+    "primus_modulus/simd",
 ]

@@ -8,7 +8,7 @@ use primus_glwe::{GlweCiphertext, NttGlweKeySwitchingContext};
 use primus_lwe::LweCiphertext;
 use primus_ntt::{NttTable, U32NttTable};
 use primus_tfhe_glwe_ntt::{
-    BooleanEncryptor, BooleanEvaluator, BooleanGate, NttBlindRotationContext, PbsOrder,
+    BooleanEncryptor, BooleanEvaluator, BooleanGate, NttGlweBlindRotationContext, PbsOrder,
     TfheContext, TfheParameters, boolean_parameters,
 };
 
@@ -54,7 +54,7 @@ fn bench_order(c: &mut Criterion, order: PbsOrder) {
     let mut output = input.clone();
 
     let bootstrapping_domain = context.bootstrapping_domain();
-    let mut blind_rotation = NttBlindRotationContext::new(bootstrapping_domain.size());
+    let mut blind_rotation = NttGlweBlindRotationContext::new(bootstrapping_domain.size());
     let key_switching_domain = context.key_switching_domain();
     let mut key_switching =
         NttGlweKeySwitchingContext::new(key_switching_domain.size().glwe_size());

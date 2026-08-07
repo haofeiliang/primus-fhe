@@ -10,7 +10,7 @@ use primus_lwe::{LweParameters, LweSecretKey};
 use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, UintNttTable};
 use primus_poly::Polynomial;
-use primus_tfhe_glwe_ntt::{NttBlindRotationContext, NttFunctionalBootstrappingKey};
+use primus_tfhe_glwe_ntt::{NttGlweBlindRotationContext, NttGlweBootstrappingKey};
 
 const LWE_DIMENSION: usize = 4;
 const GLWE_DIMENSION: usize = 1;
@@ -69,7 +69,7 @@ fn functional_bootstrapping_key_blind_rotates() {
     let coeff_output_secret_key = GlweSecretKey::generate(&glwe_params, &mut rng);
     let output_secret_key = NttGlweSecretKey::from_coeff_secret_key(&coeff_output_secret_key, &ntt);
     let mut gadget_context = NttGadgetEncryptContext::new(domain.size());
-    let key = NttFunctionalBootstrappingKey::generate_ntt(
+    let key = NttGlweBootstrappingKey::generate_ntt(
         &input_secret_key,
         &lwe_params,
         &output_secret_key,
@@ -101,7 +101,7 @@ fn functional_bootstrapping_key_blind_rotates() {
     let accumulator = accumulator_ntt.into_coeff_form(&ntt);
 
     let mut output: Glwe<Vec<u32>> = Glwe::zero(ggsw_params.glwe_len());
-    let mut blind_rotation_context = NttBlindRotationContext::new(domain.size());
+    let mut blind_rotation_context = NttGlweBlindRotationContext::new(domain.size());
     key.ntt_blind_rotate_to(
         &input,
         &accumulator,

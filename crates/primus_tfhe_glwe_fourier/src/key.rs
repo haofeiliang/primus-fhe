@@ -3,16 +3,16 @@ use primus_glwe::{
     FourierGadgetEncryptContext, FourierGlweKeySwitchingKey, FourierGlweSecretKey, GlweSecretKey,
 };
 use primus_lwe::LweSecretKey;
-use primus_tfhe::ClientKey;
+use primus_tfhe_glwe::GlweClientKey as ClientKey;
 
-use crate::{FourierFunctionalBootstrappingKey, TfheContext, TfheParameters, error::TfheKeyError};
+use crate::{FourierGlweBootstrappingKey, TfheContext, TfheParameters, error::TfheKeyError};
 
 /// Fourier-domain evaluation keys used by a TFHE server.
 ///
 /// Both PBS orders share these key materials. [`crate::PbsOrder`] only changes
 /// the order in which the evaluator applies them.
 pub struct ServerKey<T: TorusFftValue> {
-    bootstrapping_key: FourierFunctionalBootstrappingKey<T>,
+    bootstrapping_key: FourierGlweBootstrappingKey<T>,
     glwe_key_switching_key: FourierGlweKeySwitchingKey,
 }
 
@@ -31,7 +31,7 @@ impl<T: TorusFftValue> ServerKey<T> {
 
     /// Returns the Fourier functional bootstrapping key.
     #[inline]
-    pub fn bootstrapping_key(&self) -> &FourierFunctionalBootstrappingKey<T> {
+    pub fn bootstrapping_key(&self) -> &FourierGlweBootstrappingKey<T> {
         &self.bootstrapping_key
     }
 
@@ -44,12 +44,7 @@ impl<T: TorusFftValue> ServerKey<T> {
     /// Decomposes this server key into its bootstrapping and key-switching
     /// keys.
     #[inline]
-    pub fn into_parts(
-        self,
-    ) -> (
-        FourierFunctionalBootstrappingKey<T>,
-        FourierGlweKeySwitchingKey,
-    ) {
+    pub fn into_parts(self) -> (FourierGlweBootstrappingKey<T>, FourierGlweKeySwitchingKey) {
         (self.bootstrapping_key, self.glwe_key_switching_key)
     }
 }
@@ -118,7 +113,7 @@ where
         &mut self,
         client_key: &ClientKey<T>,
         rng: &mut R,
-    ) -> FourierFunctionalBootstrappingKey<T>
+    ) -> FourierGlweBootstrappingKey<T>
     where
         R: rand::Rng + rand::CryptoRng,
     {
@@ -129,7 +124,7 @@ where
         );
         let bootstrapping_parameters = parameters.bootstrapping();
         self.gadget.resize(bootstrapping_parameters.size());
-        FourierFunctionalBootstrappingKey::generate_fourier(
+        FourierGlweBootstrappingKey::generate_fourier(
             client_key.small_lwe_secret_key(),
             parameters.small_lwe(),
             &main_glwe_secret_key,

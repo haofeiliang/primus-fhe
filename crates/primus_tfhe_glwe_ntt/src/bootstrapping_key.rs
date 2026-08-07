@@ -19,7 +19,7 @@ use primus_tfhe::backend_support::{direct_exponent, modulus_switch};
 /// An NTT bootstrapping key containing one GGSW encryption per input LWE
 /// secret coefficient.
 #[derive(Clone)]
-pub struct NttFunctionalBootstrappingKey<T: FheUint> {
+pub struct NttGlweBootstrappingKey<T: FheUint> {
     data: Vec<T>,
     input_dimension: usize,
     input_modulus: Option<T>,
@@ -27,7 +27,7 @@ pub struct NttFunctionalBootstrappingKey<T: FheUint> {
     cipher_modulus: T,
 }
 
-impl<T: FheUint> NttFunctionalBootstrappingKey<T> {
+impl<T: FheUint> NttGlweBootstrappingKey<T> {
     /// Returns the input LWE dimension.
     #[inline]
     pub fn input_dimension(&self) -> usize {
@@ -125,7 +125,7 @@ impl<T: FheUint> NttFunctionalBootstrappingKey<T> {
         accumulator: &Glwe<B>,
         output: &mut Glwe<C>,
         domain: &NttGadgetDomain<'_, T, M, Table>,
-        context: &mut NttBlindRotationContext<T>,
+        context: &mut NttGlweBlindRotationContext<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
@@ -148,7 +148,7 @@ impl<T: FheUint> NttFunctionalBootstrappingKey<T> {
         lookup_table: &Polynomial<B>,
         output: &mut Glwe<C>,
         domain: &NttGadgetDomain<'_, T, M, Table>,
-        context: &mut NttBlindRotationContext<T>,
+        context: &mut NttGlweBlindRotationContext<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
@@ -188,7 +188,7 @@ impl<T: FheUint> NttFunctionalBootstrappingKey<T> {
         accumulator: &Glwe<B>,
         output: &mut Glwe<C>,
         domain: &NttGadgetDomain<'_, T, M, Table>,
-        context: &mut NttBlindRotationContext<T>,
+        context: &mut NttGlweBlindRotationContext<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
@@ -208,7 +208,7 @@ impl<T: FheUint> NttFunctionalBootstrappingKey<T> {
         accumulator: &Glwe<B>,
         output: &mut Glwe<C>,
         domain: &NttGadgetDomain<'_, T, M, Table>,
-        context: &mut NttBlindRotationContext<T>,
+        context: &mut NttGlweBlindRotationContext<T>,
         exponent_of: F,
     ) where
         M: FieldContext<T>,
@@ -245,7 +245,7 @@ impl<T: FheUint> NttFunctionalBootstrappingKey<T> {
         input: &Lwe<A>,
         output: &mut Glwe<C>,
         domain: &NttGadgetDomain<'_, T, M, Table>,
-        context: &mut NttBlindRotationContext<T>,
+        context: &mut NttGlweBlindRotationContext<T>,
         exponent_of: F,
     ) where
         M: FieldContext<T>,
@@ -258,7 +258,7 @@ impl<T: FheUint> NttFunctionalBootstrappingKey<T> {
         let ntt = domain.table();
         let modulus = parameters.cipher_modulus();
 
-        let NttBlindRotationContext {
+        let NttGlweBlindRotationContext {
             scratch,
             external_product,
         } = context;
@@ -298,12 +298,12 @@ impl<T: FheUint> NttFunctionalBootstrappingKey<T> {
 }
 
 /// Reusable workspace for NTT blind rotation.
-pub struct NttBlindRotationContext<T: FheUint> {
+pub struct NttGlweBlindRotationContext<T: FheUint> {
     scratch: Glwe<Vec<T>>,
     external_product: NttExternalProductContext<T>,
 }
 
-impl<T: FheUint> NttBlindRotationContext<T> {
+impl<T: FheUint> NttGlweBlindRotationContext<T> {
     /// Creates a workspace for a checked GLWE size.
     pub fn new(size: GadgetSize) -> Self {
         Self {
