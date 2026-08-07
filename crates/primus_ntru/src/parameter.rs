@@ -1,5 +1,6 @@
 //! Parameters shared by the NTT and Fourier NTRU backends.
 
+use primus_decompose::{ApproxSignedBasisError, primitive::ApproxSignedBasis};
 use primus_distr::{DiscreteGaussian, SignedDiscreteGaussian};
 use primus_fhe_core::plaintext::PlaintextCodec;
 use primus_integer::FheUint;
@@ -128,5 +129,113 @@ where
     #[inline]
     pub fn noise_distribution(&self) -> &DiscreteGaussian<T> {
         &self.noise_distribution
+    }
+}
+
+/// Parameters for NLev and NGSW ciphertexts in one NTRU modulus domain.
+///
+/// This type binds the underlying NTRU encryption parameters to the
+/// approximate signed decomposition basis used by a gadget operation. Create
+/// separate values when key switching, bootstrapping, or another operation
+/// uses different decomposition parameters.
+#[derive(Clone)]
+pub struct NlevParameters<T, M>
+where
+    T: FheUint,
+    M: RingContext<T>,
+{
+    ntru: NtruParameters<T, M>,
+    basis: ApproxSignedBasis<T>,
+    nlev_len: usize,
+}
+
+impl<T, M> NlevParameters<T, M>
+where
+    T: FheUint,
+    M: RingContext<T>,
+{
+    /// Creates NLev/NGSW parameters from matching NTRU parameters.
+    ///
+    /// `log_basis` is the base-2 logarithm of the gadget basis.
+    /// `reverse_length`, when present, selects the retained decomposition
+    /// level count.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the decomposition parameters are invalid for the NTRU
+    /// ciphertext modulus.
+    #[must_use]
+    #[inline]
+    pub fn with_ntru_params(
+        ntru: &NtruParameters<T, M>,
+        log_basis: u32,
+        reverse_length: Option<usize>,
+    ) -> Self {
+        Self::try_with_ntru_params(ntru, log_basis, reverse_length)
+            .unwrap_or_else(|error| panic!("failed to construct NLev parameters: {error}"))
+    }
+
+    /// Tries to create NLev/NGSW parameters and their decomposition basis in
+    /// the modulus domain of `ntru`.
+    pub fn try_with_ntru_params(
+        ntru: &NtruParameters<T, M>,
+        log_basis: u32,
+        reverse_length: Option<usize>,
+    ) -> Result<Self, ApproxSignedBasisError> {
+        let basis =
+            ApproxSignedBasis::try_new(ntru.cipher_modulus_value(), log_basis, reverse_length)?;
+        let nlev_len = basis
+            .decompose_length()
+            .checked_mul(ntru.poly_length())
+            .expect("NLev ciphertext length overflow");
+        Ok(Self {
+            ntru: ntru.clone(),
+            basis,
+            nlev_len,
+        })
+    }
+
+    /// Returns the underlying NTRU encryption parameters.
+    #[must_use]
+    #[inline]
+    pub fn ntru(&self) -> &NtruParameters<T, M> {
+        &self.ntru
+    }
+
+    /// Returns the approximate signed decomposition basis.
+    #[must_use]
+    #[inline]
+    pub fn basis(&self) -> &ApproxSignedBasis<T> {
+        &self.basis
+    }
+
+    /// Returns the polynomial length `N`.
+    #[must_use]
+    #[inline]
+    pub fn poly_length(&self) -> usize {
+        self.ntru.poly_length()
+    }
+
+    /// Returns the number of retained decomposition levels.
+    #[must_use]
+    #[inline]
+    pub fn decompose_length(&self) -> usize {
+        self.basis.decompose_length()
+    }
+
+    /// Returns the number of coefficient or NTT values in an NLev/NGSW
+    /// ciphertext.
+    #[must_use]
+    #[inline]
+    pub fn nlev_len(&self) -> usize {
+        self.nlev_len
+    }
+
+    /// Returns the number of complex values in a Fourier NLev/NGSW
+    /// ciphertext.
+    #[must_use]
+    #[inline]
+    pub fn fourier_nlev_len(&self) -> usize {
+        self.nlev_len >> 1
     }
 }

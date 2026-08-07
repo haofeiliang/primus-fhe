@@ -1,7 +1,6 @@
 //! NLev and NGSW generation with transform-domain NTRU secret keys.
 
 use primus_data::{Data, DataMut, RawData};
-use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{Complex64, FftEngine, FftTable, TorusFftValue};
 use primus_integer::FheUint;
 use primus_modulus::NativeModulus;
@@ -11,7 +10,7 @@ use primus_reduce::FieldContext;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::{
-    FourierNgswCiphertext, FourierNlevCiphertext, NtruParameters, NttNgswCiphertext,
+    FourierNgswCiphertext, FourierNlevCiphertext, NlevParameters, NttNgswCiphertext,
     NttNlevCiphertext,
 };
 
@@ -75,8 +74,7 @@ impl<T: FheUint> NttNtruSecretKey<T> {
         &self,
         message: &Polynomial<A>,
         result: &mut NttNlevCiphertext<B>,
-        params: &NtruParameters<T, M>,
-        basis: &ApproxSignedBasis<T>,
+        params: &NlevParameters<T, M>,
         ntt: &Table,
         rng: &mut R,
         context: &mut NttNtruGadgetEncryptContext<T>,
@@ -87,16 +85,18 @@ impl<T: FheUint> NttNtruSecretKey<T> {
         A: RawData<Elem = T> + Data,
         B: RawData<Elem = T> + DataMut,
     {
-        self.assert_gadget_domain(message, result.as_ref(), params, basis, ntt, context);
+        self.assert_gadget_domain(message, result.as_ref(), params, ntt, context);
 
         let poly_length = self.poly_length();
-        let modulus = params.cipher_modulus();
-        for (scalar, mut level) in basis
+        let ntru_params = params.ntru();
+        let modulus = ntru_params.cipher_modulus();
+        for (scalar, mut level) in params
+            .basis()
             .scalar_iter()
             .zip(result.iter_ntt_ntru_mut(poly_length))
         {
             message.mul_scalar_to(scalar, &mut context.encoded, modulus);
-            self.encrypt_encoded_to_unchecked(&context.encoded, &mut level, params, ntt, rng);
+            self.encrypt_encoded_to_unchecked(&context.encoded, &mut level, ntru_params, ntt, rng);
         }
     }
 
@@ -105,8 +105,7 @@ impl<T: FheUint> NttNtruSecretKey<T> {
         &self,
         message: &Polynomial<A>,
         result: &mut NttNgswCiphertext<B>,
-        params: &NtruParameters<T, M>,
-        basis: &ApproxSignedBasis<T>,
+        params: &NlevParameters<T, M>,
         ntt: &Table,
         rng: &mut R,
         context: &mut NttNtruGadgetEncryptContext<T>,
@@ -117,17 +116,19 @@ impl<T: FheUint> NttNtruSecretKey<T> {
         A: RawData<Elem = T> + Data,
         B: RawData<Elem = T> + DataMut,
     {
-        self.assert_gadget_domain(message, result.as_ref(), params, basis, ntt, context);
+        self.assert_gadget_domain(message, result.as_ref(), params, ntt, context);
 
         let poly_length = self.poly_length();
-        let modulus = params.cipher_modulus();
-        for (scalar, mut level) in basis
+        let ntru_params = params.ntru();
+        let modulus = ntru_params.cipher_modulus();
+        for (scalar, mut level) in params
+            .basis()
             .scalar_iter()
             .zip(result.iter_ntt_ntru_mut(poly_length))
         {
             message.mul_scalar_to(scalar, &mut context.encoded, modulus);
             ntt.transform_slice(context.encoded.as_mut());
-            self.encrypt_zero_to_unchecked(&mut level, params, ntt, rng);
+            self.encrypt_zero_to_unchecked(&mut level, ntru_params, ntt, rng);
             NttPolynomial(level.as_mut())
                 .add_assign(&NttPolynomial(context.encoded.as_ref()), modulus);
         }
@@ -137,8 +138,7 @@ impl<T: FheUint> NttNtruSecretKey<T> {
         &self,
         message: &Polynomial<A>,
         result: &[T],
-        params: &NtruParameters<T, M>,
-        basis: &ApproxSignedBasis<T>,
+        params: &NlevParameters<T, M>,
         ntt: &Table,
         context: &NttNtruGadgetEncryptContext<T>,
     ) where
@@ -146,11 +146,10 @@ impl<T: FheUint> NttNtruSecretKey<T> {
         Table: NttTable<ValueT = T>,
         A: RawData<Elem = T> + Data,
     {
-        self.assert_domain(params, ntt);
-        assert_eq!(basis.modulus(), Some(params.cipher_modulus().value()));
+        self.assert_domain(params.ntru(), ntt);
         assert_eq!(message.as_ref().len(), self.poly_length());
         assert_eq!(context.encoded.as_ref().len(), self.poly_length());
-        assert_eq!(result.len(), basis.decompose_length() * self.poly_length());
+        assert_eq!(result.len(), params.nlev_len());
     }
 }
 
@@ -160,8 +159,7 @@ impl FourierNtruSecretKey {
         &self,
         message: &Polynomial<A>,
         result: &mut FourierNlevCiphertext<B>,
-        params: &NtruParameters<T, NativeModulus<T>>,
-        basis: &ApproxSignedBasis<T>,
+        params: &NlevParameters<T, NativeModulus<T>>,
         fft: &mut FftEngine<'_, Table>,
         rng: &mut R,
         context: &mut FourierNtruGadgetEncryptContext<T>,
@@ -172,10 +170,12 @@ impl FourierNtruSecretKey {
         A: RawData<Elem = T> + Data,
         B: RawData<Elem = Complex64> + DataMut,
     {
-        self.assert_gadget_domain(message, result.as_ref(), params, basis, fft, context);
+        self.assert_gadget_domain(message, result.as_ref(), params, fft, context);
 
-        let modulus = params.cipher_modulus();
-        for (scalar, mut level) in basis
+        let ntru_params = params.ntru();
+        let modulus = ntru_params.cipher_modulus();
+        for (scalar, mut level) in params
+            .basis()
             .scalar_iter()
             .zip(result.iter_ntru_mut(fft.fourier_length()))
         {
@@ -183,7 +183,7 @@ impl FourierNtruSecretKey {
             self.encrypt_encoded_to_unchecked(
                 &context.encoded,
                 &mut level,
-                params,
+                ntru_params,
                 fft,
                 rng,
                 &mut context.ntru,
@@ -196,8 +196,7 @@ impl FourierNtruSecretKey {
         &self,
         message: &Polynomial<A>,
         result: &mut FourierNgswCiphertext<B>,
-        params: &NtruParameters<T, NativeModulus<T>>,
-        basis: &ApproxSignedBasis<T>,
+        params: &NlevParameters<T, NativeModulus<T>>,
         fft: &mut FftEngine<'_, Table>,
         rng: &mut R,
         context: &mut FourierNtruGadgetEncryptContext<T>,
@@ -208,16 +207,18 @@ impl FourierNtruSecretKey {
         A: RawData<Elem = T> + Data,
         B: RawData<Elem = Complex64> + DataMut,
     {
-        self.assert_gadget_domain(message, result.as_ref(), params, basis, fft, context);
+        self.assert_gadget_domain(message, result.as_ref(), params, fft, context);
 
-        let modulus = params.cipher_modulus();
-        for (scalar, mut level) in basis
+        let ntru_params = params.ntru();
+        let modulus = ntru_params.cipher_modulus();
+        for (scalar, mut level) in params
+            .basis()
             .scalar_iter()
             .zip(result.iter_ntru_mut(fft.fourier_length()))
         {
             message.mul_scalar_to(scalar, &mut context.encoded, modulus);
             fft.forward_as_torus(context.encoded.as_ref(), &mut context.transformed);
-            self.encrypt_zero_to_unchecked(&mut level, params, fft, rng, &mut context.ntru);
+            self.encrypt_zero_to_unchecked(&mut level, ntru_params, fft, rng, &mut context.ntru);
             FourierPolynomial(level.as_mut())
                 .add_assign(&FourierPolynomial(context.transformed.as_slice()));
         }
@@ -227,8 +228,7 @@ impl FourierNtruSecretKey {
         &self,
         message: &Polynomial<A>,
         result: &[Complex64],
-        params: &NtruParameters<T, NativeModulus<T>>,
-        basis: &ApproxSignedBasis<T>,
+        params: &NlevParameters<T, NativeModulus<T>>,
         fft: &FftEngine<'_, Table>,
         context: &FourierNtruGadgetEncryptContext<T>,
     ) where
@@ -236,14 +236,10 @@ impl FourierNtruSecretKey {
         Table: FftTable,
         A: RawData<Elem = T> + Data,
     {
-        self.assert_domain(params, fft);
-        assert_eq!(basis.modulus(), None);
+        self.assert_domain(params.ntru(), fft);
         assert_eq!(message.as_ref().len(), self.poly_length());
         assert_eq!(context.encoded.as_ref().len(), self.poly_length());
         assert_eq!(context.transformed.len(), fft.fourier_length());
-        assert_eq!(
-            result.len(),
-            basis.decompose_length() * fft.fourier_length()
-        );
+        assert_eq!(result.len(), params.fourier_nlev_len());
     }
 }

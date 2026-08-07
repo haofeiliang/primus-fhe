@@ -8,6 +8,7 @@
 
 mod ciphertext;
 mod error;
+mod key_switch;
 mod parameter;
 mod secret_key;
 
@@ -16,7 +17,8 @@ pub use ciphertext::{
     NlevCiphertext, NtruCiphertext, NttNgswCiphertext, NttNlevCiphertext, NttNtruCiphertext,
 };
 pub use error::NtruError;
-pub use parameter::NtruParameters;
+pub use key_switch::{FourierNtruKeySwitchingKey, NttNtruKeySwitchingKey};
+pub use parameter::{NlevParameters, NtruParameters};
 pub use primus_fhe_core::{SecretCoefficient, SecretKeyDistr};
 pub use primus_lattice::context::{
     FourierNtruExternalProductContext, NttNtruExternalProductContext,

@@ -1,11 +1,10 @@
-use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable};
 use primus_lattice::ntru::{FourierNtruOwned, Ntru, NttNtru};
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntru::{
     FourierNgswCiphertext, FourierNlevCiphertext, FourierNtruDecryptContext,
     FourierNtruEncryptContext, FourierNtruExternalProductContext, FourierNtruGadgetEncryptContext,
-    FourierNtruSecretKey, NtruParameters, NttNgswCiphertext, NttNlevCiphertext,
+    FourierNtruSecretKey, NlevParameters, NtruParameters, NttNgswCiphertext, NttNlevCiphertext,
     NttNtruExternalProductContext, NttNtruGadgetEncryptContext, NttNtruSecretKey, SecretKeyDistr,
 };
 use primus_ntt::{NttTable, UintNttTable};
@@ -77,7 +76,8 @@ fn ntt_nlev_generation_and_ngsw_cmux() {
         SecretKeyDistr::Ternary,
         0.7,
     );
-    let basis = ApproxSignedBasis::new(Some(EXPLICIT_MODULUS), 9, None);
+    let gadget_params = NlevParameters::with_ntru_params(&params, 9, None);
+    let basis = gadget_params.basis();
     let mut rng = rand::rng();
     let secret_key = NttNtruSecretKey::generate(&params, &ntt, &mut rng).unwrap();
     let mut gadget_context = NttNtruGadgetEncryptContext::new(POLY_LENGTH);
@@ -90,8 +90,7 @@ fn ntt_nlev_generation_and_ngsw_cmux() {
     secret_key.encrypt_nlev_to(
         &one,
         &mut nlev,
-        &params,
-        &basis,
+        &gadget_params,
         &ntt,
         &mut rng,
         &mut gadget_context,
@@ -115,8 +114,7 @@ fn ntt_nlev_generation_and_ngsw_cmux() {
     secret_key.encrypt_ngsw_to(
         &Polynomial::new(control_message),
         &mut control,
-        &params,
-        &basis,
+        &gadget_params,
         &ntt,
         &mut rng,
         &mut gadget_context,
@@ -143,7 +141,7 @@ fn ntt_nlev_generation_and_ngsw_cmux() {
         &candidates[0],
         &candidates[1],
         &mut output,
-        &basis,
+        basis,
         modulus,
         &ntt,
         &mut external_product_context,
@@ -157,7 +155,7 @@ fn ntt_nlev_generation_and_ngsw_cmux() {
         &candidates[0],
         1,
         &mut output,
-        &basis,
+        basis,
         modulus,
         &ntt,
         &mut external_product_context,
@@ -176,8 +174,7 @@ fn ntt_nlev_generation_and_ngsw_cmux() {
             secret_key.encrypt_ngsw_to(
                 &Polynomial::new(message),
                 control,
-                &params,
-                &basis,
+                &gadget_params,
                 &ntt,
                 &mut rng,
                 &mut gadget_context,
@@ -189,7 +186,7 @@ fn ntt_nlev_generation_and_ngsw_cmux() {
             &candidates[0],
             &candidates[1..],
             &mut output,
-            &basis,
+            basis,
             modulus,
             &ntt,
             &mut external_product_context,
@@ -212,7 +209,8 @@ fn fourier_nlev_generation_and_ngsw_cmux() {
         SecretKeyDistr::Ternary,
         0.7,
     );
-    let basis = ApproxSignedBasis::new(None, 8, None);
+    let gadget_params = NlevParameters::with_ntru_params(&params, 8, None);
+    let basis = gadget_params.basis();
     let mut rng = rand::rng();
     let secret_key = FourierNtruSecretKey::generate(&params, &mut fft, &mut rng).unwrap();
     let mut gadget_context = FourierNtruGadgetEncryptContext::new(POLY_LENGTH);
@@ -226,8 +224,7 @@ fn fourier_nlev_generation_and_ngsw_cmux() {
     secret_key.encrypt_nlev_to(
         &one,
         &mut nlev,
-        &params,
-        &basis,
+        &gadget_params,
         &mut fft,
         &mut rng,
         &mut gadget_context,
@@ -254,8 +251,7 @@ fn fourier_nlev_generation_and_ngsw_cmux() {
     secret_key.encrypt_ngsw_to(
         &Polynomial::new(control_message),
         &mut control,
-        &params,
-        &basis,
+        &gadget_params,
         &mut fft,
         &mut rng,
         &mut gadget_context,
@@ -283,7 +279,7 @@ fn fourier_nlev_generation_and_ngsw_cmux() {
         &candidates[0],
         &candidates[1],
         &mut output,
-        &basis,
+        basis,
         &mut fft,
         &mut external_product_context,
     );
@@ -302,7 +298,7 @@ fn fourier_nlev_generation_and_ngsw_cmux() {
         &candidates[0],
         1,
         &mut output,
-        &basis,
+        basis,
         &mut fft,
         &mut external_product_context,
     );
@@ -327,8 +323,7 @@ fn fourier_nlev_generation_and_ngsw_cmux() {
             secret_key.encrypt_ngsw_to(
                 &Polynomial::new(message),
                 control,
-                &params,
-                &basis,
+                &gadget_params,
                 &mut fft,
                 &mut rng,
                 &mut gadget_context,
@@ -340,7 +335,7 @@ fn fourier_nlev_generation_and_ngsw_cmux() {
             &candidates[0],
             &candidates[1..],
             &mut output,
-            &basis,
+            basis,
             &mut fft,
             &mut external_product_context,
         );
