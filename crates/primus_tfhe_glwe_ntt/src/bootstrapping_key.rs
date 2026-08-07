@@ -12,7 +12,7 @@ use primus_lattice::{
 };
 use primus_lwe::{LweParameters, LweSecretKey};
 use primus_ntt::NttTable;
-use primus_poly::PolynomialOwned;
+use primus_poly::{Polynomial, PolynomialOwned};
 use primus_reduce::{FieldContext, RingContext};
 use primus_tfhe::backend_support::{direct_exponent, modulus_switch};
 
@@ -140,6 +140,47 @@ impl<T: FheUint> NttFunctionalBootstrappingKey<T> {
         });
     }
 
+    /// Blind-rotates an encoded lookup-table polynomial as a trivial GLWE
+    /// accumulator.
+    pub fn ntt_blind_rotate_lookup_table_to<M, Table, A, B, C>(
+        &self,
+        input: &Lwe<A>,
+        lookup_table: &Polynomial<B>,
+        output: &mut Glwe<C>,
+        domain: &NttGadgetDomain<'_, T, M, Table>,
+        context: &mut NttBlindRotationContext<T>,
+    ) where
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+        A: RawData<Elem = T> + Data,
+        B: RawData<Elem = T> + Data,
+        C: RawData<Elem = T> + DataMut,
+    {
+        let parameters = domain.parameters();
+        let poly_length = parameters.poly_length();
+        let two_n = poly_length * 2;
+        debug_assert_eq!(
+            (
+                input.dimension(),
+                lookup_table.as_ref().len(),
+                output.as_ref().len(),
+            ),
+            (self.input_dimension(), poly_length, self.size().glwe_len(),)
+        );
+
+        let input_modulus = self.input_modulus();
+        let exponent_of = |value| modulus_switch(value, input_modulus, two_n);
+        let initial_exponent = exponent_of(input.b()).wrapping_neg() & (two_n - 1);
+        let (mask, body) = output.a_b_mut_slices(poly_length);
+        mask.fill(T::ZERO);
+        lookup_table.mul_monomial_to(
+            initial_exponent,
+            &mut Polynomial(body),
+            parameters.cipher_modulus(),
+        );
+        self.blind_rotate_initialized(input, output, domain, context, exponent_of);
+    }
+
     /// Blind-rotates from an LWE whose coefficients are exponents in `[0, 2N)`.
     pub fn ntt_blind_rotate_exponents_to<M, Table, A, B, C>(
         &self,
@@ -178,7 +219,6 @@ impl<T: FheUint> NttFunctionalBootstrappingKey<T> {
         F: Fn(T) -> usize,
     {
         let parameters = domain.parameters();
-        let ntt = domain.table();
         let modulus = parameters.cipher_modulus();
         let poly_length = parameters.poly_length();
         let two_n = 2 * poly_length;
@@ -197,6 +237,26 @@ impl<T: FheUint> NttFunctionalBootstrappingKey<T> {
 
         let initial_exponent = exponent_of(input.b()).wrapping_neg() & (two_n - 1);
         accumulator.mul_monomial_to(initial_exponent, output, poly_length, modulus);
+        self.blind_rotate_initialized(input, output, domain, context, exponent_of);
+    }
+
+    fn blind_rotate_initialized<M, Table, A, C, F>(
+        &self,
+        input: &Lwe<A>,
+        output: &mut Glwe<C>,
+        domain: &NttGadgetDomain<'_, T, M, Table>,
+        context: &mut NttBlindRotationContext<T>,
+        exponent_of: F,
+    ) where
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+        A: RawData<Elem = T> + Data,
+        C: RawData<Elem = T> + DataMut,
+        F: Fn(T) -> usize,
+    {
+        let parameters = domain.parameters();
+        let ntt = domain.table();
+        let modulus = parameters.cipher_modulus();
 
         let NttBlindRotationContext {
             scratch,

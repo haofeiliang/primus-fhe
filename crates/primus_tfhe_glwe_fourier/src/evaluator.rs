@@ -118,14 +118,16 @@ where
     ) {
         let parameters = self.context.parameters();
         let glwe = parameters.glwe();
-        self.server_key.bootstrapping_key().fourier_blind_rotate_to(
-            input.as_lwe(),
-            lookup_table.accumulator(),
-            &mut self.main_glwe,
-            parameters.bootstrapping(),
-            &mut self.fft,
-            &mut self.blind_rotation,
-        );
+        self.server_key
+            .bootstrapping_key()
+            .fourier_blind_rotate_lookup_table_to(
+                input.as_lwe(),
+                lookup_table.polynomial(),
+                &mut self.main_glwe,
+                parameters.bootstrapping(),
+                &mut self.fft,
+                &mut self.blind_rotation,
+            );
         self.server_key.glwe_key_switching_key().key_switch_to(
             &self.main_glwe,
             &mut self.switched,
@@ -165,14 +167,16 @@ where
             glwe.poly_length(),
             glwe.cipher_modulus(),
         );
-        self.server_key.bootstrapping_key().fourier_blind_rotate_to(
-            &self.small_lwe,
-            lookup_table.accumulator(),
-            &mut self.main_glwe,
-            parameters.bootstrapping(),
-            &mut self.fft,
-            &mut self.blind_rotation,
-        );
+        self.server_key
+            .bootstrapping_key()
+            .fourier_blind_rotate_lookup_table_to(
+                &self.small_lwe,
+                lookup_table.polynomial(),
+                &mut self.main_glwe,
+                parameters.bootstrapping(),
+                &mut self.fft,
+                &mut self.blind_rotation,
+            );
         self.main_glwe.extract_lwe_to(
             output.as_lwe_mut(),
             glwe.poly_length(),

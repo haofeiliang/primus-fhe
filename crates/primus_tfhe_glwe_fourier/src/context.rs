@@ -90,7 +90,7 @@ where
         Evaluator::try_new(self, server_key)
     }
 
-    /// Compiles a unary function into a coefficient-domain GLWE accumulator.
+    /// Compiles a unary function into an encoded lookup-table polynomial.
     #[inline]
     pub fn compile_lookup_table_fn<F>(
         &self,
@@ -102,7 +102,7 @@ where
         self.parameters.compile_lookup_table_fn(function)
     }
 
-    /// Compiles one output per plaintext input into a GLWE accumulator.
+    /// Compiles one output per plaintext input into a lookup-table polynomial.
     #[inline]
     pub fn compile_lookup_table_slice(
         &self,

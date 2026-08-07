@@ -1,43 +1,44 @@
 use core::fmt;
 
 use primus_integer::FheUint;
-use primus_lattice::glwe::Glwe;
+use primus_poly::{Polynomial, PolynomialOwned};
 use primus_reduce::RingContext;
 
 use crate::backend_support::modulus_switch;
 use crate::{PlaintextEmbedding, TfheParameters};
 
-/// A lookup table compiled into a trivial GLWE accumulator.
+/// A lookup table compiled into an encoded negacyclic polynomial.
 ///
 /// User functions are fully evaluated during compilation. Applying this table
 /// therefore requires neither a callback nor dynamic dispatch on the PBS hot
-/// path.
+/// path. An execution backend embeds this polynomial into its accumulator
+/// representation when blind rotation begins.
 #[derive(Clone)]
 #[repr(transparent)]
 pub struct LookupTable<T: FheUint> {
-    accumulator: Glwe<Vec<T>>,
+    polynomial: PolynomialOwned<T>,
 }
 
 impl<T: FheUint> fmt::Debug for LookupTable<T> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
             .debug_struct("LookupTable")
-            .field("coefficient_count", &self.accumulator.as_ref().len())
+            .field("coefficient_count", &self.polynomial.as_ref().len())
             .finish_non_exhaustive()
     }
 }
 
 impl<T: FheUint> LookupTable<T> {
-    /// Returns the coefficient-domain GLWE accumulator.
+    /// Returns the encoded lookup-table polynomial.
     #[inline]
-    pub fn accumulator(&self) -> &Glwe<Vec<T>> {
-        &self.accumulator
+    pub fn polynomial(&self) -> &PolynomialOwned<T> {
+        &self.polynomial
     }
 
-    /// Decomposes this table into its coefficient-domain GLWE accumulator.
+    /// Decomposes this table into its encoded polynomial.
     #[inline]
-    pub fn into_accumulator(self) -> Glwe<Vec<T>> {
-        self.accumulator
+    pub fn into_polynomial(self) -> PolynomialOwned<T> {
+        self.polynomial
     }
 }
 
@@ -83,6 +84,12 @@ where
         self.compile_lookup_table_outputs(domain_len, |input| outputs[input])
     }
 
+    /// Returns the number of independently programmable lookup-table inputs.
+    ///
+    /// A negacyclic accumulator determines its second half from its first, so
+    /// only `ceil(t / 2)` values are stored for plaintext modulus `t`. Each
+    /// value must also have a distinct location in the `N`-coefficient
+    /// rotation domain.
     fn lookup_table_domain_len(&self) -> Result<usize, LookupTableError> {
         let plaintext_domain_len: usize = self
             .plain_modulus_value()
@@ -99,6 +106,11 @@ where
         Ok(domain_len)
     }
 
+    /// Evaluates plaintext outputs and encodes them for accumulator storage.
+    ///
+    /// This wrapper owns validation of the user-visible output range. The
+    /// lower-level compiler consequently receives values already represented
+    /// in the GLWE ciphertext modulus.
     fn compile_lookup_table_outputs<F>(
         &self,
         domain_len: usize,
@@ -119,6 +131,18 @@ where
         })
     }
 
+    /// Compiles encoded outputs into the negacyclic accumulator polynomial.
+    ///
+    /// `domain_len` is the independently programmable front-half domain and
+    /// `encoded_output_at` returns coefficients in the GLWE ciphertext
+    /// modulus. Adjacent plaintext inputs are mapped to rotation centers; the
+    /// coefficients between their upper midpoints are filled with the output
+    /// belonging to the preceding center. The tail is the negation of the
+    /// first output, which supplies the required negacyclic continuation.
+    ///
+    /// This is `pub(crate)` so TFHE parameter construction can also compile
+    /// outputs that already use a backend-defined encoding without exposing
+    /// that representation-sensitive operation to users.
     pub(crate) fn compile_encoded_lookup_table<F>(
         &self,
         domain_len: usize,
@@ -128,9 +152,7 @@ where
         F: Fn(usize) -> Result<T, LookupTableError>,
     {
         let poly_length = self.glwe().poly_length();
-        let two_n = poly_length
-            .checked_mul(2)
-            .ok_or(LookupTableError::PolynomialLengthTooLarge)?;
+        let two_n = poly_length * 2;
         let lwe_codec = self.small_lwe().plaintext_codec();
         let lwe_modulus = self.small_lwe().cipher_modulus().explicit_value();
         let rotation_center = |input: usize| -> Result<usize, LookupTableError> {
@@ -140,9 +162,10 @@ where
             Ok(modulus_switch(encoded, lwe_modulus, two_n))
         };
 
-        let mut accumulator = Glwe::zero(self.glwe().glwe_len());
-        let (_, body) = accumulator.a_b_mut_slices(poly_length);
+        let mut polynomial = Polynomial::zero(poly_length);
+        let coefficients = polynomial.as_mut();
         let first_output = encoded_output_at(0)?;
+
         let mut encoded_output = first_output;
         let mut previous_center = 0;
         let mut cursor = 0;
@@ -156,11 +179,12 @@ where
                 });
             }
             let boundary = upper_midpoint(previous_center, center);
-            body[cursor..boundary].fill(encoded_output);
+            coefficients[cursor..boundary].fill(encoded_output);
             cursor = boundary;
             encoded_output = encoded_output_at(input)?;
             previous_center = center;
         }
+
         let next_center = rotation_center(domain_len)?;
         if previous_center >= next_center {
             return Err(LookupTableError::RotationCenterCollision {
@@ -170,13 +194,18 @@ where
             });
         }
         let boundary = upper_midpoint(previous_center, next_center).min(poly_length);
-        body[cursor..boundary].fill(encoded_output);
-        body[boundary..].fill(self.glwe().cipher_modulus().reduce_neg(first_output));
+        coefficients[cursor..boundary].fill(encoded_output);
 
-        Ok(LookupTable { accumulator })
+        coefficients[boundary..].fill(self.glwe().cipher_modulus().reduce_neg(first_output));
+
+        Ok(LookupTable { polynomial })
     }
 }
 
+/// Returns the integer midpoint of `lhs` and `rhs`, rounding upward.
+///
+/// Lookup-table intervals use this value as the boundary between adjacent
+/// rotation centers, assigning an odd-width tie to the center on the left.
 #[inline]
 fn upper_midpoint(lhs: usize, rhs: usize) -> usize {
     lhs.midpoint(rhs) + ((lhs ^ rhs) & 1)
@@ -188,10 +217,6 @@ pub enum LookupTableError {
     /// The plaintext modulus cannot be used as a platform-sized domain length.
     #[error("plaintext modulus is too large for lookup-table compilation")]
     PlaintextModulusTooLarge,
-
-    /// Twice the polynomial length cannot be represented by `usize`.
-    #[error("polynomial length is too large for lookup-table compilation")]
-    PolynomialLengthTooLarge,
 
     /// More user-visible plaintext values exist than available coefficients.
     #[error(

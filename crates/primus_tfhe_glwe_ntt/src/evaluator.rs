@@ -121,13 +121,15 @@ where
         output: &mut Ciphertext<T>,
     ) {
         let glwe = self.context.parameters().glwe();
-        self.server_key.bootstrapping_key().ntt_blind_rotate_to(
-            input.as_lwe(),
-            lookup_table.accumulator(),
-            &mut self.main_glwe,
-            &self.bootstrapping_domain,
-            &mut self.blind_rotation,
-        );
+        self.server_key
+            .bootstrapping_key()
+            .ntt_blind_rotate_lookup_table_to(
+                input.as_lwe(),
+                lookup_table.polynomial(),
+                &mut self.main_glwe,
+                &self.bootstrapping_domain,
+                &mut self.blind_rotation,
+            );
         self.server_key.glwe_key_switching_key().key_switch_to(
             &self.main_glwe,
             &mut self.switched,
@@ -164,13 +166,15 @@ where
             glwe.poly_length(),
             glwe.cipher_modulus(),
         );
-        self.server_key.bootstrapping_key().ntt_blind_rotate_to(
-            &self.small_lwe,
-            lookup_table.accumulator(),
-            &mut self.main_glwe,
-            &self.bootstrapping_domain,
-            &mut self.blind_rotation,
-        );
+        self.server_key
+            .bootstrapping_key()
+            .ntt_blind_rotate_lookup_table_to(
+                &self.small_lwe,
+                lookup_table.polynomial(),
+                &mut self.main_glwe,
+                &self.bootstrapping_domain,
+                &mut self.blind_rotation,
+            );
         self.main_glwe.extract_lwe_to(
             output.as_lwe_mut(),
             glwe.poly_length(),

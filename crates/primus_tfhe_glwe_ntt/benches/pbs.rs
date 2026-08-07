@@ -67,13 +67,15 @@ fn bench_order(c: &mut Criterion, order: PbsOrder) {
         LweCiphertext::zero(parameters.ciphertext_lwe_dimension());
 
     match order {
-        PbsOrder::BootstrapKeyswitch => server_key.bootstrapping_key().ntt_blind_rotate_to(
-            input.as_lwe(),
-            lookup_table.accumulator(),
-            &mut main_glwe,
-            &bootstrapping_domain,
-            &mut blind_rotation,
-        ),
+        PbsOrder::BootstrapKeyswitch => server_key
+            .bootstrapping_key()
+            .ntt_blind_rotate_lookup_table_to(
+                input.as_lwe(),
+                lookup_table.polynomial(),
+                &mut main_glwe,
+                &bootstrapping_domain,
+                &mut blind_rotation,
+            ),
         PbsOrder::KeyswitchBootstrap => {
             input
                 .as_lwe()
@@ -141,9 +143,9 @@ fn bench_order(c: &mut Criterion, order: PbsOrder) {
             PbsOrder::KeyswitchBootstrap => &small_lwe,
         };
         b.iter(|| {
-            black_box(server_key.bootstrapping_key()).ntt_blind_rotate_to(
+            black_box(server_key.bootstrapping_key()).ntt_blind_rotate_lookup_table_to(
                 black_box(blind_rotation_input),
-                black_box(lookup_table.accumulator()),
+                black_box(lookup_table.polynomial()),
                 black_box(&mut main_glwe),
                 &bootstrapping_domain,
                 &mut blind_rotation,
@@ -151,7 +153,6 @@ fn bench_order(c: &mut Criterion, order: PbsOrder) {
             black_box(&main_glwe);
         });
     });
-
     if order == PbsOrder::KeyswitchBootstrap {
         group.bench_function("full_sample_extraction", |b| {
             b.iter(|| {

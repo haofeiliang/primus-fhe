@@ -3,12 +3,13 @@
 
 #![deny(missing_docs)]
 
-mod boolean;
 mod client;
 mod error;
 mod key;
 mod lookup_table;
 mod parameters;
+
+mod boolean;
 
 #[doc(hidden)]
 pub mod backend_support;

@@ -14,7 +14,7 @@ use primus_lattice::{
 };
 use primus_lwe::{LweParameters, LweSecretKey};
 use primus_modulus::NativeModulus;
-use primus_poly::PolynomialOwned;
+use primus_poly::{Polynomial, PolynomialOwned};
 use primus_reduce::RingContext;
 use primus_tfhe::backend_support::{direct_exponent, modulus_switch};
 
@@ -146,6 +146,46 @@ impl<T: TorusFftValue> FourierFunctionalBootstrappingKey<T> {
         );
     }
 
+    /// Blind-rotates an encoded lookup-table polynomial as a trivial GLWE
+    /// accumulator.
+    pub fn fourier_blind_rotate_lookup_table_to<Table, A, B, C>(
+        &self,
+        input: &Lwe<A>,
+        lookup_table: &Polynomial<B>,
+        output: &mut TorusGlwe<C>,
+        parameters: &GlevParameters<T, NativeModulus<T>>,
+        fft: &mut FftEngine<'_, Table>,
+        context: &mut FourierBlindRotationContext<T>,
+    ) where
+        Table: FftTable,
+        A: RawData<Elem = T> + Data,
+        B: RawData<Elem = T> + Data,
+        C: RawData<Elem = T> + DataMut,
+    {
+        let poly_length = parameters.poly_length();
+        let two_n = poly_length * 2;
+        debug_assert_eq!(
+            (
+                input.dimension(),
+                lookup_table.as_ref().len(),
+                output.as_ref().len(),
+            ),
+            (self.input_dimension(), poly_length, self.size().glwe_len(),)
+        );
+
+        let modulus = self.input_modulus();
+        let exponent_of = |value| modulus_switch(value, modulus, two_n);
+        let initial_exponent = exponent_of(input.b()).wrapping_neg() & (two_n - 1);
+        let (mask, body) = output.a_b_mut_slices(poly_length);
+        mask.fill(T::ZERO);
+        lookup_table.mul_monomial_to(
+            initial_exponent,
+            &mut Polynomial(body),
+            NativeModulus::new(),
+        );
+        self.blind_rotate_initialized(input, output, parameters, (fft, context), exponent_of);
+    }
+
     /// Blind-rotates from an LWE whose coefficients are exponents in `[0, 2N)`.
     pub fn fourier_blind_rotate_exponents_to<Table, A, B, C>(
         &self,
@@ -208,6 +248,26 @@ impl<T: TorusFftValue> FourierFunctionalBootstrappingKey<T> {
 
         let initial_exponent = exponent_of(input.b()).wrapping_neg() & (two_n - 1);
         accumulator.mul_monomial_to(initial_exponent, output, poly_length, NativeModulus::new());
+        self.blind_rotate_initialized(input, output, parameters, (fft, context), exponent_of);
+    }
+
+    fn blind_rotate_initialized<Table, A, C, F>(
+        &self,
+        input: &Lwe<A>,
+        output: &mut TorusGlwe<C>,
+        parameters: &GlevParameters<T, NativeModulus<T>>,
+        workspace: (
+            &mut FftEngine<'_, Table>,
+            &mut FourierBlindRotationContext<T>,
+        ),
+        exponent_of: F,
+    ) where
+        Table: FftTable,
+        A: RawData<Elem = T> + Data,
+        C: RawData<Elem = T> + DataMut,
+        F: Fn(T) -> usize,
+    {
+        let (fft, context) = workspace;
 
         let FourierBlindRotationContext {
             scratch,
