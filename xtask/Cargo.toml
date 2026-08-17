@@ -5,3 +5,18 @@ edition = "2024"
 publish = false
 
 [dependencies]
+primus_fft = { path = "../crates/primus_fft" }
+primus_fhe_core = { path = "../crates/primus_fhe_core" }
+primus_lattice = { path = "../crates/primus_lattice" }
+primus_lwe = { path = "../crates/primus_lwe" }
+primus_modulus = { path = "../crates/primus_modulus" }
+primus_ntru = { path = "../crates/primus_ntru" }
+primus_ntt = { path = "../crates/primus_ntt" }
+primus_reduce = { path = "../crates/primus_reduce" }
+primus_tfhe = { path = "../crates/primus_tfhe" }
+primus_tfhe_ntru = { path = "../crates/primus_tfhe_ntru" }
+primus_tfhe_ntru_fourier = { path = "../crates/primus_tfhe_ntru_fourier" }
+primus_tfhe_ntru_ntt = { path = "../crates/primus_tfhe_ntru_ntt" }
+
+clap = { workspace = true }
+rand = { workspace = true }
