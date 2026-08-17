@@ -8,4 +8,4 @@ mod secret_key_distr;
 pub mod plaintext;
 
 pub(crate) use plaintext::*;
-pub use secret_key_distr::{SecretCoefficient, SecretKeyDistr};
+pub use secret_key_distr::{SecretCoefficient, SecretKeyDistr, SecretKeyDistrError};

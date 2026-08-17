@@ -43,7 +43,7 @@ fn test_rns_glev() {
         mod_t,
         mod_gamma,
         &moduli,
-        SecretKeyDistr::Ternary,
+        SecretKeyDistr::SparseTernary,
         3.20,
     );
 
@@ -152,7 +152,7 @@ fn test_key_switching() {
         mod_t,
         mod_gamma,
         &moduli,
-        SecretKeyDistr::Ternary,
+        SecretKeyDistr::SparseTernary,
         3.20,
     );
 

@@ -37,21 +37,23 @@ impl<T: FheUint> Array<T> {
     /// Generate a random binary [`Array<T>`].
     #[must_use]
     #[inline]
-    pub fn random_binary<R>(length: usize, rng: &mut R) -> Self
+    pub fn random_uniform_binary<R>(length: usize, rng: &mut R) -> Self
     where
         R: rand::Rng + rand::CryptoRng,
     {
-        Self(primus_distr::sample_binary_values(length, rng))
+        Self(primus_distr::sample_uniform_binary_values(length, rng))
     }
 
     /// Generate a random ternary [`Array<T>`].
     #[must_use]
     #[inline]
-    pub fn random_ternary<R>(minus_one: T, length: usize, rng: &mut R) -> Self
+    pub fn random_sparse_ternary<R>(minus_one: T, length: usize, rng: &mut R) -> Self
     where
         R: rand::Rng + rand::CryptoRng,
     {
-        Self(primus_distr::sample_ternary_values(minus_one, length, rng))
+        Self(primus_distr::sample_sparse_ternary_values(
+            minus_one, length, rng,
+        ))
     }
 
     /// Generate a random [`Array<T>`] with discrete gaussian distribution.
@@ -92,20 +94,20 @@ impl<'a, T: FheUint> ArrayMut<'a, T> {
 
     /// Fill a random binary [`ArrayMut<'a, T>`].
     #[inline]
-    pub fn random_binary_assign<R>(&mut self, rng: &mut R)
+    pub fn random_uniform_binary_assign<R>(&mut self, rng: &mut R)
     where
         R: rand::Rng + rand::CryptoRng,
     {
-        primus_distr::sample_binary_values_to(self.0, rng)
+        primus_distr::sample_uniform_binary_values_to(self.0, rng)
     }
 
     /// Fill a random ternary [`ArrayMut<'a, T>`].
     #[inline]
-    pub fn random_ternary_assign<R>(&mut self, minus_one: T, rng: &mut R)
+    pub fn random_sparse_ternary_assign<R>(&mut self, minus_one: T, rng: &mut R)
     where
         R: rand::Rng + rand::CryptoRng,
     {
-        primus_distr::sample_ternary_values_to(self.0, minus_one, rng)
+        primus_distr::sample_sparse_ternary_values_to(self.0, minus_one, rng)
     }
 
     /// Fill a random [`ArrayMut<'a, T>`] with discrete gaussian distribution.

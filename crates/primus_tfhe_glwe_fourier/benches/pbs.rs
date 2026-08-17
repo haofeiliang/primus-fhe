@@ -26,7 +26,7 @@ fn parameters(order: PbsOrder) -> TfheParameters<u32> {
         LWE_DIMENSION,
         PLAINTEXT_MODULUS,
         NativeModulus::new(),
-        SecretKeyDistr::Binary,
+        SecretKeyDistr::UniformBinary,
         3.2,
     );
     let glwe = GlweParameters::new(
@@ -34,7 +34,7 @@ fn parameters(order: PbsOrder) -> TfheParameters<u32> {
         POLY_LENGTH,
         PLAINTEXT_MODULUS,
         NativeModulus::new(),
-        SecretKeyDistr::Binary,
+        SecretKeyDistr::UniformBinary,
         3.2,
     );
     let bootstrapping = GgswParameters::with_glwe_params(&glwe, 8, Some(3));

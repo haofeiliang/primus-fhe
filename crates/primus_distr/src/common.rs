@@ -3,23 +3,26 @@ use std::slice::IterMut;
 use itertools::Itertools;
 use num_traits::ConstZero;
 use primus_integer::{AsInto, FheInt, FheUint, UnsignedInteger};
-use rand::distr::{Distribution, Uniform};
+use rand::{
+    distr::{Bernoulli, Distribution, Uniform},
+    seq::SliceRandom,
+};
 
 use crate::{DiscreteGaussian, SignedDiscreteGaussian};
 
 /// Sample a binary vector whose values are `T`.
-pub fn sample_binary_values<T, R>(length: usize, rng: &mut R) -> Vec<T>
+pub fn sample_uniform_binary_values<T, R>(length: usize, rng: &mut R) -> Vec<T>
 where
     T: FheInt,
     R: rand::Rng + rand::CryptoRng,
 {
     let mut v = vec![T::ZERO; length];
-    sample_binary_values_to(&mut v, rng);
+    sample_uniform_binary_values_to(&mut v, rng);
     v
 }
 
 /// Sample a binary vector whose values are `T`.
-pub fn sample_binary_values_to<T, R>(result: &mut [T], rng: &mut R)
+pub fn sample_uniform_binary_values_to<T, R>(result: &mut [T], rng: &mut R)
 where
     T: FheInt,
     R: rand::Rng + rand::CryptoRng,
@@ -41,19 +44,66 @@ where
     }
 }
 
+/// Samples binary values with the configured probability of sampling `1`.
+///
+/// # Panics
+///
+/// Panics if `one_probability` is not finite or does not belong to `[0, 1]`.
+pub fn sample_binary_values_with_probability<T, R>(
+    length: usize,
+    one_probability: f64,
+    rng: &mut R,
+) -> Vec<T>
+where
+    T: FheInt,
+    R: rand::Rng + rand::CryptoRng,
+{
+    let distribution = Bernoulli::new(one_probability)
+        .expect("binary one probability must be finite and in [0, 1]");
+    distribution
+        .sample_iter(rng)
+        .take(length)
+        .map(|is_one| if is_one { T::ONE } else { T::ZERO })
+        .collect()
+}
+
+/// Samples a binary vector containing exactly `hamming_weight` ones.
+///
+/// # Panics
+///
+/// Panics if `hamming_weight` exceeds `length`.
+pub fn sample_fixed_hamming_weight_binary_values<T, R>(
+    length: usize,
+    hamming_weight: usize,
+    rng: &mut R,
+) -> Vec<T>
+where
+    T: FheInt,
+    R: rand::Rng + rand::CryptoRng,
+{
+    assert!(
+        hamming_weight <= length,
+        "binary Hamming weight must not exceed the output length"
+    );
+    let mut result = vec![T::ZERO; length];
+    result[..hamming_weight].fill(T::ONE);
+    result.shuffle(rng);
+    result
+}
+
 /// Sample a ternary vector whose values are `T`.
-pub fn sample_ternary_values<T, R>(minus_one: T, length: usize, rng: &mut R) -> Vec<T>
+pub fn sample_sparse_ternary_values<T, R>(minus_one: T, length: usize, rng: &mut R) -> Vec<T>
 where
     T: FheInt,
     R: rand::Rng + rand::CryptoRng,
 {
     let mut v = vec![T::ZERO; length];
-    sample_ternary_values_to(&mut v, minus_one, rng);
+    sample_sparse_ternary_values_to(&mut v, minus_one, rng);
     v
 }
 
 /// Sample a ternary vector whose values are `T`.
-pub fn sample_ternary_values_to<T, R>(result: &mut [T], minus_one: T, rng: &mut R)
+pub fn sample_sparse_ternary_values_to<T, R>(result: &mut [T], minus_one: T, rng: &mut R)
 where
     T: FheInt,
     R: rand::Rng + rand::CryptoRng,
@@ -73,6 +123,123 @@ where
         *elem = s[(r & 0b11) as usize];
         r >>= 2;
     }
+}
+
+/// Samples uniformly from `{-1, 0, 1}`.
+pub fn sample_uniform_ternary_values<T, R>(minus_one: T, length: usize, rng: &mut R) -> Vec<T>
+where
+    T: FheInt,
+    R: rand::Rng + rand::CryptoRng,
+{
+    let mut result = vec![T::ZERO; length];
+    sample_uniform_ternary_values_to(&mut result, minus_one, rng);
+    result
+}
+
+/// Fills `result` uniformly from `{-1, 0, 1}`.
+pub fn sample_uniform_ternary_values_to<T, R>(result: &mut [T], minus_one: T, rng: &mut R)
+where
+    T: FheInt,
+    R: rand::Rng + rand::CryptoRng,
+{
+    let values = [minus_one, T::ZERO, T::ONE];
+    let mut random = 0;
+    let mut remaining_pairs = 0;
+    for output in result.iter_mut() {
+        loop {
+            if remaining_pairs == 0 {
+                random = rng.next_u32();
+                remaining_pairs = 16;
+            }
+            let value_index = (random & 0b11) as usize;
+            random >>= 2;
+            remaining_pairs -= 1;
+            if value_index != 3 {
+                *output = values[value_index];
+                break;
+            }
+        }
+    }
+}
+
+/// Samples ternary values with explicit probabilities for `-1` and `1`.
+///
+/// # Panics
+///
+/// Panics if either probability is invalid or their sum exceeds one.
+pub fn sample_ternary_values_with_probabilities<T, R>(
+    minus_one: T,
+    length: usize,
+    negative_one_probability: f64,
+    one_probability: f64,
+    rng: &mut R,
+) -> Vec<T>
+where
+    T: FheInt,
+    R: rand::Rng + rand::CryptoRng,
+{
+    assert!(
+        negative_one_probability.is_finite()
+            && one_probability.is_finite()
+            && (0.0..=1.0).contains(&negative_one_probability)
+            && (0.0..=1.0).contains(&one_probability)
+            && negative_one_probability <= 1.0 - one_probability,
+        "ternary probabilities must be finite, non-negative, and sum to at most one"
+    );
+
+    let nonzero_probability = one_probability + negative_one_probability;
+    let zero_probability = 1.0 - nonzero_probability;
+    let zero = Bernoulli::new(zero_probability).expect("validated zero probability");
+    let negative = (nonzero_probability > 0.0).then(|| {
+        Bernoulli::new(negative_one_probability / nonzero_probability)
+            .expect("validated conditional negative-one probability")
+    });
+
+    (0..length)
+        .map(|_| {
+            if zero.sample(&mut *rng) {
+                T::ZERO
+            } else if negative
+                .as_ref()
+                .is_some_and(|distribution| distribution.sample(&mut *rng))
+            {
+                minus_one
+            } else {
+                T::ONE
+            }
+        })
+        .collect()
+}
+
+/// Samples a ternary vector with exact counts of `-1` and `1`.
+///
+/// # Panics
+///
+/// Panics if the weights overflow or their sum exceeds `length`.
+pub fn sample_fixed_hamming_weight_ternary_values<T, R>(
+    minus_one: T,
+    length: usize,
+    negative_one_weight: usize,
+    one_weight: usize,
+    rng: &mut R,
+) -> Vec<T>
+where
+    T: FheInt,
+    R: rand::Rng + rand::CryptoRng,
+{
+    let nonzero_weight = negative_one_weight
+        .checked_add(one_weight)
+        .expect("ternary Hamming weights must fit in usize");
+    assert!(
+        nonzero_weight <= length,
+        "ternary Hamming weights must not exceed the output length"
+    );
+
+    let mut result = vec![T::ZERO; length];
+    result[..negative_one_weight].fill(minus_one);
+    result[negative_one_weight..nonzero_weight].fill(T::ONE);
+    result.shuffle(rng);
+    result
 }
 
 /// Sample a vector of `length` values from a uniform distribution.
@@ -149,7 +316,7 @@ where
 {
     let (v, w) = result.split_at_mut(length);
 
-    sample_binary_values_to(v, rng);
+    sample_uniform_binary_values_to(v, rng);
 
     w.chunks_exact_mut(length)
         .for_each(|s| s.copy_from_slice(v));

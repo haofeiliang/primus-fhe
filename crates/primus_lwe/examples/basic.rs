@@ -14,7 +14,7 @@ fn main() {
         LWE_DIMENSION,
         PLAINTEXT_MODULUS,
         NativeModulus::new(),
-        SecretKeyDistr::Binary,
+        SecretKeyDistr::UniformBinary,
         0.7,
     );
     let mut rng = rand::rng();

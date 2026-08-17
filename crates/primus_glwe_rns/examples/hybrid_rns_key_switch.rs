@@ -31,7 +31,7 @@ fn main() {
         plaintext_modulus,
         gamma,
         &q_moduli,
-        SecretKeyDistr::Ternary,
+        SecretKeyDistr::SparseTernary,
         3.20,
     );
     let hybrid_rns = HybridRNS::new(&q_moduli, &p_moduli, 2).unwrap();

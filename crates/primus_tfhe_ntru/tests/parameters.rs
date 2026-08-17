@@ -30,21 +30,22 @@ fn nlev(
 #[test]
 fn accepts_a_smaller_external_dimension_and_rejects_an_oversized_one() {
     let modulus = BarrettModulus::new(Q);
-    let accumulator = ntru(N, 4, Q, SecretKeyDistr::Ternary);
-    let nonbinary_client = ntru(N, 4, Q, SecretKeyDistr::Ternary);
-    let external = LweParameters::new(N, 4, modulus, SecretKeyDistr::Binary, 0.7);
+    let accumulator = ntru(N, 4, Q, SecretKeyDistr::SparseTernary);
+    let nonbinary_client = ntru(N, 4, Q, SecretKeyDistr::SparseTernary);
+    let external = LweParameters::new(N, 4, modulus, SecretKeyDistr::UniformBinary, 0.7);
     assert_eq!(
         NtruTfheParameters::try_new(external, nlev(&accumulator), nlev(&nonbinary_client)).err(),
         Some(NtruParameterError::ClientSecretKeyMustBeBinary)
     );
 
-    let client = ntru(N, 4, Q, SecretKeyDistr::Binary);
-    let smaller_dimension = LweParameters::new(N / 2, 4, modulus, SecretKeyDistr::Binary, 0.7);
+    let client = ntru(N, 4, Q, SecretKeyDistr::UniformBinary);
+    let smaller_dimension =
+        LweParameters::new(N / 2, 4, modulus, SecretKeyDistr::UniformBinary, 0.7);
     assert!(
         NtruTfheParameters::try_new(smaller_dimension, nlev(&accumulator), nlev(&client)).is_ok()
     );
 
-    let wrong_dimension = LweParameters::new(N * 2, 4, modulus, SecretKeyDistr::Binary, 0.7);
+    let wrong_dimension = LweParameters::new(N * 2, 4, modulus, SecretKeyDistr::UniformBinary, 0.7);
     assert_eq!(
         NtruTfheParameters::try_new(wrong_dimension, nlev(&accumulator), nlev(&client)).err(),
         Some(NtruParameterError::InvalidLweDimension {
@@ -53,7 +54,7 @@ fn accepts_a_smaller_external_dimension_and_rejects_an_oversized_one() {
         })
     );
 
-    let zero_dimension = LweParameters::new(0, 4, modulus, SecretKeyDistr::Binary, 0.7);
+    let zero_dimension = LweParameters::new(0, 4, modulus, SecretKeyDistr::UniformBinary, 0.7);
     assert_eq!(
         NtruTfheParameters::try_new(zero_dimension, nlev(&accumulator), nlev(&client)).err(),
         Some(NtruParameterError::InvalidLweDimension {
@@ -65,23 +66,41 @@ fn accepts_a_smaller_external_dimension_and_rejects_an_oversized_one() {
 
 #[test]
 fn rejects_mismatched_ring_or_plaintext_domains() {
-    let external = LweParameters::new(N, 4, BarrettModulus::new(Q), SecretKeyDistr::Binary, 0.7);
-    let accumulator = ntru(N, 4, Q, SecretKeyDistr::Ternary);
-    let wrong_length = ntru(N * 2, 4, Q, SecretKeyDistr::Binary);
+    let external = LweParameters::new(
+        N,
+        4,
+        BarrettModulus::new(Q),
+        SecretKeyDistr::UniformBinary,
+        0.7,
+    );
+    let accumulator = ntru(N, 4, Q, SecretKeyDistr::SparseTernary);
+    let wrong_length = ntru(N * 2, 4, Q, SecretKeyDistr::UniformBinary);
     assert_eq!(
         NtruTfheParameters::try_new(external, nlev(&accumulator), nlev(&wrong_length)).err(),
         Some(NtruParameterError::PolynomialLengthMismatch)
     );
 
-    let external = LweParameters::new(N, 4, BarrettModulus::new(Q), SecretKeyDistr::Binary, 0.7);
-    let wrong_plain = ntru(N, 8, Q, SecretKeyDistr::Binary);
+    let external = LweParameters::new(
+        N,
+        4,
+        BarrettModulus::new(Q),
+        SecretKeyDistr::UniformBinary,
+        0.7,
+    );
+    let wrong_plain = ntru(N, 8, Q, SecretKeyDistr::UniformBinary);
     assert_eq!(
         NtruTfheParameters::try_new(external, nlev(&accumulator), nlev(&wrong_plain)).err(),
         Some(NtruParameterError::PlainModulusMismatch)
     );
 
-    let external = LweParameters::new(N, 4, BarrettModulus::new(Q), SecretKeyDistr::Binary, 0.7);
-    let wrong_modulus = ntru(N, 4, 998_244_353, SecretKeyDistr::Binary);
+    let external = LweParameters::new(
+        N,
+        4,
+        BarrettModulus::new(Q),
+        SecretKeyDistr::UniformBinary,
+        0.7,
+    );
+    let wrong_modulus = ntru(N, 4, 998_244_353, SecretKeyDistr::UniformBinary);
     assert_eq!(
         NtruTfheParameters::try_new(external, nlev(&accumulator), nlev(&wrong_modulus)).err(),
         Some(NtruParameterError::CipherModulusMismatch)

@@ -159,6 +159,9 @@ where
         noise_standard_deviation: f64,
     ) -> Self {
         let size = GlweSize::new(dimension, poly_length);
+        secret_key_distr
+            .validate_for_length(size.mask_len())
+            .expect("invalid GLWE secret-key distribution");
         let cipher_modulus_value = cipher_modulus.explicit_value();
         let plaintext_codec = PlaintextCodec::new(plain_modulus_value, cipher_modulus_value);
 

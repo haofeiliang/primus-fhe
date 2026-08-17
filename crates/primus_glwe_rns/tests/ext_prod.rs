@@ -41,7 +41,7 @@ fn test_external_product() {
         mod_t,
         mod_gamma,
         &moduli,
-        SecretKeyDistr::Ternary,
+        SecretKeyDistr::SparseTernary,
         3.20,
     );
 

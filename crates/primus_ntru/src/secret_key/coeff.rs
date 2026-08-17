@@ -34,18 +34,36 @@ impl<T: FheUint> NtruSecretKey<T> {
     pub(crate) fn generate_padded_binary<R>(
         poly_length: usize,
         active_length: usize,
+        distr: SecretKeyDistr,
         rng: &mut R,
     ) -> Self
     where
         R: rand::Rng + rand::CryptoRng,
     {
         assert!((1..=poly_length).contains(&active_length));
-        let mut key = primus_distr::sample_binary_values(active_length, rng);
+        debug_assert!(distr.is_binary());
+        let mut key = match distr {
+            SecretKeyDistr::UniformBinary => {
+                primus_distr::sample_uniform_binary_values(active_length, rng)
+            }
+            SecretKeyDistr::Binary { one_probability } => {
+                primus_distr::sample_binary_values_with_probability(
+                    active_length,
+                    one_probability,
+                    rng,
+                )
+            }
+            SecretKeyDistr::FixedHammingWeightBinary { hamming_weight } => {
+                primus_distr::sample_fixed_hamming_weight_binary_values(
+                    active_length,
+                    hamming_weight,
+                    rng,
+                )
+            }
+            _ => unreachable!("binary distribution checked above"),
+        };
         key.resize(poly_length, T::ZERO.cast_to_signed());
-        Self {
-            key,
-            distr: SecretKeyDistr::Binary,
-        }
+        Self { key, distr }
     }
 
     /// Creates a coefficient-domain NTRU key from canonical signed values.
@@ -85,11 +103,55 @@ impl<T: FheUint> NtruSecretKey<T> {
         M: primus_reduce::RingContext<T>,
     {
         let poly_length = params.poly_length();
-        let key = match params.secret_key_distr() {
-            SecretKeyDistr::Binary => primus_distr::sample_binary_values(poly_length, rng),
-            SecretKeyDistr::Ternary => {
-                primus_distr::sample_ternary_values(-T::ONE.cast_to_signed(), poly_length, rng)
+        let distr = params.secret_key_distr();
+        let key = match distr {
+            SecretKeyDistr::UniformBinary => {
+                primus_distr::sample_uniform_binary_values(poly_length, rng)
             }
+            SecretKeyDistr::Binary { one_probability } => {
+                primus_distr::sample_binary_values_with_probability(
+                    poly_length,
+                    one_probability,
+                    rng,
+                )
+            }
+            SecretKeyDistr::SparseTernary => primus_distr::sample_sparse_ternary_values(
+                -T::ONE.cast_to_signed(),
+                poly_length,
+                rng,
+            ),
+            SecretKeyDistr::UniformTernary => primus_distr::sample_uniform_ternary_values(
+                -T::ONE.cast_to_signed(),
+                poly_length,
+                rng,
+            ),
+            SecretKeyDistr::Ternary {
+                negative_one_probability,
+                one_probability,
+            } => primus_distr::sample_ternary_values_with_probabilities(
+                -T::ONE.cast_to_signed(),
+                poly_length,
+                negative_one_probability,
+                one_probability,
+                rng,
+            ),
+            SecretKeyDistr::FixedHammingWeightBinary { hamming_weight } => {
+                primus_distr::sample_fixed_hamming_weight_binary_values(
+                    poly_length,
+                    hamming_weight,
+                    rng,
+                )
+            }
+            SecretKeyDistr::FixedHammingWeightTernary {
+                negative_one_weight,
+                one_weight,
+            } => primus_distr::sample_fixed_hamming_weight_ternary_values(
+                -T::ONE.cast_to_signed(),
+                poly_length,
+                negative_one_weight,
+                one_weight,
+                rng,
+            ),
             SecretKeyDistr::Gaussian(_) => params
                 .secret_key_distribution()
                 .expect("Gaussian NTRU key distribution must be precomputed")
@@ -97,9 +159,6 @@ impl<T: FheUint> NtruSecretKey<T> {
                 .take(poly_length)
                 .collect(),
         };
-        Self {
-            key,
-            distr: params.secret_key_distr(),
-        }
+        Self { key, distr }
     }
 }

@@ -2,9 +2,7 @@
 
 use primus_data::{Data, DataMut, RawData};
 use primus_fft::{Complex64, FftEngine, FftTable, TorusFftValue};
-use primus_glwe::{
-    FourierGadgetEncryptContext, FourierGlweSecretKey, GlevParameters, SecretKeyDistr,
-};
+use primus_glwe::{FourierGadgetEncryptContext, FourierGlweSecretKey, GlevParameters};
 use primus_lattice::{
     GadgetSize,
     context::FourierExternalProductContext,
@@ -75,9 +73,9 @@ impl<T: TorusFftValue> FourierGlweBootstrappingKey<T> {
         Table: FftTable,
         R: rand::Rng + rand::CryptoRng,
     {
-        assert_eq!(input_secret_key.distr(), SecretKeyDistr::Binary);
+        assert!(input_secret_key.distr().is_binary());
         assert_eq!(input_secret_key.dimension(), input_parameters.dimension());
-        assert_eq!(input_parameters.secret_key_distr(), SecretKeyDistr::Binary);
+        assert!(input_parameters.secret_key_distr().is_binary());
         assert_eq!(output_secret_key.glwe_size(), parameters.glwe_size());
         assert_eq!(fft.poly_length(), parameters.poly_length());
 

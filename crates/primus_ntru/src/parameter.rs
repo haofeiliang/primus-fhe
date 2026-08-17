@@ -58,6 +58,9 @@ where
                 && poly_length.is_power_of_two(),
             "NTRU polynomial length must be a supported power of two"
         );
+        secret_key_distr
+            .validate_for_length(poly_length)
+            .expect("invalid NTRU secret-key distribution");
 
         let plaintext_codec = PlaintextCodec::new(plain_modulus, cipher_modulus.explicit_value());
         let modulus_minus_one = cipher_modulus.minus_one();
@@ -68,7 +71,7 @@ where
                 SignedDiscreteGaussian::new(standard_deviation)
                     .expect("invalid Gaussian NTRU secret-key distribution"),
             ),
-            SecretKeyDistr::Binary | SecretKeyDistr::Ternary => None,
+            _ => None,
         };
 
         Self {

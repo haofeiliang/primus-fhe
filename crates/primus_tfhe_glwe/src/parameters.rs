@@ -116,8 +116,12 @@ where
             return Err(GlweParameterError::KeySwitchingBasisModulusMismatch);
         }
 
-        let glwe_key_switching =
-            Self::derive_glwe_key_switching(small_lwe.dimension(), &glwe, key_switching_basis);
+        let glwe_key_switching = Self::derive_glwe_key_switching(
+            small_lwe.dimension(),
+            small_lwe.secret_key_distr(),
+            &glwe,
+            key_switching_basis,
+        );
         Ok(Self {
             small_lwe,
             glwe,
@@ -129,6 +133,7 @@ where
 
     fn derive_glwe_key_switching(
         small_lwe_dimension: usize,
+        small_lwe_distr: SecretKeyDistr,
         glwe: &GlweParameters<T, GM>,
         basis: ApproxSignedBasis<T>,
     ) -> GlweKeySwitchingParameters<T, GM> {
@@ -138,7 +143,7 @@ where
             glwe.poly_length(),
             glwe.plain_modulus_value(),
             glwe.cipher_modulus(),
-            SecretKeyDistr::Binary,
+            small_lwe_distr,
             glwe.noise_distribution().standard_deviation(),
         );
         let full_decompose_length = (basis.value_bits() / basis.log_basis()) as usize;
@@ -154,7 +159,7 @@ where
         glwe: &GlweParameters<T, GM>,
         bootstrapping: &GgswParameters<T, GM>,
     ) -> Result<(), GlweParameterError> {
-        if small_lwe.secret_key_distr() != SecretKeyDistr::Binary {
+        if !small_lwe.secret_key_distr().is_binary() {
             return Err(GlweParameterError::InputLweSecretKeyMustBeBinary);
         }
 

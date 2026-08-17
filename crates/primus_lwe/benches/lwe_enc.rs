@@ -12,7 +12,7 @@ fn bench_encrypt(c: &mut Criterion) {
 
     let mut rng = rand::rng();
 
-    let params = LweParameters::new(dimension, 2, mod_t, SecretKeyDistr::Binary, 16.0);
+    let params = LweParameters::new(dimension, 2, mod_t, SecretKeyDistr::UniformBinary, 16.0);
 
     let sk = LweSecretKey::generate(&params, &mut rng);
 

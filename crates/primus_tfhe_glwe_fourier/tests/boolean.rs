@@ -15,13 +15,19 @@ fn parameters() -> TfheParameters<u32> {
 }
 
 fn parameters_with_order(pbs_order: PbsOrder) -> TfheParameters<u32> {
-    let lwe = LweParameters::new(4, 4, NativeModulus::new(), SecretKeyDistr::Binary, 0.7);
+    let lwe = LweParameters::new(
+        4,
+        4,
+        NativeModulus::new(),
+        SecretKeyDistr::UniformBinary,
+        0.7,
+    );
     let glwe = GlweParameters::new(
         1,
         POLY_LENGTH,
         4,
         NativeModulus::new(),
-        SecretKeyDistr::Binary,
+        SecretKeyDistr::UniformBinary,
         0.7,
     );
     let bootstrapping = GgswParameters::with_glwe_params(&glwe, 8, Some(3));

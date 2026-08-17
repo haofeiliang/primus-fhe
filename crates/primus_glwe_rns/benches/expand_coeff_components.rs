@@ -39,7 +39,7 @@ fn bench_expand_coeff_components(c: &mut Criterion) {
             mod_t,
             mod_gamma,
             &moduli,
-            SecretKeyDistr::Ternary,
+            SecretKeyDistr::SparseTernary,
             3.20,
         );
 

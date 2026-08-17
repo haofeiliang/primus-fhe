@@ -60,21 +60,21 @@ impl<T: FheUint> PolynomialOwned<T> {
     /// Generate a random binary [`PolynomialOwned<T>`].
     #[must_use]
     #[inline]
-    pub fn random_binary<R>(poly_length: usize, rng: &mut R) -> Self
+    pub fn random_uniform_binary<R>(poly_length: usize, rng: &mut R) -> Self
     where
         R: rand::Rng + rand::CryptoRng,
     {
-        Self(primus_distr::sample_binary_values(poly_length, rng))
+        Self(primus_distr::sample_uniform_binary_values(poly_length, rng))
     }
 
     /// Generate a random ternary [`PolynomialOwned<T>`].
     #[must_use]
     #[inline]
-    pub fn random_ternary<R>(minus_one: T, poly_length: usize, rng: &mut R) -> Self
+    pub fn random_sparse_ternary<R>(minus_one: T, poly_length: usize, rng: &mut R) -> Self
     where
         R: rand::Rng + rand::CryptoRng,
     {
-        Self(primus_distr::sample_ternary_values(
+        Self(primus_distr::sample_sparse_ternary_values(
             minus_one,
             poly_length,
             rng,
@@ -113,20 +113,20 @@ where
 
     /// Generate a random binary [`Polynomial<S>`].
     #[inline]
-    pub fn random_binary_assign<R>(&mut self, rng: &mut R)
+    pub fn random_uniform_binary_assign<R>(&mut self, rng: &mut R)
     where
         R: rand::Rng + rand::CryptoRng,
     {
-        primus_distr::sample_binary_values_to(self.as_mut(), rng)
+        primus_distr::sample_uniform_binary_values_to(self.as_mut(), rng)
     }
 
     /// Generate a random ternary [`Polynomial<S>`].
     #[inline]
-    pub fn random_ternary_assign<R>(&mut self, minus_one: T, rng: &mut R)
+    pub fn random_sparse_ternary_assign<R>(&mut self, minus_one: T, rng: &mut R)
     where
         R: rand::Rng + rand::CryptoRng,
     {
-        primus_distr::sample_ternary_values_to(self.as_mut(), minus_one, rng)
+        primus_distr::sample_sparse_ternary_values_to(self.as_mut(), minus_one, rng)
     }
 
     /// Generate a random [`Polynomial<S>`] with discrete gaussian distribution..

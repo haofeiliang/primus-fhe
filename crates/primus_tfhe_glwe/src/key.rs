@@ -4,10 +4,7 @@ use primus_lattice::GlweSize;
 use primus_reduce::RingContext;
 use primus_tfhe::LweSecretKeyRef;
 
-use crate::{
-    GlwePbsOrder, GlweSecretKey, GlweTfheParameters, LweSecretKey, SecretCoefficient,
-    SecretKeyDistr,
-};
+use crate::{GlwePbsOrder, GlweSecretKey, GlweTfheParameters, LweSecretKey, SecretCoefficient};
 
 /// The complete client-side secret material for GLWE-based TFHE.
 ///
@@ -84,34 +81,17 @@ impl<T: FheUint> GlweClientKey<T> {
             .expect("validated TFHE dimensions must fit in usize");
 
         let mut key = vec![SecretCoefficient::<T>::ZERO; capacity];
-        let distribution = match lwe_secret_key.distr() {
-            SecretKeyDistr::Binary => {
-                key[..lwe_dimension]
-                    .iter_mut()
-                    .zip(lwe_secret_key.as_ref())
-                    .for_each(|(output, &coefficient)| {
-                        *output = coefficient.cast_to_signed();
-                    });
-                SecretKeyDistr::Binary
-            }
-            SecretKeyDistr::Ternary => {
-                let minus_one = parameters.small_lwe().cipher_modulus_minus_one();
-                key[..lwe_dimension]
-                    .iter_mut()
-                    .zip(lwe_secret_key.as_ref())
-                    .for_each(|(output, &coefficient)| {
-                        *output = if coefficient == minus_one {
-                            -T::ONE.cast_to_signed()
-                        } else {
-                            coefficient.cast_to_signed()
-                        };
-                    });
-                SecretKeyDistr::Ternary
-            }
-            SecretKeyDistr::Gaussian(_) => {
-                panic!("TFHE small LWE secret keys must use the binary distribution")
-            }
-        };
+        let distribution = lwe_secret_key.distr();
+        assert!(
+            distribution.is_binary(),
+            "TFHE small LWE secret keys must use a binary distribution"
+        );
+        key[..lwe_dimension]
+            .iter_mut()
+            .zip(lwe_secret_key.as_ref())
+            .for_each(|(output, &coefficient)| {
+                *output = coefficient.cast_to_signed();
+            });
 
         GlweSecretKey::new(
             key,

@@ -47,7 +47,7 @@ fn bench_key_switching(c: &mut Criterion) {
             mod_t,
             mod_gamma,
             &q_moduli,
-            SecretKeyDistr::Ternary,
+            SecretKeyDistr::SparseTernary,
             3.20,
         );
         let input_sk = GlweSecretKey::generate(&glwe_params, &mut rng);

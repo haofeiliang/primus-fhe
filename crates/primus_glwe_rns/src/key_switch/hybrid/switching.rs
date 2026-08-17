@@ -417,7 +417,7 @@ mod tests {
             plaintext_modulus,
             gamma,
             &q_moduli,
-            SecretKeyDistr::Ternary,
+            SecretKeyDistr::SparseTernary,
             3.20,
         );
         let hybrid = HybridRNS::new(&q_moduli, &p_moduli, 2).unwrap();

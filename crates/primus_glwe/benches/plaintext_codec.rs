@@ -43,7 +43,7 @@ fn bench_plaintext_codec_u64(c: &mut Criterion) {
     let ciphertexts = ciphertext_values(q);
     let messages = message_values(t);
     let modulus = BarrettModulus::new(q);
-    let params = GlweParameters::new(1, BATCH_LEN, t, modulus, SecretKeyDistr::Binary, 3.2);
+    let params = GlweParameters::new(1, BATCH_LEN, t, modulus, SecretKeyDistr::UniformBinary, 3.2);
     let scaled_codec = *params.plaintext_codec();
     let native_scaled_codec = PlaintextCodec::new(t, None);
     let mut encoded = vec![0u64; BATCH_LEN];
@@ -139,7 +139,7 @@ fn bench_plaintext_codec_u32(c: &mut Criterion) {
     let ciphertexts = ciphertext_values_u32(q);
     let messages = message_values_u32(t);
     let modulus = BarrettModulus::new(q);
-    let params = GlweParameters::new(1, BATCH_LEN, t, modulus, SecretKeyDistr::Binary, 3.2);
+    let params = GlweParameters::new(1, BATCH_LEN, t, modulus, SecretKeyDistr::UniformBinary, 3.2);
     let scaled_codec = *params.plaintext_codec();
     let mut encoded = vec![0u32; BATCH_LEN];
 
@@ -188,7 +188,7 @@ fn bench_glwe_decrypt_arbitrary_modulus(c: &mut Criterion) {
             poly_length,
             PLAIN_MODULUS,
             cipher_modulus,
-            SecretKeyDistr::Binary,
+            SecretKeyDistr::UniformBinary,
             3.2,
         );
 

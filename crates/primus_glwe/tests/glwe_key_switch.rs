@@ -33,7 +33,7 @@ fn ntt_glwe_key_switches_for_equal_and_smaller_output_dimensions() {
         POLY_LENGTH,
         PLAINTEXT_MODULUS,
         modulus,
-        SecretKeyDistr::Binary,
+        SecretKeyDistr::UniformBinary,
         0.7,
     );
     let input_coeff_key = GlweSecretKey::generate(&input_params, &mut rng);
@@ -50,7 +50,7 @@ fn ntt_glwe_key_switches_for_equal_and_smaller_output_dimensions() {
             POLY_LENGTH,
             PLAINTEXT_MODULUS,
             modulus,
-            SecretKeyDistr::Binary,
+            SecretKeyDistr::UniformBinary,
             0.7,
         );
         let generated_output_key = GlweSecretKey::generate(&output_params, &mut rng);
@@ -61,7 +61,7 @@ fn ntt_glwe_key_switches_for_equal_and_smaller_output_dimensions() {
             let mut padded = vec![0; POLY_LENGTH];
             padded[..active_key_len]
                 .copy_from_slice(&generated_output_key.as_slice()[..active_key_len]);
-            GlweSecretKey::new(padded, output_params.size(), SecretKeyDistr::Binary)
+            GlweSecretKey::new(padded, output_params.size(), SecretKeyDistr::UniformBinary)
         } else {
             generated_output_key
         };
@@ -107,7 +107,7 @@ fn fourier_glwe_key_switches_for_equal_and_smaller_output_dimensions() {
         POLY_LENGTH,
         PLAINTEXT_MODULUS,
         NativeModulus::new(),
-        SecretKeyDistr::Binary,
+        SecretKeyDistr::UniformBinary,
         0.7,
     );
     let input_coeff_key = GlweSecretKey::generate(&input_params, &mut rng);
@@ -133,7 +133,7 @@ fn fourier_glwe_key_switches_for_equal_and_smaller_output_dimensions() {
             POLY_LENGTH,
             PLAINTEXT_MODULUS,
             NativeModulus::new(),
-            SecretKeyDistr::Binary,
+            SecretKeyDistr::UniformBinary,
             0.7,
         );
         let generated_output_key = GlweSecretKey::generate(&output_params, &mut rng);
@@ -142,7 +142,7 @@ fn fourier_glwe_key_switches_for_equal_and_smaller_output_dimensions() {
             let mut padded = vec![0; POLY_LENGTH];
             padded[..active_key_len]
                 .copy_from_slice(&generated_output_key.as_slice()[..active_key_len]);
-            GlweSecretKey::new(padded, output_params.size(), SecretKeyDistr::Binary)
+            GlweSecretKey::new(padded, output_params.size(), SecretKeyDistr::UniformBinary)
         } else {
             generated_output_key
         };

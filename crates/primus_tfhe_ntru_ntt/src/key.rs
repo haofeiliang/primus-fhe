@@ -166,7 +166,10 @@ where
         let parameters = self.context.parameters();
         let mut coefficients = vec![T::ZERO.cast_to_signed(); parameters.poly_length()];
         coefficients[0] = T::ONE.cast_to_signed();
-        let unit = NtruSecretKey::new(coefficients, primus_ntru::SecretKeyDistr::Binary);
+        let unit = NtruSecretKey::new(
+            coefficients,
+            primus_ntru::SecretKeyDistr::FixedHammingWeightBinary { hamming_weight: 1 },
+        );
         NttNtruKeySwitchingKey::generate(
             &unit,
             accumulator_ntt,

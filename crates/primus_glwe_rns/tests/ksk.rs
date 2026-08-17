@@ -40,7 +40,7 @@ fn test_rns_glwe_ksk() {
         mod_t,
         mod_gamma,
         &moduli,
-        SecretKeyDistr::Ternary,
+        SecretKeyDistr::SparseTernary,
         3.20,
     );
 
@@ -122,7 +122,7 @@ fn test_rns_glwe_ksk_hybrid() {
         mod_t,
         mod_gamma,
         &q_moduli,
-        SecretKeyDistr::Ternary,
+        SecretKeyDistr::SparseTernary,
         3.20,
     );
 

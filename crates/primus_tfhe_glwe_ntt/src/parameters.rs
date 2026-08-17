@@ -30,7 +30,7 @@ pub fn boolean_parameters()
         LWE_DIMENSION,
         PLAINTEXT_MODULUS,
         modulus,
-        SecretKeyDistr::Binary,
+        SecretKeyDistr::UniformBinary,
         3.2 * (CIPHERTEXT_MODULUS as f64 / 2.0f64.powi(14)),
     );
     let glwe = GlweParameters::new(
@@ -38,7 +38,7 @@ pub fn boolean_parameters()
         POLY_LENGTH,
         PLAINTEXT_MODULUS,
         modulus,
-        SecretKeyDistr::Ternary,
+        SecretKeyDistr::SparseTernary,
         6.4,
     );
     let bootstrapping = GgswParameters::with_glwe_params(&glwe, 7, Some(3));

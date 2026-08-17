@@ -243,7 +243,7 @@ where
 
         let modulus = params.cipher_modulus();
         let mut ephemeral = vec![T::ZERO; poly_length];
-        primus_distr::sample_ternary_values_to(
+        primus_distr::sample_sparse_ternary_values_to(
             &mut ephemeral,
             params.cipher_modulus_minus_one(),
             rng,

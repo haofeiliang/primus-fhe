@@ -65,10 +65,51 @@ impl<T: FheUint> LweSecretKey<T> {
     {
         let distr = params.secret_key_distr();
         let key = match distr {
-            SecretKeyDistr::Binary => primus_distr::sample_binary_values(params.dimension(), rng),
-            SecretKeyDistr::Ternary => primus_distr::sample_ternary_values(
+            SecretKeyDistr::UniformBinary => {
+                primus_distr::sample_uniform_binary_values(params.dimension(), rng)
+            }
+            SecretKeyDistr::Binary { one_probability } => {
+                primus_distr::sample_binary_values_with_probability(
+                    params.dimension(),
+                    one_probability,
+                    rng,
+                )
+            }
+            SecretKeyDistr::SparseTernary => primus_distr::sample_sparse_ternary_values(
                 params.cipher_modulus_minus_one(),
                 params.dimension(),
+                rng,
+            ),
+            SecretKeyDistr::UniformTernary => primus_distr::sample_uniform_ternary_values(
+                params.cipher_modulus_minus_one(),
+                params.dimension(),
+                rng,
+            ),
+            SecretKeyDistr::Ternary {
+                negative_one_probability,
+                one_probability,
+            } => primus_distr::sample_ternary_values_with_probabilities(
+                params.cipher_modulus_minus_one(),
+                params.dimension(),
+                negative_one_probability,
+                one_probability,
+                rng,
+            ),
+            SecretKeyDistr::FixedHammingWeightBinary { hamming_weight } => {
+                primus_distr::sample_fixed_hamming_weight_binary_values(
+                    params.dimension(),
+                    hamming_weight,
+                    rng,
+                )
+            }
+            SecretKeyDistr::FixedHammingWeightTernary {
+                negative_one_weight,
+                one_weight,
+            } => primus_distr::sample_fixed_hamming_weight_ternary_values(
+                params.cipher_modulus_minus_one(),
+                params.dimension(),
+                negative_one_weight,
+                one_weight,
                 rng,
             ),
             SecretKeyDistr::Gaussian(_) => params

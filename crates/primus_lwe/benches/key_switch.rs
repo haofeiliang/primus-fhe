@@ -19,8 +19,13 @@ const LEVEL_COUNT: usize = 13;
 
 fn bench_key_switch(c: &mut Criterion) {
     let modulus = BarrettModulus::new(CIPHERTEXT_MODULUS);
-    let output_parameters =
-        LweParameters::new(OUTPUT_DIMENSION, 4, modulus, SecretKeyDistr::Binary, 0.7);
+    let output_parameters = LweParameters::new(
+        OUTPUT_DIMENSION,
+        4,
+        modulus,
+        SecretKeyDistr::UniformBinary,
+        0.7,
+    );
     let basis = ApproxSignedBasis::new(Some(CIPHERTEXT_MODULUS), LOG_BASIS, Some(LEVEL_COUNT));
     let mut rng = rand::rng();
     let output_secret_key = LweSecretKey::generate(&output_parameters, &mut rng);

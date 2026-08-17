@@ -48,7 +48,7 @@ fn ntt_key_switch_preserves_plaintext() {
         POLY_LENGTH,
         PLAIN_MODULUS,
         modulus,
-        SecretKeyDistr::Ternary,
+        SecretKeyDistr::SparseTernary,
         0.7,
     );
     let key_switching = NlevParameters::with_ntru_params(&parameters, 9, None);
@@ -113,7 +113,7 @@ fn fourier_key_switch_preserves_plaintext() {
         POLY_LENGTH,
         PLAIN_MODULUS,
         NativeModulus::new(),
-        SecretKeyDistr::Ternary,
+        SecretKeyDistr::SparseTernary,
         0.7,
     );
     let key_switching = NlevParameters::with_ntru_params(&parameters, 8, None);

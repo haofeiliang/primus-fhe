@@ -7,8 +7,8 @@ const DIMENSION: usize = 670;
 const NOISE_ALPHA: f64 = 2.980_232_238_769_531_2e-8; // 2^-25
 const PLAIN_MODULI: [usize; 2] = [256, 257];
 const SECRET_KEY_TYPES: [SecretKeyDistr; 3] = [
-    SecretKeyDistr::Binary,
-    SecretKeyDistr::Ternary,
+    SecretKeyDistr::UniformBinary,
+    SecretKeyDistr::SparseTernary,
     SecretKeyDistr::Gaussian(3.2),
 ];
 

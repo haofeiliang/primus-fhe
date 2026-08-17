@@ -12,9 +12,15 @@ fn main() {
     const N: usize = 256;
     const LWE_DIMENSION: usize = 64;
     let modulus = NativeModulus::new();
-    let external_lwe = LweParameters::new(LWE_DIMENSION, 4, modulus, SecretKeyDistr::Binary, 0.7);
-    let accumulator = NtruParameters::new(N, 4, modulus, SecretKeyDistr::Ternary, 0.7);
-    let client = NtruParameters::new(N, 4, modulus, SecretKeyDistr::Binary, 0.7);
+    let external_lwe = LweParameters::new(
+        LWE_DIMENSION,
+        4,
+        modulus,
+        SecretKeyDistr::UniformBinary,
+        0.7,
+    );
+    let accumulator = NtruParameters::new(N, 4, modulus, SecretKeyDistr::SparseTernary, 0.7);
+    let client = NtruParameters::new(N, 4, modulus, SecretKeyDistr::UniformBinary, 0.7);
     let parameters = NtruTfheParameters::try_new(
         external_lwe,
         NlevParameters::with_ntru_params(&accumulator, 8, Some(4)),

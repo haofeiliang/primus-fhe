@@ -52,7 +52,7 @@ fn functional_bootstrapping_key_blind_rotates() {
         LWE_DIMENSION,
         PLAINTEXT_MODULUS,
         modulus,
-        SecretKeyDistr::Binary,
+        SecretKeyDistr::UniformBinary,
         0.7,
     );
     let glwe_params = GlweParameters::new(
@@ -60,12 +60,12 @@ fn functional_bootstrapping_key_blind_rotates() {
         POLY_LENGTH,
         PLAINTEXT_MODULUS,
         modulus,
-        SecretKeyDistr::Ternary,
+        SecretKeyDistr::SparseTernary,
         0.7,
     );
     let ggsw_params = GlevParameters::with_glwe_params(&glwe_params, 8, None);
     let domain = NttGadgetDomain::try_new(&ggsw_params, &ntt).unwrap();
-    let input_secret_key = LweSecretKey::new(vec![1u32, 0, 1, 1], SecretKeyDistr::Binary);
+    let input_secret_key = LweSecretKey::new(vec![1u32, 0, 1, 1], SecretKeyDistr::UniformBinary);
     let coeff_output_secret_key = GlweSecretKey::generate(&glwe_params, &mut rng);
     let output_secret_key = NttGlweSecretKey::from_coeff_secret_key(&coeff_output_secret_key, &ntt);
     let mut gadget_context = NttGadgetEncryptContext::new(domain.size());

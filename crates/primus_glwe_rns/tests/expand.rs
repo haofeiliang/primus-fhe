@@ -41,7 +41,7 @@ fn test_crt_glwe_expand_coefficients() {
         mod_t,
         mod_gamma,
         &moduli,
-        SecretKeyDistr::Ternary,
+        SecretKeyDistr::SparseTernary,
         3.20,
     );
 
@@ -141,7 +141,7 @@ fn test_dcrt_glwe_expand_coefficients() {
         mod_t,
         mod_gamma,
         &moduli,
-        SecretKeyDistr::Ternary,
+        SecretKeyDistr::SparseTernary,
         3.20,
     );
 
@@ -232,7 +232,7 @@ fn test_dcrt_glwe_expand_coefficients_parallel() {
         mod_t,
         mod_gamma,
         &moduli,
-        SecretKeyDistr::Ternary,
+        SecretKeyDistr::SparseTernary,
         3.20,
     );
 
@@ -325,7 +325,7 @@ fn test_crt_glwe_expand_coefficients_parallel() {
         mod_t,
         mod_gamma,
         &moduli,
-        SecretKeyDistr::Ternary,
+        SecretKeyDistr::SparseTernary,
         3.20,
     );
 

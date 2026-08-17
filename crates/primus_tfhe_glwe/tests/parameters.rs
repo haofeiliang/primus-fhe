@@ -20,7 +20,7 @@ fn components() -> Components {
         LWE_DIMENSION,
         PLAIN_MODULUS,
         NativeModulus::new(),
-        SecretKeyDistr::Binary,
+        SecretKeyDistr::UniformBinary,
         3.2,
     );
     let glwe = GlweParameters::new(
@@ -28,7 +28,7 @@ fn components() -> Components {
         POLY_LENGTH,
         PLAIN_MODULUS,
         NativeModulus::new(),
-        SecretKeyDistr::Ternary,
+        SecretKeyDistr::SparseTernary,
         3.2,
     );
     let bootstrapping = GgswParameters::with_glwe_params(&glwe, 8, Some(3));
@@ -60,7 +60,7 @@ fn derives_the_same_key_switching_layout_for_both_orders() {
         assert_eq!(parameters.glwe_key_switching().poly_length(), POLY_LENGTH);
         assert_eq!(
             parameters.glwe_key_switching().output().secret_key_distr(),
-            SecretKeyDistr::Binary
+            SecretKeyDistr::UniformBinary
         );
         assert_eq!(
             parameters.glwe_key_switching().output().decompose_length(),

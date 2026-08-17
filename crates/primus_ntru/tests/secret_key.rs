@@ -63,7 +63,7 @@ where
         POLY_LENGTH,
         T::try_from(PLAIN_MODULUS).unwrap(),
         modulus,
-        SecretKeyDistr::Ternary,
+        SecretKeyDistr::SparseTernary,
         0.7,
     );
     let mut rng = rand::rng();
@@ -163,7 +163,7 @@ where
         POLY_LENGTH,
         T::try_from(PLAIN_MODULUS).unwrap(),
         NativeModulus::new(),
-        SecretKeyDistr::Ternary,
+        SecretKeyDistr::SparseTernary,
         0.7,
     );
     let mut rng = rand::rng();
@@ -270,7 +270,7 @@ fn fourier_secret_key_roundtrip_and_linear_operations() {
 fn transform_backends_reject_the_zero_key() {
     let zero_key = NtruSecretKey::<u32>::new(
         vec![SecretCoefficient::<u32>::default(); POLY_LENGTH],
-        SecretKeyDistr::Ternary,
+        SecretKeyDistr::SparseTernary,
     );
 
     let modulus = BarrettModulus::new(132_120_577u32);
@@ -297,8 +297,8 @@ fn key_generation_supports_small_coefficient_distributions() {
     let mut fft = FftEngine::new(&fft_table);
 
     for distribution in [
-        SecretKeyDistr::Binary,
-        SecretKeyDistr::Ternary,
+        SecretKeyDistr::UniformBinary,
+        SecretKeyDistr::SparseTernary,
         SecretKeyDistr::Gaussian(3.2),
     ] {
         let ntt_params = NtruParameters::new(

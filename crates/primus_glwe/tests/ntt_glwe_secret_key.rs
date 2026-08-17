@@ -23,8 +23,8 @@ where
     let message = Polynomial::new(messages.clone());
 
     for secret_key_distr in [
-        SecretKeyDistr::Binary,
-        SecretKeyDistr::Ternary,
+        SecretKeyDistr::UniformBinary,
+        SecretKeyDistr::SparseTernary,
         SecretKeyDistr::Gaussian(3.2),
     ] {
         let params = GlweParameters::new(

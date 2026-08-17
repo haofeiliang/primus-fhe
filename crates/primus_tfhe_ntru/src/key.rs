@@ -1,6 +1,6 @@
 use num_traits::ConstZero;
 use primus_integer::FheUint;
-use primus_ntru::{NtruSecretKey, SecretKeyDistr};
+use primus_ntru::NtruSecretKey;
 use primus_reduce::RingContext;
 use primus_tfhe::LweSecretKeyRef;
 
@@ -82,8 +82,10 @@ impl<T: FheUint> NtruClientKey<T> {
         {
             return Err(NtruKeyError::PolynomialLengthMismatch);
         }
-        if self.client_ntru_secret_key.distr() != SecretKeyDistr::Binary {
-            return Err(NtruKeyError::ClientSecretKeyMustBeBinary);
+        if self.client_ntru_secret_key.distr()
+            != parameters.key_switching().ntru().secret_key_distr()
+        {
+            return Err(NtruKeyError::ClientSecretKeyDistributionMismatch);
         }
         let expected_lwe_dimension = parameters.external_lwe().dimension();
         if self.external_lwe_dimension != expected_lwe_dimension {
@@ -120,9 +122,9 @@ pub enum NtruKeyError {
     /// At least one NTRU secret has the wrong polynomial length.
     #[error("NTRU client-key polynomial length mismatch")]
     PolynomialLengthMismatch,
-    /// The client NTRU secret is not binary.
-    #[error("the NTRU client secret key must be binary")]
-    ClientSecretKeyMustBeBinary,
+    /// The client NTRU secret was sampled from a different binary distribution.
+    #[error("NTRU client secret-key distribution mismatch")]
+    ClientSecretKeyDistributionMismatch,
     /// The active client-key prefix has the wrong LWE dimension.
     #[error("NTRU client key has the wrong external LWE dimension")]
     ExternalLweDimensionMismatch,

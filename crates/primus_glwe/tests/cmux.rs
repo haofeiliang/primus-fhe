@@ -33,7 +33,7 @@ fn fourier_cmux_selects_requested_glwe() {
         POLY_LENGTH,
         PLAINTEXT_MODULUS,
         NativeModulus::new(),
-        SecretKeyDistr::Binary,
+        SecretKeyDistr::UniformBinary,
         0.7,
     );
     let params = GlevParameters::with_glwe_params(&glwe_params, 8, None);
@@ -154,7 +154,7 @@ fn ntt_cmux_selects_requested_glwe() {
         POLY_LENGTH,
         PLAINTEXT_MODULUS,
         modulus,
-        SecretKeyDistr::Ternary,
+        SecretKeyDistr::SparseTernary,
         0.7,
     );
     let params = GlevParameters::with_glwe_params(&glwe_params, 8, None);

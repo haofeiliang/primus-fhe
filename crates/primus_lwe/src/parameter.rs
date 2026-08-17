@@ -104,6 +104,9 @@ where
         secret_key_distr: SecretKeyDistr,
         noise_standard_deviation: f64,
     ) -> Self {
+        secret_key_distr
+            .validate_for_length(dimension)
+            .expect("invalid LWE secret-key distribution");
         let cipher_modulus_minus_one = cipher_modulus.minus_one();
 
         let noise_distribution =
@@ -112,7 +115,7 @@ where
             SecretKeyDistr::Gaussian(standard_deviation) => {
                 Some(DiscreteGaussian::new(standard_deviation, cipher_modulus_minus_one).unwrap())
             }
-            SecretKeyDistr::Binary | SecretKeyDistr::Ternary => None,
+            _ => None,
         };
 
         let cipher_modulus_uniform_distr = cipher_modulus.uniform_distribution();

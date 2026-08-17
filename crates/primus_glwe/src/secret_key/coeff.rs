@@ -121,11 +121,49 @@ impl<T: FheUint> GlweSecretKey<T> {
         R: rand::Rng + rand::CryptoRng,
     {
         let key_len = glwe_size.mask_len();
+        distr
+            .validate_for_length(key_len)
+            .expect("invalid GLWE secret-key distribution");
         let key = match distr {
-            SecretKeyDistr::Binary => primus_distr::sample_binary_values(key_len, rng),
-            SecretKeyDistr::Ternary => {
-                primus_distr::sample_ternary_values(-T::ONE.cast_to_signed(), key_len, rng)
+            SecretKeyDistr::UniformBinary => {
+                primus_distr::sample_uniform_binary_values(key_len, rng)
             }
+            SecretKeyDistr::Binary { one_probability } => {
+                primus_distr::sample_binary_values_with_probability(key_len, one_probability, rng)
+            }
+            SecretKeyDistr::SparseTernary => {
+                primus_distr::sample_sparse_ternary_values(-T::ONE.cast_to_signed(), key_len, rng)
+            }
+            SecretKeyDistr::UniformTernary => {
+                primus_distr::sample_uniform_ternary_values(-T::ONE.cast_to_signed(), key_len, rng)
+            }
+            SecretKeyDistr::Ternary {
+                negative_one_probability,
+                one_probability,
+            } => primus_distr::sample_ternary_values_with_probabilities(
+                -T::ONE.cast_to_signed(),
+                key_len,
+                negative_one_probability,
+                one_probability,
+                rng,
+            ),
+            SecretKeyDistr::FixedHammingWeightBinary { hamming_weight } => {
+                primus_distr::sample_fixed_hamming_weight_binary_values(
+                    key_len,
+                    hamming_weight,
+                    rng,
+                )
+            }
+            SecretKeyDistr::FixedHammingWeightTernary {
+                negative_one_weight,
+                one_weight,
+            } => primus_distr::sample_fixed_hamming_weight_ternary_values(
+                -T::ONE.cast_to_signed(),
+                key_len,
+                negative_one_weight,
+                one_weight,
+                rng,
+            ),
             SecretKeyDistr::Gaussian(standard_deviation) => {
                 primus_distr::SignedDiscreteGaussian::new(standard_deviation)
                     .expect("validated GLWE secret Gaussian distribution")

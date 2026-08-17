@@ -153,9 +153,10 @@ impl FourierNtruSecretKey {
 
     /// Rejection-samples a stable binary prefix padded to the NTRU ring.
     ///
-    /// The coefficient key contains `active_length` independently sampled
-    /// binary coefficients followed by zeros. The same key can therefore be
-    /// viewed as a smaller external LWE secret after compact extraction.
+    /// The coefficient key contains `active_length` coefficients sampled from
+    /// the configured binary distribution followed by zeros. The same key can
+    /// therefore be viewed as a smaller external LWE secret after compact
+    /// extraction.
     ///
     /// # Panics
     ///
@@ -172,13 +173,21 @@ impl FourierNtruSecretKey {
         Table: FftTable,
         R: rand::Rng + rand::CryptoRng,
     {
-        assert_eq!(params.secret_key_distr(), SecretKeyDistr::Binary);
+        assert!(params.secret_key_distr().is_binary());
         assert!((1..=params.poly_length()).contains(&active_length));
+        params
+            .secret_key_distr()
+            .validate_for_length(active_length)
+            .expect("invalid padded NTRU secret-key distribution");
         assert_eq!(fft.poly_length(), params.poly_length());
 
         for _ in 0..crate::parameter::KEY_GENERATION_ATTEMPTS {
-            let coefficient_key =
-                NtruSecretKey::generate_padded_binary(params.poly_length(), active_length, rng);
+            let coefficient_key = NtruSecretKey::generate_padded_binary(
+                params.poly_length(),
+                active_length,
+                params.secret_key_distr(),
+                rng,
+            );
             match Self::try_from_coeff_secret_key(&coefficient_key, fft) {
                 Ok(key) => return Ok((coefficient_key, key)),
                 Err(NtruError::NonInvertibleSecretKey | NtruError::UnstableFourierInverse) => {}

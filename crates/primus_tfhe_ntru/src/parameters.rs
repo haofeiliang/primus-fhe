@@ -4,11 +4,9 @@ use primus_ntru::NlevParameters;
 use primus_reduce::RingContext;
 
 use crate::NtruParameterError::{
-    CipherModulusMismatch, ClientSecretKeyMustBeBinary, InvalidLweDimension, PlainModulusMismatch,
-    PolynomialLengthMismatch,
+    CipherModulusMismatch, ClientSecretKeyDistributionMismatch, ClientSecretKeyMustBeBinary,
+    InvalidLweDimension, PlainModulusMismatch, PolynomialLengthMismatch,
 };
-use primus_ntru::SecretKeyDistr;
-
 /// Mathematical parameters for NTRU-based TFHE.
 ///
 /// The bootstrapping parameters describe ciphertexts under the accumulator
@@ -42,10 +40,13 @@ where
         bootstrapping: NlevParameters<T, M>,
         key_switching: NlevParameters<T, M>,
     ) -> Result<Self, NtruParameterError> {
-        if external_lwe.secret_key_distr() != SecretKeyDistr::Binary
-            || key_switching.ntru().secret_key_distr() != SecretKeyDistr::Binary
-        {
+        let external_distr = external_lwe.secret_key_distr();
+        let client_ntru_distr = key_switching.ntru().secret_key_distr();
+        if !external_distr.is_binary() || !client_ntru_distr.is_binary() {
             return Err(ClientSecretKeyMustBeBinary);
+        }
+        if external_distr != client_ntru_distr {
+            return Err(ClientSecretKeyDistributionMismatch);
         }
 
         let bootstrapping_ntru = bootstrapping.ntru();
@@ -116,6 +117,9 @@ pub enum NtruParameterError {
     /// The external LWE and client NTRU secret must both be binary.
     #[error("NTRU TFHE requires a binary client secret key")]
     ClientSecretKeyMustBeBinary,
+    /// The external LWE and padded NTRU views describe different distributions.
+    #[error("the external LWE and client NTRU secret-key distributions must match")]
+    ClientSecretKeyDistributionMismatch,
     /// The external LWE key cannot fit in one zero-padded NTRU polynomial.
     #[error("external LWE dimension {lwe_dimension} must belong to 1..={poly_length}")]
     InvalidLweDimension {

@@ -167,7 +167,10 @@ where
         let parameters = self.context.parameters();
         let mut coefficients = vec![T::ZERO.cast_to_signed(); parameters.poly_length()];
         coefficients[0] = T::ONE.cast_to_signed();
-        let unit = NtruSecretKey::new(coefficients, SecretKeyDistr::Binary);
+        let unit = NtruSecretKey::new(
+            coefficients,
+            SecretKeyDistr::FixedHammingWeightBinary { hamming_weight: 1 },
+        );
         FourierNtruKeySwitchingKey::generate(
             &unit,
             accumulator_fourier,

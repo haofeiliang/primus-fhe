@@ -8,6 +8,7 @@ primus_integer = { path = "../primus_integer" }
 primus_reduce = { path = "../primus_reduce" }
 primus_modulus = { path = "../primus_modulus" }
 primus_factor = { path = "../primus_factor" }
+thiserror = { workspace = true }
 
 [dev-dependencies]
 primus_fft = { path = "../primus_fft" }

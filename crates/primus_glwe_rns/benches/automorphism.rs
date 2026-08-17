@@ -36,7 +36,7 @@ fn bench_automorphism(c: &mut Criterion) {
             mod_t,
             mod_gamma,
             &moduli,
-            SecretKeyDistr::Ternary,
+            SecretKeyDistr::SparseTernary,
             3.20,
         );
 

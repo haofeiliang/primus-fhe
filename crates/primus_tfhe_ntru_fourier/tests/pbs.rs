@@ -16,21 +16,21 @@ fn parameters() -> NtruTfheParameters<u32, NativeModulus<u32>> {
         LWE_DIMENSION,
         PLAIN_MODULUS,
         modulus,
-        SecretKeyDistr::Binary,
+        SecretKeyDistr::UniformBinary,
         0.7,
     );
     let accumulator = NtruParameters::new(
         POLY_LENGTH,
         PLAIN_MODULUS,
         modulus,
-        SecretKeyDistr::Ternary,
+        SecretKeyDistr::SparseTernary,
         0.7,
     );
     let client = NtruParameters::new(
         POLY_LENGTH,
         PLAIN_MODULUS,
         modulus,
-        SecretKeyDistr::Binary,
+        SecretKeyDistr::UniformBinary,
         0.7,
     );
     NtruTfheParameters::try_new(
@@ -48,21 +48,21 @@ fn ntt_outputs() -> Vec<u32> {
         LWE_DIMENSION,
         PLAIN_MODULUS,
         modulus,
-        SecretKeyDistr::Binary,
+        SecretKeyDistr::UniformBinary,
         0.7,
     );
     let accumulator = NtruParameters::new(
         POLY_LENGTH,
         PLAIN_MODULUS,
         modulus,
-        SecretKeyDistr::Ternary,
+        SecretKeyDistr::SparseTernary,
         0.7,
     );
     let client = NtruParameters::new(
         POLY_LENGTH,
         PLAIN_MODULUS,
         modulus,
-        SecretKeyDistr::Binary,
+        SecretKeyDistr::UniformBinary,
         0.7,
     );
     let parameters = primus_tfhe_ntru_ntt::NtruTfheParameters::try_new(

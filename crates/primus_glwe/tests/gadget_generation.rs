@@ -52,7 +52,7 @@ fn fourier_glev_generation_and_ggsw_external_product() {
         POLY_LENGTH,
         16u32,
         NativeModulus::new(),
-        SecretKeyDistr::Binary,
+        SecretKeyDistr::UniformBinary,
         0.7,
     );
     let params = GlevParameters::with_glwe_params(&glwe_params, 8, None);
@@ -165,7 +165,7 @@ fn ntt_glev_and_ggsw_generation() {
         POLY_LENGTH,
         16u32,
         modulus,
-        SecretKeyDistr::Ternary,
+        SecretKeyDistr::SparseTernary,
         0.7,
     );
     let params = GlevParameters::with_glwe_params(&glwe_params, 8, None);

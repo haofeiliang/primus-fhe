@@ -19,8 +19,8 @@ const PLAIN_MODULI: [ValueT; 3] = [256, 257, 12_289];
 const GAMMA_MODULUS: ValueT = 2_305_843_009_213_554_689;
 const CIPHER_MODULI: [ValueT; 2] = [1_125_899_906_826_241, 1_125_899_906_629_633];
 const SECRET_KEY_TYPES: [SecretKeyDistr; 3] = [
-    SecretKeyDistr::Binary,
-    SecretKeyDistr::Ternary,
+    SecretKeyDistr::UniformBinary,
+    SecretKeyDistr::SparseTernary,
     SecretKeyDistr::Gaussian(SECRET_KEY_GAUSSIAN_STANDARD_DEVIATION),
 ];
 
@@ -157,7 +157,7 @@ fn test_dcrt_glwe_secret_key_ciphertext_ops_crt_modulus() {
         mod_t,
         mod_gamma,
         &moduli,
-        SecretKeyDistr::Ternary,
+        SecretKeyDistr::SparseTernary,
         NOISE_STANDARD_DEVIATION,
     );
 
@@ -171,7 +171,7 @@ fn test_dcrt_glwe_secret_key_ciphertext_ops_crt_modulus() {
     // m₂: alternating 0/1 (binary for CRT multiplication)
     let m0 = message_polynomial(plain_modulus);
     let mut m1 = message_polynomial(plain_modulus);
-    let m2 = Polynomial::random_binary(POLY_LENGTH, &mut rng);
+    let m2 = Polynomial::random_uniform_binary(POLY_LENGTH, &mut rng);
 
     // msg₂ is kept in coefficient form for the multiplication step;
     // it will be converted to NTT domain later.

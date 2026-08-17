@@ -16,21 +16,21 @@ fn parameters() -> NtruTfheParameters<u32, BarrettModulus<u32>> {
         LWE_DIMENSION,
         PLAIN_MODULUS,
         modulus,
-        SecretKeyDistr::Binary,
+        SecretKeyDistr::UniformBinary,
         0.7,
     );
     let accumulator = NtruParameters::new(
         POLY_LENGTH,
         PLAIN_MODULUS,
         modulus,
-        SecretKeyDistr::Ternary,
+        SecretKeyDistr::SparseTernary,
         0.7,
     );
     let client = NtruParameters::new(
         POLY_LENGTH,
         PLAIN_MODULUS,
         modulus,
-        SecretKeyDistr::Binary,
+        SecretKeyDistr::UniformBinary,
         0.7,
     );
     NtruTfheParameters::try_new(

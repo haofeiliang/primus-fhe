@@ -104,7 +104,7 @@ mod tests {
     fn domain_rejects_transform_shape_mismatch() {
         const Q: u32 = 132_120_577;
         let modulus = BarrettModulus::new(Q);
-        let glwe = GlweParameters::new(1, 256, 16, modulus, SecretKeyDistr::Binary, 0.7);
+        let glwe = GlweParameters::new(1, 256, 16, modulus, SecretKeyDistr::UniformBinary, 0.7);
         let gadget = GlevParameters::with_glwe_params(&glwe, 8, Some(3));
         let wrong_length_table = UintNttTable::new(9, modulus).unwrap();
         assert!(matches!(

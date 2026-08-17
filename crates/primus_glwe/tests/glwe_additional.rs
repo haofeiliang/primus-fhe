@@ -20,7 +20,7 @@ fn additional_glwe_workflows() {
         POLY_LENGTH,
         PLAIN_MODULUS,
         modulus,
-        SecretKeyDistr::Binary,
+        SecretKeyDistr::UniformBinary,
         0.7,
     );
     let table = UintNttTable::new(POLY_LENGTH.trailing_zeros(), modulus).unwrap();

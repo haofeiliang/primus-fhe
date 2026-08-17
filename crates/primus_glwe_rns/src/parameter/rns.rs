@@ -77,6 +77,9 @@ where
         let noise_distribution = SignedDiscreteGaussian::new(noise_standard_deviation).unwrap();
 
         let size = RnsGlweSize::new(GlweSize::new(dimension, poly_length), cipher_moduli.len());
+        secret_key_distr
+            .validate_for_length(size.glwe_size().mask_len())
+            .expect("invalid RNS GLWE secret-key distribution");
 
         let secret_key_distribution =
             if let SecretKeyDistr::Gaussian(standard_deviation) = secret_key_distr {

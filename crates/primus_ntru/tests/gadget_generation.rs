@@ -73,7 +73,7 @@ fn ntt_nlev_generation_and_ngsw_cmux() {
         POLY_LENGTH,
         PLAINTEXT_MODULUS,
         modulus,
-        SecretKeyDistr::Ternary,
+        SecretKeyDistr::SparseTernary,
         0.7,
     );
     let gadget_params = NlevParameters::with_ntru_params(&params, 9, None);
@@ -206,7 +206,7 @@ fn fourier_nlev_generation_and_ngsw_cmux() {
         POLY_LENGTH,
         PLAINTEXT_MODULUS,
         NativeModulus::new(),
-        SecretKeyDistr::Ternary,
+        SecretKeyDistr::SparseTernary,
         0.7,
     );
     let gadget_params = NlevParameters::with_ntru_params(&params, 8, None);

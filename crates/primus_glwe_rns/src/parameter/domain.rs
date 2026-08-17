@@ -234,7 +234,7 @@ mod tests {
             BarrettModulus::new(12_289),
             BarrettModulus::new(2_199_023_190_017),
             &moduli,
-            SecretKeyDistr::Ternary,
+            SecretKeyDistr::SparseTernary,
             3.2,
         );
         let crt_gadget = CrtGlevParameters::with_glwe_params(&crt_glwe, 20, None);

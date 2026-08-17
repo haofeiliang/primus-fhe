@@ -1,7 +1,7 @@
 //! NTT-domain functional bootstrapping key and blind rotation.
 
 use primus_data::{Data, DataMut, RawData};
-use primus_glwe::{NttGadgetDomain, NttGadgetEncryptContext, NttGlweSecretKey, SecretKeyDistr};
+use primus_glwe::{NttGadgetDomain, NttGadgetEncryptContext, NttGlweSecretKey};
 use primus_integer::FheUint;
 use primus_lattice::{
     GadgetSize,
@@ -75,9 +75,9 @@ impl<T: FheUint> NttGlweBootstrappingKey<T> {
         R: rand::Rng + rand::CryptoRng,
     {
         let parameters = domain.parameters();
-        assert_eq!(input_secret_key.distr(), SecretKeyDistr::Binary);
+        assert!(input_secret_key.distr().is_binary());
         assert_eq!(input_secret_key.dimension(), input_parameters.dimension());
-        assert_eq!(input_parameters.secret_key_distr(), SecretKeyDistr::Binary);
+        assert!(input_parameters.secret_key_distr().is_binary());
         assert_eq!(output_secret_key.glwe_size(), parameters.glwe_size());
 
         let input_dimension = input_secret_key.dimension();
