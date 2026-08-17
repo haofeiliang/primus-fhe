@@ -71,9 +71,15 @@ pub(crate) struct Config {
     /// Plaintext modulus.
     #[arg(long, default_value_t = 4)]
     plain_modulus: u32,
-    /// Standard deviation of fresh error coefficients.
+    /// Standard deviation of fresh external LWE error coefficients.
     #[arg(long, default_value_t = 0.7)]
-    noise_standard_deviation: f64,
+    lwe_noise_standard_deviation: f64,
+    /// Standard deviation of accumulator initializer and control errors.
+    #[arg(long, default_value_t = 0.7)]
+    bootstrapping_noise_standard_deviation: f64,
+    /// Standard deviation of NTRU key-switching-key errors.
+    #[arg(long, default_value_t = 0.7)]
+    key_switching_noise_standard_deviation: f64,
     /// Explicit modulus used by the NTT backend.
     #[arg(long, default_value_t = DEFAULT_NTT_MODULUS)]
     ntt_modulus: u32,
@@ -109,8 +115,23 @@ impl Config {
         if self.plain_modulus < 4 || !self.plain_modulus.is_multiple_of(2) {
             return Err("--plain-modulus must be even and at least four".into());
         }
-        if !self.noise_standard_deviation.is_finite() || self.noise_standard_deviation <= 0.0 {
-            return Err("--noise-standard-deviation must be finite and positive".into());
+        for (name, standard_deviation) in [
+            (
+                "--lwe-noise-standard-deviation",
+                self.lwe_noise_standard_deviation,
+            ),
+            (
+                "--bootstrapping-noise-standard-deviation",
+                self.bootstrapping_noise_standard_deviation,
+            ),
+            (
+                "--key-switching-noise-standard-deviation",
+                self.key_switching_noise_standard_deviation,
+            ),
+        ] {
+            if !standard_deviation.is_finite() || standard_deviation <= 0.0 {
+                return Err(format!("{name} must be finite and positive"));
+            }
         }
         if self.bootstrapping_log_basis < 2 || self.key_switching_log_basis < 2 {
             return Err("decomposition log basis must be at least two".into());
@@ -136,21 +157,21 @@ fn run_ntt(config: &Config) -> Result<(), String> {
         config.plain_modulus,
         modulus,
         SecretKeyDistr::UniformBinary,
-        config.noise_standard_deviation,
+        config.lwe_noise_standard_deviation,
     );
     let accumulator = NtruParameters::new(
         config.poly_length,
         config.plain_modulus,
         modulus,
         SecretKeyDistr::SparseTernary,
-        config.noise_standard_deviation,
+        config.bootstrapping_noise_standard_deviation,
     );
     let client = NtruParameters::new(
         config.poly_length,
         config.plain_modulus,
         modulus,
         SecretKeyDistr::UniformBinary,
-        config.noise_standard_deviation,
+        config.key_switching_noise_standard_deviation,
     );
     let parameters = make_parameters(config, external_lwe, &accumulator, &client)?;
     let table = U32NttTable::new(config.poly_length.trailing_zeros(), modulus)
@@ -226,21 +247,21 @@ fn run_fourier(config: &Config) -> Result<(), String> {
         config.plain_modulus,
         modulus,
         SecretKeyDistr::UniformBinary,
-        config.noise_standard_deviation,
+        config.lwe_noise_standard_deviation,
     );
     let accumulator = NtruParameters::new(
         config.poly_length,
         config.plain_modulus,
         modulus,
         SecretKeyDistr::SparseTernary,
-        config.noise_standard_deviation,
+        config.bootstrapping_noise_standard_deviation,
     );
     let client = NtruParameters::new(
         config.poly_length,
         config.plain_modulus,
         modulus,
         SecretKeyDistr::UniformBinary,
-        config.noise_standard_deviation,
+        config.key_switching_noise_standard_deviation,
     );
     let parameters = make_parameters(config, external_lwe, &accumulator, &client)?;
     let table = RustFftTable::new(config.poly_length.trailing_zeros())
@@ -614,23 +635,28 @@ impl Report {
         println!("NTRU TFHE parameter validation");
         println!("backend: {}", self.backend.name());
         println!(
-            "N={}, n={}, t={}, sigma={}",
-            config.poly_length,
-            config.lwe_dimension,
-            config.plain_modulus,
-            config.noise_standard_deviation
+            "N={}, n={}, t={}",
+            config.poly_length, config.lwe_dimension, config.plain_modulus
         );
         match self.backend {
             Backend::Ntt => println!("q={}", config.ntt_modulus),
             Backend::Fourier => println!("q=2^32 (native)"),
         }
         println!(
-            "bootstrapping: logB={}, L={}",
-            config.bootstrapping_log_basis, config.bootstrapping_levels
+            "external LWE: sigma={}",
+            config.lwe_noise_standard_deviation
         );
         println!(
-            "key switching: logB={}, L={}",
-            config.key_switching_log_basis, config.key_switching_levels
+            "bootstrapping: sigma={}, logB={}, L={}",
+            config.bootstrapping_noise_standard_deviation,
+            config.bootstrapping_log_basis,
+            config.bootstrapping_levels
+        );
+        println!(
+            "key switching: sigma={}, logB={}, L={}",
+            config.key_switching_noise_standard_deviation,
+            config.key_switching_log_basis,
+            config.key_switching_levels
         );
         println!("seed=0x{:016x}", config.seed);
         println!();
