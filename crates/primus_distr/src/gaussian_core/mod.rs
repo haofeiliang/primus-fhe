@@ -2,18 +2,18 @@ use primus_integer::{FheUint, Integer};
 
 mod cdt;
 mod parameters;
-#[cfg(all(target_os = "linux", feature = "high_precision"))]
-mod unix_cdt;
+#[cfg(feature = "high_precision")]
+mod precise_cdt;
 mod ziggurat;
 
 pub(crate) use cdt::build_cdt;
-#[cfg(all(target_os = "linux", feature = "high_precision"))]
-pub(crate) use parameters::UNIX_CDT_MAX_MAGNITUDE;
+#[cfg(feature = "high_precision")]
+pub(crate) use parameters::PRECISE_CDT_MAX_MAGNITUDE;
 pub(crate) use parameters::{
     CDT_MAX_MAGNITUDE, CDT_STANDARD_DEVIATION_THRESHOLD, DEFAULT_TAIL_CUT, GaussianParameters,
 };
-#[cfg(all(target_os = "linux", feature = "high_precision"))]
-pub(crate) use unix_cdt::{build_unix_cdt, compare_u256};
+#[cfg(feature = "high_precision")]
+pub(crate) use precise_cdt::{build_precise_cdt, compare_u256};
 pub(crate) use ziggurat::ZigguratMagnitudeSampler;
 
 /// Encodes a sampled magnitude in the canonical unsigned modulus range.

@@ -8,9 +8,9 @@ pub(crate) const DEFAULT_TAIL_CUT: f64 = 12.0;
 pub(crate) const CDT_STANDARD_DEVIATION_THRESHOLD: f64 = 20.0;
 /// Largest magnitude supported by the portable 64-bit CDT representation.
 pub(crate) const CDT_MAX_MAGNITUDE: u64 = 255;
-#[cfg(all(target_os = "linux", feature = "high_precision"))]
-/// Largest magnitude supported by the Linux 256-bit CDT representation.
-pub(crate) const UNIX_CDT_MAX_MAGNITUDE: u64 = 1023;
+#[cfg(feature = "high_precision")]
+/// Largest magnitude supported by the high-precision 256-bit CDT representation.
+pub(crate) const PRECISE_CDT_MAX_MAGNITUDE: u64 = 1023;
 
 /// Smallest scale for which this crate treats the discrete distribution's
 /// measured standard deviation as matching the requested value closely.

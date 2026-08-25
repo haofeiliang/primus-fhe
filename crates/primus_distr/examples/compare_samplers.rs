@@ -5,7 +5,7 @@
 // Criterion benchmarks for construction and throughput measurements.
 //   - CDTSampler (f64 precision, portable, default for σ ≤ 20)
 //   - DiscreteZiggurat (large σ)
-//   - UnixCDTSampler (256-bit precision, Unix + high_precision feature only)
+//   - PreciseCDTSampler (256-bit precision, high_precision feature only)
 
 use comfy_table::{Attribute, Cell, Color, ContentArrangement, Table, presets::UTF8_FULL};
 use rand::{SeedableRng, distr::Distribution, rngs::StdRng};
@@ -13,8 +13,8 @@ use std::{env, process};
 
 use primus_distr::{CDTSampler, DiscreteGaussian, DiscreteZiggurat, stats::gaussian_stats};
 
-#[cfg(all(target_os = "linux", feature = "high_precision"))]
-use primus_distr::UnixCDTSampler;
+#[cfg(feature = "high_precision")]
+use primus_distr::PreciseCDTSampler;
 
 type ValueT = u64;
 
@@ -230,13 +230,13 @@ fn compare_samplers_at_sigma(sigma: f64) {
         Err(error) => println!("  Discrete Ziggurat unavailable: {error}"),
     }
 
-    #[cfg(all(target_os = "linux", feature = "high_precision"))]
-    match UnixCDTSampler::<ValueT>::new(sigma, TAIL_CUT, Q - 1) {
+    #[cfg(feature = "high_precision")]
+    match PreciseCDTSampler::<ValueT>::new(sigma, TAIL_CUT, Q - 1) {
         Ok(sampler) => {
-            println!("  Analyzing UnixCDTSampler (256-bit precision)...");
-            all_stats.push(analyze_sampler("UnixCDTSampler", sigma, &sampler));
+            println!("  Analyzing PreciseCDTSampler (256-bit precision)...");
+            all_stats.push(analyze_sampler("PreciseCDTSampler", sigma, &sampler));
         }
-        Err(error) => println!("  UnixCDTSampler unavailable: {error}"),
+        Err(error) => println!("  PreciseCDTSampler unavailable: {error}"),
     }
 
     match DiscreteGaussian::<ValueT>::new(sigma, Q - 1) {

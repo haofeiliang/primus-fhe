@@ -7,13 +7,13 @@ use crate::{
 };
 
 mod cdt;
-#[cfg(all(target_os = "linux", feature = "high_precision"))]
-mod unix_cdt;
+#[cfg(feature = "high_precision")]
+mod precise_cdt;
 mod ziggurat;
 
 pub use cdt::SignedCDTSampler;
-#[cfg(all(target_os = "linux", feature = "high_precision"))]
-pub use unix_cdt::SignedUnixCDTSampler;
+#[cfg(feature = "high_precision")]
+pub use precise_cdt::SignedPreciseCDTSampler;
 pub use ziggurat::SignedDiscreteZiggurat;
 
 /// A centered discrete Gaussian distribution over signed integers.

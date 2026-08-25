@@ -19,8 +19,9 @@
 //! The Gaussian samplers internally choose between a CDT sampler
 //! ([`CDTSampler`]) and a Ziggurat sampler ([`DiscreteZiggurat`]) based on
 //! the standard deviation (threshold: σ = 20).
-//! On Linux with the `high_precision` feature, a 256-bit CDT sampler
-//! (`UnixCDTSampler`) is also available.
+//! With the `high_precision` feature, portable 256-bit CDT samplers
+//! ([`PreciseCDTSampler`] and [`SignedPreciseCDTSampler`]) are also
+//! available.
 //!
 //! # Batch sampling
 //!
@@ -50,11 +51,11 @@ pub use common::*;
 pub use binary::BinaryDistr;
 pub use ternary::SparseTernaryDistr;
 
-#[cfg(all(target_os = "linux", feature = "high_precision"))]
-pub use discrete_gaussian::UnixCDTSampler;
+#[cfg(feature = "high_precision")]
+pub use discrete_gaussian::PreciseCDTSampler;
 pub use discrete_gaussian::{CDTSampler, DiscreteGaussian, DiscreteZiggurat};
-#[cfg(all(target_os = "linux", feature = "high_precision"))]
-pub use signed_discrete_gaussian::SignedUnixCDTSampler;
+#[cfg(feature = "high_precision")]
+pub use signed_discrete_gaussian::SignedPreciseCDTSampler;
 pub use signed_discrete_gaussian::{
     SignedCDTSampler, SignedDiscreteGaussian, SignedDiscreteZiggurat,
 };

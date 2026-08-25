@@ -4,7 +4,7 @@
 // Each sampler is tested only in its applicable range:
 //   - DiscreteZiggurat:  sigma >= 10   (large sigma)
 //   - CDTSampler:        sigma <= 20   (default, binary-search CDT)
-//   - UnixCDTSampler:    sigma <= 20   (Linux + high_precision feature only)
+//   - PreciseCDTSampler: sigma <= 20 (high_precision feature only)
 //
 // The overlap [10, 20] lets us compare CDT and Ziggurat side by side.
 
@@ -13,8 +13,8 @@ use std::hint::black_box;
 use criterion::{Criterion, criterion_group, criterion_main};
 use primus_distr::{CDTSampler, DiscreteZiggurat};
 
-#[cfg(all(target_os = "linux", feature = "high_precision"))]
-use primus_distr::UnixCDTSampler;
+#[cfg(feature = "high_precision")]
+use primus_distr::PreciseCDTSampler;
 
 const MODULUS_MINUS_ONE: u64 = 1125899906826241 - 1;
 const TAIL_CUT: f64 = 12.0;
@@ -30,11 +30,11 @@ fn bench_different_sampler(c: &mut Criterion) {
             });
         }
 
-        #[cfg(all(target_os = "linux", feature = "high_precision"))]
+        #[cfg(feature = "high_precision")]
         if sigma <= 20.0 {
-            group.bench_function(format!("UnixCDTSampler/σ={sigma}"), |b| {
+            group.bench_function(format!("PreciseCDTSampler/σ={sigma}"), |b| {
                 b.iter(|| {
-                    black_box(UnixCDTSampler::new(sigma, TAIL_CUT, MODULUS_MINUS_ONE).unwrap())
+                    black_box(PreciseCDTSampler::new(sigma, TAIL_CUT, MODULUS_MINUS_ONE).unwrap())
                 })
             });
         }

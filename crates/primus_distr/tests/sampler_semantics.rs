@@ -1,6 +1,8 @@
 use std::convert::Infallible;
 
 use primus_distr::{BinaryDistr, DiscreteGaussian, SignedDiscreteGaussian, SparseTernaryDistr};
+#[cfg(feature = "high_precision")]
+use primus_distr::{PreciseCDTSampler, SignedPreciseCDTSampler};
 use rand::{SeedableRng, TryRng, distr::Distribution, rngs::StdRng};
 
 struct CountingRng(u32);
@@ -81,6 +83,24 @@ fn gaussian_facades_preserve_encoding_and_basic_moments() {
         assert!(
             (measured_standard_deviation / standard_deviation - 1.0).abs() < 0.12,
             "requested σ={standard_deviation}, measured σ={measured_standard_deviation}"
+        );
+    }
+}
+
+#[cfg(feature = "high_precision")]
+#[test]
+fn high_precision_samplers_preserve_signed_and_modular_encoding() {
+    const SEED: u64 = 0x4849_4748_5052_4543;
+
+    let modular = PreciseCDTSampler::<u64>::new(3.19, 12.0, u64::MAX).unwrap();
+    let signed = SignedPreciseCDTSampler::<i64>::new(3.19, 12.0).unwrap();
+    let mut modular_rng = StdRng::seed_from_u64(SEED);
+    let mut signed_rng = StdRng::seed_from_u64(SEED);
+
+    for _ in 0..1_024 {
+        assert_eq!(
+            modular.sample(&mut modular_rng) as i64,
+            signed.sample(&mut signed_rng)
         );
     }
 }

@@ -3,19 +3,21 @@ use rand::{RngExt, distr::Distribution};
 
 use crate::{
     DistrErr,
-    gaussian_core::{GaussianParameters, UNIX_CDT_MAX_MAGNITUDE, build_unix_cdt, compare_u256},
+    gaussian_core::{
+        GaussianParameters, PRECISE_CDT_MAX_MAGNITUDE, build_precise_cdt, compare_u256,
+    },
     utils::cdt_index_by,
 };
 
-/// High-precision CDT sampler using 256-bit arithmetic (Unix only).
+/// High-precision CDT sampler using a portable 256-bit representation.
 #[derive(Debug, Clone)]
-pub struct UnixCDTSampler<T: FheUint> {
+pub struct PreciseCDTSampler<T: FheUint> {
     std_dev: f64,
     modulus_minus_one: T,
     cdt: Vec<[u64; 4]>,
 }
 
-impl<T: FheUint> UnixCDTSampler<T> {
+impl<T: FheUint> PreciseCDTSampler<T> {
     /// Generates a high-precision CDT sampler.
     ///
     /// Returns an error when the parameters are invalid, the support exceeds
@@ -30,9 +32,9 @@ impl<T: FheUint> UnixCDTSampler<T> {
         modulus_minus_one: T,
     ) -> Result<Self, DistrErr> {
         let parameters = parameters
-            .validate_cdt_size(UNIX_CDT_MAX_MAGNITUDE)?
+            .validate_cdt_size(PRECISE_CDT_MAX_MAGNITUDE)?
             .validate_modular_output(modulus_minus_one)?;
-        let (std_dev, cdt) = build_unix_cdt(parameters);
+        let (std_dev, cdt) = build_precise_cdt(parameters);
         Ok(Self {
             std_dev,
             modulus_minus_one,
@@ -47,7 +49,7 @@ impl<T: FheUint> UnixCDTSampler<T> {
     }
 }
 
-impl<T: FheUint> Distribution<T> for UnixCDTSampler<T> {
+impl<T: FheUint> Distribution<T> for PreciseCDTSampler<T> {
     #[inline]
     fn sample<R: rand::Rng + ?Sized>(&self, rng: &mut R) -> T {
         let mut random = [0; 4];

@@ -2,13 +2,13 @@ use primus_integer::FheUint;
 use rand::{Rng, distr::Distribution};
 
 mod cdt;
-#[cfg(all(target_os = "linux", feature = "high_precision"))]
-mod unix_cdt;
+#[cfg(feature = "high_precision")]
+mod precise_cdt;
 mod ziggurat;
 
 pub use cdt::CDTSampler;
-#[cfg(all(target_os = "linux", feature = "high_precision"))]
-pub use unix_cdt::UnixCDTSampler;
+#[cfg(feature = "high_precision")]
+pub use precise_cdt::PreciseCDTSampler;
 pub use ziggurat::DiscreteZiggurat;
 
 use crate::{

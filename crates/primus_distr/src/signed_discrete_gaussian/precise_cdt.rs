@@ -5,19 +5,21 @@ use rand::{RngExt, distr::Distribution};
 
 use crate::{
     DistrErr,
-    gaussian_core::{GaussianParameters, UNIX_CDT_MAX_MAGNITUDE, build_unix_cdt, compare_u256},
+    gaussian_core::{
+        GaussianParameters, PRECISE_CDT_MAX_MAGNITUDE, build_precise_cdt, compare_u256,
+    },
     utils::cdt_index_by,
 };
 
-/// High-precision signed CDT sampler using 256-bit arithmetic (Unix only).
+/// High-precision signed CDT sampler using a portable 256-bit representation.
 #[derive(Debug, Clone)]
-pub struct SignedUnixCDTSampler<T: Integer> {
+pub struct SignedPreciseCDTSampler<T: Integer> {
     std_dev: f64,
     cdt: Vec<[u64; 4]>,
     output: PhantomData<T>,
 }
 
-impl<T: Integer> SignedUnixCDTSampler<T> {
+impl<T: Integer> SignedPreciseCDTSampler<T> {
     /// Generates a high-precision signed CDT sampler.
     ///
     /// Returns an error when the parameters are invalid, the support exceeds
@@ -29,9 +31,9 @@ impl<T: Integer> SignedUnixCDTSampler<T> {
 
     pub(crate) fn from_parameters(parameters: GaussianParameters) -> Result<Self, DistrErr> {
         let parameters = parameters
-            .validate_cdt_size(UNIX_CDT_MAX_MAGNITUDE)?
+            .validate_cdt_size(PRECISE_CDT_MAX_MAGNITUDE)?
             .validate_signed_output::<T>()?;
-        let (std_dev, cdt) = build_unix_cdt(parameters);
+        let (std_dev, cdt) = build_precise_cdt(parameters);
         Ok(Self {
             std_dev,
             cdt,
@@ -46,7 +48,7 @@ impl<T: Integer> SignedUnixCDTSampler<T> {
     }
 }
 
-impl<T: Integer> Distribution<T> for SignedUnixCDTSampler<T> {
+impl<T: Integer> Distribution<T> for SignedPreciseCDTSampler<T> {
     #[inline]
     fn sample<R: rand::Rng + ?Sized>(&self, rng: &mut R) -> T {
         let mut random = [0; 4];
