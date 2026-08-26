@@ -170,7 +170,7 @@ where
 pub fn sample_ternary_values_with_probabilities<T, R>(
     minus_one: T,
     length: usize,
-    negative_one_probability: f64,
+    minus_one_probability: f64,
     one_probability: f64,
     rng: &mut R,
 ) -> Vec<T>
@@ -179,19 +179,19 @@ where
     R: rand::Rng + rand::CryptoRng,
 {
     assert!(
-        negative_one_probability.is_finite()
+        minus_one_probability.is_finite()
             && one_probability.is_finite()
-            && (0.0..=1.0).contains(&negative_one_probability)
+            && (0.0..=1.0).contains(&minus_one_probability)
             && (0.0..=1.0).contains(&one_probability)
-            && negative_one_probability <= 1.0 - one_probability,
+            && minus_one_probability <= 1.0 - one_probability,
         "ternary probabilities must be finite, non-negative, and sum to at most one"
     );
 
-    let nonzero_probability = one_probability + negative_one_probability;
+    let nonzero_probability = one_probability + minus_one_probability;
     let zero_probability = 1.0 - nonzero_probability;
     let zero = Bernoulli::new(zero_probability).expect("validated zero probability");
     let negative = (nonzero_probability > 0.0).then(|| {
-        Bernoulli::new(negative_one_probability / nonzero_probability)
+        Bernoulli::new(minus_one_probability / nonzero_probability)
             .expect("validated conditional negative-one probability")
     });
 
@@ -219,7 +219,7 @@ where
 pub fn sample_fixed_hamming_weight_ternary_values<T, R>(
     minus_one: T,
     length: usize,
-    negative_one_weight: usize,
+    minus_one_weight: usize,
     one_weight: usize,
     rng: &mut R,
 ) -> Vec<T>
@@ -227,7 +227,7 @@ where
     T: FheInt,
     R: rand::Rng + rand::CryptoRng,
 {
-    let nonzero_weight = negative_one_weight
+    let nonzero_weight = minus_one_weight
         .checked_add(one_weight)
         .expect("ternary Hamming weights must fit in usize");
     assert!(
@@ -236,8 +236,8 @@ where
     );
 
     let mut result = vec![T::ZERO; length];
-    result[..negative_one_weight].fill(minus_one);
-    result[negative_one_weight..nonzero_weight].fill(T::ONE);
+    result[..minus_one_weight].fill(minus_one);
+    result[minus_one_weight..nonzero_weight].fill(T::ONE);
     result.shuffle(rng);
     result
 }

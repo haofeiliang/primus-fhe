@@ -1,8 +1,7 @@
 use super::GaussianParameters;
-use crate::utils::log_sum_exp;
 
 /// Builds the portable CDT shared by signed and modular output adapters.
-#[inline(always)]
+#[inline]
 pub(crate) fn build_cdt(parameters: GaussianParameters) -> (f64, Vec<u64>) {
     let standard_deviation = parameters.standard_deviation();
     let length = parameters.maximum_magnitude() as usize + 1;
@@ -15,34 +14,29 @@ pub(crate) fn build_cdt(parameters: GaussianParameters) -> (f64, Vec<u64>) {
         *log_probability = -(magnitude * magnitude) / two_variance;
     }
 
-    let log_sum = log_sum_exp(&log_pdf);
-    let normalized_log_pdf: Vec<f64> = log_pdf
-        .iter()
-        .map(|&log_probability| log_probability - log_sum)
-        .collect();
-    let normalized_pdf: Vec<f64> = normalized_log_pdf
-        .iter()
-        .map(|&log_probability| log_probability.exp())
-        .collect();
+    let max_log_probability = log_pdf.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    for log_probability in &mut log_pdf {
+        *log_probability = (*log_probability - max_log_probability).exp();
+    }
+    let probability_sum: f64 = log_pdf.iter().sum();
 
-    let mut cdt = Vec::with_capacity(length + 1);
+    let mut cdt = vec![0; length + 1];
     let mut cumulative_probability = 0.0;
-    cdt.push(0);
 
-    for &probability in normalized_pdf.iter() {
+    for (&probability, bound) in log_pdf.iter().zip(&mut cdt[1..]) {
         cumulative_probability += probability;
-        let scaled = cumulative_probability.min(1.0) * u64::MAX as f64;
-        cdt.push(if scaled >= u64::MAX as f64 {
+        let normalized_cumulative_probability = (cumulative_probability / probability_sum).min(1.0);
+        let scaled = normalized_cumulative_probability * u64::MAX as f64;
+        *bound = if scaled >= u64::MAX as f64 {
             u64::MAX
         } else {
             (scaled + 0.5) as u64
-        });
+        };
     }
 
     if let Some(last) = cdt.last_mut() {
         *last = u64::MAX;
     }
-    assert_eq!(cdt.len(), length + 1, "CDT length mismatch");
 
     (standard_deviation, cdt)
 }

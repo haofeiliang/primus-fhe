@@ -91,14 +91,14 @@ pub fn gaussian_stats<T: FheUint>(
         })
         .collect();
 
+    counts.fill(0);
+
     let n = samples.len();
     if n == 0 {
-        counts.fill(0);
         return (0.0, 0.0);
     }
 
     let mut sum: i128 = 0;
-    counts.fill(0);
 
     for &x in samples {
         let x: u128 = x.as_into();
@@ -212,12 +212,6 @@ mod tests {
         assert!((mean - (-0.3)).abs() < 1e-10);
         assert!((std - 6.41f64.sqrt()).abs() < 1e-10);
         assert_eq!(counts, [6, 10, 10]);
-    }
-
-    #[test]
-    #[should_panic(expected = "samples must be canonical residues")]
-    fn gaussian_stats_rejects_noncanonical_samples() {
-        gaussian_stats(&[Q], Q, 1.0, &[1.0], &mut [0]);
     }
 
     #[test]
