@@ -9,8 +9,10 @@ use primus_poly::{FourierPolynomial, NttPolynomial};
 use primus_reduce::FieldContext;
 
 use crate::{
-    context::{FourierExternalProductContext, NttExternalProductContext},
-    glwe::{Glwe, TorusGlwe},
+    context::{
+        FourierExternalProductContext, NttExternalProductContext, NttExternalProductContextRefMut,
+    },
+    glwe::{Glwe, NttGlwe, TorusGlwe},
 };
 
 use super::{FourierGgsw, NttGgsw};
@@ -39,13 +41,13 @@ where
         S: RawData<Elem = Complex64> + Data,
     {
         debug_assert_eq!(output.as_ref().len(), context.size().glwe_size().glwe_len());
-        self.external_product_accumulate(input, basis, fft, context);
+        self.external_product_to_accumulator(input, basis, fft, context);
         context.fourier_accumulator.write_torus_form(output, fft);
     }
 
     /// Clears the Fourier accumulator, then stores `self external_product input` in it.
     /// The result remains in Fourier form for the caller to combine or transform back.
-    pub(super) fn external_product_accumulate<T, Table, A>(
+    pub(super) fn external_product_to_accumulator<T, Table, A>(
         &self,
         input: &TorusGlwe<A>,
         basis: &ApproxSignedBasis<T>,
@@ -140,19 +142,48 @@ where
         S: RawData<Elem = T> + Data,
     {
         debug_assert_eq!(output.as_ref().len(), context.size().glwe_size().glwe_len());
-        self.external_product_accumulate(input, basis, modulus, ntt, context);
+        let mut context = context.as_mut();
+        self.external_product_to_accumulator(input, basis, modulus, ntt, &mut context);
         context.ntt_accumulator.write_coeff_form(output, ntt);
+    }
+
+    /// Computes `output = self external_product input` and keeps the result in
+    /// the NTT domain.
+    ///
+    /// The input is a coefficient-domain GLWE ciphertext reduced to `[0, q)`.
+    /// The output is overwritten in NTT form. This variant avoids the inverse
+    /// transform performed by [`Self::external_product_to`] when a composed
+    /// operation consumes the product in the NTT domain.
+    pub fn external_product_ntt_to<T, M, Table, A, C>(
+        &self,
+        input: &Glwe<A>,
+        output: &mut NttGlwe<C>,
+        basis: &ApproxSignedBasis<T>,
+        modulus: M,
+        ntt: &Table,
+        context: &mut NttExternalProductContext<T>,
+    ) where
+        T: FheUint,
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+        A: RawData<Elem = T> + Data,
+        C: RawData<Elem = T> + DataMut,
+        S: RawData<Elem = T> + Data,
+    {
+        debug_assert_eq!(output.as_ref().len(), context.size().glwe_size().glwe_len());
+        let mut context = context.as_mut_with_accumulator(output);
+        self.external_product_to_accumulator(input, basis, modulus, ntt, &mut context);
     }
 
     /// Clears the NTT accumulator, then stores `self external_product input` in it.
     /// The result remains in NTT form for the caller to combine or transform back.
-    pub(super) fn external_product_accumulate<T, M, Table, A>(
+    pub(super) fn external_product_to_accumulator<T, M, Table, A>(
         &self,
         input: &Glwe<A>,
         basis: &ApproxSignedBasis<T>,
         modulus: M,
         ntt: &Table,
-        context: &mut NttExternalProductContext<T>,
+        context: &mut NttExternalProductContextRefMut<'_, T>,
     ) where
         T: FheUint,
         M: FieldContext<T>,
@@ -172,7 +203,7 @@ where
         basis: &ApproxSignedBasis<T>,
         modulus: M,
         ntt: &Table,
-        context: &mut NttExternalProductContext<T>,
+        context: &mut NttExternalProductContextRefMut<'_, T>,
     ) where
         T: FheUint,
         M: FieldContext<T>,
@@ -195,19 +226,19 @@ where
         for (coeff_poly, key_row) in input.iter_poly(poly_len).zip(self.iter_ntt_glev(glev_len)) {
             basis.init_value_carry_slice_to(
                 coeff_poly.as_ref(),
-                &mut context.adjusted_poly,
-                &mut context.carries,
+                context.adjusted_poly,
+                context.carries,
             );
             for (decomposer, key_glwe) in
                 basis.decompose_iter().zip(key_row.iter_ntt_glwe(glwe_len))
             {
                 decomposer.decompose_slice_to(
-                    &context.adjusted_poly,
-                    &mut context.decomposed_ntt,
-                    &mut context.carries,
+                    context.adjusted_poly,
+                    context.decomposed_ntt,
+                    context.carries,
                 );
-                ntt.transform_slice(&mut context.decomposed_ntt);
-                let digit = NttPolynomial::new(context.decomposed_ntt.as_slice());
+                ntt.transform_slice(context.decomposed_ntt);
+                let digit = NttPolynomial::new(&*context.decomposed_ntt);
                 context
                     .ntt_accumulator
                     .add_mul_ntt_polynomial_assign(&digit, &key_glwe, modulus);

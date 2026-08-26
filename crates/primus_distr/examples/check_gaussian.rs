@@ -251,16 +251,6 @@ fn main() {
     // ---- Choose sampler(s) to validate (edit / uncomment below) ----
 
     // CDTSampler (f64 precision, portable; available while its support fits):
-    // {
-    //     let sigmas = [MIN_STANDARD_DEVIATION, 0.8, 0.9, 1.0, 3.19, 10.0, 15.0, 20.0];
-    //     for &sigma in &sigmas {
-    //         let distr = primus_distr::CDTSampler::<ValueT>::new(sigma, TAIL_CUT, Q - 1).unwrap();
-    //         validate_sampler("CDTSampler", sigma, &distr, &mut rng);
-    //     }
-    // }
-
-    // PreciseCDTSampler:
-    #[cfg(feature = "high_precision")]
     {
         let sigmas = [
             MIN_STANDARD_DEVIATION,
@@ -273,11 +263,30 @@ fn main() {
             20.0,
         ];
         for &sigma in &sigmas {
-            let distr =
-                primus_distr::PreciseCDTSampler::<ValueT>::new(sigma, TAIL_CUT, Q - 1).unwrap();
-            validate_sampler("PreciseCDTSampler", sigma, &distr, &mut rng);
+            let distr = primus_distr::CDTSampler::<ValueT>::new(sigma, TAIL_CUT, Q - 1).unwrap();
+            validate_sampler("CDTSampler", sigma, &distr, &mut rng);
         }
     }
+
+    // PreciseCDTSampler:
+    // #[cfg(feature = "high_precision")]
+    // {
+    //     let sigmas = [
+    //         MIN_STANDARD_DEVIATION,
+    //         0.8,
+    //         0.9,
+    //         1.0,
+    //         3.19,
+    //         10.0,
+    //         15.0,
+    //         20.0,
+    //     ];
+    //     for &sigma in &sigmas {
+    //         let distr =
+    //             primus_distr::PreciseCDTSampler::<ValueT>::new(sigma, TAIL_CUT, Q - 1).unwrap();
+    //         validate_sampler("PreciseCDTSampler", sigma, &distr, &mut rng);
+    //     }
+    // }
 
     // DiscreteZiggurat (large σ):
     // {

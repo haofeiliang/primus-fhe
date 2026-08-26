@@ -7,6 +7,9 @@ pub type NttGlweCiphertext<T> = primus_lattice::glwe::NttGlwe<T>;
 /// Fourier-domain GLWE ciphertext.
 pub type FourierGlweCiphertext<S> = primus_lattice::glwe::FourierGlwe<S>;
 
+/// Coefficient-domain GLev ciphertext.
+pub type GlevCiphertext<S> = primus_lattice::glev::Glev<S>;
+
 /// NTT-domain GLev ciphertext.
 pub type NttGlevCiphertext<S> = primus_lattice::glev::NttGlev<S>;
 

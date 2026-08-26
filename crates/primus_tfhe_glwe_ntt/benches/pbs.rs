@@ -50,8 +50,17 @@ fn bench_order(c: &mut Criterion, order: PbsOrder) {
     let encryptor = context.encryptor(&client_key).unwrap();
     let input = encryptor.encrypt_padded(1u32, &mut rng).unwrap();
     let lookup_table = context.compile_lookup_table_slice(&[1u32, 0]).unwrap();
+    let many_lookup_table = context
+        .compile_many_lookup_table_fn(4, |input, output| match output {
+            0 => input as u32,
+            1 => (1 - input) as u32,
+            2 => (input + 1) as u32,
+            _ => 0,
+        })
+        .unwrap();
     let mut evaluator = context.evaluator(&server_key).unwrap();
     let mut output = input.clone();
+    let mut many_outputs = vec![input.clone(); many_lookup_table.output_count()];
 
     let bootstrapping_domain = context.bootstrapping_domain();
     let mut blind_rotation = NttGlweBlindRotationContext::new(bootstrapping_domain.size());
@@ -175,6 +184,16 @@ fn bench_order(c: &mut Criterion, order: PbsOrder) {
     group.bench_function("complete_pbs_allocating", |b| {
         b.iter(|| {
             black_box(evaluator.apply_lookup_table(black_box(&input), black_box(&lookup_table)));
+        });
+    });
+    group.bench_function("complete_pbs_many_4_reused_outputs", |b| {
+        b.iter(|| {
+            evaluator.apply_many_lookup_table_to(
+                black_box(&input),
+                black_box(&many_lookup_table),
+                black_box(&mut many_outputs),
+            );
+            black_box(&many_outputs);
         });
     });
     for gate in [

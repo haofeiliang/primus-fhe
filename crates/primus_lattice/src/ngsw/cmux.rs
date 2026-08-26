@@ -48,7 +48,7 @@ where
         debug_assert_eq!(output.as_ref().len(), poly_length);
 
         ct1.sub_element_wise_to(ct0, output, NativeModulus::new());
-        self.external_product_accumulate(output, basis, fft, context);
+        self.external_product_to_accumulator(output, basis, fft, context);
         context.fourier_accumulator.write_torus_form(output, fft);
         output.add_element_wise_assign(ct0, NativeModulus::new());
     }
@@ -127,7 +127,7 @@ where
         C: RawData<Elem = T> + DataMut,
     {
         input.mul_monomial_sub_one_to(exponent, output, NativeModulus::new());
-        self.external_product_accumulate(output, basis, fft, context);
+        self.external_product_to_accumulator(output, basis, fft, context);
         context.fourier_accumulator.write_torus_form(output, fft);
         output.add_element_wise_assign(input, NativeModulus::new());
     }
@@ -166,7 +166,7 @@ where
         debug_assert_eq!(output.as_ref().len(), poly_length);
 
         ct1.sub_element_wise_to(ct0, output, modulus);
-        self.external_product_accumulate(output, basis, modulus, ntt, context);
+        self.external_product_to_accumulator(output, basis, modulus, ntt, context);
         context.ntt_accumulator.write_coeff_form(output, ntt);
         output.add_element_wise_assign(ct0, modulus);
     }
@@ -249,7 +249,7 @@ where
         C: RawData<Elem = T> + DataMut,
     {
         input.mul_monomial_sub_one_to(exponent, output, modulus);
-        self.external_product_accumulate(output, basis, modulus, ntt, context);
+        self.external_product_to_accumulator(output, basis, modulus, ntt, context);
         context.ntt_accumulator.write_coeff_form(output, ntt);
         output.add_element_wise_assign(input, modulus);
     }

@@ -1,3 +1,4 @@
+use primus_data::{DataMut, RawData};
 use primus_fft::{Complex64, TorusFftValue};
 use primus_integer::FheUint;
 
@@ -105,6 +106,31 @@ pub struct NttExternalProductContext<T: FheUint> {
     pub(crate) ntt_accumulator: NttGlwe<Vec<T>>,
 }
 
+/// Mutable view of the buffers used by an NTT external product.
+///
+/// The accumulator may borrow either the context-owned buffer or a
+/// caller-provided NTT GLWE output.
+pub(crate) struct NttExternalProductContextRefMut<'a, T: FheUint> {
+    size: GadgetSize,
+    /// Adjusted coefficients used by decomposition.
+    pub(crate) adjusted_poly: &'a mut [T],
+    /// Carry bits used by decomposition.
+    pub(crate) carries: &'a mut [bool],
+    /// One decomposed polynomial, transformed in place to NTT form.
+    pub(crate) decomposed_ntt: &'a mut [T],
+    /// Accumulator selected for this external product.
+    pub(crate) ntt_accumulator: NttGlwe<&'a mut [T]>,
+}
+
+impl<T: FheUint> NttExternalProductContextRefMut<'_, T> {
+    /// Returns the external-product layout bound to this view.
+    #[must_use]
+    #[inline]
+    pub(crate) fn size(&self) -> GadgetSize {
+        self.size
+    }
+}
+
 impl<T: FheUint> NttExternalProductContext<T> {
     /// Creates a context with all buffers pre-allocated.
     pub fn new(size: GadgetSize) -> Self {
@@ -156,5 +182,35 @@ impl<T: FheUint> NttExternalProductContext<T> {
     #[inline]
     pub fn size(&self) -> GadgetSize {
         self.size
+    }
+
+    /// Borrows all scratch buffers and the context-owned accumulator.
+    #[inline]
+    pub(crate) fn as_mut(&mut self) -> NttExternalProductContextRefMut<'_, T> {
+        NttExternalProductContextRefMut {
+            size: self.size,
+            adjusted_poly: &mut self.adjusted_poly,
+            carries: &mut self.carries,
+            decomposed_ntt: &mut self.decomposed_ntt,
+            ntt_accumulator: NttGlwe(self.ntt_accumulator.as_mut()),
+        }
+    }
+
+    /// Borrows the scratch buffers while using `accumulator` as the output.
+    #[inline]
+    pub(crate) fn as_mut_with_accumulator<'a, S>(
+        &'a mut self,
+        accumulator: &'a mut NttGlwe<S>,
+    ) -> NttExternalProductContextRefMut<'a, T>
+    where
+        S: RawData<Elem = T> + DataMut,
+    {
+        NttExternalProductContextRefMut {
+            size: self.size,
+            adjusted_poly: &mut self.adjusted_poly,
+            carries: &mut self.carries,
+            decomposed_ntt: &mut self.decomposed_ntt,
+            ntt_accumulator: NttGlwe(accumulator.as_mut()),
+        }
     }
 }

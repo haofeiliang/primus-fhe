@@ -1,6 +1,7 @@
 //! NTT-domain functional bootstrapping key and blind rotation.
 
 use primus_data::{Data, DataMut, RawData};
+use primus_decompose::primitive::ApproxSignedBasis;
 use primus_glwe::{NttGadgetDomain, NttGadgetEncryptContext, NttGlweSecretKey};
 use primus_integer::FheUint;
 use primus_lattice::{
@@ -14,7 +15,7 @@ use primus_lwe::{LweParameters, LweSecretKey};
 use primus_ntt::NttTable;
 use primus_poly::{Polynomial, PolynomialOwned};
 use primus_reduce::{FieldContext, RingContext};
-use primus_tfhe::backend_support::{direct_exponent, modulus_switch};
+use primus_tfhe::backend_support::{direct_exponent, modulus_switch, windowed_modulus_switch};
 
 /// An NTT bootstrapping key containing one GGSW encryption per input LWE
 /// secret coefficient.
@@ -25,6 +26,7 @@ pub struct NttGlweBootstrappingKey<T: FheUint> {
     input_modulus: Option<T>,
     size: GadgetSize,
     cipher_modulus: T,
+    basis: ApproxSignedBasis<T>,
 }
 
 impl<T: FheUint> NttGlweBootstrappingKey<T> {
@@ -50,6 +52,12 @@ impl<T: FheUint> NttGlweBootstrappingKey<T> {
     #[inline]
     pub fn cipher_modulus(&self) -> Option<T> {
         Some(self.cipher_modulus)
+    }
+
+    /// Returns the decomposition basis bound to this key.
+    #[inline]
+    pub fn basis(&self) -> &ApproxSignedBasis<T> {
+        &self.basis
     }
 
     /// Returns the NTT-domain values stored by this key.
@@ -109,6 +117,7 @@ impl<T: FheUint> NttGlweBootstrappingKey<T> {
             input_modulus: input_parameters.cipher_modulus().explicit_value(),
             size: parameters.size(),
             cipher_modulus: parameters.cipher_modulus().value(),
+            basis: domain.basis().clone(),
         }
     }
 
@@ -170,6 +179,58 @@ impl<T: FheUint> NttGlweBootstrappingKey<T> {
 
         let input_modulus = self.input_modulus();
         let exponent_of = |value| modulus_switch(value, input_modulus, two_n);
+        let initial_exponent = exponent_of(input.b()).wrapping_neg() & (two_n - 1);
+        let (mask, body) = output.a_b_mut_slices(poly_length);
+        mask.fill(T::ZERO);
+        lookup_table.mul_monomial_to(
+            initial_exponent,
+            &mut Polynomial(body),
+            parameters.cipher_modulus(),
+        );
+        self.blind_rotate_initialized(input, output, domain, context, exponent_of);
+    }
+
+    /// Blind-rotates an interleaved PBSManyLUT accumulator.
+    ///
+    /// Every modulus-switched exponent is rounded to a multiple of
+    /// `output_count`, preserving the independently programmed residue
+    /// classes. `output_count` must be a non-zero power of two dividing the
+    /// polynomial length.
+    pub fn ntt_blind_rotate_many_lookup_table_to<M, Table, A, B, C>(
+        &self,
+        input: &Lwe<A>,
+        lookup_table: &Polynomial<B>,
+        output_count: usize,
+        output: &mut Glwe<C>,
+        domain: &NttGadgetDomain<'_, T, M, Table>,
+        context: &mut NttGlweBlindRotationContext<T>,
+    ) where
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+        A: RawData<Elem = T> + Data,
+        B: RawData<Elem = T> + Data,
+        C: RawData<Elem = T> + DataMut,
+    {
+        let parameters = domain.parameters();
+        let poly_length = parameters.poly_length();
+        let two_n = poly_length * 2;
+        assert!(
+            output_count.is_power_of_two() && poly_length.is_multiple_of(output_count),
+            "PBSManyLUT output count must be a non-zero power-of-two divisor of N"
+        );
+        assert_eq!(
+            (
+                input.dimension(),
+                lookup_table.as_ref().len(),
+                output.as_ref().len(),
+            ),
+            (self.input_dimension(), poly_length, self.size().glwe_len()),
+            "PBSManyLUT input, table, or output layout mismatch"
+        );
+
+        let input_modulus = self.input_modulus();
+        let exponent_of =
+            |value| windowed_modulus_switch(value, input_modulus, two_n, output_count);
         let initial_exponent = exponent_of(input.b()).wrapping_neg() & (two_n - 1);
         let (mask, body) = output.a_b_mut_slices(poly_length);
         mask.fill(T::ZERO);
@@ -255,6 +316,22 @@ impl<T: FheUint> NttGlweBootstrappingKey<T> {
         F: Fn(T) -> usize,
     {
         let parameters = domain.parameters();
+        assert_eq!(domain.size(), self.size, "blind-rotation domain mismatch");
+        assert_eq!(
+            domain.basis(),
+            &self.basis,
+            "blind-rotation decomposition basis mismatch"
+        );
+        assert_eq!(
+            context.external_product.size(),
+            self.size,
+            "blind-rotation workspace gadget layout mismatch"
+        );
+        assert_eq!(
+            context.scratch.as_ref().len(),
+            self.size.glwe_len(),
+            "blind-rotation workspace GLWE layout mismatch"
+        );
         let ntt = domain.table();
         let modulus = parameters.cipher_modulus();
 

@@ -6,6 +6,7 @@ use primus_poly::{ArrayBase, NttPolynomial, Polynomial, PolynomialIter, Polynomi
 use primus_reduce::{FieldContext, RingContext};
 
 use super::NttGlwe;
+
 use crate::lwe::Lwe;
 
 /// A cryptographic structure for Module(General) Learning with Errors (MLWE, GLWE).
@@ -94,11 +95,12 @@ where
     {
         debug_assert!(poly_length > 0);
         debug_assert!(self.as_ref().len().is_multiple_of(poly_length));
-        debug_assert!(output.dimension().is_multiple_of(poly_length));
 
-        let mask_len = output.dimension();
-
+        let mask_len = self.as_ref().len() - poly_length;
         let (output_mask, output_body) = output.a_b_mut();
+
+        debug_assert_eq!(mask_len, output_mask.len());
+
         for (mask, extracted) in self.as_ref()[..mask_len]
             .chunks_exact(poly_length)
             .zip(output_mask.chunks_exact_mut(poly_length))
@@ -109,6 +111,36 @@ where
             }
         }
         *output_body = self.as_ref()[mask_len];
+    }
+
+    /// Extracts coefficient `index` as an LWE sample.
+    ///
+    /// A GLWE with `k` mask polynomials of length `N` produces an LWE of
+    /// dimension `kN`. `index` must be in `[0, N)`, and `output` must have
+    /// dimension `kN`.
+    pub fn extract_lwe_at_to<M, B>(
+        &self,
+        index: usize,
+        output: &mut Lwe<B>,
+        poly_length: usize,
+        modulus: M,
+    ) where
+        M: RingContext<T>,
+        B: RawData<Elem = T> + DataMut,
+    {
+        debug_assert!(index < poly_length, "GLWE extraction index is out of range");
+        debug_assert!(
+            self.as_ref().len().is_multiple_of(poly_length),
+            "GLWE length is not divisible by the polynomial length"
+        );
+
+        let mask_len = self.as_ref().len() - poly_length;
+        debug_assert_eq!(
+            output.dimension(),
+            mask_len,
+            "LWE output dimension does not match the extracted GLWE key"
+        );
+        self.extract_lwe_prefix_at_to(index, output, poly_length, modulus);
     }
 
     /// Extracts the constant coefficient as an LWE sample while omitting mask
@@ -128,10 +160,9 @@ where
         debug_assert!(self.as_ref().len().is_multiple_of(poly_length));
 
         let mask_len = self.as_ref().len() - poly_length;
-        let active_key_len = output.dimension();
-        debug_assert!((1..=mask_len).contains(&active_key_len));
-
         let (output_mask, output_body) = output.a_b_mut();
+        debug_assert!((1..=mask_len).contains(&output_mask.len()));
+
         for (mask, extracted) in self.as_ref()[..mask_len]
             .chunks_exact(poly_length)
             .zip(output_mask.chunks_mut(poly_length))
@@ -142,6 +173,66 @@ where
             }
         }
         *output_body = self.as_ref()[mask_len];
+    }
+
+    /// Extracts coefficient `index` as an LWE sample while omitting mask
+    /// coefficients paired with a zero-padded secret-key suffix.
+    ///
+    /// `index` must be in `[0, N)`. The active secret-key length is inferred
+    /// from `output.dimension()` and must not exceed the full `kN` mask.
+    pub fn extract_compact_lwe_at_to<M, B>(
+        &self,
+        index: usize,
+        output: &mut Lwe<B>,
+        poly_length: usize,
+        modulus: M,
+    ) where
+        M: RingContext<T>,
+        B: RawData<Elem = T> + DataMut,
+    {
+        debug_assert!(index < poly_length, "GLWE extraction index is out of range");
+        debug_assert!(
+            self.as_ref().len().is_multiple_of(poly_length),
+            "GLWE length is not divisible by the polynomial length"
+        );
+
+        let mask_len = self.as_ref().len() - poly_length;
+        debug_assert!(
+            (1..=mask_len).contains(&output.dimension()),
+            "compact LWE output dimension exceeds the GLWE mask"
+        );
+        self.extract_lwe_prefix_at_to(index, output, poly_length, modulus);
+    }
+
+    #[inline]
+    fn extract_lwe_prefix_at_to<M, B>(
+        &self,
+        index: usize,
+        output: &mut Lwe<B>,
+        poly_length: usize,
+        modulus: M,
+    ) where
+        M: RingContext<T>,
+        B: RawData<Elem = T> + DataMut,
+    {
+        let (input_mask, input_body) = self.a_b_slices(poly_length);
+        let (output_mask, output_body) = output.a_b_mut();
+
+        for (mask, extracted) in input_mask
+            .chunks_exact(poly_length)
+            .zip(output_mask.chunks_mut(poly_length))
+        {
+            let positive_len = (index + 1).min(extracted.len());
+            let (positive, negacyclic) = extracted.split_at_mut(positive_len);
+
+            for (output, &input) in positive.iter_mut().zip(mask[..=index].iter().rev()) {
+                *output = input;
+            }
+            for (output, &input) in negacyclic.iter_mut().zip(mask.iter().rev()) {
+                *output = modulus.reduce_neg(input);
+            }
+        }
+        *output_body = input_body[index];
     }
 
     /// Multiplies every GLWE component by `X^exponent` in
@@ -338,6 +429,66 @@ mod tests {
 
             assert_eq!(compact.a(), &full.a()[..active_key_len]);
             assert_eq!(compact.b(), full.b());
+        }
+    }
+
+    #[test]
+    fn indexed_extraction_matches_negacyclic_rotation_and_compact_prefix() {
+        let glwe = Glwe(vec![
+            1u32, 2, 3, 4, // first mask
+            5, 6, 7, 8, // second mask
+            9, 10, 11, 12, // body
+        ]);
+        let modulus = NativeModulus::new();
+        let expected = [
+            vec![
+                1,
+                4u32.wrapping_neg(),
+                3u32.wrapping_neg(),
+                2u32.wrapping_neg(),
+                5,
+                8u32.wrapping_neg(),
+                7u32.wrapping_neg(),
+                6u32.wrapping_neg(),
+                9,
+            ],
+            vec![
+                2,
+                1,
+                4u32.wrapping_neg(),
+                3u32.wrapping_neg(),
+                6,
+                5,
+                8u32.wrapping_neg(),
+                7u32.wrapping_neg(),
+                10,
+            ],
+            vec![
+                3,
+                2,
+                1,
+                4u32.wrapping_neg(),
+                7,
+                6,
+                5,
+                8u32.wrapping_neg(),
+                11,
+            ],
+            vec![4, 3, 2, 1, 8, 7, 6, 5, 12],
+        ];
+
+        for (index, expected) in expected.iter().enumerate() {
+            let mut full: Lwe<Vec<u32>> = Lwe::zero(8);
+            glwe.extract_lwe_at_to(index, &mut full, 4, modulus);
+            assert_eq!(full.0.as_slice(), expected);
+
+            for active_key_len in [1, 3, 4, 5, 7, 8] {
+                let mut compact: Lwe<Vec<u32>> = Lwe::zero(active_key_len);
+                glwe.extract_compact_lwe_at_to(index, &mut compact, 4, modulus);
+
+                assert_eq!(compact.a(), &expected[..active_key_len]);
+                assert_eq!(compact.b(), expected[8]);
+            }
         }
     }
 

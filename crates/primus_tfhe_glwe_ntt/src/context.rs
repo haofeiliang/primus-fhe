@@ -1,11 +1,13 @@
 use primus_glwe::NttGadgetDomain;
 use primus_integer::FheUint;
 use primus_ntt::NttTable;
-use primus_tfhe::LookupTable;
+use primus_tfhe::{LookupTable, ManyLookupTable};
 use primus_tfhe_glwe::GlweClientKey as ClientKey;
 
 use crate::{
-    Decryptor, Encryptor, Evaluator, KeyGenerator, ServerKey, TfheParameters,
+    CircuitBootstrapEvaluationError, CircuitBootstrapEvaluator, CircuitBootstrapKey,
+    CircuitBootstrapKeyError, CircuitBootstrapParameters, Decryptor, Encryptor, Evaluator,
+    KeyGenerator, ServerKey, TfheParameters,
     error::{
         LookupTableError, TfheClientError, TfheContextError, TfheEvaluationError, TfheKeyError,
     },
@@ -112,6 +114,29 @@ where
         Evaluator::try_new(self, server_key)
     }
 
+    /// Generates the optional HomTrace and scheme-switching key material.
+    pub fn generate_circuit_bootstrap_key<R>(
+        &self,
+        client_key: &ClientKey<T>,
+        parameters: &CircuitBootstrapParameters<T>,
+        rng: &mut R,
+    ) -> Result<CircuitBootstrapKey<T>, CircuitBootstrapKeyError>
+    where
+        R: rand::Rng + rand::CryptoRng,
+    {
+        KeyGenerator::new(self).try_generate_circuit_bootstrap_key(client_key, parameters, rng)
+    }
+
+    /// Creates an allocation-free patched NTT circuit-bootstrap evaluator.
+    pub fn circuit_bootstrap_evaluator<'a>(
+        &'a self,
+        server_key: &'a ServerKey<T>,
+        parameters: &'a CircuitBootstrapParameters<T>,
+        circuit_key: &'a CircuitBootstrapKey<T>,
+    ) -> Result<CircuitBootstrapEvaluator<'a, T, Table>, CircuitBootstrapEvaluationError> {
+        CircuitBootstrapEvaluator::try_new(self, server_key, parameters, circuit_key)
+    }
+
     /// Compiles a unary function into an encoded lookup-table polynomial.
     #[inline]
     pub fn compile_lookup_table_fn<F>(
@@ -131,6 +156,32 @@ where
         outputs: &[T],
     ) -> Result<LookupTable<T>, LookupTableError> {
         self.parameters.compile_lookup_table_slice(outputs)
+    }
+
+    /// Compiles several unary functions into one PBSManyLUT accumulator.
+    #[inline]
+    pub fn compile_many_lookup_table_fn<F>(
+        &self,
+        output_count: usize,
+        function: F,
+    ) -> Result<ManyLookupTable<T>, LookupTableError>
+    where
+        F: Fn(usize, usize) -> T,
+    {
+        self.parameters
+            .compile_many_lookup_table_fn(output_count, function)
+    }
+
+    /// Compiles input-major multi-output values into one PBSManyLUT
+    /// accumulator.
+    #[inline]
+    pub fn compile_many_lookup_table_slice(
+        &self,
+        output_count: usize,
+        outputs: &[T],
+    ) -> Result<ManyLookupTable<T>, LookupTableError> {
+        self.parameters
+            .compile_many_lookup_table_slice(output_count, outputs)
     }
 
     /// Decomposes this context into its parameters and NTT table.

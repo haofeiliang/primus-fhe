@@ -9,7 +9,7 @@ use primus_lattice::{
     GadgetSize, GlweSize,
     context::{FourierExternalProductContext, NttExternalProductContext},
     ggsw::{FourierGgswOwned, NttGgsw},
-    glwe::Glwe,
+    glwe::{Glwe, NttGlwe},
 };
 use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, UintNttTable};
@@ -78,6 +78,7 @@ fn ntt_external_product(c: &mut Criterion) {
             .collect(),
     );
     let mut output = Glwe::new(vec![0u32; glwe_len]);
+    let mut ntt_output = NttGlwe::new(vec![0u32; glwe_len]);
     let mut context = NttExternalProductContext::new(GadgetSize::new(
         GlweSize::new(dimension, ntt.poly_length()),
         basis.decompose_length(),
@@ -88,6 +89,18 @@ fn ntt_external_product(c: &mut Criterion) {
             black_box(&key).external_product_to(
                 black_box(&input),
                 black_box(&mut output),
+                black_box(&basis),
+                black_box(modulus),
+                black_box(&ntt),
+                black_box(&mut context),
+            )
+        });
+    });
+    c.bench_function("external_product/ntt_output/n1024/k1/logb8/l3", |b| {
+        b.iter(|| {
+            black_box(&key).external_product_ntt_to(
+                black_box(&input),
+                black_box(&mut ntt_output),
                 black_box(&basis),
                 black_box(modulus),
                 black_box(&ntt),

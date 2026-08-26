@@ -20,6 +20,24 @@ pub fn modulus_switch<T: FheUint>(value: T, modulus: Option<T>, two_n: usize) ->
     }
 }
 
+/// Modulus-switches one LWE coefficient to a multiple of `window` in
+/// `[0, 2N)`.
+///
+/// `window` must be a non-zero power of two dividing `two_n`. The discarded
+/// low exponent bits keep the residue classes of an interleaved PBSManyLUT
+/// accumulator independent during blind rotation.
+#[inline]
+pub fn windowed_modulus_switch<T: FheUint>(
+    value: T,
+    modulus: Option<T>,
+    two_n: usize,
+    window: usize,
+) -> usize {
+    debug_assert!(window.is_power_of_two());
+    debug_assert!(window <= two_n && two_n.is_multiple_of(window));
+    modulus_switch(value, modulus, two_n / window) * window
+}
+
 /// Rounds a native-torus coefficient into the rotation domain.
 #[inline]
 fn native_modulus_switch<T: FheUint>(value: T, two_n: usize) -> usize {

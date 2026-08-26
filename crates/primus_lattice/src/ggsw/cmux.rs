@@ -48,7 +48,7 @@ where
         debug_assert_eq!(output.as_ref().len(), glwe_len);
 
         ct1.sub_element_wise_to(ct0, output, NativeModulus::new());
-        self.external_product_accumulate(output, basis, fft, context);
+        self.external_product_to_accumulator(output, basis, fft, context);
         context.fourier_accumulator.write_torus_form(output, fft);
         output.add_element_wise_assign(ct0, NativeModulus::new());
     }
@@ -130,7 +130,7 @@ where
         let poly_length = context.size().glwe_size().poly_length();
 
         input.mul_monomial_sub_one_to(exponent, output, poly_length, NativeModulus::new());
-        self.external_product_accumulate(output, basis, fft, context);
+        self.external_product_to_accumulator(output, basis, fft, context);
         context.fourier_accumulator.write_torus_form(output, fft);
         output.add_element_wise_assign(input, NativeModulus::new());
     }
@@ -170,7 +170,8 @@ where
         debug_assert_eq!(output.as_ref().len(), glwe_len);
 
         ct1.sub_element_wise_to(ct0, output, modulus);
-        self.external_product_accumulate(output, basis, modulus, ntt, context);
+        let mut context = context.as_mut();
+        self.external_product_to_accumulator(output, basis, modulus, ntt, &mut context);
         context.ntt_accumulator.write_coeff_form(output, ntt);
         output.add_element_wise_assign(ct0, modulus);
     }
@@ -221,11 +222,12 @@ where
             return;
         }
 
+        let mut context = context.as_mut();
         context.ntt_accumulator.set_zero();
         for (control, candidate) in controls.zip(candidates) {
             candidate.sub_element_wise_to(default, output, modulus);
             let control: &Self = control.borrow();
-            control.external_product_add_assign(output, basis, modulus, ntt, context);
+            control.external_product_add_assign(output, basis, modulus, ntt, &mut context);
         }
         context.ntt_accumulator.write_coeff_form(output, ntt);
         output.add_element_wise_assign(default, modulus);
@@ -256,7 +258,8 @@ where
         let poly_length = context.size().glwe_size().poly_length();
 
         input.mul_monomial_sub_one_to(exponent, output, poly_length, modulus);
-        self.external_product_accumulate(output, basis, modulus, ntt, context);
+        let mut context = context.as_mut();
+        self.external_product_to_accumulator(output, basis, modulus, ntt, &mut context);
         context.ntt_accumulator.write_coeff_form(output, ntt);
         output.add_element_wise_assign(input, modulus);
     }

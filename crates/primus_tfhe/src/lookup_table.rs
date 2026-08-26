@@ -17,6 +17,47 @@ pub struct LookupTable<T: FheUint> {
     polynomial: PolynomialOwned<T>,
 }
 
+/// Multiple lookup tables interleaved into one negacyclic accumulator.
+///
+/// `output_count` is a power of two. Blind rotation quantizes every rotation
+/// exponent to a multiple of that count, so each residue class contains an
+/// independently programmable lookup table.
+#[derive(Clone)]
+pub struct ManyLookupTable<T: FheUint> {
+    polynomial: PolynomialOwned<T>,
+    output_count: usize,
+}
+
+impl<T: FheUint> fmt::Debug for ManyLookupTable<T> {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter
+            .debug_struct("ManyLookupTable")
+            .field("coefficient_count", &self.polynomial.as_ref().len())
+            .field("output_count", &self.output_count)
+            .finish_non_exhaustive()
+    }
+}
+
+impl<T: FheUint> ManyLookupTable<T> {
+    /// Returns the interleaved encoded lookup-table polynomial.
+    #[inline]
+    pub fn polynomial(&self) -> &PolynomialOwned<T> {
+        &self.polynomial
+    }
+
+    /// Returns the number of independently programmable outputs.
+    #[inline]
+    pub fn output_count(&self) -> usize {
+        self.output_count
+    }
+
+    /// Decomposes this table into its polynomial and output count.
+    #[inline]
+    pub fn into_parts(self) -> (PolynomialOwned<T>, usize) {
+        (self.polynomial, self.output_count)
+    }
+}
+
 impl<T: FheUint> fmt::Debug for LookupTable<T> {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         formatter
@@ -122,6 +163,71 @@ where
     Ok(LookupTable { polynomial })
 }
 
+/// Compiles encoded multi-output values into an interleaved negacyclic lookup
+/// table.
+///
+/// The polynomial is split into `output_count` residue classes. Each class is
+/// compiled as a lookup table of length `poly_length / output_count`. This is
+/// the accumulator layout consumed by windowed modulus switching in
+/// PBSManyLUT.
+#[doc(hidden)]
+pub fn compile_encoded_many_lookup_table<T, M, F>(
+    domain_len: usize,
+    poly_length: usize,
+    output_count: usize,
+    lwe_codec: &PlaintextCodec<T>,
+    lwe_modulus: Option<T>,
+    accumulator_modulus: M,
+    encoded_output_at: F,
+) -> Result<ManyLookupTable<T>, LookupTableError>
+where
+    T: FheUint,
+    M: RingContext<T>,
+    F: Fn(usize, usize) -> Result<T, LookupTableError>,
+{
+    if output_count == 0 || !output_count.is_power_of_two() {
+        return Err(LookupTableError::OutputCountMustBePowerOfTwo { output_count });
+    }
+    if output_count > poly_length {
+        return Err(LookupTableError::OutputCountTooLarge {
+            output_count,
+            poly_length,
+        });
+    }
+
+    let virtual_poly_length = poly_length / output_count;
+    if domain_len > virtual_poly_length {
+        return Err(LookupTableError::PlaintextDomainTooLarge {
+            domain_len,
+            rotation_domain_len: virtual_poly_length,
+        });
+    }
+
+    let mut polynomial = PolynomialOwned::zero(poly_length);
+    for output_index in 0..output_count {
+        let table = compile_encoded_lookup_table(
+            domain_len,
+            virtual_poly_length,
+            lwe_codec,
+            lwe_modulus,
+            accumulator_modulus,
+            |input| encoded_output_at(input, output_index),
+        )?;
+        for (destination, &value) in polynomial.as_mut()[output_index..]
+            .iter_mut()
+            .step_by(output_count)
+            .zip(table.polynomial().as_ref())
+        {
+            *destination = value;
+        }
+    }
+
+    Ok(ManyLookupTable {
+        polynomial,
+        output_count,
+    })
+}
+
 /// Returns the integer midpoint of `lhs` and `rhs`, rounding upward.
 #[inline]
 fn upper_midpoint(lhs: usize, rhs: usize) -> usize {
@@ -163,6 +269,23 @@ pub enum LookupTableError {
         expected: usize,
         /// Supplied output count.
         actual: usize,
+    },
+    /// The flattened PBSManyLUT table length does not fit in `usize`.
+    #[error("many-LUT flattened table length overflows usize")]
+    ManyTableLengthOverflow,
+    /// PBSManyLUT requires a non-zero power-of-two output count.
+    #[error("many-LUT output count {output_count} is not a non-zero power of two")]
+    OutputCountMustBePowerOfTwo {
+        /// Supplied output count.
+        output_count: usize,
+    },
+    /// The requested number of outputs exceeds the accumulator length.
+    #[error("many-LUT output count {output_count} exceeds polynomial length {poly_length}")]
+    OutputCountTooLarge {
+        /// Supplied output count.
+        output_count: usize,
+        /// Accumulator polynomial length.
+        poly_length: usize,
     },
     /// A function output lies outside the plaintext domain.
     #[error("lookup-table output for input {input} is outside the plaintext domain")]

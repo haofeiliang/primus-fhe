@@ -5,6 +5,9 @@
 mod error;
 
 mod bootstrapping_key;
+mod circuit_bootstrap_evaluator;
+mod circuit_bootstrap_key;
+mod circuit_bootstrap_parameters;
 mod client;
 mod context;
 mod evaluator;
@@ -21,11 +24,16 @@ pub use error::{
 };
 
 pub use bootstrapping_key::{NttGlweBlindRotationContext, NttGlweBootstrappingKey};
+pub use circuit_bootstrap_evaluator::{CircuitBootstrapEvaluationError, CircuitBootstrapEvaluator};
+pub use circuit_bootstrap_key::{CircuitBootstrapKey, CircuitBootstrapKeyError};
+pub use circuit_bootstrap_parameters::{
+    CircuitBootstrapParameterError, CircuitBootstrapParameters,
+};
 pub use client::{Decryptor, Encryptor};
 pub use context::TfheContext;
 pub use evaluator::Evaluator;
 pub use key::{KeyGenerator, ServerKey};
-pub use primus_tfhe::{Ciphertext, LookupTable, LweSecretKeyRef};
+pub use primus_tfhe::{Ciphertext, LookupTable, LweSecretKeyRef, ManyLookupTable};
 pub use primus_tfhe_glwe::{GlweClientKey as ClientKey, GlwePbsOrder as PbsOrder};
 
 pub use parameters::TfheParameters;

@@ -10,8 +10,8 @@ use primus_reduce::FieldContext;
 use crate::{
     context::{FourierNtruExternalProductContext, NttNtruExternalProductContext},
     nlev::{
-        Nlev, fourier_gadget_product_accumulate, fourier_gadget_product_add_assign,
-        ntt_gadget_product_accumulate, ntt_gadget_product_add_assign,
+        Nlev, fourier_gadget_product_add_assign, fourier_gadget_product_to_accumulator,
+        ntt_gadget_product_add_assign, ntt_gadget_product_to_accumulator,
     },
     ntru::Ntru,
 };
@@ -42,13 +42,13 @@ where
         S: Data,
     {
         debug_assert_eq!(output.as_ref().len(), context.poly_length());
-        self.external_product_accumulate(input, basis, fft, context);
+        self.external_product_to_accumulator(input, basis, fft, context);
         context.fourier_accumulator.write_torus_form(output, fft);
     }
 
     /// Clears the Fourier accumulator, then stores `self external_product input` in it.
     /// The result remains in Fourier form for the caller to combine or transform back.
-    pub(super) fn external_product_accumulate<T, Table, A>(
+    pub(super) fn external_product_to_accumulator<T, Table, A>(
         &self,
         input: &Ntru<A>,
         basis: &ApproxSignedBasis<T>,
@@ -60,7 +60,7 @@ where
         A: RawData<Elem = T> + Data,
         S: Data,
     {
-        fourier_gadget_product_accumulate(self.as_ref(), input.as_ref(), basis, fft, context);
+        fourier_gadget_product_to_accumulator(self.as_ref(), input.as_ref(), basis, fft, context);
     }
 
     /// Adds `self external_product input` to the existing Fourier accumulator.
@@ -107,7 +107,7 @@ where
             .iter_ntru(poly_length)
             .zip(output.iter_ntru_mut(poly_length))
         {
-            self.external_product_accumulate(&input_level, basis, fft, context);
+            self.external_product_to_accumulator(&input_level, basis, fft, context);
             context
                 .fourier_accumulator
                 .write_torus_form(&mut output_level, fft);
@@ -142,13 +142,13 @@ where
         S: RawData<Elem = T> + Data,
     {
         debug_assert_eq!(output.as_ref().len(), context.poly_length());
-        self.external_product_accumulate(input, basis, modulus, ntt, context);
+        self.external_product_to_accumulator(input, basis, modulus, ntt, context);
         context.ntt_accumulator.write_coeff_form(output, ntt);
     }
 
     /// Clears the NTT accumulator, then stores `self external_product input` in it.
     /// The result remains in NTT form for the caller to combine or transform back.
-    pub(super) fn external_product_accumulate<T, M, Table, A>(
+    pub(super) fn external_product_to_accumulator<T, M, Table, A>(
         &self,
         input: &Ntru<A>,
         basis: &ApproxSignedBasis<T>,
@@ -162,7 +162,14 @@ where
         A: RawData<Elem = T> + Data,
         S: RawData<Elem = T> + Data,
     {
-        ntt_gadget_product_accumulate(self.as_ref(), input.as_ref(), basis, modulus, ntt, context);
+        ntt_gadget_product_to_accumulator(
+            self.as_ref(),
+            input.as_ref(),
+            basis,
+            modulus,
+            ntt,
+            context,
+        );
     }
 
     /// Adds `self external_product input` to the existing NTT accumulator.
@@ -213,7 +220,7 @@ where
             .iter_ntru(poly_length)
             .zip(output.iter_ntru_mut(poly_length))
         {
-            self.external_product_accumulate(&input_level, basis, modulus, ntt, context);
+            self.external_product_to_accumulator(&input_level, basis, modulus, ntt, context);
             context
                 .ntt_accumulator
                 .write_coeff_form(&mut output_level, ntt);

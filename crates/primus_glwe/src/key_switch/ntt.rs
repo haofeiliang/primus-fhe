@@ -1,6 +1,7 @@
 //! Single-modulus GLWE key switching in the NTT domain.
 
 use primus_data::{Data, DataMut, RawData};
+use primus_decompose::primitive::ApproxSignedBasis;
 use primus_integer::FheUint;
 use primus_lattice::{
     GadgetSize, GlweSize,
@@ -23,6 +24,7 @@ pub struct NttGlweKeySwitchingKey<T: FheUint> {
     data: Vec<T>,
     input_size: GlweSize,
     output_size: GadgetSize,
+    basis: ApproxSignedBasis<T>,
 }
 
 impl<T: FheUint> NttGlweKeySwitchingKey<T> {
@@ -69,6 +71,7 @@ impl<T: FheUint> NttGlweKeySwitchingKey<T> {
             data,
             input_size,
             output_size,
+            basis: domain.basis().clone(),
         }
     }
 
@@ -90,6 +93,24 @@ impl<T: FheUint> NttGlweKeySwitchingKey<T> {
         self.input_size.poly_length()
     }
 
+    /// Returns the input layout bound to this key.
+    #[inline]
+    pub fn input_size(&self) -> GlweSize {
+        self.input_size
+    }
+
+    /// Returns the output gadget layout bound to this key.
+    #[inline]
+    pub fn output_size(&self) -> GadgetSize {
+        self.output_size
+    }
+
+    /// Returns the decomposition basis bound to this key.
+    #[inline]
+    pub fn basis(&self) -> &ApproxSignedBasis<T> {
+        &self.basis
+    }
+
     /// Returns the raw NTT-domain key data.
     #[inline]
     pub fn as_slice(&self) -> &[T] {
@@ -98,60 +119,6 @@ impl<T: FheUint> NttGlweKeySwitchingKey<T> {
 
     fn iter(&self) -> NttGlevIter<'_, T> {
         NttGlevIter::new(&self.data, self.output_size.glev_len())
-    }
-
-    /// Key-switches a coefficient-domain GLWE ciphertext into `output`.
-    pub fn key_switch_to<M, Table, A, B>(
-        &self,
-        input: &Glwe<A>,
-        output: &mut Glwe<B>,
-        domain: &NttGadgetDomain<'_, T, M, Table>,
-        context: &mut NttGlweKeySwitchingContext<T>,
-    ) where
-        M: FieldContext<T>,
-        Table: NttTable<ValueT = T>,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + DataMut,
-    {
-        assert_eq!(input.as_ref().len(), self.input_size.glwe_len());
-        assert_eq!(output.as_ref().len(), self.output_size.glwe_len());
-
-        let parameters = domain.parameters();
-        let ntt = domain.table();
-        let modulus = parameters.cipher_modulus();
-        let basis = domain.basis();
-        let poly_length = self.input_size.poly_length();
-        let glwe_len = self.output_size.glwe_len();
-        let (input_mask, input_body) = input.a_b_slices(poly_length);
-
-        context.accumulator.set_zero();
-        for (mask_poly, entry) in input_mask.chunks_exact(poly_length).zip(self.iter()) {
-            basis.init_value_carry_slice_to(
-                mask_poly,
-                &mut context.adjusted_poly,
-                &mut context.carries,
-            );
-
-            for (decomposer, key_glwe) in basis.decompose_iter().zip(entry.iter_ntt_glwe(glwe_len))
-            {
-                decomposer.decompose_slice_to(
-                    &context.adjusted_poly,
-                    &mut context.decomposed_ntt,
-                    &mut context.carries,
-                );
-                ntt.transform_slice(&mut context.decomposed_ntt);
-                context.accumulator.add_mul_ntt_polynomial_assign(
-                    &NttPolynomial::new(context.decomposed_ntt.as_slice()),
-                    &key_glwe,
-                    modulus,
-                );
-            }
-        }
-
-        context.accumulator.write_coeff_form(output, ntt);
-        modulus.reduce_neg_slice_assign(output.as_mut());
-        let (_, output_body) = output.a_b_mut_slices(poly_length);
-        modulus.reduce_add_slice_assign(output_body, input_body);
     }
 
     /// Key-switches into a newly allocated coefficient-domain ciphertext.
@@ -170,6 +137,163 @@ impl<T: FheUint> NttGlweKeySwitchingKey<T> {
         self.key_switch_to(input, &mut output, domain, context);
         output
     }
+
+    /// Key-switches a coefficient-domain GLWE ciphertext into `output`.
+    pub fn key_switch_to<M, Table, A, B>(
+        &self,
+        input: &Glwe<A>,
+        output: &mut Glwe<B>,
+        domain: &NttGadgetDomain<'_, T, M, Table>,
+        context: &mut NttGlweKeySwitchingContext<T>,
+    ) where
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+        A: RawData<Elem = T> + Data,
+        B: RawData<Elem = T> + DataMut,
+    {
+        assert_eq!(input.as_ref().len(), self.input_size.glwe_len());
+        assert_eq!(output.as_ref().len(), self.output_size.glwe_len());
+        self.assert_compatible(domain, context);
+
+        self.key_switch_kernel_to(input, output, domain, context);
+    }
+
+    /// Key-switches a validated coefficient-domain GLWE ciphertext.
+    ///
+    /// The caller must have validated the ciphertext layouts, domain, and
+    /// workspace with [`Self::assert_compatible`].
+    pub(crate) fn key_switch_kernel_to<M, Table, A, B>(
+        &self,
+        input: &Glwe<A>,
+        output: &mut Glwe<B>,
+        domain: &NttGadgetDomain<'_, T, M, Table>,
+        context: &mut NttGlweKeySwitchingContext<T>,
+    ) where
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+        A: RawData<Elem = T> + Data,
+        B: RawData<Elem = T> + DataMut,
+    {
+        debug_assert_eq!(input.as_ref().len(), self.input_size.glwe_len());
+        debug_assert_eq!(output.as_ref().len(), self.output_size.glwe_len());
+
+        let parameters = domain.parameters();
+        let ntt = domain.table();
+        let modulus = parameters.cipher_modulus();
+        let poly_length = self.input_size.poly_length();
+        let (input_mask, input_body) = input.a_b_slices(poly_length);
+
+        let mut context = context.as_mut();
+        self.mask_product_to_accumulator(input_mask, domain, &mut context);
+        context.accumulator.write_coeff_form(output, ntt);
+        modulus.reduce_neg_slice_assign(output.as_mut());
+        let (_, output_body) = output.a_b_mut_slices(poly_length);
+        modulus.reduce_add_slice_assign(output_body, input_body);
+    }
+
+    /// Key-switches a validated coefficient-domain mask and NTT-domain body
+    /// directly into an NTT GLWE.
+    ///
+    /// The output is overwritten with `(0, body) - sum_i mask_i * KSK_i`.
+    /// The caller must have validated the layouts, domain, and workspace with
+    /// [`Self::assert_compatible`].
+    pub(crate) fn key_switch_ntt_kernel_to<M, Table, A, B>(
+        &self,
+        input_mask: &[T],
+        input_body: &NttPolynomial<A>,
+        output: &mut NttGlwe<B>,
+        domain: &NttGadgetDomain<'_, T, M, Table>,
+        context: &mut NttGlweKeySwitchingContext<T>,
+    ) where
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+        A: RawData<Elem = T> + Data,
+        B: RawData<Elem = T> + DataMut,
+    {
+        debug_assert_eq!(input_mask.len(), self.input_size.mask_len());
+        debug_assert_eq!(input_body.as_ref().len(), self.input_size.poly_length());
+        debug_assert_eq!(output.as_ref().len(), self.output_size.glwe_len());
+
+        let modulus = domain.parameters().cipher_modulus();
+        let poly_length = self.input_size.poly_length();
+        let mut context = context.as_mut_with_accumulator(output);
+        self.mask_product_to_accumulator(input_mask, domain, &mut context);
+        modulus.reduce_neg_slice_assign(context.accumulator.as_mut());
+        let (_, output_body) = context.accumulator.a_b_mut_slices(poly_length);
+        modulus.reduce_add_slice_assign(output_body, input_body.as_ref());
+    }
+
+    /// Validates the domain and reusable workspace shared by both output paths.
+    pub(crate) fn assert_compatible<M, Table>(
+        &self,
+        domain: &NttGadgetDomain<'_, T, M, Table>,
+        context: &NttGlweKeySwitchingContext<T>,
+    ) where
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+    {
+        assert_eq!(
+            domain.size(),
+            self.output_size,
+            "key-switch domain mismatch"
+        );
+        assert_eq!(
+            domain.basis(),
+            &self.basis,
+            "key-switch decomposition basis mismatch"
+        );
+        assert_eq!(
+            context.accumulator.as_ref().len(),
+            self.output_size.glwe_len(),
+            "key-switch workspace layout mismatch"
+        );
+        assert_eq!(
+            context.adjusted_poly.len(),
+            self.input_size.poly_length(),
+            "key-switch workspace polynomial length mismatch"
+        );
+    }
+
+    /// Clears the selected NTT accumulator and stores the positive mask
+    /// product `sum_i mask_i * KSK_i` in it.
+    ///
+    /// The caller handles the final negation and body addition.
+    fn mask_product_to_accumulator<M, Table>(
+        &self,
+        input_mask: &[T],
+        domain: &NttGadgetDomain<'_, T, M, Table>,
+        context: &mut NttGlweKeySwitchingContextRefMut<'_, T>,
+    ) where
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+    {
+        let parameters = domain.parameters();
+        let table = domain.table();
+        let modulus = parameters.cipher_modulus();
+        let basis = domain.basis();
+        let poly_length = self.input_size.poly_length();
+        let glwe_len = self.output_size.glwe_len();
+
+        context.accumulator.set_zero();
+        for (mask_poly, entry) in input_mask.chunks_exact(poly_length).zip(self.iter()) {
+            basis.init_value_carry_slice_to(mask_poly, context.adjusted_poly, context.carries);
+
+            for (decomposer, key_glwe) in basis.decompose_iter().zip(entry.iter_ntt_glwe(glwe_len))
+            {
+                decomposer.decompose_slice_to(
+                    context.adjusted_poly,
+                    context.decomposed_ntt,
+                    context.carries,
+                );
+                table.transform_slice(context.decomposed_ntt);
+                context.accumulator.add_mul_ntt_polynomial_assign(
+                    &NttPolynomial::new(&*context.decomposed_ntt),
+                    &key_glwe,
+                    modulus,
+                );
+            }
+        }
+    }
 }
 
 /// Reusable NTT GLWE key-switching workspace.
@@ -178,6 +302,14 @@ pub struct NttGlweKeySwitchingContext<T: FheUint> {
     carries: Vec<bool>,
     decomposed_ntt: Vec<T>,
     accumulator: NttGlwe<Vec<T>>,
+}
+
+/// Mutable view of key-switch scratch with a replaceable NTT accumulator.
+struct NttGlweKeySwitchingContextRefMut<'a, T: FheUint> {
+    adjusted_poly: &'a mut [T],
+    carries: &'a mut [bool],
+    decomposed_ntt: &'a mut [T],
+    accumulator: NttGlwe<&'a mut [T]>,
 }
 
 impl<T: FheUint> NttGlweKeySwitchingContext<T> {
@@ -189,6 +321,32 @@ impl<T: FheUint> NttGlweKeySwitchingContext<T> {
             carries: vec![false; poly_length],
             decomposed_ntt: vec![T::ZERO; poly_length],
             accumulator: NttGlwe::zero(glwe_size.glwe_len()),
+        }
+    }
+
+    #[inline]
+    fn as_mut(&mut self) -> NttGlweKeySwitchingContextRefMut<'_, T> {
+        NttGlweKeySwitchingContextRefMut {
+            adjusted_poly: &mut self.adjusted_poly,
+            carries: &mut self.carries,
+            decomposed_ntt: &mut self.decomposed_ntt,
+            accumulator: NttGlwe(self.accumulator.as_mut()),
+        }
+    }
+
+    #[inline]
+    fn as_mut_with_accumulator<'a, S>(
+        &'a mut self,
+        accumulator: &'a mut NttGlwe<S>,
+    ) -> NttGlweKeySwitchingContextRefMut<'a, T>
+    where
+        S: RawData<Elem = T> + DataMut,
+    {
+        NttGlweKeySwitchingContextRefMut {
+            adjusted_poly: &mut self.adjusted_poly,
+            carries: &mut self.carries,
+            decomposed_ntt: &mut self.decomposed_ntt,
+            accumulator: NttGlwe(accumulator.as_mut()),
         }
     }
 }

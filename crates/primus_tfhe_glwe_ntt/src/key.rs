@@ -25,11 +25,14 @@ impl<T: FheUint> ServerKey<T> {
             && self.bootstrapping_key.input_modulus()
                 == parameters.small_lwe().cipher_modulus_value()
             && self.bootstrapping_key.size() == bootstrapping.size()
+            && self.bootstrapping_key.basis() == bootstrapping.basis()
             && self.bootstrapping_key.cipher_modulus()
                 == Some(parameters.glwe().cipher_modulus_value())
             && self.glwe_key_switching_key.input_dimension() == key_switching.input_dimension()
             && self.glwe_key_switching_key.output_dimension() == key_switching.output_dimension()
             && self.glwe_key_switching_key.poly_length() == key_switching.poly_length()
+            && self.glwe_key_switching_key.output_size() == key_switching.output_size()
+            && self.glwe_key_switching_key.basis() == key_switching.output().basis()
     }
 
     /// Returns the NTT functional bootstrapping key.
@@ -58,8 +61,8 @@ where
     T: FheUint,
     Table: NttTable<ValueT = T>,
 {
-    context: &'a TfheContext<T, Table>,
-    gadget: NttGadgetEncryptContext<T>,
+    pub(crate) context: &'a TfheContext<T, Table>,
+    pub(crate) gadget: NttGadgetEncryptContext<T>,
 }
 
 impl<'a, T, Table> KeyGenerator<'a, T, Table>

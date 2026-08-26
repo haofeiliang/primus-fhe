@@ -16,7 +16,7 @@ use crate::{
 use super::{FourierNlev, NttNlev};
 
 /// Clears the Fourier accumulator, then stores the gadget product of `gadget` and `input` in it.
-pub(crate) fn fourier_gadget_product_accumulate<T, Table>(
+pub(crate) fn fourier_gadget_product_to_accumulator<T, Table>(
     gadget: &[Complex64],
     input: &[T],
     basis: &ApproxSignedBasis<T>,
@@ -67,7 +67,7 @@ pub(crate) fn fourier_gadget_product_add_assign<T, Table>(
 }
 
 /// Clears the NTT accumulator, then stores the gadget product of `gadget` and `input` in it.
-pub(crate) fn ntt_gadget_product_accumulate<T, M, Table>(
+pub(crate) fn ntt_gadget_product_to_accumulator<T, M, Table>(
     gadget: &[T],
     input: &[T],
     basis: &ApproxSignedBasis<T>,
@@ -145,7 +145,13 @@ where
         S: Data,
     {
         debug_assert_eq!(output.as_ref().len(), context.poly_length());
-        fourier_gadget_product_accumulate(self.as_ref(), polynomial.as_ref(), basis, fft, context);
+        fourier_gadget_product_to_accumulator(
+            self.as_ref(),
+            polynomial.as_ref(),
+            basis,
+            fft,
+            context,
+        );
         context.fourier_accumulator.write_torus_form(output, fft);
     }
 }
@@ -176,7 +182,7 @@ where
         S: RawData<Elem = T> + Data,
     {
         debug_assert_eq!(output.as_ref().len(), context.poly_length());
-        ntt_gadget_product_accumulate(
+        ntt_gadget_product_to_accumulator(
             self.as_ref(),
             polynomial.as_ref(),
             basis,
