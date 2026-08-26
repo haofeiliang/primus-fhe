@@ -260,6 +260,7 @@ fn main() {
     // }
 
     // PreciseCDTSampler:
+    #[cfg(feature = "high_precision")]
     {
         let sigmas = [
             MIN_STANDARD_DEVIATION,
