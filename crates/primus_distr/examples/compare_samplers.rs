@@ -3,7 +3,7 @@
 // Compares the accuracy of available discrete Gaussian samplers at one or more
 // requested sigma values. Results are descriptive and non-gating; use the
 // Criterion benchmarks for construction and throughput measurements.
-//   - CDTSampler (f64 precision, portable, default for σ ≤ 20)
+//   - CDTSampler (f64 precision, portable, default while its support fits)
 //   - DiscreteZiggurat (large σ)
 //   - PreciseCDTSampler (256-bit precision, high_precision feature only)
 

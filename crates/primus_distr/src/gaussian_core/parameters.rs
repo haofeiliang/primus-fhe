@@ -4,8 +4,6 @@ use crate::{DistrErr, MIN_STANDARD_DEVIATION};
 
 /// Default number of standard deviations retained by facade samplers.
 pub(crate) const DEFAULT_TAIL_CUT: f64 = 12.0;
-/// Largest standard deviation for which facade samplers select portable CDT.
-pub(crate) const CDT_STANDARD_DEVIATION_THRESHOLD: f64 = 20.0;
 /// Largest magnitude supported by the portable 64-bit CDT representation.
 pub(crate) const CDT_MAX_MAGNITUDE: u64 = 255;
 #[cfg(feature = "high_precision")]

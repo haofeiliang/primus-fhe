@@ -38,6 +38,10 @@ impl<T: FheInt> ZigguratMagnitudeSampler<T> {
         let maximum_magnitude = parameters.maximum_magnitude() as f64;
         let negative_twice_variance = standard_deviation * standard_deviation * -2.0;
 
+        // For supports above the CDT limit, benchmarks show that 128 layers
+        // outperform 64 and 256 in steady-state sampling while retaining much
+        // lower setup cost than 256. Smaller direct Ziggurat instances keep
+        // leaner initial tables and still fall back by doubling when needed.
         let mut rectangle_count = if maximum_magnitude < 20.0 {
             32
         } else if maximum_magnitude < 100.0 {

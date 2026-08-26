@@ -3,7 +3,7 @@ use rand::distr::Distribution;
 
 use crate::{
     DistrErr,
-    gaussian_core::{CDT_STANDARD_DEVIATION_THRESHOLD, DEFAULT_TAIL_CUT, GaussianParameters},
+    gaussian_core::{CDT_MAX_MAGNITUDE, DEFAULT_TAIL_CUT, GaussianParameters},
 };
 
 mod cdt;
@@ -19,7 +19,8 @@ pub use ziggurat::SignedDiscreteZiggurat;
 /// A centered discrete Gaussian distribution over signed integers.
 ///
 /// Samples can be positive, zero, or negative. Internally delegates to
-/// [`SignedCDTSampler`] (σ ≤ 20) or [`SignedDiscreteZiggurat`] (σ > 20).
+/// [`SignedCDTSampler`] when the truncated support fits its table, and to
+/// [`SignedDiscreteZiggurat`] otherwise.
 #[derive(Clone)]
 pub enum SignedDiscreteGaussian<T: FheInt> {
     /// CDT (cumulative distribution table) based sampler.
@@ -44,7 +45,7 @@ impl<T: FheInt> SignedDiscreteGaussian<T> {
     #[inline]
     pub fn new(std_dev: f64) -> Result<SignedDiscreteGaussian<T>, DistrErr> {
         let parameters = GaussianParameters::new(std_dev, DEFAULT_TAIL_CUT)?;
-        if std_dev <= CDT_STANDARD_DEVIATION_THRESHOLD {
+        if parameters.maximum_magnitude() <= CDT_MAX_MAGNITUDE {
             SignedCDTSampler::from_parameters(parameters).map(SignedDiscreteGaussian::Cdt)
         } else {
             SignedDiscreteZiggurat::from_parameters(parameters)

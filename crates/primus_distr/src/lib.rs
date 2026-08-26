@@ -18,7 +18,7 @@
 //!
 //! The Gaussian samplers internally choose between a CDT sampler
 //! ([`CDTSampler`]) and a Ziggurat sampler ([`DiscreteZiggurat`]) based on
-//! the standard deviation (threshold: σ = 20).
+//! whether the truncated support fits the CDT table.
 //! With the `high_precision` feature, portable 256-bit CDT samplers
 //! ([`PreciseCDTSampler`] and [`SignedPreciseCDTSampler`]) are also
 //! available.

@@ -9,9 +9,7 @@ mod ziggurat;
 pub(crate) use cdt::build_cdt;
 #[cfg(feature = "high_precision")]
 pub(crate) use parameters::PRECISE_CDT_MAX_MAGNITUDE;
-pub(crate) use parameters::{
-    CDT_MAX_MAGNITUDE, CDT_STANDARD_DEVIATION_THRESHOLD, DEFAULT_TAIL_CUT, GaussianParameters,
-};
+pub(crate) use parameters::{CDT_MAX_MAGNITUDE, DEFAULT_TAIL_CUT, GaussianParameters};
 #[cfg(feature = "high_precision")]
 pub(crate) use precise_cdt::{build_precise_cdt, compare_u256};
 pub(crate) use ziggurat::ZigguratMagnitudeSampler;

@@ -13,7 +13,7 @@ pub use ziggurat::DiscreteZiggurat;
 
 use crate::{
     DistrErr,
-    gaussian_core::{CDT_STANDARD_DEVIATION_THRESHOLD, DEFAULT_TAIL_CUT, GaussianParameters},
+    gaussian_core::{CDT_MAX_MAGNITUDE, DEFAULT_TAIL_CUT, GaussianParameters},
 };
 
 /// A centered discrete Gaussian distribution over unsigned integers.
@@ -22,8 +22,8 @@ use crate::{
 /// are mapped into the upper half of the modulus range via
 /// `modulus_minus_one - |x| + 1`.
 ///
-/// Internally delegates to [`CDTSampler`] (σ ≤ 20) or
-/// [`DiscreteZiggurat`] (σ > 20).
+/// Internally delegates to [`CDTSampler`] when the truncated support fits its
+/// table, and to [`DiscreteZiggurat`] otherwise.
 #[derive(Clone)]
 pub enum DiscreteGaussian<T: FheUint> {
     /// CDT (cumulative distribution table) based sampler.
@@ -52,7 +52,7 @@ impl<T: FheUint> DiscreteGaussian<T> {
     #[inline]
     pub fn new(std_dev: f64, modulus_minus_one: T) -> Result<DiscreteGaussian<T>, DistrErr> {
         let parameters = GaussianParameters::new(std_dev, DEFAULT_TAIL_CUT)?;
-        if std_dev <= CDT_STANDARD_DEVIATION_THRESHOLD {
+        if parameters.maximum_magnitude() <= CDT_MAX_MAGNITUDE {
             CDTSampler::from_parameters(parameters, modulus_minus_one).map(DiscreteGaussian::Cdt)
         } else {
             DiscreteZiggurat::from_parameters(parameters, modulus_minus_one)

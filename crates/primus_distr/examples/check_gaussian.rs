@@ -250,7 +250,7 @@ fn main() {
 
     // ---- Choose sampler(s) to validate (edit / uncomment below) ----
 
-    // CDTSampler (f64 precision, portable; efficient for sigma <= 20):
+    // CDTSampler (f64 precision, portable; available while its support fits):
     // {
     //     let sigmas = [MIN_STANDARD_DEVIATION, 0.8, 0.9, 1.0, 3.19, 10.0, 15.0, 20.0];
     //     for &sigma in &sigmas {
