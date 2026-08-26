@@ -1,6 +1,6 @@
 use primus_integer::Integer;
 
-use crate::DistrErr;
+use crate::{DistrErr, MIN_STANDARD_DEVIATION};
 
 /// Default number of standard deviations retained by facade samplers.
 pub(crate) const DEFAULT_TAIL_CUT: f64 = 12.0;
@@ -11,14 +11,6 @@ pub(crate) const CDT_MAX_MAGNITUDE: u64 = 255;
 #[cfg(feature = "high_precision")]
 /// Largest magnitude supported by the high-precision 256-bit CDT representation.
 pub(crate) const PRECISE_CDT_MAX_MAGNITUDE: u64 = 1023;
-
-/// Smallest scale for which this crate treats the discrete distribution's
-/// measured standard deviation as matching the requested value closely.
-///
-/// This is an implementation-support threshold, not a mathematical or
-/// cryptographic security bound. Below it, lattice discretization makes the
-/// measured standard deviation diverge increasingly from the scale parameter.
-const MIN_SUPPORTED_STANDARD_DEVIATION: f64 = 0.7;
 
 /// `2^64`, represented exactly as `f64`.
 ///
@@ -55,7 +47,7 @@ impl GaussianParameters {
     pub(crate) fn new(standard_deviation: f64, tail_cut: f64) -> Result<Self, DistrErr> {
         let variance = standard_deviation * standard_deviation;
         if !standard_deviation.is_finite()
-            || standard_deviation < MIN_SUPPORTED_STANDARD_DEVIATION
+            || standard_deviation < MIN_STANDARD_DEVIATION
             || !variance.is_finite()
             || !(2.0 * variance).is_finite()
         {
@@ -166,12 +158,13 @@ impl GaussianParameters {
 #[cfg(test)]
 mod tests {
     use super::{CDT_MAX_MAGNITUDE, GaussianParameters};
-    use crate::DistrErr;
+    use crate::{DistrErr, MIN_STANDARD_DEVIATION};
 
     #[test]
     fn rejects_invalid_parameters_and_unencodable_support() {
         for standard_deviation in [
             0.0,
+            MIN_STANDARD_DEVIATION / 2.0,
             -1.0,
             f64::NAN,
             f64::INFINITY,
@@ -183,6 +176,7 @@ mod tests {
                 Err(DistrErr::InvalidStandardDeviation { .. })
             ));
         }
+        assert!(GaussianParameters::new(MIN_STANDARD_DEVIATION, 12.0).is_ok());
         for tail_cut in [0.0, -1.0, f64::NAN, f64::INFINITY] {
             assert!(matches!(
                 GaussianParameters::new(3.19, tail_cut),

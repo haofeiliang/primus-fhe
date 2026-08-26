@@ -4,7 +4,10 @@ use thiserror::Error;
 #[derive(Error, Debug, Clone, PartialEq)]
 pub enum DistrErr {
     /// The standard deviation is unsupported by the floating-point kernels.
-    #[error("standard deviation must be at least 0.7 with finite variance, got {value}")]
+    #[error(
+        "standard deviation must be at least {minimum} with finite variance, got {value}",
+        minimum = crate::MIN_STANDARD_DEVIATION
+    )]
     InvalidStandardDeviation {
         /// Invalid standard deviation.
         value: f64,

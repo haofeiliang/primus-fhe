@@ -35,7 +35,7 @@ impl<T: FheInt> SignedDiscreteGaussian<T> {
     ///
     /// # Parameters
     /// - `std_dev` — standard deviation (`σ`), which must be finite and at
-    ///   least 0.7.
+    ///   least [`MIN_STANDARD_DEVIATION`](crate::MIN_STANDARD_DEVIATION).
     ///
     /// # Errors
     ///

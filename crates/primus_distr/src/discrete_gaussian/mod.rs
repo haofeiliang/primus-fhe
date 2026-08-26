@@ -38,15 +38,17 @@ impl<T: FheUint> DiscreteGaussian<T> {
     /// Automatically selects the CDT or Ziggurat backend based on `std_dev`.
     ///
     /// # Parameters
-    /// - `std_dev` — standard deviation (`σ`), must be at least 0.7.
+    /// - `std_dev` — standard deviation (`σ`), must be at least
+    ///   [`MIN_STANDARD_DEVIATION`](crate::MIN_STANDARD_DEVIATION).
     /// - `modulus_minus_one` — the modulus minus one, used to wrap negative
     ///   samples into the unsigned range.
     ///
     /// # Errors
     ///
-    /// Returns an error when `std_dev` is smaller than 0.7 or cannot be used by
-    /// the floating-point kernels, or when the truncated support does not fit
-    /// below the supplied modulus.
+    /// Returns an error when `std_dev` is smaller than
+    /// [`MIN_STANDARD_DEVIATION`](crate::MIN_STANDARD_DEVIATION) or cannot be
+    /// used by the floating-point kernels, or when the truncated support does
+    /// not fit below the supplied modulus.
     #[inline]
     pub fn new(std_dev: f64, modulus_minus_one: T) -> Result<DiscreteGaussian<T>, DistrErr> {
         let parameters = GaussianParameters::new(std_dev, DEFAULT_TAIL_CUT)?;

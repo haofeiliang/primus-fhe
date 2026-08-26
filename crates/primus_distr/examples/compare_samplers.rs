@@ -11,7 +11,9 @@ use comfy_table::{Attribute, Cell, Color, ContentArrangement, Table, presets::UT
 use rand::{SeedableRng, distr::Distribution, rngs::StdRng};
 use std::{env, process};
 
-use primus_distr::{CDTSampler, DiscreteGaussian, DiscreteZiggurat, stats::gaussian_stats};
+use primus_distr::{
+    CDTSampler, DiscreteGaussian, DiscreteZiggurat, MIN_STANDARD_DEVIATION, stats::gaussian_stats,
+};
 
 #[cfg(feature = "high_precision")]
 use primus_distr::PreciseCDTSampler;
@@ -271,8 +273,10 @@ fn main() {
                     );
                     process::exit(2);
                 });
-                if !sigma.is_finite() || sigma < 0.7 {
-                    eprintln!("sigma must be finite and at least 0.7: {argument}");
+                if !sigma.is_finite() || sigma < MIN_STANDARD_DEVIATION {
+                    eprintln!(
+                        "sigma must be finite and at least {MIN_STANDARD_DEVIATION}: {argument}"
+                    );
                     process::exit(2);
                 }
                 sigma

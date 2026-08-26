@@ -46,6 +46,13 @@ pub mod stats;
 
 pub use error::DistrErr;
 
+/// Smallest standard deviation supported by the discrete Gaussian samplers.
+///
+/// This is an implementation-support threshold rather than a mathematical or
+/// cryptographic security bound. Below it, lattice discretization makes the
+/// measured standard deviation diverge increasingly from the scale parameter.
+pub const MIN_STANDARD_DEVIATION: f64 = 0.7;
+
 pub use common::*;
 
 pub use binary::BinaryDistr;
