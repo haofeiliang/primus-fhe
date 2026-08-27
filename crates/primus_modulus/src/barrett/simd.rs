@@ -1,6 +1,8 @@
 //! SIMD Barrett modulus implementation and dot-product helper.
 
-use primus_integer::{CarryingAdd, CarryingMul, SimdArray, SimdUnsignedInteger, WideningMul};
+use primus_integer::{
+    CarryingAdd, CarryingMul, SimdArray, SimdUnsignedArray, SimdUnsignedInteger, WideningMul,
+};
 use primus_reduce::prelude::*;
 
 use super::BarrettModulus;

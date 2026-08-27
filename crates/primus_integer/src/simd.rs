@@ -1,13 +1,10 @@
-//! SIMD abstractions for unsigned integer types.
+//! SIMD abstractions for integer types.
 //!
-//! This module provides traits and blanket implementations that extend the
-//! scalar [`UnsignedInteger`] operations to SIMD
-//! vectors when the `simd` features are enabled.
-//!
-//! [`SimdUnsignedInteger`] marks unsigned integer types that can serve as
-//! SIMD lane elements. [`SimdArray`] extends [`Simd`] vectors with the
-//! arithmetic and comparison capabilities required by higher-level crates.
-//! [`SimdMaskArray`] provides the corresponding mask operations.
+//! [`SimdInteger`], [`SimdArray`], and [`SimdMaskArray`] provide the common
+//! vector layout, arithmetic, comparison, and mask operations shared by signed
+//! and unsigned integers. [`SimdUnsignedInteger`] and [`SimdUnsignedArray`]
+//! add the carrying and widening operations required by unsigned word
+//! arithmetic.
 
 use core::{
     fmt::Debug,
@@ -22,33 +19,37 @@ use core::{
 
 use crate::{BorrowingSub, CarryingAdd, CarryingMul, Integer, UnsignedInteger, WideningMul};
 
-/// Native SIMD vector width in bits.
+/// Default SIMD vector width selected by this crate, in bits.
 #[cfg(target_feature = "avx512f")]
 pub const VECTOR_BITS: usize = 512;
 
-/// Native SIMD vector width in bits.
+/// Default SIMD vector width selected by this crate, in bits.
 #[cfg(not(target_feature = "avx512f"))]
 pub const VECTOR_BITS: usize = 256;
 
-/// Array type containing exactly one SIMD chunk of scalar lanes.
+/// Fixed-size array of scalar lanes used to exchange data with SIMD vectors.
 pub trait LaneArray<T: Integer>: Copy + AsRef<[T]> + AsMut<[T]> + IntoIterator<Item = T> {
     /// Builds a lane array with every lane set to zero.
+    #[must_use]
     #[inline]
     fn zero() -> Self {
         Self::splat(T::ZERO)
     }
 
     /// Builds a lane array with every lane set to `value`.
+    #[must_use]
     fn splat(value: T) -> Self;
 
     /// Builds a lane array by calling `f` once for each lane index.
+    #[must_use]
     fn from_fn<F: FnMut(usize) -> T>(f: F) -> Self;
 
     /// Maps each lane to a new array without exposing lane indices.
+    #[must_use]
     fn map(self, f: impl FnMut(T) -> T) -> Self;
 
-    /// Builds a lane array from a slice with exactly one SIMD chunk worth of
-    /// scalar values.
+    /// Builds a lane array from a slice with the same number of elements.
+    #[must_use]
     fn try_from_slice(slice: &[T]) -> Option<Self>;
 }
 
@@ -99,13 +100,13 @@ pub trait SimdInteger: Integer + SimdElement + SimdCast {
     /// Generic code should prefer this associated type over spelling
     /// `Simd<Self, { Self::LANE_COUNT }>` directly, because const expressions
     /// involving type parameters still require unstable `generic_const_exprs`.
-    type SimdT: SimdArray<Self, Array = Self::Array>;
+    type SimdT: SimdArray<Self>;
 
     /// SIMD mask type matching [`Self::SimdT`].
     ///
     /// The mask element type is the signed mask backing type associated with
     /// this scalar through [`SimdElement::Mask`].
-    type MaskT: SimdMaskArray<Self, Selector = Self::Selector, MaskReprT = Self::MaskReprT>;
+    type MaskT: SimdMaskArray<Self>;
 
     /// Integer SIMD vector used as the mask representation.
     ///
@@ -118,6 +119,7 @@ pub trait SimdInteger: Integer + SimdElement + SimdCast {
     /// The returned chunk slice is backed by [`Self::Array`], so callers can
     /// construct [`Self::SimdT`] values without writing the lane-count const
     /// expression at the call site.
+    #[must_use]
     fn simd_as_chunks(slice: &[Self]) -> (&[Self::Array], &[Self]);
 
     /// Splits a mutable slice into default SIMD-sized chunks and a scalar tail.
@@ -125,6 +127,7 @@ pub trait SimdInteger: Integer + SimdElement + SimdCast {
     /// This is the mutable counterpart of [`Self::simd_as_chunks`], intended
     /// for kernels that write whole SIMD chunks and then handle the remaining
     /// scalar lanes separately.
+    #[must_use]
     fn simd_as_chunks_mut(slice: &mut [Self]) -> (&mut [Self::Array], &mut [Self]);
 }
 
@@ -167,8 +170,8 @@ macro_rules! impl_simd_unsigned_integer {
 
 impl_simd_unsigned_integer! {u8 u16 u32 u64 usize}
 
-/// SIMD vector of `N` elements of type `T`, extending [`Simd`] with the
-/// arithmetic and comparison capabilities required by higher-level crates.
+/// Unsigned SIMD vector extending [`SimdArray`] with carrying and widening
+/// arithmetic required by higher-level crates.
 pub trait SimdUnsignedArray<T>:
     SimdArray<T>
     + SimdUint<Scalar = T>
@@ -179,6 +182,14 @@ pub trait SimdUnsignedArray<T>:
 where
     T: UnsignedInteger + SimdInteger,
 {
+    /// Adds corresponding lanes, returning the wrapped sums and overflow mask.
+    #[must_use]
+    #[inline]
+    fn overflowing_add(self, rhs: Self) -> (Self, T::MaskT) {
+        let sum = self + rhs;
+        let overflow = sum.simd_lt(self);
+        (sum, overflow)
+    }
 }
 
 impl<T, V> SimdUnsignedArray<T> for V
@@ -193,16 +204,13 @@ where
 {
 }
 
-/// SIMD vector of `N` elements of type `T`, extending [`Simd`] with the
-/// arithmetic and comparison capabilities required by higher-level crates.
+/// Default-width SIMD vector extending [`Simd`] with the common operations
+/// required by higher-level crates.
 pub trait SimdArray<T: SimdInteger>
 where
     Self: Send + Sync + Clone + Copy + Default,
     Self: PartialEq + PartialOrd + Eq + Ord,
     Self: Debug,
-    Self: From<<T as SimdInteger>::SimdT> + Into<<T as SimdInteger>::SimdT>,
-    Self: From<<T as SimdInteger>::Array> + Into<<T as SimdInteger>::Array>,
-    Self: AsRef<<T as SimdInteger>::Array> + AsMut<<T as SimdInteger>::Array>,
     Self: SimdPartialEq<Mask = T::MaskT> + SimdPartialOrd + SimdOrd,
     Self: Product<Self> + Sum<Self>,
     for<'a> Self: Product<&'a Self> + Sum<&'a Self>,
@@ -226,59 +234,52 @@ where
     for<'a> Self: BitOr<&'a Self, Output = Self> + BitOrAssign<&'a Self>,
     for<'a> Self: BitXor<&'a Self, Output = Self> + BitXorAssign<&'a Self>,
 {
-    /// Array type containing one vector worth of scalar lanes.
-    type Array: LaneArray<T>;
-
     /// Constructs a new SIMD vector with all elements set to the given value.
-    fn splat(value: T) -> T::SimdT;
+    #[must_use]
+    fn splat(value: T) -> Self;
 
     /// Converts an array to a SIMD vector.
-    fn from_array(array: Self::Array) -> T::SimdT;
+    #[must_use]
+    fn from_array(array: T::Array) -> Self;
 
     /// Converts a SIMD vector to an array.
-    fn to_array(self) -> Self::Array;
+    #[must_use]
+    fn to_array(self) -> T::Array;
 
     /// Returns an array reference containing the entire SIMD vector.
-    fn as_array(&self) -> &Self::Array;
+    #[must_use]
+    fn as_array(&self) -> &T::Array;
 
     /// Returns a mutable array reference containing the entire SIMD vector.
-    fn as_mut_array(&mut self) -> &mut Self::Array;
-
-    /// Returns a tuple of the sum along with a boolean indicating whether an arithmetic overflow would occur.
-    /// If an overflow would have occurred then the wrapped value is returned.
-    fn overflowing_add(self, rhs: Self) -> (Self, T::MaskT) {
-        let a = self + rhs;
-        (a, a.simd_lt(self))
-    }
+    #[must_use]
+    fn as_mut_array(&mut self) -> &mut T::Array;
 }
 
 macro_rules! impl_simd_array {
     ($($t:ty)*) => ($(
         impl SimdArray<$t> for Simd<$t, {<$t>::LANE_COUNT}>  {
-            type Array = <$t as SimdInteger>::Array;
-
             #[inline]
             fn splat(value: $t) -> Self {
                 Simd::<$t, {<$t>::LANE_COUNT}>::splat(value)
             }
 
             #[inline]
-            fn from_array(array: Self::Array) -> Self {
+            fn from_array(array: <$t as SimdInteger>::Array) -> Self {
                 Simd::<$t, {<$t>::LANE_COUNT}>::from_array(array)
             }
 
             #[inline]
-            fn to_array(self) -> Self::Array {
+            fn to_array(self) -> <$t as SimdInteger>::Array {
                 self.to_array()
             }
 
             #[inline]
-            fn as_array(&self) -> &Self::Array {
+            fn as_array(&self) -> &<$t as SimdInteger>::Array {
                 self.as_array()
             }
 
             #[inline]
-            fn as_mut_array(&mut self) -> &mut Self::Array {
+            fn as_mut_array(&mut self) -> &mut <$t as SimdInteger>::Array {
                 self.as_mut_array()
             }
         }
@@ -287,7 +288,8 @@ macro_rules! impl_simd_array {
 
 impl_simd_array! {i8 i16 i32 i64 isize u8 u16 u32 u64 usize}
 
-/// SIMD mask of `N` elements, providing bitwise and selection operations.
+/// Mask for a default-width SIMD vector, providing bitwise and selection
+/// operations.
 #[allow(clippy::len_without_is_empty)]
 pub trait SimdMaskArray<T: SimdInteger>
 where
@@ -295,18 +297,12 @@ where
     Self: PartialEq + PartialOrd,
     Self: Debug,
     Self: Select<T::SimdT>,
-    Self: From<T::Selector> + Into<T::Selector>,
     Self: SimdPartialEq<Mask = Self> + SimdPartialOrd + SimdOrd,
     Self: BitAnd<Output = Self> + BitAndAssign + BitAnd<bool, Output = Self> + BitAndAssign<bool>,
     Self: BitOr<Output = Self> + BitOrAssign + BitOr<bool, Output = Self> + BitOrAssign<bool>,
     Self: BitXor<Output = Self> + BitXorAssign + BitXor<bool, Output = Self> + BitXorAssign<bool>,
     Self: Not<Output = Self>,
 {
-    /// Boolean selector array matching this mask.
-    type Selector: Copy;
-    /// Integer SIMD vector used as the mask representation.
-    type MaskReprT;
-
     /// Get the number of lanes in this vector.
     #[must_use]
     #[inline]
@@ -333,13 +329,16 @@ where
     fn select(self, true_values: T::SimdT, false_values: T::SimdT) -> T::SimdT;
 
     /// Constructs a mask by setting all elements to the given value.
+    #[must_use]
     fn splat(value: bool) -> Self;
 
     /// Converts an array of bools to a SIMD mask.
-    fn from_array(array: Self::Selector) -> Self;
+    #[must_use]
+    fn from_array(array: T::Selector) -> Self;
 
     /// Converts a SIMD mask to an array of bools.
-    fn to_array(self) -> Self::Selector;
+    #[must_use]
+    fn to_array(self) -> T::Selector;
 
     /// Converts a vector of integers to a mask, where 0 represents `false` and -1
     /// represents `true`.
@@ -348,12 +347,12 @@ where
     /// Panics if any element is not 0 or -1.
     #[must_use]
     #[track_caller]
-    fn from_simd(value: Self::MaskReprT) -> Self;
+    fn from_simd(value: T::MaskReprT) -> Self;
 
     /// Converts the mask to a vector of integers, where 0 represents `false`
     /// and -1 represents `true`.
     #[must_use]
-    fn to_simd(self) -> Self::MaskReprT;
+    fn to_simd(self) -> T::MaskReprT;
 
     /// Returns true if any element is set, or false otherwise.
     #[must_use]
@@ -367,9 +366,6 @@ where
 macro_rules! impl_mask_array {
     ($t:ty) => {
         impl SimdMaskArray<$t> for Mask<<$t as SimdElement>::Mask, { <$t>::LANE_COUNT }> {
-            type Selector = <$t as SimdInteger>::Selector;
-            type MaskReprT = <$t as SimdInteger>::MaskReprT;
-
             #[inline]
             fn select(
                 self,

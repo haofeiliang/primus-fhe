@@ -2,7 +2,7 @@
 
 use std::simd::cmp::SimdOrd;
 
-use primus_integer::{CarryingAdd, SimdArray, SimdUnsignedInteger, WideningMul};
+use primus_integer::{CarryingAdd, SimdArray, SimdUnsignedArray, SimdUnsignedInteger, WideningMul};
 
 pub use crate::common::uint::simd::{lazy_reduce_neg, reduce_neg, reduce_once};
 
