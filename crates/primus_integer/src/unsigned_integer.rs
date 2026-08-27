@@ -21,9 +21,9 @@ use crate::{
 /// # Associated type
 ///
 /// [`SignedInteger`](UnsignedInteger::SignedInteger) is the matching signed
-/// type (e.g. `i64` for `u64`) and is used internally by algorithms such as
-/// [`Xgcd::xgcd`] that need signed intermediate
-/// cofactors.
+/// type with the same bit width (for example, `i64` for `u64`). It allows
+/// generic code to convert between unsigned residues and signed coefficients
+/// without naming a concrete primitive type.
 pub trait UnsignedInteger:
     Integer
     + num_traits::Unsigned
@@ -39,7 +39,7 @@ pub trait UnsignedInteger:
     + TryInto<usize, Error: Debug>
 {
     /// The matching signed type (e.g. `i64` for `u64`).
-    type SignedInteger: crate::signed_integer::SignedInteger<UnsignedInteger = Self>;
+    type SignedInteger: super::SignedInteger<UnsignedInteger = Self>;
 
     /// Returns the minimum number of bits required to represent `self`.
     ///
