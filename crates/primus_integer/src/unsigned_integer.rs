@@ -44,7 +44,7 @@ pub trait UnsignedInteger:
     /// Returns the minimum number of bits required to represent `self`.
     ///
     /// Returns zero when `self` is zero.
-    #[must_use = "this returns the result of the operation, without modifying the original"]
+    #[must_use]
     fn bit_width(self) -> u32;
 
     /// Returns `true` if and only if `self == 2^k` for some `k`.

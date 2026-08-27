@@ -329,7 +329,7 @@ where
     /// let c = mask.select(a, b);
     /// assert_eq!(c.to_array(), [0, 5, 6, 3]);
     /// ```
-    #[must_use = "method returns a new vector and does not mutate the original inputs"]
+    #[must_use]
     fn select(self, true_values: T::SimdT, false_values: T::SimdT) -> T::SimdT;
 
     /// Constructs a mask by setting all elements to the given value.
@@ -346,21 +346,21 @@ where
     ///
     /// # Panics
     /// Panics if any element is not 0 or -1.
-    #[must_use = "method returns a new mask and does not mutate the original value"]
+    #[must_use]
     #[track_caller]
     fn from_simd(value: Self::MaskReprT) -> Self;
 
     /// Converts the mask to a vector of integers, where 0 represents `false`
     /// and -1 represents `true`.
-    #[must_use = "method returns a new vector and does not mutate the original value"]
+    #[must_use]
     fn to_simd(self) -> Self::MaskReprT;
 
     /// Returns true if any element is set, or false otherwise.
-    #[must_use = "method returns a new bool and does not mutate the original value"]
+    #[must_use]
     fn any(self) -> bool;
 
     /// Returns true if all elements are set, or false otherwise.
-    #[must_use = "method returns a new bool and does not mutate the original value"]
+    #[must_use]
     fn all(self) -> bool;
 }
 
