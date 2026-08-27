@@ -49,7 +49,7 @@ fn overflowing_traits_delegate_to_primitive_arithmetic() {
 
 #[test]
 fn size_counts_each_supported_storage_backend() {
-    let values = [1u32, 2, 3, 4];
+    let mut values = [1u32, 2, 3, 4];
     let slice: &[u32] = &values;
     let boxed: Box<[u32]> = values.into();
     let arc: Arc<[u32]> = Arc::from(values);
@@ -59,4 +59,7 @@ fn size_counts_each_supported_storage_backend() {
     assert_eq!(slice.byte_count(), 16);
     assert_eq!(boxed.byte_count(), 16);
     assert_eq!(arc.byte_count(), 16);
+
+    let mutable_slice: &mut [u32] = &mut values;
+    assert_eq!(mutable_slice.byte_count(), 16);
 }

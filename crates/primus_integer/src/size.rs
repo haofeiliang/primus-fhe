@@ -2,43 +2,61 @@ use std::sync::Arc;
 
 use crate::ByteCount;
 
-/// A trait for the size of a value.
+/// Reports the byte length of a value's logical element storage.
+///
+/// The count excludes container metadata, unused capacity, reference-counting
+/// state, and fields that are not part of the underlying element storage.
 pub trait Size {
-    /// Returns the size of the pointed-to value in bytes.
+    /// Returns the byte length of the logical element storage.
+    #[must_use]
     fn byte_count(&self) -> usize;
 }
 
 impl<T: ByteCount> Size for Vec<T> {
     #[inline]
     fn byte_count(&self) -> usize {
-        self.len() * T::BYTES
+        Size::byte_count(self.as_slice())
     }
 }
 
-impl<T: ByteCount> Size for &[T] {
+impl<T: ByteCount> Size for [T] {
     #[inline]
     fn byte_count(&self) -> usize {
         self.len() * T::BYTES
     }
 }
 
-impl<T: ByteCount> Size for Box<[T]> {
+impl<S: Size + ?Sized> Size for &S {
     #[inline]
     fn byte_count(&self) -> usize {
-        self.len() * T::BYTES
+        Size::byte_count(*self)
+    }
+}
+
+impl<S: Size + ?Sized> Size for &mut S {
+    #[inline]
+    fn byte_count(&self) -> usize {
+        Size::byte_count(&**self)
     }
 }
 
 impl<T: ByteCount, const N: usize> Size for [T; N] {
     #[inline]
     fn byte_count(&self) -> usize {
-        N * T::BYTES
+        Size::byte_count(self.as_slice())
     }
 }
 
-impl<T: ByteCount> Size for Arc<[T]> {
+impl<S: Size + ?Sized> Size for Box<S> {
     #[inline]
     fn byte_count(&self) -> usize {
-        self.len() * T::BYTES
+        Size::byte_count(self.as_ref())
+    }
+}
+
+impl<S: Size + ?Sized> Size for Arc<S> {
+    #[inline]
+    fn byte_count(&self) -> usize {
+        Size::byte_count(self.as_ref())
     }
 }
