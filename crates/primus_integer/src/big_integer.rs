@@ -269,7 +269,7 @@ where
 
         let mut carry = T::ZERO;
         for (ele, res) in self.iter().zip(acc.iter_mut()) {
-            (*res, carry) = value.carrying_mul_add(*ele, *res, carry);
+            (*res, carry) = value.carrying_mul_add(*ele, carry, *res);
         }
 
         carry

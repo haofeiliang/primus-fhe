@@ -12,9 +12,12 @@ macro_rules! impl_simd_uint_carrying_add {
 
                 #[inline]
                 fn carrying_add(self, rhs: Self, carry: Self::CarryT) -> (Self, Self::CarryT) {
-                    let a = self + rhs;
-                    let b = a - carry.to_simd().cast();
-                    (b, a.simd_lt(self) | b.simd_lt(a))
+                    let sum = self + rhs;
+                    // A true mask lane becomes an all-ones unsigned word, so
+                    // subtracting it adds one modulo the word radix.
+                    let sum_with_carry = sum - carry.to_simd().cast();
+                    let carry_out = sum.simd_lt(self) | sum_with_carry.simd_lt(sum);
+                    (sum_with_carry, carry_out)
                 }
             }
         )*
