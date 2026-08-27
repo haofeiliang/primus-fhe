@@ -2,7 +2,7 @@ use std::slice::IterMut;
 
 use itertools::Itertools;
 use num_traits::ConstZero;
-use primus_integer::{AsInto, FheInt, FheUint, UnsignedInteger};
+use primus_integer::{AsInto, FheInt, FheUint, SignedInteger, UnsignedInteger};
 use rand::{
     distr::{Bernoulli, Distribution, Uniform},
     seq::SliceRandom,
@@ -473,7 +473,7 @@ where
     'outer: loop {
         let r = gaussian.sample(rng);
         if r >= <<T as UnsignedInteger>::SignedInteger as ConstZero>::ZERO {
-            let t: T = <T as UnsignedInteger>::cast_from_signed(r);
+            let t: T = r.cast_to_unsigned();
             for iter in iters.iter_mut() {
                 if let Some(value) = iter.next() {
                     *value = t;
@@ -526,7 +526,7 @@ pub fn sample_crt_gaussian_values_iter_mut<T, R>(
     loop {
         let r = gaussian.sample(rng);
         if r >= <<T as UnsignedInteger>::SignedInteger as ConstZero>::ZERO {
-            let t: T = <T as UnsignedInteger>::cast_from_signed(r);
+            let t: T = r.cast_to_unsigned();
             for iter in iters.iter_mut() {
                 if let Some(value) = iter.next() {
                     *value = t;

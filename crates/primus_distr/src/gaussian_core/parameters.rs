@@ -1,4 +1,4 @@
-use primus_integer::Integer;
+use primus_integer::{Integer, SignedInteger};
 
 use crate::{DistrErr, MIN_STANDARD_DEVIATION};
 
@@ -131,16 +131,12 @@ impl GaussianParameters {
         Ok(self)
     }
 
-    /// Verifies that `T` is signed and can represent both signs of every
-    /// magnitude in the truncated support.
+    /// Verifies that `T` can represent both signs of every magnitude in the
+    /// truncated support.
     ///
     /// Bounding the magnitude by `T::MAX` ensures that conversion and
     /// subsequent negation cannot overflow.
-    pub(crate) fn validate_signed_output<T: Integer>(self) -> Result<Self, DistrErr> {
-        if T::MIN >= T::ZERO {
-            return Err(DistrErr::UnsignedOutputType);
-        }
-
+    pub(crate) fn validate_signed_output<T: SignedInteger>(self) -> Result<Self, DistrErr> {
         let output_maximum: u128 = T::MAX.as_into();
         let maximum_magnitude = self.maximum_magnitude();
         if u128::from(maximum_magnitude) > output_maximum {
@@ -192,10 +188,6 @@ mod tests {
             Err(DistrErr::ModulusTooSmall { .. })
         ));
         assert!(parameters.validate_modular_output(38_u16).is_ok());
-        assert!(matches!(
-            parameters.validate_signed_output::<u16>(),
-            Err(DistrErr::UnsignedOutputType)
-        ));
         assert!(parameters.validate_signed_output::<i16>().is_ok());
 
         let large_parameters = GaussianParameters::new(30.0, 12.0).unwrap();

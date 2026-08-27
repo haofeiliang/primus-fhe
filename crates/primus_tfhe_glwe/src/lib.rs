@@ -10,13 +10,13 @@ mod parameters;
 
 mod boolean;
 
-use num_traits::identities::ConstZero;
+use num_traits::Signed;
 use primus_fhe_core::plaintext::{PlaintextCodec, PlaintextEmbedding};
 use primus_glwe::{
     GgswParameters, GlevParameters, GlweKeySwitchingParameters, GlweParameters, GlweSecretKey,
     SecretCoefficient,
 };
-use primus_integer::{FheUint, WrappingNeg};
+use primus_integer::{FheUint, SignedInteger};
 use primus_lwe::{LweCiphertext, LweParameters, LweSecretKey};
 
 pub use boolean::{
@@ -36,12 +36,11 @@ pub use primus_glwe::SecretKeyDistr;
 
 #[inline]
 fn encode_secret_coefficient<T: FheUint>(coefficient: SecretCoefficient<T>, modulus: T) -> T {
-    if coefficient < SecretCoefficient::<T>::ZERO {
-        let magnitude = T::cast_from_signed(coefficient.wrapping_neg());
-        debug_assert!(magnitude < modulus);
-        modulus - magnitude
+    if coefficient.is_negative() {
+        debug_assert!(coefficient.unsigned_abs() < modulus);
+        modulus.wrapping_add_signed(coefficient)
     } else {
-        let coefficient = T::cast_from_signed(coefficient);
+        let coefficient = coefficient.cast_to_unsigned();
         debug_assert!(coefficient < modulus);
         coefficient
     }

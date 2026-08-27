@@ -1,5 +1,4 @@
 use core::fmt::Debug;
-use std::ops::Neg;
 
 use primus_gcd::Xgcd;
 
@@ -40,7 +39,7 @@ pub trait UnsignedInteger:
     + TryInto<usize, Error: Debug>
 {
     /// The matching signed type (e.g. `i64` for `u64`).
-    type SignedInteger: Integer + Neg<Output = Self::SignedInteger>;
+    type SignedInteger: crate::signed_integer::SignedInteger<UnsignedInteger = Self>;
 
     /// Returns `true` if and only if `self == 2^k` for some `k`.
     #[must_use]

@@ -1,4 +1,4 @@
-use primus_integer::FheInt;
+use primus_integer::{FheInt, SignedInteger};
 use rand::distr::Distribution;
 
 use crate::{
@@ -8,11 +8,11 @@ use crate::{
 
 /// Discrete Ziggurat sampler with signed output.
 #[derive(Clone)]
-pub struct SignedDiscreteZiggurat<T: FheInt> {
+pub struct SignedDiscreteZiggurat<T: FheInt + SignedInteger> {
     core: ZigguratMagnitudeSampler<T>,
 }
 
-impl<T: FheInt> SignedDiscreteZiggurat<T> {
+impl<T: FheInt + SignedInteger> SignedDiscreteZiggurat<T> {
     /// Generates a [`SignedDiscreteZiggurat<T>`].
     ///
     /// Returns an error when the parameters are invalid, `T` cannot represent
@@ -36,7 +36,7 @@ impl<T: FheInt> SignedDiscreteZiggurat<T> {
     }
 }
 
-impl<T: FheInt> Distribution<T> for SignedDiscreteZiggurat<T> {
+impl<T: FheInt + SignedInteger> Distribution<T> for SignedDiscreteZiggurat<T> {
     #[inline]
     fn sample<R: rand::Rng + ?Sized>(&self, rng: &mut R) -> T {
         let (positive, magnitude) = self.core.sample(rng);

@@ -1,5 +1,5 @@
 use primus_distr::DiscreteGaussian;
-use primus_integer::FheUint;
+use primus_integer::{FheUint, SignedInteger};
 use primus_reduce::RingContext;
 use primus_tfhe::Ciphertext;
 use rand::distr::{Distribution, Uniform};
@@ -322,7 +322,7 @@ where
 {
     match modulus.explicit_value() {
         Some(modulus) => encode_secret_coefficient(coefficient, modulus),
-        None => T::cast_from_signed(coefficient),
+        None => coefficient.cast_to_unsigned(),
     }
 }
 

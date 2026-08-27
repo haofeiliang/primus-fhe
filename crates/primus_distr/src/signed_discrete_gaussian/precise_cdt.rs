@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use primus_integer::{AsInto, Integer};
+use primus_integer::{AsInto, SignedInteger};
 use rand::{RngExt, distr::Distribution};
 
 use crate::{
@@ -13,13 +13,13 @@ use crate::{
 
 /// High-precision signed CDT sampler using a portable 256-bit representation.
 #[derive(Debug, Clone)]
-pub struct SignedPreciseCDTSampler<T: Integer> {
+pub struct SignedPreciseCDTSampler<T: SignedInteger> {
     std_dev: f64,
     cdt: Vec<[u64; 4]>,
     output: PhantomData<T>,
 }
 
-impl<T: Integer> SignedPreciseCDTSampler<T> {
+impl<T: SignedInteger> SignedPreciseCDTSampler<T> {
     /// Generates a high-precision signed CDT sampler.
     ///
     /// Returns an error when the parameters are invalid, the support exceeds
@@ -48,7 +48,7 @@ impl<T: Integer> SignedPreciseCDTSampler<T> {
     }
 }
 
-impl<T: Integer> Distribution<T> for SignedPreciseCDTSampler<T> {
+impl<T: SignedInteger> Distribution<T> for SignedPreciseCDTSampler<T> {
     #[inline]
     fn sample<R: rand::Rng + ?Sized>(&self, rng: &mut R) -> T {
         let mut random = [0; 4];

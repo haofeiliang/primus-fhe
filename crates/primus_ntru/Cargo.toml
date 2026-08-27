@@ -16,6 +16,7 @@ primus_ntt = { path = "../primus_ntt" }
 primus_poly = { path = "../primus_poly" }
 primus_reduce = { path = "../primus_reduce" }
 
+num-traits = { workspace = true }
 rand = { workspace = true }
 thiserror = { workspace = true }
 zeroize = { workspace = true }

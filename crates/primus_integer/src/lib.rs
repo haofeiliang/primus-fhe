@@ -1,8 +1,9 @@
 //! Integer trait hierarchies and big-integer arithmetic.
 //!
-//! `primus_integer` provides [`Integer`] and [`UnsignedInteger`] — the core
-//! numeric trait hierarchies used throughout the primus workspace — together
-//! with [`BigUint`] for fixed-width, multi-limb unsigned integers.
+//! `primus_integer` provides [`Integer`], [`SignedInteger`], and
+//! [`UnsignedInteger`] — the core numeric trait hierarchies used throughout
+//! the primus workspace — together with [`BigUint`] for fixed-width,
+//! multi-limb unsigned integers.
 //!
 //! When the `simd` feature is enabled (requires nightly), SIMD vector
 //! abstractions (SimdArray, SimdInteger, SimdMaskArray, SimdUnsignedInteger)
@@ -16,6 +17,7 @@ mod macros;
 mod integer_traits;
 
 mod integer;
+mod signed_integer;
 mod unsigned_integer;
 
 mod big_integer;
@@ -29,6 +31,7 @@ pub use size::Size;
 pub use integer_traits::*;
 
 pub use integer::{FheInt, Integer};
+pub use signed_integer::SignedInteger;
 pub use unsigned_integer::{FheUint, UnsignedInteger};
 
 pub use big_integer::{

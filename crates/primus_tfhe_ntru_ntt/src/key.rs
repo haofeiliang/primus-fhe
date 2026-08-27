@@ -1,4 +1,4 @@
-use primus_integer::FheUint;
+use primus_integer::{FheUint, SignedInteger};
 use primus_lattice::ngsw::NttNgsw;
 use primus_ntru::{
     NtruSecretKey, NttNtruGadgetEncryptContext, NttNtruKeySwitchingKey, NttNtruSecretKey,
@@ -199,7 +199,7 @@ where
             .iter()
             .zip(controls.chunks_exact_mut(nlev_len))
         {
-            message.as_mut()[0] = T::cast_from_signed(coefficient);
+            message.as_mut()[0] = coefficient.cast_to_unsigned();
             accumulator_ntt.encrypt_ngsw_to(
                 &message,
                 &mut NttNgsw::new(chunk),

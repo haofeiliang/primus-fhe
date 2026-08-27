@@ -1,4 +1,4 @@
-use primus_integer::{FheUint, Integer};
+use primus_integer::{FheUint, SignedInteger};
 
 mod cdt;
 mod parameters;
@@ -28,10 +28,6 @@ pub(crate) fn encode_modular<T: FheUint>(positive: bool, magnitude: T, modulus_m
 
 /// Applies the sampled sign to a non-negative magnitude.
 #[inline(always)]
-pub(crate) fn encode_signed<T: Integer>(positive: bool, magnitude: T) -> T {
-    if positive {
-        magnitude
-    } else {
-        T::ZERO - magnitude
-    }
+pub(crate) fn encode_signed<T: SignedInteger>(positive: bool, magnitude: T) -> T {
+    if positive { magnitude } else { -magnitude }
 }

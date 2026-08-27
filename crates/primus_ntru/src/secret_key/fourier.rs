@@ -3,7 +3,7 @@
 use primus_data::{Data, DataMut, RawData};
 use primus_fft::{Complex64, FftEngine, FftTable, TorusFftValue};
 use primus_fhe_core::plaintext::PlaintextEmbedding;
-use primus_integer::FheUint;
+use primus_integer::{FheUint, SignedInteger};
 use primus_lattice::{MAX_POLY_LENGTH, MIN_POLY_LENGTH};
 use primus_modulus::NativeModulus;
 use primus_poly::{FourierPolynomial, FourierPolynomialOwned, Polynomial, PolynomialOwned};
@@ -73,7 +73,7 @@ impl FourierNtruSecretKey {
         let odd_sum = secret_key
             .as_slice()
             .iter()
-            .filter(|&&coefficient| (T::cast_from_signed(coefficient) & T::ONE) == T::ONE)
+            .filter(|&&coefficient| (coefficient.cast_to_unsigned() & T::ONE) == T::ONE)
             .count()
             % 2
             == 1;
@@ -86,7 +86,7 @@ impl FourierNtruSecretKey {
             .iter_mut()
             .zip(secret_key.as_slice())
             .for_each(|(output, &coefficient)| {
-                *output = T::cast_from_signed(coefficient);
+                *output = coefficient.cast_to_unsigned();
             });
 
         let mut key = FourierPolynomialOwned::zero(fft.fourier_length());

@@ -1,4 +1,5 @@
 use primus_fft::{Complex64, FftEngine, FftTable, TorusFftValue};
+use primus_integer::SignedInteger;
 use primus_lattice::ngsw::FourierNgsw;
 use primus_ntru::{
     FourierNtruGadgetEncryptContext, FourierNtruKeySwitchingKey, FourierNtruSecretKey,
@@ -201,7 +202,7 @@ where
             .iter()
             .zip(controls.chunks_exact_mut(nlev_len))
         {
-            message.as_mut()[0] = T::cast_from_signed(coefficient);
+            message.as_mut()[0] = coefficient.cast_to_unsigned();
             accumulator_fourier.encrypt_ngsw_to(
                 &message,
                 &mut FourierNgsw::new(chunk),

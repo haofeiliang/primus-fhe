@@ -1,4 +1,4 @@
-use primus_integer::FheInt;
+use primus_integer::{FheInt, SignedInteger};
 use rand::distr::Distribution;
 
 use crate::{
@@ -22,14 +22,14 @@ pub use ziggurat::SignedDiscreteZiggurat;
 /// [`SignedCDTSampler`] when the truncated support fits its table, and to
 /// [`SignedDiscreteZiggurat`] otherwise.
 #[derive(Clone)]
-pub enum SignedDiscreteGaussian<T: FheInt> {
+pub enum SignedDiscreteGaussian<T: FheInt + SignedInteger> {
     /// CDT (cumulative distribution table) based sampler.
     Cdt(SignedCDTSampler<T>),
     /// Ziggurat based sampler.
     Ziggurat(SignedDiscreteZiggurat<T>),
 }
 
-impl<T: FheInt> SignedDiscreteGaussian<T> {
+impl<T: FheInt + SignedInteger> SignedDiscreteGaussian<T> {
     /// Construct a signed discrete Gaussian sampler.
     ///
     /// Automatically selects the CDT or Ziggurat backend based on `std_dev`.
@@ -62,7 +62,7 @@ impl<T: FheInt> SignedDiscreteGaussian<T> {
     }
 }
 
-impl<T: FheInt> Distribution<T> for SignedDiscreteGaussian<T> {
+impl<T: FheInt + SignedInteger> Distribution<T> for SignedDiscreteGaussian<T> {
     #[inline]
     fn sample<R: rand::Rng + ?Sized>(&self, rng: &mut R) -> T {
         match self {

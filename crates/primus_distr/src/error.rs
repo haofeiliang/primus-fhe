@@ -62,10 +62,6 @@ pub enum DistrErr {
         output_maximum: u128,
     },
 
-    /// A signed sampler was requested with an unsigned output type.
-    #[error("signed Gaussian sampling requires a signed output type")]
-    UnsignedOutputType,
-
     /// Ziggurat setup could not represent the requested distribution.
     #[error(
         "cannot construct Ziggurat for standard deviation {standard_deviation} and tail cut {tail_cut}"

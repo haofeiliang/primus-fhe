@@ -1,7 +1,7 @@
-use num_traits::identities::ConstZero;
+use num_traits::Signed;
 use primus_distr::DiscreteGaussian;
 use primus_fhe_core::{SecretCoefficient, plaintext::PlaintextEmbedding};
-use primus_integer::{FheUint, WrappingNeg};
+use primus_integer::{FheUint, SignedInteger};
 use primus_lwe::LweCiphertext;
 use primus_reduce::RingContext;
 use primus_tfhe::Ciphertext;
@@ -225,13 +225,14 @@ where
 {
     match modulus.explicit_value() {
         Some(modulus) => {
-            if coefficient < SecretCoefficient::<T>::ZERO {
-                modulus - T::cast_from_signed(coefficient.wrapping_neg())
+            if coefficient.is_negative() {
+                debug_assert!(coefficient.unsigned_abs() < modulus);
+                modulus.wrapping_add_signed(coefficient)
             } else {
-                T::cast_from_signed(coefficient)
+                coefficient.cast_to_unsigned()
             }
         }
-        None => T::cast_from_signed(coefficient),
+        None => coefficient.cast_to_unsigned(),
     }
 }
 

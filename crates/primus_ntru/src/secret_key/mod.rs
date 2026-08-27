@@ -5,7 +5,8 @@ mod fourier;
 mod gadget;
 mod ntt;
 
-use primus_integer::{FheUint, WrappingNeg};
+use num_traits::Signed;
+use primus_integer::{FheUint, SignedInteger};
 use primus_reduce::RingContext;
 
 use crate::SecretCoefficient;
@@ -31,11 +32,11 @@ pub(crate) fn encode_secret_polynomial_to<T: FheUint, M: RingContext<T>>(
         .iter_mut()
         .zip(coefficients)
         .for_each(|(output, &coefficient)| {
-            *output = if coefficient < T::ZERO.cast_to_signed() {
-                let magnitude = T::cast_from_signed(coefficient.wrapping_neg());
+            *output = if coefficient.is_negative() {
+                let magnitude = coefficient.unsigned_abs();
                 modulus.reduce_neg(modulus.reduce(magnitude))
             } else {
-                modulus.reduce(T::cast_from_signed(coefficient))
+                modulus.reduce(coefficient.cast_to_unsigned())
             };
         });
 }

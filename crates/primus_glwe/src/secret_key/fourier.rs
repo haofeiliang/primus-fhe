@@ -2,7 +2,7 @@
 
 use primus_data::{Data, DataMut, RawData};
 use primus_fft::{Complex64, FftEngine, FftTable, TorusFftValue};
-use primus_integer::FheUint;
+use primus_integer::{FheUint, SignedInteger};
 use primus_lattice::{GlweSize, MAX_POLY_LENGTH, MIN_POLY_LENGTH};
 use primus_modulus::NativeModulus;
 use primus_poly::{FourierPolynomialIter, FourierPolynomialOwned, Polynomial, PolynomialOwned};
@@ -95,7 +95,7 @@ impl FourierGlweSecretKey {
                 .iter_mut()
                 .zip(coefficients)
                 .for_each(|(output, &coefficient)| {
-                    *output = T::cast_from_signed(coefficient);
+                    *output = coefficient.cast_to_unsigned();
                 });
             fft.forward_as_integer(&native_coefficients, fourier);
         }

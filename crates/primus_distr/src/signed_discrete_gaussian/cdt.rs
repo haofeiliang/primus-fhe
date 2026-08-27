@@ -1,6 +1,6 @@
 use std::marker::PhantomData;
 
-use primus_integer::{AsInto, Integer};
+use primus_integer::{AsInto, SignedInteger};
 use rand::distr::Distribution;
 
 use crate::{
@@ -11,13 +11,13 @@ use crate::{
 
 /// Signed CDT sampler using log-space computation.
 #[derive(Debug, Clone)]
-pub struct SignedCDTSampler<T: Integer> {
+pub struct SignedCDTSampler<T: SignedInteger> {
     std_dev: f64,
     cdt: Vec<u64>,
     output: PhantomData<T>,
 }
 
-impl<T: Integer> SignedCDTSampler<T> {
+impl<T: SignedInteger> SignedCDTSampler<T> {
     /// Generates a signed CDT sampler using log-space arithmetic.
     ///
     /// Returns an error when the parameters are invalid, the support exceeds
@@ -46,7 +46,7 @@ impl<T: Integer> SignedCDTSampler<T> {
     }
 }
 
-impl<T: Integer> Distribution<T> for SignedCDTSampler<T> {
+impl<T: SignedInteger> Distribution<T> for SignedCDTSampler<T> {
     #[inline]
     fn sample<R: rand::Rng + ?Sized>(&self, rng: &mut R) -> T {
         let random: u64 = rng.next_u64();
