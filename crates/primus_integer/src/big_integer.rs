@@ -115,12 +115,14 @@ where
     ///
     /// This is the storage length, not the effective mathematical bit length.
     #[allow(clippy::len_without_is_empty)]
+    #[must_use]
     #[inline(always)]
     pub fn len(&self) -> usize {
         self.0.len()
     }
 
     /// Returns the limbs as a slice in little-endian order.
+    #[must_use]
     #[inline(always)]
     pub fn digits(&self) -> &[T] {
         self.0.as_slice()
@@ -134,6 +136,7 @@ where
     }
 
     /// Returns `true` if all limbs are zero.
+    #[must_use]
     #[inline]
     pub fn is_zero(&self) -> bool {
         self.iter().all(T::is_zero)
@@ -144,15 +147,16 @@ where
     /// Leading zero limbs are ignored.
     #[must_use]
     #[inline]
-    pub fn bits_count(&self) -> u32 {
+    pub fn bit_width(&self) -> u32 {
         self.iter()
             .enumerate()
             .rev()
             .find(|(_, v)| !v.is_zero())
-            .map_or(0, |(i, v)| T::BITS * (i as u32 + 1) - v.leading_zeros())
+            .map_or(0, |(i, v)| T::BITS * i as u32 + v.bit_width())
     }
 
     /// Borrows the same value as an immutable slice-backed [`BigUint`].
+    #[must_use]
     #[inline(always)]
     pub fn view(&self) -> BigUint<&[T]> {
         BigUint(self.0.as_slice())
@@ -411,6 +415,7 @@ where
     T: UnsignedInteger,
 {
     /// Returns the limbs as a mutable slice in little-endian order.
+    #[must_use]
     #[inline(always)]
     pub fn digits_mut(&mut self) -> &mut [T] {
         self.0.as_mut_slice()
@@ -430,6 +435,7 @@ where
     }
 
     /// Borrows the same value as a mutable slice-backed [`BigUint`].
+    #[must_use]
     #[inline(always)]
     pub fn view_mut(&mut self) -> BigUint<&mut [T]> {
         BigUint(self.0.as_mut_slice())

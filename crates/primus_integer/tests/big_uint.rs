@@ -28,7 +28,7 @@ fn representation_and_product_contracts() {
     let expected = factors.into_iter().map(u128::from).product::<u128>();
 
     assert_eq!(compose_u32(product.digits()), expected);
-    assert_eq!(product.bits_count(), u128::BITS - expected.leading_zeros());
+    assert_eq!(product.bit_width(), u128::BITS - expected.leading_zeros());
     assert!(!product.is_zero());
     assert_eq!(product.view(), BigUint(product.digits()));
 
