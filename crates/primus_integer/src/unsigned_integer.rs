@@ -41,6 +41,12 @@ pub trait UnsignedInteger:
     /// The matching signed type (e.g. `i64` for `u64`).
     type SignedInteger: crate::signed_integer::SignedInteger<UnsignedInteger = Self>;
 
+    /// Returns the minimum number of bits required to represent `self`.
+    ///
+    /// Returns zero when `self` is zero.
+    #[must_use = "this returns the result of the operation, without modifying the original"]
+    fn bit_width(self) -> u32;
+
     /// Returns `true` if and only if `self == 2^k` for some `k`.
     #[must_use]
     #[inline(always)]
@@ -71,6 +77,11 @@ macro_rules! impl_unsigned_integer {
     ($t:ty, $i:ty) => {
         impl UnsignedInteger for $t {
             type SignedInteger = $i;
+
+            #[inline]
+            fn bit_width(self) -> u32 {
+                <$t>::bit_width(self)
+            }
 
             #[inline]
             fn cast_from_signed(value: Self::SignedInteger) -> Self {
