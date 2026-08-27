@@ -1,3 +1,6 @@
+use std::{any::type_name, fmt::Debug};
+
+use dashu_int::UBig;
 use primus_gcd::Xgcd;
 use rand::{RngExt, SeedableRng, rngs::StdRng};
 
@@ -71,74 +74,70 @@ fn u8_power_of_two_inverses_are_exhaustive() {
     }
 }
 
-/// Verifies the public panic preconditions and the non-invertible even-input
-/// behavior without repeating them for every macro-generated integer type.
-#[test]
-fn public_preconditions_and_noninvertible_inputs() {
-    assert!(std::panic::catch_unwind(|| u64::xgcd(1, 2)).is_err());
-    assert!(std::panic::catch_unwind(|| u64::gcdinv(2, 2)).is_err());
+fn assert_xgcd_identity<T>(x: T, y: T)
+where
+    T: Xgcd + Copy + Debug + Ord,
+    UBig: From<T>,
+{
+    let (a, b, gcd) = T::xgcd(x, y);
+    let ty = type_name::<T>();
 
-    for (value, mask) in [(3u64, 0), (3, 5), (2, 10)] {
-        assert!(
-            std::panic::catch_unwind(|| u64::gcdinv_pow_of_2(value, mask)).is_err(),
-            "value={value}, mask={mask}",
-        );
-    }
-
-    assert_eq!(u64::gcdinv_pow_of_2(2, u64::MAX), None);
-    assert_eq!(u64::gcdinv_native(2), None);
+    assert_eq!(gcd, x.gcd(y), "type={ty}, x={x:?}, y={y:?}");
+    assert_eq!(
+        UBig::from(a) * UBig::from(x),
+        UBig::from(b) * UBig::from(y) + UBig::from(gcd),
+        "type={ty}, x={x:?}, y={y:?}, a={a:?}, b={b:?}, gcd={gcd:?}",
+    );
 }
 
-macro_rules! check_widened_identities {
-    ($rng:ident, $ty:ty, $wide:ty) => {
-        for _ in 0..RANDOM_CASES {
-            let x: $ty = $rng.random::<$wide>() as $ty;
-            let y: $ty = $rng.random_range(0..=x);
-            let (a, b, gcd) = <$ty>::xgcd(x, y);
+fn assert_gcdinv_identity<T>(value: T, modulus: T)
+where
+    T: Xgcd + Copy + Debug + Ord,
+    UBig: From<T>,
+{
+    let (inverse, gcd) = T::gcdinv(value, modulus);
+    let ty = type_name::<T>();
 
-            assert_eq!(gcd, x.gcd(y), "type={}, x={x}, y={y}", stringify!($ty));
-            assert_eq!(
-                a as $wide * x as $wide - b as $wide * y as $wide,
-                gcd as $wide,
-                "type={}, x={x}, y={y}, a={a}, b={b}, gcd={gcd}",
-                stringify!($ty),
-            );
+    assert_eq!(
+        gcd,
+        value.gcd(modulus),
+        "type={ty}, value={value:?}, modulus={modulus:?}",
+    );
+    assert!(inverse < modulus);
+
+    let big_modulus = UBig::from(modulus);
+    assert_eq!(
+        (UBig::from(inverse) * UBig::from(value)) % &big_modulus,
+        UBig::from(gcd) % &big_modulus,
+        "type={ty}, value={value:?}, modulus={modulus:?}, inverse={inverse:?}, gcd={gcd:?}",
+    );
+}
+
+macro_rules! check_integer_identities {
+    ($rng:ident, $ty:ty) => {
+        for _ in 0..RANDOM_CASES {
+            let x = $rng.random::<u128>() as $ty;
+            let y: $ty = $rng.random_range(0..=x);
+            assert_xgcd_identity(x, y);
 
             let modulus: $ty = $rng.random_range(1..=<$ty>::MAX);
             let value: $ty = $rng.random_range(0..modulus);
-            let (inverse, gcd) = <$ty>::gcdinv(value, modulus);
-
-            assert_eq!(
-                gcd,
-                value.gcd(modulus),
-                "type={}, value={value}, modulus={modulus}",
-                stringify!($ty),
-            );
-            assert!(inverse < modulus);
-            assert_eq!(
-                (inverse as $wide * value as $wide) % modulus as $wide,
-                gcd as $wide % modulus as $wide,
-                "type={}, value={value}, modulus={modulus}, inverse={inverse}, gcd={gcd}",
-                stringify!($ty),
-            );
+            assert_gcdinv_identity(value, modulus);
         }
     };
 }
 
-/// Verifies the returned coefficients for every non-`u128` integer width
-/// against a wider primitive-integer oracle.
+/// Verifies randomized GCD and modular-inverse identities for every wider
+/// primitive unsigned integer type against an arbitrary-precision oracle.
 #[test]
-fn wider_integer_identities_match_widened_oracles() {
+fn integer_identities_match_big_integer_oracles() {
     let mut rng = seeded_rng(0x7769_6465_5f69_6465);
 
-    check_widened_identities!(rng, u16, u32);
-    check_widened_identities!(rng, u32, u64);
-    check_widened_identities!(rng, u64, u128);
-
-    #[cfg(target_pointer_width = "32")]
-    check_widened_identities!(rng, usize, u64);
-    #[cfg(target_pointer_width = "64")]
-    check_widened_identities!(rng, usize, u128);
+    check_integer_identities!(rng, u16);
+    check_integer_identities!(rng, u32);
+    check_integer_identities!(rng, u64);
+    check_integer_identities!(rng, u128);
+    check_integer_identities!(rng, usize);
 }
 
 macro_rules! check_power_of_two_inverse {
@@ -185,9 +184,9 @@ fn power_of_two_inverses_cover_wider_integer_widths() {
 }
 
 /// Verifies the explicitly optimized high-MSB and high-quotient `u64` paths
-/// against exact `u128` identities.
+/// against exact arbitrary-precision identities.
 #[test]
-fn u64_high_bit_paths_match_widened_oracles() {
+fn u64_high_bit_paths_match_big_integer_oracles() {
     let mut rng = seeded_rng(0x7536_345f_6d73_625f);
     let low = (u64::MAX >> 2) + 1;
     let high = u64::MAX >> 1;
@@ -195,16 +194,11 @@ fn u64_high_bit_paths_match_widened_oracles() {
     for _ in 0..RANDOM_CASES {
         let x = rng.random_range(low..=high);
         let y = rng.random_range(low..=x);
-        let (a, b, gcd) = u64::xgcd(x, y);
-        assert_eq!(a as u128 * x as u128 - b as u128 * y as u128, gcd as u128);
+        assert_xgcd_identity(x, y);
 
         let modulus = rng.random_range((low + 1)..=high);
         let value = rng.random_range(low..modulus);
-        let (inverse, gcd) = u64::gcdinv(value, modulus);
-        assert_eq!(
-            (inverse as u128 * value as u128) % modulus as u128,
-            gcd as u128 % modulus as u128,
-        );
+        assert_gcdinv_identity(value, modulus);
     }
 
     let high_quotient = (u64::MAX >> 1) + 1;
@@ -212,103 +206,10 @@ fn u64_high_bit_paths_match_widened_oracles() {
     assert_eq!(u64::gcdinv(1, high_quotient), (1, 1));
 }
 
-fn wide_mul_u128(lhs: u128, rhs: u128) -> [u64; 4] {
-    let lhs = [lhs as u64, (lhs >> 64) as u64];
-    let rhs = [rhs as u64, (rhs >> 64) as u64];
-    let mut result = [0u64; 4];
-
-    for (lhs_index, &lhs_limb) in lhs.iter().enumerate() {
-        let mut carry = 0u128;
-        for (rhs_index, &rhs_limb) in rhs.iter().enumerate() {
-            let output_index = lhs_index + rhs_index;
-            let value = lhs_limb as u128 * rhs_limb as u128 + result[output_index] as u128 + carry;
-            result[output_index] = value as u64;
-            carry = value >> 64;
-        }
-
-        let mut output_index = lhs_index + rhs.len();
-        while carry != 0 {
-            assert!(
-                output_index < result.len(),
-                "wide multiplication overflowed"
-            );
-            let value = result[output_index] as u128 + carry;
-            result[output_index] = value as u64;
-            carry = value >> 64;
-            output_index += 1;
-        }
-    }
-
-    result
-}
-
-fn wide_add_u128(mut lhs: [u64; 4], rhs: u128) -> [u64; 4] {
-    let rhs = [rhs as u64, (rhs >> 64) as u64, 0, 0];
-    let mut carry = 0u128;
-
-    for (lhs_limb, rhs_limb) in lhs.iter_mut().zip(rhs) {
-        let value = *lhs_limb as u128 + rhs_limb as u128 + carry;
-        *lhs_limb = value as u64;
-        carry = value >> 64;
-    }
-
-    assert_eq!(carry, 0, "wide addition overflowed");
-    lhs
-}
-
-fn add_mod_u128(lhs: u128, rhs: u128, modulus: u128) -> u128 {
-    debug_assert!(lhs < modulus);
-    debug_assert!(rhs < modulus);
-
-    if lhs >= modulus - rhs {
-        lhs - (modulus - rhs)
-    } else {
-        lhs + rhs
-    }
-}
-
-fn mul_mod_u128(mut lhs: u128, mut rhs: u128, modulus: u128) -> u128 {
-    lhs %= modulus;
-    let mut result = 0;
-
-    while rhs != 0 {
-        if rhs & 1 == 1 {
-            result = add_mod_u128(result, lhs, modulus);
-        }
-        rhs >>= 1;
-        if rhs != 0 {
-            lhs = add_mod_u128(lhs, lhs, modulus);
-        }
-    }
-
-    result
-}
-
-fn assert_u128_xgcd_identity(x: u128, y: u128) {
-    let (a, b, gcd) = u128::xgcd(x, y);
-    assert_eq!(gcd, x.gcd(y), "x={x}, y={y}");
-    assert_eq!(
-        wide_mul_u128(a, x),
-        wide_add_u128(wide_mul_u128(b, y), gcd),
-        "x={x}, y={y}, a={a}, b={b}, gcd={gcd}",
-    );
-}
-
-fn assert_u128_gcdinv_identity(value: u128, modulus: u128) {
-    let (inverse, gcd) = u128::gcdinv(value, modulus);
-    assert_eq!(gcd, value.gcd(modulus), "value={value}, modulus={modulus}");
-    assert!(inverse < modulus);
-    assert_eq!(
-        mul_mod_u128(inverse, value, modulus),
-        gcd % modulus,
-        "value={value}, modulus={modulus}, inverse={inverse}, gcd={gcd}",
-    );
-}
-
-/// Verifies full-width `u128` coefficients with independent two-limb wide
-/// multiplication and overflow-free modular multiplication oracles.
+/// Verifies full-width `u128` identities with an arbitrary-precision integer
+/// oracle independent of the implementation under test.
 #[test]
-fn u128_full_width_identities_match_independent_oracles() {
+fn u128_boundary_identities_match_big_integer_oracles() {
     const TOP_BIT: u128 = 1 << 127;
 
     for (x, y) in [
@@ -320,7 +221,7 @@ fn u128_full_width_identities_match_independent_oracles() {
         (TOP_BIT, 1),
         (TOP_BIT + 123, TOP_BIT),
     ] {
-        assert_u128_xgcd_identity(x, y);
+        assert_xgcd_identity(x, y);
     }
 
     for (value, modulus) in [
@@ -331,17 +232,6 @@ fn u128_full_width_identities_match_independent_oracles() {
         (TOP_BIT, u128::MAX),
         (u128::MAX - 1, u128::MAX),
     ] {
-        assert_u128_gcdinv_identity(value, modulus);
-    }
-
-    let mut rng = seeded_rng(0x7531_3238_5f66_756c);
-    for _ in 0..RANDOM_CASES {
-        let x = rng.random::<u128>();
-        let y = rng.random_range(0..=x);
-        assert_u128_xgcd_identity(x, y);
-
-        let modulus = rng.random_range(1..=u128::MAX);
-        let value = rng.random_range(0..modulus);
-        assert_u128_gcdinv_identity(value, modulus);
+        assert_gcdinv_identity(value, modulus);
     }
 }

@@ -1,19 +1,30 @@
-//! Extended GCD and modular inverse for unsigned integer types.
+//! Greatest-common-divisor and modular-inverse operations for primitive
+//! unsigned integers.
 //!
-//! This implementation refers to the following codebases.
-//! <https://flintlib.org/doc/ulong_extras.html#c.n_xgcd>
-//! <https://flintlib.org/doc/ulong_extras.html#c.n_gcdinv>
+//! The [`Xgcd`] extension trait is implemented for `u8`, `u16`, `u32`, `u64`,
+//! `u128`, and `usize`. It provides ordinary GCD and coprimality operations,
+//! extended-GCD coefficients normalized as `a * x - b * y = gcd(x, y)`, and
+//! modular inverses for both general and power-of-two moduli.
+//!
+//! The implementations use fixed-width, allocation-free arithmetic. The
+//! general extended-GCD routines are based on FLINT's unsigned-integer
+//! algorithms, while power-of-two inversion uses Newton/Hensel lifting.
+//!
+//! # References
+//!
+//! - FLINT [`n_xgcd`](https://flintlib.org/doc/ulong_extras.html#c.n_xgcd)
+//! - FLINT [`n_gcdinv`](https://flintlib.org/doc/ulong_extras.html#c.n_gcdinv)
 
 #![deny(missing_docs)]
 
-/// Lookup table for the modular inverse of an odd `u8` modulo `2^8`.
+/// Lookup table for inverses of odd integers modulo `2^8`.
 ///
-/// `INV_TABLE[((a >> 1) & 0x7F)]` gives the 8-bit inverse of the odd 8-bit
-/// number whose lower 8 bits equal those of `a`.  It seeds the Hensel
-/// iteration at 8 correct bits instead of 1, removing the first 3 steps.
+/// For odd `a`, `INV_TABLE[((a >> 1) & 0x7F) as usize]` is the inverse of
+/// `a` modulo `2^8`. This supplies eight correct low bits to the Hensel
+/// iteration and skips the first three one-bit-seeded lifting steps.
 ///
-/// Computed from the identity:
-///   `INV_TABLE[i] ≡ (2i + 1)^(-1)  (mod 2^8)`   for `i ∈ [0,127]`.
+/// Each entry satisfies `INV_TABLE[i] * (2 * i + 1) ≡ 1 (mod 2^8)` for
+/// `i` in `0..128`.
 const INV_TABLE: [u8; 128] = [
     1, 171, 205, 183, 57, 163, 197, 239, 241, 27, 61, 167, 41, 19, 53, 223, 225, 139, 173, 151, 25,
     131, 165, 207, 209, 251, 29, 135, 9, 243, 21, 191, 193, 107, 141, 119, 249, 99, 133, 175, 177,
@@ -24,10 +35,12 @@ const INV_TABLE: [u8; 128] = [
     51, 85, 255,
 ];
 
-/// Greatest common divisor and Bézout coefficients
+/// Extension trait for GCD, coprimality, Bézout coefficients, and modular
+/// inverses.
 pub trait Xgcd: Sized {
-    /// Calculates the Greatest Common Divisor (GCD) of the number and `other`. The
-    /// result is always non-negative.
+    /// Returns the greatest common divisor of `self` and `other`.
+    ///
+    /// By convention, `gcd(0, 0) = 0`.
     ///
     /// # Examples
     ///
@@ -41,7 +54,7 @@ pub trait Xgcd: Sized {
     #[must_use]
     fn gcd(self, other: Self) -> Self;
 
-    /// Check whether two numbers are coprime.
+    /// Returns `true` if `self` and `other` are coprime.
     ///
     /// # Examples
     ///
@@ -57,7 +70,7 @@ pub trait Xgcd: Sized {
     fn is_coprime(self, other: Self) -> bool;
 
     /// Returns `(a, b, g)`, where `g` is the greatest common divisor of `x`
-    /// and `y`, and the unsigned coefficients satisfy `a x - b y = g` over
+    /// and `y`, and the unsigned coefficients satisfy `a * x - b * y = g` over
     /// the integers. Requires `x >= y`.
     ///
     /// # Examples
@@ -76,21 +89,21 @@ pub trait Xgcd: Sized {
     ///
     /// # Algorithm
     ///
-    /// Uses the extended Euclidean algorithm, with the coefficient signs
-    /// normalized to the returned form `a x - b y = g`.
+    /// Uses the extended Euclidean algorithm with specialized paths for the
+    /// small quotients `1`, `2`, and `3`. The coefficient signs are normalized
+    /// to the returned unsigned form `a * x - b * y = g`.
     #[must_use]
     fn xgcd(x: Self, y: Self) -> (Self, Self, Self);
 
     /// Returns `(a, g)`, where `g = gcd(x, m)`, `0 <= a < m`, and
-    /// `a x ≡ g (mod m)`. Requires `x < m`.
+    /// `a * x ≡ g (mod m)`. Requires `x < m`.
     ///
     /// When `g = 1`, `a` is the multiplicative inverse of `x` modulo `m`.
     ///
-    /// When `m = 1` the greatest common divisor is set to `1` and `a` is
-    /// set to `0`.
+    /// When `m = 1`, this method returns `(0, 1)`.
     ///
-    /// This is merely an adaption of the extended Euclidean algorithm
-    /// computing just one cofactor and reducing it modulo `m`.
+    /// The implementation adapts the extended Euclidean algorithm to track
+    /// only the required coefficient and normalize it modulo `m`.
     ///
     /// # Examples
     ///
@@ -108,17 +121,18 @@ pub trait Xgcd: Sized {
     #[must_use]
     fn gcdinv(x: Self, m: Self) -> (Self, Self);
 
-    /// Computes the modular inverse of `a` modulo a power of two.
+    /// Computes the modular inverse of `a` modulo `2^k`.
     ///
-    /// The modulus is `mask + 1`, where `mask` must be of the form `2^k - 1`
-    /// for `1 <= k <= Self::BITS`. Returns `None` if `a` is even, since no
-    /// inverse exists modulo a nontrivial power of two for even numbers.
+    /// `mask` specifies the modulus and must equal `2^k - 1` for
+    /// `1 <= k <= Self::BITS`. When `k = Self::BITS`, the modulus is the full
+    /// native wrapping modulus even though `2^Self::BITS` is not representable
+    /// by `Self`. Returns `None` if `a` is even, since only odd integers are
+    /// invertible modulo a nontrivial power of two.
     ///
-    /// Uses Newton's method (Hensel lifting):
-    /// `x_{n+1} = x_n · (2 - a · x_n)  (mod 2^{2^n})`.
+    /// Uses the Newton/Hensel update `x <- x * (2 - a * x)`. Each iteration
+    /// doubles the number of correct low bits.
     ///
-    /// The iteration doubles the number of correct bits each step, converging
-    /// in O(log BITS) iterations.
+    /// The iteration converges in `O(log(Self::BITS))` steps.
     ///
     /// # Examples
     ///
@@ -136,11 +150,11 @@ pub trait Xgcd: Sized {
     #[must_use]
     fn gcdinv_pow_of_2(a: Self, mask: Self) -> Option<Self>;
 
-    /// Computes the modular inverse of `a` modulo `2^BITS` (the full native
-    /// word size). Returns `None` if `a` is even.
+    /// Computes the modular inverse of `a` modulo `2^Self::BITS` using native
+    /// wrapping arithmetic. Returns `None` if `a` is even.
     ///
-    /// Equivalent to `gcdinv_pow_of_2(a, Self::MAX)`, but may avoid an
-    /// explicit mask operation.
+    /// Equivalent to [`Self::gcdinv_pow_of_2`] with `mask = Self::MAX`, but may
+    /// avoid an explicit mask operation.
     ///
     /// # Examples
     ///
@@ -156,12 +170,12 @@ pub trait Xgcd: Sized {
 
 macro_rules! impl_extended_gcd {
     (impl Xgcd for $SelfT:ty; SignedType: $SignedT:ty) => {
-        // Anonymous const block scopes the helper fns so they are reachable
-        // from both `xgcd` and `gcdinv` without polluting the module namespace
-        // or colliding across the macro's multiple expansions.
+        // A const block gives each macro expansion its own helper-function
+        // scope, keeping the generated names out of the module namespace and
+        // preventing collisions between integer types.
         const _: () = {
-            // Coefficient recurrences intentionally use limb-width wrapping,
-            // matching FLINT's unsigned casts while staying valid in debug builds.
+            // Coefficient recurrences intentionally use word-width two's-complement
+            // wrapping, matching FLINT's casts while avoiding debug overflow panics.
             #[inline]
             fn coeff_sub(lhs: $SignedT, rhs: $SignedT) -> $SignedT {
                 lhs.wrapping_sub(rhs)
@@ -176,11 +190,15 @@ macro_rules! impl_extended_gcd {
             fn lift_inverse(a: $SelfT, x: $SelfT) -> $SelfT {
                 const TWO: $SelfT = 2;
 
+                // If `a * x = 1` modulo `2^b`, this Newton step makes the
+                // product equal to one modulo `2^(2b)`.
                 x.wrapping_mul(TWO.wrapping_sub(a.wrapping_mul(x)))
             }
 
             #[inline(always)]
             fn inverse_odd_mod_native(a: $SelfT) -> $SelfT {
+                // The table supplies eight correct bits; every lift doubles
+                // that precision until it covers the native word.
                 let mut x = INV_TABLE[((a >> 1) & 0x7F) as usize] as $SelfT;
                 for _ in 3..<$SelfT>::BITS.ilog2() {
                     x = lift_inverse(a, x);
@@ -190,6 +208,8 @@ macro_rules! impl_extended_gcd {
 
             #[inline(always)]
             fn inverse_odd_mod_mask(a: $SelfT, mask: $SelfT) -> $SelfT {
+                // Stop as soon as the lifted precision covers the modulus
+                // selected by `mask`, then discard any excess high bits.
                 let mut x = INV_TABLE[((a >> 1) & 0x7F) as usize] as $SelfT;
                 if mask <= u8::MAX as $SelfT {
                     return x & mask;
@@ -216,17 +236,17 @@ macro_rules! impl_extended_gcd {
             impl Xgcd for $SelfT {
                 #[inline]
                 fn gcd(self, other: Self) -> Self {
-                    // Use Stein's algorithm
+                    // Use Stein's binary GCD algorithm.
                     let mut m = self;
                     let mut n = other;
                     if m == 0 || n == 0 {
                         return m | n;
                     }
 
-                    // find common factors of 2
+                    // Remove the common power of two.
                     let shift = (m | n).trailing_zeros();
 
-                    // divide n and m by 2 until odd
+                    // Make both remaining factors odd.
                     m >>= m.trailing_zeros();
                     n >>= n.trailing_zeros();
 
@@ -278,7 +298,7 @@ macro_rules! impl_extended_gcd {
                     u3 = x;
                     v3 = y;
 
-                    // x and y both have top bit set
+                    // `x` and `y` both have their top bit set.
                     if ((x & y) as $SignedT) < 0 {
                         d = u3 - v3;
                         t2 = v2;
@@ -291,7 +311,7 @@ macro_rules! impl_extended_gcd {
                         v3 = d;
                     }
 
-                    // second value has second msb set
+                    // `v3` has its second-highest bit set.
                     while ((v3 << 1) as $SignedT) < 0 {
                         d = u3 - v3;
                         if d < v3 {
@@ -330,7 +350,8 @@ macro_rules! impl_extended_gcd {
                     while v3 > 0 {
                         d = u3 - v3;
 
-                        // overflow not possible, top 2 bits of v3 not set
+                        // The top two bits of `v3` are clear, so `v3 << 2`
+                        // cannot overflow.
                         if u3 < (v3 << 2) {
                             if d < v3 {
                                 // quot = 1
@@ -377,7 +398,10 @@ macro_rules! impl_extended_gcd {
                         }
                     }
 
-                    /* Remarkably, |u1| < x/2, thus comparison with 0 is valid */
+                    // The coefficient bound `|u1| < x / 2` guarantees that
+                    // its word-width representation has an unambiguous sign.
+                    // Choose the equivalent representatives needed for the
+                    // returned unsigned form `a * x - b * y = gcd(x, y)`.
                     if u1 <= 0 {
                         u1 = u1.wrapping_add_unsigned(y);
                         v1 = v1.wrapping_sub_unsigned(x);
@@ -404,7 +428,7 @@ macro_rules! impl_extended_gcd {
                     r = x;
                     x = y;
 
-                    // y and x both have top bit set
+                    // `x` and `r` both have their top bit set.
                     if ((x & r) as $SignedT) < 0 {
                         d = x - r;
                         t2 = v2;
@@ -414,7 +438,7 @@ macro_rules! impl_extended_gcd {
                         r = d;
                     }
 
-                    // second value has second msb set
+                    // `r` has its second-highest bit set.
                     while ((r << 1) as $SignedT) < 0 {
                         d = x - r;
                         if d < r {
@@ -442,9 +466,10 @@ macro_rules! impl_extended_gcd {
                     }
 
                     while r > 0 {
-                        // overflow not possible due to top 2 bits of r not being set
+                        // The top two bits of `r` are clear, so `r << 2`
+                        // cannot overflow.
                         if x < (r << 2) {
-                            // if quot < 4
+                            // The quotient is less than four.
                             d = x - r;
                             if d < r {
                                 // quot = 1
@@ -480,6 +505,7 @@ macro_rules! impl_extended_gcd {
                     }
 
                     if v1 < 0 {
+                        // Normalize the tracked coefficient into `[0, y)`.
                         v1 = v1.wrapping_add_unsigned(y);
                     }
 
