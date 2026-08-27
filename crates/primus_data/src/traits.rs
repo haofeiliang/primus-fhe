@@ -1,4 +1,4 @@
-use std::slice::{Iter, IterMut};
+use core::slice::{Iter, IterMut};
 
 /// Base trait associating a storage backend with its element type.
 pub trait RawData: Sized {

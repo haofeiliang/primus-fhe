@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use crate::traits::{Data, DataMut, DataOwned, RawData};
+use super::{Data, DataMut, DataOwned, RawData};
 
 // Borrowed slices.
 
