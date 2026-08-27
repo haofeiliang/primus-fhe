@@ -4,19 +4,22 @@ macro_rules! overflowing_impl {
     ($trait_name:ident, $method:ident, $T:ty) => {
         impl $trait_name for $T {
             #[inline]
-            fn $method(self, v: Self) -> (Self, bool) {
-                <$T>::$method(self, v)
+            fn $method(self, rhs: Self) -> (Self, bool) {
+                <$T>::$method(self, rhs)
             }
         }
     };
 }
 
-/// Performs addition with a flag for overflow.
+/// Provides addition with an overflow flag for generic integer code.
 pub trait OverflowingAdd: Sized + Add<Self, Output = Self> {
-    /// Returns a tuple of the sum along with a boolean indicating whether an arithmetic overflow would occur.
-    /// If an overflow would have occurred then the wrapped value is returned.
-    #[must_use]
-    fn overflowing_add(self, v: Self) -> (Self, bool);
+    /// Computes `self + rhs`, returning the wrapped sum and a boolean indicating
+    /// whether arithmetic overflow occurred.
+    ///
+    /// For signed integers, the boolean reports signed-range overflow and is
+    /// not a carry flag.
+    #[must_use = "this returns the result of the operation, without modifying the original"]
+    fn overflowing_add(self, rhs: Self) -> (Self, bool);
 }
 
 overflowing_impl!(OverflowingAdd, overflowing_add, u8);
@@ -33,12 +36,15 @@ overflowing_impl!(OverflowingAdd, overflowing_add, i64);
 overflowing_impl!(OverflowingAdd, overflowing_add, isize);
 overflowing_impl!(OverflowingAdd, overflowing_add, i128);
 
-/// Performs subtraction with a flag for overflow.
+/// Provides subtraction with an overflow flag for generic integer code.
 pub trait OverflowingSub: Sized + Sub<Self, Output = Self> {
-    /// Returns a tuple of the difference along with a boolean indicating whether an arithmetic overflow would occur.
-    /// If an overflow would have occurred then the wrapped value is returned.
-    #[must_use]
-    fn overflowing_sub(self, v: Self) -> (Self, bool);
+    /// Computes `self - rhs`, returning the wrapped difference and a boolean
+    /// indicating whether arithmetic overflow occurred.
+    ///
+    /// For signed integers, the boolean reports signed-range overflow and is
+    /// not a borrow flag.
+    #[must_use = "this returns the result of the operation, without modifying the original"]
+    fn overflowing_sub(self, rhs: Self) -> (Self, bool);
 }
 
 overflowing_impl!(OverflowingSub, overflowing_sub, u8);
@@ -55,12 +61,12 @@ overflowing_impl!(OverflowingSub, overflowing_sub, i64);
 overflowing_impl!(OverflowingSub, overflowing_sub, isize);
 overflowing_impl!(OverflowingSub, overflowing_sub, i128);
 
-/// Performs multiplication with a flag for overflow.
+/// Provides multiplication with an overflow flag for generic integer code.
 pub trait OverflowingMul: Sized + Mul<Self, Output = Self> {
-    /// Returns a tuple of the product along with a boolean indicating whether an arithmetic overflow would occur.
-    /// If an overflow would have occurred then the wrapped value is returned.
-    #[must_use]
-    fn overflowing_mul(self, v: Self) -> (Self, bool);
+    /// Computes `self * rhs`, returning the wrapped product and a boolean
+    /// indicating whether arithmetic overflow occurred.
+    #[must_use = "this returns the result of the operation, without modifying the original"]
+    fn overflowing_mul(self, rhs: Self) -> (Self, bool);
 }
 
 overflowing_impl!(OverflowingMul, overflowing_mul, u8);

@@ -1,31 +1,29 @@
-use core::num::Wrapping;
-use core::ops::{Add, Mul, Neg, Shl, Shr, Sub};
+use core::ops::{Add, Mul, Sub};
 
 macro_rules! impl_wrapping {
     ($trait_name:ident, $method:ident, $T:ty) => {
         impl $trait_name for $T {
             #[inline]
-            fn $method(self, v: Self) -> Self {
-                <$T>::$method(self, v)
+            fn $method(self, rhs: Self) -> Self {
+                <$T>::$method(self, rhs)
             }
         }
     };
     ($trait_name:ident, $method:ident, $T:ty, $rhs:ty) => {
         impl $trait_name<$rhs> for $T {
             #[inline]
-            fn $method(self, v: $rhs) -> Self {
-                <$T>::$method(self, v)
+            fn $method(self, rhs: $rhs) -> Self {
+                <$T>::$method(self, rhs)
             }
         }
     };
 }
 
-/// Performs addition that wraps around on overflow.
-pub trait WrappingAdd: Sized + Copy + Add<Self, Output = Self> {
-    /// Wrapping (modular) addition. Computes `self + other`, wrapping around at the boundary of
-    /// the type.
-    #[must_use]
-    fn wrapping_add(self, v: Self) -> Self;
+/// Provides wrapping addition for generic integer code.
+pub trait WrappingAdd: Sized + Add<Self, Output = Self> {
+    /// Computes `self + rhs`, wrapping around at the numeric bounds of `Self`.
+    #[must_use = "this returns the result of the operation, without modifying the original"]
+    fn wrapping_add(self, rhs: Self) -> Self;
 }
 
 impl_wrapping!(WrappingAdd, wrapping_add, u8);
@@ -42,12 +40,11 @@ impl_wrapping!(WrappingAdd, wrapping_add, i64);
 impl_wrapping!(WrappingAdd, wrapping_add, isize);
 impl_wrapping!(WrappingAdd, wrapping_add, i128);
 
-/// Performs subtraction that wraps around on overflow.
-pub trait WrappingSub: Sized + Copy + Sub<Self, Output = Self> {
-    /// Wrapping (modular) subtraction. Computes `self - other`, wrapping around at the boundary
-    /// of the type.
-    #[must_use]
-    fn wrapping_sub(self, v: Self) -> Self;
+/// Provides wrapping subtraction for generic integer code.
+pub trait WrappingSub: Sized + Sub<Self, Output = Self> {
+    /// Computes `self - rhs`, wrapping around at the numeric bounds of `Self`.
+    #[must_use = "this returns the result of the operation, without modifying the original"]
+    fn wrapping_sub(self, rhs: Self) -> Self;
 }
 
 impl_wrapping!(WrappingSub, wrapping_sub, u8);
@@ -64,12 +61,11 @@ impl_wrapping!(WrappingSub, wrapping_sub, i64);
 impl_wrapping!(WrappingSub, wrapping_sub, isize);
 impl_wrapping!(WrappingSub, wrapping_sub, i128);
 
-/// Performs multiplication that wraps around on overflow.
-pub trait WrappingMul: Sized + Copy + Mul<Self, Output = Self> {
-    /// Wrapping (modular) multiplication. Computes `self * other`, wrapping around at the boundary
-    /// of the type.
-    #[must_use]
-    fn wrapping_mul(self, v: Self) -> Self;
+/// Provides wrapping multiplication for generic integer code.
+pub trait WrappingMul: Sized + Mul<Self, Output = Self> {
+    /// Computes `self * rhs`, wrapping around at the numeric bounds of `Self`.
+    #[must_use = "this returns the result of the operation, without modifying the original"]
+    fn wrapping_mul(self, rhs: Self) -> Self;
 }
 
 impl_wrapping!(WrappingMul, wrapping_mul, u8);
@@ -97,17 +93,12 @@ macro_rules! impl_wrapping_unary {
     };
 }
 
-/// Performs a negation that does not panic.
-pub trait WrappingNeg: Sized + Copy {
-    /// Wrapping (modular) negation. Computes `-self`,
-    /// wrapping around at the boundary of the type.
+/// Provides wrapping negation for generic integer code.
+pub trait WrappingNeg: Sized {
+    /// Computes `-self`, wrapping around at the numeric bounds of `Self`.
     ///
-    /// Since unsigned types do not have negative equivalents
-    /// all applications of this function will wrap (except for `-0`).
-    /// For values smaller than the corresponding signed type's maximum
-    /// the result is the same as casting the corresponding signed value.
-    /// Any larger values are equivalent to `MAX + 1 - (val - MAX - 1)` where
-    /// `MAX` is the corresponding signed type's maximum.
+    /// For primitive integers, negating a signed type's `MIN` value returns
+    /// `MIN`; negating an unsigned value performs modular negation.
     ///
     /// # Examples
     ///
@@ -118,7 +109,7 @@ pub trait WrappingNeg: Sized + Copy {
     /// assert_eq!(WrappingNeg::wrapping_neg(-100i8), 100);
     /// assert_eq!(WrappingNeg::wrapping_neg(-128i8), -128); // wrapped!
     /// ```
-    #[must_use]
+    #[must_use = "this returns the result of the operation, without modifying the original"]
     fn wrapping_neg(self) -> Self;
 }
 
@@ -146,11 +137,12 @@ macro_rules! impl_wrapping_shift {
     };
 }
 
-/// Performs a left shift that does not panic.
-pub trait WrappingShl: Sized + Copy + Shl<usize, Output = Self> {
-    /// Panic-free bitwise shift-left; yields `self << mask(rhs)`,
-    /// where `mask` removes any high order bits of `rhs` that would
-    /// cause the shift to exceed the bitwidth of the type.
+/// Provides wrapping left shift for generic integer code.
+pub trait WrappingShl: Sized {
+    /// Computes a panic-free left shift after masking any high-order bits of
+    /// `rhs` that would make the shift exceed the bit width of `Self`.
+    ///
+    /// This is not a rotation: bits shifted out of the value are discarded.
     ///
     /// # Examples
     ///
@@ -164,7 +156,7 @@ pub trait WrappingShl: Sized + Copy + Shl<usize, Output = Self> {
     /// assert_eq!(WrappingShl::wrapping_shl(x, 15), 0x8000);
     /// assert_eq!(WrappingShl::wrapping_shl(x, 16), 0x0001);
     /// ```
-    #[must_use]
+    #[must_use = "this returns the result of the operation, without modifying the original"]
     fn wrapping_shl(self, rhs: u32) -> Self;
 }
 
@@ -182,11 +174,12 @@ impl_wrapping_shift!(WrappingShl, wrapping_shl, i64);
 impl_wrapping_shift!(WrappingShl, wrapping_shl, isize);
 impl_wrapping_shift!(WrappingShl, wrapping_shl, i128);
 
-/// Performs a right shift that does not panic.
-pub trait WrappingShr: Sized + Copy + Shr<usize, Output = Self> {
-    /// Panic-free bitwise shift-right; yields `self >> mask(rhs)`,
-    /// where `mask` removes any high order bits of `rhs` that would
-    /// cause the shift to exceed the bitwidth of the type.
+/// Provides wrapping right shift for generic integer code.
+pub trait WrappingShr: Sized {
+    /// Computes a panic-free right shift after masking any high-order bits of
+    /// `rhs` that would make the shift exceed the bit width of `Self`.
+    ///
+    /// This is not a rotation: bits shifted out of the value are discarded.
     ///
     /// # Examples
     ///
@@ -200,7 +193,7 @@ pub trait WrappingShr: Sized + Copy + Shr<usize, Output = Self> {
     /// assert_eq!(WrappingShr::wrapping_shr(x, 15), 0x0001);
     /// assert_eq!(WrappingShr::wrapping_shr(x, 16), 0x8000);
     /// ```
-    #[must_use]
+    #[must_use = "this returns the result of the operation, without modifying the original"]
     fn wrapping_shr(self, rhs: u32) -> Self;
 }
 
@@ -217,55 +210,3 @@ impl_wrapping_shift!(WrappingShr, wrapping_shr, i32);
 impl_wrapping_shift!(WrappingShr, wrapping_shr, i64);
 impl_wrapping_shift!(WrappingShr, wrapping_shr, isize);
 impl_wrapping_shift!(WrappingShr, wrapping_shr, i128);
-
-// Forward our wrapping traits through std's Wrapping<T> so that generic
-// code bounded on WrappingAdd / WrappingSub / … can also operate on
-// std::num::Wrapping<T> values.
-impl<T: WrappingAdd> WrappingAdd for Wrapping<T>
-where
-    Wrapping<T>: Add<Output = Wrapping<T>>,
-{
-    fn wrapping_add(self, v: Self) -> Self {
-        Wrapping(self.0.wrapping_add(v.0))
-    }
-}
-impl<T: WrappingSub> WrappingSub for Wrapping<T>
-where
-    Wrapping<T>: Sub<Output = Wrapping<T>>,
-{
-    fn wrapping_sub(self, v: Self) -> Self {
-        Wrapping(self.0.wrapping_sub(v.0))
-    }
-}
-impl<T: WrappingMul> WrappingMul for Wrapping<T>
-where
-    Wrapping<T>: Mul<Output = Wrapping<T>>,
-{
-    fn wrapping_mul(self, v: Self) -> Self {
-        Wrapping(self.0.wrapping_mul(v.0))
-    }
-}
-impl<T: WrappingNeg> WrappingNeg for Wrapping<T>
-where
-    Wrapping<T>: Neg<Output = Wrapping<T>>,
-{
-    fn wrapping_neg(self) -> Self {
-        Wrapping(self.0.wrapping_neg())
-    }
-}
-impl<T: WrappingShl> WrappingShl for Wrapping<T>
-where
-    Wrapping<T>: Shl<usize, Output = Wrapping<T>>,
-{
-    fn wrapping_shl(self, rhs: u32) -> Self {
-        Wrapping(self.0.wrapping_shl(rhs))
-    }
-}
-impl<T: WrappingShr> WrappingShr for Wrapping<T>
-where
-    Wrapping<T>: Shr<usize, Output = Wrapping<T>>,
-{
-    fn wrapping_shr(self, rhs: u32) -> Self {
-        Wrapping(self.0.wrapping_shr(rhs))
-    }
-}

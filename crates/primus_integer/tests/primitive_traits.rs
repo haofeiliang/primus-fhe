@@ -1,9 +1,8 @@
-use std::{num::Wrapping, sync::Arc};
+use std::sync::Arc;
 
 use primus_integer::{
     CheckedAdd, CheckedDiv, CheckedMul, CheckedNeg, CheckedRem, CheckedShl, CheckedShr, CheckedSub,
-    OverflowingAdd, OverflowingMul, OverflowingSub, Size, WrappingAdd, WrappingMul, WrappingNeg,
-    WrappingShl, WrappingShr, WrappingSub,
+    OverflowingAdd, OverflowingMul, OverflowingSub, Size,
 };
 
 #[test]
@@ -46,19 +45,6 @@ fn overflowing_traits_delegate_to_primitive_arithmetic() {
         OverflowingMul::overflowing_mul(i32::MIN, -1),
         (i32::MIN, true)
     );
-}
-
-#[test]
-fn wrapping_traits_support_wrapping_values() {
-    let max = Wrapping(u8::MAX);
-    let one = Wrapping(1u8);
-
-    assert_eq!(WrappingAdd::wrapping_add(max, one), Wrapping(0));
-    assert_eq!(WrappingSub::wrapping_sub(Wrapping(0), one), max);
-    assert_eq!(WrappingMul::wrapping_mul(max, Wrapping(2)), Wrapping(254));
-    assert_eq!(WrappingNeg::wrapping_neg(max), one);
-    assert_eq!(WrappingShl::wrapping_shl(one, u8::BITS), one);
-    assert_eq!(WrappingShr::wrapping_shr(max, u8::BITS), max);
 }
 
 #[test]
