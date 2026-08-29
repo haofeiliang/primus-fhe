@@ -196,6 +196,7 @@ impl<T: SimdUnsignedInteger> ReduceMulAddAssign<T::SimdT> for SimdBarrettModulus
 /// # Panics
 ///
 /// Panics if `a` and `b` have different lengths.
+#[must_use]
 #[inline]
 pub fn simd_reduce_dot_product<T: SimdUnsignedInteger, M>(modulus: M, a: &[T], b: &[T]) -> T
 where

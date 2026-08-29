@@ -288,6 +288,17 @@ fn mul_slice_ops() {
         m.reduce_sub_mul_slice_assign(&mut acc, &a, &b);
         assert_eq!(acc, expected_sub, "sub_mul_slice_assign len={len}");
 
+        let mut lazy_acc = c.clone();
+        m.lazy_reduce_sub_mul_slice_assign(&mut lazy_acc, &a, &b);
+        for value in &mut lazy_acc {
+            assert!(*value < MODULUS * 2);
+            *value = m.reduce_once(*value);
+        }
+        assert_eq!(
+            lazy_acc, expected_sub,
+            "lazy_sub_mul_slice_assign len={len}"
+        );
+
         let expected_abc: Vec<u32> = a
             .iter()
             .zip(&b)

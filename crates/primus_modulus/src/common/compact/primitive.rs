@@ -6,6 +6,7 @@ pub use crate::common::uint::{
 };
 
 /// Returns `(a + b) mod modulus`.
+#[must_use]
 #[inline(always)]
 pub fn reduce_add<T: UnsignedInteger>(modulus: T, a: T, b: T) -> T {
     let sum = a + b;
@@ -19,6 +20,7 @@ pub fn reduce_add_assign<T: UnsignedInteger>(modulus: T, a: &mut T, b: T) {
 }
 
 /// Returns `(2 * value) mod modulus`.
+#[must_use]
 #[inline(always)]
 pub fn reduce_double<T: UnsignedInteger>(modulus: T, value: T) -> T {
     let double = value.wrapping_shl(1);
@@ -32,6 +34,7 @@ pub fn reduce_double_assign<T: UnsignedInteger>(modulus: T, value: &mut T) {
 }
 
 /// Returns `(a - b) mod modulus`.
+#[must_use]
 #[inline(always)]
 pub fn reduce_sub<T: UnsignedInteger>(modulus: T, a: T, b: T) -> T {
     let diff = a.wrapping_sub(b);
@@ -46,6 +49,7 @@ pub fn reduce_sub_assign<T: UnsignedInteger>(modulus: T, a: &mut T, b: T) {
 }
 
 /// Returns the lazy difference `a + modulus - b`.
+#[must_use]
 #[inline(always)]
 pub fn lazy_reduce_sub<T: UnsignedInteger>(modulus: T, a: T, b: T) -> T {
     a + (modulus - b)

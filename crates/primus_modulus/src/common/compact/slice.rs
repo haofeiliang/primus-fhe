@@ -372,7 +372,7 @@ pub fn lazy_reduce_mul_scalar_add_slice_to<T, M>(
 ///
 /// The sum must fit in two limbs.
 #[inline]
-pub fn multiply_add<T: UnsignedInteger>(c: &mut [T; 2], a: T, b: T) {
+fn multiply_add<T: UnsignedInteger>(c: &mut [T; 2], a: T, b: T) {
     let (lw, hw) = a.widening_mul(b);
     let carry;
     (c[0], carry) = c[0].overflowing_add(lw);
@@ -384,6 +384,7 @@ pub fn multiply_add<T: UnsignedInteger>(c: &mut [T; 2], a: T, b: T) {
 /// # Panics
 ///
 /// Panics if the slices have different lengths.
+#[must_use]
 #[inline]
 pub fn reduce_dot_product<T, M>(modulus: M, a: &[T], b: &[T]) -> T
 where
@@ -415,6 +416,7 @@ where
 /// Computes the dot product of two iterators modulo `modulus`.
 ///
 /// Iteration stops when either iterator ends.
+#[must_use]
 #[inline]
 pub fn reduce_dot_product_iter<T, M>(
     modulus: M,

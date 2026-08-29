@@ -14,4 +14,4 @@ pub use primitive::*;
 ///
 /// With the module's modulus bound and canonical operands, 16 products sum to
 /// less than `2^(2 * BITS)` and therefore fit in two limbs.
-pub const DOT_PRODUCT_INNER_CHUNK: usize = 16;
+pub(crate) const DOT_PRODUCT_INNER_CHUNK: usize = 16;

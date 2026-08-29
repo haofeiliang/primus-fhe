@@ -11,6 +11,7 @@ mod mul;
 pub use mul::*;
 
 /// Adds SIMD lanes modulo `m`.
+#[must_use]
 #[inline]
 pub fn reduce_add<T>(m: T::SimdT, a: T::SimdT, b: T::SimdT) -> T::SimdT
 where
@@ -21,6 +22,7 @@ where
 }
 
 /// Doubles SIMD lanes modulo `m`.
+#[must_use]
 #[inline]
 pub fn reduce_double<T>(m: T::SimdT, a: T::SimdT) -> T::SimdT
 where
@@ -31,6 +33,7 @@ where
 }
 
 /// Subtracts SIMD lanes modulo `m`.
+#[must_use]
 #[inline]
 pub fn reduce_sub<T>(m: T::SimdT, a: T::SimdT, b: T::SimdT) -> T::SimdT
 where
@@ -44,6 +47,7 @@ where
 }
 
 /// Returns the lane-wise lazy difference `a + m - b`.
+#[must_use]
 #[inline]
 pub fn lazy_reduce_sub<T>(m: T::SimdT, a: T::SimdT, b: T::SimdT) -> T::SimdT
 where
@@ -58,7 +62,11 @@ where
 ///
 /// Every lane-wise sum must fit in two limbs.
 #[inline]
-pub fn multiply_add<T: SimdUnsignedInteger>(c: &mut [T::SimdT; 2], a: T::SimdT, b: T::SimdT) {
+pub(crate) fn multiply_add<T: SimdUnsignedInteger>(
+    c: &mut [T::SimdT; 2],
+    a: T::SimdT,
+    b: T::SimdT,
+) {
     let (lw, hw) = a.widening_mul(b);
     let carry;
     (c[0], carry) = c[0].overflowing_add(lw);
