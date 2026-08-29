@@ -192,13 +192,12 @@ fn udiv256_by_128_to_128(u1: u128, u0: u128, mut v: NonZeroU128, r: &mut u128) -
     };
     let mut rhat = un128 - q1 * vn1_val;
 
-    // q1 has at most error 2. No more than 2 iterations.
-    while q1 >= B || q1 * vn0 > B * rhat + un1 {
+    // The estimate is at most two greater than the true quotient digit, so at
+    // most two corrections are required. Once `rhat >= B`, the correction
+    // condition is necessarily false.
+    while rhat < B && q1 * vn0 > B * rhat + un1 {
         q1 -= 1;
         rhat += vn1_val;
-        if rhat >= B {
-            break;
-        }
     }
 
     un21 = un128
@@ -214,13 +213,12 @@ fn udiv256_by_128_to_128(u1: u128, u0: u128, mut v: NonZeroU128, r: &mut u128) -
     };
     rhat = un21 - q0 * vn1_val;
 
-    // q0 has at most error 2. No more than 2 iterations.
-    while q0 >= B || q0 * vn0 > B * rhat + un0 {
+    // The estimate is at most two greater than the true quotient digit, so at
+    // most two corrections are required. Once `rhat >= B`, the correction
+    // condition is necessarily false.
+    while rhat < B && q0 * vn0 > B * rhat + un0 {
         q0 -= 1;
         rhat += vn1_val;
-        if rhat >= B {
-            break;
-        }
     }
 
     *r = (un21
@@ -237,7 +235,19 @@ fn udiv256_by_128_to_128(u1: u128, u0: u128, mut v: NonZeroU128, r: &mut u128) -
 mod tests {
     use crate::BigUint;
 
-    use super::DivRemScalar;
+    use super::{DivRemScalar, DivWide};
+
+    #[test]
+    fn u128_div_wide_handles_clamped_quotient_estimate() {
+        const B: u128 = 1 << 64;
+
+        let divisor = u128::MAX;
+        let hi = (B - 1) * B + 1;
+
+        // Since 2^128 = divisor + 1 and hi < divisor, the quotient of
+        // hi * 2^128 by divisor is hi, with remainder hi.
+        assert_eq!(u128::div_wide(0, hi, divisor), hi);
+    }
 
     #[test]
     fn u128_special_cases_clear_the_full_quotient() {
