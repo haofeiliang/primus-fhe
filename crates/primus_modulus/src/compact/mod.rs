@@ -16,6 +16,7 @@ impl<T: UnsignedInteger> CompactModulus<T> {
     /// # Panics
     ///
     /// Panics unless `1 < value < 2^(T::BITS - 2)`.
+    #[must_use]
     #[inline(always)]
     pub fn new(value: T) -> Self {
         assert!(
@@ -24,6 +25,13 @@ impl<T: UnsignedInteger> CompactModulus<T> {
         );
         assert!(value > T::ONE, "modulus can't be 0 or 1.");
         Self(value)
+    }
+
+    /// Returns the modulus.
+    #[must_use]
+    #[inline(always)]
+    pub const fn value(self) -> T {
+        self.0
     }
 }
 

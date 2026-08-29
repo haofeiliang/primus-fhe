@@ -16,10 +16,18 @@ impl<T: UnsignedInteger> UintModulus<T> {
     /// # Panics
     ///
     /// Panics if `value ≤ 1`.
+    #[must_use]
     #[inline(always)]
     pub fn new(value: T) -> Self {
         assert!(value > T::ONE, "modulus can't be 0 or 1.");
         Self(value)
+    }
+
+    /// Returns the modulus.
+    #[must_use]
+    #[inline(always)]
+    pub const fn value(self) -> T {
+        self.0
     }
 }
 
