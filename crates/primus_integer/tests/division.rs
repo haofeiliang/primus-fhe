@@ -25,10 +25,13 @@ fn u32_special_cases_clear_the_full_quotient() {
 
 #[test]
 fn u32_dense_and_trimmed_dividends_match_u128() {
-    let divisor = 132_120_577u32;
-    for dividend in [
-        [0xfedc_ba98, 0x7654_3210, 0x89ab_cdef, 0x0123_4567],
-        [0x89ab_cdef, 0x0123_4567, 0, 0],
+    for (dividend, divisor) in [
+        (
+            [0xfedc_ba98, 0x7654_3210, 0x89ab_cdef, 0x0123_4567],
+            132_120_577u32,
+        ),
+        ([0xfedc_ba98, 0x7654_3210, 0x89ab_cdef, 0x0123_4567], 65_521),
+        ([0x89ab_cdef, 0x0123_4567, 0, 0], 132_120_577),
     ] {
         let mut quotient = [u32::MAX; 4];
         let remainder = u32::div_rem_scalar(&dividend, divisor, &mut quotient);

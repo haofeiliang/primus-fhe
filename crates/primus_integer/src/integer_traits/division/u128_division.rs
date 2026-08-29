@@ -279,6 +279,7 @@ mod tests {
                 &[
                     0xdead_beef_cafe_babe_1234_5678_9abc_def0,
                     0x0001_0203_0405_0607_0809_0a0b_0c0d_0e0f,
+                    0,
                 ],
                 (1u128 << 64) | 0x1234_5678_9abc_def1,
             ),

@@ -3,7 +3,10 @@
 
 use std::simd::{Mask, Simd};
 
-use primus_integer::{BorrowingSub, CarryingAdd, CarryingMul, SimdInteger, WideningMul};
+use primus_integer::{
+    BorrowingSub, CarryingAdd, CarryingMul, SimdArray, SimdInteger, SimdMaskArray,
+    SimdUnsignedArray, WideningMul,
+};
 
 #[test]
 fn slice_helpers_preserve_chunks_and_tail() {
@@ -30,6 +33,14 @@ fn slice_helpers_preserve_chunks_and_tail() {
 
 #[test]
 fn u32_simd_word_operations_match_scalar_lanes() {
+    type U32Simd = <u32 as SimdInteger>::SimdT;
+    let max = <U32Simd as SimdArray<u32>>::splat(u32::MAX);
+    let one = <U32Simd as SimdArray<u32>>::splat(1);
+    let zero = <U32Simd as SimdArray<u32>>::splat(0);
+    let (sum, overflow) = SimdUnsignedArray::overflowing_add(max, one);
+    assert_eq!(sum, zero);
+    assert!(SimdMaskArray::<u32>::all(overflow));
+
     let lhs = Simd::<u32, 8>::from_array([
         0,
         1,
@@ -106,14 +117,18 @@ fn u64_simd_multiplication_matches_scalar_lanes() {
     let lhs = Simd::<u64, 4>::from_array([0, 1, u64::MAX, 0x8000_0000_0000_0001]);
     let rhs = Simd::<u64, 4>::from_array([u64::MAX, 7, u64::MAX, 0x7fff_ffff_ffff_ffff]);
     let carry = Simd::<u64, 4>::from_array([1, 2, 3, 4]);
+    let add = Simd::<u64, 4>::from_array([4, 3, 2, 1]);
 
     let lhs_array = lhs.to_array();
     let rhs_array = rhs.to_array();
     let carry_array = carry.to_array();
+    let add_array = add.to_array();
     let (product_low, product_high) = WideningMul::widening_mul(lhs, rhs);
     let product_high_only = WideningMul::widening_mul_hw(lhs, rhs);
     let (carry_low, carry_high) = CarryingMul::carrying_mul(lhs, rhs, carry);
     let carry_high_only = CarryingMul::carrying_mul_hw(lhs, rhs, carry);
+    let (add_low, add_high) = CarryingMul::carrying_mul_add(lhs, rhs, carry, add);
+    let add_high_only = CarryingMul::carrying_mul_add_hw(lhs, rhs, carry, add);
 
     for index in 0..4 {
         assert_eq!(
@@ -126,5 +141,15 @@ fn u64_simd_multiplication_matches_scalar_lanes() {
             CarryingMul::carrying_mul(lhs_array[index], rhs_array[index], carry_array[index]),
         );
         assert_eq!(carry_high_only[index], carry_high[index]);
+        assert_eq!(
+            (add_low[index], add_high[index]),
+            CarryingMul::carrying_mul_add(
+                lhs_array[index],
+                rhs_array[index],
+                carry_array[index],
+                add_array[index],
+            ),
+        );
+        assert_eq!(add_high_only[index], add_high[index]);
     }
 }

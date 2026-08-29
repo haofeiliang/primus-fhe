@@ -1,12 +1,11 @@
 use primus_integer::{BigUint, multiply_many_values};
 
 fn compose_u32(limbs: &[u32]) -> u128 {
+    assert!(limbs.len() <= 4);
     limbs
         .iter()
-        .enumerate()
-        .fold(0u128, |value, (index, &limb)| {
-            value | ((limb as u128) << (u32::BITS as usize * index))
-        })
+        .rev()
+        .fold(0u128, |value, &limb| (value << u32::BITS) | limb as u128)
 }
 
 fn compose_u64(limbs: &[u64]) -> u128 {
@@ -28,12 +27,19 @@ fn representation_and_product_contracts() {
     let expected = factors.into_iter().map(u128::from).product::<u128>();
 
     assert_eq!(compose_u32(product.digits()), expected);
-    assert_eq!(product.bit_width(), u128::BITS - expected.leading_zeros());
+    assert_eq!(product.bit_width(), expected.bit_width());
     assert!(!product.is_zero());
-    assert_eq!(product.view(), BigUint(product.digits()));
 
     assert_eq!(BigUint(&[1u32, 2][..]), BigUint(vec![1u32, 2]));
-    assert_ne!(BigUint(&[1u32][..]), BigUint(&[1u32, 0][..]));
+
+    let padded = BigUint(&[1u32, 0][..]);
+    assert_ne!(BigUint(&[1u32][..]), padded);
+    assert_eq!(padded.bit_width(), 1);
+
+    let zero = BigUint(&[0u32; 2][..]);
+    assert!(zero.is_zero());
+    assert_eq!(zero.bit_width(), 0);
+
     assert!(std::panic::catch_unwind(|| multiply_many_values::<u32>(&[])).is_err());
 }
 
