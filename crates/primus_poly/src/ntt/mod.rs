@@ -1,7 +1,7 @@
 use num_traits::Zero;
 use primus_data::{Data, DataMut, DataOwned, RawData};
 use primus_integer::{ByteCount, FheUint, Size};
-use primus_reduce::{LazyReduceMulAddSlice, ReduceMulAddSlice};
+use primus_reduce::ReduceMulAddSlice;
 
 mod basic;
 mod random;
@@ -114,21 +114,6 @@ where
     {
         modulus.reduce_add_mul_slice_assign(self.as_mut_slice(), a.as_slice(), b.as_slice());
     }
-
-    /// Performs `self = self + (a * b)`.
-    #[inline]
-    pub fn add_mul_assign_fast<M, A, B>(
-        &mut self,
-        a: &NttPolynomial<A>,
-        b: &NttPolynomial<B>,
-        modulus: M,
-    ) where
-        M: Copy + LazyReduceMulAddSlice<T>,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + Data,
-    {
-        modulus.lazy_reduce_add_mul_slice_assign(self.as_mut_slice(), a.as_slice(), b.as_slice());
-    }
 }
 
 impl<S, T> NttPolynomial<S>
@@ -183,28 +168,6 @@ where
         D: RawData<Elem = T> + DataMut,
     {
         modulus.reduce_mul_add_slice_to(
-            self.as_slice(),
-            b.as_slice(),
-            c.as_slice(),
-            output.as_mut_slice(),
-        );
-    }
-
-    /// Performs `result = self * b + c`.
-    #[inline]
-    pub fn mul_add_to_fast<M, B, C, D>(
-        &self,
-        b: &NttPolynomial<B>,
-        c: &NttPolynomial<C>,
-        output: &mut NttPolynomial<D>,
-        modulus: M,
-    ) where
-        M: Copy + LazyReduceMulAddSlice<T>,
-        B: RawData<Elem = T> + Data,
-        C: RawData<Elem = T> + Data,
-        D: RawData<Elem = T> + DataMut,
-    {
-        modulus.lazy_reduce_mul_add_slice_to(
             self.as_slice(),
             b.as_slice(),
             c.as_slice(),
