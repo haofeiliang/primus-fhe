@@ -56,6 +56,12 @@ mod u32tests {
     }
 
     #[test]
+    #[should_panic(expected = "Barrett reduction requires at least one limb")]
+    fn lazy_reduce_empty_slice_panics() {
+        let _ = Modulus.lazy_reduce(&[] as &[u32]);
+    }
+
+    #[test]
     fn slice_ops() {
         use primus_modulus::BarrettModulus;
 

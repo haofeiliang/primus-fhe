@@ -104,10 +104,14 @@ pub(crate) fn lazy_ops(
             type Output = #ty;
 
             /// Returns a lazy representative of a nonempty multi-limb value.
+            ///
+            /// # Panics
+            ///
+            /// Panics if `value` is empty.
             #[inline]
             fn lazy_reduce(self, value: &[#ty]) -> Self::Output {
                 match value {
-                    &[] => unreachable!(),
+                    &[] => panic!("Barrett reduction requires at least one limb"),
                     &[v] => {
                         if v < #modulus << 1u32 {
                             v
