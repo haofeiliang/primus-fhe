@@ -27,6 +27,7 @@ impl<T: SimdUnsignedInteger> SimdBarrettModulus<T> {
     /// `value` must satisfy `1 < value < 2^(T::BITS - 2)`, and `ratio` must
     /// equal `floor(B² / value)` where `B = 2^(T::BITS)`. Prefer converting a
     /// validated [`BarrettModulus`] when runtime construction is sufficient.
+    #[must_use]
     pub fn new(value: T, ratio: [T; 2]) -> Self {
         Self {
             value: T::SimdT::splat(value),
@@ -37,6 +38,9 @@ impl<T: SimdUnsignedInteger> SimdBarrettModulus<T> {
 
 impl<T: SimdUnsignedInteger> SimdBarrettModulus<T> {
     /// Lazily reduces a lane-wise 2-limb value `(hi * B + lo)` modulo this modulus.
+    ///
+    /// The result in every lane is in `[0, 2 * modulus)`.
+    #[must_use]
     #[inline]
     pub fn lazy_reduce_wide(&self, lo: T::SimdT, hi: T::SimdT) -> T::SimdT {
         let ah = lo.widening_mul_hw(self.ratio[0]);
@@ -55,6 +59,7 @@ impl<T: SimdUnsignedInteger> SimdBarrettModulus<T> {
     }
 
     /// Reduces a lane-wise 2-limb value `(hi * B + lo)` modulo this modulus.
+    #[must_use]
     #[inline]
     pub fn reduce_wide(&self, lo: T::SimdT, hi: T::SimdT) -> T::SimdT {
         compact::simd::reduce_once::<T>(self.value, self.lazy_reduce_wide(lo, hi))

@@ -41,10 +41,17 @@ impl<T: UnsignedInteger> BarrettModulus<T> {
     ///
     /// Panics unless `1 < value < 2^(T::BITS - 2)`. For a fallible variant, see
     /// [`try_new`](Self::try_new).
+    #[must_use]
     pub fn new(value: T) -> Self {
-        assert!(value > T::ONE, "modulus can't be 0 or 1.");
+        assert!(
+            value > T::ONE,
+            "BarrettModulus::new: modulus must be greater than one"
+        );
         let leading_zeros = value.leading_zeros();
-        assert!(leading_zeros > 1, "modulus is too large.");
+        assert!(
+            leading_zeros > 1,
+            "BarrettModulus::new: modulus must be less than 2^(T::BITS - 2)"
+        );
         Self::new_unchecked(value)
     }
 
@@ -53,6 +60,7 @@ impl<T: UnsignedInteger> BarrettModulus<T> {
     /// # Correctness
     ///
     /// `value` must satisfy `1 < value < 2^(T::BITS - 2)`.
+    #[must_use]
     #[inline]
     pub fn new_unchecked(value: T) -> Self {
         let mut quotient = [T::ZERO; 3];
@@ -69,6 +77,7 @@ impl<T: UnsignedInteger> BarrettModulus<T> {
     ///
     /// `value` must satisfy `1 < value < 2^(T::BITS - 2)`, and `ratio` must
     /// equal `floor(B² / value)` where `B = 2^(T::BITS)`.
+    #[must_use]
     #[inline]
     pub const fn from_parts(value: T, ratio: [T; 2]) -> Self {
         Self { value, ratio }
@@ -76,6 +85,7 @@ impl<T: UnsignedInteger> BarrettModulus<T> {
 
     /// Creates a [`BarrettModulus<T>`] when `1 < value < 2^(T::BITS - 2)`, or
     /// returns `None` otherwise.
+    #[must_use]
     #[inline]
     pub fn try_new(value: T) -> Option<Self> {
         if value <= T::ONE {
@@ -89,12 +99,14 @@ impl<T: UnsignedInteger> BarrettModulus<T> {
     }
 
     /// Returns the modulus.
+    #[must_use]
     #[inline]
     pub const fn value(&self) -> T {
         self.value
     }
 
     /// Returns the precomputed reciprocal `floor(B² / modulus)`.
+    #[must_use]
     #[inline]
     pub const fn ratio(&self) -> [T; 2] {
         self.ratio
@@ -141,6 +153,7 @@ impl<T: UnsignedInteger> BarrettModulus<T> {
     }
 
     /// Reduces a 2-limb value `(hi * B + lo)` modulo this modulus.
+    #[must_use]
     #[inline]
     pub fn reduce_wide(&self, lo: T, hi: T) -> T {
         self.reduce_once(self.lazy_reduce_wide(lo, hi))

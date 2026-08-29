@@ -2,11 +2,16 @@
 
 use primus_modulus::{BarrettModulus, UintModulus};
 use primus_reduce::{FieldContext, prelude::*};
-use rand::{RngExt, distr::Uniform, prelude::*};
+use rand::{
+    RngExt, SeedableRng,
+    distr::{Distribution, Uniform},
+    rngs::StdRng,
+};
 
 type ValueT = u32;
 
 const MODULUS: ValueT = 536_813_569;
+const SEED: u64 = 0x4241_5252_4554_5431;
 
 #[test]
 fn constructor_bounds() {
@@ -14,6 +19,7 @@ fn constructor_bounds() {
     assert!(std::panic::catch_unwind(|| BarrettModulus::<ValueT>::new(1)).is_err());
 
     let u32_limit = 1u32 << (u32::BITS - 2);
+    assert!(std::panic::catch_unwind(|| BarrettModulus::<u32>::new(u32_limit)).is_err());
     assert!(BarrettModulus::<u32>::try_new(u32_limit - 1).is_some());
     assert!(BarrettModulus::<u32>::try_new(u32_limit).is_none());
 
@@ -32,7 +38,7 @@ fn scalar_ops_against_uint() {
 
     field_trait(b);
 
-    let mut rng = rand::rng();
+    let mut rng = StdRng::seed_from_u64(SEED);
 
     for _ in 0..20 {
         let a: u32 = distr.sample(&mut rng);
@@ -61,7 +67,7 @@ fn slice_ops_against_uint() {
     let b = BarrettModulus::<u32>::new(MODULUS);
     let u = UintModulus(MODULUS);
     let distr = Uniform::new(0, MODULUS).unwrap();
-    let mut rng = rand::rng();
+    let mut rng = StdRng::seed_from_u64(SEED);
 
     for &len in &[0usize, 1, 3, 7, 8, 15, 16, 17, 31, 33, 64, 65] {
         let a: Vec<u32> = (0..len).map(|_| distr.sample(&mut rng)).collect();
@@ -140,7 +146,7 @@ fn mul_mod(a: u32, b: u32) -> u32 {
 fn mul_ops() {
     let m = BarrettModulus::<u32>::new(MODULUS);
     let distr = Uniform::new(0, MODULUS).unwrap();
-    let mut rng = rand::rng();
+    let mut rng = StdRng::seed_from_u64(SEED);
 
     for _ in 0..20 {
         let a: u32 = distr.sample(&mut rng);
@@ -164,7 +170,7 @@ fn mul_ops() {
 fn dot_product() {
     let m = BarrettModulus::<u32>::new(MODULUS);
     let distr = Uniform::new(0, MODULUS).unwrap();
-    let mut rng = rand::rng();
+    let mut rng = StdRng::seed_from_u64(SEED);
 
     for &len in &[0usize, 1, 7, 15, 16, 17, 31, 32, 33, 127, 128, 129] {
         let a: Vec<u32> = (0..len).map(|_| distr.sample(&mut rng)).collect();
@@ -220,7 +226,7 @@ fn simd_dot_product_accumulator_boundary() {
 fn mul_slice_ops() {
     let m = BarrettModulus::<u32>::new(MODULUS);
     let distr = Uniform::new(0, MODULUS).unwrap();
-    let mut rng = rand::rng();
+    let mut rng = StdRng::seed_from_u64(SEED);
 
     for &len in &[0usize, 1, 3, 7, 8, 15, 16, 17, 31, 33, 64, 65] {
         let a: Vec<u32> = (0..len).map(|_| distr.sample(&mut rng)).collect();
@@ -335,7 +341,7 @@ fn simd_slice_ops_against_uint() {
     let b = BarrettModulus::<u32>::new(MODULUS);
     let u = UintModulus(MODULUS);
     let distr = Uniform::new(0, MODULUS).unwrap();
-    let mut rng = rand::rng();
+    let mut rng = StdRng::seed_from_u64(SEED);
 
     for &len in &[
         0usize, 1, 3, 7, 8, 15, 16, 17, 31, 32, 33, 63, 64, 65, 127, 128, 129,
