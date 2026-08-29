@@ -7,13 +7,19 @@ pub trait LazyModulo<M> {
 
     /// Calculates a representative congruent to `self` modulo `modulus`.
     ///
-    /// # Correctness
+    /// # Preconditions
     ///
-    /// The result is only guaranteed to be in `[0, 2 * modulus)`, not the
-    /// canonical `[0, modulus)`.
+    /// The supported input range is defined by the concrete [`LazyReduce`]
+    /// implementation of `modulus`.
+    ///
+    /// # Guarantees
+    ///
+    /// The result is in `[0, 2 * modulus)`. It may be non-canonical and must be
+    /// reduced once when a value in `[0, modulus)` is required.
     ///
     /// If the modulus type does not natively support lazy reduction,
     /// implementations should fall back to [`Modulo`](crate::ops::Modulo).
+    #[must_use]
     fn lazy_modulo(self, modulus: M) -> Self::Output;
 }
 
@@ -31,10 +37,19 @@ where
 
 /// The lazy modulo assignment operation.
 pub trait LazyModuloAssign<M> {
-    /// Replaces `self` with a congruent value in `[0, 2 * modulus)`.
+    /// Replaces `self` with a representative congruent to it modulo `modulus`.
     ///
-    /// If modulus doesn't support this special case,
-    /// just fall back to [crate::ops::ModuloAssign] trait.
+    /// # Preconditions
+    ///
+    /// The supported input range is defined by the concrete
+    /// [`LazyReduceAssign`] implementation of `modulus`.
+    ///
+    /// # Guarantees
+    ///
+    /// The result is in `[0, 2 * modulus)`.
+    ///
+    /// Implementations without a specialized lazy kernel may fall back to
+    /// [`ModuloAssign`](crate::ops::ModuloAssign).
     fn lazy_modulo_assign(&mut self, modulus: M);
 }
 
@@ -55,12 +70,17 @@ pub trait LazyMulModulo<M>: Sized {
 
     /// Calculates a lazy representative of `self * b` modulo `modulus`.
     ///
-    /// # Correctness
+    /// # Preconditions
     ///
     /// - `self * b < modulus²`
     ///
-    /// If modulus doesn't support this special case,
-    /// just fall back to [crate::ops::MulModulo] trait.
+    /// # Guarantees
+    ///
+    /// The result is in `[0, 2 * modulus)`.
+    ///
+    /// Implementations without a specialized lazy kernel may fall back to
+    /// [`MulModulo`](crate::ops::MulModulo).
+    #[must_use]
     fn lazy_mul_modulo(self, b: Self, modulus: M) -> Self::Output;
 }
 
@@ -80,12 +100,16 @@ where
 pub trait LazyMulModuloAssign<M>: Sized {
     /// Replaces `self` with a lazy representative of `self * b` modulo `modulus`.
     ///
-    /// # Correctness
+    /// # Preconditions
     ///
     /// - `self * b < modulus²`
     ///
-    /// If modulus doesn't support this special case,
-    /// just fall back to [crate::ops::MulModuloAssign] trait.
+    /// # Guarantees
+    ///
+    /// The result is in `[0, 2 * modulus)`.
+    ///
+    /// Implementations without a specialized lazy kernel may fall back to
+    /// [`MulModuloAssign`](crate::ops::MulModuloAssign).
     fn lazy_mul_modulo_assign(&mut self, b: Self, modulus: M);
 }
 
@@ -106,14 +130,19 @@ pub trait LazyMulAddModulo<M>: Sized {
 
     /// Calculates a lazy representative of `self * b + c` modulo `modulus`.
     ///
-    /// # Correctness
+    /// # Preconditions
     ///
     /// - `self < modulus`
     /// - `b < modulus`
     /// - `c < modulus`
     ///
-    /// If modulus doesn't support this special case,
-    /// just fall back to [crate::ops::MulAddModulo] trait.
+    /// # Guarantees
+    ///
+    /// The result is in `[0, 2 * modulus)`.
+    ///
+    /// Implementations without a specialized lazy kernel may fall back to
+    /// [`MulAddModulo`](crate::ops::MulAddModulo).
+    #[must_use]
     fn lazy_mul_add_modulo(self, b: Self, c: Self, modulus: M) -> Self::Output;
 }
 
@@ -133,14 +162,18 @@ where
 pub trait LazyMulAddModuloAssign<M>: Sized {
     /// Replaces `self` with a lazy representative of `self * b + c` modulo `modulus`.
     ///
-    /// # Correctness
+    /// # Preconditions
     ///
     /// - `self < modulus`
     /// - `b < modulus`
     /// - `c < modulus`
     ///
-    /// If modulus doesn't support this special case,
-    /// just fall back to [crate::ops::MulAddModuloAssign] trait.
+    /// # Guarantees
+    ///
+    /// The result is in `[0, 2 * modulus)`.
+    ///
+    /// Implementations without a specialized lazy kernel may fall back to
+    /// [`MulAddModuloAssign`](crate::ops::MulAddModuloAssign).
     fn lazy_mul_add_modulo_assign(&mut self, b: Self, c: Self, modulus: M);
 }
 
@@ -161,13 +194,18 @@ pub trait LazySubModulo<M>: Sized {
 
     /// Calculates a lazy representative of `self - b` modulo `modulus`.
     ///
-    /// # Correctness
+    /// # Preconditions
     ///
     /// - `self < modulus`
     /// - `b < modulus`
     ///
-    /// If modulus doesn't support this special case,
-    /// just fall back to [crate::ops::SubModulo] trait.
+    /// # Guarantees
+    ///
+    /// The result is in `[0, 2 * modulus)`.
+    ///
+    /// Implementations without a specialized lazy kernel may fall back to
+    /// [`SubModulo`](crate::ops::SubModulo).
+    #[must_use]
     fn lazy_sub_modulo(self, b: Self, modulus: M) -> Self::Output;
 }
 
@@ -187,13 +225,17 @@ where
 pub trait LazySubModuloAssign<M>: Sized {
     /// Replaces `self` with a lazy representative of `self - b` modulo `modulus`.
     ///
-    /// # Correctness
+    /// # Preconditions
     ///
     /// - `self < modulus`
     /// - `b < modulus`
     ///
-    /// If modulus doesn't support this special case,
-    /// just fall back to [crate::ops::SubModuloAssign] trait.
+    /// # Guarantees
+    ///
+    /// The result is in `[0, 2 * modulus)`.
+    ///
+    /// Implementations without a specialized lazy kernel may fall back to
+    /// [`SubModuloAssign`](crate::ops::SubModuloAssign).
     fn lazy_sub_modulo_assign(&mut self, b: Self, modulus: M);
 }
 
@@ -214,12 +256,17 @@ pub trait LazyNegModulo<M> {
 
     /// Calculates a lazy representative of `-self` modulo `modulus`.
     ///
-    /// # Correctness
+    /// # Preconditions
     ///
     /// - `self < modulus`
     ///
-    /// If modulus doesn't support this special case,
-    /// just fall back to [crate::ops::NegModulo] trait.
+    /// # Guarantees
+    ///
+    /// The result is in `[0, 2 * modulus)`.
+    ///
+    /// Implementations without a specialized lazy kernel may fall back to
+    /// [`NegModulo`](crate::ops::NegModulo).
+    #[must_use]
     fn lazy_neg_modulo(self, modulus: M) -> Self::Output;
 }
 
@@ -239,12 +286,16 @@ where
 pub trait LazyNegModuloAssign<M> {
     /// Replaces `self` with a lazy representative of `-self` modulo `modulus`.
     ///
-    /// # Correctness
+    /// # Preconditions
     ///
     /// - `self < modulus`
     ///
-    /// If modulus doesn't support this special case,
-    /// just fall back to [crate::ops::NegModuloAssign] trait.
+    /// # Guarantees
+    ///
+    /// The result is in `[0, 2 * modulus)`.
+    ///
+    /// Implementations without a specialized lazy kernel may fall back to
+    /// [`NegModuloAssign`](crate::ops::NegModuloAssign).
     fn lazy_neg_modulo_assign(&mut self, modulus: M);
 }
 

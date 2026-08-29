@@ -186,7 +186,6 @@ impl<T: FheUint> ReduceMulAddSlice<T> for PowOf2Modulus<T> {
 
 #[cfg(not(feature = "simd"))]
 impl<T: FheUint> ReduceDotProduct<T> for PowOf2Modulus<T> {
-    type Output = T;
     #[inline]
     fn reduce_dot_product(self, a: &[T], b: &[T]) -> T {
         assert_eq!(a.len(), b.len(), "reduce_dot_product: length mismatch");

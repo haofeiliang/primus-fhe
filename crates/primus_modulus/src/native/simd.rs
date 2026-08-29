@@ -166,7 +166,6 @@ impl<T: FheUint> ReduceDoubleSlice<T> for NativeModulus<T> {
 }
 
 impl<T: FheUint> ReduceDotProduct<T> for NativeModulus<T> {
-    type Output = T;
     #[inline]
     fn reduce_dot_product(self, a: &[T], b: &[T]) -> T {
         assert_eq!(a.len(), b.len(), "reduce_dot_product: length mismatch");

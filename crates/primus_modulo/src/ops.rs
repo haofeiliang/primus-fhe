@@ -8,6 +8,12 @@ pub trait Modulo<M> {
     type Output;
 
     /// Calculates `self (mod modulus)`.
+    ///
+    /// # Correctness
+    ///
+    /// The legal input range and representation for `self` are defined by the
+    /// concrete [`Reduce`] implementation of `modulus`.
+    #[must_use]
     fn modulo(self, modulus: M) -> Self::Output;
 }
 
@@ -26,6 +32,11 @@ where
 /// The modulo assignment operation.
 pub trait ModuloAssign<M> {
     /// Calculates `self = self (mod modulus)`.
+    ///
+    /// # Correctness
+    ///
+    /// The legal input range is defined by the concrete [`ReduceAssign`]
+    /// implementation of `modulus`.
     fn modulo_assign(&mut self, modulus: M);
 }
 
@@ -45,6 +56,12 @@ pub trait ModuloOnce<M> {
     type Output;
 
     /// Calculates `self - modulus` if `self >= modulus`.
+    ///
+    /// # Correctness
+    ///
+    /// - `self < 2 * modulus`
+    /// - The result is `< modulus`
+    #[must_use]
     fn modulo_once(self, modulus: M) -> Self::Output;
 }
 
@@ -63,6 +80,11 @@ where
 /// In-place single-correction modular reduction.
 pub trait ModuloOnceAssign<M> {
     /// Calculates `self -= modulus` if `self >= modulus`.
+    ///
+    /// # Correctness
+    ///
+    /// - `self < 2 * modulus`
+    /// - The result is `< modulus`
     fn modulo_once_assign(&mut self, modulus: M);
 }
 
@@ -87,6 +109,7 @@ pub trait AddModulo<M>: Sized {
     ///
     /// - `self < modulus`
     /// - `b < modulus`
+    #[must_use]
     fn add_modulo(self, b: Self, modulus: M) -> Self::Output;
 }
 
@@ -133,6 +156,7 @@ pub trait DoubleModulo<M> {
     /// # Correctness
     ///
     /// - `self < modulus`
+    #[must_use]
     fn double_modulo(self, modulus: M) -> Self::Output;
 }
 
@@ -179,6 +203,7 @@ pub trait SubModulo<M>: Sized {
     ///
     /// - `self < modulus`
     /// - `b < modulus`
+    #[must_use]
     fn sub_modulo(self, b: Self, modulus: M) -> Self::Output;
 }
 
@@ -225,6 +250,7 @@ pub trait NegModulo<M> {
     /// # Correctness
     ///
     /// - `self < modulus`
+    #[must_use]
     fn neg_modulo(self, modulus: M) -> Self::Output;
 }
 
@@ -270,6 +296,7 @@ pub trait MulModulo<M>: Sized {
     /// # Correctness
     ///
     /// - `self*b < modulus²`
+    #[must_use]
     fn mul_modulo(self, b: Self, modulus: M) -> Self::Output;
 }
 
@@ -315,6 +342,7 @@ pub trait SquareModulo<M> {
     /// # Correctness
     ///
     /// - `self < modulus`
+    #[must_use]
     fn square_modulo(self, modulus: M) -> Self::Output;
 }
 
@@ -362,6 +390,7 @@ pub trait MulAddModulo<M>: Sized {
     /// - `self < modulus`
     /// - `b < modulus`
     /// - `c < modulus`
+    #[must_use]
     fn mul_add_modulo(self, b: Self, c: Self, modulus: M) -> Self::Output;
 }
 
@@ -405,6 +434,17 @@ pub trait InvModulo<M> {
     type Output;
 
     /// Calculate the multiplicative inverse of `self (mod modulus)`.
+    ///
+    /// # Correctness
+    ///
+    /// - `self < modulus`
+    /// - `self` and `modulus` must be coprime
+    ///
+    /// # Panics
+    ///
+    /// Panics if `self` has no inverse modulo `modulus`. Use [`TryInvModulo`]
+    /// for a non-panicking variant.
+    #[must_use]
     fn inv_modulo(self, modulus: M) -> Self::Output;
 }
 
@@ -423,6 +463,16 @@ where
 /// In-place modular multiplicative inversion.
 pub trait InvModuloAssign<M> {
     /// Calculates `self^(-1) (mod modulus)`.
+    ///
+    /// # Correctness
+    ///
+    /// - `self < modulus`
+    /// - `self` and `modulus` must be coprime
+    ///
+    /// # Panics
+    ///
+    /// Panics if `self` has no inverse modulo `modulus`. Use [`TryInvModulo`]
+    /// for a non-panicking variant.
     fn inv_modulo_assign(&mut self, modulus: M);
 }
 
@@ -447,13 +497,14 @@ where
     /// Attempts to calculate the multiplicative inverse of `self` modulo
     /// `modulus`.
     ///
-    /// # Preconditions
+    /// # Correctness
     ///
     /// - `self < modulus`
     ///
     /// # Errors
     ///
-    /// If there does not exist such an inverse, a [`ReduceError`] will be returned.
+    /// Returns [`ReduceError::NoInverse`] if `self` has no inverse modulo
+    /// `modulus`.
     fn try_inv_modulo(self, modulus: M) -> Result<Self::Output, ReduceError<Self>>;
 }
 
@@ -475,6 +526,17 @@ pub trait DivModulo<M>: Sized {
     type Output;
 
     /// Calculates `self / b (mod modulus)`.
+    ///
+    /// # Correctness
+    ///
+    /// - `self < modulus`
+    /// - `b < modulus`
+    /// - `b` and `modulus` must be coprime
+    ///
+    /// # Panics
+    ///
+    /// Panics if `b` has no inverse modulo `modulus`.
+    #[must_use]
     fn div_modulo(self, b: Self, modulus: M) -> Self::Output;
 }
 
@@ -493,6 +555,16 @@ where
 /// The modular division assignment.
 pub trait DivModuloAssign<M>: Sized {
     /// Calculates `self /= b (mod modulus)`.
+    ///
+    /// # Correctness
+    ///
+    /// - `self < modulus`
+    /// - `b < modulus`
+    /// - `b` and `modulus` must be coprime
+    ///
+    /// # Panics
+    ///
+    /// Panics if `b` has no inverse modulo `modulus`.
     fn div_modulo_assign(&mut self, b: Self, modulus: M);
 }
 
@@ -509,6 +581,11 @@ where
 /// The modular exponentiation.
 pub trait ExpModulo<M> {
     /// Calculates `self^exp (mod modulus)`.
+    ///
+    /// # Correctness
+    ///
+    /// - `self < modulus`
+    #[must_use]
     fn exp_modulo<Exponent: UnsignedInteger>(self, exp: Exponent, modulus: M) -> Self;
 }
 
@@ -525,6 +602,11 @@ where
 /// The modular power-of-two exponentiation.
 pub trait ExpPowerOf2Modulo<M> {
     /// Calculates `self^(2^exp_log) (mod modulus)`.
+    ///
+    /// # Correctness
+    ///
+    /// - `self < modulus`
+    #[must_use]
     fn exp_power_of_2_modulo(self, exp_log: u32, modulus: M) -> Self;
 }
 

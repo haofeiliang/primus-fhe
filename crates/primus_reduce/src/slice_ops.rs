@@ -271,9 +271,6 @@ pub trait TryReduceInvSlice<T> {
 
 /// Modular dot products of slices or iterators.
 pub trait ReduceDotProduct<T> {
-    /// Output type.
-    type Output;
-
     /// Calculates `∑ a[i] * b[i] (mod modulus)`.
     ///
     /// # Correctness
@@ -284,7 +281,7 @@ pub trait ReduceDotProduct<T> {
     ///
     /// Panics if `a.len() != b.len()`.
     #[must_use]
-    fn reduce_dot_product(self, a: &[T], b: &[T]) -> Self::Output;
+    fn reduce_dot_product(self, a: &[T], b: &[T]) -> T;
 
     /// Calculates `∑ a_i * b_i (mod modulus)` using standard `zip` semantics.
     ///
@@ -302,5 +299,5 @@ pub trait ReduceDotProduct<T> {
         self,
         a: impl IntoIterator<Item = T>,
         b: impl IntoIterator<Item = T>,
-    ) -> Self::Output;
+    ) -> T;
 }

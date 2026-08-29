@@ -141,10 +141,8 @@ pub(crate) fn slice_ops(name: &Ident, modulus: &TokenStream, ty: &syn::Path) -> 
 
         // ReduceDotProduct
         impl ::primus_modulus::reduce::ReduceDotProduct<#ty> for #name {
-            type Output = #ty;
-
             #[inline]
-            fn reduce_dot_product(self, a: &[#ty], b: &[#ty]) -> Self::Output {
+            fn reduce_dot_product(self, a: &[#ty], b: &[#ty]) -> #ty {
                 use ::primus_modulus::common::compact::slice;
                 slice::reduce_dot_product(self, a, b)
             }
@@ -154,7 +152,7 @@ pub(crate) fn slice_ops(name: &Ident, modulus: &TokenStream, ty: &syn::Path) -> 
                 self,
                 a: impl IntoIterator<Item = #ty>,
                 b: impl IntoIterator<Item = #ty>,
-            ) -> Self::Output {
+            ) -> #ty {
                 use ::primus_modulus::common::compact::slice;
                 slice::reduce_dot_product_iter(self, a, b)
             }
@@ -334,10 +332,8 @@ pub(crate) fn slice_ops(name: &Ident, modulus: &TokenStream, ty: &syn::Path) -> 
 
         // ReduceDotProduct
         impl ::primus_modulus::reduce::ReduceDotProduct<#ty> for #name {
-            type Output = #ty;
-
             #[inline]
-            fn reduce_dot_product(self, a: &[#ty], b: &[#ty]) -> Self::Output {
+            fn reduce_dot_product(self, a: &[#ty], b: &[#ty]) -> #ty {
                 ::primus_modulus::barrett_simd_reduce_dot_product(self, a, b)
             }
 
@@ -346,7 +342,7 @@ pub(crate) fn slice_ops(name: &Ident, modulus: &TokenStream, ty: &syn::Path) -> 
                 self,
                 a: impl IntoIterator<Item = #ty>,
                 b: impl IntoIterator<Item = #ty>,
-            ) -> Self::Output {
+            ) -> #ty {
                 use ::primus_modulus::common::compact::slice;
                 slice::reduce_dot_product_iter(self, a, b)
             }

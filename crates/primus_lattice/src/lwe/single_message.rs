@@ -99,7 +99,7 @@ where
         rng: &mut R,
     ) -> Self
     where
-        M: Copy + Modulus<ValueT = T> + ReduceDotProduct<T, Output = T> + ReduceAdd<T, Output = T>,
+        M: Copy + Modulus<ValueT = T> + ReduceDotProduct<T> + ReduceAdd<T, Output = T>,
         R: rand::Rng + rand::CryptoRng,
     {
         let len = secret_key.len();

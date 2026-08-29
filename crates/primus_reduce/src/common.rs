@@ -37,7 +37,7 @@ pub trait RingContext<T>:
     + ReduceSquareAssign<T>
     + ReduceExp<T>
     + ReduceExpPowerOf2<T>
-    + ReduceDotProduct<T, Output = T>
+    + ReduceDotProduct<T>
 {
 }
 
@@ -70,7 +70,7 @@ impl<T: UnsignedInteger, M> RingContext<T> for M where
         + ReduceSquareAssign<T>
         + ReduceExp<T>
         + ReduceExpPowerOf2<T>
-        + ReduceDotProduct<T, Output = T>
+        + ReduceDotProduct<T>
 {
 }
 

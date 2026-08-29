@@ -6,7 +6,15 @@
 //! Each trait is implemented via a blanket impl that delegates to the
 //! corresponding [`primus_reduce`] trait, simply reversing the call order.
 //!
-//! The naming convention is `XxxModulo` (value-side) ↔ `ReduceXxx` (modulus-side).
+//! Callers normally import [`prelude`] so that the extension methods are in
+//! scope:
+//!
+//! ```
+//! use primus_modulo::prelude::*;
+//! ```
+//!
+//! Most operation names use `XxxModulo` on the value side and `ReduceXxx` on
+//! the modulus side. `ModuloOnce` retains the natural `modulo_once` ordering.
 
 #![deny(missing_docs)]
 

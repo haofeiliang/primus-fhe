@@ -452,10 +452,8 @@ mod dot_product {
     use crate::{BarrettModulus, common::compact::slice};
 
     impl<T: FheUint> ReduceDotProduct<T> for BarrettModulus<T> {
-        type Output = T;
-
         #[inline]
-        fn reduce_dot_product(self, a: &[T], b: &[T]) -> Self::Output {
+        fn reduce_dot_product(self, a: &[T], b: &[T]) -> T {
             slice::reduce_dot_product(self, a, b)
         }
 
@@ -464,7 +462,7 @@ mod dot_product {
             self,
             a: impl IntoIterator<Item = T>,
             b: impl IntoIterator<Item = T>,
-        ) -> Self::Output {
+        ) -> T {
             slice::reduce_dot_product_iter(self, a, b)
         }
     }
@@ -478,10 +476,8 @@ mod dot_product {
     use crate::{BarrettModulus, common::compact::slice};
 
     impl<T: FheUint> ReduceDotProduct<T> for BarrettModulus<T> {
-        type Output = T;
-
         #[inline]
-        fn reduce_dot_product(self, a: &[T], b: &[T]) -> Self::Output {
+        fn reduce_dot_product(self, a: &[T], b: &[T]) -> T {
             crate::barrett_simd_reduce_dot_product(self, a, b)
         }
 
@@ -490,7 +486,7 @@ mod dot_product {
             self,
             a: impl IntoIterator<Item = T>,
             b: impl IntoIterator<Item = T>,
-        ) -> Self::Output {
+        ) -> T {
             slice::reduce_dot_product_iter(self, a, b)
         }
     }
