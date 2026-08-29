@@ -108,17 +108,13 @@ macro_rules! benchmark_barrett_slices {
         );
         group.finish();
 
-        let mut values = input.nonzero.clone();
-        let mut scratch = vec![0; len];
-        let mut group = $criterion.benchmark_group(format!(
-            "barrett/slice/{}/inverse_assign/{}",
-            $type_name, len
-        ));
+        let values = input.nonzero.clone();
+        let mut output = vec![0; len];
+        let mut group =
+            $criterion.benchmark_group(format!("barrett/slice/{}/inverse_to/{}", $type_name, len));
         group.throughput(Throughput::Elements(len as u64));
         group.bench_function("batch", |b| {
-            b.iter(|| {
-                modulus.reduce_inv_slice_assign(black_box(&mut values), black_box(&mut scratch))
-            })
+            b.iter(|| modulus.reduce_inv_slice_to(black_box(&values), black_box(&mut output)))
         });
         group.finish();
     }};
@@ -180,14 +176,12 @@ fn bench_barrett_slice(c: &mut Criterion) {
         );
         group.finish();
 
-        let mut values = input.nonzero;
-        let mut scratch = vec![0; len];
-        let mut group = c.benchmark_group(format!("barrett/slice/u64/inverse_assign/{len}"));
+        let values = input.nonzero;
+        let mut output = vec![0; len];
+        let mut group = c.benchmark_group(format!("barrett/slice/u64/inverse_to/{len}"));
         group.throughput(Throughput::Elements(len as u64));
         group.bench_function("batch", |b| {
-            b.iter(|| {
-                modulus.reduce_inv_slice_assign(black_box(&mut values), black_box(&mut scratch))
-            })
+            b.iter(|| modulus.reduce_inv_slice_to(black_box(&values), black_box(&mut output)))
         });
         group.finish();
     }

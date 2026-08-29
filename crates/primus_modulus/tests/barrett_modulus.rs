@@ -99,6 +99,39 @@ fn slice_ops_against_uint() {
     }
 }
 
+#[test]
+fn inverse_slice_ops_against_uint() {
+    let b = BarrettModulus::<u32>::new(MODULUS);
+    let u = UintModulus(MODULUS);
+
+    for input in [&[][..], &[1][..], &[1, 2, 3, 17, 257][..]] {
+        let mut expected = vec![0; input.len()];
+        u.reduce_inv_slice_to(input, &mut expected);
+
+        let mut output = vec![u32::MAX; input.len()];
+        b.reduce_inv_slice_to(input, &mut output);
+        assert_eq!(output, expected);
+
+        output.fill(u32::MAX);
+        b.try_reduce_inv_slice_to(input, &mut output).unwrap();
+        assert_eq!(output, expected);
+    }
+}
+
+#[test]
+fn try_inverse_slice_reports_noninvertible_input() {
+    let modulus = BarrettModulus::<u32>::new(15);
+    let input = [2, 3, 4];
+    let mut output = [u32::MAX; 3];
+
+    assert!(
+        modulus
+            .try_reduce_inv_slice_to(&input, &mut output)
+            .is_err()
+    );
+    assert_eq!(input, [2, 3, 4]);
+}
+
 fn mul_mod(a: u32, b: u32) -> u32 {
     ((a as u64 * b as u64) % MODULUS as u64) as u32
 }

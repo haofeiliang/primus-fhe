@@ -115,18 +115,11 @@ pub fn lazy_reduce_neg_slice_to<T: UnsignedInteger>(modulus: T, input: &[T], out
         .for_each(|(x, &y)| *x = super::lazy_reduce_neg(modulus, y));
 }
 
-/// Replaces each value with its multiplicative inverse modulo `modulus`.
-///
-/// # Panics
-///
-/// Panics if any value has no inverse modulo `modulus`.
-#[inline]
-pub fn reduce_inv_slice_assign<T: UnsignedInteger>(modulus: T, values: &mut [T]) {
-    values
-        .iter_mut()
-        .for_each(|v| super::reduce_inv_assign(modulus, v));
-}
 /// Writes multiplicative inverses of `input` modulo `modulus` into `output`.
+///
+/// # Correctness
+///
+/// `input` and `output` must have the same length.
 ///
 /// # Panics
 ///
@@ -140,18 +133,11 @@ pub fn reduce_inv_slice_to<T: UnsignedInteger>(modulus: T, input: &[T], output: 
         .for_each(|(x, &y)| *x = super::reduce_inv(modulus, y));
 }
 
-/// Attempts to invert each value in place modulo `modulus`.
-#[inline]
-pub fn try_reduce_inv_slice_assign<T: UnsignedInteger>(
-    modulus: T,
-    values: &mut [T],
-) -> Result<(), ReduceError<T>> {
-    for value in values {
-        *value = super::try_reduce_inv(modulus, *value)?;
-    }
-    Ok(())
-}
 /// Attempts to write inverses of `input` modulo `modulus` into `output`.
+///
+/// # Correctness
+///
+/// `input` and `output` must have the same length.
 #[inline]
 pub fn try_reduce_inv_slice_to<T: UnsignedInteger>(
     modulus: T,

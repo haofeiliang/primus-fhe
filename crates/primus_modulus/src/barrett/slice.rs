@@ -504,35 +504,6 @@ mod inv {
 
     impl<T: FheUint> ReduceInvSlice<T> for BarrettModulus<T> {
         #[inline]
-        fn reduce_inv_slice_assign(self, values: &mut [T], prefix_products: &mut [T]) {
-            let len = values.len();
-
-            debug_assert_eq!(prefix_products.len(), len);
-
-            if len == 0 {
-                return;
-            }
-
-            let mut total_product = T::ONE;
-            for (prefix_product, &value) in prefix_products.iter_mut().zip(values.iter()) {
-                *prefix_product = total_product;
-                total_product = self.reduce_mul(total_product, value);
-            }
-
-            let mut suffix_inverse = self.reduce_inv(total_product);
-
-            for (value, prefix_product) in values
-                .iter_mut()
-                .rev()
-                .zip(prefix_products.iter().rev().copied())
-            {
-                let current_value = *value;
-                *value = self.reduce_mul(prefix_product, suffix_inverse);
-                suffix_inverse = self.reduce_mul(suffix_inverse, current_value);
-            }
-        }
-
-        #[inline]
         fn reduce_inv_slice_to(self, input: &[T], output: &mut [T]) {
             let len = input.len();
 
@@ -558,40 +529,6 @@ mod inv {
     }
 
     impl<T: FheUint> TryReduceInvSlice<T> for BarrettModulus<T> {
-        #[inline]
-        fn try_reduce_inv_slice_assign(
-            self,
-            values: &mut [T],
-            prefix_products: &mut [T],
-        ) -> Result<(), ReduceError<T>> {
-            let len = values.len();
-
-            debug_assert_eq!(prefix_products.len(), len);
-
-            if len == 0 {
-                return Ok(());
-            }
-
-            let mut total_product = T::ONE;
-            for (prefix_product, &value) in prefix_products.iter_mut().zip(values.iter()) {
-                *prefix_product = total_product;
-                total_product = self.reduce_mul(total_product, value);
-            }
-
-            let mut suffix_inverse = self.try_reduce_inv(total_product)?;
-
-            for (value, prefix_product) in values
-                .iter_mut()
-                .rev()
-                .zip(prefix_products.iter().rev().copied())
-            {
-                let current_value = *value;
-                *value = self.reduce_mul(prefix_product, suffix_inverse);
-                suffix_inverse = self.reduce_mul(suffix_inverse, current_value);
-            }
-
-            Ok(())
-        }
         #[inline]
         fn try_reduce_inv_slice_to(
             self,

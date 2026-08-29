@@ -162,4 +162,23 @@ mod u32tests {
             );
         }
     }
+
+    #[test]
+    fn inverse_slice_ops() {
+        use primus_modulus::BarrettModulus;
+
+        let input = [1, 2, 3, 17, 257];
+        let mut expected = [0; 5];
+        BarrettModulus::new(Modulus::value()).reduce_inv_slice_to(&input, &mut expected);
+
+        let mut output = [u32::MAX; 5];
+        Modulus.reduce_inv_slice_to(&input, &mut output);
+        assert_eq!(output, expected);
+
+        output.fill(u32::MAX);
+        Modulus
+            .try_reduce_inv_slice_to(&input, &mut output)
+            .unwrap();
+        assert_eq!(output, expected);
+    }
 }

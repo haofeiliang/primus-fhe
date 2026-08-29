@@ -358,36 +358,6 @@ pub(crate) fn slice_inv_ops(name: &Ident, ty: &syn::Path) -> TokenStream {
     quote! {
         impl ::primus_modulus::reduce::ReduceInvSlice<#ty> for #name {
             #[inline]
-            fn reduce_inv_slice_assign(self, values: &mut [#ty], prefix_products: &mut [#ty]) {
-                use ::primus_modulus::reduce::{ReduceInv, ReduceMul};
-                let len = values.len();
-
-                debug_assert_eq!(prefix_products.len(), len);
-
-                if len == 0 {
-                    return;
-                }
-
-                let mut total_product = 1;
-                for (prefix_product, &value) in prefix_products.iter_mut().zip(values.iter()) {
-                    *prefix_product = total_product;
-                    total_product = self.reduce_mul(total_product, value);
-                }
-
-                let mut suffix_inverse = self.reduce_inv(total_product);
-
-                for (value, prefix_product) in values
-                    .iter_mut()
-                    .rev()
-                    .zip(prefix_products.iter().rev().copied())
-                {
-                    let current_value = *value;
-                    *value = self.reduce_mul(prefix_product, suffix_inverse);
-                    suffix_inverse = self.reduce_mul(suffix_inverse, current_value);
-                }
-            }
-
-            #[inline]
             fn reduce_inv_slice_to(self, input: &[#ty], output: &mut [#ty]) {
                 use ::primus_modulus::reduce::{ReduceInv, ReduceMul, ReduceMulAssign};
                 let len = input.len();
@@ -413,41 +383,6 @@ pub(crate) fn slice_inv_ops(name: &Ident, ty: &syn::Path) -> TokenStream {
             }
         }
         impl ::primus_modulus::reduce::TryReduceInvSlice<#ty> for #name {
-            #[inline]
-            fn try_reduce_inv_slice_assign(
-                self,
-                values: &mut [#ty],
-                prefix_products: &mut [#ty],
-            ) -> Result<(), ::primus_modulus::reduce::ReduceError<#ty>> {
-                use ::primus_modulus::reduce::{ReduceMul, TryReduceInv};
-                let len = values.len();
-
-                debug_assert_eq!(prefix_products.len(), len);
-
-                if len == 0 {
-                    return Ok(());
-                }
-
-                let mut total_product = 1;
-                for (prefix_product, &value) in prefix_products.iter_mut().zip(values.iter()) {
-                    *prefix_product = total_product;
-                    total_product = self.reduce_mul(total_product, value);
-                }
-
-                let mut suffix_inverse = self.try_reduce_inv(total_product)?;
-
-                for (value, prefix_product) in values
-                    .iter_mut()
-                    .rev()
-                    .zip(prefix_products.iter().rev().copied())
-                {
-                    let current_value = *value;
-                    *value = self.reduce_mul(prefix_product, suffix_inverse);
-                    suffix_inverse = self.reduce_mul(suffix_inverse, current_value);
-                }
-
-                Ok(())
-            }
             #[inline]
             fn try_reduce_inv_slice_to(
                 self,

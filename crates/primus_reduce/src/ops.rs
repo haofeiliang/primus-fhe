@@ -11,14 +11,17 @@ pub trait Reduce<T> {
     ///
     /// # Correctness
     ///
-    /// The legal input range for `value` is **implementation-defined** and
-    /// depends on the modulus form: Barrett admits up to `value < modulus²`,
-    /// Montgomery requires `value < N·R`, native power-of-two admits any
-    /// `T`. Consult the concrete modulus type's docs.
+    /// The legal input range and representation for `value` are defined by
+    /// each implementation for its concrete input type. The same modulus type
+    /// may support scalar, fixed-width multi-limb, and arbitrary-length limb
+    /// inputs with different requirements. Consult the concrete
+    /// implementation's documentation.
     ///
-    /// [`FieldContext`](crate::FieldContext) impls conventionally interpret
-    /// `T = &[U]` as multi-limb input (e.g. `&[u64; 2]` as a 128-bit value)
-    /// to be reduced into the scalar output type.
+    /// The `Reduce<&[U]>` implementation required by
+    /// [`FieldContext`](crate::FieldContext) conventionally interprets the
+    /// slice as a little-endian multi-limb integer to be reduced into `U`.
+    /// Its accepted lengths and empty-slice behavior remain
+    /// implementation-defined.
     #[must_use]
     fn reduce(self, value: T) -> Self::Output;
 }

@@ -234,14 +234,11 @@ where
 
 /// Value-side mirror of [`ReduceInvSlice`].
 pub trait InvModuloSlice<M> {
-    /// `self[i] = self[i]^(-1) (mod modulus)` in-place.
-    ///
-    /// # Panics
-    ///
-    /// Panics if any element has no inverse modulo `modulus`.
-    fn inv_modulo_slice_assign(&mut self, scratch: &mut Self, modulus: M);
-
     /// `output[i] = self[i]^(-1) (mod modulus)`.
+    ///
+    /// # Preconditions
+    ///
+    /// - `self.len() == output.len()`
     ///
     /// # Panics
     ///
@@ -254,11 +251,6 @@ where
     M: ReduceInvSlice<T> + Copy,
 {
     #[inline(always)]
-    fn inv_modulo_slice_assign(&mut self, scratch: &mut [T], modulus: M) {
-        modulus.reduce_inv_slice_assign(self, scratch);
-    }
-
-    #[inline(always)]
     fn inv_modulo_slice_to(&self, output: &mut [T], modulus: M) {
         modulus.reduce_inv_slice_to(self, output);
     }
@@ -269,24 +261,6 @@ pub trait TryInvModuloSlice<M, T>
 where
     Self: AsRef<[T]>,
 {
-    /// Try to compute `self[i] = self[i]^(-1) (mod modulus)` in-place.
-    ///
-    /// # Preconditions
-    ///
-    /// - Every value in `self` is less than `modulus`
-    /// - `scratch` satisfies the modulus implementation's requirement
-    ///
-    /// # Errors
-    ///
-    /// Returns [`ReduceError::NoInverse`](primus_reduce::ReduceError::NoInverse)
-    /// if one or more values have no inverse. `self` and `scratch` may be
-    /// modified when an error is returned.
-    fn try_inv_modulo_slice_assign(
-        &mut self,
-        scratch: &mut [T],
-        modulus: M,
-    ) -> Result<(), primus_reduce::ReduceError<T>>;
-
     /// Try to compute `output[i] = self[i]^(-1) (mod modulus)`.
     ///
     /// # Preconditions
@@ -310,15 +284,6 @@ impl<T, M> TryInvModuloSlice<M, T> for [T]
 where
     M: TryReduceInvSlice<T>,
 {
-    #[inline(always)]
-    fn try_inv_modulo_slice_assign(
-        &mut self,
-        scratch: &mut [T],
-        modulus: M,
-    ) -> Result<(), primus_reduce::ReduceError<T>> {
-        modulus.try_reduce_inv_slice_assign(self, scratch)
-    }
-
     #[inline(always)]
     fn try_inv_modulo_slice_to(
         &self,

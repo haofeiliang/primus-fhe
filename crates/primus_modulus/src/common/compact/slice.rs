@@ -2,9 +2,9 @@ use primus_integer::{FheUint, UnsignedInteger};
 use primus_reduce::{ExplicitModulus, prelude::*};
 
 pub use crate::common::uint::slice::{
-    lazy_reduce_neg_slice_assign, lazy_reduce_neg_slice_to, reduce_inv_slice_assign,
-    reduce_inv_slice_to, reduce_neg_slice_assign, reduce_neg_slice_to, reduce_once_slice_assign,
-    reduce_once_slice_to, try_reduce_inv_slice_assign, try_reduce_inv_slice_to,
+    lazy_reduce_neg_slice_assign, lazy_reduce_neg_slice_to, reduce_inv_slice_to,
+    reduce_neg_slice_assign, reduce_neg_slice_to, reduce_once_slice_assign, reduce_once_slice_to,
+    try_reduce_inv_slice_to,
 };
 
 use super::DOT_PRODUCT_INNER_CHUNK;

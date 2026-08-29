@@ -230,32 +230,7 @@ pub trait ReduceMulAddSlice<T> {
 }
 
 /// Slice form of [`crate::ReduceInv`].
-///
-/// # Scratch buffer
-///
-/// The scratch-buffer requirement of [`reduce_inv_slice_assign`](Self::reduce_inv_slice_assign)
-/// depends on the modulus implementation. `UintModulus` and `CompactModulus`
-/// do not use scratch space, while Barrett implementations require
-/// `scratch.len() == values.len()` (the polynomial length for polynomial
-/// callers). The out-of-place method does not need a separate scratch buffer
-/// because it can reuse `output` as working space.
 pub trait ReduceInvSlice<T> {
-    /// Calculates `values[i] = values[i]^(-1) (mod modulus)` in-place,
-    /// where `self` is the modulus.
-    ///
-    /// # Correctness
-    ///
-    /// - `scratch` satisfies the modulus implementation's requirement described
-    ///   in this trait's [scratch-buffer section](Self#scratch-buffer)
-    /// - Each `values[i] < modulus`
-    /// - Each `values[i]` and `modulus` must be coprime
-    ///
-    /// # Panics
-    ///
-    /// Panics if any element has no inverse modulo `modulus`. Use
-    /// [`TryReduceInvSlice`] for a non-panicking variant.
-    fn reduce_inv_slice_assign(self, values: &mut [T], scratch: &mut [T]);
-
     /// Writes `input[i]^(-1) (mod modulus)` into `output[i]` for each element,
     /// where `self` is the modulus.
     ///
@@ -268,40 +243,12 @@ pub trait ReduceInvSlice<T> {
     /// # Panics
     ///
     /// Panics if any element has no inverse modulo `modulus`. Use
-    /// [`TryReduceInvSlice`] for a non-panicking variant.
+    /// [`TryReduceInvSlice`] for a non-panicking inverse.
     fn reduce_inv_slice_to(self, input: &[T], output: &mut [T]);
 }
 
 /// Fallible slice form of [`crate::TryReduceInv`].
-///
-/// # Scratch buffer
-///
-/// [`try_reduce_inv_slice_assign`](Self::try_reduce_inv_slice_assign) has the
-/// same implementation-specific scratch-buffer requirement as
-/// [`ReduceInvSlice::reduce_inv_slice_assign`]. `UintModulus` and
-/// `CompactModulus` do not use scratch space, while Barrett implementations
-/// require `scratch.len() == values.len()`.
 pub trait TryReduceInvSlice<T> {
-    /// Attempts to replace each value with its multiplicative inverse,
-    /// where `self` is the modulus.
-    ///
-    /// # Correctness
-    ///
-    /// - `scratch` satisfies the modulus implementation's requirement described
-    ///   in this trait's [scratch-buffer section](Self#scratch-buffer)
-    /// - Each `values[i] < modulus`
-    ///
-    /// # Errors
-    ///
-    /// Returns [`ReduceError::NoInverse`](crate::ReduceError::NoInverse) if one
-    /// or more values have no inverse. `values` and `scratch` may be modified
-    /// when an error is returned.
-    fn try_reduce_inv_slice_assign(
-        self,
-        values: &mut [T],
-        scratch: &mut [T],
-    ) -> Result<(), crate::ReduceError<T>>;
-
     /// Attempts to write each input's multiplicative inverse to `output`,
     /// where `self` is the modulus.
     ///
