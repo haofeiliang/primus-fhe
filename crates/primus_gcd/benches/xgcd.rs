@@ -2,7 +2,7 @@
 
 use core::hint::black_box;
 
-use criterion::{BatchSize, BenchmarkId, Criterion, criterion_group, criterion_main};
+use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use primus_gcd::Xgcd;
 use rand::distr::{Distribution, Uniform};
 use rand::{Rng, SeedableRng, rngs::StdRng};
@@ -50,96 +50,88 @@ fn bench_primitive_gcd(c: &mut Criterion) {
         .map(|&(larger, _)| larger | 1)
         .collect();
 
-    let mut group = c.benchmark_group("primitive_gcd/u64");
+    let mut group = c.benchmark_group(format!("primitive_gcd/u64/dataset_{DATASET_LEN}"));
+    group.throughput(Throughput::Elements(DATASET_LEN as u64));
 
     // Keep each measured closure explicit so its operation and operand order
-    // remain visible. iter_batched excludes input rotation from the timed work.
+    // remain visible. Each iteration processes the complete pre-generated
+    // dataset, amortizing loop overhead without timing input generation or
+    // `iter_batched`'s result collection.
     group.bench_function(BenchmarkId::new("gcd", "general"), |b| {
-        let mut inputs = general_pairs.iter().copied().cycle();
-        b.iter_batched(
-            || inputs.next().unwrap(),
-            |(x, y)| black_box(black_box(x).gcd(black_box(y))),
-            BatchSize::SmallInput,
-        )
+        b.iter(|| {
+            for &(x, y) in &general_pairs {
+                let _ = black_box(black_box(x).gcd(black_box(y)));
+            }
+        })
     });
 
     group.bench_function(BenchmarkId::new("is_coprime", "general"), |b| {
-        let mut inputs = general_pairs.iter().copied().cycle();
-        b.iter_batched(
-            || inputs.next().unwrap(),
-            |(x, y)| black_box(black_box(x).is_coprime(black_box(y))),
-            BatchSize::SmallInput,
-        )
+        b.iter(|| {
+            for &(x, y) in &general_pairs {
+                let _ = black_box(black_box(x).is_coprime(black_box(y)));
+            }
+        })
     });
 
     group.bench_function(BenchmarkId::new("xgcd", "general"), |b| {
-        let mut inputs = general_pairs.iter().copied().cycle();
-        b.iter_batched(
-            || inputs.next().unwrap(),
-            |(x, y)| black_box(u64::xgcd(black_box(x), black_box(y))),
-            BatchSize::SmallInput,
-        )
+        b.iter(|| {
+            for &(x, y) in &general_pairs {
+                let _ = black_box(u64::xgcd(black_box(x), black_box(y)));
+            }
+        })
     });
 
     group.bench_function(BenchmarkId::new("xgcd", "high_msb"), |b| {
-        let mut inputs = high_msb_pairs.iter().copied().cycle();
-        b.iter_batched(
-            || inputs.next().unwrap(),
-            |(x, y)| black_box(u64::xgcd(black_box(x), black_box(y))),
-            BatchSize::SmallInput,
-        )
+        b.iter(|| {
+            for &(x, y) in &high_msb_pairs {
+                let _ = black_box(u64::xgcd(black_box(x), black_box(y)));
+            }
+        })
     });
 
     group.bench_function(BenchmarkId::new("gcdinv", "general"), |b| {
-        let mut inputs = general_pairs.iter().copied().cycle();
-        b.iter_batched(
-            || inputs.next().unwrap(),
-            |(larger, smaller)| black_box(u64::gcdinv(black_box(smaller), black_box(larger))),
-            BatchSize::SmallInput,
-        )
+        b.iter(|| {
+            for &(larger, smaller) in &general_pairs {
+                let _ = black_box(u64::gcdinv(black_box(smaller), black_box(larger)));
+            }
+        })
     });
 
     group.bench_function(BenchmarkId::new("gcdinv", "high_msb"), |b| {
-        let mut inputs = high_msb_pairs.iter().copied().cycle();
-        b.iter_batched(
-            || inputs.next().unwrap(),
-            |(larger, smaller)| black_box(u64::gcdinv(black_box(smaller), black_box(larger))),
-            BatchSize::SmallInput,
-        )
+        b.iter(|| {
+            for &(larger, smaller) in &high_msb_pairs {
+                let _ = black_box(u64::gcdinv(black_box(smaller), black_box(larger)));
+            }
+        })
     });
 
     // Keep both explicit mask arguments opaque to measure the public
     // runtime-mask paths rather than constant-specialized calls.
     group.bench_function(BenchmarkId::new("gcdinv_pow_of_2", "full_width"), |b| {
-        let mut inputs = odd_values.iter().copied().cycle();
-        b.iter_batched(
-            || inputs.next().unwrap(),
-            |value| black_box(u64::gcdinv_pow_of_2(black_box(value), black_box(u64::MAX))),
-            BatchSize::SmallInput,
-        )
+        b.iter(|| {
+            for &value in &odd_values {
+                let _ = black_box(u64::gcdinv_pow_of_2(black_box(value), black_box(u64::MAX)));
+            }
+        })
     });
 
     group.bench_function(BenchmarkId::new("gcdinv_native", "full_width"), |b| {
-        let mut inputs = odd_values.iter().copied().cycle();
-        b.iter_batched(
-            || inputs.next().unwrap(),
-            |value| black_box(u64::gcdinv_native(black_box(value))),
-            BatchSize::SmallInput,
-        )
+        b.iter(|| {
+            for &value in &odd_values {
+                let _ = black_box(u64::gcdinv_native(black_box(value)));
+            }
+        })
     });
 
     group.bench_function(BenchmarkId::new("gcdinv_pow_of_2", "16_bit"), |b| {
-        let mut inputs = odd_values.iter().copied().cycle();
-        b.iter_batched(
-            || inputs.next().unwrap(),
-            |value| {
-                black_box(u64::gcdinv_pow_of_2(
+        b.iter(|| {
+            for &value in &odd_values {
+                let _ = black_box(u64::gcdinv_pow_of_2(
                     black_box(value),
                     black_box(MASK_16_BITS),
-                ))
-            },
-            BatchSize::SmallInput,
-        )
+                ));
+            }
+        })
     });
 
     group.finish();

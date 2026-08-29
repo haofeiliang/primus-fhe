@@ -10,6 +10,22 @@ fn seeded_rng(seed: u64) -> StdRng {
     StdRng::seed_from_u64(seed)
 }
 
+fn big_gcd<T>(x: T, y: T) -> UBig
+where
+    UBig: From<T>,
+{
+    let x = UBig::from(x);
+    let y = UBig::from(y);
+
+    // Primus follows Rust's integer convention `gcd(0, 0) = 0`, whereas
+    // dashu rejects this otherwise undefined case.
+    if x == UBig::ZERO && y == UBig::ZERO {
+        UBig::ZERO
+    } else {
+        dashu_int::ops::Gcd::gcd(x, y)
+    }
+}
+
 /// Verifies the complete `u8` input space for GCD, coprimality, and the
 /// extended-GCD Bézout identity.
 #[test]
@@ -81,8 +97,18 @@ where
 {
     let (a, b, gcd) = T::xgcd(x, y);
     let ty = type_name::<T>();
+    let expected_gcd = big_gcd(x, y);
 
-    assert_eq!(gcd, x.gcd(y), "type={ty}, x={x:?}, y={y:?}");
+    assert_eq!(
+        UBig::from(x.gcd(y)),
+        expected_gcd,
+        "type={ty}, x={x:?}, y={y:?}",
+    );
+    assert_eq!(
+        UBig::from(gcd),
+        expected_gcd,
+        "type={ty}, x={x:?}, y={y:?}, a={a:?}, b={b:?}",
+    );
     assert_eq!(
         UBig::from(a) * UBig::from(x),
         UBig::from(b) * UBig::from(y) + UBig::from(gcd),
@@ -97,11 +123,17 @@ where
 {
     let (inverse, gcd) = T::gcdinv(value, modulus);
     let ty = type_name::<T>();
+    let expected_gcd = big_gcd(value, modulus);
 
     assert_eq!(
-        gcd,
-        value.gcd(modulus),
+        UBig::from(value.gcd(modulus)),
+        expected_gcd,
         "type={ty}, value={value:?}, modulus={modulus:?}",
+    );
+    assert_eq!(
+        UBig::from(gcd),
+        expected_gcd,
+        "type={ty}, value={value:?}, modulus={modulus:?}, inverse={inverse:?}",
     );
     assert!(inverse < modulus);
 
