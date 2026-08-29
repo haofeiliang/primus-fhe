@@ -1,32 +1,41 @@
+// cargo bench -p primus_integer --bench big_uint
+
 mod support;
 
-use std::{cmp::Ordering, hint::black_box};
+use core::{cmp::Ordering, hint::black_box};
 
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use primus_integer::{BigUint, multiply_many_values};
-use rand::distr::{Distribution, Uniform};
-use rand::{SeedableRng, rngs::StdRng};
+use rand::{RngExt, SeedableRng, rngs::StdRng};
 
-use support::{RNG_SEED, sampled_values};
+use support::{RNG_SEED, random_values};
 
 const BATCH_LEN: usize = 1024;
 const LIMB_COUNTS: [usize; 2] = [2, 8];
 
 fn bench_big_uint(c: &mut Criterion) {
     let mut rng = StdRng::seed_from_u64(RNG_SEED ^ 0x6269_675f_7569_6e74);
-    let distribution = Uniform::new_inclusive(u64::MIN, u64::MAX).unwrap();
     let mut group = c.benchmark_group("big_uint");
 
     for limb_count in LIMB_COUNTS {
         let value_count = BATCH_LEN;
         let buffer_len = limb_count * value_count;
-        let lhs = sampled_values(&mut rng, &distribution, buffer_len);
-        let rhs = sampled_values(&mut rng, &distribution, buffer_len);
-        let initial_acc = sampled_values(&mut rng, &distribution, buffer_len);
+        let lhs = random_values::<u64>(&mut rng, buffer_len);
+        let rhs = random_values::<u64>(&mut rng, buffer_len);
+        let initial_acc = random_values::<u64>(&mut rng, buffer_len);
+        let mut cmp_rhs = lhs.clone();
+        for value in cmp_rhs.chunks_exact_mut(limb_count) {
+            value[0] = value[0].wrapping_add(1);
+        }
         // Ciphertext moduli are normally around 50--60 bits, while a gadget
         // decomposition digit is much smaller.
-        let scalar = (distribution.sample(&mut rng) & ((1u64 << 52) - 1)) | 1;
+        let scalar = (rng.random::<u64>() & ((1u64 << 52) - 1)) | 1;
         let small_scalar = scalar & ((1u64 << 20) - 1);
+        // Isolate the common no-carry path for scalar addition.
+        let mut no_carry_lhs = lhs.clone();
+        for value in no_carry_lhs.chunks_exact_mut(limb_count) {
+            value[0] &= u64::MAX >> 1;
+        }
         let case = format!("u64/{limb_count}_limbs");
 
         group.throughput(Throughput::Elements(value_count as u64));
@@ -62,11 +71,11 @@ fn bench_big_uint(c: &mut Criterion) {
         });
 
         let mut value_sum = vec![0u64; buffer_len];
-        group.bench_function(BenchmarkId::new("add_value_to", &case), |b| {
+        group.bench_function(BenchmarkId::new("add_value_to_no_carry", &case), |b| {
             b.iter(|| {
                 let mut carry_mix = false;
                 let small_scalar = black_box(small_scalar);
-                for (input, output) in black_box(lhs.as_slice())
+                for (input, output) in black_box(no_carry_lhs.as_slice())
                     .chunks_exact(limb_count)
                     .zip(black_box(value_sum.as_mut_slice()).chunks_exact_mut(limb_count))
                 {
@@ -106,12 +115,13 @@ fn bench_big_uint(c: &mut Criterion) {
             })
         });
 
-        group.bench_function(BenchmarkId::new("cmp", &case), |b| {
+        // Equal high limbs force comparison to scan the full fixed width.
+        group.bench_function(BenchmarkId::new("cmp_full_scan", &case), |b| {
             b.iter(|| {
                 let mut ordering_mix = 0usize;
                 for (lhs, rhs) in black_box(lhs.as_slice())
                     .chunks_exact(limb_count)
-                    .zip(black_box(rhs.as_slice()).chunks_exact(limb_count))
+                    .zip(black_box(cmp_rhs.as_slice()).chunks_exact(limb_count))
                 {
                     ordering_mix ^= match BigUint(lhs).cmp(&BigUint(rhs)) {
                         Ordering::Less => 0,

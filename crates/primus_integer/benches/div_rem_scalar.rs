@@ -1,54 +1,55 @@
+// cargo bench -p primus_integer --bench div_rem_scalar
+
 mod support;
 
 use core::hint::black_box;
 
-use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
-use primus_integer::{DivRemScalar, DivWide};
-use rand::distr::Uniform;
+use criterion::{
+    BenchmarkGroup, BenchmarkId, Criterion, criterion_group, criterion_main, measurement::WallTime,
+};
+use primus_integer::{DivRemScalar, DivWide, UnsignedInteger};
 use rand::{SeedableRng, rngs::StdRng};
 
-use support::{RNG_SEED, sampled_values};
+use support::{RNG_SEED, random_values};
 
 const LIMB_COUNTS: [usize; 2] = [2, 8];
 const U128_HALF_WORD_DIVISOR: u128 = 0xdead_beef_cafe_babe;
 const U128_FULL_WIDTH_DIVISOR: u128 = (1u128 << 96) | 0xc0ff_ee15_dead_beef;
 
-macro_rules! bench_barrett_division {
-    ($group:expr, $type_name:literal, $ty:ty, $divisor:expr) => {{
-        let dividend = [0 as $ty, 0 as $ty, 1 as $ty];
-        let mut quotient = [0 as $ty; 3];
-        $group.throughput(Throughput::Elements(dividend.len() as u64));
-        $group.bench_function(BenchmarkId::new("barrett_reciprocal", $type_name), |b| {
-            b.iter(|| {
-                let remainder = <$ty>::div_rem_scalar(
-                    black_box(&dividend),
-                    black_box($divisor),
-                    black_box(&mut quotient),
-                );
-                black_box(remainder)
-            })
-        });
-    }};
+fn bench_barrett_division<T>(group: &mut BenchmarkGroup<'_, WallTime>, type_name: &str, divisor: T)
+where
+    T: UnsignedInteger,
+{
+    let dividend = [T::ZERO, T::ZERO, T::ONE];
+    let mut quotient = [T::ZERO; 3];
+    group.bench_function(BenchmarkId::new("barrett_reciprocal", type_name), |b| {
+        b.iter(|| {
+            let remainder = T::div_rem_scalar(
+                black_box(&dividend),
+                black_box(divisor),
+                black_box(&mut quotient),
+            );
+            black_box(remainder)
+        })
+    });
 }
 
 fn bench_div_rem_scalar(c: &mut Criterion) {
     let mut group = c.benchmark_group("div_rem_scalar");
 
     // Barrett precomputation divides 2^(2*BITS) by a word-sized modulus.
-    bench_barrett_division!(group, "u32", u32, 1_056_866_017u32);
-    bench_barrett_division!(group, "u64", u64, 1_125_899_906_826_241u64);
+    bench_barrett_division(&mut group, "u32", 1_056_866_017u32);
+    bench_barrett_division(&mut group, "u64", 1_125_899_906_826_241u64);
 
     // BFV plaintext scaling divides a dense RNS modulus product by a small
     // plaintext modulus. Two and eight limbs cover small and deep RNS bases.
     const PLAINTEXT_MODULUS: u64 = 65_537;
     let mut rng = StdRng::seed_from_u64(RNG_SEED ^ 0x6469_7669_7369_6f6e);
-    let distribution = Uniform::new_inclusive(u64::MIN, u64::MAX).unwrap();
     for limb_count in LIMB_COUNTS {
-        let dividend = sampled_values(&mut rng, &distribution, limb_count);
+        let dividend = random_values::<u64>(&mut rng, limb_count);
         let mut quotient = vec![0u64; limb_count];
         let case = format!("u64/{limb_count}_limbs");
 
-        group.throughput(Throughput::Elements(limb_count as u64));
         group.bench_function(BenchmarkId::new("plaintext_scale", case), |b| {
             b.iter(|| {
                 let remainder = u64::div_rem_scalar(
@@ -64,12 +65,10 @@ fn bench_div_rem_scalar(c: &mut Criterion) {
     // u128 has separate half-word and Knuth-D kernels because no wider
     // primitive integer is available. Two and eight limbs expose both the
     // fixed setup cost and the per-limb cost of each kernel.
-    let distribution = Uniform::new_inclusive(u128::MIN, u128::MAX).unwrap();
     for limb_count in LIMB_COUNTS {
-        let dividend = sampled_values(&mut rng, &distribution, limb_count);
+        let dividend = random_values::<u128>(&mut rng, limb_count);
         let mut quotient = vec![0u128; limb_count];
 
-        group.throughput(Throughput::Elements(limb_count as u64));
         group.bench_function(
             BenchmarkId::new("u128_half_word", format!("{limb_count}_limbs")),
             |b| {
@@ -99,9 +98,13 @@ fn bench_div_rem_scalar(c: &mut Criterion) {
         );
     }
 
+    group.finish();
+}
+
+fn bench_div_wide(c: &mut Criterion) {
+    let mut group = c.benchmark_group("div_wide");
     let lo = 0xfedc_ba98_7654_3210_0123_4567_89ab_cdef;
-    group.throughput(Throughput::Elements(1));
-    group.bench_function(BenchmarkId::new("u128_div_wide", "half_word"), |b| {
+    group.bench_function(BenchmarkId::new("u128", "half_word"), |b| {
         b.iter(|| {
             black_box(u128::div_wide(
                 black_box(lo),
@@ -110,7 +113,7 @@ fn bench_div_rem_scalar(c: &mut Criterion) {
             ))
         })
     });
-    group.bench_function(BenchmarkId::new("u128_div_wide", "full_width"), |b| {
+    group.bench_function(BenchmarkId::new("u128", "full_width"), |b| {
         b.iter(|| {
             black_box(u128::div_wide(
                 black_box(lo),
@@ -123,5 +126,5 @@ fn bench_div_rem_scalar(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_div_rem_scalar);
+criterion_group!(benches, bench_div_rem_scalar, bench_div_wide);
 criterion_main!(benches);

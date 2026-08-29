@@ -1,17 +1,19 @@
-#![cfg_attr(feature = "simd", feature(portable_simd))]
+// cargo bench -p primus_integer --bench word_ops
 
 mod support;
 
-use std::hint::black_box;
+use core::hint::black_box;
+
+use criterion::{
+    BenchmarkGroup, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main,
+    measurement::WallTime,
+};
+use primus_integer::{CarryingMul, UnsignedInteger, WideningMul};
 #[cfg(feature = "simd")]
-use std::simd::Simd;
+use primus_integer::{SimdArray, SimdUnsignedInteger};
+use rand::{Fill, SeedableRng, rngs::StdRng};
 
-use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
-use primus_integer::{CarryingMul, WideningMul};
-use rand::distr::{Distribution, Uniform};
-use rand::{SeedableRng, rngs::StdRng};
-
-use support::{RNG_SEED, sampled_values};
+use support::{RNG_SEED, random_values};
 
 const BATCH_LEN: usize = 8192;
 
@@ -22,244 +24,250 @@ struct WordInputs<T> {
     add: Vec<T>,
 }
 
-fn word_inputs<T, D>(rng: &mut StdRng, distribution: &D) -> WordInputs<T>
-where
-    D: Distribution<T>,
-{
-    WordInputs {
-        lhs: sampled_values(rng, distribution, BATCH_LEN),
-        rhs: sampled_values(rng, distribution, BATCH_LEN),
-        carry: sampled_values(rng, distribution, BATCH_LEN),
-        add: sampled_values(rng, distribution, BATCH_LEN),
+impl<T> WordInputs<T> {
+    fn assert_batch_len(&self) {
+        assert_eq!(self.lhs.len(), BATCH_LEN);
+        assert_eq!(self.rhs.len(), BATCH_LEN);
+        assert_eq!(self.carry.len(), BATCH_LEN);
+        assert_eq!(self.add.len(), BATCH_LEN);
     }
 }
 
-macro_rules! bench_scalar_word_ops {
-    ($group:expr, $type_name:literal, $ty:ty, $inputs:expr) => {{
-        let inputs = &$inputs;
-        let mut low = vec![0 as $ty; BATCH_LEN];
-        let mut high = vec![0 as $ty; BATCH_LEN];
+fn word_inputs<T>(rng: &mut StdRng) -> WordInputs<T>
+where
+    T: UnsignedInteger + Fill,
+{
+    WordInputs {
+        lhs: random_values(rng, BATCH_LEN),
+        rhs: random_values(rng, BATCH_LEN),
+        carry: random_values(rng, BATCH_LEN),
+        add: random_values(rng, BATCH_LEN),
+    }
+}
 
-        $group.bench_function(BenchmarkId::new("widening_mul", $type_name), |b| {
-            b.iter(|| {
-                let lhs = black_box(inputs.lhs.as_slice());
-                let rhs = black_box(inputs.rhs.as_slice());
-                let low = black_box(low.as_mut_slice());
-                let high = black_box(high.as_mut_slice());
+fn bench_scalar_word_ops<T>(
+    group: &mut BenchmarkGroup<'_, WallTime>,
+    type_name: &str,
+    inputs: &WordInputs<T>,
+) where
+    T: UnsignedInteger,
+{
+    let mut low = vec![T::ZERO; BATCH_LEN];
+    let mut high = vec![T::ZERO; BATCH_LEN];
 
-                for index in 0..BATCH_LEN {
-                    (low[index], high[index]) = WideningMul::widening_mul(lhs[index], rhs[index]);
-                }
-            })
-        });
+    group.bench_function(BenchmarkId::new("widening_mul", type_name), |b| {
+        b.iter(|| {
+            let lhs = black_box(inputs.lhs.as_slice());
+            let rhs = black_box(inputs.rhs.as_slice());
+            let low = black_box(low.as_mut_slice());
+            let high = black_box(high.as_mut_slice());
 
-        $group.bench_function(BenchmarkId::new("widening_mul_hw", $type_name), |b| {
-            b.iter(|| {
-                let lhs = black_box(inputs.lhs.as_slice());
-                let rhs = black_box(inputs.rhs.as_slice());
-                let high = black_box(high.as_mut_slice());
+            let operands = lhs.iter().zip(rhs);
+            let outputs = low.iter_mut().zip(high);
+            for ((&lhs, &rhs), (low, high)) in operands.zip(outputs) {
+                (*low, *high) = WideningMul::widening_mul(lhs, rhs);
+            }
+        })
+    });
 
-                for index in 0..BATCH_LEN {
-                    high[index] = WideningMul::widening_mul_hw(lhs[index], rhs[index]);
-                }
-            })
-        });
+    group.bench_function(BenchmarkId::new("widening_mul_hw", type_name), |b| {
+        b.iter(|| {
+            let lhs = black_box(inputs.lhs.as_slice());
+            let rhs = black_box(inputs.rhs.as_slice());
+            let high = black_box(high.as_mut_slice());
 
-        $group.bench_function(BenchmarkId::new("carrying_mul", $type_name), |b| {
-            b.iter(|| {
-                let lhs = black_box(inputs.lhs.as_slice());
-                let rhs = black_box(inputs.rhs.as_slice());
-                let carry = black_box(inputs.carry.as_slice());
-                let low = black_box(low.as_mut_slice());
-                let high = black_box(high.as_mut_slice());
+            for ((&lhs, &rhs), high) in lhs.iter().zip(rhs).zip(high) {
+                *high = WideningMul::widening_mul_hw(lhs, rhs);
+            }
+        })
+    });
 
-                for index in 0..BATCH_LEN {
-                    (low[index], high[index]) =
-                        CarryingMul::carrying_mul(lhs[index], rhs[index], carry[index]);
-                }
-            })
-        });
+    group.bench_function(BenchmarkId::new("carrying_mul", type_name), |b| {
+        b.iter(|| {
+            let lhs = black_box(inputs.lhs.as_slice());
+            let rhs = black_box(inputs.rhs.as_slice());
+            let carry = black_box(inputs.carry.as_slice());
+            let low = black_box(low.as_mut_slice());
+            let high = black_box(high.as_mut_slice());
 
-        $group.bench_function(BenchmarkId::new("carrying_mul_hw", $type_name), |b| {
-            b.iter(|| {
-                let lhs = black_box(inputs.lhs.as_slice());
-                let rhs = black_box(inputs.rhs.as_slice());
-                let carry = black_box(inputs.carry.as_slice());
-                let high = black_box(high.as_mut_slice());
+            let operands = lhs.iter().zip(rhs).zip(carry);
+            let outputs = low.iter_mut().zip(high);
+            for (((&lhs, &rhs), &carry), (low, high)) in operands.zip(outputs) {
+                (*low, *high) = CarryingMul::carrying_mul(lhs, rhs, carry);
+            }
+        })
+    });
 
-                for index in 0..BATCH_LEN {
-                    high[index] =
-                        CarryingMul::carrying_mul_hw(lhs[index], rhs[index], carry[index]);
-                }
-            })
-        });
+    group.bench_function(BenchmarkId::new("carrying_mul_hw", type_name), |b| {
+        b.iter(|| {
+            let lhs = black_box(inputs.lhs.as_slice());
+            let rhs = black_box(inputs.rhs.as_slice());
+            let carry = black_box(inputs.carry.as_slice());
+            let high = black_box(high.as_mut_slice());
 
-        $group.bench_function(BenchmarkId::new("carrying_mul_add", $type_name), |b| {
-            b.iter(|| {
-                let lhs = black_box(inputs.lhs.as_slice());
-                let rhs = black_box(inputs.rhs.as_slice());
-                let carry = black_box(inputs.carry.as_slice());
-                let add = black_box(inputs.add.as_slice());
-                let low = black_box(low.as_mut_slice());
-                let high = black_box(high.as_mut_slice());
+            let operands = lhs.iter().zip(rhs).zip(carry);
+            for (((&lhs, &rhs), &carry), high) in operands.zip(high) {
+                *high = CarryingMul::carrying_mul_hw(lhs, rhs, carry);
+            }
+        })
+    });
 
-                for index in 0..BATCH_LEN {
-                    (low[index], high[index]) = CarryingMul::carrying_mul_add(
-                        lhs[index],
-                        rhs[index],
-                        carry[index],
-                        add[index],
-                    );
-                }
-            })
-        });
-    }};
+    group.bench_function(BenchmarkId::new("carrying_mul_add", type_name), |b| {
+        b.iter(|| {
+            let lhs = black_box(inputs.lhs.as_slice());
+            let rhs = black_box(inputs.rhs.as_slice());
+            let carry = black_box(inputs.carry.as_slice());
+            let add = black_box(inputs.add.as_slice());
+            let low = black_box(low.as_mut_slice());
+            let high = black_box(high.as_mut_slice());
+
+            let operands = lhs.iter().zip(rhs).zip(carry).zip(add);
+            let outputs = low.iter_mut().zip(high);
+            for ((((&lhs, &rhs), &carry), &add), (low, high)) in operands.zip(outputs) {
+                (*low, *high) = CarryingMul::carrying_mul_add(lhs, rhs, carry, add);
+            }
+        })
+    });
 }
 
 #[cfg(feature = "simd")]
-macro_rules! bench_simd_word_ops {
-    ($group:expr, $type_name:literal, $ty:ty, $lanes:literal, $inputs:expr) => {{
-        let inputs = &$inputs;
-        let mut low = vec![0 as $ty; BATCH_LEN];
-        let mut high = vec![0 as $ty; BATCH_LEN];
+fn bench_simd_word_ops<T>(
+    group: &mut BenchmarkGroup<'_, WallTime>,
+    type_name: &str,
+    inputs: &WordInputs<T>,
+) where
+    T: SimdUnsignedInteger,
+{
+    assert_eq!(BATCH_LEN % T::LANE_COUNT, 0);
 
-        $group.bench_function(BenchmarkId::new("simd_widening_mul", $type_name), |b| {
-            b.iter(|| {
-                let (lhs, lhs_tail) = black_box(inputs.lhs.as_slice()).as_chunks::<$lanes>();
-                let (rhs, rhs_tail) = black_box(inputs.rhs.as_slice()).as_chunks::<$lanes>();
-                let (low, low_tail) = black_box(low.as_mut_slice()).as_chunks_mut::<$lanes>();
-                let (high, high_tail) = black_box(high.as_mut_slice()).as_chunks_mut::<$lanes>();
-                debug_assert!(
-                    lhs_tail.is_empty()
-                        && rhs_tail.is_empty()
-                        && low_tail.is_empty()
-                        && high_tail.is_empty()
-                );
+    let (lhs, lhs_tail) = T::simd_as_chunks(inputs.lhs.as_slice());
+    let (rhs, rhs_tail) = T::simd_as_chunks(inputs.rhs.as_slice());
+    let (carry, carry_tail) = T::simd_as_chunks(inputs.carry.as_slice());
+    let (add, add_tail) = T::simd_as_chunks(inputs.add.as_slice());
+    assert!(
+        lhs_tail.is_empty() && rhs_tail.is_empty() && carry_tail.is_empty() && add_tail.is_empty()
+    );
 
-                for index in 0..lhs.len() {
-                    let lhs = Simd::<$ty, $lanes>::from_array(lhs[index]);
-                    let rhs = Simd::<$ty, $lanes>::from_array(rhs[index]);
-                    let (result_low, result_high) = WideningMul::widening_mul(lhs, rhs);
-                    low[index] = result_low.to_array();
-                    high[index] = result_high.to_array();
-                }
-            })
-        });
+    let mut low = vec![T::ZERO; BATCH_LEN];
+    let mut high = vec![T::ZERO; BATCH_LEN];
+    let case = format!("{type_name}x{}", T::LANE_COUNT);
 
-        $group.bench_function(BenchmarkId::new("simd_widening_mul_hw", $type_name), |b| {
-            b.iter(|| {
-                let (lhs, lhs_tail) = black_box(inputs.lhs.as_slice()).as_chunks::<$lanes>();
-                let (rhs, rhs_tail) = black_box(inputs.rhs.as_slice()).as_chunks::<$lanes>();
-                let (high, high_tail) = black_box(high.as_mut_slice()).as_chunks_mut::<$lanes>();
-                debug_assert!(lhs_tail.is_empty() && rhs_tail.is_empty() && high_tail.is_empty());
+    group.bench_function(BenchmarkId::new("simd_widening_mul", &case), |b| {
+        b.iter(|| {
+            let lhs = black_box(lhs);
+            let rhs = black_box(rhs);
+            let low = T::simd_as_chunks_mut(black_box(low.as_mut_slice())).0;
+            let high = T::simd_as_chunks_mut(black_box(high.as_mut_slice())).0;
 
-                for index in 0..lhs.len() {
-                    let lhs = Simd::<$ty, $lanes>::from_array(lhs[index]);
-                    let rhs = Simd::<$ty, $lanes>::from_array(rhs[index]);
-                    high[index] = WideningMul::widening_mul_hw(lhs, rhs).to_array();
-                }
-            })
-        });
+            let operands = lhs.iter().zip(rhs);
+            let outputs = low.iter_mut().zip(high);
+            for ((lhs, rhs), (low, high)) in operands.zip(outputs) {
+                let lhs = T::SimdT::from_array(*lhs);
+                let rhs = T::SimdT::from_array(*rhs);
+                let (result_low, result_high) = WideningMul::widening_mul(lhs, rhs);
+                *low = result_low.to_array();
+                *high = result_high.to_array();
+            }
+        })
+    });
 
-        $group.bench_function(BenchmarkId::new("simd_carrying_mul", $type_name), |b| {
-            b.iter(|| {
-                let (lhs, lhs_tail) = black_box(inputs.lhs.as_slice()).as_chunks::<$lanes>();
-                let (rhs, rhs_tail) = black_box(inputs.rhs.as_slice()).as_chunks::<$lanes>();
-                let (carry, carry_tail) = black_box(inputs.carry.as_slice()).as_chunks::<$lanes>();
-                let (low, low_tail) = black_box(low.as_mut_slice()).as_chunks_mut::<$lanes>();
-                let (high, high_tail) = black_box(high.as_mut_slice()).as_chunks_mut::<$lanes>();
-                debug_assert!(
-                    lhs_tail.is_empty()
-                        && rhs_tail.is_empty()
-                        && carry_tail.is_empty()
-                        && low_tail.is_empty()
-                        && high_tail.is_empty()
-                );
+    group.bench_function(BenchmarkId::new("simd_widening_mul_hw", &case), |b| {
+        b.iter(|| {
+            let lhs = black_box(lhs);
+            let rhs = black_box(rhs);
+            let high = T::simd_as_chunks_mut(black_box(high.as_mut_slice())).0;
 
-                for index in 0..lhs.len() {
-                    let lhs = Simd::<$ty, $lanes>::from_array(lhs[index]);
-                    let rhs = Simd::<$ty, $lanes>::from_array(rhs[index]);
-                    let carry = Simd::<$ty, $lanes>::from_array(carry[index]);
-                    let (result_low, result_high) = CarryingMul::carrying_mul(lhs, rhs, carry);
-                    low[index] = result_low.to_array();
-                    high[index] = result_high.to_array();
-                }
-            })
-        });
+            for ((lhs, rhs), high) in lhs.iter().zip(rhs).zip(high) {
+                let lhs = T::SimdT::from_array(*lhs);
+                let rhs = T::SimdT::from_array(*rhs);
+                *high = WideningMul::widening_mul_hw(lhs, rhs).to_array();
+            }
+        })
+    });
 
-        $group.bench_function(BenchmarkId::new("simd_carrying_mul_hw", $type_name), |b| {
-            b.iter(|| {
-                let (lhs, lhs_tail) = black_box(inputs.lhs.as_slice()).as_chunks::<$lanes>();
-                let (rhs, rhs_tail) = black_box(inputs.rhs.as_slice()).as_chunks::<$lanes>();
-                let (carry, carry_tail) = black_box(inputs.carry.as_slice()).as_chunks::<$lanes>();
-                let (high, high_tail) = black_box(high.as_mut_slice()).as_chunks_mut::<$lanes>();
-                debug_assert!(
-                    lhs_tail.is_empty()
-                        && rhs_tail.is_empty()
-                        && carry_tail.is_empty()
-                        && high_tail.is_empty()
-                );
+    group.bench_function(BenchmarkId::new("simd_carrying_mul", &case), |b| {
+        b.iter(|| {
+            let lhs = black_box(lhs);
+            let rhs = black_box(rhs);
+            let carry = black_box(carry);
+            let low = T::simd_as_chunks_mut(black_box(low.as_mut_slice())).0;
+            let high = T::simd_as_chunks_mut(black_box(high.as_mut_slice())).0;
 
-                for index in 0..lhs.len() {
-                    let lhs = Simd::<$ty, $lanes>::from_array(lhs[index]);
-                    let rhs = Simd::<$ty, $lanes>::from_array(rhs[index]);
-                    let carry = Simd::<$ty, $lanes>::from_array(carry[index]);
-                    high[index] = CarryingMul::carrying_mul_hw(lhs, rhs, carry).to_array();
-                }
-            })
-        });
+            let operands = lhs.iter().zip(rhs).zip(carry);
+            let outputs = low.iter_mut().zip(high);
+            for (((lhs, rhs), carry), (low, high)) in operands.zip(outputs) {
+                let lhs = T::SimdT::from_array(*lhs);
+                let rhs = T::SimdT::from_array(*rhs);
+                let carry = T::SimdT::from_array(*carry);
+                let (result_low, result_high) = CarryingMul::carrying_mul(lhs, rhs, carry);
+                *low = result_low.to_array();
+                *high = result_high.to_array();
+            }
+        })
+    });
 
-        $group.bench_function(BenchmarkId::new("simd_carrying_mul_add", $type_name), |b| {
-            b.iter(|| {
-                let (lhs, lhs_tail) = black_box(inputs.lhs.as_slice()).as_chunks::<$lanes>();
-                let (rhs, rhs_tail) = black_box(inputs.rhs.as_slice()).as_chunks::<$lanes>();
-                let (carry, carry_tail) = black_box(inputs.carry.as_slice()).as_chunks::<$lanes>();
-                let (add, add_tail) = black_box(inputs.add.as_slice()).as_chunks::<$lanes>();
-                let (low, low_tail) = black_box(low.as_mut_slice()).as_chunks_mut::<$lanes>();
-                let (high, high_tail) = black_box(high.as_mut_slice()).as_chunks_mut::<$lanes>();
-                debug_assert!(
-                    lhs_tail.is_empty()
-                        && rhs_tail.is_empty()
-                        && carry_tail.is_empty()
-                        && add_tail.is_empty()
-                        && low_tail.is_empty()
-                        && high_tail.is_empty()
-                );
+    group.bench_function(BenchmarkId::new("simd_carrying_mul_hw", &case), |b| {
+        b.iter(|| {
+            let lhs = black_box(lhs);
+            let rhs = black_box(rhs);
+            let carry = black_box(carry);
+            let high = T::simd_as_chunks_mut(black_box(high.as_mut_slice())).0;
 
-                for index in 0..lhs.len() {
-                    let lhs = Simd::<$ty, $lanes>::from_array(lhs[index]);
-                    let rhs = Simd::<$ty, $lanes>::from_array(rhs[index]);
-                    let carry = Simd::<$ty, $lanes>::from_array(carry[index]);
-                    let add = Simd::<$ty, $lanes>::from_array(add[index]);
-                    let (result_low, result_high) =
-                        CarryingMul::carrying_mul_add(lhs, rhs, carry, add);
-                    low[index] = result_low.to_array();
-                    high[index] = result_high.to_array();
-                }
-            })
-        });
-    }};
+            let operands = lhs.iter().zip(rhs).zip(carry);
+            for (((lhs, rhs), carry), high) in operands.zip(high) {
+                let lhs = T::SimdT::from_array(*lhs);
+                let rhs = T::SimdT::from_array(*rhs);
+                let carry = T::SimdT::from_array(*carry);
+                *high = CarryingMul::carrying_mul_hw(lhs, rhs, carry).to_array();
+            }
+        })
+    });
+
+    group.bench_function(BenchmarkId::new("simd_carrying_mul_add", &case), |b| {
+        b.iter(|| {
+            let lhs = black_box(lhs);
+            let rhs = black_box(rhs);
+            let carry = black_box(carry);
+            let add = black_box(add);
+            let low = T::simd_as_chunks_mut(black_box(low.as_mut_slice())).0;
+            let high = T::simd_as_chunks_mut(black_box(high.as_mut_slice())).0;
+
+            let operands = lhs.iter().zip(rhs).zip(carry).zip(add);
+            let outputs = low.iter_mut().zip(high);
+            for ((((lhs, rhs), carry), add), (low, high)) in operands.zip(outputs) {
+                let lhs = T::SimdT::from_array(*lhs);
+                let rhs = T::SimdT::from_array(*rhs);
+                let carry = T::SimdT::from_array(*carry);
+                let add = T::SimdT::from_array(*add);
+                let (result_low, result_high) = CarryingMul::carrying_mul_add(lhs, rhs, carry, add);
+                *low = result_low.to_array();
+                *high = result_high.to_array();
+            }
+        })
+    });
 }
 
 fn bench_word_ops(c: &mut Criterion) {
     let mut rng = StdRng::seed_from_u64(RNG_SEED);
     // Full-width values make high halves and carry outputs common, as they are
     // in Barrett/Shoup reduction and CRT accumulation.
-    let u32_distribution = Uniform::new_inclusive(u32::MIN, u32::MAX).unwrap();
-    let u64_distribution = Uniform::new_inclusive(u64::MIN, u64::MAX).unwrap();
-    let u32_inputs = word_inputs(&mut rng, &u32_distribution);
-    let u64_inputs = word_inputs(&mut rng, &u64_distribution);
+    let u32_inputs = word_inputs::<u32>(&mut rng);
+    let u64_inputs = word_inputs::<u64>(&mut rng);
+    u32_inputs.assert_batch_len();
+    u64_inputs.assert_batch_len();
 
     let mut group = c.benchmark_group("word_ops");
     group.throughput(Throughput::Elements(BATCH_LEN as u64));
 
-    bench_scalar_word_ops!(group, "u32", u32, u32_inputs);
-    bench_scalar_word_ops!(group, "u64", u64, u64_inputs);
+    // These batched scalar-API cases intentionally allow compiler
+    // auto-vectorization; they measure optimized slice throughput.
+    bench_scalar_word_ops(&mut group, "u32", &u32_inputs);
+    bench_scalar_word_ops(&mut group, "u64", &u64_inputs);
 
     #[cfg(feature = "simd")]
     {
-        bench_simd_word_ops!(group, "u32x8", u32, 8, u32_inputs);
-        bench_simd_word_ops!(group, "u64x4", u64, 4, u64_inputs);
+        bench_simd_word_ops(&mut group, "u32", &u32_inputs);
+        bench_simd_word_ops(&mut group, "u64", &u64_inputs);
     }
 
     group.finish();
