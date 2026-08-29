@@ -259,8 +259,8 @@ pub trait TryReduceInvSlice<T> {
     ///
     /// # Errors
     ///
-    /// Returns [`ReduceError::NoInverse`](crate::ReduceError::NoInverse) if one
-    /// or more input values have no inverse. `output` may be modified when an
+    /// Returns an inverse-related [`ReduceError`](crate::ReduceError) if one or
+    /// more input values have no inverse. `output` may be modified when an
     /// error is returned.
     fn try_reduce_inv_slice_to(
         self,

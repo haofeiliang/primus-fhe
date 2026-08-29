@@ -287,8 +287,9 @@ pub trait TryReduceInv<T> {
     ///
     /// # Errors
     ///
-    /// Returns [`ReduceError::NoInverse`] if `value` has no inverse modulo
-    /// `modulus`.
+    /// Returns [`ReduceError::NoInverse`] for an explicit modulus, or
+    /// [`ReduceError::NoInverseImplicitModulus`] for an implicit native
+    /// modulus, if `value` has no inverse.
     fn try_reduce_inv(self, value: T) -> Result<Self::Output, ReduceError<T>>;
 }
 

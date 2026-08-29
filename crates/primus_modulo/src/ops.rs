@@ -503,8 +503,8 @@ where
     ///
     /// # Errors
     ///
-    /// Returns [`ReduceError::NoInverse`] if `self` has no inverse modulo
-    /// `modulus`.
+    /// Returns an inverse-related [`ReduceError`] if `self` has no inverse
+    /// modulo `modulus`.
     fn try_inv_modulo(self, modulus: M) -> Result<Self::Output, ReduceError<Self>>;
 }
 

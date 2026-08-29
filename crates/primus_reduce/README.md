@@ -51,7 +51,7 @@ This crate defines interfaces, not validation boundaries. Each public method doc
 - Low-level numerical kernels may diagnose shape mismatches only with `debug_assert*!`; release callers must uphold the documented contracts.
 - Dot products explicitly check equal slice lengths in every build profile.
 - Lazy results require a final once-reduction before they are treated as canonical residues.
-- Fallible inverse traits report `ReduceError::NoInverse`; infallible inverse and division traits may panic when the required inverse does not exist.
+- Fallible inverse traits report `ReduceError`; infallible inverse and division traits may panic when the required inverse does not exist.
 
 `FieldContext` means that a modulus type implements the listed operation set. It does not prove that the modulus is prime or that every nonzero residue is invertible. Callers remain responsible for validating the algebraic assumptions required by their algorithms.
 

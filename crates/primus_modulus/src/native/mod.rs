@@ -21,8 +21,9 @@ impl<T: UnsignedInteger> Default for NativeModulus<T> {
 
 impl<T: UnsignedInteger> NativeModulus<T> {
     /// Creates a [`NativeModulus<T>`].
+    #[must_use]
     #[inline(always)]
-    pub fn new() -> Self {
+    pub const fn new() -> Self {
         Self(PhantomData)
     }
 }

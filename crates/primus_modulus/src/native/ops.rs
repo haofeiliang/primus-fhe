@@ -149,10 +149,7 @@ impl<T: UnsignedInteger> TryReduceInv<T> for NativeModulus<T> {
 
     #[inline]
     fn try_reduce_inv(self, value: T) -> Result<Self::Output, ReduceError<T>> {
-        Xgcd::gcdinv_native(value).ok_or(ReduceError::NoInverse {
-            value,
-            modulus: T::ZERO,
-        })
+        Xgcd::gcdinv_native(value).ok_or(ReduceError::NoInverseImplicitModulus { value })
     }
 }
 

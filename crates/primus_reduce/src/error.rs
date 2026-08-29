@@ -16,4 +16,11 @@ pub enum ReduceError<T> {
         /// The modulus.
         modulus: T,
     },
+    /// Error that occurs when the given value has no inverse element with an
+    /// implicit native modulus that cannot be represented in `T`.
+    #[error("Value {value:?} has no inverse element with the implicit native modulus!")]
+    NoInverseImplicitModulus {
+        /// The value being inverted.
+        value: T,
+    },
 }

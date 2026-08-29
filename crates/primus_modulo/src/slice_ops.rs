@@ -374,7 +374,7 @@ where
     ///
     /// # Errors
     ///
-    /// Returns [`ReduceError::NoInverse`](primus_reduce::ReduceError::NoInverse)
+    /// Returns an inverse-related [`ReduceError`](primus_reduce::ReduceError)
     /// if one or more values have no inverse. `output` may be modified when an
     /// error is returned.
     fn try_inv_modulo_slice_to(
