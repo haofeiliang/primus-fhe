@@ -130,6 +130,7 @@ where
 
     /// Returns an iterator over the limbs from least significant to most
     /// significant.
+    #[must_use = "iterators are lazy and do nothing unless consumed"]
     #[inline(always)]
     pub fn iter<'a>(&'a self) -> core::slice::Iter<'a, T> {
         self.0.iter()
@@ -423,6 +424,7 @@ where
 
     /// Returns a mutable iterator over the limbs from least significant to most
     /// significant.
+    #[must_use = "iterators are lazy and do nothing unless consumed"]
     #[inline(always)]
     pub fn iter_mut<'a>(&'a mut self) -> std::slice::IterMut<'a, T> {
         self.0.iter_mut()

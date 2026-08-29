@@ -1,10 +1,8 @@
 #![cfg(feature = "simd")]
 #![cfg_attr(feature = "simd", feature(portable_simd))]
 
-use std::simd::{Mask, Simd};
-
 use primus_integer::{
-    BorrowingSub, CarryingAdd, CarryingMul, SimdArray, SimdInteger, SimdMaskArray,
+    BorrowingSub, CarryingAdd, CarryingMul, LaneArray, SimdArray, SimdInteger, SimdMaskArray,
     SimdUnsignedArray, WideningMul,
 };
 
@@ -34,6 +32,9 @@ fn slice_helpers_preserve_chunks_and_tail() {
 #[test]
 fn u32_simd_word_operations_match_scalar_lanes() {
     type U32Simd = <u32 as SimdInteger>::SimdT;
+    type U32Array = <u32 as SimdInteger>::Array;
+    type U32Mask = <u32 as SimdInteger>::MaskT;
+
     let max = <U32Simd as SimdArray<u32>>::splat(u32::MAX);
     let one = <U32Simd as SimdArray<u32>>::splat(1);
     let zero = <U32Simd as SimdArray<u32>>::splat(0);
@@ -41,35 +42,40 @@ fn u32_simd_word_operations_match_scalar_lanes() {
     assert_eq!(sum, zero);
     assert!(SimdMaskArray::<u32>::all(overflow));
 
-    let lhs = Simd::<u32, 8>::from_array([
-        0,
-        1,
-        u32::MAX,
-        u32::MAX,
-        0x8000_0000,
-        0x7fff_ffff,
-        123_456_789,
-        4_000_000_000,
-    ]);
-    let rhs = Simd::<u32, 8>::from_array([
-        0,
-        u32::MAX,
-        1,
-        u32::MAX,
-        0x8000_0000,
-        2,
-        987_654_321,
-        500_000_000,
-    ]);
-    let carry = Simd::<u32, 8>::from_array([0, 1, 2, 3, 4, 5, 6, 7]);
-    let add = Simd::<u32, 8>::from_array([7, 6, 5, 4, 3, 2, 1, 0]);
-    let mask = Mask::<i32, 8>::from_array([false, true, false, true, true, false, true, false]);
+    let lhs_array: U32Array = LaneArray::from_fn(|index| {
+        [
+            0,
+            1,
+            u32::MAX,
+            u32::MAX,
+            0x8000_0000,
+            0x7fff_ffff,
+            123_456_789,
+            4_000_000_000,
+        ][index % 8]
+    });
+    let rhs_array: U32Array = LaneArray::from_fn(|index| {
+        [
+            0,
+            u32::MAX,
+            1,
+            u32::MAX,
+            0x8000_0000,
+            2,
+            987_654_321,
+            500_000_000,
+        ][index % 8]
+    });
+    let carry_array: U32Array = LaneArray::from_fn(|index| index as u32);
+    let add_array: U32Array = LaneArray::from_fn(|index| (u32::LANE_COUNT - 1 - index) as u32);
+    let mask_array: <u32 as SimdInteger>::Selector =
+        core::array::from_fn(|index| matches!(index % 8, 1 | 3 | 4 | 6));
 
-    let lhs_array = lhs.to_array();
-    let rhs_array = rhs.to_array();
-    let carry_array = carry.to_array();
-    let add_array = add.to_array();
-    let mask_array = mask.to_array();
+    let lhs = <U32Simd as SimdArray<u32>>::from_array(lhs_array);
+    let rhs = <U32Simd as SimdArray<u32>>::from_array(rhs_array);
+    let carry = <U32Simd as SimdArray<u32>>::from_array(carry_array);
+    let add = <U32Simd as SimdArray<u32>>::from_array(add_array);
+    let mask = <U32Mask as SimdMaskArray<u32>>::from_array(mask_array);
 
     let (sum, sum_carry) = CarryingAdd::carrying_add(lhs, rhs, mask);
     let (difference, borrow) = BorrowingSub::borrowing_sub(lhs, rhs, mask);
@@ -80,14 +86,20 @@ fn u32_simd_word_operations_match_scalar_lanes() {
     let (add_low, add_high) = CarryingMul::carrying_mul_add(lhs, rhs, carry, add);
     let add_high_only = CarryingMul::carrying_mul_add_hw(lhs, rhs, carry, add);
 
-    for index in 0..8 {
+    let lhs_array: &[u32] = lhs_array.as_ref();
+    let rhs_array: &[u32] = rhs_array.as_ref();
+    let carry_array: &[u32] = carry_array.as_ref();
+    let add_array: &[u32] = add_array.as_ref();
+
+    for index in 0..u32::LANE_COUNT {
+        let carry_in = matches!(index % 8, 1 | 3 | 4 | 6);
         assert_eq!(
             (sum[index], sum_carry.test(index)),
-            CarryingAdd::carrying_add(lhs_array[index], rhs_array[index], mask_array[index]),
+            CarryingAdd::carrying_add(lhs_array[index], rhs_array[index], carry_in),
         );
         assert_eq!(
             (difference[index], borrow.test(index)),
-            BorrowingSub::borrowing_sub(lhs_array[index], rhs_array[index], mask_array[index]),
+            BorrowingSub::borrowing_sub(lhs_array[index], rhs_array[index], carry_in),
         );
         assert_eq!(
             (product_low[index], product_high[index]),
@@ -114,15 +126,20 @@ fn u32_simd_word_operations_match_scalar_lanes() {
 
 #[test]
 fn u64_simd_multiplication_matches_scalar_lanes() {
-    let lhs = Simd::<u64, 4>::from_array([0, 1, u64::MAX, 0x8000_0000_0000_0001]);
-    let rhs = Simd::<u64, 4>::from_array([u64::MAX, 7, u64::MAX, 0x7fff_ffff_ffff_ffff]);
-    let carry = Simd::<u64, 4>::from_array([1, 2, 3, 4]);
-    let add = Simd::<u64, 4>::from_array([4, 3, 2, 1]);
+    type U64Simd = <u64 as SimdInteger>::SimdT;
+    type U64Array = <u64 as SimdInteger>::Array;
 
-    let lhs_array = lhs.to_array();
-    let rhs_array = rhs.to_array();
-    let carry_array = carry.to_array();
-    let add_array = add.to_array();
+    let lhs_array: U64Array =
+        LaneArray::from_fn(|index| [0, 1, u64::MAX, 0x8000_0000_0000_0001][index % 4]);
+    let rhs_array: U64Array =
+        LaneArray::from_fn(|index| [u64::MAX, 7, u64::MAX, 0x7fff_ffff_ffff_ffff][index % 4]);
+    let carry_array: U64Array = LaneArray::from_fn(|index| index as u64 + 1);
+    let add_array: U64Array = LaneArray::from_fn(|index| (u64::LANE_COUNT - index) as u64);
+
+    let lhs = <U64Simd as SimdArray<u64>>::from_array(lhs_array);
+    let rhs = <U64Simd as SimdArray<u64>>::from_array(rhs_array);
+    let carry = <U64Simd as SimdArray<u64>>::from_array(carry_array);
+    let add = <U64Simd as SimdArray<u64>>::from_array(add_array);
     let (product_low, product_high) = WideningMul::widening_mul(lhs, rhs);
     let product_high_only = WideningMul::widening_mul_hw(lhs, rhs);
     let (carry_low, carry_high) = CarryingMul::carrying_mul(lhs, rhs, carry);
@@ -130,7 +147,12 @@ fn u64_simd_multiplication_matches_scalar_lanes() {
     let (add_low, add_high) = CarryingMul::carrying_mul_add(lhs, rhs, carry, add);
     let add_high_only = CarryingMul::carrying_mul_add_hw(lhs, rhs, carry, add);
 
-    for index in 0..4 {
+    let lhs_array: &[u64] = lhs_array.as_ref();
+    let rhs_array: &[u64] = rhs_array.as_ref();
+    let carry_array: &[u64] = carry_array.as_ref();
+    let add_array: &[u64] = add_array.as_ref();
+
+    for index in 0..u64::LANE_COUNT {
         assert_eq!(
             (product_low[index], product_high[index]),
             WideningMul::widening_mul(lhs_array[index], rhs_array[index]),

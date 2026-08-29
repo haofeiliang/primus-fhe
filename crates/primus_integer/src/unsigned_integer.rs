@@ -61,15 +61,18 @@ pub trait UnsignedInteger:
     /// example `-1i64` maps to `u64::MAX`). This is the inverse of
     /// [`wrapping_add_signed`](Self::wrapping_add_signed) when interpreting
     /// the result modulo `2^BITS`.
+    #[must_use]
     fn cast_from_signed(value: Self::SignedInteger) -> Self;
 
     /// Reinterprets this unsigned value as its signed companion using `as`.
     ///
     /// Values with the high bit set become negative, preserving the underlying
     /// two's-complement bit pattern.
+    #[must_use]
     fn cast_to_signed(self) -> Self::SignedInteger;
 
     /// Wrapping (modular) addition with a signed integer. Computes `self + rhs`, wrapping around at the boundary of the type.
+    #[must_use]
     fn wrapping_add_signed(self, rhs: Self::SignedInteger) -> Self;
 }
 

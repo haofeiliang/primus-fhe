@@ -21,7 +21,7 @@ criterion = { workspace = true }
 
 [features]
 default = []
-simd = ["rand/simd_support"]
+simd = []
 
 [[bench]]
 name = "word_ops"
