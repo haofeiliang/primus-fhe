@@ -80,6 +80,12 @@ impl<T: UnsignedInteger, M> RingContext<T> for M where
 /// Granted automatically (blanket impl) when the type already satisfies
 /// [`RingContext`] and [`ExplicitModulus`], and additionally implements the
 /// listed `LazyReduce*` / inverse / division / slice traits.
+///
+/// This is a capability marker, not proof that the residues form a mathematical
+/// field. In particular, it does not guarantee that the modulus is prime or
+/// that every nonzero residue is invertible. Callers must validate any such
+/// algebraic requirements; inverse and division operations retain the failure
+/// behavior documented by their individual traits.
 pub trait FieldContext<T>:
     RingContext<T>
     + ExplicitModulus<ValueT = T>
