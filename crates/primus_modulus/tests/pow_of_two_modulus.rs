@@ -2,16 +2,39 @@
 
 use primus_modulus::{PowOf2Modulus, UintModulus};
 use primus_reduce::prelude::*;
-use rand::{RngExt, distr::Uniform, prelude::*};
+use rand::{
+    RngExt, SeedableRng,
+    distr::{Distribution, Uniform},
+    rngs::StdRng,
+};
 
 const MODULUS: u32 = 16_777_216; // 2^24
+const SEED: u64 = 0x504f_5732_504f_5732;
+
+#[test]
+fn constructor_bounds() {
+    let modulus = PowOf2Modulus::new(128u8);
+    assert_eq!(modulus.value(), 128);
+    assert_eq!(modulus.mask(), 127);
+
+    let modulus = PowOf2Modulus::with_mask(127u8);
+    assert_eq!(modulus.value(), 128);
+    assert_eq!(modulus.mask(), 127);
+
+    for value in [0u8, 1, 3] {
+        assert!(std::panic::catch_unwind(|| PowOf2Modulus::new(value)).is_err());
+    }
+    for mask in [0u8, 2, u8::MAX] {
+        assert!(std::panic::catch_unwind(|| PowOf2Modulus::with_mask(mask)).is_err());
+    }
+}
 
 #[test]
 fn scalar_ops_against_uint() {
     let p = PowOf2Modulus::<u32>::new(MODULUS);
     let u = UintModulus(MODULUS);
     let distr = Uniform::new(0, MODULUS).unwrap();
-    let mut rng = rand::rng();
+    let mut rng = StdRng::seed_from_u64(SEED);
 
     for _ in 0..20 {
         let a: u32 = distr.sample(&mut rng);
@@ -35,7 +58,7 @@ fn scalar_ops_against_uint() {
 fn mul_ops() {
     let p = PowOf2Modulus::<u32>::new(MODULUS);
     let distr = Uniform::new(0, MODULUS).unwrap();
-    let mut rng = rand::rng();
+    let mut rng = StdRng::seed_from_u64(SEED);
 
     for _ in 0..20 {
         let a: u32 = distr.sample(&mut rng);
@@ -55,7 +78,7 @@ fn slice_ops_against_uint() {
     let p = PowOf2Modulus::<u32>::new(MODULUS);
     let u = UintModulus(MODULUS);
     let distr = Uniform::new(0, MODULUS).unwrap();
-    let mut rng = rand::rng();
+    let mut rng = StdRng::seed_from_u64(SEED);
 
     for &len in &[
         0usize, 1, 2, 3, 4, 5, 6, 7, 8, 9, 15, 16, 17, 31, 32, 33, 63, 64, 65,

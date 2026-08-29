@@ -20,11 +20,12 @@ impl<T: UnsignedInteger> PowOf2Modulus<T> {
     /// # Panics
     ///
     /// Panics unless `value` is a representable power of two greater than one.
+    #[must_use]
     #[inline]
     pub fn new(value: T) -> Self {
         assert!(
             value > T::ONE && value.is_power_of_two(),
-            "The value is not a power of 2."
+            "PowOf2Modulus::new: modulus must be a representable power of two greater than one"
         );
         Self {
             mask: value - T::ONE,
@@ -36,24 +37,26 @@ impl<T: UnsignedInteger> PowOf2Modulus<T> {
     /// # Panics
     ///
     /// Panics unless `mask = 2^k - 1` for some `1 ≤ k < T::BITS`.
+    #[must_use]
     #[inline]
     pub fn with_mask(mask: T) -> Self {
         let leading_zeros = mask.leading_zeros();
-        assert!(mask.count_zeros() == leading_zeros && !mask.is_zero());
         assert!(
-            leading_zeros > 0,
-            "NativeModulus<T> supports modulus value such as 2⁸, 2¹⁶, 2³², 2⁶⁴, 2¹²⁸"
+            !mask.is_zero() && leading_zeros > 0 && mask.count_zeros() == leading_zeros,
+            "PowOf2Modulus::with_mask: mask must be 2^k - 1 for 1 <= k < T::BITS; use NativeModulus for the full-width modulus"
         );
         Self { mask }
     }
 
     /// Returns the modulus.
+    #[must_use]
     #[inline]
     pub fn value(self) -> T {
         self.mask + T::ONE
     }
 
     /// Returns the reduction mask, which is the modulus minus one.
+    #[must_use]
     #[inline]
     pub const fn mask(self) -> T {
         self.mask
