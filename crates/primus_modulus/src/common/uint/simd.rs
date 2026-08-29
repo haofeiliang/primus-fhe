@@ -5,6 +5,7 @@ use std::simd::cmp::{SimdOrd, SimdPartialEq, SimdPartialOrd};
 use primus_integer::{SimdArray, SimdMaskArray, SimdUnsignedInteger};
 
 /// Reduces each SIMD lane by subtracting `m` at most once.
+#[must_use]
 #[inline]
 pub fn reduce_once<T: SimdUnsignedInteger>(m: T::SimdT, v: T::SimdT) -> T::SimdT {
     // When `v < m`, `v - m` wraps above `v`; otherwise the subtraction is the
@@ -13,6 +14,7 @@ pub fn reduce_once<T: SimdUnsignedInteger>(m: T::SimdT, v: T::SimdT) -> T::SimdT
 }
 
 /// Adds SIMD lanes modulo `m`.
+#[must_use]
 #[inline]
 pub fn reduce_add<T: SimdUnsignedInteger>(m: T::SimdT, a: T::SimdT, b: T::SimdT) -> T::SimdT {
     let threshold = m - b;
@@ -20,12 +22,14 @@ pub fn reduce_add<T: SimdUnsignedInteger>(m: T::SimdT, a: T::SimdT, b: T::SimdT)
 }
 
 /// Subtracts SIMD lanes modulo `m`.
+#[must_use]
 #[inline]
 pub fn reduce_sub<T: SimdUnsignedInteger>(m: T::SimdT, a: T::SimdT, b: T::SimdT) -> T::SimdT {
     a.simd_ge(b).select(a - b, a + m - b)
 }
 
 /// Returns the lane-wise additive inverse modulo `m`.
+#[must_use]
 #[inline]
 pub fn reduce_neg<T: SimdUnsignedInteger>(m: T::SimdT, v: T::SimdT) -> T::SimdT {
     let zero = T::SimdT::splat(T::ZERO);
@@ -33,6 +37,7 @@ pub fn reduce_neg<T: SimdUnsignedInteger>(m: T::SimdT, v: T::SimdT) -> T::SimdT 
 }
 
 /// Returns the lane-wise lazy additive inverse `m - v`.
+#[must_use]
 #[inline]
 pub fn lazy_reduce_neg<T: SimdUnsignedInteger>(m: T::SimdT, v: T::SimdT) -> T::SimdT {
     m - v

@@ -6,7 +6,7 @@ use rand::{RngExt, distr::Uniform, prelude::*};
 
 type ValueT = u32;
 type WideT = u64;
-const MODULUS: ValueT = 536_813_569;
+const MODULUS: ValueT = 4_294_967_291;
 
 const MODULUS_W: WideT = MODULUS as WideT;
 
@@ -57,7 +57,7 @@ fn scalar_ops() {
         let v = if rng.random_bool(0.5) {
             a
         } else {
-            a.wrapping_add(MODULUS)
+            rng.random_range(MODULUS..=ValueT::MAX)
         };
         let r = wide_once_mod(v);
         assert_eq!(m.reduce_once(v), r);
@@ -91,7 +91,7 @@ fn slice_ops() {
                 if rng.random_bool(0.5) {
                     x
                 } else {
-                    x.wrapping_add(MODULUS)
+                    rng.random_range(MODULUS..=ValueT::MAX)
                 }
             })
             .collect();
