@@ -16,14 +16,29 @@ struct BarrettModulusInput {
     value: syn::LitInt,
 }
 
-/// Derive the Barrett Modulus for the const modulus value.
+/// Derives a zero-sized Barrett modulus context for a compile-time constant.
 ///
-/// ## Examples
+/// The input must be a unit struct. The `modulus` attribute accepts a bare
+/// unsigned integer type (`u16`, `u32`, or `u64`) and a modulus satisfying
+/// `1 < value < 2^(BITS - 2)`. Invalid inputs produce a compile-time error.
+///
+/// The macro generates associated `value()` and `ratio()` functions together
+/// with the scalar, slice, lazy-reduction, inverse, and dot-product traits used
+/// by `primus_modulus`. It also implements `Copy`, `Clone`, `PartialEq`, `Eq`,
+/// `Debug`, and `Hash`; do not derive those traits separately. When the SIMD
+/// feature is enabled, the generated slice operations use the corresponding
+/// SIMD kernels.
+///
+/// # Example
 ///
 /// ```ignore
+/// use primus_modulus::Barrett;
+///
 /// #[derive(Barrett)]
 /// #[modulus(ty = u32, value = 536813569)]
 /// struct Modulus;
+///
+/// assert_eq!(Modulus::value(), 536_813_569);
 /// ```
 #[proc_macro_derive(Barrett, attributes(modulus))]
 pub fn derive_barrett(input: TokenStream) -> TokenStream {

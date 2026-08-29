@@ -13,11 +13,13 @@ pub(crate) fn basic(
     quote! {
         impl #name {
             /// Returns the modulus value.
+            #[must_use]
             #vis const fn value() -> #ty {
                 #modulus
             }
 
-            /// Returns the ratio of this modulus.
+            /// Returns the little-endian limbs of `floor(B² / modulus)`, where `B = 2^BITS`.
+            #[must_use]
             #[inline]
             #vis const fn ratio() -> [#ty; 2] {
                 [#r0, #r1]
