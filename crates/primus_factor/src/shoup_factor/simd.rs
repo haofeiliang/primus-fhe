@@ -71,7 +71,7 @@ impl<T: SimdUnsignedInteger> SimdShoupFactor<T> {
     /// corresponding value lane and the modulus used by later operations.
     #[must_use]
     #[inline]
-    pub fn with_quotient(value: T::SimdT, quotient: T::SimdT) -> Self {
+    pub fn from_raw(value: T::SimdT, quotient: T::SimdT) -> Self {
         Self { value, quotient }
     }
 

@@ -2,21 +2,20 @@ use std::hint::black_box;
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use primus_factor::{FactorSliceOps, ShoupFactor};
-use rand::distr::{Distribution, Uniform};
 
 type ValueT = u64;
 
 fn bench_shoup_factor(c: &mut Criterion) {
-    let mut rng = rand::rng();
-
-    let distr = Uniform::new(0, ValueT::MAX >> 1).unwrap();
-    let modulus = distr.sample(&mut rng);
-    let distr_value = Uniform::new(0, modulus).unwrap();
-
-    let factor = ShoupFactor::new(distr_value.sample(&mut rng), modulus);
+    let modulus = 1_152_921_504_606_830_593;
+    let factor = ShoupFactor::new(modulus / 3, modulus);
 
     for n in [1024, 2048, 4096] {
-        let data: Vec<ValueT> = (0..n).map(|_| distr_value.sample(&mut rng)).collect();
+        let data: Vec<ValueT> = (0..n)
+            .map(|i| {
+                let i = i as ValueT;
+                (17 * i * i + 31 * i + 7) % modulus
+            })
+            .collect();
         let mut result = vec![0; n];
 
         c.bench_function(&format!("factor_mul_slice_to/n={n}"), |b| {

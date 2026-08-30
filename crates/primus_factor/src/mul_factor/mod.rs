@@ -26,14 +26,7 @@ impl MultiplyFactor {
             "Unsupported BitShift {bit_shift}"
         );
 
-        let op_hi = operand >> (64u32 - bit_shift);
-        let op_lo = if bit_shift == 64 {
-            0
-        } else {
-            operand << bit_shift
-        };
-
-        let quotient = divide_u128_u64_lo(op_hi, op_lo, modulus);
+        let quotient = (((operand as u128) << bit_shift) / modulus as u128) as u64;
 
         Self { operand, quotient }
     }
@@ -58,10 +51,27 @@ impl MultiplyFactor {
     ///
     /// BIT_SHIFT must match the bit_shift value used to construct this
     /// factor, and modulus must match the modulus used to construct it.
-    /// Inputs are expected to be canonical modulo modulus.
+    /// Inputs are expected to be canonical modulo modulus, and `modulus` must
+    /// be less than `2^(BIT_SHIFT - 2)`. The result lies in
+    /// `[0, 2 * modulus)`.
+    ///
+    /// # Debug assertions
+    ///
+    /// Debug builds assert the supported `BIT_SHIFT` values and the modulus
+    /// bound. Release builds assume callers uphold both contracts.
     #[must_use]
     #[inline]
     pub fn lazy_mul_modulo<const BIT_SHIFT: u32>(self, b: u64, modulus: u64) -> u64 {
+        debug_assert!(
+            match BIT_SHIFT {
+                32 => modulus < (1u64 << 30),
+                52 => modulus < (1u64 << 50),
+                64 => modulus < (1u64 << 62),
+                _ => false,
+            },
+            "modulus {modulus} must be less than 2^(BIT_SHIFT - 2) for BIT_SHIFT {BIT_SHIFT}",
+        );
+
         let hw = if BIT_SHIFT == 32 {
             (self.quotient * b) >> BIT_SHIFT
         } else {
@@ -76,20 +86,14 @@ impl MultiplyFactor {
     ///
     /// BIT_SHIFT must match the bit_shift value used to construct this
     /// factor, and modulus must match the modulus used to construct it.
-    /// Inputs are expected to be canonical modulo modulus.
+    /// Inputs are expected to be canonical modulo modulus, and `modulus` must
+    /// be less than `2^(BIT_SHIFT - 2)`.
     #[must_use]
     #[inline]
     pub fn mul_modulo<const BIT_SHIFT: u32>(self, b: u64, modulus: u64) -> u64 {
         let r = self.lazy_mul_modulo::<BIT_SHIFT>(b, modulus);
         r.min(r.wrapping_sub(modulus))
     }
-}
-
-// Returns low 64bit of 128b/64b where x1=high 64b, x0=low 64b
-fn divide_u128_u64_lo(x1: u64, x0: u64, y: u64) -> u64 {
-    let n = ((x1 as u128) << 64) | (x0 as u128);
-    let q = n / y as u128;
-    q as u64
 }
 
 #[cfg(test)]
@@ -150,5 +154,16 @@ mod tests {
 
             assert_eq!(c, ((a as u128 * b as u128) % q as u128) as u64);
         }
+    }
+
+    #[cfg(debug_assertions)]
+    #[test]
+    #[should_panic(expected = "must be less than 2^(BIT_SHIFT - 2)")]
+    fn rejects_large_modulus_for_multiplication() {
+        let modulus = (1u64 << 60) + 7;
+        let operand = modulus - 1;
+        let factor = MultiplyFactor::new(operand, 52, modulus);
+
+        let _ = factor.mul_modulo::<52>(operand, modulus);
     }
 }
