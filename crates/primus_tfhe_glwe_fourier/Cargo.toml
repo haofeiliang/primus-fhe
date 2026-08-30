@@ -7,7 +7,6 @@ edition = "2024"
 primus_data = { path = "../primus_data" }
 primus_fft = { path = "../primus_fft" }
 primus_glwe = { path = "../primus_glwe" }
-primus_integer = { path = "../primus_integer" }
 primus_lattice = { path = "../primus_lattice" }
 primus_lwe = { path = "../primus_lwe" }
 primus_modulus = { path = "../primus_modulus" }
@@ -31,7 +30,6 @@ harness = false
 default = []
 simd = [
     "primus_glwe/simd",
-    "primus_integer/simd",
     "primus_lattice/simd",
     "primus_lwe/simd",
     "primus_modulus/simd",

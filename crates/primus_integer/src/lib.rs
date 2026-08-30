@@ -12,8 +12,6 @@
 #![cfg_attr(feature = "simd", feature(portable_simd))]
 #![deny(missing_docs)]
 
-mod macros;
-
 mod integer_traits;
 
 mod integer;

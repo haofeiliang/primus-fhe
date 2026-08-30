@@ -314,17 +314,6 @@ where
     ///
     /// For each element in the mask, choose the corresponding element from `true_values` if
     /// that element mask is true, and `false_values` if that element mask is false.
-    ///
-    /// # Examples
-    /// ```ignore
-    /// # #![feature(portable_simd)]
-    /// # use core::simd::{Simd, Mask};
-    /// let a = Simd::from_array([0, 1, 2, 3]);
-    /// let b = Simd::from_array([4, 5, 6, 7]);
-    /// let mask = Mask::from_array([true, false, false, true]);
-    /// let c = mask.select(a, b);
-    /// assert_eq!(c.to_array(), [0, 5, 6, 3]);
-    /// ```
     #[must_use]
     fn select(self, true_values: T::SimdT, false_values: T::SimdT) -> T::SimdT;
 

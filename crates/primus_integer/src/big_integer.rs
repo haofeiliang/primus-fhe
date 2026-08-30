@@ -1,13 +1,14 @@
-use core::cmp::Ordering;
-use std::{
+use core::{
+    cmp::Ordering,
+    iter::FusedIterator,
     ops::{Index, IndexMut},
-    slice::SliceIndex,
+    slice::{ChunksExact, ChunksExactMut, SliceIndex},
 };
 
 use primus_data::{Data, DataMut, RawData};
 use serde::{Deserialize, Serialize};
 
-use crate::{UnsignedInteger, impl_iters};
+use crate::UnsignedInteger;
 
 /// A fixed-width unsigned integer backed by little-endian limb storage.
 ///
@@ -23,7 +24,147 @@ where
     S: RawData,
     <S as RawData>::Elem: UnsignedInteger;
 
-impl_iters!(BigUint, big_uint);
+/// Iterator over non-overlapping, immutable [`BigUint`] values.
+#[derive(Debug, Clone)]
+pub struct BigUintIter<'a, T>
+where
+    T: UnsignedInteger,
+{
+    /// The underlying immutable chunk iterator.
+    pub iter: ChunksExact<'a, T>,
+}
+
+impl<'a, T: UnsignedInteger> BigUintIter<'a, T> {
+    /// Creates an iterator over complete `BigUint` values with `limb_count` limbs each.
+    ///
+    /// A trailing partial value is not yielded. Callers that require complete
+    /// coverage must ensure that `data.len()` is divisible by `limb_count`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `limb_count` is zero.
+    #[inline]
+    pub fn new(data: &'a [T], limb_count: usize) -> Self {
+        Self {
+            iter: data.chunks_exact(limb_count),
+        }
+    }
+}
+
+impl<'a, T: UnsignedInteger> Iterator for BigUintIter<'a, T> {
+    type Item = BigUint<&'a [T]>;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.next().map(BigUint)
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.iter.size_hint()
+    }
+
+    #[inline]
+    fn count(self) -> usize {
+        self.len()
+    }
+
+    #[inline]
+    fn nth(&mut self, n: usize) -> Option<Self::Item> {
+        self.iter.nth(n).map(BigUint)
+    }
+
+    #[inline]
+    fn last(mut self) -> Option<Self::Item> {
+        self.next_back()
+    }
+}
+
+impl<T: UnsignedInteger> DoubleEndedIterator for BigUintIter<'_, T> {
+    #[inline]
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.iter.next_back().map(BigUint)
+    }
+
+    #[inline]
+    fn nth_back(&mut self, n: usize) -> Option<Self::Item> {
+        self.iter.nth_back(n).map(BigUint)
+    }
+}
+
+impl<T: UnsignedInteger> ExactSizeIterator for BigUintIter<'_, T> {}
+impl<T: UnsignedInteger> FusedIterator for BigUintIter<'_, T> {}
+
+/// Iterator over non-overlapping, mutable [`BigUint`] values.
+#[derive(Debug)]
+pub struct BigUintIterMut<'a, T>
+where
+    T: UnsignedInteger,
+{
+    /// The underlying mutable chunk iterator.
+    pub iter: ChunksExactMut<'a, T>,
+}
+
+impl<'a, T: UnsignedInteger> BigUintIterMut<'a, T> {
+    /// Creates an iterator over complete `BigUint` values with `limb_count` limbs each.
+    ///
+    /// A trailing partial value is not yielded. Callers that require complete
+    /// coverage must ensure that `data.len()` is divisible by `limb_count`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `limb_count` is zero.
+    #[inline]
+    pub fn new(data: &'a mut [T], limb_count: usize) -> Self {
+        Self {
+            iter: data.chunks_exact_mut(limb_count),
+        }
+    }
+}
+
+impl<'a, T: UnsignedInteger> Iterator for BigUintIterMut<'a, T> {
+    type Item = BigUint<&'a mut [T]>;
+
+    #[inline]
+    fn next(&mut self) -> Option<Self::Item> {
+        self.iter.next().map(BigUint)
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.iter.size_hint()
+    }
+
+    #[inline]
+    fn count(self) -> usize {
+        self.len()
+    }
+
+    #[inline]
+    fn nth(&mut self, n: usize) -> Option<Self::Item> {
+        self.iter.nth(n).map(BigUint)
+    }
+
+    #[inline]
+    fn last(mut self) -> Option<Self::Item> {
+        self.next_back()
+    }
+}
+
+impl<T: UnsignedInteger> DoubleEndedIterator for BigUintIterMut<'_, T> {
+    #[inline]
+    fn next_back(&mut self) -> Option<Self::Item> {
+        self.iter.next_back().map(BigUint)
+    }
+
+    #[inline]
+    fn nth_back(&mut self, n: usize) -> Option<Self::Item> {
+        self.iter.nth_back(n).map(BigUint)
+    }
+}
+
+impl<T: UnsignedInteger> ExactSizeIterator for BigUintIterMut<'_, T> {}
+impl<T: UnsignedInteger> FusedIterator for BigUintIterMut<'_, T> {}
 
 /// Owned [`BigUint`] backed by a [`Vec`].
 pub type BigUintOwned<T> = BigUint<Vec<T>>;
@@ -484,6 +625,9 @@ where
     }
 
     /// Adds `value` and returns the carry beyond the fixed width.
+    ///
+    /// Higher-level callers must validate that the representation contains at
+    /// least one limb before entering this arithmetic kernel.
     #[must_use]
     #[inline]
     pub fn add_value_assign(&mut self, value: T) -> bool {
@@ -504,6 +648,9 @@ where
     }
 
     /// Subtracts `value` and returns the final borrow.
+    ///
+    /// Higher-level callers must validate that the representation contains at
+    /// least one limb before entering this arithmetic kernel.
     #[must_use]
     #[inline]
     pub fn sub_value_assign(&mut self, value: T) -> bool {
@@ -658,6 +805,7 @@ where
 /// # Panics
 ///
 /// Panics if `values` is empty.
+#[must_use]
 pub fn multiply_many_values<T: UnsignedInteger>(values: &[T]) -> BigUint<Vec<T>> {
     let (&first, remaining) = values.split_first().expect("values must be nonempty");
     let mut result = BigUint(Vec::with_capacity(values.len()));
