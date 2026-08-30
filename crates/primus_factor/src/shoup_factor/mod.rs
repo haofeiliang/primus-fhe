@@ -112,11 +112,12 @@ impl<T: UnsignedInteger> FactorBase<T> for ShoupFactor<T> {
 }
 
 impl<T: UnsignedInteger> LazyFactorMul<T> for ShoupFactor<T> {
-    /// Calculates `self.value() * b (mod 2 * modulus)`.
+    /// Calculates a lazy representative of `self.value() * b` modulo `modulus`.
     ///
-    /// `b` must be less than `modulus`, `modulus` must match the modulus used
-    /// to precompute `self.quotient()`, and `modulus` must be less than
-    /// `2^(T::BITS - 1)`. The result is in `[0, 2 * modulus)`.
+    /// `b` may be any value representable by `T`. `modulus` must match the
+    /// modulus used to precompute `self.quotient()` and must be less than
+    /// `2^(T::BITS - 1)`. The result is congruent to the product modulo
+    /// `modulus` and lies in `[0, 2 * modulus)`.
     ///
     /// # Proof
     ///
@@ -125,7 +126,8 @@ impl<T: UnsignedInteger> LazyFactorMul<T> for ShoupFactor<T> {
     ///
     /// By definition, `w' = floor(wB / p)`. Let `q = floor(w'x / B)`.
     ///
-    /// Then, `0 <= wB / p - w' < 1`, `0 <= w'x / B - q < 1`.
+    /// Then, `0 <= wB / p - w' < 1`, `0 <= w'x / B - q < 1`. Since `x` is
+    /// represented by `T`, `0 <= x < B`.
     ///
     /// Multiplying by `xp / B` and `p` respectively, and adding, yields
     ///
@@ -142,8 +144,8 @@ impl<T: UnsignedInteger> LazyFactorMul<T> for ShoupFactor<T> {
 impl<T: UnsignedInteger> FactorMul<T> for ShoupFactor<T> {
     /// Calculates `self.value() * b (mod modulus)`.
     ///
-    /// `b` must be less than `modulus`, `modulus` must match the modulus used
-    /// to precompute `self.quotient()`, and `modulus` must be less than
+    /// `b` may be any value representable by `T`. `modulus` must match the
+    /// modulus used to precompute `self.quotient()` and must be less than
     /// `2^(T::BITS - 1)`. The result is in `[0, modulus)`.
     #[inline]
     fn factor_mul_modulo(self, b: T, modulus: T) -> T {

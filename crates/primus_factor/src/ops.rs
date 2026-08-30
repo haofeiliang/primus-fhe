@@ -3,14 +3,15 @@ use primus_integer::SimdUnsignedInteger;
 
 /// Lazy modular multiplication by a precomputed factor.
 ///
-/// Implementations return a value in the representation-specific lazy range,
-/// usually `[0, 2 * modulus)`, and callers can canonicalize it with a final
-/// modular reduction when needed.
+/// Implementations return a value congruent to the product modulo `modulus`
+/// in a representation-specific lazy range, usually `[0, 2 * modulus)`.
+/// Callers can canonicalize it with a final modular reduction when needed.
 ///
 /// The factor must have been precomputed for the `modulus` supplied to each
 /// call.
 pub trait LazyFactorMul<T> {
-    /// Calculates `self * b (mod 2 * modulus)` for canonical `b`.
+    /// Calculates a lazy representative of `self * b` modulo `modulus` for
+    /// canonical `b`.
     #[must_use]
     fn lazy_factor_mul_modulo(self, b: T, modulus: T) -> T;
 }
@@ -60,10 +61,12 @@ where
 /// The factor must have been precomputed for the `modulus` supplied to each
 /// call. Input slice elements are expected to be canonical.
 pub trait LazyFactorSliceOps<T> {
-    /// Calculates `factor * value (mod 2 * modulus)` for each element in-place.
+    /// Calculates a lazy representative of `factor * value` modulo `modulus`
+    /// for each element in-place.
     fn lazy_factor_mul_slice_assign(self, values: &mut [T], modulus: T);
 
-    /// Calculates `factor * input (mod 2 * modulus)` into `output`.
+    /// Calculates lazy representatives of `factor * input` modulo `modulus`
+    /// into `output`.
     ///
     /// # Debug assertions
     ///

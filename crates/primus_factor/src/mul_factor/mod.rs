@@ -53,7 +53,8 @@ impl MultiplyFactor {
         self.quotient
     }
 
-    /// Multiplies this factor's operand by b modulo 2 * modulus.
+    /// Returns a lazy representative of this factor's operand times `b` modulo
+    /// `modulus`.
     ///
     /// BIT_SHIFT must match the bit_shift value used to construct this
     /// factor, and modulus must match the modulus used to construct it.
