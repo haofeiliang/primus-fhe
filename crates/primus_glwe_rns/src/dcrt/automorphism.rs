@@ -18,7 +18,7 @@
 //! `br(i)` stores the evaluation at ω^(2i+1). The permutation table accounts
 //! for this: `out[br(i)] = in[br(i')]` where `i' = ((k·(2i+1)) mod 2N − 1) / 2`.
 
-use primus_data::{Data, DataMut, RawData};
+use primus_data::{Data, DataMut};
 use primus_integer::FheUint;
 use primus_lattice::{
     RnsGadgetSize,
@@ -267,8 +267,8 @@ impl<T: FheUint> DcrtGlweAutoKey<T> {
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
     {
         self.automorphism_kernel(ciphertext, result, domain, context);
     }
@@ -283,8 +283,8 @@ impl<T: FheUint> DcrtGlweAutoKey<T> {
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
     {
         let params = domain.parameters();
         let table = domain.table();

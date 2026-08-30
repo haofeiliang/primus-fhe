@@ -1,5 +1,5 @@
 use aligned_vec::{AVec, avec};
-use primus_data::{DataMut, RawData};
+use primus_data::DataMut;
 use primus_factor::{FactorMul, ShoupFactor};
 use primus_gcd::Xgcd;
 use primus_poly::{NttPolynomial, Polynomial};
@@ -529,7 +529,7 @@ impl NttTable for U64NttTable {
     }
 
     #[inline]
-    fn transform_inplace<S: RawData<Elem = Self::ValueT> + DataMut>(
+    fn transform_inplace<S: DataMut<Elem = Self::ValueT>>(
         &self,
         mut poly: Polynomial<S>,
     ) -> NttPolynomial<S> {
@@ -538,7 +538,7 @@ impl NttTable for U64NttTable {
     }
 
     #[inline]
-    fn inverse_transform_inplace<S: RawData<Elem = Self::ValueT> + DataMut>(
+    fn inverse_transform_inplace<S: DataMut<Elem = Self::ValueT>>(
         &self,
         mut values: NttPolynomial<S>,
     ) -> Polynomial<S> {

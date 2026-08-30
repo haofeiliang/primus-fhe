@@ -77,7 +77,7 @@ where
 
 impl<S, T> TruncatedGlwe<S>
 where
-    S: RawData<Elem = T> + Data,
+    S: Data<Elem = T>,
     T: FheUint,
 {
     /// Returns the mask and retained body coefficients.

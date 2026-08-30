@@ -1,11 +1,11 @@
 use num_complex::Complex64;
-use primus_data::{Data, DataMut, RawData};
+use primus_data::{Data, DataMut};
 
 use super::FourierPolynomial;
 
 impl<S> FourierPolynomial<S>
 where
-    S: RawData<Elem = Complex64> + DataMut,
+    S: DataMut<Elem = Complex64>,
 {
     /// Negates every value in this Fourier polynomial.
     #[inline]
@@ -26,13 +26,13 @@ where
 
 impl<S> FourierPolynomial<S>
 where
-    S: RawData<Elem = Complex64> + Data,
+    S: Data<Elem = Complex64>,
 {
     /// Writes the pointwise negation of `self` to `output`.
     #[inline]
     pub fn neg_to<A>(&self, output: &mut FourierPolynomial<A>)
     where
-        A: RawData<Elem = Complex64> + DataMut,
+        A: DataMut<Elem = Complex64>,
     {
         assert_eq!(self.0.len(), output.0.len());
         for (output, value) in output.0.iter_mut().zip(self.0.iter()) {

@@ -1,4 +1,4 @@
-use primus_data::{DataMut, RawData};
+use primus_data::DataMut;
 use primus_distr::{DiscreteGaussian, SignedDiscreteGaussian};
 use primus_integer::{FheUint, UnsignedInteger};
 use primus_reduce::ReduceAddAssign;
@@ -72,7 +72,7 @@ impl<T: FheUint> CrtPolynomial<Vec<T>> {
 
 impl<S, T> CrtPolynomial<S>
 where
-    S: RawData<Elem = T> + DataMut,
+    S: DataMut<Elem = T>,
     T: FheUint,
 {
     /// Fill with random binary values.

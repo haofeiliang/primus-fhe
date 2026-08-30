@@ -1,6 +1,6 @@
 use itertools::izip;
 use num_traits::ConstZero;
-use primus_data::{Data, DataMut, RawData};
+use primus_data::{Data, DataMut};
 use primus_integer::{FheUint, WrappingNeg};
 use primus_lattice::{
     RnsGadgetSize,
@@ -234,8 +234,8 @@ impl<T: FheUint> CrtGlweAutoKey<T> {
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
     {
         let rns_glwe_len = self.size.rns_glwe_size().rns_glwe_len();
 
@@ -255,8 +255,8 @@ impl<T: FheUint> CrtGlweAutoKey<T> {
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
     {
         let params = domain.parameters();
         let table = domain.table();

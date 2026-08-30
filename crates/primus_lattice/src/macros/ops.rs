@@ -7,7 +7,7 @@ macro_rules! impl_basic_operation_single_modulus {
     ($cipher:ident < $s:ident >) => {
         impl<$s, T> $cipher<$s>
         where
-            $s: RawData<Elem = T> + DataMut,
+            $s: DataMut<Elem = T>,
             T: FheUint,
         {
             /// Perform element-wise modular addition `self + rhs`.
@@ -15,7 +15,7 @@ macro_rules! impl_basic_operation_single_modulus {
             pub fn add_element_wise<M, A>(mut self, rhs: &$cipher<A>, modulus: M) -> Self
             where
                 M: primus_reduce::RingContext<T>,
-                A: RawData<Elem = T> + Data,
+                A: Data<Elem = T>,
             {
                 ArrayBase(self.as_mut()).add_element_wise_assign(&ArrayBase(rhs.as_ref()), modulus);
                 self
@@ -26,7 +26,7 @@ macro_rules! impl_basic_operation_single_modulus {
             pub fn sub_element_wise<M, A>(mut self, rhs: &$cipher<A>, modulus: M) -> Self
             where
                 M: primus_reduce::RingContext<T>,
-                A: RawData<Elem = T> + Data,
+                A: Data<Elem = T>,
             {
                 ArrayBase(self.as_mut()).sub_element_wise_assign(&ArrayBase(rhs.as_ref()), modulus);
                 self
@@ -37,7 +37,7 @@ macro_rules! impl_basic_operation_single_modulus {
             pub fn add_element_wise_assign<M, A>(&mut self, rhs: &$cipher<A>, modulus: M)
             where
                 M: primus_reduce::RingContext<T>,
-                A: RawData<Elem = T> + Data,
+                A: Data<Elem = T>,
             {
                 ArrayBase(self.as_mut()).add_element_wise_assign(&ArrayBase(rhs.as_ref()), modulus);
             }
@@ -47,7 +47,7 @@ macro_rules! impl_basic_operation_single_modulus {
             pub fn sub_element_wise_assign<M, A>(&mut self, rhs: &$cipher<A>, modulus: M)
             where
                 M: primus_reduce::RingContext<T>,
-                A: RawData<Elem = T> + Data,
+                A: Data<Elem = T>,
             {
                 ArrayBase(self.as_mut()).sub_element_wise_assign(&ArrayBase(rhs.as_ref()), modulus);
             }
@@ -55,7 +55,7 @@ macro_rules! impl_basic_operation_single_modulus {
 
         impl<$s, T> $cipher<$s>
         where
-            $s: RawData<Elem = T> + Data,
+            $s: Data<Elem = T>,
             T: FheUint,
         {
             /// Performs in-place element-wise modular addition:`result = self + rhs`,
@@ -67,8 +67,8 @@ macro_rules! impl_basic_operation_single_modulus {
                 modulus: M,
             ) where
                 M: primus_reduce::RingContext<T>,
-                A: RawData<Elem = T> + Data,
-                B: RawData<Elem = T> + DataMut,
+                A: Data<Elem = T>,
+                B: DataMut<Elem = T>,
             {
                 ArrayBase(self.as_ref()).add_element_wise_to(
                     &ArrayBase(rhs.as_ref()),
@@ -86,8 +86,8 @@ macro_rules! impl_basic_operation_single_modulus {
                 modulus: M,
             ) where
                 M: primus_reduce::RingContext<T>,
-                A: RawData<Elem = T> + Data,
-                B: RawData<Elem = T> + DataMut,
+                A: Data<Elem = T>,
+                B: DataMut<Elem = T>,
             {
                 ArrayBase(self.as_ref()).sub_element_wise_to(
                     &ArrayBase(rhs.as_ref()),
@@ -103,7 +103,7 @@ macro_rules! impl_basic_operation_multiple_modulus {
     ($cipher:ident < $s:ident >) => {
         impl<$s, T> $cipher<$s>
         where
-            $s: RawData<Elem = T> + DataMut,
+            $s: DataMut<Elem = T>,
             T: FheUint,
         {
             /// Perform element-wise modular addition `self + rhs`.
@@ -117,7 +117,7 @@ macro_rules! impl_basic_operation_multiple_modulus {
             ) -> Self
             where
                 M: FieldContext<T>,
-                A: RawData<Elem = T> + Data,
+                A: Data<Elem = T>,
             {
                 self.add_element_wise_assign(rhs, poly_length, crt_poly_length, moduli);
                 self
@@ -134,7 +134,7 @@ macro_rules! impl_basic_operation_multiple_modulus {
             ) -> Self
             where
                 M: FieldContext<T>,
-                A: RawData<Elem = T> + Data,
+                A: Data<Elem = T>,
             {
                 self.sub_element_wise_assign(rhs, poly_length, crt_poly_length, moduli);
                 self
@@ -150,7 +150,7 @@ macro_rules! impl_basic_operation_multiple_modulus {
                 moduli: &[M],
             ) where
                 M: FieldContext<T>,
-                A: RawData<Elem = T> + Data,
+                A: Data<Elem = T>,
             {
                 izip!(
                     self.0.chunks_exact_mut(crt_poly_length),
@@ -178,7 +178,7 @@ macro_rules! impl_basic_operation_multiple_modulus {
                 moduli: &[M],
             ) where
                 M: FieldContext<T>,
-                A: RawData<Elem = T> + Data,
+                A: Data<Elem = T>,
             {
                 izip!(
                     self.0.chunks_exact_mut(crt_poly_length),
@@ -199,7 +199,7 @@ macro_rules! impl_basic_operation_multiple_modulus {
 
         impl<$s, T> $cipher<$s>
         where
-            $s: RawData<Elem = T> + Data,
+            $s: Data<Elem = T>,
             T: FheUint,
         {
             /// Performs element-wise modular addition `result = self + rhs`.
@@ -213,8 +213,8 @@ macro_rules! impl_basic_operation_multiple_modulus {
                 moduli: &[M],
             ) where
                 M: FieldContext<T>,
-                A: RawData<Elem = T> + Data,
-                B: RawData<Elem = T> + DataMut,
+                A: Data<Elem = T>,
+                B: DataMut<Elem = T>,
             {
                 izip!(
                     self.0.chunks_exact(crt_poly_length),
@@ -245,8 +245,8 @@ macro_rules! impl_basic_operation_multiple_modulus {
                 moduli: &[M],
             ) where
                 M: FieldContext<T>,
-                A: RawData<Elem = T> + Data,
-                B: RawData<Elem = T> + DataMut,
+                A: Data<Elem = T>,
+                B: DataMut<Elem = T>,
             {
                 izip!(
                     self.0.chunks_exact(crt_poly_length),

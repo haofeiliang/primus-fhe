@@ -30,7 +30,7 @@ where
 
 impl<S, T> BigUintPolynomial<S>
 where
-    S: RawData<Elem = T> + DataOwned,
+    S: DataOwned<Elem = T>,
     T: FheUint,
 {
     /// Creates a [`BigUintPolynomial<S>`] with all coefficients equal to zero.
@@ -57,7 +57,7 @@ where
 
 impl<S, T> BigUintPolynomial<S>
 where
-    S: RawData<Elem = T> + DataMut,
+    S: DataMut<Elem = T>,
     T: FheUint,
 {
     /// Copy the coefficients from another slice.
@@ -89,7 +89,7 @@ where
 
 impl<S, T> BigUintPolynomial<S>
 where
-    S: RawData<Elem = T> + Data,
+    S: Data<Elem = T>,
     T: FheUint,
 {
     /// Returns `true` if `self` is equal to `0`.

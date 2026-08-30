@@ -1,4 +1,4 @@
-use primus_data::{Data, DataMut, RawData};
+use primus_data::{Data, DataMut};
 use primus_integer::FheUint;
 use primus_lattice::RnsGlweSize;
 use primus_ntt::{DcrtTable, NttTable};
@@ -66,7 +66,7 @@ impl<T: FheUint> HybridRnsGlweKeySwitchingKey<T> {
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        B: RawData<Elem = T> + DataMut,
+        B: DataMut<Elem = T>,
     {
         let poly_length = self.input_size.poly_length();
         let qp_poly_len = self.qp_size.rns_poly_len();
@@ -115,8 +115,8 @@ impl<T: FheUint> HybridRnsGlweKeySwitchingKey<T> {
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
     {
         assert_eq!(c_in.as_ref().len(), self.input_size.rns_glwe_len());
         assert_eq!(c_out.as_ref().len(), self.output_size.rns_glwe_len());
@@ -162,8 +162,8 @@ impl<T: FheUint> HybridRnsGlweKeySwitchingKey<T> {
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
     {
         let hybrid_rns = domain.hybrid_rns();
         let table = domain.table();

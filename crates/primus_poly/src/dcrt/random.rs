@@ -1,4 +1,4 @@
-use primus_data::{DataMut, RawData};
+use primus_data::DataMut;
 use primus_integer::FheUint;
 use rand::distr::Uniform;
 
@@ -22,7 +22,7 @@ impl<T: FheUint> DcrtPolynomial<Vec<T>> {
 
 impl<S, T> DcrtPolynomial<S>
 where
-    S: RawData<Elem = T> + DataMut,
+    S: DataMut<Elem = T>,
     T: FheUint,
 {
     /// Fill with random uniform values.

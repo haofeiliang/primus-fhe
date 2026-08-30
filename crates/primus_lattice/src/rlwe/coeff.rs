@@ -38,14 +38,14 @@ impl_ntt!(Rlwe<S>, NttRlwe);
 
 impl<S, T> Rlwe<S>
 where
-    S: RawData<Elem = T> + DataOwned,
+    S: DataOwned<Elem = T>,
     T: FheUint,
 {
     /// Creates a new [`Rlwe<S>`] with reference of [`Polynomial<A>`].
     #[inline]
     pub fn from_ref<A>(a: &Polynomial<A>, b: &Polynomial<A>) -> Self
     where
-        A: RawData<Elem = T> + Data,
+        A: Data<Elem = T>,
     {
         debug_assert_eq!(a.poly_length(), b.poly_length());
         Self(S::from_vec([a.as_ref(), b.as_ref()].concat()))
@@ -104,7 +104,7 @@ impl<T: FheUint> Rlwe<Vec<T>> {
     where
         R: rand::Rng + rand::CryptoRng,
         Table: NttTable<ValueT = T>,
-        A: RawData<Elem = T> + Data,
+        A: Data<Elem = T>,
         M: FieldContext<T>,
     {
         let poly_length = secret_key.poly_length();
@@ -128,7 +128,7 @@ impl<T: FheUint> Rlwe<Vec<T>> {
 
 impl<S, T> Rlwe<S>
 where
-    S: RawData<Elem = T> + DataMut,
+    S: DataMut<Elem = T>,
     T: FheUint,
 {
     /// Extracts mutable slice of `a` and `b` of this [`Rlwe<S>`].
@@ -159,7 +159,7 @@ where
 
 impl<S, T> Rlwe<S>
 where
-    S: RawData<Elem = T> + Data,
+    S: Data<Elem = T>,
     T: FheUint,
 {
     /// Extracts slice of `a` and `b` of this [`Rlwe<S>`].
@@ -181,8 +181,8 @@ where
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
     {
         let poly_length = ntt_table.poly_length();
 

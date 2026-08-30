@@ -37,7 +37,7 @@ impl_crt_ntt!(CrtGlwe<S>, DcrtGlwe);
 
 impl<S, T> CrtGlwe<S>
 where
-    S: RawData<Elem = T> + DataMut,
+    S: DataMut<Elem = T>,
     T: FheUint,
 {
     /// Splits this GLWE into its mutable mask and body slices.
@@ -123,7 +123,7 @@ where
 
 impl<S, T> CrtGlwe<S>
 where
-    S: RawData<Elem = T> + Data,
+    S: Data<Elem = T>,
     T: FheUint,
 {
     /// Splits this GLWE into its mask and body slices.
@@ -156,7 +156,7 @@ where
         moduli: &[M],
     ) where
         M: FieldContext<T>,
-        A: RawData<Elem = T> + DataMut,
+        A: DataMut<Elem = T>,
     {
         self.iter_crt_poly(crt_poly_len)
             .zip(result.iter_crt_poly_mut(crt_poly_len))
@@ -175,7 +175,7 @@ where
         moduli: &[T],
     ) where
         F: Copy + FactorSliceOps<T>,
-        A: RawData<Elem = T> + DataMut,
+        A: DataMut<Elem = T>,
     {
         self.iter_crt_poly(crt_poly_len)
             .zip(result.iter_crt_poly_mut(crt_poly_len))
@@ -196,8 +196,8 @@ where
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
     {
         let poly_length = table.poly_length();
         let dcrt_poly_len = table.crt_poly_length();
@@ -222,8 +222,8 @@ where
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
     {
         let crt_poly_len = table.crt_poly_length();
         let dcrt_glev_len = basis.decompose_length() * self.as_ref().len();

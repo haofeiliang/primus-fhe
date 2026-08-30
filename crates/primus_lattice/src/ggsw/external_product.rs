@@ -36,9 +36,9 @@ where
     ) where
         T: TorusFftValue,
         Table: FftTable,
-        A: RawData<Elem = T> + Data,
-        C: RawData<Elem = T> + DataMut,
-        S: RawData<Elem = Complex64> + Data,
+        A: Data<Elem = T>,
+        C: DataMut<Elem = T>,
+        S: Data<Elem = Complex64>,
     {
         debug_assert_eq!(output.as_ref().len(), context.size().glwe_size().glwe_len());
         self.external_product_to_accumulator(input, basis, fft, context);
@@ -56,8 +56,8 @@ where
     ) where
         T: TorusFftValue,
         Table: FftTable,
-        A: RawData<Elem = T> + Data,
-        S: RawData<Elem = Complex64> + Data,
+        A: Data<Elem = T>,
+        S: Data<Elem = Complex64>,
     {
         context.fourier_accumulator.set_zero();
         self.external_product_add_assign(input, basis, fft, context);
@@ -74,8 +74,8 @@ where
     ) where
         T: TorusFftValue,
         Table: FftTable,
-        A: RawData<Elem = T> + Data,
-        S: RawData<Elem = Complex64> + Data,
+        A: Data<Elem = T>,
+        S: Data<Elem = Complex64>,
     {
         let size = context.size();
         let glwe_size = size.glwe_size();
@@ -137,9 +137,9 @@ where
         T: FheUint,
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: RawData<Elem = T> + Data,
-        C: RawData<Elem = T> + DataMut,
-        S: RawData<Elem = T> + Data,
+        A: Data<Elem = T>,
+        C: DataMut<Elem = T>,
+        S: Data<Elem = T>,
     {
         debug_assert_eq!(output.as_ref().len(), context.size().glwe_size().glwe_len());
         let mut context = context.as_mut();
@@ -166,9 +166,9 @@ where
         T: FheUint,
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: RawData<Elem = T> + Data,
-        C: RawData<Elem = T> + DataMut,
-        S: RawData<Elem = T> + Data,
+        A: Data<Elem = T>,
+        C: DataMut<Elem = T>,
+        S: Data<Elem = T>,
     {
         debug_assert_eq!(output.as_ref().len(), context.size().glwe_size().glwe_len());
         let mut context = context.as_mut_with_accumulator(output);
@@ -188,8 +188,8 @@ where
         T: FheUint,
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: RawData<Elem = T> + Data,
-        S: RawData<Elem = T> + Data,
+        A: Data<Elem = T>,
+        S: Data<Elem = T>,
     {
         context.ntt_accumulator.set_zero();
         self.external_product_add_assign(input, basis, modulus, ntt, context);
@@ -208,8 +208,8 @@ where
         T: FheUint,
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: RawData<Elem = T> + Data,
-        S: RawData<Elem = T> + Data,
+        A: Data<Elem = T>,
+        S: Data<Elem = T>,
     {
         let size = context.size();
         let glwe_size = size.glwe_size();

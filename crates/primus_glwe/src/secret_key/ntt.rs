@@ -1,6 +1,6 @@
 //! Single-modulus NTT-domain GLWE secret key with encryption and decryption.
 
-use primus_data::{Data, DataMut, RawData};
+use primus_data::{Data, DataMut};
 use primus_integer::FheUint;
 use primus_lattice::GlweSize;
 use primus_ntt::NttTable;
@@ -121,8 +121,8 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
         R: rand::Rng + rand::CryptoRng,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
     {
         self.encrypt_to_with_message(
             NttEncryptionMessage::Plaintext {
@@ -149,8 +149,8 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
         R: rand::Rng + rand::CryptoRng,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
     {
         self.encrypt_to_with_message(
             NttEncryptionMessage::Plaintext {
@@ -178,8 +178,8 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
         R: rand::Rng + rand::CryptoRng,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
     {
         self.encrypt_to_with_message(
             NttEncryptionMessage::Encoded(encoded.as_ref()),
@@ -218,7 +218,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
         R: rand::Rng + rand::CryptoRng,
-        A: RawData<Elem = T> + DataMut,
+        A: DataMut<Elem = T>,
     {
         self.encrypt_to_with_message(
             NttEncryptionMessage::Zero,
@@ -240,8 +240,8 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
         R: rand::Rng + rand::CryptoRng,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
     {
         self.encrypt_to_with_message(
             NttEncryptionMessage::Encoded(encoded.as_ref()),
@@ -262,7 +262,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
         R: rand::Rng + rand::CryptoRng,
-        A: RawData<Elem = T> + DataMut,
+        A: DataMut<Elem = T>,
     {
         self.encrypt_to_with_message(
             NttEncryptionMessage::Zero,
@@ -284,7 +284,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
         R: rand::Rng + rand::CryptoRng,
-        B: RawData<Elem = T> + DataMut,
+        B: DataMut<Elem = T>,
     {
         let poly_length = self.size.poly_length();
         assert_eq!(ntt_table.poly_length(), poly_length);
@@ -337,8 +337,8 @@ impl<T: FheUint> NttGlweSecretKey<T> {
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        S: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + DataMut,
+        S: Data<Elem = T>,
+        B: DataMut<Elem = T>,
     {
         let poly_length = self.size.poly_length();
         debug_assert_eq!(ntt_table.poly_length(), poly_length);
@@ -372,7 +372,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
     where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: RawData<Elem = T> + Data,
+        A: Data<Elem = T>,
     {
         let mut result = PolynomialOwned::zero(self.size.poly_length());
         self.decrypt_to(cipher, &mut result, params, ntt_table);
@@ -391,8 +391,8 @@ impl<T: FheUint> NttGlweSecretKey<T> {
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
     {
         self.phase_to(cipher, result, ntt_table, params.cipher_modulus());
 
@@ -412,7 +412,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
     where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: RawData<Elem = T> + Data,
+        A: Data<Elem = T>,
     {
         self.decrypt_with_noise_and_embedding(
             cipher,
@@ -433,7 +433,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
     where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: RawData<Elem = T> + Data,
+        A: Data<Elem = T>,
     {
         self.decrypt_with_noise_and_embedding(
             cipher,
@@ -455,7 +455,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
     where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: RawData<Elem = T> + Data,
+        A: Data<Elem = T>,
     {
         let modulus = params.cipher_modulus();
         let mut message = PolynomialOwned::zero(self.size.poly_length());
@@ -552,7 +552,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
     where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: RawData<Elem = T> + Data,
+        A: Data<Elem = T>,
     {
         let size = self.size;
         let poly_length = size.poly_length();
@@ -599,7 +599,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         Msg: TryFrom<T>,
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: RawData<Elem = T> + Data,
+        A: Data<Elem = T>,
     {
         assert_eq!(self.size, params.size());
         let mut messages = self.phase_multi_messages(cipher, params.cipher_modulus(), ntt_table);

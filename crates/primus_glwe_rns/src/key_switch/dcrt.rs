@@ -1,6 +1,6 @@
 //! GLWE key switching with signed digit decomposition over an RNS basis.
 
-use primus_data::{Data, DataMut, RawData};
+use primus_data::{Data, DataMut};
 use primus_integer::FheUint;
 use primus_lattice::{
     RnsGadgetSize, RnsGlweSize,
@@ -106,8 +106,8 @@ impl<T: FheUint> DcrtGlweKeySwitchingKey<T> {
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
     {
         assert_eq!(input.as_ref().len(), self.input_size.rns_glwe_len());
         assert_eq!(

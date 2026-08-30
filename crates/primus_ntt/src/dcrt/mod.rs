@@ -1,4 +1,4 @@
-use primus_data::{DataMut, RawData};
+use primus_data::DataMut;
 use primus_poly::{CrtPolynomial, DcrtPolynomial};
 use primus_reduce::FieldContext;
 
@@ -78,7 +78,7 @@ where
     #[inline]
     pub fn transform_inplace<S>(&self, mut crt_poly: CrtPolynomial<S>) -> DcrtPolynomial<S>
     where
-        S: RawData<Elem = Ntt::ValueT> + DataMut,
+        S: DataMut<Elem = Ntt::ValueT>,
     {
         let poly_length = self.poly_length();
         debug_assert_eq!(self.crt_poly_length(), crt_poly.crt_poly_length());
@@ -94,7 +94,7 @@ where
     #[inline]
     pub fn inverse_transform_inplace<S>(&self, mut dcrt_poly: DcrtPolynomial<S>) -> CrtPolynomial<S>
     where
-        S: RawData<Elem = Ntt::ValueT> + DataMut,
+        S: DataMut<Elem = Ntt::ValueT>,
     {
         let poly_length = self.poly_length();
         debug_assert_eq!(self.crt_poly_length(), dcrt_poly.dcrt_poly_length());

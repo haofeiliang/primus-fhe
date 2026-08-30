@@ -1,5 +1,5 @@
 use itertools::izip;
-use primus_data::{Data, DataMut, RawData};
+use primus_data::{Data, DataMut};
 use primus_factor::FactorSliceOps;
 use primus_integer::FheUint;
 use primus_reduce::{ReduceAdd, ReduceMul, ReduceMulAddSlice, ReduceMulSlice, ReduceSub};
@@ -8,7 +8,7 @@ use super::ArrayBase;
 
 impl<S, T> ArrayBase<S>
 where
-    S: RawData<Elem = T> + DataMut,
+    S: DataMut<Elem = T>,
     T: FheUint,
 {
     /// Performs `self * scalar` according to `modulus`.
@@ -35,7 +35,7 @@ where
     pub fn add_mul_scalar_assign<M, A>(&mut self, rhs: &ArrayBase<A>, scalar: T, modulus: M)
     where
         M: Copy + ReduceMulAddSlice<T>,
-        A: RawData<Elem = T> + Data,
+        A: Data<Elem = T>,
     {
         modulus.reduce_add_mul_scalar_slice_assign(self.as_mut(), rhs.as_ref(), scalar);
     }
@@ -54,7 +54,7 @@ where
     pub fn add_mul_factor_assign<F, A>(&mut self, rhs: &ArrayBase<A>, factor: F, modulus: T)
     where
         F: FactorSliceOps<T>,
-        A: RawData<Elem = T> + Data,
+        A: Data<Elem = T>,
     {
         factor.add_factor_mul_slice_assign(self.as_mut(), rhs.as_ref(), modulus);
     }
@@ -64,7 +64,7 @@ where
     pub fn mul_element_wise<M, A>(mut self, rhs: &ArrayBase<A>, modulus: M) -> Self
     where
         M: Copy + ReduceMulSlice<T>,
-        A: RawData<Elem = T> + Data,
+        A: Data<Elem = T>,
     {
         self.mul_element_wise_assign(rhs, modulus);
         self
@@ -75,7 +75,7 @@ where
     pub fn mul_element_wise_assign<M, A>(&mut self, rhs: &ArrayBase<A>, modulus: M)
     where
         M: Copy + ReduceMulSlice<T>,
-        A: RawData<Elem = T> + Data,
+        A: Data<Elem = T>,
     {
         modulus.reduce_mul_slice_assign(self.as_mut(), rhs.as_ref());
     }
@@ -90,9 +90,9 @@ where
         modulus: M,
     ) where
         M: Copy + ReduceAdd<T, Output = T> + ReduceSub<T, Output = T> + ReduceMul<T, Output = T>,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + Data,
-        C: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: Data<Elem = T>,
+        C: DataMut<Elem = T>,
     {
         debug_assert_eq!(self.len(), rhs.len());
         debug_assert_eq!(self.len(), w.len());
@@ -107,7 +107,7 @@ where
 
 impl<S, T> ArrayBase<S>
 where
-    S: RawData<Elem = T> + Data,
+    S: Data<Elem = T>,
     T: FheUint,
 {
     /// Performs element wise modular multiplication operation `result = self * rhs` according to `modulus`.
@@ -119,8 +119,8 @@ where
         modulus: M,
     ) where
         M: Copy + ReduceMulSlice<T>,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
     {
         modulus.reduce_mul_slice_to(self.as_ref(), rhs.as_ref(), output.as_mut());
     }
@@ -130,7 +130,7 @@ where
     pub fn mul_scalar_to<M, A>(&self, scalar: T, output: &mut ArrayBase<A>, modulus: M)
     where
         M: Copy + ReduceMulSlice<T>,
-        A: RawData<Elem = T> + DataMut,
+        A: DataMut<Elem = T>,
     {
         modulus.reduce_mul_scalar_slice_to(self.as_ref(), scalar, output.as_mut());
     }
@@ -140,7 +140,7 @@ where
     pub fn mul_factor_to<F, A>(&self, factor: F, output: &mut ArrayBase<A>, modulus: T)
     where
         F: FactorSliceOps<T>,
-        A: RawData<Elem = T> + DataMut,
+        A: DataMut<Elem = T>,
     {
         factor.factor_mul_slice_to(self.as_ref(), output.as_mut(), modulus);
     }

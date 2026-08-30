@@ -1,6 +1,6 @@
 //! Single-modulus GLev and GGSW generation with GLWE secret keys.
 
-use primus_data::{Data, DataMut, RawData};
+use primus_data::{Data, DataMut};
 use primus_fft::{Complex64, FftEngine, FftTable, TorusFftValue};
 use primus_integer::FheUint;
 use primus_modulus::NativeModulus;
@@ -112,8 +112,8 @@ impl FourierGlweSecretKey {
         T: TorusFftValue,
         Table: FftTable,
         R: rand::Rng + rand::CryptoRng,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = Complex64> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = Complex64>,
     {
         assert_eq!(result.as_ref().len(), params.fourier_glev_len());
         let modulus = params.cipher_modulus();
@@ -149,8 +149,8 @@ impl FourierGlweSecretKey {
         T: TorusFftValue,
         Table: FftTable,
         R: rand::Rng + rand::CryptoRng,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = Complex64> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = Complex64>,
     {
         assert_eq!(result.as_ref().len(), params.fourier_ggsw_len());
 
@@ -198,8 +198,8 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
         R: rand::Rng + rand::CryptoRng,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
     {
         let params = domain.parameters();
         let ntt = domain.table();
@@ -228,8 +228,8 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
         R: rand::Rng + rand::CryptoRng,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
     {
         let params = domain.parameters();
         let ntt = domain.table();

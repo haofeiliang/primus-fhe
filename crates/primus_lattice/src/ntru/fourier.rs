@@ -20,13 +20,13 @@ impl_fourier_backward!(FourierNtru, Ntru);
 
 impl<S> FourierNtru<S>
 where
-    S: RawData<Elem = Complex64> + DataMut,
+    S: DataMut<Elem = Complex64>,
 {
     /// Adds another Fourier NTRU ciphertext pointwise.
     #[inline]
     pub fn add_assign<A>(&mut self, rhs: &FourierNtru<A>)
     where
-        A: RawData<Elem = Complex64> + Data,
+        A: Data<Elem = Complex64>,
     {
         FourierPolynomial(self.as_mut()).add_assign(&FourierPolynomial(rhs.as_ref()));
     }
@@ -35,7 +35,7 @@ where
     #[inline]
     pub fn sub_assign<A>(&mut self, rhs: &FourierNtru<A>)
     where
-        A: RawData<Elem = Complex64> + Data,
+        A: Data<Elem = Complex64>,
     {
         FourierPolynomial(self.as_mut()).sub_assign(&FourierPolynomial(rhs.as_ref()));
     }
@@ -56,7 +56,7 @@ where
     #[inline]
     pub fn mul_fourier_polynomial_assign<A>(&mut self, rhs: &FourierPolynomial<A>)
     where
-        A: RawData<Elem = Complex64> + Data,
+        A: Data<Elem = Complex64>,
     {
         FourierPolynomial(self.as_mut()).mul_assign(rhs);
     }
@@ -64,7 +64,7 @@ where
 
 impl<S> FourierNtru<S>
 where
-    S: RawData<Elem = Complex64> + Data,
+    S: Data<Elem = Complex64>,
 {
     /// Writes the pointwise product of this ciphertext and a Fourier
     /// plaintext polynomial to `result`.
@@ -74,8 +74,8 @@ where
         rhs: &FourierPolynomial<A>,
         result: &mut FourierNtru<B>,
     ) where
-        A: RawData<Elem = Complex64> + Data,
-        B: RawData<Elem = Complex64> + DataMut,
+        A: Data<Elem = Complex64>,
+        B: DataMut<Elem = Complex64>,
     {
         FourierPolynomial(self.as_ref()).mul_to(rhs, &mut FourierPolynomial(result.as_mut()));
     }

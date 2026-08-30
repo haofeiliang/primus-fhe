@@ -29,7 +29,7 @@ impl_intt!(NttGlwe<S>, Glwe);
 
 impl<S, T> NttGlwe<S>
 where
-    S: RawData<Elem = T> + DataMut,
+    S: DataMut<Elem = T>,
     T: FheUint,
 {
     /// Splits this GLWE into its mutable mask and body slices.
@@ -63,7 +63,7 @@ where
     pub fn mul_ntt_polynomial_assign<M, A>(&mut self, ntt_poly: &NttPolynomial<A>, modulus: M)
     where
         M: FieldContext<T>,
-        A: RawData<Elem = T> + Data,
+        A: Data<Elem = T>,
     {
         let poly_len = ntt_poly.poly_length();
 
@@ -84,8 +84,8 @@ where
         modulus: M,
     ) where
         M: FieldContext<T>,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + Data,
+        A: Data<Elem = T>,
+        B: Data<Elem = T>,
     {
         let poly_length = ntt_poly.poly_length();
         debug_assert_eq!(self.as_ref().len(), rhs.as_ref().len());
@@ -101,7 +101,7 @@ where
 
 impl<S, T> NttGlwe<S>
 where
-    S: RawData<Elem = T> + Data,
+    S: Data<Elem = T>,
     T: FheUint,
 {
     /// Splits this GLWE into its mask and body slices.
@@ -137,8 +137,8 @@ where
         modulus: M,
     ) where
         M: FieldContext<T>,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
     {
         let poly_length = ntt_poly.poly_length();
 

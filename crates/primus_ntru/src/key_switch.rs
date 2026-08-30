@@ -1,6 +1,6 @@
 //! NTRU key switching through NLev external products.
 
-use primus_data::{Data, DataMut, RawData};
+use primus_data::{Data, DataMut};
 use primus_fft::{Complex64, FftEngine, FftTable, TorusFftValue};
 use primus_integer::FheUint;
 use primus_lattice::nlev::{FourierNlev, NttNlev};
@@ -81,8 +81,8 @@ impl<T: FheUint> NttNtruKeySwitchingKey<T> {
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
     {
         let poly_length = input.as_ref().len();
         assert_eq!(output.as_ref().len(), poly_length);
@@ -109,7 +109,7 @@ impl<T: FheUint> NttNtruKeySwitchingKey<T> {
     where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: RawData<Elem = T> + Data,
+        A: Data<Elem = T>,
     {
         let mut output = NtruCiphertext::zero(input.as_ref().len());
         self.key_switch_to(input, &mut output, parameters, ntt, context);
@@ -182,8 +182,8 @@ impl FourierNtruKeySwitchingKey {
     ) where
         T: TorusFftValue,
         Table: FftTable,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
     {
         let poly_length = input.as_ref().len();
         assert_eq!(output.as_ref().len(), poly_length);
@@ -209,7 +209,7 @@ impl FourierNtruKeySwitchingKey {
     where
         T: TorusFftValue,
         Table: FftTable,
-        A: RawData<Elem = T> + Data,
+        A: Data<Elem = T>,
     {
         let mut output = NtruCiphertext::zero(input.as_ref().len());
         self.key_switch_to(input, &mut output, parameters, fft, context);

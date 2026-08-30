@@ -1,4 +1,4 @@
-use primus_data::{Data, RawData};
+use primus_data::Data;
 use primus_fft::{FftEngine, FftTable, TorusFftValue};
 use primus_lattice::{lwe::Lwe, ntru::Ntru};
 use primus_modulus::NativeModulus;
@@ -38,7 +38,7 @@ pub(crate) fn blind_rotate_lookup_table_to<T, Table, A>(
 ) where
     T: TorusFftValue,
     Table: FftTable,
-    A: RawData<Elem = T> + Data,
+    A: Data<Elem = T>,
 {
     let poly_length = parameters.poly_length();
     let two_n = poly_length * 2;

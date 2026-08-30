@@ -36,7 +36,7 @@ impl_crt_ntt!(CrtRlwe<S>, DcrtRlwe);
 
 impl<S, T> CrtRlwe<S>
 where
-    S: RawData<Elem = T> + Data,
+    S: Data<Elem = T>,
     T: FheUint,
 {
     /// Performs a multiplication on the `self` [`CrtRlwe<S>`] with another `dcrt_polynomial` [`DcrtPolynomial<A>`],
@@ -51,8 +51,8 @@ where
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
     {
         let poly_length = table.poly_length();
         let crt_poly_len = table.crt_poly_length();

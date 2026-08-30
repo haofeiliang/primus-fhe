@@ -41,7 +41,7 @@ impl_crt_intt!(DcrtGlwe<S>, CrtGlwe);
 
 impl<S, T> DcrtGlwe<S>
 where
-    S: RawData<Elem = T> + DataMut,
+    S: DataMut<Elem = T>,
     T: FheUint,
 {
     /// Splits this GLWE into its mutable mask and body slices.
@@ -120,8 +120,8 @@ where
         moduli: &[M],
     ) where
         M: FieldContext<T>,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + Data,
+        A: Data<Elem = T>,
+        B: Data<Elem = T>,
     {
         let dcrt_poly_len = dcrt_poly.dcrt_poly_length();
 
@@ -143,9 +143,9 @@ where
         moduli: &[M],
     ) where
         M: FieldContext<T>,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + Data,
-        C: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: Data<Elem = T>,
+        C: DataMut<Elem = T>,
     {
         let dcrt_poly_len = dcrt_poly.dcrt_poly_length();
         self.iter_dcrt_poly_mut(dcrt_poly_len)
@@ -169,8 +169,8 @@ where
         poly_length: usize,
         moduli: &[T],
     ) where
-        A: RawData<Elem = T> + Data,
-        C: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        C: DataMut<Elem = T>,
     {
         let dcrt_poly_len = factor_poly.len();
         self.iter_dcrt_poly_mut(dcrt_poly_len)
@@ -193,8 +193,8 @@ where
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + Data,
+        A: Data<Elem = T>,
+        B: Data<Elem = T>,
     {
         let poly_length = table.poly_length();
         let big_uint_value_len = rns_base.big_uint_value_len();
@@ -272,8 +272,8 @@ where
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + Data,
+        A: Data<Elem = T>,
+        B: Data<Elem = T>,
     {
         let poly_length = table.poly_length();
         let big_uint_value_len = rns_base.big_uint_value_len();
@@ -336,7 +336,7 @@ where
 
 impl<S, T> DcrtGlwe<S>
 where
-    S: RawData<Elem = T> + Data,
+    S: Data<Elem = T>,
     T: FheUint,
 {
     /// Splits this GLWE into its mask and body slices.
@@ -369,7 +369,7 @@ where
         moduli: &[T],
     ) where
         F: Copy + FactorSliceOps<T>,
-        A: RawData<Elem = T> + DataMut,
+        A: DataMut<Elem = T>,
     {
         self.iter_dcrt_poly(dcrt_poly_len)
             .zip(result.iter_dcrt_poly_mut(dcrt_poly_len))
@@ -389,8 +389,8 @@ where
         moduli: &[M],
     ) where
         M: FieldContext<T>,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
     {
         let dcrt_poly_len = dcrt_poly.dcrt_poly_length();
 

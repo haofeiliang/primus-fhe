@@ -1,4 +1,4 @@
-use primus_data::{DataMut, DataOwned, RawData};
+use primus_data::{DataMut, DataOwned};
 use primus_distr::DiscreteGaussian;
 use primus_integer::FheUint;
 use primus_reduce::{Modulus, ReduceAddAssign};
@@ -10,7 +10,7 @@ use super::Polynomial;
 
 impl<S, T> Polynomial<S>
 where
-    S: RawData<Elem = T> + DataOwned,
+    S: DataOwned<Elem = T>,
     T: FheUint,
 {
     /// Generate a random [`Polynomial<S>`].
@@ -84,7 +84,7 @@ impl<T: FheUint> PolynomialOwned<T> {
 
 impl<S, T> Polynomial<S>
 where
-    S: RawData<Elem = T> + DataMut,
+    S: DataMut<Elem = T>,
     T: FheUint,
 {
     /// Generate a random [`Polynomial<S>`].

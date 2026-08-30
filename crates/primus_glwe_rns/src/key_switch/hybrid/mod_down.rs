@@ -104,7 +104,7 @@ mod tests {
 
         table.ntt_tables()[..q_values.len()]
             .iter()
-            .zip(mixed_domain[..q_len].chunks_exact_mut(POLY_LENGTH))
+            .zip(mixed_domain[..q_len].as_chunks_mut::<POLY_LENGTH>().0)
             .for_each(|(ntt_table, q_limb)| ntt_table.inverse_transform_slice(q_limb));
 
         assert_eq!(&mixed_domain[..q_len], &reference[..q_len]);

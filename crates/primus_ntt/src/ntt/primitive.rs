@@ -1,4 +1,4 @@
-use primus_data::{DataMut, RawData};
+use primus_data::DataMut;
 use primus_factor::{FactorMul, LazyFactorMul, ShoupFactor};
 use primus_integer::FheUint;
 use primus_modulus::common::compact;
@@ -214,7 +214,7 @@ impl<T: FheUint> NttTable for UintNttTable<T> {
     }
 
     #[inline]
-    fn transform_inplace<S: RawData<Elem = Self::ValueT> + DataMut>(
+    fn transform_inplace<S: DataMut<Elem = Self::ValueT>>(
         &self,
         mut poly: Polynomial<S>,
     ) -> NttPolynomial<S> {
@@ -223,7 +223,7 @@ impl<T: FheUint> NttTable for UintNttTable<T> {
     }
 
     #[inline]
-    fn inverse_transform_inplace<S: RawData<Elem = Self::ValueT> + DataMut>(
+    fn inverse_transform_inplace<S: DataMut<Elem = Self::ValueT>>(
         &self,
         mut values: NttPolynomial<S>,
     ) -> Polynomial<S> {

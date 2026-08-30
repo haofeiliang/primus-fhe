@@ -42,7 +42,7 @@ where
 
 impl<S, T> Polynomial<S>
 where
-    S: RawData<Elem = T> + DataOwned,
+    S: DataOwned<Elem = T>,
     T: FheUint,
 {
     /// Creates a [`Polynomial<T>`] with all coefficients equal to zero.
@@ -69,7 +69,7 @@ where
 
 impl<S, T> Polynomial<S>
 where
-    S: RawData<Elem = T> + DataMut,
+    S: DataMut<Elem = T>,
     T: FheUint,
 {
     /// Extracts a mutable slice of the entire vector.
@@ -101,7 +101,7 @@ where
 
 impl<S, T> Polynomial<S>
 where
-    S: RawData<Elem = T> + Data,
+    S: Data<Elem = T>,
     T: FheUint,
 {
     /// Get the coefficient counts of polynomial.
@@ -150,7 +150,7 @@ where
 
 impl<S, T> Size for Polynomial<S>
 where
-    S: RawData<Elem = T> + Data,
+    S: Data<Elem = T>,
     T: FheUint,
 {
     #[inline]

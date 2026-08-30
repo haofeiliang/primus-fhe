@@ -20,7 +20,7 @@ where
 
 impl<S, T> AsRef<[T]> for NttGlwePublicKey<S>
 where
-    S: RawData<Elem = T> + Data,
+    S: Data<Elem = T>,
     T: FheUint,
 {
     #[inline]
@@ -31,7 +31,7 @@ where
 
 impl<S, T> AsMut<[T]> for NttGlwePublicKey<S>
 where
-    S: RawData<Elem = T> + DataMut,
+    S: DataMut<Elem = T>,
     T: FheUint,
 {
     #[inline]
@@ -72,7 +72,7 @@ impl<T: FheUint> NttGlwePublicKey<Vec<T>> {
 
 impl<S, T> NttGlwePublicKey<S>
 where
-    S: RawData<Elem = T> + DataOwned,
+    S: DataOwned<Elem = T>,
     T: FheUint,
 {
     /// Creates a public key from its native-endian byte representation.
@@ -86,7 +86,7 @@ where
 
 impl<S, T> NttGlwePublicKey<S>
 where
-    S: RawData<Elem = T> + DataMut,
+    S: DataMut<Elem = T>,
     T: FheUint,
 {
     /// Replaces this public key from its native-endian byte representation.
@@ -98,7 +98,7 @@ where
 
 impl<S, T> NttGlwePublicKey<S>
 where
-    S: RawData<Elem = T> + Data,
+    S: Data<Elem = T>,
     T: FheUint,
 {
     /// Converts this public key to native-endian bytes.
@@ -131,8 +131,8 @@ where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
         R: rand::Rng + rand::CryptoRng,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
     {
         self.encrypt_to_with_message(
             Some((message.as_ref(), PlaintextEmbedding::Unsigned)),
@@ -155,8 +155,8 @@ where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
         R: rand::Rng + rand::CryptoRng,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
     {
         self.encrypt_to_with_message(
             Some((message.as_ref(), PlaintextEmbedding::Centered)),
@@ -179,7 +179,7 @@ where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
         R: rand::Rng + rand::CryptoRng,
-        A: RawData<Elem = T> + Data,
+        A: Data<Elem = T>,
     {
         let mut result = NttGlweCiphertext::zero(params.glwe_len());
         self.encrypt_to(message, &mut result, params, ntt_table, rng);
@@ -197,7 +197,7 @@ where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
         R: rand::Rng + rand::CryptoRng,
-        B: RawData<Elem = T> + DataMut,
+        B: DataMut<Elem = T>,
     {
         self.encrypt_to_with_message(None, result, params, ntt_table, rng);
     }
@@ -230,7 +230,7 @@ where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
         R: rand::Rng + rand::CryptoRng,
-        B: RawData<Elem = T> + DataMut,
+        B: DataMut<Elem = T>,
     {
         let size = params.size();
         let poly_length = size.poly_length();

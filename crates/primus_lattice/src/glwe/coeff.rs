@@ -32,7 +32,7 @@ impl_ntt!(Glwe<S>, NttGlwe);
 
 impl<S, T> Glwe<S>
 where
-    S: RawData<Elem = T> + DataMut,
+    S: DataMut<Elem = T>,
     T: FheUint,
 {
     /// Splits this GLWE into its mutable mask and body slices.
@@ -58,7 +58,7 @@ where
 
 impl<S, T> Glwe<S>
 where
-    S: RawData<Elem = T> + Data,
+    S: Data<Elem = T>,
     T: FheUint,
 {
     /// Splits this GLWE into its mask and body slices.
@@ -81,7 +81,7 @@ where
 
 impl<S, T> Glwe<S>
 where
-    S: RawData<Elem = T> + Data,
+    S: Data<Elem = T>,
     T: FheUint,
 {
     /// Extracts the constant coefficient as an LWE sample.
@@ -91,7 +91,7 @@ where
     pub fn extract_lwe_to<M, B>(&self, output: &mut Lwe<B>, poly_length: usize, modulus: M)
     where
         M: RingContext<T>,
-        B: RawData<Elem = T> + DataMut,
+        B: DataMut<Elem = T>,
     {
         debug_assert!(poly_length > 0);
         debug_assert!(self.as_ref().len().is_multiple_of(poly_length));
@@ -126,7 +126,7 @@ where
         modulus: M,
     ) where
         M: RingContext<T>,
-        B: RawData<Elem = T> + DataMut,
+        B: DataMut<Elem = T>,
     {
         debug_assert!(index < poly_length, "GLWE extraction index is out of range");
         debug_assert!(
@@ -154,7 +154,7 @@ where
     pub fn extract_compact_lwe_to<M, B>(&self, output: &mut Lwe<B>, poly_length: usize, modulus: M)
     where
         M: RingContext<T>,
-        B: RawData<Elem = T> + DataMut,
+        B: DataMut<Elem = T>,
     {
         debug_assert!(poly_length > 0);
         debug_assert!(self.as_ref().len().is_multiple_of(poly_length));
@@ -188,7 +188,7 @@ where
         modulus: M,
     ) where
         M: RingContext<T>,
-        B: RawData<Elem = T> + DataMut,
+        B: DataMut<Elem = T>,
     {
         debug_assert!(index < poly_length, "GLWE extraction index is out of range");
         debug_assert!(
@@ -213,7 +213,7 @@ where
         modulus: M,
     ) where
         M: RingContext<T>,
-        B: RawData<Elem = T> + DataMut,
+        B: DataMut<Elem = T>,
     {
         let (input_mask, input_body) = self.a_b_slices(poly_length);
         let (output_mask, output_body) = output.a_b_mut();
@@ -247,7 +247,7 @@ where
         modulus: M,
     ) where
         M: RingContext<T>,
-        B: RawData<Elem = T> + DataMut,
+        B: DataMut<Elem = T>,
     {
         self.monomial_to::<false, M, B>(exponent, output, poly_length, modulus);
     }
@@ -265,7 +265,7 @@ where
         modulus: M,
     ) where
         M: RingContext<T>,
-        B: RawData<Elem = T> + DataMut,
+        B: DataMut<Elem = T>,
     {
         self.monomial_to::<true, M, B>(exponent, output, poly_length, modulus);
     }
@@ -279,7 +279,7 @@ where
         modulus: M,
     ) where
         M: RingContext<T>,
-        B: RawData<Elem = T> + DataMut,
+        B: DataMut<Elem = T>,
     {
         debug_assert!(
             (crate::MIN_POLY_LENGTH..=crate::MAX_POLY_LENGTH).contains(&poly_length)
@@ -318,8 +318,8 @@ where
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
     {
         let ntt_poly_len = ntt_table.poly_length();
 
@@ -334,7 +334,7 @@ where
 
 impl<S, T> Lwe<S>
 where
-    S: RawData<Elem = T> + Data,
+    S: Data<Elem = T>,
     T: FheUint,
 {
     /// Inserts this LWE sample into a GLWE ciphertext so that compact sample
@@ -351,7 +351,7 @@ where
         modulus: M,
     ) where
         M: RingContext<T>,
-        B: RawData<Elem = T> + DataMut,
+        B: DataMut<Elem = T>,
     {
         debug_assert!(poly_length > 0);
         debug_assert!(self.dimension() > 0);

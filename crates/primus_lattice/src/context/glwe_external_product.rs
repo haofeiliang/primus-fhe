@@ -1,4 +1,4 @@
-use primus_data::{DataMut, RawData};
+use primus_data::DataMut;
 use primus_fft::{Complex64, TorusFftValue};
 use primus_integer::FheUint;
 
@@ -203,7 +203,7 @@ impl<T: FheUint> NttExternalProductContext<T> {
         accumulator: &'a mut NttGlwe<S>,
     ) -> NttExternalProductContextRefMut<'a, T>
     where
-        S: RawData<Elem = T> + DataMut,
+        S: DataMut<Elem = T>,
     {
         NttExternalProductContextRefMut {
             size: self.size,

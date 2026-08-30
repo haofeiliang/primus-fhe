@@ -140,8 +140,8 @@ where
     ) where
         T: TorusFftValue,
         Table: FftTable,
-        A: RawData<Elem = T> + Data,
-        C: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        C: DataMut<Elem = T>,
         S: Data,
     {
         debug_assert_eq!(output.as_ref().len(), context.poly_length());
@@ -177,9 +177,9 @@ where
         T: FheUint,
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: RawData<Elem = T> + Data,
-        C: RawData<Elem = T> + DataMut,
-        S: RawData<Elem = T> + Data,
+        A: Data<Elem = T>,
+        C: DataMut<Elem = T>,
+        S: Data<Elem = T>,
     {
         debug_assert_eq!(output.as_ref().len(), context.poly_length());
         ntt_gadget_product_to_accumulator(

@@ -38,9 +38,9 @@ where
         T: TorusFftValue,
         Table: FftTable,
         S: Data,
-        B: RawData<Elem = T> + Data,
-        C: RawData<Elem = T> + Data,
-        D: RawData<Elem = T> + DataMut,
+        B: Data<Elem = T>,
+        C: Data<Elem = T>,
+        D: DataMut<Elem = T>,
     {
         let poly_length = context.poly_length();
         debug_assert_eq!(ct0.as_ref().len(), poly_length);
@@ -74,9 +74,9 @@ where
         T: TorusFftValue,
         Table: FftTable,
         S: Data,
-        B: RawData<Elem = T> + Data,
-        C: RawData<Elem = T> + Data,
-        D: RawData<Elem = T> + DataMut,
+        B: Data<Elem = T>,
+        C: Data<Elem = T>,
+        D: DataMut<Elem = T>,
         I: IntoIterator,
         I::IntoIter: ExactSizeIterator,
         I::Item: Borrow<Self>,
@@ -123,8 +123,8 @@ where
         T: TorusFftValue,
         Table: FftTable,
         S: Data,
-        B: RawData<Elem = T> + Data,
-        C: RawData<Elem = T> + DataMut,
+        B: Data<Elem = T>,
+        C: DataMut<Elem = T>,
     {
         input.mul_monomial_sub_one_to(exponent, output, NativeModulus::new());
         self.external_product_to_accumulator(output, basis, fft, context);
@@ -155,10 +155,10 @@ where
         T: FheUint,
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        S: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + Data,
-        C: RawData<Elem = T> + Data,
-        D: RawData<Elem = T> + DataMut,
+        S: Data<Elem = T>,
+        B: Data<Elem = T>,
+        C: Data<Elem = T>,
+        D: DataMut<Elem = T>,
     {
         let poly_length = context.poly_length();
         debug_assert_eq!(ct0.as_ref().len(), poly_length);
@@ -193,10 +193,10 @@ where
         T: FheUint,
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        S: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + Data,
-        C: RawData<Elem = T> + Data,
-        D: RawData<Elem = T> + DataMut,
+        S: Data<Elem = T>,
+        B: Data<Elem = T>,
+        C: Data<Elem = T>,
+        D: DataMut<Elem = T>,
         I: IntoIterator,
         I::IntoIter: ExactSizeIterator,
         I::Item: Borrow<Self>,
@@ -244,9 +244,9 @@ where
         T: FheUint,
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        S: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + Data,
-        C: RawData<Elem = T> + DataMut,
+        S: Data<Elem = T>,
+        B: Data<Elem = T>,
+        C: DataMut<Elem = T>,
     {
         input.mul_monomial_sub_one_to(exponent, output, modulus);
         self.external_product_to_accumulator(output, basis, modulus, ntt, context);

@@ -20,7 +20,7 @@
 //!     ▼
 //!   recovered m: `Polynomial<T>`
 
-use primus_data::{Data, DataMut, RawData};
+use primus_data::{Data, DataMut};
 use primus_factor::{FactorSliceOps, ShoupFactor};
 use primus_integer::{BigUint, DivRemScalar, FheUint, multiply_many_values};
 use primus_poly::{CrtPolynomial, DcrtPolynomial, Polynomial};
@@ -189,8 +189,8 @@ where
         crt_message: &mut CrtPolynomial<B>,
         poly_length: usize,
     ) where
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
     {
         self.base_q.wrapping_decompose_small_polynomial_to(
             message,
@@ -214,8 +214,8 @@ where
         destination: &mut CrtPolynomial<B>,
         poly_length: usize,
     ) where
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
     {
         self.base_q.add_wrapping_decompose_small_polynomial_scaled(
             message,
@@ -238,8 +238,8 @@ where
         crt_message: &mut CrtPolynomial<B>,
         poly_length: usize,
     ) where
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
     {
         crt_message
             .iter_each_modulus_mut(poly_length)
@@ -262,8 +262,8 @@ where
         destination: &mut CrtPolynomial<B>,
         poly_length: usize,
     ) where
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
     {
         self.base_q.add_decompose_small_polynomial_scaled(
             message,
@@ -289,8 +289,8 @@ where
         poly_length: usize,
         fast_convert_buffer: &mut [T],
     ) where
-        A: RawData<Elem = T> + DataMut,
-        B: RawData<Elem = T> + DataMut,
+        A: DataMut<Elem = T>,
+        B: DataMut<Elem = T>,
     {
         let rns_poly_len = self
             .moduli_count()

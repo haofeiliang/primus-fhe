@@ -32,14 +32,14 @@ impl_intt!(NttRlwe<S>, Rlwe);
 
 impl<S, T> NttRlwe<S>
 where
-    S: RawData<Elem = T> + DataOwned,
+    S: DataOwned<Elem = T>,
     T: FheUint,
 {
     /// Creates a new [`NttRlwe<S>`] with reference of [`NttPolynomial<A>`].
     #[inline]
     pub fn from_ref<A>(a: &NttPolynomial<A>, b: &NttPolynomial<A>) -> Self
     where
-        A: RawData<Elem = T> + Data,
+        A: Data<Elem = T>,
     {
         debug_assert_eq!(a.poly_length(), b.poly_length());
         Self(S::from_vec([a.as_ref(), b.as_ref()].concat()))
@@ -48,7 +48,7 @@ where
 
 impl<S, T> NttRlwe<S>
 where
-    S: RawData<Elem = T> + DataMut,
+    S: DataMut<Elem = T>,
     T: FheUint,
 {
     /// Extracts mutable slice of `a` and `b` of this [`NttRlwe<S>`].
@@ -80,7 +80,7 @@ where
     pub fn mul_ntt_polynomial_assign<M, A>(&mut self, ntt_poly: &NttPolynomial<A>, modulus: M)
     where
         M: FieldContext<T>,
-        A: RawData<Elem = T> + Data,
+        A: Data<Elem = T>,
     {
         let poly_len = ntt_poly.poly_length();
 
@@ -97,8 +97,8 @@ where
         modulus: M,
     ) where
         M: FieldContext<T>,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + Data,
+        A: Data<Elem = T>,
+        B: Data<Elem = T>,
     {
         let poly_len = ntt_poly.poly_length();
         self.iter_ntt_poly_mut(poly_len)
@@ -111,7 +111,7 @@ where
 
 impl<S, T> NttRlwe<S>
 where
-    S: RawData<Elem = T> + Data,
+    S: Data<Elem = T>,
     T: FheUint,
 {
     /// Extracts slice of `a` and `b` of this [`NttRlwe<S>`].
@@ -139,8 +139,8 @@ where
         modulus: M,
     ) where
         M: FieldContext<T>,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
     {
         let poly_len = ntt_poly.poly_length();
 

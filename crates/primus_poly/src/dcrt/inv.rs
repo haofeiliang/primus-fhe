@@ -1,5 +1,5 @@
 use itertools::izip;
-use primus_data::{Data, DataMut, RawData};
+use primus_data::{Data, DataMut};
 use primus_integer::FheUint;
 use primus_reduce::ReduceInvSlice;
 
@@ -7,7 +7,7 @@ use super::DcrtPolynomial;
 
 impl<S, T> DcrtPolynomial<S>
 where
-    S: RawData<Elem = T> + Data,
+    S: Data<Elem = T>,
     T: FheUint,
 {
     /// Writes the point-wise inverse of each modulus component to `output`.
@@ -26,7 +26,7 @@ where
     pub fn inv_to<M, A>(&self, output: &mut DcrtPolynomial<A>, poly_length: usize, moduli: &[M])
     where
         M: Copy + ReduceInvSlice<T>,
-        A: RawData<Elem = T> + DataMut,
+        A: DataMut<Elem = T>,
     {
         debug_assert_eq!(self.dcrt_poly_length(), output.dcrt_poly_length());
 

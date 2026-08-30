@@ -16,7 +16,7 @@ where
 
 impl<S, T> MultiMsgLwe<S>
 where
-    S: RawData<Elem = T> + DataOwned,
+    S: DataOwned<Elem = T>,
     T: FheUint,
 {
     /// Creates a new [`MultiMsgLwe<S, T>`] from bytes `data`.
@@ -42,7 +42,7 @@ where
 
 impl<S, T> MultiMsgLwe<S>
 where
-    S: RawData<Elem = T> + DataMut,
+    S: DataMut<Elem = T>,
     T: FheUint,
 {
     /// Creates a new [`MultiMsgLwe<S, T>`] from bytes `data`.
@@ -75,7 +75,7 @@ where
     pub fn add_component_wise<M, A>(mut self, rhs: &MultiMsgLwe<A>, modulus: M) -> Self
     where
         M: Copy + ReduceAddSlice<T>,
-        A: RawData<Elem = T> + Data,
+        A: Data<Elem = T>,
     {
         self.add_component_wise_assign(rhs, modulus);
         self
@@ -87,7 +87,7 @@ where
     pub fn add_component_wise_assign<M, A>(&mut self, rhs: &MultiMsgLwe<A>, modulus: M)
     where
         M: Copy + ReduceAddSlice<T>,
-        A: RawData<Elem = T> + Data,
+        A: Data<Elem = T>,
     {
         modulus.reduce_add_slice_assign(self.0.as_mut_slice(), rhs.0.as_slice());
     }
@@ -102,7 +102,7 @@ where
     pub fn sub_component_wise<M, A>(mut self, rhs: &MultiMsgLwe<A>, modulus: M) -> Self
     where
         M: Copy + ReduceSubSlice<T>,
-        A: RawData<Elem = T> + Data,
+        A: Data<Elem = T>,
     {
         self.sub_component_wise_assign(rhs, modulus);
         self
@@ -114,7 +114,7 @@ where
     pub fn sub_component_wise_assign<M, A>(&mut self, rhs: &MultiMsgLwe<A>, modulus: M)
     where
         M: Copy + ReduceSubSlice<T>,
-        A: RawData<Elem = T> + Data,
+        A: Data<Elem = T>,
     {
         modulus.reduce_sub_slice_assign(self.0.as_mut_slice(), rhs.0.as_slice());
     }
@@ -136,7 +136,7 @@ where
     pub fn add_mul_scalar_assign<M, A>(&mut self, rhs: &MultiMsgLwe<A>, scalar: T, modulus: M)
     where
         M: Copy + ReduceMulAddSlice<T>,
-        A: RawData<Elem = T> + Data,
+        A: Data<Elem = T>,
     {
         modulus.reduce_add_mul_scalar_slice_assign(self.0.as_mut_slice(), rhs.0.as_slice(), scalar);
     }
@@ -144,7 +144,7 @@ where
 
 impl<S, T> MultiMsgLwe<S>
 where
-    S: RawData<Elem = T> + Data,
+    S: Data<Elem = T>,
     T: FheUint,
 {
     /// Converts [`MultiMsgLwe<S, T>`] into bytes.
@@ -185,8 +185,8 @@ where
     ) -> MultiMsgLwe<B>
     where
         M: Copy + ReduceAddSlice<T>,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + DataOwned,
+        A: Data<Elem = T>,
+        B: DataOwned<Elem = T>,
     {
         let len = self.0.len();
 
@@ -212,8 +212,8 @@ where
     ) -> MultiMsgLwe<B>
     where
         M: Copy + ReduceSubSlice<T>,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + DataOwned,
+        A: Data<Elem = T>,
+        B: DataOwned<Elem = T>,
     {
         let len = self.0.len();
 
@@ -279,7 +279,7 @@ impl<T: FheUint> MultiMsgLwe<Vec<T>> {
 
 impl<S, T> Size for MultiMsgLwe<S>
 where
-    S: RawData<Elem = T> + Data,
+    S: Data<Elem = T>,
     T: FheUint,
 {
     #[inline]

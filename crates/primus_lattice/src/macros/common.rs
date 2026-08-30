@@ -19,7 +19,7 @@ macro_rules! impl_common {
 
         impl<$s, T> AsRef<[T]> for $cipher<$s>
         where
-            $s: RawData<Elem = T> + Data,
+            $s: Data<Elem = T>,
             T: FheUint,
         {
             #[inline(always)]
@@ -30,7 +30,7 @@ macro_rules! impl_common {
 
         impl<$s, T> AsMut<[T]> for $cipher<$s>
         where
-            $s: RawData<Elem = T> + DataMut,
+            $s: DataMut<Elem = T>,
             T: FheUint,
         {
             #[inline(always)]
@@ -45,7 +45,7 @@ macro_rules! impl_bytes_conversion {
     ($cipher:ident < $s:ident >) => {
         impl<$s, T> $cipher<$s>
         where
-            $s: RawData<Elem = T> + DataOwned,
+            $s: DataOwned<Elem = T>,
             T: FheUint,
         {
             #[doc = concat!(r" Creates a new [`",stringify!($cipher),"<",stringify!($s),">`] from bytes `data`.")]
@@ -59,7 +59,7 @@ macro_rules! impl_bytes_conversion {
 
         impl<$s, T> $cipher<$s>
         where
-            $s: RawData<Elem = T> + DataMut,
+            $s: DataMut<Elem = T>,
             T: FheUint,
         {
             /// Copy from bytes `data`.
@@ -73,7 +73,7 @@ macro_rules! impl_bytes_conversion {
 
         impl<$s, T> $cipher<$s>
         where
-            $s: RawData<Elem = T> + Data,
+            $s: Data<Elem = T>,
             T: FheUint,
         {
             /// Converts `self` into bytes.
@@ -105,7 +105,7 @@ macro_rules! impl_zero {
     ($cipher:ident < $s:ident >) => {
         impl<$s, T> $cipher<$s>
         where
-            $s: RawData<Elem = T> + DataOwned,
+            $s: DataOwned<Elem = T>,
             T: FheUint,
         {
             paste::paste! {
@@ -119,7 +119,7 @@ macro_rules! impl_zero {
 
         impl<$s, T> $cipher<$s>
         where
-            $s: RawData<Elem = T> + DataMut,
+            $s: DataMut<Elem = T>,
             T: FheUint,
         {
             /// Set all values or coefficients equal to zero.

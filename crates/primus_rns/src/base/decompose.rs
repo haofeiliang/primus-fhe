@@ -1,5 +1,5 @@
 use itertools::izip;
-use primus_data::{Data, DataMut, RawData};
+use primus_data::{Data, DataMut};
 use primus_factor::{Factor, FactorBase};
 use primus_integer::{BigUint, FheUint};
 use primus_poly::{BigUintPolynomial, CrtPolynomial, Polynomial};
@@ -166,8 +166,8 @@ where
         poly_length: usize,
         small_poly_modulus: T,
     ) where
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
     {
         self.wrapping_decompose_small_values_to(
             small_poly.as_slice(),
@@ -264,8 +264,8 @@ where
         small_poly_modulus: T,
         factors: &[F],
     ) where
-        A: RawData<Elem = T> + Data,
-        C: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        C: DataMut<Elem = T>,
     {
         self.add_wrapping_decompose_small_values_scaled(
             small_poly.as_slice(),
@@ -327,8 +327,8 @@ where
         poly_length: usize,
         factors: &[F],
     ) where
-        A: RawData<Elem = T> + Data,
-        C: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        C: DataMut<Elem = T>,
     {
         self.add_decompose_small_values_scaled(
             small_poly.as_slice(),
@@ -389,8 +389,8 @@ where
         crt_poly: &mut CrtPolynomial<B>,
         poly_length: usize,
     ) where
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
     {
         self.decompose_big_uint_values_to(
             big_uint_poly.as_slice(),

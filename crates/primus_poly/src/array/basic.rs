@@ -4,14 +4,14 @@ use core::{
 };
 
 use num_traits::{ConstZero, Zero};
-use primus_data::{Data, DataMut, DataOwned, RawData};
+use primus_data::{Data, DataMut, DataOwned};
 use primus_integer::{ByteCount, FheUint, Size};
 
 use super::ArrayBase;
 
 impl<S, T> ArrayBase<S>
 where
-    S: RawData<Elem = T> + Data,
+    S: Data<Elem = T>,
     T: FheUint,
 {
     /// Returns an iterator that allows reading each value.
@@ -29,7 +29,7 @@ where
 
 impl<S, T> ArrayBase<S>
 where
-    S: RawData<Elem = T> + DataMut,
+    S: DataMut<Elem = T>,
     T: FheUint,
 {
     /// Returns an iterator that allows modifying each value.
@@ -47,7 +47,7 @@ where
 
 impl<S, T> ArrayBase<S>
 where
-    S: RawData<Elem = T> + DataOwned,
+    S: DataOwned<Elem = T>,
     T: FheUint,
 {
     /// Creates a new [`ArrayBase`] with all elements equal to zero.
@@ -60,7 +60,7 @@ where
 
 impl<S, T> Size for ArrayBase<S>
 where
-    S: RawData<Elem = T> + Data,
+    S: Data<Elem = T>,
     T: FheUint,
 {
     #[inline]
@@ -71,7 +71,7 @@ where
 
 impl<S, T, I: SliceIndex<[T]>> Index<I> for ArrayBase<S>
 where
-    S: RawData<Elem = T> + Data,
+    S: Data<Elem = T>,
     T: FheUint,
 {
     type Output = I::Output;
@@ -84,7 +84,7 @@ where
 
 impl<S, T, I: SliceIndex<[T]>> IndexMut<I> for ArrayBase<S>
 where
-    S: RawData<Elem = T> + DataMut,
+    S: DataMut<Elem = T>,
     T: FheUint,
 {
     #[inline]
@@ -95,7 +95,7 @@ where
 
 impl<S, T> AsRef<[T]> for ArrayBase<S>
 where
-    S: RawData<Elem = T> + Data,
+    S: Data<Elem = T>,
     T: FheUint,
 {
     #[inline]
@@ -106,7 +106,7 @@ where
 
 impl<S, T> AsMut<[T]> for ArrayBase<S>
 where
-    S: RawData<Elem = T> + DataMut,
+    S: DataMut<Elem = T>,
     T: FheUint,
 {
     #[inline]
@@ -117,7 +117,7 @@ where
 
 impl<'t, S, T> IntoIterator for &'t ArrayBase<S>
 where
-    S: RawData<Elem = T> + Data,
+    S: Data<Elem = T>,
     T: FheUint,
 {
     type Item = &'t T;
@@ -132,7 +132,7 @@ where
 
 impl<'t, S, T> IntoIterator for &'t mut ArrayBase<S>
 where
-    S: RawData<Elem = T> + DataMut,
+    S: DataMut<Elem = T>,
     T: FheUint,
 {
     type Item = &'t mut T;
@@ -147,7 +147,7 @@ where
 
 impl<S, T> IntoIterator for ArrayBase<S>
 where
-    S: RawData<Elem = T> + DataOwned,
+    S: DataOwned<Elem = T>,
     T: FheUint,
 {
     type Item = T;

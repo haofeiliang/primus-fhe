@@ -1,5 +1,5 @@
 use itertools::izip;
-use primus_data::{Data, DataMut, RawData};
+use primus_data::{Data, DataMut};
 use primus_factor::FactorSliceOps;
 use primus_integer::FheUint;
 use primus_reduce::{ReduceMulAddSlice, ReduceMulSlice, ReduceNegSlice};
@@ -8,7 +8,7 @@ use super::CrtPolynomial;
 
 impl<S, T> CrtPolynomial<S>
 where
-    S: RawData<Elem = T> + DataMut,
+    S: DataMut<Elem = T>,
     T: FheUint,
 {
     /// Performs `self * scalars` according to `moduli`.
@@ -62,7 +62,7 @@ where
         moduli: &[M],
     ) where
         M: Copy + ReduceMulAddSlice<T>,
-        A: RawData<Elem = T> + Data,
+        A: Data<Elem = T>,
     {
         izip!(
             self.iter_each_modulus_mut(poly_length),
@@ -85,7 +85,7 @@ where
         moduli: &[T],
     ) where
         F: Copy + FactorSliceOps<T>,
-        A: RawData<Elem = T> + Data,
+        A: Data<Elem = T>,
     {
         izip!(
             self.iter_each_modulus_mut(poly_length),
@@ -130,7 +130,7 @@ where
 
 impl<S, T> CrtPolynomial<S>
 where
-    S: RawData<Elem = T> + Data,
+    S: Data<Elem = T>,
     T: FheUint,
 {
     /// Performs `result = self * scalars` according to `moduli`.
@@ -143,7 +143,7 @@ where
         moduli: &[M],
     ) where
         M: Copy + ReduceMulSlice<T>,
-        A: RawData<Elem = T> + DataMut,
+        A: DataMut<Elem = T>,
     {
         izip!(
             self.iter_each_modulus(poly_length),
@@ -166,7 +166,7 @@ where
         moduli: &[T],
     ) where
         F: Copy + FactorSliceOps<T>,
-        A: RawData<Elem = T> + DataMut,
+        A: DataMut<Elem = T>,
     {
         izip!(
             self.iter_each_modulus(poly_length),

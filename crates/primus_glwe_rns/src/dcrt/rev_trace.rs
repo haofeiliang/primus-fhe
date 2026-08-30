@@ -1,4 +1,4 @@
-use primus_data::{Data, DataMut, RawData};
+use primus_data::{Data, DataMut};
 use primus_factor::ShoupFactor;
 use primus_integer::FheUint;
 use primus_ntt::NttTable;
@@ -75,8 +75,8 @@ impl<T: FheUint> DcrtGlweRevTraceKey<T> {
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
     {
         let params = domain.parameters();
         let poly_length = params.poly_length();

@@ -30,14 +30,14 @@ impl_basic_operation_single_modulus!(Ntru<S>);
 
 impl<S, T> Ntru<S>
 where
-    S: RawData<Elem = T> + DataOwned,
+    S: DataOwned<Elem = T>,
     T: FheUint,
 {
     /// Creates a new [`Ntru<S>`] with reference of [`Polynomial<A>`].
     #[inline]
     pub fn from_ref<A>(h: &Polynomial<A>) -> Self
     where
-        A: RawData<Elem = T> + Data,
+        A: Data<Elem = T>,
     {
         Self(S::from_vec(h.as_ref().to_vec()))
     }
@@ -45,7 +45,7 @@ where
 
 impl<S, T> Ntru<S>
 where
-    S: RawData<Elem = T> + Data,
+    S: Data<Elem = T>,
     T: FheUint,
 {
     /// Extracts the constant-term NTRU phase as an LWE ciphertext.
@@ -62,7 +62,7 @@ where
     pub fn extract_lwe_to<M, A>(&self, output: &mut Lwe<A>, modulus: M)
     where
         M: RingContext<T>,
-        A: RawData<Elem = T> + DataMut,
+        A: DataMut<Elem = T>,
     {
         let coefficients = self.as_ref();
         assert_eq!(output.dimension(), coefficients.len());
@@ -83,7 +83,7 @@ where
     pub fn extract_compact_lwe_to<M, A>(&self, output: &mut Lwe<A>, modulus: M)
     where
         M: primus_reduce::RingContext<T>,
-        A: RawData<Elem = T> + DataMut,
+        A: DataMut<Elem = T>,
     {
         let coefficients = self.as_ref();
         let (a, b) = output.a_b_mut();
@@ -104,7 +104,7 @@ where
     pub fn mul_monomial_to<M, A>(&self, exponent: usize, output: &mut Ntru<A>, modulus: M)
     where
         M: RingContext<T>,
-        A: RawData<Elem = T> + DataMut,
+        A: DataMut<Elem = T>,
     {
         Polynomial(self.as_ref()).mul_monomial_to(
             exponent,
@@ -120,7 +120,7 @@ where
     pub fn mul_monomial_sub_one_to<M, A>(&self, exponent: usize, output: &mut Ntru<A>, modulus: M)
     where
         M: RingContext<T>,
-        A: RawData<Elem = T> + DataMut,
+        A: DataMut<Elem = T>,
     {
         Polynomial(self.as_ref()).mul_monomial_sub_one_to(
             exponent,
@@ -133,7 +133,7 @@ where
     #[inline]
     pub fn write_ntt_form<Table, A>(&self, result: &mut NttNtru<A>, ntt_table: &Table)
     where
-        A: RawData<Elem = T> + DataMut,
+        A: DataMut<Elem = T>,
         Table: NttTable<ValueT = T>,
     {
         let p = result.as_mut();
@@ -153,8 +153,8 @@ where
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
     {
         let p = result.as_mut();
         p.copy_from_slice(self.as_ref());
@@ -165,7 +165,7 @@ where
 
 impl<S, T> Ntru<S>
 where
-    S: RawData<Elem = T> + DataMut,
+    S: DataMut<Elem = T>,
     T: FheUint,
 {
     /// Multiplies each coefficient by `scalar` modulo `modulus` in place.

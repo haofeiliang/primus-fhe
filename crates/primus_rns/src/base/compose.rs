@@ -1,5 +1,5 @@
 use itertools::izip;
-use primus_data::{Data, DataMut, RawData};
+use primus_data::{Data, DataMut};
 use primus_factor::FactorMul;
 use primus_integer::{BigUint, BigUintIterMut, FheUint};
 use primus_poly::{BigUintPolynomial, CrtPolynomial};
@@ -125,8 +125,8 @@ where
         poly_length: usize,
         scratch: &mut [T],
     ) where
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
     {
         self.compose_multiple_values_to(
             crt_poly.as_slice(),

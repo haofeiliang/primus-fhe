@@ -38,7 +38,7 @@ impl_crt_intt!(DcrtGlev<S>, CrtGlev);
 
 impl<S, T> DcrtGlev<S>
 where
-    S: RawData<Elem = T> + Data,
+    S: Data<Elem = T>,
     T: FheUint,
 {
     /// Multiplies this DCRT GLEV with a CRT-domain polynomial, storing the result into `result`.
@@ -53,8 +53,8 @@ where
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
     {
         let poly_length = table.poly_length();
         let basis_value = basis.basis_value();
@@ -119,8 +119,8 @@ where
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
     {
         let poly_length = table.poly_length();
         let dcrt_glwe_len = result.0.len();

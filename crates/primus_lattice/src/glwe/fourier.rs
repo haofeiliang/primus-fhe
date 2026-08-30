@@ -39,7 +39,7 @@ impl_fourier_backward!(FourierGlwe, Glwe);
 
 impl<S> FourierGlwe<S>
 where
-    S: RawData<Elem = Complex64> + Data,
+    S: Data<Elem = Complex64>,
 {
     /// Splits this GLWE into its mask and body slices.
     #[inline]
@@ -67,7 +67,7 @@ where
 
 impl<S> FourierGlwe<S>
 where
-    S: RawData<Elem = Complex64> + DataMut,
+    S: DataMut<Elem = Complex64>,
 {
     /// Splits this GLWE into its mutable mask and body slices.
     #[inline]
@@ -109,8 +109,8 @@ where
         poly: &FourierPolynomial<A>,
         rhs: &FourierGlwe<B>,
     ) where
-        A: RawData<Elem = Complex64> + Data,
-        B: RawData<Elem = Complex64> + Data,
+        A: Data<Elem = Complex64>,
+        B: Data<Elem = Complex64>,
     {
         let fourier_length = poly.fourier_length();
         for (mut acc, key_poly) in self

@@ -1,6 +1,6 @@
 //! Single-modulus GLWE key switching in the Fourier domain.
 
-use primus_data::{Data, DataMut, RawData};
+use primus_data::{Data, DataMut};
 use primus_fft::{Complex64, FftEngine, FftTable, TorusFftValue};
 use primus_integer::SignedInteger;
 use primus_lattice::{
@@ -112,8 +112,8 @@ impl FourierGlweKeySwitchingKey {
     ) where
         T: TorusFftValue,
         Table: FftTable,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
     {
         assert_eq!(input.as_ref().len(), self.input_size.glwe_len());
         assert_eq!(output.as_ref().len(), self.output_size.glwe_len());
@@ -165,7 +165,7 @@ impl FourierGlweKeySwitchingKey {
     where
         T: TorusFftValue,
         Table: FftTable,
-        A: RawData<Elem = T> + Data,
+        A: Data<Elem = T>,
     {
         let mut output = Glwe::zero(self.output_size.glwe_len());
         self.key_switch_to(input, &mut output, parameters, fft, context);

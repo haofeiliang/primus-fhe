@@ -1,6 +1,6 @@
 //! NLev and NGSW generation with transform-domain NTRU secret keys.
 
-use primus_data::{Data, DataMut, RawData};
+use primus_data::{Data, DataMut};
 use primus_fft::{Complex64, FftEngine, FftTable, TorusFftValue};
 use primus_integer::FheUint;
 use primus_modulus::NativeModulus;
@@ -82,8 +82,8 @@ impl<T: FheUint> NttNtruSecretKey<T> {
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
         R: rand::Rng + rand::CryptoRng,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
     {
         self.assert_gadget_domain(message, result.as_ref(), params, ntt, context);
 
@@ -113,8 +113,8 @@ impl<T: FheUint> NttNtruSecretKey<T> {
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
         R: rand::Rng + rand::CryptoRng,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
     {
         self.assert_gadget_domain(message, result.as_ref(), params, ntt, context);
 
@@ -144,7 +144,7 @@ impl<T: FheUint> NttNtruSecretKey<T> {
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: RawData<Elem = T> + Data,
+        A: Data<Elem = T>,
     {
         self.assert_domain(params.ntru(), ntt);
         assert_eq!(message.as_ref().len(), self.poly_length());
@@ -167,8 +167,8 @@ impl FourierNtruSecretKey {
         T: TorusFftValue,
         Table: FftTable,
         R: rand::Rng + rand::CryptoRng,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = Complex64> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = Complex64>,
     {
         self.assert_gadget_domain(message, result.as_ref(), params, fft, context);
 
@@ -204,8 +204,8 @@ impl FourierNtruSecretKey {
         T: TorusFftValue,
         Table: FftTable,
         R: rand::Rng + rand::CryptoRng,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = Complex64> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = Complex64>,
     {
         self.assert_gadget_domain(message, result.as_ref(), params, fft, context);
 
@@ -234,7 +234,7 @@ impl FourierNtruSecretKey {
     ) where
         T: TorusFftValue,
         Table: FftTable,
-        A: RawData<Elem = T> + Data,
+        A: Data<Elem = T>,
     {
         self.assert_domain(params.ntru(), fft);
         assert_eq!(message.as_ref().len(), self.poly_length());

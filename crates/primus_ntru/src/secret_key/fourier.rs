@@ -1,6 +1,6 @@
 //! Native-torus Fourier NTRU secret key.
 
-use primus_data::{Data, DataMut, RawData};
+use primus_data::{Data, DataMut};
 use primus_fft::{Complex64, FftEngine, FftTable, TorusFftValue};
 use primus_fhe_core::plaintext::PlaintextEmbedding;
 use primus_integer::{FheUint, SignedInteger};
@@ -210,7 +210,7 @@ impl FourierNtruSecretKey {
         T: TorusFftValue,
         Table: FftTable,
         R: rand::Rng + rand::CryptoRng,
-        A: RawData<Elem = T> + Data,
+        A: Data<Elem = T>,
     {
         let mut result = FourierNtruCiphertext::zero(fft.fourier_length());
         self.encrypt_to(message, &mut result, params, fft, rng, context);
@@ -230,8 +230,8 @@ impl FourierNtruSecretKey {
         T: TorusFftValue,
         Table: FftTable,
         R: rand::Rng + rand::CryptoRng,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = Complex64> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = Complex64>,
     {
         self.encrypt_to_with_message(
             FourierEncryptionMessage::Plaintext {
@@ -259,8 +259,8 @@ impl FourierNtruSecretKey {
         T: TorusFftValue,
         Table: FftTable,
         R: rand::Rng + rand::CryptoRng,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = Complex64> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = Complex64>,
     {
         self.encrypt_to_with_message(
             FourierEncryptionMessage::Plaintext {
@@ -288,8 +288,8 @@ impl FourierNtruSecretKey {
         T: TorusFftValue,
         Table: FftTable,
         R: rand::Rng + rand::CryptoRng,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = Complex64> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = Complex64>,
     {
         self.assert_domain(params, fft);
         assert_eq!(encoded.as_ref().len(), self.poly_length());
@@ -335,7 +335,7 @@ impl FourierNtruSecretKey {
         T: TorusFftValue,
         Table: FftTable,
         R: rand::Rng + rand::CryptoRng,
-        B: RawData<Elem = Complex64> + DataMut,
+        B: DataMut<Elem = Complex64>,
     {
         self.assert_domain(params, fft);
         assert_eq!(result.as_ref().len(), fft.fourier_length());
@@ -359,8 +359,8 @@ impl FourierNtruSecretKey {
         T: TorusFftValue,
         Table: FftTable,
         R: rand::Rng + rand::CryptoRng,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = Complex64> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = Complex64>,
     {
         debug_assert_eq!(encoded.as_ref().len(), self.poly_length());
         debug_assert_eq!(result.as_ref().len(), fft.fourier_length());
@@ -385,7 +385,7 @@ impl FourierNtruSecretKey {
         T: TorusFftValue,
         Table: FftTable,
         R: rand::Rng + rand::CryptoRng,
-        B: RawData<Elem = Complex64> + DataMut,
+        B: DataMut<Elem = Complex64>,
     {
         debug_assert_eq!(result.as_ref().len(), fft.fourier_length());
         self.encrypt_to_with_message_unchecked(
@@ -410,7 +410,7 @@ impl FourierNtruSecretKey {
         T: TorusFftValue,
         Table: FftTable,
         R: rand::Rng + rand::CryptoRng,
-        B: RawData<Elem = Complex64> + DataMut,
+        B: DataMut<Elem = Complex64>,
     {
         let coefficients = context.coeff.as_mut();
         primus_distr::sample_gaussian_values_to(coefficients, params.noise_distribution(), rng);
@@ -439,8 +439,8 @@ impl FourierNtruSecretKey {
     ) where
         T: TorusFftValue,
         Table: FftTable,
-        A: RawData<Elem = Complex64> + Data,
-        B: RawData<Elem = T> + DataMut,
+        A: Data<Elem = Complex64>,
+        B: DataMut<Elem = T>,
     {
         self.assert_domain(params, fft);
         assert_eq!(cipher.as_ref().len(), fft.fourier_length());
@@ -462,7 +462,7 @@ impl FourierNtruSecretKey {
     where
         T: TorusFftValue,
         Table: FftTable,
-        A: RawData<Elem = Complex64> + Data,
+        A: Data<Elem = Complex64>,
     {
         let mut result = PolynomialOwned::zero(self.poly_length());
         self.decrypt_to(cipher, &mut result, params, fft, context);
@@ -480,8 +480,8 @@ impl FourierNtruSecretKey {
     ) where
         T: TorusFftValue,
         Table: FftTable,
-        A: RawData<Elem = Complex64> + Data,
-        B: RawData<Elem = T> + DataMut,
+        A: Data<Elem = Complex64>,
+        B: DataMut<Elem = T>,
     {
         self.phase_to(cipher, result, params, fft, context);
         params
@@ -500,7 +500,7 @@ impl FourierNtruSecretKey {
     where
         T: TorusFftValue,
         Table: FftTable,
-        A: RawData<Elem = Complex64> + Data,
+        A: Data<Elem = Complex64>,
     {
         let modulus = NativeModulus::new();
         let mut message = PolynomialOwned::zero(self.poly_length());

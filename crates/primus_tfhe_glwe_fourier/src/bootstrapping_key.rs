@@ -1,6 +1,6 @@
 //! Fourier-domain functional bootstrapping key and blind rotation.
 
-use primus_data::{Data, DataMut, RawData};
+use primus_data::{Data, DataMut};
 use primus_fft::{Complex64, FftEngine, FftTable, TorusFftValue};
 use primus_glwe::{FourierGadgetEncryptContext, FourierGlweSecretKey, GlevParameters};
 use primus_lattice::{
@@ -128,9 +128,9 @@ impl<T: TorusFftValue> FourierGlweBootstrappingKey<T> {
         context: &mut FourierGlweBlindRotationContext<T>,
     ) where
         Table: FftTable,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + Data,
-        C: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: Data<Elem = T>,
+        C: DataMut<Elem = T>,
     {
         let two_n = parameters.poly_length() * 2;
         let modulus = self.input_modulus();
@@ -156,9 +156,9 @@ impl<T: TorusFftValue> FourierGlweBootstrappingKey<T> {
         context: &mut FourierGlweBlindRotationContext<T>,
     ) where
         Table: FftTable,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + Data,
-        C: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: Data<Elem = T>,
+        C: DataMut<Elem = T>,
     {
         let poly_length = parameters.poly_length();
         let two_n = poly_length * 2;
@@ -195,9 +195,9 @@ impl<T: TorusFftValue> FourierGlweBootstrappingKey<T> {
         context: &mut FourierGlweBlindRotationContext<T>,
     ) where
         Table: FftTable,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + Data,
-        C: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: Data<Elem = T>,
+        C: DataMut<Elem = T>,
     {
         let two_n = 2 * parameters.poly_length();
         self.blind_rotate_with(
@@ -223,9 +223,9 @@ impl<T: TorusFftValue> FourierGlweBootstrappingKey<T> {
         exponent_of: F,
     ) where
         Table: FftTable,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + Data,
-        C: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: Data<Elem = T>,
+        C: DataMut<Elem = T>,
         F: Fn(T) -> usize,
     {
         let (fft, context) = workspace;
@@ -261,8 +261,8 @@ impl<T: TorusFftValue> FourierGlweBootstrappingKey<T> {
         exponent_of: F,
     ) where
         Table: FftTable,
-        A: RawData<Elem = T> + Data,
-        C: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        C: DataMut<Elem = T>,
         F: Fn(T) -> usize,
     {
         let (fft, context) = workspace;

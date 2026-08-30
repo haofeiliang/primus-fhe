@@ -1,5 +1,5 @@
 use num_traits::Signed;
-use primus_data::{Data, DataMut, RawData};
+use primus_data::{Data, DataMut};
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_integer::{FheUint, SignedInteger};
 use primus_lattice::lwe::Lwe;
@@ -173,8 +173,8 @@ impl<T: FheUint> LweKeySwitchingKey<T> {
     pub fn key_switch_to<M, A, B>(&self, input: &Lwe<A>, output: &mut Lwe<B>, modulus: M)
     where
         M: RingContext<T>,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
     {
         assert_eq!(input.dimension(), self.input_dimension);
         assert_eq!(output.dimension(), self.output_dimension);
@@ -225,7 +225,7 @@ impl<T: FheUint> LweKeySwitchingKey<T> {
     pub fn key_switch<M, A>(&self, input: &Lwe<A>, modulus: M) -> Lwe<Vec<T>>
     where
         M: RingContext<T>,
-        A: RawData<Elem = T> + Data,
+        A: Data<Elem = T>,
     {
         let mut output = Lwe::zero(self.output_dimension);
         self.key_switch_to(input, &mut output, modulus);

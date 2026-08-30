@@ -1,6 +1,6 @@
 //! Single-modulus GLWE key switching in the NTT domain.
 
-use primus_data::{Data, DataMut, RawData};
+use primus_data::{Data, DataMut};
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_integer::FheUint;
 use primus_lattice::{
@@ -131,7 +131,7 @@ impl<T: FheUint> NttGlweKeySwitchingKey<T> {
     where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: RawData<Elem = T> + Data,
+        A: Data<Elem = T>,
     {
         let mut output = Glwe::zero(self.output_size.glwe_len());
         self.key_switch_to(input, &mut output, domain, context);
@@ -148,8 +148,8 @@ impl<T: FheUint> NttGlweKeySwitchingKey<T> {
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
     {
         assert_eq!(input.as_ref().len(), self.input_size.glwe_len());
         assert_eq!(output.as_ref().len(), self.output_size.glwe_len());
@@ -171,8 +171,8 @@ impl<T: FheUint> NttGlweKeySwitchingKey<T> {
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
     {
         debug_assert_eq!(input.as_ref().len(), self.input_size.glwe_len());
         debug_assert_eq!(output.as_ref().len(), self.output_size.glwe_len());
@@ -207,8 +207,8 @@ impl<T: FheUint> NttGlweKeySwitchingKey<T> {
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
     {
         debug_assert_eq!(input_mask.len(), self.input_size.mask_len());
         debug_assert_eq!(input_body.as_ref().len(), self.input_size.poly_length());
@@ -340,7 +340,7 @@ impl<T: FheUint> NttGlweKeySwitchingContext<T> {
         accumulator: &'a mut NttGlwe<S>,
     ) -> NttGlweKeySwitchingContextRefMut<'a, T>
     where
-        S: RawData<Elem = T> + DataMut,
+        S: DataMut<Elem = T>,
     {
         NttGlweKeySwitchingContextRefMut {
             adjusted_poly: &mut self.adjusted_poly,

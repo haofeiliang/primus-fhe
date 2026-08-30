@@ -1,6 +1,6 @@
 //! Exact explicit-modulus NTT NTRU secret key.
 
-use primus_data::{Data, DataMut, RawData};
+use primus_data::{Data, DataMut};
 use primus_fhe_core::plaintext::PlaintextEmbedding;
 use primus_integer::FheUint;
 use primus_ntt::NttTable;
@@ -197,7 +197,7 @@ impl<T: FheUint> NttNtruSecretKey<T> {
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
         R: rand::Rng + rand::CryptoRng,
-        A: RawData<Elem = T> + Data,
+        A: Data<Elem = T>,
     {
         let mut result = NttNtruCiphertext::zero(self.poly_length());
         self.encrypt_to(message, &mut result, params, ntt_table, rng);
@@ -216,8 +216,8 @@ impl<T: FheUint> NttNtruSecretKey<T> {
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
         R: rand::Rng + rand::CryptoRng,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
     {
         self.encrypt_to_with_message(
             NttEncryptionMessage::Plaintext {
@@ -243,8 +243,8 @@ impl<T: FheUint> NttNtruSecretKey<T> {
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
         R: rand::Rng + rand::CryptoRng,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
     {
         self.encrypt_to_with_message(
             NttEncryptionMessage::Plaintext {
@@ -270,8 +270,8 @@ impl<T: FheUint> NttNtruSecretKey<T> {
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
         R: rand::Rng + rand::CryptoRng,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
     {
         self.assert_domain(params, ntt_table);
         assert_eq!(encoded.as_ref().len(), self.poly_length());
@@ -313,7 +313,7 @@ impl<T: FheUint> NttNtruSecretKey<T> {
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
         R: rand::Rng + rand::CryptoRng,
-        B: RawData<Elem = T> + DataMut,
+        B: DataMut<Elem = T>,
     {
         self.assert_domain(params, ntt_table);
         assert_eq!(result.as_ref().len(), self.poly_length());
@@ -335,8 +335,8 @@ impl<T: FheUint> NttNtruSecretKey<T> {
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
         R: rand::Rng + rand::CryptoRng,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
     {
         debug_assert_eq!(encoded.as_ref().len(), self.poly_length());
         debug_assert_eq!(result.as_ref().len(), self.poly_length());
@@ -359,7 +359,7 @@ impl<T: FheUint> NttNtruSecretKey<T> {
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
         R: rand::Rng + rand::CryptoRng,
-        B: RawData<Elem = T> + DataMut,
+        B: DataMut<Elem = T>,
     {
         debug_assert_eq!(result.as_ref().len(), self.poly_length());
         self.encrypt_to_with_message_unchecked(
@@ -382,7 +382,7 @@ impl<T: FheUint> NttNtruSecretKey<T> {
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
         R: rand::Rng + rand::CryptoRng,
-        B: RawData<Elem = T> + DataMut,
+        B: DataMut<Elem = T>,
     {
         let coefficients = result.as_mut();
         primus_distr::sample_gaussian_values_to(coefficients, params.noise_distribution(), rng);
@@ -409,8 +409,8 @@ impl<T: FheUint> NttNtruSecretKey<T> {
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
     {
         self.assert_domain(params, ntt_table);
         assert_eq!(cipher.as_ref().len(), self.poly_length());
@@ -434,7 +434,7 @@ impl<T: FheUint> NttNtruSecretKey<T> {
     where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: RawData<Elem = T> + Data,
+        A: Data<Elem = T>,
     {
         let mut result = PolynomialOwned::zero(self.poly_length());
         self.decrypt_to(cipher, &mut result, params, ntt_table);
@@ -451,8 +451,8 @@ impl<T: FheUint> NttNtruSecretKey<T> {
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
     {
         self.phase_to(cipher, result, params, ntt_table);
         params
@@ -470,7 +470,7 @@ impl<T: FheUint> NttNtruSecretKey<T> {
     where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: RawData<Elem = T> + Data,
+        A: Data<Elem = T>,
     {
         let modulus = params.cipher_modulus();
         let mut message = PolynomialOwned::zero(self.poly_length());

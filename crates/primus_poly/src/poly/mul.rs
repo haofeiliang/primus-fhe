@@ -1,4 +1,4 @@
-use primus_data::{Data, DataMut, RawData};
+use primus_data::{Data, DataMut};
 use primus_factor::FactorSliceOps;
 use primus_integer::FheUint;
 use primus_reduce::{
@@ -10,7 +10,7 @@ use super::Polynomial;
 
 impl<S, T> Polynomial<S>
 where
-    S: RawData<Elem = T> + DataMut,
+    S: DataMut<Elem = T>,
     T: FheUint,
 {
     /// Performs `self * scalar` according to `modulus`.
@@ -47,7 +47,7 @@ where
     pub fn add_mul_scalar_assign<M, A>(&mut self, rhs: &Polynomial<A>, scalar: T, modulus: M)
     where
         M: Copy + ReduceMulAddSlice<T>,
-        A: RawData<Elem = T> + Data,
+        A: Data<Elem = T>,
     {
         modulus.reduce_add_mul_scalar_slice_assign(self.as_mut(), rhs.as_ref(), scalar);
     }
@@ -66,7 +66,7 @@ where
     pub fn add_mul_factor_assign<F, A>(&mut self, rhs: &Polynomial<A>, factor: F, modulus: T)
     where
         F: FactorSliceOps<T>,
-        A: RawData<Elem = T> + Data,
+        A: Data<Elem = T>,
     {
         factor.add_factor_mul_slice_assign(self.as_mut(), rhs.as_ref(), modulus);
     }
@@ -101,7 +101,7 @@ where
 
 impl<S, T> Polynomial<S>
 where
-    S: RawData<Elem = T> + Data,
+    S: Data<Elem = T>,
     T: FheUint,
 {
     /// Multiplies `self` by `X^exponent` in `Z_q[X]/(X^N + 1)` and writes the result.
@@ -111,7 +111,7 @@ where
     pub fn mul_monomial_to<M, A>(&self, exponent: usize, output: &mut Polynomial<A>, modulus: M)
     where
         M: RingContext<T>,
-        A: RawData<Elem = T> + DataMut,
+        A: DataMut<Elem = T>,
     {
         self.monomial_to::<false, M, A>(exponent, output, modulus);
     }
@@ -128,7 +128,7 @@ where
         modulus: M,
     ) where
         M: RingContext<T>,
-        A: RawData<Elem = T> + DataMut,
+        A: DataMut<Elem = T>,
     {
         self.monomial_to::<true, M, A>(exponent, output, modulus);
     }
@@ -141,7 +141,7 @@ where
         modulus: M,
     ) where
         M: RingContext<T>,
-        A: RawData<Elem = T> + DataMut,
+        A: DataMut<Elem = T>,
     {
         let input = self.as_ref();
         let output = output.as_mut();
@@ -194,8 +194,8 @@ where
     pub fn naive_mul_to<M, A, B>(&self, rhs: &Polynomial<A>, output: &mut Polynomial<B>, modulus: M)
     where
         M: Copy + ReduceSubAssign<T> + ReduceMul<T, Output = T> + ReduceMulAdd<T, Output = T>,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
     {
         let a: &[T] = self.as_ref();
         let b: &[T] = rhs.as_ref();
@@ -230,7 +230,7 @@ where
     pub fn mul_scalar_to<M, A>(&self, scalar: T, output: &mut Polynomial<A>, modulus: M)
     where
         M: Copy + ReduceMulSlice<T>,
-        A: RawData<Elem = T> + DataMut,
+        A: DataMut<Elem = T>,
     {
         modulus.reduce_mul_scalar_slice_to(self.as_ref(), scalar, output.as_mut());
     }
@@ -240,7 +240,7 @@ where
     pub fn mul_factor_to<F, A>(&self, factor: F, output: &mut Polynomial<A>, modulus: T)
     where
         F: FactorSliceOps<T>,
-        A: RawData<Elem = T> + DataMut,
+        A: DataMut<Elem = T>,
     {
         factor.factor_mul_slice_to(self.as_ref(), output.as_mut(), modulus);
     }

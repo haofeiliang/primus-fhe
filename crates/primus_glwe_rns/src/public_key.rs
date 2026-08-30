@@ -1,5 +1,5 @@
 use itertools::izip;
-use primus_data::{Data, DataMut, RawData};
+use primus_data::{Data, DataMut};
 use primus_integer::FheUint;
 use primus_lattice::{ggsw::DcrtGgsw, glev::DcrtGlev, glwe::DcrtGlwe};
 use primus_ntt::{DcrtTable, NttTable};
@@ -86,7 +86,7 @@ impl<T: FheUint> DcrtGlwePublicKey<T> {
         R: rand::Rng + rand::CryptoRng,
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: RawData<Elem = T> + Data,
+        A: Data<Elem = T>,
     {
         let dimension = params.dimension();
         let poly_length = params.poly_length();
@@ -239,7 +239,7 @@ impl<T: FheUint> DcrtGlwePublicKey<T> {
         R: rand::Rng + rand::CryptoRng,
         Table: NttTable<ValueT = T>,
         M: FieldContext<T>,
-        A: RawData<Elem = T> + DataMut,
+        A: DataMut<Elem = T>,
     {
         let rns_poly_len = params.rns_poly_len();
         let dcrt_glev_len = params.rns_glev_len();

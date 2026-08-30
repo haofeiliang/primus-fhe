@@ -42,7 +42,7 @@ where
 
 impl<S, T> ArrayBase<S>
 where
-    S: RawData<Elem = T> + DataOwned,
+    S: DataOwned<Elem = T>,
     T: FheUint,
 {
     /// Constructs a new array from a slice.
@@ -62,7 +62,7 @@ where
 
 impl<S, T> ArrayBase<S>
 where
-    S: RawData<Elem = T> + DataMut,
+    S: DataMut<Elem = T>,
     T: FheUint,
 {
     /// Copies elements from a slice into `self`.
@@ -79,7 +79,7 @@ where
 }
 impl<S, T> ArrayBase<S>
 where
-    S: RawData<Elem = T> + Data,
+    S: Data<Elem = T>,
     T: FheUint,
 {
     /// Returns the number of elements.
@@ -104,7 +104,7 @@ where
 
 impl<S, T> FromIterator<T> for ArrayBase<S>
 where
-    S: RawData<Elem = T> + DataOwned,
+    S: DataOwned<Elem = T>,
     T: FheUint,
 {
     #[inline]
@@ -115,7 +115,7 @@ where
 
 impl<S, T> Deref for ArrayBase<S>
 where
-    S: RawData<Elem = T> + Data,
+    S: Data<Elem = T>,
     T: FheUint,
 {
     type Target = S;
@@ -128,7 +128,7 @@ where
 
 impl<S, T> DerefMut for ArrayBase<S>
 where
-    S: RawData<Elem = T> + DataMut,
+    S: DataMut<Elem = T>,
     T: FheUint,
 {
     #[inline]

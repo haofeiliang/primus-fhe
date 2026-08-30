@@ -1,6 +1,6 @@
 //! Native-torus Fourier-domain GLWE secret key with encryption and decryption.
 
-use primus_data::{Data, DataMut, RawData};
+use primus_data::{Data, DataMut};
 use primus_fft::{Complex64, FftEngine, FftTable, TorusFftValue};
 use primus_integer::{FheUint, SignedInteger};
 use primus_lattice::{GlweSize, MAX_POLY_LENGTH, MIN_POLY_LENGTH};
@@ -131,8 +131,8 @@ impl FourierGlweSecretKey {
     ) where
         Table: FftTable,
         R: rand::Rng + rand::CryptoRng,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = Complex64> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = Complex64>,
         T: TorusFftValue,
     {
         self.encrypt_to_with_message(
@@ -161,8 +161,8 @@ impl FourierGlweSecretKey {
     ) where
         Table: FftTable,
         R: rand::Rng + rand::CryptoRng,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = Complex64> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = Complex64>,
         T: TorusFftValue,
     {
         self.encrypt_to_with_message(
@@ -192,8 +192,8 @@ impl FourierGlweSecretKey {
     ) where
         Table: FftTable,
         R: rand::Rng + rand::CryptoRng,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = Complex64> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = Complex64>,
         T: TorusFftValue,
     {
         self.encrypt_to_with_message(
@@ -235,7 +235,7 @@ impl FourierGlweSecretKey {
     ) where
         Table: FftTable,
         R: rand::Rng + rand::CryptoRng,
-        B: RawData<Elem = Complex64> + DataMut,
+        B: DataMut<Elem = Complex64>,
         T: TorusFftValue,
     {
         self.encrypt_to_with_message(
@@ -259,8 +259,8 @@ impl FourierGlweSecretKey {
     ) where
         Table: FftTable,
         R: rand::Rng + rand::CryptoRng,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = Complex64> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = Complex64>,
         T: TorusFftValue,
     {
         self.encrypt_to_with_message(
@@ -283,7 +283,7 @@ impl FourierGlweSecretKey {
     ) where
         Table: FftTable,
         R: rand::Rng + rand::CryptoRng,
-        B: RawData<Elem = Complex64> + DataMut,
+        B: DataMut<Elem = Complex64>,
         T: TorusFftValue,
     {
         self.encrypt_to_with_message(
@@ -307,7 +307,7 @@ impl FourierGlweSecretKey {
     ) where
         Table: FftTable,
         R: rand::Rng + rand::CryptoRng,
-        B: RawData<Elem = Complex64> + DataMut,
+        B: DataMut<Elem = Complex64>,
         T: TorusFftValue,
     {
         let poly_length = self.size.poly_length();
@@ -356,8 +356,8 @@ impl FourierGlweSecretKey {
         context: &mut FourierGlweDecryptContext,
     ) where
         Table: FftTable,
-        A: RawData<Elem = Complex64> + Data,
-        B: RawData<Elem = T> + DataMut,
+        A: Data<Elem = Complex64>,
+        B: DataMut<Elem = T>,
         T: TorusFftValue,
     {
         assert_eq!(result.as_ref().len(), self.size.poly_length());
@@ -393,7 +393,7 @@ impl FourierGlweSecretKey {
     ) -> PolynomialOwned<T>
     where
         Table: FftTable,
-        A: RawData<Elem = Complex64> + Data,
+        A: Data<Elem = Complex64>,
         T: TorusFftValue,
     {
         let mut result = PolynomialOwned::zero(self.size.poly_length());
@@ -411,8 +411,8 @@ impl FourierGlweSecretKey {
         context: &mut FourierGlweDecryptContext,
     ) where
         Table: FftTable,
-        A: RawData<Elem = Complex64> + Data,
-        B: RawData<Elem = T> + DataMut,
+        A: Data<Elem = Complex64>,
+        B: DataMut<Elem = T>,
         T: TorusFftValue,
     {
         self.phase_to(cipher, result, fft, context);

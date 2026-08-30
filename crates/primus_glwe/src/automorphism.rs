@@ -1,7 +1,7 @@
 //! Single-modulus GLWE automorphisms evaluated with NTT key switching.
 
 use num_traits::ConstZero;
-use primus_data::{Data, DataMut, RawData};
+use primus_data::{Data, DataMut};
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_integer::{FheUint, WrappingNeg};
 use primus_lattice::glwe::{Glwe, NttGlwe};
@@ -240,8 +240,8 @@ impl<T: FheUint> NttGlweAutomorphismKey<T> {
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
     {
         assert_eq!(
             input.as_ref().len(),
@@ -269,8 +269,8 @@ impl<T: FheUint> NttGlweAutomorphismKey<T> {
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
     {
         let poly_length = self.key_switching.poly_length();
         debug_assert_eq!(
@@ -319,8 +319,8 @@ impl<T: FheUint> NttGlweAutomorphismKey<T> {
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
     {
         let poly_length = self.key_switching.poly_length();
 
@@ -355,8 +355,8 @@ impl<T: FheUint> NttGlweAutomorphismKey<T> {
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
     {
         let poly_length = self.key_switching.poly_length();
         debug_assert_eq!(

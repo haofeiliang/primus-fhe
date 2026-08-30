@@ -48,7 +48,7 @@ where
 
 impl<S, T> DcrtPolynomial<S>
 where
-    S: RawData<Elem = T> + DataOwned,
+    S: DataOwned<Elem = T>,
     T: FheUint,
 {
     /// Creates a [`DcrtPolynomial<T>`] with all coefficients equal to zero.
@@ -68,7 +68,7 @@ where
 
 impl<S, T> DcrtPolynomial<S>
 where
-    S: RawData<Elem = T> + DataMut,
+    S: DataMut<Elem = T>,
     T: FheUint,
 {
     /// Extracts a mutable slice of the entire vector.
@@ -98,7 +98,7 @@ where
     #[inline]
     pub fn copy_from<A>(&mut self, src: &DcrtPolynomial<A>)
     where
-        A: RawData<Elem = T> + Data,
+        A: Data<Elem = T>,
     {
         self.0.copy_from_slice(src.0.as_slice());
     }
@@ -113,8 +113,8 @@ where
         moduli: &[M],
     ) where
         M: Copy + ReduceMulAddSlice<T>,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + Data,
+        A: Data<Elem = T>,
+        B: Data<Elem = T>,
     {
         izip!(
             self.iter_each_modulus_mut(poly_length),
@@ -136,9 +136,9 @@ where
         moduli: &[M],
     ) where
         M: Copy + ReduceAdd<T, Output = T> + ReduceSub<T, Output = T> + ReduceMul<T, Output = T>,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + Data,
-        C: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: Data<Elem = T>,
+        C: DataMut<Elem = T>,
     {
         izip!(
             self.iter_each_modulus_mut(poly_length),
@@ -160,7 +160,7 @@ where
 
 impl<S, T> DcrtPolynomial<S>
 where
-    S: RawData<Elem = T> + Data,
+    S: Data<Elem = T>,
     T: FheUint,
 {
     /// Extracts a slice containing the entire vector.
@@ -192,7 +192,7 @@ where
 
 impl<S, T> Size for DcrtPolynomial<S>
 where
-    S: RawData<Elem = T> + Data,
+    S: Data<Elem = T>,
     T: FheUint,
 {
     #[inline]
@@ -203,7 +203,7 @@ where
 
 impl<S, T> AsRef<[T]> for DcrtPolynomial<S>
 where
-    S: RawData<Elem = T> + Data,
+    S: Data<Elem = T>,
     T: FheUint,
 {
     #[inline]
@@ -214,7 +214,7 @@ where
 
 impl<S, T> AsMut<[T]> for DcrtPolynomial<S>
 where
-    S: RawData<Elem = T> + DataMut,
+    S: DataMut<Elem = T>,
     T: FheUint,
 {
     #[inline]

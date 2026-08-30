@@ -100,7 +100,7 @@ impl<S: RawData<Elem = Complex64>> FourierPolynomial<S> {
         Self(values)
     }
 }
-impl<S: RawData<Elem = Complex64> + DataOwned> FourierPolynomial<S> {
+impl<S: DataOwned<Elem = Complex64>> FourierPolynomial<S> {
     /// Creates a zero polynomial.
     #[must_use]
     pub fn zero(fourier_length: usize) -> Self {
@@ -117,7 +117,7 @@ impl<S: RawData<Elem = Complex64> + DataOwned> FourierPolynomial<S> {
         self.0
     }
 }
-impl<S: RawData<Elem = Complex64> + Data> FourierPolynomial<S> {
+impl<S: Data<Elem = Complex64>> FourierPolynomial<S> {
     /// Returns all Fourier values.
     pub fn as_slice(&self) -> &[Complex64] {
         self.0.as_slice()
@@ -135,7 +135,7 @@ impl<S: RawData<Elem = Complex64> + Data> FourierPolynomial<S> {
         self.0.iter().all(|x| *x == Complex64::default())
     }
 }
-impl<S: RawData<Elem = Complex64> + DataMut> FourierPolynomial<S> {
+impl<S: DataMut<Elem = Complex64>> FourierPolynomial<S> {
     /// Returns all Fourier values mutably.
     pub fn as_mut_slice(&mut self) -> &mut [Complex64] {
         self.0.as_mut_slice()
@@ -153,12 +153,12 @@ impl<S: RawData<Elem = Complex64> + DataMut> FourierPolynomial<S> {
         self.0.fill(Complex64::default());
     }
 }
-impl<S: RawData<Elem = Complex64> + Data> AsRef<[Complex64]> for FourierPolynomial<S> {
+impl<S: Data<Elem = Complex64>> AsRef<[Complex64]> for FourierPolynomial<S> {
     fn as_ref(&self) -> &[Complex64] {
         self.as_slice()
     }
 }
-impl<S: RawData<Elem = Complex64> + DataMut> AsMut<[Complex64]> for FourierPolynomial<S> {
+impl<S: DataMut<Elem = Complex64>> AsMut<[Complex64]> for FourierPolynomial<S> {
     fn as_mut(&mut self) -> &mut [Complex64] {
         self.as_mut_slice()
     }

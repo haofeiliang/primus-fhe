@@ -1,4 +1,4 @@
-use primus_data::{Data, DataMut, RawData};
+use primus_data::{Data, DataMut};
 use primus_integer::FheUint;
 use primus_reduce::ReduceNegSlice;
 
@@ -6,7 +6,7 @@ use super::Polynomial;
 
 impl<S, T> Polynomial<S>
 where
-    S: RawData<Elem = T> + DataMut,
+    S: DataMut<Elem = T>,
     T: FheUint,
 {
     /// Performs the unary `-` operation.
@@ -31,7 +31,7 @@ where
 
 impl<S, T> Polynomial<S>
 where
-    S: RawData<Elem = T> + Data,
+    S: Data<Elem = T>,
     T: FheUint,
 {
     /// Performs the unary `-` operation.
@@ -39,7 +39,7 @@ where
     pub fn neg_to<M, A>(&self, output: &mut Polynomial<A>, modulus: M)
     where
         M: Copy + ReduceNegSlice<T>,
-        A: RawData<Elem = T> + DataMut,
+        A: DataMut<Elem = T>,
     {
         modulus.reduce_neg_slice_to(self.as_ref(), output.as_mut());
     }

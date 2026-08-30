@@ -32,7 +32,7 @@ impl_crt_intt!(DcrtRlwe<S>, CrtRlwe);
 
 impl<S, T> DcrtRlwe<S>
 where
-    S: RawData<Elem = T> + Data,
+    S: Data<Elem = T>,
     T: FheUint,
 {
     /// Performs a multiplication on the `self` [`DcrtRlwe<S>`] with another `dcrt_poly` [`DcrtPolynomial<A>`],
@@ -46,8 +46,8 @@ where
         moduli: &[M],
     ) where
         M: FieldContext<T>,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
     {
         let dcrt_poly_len = dcrt_poly.dcrt_poly_length();
 

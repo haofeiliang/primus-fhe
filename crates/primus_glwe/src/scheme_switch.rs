@@ -1,6 +1,6 @@
 //! Scheme switching from GLev to NTT GGSW ciphertexts.
 
-use primus_data::{Data, DataMut, RawData};
+use primus_data::{Data, DataMut};
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_integer::FheUint;
 use primus_lattice::{
@@ -124,8 +124,8 @@ impl<T: FheUint> NttGlweSchemeSwitchKey<T> {
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
     {
         assert_eq!(
             input.as_ref().len(),

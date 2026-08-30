@@ -27,14 +27,14 @@ impl_basic_operation_single_modulus!(NttNtru<S>);
 
 impl<S, T> NttNtru<S>
 where
-    S: RawData<Elem = T> + Data,
+    S: Data<Elem = T>,
     T: FheUint,
 {
     /// Transforms `self` to coefficient form and stores in `result`.
     #[inline]
     pub fn write_coeff_form<Table, A>(&self, result: &mut Ntru<A>, ntt_table: &Table)
     where
-        A: RawData<Elem = T> + DataMut,
+        A: DataMut<Elem = T>,
         Table: NttTable<ValueT = T>,
     {
         let p = result.as_mut();
@@ -52,8 +52,8 @@ where
         modulus: M,
     ) where
         M: FieldContext<T>,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
     {
         NttPolynomial(self.as_ref()).mul_to(ntt_poly, &mut NttPolynomial(result.as_mut()), modulus);
     }
@@ -61,7 +61,7 @@ where
 
 impl<S, T> NttNtru<S>
 where
-    S: RawData<Elem = T> + DataMut,
+    S: DataMut<Elem = T>,
     T: FheUint,
 {
     /// Negates this NTT-domain ciphertext coefficient-wise modulo `modulus`.
@@ -97,7 +97,7 @@ where
     pub fn mul_ntt_polynomial_assign<M, A>(&mut self, ntt_poly: &NttPolynomial<A>, modulus: M)
     where
         M: FieldContext<T>,
-        A: RawData<Elem = T> + Data,
+        A: Data<Elem = T>,
     {
         NttPolynomial(self.as_mut()).mul_assign(ntt_poly, modulus);
     }
@@ -110,8 +110,8 @@ where
         modulus: M,
     ) where
         M: FieldContext<T>,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + Data,
+        A: Data<Elem = T>,
+        B: Data<Elem = T>,
     {
         NttPolynomial(self.as_mut()).add_mul_assign(
             &NttPolynomial(ntt_ntru.as_ref()),

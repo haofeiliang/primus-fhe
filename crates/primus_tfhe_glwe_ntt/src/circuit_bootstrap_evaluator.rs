@@ -1,7 +1,7 @@
 //! Patched NTT circuit bootstrapping using PBSManyLUT, HomTrace, and scheme
 //! switching.
 
-use primus_data::{DataMut, RawData};
+use primus_data::DataMut;
 use primus_glwe::{
     GlevCiphertext, GlweCiphertext, NttGadgetDomain, NttGlweKeySwitchingContext,
     NttGlweSchemeSwitchContext, NttGlweTraceContext,
@@ -160,7 +160,7 @@ where
     /// GLWE key.
     pub fn circuit_bootstrap_to<S>(&mut self, input: &Ciphertext<T>, output: &mut NttGgsw<S>)
     where
-        S: RawData<Elem = T> + DataMut,
+        S: DataMut<Elem = T>,
     {
         let tfhe = self.context.parameters();
         assert_eq!(

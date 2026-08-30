@@ -1,17 +1,17 @@
 use num_complex::Complex64;
-use primus_data::{Data, DataMut, RawData};
+use primus_data::{Data, DataMut};
 
 use super::FourierPolynomial;
 
 impl<S> FourierPolynomial<S>
 where
-    S: RawData<Elem = Complex64> + DataMut,
+    S: DataMut<Elem = Complex64>,
 {
     /// Multiplies this Fourier polynomial pointwise by `rhs`.
     #[inline]
     pub fn mul_assign<A>(&mut self, rhs: &FourierPolynomial<A>)
     where
-        A: RawData<Elem = Complex64> + Data,
+        A: Data<Elem = Complex64>,
     {
         assert_eq!(self.0.len(), rhs.0.len());
         for (value, rhs) in self.0.iter_mut().zip(rhs.0.iter()) {
@@ -24,7 +24,7 @@ where
     #[allow(clippy::should_implement_trait)]
     pub fn mul<A>(mut self, rhs: &FourierPolynomial<A>) -> Self
     where
-        A: RawData<Elem = Complex64> + Data,
+        A: Data<Elem = Complex64>,
     {
         self.mul_assign(rhs);
         self
@@ -50,8 +50,8 @@ where
     #[inline]
     pub fn add_mul_assign<A, B>(&mut self, lhs: &FourierPolynomial<A>, rhs: &FourierPolynomial<B>)
     where
-        A: RawData<Elem = Complex64> + Data,
-        B: RawData<Elem = Complex64> + Data,
+        A: Data<Elem = Complex64>,
+        B: Data<Elem = Complex64>,
     {
         assert_eq!(self.0.len(), lhs.0.len());
         assert_eq!(self.0.len(), rhs.0.len());
@@ -63,14 +63,14 @@ where
 
 impl<S> FourierPolynomial<S>
 where
-    S: RawData<Elem = Complex64> + Data,
+    S: Data<Elem = Complex64>,
 {
     /// Writes the pointwise product `self * rhs` to `output`.
     #[inline]
     pub fn mul_to<A, B>(&self, rhs: &FourierPolynomial<A>, output: &mut FourierPolynomial<B>)
     where
-        A: RawData<Elem = Complex64> + Data,
-        B: RawData<Elem = Complex64> + DataMut,
+        A: Data<Elem = Complex64>,
+        B: DataMut<Elem = Complex64>,
     {
         assert_eq!(self.0.len(), rhs.0.len());
         assert_eq!(self.0.len(), output.0.len());
@@ -83,7 +83,7 @@ where
     #[inline]
     pub fn mul_scalar_to<A>(&self, scalar: f64, output: &mut FourierPolynomial<A>)
     where
-        A: RawData<Elem = Complex64> + DataMut,
+        A: DataMut<Elem = Complex64>,
     {
         assert_eq!(self.0.len(), output.0.len());
         for (output, value) in output.0.iter_mut().zip(self.0.iter()) {

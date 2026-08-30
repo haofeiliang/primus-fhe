@@ -1,4 +1,4 @@
-use primus_data::{Data, DataMut, RawData};
+use primus_data::{Data, DataMut};
 use primus_factor::ShoupFactor;
 use primus_integer::{AsInto, BigUint, FheUint};
 use primus_ntt::NttTable;
@@ -74,8 +74,8 @@ impl<T: FheUint> CrtGlweExpandCoeffKey<T> {
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
     {
         assert_eq!(result.len(), domain.parameters().poly_length());
         self.expand_partial_coefficients_inplace(ciphertext, result, domain, context)
@@ -93,8 +93,8 @@ impl<T: FheUint> CrtGlweExpandCoeffKey<T> {
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
     {
         let params = domain.parameters();
         let poly_length = params.poly_length();
@@ -140,8 +140,8 @@ impl<T: FheUint> CrtGlweExpandCoeffKey<T> {
         context_pool: &CrtGlweExpandCoeffSyncPool<T>,
     ) where
         M: FieldContext<T> + Sync,
-        A: RawData<Elem = T> + Data + Sync,
-        B: RawData<Elem = T> + DataMut + Send,
+        A: Data<Elem = T> + Sync,
+        B: DataMut<Elem = T> + Send,
         Table: NttTable<ValueT = T>,
     {
         assert_eq!(result.len(), domain.parameters().poly_length());
@@ -159,8 +159,8 @@ impl<T: FheUint> CrtGlweExpandCoeffKey<T> {
         context_pool: &CrtGlweExpandCoeffSyncPool<T>,
     ) where
         M: FieldContext<T> + Sync,
-        A: RawData<Elem = T> + Data + Sync,
-        B: RawData<Elem = T> + DataMut + Send,
+        A: Data<Elem = T> + Sync,
+        B: DataMut<Elem = T> + Send,
         Table: NttTable<ValueT = T>,
     {
         let params = domain.parameters();

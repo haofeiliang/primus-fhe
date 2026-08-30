@@ -37,8 +37,8 @@ where
     ) where
         T: TorusFftValue,
         Table: FftTable,
-        A: RawData<Elem = T> + Data,
-        C: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        C: DataMut<Elem = T>,
         S: Data,
     {
         debug_assert_eq!(output.as_ref().len(), context.poly_length());
@@ -57,7 +57,7 @@ where
     ) where
         T: TorusFftValue,
         Table: FftTable,
-        A: RawData<Elem = T> + Data,
+        A: Data<Elem = T>,
         S: Data,
     {
         fourier_gadget_product_to_accumulator(self.as_ref(), input.as_ref(), basis, fft, context);
@@ -74,7 +74,7 @@ where
     ) where
         T: TorusFftValue,
         Table: FftTable,
-        A: RawData<Elem = T> + Data,
+        A: Data<Elem = T>,
         S: Data,
     {
         fourier_gadget_product_add_assign(self.as_ref(), input.as_ref(), basis, fft, context);
@@ -94,8 +94,8 @@ where
     ) where
         T: TorusFftValue,
         Table: FftTable,
-        A: RawData<Elem = T> + Data,
-        C: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        C: DataMut<Elem = T>,
         S: Data,
     {
         let poly_length = context.poly_length();
@@ -137,9 +137,9 @@ where
         T: FheUint,
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: RawData<Elem = T> + Data,
-        C: RawData<Elem = T> + DataMut,
-        S: RawData<Elem = T> + Data,
+        A: Data<Elem = T>,
+        C: DataMut<Elem = T>,
+        S: Data<Elem = T>,
     {
         debug_assert_eq!(output.as_ref().len(), context.poly_length());
         self.external_product_to_accumulator(input, basis, modulus, ntt, context);
@@ -159,8 +159,8 @@ where
         T: FheUint,
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: RawData<Elem = T> + Data,
-        S: RawData<Elem = T> + Data,
+        A: Data<Elem = T>,
+        S: Data<Elem = T>,
     {
         ntt_gadget_product_to_accumulator(
             self.as_ref(),
@@ -185,8 +185,8 @@ where
         T: FheUint,
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: RawData<Elem = T> + Data,
-        S: RawData<Elem = T> + Data,
+        A: Data<Elem = T>,
+        S: Data<Elem = T>,
     {
         ntt_gadget_product_add_assign(self.as_ref(), input.as_ref(), basis, modulus, ntt, context);
     }
@@ -207,9 +207,9 @@ where
         T: FheUint,
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: RawData<Elem = T> + Data,
-        C: RawData<Elem = T> + DataMut,
-        S: RawData<Elem = T> + Data,
+        A: Data<Elem = T>,
+        C: DataMut<Elem = T>,
+        S: Data<Elem = T>,
     {
         let poly_length = context.poly_length();
         let nlev_length = basis.decompose_length() * poly_length;

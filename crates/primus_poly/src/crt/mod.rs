@@ -39,7 +39,7 @@ where
 
 impl<S, T> CrtPolynomial<S>
 where
-    S: RawData<Elem = T> + DataOwned,
+    S: DataOwned<Elem = T>,
     T: FheUint,
 {
     /// Creates a [`CrtPolynomial<T>`] with all coefficients equal to zero.
@@ -59,7 +59,7 @@ where
 
 impl<S, T> CrtPolynomial<S>
 where
-    S: RawData<Elem = T> + DataMut,
+    S: DataMut<Elem = T>,
     T: FheUint,
 {
     /// Extracts a mutable slice of the entire vector.
@@ -89,7 +89,7 @@ where
     #[inline]
     pub fn copy_from<A>(&mut self, src: &CrtPolynomial<A>)
     where
-        A: RawData<Elem = T> + Data,
+        A: Data<Elem = T>,
     {
         self.0.copy_from_slice(src.0.as_slice());
     }
@@ -97,7 +97,7 @@ where
 
 impl<S, T> CrtPolynomial<S>
 where
-    S: RawData<Elem = T> + Data,
+    S: Data<Elem = T>,
     T: FheUint,
 {
     /// Extracts a slice containing the entire vector.
@@ -129,7 +129,7 @@ where
 
 impl<S, T> Size for CrtPolynomial<S>
 where
-    S: RawData<Elem = T> + Data,
+    S: Data<Elem = T>,
     T: FheUint,
 {
     #[inline]
@@ -140,7 +140,7 @@ where
 
 impl<S, T> AsRef<[T]> for CrtPolynomial<S>
 where
-    S: RawData<Elem = T> + Data,
+    S: Data<Elem = T>,
     T: FheUint,
 {
     #[inline]
@@ -151,7 +151,7 @@ where
 
 impl<S, T> AsMut<[T]> for CrtPolynomial<S>
 where
-    S: RawData<Elem = T> + DataMut,
+    S: DataMut<Elem = T>,
     T: FheUint,
 {
     #[inline]

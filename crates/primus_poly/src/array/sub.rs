@@ -1,4 +1,4 @@
-use primus_data::{Data, DataMut, RawData};
+use primus_data::{Data, DataMut};
 use primus_integer::FheUint;
 use primus_reduce::ReduceSubSlice;
 
@@ -6,7 +6,7 @@ use super::ArrayBase;
 
 impl<S, T> ArrayBase<S>
 where
-    S: RawData<Elem = T> + DataMut,
+    S: DataMut<Elem = T>,
     T: FheUint,
 {
     /// Performs `self - rhs` according to `modulus`.
@@ -14,7 +14,7 @@ where
     pub fn sub_element_wise<M, A>(mut self, rhs: &ArrayBase<A>, modulus: M) -> Self
     where
         M: Copy + ReduceSubSlice<T>,
-        A: RawData<Elem = T> + Data,
+        A: Data<Elem = T>,
     {
         self.sub_element_wise_assign(rhs, modulus);
         self
@@ -25,7 +25,7 @@ where
     pub fn sub_element_wise_assign<M, A>(&mut self, rhs: &ArrayBase<A>, modulus: M)
     where
         M: Copy + ReduceSubSlice<T>,
-        A: RawData<Elem = T> + Data,
+        A: Data<Elem = T>,
     {
         modulus.reduce_sub_slice_assign(self.as_mut(), rhs.as_ref());
     }
@@ -33,7 +33,7 @@ where
 
 impl<S, T> ArrayBase<S>
 where
-    S: RawData<Elem = T> + Data,
+    S: Data<Elem = T>,
     T: FheUint,
 {
     /// Performs `result = self - rhs` according to `modulus`.
@@ -45,8 +45,8 @@ where
         modulus: M,
     ) where
         M: Copy + ReduceSubSlice<T>,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
     {
         modulus.reduce_sub_slice_to(self.as_ref(), rhs.as_ref(), output.as_mut());
     }
@@ -56,7 +56,7 @@ where
     pub fn sub_element_wise_rev_assign<M, A>(&self, rhs: &mut ArrayBase<A>, modulus: M)
     where
         M: Copy + ReduceSubSlice<T>,
-        A: RawData<Elem = T> + DataMut,
+        A: DataMut<Elem = T>,
     {
         modulus.reduce_sub_slice_rev_assign(self.as_ref(), rhs.as_mut());
     }

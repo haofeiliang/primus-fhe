@@ -65,7 +65,7 @@ where
 
 impl<S, T, I: SliceIndex<[T]>> IndexMut<I> for BigUint<S>
 where
-    S: RawData<Elem = T> + DataMut,
+    S: DataMut<Elem = T>,
     T: UnsignedInteger,
 {
     #[inline]

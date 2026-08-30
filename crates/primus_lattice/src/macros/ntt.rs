@@ -8,7 +8,7 @@ macro_rules! impl_ntt {
     ($cipher:ident < $s:ident >,$ntt_cipher:ident) => {
         impl<$s, T> $cipher<$s>
         where
-            $s: RawData<Elem = T> + DataMut,
+            $s: DataMut<Elem = T>,
             T: FheUint,
         {
             /// Transforms `self` to ntt form.
@@ -27,14 +27,14 @@ macro_rules! impl_ntt {
 
         impl<$s, T> $cipher<$s>
         where
-            $s: RawData<Elem = T> + Data,
+            $s: Data<Elem = T>,
             T: FheUint,
         {
             /// Transforms `self` to ntt form and stores in `result`.
             #[inline]
             pub fn write_ntt_form<Table, A>(&self, result: &mut $ntt_cipher<A>, ntt_table: &Table)
             where
-                A: RawData<Elem = T> + DataMut,
+                A: DataMut<Elem = T>,
                 Table: NttTable<ValueT = T>,
             {
                 let poly_length = ntt_table.poly_length();
@@ -51,7 +51,7 @@ macro_rules! impl_intt {
     ($ntt_cipher:ident < $s:ident >,$cipher:ident) => {
         impl<$s, T> $ntt_cipher<$s>
         where
-            $s: RawData<Elem = T> + DataMut,
+            $s: DataMut<Elem = T>,
             T: FheUint,
         {
             /// Transforms `self` to coefficient form.
@@ -70,14 +70,14 @@ macro_rules! impl_intt {
 
         impl<$s, T> $ntt_cipher<$s>
         where
-            $s: RawData<Elem = T> + Data,
+            $s: Data<Elem = T>,
             T: FheUint,
         {
             /// Transforms `self` to coefficient form and stores in `result`.
             #[inline]
             pub fn write_coeff_form<Table, A>(&self, result: &mut $cipher<A>, ntt_table: &Table)
             where
-                A: RawData<Elem = T> + DataMut,
+                A: DataMut<Elem = T>,
                 Table: NttTable<ValueT = T>,
             {
                 let poly_length = ntt_table.poly_length();
@@ -94,7 +94,7 @@ macro_rules! impl_crt_ntt {
     ($cipher:ident < $s:ident >,$ntt_cipher:ident) => {
         impl<$s, T> $cipher<$s>
         where
-            $s: RawData<Elem = T> + DataMut,
+            $s: DataMut<Elem = T>,
             T: FheUint,
         {
             /// Transforms `self` to ntt form.
@@ -117,7 +117,7 @@ macro_rules! impl_crt_ntt {
 
         impl<$s, T> $cipher<$s>
         where
-            $s: RawData<Elem = T> + Data,
+            $s: Data<Elem = T>,
             T: FheUint,
         {
             /// Transforms `self` to ntt form and stores in `result`.
@@ -128,7 +128,7 @@ macro_rules! impl_crt_ntt {
                 table: &primus_ntt::DcrtTable<Table>,
             ) where
                 Table: primus_ntt::NttTable<ValueT = T>,
-                A: RawData<Elem = T> + DataMut,
+                A: DataMut<Elem = T>,
             {
                 let crt_poly_length = table.crt_poly_length();
                 result.0.copy_from_slice(self.as_ref());
@@ -147,7 +147,7 @@ macro_rules! impl_crt_intt {
     ($ntt_cipher:ident < $s:ident >,$cipher:ident) => {
         impl<$s, T> $ntt_cipher<$s>
         where
-            $s: RawData<Elem = T> + DataMut,
+            $s: DataMut<Elem = T>,
             T: FheUint,
         {
             /// Transforms `self` to coefficient form.
@@ -167,7 +167,7 @@ macro_rules! impl_crt_intt {
 
         impl<$s, T> $ntt_cipher<$s>
         where
-            $s: RawData<Elem = T> + Data,
+            $s: Data<Elem = T>,
             T: FheUint,
         {
             /// Transforms `self` to coefficient form and stores in `result`.
@@ -178,7 +178,7 @@ macro_rules! impl_crt_intt {
                 table: &primus_ntt::DcrtTable<Table>,
             ) where
                 Table: primus_ntt::NttTable<ValueT = T>,
-                A: RawData<Elem = T> + DataMut,
+                A: DataMut<Elem = T>,
             {
                 let crt_poly_length = table.crt_poly_length();
                 result.0.copy_from_slice(self.as_ref());

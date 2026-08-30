@@ -1,7 +1,7 @@
 //! DCRT-domain (NTT within CRT, multi-modulus) GLWE secret key with full
 //! encryption/decryption and GLev encryption.
 
-use primus_data::{Data, DataMut, RawData};
+use primus_data::{Data, DataMut};
 use primus_integer::FheUint;
 use primus_lattice::{RnsGlweSize, glev::DcrtGlev};
 use primus_ntt::{DcrtTable, NttTable};
@@ -109,8 +109,8 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
         R: rand::Rng + rand::CryptoRng,
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
     {
         let poly_length = params.poly_length();
         let rns_poly_len = params.rns_poly_len();
@@ -154,8 +154,8 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
         R: rand::Rng + rand::CryptoRng,
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
     {
         let poly_length = params.poly_length();
         let rns_poly_len = params.rns_poly_len();
@@ -198,8 +198,8 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
         R: rand::Rng + rand::CryptoRng,
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
     {
         let poly_length = params.poly_length();
         let rns_poly_len = params.rns_poly_len();
@@ -243,7 +243,7 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
         R: rand::Rng + rand::CryptoRng,
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: RawData<Elem = T> + DataMut,
+        A: DataMut<Elem = T>,
     {
         let poly_length = params.poly_length();
         let rns_poly_len = params.rns_poly_len();
@@ -284,8 +284,8 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
         R: rand::Rng + rand::CryptoRng,
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
     {
         let poly_length = params.poly_length();
         let moduli = params.cipher_moduli();
@@ -329,8 +329,8 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
         R: rand::Rng + rand::CryptoRng,
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
     {
         let params = domain.parameters();
         let table = domain.table();
@@ -362,8 +362,8 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
         R: rand::Rng + rand::CryptoRng,
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
     {
         let poly_length = params.poly_length();
         let moduli = params.cipher_moduli();
@@ -407,8 +407,8 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
         R: rand::Rng + rand::CryptoRng,
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
     {
         let params = domain.parameters();
         let table = domain.table();
@@ -440,8 +440,8 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
         params: &CrtGlweParameters<T, M>,
     ) where
         M: FieldContext<T>,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
     {
         let poly_length = params.poly_length();
         let moduli = params.cipher_moduli();
@@ -465,8 +465,8 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
         params: &CrtGlweParameters<T, M>,
     ) where
         M: FieldContext<T>,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
     {
         let poly_length = params.poly_length();
         let moduli = params.cipher_moduli();
@@ -493,7 +493,7 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
     where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: RawData<Elem = T> + Data,
+        A: Data<Elem = T>,
     {
         let mut msg = PolynomialOwned::zero(params.poly_length());
         self.decrypt_inplace(ciphertext, &mut msg, params, table, context);
@@ -514,8 +514,8 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
     {
         assert_eq!(context.size(), params.size());
         let poly_length = params.poly_length();

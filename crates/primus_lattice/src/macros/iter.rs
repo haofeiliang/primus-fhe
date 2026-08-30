@@ -88,7 +88,7 @@ macro_rules! impl_iter_sub_structure {
     ($cipher:ident < $s:ident >, $sub:ident) => {
         impl<$s, T> $cipher<$s>
         where
-            $s: RawData<Elem = T> + Data,
+            $s: Data<Elem = T>,
             T: FheUint,
         {
             paste::paste! {
@@ -102,7 +102,7 @@ macro_rules! impl_iter_sub_structure {
 
         impl<$s, T> $cipher<$s>
         where
-            $s: RawData<Elem = T> + DataMut,
+            $s: DataMut<Elem = T>,
             T: FheUint,
         {
             paste::paste! {
@@ -120,7 +120,7 @@ macro_rules! impl_iter_sub_structure {
     ($cipher:ident < $s:ident >, $sub:ident, $sub_short:ident) => {
         impl<$s, T> $cipher<$s>
         where
-            $s: RawData<Elem = T> + Data,
+            $s: Data<Elem = T>,
             T: FheUint,
         {
             paste::paste! {
@@ -134,7 +134,7 @@ macro_rules! impl_iter_sub_structure {
 
         impl<$s, T> $cipher<$s>
         where
-            $s: RawData<Elem = T> + DataMut,
+            $s: DataMut<Elem = T>,
             T: FheUint,
         {
             paste::paste! {

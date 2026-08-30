@@ -1,4 +1,4 @@
-use primus_data::{DataMut, DataOwned, RawData};
+use primus_data::{DataMut, DataOwned};
 use primus_integer::FheUint;
 use primus_reduce::Modulus;
 use rand::distr::Distribution;
@@ -7,7 +7,7 @@ use super::NttPolynomial;
 
 impl<S, T> NttPolynomial<S>
 where
-    S: RawData<Elem = T> + DataOwned,
+    S: DataOwned<Elem = T>,
     T: FheUint,
 {
     /// Generate a random [`NttPolynomial<S>`].
@@ -41,7 +41,7 @@ where
 
 impl<S, T> NttPolynomial<S>
 where
-    S: RawData<Elem = T> + DataMut,
+    S: DataMut<Elem = T>,
     T: FheUint,
 {
     /// Generate a random [`NttPolynomial<S>`].

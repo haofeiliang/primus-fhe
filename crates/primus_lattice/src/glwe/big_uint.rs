@@ -28,7 +28,7 @@ impl_iter_sub_structure!(BigUintGlwe<S>, BigUintPolynomial, big_uint_poly);
 
 impl<S, T> BigUintGlwe<S>
 where
-    S: RawData<Elem = T> + DataMut,
+    S: DataMut<Elem = T>,
     T: FheUint,
 {
     /// Composes the CRT representation in `crt_glwe` into this BigUint GLWE.
@@ -41,7 +41,7 @@ where
         rns_base: &RNSBase<T, M>,
         compose_buffer: &mut [T],
     ) where
-        A: RawData<Elem = T> + Data,
+        A: Data<Elem = T>,
         M: FieldContext<T>,
     {
         let big_uint_value_len = rns_base.big_uint_value_len();
@@ -62,7 +62,7 @@ where
 
 impl<S, T> BigUintGlwe<S>
 where
-    S: RawData<Elem = T> + Data,
+    S: Data<Elem = T>,
     T: FheUint,
 {
     /// Decomposes `self`.
@@ -74,7 +74,7 @@ where
         crt_poly_len: usize,
         rns_base: &RNSBase<T, M>,
     ) where
-        A: RawData<Elem = T> + DataMut,
+        A: DataMut<Elem = T>,
         M: FieldContext<T>,
     {
         let big_uint_value_len = rns_base.big_uint_value_len();

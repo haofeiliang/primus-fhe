@@ -1,5 +1,5 @@
 use itertools::izip;
-use primus_data::{Data, DataMut, RawData};
+use primus_data::{Data, DataMut};
 use primus_factor::{Factor, FactorMul, FactorSliceOps};
 use primus_integer::FheUint;
 use primus_modulus::common::compact;
@@ -70,7 +70,7 @@ where
 
 impl<S, T> DcrtPolynomial<S>
 where
-    S: RawData<Elem = T> + DataMut,
+    S: DataMut<Elem = T>,
     T: FheUint,
 {
     /// Performs `self * scalars` according to `moduli`.
@@ -104,7 +104,7 @@ where
         moduli: &[M],
     ) where
         M: Copy + ReduceMulAddSlice<T>,
-        A: RawData<Elem = T> + Data,
+        A: Data<Elem = T>,
     {
         izip!(
             self.iter_each_modulus_mut(poly_length),
@@ -147,7 +147,7 @@ where
         moduli: &[T],
     ) where
         F: Copy + FactorSliceOps<T>,
-        A: RawData<Elem = T> + Data,
+        A: Data<Elem = T>,
     {
         izip!(
             self.iter_each_modulus_mut(poly_length),
@@ -165,7 +165,7 @@ where
     pub fn mul<M, A>(mut self, rhs: &DcrtPolynomial<A>, poly_length: usize, moduli: &[M]) -> Self
     where
         M: Copy + ReduceMulSlice<T>,
-        A: RawData<Elem = T> + Data,
+        A: Data<Elem = T>,
     {
         self.mul_assign(rhs, poly_length, moduli);
         self
@@ -176,7 +176,7 @@ where
     pub fn mul_assign<M, A>(&mut self, rhs: &DcrtPolynomial<A>, poly_length: usize, moduli: &[M])
     where
         M: Copy + ReduceMulSlice<T>,
-        A: RawData<Elem = T> + Data,
+        A: Data<Elem = T>,
     {
         izip!(
             self.iter_each_modulus_mut(poly_length),
@@ -202,8 +202,8 @@ where
         moduli: &[T],
     ) where
         F: Factor<T>,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
     {
         izip!(
             self.iter_each_modulus_mut(poly_length),
@@ -224,7 +224,7 @@ where
 
 impl<S, T> DcrtPolynomial<S>
 where
-    S: RawData<Elem = T> + Data,
+    S: Data<Elem = T>,
     T: FheUint,
 {
     /// Performs `result = self * rhs` according to `moduli`.
@@ -237,8 +237,8 @@ where
         moduli: &[M],
     ) where
         M: Copy + ReduceMulSlice<T>,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + DataMut,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
     {
         izip!(
             self.iter_each_modulus(poly_length),
@@ -259,7 +259,7 @@ where
         moduli: &[M],
     ) where
         M: Copy + ReduceMulSlice<T>,
-        A: RawData<Elem = T> + DataMut,
+        A: DataMut<Elem = T>,
     {
         izip!(
             self.iter_each_modulus(poly_length),
@@ -282,7 +282,7 @@ where
         moduli: &[T],
     ) where
         F: Copy + FactorSliceOps<T>,
-        A: RawData<Elem = T> + DataMut,
+        A: DataMut<Elem = T>,
     {
         izip!(
             self.iter_each_modulus(poly_length),

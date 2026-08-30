@@ -1,5 +1,5 @@
 use num_traits::{ConstOne, ConstZero};
-use primus_data::{DataMut, RawData};
+use primus_data::DataMut;
 use primus_factor::{FactorMul, ShoupFactor};
 use primus_poly::{NttPolynomial, Polynomial};
 use primus_reduce::FieldContext;
@@ -44,7 +44,7 @@ pub trait NttTable: Sized + Send + Sync {
     /// # Arguments
     ///
     /// * `poly` - inputs in normal order, outputs in bit-reversed order
-    fn transform_inplace<S: RawData<Elem = Self::ValueT> + DataMut>(
+    fn transform_inplace<S: DataMut<Elem = Self::ValueT>>(
         &self,
         poly: Polynomial<S>,
     ) -> NttPolynomial<S>;
@@ -56,7 +56,7 @@ pub trait NttTable: Sized + Send + Sync {
     /// # Arguments
     ///
     /// * `values` - inputs in bit-reversed order, outputs in normal order
-    fn inverse_transform_inplace<S: RawData<Elem = Self::ValueT> + DataMut>(
+    fn inverse_transform_inplace<S: DataMut<Elem = Self::ValueT>>(
         &self,
         values: NttPolynomial<S>,
     ) -> Polynomial<S>;

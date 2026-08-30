@@ -44,7 +44,7 @@ where
 
 impl<S, T> NttPolynomial<S>
 where
-    S: RawData<Elem = T> + DataOwned,
+    S: DataOwned<Elem = T>,
     T: FheUint,
 {
     /// Creates a [`NttPolynomial<T>`] with all NTT values equal to zero.
@@ -71,7 +71,7 @@ where
 
 impl<S, T> NttPolynomial<S>
 where
-    S: RawData<Elem = T> + DataMut,
+    S: DataMut<Elem = T>,
     T: FheUint,
 {
     /// Extracts a mutable slice of the entire vector.
@@ -109,8 +109,8 @@ where
         modulus: M,
     ) where
         M: Copy + ReduceMulAddSlice<T>,
-        A: RawData<Elem = T> + Data,
-        B: RawData<Elem = T> + Data,
+        A: Data<Elem = T>,
+        B: Data<Elem = T>,
     {
         modulus.reduce_add_mul_slice_assign(self.as_mut_slice(), a.as_slice(), b.as_slice());
     }
@@ -118,7 +118,7 @@ where
 
 impl<S, T> NttPolynomial<S>
 where
-    S: RawData<Elem = T> + Data,
+    S: Data<Elem = T>,
     T: FheUint,
 {
     /// Extracts a slice containing the entire vector.
@@ -163,9 +163,9 @@ where
         modulus: M,
     ) where
         M: Copy + ReduceMulAddSlice<T>,
-        B: RawData<Elem = T> + Data,
-        C: RawData<Elem = T> + Data,
-        D: RawData<Elem = T> + DataMut,
+        B: Data<Elem = T>,
+        C: Data<Elem = T>,
+        D: DataMut<Elem = T>,
     {
         modulus.reduce_mul_add_slice_to(
             self.as_slice(),
@@ -178,7 +178,7 @@ where
 
 impl<S, T> Size for NttPolynomial<S>
 where
-    S: RawData<Elem = T> + Data,
+    S: Data<Elem = T>,
     T: FheUint,
 {
     #[inline]
