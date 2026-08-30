@@ -57,10 +57,10 @@ fn standard_backends() {
 #[test]
 fn owned_backends() {
     let vec = Vec::<u64>::from_slice(&VALUES);
-    assert_eq!(DataOwned::into_iter(vec).collect::<Vec<_>>(), VALUES);
+    assert_eq!(vec.into_iter().collect::<Vec<_>>(), VALUES);
 
     let boxed = Box::<[u64]>::from_vec(VALUES.to_vec());
-    assert_eq!(DataOwned::into_iter(boxed).collect::<Vec<_>>(), VALUES);
+    assert_eq!(boxed.into_iter().collect::<Vec<_>>(), VALUES);
 
     let collected: Vec<u64> = collect_owned();
     assert_eq!(collected.as_slice(), VALUES);

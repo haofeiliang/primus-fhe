@@ -208,18 +208,14 @@ pub trait DataMut: Data {
 
 /// Owned storage that can be constructed from a slice, a `Vec`, or an
 /// iterator, and consumed back into an iterator.
-pub trait DataOwned: Data + FromIterator<Self::Elem> {
-    /// The owning iterator type returned by [`into_iter`](DataOwned::into_iter).
-    type IntoIter: Iterator<Item = Self::Elem>;
-
+pub trait DataOwned: Data + FromIterator<Self::Elem> + IntoIterator<Item = Self::Elem> {
     /// Creates an owned buffer from a slice by cloning each element.
+    #[must_use]
     fn from_slice(data: &[Self::Elem]) -> Self
     where
         Self::Elem: Clone;
 
     /// Creates an owned buffer from a `Vec`, reusing its allocation when possible.
+    #[must_use]
     fn from_vec(data: Vec<Self::Elem>) -> Self;
-
-    /// Consumes the buffer and returns an iterator over its elements.
-    fn into_iter(self) -> Self::IntoIter;
 }

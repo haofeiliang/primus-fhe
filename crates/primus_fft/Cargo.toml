@@ -4,7 +4,6 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-primus_data = { path = "../primus_data" }
 primus_integer = { path = "../primus_integer" }
 num-complex = { workspace = true }
 rustfft = { workspace = true }

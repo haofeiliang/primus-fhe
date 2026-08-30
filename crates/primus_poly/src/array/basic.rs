@@ -152,10 +152,10 @@ where
 {
     type Item = T;
 
-    type IntoIter = S::IntoIter;
+    type IntoIter = <S as IntoIterator>::IntoIter;
 
     #[inline]
     fn into_iter(self) -> Self::IntoIter {
-        <S as DataOwned>::into_iter(self.0)
+        self.0.into_iter()
     }
 }

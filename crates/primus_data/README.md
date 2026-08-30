@@ -23,6 +23,8 @@ This lets arithmetic and cryptographic kernels accept borrowed slices, arrays, o
 | `&[T]` | yes | no | no |
 | `&mut [T]` | yes | yes | no |
 | `[T; N]` | yes | yes | no |
+| `&[T; N]` | yes | no | no |
+| `&mut [T; N]` | yes | yes | no |
 | `Vec<T>` | yes | yes | yes |
 | `Box<[T]>` | yes | yes | yes |
 | `Arc<[T]>` | yes | no | no |

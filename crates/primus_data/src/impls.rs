@@ -138,8 +138,6 @@ impl<T> DataMut for Vec<T> {
 }
 
 impl<T> DataOwned for Vec<T> {
-    type IntoIter = std::vec::IntoIter<T>;
-
     #[inline(always)]
     fn from_slice(data: &[T]) -> Self
     where
@@ -151,11 +149,6 @@ impl<T> DataOwned for Vec<T> {
     #[inline(always)]
     fn from_vec(data: Vec<T>) -> Self {
         data
-    }
-
-    #[inline(always)]
-    fn into_iter(self) -> Self::IntoIter {
-        <Vec<T> as IntoIterator>::into_iter(self)
     }
 }
 
@@ -178,8 +171,6 @@ impl<T> DataMut for Box<[T]> {
 }
 
 impl<T> DataOwned for Box<[T]> {
-    type IntoIter = <Box<[T]> as IntoIterator>::IntoIter;
-
     #[inline(always)]
     fn from_slice(data: &[T]) -> Self
     where
@@ -191,11 +182,6 @@ impl<T> DataOwned for Box<[T]> {
     #[inline(always)]
     fn from_vec(data: Vec<T>) -> Self {
         data.into_boxed_slice()
-    }
-
-    #[inline(always)]
-    fn into_iter(self) -> Self::IntoIter {
-        <Box<[T]> as IntoIterator>::into_iter(self)
     }
 }
 
