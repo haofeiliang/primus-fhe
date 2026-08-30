@@ -289,7 +289,7 @@ macro_rules! impl_extended_gcd {
                     let mut rem: Self;
                     let mut d: Self;
 
-                    assert!(x >= y);
+                    assert!(x >= y, "xgcd requires x >= y, got x={x}, y={y}");
 
                     u1 = 1;
                     v2 = 1;
@@ -421,7 +421,7 @@ macro_rules! impl_extended_gcd {
                     let mut quot: Self;
                     let mut rem: Self;
 
-                    assert!(y > x);
+                    assert!(y > x, "gcdinv requires x < modulus, got x={x}, modulus={y}");
 
                     v1 = 0;
                     v2 = 1;

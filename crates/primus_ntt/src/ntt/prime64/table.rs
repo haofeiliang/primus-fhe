@@ -114,8 +114,8 @@ pub struct U64NttTable {
 
 /// Compute the modular inverse of `a` modulo `q`.
 ///
-/// Uses `primus_gcd::Xgcd::gcdinv` — an optimized binary GCD
-/// that avoids division instructions.
+/// Uses `primus_gcd::Xgcd::gcdinv`, which specializes quotients `1`, `2`, and
+/// `3` before falling back to integer division.
 fn mod_inv(a: u64, q: u64) -> u64 {
     let (inv, gcd) = u64::gcdinv(a, q);
     assert_eq!(gcd, 1, "a={a} is not invertible modulo q={q}");

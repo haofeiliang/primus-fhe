@@ -220,20 +220,19 @@ fn power_of_two_inverses_cover_wider_integer_widths() {
 #[test]
 fn u64_high_bit_paths_match_big_integer_oracles() {
     let mut rng = seeded_rng(0x7536_345f_6d73_625f);
-    let low = (u64::MAX >> 2) + 1;
-    let high = u64::MAX >> 1;
+    const TOP_BIT: u64 = 1 << (u64::BITS - 1);
 
     for _ in 0..RANDOM_CASES {
-        let x = rng.random_range(low..=high);
-        let y = rng.random_range(low..=x);
+        let x = rng.random_range(TOP_BIT..=u64::MAX);
+        let y = rng.random_range(TOP_BIT..=x);
         assert_xgcd_identity(x, y);
 
-        let modulus = rng.random_range((low + 1)..=high);
-        let value = rng.random_range(low..modulus);
+        let modulus = rng.random_range((TOP_BIT + 1)..=u64::MAX);
+        let value = rng.random_range(TOP_BIT..modulus);
         assert_gcdinv_identity(value, modulus);
     }
 
-    let high_quotient = (u64::MAX >> 1) + 1;
+    let high_quotient = TOP_BIT;
     assert_eq!(u64::xgcd(high_quotient, 1), (1, high_quotient - 1, 1));
     assert_eq!(u64::gcdinv(1, high_quotient), (1, 1));
 }
