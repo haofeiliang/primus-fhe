@@ -12,7 +12,7 @@ pub trait RingContext<T>:
     Modulus<ValueT = T>
     + Reduce<T, Output = T>
     + ReduceAssign<T>
-    + ReduceOnce<T>
+    + ReduceOnce<T, Output = T>
     + ReduceOnceAssign<T>
     + ReduceOnceSlice<T>
     + ReduceAdd<T, Output = T>
@@ -45,7 +45,7 @@ impl<T: UnsignedInteger, M> RingContext<T> for M where
     M: Modulus<ValueT = T>
         + Reduce<T, Output = T>
         + ReduceAssign<T>
-        + ReduceOnce<T>
+        + ReduceOnce<T, Output = T>
         + ReduceOnceAssign<T>
         + ReduceOnceSlice<T>
         + ReduceAdd<T, Output = T>

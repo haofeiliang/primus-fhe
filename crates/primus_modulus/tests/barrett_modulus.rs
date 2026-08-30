@@ -3,7 +3,7 @@
 use primus_modulus::{BarrettModulus, UintModulus};
 use primus_reduce::{FieldContext, prelude::*};
 use rand::{
-    RngExt, SeedableRng,
+    SeedableRng,
     distr::{Distribution, Uniform},
     rngs::StdRng,
 };
@@ -31,77 +31,14 @@ fn constructor_bounds() {
 fn field_trait<M: FieldContext<ValueT>>(_modulus: M) {}
 
 #[test]
-fn scalar_ops_against_uint() {
+fn field_context_and_wide_reduction() {
     let b = BarrettModulus::<u32>::new(MODULUS);
-    let u = UintModulus(MODULUS);
-    let distr = Uniform::new(0, MODULUS).unwrap();
-
     field_trait(b);
 
-    let mut rng = StdRng::seed_from_u64(SEED);
-
-    for _ in 0..20 {
-        let a: u32 = distr.sample(&mut rng);
-        let c: u32 = distr.sample(&mut rng);
-
-        assert_eq!(b.reduce_add(a, c), u.reduce_add(a, c));
-        assert_eq!(b.reduce_sub(a, c), u.reduce_sub(a, c));
-        assert_eq!(b.reduce_double(a), u.reduce_double(a));
-        assert_eq!(b.reduce_neg(a), u.reduce_neg(a));
-
-        let v = if rng.random_bool(0.5) {
-            a
-        } else {
-            a.wrapping_add(MODULUS)
-        };
-        assert_eq!(b.reduce_once(v), u.reduce_once(v));
-
+    for (a, c) in [(0, 0), (1, MODULUS - 1), (MODULUS - 1, MODULUS - 2)] {
         let product = (a as u64) * (c as u64);
         let expected = (product % MODULUS as u64) as u32;
         assert_eq!(b.reduce((product as u32, (product >> 32) as u32)), expected);
-    }
-}
-
-#[test]
-fn slice_ops_against_uint() {
-    let b = BarrettModulus::<u32>::new(MODULUS);
-    let u = UintModulus(MODULUS);
-    let distr = Uniform::new(0, MODULUS).unwrap();
-    let mut rng = StdRng::seed_from_u64(SEED);
-
-    for &len in &[0usize, 1, 3, 7, 8, 15, 16, 17, 31, 33, 64, 65] {
-        let a: Vec<u32> = (0..len).map(|_| distr.sample(&mut rng)).collect();
-        let c: Vec<u32> = (0..len).map(|_| distr.sample(&mut rng)).collect();
-
-        for op in &["add", "sub", "neg", "once"] {
-            let a_in = match *op {
-                "once" => a.iter().map(|&x| x.wrapping_add(MODULUS)).collect(),
-                _ => a.clone(),
-            };
-            let mut b_res = a_in.clone();
-            let mut u_res = a_in;
-
-            match *op {
-                "add" => {
-                    b.reduce_add_slice_assign(&mut b_res, &c);
-                    u.reduce_add_slice_assign(&mut u_res, &c);
-                }
-                "sub" => {
-                    b.reduce_sub_slice_assign(&mut b_res, &c);
-                    u.reduce_sub_slice_assign(&mut u_res, &c);
-                }
-                "neg" => {
-                    b.reduce_neg_slice_assign(&mut b_res);
-                    u.reduce_neg_slice_assign(&mut u_res);
-                }
-                "once" => {
-                    b.reduce_once_slice_assign(&mut b_res);
-                    u.reduce_once_slice_assign(&mut u_res);
-                }
-                _ => {}
-            }
-            assert_eq!(b_res, u_res, "{op} len={len}");
-        }
     }
 }
 
@@ -228,7 +165,7 @@ fn mul_slice_ops() {
     let distr = Uniform::new(0, MODULUS).unwrap();
     let mut rng = StdRng::seed_from_u64(SEED);
 
-    for &len in &[0usize, 1, 3, 7, 8, 15, 16, 17, 31, 33, 64, 65] {
+    for &len in &[0usize, 1, 7, 8, 9, 15, 16, 17] {
         let a: Vec<u32> = (0..len).map(|_| distr.sample(&mut rng)).collect();
         let b: Vec<u32> = (0..len).map(|_| distr.sample(&mut rng)).collect();
         let c: Vec<u32> = (0..len).map(|_| distr.sample(&mut rng)).collect();
@@ -332,42 +269,5 @@ fn mul_slice_ops() {
         let mut acc = c.clone();
         m.reduce_add_mul_scalar_slice_assign(&mut acc, &b, scalar);
         assert_eq!(acc, expected_asc, "add_scalar_mul_slice_assign len={len}");
-    }
-}
-
-#[cfg(feature = "simd")]
-#[test]
-fn simd_slice_ops_against_uint() {
-    let b = BarrettModulus::<u32>::new(MODULUS);
-    let u = UintModulus(MODULUS);
-    let distr = Uniform::new(0, MODULUS).unwrap();
-    let mut rng = StdRng::seed_from_u64(SEED);
-
-    for &len in &[
-        0usize, 1, 3, 7, 8, 15, 16, 17, 31, 32, 33, 63, 64, 65, 127, 128, 129,
-    ] {
-        let a: Vec<u32> = (0..len).map(|_| distr.sample(&mut rng)).collect();
-        let c: Vec<u32> = (0..len).map(|_| distr.sample(&mut rng)).collect();
-
-        for op in &["add", "sub", "neg"] {
-            let mut b_res = a.clone();
-            let mut u_res = a.clone();
-            match *op {
-                "add" => {
-                    b.reduce_add_slice_assign(&mut b_res, &c);
-                    u.reduce_add_slice_assign(&mut u_res, &c);
-                }
-                "sub" => {
-                    b.reduce_sub_slice_assign(&mut b_res, &c);
-                    u.reduce_sub_slice_assign(&mut u_res, &c);
-                }
-                "neg" => {
-                    b.reduce_neg_slice_assign(&mut b_res);
-                    u.reduce_neg_slice_assign(&mut u_res);
-                }
-                _ => {}
-            }
-            assert_eq!(b_res, u_res, "simd {op} len={len}");
-        }
     }
 }

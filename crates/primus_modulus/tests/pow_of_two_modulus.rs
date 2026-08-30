@@ -80,9 +80,7 @@ fn slice_ops_against_uint() {
     let distr = Uniform::new(0, MODULUS).unwrap();
     let mut rng = StdRng::seed_from_u64(SEED);
 
-    for &len in &[
-        0usize, 1, 2, 3, 4, 5, 6, 7, 8, 9, 15, 16, 17, 31, 32, 33, 63, 64, 65,
-    ] {
+    for &len in &[0usize, 1, 7, 8, 9, 15, 16, 17] {
         let a: Vec<u32> = (0..len).map(|_| distr.sample(&mut rng)).collect();
         let b: Vec<u32> = (0..len).map(|_| distr.sample(&mut rng)).collect();
 

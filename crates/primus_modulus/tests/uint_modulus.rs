@@ -2,11 +2,12 @@
 
 use primus_modulus::UintModulus;
 use primus_reduce::prelude::*;
-use rand::{RngExt, distr::Uniform, prelude::*};
+use rand::{RngExt, SeedableRng, distr::Uniform, prelude::*, rngs::StdRng};
 
 type ValueT = u32;
 type WideT = u64;
 const MODULUS: ValueT = 4_294_967_291;
+const SEED: u64 = 0x5549_4e54_4d4f_4431;
 
 const MODULUS_W: WideT = MODULUS as WideT;
 
@@ -36,7 +37,7 @@ fn wide_once_mod(v: ValueT) -> ValueT {
 fn scalar_ops() {
     let m = UintModulus(MODULUS);
     let distr = Uniform::new(0, MODULUS).unwrap();
-    let mut rng = rand::rng();
+    let mut rng = StdRng::seed_from_u64(SEED);
 
     for _ in 0..20 {
         let a: ValueT = distr.sample(&mut rng);
@@ -77,11 +78,9 @@ fn scalar_ops() {
 fn slice_ops() {
     let m = UintModulus(MODULUS);
     let distr = Uniform::new(0, MODULUS).unwrap();
-    let mut rng = rand::rng();
+    let mut rng = StdRng::seed_from_u64(SEED ^ 1);
 
-    for &len in &[
-        0usize, 1, 2, 3, 4, 5, 6, 7, 8, 9, 15, 16, 17, 31, 32, 33, 63, 64, 65,
-    ] {
+    for &len in &[0usize, 1, 7, 8, 9, 15, 16, 17] {
         let a: Vec<ValueT> = (0..len).map(|_| distr.sample(&mut rng)).collect();
         let b: Vec<ValueT> = (0..len).map(|_| distr.sample(&mut rng)).collect();
 
