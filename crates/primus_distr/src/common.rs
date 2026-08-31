@@ -2,7 +2,7 @@ use std::slice::IterMut;
 
 use itertools::Itertools;
 use num_traits::ConstZero;
-use primus_integer::{AsInto, FheInt, FheUint, SignedInteger, UnsignedInteger};
+use primus_integer::{FheInt, FheUint, SignedInteger, UnsignedInteger};
 use rand::{
     distr::{Bernoulli, Distribution, Uniform},
     seq::SliceRandom,
@@ -445,7 +445,11 @@ pub fn sample_crt_uniform_values_iter_mut<T, R>(
     });
 }
 
-/// Sample a gaussian vector whose values are `T`.
+/// Samples a Gaussian vector in modulus-major CRT layout.
+///
+/// Every modulus must canonically encode the complete truncated support. This
+/// precondition is not checked and must be established by the caller's
+/// parameter construction.
 pub fn sample_crt_gaussian_values<T, R>(
     length: usize,
     moduli: &[T],
@@ -456,73 +460,60 @@ where
     T: FheUint,
     R: rand::Rng + rand::CryptoRng,
 {
-    let bound: f64 = 24.0 * gaussian.standard_deviation();
-    let bound: T = bound.as_into();
-    for modulus in moduli {
-        assert!(bound < *modulus);
-    }
-
     let moduli_count = moduli.len();
     let mut result = vec![T::ZERO; length * moduli_count];
-
-    let mut iters: Vec<IterMut<'_, T>> = result
-        .chunks_exact_mut(length)
-        .map(|s| s.iter_mut())
-        .collect();
-
-    'outer: loop {
-        let r = gaussian.sample(rng);
-        if r >= <<T as UnsignedInteger>::SignedInteger as ConstZero>::ZERO {
-            let t: T = r.cast_to_unsigned();
-            for iter in iters.iter_mut() {
-                if let Some(value) = iter.next() {
-                    *value = t;
-                } else {
-                    break 'outer;
-                }
-            }
-        } else {
-            for (iter, &modulus) in iters.iter_mut().zip(moduli) {
-                if let Some(value) = iter.next() {
-                    *value = <T as UnsignedInteger>::wrapping_add_signed(modulus, r);
-                } else {
-                    break 'outer;
-                }
-            }
-        }
-    }
+    sample_crt_gaussian_values_to(&mut result, length, moduli, gaussian, rng);
 
     result
 }
 
-/// Sample a gaussian vector whose values are `T`.
+/// Fills a slice with Gaussian samples in modulus-major CRT layout.
+///
+/// Every modulus must canonically encode the complete truncated support. This
+/// precondition is not checked and must be established by the caller's
+/// parameter construction.
+///
+/// In debug builds, this function checks that `result.len()` equals
+/// `length * moduli.len()`.
 pub fn sample_crt_gaussian_values_to<T, R>(
     result: &mut [T],
     length: usize,
-    moduli_value: &[T],
+    moduli: &[T],
     gaussian: &SignedDiscreteGaussian<<T as UnsignedInteger>::SignedInteger>,
     rng: &mut R,
 ) where
     T: FheUint,
     R: rand::Rng + rand::CryptoRng,
 {
+    debug_assert_eq!(
+        result.len(),
+        length * moduli.len(),
+        "CRT Gaussian output length must equal length times the modulus count"
+    );
+    if result.is_empty() {
+        return;
+    }
+
     let iters: Vec<IterMut<'_, T>> = result
         .chunks_exact_mut(length)
         .map(|s| s.iter_mut())
         .collect();
-    sample_crt_gaussian_values_iter_mut(iters, moduli_value, gaussian, rng);
+    sample_crt_gaussian_values_iter_mut(iters, moduli, gaussian, rng);
 }
 
-/// Sample a gaussian vector whose values are `T`.
-pub fn sample_crt_gaussian_values_iter_mut<T, R>(
+fn sample_crt_gaussian_values_iter_mut<T, R>(
     mut iters: Vec<IterMut<'_, T>>,
-    moduli_value: &[T],
+    moduli: &[T],
     gaussian: &SignedDiscreteGaussian<<T as UnsignedInteger>::SignedInteger>,
     rng: &mut R,
 ) where
     T: FheUint,
     R: rand::Rng + rand::CryptoRng,
 {
+    if iters.is_empty() {
+        return;
+    }
+
     loop {
         let r = gaussian.sample(rng);
         if r >= <<T as UnsignedInteger>::SignedInteger as ConstZero>::ZERO {
@@ -535,7 +526,7 @@ pub fn sample_crt_gaussian_values_iter_mut<T, R>(
                 }
             }
         } else {
-            for (iter, &modulus) in iters.iter_mut().zip(moduli_value) {
+            for (iter, &modulus) in iters.iter_mut().zip(moduli) {
                 if let Some(value) = iter.next() {
                     *value = <T as UnsignedInteger>::wrapping_add_signed(modulus, r);
                 } else {
