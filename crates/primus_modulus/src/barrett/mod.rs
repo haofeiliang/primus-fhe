@@ -75,8 +75,9 @@ impl<T: UnsignedInteger> BarrettModulus<T> {
     ///
     /// # Correctness
     ///
-    /// `value` must satisfy `1 < value < 2^(T::BITS - 2)`, and `ratio` must
-    /// equal `floor(B² / value)` where `B = 2^(T::BITS)`.
+    /// `value` must satisfy `1 < value < 2^(T::BITS - 2)`, and `ratio` must be
+    /// the little-endian limbs `[low, high]` of `floor(B² / value)`, where
+    /// `B = 2^(T::BITS)`.
     #[must_use]
     #[inline]
     pub const fn from_parts(value: T, ratio: [T; 2]) -> Self {
@@ -105,7 +106,8 @@ impl<T: UnsignedInteger> BarrettModulus<T> {
         self.value
     }
 
-    /// Returns the precomputed reciprocal `floor(B² / modulus)`.
+    /// Returns the little-endian limbs `[low, high]` of the precomputed
+    /// reciprocal `floor(B² / modulus)`.
     #[must_use]
     #[inline]
     pub const fn ratio(&self) -> [T; 2] {

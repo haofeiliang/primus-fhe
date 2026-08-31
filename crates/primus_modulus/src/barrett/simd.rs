@@ -20,15 +20,16 @@ pub struct SimdBarrettModulus<T: SimdUnsignedInteger> {
 }
 
 impl<T: SimdUnsignedInteger> SimdBarrettModulus<T> {
-    /// Creates a [`SimdBarrettModulus<T>`] from a modulus and its precomputed reciprocal.
+    /// Creates a [`SimdBarrettModulus<T>`] from precomputed parts.
     ///
     /// # Correctness
     ///
-    /// `value` must satisfy `1 < value < 2^(T::BITS - 2)`, and `ratio` must
-    /// equal `floor(B² / value)` where `B = 2^(T::BITS)`. Prefer converting a
-    /// validated [`BarrettModulus`] when runtime construction is sufficient.
+    /// `value` must satisfy `1 < value < 2^(T::BITS - 2)`, and `ratio` must be
+    /// the little-endian limbs `[low, high]` of `floor(B² / value)`, where
+    /// `B = 2^(T::BITS)`. Prefer converting a validated [`BarrettModulus`] when
+    /// runtime construction is sufficient.
     #[must_use]
-    pub fn new(value: T, ratio: [T; 2]) -> Self {
+    pub fn from_parts(value: T, ratio: [T; 2]) -> Self {
         Self {
             value: T::SimdT::splat(value),
             ratio: [T::SimdT::splat(ratio[0]), T::SimdT::splat(ratio[1])],

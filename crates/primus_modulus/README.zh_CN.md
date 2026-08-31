@@ -17,7 +17,7 @@
 | `CompactModulus<T>` | `1 < modulus < 2^(T::BITS - 2)` | 不保存预计算数据的基本加、减、取负和逆元运算 |
 | `UintModulus<T>` | 任意可表示的 `modulus > 1` | 紧凑范围限制不适用时的基本算术 |
 
-`BarrettModulus` 保存 `floor(B² / modulus)`，其中 `B = 2^T::BITS`。模数预留的两个高位使其点积内核可以在约简前累加 16 个乘积。`CompactModulus` 和 `UintModulus` 只保存模数。
+`BarrettModulus` 以小端 limb `[low, high]` 保存 `floor(B² / modulus)`，其中 `B = 2^T::BITS`。模数预留的两个高位使其点积内核可以在约简前累加 16 个乘积。`CompactModulus` 和 `UintModulus` 只保存模数。
 
 ## 示例
 
@@ -43,7 +43,7 @@ assert_eq!(output, [11, 6, 50]);
 - 当受支持 Barrett 范围内的模数需要乘法和重复约简时，使用 `BarrettModulus::new(value)`。
 - 对各自较小的基本运算集合使用 `CompactModulus::new(value)` 或 `UintModulus::new(value)`。
 
-带检查的构造器会验证文档规定的范围。当调用方已经完成验证，并且有意避免重复检查时，仍可使用 `CompactModulus(value)` 和 `UintModulus(value)`。同样，调用 `BarrettModulus::new_unchecked` 和 `BarrettModulus::from_parts` 时，调用方必须维持其文档规定的倒数与范围不变量。
+带检查的构造器会验证文档规定的范围。当调用方已经完成验证，并且有意避免重复检查时，仍可使用 `CompactModulus(value)` 和 `UintModulus(value)`。同样，调用 `BarrettModulus::new_unchecked`、`BarrettModulus::from_parts` 和 `SimdBarrettModulus::from_parts` 时，调用方必须维持其文档规定的倒数与范围不变量。
 
 ## Feature
 

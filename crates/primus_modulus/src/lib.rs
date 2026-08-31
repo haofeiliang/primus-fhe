@@ -10,6 +10,23 @@
 //! | [`BarrettModulus`] | Barrett reduction (`m < 2^(BITS - 2)`) | Repeated multiplication and reduction |
 //! | [`CompactModulus`] | Bounded arithmetic (`m < 2^(BITS - 2)`) | Basic operations without precomputation |
 //! | [`UintModulus`] | Generic unsigned arithmetic | Basic operations for any representable `m > 1` |
+//!
+//! # Example
+//!
+//! ```
+//! use primus_modulus::{BarrettModulus, reduce::prelude::*};
+//!
+//! let modulus = BarrettModulus::new(97u64);
+//!
+//! assert_eq!(modulus.reduce_add(80, 30), 13);
+//! assert_eq!(modulus.reduce_mul(12, 9), 11);
+//!
+//! let lhs = [12, 20, 31];
+//! let rhs = [9, 10, 11];
+//! let mut output = [0; 3];
+//! modulus.reduce_mul_slice_to(&lhs, &rhs, &mut output);
+//! assert_eq!(output, [11, 6, 50]);
+//! ```
 
 pub use primus_integer as integer;
 pub use primus_reduce as reduce;

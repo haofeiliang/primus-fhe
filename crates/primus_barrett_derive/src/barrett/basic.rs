@@ -93,7 +93,7 @@ pub(crate) fn into_simd_modulus(
         impl ::std::convert::Into<::primus_modulus::SimdBarrettModulus<#ty>> for #name {
             #[inline]
             fn into(self) -> ::primus_modulus::SimdBarrettModulus<#ty> {
-                ::primus_modulus::SimdBarrettModulus::new(#modulus, [#r0, #r1])
+                ::primus_modulus::SimdBarrettModulus::from_parts(#modulus, [#r0, #r1])
             }
         }
     }

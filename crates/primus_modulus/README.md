@@ -17,7 +17,7 @@ English | [简体中文](README.zh_CN.md)
 | `CompactModulus<T>` | `1 < modulus < 2^(T::BITS - 2)` | basic add, subtract, negate, and inverse operations without precomputed data |
 | `UintModulus<T>` | any representable `modulus > 1` | basic arithmetic when the compact range restriction is unsuitable |
 
-`BarrettModulus` stores `floor(B² / modulus)`, where `B = 2^T::BITS`. The two spare modulus bits permit its dot-product kernels to accumulate 16 products before reduction. `CompactModulus` and `UintModulus` store only the modulus.
+`BarrettModulus` stores the little-endian limbs `[low, high]` of `floor(B² / modulus)`, where `B = 2^T::BITS`. The two spare modulus bits permit its dot-product kernels to accumulate 16 products before reduction. `CompactModulus` and `UintModulus` store only the modulus.
 
 ## Example
 
@@ -43,7 +43,7 @@ assert_eq!(output, [11, 6, 50]);
 - Use `BarrettModulus::new(value)` when multiplication and repeated reduction are required for a modulus in the supported Barrett range.
 - Use `CompactModulus::new(value)` or `UintModulus::new(value)` for their smaller basic-operation sets.
 
-Checked constructors validate their documented range. `CompactModulus(value)` and `UintModulus(value)` remain available when an already-validated caller intentionally avoids a repeated check. Likewise, `BarrettModulus::new_unchecked` and `BarrettModulus::from_parts` require the caller to uphold their documented reciprocal and range invariants.
+Checked constructors validate their documented range. `CompactModulus(value)` and `UintModulus(value)` remain available when an already-validated caller intentionally avoids a repeated check. Likewise, `BarrettModulus::new_unchecked`, `BarrettModulus::from_parts`, and `SimdBarrettModulus::from_parts` require the caller to uphold their documented reciprocal and range invariants.
 
 ## Features
 

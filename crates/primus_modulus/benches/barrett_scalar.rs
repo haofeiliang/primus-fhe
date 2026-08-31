@@ -7,8 +7,7 @@ mod support;
 use core::hint::black_box;
 
 use criterion::{
-    BenchmarkGroup, Criterion, Throughput, criterion_group, criterion_main,
-    measurement::Measurement,
+    BatchSize, BenchmarkGroup, Criterion, criterion_group, criterion_main, measurement::Measurement,
 };
 use primus_modulus::BarrettModulus;
 use primus_reduce::prelude::*;
@@ -26,19 +25,24 @@ fn bench_unary<T, M, R>(
 ) where
     T: Copy,
     M: Copy,
-    R: Copy + Default,
 {
-    let mut output = vec![R::default(); input.len()];
-    group.throughput(Throughput::Elements(input.len() as u64));
+    assert!(
+        !input.is_empty(),
+        "scalar benchmark inputs must be non-empty"
+    );
+
+    let mut inputs = input.iter().copied().cycle();
     group.bench_function(name, |b| {
         let modulus = black_box(modulus);
-        b.iter(|| {
-            output
-                .iter_mut()
-                .zip(input)
-                .for_each(|(output, &value)| *output = operation(modulus, value));
-            black_box(&mut output);
-        })
+        b.iter_batched(
+            || {
+                inputs
+                    .next()
+                    .expect("scalar benchmark inputs must be non-empty")
+            },
+            |value| black_box(operation(modulus, black_box(value))),
+            BatchSize::SmallInput,
+        )
     });
 }
 

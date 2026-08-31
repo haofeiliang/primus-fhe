@@ -10,50 +10,50 @@ mod mul;
 
 pub use mul::*;
 
-/// Adds SIMD lanes modulo `m`.
+/// Adds SIMD lanes modulo `modulus`.
 #[must_use]
 #[inline]
-pub fn reduce_add<T>(m: T::SimdT, a: T::SimdT, b: T::SimdT) -> T::SimdT
+pub fn reduce_add<T>(modulus: T::SimdT, a: T::SimdT, b: T::SimdT) -> T::SimdT
 where
     T: SimdUnsignedInteger,
 {
     let sum = a + b;
-    sum.simd_min(sum - m)
+    sum.simd_min(sum - modulus)
 }
 
-/// Doubles SIMD lanes modulo `m`.
+/// Doubles SIMD lanes modulo `modulus`.
 #[must_use]
 #[inline]
-pub fn reduce_double<T>(m: T::SimdT, a: T::SimdT) -> T::SimdT
+pub fn reduce_double<T>(modulus: T::SimdT, value: T::SimdT) -> T::SimdT
 where
     T: SimdUnsignedInteger,
 {
-    let sum = a << T::SimdT::splat(T::ONE);
-    sum.simd_min(sum - m)
+    let sum = value << T::SimdT::splat(T::ONE);
+    sum.simd_min(sum - modulus)
 }
 
-/// Subtracts SIMD lanes modulo `m`.
+/// Subtracts SIMD lanes modulo `modulus`.
 #[must_use]
 #[inline]
-pub fn reduce_sub<T>(m: T::SimdT, a: T::SimdT, b: T::SimdT) -> T::SimdT
+pub fn reduce_sub<T>(modulus: T::SimdT, a: T::SimdT, b: T::SimdT) -> T::SimdT
 where
     T: SimdUnsignedInteger,
 {
-    // If `a >= b`, `a - b` is canonical and adding `m` makes it larger without
-    // overflow. Otherwise, adding `m` to the wrapped difference produces the
-    // canonical value. Unsigned minimum selects the canonical case.
+    // If `a >= b`, `a - b` is canonical and adding `modulus` makes it larger
+    // without overflow. Otherwise, adding `modulus` to the wrapped difference
+    // produces the canonical value. Unsigned minimum selects the canonical case.
     let diff = a - b;
-    diff.simd_min(diff + m)
+    diff.simd_min(diff + modulus)
 }
 
-/// Returns the lane-wise lazy difference `a + m - b`.
+/// Returns the lane-wise lazy difference `a + modulus - b`.
 #[must_use]
 #[inline]
-pub fn lazy_reduce_sub<T>(m: T::SimdT, a: T::SimdT, b: T::SimdT) -> T::SimdT
+pub fn lazy_reduce_sub<T>(modulus: T::SimdT, a: T::SimdT, b: T::SimdT) -> T::SimdT
 where
     T: SimdUnsignedInteger,
 {
-    m - b + a
+    modulus - b + a
 }
 
 /// Adds the lane-wise product `a * b` to the two-limb SIMD accumulator `c`.

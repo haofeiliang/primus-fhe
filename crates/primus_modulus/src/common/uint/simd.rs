@@ -4,43 +4,43 @@ use std::simd::cmp::{SimdOrd, SimdPartialEq, SimdPartialOrd};
 
 use primus_integer::{SimdArray, SimdMaskArray, SimdUnsignedInteger};
 
-/// Reduces each SIMD lane by subtracting `m` at most once.
+/// Reduces each SIMD lane by subtracting `modulus` at most once.
 #[must_use]
 #[inline]
-pub fn reduce_once<T: SimdUnsignedInteger>(m: T::SimdT, v: T::SimdT) -> T::SimdT {
-    // When `v < m`, `v - m` wraps above `v`; otherwise the subtraction is the
-    // smaller, reduced value.
-    v.simd_min(v - m)
+pub fn reduce_once<T: SimdUnsignedInteger>(modulus: T::SimdT, value: T::SimdT) -> T::SimdT {
+    // When `value < modulus`, the subtraction wraps above `value`; otherwise
+    // the subtraction is the smaller, reduced value.
+    value.simd_min(value - modulus)
 }
 
-/// Adds SIMD lanes modulo `m`.
+/// Adds SIMD lanes modulo `modulus`.
 #[must_use]
 #[inline]
-pub fn reduce_add<T: SimdUnsignedInteger>(m: T::SimdT, a: T::SimdT, b: T::SimdT) -> T::SimdT {
-    let threshold = m - b;
+pub fn reduce_add<T: SimdUnsignedInteger>(modulus: T::SimdT, a: T::SimdT, b: T::SimdT) -> T::SimdT {
+    let threshold = modulus - b;
     a.simd_ge(threshold).select(a - threshold, a + b)
 }
 
-/// Subtracts SIMD lanes modulo `m`.
+/// Subtracts SIMD lanes modulo `modulus`.
 #[must_use]
 #[inline]
-pub fn reduce_sub<T: SimdUnsignedInteger>(m: T::SimdT, a: T::SimdT, b: T::SimdT) -> T::SimdT {
-    a.simd_ge(b).select(a - b, a + m - b)
+pub fn reduce_sub<T: SimdUnsignedInteger>(modulus: T::SimdT, a: T::SimdT, b: T::SimdT) -> T::SimdT {
+    a.simd_ge(b).select(a - b, a + modulus - b)
 }
 
-/// Returns the lane-wise additive inverse modulo `m`.
+/// Returns the lane-wise additive inverse modulo `modulus`.
 #[must_use]
 #[inline]
-pub fn reduce_neg<T: SimdUnsignedInteger>(m: T::SimdT, v: T::SimdT) -> T::SimdT {
+pub fn reduce_neg<T: SimdUnsignedInteger>(modulus: T::SimdT, value: T::SimdT) -> T::SimdT {
     let zero = T::SimdT::splat(T::ZERO);
-    v.simd_eq(zero).select(zero, m - v)
+    value.simd_eq(zero).select(zero, modulus - value)
 }
 
-/// Returns the lane-wise lazy additive inverse `m - v`.
+/// Returns the lane-wise lazy additive inverse `modulus - value`.
 #[must_use]
 #[inline]
-pub fn lazy_reduce_neg<T: SimdUnsignedInteger>(m: T::SimdT, v: T::SimdT) -> T::SimdT {
-    m - v
+pub fn lazy_reduce_neg<T: SimdUnsignedInteger>(modulus: T::SimdT, value: T::SimdT) -> T::SimdT {
+    modulus - value
 }
 
 /// Reduces each value in place by subtracting `modulus` at most once.

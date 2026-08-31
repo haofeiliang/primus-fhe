@@ -1,6 +1,6 @@
 use core::hint::black_box;
 
-use criterion::{BenchmarkGroup, Throughput, measurement::Measurement};
+use criterion::{BatchSize, BenchmarkGroup, measurement::Measurement};
 
 pub const MODULUS_U64: u64 = 1_125_899_906_826_241;
 pub const INPUT_COUNT: usize = 1_024;
@@ -13,20 +13,23 @@ pub fn bench_binary<T, M>(
     modulus: M,
     operation: impl Fn(M, T, T) -> T,
 ) where
-    T: Copy + Default,
+    T: Copy,
     M: Copy,
 {
-    let mut output = vec![T::default(); lhs.len()];
-    group.throughput(Throughput::Elements(lhs.len() as u64));
+    assert_eq!(lhs.len(), rhs.len(), "scalar benchmark length mismatch");
+    assert!(!lhs.is_empty(), "scalar benchmark inputs must be non-empty");
+
+    let mut inputs = lhs.iter().copied().zip(rhs.iter().copied()).cycle();
     group.bench_function(name, |b| {
         let modulus = black_box(modulus);
-        b.iter(|| {
-            output
-                .iter_mut()
-                .zip(lhs)
-                .zip(rhs)
-                .for_each(|((output, &lhs), &rhs)| *output = operation(modulus, lhs, rhs));
-            black_box(&mut output);
-        })
+        b.iter_batched(
+            || {
+                inputs
+                    .next()
+                    .expect("scalar benchmark inputs must be non-empty")
+            },
+            |(lhs, rhs)| black_box(operation(modulus, black_box(lhs), black_box(rhs))),
+            BatchSize::SmallInput,
+        )
     });
 }
