@@ -99,6 +99,8 @@ where
     }
 
     /// Multiplies `self` by the monomial `X^r`, in place, for each modulus component.
+    ///
+    /// `r` must belong to `[0, 2N)`, where `N` is `poly_length`.
     pub fn mul_monomial_assign<M>(&mut self, r: usize, poly_length: usize, moduli: &[M])
     where
         M: Copy + ReduceNegSlice<T>,

@@ -1,7 +1,8 @@
+use num_traits::Signed;
 use primus_data::DataMut;
-use primus_distr::{DiscreteGaussian, SignedDiscreteGaussian};
-use primus_integer::{FheUint, UnsignedInteger};
-use primus_reduce::ReduceAddAssign;
+use primus_distr::SignedDiscreteGaussian;
+use primus_integer::{FheUint, SignedInteger, UnsignedInteger};
+use primus_reduce::{ExplicitModulus, ReduceAddAssign};
 use rand::distr::{Distribution, Uniform};
 
 use super::CrtPolynomial;
@@ -140,25 +141,55 @@ where
         )
     }
 
-    /// Adds discrete gaussian noise to each coefficient.
+    /// Adds the same discrete Gaussian sample to every CRT residue of each coefficient.
+    ///
+    /// Each modulus must canonically encode the complete truncated support of
+    /// `gaussian`. In debug builds, this method checks that the backing storage
+    /// contains exactly one polynomial per modulus.
     #[inline]
     pub fn add_random_gaussian_assign<R, M>(
         &mut self,
         poly_length: usize,
-        gaussian: &DiscreteGaussian<T>,
+        gaussian: &SignedDiscreteGaussian<<T as UnsignedInteger>::SignedInteger>,
         moduli: &[M],
         rng: &mut R,
     ) where
         R: rand::Rng + rand::CryptoRng,
-        M: Copy + ReduceAddAssign<T>,
+        M: Copy + ExplicitModulus<ValueT = T> + ReduceAddAssign<T>,
     {
-        self.iter_each_modulus_mut(poly_length)
-            .zip(moduli)
-            .for_each(|(poly, &modulus)| {
-                let rng = &mut *rng;
-                poly.iter_mut()
-                    .zip(gaussian.sample_iter(rng))
-                    .for_each(|(a, b)| modulus.reduce_add_assign(a, b));
-            });
+        debug_assert!(poly_length > 0, "CRT polynomial length must be nonzero");
+        debug_assert_eq!(
+            self.crt_poly_length(),
+            poly_length * moduli.len(),
+            "CRT polynomial storage length must equal polynomial length times the modulus count"
+        );
+
+        let values = self.as_mut_slice();
+        for coefficient in 0..poly_length {
+            let sample = gaussian.sample(rng);
+            if !sample.is_negative() {
+                let residue = sample.cast_to_unsigned();
+                for (value, &modulus) in values
+                    .iter_mut()
+                    .skip(coefficient)
+                    .step_by(poly_length)
+                    .zip(moduli)
+                {
+                    debug_assert!(residue < modulus.value());
+                    modulus.reduce_add_assign(value, residue);
+                }
+            } else {
+                for (value, &modulus) in values
+                    .iter_mut()
+                    .skip(coefficient)
+                    .step_by(poly_length)
+                    .zip(moduli)
+                {
+                    debug_assert!(sample.unsigned_abs() < modulus.value());
+                    let residue = modulus.value().wrapping_add_signed(sample);
+                    modulus.reduce_add_assign(value, residue);
+                }
+            }
+        }
     }
 }

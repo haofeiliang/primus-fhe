@@ -72,6 +72,8 @@ where
     }
 
     /// Multiplies `self` by the monomial `X^r` in the ring `Z_modulus[X]/(X^N + 1)`, in place.
+    ///
+    /// `r` must belong to `[0, 2N)`.
     pub fn mul_monomial_assign<M>(&mut self, r: usize, modulus: M)
     where
         M: Copy + ReduceNegSlice<T>,

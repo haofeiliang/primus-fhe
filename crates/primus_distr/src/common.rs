@@ -478,8 +478,8 @@ where
 /// precondition is not checked and must be established by the caller's
 /// parameter construction.
 ///
-/// In debug builds, this function checks that `result.len()` equals
-/// `length * moduli.len()`.
+/// In debug builds, this function checks that `length` is nonzero and that
+/// `result.len()` equals `length * moduli.len()`.
 pub fn sample_crt_gaussian_values_to<T, R>(
     result: &mut [T],
     length: usize,
@@ -490,6 +490,7 @@ pub fn sample_crt_gaussian_values_to<T, R>(
     T: FheUint,
     R: rand::Rng + rand::CryptoRng,
 {
+    debug_assert!(length > 0, "CRT polynomial length must be nonzero");
     debug_assert_eq!(
         result.len(),
         length * moduli.len(),
@@ -499,44 +500,21 @@ pub fn sample_crt_gaussian_values_to<T, R>(
         return;
     }
 
-    let iters: Vec<IterMut<'_, T>> = result
-        .chunks_exact_mut(length)
-        .map(|s| s.iter_mut())
-        .collect();
-    sample_crt_gaussian_values_iter_mut(iters, moduli, gaussian, rng);
-}
-
-fn sample_crt_gaussian_values_iter_mut<T, R>(
-    mut iters: Vec<IterMut<'_, T>>,
-    moduli: &[T],
-    gaussian: &SignedDiscreteGaussian<<T as UnsignedInteger>::SignedInteger>,
-    rng: &mut R,
-) where
-    T: FheUint,
-    R: rand::Rng + rand::CryptoRng,
-{
-    if iters.is_empty() {
-        return;
-    }
-
-    loop {
-        let r = gaussian.sample(rng);
-        if r >= <<T as UnsignedInteger>::SignedInteger as ConstZero>::ZERO {
-            let t: T = r.cast_to_unsigned();
-            for iter in iters.iter_mut() {
-                if let Some(value) = iter.next() {
-                    *value = t;
-                } else {
-                    return;
-                }
+    for coefficient in 0..length {
+        let sample = gaussian.sample(rng);
+        if sample >= <<T as UnsignedInteger>::SignedInteger as ConstZero>::ZERO {
+            let residue: T = sample.cast_to_unsigned();
+            for value in result.iter_mut().skip(coefficient).step_by(length) {
+                *value = residue;
             }
         } else {
-            for (iter, &modulus) in iters.iter_mut().zip(moduli) {
-                if let Some(value) = iter.next() {
-                    *value = <T as UnsignedInteger>::wrapping_add_signed(modulus, r);
-                } else {
-                    return;
-                }
+            for (value, &modulus) in result
+                .iter_mut()
+                .skip(coefficient)
+                .step_by(length)
+                .zip(moduli)
+            {
+                *value = <T as UnsignedInteger>::wrapping_add_signed(modulus, sample);
             }
         }
     }

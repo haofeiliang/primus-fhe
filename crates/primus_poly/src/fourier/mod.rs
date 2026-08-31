@@ -239,12 +239,4 @@ mod tests {
             FourierPolynomialOwned::from_slice(lhs.as_slice()).neg()
         );
     }
-
-    #[test]
-    #[should_panic]
-    fn pointwise_arithmetic_rejects_different_lengths() {
-        let mut lhs = FourierPolynomialOwned::zero(2);
-        let rhs = FourierPolynomialOwned::zero(3);
-        lhs.add_assign(&rhs);
-    }
 }

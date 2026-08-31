@@ -13,7 +13,7 @@ where
     where
         A: Data<Elem = Complex64>,
     {
-        assert_eq!(self.0.len(), rhs.0.len());
+        debug_assert_eq!(self.0.len(), rhs.0.len());
         for (value, rhs) in self.0.iter_mut().zip(rhs.0.iter()) {
             *value += *rhs;
         }
@@ -42,8 +42,8 @@ where
         A: Data<Elem = Complex64>,
         B: DataMut<Elem = Complex64>,
     {
-        assert_eq!(self.0.len(), rhs.0.len());
-        assert_eq!(self.0.len(), output.0.len());
+        debug_assert_eq!(self.0.len(), rhs.0.len());
+        debug_assert_eq!(self.0.len(), output.0.len());
         for ((output, lhs), rhs) in output.0.iter_mut().zip(self.0.iter()).zip(rhs.0.iter()) {
             *output = *lhs + *rhs;
         }

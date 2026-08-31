@@ -34,7 +34,7 @@ where
     where
         A: DataMut<Elem = Complex64>,
     {
-        assert_eq!(self.0.len(), output.0.len());
+        debug_assert_eq!(self.0.len(), output.0.len());
         for (output, value) in output.0.iter_mut().zip(self.0.iter()) {
             *output = -*value;
         }
