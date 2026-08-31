@@ -3,7 +3,7 @@ use std::f64::consts::{FRAC_1_SQRT_2, FRAC_2_SQRT_PI};
 use primus_integer::FheInt;
 use rand::{
     RngExt,
-    distr::{Distribution, Uniform},
+    distr::{Bernoulli, Distribution, Uniform},
 };
 
 use super::GaussianParameters;
@@ -29,6 +29,7 @@ pub(crate) struct ZigguratMagnitudeSampler<T: FheInt> {
     slope: Vec<f64>,
     sample_rectangle: Uniform<usize>,
     sample_x: Vec<Uniform<T>>,
+    zero_acceptance: Bernoulli,
     strategies: Vec<FallRegion>,
 }
 
@@ -137,6 +138,10 @@ impl<T: FheInt> ZigguratMagnitudeSampler<T> {
 
             x.push(maximum_magnitude);
             y.push(0.0);
+            // Zero is shared by both signs. Account for both that duplication
+            // and any first-layer height above or below the target PDF at zero.
+            let zero_acceptance = Bernoulli::new(0.5 / y[0])
+                .expect("a constructed Ziggurat has a valid first-layer height");
             let sample_x = x
                 .iter()
                 .map(|&value| Uniform::new_inclusive(T::ZERO, T::as_from(value.floor())).unwrap())
@@ -197,6 +202,7 @@ impl<T: FheInt> ZigguratMagnitudeSampler<T> {
                 slope,
                 sample_rectangle: Uniform::new_inclusive(1, rectangle_count).unwrap(),
                 sample_x,
+                zero_acceptance,
                 strategies,
             });
         }
@@ -219,7 +225,7 @@ impl<T: FheInt> ZigguratMagnitudeSampler<T> {
                 return (positive, magnitude);
             }
             if magnitude == T::ZERO {
-                if rng.random() {
+                if self.zero_acceptance.sample(rng) {
                     return (positive, T::ZERO);
                 }
                 continue;
@@ -260,5 +266,19 @@ impl<T: FheInt> ZigguratMagnitudeSampler<T> {
     #[inline(always)]
     fn pdf(&self, x: f64) -> f64 {
         (x * x * self.inverse_negative_twice_variance).exp()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn zero_acceptance_compensates_first_layer_height() {
+        let parameters = GaussianParameters::new(53.065, 12.0).unwrap();
+        let sampler = ZigguratMagnitudeSampler::<u64>::new(parameters).unwrap();
+
+        let corrected_zero_mass = sampler.zero_acceptance.p() * sampler.y[0];
+        assert!((corrected_zero_mass - 0.5).abs() < 1e-15);
     }
 }
