@@ -27,7 +27,7 @@ where
         A: Data<Elem = T>,
         B: Data<Elem = T>,
     {
-        assert_eq!(self.len(), rhs.len());
+        debug_assert_eq!(self.len(), rhs.len());
         let value_len = modulus.len();
         self.iter_mut(value_len)
             .zip(rhs.iter(value_len))
@@ -54,8 +54,8 @@ where
         B: DataMut<Elem = T>,
         C: Data<Elem = T>,
     {
-        assert_eq!(self.len(), rhs.len());
-        assert_eq!(self.len(), output.len());
+        debug_assert_eq!(self.len(), rhs.len());
+        debug_assert_eq!(self.len(), output.len());
         let value_len = modulus.len();
         izip!(
             self.iter(value_len),
@@ -74,7 +74,7 @@ where
         A: DataMut<Elem = T>,
         C: Data<Elem = T>,
     {
-        assert_eq!(self.len(), rhs.len());
+        debug_assert_eq!(self.len(), rhs.len());
         let value_len = modulus.len();
         rhs.iter_mut(value_len)
             .zip(self.iter(value_len))

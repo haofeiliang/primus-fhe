@@ -42,7 +42,7 @@ where
         A: DataMut<Elem = T>,
         B: Data<Elem = T>,
     {
-        assert_eq!(self.len(), output.len());
+        debug_assert_eq!(self.len(), output.len());
         let value_len = modulus.len();
         output
             .iter_mut(value_len)
