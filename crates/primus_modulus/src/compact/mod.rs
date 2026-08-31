@@ -45,6 +45,10 @@ impl<T: FheUint> primus_reduce::Modulus for CompactModulus<T> {
 
     #[inline(always)]
     fn minus_one(self) -> Self::ValueT {
+        debug_assert!(
+            self.0 > T::ONE,
+            "CompactModulus value must be greater than one"
+        );
         self.0 - T::ONE
     }
 }

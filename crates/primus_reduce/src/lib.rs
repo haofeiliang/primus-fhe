@@ -65,8 +65,9 @@ pub trait Modulus: Copy + core::fmt::Debug + Eq + Send + Sync {
     ///
     /// # Panics
     ///
-    /// Never panics for unsigned [`Modulus`] impls: the constructed range
-    /// `[0, minus_one()]` is always non-empty.
+    /// May panic if `self` does not satisfy the concrete implementation's
+    /// modulus invariant. For a valid modulus, the constructed range
+    /// `[0, minus_one()]` is non-empty.
     #[must_use]
     #[inline]
     fn uniform_distribution(self) -> Uniform<Self::ValueT> {

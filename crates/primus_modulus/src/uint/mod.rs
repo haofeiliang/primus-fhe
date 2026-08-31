@@ -41,6 +41,10 @@ impl<T: FheUint> primus_reduce::Modulus for UintModulus<T> {
 
     #[inline(always)]
     fn minus_one(self) -> Self::ValueT {
+        debug_assert!(
+            self.0 > T::ONE,
+            "UintModulus value must be greater than one"
+        );
         self.0 - T::ONE
     }
 }
