@@ -347,6 +347,11 @@ pub fn sample_crt_ternary_values_to<T, R>(
     R: rand::Rng + rand::CryptoRng,
 {
     debug_assert_eq!(result.len(), moduli_minus_one.len() * length);
+
+    if result.is_empty() {
+        return;
+    }
+
     let mut iters: Vec<IterMut<'_, T>> = result
         .chunks_exact_mut(length)
         .map(|s| s.iter_mut())
