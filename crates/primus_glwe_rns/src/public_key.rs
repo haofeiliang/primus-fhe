@@ -98,7 +98,7 @@ impl<T: FheUint> DcrtGlwePublicKey<T> {
         let mut result = DcrtGlwe::zero(dcrt_glwe_len);
         let mut v = vec![T::ZERO; rns_poly_len];
 
-        primus_distr::sample_crt_ternary_values_to(
+        primus_distr::sample_crt_sparse_ternary_values_to(
             &mut v,
             poly_length,
             params.cipher_moduli_minus_one(),
@@ -156,7 +156,7 @@ impl<T: FheUint> DcrtGlwePublicKey<T> {
             .iter_dcrt_glwe_mut(dcrt_glwe_len)
             .zip(params.basis().iter_scalar_residues())
             .for_each(|(mut dcrt_glwe, scalar_residues)| {
-                primus_distr::sample_crt_ternary_values_to(
+                primus_distr::sample_crt_sparse_ternary_values_to(
                     v,
                     poly_length,
                     params.cipher_moduli_minus_one(),

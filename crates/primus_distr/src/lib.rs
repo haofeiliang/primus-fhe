@@ -25,9 +25,9 @@
 //!
 //! # Batch sampling
 //!
-//! Utility functions support efficient batch generation of vectors —
-//! including CRT (Chinese remainder theorem) interleaved layouts where
-//! values are replicated across multiple modulus slots.
+//! Utility functions support efficient batch generation of vectors,
+//! including modulus-major CRT (Chinese remainder theorem) layouts where each
+//! logical value is encoded under every component modulus.
 
 mod error;
 mod gaussian_core;

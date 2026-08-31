@@ -67,8 +67,7 @@ impl<T: FheUint> NttNtruSecretKey<T> {
         ntt_table.transform_slice(key.as_mut());
 
         let mut inv_key = NttPolynomialOwned::zero(poly_length);
-        modulus
-            .try_reduce_inv_slice_to(key.as_ref(), inv_key.as_mut())
+        key.try_inv_to(&mut inv_key, modulus)
             .map_err(|_| NtruError::NonInvertibleSecretKey)?;
 
         debug_assert!(

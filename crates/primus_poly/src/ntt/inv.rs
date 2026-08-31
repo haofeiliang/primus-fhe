@@ -1,6 +1,6 @@
 use primus_data::{Data, DataMut};
 use primus_integer::FheUint;
-use primus_reduce::ReduceInvSlice;
+use primus_reduce::{ReduceError, ReduceInvSlice, TryReduceInvSlice};
 
 use super::NttPolynomial;
 
@@ -13,7 +13,8 @@ where
     ///
     /// # Correctness
     ///
-    /// `output.poly_length()` must equal `self.poly_length()`.
+    /// - `output.poly_length()` equals `self.poly_length()`
+    /// - Every input value is less than `modulus`
     ///
     /// # Panics
     ///
@@ -25,5 +26,29 @@ where
         A: DataMut<Elem = T>,
     {
         modulus.reduce_inv_slice_to(self.as_slice(), output.as_mut_slice());
+    }
+
+    /// Attempts to write the point-wise inverse in the NTT domain to `output`.
+    ///
+    /// # Correctness
+    ///
+    /// - `output.poly_length()` equals `self.poly_length()`
+    /// - Every input value is less than `modulus`
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`ReduceError`] if any point value has no inverse modulo
+    /// `modulus`. `output` may be modified when an error is returned.
+    #[inline]
+    pub fn try_inv_to<M, A>(
+        &self,
+        output: &mut NttPolynomial<A>,
+        modulus: M,
+    ) -> Result<(), ReduceError<T>>
+    where
+        M: Copy + TryReduceInvSlice<T>,
+        A: DataMut<Elem = T>,
+    {
+        modulus.try_reduce_inv_slice_to(self.as_slice(), output.as_mut_slice())
     }
 }

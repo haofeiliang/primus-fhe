@@ -13,9 +13,9 @@ English | [简体中文](README.zh_CN.md)
 | --- | --- | --- |
 | `ArrayBase<S>` | Flat unsigned-integer array | Element-wise modular arithmetic and butterfly helpers |
 | `Polynomial<S>` | `N` coefficients in ascending-power order under one modulus | Add, subtract, negate, scalar/factor multiplication, negacyclic monomials, naive multiplication, evaluation, and sampling |
-| `NttPolynomial<S>` | `N` point values under one modulus; ordering is defined by the NTT context | Point-wise arithmetic, fused multiply-add, inverse, and sampling |
-| `CrtPolynomial<S>` | Modulus-major coefficient data: one contiguous `N`-coefficient polynomial per modulus | Component-wise arithmetic, scalar/factor operations, negacyclic monomials, and shared binary/ternary/Gaussian sampling |
-| `DcrtPolynomial<S>` | Modulus-major NTT data: one contiguous `N`-value transform per modulus | Point-wise arithmetic, fused multiply-add, inverse, and butterfly kernels |
+| `NttPolynomial<S>` | `N` point values under one modulus; ordering is defined by the NTT context | Point-wise arithmetic, fused multiply-add, inverse, and uniform sampling |
+| `CrtPolynomial<S>` | Modulus-major coefficient data: one contiguous `N`-coefficient polynomial per modulus | Component-wise arithmetic, scalar/factor operations, negacyclic monomials, and shared uniform-binary/sparse-ternary/Gaussian sampling |
+| `DcrtPolynomial<S>` | Modulus-major NTT data: one contiguous `N`-value transform per modulus | Point-wise arithmetic, fused multiply-add, inverse, uniform sampling, and butterfly kernels |
 | `BigUintPolynomial<S>` | Coefficient-major data: each coefficient is a fixed-width little-endian limb chunk | Multi-limb modular add, subtract, and negate |
 | `FourierPolynomial<S>` | Independent complex evaluations; ordering is defined by the Fourier backend | Point-wise add, subtract, negate, multiply, fused multiply-add, and scalar multiplication |
 
@@ -67,7 +67,7 @@ Many shape checks in repeated arithmetic paths are `debug_assert*!` diagnostics.
 
 ## Random sampling
 
-Depending on the representation, the crate provides uniform, binary, ternary, and discrete-Gaussian constructors and in-place fills. CRT binary, ternary, and Gaussian sampling draw one logical coefficient and encode that same value under every component modulus. Random APIs require an RNG implementing both `rand::Rng` and `rand::CryptoRng`.
+Direct NTT and DCRT sampling is uniform. To sample a non-uniform coefficient distribution, construct a coefficient-domain `Polynomial` or `CrtPolynomial` and then transform it. CRT uniform-binary, sparse-ternary, and Gaussian sampling draw one logical coefficient and encode that same value under every component modulus. The sparse ternary distribution has `P(0) = 1/2` and `P(1) = P(-1) = 1/4`. Random APIs require an RNG implementing both `rand::Rng` and `rand::CryptoRng`.
 
 ## SIMD feature
 

@@ -91,7 +91,10 @@ where
     result
 }
 
-/// Sample a ternary vector whose values are `T`.
+/// Samples sparse ternary values.
+///
+/// Values have probabilities `P(0) = 1/2` and `P(1) = P(-1) = 1/4`.
+/// `minus_one` encodes `-1`.
 pub fn sample_sparse_ternary_values<T, R>(minus_one: T, length: usize, rng: &mut R) -> Vec<T>
 where
     T: FheInt,
@@ -102,7 +105,10 @@ where
     v
 }
 
-/// Sample a ternary vector whose values are `T`.
+/// Fills `result` with sparse ternary values.
+///
+/// Values have probabilities `P(0) = 1/2` and `P(1) = P(-1) = 1/4`.
+/// `minus_one` encodes `-1`.
 pub fn sample_sparse_ternary_values_to<T, R>(result: &mut [T], minus_one: T, rng: &mut R)
 where
     T: FheInt,
@@ -288,28 +294,32 @@ where
         .for_each(|(a, b)| *a = b);
 }
 
-/// Sample a CRT-layout binary vector.
+/// Samples CRT-layout uniform binary values.
 ///
 /// Generates `length` binary values and replicates them across `moduli_count`
 /// slots, producing a vector of `length * moduli_count` elements in
-/// CRT-interleaved order.
-pub fn sample_crt_binary_values<T, R>(length: usize, moduli_count: usize, rng: &mut R) -> Vec<T>
+/// modulus-major CRT order.
+pub fn sample_crt_uniform_binary_values<T, R>(
+    length: usize,
+    moduli_count: usize,
+    rng: &mut R,
+) -> Vec<T>
 where
     T: FheInt,
     R: rand::Rng + rand::CryptoRng,
 {
     let mut result = vec![T::ZERO; length * moduli_count];
 
-    sample_crt_binary_values_to(&mut result, length, rng);
+    sample_crt_uniform_binary_values_to(&mut result, length, rng);
 
     result
 }
 
-/// Fill `result` with CRT-layout binary values (in-place).
+/// Fills `result` with CRT-layout uniform binary values.
 ///
 /// Samples `length` binary values into the first chunk, then copies them
 /// into each subsequent chunk of `length` elements.
-pub fn sample_crt_binary_values_to<T, R>(result: &mut [T], length: usize, rng: &mut R)
+pub fn sample_crt_uniform_binary_values_to<T, R>(result: &mut [T], length: usize, rng: &mut R)
 where
     T: FheInt,
     R: rand::Rng + rand::CryptoRng,
@@ -322,8 +332,16 @@ where
         .for_each(|s| s.copy_from_slice(v));
 }
 
-/// Sample a ternary vector whose values are `T`.
-pub fn sample_crt_ternary_values<T, R>(length: usize, moduli_minus_one: &[T], rng: &mut R) -> Vec<T>
+/// Samples CRT-layout sparse ternary values.
+///
+/// Each logical value is shared by every modulus component and has
+/// probabilities `P(0) = 1/2` and `P(1) = P(-1) = 1/4`.
+/// `moduli_minus_one[i]` encodes `-1` in component `i`.
+pub fn sample_crt_sparse_ternary_values<T, R>(
+    length: usize,
+    moduli_minus_one: &[T],
+    rng: &mut R,
+) -> Vec<T>
 where
     T: FheInt,
     R: rand::Rng + rand::CryptoRng,
@@ -331,13 +349,17 @@ where
     let moduli_count = moduli_minus_one.len();
     let mut result = vec![T::ZERO; length * moduli_count];
 
-    sample_crt_ternary_values_to(&mut result, length, moduli_minus_one, rng);
+    sample_crt_sparse_ternary_values_to(&mut result, length, moduli_minus_one, rng);
 
     result
 }
 
-/// Sample a ternary vector whose values are `T`.
-pub fn sample_crt_ternary_values_to<T, R>(
+/// Fills `result` with CRT-layout sparse ternary values.
+///
+/// Each logical value is shared by every modulus component and has
+/// probabilities `P(0) = 1/2` and `P(1) = P(-1) = 1/4`.
+/// `moduli_minus_one[i]` encodes `-1` in component `i`.
+pub fn sample_crt_sparse_ternary_values_to<T, R>(
     result: &mut [T],
     length: usize,
     moduli_minus_one: &[T],

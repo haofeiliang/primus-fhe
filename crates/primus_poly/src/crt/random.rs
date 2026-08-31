@@ -8,28 +8,32 @@ use rand::distr::{Distribution, Uniform};
 use super::CrtPolynomial;
 
 impl<T: FheUint> CrtPolynomial<Vec<T>> {
-    /// Generate a random binary [`CrtPolynomial<Vec<T>, T>`].
+    /// Generates a CRT polynomial with shared uniform binary coefficients.
     #[must_use]
     #[inline]
-    pub fn random_binary<R>(poly_length: usize, moduli_count: usize, rng: &mut R) -> Self
+    pub fn random_uniform_binary<R>(poly_length: usize, moduli_count: usize, rng: &mut R) -> Self
     where
         R: rand::Rng + rand::CryptoRng,
     {
-        Self(primus_distr::sample_crt_binary_values(
+        Self(primus_distr::sample_crt_uniform_binary_values(
             poly_length,
             moduli_count,
             rng,
         ))
     }
 
-    /// Generate a random ternary [`CrtPolynomial<Vec<T>, T>`].
+    /// Generates a sparse ternary CRT polynomial.
+    ///
+    /// Each logical coefficient is shared by every modulus component and has
+    /// probabilities `P(0) = 1/2` and `P(1) = P(-1) = 1/4`.
+    /// `moduli_minus_one[i]` encodes `-1` in component `i`.
     #[must_use]
     #[inline]
-    pub fn random_ternary<R>(poly_length: usize, moduli_minus_one: &[T], rng: &mut R) -> Self
+    pub fn random_sparse_ternary<R>(poly_length: usize, moduli_minus_one: &[T], rng: &mut R) -> Self
     where
         R: rand::Rng + rand::CryptoRng,
     {
-        Self(primus_distr::sample_crt_ternary_values(
+        Self(primus_distr::sample_crt_sparse_ternary_values(
             poly_length,
             moduli_minus_one,
             rng,
@@ -76,18 +80,22 @@ where
     S: DataMut<Elem = T>,
     T: FheUint,
 {
-    /// Fill with random binary values.
+    /// Fills this polynomial with shared uniform binary coefficients.
     #[inline]
-    pub fn random_binary_assign<R>(&mut self, poly_length: usize, rng: &mut R)
+    pub fn random_uniform_binary_assign<R>(&mut self, poly_length: usize, rng: &mut R)
     where
         R: rand::Rng + rand::CryptoRng,
     {
-        primus_distr::sample_crt_binary_values_to(self.as_mut_slice(), poly_length, rng)
+        primus_distr::sample_crt_uniform_binary_values_to(self.as_mut_slice(), poly_length, rng)
     }
 
-    /// Fill with random ternary values.
+    /// Fills this polynomial with shared sparse ternary values.
+    ///
+    /// Each logical coefficient has probabilities `P(0) = 1/2` and
+    /// `P(1) = P(-1) = 1/4`. `moduli_minus_one[i]` encodes `-1` in component
+    /// `i`.
     #[inline]
-    pub fn random_ternary_assign<R>(
+    pub fn random_sparse_ternary_assign<R>(
         &mut self,
         poly_length: usize,
         moduli_minus_one: &[T],
@@ -95,7 +103,7 @@ where
     ) where
         R: rand::Rng + rand::CryptoRng,
     {
-        primus_distr::sample_crt_ternary_values_to(
+        primus_distr::sample_crt_sparse_ternary_values_to(
             self.as_mut_slice(),
             poly_length,
             moduli_minus_one,

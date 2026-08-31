@@ -13,9 +13,9 @@
 | --- | --- | --- |
 | `ArrayBase<S>` | 无符号整数的一维平坦数组 | 逐元素模算术与 butterfly helper |
 | `Polynomial<S>` | 单个模数下按幂次递增排列的 `N` 个系数 | 加、减、取负、scalar/factor 乘法、负循环单项式、朴素乘法、求值和采样 |
-| `NttPolynomial<S>` | 单个模数下的 `N` 个点值；顺序由 NTT context 定义 | 逐点算术、融合乘加、逆元和采样 |
-| `CrtPolynomial<S>` | modulus-major 系数数据：每个模数对应一个连续的 `N` 系数多项式 | 分量算术、scalar/factor 操作、负循环单项式以及共享的 binary/ternary/Gaussian 采样 |
-| `DcrtPolynomial<S>` | modulus-major NTT 数据：每个模数对应一个连续的 `N` 点变换结果 | 逐点算术、融合乘加、逆元和 butterfly 内核 |
+| `NttPolynomial<S>` | 单个模数下的 `N` 个点值；顺序由 NTT context 定义 | 逐点算术、融合乘加、逆元和 uniform 采样 |
+| `CrtPolynomial<S>` | modulus-major 系数数据：每个模数对应一个连续的 `N` 系数多项式 | 分量算术、scalar/factor 操作、负循环单项式以及共享的 uniform-binary/sparse-ternary/Gaussian 采样 |
+| `DcrtPolynomial<S>` | modulus-major NTT 数据：每个模数对应一个连续的 `N` 点变换结果 | 逐点算术、融合乘加、逆元、uniform 采样和 butterfly 内核 |
 | `BigUintPolynomial<S>` | coefficient-major 数据：每个系数是固定宽度的小端 limb 分块 | 多 limb 模加、模减和模取负 |
 | `FourierPolynomial<S>` | 独立复数求值；顺序由 Fourier 后端定义 | 逐点加、减、取负、乘法、融合乘加和 scalar 乘法 |
 
@@ -67,7 +67,7 @@ assert_eq!(lhs.as_slice(), &[84, 13, 21, 4]);
 
 ## 随机采样
 
-根据具体表示，crate 提供 uniform、binary、ternary 和离散 Gaussian 构造器与原地填充操作。CRT binary、ternary 和 Gaussian 采样会生成一个逻辑系数，并在每个分量模数下编码同一个值。随机 API 要求 RNG 同时实现 `rand::Rng` 和 `rand::CryptoRng`。
+直接在 NTT 和 DCRT 表示中进行的采样仅支持 uniform 分布。若要采样非 uniform 的系数分布，应先构造系数域的 `Polynomial` 或 `CrtPolynomial`，再执行变换。CRT uniform-binary、sparse-ternary 和 Gaussian 采样会生成一个逻辑系数，并在每个分量模数下编码同一个值；其中 sparse ternary 分布满足 `P(0) = 1/2`、`P(1) = P(-1) = 1/4`。随机 API 要求 RNG 同时实现 `rand::Rng` 和 `rand::CryptoRng`。
 
 ## SIMD feature
 
