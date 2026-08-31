@@ -191,7 +191,9 @@ where
     /// `(self, result) = (self + rhs, (self_orig - rhs) * w)`.
     ///
     /// `self` and `rhs` are expected in `[0, q)`. Both outputs are written
-    /// back in `[0, q)`.
+    /// back in `[0, q)`. `w` is a modulus-major factor polynomial with one
+    /// factor per stored point, so its length equals the backing length of each
+    /// DCRT polynomial.
     #[inline]
     pub fn butterfly_mul_factor_to<F, A, B>(
         &mut self,
@@ -205,6 +207,13 @@ where
         A: Data<Elem = T>,
         B: DataMut<Elem = T>,
     {
+        debug_assert!(poly_length > 0);
+        let dcrt_poly_length = self.dcrt_poly_length();
+        debug_assert_eq!(dcrt_poly_length, rhs.dcrt_poly_length());
+        debug_assert_eq!(dcrt_poly_length, w.len());
+        debug_assert_eq!(dcrt_poly_length, output.dcrt_poly_length());
+        debug_assert_eq!(dcrt_poly_length, moduli.len() * poly_length);
+
         izip!(
             self.iter_each_modulus_mut(poly_length),
             rhs.iter_each_modulus(poly_length),

@@ -58,7 +58,7 @@ assert_eq!(lhs.as_slice(), &[84, 13, 21, 4]);
 
 - 一起参与运算的所有输入和输出具有相同表示与布局；
 - backing storage 能被传入的多项式长度或多 limb 系数宽度精确整除；
-- CRT/DCRT 存储长度等于 `moduli.len() * poly_length`，scalar、factor、distribution 和 modulus slice 均为每个分量提供一个元素；
+- CRT/DCRT 存储长度等于 `moduli.len() * poly_length`；按分量使用的 scalar、factor、distribution 和 modulus slice 均为每个分量提供一个元素，而 butterfly `w` 这类逐点 factor polynomial 与 backing storage 具有相同的 modulus-major 布局和长度；
 - 数值满足所选 `primus_reduce` 或 `primus_factor` 操作要求的规范或惰性范围；
 - 单项式指数位于对应文档规定的 `[0, 2N)` 范围内，需要二次幂 `N` 的方法收到满足条件的长度；
 - NTT 和 Fourier 操作数由相互兼容的变换 context 产生。

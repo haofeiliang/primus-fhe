@@ -1,6 +1,5 @@
 use std::slice::IterMut;
 
-use itertools::Itertools;
 use num_traits::ConstZero;
 use primus_integer::{FheInt, FheUint, SignedInteger, UnsignedInteger};
 use rand::{
@@ -417,9 +416,9 @@ pub fn sample_crt_sparse_ternary_values_to<T, R>(
     }
 }
 
-/// Sample a uniform vector whose values are `T`.
+/// Samples a uniform vector in modulus-major CRT layout.
 pub fn sample_crt_uniform_values<T, R>(
-    length: usize,
+    poly_length: usize,
     uniform_distrs: &[Uniform<T>],
     rng: &mut R,
 ) -> Vec<T>
@@ -427,26 +426,36 @@ where
     T: FheInt,
     R: rand::Rng + rand::CryptoRng,
 {
-    let mut result = vec![T::ZERO; length * uniform_distrs.len()];
+    let mut result = vec![T::ZERO; poly_length * uniform_distrs.len()];
 
-    sample_crt_uniform_values_to(&mut result, length, uniform_distrs, rng);
+    sample_crt_uniform_values_to(&mut result, poly_length, uniform_distrs, rng);
 
     result
 }
 
-/// Sample a uniform vector whose values are `T`.
+/// Fills a slice with uniform samples in modulus-major CRT layout.
+///
+/// In debug builds, this function checks that `poly_length` is nonzero and
+/// that `result.len()` equals `poly_length * uniform_distrs.len()`.
 pub fn sample_crt_uniform_values_to<T, R>(
     result: &mut [T],
-    length: usize,
+    poly_length: usize,
     uniform_distrs: &[Uniform<T>],
     rng: &mut R,
 ) where
     T: FheInt,
     R: rand::Rng + rand::CryptoRng,
 {
+    debug_assert!(poly_length > 0, "CRT polynomial length must be nonzero");
+    debug_assert_eq!(
+        result.len(),
+        poly_length * uniform_distrs.len(),
+        "CRT uniform output length must equal polynomial length times the distribution count"
+    );
+
     result
-        .chunks_exact_mut(length)
-        .zip_eq(uniform_distrs)
+        .chunks_exact_mut(poly_length)
+        .zip(uniform_distrs)
         .for_each(|(s, u)| {
             s.iter_mut()
                 .zip(u.sample_iter(&mut *rng))

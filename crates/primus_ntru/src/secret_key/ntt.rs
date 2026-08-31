@@ -48,7 +48,7 @@ impl<T: FheUint> NttNtruSecretKey<T> {
     /// # Errors
     ///
     /// Returns [`NtruError::NonInvertibleSecretKey`] if an NTT evaluation of
-    /// `f` is zero.
+    /// `f` is not invertible modulo `modulus`.
     pub fn try_from_coeff_secret_key<M, Table>(
         secret_key: &NtruSecretKey<T>,
         modulus: M,

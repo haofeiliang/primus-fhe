@@ -58,7 +58,7 @@ The wrappers deliberately do not store polynomial length, modulus values, transf
 
 - all operands and outputs participating in one operation have the same representation and layout;
 - backing storage is exactly divisible by the supplied polynomial length or multi-limb coefficient width;
-- CRT/DCRT storage has length `moduli.len() * poly_length`, and scalar, factor, distribution, and modulus slices contain one entry per component;
+- CRT/DCRT storage has length `moduli.len() * poly_length`; component-wise scalar, factor, distribution, and modulus slices contain one entry per component, while per-point factor polynomials such as butterfly `w` have the same modulus-major layout and length as the backing storage;
 - values satisfy the canonical or lazy range required by the selected `primus_reduce` or `primus_factor` operation;
 - monomial exponents belong to the documented `[0, 2N)` range, and methods requiring a power-of-two `N` receive one;
 - NTT and Fourier operands were produced for compatible transform contexts.
