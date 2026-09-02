@@ -123,6 +123,12 @@ pub trait MonomialNttTable: NttTable {
     fn inv_root_powers(&self) -> &[Self::ValueT];
 
     /// Transforms the monomial `coeff * X^degree` directly into NTT form.
+    ///
+    /// # Correctness
+    ///
+    /// `coeff` must be a canonical residue modulo [`NttTable::modulus`], that
+    /// is, it must lie in `[0, self.modulus())`. This method does not reduce
+    /// `coeff` before using it.
     fn transform_monomial(&self, coeff: Self::ValueT, degree: usize, values: &mut [Self::ValueT]) {
         let n = self.poly_length();
         assert_ntt_length(values.len(), n);

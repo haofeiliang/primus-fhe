@@ -152,6 +152,12 @@ where
     Ntt: MonomialNttTable,
 {
     /// Transforms `coeff * X^degree` for every CRT modulus.
+    ///
+    /// # Correctness
+    ///
+    /// `coeff` must be a canonical residue for every CRT modulus, that is,
+    /// `coeff < table.modulus()` for every table in `self`. This method does
+    /// not reduce `coeff` separately for each CRT limb.
     pub fn transform_monomial(
         &self,
         coeff: Ntt::ValueT,
