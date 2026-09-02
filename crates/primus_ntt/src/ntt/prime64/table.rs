@@ -16,20 +16,18 @@ use crate::{
 
 #[cfg(target_arch = "x86_64")]
 use super::avx2::precompute::build_avx2_roots_u64;
-use super::scalar;
+use super::{precompute::build_barrett_vector, scalar};
 
 /// Backend selector for `U64NttTable`.
+#[cfg(target_arch = "x86_64")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum U64Backend {
     Scalar,
     /// AVX2 backend — available on x86_64 with `avx2` target feature.
-    #[cfg(target_arch = "x86_64")]
     Avx2,
     /// AVX-512 DQ backend — available on x86_64 with `avx512f` + `avx512dq`.
-    #[cfg(target_arch = "x86_64")]
     Avx512Dq,
     /// AVX-512 IFMA backend — available on x86_64 with `avx512ifma` + `avx512dq`.
-    #[cfg(target_arch = "x86_64")]
     Avx512Ifma,
 }
 
@@ -123,6 +121,7 @@ pub struct U64NttTable {
     #[cfg(target_arch = "x86_64")]
     inv_roots_precon52: AVec<u64>,
 
+    #[cfg(target_arch = "x86_64")]
     backend: U64Backend,
 }
 
@@ -172,6 +171,9 @@ impl U64NttTable {
     /// Priority: IFMA → DQ → AVX2 → scalar.
     fn dispatch_forward(&self, values: &mut [u64], input_mod_factor: u32, output_mod_factor: u32) {
         assert_ntt_length(values.len(), self.n);
+
+        #[cfg(not(target_arch = "x86_64"))]
+        let _ = input_mod_factor;
 
         #[cfg(target_arch = "x86_64")]
         if self.n >= 16 {
@@ -248,6 +250,9 @@ impl U64NttTable {
     /// Priority: IFMA → DQ → AVX2 → scalar.
     fn dispatch_inverse(&self, values: &mut [u64], input_mod_factor: u32, output_mod_factor: u32) {
         assert_ntt_length(values.len(), self.n);
+
+        #[cfg(not(target_arch = "x86_64"))]
+        let _ = input_mod_factor;
 
         #[cfg(target_arch = "x86_64")]
         if self.n >= 16 {
@@ -370,7 +375,7 @@ impl NttTable for U64NttTable {
         // Barrett-32 precons for scalar fast path (and reused by AVX-512 DQ-32
         // inverse).  Built unconditionally when q is small enough.
         let roots_precon32 = if low_q {
-            super::avx512::precompute::build_barrett_vector(&roots, 32, q)
+            build_barrett_vector(&roots, 32, q)
         } else {
             AVec::with_capacity(64, 0)
         };
@@ -410,12 +415,10 @@ impl NttTable for U64NttTable {
         // --- backend selector (best available) ---
         #[cfg(target_arch = "x86_64")]
         let backend = select_u64_backend(*HAS_AVX512IFMA, *HAS_AVX512DQ, *HAS_AVX2);
-        #[cfg(not(target_arch = "x86_64"))]
-        let backend = U64Backend::Scalar;
 
         // Scalar Barrett-32 and AVX-512DQ-32 share the same q < 2^30 bound.
         let inv_roots_precon32 = if low_q {
-            super::avx512::precompute::build_barrett_vector(&inv_roots, 32, q)
+            build_barrett_vector(&inv_roots, 32, q)
         } else {
             AVec::with_capacity(64, 0)
         };
@@ -456,10 +459,10 @@ impl NttTable for U64NttTable {
             inv_roots_precon52,
         ) = if use_avx512 {
             let ar = super::avx512::precompute::build_avx512_root_powers(n, &roots);
-            let arp32 = super::avx512::precompute::build_barrett_vector(&ar, 32, q);
-            let arp52 = super::avx512::precompute::build_barrett_vector(&ar, 52, q);
-            let arp64 = super::avx512::precompute::build_barrett_vector(&ar, 64, q);
-            let irp52 = super::avx512::precompute::build_barrett_vector(&inv_roots, 52, q);
+            let arp32 = build_barrett_vector(&ar, 32, q);
+            let arp52 = build_barrett_vector(&ar, 52, q);
+            let arp64 = build_barrett_vector(&ar, 64, q);
+            let irp52 = build_barrett_vector(&inv_roots, 52, q);
             (ar, arp32, arp52, arp64, irp52)
         } else {
             (
@@ -509,6 +512,7 @@ impl NttTable for U64NttTable {
             inv_roots_precon32,
             #[cfg(target_arch = "x86_64")]
             inv_roots_precon52,
+            #[cfg(target_arch = "x86_64")]
             backend,
         })
     }

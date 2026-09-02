@@ -1,5 +1,4 @@
 use aligned_vec::AVec;
-use primus_factor::MultiplyFactor;
 
 /// Builds the AVX512-specialized root-of-unity power arrangement with T4/T2
 /// duplication to avoid extra permutations during loading.
@@ -30,16 +29,4 @@ pub fn build_avx512_root_powers(n: usize, root_of_unity_powers: &[u64]) -> AVec<
     avx512_roots.extend_from_slice(&root_of_unity_powers[n / 2..]);
 
     avx512_roots
-}
-
-/// Computes a Barrett-preconditioned vector for a given bit-shift.
-///
-/// For each `value` in `values`, computes `floor(value * 2^bit_shift / q)`.
-pub fn build_barrett_vector(values: &[u64], bit_shift: u32, q: u64) -> AVec<u64> {
-    AVec::from_iter(
-        64,
-        values
-            .iter()
-            .map(|&value| MultiplyFactor::new(value, bit_shift, q).quotient()),
-    )
 }
