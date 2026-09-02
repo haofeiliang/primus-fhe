@@ -28,9 +28,23 @@ enum U64Backend {
     /// AVX-512 DQ backend — available on x86_64 with `avx512f` + `avx512dq`.
     #[cfg(target_arch = "x86_64")]
     Avx512Dq,
-    /// AVX-512 IFMA backend — available on x86_64 with `avx512ifma`.
+    /// AVX-512 IFMA backend — available on x86_64 with `avx512ifma` + `avx512dq`.
     #[cfg(target_arch = "x86_64")]
     Avx512Ifma,
+}
+
+#[cfg(target_arch = "x86_64")]
+fn select_u64_backend(has_avx512_ifma: bool, has_avx512_dq: bool, has_avx2: bool) -> U64Backend {
+    // The IFMA inverse and 64-bit fallback paths use AVX-512DQ instructions.
+    if has_avx512_ifma && has_avx512_dq {
+        U64Backend::Avx512Ifma
+    } else if has_avx512_dq {
+        U64Backend::Avx512Dq
+    } else if has_avx2 {
+        U64Backend::Avx2
+    } else {
+        U64Backend::Scalar
+    }
 }
 
 /// Specialized NTT table for `u64` coefficients.
@@ -395,17 +409,7 @@ impl NttTable for U64NttTable {
 
         // --- backend selector (best available) ---
         #[cfg(target_arch = "x86_64")]
-        let backend = {
-            if *HAS_AVX512IFMA {
-                U64Backend::Avx512Ifma
-            } else if *HAS_AVX512DQ {
-                U64Backend::Avx512Dq
-            } else if *HAS_AVX2 {
-                U64Backend::Avx2
-            } else {
-                U64Backend::Scalar
-            }
-        };
+        let backend = select_u64_backend(*HAS_AVX512IFMA, *HAS_AVX512DQ, *HAS_AVX2);
         #[cfg(not(target_arch = "x86_64"))]
         let backend = U64Backend::Scalar;
 
@@ -576,6 +580,17 @@ mod tests {
 
     use super::*;
     use crate::UintNttTable;
+
+    #[test]
+    fn ifma_backend_requires_avx512_dq() {
+        assert_eq!(select_u64_backend(true, false, true), U64Backend::Avx2);
+        assert_eq!(select_u64_backend(true, false, false), U64Backend::Scalar);
+        assert_eq!(
+            select_u64_backend(true, true, false),
+            U64Backend::Avx512Ifma
+        );
+        assert_eq!(select_u64_backend(false, true, false), U64Backend::Avx512Dq);
+    }
 
     #[test]
     fn avx512_dq_inverse_matches_generic_across_32_bit_modulus_limit() {
