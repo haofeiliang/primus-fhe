@@ -260,7 +260,7 @@ impl NttTable for U32NttTable {
         // --- backend-specific pre-expanded root tables ---
         // Only build for the selected backend to save memory and init time.
         #[cfg(target_arch = "x86_64")]
-        let use_avx2 = matches!(backend, U32Backend::Avx2 | U32Backend::Avx512);
+        let use_avx2 = matches!(backend, U32Backend::Avx2);
         #[cfg(target_arch = "x86_64")]
         let use_avx512 = matches!(backend, U32Backend::Avx512);
 

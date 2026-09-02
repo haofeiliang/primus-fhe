@@ -8,21 +8,11 @@ pub(crate) const DEFAULT_SHIFT_BITS: u32 = 64;
 /// acceleration is enabled
 pub(crate) const IFMA_SHIFT_BITS: u32 = 52;
 
-/// Maximum modulus to use 32-bit AVX512-DQ acceleration for the
-/// forward transform
-pub(crate) const MAX_FWD_32_MODULUS: u64 = 1u64 << (32 - 2);
+/// Maximum modulus to use 32-bit AVX512-DQ acceleration.
+pub(crate) const MAX_DQ32_MODULUS: u64 = 1u64 << (32 - 2);
 
-/// Maximum modulus to use 32-bit AVX512-DQ acceleration for the
-/// inverse transform
-pub(crate) const MAX_INV_32_MODULUS: u64 = 1u64 << (32 - 2);
-
-/// Maximum modulus to use AVX512-IFMA acceleration for the forward
-/// transform
-pub(crate) const MAX_FWD_IFMA_MODULUS: u64 = 1u64 << (IFMA_SHIFT_BITS - 2);
-
-/// Maximum modulus to use AVX512-IFMA acceleration for the inverse
-/// transform
-pub(crate) const MAX_INV_IFMA_MODULUS: u64 = 1u64 << (IFMA_SHIFT_BITS - 2);
+/// Maximum modulus to use AVX512-IFMA acceleration.
+pub(crate) const MAX_IFMA_MODULUS: u64 = 1u64 << (IFMA_SHIFT_BITS - 2);
 
 /// Maximum modulus to use AVX512-DQ acceleration for the inverse
 /// transform
@@ -30,9 +20,9 @@ pub(crate) const MAX_INV_DQ_MODULUS: u64 = 1u64 << (DEFAULT_SHIFT_BITS - 1);
 
 pub(crate) fn max_fwd_modulus(bit_shift: u32) -> u64 {
     if bit_shift == 32 {
-        MAX_FWD_32_MODULUS
+        MAX_DQ32_MODULUS
     } else if bit_shift == 52 {
-        MAX_FWD_IFMA_MODULUS
+        MAX_IFMA_MODULUS
     } else if bit_shift == 64 {
         1u64 << crate::U64_NTT_MAX_MODULUS_BITS
     } else {
@@ -43,9 +33,9 @@ pub(crate) fn max_fwd_modulus(bit_shift: u32) -> u64 {
 
 pub(crate) fn max_inv_modulus(bit_shift: u32) -> u64 {
     if bit_shift == 32 {
-        MAX_INV_32_MODULUS
+        MAX_DQ32_MODULUS
     } else if bit_shift == 52 {
-        MAX_INV_IFMA_MODULUS
+        MAX_IFMA_MODULUS
     } else if bit_shift == 64 {
         MAX_INV_DQ_MODULUS
     } else {
