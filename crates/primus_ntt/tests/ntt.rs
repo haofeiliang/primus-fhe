@@ -124,6 +124,39 @@ fn u64_transform_matches_generic_reference_across_modulus_ranges() {
 }
 
 #[test]
+fn u64_lazy_transforms_match_generic_reference_across_modulus_ranges() {
+    for q in [536813569u64, 562949953392641, 1152921504606830593] {
+        let modulus = BarrettModulus::new(q);
+        let table = U64NttTable::new(LOG_N, modulus).unwrap();
+        let reference = UintNttTable::<u64>::new(LOG_N, modulus).unwrap();
+
+        let mut actual = vec![4 * q - 1; N];
+        let mut expected = vec![q - 1; N];
+        table.lazy_transform_slice(&mut actual);
+        reference.transform_slice(&mut expected);
+        assert!(
+            actual.iter().all(|&value| value < 4 * q),
+            "lazy forward output exceeded [0, 4q) for q={q}"
+        );
+        for (actual, expected) in actual.into_iter().zip(expected) {
+            assert_eq!(actual % q, expected, "lazy forward mismatch for q={q}");
+        }
+
+        let mut actual = vec![2 * q - 1; N];
+        let mut expected = vec![q - 1; N];
+        table.lazy_inverse_transform_slice(&mut actual);
+        reference.inverse_transform_slice(&mut expected);
+        assert!(
+            actual.iter().all(|&value| value < 2 * q),
+            "lazy inverse output exceeded [0, 2q) for q={q}"
+        );
+        for (actual, expected) in actual.into_iter().zip(expected) {
+            assert_eq!(actual % q, expected, "lazy inverse mismatch for q={q}");
+        }
+    }
+}
+
+#[test]
 fn monomial_transform_matches_full_ntt() {
     let q32 = 268369921u32;
     let modulus32 = BarrettModulus::new(q32);

@@ -156,7 +156,7 @@ impl U64NttTable {
     /// Dispatch forward transform to the selected backend.
     ///
     /// Priority: IFMA → DQ → AVX2 → scalar.
-    fn dispatch_forward(&self, values: &mut [u64], output_mod_factor: u32) {
+    fn dispatch_forward(&self, values: &mut [u64], input_mod_factor: u32, output_mod_factor: u32) {
         assert_ntt_length(values.len(), self.n);
 
         #[cfg(target_arch = "x86_64")]
@@ -173,7 +173,7 @@ impl U64NttTable {
                         self.q,
                         &self.avx512_roots,
                         &self.avx512_roots_precon52,
-                        1,
+                        input_mod_factor as u64,
                         output_mod_factor as u64,
                         0,
                         0,
@@ -189,7 +189,7 @@ impl U64NttTable {
                             self.q,
                             &self.avx512_roots,
                             &self.avx512_roots_precon32,
-                            1,
+                            input_mod_factor as u64,
                             output_mod_factor as u64,
                             0,
                             0,
@@ -202,7 +202,7 @@ impl U64NttTable {
                             self.q,
                             &self.avx512_roots,
                             &self.avx512_roots_precon64,
-                            1,
+                            input_mod_factor as u64,
                             output_mod_factor as u64,
                             0,
                             0,
@@ -232,7 +232,7 @@ impl U64NttTable {
     /// Dispatch inverse transform to the selected backend.
     ///
     /// Priority: IFMA → DQ → AVX2 → scalar.
-    fn dispatch_inverse(&self, values: &mut [u64], output_mod_factor: u32) {
+    fn dispatch_inverse(&self, values: &mut [u64], input_mod_factor: u32, output_mod_factor: u32) {
         assert_ntt_length(values.len(), self.n);
 
         #[cfg(target_arch = "x86_64")]
@@ -250,7 +250,7 @@ impl U64NttTable {
                         self.inv_n,
                         &self.inv_roots,
                         &self.inv_roots_precon52,
-                        1,
+                        input_mod_factor as u64,
                         output_mod_factor as u64,
                         0,
                         0,
@@ -267,7 +267,7 @@ impl U64NttTable {
                             self.inv_n,
                             &self.inv_roots,
                             &self.inv_roots_precon32,
-                            1,
+                            input_mod_factor as u64,
                             output_mod_factor as u64,
                             0,
                             0,
@@ -281,7 +281,7 @@ impl U64NttTable {
                             self.inv_n,
                             &self.inv_roots,
                             &self.inv_roots_precon64,
-                            1,
+                            input_mod_factor as u64,
                             output_mod_factor as u64,
                             0,
                             0,
@@ -548,22 +548,22 @@ impl NttTable for U64NttTable {
 
     #[inline]
     fn lazy_transform_slice(&self, poly: &mut [u64]) {
-        self.dispatch_forward(poly, 4);
+        self.dispatch_forward(poly, 4, 4);
     }
 
     #[inline]
     fn transform_slice(&self, poly: &mut [u64]) {
-        self.dispatch_forward(poly, 1);
+        self.dispatch_forward(poly, 1, 1);
     }
 
     #[inline]
     fn lazy_inverse_transform_slice(&self, values: &mut [u64]) {
-        self.dispatch_inverse(values, 2);
+        self.dispatch_inverse(values, 2, 2);
     }
 
     #[inline]
     fn inverse_transform_slice(&self, values: &mut [u64]) {
-        self.dispatch_inverse(values, 1);
+        self.dispatch_inverse(values, 1, 1);
     }
 }
 
