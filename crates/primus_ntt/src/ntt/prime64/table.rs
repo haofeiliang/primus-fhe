@@ -409,23 +409,14 @@ impl NttTable for U64NttTable {
         #[cfg(not(target_arch = "x86_64"))]
         let backend = U64Backend::Scalar;
 
-        // Scalar Barrett-32 needs this table below 2^30. AVX-512DQ uses the
-        // same layout for its wider inverse-only range below 2^31.
-        #[cfg(target_arch = "x86_64")]
-        let needs_inv_roots_precon32 = low_q
-            || (n >= 16
-                && matches!(backend, U64Backend::Avx512Dq)
-                && q < super::avx512::internal::MAX_INV_32_MODULUS);
-        #[cfg(not(target_arch = "x86_64"))]
-        let needs_inv_roots_precon32 = low_q;
-
-        let inv_roots_precon32 = if needs_inv_roots_precon32 {
+        // Scalar Barrett-32 and AVX-512DQ-32 share the same q < 2^30 bound.
+        let inv_roots_precon32 = if low_q {
             super::avx512::precompute::build_barrett_vector(&inv_roots, 32, q)
         } else {
             AVec::with_capacity(64, 0)
         };
 
-        debug_assert!(!needs_inv_roots_precon32 || inv_roots_precon32.len() == n);
+        debug_assert!(!low_q || inv_roots_precon32.len() == n);
 
         // --- backend-specific pre-expanded root tables ---
         // AVX2 tables: needed for Avx2 (and kept empty for higher backends
@@ -576,5 +567,44 @@ impl MonomialNttTable for U64NttTable {
     #[inline]
     fn inv_root_powers(&self) -> &[Self::ValueT] {
         &self.inv_roots
+    }
+}
+
+#[cfg(all(test, target_arch = "x86_64"))]
+mod tests {
+    use primus_modulus::BarrettModulus;
+
+    use super::*;
+    use crate::UintNttTable;
+
+    #[test]
+    fn avx512_dq_inverse_matches_generic_across_32_bit_modulus_limit() {
+        if !*HAS_AVX512DQ {
+            return;
+        }
+
+        const LOG_N: u32 = 4;
+        const N: usize = 1 << LOG_N;
+
+        // Both primes are 1 modulo 2N and lie immediately below and above 2^30.
+        for q in [1073741441u64, 1073741857] {
+            let modulus = BarrettModulus::new(q);
+            let mut table = U64NttTable::new(LOG_N, modulus).unwrap();
+            let reference = UintNttTable::<u64>::new(LOG_N, modulus).unwrap();
+            table.backend = U64Backend::Avx512Dq;
+
+            let input = (0..N)
+                .map(|i| {
+                    let i = i as u64;
+                    (17 * i * i + 31 * i + 7) % q
+                })
+                .collect::<Vec<_>>();
+            let mut actual = input.clone();
+            let mut expected = input;
+
+            table.inverse_transform_slice(&mut actual);
+            reference.inverse_transform_slice(&mut expected);
+            assert_eq!(actual, expected, "AVX-512DQ inverse mismatch for q={q}");
+        }
     }
 }

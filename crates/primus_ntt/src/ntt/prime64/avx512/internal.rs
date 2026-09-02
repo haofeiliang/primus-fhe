@@ -14,7 +14,7 @@ pub(crate) const MAX_FWD_32_MODULUS: u64 = 1u64 << (32 - 2);
 
 /// Maximum modulus to use 32-bit AVX512-DQ acceleration for the
 /// inverse transform
-pub(crate) const MAX_INV_32_MODULUS: u64 = 1u64 << (32 - 1);
+pub(crate) const MAX_INV_32_MODULUS: u64 = 1u64 << (32 - 2);
 
 /// Maximum modulus to use AVX512-IFMA acceleration for the forward
 /// transform
