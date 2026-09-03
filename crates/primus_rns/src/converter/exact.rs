@@ -39,7 +39,11 @@ impl<T: FheUint> ExactConversionContext<T> {
 }
 
 impl<T: FheUint, M: FieldContext<T>> BaseConverter<T, M> {
-    /// Exactly converts an input-basis array to a single-modulus output basis.
+    /// Converts an input-basis array to a single-modulus output basis using
+    /// SEAL-style corrected RNS base conversion.
+    ///
+    /// Unlike fast base conversion, this applies the quotient correction needed
+    /// to select the centered lift.
     ///
     /// The output basis must contain exactly one modulus. `crt_poly_in.len()`
     /// must equal `input_moduli_count() * poly_length` and uses modulus-major
@@ -53,9 +57,18 @@ impl<T: FheUint, M: FieldContext<T>> BaseConverter<T, M> {
     /// `input_moduli_count()` and the same `poly_length`. A single-modulus
     /// input ignores `context`.
     ///
-    /// This uses the floating-point correction term common in centered exact
-    /// RNS base conversion. Input coefficients must be canonical residues in
-    /// their corresponding input moduli.
+    /// For a multi-modulus input, the correction is estimated with `f64`. The
+    /// name "exact" follows SEAL terminology and distinguishes this corrected
+    /// conversion from fast base conversion; it does not guarantee mathematical
+    /// exactness for every possible residue vector. When the exact correction is
+    /// within floating-point error of a half-integer, equivalently when the
+    /// centered representative is near the `-Q/2`/`Q/2` boundary, the rounded
+    /// correction can be off by one and the result can differ by one multiple of
+    /// `Q` modulo the output modulus. Callers requiring exact conversion at that
+    /// boundary must use a higher-precision method.
+    ///
+    /// Input coefficients must be canonical residues in their corresponding
+    /// input moduli.
     pub fn exact_convert_array(
         &self,
         crt_poly_in: &[T],

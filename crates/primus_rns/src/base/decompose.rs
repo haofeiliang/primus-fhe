@@ -51,6 +51,8 @@ where
     /// `ceil(small_value_modulus / 2)` are copied as positive residues. Other
     /// values are interpreted as negative representatives modulo
     /// `small_value_modulus` and lifted into each RNS modulus.
+    /// When `small_value_modulus == 2`, the binary values `0` and `1` are
+    /// preserved directly; `1` is not interpreted as `-1`.
     ///
     /// `small_value_modulus` must be no larger than every RNS modulus; batched
     /// variants require it to be strictly smaller in debug builds.
@@ -113,6 +115,8 @@ where
     ///
     /// `small_values.len()` must equal `value_count`. Each value is expected to
     /// be reduced modulo `small_value_modulus`.
+    /// When `small_value_modulus == 2`, the binary values `0` and `1` are
+    /// preserved directly; `1` is not interpreted as `-1`.
     ///
     /// `multi_residues.len()` must equal `moduli_count() * value_count` and is
     /// written in modulus-major layout: chunk `i` of length `value_count`
@@ -154,6 +158,8 @@ where
     ///
     /// `small_poly.as_slice().len()` must equal `poly_length`. Coefficients are
     /// expected to be reduced modulo `small_poly_modulus`.
+    /// When `small_poly_modulus == 2`, the binary values `0` and `1` are
+    /// preserved directly; `1` is not interpreted as `-1`.
     ///
     /// `crt_poly.as_mut_slice().len()` must equal `moduli_count() * poly_length`
     /// and is written in modulus-major layout: chunk `i` of length
@@ -182,6 +188,8 @@ where
     /// `small_values.len()` must equal `value_count`. Each value is expected to
     /// be reduced modulo `small_value_modulus`, which must be smaller than
     /// every RNS modulus.
+    /// When `small_value_modulus == 2`, the binary values `0` and `1` are
+    /// preserved directly; `1` is not interpreted as `-1` before scaling.
     ///
     /// `acc.len()` must equal `moduli_count() * value_count` and uses
     /// modulus-major layout. The function adds into the existing contents of
@@ -248,6 +256,8 @@ where
     ///
     /// `small_poly.as_slice().len()` must equal `poly_length`. Coefficients are
     /// expected to be reduced modulo `small_poly_modulus`.
+    /// When `small_poly_modulus == 2`, the binary values `0` and `1` are
+    /// preserved directly; `1` is not interpreted as `-1` before scaling.
     ///
     /// `acc.as_mut_slice().len()` must equal `moduli_count() * poly_length` and
     /// uses modulus-major CRT polynomial layout. The function accumulates into

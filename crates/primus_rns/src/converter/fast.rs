@@ -90,8 +90,8 @@ impl<T: FheUint, M: FieldContext<T>> BaseConverter<T, M> {
     /// multiple-of-`Q` term. With one input modulus, conversion is an exact
     /// direct reduction.
     ///
-    /// `residues_in.len()` must equal `input_moduli_count()`. Element `i` is
-    /// interpreted modulo `input_base().moduli()[i]`.
+    /// `residues_in.len()` must equal `input_moduli_count()`. Element `i` must
+    /// be a canonical residue in `[0, input_base().moduli()[i])`.
     ///
     /// `residues_out.len()` must equal `output_moduli_count()`. Element `j`
     /// receives the converted residue modulo `output_base().moduli()[j]`.
@@ -256,7 +256,8 @@ impl<T: FheUint, M: FieldContext<T>> BaseConverter<T, M> {
     ///
     /// `crt_poly_in.len()` must equal `input_moduli_count() * poly_length` and
     /// uses modulus-major layout: chunk `i` of length `poly_length` stores all
-    /// coefficients modulo `input_base().moduli()[i]`.
+    /// coefficients modulo `input_base().moduli()[i]`. Every input coefficient
+    /// must be a canonical residue for its corresponding input modulus.
     ///
     /// `crt_poly_out.len()` must equal `output_moduli_count() * poly_length`
     /// and is written in the same modulus-major layout for the output basis.
@@ -292,7 +293,8 @@ impl<T: FheUint, M: FieldContext<T>> BaseConverter<T, M> {
     ///
     /// The output basis must contain exactly two moduli. `crt_poly_in.len()`
     /// must equal `input_moduli_count() * poly_length` and uses modulus-major
-    /// layout.
+    /// layout. Every input coefficient must be a canonical residue for its
+    /// corresponding input modulus.
     ///
     /// `scratch.len()` must be at least
     /// [`fast_convert_array_scratch_len`](Self::fast_convert_array_scratch_len).
