@@ -1,8 +1,7 @@
 use core::range::Range;
 
 use primus_modulus::BarrettModulus;
-use primus_reduce::TryReduceInv;
-use primus_rns::{HybridRNS, RNSError};
+use primus_rns::{HybridRNS, HybridRNSPartitioning, RNSError};
 
 type ValueT = u64;
 type ModulusT = BarrettModulus<ValueT>;
@@ -18,44 +17,56 @@ fn make_hybrid(
 }
 
 #[test]
-fn construction_partitions_q_and_precomputes_p() {
-    let q = [17, 41, 73, 89, 97];
-    let p = [101, 103];
-    let hybrid = make_hybrid(&q, &p, 4);
+fn construction_uses_fixed_partitioning_and_precomputes_p() {
+    let q_moduli = [17, 41, 73, 89, 97].map(ModulusT::new);
+    let p_moduli = [101, 103].map(ModulusT::new);
+    let hybrid = HybridRNS::new(&q_moduli, &p_moduli, 3).unwrap();
     let ranges: Vec<_> = hybrid
         .partitions()
         .map(|partition| partition.q_range())
         .collect();
 
-    assert_eq!(hybrid.q_moduli_count(), 5);
-    assert_eq!(hybrid.p_moduli_count(), 2);
-    assert_eq!(hybrid.qp_moduli_count(), 7);
-    assert_eq!(hybrid.decomposition_count(), 4);
+    assert_eq!(hybrid.decomposition_count(), 3);
     assert_eq!(hybrid.partition_moduli_count(), 2);
-    assert_eq!(hybrid.partition_count(), 3);
+    assert_eq!(hybrid.partitioning().full_q_moduli_count(), 5);
     assert_eq!(
         ranges,
         [Range::from(0..2), Range::from(2..4), Range::from(4..5)],
     );
 
-    assert!(matches!(
-        HybridRNS::new(&[ModulusT::new(17)], &[ModulusT::new(41)], 0),
-        Err(RNSError::InvalidDecompositionCount),
-    ));
-    let p_product = p.into_iter().product::<u64>();
+    let partitioning = hybrid.partitioning();
+    let active = HybridRNS::from_partitioning(&q_moduli[..3], &p_moduli, partitioning).unwrap();
+    let active_ranges: Vec<_> = active
+        .partitions()
+        .map(|partition| partition.q_range())
+        .collect();
+    assert_eq!(active.partitioning(), partitioning);
+    assert_eq!(active_ranges, [Range::from(0..2), Range::from(2..3)]);
 
-    for ((&qi, &p_mod_qi), &inv_p_mod_qi) in
-        q.iter().zip(hybrid.p_mod_q()).zip(hybrid.inv_p_mod_q())
-    {
-        let modulus = ModulusT::new(qi);
-        let expected = p_product % qi;
-        assert_eq!(p_mod_qi, expected);
-        assert_eq!(inv_p_mod_qi, modulus.try_reduce_inv(expected).unwrap());
-    }
+    assert!(matches!(
+        HybridRNSPartitioning::new(5, 4),
+        Err(RNSError::IncompatibleDecompositionCount {
+            q_moduli_count: 5,
+            decomposition_count: 4,
+        }),
+    ));
+    assert!(matches!(
+        HybridRNS::from_partitioning(
+            &q_moduli,
+            &p_moduli,
+            HybridRNSPartitioning::new(4, 2).unwrap(),
+        ),
+        Err(RNSError::ActiveBaseTooLarge {
+            actual: 5,
+            maximum: 4,
+        }),
+    ));
+    assert_eq!(hybrid.p_mod_q(), [16, 30, 37, 79, 24]);
+    assert_eq!(hybrid.inv_p_mod_q(), [16, 26, 2, 80, 93]);
 }
 
 #[test]
-fn approximate_mod_up_writes_a_complete_qp_digit() {
+fn mod_up_full_and_streaming_outputs_match() {
     let hybrid = make_hybrid(&[17, 41, 73], &[89, 97], 2);
     let poly_length = 4;
     let polynomial_q = [
@@ -80,16 +91,35 @@ fn approximate_mod_up_writes_a_complete_qp_digit() {
         ],
     ];
 
-    for (partition, expected_digit) in hybrid.partitions().zip(&expected_digits) {
+    for (partition, expected) in hybrid.partitions().zip(&expected_digits) {
+        let q_range = partition.q_range();
+        let partition_elements =
+            Range::from(q_range.start * poly_length..q_range.end * poly_length);
+
         let mut digit_qp = vec![0; hybrid.qp_moduli_count() * poly_length];
         let mut scratch = vec![0; partition.mod_up_scratch_len(poly_length)];
-        partition.approx_mod_up(&polynomial_q, &mut digit_qp, poly_length, &mut scratch);
-        assert_eq!(digit_qp, expected_digit);
+        partition.approx_mod_up_to(&polynomial_q, &mut digit_qp, poly_length, &mut scratch);
+        assert_eq!(digit_qp, expected);
+
+        let mut streamed = vec![0; hybrid.qp_moduli_count() * poly_length];
+        streamed[partition_elements].copy_from_slice(&polynomial_q[partition_elements]);
+        let mut output_limb = vec![0; poly_length];
+        partition.for_each_approx_mod_up_complement_limb(
+            &polynomial_q,
+            &mut output_limb,
+            poly_length,
+            &mut scratch,
+            |modulus_index, converted_limb| {
+                let limb_start = modulus_index * poly_length;
+                streamed[limb_start..limb_start + poly_length].copy_from_slice(converted_limb);
+            },
+        );
+        assert_eq!(streamed, expected);
     }
 }
 
 #[test]
-fn polynomial_mod_down_matches_scalar_conversion_with_multiple_p_moduli() {
+fn mod_down_matches_expected_output_with_multiple_p_moduli() {
     let hybrid = make_hybrid(&[17, 41, 73], &[89, 97], 2);
     let poly_length = 5;
     let mut polynomial_qp = vec![0; hybrid.qp_moduli_count() * poly_length];
@@ -106,29 +136,21 @@ fn polynomial_mod_down_matches_scalar_conversion_with_multiple_p_moduli() {
     }
 
     let original = polynomial_qp.clone();
+    let q_len = hybrid.q_moduli_count() * poly_length;
+    let expected_q = [
+        0, 0, 0, 16, 0, // q_0
+        38, 38, 38, 37, 38, // q_1
+        48, 48, 48, 47, 48, // q_2
+    ];
     let mut converted_p = vec![0; hybrid.q_moduli_count() * poly_length];
     let mut scratch = vec![0; hybrid.mod_down_scratch_len(poly_length)];
-    hybrid.approx_mod_down(
+    hybrid.approx_mod_down_q_assign(
         &mut polynomial_qp,
         poly_length,
         &mut converted_p,
         &mut scratch,
     );
 
-    for coefficient in 0..poly_length {
-        let residues_qp: Vec<_> = original
-            .chunks_exact(poly_length)
-            .map(|limb| limb[coefficient])
-            .collect();
-        let mut output_q = vec![0; hybrid.q_moduli_count()];
-        let mut scalar_scratch = vec![0; hybrid.mod_down_scalar_scratch_len()];
-        hybrid.approx_mod_down_scalar(&residues_qp, &mut output_q, &mut scalar_scratch);
-
-        assert!(
-            polynomial_qp[..hybrid.q_moduli_count() * poly_length]
-                .chunks_exact(poly_length)
-                .map(|limb| limb[coefficient])
-                .eq(output_q),
-        );
-    }
+    assert_eq!(&polynomial_qp[..q_len], expected_q);
+    assert_eq!(&polynomial_qp[q_len..], &original[q_len..]);
 }

@@ -4,7 +4,7 @@ use primus_lattice::RnsGlweSize;
 use primus_ntt::{DcrtTable, NttTable};
 use primus_poly::DcrtPolynomial;
 use primus_reduce::FieldContext;
-use primus_rns::{HybridRNS, HybridRNSPartition};
+use primus_rns::HybridRNS;
 
 use super::{HybridRnsGlweKeySwitchingKey, mod_down::approx_mod_down_ntt};
 use crate::{DcrtGlweCiphertext, HybridRnsKeySwitchDomain};
@@ -42,19 +42,42 @@ impl<T: FheUint> HybridRnsGlweKeySwitchingKey<T> {
             .zip(q_scratch.chunks_exact_mut(poly_length))
             .for_each(|(ntt_table, q_limb)| ntt_table.inverse_transform_slice(q_limb));
 
-        accumulate_partitions(
-            q_scratch,
-            Some(mask_mod_q_ntt),
-            key_for_secret,
-            hybrid_rns,
-            table,
-            accumulator_qp,
-            mod_up_limb,
-            mod_up_scratch,
-            poly_length,
-            qp_poly_len,
-            qp_glwe_len,
-        );
+        let qp_moduli = hybrid_rns.qp_base().moduli();
+        for (partition, key_glwe) in hybrid_rns
+            .partitions()
+            .zip(key_for_secret.chunks_exact(qp_glwe_len))
+        {
+            for modulus_index in partition.q_range() {
+                let limb_start = modulus_index * poly_length;
+                add_qp_glwe_product(
+                    accumulator_qp,
+                    key_glwe,
+                    &mask_mod_q_ntt[limb_start..limb_start + poly_length],
+                    qp_poly_len,
+                    modulus_index,
+                    &qp_moduli[modulus_index],
+                );
+            }
+
+            let scratch_len = partition.mod_up_scratch_len(poly_length);
+            partition.for_each_approx_mod_up_complement_limb(
+                q_scratch,
+                mod_up_limb,
+                poly_length,
+                &mut mod_up_scratch[..scratch_len],
+                |modulus_index, converted_limb| {
+                    table.ntt_tables()[modulus_index].transform_slice(converted_limb);
+                    add_qp_glwe_product(
+                        accumulator_qp,
+                        key_glwe,
+                        converted_limb,
+                        qp_poly_len,
+                        modulus_index,
+                        &qp_moduli[modulus_index],
+                    );
+                },
+            );
+        }
     }
 
     fn mod_down_and_write_negated_accumulator<M, Table, B>(
@@ -175,28 +198,38 @@ impl<T: FheUint> HybridRnsGlweKeySwitchingKey<T> {
             .checked_mul(qp_glwe_len)
             .expect("hybrid QP gadget length overflow");
         let (mask_in, body_in) = c_in.a_b(self.input_size.rns_poly_len());
+        let qp_moduli = hybrid_rns.qp_base().moduli();
+        let mut digit_qp = vec![T::ZERO; qp_poly_len];
 
         context.accumulator_qp.fill(T::ZERO);
         for (mask_polynomial, key_for_secret) in mask_in.zip(self.key.chunks_exact(qp_gadget_len)) {
-            let HybridRnsGlweKeySwitchingContext {
-                accumulator_qp,
-                mod_up_limb,
-                mod_up_scratch,
-                ..
-            } = &mut *context;
-            accumulate_partitions(
-                mask_polynomial.as_slice(),
-                None,
-                key_for_secret,
-                hybrid_rns,
-                table,
-                accumulator_qp,
-                mod_up_limb,
-                mod_up_scratch,
-                poly_length,
-                qp_poly_len,
-                qp_glwe_len,
-            );
+            for (partition, key_glwe) in hybrid_rns
+                .partitions()
+                .zip(key_for_secret.chunks_exact(qp_glwe_len))
+            {
+                let scratch_len = partition.mod_up_scratch_len(poly_length);
+                partition.approx_mod_up_to(
+                    mask_polynomial.as_slice(),
+                    &mut digit_qp,
+                    poly_length,
+                    &mut context.mod_up_scratch[..scratch_len],
+                );
+                table.transform_slice(&mut digit_qp);
+
+                for (accumulator_poly, key_poly) in context
+                    .accumulator_qp
+                    .chunks_exact_mut(qp_poly_len)
+                    .zip(key_glwe.chunks_exact(qp_poly_len))
+                {
+                    let mut accumulator_poly = DcrtPolynomial(accumulator_poly);
+                    accumulator_poly.add_mul_assign(
+                        &DcrtPolynomial(digit_qp.as_slice()),
+                        &DcrtPolynomial(key_poly),
+                        poly_length,
+                        qp_moduli,
+                    );
+                }
+            }
         }
 
         self.mod_down_and_write_negated_accumulator(c_out, hybrid_rns, table, context);
@@ -211,95 +244,6 @@ impl<T: FheUint> HybridRnsGlweKeySwitchingKey<T> {
             poly_length,
             hybrid_rns.q_base().moduli(),
         );
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn accumulate_partitions<T, M, Table>(
-    mask_mod_q: &[T],
-    mask_mod_q_ntt: Option<&[T]>,
-    key_for_secret: &[T],
-    hybrid_rns: &HybridRNS<T, M>,
-    table: &DcrtTable<Table>,
-    accumulator_qp: &mut [T],
-    mod_up_limb: &mut [T],
-    mod_up_scratch: &mut [T],
-    poly_length: usize,
-    qp_poly_len: usize,
-    qp_glwe_len: usize,
-) where
-    T: FheUint,
-    M: FieldContext<T>,
-    Table: NttTable<ValueT = T>,
-{
-    let qp_moduli = hybrid_rns.qp_base().moduli();
-    for (partition, key_glwe) in hybrid_rns
-        .partitions()
-        .zip(key_for_secret.chunks_exact(qp_glwe_len))
-    {
-        accumulate_partition(
-            partition,
-            mask_mod_q,
-            mask_mod_q_ntt,
-            key_glwe,
-            table,
-            accumulator_qp,
-            mod_up_limb,
-            mod_up_scratch,
-            poly_length,
-            qp_poly_len,
-            qp_moduli,
-        );
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn accumulate_partition<T, M, Table>(
-    partition: &HybridRNSPartition<T, M>,
-    mask_mod_q: &[T],
-    mask_mod_q_ntt: Option<&[T]>,
-    key_glwe: &[T],
-    table: &DcrtTable<Table>,
-    accumulator_qp: &mut [T],
-    mod_up_limb: &mut [T],
-    mod_up_scratch: &mut [T],
-    poly_length: usize,
-    qp_poly_len: usize,
-    qp_moduli: &[M],
-) where
-    T: FheUint,
-    M: FieldContext<T>,
-    Table: NttTable<ValueT = T>,
-{
-    let partition_range = partition.q_range();
-    let scratch_len = partition.mod_up_scratch_len(poly_length);
-    for mod_up in
-        partition.approx_mod_up_limbs(mask_mod_q, poly_length, &mut mod_up_scratch[..scratch_len])
-    {
-        let modulus_index = mod_up.qp_modulus_index();
-        if let Some(mask_ntt) = mask_mod_q_ntt.filter(|_| partition_range.contains(&modulus_index))
-        {
-            let limb_start = modulus_index * poly_length;
-            add_qp_glwe_product(
-                accumulator_qp,
-                key_glwe,
-                &mask_ntt[limb_start..limb_start + poly_length],
-                qp_poly_len,
-                modulus_index,
-                &qp_moduli[modulus_index],
-            );
-        } else {
-            mod_up.write_to(mod_up_limb);
-            table.ntt_tables()[modulus_index].transform_slice(mod_up_limb);
-            add_qp_glwe_product(
-                accumulator_qp,
-                key_glwe,
-                mod_up_limb,
-                qp_poly_len,
-                modulus_index,
-                &qp_moduli[modulus_index],
-            );
-        }
     }
 }
 

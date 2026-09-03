@@ -33,7 +33,7 @@ pub(super) fn approx_mod_down_ntt<T, M, Table>(
         .zip(polynomial_mod_p.chunks_exact_mut(poly_length))
         .for_each(|(ntt_table, p_limb)| ntt_table.inverse_transform_slice(p_limb));
 
-    hybrid_rns.approx_convert_p_to_q(polynomial_mod_p, converted_p_mod_q, poly_length, scratch);
+    hybrid_rns.approx_convert_p_to_q_to(polynomial_mod_p, converted_p_mod_q, poly_length, scratch);
 
     izip!(
         q_table,
@@ -82,7 +82,7 @@ mod tests {
         let mut reference = coefficient_qp.clone();
         let mut reference_converted = vec![0; q_len];
         let mut reference_scratch = vec![0; hybrid_rns.mod_down_scratch_len(POLY_LENGTH)];
-        hybrid_rns.approx_mod_down(
+        hybrid_rns.approx_mod_down_q_assign(
             &mut reference,
             POLY_LENGTH,
             &mut reference_converted,

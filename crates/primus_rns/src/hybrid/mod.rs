@@ -1,35 +1,111 @@
-//! Hybrid RNS gadget decomposition for key switching.
+//! Hybrid RNS basis extension, decomposition, and reduction.
 //!
 //! [`HybridRNS`] splits the ciphertext basis `Q` into non-empty contiguous
 //! partitions. Each [`HybridRNSPartition`] owns the precomputation for the
 //! approximate basis extension from that partition to its complement and the
 //! auxiliary basis `P`. The resulting digits live in the combined `QP` basis.
-//! `decomposition_count` (`dnum`) is the requested digit count,
-//! `partition_moduli_count` (`alpha`) is the maximum number of `Q` moduli in a
-//! digit, and `partition_count` (`beta`) is the actual number of non-empty
-//! digits.
+//! `decomposition_count` (`dnum`) is the exact number of digits in the full
+//! `Q` basis, `partition_moduli_count` (`alpha`) is the fixed maximum number of
+//! `Q` moduli in a digit, and `partition_count` (`beta`) is the number of
+//! non-empty digits at the active level.
+//!
+//! [`HybridRNSPartitioning`] fixes `alpha` from the full `Q` basis so shorter
+//! levels in the same modulus chain keep a key-compatible partition layout.
+//! A [`HybridRNS`] instance contains the bases and conversion precomputations
+//! for exactly one active `Q` level.
 //!
 //! The polynomial APIs use modulus-major storage and caller-owned scratch
-//! buffers. They do not allocate in the online key-switching path.
+//! buffers. The streaming ModUp API lets higher-level key-switching code reuse
+//! partition limbs and consume converted complement limbs without allocating a
+//! complete `QP` digit.
 //!
 //! # References
 //!
 //! - OpenFHE `KeySwitchHYBRID` and `DCRTPoly::ApproxModDown`
 //! - SEAL `BaseConverter`
 
-use core::range::Range;
+use core::{num::NonZeroUsize, range::Range};
 
 mod construction;
 mod mod_down;
 mod mod_up;
-mod partition;
-
-pub use mod_up::HybridModUpLimb;
 
 use primus_integer::FheUint;
 use primus_reduce::FieldContext;
 
-use crate::{BaseConverter, RNSBase};
+use crate::{BaseConverter, RNSBase, RNSError};
+
+/// A partitioning rule shared by compatible hybrid-RNS levels.
+///
+/// Hybrid key-switching keys fix the maximum number of full-`Q` moduli in one
+/// partition (`alpha`). Active modulus-chain levels must reuse that value
+/// instead of recomputing it from their shorter `Q` basis.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct HybridRNSPartitioning {
+    full_q_moduli_count: NonZeroUsize,
+    decomposition_count: NonZeroUsize,
+    partition_moduli_count: NonZeroUsize,
+}
+
+impl HybridRNSPartitioning {
+    /// Derives a fixed partitioning rule from a full `Q` basis and requested
+    /// decomposition digit count (`dnum`).
+    ///
+    /// The fixed partition size is
+    /// `ceil(full_q_moduli_count / decomposition_count)`. As in OpenFHE, the
+    /// requested count must produce exactly that many non-empty, contiguous
+    /// partitions; unsupported counts are rejected rather than silently
+    /// producing fewer partitions.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`RNSError::EmptyBase`] when `full_q_moduli_count` is zero.
+    /// Returns [`RNSError::InvalidDecompositionCount`] when
+    /// `decomposition_count` is zero, or
+    /// [`RNSError::IncompatibleDecompositionCount`] when the fixed partition
+    /// size cannot produce exactly the requested number of digits.
+    pub fn new(full_q_moduli_count: usize, decomposition_count: usize) -> Result<Self, RNSError> {
+        let full_q_moduli_count =
+            NonZeroUsize::new(full_q_moduli_count).ok_or(RNSError::EmptyBase)?;
+        let decomposition_count =
+            NonZeroUsize::new(decomposition_count).ok_or(RNSError::InvalidDecompositionCount)?;
+        let partition_moduli_count = full_q_moduli_count.div_ceil(decomposition_count);
+        let actual_partition_count = full_q_moduli_count.div_ceil(partition_moduli_count);
+        if actual_partition_count != decomposition_count {
+            return Err(RNSError::IncompatibleDecompositionCount {
+                q_moduli_count: full_q_moduli_count.get(),
+                decomposition_count: decomposition_count.get(),
+            });
+        }
+
+        Ok(Self {
+            full_q_moduli_count,
+            decomposition_count,
+            partition_moduli_count,
+        })
+    }
+
+    /// Returns the full-`Q` modulus count used to derive this rule.
+    #[must_use]
+    #[inline]
+    pub fn full_q_moduli_count(self) -> usize {
+        self.full_q_moduli_count.get()
+    }
+
+    /// Returns the exact number of decomposition digits in the full `Q` basis.
+    #[must_use]
+    #[inline]
+    pub fn decomposition_count(self) -> usize {
+        self.decomposition_count.get()
+    }
+
+    /// Returns the fixed maximum number of `Q` moduli per partition (`alpha`).
+    #[must_use]
+    #[inline]
+    pub fn partition_moduli_count(self) -> usize {
+        self.partition_moduli_count.get()
+    }
+}
 
 /// One non-empty, contiguous partition of the ciphertext basis `Q`.
 #[derive(Clone)]
@@ -43,7 +119,7 @@ where
     mod_up_converter: BaseConverter<T, M>,
 }
 
-/// Precomputed bases and converters for hybrid RNS key switching.
+/// Precomputed bases and converters for one active hybrid-RNS level.
 #[derive(Clone)]
 pub struct HybridRNS<T, M>
 where
@@ -53,8 +129,7 @@ where
     q_base: RNSBase<T, M>,
     p_base: RNSBase<T, M>,
     qp_base: RNSBase<T, M>,
-    decomposition_count: usize,
-    partition_moduli_count: usize,
+    partitioning: HybridRNSPartitioning,
     partitions: Vec<HybridRNSPartition<T, M>>,
     p_mod_q: Vec<T>,
     inv_p_mod_q: Vec<T>,
@@ -78,7 +153,7 @@ where
         &self.p_base
     }
 
-    /// Returns the combined basis `Q ∪ P`.
+    /// Returns the combined basis in `Q || P` order.
     #[inline]
     pub fn qp_base(&self) -> &RNSBase<T, M> {
         &self.qp_base
@@ -102,20 +177,26 @@ where
         self.qp_base.moduli_count()
     }
 
-    /// Returns the requested number of decomposition digits (`dnum`).
+    /// Returns the partitioning rule shared by compatible modulus-chain levels.
+    #[must_use]
+    #[inline]
+    pub fn partitioning(&self) -> HybridRNSPartitioning {
+        self.partitioning
+    }
+
+    /// Returns the exact full-`Q` decomposition digit count (`dnum`).
     ///
-    /// This is an upper bound; [`partition_count`](Self::partition_count) can
-    /// be smaller because every partition is non-empty and all but the last
-    /// have the same size.
+    /// [`partition_count`](Self::partition_count) equals this value at the full
+    /// level and can be smaller at a shorter active level.
     #[inline]
     pub fn decomposition_count(&self) -> usize {
-        self.decomposition_count
+        self.partitioning.decomposition_count()
     }
 
     /// Returns the maximum number of `Q` moduli per partition (`alpha`).
     #[inline]
     pub fn partition_moduli_count(&self) -> usize {
-        self.partition_moduli_count
+        self.partitioning.partition_moduli_count()
     }
 
     /// Iterates over the non-empty `Q` partitions in basis order.
@@ -147,12 +228,6 @@ where
             .fast_convert_array_scratch_len(poly_length)
     }
 
-    /// Returns the minimum scratch length required by scalar ModDown.
-    #[inline]
-    pub fn mod_down_scalar_scratch_len(&self) -> usize {
-        self.mod_down_converter.fast_convert_scratch_len()
-    }
-
     /// Returns `P mod q_i` in `Q`-basis order.
     #[inline]
     pub fn p_mod_q(&self) -> &[T] {
@@ -163,5 +238,25 @@ where
     #[inline]
     pub fn inv_p_mod_q(&self) -> &[T] {
         &self.inv_p_mod_q
+    }
+}
+
+impl<T, M> HybridRNSPartition<T, M>
+where
+    T: FheUint,
+    M: FieldContext<T>,
+{
+    /// Returns the indices of this partition in the active `Q` basis.
+    #[must_use]
+    #[inline]
+    pub fn q_range(&self) -> Range<usize> {
+        self.q_range
+    }
+
+    /// Returns the number of active `Q` moduli in this partition.
+    #[must_use]
+    #[inline]
+    pub fn moduli_count(&self) -> usize {
+        self.q_range.end - self.q_range.start
     }
 }
