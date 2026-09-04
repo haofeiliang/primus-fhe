@@ -10,36 +10,28 @@ fn base(moduli: &[Value]) -> Base {
     Base::new(&moduli).unwrap()
 }
 
-fn pack_modulus_major(residues: &[Vec<Value>], moduli_count: usize) -> Vec<Value> {
-    let value_count = residues.len();
-    let mut packed = vec![0; moduli_count * value_count];
-    for (value_index, value_residues) in residues.iter().enumerate() {
-        for (modulus_index, &residue) in value_residues.iter().enumerate() {
-            packed[modulus_index * value_count + value_index] = residue;
-        }
-    }
-    packed
-}
-
 #[test]
 fn fast_array_conversion_matches_scalar_conversion() {
     let input_base = base(&[17, 19, 23]);
     let output_base = base(&[29, 31]);
     let converter = BaseConverter::new(&input_base, &output_base);
-    let residues = vec![
-        vec![0, 0, 0],
-        vec![1, 2, 3],
-        vec![16, 18, 22],
-        vec![7, 11, 13],
+    let input = [
+        0, 1, 16, 7, // mod 17
+        0, 2, 18, 11, // mod 19
+        0, 3, 22, 13, // mod 23
     ];
-    let value_count = residues.len();
-    let input = pack_modulus_major(&residues, input_base.moduli_count());
+    let value_count = input.len() / input_base.moduli_count();
     let mut expected = vec![0; output_base.moduli_count() * value_count];
 
-    for (value_index, value_residues) in residues.iter().enumerate() {
+    for value_index in 0..value_count {
+        let value_residues = [
+            input[value_index],
+            input[value_count + value_index],
+            input[2 * value_count + value_index],
+        ];
         let mut scalar_output = vec![0; output_base.moduli_count()];
         let mut scalar_scratch = vec![0; input_base.moduli_count()];
-        converter.fast_convert(value_residues, &mut scalar_output, &mut scalar_scratch);
+        converter.fast_convert(&value_residues, &mut scalar_output, &mut scalar_scratch);
         for (modulus_index, value) in scalar_output.into_iter().enumerate() {
             expected[modulus_index * value_count + value_index] = value;
         }
@@ -84,16 +76,10 @@ fn exact_array_conversion_uses_centered_values_and_reuses_context() {
     let output_base = base(&[37]);
     let converter = BaseConverter::new(&input_base, &output_base);
     let values = [0, 1, 2, 7, 16, 7_428];
-    let residues: Vec<_> = values
+    let input: Vec<_> = input_moduli
         .iter()
-        .map(|&value| {
-            input_moduli
-                .iter()
-                .map(|&modulus| value % modulus)
-                .collect()
-        })
+        .flat_map(|&modulus| values.iter().map(move |&value| value % modulus))
         .collect();
-    let input = pack_modulus_major(&residues, input_base.moduli_count());
     let mut output = vec![Value::MAX; values.len()];
     let mut context = converter.exact_conversion_context(values.len());
 
