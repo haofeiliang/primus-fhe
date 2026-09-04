@@ -46,7 +46,6 @@ where
     params.base_q().wrapping_decompose_small_polynomial_to(
         message,
         &mut decomposed,
-        POLY_LENGTH,
         params.plain_modulus_value(),
     );
     decomposed

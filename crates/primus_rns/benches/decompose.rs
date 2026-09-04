@@ -3,7 +3,7 @@ use std::hint::black_box;
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use primus_factor::ShoupFactor;
 use primus_modulus::BarrettModulus;
-use primus_rns::{BaseConverter, ExactConversionContext, RNSBase};
+use primus_rns::{BaseConverter, RNSBase};
 
 // Benchmarks intentionally focus on the slice-level APIs used by polynomial
 // paths. Single-value compose/decompose is only a correctness primitive here.
@@ -51,12 +51,12 @@ fn generated_crt_residues(base: &BaseT, value_count: usize) -> Vec<ValueT> {
 fn compose_crt_residues(base: &BaseT, residues: &[ValueT], value_count: usize) -> Vec<ValueT> {
     let mut values = vec![0; base.big_uint_value_len() * value_count];
     let mut scratch = vec![0; base.moduli_count()];
-    base.compose_multiple_values_to(residues, &mut values, value_count, &mut scratch);
+    base.compose_big_uint_values_to(residues, &mut values, value_count, &mut scratch);
     values
 }
 
 // Create per-modulus Shoup factors from deterministic values, used as scaling
-// multipliers in the add_wrapping_decompose_small_values_scaled benchmark.
+// multipliers in the add_wrapping_decompose_small_values_scaled_assign benchmark.
 fn shoup_factors(base: &BaseT) -> Vec<ShoupFactor<ValueT>> {
     base.moduli()
         .iter()
@@ -69,9 +69,10 @@ fn shoup_factors(base: &BaseT) -> Vec<ShoupFactor<ValueT>> {
 }
 
 // Benchmark the five slice-level decompose/compose APIs used on polynomial
-// paths: wrapping_decompose_small_values_to, add_wrapping_decompose_small_values_scaled,
-// add_decompose_small_values_scaled, decompose_big_uint_values_to, and
-// compose_multiple_values_to. Each is measured with two different modulus sets
+// paths: wrapping_decompose_small_values_to,
+// add_wrapping_decompose_small_values_scaled_assign,
+// add_decompose_small_values_scaled_assign, decompose_big_uint_values_to, and
+// compose_big_uint_values_to. Each is measured with two different modulus sets
 // (2-modulus / 3-modulus) at POLY_LENGTH=4096.
 fn bench_slice_decompose_and_compose(c: &mut Criterion) {
     let cases = [
@@ -96,7 +97,6 @@ fn bench_slice_decompose_and_compose(c: &mut Criterion) {
                     base.wrapping_decompose_small_values_to(
                         black_box(&small_values),
                         black_box(&mut wrapping_out),
-                        POLY_LENGTH,
                         black_box(small_modulus),
                     );
                 });
@@ -105,14 +105,13 @@ fn bench_slice_decompose_and_compose(c: &mut Criterion) {
 
         let mut acc = generated_crt_residues(&base, POLY_LENGTH);
         group.bench_with_input(
-            BenchmarkId::new("add_wrapping_decompose_small_values_scaled", label),
+            BenchmarkId::new("add_wrapping_decompose_small_values_scaled_assign", label),
             &label,
             |b, _| {
                 b.iter(|| {
-                    base.add_wrapping_decompose_small_values_scaled(
+                    base.add_wrapping_decompose_small_values_scaled_assign(
                         black_box(&small_values),
                         black_box(&mut acc),
-                        POLY_LENGTH,
                         black_box(small_modulus),
                         black_box(&factors),
                     );
@@ -124,14 +123,13 @@ fn bench_slice_decompose_and_compose(c: &mut Criterion) {
         // Use a fresh accumulator so we benchmark the same workload shape.
         let mut unsigned_acc = generated_crt_residues(&base, POLY_LENGTH);
         group.bench_with_input(
-            BenchmarkId::new("add_decompose_small_values_scaled", label),
+            BenchmarkId::new("add_decompose_small_values_scaled_assign", label),
             &label,
             |b, _| {
                 b.iter(|| {
-                    base.add_decompose_small_values_scaled(
+                    base.add_decompose_small_values_scaled_assign(
                         black_box(&small_values),
                         black_box(&mut unsigned_acc),
-                        POLY_LENGTH,
                         black_box(&factors),
                     );
                 });
@@ -158,11 +156,11 @@ fn bench_slice_decompose_and_compose(c: &mut Criterion) {
         let mut composed = vec![0; big_uint_values.len()];
         let mut scratch = vec![0; base.moduli_count()];
         group.bench_with_input(
-            BenchmarkId::new("compose_multiple_values_to", label),
+            BenchmarkId::new("compose_big_uint_values_to", label),
             &label,
             |b, _| {
                 b.iter(|| {
-                    base.compose_multiple_values_to(
+                    base.compose_big_uint_values_to(
                         black_box(&crt_residues),
                         black_box(&mut composed),
                         POLY_LENGTH,
@@ -206,7 +204,7 @@ fn bench_slice_base_convert(c: &mut Criterion) {
     });
 
     let mut exact_out = vec![0; POLY_LENGTH];
-    let mut exact_context = ExactConversionContext::new(input_base.moduli_count(), POLY_LENGTH);
+    let mut exact_context = exact_converter.exact_conversion_context(POLY_LENGTH);
     group.bench_function("exact_convert_array/3mod_to_1mod", |b| {
         b.iter(|| {
             exact_converter.exact_convert_array(

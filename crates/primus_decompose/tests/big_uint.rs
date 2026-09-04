@@ -238,7 +238,7 @@ mod tests {
 
         let mut input_values: Vec<ValueT> = vec![0; N * big_uint_value_len];
         let mut compose_buffer = vec![0; moduli_count];
-        rns_base.compose_multiple_values_to(
+        rns_base.compose_big_uint_values_to(
             &input_residues,
             &mut input_values,
             N,
@@ -268,7 +268,6 @@ mod tests {
                 rns_base.wrapping_decompose_small_values_to(
                     &decomposed_unsigned_values,
                     &mut temp,
-                    N,
                     basis_value,
                 );
 
@@ -286,7 +285,7 @@ mod tests {
             });
 
         let mut output_values: Vec<ValueT> = vec![0; N * big_uint_value_len];
-        rns_base.compose_multiple_values_to(&residues, &mut output_values, N, &mut compose_buffer);
+        rns_base.compose_big_uint_values_to(&residues, &mut output_values, N, &mut compose_buffer);
 
         let mut min: Vec<ValueT> = vec![0; N * big_uint_value_len];
 
@@ -368,7 +367,6 @@ mod tests {
                 rns_base.wrapping_decompose_small_values_to(
                     &decomposed_unsigned_values,
                     &mut residues1,
-                    1,
                     basis_value,
                 );
 

@@ -82,7 +82,7 @@ where
             let _ = delta.add_value_assign(T::ONE);
         }
 
-        let delta_factor_mod_q = base_q.decompose_to_rns_factor(delta.view());
+        let delta_factor_mod_q = base_q.decompose_factors(delta.view());
 
         let t_gamma = [t_modulus, gamma_modulus];
         let base_t_gamma = RNSBase::new(&t_gamma).unwrap();
@@ -94,7 +94,7 @@ where
             .collect();
         let inv_gamma_mod_t = ShoupFactor::new(t_modulus.reduce_inv(t_modulus.reduce(gamma)), t);
         let t_gamma_value = multiply_many_values(&[t, gamma]);
-        let t_gamma_factor_mod_q = base_q.decompose_to_rns_factor(t_gamma_value.view());
+        let t_gamma_factor_mod_q = base_q.decompose_factors(t_gamma_value.view());
 
         let converter_q_to_t_gamma = BaseConverter::new(&base_q, &base_t_gamma);
 
@@ -192,12 +192,8 @@ where
         A: Data<Elem = T>,
         B: DataMut<Elem = T>,
     {
-        self.base_q.wrapping_decompose_small_polynomial_to(
-            message,
-            crt_message,
-            poly_length,
-            self.t,
-        );
+        self.base_q
+            .wrapping_decompose_small_polynomial_to(message, crt_message, self.t);
 
         crt_message.mul_factor_assign(&self.delta_factor_mod_q, poly_length, &self.moduli_values);
     }
@@ -206,32 +202,31 @@ where
     ///
     /// # Panics
     ///
-    /// Panics if the source or destination layout does not match
-    /// `poly_length` and this codec's RNS basis.
+    /// Panics if the source or destination layout does not match this codec's
+    /// RNS basis.
     pub fn add_centered_encode_coeffs_assign<A, B>(
         &self,
         message: &Polynomial<A>,
         destination: &mut CrtPolynomial<B>,
-        poly_length: usize,
     ) where
         A: Data<Elem = T>,
         B: DataMut<Elem = T>,
     {
-        self.base_q.add_wrapping_decompose_small_polynomial_scaled(
-            message,
-            destination,
-            poly_length,
-            self.t,
-            &self.delta_factor_mod_q,
-        );
+        self.base_q
+            .add_wrapping_decompose_small_polynomial_scaled_assign(
+                message,
+                destination,
+                self.t,
+                &self.delta_factor_mod_q,
+            );
     }
 
     /// Encodes unsigned coefficients into CRT form, scaled by `floor(Q / t)`.
     ///
     /// # Panics
     ///
-    /// Panics if the source or destination layout does not match
-    /// `poly_length` and this codec's RNS basis.
+    /// Panics if the source or destination layout does not match this codec's
+    /// RNS basis.
     pub fn unsigned_encode_coeffs<A, B>(
         &self,
         message: &Polynomial<A>,
@@ -260,15 +255,13 @@ where
         &self,
         message: &Polynomial<A>,
         destination: &mut CrtPolynomial<B>,
-        poly_length: usize,
     ) where
         A: Data<Elem = T>,
         B: DataMut<Elem = T>,
     {
-        self.base_q.add_decompose_small_polynomial_scaled(
+        self.base_q.add_decompose_small_polynomial_scaled_assign(
             message,
             destination,
-            poly_length,
             &self.delta_factor_mod_q,
         );
     }

@@ -34,17 +34,15 @@ fn construction_rejects_invalid_bases() {
     ));
 }
 
-/// Verifies the singleton representation and independently checks the
-/// punctured products constructed for a multi-modulus base.
 #[test]
-fn construction_computes_punctured_products() {
+fn construction_computes_moduli_products() {
     let singleton = base(&[3]);
     assert_eq!(singleton.moduli_product().digits(), &[3]);
-    assert_eq!(singleton.punctured_product(), &[1]);
+    assert_eq!(singleton.compose(&[2]).digits(), &[2]);
 
     let base = base(&[3, 5, 7]);
     assert_eq!(base.moduli_product().digits(), &[105]);
-    assert_eq!(base.punctured_product(), &[35, 21, 15]);
+    assert_eq!(base.compose(&[2, 4, 6]).digits(), &[104]);
 }
 
 #[test]
@@ -70,7 +68,7 @@ fn compose_and_decompose_preserve_the_modulus_major_layout() {
 
     let mut recomposed = vec![Value::MAX; values.len()];
     let mut scratch = vec![0; base.moduli_count()];
-    base.compose_multiple_values_to(&expected, &mut recomposed, residues.len(), &mut scratch);
+    base.compose_big_uint_values_to(&expected, &mut recomposed, residues.len(), &mut scratch);
     assert_eq!(recomposed, values);
 
     let scalar = base.compose(&residues[2]);
@@ -91,7 +89,7 @@ fn wrapping_and_scaled_decomposition_follow_the_centered_rule() {
     };
 
     let mut decomposed = vec![Value::MAX; base.moduli_count() * values.len()];
-    base.wrapping_decompose_small_values_to(&values, &mut decomposed, values.len(), small_modulus);
+    base.wrapping_decompose_small_values_to(&values, &mut decomposed, small_modulus);
 
     for (modulus_index, modulus) in base.moduli().iter().enumerate() {
         for (value_index, &value) in values.iter().enumerate() {
@@ -109,10 +107,9 @@ fn wrapping_and_scaled_decomposition_follow_the_centered_rule() {
         .map(|(&factor, modulus)| ShoupFactor::new(factor, modulus.value()))
         .collect();
     let mut accumulated = vec![11; decomposed.len()];
-    base.add_wrapping_decompose_small_values_scaled(
+    base.add_wrapping_decompose_small_values_scaled_assign(
         &values,
         &mut accumulated,
-        values.len(),
         small_modulus,
         &factors,
     );
@@ -142,15 +139,6 @@ fn extending_a_base_matches_fresh_construction() {
     ]);
 
     assert_eq!(extended.moduli_product(), direct.moduli_product());
-    assert_eq!(extended.punctured_product(), direct.punctured_product());
-    assert!(
-        extended
-            .inv_punctured_product_mod_modulus()
-            .iter()
-            .map(|factor| factor.value())
-            .eq(direct
-                .inv_punctured_product_mod_modulus()
-                .iter()
-                .map(|factor| factor.value()))
-    );
+    let residues = [1, 2, 3, 4];
+    assert_eq!(extended.compose(&residues), direct.compose(&residues));
 }

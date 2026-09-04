@@ -69,7 +69,7 @@ where
             compose_buffer,
         } = context.as_mut();
 
-        rns_base.compose_multiple_values_to(
+        rns_base.compose_big_uint_values_to(
             crt_poly.as_ref(),
             adjust_big_uint_values,
             poly_length,
@@ -92,7 +92,6 @@ where
                 rns_base.wrapping_decompose_small_values_to(
                     decomposed_unsigned_values,
                     multi_residues,
-                    poly_length,
                     basis_value,
                 );
 
@@ -151,7 +150,6 @@ where
                 rns_base.wrapping_decompose_small_values_to(
                     decomposed_unsigned_values,
                     multi_residues,
-                    poly_length,
                     basis_value,
                 );
 

@@ -59,7 +59,7 @@ fn big_values(base: &Base, count: usize) -> Vec<Word> {
 
     let mut values = vec![0; base.big_uint_value_len() * count];
     let mut scratch = vec![0; base.moduli_count()];
-    base.compose_multiple_values_to(&residues, &mut values, count, &mut scratch);
+    base.compose_big_uint_values_to(&residues, &mut values, count, &mut scratch);
     values
 }
 

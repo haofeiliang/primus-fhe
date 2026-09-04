@@ -111,16 +111,6 @@ impl<T: FheUint, M: FieldContext<T>> BaseConverter<T, M> {
         }
     }
 
-    /// Returns the input basis.
-    pub fn input_base(&self) -> &RNSBase<T, M> {
-        &self.input_base
-    }
-
-    /// Returns the output basis.
-    pub fn output_base(&self) -> &RNSBase<T, M> {
-        &self.output_base
-    }
-
     /// Returns the number of moduli in the input basis.
     pub fn input_moduli_count(&self) -> usize {
         self.input_base.moduli_count()

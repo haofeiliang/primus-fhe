@@ -172,11 +172,9 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
             rng,
         );
 
-        params.codec().add_unsigned_encode_coeffs_assign(
-            msg,
-            &mut CrtPolynomial(&mut *b.0),
-            poly_length,
-        );
+        params
+            .codec()
+            .add_unsigned_encode_coeffs_assign(msg, &mut CrtPolynomial(&mut *b.0));
 
         table.transform_slice(b.0);
 
@@ -216,11 +214,9 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
             rng,
         );
 
-        params.codec().add_centered_encode_coeffs_assign(
-            msg,
-            &mut CrtPolynomial(&mut *b.0),
-            poly_length,
-        );
+        params
+            .codec()
+            .add_centered_encode_coeffs_assign(msg, &mut CrtPolynomial(&mut *b.0));
 
         table.transform_slice(b.0);
 

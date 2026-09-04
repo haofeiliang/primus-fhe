@@ -7,24 +7,16 @@ use super::BaseConverter;
 
 /// Reusable scratch space for exact batched RNS base conversion.
 ///
-/// For a multi-modulus input, a context is tied to an input modulus count and
-/// polynomial length. Reusing it across conversions with the same dimensions
-/// avoids allocations in [`BaseConverter::exact_convert_array`]. A
-/// single-modulus input uses direct centered reduction and ignores the context.
+/// Create this through [`BaseConverter::exact_conversion_context`]. Reusing it
+/// for conversions of the same polynomial length avoids allocations in
+/// [`BaseConverter::exact_convert_array`].
 pub struct ExactConversionContext<T: FheUint> {
     adjusted_residues: Vec<T>,
     correction_terms: Vec<f64>,
-    input_moduli_count: usize,
-    poly_length: usize,
 }
 
 impl<T: FheUint> ExactConversionContext<T> {
-    /// Allocates scratch space for the given conversion dimensions.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `input_moduli_count * poly_length` overflows `usize`.
-    pub fn new(input_moduli_count: usize, poly_length: usize) -> Self {
+    fn new(input_moduli_count: usize, poly_length: usize) -> Self {
         let adjusted_residues_len = input_moduli_count
             .checked_mul(poly_length)
             .expect("exact conversion context length overflow");
@@ -32,13 +24,29 @@ impl<T: FheUint> ExactConversionContext<T> {
         Self {
             adjusted_residues: vec![T::ZERO; adjusted_residues_len],
             correction_terms: vec![0.0; poly_length],
-            input_moduli_count,
-            poly_length,
         }
     }
 }
 
 impl<T: FheUint, M: FieldContext<T>> BaseConverter<T, M> {
+    /// Allocates reusable scratch space for exact conversions of one length.
+    ///
+    /// The returned context is sized for this converter's input-modulus count
+    /// and can be reused by [`exact_convert_array`](Self::exact_convert_array)
+    /// when `poly_length` is unchanged. A single-modulus input needs no scratch.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `input_moduli_count() * poly_length` overflows `usize`.
+    #[must_use]
+    pub fn exact_conversion_context(&self, poly_length: usize) -> ExactConversionContext<T> {
+        if self.uses_single_input_kernel() {
+            ExactConversionContext::new(0, 0)
+        } else {
+            ExactConversionContext::new(self.input_moduli_count(), poly_length)
+        }
+    }
+
     /// Converts an input-basis array to a single-modulus output basis using
     /// SEAL-style corrected RNS base conversion.
     ///
@@ -53,9 +61,10 @@ impl<T: FheUint, M: FieldContext<T>> BaseConverter<T, M> {
     /// representative in `[-Q/2, Q/2)`, where `Q` is the input-base product.
     /// `crt_poly_out.len()` must equal `poly_length`; it receives that centered
     /// representative reduced modulo the single output modulus.
-    /// For a multi-modulus input, `context` must be constructed for
-    /// `input_moduli_count()` and the same `poly_length`. A single-modulus
-    /// input ignores `context`.
+    /// For a multi-modulus input, `context` must come from
+    /// [`exact_conversion_context`](Self::exact_conversion_context) on a
+    /// converter with the same input-modulus count and the same `poly_length`.
+    /// A single-modulus input ignores `context`.
     ///
     /// For a multi-modulus input, the correction is estimated with `f64`. The
     /// name "exact" follows SEAL terminology and distinguishes this corrected
@@ -109,8 +118,16 @@ impl<T: FheUint, M: FieldContext<T>> BaseConverter<T, M> {
             return;
         }
 
-        assert_eq!(context.input_moduli_count, input_moduli_count);
-        assert_eq!(context.poly_length, poly_length);
+        assert_eq!(
+            context.adjusted_residues.len(),
+            expected_input_len,
+            "exact conversion context has the wrong input shape"
+        );
+        assert_eq!(
+            context.correction_terms.len(),
+            poly_length,
+            "exact conversion context has the wrong polynomial length"
+        );
 
         let adjusted_residues = &mut context.adjusted_residues;
         let correction_terms = &mut context.correction_terms;

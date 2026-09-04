@@ -1,7 +1,8 @@
 mod compose;
 mod decompose;
 mod extension;
-mod kernels;
+mod small;
+mod small_kernels;
 
 use itertools::Itertools;
 use primus_factor::ShoupFactor;
@@ -147,7 +148,7 @@ where
 
     /// Returns the moduli values in basis order.
     #[inline]
-    pub fn moduli_values(&self) -> impl Iterator<Item = T> {
+    pub(crate) fn moduli_values(&self) -> impl Iterator<Item = T> {
         self.moduli.iter().map(|m| m.value())
     }
 
@@ -169,22 +170,12 @@ where
         self.moduli_product.len()
     }
 
-    /// Returns all punctured products in flattened basis order.
-    ///
-    /// The returned slice length is `moduli_count() * big_uint_value_len()`.
-    /// Chunk `i` has length [`big_uint_value_len`](Self::big_uint_value_len)
-    /// and stores `Q / q_i`, where `q_i == moduli()[i]`.
-    #[inline]
-    pub fn punctured_product(&self) -> &[T] {
-        &self.punctured_product
-    }
-
     /// Iterates over punctured products `Q / q_i` as fixed-width big integers.
     ///
     /// The iterator yields `moduli_count()` chunks. Each chunk has exactly
     /// [`big_uint_value_len`](Self::big_uint_value_len) limbs.
     #[inline]
-    pub fn iter_punctured_product(
+    pub(crate) fn iter_punctured_product(
         &self,
     ) -> impl ExactSizeIterator<Item = BigUint<&[T]>> + DoubleEndedIterator {
         self.punctured_product
@@ -197,7 +188,7 @@ where
     /// The returned slice length is `moduli_count()`. Factor `i` belongs to
     /// `moduli()[i]` and must not be reused with another modulus.
     #[inline]
-    pub fn inv_punctured_product_mod_modulus(&self) -> &[ShoupFactor<T>] {
+    pub(crate) fn inv_punctured_product_mod_modulus(&self) -> &[ShoupFactor<T>] {
         &self.inv_punctured_product_mod_modulus
     }
 }

@@ -75,7 +75,7 @@ fn test_rns_glev() {
     // ── Build GLev gadget encrypting m₁ ─────────────────────────
     // input1 is decomposed into CRT form and encrypted as a GLev structure.
     let mut msg1: CrtPolynomial<Vec<ValueT>> = CrtPolynomial::zero(rns_poly_len);
-    base_q.wrapping_decompose_small_polynomial_to(&input1, &mut msg1, poly_length, t);
+    base_q.wrapping_decompose_small_polynomial_to(&input1, &mut msg1, t);
 
     dcrt_sk.encrypt_crt_msg_to_dcrt_glev_inplace(&msg1, &mut dcrt_glev, &domain, &mut rng);
 
@@ -87,7 +87,7 @@ fn test_rns_glev() {
 
     let mut msg2: CrtPolynomial<Vec<ValueT>> = CrtPolynomial::zero(rns_poly_len);
 
-    base_q.wrapping_decompose_small_polynomial_to(&input2, &mut msg2, poly_length, t);
+    base_q.wrapping_decompose_small_polynomial_to(&input2, &mut msg2, t);
 
     msg2.mul_factor_assign(
         glwe_params.delta_factor_mod_q(),

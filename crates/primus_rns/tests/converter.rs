@@ -1,5 +1,5 @@
 use primus_modulus::BarrettModulus;
-use primus_rns::{BaseConverter, ExactConversionContext, RNSBase};
+use primus_rns::{BaseConverter, RNSBase};
 
 type Value = u64;
 type Modulus = BarrettModulus<Value>;
@@ -70,7 +70,7 @@ fn single_input_fast_and_exact_conversion_use_distinct_lifts() {
     let exact_output_base = base(&[13]);
     let exact_converter = BaseConverter::new(&input_base, &exact_output_base);
     let mut exact_output = [Value::MAX; 5];
-    let mut context = ExactConversionContext::new(0, 0);
+    let mut context = exact_converter.exact_conversion_context(input.len());
 
     exact_converter.exact_convert_array(&input, &mut exact_output, input.len(), &mut context);
 
@@ -95,7 +95,7 @@ fn exact_array_conversion_uses_centered_values_and_reuses_context() {
         .collect();
     let input = pack_modulus_major(&residues, input_base.moduli_count());
     let mut output = vec![Value::MAX; values.len()];
-    let mut context = ExactConversionContext::new(input_base.moduli_count(), values.len());
+    let mut context = converter.exact_conversion_context(values.len());
 
     converter.exact_convert_array(&input, &mut output, values.len(), &mut context);
     assert_eq!(output, [0, 1, 2, 7, 16, 36]);

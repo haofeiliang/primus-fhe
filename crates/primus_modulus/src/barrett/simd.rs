@@ -210,8 +210,13 @@ where
 {
     assert_eq!(a.len(), b.len(), "reduce_dot_product: length mismatch");
 
-    let k = compact::DOT_PRODUCT_INNER_CHUNK;
-    let outer = k * T::LANE_COUNT;
+    let outer = compact::DOT_PRODUCT_INNER_CHUNK * T::LANE_COUNT;
+
+    // Below one complete SIMD accumulator chunk, setup and horizontal
+    // reduction cost more than the scalar kernel.
+    if a.len() < outer {
+        return compact::slice::reduce_dot_product(modulus, a, b);
+    }
 
     let sm: SimdBarrettModulus<T> = modulus.into();
     let mv = sm.value;

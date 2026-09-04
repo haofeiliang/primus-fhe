@@ -78,7 +78,7 @@ where
     ///
     /// `scratch.len()` must equal `moduli_count()`. It is scratch storage for
     /// one coefficient's residue vector and is overwritten for each value.
-    pub fn compose_multiple_values_to(
+    pub fn compose_big_uint_values_to(
         &self,
         multi_residues: &[T],
         big_uint_values: &mut [T],
@@ -128,7 +128,7 @@ where
         A: Data<Elem = T>,
         B: DataMut<Elem = T>,
     {
-        self.compose_multiple_values_to(
+        self.compose_big_uint_values_to(
             crt_poly.as_slice(),
             big_uint_poly.as_mut_slice(),
             poly_length,
