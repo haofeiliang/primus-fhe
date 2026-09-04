@@ -3,18 +3,60 @@
 //
 // Filter by value type or operation, for example:
 // cargo bench -p primus_ntt --bench bench_ntt -- "monomial/u64"
+// cargo bench -p primus_ntt --bench bench_ntt -- "^ntt/u64/.*/forward/specialized$"
+// cargo bench -p primus_ntt --bench bench_ntt -- "construction"
 
 use core::fmt::Display;
 use std::{hint::black_box, time::Duration};
 
-use criterion::{BatchSize, BenchmarkGroup, BenchmarkId, Criterion, measurement::WallTime};
+use criterion::{
+    BatchSize, BenchmarkGroup, BenchmarkId, Criterion, Throughput, measurement::WallTime,
+};
 use primus_integer::FheUint;
 use primus_modulus::BarrettModulus;
 use primus_ntt::{MonomialNttTable, NttTable, U32NttTable, U64NttTable, UintNttTable};
+use primus_reduce::FieldContext;
 use rand::distr::{Distribution, Uniform};
 
-const U32_CASES: &[(u32, usize)] = &[(268369921, 4096)];
-const U64_CASES: &[(u64, usize)] = &[(1073692673, 4096), (1125899906826241, 4096)];
+// Transform cases cover scalar/SIMD cutovers, the AVX-512 breadth-first leaf
+// boundary, and representative cache-working-set sizes. On machines without a
+// given instruction set, the same cases measure the selected fallback.
+const U32_TRANSFORM_CASES: &[(u32, usize)] = &[
+    (268_369_921, 16),
+    (268_369_921, 32),
+    (268_369_921, 1024),
+    (268_369_921, 4096),
+];
+const U64_TRANSFORM_CASES: &[(u64, usize)] = &[
+    // Below 2^30: scalar-32 for n < 16; IFMA or DQ-32 when available.
+    (1_073_692_673, 8),
+    (1_073_692_673, 16),
+    (1_073_692_673, 1024),
+    (1_073_692_673, 2048),
+    (1_073_692_673, 4096),
+    // Below 2^50: scalar-64 for n < 16; IFMA when available.
+    (1_125_899_906_826_241, 8),
+    (1_125_899_906_826_241, 16),
+    (1_125_899_906_826_241, 1024),
+    (1_125_899_906_826_241, 2048),
+    (1_125_899_906_826_241, 4096),
+    (1_125_899_906_826_241, 8192),
+    // Above the IFMA limit: AVX-512 DQ-64 when available.
+    (1_152_921_504_606_830_593, 16),
+    (1_152_921_504_606_830_593, 1024),
+    (1_152_921_504_606_830_593, 2048),
+    (1_152_921_504_606_830_593, 4096),
+    (1_152_921_504_606_830_593, 8192),
+];
+
+// Keep the more numerous construction, lazy, monomial, and expansion
+// operations focused on one representative size per arithmetic range.
+const U32_AUXILIARY_CASES: &[(u32, usize)] = &[(268_369_921, 4096)];
+const U64_AUXILIARY_CASES: &[(u64, usize)] = &[
+    (1_073_692_673, 4096),
+    (1_125_899_906_826_241, 4096),
+    (1_152_921_504_606_830_593, 4096),
+];
 const INPUT_POOL_SIZE: usize = 16;
 
 #[derive(Clone, Copy)]
@@ -91,6 +133,33 @@ fn bench_ntt_table<Value, Table>(
         table,
         input_pool,
         NttTable::inverse_transform_slice,
+    );
+}
+
+fn bench_lazy_ntt_table<Value, Table>(
+    group: &mut BenchmarkGroup<'_, WallTime>,
+    implementation: &str,
+    table: &Table,
+    input_pool: &[Vec<Value>],
+) where
+    Value: FheUint,
+    Table: NttTable<ValueT = Value>,
+{
+    bench_transform(
+        group,
+        "forward",
+        implementation,
+        table,
+        input_pool,
+        NttTable::lazy_transform_slice,
+    );
+    bench_transform(
+        group,
+        "inverse",
+        implementation,
+        table,
+        input_pool,
+        NttTable::lazy_inverse_transform_slice,
     );
 }
 
@@ -179,7 +248,29 @@ fn bench_expansion_table<Value, Table>(
     );
 }
 
-fn bench_case<Value, Specialized, Generic>(
+fn bench_ntt_case<Value, Specialized, Generic>(
+    criterion: &mut Criterion,
+    value_type: &str,
+    modulus: Value,
+    n: usize,
+    specialized: &Specialized,
+    generic: &Generic,
+    input_pool: &[Vec<Value>],
+) where
+    Value: FheUint + Display,
+    Specialized: MonomialNttTable<ValueT = Value>,
+    Generic: MonomialNttTable<ValueT = Value>,
+{
+    let case = format!("{value_type}/q={modulus}/n={n}");
+
+    let mut ntt_group = criterion.benchmark_group(format!("ntt/{case}"));
+    ntt_group.throughput(Throughput::Elements(n as u64));
+    bench_ntt_table(&mut ntt_group, "specialized", specialized, input_pool);
+    bench_ntt_table(&mut ntt_group, "generic", generic, input_pool);
+    ntt_group.finish();
+}
+
+fn bench_auxiliary_case<Value, Specialized, Generic>(
     criterion: &mut Criterion,
     case: BenchCase<Value>,
     specialized: &Specialized,
@@ -198,16 +289,18 @@ fn bench_case<Value, Specialized, Generic>(
     } = case;
     let case = format!("{value_type}/q={modulus}/n={n}");
 
-    let mut ntt_group = criterion.benchmark_group(format!("ntt/{case}"));
-    bench_ntt_table(&mut ntt_group, "specialized", specialized, input_pool);
-    bench_ntt_table(&mut ntt_group, "generic", generic, input_pool);
-    ntt_group.finish();
+    let mut lazy_group = criterion.benchmark_group(format!("lazy_ntt/{case}"));
+    lazy_group.throughput(Throughput::Elements(n as u64));
+    bench_lazy_ntt_table(&mut lazy_group, "specialized", specialized, input_pool);
+    bench_lazy_ntt_table(&mut lazy_group, "generic", generic, input_pool);
+    lazy_group.finish();
 
     let degree = n / 3;
     let mut specialized_output = vec![Value::ZERO; n];
     let mut generic_output = vec![Value::ZERO; n];
 
     let mut monomial_group = criterion.benchmark_group(format!("monomial/{case}"));
+    monomial_group.throughput(Throughput::Elements(n as u64));
     bench_monomial_table(
         &mut monomial_group,
         "specialized",
@@ -227,6 +320,9 @@ fn bench_case<Value, Specialized, Generic>(
     monomial_group.finish();
 
     let mut expansion_group = criterion.benchmark_group(format!("expansion/{case}"));
+    expansion_group.throughput(Throughput::Elements(
+        n as u64 * u64::from(n.trailing_zeros()),
+    ));
     bench_expansion_table(
         &mut expansion_group,
         "specialized",
@@ -242,8 +338,36 @@ fn bench_case<Value, Specialized, Generic>(
     expansion_group.finish();
 }
 
+fn bench_construction_case<Value, Specialized, Generic, Modulus>(
+    criterion: &mut Criterion,
+    value_type: &str,
+    modulus: Value,
+    n: usize,
+    modulus_context: Modulus,
+) where
+    Value: FheUint + Display,
+    Specialized: NttTable<ValueT = Value>,
+    Generic: NttTable<ValueT = Value>,
+    Modulus: Copy + FieldContext<Value>,
+{
+    let log_n = n.trailing_zeros();
+    let case = format!("{value_type}/q={modulus}/n={n}");
+    let mut group = criterion.benchmark_group(format!("construction/{case}"));
+    group.bench_function("specialized", |b| {
+        b.iter(|| {
+            black_box(Specialized::new(log_n, black_box(modulus_context)).unwrap());
+        })
+    });
+    group.bench_function("generic", |b| {
+        b.iter(|| {
+            black_box(Generic::new(log_n, black_box(modulus_context)).unwrap());
+        })
+    });
+    group.finish();
+}
+
 fn bench_u32(criterion: &mut Criterion) {
-    for &(q, n) in U32_CASES {
+    for &(q, n) in U32_TRANSFORM_CASES {
         assert!((q - 1).is_multiple_of(2 * n as u32));
 
         let modulus = BarrettModulus::new(q);
@@ -253,7 +377,21 @@ fn bench_u32(criterion: &mut Criterion) {
         let specialized = U32NttTable::new(log_n, modulus).unwrap();
         let generic = UintNttTable::<u32>::new(log_n, modulus).unwrap();
 
-        bench_case(
+        bench_ntt_case(criterion, "u32", q, n, &specialized, &generic, &input_pool);
+    }
+
+    for &(q, n) in U32_AUXILIARY_CASES {
+        let modulus = BarrettModulus::new(q);
+        let log_n = n.trailing_zeros();
+        let distribution = Uniform::new(0, q).unwrap();
+        let input_pool = generate_input_pool(&distribution, n);
+        let specialized = U32NttTable::new(log_n, modulus).unwrap();
+        let generic = UintNttTable::<u32>::new(log_n, modulus).unwrap();
+
+        bench_construction_case::<u32, U32NttTable, UintNttTable<u32>, _>(
+            criterion, "u32", q, n, modulus,
+        );
+        bench_auxiliary_case(
             criterion,
             BenchCase {
                 value_type: "u32",
@@ -269,7 +407,7 @@ fn bench_u32(criterion: &mut Criterion) {
 }
 
 fn bench_u64(criterion: &mut Criterion) {
-    for &(q, n) in U64_CASES {
+    for &(q, n) in U64_TRANSFORM_CASES {
         assert!((q - 1).is_multiple_of(2 * n as u64));
 
         let modulus = BarrettModulus::new(q);
@@ -279,7 +417,21 @@ fn bench_u64(criterion: &mut Criterion) {
         let specialized = U64NttTable::new(log_n, modulus).unwrap();
         let generic = UintNttTable::<u64>::new(log_n, modulus).unwrap();
 
-        bench_case(
+        bench_ntt_case(criterion, "u64", q, n, &specialized, &generic, &input_pool);
+    }
+
+    for &(q, n) in U64_AUXILIARY_CASES {
+        let modulus = BarrettModulus::new(q);
+        let log_n = n.trailing_zeros();
+        let distribution = Uniform::new(0, q).unwrap();
+        let input_pool = generate_input_pool(&distribution, n);
+        let specialized = U64NttTable::new(log_n, modulus).unwrap();
+        let generic = UintNttTable::<u64>::new(log_n, modulus).unwrap();
+
+        bench_construction_case::<u64, U64NttTable, UintNttTable<u64>, _>(
+            criterion, "u64", q, n, modulus,
+        );
+        bench_auxiliary_case(
             criterion,
             BenchCase {
                 value_type: "u64",

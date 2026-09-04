@@ -174,19 +174,10 @@ impl U64NttTable {
         let q = self.q;
         let two_q = self.two_q;
 
-        let inv_n = self.inv_n;
-        let inv_n_w = self.inv_n_w;
-
-        let inv_n_precon = if BIT_SHIFT == 32 {
-            self.inv_n_precon32
-        } else {
-            self.inv_n_precon64
-        };
-        let inv_n_w_precon = if BIT_SHIFT == 32 {
-            self.inv_n_w_precon32
-        } else {
-            self.inv_n_w_precon64
-        };
+        let inv_n = self.inverse_final_scale.inv_n;
+        let inv_n_precon = self.inverse_final_scale.inv_n_precon;
+        let inv_n_w = self.inverse_final_scale.inv_n_w;
+        let inv_n_w_precon = self.inverse_final_scale.inv_n_w_precon;
 
         let inv_roots = self.inv_roots.as_slice();
         let inv_roots_precon = if BIT_SHIFT == 32 {

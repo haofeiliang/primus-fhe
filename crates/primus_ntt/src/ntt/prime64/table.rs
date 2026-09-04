@@ -1,6 +1,6 @@
 use aligned_vec::{AVec, avec};
 use primus_data::DataMut;
-use primus_factor::{FactorMul, ShoupFactor};
+use primus_factor::{FactorMul, MultiplyFactor, ShoupFactor};
 use primus_gcd::Xgcd;
 use primus_poly::{NttPolynomial, Polynomial};
 use primus_reduce::FieldContext;
@@ -18,7 +18,16 @@ use crate::{
 use super::avx2::precompute::build_avx2_roots_u64;
 #[cfg(target_arch = "x86_64")]
 use super::avx512::internal::{IFMA_SHIFT_BITS, MAX_DQ32_MODULUS, MAX_IFMA_MODULUS};
-use super::{precompute::build_barrett_vector, scalar};
+use super::precompute::build_barrett_vector;
+
+/// Backend-specific constants for the fused final inverse stage.
+#[derive(Clone, Copy)]
+pub(super) struct InverseFinalScale {
+    pub(super) inv_n: u64,
+    pub(super) inv_n_precon: u64,
+    pub(super) inv_n_w: u64,
+    pub(super) inv_n_w_precon: u64,
+}
 
 /// Exact transform kernel selected for `U64NttTable`.
 #[cfg(target_arch = "x86_64")]
@@ -92,14 +101,7 @@ pub struct U64NttTable {
     root: u64,
     inv_root: u64,
 
-    pub(super) inv_n: u64,
-    pub(super) inv_n_precon32: u64,
-    pub(super) inv_n_precon64: u64,
-    /// `inv_n * inv_roots[n-1] mod q` — precomputed for the inverse final stage.
-    pub(super) inv_n_w: u64,
-    /// Shoup preconditioner for `inv_n_w`.
-    pub(super) inv_n_w_precon32: u64,
-    pub(super) inv_n_w_precon64: u64,
+    pub(super) inverse_final_scale: InverseFinalScale,
 
     /// Forward roots in bit-reversed order (size `n`).
     pub(super) roots: AVec<u64>,
@@ -188,7 +190,7 @@ impl U64NttTable {
     /// Returns the inverse of `N` modulo `q`.
     #[inline]
     pub fn inv_n(&self) -> u64 {
-        self.inv_n
+        self.inverse_final_scale.inv_n
     }
 
     /// Dispatch forward transform to the selected backend.
@@ -285,7 +287,7 @@ impl U64NttTable {
                     inverse_transform_from_bit_reverse_avx512::<32>(
                         values,
                         self.q,
-                        self.inv_n,
+                        &self.inverse_final_scale,
                         &self.inv_roots,
                         &self.inv_roots_precon32,
                         input_mod_factor as u64,
@@ -298,7 +300,7 @@ impl U64NttTable {
                     inverse_transform_from_bit_reverse_avx512::<64>(
                         values,
                         self.q,
-                        self.inv_n,
+                        &self.inverse_final_scale,
                         &self.inv_roots,
                         &self.inv_roots_precon64,
                         input_mod_factor as u64,
@@ -311,7 +313,7 @@ impl U64NttTable {
                     inverse_transform_from_bit_reverse_avx512::<{ IFMA_SHIFT_BITS }>(
                         values,
                         self.q,
-                        self.inv_n,
+                        &self.inverse_final_scale,
                         &self.inv_roots,
                         &self.inv_roots_precon52,
                         input_mod_factor as u64,
@@ -359,6 +361,7 @@ impl NttTable for U64NttTable {
 
         let n = 1usize << log_n;
         let two_q = q << 1;
+        #[cfg(not(target_arch = "x86_64"))]
         let low_q = q < (1u64 << 30);
 
         #[cfg(target_arch = "x86_64")]
@@ -442,24 +445,24 @@ impl NttTable for U64NttTable {
             AVec::with_capacity(64, 0)
         };
 
-        // --- inv_n = n^{-1} mod q ---
-        let inv_n = mod_inv(n as u64, q);
-        let inv_n_precon64 = ShoupFactor::<u64>::quotient_for(inv_n, q);
-        let inv_n_precon32 = if low_q {
-            (inv_n << 32).wrapping_div(q)
-        } else {
-            0
+        // --- constants for the backend's fused final inverse stage ---
+        #[cfg(target_arch = "x86_64")]
+        let inverse_bit_shift = match backend {
+            U64Backend::Scalar32 | U64Backend::Avx512Dq32 => 32,
+            U64Backend::Avx512Ifma52 => IFMA_SHIFT_BITS,
+            U64Backend::Scalar64 | U64Backend::Avx2 | U64Backend::Avx512Dq64 => 64,
         };
+        #[cfg(not(target_arch = "x86_64"))]
+        let inverse_bit_shift = if low_q { 32 } else { 64 };
 
-        // Precompute inv_n_w = inv_n * inv_roots[n-1] mod q for the inverse final stage.
+        let inv_n = mod_inv(n as u64, q);
         let last_w = unsafe { *inv_roots.get_unchecked(n - 1) };
-        let inv_n_w =
-            scalar::reduce_once(scalar::mul_mod_lazy(last_w, inv_n, inv_n_precon64, q), q);
-        let inv_n_w_precon64 = ShoupFactor::<u64>::quotient_for(inv_n_w, q);
-        let inv_n_w_precon32 = if low_q {
-            (inv_n_w << 32).wrapping_div(q)
-        } else {
-            0
+        let inv_n_w = modulus.reduce_mul(inv_n, last_w);
+        let inverse_final_scale = InverseFinalScale {
+            inv_n,
+            inv_n_precon: MultiplyFactor::new(inv_n, inverse_bit_shift, q).quotient(),
+            inv_n_w,
+            inv_n_w_precon: MultiplyFactor::new(inv_n_w, inverse_bit_shift, q).quotient(),
         };
 
         // --- backend-specific pre-expanded root tables ---
@@ -525,12 +528,7 @@ impl NttTable for U64NttTable {
             two_q,
             root,
             inv_root,
-            inv_n,
-            inv_n_precon32,
-            inv_n_precon64,
-            inv_n_w,
-            inv_n_w_precon32,
-            inv_n_w_precon64,
+            inverse_final_scale,
             roots,
             roots_precon32,
             roots_precon64,

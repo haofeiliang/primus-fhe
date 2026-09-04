@@ -10,8 +10,9 @@ use core::arch::x86_64::*;
 use super::butterfly::{fwd_butterfly, inv_butterfly};
 use super::utils::*;
 
-pub fn fwd_t1<const BIT_SHIFT: u32>(
+pub fn fwd_t1<const BIT_SHIFT: u32, const REDUCE_OUTPUT: bool>(
     operand: &mut [u64],
+    v_modulus: __m512i,
     v_neg_modulus: __m512i,
     v_twice_mod: __m512i,
     w: &[u64],
@@ -37,6 +38,13 @@ pub fn fwd_t1<const BIT_SHIFT: u32>(
                 v_neg_modulus,
                 v_twice_mod,
             );
+
+            if REDUCE_OUTPUT {
+                v_x = _mm512_hexl_small_mod_epu64_2(v_x, v_twice_mod);
+                v_x = _mm512_hexl_small_mod_epu64_2(v_x, v_modulus);
+                v_y = _mm512_hexl_small_mod_epu64_2(v_y, v_twice_mod);
+                v_y = _mm512_hexl_small_mod_epu64_2(v_y, v_modulus);
+            }
 
             write_fwd_interleaved_t1(v_x, v_y, x);
         }
