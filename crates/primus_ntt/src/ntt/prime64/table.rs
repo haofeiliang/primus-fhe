@@ -76,9 +76,9 @@ fn select_u64_backend(
 
 /// Specialized NTT table for `u64` coefficients.
 ///
-/// Stores roots and Barrett preconditioners in structure-of-arrays layout
-/// for fast scalar and SIMD access.  Supports runtime dispatch to scalar,
-/// AVX2, AVX-512 DQ, and AVX-512 IFMA backends.
+/// Stores canonical roots and only the preconditioners and packed forward-root
+/// layout required by the backend selected at construction. Supports scalar,
+/// AVX2, AVX-512 DQ, and AVX-512 IFMA kernels.
 ///
 /// # Constraints
 ///

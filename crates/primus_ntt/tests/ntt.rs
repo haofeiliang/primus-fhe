@@ -8,8 +8,8 @@ use primus_ntt::{MonomialNttTable, NttTable, U32NttTable, U64NttTable, UintNttTa
 const N: usize = 256;
 const LOG_N: u32 = N.trailing_zeros();
 
-fn deterministic_u32_input(modulus: u32) -> Vec<u32> {
-    (0..N)
+fn deterministic_u32_input(n: usize, modulus: u32) -> Vec<u32> {
+    (0..n)
         .map(|i| {
             let i = i as u32;
             (17 * i * i + 31 * i + 7) % modulus
@@ -17,8 +17,8 @@ fn deterministic_u32_input(modulus: u32) -> Vec<u32> {
         .collect()
 }
 
-fn deterministic_u64_input(modulus: u64) -> Vec<u64> {
-    (0..N)
+fn deterministic_u64_input(n: usize, modulus: u64) -> Vec<u64> {
+    (0..n)
         .map(|i| {
             let i = i as u64;
             (17 * i * i + 31 * i + 7) % modulus
@@ -106,20 +106,54 @@ where
 fn u32_transform_matches_generic_reference() {
     let q = 268369921u32;
     let modulus = BarrettModulus::new(q);
+
+    for n in [32, N] {
+        let log_n = n.trailing_zeros();
+        let table = U32NttTable::new(log_n, modulus).unwrap();
+        let reference = UintNttTable::<u32>::new(log_n, modulus).unwrap();
+
+        assert_transform_matches_reference(&table, &reference, &deterministic_u32_input(n, q));
+    }
+}
+
+#[test]
+fn u32_lazy_transforms_match_generic_reference() {
+    let q = 268369921u32;
+    let modulus = BarrettModulus::new(q);
     let table = U32NttTable::new(LOG_N, modulus).unwrap();
     let reference = UintNttTable::<u32>::new(LOG_N, modulus).unwrap();
 
-    assert_transform_matches_reference(&table, &reference, &deterministic_u32_input(q));
+    let mut actual = vec![4 * q - 1; N];
+    let mut expected = vec![q - 1; N];
+    table.lazy_transform_slice(&mut actual);
+    reference.transform_slice(&mut expected);
+    assert!(actual.iter().all(|&value| value < 4 * q));
+    for (actual, expected) in actual.into_iter().zip(expected) {
+        assert_eq!(actual % q, expected, "lazy forward mismatch");
+    }
+
+    let mut actual = vec![2 * q - 1; N];
+    let mut expected = vec![q - 1; N];
+    table.lazy_inverse_transform_slice(&mut actual);
+    reference.inverse_transform_slice(&mut expected);
+    assert!(actual.iter().all(|&value| value < 2 * q));
+    for (actual, expected) in actual.into_iter().zip(expected) {
+        assert_eq!(actual % q, expected, "lazy inverse mismatch");
+    }
 }
 
 #[test]
 fn u64_transform_matches_generic_reference_across_modulus_ranges() {
     for q in [536813569u64, 562949953392641, 1152921504606830593] {
         let modulus = BarrettModulus::new(q);
-        let table = U64NttTable::new(LOG_N, modulus).unwrap();
-        let reference = UintNttTable::<u64>::new(LOG_N, modulus).unwrap();
 
-        assert_transform_matches_reference(&table, &reference, &deterministic_u64_input(q));
+        for n in [16, N] {
+            let log_n = n.trailing_zeros();
+            let table = U64NttTable::new(log_n, modulus).unwrap();
+            let reference = UintNttTable::<u64>::new(log_n, modulus).unwrap();
+
+            assert_transform_matches_reference(&table, &reference, &deterministic_u64_input(n, q));
+        }
     }
 }
 

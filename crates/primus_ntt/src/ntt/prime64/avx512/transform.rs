@@ -1,3 +1,11 @@
+//! Top-level HEXL-style AVX-512 scheduling.
+//!
+//! The recursive state (`recursion_depth`, `recursion_half`) identifies a
+//! subtree of the global root tables. Leaves run breadth-first. The forward
+//! table has duplicated T4/T2 regions, so `compute_new_w_idx` translates a
+//! canonical stage index into that expanded layout; inverse roots keep their
+//! canonical scrambled order.
+
 use core::arch::x86_64::*;
 
 use primus_factor::MultiplyFactor;
@@ -7,8 +15,6 @@ use super::stages::*;
 use super::utils::*;
 
 const BASE_NTT_SIZE: usize = 1024;
-
-// ── Forward Transform ─────────────────────────────────────────────────────
 
 #[allow(clippy::too_many_arguments)]
 pub unsafe fn forward_transform_to_bit_reverse_avx512<const BIT_SHIFT: u32>(
@@ -198,8 +204,6 @@ pub unsafe fn forward_transform_to_bit_reverse_avx512<const BIT_SHIFT: u32>(
         }
     }
 }
-
-// ── Inverse Transform ─────────────────────────────────────────────────────
 
 #[allow(clippy::too_many_arguments)]
 pub unsafe fn inverse_transform_from_bit_reverse_avx512<const BIT_SHIFT: u32>(

@@ -19,21 +19,20 @@ use super::scalar;
 use super::{avx2::precompute::build_avx2_roots_u32, avx512::precompute::build_avx512_roots_u32};
 
 /// Backend selector for `U32NttTable`.
+#[cfg(target_arch = "x86_64")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum U32Backend {
     Scalar,
     /// AVX2 backend — available on x86_64 with `avx2` target feature.
-    #[cfg(target_arch = "x86_64")]
     Avx2,
     /// AVX-512 backend — available on x86_64 with `avx512f` target feature.
-    #[cfg(target_arch = "x86_64")]
     Avx512,
 }
 
 /// Specialized NTT table for `u32` coefficients.
 ///
-/// Stores roots and Barrett-32 preconditioners in structure-of-arrays layout
-/// for fast scalar (and future SIMD) access.
+/// Stores canonical roots and Barrett-32 preconditioners plus the packed root
+/// layout required by the backend selected at construction.
 ///
 /// # Constraints
 ///
@@ -87,6 +86,7 @@ pub struct U32NttTable {
     #[cfg(target_arch = "x86_64")]
     pub(super) avx512_inv_roots_precon: AVec<u32>,
 
+    #[cfg(target_arch = "x86_64")]
     backend: U32Backend,
 }
 
@@ -138,13 +138,12 @@ impl U32NttTable {
     fn dispatch_forward(&self, values: &mut [u32], output_mod_factor: u32) {
         assert_ntt_length(values.len(), self.n);
 
+        #[cfg(target_arch = "x86_64")]
         if self.n >= 32 {
             match self.backend {
-                #[cfg(target_arch = "x86_64")]
                 U32Backend::Avx2 => unsafe {
                     return self.avx2_forward_transform(values, output_mod_factor);
                 },
-                #[cfg(target_arch = "x86_64")]
                 U32Backend::Avx512 => unsafe {
                     return self.avx512_forward_transform(values, output_mod_factor);
                 },
@@ -161,13 +160,12 @@ impl U32NttTable {
     fn dispatch_inverse(&self, values: &mut [u32], output_mod_factor: u32) {
         assert_ntt_length(values.len(), self.n);
 
+        #[cfg(target_arch = "x86_64")]
         if self.n >= 32 {
             match self.backend {
-                #[cfg(target_arch = "x86_64")]
                 U32Backend::Avx2 => unsafe {
                     return self.avx2_inverse_transform(values, output_mod_factor);
                 },
-                #[cfg(target_arch = "x86_64")]
                 U32Backend::Avx512 => unsafe {
                     return self.avx512_inverse_transform(values, output_mod_factor);
                 },
@@ -254,9 +252,6 @@ impl NttTable for U32NttTable {
         } else {
             U32Backend::Scalar
         };
-        #[cfg(not(target_arch = "x86_64"))]
-        let backend = U32Backend::Scalar;
-
         // --- backend-specific pre-expanded root tables ---
         // Only build for the selected backend to save memory and init time.
         #[cfg(target_arch = "x86_64")]
@@ -327,6 +322,7 @@ impl NttTable for U32NttTable {
             avx512_inv_roots,
             #[cfg(target_arch = "x86_64")]
             avx512_inv_roots_precon,
+            #[cfg(target_arch = "x86_64")]
             backend,
         })
     }
