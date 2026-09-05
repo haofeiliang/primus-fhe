@@ -117,6 +117,20 @@ fn test_rns_glev() {
     let m_dec = dcrt_sk.decrypt(&c1, &glwe_params, &table, &mut decrypt_context);
 
     assert_eq!(m_dec, desired);
+
+    // Reuse the dirty workspace. A zero product must overwrite scratch data
+    // without changing the accumulator or requiring a separate context reset.
+    let previous = c1.clone();
+    msg2_big_uint_poly.as_mut_slice().fill(0);
+    c1.add_dcrt_glev_mul_big_uint_poly_assign(
+        &dcrt_glev,
+        &msg2_big_uint_poly,
+        glev_params.basis(),
+        &table,
+        base_q,
+        &mut glev_context,
+    );
+    assert_eq!(c1.as_ref(), previous.as_ref());
 }
 
 /// End-to-end key-switching correctness test.

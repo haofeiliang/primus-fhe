@@ -334,12 +334,55 @@ impl<'a, T: FheUint> OnceBigUintSignedDecomposer<'a, T> {
         let big_uint_value_len = self.big_uint_value_len();
         debug_assert_eq!(carries.len(), decomposed_unsigned_values.len());
         debug_assert_eq!(big_uint_values.len(), carries.len() * big_uint_value_len);
+        // Constant strides let the optimizer use interleaved vector loads for
+        // common widths. Choose the width once per batch.
+        match big_uint_value_len {
+            1 => {
+                return self.unsigned_decompose_fixed::<1>(
+                    big_uint_values,
+                    decomposed_unsigned_values,
+                    carries,
+                );
+            }
+            2 => {
+                return self.unsigned_decompose_fixed::<2>(
+                    big_uint_values,
+                    decomposed_unsigned_values,
+                    carries,
+                );
+            }
+            4 => {
+                return self.unsigned_decompose_fixed::<4>(
+                    big_uint_values,
+                    decomposed_unsigned_values,
+                    carries,
+                );
+            }
+            _ => {}
+        }
         for ((value, decomposed_unsigned_value), carry) in big_uint_values
             .chunks_exact(big_uint_value_len)
             .zip(decomposed_unsigned_values.iter_mut())
             .zip(carries)
         {
             self.unsigned_decompose_to_kernel(value, decomposed_unsigned_value, carry);
+        }
+    }
+
+    /// The caller selected LIMBS from the basis's fixed input width.
+    /// Keep these batch loops out of the caller: inlining all widths enlarges
+    /// the level loop and can regress the runtime-stride fallback. One call
+    /// per batch lets each fixed-stride loop be optimized independently.
+    #[inline(never)]
+    fn unsigned_decompose_fixed<const LIMBS: usize>(
+        &self,
+        values: &[T],
+        digits: &mut [T],
+        carries: &mut [bool],
+    ) {
+        let (values, _) = values.as_chunks::<LIMBS>();
+        for ((value, digit), carry) in values.iter().zip(digits).zip(carries) {
+            self.unsigned_decompose_to_kernel(value, digit, carry);
         }
     }
 }

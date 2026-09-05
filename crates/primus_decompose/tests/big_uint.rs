@@ -183,3 +183,44 @@ fn batch_matches_scalar_decomposition() {
         }
     }
 }
+
+#[test]
+fn unsigned_batch_strides_and_tails_match_scalar() {
+    check_unsigned_batch_strides_and_tails::<u32>();
+    check_unsigned_batch_strides_and_tails::<u64>();
+}
+
+fn check_unsigned_batch_strides_and_tails<T: FheUint>() {
+    // Cover the fixed-width kernels and the general fallback, both with
+    // windows contained in a limb and with windows crossing a boundary.
+    for len in [1, 2, 3, 4] {
+        let mut modulus = vec![T::MAX; len];
+        modulus[len - 1] >>= 2;
+        for log_basis in [16, 17] {
+            let basis = BigUintApproxSignedBasis::new(BigUint(&modulus[..]), log_basis, None);
+            for count in [0, 1, 7, 8, 9, 31, 32, 33] {
+                let mut values: Vec<T> = (0..count * len)
+                    .map(|i| T::as_from((i as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15)))
+                    .collect();
+                for value in values.chunks_exact_mut(len) {
+                    value[len - 1] %= modulus[len - 1];
+                }
+                let mut adjusted = vec![T::ZERO; values.len()];
+                let mut carries = vec![false; count];
+                basis.init_value_carry_slice_to(&values, &mut adjusted, &mut carries);
+                let mut digits = vec![T::MAX; count];
+                for decomposer in basis.decomposer_iter() {
+                    let previous_carries = carries.clone();
+                    decomposer.unsigned_decompose_slice_to(&adjusted, &mut digits, &mut carries);
+                    for (index, value) in adjusted.chunks_exact(len).enumerate() {
+                        assert_eq!(
+                            (digits[index], carries[index]),
+                            decomposer.unsigned_decompose(value, previous_carries[index]),
+                            "limbs={len}, logB={log_basis}, count={count}, index={index}",
+                        );
+                    }
+                }
+            }
+        }
+    }
+}

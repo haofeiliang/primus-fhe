@@ -355,9 +355,12 @@ impl<T: FheUint> BigUintApproxSignedBasis<T> {
                     ))
                     .zip(carries)
                     .for_each(|((value, mut adjust), carry)| {
-                        adjust.0.copy_from_slice(value.0);
                         if value.cmp(threshold).is_ge() {
-                            let _ = adjust.add_assign(add);
+                            // Write the adjusted value directly, without first
+                            // copying it and then reading it back for the add.
+                            let _ = value.add_to(add, &mut adjust);
+                        } else {
+                            adjust.0.copy_from_slice(value.0);
                         }
                         *carry = !(adjust[*index] & *mask).is_zero();
                     });
@@ -369,9 +372,12 @@ impl<T: FheUint> BigUintApproxSignedBasis<T> {
                         big_uint_value_len,
                     ))
                     .for_each(|(value, mut adjust)| {
-                        adjust.0.copy_from_slice(value.0);
                         if value.cmp(threshold).is_ge() {
-                            let _ = adjust.add_assign(add);
+                            // Write the adjusted value directly, without first
+                            // copying it and then reading it back for the add.
+                            let _ = value.add_to(add, &mut adjust);
+                        } else {
+                            adjust.0.copy_from_slice(value.0);
                         }
                     });
                 carries.fill(false);

@@ -8,7 +8,7 @@ use primus_lattice::{
     glev::{DcrtGlevIter, DcrtGlevIterMut},
 };
 use primus_ntt::NttTable;
-use primus_poly::{BigUintPolynomial, CrtPolynomial, DcrtPolynomial};
+use primus_poly::{CrtPolynomial, DcrtPolynomial};
 use primus_reduce::FieldContext;
 
 use crate::secret_key::encode_secret_polynomial_to_rns;
@@ -126,7 +126,6 @@ impl<T: FheUint> DcrtGlweKeySwitchingKey<T> {
         let poly_length = self.input_size.poly_length();
         let rns_poly_len = self.input_size.rns_poly_len();
         let DcrtGlweKeySwitchingContext {
-            composed_polynomial,
             transformed_polynomial,
             glev_context,
             ..
@@ -138,16 +137,11 @@ impl<T: FheUint> DcrtGlweKeySwitchingKey<T> {
         self.iter_dcrt_glev()
             .zip(input_mask)
             .for_each(|(key_entry, mask_polynomial)| {
-                rns_base.compose_polynomial_to(
-                    &mask_polynomial,
-                    composed_polynomial,
-                    poly_length,
-                    glev_context.compose_buffer_mut(),
-                );
-
-                output.add_dcrt_glev_mul_big_uint_poly_assign(
+                // Compose directly into the decomposition workspace; the CRT
+                // entry point adjusts it in place and overwrites every buffer.
+                output.add_dcrt_glev_mul_crt_poly_assign(
                     &key_entry,
-                    composed_polynomial,
+                    &mask_polynomial,
                     basis,
                     table,
                     rns_base,
@@ -174,7 +168,6 @@ impl<T: FheUint> DcrtGlweKeySwitchingKey<T> {
 pub struct DcrtGlweKeySwitchingContext<T: FheUint> {
     input_size: RnsGlweSize,
     output_size: RnsGadgetSize,
-    composed_polynomial: BigUintPolynomial<Vec<T>>,
     transformed_polynomial: CrtPolynomial<Vec<T>>,
     glev_context: DcrtGlevMulContext<T>,
 }
@@ -193,11 +186,9 @@ impl<T: FheUint> DcrtGlweKeySwitchingContext<T> {
         let rns_glwe_size = output_size.rns_glwe_size();
         assert_eq!(input_size.poly_length(), rns_glwe_size.poly_length());
         assert_eq!(input_size.moduli_count(), rns_glwe_size.moduli_count());
-        let big_uint_poly_len = input_size.poly_length() * domain.rns_base().big_uint_value_len();
         Self {
             input_size,
             output_size,
-            composed_polynomial: BigUintPolynomial::zero(big_uint_poly_len),
             transformed_polynomial: CrtPolynomial::zero(input_size.rns_poly_len()),
             glev_context: DcrtGlevMulContext::new(output_size, domain.rns_base()),
         }

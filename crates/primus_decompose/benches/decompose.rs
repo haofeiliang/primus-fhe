@@ -307,12 +307,14 @@ fn bench_big_initialization(c: &mut Criterion) {
     group.finish();
 }
 
-fn big_batch_cases() -> [(usize, u32, Option<usize>); 4] {
-    // 50/100/200-bit moduli: one limb; no drop with crossing windows;
+fn big_batch_cases() -> [(usize, u32, Option<usize>); 5] {
+    // 50/100/150/200-bit moduli: one limb; no drop with crossing windows;
     // multiple limbs with rounding; retained levels starting in limb 1.
     [
         (1, 16, None),
         (2, 20, None),
+        // Three limbs exercise the runtime-stride fallback between fixed widths.
+        (3, 17, None),
         (4, 16, None),
         (2, 17, Some(1)),
     ]

@@ -6,8 +6,9 @@ use crate::RnsGadgetSize;
 
 /// Reusable workspace for DCRT GLev decomposition and recomposition.
 ///
-/// Each operation overwrites the internal buffers. A context may be reused
-/// with another parameter set when all required workspace lengths match.
+/// Each operation initializes the buffers it uses; no reset is needed between
+/// calls. A context may be reused with another parameter set when all required
+/// workspace lengths match.
 pub struct DcrtGlevMulContext<T: FheUint> {
     size: RnsGadgetSize,
     adjust_big_uint_values: Vec<T>,
@@ -69,15 +70,6 @@ impl<T: FheUint> DcrtGlevMulContext<T> {
             multi_residues: &mut self.multi_residues,
             compose_buffer: &mut self.compose_buffer,
         }
-    }
-
-    /// Resets all buffers to their zero values.
-    pub fn clear(&mut self) {
-        self.adjust_big_uint_values.fill(T::ZERO);
-        self.decomposed_unsigned_values.fill(T::ZERO);
-        self.carries.fill(false);
-        self.multi_residues.fill(T::ZERO);
-        self.compose_buffer.fill(T::ZERO);
     }
 
     /// Returns a mutable reference to the compose buffer.

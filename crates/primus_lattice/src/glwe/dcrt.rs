@@ -290,7 +290,6 @@ where
         let moduli = rns_base.moduli();
         let dcrt_glwe_len = self.0.len();
 
-        context.clear();
         let DcrtGlevMulContextRefMut {
             adjust_big_uint_values,
             decomposed_unsigned_values,
