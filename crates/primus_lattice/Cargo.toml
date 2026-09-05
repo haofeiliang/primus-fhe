@@ -12,7 +12,7 @@ primus_factor = { path = "../primus_factor" }
 primus_distr = { path = "../primus_distr" }
 primus_poly = { path = "../primus_poly" }
 primus_ntt = { path = "../primus_ntt" }
-primus_rns = { path = "../primus_rns" }
+primus_rns = { path = "../primus_rns", optional = true }
 primus_decompose = { path = "../primus_decompose" }
 primus_fft = { path = "../primus_fft" }
 
@@ -38,11 +38,12 @@ harness = false
 
 [features]
 default = []
+rns = ["dep:primus_rns"]
 simd = [
     "primus_integer/simd",
     "primus_factor/simd",
     "primus_poly/simd",
     "primus_ntt/simd",
-    "primus_rns/simd",
+    "primus_rns?/simd",
     "primus_decompose/simd",
 ]

@@ -2,9 +2,12 @@ use primus_data::{Data, DataMut, DataOwned, RawData};
 use primus_integer::FheUint;
 #[allow(unused_imports)]
 use primus_poly::{BigUintPolynomial, BigUintPolynomialIter, BigUintPolynomialIterMut};
+#[cfg(feature = "rns")]
 use primus_reduce::FieldContext;
+#[cfg(feature = "rns")]
 use primus_rns::RNSBase;
 
+#[cfg(feature = "rns")]
 use super::CrtGlwe;
 
 /// A cryptographic structure for Module(General) Learning with Errors (MLWE, GLWE).
@@ -26,6 +29,7 @@ impl_zero!(BigUintGlwe<S>);
 impl_iters!(BigUintGlwe);
 impl_iter_sub_structure!(BigUintGlwe<S>, BigUintPolynomial, big_uint_poly);
 
+#[cfg(feature = "rns")]
 impl<S, T> BigUintGlwe<S>
 where
     S: DataMut<Elem = T>,
@@ -60,6 +64,7 @@ where
     }
 }
 
+#[cfg(feature = "rns")]
 impl<S, T> BigUintGlwe<S>
 where
     S: Data<Elem = T>,

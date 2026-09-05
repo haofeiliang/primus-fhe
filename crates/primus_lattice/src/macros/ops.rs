@@ -99,6 +99,7 @@ macro_rules! impl_basic_operation_single_modulus {
     };
 }
 
+#[cfg(feature = "rns")]
 macro_rules! impl_basic_operation_multiple_modulus {
     ($cipher:ident < $s:ident >) => {
         impl<$s, T> $cipher<$s>

@@ -4,7 +4,9 @@ mod coeff;
 mod ntt;
 mod truncate;
 
+#[cfg(feature = "rns")]
 mod crt;
+#[cfg(feature = "rns")]
 mod dcrt;
 /// Fourier-domain GLWE ciphertexts.
 mod fourier;
@@ -15,7 +17,9 @@ pub use coeff::{Glwe, GlweIter, GlweIterMut};
 pub use ntt::{NttGlwe, NttGlweIter, NttGlweIterMut};
 pub use truncate::TruncatedGlwe;
 
+#[cfg(feature = "rns")]
 pub use crt::{CrtGlwe, CrtGlweIter, CrtGlweIterMut};
+#[cfg(feature = "rns")]
 pub use dcrt::{DcrtGlwe, DcrtGlweIter, DcrtGlweIterMut};
 pub use fourier::{FourierGlwe, FourierGlweIter, FourierGlweIterMut, FourierGlweOwned};
 

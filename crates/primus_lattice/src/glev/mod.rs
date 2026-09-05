@@ -1,7 +1,9 @@
 mod coeff;
 mod ntt;
 
+#[cfg(feature = "rns")]
 mod crt;
+#[cfg(feature = "rns")]
 mod dcrt;
 /// Fourier-domain GLev ciphertexts.
 mod fourier;
@@ -9,7 +11,9 @@ mod fourier;
 pub use coeff::{Glev, GlevIter, GlevIterMut};
 pub use ntt::{NttGlev, NttGlevIter, NttGlevIterMut};
 
+#[cfg(feature = "rns")]
 pub use crt::{CrtGlev, CrtGlevIter, CrtGlevIterMut};
+#[cfg(feature = "rns")]
 pub use dcrt::{DcrtGlev, DcrtGlevIter, DcrtGlevIterMut};
 pub use fourier::{FourierGlev, FourierGlevIter, FourierGlevIterMut, FourierGlevOwned};
 

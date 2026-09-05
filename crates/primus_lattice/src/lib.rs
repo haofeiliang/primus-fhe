@@ -1,6 +1,16 @@
 #![deny(missing_docs)]
 
 //! Defines some lattice cryptographic structure.
+//!
+//! # Features
+//!
+//! - `rns` (disabled by default) enables CRT/DCRT ciphertexts, their multiplication
+//!   workspace, and the CRT conversions on [`glwe::BigUintGlwe`].
+//! - `simd` enables nightly SIMD support in the arithmetic dependencies. It does
+//!   not enable `rns`; when both are enabled, the RNS dependency also uses SIMD.
+//!
+//! [`glwe::BigUintGlwe`], [`RnsGlweSize`], and [`RnsGadgetSize`] remain available
+//! without `rns`: their storage and layout APIs do not depend on RNS arithmetic.
 
 #[macro_use]
 mod macros;

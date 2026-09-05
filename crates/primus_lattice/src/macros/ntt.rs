@@ -90,6 +90,7 @@ macro_rules! impl_intt {
     };
 }
 
+#[cfg(feature = "rns")]
 macro_rules! impl_crt_ntt {
     ($cipher:ident < $s:ident >,$ntt_cipher:ident) => {
         impl<$s, T> $cipher<$s>
@@ -143,6 +144,7 @@ macro_rules! impl_crt_ntt {
     };
 }
 
+#[cfg(feature = "rns")]
 macro_rules! impl_crt_intt {
     ($ntt_cipher:ident < $s:ident >,$cipher:ident) => {
         impl<$s, T> $ntt_cipher<$s>
