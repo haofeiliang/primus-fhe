@@ -2,13 +2,18 @@ use core::iter::successors;
 
 use num_traits::ConstOne;
 use primus_integer::FheUint;
-use serde::{Deserialize, Deserializer, Serialize, Serializer, de::Error};
 
 use crate::{ApproxSignedBasisError, MIN_DECOMPOSITION_LOG_BASIS};
 
-use super::{ScalarIter, SignedDecomposeIter, ValueCarryInitMode, ValueMask};
+use super::{ScalarIter, SignedDecomposerIter, ValueCarryInitMode, ValueMask};
 
-/// The basis for approximate signed decomposition.
+/// Precomputed approximate signed decomposition modulo `q`.
+///
+/// With radix `B = 2^log_basis`, level `i` has weight `2^drop_bits * B^i`.
+/// Digits lie in `[-B/2, B/2)` and are encoded as canonical residues modulo
+/// `q` (modulo `2^T::BITS` for the implicit native modulus). Their weighted
+/// sum approximates the input, with circular distance bounded by
+/// [`Self::approximate_error_bound`].
 #[derive(Debug, Clone)]
 pub struct ApproxSignedBasis<T: FheUint> {
     modulus: Option<T>,
@@ -24,46 +29,6 @@ pub struct ApproxSignedBasis<T: FheUint> {
     value_carry_init_mode: ValueCarryInitMode<T>,
     scalars: Vec<T>,
     value_masks: Vec<ValueMask<T>>,
-}
-
-#[derive(Serialize, Deserialize)]
-#[serde(bound(deserialize = "T: FheUint"))]
-struct ApproxSignedBasisParameters<T: FheUint> {
-    modulus: Option<T>,
-    log_basis: u32,
-    reverse_length: Option<usize>,
-}
-
-impl<T: FheUint> Serialize for ApproxSignedBasis<T> {
-    #[inline]
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        let full_length = (self.value_bits / self.log_basis) as usize;
-        ApproxSignedBasisParameters {
-            modulus: self.modulus,
-            log_basis: self.log_basis,
-            reverse_length: (self.decompose_length != full_length).then_some(self.decompose_length),
-        }
-        .serialize(serializer)
-    }
-}
-
-impl<'de, T: FheUint> Deserialize<'de> for ApproxSignedBasis<T> {
-    #[inline]
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let parameters = ApproxSignedBasisParameters::deserialize(deserializer)?;
-        Self::try_new(
-            parameters.modulus,
-            parameters.log_basis,
-            parameters.reverse_length,
-        )
-        .map_err(D::Error::custom)
-    }
 }
 
 impl<T: FheUint> Eq for ApproxSignedBasis<T> {}
@@ -84,7 +49,7 @@ impl<T: FheUint> ApproxSignedBasis<T> {
     /// `2^T::BITS`. `log_basis` is the base-2 logarithm of the decomposition
     /// basis (`basis = 2^log_basis`) and must be in `2..T::BITS`.
     /// `reverse_length`, when provided, limits the number of decomposition
-    /// steps.
+    /// steps by discarding more low bits and retaining the highest levels.
     ///
     /// Digits lie in `[-basis / 2, basis / 2)`. Both decomposition operators
     /// and their corresponding scalars are yielded from the lowest retained
@@ -132,7 +97,7 @@ impl<T: FheUint> ApproxSignedBasis<T> {
                 }
             } else {
                 modulus_is_power_of_2 = false;
-                value_bits = T::BITS - modulus.leading_zeros();
+                value_bits = modulus.bit_width();
                 if value_bits <= log_basis {
                     return Err(ApproxSignedBasisError::BasisExceedsModulus);
                 }
@@ -289,6 +254,7 @@ impl<T: FheUint> ApproxSignedBasis<T> {
     /// Returns the maximum approximation error caused by the dropped low bits.
     ///
     /// This is `0` when no bits are dropped, otherwise `2^(drop_bits - 1)`.
+    /// Error is measured as circular distance modulo the decomposition modulus.
     #[inline]
     pub fn approximate_error_bound(&self) -> T {
         if self.drop_bits == 0 {
@@ -298,10 +264,16 @@ impl<T: FheUint> ApproxSignedBasis<T> {
         }
     }
 
-    /// Returns an iterator over the signed decomposition operators of this [`ApproxSignedBasis<T>`].
+    /// Returns decomposition operators from the lowest retained level to the highest.
+    ///
+    /// Initialize the input with an `init_value_carry*` method first (or
+    /// [`Self::init_carry_slice`] when no adjustment is needed). Apply all
+    /// operators in order to that same adjusted input, forwarding the carry
+    /// from each level to the next. Reversing or skipping levels does not
+    /// preserve this carry protocol.
     #[inline]
-    pub fn decompose_iter<'a>(&'a self) -> SignedDecomposeIter<'a, T> {
-        SignedDecomposeIter {
+    pub fn decomposer_iter<'a>(&'a self) -> SignedDecomposerIter<'a, T> {
+        SignedDecomposerIter {
             value_masks: self.value_masks.iter(),
             carry_mask: self.carry_mask,
             basis_minus_one: self.basis_minus_one,
@@ -309,16 +281,18 @@ impl<T: FheUint> ApproxSignedBasis<T> {
         }
     }
 
-    /// Returns an iterator over scalars of this [`ApproxSignedBasis<T>`].
+    /// Returns reconstruction weights in the same order as [`Self::decomposer_iter`].
     #[inline]
     pub fn scalar_iter<'a>(&'a self) -> ScalarIter<'a, T> {
         ScalarIter::new(&self.scalars)
     }
 
-    /// Init carry and adjusted value for a value.
+    /// Returns an adjusted input and its initial carry.
     ///
     /// For an explicit modulus `q`, `value` must be reduced to `[0, q)`.
     /// With the implicit native modulus, every value of `T` is valid.
+    /// The adjusted value is an internal bit representation, not necessarily
+    /// reduced modulo `q`; pass it unchanged to every decomposition operator.
     #[inline]
     pub fn init_value_carry(&self, value: T) -> (T, bool) {
         match self.value_carry_init_mode {
@@ -347,12 +321,14 @@ impl<T: FheUint> ApproxSignedBasis<T> {
         }
     }
 
-    /// Init carries and adjusted values for a slice and store the adjusted values back to `values`.
+    /// Adjusts inputs in place and overwrites their initial carries.
     ///
     /// For an explicit modulus `q`, every input value must be reduced to
     /// `[0, q)`. With the implicit native modulus, every value of `T` is valid.
+    /// `values` and `carries` must have equal lengths. Adjusted values follow
+    /// the internal representation described by [`Self::init_value_carry`].
     #[inline]
-    pub fn init_value_carry_slice_in_place(&self, values: &mut [T], carries: &mut [bool]) {
+    pub fn init_value_carry_slice_assign(&self, values: &mut [T], carries: &mut [bool]) {
         debug_assert_eq!(values.len(), carries.len());
 
         match self.value_carry_init_mode {
@@ -388,10 +364,12 @@ impl<T: FheUint> ApproxSignedBasis<T> {
         }
     }
 
-    /// Init carries and adjusted values for a slice.
+    /// Writes adjusted inputs and initial carries for a batch.
     ///
     /// For an explicit modulus `q`, every input value must be reduced to
     /// `[0, q)`. With the implicit native modulus, every value of `T` is valid.
+    /// All three slices must have equal lengths. Both outputs are overwritten;
+    /// adjusted values follow [`Self::init_value_carry`].
     #[inline]
     pub fn init_value_carry_slice_to(
         &self,
@@ -456,6 +434,7 @@ impl<T: FheUint> ApproxSignedBasis<T> {
     /// For an explicit power-of-two modulus `q`, every input value must be
     /// reduced to `[0, q)`. With the implicit native modulus, every value of
     /// `T` is valid.
+    /// The slices must have equal lengths; all carries are overwritten.
     ///
     /// This only supports power-of-two modulus (the common TFHE case).  For
     /// non-power-of-two moduli, use [`Self::init_value_carry_slice_to`] instead,

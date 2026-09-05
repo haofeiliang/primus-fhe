@@ -54,7 +54,7 @@ pub(crate) fn fourier_gadget_product_add_assign<T, Table>(
     basis.init_carry_slice(input, &mut context.carries);
 
     for (decomposer, key_level) in basis
-        .decompose_iter()
+        .decomposer_iter()
         .zip(gadget.chunks_exact(fourier_length))
     {
         decomposer.decompose_slice_to(input, &mut context.decomposed_poly, &mut context.carries);
@@ -107,7 +107,10 @@ pub(crate) fn ntt_gadget_product_add_assign<T, M, Table>(
 
     basis.init_value_carry_slice_to(input, &mut context.adjusted_poly, &mut context.carries);
 
-    for (decomposer, key_level) in basis.decompose_iter().zip(gadget.chunks_exact(poly_length)) {
+    for (decomposer, key_level) in basis
+        .decomposer_iter()
+        .zip(gadget.chunks_exact(poly_length))
+    {
         decomposer.decompose_slice_to(
             &context.adjusted_poly,
             &mut context.decomposed_ntt,

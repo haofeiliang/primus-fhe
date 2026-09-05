@@ -131,7 +131,7 @@ impl FourierGlweKeySwitchingKey {
             basis.init_carry_slice(mask_poly, &mut context.carries);
             let entry = FourierGlev::new(entry);
             for (decomposer, key_glwe) in basis
-                .decompose_iter()
+                .decomposer_iter()
                 .zip(entry.iter_glwe(fourier_glwe_len))
             {
                 decomposer.decompose_slice_to(

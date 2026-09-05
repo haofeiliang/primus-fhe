@@ -5,7 +5,6 @@ use primus_data::Data;
 use primus_integer::{BigUint, BigUintIter, BigUintIterMut, DivRem, FheUint};
 use primus_reduce::FieldContext;
 use primus_rns::RNSBase;
-use serde::{Deserialize, Serialize};
 
 use crate::{
     ApproxSignedBasisError, MIN_DECOMPOSITION_LOG_BASIS, big_integer::BigUintSignedDecomposerIter,
@@ -13,9 +12,17 @@ use crate::{
 
 use super::{BigUintValueCarryInitMode, ValueMask};
 
-/// The basis for approximate signed decomposition.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(bound(deserialize = "T: FheUint"))]
+/// Precomputed approximate signed decomposition modulo the RNS product `Q`.
+///
+/// With radix `B = 2^log_basis`, level `i` has weight `2^drop_bits * B^i`.
+/// Digits lie in `[-B/2, B/2)` and are visited from the lowest retained level
+/// to the highest. Their weighted sum approximates the input modulo `Q`;
+/// [`Self::approximate_error_bound`] bounds the circular distance modulo `Q`.
+///
+/// Inputs and full-width outputs use exactly [`Self::big_uint_value_len`]
+/// little-endian limbs per value. Batches are value-major: each consecutive
+/// chunk contains all limbs of one value, unlike modulus-major RNS residues.
+#[derive(Debug, Clone)]
 pub struct BigUintApproxSignedBasis<T: FheUint> {
     modulus: Vec<T>,
     basis: T,
@@ -38,7 +45,7 @@ impl<T: FheUint> BigUintApproxSignedBasis<T> {
     /// `log_basis` is the base-2 logarithm of the decomposition basis
     /// (`basis = 2^log_basis`) and must satisfy `2 <= log_basis < T::BITS`.
     /// `reverse_length`, when provided, limits the number of decomposition
-    /// steps to a prefix of the full chain.
+    /// steps by discarding more low bits and retaining the highest levels.
     ///
     /// # Panics
     ///
@@ -59,6 +66,8 @@ impl<T: FheUint> BigUintApproxSignedBasis<T> {
     /// must satisfy `2 <= log_basis < T::BITS`, and `2^log_basis` must not
     /// exceed that modulus. `reverse_length`, when provided, must be in the
     /// range `1..=full_decomposition_length`.
+    /// It retains the highest levels; iteration still proceeds from the
+    /// lowest retained level to the highest.
     ///
     /// # Errors
     ///
@@ -129,7 +138,17 @@ impl<T: FheUint> BigUintApproxSignedBasis<T> {
                 let carry = value.left_shift_assign(1);
                 assert_eq!(carry, T::ZERO);
                 value[0] |= T::ONE;
-                let carry = value.left_shift_assign(drop_bits - 1);
+                // The retained levels may start beyond the first limb. Move
+                // whole limbs before using the single-limb shift operation.
+                let (limbs, bits) = (drop_bits - 1).div_rem(T::BITS);
+                let limbs = limbs as usize;
+                // Retained bits plus dropped bits fit the modulus width, so
+                // the high limbs discarded by this move are all zero.
+                if limbs != 0 {
+                    value.0.copy_within(..big_uint_value_len - limbs, limbs);
+                    value.0[..limbs].fill(T::ZERO);
+                }
+                let carry = value.left_shift_assign(bits);
                 assert_eq!(carry, T::ZERO);
             } else {
                 let carry = value.add_value_assign(T::ONE);
@@ -160,20 +179,13 @@ impl<T: FheUint> BigUintApproxSignedBasis<T> {
         };
 
         let mut scalars = vec![T::ZERO; big_uint_value_len * decompose_length];
-        let mut prev: Option<BigUint<Vec<T>>> = None;
-
-        BigUintIterMut::new(&mut scalars, big_uint_value_len).for_each(|mut scalar| {
-            if let Some(pre) = prev.as_mut() {
-                let carry = pre.left_shift_assign(log_basis);
-                assert_eq!(carry, T::ZERO);
-                scalar.0.copy_from_slice(&pre.0);
-            } else {
-                scalar[0] = T::ONE;
-                let carry = scalar.left_shift_assign(drop_bits);
-                assert_eq!(carry, T::ZERO);
-                prev = Some(BigUint(scalar.0.to_vec()));
-            }
-        });
+        // Each reconstruction weight is a single bit, including when the
+        // lowest retained level starts beyond the first limb.
+        for (level, scalar) in scalars.chunks_exact_mut(big_uint_value_len).enumerate() {
+            let bit = drop_bits + level as u32 * log_basis;
+            let (index, shift) = bit.div_rem(T::BITS);
+            scalar[index as usize] = T::ONE << shift;
+        }
 
         let moduli_count = rns_base.moduli_count();
         let mut scalars_residue = vec![T::ZERO; moduli_count * decompose_length];
@@ -267,7 +279,8 @@ impl<T: FheUint> BigUintApproxSignedBasis<T> {
 
     /// Returns the maximum approximation error caused by the dropped low bits.
     ///
-    /// This is `0` when no bits are dropped, otherwise the initial carry mask.
+    /// This is `0` when no bits are dropped, otherwise `2^(drop_bits - 1)`.
+    /// Error is measured as circular distance modulo `Q`.
     #[inline]
     pub fn approximate_error_bound(&self) -> BigUint<Vec<T>> {
         self.value_carry_init_mode
@@ -280,13 +293,21 @@ impl<T: FheUint> BigUintApproxSignedBasis<T> {
         &self.modulus_sub_basis
     }
 
-    /// Returns a reference to the scalars residue of this [`BigUintApproxSignedBasis<T>`].
+    /// Returns reconstruction weights modulo each RNS modulus, level by level.
+    ///
+    /// Levels run from low to high. Each chunk contains one residue per
+    /// modulus, in the order of the RNS base supplied at construction.
     #[inline]
-    pub fn iter_scalar_residues(&self) -> std::slice::ChunksExact<'_, T> {
+    pub fn scalar_residue_iter(&self) -> std::slice::ChunksExact<'_, T> {
         self.scalars_residue.chunks_exact(self.moduli_count)
     }
 
-    /// Returns an iterator over the signed decomposition operators of this [`BigUintApproxSignedBasis<T>`].
+    /// Returns decomposition operators from the lowest retained level to the highest.
+    ///
+    /// Initialize the input with an `init_value_carry*` method first. Apply all
+    /// operators in order to that same adjusted input, forwarding the carry
+    /// from each level to the next. Reversing or skipping levels does not
+    /// preserve this carry protocol.
     #[inline]
     pub fn decomposer_iter<'a>(&'a self) -> BigUintSignedDecomposerIter<'a, T> {
         BigUintSignedDecomposerIter {
@@ -297,13 +318,19 @@ impl<T: FheUint> BigUintApproxSignedBasis<T> {
         }
     }
 
-    /// Returns an iterator over scalars of this [`BigUintApproxSignedBasis<T>`].
+    /// Returns full-width reconstruction weights in the same order as [`Self::decomposer_iter`].
+    /// Each weight is a little-endian chunk of [`Self::big_uint_value_len`] limbs.
     #[inline]
     pub fn scalar_iter(&self) -> std::slice::ChunksExact<'_, T> {
         self.scalars.chunks_exact(self.big_uint_value_len())
     }
 
-    /// Init carry and adjusted value for a value.
+    /// Allocates an adjusted input and computes its initial carry.
+    ///
+    /// `value` must be in `[0, Q)` and contain exactly
+    /// [`Self::big_uint_value_len`] little-endian limbs. The returned adjusted
+    /// value is an internal bit representation, not necessarily reduced modulo
+    /// `Q`; pass it unchanged to each successive decomposition operator.
     #[inline]
     pub fn init_value_carry<A>(&self, value: &BigUint<A>) -> (Vec<T>, bool)
     where
@@ -341,9 +368,14 @@ impl<T: FheUint> BigUintApproxSignedBasis<T> {
         }
     }
 
-    /// Init carries and adjusted values for a slice and store the adjusted values back to `values`.
+    /// Adjusts a value-major batch in place and overwrites its initial carries.
+    ///
+    /// Each input must be in `[0, Q)`, stored in exactly
+    /// [`Self::big_uint_value_len`] little-endian limbs. `values.len()` must
+    /// equal `carries.len() * big_uint_value_len()`. Adjusted values follow the
+    /// internal representation described by [`Self::init_value_carry`].
     #[inline]
-    pub fn init_value_carry_slice_inplace(&self, values: &mut [T], carries: &mut [bool]) {
+    pub fn init_value_carry_slice_assign(&self, values: &mut [T], carries: &mut [bool]) {
         let big_uint_value_len = self.big_uint_value_len();
         debug_assert_eq!(values.len(), carries.len() * big_uint_value_len);
 
@@ -382,7 +414,12 @@ impl<T: FheUint> BigUintApproxSignedBasis<T> {
         }
     }
 
-    /// Init carries and adjusted values for a slice.
+    /// Writes adjusted inputs and initial carries for a value-major batch.
+    ///
+    /// Each input must be in `[0, Q)`, stored in exactly
+    /// [`Self::big_uint_value_len`] little-endian limbs. Both value buffers
+    /// must have length `carries.len() * big_uint_value_len()`. Outputs are
+    /// overwritten; adjusted values follow [`Self::init_value_carry`].
     #[inline]
     pub fn init_value_carry_slice_to(
         &self,

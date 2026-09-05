@@ -1,425 +1,210 @@
-#[cfg(test)]
-mod tests {
-    use itertools::{Itertools, izip};
-    use primus_decompose::big_integer::BigUintApproxSignedBasis;
-    use primus_integer::{BigUint, BigUintIter, BigUintIterMut, multiply_many_values};
-    use primus_modulus::BarrettModulus;
-    use primus_reduce::prelude::*;
-    use primus_rns::RNSBase;
-    use rand::RngExt;
-    use rand::distr::{Distribution, Uniform};
-    use rayon::prelude::*;
+use primus_decompose::big_integer::BigUintApproxSignedBasis;
+use primus_integer::{AsFrom, BigUint, FheUint};
+use primus_modulus::BarrettModulus;
+use primus_reduce::FieldContext;
+use primus_rns::RNSBase;
+use rand::{RngExt, SeedableRng, rngs::StdRng};
 
-    type ValueT = u32;
-    type WideT = u64;
-    type SignedT = i64;
+// Test products fit in u128, so the oracle does not depend on BigUint arithmetic.
+fn to_u128<T: FheUint + Into<u128>>(limbs: &[T]) -> u128 {
+    limbs
+        .iter()
+        .rev()
+        .fold(0, |value, &limb| (value << T::BITS) | limb.into())
+}
 
-    #[test]
-    fn test_big_uint_value_single_decompose() {
-        let mut rng = rand::rng();
+fn limbs<T: FheUint + AsFrom<u128>>(value: u128, len: usize) -> Vec<T> {
+    (0..len)
+        .map(|index| T::as_from(value >> (index as u32 * T::BITS)))
+        .collect()
+}
 
-        let moduli_value: [ValueT; 2] = [134215681, 134176769];
-        let moduli = moduli_value.map(BarrettModulus::new);
-
-        let distrs = moduli_value.map(|m| Uniform::new(0, m).unwrap());
-
-        let rns_base = RNSBase::new(&moduli).unwrap();
-        let composed_modulus = rns_base.moduli_product();
-        let unused_bits = composed_modulus.0.last().unwrap().leading_zeros();
-        let basis = BigUintApproxSignedBasis::new(&rns_base, 7, None);
-
-        println!("decompose_length: {}", basis.decompose_length());
-
-        // make test simple
-        assert!(basis.drop_bits() < ValueT::BITS);
-
-        let difference_bound = basis.approximate_error_bound();
-
-        println!("difference bound: {:?}", difference_bound);
-
-        let basis_value = basis.basis_value();
-        let log_basis = basis.log_basis() as usize;
-        let mut decomposed_unsigned_value = Vec::with_capacity(basis.decompose_length());
-        let mut difference = BigUint(vec![0; composed_modulus.len()]);
-
-        let mut value = multiply_many_values(&distrs.map(|distr| rng.sample(distr)));
-        value.0.resize(composed_modulus.len(), 0);
-
-        let show = |value: &[ValueT]| {
-            let mut value_str = String::new();
-            let mut last = true;
-            for &chunk in value.iter().rev() {
-                if last {
-                    value_str += &format!("{:01$b}", chunk, (ValueT::BITS - unused_bits) as usize);
-                    last = false;
-                } else {
-                    value_str += &format!("{:01$b}", chunk, ValueT::BITS as usize);
-                }
+fn inputs(q: u128, log_basis: u32, levels: usize, drop_bits: u32) -> Vec<u128> {
+    let radix = 1u128 << log_basis;
+    let step = 1u128 << drop_bits;
+    let threshold = (0..levels)
+        .map(|level| (radix / 2 - 1) << (drop_bits + level as u32 * log_basis))
+        .sum::<u128>()
+        + if drop_bits == 0 { 1 } else { step / 2 };
+    let mut values = vec![0, 1, q / 2, q - 1];
+    for boundary in [step / 2, step, threshold, 1 << 32, 1 << 64] {
+        for value in [boundary.saturating_sub(1), boundary, boundary + 1] {
+            if value < q {
+                values.push(value);
             }
+        }
+    }
+    let mut rng = StdRng::seed_from_u64(0x4445_434f_4d50);
+    values.extend((0..64).map(|_| rng.random_range(0..q)));
+    values.sort_unstable();
+    values.dedup();
+    values
+}
 
-            let (pre, end) = value_str.split_at(log_basis * basis.decompose_length());
+fn assert_contract<T>(moduli: &[T], log_basis: u32, retained: Option<usize>)
+where
+    T: FheUint + Into<u128> + AsFrom<u128>,
+    BarrettModulus<T>: FieldContext<T>,
+{
+    let q: u128 = moduli.iter().map(|&m| m.into()).product();
+    let base = RNSBase::new(
+        &moduli
+            .iter()
+            .copied()
+            .map(BarrettModulus::new)
+            .collect::<Vec<_>>(),
+    )
+    .unwrap();
+    let basis = BigUintApproxSignedBasis::try_new(&base, log_basis, retained).unwrap();
+    let levels = retained.unwrap_or((q.ilog2() + 1) as usize / log_basis as usize);
+    let drop_bits = q.ilog2() + 1 - levels as u32 * log_basis;
+    let bound = if drop_bits == 0 {
+        0
+    } else {
+        1 << (drop_bits - 1)
+    };
+    let radix = 1i128 << log_basis;
+    let len = basis.big_uint_value_len();
+    assert_eq!(to_u128(basis.modulus()), q);
+    assert_eq!(basis.drop_bits(), drop_bits);
+    assert_eq!(basis.decompose_length(), levels);
+    assert_eq!(basis.decomposer_iter().len(), levels);
+    assert_eq!(basis.scalar_iter().len(), levels);
+    assert_eq!(basis.scalar_residue_iter().len(), levels);
+    assert_eq!(to_u128(basis.approximate_error_bound().digits()), bound);
 
-            pre.chars().chunks(log_basis).into_iter().for_each(|v| {
-                let str: String = v.collect();
-                print!("{}|", str);
-            });
-            println!("{}", end);
-        };
+    for (level, (scalar, residues)) in basis
+        .scalar_iter()
+        .zip(basis.scalar_residue_iter())
+        .enumerate()
+    {
+        let expected = 1u128 << (drop_bits + level as u32 * log_basis);
+        assert_eq!(to_u128(scalar), expected);
+        for (&residue, &modulus) in residues.iter().zip(moduli) {
+            assert_eq!(residue.into(), expected % modulus.into());
+        }
+    }
 
-        println!("modulus: {:?}", composed_modulus);
-        show(composed_modulus.0);
+    for input in inputs(q, log_basis, levels, drop_bits) {
+        let (adjusted, mut carry) = basis.init_value_carry(&BigUint(limbs::<T>(input, len)));
+        let mut sum = 0i128;
+        for (level, decomposer) in basis.decomposer_iter().enumerate() {
+            let (digit, next_carry) = decomposer.decompose(&adjusted, carry);
+            let (unsigned, unsigned_carry) = decomposer.unsigned_decompose(&adjusted, carry);
+            assert_eq!(next_carry, unsigned_carry);
+            let unsigned = unsigned.into() as i128;
+            assert!((0..radix).contains(&unsigned));
+            let centered = if unsigned >= radix / 2 {
+                unsigned - radix
+            } else {
+                unsigned
+            };
+            assert_eq!(to_u128(&digit), centered.rem_euclid(q as i128) as u128);
+            sum += centered * (1i128 << (drop_bits + level as u32 * log_basis));
+            carry = next_carry;
+        }
+        let output = sum.rem_euclid(q as i128) as u128;
+        let distance = input.abs_diff(output);
+        let error = distance.min(q - distance);
+        assert!(
+            error <= bound,
+            "q={q}, logB={log_basis}, levels={levels}, input={input}, output={output}, error={error}, bound={bound}"
+        );
+    }
+}
 
-        println!("value");
-        show(value.digits());
+#[test]
+fn retained_levels_match_modular_oracle() {
+    let moduli = [134_215_681u32, 134_176_769];
+    for log_basis in [3, 5, 7] {
+        assert_contract(&moduli, log_basis, None);
+    }
+    // 49-bit product: start the retained levels before, at, and beyond bit 32.
+    let moduli = [65_537u32, 65_539, 65_543];
+    for (log_basis, retained) in [(3, 6), (17, 1), (4, 4), (4, 1)] {
+        assert_contract(&moduli, log_basis, Some(retained));
+    }
+    // 100-bit product exercises the same boundaries for 64-bit limbs.
+    let moduli = [1_125_899_906_826_241u64, 1_125_899_906_629_633];
+    for (log_basis, retained) in [(4, 10), (3, 12), (4, 8)] {
+        assert_contract(&moduli, log_basis, Some(retained));
+    }
+}
 
-        let (adjust_value, mut carry) = basis.init_value_carry(&value);
+#[test]
+fn batch_matches_scalar_and_centered_rns_lift() {
+    let moduli = [134_215_681u32, 134_176_769];
+    let q: u128 = moduli.iter().map(|&m| u128::from(m)).product();
+    let base = RNSBase::new(&moduli.map(BarrettModulus::new)).unwrap();
+    for log_basis in [3, 5] {
+        let basis = BigUintApproxSignedBasis::new(&base, log_basis, None);
+        let len = basis.big_uint_value_len();
+        let values: Vec<u32> = inputs(q, log_basis, basis.decompose_length(), basis.drop_bits())
+            .into_iter()
+            .flat_map(|value| limbs(value, len))
+            .collect();
+        let count = values.len() / len;
+        let mut adjusted = vec![u32::MAX; values.len()];
+        let mut carries = vec![true; count];
+        basis.init_value_carry_slice_to(&values, &mut adjusted, &mut carries);
+        let mut in_place = values.clone();
+        let mut in_place_carries = vec![true; count];
+        basis.init_value_carry_slice_assign(&mut in_place, &mut in_place_carries);
+        assert_eq!(adjusted, in_place);
+        assert_eq!(carries, in_place_carries);
+        for ((input, actual), &carry) in values
+            .chunks_exact(len)
+            .zip(adjusted.chunks_exact(len))
+            .zip(&carries)
+        {
+            let (expected, expected_carry) = basis.init_value_carry(&BigUint(input));
+            assert_eq!(actual, expected);
+            assert_eq!(carry, expected_carry);
+        }
 
-        println!("adjust_value");
-        show(&adjust_value);
-
+        let mut signed_digits = vec![u32::MAX; values.len()];
+        let mut unsigned_digits = vec![u32::MAX; count];
+        let mut residues = vec![0; count * moduli.len()];
         for decomposer in basis.decomposer_iter() {
-            let (di, ci) = decomposer.unsigned_decompose(&adjust_value, carry);
-            decomposed_unsigned_value.push(di);
-            carry = ci;
-        }
+            let previous_carries = carries.clone();
+            let mut unsigned_carries = carries.clone();
+            decomposer.decompose_slice_to(&adjusted, &mut signed_digits, &mut carries);
+            decomposer.unsigned_decompose_slice_to(
+                &adjusted,
+                &mut unsigned_digits,
+                &mut unsigned_carries,
+            );
+            assert_eq!(carries, unsigned_carries);
+            base.wrapping_decompose_small_values_to(
+                &unsigned_digits,
+                &mut residues,
+                basis.basis_value(),
+            );
 
-        let result = basis
-            .iter_scalar_residues()
-            .zip(decomposed_unsigned_value.iter())
-            .fold(vec![0, 0], |mut acc, (scalar_residue, &unsigned_value)| {
-                let value_chunk_residues = rns_base.wrapping_decompose(unsigned_value, basis_value);
-                for (ac, value_chunk, &scalar, modulus) in
-                    izip!(acc.iter_mut(), value_chunk_residues, scalar_residue, moduli)
-                {
-                    *ac = modulus.reduce_mul_add(scalar, value_chunk, *ac);
-                }
-                acc
-            });
-        let result = rns_base.compose(&result);
-
-        for &unsigned_value in decomposed_unsigned_value.iter().rev() {
-            if basis_value > 2 {
-                if unsigned_value >= basis_value / 2 {
-                    print!(
-                        "{:1$}|",
-                        -((basis_value - unsigned_value) as SignedT),
-                        log_basis
+            for (index, value) in adjusted.chunks_exact(len).enumerate() {
+                let (digit, carry) = decomposer.decompose(value, previous_carries[index]);
+                assert_eq!(&signed_digits[index * len..(index + 1) * len], digit);
+                assert_eq!(carries[index], carry);
+                let mut digit_to = vec![u32::MAX; len];
+                let mut carry_to = previous_carries[index];
+                decomposer.decompose_to(value, &mut digit_to, &mut carry_to);
+                assert_eq!(digit_to, digit);
+                assert_eq!(carry_to, carry);
+                let (unsigned, carry) =
+                    decomposer.unsigned_decompose(value, previous_carries[index]);
+                let mut unsigned_to = u32::MAX;
+                let mut carry_to = previous_carries[index];
+                decomposer.unsigned_decompose_to(value, &mut unsigned_to, &mut carry_to);
+                assert_eq!(unsigned_to, unsigned);
+                assert_eq!(unsigned_digits[index], unsigned);
+                assert_eq!(carry_to, carry);
+                for (modulus_index, &modulus) in moduli.iter().enumerate() {
+                    assert_eq!(
+                        u128::from(residues[modulus_index * count + index]),
+                        to_u128(&digit) % u128::from(modulus)
                     );
-                } else {
-                    print!("{:1$}|", unsigned_value, log_basis);
                 }
-            } else {
-                print!("{:1$}|", unsigned_value, log_basis);
             }
         }
-        println!();
-
-        let value = value;
-
-        println!("value ={:?}", value);
-        println!("result={:?}", result);
-
-        if result.cmp(&value).is_le() {
-            let _ = value.sub_to(&result, &mut difference);
-        } else {
-            let _ = result.sub_to(&value, &mut difference);
-        }
-
-        assert!(
-            difference.cmp(&difference_bound).is_le(),
-            "value: {:?}\ndifference: {:?}",
-            value,
-            difference
-        );
-
-        println!("difference: {}", difference[0]);
-    }
-
-    #[test]
-    fn batch_test_big_uint_value_single_decompose() {
-        let mut rng = rand::rng();
-
-        let moduli_value: [ValueT; 2] = [134215681, 134176769];
-        let moduli = moduli_value.map(BarrettModulus::new);
-
-        let distrs = moduli_value.map(|m| Uniform::new(0, m).unwrap());
-
-        let rns_base = RNSBase::new(&moduli).unwrap();
-        let composed_modulus = rns_base.moduli_product();
-        let basis = BigUintApproxSignedBasis::new(&rns_base, 7, None);
-
-        // make test simple
-        assert!(basis.drop_bits() < ValueT::BITS);
-
-        let difference_bound = basis.approximate_error_bound();
-
-        let basis_value = basis.basis_value();
-        let mut decomposed_unsigned_value = vec![0; basis.decompose_length()];
-        let mut difference = BigUint(vec![0; composed_modulus.len()]);
-
-        for _ in 0..1_0000 {
-            let mut value = multiply_many_values(&distrs.map(|distr| rng.sample(distr)));
-            value.0.resize(composed_modulus.len(), 0);
-
-            let (adjust_value, mut carry) = basis.init_value_carry(&value);
-
-            for (decomposer, unsigned_value) in basis
-                .decomposer_iter()
-                .zip(decomposed_unsigned_value.iter_mut())
-            {
-                (*unsigned_value, carry) = decomposer.unsigned_decompose(&adjust_value, carry);
-            }
-
-            let result = basis
-                .iter_scalar_residues()
-                .zip(decomposed_unsigned_value.iter())
-                .fold(vec![0, 0], |mut acc, (scalar_residue, &unsigned_value)| {
-                    let value_chunk_residues =
-                        rns_base.wrapping_decompose(unsigned_value, basis_value);
-                    for (ac, value_chunk, &scalar, modulus) in
-                        izip!(acc.iter_mut(), value_chunk_residues, scalar_residue, moduli)
-                    {
-                        *ac = modulus.reduce_mul_add(scalar, value_chunk, *ac);
-                    }
-                    acc
-                });
-            let result = rns_base.compose(&result);
-            let value = value;
-
-            if result.cmp(&value).is_le() {
-                let _ = value.sub_to(&result, &mut difference);
-            } else {
-                let _ = result.sub_to(&value, &mut difference);
-            }
-
-            assert!(
-                difference.cmp(&difference_bound).is_le(),
-                "value: {:?}\ndifference: {:?}",
-                value,
-                difference
-            );
-        }
-    }
-
-    #[test]
-    fn test_big_uint_value_slice_decompose() {
-        const N: usize = 32;
-
-        let mut rng = rand::rng();
-
-        let moduli_value: [ValueT; 2] = [134215681, 134176769];
-        let moduli_count = moduli_value.len();
-        let moduli = moduli_value.map(BarrettModulus::new);
-        let distrs = moduli_value.map(|m| Uniform::new(0, m).unwrap());
-
-        let rns_base = RNSBase::new(&moduli).unwrap();
-        let modulus = rns_base.moduli_product();
-        let big_uint_value_len = modulus.len();
-        let basis = BigUintApproxSignedBasis::new(&rns_base, 5, None);
-        let basis_value = basis.basis_value();
-
-        let difference_bound = basis.approximate_error_bound();
-
-        println!("difference bound: {:?}", difference_bound);
-
-        let mut input_residues: Vec<ValueT> = vec![0; N * moduli_count];
-        input_residues
-            .as_chunks_mut::<N>()
-            .0
-            .iter_mut()
-            .zip(distrs)
-            .for_each(|(r, d)| {
-                r.iter_mut()
-                    .zip((&mut rng).sample_iter(d))
-                    .for_each(|(a, b)| {
-                        *a = b;
-                    });
-            });
-
-        let mut input_values: Vec<ValueT> = vec![0; N * big_uint_value_len];
-        let mut compose_buffer = vec![0; moduli_count];
-        rns_base.compose_big_uint_values_to(
-            &input_residues,
-            &mut input_values,
-            N,
-            &mut compose_buffer,
-        );
-
-        let mut adjust_big_uint_values = vec![0; N * big_uint_value_len];
-        let mut carries = vec![false; N];
-        basis.init_value_carry_slice_to(&input_values, &mut adjust_big_uint_values, &mut carries);
-
-        let mut residues: Vec<ValueT> = vec![0; N * moduli_count];
-        let mut decomposed_unsigned_values = vec![0; N];
-        let mut temp: Vec<ValueT> = vec![0; N * moduli_count];
-
-        basis
-            .decomposer_iter()
-            .zip(basis.iter_scalar_residues())
-            .for_each(|(once_decomposer, scalar)| {
-                once_decomposer.unsigned_decompose_slice_to(
-                    &adjust_big_uint_values,
-                    &mut decomposed_unsigned_values,
-                    &mut carries,
-                );
-
-                assert!(decomposed_unsigned_values.iter().all(|&v| v < basis_value));
-
-                rns_base.wrapping_decompose_small_values_to(
-                    &decomposed_unsigned_values,
-                    &mut temp,
-                    basis_value,
-                );
-
-                izip!(
-                    residues.as_chunks_mut::<N>().0.iter_mut(),
-                    temp.as_chunks::<N>().0.iter(),
-                    scalar,
-                    &moduli
-                )
-                .for_each(|(a, b, &scalar, m)| {
-                    a.iter_mut()
-                        .zip(b)
-                        .for_each(|(x, &y)| *x = m.reduce_mul_add(y, scalar, *x));
-                });
-            });
-
-        let mut output_values: Vec<ValueT> = vec![0; N * big_uint_value_len];
-        rns_base.compose_big_uint_values_to(&residues, &mut output_values, N, &mut compose_buffer);
-
-        let mut min: Vec<ValueT> = vec![0; N * big_uint_value_len];
-
-        izip!(
-            BigUintIter::new(&input_values, big_uint_value_len),
-            BigUintIter::new(&output_values, big_uint_value_len),
-            BigUintIterMut::new(&mut min, big_uint_value_len),
-        )
-        .for_each(|(i, o, mut m)| {
-            if i.cmp(&o).is_le() {
-                let _ = o.sub_to(&i, &mut m);
-            } else {
-                let _ = i.sub_to(&o, &mut m);
-            }
-        });
-
-        for differ in BigUintIter::new(&min, big_uint_value_len) {
-            if differ.cmp(&difference_bound).is_gt() {
-                println!("differ={:?}", differ);
-            }
-        }
-
-        assert!(
-            BigUintIter::new(&min, big_uint_value_len)
-                .all(|differ| differ.cmp(&difference_bound).is_le())
-        )
-    }
-
-    #[test]
-    fn compare_signed_and_unsigned_decompse() {
-        let mut rng = rand::rng();
-
-        let moduli_value: [ValueT; 2] = [134215681, 134176769];
-        let moduli = moduli_value.map(BarrettModulus::new);
-        let moduli_count = moduli.len();
-
-        let rns_base = RNSBase::new(&moduli).unwrap();
-        let big_uint_value_len = rns_base.big_uint_value_len();
-        let basis = BigUintApproxSignedBasis::new(&rns_base, 5, None);
-
-        assert_eq!(moduli_count, 2);
-        assert_eq!(big_uint_value_len, 2);
-
-        let basis_value = basis.basis_value();
-
-        let modulus: WideT = 134215681 * 134176769;
-
-        let random_values: Vec<WideT> = Uniform::new(0, modulus)
-            .unwrap()
-            .sample_iter(&mut rng)
-            .take(1_0000)
-            .collect();
-
-        random_values.par_iter().for_each(|i| {
-            let input_big_uint_value: [ValueT; 2] = [*i as ValueT, (i >> 32) as ValueT];
-            let mut adjust_big_uint_values: [ValueT; 2] = [0, 0];
-
-            let mut carries: [bool; 1] = [false; 1];
-            let mut decomposed_big_uint_values: [ValueT; 2] = [0, 0];
-
-            let mut decomposed_unsigned_values: [ValueT; 1] = [0];
-            let mut residues1: [ValueT; 2] = [0, 0];
-            let mut residues2: [ValueT; 2] = [0, 0];
-
-            basis.init_value_carry_slice_to(
-                &input_big_uint_value,
-                &mut adjust_big_uint_values,
-                &mut carries,
-            );
-
-            basis.decomposer_iter().for_each(|once_decomposer| {
-                let mut temp = carries;
-                once_decomposer.unsigned_decompose_slice_to(
-                    &adjust_big_uint_values,
-                    &mut decomposed_unsigned_values,
-                    &mut temp,
-                );
-
-                rns_base.wrapping_decompose_small_values_to(
-                    &decomposed_unsigned_values,
-                    &mut residues1,
-                    basis_value,
-                );
-
-                once_decomposer.decompose_slice_to(
-                    &adjust_big_uint_values,
-                    &mut decomposed_big_uint_values,
-                    &mut carries,
-                );
-
-                rns_base.decompose_big_uint_values_to(
-                    &decomposed_big_uint_values,
-                    &mut residues2,
-                    1,
-                );
-
-                assert_eq!(residues1, residues2, "{}", decomposed_unsigned_values[0]);
-                assert_eq!(temp, carries);
-            });
-        });
-    }
-
-    #[test]
-    fn test_init_value_carry_slice_matches_single() {
-        let mut rng = rand::rng();
-        let moduli_value: [ValueT; 2] = [134215681, 134176769];
-        let moduli = moduli_value.map(BarrettModulus::new);
-
-        let rns_base = RNSBase::new(&moduli).unwrap();
-        let basis = BigUintApproxSignedBasis::new(&rns_base, 5, None);
-
-        let modulus: WideT = 134215681 * 134176769;
-        let random_values: Vec<WideT> = Uniform::new(0, modulus)
-            .unwrap()
-            .sample_iter(&mut rng)
-            .take(1_0000)
-            .collect();
-
-        random_values.par_iter().for_each(|i: &WideT| {
-            let input_big_uint_value: [ValueT; 2] = [*i as ValueT, (i >> 32) as ValueT];
-            let input_big_uint = BigUint(input_big_uint_value);
-            let (adjust_value, carry) = basis.init_value_carry(&input_big_uint);
-
-            let mut adjust_big_uint_values: [ValueT; 2] = [0, 0];
-            let mut carries: [bool; 1] = [false; 1];
-
-            basis.init_value_carry_slice_to(
-                &input_big_uint_value,
-                &mut adjust_big_uint_values,
-                &mut carries,
-            );
-
-            assert_eq!(adjust_big_uint_values.as_slice(), adjust_value.as_slice());
-            assert_eq!(carries[0], carry);
-        });
     }
 }

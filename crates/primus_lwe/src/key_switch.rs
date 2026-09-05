@@ -189,7 +189,7 @@ impl<T: FheUint> LweKeySwitchingKey<T> {
         let mut entries = self.data.chunks_exact(output_lwe_len);
         for &coefficient in input.a() {
             let (adjusted, mut carry) = self.basis.init_value_carry(coefficient);
-            for decomposer in self.basis.decompose_iter() {
+            for decomposer in self.basis.decomposer_iter() {
                 let (digit, next_carry) = decomposer.decompose(adjusted, carry);
                 carry = next_carry;
                 let key_entry = Lwe(entries.next().expect("invalid key-switching key length"));

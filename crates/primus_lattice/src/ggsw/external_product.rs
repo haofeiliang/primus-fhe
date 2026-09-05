@@ -97,7 +97,7 @@ where
         {
             basis.init_carry_slice(coeff_poly.0, &mut context.carries);
             for (decomposer, key_glwe) in basis
-                .decompose_iter()
+                .decomposer_iter()
                 .zip(key_row.iter_glwe(fourier_glwe_len))
             {
                 decomposer.decompose_slice_to(
@@ -230,7 +230,7 @@ where
                 context.carries,
             );
             for (decomposer, key_glwe) in
-                basis.decompose_iter().zip(key_row.iter_ntt_glwe(glwe_len))
+                basis.decomposer_iter().zip(key_row.iter_ntt_glwe(glwe_len))
             {
                 decomposer.decompose_slice_to(
                     context.adjusted_poly,

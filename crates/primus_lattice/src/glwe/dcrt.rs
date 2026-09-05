@@ -182,6 +182,9 @@ where
     }
 
     /// Performs `self += dcrt_glev * crt_poly` using the given decomposition basis and NTT table.
+    ///
+    /// `basis` must match the ordered `rns_base`, and its radix must be
+    /// smaller than every RNS modulus for the fast centered digit lift.
     pub fn add_dcrt_glev_mul_crt_poly_assign<M, Table, A, B>(
         &mut self,
         dcrt_glev: &DcrtGlev<A>,
@@ -230,7 +233,7 @@ where
             compose_buffer,
         );
 
-        basis.init_value_carry_slice_inplace(adjust_big_uint_values, carries);
+        basis.init_value_carry_slice_assign(adjust_big_uint_values, carries);
 
         dcrt_glev
             .iter_dcrt_glwe(dcrt_glwe_len)
@@ -260,6 +263,9 @@ where
     }
 
     /// Performs `self += dcrt_glev * big_uint_poly` using the given decomposition basis and NTT table.
+    ///
+    /// `basis` must match the ordered `rns_base`, and its radix must be
+    /// smaller than every RNS modulus for the fast centered digit lift.
     pub fn add_dcrt_glev_mul_big_uint_poly_assign<M, Table, A, B>(
         &mut self,
         dcrt_glev: &DcrtGlev<A>,

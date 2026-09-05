@@ -333,7 +333,7 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
         assert_eq!(result.as_ref().len(), params.rns_glev_len());
         result
             .iter_dcrt_glwe_mut(params.rns_glwe_len())
-            .zip(params.basis().iter_scalar_residues())
+            .zip(params.basis().scalar_residue_iter())
             .for_each(|(mut dcrt_glwe, scalar_residues)| {
                 self.encrypt_dcrt_msg_to_dcrt_glwe_inplace_with_custom_delta(
                     dcrt_msg,
@@ -411,7 +411,7 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
         assert_eq!(result.as_ref().len(), params.rns_glev_len());
         result
             .iter_dcrt_glwe_mut(params.rns_glwe_len())
-            .zip(params.basis().iter_scalar_residues())
+            .zip(params.basis().scalar_residue_iter())
             .for_each(|(mut dcrt_glwe, scalar_residues)| {
                 self.encrypt_crt_msg_to_dcrt_glwe_inplace_with_custom_delta(
                     crt_msg,

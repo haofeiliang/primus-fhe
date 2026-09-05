@@ -42,6 +42,9 @@ where
     T: FheUint,
 {
     /// Multiplies this DCRT GLEV with a CRT-domain polynomial, storing the result into `result`.
+    ///
+    /// `basis` must match the ordered `rns_base`, and its radix must be
+    /// smaller than every RNS modulus for the fast centered digit lift.
     pub fn mul_crt_poly_to<M, Table, A, B>(
         &self,
         crt_poly: &CrtPolynomial<A>,
@@ -76,7 +79,7 @@ where
             compose_buffer,
         );
 
-        basis.init_value_carry_slice_inplace(adjust_big_uint_values, carries);
+        basis.init_value_carry_slice_assign(adjust_big_uint_values, carries);
 
         result.set_zero();
 
@@ -107,6 +110,9 @@ where
     }
 
     /// Multiplies this DCRT GLEV with a BigUint-domain polynomial, storing the result into `result`.
+    ///
+    /// `basis` must match the ordered `rns_base`, and its radix must be
+    /// smaller than every RNS modulus for the fast centered digit lift.
     pub fn mul_big_uint_poly_to<M, Table, A, B>(
         &self,
         big_uint_poly: &BigUintPolynomial<A>,

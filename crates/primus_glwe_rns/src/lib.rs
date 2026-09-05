@@ -30,8 +30,8 @@ pub use key_switch::{
     HybridRnsGlweKeySwitchingKey,
 };
 pub use parameter::{
-    CrtGgswParameters, CrtGlevParameters, CrtGlweParameters, DcrtGadgetDomain, GadgetDomainError,
-    HybridRnsKeySwitchDomain,
+    CrtGgswParameters, CrtGlevParameters, CrtGlevParametersError, CrtGlweParameters,
+    DcrtGadgetDomain, GadgetDomainError, HybridRnsKeySwitchDomain,
 };
 pub use plaintext::RnsCoeffCodec;
 pub use primus_glwe::{

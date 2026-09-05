@@ -28,7 +28,7 @@ where
 
     let (adjusted, mut carry) = basis.init_value_carry(value);
     let mut recomposed = 0u128;
-    for (level, (decomposer, scalar)) in basis.decompose_iter().zip(scalars).enumerate() {
+    for (level, (decomposer, scalar)) in basis.decomposer_iter().zip(scalars).enumerate() {
         let (raw_digit, next_carry) = decomposer.decompose(adjusted, carry);
         carry = next_carry;
 
@@ -142,6 +142,53 @@ fn invalid_parameters_are_rejected() {
 }
 
 #[test]
+fn batch_initialization_and_digits_match_scalar() {
+    for (modulus, log_basis, retained) in [
+        (None, 4, None),
+        (None, 4, Some(2)),
+        (Some(1 << 16), 6, None),
+        (Some(697), 5, None),
+        (Some(1_073_692_673), 8, Some(3)),
+    ] {
+        let basis = ApproxSignedBasis::<u32>::new(modulus, log_basis, retained);
+        let max = modulus.map_or(u32::MAX, |q| q - 1);
+        let values = [0, 1, max / 2, max - 1, max];
+        let mut adjusted = [u32::MAX; 5];
+        let mut carries = [true; 5];
+        basis.init_value_carry_slice_to(&values, &mut adjusted, &mut carries);
+        let mut in_place = values;
+        let mut in_place_carries = [true; 5];
+        basis.init_value_carry_slice_assign(&mut in_place, &mut in_place_carries);
+        assert_eq!(adjusted, in_place);
+        assert_eq!(carries, in_place_carries);
+        if basis.modulus_is_power_of_2() {
+            let mut carry_only = [true; 5];
+            basis.init_carry_slice(&values, &mut carry_only);
+            assert_eq!(adjusted, values);
+            assert_eq!(carries, carry_only);
+        }
+        for index in 0..values.len() {
+            assert_eq!(
+                (adjusted[index], carries[index]),
+                basis.init_value_carry(values[index])
+            );
+        }
+        for decomposer in basis.decomposer_iter() {
+            let previous_carries = carries;
+            let mut output = [u32::MAX; 5];
+            decomposer.decompose_slice_to(&adjusted, &mut output, &mut carries);
+            for index in 0..values.len() {
+                assert_eq!(
+                    (output[index], carries[index]),
+                    decomposer.decompose(adjusted[index], previous_carries[index])
+                );
+            }
+        }
+    }
+}
+
+#[test]
+#[cfg(debug_assertions)]
 fn slice_length_mismatches_are_rejected() {
     let basis = ApproxSignedBasis::<u32>::new(None, 4, Some(2));
 
@@ -154,46 +201,11 @@ fn slice_length_mismatches_are_rejected() {
         .is_err()
     );
 
-    let decomposer = basis.decompose_iter().next().unwrap();
+    let decomposer = basis.decomposer_iter().next().unwrap();
     assert!(
         std::panic::catch_unwind(|| {
             decomposer.decompose_slice_to(&[0, 1], &mut [0; 2], &mut [false])
         })
         .is_err()
     );
-}
-
-#[test]
-fn serde_roundtrip_rebuilds_derived_state() {
-    for basis in [
-        ApproxSignedBasis::<u64>::new(None, 8, Some(4)),
-        ApproxSignedBasis::new(Some(1_073_692_673), 8, Some(3)),
-    ] {
-        let serialized = serde_json::to_value(&basis).unwrap();
-        let fields = serialized.as_object().unwrap();
-        assert_eq!(fields.len(), 3);
-        assert!(fields.contains_key("modulus"));
-        assert!(fields.contains_key("log_basis"));
-        assert!(fields.contains_key("reverse_length"));
-        assert!(!fields.contains_key("scalars"));
-        assert!(!fields.contains_key("value_masks"));
-
-        let rebuilt: ApproxSignedBasis<u64> = serde_json::from_value(serialized).unwrap();
-        assert_eq!(rebuilt, basis);
-        assert_eq!(
-            rebuilt.scalar_iter().collect::<Vec<_>>(),
-            basis.scalar_iter().collect::<Vec<_>>()
-        );
-    }
-}
-
-#[test]
-fn serde_rejects_invalid_parameters_without_panicking() {
-    for serialized in [
-        r#"{"modulus":null,"log_basis":1,"reverse_length":null}"#,
-        r#"{"modulus":13,"log_basis":4,"reverse_length":null}"#,
-        r#"{"modulus":null,"log_basis":4,"reverse_length":0}"#,
-    ] {
-        assert!(serde_json::from_str::<ApproxSignedBasis<u32>>(serialized).is_err());
-    }
 }

@@ -4,15 +4,13 @@ use core::{
 };
 
 use primus_integer::FheUint;
-use serde::{Deserialize, Serialize};
 
 /// How to initialize the carry bit and adjust the input value before decomposition.
 ///
 /// For non-power-of-two moduli, values near the top of the range may need to
 /// wrap around (by adding `2^value_bits - modulus`) and/or set an initial carry
 /// to ensure the decomposition is approximately correct.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-#[serde(bound(deserialize = "T: FheUint"))]
+#[derive(Debug, Clone, Copy)]
 pub enum ValueCarryInitMode<T: FheUint> {
     /// Both adjust the value and extract a carry bit.
     AdjustAndCarry {
@@ -109,8 +107,7 @@ impl<'a, T: FheUint> ExactSizeIterator for ScalarIter<'a, T> {
 ///
 /// The window spans `bit_len(mask)` bits, starting at bit position `shr_bits`.
 /// Extraction uses shift-then-AND: `(value >> shr_bits) & mask`.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-#[serde(bound(deserialize = "T: FheUint"))]
+#[derive(Debug, Clone, Copy)]
 pub struct ValueMask<T: FheUint> {
     /// The bitmask applied after shifting — equal to `basis - 1`.
     mask: T,
@@ -145,14 +142,14 @@ impl<T: FheUint> ValueMask<T> {
 }
 
 /// An iterator over the signed decomposition operators.
-pub struct SignedDecomposeIter<'a, T: FheUint> {
+pub struct SignedDecomposerIter<'a, T: FheUint> {
     pub(super) value_masks: Iter<'a, ValueMask<T>>,
     pub(super) carry_mask: T,
     pub(super) basis_minus_one: T,
     pub(super) modulus_minus_basis: T,
 }
 
-impl<'a, T: FheUint> SignedDecomposeIter<'a, T> {
+impl<'a, T: FheUint> SignedDecomposerIter<'a, T> {
     #[inline]
     fn make_item(&self, value_mask: &ValueMask<T>) -> OnceSignedDecomposer<T> {
         OnceSignedDecomposer {
@@ -164,7 +161,7 @@ impl<'a, T: FheUint> SignedDecomposeIter<'a, T> {
     }
 }
 
-impl<'a, T: FheUint> Iterator for SignedDecomposeIter<'a, T> {
+impl<'a, T: FheUint> Iterator for SignedDecomposerIter<'a, T> {
     type Item = OnceSignedDecomposer<T>;
 
     #[inline]
@@ -194,9 +191,9 @@ impl<'a, T: FheUint> Iterator for SignedDecomposeIter<'a, T> {
     }
 }
 
-impl<'a, T: FheUint> FusedIterator for SignedDecomposeIter<'a, T> {}
+impl<'a, T: FheUint> FusedIterator for SignedDecomposerIter<'a, T> {}
 
-impl<'a, T: FheUint> core::iter::DoubleEndedIterator for SignedDecomposeIter<'a, T> {
+impl<'a, T: FheUint> core::iter::DoubleEndedIterator for SignedDecomposerIter<'a, T> {
     #[inline]
     fn next_back(&mut self) -> Option<Self::Item> {
         self.value_masks.next_back().map(|v| self.make_item(v))
@@ -208,14 +205,19 @@ impl<'a, T: FheUint> core::iter::DoubleEndedIterator for SignedDecomposeIter<'a,
     }
 }
 
-impl<'a, T: FheUint> ExactSizeIterator for SignedDecomposeIter<'a, T> {
+impl<'a, T: FheUint> ExactSizeIterator for SignedDecomposerIter<'a, T> {
     #[inline]
     fn len(&self) -> usize {
         self.value_masks.len()
     }
 }
 
-/// The signed decomposition operator which can execute once decomposition.
+/// Extracts one signed digit from an initialized decomposition input.
+///
+/// Obtain operators from [`super::ApproxSignedBasis::decomposer_iter`] and
+/// apply them in order to the same adjusted value. The first carry comes
+/// from initialization; later carries come from the preceding level.
+/// A carry can be true even when the returned digit is zero.
 pub struct OnceSignedDecomposer<T: FheUint> {
     value_mask: ValueMask<T>,
     carry_mask: T,
@@ -224,7 +226,11 @@ pub struct OnceSignedDecomposer<T: FheUint> {
 }
 
 impl<T: FheUint> OnceSignedDecomposer<T> {
-    /// Execute once decomposition and return the decomposed value and carry for next decomposition.
+    /// Returns a digit encoded modulo `q` and the carry for the next level.
+    ///
+    /// The signed digit lies in `[-B/2, B/2)`. Negative digits are represented
+    /// by `q + digit`, using `q = 2^T::BITS` for the implicit native modulus.
+    /// `value` and `carry` must follow this operator's initialization protocol.
     #[inline]
     pub fn decompose(&self, value: T, carry: bool) -> (T, bool) {
         let mut temp = self.value_mask.get_value(value) + T::as_from(carry);
@@ -241,7 +247,7 @@ impl<T: FheUint> OnceSignedDecomposer<T> {
         (temp, next_carry)
     }
 
-    /// Execute once decomposition, store carry for next decomposition back to `carry`.
+    /// Overwrites the digit output and advances `carry`, as in [`Self::decompose`].
     #[inline]
     pub fn decompose_to(&self, value: T, decomposed_value: &mut T, carry: &mut bool) {
         let temp = self.value_mask.get_value(value) + T::as_from(*carry);
@@ -258,7 +264,10 @@ impl<T: FheUint> OnceSignedDecomposer<T> {
         }
     }
 
-    /// Execute once decomposition for slice, store carries for next decomposition back to `carries`.
+    /// Writes one digit per adjusted input and advances the corresponding carries.
+    ///
+    /// All slices must have equal lengths. Each input and carry must follow
+    /// [`Self::decompose`]; `decomposed_values` is overwritten, not accumulated.
     #[inline]
     pub fn decompose_slice_to(
         &self,

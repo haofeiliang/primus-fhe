@@ -211,6 +211,9 @@ where
     }
 
     /// Multiplies this CRT GLWE by a DCRT GGSW ciphertext, storing the result into `result`.
+    ///
+    /// `basis` must match the ordered `rns_base`, and its radix must be
+    /// smaller than every RNS modulus for the fast centered digit lift.
     pub fn mul_dcrt_ggsw_to<M, Table, A, B>(
         &self,
         dcrt_ggsw: &DcrtGgsw<A>,

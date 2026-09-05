@@ -11,6 +11,8 @@ use rand::distr::Uniform;
 
 use crate::{RnsCoeffCodec, SecretKeyDistr};
 
+use super::CrtGlevParametersError;
+
 /// Big Unsigned Integer Glwe Parameters.
 #[derive(Clone)]
 pub struct CrtGlweParameters<T, M>
@@ -272,6 +274,10 @@ where
     M: FieldContext<T>,
 {
     /// Creates CRT GLev/GGSW parameters from one matching GLWE parameter set.
+    ///
+    /// # Panics
+    ///
+    /// Panics if [`Self::try_with_glwe_params`] rejects the decomposition parameters.
     #[inline]
     pub fn with_glwe_params(
         glwe_params: &CrtGlweParameters<T, M>,
@@ -284,13 +290,30 @@ where
 
     /// Tries to create CRT GLev/GGSW parameters and their basis from the
     /// ordered RNS base owned by `glwe_params`.
+    ///
+    /// The radix `2^log_basis` must be strictly smaller than every RNS modulus,
+    /// as required by the fast centered lift used by CRT/DCRT gadget products.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`CrtGlevParametersError`] if decomposition construction fails
+    /// or a modulus does not satisfy the centered-lift precondition.
     pub fn try_with_glwe_params(
         glwe_params: &CrtGlweParameters<T, M>,
         log_basis: u32,
         reverse_length: Option<usize>,
-    ) -> Result<Self, primus_decompose::ApproxSignedBasisError> {
+    ) -> Result<Self, CrtGlevParametersError<T>> {
         let basis =
             BigUintApproxSignedBasis::try_new(glwe_params.base_q(), log_basis, reverse_length)?;
+        for (index, &modulus) in glwe_params.cipher_moduli_value().iter().enumerate() {
+            if basis.basis_value() >= modulus {
+                return Err(CrtGlevParametersError::BasisNotSmallerThanModulus {
+                    basis: basis.basis_value(),
+                    modulus,
+                    index,
+                });
+            }
+        }
         let decompose_length = basis.decompose_length();
         Ok(Self {
             cipher_modulus_minus_one: glwe_params.cipher_modulus_minus_one().into(),

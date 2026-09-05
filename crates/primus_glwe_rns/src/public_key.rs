@@ -154,7 +154,7 @@ impl<T: FheUint> DcrtGlwePublicKey<T> {
 
         dcrt_glev
             .iter_dcrt_glwe_mut(dcrt_glwe_len)
-            .zip(params.basis().iter_scalar_residues())
+            .zip(params.basis().scalar_residue_iter())
             .for_each(|(mut dcrt_glwe, scalar_residues)| {
                 primus_distr::sample_crt_sparse_ternary_values_to(
                     v,

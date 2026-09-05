@@ -1,14 +1,12 @@
 use core::{iter::FusedIterator, num::NonZeroU32, slice::Iter};
 
 use primus_integer::{BigUint, FheUint};
-use serde::{Deserialize, Serialize};
 
 /// How to initialize the carry bit and adjust a `BigUint` input before decomposition.
 ///
 /// `threshold` is the split value: inputs `>= threshold` are adjusted by `add`.
 /// `index` and `mask` select the limb and bit used to extract the initial carry.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(bound(deserialize = "T: FheUint"))]
+#[derive(Debug, Clone)]
 pub enum BigUintValueCarryInitMode<T: FheUint> {
     /// Both adjust the value and extract a carry bit.
     AdjustAndCarry {
@@ -58,8 +56,7 @@ impl<T: FheUint> BigUintValueCarryInitMode<T> {
 /// within `value[index]`. When the window crosses a limb boundary (i.e.
 /// `shr_bits + bit_len(mask) > T::BITS`), the upper part spills into
 /// `value[index + 1]` and must be shifted back into place with `shl_bits`.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
-#[serde(bound(deserialize = "T: FheUint"))]
+#[derive(Debug, Clone, Copy)]
 pub struct ValueMask<T: FheUint> {
     /// The bitmask applied after shifting — equal to `basis - 1`.
     mask: T,
@@ -213,7 +210,16 @@ impl<'a, T: FheUint> ExactSizeIterator for BigUintSignedDecomposerIter<'a, T> {
     }
 }
 
-/// The signed decomposition operator which can execute once decomposition.
+/// Extracts one signed digit from an initialized multi-limb input.
+///
+/// Obtain operators from [`super::BigUintApproxSignedBasis::decomposer_iter`]
+/// and apply them in order to the same adjusted value. The first carry comes
+/// from initialization; later carries come from the preceding level.
+/// A carry can be true even when the returned digit is zero.
+///
+/// Full-width values have exactly the basis's `big_uint_value_len()`
+/// little-endian limbs. Batch buffers are value-major, with all limbs of each
+/// value contiguous. Unsigned digit outputs instead use one limb per value.
 pub struct OnceBigUintSignedDecomposer<'a, T: FheUint> {
     pub(super) value_mask: ValueMask<T>,
     pub(super) carry_mask: T,
@@ -229,7 +235,11 @@ impl<'a, T: FheUint> OnceBigUintSignedDecomposer<'a, T> {
         self.modulus_minus_basis.len()
     }
 
-    /// Execute once decomposition and return the decomposed value and carry for next decomposition.
+    /// Allocates a digit encoded modulo `Q` and returns the next carry.
+    ///
+    /// The signed digit lies in `[-B/2, B/2)`. Negative digits are represented
+    /// by `Q + digit`. `value` must have exactly `big_uint_value_len()` limbs;
+    /// both it and `carry` must follow this operator's initialization protocol.
     #[inline]
     pub fn decompose(&self, value: &[T], carry: bool) -> (Vec<T>, bool) {
         debug_assert_eq!(value.len(), self.big_uint_value_len());
@@ -248,7 +258,13 @@ impl<'a, T: FheUint> OnceBigUintSignedDecomposer<'a, T> {
         (result.0, next_carry)
     }
 
-    /// Execute once unsigned decomposition and return the decomposed value and carry.
+    /// Returns a signed digit encoded modulo `B`, and the next carry.
+    ///
+    /// The result is in `[0, B)`: values below `B/2` encode themselves, and
+    /// values at or above `B/2` encode `result - B`. For example, `B - 1`
+    /// encodes `-1`, not a positive digit. Unlike [`Self::decompose`], this
+    /// returns one limb rather than a residue modulo `Q`.
+    /// Input shape and initialization requirements match [`Self::decompose`].
     #[inline]
     pub fn unsigned_decompose(&self, value: &[T], carry: bool) -> (T, bool) {
         debug_assert_eq!(value.len(), self.big_uint_value_len());
@@ -259,7 +275,10 @@ impl<'a, T: FheUint> OnceBigUintSignedDecomposer<'a, T> {
         (temp & self.basis_minus_one, next_carry)
     }
 
-    /// Execute once decomposition, store carry for next decomposition back to `carry`.
+    /// Writes a digit modulo `Q` and advances `carry`, as in [`Self::decompose`].
+    ///
+    /// Both value slices must contain exactly `big_uint_value_len()` limbs.
+    /// The output is overwritten, not accumulated.
     #[inline]
     pub fn decompose_to(&self, value: &[T], decomposed_value: &mut [T], carry: &mut bool) {
         debug_assert_eq!(value.len(), self.big_uint_value_len());
@@ -286,7 +305,8 @@ impl<'a, T: FheUint> OnceBigUintSignedDecomposer<'a, T> {
         }
     }
 
-    /// Execute once unsigned decomposition, store carry for next decomposition back to `carry`.
+    /// Writes a digit modulo `B` and advances `carry`, as in [`Self::unsigned_decompose`].
+    /// The output is overwritten, not accumulated.
     #[inline]
     pub fn unsigned_decompose_to(
         &self,
@@ -311,7 +331,11 @@ impl<'a, T: FheUint> OnceBigUintSignedDecomposer<'a, T> {
         *decomposed_unsigned_value = temp & self.basis_minus_one;
     }
 
-    /// Execute once decomposition for slice, store carries for next decomposition back to `carries`.
+    /// Writes full-width digits modulo `Q` and advances the corresponding carries.
+    ///
+    /// Both value buffers must have length `carries.len() * big_uint_value_len()`
+    /// in value-major layout. Inputs follow [`Self::decompose`]; all output
+    /// limbs are overwritten, not accumulated.
     #[inline]
     pub fn decompose_slice_to(
         &self,
@@ -331,7 +355,11 @@ impl<'a, T: FheUint> OnceBigUintSignedDecomposer<'a, T> {
         }
     }
 
-    /// Execute once unsigned decomposition for slice, store carries for next decomposition back to `carries`.
+    /// Writes one digit modulo `B` per adjusted input and advances its carry.
+    ///
+    /// `big_uint_values.len()` must equal `carries.len() * big_uint_value_len()`
+    /// in value-major layout. The digit output must have `carries.len()` limbs.
+    /// Inputs follow [`Self::unsigned_decompose`]; outputs are overwritten.
     #[inline]
     pub fn unsigned_decompose_slice_to(
         &self,

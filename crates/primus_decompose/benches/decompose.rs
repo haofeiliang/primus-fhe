@@ -96,7 +96,7 @@ fn bench_primitive_online(c: &mut Criterion) {
             b.iter(|| {
                 let (adjusted, mut carry) = basis.init_value_carry(black_box(value));
                 let mut decomposed = 0;
-                for decomposer in basis.decompose_iter() {
+                for decomposer in basis.decomposer_iter() {
                     decomposer.decompose_to(adjusted, &mut decomposed, &mut carry);
                     black_box(decomposed);
                 }
@@ -117,7 +117,7 @@ fn bench_primitive_online(c: &mut Criterion) {
                         black_box(&mut adjusted),
                         black_box(&mut carries),
                     );
-                    for decomposer in basis.decompose_iter() {
+                    for decomposer in basis.decomposer_iter() {
                         decomposer.decompose_slice_to(
                             black_box(&adjusted),
                             black_box(&mut decomposed),
@@ -257,27 +257,6 @@ fn bench_big_initialization(c: &mut Criterion) {
     group.finish();
 }
 
-fn bench_scalar_residue_iteration(c: &mut Criterion) {
-    let mut group = c.benchmark_group("decompose/big/scalar_residues");
-    for limb_count in [1, 2, 4] {
-        let base = rns_base(limb_count);
-        let basis = BigUintApproxSignedBasis::new(&base, BIG_LOG_BASIS, None);
-        group.bench_function(
-            BenchmarkId::new("consume", format!("{limb_count}_limbs")),
-            |b| {
-                b.iter(|| {
-                    let checksum = black_box(&basis)
-                        .iter_scalar_residues()
-                        .flatten()
-                        .fold(0, |acc: Word, &value| acc.wrapping_add(value));
-                    black_box(checksum)
-                });
-            },
-        );
-    }
-    group.finish();
-}
-
 criterion_group!(
     benches,
     bench_primitive_setup,
@@ -285,6 +264,5 @@ criterion_group!(
     bench_big_setup,
     bench_big_online,
     bench_big_initialization,
-    bench_scalar_residue_iteration,
 );
 criterion_main!(benches);

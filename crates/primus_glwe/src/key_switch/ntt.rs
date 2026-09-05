@@ -278,7 +278,7 @@ impl<T: FheUint> NttGlweKeySwitchingKey<T> {
         for (mask_poly, entry) in input_mask.chunks_exact(poly_length).zip(self.iter()) {
             basis.init_value_carry_slice_to(mask_poly, context.adjusted_poly, context.carries);
 
-            for (decomposer, key_glwe) in basis.decompose_iter().zip(entry.iter_ntt_glwe(glwe_len))
+            for (decomposer, key_glwe) in basis.decomposer_iter().zip(entry.iter_ntt_glwe(glwe_len))
             {
                 decomposer.decompose_slice_to(
                     context.adjusted_poly,
