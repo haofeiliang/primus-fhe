@@ -1,20 +1,15 @@
 // cargo bench -p primus_decompose --bench decompose
 //
-// Compare scalar and SIMD builds with the same nightly toolchain:
-// cargo +nightly bench -p primus_decompose --bench decompose -- --save-baseline nightly-scalar
-// cargo +nightly bench -p primus_decompose --bench decompose --features simd -- --baseline nightly-scalar
+// BigUint setup measures integer decomposition precomputation only. RNS
+// reconstruction weights belong to primus_glwe_rns parameter construction.
 
 use std::hint::black_box;
 
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use primus_decompose::{big_integer::BigUintApproxSignedBasis, primitive::ApproxSignedBasis};
-use primus_integer::BigUint;
-use primus_modulus::BarrettModulus;
-use primus_rns::RNSBase;
+use primus_integer::{BigUint, multiply_many_values};
 
 type Word = u64;
-type Modulus = BarrettModulus<Word>;
-type Base = RNSBase<Word, Modulus>;
 
 const COEFFICIENT_COUNT: usize = 4096;
 const PRIMITIVE_LOG_BASIS: u32 = 8;
@@ -26,13 +21,8 @@ const MODULI: [Word; 4] = [
     1_125_899_904_679_937,
 ];
 
-fn rns_base(limb_count: usize) -> Base {
-    let moduli: Vec<_> = MODULI[..limb_count]
-        .iter()
-        .copied()
-        .map(Modulus::new)
-        .collect();
-    RNSBase::new(&moduli).unwrap()
+fn big_modulus(limb_count: usize) -> BigUint<Vec<Word>> {
+    multiply_many_values(&MODULI[..limb_count])
 }
 
 fn primitive_values(modulus: Option<Word>, count: usize) -> Vec<Word> {
@@ -46,20 +36,18 @@ fn primitive_values(modulus: Option<Word>, count: usize) -> Vec<Word> {
         .collect()
 }
 
-fn big_values(base: &Base, count: usize) -> Vec<Word> {
-    let mut residues = vec![0; base.moduli_count() * count];
-    for (modulus_index, modulus) in base.moduli().iter().enumerate() {
-        for value_index in 0..count {
-            residues[modulus_index * count + value_index] = (value_index as Word)
-                .wrapping_mul(1_000_003)
-                .wrapping_add((modulus_index as Word + 1) * 17)
-                % modulus.value();
+fn big_values(modulus: BigUint<&[Word]>, count: usize) -> Vec<Word> {
+    let len = modulus.len();
+    let high_mask = Word::MAX >> modulus[len - 1].leading_zeros();
+    let mut values = primitive_values(None, count * len);
+    for digits in values.chunks_exact_mut(len) {
+        // Limit inputs to the modulus bit width, then reduce once: 2^bits < 2Q.
+        digits[len - 1] &= high_mask;
+        let mut value = BigUint(digits);
+        if value.cmp(&modulus).is_ge() {
+            let _ = value.sub_assign(&modulus);
         }
     }
-
-    let mut values = vec![0; base.big_uint_value_len() * count];
-    let mut scratch = vec![0; base.moduli_count()];
-    base.compose_big_uint_values_to(&residues, &mut values, count, &mut scratch);
     values
 }
 
@@ -135,13 +123,13 @@ fn bench_primitive_online(c: &mut Criterion) {
 fn bench_big_setup(c: &mut Criterion) {
     let mut group = c.benchmark_group("decompose/big/setup");
     for limb_count in [1, 2, 4] {
-        let base = rns_base(limb_count);
+        let modulus = big_modulus(limb_count);
         group.bench_function(
             BenchmarkId::new("new", format!("{limb_count}_limbs/logB={BIG_LOG_BASIS}")),
             |b| {
                 b.iter(|| {
                     black_box(BigUintApproxSignedBasis::new(
-                        black_box(&base),
+                        black_box(modulus.view()),
                         BIG_LOG_BASIS,
                         None,
                     ))
@@ -155,14 +143,14 @@ fn bench_big_setup(c: &mut Criterion) {
 fn bench_big_online(c: &mut Criterion) {
     let mut group = c.benchmark_group("decompose/big/online");
     for limb_count in [1, 2, 4] {
-        let base = rns_base(limb_count);
-        let basis = BigUintApproxSignedBasis::new(&base, BIG_LOG_BASIS, None);
+        let modulus = big_modulus(limb_count);
+        let basis = BigUintApproxSignedBasis::new(modulus.view(), BIG_LOG_BASIS, None);
         let case = format!(
             "{limb_count}_limbs/logB={BIG_LOG_BASIS}/levels={}",
             basis.decompose_length()
         );
 
-        let scalar_value = big_values(&base, 1);
+        let scalar_value = big_values(modulus.view(), 1);
         group.bench_function(BenchmarkId::new("scalar_allocating", &case), |b| {
             b.iter(|| {
                 let value = BigUint(black_box(scalar_value.as_slice()));
@@ -199,7 +187,7 @@ fn bench_big_online(c: &mut Criterion) {
             });
         });
 
-        let values = big_values(&base, COEFFICIENT_COUNT);
+        let values = big_values(modulus.view(), COEFFICIENT_COUNT);
         let mut adjusted = vec![0; values.len()];
         let mut decomposed = vec![0; values.len()];
         let mut carries = vec![false; COEFFICIENT_COUNT];
@@ -231,9 +219,9 @@ fn bench_big_initialization(c: &mut Criterion) {
     let mut group = c.benchmark_group("decompose/big/initialization");
 
     for limb_count in [1, 2, 4] {
-        let base = rns_base(limb_count);
-        let basis = BigUintApproxSignedBasis::new(&base, BIG_LOG_BASIS, None);
-        let values = big_values(&base, COEFFICIENT_COUNT);
+        let modulus = big_modulus(limb_count);
+        let basis = BigUintApproxSignedBasis::new(modulus.view(), BIG_LOG_BASIS, None);
+        let values = big_values(modulus.view(), COEFFICIENT_COUNT);
         let mut adjusted = vec![0; values.len()];
         let mut carries = vec![false; COEFFICIENT_COUNT];
         group.bench_function(

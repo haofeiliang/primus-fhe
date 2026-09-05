@@ -3,8 +3,6 @@ use std::iter::successors;
 use num_traits::ConstOne;
 use primus_data::Data;
 use primus_integer::{BigUint, BigUintIter, BigUintIterMut, DivRem, FheUint};
-use primus_reduce::FieldContext;
-use primus_rns::RNSBase;
 
 use crate::{
     ApproxSignedBasisError, MIN_DECOMPOSITION_LOG_BASIS, big_integer::BigUintSignedDecomposerIter,
@@ -12,7 +10,7 @@ use crate::{
 
 use super::{BigUintValueCarryInitMode, ValueMask};
 
-/// Precomputed approximate signed decomposition modulo the RNS product `Q`.
+/// Precomputed approximate signed decomposition modulo a multi-limb integer `Q`.
 ///
 /// With radix `B = 2^log_basis`, level `i` has weight `2^drop_bits * B^i`.
 /// Digits lie in `[-B/2, B/2)` and are visited from the lowest retained level
@@ -34,14 +32,14 @@ pub struct BigUintApproxSignedBasis<T: FheUint> {
     carry_mask: T,
     modulus_sub_basis: Vec<T>,
     scalars: Vec<T>,
-    scalars_residue: Vec<T>,
-    moduli_count: usize,
     value_masks: Vec<ValueMask<T>>,
 }
 
 impl<T: FheUint> BigUintApproxSignedBasis<T> {
-    /// Creates a decomposition basis for the product of the given RNS base.
+    /// Creates a decomposition basis for the given integer modulus.
     ///
+    /// `modulus` must be nonempty, with little-endian limbs and a nonzero
+    /// most-significant limb. The basis owns a copy of the modulus.
     /// `log_basis` is the base-2 logarithm of the decomposition basis
     /// (`basis = 2^log_basis`) and must satisfy `2 <= log_basis < T::BITS`.
     /// `reverse_length`, when provided, limits the number of decomposition
@@ -51,19 +49,17 @@ impl<T: FheUint> BigUintApproxSignedBasis<T> {
     ///
     /// Panics when [`try_new`](Self::try_new) returns an error.
     #[inline]
-    pub fn new<M>(rns_base: &RNSBase<T, M>, log_basis: u32, reverse_length: Option<usize>) -> Self
-    where
-        M: FieldContext<T>,
-    {
-        Self::try_new(rns_base, log_basis, reverse_length).unwrap_or_else(|error| {
+    pub fn new(modulus: BigUint<&[T]>, log_basis: u32, reverse_length: Option<usize>) -> Self {
+        Self::try_new(modulus, log_basis, reverse_length).unwrap_or_else(|error| {
             panic!("failed to construct BigUint approximate signed basis: {error}")
         })
     }
 
     /// Tries to create a decomposition basis for the given modulus.
     ///
-    /// The decomposition modulus is the product of `rns_base`. `log_basis`
-    /// must satisfy `2 <= log_basis < T::BITS`, and `2^log_basis` must not
+    /// `modulus` must be nonempty, with little-endian limbs and a nonzero
+    /// most-significant limb. `log_basis` must satisfy
+    /// `2 <= log_basis < T::BITS`, and `2^log_basis` must not
     /// exceed that modulus. `reverse_length`, when provided, must be in the
     /// range `1..=full_decomposition_length`.
     /// It retains the highest levels; iteration still proceeds from the
@@ -73,14 +69,11 @@ impl<T: FheUint> BigUintApproxSignedBasis<T> {
     ///
     /// Returns [`ApproxSignedBasisError`] when any parameter is invalid.
     #[inline]
-    pub fn try_new<M>(
-        rns_base: &RNSBase<T, M>,
+    pub fn try_new(
+        modulus: BigUint<&[T]>,
         log_basis: u32,
         reverse_length: Option<usize>,
-    ) -> Result<Self, ApproxSignedBasisError>
-    where
-        M: FieldContext<T>,
-    {
+    ) -> Result<Self, ApproxSignedBasisError> {
         if log_basis < MIN_DECOMPOSITION_LOG_BASIS || log_basis >= T::BITS {
             return Err(ApproxSignedBasisError::InvalidLogBasis {
                 log_basis,
@@ -88,9 +81,11 @@ impl<T: FheUint> BigUintApproxSignedBasis<T> {
             });
         }
 
-        let modulus = rns_base.moduli_product();
         let big_uint_value_len = modulus.len();
-        let unused_bits = modulus.0.last().unwrap().leading_zeros();
+        let unused_bits = match modulus.0.last() {
+            Some(high) if !high.is_zero() => high.leading_zeros(),
+            _ => return Err(ApproxSignedBasisError::InvalidModulusRepresentation),
+        };
         let modulus_bits_count = T::BITS * (big_uint_value_len as u32) - unused_bits;
         if modulus_bits_count <= log_basis {
             return Err(ApproxSignedBasisError::BasisExceedsModulus);
@@ -187,15 +182,6 @@ impl<T: FheUint> BigUintApproxSignedBasis<T> {
             scalar[index as usize] = T::ONE << shift;
         }
 
-        let moduli_count = rns_base.moduli_count();
-        let mut scalars_residue = vec![T::ZERO; moduli_count * decompose_length];
-
-        BigUintIter::new(&scalars, big_uint_value_len)
-            .zip(scalars_residue.chunks_exact_mut(moduli_count))
-            .for_each(|(scalar, residues)| {
-                rns_base.decompose_to(scalar, residues);
-            });
-
         let value_masks: Vec<ValueMask<T>> =
             successors(Some(ValueMask::new(basis_minus_one, drop_bits)), |&prev| {
                 Some(prev.next(log_basis))
@@ -229,8 +215,6 @@ impl<T: FheUint> BigUintApproxSignedBasis<T> {
             carry_mask,
             modulus_sub_basis: modulus_sub_basis.0,
             scalars,
-            scalars_residue,
-            moduli_count,
             value_masks,
         })
     }
@@ -291,15 +275,6 @@ impl<T: FheUint> BigUintApproxSignedBasis<T> {
     #[inline]
     pub fn modulus_sub_basis(&self) -> &[T] {
         &self.modulus_sub_basis
-    }
-
-    /// Returns reconstruction weights modulo each RNS modulus, level by level.
-    ///
-    /// Levels run from low to high. Each chunk contains one residue per
-    /// modulus, in the order of the RNS base supplied at construction.
-    #[inline]
-    pub fn scalar_residue_iter(&self) -> std::slice::ChunksExact<'_, T> {
-        self.scalars_residue.chunks_exact(self.moduli_count)
     }
 
     /// Returns decomposition operators from the lowest retained level to the highest.

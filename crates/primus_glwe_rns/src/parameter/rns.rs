@@ -266,6 +266,8 @@ where
     noise_distribution: SignedDiscreteGaussian<<T as UnsignedInteger>::SignedInteger>,
     /// Decompose basis for `Q`.
     basis: BigUintApproxSignedBasis<T>,
+    /// Reconstruction weights in level-major order, then ordered RNS modulus.
+    scalar_residues: Vec<T>,
 }
 
 impl<T, M> CrtGlevParameters<T, M>
@@ -303,8 +305,11 @@ where
         log_basis: u32,
         reverse_length: Option<usize>,
     ) -> Result<Self, CrtGlevParametersError<T>> {
-        let basis =
-            BigUintApproxSignedBasis::try_new(glwe_params.base_q(), log_basis, reverse_length)?;
+        let basis = BigUintApproxSignedBasis::try_new(
+            glwe_params.cipher_modulus(),
+            log_basis,
+            reverse_length,
+        )?;
         for (index, &modulus) in glwe_params.cipher_moduli_value().iter().enumerate() {
             if basis.basis_value() >= modulus {
                 return Err(CrtGlevParametersError::BasisNotSmallerThanModulus {
@@ -315,6 +320,14 @@ where
             }
         }
         let decompose_length = basis.decompose_length();
+        let mut scalar_residues =
+            vec![T::ZERO; decompose_length * glwe_params.cipher_moduli_count()];
+        for (scalar, residues) in basis
+            .scalar_iter()
+            .zip(scalar_residues.chunks_exact_mut(glwe_params.cipher_moduli_count()))
+        {
+            glwe_params.base_q().decompose_to(BigUint(scalar), residues);
+        }
         Ok(Self {
             cipher_modulus_minus_one: glwe_params.cipher_modulus_minus_one().into(),
             base_q: glwe_params.base_q().clone(),
@@ -324,6 +337,7 @@ where
             secret_key_distr: glwe_params.secret_key_distr,
             noise_distribution: glwe_params.noise_distribution().clone(),
             basis,
+            scalar_residues,
             size: RnsGadgetSize::new(glwe_params.size(), decompose_length),
         })
     }
@@ -413,6 +427,18 @@ where
     #[inline]
     pub fn basis(&self) -> &BigUintApproxSignedBasis<T> {
         &self.basis
+    }
+
+    /// Returns cached reconstruction weights modulo each ciphertext modulus.
+    ///
+    /// Levels follow [`BigUintApproxSignedBasis::decomposer_iter`] from low
+    /// to high. Each chunk contains one residue per modulus, in the order of
+    /// [`Self::cipher_moduli`]. The weights are computed once at construction.
+    #[must_use]
+    #[inline]
+    pub fn scalar_residue_iter(&self) -> std::slice::ChunksExact<'_, T> {
+        self.scalar_residues
+            .chunks_exact(self.cipher_moduli_count())
     }
 
     /// Returns the cached RNS gadget layout.

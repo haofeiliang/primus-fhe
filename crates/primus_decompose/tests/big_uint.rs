@@ -1,8 +1,5 @@
 use primus_decompose::big_integer::BigUintApproxSignedBasis;
 use primus_integer::{AsFrom, BigUint, FheUint};
-use primus_modulus::BarrettModulus;
-use primus_reduce::FieldContext;
-use primus_rns::RNSBase;
 use rand::{RngExt, SeedableRng, rngs::StdRng};
 
 // Test products fit in u128, so the oracle does not depend on BigUint arithmetic.
@@ -44,18 +41,10 @@ fn inputs(q: u128, log_basis: u32, levels: usize, drop_bits: u32) -> Vec<u128> {
 fn assert_contract<T>(moduli: &[T], log_basis: u32, retained: Option<usize>)
 where
     T: FheUint + Into<u128> + AsFrom<u128>,
-    BarrettModulus<T>: FieldContext<T>,
 {
     let q: u128 = moduli.iter().map(|&m| m.into()).product();
-    let base = RNSBase::new(
-        &moduli
-            .iter()
-            .copied()
-            .map(BarrettModulus::new)
-            .collect::<Vec<_>>(),
-    )
-    .unwrap();
-    let basis = BigUintApproxSignedBasis::try_new(&base, log_basis, retained).unwrap();
+    let modulus = BigUint(limbs::<T>(q, (q.ilog2() + 1).div_ceil(T::BITS) as usize));
+    let basis = BigUintApproxSignedBasis::try_new(modulus.view(), log_basis, retained).unwrap();
     let levels = retained.unwrap_or((q.ilog2() + 1) as usize / log_basis as usize);
     let drop_bits = q.ilog2() + 1 - levels as u32 * log_basis;
     let bound = if drop_bits == 0 {
@@ -70,19 +59,11 @@ where
     assert_eq!(basis.decompose_length(), levels);
     assert_eq!(basis.decomposer_iter().len(), levels);
     assert_eq!(basis.scalar_iter().len(), levels);
-    assert_eq!(basis.scalar_residue_iter().len(), levels);
     assert_eq!(to_u128(basis.approximate_error_bound().digits()), bound);
 
-    for (level, (scalar, residues)) in basis
-        .scalar_iter()
-        .zip(basis.scalar_residue_iter())
-        .enumerate()
-    {
+    for (level, scalar) in basis.scalar_iter().enumerate() {
         let expected = 1u128 << (drop_bits + level as u32 * log_basis);
         assert_eq!(to_u128(scalar), expected);
-        for (&residue, &modulus) in residues.iter().zip(moduli) {
-            assert_eq!(residue.into(), expected % modulus.into());
-        }
     }
 
     for input in inputs(q, log_basis, levels, drop_bits) {
@@ -132,12 +113,12 @@ fn retained_levels_match_modular_oracle() {
 }
 
 #[test]
-fn batch_matches_scalar_and_centered_rns_lift() {
+fn batch_matches_scalar_decomposition() {
     let moduli = [134_215_681u32, 134_176_769];
     let q: u128 = moduli.iter().map(|&m| u128::from(m)).product();
-    let base = RNSBase::new(&moduli.map(BarrettModulus::new)).unwrap();
+    let modulus = BigUint(limbs(q, (q.ilog2() + 1).div_ceil(u32::BITS) as usize));
     for log_basis in [3, 5] {
-        let basis = BigUintApproxSignedBasis::new(&base, log_basis, None);
+        let basis = BigUintApproxSignedBasis::<u32>::new(modulus.view(), log_basis, None);
         let len = basis.big_uint_value_len();
         let values: Vec<u32> = inputs(q, log_basis, basis.decompose_length(), basis.drop_bits())
             .into_iter()
@@ -164,7 +145,6 @@ fn batch_matches_scalar_and_centered_rns_lift() {
 
         let mut signed_digits = vec![u32::MAX; values.len()];
         let mut unsigned_digits = vec![u32::MAX; count];
-        let mut residues = vec![0; count * moduli.len()];
         for decomposer in basis.decomposer_iter() {
             let previous_carries = carries.clone();
             let mut unsigned_carries = carries.clone();
@@ -175,12 +155,6 @@ fn batch_matches_scalar_and_centered_rns_lift() {
                 &mut unsigned_carries,
             );
             assert_eq!(carries, unsigned_carries);
-            base.wrapping_decompose_small_values_to(
-                &unsigned_digits,
-                &mut residues,
-                basis.basis_value(),
-            );
-
             for (index, value) in adjusted.chunks_exact(len).enumerate() {
                 let (digit, carry) = decomposer.decompose(value, previous_carries[index]);
                 assert_eq!(&signed_digits[index * len..(index + 1) * len], digit);
@@ -198,12 +172,6 @@ fn batch_matches_scalar_and_centered_rns_lift() {
                 assert_eq!(unsigned_to, unsigned);
                 assert_eq!(unsigned_digits[index], unsigned);
                 assert_eq!(carry_to, carry);
-                for (modulus_index, &modulus) in moduli.iter().enumerate() {
-                    assert_eq!(
-                        u128::from(residues[modulus_index * count + index]),
-                        to_u128(&digit) % u128::from(modulus)
-                    );
-                }
             }
         }
     }

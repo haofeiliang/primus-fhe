@@ -1,6 +1,9 @@
 /// Errors returned when constructing an approximate signed decomposition basis.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum ApproxSignedBasisError {
+    /// A multi-limb modulus is empty or has a zero most-significant limb.
+    #[error("modulus must be nonempty with a nonzero most-significant limb")]
+    InvalidModulusRepresentation,
     /// The logarithm of the decomposition basis is outside the supported range.
     #[error("log_basis must satisfy 2 <= log_basis < {limb_bits}, got {log_basis}")]
     InvalidLogBasis {
