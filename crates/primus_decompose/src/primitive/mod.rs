@@ -3,6 +3,4 @@ mod common;
 
 pub use crate::ApproxSignedBasisError;
 pub use basis::ApproxSignedBasis;
-pub use common::{
-    OnceSignedDecomposer, ScalarIter, SignedDecomposerIter, ValueCarryInitMode, ValueMask,
-};
+pub use common::{OnceSignedDecomposer, ScalarIter, SignedDecomposerIter};

@@ -1,11 +1,10 @@
-use core::iter::successors;
-
-use num_traits::ConstOne;
 use primus_integer::FheUint;
 
-use crate::{ApproxSignedBasisError, MIN_DECOMPOSITION_LOG_BASIS};
+use crate::{
+    ApproxSignedBasisError, MIN_DECOMPOSITION_LOG_BASIS, decomposition_length_and_drop_bits,
+};
 
-use super::{ScalarIter, SignedDecomposerIter, ValueCarryInitMode, ValueMask};
+use super::common::{ScalarIter, SignedDecomposerIter, ValueCarryInitMode, ValueMask};
 
 /// Precomputed approximate signed decomposition modulo `q`.
 ///
@@ -14,6 +13,11 @@ use super::{ScalarIter, SignedDecomposerIter, ValueCarryInitMode, ValueMask};
 /// `q` (modulo `2^T::BITS` for the implicit native modulus). Their weighted
 /// sum approximates the input, with circular distance bounded by
 /// [`Self::approximate_error_bound`].
+///
+/// The decomposition width `m` is `log2(q)` for power-of-two moduli and
+/// `bit_width(q)` otherwise. The full level count is `m / log_basis`;
+/// retaining `k` levels leaves `drop_bits = m - k * log_basis`.
+/// Power-of-two inputs need no adjustment buffer: use [`Self::init_carry_slice`].
 #[derive(Debug, Clone)]
 pub struct ApproxSignedBasis<T: FheUint> {
     modulus: Option<T>,
@@ -81,106 +85,59 @@ impl<T: FheUint> ApproxSignedBasis<T> {
             });
         }
 
-        let basis = <T as ConstOne>::ONE << log_basis;
-        let basis_minus_one = basis - <T as ConstOne>::ONE;
+        let basis = T::ONE << log_basis;
+        let basis_minus_one = basis - T::ONE;
 
-        let modulus_is_power_of_2;
-        let value_bits;
-        let modulus_minus_basis;
-
-        if let Some(modulus) = modulus {
-            if modulus.is_power_of_two() {
-                modulus_is_power_of_2 = true;
-                value_bits = modulus.trailing_zeros();
-                if value_bits < log_basis {
+        // The primitive power-of-two domain uses log2(q), not bit_width(q).
+        let (modulus_is_power_of_2, value_bits, modulus_minus_basis) = match modulus {
+            None => (true, T::BITS, T::MAX - basis_minus_one),
+            Some(q) => {
+                if q < basis {
                     return Err(ApproxSignedBasisError::BasisExceedsModulus);
                 }
-            } else {
-                modulus_is_power_of_2 = false;
-                value_bits = modulus.bit_width();
-                if value_bits <= log_basis {
-                    return Err(ApproxSignedBasisError::BasisExceedsModulus);
-                }
+                let power_of_two = q.is_power_of_two();
+                let bits = if power_of_two {
+                    q.trailing_zeros()
+                } else {
+                    q.bit_width()
+                };
+                (power_of_two, bits, q - basis)
             }
-            modulus_minus_basis = modulus - basis;
+        };
+        let (decompose_length, drop_bits) =
+            decomposition_length_and_drop_bits(value_bits, log_basis, reverse_length)?;
+        let init_carry_mask = drop_bits.checked_sub(1).map(|bit| T::ONE << bit);
+
+        // Power-of-two inputs already have the right bit representation. Other
+        // moduli need the negative region lifted from q to the binary domain.
+        let value_carry_init_mode = if modulus_is_power_of_2 {
+            match init_carry_mask {
+                Some(mask) => ValueCarryInitMode::CarryOnly { mask },
+                None => ValueCarryInitMode::Plain,
+            }
         } else {
-            modulus_is_power_of_2 = true;
-            value_bits = T::BITS;
-            modulus_minus_basis = T::MAX - basis_minus_one;
-        }
-
-        let decompose_length = value_bits / log_basis;
-        let mut drop_bits = value_bits - decompose_length * log_basis;
-        let mut decompose_length = decompose_length as usize;
-
-        if let Some(reverse_len) = reverse_length {
-            if reverse_len == 0 {
-                return Err(ApproxSignedBasisError::ZeroReverseLength);
+            let q = modulus.unwrap();
+            let threshold = wrap_threshold(log_basis, decompose_length, drop_bits);
+            // Compute 2^value_bits - q without representing 2^T::BITS.
+            let add = (T::MAX >> (T::BITS - value_bits)) - (q - T::ONE);
+            match init_carry_mask {
+                Some(mask) => ValueCarryInitMode::AdjustAndCarry {
+                    threshold,
+                    add,
+                    mask,
+                },
+                None => ValueCarryInitMode::AdjustOnly { threshold, add },
             }
-            if reverse_len > decompose_length {
-                return Err(ApproxSignedBasisError::ReverseLengthTooLarge {
-                    reverse_length: reverse_len,
-                    full_length: decompose_length,
-                });
-            }
-            decompose_length = reverse_len;
-            drop_bits = value_bits - (reverse_len as u32) * log_basis;
-        }
-
-        let init_carry_mask = if drop_bits > 0 {
-            Some(<T as ConstOne>::ONE << (drop_bits - 1))
-        } else {
-            None
         };
 
-        let carry_mask = (T::ONE << log_basis) | (T::ONE << (log_basis - 1));
-
-        let mut wrap_threshold = None;
-        let mut next_pow_of_2_sub_modulus = T::ZERO;
-        if !modulus_is_power_of_2 {
-            let modulus = modulus.unwrap();
-            let mut value = T::ZERO;
-            for _ in 0..decompose_length {
-                value <<= log_basis;
-                value |= basis_minus_one >> 1u32;
-            }
-            if drop_bits > 0 {
-                value <<= 1;
-                value |= T::ONE;
-                value <<= drop_bits - 1;
-            } else {
-                value += T::ONE;
-            }
-            wrap_threshold = (value < modulus).then_some(value);
-
-            next_pow_of_2_sub_modulus = (T::MAX >> (T::BITS - value_bits)) - (modulus - T::ONE);
-        }
-
-        let scalars: Vec<T> =
-            successors(Some(T::ONE << drop_bits), |&prev| Some(prev << log_basis))
-                .take(decompose_length)
-                .collect();
-
-        let value_masks: Vec<ValueMask<T>> =
-            successors(Some(ValueMask::new(basis_minus_one, drop_bits)), |&prev| {
-                Some(prev.next(log_basis))
-            })
-            .take(decompose_length)
+        // Weights and extraction windows refer to the same ascending levels.
+        let scalars = (0..decompose_length)
+            .map(|level| T::ONE << (drop_bits + level as u32 * log_basis))
             .collect();
-
-        let value_carry_init_mode = match (wrap_threshold, init_carry_mask) {
-            (Some(threshold), Some(mask)) => ValueCarryInitMode::AdjustAndCarry {
-                threshold,
-                add: next_pow_of_2_sub_modulus,
-                mask,
-            },
-            (Some(threshold), None) => ValueCarryInitMode::AdjustOnly {
-                threshold,
-                add: next_pow_of_2_sub_modulus,
-            },
-            (None, Some(mask)) => ValueCarryInitMode::CarryOnly { mask },
-            (None, None) => ValueCarryInitMode::Plain,
-        };
+        let value_masks = (0..decompose_length)
+            .map(|level| ValueMask::new(basis_minus_one, drop_bits + level as u32 * log_basis))
+            .collect();
+        let carry_mask = (T::ONE << log_basis) | (T::ONE << (log_basis - 1));
 
         Ok(Self {
             modulus,
@@ -442,9 +399,7 @@ impl<T: FheUint> ApproxSignedBasis<T> {
     ///
     /// # Panics
     ///
-    /// Panics if this basis was created for a non-power-of-two modulus (i.e.
-    /// any initialization mode other than [`ValueCarryInitMode::CarryOnly`]
-    /// or [`ValueCarryInitMode::Plain`]).
+    /// Panics if this basis was created for a non-power-of-two modulus.
     #[inline]
     pub fn init_carry_slice(&self, values: &[T], carries: &mut [bool]) {
         debug_assert_eq!(values.len(), carries.len());
@@ -462,4 +417,27 @@ impl<T: FheUint> ApproxSignedBasis<T> {
             ),
         }
     }
+}
+
+/// First input whose rounded positive digits would exceed the retained range.
+///
+/// For radix B, k levels and d dropped bits, the largest positive digit sum is
+/// P = (B/2 - 1) * sum(B^i, 0 <= i < k). The split is P*2^d + 2^(d-1)
+/// when d > 0, or P + 1 otherwise. Inputs at/above it are represented as x-q.
+///
+/// In the non-power-of-two domain, m = k*log_basis + d > log_basis.
+/// This split is strictly below 2^(m-1) <= q, so adjustment is always needed
+/// for some canonical inputs; there is no optional "no split" case.
+fn wrap_threshold<T: FheUint>(log_basis: u32, levels: usize, drop_bits: u32) -> T {
+    let positive_digit = (T::ONE << (log_basis - 1)) - T::ONE;
+    let mut positive_limit = T::ZERO;
+    for _ in 0..levels {
+        positive_limit = (positive_limit << log_basis) | positive_digit;
+    }
+    let rounding_offset = if drop_bits == 0 {
+        T::ONE
+    } else {
+        T::ONE << (drop_bits - 1)
+    };
+    (positive_limit << drop_bits) + rounding_offset
 }

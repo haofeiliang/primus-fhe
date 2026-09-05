@@ -5,9 +5,9 @@
 
 use std::hint::black_box;
 
-use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
+use criterion::{BatchSize, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use primus_decompose::{big_integer::BigUintApproxSignedBasis, primitive::ApproxSignedBasis};
-use primus_integer::{BigUint, multiply_many_values};
+use primus_integer::{BigUint, FheUint, multiply_many_values};
 
 type Word = u64;
 
@@ -71,34 +71,83 @@ fn bench_primitive_setup(c: &mut Criterion) {
 }
 
 fn bench_primitive_online(c: &mut Criterion) {
-    let mut group = c.benchmark_group("decompose/primitive/online");
-    for (label, modulus) in [("native", None), ("explicit_q50", Some(MODULI[0]))] {
-        let basis = ApproxSignedBasis::<Word>::new(modulus, PRIMITIVE_LOG_BASIS, None);
-        let case = format!(
-            "{label}/logB={PRIMITIVE_LOG_BASIS}/levels={}",
-            basis.decompose_length()
-        );
+    // Native Fourier: exact and truncated, both using the no-copy carry path.
+    primitive_online(c, "u64/native", None::<u64>, 8, None);
+    primitive_online(c, "u64/native", None::<u64>, 8, Some(3));
+    // Explicit moduli: adjustment with and without an initial rounding carry.
+    primitive_online(c, "u64/q50", Some(MODULI[0]), 8, None);
+    primitive_online(c, "u64/q50", Some(MODULI[0]), 10, None);
+    // Representative NTT key-switching and external-product decompositions.
+    primitive_online(c, "u32/q27", Some(132_120_577u32), 2, Some(13));
+    primitive_online(c, "u32/q27", Some(132_120_577u32), 7, Some(3));
+}
 
-        let value = primitive_values(modulus, 1)[0];
-        group.bench_function(BenchmarkId::new("scalar_to", &case), |b| {
+fn primitive_online<T: FheUint>(
+    c: &mut Criterion,
+    label: &str,
+    modulus: Option<T>,
+    log_basis: u32,
+    retained: Option<usize>,
+) {
+    let mut group = c.benchmark_group("decompose/primitive/online");
+    let basis = ApproxSignedBasis::new(modulus, log_basis, retained);
+    let value = T::as_from(primitive_values(None, 1)[0]);
+    let value = modulus.map_or(value, |q| value % q);
+    group.bench_function(
+        BenchmarkId::new(
+            "scalar_to",
+            format!(
+                "{label}/logB={log_basis}/L={}/drop={}",
+                basis.decompose_length(),
+                basis.drop_bits()
+            ),
+        ),
+        |b| {
             b.iter(|| {
                 let (adjusted, mut carry) = basis.init_value_carry(black_box(value));
-                let mut decomposed = 0;
+                let mut digit = T::ZERO;
                 for decomposer in basis.decomposer_iter() {
-                    decomposer.decompose_to(adjusted, &mut decomposed, &mut carry);
-                    black_box(decomposed);
+                    decomposer.decompose_to(adjusted, &mut digit, &mut carry);
+                    black_box(digit);
                 }
                 black_box(carry)
+            })
+        },
+    );
+    for count in [1024, 4096] {
+        let case = format!(
+            "{label}/logB={log_basis}/L={}/drop={}/N={count}",
+            basis.decompose_length(),
+            basis.drop_bits(),
+        );
+        let values: Vec<T> = primitive_values(None, count)
+            .into_iter()
+            .map(|value| {
+                let value = T::as_from(value);
+                modulus.map_or(value, |q| value % q)
+            })
+            .collect();
+        let mut decomposed = vec![T::ZERO; count];
+        let mut carries = vec![false; count];
+        group.throughput(Throughput::Elements(count as u64));
+        // Select the initialization path outside the timed coefficient loops.
+        if basis.modulus_is_power_of_2() {
+            group.bench_function(BenchmarkId::new("batch_borrowed", &case), |b| {
+                b.iter(|| {
+                    basis.init_carry_slice(black_box(&values), black_box(&mut carries));
+                    for decomposer in basis.decomposer_iter() {
+                        decomposer.decompose_slice_to(
+                            black_box(&values),
+                            black_box(&mut decomposed),
+                            black_box(&mut carries),
+                        );
+                        black_box(&decomposed);
+                    }
+                });
             });
-        });
-
-        let values = primitive_values(modulus, COEFFICIENT_COUNT);
-        let mut adjusted = vec![0; COEFFICIENT_COUNT];
-        let mut decomposed = vec![0; COEFFICIENT_COUNT];
-        let mut carries = vec![false; COEFFICIENT_COUNT];
-        group.bench_function(
-            BenchmarkId::new(format!("batch_to/N={COEFFICIENT_COUNT}"), &case),
-            |b| {
+        } else {
+            let mut adjusted = vec![T::ZERO; count];
+            group.bench_function(BenchmarkId::new("batch_to", &case), |b| {
                 b.iter(|| {
                     basis.init_value_carry_slice_to(
                         black_box(&values),
@@ -114,8 +163,8 @@ fn bench_primitive_online(c: &mut Criterion) {
                         black_box(&decomposed);
                     }
                 });
-            },
-        );
+            });
+        }
     }
     group.finish();
 }
@@ -218,29 +267,91 @@ fn bench_big_online(c: &mut Criterion) {
 fn bench_big_initialization(c: &mut Criterion) {
     let mut group = c.benchmark_group("decompose/big/initialization");
 
-    for limb_count in [1, 2, 4] {
+    for (limb_count, log_basis, retained) in big_batch_cases() {
         let modulus = big_modulus(limb_count);
-        let basis = BigUintApproxSignedBasis::new(modulus.view(), BIG_LOG_BASIS, None);
+        let basis = BigUintApproxSignedBasis::new(modulus.view(), log_basis, retained);
         let values = big_values(modulus.view(), COEFFICIENT_COUNT);
         let mut adjusted = vec![0; values.len()];
         let mut carries = vec![false; COEFFICIENT_COUNT];
-        group.bench_function(
-            BenchmarkId::new(
-                format!("batch_to/N={COEFFICIENT_COUNT}"),
-                format!("{limb_count}_limbs"),
-            ),
-            |b| {
+        let case = format!(
+            "{limb_count}_limbs/logB={log_basis}/L={}/drop={}/N={COEFFICIENT_COUNT}",
+            basis.decompose_length(),
+            basis.drop_bits()
+        );
+        group.throughput(Throughput::Elements(COEFFICIENT_COUNT as u64));
+        group.bench_function(BenchmarkId::new("batch_to", &case), |b| {
+            b.iter(|| {
+                basis.init_value_carry_slice_to(
+                    black_box(&values),
+                    black_box(&mut adjusted),
+                    black_box(&mut carries),
+                );
+                black_box(&adjusted);
+                black_box(&carries);
+            });
+        });
+        group.bench_function(BenchmarkId::new("batch_assign", &case), |b| {
+            // Each input must be canonical again: repeated in-place adjustment
+            // is not valid. Reset outside timing, as CRT compose does upstream.
+            b.iter_batched_ref(
+                || values.clone(),
+                |input| {
+                    basis.init_value_carry_slice_assign(black_box(input), black_box(&mut carries));
+                    black_box(&*input);
+                    black_box(&carries);
+                },
+                BatchSize::SmallInput,
+            );
+        });
+    }
+    group.finish();
+}
+
+fn big_batch_cases() -> [(usize, u32, Option<usize>); 4] {
+    // 50/100/200-bit moduli: one limb; no drop with crossing windows;
+    // multiple limbs with rounding; retained levels starting in limb 1.
+    [
+        (1, 16, None),
+        (2, 20, None),
+        (4, 16, None),
+        (2, 17, Some(1)),
+    ]
+}
+
+fn bench_big_unsigned(c: &mut Criterion) {
+    let mut group = c.benchmark_group("decompose/big/unsigned");
+    for (limb_count, log_basis, retained) in big_batch_cases() {
+        let modulus = big_modulus(limb_count);
+        let basis = BigUintApproxSignedBasis::new(modulus.view(), log_basis, retained);
+        for count in [1024, 4096] {
+            let values = big_values(modulus.view(), count);
+            let mut adjusted = vec![0; values.len()];
+            let mut digits = vec![0; count];
+            let mut carries = vec![false; count];
+            let case = format!(
+                "{limb_count}_limbs/logB={log_basis}/L={}/drop={}/N={count}",
+                basis.decompose_length(),
+                basis.drop_bits()
+            );
+            group.throughput(Throughput::Elements(count as u64));
+            group.bench_function(BenchmarkId::new("batch_to", case), |b| {
                 b.iter(|| {
                     basis.init_value_carry_slice_to(
                         black_box(&values),
                         black_box(&mut adjusted),
                         black_box(&mut carries),
                     );
-                    black_box(&adjusted);
-                    black_box(&carries);
+                    for decomposer in basis.decomposer_iter() {
+                        decomposer.unsigned_decompose_slice_to(
+                            black_box(&adjusted),
+                            black_box(&mut digits),
+                            black_box(&mut carries),
+                        );
+                        black_box(&digits);
+                    }
                 });
-            },
-        );
+            });
+        }
     }
     group.finish();
 }
@@ -252,5 +363,6 @@ criterion_group!(
     bench_big_setup,
     bench_big_online,
     bench_big_initialization,
+    bench_big_unsigned,
 );
 criterion_main!(benches);

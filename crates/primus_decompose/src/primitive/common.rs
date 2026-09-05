@@ -11,7 +11,7 @@ use primus_integer::FheUint;
 /// wrap around (by adding `2^value_bits - modulus`) and/or set an initial carry
 /// to ensure the decomposition is approximately correct.
 #[derive(Debug, Clone, Copy)]
-pub enum ValueCarryInitMode<T: FheUint> {
+pub(super) enum ValueCarryInitMode<T: FheUint> {
     /// Both adjust the value and extract a carry bit.
     AdjustAndCarry {
         /// Values `>= threshold` are adjusted by `add`.
@@ -108,7 +108,7 @@ impl<'a, T: FheUint> ExactSizeIterator for ScalarIter<'a, T> {
 /// The window spans `bit_len(mask)` bits, starting at bit position `shr_bits`.
 /// Extraction uses shift-then-AND: `(value >> shr_bits) & mask`.
 #[derive(Debug, Clone, Copy)]
-pub struct ValueMask<T: FheUint> {
+pub(super) struct ValueMask<T: FheUint> {
     /// The bitmask applied after shifting — equal to `basis - 1`.
     mask: T,
     /// Right-shift amount applied before masking.
@@ -122,15 +122,6 @@ impl<T: FheUint> ValueMask<T> {
         Self {
             mask,
             shr_bits: drop_bits,
-        }
-    }
-
-    /// Advances the window by `advance` bits for the next decomposition step.
-    #[inline]
-    pub fn next(self, advance: u32) -> Self {
-        Self {
-            mask: self.mask,
-            shr_bits: self.shr_bits + advance,
         }
     }
 
@@ -235,12 +226,14 @@ impl<T: FheUint> OnceSignedDecomposer<T> {
     pub fn decompose(&self, value: T, carry: bool) -> (T, bool) {
         let mut temp = self.value_mask.get_value(value) + T::as_from(carry);
 
+        // temp is in [0, B]. The two-bit mask tests temp >= B/2, including B.
+        // Subtracting B gives [-B/2, B/2); temp == B is zero with a carry.
         let next_carry = !(temp & self.carry_mask).is_zero();
         if next_carry {
             if temp > self.basis_minus_one {
                 temp = T::ZERO;
             } else {
-                temp += self.modulus_minus_basis
+                temp += self.modulus_minus_basis;
             }
         }
 
@@ -251,13 +244,15 @@ impl<T: FheUint> OnceSignedDecomposer<T> {
     #[inline]
     pub fn decompose_to(&self, value: T, decomposed_value: &mut T, carry: &mut bool) {
         let temp = self.value_mask.get_value(value) + T::as_from(*carry);
+        // Keep this output kernel separate from the value-returning version.
+        // Routing either through the other regressed batch decomposition or
+        // LWE key switching in benchmarks by changing LLVM's scheduling.
         *carry = !(temp & self.carry_mask).is_zero();
-
         if *carry {
             if temp > self.basis_minus_one {
                 *decomposed_value = T::ZERO;
             } else {
-                *decomposed_value = temp + self.modulus_minus_basis
+                *decomposed_value = temp + self.modulus_minus_basis;
             }
         } else {
             *decomposed_value = temp;

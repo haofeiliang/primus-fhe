@@ -11,6 +11,7 @@ use primus_lwe::{
 };
 use primus_modulus::BarrettModulus;
 use rand::distr::{Distribution, Uniform};
+use rand::{SeedableRng, rngs::StdRng};
 
 const CIPHERTEXT_MODULUS: u32 = 132_120_577;
 const OUTPUT_DIMENSION: usize = 800;
@@ -27,7 +28,7 @@ fn bench_key_switch(c: &mut Criterion) {
         0.7,
     );
     let basis = ApproxSignedBasis::new(Some(CIPHERTEXT_MODULUS), LOG_BASIS, Some(LEVEL_COUNT));
-    let mut rng = rand::rng();
+    let mut rng = StdRng::seed_from_u64(0xdec0_005e);
     let output_secret_key = LweSecretKey::generate(&output_parameters, &mut rng);
     let uniform = Uniform::new(0, CIPHERTEXT_MODULUS).unwrap();
     let mut group = c.benchmark_group("lwe_key_switch/u32/explicit");

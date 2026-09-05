@@ -96,6 +96,13 @@ where
 
 #[test]
 fn retained_levels_match_modular_oracle() {
+    // BigUint deliberately uses bit_width(Q), including for powers of two.
+    // Cover both ends of the 64-bit-wide range, with/without rounding.
+    for q in [1u64 << 63, u64::MAX] {
+        for log_basis in [7, 8] {
+            assert_contract(&[q], log_basis, None);
+        }
+    }
     let moduli = [134_215_681u32, 134_176_769];
     for log_basis in [3, 5, 7] {
         assert_contract(&moduli, log_basis, None);

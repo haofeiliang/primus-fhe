@@ -7,20 +7,13 @@ use primus_integer::{BigUint, FheUint};
 /// `threshold` is the split value: inputs `>= threshold` are adjusted by `add`.
 /// `index` and `mask` select the limb and bit used to extract the initial carry.
 #[derive(Debug, Clone)]
-pub enum BigUintValueCarryInitMode<T: FheUint> {
+pub(super) enum BigUintValueCarryInitMode<T: FheUint> {
     /// Both adjust the value and extract a carry bit.
     AdjustAndCarry {
         /// Values `>= threshold` are adjusted.
         threshold: BigUint<Vec<T>>,
         /// Amount added to adjust the value.
         add: BigUint<Vec<T>>,
-        /// Limb index used to extract the initial carry.
-        index: usize,
-        /// Mask applied to extract the initial carry.
-        mask: T,
-    },
-    /// Extract a carry bit from the value without adjustment.
-    CarryOnly {
         /// Limb index used to extract the initial carry.
         index: usize,
         /// Mask applied to extract the initial carry.
@@ -33,23 +26,8 @@ pub enum BigUintValueCarryInitMode<T: FheUint> {
         /// Amount added to adjust the value.
         add: BigUint<Vec<T>>,
     },
-    /// No adjustment and no initial carry - value passes through unchanged.
-    Plain,
 }
 
-impl<T: FheUint> BigUintValueCarryInitMode<T> {
-    #[inline]
-    pub(super) fn approximate_error_bound(&self, value_len: usize) -> BigUint<Vec<T>> {
-        let mut bound = BigUint(vec![T::ZERO; value_len]);
-        match self {
-            Self::AdjustAndCarry { index, mask, .. } | Self::CarryOnly { index, mask } => {
-                bound[*index] = *mask;
-            }
-            Self::AdjustOnly { .. } | Self::Plain => {}
-        }
-        bound
-    }
-}
 /// Mask to extract a window of bits from a multi-limb `BigUint`.
 ///
 /// The window spans `bit_len(mask)` bits, starting at bit position `shr_bits`
@@ -57,7 +35,7 @@ impl<T: FheUint> BigUintValueCarryInitMode<T> {
 /// `shr_bits + bit_len(mask) > T::BITS`), the upper part spills into
 /// `value[index + 1]` and must be shifted back into place with `shl_bits`.
 #[derive(Debug, Clone, Copy)]
-pub struct ValueMask<T: FheUint> {
+pub(super) struct ValueMask<T: FheUint> {
     /// The bitmask applied after shifting — equal to `basis - 1`.
     mask: T,
     /// Which limb to read from `value[index]`.
@@ -97,26 +75,6 @@ impl<T: FheUint> ValueMask<T> {
             shr_bits,
             shl_bits,
         }
-    }
-
-    /// Advances the window by `advance` bits for the next decomposition step.
-    #[inline]
-    pub fn next(mut self, advance: u32) -> Self {
-        let mut shr_bits = advance + self.shr_bits;
-
-        if shr_bits >= T::BITS {
-            self.index += 1;
-            shr_bits -= T::BITS;
-        }
-
-        self.shr_bits = shr_bits;
-        self.shl_bits = if self.mask.leading_zeros() < shr_bits {
-            NonZeroU32::new(T::BITS - shr_bits)
-        } else {
-            None
-        };
-
-        self
     }
 
     /// Extracts the masked window from `value` using shift-then-AND.
@@ -235,19 +193,29 @@ impl<'a, T: FheUint> OnceBigUintSignedDecomposer<'a, T> {
         self.modulus_minus_basis.len()
     }
 
+    /// Extracts a retained window plus the incoming carry, in [0, B], and
+    /// advances `carry` to the next level.
+    /// The signed digit is temp - next_carry*B. In particular, temp == B
+    /// produces digit zero but must still carry into the next level.
+    /// The two-bit mask tests temp >= B/2, including the overflow bit at B.
+    #[inline]
+    fn extract_with_carry(&self, value: &[T], carry: &mut bool) -> T {
+        let temp = self.value_mask.get_value(value) + T::as_from(*carry);
+        *carry = !(temp & self.carry_mask).is_zero();
+        temp
+    }
+
     /// Allocates a digit encoded modulo `Q` and returns the next carry.
     ///
     /// The signed digit lies in `[-B/2, B/2)`. Negative digits are represented
     /// by `Q + digit`. `value` must have exactly `big_uint_value_len()` limbs;
     /// both it and `carry` must follow this operator's initialization protocol.
     #[inline]
-    pub fn decompose(&self, value: &[T], carry: bool) -> (Vec<T>, bool) {
+    pub fn decompose(&self, value: &[T], mut carry: bool) -> (Vec<T>, bool) {
         debug_assert_eq!(value.len(), self.big_uint_value_len());
-        let temp = self.value_mask.get_value(value) + T::as_from(carry);
-
-        let next_carry = !(temp & self.carry_mask).is_zero();
+        let temp = self.extract_with_carry(value, &mut carry);
         let mut result = BigUint(vec![T::ZERO; value.len()]);
-        if next_carry {
+        if carry {
             if temp <= self.basis_minus_one {
                 let _ = self.modulus_minus_basis.add_value_to(temp, &mut result);
             }
@@ -255,7 +223,7 @@ impl<'a, T: FheUint> OnceBigUintSignedDecomposer<'a, T> {
             result[0] = temp;
         }
 
-        (result.0, next_carry)
+        (result.0, carry)
     }
 
     /// Returns a signed digit encoded modulo `B`, and the next carry.
@@ -266,13 +234,11 @@ impl<'a, T: FheUint> OnceBigUintSignedDecomposer<'a, T> {
     /// returns one limb rather than a residue modulo `Q`.
     /// Input shape and initialization requirements match [`Self::decompose`].
     #[inline]
-    pub fn unsigned_decompose(&self, value: &[T], carry: bool) -> (T, bool) {
+    pub fn unsigned_decompose(&self, value: &[T], mut carry: bool) -> (T, bool) {
         debug_assert_eq!(value.len(), self.big_uint_value_len());
-        let temp = self.value_mask.get_value(value) + T::as_from(carry);
+        let temp = self.extract_with_carry(value, &mut carry);
 
-        let next_carry = !(temp & self.carry_mask).is_zero();
-
-        (temp & self.basis_minus_one, next_carry)
+        (temp & self.basis_minus_one, carry)
     }
 
     /// Writes a digit modulo `Q` and advances `carry`, as in [`Self::decompose`].
@@ -288,8 +254,7 @@ impl<'a, T: FheUint> OnceBigUintSignedDecomposer<'a, T> {
 
     #[inline]
     fn decompose_to_kernel(&self, value: &[T], decomposed_value: &mut [T], carry: &mut bool) {
-        let temp = self.value_mask.get_value(value) + T::as_from(*carry);
-        *carry = !(temp & self.carry_mask).is_zero();
+        let temp = self.extract_with_carry(value, carry);
 
         if *carry {
             if temp > self.basis_minus_one {
@@ -325,8 +290,7 @@ impl<'a, T: FheUint> OnceBigUintSignedDecomposer<'a, T> {
         decomposed_unsigned_value: &mut T,
         carry: &mut bool,
     ) {
-        let temp = self.value_mask.get_value(value) + T::as_from(*carry);
-        *carry = !(temp & self.carry_mask).is_zero();
+        let temp = self.extract_with_carry(value, carry);
 
         *decomposed_unsigned_value = temp & self.basis_minus_one;
     }

@@ -14,6 +14,7 @@ use primus_modulus::BarrettModulus;
 use primus_ntt::U64DcrtTable;
 use primus_poly::Polynomial;
 use primus_rns::HybridRNS;
+use rand::{SeedableRng, rngs::StdRng};
 
 fn bench_key_switching(c: &mut Criterion) {
     type Value = u64;
@@ -32,7 +33,7 @@ fn bench_key_switching(c: &mut Criterion) {
     let p_moduli = P_VALUES.map(BarrettModulus::new);
     let qp_moduli: Vec<_> = q_moduli.iter().chain(p_moduli.iter()).copied().collect();
 
-    let mut rng = rand::rng();
+    let mut rng = StdRng::seed_from_u64(0xdec0_005e);
     let mut group = c.benchmark_group("key_switching");
     group.sample_size(10);
 

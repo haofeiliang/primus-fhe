@@ -1,14 +1,11 @@
-use std::iter::successors;
-
-use num_traits::ConstOne;
 use primus_data::Data;
 use primus_integer::{BigUint, BigUintIter, BigUintIterMut, DivRem, FheUint};
 
 use crate::{
-    ApproxSignedBasisError, MIN_DECOMPOSITION_LOG_BASIS, big_integer::BigUintSignedDecomposerIter,
+    ApproxSignedBasisError, MIN_DECOMPOSITION_LOG_BASIS, decomposition_length_and_drop_bits,
 };
 
-use super::{BigUintValueCarryInitMode, ValueMask};
+use super::common::{BigUintSignedDecomposerIter, BigUintValueCarryInitMode, ValueMask};
 
 /// Precomputed approximate signed decomposition modulo a multi-limb integer `Q`.
 ///
@@ -16,6 +13,11 @@ use super::{BigUintValueCarryInitMode, ValueMask};
 /// Digits lie in `[-B/2, B/2)` and are visited from the lowest retained level
 /// to the highest. Their weighted sum approximates the input modulo `Q`;
 /// [`Self::approximate_error_bound`] bounds the circular distance modulo `Q`.
+///
+/// The decomposition width is `m = bit_width(Q)`, including when `Q` is a
+/// power of two. The full level count is `m / log_basis`; retaining `k`
+/// levels leaves `drop_bits = m - k * log_basis`. Unlike the primitive
+/// basis, this representation always uses the adjusted-input protocol.
 ///
 /// Inputs and full-width outputs use exactly [`Self::big_uint_value_len`]
 /// little-endian limbs per value. Batches are value-major: each consecutive
@@ -91,25 +93,10 @@ impl<T: FheUint> BigUintApproxSignedBasis<T> {
             return Err(ApproxSignedBasisError::BasisExceedsModulus);
         }
 
-        let basis = <T as ConstOne>::ONE << log_basis;
-        let basis_minus_one = basis - <T as ConstOne>::ONE;
-        let decompose_length = modulus_bits_count / log_basis;
-        let mut drop_bits = modulus_bits_count - decompose_length * log_basis;
-        let mut decompose_length = decompose_length as usize;
-
-        if let Some(reverse_len) = reverse_length {
-            if reverse_len == 0 {
-                return Err(ApproxSignedBasisError::ZeroReverseLength);
-            }
-            if reverse_len > decompose_length {
-                return Err(ApproxSignedBasisError::ReverseLengthTooLarge {
-                    reverse_length: reverse_len,
-                    full_length: decompose_length,
-                });
-            }
-            decompose_length = reverse_len;
-            drop_bits = modulus_bits_count - (reverse_len as u32) * log_basis;
-        }
+        let basis = T::ONE << log_basis;
+        let basis_minus_one = basis - T::ONE;
+        let (decompose_length, drop_bits) =
+            decomposition_length_and_drop_bits(modulus_bits_count, log_basis, reverse_length)?;
 
         let init_carry_mask = if drop_bits > 0 {
             let bits = drop_bits - 1;
@@ -122,56 +109,19 @@ impl<T: FheUint> BigUintApproxSignedBasis<T> {
 
         let carry_mask = (T::ONE << log_basis) | (T::ONE << (log_basis - 1));
 
-        let split_value: Option<BigUint<Vec<T>>> = {
-            let mut value = BigUint(vec![T::ZERO; big_uint_value_len]);
-            for _ in 0..decompose_length {
-                let carry = value.left_shift_assign(log_basis);
-                assert_eq!(carry, T::ZERO);
-                value[0] |= basis_minus_one >> 1u32;
-            }
-            if drop_bits > 0 {
-                let carry = value.left_shift_assign(1);
-                assert_eq!(carry, T::ZERO);
-                value[0] |= T::ONE;
-                // The retained levels may start beyond the first limb. Move
-                // whole limbs before using the single-limb shift operation.
-                let (limbs, bits) = (drop_bits - 1).div_rem(T::BITS);
-                let limbs = limbs as usize;
-                // Retained bits plus dropped bits fit the modulus width, so
-                // the high limbs discarded by this move are all zero.
-                if limbs != 0 {
-                    value.0.copy_within(..big_uint_value_len - limbs, limbs);
-                    value.0[..limbs].fill(T::ZERO);
-                }
-                let carry = value.left_shift_assign(bits);
-                assert_eq!(carry, T::ZERO);
-            } else {
-                let carry = value.add_value_assign(T::ONE);
-                assert!(!carry);
-            }
-
-            if value.cmp(&modulus).is_ge() {
-                None
-            } else {
-                Some(value)
-            }
-        };
+        let threshold = wrap_threshold(big_uint_value_len, log_basis, decompose_length, drop_bits);
 
         let mut modulus_sub_basis = BigUint(modulus.0.to_vec());
         let borrow = modulus_sub_basis.sub_value_assign(basis);
         assert!(!borrow);
 
-        let make_adjust_add = || {
-            let mut next_pow_of_2_minus_one = BigUint(vec![T::MAX; big_uint_value_len]);
-            next_pow_of_2_minus_one[big_uint_value_len - 1] >>= unused_bits;
-
-            let mut modulus_minus_one = BigUint(modulus.0.to_vec());
-            let _ = modulus_minus_one.sub_value_assign(T::ONE);
-
-            let borrow = next_pow_of_2_minus_one.sub_assign(&modulus_minus_one);
-            assert!(!borrow);
-            next_pow_of_2_minus_one
-        };
+        // (2^m - 1) - Q + 1 avoids representing 2^m or allocating Q - 1.
+        let mut add = BigUint(vec![T::MAX; big_uint_value_len]);
+        add[big_uint_value_len - 1] >>= unused_bits;
+        let borrow = add.sub_assign(&modulus);
+        debug_assert!(!borrow);
+        let carry = add.add_value_assign(T::ONE);
+        debug_assert!(!carry);
 
         let mut scalars = vec![T::ZERO; big_uint_value_len * decompose_length];
         // Each reconstruction weight is a single bit, including when the
@@ -182,26 +132,20 @@ impl<T: FheUint> BigUintApproxSignedBasis<T> {
             scalar[index as usize] = T::ONE << shift;
         }
 
-        let value_masks: Vec<ValueMask<T>> =
-            successors(Some(ValueMask::new(basis_minus_one, drop_bits)), |&prev| {
-                Some(prev.next(log_basis))
-            })
-            .take(decompose_length)
+        let value_masks = (0..decompose_length)
+            .map(|level| ValueMask::new(basis_minus_one, drop_bits + level as u32 * log_basis))
             .collect();
 
-        let value_carry_init_mode = match (split_value, init_carry_mask) {
-            (Some(threshold), Some((index, mask))) => BigUintValueCarryInitMode::AdjustAndCarry {
+        // Every valid BigUint modulus has a negative region to adjust.
+        // Only the presence of an initial rounding carry varies.
+        let value_carry_init_mode = match init_carry_mask {
+            Some((index, mask)) => BigUintValueCarryInitMode::AdjustAndCarry {
                 threshold,
-                add: make_adjust_add(),
+                add,
                 index,
                 mask,
             },
-            (None, Some((index, mask))) => BigUintValueCarryInitMode::CarryOnly { index, mask },
-            (Some(threshold), None) => BigUintValueCarryInitMode::AdjustOnly {
-                threshold,
-                add: make_adjust_add(),
-            },
-            (None, None) => BigUintValueCarryInitMode::Plain,
+            None => BigUintValueCarryInitMode::AdjustOnly { threshold, add },
         };
 
         Ok(Self {
@@ -267,8 +211,12 @@ impl<T: FheUint> BigUintApproxSignedBasis<T> {
     /// Error is measured as circular distance modulo `Q`.
     #[inline]
     pub fn approximate_error_bound(&self) -> BigUint<Vec<T>> {
-        self.value_carry_init_mode
-            .approximate_error_bound(self.big_uint_value_len())
+        let mut bound = BigUint(vec![T::ZERO; self.big_uint_value_len()]);
+        if let Some(bit) = self.drop_bits.checked_sub(1) {
+            let (index, shift) = bit.div_rem(T::BITS);
+            bound[index as usize] = T::ONE << shift;
+        }
+        bound
     }
 
     /// Returns a reference to the modulus sub basis of this [`BigUintApproxSignedBasis<T>`].
@@ -335,11 +283,6 @@ impl<T: FheUint> BigUintApproxSignedBasis<T> {
                 }
                 (adjust.0, false)
             }
-            BigUintValueCarryInitMode::CarryOnly { index, mask } => (
-                value_digits.to_vec(),
-                !(value_digits[*index] & *mask).is_zero(),
-            ),
-            BigUintValueCarryInitMode::Plain => (value_digits.to_vec(), false),
         }
     }
 
@@ -378,14 +321,6 @@ impl<T: FheUint> BigUintApproxSignedBasis<T> {
                 });
                 carries.fill(false);
             }
-            BigUintValueCarryInitMode::CarryOnly { index, mask } => {
-                BigUintIter::new(values, big_uint_value_len)
-                    .zip(carries)
-                    .for_each(|(value, carry)| {
-                        *carry = !(value[*index] & *mask).is_zero();
-                    });
-            }
-            BigUintValueCarryInitMode::Plain => carries.fill(false),
         }
     }
 
@@ -441,22 +376,49 @@ impl<T: FheUint> BigUintApproxSignedBasis<T> {
                     });
                 carries.fill(false);
             }
-            BigUintValueCarryInitMode::CarryOnly { index, mask } => {
-                BigUintIter::new(big_uint_values, big_uint_value_len)
-                    .zip(BigUintIterMut::new(
-                        adjust_big_uint_values,
-                        big_uint_value_len,
-                    ))
-                    .zip(carries)
-                    .for_each(|((value, adjust), carry)| {
-                        adjust.0.copy_from_slice(value.0);
-                        *carry = !(value[*index] & *mask).is_zero();
-                    });
-            }
-            BigUintValueCarryInitMode::Plain => {
-                adjust_big_uint_values.copy_from_slice(big_uint_values);
-                carries.fill(false);
-            }
         }
     }
+}
+
+/// Builds the wrap split for k retained digits and d dropped bits.
+///
+/// With B = 2^log_basis and m = k*log_basis + d, let
+/// P = (B/2 - 1) * sum(B^i, 0 <= i < k). The split is P*2^d plus the rounding
+/// half-step (or 1 when d=0). It is always below 2^(m-1) <= Q:
+/// for d>0 the gap is 2^(d-1)*sum(B^i); for d=0 it is
+/// (B^k-B)/(2*(B-1)) > 0 since the constructor guarantees m>log_basis.
+/// Thus neither a comparison with Q nor a "no adjustment" mode is needed.
+fn wrap_threshold<T: FheUint>(
+    value_len: usize,
+    log_basis: u32,
+    levels: usize,
+    drop_bits: u32,
+) -> BigUint<Vec<T>> {
+    let positive_digit = (T::ONE << (log_basis - 1)) - T::ONE;
+    let mut value = BigUint(vec![T::ZERO; value_len]);
+    for _ in 0..levels {
+        let carry = value.left_shift_assign(log_basis);
+        debug_assert_eq!(carry, T::ZERO);
+        value[0] |= positive_digit;
+    }
+    if drop_bits > 0 {
+        let carry = value.left_shift_assign(1);
+        debug_assert_eq!(carry, T::ZERO);
+        value[0] |= T::ONE;
+        // Scale (2P + 1) by 2^(d-1). The integer shift API accepts only
+        // sub-limb shifts, so move whole limbs first. The proven width bound
+        // ensures all high limbs discarded by copy_within are zero.
+        let (limbs, bits) = (drop_bits - 1).div_rem(T::BITS);
+        let limbs = limbs as usize;
+        if limbs != 0 {
+            value.0.copy_within(..value_len - limbs, limbs);
+            value.0[..limbs].fill(T::ZERO);
+        }
+        let carry = value.left_shift_assign(bits);
+        debug_assert_eq!(carry, T::ZERO);
+    } else {
+        let carry = value.add_value_assign(T::ONE);
+        debug_assert!(!carry);
+    }
+    value
 }
