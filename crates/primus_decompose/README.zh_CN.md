@@ -207,8 +207,9 @@ cargo bench -p primus_decompose --bench decompose
 cargo +nightly test -p primus_decompose --features simd
 ```
 
-基准分别测量 basis 构造和在线 scalar/batch 分解，覆盖 primitive 的零复制与 adjusted
-路径，以及 BigUint 的全宽与紧凑输出。Workspace 已通过
+基准分别测量 basis 构造和在线分解。Primitive 覆盖 scalar 以及零复制/adjusted 批量
+路径；BigUint 以紧凑批量输出为主，覆盖固定步长与通用 fallback，并保留一组相同参数的
+全宽输出对照。每批处理 4096 个系数，包含初始化与所有保留层。Workspace 已通过
 [`.cargo/config.toml`](../../.cargo/config.toml) 设置 `target-cpu=native`。
 
 ## 许可证

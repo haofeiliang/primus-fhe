@@ -218,9 +218,12 @@ cargo bench -p primus_decompose --bench decompose
 cargo +nightly test -p primus_decompose --features simd
 ```
 
-The benchmarks separate basis construction from online scalar and batch
-decomposition, including primitive no-copy/adjusted paths and full-width/compact
-BigUint outputs. Workspace builds already use `target-cpu=native` via
+The benchmarks separate basis construction from online decomposition. Primitive
+cases cover scalar and no-copy/adjusted batch paths. BigUint cases focus on compact
+batch output with fixed strides and the general fallback, plus one matched
+full-width output case. Each batch processes 4096 coefficients, including
+initialization and every retained level. Workspace builds already use
+`target-cpu=native` via
 [`.cargo/config.toml`](../../.cargo/config.toml).
 
 ## License

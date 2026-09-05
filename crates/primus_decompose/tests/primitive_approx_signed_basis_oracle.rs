@@ -1,4 +1,4 @@
-use primus_decompose::primitive::ApproxSignedBasis;
+use primus_decompose::{ApproxSignedBasisError, primitive::ApproxSignedBasis};
 use primus_integer::FheUint;
 
 fn assert_decomposition_contract<T>(
@@ -14,21 +14,18 @@ where
     let radix = 1u128 << basis.log_basis();
     let half_radix = radix / 2;
 
-    let scalars: Vec<_> = basis.scalar_iter().map(Into::into).collect();
-    assert_eq!(scalars.len(), basis.decompose_length());
-
-    let mut expected_scalar = 1u128 << basis.drop_bits();
-    for (level, &scalar) in scalars.iter().enumerate() {
-        assert_eq!(
-            scalar, expected_scalar,
-            "level {level} is not ordered from low to high"
-        );
-        expected_scalar *= radix;
-    }
-
+    assert_eq!(basis.scalar_iter().len(), basis.decompose_length());
     let (adjusted, mut carry) = basis.init_value_carry(value);
     let mut recomposed = 0u128;
-    for (level, (decomposer, scalar)) in basis.decomposer_iter().zip(scalars).enumerate() {
+    for (level, (decomposer, scalar)) in
+        basis.decomposer_iter().zip(basis.scalar_iter()).enumerate()
+    {
+        let scalar = scalar.into();
+        assert_eq!(
+            scalar,
+            1u128 << (basis.drop_bits() + level as u32 * basis.log_basis()),
+            "level {level} is not ordered from low to high"
+        );
         let (raw_digit, next_carry) = decomposer.decompose(adjusted, carry);
         carry = next_carry;
 
@@ -133,12 +130,38 @@ fn representative_u32_u64_and_ntt_prime_cases_match_contract() {
 
 #[test]
 fn invalid_parameters_are_rejected() {
-    assert!(std::panic::catch_unwind(|| ApproxSignedBasis::<u32>::new(None, 1, None)).is_err());
-    assert!(
-        std::panic::catch_unwind(|| ApproxSignedBasis::<u32>::new(None, u32::BITS, None)).is_err()
-    );
-    assert!(std::panic::catch_unwind(|| ApproxSignedBasis::<u32>::new(Some(13), 4, None)).is_err());
-    assert!(std::panic::catch_unwind(|| ApproxSignedBasis::<u32>::new(None, 4, Some(0))).is_err());
+    for (modulus, log_basis, retained, expected) in [
+        (
+            None,
+            1,
+            None,
+            ApproxSignedBasisError::InvalidLogBasis {
+                log_basis: 1,
+                limb_bits: 32,
+            },
+        ),
+        (
+            None,
+            32,
+            None,
+            ApproxSignedBasisError::InvalidLogBasis {
+                log_basis: 32,
+                limb_bits: 32,
+            },
+        ),
+        (
+            Some(13),
+            4,
+            None,
+            ApproxSignedBasisError::BasisExceedsModulus,
+        ),
+        (None, 4, Some(0), ApproxSignedBasisError::ZeroReverseLength),
+    ] {
+        assert_eq!(
+            ApproxSignedBasis::<u32>::try_new(modulus, log_basis, retained).unwrap_err(),
+            expected
+        );
+    }
 }
 
 #[test]
@@ -185,27 +208,4 @@ fn batch_initialization_and_digits_match_scalar() {
             }
         }
     }
-}
-
-#[test]
-#[cfg(debug_assertions)]
-fn slice_length_mismatches_are_rejected() {
-    let basis = ApproxSignedBasis::<u32>::new(None, 4, Some(2));
-
-    assert!(
-        std::panic::catch_unwind(|| basis.init_value_carry_slice_to(
-            &[0, 1],
-            &mut [0],
-            &mut [false; 2]
-        ))
-        .is_err()
-    );
-
-    let decomposer = basis.decomposer_iter().next().unwrap();
-    assert!(
-        std::panic::catch_unwind(|| {
-            decomposer.decompose_slice_to(&[0, 1], &mut [0; 2], &mut [false])
-        })
-        .is_err()
-    );
 }

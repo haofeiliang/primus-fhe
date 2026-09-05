@@ -1,4 +1,4 @@
-use primus_decompose::big_integer::BigUintApproxSignedBasis;
+use primus_decompose::{ApproxSignedBasisError, big_integer::BigUintApproxSignedBasis};
 use primus_integer::{AsFrom, BigUint, FheUint};
 use rand::{RngExt, SeedableRng, rngs::StdRng};
 
@@ -121,100 +121,69 @@ fn retained_levels_match_modular_oracle() {
 
 #[test]
 fn batch_matches_scalar_decomposition() {
-    let moduli = [134_215_681u32, 134_176_769];
-    let q: u128 = moduli.iter().map(|&m| u128::from(m)).product();
-    let modulus = BigUint(limbs(q, (q.ilog2() + 1).div_ceil(u32::BITS) as usize));
-    for log_basis in [3, 5] {
-        let basis = BigUintApproxSignedBasis::<u32>::new(modulus.view(), log_basis, None);
-        let len = basis.big_uint_value_len();
-        let values: Vec<u32> = inputs(q, log_basis, basis.decompose_length(), basis.drop_bits())
-            .into_iter()
-            .flat_map(|value| limbs(value, len))
-            .collect();
-        let count = values.len() / len;
-        let mut adjusted = vec![u32::MAX; values.len()];
-        let mut carries = vec![true; count];
-        basis.init_value_carry_slice_to(&values, &mut adjusted, &mut carries);
-        let mut in_place = values.clone();
-        let mut in_place_carries = vec![true; count];
-        basis.init_value_carry_slice_assign(&mut in_place, &mut in_place_carries);
-        assert_eq!(adjusted, in_place);
-        assert_eq!(carries, in_place_carries);
-        for ((input, actual), &carry) in values
-            .chunks_exact(len)
-            .zip(adjusted.chunks_exact(len))
-            .zip(&carries)
-        {
-            let (expected, expected_carry) = basis.init_value_carry(&BigUint(input));
-            assert_eq!(actual, expected);
-            assert_eq!(carry, expected_carry);
-        }
-
-        let mut signed_digits = vec![u32::MAX; values.len()];
-        let mut unsigned_digits = vec![u32::MAX; count];
-        for decomposer in basis.decomposer_iter() {
-            let previous_carries = carries.clone();
-            let mut unsigned_carries = carries.clone();
-            decomposer.decompose_slice_to(&adjusted, &mut signed_digits, &mut carries);
-            decomposer.unsigned_decompose_slice_to(
-                &adjusted,
-                &mut unsigned_digits,
-                &mut unsigned_carries,
-            );
-            assert_eq!(carries, unsigned_carries);
-            for (index, value) in adjusted.chunks_exact(len).enumerate() {
-                let (digit, carry) = decomposer.decompose(value, previous_carries[index]);
-                assert_eq!(&signed_digits[index * len..(index + 1) * len], digit);
-                assert_eq!(carries[index], carry);
-                let mut digit_to = vec![u32::MAX; len];
-                let mut carry_to = previous_carries[index];
-                decomposer.decompose_to(value, &mut digit_to, &mut carry_to);
-                assert_eq!(digit_to, digit);
-                assert_eq!(carry_to, carry);
-                let (unsigned, carry) =
-                    decomposer.unsigned_decompose(value, previous_carries[index]);
-                let mut unsigned_to = u32::MAX;
-                let mut carry_to = previous_carries[index];
-                decomposer.unsigned_decompose_to(value, &mut unsigned_to, &mut carry_to);
-                assert_eq!(unsigned_to, unsigned);
-                assert_eq!(unsigned_digits[index], unsigned);
-                assert_eq!(carry_to, carry);
-            }
-        }
-    }
+    check_batch::<u32>();
+    check_batch::<u64>();
 }
 
-#[test]
-fn unsigned_batch_strides_and_tails_match_scalar() {
-    check_unsigned_batch_strides_and_tails::<u32>();
-    check_unsigned_batch_strides_and_tails::<u64>();
-}
-
-fn check_unsigned_batch_strides_and_tails<T: FheUint>() {
-    // Cover the fixed-width kernels and the general fallback, both with
-    // windows contained in a limb and with windows crossing a boundary.
+fn check_batch<T: FheUint>() {
+    // Fixed strides 1/2/4 and fallback 3. A whole-limb bit width gives no
+    // rounding with logB=16, and dropped bits/cross-limb windows with logB=17.
     for len in [1, 2, 3, 4] {
         let mut modulus = vec![T::MAX; len];
-        modulus[len - 1] >>= 2;
+        modulus[0] -= T::as_from(58u8);
+        modulus[len - 1] -= T::as_from(2u8);
         for log_basis in [16, 17] {
             let basis = BigUintApproxSignedBasis::new(BigUint(&modulus[..]), log_basis, None);
-            for count in [0, 1, 7, 8, 9, 31, 32, 33] {
+            // Empty input, a single value, and a batch with a vectorization tail.
+            for count in [0, 1, 33] {
                 let mut values: Vec<T> = (0..count * len)
                     .map(|i| T::as_from((i as u64).wrapping_mul(0x9e37_79b9_7f4a_7c15)))
                     .collect();
                 for value in values.chunks_exact_mut(len) {
                     value[len - 1] %= modulus[len - 1];
                 }
-                let mut adjusted = vec![T::ZERO; values.len()];
-                let mut carries = vec![false; count];
+                if count != 0 {
+                    // Q-1 adjusts to all ones, exercising zero digits that
+                    // still propagate carry through later levels.
+                    values[..len].copy_from_slice(&modulus);
+                    values[0] -= T::ONE;
+                }
+                let mut adjusted = vec![T::MAX; values.len()];
+                let mut carries = vec![true; count];
                 basis.init_value_carry_slice_to(&values, &mut adjusted, &mut carries);
-                let mut digits = vec![T::MAX; count];
+                let mut in_place = values.clone();
+                let mut in_place_carries = vec![true; count];
+                basis.init_value_carry_slice_assign(&mut in_place, &mut in_place_carries);
+                assert_eq!(adjusted, in_place);
+                assert_eq!(carries, in_place_carries);
+                for ((input, actual), &carry) in values
+                    .chunks_exact(len)
+                    .zip(adjusted.chunks_exact(len))
+                    .zip(&carries)
+                {
+                    let (expected, expected_carry) = basis.init_value_carry(&BigUint(input));
+                    assert_eq!(actual, expected);
+                    assert_eq!(carry, expected_carry);
+                }
+
+                let mut signed_digits = vec![T::MAX; values.len()];
+                let mut unsigned_digits = vec![T::MAX; count];
                 for decomposer in basis.decomposer_iter() {
                     let previous_carries = carries.clone();
-                    decomposer.unsigned_decompose_slice_to(&adjusted, &mut digits, &mut carries);
+                    let mut unsigned_carries = carries.clone();
+                    decomposer.decompose_slice_to(&adjusted, &mut signed_digits, &mut carries);
+                    decomposer.unsigned_decompose_slice_to(
+                        &adjusted,
+                        &mut unsigned_digits,
+                        &mut unsigned_carries,
+                    );
+                    assert_eq!(carries, unsigned_carries);
                     for (index, value) in adjusted.chunks_exact(len).enumerate() {
+                        let (digit, carry) = decomposer.decompose(value, previous_carries[index]);
+                        assert_eq!(&signed_digits[index * len..(index + 1) * len], digit);
+                        assert_eq!(carries[index], carry);
                         assert_eq!(
-                            (digits[index], carries[index]),
+                            (unsigned_digits[index], carries[index]),
                             decomposer.unsigned_decompose(value, previous_carries[index]),
                             "limbs={len}, logB={log_basis}, count={count}, index={index}",
                         );
@@ -223,4 +192,53 @@ fn check_unsigned_batch_strides_and_tails<T: FheUint>() {
             }
         }
     }
+}
+
+#[test]
+fn invalid_parameters_and_modulus_representations_are_rejected() {
+    let modulus = BigUint([17_u32 * 97]);
+    for (log_basis, retained, expected) in [
+        (
+            1,
+            None,
+            ApproxSignedBasisError::InvalidLogBasis {
+                log_basis: 1,
+                limb_bits: 32,
+            },
+        ),
+        (
+            32,
+            None,
+            ApproxSignedBasisError::InvalidLogBasis {
+                log_basis: 32,
+                limb_bits: 32,
+            },
+        ),
+        (4, Some(0), ApproxSignedBasisError::ZeroReverseLength),
+        (
+            4,
+            Some(3),
+            ApproxSignedBasisError::ReverseLengthTooLarge {
+                reverse_length: 3,
+                full_length: 2,
+            },
+        ),
+    ] {
+        assert_eq!(
+            BigUintApproxSignedBasis::try_new(modulus.view(), log_basis, retained).unwrap_err(),
+            expected
+        );
+    }
+    assert_eq!(
+        BigUintApproxSignedBasis::try_new(BigUint(&[3_u32]), 2, None).unwrap_err(),
+        ApproxSignedBasisError::BasisExceedsModulus
+    );
+    for invalid in [&[][..], &[0][..], &[1649, 0][..]] {
+        assert_eq!(
+            BigUintApproxSignedBasis::<u32>::try_new(BigUint(invalid), 4, None).unwrap_err(),
+            ApproxSignedBasisError::InvalidModulusRepresentation
+        );
+    }
+    // Zero low limbs are valid; only redundant high zero limbs are rejected.
+    assert!(BigUintApproxSignedBasis::try_new(BigUint(&[0_u32, 1]), 4, None).is_ok());
 }
