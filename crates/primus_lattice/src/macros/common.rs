@@ -4,22 +4,23 @@
 //! and zero-initialization for every integer-domain ciphertext type.
 
 macro_rules! impl_common {
-    ($cipher:ident < $s:ident >) => {
-        impl<$s> $cipher<$s>
+    ($cipher:ident) => {
+        impl<S> $cipher<S>
         where
-            $s: RawData,
-            <$s as RawData>::Elem: FheUint,
+            S: RawData,
+            <S as RawData>::Elem: FheUint,
         {
-            #[doc = concat!(r" Creates a new [`",stringify!($cipher),"<",stringify!($s),">`].")]
+            #[doc = concat!(r" Creates a new [`",stringify!($cipher),"<",stringify!(S),">`].")]
+            #[must_use]
             #[inline(always)]
-            pub fn new(data: $s) -> Self {
+            pub fn new(data: S) -> Self {
                 Self(data)
             }
         }
 
-        impl<$s, T> AsRef<[T]> for $cipher<$s>
+        impl<S, T> AsRef<[T]> for $cipher<S>
         where
-            $s: Data<Elem = T>,
+            S: Data<Elem = T>,
             T: FheUint,
         {
             #[inline(always)]
@@ -28,9 +29,9 @@ macro_rules! impl_common {
             }
         }
 
-        impl<$s, T> AsMut<[T]> for $cipher<$s>
+        impl<S, T> AsMut<[T]> for $cipher<S>
         where
-            $s: DataMut<Elem = T>,
+            S: DataMut<Elem = T>,
             T: FheUint,
         {
             #[inline(always)]
@@ -41,25 +42,26 @@ macro_rules! impl_common {
     };
 }
 
-macro_rules! impl_bytes_conversion {
-    ($cipher:ident < $s:ident >) => {
-        impl<$s, T> $cipher<$s>
+macro_rules! impl_bytes_io {
+    ($cipher:ident) => {
+        impl<S, T> $cipher<S>
         where
-            $s: DataOwned<Elem = T>,
+            S: DataOwned<Elem = T>,
             T: FheUint,
         {
-            #[doc = concat!(r" Creates a new [`",stringify!($cipher),"<",stringify!($s),">`] from bytes `data`.")]
+            #[doc = concat!(r" Creates a new [`",stringify!($cipher),"<",stringify!(S),">`] from bytes `data`.")]
+            #[must_use]
             #[inline]
             pub fn from_bytes(data: &[u8]) -> Self {
                 let converted_data: &[T] = bytemuck::cast_slice(data);
 
-                Self(<$s>::from_slice(converted_data))
+                Self(<S>::from_slice(converted_data))
             }
         }
 
-        impl<$s, T> $cipher<$s>
+        impl<S, T> $cipher<S>
         where
-            $s: DataMut<Elem = T>,
+            S: DataMut<Elem = T>,
             T: FheUint,
         {
             /// Copy from bytes `data`.
@@ -71,9 +73,9 @@ macro_rules! impl_bytes_conversion {
             }
         }
 
-        impl<$s, T> $cipher<$s>
+        impl<S, T> $cipher<S>
         where
-            $s: Data<Elem = T>,
+            S: Data<Elem = T>,
             T: FheUint,
         {
             /// Converts `self` into bytes.
@@ -91,7 +93,50 @@ macro_rules! impl_bytes_conversion {
 
                 data.copy_from_slice(converted_data);
             }
+        }
+    };
+}
 
+macro_rules! impl_zero {
+    ($cipher:ident) => {
+        impl<S, T> $cipher<S>
+        where
+            S: DataOwned<Elem = T>,
+            T: FheUint,
+        {
+            paste::paste! {
+                #[doc = concat!(r" Creates a new [`",stringify!($cipher),"<",stringify!(S),">`] with all values or coefficients equal to zero.")]
+                #[must_use]
+                #[inline]
+                pub fn zero([<$cipher:snake _len>]: usize) -> Self {
+                    Self(<S>::from_vec(vec![T::ZERO; [<$cipher:snake _len>]]))
+                }
+            }
+        }
+
+        impl<S, T> $cipher<S>
+        where
+            S: DataMut<Elem = T>,
+            T: FheUint,
+        {
+            /// Set all values or coefficients equal to zero.
+            #[inline]
+            pub fn set_zero(&mut self) {
+                self.0.fill(T::ZERO);
+            }
+        }
+    };
+}
+
+/// Byte I/O and the inherent size accessor used by integer ciphertexts.
+macro_rules! impl_bytes_conversion {
+    ($cipher:ident) => {
+        impl_bytes_io!($cipher);
+        impl<S, T> $cipher<S>
+        where
+            S: Data<Elem = T>,
+            T: FheUint,
+        {
             /// Returns the bytes count.
             #[inline]
             pub fn byte_count(&self) -> usize {
@@ -101,32 +146,12 @@ macro_rules! impl_bytes_conversion {
     };
 }
 
-macro_rules! impl_zero {
-    ($cipher:ident < $s:ident >) => {
-        impl<$s, T> $cipher<$s>
-        where
-            $s: DataOwned<Elem = T>,
-            T: FheUint,
-        {
-            paste::paste! {
-                #[doc = concat!(r" Creates a new [`",stringify!($cipher),"<",stringify!($s),">`] with all values or coefficients equal to zero.")]
-                #[inline]
-                pub fn zero([<$cipher:snake _len>]: usize) -> Self {
-                    Self(<$s>::from_vec(vec![T::ZERO; [<$cipher:snake _len>]]))
-                }
-            }
-        }
-
-        impl<$s, T> $cipher<$s>
-        where
-            $s: DataMut<Elem = T>,
-            T: FheUint,
-        {
-            /// Set all values or coefficients equal to zero.
-            #[inline]
-            pub fn set_zero(&mut self) {
-                self.0.fill(T::ZERO);
-            }
-        }
+/// Standard integer ciphertext storage APIs. LWE keeps its dimension-based
+/// zero constructors and `Size` trait, so it uses the constituent macros.
+macro_rules! impl_ciphertext_core {
+    ($cipher:ident) => {
+        impl_common!($cipher);
+        impl_bytes_conversion!($cipher);
+        impl_zero!($cipher);
     };
 }

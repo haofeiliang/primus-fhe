@@ -1,8 +1,7 @@
 use primus_data::{Data, DataMut, DataOwned, RawData};
-use primus_factor::FactorSliceOps;
 use primus_integer::FheUint;
 use primus_ntt::NttTable;
-use primus_poly::{ArrayBase, NttPolynomial, Polynomial};
+use primus_poly::{NttPolynomial, Polynomial};
 use primus_reduce::{FieldContext, RingContext};
 
 use crate::lwe::Lwe;
@@ -22,11 +21,14 @@ where
     S: RawData,
     <S as RawData>::Elem: FheUint;
 
-impl_common!(Ntru<S>);
-impl_bytes_conversion!(Ntru<S>);
-impl_zero!(Ntru<S>);
+impl_ciphertext_core!(Ntru);
+
 impl_iters!(Ntru);
-impl_basic_operation_single_modulus!(Ntru<S>);
+
+impl_basic_operation_single_modulus!(Ntru);
+impl_neg_single_modulus!(Ntru);
+impl_mul_scalar_single_modulus!(Ntru);
+impl_mul_factor_assign_single_modulus!(Ntru);
 
 impl<S, T> Ntru<S>
 where
@@ -35,6 +37,7 @@ where
 {
     /// Creates a new [`Ntru<S>`] with reference of [`Polynomial<A>`].
     #[inline]
+    #[must_use]
     pub fn from_ref<A>(h: &Polynomial<A>) -> Self
     where
         A: Data<Elem = T>,
@@ -168,24 +171,6 @@ where
     S: DataMut<Elem = T>,
     T: FheUint,
 {
-    /// Multiplies each coefficient by `scalar` modulo `modulus` in place.
-    #[inline]
-    pub fn mul_scalar_assign<M>(&mut self, scalar: T, modulus: M)
-    where
-        M: FieldContext<T>,
-    {
-        ArrayBase(self.as_mut()).mul_scalar_assign(scalar, modulus);
-    }
-
-    /// Multiplies each coefficient by a Shoup `factor` modulo `modulus` in place.
-    #[inline]
-    pub fn mul_factor_assign<F>(&mut self, factor: F, modulus: T)
-    where
-        F: FactorSliceOps<T>,
-    {
-        ArrayBase(self.as_mut()).mul_factor_assign(factor, modulus);
-    }
-
     /// Transforms `self` to ntt form.
     #[inline]
     pub fn into_ntt_form<Table>(mut self, ntt_table: &Table) -> NttNtru<S>

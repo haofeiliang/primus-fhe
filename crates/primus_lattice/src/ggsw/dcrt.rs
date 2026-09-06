@@ -22,10 +22,11 @@ where
     S: RawData,
     <S as RawData>::Elem: FheUint;
 
-impl_common!(DcrtGgsw<S>);
-impl_bytes_conversion!(DcrtGgsw<S>);
-impl_zero!(DcrtGgsw<S>);
+impl_ciphertext_core!(DcrtGgsw);
+
 impl_iters!(DcrtGgsw);
-impl_iter_sub_structure!(DcrtGgsw<S>, DcrtGlev);
-impl_basic_operation_multiple_modulus!(DcrtGgsw<S>);
-impl_crt_intt!(DcrtGgsw<S>, CrtGgsw);
+impl_iter_sub_structure!(DcrtGgsw, DcrtGlev);
+
+impl_basic_operation_multiple_modulus!(DcrtGgsw);
+
+impl_crt_intt!(DcrtGgsw, CrtGgsw);

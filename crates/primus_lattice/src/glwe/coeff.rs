@@ -2,7 +2,7 @@ use primus_data::{Data, DataMut, DataOwned, RawData};
 use primus_integer::FheUint;
 use primus_ntt::NttTable;
 #[allow(unused_imports)]
-use primus_poly::{ArrayBase, NttPolynomial, Polynomial, PolynomialIter, PolynomialIterMut};
+use primus_poly::{NttPolynomial, Polynomial, PolynomialIter, PolynomialIterMut};
 use primus_reduce::{FieldContext, RingContext};
 
 use super::NttGlwe;
@@ -20,30 +20,22 @@ where
     S: RawData,
     <S as RawData>::Elem: FheUint;
 
-impl_common!(Glwe<S>);
-impl_bytes_conversion!(Glwe<S>);
-impl_zero!(Glwe<S>);
+impl_ciphertext_core!(Glwe);
+
 impl_iters!(Glwe);
-impl_iter_sub_structure!(Glwe<S>, Polynomial, poly);
-impl_basic_operation_single_modulus!(Glwe<S>);
-impl_ntt!(Glwe<S>, NttGlwe);
+impl_iter_sub_structure!(Glwe, Polynomial, poly);
+
+impl_basic_operation_single_modulus!(Glwe);
+impl_neg_single_modulus!(Glwe);
+impl_mul_scalar_single_modulus!(Glwe);
+
+impl_ntt!(Glwe, NttGlwe);
 
 impl<S, T> Glwe<S>
 where
     S: DataMut<Elem = T>,
     T: FheUint,
 {
-    /// Negates every mask and body coefficient modulo `modulus` in place.
-    ///
-    /// Coefficients must satisfy the input range required by `modulus`.
-    #[inline]
-    pub fn neg_assign<M>(&mut self, modulus: M)
-    where
-        M: primus_reduce::ReduceNegSlice<T>,
-    {
-        modulus.reduce_neg_slice_assign(self.as_mut());
-    }
-
     /// Splits this GLWE into its mutable mask and body slices.
     #[inline]
     pub fn a_b_mut_slices(&mut self, poly_length: usize) -> (&mut [T], &mut [T]) {
@@ -86,13 +78,7 @@ where
         let (mask, body) = self.a_b_slices(poly_length);
         (PolynomialIter::new(mask, poly_length), Polynomial(body))
     }
-}
 
-impl<S, T> Glwe<S>
-where
-    S: Data<Elem = T>,
-    T: FheUint,
-{
     /// Multiplies every GLWE component by `X^exponent` in
     /// `Z_q[X]/(X^N + 1)` and writes the output to `output`.
     ///

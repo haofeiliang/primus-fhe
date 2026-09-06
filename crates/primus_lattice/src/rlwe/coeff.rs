@@ -2,10 +2,9 @@ use std::mem::MaybeUninit;
 
 use primus_data::{Data, DataMut, DataOwned, RawData};
 use primus_distr::DiscreteGaussian;
-use primus_factor::FactorSliceOps;
 use primus_integer::FheUint;
 use primus_ntt::NttTable;
-use primus_poly::{ArrayBase, NttPolynomial, Polynomial, PolynomialIter, PolynomialIterMut};
+use primus_poly::{NttPolynomial, Polynomial, PolynomialIter, PolynomialIterMut};
 use primus_reduce::{FieldContext, ReduceNeg, ReduceNegAssign, ReduceNegSlice};
 
 use crate::lwe::{Lwe, MultiMsgLwe};
@@ -28,13 +27,17 @@ where
     S: RawData,
     <S as RawData>::Elem: FheUint;
 
-impl_common!(Rlwe<S>);
-impl_bytes_conversion!(Rlwe<S>);
-impl_zero!(Rlwe<S>);
+impl_ciphertext_core!(Rlwe);
+
 impl_iters!(Rlwe);
-impl_iter_sub_structure!(Rlwe<S>, Polynomial, poly);
-impl_basic_operation_single_modulus!(Rlwe<S>);
-impl_ntt!(Rlwe<S>, NttRlwe);
+impl_iter_sub_structure!(Rlwe, Polynomial, poly);
+
+impl_basic_operation_single_modulus!(Rlwe);
+impl_neg_single_modulus!(Rlwe);
+impl_mul_scalar_single_modulus!(Rlwe);
+impl_mul_factor_assign_single_modulus!(Rlwe);
+
+impl_ntt!(Rlwe, NttRlwe);
 
 impl<S, T> Rlwe<S>
 where
@@ -43,6 +46,7 @@ where
 {
     /// Creates a new [`Rlwe<S>`] with reference of [`Polynomial<A>`].
     #[inline]
+    #[must_use]
     pub fn from_ref<A>(a: &Polynomial<A>, b: &Polynomial<A>) -> Self
     where
         A: Data<Elem = T>,
@@ -136,24 +140,6 @@ where
     pub fn a_b_mut_slices(&mut self) -> (&mut [T], &mut [T]) {
         let mid = self.0.len() >> 1;
         unsafe { self.0.split_at_mut_unchecked(mid) }
-    }
-
-    /// Multiplies each coefficient of both `a` and `b` by `scalar` modulo `modulus` in place.
-    #[inline]
-    pub fn mul_scalar_assign<M>(&mut self, scalar: T, modulus: M)
-    where
-        M: FieldContext<T>,
-    {
-        ArrayBase(self.as_mut()).mul_scalar_assign(scalar, modulus);
-    }
-
-    /// Multiplies each coefficient of both `a` and `b` by a Shoup `factor` modulo `modulus` in place.
-    #[inline]
-    pub fn mul_factor_assign<F>(&mut self, factor: F, modulus: T)
-    where
-        F: FactorSliceOps<T>,
-    {
-        ArrayBase(self.as_mut()).mul_factor_assign(factor, modulus);
     }
 }
 

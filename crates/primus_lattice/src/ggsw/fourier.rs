@@ -23,8 +23,9 @@ pub struct FourierGgsw<S>(pub S)
 where
     S: RawData<Elem = Complex64>;
 
-impl_fourier_iters!(FourierGgsw);
 impl_fourier_core!(FourierGgsw);
+
+impl_fourier_iters!(FourierGgsw);
 impl_fourier_iter_sub!(
     FourierGgsw,
     FourierGlev,
@@ -32,5 +33,5 @@ impl_fourier_iter_sub!(
     FourierGlevIterMut,
     glev
 );
-impl_fourier_forward!(Ggsw, FourierGgsw);
-impl_fourier_backward!(FourierGgsw, Ggsw);
+
+impl_fourier_conversion!(Ggsw, FourierGgsw);

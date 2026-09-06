@@ -21,6 +21,7 @@ pub struct FourierNtruExternalProductContext<T: TorusFftValue> {
 impl<T: TorusFftValue> FourierNtruExternalProductContext<T> {
     /// Creates reusable buffers for NTRU polynomials of length `poly_length`.
     #[inline]
+    #[must_use]
     pub fn new(poly_length: usize) -> Self {
         debug_assert!(poly_length >= 2 && poly_length.is_power_of_two());
         let fourier_length = poly_length / 2;
@@ -59,6 +60,7 @@ pub struct NttNtruExternalProductContext<T: FheUint> {
 impl<T: FheUint> NttNtruExternalProductContext<T> {
     /// Creates reusable buffers for NTRU polynomials of length `poly_length`.
     #[inline]
+    #[must_use]
     pub fn new(poly_length: usize) -> Self {
         debug_assert!(poly_length >= 2 && poly_length.is_power_of_two());
         Self {

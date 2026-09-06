@@ -1,7 +1,6 @@
 use primus_data::{Data, DataMut, DataOwned, RawData};
 use primus_integer::FheUint;
 use primus_ntt::NttTable;
-use primus_poly::ArrayBase;
 
 #[allow(unused_imports)]
 use crate::ntru::{Ntru, NtruIter, NtruIterMut};
@@ -28,10 +27,11 @@ where
     S: RawData,
     <S as RawData>::Elem: FheUint;
 
-impl_common!(Ngsw<S>);
-impl_bytes_conversion!(Ngsw<S>);
-impl_zero!(Ngsw<S>);
+impl_ciphertext_core!(Ngsw);
+
 impl_iters!(Ngsw);
-impl_iter_sub_structure!(Ngsw<S>, Ntru);
-impl_basic_operation_single_modulus!(Ngsw<S>);
-impl_ntt!(Ngsw<S>, NttNgsw);
+impl_iter_sub_structure!(Ngsw, Ntru);
+
+impl_basic_operation_single_modulus!(Ngsw);
+
+impl_ntt!(Ngsw, NttNgsw);

@@ -23,10 +23,11 @@ where
     S: RawData,
     <S as RawData>::Elem: FheUint;
 
-impl_common!(DcrtRlev<S>);
-impl_bytes_conversion!(DcrtRlev<S>);
-impl_zero!(DcrtRlev<S>);
+impl_ciphertext_core!(DcrtRlev);
+
 impl_iters!(DcrtRlev);
-impl_iter_sub_structure!(DcrtRlev<S>, DcrtRlwe);
-impl_basic_operation_multiple_modulus!(DcrtRlev<S>);
-impl_crt_intt!(DcrtRlev<S>, CrtRlev);
+impl_iter_sub_structure!(DcrtRlev, DcrtRlwe);
+
+impl_basic_operation_multiple_modulus!(DcrtRlev);
+
+impl_crt_intt!(DcrtRlev, CrtRlev);

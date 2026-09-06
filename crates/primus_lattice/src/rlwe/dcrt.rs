@@ -22,13 +22,14 @@ where
     S: RawData,
     <S as RawData>::Elem: FheUint;
 
-impl_common!(DcrtRlwe<S>);
-impl_bytes_conversion!(DcrtRlwe<S>);
-impl_zero!(DcrtRlwe<S>);
+impl_ciphertext_core!(DcrtRlwe);
+
 impl_iters!(DcrtRlwe);
-impl_iter_sub_structure!(DcrtRlwe<S>, DcrtPolynomial, dcrt_poly);
-impl_basic_operation_multiple_modulus!(DcrtRlwe<S>);
-impl_crt_intt!(DcrtRlwe<S>, CrtRlwe);
+impl_iter_sub_structure!(DcrtRlwe, DcrtPolynomial, dcrt_poly);
+
+impl_basic_operation_multiple_modulus!(DcrtRlwe);
+
+impl_crt_intt!(DcrtRlwe, CrtRlwe);
 
 impl<S, T> DcrtRlwe<S>
 where

@@ -1,7 +1,7 @@
 use primus_data::{Data, DataMut, DataOwned, RawData};
 use primus_integer::FheUint;
 use primus_ntt::NttTable;
-use primus_poly::{ArrayBase, NttPolynomial, NttPolynomialIter, NttPolynomialIterMut};
+use primus_poly::{NttPolynomial, NttPolynomialIter, NttPolynomialIterMut};
 use primus_reduce::FieldContext;
 
 use super::Rlwe;
@@ -22,13 +22,16 @@ where
     S: RawData,
     <S as RawData>::Elem: FheUint;
 
-impl_common!(NttRlwe<S>);
-impl_bytes_conversion!(NttRlwe<S>);
-impl_zero!(NttRlwe<S>);
+impl_ciphertext_core!(NttRlwe);
+
 impl_iters!(NttRlwe);
-impl_iter_sub_structure!(NttRlwe<S>, NttPolynomial, ntt_poly);
-impl_basic_operation_single_modulus!(NttRlwe<S>);
-impl_intt!(NttRlwe<S>, Rlwe);
+impl_iter_sub_structure!(NttRlwe, NttPolynomial, ntt_poly);
+
+impl_basic_operation_single_modulus!(NttRlwe);
+impl_neg_single_modulus!(NttRlwe);
+impl_mul_scalar_single_modulus!(NttRlwe);
+
+impl_intt!(NttRlwe, Rlwe);
 
 impl<S, T> NttRlwe<S>
 where
@@ -37,6 +40,7 @@ where
 {
     /// Creates a new [`NttRlwe<S>`] with reference of [`NttPolynomial<A>`].
     #[inline]
+    #[must_use]
     pub fn from_ref<A>(a: &NttPolynomial<A>, b: &NttPolynomial<A>) -> Self
     where
         A: Data<Elem = T>,
@@ -66,15 +70,6 @@ where
         (NttPolynomial(a), NttPolynomial(b))
     }
 
-    /// Multiplies each NTT coefficient of both `a` and `b` by `scalar` modulo `modulus` in place.
-    #[inline]
-    pub fn mul_scalar_assign<M>(&mut self, scalar: T, modulus: M)
-    where
-        M: FieldContext<T>,
-    {
-        ArrayBase(self.as_mut()).mul_scalar_assign(scalar, modulus);
-    }
-
     /// Performs a modular multiplication on the `self` [`NttRlwe<S>`] with another `ntt_poly` [`NttPolynomial<A>`].
     #[inline]
     pub fn mul_ntt_polynomial_assign<M, A>(&mut self, ntt_poly: &NttPolynomial<A>, modulus: M)
@@ -89,22 +84,22 @@ where
         });
     }
 
-    /// Performs `self += ntt_rlwe * ntt_poly` in place, all in the NTT domain.
+    /// Performs `self += rhs * poly` in place, all in the NTT domain.
     pub fn add_mul_ntt_polynomial_assign<M, A, B>(
         &mut self,
-        ntt_rlwe: &NttRlwe<A>,
-        ntt_poly: &NttPolynomial<B>,
+        rhs: &NttRlwe<A>,
+        poly: &NttPolynomial<B>,
         modulus: M,
     ) where
         M: FieldContext<T>,
         A: Data<Elem = T>,
         B: Data<Elem = T>,
     {
-        let poly_len = ntt_poly.poly_length();
+        let poly_len = poly.poly_length();
         self.iter_ntt_poly_mut(poly_len)
-            .zip(ntt_rlwe.iter_ntt_poly(poly_len))
+            .zip(rhs.iter_ntt_poly(poly_len))
             .for_each(|(mut x, y)| {
-                x.add_mul_assign(&y, ntt_poly, modulus);
+                x.add_mul_assign(&y, poly, modulus);
             });
     }
 }

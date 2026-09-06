@@ -1,7 +1,7 @@
 use primus_data::{Data, DataMut, DataOwned, RawData};
 use primus_integer::FheUint;
 use primus_ntt::NttTable;
-use primus_poly::{ArrayBase, NttPolynomial};
+use primus_poly::NttPolynomial;
 use primus_reduce::FieldContext;
 
 use super::Ntru;
@@ -19,11 +19,13 @@ where
     S: RawData,
     <S as RawData>::Elem: FheUint;
 
-impl_common!(NttNtru<S>);
-impl_bytes_conversion!(NttNtru<S>);
-impl_zero!(NttNtru<S>);
+impl_ciphertext_core!(NttNtru);
+
 impl_iters!(NttNtru);
-impl_basic_operation_single_modulus!(NttNtru<S>);
+
+impl_basic_operation_single_modulus!(NttNtru);
+impl_neg_single_modulus!(NttNtru);
+impl_mul_scalar_single_modulus!(NttNtru);
 
 impl<S, T> NttNtru<S>
 where
@@ -64,15 +66,6 @@ where
     S: DataMut<Elem = T>,
     T: FheUint,
 {
-    /// Negates this NTT-domain ciphertext coefficient-wise modulo `modulus`.
-    #[inline]
-    pub fn neg_assign<M>(&mut self, modulus: M)
-    where
-        M: FieldContext<T>,
-    {
-        NttPolynomial(self.as_mut()).neg_assign(modulus);
-    }
-
     /// Transforms `self` to coefficient form.
     #[inline]
     pub fn into_coeff_form<Table>(mut self, ntt_table: &Table) -> Ntru<S>
@@ -81,15 +74,6 @@ where
     {
         ntt_table.inverse_transform_slice(self.as_mut());
         Ntru::new(self.0)
-    }
-
-    /// Multiplies each NTT coefficient by `scalar` modulo `modulus` in place.
-    #[inline]
-    pub fn mul_scalar_assign<M>(&mut self, scalar: T, modulus: M)
-    where
-        M: FieldContext<T>,
-    {
-        ArrayBase(self.as_mut()).mul_scalar_assign(scalar, modulus);
     }
 
     /// Performs a modular multiplication on the `self` [`NttNtru<S>`] with another `ntt_poly` [`NttPolynomial<A>`].
@@ -102,21 +86,17 @@ where
         NttPolynomial(self.as_mut()).mul_assign(ntt_poly, modulus);
     }
 
-    /// Performs `self += ntt_ntru * ntt_poly` in place, all in the NTT domain.
+    /// Performs `self += rhs * poly` in place, all in the NTT domain.
     pub fn add_mul_ntt_polynomial_assign<M, A, B>(
         &mut self,
-        ntt_ntru: &NttNtru<A>,
-        ntt_poly: &NttPolynomial<B>,
+        rhs: &NttNtru<A>,
+        poly: &NttPolynomial<B>,
         modulus: M,
     ) where
         M: FieldContext<T>,
         A: Data<Elem = T>,
         B: Data<Elem = T>,
     {
-        NttPolynomial(self.as_mut()).add_mul_assign(
-            &NttPolynomial(ntt_ntru.as_ref()),
-            ntt_poly,
-            modulus,
-        );
+        NttPolynomial(self.as_mut()).add_mul_assign(&NttPolynomial(rhs.as_ref()), poly, modulus);
     }
 }

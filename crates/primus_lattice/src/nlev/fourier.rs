@@ -17,8 +17,9 @@ pub struct FourierNlev<S>(pub S)
 where
     S: RawData<Elem = Complex64>;
 
-impl_fourier_iters!(FourierNlev);
 impl_fourier_core!(FourierNlev);
+
+impl_fourier_iters!(FourierNlev);
 impl_fourier_iter_sub!(
     FourierNlev,
     FourierNtru,
@@ -26,5 +27,5 @@ impl_fourier_iter_sub!(
     FourierNtruIterMut,
     ntru
 );
-impl_fourier_forward!(Nlev, FourierNlev);
-impl_fourier_backward!(FourierNlev, Nlev);
+
+impl_fourier_conversion!(Nlev, FourierNlev);

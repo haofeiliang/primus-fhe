@@ -19,6 +19,7 @@ macro_rules! impl_iters {
             impl<'a, T: FheUint> [<$cipher Iter>]<'a, T> {
                 #[doc = concat!("Creates an iterator yielding [`", stringify!($cipher), "`] chunks of `", stringify!([<$cipher:snake _len>]), "` elements each.")]
                 #[inline]
+                #[must_use]
                 pub fn new(data:&'a [T], [<$cipher:snake _len>]:usize) -> Self{
                     Self {
                         iter: data.chunks_exact([<$cipher:snake _len>])
@@ -57,6 +58,7 @@ macro_rules! impl_iters {
             impl<'a, T: FheUint> [<$cipher IterMut>]<'a, T> {
                 #[doc = concat!("Creates a mutable iterator yielding [`", stringify!($cipher), "`] chunks of `", stringify!([<$cipher:snake _len>]), "` elements each.")]
                 #[inline]
+                #[must_use]
                 pub fn new(data:&'a mut [T], [<$cipher:snake _len>]:usize) -> Self{
                     Self {
                         iter: data.chunks_exact_mut([<$cipher:snake _len>])
@@ -85,42 +87,15 @@ macro_rules! impl_iters {
 }
 
 macro_rules! impl_iter_sub_structure {
-    ($cipher:ident < $s:ident >, $sub:ident) => {
-        impl<$s, T> $cipher<$s>
-        where
-            $s: Data<Elem = T>,
-            T: FheUint,
-        {
-            paste::paste! {
-                #[doc = concat!("Returns an iterator over the [`", stringify!($sub), "`] sub-components of this `", stringify!($cipher), "`.")]
-                #[inline]
-                pub fn [<iter_ $sub:snake>]<'a>(&'a self, [<$sub:snake _len>]: usize) -> [<$sub Iter>]<'a, T> {
-                    [<$sub Iter>]::new(self.0.as_slice(), [<$sub:snake _len>])
-                }
-            }
-        }
-
-        impl<$s, T> $cipher<$s>
-        where
-            $s: DataMut<Elem = T>,
-            T: FheUint,
-        {
-            paste::paste! {
-                #[doc = concat!("Returns a mutable iterator over the [`", stringify!($sub), "`] sub-components of this `", stringify!($cipher), "`.")]
-                #[inline]
-                pub fn [<iter_ $sub:snake _mut>]<'a>(
-                    &'a mut self,
-                    [<$sub:snake _len>]: usize,
-                ) -> [<$sub IterMut>]<'a, T> {
-                    [<$sub IterMut>]::new(self.0.as_mut_slice(), [<$sub:snake _len>])
-                }
-            }
+    ($cipher:ident, $sub:ident) => {
+        paste::paste! {
+            impl_iter_sub_structure!($cipher, $sub, [<$sub:snake>]);
         }
     };
-    ($cipher:ident < $s:ident >, $sub:ident, $sub_short:ident) => {
-        impl<$s, T> $cipher<$s>
+    ($cipher:ident, $sub:ident, $sub_short:ident) => {
+        impl<S, T> $cipher<S>
         where
-            $s: Data<Elem = T>,
+            S: Data<Elem = T>,
             T: FheUint,
         {
             paste::paste! {
@@ -132,9 +107,9 @@ macro_rules! impl_iter_sub_structure {
             }
         }
 
-        impl<$s, T> $cipher<$s>
+        impl<S, T> $cipher<S>
         where
-            $s: DataMut<Elem = T>,
+            S: DataMut<Elem = T>,
             T: FheUint,
         {
             paste::paste! {

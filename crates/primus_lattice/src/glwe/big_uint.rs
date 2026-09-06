@@ -23,11 +23,10 @@ where
     S: RawData,
     <S as RawData>::Elem: FheUint;
 
-impl_common!(BigUintGlwe<S>);
-impl_bytes_conversion!(BigUintGlwe<S>);
-impl_zero!(BigUintGlwe<S>);
+impl_ciphertext_core!(BigUintGlwe);
+
 impl_iters!(BigUintGlwe);
-impl_iter_sub_structure!(BigUintGlwe<S>, BigUintPolynomial, big_uint_poly);
+impl_iter_sub_structure!(BigUintGlwe, BigUintPolynomial, big_uint_poly);
 
 #[cfg(feature = "rns")]
 impl<S, T> BigUintGlwe<S>

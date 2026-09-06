@@ -21,8 +21,9 @@ pub struct FourierGlwe<S>(pub S)
 where
     S: RawData<Elem = Complex64>;
 
-impl_fourier_iters!(FourierGlwe);
 impl_fourier_core!(FourierGlwe);
+
+impl_fourier_iters!(FourierGlwe);
 impl_fourier_iter_sub!(
     FourierGlwe,
     FourierPolynomial,
@@ -30,8 +31,10 @@ impl_fourier_iter_sub!(
     FourierPolynomialIterMut,
     fourier_poly
 );
-impl_fourier_forward!(Glwe, FourierGlwe);
-impl_fourier_backward!(FourierGlwe, Glwe);
+
+impl_fourier_basic_operation!(FourierGlwe);
+
+impl_fourier_conversion!(Glwe, FourierGlwe);
 
 // ---------------------------------------------------------------------------
 // GLWE-specific methods
@@ -98,7 +101,7 @@ where
         )
     }
 
-    /// Performs `self += poly * rhs` for each component (pointwise FMA).
+    /// Performs `self += rhs * poly` for each component (pointwise FMA).
     ///
     /// This is the core operation in the TFHE external product hot loop:
     /// the accumulator GLWE accumulates the product of a decomposed FFT
@@ -106,8 +109,8 @@ where
     #[inline]
     pub fn add_mul_fourier_polynomial_assign<A, B>(
         &mut self,
-        rhs: &FourierGlwe<B>,
-        poly: &FourierPolynomial<A>,
+        rhs: &FourierGlwe<A>,
+        poly: &FourierPolynomial<B>,
     ) where
         A: Data<Elem = Complex64>,
         B: Data<Elem = Complex64>,

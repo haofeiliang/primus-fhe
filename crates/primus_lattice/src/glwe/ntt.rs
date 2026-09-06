@@ -1,7 +1,7 @@
 use primus_data::{Data, DataMut, DataOwned, RawData};
 use primus_integer::FheUint;
 use primus_ntt::NttTable;
-use primus_poly::{ArrayBase, NttPolynomial, NttPolynomialIter, NttPolynomialIterMut};
+use primus_poly::{NttPolynomial, NttPolynomialIter, NttPolynomialIterMut};
 use primus_reduce::FieldContext;
 
 use super::Glwe;
@@ -19,30 +19,22 @@ where
     S: RawData,
     <S as RawData>::Elem: FheUint;
 
-impl_common!(NttGlwe<S>);
-impl_bytes_conversion!(NttGlwe<S>);
-impl_zero!(NttGlwe<S>);
+impl_ciphertext_core!(NttGlwe);
+
 impl_iters!(NttGlwe);
-impl_iter_sub_structure!(NttGlwe<S>, NttPolynomial, ntt_poly);
-impl_basic_operation_single_modulus!(NttGlwe<S>);
-impl_intt!(NttGlwe<S>, Glwe);
+impl_iter_sub_structure!(NttGlwe, NttPolynomial, ntt_poly);
+
+impl_basic_operation_single_modulus!(NttGlwe);
+impl_neg_single_modulus!(NttGlwe);
+impl_mul_scalar_single_modulus!(NttGlwe);
+
+impl_intt!(NttGlwe, Glwe);
 
 impl<S, T> NttGlwe<S>
 where
     S: DataMut<Elem = T>,
     T: FheUint,
 {
-    /// Negates every mask and body coefficient modulo `modulus` in place.
-    ///
-    /// Coefficients must satisfy the input range required by `modulus`.
-    #[inline]
-    pub fn neg_assign<M>(&mut self, modulus: M)
-    where
-        M: primus_reduce::ReduceNegSlice<T>,
-    {
-        modulus.reduce_neg_slice_assign(self.as_mut());
-    }
-
     /// Splits this GLWE into its mutable mask and body slices.
     ///
     /// The body is the final NTT polynomial and therefore has exactly
@@ -90,22 +82,22 @@ where
     #[inline]
     pub fn add_mul_ntt_polynomial_assign<M, A, B>(
         &mut self,
-        rhs: &NttGlwe<B>,
-        ntt_poly: &NttPolynomial<A>,
+        rhs: &NttGlwe<A>,
+        poly: &NttPolynomial<B>,
         modulus: M,
     ) where
         M: FieldContext<T>,
         A: Data<Elem = T>,
         B: Data<Elem = T>,
     {
-        let poly_length = ntt_poly.poly_length();
+        let poly_length = poly.poly_length();
         debug_assert_eq!(self.as_ref().len(), rhs.as_ref().len());
         debug_assert_eq!(self.as_ref().len() % poly_length, 0);
 
         self.iter_ntt_poly_mut(poly_length)
             .zip(rhs.iter_ntt_poly(poly_length))
             .for_each(|(mut accumulator, rhs)| {
-                accumulator.add_mul_assign(ntt_poly, &rhs, modulus);
+                accumulator.add_mul_assign(poly, &rhs, modulus);
             });
     }
 }

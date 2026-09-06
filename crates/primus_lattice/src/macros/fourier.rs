@@ -26,6 +26,7 @@ macro_rules! impl_fourier_iters {
                     "`] views containing `", stringify!([<$cipher:snake _len>]), "` complex values each.",
                     "\n\n# Panics\n\nPanics if `", stringify!([<$cipher:snake _len>]), "` is zero or does not divide `data.len()`."
                 )]
+                #[must_use]
                 #[inline]
                 pub fn new(data: &'a [num_complex::Complex64], [<$cipher:snake _len>]: usize) -> Self {
                     assert!([<$cipher:snake _len>] != 0, "Fourier chunk length must be non-zero");
@@ -82,6 +83,7 @@ macro_rules! impl_fourier_iters {
                     "`] views containing `", stringify!([<$cipher:snake _len>]), "` complex values each.",
                     "\n\n# Panics\n\nPanics if `", stringify!([<$cipher:snake _len>]), "` is zero or does not divide `data.len()`."
                 )]
+                #[must_use]
                 #[inline]
                 pub fn new(data: &'a mut [num_complex::Complex64], [<$cipher:snake _len>]: usize) -> Self {
                     assert!([<$cipher:snake _len>] != 0, "Fourier chunk length must be non-zero");
@@ -136,6 +138,7 @@ macro_rules! impl_fourier_core {
             S: primus_data::RawData<Elem = num_complex::Complex64>,
         {
             #[doc = concat!("Creates a new [`", stringify!($cipher), "`].")]
+            #[must_use]
             #[inline]
             pub fn new(data: S) -> Self {
                 Self(data)
@@ -151,6 +154,7 @@ macro_rules! impl_fourier_core {
                 #[inline]
                 /// The length is the total number of complex Fourier values,
                 /// including every polynomial and ciphertext component.
+                #[must_use]
                 pub fn zero([< $cipher:snake _len >]: usize) -> Self {
                     Self(S::from_vec(vec![
                         num_complex::Complex64::default();
@@ -251,9 +255,8 @@ macro_rules! impl_fourier_iter_sub {
     };
 }
 
-/// Generates `write_fourier_form` — a coefficient → Fourier conversion
-/// that normalizes the input as torus values before the FFT.
-macro_rules! impl_fourier_forward {
+/// Generates both coefficient-to-Fourier and Fourier-to-torus conversions.
+macro_rules! impl_fourier_conversion {
     ($coeff:ident, $fourier:ident) => {
         impl<S, T> $coeff<S>
         where
@@ -278,13 +281,6 @@ macro_rules! impl_fourier_forward {
                 }
             }
         }
-    };
-}
-
-/// Generates `write_torus_form` — a Fourier → coefficient conversion
-/// that produces normalized torus values from the inverse FFT.
-macro_rules! impl_fourier_backward {
-    ($fourier:ident, $coeff:ident) => {
         impl<S> $fourier<S>
         where
             S: primus_data::RawData<Elem = num_complex::Complex64> + primus_data::Data,

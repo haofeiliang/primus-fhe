@@ -17,8 +17,9 @@ pub struct FourierNgsw<S>(pub S)
 where
     S: RawData<Elem = Complex64>;
 
-impl_fourier_iters!(FourierNgsw);
 impl_fourier_core!(FourierNgsw);
+
+impl_fourier_iters!(FourierNgsw);
 impl_fourier_iter_sub!(
     FourierNgsw,
     FourierNtru,
@@ -26,5 +27,5 @@ impl_fourier_iter_sub!(
     FourierNtruIterMut,
     ntru
 );
-impl_fourier_forward!(Ngsw, FourierNgsw);
-impl_fourier_backward!(FourierNgsw, Ngsw);
+
+impl_fourier_conversion!(Ngsw, FourierNgsw);

@@ -23,10 +23,11 @@ where
     S: RawData,
     <S as RawData>::Elem: FheUint;
 
-impl_common!(CrtGlev<S>);
-impl_bytes_conversion!(CrtGlev<S>);
-impl_zero!(CrtGlev<S>);
+impl_ciphertext_core!(CrtGlev);
+
 impl_iters!(CrtGlev);
-impl_iter_sub_structure!(CrtGlev<S>, CrtGlwe);
-impl_basic_operation_multiple_modulus!(CrtGlev<S>);
-impl_crt_ntt!(CrtGlev<S>, DcrtGlev);
+impl_iter_sub_structure!(CrtGlev, CrtGlwe);
+
+impl_basic_operation_multiple_modulus!(CrtGlev);
+
+impl_crt_ntt!(CrtGlev, DcrtGlev);

@@ -1,6 +1,5 @@
 use primus_data::{Data, DataMut, DataOwned, RawData};
 use primus_integer::FheUint;
-use primus_poly::ArrayBase;
 use primus_reduce::ReduceNegSlice;
 
 use crate::{
@@ -20,10 +19,9 @@ where
     S: RawData,
     <S as RawData>::Elem: FheUint;
 
-impl_common!(TruncatedGlwe<S>);
-impl_bytes_conversion!(TruncatedGlwe<S>);
-impl_zero!(TruncatedGlwe<S>);
-impl_basic_operation_single_modulus!(TruncatedGlwe<S>);
+impl_ciphertext_core!(TruncatedGlwe);
+
+impl_basic_operation_single_modulus!(TruncatedGlwe);
 
 impl<T> TruncatedGlwe<Vec<T>>
 where

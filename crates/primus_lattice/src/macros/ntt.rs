@@ -5,10 +5,10 @@
 //! (CRT ↔ DCRT) representations.
 
 macro_rules! impl_ntt {
-    ($cipher:ident < $s:ident >,$ntt_cipher:ident) => {
-        impl<$s, T> $cipher<$s>
+    ($cipher:ident,$ntt_cipher:ident) => {
+        impl<S, T> $cipher<S>
         where
-            $s: DataMut<Elem = T>,
+            S: DataMut<Elem = T>,
             T: FheUint,
         {
             /// Transforms `self` to ntt form.
@@ -25,9 +25,9 @@ macro_rules! impl_ntt {
             }
         }
 
-        impl<$s, T> $cipher<$s>
+        impl<S, T> $cipher<S>
         where
-            $s: Data<Elem = T>,
+            S: Data<Elem = T>,
             T: FheUint,
         {
             /// Transforms `self` to ntt form and stores in `output`.
@@ -48,10 +48,10 @@ macro_rules! impl_ntt {
 }
 
 macro_rules! impl_intt {
-    ($ntt_cipher:ident < $s:ident >,$cipher:ident) => {
-        impl<$s, T> $ntt_cipher<$s>
+    ($ntt_cipher:ident,$cipher:ident) => {
+        impl<S, T> $ntt_cipher<S>
         where
-            $s: DataMut<Elem = T>,
+            S: DataMut<Elem = T>,
             T: FheUint,
         {
             /// Transforms `self` to coefficient form.
@@ -68,9 +68,9 @@ macro_rules! impl_intt {
             }
         }
 
-        impl<$s, T> $ntt_cipher<$s>
+        impl<S, T> $ntt_cipher<S>
         where
-            $s: Data<Elem = T>,
+            S: Data<Elem = T>,
             T: FheUint,
         {
             /// Transforms `self` to coefficient form and stores in `output`.
@@ -92,10 +92,10 @@ macro_rules! impl_intt {
 
 #[cfg(feature = "rns")]
 macro_rules! impl_crt_ntt {
-    ($cipher:ident < $s:ident >,$ntt_cipher:ident) => {
-        impl<$s, T> $cipher<$s>
+    ($cipher:ident,$ntt_cipher:ident) => {
+        impl<S, T> $cipher<S>
         where
-            $s: DataMut<Elem = T>,
+            S: DataMut<Elem = T>,
             T: FheUint,
         {
             /// Transforms `self` to ntt form.
@@ -103,7 +103,7 @@ macro_rules! impl_crt_ntt {
             pub fn into_ntt_form<Table>(
                 self,
                 table: &primus_ntt::DcrtTable<Table>,
-            ) -> $ntt_cipher<$s>
+            ) -> $ntt_cipher<S>
             where
                 Table: primus_ntt::NttTable<ValueT = T>,
             {
@@ -116,9 +116,9 @@ macro_rules! impl_crt_ntt {
             }
         }
 
-        impl<$s, T> $cipher<$s>
+        impl<S, T> $cipher<S>
         where
-            $s: Data<Elem = T>,
+            S: Data<Elem = T>,
             T: FheUint,
         {
             /// Transforms `self` to ntt form and stores in `output`.
@@ -146,15 +146,15 @@ macro_rules! impl_crt_ntt {
 
 #[cfg(feature = "rns")]
 macro_rules! impl_crt_intt {
-    ($ntt_cipher:ident < $s:ident >,$cipher:ident) => {
-        impl<$s, T> $ntt_cipher<$s>
+    ($ntt_cipher:ident,$cipher:ident) => {
+        impl<S, T> $ntt_cipher<S>
         where
-            $s: DataMut<Elem = T>,
+            S: DataMut<Elem = T>,
             T: FheUint,
         {
             /// Transforms `self` to coefficient form.
             #[inline]
-            pub fn into_coeff_form<Table>(self, table: &primus_ntt::DcrtTable<Table>) -> $cipher<$s>
+            pub fn into_coeff_form<Table>(self, table: &primus_ntt::DcrtTable<Table>) -> $cipher<S>
             where
                 Table: primus_ntt::NttTable<ValueT = T>,
             {
@@ -167,9 +167,9 @@ macro_rules! impl_crt_intt {
             }
         }
 
-        impl<$s, T> $ntt_cipher<$s>
+        impl<S, T> $ntt_cipher<S>
         where
-            $s: Data<Elem = T>,
+            S: Data<Elem = T>,
             T: FheUint,
         {
             /// Transforms `self` to coefficient form and stores in `output`.

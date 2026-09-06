@@ -14,22 +14,21 @@ where
     S: RawData,
     <S as RawData>::Elem: FheUint;
 
-impl_common!(MultiMsgLwe<S>);
+impl_common!(MultiMsgLwe);
+impl_bytes_io!(MultiMsgLwe);
+
+impl_basic_operation_single_modulus!(MultiMsgLwe);
+impl_neg_single_modulus!(MultiMsgLwe);
+impl_mul_scalar_single_modulus!(MultiMsgLwe);
+impl_add_mul_scalar_single_modulus!(MultiMsgLwe);
 
 impl<S, T> MultiMsgLwe<S>
 where
     S: DataOwned<Elem = T>,
     T: FheUint,
 {
-    /// Creates a new [`MultiMsgLwe<S, T>`] from bytes `data`.
-    #[inline]
-    pub fn from_bytes(data: &[u8]) -> Self {
-        let converted_data: &[T] = bytemuck::cast_slice(data);
-
-        Self(S::from_slice(converted_data))
-    }
-
     /// Generates a [`MultiMsgLwe<S, T>`] with all values are `0`.
+    #[must_use]
     #[inline]
     pub fn zero(dimension: usize, msg_count: usize) -> Self {
         Self(S::from_vec(vec![T::ZERO; dimension + msg_count]))
@@ -41,14 +40,6 @@ where
     S: DataMut<Elem = T>,
     T: FheUint,
 {
-    /// Creates a new [`MultiMsgLwe<S, T>`] from bytes `data`.
-    #[inline]
-    pub fn read_bytes(&mut self, data: &[u8]) {
-        let converted_data: &[T] = bytemuck::cast_slice(data);
-
-        self.0.copy_from_slice(converted_data);
-    }
-
     /// Returns mutable references to `a` and `b` of this [`MultiMsgLwe<S, T>`].
     #[inline]
     pub fn a_b_mut(&mut self, dimension: usize) -> (&mut [T], &mut [T]) {
@@ -60,72 +51,6 @@ where
     pub fn set_zero(&mut self) {
         self.0.fill(T::ZERO);
     }
-
-    /// Perform component-wise modular addition of two [`MultiMsgLwe<S, T>`].
-    #[inline]
-    pub fn add<M, A>(mut self, rhs: &MultiMsgLwe<A>, modulus: M) -> Self
-    where
-        M: Copy + ReduceAddSlice<T>,
-        A: Data<Elem = T>,
-    {
-        self.add_assign(rhs, modulus);
-        self
-    }
-
-    /// Performs an in-place component-wise modular addition
-    /// on the `self` [`MultiMsgLwe<S, T>`] with another `rhs` [`MultiMsgLwe<S, T>`].
-    #[inline]
-    pub fn add_assign<M, A>(&mut self, rhs: &MultiMsgLwe<A>, modulus: M)
-    where
-        M: Copy + ReduceAddSlice<T>,
-        A: Data<Elem = T>,
-    {
-        modulus.reduce_add_slice_assign(self.0.as_mut_slice(), rhs.0.as_slice());
-    }
-
-    /// Perform component-wise modular subtraction of two [`MultiMsgLwe<S, T>`].
-    #[inline]
-    pub fn sub<M, A>(mut self, rhs: &MultiMsgLwe<A>, modulus: M) -> Self
-    where
-        M: Copy + ReduceSubSlice<T>,
-        A: Data<Elem = T>,
-    {
-        self.sub_assign(rhs, modulus);
-        self
-    }
-
-    /// Performs an in-place component-wise modular subtraction
-    /// on the `self` [`MultiMsgLwe<S, T>`] with another `rhs` [`MultiMsgLwe<S, T>`].
-    #[inline]
-    pub fn sub_assign<M, A>(&mut self, rhs: &MultiMsgLwe<A>, modulus: M)
-    where
-        M: Copy + ReduceSubSlice<T>,
-        A: Data<Elem = T>,
-    {
-        modulus.reduce_sub_slice_assign(self.0.as_mut_slice(), rhs.0.as_slice());
-    }
-
-    /// Performs an in-place modular scalar multiplication
-    /// on the `self` [`MultiMsgLwe<S, T>`] with scalar `T`.
-    #[inline]
-    pub fn mul_scalar_assign<M>(&mut self, scalar: T, modulus: M)
-    where
-        M: Copy + ReduceMulSlice<T>,
-    {
-        modulus.reduce_mul_scalar_slice_assign(self.0.as_mut_slice(), scalar);
-    }
-
-    /// Performs an in-place modular scalar multiplication
-    /// on the `rhs` [`MultiMsgLwe<S, T>`] with `scalar` `T`,
-    /// then add to `self`.
-    #[inline]
-    pub fn add_mul_scalar_assign<M, A>(&mut self, rhs: &MultiMsgLwe<A>, scalar: T, modulus: M)
-    where
-        M: Copy + ReduceMulAddSlice<T>,
-        A: Data<Elem = T>,
-    {
-        modulus.reduce_add_mul_scalar_slice_assign(self.0.as_mut_slice(), rhs.0.as_slice(), scalar);
-    }
 }
 
 impl<S, T> MultiMsgLwe<S>
@@ -133,56 +58,10 @@ where
     S: Data<Elem = T>,
     T: FheUint,
 {
-    /// Converts [`MultiMsgLwe<S, T>`] into bytes.
-    #[inline]
-    pub fn to_bytes(&self) -> Vec<u8> {
-        let data: &[u8] = bytemuck::cast_slice(self.0.as_slice());
-
-        data.to_vec()
-    }
-
-    /// Converts [`MultiMsgLwe<S, T>`] into bytes, stored in `data`.
-    #[inline]
-    pub fn write_bytes(&self, data: &mut [u8]) {
-        let src: &[u8] = bytemuck::cast_slice(self.0.as_slice());
-
-        assert_eq!(data.len(), src.len());
-
-        data.copy_from_slice(src);
-    }
-
     /// Returns references to `a` and `b` of this [`MultiMsgLwe<S, T>`].
     #[inline]
     pub fn a_b(&self, dimension: usize) -> (&[T], &[T]) {
         self.0.split_at(dimension)
-    }
-
-    /// Writes the component-wise modular sum `output = self + rhs`.
-    ///
-    /// All ciphertexts must have the same layout and length. Coefficients must
-    /// satisfy the input range required by `modulus`.
-    #[inline]
-    pub fn add_to<M, A, B>(&self, rhs: &MultiMsgLwe<A>, output: &mut MultiMsgLwe<B>, modulus: M)
-    where
-        M: Copy + ReduceAddSlice<T>,
-        A: Data<Elem = T>,
-        B: DataMut<Elem = T>,
-    {
-        modulus.reduce_add_slice_to(self.as_ref(), rhs.as_ref(), output.as_mut());
-    }
-
-    /// Writes the component-wise modular difference `output = self - rhs`.
-    ///
-    /// All ciphertexts must have the same layout and length. Coefficients must
-    /// satisfy the input range required by `modulus`.
-    #[inline]
-    pub fn sub_to<M, A, B>(&self, rhs: &MultiMsgLwe<A>, output: &mut MultiMsgLwe<B>, modulus: M)
-    where
-        M: Copy + ReduceSubSlice<T>,
-        A: Data<Elem = T>,
-        B: DataMut<Elem = T>,
-    {
-        modulus.reduce_sub_slice_to(self.as_ref(), rhs.as_ref(), output.as_mut());
     }
 }
 

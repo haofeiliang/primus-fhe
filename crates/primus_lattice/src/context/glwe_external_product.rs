@@ -30,6 +30,7 @@ impl<T: TorusFftValue> FourierGlweExternalProductContext<T> {
     /// Creates a new context with all buffers pre-allocated.
     ///
     /// The accumulator is sized for all mask polynomials and the body.
+    #[must_use]
     pub fn new(size: GadgetSize) -> Self {
         let glwe_size = size.glwe_size();
         let poly_length = glwe_size.poly_length();
@@ -133,6 +134,7 @@ impl<T: FheUint> NttGlweExternalProductContextRefMut<'_, T> {
 
 impl<T: FheUint> NttGlweExternalProductContext<T> {
     /// Creates a context with all buffers pre-allocated.
+    #[must_use]
     pub fn new(size: GadgetSize) -> Self {
         let glwe_size = size.glwe_size();
         let poly_length = glwe_size.poly_length();
