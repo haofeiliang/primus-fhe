@@ -1,12 +1,12 @@
 use primus_decompose::primitive::ApproxSignedBasis;
-use primus_fft::{FftEngine, FftTable, RustFftTable};
+use primus_fft::{FftEngine, FftTable, RustFftTable, TfheFftTable};
 use primus_lattice::{
     GadgetSize, GlweSize,
     context::{
         FourierGlweExternalProductContext, FourierNtruExternalProductContext,
         NttNtruExternalProductContext,
     },
-    ggsw::FourierGgswOwned,
+    ggsw::{FourierGgswOwned, Ggsw},
     glwe::Glwe,
     ngsw::{FourierNgswOwned, Ngsw},
     nlev::{FourierNlevOwned, Nlev},
@@ -16,24 +16,43 @@ use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntt::{NttTable, UintNttTable};
 use primus_poly::Polynomial;
 
-#[test]
-fn zero_fourier_ggsw_produces_zero() {
-    let fft = RustFftTable::new(4).unwrap();
+// A diagonal gadget for one is an identity external product. Applying a zero
+// gadget afterwards must clear both a nonzero output and the reused accumulator.
+fn fourier_ggsw_workspace_reuse<Table: FftTable>() {
+    let fft = Table::new(4).unwrap();
     let mut engine = FftEngine::new(&fft);
-    let dimension = 1;
-    let component_count = dimension + 1;
-    let basis = ApproxSignedBasis::<u32>::new(None, 4, Some(3));
-    let level = basis.decompose_length();
-    let input = Glwe::new(vec![1u32; component_count * fft.poly_length()]);
-    let key =
-        FourierGgswOwned::zero(component_count * level * component_count * fft.fourier_length());
-    let mut output = Glwe::new(vec![u32::MAX; component_count * fft.poly_length()]);
+    let components = 3;
+    let n = fft.poly_length();
+    let basis = ApproxSignedBasis::<u32>::new(None, 8, None);
+    let levels = basis.decompose_length();
+    let mut gadget = Ggsw::new(vec![0u32; components * levels * components * n]);
+    for row in 0..components {
+        for (level, scalar) in basis.scalar_iter().enumerate() {
+            gadget.as_mut()[((row * levels + level) * components + row) * n] = scalar;
+        }
+    }
+    let mut key = FourierGgswOwned::zero(components * levels * components * fft.fourier_length());
+    gadget.write_fourier_form(&mut key, &mut engine);
+    let values: Vec<u32> = (0..components * n)
+        .map(|i| (i as u32).wrapping_mul(0x9e37_79b9))
+        .collect();
+    let input = Glwe::new(values.clone());
+    let mut output = Glwe::new(vec![u32::MAX; values.len()]);
     let mut context = FourierGlweExternalProductContext::new(GadgetSize::new(
-        GlweSize::new(dimension, fft.poly_length()),
-        basis.decompose_length(),
+        GlweSize::new(components - 1, n),
+        levels,
     ));
     key.external_product_to(&input, &mut output, &basis, &mut engine, &mut context);
-    assert!(output.as_ref().iter().all(|x| *x == 0));
+    assert_eq!(output.as_ref(), values);
+    key.set_zero();
+    key.external_product_to(&input, &mut output, &basis, &mut engine, &mut context);
+    assert!(output.as_ref().iter().all(|&x| x == 0));
+}
+
+#[test]
+fn fourier_ggsw_products_overwrite_dirty_output_and_workspace() {
+    fourier_ggsw_workspace_reuse::<RustFftTable>();
+    fourier_ggsw_workspace_reuse::<TfheFftTable>();
 }
 
 #[test]

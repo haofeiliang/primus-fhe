@@ -5,6 +5,8 @@ use primus_lattice::{
     ggsw::{CrtGgsw, DcrtGgsw},
     glev::{CrtGlev, DcrtGlev},
     glwe::{CrtGlwe, DcrtGlwe},
+    rgsw::{CrtRgsw, DcrtRgsw},
+    rlev::{CrtRlev, DcrtRlev},
     rlwe::{CrtRlwe, DcrtRlwe},
 };
 use primus_modulus::BarrettModulus;
@@ -14,11 +16,6 @@ fn rns_arithmetic_preserves_component_and_modulus_order() {
     const N: usize = 2;
     let qs = [17u32, 97];
     let moduli = qs.map(BarrettModulus::new);
-    let scalars = primus_rns::Residues([3, 5]);
-    let factors = primus_rns::ResidueFactors([
-        ShoupFactor::new(scalars.as_ref()[0], qs[0]),
-        ShoupFactor::new(scalars.as_ref()[1], qs[1]),
-    ]);
     let rns_poly_len = N * qs.len();
 
     macro_rules! check {
@@ -33,13 +30,13 @@ fn rns_arithmetic_preserves_component_and_modulus_order() {
             let rhs: Vec<u32> = (0..len)
                 .map(|i| (i as u32 + 2) % qs[i / N % qs.len()])
                 .collect();
-            let expected = |op: fn(u32, u32, u32, u32) -> u32| -> Vec<u32> {
+            let expected = |op: fn(u32, u32, u32) -> u32| -> Vec<u32> {
                 lhs.iter()
                     .zip(&rhs)
                     .enumerate()
                     .map(|(i, (&a, &b))| {
                         let limb = i / N % qs.len();
-                        op(a, b, qs[limb], scalars.as_ref()[limb])
+                        op(a, b, qs[limb])
                     })
                     .collect()
             };
@@ -48,28 +45,17 @@ fn rns_arithmetic_preserves_component_and_modulus_order() {
             let mut storage = vec![11; len];
             let mut output = $cipher::new(storage.as_mut_slice());
             input.add_to(&rhs, &mut output, N, rns_poly_len, &moduli);
-            assert_eq!(output.as_ref(), expected(|a, b, q, _| (a + b) % q));
+            assert_eq!(output.as_ref(), expected(|a, b, q| (a + b) % q));
             output.sub_assign(&rhs, N, rns_poly_len, &moduli);
             assert_eq!(output.as_ref(), lhs);
             input.sub_to(&rhs, &mut output, N, rns_poly_len, &moduli);
-            assert_eq!(output.as_ref(), expected(|a, b, q, _| (a + q - b) % q));
+            assert_eq!(output.as_ref(), expected(|a, b, q| (a + q - b) % q));
             output.add_assign(&rhs, N, rns_poly_len, &moduli);
             assert_eq!(output.as_ref(), lhs);
             input.neg_to(&mut output, N, rns_poly_len, &moduli);
-            assert_eq!(output.as_ref(), expected(|a, _, q, _| (q - a) % q));
+            assert_eq!(output.as_ref(), expected(|a, _, q| (q - a) % q));
             output.neg_assign(N, rns_poly_len, &moduli);
             assert_eq!(output.as_ref(), lhs);
-            let product = expected(|a, _, q, s| (a * s) % q);
-            input.mul_scalar_to(&scalars, &mut output, N, rns_poly_len, &moduli);
-            assert_eq!(output.as_ref(), product);
-            output.as_mut().copy_from_slice(&lhs);
-            output.mul_scalar_assign(&scalars, N, rns_poly_len, &moduli);
-            assert_eq!(output.as_ref(), product);
-            input.mul_factor_to(&factors, &mut output, N, rns_poly_len, &qs);
-            assert_eq!(output.as_ref(), product);
-            output.as_mut().copy_from_slice(&lhs);
-            output.mul_factor_assign(&factors, N, rns_poly_len, &qs);
-            assert_eq!(output.as_ref(), product);
         }};
     }
     check!(CrtGlwe, 3);
@@ -81,4 +67,82 @@ fn rns_arithmetic_preserves_component_and_modulus_order() {
     check!(DcrtGlev, 2 * 3);
     check!(CrtGgsw, 3 * 2 * 3);
     check!(DcrtGgsw, 3 * 2 * 3);
+}
+
+#[test]
+fn rns_scalar_and_factor_products_preserve_accumulators_and_modulus_order() {
+    use primus_rns::{ResidueFactors, Residues};
+    const N: usize = 32;
+    let qs = [17u32, 97];
+    let moduli = qs.map(BarrettModulus::new);
+    let rns_poly_len = N * qs.len();
+    macro_rules! check {
+        ($cipher:ident, $components:expr) => {{
+            let len = rns_poly_len * $components;
+            let values: Vec<u32> = (0..len).map(|i| i as u32 * 31 % qs[i / N % 2]).collect();
+            let acc: Vec<u32> = (0..len)
+                .map(|i| (i as u32 * 7 + 11) % qs[i / N % 2])
+                .collect();
+            let input = $cipher::new(values.as_slice());
+            let mut storage = vec![11; len];
+            let mut output = $cipher::new(storage.as_mut_slice());
+            for scalars in [[0, 0], [3, 5], [16, 96]] {
+                let factors = ResidueFactors([
+                    ShoupFactor::new(scalars[0], qs[0]),
+                    ShoupFactor::new(scalars[1], qs[1]),
+                ]);
+                let scalar = Residues(scalars);
+                let product: Vec<_> = values
+                    .iter()
+                    .enumerate()
+                    .map(|(i, x)| x * scalars[i / N % 2] % qs[i / N % 2])
+                    .collect();
+                let sum: Vec<_> = acc
+                    .iter()
+                    .zip(&product)
+                    .enumerate()
+                    .map(|(i, (a, p))| (a + p) % qs[i / N % 2])
+                    .collect();
+                let difference: Vec<_> = acc
+                    .iter()
+                    .zip(&product)
+                    .enumerate()
+                    .map(|(i, (a, p))| (a + qs[i / N % 2] - p) % qs[i / N % 2])
+                    .collect();
+                output.as_mut().fill(11);
+                input.mul_factor_to(&factors, &mut output, N, rns_poly_len, &qs);
+                assert_eq!(output.as_ref(), product);
+                output.as_mut().copy_from_slice(&values);
+                output.mul_factor_assign(&factors, N, rns_poly_len, &qs);
+                assert_eq!(output.as_ref(), product);
+                output.as_mut().fill(11);
+                input.mul_scalar_to(&scalar, &mut output, N, rns_poly_len, &moduli);
+                assert_eq!(output.as_ref(), product);
+                output.as_mut().copy_from_slice(&values);
+                output.mul_scalar_assign(&scalar, N, rns_poly_len, &moduli);
+                assert_eq!(output.as_ref(), product);
+                output.as_mut().copy_from_slice(&acc);
+                output.add_mul_scalar_assign(&input, &scalar, N, rns_poly_len, &moduli);
+                assert_eq!(output.as_ref(), sum);
+                output.as_mut().copy_from_slice(&acc);
+                output.add_mul_factor_assign(&input, &factors, N, rns_poly_len, &qs);
+                assert_eq!(output.as_ref(), sum);
+                output.as_mut().copy_from_slice(&acc);
+                output.sub_mul_factor_assign(&input, &factors, N, rns_poly_len, &qs);
+                assert_eq!(output.as_ref(), difference);
+            }
+        }};
+    }
+    check!(CrtGlwe, 3);
+    check!(DcrtGlwe, 3);
+    check!(CrtRlwe, 2);
+    check!(DcrtRlwe, 2);
+    check!(CrtGlev, 2 * 3);
+    check!(DcrtGlev, 2 * 3);
+    check!(CrtGgsw, 3 * 2 * 3);
+    check!(DcrtGgsw, 3 * 2 * 3);
+    check!(CrtRlev, 2 * 2);
+    check!(DcrtRlev, 2 * 2);
+    check!(CrtRgsw, 2 * 2 * 2);
+    check!(DcrtRgsw, 2 * 2 * 2);
 }
