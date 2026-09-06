@@ -23,4 +23,7 @@ pub use fourier::{FourierGgsw, FourierGgswIter, FourierGgswIterMut, FourierGgswO
 ///
 /// Matrix of [`TorusGlev`](crate::glev::TorusGlev) ciphertexts, one per row
 /// (i.e. one per GLWE mask component plus one for the body).
+///
+/// This alias does not enforce the native modulus or perform encoding;
+/// callers must use native-torus arithmetic and the underlying type's layout.
 pub type TorusGgsw<S> = Ggsw<S>;

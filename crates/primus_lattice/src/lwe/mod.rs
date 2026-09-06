@@ -8,4 +8,7 @@ pub use single_message::Lwe;
 /// TFHE torus LWE ciphertext (coefficient domain).
 ///
 /// Layout: `[a_1, ..., a_k, b]` — `k` mask elements + 1 body element.
+///
+/// This alias does not enforce the native modulus or perform encoding;
+/// callers must use native-torus arithmetic and the underlying type's layout.
 pub type TorusLwe<S> = Lwe<S>;

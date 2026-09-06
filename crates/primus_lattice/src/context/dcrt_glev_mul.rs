@@ -6,6 +6,8 @@ use crate::RnsGadgetSize;
 
 /// Reusable workspace for DCRT GLev decomposition and recomposition.
 ///
+/// # Correctness
+///
 /// Each operation initializes the buffers it uses; no reset is needed between
 /// calls. A context may be reused with another parameter set when all required
 /// workspace lengths match, as checked by [`Self::is_compatible`]. The context
@@ -103,7 +105,9 @@ impl<T: FheUint> DcrtGlevMulContext<T> {
         }
     }
 
-    /// Returns a mutable reference to the compose buffer.
+    /// Borrows the temporary recomposition buffer (one element per RNS modulus).
+    ///
+    /// Its previous contents need not be preserved; recomposition initializes it.
     pub fn compose_buffer_mut(&mut self) -> &mut [T] {
         &mut self.compose_buffer
     }

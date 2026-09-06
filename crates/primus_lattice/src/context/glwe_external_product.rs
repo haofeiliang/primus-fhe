@@ -9,6 +9,8 @@ use crate::{
 
 /// Pre-allocated scratch buffers for a native-torus Fourier external product.
 ///
+/// # Correctness
+///
 /// Construction and resizing maintain scratch lengths for the bound GLWE size.
 /// The bound [`GadgetSize`] also records the decomposition length. This context
 /// does not bind a basis or FFT table: callers must provide a native-torus basis
@@ -96,6 +98,8 @@ impl<T: TorusFftValue> FourierGlweExternalProductContext<T> {
 }
 
 /// Pre-allocated scratch buffers for an NTT external product.
+///
+/// # Correctness
 ///
 /// Construction and resizing maintain scratch lengths for the bound GLWE size.
 /// The bound [`GadgetSize`] also records the decomposition length. This context

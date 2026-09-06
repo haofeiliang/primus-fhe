@@ -12,6 +12,14 @@ use super::Glwe;
 /// |--a1--|....|--ak--|--b--|
 ///
 /// where `a1`...`ak` and `b` are [`NttPolynomial`] with same poly length, `k` is the dimension.
+///
+/// # Correctness
+///
+/// The layout above is a caller-maintained contract. Raw construction and
+/// mutable storage access do not validate it; parameter and key metadata
+/// are not stored in this wrapper. See the [crate contracts](crate#correctness).
+/// Stored values must use the matching NTT table, modulus, and evaluation
+/// order; a representation wrapper alone does not perform a transform.
 #[derive(Clone)]
 pub struct NttGlwe<S>(pub S)
 where
@@ -39,12 +47,18 @@ where
 {
     /// Splits this GLWE into its mutable mask and body slices.
     ///
+    /// # Correctness
+    ///
     /// Storage must contain at least one mask polynomial and one body polynomial,
     /// each with `poly_length` elements. The caller must maintain this layout
     /// and provide a nonzero polynomial length.
     ///
     /// The body is the final NTT polynomial and therefore has exactly
-    /// `poly_length` coefficients.
+    /// `poly_length` evaluations.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the supplied polynomial storage length exceeds the ciphertext length.
     #[inline]
     pub fn a_b_mut_slices(&mut self, poly_length: usize) -> (&mut [T], &mut [T]) {
         let glwe_len = self.as_ref().len();
@@ -52,7 +66,14 @@ where
     }
 
     /// Splits this GLWE into its mutable mask polynomials and body polynomial.
-    /// Storage and polynomial length must satisfy the layout required by `a_b_slices`.
+    ///
+    /// # Correctness
+    ///
+    /// Storage and polynomial length must satisfy the layout required by [`Self::a_b_slices`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if the supplied polynomial storage length exceeds the ciphertext length. Also panics if it is zero.
     #[inline]
     pub fn a_b_mut(
         &mut self,
@@ -73,12 +94,18 @@ where
 {
     /// Splits this GLWE into its mask and body slices.
     ///
+    /// # Correctness
+    ///
     /// Storage must contain at least one mask polynomial and one body polynomial,
     /// each with `poly_length` elements. The caller must maintain this layout
     /// and provide a nonzero polynomial length.
     ///
     /// The body is the final NTT polynomial and therefore has exactly
-    /// `poly_length` coefficients.
+    /// `poly_length` evaluations.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the supplied polynomial storage length exceeds the ciphertext length.
     #[inline]
     pub fn a_b_slices(&self, poly_length: usize) -> (&[T], &[T]) {
         let glwe_len = self.as_ref().len();
@@ -86,7 +113,14 @@ where
     }
 
     /// Splits this GLWE into its mask polynomials and body polynomial.
-    /// Storage and polynomial length must satisfy the layout required by `a_b_slices`.
+    ///
+    /// # Correctness
+    ///
+    /// Storage and polynomial length must satisfy the layout required by [`Self::a_b_slices`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if the supplied polynomial storage length exceeds the ciphertext length. Also panics if it is zero.
     #[inline]
     pub fn a_b(&self, poly_length: usize) -> (NttPolynomialIter<'_, T>, NttPolynomial<&[T]>) {
         let (mask, body) = self.a_b_slices(poly_length);

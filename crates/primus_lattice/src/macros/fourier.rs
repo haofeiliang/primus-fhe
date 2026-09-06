@@ -24,9 +24,15 @@ macro_rules! impl_fourier_iters {
                     "Creates an iterator yielding [`",
                     stringify!($cipher),
                     "`] views containing `", stringify!([<$cipher:snake _len>]), "` complex values each.",
-                    "\n\nAny incomplete trailing chunk is omitted. The caller must provide a complete ciphertext layout.",
+                    "\n\n# Correctness\n\nAny incomplete trailing chunk is omitted. The caller must provide a complete ciphertext layout.",
                     "\n\n# Panics\n\nPanics if `", stringify!([<$cipher:snake _len>]), "` is zero."
                 )]
+                ///
+                /// # Correctness
+                ///
+                /// This only wraps storage. The caller must supply the complete layout and
+                /// representation documented for this ciphertext; no cryptographic metadata
+                /// is inferred or validated.
                 #[must_use]
                 #[inline]
                 pub fn new(data: &'a [num_complex::Complex64], [<$cipher:snake _len>]: usize) -> Self {
@@ -76,9 +82,15 @@ macro_rules! impl_fourier_iters {
                     "Creates a mutable iterator yielding [`",
                     stringify!($cipher),
                     "`] views containing `", stringify!([<$cipher:snake _len>]), "` complex values each.",
-                    "\n\nAny incomplete trailing chunk is omitted. The caller must provide a complete ciphertext layout.",
+                    "\n\n# Correctness\n\nAny incomplete trailing chunk is omitted. The caller must provide a complete ciphertext layout.",
                     "\n\n# Panics\n\nPanics if `", stringify!([<$cipher:snake _len>]), "` is zero."
                 )]
+                ///
+                /// # Correctness
+                ///
+                /// This only wraps storage. The caller must supply the complete layout and
+                /// representation documented for this ciphertext; no cryptographic metadata
+                /// is inferred or validated.
                 #[must_use]
                 #[inline]
                 pub fn new(data: &'a mut [num_complex::Complex64], [<$cipher:snake _len>]: usize) -> Self {
@@ -128,6 +140,12 @@ macro_rules! impl_fourier_core {
             S: primus_data::RawData<Elem = num_complex::Complex64>,
         {
             #[doc = concat!("Creates a new [`", stringify!($cipher), "`].")]
+            ///
+            /// # Correctness
+            ///
+            /// This only wraps storage. The caller must supply the complete layout and
+            /// representation documented for this ciphertext; no cryptographic metadata
+            /// is inferred or validated.
             #[must_use]
             #[inline]
             pub fn new(data: S) -> Self {
@@ -212,7 +230,8 @@ macro_rules! impl_fourier_iter_sub {
             {
                 #[doc = concat!(
                     "Returns an iterator over the [`", stringify!($sub), "`] sub-components, each containing `", stringify!([<$method _len>]), "` complex values.",
-                    "\n\n# Panics\n\nPanics if `", stringify!([<$method _len>]), "` is zero or does not divide the ciphertext length."
+                    "\n\n# Correctness\n\nThe chunk length must describe one complete sub-component. Incomplete trailing chunks are omitted.",
+                    "\n\n# Panics\n\nPanics if `", stringify!([<$method _len>]), "` is zero."
                 )]
                 #[inline]
                 pub fn [<iter_ $method>](
@@ -231,7 +250,8 @@ macro_rules! impl_fourier_iter_sub {
                     "Returns a mutable iterator over the [`",
                     stringify!($sub),
                     "`] sub-components, each containing `", stringify!([<$method _len>]), "` complex values.",
-                    "\n\n# Panics\n\nPanics if `", stringify!([<$method _len>]), "` is zero or does not divide the ciphertext length."
+                    "\n\n# Correctness\n\nThe chunk length must describe one complete sub-component. Incomplete trailing chunks are omitted.",
+                    "\n\n# Panics\n\nPanics if `", stringify!([<$method _len>]), "` is zero."
                 )]
                 #[inline]
                 pub fn [<iter_ $method _mut>](
@@ -254,6 +274,16 @@ macro_rules! impl_fourier_conversion {
             T: primus_fft::TorusFftValue,
         {
             /// Writes this ciphertext in normalized torus Fourier form.
+            ///
+            /// # Correctness
+            ///
+            /// Coefficient storage must consist of complete `fft.poly_length()` blocks;
+            /// Fourier storage must consist of complete `fft.fourier_length()` blocks,
+            /// with the same number and order of polynomials on both sides. The table,
+            /// packing, and normalized torus scale must agree. Conversion can incur
+            /// floating-point rounding error. Output is overwritten for each paired
+            /// polynomial; mismatched counts or incomplete blocks are not validated
+            /// and can leave part of the input or output unprocessed.
             pub fn write_fourier_form<Table, A>(
                 &self,
                 output: &mut $fourier<A>,
@@ -276,6 +306,16 @@ macro_rules! impl_fourier_conversion {
             S: primus_data::RawData<Elem = num_complex::Complex64> + primus_data::Data,
         {
             /// Writes this Fourier ciphertext back to torus coefficient form.
+            ///
+            /// # Correctness
+            ///
+            /// Coefficient storage must consist of complete `fft.poly_length()` blocks;
+            /// Fourier storage must consist of complete `fft.fourier_length()` blocks,
+            /// with the same number and order of polynomials on both sides. The table,
+            /// packing, and normalized torus scale must agree. Conversion can incur
+            /// floating-point rounding error. Output is overwritten for each paired
+            /// polynomial; mismatched counts or incomplete blocks are not validated
+            /// and can leave part of the input or output unprocessed.
             pub fn write_torus_form<Table, A, T>(
                 &self,
                 output: &mut $coeff<A>,

@@ -12,6 +12,16 @@ use super::Nlev;
 /// Each gadget level contains one independent Fourier representation of an
 /// NTRU polynomial. A coefficient polynomial of length `N` occupies `N / 2`
 /// complex values.
+///
+/// # Correctness
+///
+/// The layout above is a caller-maintained contract. Raw construction and
+/// mutable storage access do not validate it; parameter and key metadata
+/// are not stored in this wrapper. See the [crate contracts](crate#correctness).
+/// Each polynomial occupies `N / 2` complex values in the FFT table's
+/// packing order. Ciphertext values use the normalized native-torus scale.
+/// Levels must follow the decomposition basis's iterator order; every level
+/// uses the same key, polynomial size, modulus, and representation.
 #[derive(Clone)]
 pub struct FourierNlev<S>(pub S)
 where

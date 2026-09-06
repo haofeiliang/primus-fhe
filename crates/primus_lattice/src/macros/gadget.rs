@@ -15,6 +15,8 @@ macro_rules! impl_gadget_diagonal_single_modulus {
             /// Every diagonal polynomial at this level receives `plaintext`, while
             /// other levels and off-diagonal components remain unchanged.
             ///
+            /// # Correctness
+            ///
             /// `plaintext` must be one complete nonempty polynomial already multiplied
             /// by the selected gadget weight and encoded in this ciphertext's domain
             /// and scale. This performs neither encoding nor encryption, and allocates
@@ -75,6 +77,8 @@ macro_rules! impl_gadget_diagonal_multiple_modulus {
             /// a zero-based storage index; the caller maps it to its gadget weight.
             /// Every diagonal polynomial at this level receives `plaintext`, while
             /// other levels and off-diagonal components remain unchanged.
+            ///
+            /// # Correctness
             ///
             /// `plaintext` must be one complete nonempty polynomial already multiplied
             /// by the selected gadget weight and encoded in this ciphertext's domain

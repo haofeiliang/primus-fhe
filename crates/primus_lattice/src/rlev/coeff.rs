@@ -7,7 +7,7 @@ use crate::rlwe::{Rlwe, RlweIter, RlweIterMut};
 
 use super::NttRlev;
 
-/// A representation of Ring Learning with Errors (RLWE) ciphertexts with respect to different base,
+/// A representation of Ring Learning with Errors (RLWE) ciphertexts at different levels of one gadget basis,
 /// used to control noise growth in polynomial multiplications.
 ///
 /// ## Structure of the `data`
@@ -15,6 +15,14 @@ use super::NttRlev;
 /// |--c1--|....|--cd--|
 ///
 /// where `c1` to `cd` are [`crate::rlwe::Rlwe`] with same parameter, `d` is the decompose length.
+///
+/// # Correctness
+///
+/// The layout above is a caller-maintained contract. Raw construction and
+/// mutable storage access do not validate it; parameter and key metadata
+/// are not stored in this wrapper. See the [crate contracts](crate#correctness).
+/// Levels must follow the decomposition basis's iterator order; every level
+/// uses the same key, polynomial size, modulus, and representation.
 #[derive(Clone)]
 pub struct Rlev<S>(pub S)
 where

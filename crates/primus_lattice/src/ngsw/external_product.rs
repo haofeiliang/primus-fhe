@@ -28,6 +28,21 @@ where
     /// `input` and `output` are coefficient-domain scalar NTRU ciphertexts.
     /// `basis` must be the decomposition basis used to construct this NGSW
     /// ciphertext.
+    ///
+    /// # Correctness
+    ///
+    /// Let `N = context.poly_length()` and `L = basis.decompose_length()`.
+    /// The input and output each contain exactly `N` coefficients.
+    /// `self` contains exactly `L * N / 2` complex values, grouped
+    /// by level in `basis.decomposer_iter()` order. The basis must be the
+    /// one used to construct the gadget ciphertext. The input and NGSW
+    /// control must use compatible NTRU keys.
+    /// `basis` must use the implicit native modulus (`basis.modulus() == None`).
+    /// The FFT engine must have polynomial length `N` and Fourier length
+    /// `N / 2`; gadget values must use its packing and normalized torus scale.
+    /// Output is overwritten and context scratch is initialized as needed;
+    /// no manual reset is required. Context dimensions do not validate the
+    /// basis, key, table, or actual ciphertext buffers.
     pub fn external_product_to<T, Table, A, C>(
         &self,
         input: &Ntru<A>,
@@ -49,6 +64,12 @@ where
 
     /// Clears the Fourier accumulator, then stores `self external_product input` in it.
     /// The output remains in Fourier form for the caller to combine or transform back.
+    ///
+    /// # Correctness
+    ///
+    /// The input, gadget, basis, table, and context must satisfy
+    /// [`Self::external_product_to`]. The context accumulator takes the role
+    /// of output and must have the corresponding transform-domain layout.
     pub(super) fn external_product_to_accumulator<T, Table, A>(
         &self,
         input: &Ntru<A>,
@@ -66,6 +87,12 @@ where
 
     /// Adds `self external_product input` to the existing Fourier accumulator.
     /// This does not clear the accumulator; the caller must initialize it first.
+    ///
+    /// # Correctness
+    ///
+    /// The input, gadget, basis, table, and context must satisfy
+    /// [`Self::external_product_to`]. The context accumulator takes the role
+    /// of output and must have the corresponding transform-domain layout.
     pub(super) fn external_product_add_assign<T, Table, A>(
         &self,
         input: &Ntru<A>,
@@ -85,6 +112,15 @@ where
     ///
     /// If `input` encrypts `alpha` as NLev and `self` encrypts `beta` as
     /// NGSW, `output` encrypts `alpha * beta` as NLev.
+    ///
+    /// # Correctness
+    ///
+    /// The gadget, basis, table, and context must satisfy
+    /// [`Self::external_product_to`]. Input and output each have exactly
+    /// `basis.decompose_length() * context.poly_length()` coefficient values,
+    /// in matching NLev level order under compatible keys. This implementation
+    /// requires the NLev and NGSW decomposition lengths to agree. Each output
+    /// level is overwritten; context scratch needs no manual reset.
     pub fn external_product_nlev_to<T, Table, A, C>(
         &self,
         input: &Nlev<A>,
@@ -126,6 +162,21 @@ where
     /// `input` and `output` are coefficient-domain scalar NTRU ciphertexts.
     /// `basis` must be the decomposition basis used to construct this NGSW
     /// ciphertext.
+    ///
+    /// # Correctness
+    ///
+    /// Let `N = context.poly_length()` and `L = basis.decompose_length()`.
+    /// The input and output each contain exactly `N` coefficients.
+    /// `self` contains exactly `L * N` evaluations, grouped
+    /// by level in `basis.decomposer_iter()` order. The basis must be the
+    /// one used to construct the gadget ciphertext. The input and NGSW
+    /// control must use compatible NTRU keys.
+    /// `basis`, `modulus`, and the NTT table must use the same modulus.
+    /// The NTT polynomial length must be `N`, and gadget evaluations must
+    /// use that table's order. Input and gadget values must be canonical residues.
+    /// Output is overwritten and context scratch is initialized as needed;
+    /// no manual reset is required. Context dimensions do not validate the
+    /// basis, key, table, or actual ciphertext buffers.
     pub fn external_product_to<T, M, Table, A, C>(
         &self,
         input: &Ntru<A>,
@@ -149,6 +200,12 @@ where
 
     /// Clears the NTT accumulator, then stores `self external_product input` in it.
     /// The output remains in NTT form for the caller to combine or transform back.
+    ///
+    /// # Correctness
+    ///
+    /// The input, gadget, basis, table, and context must satisfy
+    /// [`Self::external_product_to`]. The context accumulator takes the role
+    /// of output and must have the corresponding transform-domain layout.
     pub(super) fn external_product_to_accumulator<T, M, Table, A>(
         &self,
         input: &Ntru<A>,
@@ -175,6 +232,12 @@ where
 
     /// Adds `self external_product input` to the existing NTT accumulator.
     /// This does not clear the accumulator; the caller must initialize it first.
+    ///
+    /// # Correctness
+    ///
+    /// The input, gadget, basis, table, and context must satisfy
+    /// [`Self::external_product_to`]. The context accumulator takes the role
+    /// of output and must have the corresponding transform-domain layout.
     pub(super) fn external_product_add_assign<T, M, Table, A>(
         &self,
         input: &Ntru<A>,
@@ -196,6 +259,15 @@ where
     ///
     /// If `input` encrypts `alpha` as NLev and `self` encrypts `beta` as
     /// NGSW, `output` encrypts `alpha * beta` as NLev.
+    ///
+    /// # Correctness
+    ///
+    /// The gadget, basis, table, and context must satisfy
+    /// [`Self::external_product_to`]. Input and output each have exactly
+    /// `basis.decompose_length() * context.poly_length()` coefficient values,
+    /// in matching NLev level order under compatible keys. This implementation
+    /// requires the NLev and NGSW decomposition lengths to agree. Each output
+    /// level is overwritten; context scratch needs no manual reset.
     pub fn external_product_nlev_to<T, M, Table, A, C>(
         &self,
         input: &Nlev<A>,

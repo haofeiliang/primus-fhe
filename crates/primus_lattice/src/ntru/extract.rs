@@ -19,7 +19,17 @@ where
     /// LWE phase `b - <a, f>` equals the constant coefficient of `f * c` in
     /// `Z_q[X] / (X^N + 1)`.
     ///
+    /// # Correctness
+    ///
     /// `output` must have LWE dimension `N`.
+    ///
+    /// Input is one nonempty coefficient polynomial of length `N`, with
+    /// canonical values under `modulus`. Extraction uses the coefficient
+    /// vector of the NTRU secret `f` as the LWE key; output is overwritten.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the NTRU polynomial is empty.
     #[inline]
     pub fn extract_lwe_to<M, A>(&self, output: &mut Lwe<A>, modulus: M)
     where
@@ -37,6 +47,12 @@ where
     /// `b - <a, f>` equals coefficient `index` of `f*c` modulo `X^N + 1`.
     /// Canonical input residues produce canonical output without allocation.
     /// `output` must have LWE dimension `N`.
+    ///
+    /// # Correctness
+    ///
+    /// Input is one nonempty coefficient polynomial of length `N`, with
+    /// canonical values under `modulus`. Extraction uses the coefficient
+    /// vector of the NTRU secret `f` as the LWE key; output is overwritten.
     ///
     /// # Panics
     ///
@@ -61,8 +77,18 @@ where
     /// `s_lwe.len()` has the same phase as full extraction without allocating
     /// or processing the omitted mask coefficients.
     ///
+    /// # Correctness
+    ///
     /// The output dimension must be in `1..=N`, where `N` is the NTRU
     /// polynomial length.
+    ///
+    /// Input is one nonempty coefficient polynomial of length `N`, with
+    /// canonical values under `modulus`. Extraction uses the coefficient
+    /// vector of the NTRU secret `f` as the LWE key; output is overwritten.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the NTRU polynomial is empty.
     #[inline]
     pub fn extract_compact_lwe_to<M, A>(&self, output: &mut Lwe<A>, modulus: M)
     where
@@ -74,10 +100,16 @@ where
 
     /// Extracts coefficient `index`, omitting a zero suffix of the NTRU secret.
     ///
+    /// # Correctness
+    ///
     /// The secret must be `[s_lwe..., 0...]`, where `s_lwe.len()` equals the
     /// output dimension. The LWE phase equals coefficient `index` of `f*c`.
     /// Canonical input residues produce canonical output without allocation.
     /// The output dimension must belong to `1..=N`.
+    ///
+    /// Input is one nonempty coefficient polynomial of length `N`, with
+    /// canonical values under `modulus`. Extraction uses the coefficient
+    /// vector of the NTRU secret `f` as the LWE key; output is overwritten.
     ///
     /// # Panics
     ///

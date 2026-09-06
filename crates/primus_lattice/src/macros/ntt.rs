@@ -12,6 +12,15 @@ macro_rules! impl_ntt {
             T: FheUint,
         {
             /// Transforms `self` to ntt form.
+            ///
+            /// # Correctness
+            ///
+            /// Storage must contain complete polynomials of `ntt_table.poly_length()`
+            /// elements. The NTT table must match the
+            /// ciphertext modulus and transform convention, and values must satisfy
+            /// the corresponding transform's input range. Inverse transforms require
+            /// the same evaluation order as the forward transform. Incomplete trailing
+            /// polynomials are not transformed.
             #[inline]
             pub fn into_ntt_form<Table>(mut self, ntt_table: &Table) -> $ntt_cipher<S>
             where
@@ -31,6 +40,20 @@ macro_rules! impl_ntt {
             T: FheUint,
         {
             /// Transforms `self` to ntt form and stores in `output`.
+            ///
+            /// # Correctness
+            ///
+            /// Storage must contain complete polynomials of `ntt_table.poly_length()`
+            /// elements. The NTT table must match the
+            /// ciphertext modulus and transform convention, and values must satisfy
+            /// the corresponding transform's input range. Inverse transforms require
+            /// the same evaluation order as the forward transform. Incomplete trailing
+            /// polynomials are not transformed. Output must have the same layout
+            /// and element count as the input; it is overwritten.
+            ///
+            /// # Panics
+            ///
+            /// Panics if input and output storage lengths differ.
             #[inline]
             pub fn write_ntt_form<Table, A>(&self, output: &mut $ntt_cipher<A>, ntt_table: &Table)
             where
@@ -55,6 +78,15 @@ macro_rules! impl_intt {
             T: FheUint,
         {
             /// Transforms `self` to coefficient form.
+            ///
+            /// # Correctness
+            ///
+            /// Storage must contain complete polynomials of `ntt_table.poly_length()`
+            /// elements. The NTT table must match the
+            /// ciphertext modulus and transform convention, and values must satisfy
+            /// the corresponding transform's input range. Inverse transforms require
+            /// the same evaluation order as the forward transform. Incomplete trailing
+            /// polynomials are not transformed.
             #[inline]
             pub fn into_coeff_form<Table>(mut self, ntt_table: &Table) -> $cipher<S>
             where
@@ -74,6 +106,20 @@ macro_rules! impl_intt {
             T: FheUint,
         {
             /// Transforms `self` to coefficient form and stores in `output`.
+            ///
+            /// # Correctness
+            ///
+            /// Storage must contain complete polynomials of `ntt_table.poly_length()`
+            /// elements. The NTT table must match the
+            /// ciphertext modulus and transform convention, and values must satisfy
+            /// the corresponding transform's input range. Inverse transforms require
+            /// the same evaluation order as the forward transform. Incomplete trailing
+            /// polynomials are not transformed. Output must have the same layout
+            /// and element count as the input; it is overwritten.
+            ///
+            /// # Panics
+            ///
+            /// Panics if input and output storage lengths differ.
             #[inline]
             pub fn write_coeff_form<Table, A>(&self, output: &mut $cipher<A>, ntt_table: &Table)
             where
@@ -99,6 +145,16 @@ macro_rules! impl_crt_ntt {
             T: FheUint,
         {
             /// Transforms `self` to ntt form.
+            ///
+            /// # Correctness
+            ///
+            /// Storage must contain complete RNS polynomials of `table.crt_poly_length()`
+            /// elements. Each consists of one coefficient/evaluation block per
+            /// modulus in the table's modulus order. The table must match the
+            /// ciphertext modulus and transform convention, and values must satisfy
+            /// the corresponding transform's input range. Inverse transforms require
+            /// the same evaluation order as the forward transform. Incomplete trailing
+            /// polynomials are not transformed.
             #[inline]
             pub fn into_ntt_form<Table>(
                 self,
@@ -122,6 +178,21 @@ macro_rules! impl_crt_ntt {
             T: FheUint,
         {
             /// Transforms `self` to ntt form and stores in `output`.
+            ///
+            /// # Correctness
+            ///
+            /// Storage must contain complete RNS polynomials of `table.crt_poly_length()`
+            /// elements. Each consists of one coefficient/evaluation block per
+            /// modulus in the table's modulus order. The table must match the
+            /// ciphertext modulus and transform convention, and values must satisfy
+            /// the corresponding transform's input range. Inverse transforms require
+            /// the same evaluation order as the forward transform. Incomplete trailing
+            /// polynomials are not transformed. Output must have the same layout
+            /// and element count as the input; it is overwritten.
+            ///
+            /// # Panics
+            ///
+            /// Panics if input and output storage lengths differ.
             #[inline]
             pub fn write_ntt_form<Table, A>(
                 &self,
@@ -153,6 +224,16 @@ macro_rules! impl_crt_intt {
             T: FheUint,
         {
             /// Transforms `self` to coefficient form.
+            ///
+            /// # Correctness
+            ///
+            /// Storage must contain complete RNS polynomials of `table.crt_poly_length()`
+            /// elements. Each consists of one coefficient/evaluation block per
+            /// modulus in the table's modulus order. The table must match the
+            /// ciphertext modulus and transform convention, and values must satisfy
+            /// the corresponding transform's input range. Inverse transforms require
+            /// the same evaluation order as the forward transform. Incomplete trailing
+            /// polynomials are not transformed.
             #[inline]
             pub fn into_coeff_form<Table>(self, table: &primus_ntt::DcrtTable<Table>) -> $cipher<S>
             where
@@ -173,6 +254,21 @@ macro_rules! impl_crt_intt {
             T: FheUint,
         {
             /// Transforms `self` to coefficient form and stores in `output`.
+            ///
+            /// # Correctness
+            ///
+            /// Storage must contain complete RNS polynomials of `table.crt_poly_length()`
+            /// elements. Each consists of one coefficient/evaluation block per
+            /// modulus in the table's modulus order. The table must match the
+            /// ciphertext modulus and transform convention, and values must satisfy
+            /// the corresponding transform's input range. Inverse transforms require
+            /// the same evaluation order as the forward transform. Incomplete trailing
+            /// polynomials are not transformed. Output must have the same layout
+            /// and element count as the input; it is overwritten.
+            ///
+            /// # Panics
+            ///
+            /// Panics if input and output storage lengths differ.
             #[inline]
             pub fn write_coeff_form<Table, A>(
                 &self,

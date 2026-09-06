@@ -16,6 +16,16 @@ pub type DcrtRlweOwned<T> = DcrtRlwe<Vec<T>>;
 /// |------a------|------b------|
 ///
 /// where `a` and `b` are [`primus_poly::DcrtPolynomial`] with same poly length and moduli count.
+///
+/// # Correctness
+///
+/// The layout above is a caller-maintained contract. Raw construction and
+/// mutable storage access do not validate it; parameter and key metadata
+/// are not stored in this wrapper. See the [crate contracts](crate#correctness).
+/// Each polynomial contains consecutive modulus blocks in one fixed RNS
+/// base order, with the same polynomial length for every modulus.
+/// Stored values must use the matching NTT table, modulus, and evaluation
+/// order; a representation wrapper alone does not perform a transform.
 #[derive(Clone)]
 pub struct DcrtRlwe<S>(pub S)
 where

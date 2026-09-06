@@ -9,6 +9,8 @@ macro_rules! impl_basic_operation_multiple_modulus {
         {
             /// Consumes `self` and adds `rhs`, reusing storage.
             ///
+            /// # Correctness
+            ///
             /// Components are stored consecutively; each contains one length-`poly_length`
             /// block per modulus, in `moduli` order. `poly_length` and `moduli.len()`
             /// must be nonzero, `rns_poly_len = poly_length * moduli.len()`, and
@@ -16,6 +18,11 @@ macro_rules! impl_basic_operation_multiple_modulus {
             /// All operands must have equal lengths, the same ordered modulus base,
             /// and the same coefficient or NTT representation.
             /// Values must satisfy each modulus operation's input range.
+            ///
+            /// # Panics
+            ///
+            /// Panics when a zero chunk length is used. Other layout requirements
+            /// are caller obligations; debug assertions do not provide release validation.
             #[must_use]
             #[inline]
             pub fn add<M, A>(
@@ -35,6 +42,8 @@ macro_rules! impl_basic_operation_multiple_modulus {
 
             /// Performs `self += rhs` in place.
             ///
+            /// # Correctness
+            ///
             /// Components are stored consecutively; each contains one length-`poly_length`
             /// block per modulus, in `moduli` order. `poly_length` and `moduli.len()`
             /// must be nonzero, `rns_poly_len = poly_length * moduli.len()`, and
@@ -42,6 +51,11 @@ macro_rules! impl_basic_operation_multiple_modulus {
             /// All operands must have equal lengths, the same ordered modulus base,
             /// and the same coefficient or NTT representation.
             /// Values must satisfy each modulus operation's input range.
+            ///
+            /// # Panics
+            ///
+            /// Panics when a zero chunk length is used. Other layout requirements
+            /// are caller obligations; debug assertions do not provide release validation.
             #[inline]
             pub fn add_assign<M, A>(
                 &mut self,
@@ -75,6 +89,8 @@ macro_rules! impl_basic_operation_multiple_modulus {
 
             /// Consumes `self` and subtracts `rhs`, reusing storage.
             ///
+            /// # Correctness
+            ///
             /// Components are stored consecutively; each contains one length-`poly_length`
             /// block per modulus, in `moduli` order. `poly_length` and `moduli.len()`
             /// must be nonzero, `rns_poly_len = poly_length * moduli.len()`, and
@@ -82,6 +98,11 @@ macro_rules! impl_basic_operation_multiple_modulus {
             /// All operands must have equal lengths, the same ordered modulus base,
             /// and the same coefficient or NTT representation.
             /// Values must satisfy each modulus operation's input range.
+            ///
+            /// # Panics
+            ///
+            /// Panics when a zero chunk length is used. Other layout requirements
+            /// are caller obligations; debug assertions do not provide release validation.
             #[must_use]
             #[inline]
             pub fn sub<M, A>(
@@ -101,6 +122,8 @@ macro_rules! impl_basic_operation_multiple_modulus {
 
             /// Performs `self -= rhs` in place.
             ///
+            /// # Correctness
+            ///
             /// Components are stored consecutively; each contains one length-`poly_length`
             /// block per modulus, in `moduli` order. `poly_length` and `moduli.len()`
             /// must be nonzero, `rns_poly_len = poly_length * moduli.len()`, and
@@ -108,6 +131,11 @@ macro_rules! impl_basic_operation_multiple_modulus {
             /// All operands must have equal lengths, the same ordered modulus base,
             /// and the same coefficient or NTT representation.
             /// Values must satisfy each modulus operation's input range.
+            ///
+            /// # Panics
+            ///
+            /// Panics when a zero chunk length is used. Other layout requirements
+            /// are caller obligations; debug assertions do not provide release validation.
             #[inline]
             pub fn sub_assign<M, A>(
                 &mut self,
@@ -146,6 +174,8 @@ macro_rules! impl_basic_operation_multiple_modulus {
         {
             /// Writes `output = self + rhs`, overwriting existing output.
             ///
+            /// # Correctness
+            ///
             /// Components are stored consecutively; each contains one length-`poly_length`
             /// block per modulus, in `moduli` order. `poly_length` and `moduli.len()`
             /// must be nonzero, `rns_poly_len = poly_length * moduli.len()`, and
@@ -153,6 +183,11 @@ macro_rules! impl_basic_operation_multiple_modulus {
             /// All operands must have equal lengths, the same ordered modulus base,
             /// and the same coefficient or NTT representation.
             /// Values must satisfy each modulus operation's input range.
+            ///
+            /// # Panics
+            ///
+            /// Panics when a zero chunk length is used. Other layout requirements
+            /// are caller obligations; debug assertions do not provide release validation.
             #[inline]
             pub fn add_to<M, A, B>(
                 &self,
@@ -194,6 +229,8 @@ macro_rules! impl_basic_operation_multiple_modulus {
 
             /// Writes `output = self - rhs`, overwriting existing output.
             ///
+            /// # Correctness
+            ///
             /// Components are stored consecutively; each contains one length-`poly_length`
             /// block per modulus, in `moduli` order. `poly_length` and `moduli.len()`
             /// must be nonzero, `rns_poly_len = poly_length * moduli.len()`, and
@@ -201,6 +238,11 @@ macro_rules! impl_basic_operation_multiple_modulus {
             /// All operands must have equal lengths, the same ordered modulus base,
             /// and the same coefficient or NTT representation.
             /// Values must satisfy each modulus operation's input range.
+            ///
+            /// # Panics
+            ///
+            /// Panics when a zero chunk length is used. Other layout requirements
+            /// are caller obligations; debug assertions do not provide release validation.
             #[inline]
             pub fn sub_to<M, A, B>(
                 &self,

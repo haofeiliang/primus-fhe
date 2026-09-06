@@ -11,6 +11,12 @@ use super::Lwe;
 /// followed by retained body coefficients `b[0..count]`. Later samples rotate
 /// this mask negacyclically. The original polynomial length and body count are
 /// supplied by the caller; this layout cannot represent multiple GLWE masks.
+///
+/// # Correctness
+///
+/// The layout above is a caller-maintained contract. Raw construction and
+/// mutable storage access do not validate it; parameter and key metadata
+/// are not stored in this wrapper. See the [crate contracts](crate#correctness).
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MultiMsgLwe<S>(pub S)
 where
@@ -30,7 +36,13 @@ where
     S: DataOwned<Elem = T>,
     T: FheUint,
 {
-    /// Generates a [`MultiMsgLwe<S, T>`] with all values are `0`.
+    /// Generates a [`MultiMsgLwe`] with all values are `0`.
+    ///
+    /// # Correctness
+    ///
+    /// `dimension` is the original nonzero RLWE polynomial length; `msg_count`
+    /// is at most `dimension`. Their sum must fit in `usize`. This allocates
+    /// zero storage without sampling a randomized encryption.
     #[must_use]
     #[inline]
     pub fn zero(dimension: usize, msg_count: usize) -> Self {
@@ -43,7 +55,16 @@ where
     S: DataMut<Elem = T>,
     T: FheUint,
 {
-    /// Returns mutable references to `a` and `b` of this [`MultiMsgLwe<S, T>`].
+    /// Returns mutable references to `a` and `b` of this [`MultiMsgLwe`].
+    ///
+    /// # Correctness
+    ///
+    /// `dimension` is the original RLWE polynomial length, separating its
+    /// constant-term extraction mask from retained body coefficients.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `dimension` exceeds the total storage length.
     #[inline]
     pub fn a_b_mut(&mut self, dimension: usize) -> (&mut [T], &mut [T]) {
         self.0.split_at_mut(dimension)
@@ -61,7 +82,16 @@ where
     S: Data<Elem = T>,
     T: FheUint,
 {
-    /// Returns references to `a` and `b` of this [`MultiMsgLwe<S, T>`].
+    /// Returns references to `a` and `b` of this [`MultiMsgLwe`].
+    ///
+    /// # Correctness
+    ///
+    /// `dimension` is the original RLWE polynomial length, separating its
+    /// constant-term extraction mask from retained body coefficients.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `dimension` exceeds the total storage length.
     #[inline]
     pub fn a_b(&self, dimension: usize) -> (&[T], &[T]) {
         self.0.split_at(dimension)
@@ -71,6 +101,17 @@ where
     /// `dimension` is the original RLWE polynomial length. The mask must already
     /// be in constant-term LWE extraction order, and `index` must be less than
     /// both `dimension` and the retained body count.
+    ///
+    /// # Correctness
+    ///
+    /// The stored values must be canonical under `modulus`; the extracted
+    /// key is the coefficient vector of the original RLWE secret.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the requested mask/body slice is out of bounds or the
+    /// rotation exceeds `dimension`. These checks do not validate the
+    /// original RLWE layout.
     #[must_use]
     #[inline]
     pub fn extract_lwe_at<M>(&self, index: usize, dimension: usize, modulus: M) -> Lwe<Vec<T>>
@@ -88,6 +129,13 @@ where
 
     /// Allocates all samples, with `msg_count` specifying the exact retained
     /// body count. The remaining storage is the constant-term extraction mask.
+    ///
+    /// # Correctness
+    ///
+    /// `msg_count` must be the actual retained body count. The remaining
+    /// storage has the original RLWE polynomial length and constant-term
+    /// extraction order. Values must be canonical under `modulus`. The output
+    /// keys are the coefficient vector of the original RLWE secret.
     ///
     /// # Panics
     ///

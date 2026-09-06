@@ -15,10 +15,25 @@ where
     /// Inserts this LWE sample into a GLWE ciphertext so that compact sample
     /// extraction recovers the original LWE sample exactly.
     ///
+    /// # Correctness
+    ///
     /// For a nonzero LWE dimension `n` and `N = poly_length`, the output must contain
     /// `ceil(n / N) + 1` polynomials of length `N`. Unused coefficients in the
     /// final mask polynomial and all non-constant body coefficients are set to
     /// zero. `poly_length` must be nonzero.
+    ///
+    /// The LWE input must use canonical residues under `modulus`. The target
+    /// GLWE key is the LWE secret padded with zeros to `ceil(n / N) * N`
+    /// coefficients and grouped into length-`N` polynomials in storage order.
+    /// Only extraction at index zero is inverted: zeroing nonconstant body
+    /// coefficients does not imply zero nonconstant coefficients of the
+    /// decrypted phase. Output is fully overwritten.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `poly_length` is zero, the input is empty, or the output is
+    /// shorter than one body polynomial. Other shape conditions are not
+    /// systematically checked.
     pub fn inverse_extract_glwe_to<M, B>(
         &self,
         output: &mut Glwe<B>,

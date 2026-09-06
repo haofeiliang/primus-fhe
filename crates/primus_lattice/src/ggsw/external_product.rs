@@ -40,6 +40,21 @@ where
     /// This operation uses the implicit native torus modulus. `input` and
     /// `output` are coefficient-domain torus GLWE ciphertexts. `basis` must be
     /// the decomposition basis used to construct `self`.
+    ///
+    /// # Correctness
+    ///
+    /// Let `size = context.size()`, `N = size.glwe_size().poly_length()`,
+    /// and `L = size.decompose_length()`. Input and output each have
+    /// `size.glwe_size().glwe_len()` elements; `self` has exactly
+    /// `size.fourier_ggsw_len()` elements. The `k + 1` GLev rows correspond
+    /// to the input mask polynomials followed by its body, with `L` levels
+    /// per row in `basis.decomposer_iter()` order. Keys must be compatible.
+    /// `basis` must use the implicit native modulus (`basis.modulus() == None`).
+    /// The FFT engine must have polynomial length `N` and Fourier length
+    /// `N / 2`; gadget values must use its packing and normalized torus scale.
+    /// Output is overwritten and context scratch is initialized as needed;
+    /// no manual reset is required. Context dimensions do not validate the
+    /// basis, key, table, or actual ciphertext buffers.
     pub fn external_product_to<T, Table, A, C>(
         &self,
         input: &TorusGlwe<A>,
@@ -61,6 +76,12 @@ where
 
     /// Clears the Fourier accumulator, then stores `self external_product input` in it.
     /// The output remains in Fourier form for the caller to combine or transform back.
+    ///
+    /// # Correctness
+    ///
+    /// The input, gadget, basis, table, and context must satisfy
+    /// [`Self::external_product_to`]. The context accumulator takes the role
+    /// of output and must have the corresponding transform-domain layout.
     pub(super) fn external_product_to_accumulator<T, Table, A>(
         &self,
         input: &TorusGlwe<A>,
@@ -79,6 +100,12 @@ where
 
     /// Adds `self external_product input` to the existing Fourier accumulator.
     /// This does not clear the accumulator; the caller must initialize it first.
+    ///
+    /// # Correctness
+    ///
+    /// The input, gadget, basis, table, and context must satisfy
+    /// [`Self::external_product_to`]. The context accumulator takes the role
+    /// of output and must have the corresponding transform-domain layout.
     pub(super) fn external_product_add_assign<T, Table, A>(
         &self,
         input: &TorusGlwe<A>,
@@ -141,6 +168,21 @@ where
     /// The input and output are coefficient-domain GLWE ciphertexts with every
     /// coefficient reduced to `[0, q)`. `basis` and `modulus` must match those
     /// used to construct `self`.
+    ///
+    /// # Correctness
+    ///
+    /// Let `size = context.size()`, `N = size.glwe_size().poly_length()`,
+    /// and `L = size.decompose_length()`. Input and output each have
+    /// `size.glwe_size().glwe_len()` elements; `self` has exactly
+    /// `size.ggsw_len()` elements. The `k + 1` GLev rows correspond
+    /// to the input mask polynomials followed by its body, with `L` levels
+    /// per row in `basis.decomposer_iter()` order. Keys must be compatible.
+    /// `basis`, `modulus`, and the NTT table must use the same modulus.
+    /// The NTT polynomial length must be `N`, and gadget evaluations must
+    /// use that table's order. Input and gadget values must be canonical residues.
+    /// Output is overwritten and context scratch is initialized as needed;
+    /// no manual reset is required. Context dimensions do not validate the
+    /// basis, key, table, or actual ciphertext buffers.
     pub fn external_product_to<T, M, Table, A, C>(
         &self,
         input: &Glwe<A>,
@@ -170,6 +212,13 @@ where
     /// The output is overwritten in NTT form. This variant avoids the inverse
     /// transform performed by [`Self::external_product_to`] when a composed
     /// operation consumes the product in the NTT domain.
+    ///
+    /// # Correctness
+    ///
+    /// All contracts of [`Self::external_product_to`] apply, except that the
+    /// output uses the supplied table's NTT representation. It must contain
+    /// exactly `context.size().glwe_size().glwe_len()` elements. The caller
+    /// need not initialize output; the product clears it before accumulating.
     pub fn external_product_ntt_to<T, M, Table, A, C>(
         &self,
         input: &Glwe<A>,
@@ -193,6 +242,12 @@ where
 
     /// Clears the NTT accumulator, then stores `self external_product input` in it.
     /// The output remains in NTT form for the caller to combine or transform back.
+    ///
+    /// # Correctness
+    ///
+    /// The input, gadget, basis, table, and context must satisfy
+    /// [`Self::external_product_to`]. The context accumulator takes the role
+    /// of output and must have the corresponding transform-domain layout.
     pub(super) fn external_product_to_accumulator<T, M, Table, A>(
         &self,
         input: &Glwe<A>,
@@ -213,6 +268,12 @@ where
 
     /// Adds `self external_product input` to the existing NTT accumulator.
     /// This does not clear the accumulator; the caller must initialize it first.
+    ///
+    /// # Correctness
+    ///
+    /// The input, gadget, basis, table, and context must satisfy
+    /// [`Self::external_product_to`]. The context accumulator takes the role
+    /// of output and must have the corresponding transform-domain layout.
     pub(super) fn external_product_add_assign<T, M, Table, A>(
         &self,
         input: &Glwe<A>,
@@ -271,8 +332,22 @@ where
 {
     /// Multiplies this CRT GLWE by a DCRT GGSW ciphertext, storing the output into `output`.
     ///
+    /// # Correctness
+    ///
     /// `basis` must match the ordered `rns_base`, and its radix must be
     /// smaller than every RNS modulus for the fast centered digit lift.
+    ///
+    /// Let `size = context.size()`, `N = table.poly_length()`,
+    /// `m = rns_base.moduli_count()`, and `w = rns_base.big_uint_value_len()`.
+    /// The bound size must match `N`, `m`, the GLWE dimension, and
+    /// `basis.decompose_length()`; `context.is_compatible(size, rns_base)`
+    /// must hold. The table uses the base's modulus order and the gadget
+    /// uses its evaluation order and `basis.decomposer_iter()` level order.
+    /// CRT/DCRT values must be canonical residues.
+    /// Input and output each have `size.rns_glwe_size().rns_glwe_len()`
+    /// elements, and the gadget has `size.rns_ggsw_len()` evaluations in
+    /// row/level/component/modulus order under a compatible key. Output is
+    /// cleared before accumulation; scratch needs no manual reset.
     pub fn mul_dcrt_ggsw_to<M, Table, A, B>(
         &self,
         dcrt_ggsw: &DcrtGgsw<A>,

@@ -26,6 +26,15 @@ where
     /// `self` is a Fourier GGSW encryption of a bit. A control bit of zero
     /// selects `ct0`, while a control bit of one selects `ct1`. The GLWE inputs
     /// and output use the implicit native torus modulus and coefficient form.
+    ///
+    /// # Correctness
+    ///
+    /// The control ciphertext, basis, transform table, and context must satisfy
+    /// [`Self::external_product_to`]. Every coefficient-domain input and output
+    /// has exactly `context.size().glwe_size().glwe_len()` elements, with compatible keys,
+    /// moduli, and encodings. Values must be canonical residues. The output
+    /// is overwritten; no prior output initialization or context reset is needed.
+    /// `self` must encrypt a bit; this is not checked.
     pub fn cmux_to<T, Table, B, C, D>(
         &self,
         ct0: &TorusGlwe<B>,
@@ -53,7 +62,7 @@ where
         output.add_assign(ct0, NativeModulus::new());
     }
 
-    /// Computes a `k`-to-1 CMux with `default` as candidate zero.
+    /// Selects among `default` and `candidates` using encrypted control bits.
     ///
     /// This evaluates
     /// `default + sum_j controls[j] * (candidates[j] - default)`.
@@ -62,6 +71,22 @@ where
     /// control bit may be nonzero. An all-zero control vector selects
     /// `default`; otherwise the unique nonzero bit selects its corresponding
     /// candidate.
+    ///
+    /// # Correctness
+    ///
+    /// The controls, basis, transform table, and context must satisfy
+    /// [`Self::external_product_to`]. Every coefficient-domain input and output
+    /// has exactly `context.size().glwe_size().glwe_len()` elements, with compatible keys,
+    /// moduli, and encodings. Values must be canonical residues. The output
+    /// is overwritten; no prior output initialization or context reset is needed.
+    /// There must be exactly one control per candidate, in the same order;
+    /// every control encrypts a bit and at most one bit is one. Empty lists
+    /// copy `default` into `output`. Bit values and exclusivity are not checked.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the reported control count differs from `candidates.len()`,
+    /// or if empty-list copying encounters unequal default/output lengths.
     pub fn cmux_k_to<T, Table, B, C, D, I>(
         controls: I,
         default: &TorusGlwe<B>,
@@ -112,6 +137,17 @@ where
     ///
     /// This is the CMUX form used by blind rotation. `exponent` must belong to
     /// `[0, 2N)`.
+    ///
+    /// # Correctness
+    ///
+    /// The control ciphertext, basis, transform table, and context must satisfy
+    /// [`Self::external_product_to`]. Every coefficient-domain input and output
+    /// has exactly `context.size().glwe_size().glwe_len()` elements, with compatible keys,
+    /// moduli, and encodings. Values must be canonical residues. The output
+    /// is overwritten; no prior output initialization or context reset is needed.
+    /// `self` must encrypt a bit; this is not checked. For bit zero the output
+    /// selects `input`; for bit one it selects `input * X^exponent`.
+    /// Require `exponent < 2 * N`, where `N` is the context polynomial length.
     pub fn cmux_monomial_to<T, Table, B, C>(
         &self,
         input: &TorusGlwe<B>,
@@ -146,6 +182,15 @@ where
     /// `self` is an NTT GGSW encryption of a bit. A control bit of zero selects
     /// `ct0`, while a control bit of one selects `ct1`. Every coefficient-domain
     /// GLWE coefficient must be reduced to `[0, q)`.
+    ///
+    /// # Correctness
+    ///
+    /// The control ciphertext, basis, transform table, and context must satisfy
+    /// [`Self::external_product_to`]. Every coefficient-domain input and output
+    /// has exactly `context.size().glwe_size().glwe_len()` elements, with compatible keys,
+    /// moduli, and encodings. Values must be canonical residues. The output
+    /// is overwritten; no prior output initialization or context reset is needed.
+    /// `self` must encrypt a bit; this is not checked.
     pub fn cmux_to<T, M, Table, B, C, D>(
         &self,
         ct0: &Glwe<B>,
@@ -176,7 +221,7 @@ where
         output.add_assign(ct0, modulus);
     }
 
-    /// Computes a `k`-to-1 CMux with `default` as candidate zero.
+    /// Selects among `default` and `candidates` using encrypted control bits.
     ///
     /// This evaluates
     /// `default + sum_j controls[j] * (candidates[j] - default)`.
@@ -185,6 +230,22 @@ where
     /// control bit may be nonzero. An all-zero control vector selects
     /// `default`; otherwise the unique nonzero bit selects its corresponding
     /// candidate.
+    ///
+    /// # Correctness
+    ///
+    /// The controls, basis, transform table, and context must satisfy
+    /// [`Self::external_product_to`]. Every coefficient-domain input and output
+    /// has exactly `context.size().glwe_size().glwe_len()` elements, with compatible keys,
+    /// moduli, and encodings. Values must be canonical residues. The output
+    /// is overwritten; no prior output initialization or context reset is needed.
+    /// There must be exactly one control per candidate, in the same order;
+    /// every control encrypts a bit and at most one bit is one. Empty lists
+    /// copy `default` into `output`. Bit values and exclusivity are not checked.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the reported control count differs from `candidates.len()`,
+    /// or if empty-list copying encounters unequal default/output lengths.
     pub fn cmux_k_to<T, M, Table, B, C, D, I>(
         controls: I,
         default: &Glwe<B>,
@@ -238,6 +299,17 @@ where
     ///
     /// This is the CMUX form used by blind rotation. `exponent` must belong to
     /// `[0, 2N)`.
+    ///
+    /// # Correctness
+    ///
+    /// The control ciphertext, basis, transform table, and context must satisfy
+    /// [`Self::external_product_to`]. Every coefficient-domain input and output
+    /// has exactly `context.size().glwe_size().glwe_len()` elements, with compatible keys,
+    /// moduli, and encodings. Values must be canonical residues. The output
+    /// is overwritten; no prior output initialization or context reset is needed.
+    /// `self` must encrypt a bit; this is not checked. For bit zero the output
+    /// selects `input`; for bit one it selects `input * X^exponent`.
+    /// Require `exponent < 2 * N`, where `N` is the context polynomial length.
     pub fn cmux_monomial_to<T, M, Table, B, C>(
         &self,
         input: &Glwe<B>,

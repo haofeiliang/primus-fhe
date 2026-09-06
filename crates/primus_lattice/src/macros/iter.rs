@@ -18,6 +18,16 @@ macro_rules! impl_iters {
 
             impl<'a, T: FheUint> [<$cipher Iter>]<'a, T> {
                 #[doc = concat!("Creates an iterator yielding [`", stringify!($cipher), "`] chunks of `", stringify!([<$cipher:snake _len>]), "` elements each.")]
+                ///
+                ///
+                /// # Correctness
+                ///
+                /// The chunk length must describe one complete sub-ciphertext in the
+                /// intended layout. An incomplete trailing chunk is omitted.
+                ///
+                /// # Panics
+                ///
+                /// Panics if the chunk length is zero.
                 #[inline]
                 #[must_use]
                 pub fn new(data:&'a [T], [<$cipher:snake _len>]:usize) -> Self{
@@ -57,6 +67,16 @@ macro_rules! impl_iters {
 
             impl<'a, T: FheUint> [<$cipher IterMut>]<'a, T> {
                 #[doc = concat!("Creates a mutable iterator yielding [`", stringify!($cipher), "`] chunks of `", stringify!([<$cipher:snake _len>]), "` elements each.")]
+                ///
+                ///
+                /// # Correctness
+                ///
+                /// The chunk length must describe one complete sub-ciphertext in the
+                /// intended layout. An incomplete trailing chunk is omitted.
+                ///
+                /// # Panics
+                ///
+                /// Panics if the chunk length is zero.
                 #[inline]
                 #[must_use]
                 pub fn new(data:&'a mut [T], [<$cipher:snake _len>]:usize) -> Self{
@@ -100,6 +120,16 @@ macro_rules! impl_iter_sub_structure {
         {
             paste::paste! {
                 #[doc = concat!("Returns an iterator over the [`", stringify!($sub), "`] sub-components of this `", stringify!($cipher), "`.")]
+                ///
+                ///
+                /// # Correctness
+                ///
+                /// The chunk length must describe one complete sub-ciphertext in the
+                /// intended layout. An incomplete trailing chunk is omitted.
+                ///
+                /// # Panics
+                ///
+                /// Panics if the chunk length is zero.
                 #[inline]
                 pub fn [<iter_ $sub_short>]<'a>(&'a self, [<$sub_short _len>]: usize) -> [<$sub Iter>]<'a, T> {
                     [<$sub Iter>]::new(self.0.as_slice(), [<$sub_short _len>])
@@ -114,6 +144,16 @@ macro_rules! impl_iter_sub_structure {
         {
             paste::paste! {
                 #[doc = concat!("Returns a mutable iterator over the [`", stringify!($sub), "`] sub-components of this `", stringify!($cipher), "`.")]
+                ///
+                ///
+                /// # Correctness
+                ///
+                /// The chunk length must describe one complete sub-ciphertext in the
+                /// intended layout. An incomplete trailing chunk is omitted.
+                ///
+                /// # Panics
+                ///
+                /// Panics if the chunk length is zero.
                 #[inline]
                 pub fn [<iter_ $sub_short _mut>]<'a>(
                     &'a mut self,

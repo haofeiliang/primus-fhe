@@ -9,10 +9,16 @@ macro_rules! impl_monomial_single_modulus {
         {
             /// Multiplies every complete polynomial by `X^exponent` in `Z_q[X]/(X^N + 1)`.
             ///
+            /// # Correctness
+            ///
             /// `N = poly_length` must be a supported power of two and `exponent`
             /// must be in `[0, 2N)`. Storage must contain complete polynomials.
             /// Values must be canonical residues; the result remains canonical.
             /// This operation does not allocate temporary storage.
+            ///
+            /// # Panics
+            ///
+            /// Panics when a zero-length polynomial chunk is used.
             #[inline]
             pub fn mul_monomial_assign<M>(
                 &mut self,
@@ -34,12 +40,18 @@ macro_rules! impl_monomial_single_modulus {
         {
             /// Multiplies every complete polynomial by `X^exponent` in `Z_q[X]/(X^N + 1)`.
             ///
+            /// # Correctness
+            ///
             /// `N = poly_length` must be a supported power of two and `exponent`
             /// must be in `[0, 2N)`. Storage must contain complete polynomials.
             /// Values must be canonical residues; the result remains canonical.
             /// This operation does not allocate temporary storage.
             /// Input and output must have equal lengths and matching layouts and bases.
             /// Every output coefficient is overwritten.
+            ///
+            /// # Panics
+            ///
+            /// Panics when a zero-length polynomial chunk is used.
             #[inline]
             pub fn mul_monomial_to<M, A>(
                 &self,
@@ -76,12 +88,18 @@ macro_rules! impl_monomial_single_modulus {
         {
             /// Accumulates `self += rhs * X^exponent` on each complete polynomial.
             ///
+            /// # Correctness
+            ///
             /// Uses `Z_q[X]/(X^N + 1)` with `N = poly_length` and
             /// `poly_length` must be a supported power of two, and `exponent`
             /// must be in `[0, 2N)`. Input and accumulator must have equal
             /// lengths, matching coefficient layouts and compatible key semantics.
             /// Gadget bases and level/row order must match. Values must be canonical
             /// residues; results remain canonical. No temporary ciphertext is allocated.
+            ///
+            /// # Panics
+            ///
+            /// Panics when a zero-length polynomial chunk is used.
             #[inline]
             pub fn add_mul_monomial_assign<M, A>(
                 &mut self,
@@ -124,6 +142,8 @@ macro_rules! impl_monomial_multiple_modulus {
         {
             /// Multiplies every complete polynomial by `X^exponent` in `Z_q[X]/(X^N + 1)`.
             ///
+            /// # Correctness
+            ///
             /// `N = poly_length` must be a supported power of two and `exponent`
             /// must be in `[0, 2N)`. Storage must contain complete polynomials.
             /// Values must be canonical residues; the result remains canonical.
@@ -131,6 +151,10 @@ macro_rules! impl_monomial_multiple_modulus {
             /// Each component has one length-`poly_length` block per modulus, in
             /// `moduli` order; the basis is nonempty and
             /// `rns_poly_len = poly_length * moduli.len()`.
+            ///
+            /// # Panics
+            ///
+            /// Panics when a zero-length polynomial chunk is used.
             #[inline]
             pub fn mul_monomial_assign<M>(
                 &mut self,
@@ -155,6 +179,8 @@ macro_rules! impl_monomial_multiple_modulus {
         {
             /// Multiplies every complete polynomial by `X^exponent` in `Z_q[X]/(X^N + 1)`.
             ///
+            /// # Correctness
+            ///
             /// `N = poly_length` must be a supported power of two and `exponent`
             /// must be in `[0, 2N)`. Storage must contain complete polynomials.
             /// Values must be canonical residues; the result remains canonical.
@@ -164,6 +190,10 @@ macro_rules! impl_monomial_multiple_modulus {
             /// `rns_poly_len = poly_length * moduli.len()`.
             /// Input and output must have equal lengths and matching layouts and bases.
             /// Every output coefficient is overwritten.
+            ///
+            /// # Panics
+            ///
+            /// Panics when a zero-length polynomial chunk is used.
             #[inline]
             pub fn mul_monomial_to<M, A>(
                 &self,
@@ -207,6 +237,8 @@ macro_rules! impl_monomial_multiple_modulus {
         {
             /// Accumulates `self += rhs * X^exponent` on each complete polynomial.
             ///
+            /// # Correctness
+            ///
             /// Uses `Z_q[X]/(X^N + 1)` with `N = poly_length` and
             /// `poly_length` must be a supported power of two, and `exponent`
             /// must be in `[0, 2N)`. Input and accumulator must have equal
@@ -217,6 +249,10 @@ macro_rules! impl_monomial_multiple_modulus {
             /// in `moduli` order. The modulus count must be nonzero and
             /// `rns_poly_len = poly_length * moduli.len()`. Storage must contain
             /// complete RNS components, and both ciphertexts must use the same basis.
+            ///
+            /// # Panics
+            ///
+            /// Panics when a zero-length polynomial chunk is used.
             #[inline]
             pub fn add_mul_monomial_assign<M, A>(
                 &mut self,

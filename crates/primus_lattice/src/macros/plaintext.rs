@@ -9,12 +9,18 @@ macro_rules! impl_plaintext_single_modulus {
         {
             /// Adds an already encoded plaintext to the body, leaving the mask unchanged.
             ///
+            /// # Correctness
+            ///
             /// `plaintext` must contain one complete nonempty polynomial in this
             /// ciphertext's representation, modulus domain and plaintext scale.
             /// Storage must contain complete mask polynomials followed by one body.
             /// RLWE requires exactly two polynomials. No encoding, rounding, random
             /// sampling or allocation is performed. The caller maintains the layout.
             /// Input residues must be canonical; output residues remain canonical.
+            ///
+            /// # Panics
+            ///
+            /// Panics if the plaintext storage is longer than the ciphertext storage.
             #[inline]
             pub fn add_plaintext_assign<M, A>(
                 &mut self,
@@ -32,12 +38,18 @@ macro_rules! impl_plaintext_single_modulus {
 
             /// Subtracts an already encoded plaintext from the body, leaving the mask unchanged.
             ///
+            /// # Correctness
+            ///
             /// `plaintext` must contain one complete nonempty polynomial in this
             /// ciphertext's representation, modulus domain and plaintext scale.
             /// Storage must contain complete mask polynomials followed by one body.
             /// RLWE requires exactly two polynomials. No encoding, rounding, random
             /// sampling or allocation is performed. The caller maintains the layout.
             /// Input residues must be canonical; output residues remain canonical.
+            ///
+            /// # Panics
+            ///
+            /// Panics if the plaintext storage is longer than the ciphertext storage.
             #[inline]
             pub fn sub_plaintext_assign<M, A>(
                 &mut self,
@@ -55,12 +67,18 @@ macro_rules! impl_plaintext_single_modulus {
 
             /// Overwrites this ciphertext with a trivial encryption: zero mask and encoded body.
             ///
+            /// # Correctness
+            ///
             /// `plaintext` must contain one complete nonempty polynomial in this
             /// ciphertext's representation, modulus domain and plaintext scale.
             /// Storage must contain complete mask polynomials followed by one body.
             /// RLWE requires exactly two polynomials. No encoding, rounding, random
             /// sampling or allocation is performed. The caller maintains the layout.
             /// Input residues must be canonical; output residues remain canonical.
+            ///
+            /// # Panics
+            ///
+            /// Panics if the plaintext storage is longer than the ciphertext storage.
             #[inline]
             pub fn set_trivial<A>(&mut self, plaintext: &primus_poly::$poly<A>)
             where
@@ -86,6 +104,8 @@ macro_rules! impl_plaintext_multiple_modulus {
         {
             /// Adds an already encoded plaintext to the body, leaving the mask unchanged.
             ///
+            /// # Correctness
+            ///
             /// `plaintext` must contain one complete nonempty polynomial in this
             /// ciphertext's representation, modulus domain and plaintext scale.
             /// Storage must contain complete mask polynomials followed by one body.
@@ -94,6 +114,10 @@ macro_rules! impl_plaintext_multiple_modulus {
             /// Input residues must be canonical; output residues remain canonical.
             /// RNS polynomials contain one block per modulus in the same basis order.
             /// The basis must be nonempty and `plaintext.as_ref().len() = poly_length * moduli.len()`.
+            ///
+            /// # Panics
+            ///
+            /// Panics if the plaintext storage is longer than the ciphertext storage.
             #[inline]
             pub fn add_plaintext_assign<M, A>(
                 &mut self,
@@ -118,6 +142,8 @@ macro_rules! impl_plaintext_multiple_modulus {
 
             /// Subtracts an already encoded plaintext from the body, leaving the mask unchanged.
             ///
+            /// # Correctness
+            ///
             /// `plaintext` must contain one complete nonempty polynomial in this
             /// ciphertext's representation, modulus domain and plaintext scale.
             /// Storage must contain complete mask polynomials followed by one body.
@@ -126,6 +152,10 @@ macro_rules! impl_plaintext_multiple_modulus {
             /// Input residues must be canonical; output residues remain canonical.
             /// RNS polynomials contain one block per modulus in the same basis order.
             /// The basis must be nonempty and `plaintext.as_ref().len() = poly_length * moduli.len()`.
+            ///
+            /// # Panics
+            ///
+            /// Panics if the plaintext storage is longer than the ciphertext storage.
             #[inline]
             pub fn sub_plaintext_assign<M, A>(
                 &mut self,
@@ -150,6 +180,8 @@ macro_rules! impl_plaintext_multiple_modulus {
 
             /// Overwrites this ciphertext with a trivial encryption: zero mask and encoded body.
             ///
+            /// # Correctness
+            ///
             /// `plaintext` must contain one complete nonempty polynomial in this
             /// ciphertext's representation, modulus domain and plaintext scale.
             /// Storage must contain complete mask polynomials followed by one body.
@@ -157,6 +189,10 @@ macro_rules! impl_plaintext_multiple_modulus {
             /// sampling or allocation is performed. The caller maintains the layout.
             /// Input residues must be canonical; output residues remain canonical.
             /// RNS polynomials contain one block per modulus in the same basis order.
+            ///
+            /// # Panics
+            ///
+            /// Panics if the plaintext storage is longer than the ciphertext storage.
             #[inline]
             pub fn set_trivial<A>(&mut self, plaintext: &primus_poly::$poly<A>)
             where

@@ -11,6 +11,12 @@ macro_rules! impl_common {
             <S as RawData>::Elem: FheUint,
         {
             #[doc = concat!(r" Creates a new [`",stringify!($cipher),"<",stringify!(S),">`].")]
+            ///
+            /// # Correctness
+            ///
+            /// This only wraps storage. The caller must supply the complete layout and
+            /// representation documented for this ciphertext; no cryptographic metadata
+            /// is inferred or validated.
             #[must_use]
             #[inline(always)]
             pub fn new(data: S) -> Self {
@@ -50,6 +56,20 @@ macro_rules! impl_bytes_io {
             T: FheUint,
         {
             #[doc = concat!(r" Creates a new [`",stringify!($cipher),"<",stringify!(S),">`] from bytes `data`.")]
+            ///
+            /// The byte representation is native-endian raw element storage, without
+            /// layout, modulus, or transform metadata. It is not a portable serialization
+            /// format; an enclosing format must supply that metadata.
+            ///
+            /// # Correctness
+            ///
+            /// Decoded elements must satisfy the target ciphertext layout and numerical
+            /// representation. Decoding does not validate these contracts.
+            ///
+            /// # Panics
+            ///
+            /// Panics if the byte length is not a multiple of the element size or the
+            /// input cannot be cast to an aligned element slice.
             #[must_use]
             #[inline]
             pub fn from_bytes(data: &[u8]) -> Self {
@@ -65,6 +85,21 @@ macro_rules! impl_bytes_io {
             T: FheUint,
         {
             /// Copy from bytes `data`.
+            ///
+            /// The byte representation is native-endian raw element storage, without
+            /// layout, modulus, or transform metadata. It is not a portable serialization
+            /// format; an enclosing format must supply that metadata.
+            ///
+            /// # Correctness
+            ///
+            /// Decoded elements must satisfy the target ciphertext layout and numerical
+            /// representation. Decoding does not validate these contracts.
+            ///
+            /// # Panics
+            ///
+            /// Panics if the byte length is not a multiple of the element size or the
+            /// input cannot be cast to an aligned element slice. Also panics if the
+            /// decoded element count differs from the destination length.
             #[inline]
             pub fn read_bytes(&mut self, data: &[u8]) {
                 let converted_data: &[T] = bytemuck::cast_slice(data);
@@ -79,6 +114,11 @@ macro_rules! impl_bytes_io {
             T: FheUint,
         {
             /// Converts `self` into bytes.
+            ///
+            /// The byte representation is native-endian raw element storage, without
+            /// layout, modulus, or transform metadata. It is not a portable serialization
+            /// format; an enclosing format must supply that metadata.
+            ///
             #[inline]
             pub fn to_bytes(&self) -> Vec<u8> {
                 let converted_data: &[u8] = bytemuck::cast_slice(self.as_ref());
@@ -87,6 +127,14 @@ macro_rules! impl_bytes_io {
             }
 
             /// Converts `self` into bytes, stored in `data`.
+            ///
+            /// The byte representation is native-endian raw element storage, without
+            /// layout, modulus, or transform metadata. It is not a portable serialization
+            /// format; an enclosing format must supply that metadata.
+            ///
+            /// # Panics
+            ///
+            /// Panics if `data.len()` differs from the raw storage byte count.
             #[inline]
             pub fn write_bytes(&self, data: &mut [u8]) {
                 let converted_data: &[u8] = bytemuck::cast_slice(self.as_ref());
@@ -106,6 +154,12 @@ macro_rules! impl_zero {
         {
             paste::paste! {
                 #[doc = concat!(r" Creates a new [`",stringify!($cipher),"<",stringify!(S),">`] with all values or coefficients equal to zero.")]
+                ///
+                /// # Correctness
+                ///
+                /// The length is the total number of stored elements, including all
+                /// components, levels, rows, and modulus blocks. The caller chooses a valid
+                /// ciphertext layout. This initializes zeros without sampling an encryption.
                 #[must_use]
                 #[inline]
                 pub fn zero([<$cipher:snake _len>]: usize) -> Self {

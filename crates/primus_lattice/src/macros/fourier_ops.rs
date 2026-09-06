@@ -9,6 +9,8 @@ macro_rules! impl_fourier_basic_operation {
         {
             /// Performs pointwise addition in place.
             ///
+            /// # Correctness
+            ///
             /// All ciphertexts must use compatible keys, the same FFT table, evaluation
             /// order and scale, and matching layouts (including gadget rows and levels).
             /// Operand lengths must match.
@@ -22,6 +24,8 @@ macro_rules! impl_fourier_basic_operation {
             }
 
             /// Performs pointwise subtraction in place.
+            ///
+            /// # Correctness
             ///
             /// All ciphertexts must use compatible keys, the same FFT table, evaluation
             /// order and scale, and matching layouts (including gadget rows and levels).
@@ -37,9 +41,10 @@ macro_rules! impl_fourier_basic_operation {
 
             /// Performs pointwise negation in place.
             ///
-            /// All ciphertexts must use compatible keys, the same FFT table, evaluation
-            /// order and scale, and matching layouts (including gadget rows and levels).
-            /// Every stored complex value is transformed.
+            /// # Correctness
+            ///
+            /// Storage must contain a complete Fourier ciphertext in its original
+            /// layout and scale. Every stored complex value is transformed.
             #[inline]
             pub fn neg_assign(&mut self) {
                 primus_poly::FourierPolynomial(self.as_mut()).neg_assign();
@@ -47,9 +52,12 @@ macro_rules! impl_fourier_basic_operation {
 
             /// Performs real scalar multiplication in place.
             ///
-            /// All ciphertexts must use compatible keys, the same FFT table, evaluation
-            /// order and scale, and matching layouts (including gadget rows and levels).
-            /// Every stored complex value is transformed.
+            /// # Correctness
+            ///
+            /// Storage must contain a complete Fourier ciphertext in its original
+            /// layout and scale. Every stored complex value is transformed.
+            /// Choose finite inputs and a finite scalar whose product remains
+            /// representable in `f64`; the operation does not bound numerical error.
             #[inline]
             pub fn mul_scalar_assign(&mut self, scalar: f64) {
                 primus_poly::FourierPolynomial(self.as_mut()).mul_scalar_assign(scalar);
@@ -60,6 +68,8 @@ macro_rules! impl_fourier_basic_operation {
             S: primus_data::Data<Elem = num_complex::Complex64>,
         {
             /// Writes `output = self + rhs` into existing storage.
+            ///
+            /// # Correctness
             ///
             /// All ciphertexts must use compatible keys, the same FFT table, evaluation
             /// order and scale, and matching layouts (including gadget rows and levels).
@@ -78,6 +88,8 @@ macro_rules! impl_fourier_basic_operation {
 
             /// Writes `output = self - rhs` into existing storage.
             ///
+            /// # Correctness
+            ///
             /// All ciphertexts must use compatible keys, the same FFT table, evaluation
             /// order and scale, and matching layouts (including gadget rows and levels).
             /// Input and output lengths must match.
@@ -95,6 +107,8 @@ macro_rules! impl_fourier_basic_operation {
 
             /// Writes `output = -self` into existing storage.
             ///
+            /// # Correctness
+            ///
             /// All ciphertexts must use compatible keys, the same FFT table, evaluation
             /// order and scale, and matching layouts (including gadget rows and levels).
             /// Input and output lengths must match.
@@ -109,9 +123,13 @@ macro_rules! impl_fourier_basic_operation {
 
             /// Writes `output = self * scalar` into existing storage.
             ///
+            /// # Correctness
+            ///
             /// All ciphertexts must use compatible keys, the same FFT table, evaluation
             /// order and scale, and matching layouts (including gadget rows and levels).
             /// Input and output lengths must match.
+            /// Choose finite inputs and a finite scalar whose product remains
+            /// representable in `f64`; the operation does not bound numerical error.
             #[inline]
             pub fn mul_scalar_to<A>(&self, scalar: f64, output: &mut $cipher<A>)
             where
@@ -133,11 +151,17 @@ macro_rules! impl_fourier_polynomial {
         {
             /// Multiplies each component by `poly` pointwise, without allocation.
             ///
+            /// # Correctness
+            ///
             /// `poly` must be nonempty and its length must divide the ciphertext length.
             /// NTRU contains exactly one polynomial, so its length must equal `poly`
             /// length. All values must use the same FFT table and evaluation order. For a torus
             /// ciphertext, `poly` must represent an unscaled integer polynomial, rather
             /// than a normalized torus polynomial, to preserve the ciphertext scale.
+            ///
+            /// # Panics
+            ///
+            /// Panics if `poly` is empty.
             #[inline]
             pub fn mul_fourier_polynomial_assign<A>(
                 &mut self,
@@ -153,12 +177,18 @@ macro_rules! impl_fourier_polynomial {
 
             /// Accumulates `self += rhs * poly` for every component, without allocation.
             ///
+            /// # Correctness
+            ///
             /// Input and accumulator must have equal lengths, compatible keys and
             /// matching layouts (including gadget rows and levels). They must use the
             /// same FFT table, evaluation order and scale. `poly` must be nonempty and
             /// its length must divide the ciphertext length (equal it for NTRU).
             /// For a torus ciphertext,
             /// `poly` must be transformed as an unscaled integer polynomial.
+            ///
+            /// # Panics
+            ///
+            /// Panics if `poly` is empty.
             #[inline]
             pub fn add_mul_fourier_polynomial_assign<A, B>(
                 &mut self,
@@ -190,12 +220,18 @@ macro_rules! impl_fourier_polynomial {
         {
             /// Writes `output = self * poly`, multiplying every component pointwise.
             ///
+            /// # Correctness
+            ///
             /// Input and output must have equal lengths and matching layouts. `poly`
             /// must be nonempty and its length must divide the ciphertext length.
             /// For NTRU the multiplier and ciphertext lengths must be equal.
             /// Both inputs must use the same FFT table and evaluation order. For a
             /// torus ciphertext, `poly` must represent an unscaled integer polynomial.
             /// Output retains the input ciphertext scale; no temporary is allocated.
+            ///
+            /// # Panics
+            ///
+            /// Panics if `poly` is empty.
             #[inline]
             pub fn mul_fourier_polynomial_to<A, B>(
                 &self,

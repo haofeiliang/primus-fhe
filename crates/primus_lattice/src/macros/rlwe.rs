@@ -9,6 +9,8 @@ macro_rules! impl_rlwe_accessors {
         {
             /// Borrows the mask `a` and body `b` slices without allocating.
             ///
+            /// # Correctness
+            ///
             /// Storage must contain two nonempty, equal-length polynomials in
             /// this ciphertext's representation. RNS halves include all moduli
             /// in the same order; their full layout is maintained by the caller.
@@ -20,6 +22,9 @@ macro_rules! impl_rlwe_accessors {
             }
 
             /// Borrows the mask and body as polynomial views.
+            ///
+            /// # Correctness
+            ///
             /// Storage must satisfy the layout required by `a_b_slices`.
             #[must_use]
             #[inline]
@@ -35,6 +40,9 @@ macro_rules! impl_rlwe_accessors {
             T: primus_integer::FheUint,
         {
             /// Borrows disjoint mask and body slices without allocating.
+            ///
+            /// # Correctness
+            ///
             /// Storage must satisfy the layout required by `a_b_slices`.
             #[inline]
             pub fn a_b_mut_slices(&mut self) -> (&mut [T], &mut [T]) {
@@ -44,6 +52,9 @@ macro_rules! impl_rlwe_accessors {
             }
 
             /// Borrows disjoint mask and body polynomial views.
+            ///
+            /// # Correctness
+            ///
             /// Storage must satisfy the layout required by `a_b_slices`.
             #[inline]
             pub fn a_b_mut(

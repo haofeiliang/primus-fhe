@@ -17,6 +17,12 @@ pub type RlweOwned<T> = Rlwe<Vec<T>>;
 /// |------a------|------b------|
 ///
 /// where `a` and `b` are [`Polynomial`] with same poly length.
+///
+/// # Correctness
+///
+/// The layout above is a caller-maintained contract. Raw construction and
+/// mutable storage access do not validate it; parameter and key metadata
+/// are not stored in this wrapper. See the [crate contracts](crate#correctness).
 #[derive(Clone)]
 pub struct Rlwe<S>(pub S)
 where
@@ -44,6 +50,13 @@ where
     T: FheUint,
 {
     /// Creates a new [`Rlwe<S>`] with reference of [`Polynomial<A>`].
+    ///
+    /// This copies both polynomial buffers into owned storage.
+    ///
+    /// # Correctness
+    ///
+    /// `a` and `b` must be nonempty, equal-length coefficient polynomials with
+    /// the same modulus. Only their equal lengths are debug-asserted.
     #[inline]
     #[must_use]
     pub fn from_ref<A>(a: &Polynomial<A>, b: &Polynomial<A>) -> Self
@@ -57,6 +70,14 @@ where
 
 impl<T: FheUint> Rlwe<Vec<T>> {
     /// Generate a [`Rlwe<Vec<T>>`] sample which encrypts `0`.
+    ///
+    /// # Correctness
+    ///
+    /// The secret must contain exactly `ntt_table.poly_length()` canonical
+    /// evaluations in that table's NTT order. `modulus` and the table must
+    /// agree, and `gaussian` must encode noise in the same modulus. These
+    /// relationships are caller obligations. The output is coefficient-domain
+    /// RLWE with phase equal to the sampled noise polynomial.
     pub fn generate_random_zero_sample<R, Table, M, A>(
         secret_key: &NttPolynomial<A>,
         gaussian: &DiscreteGaussian<T>,
@@ -96,6 +117,19 @@ where
 {
     /// Performs a multiplication on the `self` [`Rlwe<S>`] with another `ntt_polynomial` [`NttPolynomial<A>`],
     /// store the output into `output` [`NttRlwe<B>`].
+    ///
+    /// # Correctness
+    ///
+    /// Each coefficient polynomial must have `ntt_table.poly_length()` entries;
+    /// `ntt_poly` must have exactly that length in the table's NTT order.
+    /// The table, ciphertext, polynomial, and `modulus` must use the same
+    /// modulus, and input values must be canonical residues. Output has the
+    /// same component count and total length as `self` and is overwritten in
+    /// NTT form, retaining the ciphertext key.
+    ///
+    /// # Panics
+    ///
+    /// Panics if input and output storage lengths differ.
     #[inline]
     pub fn mul_ntt_polynomial_to<M, Table, A, B>(
         &self,

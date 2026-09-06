@@ -9,6 +9,8 @@ macro_rules! impl_basic_operation_single_modulus {
         {
             /// Consumes `self` and adds `rhs`, reusing the backing storage.
             ///
+            /// # Correctness
+            ///
             /// All ciphertexts must have the same layout and length. Coefficients must
             /// satisfy the input ranges required by `modulus`.
             #[must_use]
@@ -24,6 +26,8 @@ macro_rules! impl_basic_operation_single_modulus {
             }
 
             /// Consumes `self` and subtracts `rhs`, reusing the backing storage.
+            ///
+            /// # Correctness
             ///
             /// All ciphertexts must have the same layout and length. Coefficients must
             /// satisfy the input ranges required by `modulus`.
@@ -41,6 +45,8 @@ macro_rules! impl_basic_operation_single_modulus {
 
             /// Performs an element-wise modular addition assignment `self += rhs`.
             ///
+            /// # Correctness
+            ///
             /// All ciphertexts must have the same layout and length. Coefficients must
             /// satisfy the input ranges required by `modulus`.
             #[inline]
@@ -54,6 +60,8 @@ macro_rules! impl_basic_operation_single_modulus {
             }
 
             /// Performs an element-wise modular subtraction assignment `self -= rhs`
+            ///
+            /// # Correctness
             ///
             /// All ciphertexts must have the same layout and length. Coefficients must
             /// satisfy the input ranges required by `modulus`.
@@ -75,6 +83,8 @@ macro_rules! impl_basic_operation_single_modulus {
         {
             /// Writes the element-wise modular sum `output = self + rhs`.
             ///
+            /// # Correctness
+            ///
             /// All ciphertexts must have the same layout and length. Coefficients must
             /// satisfy the input ranges required by `modulus`.
             #[inline]
@@ -92,6 +102,8 @@ macro_rules! impl_basic_operation_single_modulus {
             }
 
             /// Writes the element-wise modular difference `output = self - rhs`.
+            ///
+            /// # Correctness
             ///
             /// All ciphertexts must have the same layout and length. Coefficients must
             /// satisfy the input ranges required by `modulus`.
@@ -122,6 +134,8 @@ macro_rules! impl_neg_single_modulus {
         {
             /// Negates every ciphertext component modulo `modulus` in place.
             ///
+            /// # Correctness
+            ///
             /// Coefficients must satisfy the input range required by `modulus`.
             #[inline]
             pub fn neg_assign<M>(&mut self, modulus: M)
@@ -137,6 +151,8 @@ macro_rules! impl_neg_single_modulus {
             T: primus_integer::FheUint,
         {
             /// Writes `output = -self` into existing storage.
+            ///
+            /// # Correctness
             ///
             /// Input and output must have the same layout and length.
             /// Coefficients must satisfy the input ranges required by `modulus`.
@@ -161,6 +177,8 @@ macro_rules! impl_mul_scalar_single_modulus {
         {
             /// Multiplies every ciphertext component by `scalar` in place.
             ///
+            /// # Correctness
+            ///
             /// Coefficients and `scalar` must satisfy the input ranges required by `modulus`.
             #[inline]
             pub fn mul_scalar_assign<M>(&mut self, scalar: T, modulus: M)
@@ -171,6 +189,8 @@ macro_rules! impl_mul_scalar_single_modulus {
             }
 
             /// Accumulates `self += rhs * scalar` without clearing `self` or allocating.
+            ///
+            /// # Correctness
             ///
             /// Both ciphertexts must have the same length, layout, representation,
             /// and compatible key semantics. Gadget bases and level/row order must
@@ -186,6 +206,8 @@ macro_rules! impl_mul_scalar_single_modulus {
             }
 
             /// Accumulates `self -= rhs * scalar` without clearing `self` or allocating.
+            ///
+            /// # Correctness
             ///
             /// Both ciphertexts must have the same length, layout, representation,
             /// and compatible key semantics. Gadget bases and level/row order must
@@ -211,6 +233,8 @@ macro_rules! impl_mul_scalar_single_modulus {
         {
             /// Writes `output = self * scalar` into existing storage.
             ///
+            /// # Correctness
+            ///
             /// Input and output must have the same layout and length.
             /// Coefficients and `scalar` must satisfy the input ranges required by `modulus`.
             #[inline]
@@ -234,6 +258,8 @@ macro_rules! impl_mul_factor_single_modulus {
         {
             /// Multiplies every ciphertext component by a precomputed `factor` in place.
             ///
+            /// # Correctness
+            ///
             /// The factor must be prepared for `modulus`; stored values must be in
             /// `[0, modulus)`. Every component, including all gadget
             /// levels and rows, is scaled by the same factor without changing layout
@@ -247,6 +273,8 @@ macro_rules! impl_mul_factor_single_modulus {
             }
 
             /// Accumulates `self += rhs * factor` without clearing `self` or allocating.
+            ///
+            /// # Correctness
             ///
             /// Both ciphertexts must have the same length, layout, representation,
             /// and compatible key semantics. Gadget bases and level/row order must
@@ -263,6 +291,8 @@ macro_rules! impl_mul_factor_single_modulus {
             }
 
             /// Accumulates `self -= rhs * factor` without clearing `self` or allocating.
+            ///
+            /// # Correctness
             ///
             /// Both ciphertexts must have the same length, layout, representation,
             /// and compatible key semantics. Gadget bases and level/row order must
@@ -284,6 +314,8 @@ macro_rules! impl_mul_factor_single_modulus {
             T: primus_integer::FheUint,
         {
             /// Writes `output = self * factor`, overwriting existing output storage.
+            ///
+            /// # Correctness
             ///
             /// Input and output must have the same layout and length. The factor
             /// must be prepared for `modulus`; stored values must be in `[0, modulus)`.

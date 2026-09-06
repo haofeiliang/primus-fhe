@@ -14,10 +14,16 @@ where
 {
     /// Extracts the constant coefficient as an LWE sample.
     ///
+    /// # Correctness
+    ///
     /// A GLWE with `k` mask polynomials of length `N` produces an LWE of
     /// dimension `kN`. `output` must therefore have length `kN + 1`.
     /// `N = poly_length` must be nonzero, and storage must contain exactly
     /// `k + 1` complete polynomials of length `N`.
+    /// Input values must be canonical under `modulus`. The LWE secret is
+    /// the GLWE mask secret flattened in polynomial/coefficient order. Output
+    /// is overwritten, and its phase is the selected coefficient of the GLWE
+    /// phase `b - sum(a_i * s_i)`.
     pub fn extract_lwe_to<M, B>(&self, output: &mut Lwe<B>, poly_length: usize, modulus: M)
     where
         M: RingContext<T>,
@@ -28,11 +34,17 @@ where
 
     /// Extracts coefficient `index` as an LWE sample.
     ///
+    /// # Correctness
+    ///
     /// A GLWE with `k` mask polynomials of length `N` produces an LWE of
     /// dimension `kN`. `index` must be in `[0, N)`, and `output` must have
     /// dimension `kN`.
     /// `N = poly_length` must be nonzero, and storage must contain exactly
     /// `k + 1` complete polynomials of length `N`.
+    /// Input values must be canonical under `modulus`. The LWE secret is
+    /// the GLWE mask secret flattened in polynomial/coefficient order. Output
+    /// is overwritten, and its phase is the selected coefficient of the GLWE
+    /// phase `b - sum(a_i * s_i)`.
     pub fn extract_lwe_at_to<M, B>(
         &self,
         index: usize,
@@ -57,6 +69,8 @@ where
     /// Extracts the constant coefficient as an LWE sample while omitting mask
     /// coefficients paired with a zero-padded secret-key suffix.
     ///
+    /// # Correctness
+    ///
     /// The active secret-key length is inferred from `output.dimension()` and
     /// must not exceed the full extracted dimension `kN`. For a GLWE key whose
     /// coefficient layout is `[s_lwe..., 0...]`, this directly produces an LWE
@@ -64,6 +78,11 @@ where
     /// ciphertext.
     /// `N = poly_length` must be nonzero, storage must contain exactly `k + 1`
     /// complete polynomials, and the output dimension must be nonzero.
+    /// Input values must be canonical under `modulus`. The LWE secret is
+    /// the GLWE mask secret flattened in polynomial/coefficient order. Output
+    /// is overwritten, and its phase is the selected coefficient of the GLWE
+    /// phase `b - sum(a_i * s_i)`. Every omitted secret coefficient
+    /// must be zero; a shorter output alone does not establish that condition.
     pub fn extract_compact_lwe_to<M, B>(&self, output: &mut Lwe<B>, poly_length: usize, modulus: M)
     where
         M: RingContext<T>,
@@ -75,10 +94,17 @@ where
     /// Extracts coefficient `index` as an LWE sample while omitting mask
     /// coefficients paired with a zero-padded secret-key suffix.
     ///
+    /// # Correctness
+    ///
     /// `index` must be in `[0, N)`. The active secret-key length is inferred
     /// from `output.dimension()` and must not exceed the full `kN` mask.
     /// `N = poly_length` must be nonzero, storage must contain exactly `k + 1`
     /// complete polynomials, and the output dimension must be nonzero.
+    /// Input values must be canonical under `modulus`. The LWE secret is
+    /// the GLWE mask secret flattened in polynomial/coefficient order. Output
+    /// is overwritten, and its phase is the selected coefficient of the GLWE
+    /// phase `b - sum(a_i * s_i)`. Every omitted secret coefficient
+    /// must be zero; a shorter output alone does not establish that condition.
     pub fn extract_compact_lwe_at_to<M, B>(
         &self,
         index: usize,
@@ -99,8 +125,8 @@ where
         self.extract_lwe_prefix_at_to(index, output, poly_length, modulus);
     }
 
-    /// Writes the selected mask prefix and body; the entry point checks index
-    /// and output dimensions. Each polynomial uses the negacyclic extraction order.
+    /// Writes the selected mask prefix and body. The caller supplies valid index
+    /// and output dimensions; entry points only debug-assert these conditions. Each polynomial uses the negacyclic extraction order.
     #[inline]
     fn extract_lwe_prefix_at_to<M, B>(
         &self,

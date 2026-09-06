@@ -15,6 +15,14 @@ pub type NttRlweOwned<T> = NttRlwe<Vec<T>>;
 /// |------a------|------b------|
 ///
 /// where `a` and `b` are [`NttPolynomial`] with same poly length.
+///
+/// # Correctness
+///
+/// The layout above is a caller-maintained contract. Raw construction and
+/// mutable storage access do not validate it; parameter and key metadata
+/// are not stored in this wrapper. See the [crate contracts](crate#correctness).
+/// Stored values must use the matching NTT table, modulus, and evaluation
+/// order; a representation wrapper alone does not perform a transform.
 #[derive(Clone)]
 pub struct NttRlwe<S>(pub S)
 where
@@ -42,6 +50,14 @@ where
     T: FheUint,
 {
     /// Creates a new [`NttRlwe<S>`] with reference of [`NttPolynomial<A>`].
+    ///
+    /// This copies both polynomial buffers into owned storage.
+    ///
+    /// # Correctness
+    ///
+    /// `a` and `b` must be nonempty, equal-length polynomials using the same
+    /// modulus and NTT table/evaluation order. Only equality of their lengths
+    /// is debug-asserted; no representation conversion is performed.
     #[inline]
     #[must_use]
     pub fn from_ref<A>(a: &NttPolynomial<A>, b: &NttPolynomial<A>) -> Self

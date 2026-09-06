@@ -14,6 +14,14 @@ use super::NttGgsw;
 /// |--c1--|....|--ck--|--c[k+1]--|
 ///
 /// where `c1` to `c[k+1]` are [`Glev`] with same parameter, `k` is the dimension.
+///
+/// # Correctness
+///
+/// The layout above is a caller-maintained contract. Raw construction and
+/// mutable storage access do not validate it; parameter and key metadata
+/// are not stored in this wrapper. See the [crate contracts](crate#correctness).
+/// Levels must follow the decomposition basis's iterator order; every level
+/// uses the same key, polynomial size, modulus, and representation.
 #[derive(Clone)]
 pub struct Ggsw<S>(pub S)
 where

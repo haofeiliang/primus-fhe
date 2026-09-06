@@ -13,6 +13,16 @@ use super::CrtGlwe;
 /// |--a1--|....|--ak--|--b--|
 ///
 /// where `a1`...`ak` and `b` are [`DcrtPolynomial`] with same poly length and moduli count, `k` is the dimension.
+///
+/// # Correctness
+///
+/// The layout above is a caller-maintained contract. Raw construction and
+/// mutable storage access do not validate it; parameter and key metadata
+/// are not stored in this wrapper. See the [crate contracts](crate#correctness).
+/// Each polynomial contains consecutive modulus blocks in one fixed RNS
+/// base order, with the same polynomial length for every modulus.
+/// Stored values must use the matching NTT table, modulus, and evaluation
+/// order; a representation wrapper alone does not perform a transform.
 #[derive(Clone)]
 pub struct DcrtGlwe<S>(pub S)
 where
@@ -40,9 +50,15 @@ where
 {
     /// Splits this GLWE into its mutable mask and body slices.
     ///
+    /// # Correctness
+    ///
     /// Storage must contain at least one mask polynomial and one body polynomial,
     /// each with `dcrt_poly_len` elements. The caller must maintain this layout
     /// and provide a nonzero polynomial length.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the supplied polynomial storage length exceeds the ciphertext length.
     #[inline]
     pub fn a_b_mut_slices(&mut self, dcrt_poly_len: usize) -> (&mut [T], &mut [T]) {
         let glwe_len = self.as_ref().len();
@@ -50,7 +66,14 @@ where
     }
 
     /// Splits this GLWE into its mutable mask polynomials and body polynomial.
-    /// Storage and polynomial length must satisfy the layout required by `a_b_slices`.
+    ///
+    /// # Correctness
+    ///
+    /// Storage and polynomial length must satisfy the layout required by [`Self::a_b_slices`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if the supplied polynomial storage length exceeds the ciphertext length. Also panics if it is zero.
     #[inline]
     pub fn a_b_mut(
         &mut self,
@@ -63,8 +86,22 @@ where
         )
     }
 
-    /// Inverse butterfly with monomial multiply.
+    /// Inverse butterfly with a DCRT polynomial multiplier.
     /// `(self, output) = (self + rhs, (self_orig - rhs) * dcrt_poly)`
+    ///
+    /// # Correctness
+    ///
+    /// Ciphertexts must have equal lengths, compatible keys, and matching
+    /// complete DCRT layouts. Each polynomial has `poly_length * moduli.len()`
+    /// entries, with nonzero polynomial length and modulus count. The
+    /// multiplier contains exactly one such polynomial in the same modulus
+    /// and evaluation order. Inputs are canonical residues; both outputs are
+    /// canonical. Precomputed factors, when used, must be prepared for the
+    /// corresponding modulus. `output` is overwritten.
+    ///
+    /// # Panics
+    ///
+    /// Panics when a zero-length polynomial chunk is used.
     pub fn butterfly_mul_dcrt_polynomial_to<M, A, B, C>(
         &mut self,
         rhs: &DcrtGlwe<A>,
@@ -92,6 +129,20 @@ where
     ///
     /// `self` and `rhs` are expected in `[0, q)`. Both outputs are written
     /// back in `[0, q)`.
+    ///
+    /// # Correctness
+    ///
+    /// Ciphertexts must have equal lengths, compatible keys, and matching
+    /// complete DCRT layouts. Each polynomial has `poly_length * moduli.len()`
+    /// entries, with nonzero polynomial length and modulus count. The
+    /// multiplier contains exactly one such polynomial in the same modulus
+    /// and evaluation order. Inputs are canonical residues; both outputs are
+    /// canonical. Precomputed factors, when used, must be prepared for the
+    /// corresponding modulus. `output` is overwritten.
+    ///
+    /// # Panics
+    ///
+    /// Panics when a zero-length polynomial chunk is used.
     pub fn butterfly_mul_factor_to<A, C>(
         &mut self,
         rhs: &DcrtGlwe<A>,
@@ -120,9 +171,15 @@ where
 {
     /// Splits this GLWE into its mask and body slices.
     ///
+    /// # Correctness
+    ///
     /// Storage must contain at least one mask polynomial and one body polynomial,
     /// each with `dcrt_poly_len` elements. The caller must maintain this layout
     /// and provide a nonzero polynomial length.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the supplied polynomial storage length exceeds the ciphertext length.
     #[inline]
     pub fn a_b_slices(&self, dcrt_poly_len: usize) -> (&[T], &[T]) {
         let glwe_len = self.as_ref().len();
@@ -130,7 +187,14 @@ where
     }
 
     /// Splits this GLWE into its mask polynomials and body polynomial.
-    /// Storage and polynomial length must satisfy the layout required by `a_b_slices`.
+    ///
+    /// # Correctness
+    ///
+    /// Storage and polynomial length must satisfy the layout required by [`Self::a_b_slices`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if the supplied polynomial storage length exceeds the ciphertext length. Also panics if it is zero.
     #[inline]
     pub fn a_b(&self, dcrt_poly_len: usize) -> (DcrtPolynomialIter<'_, T>, DcrtPolynomial<&[T]>) {
         let (mask, body) = self.a_b_slices(dcrt_poly_len);

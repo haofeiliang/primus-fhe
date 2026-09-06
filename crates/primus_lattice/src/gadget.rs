@@ -3,7 +3,8 @@
 /// Visits the diagonal polynomial of one decomposition level in every row.
 ///
 /// The caller maintains matching storage and layout lengths from a checked gadget
-/// size; the public operation checks the level index.
+/// size. `level` must be within that size's decomposition length; the public
+/// operation only diagnoses this condition with a debug assertion.
 /// `poly_len`, `glwe_len` and `glev_len` count stored elements in the current
 /// representation: one polynomial, one GLWE ciphertext and one complete GLev row,
 /// respectively. For RGSW, GLWE has dimension one, so these are RLWE and RLev lengths.

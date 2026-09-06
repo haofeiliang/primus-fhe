@@ -9,6 +9,8 @@ macro_rules! impl_neg_multiple_modulus {
         {
             /// Negates every ciphertext component in place.
             ///
+            /// # Correctness
+            ///
             /// Components are stored consecutively; each contains one length-`poly_length`
             /// block per modulus, in `moduli` order. `poly_length` and `moduli.len()`
             /// must be nonzero, `rns_poly_len = poly_length * moduli.len()`, and
@@ -16,6 +18,11 @@ macro_rules! impl_neg_multiple_modulus {
             /// All operands must have equal lengths, the same ordered modulus base,
             /// and the same coefficient or NTT representation.
             /// Values must satisfy each modulus negation input range.
+            ///
+            /// # Panics
+            ///
+            /// Panics when a zero chunk length is used. Other layout requirements
+            /// are caller obligations; debug assertions do not provide release validation.
             #[inline]
             pub fn neg_assign<M>(&mut self, poly_length: usize, rns_poly_len: usize, moduli: &[M])
             where
@@ -35,6 +42,8 @@ macro_rules! impl_neg_multiple_modulus {
         {
             /// Writes `output = -self`, overwriting all components.
             ///
+            /// # Correctness
+            ///
             /// Components are stored consecutively; each contains one length-`poly_length`
             /// block per modulus, in `moduli` order. `poly_length` and `moduli.len()`
             /// must be nonzero, `rns_poly_len = poly_length * moduli.len()`, and
@@ -42,6 +51,11 @@ macro_rules! impl_neg_multiple_modulus {
             /// All operands must have equal lengths, the same ordered modulus base,
             /// and the same coefficient or NTT representation.
             /// Values must satisfy each modulus negation input range.
+            ///
+            /// # Panics
+            ///
+            /// Panics when a zero chunk length is used. Other layout requirements
+            /// are caller obligations; debug assertions do not provide release validation.
             #[inline]
             pub fn neg_to<M, A>(
                 &self,

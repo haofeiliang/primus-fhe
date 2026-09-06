@@ -9,6 +9,8 @@ macro_rules! impl_mul_scalar_multiple_modulus {
         {
             /// Multiplies each modulus block by its scalar residue in place.
             ///
+            /// # Correctness
+            ///
             /// Components are stored consecutively; each contains one length-`poly_length`
             /// block per modulus, in `moduli` order. `poly_length` and `moduli.len()`
             /// must be nonzero, `rns_poly_len = poly_length * moduli.len()`, and
@@ -17,6 +19,11 @@ macro_rules! impl_mul_scalar_multiple_modulus {
             /// and the same coefficient or NTT representation.
             /// `scalar` contains one residue per modulus, in the same order.
             /// Values and residues must satisfy each modulus multiplication input range.
+            ///
+            /// # Panics
+            ///
+            /// Panics when a zero chunk length is used. Other layout requirements
+            /// are caller obligations; debug assertions do not provide release validation.
             #[inline]
             pub fn mul_scalar_assign<M>(
                 &mut self,
@@ -41,6 +48,8 @@ macro_rules! impl_mul_scalar_multiple_modulus {
 
             /// Accumulates `self += rhs * scalar` without clearing `self` or allocating.
             ///
+            /// # Correctness
+            ///
             /// Both ciphertexts must have the same length, layout, representation,
             /// and compatible key semantics. Gadget bases and level/row order must
             /// match. Components are consecutive RNS polynomials, each containing
@@ -52,6 +61,11 @@ macro_rules! impl_mul_scalar_multiple_modulus {
             /// Input and accumulator values must be canonical residues, and results
             /// remain canonical. Scalar residues must be canonical under their
             /// corresponding moduli.
+            ///
+            /// # Panics
+            ///
+            /// Panics when a zero chunk length is used. Other layout requirements
+            /// are caller obligations; debug assertions do not provide release validation.
             #[inline]
             pub fn add_mul_scalar_assign<M, A>(
                 &mut self,
@@ -93,6 +107,8 @@ macro_rules! impl_mul_scalar_multiple_modulus {
         {
             /// Writes the scalar product into `output`, overwriting all components.
             ///
+            /// # Correctness
+            ///
             /// Components are stored consecutively; each contains one length-`poly_length`
             /// block per modulus, in `moduli` order. `poly_length` and `moduli.len()`
             /// must be nonzero, `rns_poly_len = poly_length * moduli.len()`, and
@@ -101,6 +117,11 @@ macro_rules! impl_mul_scalar_multiple_modulus {
             /// and the same coefficient or NTT representation.
             /// `scalar` contains one residue per modulus, in the same order.
             /// Values and residues must satisfy each modulus multiplication input range.
+            ///
+            /// # Panics
+            ///
+            /// Panics when a zero chunk length is used. Other layout requirements
+            /// are caller obligations; debug assertions do not provide release validation.
             #[inline]
             pub fn mul_scalar_to<M, A>(
                 &self,

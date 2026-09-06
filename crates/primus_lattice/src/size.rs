@@ -1,3 +1,9 @@
+//! Checked storage dimensions, independent of ciphertext buffers and arithmetic tables.
+//!
+//! These descriptors validate positive counts, the supported polynomial-size
+//! range, and flattened-length overflow. They do not establish transform-table
+//! availability, modulus suitability, gadget weights, or encryption security.
+
 /// Smallest supported polynomial length for GLWE-family layouts.
 pub const MIN_POLY_LENGTH: usize = 2;
 
@@ -83,6 +89,11 @@ impl GlweSize {
     }
 
     /// Creates GLWE sizes, panicking when [`Self::try_new`] fails.
+    ///
+    /// # Panics
+    ///
+    /// Panics on any invalid count, polynomial size, or length overflow reported
+    /// by [`Self::try_new`].
     #[must_use]
     pub fn new(dimension: usize, poly_length: usize) -> Self {
         Self::try_new(dimension, poly_length).unwrap_or_else(|error| panic!("{error}"))
@@ -164,6 +175,11 @@ impl PartialEq for RnsGlweSize {
 
 impl RnsGlweSize {
     /// Creates checked RNS GLWE sizes.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for a zero modulus count or a derived length that
+    /// does not fit in `usize`.
     pub fn try_new(glwe_size: GlweSize, moduli_count: usize) -> Result<Self, GlweSizeError> {
         if moduli_count == 0 {
             return Err(GlweSizeError::ZeroModuliCount);
@@ -191,6 +207,11 @@ impl RnsGlweSize {
     }
 
     /// Creates RNS GLWE sizes, panicking when [`Self::try_new`] fails.
+    ///
+    /// # Panics
+    ///
+    /// Panics on any invalid count, polynomial size, or length overflow reported
+    /// by [`Self::try_new`].
     #[must_use]
     pub fn new(glwe_size: GlweSize, moduli_count: usize) -> Self {
         Self::try_new(glwe_size, moduli_count).unwrap_or_else(|error| panic!("{error}"))
@@ -264,6 +285,11 @@ impl PartialEq for GadgetSize {
 
 impl GadgetSize {
     /// Creates checked gadget ciphertext sizes.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for a zero decomposition length or a derived length that
+    /// does not fit in `usize`.
     pub fn try_new(glwe_size: GlweSize, decompose_length: usize) -> Result<Self, GlweSizeError> {
         if decompose_length == 0 {
             return Err(GlweSizeError::ZeroDecomposeLength);
@@ -286,6 +312,11 @@ impl GadgetSize {
     }
 
     /// Creates gadget sizes, panicking when [`Self::try_new`] fails.
+    ///
+    /// # Panics
+    ///
+    /// Panics on any invalid count, polynomial size, or length overflow reported
+    /// by [`Self::try_new`].
     #[must_use]
     pub fn new(glwe_size: GlweSize, decompose_length: usize) -> Self {
         Self::try_new(glwe_size, decompose_length).unwrap_or_else(|error| panic!("{error}"))
@@ -359,6 +390,11 @@ impl PartialEq for RnsGadgetSize {
 
 impl RnsGadgetSize {
     /// Creates checked RNS gadget ciphertext sizes.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error for a zero decomposition length or a derived length that
+    /// does not fit in `usize`.
     pub fn try_new(
         rns_glwe_size: RnsGlweSize,
         decompose_length: usize,
@@ -385,6 +421,11 @@ impl RnsGadgetSize {
     }
 
     /// Creates RNS gadget sizes, panicking when [`Self::try_new`] fails.
+    ///
+    /// # Panics
+    ///
+    /// Panics on any invalid count, polynomial size, or length overflow reported
+    /// by [`Self::try_new`].
     #[must_use]
     pub fn new(rns_glwe_size: RnsGlweSize, decompose_length: usize) -> Self {
         Self::try_new(rns_glwe_size, decompose_length).unwrap_or_else(|error| panic!("{error}"))

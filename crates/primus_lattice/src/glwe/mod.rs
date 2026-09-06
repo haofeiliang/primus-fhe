@@ -27,5 +27,8 @@ pub use fourier::{FourierGlwe, FourierGlweIter, FourierGlweIterMut, FourierGlweO
 /// TFHE torus GLWE ciphertext (coefficient domain).
 ///
 /// Layout: `|--a1--| ... |--ak--|--b--|` where each `a_i` and `b` is a
-/// polynomial of degree `N-1`.
+/// polynomial with `N` coefficients (degree less than `N`).
+///
+/// This alias does not enforce the native modulus or perform encoding;
+/// callers must use native-torus arithmetic and the underlying type's layout.
 pub type TorusGlwe<S> = Glwe<S>;

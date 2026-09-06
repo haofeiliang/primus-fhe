@@ -11,9 +11,18 @@ use super::NttRgsw;
 ///
 /// ## Structure of the `data`
 ///
-/// |--c1--|....|--ck--|--c[k+1]--|
+/// `|--c1--|--c2--|`
 ///
-/// where `c1` to `c[k+1]` are [`Rlev`] with same parameter, `k` is the dimension.
+/// Both rows are RLev ciphertexts with identical parameters. The underlying
+/// GLWE dimension is exactly one.
+///
+/// # Correctness
+///
+/// The layout above is a caller-maintained contract. Raw construction and
+/// mutable storage access do not validate it; parameter and key metadata
+/// are not stored in this wrapper. See the [crate contracts](crate#correctness).
+/// Levels must follow the decomposition basis's iterator order; every level
+/// uses the same key, polynomial size, modulus, and representation.
 #[derive(Clone)]
 pub struct Rgsw<S>(pub S)
 where

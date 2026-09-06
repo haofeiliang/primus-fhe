@@ -19,6 +19,16 @@ use crate::glev::{FourierGlev, FourierGlevIter, FourierGlevIterMut};
 /// Each row is a [`FourierGlev`] of length
 /// `fourier_glev_len`.
 /// Total data length: `(k + 1) * fourier_glev_len`.
+///
+/// # Correctness
+///
+/// The layout above is a caller-maintained contract. Raw construction and
+/// mutable storage access do not validate it; parameter and key metadata
+/// are not stored in this wrapper. See the [crate contracts](crate#correctness).
+/// Each polynomial occupies `N / 2` complex values in the FFT table's
+/// packing order. Ciphertext values use the normalized native-torus scale.
+/// Levels must follow the decomposition basis's iterator order; every level
+/// uses the same key, polynomial size, modulus, and representation.
 #[derive(Clone)]
 pub struct FourierGgsw<S>(pub S)
 where
@@ -51,6 +61,8 @@ where
     /// a zero-based storage index; the caller maps it to its gadget weight.
     /// Every diagonal polynomial at this level receives `plaintext`, while
     /// other levels and off-diagonal components remain unchanged.
+    ///
+    /// # Correctness
     ///
     /// `plaintext` must be one complete nonempty polynomial already multiplied
     /// by the selected gadget weight and encoded in this ciphertext's domain

@@ -14,6 +14,12 @@ use super::NttGlwe;
 /// |--a1--|....|--ak--|--b--|
 ///
 /// where `a1`...`ak` and `b` are [`Polynomial`] with same poly length, `k` is the dimension.
+///
+/// # Correctness
+///
+/// The layout above is a caller-maintained contract. Raw construction and
+/// mutable storage access do not validate it; parameter and key metadata
+/// are not stored in this wrapper. See the [crate contracts](crate#correctness).
 #[derive(Clone)]
 pub struct Glwe<S>(pub S)
 where
@@ -41,9 +47,15 @@ where
 {
     /// Splits this GLWE into its mutable mask and body slices.
     ///
+    /// # Correctness
+    ///
     /// Storage must contain at least one mask polynomial and one body polynomial,
     /// each with `poly_length` elements. The caller must maintain this layout
     /// and provide a nonzero polynomial length.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the supplied polynomial storage length exceeds the ciphertext length.
     #[inline]
     pub fn a_b_mut_slices(&mut self, poly_length: usize) -> (&mut [T], &mut [T]) {
         let glwe_len = self.as_ref().len();
@@ -51,7 +63,14 @@ where
     }
 
     /// Splits this GLWE into its mutable mask polynomials and body polynomial.
-    /// Storage and polynomial length must satisfy the layout required by `a_b_slices`.
+    ///
+    /// # Correctness
+    ///
+    /// Storage and polynomial length must satisfy the layout required by [`Self::a_b_slices`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if the supplied polynomial storage length exceeds the ciphertext length. Also panics if it is zero.
     #[inline]
     pub fn a_b_mut(
         &mut self,
@@ -69,9 +88,15 @@ where
 {
     /// Splits this GLWE into its mask and body slices.
     ///
+    /// # Correctness
+    ///
     /// Storage must contain at least one mask polynomial and one body polynomial,
     /// each with `poly_length` elements. The caller must maintain this layout
     /// and provide a nonzero polynomial length.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the supplied polynomial storage length exceeds the ciphertext length.
     #[inline]
     pub fn a_b_slices(&self, poly_length: usize) -> (&[T], &[T]) {
         let glwe_len = self.as_ref().len();
@@ -79,7 +104,14 @@ where
     }
 
     /// Splits this GLWE into its mask polynomials and body polynomial.
-    /// Storage and polynomial length must satisfy the layout required by `a_b_slices`.
+    ///
+    /// # Correctness
+    ///
+    /// Storage and polynomial length must satisfy the layout required by [`Self::a_b_slices`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if the supplied polynomial storage length exceeds the ciphertext length. Also panics if it is zero.
     #[inline]
     pub fn a_b(&self, poly_length: usize) -> (PolynomialIter<'_, T>, Polynomial<&[T]>) {
         let (mask, body) = self.a_b_slices(poly_length);
@@ -89,10 +121,18 @@ where
     /// Computes `output = self * (X^exponent - 1)` component-wise in
     /// `Z_q[X]/(X^N + 1)`.
     ///
+    /// # Correctness
+    ///
     /// `exponent` must belong to `[0, 2N)`. Rotation and subtraction are
     /// fused into one coefficient pass. `poly_length = N` must be a supported
     /// power of two, and both ciphertexts must have equal lengths containing
     /// whole polynomials of length `N`.
+    /// Values must be canonical under `modulus`; output is overwritten with
+    /// canonical residues in the same coefficient layout.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `poly_length` is zero.
     pub fn mul_monomial_sub_one_to<M, B>(
         &self,
         exponent: usize,
@@ -116,6 +156,19 @@ where
 
     /// Performs a multiplication on the `self` [`Glwe<S>`] with another `ntt_poly` [`NttPolynomial<A>`],
     /// store the output into `output` [`NttGlwe<B>`].
+    ///
+    /// # Correctness
+    ///
+    /// Each coefficient polynomial must have `ntt_table.poly_length()` entries;
+    /// `ntt_poly` must have exactly that length in the table's NTT order.
+    /// The table, ciphertext, polynomial, and `modulus` must use the same
+    /// modulus, and input values must be canonical residues. Output has the
+    /// same component count and total length as `self` and is overwritten in
+    /// NTT form, retaining the ciphertext key.
+    ///
+    /// # Panics
+    ///
+    /// Panics if input and output storage lengths differ.
     #[inline]
     pub fn mul_ntt_polynomial_to<M, Table, A, B>(
         &self,

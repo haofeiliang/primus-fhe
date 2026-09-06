@@ -9,6 +9,8 @@ macro_rules! impl_mul_factor_multiple_modulus {
         {
             /// Multiplies each modulus block by its precomputed factor in place.
             ///
+            /// # Correctness
+            ///
             /// Components are stored consecutively; each contains one length-`poly_length`
             /// block per modulus, in `moduli` order. `poly_length` and `moduli.len()`
             /// must be nonzero, `rns_poly_len = poly_length * moduli.len()`, and
@@ -17,6 +19,11 @@ macro_rules! impl_mul_factor_multiple_modulus {
             /// and the same coefficient or NTT representation.
             /// `factors` contains one precomputed factor for each modulus in order.
             /// Each factor must match its modulus; values must satisfy its input range.
+            ///
+            /// # Panics
+            ///
+            /// Panics when a zero chunk length is used. Other layout requirements
+            /// are caller obligations; debug assertions do not provide release validation.
             #[inline]
             pub fn mul_factor_assign<F>(
                 &mut self,
@@ -41,6 +48,8 @@ macro_rules! impl_mul_factor_multiple_modulus {
 
             /// Accumulates `self += rhs * factors` without clearing `self` or allocating.
             ///
+            /// # Correctness
+            ///
             /// Both ciphertexts must have the same length, layout, representation,
             /// and compatible key semantics. Gadget bases and level/row order must
             /// match. Components are consecutive RNS polynomials, each containing
@@ -52,6 +61,11 @@ macro_rules! impl_mul_factor_multiple_modulus {
             /// Input and accumulator values must be canonical residues, and results
             /// remain canonical. Each factor must be precomputed for its
             /// corresponding modulus.
+            ///
+            /// # Panics
+            ///
+            /// Panics when a zero chunk length is used. Other layout requirements
+            /// are caller obligations; debug assertions do not provide release validation.
             #[inline]
             pub fn add_mul_factor_assign<F, A>(
                 &mut self,
@@ -88,6 +102,8 @@ macro_rules! impl_mul_factor_multiple_modulus {
 
             /// Accumulates `self -= rhs * factors` without clearing `self` or allocating.
             ///
+            /// # Correctness
+            ///
             /// Both ciphertexts must have the same length, layout, representation,
             /// and compatible key semantics. Gadget bases and level/row order must
             /// match. Components are consecutive RNS polynomials, each containing
@@ -99,6 +115,11 @@ macro_rules! impl_mul_factor_multiple_modulus {
             /// Input and accumulator values must be canonical residues, and results
             /// remain canonical. Each factor must be precomputed for its
             /// corresponding modulus.
+            ///
+            /// # Panics
+            ///
+            /// Panics when a zero chunk length is used. Other layout requirements
+            /// are caller obligations; debug assertions do not provide release validation.
             #[inline]
             pub fn sub_mul_factor_assign<F, A>(
                 &mut self,
@@ -140,6 +161,8 @@ macro_rules! impl_mul_factor_multiple_modulus {
         {
             /// Writes the factor product into `output`, overwriting all components.
             ///
+            /// # Correctness
+            ///
             /// Components are stored consecutively; each contains one length-`poly_length`
             /// block per modulus, in `moduli` order. `poly_length` and `moduli.len()`
             /// must be nonzero, `rns_poly_len = poly_length * moduli.len()`, and
@@ -148,6 +171,11 @@ macro_rules! impl_mul_factor_multiple_modulus {
             /// and the same coefficient or NTT representation.
             /// `factors` contains one precomputed factor for each modulus in order.
             /// Each factor must match its modulus; values must satisfy its input range.
+            ///
+            /// # Panics
+            ///
+            /// Panics when a zero chunk length is used. Other layout requirements
+            /// are caller obligations; debug assertions do not provide release validation.
             #[inline]
             pub fn mul_factor_to<F, A>(
                 &self,

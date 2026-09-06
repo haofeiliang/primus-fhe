@@ -21,6 +21,18 @@ use super::CrtGgsw;
 /// Same-domain polynomial multiplication likewise applies one DCRT polynomial
 /// to every component and preserves the gadget type; it does not decompose an
 /// input or accumulate across gadget levels as an external product does.
+///
+/// # Correctness
+///
+/// The layout above is a caller-maintained contract. Raw construction and
+/// mutable storage access do not validate it; parameter and key metadata
+/// are not stored in this wrapper. See the [crate contracts](crate#correctness).
+/// Each polynomial contains consecutive modulus blocks in one fixed RNS
+/// base order, with the same polynomial length for every modulus.
+/// Stored values must use the matching NTT table, modulus, and evaluation
+/// order; a representation wrapper alone does not perform a transform.
+/// Levels must follow the decomposition basis's iterator order; every level
+/// uses the same key, polynomial size, modulus, and representation.
 #[derive(Clone)]
 pub struct DcrtGgsw<S>(pub S)
 where

@@ -17,6 +17,14 @@ pub type CrtRlweOwned<T> = CrtRlwe<Vec<T>>;
 /// |------a------|------b------|
 ///
 /// where `a` and `b` are [`CrtPolynomial`] with same poly length and moduli count.
+///
+/// # Correctness
+///
+/// The layout above is a caller-maintained contract. Raw construction and
+/// mutable storage access do not validate it; parameter and key metadata
+/// are not stored in this wrapper. See the [crate contracts](crate#correctness).
+/// Each polynomial contains consecutive modulus blocks in one fixed RNS
+/// base order, with the same polynomial length for every modulus.
 #[derive(Clone)]
 pub struct CrtRlwe<S>(pub S)
 where
@@ -45,6 +53,18 @@ where
 {
     /// Performs a multiplication on the `self` [`CrtRlwe<S>`] with another `dcrt_polynomial` [`DcrtPolynomial<A>`],
     /// store the output into `output` [`DcrtRlwe<B>`].
+    ///
+    /// # Correctness
+    ///
+    /// Input and output each contain exactly two complete RNS polynomials,
+    /// each of length `table.crt_poly_length()`. `dcrt_poly` contains exactly
+    /// one such polynomial. The table, `moduli`, and operands must use the
+    /// same ordered RNS base, with canonical values and matching NTT
+    /// evaluation order for the multiplier. Output is overwritten in DCRT form.
+    ///
+    /// # Panics
+    ///
+    /// Panics if input and output storage lengths differ.
     #[inline]
     pub fn mul_dcrt_polynomial_to<M, Table, A, B>(
         &self,

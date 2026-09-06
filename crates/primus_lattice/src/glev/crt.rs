@@ -6,7 +6,7 @@ use crate::glwe::{CrtGlwe, CrtGlweIter, CrtGlweIterMut};
 
 use super::DcrtGlev;
 
-/// A representation of Module Learning with Errors (MLWE) ciphertexts with respect to different base,
+/// A representation of Module Learning with Errors (MLWE) ciphertexts at different levels of one gadget basis,
 /// used to control noise growth in polynomial multiplications.
 ///
 /// ## Structure of the `data`
@@ -19,6 +19,16 @@ use super::DcrtGlev;
 /// matching ciphertext dimensions, gadget bases, level order, ordered RNS bases,
 /// and key semantics. Scalar and factor multiplication applies the same RNS
 /// scalar to every level and ciphertext component.
+///
+/// # Correctness
+///
+/// The layout above is a caller-maintained contract. Raw construction and
+/// mutable storage access do not validate it; parameter and key metadata
+/// are not stored in this wrapper. See the [crate contracts](crate#correctness).
+/// Each polynomial contains consecutive modulus blocks in one fixed RNS
+/// base order, with the same polynomial length for every modulus.
+/// Levels must follow the decomposition basis's iterator order; every level
+/// uses the same key, polynomial size, modulus, and representation.
 #[derive(Clone)]
 pub struct CrtGlev<S>(pub S)
 where

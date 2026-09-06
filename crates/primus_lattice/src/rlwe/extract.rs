@@ -9,6 +9,12 @@ use crate::lwe::{Lwe, MultiMsgLwe};
 
 impl<T: FheUint> Rlwe<Vec<T>> {
     /// Extracts the constant coefficient, consuming and reusing the allocation.
+    ///
+    /// # Correctness
+    ///
+    /// Input storage must contain exactly two nonempty length-`N` polynomials
+    /// in coefficient form, with canonical values under `modulus`. The
+    /// extracted LWE key is the coefficient vector of the RLWE secret.
     #[must_use]
     #[inline]
     pub fn into_lwe<M>(self, modulus: M) -> Lwe<Vec<T>>
@@ -21,7 +27,14 @@ impl<T: FheUint> Rlwe<Vec<T>> {
     /// Packs the first `count` coefficients, consuming and reusing the allocation.
     /// The mask is converted to constant-term LWE extraction order.
     ///
+    /// # Correctness
+    ///
+    /// Input storage must contain exactly two nonempty length-`N` polynomials
+    /// in coefficient form, with canonical values under `modulus`. The
+    /// extracted LWE key is the coefficient vector of the RLWE secret.
+    ///
     /// # Panics
+    ///
     /// Panics if `count` exceeds the polynomial length.
     #[must_use]
     pub fn into_multi_msg_lwe<M>(self, count: usize, modulus: M) -> MultiMsgLwe<Vec<T>>
@@ -51,6 +64,12 @@ where
     T: FheUint,
 {
     /// Allocates an LWE sample for the constant coefficient.
+    ///
+    /// # Correctness
+    ///
+    /// Input storage must contain exactly two nonempty length-`N` polynomials
+    /// in coefficient form, with canonical values under `modulus`. The
+    /// extracted LWE key is the coefficient vector of the RLWE secret.
     #[must_use]
     #[inline]
     pub fn extract_lwe<M>(&self, modulus: M) -> Lwe<Vec<T>>
@@ -63,7 +82,14 @@ where
     /// Allocates an LWE sample for coefficient `index`.
     /// Storage must contain two complete nonempty polynomials of equal length.
     ///
+    /// # Correctness
+    ///
+    /// Input storage must contain exactly two nonempty length-`N` polynomials
+    /// in coefficient form, with canonical values under `modulus`. The
+    /// extracted LWE key is the coefficient vector of the RLWE secret.
+    ///
     /// # Panics
+    ///
     /// Panics if `index` is outside the polynomial.
     #[must_use]
     #[inline]
@@ -89,7 +115,14 @@ where
     /// Allocates a packed LWE containing the first `count` body coefficients.
     /// The mask is stored in constant-term LWE extraction order.
     ///
+    /// # Correctness
+    ///
+    /// Input storage must contain exactly two nonempty length-`N` polynomials
+    /// in coefficient form, with canonical values under `modulus`. The
+    /// extracted LWE key is the coefficient vector of the RLWE secret.
+    ///
     /// # Panics
+    ///
     /// Panics if `count` exceeds the polynomial length.
     #[must_use]
     #[inline]
@@ -120,10 +153,15 @@ where
 
     /// Extracts the constant coefficient into an existing LWE buffer.
     ///
+    /// # Correctness
+    ///
     /// Storage must contain two polynomials of the same nonzero length `N`.
     /// The output dimension must be `N`.
     /// The output phase equals the selected coefficient
     /// of `b - a*s`. Canonical inputs produce canonical outputs without allocation.
+    /// Input storage must contain exactly two nonempty length-`N` polynomials
+    /// in coefficient form, with canonical values under `modulus`. The
+    /// extracted LWE key is the coefficient vector of the RLWE secret.
     #[inline]
     pub fn extract_lwe_to<M, A>(&self, output: &mut Lwe<A>, modulus: M)
     where
@@ -136,10 +174,15 @@ where
 
     /// Extracts coefficient `index` into an existing LWE buffer.
     ///
+    /// # Correctness
+    ///
     /// Storage must contain two polynomials of the same nonzero length `N`.
     /// The output dimension must be `N`.
     /// `index` must belong to `[0, N)`. The output phase equals the selected coefficient
     /// of `b - a*s`. Canonical inputs produce canonical outputs without allocation.
+    /// Input storage must contain exactly two nonempty length-`N` polynomials
+    /// in coefficient form, with canonical values under `modulus`. The
+    /// extracted LWE key is the coefficient vector of the RLWE secret.
     #[inline]
     pub fn extract_lwe_at_to<M, A>(&self, index: usize, output: &mut Lwe<A>, modulus: M)
     where
@@ -152,11 +195,17 @@ where
 
     /// Extracts the constant coefficient into an existing LWE buffer.
     ///
+    /// # Correctness
+    ///
     /// Storage must contain two polynomials of the same nonzero length `N`.
     /// The output dimension must be in `1..=N`; the RLWE secret must have
     /// a zero suffix beyond that dimension.
     /// The output phase equals the selected coefficient
     /// of `b - a*s`. Canonical inputs produce canonical outputs without allocation.
+    /// Input storage must contain exactly two nonempty length-`N` polynomials
+    /// in coefficient form, with canonical values under `modulus`. The
+    /// extracted LWE key is the coefficient vector of the RLWE secret.
+    /// Only a zero suffix of that secret may be omitted.
     #[inline]
     pub fn extract_compact_lwe_to<M, A>(&self, output: &mut Lwe<A>, modulus: M)
     where
@@ -169,11 +218,17 @@ where
 
     /// Extracts coefficient `index` into an existing LWE buffer.
     ///
+    /// # Correctness
+    ///
     /// Storage must contain two polynomials of the same nonzero length `N`.
     /// The output dimension must be in `1..=N`; the RLWE secret must have
     /// a zero suffix beyond that dimension.
     /// `index` must belong to `[0, N)`. The output phase equals the selected coefficient
     /// of `b - a*s`. Canonical inputs produce canonical outputs without allocation.
+    /// Input storage must contain exactly two nonempty length-`N` polynomials
+    /// in coefficient form, with canonical values under `modulus`. The
+    /// extracted LWE key is the coefficient vector of the RLWE secret.
+    /// Only a zero suffix of that secret may be omitted.
     #[inline]
     pub fn extract_compact_lwe_at_to<M, A>(&self, index: usize, output: &mut Lwe<A>, modulus: M)
     where

@@ -21,11 +21,30 @@ where
 {
     /// Multiplies this DCRT GLEV with a CRT-domain polynomial, storing the output into `output`.
     ///
+    /// # Correctness
+    ///
     /// `basis` must match the ordered `rns_base`, and its radix must be
     /// smaller than every RNS modulus for the fast centered digit lift.
-    /// `context` must support the output gadget size and the current RNS limb
+    /// `context` must support the GLev layout and the current RNS limb
     /// width; the table must match its polynomial length and ordered RNS base.
     /// The output is overwritten; scratch does not require a manual reset.
+    ///
+    /// Let `size = context.size()`, `N = table.poly_length()`,
+    /// `m = rns_base.moduli_count()`, and `w = rns_base.big_uint_value_len()`.
+    /// The bound size must match `N`, `m`, the GLWE dimension, and
+    /// `basis.decompose_length()`; `context.is_compatible(size, rns_base)`
+    /// must hold. The table uses the base's modulus order and the gadget
+    /// uses its evaluation order and `basis.decomposer_iter()` level order.
+    /// CRT/DCRT values must be canonical residues.
+    /// The GLev contains exactly `size.rns_glev_len()` evaluations and the
+    /// GLWE output/accumulator exactly `size.rns_glwe_size().rns_glwe_len()`.
+    /// The polynomial contains `N * m` coefficients grouped by modulus.
+    ///
+    /// # Panics
+    ///
+    /// The RNS recomposition boundary panics if the CRT polynomial length
+    /// is not `N * m` or the context's BigUint/scratch lengths do not match
+    /// `N * w` and `m`. Other compatibility requirements are not fully checked.
     pub fn mul_crt_polynomial_to<M, Table, A, B>(
         &self,
         crt_poly: &CrtPolynomial<A>,
@@ -48,11 +67,26 @@ where
 
     /// Multiplies this DCRT GLEV with a BigUint-domain polynomial, storing the output into `output`.
     ///
+    /// # Correctness
+    ///
     /// `basis` must match the ordered `rns_base`, and its radix must be
     /// smaller than every RNS modulus for the fast centered digit lift.
-    /// `context` must support the output gadget size and the current RNS limb
+    /// `context` must support the GLev layout and the current RNS limb
     /// width; the table must match its polynomial length and ordered RNS base.
     /// The output is overwritten; scratch does not require a manual reset.
+    ///
+    /// Let `size = context.size()`, `N = table.poly_length()`,
+    /// `m = rns_base.moduli_count()`, and `w = rns_base.big_uint_value_len()`.
+    /// The bound size must match `N`, `m`, the GLWE dimension, and
+    /// `basis.decompose_length()`; `context.is_compatible(size, rns_base)`
+    /// must hold. The table uses the base's modulus order and the gadget
+    /// uses its evaluation order and `basis.decomposer_iter()` level order.
+    /// CRT/DCRT values must be canonical residues.
+    /// The GLev contains exactly `size.rns_glev_len()` evaluations and the
+    /// GLWE output/accumulator exactly `size.rns_glwe_size().rns_glwe_len()`.
+    /// The polynomial contains `N * w` little-endian limbs grouped by
+    /// coefficient, each representing a value in `[0, Q)`, where `Q` is the
+    /// product of the RNS moduli.
     pub fn mul_big_uint_polynomial_to<M, Table, A, B>(
         &self,
         big_uint_poly: &BigUintPolynomial<A>,
@@ -86,11 +120,30 @@ where
 {
     /// Performs `self += dcrt_glev * crt_poly` using the given decomposition basis and NTT table.
     ///
+    /// # Correctness
+    ///
     /// `basis` must match the ordered `rns_base`, and its radix must be
     /// smaller than every RNS modulus for the fast centered digit lift.
-    /// `context` must support the output gadget size and the current RNS limb
+    /// `context` must support the GLev layout and the current RNS limb
     /// width; the table must match its polynomial length and ordered RNS base.
     /// The output must be initialized; scratch does not require a manual reset.
+    ///
+    /// Let `size = context.size()`, `N = table.poly_length()`,
+    /// `m = rns_base.moduli_count()`, and `w = rns_base.big_uint_value_len()`.
+    /// The bound size must match `N`, `m`, the GLWE dimension, and
+    /// `basis.decompose_length()`; `context.is_compatible(size, rns_base)`
+    /// must hold. The table uses the base's modulus order and the gadget
+    /// uses its evaluation order and `basis.decomposer_iter()` level order.
+    /// CRT/DCRT values must be canonical residues.
+    /// The GLev contains exactly `size.rns_glev_len()` evaluations and the
+    /// GLWE output/accumulator exactly `size.rns_glwe_size().rns_glwe_len()`.
+    /// The polynomial contains `N * m` coefficients grouped by modulus.
+    ///
+    /// # Panics
+    ///
+    /// The RNS recomposition boundary panics if the CRT polynomial length
+    /// is not `N * m` or the context's BigUint/scratch lengths do not match
+    /// `N * w` and `m`. Other compatibility requirements are not fully checked.
     pub fn add_dcrt_glev_mul_crt_polynomial_assign<M, Table, A, B>(
         &mut self,
         dcrt_glev: &DcrtGlev<A>,
@@ -171,11 +224,26 @@ where
 
     /// Performs `self += dcrt_glev * big_uint_poly` using the given decomposition basis and NTT table.
     ///
+    /// # Correctness
+    ///
     /// `basis` must match the ordered `rns_base`, and its radix must be
     /// smaller than every RNS modulus for the fast centered digit lift.
-    /// `context` must support the output gadget size and the current RNS limb
+    /// `context` must support the GLev layout and the current RNS limb
     /// width; the table must match its polynomial length and ordered RNS base.
     /// The output must be initialized; scratch does not require a manual reset.
+    ///
+    /// Let `size = context.size()`, `N = table.poly_length()`,
+    /// `m = rns_base.moduli_count()`, and `w = rns_base.big_uint_value_len()`.
+    /// The bound size must match `N`, `m`, the GLWE dimension, and
+    /// `basis.decompose_length()`; `context.is_compatible(size, rns_base)`
+    /// must hold. The table uses the base's modulus order and the gadget
+    /// uses its evaluation order and `basis.decomposer_iter()` level order.
+    /// CRT/DCRT values must be canonical residues.
+    /// The GLev contains exactly `size.rns_glev_len()` evaluations and the
+    /// GLWE output/accumulator exactly `size.rns_glwe_size().rns_glwe_len()`.
+    /// The polynomial contains `N * w` little-endian limbs grouped by
+    /// coefficient, each representing a value in `[0, Q)`, where `Q` is the
+    /// product of the RNS moduli.
     pub fn add_dcrt_glev_mul_big_uint_polynomial_assign<M, Table, A, B>(
         &mut self,
         dcrt_glev: &DcrtGlev<A>,

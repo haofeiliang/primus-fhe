@@ -13,6 +13,14 @@ use super::Ntru;
 /// |------h------|
 ///
 /// where `h` is [`NttPolynomial`].
+///
+/// # Correctness
+///
+/// The layout above is a caller-maintained contract. Raw construction and
+/// mutable storage access do not validate it; parameter and key metadata
+/// are not stored in this wrapper. See the [crate contracts](crate#correctness).
+/// Stored values must use the matching NTT table, modulus, and evaluation
+/// order; a representation wrapper alone does not perform a transform.
 #[derive(Clone)]
 pub struct NttNtru<S>(pub S)
 where
@@ -34,6 +42,18 @@ where
     T: FheUint,
 {
     /// Transforms `self` to coefficient form and stores in `output`.
+    ///
+    /// # Correctness
+    ///
+    /// Storage must contain exactly one polynomial of `ntt_table.poly_length()`
+    /// values, satisfying the selected transform's input range. The table
+    /// modulus must match the ciphertext; inverse input must use that table's
+    /// evaluation order and normalization. Output has the same length and is
+    /// fully overwritten.
+    ///
+    /// # Panics
+    ///
+    /// Panics if input and output lengths differ.
     #[inline]
     pub fn write_coeff_form<Table, A>(&self, output: &mut Ntru<A>, ntt_table: &Table)
     where
@@ -47,6 +67,13 @@ where
 
     /// Performs a modular multiplication on the `self` [`NttNtru<S>`] with another `polynomial` [`NttPolynomial`],
     /// stores the output into `output`.
+    ///
+    /// # Correctness
+    ///
+    /// Every operand contains exactly one polynomial of the same nonzero
+    /// length in the same NTT order and modulus. Values must be canonical
+    /// residues. Ciphertext keys must be compatible for accumulation;
+    /// `*_assign` preserves the accumulator, while `*_to` overwrites output.
     #[inline]
     pub fn mul_ntt_polynomial_to<M, A, B>(
         &self,
@@ -68,6 +95,13 @@ where
     T: FheUint,
 {
     /// Transforms `self` to coefficient form.
+    ///
+    /// # Correctness
+    ///
+    /// Storage must contain exactly one polynomial of `ntt_table.poly_length()`
+    /// values, satisfying the selected transform's input range. The table
+    /// modulus must match the ciphertext; inverse input must use that table's
+    /// evaluation order and normalization.
     #[inline]
     pub fn into_coeff_form<Table>(mut self, ntt_table: &Table) -> Ntru<S>
     where
@@ -78,6 +112,13 @@ where
     }
 
     /// Performs a modular multiplication on the `self` [`NttNtru<S>`] with another `ntt_poly` [`NttPolynomial<A>`].
+    ///
+    /// # Correctness
+    ///
+    /// Every operand contains exactly one polynomial of the same nonzero
+    /// length in the same NTT order and modulus. Values must be canonical
+    /// residues. Ciphertext keys must be compatible for accumulation;
+    /// `*_assign` preserves the accumulator, while `*_to` overwrites output.
     #[inline]
     pub fn mul_ntt_polynomial_assign<M, A>(&mut self, ntt_poly: &NttPolynomial<A>, modulus: M)
     where
@@ -88,6 +129,13 @@ where
     }
 
     /// Performs `self += rhs * poly` in place, all in the NTT domain.
+    ///
+    /// # Correctness
+    ///
+    /// Every operand contains exactly one polynomial of the same nonzero
+    /// length in the same NTT order and modulus. Values must be canonical
+    /// residues. Ciphertext keys must be compatible for accumulation;
+    /// `*_assign` preserves the accumulator, while `*_to` overwrites output.
     pub fn add_mul_ntt_polynomial_assign<M, A, B>(
         &mut self,
         rhs: &NttNtru<A>,

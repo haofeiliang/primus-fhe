@@ -14,6 +14,16 @@ use super::Ggsw;
 /// |--c1--|....|--ck--|--c[k+1]--|
 ///
 /// where `c1` to `c[k+1]` are [`NttGlev`] with same parameter, `k` is the dimension.
+///
+/// # Correctness
+///
+/// The layout above is a caller-maintained contract. Raw construction and
+/// mutable storage access do not validate it; parameter and key metadata
+/// are not stored in this wrapper. See the [crate contracts](crate#correctness).
+/// Stored values must use the matching NTT table, modulus, and evaluation
+/// order; a representation wrapper alone does not perform a transform.
+/// Levels must follow the decomposition basis's iterator order; every level
+/// uses the same key, polynomial size, modulus, and representation.
 #[derive(Clone)]
 pub struct NttGgsw<S>(pub S)
 where

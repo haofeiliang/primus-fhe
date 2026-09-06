@@ -9,10 +9,16 @@ macro_rules! impl_ntt_polynomial_mul {
         {
             /// Multiplies every ciphertext polynomial by `poly` in place.
             ///
+            /// # Correctness
+            ///
             /// Operands must use the same NTT representation and modulus.
             /// Ciphertext storage must contain whole polynomials matching `poly`;
             /// values must be valid inputs to the modular product.
             /// `poly` must be nonempty and use the same NTT table as the ciphertexts.
+            ///
+            /// # Panics
+            ///
+            /// Panics when a zero-length polynomial chunk is used.
             #[inline]
             pub fn mul_ntt_polynomial_assign<M, A>(
                 &mut self,
@@ -30,6 +36,8 @@ macro_rules! impl_ntt_polynomial_mul {
 
             /// Accumulates `self += rhs * poly` without clearing `self`.
             ///
+            /// # Correctness
+            ///
             /// Ciphertexts must use compatible keys and matching layouts, including
             /// gadget bases and level/row order. The same polynomial scales every
             /// component; no gadget decomposition or level reduction is performed.
@@ -38,6 +46,10 @@ macro_rules! impl_ntt_polynomial_mul {
             /// Ciphertexts must have equal lengths and contain whole polynomials
             /// matching `poly`; values must be valid inputs to the modular product.
             /// `poly` must be nonempty and use the same NTT table as the ciphertexts.
+            ///
+            /// # Panics
+            ///
+            /// Panics when a zero-length polynomial chunk is used.
             #[inline]
             pub fn add_mul_ntt_polynomial_assign<M, A, B>(
                 &mut self,
@@ -75,10 +87,16 @@ macro_rules! impl_ntt_polynomial_mul {
         {
             /// Writes `output = self * poly`, overwriting every output component.
             ///
+            /// # Correctness
+            ///
             /// Operands must use the same NTT representation and modulus.
             /// Ciphertexts must have equal lengths and contain whole polynomials
             /// matching `poly`; values must be valid inputs to the modular product.
             /// `poly` must be nonempty and use the same NTT table as the ciphertexts.
+            ///
+            /// # Panics
+            ///
+            /// Panics when a zero-length polynomial chunk is used.
             #[inline]
             pub fn mul_ntt_polynomial_to<M, A, B>(
                 &self,

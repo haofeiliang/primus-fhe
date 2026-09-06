@@ -6,6 +6,9 @@ use crate::ntru::{FourierNtru, NttNtru};
 /// Pre-allocated scratch buffers for native-torus Fourier NTRU gadget products.
 ///
 /// Shared by NLev key switching and NGSW external products, including CMUX.
+///
+/// # Correctness
+///
 /// Scratch lengths are fixed by `poly_length`; decomposition levels are not
 /// bound, so the workspace can be reused across different decomposition lengths.
 /// Callers must supply compatible input and gadget layouts and matching transform
@@ -30,6 +33,12 @@ pub struct FourierNtruExternalProductContext<T: TorusFftValue> {
 
 impl<T: TorusFftValue> FourierNtruExternalProductContext<T> {
     /// Creates reusable buffers for NTRU polynomials of length `poly_length`.
+    ///
+    /// # Correctness
+    ///
+    /// `poly_length` must be a power of two of at least two, supported by the
+    /// transform table used by subsequent operations. This is only
+    /// debug-asserted here; construction does not bind or validate a table.
     #[inline]
     #[must_use]
     pub fn new(poly_length: usize) -> Self {
@@ -55,6 +64,9 @@ impl<T: TorusFftValue> FourierNtruExternalProductContext<T> {
 /// Pre-allocated scratch buffers for exact NTT NTRU gadget products.
 ///
 /// Shared by NLev key switching and NGSW external products, including CMUX.
+///
+/// # Correctness
+///
 /// Scratch lengths are fixed by `poly_length`; decomposition levels are not
 /// bound, so the workspace can be reused across different decomposition lengths.
 /// Callers must supply compatible input and gadget layouts and matching transform
@@ -78,6 +90,12 @@ pub struct NttNtruExternalProductContext<T: FheUint> {
 
 impl<T: FheUint> NttNtruExternalProductContext<T> {
     /// Creates reusable buffers for NTRU polynomials of length `poly_length`.
+    ///
+    /// # Correctness
+    ///
+    /// `poly_length` must be a power of two of at least two, supported by the
+    /// transform table used by subsequent operations. This is only
+    /// debug-asserted here; construction does not bind or validate a table.
     #[inline]
     #[must_use]
     pub fn new(poly_length: usize) -> Self {

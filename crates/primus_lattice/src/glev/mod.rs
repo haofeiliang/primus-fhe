@@ -22,4 +22,7 @@ pub use fourier::{FourierGlev, FourierGlevIter, FourierGlevIterMut, FourierGlevO
 /// TFHE torus GLev ciphertext (coefficient domain).
 ///
 /// List of [`TorusGlwe`](crate::glwe::TorusGlwe) per gadget decomposition level.
+///
+/// This alias does not enforce the native modulus or perform encoding;
+/// callers must use native-torus arithmetic and the underlying type's layout.
 pub type TorusGlev<S> = Glev<S>;

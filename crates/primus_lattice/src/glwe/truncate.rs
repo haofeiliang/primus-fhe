@@ -13,6 +13,12 @@ use crate::{
 /// The layout is `|--a_1--| ... |--a_k--|--b[..message_count]--|`. Each mask
 /// polynomial has the full polynomial length, while the truncated body keeps
 /// one coefficient per packed message.
+///
+/// # Correctness
+///
+/// The layout above is a caller-maintained contract. Raw construction and
+/// mutable storage access do not validate it; parameter and key metadata
+/// are not stored in this wrapper. See the [crate contracts](crate#correctness).
 #[derive(Clone)]
 pub struct TruncatedGlwe<S>(pub S)
 where
@@ -31,6 +37,19 @@ where
     T: FheUint,
 {
     /// Extracts the first encrypted coefficient, consuming and reusing the allocation.
+    ///
+    /// # Correctness
+    ///
+    /// `size` must match the mask dimension and polynomial length. Storage
+    /// contains exactly `size.mask_len()` mask coefficients followed by at
+    /// most `size.poly_length()` retained body coefficients.
+    /// Input values must be canonical under `modulus`; the output key is
+    /// the original secret flattened in polynomial/coefficient order.
+    /// At least one body coefficient must be retained.
+    ///
+    /// # Panics
+    ///
+    /// Panics if storage is shorter than `size.mask_len()`.
     #[must_use]
     #[inline]
     pub fn into_lwe<M>(self, size: GlweSize, modulus: M) -> Lwe<Vec<T>>
@@ -55,6 +74,14 @@ where
     ///
     /// Requires GLWE dimension one (RLWE), since [`MultiMsgLwe`] rotates its
     /// entire mask as one polynomial when extracting subsequent messages.
+    ///
+    /// # Correctness
+    ///
+    /// `size` must match the mask dimension and polynomial length. Storage
+    /// contains exactly `size.mask_len()` mask coefficients followed by at
+    /// most `size.poly_length()` retained body coefficients.
+    /// Input values must be canonical under `modulus`; the output key is
+    /// the original secret flattened in polynomial/coefficient order.
     ///
     /// # Panics
     ///
@@ -100,12 +127,32 @@ where
     T: FheUint,
 {
     /// Returns the mask and retained body coefficients.
+    ///
+    /// # Correctness
+    ///
+    /// `size` must match the mask dimension and polynomial length. Storage
+    /// contains exactly `size.mask_len()` mask coefficients followed by at
+    /// most `size.poly_length()` retained body coefficients.
+    ///
+    /// # Panics
+    ///
+    /// Panics if storage is shorter than `size.mask_len()`.
     #[inline]
     pub fn a_b_slices(&self, size: GlweSize) -> (&[T], &[T]) {
         self.0.split_at(size.mask_len())
     }
 
     /// Returns the number of retained body coefficients.
+    ///
+    /// # Correctness
+    ///
+    /// `size` must match the mask dimension and polynomial length. Storage
+    /// contains exactly `size.mask_len()` mask coefficients followed by at
+    /// most `size.poly_length()` retained body coefficients.
+    ///
+    /// # Panics
+    ///
+    /// Panics if storage is shorter than `size.mask_len()`.
     #[inline]
     pub fn message_count(&self, size: GlweSize) -> usize {
         self.as_ref()
