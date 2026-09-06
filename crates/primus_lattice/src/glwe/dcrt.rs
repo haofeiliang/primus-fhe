@@ -28,6 +28,7 @@ impl_basic_operation_multiple_modulus!(DcrtGlwe);
 impl_neg_multiple_modulus!(DcrtGlwe);
 impl_mul_scalar_multiple_modulus!(DcrtGlwe);
 impl_mul_factor_multiple_modulus!(DcrtGlwe);
+impl_dcrt_polynomial_mul!(DcrtGlwe);
 
 impl_crt_intt!(DcrtGlwe, CrtGlwe);
 
@@ -57,27 +58,6 @@ where
             DcrtPolynomialIterMut::new(mask, dcrt_poly_len),
             DcrtPolynomial(body),
         )
-    }
-
-    /// Performs `self += rhs * poly` in place.
-    pub fn add_mul_dcrt_polynomial_assign<M, A, B>(
-        &mut self,
-        rhs: &DcrtGlwe<A>,
-        poly: &DcrtPolynomial<B>,
-        poly_length: usize,
-        moduli: &[M],
-    ) where
-        M: FieldContext<T>,
-        A: Data<Elem = T>,
-        B: Data<Elem = T>,
-    {
-        let dcrt_poly_len = poly.dcrt_poly_length();
-
-        self.iter_dcrt_poly_mut(dcrt_poly_len)
-            .zip(rhs.iter_dcrt_poly(dcrt_poly_len))
-            .for_each(|(mut x, y)| {
-                x.add_mul_assign(&y, poly, poly_length, moduli);
-            });
     }
 
     /// Inverse butterfly with monomial multiply.
@@ -153,28 +133,5 @@ where
             DcrtPolynomialIter::new(mask, dcrt_poly_len),
             DcrtPolynomial(body),
         )
-    }
-
-    /// Performs a multiplication on the `self` [`DcrtGlwe<S>`] with another `dcrt_polynomial` [`DcrtPolynomial<A>`],
-    /// store the output into `output` [`DcrtGlwe<B>`].
-    #[inline]
-    pub fn mul_dcrt_polynomial_to<M, A, B>(
-        &self,
-        dcrt_poly: &DcrtPolynomial<A>,
-        output: &mut DcrtGlwe<B>,
-        poly_length: usize,
-        moduli: &[M],
-    ) where
-        M: FieldContext<T>,
-        A: Data<Elem = T>,
-        B: DataMut<Elem = T>,
-    {
-        let dcrt_poly_len = dcrt_poly.dcrt_poly_length();
-
-        self.iter_dcrt_poly(dcrt_poly_len)
-            .zip(output.iter_dcrt_poly_mut(dcrt_poly_len))
-            .for_each(|(a, mut b)| {
-                a.mul_to(dcrt_poly, &mut b, poly_length, moduli);
-            });
     }
 }

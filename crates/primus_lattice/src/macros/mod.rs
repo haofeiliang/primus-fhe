@@ -4,10 +4,11 @@
 //! At each type declaration, group invocations in this order:
 //! storage/construction, iteration/access, arithmetic, domain conversion.
 //! Within arithmetic, use add/sub, negation, scalar multiply, scalar FMA,
-//! then precomputed-factor multiply. Capability groups remain explicit.
+//! then precomputed-factor multiply and polynomial products. Capability groups remain explicit.
 //!
 //! - [`common`]: constructors, byte I/O, zero initialization
-//! - [`iter`]: integer ciphertext and sub-component iterators
+//! - [`iter`], [`rlwe`]: ciphertext iterators and RLWE polynomial views
+//! - [`ntt_polynomial`], [`dcrt_polynomial`]: same-domain polynomial products
 //! - [`ops`], [`rns_ops`], [`fourier_ops`]: representation-specific arithmetic
 //! - [`ntt`], [`fourier`]: representation conversions and Fourier storage
 
@@ -16,6 +17,8 @@ mod common;
 #[macro_use]
 mod iter;
 #[macro_use]
+mod rlwe;
+#[macro_use]
 mod ops;
 #[macro_use]
 mod rns_ops;
@@ -23,5 +26,9 @@ mod rns_ops;
 mod fourier_ops;
 #[macro_use]
 mod ntt;
+#[macro_use]
+mod ntt_polynomial;
+#[macro_use]
+mod dcrt_polynomial;
 #[macro_use]
 mod fourier;

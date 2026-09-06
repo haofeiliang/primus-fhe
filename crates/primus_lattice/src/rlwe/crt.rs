@@ -16,7 +16,7 @@ pub type CrtRlweOwned<T> = CrtRlwe<Vec<T>>;
 ///
 /// |------a------|------b------|
 ///
-/// where `a` and `b` are [`primus_poly::CrtPolynomial`] with same poly length and moduli count.
+/// where `a` and `b` are [`CrtPolynomial`] with same poly length and moduli count.
 #[derive(Clone)]
 pub struct CrtRlwe<S>(pub S)
 where
@@ -27,6 +27,7 @@ impl_ciphertext_core!(CrtRlwe);
 
 impl_iters!(CrtRlwe);
 impl_iter_sub_structure!(CrtRlwe, CrtPolynomial, crt_poly);
+impl_rlwe_accessors!(CrtRlwe, CrtPolynomial);
 
 impl_basic_operation_multiple_modulus!(CrtRlwe);
 impl_neg_multiple_modulus!(CrtRlwe);

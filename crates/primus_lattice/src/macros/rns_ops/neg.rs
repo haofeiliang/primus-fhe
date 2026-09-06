@@ -35,9 +35,7 @@ macro_rules! impl_neg_multiple_modulus {
                     "incomplete RNS component"
                 );
                 for output in self.as_mut().chunks_exact_mut(rns_poly_len) {
-                    for (output, &modulus) in
-                        itertools::izip!(output.chunks_exact_mut(poly_length), moduli)
-                    {
+                    for (output, &modulus) in output.chunks_exact_mut(poly_length).zip(moduli) {
                         modulus.reduce_neg_slice_assign(output);
                     }
                 }

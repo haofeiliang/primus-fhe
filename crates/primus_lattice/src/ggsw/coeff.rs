@@ -13,7 +13,7 @@ use super::NttGgsw;
 ///
 /// |--c1--|....|--ck--|--c[k+1]--|
 ///
-/// where `c1` to `c[k+1]` are [`crate::glev::Glev`] with same parameter, `k` is the dimension.
+/// where `c1` to `c[k+1]` are [`Glev`] with same parameter, `k` is the dimension.
 #[derive(Clone)]
 pub struct Ggsw<S>(pub S)
 where

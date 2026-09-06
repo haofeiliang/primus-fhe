@@ -13,7 +13,12 @@ use super::DcrtGlev;
 ///
 /// |--c1--|....|--cd--|
 ///
-/// where `c1` to `cd` are [`crate::glwe::CrtGlwe`] with same parameter, `d` is the decompose length.
+/// where `c1` to `cd` are [`CrtGlwe`] with same parameter, `d` is the decompose length.
+///
+/// Arithmetic preserves every gadget level and its layout. Operands must use
+/// matching ciphertext dimensions, gadget bases, level order, ordered RNS bases,
+/// and key semantics. Scalar and factor multiplication applies the same RNS
+/// scalar to every level and ciphertext component.
 #[derive(Clone)]
 pub struct CrtGlev<S>(pub S)
 where
@@ -26,5 +31,8 @@ impl_iters!(CrtGlev);
 impl_iter_sub_structure!(CrtGlev, CrtGlwe);
 
 impl_basic_operation_multiple_modulus!(CrtGlev);
+impl_neg_multiple_modulus!(CrtGlev);
+impl_mul_scalar_multiple_modulus!(CrtGlev);
+impl_mul_factor_multiple_modulus!(CrtGlev);
 
 impl_crt_ntt!(CrtGlev, DcrtGlev);

@@ -1,7 +1,8 @@
 use primus_data::{Data, DataMut, DataOwned, RawData};
 use primus_integer::FheUint;
-use primus_poly::{DcrtPolynomial, DcrtPolynomialIter, DcrtPolynomialIterMut};
-use primus_reduce::FieldContext;
+#[cfg(doc)]
+use primus_poly::DcrtPolynomial;
+use primus_poly::{DcrtPolynomialIter, DcrtPolynomialIterMut};
 
 use super::CrtRlwe;
 
@@ -14,7 +15,7 @@ pub type DcrtRlweOwned<T> = DcrtRlwe<Vec<T>>;
 ///
 /// |------a------|------b------|
 ///
-/// where `a` and `b` are [`DcrtPolynomial`] with same poly length and moduli count.
+/// where `a` and `b` are [`primus_poly::DcrtPolynomial`] with same poly length and moduli count.
 #[derive(Clone)]
 pub struct DcrtRlwe<S>(pub S)
 where
@@ -25,39 +26,12 @@ impl_ciphertext_core!(DcrtRlwe);
 
 impl_iters!(DcrtRlwe);
 impl_iter_sub_structure!(DcrtRlwe, DcrtPolynomial, dcrt_poly);
+impl_rlwe_accessors!(DcrtRlwe, DcrtPolynomial);
 
 impl_basic_operation_multiple_modulus!(DcrtRlwe);
 impl_neg_multiple_modulus!(DcrtRlwe);
 impl_mul_scalar_multiple_modulus!(DcrtRlwe);
 impl_mul_factor_multiple_modulus!(DcrtRlwe);
+impl_dcrt_polynomial_mul!(DcrtRlwe);
 
 impl_crt_intt!(DcrtRlwe, CrtRlwe);
-
-impl<S, T> DcrtRlwe<S>
-where
-    S: Data<Elem = T>,
-    T: FheUint,
-{
-    /// Performs a multiplication on the `self` [`DcrtRlwe<S>`] with another `dcrt_poly` [`DcrtPolynomial<A>`],
-    /// store the output into `output` [`DcrtRlwe<B>`].
-    #[inline]
-    pub fn mul_dcrt_polynomial_to<M, A, B>(
-        &self,
-        dcrt_poly: &DcrtPolynomial<A>,
-        output: &mut DcrtRlwe<B>,
-        poly_length: usize,
-        moduli: &[M],
-    ) where
-        M: FieldContext<T>,
-        A: Data<Elem = T>,
-        B: DataMut<Elem = T>,
-    {
-        let dcrt_poly_len = dcrt_poly.dcrt_poly_length();
-
-        self.iter_dcrt_poly(dcrt_poly_len)
-            .zip(output.iter_dcrt_poly_mut(dcrt_poly_len))
-            .for_each(|(a, mut b)| {
-                a.mul_to(dcrt_poly, &mut b, poly_length, moduli);
-            });
-    }
-}

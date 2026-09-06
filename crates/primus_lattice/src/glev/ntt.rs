@@ -14,7 +14,7 @@ use super::Glev;
 ///
 /// |--c1--|....|--cd--|
 ///
-/// where `c1` to `cd` are [`crate::glwe::NttGlwe`] with same parameter, `d` is the decompose length.
+/// where `c1` to `cd` are [`NttGlwe`] with same parameter, `d` is the decompose length.
 #[derive(Clone)]
 pub struct NttGlev<S>(pub S)
 where

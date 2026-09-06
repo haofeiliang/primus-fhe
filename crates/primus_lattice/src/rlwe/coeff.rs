@@ -31,6 +31,7 @@ impl_ciphertext_core!(Rlwe);
 
 impl_iters!(Rlwe);
 impl_iter_sub_structure!(Rlwe, Polynomial, poly);
+impl_rlwe_accessors!(Rlwe, Polynomial);
 
 impl_basic_operation_single_modulus!(Rlwe);
 impl_neg_single_modulus!(Rlwe);
@@ -132,29 +133,9 @@ impl<T: FheUint> Rlwe<Vec<T>> {
 
 impl<S, T> Rlwe<S>
 where
-    S: DataMut<Elem = T>,
-    T: FheUint,
-{
-    /// Extracts mutable slice of `a` and `b` of this [`Rlwe<S>`].
-    #[inline]
-    pub fn a_b_mut_slices(&mut self) -> (&mut [T], &mut [T]) {
-        let mid = self.0.len() >> 1;
-        unsafe { self.0.split_at_mut_unchecked(mid) }
-    }
-}
-
-impl<S, T> Rlwe<S>
-where
     S: Data<Elem = T>,
     T: FheUint,
 {
-    /// Extracts slice of `a` and `b` of this [`Rlwe<S>`].
-    #[inline]
-    pub fn a_b_slices(&self) -> (&[T], &[T]) {
-        let mid = self.0.len() >> 1;
-        unsafe { self.0.split_at_unchecked(mid) }
-    }
-
     /// Performs a multiplication on the `self` [`Rlwe<S>`] with another `ntt_polynomial` [`NttPolynomial<A>`],
     /// store the output into `output` [`NttRlwe<B>`].
     #[inline]

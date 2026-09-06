@@ -2,6 +2,8 @@
 
 use primus_factor::ShoupFactor;
 use primus_lattice::{
+    ggsw::{CrtGgsw, DcrtGgsw},
+    glev::{CrtGlev, DcrtGlev},
     glwe::{CrtGlwe, DcrtGlwe},
     rlwe::{CrtRlwe, DcrtRlwe},
 };
@@ -74,4 +76,9 @@ fn rns_arithmetic_preserves_component_and_modulus_order() {
     check!(DcrtGlwe, 3);
     check!(CrtRlwe, 2);
     check!(DcrtRlwe, 2);
+    // Two gadget levels, three GLWE polynomials, and three GGSW rows.
+    check!(CrtGlev, 2 * 3);
+    check!(DcrtGlev, 2 * 3);
+    check!(CrtGgsw, 3 * 2 * 3);
+    check!(DcrtGgsw, 3 * 2 * 3);
 }

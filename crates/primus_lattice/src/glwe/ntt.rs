@@ -2,7 +2,6 @@ use primus_data::{Data, DataMut, DataOwned, RawData};
 use primus_integer::FheUint;
 use primus_ntt::NttTable;
 use primus_poly::{NttPolynomial, NttPolynomialIter, NttPolynomialIterMut};
-use primus_reduce::FieldContext;
 
 use super::Glwe;
 
@@ -27,6 +26,7 @@ impl_iter_sub_structure!(NttGlwe, NttPolynomial, ntt_poly);
 impl_basic_operation_single_modulus!(NttGlwe);
 impl_neg_single_modulus!(NttGlwe);
 impl_mul_scalar_single_modulus!(NttGlwe);
+impl_ntt_polynomial_mul!(NttGlwe);
 
 impl_intt!(NttGlwe, Glwe);
 
@@ -60,46 +60,6 @@ where
             NttPolynomial(body),
         )
     }
-
-    /// Performs a modular multiplication on the `self` [`NttGlwe<S>`] with another `ntt_poly` [`NttPolynomial<A>`].
-    #[inline]
-    pub fn mul_ntt_polynomial_assign<M, A>(&mut self, ntt_poly: &NttPolynomial<A>, modulus: M)
-    where
-        M: FieldContext<T>,
-        A: Data<Elem = T>,
-    {
-        let poly_len = ntt_poly.poly_length();
-
-        self.iter_ntt_poly_mut(poly_len).for_each(|mut poly| {
-            poly.mul_assign(ntt_poly, modulus);
-        });
-    }
-
-    /// Performs `self += ntt_poly * rhs` component-wise.
-    ///
-    /// This is the NTT-domain multiply-accumulate used by the TFHE external
-    /// product hot loop.
-    #[inline]
-    pub fn add_mul_ntt_polynomial_assign<M, A, B>(
-        &mut self,
-        rhs: &NttGlwe<A>,
-        poly: &NttPolynomial<B>,
-        modulus: M,
-    ) where
-        M: FieldContext<T>,
-        A: Data<Elem = T>,
-        B: Data<Elem = T>,
-    {
-        let poly_length = poly.poly_length();
-        debug_assert_eq!(self.as_ref().len(), rhs.as_ref().len());
-        debug_assert_eq!(self.as_ref().len() % poly_length, 0);
-
-        self.iter_ntt_poly_mut(poly_length)
-            .zip(rhs.iter_ntt_poly(poly_length))
-            .for_each(|(mut accumulator, rhs)| {
-                accumulator.add_mul_assign(poly, &rhs, modulus);
-            });
-    }
 }
 
 impl<S, T> NttGlwe<S>
@@ -128,27 +88,5 @@ where
             NttPolynomialIter::new(mask, poly_length),
             NttPolynomial(body),
         )
-    }
-
-    /// Performs a modular multiplication on the `self` [`NttGlwe<S>`] with another `ntt_poly` [`NttPolynomial`],
-    /// stores the output into `output`.
-    #[inline]
-    pub fn mul_ntt_polynomial_to<M, A, B>(
-        &self,
-        ntt_poly: &NttPolynomial<A>,
-        output: &mut NttGlwe<B>,
-        modulus: M,
-    ) where
-        M: FieldContext<T>,
-        A: Data<Elem = T>,
-        B: DataMut<Elem = T>,
-    {
-        let poly_length = ntt_poly.poly_length();
-
-        self.iter_ntt_poly(poly_length)
-            .zip(output.iter_ntt_poly_mut(poly_length))
-            .for_each(|(x, mut y)| {
-                x.mul_to(ntt_poly, &mut y, modulus);
-            });
     }
 }

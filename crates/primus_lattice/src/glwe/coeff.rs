@@ -13,7 +13,7 @@ use super::NttGlwe;
 ///
 /// |--a1--|....|--ak--|--b--|
 ///
-/// where `a1`...`ak` and `b` are [`primus_poly::Polynomial`] with same poly length, `k` is the dimension.
+/// where `a1`...`ak` and `b` are [`Polynomial`] with same poly length, `k` is the dimension.
 #[derive(Clone)]
 pub struct Glwe<S>(pub S)
 where

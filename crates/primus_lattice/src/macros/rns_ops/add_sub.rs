@@ -71,10 +71,11 @@ macro_rules! impl_basic_operation_multiple_modulus {
                     rhs.as_ref().len(),
                     "RNS operand length mismatch"
                 );
-                for (lhs, rhs) in itertools::izip!(
-                    self.as_mut().chunks_exact_mut(rns_poly_len),
-                    rhs.as_ref().chunks_exact(rns_poly_len)
-                ) {
+                for (lhs, rhs) in self
+                    .as_mut()
+                    .chunks_exact_mut(rns_poly_len)
+                    .zip(rhs.as_ref().chunks_exact(rns_poly_len))
+                {
                     for (lhs, rhs, &modulus) in itertools::izip!(
                         lhs.chunks_exact_mut(poly_length),
                         rhs.chunks_exact(poly_length),
@@ -149,10 +150,11 @@ macro_rules! impl_basic_operation_multiple_modulus {
                     rhs.as_ref().len(),
                     "RNS operand length mismatch"
                 );
-                for (lhs, rhs) in itertools::izip!(
-                    self.as_mut().chunks_exact_mut(rns_poly_len),
-                    rhs.as_ref().chunks_exact(rns_poly_len)
-                ) {
+                for (lhs, rhs) in self
+                    .as_mut()
+                    .chunks_exact_mut(rns_poly_len)
+                    .zip(rhs.as_ref().chunks_exact(rns_poly_len))
+                {
                     for (lhs, rhs, &modulus) in itertools::izip!(
                         lhs.chunks_exact_mut(poly_length),
                         rhs.chunks_exact(poly_length),
