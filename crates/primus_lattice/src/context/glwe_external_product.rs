@@ -9,11 +9,15 @@ use crate::{
 
 /// Pre-allocated scratch buffers for a native-torus Fourier external product.
 ///
-/// All allocations and contract checks happen when the context is constructed
-/// or resized. The external-product hot path only mutates its internal buffers.
+/// Construction and resizing maintain scratch lengths for the bound GLWE size.
+/// The bound [`GadgetSize`] also records the decomposition length. This context
+/// does not bind a basis or FFT table: callers must provide a native-torus basis
+/// with matching levels, matching ciphertext layouts, and Fourier data produced
+/// with a compatible FFT layout and polynomial length.
 ///
-/// The bound [`GadgetSize`] includes the mask and body polynomial counts plus
-/// the decomposition length. Each operation overwrites every internal buffer.
+/// Overwriting products initialize the accumulator; internal accumulating
+/// products require an initialized accumulator. Other scratch is written before
+/// use, so callers do not need to reset the context between operations.
 pub struct FourierGlweExternalProductContext<T: TorusFftValue> {
     size: GadgetSize,
     /// Carry bits, one per coefficient (length = `poly_length`).
@@ -93,8 +97,15 @@ impl<T: TorusFftValue> FourierGlweExternalProductContext<T> {
 
 /// Pre-allocated scratch buffers for an NTT external product.
 ///
-/// The bound [`GadgetSize`] includes the mask and body polynomial counts plus
-/// the decomposition length. Each operation overwrites every internal buffer.
+/// Construction and resizing maintain scratch lengths for the bound GLWE size.
+/// The bound [`GadgetSize`] also records the decomposition length. This context
+/// does not bind a basis, NTT table, or modulus. Callers must provide matching
+/// polynomial lengths, decomposition levels, ciphertext layouts, and the same
+/// modulus for the basis, NTT table, and modular arithmetic.
+///
+/// Overwriting products initialize the accumulator; internal accumulating
+/// products require an initialized accumulator. Other scratch is written before
+/// use, so callers do not need to reset the context between operations.
 pub struct NttGlweExternalProductContext<T: FheUint> {
     size: GadgetSize,
     /// Adjusted coefficients used by decomposition (length = `poly_length`).
@@ -199,6 +210,7 @@ impl<T: FheUint> NttGlweExternalProductContext<T> {
     }
 
     /// Borrows the scratch buffers while using `accumulator` as the output.
+    /// The operation entry point must ensure its length matches the bound GLWE size.
     #[inline]
     pub(crate) fn as_mut_with_accumulator<'a, S>(
         &'a mut self,

@@ -23,6 +23,9 @@ where
     ///
     /// `basis` must match the ordered `rns_base`, and its radix must be
     /// smaller than every RNS modulus for the fast centered digit lift.
+    /// `context` must support the output gadget size and the current RNS limb
+    /// width; the table must match its polynomial length and ordered RNS base.
+    /// The output is overwritten; scratch does not require a manual reset.
     pub fn mul_crt_polynomial_to<M, Table, A, B>(
         &self,
         crt_poly: &CrtPolynomial<A>,
@@ -47,6 +50,9 @@ where
     ///
     /// `basis` must match the ordered `rns_base`, and its radix must be
     /// smaller than every RNS modulus for the fast centered digit lift.
+    /// `context` must support the output gadget size and the current RNS limb
+    /// width; the table must match its polynomial length and ordered RNS base.
+    /// The output is overwritten; scratch does not require a manual reset.
     pub fn mul_big_uint_polynomial_to<M, Table, A, B>(
         &self,
         big_uint_poly: &BigUintPolynomial<A>,
@@ -82,6 +88,9 @@ where
     ///
     /// `basis` must match the ordered `rns_base`, and its radix must be
     /// smaller than every RNS modulus for the fast centered digit lift.
+    /// `context` must support the output gadget size and the current RNS limb
+    /// width; the table must match its polynomial length and ordered RNS base.
+    /// The output must be initialized; scratch does not require a manual reset.
     pub fn add_dcrt_glev_mul_crt_polynomial_assign<M, Table, A, B>(
         &mut self,
         dcrt_glev: &DcrtGlev<A>,
@@ -97,11 +106,19 @@ where
         B: Data<Elem = T>,
     {
         let poly_length = table.poly_length();
-        let big_uint_value_len = rns_base.big_uint_value_len();
         let basis_value = basis.basis_value();
 
         let moduli = rns_base.moduli();
         let dcrt_glwe_len = self.0.len();
+
+        let size = context.size();
+        debug_assert!(
+            context.is_compatible(size, rns_base),
+            "incompatible DCRT workspace"
+        );
+        debug_assert_eq!(size.rns_glwe_size().poly_length(), poly_length);
+        debug_assert_eq!(size.rns_glwe_size().rns_glwe_len(), dcrt_glwe_len);
+        debug_assert_eq!(size.decompose_length(), basis.decompose_length());
 
         let DcrtGlevMulContextRefMut {
             adjust_big_uint_values,
@@ -111,13 +128,6 @@ where
             compose_buffer,
         } = context.as_mut();
 
-        debug_assert_eq!(
-            adjust_big_uint_values.len(),
-            poly_length * big_uint_value_len
-        );
-        debug_assert_eq!(decomposed_unsigned_values.len(), poly_length);
-        debug_assert_eq!(carries.len(), poly_length);
-        debug_assert_eq!(multi_residues.len(), poly_length * moduli.len());
         debug_assert_eq!(
             dcrt_glev.as_ref().len(),
             dcrt_glwe_len * basis.decompose_length()
@@ -163,6 +173,9 @@ where
     ///
     /// `basis` must match the ordered `rns_base`, and its radix must be
     /// smaller than every RNS modulus for the fast centered digit lift.
+    /// `context` must support the output gadget size and the current RNS limb
+    /// width; the table must match its polynomial length and ordered RNS base.
+    /// The output must be initialized; scratch does not require a manual reset.
     pub fn add_dcrt_glev_mul_big_uint_polynomial_assign<M, Table, A, B>(
         &mut self,
         dcrt_glev: &DcrtGlev<A>,
@@ -187,6 +200,15 @@ where
         let moduli = rns_base.moduli();
         let dcrt_glwe_len = self.0.len();
 
+        let size = context.size();
+        debug_assert!(
+            context.is_compatible(size, rns_base),
+            "incompatible DCRT workspace"
+        );
+        debug_assert_eq!(size.rns_glwe_size().poly_length(), poly_length);
+        debug_assert_eq!(size.rns_glwe_size().rns_glwe_len(), dcrt_glwe_len);
+        debug_assert_eq!(size.decompose_length(), basis.decompose_length());
+
         let DcrtGlevMulContextRefMut {
             adjust_big_uint_values,
             decomposed_unsigned_values,
@@ -195,10 +217,6 @@ where
             compose_buffer: _,
         } = context.as_mut();
 
-        debug_assert_eq!(adjust_big_uint_values.len(), big_uint_poly_len);
-        debug_assert_eq!(decomposed_unsigned_values.len(), poly_length);
-        debug_assert_eq!(carries.len(), poly_length);
-        debug_assert_eq!(multi_residues.len(), poly_length * moduli.len());
         debug_assert_eq!(
             dcrt_glev.as_ref().len(),
             dcrt_glwe_len * basis.decompose_length()

@@ -30,9 +30,10 @@ impl<T> TruncatedGlwe<Vec<T>>
 where
     T: FheUint,
 {
-    /// Extracts the first encrypted coefficient as an LWE ciphertext.
+    /// Extracts the first encrypted coefficient, consuming and reusing the allocation.
+    #[must_use]
     #[inline]
-    pub fn extract_lwe_locally<M>(self, size: GlweSize, modulus: M) -> Lwe<Vec<T>>
+    pub fn into_lwe<M>(self, size: GlweSize, modulus: M) -> Lwe<Vec<T>>
     where
         M: Copy + ReduceNegSlice<T>,
     {
@@ -50,7 +51,7 @@ where
     }
 
     /// Extracts the retained coefficients as a packed multi-message LWE
-    /// ciphertext.
+    /// ciphertext, consuming and reusing the allocation.
     ///
     /// Requires GLWE dimension one (RLWE), since [`MultiMsgLwe`] rotates its
     /// entire mask as one polynomial when extracting subsequent messages.
@@ -59,7 +60,8 @@ where
     ///
     /// Panics if `size.dimension() != 1` or `count` exceeds the number of
     /// retained body coefficients.
-    pub fn extract_first_few_lwe_locally<M>(
+    #[must_use]
+    pub fn into_multi_msg_lwe<M>(
         self,
         count: usize,
         size: GlweSize,
@@ -78,7 +80,10 @@ where
         let message_count = self.message_count(size);
         let mut data = self.0;
 
-        assert!(count <= message_count);
+        assert!(
+            count <= message_count,
+            "message count must not exceed retained body length"
+        );
         data.truncate(mask_len + count);
         for mask in data[..mask_len].chunks_exact_mut(poly_length) {
             mask[1..].reverse();

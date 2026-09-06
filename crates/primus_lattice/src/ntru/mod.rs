@@ -1,4 +1,5 @@
 mod coeff;
+mod extract;
 mod fourier;
 pub(crate) mod gadget_product;
 mod ntt;

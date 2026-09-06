@@ -6,6 +6,16 @@ use crate::ntru::{FourierNtru, NttNtru};
 /// Pre-allocated scratch buffers for native-torus Fourier NTRU gadget products.
 ///
 /// Shared by NLev key switching and NGSW external products, including CMUX.
+/// Scratch lengths are fixed by `poly_length`; decomposition levels are not
+/// bound, so the workspace can be reused across different decomposition lengths.
+/// Callers must supply compatible input and gadget layouts and matching transform
+/// lengths. The basis and transform table are not stored in this context.
+///
+/// Overwriting products initialize the accumulator; internal accumulating
+/// products require an initialized accumulator. Other scratch is written before
+/// use, and no manual reset is needed between operations.
+/// Fourier data must use a compatible FFT layout, and the basis must use the
+/// implicit native-torus modulus.
 pub struct FourierNtruExternalProductContext<T: TorusFftValue> {
     poly_length: usize,
     /// Carry bits reused while decomposing one coefficient polynomial.
@@ -45,6 +55,15 @@ impl<T: TorusFftValue> FourierNtruExternalProductContext<T> {
 /// Pre-allocated scratch buffers for exact NTT NTRU gadget products.
 ///
 /// Shared by NLev key switching and NGSW external products, including CMUX.
+/// Scratch lengths are fixed by `poly_length`; decomposition levels are not
+/// bound, so the workspace can be reused across different decomposition lengths.
+/// Callers must supply compatible input and gadget layouts and matching transform
+/// lengths. The basis and transform table are not stored in this context.
+///
+/// Overwriting products initialize the accumulator; internal accumulating
+/// products require an initialized accumulator. Other scratch is written before
+/// use, and no manual reset is needed between operations.
+/// The basis, NTT table, and modular arithmetic must use the same modulus.
 pub struct NttNtruExternalProductContext<T: FheUint> {
     poly_length: usize,
     /// Modulus-adjusted coefficients reused as decomposition input.

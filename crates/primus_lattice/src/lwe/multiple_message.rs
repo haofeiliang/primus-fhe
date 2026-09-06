@@ -5,9 +5,12 @@ use serde::{Deserialize, Serialize};
 
 use super::Lwe;
 
-/// Represents a cryptographic structure based on the Learning with Errors (LWE) problem.
+/// Packed LWE samples extracted from an RLWE ciphertext.
 ///
-/// This structure encrypts several messages like a rlwe but truncated `b`.
+/// Storage contains a length-`N` mask in constant-term extraction order,
+/// followed by retained body coefficients `b[0..count]`. Later samples rotate
+/// this mask negacyclically. The original polynomial length and body count are
+/// supplied by the caller; this layout cannot represent multiple GLWE masks.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MultiMsgLwe<S>(pub S)
 where
@@ -63,31 +66,33 @@ where
     pub fn a_b(&self, dimension: usize) -> (&[T], &[T]) {
         self.0.split_at(dimension)
     }
-}
 
-impl<T: FheUint> MultiMsgLwe<Vec<T>> {
-    /// Sample extract [`Lwe<Vec<T>>`].
+    /// Allocates the sample for body coefficient `index`.
+    /// `dimension` is the original RLWE polynomial length. The mask must already
+    /// be in constant-term LWE extraction order, and `index` must be less than
+    /// both `dimension` and the retained body count.
+    #[must_use]
     #[inline]
-    pub fn extract_rlwe_mode<M>(&self, dimension: usize, index: usize, modulus: M) -> Lwe<Vec<T>>
+    pub fn extract_lwe_at<M>(&self, index: usize, dimension: usize, modulus: M) -> Lwe<Vec<T>>
     where
         M: Copy + ReduceNegSlice<T>,
     {
-        let mut data = self.0[..dimension + 1].to_vec();
-        if index == 0 {
-            Lwe::new(data)
-        } else {
+        let mut data = self.as_ref()[..dimension + 1].to_vec();
+        if index != 0 {
             data[..dimension].rotate_right(index);
             modulus.reduce_neg_slice_assign(&mut data[..index]);
-            data[dimension] = self.0[dimension + index];
-            Lwe::new(data)
+            data[dimension] = self.as_ref()[dimension + index];
         }
+        Lwe::new(data)
     }
 
-    /// Sample extract all [`Lwe<T>`].
+    /// Allocates all samples, with `msg_count` specifying the exact retained
+    /// body count. The remaining storage is the constant-term extraction mask.
     ///
     /// # Panics
     ///
     /// Panics if `msg_count` is zero or exceeds the LWE dimension.
+    #[must_use]
     #[inline]
     pub fn extract_all<M>(&self, msg_count: usize, modulus: M) -> Vec<Lwe<Vec<T>>>
     where
@@ -101,8 +106,8 @@ impl<T: FheUint> MultiMsgLwe<Vec<T>> {
         let dimension = self.0.len() - msg_count;
         let mut output = Vec::with_capacity(msg_count);
 
-        let mut data = self.0[..dimension + 1].to_vec();
-        self.0[dimension + 1..].iter().for_each(|&b| {
+        let mut data = self.as_ref()[..dimension + 1].to_vec();
+        self.as_ref()[dimension + 1..].iter().for_each(|&b| {
             let lwe = Lwe::new(data.clone());
             output.push(lwe);
 

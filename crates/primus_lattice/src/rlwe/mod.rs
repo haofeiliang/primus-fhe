@@ -1,4 +1,5 @@
 mod coeff;
+mod extract;
 mod ntt;
 
 #[cfg(feature = "rns")]

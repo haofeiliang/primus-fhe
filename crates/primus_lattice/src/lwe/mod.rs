@@ -1,3 +1,4 @@
+mod extract;
 mod multiple_message;
 mod single_message;
 

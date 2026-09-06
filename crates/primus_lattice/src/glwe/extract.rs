@@ -1,5 +1,4 @@
-//! Sample extraction and inverse embedding between GLWE and LWE layouts.
-//!
+//! Sample extraction from coefficient-domain GLWE ciphertexts.
 
 use primus_data::{Data, DataMut};
 use primus_integer::FheUint;
@@ -24,21 +23,7 @@ where
         M: RingContext<T>,
         B: DataMut<Elem = T>,
     {
-        let mask_len = self.as_ref().len() - poly_length;
-        let (output_mask, output_body) = output.a_b_mut();
-
-        debug_assert_eq!(mask_len, output_mask.len());
-
-        for (mask, extracted) in self.as_ref()[..mask_len]
-            .chunks_exact(poly_length)
-            .zip(output_mask.chunks_exact_mut(poly_length))
-        {
-            extracted[0] = mask[0];
-            for (output, &input) in extracted[1..].iter_mut().zip(mask[1..].iter().rev()) {
-                *output = modulus.reduce_neg(input);
-            }
-        }
-        *output_body = self.as_ref()[mask_len];
+        self.extract_lwe_at_to(0, output, poly_length, modulus);
     }
 
     /// Extracts coefficient `index` as an LWE sample.
@@ -84,20 +69,7 @@ where
         M: RingContext<T>,
         B: DataMut<Elem = T>,
     {
-        let mask_len = self.as_ref().len() - poly_length;
-        let (output_mask, output_body) = output.a_b_mut();
-        debug_assert!((1..=mask_len).contains(&output_mask.len()));
-
-        for (mask, extracted) in self.as_ref()[..mask_len]
-            .chunks_exact(poly_length)
-            .zip(output_mask.chunks_mut(poly_length))
-        {
-            extracted[0] = mask[0];
-            for (output, &input) in extracted[1..].iter_mut().zip(mask[1..].iter().rev()) {
-                *output = modulus.reduce_neg(input);
-            }
-        }
-        *output_body = self.as_ref()[mask_len];
+        self.extract_compact_lwe_at_to(0, output, poly_length, modulus);
     }
 
     /// Extracts coefficient `index` as an LWE sample while omitting mask
@@ -127,6 +99,8 @@ where
         self.extract_lwe_prefix_at_to(index, output, poly_length, modulus);
     }
 
+    /// Writes the selected mask prefix and body; the entry point checks index
+    /// and output dimensions. Each polynomial uses the negacyclic extraction order.
     #[inline]
     fn extract_lwe_prefix_at_to<M, B>(
         &self,
@@ -156,48 +130,5 @@ where
             }
         }
         *output_body = input_body[index];
-    }
-}
-
-impl<S, T> Lwe<S>
-where
-    S: Data<Elem = T>,
-    T: FheUint,
-{
-    /// Inserts this LWE sample into a GLWE ciphertext so that compact sample
-    /// extraction recovers the original LWE sample exactly.
-    ///
-    /// For a nonzero LWE dimension `n` and `N = poly_length`, the output must contain
-    /// `ceil(n / N) + 1` polynomials of length `N`. Unused coefficients in the
-    /// final mask polynomial and all non-constant body coefficients are set to
-    /// zero. `poly_length` must be nonzero.
-    pub fn inverse_extract_glwe_to<M, B>(
-        &self,
-        output: &mut Glwe<B>,
-        poly_length: usize,
-        modulus: M,
-    ) where
-        M: RingContext<T>,
-        B: DataMut<Elem = T>,
-    {
-        let output_mask_len = self.dimension().next_multiple_of(poly_length);
-        debug_assert_eq!(output.as_ref().len(), output_mask_len + poly_length);
-
-        let (input_mask, input_body) = self.a_b();
-        let (output_mask, output_body) = output.as_mut().split_at_mut(output_mask_len);
-        output_mask.fill(T::ZERO);
-
-        for (input, mask) in input_mask
-            .chunks(poly_length)
-            .zip(output_mask.chunks_exact_mut(poly_length))
-        {
-            mask[0] = input[0];
-            for (output, &input) in mask[1..].iter_mut().rev().zip(&input[1..]) {
-                *output = modulus.reduce_neg(input);
-            }
-        }
-
-        output_body.fill(T::ZERO);
-        output_body[0] = input_body;
     }
 }

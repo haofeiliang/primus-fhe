@@ -165,6 +165,9 @@ impl<T: FheUint> DcrtGlweKeySwitchingKey<T> {
 /// Reusable workspace for DCRT GLWE key switching.
 ///
 /// Key switching overwrites every internal polynomial and decomposition buffer.
+/// Construct this workspace from the domain used by the operations. Reuse with
+/// another domain requires the same gadget layout and RNS big-integer limb
+/// width; the caller must maintain this compatibility. No rebinding is performed.
 pub struct DcrtGlweKeySwitchingContext<T: FheUint> {
     input_size: RnsGlweSize,
     output_size: RnsGadgetSize,

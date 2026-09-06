@@ -22,6 +22,9 @@ use crate::{
 /// Reusable workspace for CRT and DCRT automorphism operations.
 ///
 /// Each operation overwrites the internal polynomial and GLev buffers.
+/// Construct this workspace from the domain used by the operations. Reuse with
+/// another domain requires the same gadget layout and RNS big-integer limb
+/// width; the caller must maintain this compatibility. No rebinding is performed.
 pub struct CrtGlweAutoContext<T: FheUint> {
     auto_crt_poly: CrtPolynomial<Vec<T>>,
     glev_context: DcrtGlevMulContext<T>,
@@ -246,6 +249,8 @@ impl<T: FheUint> CrtGlweAutoKey<T> {
     }
 
     /// Internal kernel used by composed operations.
+    /// Callers must ensure workspace compatibility and input/output layouts
+    /// before invoking this kernel; it performs no boundary validation.
     pub(crate) fn automorphism_kernel<M, Table, A, B>(
         &self,
         ciphertext: &CrtGlweCiphertext<A>,

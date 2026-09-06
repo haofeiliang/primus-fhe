@@ -51,6 +51,7 @@ fn indexed_extraction_preserves_ntru_and_rlwe_phases() {
                 assert_eq!(compact.a(), &full.a()[..active]);
             }
             rlwe.extract_lwe_at_to(index, &mut full, modulus);
+            assert_eq!(rlwe.extract_lwe_at(index, modulus), full);
             rlwe.extract_compact_lwe_at_to(index, &mut compact, modulus);
             let expected = (body[index] + Q - phase[index]) % Q;
             assert_eq!(

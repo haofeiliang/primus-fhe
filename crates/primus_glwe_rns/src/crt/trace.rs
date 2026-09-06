@@ -11,6 +11,9 @@ use crate::{
 /// Reusable workspace for CRT trace and coefficient-expansion operations.
 ///
 /// Each operation overwrites the internal ciphertext and automorphism buffers.
+/// Construct this workspace from the domain used by the operations. Reuse with
+/// another domain requires the same gadget layout and RNS big-integer limb
+/// width; the caller must maintain this compatibility. No rebinding is performed.
 pub struct CrtGlweTraceContext<T: FheUint> {
     crt_glwe: CrtGlweCiphertext<Vec<T>>,
     auto_context: CrtGlweAutoContext<T>,

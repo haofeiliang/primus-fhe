@@ -274,6 +274,8 @@ impl<T: FheUint> DcrtGlweAutoKey<T> {
     }
 
     /// Internal kernel used by composed operations.
+    /// Callers must ensure workspace compatibility and input/output layouts
+    /// before invoking this kernel; it performs no boundary validation.
     pub(crate) fn automorphism_kernel<M, Table, A, B>(
         &self,
         ciphertext: &DcrtGlweCiphertext<A>,

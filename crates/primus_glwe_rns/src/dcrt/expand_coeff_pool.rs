@@ -12,7 +12,10 @@ pub type DcrtGlweExpandCoeffContext<T> = DcrtGlweTraceContext<T>;
 /// Preallocated, thread-safe workspace pool for parallel coefficient expansion.
 ///
 /// Contexts are returned to the pool after each worker finishes. Parallel
-/// expansion performs no pool allocation.
+/// expansion performs no pool allocation. All workspaces are constructed from
+/// one domain. Callers must use a domain with the same gadget layout and RNS
+/// big-integer limb width when running expansion; acquiring a workspace does
+/// not rebind or validate it.
 pub struct DcrtGlweExpandCoeffSyncPool<T: FheUint> {
     contexts: Mutex<Vec<DcrtGlweExpandCoeffContext<T>>>,
 }
