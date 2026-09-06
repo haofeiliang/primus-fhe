@@ -29,12 +29,34 @@ criterion = { workspace = true }
 rand = { workspace = true }
 
 [[bench]]
-name = "external_product"
+name = "glwe_fourier"
 harness = false
 
 [[bench]]
-name = "cmux"
+name = "glwe_ntt"
 harness = false
+
+[[bench]]
+name = "ntru_fourier"
+harness = false
+
+[[bench]]
+name = "ntru_ntt"
+harness = false
+
+[[bench]]
+name = "extraction"
+harness = false
+
+[[bench]]
+name = "rns_glev"
+harness = false
+required-features = ["rns"]
+
+[[bench]]
+name = "rns_ggsw"
+harness = false
+required-features = ["rns"]
 
 [features]
 default = []

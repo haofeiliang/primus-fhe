@@ -39,3 +39,7 @@ harness = false
 default = []
 derive = ["dep:primus_barrett_derive"]
 simd = ["primus_integer/simd", "primus_barrett_derive?/simd"]
+
+[[bench]]
+name = "slice_arithmetic"
+harness = false
