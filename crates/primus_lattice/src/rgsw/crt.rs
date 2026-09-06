@@ -25,5 +25,6 @@ impl_iters!(CrtRgsw);
 impl_iter_sub_structure!(CrtRgsw, CrtRlev);
 
 impl_basic_operation_multiple_modulus!(CrtRgsw);
+impl_mul_factor_multiple_modulus!(CrtRgsw);
 
 impl_crt_ntt!(CrtRgsw, DcrtRgsw);

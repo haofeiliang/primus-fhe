@@ -22,7 +22,7 @@ impl_bytes_io!(Lwe);
 impl_basic_operation_single_modulus!(Lwe);
 impl_neg_single_modulus!(Lwe);
 impl_mul_scalar_single_modulus!(Lwe);
-impl_add_mul_scalar_single_modulus!(Lwe);
+impl_mul_factor_single_modulus!(Lwe);
 
 impl<S, T> Lwe<S>
 where

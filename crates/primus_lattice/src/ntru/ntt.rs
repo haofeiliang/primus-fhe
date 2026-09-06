@@ -26,6 +26,7 @@ impl_iters!(NttNtru);
 impl_basic_operation_single_modulus!(NttNtru);
 impl_neg_single_modulus!(NttNtru);
 impl_mul_scalar_single_modulus!(NttNtru);
+impl_mul_factor_single_modulus!(NttNtru);
 
 impl<S, T> NttNtru<S>
 where

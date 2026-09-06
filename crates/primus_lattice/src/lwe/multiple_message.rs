@@ -20,7 +20,7 @@ impl_bytes_io!(MultiMsgLwe);
 impl_basic_operation_single_modulus!(MultiMsgLwe);
 impl_neg_single_modulus!(MultiMsgLwe);
 impl_mul_scalar_single_modulus!(MultiMsgLwe);
-impl_add_mul_scalar_single_modulus!(MultiMsgLwe);
+impl_mul_factor_single_modulus!(MultiMsgLwe);
 
 impl<S, T> MultiMsgLwe<S>
 where

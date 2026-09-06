@@ -30,6 +30,7 @@ impl_rlwe_accessors!(NttRlwe, NttPolynomial);
 impl_basic_operation_single_modulus!(NttRlwe);
 impl_neg_single_modulus!(NttRlwe);
 impl_mul_scalar_single_modulus!(NttRlwe);
+impl_mul_factor_single_modulus!(NttRlwe);
 impl_ntt_polynomial_mul!(NttRlwe);
 
 impl_intt!(NttRlwe, Rlwe);

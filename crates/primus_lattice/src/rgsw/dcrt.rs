@@ -25,5 +25,6 @@ impl_iters!(DcrtRgsw);
 impl_iter_sub_structure!(DcrtRgsw, DcrtRlev);
 
 impl_basic_operation_multiple_modulus!(DcrtRgsw);
+impl_mul_factor_multiple_modulus!(DcrtRgsw);
 
 impl_crt_intt!(DcrtRgsw, CrtRgsw);

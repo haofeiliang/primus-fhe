@@ -26,5 +26,7 @@ impl_iters!(Rgsw);
 impl_iter_sub_structure!(Rgsw, Rlev);
 
 impl_basic_operation_single_modulus!(Rgsw);
+impl_mul_scalar_single_modulus!(Rgsw);
+impl_mul_factor_single_modulus!(Rgsw);
 
 impl_ntt!(Rgsw, NttRgsw);

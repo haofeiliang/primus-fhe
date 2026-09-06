@@ -152,7 +152,7 @@ macro_rules! impl_neg_single_modulus {
     };
 }
 
-macro_rules! impl_mul_scalar_assign_single_modulus {
+macro_rules! impl_mul_scalar_single_modulus {
     ($cipher:ident) => {
         impl<S, T> $cipher<S>
         where
@@ -169,13 +169,41 @@ macro_rules! impl_mul_scalar_assign_single_modulus {
             {
                 modulus.reduce_mul_scalar_slice_assign(self.as_mut(), scalar);
             }
-        }
-    };
-}
 
-macro_rules! impl_mul_scalar_single_modulus {
-    ($cipher:ident) => {
-        impl_mul_scalar_assign_single_modulus!($cipher);
+            /// Accumulates `self += rhs * scalar` without clearing `self` or allocating.
+            ///
+            /// Both ciphertexts must have the same length, layout, representation,
+            /// and compatible key semantics. Gadget bases and level/row order must
+            /// match. Input, accumulator, and scalar must be canonical residues;
+            /// results are canonical residues under the same modulus.
+            #[inline]
+            pub fn add_mul_scalar_assign<M, A>(&mut self, rhs: &$cipher<A>, scalar: T, modulus: M)
+            where
+                M: primus_reduce::ReduceMulAddSlice<T>,
+                A: primus_data::Data<Elem = T>,
+            {
+                modulus.reduce_add_mul_scalar_slice_assign(self.as_mut(), rhs.as_ref(), scalar);
+            }
+
+            /// Accumulates `self -= rhs * scalar` without clearing `self` or allocating.
+            ///
+            /// Both ciphertexts must have the same length, layout, representation,
+            /// and compatible key semantics. Gadget bases and level/row order must
+            /// match. Input, accumulator, and scalar must be canonical residues;
+            /// results are canonical residues under the same modulus.
+            #[inline]
+            pub fn sub_mul_scalar_assign<M, A>(&mut self, rhs: &$cipher<A>, scalar: T, modulus: M)
+            where
+                M: Copy
+                    + primus_reduce::ReduceNeg<T, Output = T>
+                    + primus_reduce::ReduceMulAddSlice<T>,
+                A: primus_data::Data<Elem = T>,
+            {
+                // Negate the scalar once to reuse the scalar FMA kernel, including SIMD.
+                let neg_scalar = modulus.reduce_neg(scalar);
+                modulus.reduce_add_mul_scalar_slice_assign(self.as_mut(), rhs.as_ref(), neg_scalar);
+            }
+        }
         impl<S, T> $cipher<S>
         where
             S: primus_data::Data<Elem = T>,
@@ -197,30 +225,7 @@ macro_rules! impl_mul_scalar_single_modulus {
     };
 }
 
-macro_rules! impl_add_mul_scalar_single_modulus {
-    ($cipher:ident) => {
-        impl<S, T> $cipher<S>
-        where
-            S: primus_data::DataMut<Elem = T>,
-            T: primus_integer::FheUint,
-        {
-            /// Accumulates `self += rhs * scalar` without allocating.
-            ///
-            /// Both ciphertexts must have the same layout and length. Coefficients
-            /// and `scalar` must satisfy the input ranges required by `modulus`.
-            #[inline]
-            pub fn add_mul_scalar_assign<M, A>(&mut self, rhs: &$cipher<A>, scalar: T, modulus: M)
-            where
-                M: primus_reduce::ReduceMulAddSlice<T>,
-                A: primus_data::Data<Elem = T>,
-            {
-                modulus.reduce_add_mul_scalar_slice_assign(self.as_mut(), rhs.as_ref(), scalar);
-            }
-        }
-    };
-}
-
-macro_rules! impl_mul_factor_assign_single_modulus {
+macro_rules! impl_mul_factor_single_modulus {
     ($cipher:ident) => {
         impl<S, T> $cipher<S>
         where
@@ -229,14 +234,69 @@ macro_rules! impl_mul_factor_assign_single_modulus {
         {
             /// Multiplies every ciphertext component by a precomputed `factor` in place.
             ///
-            /// The factor must be prepared for `modulus`; coefficients must satisfy
-            /// its multiplication input range.
+            /// The factor must be prepared for `modulus`; stored values must be in
+            /// `[0, modulus)`. Every component, including all gadget
+            /// levels and rows, is scaled by the same factor without changing layout
+            /// or coefficient/NTT representation. Outputs are reduced modulo `modulus`.
             #[inline]
             pub fn mul_factor_assign<F>(&mut self, factor: F, modulus: T)
             where
                 F: primus_factor::FactorSliceOps<T>,
             {
-                primus_poly::ArrayBase(self.as_mut()).mul_factor_assign(factor, modulus);
+                factor.factor_mul_slice_assign(self.as_mut(), modulus);
+            }
+
+            /// Accumulates `self += rhs * factor` without clearing `self` or allocating.
+            ///
+            /// Both ciphertexts must have the same length, layout, representation,
+            /// and compatible key semantics. Gadget bases and level/row order must
+            /// match. The same factor applies to every component.
+            /// The factor must be prepared for `modulus`; input and accumulator
+            /// values must be in `[0, modulus)`. Results remain in that range.
+            #[inline]
+            pub fn add_mul_factor_assign<F, A>(&mut self, rhs: &$cipher<A>, factor: F, modulus: T)
+            where
+                F: primus_factor::FactorSliceOps<T>,
+                A: primus_data::Data<Elem = T>,
+            {
+                factor.add_factor_mul_slice_assign(self.as_mut(), rhs.as_ref(), modulus);
+            }
+
+            /// Accumulates `self -= rhs * factor` without clearing `self` or allocating.
+            ///
+            /// Both ciphertexts must have the same length, layout, representation,
+            /// and compatible key semantics. Gadget bases and level/row order must
+            /// match. The same factor applies to every component.
+            /// The factor must be prepared for `modulus`; input and accumulator
+            /// values must be in `[0, modulus)`. Results remain in that range.
+            #[inline]
+            pub fn sub_mul_factor_assign<F, A>(&mut self, rhs: &$cipher<A>, factor: F, modulus: T)
+            where
+                F: primus_factor::FactorSliceOps<T>,
+                A: primus_data::Data<Elem = T>,
+            {
+                factor.sub_factor_mul_slice_assign(self.as_mut(), rhs.as_ref(), modulus);
+            }
+        }
+        impl<S, T> $cipher<S>
+        where
+            S: primus_data::Data<Elem = T>,
+            T: primus_integer::FheUint,
+        {
+            /// Writes `output = self * factor`, overwriting existing output storage.
+            ///
+            /// Input and output must have the same layout and length. The factor
+            /// must be prepared for `modulus`; stored values must be in `[0, modulus)`.
+            /// Every component, including all gadget levels and rows, is
+            /// scaled by the same factor without changing coefficient/NTT
+            /// representation. Outputs are reduced modulo `modulus`.
+            #[inline]
+            pub fn mul_factor_to<F, A>(&self, factor: F, output: &mut $cipher<A>, modulus: T)
+            where
+                F: primus_factor::FactorSliceOps<T>,
+                A: primus_data::DataMut<Elem = T>,
+            {
+                factor.factor_mul_slice_to(self.as_ref(), output.as_mut(), modulus);
             }
         }
     };

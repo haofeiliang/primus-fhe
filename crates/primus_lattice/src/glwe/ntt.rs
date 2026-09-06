@@ -26,6 +26,7 @@ impl_iter_sub_structure!(NttGlwe, NttPolynomial, ntt_poly);
 impl_basic_operation_single_modulus!(NttGlwe);
 impl_neg_single_modulus!(NttGlwe);
 impl_mul_scalar_single_modulus!(NttGlwe);
+impl_mul_factor_single_modulus!(NttGlwe);
 impl_ntt_polynomial_mul!(NttGlwe);
 
 impl_intt!(NttGlwe, Glwe);

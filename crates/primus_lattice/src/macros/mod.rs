@@ -3,8 +3,8 @@
 //! Pass type names without storage generics: `impl_common!(Lwe)`.
 //! At each type declaration, group invocations in this order:
 //! storage/construction, iteration/access, arithmetic, domain conversion.
-//! Within arithmetic, use add/sub, negation, scalar multiply, scalar FMA,
-//! then precomputed-factor multiply and polynomial products. Capability groups remain explicit.
+//! Within arithmetic, use add/sub, negation, scalar arithmetic,
+//! then precomputed-factor arithmetic and polynomial products. Capability groups remain explicit.
 //!
 //! - [`common`]: constructors, byte I/O, zero initialization
 //! - [`iter`], [`rlwe`]: ciphertext iterators and RLWE polynomial views
