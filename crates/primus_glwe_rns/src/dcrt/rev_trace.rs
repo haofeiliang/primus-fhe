@@ -3,6 +3,7 @@ use primus_factor::ShoupFactor;
 use primus_integer::FheUint;
 use primus_ntt::NttTable;
 use primus_reduce::FieldContext;
+use primus_rns::ResidueFactors;
 
 use crate::{
     DcrtGadgetDomain, DcrtGlweAutoKey, DcrtGlweCiphertext, DcrtGlweSecretKey, DcrtGlweTraceContext,
@@ -15,7 +16,7 @@ pub type DcrtGlweRevTraceContext<T> = DcrtGlweTraceContext<T>;
 /// Automorphism keys for reverse tracing a DCRT GLWE ciphertext.
 pub struct DcrtGlweRevTraceKey<T: FheUint> {
     auto_keys: Vec<DcrtGlweAutoKey<T>>,
-    inv_2_residues: Vec<ShoupFactor<T>>,
+    inv_2_residues: ResidueFactors<Vec<ShoupFactor<T>>>,
 }
 
 impl<T: FheUint> DcrtGlweRevTraceKey<T> {
@@ -41,11 +42,13 @@ impl<T: FheUint> DcrtGlweRevTraceKey<T> {
 
         // Precompute 2^{-1} mod q_i for each RNS modulus.
         // For odd prime q_i, inv(2) = (q_i + 1) / 2.
-        let inv_2_residues: Vec<ShoupFactor<T>> = params
-            .cipher_moduli_value()
-            .iter()
-            .map(|&m| ShoupFactor::new((m + T::ONE) >> 1u32, m))
-            .collect();
+        let inv_2_residues: ResidueFactors<Vec<ShoupFactor<T>>> = ResidueFactors(
+            params
+                .cipher_moduli_value()
+                .iter()
+                .map(|&m| ShoupFactor::new((m + T::ONE) >> 1u32, m))
+                .collect(),
+        );
 
         Self {
             auto_keys,

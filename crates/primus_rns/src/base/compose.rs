@@ -6,6 +6,7 @@ use primus_poly::{BigUintPolynomial, CrtPolynomial};
 use primus_reduce::FieldContext;
 
 use super::RNSBase;
+use crate::Residues;
 
 impl<T, M> RNSBase<T, M>
 where
@@ -19,7 +20,8 @@ where
     ///
     /// The returned value has [`big_uint_value_len`](Self::big_uint_value_len)
     /// little-endian limbs and is reduced modulo the product of the basis moduli.
-    pub fn compose(&self, residues: &[T]) -> BigUint<Vec<T>> {
+    pub fn compose(&self, residues: &Residues<impl Data<Elem = T>>) -> BigUint<Vec<T>> {
+        let residues = residues.as_ref();
         assert_eq!(self.moduli_count(), residues.len());
 
         let value_len = self.big_uint_value_len();
@@ -59,7 +61,12 @@ where
     ///
     /// `value.len()` must equal [`big_uint_value_len`](Self::big_uint_value_len).
     /// The previous contents of the buffer are fully overwritten.
-    pub fn compose_to(&self, residues: &[T], value: &mut BigUint<&mut [T]>) {
+    pub fn compose_to(
+        &self,
+        residues: &Residues<impl Data<Elem = T>>,
+        value: &mut BigUint<&mut [T]>,
+    ) {
+        let residues = residues.as_ref();
         assert_eq!(self.moduli_count(), residues.len());
         assert_eq!(self.big_uint_value_len(), value.len());
         self.compose_to_kernel(residues, value);

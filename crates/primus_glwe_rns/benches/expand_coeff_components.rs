@@ -1,3 +1,4 @@
+use primus_rns::ResidueFactors;
 use std::hint::black_box;
 
 use criterion::{BatchSize, BenchmarkId, Criterion, criterion_group, criterion_main};
@@ -75,11 +76,13 @@ fn bench_expand_coeff_components(c: &mut Criterion) {
             let mut count = vec![0; glev_params.big_uint_value_len()];
             count[0] = poly_length as V;
             let count_residue = base_q.decompose(BigUint(&count));
-            count_residue
-                .iter()
-                .zip(base_q.moduli())
-                .map(|(&n, m)| ShoupFactor::new(m.reduce_inv(n), m.value()))
-                .collect::<Vec<_>>()
+            ResidueFactors(
+                count_residue
+                    .iter()
+                    .zip(base_q.moduli())
+                    .map(|(&n, m)| ShoupFactor::new(m.reduce_inv(n), m.value()))
+                    .collect::<Vec<_>>(),
+            )
         };
 
         let monomial_factors = {

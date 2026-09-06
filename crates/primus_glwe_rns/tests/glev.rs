@@ -90,7 +90,7 @@ fn test_rns_glev() {
     base_q.wrapping_decompose_small_polynomial_to(&input2, &mut msg2, t);
 
     msg2.mul_factor_assign(
-        glwe_params.delta_factor_mod_q(),
+        glwe_params.delta_factor_mod_q().as_ref(),
         poly_length,
         glwe_params.cipher_moduli_value(),
     );

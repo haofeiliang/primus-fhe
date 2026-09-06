@@ -14,6 +14,8 @@
 
 | 类型 | 职责 |
 | --- | --- |
+| `Residues<S>` | 一个值在有序 RNS 基下的剩余表示 |
+| `ResidueFactors<S>` | 一个值在有序 RNS 基下的预计算乘法因子 |
 | `RNSBase<T, M>` | 非空、模数两两互素的 RNS 基及其 CRT 预计算 |
 | `BaseConverter<T, M>` | 在两个 RNS 基之间执行 fast 或 corrected 转换的预计算 |
 | `ExactConversionContext<T>` | corrected 批量转换使用的可复用 workspace |
@@ -26,16 +28,25 @@
 
 ## 示例
 
+`Residues<S>` 用自有或借用存储表示一个值在有序 RNS 基下的规范剩余，
+不保存或验证 RNS 基。单值分解、重构和快速基转换使用该类型；批量布局和
+临时工作区仍使用切片。
+
+`ResidueFactors<S>` 按基顺序存储每个模数下的预计算乘法因子。
+`decompose_factors` 返回该类型，带缩放的分解接口接收该类型。每个因子必须
+按对应模数预计算，包装类型本身不验证预计算信息。多项式因子表和 CRT 重构
+权重仍采用独立表示。
+
 ```rust
 use primus_modulus::BarrettModulus;
-use primus_rns::RNSBase;
+use primus_rns::{RNSBase, Residues};
 
 let moduli = [3_u64, 5, 7].map(BarrettModulus::new);
 let base = RNSBase::new(&moduli).unwrap();
 
-let value = base.compose(&[2, 4, 6]);
+let value = base.compose(&Residues([2, 4, 6]));
 assert_eq!(value.digits(), &[104]);
-assert_eq!(base.decompose(value.view()), [2, 4, 6]);
+assert_eq!(base.decompose(value.view()).as_ref(), [2, 4, 6]);
 ```
 
 `compose` 返回 `[0, Q)` 中的规范代表元，其中 `Q` 是基中所有模数的乘积。

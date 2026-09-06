@@ -20,7 +20,7 @@ macro_rules! impl_mul_factor_multiple_modulus {
             #[inline]
             pub fn mul_factor_assign<F>(
                 &mut self,
-                factors: &[F],
+                factors: &primus_rns::ResidueFactors<impl primus_data::Data<Elem = F>>,
                 poly_length: usize,
                 rns_poly_len: usize,
                 moduli: &[T],
@@ -42,9 +42,11 @@ macro_rules! impl_mul_factor_multiple_modulus {
                 );
                 debug_assert_eq!(factors.len(), moduli.len(), "RNS scalar count mismatch");
                 for output in self.as_mut().chunks_exact_mut(rns_poly_len) {
-                    for (output, &factor, &modulus) in
-                        itertools::izip!(output.chunks_exact_mut(poly_length), factors, moduli)
-                    {
+                    for (output, &factor, &modulus) in itertools::izip!(
+                        output.chunks_exact_mut(poly_length),
+                        factors.iter(),
+                        moduli
+                    ) {
                         factor.factor_mul_slice_assign(output, modulus);
                     }
                 }
@@ -68,7 +70,7 @@ macro_rules! impl_mul_factor_multiple_modulus {
             #[inline]
             pub fn mul_factor_to<F, A>(
                 &self,
-                factors: &[F],
+                factors: &primus_rns::ResidueFactors<impl primus_data::Data<Elem = F>>,
                 output: &mut $cipher<A>,
                 poly_length: usize,
                 rns_poly_len: usize,
@@ -104,7 +106,7 @@ macro_rules! impl_mul_factor_multiple_modulus {
                     for (input, output, &factor, &modulus) in itertools::izip!(
                         input.chunks_exact(poly_length),
                         output.chunks_exact_mut(poly_length),
-                        factors,
+                        factors.iter(),
                         moduli
                     ) {
                         factor.factor_mul_slice_to(input, output, modulus);

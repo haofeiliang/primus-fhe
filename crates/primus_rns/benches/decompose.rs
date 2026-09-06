@@ -1,9 +1,9 @@
+use primus_rns::{BaseConverter, RNSBase, ResidueFactors};
 use std::hint::black_box;
 
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use primus_factor::ShoupFactor;
 use primus_modulus::BarrettModulus;
-use primus_rns::{BaseConverter, RNSBase};
 
 type Value = u64;
 type Modulus = BarrettModulus<Value>;
@@ -47,15 +47,17 @@ fn composed_values(base: &Base, residues: &[Value], value_count: usize) -> Vec<V
     values
 }
 
-fn shoup_factors(base: &Base) -> Vec<ShoupFactor<Value>> {
-    base.moduli()
-        .iter()
-        .enumerate()
-        .map(|(index, modulus)| {
-            let modulus = modulus.value();
-            ShoupFactor::new(((index as Value + 3) * 17) % modulus, modulus)
-        })
-        .collect()
+fn shoup_factors(base: &Base) -> ResidueFactors<Vec<ShoupFactor<Value>>> {
+    ResidueFactors(
+        base.moduli()
+            .iter()
+            .enumerate()
+            .map(|(index, modulus)| {
+                let modulus = modulus.value();
+                ShoupFactor::new(((index as Value + 3) * 17) % modulus, modulus)
+            })
+            .collect(),
+    )
 }
 
 // These are the allocation-free slice operations used by polynomial paths.

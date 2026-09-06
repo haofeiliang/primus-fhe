@@ -10,6 +10,7 @@ use super::RNSBase;
 use super::small_kernels::simd;
 #[cfg(not(feature = "simd"))]
 use super::small_kernels::slice;
+use crate::{ResidueFactors, Residues};
 
 impl<T, M> RNSBase<T, M>
 where
@@ -28,8 +29,8 @@ where
     ///
     /// `small_value_modulus` must be no larger than every RNS modulus; batched
     /// variants require it to be strictly smaller in debug builds.
-    pub fn wrapping_decompose(&self, value: T, small_value_modulus: T) -> Vec<T> {
-        if small_value_modulus != T::TWO {
+    pub fn wrapping_decompose(&self, value: T, small_value_modulus: T) -> Residues<Vec<T>> {
+        Residues(if small_value_modulus != T::TWO {
             let half = (small_value_modulus + T::ONE) / T::TWO;
             self.moduli_values()
                 .map(|modulus| {
@@ -42,7 +43,7 @@ where
                 .collect()
         } else {
             vec![value; self.moduli_count()]
-        }
+        })
     }
 
     /// Writes [`wrapping_decompose`](Self::wrapping_decompose) into caller-provided storage.
@@ -50,7 +51,13 @@ where
     /// `residues` must contain exactly `moduli_count()` elements. `value` is
     /// expected to be reduced modulo `small_value_modulus`; the output uses the
     /// same basis order as [`moduli`](Self::moduli).
-    pub fn wrapping_decompose_to(&self, value: T, residues: &mut [T], small_value_modulus: T) {
+    pub fn wrapping_decompose_to(
+        &self,
+        value: T,
+        residues: &mut Residues<impl DataMut<Elem = T>>,
+        small_value_modulus: T,
+    ) {
+        let residues = residues.as_mut();
         debug_assert_eq!(self.moduli_count(), residues.len());
 
         if small_value_modulus != T::TWO {
@@ -154,7 +161,7 @@ where
         small_values: &[T],
         acc: &mut [T],
         small_value_modulus: T,
-        factors: &[F],
+        factors: &ResidueFactors<impl Data<Elem = F>>,
     ) {
         let value_count = small_values.len();
         debug_assert_eq!(acc.len(), self.moduli_count() * value_count);
@@ -166,7 +173,7 @@ where
             izip!(
                 acc.chunks_exact_mut(value_count),
                 self.moduli_values(),
-                factors,
+                factors.iter(),
             )
             .for_each(|(acc_chunk, modulus, &factor)| {
                 let temp = modulus - small_value_modulus;
@@ -195,7 +202,7 @@ where
             izip!(
                 acc.chunks_exact_mut(value_count),
                 self.moduli_values(),
-                factors,
+                factors.iter(),
             )
             .for_each(|(acc_chunk, modulus, &factor)| {
                 factor.add_factor_mul_slice_assign(acc_chunk, small_values, modulus);
@@ -222,7 +229,7 @@ where
         small_poly: &Polynomial<A>,
         acc: &mut CrtPolynomial<C>,
         small_poly_modulus: T,
-        factors: &[F],
+        factors: &ResidueFactors<impl Data<Elem = F>>,
     ) where
         A: Data<Elem = T>,
         C: DataMut<Elem = T>,
@@ -253,7 +260,7 @@ where
         &self,
         small_values: &[T],
         acc: &mut [T],
-        factors: &[F],
+        factors: &ResidueFactors<impl Data<Elem = F>>,
     ) {
         let value_count = small_values.len();
         debug_assert_eq!(acc.len(), self.moduli_count() * value_count);
@@ -262,7 +269,7 @@ where
         izip!(
             acc.chunks_exact_mut(value_count),
             self.moduli_values(),
-            factors,
+            factors.iter(),
         )
         .for_each(|(acc_chunk, modulus, &factor)| {
             factor.add_factor_mul_slice_assign(acc_chunk, small_values, modulus);
@@ -283,7 +290,7 @@ where
         &self,
         small_poly: &Polynomial<A>,
         acc: &mut CrtPolynomial<C>,
-        factors: &[F],
+        factors: &ResidueFactors<impl Data<Elem = F>>,
     ) where
         A: Data<Elem = T>,
         C: DataMut<Elem = T>,

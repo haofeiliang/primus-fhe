@@ -3,7 +3,7 @@ use primus_factor::ShoupFactor;
 use primus_integer::{AsInto, BigUint, FheUint};
 use primus_ntt::{DcrtTable, MonomialNttTable, NttTable};
 use primus_reduce::FieldContext;
-use primus_rns::RNSBase;
+use primus_rns::{RNSBase, ResidueFactors};
 use rayon::prelude::*;
 
 use crate::{
@@ -17,7 +17,7 @@ use super::{DcrtGlweExpandCoeffContext, DcrtGlweExpandCoeffSyncPool};
 pub struct DcrtGlweExpandCoeffKey<T: FheUint> {
     auto_keys: Vec<DcrtGlweAutoKey<T>>,
     ntt_monomial_factors: Vec<Vec<ShoupFactor<T>>>,
-    inv_count_residues_by_level: Vec<Vec<ShoupFactor<T>>>,
+    inv_count_residues_by_level: Vec<ResidueFactors<Vec<ShoupFactor<T>>>>,
 }
 
 impl<T: FheUint> DcrtGlweExpandCoeffKey<T> {
@@ -85,7 +85,7 @@ impl<T: FheUint> DcrtGlweExpandCoeffKey<T> {
     fn precompute_inv_count_residues<M>(
         params: &CrtGlevParameters<T, M>,
         rns_base: &RNSBase<T, M>,
-    ) -> Vec<Vec<ShoupFactor<T>>>
+    ) -> Vec<ResidueFactors<Vec<ShoupFactor<T>>>>
     where
         M: FieldContext<T>,
     {
@@ -99,11 +99,13 @@ impl<T: FheUint> DcrtGlweExpandCoeffKey<T> {
                 n[0] = count.as_into();
                 let n_residue = rns_base.decompose(BigUint(&n));
 
-                n_residue
-                    .iter()
-                    .zip(rns_base.moduli())
-                    .map(|(&n, m)| ShoupFactor::new(m.reduce_inv(n), m.value()))
-                    .collect()
+                ResidueFactors(
+                    n_residue
+                        .iter()
+                        .zip(rns_base.moduli())
+                        .map(|(&n, m)| ShoupFactor::new(m.reduce_inv(n), m.value()))
+                        .collect(),
+                )
             })
             .collect()
     }

@@ -5,6 +5,7 @@ use primus_lattice::{ggsw::DcrtGgsw, glev::DcrtGlev, glwe::DcrtGlwe};
 use primus_ntt::{DcrtTable, NttTable};
 use primus_poly::{CrtPolynomial, DcrtPolynomial};
 use primus_reduce::FieldContext;
+use primus_rns::Residues;
 
 use crate::{CrtGgswParameters, CrtGlevParameters, CrtGlweParameters, DcrtGlweSecretKey};
 
@@ -134,7 +135,7 @@ impl<T: FheUint> DcrtGlwePublicKey<T> {
     fn encrypt_monomial_in_dcrt_glev_inplace<R, Table, M>(
         &self,
         index: usize,
-        coeff_residues: &[T],
+        coeff_residues: &Residues<impl Data<Elem = T>>,
         degree: usize,
         dcrt_glev: &mut DcrtGlev<&mut [T]>,
         params: &CrtGlevParameters<T, M>,
@@ -181,8 +182,8 @@ impl<T: FheUint> DcrtGlwePublicKey<T> {
                         if i == index {
                             izip!(
                                 ai.iter_each_modulus_mut(poly_length),
-                                coeff_residues,
-                                scalar_residues,
+                                coeff_residues.iter(),
+                                scalar_residues.iter(),
                                 moduli,
                             )
                             .for_each(
@@ -206,7 +207,7 @@ impl<T: FheUint> DcrtGlwePublicKey<T> {
     /// Generate a [`DcrtGgsw`] ciphertext which encrypted `coeff*X^degree`.
     pub fn encrypt_monomial_ggsw<R, Table, M>(
         &self,
-        coeff_residues: &[T],
+        coeff_residues: &Residues<impl Data<Elem = T>>,
         degree: usize,
         params: &CrtGgswParameters<T, M>,
         table: &DcrtTable<Table>,
@@ -229,7 +230,7 @@ impl<T: FheUint> DcrtGlwePublicKey<T> {
     /// Generate a [`DcrtGgsw`] ciphertext which encrypted `coeff*X^degree`.
     pub fn encrypt_monomial_ggsw_inplace<R, Table, M, A>(
         &self,
-        coeff_residues: &[T],
+        coeff_residues: &Residues<impl Data<Elem = T>>,
         degree: usize,
         result: &mut DcrtGgsw<A>,
         params: &CrtGgswParameters<T, M>,

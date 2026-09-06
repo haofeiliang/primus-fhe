@@ -101,7 +101,12 @@ fn test_crt_glwe_trace() {
         .map(|(&n, m)| m.reduce_inv(n))
         .collect::<Vec<_>>();
 
-    c1.mul_scalar_assign(&scalar_residue, poly_length, rns_poly_len, &moduli);
+    c1.mul_scalar_assign(
+        &primus_rns::Residues(scalar_residue.as_slice()),
+        poly_length,
+        rns_poly_len,
+        &moduli,
+    );
 
     let mut c2: CrtGlwe<Vec<ValueT>> = CrtGlwe::new(c2.0);
 
@@ -193,7 +198,12 @@ fn test_dcrt_glwe_trace() {
         .map(|(&n, m)| m.reduce_inv(n))
         .collect::<Vec<_>>();
 
-    c1.mul_scalar_assign(&scalar_residue, poly_length, rns_poly_len, &moduli);
+    c1.mul_scalar_assign(
+        &primus_rns::Residues(scalar_residue.as_slice()),
+        poly_length,
+        rns_poly_len,
+        &moduli,
+    );
 
     trace_key.trace_inplace(&c1, &mut c2, &domain, &mut trace_context);
 
@@ -363,7 +373,7 @@ fn test_dcrt_glwe_rev_trace_noise() {
         let mut compose_buffer = vec![0; moduli_count];
         for (chunk, delta_factor, &modulus_value) in izip!(
             expected_crt.chunks_exact_mut(poly_length),
-            delta_factor_mod_q,
+            delta_factor_mod_q.iter(),
             moduli_values,
         ) {
             for (slot, value) in chunk.iter_mut().zip(expected_msg) {
@@ -440,7 +450,12 @@ fn test_dcrt_glwe_rev_trace_noise() {
         .map(|(&n, m)| m.reduce_inv(n))
         .collect::<Vec<_>>();
 
-    c1_clone.mul_scalar_assign(&scalar_residue, poly_length, rns_poly_len, &moduli);
+    c1_clone.mul_scalar_assign(
+        &primus_rns::Residues(scalar_residue.as_slice()),
+        poly_length,
+        rns_poly_len,
+        &moduli,
+    );
 
     trace_key.trace_inplace(&c1_clone, &mut c2, &domain, &mut trace_context);
 

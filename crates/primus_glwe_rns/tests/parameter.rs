@@ -60,7 +60,7 @@ fn cached_weights_and_centered_digits_follow_rns_order() {
         for (level, residues) in params.scalar_residue_iter().enumerate() {
             let weight = 1u64 << (basis.drop_bits() + level as u32 * log_basis);
             assert_eq!(
-                residues,
+                residues.as_ref(),
                 moduli.map(|modulus| (weight % u64::from(modulus)) as u32)
             );
         }

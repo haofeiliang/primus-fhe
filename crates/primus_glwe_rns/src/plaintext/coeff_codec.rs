@@ -25,7 +25,7 @@ use primus_factor::{FactorSliceOps, ShoupFactor};
 use primus_integer::{BigUint, DivRemScalar, FheUint, multiply_many_values};
 use primus_poly::{CrtPolynomial, DcrtPolynomial, Polynomial};
 use primus_reduce::FieldContext;
-use primus_rns::{BaseConverter, RNSBase};
+use primus_rns::{BaseConverter, RNSBase, ResidueFactors, Residues};
 
 /// BFV-style RNS coefficient codec.
 ///
@@ -44,14 +44,14 @@ where
 
     // For encoding: Δ = round(Q / t) as BigUint, pre-decomposed into Shoup factors mod each q_i
     delta: BigUint<Vec<T>>,
-    delta_factor_mod_q: Vec<ShoupFactor<T>>,
+    delta_factor_mod_q: ResidueFactors<Vec<ShoupFactor<T>>>,
 
     // For decoding: HPS γ-trick, produces m mod t
     gamma: T,
-    base_t_gamma: RNSBase<T, M>,               // {t, γ}
-    t_gamma_factor_mod_q: Vec<ShoupFactor<T>>, // [(t·γ) mod q_i]
-    minus_inv_q_mod_t_gamma: Vec<T>,           // [(−Q^{-1}) mod m_j], m_j ∈ {t, γ}
-    inv_gamma_mod_t: ShoupFactor<T>,           // (γ^{-1}) mod t
+    base_t_gamma: RNSBase<T, M>,                               // {t, γ}
+    t_gamma_factor_mod_q: ResidueFactors<Vec<ShoupFactor<T>>>, // [(t·γ) mod q_i]
+    minus_inv_q_mod_t_gamma: Residues<Vec<T>>,                 // [(−Q^{-1}) mod m_j], m_j ∈ {t, γ}
+    inv_gamma_mod_t: ShoupFactor<T>,                           // (γ^{-1}) mod t
     converter_q_to_t_gamma: BaseConverter<T, M>,
 }
 
@@ -87,11 +87,13 @@ where
         let t_gamma = [t_modulus, gamma_modulus];
         let base_t_gamma = RNSBase::new(&t_gamma).unwrap();
         let q_mod_t_gamma = base_t_gamma.decompose(cipher_modulus.view());
-        let minus_inv_q_mod_t_gamma: Vec<T> = q_mod_t_gamma
-            .iter()
-            .zip(&t_gamma)
-            .map(|(&x, modulus)| modulus.reduce_neg(modulus.reduce_inv(x)))
-            .collect();
+        let minus_inv_q_mod_t_gamma = Residues(
+            q_mod_t_gamma
+                .iter()
+                .zip(&t_gamma)
+                .map(|(&x, modulus)| modulus.reduce_neg(modulus.reduce_inv(x)))
+                .collect::<Vec<T>>(),
+        );
         let inv_gamma_mod_t = ShoupFactor::new(t_modulus.reduce_inv(t_modulus.reduce(gamma)), t);
         let t_gamma_value = multiply_many_values(&[t, gamma]);
         let t_gamma_factor_mod_q = base_q.decompose_factors(t_gamma_value.view());
@@ -168,8 +170,8 @@ where
     }
 
     /// Returns the Shoup factors for `floor(Q / t)` in every Q limb.
-    pub fn delta_factor_mod_q(&self) -> &[ShoupFactor<T>] {
-        &self.delta_factor_mod_q
+    pub fn delta_factor_mod_q(&self) -> ResidueFactors<&[ShoupFactor<T>]> {
+        self.delta_factor_mod_q.view()
     }
 
     /// Returns `floor(Q / t)` as a multi-limb integer.
@@ -195,7 +197,11 @@ where
         self.base_q
             .wrapping_decompose_small_polynomial_to(message, crt_message, self.t);
 
-        crt_message.mul_factor_assign(&self.delta_factor_mod_q, poly_length, &self.moduli_values);
+        crt_message.mul_factor_assign(
+            self.delta_factor_mod_q.as_ref(),
+            poly_length,
+            &self.moduli_values,
+        );
     }
 
     /// Adds centered, scaled plaintext coefficients to a CRT polynomial.
@@ -242,7 +248,11 @@ where
                 residues.copy_from_slice(message.as_ref());
             });
 
-        crt_message.mul_factor_assign(&self.delta_factor_mod_q, poly_length, &self.moduli_values);
+        crt_message.mul_factor_assign(
+            self.delta_factor_mod_q.as_ref(),
+            poly_length,
+            &self.moduli_values,
+        );
     }
 
     /// Adds unsigned, scaled plaintext coefficients to a CRT polynomial.
@@ -297,8 +307,8 @@ where
         let gamma = self.gamma;
         let t_modulus = self.base_t_gamma.moduli()[0];
         let gamma_modulus = self.base_t_gamma.moduli()[1];
-        let minus_inv_q_mod_t = self.minus_inv_q_mod_t_gamma[0];
-        let minus_inv_q_mod_gamma = self.minus_inv_q_mod_t_gamma[1];
+        let minus_inv_q_mod_t = self.minus_inv_q_mod_t_gamma.as_ref()[0];
+        let minus_inv_q_mod_gamma = self.minus_inv_q_mod_t_gamma.as_ref()[1];
         let inv_gamma_mod_t = self.inv_gamma_mod_t;
         let msg = msg.as_mut();
 
@@ -309,7 +319,11 @@ where
         //  4. Centered-lift y_γ and recover m·γ mod t = y_t - centered(y_γ)
         //  5. Multiply by γ^{-1} mod t to get m
 
-        msg_mod_q.mul_factor_assign(&self.t_gamma_factor_mod_q, poly_length, &self.moduli_values);
+        msg_mod_q.mul_factor_assign(
+            self.t_gamma_factor_mod_q.as_ref(),
+            poly_length,
+            &self.moduli_values,
+        );
 
         let conversion_scratch_len = self
             .converter_q_to_t_gamma

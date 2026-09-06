@@ -16,6 +16,8 @@ flat slices with caller-owned reusable workspace.
 
 | Type | Role |
 | --- | --- |
+| `Residues<S>` | One value represented under an ordered RNS basis |
+| `ResidueFactors<S>` | Precomputed multiplication factors for one value under an ordered RNS basis |
 | `RNSBase<T, M>` | A non-empty, pairwise-coprime modulus basis and its CRT precomputations |
 | `BaseConverter<T, M>` | Precomputed fast or corrected conversion between two RNS bases |
 | `ExactConversionContext<T>` | Reusable workspace for corrected batched conversion |
@@ -29,16 +31,27 @@ repeated polynomial operations.
 
 ## Example
 
+`Residues<S>` stores one value as canonical residues in an ordered RNS basis,
+with owned or borrowed storage. It does not store or validate the basis.
+Single-value decomposition, composition, and fast conversion use this type;
+batched layouts and scratch buffers remain slices.
+
+`ResidueFactors<S>` stores one precomputed factor per modulus in basis order.
+`decompose_factors` returns this type, and scaled-decomposition APIs accept it.
+Each factor must be prepared for its corresponding modulus; the wrapper does not
+validate precomputations. Polynomial factor tables and CRT reconstruction weights
+remain separate representations.
+
 ```rust
 use primus_modulus::BarrettModulus;
-use primus_rns::RNSBase;
+use primus_rns::{RNSBase, Residues};
 
 let moduli = [3_u64, 5, 7].map(BarrettModulus::new);
 let base = RNSBase::new(&moduli).unwrap();
 
-let value = base.compose(&[2, 4, 6]);
+let value = base.compose(&Residues([2, 4, 6]));
 assert_eq!(value.digits(), &[104]);
-assert_eq!(base.decompose(value.view()), [2, 4, 6]);
+assert_eq!(base.decompose(value.view()).as_ref(), [2, 4, 6]);
 ```
 
 `compose` returns the canonical representative in `[0, Q)`, where `Q` is the

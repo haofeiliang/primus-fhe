@@ -1,4 +1,5 @@
 use primus_modulus::BarrettModulus;
+use primus_rns::Residues;
 use primus_rns::{BaseConverter, RNSBase};
 
 type Value = u64;
@@ -31,7 +32,11 @@ fn fast_array_conversion_matches_scalar_conversion() {
         ];
         let mut scalar_output = vec![0; output_base.moduli_count()];
         let mut scalar_scratch = vec![0; input_base.moduli_count()];
-        converter.fast_convert(&value_residues, &mut scalar_output, &mut scalar_scratch);
+        converter.fast_convert(
+            &Residues(value_residues.as_slice()),
+            &mut Residues(scalar_output.as_mut_slice()),
+            &mut scalar_scratch,
+        );
         for (modulus_index, value) in scalar_output.into_iter().enumerate() {
             expected[modulus_index * value_count + value_index] = value;
         }

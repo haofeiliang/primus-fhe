@@ -6,7 +6,7 @@ use primus_factor::ShoupFactor;
 use primus_integer::{BigUint, FheUint, UnsignedInteger};
 use primus_lattice::{GlweSize, RnsGadgetSize, RnsGlweSize};
 use primus_reduce::FieldContext;
-use primus_rns::RNSBase;
+use primus_rns::{RNSBase, ResidueFactors, Residues};
 use rand::distr::Uniform;
 
 use crate::{RnsCoeffCodec, SecretKeyDistr};
@@ -197,7 +197,7 @@ where
     }
 
     /// Returns a reference to the delta residues of this [`CrtGlweParameters<T, M>`].
-    pub fn delta_factor_mod_q(&self) -> &[ShoupFactor<T>] {
+    pub fn delta_factor_mod_q(&self) -> ResidueFactors<&[ShoupFactor<T>]> {
         self.codec.delta_factor_mod_q()
     }
 
@@ -326,7 +326,9 @@ where
             .scalar_iter()
             .zip(scalar_residues.chunks_exact_mut(glwe_params.cipher_moduli_count()))
         {
-            glwe_params.base_q().decompose_to(BigUint(scalar), residues);
+            glwe_params
+                .base_q()
+                .decompose_to(BigUint(scalar), &mut Residues(residues));
         }
         Ok(Self {
             cipher_modulus_minus_one: glwe_params.cipher_modulus_minus_one().into(),
@@ -436,9 +438,12 @@ where
     /// [`Self::cipher_moduli`]. The weights are computed once at construction.
     #[must_use]
     #[inline]
-    pub fn scalar_residue_iter(&self) -> std::slice::ChunksExact<'_, T> {
+    pub fn scalar_residue_iter(
+        &self,
+    ) -> impl ExactSizeIterator<Item = Residues<&[T]>> + DoubleEndedIterator {
         self.scalar_residues
             .chunks_exact(self.cipher_moduli_count())
+            .map(Residues)
     }
 
     /// Returns the cached RNS gadget layout.

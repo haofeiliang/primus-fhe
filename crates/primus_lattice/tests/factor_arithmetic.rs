@@ -98,7 +98,7 @@ fn ring_gadget_factors_preserve_level_and_modulus_order() {
     const N: usize = 32;
     let qs = [17u32, 97];
     let scalars = [3, 5];
-    let factors = [ShoupFactor::new(3, 17), ShoupFactor::new(5, 97)];
+    let factors = primus_rns::ResidueFactors([ShoupFactor::new(3, 17), ShoupFactor::new(5, 97)]);
     let rns_poly_len = N * qs.len();
     macro_rules! check {
         ($cipher:ident, $components:expr) => {{

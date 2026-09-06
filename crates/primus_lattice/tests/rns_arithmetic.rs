@@ -14,11 +14,11 @@ fn rns_arithmetic_preserves_component_and_modulus_order() {
     const N: usize = 2;
     let qs = [17u32, 97];
     let moduli = qs.map(BarrettModulus::new);
-    let scalars = [3, 5];
-    let factors = [
-        ShoupFactor::new(scalars[0], qs[0]),
-        ShoupFactor::new(scalars[1], qs[1]),
-    ];
+    let scalars = primus_rns::Residues([3, 5]);
+    let factors = primus_rns::ResidueFactors([
+        ShoupFactor::new(scalars.as_ref()[0], qs[0]),
+        ShoupFactor::new(scalars.as_ref()[1], qs[1]),
+    ]);
     let rns_poly_len = N * qs.len();
 
     macro_rules! check {
@@ -39,7 +39,7 @@ fn rns_arithmetic_preserves_component_and_modulus_order() {
                     .enumerate()
                     .map(|(i, (&a, &b))| {
                         let limb = i / N % qs.len();
-                        op(a, b, qs[limb], scalars[limb])
+                        op(a, b, qs[limb], scalars.as_ref()[limb])
                     })
                     .collect()
             };

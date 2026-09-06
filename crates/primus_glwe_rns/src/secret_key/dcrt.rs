@@ -7,6 +7,7 @@ use primus_lattice::{RnsGlweSize, glev::DcrtGlev};
 use primus_ntt::{DcrtTable, NttTable};
 use primus_poly::{CrtPolynomial, DcrtPolynomial, DcrtPolynomialIter, Polynomial, PolynomialOwned};
 use primus_reduce::FieldContext;
+use primus_rns::Residues;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::{
@@ -130,7 +131,7 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
         let mut b_crt_poly = CrtPolynomial(&mut *b.0);
         b_crt_poly.add_mul_factor_assign(
             msg,
-            params.delta_factor_mod_q(),
+            params.delta_factor_mod_q().as_ref(),
             poly_length,
             params.cipher_moduli_value(),
         );
@@ -271,7 +272,7 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
     fn encrypt_dcrt_msg_to_dcrt_glwe_inplace_with_custom_delta<R, M, Table, A, B>(
         &self,
         dcrt_msg: &DcrtPolynomial<A>,
-        delta_residues: &[T],
+        delta_residues: &Residues<impl Data<Elem = T>>,
         result: &mut DcrtGlweCiphertext<B>,
         params: &CrtGlevParameters<T, M>,
         table: &DcrtTable<Table>,
@@ -298,7 +299,7 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
         );
 
         table.transform_slice(b.0);
-        b.add_mul_scalar_assign(dcrt_msg, delta_residues, poly_length, moduli);
+        b.add_mul_scalar_assign(dcrt_msg, delta_residues.as_ref(), poly_length, moduli);
 
         self.iter_dcrt_poly().zip(a).for_each(|(si, ai)| {
             primus_distr::sample_crt_uniform_values_to(
@@ -337,7 +338,7 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
             .for_each(|(mut dcrt_glwe, scalar_residues)| {
                 self.encrypt_dcrt_msg_to_dcrt_glwe_inplace_with_custom_delta(
                     dcrt_msg,
-                    scalar_residues,
+                    &scalar_residues,
                     &mut dcrt_glwe,
                     params,
                     table,
@@ -349,7 +350,7 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
     fn encrypt_crt_msg_to_dcrt_glwe_inplace_with_custom_delta<R, M, Table, A, B>(
         &self,
         crt_msg: &CrtPolynomial<A>,
-        delta_residues: &[T],
+        delta_residues: &Residues<impl Data<Elem = T>>,
         result: &mut DcrtGlweCiphertext<B>,
         params: &CrtGlevParameters<T, M>,
         table: &DcrtTable<Table>,
@@ -376,7 +377,7 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
         );
 
         let mut b_crt_poly = CrtPolynomial(&mut *b.0);
-        b_crt_poly.add_mul_scalar_assign(crt_msg, delta_residues, poly_length, moduli);
+        b_crt_poly.add_mul_scalar_assign(crt_msg, delta_residues.as_ref(), poly_length, moduli);
         table.transform_slice(b.0);
 
         self.iter_dcrt_poly().zip(a).for_each(|(si, ai)| {
@@ -415,7 +416,7 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
             .for_each(|(mut dcrt_glwe, scalar_residues)| {
                 self.encrypt_crt_msg_to_dcrt_glwe_inplace_with_custom_delta(
                     crt_msg,
-                    scalar_residues,
+                    &scalar_residues,
                     &mut dcrt_glwe,
                     params,
                     table,

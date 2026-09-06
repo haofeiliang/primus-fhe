@@ -7,6 +7,7 @@ use primus_modulus::BarrettModulus;
 use primus_ntt::UintDcrtTable;
 use primus_poly::Polynomial;
 use primus_reduce::ReduceNegSlice;
+use primus_rns::Residues;
 use rand::RngExt;
 
 /// Test GLWE external product: c₂ = GGSW(monomial) ⊡ GLWE(plaintext).
@@ -61,7 +62,8 @@ fn test_external_product() {
         let degree = rng.random_range(0..poly_length);
 
         // ── GGSW encrypts the monomial X^d ──────────────────────
-        let ggsw = pk.encrypt_monomial_ggsw(&[1, 1], degree, &glev_params, &table, &mut rng);
+        let ggsw =
+            pk.encrypt_monomial_ggsw(&Residues([1, 1]), degree, &glev_params, &table, &mut rng);
 
         // ── Encrypt a random plaintext m(X) ─────────────────────
         let input: Polynomial<Vec<ValueT>> = Polynomial::random(poly_length, mod_t, &mut rng);

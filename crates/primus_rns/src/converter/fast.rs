@@ -4,6 +4,8 @@ use primus_integer::FheUint;
 use primus_reduce::FieldContext;
 
 use super::BaseConverter;
+use crate::Residues;
+use primus_data::{Data, DataMut};
 
 /// One prepared destination-modulus kernel for batched fast conversion.
 ///
@@ -100,7 +102,14 @@ impl<T: FheUint, M: FieldContext<T>> BaseConverter<T, M> {
     /// [`fast_convert_scratch_len`](Self::fast_convert_scratch_len). The
     /// general conversion kernel overwrites only the required prefix with the
     /// adjusted input residues. A single-modulus input basis ignores scratch.
-    pub fn fast_convert(&self, residues_in: &[T], residues_out: &mut [T], scratch: &mut [T]) {
+    pub fn fast_convert(
+        &self,
+        residues_in: &Residues<impl Data<Elem = T>>,
+        residues_out: &mut Residues<impl DataMut<Elem = T>>,
+        scratch: &mut [T],
+    ) {
+        let residues_in = residues_in.as_ref();
+        let residues_out = residues_out.as_mut();
         assert_eq!(residues_in.len(), self.input_moduli_count());
         assert_eq!(residues_out.len(), self.output_moduli_count());
 

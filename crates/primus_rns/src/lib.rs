@@ -5,6 +5,9 @@
 //! [`BaseConverter`] builds on two bases to convert residue vectors between
 //! them, including batched polynomial layouts used by `primus_poly`.
 //!
+//! [`Residues`] represents one value under an ordered basis with owned or
+//! borrowed storage; it does not store or validate the basis.
+//!
 //! Layout conventions used by the public APIs:
 //!
 //! - `n` means `RNSBase::moduli_count()`.
@@ -19,6 +22,11 @@
 #![deny(missing_docs)]
 
 mod error;
+mod residue_factors;
+mod residues;
+
+pub use residue_factors::ResidueFactors;
+pub use residues::Residues;
 
 mod base;
 mod converter;

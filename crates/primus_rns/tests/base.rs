@@ -1,7 +1,8 @@
 use primus_factor::ShoupFactor;
+use primus_integer::BigUint;
 use primus_modulus::BarrettModulus;
 use primus_reduce::prelude::*;
-use primus_rns::{RNSBase, RNSError};
+use primus_rns::{RNSBase, RNSError, ResidueFactors, Residues};
 
 type Value = u64;
 type Modulus = BarrettModulus<Value>;
@@ -27,15 +28,22 @@ fn construction_rejects_invalid_bases() {
 fn scalar_crt_matches_known_representatives() {
     let singleton = base(&[3]);
     assert_eq!(singleton.moduli_product().digits(), &[3]);
-    let value = singleton.compose(&[2]);
+    let value = singleton.compose(&Residues([2]));
     assert_eq!(value.digits(), &[2]);
-    assert_eq!(singleton.decompose(value.view()), [2]);
+    assert_eq!(singleton.decompose(value.view()).as_ref(), [2]);
 
     let base = base(&[3, 5, 7]);
     assert_eq!(base.moduli_product().digits(), &[105]);
-    let value = base.compose(&[2, 4, 6]);
+    let value = base.compose(&Residues([2, 4, 6]));
     assert_eq!(value.digits(), &[104]);
-    assert_eq!(base.decompose(value.view()), [2, 4, 6]);
+    assert_eq!(base.decompose(value.view()).as_ref(), [2, 4, 6]);
+    let mut storage = [Value::MAX; 3];
+    let mut output = Residues::new(storage.as_mut_slice());
+    base.decompose_to(value.view(), &mut output);
+    let mut reconstructed = BigUint(vec![Value::MAX; base.big_uint_value_len()]);
+    base.compose_to(&output.view(), &mut reconstructed.view_mut());
+    assert_eq!(reconstructed, value);
+    assert_eq!(storage, [2, 4, 6]);
 }
 
 #[test]
@@ -61,7 +69,7 @@ fn compose_and_decompose_preserve_the_modulus_major_layout() {
     let mut values = vec![0; residues.len() * value_len];
     for (index, value_residues) in residues.iter().enumerate() {
         values[index * value_len..(index + 1) * value_len]
-            .copy_from_slice(base.compose(value_residues).digits());
+            .copy_from_slice(base.compose(&Residues(value_residues)).digits());
     }
 
     let mut decomposed = vec![Value::MAX; expected.len()];
@@ -78,11 +86,13 @@ fn compose_and_decompose_preserve_the_modulus_major_layout() {
 fn wrapping_and_scaled_decomposition_follow_the_centered_rule() {
     let base = base(&[97, 101, 103]);
     let factor_values = [3, 5, 7];
-    let factors: Vec<_> = factor_values
-        .iter()
-        .zip(base.moduli())
-        .map(|(&factor, modulus)| ShoupFactor::new(factor, modulus.value()))
-        .collect();
+    let factors = ResidueFactors(
+        factor_values
+            .iter()
+            .zip(base.moduli())
+            .map(|(&factor, modulus)| ShoupFactor::new(factor, modulus.value()))
+            .collect::<Vec<_>>(),
+    );
 
     const BINARY_VALUES: &[Value] = &[0, 1];
     const ODD_MODULUS_VALUES: &[Value] = &[0, 1, 3, 4, 6];
@@ -127,7 +137,10 @@ fn wrapping_and_scaled_decomposition_follow_the_centered_rule() {
 fn extending_a_base_matches_fresh_construction() {
     let assert_equivalent = |extended: &Base, direct: &Base, residues: &[Value]| {
         assert_eq!(extended.moduli_product(), direct.moduli_product());
-        assert_eq!(extended.compose(residues), direct.compose(residues));
+        assert_eq!(
+            extended.compose(&Residues(residues)),
+            direct.compose(&Residues(residues))
+        );
     };
 
     let q = base(&[17]);
