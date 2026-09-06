@@ -26,6 +26,7 @@ impl_iters!(DcrtRlev);
 impl_iter_sub_structure!(DcrtRlev, DcrtRlwe);
 
 impl_basic_operation_multiple_modulus!(DcrtRlev);
+impl_neg_multiple_modulus!(DcrtRlev);
 impl_mul_scalar_multiple_modulus!(DcrtRlev);
 impl_mul_factor_multiple_modulus!(DcrtRlev);
 impl_dcrt_polynomial_mul!(DcrtRlev);

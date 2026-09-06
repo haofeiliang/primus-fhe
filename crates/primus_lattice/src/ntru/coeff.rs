@@ -58,9 +58,7 @@ where
     /// LWE phase `b - <a, f>` equals the constant coefficient of `f * c` in
     /// `Z_q[X] / (X^N + 1)`.
     ///
-    /// # Panics
-    ///
-    /// Panics if `output` does not have LWE dimension `N`.
+    /// `output` must have LWE dimension `N`.
     #[inline]
     pub fn extract_lwe_to<M, A>(&self, output: &mut Lwe<A>, modulus: M)
     where
@@ -68,7 +66,7 @@ where
         A: DataMut<Elem = T>,
     {
         let coefficients = self.as_ref();
-        assert_eq!(output.dimension(), coefficients.len());
+        debug_assert_eq!(output.dimension(), coefficients.len());
         self.extract_compact_lwe_to(output, modulus);
     }
 
@@ -78,26 +76,76 @@ where
     /// `s_lwe.len()` has the same phase as full extraction without allocating
     /// or processing the omitted mask coefficients.
     ///
-    /// # Panics
-    ///
-    /// Panics if the output dimension is zero or exceeds the NTRU polynomial
-    /// length.
+    /// The output dimension must be in `1..=N`, where `N` is the NTRU
+    /// polynomial length.
     #[inline]
     pub fn extract_compact_lwe_to<M, A>(&self, output: &mut Lwe<A>, modulus: M)
     where
         M: primus_reduce::RingContext<T>,
         A: DataMut<Elem = T>,
     {
-        let coefficients = self.as_ref();
-        let (a, b) = output.a_b_mut();
-        assert!((1..=coefficients.len()).contains(&a.len()));
+        self.extract_compact_lwe_at_to(0, output, modulus);
+    }
 
+    /// Extracts coefficient `index` of the NTRU phase into an LWE buffer.
+    ///
+    /// For `c` encrypted under `f`, writes `b = 0` and a mask such that
+    /// `b - <a, f>` equals coefficient `index` of `f*c` modulo `X^N + 1`.
+    /// Canonical input residues produce canonical output without allocation.
+    /// `output` must have LWE dimension `N`.
+    ///
+    /// # Panics
+    ///
+    /// Panics unless `index < N`.
+    #[inline]
+    pub fn extract_lwe_at_to<M, A>(&self, index: usize, output: &mut Lwe<A>, modulus: M)
+    where
+        M: RingContext<T>,
+        A: DataMut<Elem = T>,
+    {
+        debug_assert_eq!(
+            output.dimension(),
+            self.as_ref().len(),
+            "LWE output dimension must equal N"
+        );
+        self.extract_compact_lwe_at_to(index, output, modulus);
+    }
+
+    /// Extracts coefficient `index`, omitting a zero suffix of the NTRU secret.
+    ///
+    /// The secret must be `[s_lwe..., 0...]`, where `s_lwe.len()` equals the
+    /// output dimension. The LWE phase equals coefficient `index` of `f*c`.
+    /// Canonical input residues produce canonical output without allocation.
+    /// The output dimension must belong to `1..=N`.
+    ///
+    /// # Panics
+    ///
+    /// Panics unless `index < N`.
+    #[inline]
+    pub fn extract_compact_lwe_at_to<M, A>(&self, index: usize, output: &mut Lwe<A>, modulus: M)
+    where
+        M: RingContext<T>,
+        A: DataMut<Elem = T>,
+    {
+        let coefficients = self.as_ref();
+        assert!(
+            index < coefficients.len(),
+            "NTRU extraction index is out of range"
+        );
+        let (a, b) = output.a_b_mut();
+        debug_assert!(
+            (1..=coefficients.len()).contains(&a.len()),
+            "invalid compact LWE dimension"
+        );
         *b = T::ZERO;
-        a[0] = modulus.reduce_neg(coefficients[0]);
-        a[1..]
-            .iter_mut()
-            .zip(coefficients[1..].iter().rev())
-            .for_each(|(output, &coefficient)| *output = coefficient);
+        let split = (index + 1).min(a.len());
+        let (negative, wrapped) = a.split_at_mut(split);
+        for (output, &input) in negative.iter_mut().zip(coefficients[..=index].iter().rev()) {
+            *output = modulus.reduce_neg(input);
+        }
+        for (output, &input) in wrapped.iter_mut().zip(coefficients.iter().rev()) {
+            *output = input;
+        }
     }
 
     /// Multiplies this ciphertext by `X^exponent` and writes the output.
@@ -179,6 +227,18 @@ where
     {
         ntt_table.transform_slice(self.as_mut());
         NttNtru::new(self.0)
+    }
+
+    /// Multiplies this polynomial ciphertext by `X^exponent` without allocation.
+    ///
+    /// The polynomial length `N` must be a supported power of two, and `exponent`
+    /// must be in `[0, 2N)`. Canonical input residues produce canonical output.
+    #[inline]
+    pub fn mul_monomial_assign<M>(&mut self, exponent: usize, modulus: M)
+    where
+        M: Copy + primus_reduce::ReduceNegSlice<T>,
+    {
+        Polynomial(self.as_mut()).mul_monomial_assign(exponent, modulus);
     }
 
     /// Accumulates `self += rhs * X^exponent` in `Z_q[X]/(X^N + 1)`.

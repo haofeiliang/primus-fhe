@@ -167,20 +167,21 @@ impl FourierGlweSecretKey {
             fft.forward_as_torus(context.encoded.as_ref(), transformed);
         }
 
-        for (row, mut glev) in result.iter_glev_mut(fourier_glev_len).enumerate() {
-            for (transformed, mut glwe) in context
-                .level_transforms
-                .chunks_exact(fourier_length)
-                .zip(glev.iter_glwe_mut(fourier_glwe_len))
-            {
+        for mut glev in result.iter_glev_mut(fourier_glev_len) {
+            for mut glwe in glev.iter_glwe_mut(fourier_glwe_len) {
                 self.encrypt_gadget_zeros_to(&mut glwe, params, fft, rng, &mut context.glwe);
-                let diagonal = glwe
-                    .as_mut()
-                    .chunks_exact_mut(fourier_length)
-                    .nth(row)
-                    .expect("GGSW diagonal component is missing");
-                FourierPolynomial::new(diagonal).add_assign(&FourierPolynomial::new(transformed));
             }
+        }
+        for (level, transformed) in context
+            .level_transforms
+            .chunks_exact(fourier_length)
+            .enumerate()
+        {
+            result.add_gadget_diagonal_assign(
+                &FourierPolynomial::new(transformed),
+                level,
+                params.size(),
+            );
         }
     }
 }
@@ -248,20 +249,22 @@ impl<T: FheUint> NttGlweSecretKey<T> {
             ntt.transform_slice(transformed);
         }
 
-        for (row, mut glev) in result.iter_ntt_glev_mut(params.glev_len()).enumerate() {
-            for (transformed, mut glwe) in context
-                .level_transforms
-                .chunks_exact(poly_length)
-                .zip(glev.iter_ntt_glwe_mut(glwe_len))
-            {
+        for mut glev in result.iter_ntt_glev_mut(params.glev_len()) {
+            for mut glwe in glev.iter_ntt_glwe_mut(glwe_len) {
                 self.encrypt_gadget_zeros_to(&mut glwe, params, ntt, rng);
-                let diagonal = glwe
-                    .as_mut()
-                    .chunks_exact_mut(poly_length)
-                    .nth(row)
-                    .expect("GGSW diagonal component is missing");
-                NttPolynomial::new(diagonal).add_assign(&NttPolynomial::new(transformed), modulus);
             }
+        }
+        for (level, transformed) in context
+            .level_transforms
+            .chunks_exact(poly_length)
+            .enumerate()
+        {
+            result.add_gadget_diagonal_assign(
+                &NttPolynomial::new(transformed),
+                level,
+                params.size(),
+                modulus,
+            );
         }
     }
 }

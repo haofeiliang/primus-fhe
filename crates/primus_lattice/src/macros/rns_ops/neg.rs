@@ -21,19 +21,6 @@ macro_rules! impl_neg_multiple_modulus {
             where
                 M: Copy + primus_reduce::ReduceNegSlice<T>,
             {
-                debug_assert!(
-                    poly_length > 0 && !moduli.is_empty(),
-                    "RNS layout must be nonempty"
-                );
-                debug_assert_eq!(
-                    poly_length.checked_mul(moduli.len()),
-                    Some(rns_poly_len),
-                    "RNS polynomial length mismatch"
-                );
-                debug_assert!(
-                    self.as_ref().len().is_multiple_of(rns_poly_len),
-                    "incomplete RNS component"
-                );
                 for output in self.as_mut().chunks_exact_mut(rns_poly_len) {
                     for (output, &modulus) in output.chunks_exact_mut(poly_length).zip(moduli) {
                         modulus.reduce_neg_slice_assign(output);
@@ -66,19 +53,6 @@ macro_rules! impl_neg_multiple_modulus {
                 M: Copy + primus_reduce::ReduceNegSlice<T>,
                 A: primus_data::DataMut<Elem = T>,
             {
-                debug_assert!(
-                    poly_length > 0 && !moduli.is_empty(),
-                    "RNS layout must be nonempty"
-                );
-                debug_assert_eq!(
-                    poly_length.checked_mul(moduli.len()),
-                    Some(rns_poly_len),
-                    "RNS polynomial length mismatch"
-                );
-                debug_assert!(
-                    self.as_ref().len().is_multiple_of(rns_poly_len),
-                    "incomplete RNS component"
-                );
                 debug_assert_eq!(
                     self.as_ref().len(),
                     output.as_ref().len(),

@@ -1,7 +1,74 @@
-//! Coefficient-domain monomial accumulation.
+//! Coefficient-domain monomial products.
 
-macro_rules! impl_add_mul_monomial_single_modulus {
+macro_rules! impl_monomial_single_modulus {
     ($cipher:ident) => {
+        impl<S, T> $cipher<S>
+        where
+            S: primus_data::DataMut<Elem = T>,
+            T: primus_integer::FheUint,
+        {
+            /// Multiplies every complete polynomial by `X^exponent` in `Z_q[X]/(X^N + 1)`.
+            ///
+            /// `N = poly_length` must be a supported power of two and `exponent`
+            /// must be in `[0, 2N)`. Storage must contain complete polynomials.
+            /// Values must be canonical residues; the result remains canonical.
+            /// This operation does not allocate temporary storage.
+            #[inline]
+            pub fn mul_monomial_assign<M>(
+                &mut self,
+                exponent: usize,
+                poly_length: usize,
+                modulus: M,
+            ) where
+                M: Copy + primus_reduce::ReduceNegSlice<T>,
+            {
+                for poly in self.as_mut().chunks_exact_mut(poly_length) {
+                    primus_poly::Polynomial(poly).mul_monomial_assign(exponent, modulus);
+                }
+            }
+        }
+        impl<S, T> $cipher<S>
+        where
+            S: primus_data::Data<Elem = T>,
+            T: primus_integer::FheUint,
+        {
+            /// Multiplies every complete polynomial by `X^exponent` in `Z_q[X]/(X^N + 1)`.
+            ///
+            /// `N = poly_length` must be a supported power of two and `exponent`
+            /// must be in `[0, 2N)`. Storage must contain complete polynomials.
+            /// Values must be canonical residues; the result remains canonical.
+            /// This operation does not allocate temporary storage.
+            /// Input and output must have equal lengths and matching layouts and bases.
+            /// Every output coefficient is overwritten.
+            #[inline]
+            pub fn mul_monomial_to<M, A>(
+                &self,
+                exponent: usize,
+                output: &mut $cipher<A>,
+                poly_length: usize,
+                modulus: M,
+            ) where
+                M: primus_reduce::RingContext<T>,
+                A: primus_data::DataMut<Elem = T>,
+            {
+                debug_assert_eq!(
+                    self.as_ref().len(),
+                    output.as_ref().len(),
+                    "ciphertext length mismatch"
+                );
+                for (input, output) in self
+                    .as_ref()
+                    .chunks_exact(poly_length)
+                    .zip(output.as_mut().chunks_exact_mut(poly_length))
+                {
+                    primus_poly::Polynomial(input).mul_monomial_to(
+                        exponent,
+                        &mut primus_poly::Polynomial(output),
+                        modulus,
+                    );
+                }
+            }
+        }
         impl<S, T> $cipher<S>
         where
             S: primus_data::DataMut<Elem = T>,
@@ -26,23 +93,10 @@ macro_rules! impl_add_mul_monomial_single_modulus {
                 M: Copy + primus_reduce::ReduceAddSlice<T> + primus_reduce::ReduceSubSlice<T>,
                 A: primus_data::Data<Elem = T>,
             {
-                debug_assert!(
-                    (crate::MIN_POLY_LENGTH..=crate::MAX_POLY_LENGTH).contains(&poly_length)
-                        && poly_length.is_power_of_two(),
-                    "invalid polynomial length"
-                );
-                debug_assert!(
-                    exponent < 2 * poly_length,
-                    "monomial exponent must be less than 2N"
-                );
                 debug_assert_eq!(
                     self.as_ref().len(),
                     rhs.as_ref().len(),
                     "ciphertext length mismatch"
-                );
-                debug_assert!(
-                    self.as_ref().len().is_multiple_of(poly_length),
-                    "incomplete ciphertext polynomial"
                 );
                 for (acc, rhs) in self
                     .as_mut()
@@ -61,8 +115,91 @@ macro_rules! impl_add_mul_monomial_single_modulus {
 }
 
 #[cfg(feature = "rns")]
-macro_rules! impl_add_mul_monomial_multiple_modulus {
+macro_rules! impl_monomial_multiple_modulus {
     ($cipher:ident) => {
+        impl<S, T> $cipher<S>
+        where
+            S: primus_data::DataMut<Elem = T>,
+            T: primus_integer::FheUint,
+        {
+            /// Multiplies every complete polynomial by `X^exponent` in `Z_q[X]/(X^N + 1)`.
+            ///
+            /// `N = poly_length` must be a supported power of two and `exponent`
+            /// must be in `[0, 2N)`. Storage must contain complete polynomials.
+            /// Values must be canonical residues; the result remains canonical.
+            /// This operation does not allocate temporary storage.
+            /// Each component has one length-`poly_length` block per modulus, in
+            /// `moduli` order; the basis is nonempty and
+            /// `rns_poly_len = poly_length * moduli.len()`.
+            #[inline]
+            pub fn mul_monomial_assign<M>(
+                &mut self,
+                exponent: usize,
+                poly_length: usize,
+                rns_poly_len: usize,
+                moduli: &[M],
+            ) where
+                M: Copy + primus_reduce::ReduceNegSlice<T>,
+            {
+                for poly in self.as_mut().chunks_exact_mut(rns_poly_len) {
+                    for (poly, &modulus) in poly.chunks_exact_mut(poly_length).zip(moduli) {
+                        primus_poly::Polynomial(poly).mul_monomial_assign(exponent, modulus);
+                    }
+                }
+            }
+        }
+        impl<S, T> $cipher<S>
+        where
+            S: primus_data::Data<Elem = T>,
+            T: primus_integer::FheUint,
+        {
+            /// Multiplies every complete polynomial by `X^exponent` in `Z_q[X]/(X^N + 1)`.
+            ///
+            /// `N = poly_length` must be a supported power of two and `exponent`
+            /// must be in `[0, 2N)`. Storage must contain complete polynomials.
+            /// Values must be canonical residues; the result remains canonical.
+            /// This operation does not allocate temporary storage.
+            /// Each component has one length-`poly_length` block per modulus, in
+            /// `moduli` order; the basis is nonempty and
+            /// `rns_poly_len = poly_length * moduli.len()`.
+            /// Input and output must have equal lengths and matching layouts and bases.
+            /// Every output coefficient is overwritten.
+            #[inline]
+            pub fn mul_monomial_to<M, A>(
+                &self,
+                exponent: usize,
+                output: &mut $cipher<A>,
+                poly_length: usize,
+                rns_poly_len: usize,
+                moduli: &[M],
+            ) where
+                M: primus_reduce::RingContext<T>,
+                A: primus_data::DataMut<Elem = T>,
+            {
+                debug_assert_eq!(
+                    self.as_ref().len(),
+                    output.as_ref().len(),
+                    "ciphertext length mismatch"
+                );
+                for (input, output) in self
+                    .as_ref()
+                    .chunks_exact(rns_poly_len)
+                    .zip(output.as_mut().chunks_exact_mut(rns_poly_len))
+                {
+                    for (input, output, &modulus) in itertools::izip!(
+                        input.chunks_exact(poly_length),
+                        output.chunks_exact_mut(poly_length),
+                        moduli
+                    ) {
+                        primus_poly::Polynomial(input).mul_monomial_to(
+                            exponent,
+                            &mut primus_poly::Polynomial(output),
+                            modulus,
+                        );
+                    }
+                }
+            }
+        }
         impl<S, T> $cipher<S>
         where
             S: primus_data::DataMut<Elem = T>,
@@ -92,29 +229,10 @@ macro_rules! impl_add_mul_monomial_multiple_modulus {
                 M: Copy + primus_reduce::ReduceAddSlice<T> + primus_reduce::ReduceSubSlice<T>,
                 A: primus_data::Data<Elem = T>,
             {
-                debug_assert!(
-                    (crate::MIN_POLY_LENGTH..=crate::MAX_POLY_LENGTH).contains(&poly_length)
-                        && poly_length.is_power_of_two(),
-                    "invalid polynomial length"
-                );
-                debug_assert!(
-                    exponent / poly_length < 2,
-                    "monomial exponent must be less than 2N"
-                );
                 debug_assert_eq!(
                     self.as_ref().len(),
                     rhs.as_ref().len(),
                     "ciphertext length mismatch"
-                );
-                debug_assert!(!moduli.is_empty(), "RNS basis must be nonempty");
-                debug_assert_eq!(
-                    poly_length.checked_mul(moduli.len()),
-                    Some(rns_poly_len),
-                    "RNS polynomial length mismatch"
-                );
-                debug_assert!(
-                    self.as_ref().len().is_multiple_of(rns_poly_len),
-                    "incomplete RNS component"
                 );
                 for (acc, rhs) in self
                     .as_mut()

@@ -28,6 +28,7 @@ impl_basic_operation_multiple_modulus!(DcrtGlwe);
 impl_neg_multiple_modulus!(DcrtGlwe);
 impl_mul_scalar_multiple_modulus!(DcrtGlwe);
 impl_mul_factor_multiple_modulus!(DcrtGlwe);
+impl_plaintext_multiple_modulus!(DcrtGlwe, DcrtPolynomial);
 impl_dcrt_polynomial_mul!(DcrtGlwe);
 
 impl_crt_intt!(DcrtGlwe, CrtGlwe);
@@ -38,16 +39,18 @@ where
     T: FheUint,
 {
     /// Splits this GLWE into its mutable mask and body slices.
+    ///
+    /// Storage must contain at least one mask polynomial and one body polynomial,
+    /// each with `dcrt_poly_len` elements. The caller must maintain this layout
+    /// and provide a nonzero polynomial length.
     #[inline]
     pub fn a_b_mut_slices(&mut self, dcrt_poly_len: usize) -> (&mut [T], &mut [T]) {
         let glwe_len = self.as_ref().len();
-        debug_assert!(dcrt_poly_len > 0);
-        debug_assert!(glwe_len > dcrt_poly_len);
-        debug_assert!(glwe_len.is_multiple_of(dcrt_poly_len));
         self.as_mut().split_at_mut(glwe_len - dcrt_poly_len)
     }
 
     /// Splits this GLWE into its mutable mask polynomials and body polynomial.
+    /// Storage and polynomial length must satisfy the layout required by `a_b_slices`.
     #[inline]
     pub fn a_b_mut(
         &mut self,
@@ -116,16 +119,18 @@ where
     T: FheUint,
 {
     /// Splits this GLWE into its mask and body slices.
+    ///
+    /// Storage must contain at least one mask polynomial and one body polynomial,
+    /// each with `dcrt_poly_len` elements. The caller must maintain this layout
+    /// and provide a nonzero polynomial length.
     #[inline]
     pub fn a_b_slices(&self, dcrt_poly_len: usize) -> (&[T], &[T]) {
         let glwe_len = self.as_ref().len();
-        debug_assert!(dcrt_poly_len > 0);
-        debug_assert!(glwe_len > dcrt_poly_len);
-        debug_assert!(glwe_len.is_multiple_of(dcrt_poly_len));
         self.as_ref().split_at(glwe_len - dcrt_poly_len)
     }
 
     /// Splits this GLWE into its mask polynomials and body polynomial.
+    /// Storage and polynomial length must satisfy the layout required by `a_b_slices`.
     #[inline]
     pub fn a_b(&self, dcrt_poly_len: usize) -> (DcrtPolynomialIter<'_, T>, DcrtPolynomial<&[T]>) {
         let (mask, body) = self.a_b_slices(dcrt_poly_len);

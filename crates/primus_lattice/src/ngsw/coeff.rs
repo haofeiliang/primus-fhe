@@ -33,8 +33,9 @@ impl_iters!(Ngsw);
 impl_iter_sub_structure!(Ngsw, Ntru);
 
 impl_basic_operation_single_modulus!(Ngsw);
+impl_neg_single_modulus!(Ngsw);
 impl_mul_scalar_single_modulus!(Ngsw);
 impl_mul_factor_single_modulus!(Ngsw);
-impl_add_mul_monomial_single_modulus!(Ngsw);
+impl_monomial_single_modulus!(Ngsw);
 
 impl_ntt!(Ngsw, NttNgsw);

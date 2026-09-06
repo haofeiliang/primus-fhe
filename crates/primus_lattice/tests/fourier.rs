@@ -24,22 +24,11 @@ fn nested_iterators_use_complex_element_lengths() {
 }
 
 #[test]
-#[should_panic(expected = "Fourier data length must be divisible")]
-fn fourier_iterator_rejects_a_partial_trailing_component() {
-    let glev = FourierGlevOwned::zero(25);
-    let _ = glev.iter_glwe(8);
-}
-
-#[test]
-#[should_panic(expected = "Fourier chunk length must be non-zero")]
-fn fourier_iterator_rejects_zero_component_length() {
-    let glev = FourierGlevOwned::zero(24);
-    let _ = glev.iter_glwe(0);
-}
-
-#[test]
 fn fourier_arithmetic_covers_all_components_and_matches_in_place() {
-    use primus_lattice::{glwe::FourierGlwe, ntru::FourierNtru};
+    use primus_lattice::{
+        ggsw::FourierGgsw, glev::FourierGlev, glwe::FourierGlwe, ngsw::FourierNgsw,
+        nlev::FourierNlev, ntru::FourierNtru,
+    };
 
     let lhs = [
         Complex64::new(1.0, 2.0),
@@ -74,4 +63,8 @@ fn fourier_arithmetic_covers_all_components_and_matches_in_place() {
     }
     check!(FourierGlwe);
     check!(FourierNtru);
+    check!(FourierGlev);
+    check!(FourierGgsw);
+    check!(FourierNlev);
+    check!(FourierNgsw);
 }

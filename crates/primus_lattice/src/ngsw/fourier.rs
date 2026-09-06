@@ -28,4 +28,7 @@ impl_fourier_iter_sub!(
     ntru
 );
 
+impl_fourier_basic_operation!(FourierNgsw);
+impl_fourier_polynomial!(FourierNgsw);
+
 impl_fourier_conversion!(Ngsw, FourierNgsw);

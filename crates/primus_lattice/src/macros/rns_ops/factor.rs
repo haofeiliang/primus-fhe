@@ -27,19 +27,6 @@ macro_rules! impl_mul_factor_multiple_modulus {
             ) where
                 F: Copy + primus_factor::FactorSliceOps<T>,
             {
-                debug_assert!(
-                    poly_length > 0 && !moduli.is_empty(),
-                    "RNS layout must be nonempty"
-                );
-                debug_assert_eq!(
-                    poly_length.checked_mul(moduli.len()),
-                    Some(rns_poly_len),
-                    "RNS polynomial length mismatch"
-                );
-                debug_assert!(
-                    self.as_ref().len().is_multiple_of(rns_poly_len),
-                    "incomplete RNS component"
-                );
                 debug_assert_eq!(factors.len(), moduli.len(), "RNS scalar count mismatch");
                 for output in self.as_mut().chunks_exact_mut(rns_poly_len) {
                     for (output, &factor, &modulus) in itertools::izip!(
@@ -77,19 +64,6 @@ macro_rules! impl_mul_factor_multiple_modulus {
                 F: Copy + primus_factor::FactorSliceOps<T>,
                 A: primus_data::Data<Elem = T>,
             {
-                debug_assert!(
-                    poly_length > 0 && !moduli.is_empty(),
-                    "RNS layout must be nonempty"
-                );
-                debug_assert_eq!(
-                    poly_length.checked_mul(moduli.len()),
-                    Some(rns_poly_len),
-                    "RNS polynomial length mismatch"
-                );
-                debug_assert!(
-                    self.as_ref().len().is_multiple_of(rns_poly_len),
-                    "incomplete RNS component"
-                );
                 debug_assert_eq!(factors.len(), moduli.len(), "RNS scalar count mismatch");
                 debug_assert_eq!(
                     self.as_ref().len(),
@@ -137,19 +111,6 @@ macro_rules! impl_mul_factor_multiple_modulus {
                 F: Copy + primus_factor::FactorSliceOps<T>,
                 A: primus_data::Data<Elem = T>,
             {
-                debug_assert!(
-                    poly_length > 0 && !moduli.is_empty(),
-                    "RNS layout must be nonempty"
-                );
-                debug_assert_eq!(
-                    poly_length.checked_mul(moduli.len()),
-                    Some(rns_poly_len),
-                    "RNS polynomial length mismatch"
-                );
-                debug_assert!(
-                    self.as_ref().len().is_multiple_of(rns_poly_len),
-                    "incomplete RNS component"
-                );
                 debug_assert_eq!(factors.len(), moduli.len(), "RNS scalar count mismatch");
                 debug_assert_eq!(
                     self.as_ref().len(),
@@ -199,19 +160,6 @@ macro_rules! impl_mul_factor_multiple_modulus {
                 F: Copy + primus_factor::FactorSliceOps<T>,
                 A: primus_data::DataMut<Elem = T>,
             {
-                debug_assert!(
-                    poly_length > 0 && !moduli.is_empty(),
-                    "RNS layout must be nonempty"
-                );
-                debug_assert_eq!(
-                    poly_length.checked_mul(moduli.len()),
-                    Some(rns_poly_len),
-                    "RNS polynomial length mismatch"
-                );
-                debug_assert!(
-                    self.as_ref().len().is_multiple_of(rns_poly_len),
-                    "incomplete RNS component"
-                );
                 debug_assert_eq!(factors.len(), moduli.len(), "RNS scalar count mismatch");
                 debug_assert_eq!(
                     self.as_ref().len(),

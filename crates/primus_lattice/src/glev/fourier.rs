@@ -34,4 +34,7 @@ impl_fourier_iter_sub!(
     glwe
 );
 
+impl_fourier_basic_operation!(FourierGlev);
+impl_fourier_polynomial!(FourierGlev);
+
 impl_fourier_conversion!(Glev, FourierGlev);

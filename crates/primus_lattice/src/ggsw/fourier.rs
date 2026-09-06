@@ -1,5 +1,6 @@
 use num_complex::Complex64;
-use primus_data::RawData;
+use primus_data::{Data, DataMut, RawData};
+use primus_poly::FourierPolynomial;
 
 #[allow(unused_imports)]
 use super::Ggsw;
@@ -34,4 +35,54 @@ impl_fourier_iter_sub!(
     glev
 );
 
+impl_fourier_basic_operation!(FourierGgsw);
+impl_fourier_polynomial!(FourierGgsw);
+
 impl_fourier_conversion!(Ggsw, FourierGgsw);
+
+impl<S> FourierGgsw<S>
+where
+    S: DataMut<Elem = Complex64>,
+{
+    /// Adds an already gadget-weighted plaintext to the diagonal of one level.
+    ///
+    /// Storage is `[row][level][component][polynomial entry]`. The number
+    /// of components equals the number of rows. `level` is
+    /// a zero-based storage index; the caller maps it to its gadget weight.
+    /// Every diagonal polynomial at this level receives `plaintext`, while
+    /// other levels and off-diagonal components remain unchanged.
+    ///
+    /// `plaintext` must be one complete nonempty polynomial already multiplied
+    /// by the selected gadget weight and encoded in this ciphertext's domain
+    /// and scale. This performs neither encoding nor encryption, and allocates
+    /// no temporary storage. Adding all levels implements addition of `m*G`
+    /// under the caller's gadget convention.
+    /// `size` must describe the complete ciphertext and plaintext layouts.
+    /// `level` must be less than its decomposition length. The caller is
+    /// responsible for matching the actual buffers to `size`.
+    /// Inputs must share the FFT table, evaluation order and torus scale.
+    #[inline]
+    pub fn add_gadget_diagonal_assign<A>(
+        &mut self,
+        plaintext: &FourierPolynomial<A>,
+        level: usize,
+        size: crate::GadgetSize,
+    ) where
+        A: Data<Elem = Complex64>,
+    {
+        let glwe_size = size.glwe_size();
+        debug_assert!(
+            level < size.decompose_length(),
+            "gadget level is out of range"
+        );
+        for diagonal in crate::gadget::diagonal_level_mut(
+            self.as_mut(),
+            glwe_size.fourier_poly_len(),
+            level,
+            glwe_size.fourier_glwe_len(),
+            size.fourier_glev_len(),
+        ) {
+            FourierPolynomial(diagonal).add_assign(plaintext);
+        }
+    }
+}

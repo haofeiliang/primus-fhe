@@ -16,10 +16,6 @@ macro_rules! impl_rlwe_accessors {
             #[inline]
             pub fn a_b_slices(&self) -> (&[T], &[T]) {
                 let data = self.as_ref();
-                debug_assert!(
-                    !data.is_empty() && data.len().is_multiple_of(2),
-                    "RLWE requires two nonempty equal-length polynomials"
-                );
                 data.split_at(data.len() / 2)
             }
 
@@ -43,10 +39,6 @@ macro_rules! impl_rlwe_accessors {
             #[inline]
             pub fn a_b_mut_slices(&mut self) -> (&mut [T], &mut [T]) {
                 let data = self.as_mut();
-                debug_assert!(
-                    !data.is_empty() && data.len().is_multiple_of(2),
-                    "RLWE requires two nonempty equal-length polynomials"
-                );
                 let mid = data.len() / 2;
                 data.split_at_mut(mid)
             }

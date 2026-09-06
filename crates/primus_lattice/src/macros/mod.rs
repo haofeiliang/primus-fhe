@@ -4,12 +4,14 @@
 //! At each type declaration, group invocations in this order:
 //! storage/construction, iteration/access, arithmetic, domain conversion.
 //! Within arithmetic, use add/sub, negation, scalar arithmetic,
-//! then precomputed-factor arithmetic and polynomial products. Capability groups remain explicit.
+//! then precomputed-factor arithmetic, polynomial products, body operations and gadget injection.
+//! Capability groups remain explicit.
 //!
 //! - [`common`]: constructors, byte I/O, zero initialization
 //! - [`iter`], [`rlwe`]: ciphertext iterators and RLWE polynomial views
-//! - [`monomial`]: coefficient-domain monomial accumulation
+//! - [`monomial`]: coefficient-domain monomial products
 //! - [`ntt_polynomial`], [`dcrt_polynomial`]: same-domain polynomial products
+//! - [`plaintext`], [`gadget`]: encoded body operations and gadget diagonal injection
 //! - [`ops`], [`rns_ops`], [`fourier_ops`]: representation-specific arithmetic
 //! - [`ntt`], [`fourier`]: representation conversions and Fourier storage
 
@@ -35,3 +37,7 @@ mod monomial;
 mod dcrt_polynomial;
 #[macro_use]
 mod fourier;
+#[macro_use]
+mod plaintext;
+#[macro_use]
+mod gadget;

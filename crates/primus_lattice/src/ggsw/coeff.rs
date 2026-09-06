@@ -26,8 +26,10 @@ impl_iters!(Ggsw);
 impl_iter_sub_structure!(Ggsw, Glev);
 
 impl_basic_operation_single_modulus!(Ggsw);
+impl_neg_single_modulus!(Ggsw);
 impl_mul_scalar_single_modulus!(Ggsw);
 impl_mul_factor_single_modulus!(Ggsw);
-impl_add_mul_monomial_single_modulus!(Ggsw);
+impl_monomial_single_modulus!(Ggsw);
+impl_gadget_diagonal_single_modulus!(Ggsw, Polynomial);
 
 impl_ntt!(Ggsw, NttGgsw);

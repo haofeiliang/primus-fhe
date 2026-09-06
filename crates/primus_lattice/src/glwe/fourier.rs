@@ -33,6 +33,7 @@ impl_fourier_iter_sub!(
 );
 
 impl_fourier_basic_operation!(FourierGlwe);
+impl_fourier_polynomial!(FourierGlwe);
 
 impl_fourier_conversion!(Glwe, FourierGlwe);
 
@@ -45,16 +46,18 @@ where
     S: Data<Elem = Complex64>,
 {
     /// Splits this GLWE into its mask and body slices.
+    ///
+    /// Storage must contain at least one mask polynomial and one body polynomial,
+    /// each with `fourier_length` elements. The caller must maintain this layout
+    /// and provide a nonzero polynomial length.
     #[inline]
     pub fn a_b_slices(&self, fourier_length: usize) -> (&[Complex64], &[Complex64]) {
         let glwe_len = self.as_ref().len();
-        debug_assert!(fourier_length > 0);
-        debug_assert!(glwe_len > fourier_length);
-        debug_assert!(glwe_len.is_multiple_of(fourier_length));
         self.as_ref().split_at(glwe_len - fourier_length)
     }
 
     /// Splits this GLWE into its mask polynomials and body polynomial.
+    /// Storage and polynomial length must satisfy the layout required by `a_b_slices`.
     #[inline]
     pub fn a_b(
         &self,
@@ -73,19 +76,21 @@ where
     S: DataMut<Elem = Complex64>,
 {
     /// Splits this GLWE into its mutable mask and body slices.
+    ///
+    /// Storage must contain at least one mask polynomial and one body polynomial,
+    /// each with `fourier_length` elements. The caller must maintain this layout
+    /// and provide a nonzero polynomial length.
     #[inline]
     pub fn a_b_mut_slices(
         &mut self,
         fourier_length: usize,
     ) -> (&mut [Complex64], &mut [Complex64]) {
         let glwe_len = self.as_ref().len();
-        debug_assert!(fourier_length > 0);
-        debug_assert!(glwe_len > fourier_length);
-        debug_assert!(glwe_len.is_multiple_of(fourier_length));
         self.as_mut().split_at_mut(glwe_len - fourier_length)
     }
 
     /// Splits this GLWE into its mutable mask polynomials and body polynomial.
+    /// Storage and polynomial length must satisfy the layout required by `a_b_slices`.
     #[inline]
     pub fn a_b_mut(
         &mut self,
@@ -100,27 +105,73 @@ where
             FourierPolynomial(body),
         )
     }
+}
 
-    /// Performs `self += rhs * poly` for each component (pointwise FMA).
+impl<S> FourierGlwe<S>
+where
+    S: DataMut<Elem = Complex64>,
+{
+    /// Adds an already encoded plaintext to the body, leaving the mask unchanged.
     ///
-    /// This is the core operation in the TFHE external product hot loop:
-    /// the accumulator GLWE accumulates the product of a decomposed FFT
-    /// polynomial with a GGSW key GLWE.
+    /// `plaintext` must contain one complete nonempty polynomial in this
+    /// ciphertext's representation, modulus domain and plaintext scale.
+    /// Storage must contain complete mask polynomials followed by one body.
+    /// No encoding, rounding, random sampling or allocation is performed.
+    /// The caller maintains the layout.
+    /// Fourier inputs must use the same FFT table, evaluation order and
+    /// normalized torus scale; this input is an encoded message, not the
+    /// unscaled integer multiplier used by Fourier polynomial products.
     #[inline]
-    pub fn add_mul_fourier_polynomial_assign<A, B>(
-        &mut self,
-        rhs: &FourierGlwe<A>,
-        poly: &FourierPolynomial<B>,
-    ) where
+    pub fn add_plaintext_assign<A>(&mut self, plaintext: &FourierPolynomial<A>)
+    where
         A: Data<Elem = Complex64>,
-        B: Data<Elem = Complex64>,
     {
-        let fourier_length = poly.fourier_length();
-        for (mut acc, key_poly) in self
-            .iter_fourier_poly_mut(fourier_length)
-            .zip(rhs.iter_fourier_poly(fourier_length))
-        {
-            acc.add_mul_assign(poly, &key_poly);
-        }
+        let body_len = plaintext.as_ref().len();
+        let len = self.as_ref().len();
+        let body = &mut self.as_mut()[len - body_len..];
+        FourierPolynomial(body).add_assign(plaintext);
+    }
+
+    /// Subtracts an already encoded plaintext from the body, leaving the mask unchanged.
+    ///
+    /// `plaintext` must contain one complete nonempty polynomial in this
+    /// ciphertext's representation, modulus domain and plaintext scale.
+    /// Storage must contain complete mask polynomials followed by one body.
+    /// No encoding, rounding, random sampling or allocation is performed.
+    /// The caller maintains the layout.
+    /// Fourier inputs must use the same FFT table, evaluation order and
+    /// normalized torus scale; this input is an encoded message, not the
+    /// unscaled integer multiplier used by Fourier polynomial products.
+    #[inline]
+    pub fn sub_plaintext_assign<A>(&mut self, plaintext: &FourierPolynomial<A>)
+    where
+        A: Data<Elem = Complex64>,
+    {
+        let body_len = plaintext.as_ref().len();
+        let len = self.as_ref().len();
+        let body = &mut self.as_mut()[len - body_len..];
+        FourierPolynomial(body).sub_assign(plaintext);
+    }
+
+    /// Overwrites this ciphertext with a trivial encryption: zero mask and encoded body.
+    ///
+    /// `plaintext` must contain one complete nonempty polynomial in this
+    /// ciphertext's representation, modulus domain and plaintext scale.
+    /// Storage must contain complete mask polynomials followed by one body.
+    /// No encoding, rounding, random sampling or allocation is performed.
+    /// The caller maintains the layout.
+    /// Fourier inputs must use the same FFT table, evaluation order and
+    /// normalized torus scale; this input is an encoded message, not the
+    /// unscaled integer multiplier used by Fourier polynomial products.
+    #[inline]
+    pub fn set_trivial<A>(&mut self, plaintext: &FourierPolynomial<A>)
+    where
+        A: Data<Elem = Complex64>,
+    {
+        let body_len = plaintext.as_ref().len();
+        let len = self.as_ref().len();
+        let (mask, body) = self.as_mut().split_at_mut(len - body_len);
+        mask.fill(Complex64::default());
+        body.copy_from_slice(plaintext.as_ref());
     }
 }

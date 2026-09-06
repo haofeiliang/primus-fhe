@@ -26,19 +26,6 @@ macro_rules! impl_dcrt_polynomial_mul {
                 A: primus_data::Data<Elem = T>,
             {
                 let component_len = poly.dcrt_poly_length();
-                debug_assert!(
-                    poly_length > 0 && !moduli.is_empty(),
-                    "DCRT layout must be nonempty"
-                );
-                debug_assert_eq!(
-                    poly_length.checked_mul(moduli.len()),
-                    Some(component_len),
-                    "DCRT polynomial length mismatch"
-                );
-                debug_assert!(
-                    self.as_ref().len().is_multiple_of(component_len),
-                    "incomplete ciphertext polynomial"
-                );
                 for values in self.as_mut().chunks_exact_mut(component_len) {
                     primus_poly::DcrtPolynomial(values).mul_assign(poly, poly_length, moduli);
                 }
@@ -68,19 +55,6 @@ macro_rules! impl_dcrt_polynomial_mul {
                 B: primus_data::Data<Elem = T>,
             {
                 let component_len = poly.dcrt_poly_length();
-                debug_assert!(
-                    poly_length > 0 && !moduli.is_empty(),
-                    "DCRT layout must be nonempty"
-                );
-                debug_assert_eq!(
-                    poly_length.checked_mul(moduli.len()),
-                    Some(component_len),
-                    "DCRT polynomial length mismatch"
-                );
-                debug_assert!(
-                    self.as_ref().len().is_multiple_of(component_len),
-                    "incomplete ciphertext polynomial"
-                );
                 debug_assert_eq!(
                     self.as_ref().len(),
                     rhs.as_ref().len(),
@@ -125,19 +99,6 @@ macro_rules! impl_dcrt_polynomial_mul {
                 B: primus_data::DataMut<Elem = T>,
             {
                 let component_len = poly.dcrt_poly_length();
-                debug_assert!(
-                    poly_length > 0 && !moduli.is_empty(),
-                    "DCRT layout must be nonempty"
-                );
-                debug_assert_eq!(
-                    poly_length.checked_mul(moduli.len()),
-                    Some(component_len),
-                    "DCRT polynomial length mismatch"
-                );
-                debug_assert!(
-                    self.as_ref().len().is_multiple_of(component_len),
-                    "incomplete ciphertext polynomial"
-                );
                 debug_assert_eq!(
                     self.as_ref().len(),
                     output.as_ref().len(),

@@ -1,4 +1,5 @@
 //! Sample extraction and inverse embedding between GLWE and LWE layouts.
+//!
 
 use primus_data::{Data, DataMut};
 use primus_integer::FheUint;
@@ -16,14 +17,13 @@ where
     ///
     /// A GLWE with `k` mask polynomials of length `N` produces an LWE of
     /// dimension `kN`. `output` must therefore have length `kN + 1`.
+    /// `N = poly_length` must be nonzero, and storage must contain exactly
+    /// `k + 1` complete polynomials of length `N`.
     pub fn extract_lwe_to<M, B>(&self, output: &mut Lwe<B>, poly_length: usize, modulus: M)
     where
         M: RingContext<T>,
         B: DataMut<Elem = T>,
     {
-        debug_assert!(poly_length > 0);
-        debug_assert!(self.as_ref().len().is_multiple_of(poly_length));
-
         let mask_len = self.as_ref().len() - poly_length;
         let (output_mask, output_body) = output.a_b_mut();
 
@@ -46,6 +46,8 @@ where
     /// A GLWE with `k` mask polynomials of length `N` produces an LWE of
     /// dimension `kN`. `index` must be in `[0, N)`, and `output` must have
     /// dimension `kN`.
+    /// `N = poly_length` must be nonzero, and storage must contain exactly
+    /// `k + 1` complete polynomials of length `N`.
     pub fn extract_lwe_at_to<M, B>(
         &self,
         index: usize,
@@ -57,10 +59,6 @@ where
         B: DataMut<Elem = T>,
     {
         debug_assert!(index < poly_length, "GLWE extraction index is out of range");
-        debug_assert!(
-            self.as_ref().len().is_multiple_of(poly_length),
-            "GLWE length is not divisible by the polynomial length"
-        );
 
         let mask_len = self.as_ref().len() - poly_length;
         debug_assert_eq!(
@@ -79,14 +77,13 @@ where
     /// coefficient layout is `[s_lwe..., 0...]`, this directly produces an LWE
     /// sample under `s_lwe` without allocating an intermediate `kN`-dimension
     /// ciphertext.
+    /// `N = poly_length` must be nonzero, storage must contain exactly `k + 1`
+    /// complete polynomials, and the output dimension must be nonzero.
     pub fn extract_compact_lwe_to<M, B>(&self, output: &mut Lwe<B>, poly_length: usize, modulus: M)
     where
         M: RingContext<T>,
         B: DataMut<Elem = T>,
     {
-        debug_assert!(poly_length > 0);
-        debug_assert!(self.as_ref().len().is_multiple_of(poly_length));
-
         let mask_len = self.as_ref().len() - poly_length;
         let (output_mask, output_body) = output.a_b_mut();
         debug_assert!((1..=mask_len).contains(&output_mask.len()));
@@ -108,6 +105,8 @@ where
     ///
     /// `index` must be in `[0, N)`. The active secret-key length is inferred
     /// from `output.dimension()` and must not exceed the full `kN` mask.
+    /// `N = poly_length` must be nonzero, storage must contain exactly `k + 1`
+    /// complete polynomials, and the output dimension must be nonzero.
     pub fn extract_compact_lwe_at_to<M, B>(
         &self,
         index: usize,
@@ -119,10 +118,6 @@ where
         B: DataMut<Elem = T>,
     {
         debug_assert!(index < poly_length, "GLWE extraction index is out of range");
-        debug_assert!(
-            self.as_ref().len().is_multiple_of(poly_length),
-            "GLWE length is not divisible by the polynomial length"
-        );
 
         let mask_len = self.as_ref().len() - poly_length;
         debug_assert!(
@@ -172,10 +167,10 @@ where
     /// Inserts this LWE sample into a GLWE ciphertext so that compact sample
     /// extraction recovers the original LWE sample exactly.
     ///
-    /// For an LWE dimension `n` and `N = poly_length`, the output must contain
+    /// For a nonzero LWE dimension `n` and `N = poly_length`, the output must contain
     /// `ceil(n / N) + 1` polynomials of length `N`. Unused coefficients in the
     /// final mask polynomial and all non-constant body coefficients are set to
-    /// zero.
+    /// zero. `poly_length` must be nonzero.
     pub fn inverse_extract_glwe_to<M, B>(
         &self,
         output: &mut Glwe<B>,
@@ -185,9 +180,6 @@ where
         M: RingContext<T>,
         B: DataMut<Elem = T>,
     {
-        debug_assert!(poly_length > 0);
-        debug_assert!(self.dimension() > 0);
-
         let output_mask_len = self.dimension().next_multiple_of(poly_length);
         debug_assert_eq!(output.as_ref().len(), output_mask_len + poly_length);
 

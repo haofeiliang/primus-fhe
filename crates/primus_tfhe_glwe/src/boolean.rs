@@ -400,7 +400,10 @@ where
             .small_lwe()
             .plaintext_codec()
             .encode_value(T::ONE, PlaintextEmbedding::Unsigned);
-        modulus.reduce_add_assign(output.as_raw_mut().as_lwe_mut().b_mut(), encoded_one);
+        output
+            .as_raw_mut()
+            .as_lwe_mut()
+            .add_plaintext_assign(encoded_one, modulus);
     }
 
     /// Returns the backend PBS evaluator.

@@ -22,6 +22,7 @@ where
 impl_ciphertext_core!(TruncatedGlwe);
 
 impl_basic_operation_single_modulus!(TruncatedGlwe);
+impl_neg_single_modulus!(TruncatedGlwe);
 impl_mul_scalar_single_modulus!(TruncatedGlwe);
 impl_mul_factor_single_modulus!(TruncatedGlwe);
 

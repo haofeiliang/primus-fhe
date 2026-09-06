@@ -37,7 +37,8 @@ impl_basic_operation_single_modulus!(Rlwe);
 impl_neg_single_modulus!(Rlwe);
 impl_mul_scalar_single_modulus!(Rlwe);
 impl_mul_factor_single_modulus!(Rlwe);
-impl_add_mul_monomial_single_modulus!(Rlwe);
+impl_monomial_single_modulus!(Rlwe);
+impl_plaintext_single_modulus!(Rlwe, Polynomial);
 
 impl_ntt!(Rlwe, NttRlwe);
 
@@ -160,6 +161,77 @@ where
             ntt_table.transform_slice(poly);
             NttPolynomial(poly).mul_assign(ntt_poly, modulus);
         });
+    }
+
+    /// Extracts the constant coefficient into an existing LWE buffer.
+    ///
+    /// Storage must contain two polynomials of the same nonzero length `N`.
+    /// The output dimension must be `N`.
+    /// The output phase equals the selected coefficient
+    /// of `b - a*s`. Canonical inputs produce canonical outputs without allocation.
+    #[inline]
+    pub fn extract_lwe_to<M, A>(&self, output: &mut Lwe<A>, modulus: M)
+    where
+        M: primus_reduce::RingContext<T>,
+        A: DataMut<Elem = T>,
+    {
+        let (mask, _) = self.a_b_slices();
+        crate::glwe::Glwe(self.as_ref()).extract_lwe_to(output, mask.len(), modulus);
+    }
+
+    /// Extracts coefficient `index` into an existing LWE buffer.
+    ///
+    /// Storage must contain two polynomials of the same nonzero length `N`.
+    /// The output dimension must be `N`.
+    /// `index` must belong to `[0, N)`. The output phase equals the selected coefficient
+    /// of `b - a*s`. Canonical inputs produce canonical outputs without allocation.
+    #[inline]
+    pub fn extract_lwe_at_to<M, A>(&self, index: usize, output: &mut Lwe<A>, modulus: M)
+    where
+        M: primus_reduce::RingContext<T>,
+        A: DataMut<Elem = T>,
+    {
+        let (mask, _) = self.a_b_slices();
+        crate::glwe::Glwe(self.as_ref()).extract_lwe_at_to(index, output, mask.len(), modulus);
+    }
+
+    /// Extracts the constant coefficient into an existing LWE buffer.
+    ///
+    /// Storage must contain two polynomials of the same nonzero length `N`.
+    /// The output dimension must be in `1..=N`; the RLWE secret must have
+    /// a zero suffix beyond that dimension.
+    /// The output phase equals the selected coefficient
+    /// of `b - a*s`. Canonical inputs produce canonical outputs without allocation.
+    #[inline]
+    pub fn extract_compact_lwe_to<M, A>(&self, output: &mut Lwe<A>, modulus: M)
+    where
+        M: primus_reduce::RingContext<T>,
+        A: DataMut<Elem = T>,
+    {
+        let (mask, _) = self.a_b_slices();
+        crate::glwe::Glwe(self.as_ref()).extract_compact_lwe_to(output, mask.len(), modulus);
+    }
+
+    /// Extracts coefficient `index` into an existing LWE buffer.
+    ///
+    /// Storage must contain two polynomials of the same nonzero length `N`.
+    /// The output dimension must be in `1..=N`; the RLWE secret must have
+    /// a zero suffix beyond that dimension.
+    /// `index` must belong to `[0, N)`. The output phase equals the selected coefficient
+    /// of `b - a*s`. Canonical inputs produce canonical outputs without allocation.
+    #[inline]
+    pub fn extract_compact_lwe_at_to<M, A>(&self, index: usize, output: &mut Lwe<A>, modulus: M)
+    where
+        M: primus_reduce::RingContext<T>,
+        A: DataMut<Elem = T>,
+    {
+        let (mask, _) = self.a_b_slices();
+        crate::glwe::Glwe(self.as_ref()).extract_compact_lwe_at_to(
+            index,
+            output,
+            mask.len(),
+            modulus,
+        );
     }
 
     /// Extract an LWE sample from RLWE.

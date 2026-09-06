@@ -26,8 +26,9 @@ impl_iters!(CrtRlev);
 impl_iter_sub_structure!(CrtRlev, CrtRlwe);
 
 impl_basic_operation_multiple_modulus!(CrtRlev);
+impl_neg_multiple_modulus!(CrtRlev);
 impl_mul_scalar_multiple_modulus!(CrtRlev);
 impl_mul_factor_multiple_modulus!(CrtRlev);
-impl_add_mul_monomial_multiple_modulus!(CrtRlev);
+impl_monomial_multiple_modulus!(CrtRlev);
 
 impl_crt_ntt!(CrtRlev, DcrtRlev);

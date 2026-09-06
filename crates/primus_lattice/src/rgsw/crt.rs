@@ -25,8 +25,10 @@ impl_iters!(CrtRgsw);
 impl_iter_sub_structure!(CrtRgsw, CrtRlev);
 
 impl_basic_operation_multiple_modulus!(CrtRgsw);
+impl_neg_multiple_modulus!(CrtRgsw);
 impl_mul_scalar_multiple_modulus!(CrtRgsw);
 impl_mul_factor_multiple_modulus!(CrtRgsw);
-impl_add_mul_monomial_multiple_modulus!(CrtRgsw);
+impl_monomial_multiple_modulus!(CrtRgsw);
+impl_gadget_diagonal_multiple_modulus!(CrtRgsw, CrtPolynomial, 1);
 
 impl_crt_ntt!(CrtRgsw, DcrtRgsw);

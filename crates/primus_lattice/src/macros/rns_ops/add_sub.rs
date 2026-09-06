@@ -53,19 +53,6 @@ macro_rules! impl_basic_operation_multiple_modulus {
                 M: Copy + primus_reduce::ReduceAddSlice<T>,
                 A: primus_data::Data<Elem = T>,
             {
-                debug_assert!(
-                    poly_length > 0 && !moduli.is_empty(),
-                    "RNS layout must be nonempty"
-                );
-                debug_assert_eq!(
-                    poly_length.checked_mul(moduli.len()),
-                    Some(rns_poly_len),
-                    "RNS polynomial length mismatch"
-                );
-                debug_assert!(
-                    self.as_ref().len().is_multiple_of(rns_poly_len),
-                    "incomplete RNS component"
-                );
                 debug_assert_eq!(
                     self.as_ref().len(),
                     rhs.as_ref().len(),
@@ -132,19 +119,6 @@ macro_rules! impl_basic_operation_multiple_modulus {
                 M: Copy + primus_reduce::ReduceSubSlice<T>,
                 A: primus_data::Data<Elem = T>,
             {
-                debug_assert!(
-                    poly_length > 0 && !moduli.is_empty(),
-                    "RNS layout must be nonempty"
-                );
-                debug_assert_eq!(
-                    poly_length.checked_mul(moduli.len()),
-                    Some(rns_poly_len),
-                    "RNS polynomial length mismatch"
-                );
-                debug_assert!(
-                    self.as_ref().len().is_multiple_of(rns_poly_len),
-                    "incomplete RNS component"
-                );
                 debug_assert_eq!(
                     self.as_ref().len(),
                     rhs.as_ref().len(),
@@ -192,19 +166,6 @@ macro_rules! impl_basic_operation_multiple_modulus {
                 A: primus_data::Data<Elem = T>,
                 B: primus_data::DataMut<Elem = T>,
             {
-                debug_assert!(
-                    poly_length > 0 && !moduli.is_empty(),
-                    "RNS layout must be nonempty"
-                );
-                debug_assert_eq!(
-                    poly_length.checked_mul(moduli.len()),
-                    Some(rns_poly_len),
-                    "RNS polynomial length mismatch"
-                );
-                debug_assert!(
-                    self.as_ref().len().is_multiple_of(rns_poly_len),
-                    "incomplete RNS component"
-                );
                 debug_assert_eq!(
                     self.as_ref().len(),
                     rhs.as_ref().len(),
@@ -253,19 +214,6 @@ macro_rules! impl_basic_operation_multiple_modulus {
                 A: primus_data::Data<Elem = T>,
                 B: primus_data::DataMut<Elem = T>,
             {
-                debug_assert!(
-                    poly_length > 0 && !moduli.is_empty(),
-                    "RNS layout must be nonempty"
-                );
-                debug_assert_eq!(
-                    poly_length.checked_mul(moduli.len()),
-                    Some(rns_poly_len),
-                    "RNS polynomial length mismatch"
-                );
-                debug_assert!(
-                    self.as_ref().len().is_multiple_of(rns_poly_len),
-                    "incomplete RNS component"
-                );
                 debug_assert_eq!(
                     self.as_ref().len(),
                     rhs.as_ref().len(),

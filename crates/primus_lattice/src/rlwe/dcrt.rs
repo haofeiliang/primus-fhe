@@ -32,6 +32,7 @@ impl_basic_operation_multiple_modulus!(DcrtRlwe);
 impl_neg_multiple_modulus!(DcrtRlwe);
 impl_mul_scalar_multiple_modulus!(DcrtRlwe);
 impl_mul_factor_multiple_modulus!(DcrtRlwe);
+impl_plaintext_multiple_modulus!(DcrtRlwe, DcrtPolynomial);
 impl_dcrt_polynomial_mul!(DcrtRlwe);
 
 impl_crt_intt!(DcrtRlwe, CrtRlwe);

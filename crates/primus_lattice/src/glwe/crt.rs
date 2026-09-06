@@ -28,7 +28,8 @@ impl_basic_operation_multiple_modulus!(CrtGlwe);
 impl_neg_multiple_modulus!(CrtGlwe);
 impl_mul_scalar_multiple_modulus!(CrtGlwe);
 impl_mul_factor_multiple_modulus!(CrtGlwe);
-impl_add_mul_monomial_multiple_modulus!(CrtGlwe);
+impl_monomial_multiple_modulus!(CrtGlwe);
+impl_plaintext_multiple_modulus!(CrtGlwe, CrtPolynomial);
 
 impl_crt_ntt!(CrtGlwe, DcrtGlwe);
 
@@ -38,16 +39,18 @@ where
     T: FheUint,
 {
     /// Splits this GLWE into its mutable mask and body slices.
+    ///
+    /// Storage must contain at least one mask polynomial and one body polynomial,
+    /// each with `crt_poly_len` elements. The caller must maintain this layout
+    /// and provide a nonzero polynomial length.
     #[inline]
     pub fn a_b_mut_slices(&mut self, crt_poly_len: usize) -> (&mut [T], &mut [T]) {
         let glwe_len = self.as_ref().len();
-        debug_assert!(crt_poly_len > 0);
-        debug_assert!(glwe_len > crt_poly_len);
-        debug_assert!(glwe_len.is_multiple_of(crt_poly_len));
         self.as_mut().split_at_mut(glwe_len - crt_poly_len)
     }
 
     /// Splits this GLWE into its mutable mask polynomials and body polynomial.
+    /// Storage and polynomial length must satisfy the layout required by `a_b_slices`.
     #[inline]
     pub fn a_b_mut(
         &mut self,
@@ -59,47 +62,6 @@ where
             CrtPolynomial(body),
         )
     }
-
-    /// Perform `self = self * X^exponent`.
-    pub fn mul_monomial_assign<M>(
-        &mut self,
-        exponent: usize,
-        poly_length: usize,
-        crt_poly_length: usize,
-        moduli: &[M],
-    ) where
-        M: FieldContext<T>,
-    {
-        if exponent < poly_length {
-            let rotate = |poly: &mut [T], modulus: M| {
-                poly.rotate_right(exponent);
-                modulus.reduce_neg_slice_assign(&mut poly[0..exponent]);
-            };
-
-            self.iter_crt_poly_mut(crt_poly_length)
-                .for_each(|mut crt_poly| {
-                    crt_poly
-                        .iter_each_modulus_mut(poly_length)
-                        .zip(moduli)
-                        .for_each(|(poly, &modulus)| rotate(poly, modulus));
-                });
-        } else {
-            debug_assert!(exponent < poly_length * 2);
-            let exponent = exponent - poly_length;
-            let rotate = |poly: &mut [T], modulus: M| {
-                poly.rotate_right(exponent);
-                modulus.reduce_neg_slice_assign(&mut poly[exponent..]);
-            };
-
-            self.iter_crt_poly_mut(crt_poly_length)
-                .for_each(|mut crt_poly| {
-                    crt_poly
-                        .iter_each_modulus_mut(poly_length)
-                        .zip(moduli)
-                        .for_each(|(poly, &modulus)| rotate(poly, modulus));
-                });
-        }
-    }
 }
 
 impl<S, T> CrtGlwe<S>
@@ -108,16 +70,18 @@ where
     T: FheUint,
 {
     /// Splits this GLWE into its mask and body slices.
+    ///
+    /// Storage must contain at least one mask polynomial and one body polynomial,
+    /// each with `crt_poly_len` elements. The caller must maintain this layout
+    /// and provide a nonzero polynomial length.
     #[inline]
     pub fn a_b_slices(&self, crt_poly_len: usize) -> (&[T], &[T]) {
         let glwe_len = self.as_ref().len();
-        debug_assert!(crt_poly_len > 0);
-        debug_assert!(glwe_len > crt_poly_len);
-        debug_assert!(glwe_len.is_multiple_of(crt_poly_len));
         self.as_ref().split_at(glwe_len - crt_poly_len)
     }
 
     /// Splits this GLWE into its mask polynomials and body polynomial.
+    /// Storage and polynomial length must satisfy the layout required by `a_b_slices`.
     #[inline]
     pub fn a_b(&self, crt_poly_len: usize) -> (CrtPolynomialIter<'_, T>, CrtPolynomial<&[T]>) {
         let (mask, body) = self.a_b_slices(crt_poly_len);

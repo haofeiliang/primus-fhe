@@ -36,6 +36,7 @@ impl_basic_operation_multiple_modulus!(DcrtGgsw);
 impl_neg_multiple_modulus!(DcrtGgsw);
 impl_mul_scalar_multiple_modulus!(DcrtGgsw);
 impl_mul_factor_multiple_modulus!(DcrtGgsw);
+impl_gadget_diagonal_multiple_modulus!(DcrtGgsw, DcrtPolynomial);
 impl_dcrt_polynomial_mul!(DcrtGgsw);
 
 impl_crt_intt!(DcrtGgsw, CrtGgsw);

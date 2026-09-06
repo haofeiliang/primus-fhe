@@ -27,6 +27,7 @@ impl_iters!(NttGlev);
 impl_iter_sub_structure!(NttGlev, NttGlwe);
 
 impl_basic_operation_single_modulus!(NttGlev);
+impl_neg_single_modulus!(NttGlev);
 impl_mul_scalar_single_modulus!(NttGlev);
 impl_mul_factor_single_modulus!(NttGlev);
 impl_ntt_polynomial_mul!(NttGlev);

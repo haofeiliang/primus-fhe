@@ -29,7 +29,8 @@ impl_basic_operation_single_modulus!(Glwe);
 impl_neg_single_modulus!(Glwe);
 impl_mul_scalar_single_modulus!(Glwe);
 impl_mul_factor_single_modulus!(Glwe);
-impl_add_mul_monomial_single_modulus!(Glwe);
+impl_monomial_single_modulus!(Glwe);
+impl_plaintext_single_modulus!(Glwe, Polynomial);
 
 impl_ntt!(Glwe, NttGlwe);
 
@@ -39,16 +40,18 @@ where
     T: FheUint,
 {
     /// Splits this GLWE into its mutable mask and body slices.
+    ///
+    /// Storage must contain at least one mask polynomial and one body polynomial,
+    /// each with `poly_length` elements. The caller must maintain this layout
+    /// and provide a nonzero polynomial length.
     #[inline]
     pub fn a_b_mut_slices(&mut self, poly_length: usize) -> (&mut [T], &mut [T]) {
         let glwe_len = self.as_ref().len();
-        debug_assert!(poly_length > 0);
-        debug_assert!(glwe_len > poly_length);
-        debug_assert!(glwe_len.is_multiple_of(poly_length));
         self.as_mut().split_at_mut(glwe_len - poly_length)
     }
 
     /// Splits this GLWE into its mutable mask polynomials and body polynomial.
+    /// Storage and polynomial length must satisfy the layout required by `a_b_slices`.
     #[inline]
     pub fn a_b_mut(
         &mut self,
@@ -65,44 +68,31 @@ where
     T: FheUint,
 {
     /// Splits this GLWE into its mask and body slices.
+    ///
+    /// Storage must contain at least one mask polynomial and one body polynomial,
+    /// each with `poly_length` elements. The caller must maintain this layout
+    /// and provide a nonzero polynomial length.
     #[inline]
     pub fn a_b_slices(&self, poly_length: usize) -> (&[T], &[T]) {
         let glwe_len = self.as_ref().len();
-        debug_assert!(poly_length > 0);
-        debug_assert!(glwe_len > poly_length);
-        debug_assert!(glwe_len.is_multiple_of(poly_length));
         self.as_ref().split_at(glwe_len - poly_length)
     }
 
     /// Splits this GLWE into its mask polynomials and body polynomial.
+    /// Storage and polynomial length must satisfy the layout required by `a_b_slices`.
     #[inline]
     pub fn a_b(&self, poly_length: usize) -> (PolynomialIter<'_, T>, Polynomial<&[T]>) {
         let (mask, body) = self.a_b_slices(poly_length);
         (PolynomialIter::new(mask, poly_length), Polynomial(body))
     }
 
-    /// Multiplies every GLWE component by `X^exponent` in
-    /// `Z_q[X]/(X^N + 1)` and writes the output to `output`.
-    ///
-    /// `exponent` must belong to `[0, 2N)`.
-    pub fn mul_monomial_to<M, B>(
-        &self,
-        exponent: usize,
-        output: &mut Glwe<B>,
-        poly_length: usize,
-        modulus: M,
-    ) where
-        M: RingContext<T>,
-        B: DataMut<Elem = T>,
-    {
-        self.monomial_to::<false, M, B>(exponent, output, poly_length, modulus);
-    }
-
     /// Computes `output = self * (X^exponent - 1)` component-wise in
     /// `Z_q[X]/(X^N + 1)`.
     ///
     /// `exponent` must belong to `[0, 2N)`. Rotation and subtraction are
-    /// fused into one coefficient pass.
+    /// fused into one coefficient pass. `poly_length = N` must be a supported
+    /// power of two, and both ciphertexts must have equal lengths containing
+    /// whole polynomials of length `N`.
     pub fn mul_monomial_sub_one_to<M, B>(
         &self,
         exponent: usize,
@@ -113,42 +103,14 @@ where
         M: RingContext<T>,
         B: DataMut<Elem = T>,
     {
-        self.monomial_to::<true, M, B>(exponent, output, poly_length, modulus);
-    }
-
-    #[inline]
-    fn monomial_to<const SUBTRACT_SELF: bool, M, B>(
-        &self,
-        exponent: usize,
-        output: &mut Glwe<B>,
-        poly_length: usize,
-        modulus: M,
-    ) where
-        M: RingContext<T>,
-        B: DataMut<Elem = T>,
-    {
-        debug_assert!(
-            (crate::MIN_POLY_LENGTH..=crate::MAX_POLY_LENGTH).contains(&poly_length)
-                && poly_length.is_power_of_two()
-        );
-        debug_assert!(exponent < 2 * poly_length);
         debug_assert_eq!(self.as_ref().len(), output.as_ref().len());
-        debug_assert!(self.as_ref().len().is_multiple_of(poly_length));
 
         for (input, output) in self
             .as_ref()
             .chunks_exact(poly_length)
             .zip(output.as_mut().chunks_exact_mut(poly_length))
         {
-            if SUBTRACT_SELF {
-                Polynomial(input).mul_monomial_sub_one_to(
-                    exponent,
-                    &mut Polynomial(output),
-                    modulus,
-                );
-            } else {
-                Polynomial(input).mul_monomial_to(exponent, &mut Polynomial(output), modulus);
-            }
+            Polynomial(input).mul_monomial_sub_one_to(exponent, &mut Polynomial(output), modulus);
         }
     }
 

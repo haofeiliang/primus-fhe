@@ -53,6 +53,12 @@ fn coefficient_monomial_accumulation_matches_oracle_and_ntt_product() {
                 let mut output = $coeff::new(storage.as_mut_slice());
                 output.add_mul_monomial_assign(&input, exponent, $($length,)? modulus);
                 assert_eq!(output.as_ref(), oracle, "{} exponent {exponent}", stringify!($coeff));
+                let product = expected(&vec![0; rhs.len()], &rhs, exponent, N, &[Q]);
+                input.mul_monomial_to(exponent, &mut output, $($length,)? modulus);
+                assert_eq!(output.as_ref(), product);
+                output.as_mut().copy_from_slice(&rhs);
+                output.mul_monomial_assign(exponent, $($length,)? modulus);
+                assert_eq!(output.as_ref(), product);
                 let mut monomial = vec![0; N];
                 monomial[exponent % N] = if exponent < N { 1 } else { Q - 1 };
                 table.transform_slice(&mut monomial);
@@ -98,6 +104,12 @@ fn crt_monomial_accumulation_preserves_modulus_and_gadget_order() {
                 let mut output = $cipher::new(storage.as_mut_slice());
                 output.add_mul_monomial_assign(&input, exponent, N, rns_poly_len, &moduli);
                 assert_eq!(output.as_ref(), expected(&acc, &rhs, exponent, N, &qs));
+                let product = expected(&vec![0; rhs.len()], &rhs, exponent, N, &qs);
+                input.mul_monomial_to(exponent, &mut output, N, rns_poly_len, &moduli);
+                assert_eq!(output.as_ref(), product);
+                output.as_mut().copy_from_slice(&rhs);
+                output.mul_monomial_assign(exponent, N, rns_poly_len, &moduli);
+                assert_eq!(output.as_ref(), product);
             }
         }};
     }

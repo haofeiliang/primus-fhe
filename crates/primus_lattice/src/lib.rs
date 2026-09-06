@@ -15,6 +15,7 @@
 #[macro_use]
 mod macros;
 
+mod gadget;
 mod size;
 
 pub use size::{

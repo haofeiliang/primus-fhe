@@ -24,17 +24,12 @@ macro_rules! impl_fourier_iters {
                     "Creates an iterator yielding [`",
                     stringify!($cipher),
                     "`] views containing `", stringify!([<$cipher:snake _len>]), "` complex values each.",
-                    "\n\n# Panics\n\nPanics if `", stringify!([<$cipher:snake _len>]), "` is zero or does not divide `data.len()`."
+                    "\n\nAny incomplete trailing chunk is omitted. The caller must provide a complete ciphertext layout.",
+                    "\n\n# Panics\n\nPanics if `", stringify!([<$cipher:snake _len>]), "` is zero."
                 )]
                 #[must_use]
                 #[inline]
                 pub fn new(data: &'a [num_complex::Complex64], [<$cipher:snake _len>]: usize) -> Self {
-                    assert!([<$cipher:snake _len>] != 0, "Fourier chunk length must be non-zero");
-                    assert_eq!(
-                        data.len() % [<$cipher:snake _len>],
-                        0,
-                        "Fourier data length must be divisible by the chunk length"
-                    );
                     Self {
                         iter: data.chunks_exact([<$cipher:snake _len>]),
                     }
@@ -81,17 +76,12 @@ macro_rules! impl_fourier_iters {
                     "Creates a mutable iterator yielding [`",
                     stringify!($cipher),
                     "`] views containing `", stringify!([<$cipher:snake _len>]), "` complex values each.",
-                    "\n\n# Panics\n\nPanics if `", stringify!([<$cipher:snake _len>]), "` is zero or does not divide `data.len()`."
+                    "\n\nAny incomplete trailing chunk is omitted. The caller must provide a complete ciphertext layout.",
+                    "\n\n# Panics\n\nPanics if `", stringify!([<$cipher:snake _len>]), "` is zero."
                 )]
                 #[must_use]
                 #[inline]
                 pub fn new(data: &'a mut [num_complex::Complex64], [<$cipher:snake _len>]: usize) -> Self {
-                    assert!([<$cipher:snake _len>] != 0, "Fourier chunk length must be non-zero");
-                    assert_eq!(
-                        data.len() % [<$cipher:snake _len>],
-                        0,
-                        "Fourier data length must be divisible by the chunk length"
-                    );
                     Self {
                         iter: data.chunks_exact_mut([<$cipher:snake _len>]),
                     }

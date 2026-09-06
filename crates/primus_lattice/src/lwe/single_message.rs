@@ -167,3 +167,39 @@ where
         self.0.len() * T::BYTES
     }
 }
+
+impl<S, T> Lwe<S>
+where
+    S: DataMut<Elem = T>,
+    T: FheUint,
+{
+    /// Adds an already encoded canonical plaintext to `b`, preserving the mask.
+    /// The plaintext must use the ciphertext modulus and scale; no encoding occurs.
+    #[inline]
+    pub fn add_plaintext_assign<M>(&mut self, plaintext: T, modulus: M)
+    where
+        M: ReduceAddAssign<T>,
+    {
+        modulus.reduce_add_assign(self.b_mut(), plaintext);
+    }
+
+    /// Subtracts an already encoded canonical plaintext from `b`, preserving the mask.
+    /// The plaintext must use the ciphertext modulus and scale; no encoding occurs.
+    #[inline]
+    pub fn sub_plaintext_assign<M>(&mut self, plaintext: T, modulus: M)
+    where
+        M: ReduceSubAssign<T>,
+    {
+        modulus.reduce_sub_assign(self.b_mut(), plaintext);
+    }
+
+    /// Overwrites the ciphertext with a zero mask and an already encoded body.
+    /// The plaintext must be canonical in the ciphertext modulus and scale.
+    /// This performs no encoding, random sampling or allocation.
+    #[inline]
+    pub fn set_trivial(&mut self, plaintext: T) {
+        let (a, b) = self.a_b_mut();
+        a.fill(T::ZERO);
+        *b = plaintext;
+    }
+}
