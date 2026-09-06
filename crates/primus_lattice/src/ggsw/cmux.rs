@@ -19,7 +19,7 @@ use super::{FourierGgsw, NttGgsw};
 
 impl<S> FourierGgsw<S>
 where
-    S: RawData<Elem = Complex64>,
+    S: Data<Elem = Complex64>,
 {
     /// Computes `output = ct0 + self external_product (ct1 - ct0)`.
     ///
@@ -46,7 +46,6 @@ where
     ) where
         T: TorusFftValue,
         Table: FftTable,
-        S: Data<Elem = Complex64>,
         B: Data<Elem = T>,
         C: Data<Elem = T>,
         D: DataMut<Elem = T>,
@@ -57,7 +56,8 @@ where
         debug_assert_eq!(output.as_ref().len(), glwe_len);
 
         ct1.sub_to(ct0, output, NativeModulus::new());
-        self.external_product_to_accumulator(output, basis, fft, context);
+        context.fourier_accumulator.set_zero();
+        self.accumulate_external_product(output, basis, fft, context);
         context.fourier_accumulator.write_torus_form(output, fft);
         output.add_assign(ct0, NativeModulus::new());
     }
@@ -74,14 +74,12 @@ where
     ///
     /// # Correctness
     ///
-    /// The controls, basis, transform table, and context must satisfy
-    /// [`Self::external_product_to`]. Every coefficient-domain input and output
-    /// has exactly `context.size().glwe_size().glwe_len()` elements, with compatible keys,
-    /// moduli, and encodings. Values must be canonical residues. The output
-    /// is overwritten; no prior output initialization or context reset is needed.
-    /// There must be exactly one control per candidate, in the same order;
-    /// every control encrypts a bit and at most one bit is one. Empty lists
-    /// copy `default` into `output`. Bit values and exclusivity are not checked.
+    /// Each control and every coefficient-domain input/output must satisfy
+    /// [`Self::cmux_to`], using the same basis, table, and context layout.
+    /// Controls and candidates have equal counts and matching order. Each
+    /// control encrypts a bit, with at most one bit equal to one; bit values
+    /// and exclusivity are not checked. Empty lists copy `default` exactly.
+    /// Output is overwritten and context scratch needs no manual reset.
     ///
     /// # Panics
     ///
@@ -98,7 +96,6 @@ where
     ) where
         T: TorusFftValue,
         Table: FftTable,
-        S: Data<Elem = Complex64>,
         B: Data<Elem = T>,
         C: Data<Elem = T>,
         D: DataMut<Elem = T>,
@@ -107,7 +104,11 @@ where
         I::Item: Borrow<Self>,
     {
         let controls = controls.into_iter();
-        assert_eq!(controls.len(), candidates.len());
+        assert_eq!(
+            controls.len(),
+            candidates.len(),
+            "CMUX requires one control per candidate"
+        );
         let glwe_len = context.size().glwe_size().glwe_len();
         debug_assert_eq!(default.as_ref().len(), glwe_len);
         debug_assert_eq!(output.as_ref().len(), glwe_len);
@@ -126,7 +127,7 @@ where
         for (control, candidate) in controls.zip(candidates) {
             candidate.sub_to(default, output, NativeModulus::new());
             let control: &Self = control.borrow();
-            control.external_product_add_assign(output, basis, fft, context);
+            control.accumulate_external_product(output, basis, fft, context);
         }
         context.fourier_accumulator.write_torus_form(output, fft);
         output.add_assign(default, NativeModulus::new());
@@ -140,14 +141,10 @@ where
     ///
     /// # Correctness
     ///
-    /// The control ciphertext, basis, transform table, and context must satisfy
-    /// [`Self::external_product_to`]. Every coefficient-domain input and output
-    /// has exactly `context.size().glwe_size().glwe_len()` elements, with compatible keys,
-    /// moduli, and encodings. Values must be canonical residues. The output
-    /// is overwritten; no prior output initialization or context reset is needed.
-    /// `self` must encrypt a bit; this is not checked. For bit zero the output
-    /// selects `input`; for bit one it selects `input * X^exponent`.
-    /// Require `exponent < 2 * N`, where `N` is the context polynomial length.
+    /// The control, input, output, basis, table, and context must satisfy
+    /// [`Self::cmux_to`]. Require `exponent < 2 * N`, where `N` is the
+    /// context polynomial length. Bit zero selects `input`; bit one selects
+    /// `input * X^exponent`. Output is overwritten; no reset is required.
     pub fn cmux_monomial_to<T, Table, B, C>(
         &self,
         input: &TorusGlwe<B>,
@@ -159,14 +156,14 @@ where
     ) where
         T: TorusFftValue,
         Table: FftTable,
-        S: Data<Elem = Complex64>,
         B: Data<Elem = T>,
         C: DataMut<Elem = T>,
     {
         let poly_length = context.size().glwe_size().poly_length();
 
         input.mul_monomial_sub_one_to(exponent, output, poly_length, NativeModulus::new());
-        self.external_product_to_accumulator(output, basis, fft, context);
+        context.fourier_accumulator.set_zero();
+        self.accumulate_external_product(output, basis, fft, context);
         context.fourier_accumulator.write_torus_form(output, fft);
         output.add_assign(input, NativeModulus::new());
     }
@@ -191,6 +188,10 @@ where
     /// moduli, and encodings. Values must be canonical residues. The output
     /// is overwritten; no prior output initialization or context reset is needed.
     /// `self` must encrypt a bit; this is not checked.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "Keep operands, decomposition basis, arithmetic, transform, and scratch explicit"
+    )]
     pub fn cmux_to<T, M, Table, B, C, D>(
         &self,
         ct0: &Glwe<B>,
@@ -216,7 +217,8 @@ where
 
         ct1.sub_to(ct0, output, modulus);
         let mut context = context.as_mut();
-        self.external_product_to_accumulator(output, basis, modulus, ntt, &mut context);
+        context.ntt_accumulator.set_zero();
+        self.accumulate_external_product(output, basis, modulus, ntt, &mut context);
         context.ntt_accumulator.write_coeff_form(output, ntt);
         output.add_assign(ct0, modulus);
     }
@@ -233,19 +235,21 @@ where
     ///
     /// # Correctness
     ///
-    /// The controls, basis, transform table, and context must satisfy
-    /// [`Self::external_product_to`]. Every coefficient-domain input and output
-    /// has exactly `context.size().glwe_size().glwe_len()` elements, with compatible keys,
-    /// moduli, and encodings. Values must be canonical residues. The output
-    /// is overwritten; no prior output initialization or context reset is needed.
-    /// There must be exactly one control per candidate, in the same order;
-    /// every control encrypts a bit and at most one bit is one. Empty lists
-    /// copy `default` into `output`. Bit values and exclusivity are not checked.
+    /// Each control and every coefficient-domain input/output must satisfy
+    /// [`Self::cmux_to`], using the same basis, table, and context layout.
+    /// Controls and candidates have equal counts and matching order. Each
+    /// control encrypts a bit, with at most one bit equal to one; bit values
+    /// and exclusivity are not checked. Empty lists copy `default` exactly.
+    /// Output is overwritten and context scratch needs no manual reset.
     ///
     /// # Panics
     ///
     /// Panics if the reported control count differs from `candidates.len()`,
     /// or if empty-list copying encounters unequal default/output lengths.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "Keep operands, decomposition basis, arithmetic, transform, and scratch explicit"
+    )]
     pub fn cmux_k_to<T, M, Table, B, C, D, I>(
         controls: I,
         default: &Glwe<B>,
@@ -268,7 +272,11 @@ where
         I::Item: Borrow<Self>,
     {
         let controls = controls.into_iter();
-        assert_eq!(controls.len(), candidates.len());
+        assert_eq!(
+            controls.len(),
+            candidates.len(),
+            "CMUX requires one control per candidate"
+        );
         let glwe_len = context.size().glwe_size().glwe_len();
         debug_assert_eq!(default.as_ref().len(), glwe_len);
         debug_assert_eq!(output.as_ref().len(), glwe_len);
@@ -288,7 +296,7 @@ where
         for (control, candidate) in controls.zip(candidates) {
             candidate.sub_to(default, output, modulus);
             let control: &Self = control.borrow();
-            control.external_product_add_assign(output, basis, modulus, ntt, &mut context);
+            control.accumulate_external_product(output, basis, modulus, ntt, &mut context);
         }
         context.ntt_accumulator.write_coeff_form(output, ntt);
         output.add_assign(default, modulus);
@@ -302,14 +310,14 @@ where
     ///
     /// # Correctness
     ///
-    /// The control ciphertext, basis, transform table, and context must satisfy
-    /// [`Self::external_product_to`]. Every coefficient-domain input and output
-    /// has exactly `context.size().glwe_size().glwe_len()` elements, with compatible keys,
-    /// moduli, and encodings. Values must be canonical residues. The output
-    /// is overwritten; no prior output initialization or context reset is needed.
-    /// `self` must encrypt a bit; this is not checked. For bit zero the output
-    /// selects `input`; for bit one it selects `input * X^exponent`.
-    /// Require `exponent < 2 * N`, where `N` is the context polynomial length.
+    /// The control, input, output, basis, table, and context must satisfy
+    /// [`Self::cmux_to`]. Require `exponent < 2 * N`, where `N` is the
+    /// context polynomial length. Bit zero selects `input`; bit one selects
+    /// `input * X^exponent`. Output is overwritten; no reset is required.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "Keep operands, decomposition basis, arithmetic, transform, and scratch explicit"
+    )]
     pub fn cmux_monomial_to<T, M, Table, B, C>(
         &self,
         input: &Glwe<B>,
@@ -331,7 +339,8 @@ where
 
         input.mul_monomial_sub_one_to(exponent, output, poly_length, modulus);
         let mut context = context.as_mut();
-        self.external_product_to_accumulator(output, basis, modulus, ntt, &mut context);
+        context.ntt_accumulator.set_zero();
+        self.accumulate_external_product(output, basis, modulus, ntt, &mut context);
         context.ntt_accumulator.write_coeff_form(output, ntt);
         output.add_assign(input, modulus);
     }

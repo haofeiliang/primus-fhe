@@ -11,17 +11,14 @@ use crate::{
     context::{FourierNtruExternalProductContext, NttNtruExternalProductContext},
     nlev::Nlev,
     ntru::Ntru,
-    ntru::gadget_product::{
-        fourier_gadget_product_add_assign, fourier_gadget_product_to_accumulator,
-        ntt_gadget_product_add_assign, ntt_gadget_product_to_accumulator,
-    },
+    ntru::gadget_product::{accumulate_fourier_gadget_product, accumulate_ntt_gadget_product},
 };
 
 use super::{FourierNgsw, NttNgsw};
 
 impl<S> FourierNgsw<S>
 where
-    S: RawData<Elem = Complex64>,
+    S: Data<Elem = Complex64>,
 {
     /// Computes `output = input external_product self` using the native torus modulus.
     ///
@@ -55,57 +52,11 @@ where
         Table: FftTable,
         A: Data<Elem = T>,
         C: DataMut<Elem = T>,
-        S: Data,
     {
         debug_assert_eq!(output.as_ref().len(), context.poly_length());
-        self.external_product_to_accumulator(input, basis, fft, context);
+        context.fourier_accumulator.set_zero();
+        accumulate_fourier_gadget_product(self.as_ref(), input.as_ref(), basis, fft, context);
         context.fourier_accumulator.write_torus_form(output, fft);
-    }
-
-    /// Clears the Fourier accumulator, then stores `self external_product input` in it.
-    /// The output remains in Fourier form for the caller to combine or transform back.
-    ///
-    /// # Correctness
-    ///
-    /// The input, gadget, basis, table, and context must satisfy
-    /// [`Self::external_product_to`]. The context accumulator takes the role
-    /// of output and must have the corresponding transform-domain layout.
-    pub(super) fn external_product_to_accumulator<T, Table, A>(
-        &self,
-        input: &Ntru<A>,
-        basis: &ApproxSignedBasis<T>,
-        fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierNtruExternalProductContext<T>,
-    ) where
-        T: TorusFftValue,
-        Table: FftTable,
-        A: Data<Elem = T>,
-        S: Data,
-    {
-        fourier_gadget_product_to_accumulator(self.as_ref(), input.as_ref(), basis, fft, context);
-    }
-
-    /// Adds `self external_product input` to the existing Fourier accumulator.
-    /// This does not clear the accumulator; the caller must initialize it first.
-    ///
-    /// # Correctness
-    ///
-    /// The input, gadget, basis, table, and context must satisfy
-    /// [`Self::external_product_to`]. The context accumulator takes the role
-    /// of output and must have the corresponding transform-domain layout.
-    pub(super) fn external_product_add_assign<T, Table, A>(
-        &self,
-        input: &Ntru<A>,
-        basis: &ApproxSignedBasis<T>,
-        fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierNtruExternalProductContext<T>,
-    ) where
-        T: TorusFftValue,
-        Table: FftTable,
-        A: Data<Elem = T>,
-        S: Data,
-    {
-        fourier_gadget_product_add_assign(self.as_ref(), input.as_ref(), basis, fft, context);
     }
 
     /// Applies this NGSW external product to every NTRU level in `input`.
@@ -133,7 +84,6 @@ where
         Table: FftTable,
         A: Data<Elem = T>,
         C: DataMut<Elem = T>,
-        S: Data,
     {
         let poly_length = context.poly_length();
         let nlev_length = basis.decompose_length() * poly_length;
@@ -144,7 +94,14 @@ where
             .iter_ntru(poly_length)
             .zip(output.iter_ntru_mut(poly_length))
         {
-            self.external_product_to_accumulator(&input_level, basis, fft, context);
+            context.fourier_accumulator.set_zero();
+            accumulate_fourier_gadget_product(
+                self.as_ref(),
+                input_level.as_ref(),
+                basis,
+                fft,
+                context,
+            );
             context
                 .fourier_accumulator
                 .write_torus_form(&mut output_level, fft);
@@ -194,65 +151,9 @@ where
         S: Data<Elem = T>,
     {
         debug_assert_eq!(output.as_ref().len(), context.poly_length());
-        self.external_product_to_accumulator(input, basis, modulus, ntt, context);
+        context.ntt_accumulator.set_zero();
+        accumulate_ntt_gadget_product(self.as_ref(), input.as_ref(), basis, modulus, ntt, context);
         context.ntt_accumulator.write_coeff_form(output, ntt);
-    }
-
-    /// Clears the NTT accumulator, then stores `self external_product input` in it.
-    /// The output remains in NTT form for the caller to combine or transform back.
-    ///
-    /// # Correctness
-    ///
-    /// The input, gadget, basis, table, and context must satisfy
-    /// [`Self::external_product_to`]. The context accumulator takes the role
-    /// of output and must have the corresponding transform-domain layout.
-    pub(super) fn external_product_to_accumulator<T, M, Table, A>(
-        &self,
-        input: &Ntru<A>,
-        basis: &ApproxSignedBasis<T>,
-        modulus: M,
-        ntt: &Table,
-        context: &mut NttNtruExternalProductContext<T>,
-    ) where
-        T: FheUint,
-        M: FieldContext<T>,
-        Table: NttTable<ValueT = T>,
-        A: Data<Elem = T>,
-        S: Data<Elem = T>,
-    {
-        ntt_gadget_product_to_accumulator(
-            self.as_ref(),
-            input.as_ref(),
-            basis,
-            modulus,
-            ntt,
-            context,
-        );
-    }
-
-    /// Adds `self external_product input` to the existing NTT accumulator.
-    /// This does not clear the accumulator; the caller must initialize it first.
-    ///
-    /// # Correctness
-    ///
-    /// The input, gadget, basis, table, and context must satisfy
-    /// [`Self::external_product_to`]. The context accumulator takes the role
-    /// of output and must have the corresponding transform-domain layout.
-    pub(super) fn external_product_add_assign<T, M, Table, A>(
-        &self,
-        input: &Ntru<A>,
-        basis: &ApproxSignedBasis<T>,
-        modulus: M,
-        ntt: &Table,
-        context: &mut NttNtruExternalProductContext<T>,
-    ) where
-        T: FheUint,
-        M: FieldContext<T>,
-        Table: NttTable<ValueT = T>,
-        A: Data<Elem = T>,
-        S: Data<Elem = T>,
-    {
-        ntt_gadget_product_add_assign(self.as_ref(), input.as_ref(), basis, modulus, ntt, context);
     }
 
     /// Applies this NGSW external product to every NTRU level in `input`.
@@ -293,7 +194,15 @@ where
             .iter_ntru(poly_length)
             .zip(output.iter_ntru_mut(poly_length))
         {
-            self.external_product_to_accumulator(&input_level, basis, modulus, ntt, context);
+            context.ntt_accumulator.set_zero();
+            accumulate_ntt_gadget_product(
+                self.as_ref(),
+                input_level.as_ref(),
+                basis,
+                modulus,
+                ntt,
+                context,
+            );
             context
                 .ntt_accumulator
                 .write_coeff_form(&mut output_level, ntt);

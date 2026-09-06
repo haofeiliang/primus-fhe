@@ -33,7 +33,7 @@ use primus_rns::RNSBase;
 
 impl<S> FourierGgsw<S>
 where
-    S: RawData<Elem = Complex64>,
+    S: Data<Elem = Complex64>,
 {
     /// Computes `output = self external_product input`.
     ///
@@ -67,35 +67,11 @@ where
         Table: FftTable,
         A: Data<Elem = T>,
         C: DataMut<Elem = T>,
-        S: Data<Elem = Complex64>,
     {
         debug_assert_eq!(output.as_ref().len(), context.size().glwe_size().glwe_len());
-        self.external_product_to_accumulator(input, basis, fft, context);
-        context.fourier_accumulator.write_torus_form(output, fft);
-    }
-
-    /// Clears the Fourier accumulator, then stores `self external_product input` in it.
-    /// The output remains in Fourier form for the caller to combine or transform back.
-    ///
-    /// # Correctness
-    ///
-    /// The input, gadget, basis, table, and context must satisfy
-    /// [`Self::external_product_to`]. The context accumulator takes the role
-    /// of output and must have the corresponding transform-domain layout.
-    pub(super) fn external_product_to_accumulator<T, Table, A>(
-        &self,
-        input: &TorusGlwe<A>,
-        basis: &ApproxSignedBasis<T>,
-        fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierGlweExternalProductContext<T>,
-    ) where
-        T: TorusFftValue,
-        Table: FftTable,
-        A: Data<Elem = T>,
-        S: Data<Elem = Complex64>,
-    {
         context.fourier_accumulator.set_zero();
-        self.external_product_add_assign(input, basis, fft, context);
+        self.accumulate_external_product(input, basis, fft, context);
+        context.fourier_accumulator.write_torus_form(output, fft);
     }
 
     /// Adds `self external_product input` to the existing Fourier accumulator.
@@ -106,7 +82,7 @@ where
     /// The input, gadget, basis, table, and context must satisfy
     /// [`Self::external_product_to`]. The context accumulator takes the role
     /// of output and must have the corresponding transform-domain layout.
-    pub(super) fn external_product_add_assign<T, Table, A>(
+    pub(super) fn accumulate_external_product<T, Table, A>(
         &self,
         input: &TorusGlwe<A>,
         basis: &ApproxSignedBasis<T>,
@@ -116,7 +92,6 @@ where
         T: TorusFftValue,
         Table: FftTable,
         A: Data<Elem = T>,
-        S: Data<Elem = Complex64>,
     {
         let size = context.size();
         let glwe_size = size.glwe_size();
@@ -201,7 +176,8 @@ where
     {
         debug_assert_eq!(output.as_ref().len(), context.size().glwe_size().glwe_len());
         let mut context = context.as_mut();
-        self.external_product_to_accumulator(input, basis, modulus, ntt, &mut context);
+        context.ntt_accumulator.set_zero();
+        self.accumulate_external_product(input, basis, modulus, ntt, &mut context);
         context.ntt_accumulator.write_coeff_form(output, ntt);
     }
 
@@ -237,33 +213,8 @@ where
     {
         debug_assert_eq!(output.as_ref().len(), context.size().glwe_size().glwe_len());
         let mut context = context.as_mut_with_accumulator(output);
-        self.external_product_to_accumulator(input, basis, modulus, ntt, &mut context);
-    }
-
-    /// Clears the NTT accumulator, then stores `self external_product input` in it.
-    /// The output remains in NTT form for the caller to combine or transform back.
-    ///
-    /// # Correctness
-    ///
-    /// The input, gadget, basis, table, and context must satisfy
-    /// [`Self::external_product_to`]. The context accumulator takes the role
-    /// of output and must have the corresponding transform-domain layout.
-    pub(super) fn external_product_to_accumulator<T, M, Table, A>(
-        &self,
-        input: &Glwe<A>,
-        basis: &ApproxSignedBasis<T>,
-        modulus: M,
-        ntt: &Table,
-        context: &mut NttGlweExternalProductContextRefMut<'_, T>,
-    ) where
-        T: FheUint,
-        M: FieldContext<T>,
-        Table: NttTable<ValueT = T>,
-        A: Data<Elem = T>,
-        S: Data<Elem = T>,
-    {
         context.ntt_accumulator.set_zero();
-        self.external_product_add_assign(input, basis, modulus, ntt, context);
+        self.accumulate_external_product(input, basis, modulus, ntt, &mut context);
     }
 
     /// Adds `self external_product input` to the existing NTT accumulator.
@@ -274,7 +225,7 @@ where
     /// The input, gadget, basis, table, and context must satisfy
     /// [`Self::external_product_to`]. The context accumulator takes the role
     /// of output and must have the corresponding transform-domain layout.
-    pub(super) fn external_product_add_assign<T, M, Table, A>(
+    pub(super) fn accumulate_external_product<T, M, Table, A>(
         &self,
         input: &Glwe<A>,
         basis: &ApproxSignedBasis<T>,

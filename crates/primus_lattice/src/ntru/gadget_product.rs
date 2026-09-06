@@ -8,30 +8,6 @@ use primus_ntt::NttTable;
 use primus_poly::{FourierPolynomial, NttPolynomial};
 use primus_reduce::FieldContext;
 
-/// Clears the Fourier accumulator, then stores the gadget product of `gadget` and `input` in it.
-///
-/// # Correctness
-///
-/// Input contains `N = context.poly_length()` canonical coefficients. The
-/// gadget has `basis.decompose_length()` complete levels in decomposition
-/// order, each of length `N / 2` in the FFT table's normalized torus
-/// representation. The basis uses the native modulus, and FFT/context
-/// polynomial lengths and packing agree.
-/// These conditions are caller obligations, with selected debug diagnostics.
-pub(crate) fn fourier_gadget_product_to_accumulator<T, Table>(
-    gadget: &[Complex64],
-    input: &[T],
-    basis: &ApproxSignedBasis<T>,
-    fft: &mut FftEngine<'_, Table>,
-    context: &mut FourierNtruExternalProductContext<T>,
-) where
-    T: TorusFftValue,
-    Table: FftTable,
-{
-    context.fourier_accumulator.set_zero();
-    fourier_gadget_product_add_assign(gadget, input, basis, fft, context);
-}
-
 /// Adds the gadget product of `gadget` and `input` to the existing Fourier accumulator.
 /// This does not clear the accumulator; the caller must initialize it first.
 ///
@@ -43,7 +19,7 @@ pub(crate) fn fourier_gadget_product_to_accumulator<T, Table>(
 /// representation. The basis uses the native modulus, and FFT/context
 /// polynomial lengths and packing agree.
 /// These conditions are caller obligations, with selected debug diagnostics.
-pub(crate) fn fourier_gadget_product_add_assign<T, Table>(
+pub(crate) fn accumulate_fourier_gadget_product<T, Table>(
     gadget: &[Complex64],
     input: &[T],
     basis: &ApproxSignedBasis<T>,
@@ -77,32 +53,6 @@ pub(crate) fn fourier_gadget_product_add_assign<T, Table>(
     }
 }
 
-/// Clears the NTT accumulator, then stores the gadget product of `gadget` and `input` in it.
-///
-/// # Correctness
-///
-/// Input contains `N = context.poly_length()` canonical coefficients. The
-/// gadget has `basis.decompose_length()` complete levels in decomposition
-/// order, each of length `N` in the NTT table's evaluation order.
-/// Gadget values are canonical. Basis, table, and arithmetic modulus agree,
-/// and the table polynomial length equals `N`.
-/// These conditions are caller obligations, with selected debug diagnostics.
-pub(crate) fn ntt_gadget_product_to_accumulator<T, M, Table>(
-    gadget: &[T],
-    input: &[T],
-    basis: &ApproxSignedBasis<T>,
-    modulus: M,
-    ntt: &Table,
-    context: &mut NttNtruExternalProductContext<T>,
-) where
-    T: FheUint,
-    M: FieldContext<T>,
-    Table: NttTable<ValueT = T>,
-{
-    context.ntt_accumulator.set_zero();
-    ntt_gadget_product_add_assign(gadget, input, basis, modulus, ntt, context);
-}
-
 /// Adds the gadget product of `gadget` and `input` to the existing NTT accumulator.
 /// This does not clear the accumulator; the caller must initialize it first.
 ///
@@ -114,7 +64,7 @@ pub(crate) fn ntt_gadget_product_to_accumulator<T, M, Table>(
 /// Gadget values are canonical. Basis, table, and arithmetic modulus agree,
 /// and the table polynomial length equals `N`.
 /// These conditions are caller obligations, with selected debug diagnostics.
-pub(crate) fn ntt_gadget_product_add_assign<T, M, Table>(
+pub(crate) fn accumulate_ntt_gadget_product<T, M, Table>(
     gadget: &[T],
     input: &[T],
     basis: &ApproxSignedBasis<T>,

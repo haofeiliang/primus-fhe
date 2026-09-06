@@ -1,4 +1,4 @@
-//! NLev external products and shared NTRU gadget-product kernels.
+//! NLev external products using the shared scalar NTRU gadget kernels.
 
 use primus_data::{Data, DataMut, RawData};
 use primus_decompose::primitive::ApproxSignedBasis;
@@ -12,9 +12,7 @@ use crate::{
     context::{FourierNtruExternalProductContext, NttNtruExternalProductContext},
     ntru::{
         Ntru,
-        gadget_product::{
-            fourier_gadget_product_to_accumulator, ntt_gadget_product_to_accumulator,
-        },
+        gadget_product::{accumulate_fourier_gadget_product, accumulate_ntt_gadget_product},
     },
 };
 
@@ -22,7 +20,7 @@ use super::{FourierNlev, NttNlev};
 
 impl<S> FourierNlev<S>
 where
-    S: RawData<Elem = Complex64>,
+    S: Data<Elem = Complex64>,
 {
     /// Computes the gadget external product `polynomial odot self`.
     ///
@@ -54,16 +52,10 @@ where
         Table: FftTable,
         A: Data<Elem = T>,
         C: DataMut<Elem = T>,
-        S: Data,
     {
         debug_assert_eq!(output.as_ref().len(), context.poly_length());
-        fourier_gadget_product_to_accumulator(
-            self.as_ref(),
-            polynomial.as_ref(),
-            basis,
-            fft,
-            context,
-        );
+        context.fourier_accumulator.set_zero();
+        accumulate_fourier_gadget_product(self.as_ref(), polynomial.as_ref(), basis, fft, context);
         context.fourier_accumulator.write_torus_form(output, fft);
     }
 }
@@ -108,7 +100,8 @@ where
         S: Data<Elem = T>,
     {
         debug_assert_eq!(output.as_ref().len(), context.poly_length());
-        ntt_gadget_product_to_accumulator(
+        context.ntt_accumulator.set_zero();
+        accumulate_ntt_gadget_product(
             self.as_ref(),
             polynomial.as_ref(),
             basis,
