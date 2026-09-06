@@ -1,8 +1,7 @@
-use itertools::izip;
 use primus_data::{Data, DataMut, DataOwned, RawData};
-use primus_factor::{FactorSliceOps, ShoupFactor};
+use primus_factor::ShoupFactor;
 use primus_integer::FheUint;
-use primus_poly::{ArrayBase, DcrtPolynomial, DcrtPolynomialIter, DcrtPolynomialIterMut};
+use primus_poly::{DcrtPolynomial, DcrtPolynomialIter, DcrtPolynomialIterMut};
 use primus_reduce::FieldContext;
 
 use super::CrtGlwe;
@@ -26,6 +25,9 @@ impl_iters!(DcrtGlwe);
 impl_iter_sub_structure!(DcrtGlwe, DcrtPolynomial, dcrt_poly);
 
 impl_basic_operation_multiple_modulus!(DcrtGlwe);
+impl_neg_multiple_modulus!(DcrtGlwe);
+impl_mul_scalar_multiple_modulus!(DcrtGlwe);
+impl_mul_factor_multiple_modulus!(DcrtGlwe);
 
 impl_crt_intt!(DcrtGlwe, CrtGlwe);
 
@@ -57,55 +59,11 @@ where
         )
     }
 
-    /// Negates each DCRT polynomial component in place.
-    pub fn neg_assign<M>(&mut self, poly_length: usize, dcrt_poly_len: usize, moduli: &[M])
-    where
-        M: FieldContext<T>,
-    {
-        self.iter_dcrt_poly_mut(dcrt_poly_len)
-            .for_each(|mut dcrt_poly| {
-                dcrt_poly.neg_assign(poly_length, moduli);
-            });
-    }
-
-    /// Multiplies each DCRT polynomial component by `scalar_residue` in place.
-    pub fn mul_scalar_assign<M>(
-        &mut self,
-        scalar_residue: &[T],
-        poly_length: usize,
-        dcrt_poly_len: usize,
-        moduli: &[M],
-    ) where
-        M: FieldContext<T>,
-    {
-        self.iter_dcrt_poly_mut(dcrt_poly_len)
-            .for_each(|mut dcrt_poly| {
-                dcrt_poly.mul_scalar_assign(scalar_residue, poly_length, moduli);
-            });
-    }
-
-    /// Performs `self *= scalar` according to `moduli`.
-    #[inline]
-    pub fn mul_factor_assign<F>(
-        &mut self,
-        scalar: &[F],
-        poly_length: usize,
-        dcrt_poly_len: usize,
-        moduli: &[T],
-    ) where
-        F: Copy + FactorSliceOps<T>,
-    {
-        self.iter_dcrt_poly_mut(dcrt_poly_len)
-            .for_each(|mut dcrt_poly| {
-                dcrt_poly.mul_factor_assign(scalar, poly_length, moduli);
-            });
-    }
-
-    /// Performs `self += dcrt_glwe * dcrt_poly` in place.
+    /// Performs `self += rhs * poly` in place.
     pub fn add_mul_dcrt_polynomial_assign<M, A, B>(
         &mut self,
-        dcrt_glwe: &DcrtGlwe<A>,
-        dcrt_poly: &DcrtPolynomial<B>,
+        rhs: &DcrtGlwe<A>,
+        poly: &DcrtPolynomial<B>,
         poly_length: usize,
         moduli: &[M],
     ) where
@@ -113,12 +71,12 @@ where
         A: Data<Elem = T>,
         B: Data<Elem = T>,
     {
-        let dcrt_poly_len = dcrt_poly.dcrt_poly_length();
+        let dcrt_poly_len = poly.dcrt_poly_length();
 
         self.iter_dcrt_poly_mut(dcrt_poly_len)
-            .zip(dcrt_glwe.iter_dcrt_poly(dcrt_poly_len))
+            .zip(rhs.iter_dcrt_poly(dcrt_poly_len))
             .for_each(|(mut x, y)| {
-                x.add_mul_assign(&y, dcrt_poly, poly_length, moduli);
+                x.add_mul_assign(&y, poly, poly_length, moduli);
             });
     }
 
@@ -195,25 +153,6 @@ where
             DcrtPolynomialIter::new(mask, dcrt_poly_len),
             DcrtPolynomial(body),
         )
-    }
-
-    /// Multiplies this DCRT GLWE by a Shoup factor and writes the output into `output`.
-    pub fn mul_factor_to<F, A>(
-        &self,
-        scalar: &[F],
-        output: &mut DcrtGlwe<A>,
-        poly_length: usize,
-        dcrt_poly_len: usize,
-        moduli: &[T],
-    ) where
-        F: Copy + FactorSliceOps<T>,
-        A: DataMut<Elem = T>,
-    {
-        self.iter_dcrt_poly(dcrt_poly_len)
-            .zip(output.iter_dcrt_poly_mut(dcrt_poly_len))
-            .for_each(|(in_dcrt_poly, mut out_dcrt_poly)| {
-                in_dcrt_poly.mul_factor_to(scalar, &mut out_dcrt_poly, poly_length, moduli);
-            });
     }
 
     /// Performs a multiplication on the `self` [`DcrtGlwe<S>`] with another `dcrt_polynomial` [`DcrtPolynomial<A>`],

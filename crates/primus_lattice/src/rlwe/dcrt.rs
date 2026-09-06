@@ -1,7 +1,6 @@
-use itertools::izip;
 use primus_data::{Data, DataMut, DataOwned, RawData};
 use primus_integer::FheUint;
-use primus_poly::{ArrayBase, DcrtPolynomial, DcrtPolynomialIter, DcrtPolynomialIterMut};
+use primus_poly::{DcrtPolynomial, DcrtPolynomialIter, DcrtPolynomialIterMut};
 use primus_reduce::FieldContext;
 
 use super::CrtRlwe;
@@ -28,6 +27,9 @@ impl_iters!(DcrtRlwe);
 impl_iter_sub_structure!(DcrtRlwe, DcrtPolynomial, dcrt_poly);
 
 impl_basic_operation_multiple_modulus!(DcrtRlwe);
+impl_neg_multiple_modulus!(DcrtRlwe);
+impl_mul_scalar_multiple_modulus!(DcrtRlwe);
+impl_mul_factor_multiple_modulus!(DcrtRlwe);
 
 impl_crt_intt!(DcrtRlwe, CrtRlwe);
 

@@ -1,11 +1,7 @@
-use itertools::izip;
 use primus_data::{Data, DataMut, DataOwned, RawData};
-use primus_factor::FactorSliceOps;
 use primus_integer::FheUint;
 use primus_ntt::{DcrtTable, NttTable};
-use primus_poly::{
-    ArrayBase, CrtPolynomial, CrtPolynomialIter, CrtPolynomialIterMut, DcrtPolynomial,
-};
+use primus_poly::{CrtPolynomial, CrtPolynomialIter, CrtPolynomialIterMut, DcrtPolynomial};
 use primus_reduce::FieldContext;
 
 use super::DcrtGlwe;
@@ -29,6 +25,9 @@ impl_iters!(CrtGlwe);
 impl_iter_sub_structure!(CrtGlwe, CrtPolynomial, crt_poly);
 
 impl_basic_operation_multiple_modulus!(CrtGlwe);
+impl_neg_multiple_modulus!(CrtGlwe);
+impl_mul_scalar_multiple_modulus!(CrtGlwe);
+impl_mul_factor_multiple_modulus!(CrtGlwe);
 
 impl_crt_ntt!(CrtGlwe, DcrtGlwe);
 
@@ -58,22 +57,6 @@ where
             CrtPolynomialIterMut::new(mask, crt_poly_len),
             CrtPolynomial(body),
         )
-    }
-
-    /// Multiplies each CRT polynomial component by `scalar_residue` in place.
-    pub fn mul_scalar_assign<M>(
-        &mut self,
-        scalar_residue: &[T],
-        poly_length: usize,
-        crt_poly_len: usize,
-        moduli: &[M],
-    ) where
-        M: FieldContext<T>,
-    {
-        self.iter_crt_poly_mut(crt_poly_len)
-            .for_each(|mut crt_poly| {
-                crt_poly.mul_scalar_assign(scalar_residue, poly_length, moduli);
-            });
     }
 
     /// Perform `self = self * X^exponent`.
@@ -141,44 +124,6 @@ where
             CrtPolynomialIter::new(mask, crt_poly_len),
             CrtPolynomial(body),
         )
-    }
-
-    /// Multiplies this CRT GLWE by a scalar residue and writes the output into `output`.
-    pub fn mul_scalar_to<M, A>(
-        &self,
-        scalar_residue: &[T],
-        output: &mut CrtGlwe<A>,
-        poly_length: usize,
-        crt_poly_len: usize,
-        moduli: &[M],
-    ) where
-        M: FieldContext<T>,
-        A: DataMut<Elem = T>,
-    {
-        self.iter_crt_poly(crt_poly_len)
-            .zip(output.iter_crt_poly_mut(crt_poly_len))
-            .for_each(|(in_crt_poly, mut out_crt_poly)| {
-                in_crt_poly.mul_scalar_to(scalar_residue, &mut out_crt_poly, poly_length, moduli);
-            });
-    }
-
-    /// Multiplies this CRT GLWE by a Shoup factor and writes the output into `output`.
-    pub fn mul_factor_to<F, A>(
-        &self,
-        scalar: &[F],
-        output: &mut CrtGlwe<A>,
-        poly_length: usize,
-        crt_poly_len: usize,
-        moduli: &[T],
-    ) where
-        F: Copy + FactorSliceOps<T>,
-        A: DataMut<Elem = T>,
-    {
-        self.iter_crt_poly(crt_poly_len)
-            .zip(output.iter_crt_poly_mut(crt_poly_len))
-            .for_each(|(in_crt_poly, mut out_crt_poly)| {
-                in_crt_poly.mul_factor_to(scalar, &mut out_crt_poly, poly_length, moduli);
-            });
     }
 
     /// Performs a multiplication on the `self` [`CrtGlwe<S>`] with another `dcrt_poly` [`DcrtPolynomial<A>`],
