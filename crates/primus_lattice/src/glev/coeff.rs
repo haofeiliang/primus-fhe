@@ -29,5 +29,6 @@ impl_iter_sub_structure!(Glev, Glwe);
 impl_basic_operation_single_modulus!(Glev);
 impl_mul_scalar_single_modulus!(Glev);
 impl_mul_factor_single_modulus!(Glev);
+impl_add_mul_monomial_single_modulus!(Glev);
 
 impl_ntt!(Glev, NttGlev);

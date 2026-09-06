@@ -2,8 +2,8 @@ use primus_data::{Data, DataMut};
 use primus_factor::FactorSliceOps;
 use primus_integer::FheUint;
 use primus_reduce::{
-    ReduceMul, ReduceMulAdd, ReduceMulAddSlice, ReduceMulSlice, ReduceNegSlice, ReduceSubAssign,
-    RingContext,
+    ReduceAddSlice, ReduceMul, ReduceMulAdd, ReduceMulAddSlice, ReduceMulSlice, ReduceNegSlice,
+    ReduceSubAssign, ReduceSubSlice, RingContext,
 };
 
 use super::Polynomial;
@@ -13,6 +13,39 @@ where
     S: DataMut<Elem = T>,
     T: FheUint,
 {
+    /// Accumulates `self += rhs * X^exponent` in `Z_q[X]/(X^N + 1)`.
+    ///
+    /// Both polynomials must have the same nonzero power-of-two length `N`.
+    /// `exponent` must be in `[0, 2N)`. Input and accumulator must be canonical
+    /// residues; results are canonical. No temporary polynomial is allocated.
+    #[inline]
+    pub fn add_mul_monomial_assign<M, A>(
+        &mut self,
+        rhs: &Polynomial<A>,
+        exponent: usize,
+        modulus: M,
+    ) where
+        M: Copy + ReduceAddSlice<T> + ReduceSubSlice<T>,
+        A: Data<Elem = T>,
+    {
+        let n = self.poly_length();
+        debug_assert!(n > 0 && n.is_power_of_two(), "invalid polynomial length");
+        debug_assert_eq!(rhs.poly_length(), n, "polynomial length mismatch");
+        debug_assert!(exponent / n < 2, "monomial exponent must be less than 2N");
+        let negate = exponent >= n;
+        let shift = if negate { exponent - n } else { exponent };
+        let (head, tail) = rhs.as_ref().split_at(n - shift);
+        let (wrapped, rest) = self.as_mut().split_at_mut(shift);
+        // X^N = -1: the wrapped tail and the remaining head have opposite signs.
+        if negate {
+            modulus.reduce_add_slice_assign(wrapped, tail);
+            modulus.reduce_sub_slice_assign(rest, head);
+        } else {
+            modulus.reduce_sub_slice_assign(wrapped, tail);
+            modulus.reduce_add_slice_assign(rest, head);
+        }
+    }
+
     /// Performs `self * scalar` according to `modulus`.
     #[inline]
     pub fn mul_scalar<M>(mut self, scalar: T, modulus: M) -> Self

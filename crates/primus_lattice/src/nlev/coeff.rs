@@ -33,5 +33,6 @@ impl_iter_sub_structure!(Nlev, Ntru);
 impl_basic_operation_single_modulus!(Nlev);
 impl_mul_scalar_single_modulus!(Nlev);
 impl_mul_factor_single_modulus!(Nlev);
+impl_add_mul_monomial_single_modulus!(Nlev);
 
 impl_ntt!(Nlev, NttNlev);

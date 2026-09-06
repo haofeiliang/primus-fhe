@@ -180,4 +180,22 @@ where
         ntt_table.transform_slice(self.as_mut());
         NttNtru::new(self.0)
     }
+
+    /// Accumulates `self += rhs * X^exponent` in `Z_q[X]/(X^N + 1)`.
+    ///
+    /// Both ciphertexts must contain a polynomial of the same nonzero power-of-two
+    /// length `N`, use compatible keys, and contain canonical residues. `exponent`
+    /// must be in `[0, 2N)`. Results are canonical; no temporary storage is allocated.
+    #[inline]
+    pub fn add_mul_monomial_assign<M, A>(&mut self, rhs: &Ntru<A>, exponent: usize, modulus: M)
+    where
+        M: Copy + primus_reduce::ReduceAddSlice<T> + primus_reduce::ReduceSubSlice<T>,
+        A: Data<Elem = T>,
+    {
+        Polynomial(self.as_mut()).add_mul_monomial_assign(
+            &Polynomial(rhs.as_ref()),
+            exponent,
+            modulus,
+        );
+    }
 }

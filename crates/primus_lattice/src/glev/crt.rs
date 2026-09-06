@@ -34,5 +34,6 @@ impl_basic_operation_multiple_modulus!(CrtGlev);
 impl_neg_multiple_modulus!(CrtGlev);
 impl_mul_scalar_multiple_modulus!(CrtGlev);
 impl_mul_factor_multiple_modulus!(CrtGlev);
+impl_add_mul_monomial_multiple_modulus!(CrtGlev);
 
 impl_crt_ntt!(CrtGlev, DcrtGlev);

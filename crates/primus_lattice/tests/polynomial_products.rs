@@ -1,4 +1,7 @@
-use primus_lattice::{glwe::NttGlwe, rlwe::NttRlwe};
+use primus_lattice::{
+    ggsw::NttGgsw, glev::NttGlev, glwe::NttGlwe, ngsw::NttNgsw, nlev::NttNlev, ntru::NttNtru,
+    rgsw::NttRgsw, rlev::NttRlev, rlwe::NttRlwe,
+};
 use primus_modulus::BarrettModulus;
 use primus_poly::NttPolynomial;
 
@@ -29,12 +32,22 @@ fn ntt_products_overwrite_or_accumulate_each_component() {
     }
     check!(NttGlwe, 3);
     check!(NttRlwe, 2);
+    check!(NttNtru, 1);
+    check!(NttGlev, 2 * 3);
+    check!(NttGgsw, 3 * 2 * 3);
+    check!(NttRlev, 2 * 2);
+    check!(NttRgsw, 2 * 2 * 2);
+    check!(NttNlev, 2);
+    check!(NttNgsw, 2);
 }
 
 #[cfg(feature = "rns")]
 #[test]
 fn dcrt_products_preserve_component_and_modulus_order() {
-    use primus_lattice::{ggsw::DcrtGgsw, glev::DcrtGlev, glwe::DcrtGlwe, rlwe::DcrtRlwe};
+    use primus_lattice::{
+        ggsw::DcrtGgsw, glev::DcrtGlev, glwe::DcrtGlwe, rgsw::DcrtRgsw, rlev::DcrtRlev,
+        rlwe::DcrtRlwe,
+    };
     use primus_poly::DcrtPolynomial;
     const N: usize = 2;
     let qs = [17u32, 97];
@@ -72,4 +85,6 @@ fn dcrt_products_preserve_component_and_modulus_order() {
     // Two gadget levels, three GLWE polynomials, and three GGSW rows.
     check!(DcrtGlev, 2 * 3);
     check!(DcrtGgsw, 3 * 2 * 3);
+    check!(DcrtRlev, 2 * 2);
+    check!(DcrtRgsw, 2 * 2 * 2);
 }

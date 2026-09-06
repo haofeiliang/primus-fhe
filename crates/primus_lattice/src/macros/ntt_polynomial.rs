@@ -35,6 +35,10 @@ macro_rules! impl_ntt_polynomial_mul {
 
             /// Accumulates `self += rhs * poly` without clearing `self`.
             ///
+            /// Ciphertexts must use compatible keys and matching layouts, including
+            /// gadget bases and level/row order. The same polynomial scales every
+            /// component; no gadget decomposition or level reduction is performed.
+            ///
             /// Operands must use the same NTT representation and modulus.
             /// Ciphertexts must have equal lengths and contain whole polynomials
             /// matching `poly`; values must be valid inputs to the modular product.

@@ -29,5 +29,6 @@ impl_iter_sub_structure!(Rlev, Rlwe);
 impl_basic_operation_single_modulus!(Rlev);
 impl_mul_scalar_single_modulus!(Rlev);
 impl_mul_factor_single_modulus!(Rlev);
+impl_add_mul_monomial_single_modulus!(Rlev);
 
 impl_ntt!(Rlev, NttRlev);

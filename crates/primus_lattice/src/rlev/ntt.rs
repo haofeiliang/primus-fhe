@@ -29,5 +29,6 @@ impl_iter_sub_structure!(NttRlev, NttRlwe);
 impl_basic_operation_single_modulus!(NttRlev);
 impl_mul_scalar_single_modulus!(NttRlev);
 impl_mul_factor_single_modulus!(NttRlev);
+impl_ntt_polynomial_mul!(NttRlev);
 
 impl_intt!(NttRlev, Rlev);

@@ -8,6 +8,7 @@
 //!
 //! - [`common`]: constructors, byte I/O, zero initialization
 //! - [`iter`], [`rlwe`]: ciphertext iterators and RLWE polynomial views
+//! - [`monomial`]: coefficient-domain monomial accumulation
 //! - [`ntt_polynomial`], [`dcrt_polynomial`]: same-domain polynomial products
 //! - [`ops`], [`rns_ops`], [`fourier_ops`]: representation-specific arithmetic
 //! - [`ntt`], [`fourier`]: representation conversions and Fourier storage
@@ -28,6 +29,8 @@ mod fourier_ops;
 mod ntt;
 #[macro_use]
 mod ntt_polynomial;
+#[macro_use]
+mod monomial;
 #[macro_use]
 mod dcrt_polynomial;
 #[macro_use]

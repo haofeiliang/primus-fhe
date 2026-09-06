@@ -33,5 +33,6 @@ impl_basic_operation_multiple_modulus!(CrtGgsw);
 impl_neg_multiple_modulus!(CrtGgsw);
 impl_mul_scalar_multiple_modulus!(CrtGgsw);
 impl_mul_factor_multiple_modulus!(CrtGgsw);
+impl_add_mul_monomial_multiple_modulus!(CrtGgsw);
 
 impl_crt_ntt!(CrtGgsw, DcrtGgsw);

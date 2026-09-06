@@ -28,5 +28,6 @@ impl_iter_sub_structure!(NttGgsw, NttGlev);
 impl_basic_operation_single_modulus!(NttGgsw);
 impl_mul_scalar_single_modulus!(NttGgsw);
 impl_mul_factor_single_modulus!(NttGgsw);
+impl_ntt_polynomial_mul!(NttGgsw);
 
 impl_intt!(NttGgsw, Ggsw);
