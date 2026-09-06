@@ -30,32 +30,32 @@ where
     S: Data<Elem = T>,
     T: FheUint,
 {
-    /// Transforms `self` to coefficient form and stores in `result`.
+    /// Transforms `self` to coefficient form and stores in `output`.
     #[inline]
-    pub fn write_coeff_form<Table, A>(&self, result: &mut Ntru<A>, ntt_table: &Table)
+    pub fn write_coeff_form<Table, A>(&self, output: &mut Ntru<A>, ntt_table: &Table)
     where
         A: DataMut<Elem = T>,
         Table: NttTable<ValueT = T>,
     {
-        let p = result.as_mut();
+        let p = output.as_mut();
         p.copy_from_slice(self.as_ref());
         ntt_table.inverse_transform_slice(p);
     }
 
     /// Performs a modular multiplication on the `self` [`NttNtru<S>`] with another `polynomial` [`NttPolynomial`],
-    /// stores the result into `result`.
+    /// stores the output into `output`.
     #[inline]
     pub fn mul_ntt_polynomial_to<M, A, B>(
         &self,
         ntt_poly: &NttPolynomial<A>,
-        result: &mut NttNtru<B>,
+        output: &mut NttNtru<B>,
         modulus: M,
     ) where
         M: FieldContext<T>,
         A: Data<Elem = T>,
         B: DataMut<Elem = T>,
     {
-        NttPolynomial(self.as_ref()).mul_to(ntt_poly, &mut NttPolynomial(result.as_mut()), modulus);
+        NttPolynomial(self.as_ref()).mul_to(ntt_poly, &mut NttPolynomial(output.as_mut()), modulus);
     }
 }
 
@@ -103,7 +103,7 @@ where
     }
 
     /// Performs `self += ntt_ntru * ntt_poly` in place, all in the NTT domain.
-    pub fn add_ntt_ntru_mul_ntt_polynomial_assign<M, A, B>(
+    pub fn add_mul_ntt_polynomial_assign<M, A, B>(
         &mut self,
         ntt_ntru: &NttNtru<A>,
         ntt_poly: &NttPolynomial<B>,

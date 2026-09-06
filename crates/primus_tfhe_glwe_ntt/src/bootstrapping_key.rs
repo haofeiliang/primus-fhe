@@ -6,7 +6,7 @@ use primus_glwe::{NttGadgetDomain, NttGadgetEncryptContext, NttGlweSecretKey};
 use primus_integer::FheUint;
 use primus_lattice::{
     GadgetSize,
-    context::NttExternalProductContext,
+    context::NttGlweExternalProductContext,
     ggsw::{NttGgsw, NttGgswIter},
     glwe::Glwe,
     lwe::Lwe,
@@ -377,7 +377,7 @@ impl<T: FheUint> NttGlweBootstrappingKey<T> {
 /// Reusable workspace for NTT blind rotation.
 pub struct NttGlweBlindRotationContext<T: FheUint> {
     scratch: Glwe<Vec<T>>,
-    external_product: NttExternalProductContext<T>,
+    external_product: NttGlweExternalProductContext<T>,
 }
 
 impl<T: FheUint> NttGlweBlindRotationContext<T> {
@@ -385,7 +385,7 @@ impl<T: FheUint> NttGlweBlindRotationContext<T> {
     pub fn new(size: GadgetSize) -> Self {
         Self {
             scratch: Glwe::zero(size.glwe_len()),
-            external_product: NttExternalProductContext::new(size),
+            external_product: NttGlweExternalProductContext::new(size),
         }
     }
 

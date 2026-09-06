@@ -50,6 +50,14 @@ where
 
     /// Extracts the retained coefficients as a packed multi-message LWE
     /// ciphertext.
+    ///
+    /// Requires GLWE dimension one (RLWE), since [`MultiMsgLwe`] rotates its
+    /// entire mask as one polynomial when extracting subsequent messages.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `size.dimension() != 1` or `count` exceeds the number of
+    /// retained body coefficients.
     pub fn extract_first_few_lwe_locally<M>(
         self,
         count: usize,
@@ -59,6 +67,11 @@ where
     where
         M: Copy + ReduceNegSlice<T>,
     {
+        assert_eq!(
+            size.dimension(),
+            1,
+            "packed multi-message LWE extraction requires GLWE dimension 1"
+        );
         let mask_len = size.mask_len();
         let poly_length = size.poly_length();
         let message_count = self.message_count(size);

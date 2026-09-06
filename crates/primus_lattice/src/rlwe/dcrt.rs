@@ -36,12 +36,12 @@ where
     T: FheUint,
 {
     /// Performs a multiplication on the `self` [`DcrtRlwe<S>`] with another `dcrt_poly` [`DcrtPolynomial<A>`],
-    /// store the result into `result` [`DcrtRlwe<B>`].
+    /// store the output into `output` [`DcrtRlwe<B>`].
     #[inline]
     pub fn mul_dcrt_polynomial_to<M, A, B>(
         &self,
         dcrt_poly: &DcrtPolynomial<A>,
-        result: &mut DcrtRlwe<B>,
+        output: &mut DcrtRlwe<B>,
         poly_length: usize,
         moduli: &[M],
     ) where
@@ -52,7 +52,7 @@ where
         let dcrt_poly_len = dcrt_poly.dcrt_poly_length();
 
         self.iter_dcrt_poly(dcrt_poly_len)
-            .zip(result.iter_dcrt_poly_mut(dcrt_poly_len))
+            .zip(output.iter_dcrt_poly_mut(dcrt_poly_len))
             .for_each(|(a, mut b)| {
                 a.mul_to(dcrt_poly, &mut b, poly_length, moduli);
             });

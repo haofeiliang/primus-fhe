@@ -186,7 +186,7 @@ impl<T: FheUint> NttGlweKeySwitchingKey<T> {
         let mut context = context.as_mut();
         self.mask_product_to_accumulator(input_mask, domain, &mut context);
         context.accumulator.write_coeff_form(output, ntt);
-        modulus.reduce_neg_slice_assign(output.as_mut());
+        output.neg_assign(modulus);
         let (_, output_body) = output.a_b_mut_slices(poly_length);
         modulus.reduce_add_slice_assign(output_body, input_body);
     }
@@ -218,7 +218,7 @@ impl<T: FheUint> NttGlweKeySwitchingKey<T> {
         let poly_length = self.input_size.poly_length();
         let mut context = context.as_mut_with_accumulator(output);
         self.mask_product_to_accumulator(input_mask, domain, &mut context);
-        modulus.reduce_neg_slice_assign(context.accumulator.as_mut());
+        context.accumulator.neg_assign(modulus);
         let (_, output_body) = context.accumulator.a_b_mut_slices(poly_length);
         modulus.reduce_add_slice_assign(output_body, input_body.as_ref());
     }
@@ -287,8 +287,8 @@ impl<T: FheUint> NttGlweKeySwitchingKey<T> {
                 );
                 table.transform_slice(context.decomposed_ntt);
                 context.accumulator.add_mul_ntt_polynomial_assign(
-                    &NttPolynomial::new(&*context.decomposed_ntt),
                     &key_glwe,
+                    &NttPolynomial::new(&*context.decomposed_ntt),
                     modulus,
                 );
             }

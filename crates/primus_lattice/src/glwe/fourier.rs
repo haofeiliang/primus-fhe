@@ -104,10 +104,10 @@ where
     /// the accumulator GLWE accumulates the product of a decomposed FFT
     /// polynomial with a GGSW key GLWE.
     #[inline]
-    pub fn add_mul_fourier_poly_assign<A, B>(
+    pub fn add_mul_fourier_polynomial_assign<A, B>(
         &mut self,
-        poly: &FourierPolynomial<A>,
         rhs: &FourierGlwe<B>,
+        poly: &FourierPolynomial<A>,
     ) where
         A: Data<Elem = Complex64>,
         B: Data<Elem = Complex64>,

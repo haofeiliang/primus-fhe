@@ -170,12 +170,12 @@ where
     }
 
     /// Performs a multiplication on the `self` [`Rlwe<S>`] with another `ntt_polynomial` [`NttPolynomial<A>`],
-    /// store the result into `result` [`NttRlwe<B>`].
+    /// store the output into `output` [`NttRlwe<B>`].
     #[inline]
     pub fn mul_ntt_polynomial_to<M, Table, A, B>(
         &self,
         ntt_poly: &NttPolynomial<A>,
-        result: &mut NttRlwe<B>,
+        output: &mut NttRlwe<B>,
         modulus: M,
         ntt_table: &Table,
     ) where
@@ -186,9 +186,9 @@ where
     {
         let poly_length = ntt_table.poly_length();
 
-        result.0.copy_from_slice(self.as_ref());
+        output.0.copy_from_slice(self.as_ref());
 
-        result.0.chunks_exact_mut(poly_length).for_each(|poly| {
+        output.0.chunks_exact_mut(poly_length).for_each(|poly| {
             ntt_table.transform_slice(poly);
             NttPolynomial(poly).mul_assign(ntt_poly, modulus);
         });

@@ -11,7 +11,7 @@ use primus_ntt::NttTable;
 use primus_reduce::FieldContext;
 
 use crate::{
-    context::{FourierExternalProductContext, NttExternalProductContext},
+    context::{FourierGlweExternalProductContext, NttGlweExternalProductContext},
     glwe::{Glwe, TorusGlwe},
 };
 
@@ -33,7 +33,7 @@ where
         output: &mut TorusGlwe<D>,
         basis: &ApproxSignedBasis<T>,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierExternalProductContext<T>,
+        context: &mut FourierGlweExternalProductContext<T>,
     ) where
         T: TorusFftValue,
         Table: FftTable,
@@ -47,10 +47,10 @@ where
         debug_assert_eq!(ct1.as_ref().len(), glwe_len);
         debug_assert_eq!(output.as_ref().len(), glwe_len);
 
-        ct1.sub_element_wise_to(ct0, output, NativeModulus::new());
+        ct1.sub_to(ct0, output, NativeModulus::new());
         self.external_product_to_accumulator(output, basis, fft, context);
         context.fourier_accumulator.write_torus_form(output, fft);
-        output.add_element_wise_assign(ct0, NativeModulus::new());
+        output.add_assign(ct0, NativeModulus::new());
     }
 
     /// Computes a `k`-to-1 CMux with `default` as candidate zero.
@@ -69,7 +69,7 @@ where
         output: &mut TorusGlwe<D>,
         basis: &ApproxSignedBasis<T>,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierExternalProductContext<T>,
+        context: &mut FourierGlweExternalProductContext<T>,
     ) where
         T: TorusFftValue,
         Table: FftTable,
@@ -99,12 +99,12 @@ where
 
         context.fourier_accumulator.set_zero();
         for (control, candidate) in controls.zip(candidates) {
-            candidate.sub_element_wise_to(default, output, NativeModulus::new());
+            candidate.sub_to(default, output, NativeModulus::new());
             let control: &Self = control.borrow();
             control.external_product_add_assign(output, basis, fft, context);
         }
         context.fourier_accumulator.write_torus_form(output, fft);
-        output.add_element_wise_assign(default, NativeModulus::new());
+        output.add_assign(default, NativeModulus::new());
     }
 
     /// Computes `output = input + self external_product
@@ -119,7 +119,7 @@ where
         output: &mut TorusGlwe<C>,
         basis: &ApproxSignedBasis<T>,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierExternalProductContext<T>,
+        context: &mut FourierGlweExternalProductContext<T>,
     ) where
         T: TorusFftValue,
         Table: FftTable,
@@ -132,7 +132,7 @@ where
         input.mul_monomial_sub_one_to(exponent, output, poly_length, NativeModulus::new());
         self.external_product_to_accumulator(output, basis, fft, context);
         context.fourier_accumulator.write_torus_form(output, fft);
-        output.add_element_wise_assign(input, NativeModulus::new());
+        output.add_assign(input, NativeModulus::new());
     }
 }
 
@@ -154,7 +154,7 @@ where
         basis: &ApproxSignedBasis<T>,
         modulus: M,
         ntt: &Table,
-        context: &mut NttExternalProductContext<T>,
+        context: &mut NttGlweExternalProductContext<T>,
     ) where
         T: FheUint,
         M: FieldContext<T>,
@@ -169,11 +169,11 @@ where
         debug_assert_eq!(ct1.as_ref().len(), glwe_len);
         debug_assert_eq!(output.as_ref().len(), glwe_len);
 
-        ct1.sub_element_wise_to(ct0, output, modulus);
+        ct1.sub_to(ct0, output, modulus);
         let mut context = context.as_mut();
         self.external_product_to_accumulator(output, basis, modulus, ntt, &mut context);
         context.ntt_accumulator.write_coeff_form(output, ntt);
-        output.add_element_wise_assign(ct0, modulus);
+        output.add_assign(ct0, modulus);
     }
 
     /// Computes a `k`-to-1 CMux with `default` as candidate zero.
@@ -193,7 +193,7 @@ where
         basis: &ApproxSignedBasis<T>,
         modulus: M,
         ntt: &Table,
-        context: &mut NttExternalProductContext<T>,
+        context: &mut NttGlweExternalProductContext<T>,
     ) where
         T: FheUint,
         M: FieldContext<T>,
@@ -225,12 +225,12 @@ where
         let mut context = context.as_mut();
         context.ntt_accumulator.set_zero();
         for (control, candidate) in controls.zip(candidates) {
-            candidate.sub_element_wise_to(default, output, modulus);
+            candidate.sub_to(default, output, modulus);
             let control: &Self = control.borrow();
             control.external_product_add_assign(output, basis, modulus, ntt, &mut context);
         }
         context.ntt_accumulator.write_coeff_form(output, ntt);
-        output.add_element_wise_assign(default, modulus);
+        output.add_assign(default, modulus);
     }
 
     /// Computes `output = input + self external_product
@@ -246,7 +246,7 @@ where
         basis: &ApproxSignedBasis<T>,
         modulus: M,
         ntt: &Table,
-        context: &mut NttExternalProductContext<T>,
+        context: &mut NttGlweExternalProductContext<T>,
     ) where
         T: FheUint,
         M: FieldContext<T>,
@@ -261,6 +261,6 @@ where
         let mut context = context.as_mut();
         self.external_product_to_accumulator(output, basis, modulus, ntt, &mut context);
         context.ntt_accumulator.write_coeff_form(output, ntt);
-        output.add_element_wise_assign(input, modulus);
+        output.add_assign(input, modulus);
     }
 }

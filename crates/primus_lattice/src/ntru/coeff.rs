@@ -97,7 +97,7 @@ where
             .for_each(|(output, &coefficient)| *output = coefficient);
     }
 
-    /// Multiplies this ciphertext by `X^exponent` and writes the result.
+    /// Multiplies this ciphertext by `X^exponent` and writes the output.
     ///
     /// `exponent` must belong to `[0, 2N)`.
     #[inline]
@@ -129,25 +129,25 @@ where
         );
     }
 
-    /// Transforms `self` to ntt form and stores in `result`.
+    /// Transforms `self` to ntt form and stores in `output`.
     #[inline]
-    pub fn write_ntt_form<Table, A>(&self, result: &mut NttNtru<A>, ntt_table: &Table)
+    pub fn write_ntt_form<Table, A>(&self, output: &mut NttNtru<A>, ntt_table: &Table)
     where
         A: DataMut<Elem = T>,
         Table: NttTable<ValueT = T>,
     {
-        let p = result.as_mut();
+        let p = output.as_mut();
         p.copy_from_slice(self.as_ref());
         ntt_table.transform_slice(p)
     }
 
     /// Performs a multiplication on the `self` [`Ntru<S>`] with another `ntt_polynomial` [`NttPolynomial<A>`],
-    /// store the result into `result` [`NttNtru<B>`].
+    /// store the output into `output` [`NttNtru<B>`].
     #[inline]
     pub fn mul_ntt_polynomial_to<M, Table, A, B>(
         &self,
         ntt_poly: &NttPolynomial<A>,
-        result: &mut NttNtru<B>,
+        output: &mut NttNtru<B>,
         modulus: M,
         ntt_table: &Table,
     ) where
@@ -156,7 +156,7 @@ where
         A: Data<Elem = T>,
         B: DataMut<Elem = T>,
     {
-        let p = result.as_mut();
+        let p = output.as_mut();
         p.copy_from_slice(self.as_ref());
         ntt_table.transform_slice(p);
         NttPolynomial(p).mul_assign(ntt_poly, modulus);

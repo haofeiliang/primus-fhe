@@ -16,6 +16,8 @@ where
     S: RawData,
     <S as RawData>::Elem: FheUint;
 
+impl_common!(Lwe<S>);
+
 impl<S, T> Lwe<S>
 where
     S: DataOwned<Elem = T>,
@@ -72,12 +74,6 @@ where
     S: DataOwned<Elem = T>,
     T: FheUint,
 {
-    /// Creates a new [`Lwe<S, T>`].
-    #[inline]
-    pub fn new(data: S) -> Self {
-        Self(data)
-    }
-
     /// Generates a [`Lwe<S, T>`] with all values are `0`.
     #[inline]
     pub fn zero(dimension: usize) -> Self {
@@ -192,25 +188,20 @@ where
     T: FheUint,
 {
     /// Performs component-wise modular addition of two [`Lwe<S, T>`].
-    ///
-    /// # Attention
-    ///
-    /// In this function, `self` is not a reference.
-    /// If your `self` is a reference, you can use function `add_component_wise_ref`.
     #[inline]
-    pub fn add_component_wise<M, A>(mut self, rhs: &Lwe<A>, modulus: M) -> Self
+    pub fn add<M, A>(mut self, rhs: &Lwe<A>, modulus: M) -> Self
     where
         M: Copy + ReduceAddSlice<T>,
         A: Data<Elem = T>,
     {
-        self.add_component_wise_assign(rhs, modulus);
+        self.add_assign(rhs, modulus);
         self
     }
 
     /// Performs an in-place component-wise modular addition
     /// on the `self` [`Lwe<S, T>`] with another `rhs` [`Lwe<S, T>`].
     #[inline]
-    pub fn add_component_wise_assign<M, A>(&mut self, rhs: &Lwe<A>, modulus: M)
+    pub fn add_assign<M, A>(&mut self, rhs: &Lwe<A>, modulus: M)
     where
         M: Copy + ReduceAddSlice<T>,
         A: Data<Elem = T>,
@@ -219,25 +210,20 @@ where
     }
 
     /// Performs component-wise modular subtraction of two [`Lwe<S, T>`].
-    ///
-    /// # Attention
-    ///
-    /// In this function, `self` is not a reference.
-    /// If your `self` is a reference, you can use function `sub_component_wise_ref`.
     #[inline]
-    pub fn sub_component_wise<M, A>(mut self, rhs: &Lwe<A>, modulus: M) -> Self
+    pub fn sub<M, A>(mut self, rhs: &Lwe<A>, modulus: M) -> Self
     where
         M: Copy + ReduceSubSlice<T>,
         A: Data<Elem = T>,
     {
-        self.sub_component_wise_assign(rhs, modulus);
+        self.sub_assign(rhs, modulus);
         self
     }
 
     /// Performs an in-place component-wise modular subtraction
     /// on the `self` [`Lwe<S, T>`] with another `rhs` [`Lwe<S, T>`].
     #[inline]
-    pub fn sub_component_wise_assign<M, A>(&mut self, rhs: &Lwe<A>, modulus: M)
+    pub fn sub_assign<M, A>(&mut self, rhs: &Lwe<A>, modulus: M)
     where
         M: Copy + ReduceSubSlice<T>,
         A: Data<Elem = T>,
@@ -282,50 +268,32 @@ where
     S: Data<Elem = T>,
     T: FheUint,
 {
-    /// Performs component-wise modular addition of two [`Lwe<S, T>`].
+    /// Writes the component-wise modular sum `output = self + rhs`.
     ///
-    /// # Attention
-    ///
-    /// In this function, `self` is a reference.
-    /// If your `self` is not a reference, you can use function `add_component_wise`.
+    /// All ciphertexts must have the same layout and length. Coefficients must
+    /// satisfy the input range required by `modulus`.
     #[inline]
-    pub fn add_component_wise_ref<M, A, B>(&self, rhs: &Lwe<A>, modulus: M) -> Lwe<B>
+    pub fn add_to<M, A, B>(&self, rhs: &Lwe<A>, output: &mut Lwe<B>, modulus: M)
     where
         M: Copy + ReduceAddSlice<T>,
         A: Data<Elem = T>,
-        B: DataOwned<Elem = T>,
+        B: DataMut<Elem = T>,
     {
-        let len = self.0.len();
-
-        debug_assert_eq!(self.0.len(), rhs.0.len());
-
-        let mut data = vec![T::ZERO; len];
-        modulus.reduce_add_slice_to(self.0.as_slice(), rhs.0.as_slice(), &mut data);
-
-        Lwe::new(B::from_vec(data))
+        modulus.reduce_add_slice_to(self.as_ref(), rhs.as_ref(), output.as_mut());
     }
 
-    /// Performs component-wise modular subtraction of two [`Lwe<S, T>`].
+    /// Writes the component-wise modular difference `output = self - rhs`.
     ///
-    /// # Attention
-    ///
-    /// In this function, `self` is a reference.
-    /// If your `self` is not a reference, you can use function `sub_component_wise`.
+    /// All ciphertexts must have the same layout and length. Coefficients must
+    /// satisfy the input range required by `modulus`.
     #[inline]
-    pub fn sub_component_wise_ref<M, A, B>(&self, rhs: &Lwe<A>, modulus: M) -> Lwe<B>
+    pub fn sub_to<M, A, B>(&self, rhs: &Lwe<A>, output: &mut Lwe<B>, modulus: M)
     where
         M: Copy + ReduceSubSlice<T>,
         A: Data<Elem = T>,
-        B: DataOwned<Elem = T>,
+        B: DataMut<Elem = T>,
     {
-        let len = self.0.len();
-
-        debug_assert_eq!(self.0.len(), rhs.0.len());
-
-        let mut data = vec![T::ZERO; len];
-        modulus.reduce_sub_slice_to(self.0.as_slice(), rhs.0.as_slice(), &mut data);
-
-        Lwe::new(B::from_vec(data))
+        modulus.reduce_sub_slice_to(self.as_ref(), rhs.as_ref(), output.as_mut());
     }
 
     /// Performs a modular negation on the `self` [`Lwe<S, T>`].

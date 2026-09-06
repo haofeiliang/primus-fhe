@@ -14,7 +14,7 @@ use crate::{
 ///
 /// The bound [`GadgetSize`] includes the mask and body polynomial counts plus
 /// the decomposition length. Each operation overwrites every internal buffer.
-pub struct FourierExternalProductContext<T: TorusFftValue> {
+pub struct FourierGlweExternalProductContext<T: TorusFftValue> {
     size: GadgetSize,
     /// Carry bits, one per coefficient (length = `poly_length`).
     pub(crate) carries: Vec<bool>,
@@ -26,7 +26,7 @@ pub struct FourierExternalProductContext<T: TorusFftValue> {
     pub(crate) fourier_accumulator: FourierGlwe<Vec<Complex64>>,
 }
 
-impl<T: TorusFftValue> FourierExternalProductContext<T> {
+impl<T: TorusFftValue> FourierGlweExternalProductContext<T> {
     /// Creates a new context with all buffers pre-allocated.
     ///
     /// The accumulator is sized for all mask polynomials and the body.
@@ -94,7 +94,7 @@ impl<T: TorusFftValue> FourierExternalProductContext<T> {
 ///
 /// The bound [`GadgetSize`] includes the mask and body polynomial counts plus
 /// the decomposition length. Each operation overwrites every internal buffer.
-pub struct NttExternalProductContext<T: FheUint> {
+pub struct NttGlweExternalProductContext<T: FheUint> {
     size: GadgetSize,
     /// Adjusted coefficients used by decomposition (length = `poly_length`).
     pub(crate) adjusted_poly: Vec<T>,
@@ -110,7 +110,7 @@ pub struct NttExternalProductContext<T: FheUint> {
 ///
 /// The accumulator may borrow either the context-owned buffer or a
 /// caller-provided NTT GLWE output.
-pub(crate) struct NttExternalProductContextRefMut<'a, T: FheUint> {
+pub(crate) struct NttGlweExternalProductContextRefMut<'a, T: FheUint> {
     size: GadgetSize,
     /// Adjusted coefficients used by decomposition.
     pub(crate) adjusted_poly: &'a mut [T],
@@ -122,7 +122,7 @@ pub(crate) struct NttExternalProductContextRefMut<'a, T: FheUint> {
     pub(crate) ntt_accumulator: NttGlwe<&'a mut [T]>,
 }
 
-impl<T: FheUint> NttExternalProductContextRefMut<'_, T> {
+impl<T: FheUint> NttGlweExternalProductContextRefMut<'_, T> {
     /// Returns the external-product layout bound to this view.
     #[must_use]
     #[inline]
@@ -131,7 +131,7 @@ impl<T: FheUint> NttExternalProductContextRefMut<'_, T> {
     }
 }
 
-impl<T: FheUint> NttExternalProductContext<T> {
+impl<T: FheUint> NttGlweExternalProductContext<T> {
     /// Creates a context with all buffers pre-allocated.
     pub fn new(size: GadgetSize) -> Self {
         let glwe_size = size.glwe_size();
@@ -186,8 +186,8 @@ impl<T: FheUint> NttExternalProductContext<T> {
 
     /// Borrows all scratch buffers and the context-owned accumulator.
     #[inline]
-    pub(crate) fn as_mut(&mut self) -> NttExternalProductContextRefMut<'_, T> {
-        NttExternalProductContextRefMut {
+    pub(crate) fn as_mut(&mut self) -> NttGlweExternalProductContextRefMut<'_, T> {
+        NttGlweExternalProductContextRefMut {
             size: self.size,
             adjusted_poly: &mut self.adjusted_poly,
             carries: &mut self.carries,
@@ -201,11 +201,11 @@ impl<T: FheUint> NttExternalProductContext<T> {
     pub(crate) fn as_mut_with_accumulator<'a, S>(
         &'a mut self,
         accumulator: &'a mut NttGlwe<S>,
-    ) -> NttExternalProductContextRefMut<'a, T>
+    ) -> NttGlweExternalProductContextRefMut<'a, T>
     where
         S: DataMut<Elem = T>,
     {
-        NttExternalProductContextRefMut {
+        NttGlweExternalProductContextRefMut {
             size: self.size,
             adjusted_poly: &mut self.adjusted_poly,
             carries: &mut self.carries,

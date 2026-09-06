@@ -5,7 +5,7 @@ use primus_decompose::primitive::ApproxSignedBasis;
 use primus_integer::FheUint;
 use primus_lattice::{
     GadgetSize,
-    context::NttExternalProductContext,
+    context::NttGlweExternalProductContext,
     ggsw::{NttGgsw, NttGgswIter},
     glev::Glev,
 };
@@ -18,14 +18,14 @@ use crate::{GlweSecretKey, NttGadgetDomain, NttGadgetEncryptContext, NttGlweSecr
 
 /// Reusable workspace for GLev-to-GGSW scheme switching.
 pub struct NttGlweSchemeSwitchContext<T: FheUint> {
-    external_product: NttExternalProductContext<T>,
+    external_product: NttGlweExternalProductContext<T>,
 }
 
 impl<T: FheUint> NttGlweSchemeSwitchContext<T> {
     /// Creates workspace for the scheme-switching key's gadget layout.
     pub fn new(key_size: GadgetSize) -> Self {
         Self {
-            external_product: NttExternalProductContext::new(key_size),
+            external_product: NttGlweExternalProductContext::new(key_size),
         }
     }
 }

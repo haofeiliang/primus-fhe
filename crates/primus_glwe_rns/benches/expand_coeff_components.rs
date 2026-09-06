@@ -174,20 +174,20 @@ fn bench_expand_coeff_components(c: &mut Criterion) {
                 |batch| {
                     let a_0 = &mut batch.0;
                     let b_0 = &mut batch.1;
-                    a_0.sub_element_wise_to(
+                    a_0.sub_to(
                         black_box(&crt_auto_result),
                         b_0,
                         poly_length,
                         crt_poly_len,
                         &moduli,
                     );
-                    b_0.mul_monic_monomial_assign(
+                    b_0.mul_monomial_assign(
                         poly_length * 2 - 1,
                         poly_length,
                         crt_poly_len,
                         &moduli,
                     );
-                    a_0.add_element_wise_assign(
+                    a_0.add_assign(
                         black_box(&crt_auto_result),
                         poly_length,
                         crt_poly_len,

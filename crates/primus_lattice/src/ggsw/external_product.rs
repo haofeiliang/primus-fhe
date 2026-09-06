@@ -1,4 +1,4 @@
-//! GGSW external products in the Fourier and NTT domains.
+//! GGSW external products in the Fourier, NTT, and DCRT domains.
 
 use primus_data::{Data, DataMut, RawData};
 use primus_decompose::primitive::ApproxSignedBasis;
@@ -10,12 +10,26 @@ use primus_reduce::FieldContext;
 
 use crate::{
     context::{
-        FourierExternalProductContext, NttExternalProductContext, NttExternalProductContextRefMut,
+        FourierGlweExternalProductContext, NttGlweExternalProductContext,
+        NttGlweExternalProductContextRefMut,
     },
     glwe::{Glwe, NttGlwe, TorusGlwe},
 };
 
 use super::{FourierGgsw, NttGgsw};
+
+#[cfg(feature = "rns")]
+use crate::{
+    context::DcrtGlevMulContext,
+    ggsw::DcrtGgsw,
+    glwe::{CrtGlwe, DcrtGlwe},
+};
+#[cfg(feature = "rns")]
+use primus_decompose::big_integer::BigUintApproxSignedBasis;
+#[cfg(feature = "rns")]
+use primus_ntt::DcrtTable;
+#[cfg(feature = "rns")]
+use primus_rns::RNSBase;
 
 impl<S> FourierGgsw<S>
 where
@@ -32,7 +46,7 @@ where
         output: &mut TorusGlwe<C>,
         basis: &ApproxSignedBasis<T>,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierExternalProductContext<T>,
+        context: &mut FourierGlweExternalProductContext<T>,
     ) where
         T: TorusFftValue,
         Table: FftTable,
@@ -46,13 +60,13 @@ where
     }
 
     /// Clears the Fourier accumulator, then stores `self external_product input` in it.
-    /// The result remains in Fourier form for the caller to combine or transform back.
+    /// The output remains in Fourier form for the caller to combine or transform back.
     pub(super) fn external_product_to_accumulator<T, Table, A>(
         &self,
         input: &TorusGlwe<A>,
         basis: &ApproxSignedBasis<T>,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierExternalProductContext<T>,
+        context: &mut FourierGlweExternalProductContext<T>,
     ) where
         T: TorusFftValue,
         Table: FftTable,
@@ -70,7 +84,7 @@ where
         input: &TorusGlwe<A>,
         basis: &ApproxSignedBasis<T>,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierExternalProductContext<T>,
+        context: &mut FourierGlweExternalProductContext<T>,
     ) where
         T: TorusFftValue,
         Table: FftTable,
@@ -106,10 +120,12 @@ where
                     &mut context.carries,
                 );
                 fft.forward_as_integer(&context.decomposed_poly, &mut context.decomposed_fourier);
-                context.fourier_accumulator.add_mul_fourier_poly_assign(
-                    &FourierPolynomial::new(context.decomposed_fourier.as_slice()),
-                    &key_glwe,
-                );
+                context
+                    .fourier_accumulator
+                    .add_mul_fourier_polynomial_assign(
+                        &key_glwe,
+                        &FourierPolynomial::new(context.decomposed_fourier.as_slice()),
+                    );
             }
         }
     }
@@ -132,7 +148,7 @@ where
         basis: &ApproxSignedBasis<T>,
         modulus: M,
         ntt: &Table,
-        context: &mut NttExternalProductContext<T>,
+        context: &mut NttGlweExternalProductContext<T>,
     ) where
         T: FheUint,
         M: FieldContext<T>,
@@ -147,7 +163,7 @@ where
         context.ntt_accumulator.write_coeff_form(output, ntt);
     }
 
-    /// Computes `output = self external_product input` and keeps the result in
+    /// Computes `output = self external_product input` and keeps the output in
     /// the NTT domain.
     ///
     /// The input is a coefficient-domain GLWE ciphertext reduced to `[0, q)`.
@@ -161,7 +177,7 @@ where
         basis: &ApproxSignedBasis<T>,
         modulus: M,
         ntt: &Table,
-        context: &mut NttExternalProductContext<T>,
+        context: &mut NttGlweExternalProductContext<T>,
     ) where
         T: FheUint,
         M: FieldContext<T>,
@@ -176,14 +192,14 @@ where
     }
 
     /// Clears the NTT accumulator, then stores `self external_product input` in it.
-    /// The result remains in NTT form for the caller to combine or transform back.
+    /// The output remains in NTT form for the caller to combine or transform back.
     pub(super) fn external_product_to_accumulator<T, M, Table, A>(
         &self,
         input: &Glwe<A>,
         basis: &ApproxSignedBasis<T>,
         modulus: M,
         ntt: &Table,
-        context: &mut NttExternalProductContextRefMut<'_, T>,
+        context: &mut NttGlweExternalProductContextRefMut<'_, T>,
     ) where
         T: FheUint,
         M: FieldContext<T>,
@@ -203,7 +219,7 @@ where
         basis: &ApproxSignedBasis<T>,
         modulus: M,
         ntt: &Table,
-        context: &mut NttExternalProductContextRefMut<'_, T>,
+        context: &mut NttGlweExternalProductContextRefMut<'_, T>,
     ) where
         T: FheUint,
         M: FieldContext<T>,
@@ -241,8 +257,48 @@ where
                 let digit = NttPolynomial::new(&*context.decomposed_ntt);
                 context
                     .ntt_accumulator
-                    .add_mul_ntt_polynomial_assign(&digit, &key_glwe, modulus);
+                    .add_mul_ntt_polynomial_assign(&key_glwe, &digit, modulus);
             }
         }
+    }
+}
+
+#[cfg(feature = "rns")]
+impl<S, T> CrtGlwe<S>
+where
+    S: Data<Elem = T>,
+    T: FheUint,
+{
+    /// Multiplies this CRT GLWE by a DCRT GGSW ciphertext, storing the output into `output`.
+    ///
+    /// `basis` must match the ordered `rns_base`, and its radix must be
+    /// smaller than every RNS modulus for the fast centered digit lift.
+    pub fn mul_dcrt_ggsw_to<M, Table, A, B>(
+        &self,
+        dcrt_ggsw: &DcrtGgsw<A>,
+        output: &mut DcrtGlwe<B>,
+        basis: &BigUintApproxSignedBasis<T>,
+        table: &DcrtTable<Table>,
+        rns_base: &RNSBase<T, M>,
+        context: &mut DcrtGlevMulContext<T>,
+    ) where
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
+    {
+        let crt_poly_len = table.crt_poly_length();
+        let dcrt_glev_len = basis.decompose_length() * self.as_ref().len();
+
+        output.set_zero();
+
+        dcrt_ggsw
+            .iter_dcrt_glev(dcrt_glev_len)
+            .zip(self.iter_crt_poly(crt_poly_len))
+            .for_each(|(dcrt_glev, crt_poly)| {
+                output.add_dcrt_glev_mul_crt_polynomial_assign(
+                    &dcrt_glev, &crt_poly, basis, table, rns_base, context,
+                );
+            });
     }
 }

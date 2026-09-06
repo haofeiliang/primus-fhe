@@ -105,7 +105,7 @@ fn test_rns_glev() {
     // ── GLev(m₁) ⊡ BigUint(δ·m₂) → GLWE(m₁·m₂) ────────────────
     let mut c1: DcrtGlwe<Vec<ValueT>> = DcrtGlwe::zero(rns_glwe_len);
 
-    dcrt_glev.mul_big_uint_poly_to(
+    dcrt_glev.mul_big_uint_polynomial_to(
         &msg2_big_uint_poly,
         &mut c1,
         glev_params.basis(),
@@ -122,7 +122,7 @@ fn test_rns_glev() {
     // without changing the accumulator or requiring a separate context reset.
     let previous = c1.clone();
     msg2_big_uint_poly.as_mut_slice().fill(0);
-    c1.add_dcrt_glev_mul_big_uint_poly_assign(
+    c1.add_dcrt_glev_mul_big_uint_polynomial_assign(
         &dcrt_glev,
         &msg2_big_uint_poly,
         glev_params.basis(),
@@ -256,7 +256,7 @@ fn test_key_switching() {
 
     let mut glev_context = DcrtGlevMulContext::new(glev_params.size(), glev_params.base_q());
     izip!(dcrt_glevs.iter(), cipher.iter(), cs.iter_mut()).for_each(|(glev, ai, result)| {
-        glev.mul_crt_poly_to(
+        glev.mul_crt_polynomial_to(
             ai,
             result,
             glev_params.basis(),
@@ -273,7 +273,7 @@ fn test_key_switching() {
     b_.copy_from_slice(b.as_ref());
 
     let result = cs.iter().fold(res, |mut acc, x| {
-        acc.sub_element_wise_assign(x, poly_length, rns_poly_len, &moduli);
+        acc.sub_assign(x, poly_length, rns_poly_len, &moduli);
         acc
     });
 

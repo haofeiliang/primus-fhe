@@ -7,6 +7,6 @@ mod ntru_external_product;
 pub use dcrt_glev_mul::DcrtGlevMulContext;
 #[cfg(feature = "rns")]
 pub(crate) use dcrt_glev_mul::DcrtGlevMulContextRefMut;
-pub(crate) use glwe_external_product::NttExternalProductContextRefMut;
-pub use glwe_external_product::{FourierExternalProductContext, NttExternalProductContext};
+pub(crate) use glwe_external_product::NttGlweExternalProductContextRefMut;
+pub use glwe_external_product::{FourierGlweExternalProductContext, NttGlweExternalProductContext};
 pub use ntru_external_product::{FourierNtruExternalProductContext, NttNtruExternalProductContext};

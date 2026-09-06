@@ -7,7 +7,7 @@ use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable, TfheFftTable};
 use primus_lattice::{
     GadgetSize, GlweSize,
-    context::{FourierExternalProductContext, NttExternalProductContext},
+    context::{FourierGlweExternalProductContext, NttGlweExternalProductContext},
     ggsw::{FourierGgswOwned, NttGgsw},
     glwe::{Glwe, NttGlwe},
 };
@@ -44,7 +44,7 @@ fn fourier_with_table(c: &mut Criterion, backend: &str, fft: impl FftTable) {
             .collect(),
     );
     let mut output = Glwe::new(vec![0u64; components * fft.poly_length()]);
-    let mut context = FourierExternalProductContext::new(GadgetSize::new(
+    let mut context = FourierGlweExternalProductContext::new(GadgetSize::new(
         GlweSize::new(dimension, fft.poly_length()),
         basis.decompose_length(),
     ));
@@ -91,7 +91,7 @@ fn ntt_external_product(c: &mut Criterion) {
     );
     let mut output = Glwe::new(vec![0u32; glwe_len]);
     let mut ntt_output = NttGlwe::new(vec![0u32; glwe_len]);
-    let mut context = NttExternalProductContext::new(GadgetSize::new(
+    let mut context = NttGlweExternalProductContext::new(GadgetSize::new(
         GlweSize::new(dimension, ntt.poly_length()),
         basis.decompose_length(),
     ));

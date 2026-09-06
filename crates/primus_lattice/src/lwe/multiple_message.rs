@@ -14,6 +14,8 @@ where
     S: RawData,
     <S as RawData>::Elem: FheUint;
 
+impl_common!(MultiMsgLwe<S>);
+
 impl<S, T> MultiMsgLwe<S>
 where
     S: DataOwned<Elem = T>,
@@ -25,12 +27,6 @@ where
         let converted_data: &[T] = bytemuck::cast_slice(data);
 
         Self(S::from_slice(converted_data))
-    }
-
-    /// Creates a new [`MultiMsgLwe<S, T>`].
-    #[inline]
-    pub fn new(data: S) -> Self {
-        Self(data)
     }
 
     /// Generates a [`MultiMsgLwe<S, T>`] with all values are `0`.
@@ -55,8 +51,8 @@ where
 
     /// Returns mutable references to `a` and `b` of this [`MultiMsgLwe<S, T>`].
     #[inline]
-    pub fn a_b_mut(&mut self, mid: usize) -> (&mut [T], &mut [T]) {
-        self.0.split_at_mut(mid)
+    pub fn a_b_mut(&mut self, dimension: usize) -> (&mut [T], &mut [T]) {
+        self.0.split_at_mut(dimension)
     }
 
     /// Sets all values to `0`.
@@ -66,25 +62,20 @@ where
     }
 
     /// Perform component-wise modular addition of two [`MultiMsgLwe<S, T>`].
-    ///
-    /// # Attention
-    ///
-    /// In this function, `self` is not a reference.
-    /// If your `self` is a reference, you can use function `add_component_wise_ref`.
     #[inline]
-    pub fn add_component_wise<M, A>(mut self, rhs: &MultiMsgLwe<A>, modulus: M) -> Self
+    pub fn add<M, A>(mut self, rhs: &MultiMsgLwe<A>, modulus: M) -> Self
     where
         M: Copy + ReduceAddSlice<T>,
         A: Data<Elem = T>,
     {
-        self.add_component_wise_assign(rhs, modulus);
+        self.add_assign(rhs, modulus);
         self
     }
 
     /// Performs an in-place component-wise modular addition
     /// on the `self` [`MultiMsgLwe<S, T>`] with another `rhs` [`MultiMsgLwe<S, T>`].
     #[inline]
-    pub fn add_component_wise_assign<M, A>(&mut self, rhs: &MultiMsgLwe<A>, modulus: M)
+    pub fn add_assign<M, A>(&mut self, rhs: &MultiMsgLwe<A>, modulus: M)
     where
         M: Copy + ReduceAddSlice<T>,
         A: Data<Elem = T>,
@@ -93,25 +84,20 @@ where
     }
 
     /// Perform component-wise modular subtraction of two [`MultiMsgLwe<S, T>`].
-    ///
-    /// # Attention
-    ///
-    /// In this function, `self` is not a reference.
-    /// If your `self` is a reference, you can use function `sub_component_wise_ref`.
     #[inline]
-    pub fn sub_component_wise<M, A>(mut self, rhs: &MultiMsgLwe<A>, modulus: M) -> Self
+    pub fn sub<M, A>(mut self, rhs: &MultiMsgLwe<A>, modulus: M) -> Self
     where
         M: Copy + ReduceSubSlice<T>,
         A: Data<Elem = T>,
     {
-        self.sub_component_wise_assign(rhs, modulus);
+        self.sub_assign(rhs, modulus);
         self
     }
 
     /// Performs an in-place component-wise modular subtraction
     /// on the `self` [`MultiMsgLwe<S, T>`] with another `rhs` [`MultiMsgLwe<S, T>`].
     #[inline]
-    pub fn sub_component_wise_assign<M, A>(&mut self, rhs: &MultiMsgLwe<A>, modulus: M)
+    pub fn sub_assign<M, A>(&mut self, rhs: &MultiMsgLwe<A>, modulus: M)
     where
         M: Copy + ReduceSubSlice<T>,
         A: Data<Elem = T>,
@@ -167,62 +153,36 @@ where
 
     /// Returns references to `a` and `b` of this [`MultiMsgLwe<S, T>`].
     #[inline]
-    pub fn a_b(&self, mid: usize) -> (&[T], &[T]) {
-        self.0.split_at(mid)
+    pub fn a_b(&self, dimension: usize) -> (&[T], &[T]) {
+        self.0.split_at(dimension)
     }
 
-    /// Perform component-wise modular addition of two [`MultiMsgLwe<S, T>`].
+    /// Writes the component-wise modular sum `output = self + rhs`.
     ///
-    /// # Attention
-    ///
-    /// In this function, `self` is a reference.
-    /// If your `self` is not a reference, you can use function `add_component_wise`.
+    /// All ciphertexts must have the same layout and length. Coefficients must
+    /// satisfy the input range required by `modulus`.
     #[inline]
-    pub fn add_component_wise_ref<M, A, B>(
-        &self,
-        rhs: &MultiMsgLwe<A>,
-        modulus: M,
-    ) -> MultiMsgLwe<B>
+    pub fn add_to<M, A, B>(&self, rhs: &MultiMsgLwe<A>, output: &mut MultiMsgLwe<B>, modulus: M)
     where
         M: Copy + ReduceAddSlice<T>,
         A: Data<Elem = T>,
-        B: DataOwned<Elem = T>,
+        B: DataMut<Elem = T>,
     {
-        let len = self.0.len();
-
-        debug_assert_eq!(self.0.len(), rhs.0.len());
-
-        let mut data = vec![T::ZERO; len];
-        modulus.reduce_add_slice_to(self.0.as_slice(), rhs.0.as_slice(), &mut data);
-
-        MultiMsgLwe::new(B::from_vec(data))
+        modulus.reduce_add_slice_to(self.as_ref(), rhs.as_ref(), output.as_mut());
     }
 
-    /// Perform component-wise modular subtraction of two [`MultiMsgLwe<S, T>`].
+    /// Writes the component-wise modular difference `output = self - rhs`.
     ///
-    /// # Attention
-    ///
-    /// In this function, `self` is a reference.
-    /// If your `self` is not a reference, you can use function `sub_component_wise`.
+    /// All ciphertexts must have the same layout and length. Coefficients must
+    /// satisfy the input range required by `modulus`.
     #[inline]
-    pub fn sub_component_wise_ref<M, A, B>(
-        &self,
-        rhs: &MultiMsgLwe<A>,
-        modulus: M,
-    ) -> MultiMsgLwe<B>
+    pub fn sub_to<M, A, B>(&self, rhs: &MultiMsgLwe<A>, output: &mut MultiMsgLwe<B>, modulus: M)
     where
         M: Copy + ReduceSubSlice<T>,
         A: Data<Elem = T>,
-        B: DataOwned<Elem = T>,
+        B: DataMut<Elem = T>,
     {
-        let len = self.0.len();
-
-        debug_assert_eq!(self.0.len(), rhs.0.len());
-
-        let mut data = vec![T::ZERO; len];
-        modulus.reduce_sub_slice_to(self.0.as_slice(), rhs.0.as_slice(), &mut data);
-
-        MultiMsgLwe::new(B::from_vec(data))
+        modulus.reduce_sub_slice_to(self.as_ref(), rhs.as_ref(), output.as_mut());
     }
 }
 
@@ -260,20 +220,20 @@ impl<T: FheUint> MultiMsgLwe<Vec<T>> {
         );
 
         let dimension = self.0.len() - msg_count;
-        let mut result = Vec::with_capacity(msg_count);
+        let mut output = Vec::with_capacity(msg_count);
 
         let mut data = self.0[..dimension + 1].to_vec();
         self.0[dimension + 1..].iter().for_each(|&b| {
             let lwe = Lwe::new(data.clone());
-            result.push(lwe);
+            output.push(lwe);
 
             data[..dimension].rotate_right(1);
             modulus.reduce_neg_assign(&mut data[0]);
             data[dimension] = b;
         });
-        result.push(Lwe::new(data));
+        output.push(Lwe::new(data));
 
-        result
+        output
     }
 }
 

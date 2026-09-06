@@ -126,7 +126,7 @@ impl<T: FheUint> NttGlweTraceKey<T> {
                 domain,
                 &mut context.automorphism,
             );
-            output.add_element_wise_assign(&context.automorphism_output, modulus);
+            output.add_assign(&context.automorphism_output, modulus);
         }
     }
 

@@ -310,7 +310,7 @@ impl<T: FheUint> DcrtGlweAutoKey<T> {
                 table.inverse_transform_slice(auto_dcrt_poly.as_mut());
 
                 // 3. Key switch via external product
-                result.add_dcrt_glev_mul_crt_poly_assign(
+                result.add_dcrt_glev_mul_crt_polynomial_assign(
                     &auto_key_i,
                     auto_dcrt_poly,
                     params.basis(),

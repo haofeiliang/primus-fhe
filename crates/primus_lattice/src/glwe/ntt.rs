@@ -32,6 +32,17 @@ where
     S: DataMut<Elem = T>,
     T: FheUint,
 {
+    /// Negates every mask and body coefficient modulo `modulus` in place.
+    ///
+    /// Coefficients must satisfy the input range required by `modulus`.
+    #[inline]
+    pub fn neg_assign<M>(&mut self, modulus: M)
+    where
+        M: primus_reduce::ReduceNegSlice<T>,
+    {
+        modulus.reduce_neg_slice_assign(self.as_mut());
+    }
+
     /// Splits this GLWE into its mutable mask and body slices.
     ///
     /// The body is the final NTT polynomial and therefore has exactly
@@ -79,8 +90,8 @@ where
     #[inline]
     pub fn add_mul_ntt_polynomial_assign<M, A, B>(
         &mut self,
-        ntt_poly: &NttPolynomial<A>,
         rhs: &NttGlwe<B>,
+        ntt_poly: &NttPolynomial<A>,
         modulus: M,
     ) where
         M: FieldContext<T>,
@@ -128,12 +139,12 @@ where
     }
 
     /// Performs a modular multiplication on the `self` [`NttGlwe<S>`] with another `ntt_poly` [`NttPolynomial`],
-    /// stores the result into `result`.
+    /// stores the output into `output`.
     #[inline]
     pub fn mul_ntt_polynomial_to<M, A, B>(
         &self,
         ntt_poly: &NttPolynomial<A>,
-        result: &mut NttGlwe<B>,
+        output: &mut NttGlwe<B>,
         modulus: M,
     ) where
         M: FieldContext<T>,
@@ -143,7 +154,7 @@ where
         let poly_length = ntt_poly.poly_length();
 
         self.iter_ntt_poly(poly_length)
-            .zip(result.iter_ntt_poly_mut(poly_length))
+            .zip(output.iter_ntt_poly_mut(poly_length))
             .for_each(|(x, mut y)| {
                 x.mul_to(ntt_poly, &mut y, modulus);
             });

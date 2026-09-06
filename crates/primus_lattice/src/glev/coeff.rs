@@ -29,3 +29,20 @@ impl_iters!(Glev);
 impl_iter_sub_structure!(Glev<S>, Glwe);
 impl_basic_operation_single_modulus!(Glev<S>);
 impl_ntt!(Glev<S>, NttGlev);
+
+impl<S, T> Glev<S>
+where
+    S: DataMut<Elem = T>,
+    T: FheUint,
+{
+    /// Multiplies every coefficient of every gadget level by `scalar` in place.
+    ///
+    /// Coefficients and `scalar` must satisfy the input ranges required by `modulus`.
+    #[inline]
+    pub fn mul_scalar_assign<M>(&mut self, scalar: T, modulus: M)
+    where
+        M: primus_reduce::ReduceMulSlice<T>,
+    {
+        modulus.reduce_mul_scalar_slice_assign(self.as_mut(), scalar);
+    }
+}

@@ -5,7 +5,7 @@ use primus_glwe::{
     NttGadgetEncryptContext, NttGlweSecretKey, SecretKeyDistr,
 };
 use primus_lattice::{
-    context::{FourierExternalProductContext, NttExternalProductContext},
+    context::{FourierGlweExternalProductContext, NttGlweExternalProductContext},
     ggsw::{FourierGgswOwned, NttGgsw, NttGgswIter},
     glwe::{FourierGlweOwned, Glwe, NttGlwe, TorusGlwe},
 };
@@ -41,7 +41,7 @@ fn fourier_cmux_selects_requested_glwe() {
     let mut encrypt_context = FourierGlweEncryptContext::new(POLY_LENGTH);
     let mut decrypt_context = FourierGlweDecryptContext::new(POLY_LENGTH);
     let mut gadget_context = FourierGadgetEncryptContext::new(params.size());
-    let mut cmux_context = FourierExternalProductContext::new(params.size());
+    let mut cmux_context = FourierGlweExternalProductContext::new(params.size());
 
     let messages = [plaintext(1), plaintext(7), plaintext(12)];
     let mut ciphertexts: [TorusGlwe<Vec<u32>>; 3] = [
@@ -162,7 +162,7 @@ fn ntt_cmux_selects_requested_glwe() {
     let coeff_secret_key = GlweSecretKey::generate(&glwe_params, &mut rng);
     let secret_key = NttGlweSecretKey::from_coeff_secret_key(&coeff_secret_key, &ntt);
     let mut gadget_context = NttGadgetEncryptContext::new(domain.size());
-    let mut cmux_context = NttExternalProductContext::new(domain.size());
+    let mut cmux_context = NttGlweExternalProductContext::new(domain.size());
 
     let messages = [plaintext(2), plaintext(7), plaintext(11)];
     let mut ciphertexts: [Glwe<Vec<u32>>; 3] =

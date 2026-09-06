@@ -67,16 +67,16 @@ where
     S: Data<Elem = Complex64>,
 {
     /// Writes the pointwise product of this ciphertext and a Fourier
-    /// plaintext polynomial to `result`.
+    /// plaintext polynomial to `output`.
     #[inline]
     pub fn mul_fourier_polynomial_to<A, B>(
         &self,
         rhs: &FourierPolynomial<A>,
-        result: &mut FourierNtru<B>,
+        output: &mut FourierNtru<B>,
     ) where
         A: Data<Elem = Complex64>,
         B: DataMut<Elem = Complex64>,
     {
-        FourierPolynomial(self.as_ref()).mul_to(rhs, &mut FourierPolynomial(result.as_mut()));
+        FourierPolynomial(self.as_ref()).mul_to(rhs, &mut FourierPolynomial(output.as_mut()));
     }
 }

@@ -9,11 +9,12 @@ use primus_reduce::FieldContext;
 
 use crate::{
     context::{FourierNtruExternalProductContext, NttNtruExternalProductContext},
-    nlev::{
-        Nlev, fourier_gadget_product_add_assign, fourier_gadget_product_to_accumulator,
+    nlev::Nlev,
+    ntru::Ntru,
+    ntru::gadget_product::{
+        fourier_gadget_product_add_assign, fourier_gadget_product_to_accumulator,
         ntt_gadget_product_add_assign, ntt_gadget_product_to_accumulator,
     },
-    ntru::Ntru,
 };
 
 use super::{FourierNgsw, NttNgsw};
@@ -47,7 +48,7 @@ where
     }
 
     /// Clears the Fourier accumulator, then stores `self external_product input` in it.
-    /// The result remains in Fourier form for the caller to combine or transform back.
+    /// The output remains in Fourier form for the caller to combine or transform back.
     pub(super) fn external_product_to_accumulator<T, Table, A>(
         &self,
         input: &Ntru<A>,
@@ -147,7 +148,7 @@ where
     }
 
     /// Clears the NTT accumulator, then stores `self external_product input` in it.
-    /// The result remains in NTT form for the caller to combine or transform back.
+    /// The output remains in NTT form for the caller to combine or transform back.
     pub(super) fn external_product_to_accumulator<T, M, Table, A>(
         &self,
         input: &Ntru<A>,

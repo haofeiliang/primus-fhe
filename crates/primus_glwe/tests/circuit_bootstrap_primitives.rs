@@ -4,7 +4,7 @@ use primus_glwe::{
     NttGlweSchemeSwitchKey, NttGlweSecretKey, NttGlweTraceContext, NttGlweTraceKey, SecretKeyDistr,
 };
 use primus_lattice::{
-    context::NttExternalProductContext,
+    context::NttGlweExternalProductContext,
     ggsw::NttGgsw,
     glev::NttGlev,
     glwe::{Glwe, NttGlwe},
@@ -168,7 +168,7 @@ fn ntt_automorphism_trace_and_scheme_switch_have_expected_semantics() {
     );
     let selected = selected.into_coeff_form(&ntt);
     let mut product: Glwe<Vec<u64>> = Glwe::zero(glwe_parameters.glwe_len());
-    let mut external_product = NttExternalProductContext::new(output_domain.size());
+    let mut external_product = NttGlweExternalProductContext::new(output_domain.size());
     control.external_product_to(
         &selected,
         &mut product,

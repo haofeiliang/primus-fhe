@@ -5,7 +5,7 @@ use primus_fft::{Complex64, FftEngine, FftTable, TorusFftValue};
 use primus_glwe::{FourierGadgetEncryptContext, FourierGlweSecretKey, GlevParameters};
 use primus_lattice::{
     GadgetSize,
-    context::FourierExternalProductContext,
+    context::FourierGlweExternalProductContext,
     ggsw::{FourierGgsw, FourierGgswIter},
     glwe::TorusGlwe,
     lwe::Lwe,
@@ -307,7 +307,7 @@ impl<T: TorusFftValue> FourierGlweBootstrappingKey<T> {
 /// Reusable workspace for Fourier blind rotation.
 pub struct FourierGlweBlindRotationContext<T: TorusFftValue> {
     scratch: TorusGlwe<Vec<T>>,
-    external_product: FourierExternalProductContext<T>,
+    external_product: FourierGlweExternalProductContext<T>,
 }
 
 impl<T: TorusFftValue> FourierGlweBlindRotationContext<T> {
@@ -315,7 +315,7 @@ impl<T: TorusFftValue> FourierGlweBlindRotationContext<T> {
     pub fn new(size: GadgetSize) -> Self {
         Self {
             scratch: TorusGlwe::zero(size.glwe_len()),
-            external_product: FourierExternalProductContext::new(size),
+            external_product: FourierGlweExternalProductContext::new(size),
         }
     }
 

@@ -1,7 +1,7 @@
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_glwe::{GgswParameters, GlweParameters, NttGlweSecretKey, SecretKeyDistr};
 use primus_lattice::{
-    context::NttExternalProductContext,
+    context::NttGlweExternalProductContext,
     glwe::{Glwe, NttGlwe},
 };
 use primus_lwe::LweParameters;
@@ -110,7 +110,7 @@ fn patched_ntt_circuit_bootstrap_produces_a_cmux_control() {
             let control = evaluator.circuit_bootstrap(&input);
             let mut selected: Glwe<Vec<u64>> = Glwe::zero(glwe.glwe_len());
             let mut external_product =
-                NttExternalProductContext::new(circuit_parameters.output().size());
+                NttGlweExternalProductContext::new(circuit_parameters.output().size());
             control.cmux_to(
                 &choices[0],
                 &choices[1],

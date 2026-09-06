@@ -263,7 +263,7 @@ macro_rules! impl_fourier_forward {
             /// Writes this ciphertext in normalized torus Fourier form.
             pub fn write_fourier_form<Table, A>(
                 &self,
-                result: &mut $fourier<A>,
+                output: &mut $fourier<A>,
                 fft: &mut primus_fft::FftEngine<'_, Table>,
             ) where
                 Table: primus_fft::FftTable,
@@ -272,7 +272,7 @@ macro_rules! impl_fourier_forward {
                 for (coeff, fourier) in self
                     .as_ref()
                     .chunks_exact(fft.poly_length())
-                    .zip(result.as_mut().chunks_exact_mut(fft.fourier_length()))
+                    .zip(output.as_mut().chunks_exact_mut(fft.fourier_length()))
                 {
                     fft.forward_as_torus(coeff, fourier);
                 }
@@ -292,7 +292,7 @@ macro_rules! impl_fourier_backward {
             /// Writes this Fourier ciphertext back to torus coefficient form.
             pub fn write_torus_form<Table, A, T>(
                 &self,
-                result: &mut $coeff<A>,
+                output: &mut $coeff<A>,
                 fft: &mut primus_fft::FftEngine<'_, Table>,
             ) where
                 Table: primus_fft::FftTable,
@@ -302,7 +302,7 @@ macro_rules! impl_fourier_backward {
                 for (fourier, coeff) in self
                     .as_ref()
                     .chunks_exact(fft.fourier_length())
-                    .zip(result.as_mut().chunks_exact_mut(fft.poly_length()))
+                    .zip(output.as_mut().chunks_exact_mut(fft.poly_length()))
                 {
                     fft.backward_as_torus(fourier, coeff);
                 }

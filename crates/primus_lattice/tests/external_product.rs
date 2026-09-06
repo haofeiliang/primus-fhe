@@ -3,7 +3,7 @@ use primus_fft::{FftEngine, FftTable, RustFftTable};
 use primus_lattice::{
     GadgetSize, GlweSize,
     context::{
-        FourierExternalProductContext, FourierNtruExternalProductContext,
+        FourierGlweExternalProductContext, FourierNtruExternalProductContext,
         NttNtruExternalProductContext,
     },
     ggsw::FourierGgswOwned,
@@ -28,7 +28,7 @@ fn zero_fourier_ggsw_produces_zero() {
     let key =
         FourierGgswOwned::zero(component_count * level * component_count * fft.fourier_length());
     let mut output = Glwe::new(vec![u32::MAX; component_count * fft.poly_length()]);
-    let mut context = FourierExternalProductContext::new(GadgetSize::new(
+    let mut context = FourierGlweExternalProductContext::new(GadgetSize::new(
         GlweSize::new(dimension, fft.poly_length()),
         basis.decompose_length(),
     ));

@@ -188,14 +188,14 @@ fn test_dcrt_glwe_secret_key_ciphertext_ops_crt_modulus() {
     secret_key.encrypt_plaintext_inplace(&m1, &mut c1, &params, &table, &mut rng);
 
     // ── Add: c₁ += c₀  →  m₁ + m₀ ──────────────────────────────
-    c1.add_element_wise_assign(&c0, POLY_LENGTH, rns_poly_len, &moduli);
+    c1.add_assign(&c0, POLY_LENGTH, rns_poly_len, &moduli);
     m1.add_assign(&m0, mod_t);
 
     secret_key.decrypt_inplace(&c1, &mut decrypted, &params, &table, &mut decrypt_context);
     assert_eq!(m1, decrypted);
 
     // ── Sub: c₁ −= c₀  →  back to m₁ ───────────────────────────
-    c1.sub_element_wise_assign(&c0, POLY_LENGTH, rns_poly_len, &moduli);
+    c1.sub_assign(&c0, POLY_LENGTH, rns_poly_len, &moduli);
     m1.sub_assign(&m0, mod_t);
 
     secret_key.decrypt_inplace(&c1, &mut decrypted, &params, &table, &mut decrypt_context);
@@ -212,7 +212,7 @@ fn test_dcrt_glwe_secret_key_ciphertext_ops_crt_modulus() {
     assert_eq!(expected_product, decrypted);
 
     // ── Negate: −c₁  →  −m₁ ────────────────────────────────────
-    c1.neg_assign(rns_poly_len, POLY_LENGTH, &moduli);
+    c1.neg_assign(POLY_LENGTH, rns_poly_len, &moduli);
     m1.neg_assign(mod_t);
 
     secret_key.decrypt_inplace(&c1, &mut decrypted, &params, &table, &mut decrypt_context);

@@ -90,7 +90,7 @@ where
     }
 
     /// Performs `self += ntt_rlwe * ntt_poly` in place, all in the NTT domain.
-    pub fn add_ntt_rlwe_mul_ntt_polynomial_assign<M, A, B>(
+    pub fn add_mul_ntt_polynomial_assign<M, A, B>(
         &mut self,
         ntt_rlwe: &NttRlwe<A>,
         ntt_poly: &NttPolynomial<B>,
@@ -130,12 +130,12 @@ where
     }
 
     /// Performs a modular multiplication on the `self` [`NttRlwe<S>`] with another `polynomial` [`NttPolynomial`],
-    /// stores the result into `result`.
+    /// stores the output into `output`.
     #[inline]
     pub fn mul_ntt_polynomial_to<M, A, B>(
         &self,
         ntt_poly: &NttPolynomial<A>,
-        result: &mut NttRlwe<B>,
+        output: &mut NttRlwe<B>,
         modulus: M,
     ) where
         M: FieldContext<T>,
@@ -145,7 +145,7 @@ where
         let poly_len = ntt_poly.poly_length();
 
         self.iter_ntt_poly(poly_len)
-            .zip(result.iter_ntt_poly_mut(poly_len))
+            .zip(output.iter_ntt_poly_mut(poly_len))
             .for_each(|(x, mut y)| {
                 x.mul_to(ntt_poly, &mut y, modulus);
             });

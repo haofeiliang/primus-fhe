@@ -357,7 +357,7 @@ where
             .copy_from_slice(else_value.as_raw().as_lwe().0.as_slice());
         self.gate_input
             .as_lwe_mut()
-            .sub_component_wise_assign(condition.as_raw().as_lwe(), modulus);
+            .sub_assign(condition.as_raw().as_lwe(), modulus);
         let encoded_one = self
             .parameters
             .small_lwe()
@@ -374,7 +374,7 @@ where
         output
             .as_raw_mut()
             .as_lwe_mut()
-            .add_component_wise_assign(self.mux_branch.as_raw().as_lwe(), modulus);
+            .add_assign(self.mux_branch.as_raw().as_lwe(), modulus);
     }
 
     /// Negates a Boolean ciphertext without programmable bootstrapping.
@@ -435,22 +435,18 @@ fn prepare_binary_gate<T, LM, GM>(
 {
     assert_dimension(lhs.as_raw(), parameters);
     assert_dimension(rhs.as_raw(), parameters);
-    output
-        .as_lwe_mut()
-        .0
-        .copy_from_slice(lhs.as_raw().as_lwe().0.as_slice());
     let modulus = parameters.small_lwe().cipher_modulus();
 
     match gate {
         BooleanGate::And | BooleanGate::Nand | BooleanGate::Or | BooleanGate::Nor => {
-            output
-                .as_lwe_mut()
-                .add_component_wise_assign(rhs.as_raw().as_lwe(), modulus);
+            lhs.as_raw()
+                .as_lwe()
+                .add_to(rhs.as_raw().as_lwe(), output.as_lwe_mut(), modulus);
         }
         BooleanGate::Xor | BooleanGate::Xnor => {
-            output
-                .as_lwe_mut()
-                .sub_component_wise_assign(rhs.as_raw().as_lwe(), modulus);
+            lhs.as_raw()
+                .as_lwe()
+                .sub_to(rhs.as_raw().as_lwe(), output.as_lwe_mut(), modulus);
             output.as_lwe_mut().mul_scalar_assign(T::TWO, modulus);
         }
     }

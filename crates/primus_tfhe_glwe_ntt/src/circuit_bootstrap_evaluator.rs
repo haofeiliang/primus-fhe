@@ -10,7 +10,7 @@ use primus_integer::FheUint;
 use primus_lattice::ggsw::NttGgsw;
 use primus_lwe::LweCiphertext;
 use primus_ntt::NttTable;
-use primus_reduce::{Modulus, ReduceInv, ReduceMul, ReduceMulSlice};
+use primus_reduce::{Modulus, ReduceInv, ReduceMul};
 use primus_tfhe::{Ciphertext, LookupTableError, ManyLookupTable};
 use primus_tfhe_glwe::GlwePbsOrder as PbsOrder;
 
@@ -205,8 +205,8 @@ where
             );
         }
 
-        glwe.cipher_modulus()
-            .reduce_mul_scalar_slice_assign(self.refreshed.as_mut(), self.inverse_poly_length);
+        self.refreshed
+            .mul_scalar_assign(self.inverse_poly_length, glwe.cipher_modulus());
         for (refreshed, mut traced) in self
             .refreshed
             .iter_glwe(glwe.glwe_len())

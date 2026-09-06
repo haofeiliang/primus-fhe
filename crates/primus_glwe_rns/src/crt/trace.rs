@@ -103,7 +103,7 @@ impl<T: FheUint> CrtGlweTraceKey<T> {
 
         for auto_key in self.auto_keys.iter() {
             auto_key.automorphism_kernel(result, crt_glwe, domain, auto_context);
-            result.add_element_wise_assign(crt_glwe, poly_length, crt_poly_length, moduli);
+            result.add_assign(crt_glwe, poly_length, crt_poly_length, moduli);
         }
     }
 }

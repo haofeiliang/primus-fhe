@@ -116,7 +116,7 @@ impl<T: FheUint> HybridRnsGlweKeySwitchingKey<T> {
             output.copy_from_slice(&accumulator[..q_poly_len]);
         }
         b_out.copy_from_slice(&accumulator_body[..q_poly_len]);
-        c_out.neg_assign(q_poly_len, poly_length, hybrid_rns.q_base().moduli());
+        c_out.neg_assign(poly_length, q_poly_len, hybrid_rns.q_base().moduli());
     }
 
     /// Hybrid RNS key switching from an NTT-domain `Q`-basis ciphertext.

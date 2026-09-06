@@ -121,9 +121,9 @@ impl<T: FheUint> CrtGlweExpandCoeffKey<T> {
 
             x.iter_mut().zip(y).for_each(|(a_0, b_0)| {
                 auto_key.automorphism_kernel(a_0, crt_glwe, domain, auto_context);
-                a_0.sub_element_wise_to(crt_glwe, b_0, poly_length, rns_poly_len, moduli);
-                b_0.mul_monic_monomial_assign(monomial_degree, poly_length, rns_poly_len, moduli);
-                a_0.add_element_wise_assign(crt_glwe, poly_length, rns_poly_len, moduli);
+                a_0.sub_to(crt_glwe, b_0, poly_length, rns_poly_len, moduli);
+                b_0.mul_monomial_assign(monomial_degree, poly_length, rns_poly_len, moduli);
+                a_0.add_assign(crt_glwe, poly_length, rns_poly_len, moduli);
             });
         }
     }
@@ -190,14 +190,9 @@ impl<T: FheUint> CrtGlweExpandCoeffKey<T> {
                 |guard, (a_0, b_0)| {
                     let (crt_glwe, auto_context) = guard.as_mut();
                     auto_key.automorphism_kernel(a_0, crt_glwe, domain, auto_context);
-                    a_0.sub_element_wise_to(crt_glwe, b_0, poly_length, rns_poly_len, moduli);
-                    b_0.mul_monic_monomial_assign(
-                        monomial_degree,
-                        poly_length,
-                        rns_poly_len,
-                        moduli,
-                    );
-                    a_0.add_element_wise_assign(crt_glwe, poly_length, rns_poly_len, moduli);
+                    a_0.sub_to(crt_glwe, b_0, poly_length, rns_poly_len, moduli);
+                    b_0.mul_monomial_assign(monomial_degree, poly_length, rns_poly_len, moduli);
+                    a_0.add_assign(crt_glwe, poly_length, rns_poly_len, moduli);
                 },
             );
         }

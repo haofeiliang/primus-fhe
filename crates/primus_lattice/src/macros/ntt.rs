@@ -30,16 +30,16 @@ macro_rules! impl_ntt {
             $s: Data<Elem = T>,
             T: FheUint,
         {
-            /// Transforms `self` to ntt form and stores in `result`.
+            /// Transforms `self` to ntt form and stores in `output`.
             #[inline]
-            pub fn write_ntt_form<Table, A>(&self, result: &mut $ntt_cipher<A>, ntt_table: &Table)
+            pub fn write_ntt_form<Table, A>(&self, output: &mut $ntt_cipher<A>, ntt_table: &Table)
             where
                 A: DataMut<Elem = T>,
                 Table: NttTable<ValueT = T>,
             {
                 let poly_length = ntt_table.poly_length();
-                result.0.copy_from_slice(self.as_ref());
-                result.0.chunks_exact_mut(poly_length).for_each(|poly| {
+                output.0.copy_from_slice(self.as_ref());
+                output.0.chunks_exact_mut(poly_length).for_each(|poly| {
                     ntt_table.transform_slice(poly);
                 });
             }
@@ -73,16 +73,16 @@ macro_rules! impl_intt {
             $s: Data<Elem = T>,
             T: FheUint,
         {
-            /// Transforms `self` to coefficient form and stores in `result`.
+            /// Transforms `self` to coefficient form and stores in `output`.
             #[inline]
-            pub fn write_coeff_form<Table, A>(&self, result: &mut $cipher<A>, ntt_table: &Table)
+            pub fn write_coeff_form<Table, A>(&self, output: &mut $cipher<A>, ntt_table: &Table)
             where
                 A: DataMut<Elem = T>,
                 Table: NttTable<ValueT = T>,
             {
                 let poly_length = ntt_table.poly_length();
-                result.0.copy_from_slice(self.as_ref());
-                result.0.chunks_exact_mut(poly_length).for_each(|values| {
+                output.0.copy_from_slice(self.as_ref());
+                output.0.chunks_exact_mut(poly_length).for_each(|values| {
                     ntt_table.inverse_transform_slice(values);
                 });
             }
@@ -121,19 +121,19 @@ macro_rules! impl_crt_ntt {
             $s: Data<Elem = T>,
             T: FheUint,
         {
-            /// Transforms `self` to ntt form and stores in `result`.
+            /// Transforms `self` to ntt form and stores in `output`.
             #[inline]
             pub fn write_ntt_form<Table, A>(
                 &self,
-                result: &mut $ntt_cipher<A>,
+                output: &mut $ntt_cipher<A>,
                 table: &primus_ntt::DcrtTable<Table>,
             ) where
                 Table: primus_ntt::NttTable<ValueT = T>,
                 A: DataMut<Elem = T>,
             {
                 let crt_poly_length = table.crt_poly_length();
-                result.0.copy_from_slice(self.as_ref());
-                result
+                output.0.copy_from_slice(self.as_ref());
+                output
                     .0
                     .chunks_exact_mut(crt_poly_length)
                     .for_each(|crt_poly| {
@@ -172,19 +172,19 @@ macro_rules! impl_crt_intt {
             $s: Data<Elem = T>,
             T: FheUint,
         {
-            /// Transforms `self` to coefficient form and stores in `result`.
+            /// Transforms `self` to coefficient form and stores in `output`.
             #[inline]
             pub fn write_coeff_form<Table, A>(
                 &self,
-                result: &mut $cipher<A>,
+                output: &mut $cipher<A>,
                 table: &primus_ntt::DcrtTable<Table>,
             ) where
                 Table: primus_ntt::NttTable<ValueT = T>,
                 A: DataMut<Elem = T>,
             {
                 let crt_poly_length = table.crt_poly_length();
-                result.0.copy_from_slice(self.as_ref());
-                result
+                output.0.copy_from_slice(self.as_ref());
+                output
                     .0
                     .chunks_exact_mut(crt_poly_length)
                     .for_each(|crt_poly| {

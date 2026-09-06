@@ -14,7 +14,7 @@ use super::NttRgsw;
 ///
 /// |--c1--|....|--ck--|--c[k+1]--|
 ///
-/// where `c1` to `c[k+1]` are [`crate::rlev::Rlev`] with same parameter, `k` is the dimension.
+/// where `c1` to `c[k+1]` are [`Rlev`] with same parameter, `k` is the dimension.
 #[derive(Clone)]
 pub struct Rgsw<S>(pub S)
 where

@@ -114,7 +114,7 @@ where
     );
 
     let mut sum = cipher.clone();
-    sum.add_element_wise_assign(&cipher, modulus);
+    sum.add_assign(&cipher, modulus);
     assert_eq!(
         secret_key.decrypt(&sum, &params, &ntt).as_ref(),
         doubled_messages(&messages)

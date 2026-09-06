@@ -202,15 +202,15 @@ impl<T: FheUint> LweKeySwitchingKey<T> {
                 // in particular, a base-four decomposition consists only of
                 // 0, 1, -1, and -2.
                 if digit == T::ONE {
-                    output.add_component_wise_assign(&key_entry, modulus);
+                    output.add_assign(&key_entry, modulus);
                 } else if digit == negative_one {
-                    output.sub_component_wise_assign(&key_entry, modulus);
+                    output.sub_assign(&key_entry, modulus);
                 } else if digit == T::TWO {
-                    output.add_component_wise_assign(&key_entry, modulus);
-                    output.add_component_wise_assign(&key_entry, modulus);
+                    output.add_assign(&key_entry, modulus);
+                    output.add_assign(&key_entry, modulus);
                 } else if digit == negative_two {
-                    output.sub_component_wise_assign(&key_entry, modulus);
-                    output.sub_component_wise_assign(&key_entry, modulus);
+                    output.sub_assign(&key_entry, modulus);
+                    output.sub_assign(&key_entry, modulus);
                 } else {
                     output.add_mul_scalar_assign(&key_entry, digit, modulus);
                 }

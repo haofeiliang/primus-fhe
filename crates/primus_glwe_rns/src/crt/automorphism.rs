@@ -279,7 +279,7 @@ impl<T: FheUint> CrtGlweAutoKey<T> {
             .for_each(|(auto_key_i, in_crt_poly)| {
                 crt_poly_auto_inplace(in_crt_poly.0, auto_crt_poly.as_mut(), auto_helper, moduli);
 
-                temp.add_dcrt_glev_mul_crt_poly_assign(
+                temp.add_dcrt_glev_mul_crt_polynomial_assign(
                     &auto_key_i,
                     auto_crt_poly,
                     params.basis(),

@@ -10,7 +10,7 @@ use primus_lattice::{
 };
 use primus_modulus::NativeModulus;
 use primus_poly::{FourierPolynomial, PolynomialOwned};
-use primus_reduce::{ReduceAddSlice, ReduceNegSlice};
+use primus_reduce::ReduceAddSlice;
 
 use crate::{FourierGadgetEncryptContext, FourierGlweSecretKey, GlevParameters, GlweSecretKey};
 
@@ -140,16 +140,16 @@ impl FourierGlweKeySwitchingKey {
                     &mut context.carries,
                 );
                 fft.forward_as_integer(&context.decomposed_poly, &mut context.decomposed_fourier);
-                context.accumulator.add_mul_fourier_poly_assign(
-                    &FourierPolynomial::new(context.decomposed_fourier.as_slice()),
+                context.accumulator.add_mul_fourier_polynomial_assign(
                     &key_glwe,
+                    &FourierPolynomial::new(context.decomposed_fourier.as_slice()),
                 );
             }
         }
 
         context.accumulator.write_torus_form(output, fft);
         let modulus = NativeModulus::new();
-        modulus.reduce_neg_slice_assign(output.as_mut());
+        output.neg_assign(modulus);
         let (_, output_body) = output.a_b_mut_slices(poly_length);
         modulus.reduce_add_slice_assign(output_body, input_body);
     }

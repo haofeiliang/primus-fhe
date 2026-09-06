@@ -40,12 +40,12 @@ where
     T: FheUint,
 {
     /// Performs a multiplication on the `self` [`CrtRlwe<S>`] with another `dcrt_polynomial` [`DcrtPolynomial<A>`],
-    /// store the result into `result` [`DcrtRlwe<B>`].
+    /// store the output into `output` [`DcrtRlwe<B>`].
     #[inline]
     pub fn mul_dcrt_polynomial_to<M, Table, A, B>(
         &self,
         dcrt_poly: &DcrtPolynomial<A>,
-        result: &mut DcrtRlwe<B>,
+        output: &mut DcrtRlwe<B>,
         moduli: &[M],
         table: &DcrtTable<Table>,
     ) where
@@ -57,9 +57,9 @@ where
         let poly_length = table.poly_length();
         let crt_poly_len = table.crt_poly_length();
 
-        result.0.copy_from_slice(self.as_ref());
+        output.0.copy_from_slice(self.as_ref());
 
-        result
+        output
             .iter_dcrt_poly_mut(crt_poly_len)
             .for_each(|mut poly| {
                 table.transform_slice(poly.0);

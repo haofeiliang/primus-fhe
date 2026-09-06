@@ -3,7 +3,9 @@ use primus_integer::FheUint;
 
 use crate::ntru::{FourierNtru, NttNtru};
 
-/// Pre-allocated scratch buffers for a native-torus Fourier NGSW external product.
+/// Pre-allocated scratch buffers for native-torus Fourier NTRU gadget products.
+///
+/// Shared by NLev key switching and NGSW external products, including CMUX.
 pub struct FourierNtruExternalProductContext<T: TorusFftValue> {
     poly_length: usize,
     /// Carry bits reused while decomposing one coefficient polynomial.
@@ -39,7 +41,9 @@ impl<T: TorusFftValue> FourierNtruExternalProductContext<T> {
     }
 }
 
-/// Pre-allocated scratch buffers for an exact NTT NGSW external product.
+/// Pre-allocated scratch buffers for exact NTT NTRU gadget products.
+///
+/// Shared by NLev key switching and NGSW external products, including CMUX.
 pub struct NttNtruExternalProductContext<T: FheUint> {
     poly_length: usize,
     /// Modulus-adjusted coefficients reused as decomposition input.

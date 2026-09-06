@@ -139,7 +139,7 @@ impl<T: FheUint> DcrtGlweKeySwitchingKey<T> {
             .for_each(|(key_entry, mask_polynomial)| {
                 // Compose directly into the decomposition workspace; the CRT
                 // entry point adjusts it in place and overwrites every buffer.
-                output.add_dcrt_glev_mul_crt_poly_assign(
+                output.add_dcrt_glev_mul_crt_polynomial_assign(
                     &key_entry,
                     &mask_polynomial,
                     basis,
@@ -151,7 +151,7 @@ impl<T: FheUint> DcrtGlweKeySwitchingKey<T> {
 
         transformed_polynomial.copy_from(&input_body);
         table.transform_slice(transformed_polynomial.as_mut());
-        output.neg_assign(rns_poly_len, poly_length, rns_base.moduli());
+        output.neg_assign(poly_length, rns_poly_len, rns_base.moduli());
 
         let (_, output_body) = output.a_b_mut_slices(rns_poly_len);
         DcrtPolynomial(output_body).add_assign(

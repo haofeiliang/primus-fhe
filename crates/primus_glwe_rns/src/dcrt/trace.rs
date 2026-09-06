@@ -102,7 +102,7 @@ impl<T: FheUint> DcrtGlweTraceKey<T> {
 
         for auto_key in self.auto_keys.iter() {
             auto_key.automorphism_kernel(result, dcrt_glwe, domain, auto_context);
-            result.add_element_wise_assign(dcrt_glwe, poly_length, rns_poly_len, moduli);
+            result.add_assign(dcrt_glwe, poly_length, rns_poly_len, moduli);
         }
     }
 }

@@ -5,7 +5,7 @@ use primus_glwe::{
     NttGadgetDomain, NttGadgetEncryptContext, NttGlweSecretKey, SecretKeyDistr,
 };
 use primus_lattice::{
-    context::{FourierExternalProductContext, NttExternalProductContext},
+    context::{FourierGlweExternalProductContext, NttGlweExternalProductContext},
     ggsw::{FourierGgswOwned, NttGgsw},
     glev::{FourierGlevOwned, NttGlev},
     glwe::{FourierGlweOwned, Glwe, NttGlwe, TorusGlwe},
@@ -126,7 +126,7 @@ fn fourier_glev_generation_and_ggsw_external_product() {
     input_fourier.write_torus_form(&mut input, &mut fft);
 
     let mut output: TorusGlwe<Vec<u32>> = TorusGlwe::zero(params.glwe_len());
-    let mut external_product_context = FourierExternalProductContext::new(params.size());
+    let mut external_product_context = FourierGlweExternalProductContext::new(params.size());
     ggsw.external_product_to(
         &input,
         &mut output,
@@ -253,7 +253,7 @@ fn ntt_glev_and_ggsw_generation() {
     secret_key.encrypt_to(&plaintext, &mut input_ntt, &glwe_params, &ntt, &mut rng);
     let input = input_ntt.into_coeff_form(&ntt);
     let mut output: Glwe<Vec<u32>> = Glwe::zero(params.glwe_len());
-    let mut external_product_context = NttExternalProductContext::new(domain.size());
+    let mut external_product_context = NttGlweExternalProductContext::new(domain.size());
     ggsw.external_product_to(
         &input,
         &mut output,

@@ -74,7 +74,7 @@ where
     #[inline]
     pub fn decompose_to<A, M>(
         &self,
-        result: &mut CrtGlwe<A>,
+        output: &mut CrtGlwe<A>,
         poly_length: usize,
         crt_poly_len: usize,
         rns_base: &RNSBase<T, M>,
@@ -86,7 +86,7 @@ where
         let big_uint_poly_len = poly_length * big_uint_value_len;
 
         self.iter_big_uint_poly(big_uint_poly_len)
-            .zip(result.iter_crt_poly_mut(crt_poly_len))
+            .zip(output.iter_crt_poly_mut(crt_poly_len))
             .for_each(|(big_uint_poly, mut crt_poly)| {
                 rns_base.decompose_polynomial_to(&big_uint_poly, &mut crt_poly, poly_length);
             });
