@@ -51,6 +51,66 @@ macro_rules! impl_mul_scalar_multiple_modulus {
                     }
                 }
             }
+
+            /// Accumulates `self += rhs * scalar` without clearing `self` or allocating.
+            ///
+            /// Both ciphertexts must have the same length, layout, representation,
+            /// and compatible key semantics. Gadget bases and level/row order must
+            /// match. Components are consecutive RNS polynomials, each containing
+            /// one length-`poly_length` block per modulus in `moduli` order.
+            /// `poly_length` and the modulus count must be nonzero, and
+            /// `rns_poly_len = poly_length * moduli.len()`. Ciphertext lengths must
+            /// be multiples of `rns_poly_len`. `scalar` must have one entry per
+            /// modulus in that same order, applied to every ciphertext component.
+            /// Input and accumulator values must be canonical residues, and results
+            /// remain canonical. Scalar residues must be canonical under their
+            /// corresponding moduli.
+            #[inline]
+            pub fn add_mul_scalar_assign<M, A>(
+                &mut self,
+                rhs: &$cipher<A>,
+                scalar: &primus_rns::Residues<impl primus_data::Data<Elem = T>>,
+                poly_length: usize,
+                rns_poly_len: usize,
+                moduli: &[M],
+            ) where
+                M: Copy + primus_reduce::ReduceMulAddSlice<T>,
+                A: primus_data::Data<Elem = T>,
+            {
+                debug_assert!(
+                    poly_length > 0 && !moduli.is_empty(),
+                    "RNS layout must be nonempty"
+                );
+                debug_assert_eq!(
+                    poly_length.checked_mul(moduli.len()),
+                    Some(rns_poly_len),
+                    "RNS polynomial length mismatch"
+                );
+                debug_assert!(
+                    self.as_ref().len().is_multiple_of(rns_poly_len),
+                    "incomplete RNS component"
+                );
+                debug_assert_eq!(scalar.len(), moduli.len(), "RNS scalar count mismatch");
+                debug_assert_eq!(
+                    self.as_ref().len(),
+                    rhs.as_ref().len(),
+                    "RNS operand length mismatch"
+                );
+                for (acc, rhs) in self
+                    .as_mut()
+                    .chunks_exact_mut(rns_poly_len)
+                    .zip(rhs.as_ref().chunks_exact(rns_poly_len))
+                {
+                    for (acc, rhs, &scalar, &modulus) in itertools::izip!(
+                        acc.chunks_exact_mut(poly_length),
+                        rhs.chunks_exact(poly_length),
+                        scalar.iter(),
+                        moduli
+                    ) {
+                        modulus.reduce_add_mul_scalar_slice_assign(acc, rhs, scalar);
+                    }
+                }
+            }
         }
         impl<S, T> $cipher<S>
         where

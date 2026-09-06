@@ -51,6 +51,126 @@ macro_rules! impl_mul_factor_multiple_modulus {
                     }
                 }
             }
+
+            /// Accumulates `self += rhs * factors` without clearing `self` or allocating.
+            ///
+            /// Both ciphertexts must have the same length, layout, representation,
+            /// and compatible key semantics. Gadget bases and level/row order must
+            /// match. Components are consecutive RNS polynomials, each containing
+            /// one length-`poly_length` block per modulus in `moduli` order.
+            /// `poly_length` and the modulus count must be nonzero, and
+            /// `rns_poly_len = poly_length * moduli.len()`. Ciphertext lengths must
+            /// be multiples of `rns_poly_len`. `factors` must have one entry per
+            /// modulus in that same order, applied to every ciphertext component.
+            /// Input and accumulator values must be canonical residues, and results
+            /// remain canonical. Each factor must be precomputed for its
+            /// corresponding modulus.
+            #[inline]
+            pub fn add_mul_factor_assign<F, A>(
+                &mut self,
+                rhs: &$cipher<A>,
+                factors: &primus_rns::ResidueFactors<impl primus_data::Data<Elem = F>>,
+                poly_length: usize,
+                rns_poly_len: usize,
+                moduli: &[T],
+            ) where
+                F: Copy + primus_factor::FactorSliceOps<T>,
+                A: primus_data::Data<Elem = T>,
+            {
+                debug_assert!(
+                    poly_length > 0 && !moduli.is_empty(),
+                    "RNS layout must be nonempty"
+                );
+                debug_assert_eq!(
+                    poly_length.checked_mul(moduli.len()),
+                    Some(rns_poly_len),
+                    "RNS polynomial length mismatch"
+                );
+                debug_assert!(
+                    self.as_ref().len().is_multiple_of(rns_poly_len),
+                    "incomplete RNS component"
+                );
+                debug_assert_eq!(factors.len(), moduli.len(), "RNS scalar count mismatch");
+                debug_assert_eq!(
+                    self.as_ref().len(),
+                    rhs.as_ref().len(),
+                    "RNS operand length mismatch"
+                );
+                for (acc, rhs) in self
+                    .as_mut()
+                    .chunks_exact_mut(rns_poly_len)
+                    .zip(rhs.as_ref().chunks_exact(rns_poly_len))
+                {
+                    for (acc, rhs, &factor, &modulus) in itertools::izip!(
+                        acc.chunks_exact_mut(poly_length),
+                        rhs.chunks_exact(poly_length),
+                        factors.iter(),
+                        moduli
+                    ) {
+                        factor.add_factor_mul_slice_assign(acc, rhs, modulus);
+                    }
+                }
+            }
+
+            /// Accumulates `self -= rhs * factors` without clearing `self` or allocating.
+            ///
+            /// Both ciphertexts must have the same length, layout, representation,
+            /// and compatible key semantics. Gadget bases and level/row order must
+            /// match. Components are consecutive RNS polynomials, each containing
+            /// one length-`poly_length` block per modulus in `moduli` order.
+            /// `poly_length` and the modulus count must be nonzero, and
+            /// `rns_poly_len = poly_length * moduli.len()`. Ciphertext lengths must
+            /// be multiples of `rns_poly_len`. `factors` must have one entry per
+            /// modulus in that same order, applied to every ciphertext component.
+            /// Input and accumulator values must be canonical residues, and results
+            /// remain canonical. Each factor must be precomputed for its
+            /// corresponding modulus.
+            #[inline]
+            pub fn sub_mul_factor_assign<F, A>(
+                &mut self,
+                rhs: &$cipher<A>,
+                factors: &primus_rns::ResidueFactors<impl primus_data::Data<Elem = F>>,
+                poly_length: usize,
+                rns_poly_len: usize,
+                moduli: &[T],
+            ) where
+                F: Copy + primus_factor::FactorSliceOps<T>,
+                A: primus_data::Data<Elem = T>,
+            {
+                debug_assert!(
+                    poly_length > 0 && !moduli.is_empty(),
+                    "RNS layout must be nonempty"
+                );
+                debug_assert_eq!(
+                    poly_length.checked_mul(moduli.len()),
+                    Some(rns_poly_len),
+                    "RNS polynomial length mismatch"
+                );
+                debug_assert!(
+                    self.as_ref().len().is_multiple_of(rns_poly_len),
+                    "incomplete RNS component"
+                );
+                debug_assert_eq!(factors.len(), moduli.len(), "RNS scalar count mismatch");
+                debug_assert_eq!(
+                    self.as_ref().len(),
+                    rhs.as_ref().len(),
+                    "RNS operand length mismatch"
+                );
+                for (acc, rhs) in self
+                    .as_mut()
+                    .chunks_exact_mut(rns_poly_len)
+                    .zip(rhs.as_ref().chunks_exact(rns_poly_len))
+                {
+                    for (acc, rhs, &factor, &modulus) in itertools::izip!(
+                        acc.chunks_exact_mut(poly_length),
+                        rhs.chunks_exact(poly_length),
+                        factors.iter(),
+                        moduli
+                    ) {
+                        factor.sub_factor_mul_slice_assign(acc, rhs, modulus);
+                    }
+                }
+            }
         }
         impl<S, T> $cipher<S>
         where
