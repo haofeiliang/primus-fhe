@@ -50,7 +50,10 @@ where
     }
 
     /// Generates a fresh client/server key pair.
-    pub fn generate_keys<R>(&self, rng: &mut R) -> Result<(ClientKey<T>, ServerKey), TfheKeyError>
+    pub fn generate_keys<R>(
+        &self,
+        rng: &mut R,
+    ) -> Result<(ClientKey<T>, ServerKey<T>), TfheKeyError>
     where
         R: rand::Rng + rand::CryptoRng,
     {
@@ -74,9 +77,11 @@ where
     }
 
     /// Creates an evaluator with reusable FFT and coefficient workspaces.
+    /// The key must use this context's FFT table instance; see
+    /// [`Evaluator::try_new`]'s correctness requirements.
     pub fn evaluator<'a>(
         &'a self,
-        server_key: &'a ServerKey,
+        server_key: &'a ServerKey<T>,
     ) -> Result<Evaluator<'a, T, Table>, TfheEvaluationError> {
         Evaluator::try_new(self, server_key)
     }

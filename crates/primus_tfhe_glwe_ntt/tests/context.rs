@@ -4,9 +4,9 @@ use primus_lwe::LweParameters;
 use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, U32NttTable};
 use primus_tfhe_glwe_ntt::{
-    PbsOrder, TfheContext, TfheContextError, TfheEvaluationError, TfheParameters,
+    KeyGenerator, PbsOrder, TfheContext, TfheContextError, TfheEvaluationError, TfheParameters,
 };
-use rand::{SeedableRng, rngs::StdRng};
+use rand::{Rng, SeedableRng, rngs::StdRng};
 
 const POLY_LENGTH: usize = 256;
 const MODULUS: u32 = 132_120_577;
@@ -97,20 +97,38 @@ fn rejects_incompatible_ntt_tables() {
 }
 
 #[test]
-fn evaluates_both_programmable_bootstrap_orders() {
+fn fresh_and_split_keys_support_both_pbs_orders() {
     for order in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
         let modulus = BarrettModulus::new(MODULUS);
         let table = U32NttTable::new(POLY_LENGTH.trailing_zeros(), modulus).unwrap();
         let context = TfheContext::try_new(parameters(order), table).unwrap();
-        let mut rng = rand::rng();
+        let mut rng = StdRng::seed_from_u64(42);
         let (client_key, server_key) = context.generate_keys(&mut rng).unwrap();
+        // The fresh pair path and the existing-client path must consume the
+        // same randomness and produce compatible keys for both PBS orders.
+        let mut split_rng = StdRng::seed_from_u64(42);
+        let mut generator = KeyGenerator::new(&context);
+        let split_client = generator.generate_client_key(&mut split_rng);
+        let split_server = generator
+            .try_generate_server_key(&split_client, &mut split_rng)
+            .unwrap();
+        assert_eq!(
+            client_key.glwe_secret_key().as_slice(),
+            split_client.glwe_secret_key().as_slice()
+        );
+        assert_eq!(
+            client_key.small_lwe_secret_key().as_ref(),
+            split_client.small_lwe_secret_key().as_ref()
+        );
+        assert_eq!(rng.next_u64(), split_rng.next_u64());
         let encryptor = context.encryptor(&client_key).unwrap();
         let decryptor = context.decryptor(&client_key).unwrap();
         let lookup_table = context.compile_lookup_table_slice(&[1u32, 0]).unwrap();
-        let mut evaluator = context.evaluator(&server_key).unwrap();
-
         let input = encryptor.encrypt_padded(0u32, &mut rng).unwrap();
-        let output = evaluator.apply_lookup_table(&input, &lookup_table);
-        assert_eq!(decryptor.decrypt::<u32>(&output).unwrap(), 1);
+        for server in [&server_key, &split_server] {
+            let mut evaluator = context.evaluator(server).unwrap();
+            let output = evaluator.apply_lookup_table(&input, &lookup_table);
+            assert_eq!(decryptor.decrypt::<u32>(&output).unwrap(), 1);
+        }
     }
 }

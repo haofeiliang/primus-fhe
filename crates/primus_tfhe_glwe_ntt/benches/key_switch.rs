@@ -5,8 +5,8 @@ use std::hint::black_box;
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use primus_glwe::{
-    GlweCiphertext, GlweSecretKey, NttGadgetEncryptContext, NttGlweKeySwitchingContext,
-    NttGlweKeySwitchingKey, NttGlweSecretKey,
+    GlweCiphertext, NttGadgetEncryptContext, NttGlweKeySwitchingContext, NttGlweKeySwitchingKey,
+    NttGlweSecretKey,
 };
 use primus_lwe::{LweCiphertext, LweKeySwitchingKey, LweSecretKey, LweSecretKeyRef};
 use primus_ntt::{NttTable, U32NttTable};
@@ -21,13 +21,12 @@ fn bench_key_switch(c: &mut Criterion) {
     let table = U32NttTable::new(poly_length.trailing_zeros(), modulus).unwrap();
     let mut rng = StdRng::seed_from_u64(42);
 
+    let small_lwe_secret_key = LweSecretKey::generate(parameters.small_lwe(), &mut rng);
+    let (glwe_secret_key, input_ntt_secret_key) =
+        NttGlweSecretKey::generate_pair(parameters.glwe(), &table, &mut rng);
     let client_key = ClientKey::new(
-        LweSecretKey::generate(parameters.small_lwe(), &mut rng),
-        GlweSecretKey::generate(
-            parameters.glwe().size(),
-            parameters.glwe().secret_key_sampler(),
-            &mut rng,
-        ),
+        small_lwe_secret_key,
+        glwe_secret_key,
         parameters.pbs_order(),
     );
     let lwe_secret_key = client_key.small_lwe_secret_key();
@@ -57,8 +56,6 @@ fn bench_key_switch(c: &mut Criterion) {
         &mut gadget_context,
     );
 
-    let input_ntt_secret_key =
-        NttGlweSecretKey::from_coeff_secret_key(input_glwe_secret_key, &table);
     let input = input_ntt_secret_key
         .encrypt_zeros(parameters.glwe(), &table, &mut rng)
         .into_coeff_form(&table);

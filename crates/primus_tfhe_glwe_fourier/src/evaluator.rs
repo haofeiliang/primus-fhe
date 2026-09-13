@@ -43,7 +43,12 @@ where
     T: TorusFftValue,
     Table: FftTable,
 {
-    /// Creates an evaluator after checking the server-key layout.
+    /// Creates an evaluator after checking the server-key layout and bases.
+    ///
+    /// # Correctness
+    ///
+    /// The server key must have been generated with this context's FFT table
+    /// instance. The checks validate parameters, not Fourier table identity.
     pub fn try_new(
         context: &'a TfheContext<T, Table>,
         server_key: &'a ServerKey<T>,
@@ -121,11 +126,10 @@ where
         let glwe = parameters.glwe();
         self.server_key
             .bootstrapping_key()
-            .fourier_blind_rotate_lookup_table_to(
+            .fourier_blind_rotate_lookup_table_kernel_to(
                 input.as_lwe(),
                 lookup_table.polynomial(),
                 &mut self.main_glwe,
-                parameters.bootstrapping(),
                 &mut self.fft,
                 &mut self.blind_rotation,
             );
@@ -168,11 +172,10 @@ where
         );
         self.server_key
             .bootstrapping_key()
-            .fourier_blind_rotate_lookup_table_to(
+            .fourier_blind_rotate_lookup_table_kernel_to(
                 &self.small_lwe,
                 lookup_table.polynomial(),
                 &mut self.main_glwe,
-                parameters.bootstrapping(),
                 &mut self.fft,
                 &mut self.blind_rotation,
             );

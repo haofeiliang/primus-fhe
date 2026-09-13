@@ -1,5 +1,6 @@
 //! Canonical coefficient-domain NTRU secret key.
 
+use num_traits::ConstZero;
 use primus_integer::FheUint;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
@@ -14,6 +15,7 @@ use crate::{NtruParameters, SecretKeyDistr};
 /// magnitude to be strictly less than `q`. Generated keys satisfy this bound
 /// for their parameter modulus; imported keys and conversions to another
 /// modulus retain this caller obligation.
+/// Secret storage, including spare capacity, is securely erased on drop.
 #[derive(Clone)]
 pub struct NtruSecretKey<T: FheUint> {
     pub(crate) key: Vec<T::SignedInteger>,
@@ -29,44 +31,21 @@ impl<T: FheUint> Zeroize for NtruSecretKey<T> {
 
 impl<T: FheUint> ZeroizeOnDrop for NtruSecretKey<T> {}
 
+impl<T: FheUint> Drop for NtruSecretKey<T> {
+    fn drop(&mut self) {
+        self.zeroize();
+    }
+}
+
 impl<T: FheUint> NtruSecretKey<T> {
-    /// Samples a binary prefix and pads the remaining coefficients with zero.
-    ///
-    /// This is kept internal because transform backends must still reject
-    /// candidates that are not invertible in their ciphertext ring.
-    pub(crate) fn generate_padded_binary<R>(
-        poly_length: usize,
-        active_length: usize,
-        distr: SecretKeyDistr,
-        rng: &mut R,
-    ) -> Self
-    where
-        R: rand::Rng + rand::CryptoRng,
-    {
-        assert!((1..=poly_length).contains(&active_length));
-        debug_assert!(distr.is_binary());
-        let mut key = match distr {
-            SecretKeyDistr::UniformBinary => {
-                primus_distr::sample_uniform_binary_values(active_length, rng)
-            }
-            SecretKeyDistr::Binary { one_probability } => {
-                primus_distr::sample_binary_values_with_probability(
-                    active_length,
-                    one_probability,
-                    rng,
-                )
-            }
-            SecretKeyDistr::FixedHammingWeightBinary { hamming_weight } => {
-                primus_distr::sample_fixed_hamming_weight_binary_values(
-                    active_length,
-                    hamming_weight,
-                    rng,
-                )
-            }
-            _ => unreachable!("binary distribution checked above"),
-        };
-        key.resize(poly_length, T::ZERO.cast_to_signed());
-        Self { key, distr }
+    /// Owns the candidate buffer before sampling so unwinding erases partial
+    /// secrets. Rejection sampling reuses this allocation, and padded sampling
+    /// overwrites only the active prefix, leaving the zero suffix intact.
+    pub(super) fn allocate(poly_length: usize, distr: SecretKeyDistr) -> Self {
+        Self {
+            key: vec![T::SignedInteger::ZERO; poly_length],
+            distr,
+        }
     }
 
     /// Creates a coefficient-domain NTRU key from signed values.
@@ -81,8 +60,12 @@ impl<T: FheUint> NtruSecretKey<T> {
     /// Panics if `key` is empty.
     #[inline]
     pub fn new(key: Vec<T::SignedInteger>, distr: SecretKeyDistr) -> Self {
-        assert!(!key.is_empty(), "NTRU secret key must not be empty");
-        Self { key, distr }
+        let secret_key = Self { key, distr };
+        assert!(
+            !secret_key.key.is_empty(),
+            "NTRU secret key must not be empty"
+        );
+        secret_key
     }
 
     /// Returns the coefficient polynomial length.
@@ -114,9 +97,10 @@ impl<T: FheUint> NtruSecretKey<T> {
         R: rand::Rng + rand::CryptoRng,
         M: primus_reduce::RingContext<T>,
     {
-        let poly_length = params.poly_length();
-        let distr = params.secret_key_distr();
-        let key = params.secret_key_sampler().sample_signed(poly_length, rng);
-        Self { key, distr }
+        let mut secret_key = Self::allocate(params.poly_length(), params.secret_key_distr());
+        params
+            .secret_key_sampler()
+            .sample_signed_to(&mut secret_key.key, rng);
+        secret_key
     }
 }

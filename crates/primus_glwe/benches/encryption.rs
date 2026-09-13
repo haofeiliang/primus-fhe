@@ -42,7 +42,7 @@ fn ntt_encryption(c: &mut Criterion) {
             3.2,
         );
         let ntt = UintNttTable::new(n.trailing_zeros(), modulus).unwrap();
-        let sk = NttGlweSecretKey::generate(&params, &ntt, &mut rng);
+        let (_, sk) = NttGlweSecretKey::generate_pair(&params, &ntt, &mut rng);
         let pk = NttGlwePublicKey::generate(&sk, &params, &ntt, &mut rng);
         let mut public_context = NttGlwePublicEncryptContext::new(n);
         let mut ciphertext = sk.encrypt(&message, &params, &ntt, &mut rng);
@@ -141,7 +141,7 @@ fn fourier_encryption(c: &mut Criterion) {
         );
         let table = RustFftTable::new(n.trailing_zeros()).unwrap();
         let mut fft = FftEngine::new(&table);
-        let sk = FourierGlweSecretKey::generate(&params, &mut fft, &mut rng);
+        let (_, sk) = FourierGlweSecretKey::generate_pair(&params, &mut fft, &mut rng);
         let mut encrypt_context = FourierGlweEncryptContext::new(n);
         let mut decrypt_context = FourierGlweDecryptContext::new(n);
         let mut ciphertext =

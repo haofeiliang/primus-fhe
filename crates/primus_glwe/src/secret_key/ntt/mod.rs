@@ -119,37 +119,46 @@ impl<T: FheUint> NttGlweSecretKey<T> {
     where
         Table: NttTable<ValueT = T>,
     {
+        assert_eq!(ntt_table.poly_length(), secret_key.poly_length());
+        Self::from_coeff_secret_key_kernel(secret_key, ntt_table)
+    }
+
+    /// Requires a matching table length and signed coefficient magnitudes below
+    /// its modulus. The final key owns storage before NTT can panic.
+    fn from_coeff_secret_key_kernel<Table>(secret_key: &GlweSecretKey<T>, ntt_table: &Table) -> Self
+    where
+        Table: NttTable<ValueT = T>,
+    {
         let size = secret_key.glwe_size();
         let poly_length = size.poly_length();
-        assert_eq!(ntt_table.poly_length(), poly_length);
-
-        let mut key = vec![T::ZERO; size.mask_len()];
+        let mut key = Self {
+            key: vec![T::ZERO; size.mask_len()],
+            size,
+            distr: secret_key.distr(),
+        };
         let modulus = UintModulus(ntt_table.modulus());
-        for (coefficients, secret) in secret_key.iter().zip(key.chunks_exact_mut(poly_length)) {
+        for (coefficients, secret) in secret_key.iter().zip(key.key.chunks_exact_mut(poly_length)) {
             modulus.encode_signed_slice_to(coefficients, secret);
             ntt_table.transform_slice(secret);
         }
 
-        Self::new(key, size, secret_key.distr)
+        key
     }
 
-    /// Generates a new [`NttGlweSecretKey<T>`] from parameters.
-    /// Reuses the parameter sampler to fill the final key storage with canonical
-    /// residues, then transforms each polynomial in place. Fixed weights apply
-    /// to the complete coefficient key, not to individual polynomials.
+    /// Samples one signed coefficient key and returns it with its NTT form.
+    /// Fixed weights apply to the complete `k * N` coefficient key. Both
+    /// representations are erased on drop, including unwinding during generation.
     ///
     /// # Panics
     ///
-    /// Panics if the table's polynomial length or modulus differs from `params`,
-    /// or a fixed secret-key weight exceeds the complete key length or its sum
-    /// overflows. Key storage is erased on unwinding if sampling or NTT panics.
+    /// Panics before sampling if the table length or modulus differs from
+    /// `params`. Inherits [`GlweSecretKey::generate`]'s sampling conditions.
     #[must_use]
-    #[inline]
-    pub fn generate<R, M>(
+    pub fn generate_pair<R, M>(
         params: &GlweParameters<T, M>,
         ntt_table: &impl NttTable<ValueT = T>,
         rng: &mut R,
-    ) -> Self
+    ) -> (GlweSecretKey<T>, Self)
     where
         R: rand::Rng + rand::CryptoRng,
         M: FieldContext<T>,
@@ -164,21 +173,8 @@ impl<T: FheUint> NttGlweSecretKey<T> {
             params.cipher_modulus().value(),
             "NTT ciphertext modulus mismatch"
         );
-        let size = params.size();
-        // Own storage before sampling so Drop erases it even on unwinding.
-        let mut result = Self {
-            key: vec![T::ZERO; size.mask_len()],
-            size,
-            distr: params.secret_key_distr(),
-        };
-        params.secret_key_sampler().sample_encoded_to(
-            &mut result.key,
-            params.cipher_modulus_minus_one(),
-            rng,
-        );
-        for polynomial in result.key.chunks_exact_mut(size.poly_length()) {
-            ntt_table.transform_slice(polynomial);
-        }
-        result
+        let coefficients = GlweSecretKey::generate(params.size(), params.secret_key_sampler(), rng);
+        let key = Self::from_coeff_secret_key_kernel(&coefficients, ntt_table);
+        (coefficients, key)
     }
 }

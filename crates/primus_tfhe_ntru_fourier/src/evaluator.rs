@@ -14,7 +14,7 @@ where
     Table: FftTable,
 {
     context: &'a TfheContext<T, Table>,
-    server_key: &'a ServerKey,
+    server_key: &'a ServerKey<T>,
     fft: FftEngine<'a, Table>,
     blind_rotation: BlindRotationWorkspace<T>,
 }
@@ -25,9 +25,14 @@ where
     Table: FftTable,
 {
     /// Creates reusable evaluation state after checking the server key once.
+    ///
+    /// # Correctness
+    ///
+    /// The server key must have been generated with this context's FFT table
+    /// instance. Parameter compatibility does not establish Fourier table identity.
     pub fn try_new(
         context: &'a TfheContext<T, Table>,
-        server_key: &'a ServerKey,
+        server_key: &'a ServerKey<T>,
     ) -> Result<Self, TfheEvaluationError> {
         if !server_key.is_compatible(context.parameters()) {
             return Err(TfheEvaluationError::IncompatibleServerKey);
@@ -58,7 +63,8 @@ where
     ///
     /// # Panics
     ///
-    /// Panics if an input or output LWE dimension differs from `N`.
+    /// Panics if an input or output LWE dimension differs from the context's
+    /// external LWE dimension.
     pub fn apply_lookup_table_to(
         &mut self,
         input: &Ciphertext<T>,
@@ -81,7 +87,6 @@ where
         self.server_key.key_switching_key().key_switch_to(
             &self.blind_rotation.current,
             &mut self.blind_rotation.scratch,
-            parameters.key_switching(),
             &mut self.fft,
             &mut self.blind_rotation.external_product,
         );

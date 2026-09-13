@@ -148,23 +148,33 @@ impl FourierGlweSecretKey {
         key
     }
 
-    /// Generates a native-torus coefficient key and converts it to Fourier form.
-    /// Inherits [`GlweSecretKey::generate`]'s sampling conditions and
-    /// [`Self::from_coeff_secret_key`]'s FFT length requirement.
-    #[inline]
+    /// Samples one signed coefficient key and returns it with its Fourier form.
+    /// Fixed weights apply to the complete `k * N` coefficient key. Both
+    /// representations and conversion scratch are erased on drop, including
+    /// unwinding during generation. Keep using the same FFT table instance.
+    ///
+    /// # Panics
+    ///
+    /// Panics before sampling if the FFT length differs from `params`.
+    /// Inherits [`GlweSecretKey::generate`]'s sampling conditions.
     #[must_use]
-    pub fn generate<T, R, Table>(
+    pub fn generate_pair<T, R, Table>(
         params: &GlweParameters<T, NativeModulus<T>>,
         fft: &mut FftEngine<'_, Table>,
         rng: &mut R,
-    ) -> Self
+    ) -> (GlweSecretKey<T>, Self)
     where
         R: rand::Rng + rand::CryptoRng,
         Table: FftTable,
         T: TorusFftValue,
     {
-        let coeff_sk =
-            GlweSecretKey::<T>::generate(params.size(), params.secret_key_sampler(), rng);
-        Self::from_coeff_secret_key(&coeff_sk, fft)
+        assert_eq!(
+            fft.poly_length(),
+            params.poly_length(),
+            "FFT polynomial length mismatch"
+        );
+        let coefficients = GlweSecretKey::generate(params.size(), params.secret_key_sampler(), rng);
+        let key = Self::from_coeff_secret_key(&coefficients, fft);
+        (coefficients, key)
     }
 }

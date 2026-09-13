@@ -24,6 +24,7 @@ impl<T: TorusFftValue> ServerKey<T> {
             && self.bootstrapping_key.input_modulus()
                 == parameters.small_lwe().cipher_modulus_value()
             && self.bootstrapping_key.size() == bootstrapping.size()
+            && self.bootstrapping_key.basis() == bootstrapping.basis()
             && self.glwe_key_switching_key.input_dimension() == key_switching.input_dimension()
             && self.glwe_key_switching_key.output_dimension() == key_switching.output_dimension()
             && self.glwe_key_switching_key.poly_length() == key_switching.poly_length()
@@ -111,31 +112,29 @@ where
         let parameters = self.context.parameters();
         client_key.check_compatible(parameters)?;
 
-        let bootstrapping_key = self.generate_bootstrapping_key(client_key, rng);
-        let glwe_key_switching_key = self.generate_glwe_key_switching_key(client_key, rng);
-
-        Ok(ServerKey {
-            bootstrapping_key,
-            glwe_key_switching_key,
-        })
-    }
-
-    fn generate_bootstrapping_key<R>(
-        &mut self,
-        client_key: &ClientKey<T>,
-        rng: &mut R,
-    ) -> FourierGlweBootstrappingKey<T>
-    where
-        R: rand::Rng + rand::CryptoRng,
-    {
-        let parameters = self.context.parameters();
         let main_glwe_secret_key = FourierGlweSecretKey::from_coeff_secret_key(
             client_key.glwe_secret_key(),
             &mut self.fft,
         );
+        Ok(self.generate_server_key_with_main(client_key, main_glwe_secret_key, rng))
+    }
+
+    /// The caller has checked the client key and prepared its matching main
+    /// transform with this context's table. Taking ownership bounds its lifetime
+    /// to BSK generation, before allocating the key-switching material.
+    fn generate_server_key_with_main<R>(
+        &mut self,
+        client_key: &ClientKey<T>,
+        main_glwe_secret_key: FourierGlweSecretKey,
+        rng: &mut R,
+    ) -> ServerKey<T>
+    where
+        R: rand::Rng + rand::CryptoRng,
+    {
+        let parameters = self.context.parameters();
         let bootstrapping_parameters = parameters.bootstrapping();
         self.gadget.resize(bootstrapping_parameters.size());
-        FourierGlweBootstrappingKey::generate_fourier(
+        let bootstrapping_key = FourierGlweBootstrappingKey::generate_fourier(
             client_key.small_lwe_secret_key(),
             parameters.small_lwe(),
             &main_glwe_secret_key,
@@ -143,7 +142,13 @@ where
             &mut self.fft,
             rng,
             &mut self.gadget,
-        )
+        );
+        drop(main_glwe_secret_key);
+        let glwe_key_switching_key = self.generate_glwe_key_switching_key(client_key, rng);
+        ServerKey {
+            bootstrapping_key,
+            glwe_key_switching_key,
+        }
     }
 
     fn generate_glwe_key_switching_key<R>(
@@ -177,8 +182,17 @@ where
     where
         R: rand::Rng + rand::CryptoRng,
     {
-        let client_key = self.generate_client_key(rng);
-        let server_key = self.try_generate_server_key(&client_key, rng)?;
+        let parameters = self.context.parameters();
+        let small_lwe_secret_key = LweSecretKey::generate(parameters.small_lwe(), rng);
+        let (glwe_secret_key, main_glwe_secret_key) =
+            FourierGlweSecretKey::generate_pair(parameters.glwe(), &mut self.fft, rng);
+        let client_key = ClientKey::new(
+            small_lwe_secret_key,
+            glwe_secret_key,
+            parameters.pbs_order(),
+        );
+        client_key.check_compatible(parameters)?;
+        let server_key = self.generate_server_key_with_main(&client_key, main_glwe_secret_key, rng);
         Ok((client_key, server_key))
     }
 }

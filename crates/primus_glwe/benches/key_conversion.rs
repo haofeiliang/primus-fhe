@@ -12,9 +12,9 @@ use primus_fft::{FftEngine, FftTable, RustFftTable};
 use primus_glwe::{
     FourierGadgetEncryptContext, FourierGlweKeySwitchingContext, FourierGlweSchemeSwitchContext,
     FourierGlweSchemeSwitchKey, FourierGlweSecretKey, FourierLwePackingKeySwitchingKey,
-    GlevParameters, GlweParameters, GlweSecretKey, NttGadgetEncryptContext,
-    NttGlweKeySwitchingContext, NttGlweSchemeSwitchContext, NttGlweSchemeSwitchKey,
-    NttGlweSecretKey, NttLwePackingKeySwitchingKey, SecretKeyDistr,
+    GlevParameters, GlweParameters, NttGadgetEncryptContext, NttGlweKeySwitchingContext,
+    NttGlweSchemeSwitchContext, NttGlweSchemeSwitchKey, NttGlweSecretKey,
+    NttLwePackingKeySwitchingKey, SecretKeyDistr,
 };
 use primus_lattice::{
     ggsw::{FourierGgsw, NttGgsw},
@@ -39,8 +39,7 @@ fn ntt_conversion(c: &mut Criterion) {
         let table = U64NttTable::new(n.trailing_zeros(), modulus).unwrap();
         let params = GlweParameters::new(k, n, 64, modulus, SecretKeyDistr::UniformBinary, 3.2);
         let size = params.size();
-        let coeff = GlweSecretKey::generate(size, params.secret_key_sampler(), &mut rng);
-        let sk = NttGlweSecretKey::from_coeff_secret_key(&coeff, &table);
+        let (coeff, sk) = NttGlweSecretKey::generate_pair(&params, &table, &mut rng);
         let glev = GlevParameters::with_glwe_params(&params, 10, Some(3));
         let mut gadget = NttGadgetEncryptContext::new(glev.size());
         let source = params
@@ -147,8 +146,7 @@ fn fourier_conversion(c: &mut Criterion) {
         let mut fft = FftEngine::new(&table);
         let params = GlweParameters::new(k, n, 64, modulus, SecretKeyDistr::UniformBinary, 3.2);
         let size = params.size();
-        let coeff = GlweSecretKey::generate(size, params.secret_key_sampler(), &mut rng);
-        let sk = FourierGlweSecretKey::from_coeff_secret_key(&coeff, &mut fft);
+        let (coeff, sk) = FourierGlweSecretKey::generate_pair(&params, &mut fft, &mut rng);
         let glev = GlevParameters::with_glwe_params(&params, 10, Some(3));
         let mut gadget = FourierGadgetEncryptContext::new(glev.size());
         let source = params

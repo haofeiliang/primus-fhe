@@ -9,12 +9,11 @@ use primus_poly::PolynomialOwned;
 use crate::{ClientKey, TfheContext, TfheKeyError, TfheParameters};
 
 /// Exact NTT evaluation keys for NTRU TFHE.
+/// The initializer retains the ring and basis metadata shared by the controls.
 pub struct ServerKey<T: FheUint> {
     initializer: NttNtruKeySwitchingKey<T>,
     controls: Vec<T>,
     key_switching_key: NttNtruKeySwitchingKey<T>,
-    poly_length: usize,
-    bootstrapping_nlev_len: usize,
 }
 
 impl<T: FheUint> ServerKey<T> {
@@ -33,18 +32,18 @@ impl<T: FheUint> ServerKey<T> {
     /// Iterates over the contiguous NGSW controls without allocation.
     pub(crate) fn iter_controls(&self) -> impl ExactSizeIterator<Item = NttNgsw<&[T]>> {
         self.controls
-            .chunks_exact(self.bootstrapping_nlev_len)
+            .chunks_exact(self.initializer.as_slice().len())
             .map(NttNgsw::new)
     }
 
-    /// Checks the stored layout against one parameter set.
+    /// Checks the generated ring and decomposition parameters before evaluation.
     pub(crate) fn is_compatible(&self, parameters: &TfheParameters<T>) -> bool {
-        self.poly_length == parameters.poly_length()
-            && self.bootstrapping_nlev_len == parameters.bootstrapping().nlev_len()
+        self.initializer.poly_length() == parameters.poly_length()
+            && self.initializer.basis() == parameters.bootstrapping().basis()
+            && self.key_switching_key.poly_length() == parameters.poly_length()
+            && self.key_switching_key.basis() == parameters.key_switching().basis()
             && self.controls.len()
-                == parameters.external_lwe().dimension() * parameters.bootstrapping().nlev_len()
-            && self.initializer.as_slice().len() == parameters.bootstrapping().nlev_len()
-            && self.key_switching_key.as_slice().len() == parameters.key_switching().nlev_len()
+                == parameters.external_lwe().dimension() * self.initializer.as_slice().len()
     }
 }
 
@@ -149,8 +148,6 @@ where
             initializer,
             controls,
             key_switching_key,
-            poly_length: parameters.poly_length(),
-            bootstrapping_nlev_len: parameters.bootstrapping().nlev_len(),
         }
     }
 
@@ -231,6 +228,7 @@ where
             rng,
         )?;
         let client_key = ClientKey::new(client, accumulator, lwe_dimension);
+        client_key.check_compatible(parameters)?;
         let server_key = self.generate_server_key_from_transformed(
             &client_key,
             &client_ntt,

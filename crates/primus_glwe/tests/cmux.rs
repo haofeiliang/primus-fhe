@@ -38,7 +38,7 @@ fn fourier_cmux_selects_requested_glwe() {
         0.7,
     );
     let params = GlevParameters::with_glwe_params(&glwe_params, 8, None);
-    let secret_key = FourierGlweSecretKey::generate(&glwe_params, &mut fft, &mut rng);
+    let (_, secret_key) = FourierGlweSecretKey::generate_pair(&glwe_params, &mut fft, &mut rng);
     let mut encrypt_context = FourierGlweEncryptContext::new(POLY_LENGTH);
     let mut decrypt_context = FourierGlweDecryptContext::new(POLY_LENGTH);
     let mut gadget_context = FourierGadgetEncryptContext::new(params.size());

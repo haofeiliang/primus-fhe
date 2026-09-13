@@ -1,10 +1,12 @@
-use primus_fft::{FftEngine, FftTable, RustFftTable};
+use std::panic::{AssertUnwindSafe, catch_unwind};
+
+use primus_fft::{FftEngine, FftTable, RustFftTable, TfheFftTable};
 use primus_lattice::ntru::FourierNtruOwned;
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntru::{
     FourierNtruDecryptContext, FourierNtruEncryptContext, FourierNtruExternalProductContext,
     FourierNtruGadgetEncryptContext, FourierNtruKeySwitchingKey, FourierNtruSecretKey,
-    NlevParameters, NtruParameters, NtruSecretKey, NttNtruExternalProductContext,
+    NlevParameters, NtruCiphertext, NtruParameters, NtruSecretKey, NttNtruExternalProductContext,
     NttNtruGadgetEncryptContext, NttNtruKeySwitchingKey, NttNtruSecretKey, SecretKeyDistr,
 };
 use primus_ntt::{NttTable, UintNttTable};
@@ -21,24 +23,6 @@ fn message() -> Vec<u32> {
         .collect()
 }
 
-fn ntt_key_pair(
-    parameters: &NtruParameters<u32, BarrettModulus<u32>>,
-    ntt: &UintNttTable<u32>,
-    rng: &mut StdRng,
-) -> (NtruSecretKey<u32>, NttNtruSecretKey<u32>) {
-    for _ in 0..1024 {
-        let coefficient_key = NtruSecretKey::generate(parameters, rng);
-        if let Ok(transformed_key) = NttNtruSecretKey::try_from_coeff_secret_key(
-            &coefficient_key,
-            parameters.cipher_modulus(),
-            ntt,
-        ) {
-            return (coefficient_key, transformed_key);
-        }
-    }
-    panic!("failed to generate an invertible NTT NTRU secret key");
-}
-
 #[test]
 fn ntt_key_switch_preserves_plaintext() {
     let mut rng = StdRng::seed_from_u64(0x4e54_5452_554b_534b);
@@ -52,8 +36,10 @@ fn ntt_key_switch_preserves_plaintext() {
         0.7,
     );
     let key_switching = NlevParameters::with_ntru_params(&parameters, 9, None);
-    let (input_coefficient_key, input_key) = ntt_key_pair(&parameters, &ntt, &mut rng);
-    let (output_coefficient_key, output_key) = ntt_key_pair(&parameters, &ntt, &mut rng);
+    let (input_coefficient_key, input_key) =
+        NttNtruSecretKey::generate_pair(&parameters, &ntt, &mut rng).unwrap();
+    let (output_coefficient_key, output_key) =
+        NttNtruSecretKey::generate_pair(&parameters, &ntt, &mut rng).unwrap();
     assert_ne!(
         input_coefficient_key.as_slice(),
         output_coefficient_key.as_slice()
@@ -79,7 +65,7 @@ fn ntt_key_switch_preserves_plaintext() {
         )
         .into_coeff_form(&ntt);
     let mut external_product = NttNtruExternalProductContext::new(POLY_LENGTH);
-    let switched = switching_key.key_switch(&input, &key_switching, &ntt, &mut external_product);
+    let switched = switching_key.key_switch(&input, modulus, &ntt, &mut external_product);
     let switched = switched.into_ntt_form(&ntt);
 
     assert_eq!(
@@ -88,26 +74,15 @@ fn ntt_key_switch_preserves_plaintext() {
     );
 }
 
-fn fourier_key_pair(
-    parameters: &NtruParameters<u32, NativeModulus<u32>>,
-    fft: &mut FftEngine<'_, RustFftTable>,
-    rng: &mut StdRng,
-) -> (NtruSecretKey<u32>, FourierNtruSecretKey) {
-    for _ in 0..1024 {
-        let coefficient_key = NtruSecretKey::generate(parameters, rng);
-        if let Ok(transformed_key) =
-            FourierNtruSecretKey::try_from_coeff_secret_key(&coefficient_key, fft)
-        {
-            return (coefficient_key, transformed_key);
-        }
-    }
-    panic!("failed to generate an invertible Fourier NTRU secret key");
-}
-
 #[test]
 fn fourier_key_switch_preserves_plaintext() {
+    check_fourier_key_switch::<RustFftTable>();
+    check_fourier_key_switch::<TfheFftTable>();
+}
+
+fn check_fourier_key_switch<Table: FftTable>() {
     let mut rng = StdRng::seed_from_u64(0x464f_5552_4b53_574b);
-    let table = RustFftTable::new(POLY_LENGTH.trailing_zeros()).unwrap();
+    let table = Table::new(POLY_LENGTH.trailing_zeros()).unwrap();
     let mut fft = FftEngine::new(&table);
     let parameters = NtruParameters::new(
         POLY_LENGTH,
@@ -117,8 +92,10 @@ fn fourier_key_switch_preserves_plaintext() {
         0.7,
     );
     let key_switching = NlevParameters::with_ntru_params(&parameters, 8, None);
-    let (input_coefficient_key, input_key) = fourier_key_pair(&parameters, &mut fft, &mut rng);
-    let (output_coefficient_key, output_key) = fourier_key_pair(&parameters, &mut fft, &mut rng);
+    let (input_coefficient_key, input_key) =
+        FourierNtruSecretKey::generate_pair(&parameters, &mut fft, &mut rng).unwrap();
+    let (output_coefficient_key, output_key) =
+        FourierNtruSecretKey::generate_pair(&parameters, &mut fft, &mut rng).unwrap();
     assert_ne!(
         input_coefficient_key.as_slice(),
         output_coefficient_key.as_slice()
@@ -148,12 +125,7 @@ fn fourier_key_switch_preserves_plaintext() {
     input.write_torus_form(&mut input_coefficients, &mut fft);
 
     let mut external_product = FourierNtruExternalProductContext::new(POLY_LENGTH);
-    let switched = switching_key.key_switch(
-        &input_coefficients,
-        &key_switching,
-        &mut fft,
-        &mut external_product,
-    );
+    let switched = switching_key.key_switch(&input_coefficients, &mut fft, &mut external_product);
     let mut transformed = FourierNtruOwned::zero(fft.fourier_length());
     switched.write_fourier_form(&mut transformed, &mut fft);
     let mut decrypt_context = FourierNtruDecryptContext::new(POLY_LENGTH);
@@ -164,4 +136,154 @@ fn fourier_key_switch_preserves_plaintext() {
             .as_ref(),
         message
     );
+}
+
+fn unit_key() -> NtruSecretKey<u32> {
+    let mut coefficients = vec![0; POLY_LENGTH];
+    coefficients[0] = 1;
+    NtruSecretKey::new(coefficients, SecretKeyDistr::UniformBinary)
+}
+
+#[test]
+fn ntt_key_switch_rejects_mismatched_resources_before_writing() {
+    let modulus = BarrettModulus::new(EXPLICIT_MODULUS);
+    let other_modulus = BarrettModulus::new(998_244_353);
+    let ntt = UintNttTable::new(POLY_LENGTH.trailing_zeros(), modulus).unwrap();
+    let short_ntt = UintNttTable::new((POLY_LENGTH / 2).trailing_zeros(), modulus).unwrap();
+    let other_ntt = UintNttTable::new(POLY_LENGTH.trailing_zeros(), other_modulus).unwrap();
+    let params = NtruParameters::new(
+        POLY_LENGTH,
+        PLAIN_MODULUS,
+        modulus,
+        SecretKeyDistr::UniformBinary,
+        0.7,
+    );
+    let params = NlevParameters::with_ntru_params(&params, 9, None);
+    let coeff_key = unit_key();
+    let key = NttNtruSecretKey::try_from_coeff_secret_key(&coeff_key, modulus, &ntt).unwrap();
+    let mut rng = StdRng::seed_from_u64(0x4e54_545f_424f_554e);
+    let switching_key = NttNtruKeySwitchingKey::generate(
+        &coeff_key,
+        &key,
+        &params,
+        &ntt,
+        &mut rng,
+        &mut NttNtruGadgetEncryptContext::new(POLY_LENGTH),
+    );
+
+    for (name, input_len, output_len, scratch_len, modulus, table) in [
+        (
+            "input",
+            POLY_LENGTH / 2,
+            POLY_LENGTH,
+            POLY_LENGTH,
+            modulus,
+            &ntt,
+        ),
+        (
+            "output",
+            POLY_LENGTH,
+            POLY_LENGTH / 2,
+            POLY_LENGTH,
+            modulus,
+            &ntt,
+        ),
+        (
+            "scratch",
+            POLY_LENGTH,
+            POLY_LENGTH,
+            POLY_LENGTH / 2,
+            modulus,
+            &ntt,
+        ),
+        (
+            "table length",
+            POLY_LENGTH,
+            POLY_LENGTH,
+            POLY_LENGTH,
+            modulus,
+            &short_ntt,
+        ),
+        (
+            "arithmetic modulus",
+            POLY_LENGTH,
+            POLY_LENGTH,
+            POLY_LENGTH,
+            other_modulus,
+            &ntt,
+        ),
+        (
+            "table modulus",
+            POLY_LENGTH,
+            POLY_LENGTH,
+            POLY_LENGTH,
+            modulus,
+            &other_ntt,
+        ),
+    ] {
+        let input = NtruCiphertext::<Vec<u32>>::zero(input_len);
+        let mut output = NtruCiphertext::new(vec![7; output_len]);
+        let mut scratch = NttNtruExternalProductContext::new(scratch_len);
+        assert!(
+            catch_unwind(AssertUnwindSafe(|| {
+                switching_key.key_switch_to(&input, &mut output, modulus, table, &mut scratch);
+            }))
+            .is_err(),
+            "{name}"
+        );
+        assert_eq!(output.as_ref(), vec![7; output_len], "{name}");
+    }
+}
+
+#[test]
+fn fourier_key_switch_rejects_mismatched_resources_before_writing() {
+    // Shape validation precedes FFT dispatch; numerical tests above cover both backends.
+    let table = RustFftTable::new(POLY_LENGTH.trailing_zeros()).unwrap();
+    let short_table = RustFftTable::new((POLY_LENGTH / 2).trailing_zeros()).unwrap();
+    let mut fft = FftEngine::new(&table);
+    let params = NtruParameters::new(
+        POLY_LENGTH,
+        PLAIN_MODULUS,
+        NativeModulus::new(),
+        SecretKeyDistr::UniformBinary,
+        0.7,
+    );
+    let params = NlevParameters::with_ntru_params(&params, 8, None);
+    let coeff_key = unit_key();
+    let key = FourierNtruSecretKey::try_from_coeff_secret_key(&coeff_key, &mut fft).unwrap();
+    let mut rng = StdRng::seed_from_u64(0x4646_545f_424f_554e);
+    let switching_key = FourierNtruKeySwitchingKey::generate(
+        &coeff_key,
+        &key,
+        &params,
+        &mut fft,
+        &mut rng,
+        &mut FourierNtruGadgetEncryptContext::new(POLY_LENGTH),
+    );
+
+    for (name, input_len, output_len, scratch_len, table) in [
+        ("input", POLY_LENGTH / 2, POLY_LENGTH, POLY_LENGTH, &table),
+        ("output", POLY_LENGTH, POLY_LENGTH / 2, POLY_LENGTH, &table),
+        ("scratch", POLY_LENGTH, POLY_LENGTH, POLY_LENGTH / 2, &table),
+        (
+            "FFT length",
+            POLY_LENGTH,
+            POLY_LENGTH,
+            POLY_LENGTH,
+            &short_table,
+        ),
+    ] {
+        let input = NtruCiphertext::<Vec<u32>>::zero(input_len);
+        let mut output = NtruCiphertext::new(vec![7; output_len]);
+        let mut scratch = FourierNtruExternalProductContext::new(scratch_len);
+        let mut fft = FftEngine::new(table);
+        assert!(
+            catch_unwind(AssertUnwindSafe(|| {
+                switching_key.key_switch_to(&input, &mut output, &mut fft, &mut scratch);
+            }))
+            .is_err(),
+            "{name}"
+        );
+        assert_eq!(output.as_ref(), vec![7; output_len], "{name}");
+    }
 }

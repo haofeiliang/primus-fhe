@@ -1,5 +1,6 @@
 //! Single-modulus coefficient-domain GLWE secret key.
 
+use num_traits::ConstZero;
 use primus_distr::SecretKeySampler;
 use primus_integer::FheUint;
 use primus_lattice::GlweSize;
@@ -97,6 +98,7 @@ impl<T: FheUint> GlweSecretKey<T> {
 
     /// Generates a canonical signed GLWE secret key using borrowed precomputation.
     /// Fixed weights apply to the complete coefficient key.
+    /// Partial secret storage is erased if sampling panics.
     ///
     /// # Panics
     ///
@@ -106,14 +108,13 @@ impl<T: FheUint> GlweSecretKey<T> {
     where
         R: rand::Rng + rand::CryptoRng,
     {
-        let key_len = glwe_size.mask_len();
-        let key = sampler.sample_signed(key_len, rng);
-        let distr = sampler.distr();
-
-        Self {
-            key,
+        // Own the allocation before sampling so unwinding erases partial secrets.
+        let mut key = Self {
+            key: vec![T::SignedInteger::ZERO; glwe_size.mask_len()],
             glwe_size,
-            distr,
-        }
+            distr: sampler.distr(),
+        };
+        sampler.sample_signed_to(&mut key.key, rng);
+        key
     }
 }

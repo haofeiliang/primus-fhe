@@ -29,6 +29,8 @@ where
         SecretKeyDistr::UniformBinary,
         SecretKeyDistr::SparseTernary,
         SecretKeyDistr::gaussian(3.2),
+        // A weight greater than N must be sampled over all k*N coefficients.
+        SecretKeyDistr::fixed_hamming_weight_ternary(DIMENSION * POLY_LENGTH, POLY_LENGTH + 7),
     ] {
         let params = GlweParameters::new(
             DIMENSION,
@@ -38,7 +40,7 @@ where
             secret_key_distr,
             0.7,
         );
-        let secret_key = FourierGlweSecretKey::generate(&params, &mut fft, &mut rng);
+        let (_, secret_key) = FourierGlweSecretKey::generate_pair(&params, &mut fft, &mut rng);
         let mut encrypt_context = FourierGlweEncryptContext::new(POLY_LENGTH);
         let mut decrypt_context = FourierGlweDecryptContext::new(POLY_LENGTH);
 

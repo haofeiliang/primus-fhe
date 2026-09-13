@@ -46,12 +46,8 @@ fn ntt_and_coefficient_inputs_reuse_the_automorphism_key() {
     );
     let glev_parameters = GlevParameters::with_glwe_params(&glwe_parameters, 10, Some(3));
     let mut rng = StdRng::seed_from_u64(0x0043_4253_5052_494d);
-    let coefficient_secret = GlweSecretKey::generate(
-        glwe_parameters.size(),
-        glwe_parameters.secret_key_sampler(),
-        &mut rng,
-    );
-    let secret = NttGlweSecretKey::from_coeff_secret_key(&coefficient_secret, &ntt);
+    let (coefficient_secret, secret) =
+        NttGlweSecretKey::generate_pair(&glwe_parameters, &ntt, &mut rng);
     let mut gadget = NttGadgetEncryptContext::new(glev_parameters.size());
 
     let automorphism_key = NttGlweAutomorphismKey::generate(

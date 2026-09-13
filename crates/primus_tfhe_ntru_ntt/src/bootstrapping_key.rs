@@ -53,7 +53,7 @@ pub(crate) fn blind_rotate_lookup_table_to<T, Table, A>(
     server_key.initializer().key_switch_to(
         &workspace.scratch,
         &mut workspace.current,
-        parameters.bootstrapping(),
+        parameters.bootstrapping().ntru().cipher_modulus(),
         ntt,
         &mut workspace.external_product,
     );

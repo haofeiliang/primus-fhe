@@ -11,7 +11,7 @@ use primus_fft::{FftEngine, FftTable, RustFftTable};
 use primus_glwe::{
     FourierGadgetEncryptContext, FourierGlweAutomorphismContext, FourierGlweAutomorphismKey,
     FourierGlweEncryptContext, FourierGlwePackingContext, FourierGlweSecretKey,
-    FourierGlweTraceContext, FourierGlweTraceKey, GlevParameters, GlweParameters, GlweSecretKey,
+    FourierGlweTraceContext, FourierGlweTraceKey, GlevParameters, GlweParameters,
     NttGadgetEncryptContext, NttGlwePackingContext, NttGlweSecretKey, NttGlweTraceContext,
     NttGlweTraceKey, SecretKeyDistr,
 };
@@ -32,8 +32,7 @@ fn ntt_primitives(c: &mut Criterion) {
         let table = U64NttTable::new(n.trailing_zeros(), modulus).unwrap();
         let params = GlweParameters::new(k, n, 64, modulus, SecretKeyDistr::UniformBinary, 3.2);
         let size = params.size();
-        let coeff = GlweSecretKey::generate(size, params.secret_key_sampler(), &mut rng);
-        let sk = NttGlweSecretKey::from_coeff_secret_key(&coeff, &table);
+        let (coeff, sk) = NttGlweSecretKey::generate_pair(&params, &table, &mut rng);
         let glev = GlevParameters::with_glwe_params(&params, 10, Some(3));
         let mut gadget = NttGadgetEncryptContext::new(glev.size());
         let key = NttGlweTraceKey::generate(&coeff, &sk, &glev, &table, &mut rng, &mut gadget);
@@ -119,8 +118,9 @@ fn ntt_primitives(c: &mut Criterion) {
             for (i, lwe) in batch.chunks_exact_mut(size.mask_len() + 1).enumerate() {
                 let (mask, body) = lwe.split_at_mut(size.mask_len());
                 let mut b = encoded_message[i];
-                // Independent LWE masks under the flattened binary GLWE key.
-                for (a, &secret) in mask.iter_mut().zip(coeff.iter().flatten()) {
+                // Noiseless LWE fixture with an independent mask under the
+                // flattened binary key; only packing is timed below.
+                for (a, &secret) in mask.iter_mut().zip(coeff.as_slice()) {
                     *a = rng.random_range(0..1_125_899_906_826_241u64);
                     if secret == 1 {
                         b = modulus.reduce_add(b, *a);
@@ -155,8 +155,7 @@ fn fourier_primitives(c: &mut Criterion) {
         let mut fft = FftEngine::new(&table);
         let params = GlweParameters::new(k, n, 64, modulus, SecretKeyDistr::UniformBinary, 3.2);
         let size = params.size();
-        let coeff = GlweSecretKey::generate(size, params.secret_key_sampler(), &mut rng);
-        let sk = FourierGlweSecretKey::from_coeff_secret_key(&coeff, &mut fft);
+        let (coeff, sk) = FourierGlweSecretKey::generate_pair(&params, &mut fft, &mut rng);
         let glev = GlevParameters::with_glwe_params(&params, 10, Some(3));
         let mut gadget = FourierGadgetEncryptContext::new(glev.size());
         let key =
@@ -242,8 +241,9 @@ fn fourier_primitives(c: &mut Criterion) {
             for (i, lwe) in batch.chunks_exact_mut(size.mask_len() + 1).enumerate() {
                 let (mask, body) = lwe.split_at_mut(size.mask_len());
                 let mut b = encoded_message[i];
-                // Independent LWE masks under the flattened binary GLWE key.
-                for (a, &secret) in mask.iter_mut().zip(coeff.iter().flatten()) {
+                // Noiseless LWE fixture with an independent mask under the
+                // flattened binary key; only packing is timed below.
+                for (a, &secret) in mask.iter_mut().zip(coeff.as_slice()) {
                     *a = rng.random::<u64>();
                     if secret == 1 {
                         b = modulus.reduce_add(b, *a);
@@ -277,8 +277,7 @@ fn fourier_automorphism_backend<Table: FftTable>(c: &mut Criterion, backend: &st
             SecretKeyDistr::UniformBinary,
             3.2,
         );
-        let coeff = GlweSecretKey::generate(params.size(), params.secret_key_sampler(), &mut rng);
-        let sk = FourierGlweSecretKey::from_coeff_secret_key(&coeff, &mut fft);
+        let (coeff, sk) = FourierGlweSecretKey::generate_pair(&params, &mut fft, &mut rng);
         let glev = GlevParameters::with_glwe_params(&params, 10, Some(3));
         let mut gadget = FourierGadgetEncryptContext::new(glev.size());
         let key = FourierGlweAutomorphismKey::generate(

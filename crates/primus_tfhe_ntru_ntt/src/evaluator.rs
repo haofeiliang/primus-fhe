@@ -56,7 +56,8 @@ where
     ///
     /// # Panics
     ///
-    /// Panics if an input or output LWE dimension differs from `N`.
+    /// Panics if an input or output LWE dimension differs from the context's
+    /// external LWE dimension.
     pub fn apply_lookup_table_to(
         &mut self,
         input: &Ciphertext<T>,
@@ -79,7 +80,7 @@ where
         self.server_key.key_switching_key().key_switch_to(
             &self.blind_rotation.current,
             &mut self.blind_rotation.scratch,
-            parameters.key_switching(),
+            parameters.key_switching().ntru().cipher_modulus(),
             self.context.table(),
             &mut self.blind_rotation.external_product,
         );

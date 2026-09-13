@@ -37,12 +37,8 @@ fn ntt_glwe_key_switches_for_equal_and_smaller_output_dimensions() {
         SecretKeyDistr::UniformBinary,
         0.7,
     );
-    let input_coeff_key = GlweSecretKey::generate(
-        input_params.size(),
-        input_params.secret_key_sampler(),
-        &mut rng,
-    );
-    let input_key = NttGlweSecretKey::from_coeff_secret_key(&input_coeff_key, &ntt);
+    let (input_coeff_key, input_key) =
+        NttGlweSecretKey::generate_pair(&input_params, &ntt, &mut rng);
     let message_values = plaintext();
     let message = Polynomial::new(message_values.clone());
     let mut encrypted: NttGlwe<Vec<u32>> = NttGlwe::zero(input_params.glwe_len());
@@ -112,12 +108,8 @@ fn fourier_glwe_key_switches_for_equal_and_smaller_output_dimensions() {
         SecretKeyDistr::UniformBinary,
         0.7,
     );
-    let input_coeff_key = GlweSecretKey::generate(
-        input_params.size(),
-        input_params.secret_key_sampler(),
-        &mut rng,
-    );
-    let input_key = FourierGlweSecretKey::from_coeff_secret_key(&input_coeff_key, &mut fft);
+    let (input_coeff_key, input_key) =
+        FourierGlweSecretKey::generate_pair(&input_params, &mut fft, &mut rng);
     let message_values = plaintext();
     let message = Polynomial::new(message_values.clone());
     let mut encrypted = FourierGlweOwned::zero(input_params.fourier_glwe_len());

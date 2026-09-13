@@ -1,7 +1,7 @@
 use primus_fft::{FftEngine, FftTable, RustFftTable};
 use primus_glwe::{
     FourierGadgetEncryptContext, FourierGlweDecryptContext, FourierGlweEncryptContext,
-    FourierGlweSecretKey, GlevParameters, GlweParameters, GlweSecretKey, NttGadgetEncryptContext,
+    FourierGlweSecretKey, GlevParameters, GlweParameters, NttGadgetEncryptContext,
     NttGlweSecretKey, SecretKeyDistr,
 };
 use primus_lattice::{
@@ -64,12 +64,8 @@ fn fourier_gadget_phases_and_external_product() {
         0.7,
     );
     let params = GlevParameters::with_glwe_params(&glwe_params, 8, None);
-    let coeff_secret_key = GlweSecretKey::generate(
-        glwe_params.size(),
-        glwe_params.secret_key_sampler(),
-        &mut rng,
-    );
-    let secret_key = FourierGlweSecretKey::from_coeff_secret_key(&coeff_secret_key, &mut fft);
+    let (coeff_secret_key, secret_key) =
+        FourierGlweSecretKey::generate_pair(&glwe_params, &mut fft, &mut rng);
     let mut gadget_context = FourierGadgetEncryptContext::new(params.size());
     let mut decrypt_context = FourierGlweDecryptContext::new(POLY_LENGTH);
 
@@ -210,12 +206,8 @@ fn ntt_gadget_phases_and_external_product() {
         0.7,
     );
     let params = GlevParameters::with_glwe_params(&glwe_params, 8, None);
-    let coeff_secret_key = GlweSecretKey::generate(
-        glwe_params.size(),
-        glwe_params.secret_key_sampler(),
-        &mut rng,
-    );
-    let secret_key = NttGlweSecretKey::from_coeff_secret_key(&coeff_secret_key, &ntt);
+    let (coeff_secret_key, secret_key) =
+        NttGlweSecretKey::generate_pair(&glwe_params, &ntt, &mut rng);
     let mut context = NttGadgetEncryptContext::new(params.size());
 
     let mut raw_message = vec![0u32; POLY_LENGTH];
@@ -334,7 +326,7 @@ fn ntt_constant_ggsw_batch_matches_individual_encryptions() {
     let params = GlevParameters::with_glwe_params(&glwe, 4, None);
     let table = UintNttTable::new(n.trailing_zeros(), modulus).unwrap();
     let mut rng = StdRng::seed_from_u64(42);
-    let key = NttGlweSecretKey::generate(&glwe, &table, &mut rng);
+    let (_, key) = NttGlweSecretKey::generate_pair(&glwe, &table, &mut rng);
     let mut context = NttGadgetEncryptContext::new(params.size());
     let mut single_context = NttGadgetEncryptContext::new(params.size());
     // Include empty input, binary BSK inputs and general canonical constants.

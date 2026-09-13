@@ -26,7 +26,7 @@ fn public_key_encoding_modes_reuse_workspace() {
     );
     let table = UintNttTable::new(POLY_LENGTH.trailing_zeros(), modulus).unwrap();
     let mut rng = StdRng::seed_from_u64(42);
-    let secret_key = NttGlweSecretKey::generate(&params, &table, &mut rng);
+    let (_, secret_key) = NttGlweSecretKey::generate_pair(&params, &table, &mut rng);
     let public_key = NttGlwePublicKey::generate(&secret_key, &params, &table, &mut rng);
     let message = Polynomial::new(
         (0..POLY_LENGTH)

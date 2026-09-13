@@ -1,16 +1,24 @@
 //! Observe secret storage immediately before its allocator releases it.
 use std::{
     alloc::{GlobalAlloc, Layout, System},
+    cell::Cell,
+    convert::Infallible,
+    panic::{AssertUnwindSafe, catch_unwind},
     ptr,
     sync::atomic::{AtomicBool, AtomicPtr, AtomicUsize, Ordering},
 };
 
+use primus_distr::SecretKeySampler;
 use primus_fft::Complex64;
 use primus_glwe::{
     FourierGlweSecretKey, GlweSecretKey, GlweSize, NttGlweSecretKey, SecretKeyDistr,
 };
+use rand::{TryCryptoRng, TryRng};
 
 struct ObservingAllocator;
+thread_local! {
+    static CAPTURE_NEXT: Cell<bool> = const { Cell::new(false) };
+}
 static WATCHED: AtomicPtr<u8> = AtomicPtr::new(ptr::null_mut());
 static LENGTH: AtomicUsize = AtomicUsize::new(0);
 static ERASED: AtomicBool = AtomicBool::new(false);
@@ -20,7 +28,16 @@ static ERASED: AtomicBool = AtomicBool::new(false);
 unsafe impl GlobalAlloc for ObservingAllocator {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
         // SAFETY: the caller supplies the layout required by GlobalAlloc.
-        unsafe { System.alloc(layout) }
+        let data = unsafe { System.alloc(layout) };
+        if !data.is_null()
+            && CAPTURE_NEXT
+                .try_with(|capture| capture.replace(false))
+                .unwrap_or(false)
+        {
+            WATCHED.store(data, Ordering::SeqCst);
+            LENGTH.store(layout.size(), Ordering::SeqCst);
+        }
+        data
     }
 
     unsafe fn dealloc(&self, data: *mut u8, layout: Layout) {
@@ -45,6 +62,29 @@ unsafe impl GlobalAlloc for ObservingAllocator {
 #[global_allocator]
 static ALLOCATOR: ObservingAllocator = ObservingAllocator;
 
+// Test-only source: write 32 nonzero coefficients before forcing unwinding.
+struct PanicAfterOneWord(bool);
+impl TryRng for PanicAfterOneWord {
+    type Error = Infallible;
+
+    fn try_next_u32(&mut self) -> Result<u32, Infallible> {
+        assert!(
+            !std::mem::replace(&mut self.0, true),
+            "sampling interrupted"
+        );
+        Ok(u32::MAX)
+    }
+
+    fn try_next_u64(&mut self) -> Result<u64, Infallible> {
+        panic!("unexpected u64 draw");
+    }
+
+    fn try_fill_bytes(&mut self, _output: &mut [u8]) -> Result<(), Infallible> {
+        panic!("unexpected byte draw");
+    }
+}
+impl TryCryptoRng for PanicAfterOneWord {}
+
 fn assert_erased_on_drop<K>(key: K, data: *const u8, len: usize) {
     ERASED.store(false, Ordering::SeqCst);
     LENGTH.store(len, Ordering::SeqCst);
@@ -60,8 +100,9 @@ fn assert_erased_on_drop<K>(key: K, data: *const u8, len: usize) {
     );
 }
 
+// Keep allocator observations serial: all cases share the watched allocation.
 #[test]
-fn all_secret_key_representations_erase_storage_on_drop() {
+fn secret_storage_is_erased_on_drop_and_sampling_unwind() {
     let size = GlweSize::new(1, 16);
     let mut coefficients = vec![1i32; 2 * size.mask_len()];
     let data = coefficients.as_ptr().cast();
@@ -91,5 +132,21 @@ fn all_secret_key_representations_erase_storage_on_drop() {
         FourierGlweSecretKey::new(fourier, size, SecretKeyDistr::UniformBinary),
         data,
         len,
+    );
+
+    let sampler = SecretKeySampler::<u32>::new(SecretKeyDistr::UniformBinary);
+    let size = GlweSize::new(1, 64);
+    ERASED.store(false, Ordering::SeqCst);
+    CAPTURE_NEXT.set(true);
+    let result = catch_unwind(AssertUnwindSafe(|| {
+        // The first allocation is the fully initialized coefficient buffer.
+        let _ = GlweSecretKey::generate(size, &sampler, &mut PanicAfterOneWord(false));
+    }));
+    CAPTURE_NEXT.set(false);
+    assert!(result.is_err());
+    assert!(WATCHED.load(Ordering::SeqCst).is_null());
+    assert!(
+        ERASED.load(Ordering::SeqCst),
+        "partial sample was not erased"
     );
 }

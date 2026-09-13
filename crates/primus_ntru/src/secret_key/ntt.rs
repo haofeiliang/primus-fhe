@@ -13,6 +13,8 @@ use crate::{NtruError, NtruParameters, NttNtruCiphertext, SecretKeyDistr};
 use super::NtruSecretKey;
 
 /// An NTRU secret key represented by `NTT(f)` and its exact pointwise inverse.
+/// Both polynomials are securely erased on drop, including failed conversions.
+/// Explicit zeroization clears their lengths and makes the key unusable.
 #[derive(Clone)]
 pub struct NttNtruSecretKey<T: FheUint> {
     key: NttPolynomialOwned<T>,
@@ -30,7 +32,21 @@ impl<T: FheUint> Zeroize for NttNtruSecretKey<T> {
 
 impl<T: FheUint> ZeroizeOnDrop for NttNtruSecretKey<T> {}
 
+impl<T: FheUint> Drop for NttNtruSecretKey<T> {
+    fn drop(&mut self) {
+        self.zeroize();
+    }
+}
+
 impl<T: FheUint> NttNtruSecretKey<T> {
+    fn allocate(poly_length: usize, distr: SecretKeyDistr) -> Self {
+        Self {
+            key: NttPolynomialOwned::zero(poly_length),
+            inv_key: NttPolynomialOwned::zero(poly_length),
+            distr,
+        }
+    }
+
     /// Returns the polynomial length.
     #[inline]
     pub fn poly_length(&self) -> usize {
@@ -69,30 +85,46 @@ impl<T: FheUint> NttNtruSecretKey<T> {
         assert_eq!(ntt_table.poly_length(), poly_length);
         assert_eq!(ntt_table.modulus(), modulus.value());
 
-        let mut key = NttPolynomialOwned::zero(poly_length);
-        modulus.encode_signed_slice_to(secret_key.as_slice(), key.as_mut());
-        ntt_table.transform_slice(key.as_mut());
+        // Establish drop protection before encoding or inversion can fail.
+        let mut transformed = Self::allocate(poly_length, secret_key.distr());
+        transformed.try_update_from_coeff_secret_key(secret_key, modulus, ntt_table)?;
+        Ok(transformed)
+    }
 
-        let mut inv_key = NttPolynomialOwned::zero(poly_length);
-        key.try_inv_to(&mut inv_key, modulus)
+    /// Overwrites both buffers after the caller establishes matching lengths,
+    /// modulus/table and coefficient bounds. A failed inverse may leave partial
+    /// output; it stays private until a later successful attempt overwrites it.
+    fn try_update_from_coeff_secret_key<M, Table>(
+        &mut self,
+        secret_key: &NtruSecretKey<T>,
+        modulus: M,
+        ntt_table: &Table,
+    ) -> Result<(), NtruError>
+    where
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+    {
+        modulus.encode_signed_slice_to(secret_key.as_slice(), self.key.as_mut());
+        ntt_table.transform_slice(self.key.as_mut());
+
+        self.key
+            .try_inv_to(&mut self.inv_key, modulus)
             .map_err(|_| NtruError::NonInvertibleSecretKey)?;
 
         debug_assert!(
-            key.as_ref()
+            self.key
+                .as_ref()
                 .iter()
-                .zip(inv_key.as_ref())
+                .zip(self.inv_key.as_ref())
                 .all(|(&value, &inverse)| modulus.reduce_mul(value, inverse) == T::ONE)
         );
 
-        Ok(Self {
-            key,
-            inv_key,
-            distr: secret_key.distr(),
-        })
+        Ok(())
     }
 
     /// Rejection-samples an invertible coefficient key and converts it to NTT
     /// form.
+    /// See [`Self::generate_pair`] for error and panic conditions.
     pub fn generate<M, Table, R>(
         params: &NtruParameters<T, M>,
         ntt_table: &Table,
@@ -106,12 +138,21 @@ impl<T: FheUint> NttNtruSecretKey<T> {
         Self::generate_pair(params, ntt_table, rng).map(|(_, transformed_key)| transformed_key)
     }
 
-    /// Rejection-samples an invertible key and returns both its coefficient
+    /// Rejection-samples an invertible key and returns its signed coefficient
     /// and NTT representations.
     ///
-    /// Returning the pair lets callers use the same sampled polynomial for
-    /// coefficient-domain protocols and NTT encryption without repeating the
-    /// invertibility search.
+    /// Secret buffers are allocated once, reused across rejected candidates,
+    /// and erased on drop, including exhausted searches and unwinding.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`NtruError::KeyGenerationExhausted`] if no acceptable key is
+    /// found within the bounded search.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the NTT table length or modulus differs from the parameters,
+    /// or a fixed weight exceeds the polynomial length or its sum overflows.
     pub fn generate_pair<M, Table, R>(
         params: &NtruParameters<T, M>,
         ntt_table: &Table,
@@ -125,14 +166,18 @@ impl<T: FheUint> NttNtruSecretKey<T> {
         assert_eq!(ntt_table.poly_length(), params.poly_length());
         assert_eq!(ntt_table.modulus(), params.cipher_modulus().value());
 
+        let mut coefficient_key =
+            NtruSecretKey::allocate(params.poly_length(), params.secret_key_distr());
+        let mut transformed = Self::allocate(params.poly_length(), params.secret_key_distr());
+        let sampler = params.secret_key_sampler();
         for _ in 0..crate::parameter::KEY_GENERATION_ATTEMPTS {
-            let coefficient_key = NtruSecretKey::generate(params, rng);
-            match Self::try_from_coeff_secret_key(
+            sampler.sample_signed_to(&mut coefficient_key.key, rng);
+            match transformed.try_update_from_coeff_secret_key(
                 &coefficient_key,
                 params.cipher_modulus(),
                 ntt_table,
             ) {
-                Ok(key) => return Ok((coefficient_key, key)),
+                Ok(()) => return Ok((coefficient_key, transformed)),
                 Err(NtruError::NonInvertibleSecretKey) => {}
                 Err(error) => return Err(error),
             }
@@ -147,11 +192,18 @@ impl<T: FheUint> NttNtruSecretKey<T> {
     /// compact extraction into a smaller LWE dimension while retaining an NTRU
     /// key switch.
     ///
+    /// Buffers are reused and erased as in [`Self::generate_pair`].
+    ///
+    /// # Errors
+    ///
+    /// Returns [`NtruError::KeyGenerationExhausted`] if the search is exhausted.
+    ///
     /// # Panics
     ///
     /// Panics unless the parameter distribution is binary and
     /// `active_length` belongs to `1..=N`. Also panics if a fixed Hamming weight
-    /// exceeds `active_length`.
+    /// exceeds `active_length`, or the NTT table length or modulus differs from
+    /// the parameters.
     pub fn generate_padded_binary_pair<M, Table, R>(
         params: &NtruParameters<T, M>,
         active_length: usize,
@@ -168,19 +220,18 @@ impl<T: FheUint> NttNtruSecretKey<T> {
         assert_eq!(ntt_table.poly_length(), params.poly_length());
         assert_eq!(ntt_table.modulus(), params.cipher_modulus().value());
 
+        let mut coefficient_key =
+            NtruSecretKey::allocate(params.poly_length(), params.secret_key_distr());
+        let mut transformed = Self::allocate(params.poly_length(), params.secret_key_distr());
+        let sampler = params.secret_key_sampler();
         for _ in 0..crate::parameter::KEY_GENERATION_ATTEMPTS {
-            let coefficient_key = NtruSecretKey::generate_padded_binary(
-                params.poly_length(),
-                active_length,
-                params.secret_key_distr(),
-                rng,
-            );
-            match Self::try_from_coeff_secret_key(
+            sampler.sample_signed_to(&mut coefficient_key.key[..active_length], rng);
+            match transformed.try_update_from_coeff_secret_key(
                 &coefficient_key,
                 params.cipher_modulus(),
                 ntt_table,
             ) {
-                Ok(key) => return Ok((coefficient_key, key)),
+                Ok(()) => return Ok((coefficient_key, transformed)),
                 Err(NtruError::NonInvertibleSecretKey) => {}
                 Err(error) => return Err(error),
             }

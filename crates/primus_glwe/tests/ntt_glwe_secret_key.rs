@@ -1,13 +1,11 @@
 use primus_encoding::PlaintextEmbedding;
-use primus_glwe::{
-    GlweParameters, GlweSecretKey, NttGlweCiphertext, NttGlweSecretKey, SecretKeyDistr,
-};
+use primus_glwe::{GlweParameters, NttGlweCiphertext, NttGlweSecretKey, SecretKeyDistr};
 use primus_integer::FheUint;
 use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, PrimitiveRoot, UintNttTable};
 use primus_poly::{Polynomial, PolynomialOwned};
 use primus_reduce::ReduceAdd;
-use rand::{Rng, SeedableRng, rngs::StdRng};
+use rand::{SeedableRng, rngs::StdRng};
 
 const DIMENSION: usize = 2;
 const POLY_LENGTH: usize = 256;
@@ -29,6 +27,8 @@ where
         SecretKeyDistr::UniformBinary,
         SecretKeyDistr::SparseTernary,
         SecretKeyDistr::gaussian(3.2),
+        // A weight greater than N must be sampled over all k*N coefficients.
+        SecretKeyDistr::fixed_hamming_weight_ternary(DIMENSION * POLY_LENGTH, POLY_LENGTH + 7),
     ] {
         let params = GlweParameters::new(
             DIMENSION,
@@ -38,9 +38,7 @@ where
             secret_key_distr,
             0.7,
         );
-        let coeff_secret_key =
-            GlweSecretKey::generate(params.size(), params.secret_key_sampler(), &mut rng);
-        let secret_key = NttGlweSecretKey::from_coeff_secret_key(&coeff_secret_key, &ntt);
+        let (_, secret_key) = NttGlweSecretKey::generate_pair(&params, &ntt, &mut rng);
         let mut cipher = secret_key.encrypt(&message, &params, &ntt, &mut rng);
         assert_eq!(
             secret_key.decrypt(&cipher, &params, &ntt).as_ref(),
@@ -87,51 +85,6 @@ fn ntt_glwe_secret_key_roundtrip_u32() {
 #[test]
 fn ntt_glwe_secret_key_roundtrip_u64() {
     assert_roundtrip(1_125_899_906_826_241u64);
-}
-
-#[test]
-fn direct_generation_matches_coefficient_conversion() {
-    fn check<T: FheUint + PrimitiveRoot>(cipher_modulus: T) {
-        let modulus = BarrettModulus::new(cipher_modulus);
-        let ntt = UintNttTable::new(POLY_LENGTH.trailing_zeros(), modulus).unwrap();
-        let key_len = DIMENSION * POLY_LENGTH;
-        for distr in [
-            SecretKeyDistr::UniformBinary,
-            SecretKeyDistr::binary(0.3),
-            SecretKeyDistr::SparseTernary,
-            SecretKeyDistr::UniformTernary,
-            SecretKeyDistr::ternary(0.2, 0.4),
-            SecretKeyDistr::fixed_hamming_weight_binary(key_len, POLY_LENGTH + 7),
-            SecretKeyDistr::fixed_hamming_weight_ternary(key_len, POLY_LENGTH + 7),
-            SecretKeyDistr::fixed_composition_ternary(key_len, 17, POLY_LENGTH + 7),
-            SecretKeyDistr::gaussian(3.2),
-            SecretKeyDistr::gaussian(30.0),
-        ] {
-            let params = GlweParameters::new(
-                DIMENSION,
-                POLY_LENGTH,
-                T::try_from(PLAIN_MODULUS).unwrap(),
-                modulus,
-                distr,
-                0.7,
-            );
-            let mut coeff_rng = StdRng::seed_from_u64(0x4e54_5453_414d_504c);
-            let mut direct_rng = StdRng::seed_from_u64(0x4e54_5453_414d_504c);
-            let coeff_key =
-                GlweSecretKey::generate(params.size(), params.secret_key_sampler(), &mut coeff_rng);
-            let expected = NttGlweSecretKey::from_coeff_secret_key(&coeff_key, &ntt);
-            let actual = NttGlweSecretKey::generate(&params, &ntt, &mut direct_rng);
-            assert_eq!(actual.glwe_size(), expected.glwe_size());
-            assert_eq!(actual.distr(), expected.distr());
-            for (actual, expected) in actual.iter().zip(expected.iter()) {
-                assert_eq!(actual.as_ref(), expected.as_ref(), "{distr:?}");
-            }
-            assert_eq!(direct_rng.next_u64(), coeff_rng.next_u64(), "{distr:?}");
-        }
-    }
-
-    check(132_120_577u32);
-    check(1_125_899_906_826_241u64);
 }
 
 #[test]
@@ -187,7 +140,7 @@ fn truncated_decryption_returns_only_retained_coefficients() {
     );
     let table = UintNttTable::new(POLY_LENGTH.trailing_zeros(), modulus).unwrap();
     let mut rng = StdRng::seed_from_u64(42);
-    let secret_key = NttGlweSecretKey::generate(&params, &table, &mut rng);
+    let (_, secret_key) = NttGlweSecretKey::generate_pair(&params, &table, &mut rng);
     for count in [0, 32, POLY_LENGTH] {
         let mut ciphertext = secret_key.encrypt_truncated_zeros(count, &params, &table, &mut rng);
         let message: Vec<_> = (0..count)

@@ -11,6 +11,7 @@ use primus_lwe::{LweParameters, LweSecretKey};
 use primus_modulus::NativeModulus;
 use primus_poly::Polynomial;
 use primus_tfhe_glwe_fourier::{FourierGlweBlindRotationContext, FourierGlweBootstrappingKey};
+use rand::{SeedableRng, rngs::StdRng};
 
 const LWE_DIMENSION: usize = 4;
 const GLWE_DIMENSION: usize = 1;
@@ -45,7 +46,7 @@ fn rotate_plaintext(input: &[u32], exponent: usize) -> Vec<u32> {
 fn functional_bootstrapping_key_blind_rotates() {
     let table = RustFftTable::new(POLY_LENGTH.trailing_zeros()).unwrap();
     let mut fft = FftEngine::new(&table);
-    let mut rng = rand::rng();
+    let mut rng = StdRng::seed_from_u64(42);
     let lwe_params = LweParameters::new(
         LWE_DIMENSION,
         PLAINTEXT_MODULUS,
@@ -63,7 +64,8 @@ fn functional_bootstrapping_key_blind_rotates() {
     );
     let ggsw_params = GlevParameters::with_glwe_params(&glwe_params, 8, None);
     let input_secret_key = LweSecretKey::new(vec![1u32, 0, 1, 1], SecretKeyDistr::UniformBinary);
-    let output_secret_key = FourierGlweSecretKey::generate(&glwe_params, &mut fft, &mut rng);
+    let (_, output_secret_key) =
+        FourierGlweSecretKey::generate_pair(&glwe_params, &mut fft, &mut rng);
     let mut gadget_context = FourierGadgetEncryptContext::new(ggsw_params.size());
     let key = FourierGlweBootstrappingKey::generate_fourier(
         &input_secret_key,
@@ -105,7 +107,6 @@ fn functional_bootstrapping_key_blind_rotates() {
         &input,
         &accumulator,
         &mut output,
-        &ggsw_params,
         &mut fft,
         &mut blind_rotation_context,
     );
@@ -131,7 +132,6 @@ fn functional_bootstrapping_key_blind_rotates() {
         &exponent_input,
         &accumulator,
         &mut output,
-        &ggsw_params,
         &mut fft,
         &mut blind_rotation_context,
     );

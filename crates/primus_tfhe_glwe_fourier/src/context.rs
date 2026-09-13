@@ -84,6 +84,8 @@ where
     }
 
     /// Creates a programmable-bootstrap evaluator with reusable FFT workspace.
+    ///
+    /// Inherits [`Evaluator::try_new`]'s Fourier table identity requirement.
     pub fn evaluator<'a>(
         &'a self,
         server_key: &'a ServerKey<T>,

@@ -17,6 +17,8 @@ use crate::{
 use super::{FourierNtruEncryptContext, FourierNtruSecretKey, NttNtruSecretKey};
 
 /// Reusable coefficient buffer for NTT NLev/NGSW generation.
+/// Sensitive message coefficients are securely erased on drop.
+/// Explicit zeroization preserves buffer lengths so the workspace can be reused.
 pub struct NttNtruGadgetEncryptContext<T: FheUint> {
     encoded: PolynomialOwned<T>,
 }
@@ -33,13 +35,23 @@ impl<T: FheUint> NttNtruGadgetEncryptContext<T> {
 
 impl<T: FheUint> Zeroize for NttNtruGadgetEncryptContext<T> {
     fn zeroize(&mut self) {
-        self.encoded.as_mut().fill(T::ZERO);
+        // Vec::zeroize clears the length; explicit workspace erasure must keep it.
+        self.encoded.as_mut().iter_mut().zeroize();
+        self.encoded.0.spare_capacity_mut().zeroize();
     }
 }
 
 impl<T: FheUint> ZeroizeOnDrop for NttNtruGadgetEncryptContext<T> {}
 
+impl<T: FheUint> Drop for NttNtruGadgetEncryptContext<T> {
+    fn drop(&mut self) {
+        self.zeroize();
+    }
+}
+
 /// Reusable buffers for Fourier NLev/NGSW generation.
+/// Sensitive message coefficients and transforms are securely erased on drop.
+/// Explicit zeroization preserves buffer lengths so the workspace can be reused.
 pub struct FourierNtruGadgetEncryptContext<T: FheUint> {
     encoded: PolynomialOwned<T>,
     transformed: Vec<Complex64>,
@@ -56,17 +68,34 @@ impl<T: FheUint> FourierNtruGadgetEncryptContext<T> {
             ntru: FourierNtruEncryptContext::new(poly_length),
         }
     }
+
+    // Drop leaves the nested encryption workspace to its own destructor;
+    // explicit zeroization must also erase that still-live workspace.
+    fn zeroize_message_buffers(&mut self) {
+        self.encoded.as_mut().iter_mut().zeroize();
+        self.encoded.0.spare_capacity_mut().zeroize();
+        for value in &mut self.transformed {
+            value.re.zeroize();
+            value.im.zeroize();
+        }
+        self.transformed.spare_capacity_mut().zeroize();
+    }
 }
 
 impl<T: FheUint> Zeroize for FourierNtruGadgetEncryptContext<T> {
     fn zeroize(&mut self) {
-        self.encoded.as_mut().fill(T::ZERO);
-        self.transformed.fill(Complex64::default());
+        self.zeroize_message_buffers();
         self.ntru.zeroize();
     }
 }
 
 impl<T: FheUint> ZeroizeOnDrop for FourierNtruGadgetEncryptContext<T> {}
+
+impl<T: FheUint> Drop for FourierNtruGadgetEncryptContext<T> {
+    fn drop(&mut self) {
+        self.zeroize_message_buffers();
+    }
+}
 
 impl<T: FheUint> NttNtruSecretKey<T> {
     /// Generates an NTT NLev encryption of a polynomial already encoded in `[0, q)`.

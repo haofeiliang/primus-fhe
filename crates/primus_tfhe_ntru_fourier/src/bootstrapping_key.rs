@@ -29,7 +29,7 @@ impl<T: TorusFftValue> BlindRotationWorkspace<T> {
 ///
 /// On return, `workspace.current` contains the encrypted selected LUT phase.
 pub(crate) fn blind_rotate_lookup_table_to<T, Table, A>(
-    server_key: &ServerKey,
+    server_key: &ServerKey<T>,
     input: &Lwe<A>,
     lookup_table: &PolynomialOwned<T>,
     workspace: &mut BlindRotationWorkspace<T>,
@@ -53,7 +53,6 @@ pub(crate) fn blind_rotate_lookup_table_to<T, Table, A>(
     server_key.initializer().key_switch_to(
         &workspace.scratch,
         &mut workspace.current,
-        parameters.bootstrapping(),
         fft,
         &mut workspace.external_product,
     );

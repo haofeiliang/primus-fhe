@@ -10,44 +10,41 @@ use primus_poly::PolynomialOwned;
 use crate::{ClientKey, TfheContext, TfheKeyError, TfheParameters};
 
 /// Fourier evaluation keys for NTRU TFHE.
-pub struct ServerKey {
-    initializer: FourierNtruKeySwitchingKey,
+/// The initializer retains the ring and basis metadata shared by the controls.
+pub struct ServerKey<T: TorusFftValue> {
+    initializer: FourierNtruKeySwitchingKey<T>,
     controls: Vec<Complex64>,
-    key_switching_key: FourierNtruKeySwitchingKey,
-    poly_length: usize,
-    bootstrapping_fourier_nlev_len: usize,
+    key_switching_key: FourierNtruKeySwitchingKey<T>,
 }
 
-impl ServerKey {
+impl<T: TorusFftValue> ServerKey<T> {
     /// Returns the Fourier NLev encryption of one used for initialization.
     #[inline]
-    pub(crate) fn initializer(&self) -> &FourierNtruKeySwitchingKey {
+    pub(crate) fn initializer(&self) -> &FourierNtruKeySwitchingKey<T> {
         &self.initializer
     }
 
     /// Returns the post-bootstrap `f_acc -> f_client` key-switching key.
     #[inline]
-    pub(crate) fn key_switching_key(&self) -> &FourierNtruKeySwitchingKey {
+    pub(crate) fn key_switching_key(&self) -> &FourierNtruKeySwitchingKey<T> {
         &self.key_switching_key
     }
 
     /// Iterates over contiguous Fourier NGSW controls without allocation.
     pub(crate) fn iter_controls(&self) -> impl ExactSizeIterator<Item = FourierNgsw<&[Complex64]>> {
         self.controls
-            .chunks_exact(self.bootstrapping_fourier_nlev_len)
+            .chunks_exact(self.initializer.as_slice().len())
             .map(FourierNgsw::new)
     }
 
-    /// Checks the stored layout against one parameter set.
-    pub(crate) fn is_compatible<T: TorusFftValue>(&self, parameters: &TfheParameters<T>) -> bool {
-        self.poly_length == parameters.poly_length()
-            && self.bootstrapping_fourier_nlev_len == parameters.bootstrapping().fourier_nlev_len()
+    /// Checks the generated ring and decomposition parameters before evaluation.
+    pub(crate) fn is_compatible(&self, parameters: &TfheParameters<T>) -> bool {
+        self.initializer.poly_length() == parameters.poly_length()
+            && self.initializer.basis() == parameters.bootstrapping().basis()
+            && self.key_switching_key.poly_length() == parameters.poly_length()
+            && self.key_switching_key.basis() == parameters.key_switching().basis()
             && self.controls.len()
-                == parameters.external_lwe().dimension()
-                    * parameters.bootstrapping().fourier_nlev_len()
-            && self.initializer.as_slice().len() == parameters.bootstrapping().fourier_nlev_len()
-            && self.key_switching_key.as_slice().len()
-                == parameters.key_switching().fourier_nlev_len()
+                == parameters.external_lwe().dimension() * self.initializer.as_slice().len()
     }
 }
 
@@ -102,7 +99,7 @@ where
         &mut self,
         client_key: &ClientKey<T>,
         rng: &mut R,
-    ) -> Result<ServerKey, TfheKeyError>
+    ) -> Result<ServerKey<T>, TfheKeyError>
     where
         R: rand::Rng + rand::CryptoRng,
     {
@@ -132,7 +129,7 @@ where
         client_fourier: &FourierNtruSecretKey,
         accumulator_fourier: &FourierNtruSecretKey,
         rng: &mut R,
-    ) -> ServerKey
+    ) -> ServerKey<T>
     where
         R: rand::Rng + rand::CryptoRng,
     {
@@ -151,8 +148,6 @@ where
             initializer,
             controls,
             key_switching_key,
-            poly_length: parameters.poly_length(),
-            bootstrapping_fourier_nlev_len: parameters.bootstrapping().fourier_nlev_len(),
         }
     }
 
@@ -161,7 +156,7 @@ where
         &mut self,
         accumulator_fourier: &FourierNtruSecretKey,
         rng: &mut R,
-    ) -> FourierNtruKeySwitchingKey
+    ) -> FourierNtruKeySwitchingKey<T>
     where
         R: rand::Rng + rand::CryptoRng,
     {
@@ -216,7 +211,7 @@ where
     }
 
     /// Generates a fresh compatible client/server key pair.
-    pub fn generate<R>(&mut self, rng: &mut R) -> Result<(ClientKey<T>, ServerKey), TfheKeyError>
+    pub fn generate<R>(&mut self, rng: &mut R) -> Result<(ClientKey<T>, ServerKey<T>), TfheKeyError>
     where
         R: rand::Rng + rand::CryptoRng,
     {
@@ -234,6 +229,7 @@ where
             rng,
         )?;
         let client_key = ClientKey::new(client, accumulator, lwe_dimension);
+        client_key.check_compatible(parameters)?;
         let server_key = self.generate_server_key_from_transformed(
             &client_key,
             &client_fourier,

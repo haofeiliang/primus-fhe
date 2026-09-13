@@ -13,7 +13,17 @@
 | `FourierGlweSecretKey` | 按整数尺度变换的 Fourier 私钥多项式；原生环面 Fourier 加解密 |
 | `NttGlwePublicKey<S>` | 一个 NTT 零加密密文；公钥加密 |
 
-随机生成密钥使用 `generate`。密钥不保存变换表，调用方必须保持生成时的模数与变换表示。公钥原始字节采用原生字节序，不包含参数元数据。
+根据所用的 NTT 或 Fourier 后端，通过 `generate_pair` 生成私钥。它只采样一次，返回有符号系数私钥及其对应的变换形式：
+
+```rust,ignore
+let (coeff_sk, ntt_sk) = NttGlweSecretKey::generate_pair(&ntt_params, &ntt_table, &mut rng);
+let (coeff_sk, fourier_sk) =
+    FourierGlweSecretKey::generate_pair(&fourier_params, &mut fft, &mut rng);
+```
+
+只需要有符号系数私钥时使用 `GlweSecretKey::generate`。转换已有系数私钥时使用 `from_coeff_secret_key`。固定重量分布作用于全部 `k*N` 个系数，而非逐多项式分别采样。私钥缓冲区在析构时擦除，也覆盖生成中发生 panic 的展开路径。
+
+密钥不保存变换表：后续操作必须保持生成时的模数和变换表示。公钥原始字节采用本机字节序，不包含参数元数据。
 
 ## 加密与解密
 

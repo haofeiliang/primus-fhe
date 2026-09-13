@@ -90,7 +90,6 @@ fn bench_order(c: &mut Criterion, order: PbsOrder) {
                 input.as_lwe(),
                 lookup_table.polynomial(),
                 &mut main_glwe,
-                bootstrapping,
                 &mut fft,
                 &mut blind_rotation,
             ),
@@ -164,7 +163,6 @@ fn bench_order(c: &mut Criterion, order: PbsOrder) {
                 black_box(blind_rotation_input),
                 black_box(lookup_table.polynomial()),
                 black_box(&mut main_glwe),
-                bootstrapping,
                 &mut fft,
                 &mut blind_rotation,
             );

@@ -13,7 +13,17 @@ Single-modulus GLWE keys and operations, with separate NTT and native-torus Four
 | `FourierGlweSecretKey` | Integer-scaled Fourier secret polynomials; native-torus Fourier encryption and decryption |
 | `NttGlwePublicKey<S>` | One NTT encryption of zero; public-key encryption |
 
-Use `generate` for randomized generation. Keys do not store transform tables: preserve the modulus and transform representation used at generation. Raw public-key bytes use native endianness and contain no parameter metadata.
+Generate a secret with `generate_pair` for the chosen NTT or Fourier backend. It samples once and returns the signed coefficient key and its matching transform:
+
+```rust,ignore
+let (coeff_sk, ntt_sk) = NttGlweSecretKey::generate_pair(&ntt_params, &ntt_table, &mut rng);
+let (coeff_sk, fourier_sk) =
+    FourierGlweSecretKey::generate_pair(&fourier_params, &mut fft, &mut rng);
+```
+
+Use `GlweSecretKey::generate` when only the signed coefficient key is needed. Use `from_coeff_secret_key` to transform an existing coefficient key. Fixed-weight distributions apply to all `k*N` coefficients, not separately to each polynomial. Secret buffers are erased on drop, including unwinding during generation.
+
+Keys do not store transform tables: preserve the modulus and transform representation used at generation. Raw public-key bytes use native endianness and contain no parameter metadata.
 
 ## Encryption and decryption
 
