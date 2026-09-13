@@ -5,6 +5,7 @@
 mod automorphism;
 mod ciphertext;
 mod key_switch;
+mod packing_key_switch;
 mod parameter;
 mod public_key;
 mod scheme_switch;
@@ -26,13 +27,17 @@ pub use key_switch::{
     FourierGlweKeySwitchingContext, FourierGlweKeySwitchingKey, NttGlweKeySwitchingContext,
     NttGlweKeySwitchingKey,
 };
+pub use packing_key_switch::{FourierLwePackingKeySwitchingKey, NttLwePackingKeySwitchingKey};
 pub use parameter::{
     GadgetSize, GgswParameters, GlevParameters, GlweKeySwitchingParameters, GlweParameters,
     GlweParametersInner, GlweSize, GlweSizeError,
 };
 pub use primus_distr::SecretKeyDistr;
 pub use public_key::{NttGlwePublicEncryptContext, NttGlwePublicKey};
-pub use scheme_switch::{NttGlweSchemeSwitchContext, NttGlweSchemeSwitchKey};
+pub use scheme_switch::{
+    FourierGlweSchemeSwitchContext, FourierGlweSchemeSwitchKey, NttGlweSchemeSwitchContext,
+    NttGlweSchemeSwitchKey,
+};
 pub use secret_key::{
     FourierGadgetEncryptContext, FourierGlweDecryptContext, FourierGlweEncryptContext,
     FourierGlweSecretKey, GlweSecretKey, NttGadgetEncryptContext, NttGlweSecretKey,

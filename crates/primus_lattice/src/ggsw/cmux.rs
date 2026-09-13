@@ -57,7 +57,7 @@ where
 
         ct1.sub_to(ct0, output, NativeModulus::new());
         context.fourier_accumulator.set_zero();
-        self.accumulate_external_product(output, basis, fft, context);
+        self.accumulate_external_product(output, basis, fft, &mut context.as_mut());
         context.fourier_accumulator.write_torus_form(output, fft);
         output.add_assign(ct0, NativeModulus::new());
     }
@@ -127,7 +127,7 @@ where
         for (control, candidate) in controls.zip(candidates) {
             candidate.sub_to(default, output, NativeModulus::new());
             let control: &Self = control.borrow();
-            control.accumulate_external_product(output, basis, fft, context);
+            control.accumulate_external_product(output, basis, fft, &mut context.as_mut());
         }
         context.fourier_accumulator.write_torus_form(output, fft);
         output.add_assign(default, NativeModulus::new());
@@ -163,7 +163,7 @@ where
 
         input.mul_monomial_sub_one_to(exponent, output, poly_length, NativeModulus::new());
         context.fourier_accumulator.set_zero();
-        self.accumulate_external_product(output, basis, fft, context);
+        self.accumulate_external_product(output, basis, fft, &mut context.as_mut());
         context.fourier_accumulator.write_torus_form(output, fft);
         output.add_assign(input, NativeModulus::new());
     }

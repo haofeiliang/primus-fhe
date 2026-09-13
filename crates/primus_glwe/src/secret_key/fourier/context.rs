@@ -148,7 +148,7 @@ impl<T: FheUint> FourierGadgetEncryptContext<T> {
         self.glwe.resize(poly_length);
     }
 
-    pub(super) fn assert_glev_compatible(&self, size: GadgetSize) {
+    pub(crate) fn assert_glev_compatible(&self, size: GadgetSize) {
         let poly_length = size.glwe_size().poly_length();
         assert_eq!(
             self.encoded.as_ref().len(),
@@ -158,7 +158,7 @@ impl<T: FheUint> FourierGadgetEncryptContext<T> {
         self.glwe.assert_poly_length(poly_length);
     }
 
-    pub(super) fn assert_ggsw_compatible(&self, size: GadgetSize) {
+    pub(crate) fn assert_ggsw_compatible(&self, size: GadgetSize) {
         self.assert_glev_compatible(size);
         assert_eq!(
             self.level_transforms.len(),

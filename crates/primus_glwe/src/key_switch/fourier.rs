@@ -292,12 +292,12 @@ impl<T: TorusFftValue> FourierGlweKeySwitchingKey<T> {
     }
 }
 
-/// Reusable Fourier GLWE key-switching workspace.
+/// Reusable Fourier workspace for GLWE key switching and LWE packing key switching.
 pub struct FourierGlweKeySwitchingContext<T: TorusFftValue> {
-    carries: Vec<bool>,
-    decomposed_poly: Vec<T>,
-    decomposed_fourier: Vec<Complex64>,
-    accumulator: FourierGlwe<Vec<Complex64>>,
+    pub(crate) carries: Vec<bool>,
+    pub(crate) decomposed_poly: Vec<T>,
+    pub(crate) decomposed_fourier: Vec<Complex64>,
+    pub(crate) accumulator: FourierGlwe<Vec<Complex64>>,
 }
 
 impl<T: TorusFftValue> FourierGlweKeySwitchingContext<T> {

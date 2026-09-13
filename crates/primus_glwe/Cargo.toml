@@ -12,6 +12,7 @@ primus_fft = { path = "../primus_fft" }
 primus_encoding = { path = "../primus_encoding" }
 primus_integer = { path = "../primus_integer" }
 primus_lattice = { path = "../primus_lattice" }
+primus_lwe = { path = "../primus_lwe" }
 primus_modulus = { path = "../primus_modulus" }
 primus_ntt = { path = "../primus_ntt" }
 primus_poly = { path = "../primus_poly" }
@@ -33,6 +34,10 @@ harness = false
 name = "primitives"
 harness = false
 
+[[bench]]
+name = "key_conversion"
+harness = false
+
 [features]
 default = []
 simd = [
@@ -44,4 +49,5 @@ simd = [
     "primus_ntt/simd",
     "primus_decompose/simd",
     "primus_lattice/simd",
+    "primus_lwe/simd",
 ]

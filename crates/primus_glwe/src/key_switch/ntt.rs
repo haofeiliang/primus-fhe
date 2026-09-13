@@ -355,12 +355,12 @@ impl<T: FheUint> NttGlweKeySwitchingKey<T> {
     }
 }
 
-/// Reusable NTT GLWE key-switching workspace.
+/// Reusable NTT workspace for GLWE key switching and LWE packing key switching.
 pub struct NttGlweKeySwitchingContext<T: FheUint> {
-    adjusted_poly: Vec<T>,
-    carries: Vec<bool>,
-    decomposed_ntt: Vec<T>,
-    accumulator: NttGlwe<Vec<T>>,
+    pub(crate) adjusted_poly: Vec<T>,
+    pub(crate) carries: Vec<bool>,
+    pub(crate) decomposed_ntt: Vec<T>,
+    pub(crate) accumulator: NttGlwe<Vec<T>>,
 }
 
 /// Mutable view of key-switch scratch with a replaceable NTT accumulator.

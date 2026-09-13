@@ -91,7 +91,6 @@ impl<T: FheUint> GlweSecretKey<T> {
 
     /// Iterates over the coefficient-domain secret polynomials.
     #[inline]
-    #[must_use]
     pub fn iter(&self) -> impl ExactSizeIterator<Item = &[T::SignedInteger]> + DoubleEndedIterator {
         self.key.chunks_exact(self.glwe_size.poly_length())
     }

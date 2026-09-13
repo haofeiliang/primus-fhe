@@ -72,13 +72,24 @@ Projection accepts arbitrary indices, including duplicates and an empty selectio
 
 For partial expansion to produce constants, message coefficients `count..N` must be zero. This unchecked premise concerns the message, not ciphertext masks or bodies. Otherwise output `i` targets `sum_j M[i+j*count] X^(j*count)`. All outputs retain ring degree `N` and use the ordinary trace context.
 
-Packing uses the [RevHomTrace algorithm](https://github.com/Stirling75/RevHomTrace/blob/main/src/glwe_conv_rev.rs). Each LWE must have dimension `k*N`, the flattened GLWE secret, and the same modulus and encoding. A batch is a flat slice of `p` complete LWEs, where `p` is a power of two in `1..=N`; slots are adjacent only at `p=N`. Construct `NttGlwePackingContext::new(size, p)` or `FourierGlwePackingContext::new(size, p)` for that fixed count. Single-LWE packing uses a trace context. Evaluation reuses output and scratch, checking shapes, indices and backend compatibility before writes.
+Trace-key packing uses the [RevHomTrace algorithm](https://github.com/Stirling75/RevHomTrace/blob/main/src/glwe_conv_rev.rs). Each LWE must have dimension `k*N`, the flattened GLWE secret, and the same modulus and encoding. A batch is a flat slice of `p` complete LWEs, where `p` is a power of two in `1..=N`; slots are adjacent only at `p=N`. Construct `NttGlwePackingContext::new(size, p)` or `FourierGlwePackingContext::new(size, p)` for that fixed count. Single-LWE packing uses a trace context. Evaluation reuses output and scratch, checking shapes, indices and backend compatibility before writes.
+
+`NttLwePackingKeySwitchingKey<T>` and `FourierLwePackingKeySwitchingKey<T>` instead convert from an independent LWE secret to the output GLWE secret. `generate` accepts `primus_lwe::LweSecretKeyRef`, the output secret, and GLev parameters. Input dimension can differ from `k*N`; input and output must use the same ciphertext modulus and message encoding.
+
+| Packing-key method | Target message |
+| --- | --- |
+| `key_switch_to` | One LWE message as a constant GLWE |
+| `pack_lwes_to` | `sum_i m[i] X^i`, for any `1 <= p <= N` |
+
+The batch input is a flat slice of complete LWEs. These keys write consecutive message coefficients and require neither a power-of-two count nor trace keys. Construct the existing `NttGlweKeySwitchingContext::new(output_size.glwe_size())` or Fourier counterpart once; it supports changing batch counts. Batch evaluation groups decomposition digits into polynomials and streams the transformed key; a single LWE uses scalar digits without digit transforms. Both paths perform one final inverse transform per output component. The zero target-message tail can still contain noise. Decoding margin must cover input noise, secret-weighted decomposition error and accumulated key noise; Fourier also incurs floating-point error. Storage is `input_dimension * output_size.glev_len()` residues for NTT, or `input_dimension * output_size.fourier_glev_len()` complex values for Fourier.
+
+`NttGlweSchemeSwitchKey<T>` and `FourierGlweSchemeSwitchKey<T>` convert a coefficient-domain GLev into a GGSW in the key's transform domain using `apply_to`. Both secret representations passed to `generate` must represent the same secret. Construct the matching scheme-switch context with `key.key_size()`. The output inherits the input GLev's gadget scaling; `key.key_basis()` only controls external-product decomposition and can differ from the output basis. Each mask row uses an encryption of the negated secret polynomial; the body row is transformed directly from the input. Fourier products accumulate directly into output without an inverse/forward FFT roundtrip.
 
 ## Source and tests
 
-[Secret keys](src/secret_key), [public keys](src/public_key), [key switching](src/key_switch), [automorphism](src/automorphism), [trace/packing](src/trace) and [scheme switching](src/scheme_switch.rs) contain the public contracts and implementation details.
+[Secret keys](src/secret_key), [public keys](src/public_key), [key switching](src/key_switch), [automorphism](src/automorphism), [trace/packing](src/trace), [packing key switching](src/packing_key_switch) and [scheme switching](src/scheme_switch) contain the public contracts and implementation details.
 
-Tests are grouped by operation: ordinary key workflows, gadget phases and external products, CMUX, key switching, automorphism, scheme switching, and trace/expansion/packing. `tests/common` holds the small schoolbook phase oracle shared by automorphism and trace tests. Boundary rejection and capacity zeroization have dedicated test binaries. Fourier automorphism and trace/packing tests exercise both RustFFT and tfhe-fft.
+Tests are grouped by operation: ordinary key workflows, gadget phases and external products, CMUX, key switching, automorphism, scheme switching, and trace/expansion/packing. `tests/common` holds the small schoolbook phase oracle shared by evaluation tests. Boundary rejection and capacity zeroization have dedicated test binaries. Fourier automorphism, trace, packing key switching and scheme-switching tests exercise both RustFFT and tfhe-fft.
 
 ```sh
 cargo test -p primus_glwe
@@ -91,15 +102,17 @@ cargo +nightly test -p primus_glwe --features simd
 ```sh
 cargo bench -p primus_glwe --bench encryption
 cargo bench -p primus_glwe --bench primitives
+cargo bench -p primus_glwe --bench key_conversion
 # Check every case without collecting timing samples:
 cargo bench -p primus_glwe -- --test
 ```
 
-Both benches use `(k, N) = (1, 1024)` and `(2, 4096)`. Each iteration performs one operation with reusable output/scratch; key/table construction and allocation remain outside timing. Parameters and fixed seeds are recorded in the bench sources. These workloads track regressions rather than compare matched security; they are not security parameter recommendations.
+All benches use `(k, N) = (1, 1024)` and `(2, 4096)`. Each iteration performs one operation with reusable output/scratch; key/table construction and allocation remain outside timing. Parameters and fixed seeds are recorded in the bench sources. These workloads track regressions rather than compare matched security; they are not security parameter recommendations.
 
 | Bench | Work measured |
 | --- | --- |
 | [encryption](benches/encryption.rs) | Secret/public encryption, secret decryption, GLev/GGSW generation; includes sampling, coding and required transforms |
 | [primitives](benches/primitives.rs) | Ordinary/reverse trace; projection and partial expansion for 8 and `N/8` coefficients; full expansion; packing 1, 8 and `N` LWEs; direct Fourier automorphism on both FFT backends |
+| [key_conversion](benches/key_conversion.rs) | Independent-key packing of 1, 8 and `N` LWEs (input dimension 512; single-LWE cases cover bases `2^3` and `2^10`); NTT/Fourier GLev-to-GGSW scheme switching |
 
 Ordinary and reverse trace measure their respective API scales. Projection/partial expansion use the same encrypted zero-tail message and report output-message throughput. Codec variants are benchmarked in `primus_encoding`.

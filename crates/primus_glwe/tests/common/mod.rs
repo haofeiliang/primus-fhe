@@ -1,4 +1,4 @@
-//! Small exact fixtures shared by automorphism and trace/packing tests.
+//! Small exact fixtures shared by evaluation tests.
 
 use primus_lattice::glwe::Glwe;
 use rand::{RngExt, rngs::StdRng};

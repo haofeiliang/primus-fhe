@@ -10,10 +10,10 @@ use primus_reduce::FieldContext;
 
 use crate::{
     context::{
-        FourierGlweExternalProductContext, NttGlweExternalProductContext,
-        NttGlweExternalProductContextRefMut,
+        FourierGlweExternalProductContext, FourierGlweExternalProductContextRefMut,
+        NttGlweExternalProductContext, NttGlweExternalProductContextRefMut,
     },
-    glwe::{Glwe, NttGlwe, TorusGlwe},
+    glwe::{FourierGlwe, Glwe, NttGlwe, TorusGlwe},
 };
 
 use super::{FourierGgsw, NttGgsw};
@@ -69,9 +69,39 @@ where
         C: DataMut<Elem = T>,
     {
         debug_assert_eq!(output.as_ref().len(), context.size().glwe_size().glwe_len());
+        let mut context = context.as_mut();
         context.fourier_accumulator.set_zero();
-        self.accumulate_external_product(input, basis, fft, context);
+        self.accumulate_external_product(input, basis, fft, &mut context);
         context.fourier_accumulator.write_torus_form(output, fft);
+    }
+
+    /// Computes an external product directly into Fourier output, without an inverse FFT.
+    ///
+    /// # Correctness
+    ///
+    /// Inherits [`Self::external_product_to`]'s contracts, except that output
+    /// has `context.size().glwe_size().fourier_glwe_len()` complex values in
+    /// the key's FFT representation. Output is cleared before accumulation.
+    pub fn external_product_fourier_to<T, Table, A, C>(
+        &self,
+        input: &TorusGlwe<A>,
+        output: &mut FourierGlwe<C>,
+        basis: &ApproxSignedBasis<T>,
+        fft: &mut FftEngine<'_, Table>,
+        context: &mut FourierGlweExternalProductContext<T>,
+    ) where
+        T: TorusFftValue,
+        Table: FftTable,
+        A: Data<Elem = T>,
+        C: DataMut<Elem = Complex64>,
+    {
+        debug_assert_eq!(
+            output.as_ref().len(),
+            context.size().glwe_size().fourier_glwe_len()
+        );
+        let mut context = context.as_mut_with_accumulator(output);
+        context.fourier_accumulator.set_zero();
+        self.accumulate_external_product(input, basis, fft, &mut context);
     }
 
     /// Adds `self external_product input` to the existing Fourier accumulator.
@@ -87,7 +117,7 @@ where
         input: &TorusGlwe<A>,
         basis: &ApproxSignedBasis<T>,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierGlweExternalProductContext<T>,
+        context: &mut FourierGlweExternalProductContextRefMut<'_, T>,
     ) where
         T: TorusFftValue,
         Table: FftTable,
@@ -111,22 +141,22 @@ where
             .iter_poly(poly_len)
             .zip(self.iter_glev(fourier_glev_len))
         {
-            basis.init_carry_slice(coeff_poly.0, &mut context.carries);
+            basis.init_carry_slice(coeff_poly.0, context.carries);
             for (decomposer, key_glwe) in basis
                 .decomposer_iter()
                 .zip(key_row.iter_glwe(fourier_glwe_len))
             {
                 decomposer.decompose_slice_to(
                     coeff_poly.0,
-                    &mut context.decomposed_poly,
-                    &mut context.carries,
+                    context.decomposed_poly,
+                    context.carries,
                 );
-                fft.forward_as_integer(&context.decomposed_poly, &mut context.decomposed_fourier);
+                fft.forward_as_integer(context.decomposed_poly, context.decomposed_fourier);
                 context
                     .fourier_accumulator
                     .add_mul_fourier_polynomial_assign(
                         &key_glwe,
-                        &FourierPolynomial::new(context.decomposed_fourier.as_slice()),
+                        &FourierPolynomial::new(&*context.decomposed_fourier),
                     );
             }
         }

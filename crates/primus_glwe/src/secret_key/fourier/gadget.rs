@@ -36,16 +36,7 @@ impl FourierGlweSecretKey {
         A: Data<Elem = T>,
         B: DataMut<Elem = Complex64>,
     {
-        assert_eq!(
-            self.glwe_size(),
-            params.glwe_size(),
-            "GLWE parameter layout mismatch"
-        );
-        assert_eq!(
-            fft.poly_length(),
-            self.poly_length(),
-            "FFT polynomial length mismatch"
-        );
+        self.assert_gadget_compatible(params, fft);
         assert_eq!(
             input.as_ref().len(),
             self.poly_length(),
@@ -57,6 +48,25 @@ impl FourierGlweSecretKey {
             "Fourier GLev output layout mismatch"
         );
         context.assert_glev_compatible(params.size());
+        self.encrypt_glev_kernel_to(input, output, params, fft, rng, context);
+    }
+
+    /// Encrypts after the caller validates key, input/output, FFT and workspace.
+    pub(crate) fn encrypt_glev_kernel_to<T, Table, R, A, B>(
+        &self,
+        input: &Polynomial<A>,
+        output: &mut FourierGlevCiphertext<B>,
+        params: &GlevParameters<T, NativeModulus<T>>,
+        fft: &mut FftEngine<'_, Table>,
+        rng: &mut R,
+        context: &mut FourierGadgetEncryptContext<T>,
+    ) where
+        T: TorusFftValue,
+        Table: FftTable,
+        R: rand::Rng + rand::CryptoRng,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = Complex64>,
+    {
         let modulus = params.cipher_modulus();
         let fourier_glwe_len = params.fourier_glwe_len();
 
@@ -104,16 +114,7 @@ impl FourierGlweSecretKey {
         A: Data<Elem = T>,
         B: DataMut<Elem = Complex64>,
     {
-        assert_eq!(
-            self.glwe_size(),
-            params.glwe_size(),
-            "GLWE parameter layout mismatch"
-        );
-        assert_eq!(
-            fft.poly_length(),
-            self.poly_length(),
-            "FFT polynomial length mismatch"
-        );
+        self.assert_gadget_compatible(params, fft);
         assert_eq!(
             input.as_ref().len(),
             self.poly_length(),
@@ -125,7 +126,25 @@ impl FourierGlweSecretKey {
             "Fourier GGSW output layout mismatch"
         );
         context.assert_ggsw_compatible(params.size());
+        self.encrypt_ggsw_kernel_to(input, output, params, fft, rng, context);
+    }
 
+    /// Encrypts after the caller validates key, input/output, FFT and workspace.
+    pub(crate) fn encrypt_ggsw_kernel_to<T, Table, R, A, B>(
+        &self,
+        input: &Polynomial<A>,
+        output: &mut FourierGgswCiphertext<B>,
+        params: &GlevParameters<T, NativeModulus<T>>,
+        fft: &mut FftEngine<'_, Table>,
+        rng: &mut R,
+        context: &mut FourierGadgetEncryptContext<T>,
+    ) where
+        T: TorusFftValue,
+        Table: FftTable,
+        R: rand::Rng + rand::CryptoRng,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = Complex64>,
+    {
         let fourier_length = fft.fourier_length();
         let fourier_glwe_len = params.fourier_glwe_len();
         let fourier_glev_len = params.fourier_glev_len();
@@ -163,5 +182,23 @@ impl FourierGlweSecretKey {
                 .add_assign(&FourierPolynomial::new(transformed));
             }
         }
+    }
+
+    /// Validates the key and FFT before composite gadget generation.
+    pub(crate) fn assert_gadget_compatible<T: TorusFftValue, Table: FftTable>(
+        &self,
+        params: &GlevParameters<T, NativeModulus<T>>,
+        fft: &FftEngine<'_, Table>,
+    ) {
+        assert_eq!(
+            self.glwe_size(),
+            params.glwe_size(),
+            "GLWE parameter layout mismatch"
+        );
+        assert_eq!(
+            fft.poly_length(),
+            self.poly_length(),
+            "FFT polynomial length mismatch"
+        );
     }
 }

@@ -32,6 +32,30 @@ pub struct FourierGlweExternalProductContext<T: TorusFftValue> {
     pub(crate) fourier_accumulator: FourierGlwe<Vec<Complex64>>,
 }
 
+/// Mutable view of the buffers used by a Fourier external product.
+///
+/// The accumulator may borrow either the context-owned buffer or a
+/// caller-provided Fourier GLWE output.
+pub(crate) struct FourierGlweExternalProductContextRefMut<'a, T: TorusFftValue> {
+    size: GadgetSize,
+    /// Carry bits used by decomposition.
+    pub(crate) carries: &'a mut [bool],
+    /// Integer digits and their Fourier transform.
+    pub(crate) decomposed_poly: &'a mut [T],
+    pub(crate) decomposed_fourier: &'a mut [Complex64],
+    /// Accumulator selected for this external product.
+    pub(crate) fourier_accumulator: FourierGlwe<&'a mut [Complex64]>,
+}
+
+impl<T: TorusFftValue> FourierGlweExternalProductContextRefMut<'_, T> {
+    /// Returns the external-product layout bound to this view.
+    #[must_use]
+    #[inline]
+    pub(crate) fn size(&self) -> GadgetSize {
+        self.size
+    }
+}
+
 impl<T: TorusFftValue> FourierGlweExternalProductContext<T> {
     /// Creates a new context with all buffers pre-allocated.
     ///
@@ -94,6 +118,37 @@ impl<T: TorusFftValue> FourierGlweExternalProductContext<T> {
     #[inline]
     pub fn size(&self) -> GadgetSize {
         self.size
+    }
+
+    /// Borrows all scratch buffers and the context-owned accumulator.
+    #[inline]
+    pub(crate) fn as_mut(&mut self) -> FourierGlweExternalProductContextRefMut<'_, T> {
+        FourierGlweExternalProductContextRefMut {
+            size: self.size,
+            carries: &mut self.carries,
+            decomposed_poly: &mut self.decomposed_poly,
+            decomposed_fourier: &mut self.decomposed_fourier,
+            fourier_accumulator: FourierGlwe(self.fourier_accumulator.as_mut()),
+        }
+    }
+
+    /// Borrows the scratch buffers while using `accumulator` as the output.
+    /// The operation entry point must ensure its length matches the bound GLWE size.
+    #[inline]
+    pub(crate) fn as_mut_with_accumulator<'a, S>(
+        &'a mut self,
+        accumulator: &'a mut FourierGlwe<S>,
+    ) -> FourierGlweExternalProductContextRefMut<'a, T>
+    where
+        S: DataMut<Elem = Complex64>,
+    {
+        FourierGlweExternalProductContextRefMut {
+            size: self.size,
+            carries: &mut self.carries,
+            decomposed_poly: &mut self.decomposed_poly,
+            decomposed_fourier: &mut self.decomposed_fourier,
+            fourier_accumulator: FourierGlwe(accumulator.as_mut()),
+        }
     }
 }
 
