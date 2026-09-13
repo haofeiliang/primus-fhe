@@ -1,17 +1,18 @@
+use primus_decompose::primitive::ApproxSignedBasis;
 use primus_integer::{FheUint, SignedInteger};
 use primus_lattice::ngsw::NttNgsw;
-use primus_ntru::{
-    NtruSecretKey, NttNtruGadgetEncryptContext, NttNtruKeySwitchingKey, NttNtruSecretKey,
-};
+use primus_lattice::nlev::NttNlev;
+use primus_ntru::{NttNtruGadgetEncryptContext, NttNtruKeySwitchingKey, NttNtruSecretKey};
 use primus_ntt::NttTable;
 use primus_poly::PolynomialOwned;
 
 use crate::{ClientKey, TfheContext, TfheKeyError, TfheParameters};
 
 /// Exact NTT evaluation keys for NTRU TFHE.
-/// The initializer retains the ring and basis metadata shared by the controls.
+/// The initializer and controls share the stored bootstrapping basis.
 pub struct ServerKey<T: FheUint> {
-    initializer: NttNtruKeySwitchingKey<T>,
+    initializer: NttNlev<Vec<T>>,
+    bootstrapping_basis: ApproxSignedBasis<T>,
     controls: Vec<T>,
     key_switching_key: NttNtruKeySwitchingKey<T>,
 }
@@ -19,8 +20,13 @@ pub struct ServerKey<T: FheUint> {
 impl<T: FheUint> ServerKey<T> {
     /// Returns the NLev encryption of one used to initialize the accumulator.
     #[inline]
-    pub(crate) fn initializer(&self) -> &NttNtruKeySwitchingKey<T> {
+    pub(crate) fn initializer(&self) -> &NttNlev<Vec<T>> {
         &self.initializer
+    }
+
+    /// Returns the common initializer/control decomposition basis.
+    pub(crate) fn bootstrapping_basis(&self) -> &ApproxSignedBasis<T> {
+        &self.bootstrapping_basis
     }
 
     /// Returns the post-bootstrap `f_acc -> f_client` key-switching key.
@@ -32,18 +38,18 @@ impl<T: FheUint> ServerKey<T> {
     /// Iterates over the contiguous NGSW controls without allocation.
     pub(crate) fn iter_controls(&self) -> impl ExactSizeIterator<Item = NttNgsw<&[T]>> {
         self.controls
-            .chunks_exact(self.initializer.as_slice().len())
+            .chunks_exact(self.initializer.as_ref().len())
             .map(NttNgsw::new)
     }
 
     /// Checks the generated ring and decomposition parameters before evaluation.
     pub(crate) fn is_compatible(&self, parameters: &TfheParameters<T>) -> bool {
-        self.initializer.poly_length() == parameters.poly_length()
-            && self.initializer.basis() == parameters.bootstrapping().basis()
+        self.initializer.as_ref().len() == parameters.bootstrapping().nlev_len()
+            && &self.bootstrapping_basis == parameters.bootstrapping().basis()
             && self.key_switching_key.poly_length() == parameters.poly_length()
             && self.key_switching_key.basis() == parameters.key_switching().basis()
             && self.controls.len()
-                == parameters.external_lwe().dimension() * self.initializer.as_slice().len()
+                == parameters.external_lwe().dimension() * self.initializer.as_ref().len()
     }
 }
 
@@ -146,35 +152,32 @@ where
         );
         ServerKey {
             initializer,
+            bootstrapping_basis: parameters.bootstrapping().basis().clone(),
             controls,
             key_switching_key,
         }
     }
 
-    /// Generates `NLEV_f_acc[1]` using the existing NTRU key-switch primitive.
+    /// Generates `NLEV_f_acc[1]` directly for accumulator initialization.
     fn generate_initializer<R>(
         &mut self,
         accumulator_ntt: &NttNtruSecretKey<T>,
         rng: &mut R,
-    ) -> NttNtruKeySwitchingKey<T>
+    ) -> NttNlev<Vec<T>>
     where
         R: rand::Rng + rand::CryptoRng,
     {
         let parameters = self.context.parameters();
-        let mut coefficients = vec![T::ZERO.cast_to_signed(); parameters.poly_length()];
-        coefficients[0] = T::ONE.cast_to_signed();
-        let unit = NtruSecretKey::new(
-            coefficients,
-            primus_ntru::SecretKeyDistr::fixed_hamming_weight_binary(parameters.poly_length(), 1),
-        );
-        NttNtruKeySwitchingKey::generate(
-            &unit,
-            accumulator_ntt,
+        let mut initializer = NttNlev::zero(parameters.bootstrapping().nlev_len());
+        accumulator_ntt.encrypt_nlev_constant_to(
+            T::ONE,
+            &mut initializer,
             parameters.bootstrapping(),
             self.context.table(),
             rng,
             &mut self.gadget,
-        )
+        );
+        initializer
     }
 
     /// Encrypts every binary client coefficient as one contiguous NTT NGSW.

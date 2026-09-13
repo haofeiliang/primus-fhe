@@ -11,6 +11,11 @@
 //! table, while Fourier takes an FFT engine and decryption context. Decoding
 //! methods additionally take [`NtruParameters`] for the plaintext codec.
 //!
+//! `encrypt_nlev_constant_to` encrypts raw ring constants without plaintext
+//! scaling. In particular, NLev[1] maps a coefficient polynomial to an encrypted
+//! NTRU accumulator through an external product. This differs from NGSW[1],
+//! which multiplies a ciphertext already encrypted under the same key.
+//!
 //! Explicit-modulus conversions use bounded signed encoding: every secret
 //! coefficient must have unsigned magnitude strictly less than the target
 //! ciphertext modulus. [`NtruParameters`] checks this for its sampling support.

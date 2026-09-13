@@ -1,18 +1,20 @@
+use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{Complex64, FftEngine, FftTable, TorusFftValue};
 use primus_integer::SignedInteger;
 use primus_lattice::ngsw::FourierNgsw;
+use primus_lattice::nlev::FourierNlev;
 use primus_ntru::{
     FourierNtruGadgetEncryptContext, FourierNtruKeySwitchingKey, FourierNtruSecretKey,
-    NtruSecretKey, SecretKeyDistr,
 };
 use primus_poly::PolynomialOwned;
 
 use crate::{ClientKey, TfheContext, TfheKeyError, TfheParameters};
 
 /// Fourier evaluation keys for NTRU TFHE.
-/// The initializer retains the ring and basis metadata shared by the controls.
+/// The initializer and controls share the stored bootstrapping basis.
 pub struct ServerKey<T: TorusFftValue> {
-    initializer: FourierNtruKeySwitchingKey<T>,
+    initializer: FourierNlev<Vec<Complex64>>,
+    bootstrapping_basis: ApproxSignedBasis<T>,
     controls: Vec<Complex64>,
     key_switching_key: FourierNtruKeySwitchingKey<T>,
 }
@@ -20,8 +22,13 @@ pub struct ServerKey<T: TorusFftValue> {
 impl<T: TorusFftValue> ServerKey<T> {
     /// Returns the Fourier NLev encryption of one used for initialization.
     #[inline]
-    pub(crate) fn initializer(&self) -> &FourierNtruKeySwitchingKey<T> {
+    pub(crate) fn initializer(&self) -> &FourierNlev<Vec<Complex64>> {
         &self.initializer
+    }
+
+    /// Returns the common initializer/control decomposition basis.
+    pub(crate) fn bootstrapping_basis(&self) -> &ApproxSignedBasis<T> {
+        &self.bootstrapping_basis
     }
 
     /// Returns the post-bootstrap `f_acc -> f_client` key-switching key.
@@ -33,18 +40,18 @@ impl<T: TorusFftValue> ServerKey<T> {
     /// Iterates over contiguous Fourier NGSW controls without allocation.
     pub(crate) fn iter_controls(&self) -> impl ExactSizeIterator<Item = FourierNgsw<&[Complex64]>> {
         self.controls
-            .chunks_exact(self.initializer.as_slice().len())
+            .chunks_exact(self.initializer.as_ref().len())
             .map(FourierNgsw::new)
     }
 
     /// Checks the generated ring and decomposition parameters before evaluation.
     pub(crate) fn is_compatible(&self, parameters: &TfheParameters<T>) -> bool {
-        self.initializer.poly_length() == parameters.poly_length()
-            && self.initializer.basis() == parameters.bootstrapping().basis()
+        self.initializer.as_ref().len() == parameters.bootstrapping().fourier_nlev_len()
+            && &self.bootstrapping_basis == parameters.bootstrapping().basis()
             && self.key_switching_key.poly_length() == parameters.poly_length()
             && self.key_switching_key.basis() == parameters.key_switching().basis()
             && self.controls.len()
-                == parameters.external_lwe().dimension() * self.initializer.as_slice().len()
+                == parameters.external_lwe().dimension() * self.initializer.as_ref().len()
     }
 }
 
@@ -146,35 +153,32 @@ where
         );
         ServerKey {
             initializer,
+            bootstrapping_basis: parameters.bootstrapping().basis().clone(),
             controls,
             key_switching_key,
         }
     }
 
-    /// Generates `NLEV_f_acc[1]` using the NTRU key-switch primitive.
+    /// Generates `NLEV_f_acc[1]` directly for accumulator initialization.
     fn generate_initializer<R>(
         &mut self,
         accumulator_fourier: &FourierNtruSecretKey,
         rng: &mut R,
-    ) -> FourierNtruKeySwitchingKey<T>
+    ) -> FourierNlev<Vec<Complex64>>
     where
         R: rand::Rng + rand::CryptoRng,
     {
         let parameters = self.context.parameters();
-        let mut coefficients = vec![T::ZERO.cast_to_signed(); parameters.poly_length()];
-        coefficients[0] = T::ONE.cast_to_signed();
-        let unit = NtruSecretKey::new(
-            coefficients,
-            SecretKeyDistr::fixed_hamming_weight_binary(parameters.poly_length(), 1),
-        );
-        FourierNtruKeySwitchingKey::generate(
-            &unit,
-            accumulator_fourier,
+        let mut initializer = FourierNlev::zero(parameters.bootstrapping().fourier_nlev_len());
+        accumulator_fourier.encrypt_nlev_constant_to(
+            T::ONE,
+            &mut initializer,
             parameters.bootstrapping(),
             &mut self.fft,
             rng,
             &mut self.gadget,
-        )
+        );
+        initializer
     }
 
     /// Encrypts every binary client coefficient as one contiguous Fourier NGSW.

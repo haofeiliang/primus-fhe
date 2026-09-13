@@ -50,14 +50,17 @@ pub(crate) fn blind_rotate_lookup_table_to<T, Table, A>(
         &mut Polynomial(workspace.scratch.as_mut()),
         NativeModulus::new(),
     );
-    server_key.initializer().key_switch_to(
-        &workspace.scratch,
+    // Evaluator binding checked the initializer's shape/basis; this workspace
+    // was constructed at the same ring length. NLev[1] encrypts the rotated LUT.
+    server_key.initializer().external_product_to(
+        &Polynomial(workspace.scratch.as_ref()),
         &mut workspace.current,
+        server_key.bootstrapping_basis(),
         fft,
         &mut workspace.external_product,
     );
 
-    let basis = parameters.bootstrapping().basis();
+    let basis = server_key.bootstrapping_basis();
     let mut output_is_current = true;
     for (&coefficient, control) in input.a().iter().zip(server_key.iter_controls()) {
         let exponent = exponent_of(coefficient);

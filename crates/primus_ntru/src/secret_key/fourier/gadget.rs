@@ -24,7 +24,17 @@ impl FourierNtruSecretKey {
         A: Data<Elem = T>,
         B: DataMut<Elem = Complex64>,
     {
-        self.assert_gadget_domain(message, result.as_ref(), params, fft, context);
+        self.assert_gadget_domain(params, fft, context);
+        assert_eq!(
+            message.as_ref().len(),
+            self.poly_length(),
+            "gadget input length mismatch"
+        );
+        assert_eq!(
+            result.as_ref().len(),
+            params.fourier_nlev_len(),
+            "gadget output length mismatch"
+        );
 
         let ntru_params = params.ntru();
         let modulus = ntru_params.cipher_modulus();
@@ -38,6 +48,57 @@ impl FourierNtruSecretKey {
                 &context.encoded,
                 &mut level,
                 ntru_params,
+                fft,
+                rng,
+                &mut context.ntru,
+            );
+        }
+    }
+
+    /// Encrypts a constant ring element as NLev without plaintext scaling.
+    /// Each level has phase `g_l * input + e_l`; input `1` initializes an
+    /// encrypted accumulator through an NLev external product.
+    /// Reuses output and scratch, zeroing the coefficient tail once per call.
+    ///
+    /// # Panics
+    ///
+    /// Panics before sampling or writes for incompatible key/parameter/table,
+    /// output or workspace lengths.
+    ///
+    /// # Correctness
+    ///
+    /// The secret key must use the supplied FFT table instance.
+    pub fn encrypt_nlev_constant_to<T, Table, R, B>(
+        &self,
+        input: T,
+        output: &mut FourierNlevCiphertext<B>,
+        params: &NlevParameters<T, NativeModulus<T>>,
+        fft: &mut FftEngine<'_, Table>,
+        rng: &mut R,
+        context: &mut FourierNtruGadgetEncryptContext<T>,
+    ) where
+        T: TorusFftValue,
+        Table: FftTable,
+        R: rand::Rng + rand::CryptoRng,
+        B: DataMut<Elem = Complex64>,
+    {
+        self.assert_gadget_domain(params, fft, context);
+        assert_eq!(
+            output.as_ref().len(),
+            params.fourier_nlev_len(),
+            "NLev output length mismatch"
+        );
+        context.encoded.as_mut().fill(T::ZERO);
+        for (scalar, mut level) in params
+            .basis()
+            .scalar_iter()
+            .zip(output.iter_ntru_mut(fft.fourier_length()))
+        {
+            context.encoded.as_mut()[0] = input.wrapping_mul(scalar);
+            self.encrypt_encoded_to_unchecked(
+                &context.encoded,
+                &mut level,
+                params.ntru(),
                 fft,
                 rng,
                 &mut context.ntru,
@@ -61,7 +122,17 @@ impl FourierNtruSecretKey {
         A: Data<Elem = T>,
         B: DataMut<Elem = Complex64>,
     {
-        self.assert_gadget_domain(message, result.as_ref(), params, fft, context);
+        self.assert_gadget_domain(params, fft, context);
+        assert_eq!(
+            message.as_ref().len(),
+            self.poly_length(),
+            "gadget input length mismatch"
+        );
+        assert_eq!(
+            result.as_ref().len(),
+            params.fourier_nlev_len(),
+            "gadget output length mismatch"
+        );
 
         let ntru_params = params.ntru();
         let modulus = ntru_params.cipher_modulus();
@@ -78,22 +149,17 @@ impl FourierNtruSecretKey {
         }
     }
 
-    fn assert_gadget_domain<T, Table, A>(
+    fn assert_gadget_domain<T, Table>(
         &self,
-        message: &Polynomial<A>,
-        result: &[Complex64],
         params: &NlevParameters<T, NativeModulus<T>>,
         fft: &FftEngine<'_, Table>,
         context: &FourierNtruGadgetEncryptContext<T>,
     ) where
         T: TorusFftValue,
         Table: FftTable,
-        A: Data<Elem = T>,
     {
         self.assert_domain(params.ntru(), fft);
-        assert_eq!(message.as_ref().len(), self.poly_length());
         assert_eq!(context.encoded.as_ref().len(), self.poly_length());
         assert_eq!(context.transformed.len(), fft.fourier_length());
-        assert_eq!(result.len(), params.fourier_nlev_len());
     }
 }

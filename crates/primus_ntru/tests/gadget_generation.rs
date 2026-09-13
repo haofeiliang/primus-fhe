@@ -1,4 +1,4 @@
-use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable};
+use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable, TfheFftTable};
 use primus_lattice::ntru::{FourierNtruOwned, Ntru, NttNtru};
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntru::{
@@ -9,6 +9,7 @@ use primus_ntru::{
 };
 use primus_ntt::{NttTable, UintNttTable};
 use primus_poly::{Polynomial, PolynomialOwned};
+use rand::{Rng, SeedableRng, rngs::StdRng};
 
 const POLY_LENGTH: usize = 256;
 const PLAINTEXT_MODULUS: u32 = 16;
@@ -78,7 +79,7 @@ fn ntt_nlev_generation_and_ngsw_cmux() {
     );
     let gadget_params = NlevParameters::with_ntru_params(&params, 9, None);
     let basis = gadget_params.basis();
-    let mut rng = rand::rng();
+    let mut rng = StdRng::seed_from_u64(42);
     let secret_key = NttNtruSecretKey::generate(&params, &ntt, &mut rng).unwrap();
     let mut gadget_context = NttNtruGadgetEncryptContext::new(POLY_LENGTH);
 
@@ -211,7 +212,7 @@ fn fourier_nlev_generation_and_ngsw_cmux() {
     );
     let gadget_params = NlevParameters::with_ntru_params(&params, 8, None);
     let basis = gadget_params.basis();
-    let mut rng = rand::rng();
+    let mut rng = StdRng::seed_from_u64(42);
     let secret_key = FourierNtruSecretKey::generate(&params, &mut fft, &mut rng).unwrap();
     let mut gadget_context = FourierNtruGadgetEncryptContext::new(POLY_LENGTH);
     let mut decrypt_context = FourierNtruDecryptContext::new(POLY_LENGTH);
@@ -349,5 +350,92 @@ fn fourier_nlev_generation_and_ngsw_cmux() {
             ),
             *expected
         );
+    }
+}
+
+#[test]
+fn constant_nlev_matches_polynomial_encryption() {
+    let modulus = BarrettModulus::new(EXPLICIT_MODULUS);
+    let ntt = UintNttTable::new(POLY_LENGTH.trailing_zeros(), modulus).unwrap();
+    let params = NtruParameters::new(
+        POLY_LENGTH,
+        16u32,
+        modulus,
+        SecretKeyDistr::SparseTernary,
+        0.7,
+    );
+    let gadget = NlevParameters::with_ntru_params(&params, 9, None);
+    let mut rng = StdRng::seed_from_u64(75);
+    let key = NttNtruSecretKey::generate(&params, &ntt, &mut rng).unwrap();
+    let mut context = NttNtruGadgetEncryptContext::new(POLY_LENGTH);
+    let mut expected = NttNlevCiphertext::<Vec<u32>>::zero(gadget.nlev_len());
+    let mut actual = expected.clone();
+    for constant in [0, 1, EXPLICIT_MODULUS - 1] {
+        let mut message = Polynomial::new(vec![0; POLY_LENGTH]);
+        message.as_mut()[0] = constant;
+        let mut reference_rng = StdRng::seed_from_u64(83);
+        let mut actual_rng = StdRng::seed_from_u64(83);
+        key.encrypt_nlev_to(
+            &message,
+            &mut expected,
+            &gadget,
+            &ntt,
+            &mut reference_rng,
+            &mut context,
+        );
+        key.encrypt_nlev_constant_to(
+            constant,
+            &mut actual,
+            &gadget,
+            &ntt,
+            &mut actual_rng,
+            &mut context,
+        );
+        assert_eq!(actual.as_ref(), expected.as_ref());
+        assert_eq!(actual_rng.next_u64(), reference_rng.next_u64());
+    }
+    check_fourier_constant_nlev::<RustFftTable>();
+    check_fourier_constant_nlev::<TfheFftTable>();
+}
+
+fn check_fourier_constant_nlev<Table: FftTable>() {
+    let table = Table::new(POLY_LENGTH.trailing_zeros()).unwrap();
+    let mut fft = FftEngine::new(&table);
+    let params = NtruParameters::new(
+        POLY_LENGTH,
+        16u32,
+        NativeModulus::new(),
+        SecretKeyDistr::SparseTernary,
+        0.7,
+    );
+    let gadget = NlevParameters::with_ntru_params(&params, 8, None);
+    let mut rng = StdRng::seed_from_u64(75);
+    let key = FourierNtruSecretKey::generate(&params, &mut fft, &mut rng).unwrap();
+    let mut context = FourierNtruGadgetEncryptContext::new(POLY_LENGTH);
+    let mut expected = FourierNlevCiphertext::<Vec<Complex64>>::zero(gadget.fourier_nlev_len());
+    let mut actual = expected.clone();
+    for constant in [0, 1, u32::MAX] {
+        let mut message = Polynomial::new(vec![0; POLY_LENGTH]);
+        message.as_mut()[0] = constant;
+        let mut reference_rng = StdRng::seed_from_u64(83);
+        let mut actual_rng = StdRng::seed_from_u64(83);
+        key.encrypt_nlev_to(
+            &message,
+            &mut expected,
+            &gadget,
+            &mut fft,
+            &mut reference_rng,
+            &mut context,
+        );
+        key.encrypt_nlev_constant_to(
+            constant,
+            &mut actual,
+            &gadget,
+            &mut fft,
+            &mut actual_rng,
+            &mut context,
+        );
+        assert_eq!(actual.as_ref(), expected.as_ref());
+        assert_eq!(actual_rng.next_u64(), reference_rng.next_u64());
     }
 }
