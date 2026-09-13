@@ -72,7 +72,7 @@ impl FourierNtruSecretKey {
         {
             message.mul_scalar_to(scalar, &mut context.encoded, modulus);
             fft.forward_as_torus(context.encoded.as_ref(), &mut context.transformed);
-            self.encrypt_zero_to_unchecked(&mut level, ntru_params, fft, rng, &mut context.ntru);
+            self.encrypt_zeros_to_unchecked(&mut level, ntru_params, fft, rng, &mut context.ntru);
             FourierPolynomial(level.as_mut())
                 .add_assign(&FourierPolynomial(context.transformed.as_slice()));
         }

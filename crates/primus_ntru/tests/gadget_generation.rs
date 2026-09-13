@@ -98,7 +98,7 @@ fn ntt_nlev_generation_and_ngsw_cmux() {
 
     for (scalar, level) in basis.scalar_iter().zip(nlev.iter_ntt_ntru(POLY_LENGTH)) {
         let mut phase = PolynomialOwned::zero(POLY_LENGTH);
-        secret_key.phase_to(&level, &mut phase, &params, &ntt);
+        secret_key.phase_to(&level, &mut phase, modulus, &ntt);
         assert!(explicit_distance(phase.as_ref()[0], scalar) <= 8);
         assert!(
             phase.as_ref()[1..]
@@ -235,7 +235,7 @@ fn fourier_nlev_generation_and_ngsw_cmux() {
         .zip(nlev.iter_ntru(fft.fourier_length()))
     {
         let mut phase = PolynomialOwned::zero(POLY_LENGTH);
-        secret_key.phase_to(&level, &mut phase, &params, &mut fft, &mut decrypt_context);
+        secret_key.phase_to(&level, &mut phase, &mut fft, &mut decrypt_context);
         assert!(native_distance(phase.as_ref()[0], scalar) <= 8);
         assert!(
             phase.as_ref()[1..]

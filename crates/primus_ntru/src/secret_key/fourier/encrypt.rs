@@ -112,7 +112,7 @@ impl FourierNtruSecretKey {
     }
 
     /// Encrypts zero into a freshly allocated Fourier ciphertext.
-    pub fn encrypt_zero<T, Table, R>(
+    pub fn encrypt_zeros<T, Table, R>(
         &self,
         params: &NtruParameters<T, NativeModulus<T>>,
         fft: &mut FftEngine<'_, Table>,
@@ -125,14 +125,7 @@ impl FourierNtruSecretKey {
         R: rand::Rng + rand::CryptoRng,
     {
         let mut result = FourierNtruCiphertext::zero(fft.fourier_length());
-        self.encrypt_to_with_message(
-            FourierEncryptionMessage::Zero,
-            &mut result,
-            params,
-            fft,
-            rng,
-            context,
-        );
+        self.encrypt_zeros_to(&mut result, params, fft, rng, context);
         result
     }
 
@@ -187,7 +180,36 @@ impl FourierNtruSecretKey {
         );
     }
 
-    pub(super) fn encrypt_zero_to_unchecked<T, Table, R, B>(
+    /// Encrypts the zero polynomial into the existing output without allocating.
+    ///
+    /// # Panics
+    ///
+    /// Panics before sampling or writes if the key, parameters, transform table,
+    /// output or workspace lengths are incompatible.
+    pub fn encrypt_zeros_to<T, Table, R, B>(
+        &self,
+        result: &mut FourierNtruCiphertext<B>,
+        params: &NtruParameters<T, NativeModulus<T>>,
+        fft: &mut FftEngine<'_, Table>,
+        rng: &mut R,
+        context: &mut FourierNtruEncryptContext<T>,
+    ) where
+        T: TorusFftValue,
+        Table: FftTable,
+        R: rand::Rng + rand::CryptoRng,
+        B: DataMut<Elem = Complex64>,
+    {
+        self.encrypt_to_with_message(
+            FourierEncryptionMessage::Zero,
+            result,
+            params,
+            fft,
+            rng,
+            context,
+        );
+    }
+
+    pub(super) fn encrypt_zeros_to_unchecked<T, Table, R, B>(
         &self,
         result: &mut FourierNtruCiphertext<B>,
         params: &NtruParameters<T, NativeModulus<T>>,

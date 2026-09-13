@@ -4,6 +4,13 @@
 //! `c = f^(-1) * (e + Delta * m)`.  Coefficient-domain parameters and
 //! secret keys are shared by the exact NTT and native-torus Fourier backends.
 //!
+//! Ordinary encryption provides `encrypt` / `encrypt_to`, `encrypt_centered_to`,
+//! `encrypt_encoded_to` and `encrypt_zeros` / `encrypt_zeros_to`. The `_to` methods
+//! reuse output storage; Fourier operations also reuse an encryption context.
+//! Phase extraction returns undecoded coefficients: NTT takes a modulus and
+//! table, while Fourier takes an FFT engine and decryption context. Decoding
+//! methods additionally take [`NtruParameters`] for the plaintext codec.
+//!
 //! Explicit-modulus conversions use bounded signed encoding: every secret
 //! coefficient must have unsigned magnitude strictly less than the target
 //! ciphertext modulus. [`NtruParameters`] checks this for its sampling support.

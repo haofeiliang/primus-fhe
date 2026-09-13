@@ -68,7 +68,7 @@ impl<T: FheUint> NttNtruSecretKey<T> {
         {
             message.mul_scalar_to(scalar, &mut context.encoded, modulus);
             ntt.transform_slice(context.encoded.as_mut());
-            self.encrypt_zero_to_unchecked(&mut level, ntru_params, ntt, rng);
+            self.encrypt_zeros_to_unchecked(&mut level, ntru_params, ntt, rng);
             NttPolynomial(level.as_mut())
                 .add_assign(&NttPolynomial(context.encoded.as_ref()), modulus);
         }

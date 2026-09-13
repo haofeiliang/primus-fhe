@@ -9,6 +9,7 @@ use primus_ntru::{
 };
 use primus_ntt::{NttTable, PrimitiveRoot, UintNttTable};
 use primus_poly::{FourierPolynomialOwned, Polynomial, PolynomialOwned};
+use rand::{Rng, SeedableRng, rngs::StdRng};
 
 const POLY_LENGTH: usize = 256;
 const PLAIN_MODULUS: usize = 16;
@@ -66,7 +67,7 @@ where
         SecretKeyDistr::SparseTernary,
         0.7,
     );
-    let mut rng = rand::rng();
+    let mut rng = StdRng::seed_from_u64(42);
     let secret_key = NttNtruSecretKey::generate(&params, &ntt, &mut rng).unwrap();
     let messages = messages::<T>();
     let message = Polynomial::new(messages.clone());
@@ -107,7 +108,8 @@ where
         messages
     );
 
-    let zero_cipher = secret_key.encrypt_zero(&params, &ntt, &mut rng);
+    let mut zero_cipher = encoded_cipher;
+    secret_key.encrypt_zeros_to(&mut zero_cipher, &params, &ntt, &mut rng);
     assert_eq!(
         secret_key.decrypt(&zero_cipher, &params, &ntt).as_ref(),
         vec![T::ZERO; POLY_LENGTH]
@@ -166,7 +168,7 @@ where
         SecretKeyDistr::SparseTernary,
         0.7,
     );
-    let mut rng = rand::rng();
+    let mut rng = StdRng::seed_from_u64(42);
     let secret_key = FourierNtruSecretKey::generate(&params, &mut fft, &mut rng).unwrap();
     let mut encrypt_context = FourierNtruEncryptContext::new(POLY_LENGTH);
     let mut decrypt_context = FourierNtruDecryptContext::new(POLY_LENGTH);
@@ -219,7 +221,14 @@ where
         messages
     );
 
-    let zero_cipher = secret_key.encrypt_zero(&params, &mut fft, &mut rng, &mut encrypt_context);
+    let mut zero_cipher = encoded_cipher;
+    secret_key.encrypt_zeros_to(
+        &mut zero_cipher,
+        &params,
+        &mut fft,
+        &mut rng,
+        &mut encrypt_context,
+    );
     assert_eq!(
         secret_key
             .decrypt(&zero_cipher, &params, &mut fft, &mut decrypt_context,)
@@ -290,7 +299,7 @@ fn transform_backends_reject_the_zero_key() {
 
 #[test]
 fn key_generation_supports_small_coefficient_distributions() {
-    let mut rng = rand::rng();
+    let mut rng = StdRng::seed_from_u64(42);
     let modulus = BarrettModulus::new(132_120_577u32);
     let ntt = UintNttTable::new(POLY_LENGTH.trailing_zeros(), modulus).unwrap();
     let fft_table = RustFftTable::new(POLY_LENGTH.trailing_zeros()).unwrap();
@@ -354,4 +363,95 @@ fn parameters_require_secret_support_below_explicit_modulus() {
             0.7,
         );
     }
+}
+
+#[test]
+fn ordinary_operations_validate_before_sampling_or_writing() {
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+    let mut rng = StdRng::seed_from_u64(73);
+    let modulus = BarrettModulus::new(132_120_577u32);
+    let ntt = UintNttTable::new(POLY_LENGTH.trailing_zeros(), modulus).unwrap();
+    let params = NtruParameters::new(POLY_LENGTH, 16, modulus, SecretKeyDistr::UniformBinary, 0.7);
+    let short_params = NtruParameters::new(
+        POLY_LENGTH / 2,
+        16,
+        modulus,
+        SecretKeyDistr::UniformBinary,
+        0.7,
+    );
+    let key = NttNtruSecretKey::generate(&params, &ntt, &mut rng).unwrap();
+    let input = key.encrypt_zeros(&params, &ntt, &mut rng);
+    let mut output = Polynomial::new(vec![7; POLY_LENGTH]);
+    assert!(
+        catch_unwind(AssertUnwindSafe(|| key.decrypt_to(
+            &input,
+            &mut output,
+            &short_params,
+            &ntt
+        )))
+        .is_err()
+    );
+    assert!(output.iter().all(|&value| value == 7));
+    let mut wrong_output = primus_ntru::NttNtruCiphertext::new(vec![7; POLY_LENGTH / 2]);
+    let mut rng = StdRng::seed_from_u64(91);
+    let mut expected_rng = StdRng::seed_from_u64(91);
+    assert!(
+        catch_unwind(AssertUnwindSafe(|| key.encrypt_zeros_to(
+            &mut wrong_output,
+            &params,
+            &ntt,
+            &mut rng
+        )))
+        .is_err()
+    );
+    assert_eq!(rng.next_u64(), expected_rng.next_u64());
+    assert!(wrong_output.as_ref().iter().all(|&value| value == 7));
+
+    let table = RustFftTable::new(POLY_LENGTH.trailing_zeros()).unwrap();
+    let mut fft = FftEngine::new(&table);
+    let params = NtruParameters::new(
+        POLY_LENGTH,
+        16u32,
+        NativeModulus::new(),
+        SecretKeyDistr::UniformBinary,
+        0.7,
+    );
+    let short_params = NtruParameters::new(
+        POLY_LENGTH / 2,
+        16u32,
+        NativeModulus::new(),
+        SecretKeyDistr::UniformBinary,
+        0.7,
+    );
+    let key = FourierNtruSecretKey::generate(&params, &mut fft, &mut rng).unwrap();
+    let mut encrypt = FourierNtruEncryptContext::new(POLY_LENGTH);
+    let mut decrypt = FourierNtruDecryptContext::new(POLY_LENGTH);
+    let mut input = key.encrypt_zeros(&params, &mut fft, &mut rng, &mut encrypt);
+    assert!(
+        catch_unwind(AssertUnwindSafe(|| key.decrypt_to(
+            &input,
+            &mut output,
+            &short_params,
+            &mut fft,
+            &mut decrypt
+        )))
+        .is_err()
+    );
+    assert!(output.iter().all(|&value| value == 7));
+    let before = input.as_ref().to_vec();
+    let mut short_encrypt = FourierNtruEncryptContext::new(POLY_LENGTH / 2);
+    let mut rng = StdRng::seed_from_u64(91);
+    let mut expected_rng = StdRng::seed_from_u64(91);
+    assert!(
+        catch_unwind(AssertUnwindSafe(|| key.encrypt_zeros_to(
+            &mut input,
+            &params,
+            &mut fft,
+            &mut rng,
+            &mut short_encrypt
+        )))
+        .is_err()
+    );
+    assert_eq!(rng.next_u64(), expected_rng.next_u64());
+    assert_eq!(input.as_ref(), before);
 }

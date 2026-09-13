@@ -11,11 +11,21 @@ use primus_reduce::ReduceSub;
 
 impl FourierNtruSecretKey {
     /// Computes `f * c` and writes `e + Delta * m` in native coefficient form.
+    /// The result is an undecoded coefficient polynomial; no plaintext codec or
+    /// noise distribution is needed. Output is overwritten, including old values.
+    ///
+    /// # Correctness
+    ///
+    /// The input and key must use this FFT table instance's Fourier representation.
+    ///
+    /// # Panics
+    ///
+    /// Panics before writes if transform, input, output or workspace lengths
+    /// do not match the key.
     pub fn phase_to<T, Table, A, B>(
         &self,
         cipher: &FourierNtruCiphertext<A>,
         result: &mut Polynomial<B>,
-        params: &NtruParameters<T, NativeModulus<T>>,
         fft: &mut FftEngine<'_, Table>,
         context: &mut FourierNtruDecryptContext,
     ) where
@@ -24,7 +34,11 @@ impl FourierNtruSecretKey {
         A: Data<Elem = Complex64>,
         B: DataMut<Elem = T>,
     {
-        self.assert_domain(params, fft);
+        assert_eq!(
+            fft.poly_length(),
+            self.poly_length(),
+            "FFT polynomial length mismatch"
+        );
         assert_eq!(cipher.as_ref().len(), fft.fourier_length());
         assert_eq!(result.as_ref().len(), self.poly_length());
         assert_eq!(context.phase.as_ref().len(), fft.fourier_length());
@@ -65,7 +79,12 @@ impl FourierNtruSecretKey {
         A: Data<Elem = Complex64>,
         B: DataMut<Elem = T>,
     {
-        self.phase_to(cipher, result, params, fft, context);
+        assert_eq!(
+            params.poly_length(),
+            self.poly_length(),
+            "NTRU parameter length mismatch"
+        );
+        self.phase_to(cipher, result, fft, context);
         params
             .plaintext_codec()
             .decode_slice_assign(result.as_mut());
@@ -86,7 +105,12 @@ impl FourierNtruSecretKey {
     {
         let modulus = NativeModulus::new();
         let mut message = PolynomialOwned::zero(self.poly_length());
-        self.phase_to(cipher, &mut message, params, fft, context);
+        assert_eq!(
+            params.poly_length(),
+            self.poly_length(),
+            "NTRU parameter length mismatch"
+        );
+        self.phase_to(cipher, &mut message, fft, context);
         let mut noise = PolynomialOwned::zero(self.poly_length());
 
         for (phase, noise) in message.iter_mut().zip(noise.iter_mut()) {

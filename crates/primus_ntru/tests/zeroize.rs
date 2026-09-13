@@ -221,7 +221,7 @@ fn secret_buffers_are_reused_and_erased() {
         |context| {
             for _ in 0..2 {
                 context.zeroize();
-                fourier_key.phase_to(&cipher, &mut phase, &fourier_params, &mut fft, context);
+                fourier_key.phase_to(&cipher, &mut phase, &mut fft, context);
             }
         },
     );

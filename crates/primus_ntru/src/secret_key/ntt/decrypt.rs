@@ -11,11 +11,23 @@ use primus_reduce::FieldContext;
 
 impl<T: FheUint> NttNtruSecretKey<T> {
     /// Computes `f * c` and writes `e + Delta * m` in coefficient form.
+    /// The result is an undecoded coefficient polynomial; no plaintext codec or
+    /// noise distribution is needed. Output is overwritten, including old values.
+    ///
+    /// # Correctness
+    ///
+    /// The input and key must use the supplied table's NTT representation, with
+    /// canonical residues modulo `modulus`.
+    ///
+    /// # Panics
+    ///
+    /// Panics before writes if transform, input or output lengths
+    /// do not match the key or the table modulus differs from `modulus`.
     pub fn phase_to<M, Table, A, B>(
         &self,
         cipher: &NttNtruCiphertext<A>,
         result: &mut Polynomial<B>,
-        params: &NtruParameters<T, M>,
+        modulus: M,
         ntt_table: &Table,
     ) where
         M: FieldContext<T>,
@@ -23,14 +35,23 @@ impl<T: FheUint> NttNtruSecretKey<T> {
         A: Data<Elem = T>,
         B: DataMut<Elem = T>,
     {
-        self.assert_domain(params, ntt_table);
+        assert_eq!(
+            ntt_table.poly_length(),
+            self.poly_length(),
+            "NTT polynomial length mismatch"
+        );
+        assert_eq!(
+            ntt_table.modulus(),
+            modulus.value(),
+            "NTT ciphertext modulus mismatch"
+        );
         assert_eq!(cipher.as_ref().len(), self.poly_length());
         assert_eq!(result.as_ref().len(), self.poly_length());
 
         NttPolynomial(cipher.as_ref()).mul_to(
             &self.key,
             &mut NttPolynomial(result.as_mut()),
-            params.cipher_modulus(),
+            modulus,
         );
         ntt_table.inverse_transform_slice(result.as_mut());
     }
@@ -65,7 +86,12 @@ impl<T: FheUint> NttNtruSecretKey<T> {
         A: Data<Elem = T>,
         B: DataMut<Elem = T>,
     {
-        self.phase_to(cipher, result, params, ntt_table);
+        assert_eq!(
+            params.poly_length(),
+            self.poly_length(),
+            "NTRU parameter length mismatch"
+        );
+        self.phase_to(cipher, result, params.cipher_modulus(), ntt_table);
         params
             .plaintext_codec()
             .decode_slice_assign(result.as_mut());
@@ -85,7 +111,12 @@ impl<T: FheUint> NttNtruSecretKey<T> {
     {
         let modulus = params.cipher_modulus();
         let mut message = PolynomialOwned::zero(self.poly_length());
-        self.phase_to(cipher, &mut message, params, ntt_table);
+        assert_eq!(
+            params.poly_length(),
+            self.poly_length(),
+            "NTRU parameter length mismatch"
+        );
+        self.phase_to(cipher, &mut message, modulus, ntt_table);
         let mut noise = PolynomialOwned::zero(self.poly_length());
 
         for (phase, noise) in message.iter_mut().zip(noise.iter_mut()) {

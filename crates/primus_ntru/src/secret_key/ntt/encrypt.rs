@@ -84,6 +84,11 @@ impl<T: FheUint> NttNtruSecretKey<T> {
     }
 
     /// Encrypts coefficients already encoded modulo `q` into `result`.
+    ///
+    /// # Correctness
+    ///
+    /// Every input coefficient must be a canonical residue in `[0, q)`;
+    /// this entry point does not scale or reduce the encoded message.
     pub fn encrypt_encoded_to<M, Table, R, A, B>(
         &self,
         encoded: &Polynomial<A>,
@@ -105,7 +110,7 @@ impl<T: FheUint> NttNtruSecretKey<T> {
     }
 
     /// Encrypts zero into a freshly allocated NTT ciphertext.
-    pub fn encrypt_zero<M, Table, R>(
+    pub fn encrypt_zeros<M, Table, R>(
         &self,
         params: &NtruParameters<T, M>,
         ntt_table: &Table,
@@ -117,13 +122,7 @@ impl<T: FheUint> NttNtruSecretKey<T> {
         R: rand::Rng + rand::CryptoRng,
     {
         let mut result = NttNtruCiphertext::zero(self.poly_length());
-        self.encrypt_to_with_message(
-            NttEncryptionMessage::Zero,
-            &mut result,
-            params,
-            ntt_table,
-            rng,
-        );
+        self.encrypt_zeros_to(&mut result, params, ntt_table, rng);
         result
     }
 
@@ -174,7 +173,28 @@ impl<T: FheUint> NttNtruSecretKey<T> {
         );
     }
 
-    pub(super) fn encrypt_zero_to_unchecked<M, Table, R, B>(
+    /// Encrypts the zero polynomial into the existing output without allocating.
+    ///
+    /// # Panics
+    ///
+    /// Panics before sampling or writes if the key, parameters, transform table,
+    /// or output lengths are incompatible.
+    pub fn encrypt_zeros_to<M, Table, R, B>(
+        &self,
+        result: &mut NttNtruCiphertext<B>,
+        params: &NtruParameters<T, M>,
+        ntt_table: &Table,
+        rng: &mut R,
+    ) where
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+        R: rand::Rng + rand::CryptoRng,
+        B: DataMut<Elem = T>,
+    {
+        self.encrypt_to_with_message(NttEncryptionMessage::Zero, result, params, ntt_table, rng);
+    }
+
+    pub(super) fn encrypt_zeros_to_unchecked<M, Table, R, B>(
         &self,
         result: &mut NttNtruCiphertext<B>,
         params: &NtruParameters<T, M>,
