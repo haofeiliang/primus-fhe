@@ -146,8 +146,6 @@ impl FourierGlweSecretKey {
         B: DataMut<Elem = Complex64>,
     {
         let fourier_length = fft.fourier_length();
-        let fourier_glwe_len = params.fourier_glwe_len();
-        let fourier_glev_len = params.fourier_glev_len();
         let modulus = params.cipher_modulus();
         // Torus lifting follows native-ring scaling, so each level needs its
         // own FFT. Cache all transformed levels for reuse across rows.
@@ -160,6 +158,27 @@ impl FourierGlweSecretKey {
             fft.forward_as_torus(context.encoded.as_ref(), transformed);
         }
 
+        self.encrypt_ggsw_from_levels_to(output, params, fft, rng, context);
+    }
+
+    /// Encrypts using the complete, prepared level transforms in `context`.
+    /// The caller establishes matching key, output, table and workspace layouts.
+    pub(super) fn encrypt_ggsw_from_levels_to<T, Table, R, B>(
+        &self,
+        output: &mut FourierGgswCiphertext<B>,
+        params: &GlevParameters<T, NativeModulus<T>>,
+        fft: &mut FftEngine<'_, Table>,
+        rng: &mut R,
+        context: &mut FourierGadgetEncryptContext<T>,
+    ) where
+        T: TorusFftValue,
+        Table: FftTable,
+        R: rand::Rng + rand::CryptoRng,
+        B: DataMut<Elem = Complex64>,
+    {
+        let fourier_length = fft.fourier_length();
+        let fourier_glwe_len = params.fourier_glwe_len();
+        let fourier_glev_len = params.fourier_glev_len();
         // Stream [row][level][component] storage, reusing the cached levels.
         // Add each diagonal only after zero encryption has accumulated the
         // original masks into the body; adding it earlier changes the phase.

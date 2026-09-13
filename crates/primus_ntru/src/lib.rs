@@ -12,9 +12,16 @@
 //! methods additionally take [`NtruParameters`] for the plaintext codec.
 //!
 //! `encrypt_nlev_constant_to` encrypts raw ring constants without plaintext
-//! scaling. In particular, NLev[1] maps a coefficient polynomial to an encrypted
-//! NTRU accumulator through an external product. This differs from NGSW[1],
+//! scaling. In particular, `NLev[1]` maps a coefficient polynomial to an encrypted
+//! NTRU accumulator through an external product. This differs from `NGSW[1]`,
 //! which multiplies a ciphertext already encrypted under the same key.
+//!
+//! `encrypt_ngsw_signed_constant_batch_to` accepts signed coefficient-secret
+//! slices directly and writes consecutive NGSWs after checking the batch once.
+//! NTT requires magnitudes below `q`, and needs no message scratch or transform
+//! because constants evaluate identically at every NTT point. Fourier accepts
+//! all signed values, reuses a gadget context and preserves per-level native-ring
+//! scaling followed by the FFT. Empty batches consume no randomness.
 //!
 //! Explicit-modulus conversions use bounded signed encoding: every secret
 //! coefficient must have unsigned magnitude strictly less than the target

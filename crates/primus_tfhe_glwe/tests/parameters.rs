@@ -42,14 +42,10 @@ fn derives_the_same_key_switching_layout_for_both_orders() {
         GlwePbsOrder::KeyswitchBootstrap,
     ] {
         let (small_lwe, glwe, bootstrapping) = components();
-        let parameters = GlweTfheParameters::try_new(
-            small_lwe,
-            glwe,
-            bootstrapping,
-            ApproxSignedBasis::new(None, 4, Some(4)),
-            order,
-        )
-        .unwrap();
+        let basis = ApproxSignedBasis::new(None, 4, Some(4));
+        let parameters =
+            GlweTfheParameters::try_new(small_lwe, glwe, bootstrapping, basis.clone(), order)
+                .unwrap();
 
         assert_eq!(parameters.pbs_order(), order);
         assert_eq!(
@@ -62,14 +58,7 @@ fn derives_the_same_key_switching_layout_for_both_orders() {
             parameters.glwe_key_switching().output().secret_key_distr(),
             SecretKeyDistr::UniformBinary
         );
-        assert_eq!(
-            parameters.glwe_key_switching().output().decompose_length(),
-            4
-        );
-        assert_eq!(
-            parameters.glwe_key_switching().output().basis().log_basis(),
-            4
-        );
+        assert_eq!(parameters.glwe_key_switching().output().basis(), &basis);
         assert_eq!(
             parameters.ciphertext_lwe_dimension(),
             match order {
@@ -78,4 +67,25 @@ fn derives_the_same_key_switching_layout_for_both_orders() {
             }
         );
     }
+}
+
+#[test]
+fn rejects_key_switching_basis_from_another_modulus() {
+    use primus_glwe::GlevParameterError;
+    use primus_tfhe_glwe::GlweParameterError;
+
+    let (small_lwe, glwe, bootstrapping) = components();
+    let result = GlweTfheParameters::try_new(
+        small_lwe,
+        glwe,
+        bootstrapping,
+        ApproxSignedBasis::new(Some(257), 4, None),
+        GlwePbsOrder::BootstrapKeyswitch,
+    );
+    assert!(matches!(
+        result,
+        Err(GlweParameterError::KeySwitchingParameters(
+            GlevParameterError::BasisModulusMismatch
+        ))
+    ));
 }

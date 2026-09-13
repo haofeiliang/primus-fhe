@@ -48,13 +48,15 @@ fourier_sk.phase_to(input, output, fft, context)
 
 NTT 私钥的普通运算无需 context。Fourier 运算使用 `FourierGlweEncryptContext<T>` / `FourierGlweDecryptContext`；NTT 公钥加密使用 `NttGlwePublicEncryptContext<T>`。这些 context 按 `N` 构造，并在相同长度下复用。Context 保存工作区而非参数，析构时擦除私密中间值。
 
-`_to` 路径复用输出和工作区。布局、变换不匹配会在写输出前失败。无效明文值可能在部分写入或消耗随机数后触发 panic。已编码的 NTT 输入必须是 `[0, q)` 中的规范剩余类，该范围由调用方保证。
+`_to` 路径复用输出和工作区。布局和变换长度检查失败会在写输出前报错；长度相同并不代表变换表示兼容。无效明文值可能在部分写入或消耗随机数后触发 panic。已编码的 NTT 输入必须是 `[0, q)` 中的规范剩余类，该范围由调用方保证。
 
 ## Gadget 与截断密文
 
 `encrypt_glev_to` 和 `encrypt_ggsw_to` 对系数域环多项式应用 gadget 基，不做明文缩放。因此 GGSW 控制位使用常数多项式 `0` 或 `1`。两者使用由 `GadgetSize` 构造的 gadget context：GLev 要求多项式长度匹配；GGSW 还要求 level 数量匹配。
 
-`encrypt_ggsw_constant_batch_to` 将规范模数剩余类组成的常数切片加密为连续的 NTT GGSW，仅做一次批量检查，不分配临时缓冲区。输出长度为 `input.len() * params.ggsw_len()`。
+已有分解基时，使用 `GlevParameters::try_with_basis(&glwe_params, basis)` 直接转移其所有权，复用预计算，并检查模数和 gadget 布局。`try_with_glwe_params` 则根据基的对数和 level 数构造分解基；两个入口均返回 `GlevParameterError`。
+
+`encrypt_ggsw_constant_batch_to` 将环常数切片加密为连续的 GGSW，仅做一次批量检查，不分配临时缓冲区。NTT 接收规范剩余类，输出长度为 `input.len() * params.ggsw_len()`；Fourier 接收原生环值，输出包含 `input.len() * params.fourier_ggsw_len()` 个复数。Fourier 保留逐 level 原生环缩放后再 FFT 的数值路径。空批次仍检查共享资源，但不消耗随机数。
 
 NTT 的 `encrypt_truncated_zeros`、`phase_truncated` 和 `decrypt_truncated` 操作系数域密文，其 mask 完整，body 最多包含 `N` 个系数。Phase 提取和解密只返回保留的系数，内部工作区仍保存完整多项式。
 
@@ -99,7 +101,7 @@ Trace key 的 packing 使用 [RevHomTrace 算法](https://github.com/Stirling75/
 
 [私钥](src/secret_key)、[公钥](src/public_key)、[key switching](src/key_switch)、[自同构](src/automorphism)、[trace/packing](src/trace)、[packing key switching](src/packing_key_switch) 和 [scheme switching](src/scheme_switch) 中维护公开契约与实现细节。
 
-测试按操作分组：普通密钥工作流、gadget phase 与 external product、CMUX、key switching、自同构、scheme switching，以及 trace/展开/packing。`tests/common` 保存求值测试共用的小规模朴素 phase oracle。边界拒绝和容量擦除使用独立测试文件。Fourier 自同构、trace、packing key switching 和 scheme switching 测试覆盖 RustFFT 和 tfhe-fft。
+测试按操作分组：普通密钥工作流、gadget phase 与 external product、常数批次等价性、CMUX、key switching、自同构、scheme switching，以及 trace/展开/packing。`tests/common` 保存求值测试共用的小规模朴素 phase oracle。边界拒绝和容量擦除使用独立测试文件。Fourier 常数批次、自同构、trace、packing key switching 和 scheme switching 测试覆盖 RustFFT 和 tfhe-fft。
 
 ```sh
 cargo test -p primus_glwe
@@ -121,7 +123,7 @@ cargo bench -p primus_glwe -- --test
 
 | 基准 | 测量内容 |
 | --- | --- |
-| [encryption](benches/encryption.rs) | 私钥/公钥加密、私钥解密、GLev/GGSW 生成；包含采样、编解码及必要变换 |
+| [encryption](benches/encryption.rs) | 私钥/公钥加密、私钥解密、GLev/GGSW 生成及 8 个常数 GGSW 的批量加密；包含采样、编解码及必要变换 |
 | [primitives](benches/primitives.rs) | 普通/反向 trace；8 和 `N/8` 项的投影与部分展开；完整展开；1、8、`N` 条 LWE packing；两种 FFT 后端的直接 Fourier 自同构 |
 | [key_conversion](benches/key_conversion.rs) | 独立私钥下 1、8、`N` 条 LWE packing（输入维数 512；单条用例覆盖基数 `2^3` 和 `2^10`）；NTT/Fourier GLev-to-GGSW scheme switching |
 

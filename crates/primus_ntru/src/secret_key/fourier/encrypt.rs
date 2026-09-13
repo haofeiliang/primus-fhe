@@ -10,7 +10,8 @@ use primus_modulus::NativeModulus;
 use primus_poly::{FourierPolynomial, Polynomial};
 
 impl FourierNtruSecretKey {
-    /// Encrypts a polynomial with unsigned plaintext embedding.
+    /// Allocates a ciphertext and delegates to [`Self::encrypt_to`], with the same
+    /// input and transform requirements.
     pub fn encrypt<T, Table, R, A>(
         &self,
         message: &Polynomial<A>,
@@ -31,6 +32,19 @@ impl FourierNtruSecretKey {
     }
 
     /// Encrypts a polynomial with unsigned plaintext embedding into `result`.
+    ///
+    /// `message` has `N` values in `[0, t)`; `result` has `N/2` complex values.
+    /// Reuses the supplied workspace.
+    ///
+    /// # Correctness
+    ///
+    /// Use the FFT table instance supplied at key construction.
+    ///
+    /// # Panics
+    ///
+    /// Panics before sampling on inconsistent key/parameter/FFT/input/output or
+    /// workspace lengths. A plaintext-codec panic can modify scratch and consume
+    /// randomness; a panicking FFT can also leave partial output.
     pub fn encrypt_to<T, Table, R, A, B>(
         &self,
         message: &Polynomial<A>,
@@ -59,7 +73,8 @@ impl FourierNtruSecretKey {
         );
     }
 
-    /// Encrypts a polynomial with centered plaintext embedding into `result`.
+    /// Uses centered embedding with the same `[0, t)` input values, storage and
+    /// failure conditions as [`Self::encrypt_to`].
     pub fn encrypt_centered_to<T, Table, R, A, B>(
         &self,
         message: &Polynomial<A>,
@@ -88,7 +103,8 @@ impl FourierNtruSecretKey {
         );
     }
 
-    /// Encrypts coefficients already encoded in the native torus.
+    /// Encrypts coefficients already encoded in the native torus without scaling.
+    /// Layout and transform requirements are the same as [`Self::encrypt_to`].
     pub fn encrypt_encoded_to<T, Table, R, A, B>(
         &self,
         encoded: &Polynomial<A>,
@@ -112,6 +128,7 @@ impl FourierNtruSecretKey {
     }
 
     /// Encrypts zero into a freshly allocated Fourier ciphertext.
+    /// Inherits [`Self::encrypt_zeros_to`]'s transform and layout requirements.
     pub fn encrypt_zeros<T, Table, R>(
         &self,
         params: &NtruParameters<T, NativeModulus<T>>,
@@ -182,10 +199,14 @@ impl FourierNtruSecretKey {
 
     /// Encrypts the zero polynomial into the existing output without allocating.
     ///
+    /// # Correctness
+    ///
+    /// Use the FFT table instance supplied at key construction.
+    ///
     /// # Panics
     ///
-    /// Panics before sampling or writes if the key, parameters, transform table,
-    /// output or workspace lengths are incompatible.
+    /// Panics before sampling or writes if key/parameter/FFT/output/workspace
+    /// lengths disagree.
     pub fn encrypt_zeros_to<T, Table, R, B>(
         &self,
         result: &mut FourierNtruCiphertext<B>,

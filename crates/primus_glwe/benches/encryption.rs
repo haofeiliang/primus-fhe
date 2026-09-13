@@ -122,6 +122,24 @@ fn ntt_encryption(c: &mut Criterion) {
                 })
             },
         );
+
+        // One batch iteration models a short stream of BSK control entries.
+        let constants = [0u64, 1, 0, 1, 1, 0, 1, 0];
+        let mut batch = vec![0; constants.len() * gadget.ggsw_len()];
+        group.throughput(criterion::Throughput::Elements(constants.len() as u64));
+        group.bench_function("encrypt_ggsw_constant_batch_to/count8", |b| {
+            b.iter(|| {
+                sk.encrypt_ggsw_constant_batch_to(
+                    black_box(&constants),
+                    &mut batch,
+                    &gadget,
+                    &ntt,
+                    &mut rng,
+                    &mut gadget_context,
+                );
+                black_box(&batch);
+            })
+        });
         group.finish();
     }
 }
@@ -217,6 +235,25 @@ fn fourier_encryption(c: &mut Criterion) {
                 })
             },
         );
+
+        // One batch iteration models a short stream of BSK control entries.
+        let constants = [0u64, 1, 0, 1, 1, 0, 1, 0];
+        let mut batch =
+            vec![primus_fft::Complex64::default(); constants.len() * gadget.fourier_ggsw_len()];
+        group.throughput(criterion::Throughput::Elements(constants.len() as u64));
+        group.bench_function("encrypt_ggsw_constant_batch_to/count8", |b| {
+            b.iter(|| {
+                sk.encrypt_ggsw_constant_batch_to(
+                    black_box(&constants),
+                    &mut batch,
+                    &gadget,
+                    &mut fft,
+                    &mut rng,
+                    &mut gadget_context,
+                );
+                black_box(&batch);
+            })
+        });
         group.finish();
     }
 }

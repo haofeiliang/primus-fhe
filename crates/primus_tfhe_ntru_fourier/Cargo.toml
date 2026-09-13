@@ -21,8 +21,6 @@ thiserror = { workspace = true }
 [dev-dependencies]
 criterion = { workspace = true }
 primus_lwe = { path = "../primus_lwe" }
-primus_ntt = { path = "../primus_ntt" }
-primus_tfhe_ntru_ntt = { path = "../primus_tfhe_ntru_ntt" }
 
 [[bench]]
 name = "pbs"

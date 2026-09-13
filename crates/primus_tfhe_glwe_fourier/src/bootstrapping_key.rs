@@ -5,15 +5,12 @@ use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{Complex64, FftEngine, FftTable, TorusFftValue};
 use primus_glwe::{FourierGadgetEncryptContext, FourierGlweSecretKey, GlevParameters};
 use primus_lattice::{
-    GadgetSize,
-    context::FourierGlweExternalProductContext,
-    ggsw::{FourierGgsw, FourierGgswIter},
-    glwe::TorusGlwe,
+    GadgetSize, context::FourierGlweExternalProductContext, ggsw::FourierGgswIter, glwe::TorusGlwe,
     lwe::Lwe,
 };
 use primus_lwe::{LweParameters, LweSecretKey};
 use primus_modulus::NativeModulus;
-use primus_poly::{Polynomial, PolynomialOwned};
+use primus_poly::Polynomial;
 use primus_reduce::RingContext;
 use primus_tfhe::backend_support::{direct_exponent, modulus_switch};
 
@@ -68,6 +65,15 @@ impl<T: TorusFftValue> FourierGlweBootstrappingKey<T> {
 
     /// Generates a Fourier bootstrapping key encrypting every binary input
     /// LWE secret coefficient under `output_secret_key`.
+    ///
+    /// Inherits [`FourierGlweSecretKey::encrypt_ggsw_constant_batch_to`]'s FFT
+    /// representation and workspace requirements.
+    ///
+    /// # Panics
+    ///
+    /// Panics if input key/parameter distributions are not binary or their
+    /// dimensions differ, or if the output key, FFT or workspace layout is
+    /// incompatible. A key-length overflow also panics. Checks precede sampling.
     pub fn generate_fourier<LM, Table, R>(
         input_secret_key: &LweSecretKey<T>,
         input_parameters: &LweParameters<T, LM>,
@@ -85,8 +91,6 @@ impl<T: TorusFftValue> FourierGlweBootstrappingKey<T> {
         assert!(input_secret_key.distr().is_binary());
         assert_eq!(input_secret_key.dimension(), input_parameters.dimension());
         assert!(input_parameters.secret_key_distr().is_binary());
-        assert_eq!(output_secret_key.glwe_size(), parameters.glwe_size());
-        assert_eq!(fft.poly_length(), parameters.poly_length());
 
         let input_dimension = input_secret_key.dimension();
         let ggsw_len = parameters.fourier_ggsw_len();
@@ -94,23 +98,14 @@ impl<T: TorusFftValue> FourierGlweBootstrappingKey<T> {
             .checked_mul(ggsw_len)
             .expect("Fourier bootstrapping-key length overflow");
         let mut data = vec![Complex64::default(); total_len];
-        let mut message = PolynomialOwned::zero(parameters.poly_length());
-
-        for (&secret, chunk) in input_secret_key
-            .as_ref()
-            .iter()
-            .zip(data.chunks_exact_mut(ggsw_len))
-        {
-            message.as_mut()[0] = secret;
-            output_secret_key.encrypt_ggsw_to(
-                &message,
-                &mut FourierGgsw::new(chunk),
-                parameters,
-                fft,
-                rng,
-                context,
-            );
-        }
+        output_secret_key.encrypt_ggsw_constant_batch_to(
+            input_secret_key.as_ref(),
+            &mut data,
+            parameters,
+            fft,
+            rng,
+            context,
+        );
 
         Self {
             data,

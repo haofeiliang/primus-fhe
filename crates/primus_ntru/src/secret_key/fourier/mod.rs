@@ -27,6 +27,9 @@ const MIN_FOURIER_KEY_NORM_SQUARED: f64 = f64::EPSILON;
 /// A native-torus NTRU key represented by `FFT(f)` and its pointwise inverse.
 /// Both polynomials are securely erased on drop, including failed conversions.
 /// Explicit zeroization clears their lengths and makes the key unusable.
+///
+/// All Fourier operations must use the FFT table instance supplied at construction;
+/// another table of the same length can have a different transform ordering.
 #[derive(Clone)]
 pub struct FourierNtruSecretKey {
     key: FourierPolynomialOwned,

@@ -7,6 +7,7 @@ use primus_tfhe_glwe_fourier::{
     BooleanDecryptor, BooleanEncryptor, BooleanEvaluator, BooleanGate, PbsOrder, TfheContext,
     TfheParameters,
 };
+use rand::{SeedableRng, rngs::StdRng};
 
 const POLY_LENGTH: usize = 256;
 
@@ -46,7 +47,7 @@ fn evaluates_boolean_gates_with_keyswitch_then_bootstrap() {
     let table = RustFftTable::new(POLY_LENGTH.trailing_zeros()).unwrap();
     let context =
         TfheContext::try_new(parameters_with_order(PbsOrder::KeyswitchBootstrap), table).unwrap();
-    let mut rng = rand::rng();
+    let mut rng = StdRng::seed_from_u64(42);
     let (client_key, server_key) = context.generate_keys(&mut rng).unwrap();
     let encryptor = BooleanEncryptor::new(context.parameters(), &client_key).unwrap();
     let decryptor = BooleanDecryptor::new(context.parameters(), &client_key).unwrap();
@@ -78,7 +79,7 @@ fn evaluates_boolean_gates_with_keyswitch_then_bootstrap() {
 fn evaluates_boolean_helpers_and_reused_output() {
     let table = RustFftTable::new(POLY_LENGTH.trailing_zeros()).unwrap();
     let context = TfheContext::try_new(parameters(), table).unwrap();
-    let mut rng = rand::rng();
+    let mut rng = StdRng::seed_from_u64(42);
     let (client_key, server_key) = context.generate_keys(&mut rng).unwrap();
     let encryptor = BooleanEncryptor::new(context.parameters(), &client_key).unwrap();
     let decryptor = BooleanDecryptor::new(context.parameters(), &client_key).unwrap();

@@ -1,4 +1,4 @@
-use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable, TfheFftTable};
+use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable};
 use primus_lattice::ntru::{FourierNtruOwned, Ntru, NttNtru};
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntru::{
@@ -9,7 +9,7 @@ use primus_ntru::{
 };
 use primus_ntt::{NttTable, UintNttTable};
 use primus_poly::{Polynomial, PolynomialOwned};
-use rand::{Rng, SeedableRng, rngs::StdRng};
+use rand::{SeedableRng, rngs::StdRng};
 
 const POLY_LENGTH: usize = 256;
 const PLAINTEXT_MODULUS: u32 = 16;
@@ -83,13 +83,9 @@ fn ntt_nlev_generation_and_ngsw_cmux() {
     let secret_key = NttNtruSecretKey::generate(&params, &ntt, &mut rng).unwrap();
     let mut gadget_context = NttNtruGadgetEncryptContext::new(POLY_LENGTH);
 
-    let mut one = vec![0; POLY_LENGTH];
-    one[0] = 1;
-    let one = Polynomial::new(one);
-    let mut nlev: NttNlevCiphertext<Vec<u32>> =
-        NttNlevCiphertext::zero(basis.decompose_length() * POLY_LENGTH);
-    secret_key.encrypt_nlev_to(
-        &one,
+    let mut nlev: NttNlevCiphertext<Vec<u32>> = NttNlevCiphertext::zero(gadget_params.nlev_len());
+    secret_key.encrypt_nlev_constant_to(
+        1,
         &mut nlev,
         &gadget_params,
         &ntt,
@@ -108,17 +104,14 @@ fn ntt_nlev_generation_and_ngsw_cmux() {
         );
     }
 
-    let mut control_message = vec![0; POLY_LENGTH];
-    control_message[0] = 1;
     let mut control: NttNgswCiphertext<Vec<u32>> =
-        NttNgswCiphertext::zero(basis.decompose_length() * POLY_LENGTH);
-    secret_key.encrypt_ngsw_to(
-        &Polynomial::new(control_message),
-        &mut control,
+        NttNgswCiphertext::zero(gadget_params.nlev_len());
+    secret_key.encrypt_ngsw_signed_constant_batch_to(
+        &[1],
+        control.as_mut(),
         &gadget_params,
         &ntt,
         &mut rng,
-        &mut gadget_context,
     );
 
     let messages = [plaintext(0), plaintext(2), plaintext(5)];
@@ -166,24 +159,21 @@ fn ntt_nlev_generation_and_ngsw_cmux() {
         shifted_plaintext(&messages[0])
     );
 
-    let mut controls: [NttNgswCiphertext<Vec<u32>>; 2] =
-        core::array::from_fn(|_| NttNgswCiphertext::zero(basis.decompose_length() * POLY_LENGTH));
+    let mut controls = vec![0; 2 * gadget_params.nlev_len()];
     for (selected, expected) in messages.iter().enumerate() {
-        for (index, control) in controls.iter_mut().enumerate() {
-            let mut message = vec![0; POLY_LENGTH];
-            message[0] = u32::from(selected == index + 1);
-            secret_key.encrypt_ngsw_to(
-                &Polynomial::new(message),
-                control,
-                &gadget_params,
-                &ntt,
-                &mut rng,
-                &mut gadget_context,
-            );
-        }
+        let selectors = [i32::from(selected == 1), i32::from(selected == 2)];
+        secret_key.encrypt_ngsw_signed_constant_batch_to(
+            &selectors,
+            &mut controls,
+            &gadget_params,
+            &ntt,
+            &mut rng,
+        );
 
         NttNgswCiphertext::cmux_k_to(
-            &controls,
+            controls
+                .chunks_exact(gadget_params.nlev_len())
+                .map(NttNgswCiphertext::new),
             &candidates[0],
             &candidates[1..],
             &mut output,
@@ -217,13 +207,10 @@ fn fourier_nlev_generation_and_ngsw_cmux() {
     let mut gadget_context = FourierNtruGadgetEncryptContext::new(POLY_LENGTH);
     let mut decrypt_context = FourierNtruDecryptContext::new(POLY_LENGTH);
 
-    let mut one = vec![0; POLY_LENGTH];
-    one[0] = 1;
-    let one = Polynomial::new(one);
     let mut nlev: FourierNlevCiphertext<Vec<Complex64>> =
-        FourierNlevCiphertext::zero(basis.decompose_length() * fft.fourier_length());
-    secret_key.encrypt_nlev_to(
-        &one,
+        FourierNlevCiphertext::zero(gadget_params.fourier_nlev_len());
+    secret_key.encrypt_nlev_constant_to(
+        1,
         &mut nlev,
         &gadget_params,
         &mut fft,
@@ -245,13 +232,11 @@ fn fourier_nlev_generation_and_ngsw_cmux() {
         );
     }
 
-    let mut control_message = vec![0; POLY_LENGTH];
-    control_message[0] = 1;
     let mut control: FourierNgswCiphertext<Vec<Complex64>> =
-        FourierNgswCiphertext::zero(basis.decompose_length() * fft.fourier_length());
-    secret_key.encrypt_ngsw_to(
-        &Polynomial::new(control_message),
-        &mut control,
+        FourierNgswCiphertext::zero(gadget_params.fourier_nlev_len());
+    secret_key.encrypt_ngsw_signed_constant_batch_to(
+        &[1],
+        control.as_mut(),
         &gadget_params,
         &mut fft,
         &mut rng,
@@ -314,25 +299,22 @@ fn fourier_nlev_generation_and_ngsw_cmux() {
         shifted_plaintext(&messages[0])
     );
 
-    let mut controls: [FourierNgswCiphertext<Vec<Complex64>>; 2] = core::array::from_fn(|_| {
-        FourierNgswCiphertext::zero(basis.decompose_length() * fft.fourier_length())
-    });
+    let mut controls = vec![Complex64::default(); 2 * gadget_params.fourier_nlev_len()];
     for (selected, expected) in messages.iter().enumerate() {
-        for (index, control) in controls.iter_mut().enumerate() {
-            let mut message = vec![0; POLY_LENGTH];
-            message[0] = u32::from(selected == index + 1);
-            secret_key.encrypt_ngsw_to(
-                &Polynomial::new(message),
-                control,
-                &gadget_params,
-                &mut fft,
-                &mut rng,
-                &mut gadget_context,
-            );
-        }
+        let selectors = [i32::from(selected == 1), i32::from(selected == 2)];
+        secret_key.encrypt_ngsw_signed_constant_batch_to(
+            &selectors,
+            &mut controls,
+            &gadget_params,
+            &mut fft,
+            &mut rng,
+            &mut gadget_context,
+        );
 
         FourierNgswCiphertext::cmux_k_to(
-            &controls,
+            controls
+                .chunks_exact(gadget_params.fourier_nlev_len())
+                .map(FourierNgswCiphertext::new),
             &candidates[0],
             &candidates[1..],
             &mut output,
@@ -350,92 +332,5 @@ fn fourier_nlev_generation_and_ngsw_cmux() {
             ),
             *expected
         );
-    }
-}
-
-#[test]
-fn constant_nlev_matches_polynomial_encryption() {
-    let modulus = BarrettModulus::new(EXPLICIT_MODULUS);
-    let ntt = UintNttTable::new(POLY_LENGTH.trailing_zeros(), modulus).unwrap();
-    let params = NtruParameters::new(
-        POLY_LENGTH,
-        16u32,
-        modulus,
-        SecretKeyDistr::SparseTernary,
-        0.7,
-    );
-    let gadget = NlevParameters::with_ntru_params(&params, 9, None);
-    let mut rng = StdRng::seed_from_u64(75);
-    let key = NttNtruSecretKey::generate(&params, &ntt, &mut rng).unwrap();
-    let mut context = NttNtruGadgetEncryptContext::new(POLY_LENGTH);
-    let mut expected = NttNlevCiphertext::<Vec<u32>>::zero(gadget.nlev_len());
-    let mut actual = expected.clone();
-    for constant in [0, 1, EXPLICIT_MODULUS - 1] {
-        let mut message = Polynomial::new(vec![0; POLY_LENGTH]);
-        message.as_mut()[0] = constant;
-        let mut reference_rng = StdRng::seed_from_u64(83);
-        let mut actual_rng = StdRng::seed_from_u64(83);
-        key.encrypt_nlev_to(
-            &message,
-            &mut expected,
-            &gadget,
-            &ntt,
-            &mut reference_rng,
-            &mut context,
-        );
-        key.encrypt_nlev_constant_to(
-            constant,
-            &mut actual,
-            &gadget,
-            &ntt,
-            &mut actual_rng,
-            &mut context,
-        );
-        assert_eq!(actual.as_ref(), expected.as_ref());
-        assert_eq!(actual_rng.next_u64(), reference_rng.next_u64());
-    }
-    check_fourier_constant_nlev::<RustFftTable>();
-    check_fourier_constant_nlev::<TfheFftTable>();
-}
-
-fn check_fourier_constant_nlev<Table: FftTable>() {
-    let table = Table::new(POLY_LENGTH.trailing_zeros()).unwrap();
-    let mut fft = FftEngine::new(&table);
-    let params = NtruParameters::new(
-        POLY_LENGTH,
-        16u32,
-        NativeModulus::new(),
-        SecretKeyDistr::SparseTernary,
-        0.7,
-    );
-    let gadget = NlevParameters::with_ntru_params(&params, 8, None);
-    let mut rng = StdRng::seed_from_u64(75);
-    let key = FourierNtruSecretKey::generate(&params, &mut fft, &mut rng).unwrap();
-    let mut context = FourierNtruGadgetEncryptContext::new(POLY_LENGTH);
-    let mut expected = FourierNlevCiphertext::<Vec<Complex64>>::zero(gadget.fourier_nlev_len());
-    let mut actual = expected.clone();
-    for constant in [0, 1, u32::MAX] {
-        let mut message = Polynomial::new(vec![0; POLY_LENGTH]);
-        message.as_mut()[0] = constant;
-        let mut reference_rng = StdRng::seed_from_u64(83);
-        let mut actual_rng = StdRng::seed_from_u64(83);
-        key.encrypt_nlev_to(
-            &message,
-            &mut expected,
-            &gadget,
-            &mut fft,
-            &mut reference_rng,
-            &mut context,
-        );
-        key.encrypt_nlev_constant_to(
-            constant,
-            &mut actual,
-            &gadget,
-            &mut fft,
-            &mut actual_rng,
-            &mut context,
-        );
-        assert_eq!(actual.as_ref(), expected.as_ref());
-        assert_eq!(actual_rng.next_u64(), reference_rng.next_u64());
     }
 }

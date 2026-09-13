@@ -1,9 +1,9 @@
 //! Single-modulus GLWE / GLev / GGSW parameters.
 
-use primus_decompose::primitive::ApproxSignedBasis;
+use primus_decompose::{ApproxSignedBasisError, primitive::ApproxSignedBasis};
 use primus_distr::{DiscreteGaussian, SecretKeySampler};
 use primus_integer::FheUint;
-use primus_lattice::{GadgetSize, GlweSize};
+use primus_lattice::{GadgetSize, GlweSize, GlweSizeError};
 use primus_reduce::RingContext;
 use rand::distr::Uniform;
 
@@ -300,7 +300,21 @@ where
     }
 }
 
-/// Glev Parameters.
+/// Invalid GLev/GGSW decomposition parameters or layout.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum GlevParameterError {
+    /// The decomposition basis could not be constructed.
+    #[error(transparent)]
+    InvalidBasis(#[from] ApproxSignedBasisError),
+    /// The basis and GLWE ciphertext use different moduli.
+    #[error("GLev decomposition basis must match the GLWE ciphertext modulus")]
+    BasisModulusMismatch,
+    /// The gadget layout cannot be represented by `usize` lengths.
+    #[error(transparent)]
+    InvalidSize(#[from] GlweSizeError),
+}
+
+/// GLWE parameters and decomposition basis shared by GLev and GGSW operations.
 #[derive(Clone)]
 pub struct GlevParameters<T, M>
 where
@@ -318,24 +332,34 @@ where
     T: FheUint,
     M: RingContext<T>,
 {
-    pub(crate) fn from_parts(
-        size: GlweSize,
-        inner: GlweParametersInner<T, M>,
+    /// Reuses a precomputed decomposition basis with matching GLWE parameters.
+    ///
+    /// Takes ownership of the basis, preserving its levels and precomputation.
+    /// Both native (`None`) and explicit modulus representations must match.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error on a basis modulus mismatch or gadget layout overflow.
+    pub fn try_with_basis(
+        glwe_params: &GlweParameters<T, M>,
         basis: ApproxSignedBasis<T>,
-    ) -> Self {
-        debug_assert_eq!(
-            basis.modulus(),
-            inner.cipher_modulus_value(),
-            "GLev decomposition basis must match the GLWE ciphertext modulus"
-        );
-        Self {
-            size: GadgetSize::new(size, basis.decompose_length()),
-            inner,
-            basis,
+    ) -> Result<Self, GlevParameterError> {
+        if basis.modulus() != glwe_params.inner().cipher_modulus_value() {
+            return Err(GlevParameterError::BasisModulusMismatch);
         }
+        Ok(Self {
+            size: GadgetSize::try_new(glwe_params.size(), basis.decompose_length())?,
+            inner: glwe_params.inner().clone(),
+            basis,
+        })
     }
 
     /// Creates GLev/GGSW parameters from matching GLWE parameters.
+    ///
+    /// # Panics
+    ///
+    /// Panics on invalid basis parameters or gadget layout overflow.
+    #[must_use]
     #[inline]
     pub fn with_glwe_params(
         glwe_params: &GlweParameters<T, M>,
@@ -348,22 +372,22 @@ where
 
     /// Tries to create GLev/GGSW parameters and their decomposition basis from
     /// one GLWE modulus domain.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error on invalid basis parameters or gadget layout overflow.
     #[inline]
     pub fn try_with_glwe_params(
         glwe_params: &GlweParameters<T, M>,
         log_basis: u32,
         reverse_length: Option<usize>,
-    ) -> Result<Self, primus_decompose::ApproxSignedBasisError> {
+    ) -> Result<Self, GlevParameterError> {
         let basis = ApproxSignedBasis::try_new(
             glwe_params.inner().cipher_modulus_value(),
             log_basis,
             reverse_length,
         )?;
-        Ok(Self::from_parts(
-            glwe_params.size(),
-            glwe_params.inner().clone(),
-            basis,
-        ))
+        Self::try_with_basis(glwe_params, basis)
     }
 
     /// Returns the parameters shared by GLWE and its gadget ciphertexts.

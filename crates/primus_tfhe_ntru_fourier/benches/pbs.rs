@@ -1,6 +1,13 @@
-// cargo bench -p primus_tfhe_ntru_fourier --bench pbs
+//! Complete PBS: `NLev[1]` initialization, blind rotation, key switching and extraction.
+//! Reuses output and evaluator; key/LUT construction and encryption are not timed.
+//! u32, the native torus with RustFFT; fixed seed, N = 1024, LWE dimension 800.
+//! Regression workload, not a matched-security backend comparison.
+//!
+//! cargo bench -p primus_tfhe_ntru_fourier --bench pbs
 
 use std::hint::black_box;
+
+use rand::{SeedableRng, rngs::StdRng};
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use primus_fft::{FftTable, RustFftTable};
@@ -30,7 +37,7 @@ fn pbs(c: &mut Criterion) {
     .unwrap();
     let table = RustFftTable::new(N.trailing_zeros()).unwrap();
     let context = TfheContext::try_new(parameters, table).unwrap();
-    let mut rng = rand::rng();
+    let mut rng = StdRng::seed_from_u64(42);
     let (client_key, server_key) = context.generate_keys(&mut rng).unwrap();
     let encryptor = context.encryptor(&client_key).unwrap();
     let input = encryptor.encrypt_padded(1u32, &mut rng).unwrap();
@@ -38,7 +45,7 @@ fn pbs(c: &mut Criterion) {
     let mut output = input.clone();
     let mut evaluator = context.evaluator(&server_key).unwrap();
 
-    c.bench_function("ntru_fourier/pbs", |bencher| {
+    c.bench_function("ntru_fourier/complete_pbs_reused_output", |bencher| {
         bencher.iter(|| {
             evaluator.apply_lookup_table_to(
                 black_box(&input),

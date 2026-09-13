@@ -47,7 +47,8 @@ impl FourierNtruSecretKey {
         fft.backward_as_torus(context.phase.as_ref(), result.as_mut());
     }
 
-    /// Decrypts a Fourier ciphertext with unsigned plaintext embedding.
+    /// Decrypts to unsigned plaintext values in `[0, t)`.
+    /// Both unsigned and centered embeddings use this decoder.
     pub fn decrypt<T, Table, A>(
         &self,
         cipher: &FourierNtruCiphertext<A>,

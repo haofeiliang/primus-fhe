@@ -20,6 +20,9 @@ pub use context::NttNtruGadgetEncryptContext;
 /// An NTRU secret key represented by `NTT(f)` and its exact pointwise inverse.
 /// Both polynomials are securely erased on drop, including failed conversions.
 /// Explicit zeroization clears their lengths and makes the key unusable.
+///
+/// Operations must use the construction modulus and NTT representation. The key
+/// stores neither modulus nor table; matching lengths do not establish this premise.
 #[derive(Clone)]
 pub struct NttNtruSecretKey<T: FheUint> {
     key: NttPolynomialOwned<T>,

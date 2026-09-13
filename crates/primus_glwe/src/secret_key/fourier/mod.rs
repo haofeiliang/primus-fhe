@@ -11,6 +11,7 @@ use crate::{GlweParameters, SecretKeyDistr};
 
 use super::GlweSecretKey;
 
+mod batch;
 mod context;
 mod decrypt;
 mod encrypt;

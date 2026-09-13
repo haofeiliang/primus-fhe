@@ -334,3 +334,61 @@ fn only_ggsw_requires_matching_workspace_levels_in_both_domains() {
         );
     }
 }
+
+#[test]
+fn glev_construction_reuses_basis_and_rejects_incompatible_domains_or_layouts() {
+    use primus_decompose::primitive::ApproxSignedBasis;
+    use primus_glwe::GlevParameterError;
+
+    let native = GlweParameters::new(
+        2,
+        N,
+        16u32,
+        NativeModulus::new(),
+        SecretKeyDistr::UniformBinary,
+        0.7,
+    );
+    let explicit = GlweParameters::new(
+        2,
+        N,
+        16u32,
+        BarrettModulus::new(257),
+        SecretKeyDistr::UniformBinary,
+        0.7,
+    );
+    for levels in [None, Some(2)] {
+        let basis = ApproxSignedBasis::new(None, 3, levels);
+        let params = GlevParameters::try_with_basis(&native, basis.clone()).unwrap();
+        assert_eq!(params.basis(), &basis);
+        assert_eq!(params.glwe_size(), native.size());
+        let basis = ApproxSignedBasis::new(Some(257), 3, levels);
+        let params = GlevParameters::try_with_basis(&explicit, basis.clone()).unwrap();
+        assert_eq!(params.basis(), &basis);
+        assert_eq!(params.glwe_size(), explicit.size());
+    }
+    for modulus in [Some(257), Some(769)] {
+        assert!(matches!(
+            GlevParameters::try_with_basis(&native, ApproxSignedBasis::new(modulus, 3, None)),
+            Err(GlevParameterError::BasisModulusMismatch)
+        ));
+    }
+    for modulus in [None, Some(769)] {
+        assert!(matches!(
+            GlevParameters::try_with_basis(&explicit, ApproxSignedBasis::new(modulus, 3, None)),
+            Err(GlevParameterError::BasisModulusMismatch)
+        ));
+    }
+    // GLWE lengths fit but the quadratic GGSW layout overflows, without allocating it.
+    let huge = GlweParameters::new(
+        1usize << (usize::BITS / 2),
+        N,
+        16u32,
+        NativeModulus::new(),
+        SecretKeyDistr::UniformBinary,
+        0.7,
+    );
+    assert!(matches!(
+        GlevParameters::try_with_glwe_params(&huge, 3, None),
+        Err(GlevParameterError::InvalidSize(_))
+    ));
+}

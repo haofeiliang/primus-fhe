@@ -1,10 +1,9 @@
 use primus_decompose::primitive::ApproxSignedBasis;
-use primus_integer::{FheUint, SignedInteger};
+use primus_integer::FheUint;
 use primus_lattice::ngsw::NttNgsw;
 use primus_lattice::nlev::NttNlev;
 use primus_ntru::{NttNtruGadgetEncryptContext, NttNtruKeySwitchingKey, NttNtruSecretKey};
 use primus_ntt::NttTable;
-use primus_poly::PolynomialOwned;
 
 use crate::{ClientKey, TfheContext, TfheKeyError, TfheParameters};
 
@@ -192,23 +191,19 @@ where
     {
         let parameters = self.context.parameters();
         let nlev_len = parameters.bootstrapping().nlev_len();
-        let mut controls = vec![T::ZERO; parameters.external_lwe().dimension() * nlev_len];
-        let mut message = PolynomialOwned::zero(parameters.poly_length());
-        for (&coefficient, chunk) in client_key
-            .external_lwe_secret_key()
-            .iter()
-            .zip(controls.chunks_exact_mut(nlev_len))
-        {
-            message.as_mut()[0] = coefficient.cast_to_unsigned();
-            accumulator_ntt.encrypt_ngsw_to(
-                &message,
-                &mut NttNgsw::new(chunk),
-                parameters.bootstrapping(),
-                self.context.table(),
-                rng,
-                &mut self.gadget,
-            );
-        }
+        let total_len = parameters
+            .external_lwe()
+            .dimension()
+            .checked_mul(nlev_len)
+            .expect("NGSW control batch length overflow");
+        let mut controls = vec![T::ZERO; total_len];
+        accumulator_ntt.encrypt_ngsw_signed_constant_batch_to(
+            client_key.external_lwe_secret_key(),
+            &mut controls,
+            parameters.bootstrapping(),
+            self.context.table(),
+            rng,
+        );
         controls
     }
 

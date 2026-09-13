@@ -10,7 +10,8 @@ use primus_poly::{NttPolynomial, Polynomial};
 use primus_reduce::FieldContext;
 
 impl<T: FheUint> NttNtruSecretKey<T> {
-    /// Encrypts a polynomial with unsigned plaintext embedding.
+    /// Allocates a ciphertext and delegates to [`Self::encrypt_to`], with the same
+    /// input and transform requirements.
     pub fn encrypt<M, Table, R, A>(
         &self,
         message: &Polynomial<A>,
@@ -30,6 +31,18 @@ impl<T: FheUint> NttNtruSecretKey<T> {
     }
 
     /// Encrypts a polynomial with unsigned plaintext embedding into `result`.
+    ///
+    /// `message` and `result` have length `N`, with message values in `[0, t)`.
+    ///
+    /// # Correctness
+    ///
+    /// Use the key's construction modulus and NTT representation.
+    ///
+    /// # Panics
+    ///
+    /// Panics before sampling on inconsistent key/parameter/table/input/output
+    /// lengths, or if the table modulus differs from `params`.
+    /// A plaintext-codec panic can leave partial output and consume randomness.
     pub fn encrypt_to<M, Table, R, A, B>(
         &self,
         message: &Polynomial<A>,
@@ -56,7 +69,8 @@ impl<T: FheUint> NttNtruSecretKey<T> {
         );
     }
 
-    /// Encrypts a polynomial with centered plaintext embedding into `result`.
+    /// Uses centered embedding with the same `[0, t)` input values, storage and
+    /// failure conditions as [`Self::encrypt_to`].
     pub fn encrypt_centered_to<M, Table, R, A, B>(
         &self,
         message: &Polynomial<A>,
@@ -84,6 +98,7 @@ impl<T: FheUint> NttNtruSecretKey<T> {
     }
 
     /// Encrypts coefficients already encoded modulo `q` into `result`.
+    /// Layout and transform requirements are the same as [`Self::encrypt_to`].
     ///
     /// # Correctness
     ///
@@ -110,6 +125,7 @@ impl<T: FheUint> NttNtruSecretKey<T> {
     }
 
     /// Encrypts zero into a freshly allocated NTT ciphertext.
+    /// Inherits [`Self::encrypt_zeros_to`]'s transform and layout requirements.
     pub fn encrypt_zeros<M, Table, R>(
         &self,
         params: &NtruParameters<T, M>,
@@ -175,10 +191,14 @@ impl<T: FheUint> NttNtruSecretKey<T> {
 
     /// Encrypts the zero polynomial into the existing output without allocating.
     ///
+    /// # Correctness
+    ///
+    /// Use the key's construction modulus and NTT representation.
+    ///
     /// # Panics
     ///
-    /// Panics before sampling or writes if the key, parameters, transform table,
-    /// or output lengths are incompatible.
+    /// Panics before sampling or writes if key/parameter/table/output lengths
+    /// disagree, or if the table modulus differs from `params`.
     pub fn encrypt_zeros_to<M, Table, R, B>(
         &self,
         result: &mut NttNtruCiphertext<B>,

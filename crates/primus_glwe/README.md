@@ -48,13 +48,15 @@ fourier_sk.phase_to(input, output, fft, context)
 
 NTT secret-key ordinary operations need no context. Fourier operations use `FourierGlweEncryptContext<T>` / `FourierGlweDecryptContext`; NTT public encryption uses `NttGlwePublicEncryptContext<T>`. Construct these with `N` and reuse them at that length. Contexts hold scratch, not parameters, and erase secret intermediates on drop.
 
-`_to` paths reuse output and scratch. Layout/transform mismatches fail before output writes. Invalid plaintext values may panic after partial writes or randomness consumption. Encoded NTT inputs must be canonical residues in `[0, q)`; callers guarantee this range.
+`_to` paths reuse output and scratch. Checked layout and transform-length mismatches fail before output writes; matching lengths do not establish transform representation compatibility. Invalid plaintext values may panic after partial writes or randomness consumption. Encoded NTT inputs must be canonical residues in `[0, q)`; callers guarantee this range.
 
 ## Gadget and truncated ciphertexts
 
 `encrypt_glev_to` and `encrypt_ggsw_to` apply the gadget basis to a coefficient-domain ring polynomial without plaintext scaling. A GGSW control bit is therefore the constant polynomial `0` or `1`. Both use a gadget context constructed from `GadgetSize`: GLev requires a matching polynomial length; GGSW also requires a matching level count.
 
-`encrypt_ggsw_constant_batch_to` encrypts canonical constants into consecutive NTT GGSWs, with one batch validation and no temporary allocation. Output length is `input.len() * params.ggsw_len()`.
+Use `GlevParameters::try_with_basis(&glwe_params, basis)` to reuse an existing decomposition basis. It takes ownership without rebuilding the basis and checks the modulus and gadget layout. `try_with_glwe_params` constructs a basis from its logarithm and level count instead; both return `GlevParameterError`.
+
+`encrypt_ggsw_constant_batch_to` encrypts a slice of ring constants into consecutive GGSWs, with one batch validation and no temporary allocation. NTT takes canonical residues and writes `input.len() * params.ggsw_len()` values; Fourier takes native-ring values and writes `input.len() * params.fourier_ggsw_len()` complex values. Fourier preserves native-ring scaling followed by the FFT for each level. Empty batches still validate shared resources and consume no randomness.
 
 NTT `encrypt_truncated_zeros`, `phase_truncated` and `decrypt_truncated` operate on coefficient ciphertexts with a full mask and at most `N` body coefficients. Phase extraction and decryption return only the retained coefficients, while their internal scratch still holds full polynomials.
 
@@ -99,7 +101,7 @@ The batch input is a flat slice of complete LWEs. These keys write consecutive m
 
 [Secret keys](src/secret_key), [public keys](src/public_key), [key switching](src/key_switch), [automorphism](src/automorphism), [trace/packing](src/trace), [packing key switching](src/packing_key_switch) and [scheme switching](src/scheme_switch) contain the public contracts and implementation details.
 
-Tests are grouped by operation: ordinary key workflows, gadget phases and external products, CMUX, key switching, automorphism, scheme switching, and trace/expansion/packing. `tests/common` holds the small schoolbook phase oracle shared by evaluation tests. Boundary rejection and capacity zeroization have dedicated test binaries. Fourier automorphism, trace, packing key switching and scheme-switching tests exercise both RustFFT and tfhe-fft.
+Tests are grouped by operation: ordinary key workflows, gadget phases and external products, constant-batch equivalence, CMUX, key switching, automorphism, scheme switching, and trace/expansion/packing. `tests/common` holds the small schoolbook phase oracle shared by evaluation tests. Boundary rejection and capacity zeroization have dedicated test binaries. Fourier constant batches, automorphism, trace, packing key switching and scheme-switching tests exercise both RustFFT and tfhe-fft.
 
 ```sh
 cargo test -p primus_glwe
@@ -121,7 +123,7 @@ All benches use `(k, N) = (1, 1024)` and `(2, 4096)`. Each iteration performs on
 
 | Bench | Work measured |
 | --- | --- |
-| [encryption](benches/encryption.rs) | Secret/public encryption, secret decryption, GLev/GGSW generation; includes sampling, coding and required transforms |
+| [encryption](benches/encryption.rs) | Secret/public encryption, secret decryption, GLev/GGSW generation and batches of 8 constant GGSWs; includes sampling, coding and required transforms |
 | [primitives](benches/primitives.rs) | Ordinary/reverse trace; projection and partial expansion for 8 and `N/8` coefficients; full expansion; packing 1, 8 and `N` LWEs; direct Fourier automorphism on both FFT backends |
 | [key_conversion](benches/key_conversion.rs) | Independent-key packing of 1, 8 and `N` LWEs (input dimension 512; single-LWE cases cover bases `2^3` and `2^10`); NTT/Fourier GLev-to-GGSW scheme switching |
 

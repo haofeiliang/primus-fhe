@@ -1,10 +1,12 @@
-use rand::{SeedableRng, rngs::StdRng};
-// cargo bench -p primus_tfhe_glwe_ntt --bench pbs
+//! PBS stages and complete evaluations with precomputed keys and reusable scratch.
+//! Allocating and reused-output cases are named separately; setup is not timed.
+//! Uses `boolean_parameters()` with a fixed seed; these are regression workloads.
+//!
+//! cargo bench -p primus_tfhe_glwe_ntt --bench pbs
 
 use std::hint::black_box;
 
 use criterion::{Criterion, criterion_group, criterion_main};
-use primus_decompose::primitive::ApproxSignedBasis;
 use primus_glwe::{GlweCiphertext, NttGlweKeySwitchingContext};
 use primus_lwe::LweCiphertext;
 use primus_ntt::{NttTable, U32NttTable};
@@ -12,21 +14,15 @@ use primus_tfhe_glwe_ntt::{
     BooleanEncryptor, BooleanEvaluator, BooleanGate, NttGlweBlindRotationContext, PbsOrder,
     TfheContext, TfheParameters, boolean_parameters,
 };
+use rand::{SeedableRng, rngs::StdRng};
 
 fn parameters_with_order(order: PbsOrder) -> TfheParameters<u32> {
     let parameters = boolean_parameters();
-    let basis = parameters.glwe_key_switching().output().basis();
-    let log_basis = basis.log_basis();
-    let level_count = basis.decompose_length();
     TfheParameters::try_new(
         parameters.small_lwe().clone(),
         parameters.glwe().clone(),
         parameters.bootstrapping().clone(),
-        ApproxSignedBasis::new(
-            Some(parameters.glwe().cipher_modulus_value()),
-            log_basis,
-            Some(level_count),
-        ),
+        parameters.glwe_key_switching().output().basis().clone(),
         order,
     )
     .unwrap()

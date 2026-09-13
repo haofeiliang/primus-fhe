@@ -1,12 +1,12 @@
-use primus_fft::{FftEngine, FftTable, RustFftTable};
+use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable};
 use primus_glwe::{
     FourierGadgetEncryptContext, FourierGlweDecryptContext, FourierGlweEncryptContext,
-    FourierGlweSecretKey, GlevParameters, GlweParameters, GlweSecretKey, NttGadgetEncryptContext,
+    FourierGlweSecretKey, GlevParameters, GlweParameters, NttGadgetEncryptContext,
     NttGlweSecretKey, SecretKeyDistr,
 };
 use primus_lattice::{
     context::{FourierGlweExternalProductContext, NttGlweExternalProductContext},
-    ggsw::{FourierGgswOwned, NttGgsw, NttGgswIter},
+    ggsw::{FourierGgsw, NttGgsw, NttGgswIter},
     glwe::{FourierGlweOwned, Glwe, NttGlwe, TorusGlwe},
 };
 use primus_modulus::{BarrettModulus, NativeModulus};
@@ -61,25 +61,22 @@ fn fourier_cmux_selects_requested_glwe() {
     }
 
     let mut output: TorusGlwe<Vec<u32>> = TorusGlwe::zero(params.glwe_len());
-    let mut controls: [FourierGgswOwned; 2] =
-        core::array::from_fn(|_| FourierGgswOwned::zero(params.fourier_ggsw_len()));
+    let ggsw_len = params.fourier_ggsw_len();
+    let mut controls = vec![Complex64::default(); 2 * ggsw_len];
     // Exercise both CMUX kernels and every valid selector, reusing output/context.
     for (control_count, selected) in [(1, 0), (1, 1), (2, 0), (2, 1), (2, 2)] {
-        for (index, control) in controls.iter_mut().take(control_count).enumerate() {
-            let mut control_message = vec![0u32; POLY_LENGTH];
-            control_message[0] = u32::from(selected == index + 1);
-            secret_key.encrypt_ggsw_to(
-                &Polynomial::new(control_message),
-                control,
-                &params,
-                &mut fft,
-                &mut rng,
-                &mut gadget_context,
-            );
-        }
+        let selectors = [u32::from(selected == 1), u32::from(selected == 2)];
+        secret_key.encrypt_ggsw_constant_batch_to(
+            &selectors[..control_count],
+            &mut controls[..control_count * ggsw_len],
+            &params,
+            &mut fft,
+            &mut rng,
+            &mut gadget_context,
+        );
 
         if control_count == 1 {
-            controls[0].cmux_to(
+            FourierGgsw::new(&controls[..ggsw_len]).cmux_to(
                 &ciphertexts[0],
                 &ciphertexts[1],
                 &mut output,
@@ -88,8 +85,8 @@ fn fourier_cmux_selects_requested_glwe() {
                 &mut cmux_context,
             );
         } else {
-            FourierGgswOwned::cmux_k_to(
-                &controls,
+            FourierGgsw::cmux_k_to(
+                controls.chunks_exact(ggsw_len).map(FourierGgsw::new),
                 &ciphertexts[0],
                 &ciphertexts[1..],
                 &mut output,
@@ -131,12 +128,7 @@ fn ntt_cmux_selects_requested_glwe() {
         0.7,
     );
     let params = GlevParameters::with_glwe_params(&glwe_params, 8, None);
-    let coeff_secret_key = GlweSecretKey::generate(
-        glwe_params.size(),
-        glwe_params.secret_key_sampler(),
-        &mut rng,
-    );
-    let secret_key = NttGlweSecretKey::from_coeff_secret_key(&coeff_secret_key, &ntt);
+    let (_, secret_key) = NttGlweSecretKey::generate_pair(&glwe_params, &ntt, &mut rng);
     let mut gadget_context = NttGadgetEncryptContext::new(params.size());
     let mut cmux_context = NttGlweExternalProductContext::new(params.size());
 
@@ -159,22 +151,15 @@ fn ntt_cmux_selects_requested_glwe() {
     let ggsw_len = params.ggsw_len();
     let mut controls = vec![0u32; 2 * ggsw_len];
     for (control_count, selected) in [(1, 0), (1, 1), (2, 0), (2, 1), (2, 2)] {
-        for (index, control) in controls
-            .chunks_exact_mut(ggsw_len)
-            .take(control_count)
-            .enumerate()
-        {
-            let mut control_message = vec![0u32; POLY_LENGTH];
-            control_message[0] = u32::from(selected == index + 1);
-            secret_key.encrypt_ggsw_to(
-                &Polynomial::new(control_message),
-                &mut NttGgsw::new(control),
-                &params,
-                &ntt,
-                &mut rng,
-                &mut gadget_context,
-            );
-        }
+        let selectors = [u32::from(selected == 1), u32::from(selected == 2)];
+        secret_key.encrypt_ggsw_constant_batch_to(
+            &selectors[..control_count],
+            &mut controls[..control_count * ggsw_len],
+            &params,
+            &ntt,
+            &mut rng,
+            &mut gadget_context,
+        );
 
         if control_count == 1 {
             NttGgsw::new(&controls[..ggsw_len]).cmux_to(

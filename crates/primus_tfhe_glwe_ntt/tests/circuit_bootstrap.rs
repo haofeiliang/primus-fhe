@@ -48,10 +48,6 @@ fn parameters(
     (tfhe, [output, trace, scheme_switch])
 }
 
-fn constant_polynomial(value: u64) -> Vec<u64> {
-    vec![value; POLY_LENGTH]
-}
-
 #[test]
 fn patched_ntt_circuit_bootstrap_produces_a_cmux_control() {
     for order in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
@@ -96,7 +92,7 @@ fn patched_ntt_circuit_bootstrap_produces_a_cmux_control() {
         for (value, choice) in [1u64, 3].into_iter().zip(&mut choices) {
             let mut encrypted: NttGlwe<Vec<u64>> = NttGlwe::zero(glwe.glwe_len());
             main_secret.encrypt_to(
-                &Polynomial::new(constant_polynomial(value)),
+                &Polynomial::new(vec![value; POLY_LENGTH]),
                 &mut encrypted,
                 glwe,
                 context.table(),
@@ -125,7 +121,7 @@ fn patched_ntt_circuit_bootstrap_produces_a_cmux_control() {
                 main_secret
                     .decrypt(&selected, glwe, context.table())
                     .as_ref(),
-                constant_polynomial(if bit == 0 { 1 } else { 3 }),
+                vec![if bit == 0 { 1 } else { 3 }; POLY_LENGTH],
                 "PBS order {order:?}, control bit {bit}"
             );
         }

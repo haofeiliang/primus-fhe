@@ -1,6 +1,7 @@
 //! Parameters for GLWE-based TFHE.
 
 use primus_decompose::primitive::ApproxSignedBasis;
+use primus_glwe::GlevParameterError;
 use primus_integer::FheUint;
 use primus_reduce::RingContext;
 
@@ -54,9 +55,9 @@ pub enum GlweParameterError {
     #[error("TFHE GLWE key switching requires matching LWE and GLWE ciphertext moduli")]
     CipherModulusMismatch,
 
-    /// The GLWE key-switching basis belongs to a different ciphertext modulus.
-    #[error("GLWE key-switching basis modulus must match the GLWE ciphertext modulus")]
-    KeySwitchingBasisModulusMismatch,
+    /// The GLWE key-switching basis or output gadget layout is incompatible.
+    #[error("invalid GLWE key-switching parameters: {0}")]
+    KeySwitchingParameters(#[from] GlevParameterError),
 }
 
 /// Mathematical parameters for GLWE-based TFHE.
@@ -112,16 +113,12 @@ where
         if small_lwe.cipher_modulus().explicit_value() != glwe.cipher_modulus().explicit_value() {
             return Err(GlweParameterError::CipherModulusMismatch);
         }
-        if key_switching_basis.modulus() != glwe.inner().cipher_modulus_value() {
-            return Err(GlweParameterError::KeySwitchingBasisModulusMismatch);
-        }
-
         let glwe_key_switching = Self::derive_glwe_key_switching(
             small_lwe.dimension(),
             small_lwe.secret_key_distr(),
             &glwe,
             key_switching_basis,
-        );
+        )?;
         Ok(Self {
             small_lwe,
             glwe,
@@ -136,7 +133,7 @@ where
         small_lwe_distr: SecretKeyDistr,
         glwe: &GlweParameters<T, GM>,
         basis: ApproxSignedBasis<T>,
-    ) -> GlweKeySwitchingParameters<T, GM> {
+    ) -> Result<GlweKeySwitchingParameters<T, GM>, GlweParameterError> {
         let output_dimension = small_lwe_dimension.div_ceil(glwe.poly_length());
         let output_glwe = GlweParameters::new(
             output_dimension,
@@ -146,12 +143,8 @@ where
             small_lwe_distr,
             glwe.noise_distribution().standard_deviation(),
         );
-        let full_decompose_length = (basis.value_bits() / basis.log_basis()) as usize;
-        let reverse_length =
-            (basis.decompose_length() != full_decompose_length).then_some(basis.decompose_length());
-        let output =
-            GlevParameters::with_glwe_params(&output_glwe, basis.log_basis(), reverse_length);
-        GlweKeySwitchingParameters::new(glwe.dimension(), output)
+        let output = GlevParameters::try_with_basis(&output_glwe, basis)?;
+        Ok(GlweKeySwitchingParameters::new(glwe.dimension(), output))
     }
 
     fn validate_common(
