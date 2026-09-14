@@ -13,6 +13,6 @@ pub use parameters::{NtruParameterError, NtruTfheParameters};
 
 pub use primus_ntru::{NlevParameters, NtruParameters, NtruSecretKey};
 pub use primus_tfhe::{
-    Ciphertext, LookupTable, LookupTableError, LweSecretKeyRef, ProgrammableBootstrap,
-    TfheEvaluationError,
+    LookupTable, LookupTableError, LweCiphertext, LweSecretKeyRef, ManyLookupTable,
+    ProgrammableBootstrap, ProgrammableBootstrapMany, TfheEvaluationError,
 };

@@ -7,21 +7,18 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 const N: usize = 256;
 use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, U32NttTable};
-use primus_tfhe_glwe_ntt::{PbsOrder, TfheContext, TfheParameters};
+use primus_tfhe_ntru_ntt::{TfheContext, TfheParameters};
 const Q: u32 = 132_120_577;
-use primus_decompose::primitive::ApproxSignedBasis;
-use primus_glwe::{GgswParameters, GlweParameters, SecretKeyDistr};
-fn parameters(order: PbsOrder) -> TfheParameters<u32> {
+use primus_ntru::{NlevParameters, NtruParameters, SecretKeyDistr};
+fn parameters() -> TfheParameters<u32> {
     let modulus = BarrettModulus::new(Q);
-    let lwe = LweParameters::new(8, 16, modulus, SecretKeyDistr::UniformBinary, 0.7);
-    let glwe = GlweParameters::new(1, N, 16, modulus, SecretKeyDistr::UniformBinary, 0.7);
-    let bsk = GgswParameters::with_glwe_params(&glwe, 8, None);
+    let lwe = LweParameters::new(3, 16, modulus, SecretKeyDistr::UniformBinary, 0.7);
+    let acc = NtruParameters::new(N, 16, modulus, SecretKeyDistr::SparseTernary, 0.7);
+    let client = NtruParameters::new(N, 16, modulus, SecretKeyDistr::UniformBinary, 0.7);
     TfheParameters::try_new(
         lwe,
-        glwe,
-        bsk,
-        ApproxSignedBasis::new(Some(Q), 8, None),
-        order,
+        NlevParameters::with_ntru_params(&acc, 8, None),
+        NlevParameters::with_ntru_params(&client, 8, None),
     )
     .unwrap()
 }
@@ -52,7 +49,7 @@ where
             .compile_many_lookup_table_slice(output_count, &flat)
             .unwrap();
         let mut outputs = vec![
-            LweCiphertext::zero(context.parameters().ciphertext_lwe_dimension());
+            LweCiphertext::zero(context.parameters().external_lwe().dimension());
             output_count
         ];
         for message in 0..8 {
@@ -183,8 +180,6 @@ where
 }
 #[test]
 fn many_pbs_preserves_outputs_and_validates_domains() {
-    for order in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
-        let table = U32NttTable::new(N.trailing_zeros(), BarrettModulus::new(Q)).unwrap();
-        check_context(TfheContext::try_new(parameters(order), table).unwrap());
-    }
+    let table = U32NttTable::new(N.trailing_zeros(), BarrettModulus::new(Q)).unwrap();
+    check_context(TfheContext::try_new(parameters(), table).unwrap());
 }

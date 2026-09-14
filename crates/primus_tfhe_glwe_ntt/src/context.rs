@@ -118,7 +118,7 @@ where
         CircuitBootstrapEvaluator::try_new(self, server_key, parameters, circuit_key)
     }
 
-    /// Compiles a unary function into an encoded lookup-table polynomial.
+    /// Compiles a unary function on `0..ceil(t/2)` into a lookup-table polynomial.
     #[inline]
     pub fn compile_lookup_table_fn<F>(
         &self,
@@ -130,7 +130,7 @@ where
         self.parameters.compile_lookup_table_fn(function)
     }
 
-    /// Compiles one output per plaintext input into a lookup-table polynomial.
+    /// Compiles one output per input in `0..ceil(t/2)` into a lookup-table polynomial.
     #[inline]
     pub fn compile_lookup_table_slice(
         &self,
@@ -139,7 +139,11 @@ where
         self.parameters.compile_lookup_table_slice(outputs)
     }
 
-    /// Compiles several unary functions into one PBSManyLUT accumulator.
+    /// Compiles several functions on `0..ceil(t/2)` into one PBSManyLUT accumulator.
+    ///
+    /// The output count must be a non-zero power of two with
+    /// `ceil(t/2) <= N / output_count`. Function arguments are `(input, output_index)`.
+    /// See [`ManyLookupTable`] for the rotation-resolution tradeoff.
     #[inline]
     pub fn compile_many_lookup_table_fn<F>(
         &self,
@@ -154,7 +158,7 @@ where
     }
 
     /// Compiles input-major multi-output values into one PBSManyLUT
-    /// accumulator.
+    /// accumulator, ordered `[input][output_index]` for `0..ceil(t/2)` inputs.
     #[inline]
     pub fn compile_many_lookup_table_slice(
         &self,

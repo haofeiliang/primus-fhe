@@ -206,4 +206,51 @@ fn functional_bootstrapping_key_blind_rotates() {
             assert_eq!(output.as_ref(), vec![7u32; ggsw_params.glwe_len()]);
         }
     }
+    // Per-call layout checks belong to each public raw LUT API, even when
+    // the transform and workspace already match the key.
+    blind_rotation_context.resize(ggsw_params.size());
+    let input_len = LWE_DIMENSION + 1;
+    let glwe_len = ggsw_params.glwe_len();
+    for (input_len, lookup_len, output_len, count) in [
+        (input_len - 1, POLY_LENGTH, glwe_len, None),
+        (input_len, POLY_LENGTH - 1, glwe_len, None),
+        (input_len, POLY_LENGTH, glwe_len - 1, None),
+        (input_len - 1, POLY_LENGTH, glwe_len, Some(2)),
+        (input_len, POLY_LENGTH - 1, glwe_len, Some(2)),
+        (input_len, POLY_LENGTH, glwe_len - 1, Some(2)),
+        (input_len, POLY_LENGTH, glwe_len, Some(0)),
+        (input_len, POLY_LENGTH, glwe_len, Some(3)),
+        (input_len, POLY_LENGTH, glwe_len, Some(POLY_LENGTH * 2)),
+    ] {
+        let input = Lwe::new(vec![0u32; input_len]);
+        let lookup = Polynomial::<Vec<u32>>::zero(lookup_len);
+        let mut output = Glwe::new(vec![17u32; output_len]);
+        let before = output.as_ref().to_vec();
+        assert!(
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                if let Some(count) = count {
+                    key.ntt_blind_rotate_many_lookup_table_to(
+                        &input,
+                        &lookup,
+                        count,
+                        &mut output,
+                        modulus,
+                        &ntt,
+                        &mut blind_rotation_context,
+                    );
+                } else {
+                    key.ntt_blind_rotate_lookup_table_to(
+                        &input,
+                        &lookup,
+                        &mut output,
+                        modulus,
+                        &ntt,
+                        &mut blind_rotation_context,
+                    );
+                }
+            }))
+            .is_err()
+        );
+        assert_eq!(output.as_ref(), before);
+    }
 }

@@ -1,9 +1,7 @@
 use primus_encoding::PlaintextEmbedding;
 use primus_integer::FheUint;
 use primus_reduce::RingContext;
-use primus_tfhe::{
-    LookupTable, LookupTableError, compile_encoded_lookup_table, lookup_table_domain_len,
-};
+use primus_tfhe::{LookupTable, LookupTableError, ManyLookupTable};
 
 use crate::NtruTfheParameters;
 
@@ -13,7 +11,7 @@ where
     M: RingContext<T>,
 {
     /// Compiles a unary function over the independently programmable front
-    /// half of the plaintext domain.
+    /// half `0..ceil(t/2)` of the plaintext domain. Outputs must belong to `0..t`.
     pub fn compile_lookup_table_fn<F>(
         &self,
         function: F,
@@ -25,7 +23,7 @@ where
         self.compile_lookup_table_outputs(domain_len, function)
     }
 
-    /// Compiles one output for every front-half plaintext input.
+    /// Compiles one output value for every front-half plaintext input.
     pub fn compile_lookup_table_slice(
         &self,
         outputs: &[T],
@@ -40,13 +38,55 @@ where
         self.compile_lookup_table_outputs(domain_len, |input| outputs[input])
     }
 
-    /// Returns the front-half domain constrained by the NTRU rotation ring.
-    fn lookup_table_domain_len(&self) -> Result<usize, LookupTableError> {
-        lookup_table_domain_len(self.plain_modulus_value(), self.poly_length())
+    /// Compiles `output_count` functions over the independently programmable
+    /// front half `0..ceil(t/2)` of the plaintext domain into one PBSManyLUT accumulator.
+    ///
+    /// Function arguments are `(input, output_index)` and outputs belong to `0..t`.
+    /// The output count must be a non-zero power of two with `ceil(t/2) <= N / count`.
+    /// See [`ManyLookupTable`] for the reduced rotation resolution.
+    pub fn compile_many_lookup_table_fn<F>(
+        &self,
+        output_count: usize,
+        function: F,
+    ) -> Result<ManyLookupTable<T>, LookupTableError>
+    where
+        F: Fn(usize, usize) -> T,
+    {
+        let domain_len = self.lookup_table_domain_len()?;
+        self.compile_many_lookup_table_outputs(domain_len, output_count, function)
     }
 
-    /// Validates outputs and delegates the negacyclic polynomial layout to the
-    /// shared TFHE compiler.
+    /// Compiles input-major multi-output values into one PBSManyLUT
+    /// accumulator.
+    ///
+    /// `outputs` must contain `domain_len * output_count` values, ordered by
+    /// plaintext input and then output index.
+    pub fn compile_many_lookup_table_slice(
+        &self,
+        output_count: usize,
+        outputs: &[T],
+    ) -> Result<ManyLookupTable<T>, LookupTableError> {
+        let domain_len = self.lookup_table_domain_len()?;
+        let expected = domain_len
+            .checked_mul(output_count)
+            .ok_or(LookupTableError::ManyTableLengthOverflow)?;
+        if outputs.len() != expected {
+            return Err(LookupTableError::DomainLengthMismatch {
+                expected,
+                actual: outputs.len(),
+            });
+        }
+        self.compile_many_lookup_table_outputs(domain_len, output_count, |input, output| {
+            outputs[input * output_count + output]
+        })
+    }
+
+    /// Returns the front-half domain constrained by the NTRU rotation ring.
+    fn lookup_table_domain_len(&self) -> Result<usize, LookupTableError> {
+        primus_tfhe::lookup_table_domain_len(self.plain_modulus_value(), self.poly_length())
+    }
+
+    /// Validates plaintext outputs and compiles them with the shared LWE/NTRU scale.
     fn compile_lookup_table_outputs<F>(
         &self,
         domain_len: usize,
@@ -55,24 +95,54 @@ where
     where
         F: Fn(usize) -> T,
     {
+        let lwe = self.external_lwe();
         let plaintext_modulus = self.plain_modulus_value();
-        let ntru = self.bootstrapping().ntru();
-        let output_codec = primus_encoding::RoundedCodec::new(
-            plaintext_modulus,
-            ntru.cipher_modulus().explicit_value(),
-        );
-        compile_encoded_lookup_table(
+        primus_tfhe::compile_encoded_lookup_table(
             domain_len,
             self.poly_length(),
-            self.external_lwe().plaintext_codec(),
-            self.external_lwe().cipher_modulus_value(),
-            ntru.cipher_modulus(),
+            plaintext_modulus,
+            lwe.cipher_modulus_value(),
+            self.bootstrapping().ntru().cipher_modulus(),
             |input| {
                 let output = output_at(input);
                 if output >= plaintext_modulus {
                     Err(LookupTableError::OutputOutOfRange { input })
                 } else {
-                    Ok(output_codec.encode_value(output, PlaintextEmbedding::Unsigned))
+                    Ok(lwe
+                        .plaintext_codec()
+                        .encode_value(output, PlaintextEmbedding::Unsigned))
+                }
+            },
+        )
+    }
+
+    /// Encodes all output columns; the shared compiler owns their interleaved layout.
+    fn compile_many_lookup_table_outputs<F>(
+        &self,
+        domain_len: usize,
+        output_count: usize,
+        output_at: F,
+    ) -> Result<ManyLookupTable<T>, LookupTableError>
+    where
+        F: Fn(usize, usize) -> T,
+    {
+        let lwe = self.external_lwe();
+        let plaintext_modulus = self.plain_modulus_value();
+        primus_tfhe::compile_encoded_many_lookup_table(
+            domain_len,
+            self.poly_length(),
+            output_count,
+            plaintext_modulus,
+            lwe.cipher_modulus_value(),
+            self.bootstrapping().ntru().cipher_modulus(),
+            |input, output_index| {
+                let output = output_at(input, output_index);
+                if output >= plaintext_modulus {
+                    Err(LookupTableError::OutputOutOfRange { input })
+                } else {
+                    Ok(lwe
+                        .plaintext_codec()
+                        .encode_value(output, PlaintextEmbedding::Unsigned))
                 }
             },
         )

@@ -53,7 +53,46 @@ fn pbs(c: &mut Criterion) {
                 black_box(&mut output),
             );
         });
-    });
+    }); // Each iteration produces the same 2/4 function outputs. Compare shared
+    // BR/KS against separate PBS calls; all tables, keys and outputs are reused.
+    for count in [2, 4] {
+        let value = |input: usize, output| ((input + output) % 4) as u32;
+        let many = context.compile_many_lookup_table_fn(count, value).unwrap();
+        let singles: Vec<_> = (0..count)
+            .map(|output| {
+                context
+                    .compile_lookup_table_fn(|input| value(input, output))
+                    .unwrap()
+            })
+            .collect();
+        let mut outputs = vec![input.clone(); count];
+        for shared in [false, true] {
+            let kind = if shared { "many" } else { "separate" };
+            c.bench_function(
+                &format!("ntru_fourier/complete_pbs_{kind}_{count}_reused_outputs"),
+                |b| {
+                    b.iter(|| {
+                        if shared {
+                            evaluator.apply_many_lookup_table_to(
+                                black_box(&input),
+                                black_box(&many),
+                                black_box(&mut outputs),
+                            );
+                        } else {
+                            for (table, output) in singles.iter().zip(&mut outputs) {
+                                evaluator.apply_lookup_table_to(
+                                    black_box(&input),
+                                    black_box(table),
+                                    black_box(output),
+                                );
+                            }
+                        }
+                        black_box(&outputs);
+                    });
+                },
+            );
+        }
+    }
 }
 
 criterion_group!(benches, pbs);

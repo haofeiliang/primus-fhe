@@ -128,6 +128,7 @@ impl<T: FheUint> NttGlweBootstrappingKey<T> {
     ///
     /// # Correctness
     ///
+    /// Input LWE coefficients must be canonical under this key's input modulus.
     /// The accumulator must contain canonical coefficients modulo `modulus`.
     /// The table must use the NTT representation used to generate this key.
     ///
@@ -179,6 +180,16 @@ impl<T: FheUint> NttGlweBootstrappingKey<T> {
         B: Data<Elem = T>,
         C: DataMut<Elem = T>,
     {
+        let poly_length = self.size.glwe_size().poly_length();
+        assert_eq!(
+            (
+                input.dimension(),
+                lookup_table.as_ref().len(),
+                output.as_ref().len(),
+            ),
+            (self.input_dimension(), poly_length, self.size().glwe_len()),
+            "blind-rotation input, lookup table or output layout mismatch"
+        );
         self.assert_compatible(modulus, ntt, context);
         self.ntt_blind_rotate_lookup_table_kernel_to(
             input,
@@ -190,8 +201,8 @@ impl<T: FheUint> NttGlweBootstrappingKey<T> {
         );
     }
 
-    /// Uses resources bound by evaluator construction or validated by the public
-    /// wrapper. Still checks the per-call input, lookup table and output layouts.
+    /// Requires resources and per-call layouts validated by the public BR/PBS
+    /// entry, or fixed by circuit-bootstrap construction. No release rechecks.
     pub(crate) fn ntt_blind_rotate_lookup_table_kernel_to<M, Table, A, B, C>(
         &self,
         input: &Lwe<A>,
@@ -209,7 +220,7 @@ impl<T: FheUint> NttGlweBootstrappingKey<T> {
     {
         let poly_length = self.size.glwe_size().poly_length();
         let two_n = poly_length * 2;
-        assert_eq!(
+        debug_assert_eq!(
             (
                 input.dimension(),
                 lookup_table.as_ref().len(),
@@ -257,6 +268,20 @@ impl<T: FheUint> NttGlweBootstrappingKey<T> {
         B: Data<Elem = T>,
         C: DataMut<Elem = T>,
     {
+        let poly_length = self.size.glwe_size().poly_length();
+        assert!(
+            output_count.is_power_of_two() && poly_length.is_multiple_of(output_count),
+            "PBSManyLUT output count must be a non-zero power-of-two divisor of N"
+        );
+        assert_eq!(
+            (
+                input.dimension(),
+                lookup_table.as_ref().len(),
+                output.as_ref().len(),
+            ),
+            (self.input_dimension(), poly_length, self.size().glwe_len()),
+            "PBSManyLUT input, table, or output layout mismatch"
+        );
         self.assert_compatible(modulus, ntt, context);
         self.ntt_blind_rotate_many_lookup_table_kernel_to(
             input,
@@ -269,8 +294,8 @@ impl<T: FheUint> NttGlweBootstrappingKey<T> {
         );
     }
 
-    /// Uses resources bound by evaluator construction or validated by the public
-    /// wrapper. Still checks the per-call input, lookup table and output layouts.
+    /// Requires resources and per-call layouts validated by the public BR/PBS
+    /// entry, or fixed by circuit-bootstrap construction. No release rechecks.
     #[expect(
         clippy::too_many_arguments,
         reason = "keep modulus, transform and workspace roles explicit"
@@ -293,11 +318,11 @@ impl<T: FheUint> NttGlweBootstrappingKey<T> {
     {
         let poly_length = self.size.glwe_size().poly_length();
         let two_n = poly_length * 2;
-        assert!(
+        debug_assert!(
             output_count.is_power_of_two() && poly_length.is_multiple_of(output_count),
             "PBSManyLUT output count must be a non-zero power-of-two divisor of N"
         );
-        assert_eq!(
+        debug_assert_eq!(
             (
                 input.dimension(),
                 lookup_table.as_ref().len(),

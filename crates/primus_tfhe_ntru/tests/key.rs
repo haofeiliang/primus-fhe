@@ -9,13 +9,17 @@ const N: usize = 8;
 const LWE_DIMENSION: usize = 4;
 
 fn parameters() -> NtruTfheParameters<u32, NativeModulus<u32>> {
+    parameters_with_plaintext(4)
+}
+
+fn parameters_with_plaintext(t: u32) -> NtruTfheParameters<u32, NativeModulus<u32>> {
     let modulus = NativeModulus::new();
-    let client = NtruParameters::new(N, 4, modulus, SecretKeyDistr::UniformBinary, 0.7);
-    let accumulator = NtruParameters::new(N, 4, modulus, SecretKeyDistr::gaussian(3.2), 0.7);
+    let client = NtruParameters::new(N, t, modulus, SecretKeyDistr::UniformBinary, 0.7);
+    let accumulator = NtruParameters::new(N, t, modulus, SecretKeyDistr::gaussian(3.2), 0.7);
     NtruTfheParameters::try_new(
         LweParameters::new(
             LWE_DIMENSION,
-            4,
+            t,
             modulus,
             SecretKeyDistr::UniformBinary,
             0.7,
@@ -70,6 +74,36 @@ fn imported_client_coefficients_must_be_binary_and_zero_padded() {
         assert_eq!(
             NtruDecryptor::new(&parameters, &key).err(),
             Some(NtruClientError::IncompatibleKey(expected))
+        );
+    }
+}
+
+#[test]
+fn padded_client_domain_matches_odd_and_even_lut_domains() {
+    use rand::{SeedableRng, rngs::StdRng};
+    let mut rng = StdRng::seed_from_u64(0x5041_4444_4544);
+    let key = imported_key([1, 0, 1, 1, 0, 0, 0, 0]);
+    for t in [3u32, 4, 5] {
+        let parameters = parameters_with_plaintext(t);
+        let encryptor = NtruEncryptor::new(&parameters, &key).unwrap();
+        let decryptor = NtruDecryptor::new(&parameters, &key).unwrap();
+        let domain_len = t.div_ceil(2);
+        assert!(
+            parameters
+                .compile_lookup_table_slice(&vec![0; domain_len as usize])
+                .is_ok()
+        );
+        let input = encryptor.encrypt_padded(domain_len - 1, &mut rng).unwrap();
+        assert_eq!(decryptor.decrypt::<u32>(&input).unwrap(), domain_len - 1);
+        assert_eq!(
+            encryptor.encrypt_padded(domain_len, &mut rng).unwrap_err(),
+            NtruClientError::MessageOutsidePaddedDomain
+        );
+        assert_eq!(
+            parameters
+                .compile_many_lookup_table_slice(usize::MAX, &[])
+                .unwrap_err(),
+            primus_tfhe_ntru::LookupTableError::ManyTableLengthOverflow
         );
     }
 }

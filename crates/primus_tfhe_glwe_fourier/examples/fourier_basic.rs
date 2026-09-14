@@ -62,6 +62,20 @@ fn main() {
     let output = evaluator.apply_lookup_table(&input, &toggle);
     assert_eq!(decryptor.decrypt::<u32>(&output).unwrap(), 1);
 
+    // Two functions share one blind rotation and ring key switch.
+    let paired = context
+        .compile_many_lookup_table_fn(2, |input, output| {
+            if output == 0 {
+                input as u32
+            } else {
+                (1 - input) as u32
+            }
+        })
+        .unwrap();
+    let outputs = evaluator.apply_many_lookup_table(&input, &paired);
+    assert_eq!(decryptor.decrypt::<u32>(&outputs[0]).unwrap(), 0);
+    assert_eq!(decryptor.decrypt::<u32>(&outputs[1]).unwrap(), 1);
+
     // The Boolean layer uses the paper's t=4 encoding and hides its special
     // accumulator and post-PBS correction.
     let boolean_encryptor = BooleanEncryptor::new(context.parameters(), &client_key).unwrap();

@@ -5,23 +5,19 @@ use primus_tfhe::{
 use rand::{SeedableRng, rngs::StdRng};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 const N: usize = 256;
-use primus_modulus::BarrettModulus;
-use primus_ntt::{NttTable, U32NttTable};
-use primus_tfhe_glwe_ntt::{PbsOrder, TfheContext, TfheParameters};
-const Q: u32 = 132_120_577;
-use primus_decompose::primitive::ApproxSignedBasis;
-use primus_glwe::{GgswParameters, GlweParameters, SecretKeyDistr};
-fn parameters(order: PbsOrder) -> TfheParameters<u32> {
-    let modulus = BarrettModulus::new(Q);
-    let lwe = LweParameters::new(8, 16, modulus, SecretKeyDistr::UniformBinary, 0.7);
-    let glwe = GlweParameters::new(1, N, 16, modulus, SecretKeyDistr::UniformBinary, 0.7);
-    let bsk = GgswParameters::with_glwe_params(&glwe, 8, None);
+use primus_fft::{FftTable, RustFftTable, TfheFftTable};
+use primus_modulus::{BarrettModulus, NativeModulus};
+use primus_ntru::{NlevParameters, NtruParameters, SecretKeyDistr};
+use primus_tfhe_ntru_fourier::{TfheContext, TfheParameters};
+fn parameters() -> TfheParameters<u32> {
+    let modulus = NativeModulus::new();
+    let lwe = LweParameters::new(3, 16, modulus, SecretKeyDistr::UniformBinary, 0.7);
+    let acc = NtruParameters::new(N, 16, modulus, SecretKeyDistr::SparseTernary, 0.7);
+    let client = NtruParameters::new(N, 16, modulus, SecretKeyDistr::UniformBinary, 0.7);
     TfheParameters::try_new(
         lwe,
-        glwe,
-        bsk,
-        ApproxSignedBasis::new(Some(Q), 8, None),
-        order,
+        NlevParameters::with_ntru_params(&acc, 8, None),
+        NlevParameters::with_ntru_params(&client, 8, None),
     )
     .unwrap()
 }
@@ -37,7 +33,7 @@ fn value(input: usize, output: usize) -> u32 {
 
 fn check_context<TABLE>(context: TfheContext<u32, TABLE>)
 where
-    TABLE: NttTable<ValueT = u32>,
+    TABLE: FftTable,
 {
     let mut rng = StdRng::seed_from_u64(0x4d41_4e59_5042_5301);
     let (client_key, server_key) = context.generate_keys(&mut rng).unwrap();
@@ -52,7 +48,7 @@ where
             .compile_many_lookup_table_slice(output_count, &flat)
             .unwrap();
         let mut outputs = vec![
-            LweCiphertext::zero(context.parameters().ciphertext_lwe_dimension());
+            LweCiphertext::zero(context.parameters().external_lwe().dimension());
             output_count
         ];
         for message in 0..8 {
@@ -88,34 +84,26 @@ where
     let mut outputs = vec![input.clone(); 2];
     // Isolate each piece of LUT metadata, including equal-length wrong-domain tables.
     let mut mismatched_tables = Vec::new();
-    for (n, t, input_q) in [(N / 2, 16, Some(Q)), (N, 8, Some(Q)), (N, 16, None)] {
+    for (n, t, input_q) in [(N / 2, 16, None), (N, 8, None), (N, 16, Some(132_120_577))] {
         mismatched_tables.push((
-            compile_encoded_lookup_table(2, n, t, input_q, BarrettModulus::new(Q), |_| Ok(0))
+            compile_encoded_lookup_table(2, n, t, input_q, NativeModulus::new(), |_| Ok(0))
                 .unwrap(),
-            compile_encoded_many_lookup_table(
-                2,
-                n,
-                2,
-                t,
-                input_q,
-                BarrettModulus::new(Q),
-                |_, _| Ok(0),
-            )
+            compile_encoded_many_lookup_table(2, n, 2, t, input_q, NativeModulus::new(), |_, _| {
+                Ok(0)
+            })
             .unwrap(),
         ));
     }
     mismatched_tables.push((
-        compile_encoded_lookup_table(2, N, 16, Some(Q), BarrettModulus::new(104_857_601), |_| {
-            Ok(0)
-        })
-        .unwrap(),
+        compile_encoded_lookup_table(2, N, 16, None, BarrettModulus::new(132_120_577), |_| Ok(0))
+            .unwrap(),
         compile_encoded_many_lookup_table(
             2,
             N,
             2,
             16,
-            Some(Q),
-            BarrettModulus::new(104_857_601),
+            None,
+            BarrettModulus::new(132_120_577),
             |_, _| Ok(0),
         )
         .unwrap(),
@@ -183,8 +171,10 @@ where
 }
 #[test]
 fn many_pbs_preserves_outputs_and_validates_domains() {
-    for order in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
-        let table = U32NttTable::new(N.trailing_zeros(), BarrettModulus::new(Q)).unwrap();
-        check_context(TfheContext::try_new(parameters(order), table).unwrap());
-    }
+    check_context(
+        TfheContext::try_new(parameters(), RustFftTable::new(N.trailing_zeros()).unwrap()).unwrap(),
+    );
+    check_context(
+        TfheContext::try_new(parameters(), TfheFftTable::new(N.trailing_zeros()).unwrap()).unwrap(),
+    );
 }

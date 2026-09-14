@@ -14,7 +14,7 @@ use primus_encoding::{PlaintextEmbedding, RoundedCodec};
 use primus_glwe::{
     GgswParameters, GlevParameters, GlweKeySwitchingParameters, GlweParameters, GlweSecretKey,
 };
-use primus_lwe::{LweCiphertext, LweParameters, LweSecretKey};
+use primus_lwe::{LweParameters, LweSecretKey};
 
 pub use boolean::{
     BOOLEAN_PLAINTEXT_BITS, BooleanCiphertext, BooleanDecryptor, BooleanEncryptor, BooleanError,
@@ -25,7 +25,7 @@ pub use key::{GlweClientKey, GlweKeyError};
 pub use parameters::{GlweParameterError, GlwePbsOrder, GlweTfheParameters};
 
 pub use primus_tfhe::{
-    Ciphertext, LookupTable, LookupTableError, LweSecretKeyRef, ManyLookupTable,
+    LookupTable, LookupTableError, LweCiphertext, LweSecretKeyRef, ManyLookupTable,
     ProgrammableBootstrap, ProgrammableBootstrapMany, TfheEvaluationError,
 };
 

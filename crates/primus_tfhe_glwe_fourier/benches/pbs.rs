@@ -87,16 +87,14 @@ fn bench_order(c: &mut Criterion, order: PbsOrder) {
         PbsOrder::BootstrapKeyswitch => server_key
             .bootstrapping_key()
             .fourier_blind_rotate_lookup_table_to(
-                input.as_lwe(),
+                &input,
                 lookup_table.polynomial(),
                 &mut main_glwe,
                 &mut fft,
                 &mut blind_rotation,
             ),
         PbsOrder::KeyswitchBootstrap => {
-            input
-                .as_lwe()
-                .inverse_extract_glwe_to(&mut main_glwe, POLY_LENGTH, modulus)
+            input.inverse_extract_glwe_to(&mut main_glwe, POLY_LENGTH, modulus)
         }
     }
     server_key.glwe_key_switching_key().key_switch_to(
@@ -126,11 +124,7 @@ fn bench_order(c: &mut Criterion, order: PbsOrder) {
     if order == PbsOrder::KeyswitchBootstrap {
         group.bench_function("inverse_sample_extraction", |b| {
             b.iter(|| {
-                input.as_lwe().inverse_extract_glwe_to(
-                    black_box(&mut main_glwe),
-                    POLY_LENGTH,
-                    modulus,
-                );
+                input.inverse_extract_glwe_to(black_box(&mut main_glwe), POLY_LENGTH, modulus);
                 black_box(&main_glwe);
             });
         });
@@ -155,7 +149,7 @@ fn bench_order(c: &mut Criterion, order: PbsOrder) {
     });
     group.bench_function("blind_rotation", |b| {
         let blind_rotation_input = match order {
-            PbsOrder::BootstrapKeyswitch => input.as_lwe(),
+            PbsOrder::BootstrapKeyswitch => &input,
             PbsOrder::KeyswitchBootstrap => &small_lwe,
         };
         b.iter(|| {
@@ -224,6 +218,43 @@ fn bench_order(c: &mut Criterion, order: PbsOrder) {
             black_box(&boolean_output);
         });
     });
+    // Each iteration produces the same 2/4 function outputs. Compare shared
+    // BR/KS against separate PBS calls; all tables, keys and outputs are reused.
+    for count in [2, 4] {
+        let value = |input: usize, output| ((input + output) % 4) as u32;
+        let many = context.compile_many_lookup_table_fn(count, value).unwrap();
+        let singles: Vec<_> = (0..count)
+            .map(|output| {
+                context
+                    .compile_lookup_table_fn(|input| value(input, output))
+                    .unwrap()
+            })
+            .collect();
+        let mut outputs = vec![input.clone(); count];
+        for shared in [false, true] {
+            let kind = if shared { "many" } else { "separate" };
+            group.bench_function(format!("complete_pbs_{kind}_{count}_reused_outputs"), |b| {
+                b.iter(|| {
+                    if shared {
+                        evaluator.apply_many_lookup_table_to(
+                            black_box(&input),
+                            black_box(&many),
+                            black_box(&mut outputs),
+                        );
+                    } else {
+                        for (table, output) in singles.iter().zip(&mut outputs) {
+                            evaluator.apply_lookup_table_to(
+                                black_box(&input),
+                                black_box(table),
+                                black_box(output),
+                            );
+                        }
+                    }
+                    black_box(&outputs);
+                });
+            });
+        }
+    }
     group.finish();
 }
 

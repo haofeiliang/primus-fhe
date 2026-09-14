@@ -2,7 +2,6 @@ use primus_encoding::PlaintextEmbedding;
 use primus_integer::FheUint;
 use primus_lwe::{LweCiphertext, LweSecretKeyRef};
 use primus_reduce::RingContext;
-use primus_tfhe::Ciphertext;
 
 use crate::{NtruClientKey, NtruKeyError, NtruTfheParameters};
 
@@ -35,38 +34,31 @@ where
         &self,
         message: Msg,
         rng: &mut R,
-    ) -> Result<Ciphertext<T>, NtruClientError>
+    ) -> Result<LweCiphertext<T>, NtruClientError>
     where
         R: rand::Rng + rand::CryptoRng,
         Msg: TryInto<T>,
     {
         let message = self.checked_message(message)?;
-        Ok(Ciphertext::from_lwe(self.encrypt_with_embedding(
-            message,
-            PlaintextEmbedding::Unsigned,
-            rng,
-        )))
+        Ok(self.encrypt_with_embedding(message, PlaintextEmbedding::Unsigned, rng))
     }
 
-    /// Encrypts an unsigned message in the programmable front half `[0, t/2)`.
+    /// Encrypts an unsigned message in the programmable front half `[0, ceil(t / 2))`.
     pub fn encrypt_padded<R, Msg>(
         &self,
         message: Msg,
         rng: &mut R,
-    ) -> Result<Ciphertext<T>, NtruClientError>
+    ) -> Result<LweCiphertext<T>, NtruClientError>
     where
         R: rand::Rng + rand::CryptoRng,
         Msg: TryInto<T>,
     {
         let message = self.checked_message(message)?;
-        if message >= (self.parameters.plain_modulus_value() >> 1u32) {
+        let modulus = self.parameters.plain_modulus_value();
+        if message >= modulus - (modulus >> 1u32) {
             return Err(NtruClientError::MessageOutsidePaddedDomain);
         }
-        Ok(Ciphertext::from_lwe(self.encrypt_with_embedding(
-            message,
-            PlaintextEmbedding::Unsigned,
-            rng,
-        )))
+        Ok(self.encrypt_with_embedding(message, PlaintextEmbedding::Unsigned, rng))
     }
 
     /// Encrypts a centered modular message in `[0, t)`.
@@ -74,17 +66,13 @@ where
         &self,
         message: Msg,
         rng: &mut R,
-    ) -> Result<Ciphertext<T>, NtruClientError>
+    ) -> Result<LweCiphertext<T>, NtruClientError>
     where
         R: rand::Rng + rand::CryptoRng,
         Msg: TryInto<T>,
     {
         let message = self.checked_message(message)?;
-        Ok(Ciphertext::from_lwe(self.encrypt_with_embedding(
-            message,
-            PlaintextEmbedding::Centered,
-            rng,
-        )))
+        Ok(self.encrypt_with_embedding(message, PlaintextEmbedding::Centered, rng))
     }
 
     /// Converts and range-checks one client message.
@@ -151,7 +139,7 @@ where
     }
 
     /// Decrypts to the canonical representative in `[0, t)`.
-    pub fn decrypt<Msg>(&self, ciphertext: &Ciphertext<T>) -> Result<Msg, NtruClientError>
+    pub fn decrypt<Msg>(&self, ciphertext: &LweCiphertext<T>) -> Result<Msg, NtruClientError>
     where
         Msg: TryFrom<T>,
     {
@@ -162,7 +150,7 @@ where
         }
         let parameters = self.parameters.external_lwe();
         let phase = LweSecretKeyRef::Signed(self.key.external_lwe_secret_key())
-            .decrypt_phase(ciphertext.as_lwe(), parameters.cipher_modulus());
+            .decrypt_phase(ciphertext, parameters.cipher_modulus());
         let message = parameters.plaintext_codec().decode_value(phase);
         Msg::try_from(message).map_err(|_| NtruClientError::PlaintextConversion)
     }

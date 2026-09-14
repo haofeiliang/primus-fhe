@@ -179,24 +179,41 @@ fn public_blind_rotation_rejects_mismatches_before_output_writes() {
         }
     }
 
-    // The LUT entry point also owns its per-call input/table/output checks.
-    for (input_len, lookup_len, output_len) in [
-        (input_len - 1, POLY_LENGTH, glwe_len),
-        (input_len, POLY_LENGTH - 1, glwe_len),
-        (input_len, POLY_LENGTH, glwe_len - 1),
+    // Raw LUT APIs own their checks independently of the evaluator's metadata.
+    for (input_len, lookup_len, output_len, count) in [
+        (input_len - 1, POLY_LENGTH, glwe_len, None),
+        (input_len, POLY_LENGTH - 1, glwe_len, None),
+        (input_len, POLY_LENGTH, glwe_len - 1, None),
+        (input_len - 1, POLY_LENGTH, glwe_len, Some(2)),
+        (input_len, POLY_LENGTH - 1, glwe_len, Some(2)),
+        (input_len, POLY_LENGTH, glwe_len - 1, Some(2)),
+        (input_len, POLY_LENGTH, glwe_len, Some(0)),
+        (input_len, POLY_LENGTH, glwe_len, Some(3)),
+        (input_len, POLY_LENGTH, glwe_len, Some(POLY_LENGTH * 2)),
     ] {
         let input = LweCiphertext::new(vec![0u32; input_len]);
         let lookup = Polynomial::<Vec<u32>>::zero(lookup_len);
         let mut output = GlweCiphertext::new(vec![17u32; output_len]);
         let before = output.as_ref().to_vec();
         let rejected = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            key.fourier_blind_rotate_lookup_table_to(
-                &input,
-                &lookup,
-                &mut output,
-                &mut fft,
-                &mut scratch,
-            );
+            if let Some(count) = count {
+                key.fourier_blind_rotate_many_lookup_table_to(
+                    &input,
+                    &lookup,
+                    count,
+                    &mut output,
+                    &mut fft,
+                    &mut scratch,
+                );
+            } else {
+                key.fourier_blind_rotate_lookup_table_to(
+                    &input,
+                    &lookup,
+                    &mut output,
+                    &mut fft,
+                    &mut scratch,
+                );
+            }
         }));
         assert!(rejected.is_err());
         assert_eq!(output.as_ref(), before);

@@ -1,6 +1,6 @@
 use primus_integer::FheUint;
 use primus_reduce::RingContext;
-use primus_tfhe::{Ciphertext, LookupTable, LookupTableError, ProgrammableBootstrap};
+use primus_tfhe::{LookupTable, LookupTableError, ProgrammableBootstrap};
 
 use crate::{
     GlweClientError, GlweClientKey, GlweDecryptor, GlweEncryptor, GlweTfheParameters,
@@ -13,32 +13,32 @@ pub const BOOLEAN_PLAINTEXT_BITS: u32 = 2;
 /// An LWE ciphertext encoding false as 0 and true as 1 modulo 4.
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[repr(transparent)]
-pub struct BooleanCiphertext<T: FheUint>(Ciphertext<T>);
+pub struct BooleanCiphertext<T: FheUint>(LweCiphertext<T>);
 
 impl<T: FheUint> BooleanCiphertext<T> {
     /// Wraps a raw ciphertext that is known to use the Boolean encoding.
     ///
     /// This operation cannot verify the encrypted plaintext.
     #[inline]
-    pub fn from_raw(ciphertext: Ciphertext<T>) -> Self {
+    pub fn from_raw(ciphertext: LweCiphertext<T>) -> Self {
         Self(ciphertext)
     }
 
-    /// Returns the underlying raw TFHE ciphertext.
+    /// Returns the underlying raw LWE ciphertext.
     #[inline]
-    pub fn as_raw(&self) -> &Ciphertext<T> {
+    pub fn as_raw(&self) -> &LweCiphertext<T> {
         &self.0
     }
 
-    /// Returns the underlying mutable raw TFHE ciphertext.
+    /// Returns the underlying mutable raw LWE ciphertext.
     #[inline]
-    pub fn as_raw_mut(&mut self) -> &mut Ciphertext<T> {
+    pub fn as_raw_mut(&mut self) -> &mut LweCiphertext<T> {
         &mut self.0
     }
 
-    /// Decomposes this wrapper into its raw TFHE ciphertext.
+    /// Decomposes this wrapper into its raw LWE ciphertext.
     #[inline]
-    pub fn into_raw(self) -> Ciphertext<T> {
+    pub fn into_raw(self) -> LweCiphertext<T> {
         self.0
     }
 }
@@ -174,7 +174,7 @@ where
     bootstrapper: E,
     gate_lookup_tables: [LookupTable<T>; 4],
     output_shift: T,
-    gate_input: Ciphertext<T>,
+    gate_input: LweCiphertext<T>,
     mux_branch: BooleanCiphertext<T>,
 }
 
@@ -203,9 +203,8 @@ where
         )
         .encode_value(T::ONE, PlaintextEmbedding::Unsigned);
         let dimension = parameters.ciphertext_lwe_dimension();
-        let gate_input = Ciphertext::from_lwe(LweCiphertext::zero(dimension));
-        let mux_branch =
-            BooleanCiphertext::from_raw(Ciphertext::from_lwe(LweCiphertext::zero(dimension)));
+        let gate_input = LweCiphertext::zero(dimension);
+        let mux_branch = BooleanCiphertext::from_raw(LweCiphertext::zero(dimension));
         Ok(Self {
             parameters,
             bootstrapper,
@@ -246,7 +245,7 @@ where
         self.parameters
             .small_lwe()
             .cipher_modulus()
-            .reduce_add_assign(output.as_raw_mut().as_lwe_mut().b_mut(), self.output_shift);
+            .reduce_add_assign(output.as_raw_mut().b_mut(), self.output_shift);
     }
 
     /// Evaluates an AND gate.
@@ -345,36 +344,29 @@ where
             self.mux_branch.as_raw_mut(),
         );
         let modulus = self.parameters.small_lwe().cipher_modulus();
-        modulus.reduce_add_assign(
-            self.mux_branch.as_raw_mut().as_lwe_mut().b_mut(),
-            self.output_shift,
-        );
+        modulus.reduce_add_assign(self.mux_branch.as_raw_mut().b_mut(), self.output_shift);
 
         assert_dimension(else_value.as_raw(), self.parameters);
         self.gate_input
-            .as_lwe_mut()
             .0
-            .copy_from_slice(else_value.as_raw().as_lwe().0.as_slice());
-        self.gate_input
-            .as_lwe_mut()
-            .sub_assign(condition.as_raw().as_lwe(), modulus);
+            .copy_from_slice(else_value.as_raw().0.as_slice());
+        self.gate_input.sub_assign(condition.as_raw(), modulus);
         let encoded_one = self
             .parameters
             .small_lwe()
             .plaintext_codec()
             .encode_value(T::ONE, PlaintextEmbedding::Unsigned);
-        modulus.reduce_add_assign(self.gate_input.as_lwe_mut().b_mut(), encoded_one);
+        modulus.reduce_add_assign(self.gate_input.b_mut(), encoded_one);
 
         self.bootstrapper.apply_lookup_table_to(
             &self.gate_input,
             &self.gate_lookup_tables[BooleanGate::And.lookup_table_index()],
             output.as_raw_mut(),
         );
-        modulus.reduce_add_assign(output.as_raw_mut().as_lwe_mut().b_mut(), self.output_shift);
+        modulus.reduce_add_assign(output.as_raw_mut().b_mut(), self.output_shift);
         output
             .as_raw_mut()
-            .as_lwe_mut()
-            .add_assign(self.mux_branch.as_raw().as_lwe(), modulus);
+            .add_assign(self.mux_branch.as_raw(), modulus);
     }
 
     /// Negates a Boolean ciphertext without programmable bootstrapping.
@@ -390,11 +382,10 @@ where
         assert_dimension(output.as_raw(), self.parameters);
         output
             .as_raw_mut()
-            .as_lwe_mut()
             .0
-            .copy_from_slice(input.as_raw().as_lwe().0.as_slice());
+            .copy_from_slice(input.as_raw().0.as_slice());
         let modulus = self.parameters.small_lwe().cipher_modulus();
-        output.as_raw_mut().as_lwe_mut().neg_assign(modulus);
+        output.as_raw_mut().neg_assign(modulus);
         let encoded_one = self
             .parameters
             .small_lwe()
@@ -402,7 +393,6 @@ where
             .encode_value(T::ONE, PlaintextEmbedding::Unsigned);
         output
             .as_raw_mut()
-            .as_lwe_mut()
             .add_plaintext_assign(encoded_one, modulus);
     }
 
@@ -429,7 +419,7 @@ fn prepare_binary_gate<T, LM, GM>(
     gate: BooleanGate,
     lhs: &BooleanCiphertext<T>,
     rhs: &BooleanCiphertext<T>,
-    output: &mut Ciphertext<T>,
+    output: &mut LweCiphertext<T>,
     parameters: &GlweTfheParameters<T, LM, GM>,
 ) where
     T: FheUint,
@@ -442,15 +432,11 @@ fn prepare_binary_gate<T, LM, GM>(
 
     match gate {
         BooleanGate::And | BooleanGate::Nand | BooleanGate::Or | BooleanGate::Nor => {
-            lhs.as_raw()
-                .as_lwe()
-                .add_to(rhs.as_raw().as_lwe(), output.as_lwe_mut(), modulus);
+            lhs.as_raw().add_to(rhs.as_raw(), output, modulus);
         }
         BooleanGate::Xor | BooleanGate::Xnor => {
-            lhs.as_raw()
-                .as_lwe()
-                .sub_to(rhs.as_raw().as_lwe(), output.as_lwe_mut(), modulus);
-            output.as_lwe_mut().mul_scalar_assign(T::TWO, modulus);
+            lhs.as_raw().sub_to(rhs.as_raw(), output, modulus);
+            output.mul_scalar_assign(T::TWO, modulus);
         }
     }
 }
@@ -481,7 +467,7 @@ where
 }
 
 fn assert_dimension<T, LM, GM>(
-    ciphertext: &Ciphertext<T>,
+    ciphertext: &LweCiphertext<T>,
     parameters: &GlweTfheParameters<T, LM, GM>,
 ) where
     T: FheUint,

@@ -47,17 +47,8 @@ fn bench_order(c: &mut Criterion, order: PbsOrder) {
     let encryptor = context.encryptor(&client_key).unwrap();
     let input = encryptor.encrypt_padded(1u32, &mut rng).unwrap();
     let lookup_table = context.compile_lookup_table_slice(&[1u32, 0]).unwrap();
-    let many_lookup_table = context
-        .compile_many_lookup_table_fn(4, |input, output| match output {
-            0 => input as u32,
-            1 => (1 - input) as u32,
-            2 => (input + 1) as u32,
-            _ => 0,
-        })
-        .unwrap();
     let mut evaluator = context.evaluator(&server_key).unwrap();
     let mut output = input.clone();
-    let mut many_outputs = vec![input.clone(); many_lookup_table.output_count()];
 
     let mut blind_rotation = NttGlweBlindRotationContext::new(parameters.bootstrapping().size());
     let mut key_switching = NttGlweKeySwitchingContext::new(
@@ -75,7 +66,7 @@ fn bench_order(c: &mut Criterion, order: PbsOrder) {
         PbsOrder::BootstrapKeyswitch => server_key
             .bootstrapping_key()
             .ntt_blind_rotate_lookup_table_to(
-                input.as_lwe(),
+                &input,
                 lookup_table.polynomial(),
                 &mut main_glwe,
                 modulus,
@@ -83,9 +74,7 @@ fn bench_order(c: &mut Criterion, order: PbsOrder) {
                 &mut blind_rotation,
             ),
         PbsOrder::KeyswitchBootstrap => {
-            input
-                .as_lwe()
-                .inverse_extract_glwe_to(&mut main_glwe, poly_length, modulus)
+            input.inverse_extract_glwe_to(&mut main_glwe, poly_length, modulus)
         }
     }
     server_key.glwe_key_switching_key().key_switch_to(
@@ -117,11 +106,7 @@ fn bench_order(c: &mut Criterion, order: PbsOrder) {
     if order == PbsOrder::KeyswitchBootstrap {
         group.bench_function("inverse_sample_extraction", |b| {
             b.iter(|| {
-                input.as_lwe().inverse_extract_glwe_to(
-                    black_box(&mut main_glwe),
-                    poly_length,
-                    modulus,
-                );
+                input.inverse_extract_glwe_to(black_box(&mut main_glwe), poly_length, modulus);
                 black_box(&main_glwe);
             });
         });
@@ -147,7 +132,7 @@ fn bench_order(c: &mut Criterion, order: PbsOrder) {
     });
     group.bench_function("blind_rotation", |b| {
         let blind_rotation_input = match order {
-            PbsOrder::BootstrapKeyswitch => input.as_lwe(),
+            PbsOrder::BootstrapKeyswitch => &input,
             PbsOrder::KeyswitchBootstrap => &small_lwe,
         };
         b.iter(|| {
@@ -186,16 +171,6 @@ fn bench_order(c: &mut Criterion, order: PbsOrder) {
             black_box(evaluator.apply_lookup_table(black_box(&input), black_box(&lookup_table)));
         });
     });
-    group.bench_function("complete_pbs_many_4_reused_outputs", |b| {
-        b.iter(|| {
-            evaluator.apply_many_lookup_table_to(
-                black_box(&input),
-                black_box(&many_lookup_table),
-                black_box(&mut many_outputs),
-            );
-            black_box(&many_outputs);
-        });
-    });
     // One representative per binary input path: add, and subtract-then-double.
     for gate in [BooleanGate::And, BooleanGate::Xor] {
         group.bench_function(format!("boolean_{gate:?}").to_lowercase(), |b| {
@@ -227,6 +202,43 @@ fn bench_order(c: &mut Criterion, order: PbsOrder) {
             black_box(&boolean_output);
         });
     });
+    // Each iteration produces the same 2/4 function outputs. Compare shared
+    // BR/KS against separate PBS calls; all tables, keys and outputs are reused.
+    for count in [2, 4] {
+        let value = |input: usize, output| ((input + output) % 4) as u32;
+        let many = context.compile_many_lookup_table_fn(count, value).unwrap();
+        let singles: Vec<_> = (0..count)
+            .map(|output| {
+                context
+                    .compile_lookup_table_fn(|input| value(input, output))
+                    .unwrap()
+            })
+            .collect();
+        let mut outputs = vec![input.clone(); count];
+        for shared in [false, true] {
+            let kind = if shared { "many" } else { "separate" };
+            group.bench_function(format!("complete_pbs_{kind}_{count}_reused_outputs"), |b| {
+                b.iter(|| {
+                    if shared {
+                        evaluator.apply_many_lookup_table_to(
+                            black_box(&input),
+                            black_box(&many),
+                            black_box(&mut outputs),
+                        );
+                    } else {
+                        for (table, output) in singles.iter().zip(&mut outputs) {
+                            evaluator.apply_lookup_table_to(
+                                black_box(&input),
+                                black_box(table),
+                                black_box(output),
+                            );
+                        }
+                    }
+                    black_box(&outputs);
+                });
+            });
+        }
+    }
     group.finish();
 }
 

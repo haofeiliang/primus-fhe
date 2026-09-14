@@ -1,7 +1,6 @@
 use primus_integer::FheUint;
 use primus_lwe::LweSecretKeyRef;
 use primus_reduce::RingContext;
-use primus_tfhe::Ciphertext;
 
 use crate::{
     GlweClientKey, GlweKeyError, GlwePbsOrder, GlweTfheParameters, LweCiphertext,
@@ -43,20 +42,16 @@ where
         &self,
         message: Msg,
         rng: &mut R,
-    ) -> Result<Ciphertext<T>, GlweClientError>
+    ) -> Result<LweCiphertext<T>, GlweClientError>
     where
         R: rand::Rng + rand::CryptoRng,
         Msg: TryInto<T>,
     {
         let message = self.checked_message(message)?;
-        Ok(Ciphertext::from_lwe(self.encrypt_with_embedding(
-            message,
-            PlaintextEmbedding::Unsigned,
-            rng,
-        )))
+        Ok(self.encrypt_with_embedding(message, PlaintextEmbedding::Unsigned, rng))
     }
 
-    /// Encrypts a message in the padded domain `[0, floor(t / 2))`.
+    /// Encrypts a message in the padded domain `[0, ceil(t / 2))`.
     ///
     /// This preserves the input-padding invariant required by an arbitrary
     /// (not necessarily negacyclic) programmable-bootstrap lookup table.
@@ -64,22 +59,18 @@ where
         &self,
         message: Msg,
         rng: &mut R,
-    ) -> Result<Ciphertext<T>, GlweClientError>
+    ) -> Result<LweCiphertext<T>, GlweClientError>
     where
         R: rand::Rng + rand::CryptoRng,
         Msg: TryInto<T>,
     {
         let message = self.checked_message(message)?;
         let modulus = self.parameters.plain_modulus_value();
-        let front_domain_len = modulus >> 1u32;
+        let front_domain_len = modulus - (modulus >> 1u32);
         if message >= front_domain_len {
             return Err(GlweClientError::MessageOutsidePaddedDomain);
         }
-        Ok(Ciphertext::from_lwe(self.encrypt_with_embedding(
-            message,
-            PlaintextEmbedding::Unsigned,
-            rng,
-        )))
+        Ok(self.encrypt_with_embedding(message, PlaintextEmbedding::Unsigned, rng))
     }
 
     /// Encrypts a centered modular message in the range `[0, t)`.
@@ -90,17 +81,13 @@ where
         &self,
         message: Msg,
         rng: &mut R,
-    ) -> Result<Ciphertext<T>, GlweClientError>
+    ) -> Result<LweCiphertext<T>, GlweClientError>
     where
         R: rand::Rng + rand::CryptoRng,
         Msg: TryInto<T>,
     {
         let message = self.checked_message(message)?;
-        Ok(Ciphertext::from_lwe(self.encrypt_with_embedding(
-            message,
-            PlaintextEmbedding::Centered,
-            rng,
-        )))
+        Ok(self.encrypt_with_embedding(message, PlaintextEmbedding::Centered, rng))
     }
 
     #[inline]
@@ -181,7 +168,7 @@ where
     }
 
     /// Decrypts to the canonical representative in `[0, t)`.
-    pub fn decrypt<Msg>(&self, ciphertext: &Ciphertext<T>) -> Result<Msg, GlweClientError>
+    pub fn decrypt<Msg>(&self, ciphertext: &LweCiphertext<T>) -> Result<Msg, GlweClientError>
     where
         Msg: TryFrom<T>,
     {
@@ -196,13 +183,13 @@ where
                 let parameters = self.parameters.small_lwe();
                 self.key
                     .small_lwe_secret_key()
-                    .decrypt(ciphertext.as_lwe(), parameters)
+                    .decrypt(ciphertext, parameters)
             }
             GlwePbsOrder::KeyswitchBootstrap => {
                 // TFHE construction validates equal t and q for both key domains.
                 let parameters = self.parameters.glwe();
                 let phase = LweSecretKeyRef::Signed(self.key.glwe_secret_key().as_slice())
-                    .decrypt_phase(ciphertext.as_lwe(), parameters.cipher_modulus());
+                    .decrypt_phase(ciphertext, parameters.cipher_modulus());
                 self.parameters
                     .small_lwe()
                     .plaintext_codec()

@@ -2,7 +2,7 @@ use primus_integer::FheUint;
 use primus_lattice::{lwe::Lwe, ntru::Ntru};
 use primus_ntt::NttTable;
 use primus_poly::{Polynomial, PolynomialOwned};
-use primus_tfhe::backend_support::modulus_switch;
+use primus_tfhe::backend_support::windowed_modulus_switch;
 
 use crate::{ServerKey, TfheParameters};
 
@@ -28,10 +28,13 @@ impl<T: FheUint> BlindRotationWorkspace<T> {
 ///
 /// On return, `workspace.current` contains an `NTRU_f_acc` encryption of the
 /// selected LUT phase.
+// The evaluator validates the LUT domain, length and window before this kernel.
+// A window of one preserves the ordinary PBS modulus-switching path.
 pub(crate) fn blind_rotate_lookup_table_to<T, Table, A>(
     server_key: &ServerKey<T>,
     input: &Lwe<A>,
     lookup_table: &PolynomialOwned<T>,
+    output_count: usize,
     workspace: &mut BlindRotationWorkspace<T>,
     parameters: &TfheParameters<T>,
     ntt: &Table,
@@ -43,7 +46,7 @@ pub(crate) fn blind_rotate_lookup_table_to<T, Table, A>(
     let poly_length = parameters.poly_length();
     let two_n = poly_length * 2;
     let input_modulus = parameters.external_lwe().cipher_modulus_value();
-    let exponent_of = |value| modulus_switch(value, input_modulus, two_n);
+    let exponent_of = |value| windowed_modulus_switch(value, input_modulus, two_n, output_count);
     let initial_exponent = exponent_of(input.b()).wrapping_neg() & (two_n - 1);
     lookup_table.mul_monomial_to(
         initial_exponent,

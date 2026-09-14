@@ -11,7 +11,7 @@ use primus_lattice::ggsw::NttGgsw;
 use primus_lwe::LweCiphertext;
 use primus_ntt::NttTable;
 use primus_reduce::{Modulus, ReduceMul};
-use primus_tfhe::{Ciphertext, LookupTableError, ManyLookupTable};
+use primus_tfhe::{LookupTableError, ManyLookupTable};
 use primus_tfhe_glwe::GlwePbsOrder as PbsOrder;
 
 use crate::{
@@ -96,7 +96,7 @@ where
             domain_len,
             poly_length,
             parameters.many_lut_output_count(),
-            tfhe.small_lwe().plaintext_codec(),
+            tfhe.plain_modulus_value(),
             tfhe.small_lwe().cipher_modulus().explicit_value(),
             modulus,
             |input, output_index| {
@@ -131,15 +131,27 @@ where
     }
 
     /// Circuit-bootstraps into a newly allocated NTT GGSW ciphertext.
-    pub fn circuit_bootstrap(&mut self, input: &Ciphertext<T>) -> NttGgsw<Vec<T>> {
+    pub fn circuit_bootstrap(&mut self, input: &LweCiphertext<T>) -> NttGgsw<Vec<T>> {
         let mut output = NttGgsw::zero(self.parameters.output().ggsw_len());
         self.circuit_bootstrap_to(input, &mut output);
         output
     }
 
     /// Converts an external LWE ciphertext into an NTT GGSW under the main
-    /// GLWE key.
-    pub fn circuit_bootstrap_to<S>(&mut self, input: &Ciphertext<T>, output: &mut NttGgsw<S>)
+    /// GLWE key. Output levels preserve the gadget scalars compiled by this
+    /// evaluator; they do not use the ordinary LWE plaintext scale.
+    ///
+    /// # Correctness
+    ///
+    /// Input must use this context's external key and unsigned rounded encoding,
+    /// with a plaintext in the independently programmed front half and canonical
+    /// residues. Noise must fit the coarser ManyLUT rotation intervals.
+    ///
+    /// # Panics
+    ///
+    /// Panics before output writes if the input dimension or output GGSW layout
+    /// differs from the context. LUT parameters are fixed during construction.
+    pub fn circuit_bootstrap_to<S>(&mut self, input: &LweCiphertext<T>, output: &mut NttGgsw<S>)
     where
         S: DataMut<Elem = T>,
     {
@@ -156,7 +168,7 @@ where
         );
 
         let small_lwe = match tfhe.pbs_order() {
-            PbsOrder::BootstrapKeyswitch => input.as_lwe(),
+            PbsOrder::BootstrapKeyswitch => input,
             PbsOrder::KeyswitchBootstrap => {
                 self.prepare_small_lwe(input);
                 &self.small_lwe
@@ -191,10 +203,10 @@ where
         );
     }
 
-    fn prepare_small_lwe(&mut self, input: &Ciphertext<T>) {
+    fn prepare_small_lwe(&mut self, input: &LweCiphertext<T>) {
         let tfhe = self.context.parameters();
         let glwe = tfhe.glwe();
-        input.as_lwe().inverse_extract_glwe_to(
+        input.inverse_extract_glwe_to(
             &mut self.main_glwe,
             glwe.poly_length(),
             glwe.cipher_modulus(),

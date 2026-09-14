@@ -15,7 +15,7 @@ use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntru::{NlevParameters, NtruParameters, NtruSecretKey, SecretKeyDistr};
 use primus_ntt::{NttTable, U32NttTable};
 use primus_reduce::RingContext;
-use primus_tfhe::{Ciphertext, LookupTable};
+use primus_tfhe::{LookupTable, LweCiphertext};
 use primus_tfhe_ntru::NtruTfheParameters;
 use rand::{RngExt, SeedableRng, rngs::StdRng};
 
@@ -390,9 +390,9 @@ fn measure_pbs<Encrypt, Evaluate, Measure>(
     mut measure: Measure,
 ) -> Result<PbsStats, String>
 where
-    Encrypt: FnMut(u32, &mut StdRng) -> Result<Ciphertext<u32>, String>,
-    Evaluate: FnMut(&Ciphertext<u32>, &LookupTable<u32>, &mut Ciphertext<u32>),
-    Measure: FnMut(&Ciphertext<u32>, u32) -> OutputMeasurement,
+    Encrypt: FnMut(u32, &mut StdRng) -> Result<LweCiphertext<u32>, String>,
+    Evaluate: FnMut(&LweCiphertext<u32>, &LookupTable<u32>, &mut LweCiphertext<u32>),
+    Measure: FnMut(&LweCiphertext<u32>, u32) -> OutputMeasurement,
 {
     let domain_len = config.programmable_domain_len();
     let cold_input = encrypt(0, rng)?;
@@ -448,7 +448,7 @@ where
 }
 
 fn measure_output<M>(
-    ciphertext: &Ciphertext<u32>,
+    ciphertext: &LweCiphertext<u32>,
     expected: u32,
     secret_key: &[i32],
     parameters: &LweParameters<u32, M>,
@@ -457,8 +457,7 @@ where
     M: RingContext<u32>,
 {
     let modulus = parameters.cipher_modulus();
-    let phase =
-        primus_lwe::LweSecretKeyRef::Signed(secret_key).decrypt_phase(ciphertext.as_lwe(), modulus);
+    let phase = primus_lwe::LweSecretKeyRef::Signed(secret_key).decrypt_phase(ciphertext, modulus);
     let decoded = parameters.plaintext_codec().decode_value(phase);
     let expected_encoding = parameters
         .plaintext_codec()

@@ -11,7 +11,7 @@ where
     GM: RingContext<T>,
 {
     /// Compiles a unary function over the independently programmable front
-    /// half of the plaintext domain.
+    /// half `0..ceil(t/2)` of the plaintext domain. Outputs must belong to `0..t`.
     pub fn compile_lookup_table_fn<F>(
         &self,
         function: F,
@@ -39,7 +39,11 @@ where
     }
 
     /// Compiles `output_count` functions over the independently programmable
-    /// front half of the plaintext domain into one PBSManyLUT accumulator.
+    /// front half `0..ceil(t/2)` of the plaintext domain into one PBSManyLUT accumulator.
+    ///
+    /// Function arguments are `(input, output_index)` and outputs belong to `0..t`.
+    /// The output count must be a non-zero power of two with `ceil(t/2) <= N / count`.
+    /// See [`ManyLookupTable`] for the reduced rotation resolution.
     pub fn compile_many_lookup_table_fn<F>(
         &self,
         output_count: usize,
@@ -138,7 +142,7 @@ where
         primus_tfhe::compile_encoded_lookup_table(
             domain_len,
             glwe.poly_length(),
-            lwe.plaintext_codec(),
+            lwe.plain_modulus_value(),
             lwe.cipher_modulus().explicit_value(),
             glwe.cipher_modulus(),
             encoded_output_at,
@@ -161,7 +165,7 @@ where
             domain_len,
             glwe.poly_length(),
             output_count,
-            lwe.plaintext_codec(),
+            lwe.plain_modulus_value(),
             lwe.cipher_modulus().explicit_value(),
             glwe.cipher_modulus(),
             encoded_output_at,
