@@ -8,7 +8,7 @@ use primus_fft::{FftEngine, FftTable, RustFftTable, TfheFftTable};
 use primus_lattice::{
     context::FourierNtruExternalProductContext,
     ngsw::{FourierNgswOwned, Ngsw},
-    ntru::Ntru,
+    ntru::{FourierNtruOwned, Ntru},
 };
 use support::{LOG_B, PRODUCT_CASES};
 
@@ -40,6 +40,7 @@ fn fourier(c: &mut Criterion, backend: &str, table: impl FftTable, levels: usize
     let mut key = FourierNgswOwned::zero(levels * fft.fourier_length());
     coeff_key.write_fourier_form(&mut key, &mut fft);
     let mut output = Ntru::new(vec![0u64; poly_length]);
+    let mut fourier_output = FourierNtruOwned::zero(poly_length / 2);
     let mut context = FourierNtruExternalProductContext::new(poly_length);
 
     let mut group = c.benchmark_group(format!(
@@ -52,6 +53,17 @@ fn fourier(c: &mut Criterion, backend: &str, table: impl FftTable, levels: usize
             black_box(&key).external_product_to(
                 black_box(&input),
                 black_box(&mut output),
+                black_box(&basis),
+                black_box(&mut fft),
+                black_box(&mut context),
+            )
+        });
+    });
+    group.bench_function("external_product_fourier", |b| {
+        b.iter(|| {
+            black_box(&key).external_product_fourier_to(
+                black_box(&input),
+                black_box(&mut fourier_output),
                 black_box(&basis),
                 black_box(&mut fft),
                 black_box(&mut context),

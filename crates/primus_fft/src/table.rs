@@ -1,4 +1,5 @@
 use num_complex::Complex64;
+use zeroize::Zeroize;
 
 use crate::{FftError, TorusFftValue};
 
@@ -118,6 +119,24 @@ pub trait FftTable: Send + Sync {
 pub struct FftEngine<'a, Table: FftTable + ?Sized> {
     table: &'a Table,
     scratch: Table::Scratch,
+}
+
+impl<Table: FftTable + ?Sized> FftEngine<'_, Table>
+where
+    Table::Scratch: Zeroize,
+{
+    /// Securely erases the backend workspace after a sequence of transforms.
+    ///
+    /// The built-in backends preserve lengths and allocations, so the engine
+    /// remains reusable. They also erase their workspace on drop. A custom
+    /// backend determines its own `Zeroize` and drop behavior.
+    ///
+    /// Transform calls do not erase scratch automatically: callers processing
+    /// secrets can use this at a lifecycle boundary without adding writes to
+    /// every transform. It does not erase caller-owned inputs or outputs.
+    pub fn zeroize_scratch(&mut self) {
+        self.scratch.zeroize();
+    }
 }
 
 impl<'a, Table: FftTable + ?Sized> FftEngine<'a, Table> {

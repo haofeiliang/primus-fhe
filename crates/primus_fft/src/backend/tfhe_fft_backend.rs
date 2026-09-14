@@ -3,6 +3,7 @@ use std::{f64::consts::PI, time::Duration};
 use dyn_stack::{PodBuffer, PodStack};
 use num_complex::Complex64;
 use tfhe_fft::unordered::{Method, Plan};
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::{FftError, FftTable, TorusFftValue};
 
@@ -16,9 +17,32 @@ pub struct TfheFftTable {
 }
 
 /// Reusable workspace for [`TfheFftTable`].
+/// Contents, including spare capacity and backend work memory, are securely
+/// erased on drop. Explicit zeroization preserves lengths and allocations.
 pub struct TfheFftScratch {
     values: Vec<Complex64>,
     memory: PodBuffer,
+}
+
+impl Zeroize for TfheFftScratch {
+    fn zeroize(&mut self) {
+        for value in &mut self.values {
+            value.re.zeroize();
+            value.im.zeroize();
+        }
+        self.values.spare_capacity_mut().zeroize();
+        // PodBuffer exposes the full initialized allocation, including any
+        // alignment padding used by the dynamic stack. Keep its length intact.
+        self.memory[..].zeroize();
+    }
+}
+
+impl ZeroizeOnDrop for TfheFftScratch {}
+
+impl Drop for TfheFftScratch {
+    fn drop(&mut self) {
+        self.zeroize();
+    }
 }
 
 impl TfheFftTable {

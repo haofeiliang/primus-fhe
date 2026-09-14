@@ -64,6 +64,11 @@ Table 不可变并实现 `Send + Sync`，因此可以在线程间共享。每个
 必须创建自己的 `FftEngine`，或者通过 `new_scratch` 获得独立 scratch；不同变换
 调用之间不能共享可变 workspace。
 
+内置 scratch 类型在析构时抗优化擦除完整缓冲区。处理秘密数据后，可以调用
+`fft.zeroize_scratch()` 擦除工作区并保留其可复用性；普通变换不会在每次调用时
+自动擦除 scratch。调用方持有的输入和输出有独立生命周期；这里的堆缓冲区保证
+不覆盖寄存器或编译器生成的栈副本。自定义后端自行定义 scratch 擦除行为。
+
 输入和输出长度必须精确匹配：
 
 - 系数 slice 包含 `poly_length()` 个值；

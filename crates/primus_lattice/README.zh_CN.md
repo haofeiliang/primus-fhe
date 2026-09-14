@@ -27,6 +27,12 @@
 
 NLev 与 NGSW 的存储形状相同，但语义不同：`beta` 的 NLev 各层相位为 `v_i*beta`，而 `beta` 的 NGSW 各层相位为 `v_i*f*beta`。它们适用的 gadget product 不同，因此保留为独立类型。
 
+NLev/NGSW 的单多项式外积可以写出系数，也可以通过 `external_product_ntt_to` /
+`external_product_fourier_to` 保留 NTT/Fourier 结果，直接在输出缓冲区累加。NTT 系数
+输出也复用目标缓冲区，最后原地逆变换；Fourier 系数输出仍用独立复数工作区转回 torus，
+Fourier 输出则省去这一步转换和舍入。`NGSW.external_product_nlev_to` 要求输入与输出 NLev 层数相同，
+但它们独立于控制密文的分解基；输出保留输入的 gadget 尺度。
+
 ## 存储与布局
 
 密文包装类型以存储 `S` 为泛型，通过 [`primus_data`](../primus_data/README.zh_CN.md) 访问数据。各运算要求相应的只读、可变或拥有存储能力。借用形式直接操作调用方的切片。

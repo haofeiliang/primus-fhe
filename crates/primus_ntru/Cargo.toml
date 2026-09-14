@@ -9,6 +9,7 @@ primus_decompose = { path = "../primus_decompose" }
 primus_distr = { path = "../primus_distr" }
 primus_fft = { path = "../primus_fft" }
 primus_encoding = { path = "../primus_encoding" }
+primus_factor = { path = "../primus_factor" }
 primus_integer = { path = "../primus_integer" }
 primus_lattice = { path = "../primus_lattice" }
 primus_modulus = { path = "../primus_modulus" }
@@ -28,10 +29,19 @@ criterion = { workspace = true }
 name = "constant_gadget"
 harness = false
 
+[[bench]]
+name = "primitives"
+harness = false
+
+[[bench]]
+name = "encryption"
+harness = false
+
 [features]
 default = []
 simd = [
     "primus_integer/simd",
+    "primus_factor/simd",
     "primus_lattice/simd",
     "primus_ntt/simd",
     "primus_poly/simd",

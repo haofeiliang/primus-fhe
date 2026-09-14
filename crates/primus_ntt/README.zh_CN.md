@@ -46,6 +46,10 @@ assert_eq!(values, expected);
 Table 的构造应放在重复变换路径之外，并复用构造结果。Table 不可变并实现
 `Send + Sync`，因此可以在线程间共享。
 
+`NttAutomorphismPermutation::new(degree, N)` 缓存 table 的 bit-reversed 顺序下
+的 `X -> X^degree` 映射。它要求 `degree` 为 `[1, 2N)` 内的奇数，`N >= 2` 为
+2 次幂。`apply_to` 只置换点值并保留其 residue 范围；同态使用仍需方案层的 key switching。
+
 ## 表示与取值范围
 
 对于 `N = 2^log_n`，正向变换读取按幂次升序排列的系数，生成 bit-reversed 顺序的

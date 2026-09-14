@@ -67,9 +67,34 @@ impl<T: FheUint> NttNtruKeySwitchingKey<T> {
             .ntru()
             .cipher_modulus()
             .encode_signed_slice_to(input_secret_key.as_slice(), encoded_secret.as_mut_slice());
+        Self::generate_encoded(
+            encoded_secret.as_slice(),
+            output_secret_key,
+            parameters,
+            ntt,
+            rng,
+            context,
+        )
+    }
+
+    /// Generates from canonical coefficients, also used for the automorphed
+    /// secret without constructing or inverting another secret-key object.
+    pub(crate) fn generate_encoded<M, Table, R>(
+        input_secret: &[T],
+        output_secret_key: &NttNtruSecretKey<T>,
+        parameters: &NlevParameters<T, M>,
+        ntt: &Table,
+        rng: &mut R,
+        context: &mut NttNtruGadgetEncryptContext<T>,
+    ) -> Self
+    where
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+        R: rand::Rng + rand::CryptoRng,
+    {
         let mut data = NttNlev::zero(parameters.nlev_len());
         output_secret_key.encrypt_nlev_to(
-            &Polynomial::new(encoded_secret.as_slice()),
+            &Polynomial::new(input_secret),
             &mut data,
             parameters,
             ntt,
@@ -78,7 +103,7 @@ impl<T: FheUint> NttNtruKeySwitchingKey<T> {
         );
         Self {
             data,
-            poly_length,
+            poly_length: parameters.poly_length(),
             basis: parameters.basis().clone(),
         }
     }
@@ -106,6 +131,8 @@ impl<T: FheUint> NttNtruKeySwitchingKey<T> {
     /// Key-switches a coefficient-domain NTRU ciphertext into `output`.
     ///
     /// Uses the polynomial length and decomposition basis stored in this key.
+    /// Accumulates into `output` in NTT form, then inverse-transforms it in place;
+    /// no intermediate accumulator copy or online allocation is needed.
     ///
     /// # Correctness
     ///
@@ -140,6 +167,20 @@ impl<T: FheUint> NttNtruKeySwitchingKey<T> {
             self.poly_length,
             "key-switch output length mismatch"
         );
+        self.assert_compatible(modulus, ntt, context);
+        self.key_switch_kernel_to(input, output, modulus, ntt, context);
+    }
+
+    /// Validates resources shared by standalone and automorphism key switching.
+    pub(crate) fn assert_compatible<M, Table>(
+        &self,
+        modulus: M,
+        ntt: &Table,
+        context: &NttNtruExternalProductContext<T>,
+    ) where
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+    {
         assert_eq!(
             context.poly_length(),
             self.poly_length,
@@ -160,6 +201,22 @@ impl<T: FheUint> NttNtruKeySwitchingKey<T> {
             modulus.value(),
             "key-switch NTT modulus mismatch"
         );
+    }
+
+    /// Applies after the owning boundary has checked operand lengths and resources.
+    pub(crate) fn key_switch_kernel_to<M, Table, A, B>(
+        &self,
+        input: &NtruCiphertext<A>,
+        output: &mut NtruCiphertext<B>,
+        modulus: M,
+        ntt: &Table,
+        context: &mut NttNtruExternalProductContext<T>,
+    ) where
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
+    {
         self.data.external_product_to(
             &Polynomial(input.as_ref()),
             output,

@@ -4,7 +4,11 @@ mod support;
 
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use primus_decompose::primitive::ApproxSignedBasis;
-use primus_lattice::{context::NttNtruExternalProductContext, ngsw::Ngsw, ntru::Ntru};
+use primus_lattice::{
+    context::NttNtruExternalProductContext,
+    ngsw::Ngsw,
+    ntru::{Ntru, NttNtru},
+};
 use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, UintNttTable};
 use support::{LOG_B, PRODUCT_CASES};
@@ -28,6 +32,7 @@ fn ntt(c: &mut Criterion, log_n: u32, levels: usize) {
     )
     .into_ntt_form(&table);
     let mut output = Ntru::new(vec![0u32; poly_length]);
+    let mut ntt_output = NttNtru::<Vec<u32>>::zero(poly_length);
     let mut context = NttNtruExternalProductContext::new(poly_length);
 
     let mut group = c.benchmark_group(format!(
@@ -40,6 +45,18 @@ fn ntt(c: &mut Criterion, log_n: u32, levels: usize) {
             black_box(&key).external_product_to(
                 black_box(&input),
                 black_box(&mut output),
+                black_box(&basis),
+                black_box(modulus),
+                black_box(&table),
+                black_box(&mut context),
+            )
+        });
+    });
+    group.bench_function("external_product_ntt", |b| {
+        b.iter(|| {
+            black_box(&key).external_product_ntt_to(
+                black_box(&input),
+                black_box(&mut ntt_output),
                 black_box(&basis),
                 black_box(modulus),
                 black_box(&table),

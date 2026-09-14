@@ -14,7 +14,7 @@ key generation, and decryptability belong to the higher-level scheme crates.
 | `polynomial_products.rs` | Negacyclic monomial signs and NTT/DCRT polynomial overwrite/accumulation |
 | `extraction.rs` | GLWE/RLWE/NTRU sample order and phase signs, compact padding, packed extraction and allocation reuse |
 | `plaintext_and_gadget.rs` | Body-only plaintext updates, trivial ciphertext clearing, selected gadget diagonals |
-| `external_product.rs` | Gadget decomposition/product semantics and dirty workspace reuse |
+| `external_product.rs` | Gadget product oracles, coefficient/borrowed transform outputs, independent NLev/control levels, dirty-output clearing and workspace reuse |
 
 Keep one focused oracle or differential test per independent contract. Local
 macros exercise the ciphertext type matrix without copying test bodies; these

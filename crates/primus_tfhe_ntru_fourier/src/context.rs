@@ -87,6 +87,31 @@ where
         Evaluator::try_new(self, server_key)
     }
 
+    /// Generates optional CBS material under this client's accumulator secret.
+    /// Inherits [`KeyGenerator::try_generate_circuit_bootstrap_key`]'s contracts.
+    pub fn generate_circuit_bootstrap_key<R: rand::Rng + rand::CryptoRng>(
+        &self,
+        client_key: &ClientKey<T>,
+        parameters: &crate::CircuitBootstrapParameters<T>,
+        rng: &mut R,
+    ) -> Result<crate::CircuitBootstrapKey<T>, crate::CircuitBootstrapKeyError> {
+        KeyGenerator::new(self).try_generate_circuit_bootstrap_key(client_key, parameters, rng)
+    }
+
+    /// Binds an allocation-free online CBS evaluator to ordinary and optional keys.
+    /// Inherits [`crate::CircuitBootstrapEvaluator::try_new`]'s key-identity contract.
+    pub fn circuit_bootstrap_evaluator<'a>(
+        &'a self,
+        server_key: &'a ServerKey<T>,
+        parameters: &'a crate::CircuitBootstrapParameters<T>,
+        circuit_key: &'a crate::CircuitBootstrapKey<T>,
+    ) -> Result<
+        crate::CircuitBootstrapEvaluator<'a, T, Table>,
+        crate::CircuitBootstrapEvaluationError,
+    > {
+        crate::CircuitBootstrapEvaluator::try_new(self, server_key, parameters, circuit_key)
+    }
+
     /// Compiles a unary function into a negacyclic lookup-table polynomial.
     #[inline]
     pub fn compile_lookup_table_fn<F>(

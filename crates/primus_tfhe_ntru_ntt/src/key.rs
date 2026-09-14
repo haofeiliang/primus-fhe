@@ -58,8 +58,8 @@ where
     T: FheUint,
     Table: NttTable<ValueT = T>,
 {
-    context: &'a TfheContext<T, Table>,
-    gadget: NttNtruGadgetEncryptContext<T>,
+    pub(crate) context: &'a TfheContext<T, Table>,
+    pub(crate) gadget: NttNtruGadgetEncryptContext<T>,
 }
 
 impl<'a, T, Table> KeyGenerator<'a, T, Table>

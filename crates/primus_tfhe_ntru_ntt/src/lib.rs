@@ -8,9 +8,16 @@
 //! Public PBS checks LUT encoding/moduli/length and all output dimensions before
 //! writing. Raw input key, encoding and noise remain caller requirements.
 
+//! [`CircuitBootstrapEvaluator`] optionally keeps the BR accumulator under f_acc,
+//! projects gadget-scaled outputs and converts NLev to NGSW. Its additional keys
+//! and independent noise/security parameters are separate from ordinary PBS.
+
 #![deny(missing_docs)]
 
 mod bootstrapping_key;
+mod circuit_bootstrap_evaluator;
+mod circuit_bootstrap_key;
+mod circuit_bootstrap_parameters;
 mod client;
 mod context;
 mod error;
@@ -30,3 +37,9 @@ pub use parameters::TfheParameters;
 
 pub use primus_tfhe::{LookupTable, LweCiphertext, LweSecretKeyRef, ManyLookupTable};
 pub use primus_tfhe_ntru::{NtruClientKey as ClientKey, NtruTfheParameters};
+
+pub use circuit_bootstrap_evaluator::{CircuitBootstrapEvaluationError, CircuitBootstrapEvaluator};
+pub use circuit_bootstrap_key::{CircuitBootstrapKey, CircuitBootstrapKeyError};
+pub use circuit_bootstrap_parameters::{
+    CircuitBootstrapParameterError, CircuitBootstrapParameters,
+};

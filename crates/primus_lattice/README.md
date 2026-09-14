@@ -27,6 +27,15 @@ Types are exported through their modules, for example `glwe::Glwe`, `ggsw::NttGg
 
 NLev and NGSW share a storage shape but have different semantics: an NLev of `beta` contains phases `v_i*beta`; an NGSW of `beta` contains phases `v_i*f*beta`. Their valid gadget products differ, so the types are intentionally distinct.
 
+NLev/NGSW scalar external products can write coefficients or keep the result
+in NTT/Fourier form with `external_product_ntt_to` / `external_product_fourier_to`.
+Transform outputs accumulate directly into the destination. NTT coefficient
+outputs also reuse the destination, then inverse-transform in place. Fourier
+coefficient outputs retain separate complex scratch for torus conversion;
+Fourier outputs skip that conversion and its rounding. For
+`NGSW.external_product_nlev_to`, input/output NLev levels match each other but
+are independent of the control's decomposition basis; their gadget scales are preserved.
+
 ## Storage and layout
 
 Wrappers are generic over storage `S` using [`primus_data`](../primus_data/README.md). Operations require the appropriate read, mutable, or owned-storage capability. Borrowed wrappers operate directly on the caller's slices.

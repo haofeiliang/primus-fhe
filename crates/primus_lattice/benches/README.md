@@ -8,15 +8,17 @@ key switching, and PBS must also be measured in their owning TFHE/scheme crates.
 | --- | --- |
 | `glwe_fourier` | GGSW external product and monomial CMUX, RustFFT and TFHE FFT |
 | `glwe_ntt` | GGSW coefficient-output/NTT-output external product and monomial CMUX |
-| `ntru_fourier` | NGSW external product and monomial CMUX, RustFFT and TFHE FFT |
-| `ntru_ntt` | NGSW external product and monomial CMUX |
+| `ntru_fourier` | NGSW coefficient/Fourier-output external product and monomial CMUX, both FFT backends |
+| `ntru_ntt` | NGSW coefficient/NTT-output external product and monomial CMUX |
 | `rns_glev` (`rns`) | CRT/BigUint GLev products and CRT accumulation |
 | `rns_ggsw` (`rns`) | CRT GLWE × DCRT GGSW external product |
 | `extraction` | GLWE/NTRU compact sample extraction and inverse GLWE extraction |
 
 NGSW and NLev use the same scalar gadget kernel. The NGSW product case measures
-that kernel without duplicating the NLev wrapper. NTT-output GGSW measures the
-path used by scheme switching when the caller keeps transformed output.
+that kernel without duplicating the NLev wrapper. Transform-output GGSW/NGSW
+cases measure products whose caller retains the transformed result. Their
+endpoints differ from the coefficient-output cases; these are not equivalent
+workloads for a speedup comparison.
 Monomial CMUX is the blind-rotation operation; binary and multi-control CMUX
 are not additional baseline cases.
 

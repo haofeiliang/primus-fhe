@@ -1,5 +1,4 @@
 //! Native-torus automorphisms using Fourier key switching.
-use super::CoeffAutoPermutation;
 use crate::{
     FourierGadgetEncryptContext, FourierGlweKeySwitchingContext, FourierGlweKeySwitchingKey,
     FourierGlweSecretKey, GlevParameters, GlweSecretKey, GlweSize,
@@ -10,7 +9,7 @@ use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{Complex64, FftEngine, FftTable, TorusFftValue};
 use primus_lattice::glwe::{FourierGlwe, Glwe};
 use primus_modulus::NativeModulus;
-use primus_poly::FourierPolynomial;
+use primus_poly::{CoeffAutomorphismPermutation, FourierPolynomial};
 
 /// Reusable workspace for coefficient- and Fourier-domain automorphisms.
 pub struct FourierGlweAutomorphismContext<T: TorusFftValue> {
@@ -34,7 +33,7 @@ impl<T: TorusFftValue> FourierGlweAutomorphismContext<T> {
 #[derive(Clone)]
 pub struct FourierGlweAutomorphismKey<T: TorusFftValue> {
     degree: usize,
-    permutation: CoeffAutoPermutation,
+    permutation: CoeffAutomorphismPermutation,
     fourier_permutation: Vec<(usize, bool)>,
     key_switching: FourierGlweKeySwitchingKey<T>,
 }
@@ -44,6 +43,8 @@ impl<T: TorusFftValue> FourierGlweAutomorphismKey<T> {
     /// # Correctness
     /// Both secrets must represent the same key. The Fourier secret must have
     /// been constructed with the supplied FFT table instance.
+    /// Coefficients negated by the automorphism must have representable signed
+    /// negations, as required by [`CoeffAutomorphismPermutation::apply_signed_to`].
     ///
     /// # Panics
     /// Panics if degree is not odd and below `2N`, or key, parameter, FFT
@@ -68,13 +69,13 @@ impl<T: TorusFftValue> FourierGlweAutomorphismKey<T> {
             size,
             "automorphism output key layout mismatch"
         );
-        let permutation = CoeffAutoPermutation::new(degree, size.poly_length());
+        let permutation = CoeffAutomorphismPermutation::new(degree, size.poly_length());
         let mut transformed = vec![T::SignedInteger::ZERO; size.mask_len()];
         for (input, output) in secret
             .iter()
             .zip(transformed.chunks_exact_mut(size.poly_length()))
         {
-            permutation.apply_secret::<T>(input, output);
+            permutation.apply_signed_to::<T>(input, output);
         }
         let transformed = GlweSecretKey::new(transformed, size, secret.distr());
         let key_switching = FourierGlweKeySwitchingKey::generate(
@@ -218,7 +219,7 @@ impl<T: TorusFftValue> FourierGlweAutomorphismKey<T> {
             .zip(context.transformed.as_mut().chunks_exact_mut(n))
         {
             self.permutation
-                .apply_residues(input, output, NativeModulus::new());
+                .apply_to(input, output, NativeModulus::new());
         }
         self.key_switching.key_switch_kernel_to(
             &context.transformed,

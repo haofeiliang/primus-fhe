@@ -2,13 +2,38 @@ use std::{f64::consts::PI, sync::Arc};
 
 use num_complex::Complex64;
 use rustfft::{Fft, FftPlanner};
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::{FftError, FftTable, TorusFftValue};
 
 /// Reusable workspace for [`RustFftTable`].
+/// Contents, including spare capacity, are securely erased on drop.
+/// Explicit zeroization preserves lengths and allocations for reuse.
 pub struct RustFftScratch {
     values: Vec<Complex64>,
     fft: Vec<Complex64>,
+}
+
+impl Zeroize for RustFftScratch {
+    fn zeroize(&mut self) {
+        for buffer in [&mut self.values, &mut self.fft] {
+            // Complex64 has no Zeroize implementation. Erase both components
+            // without clearing the Vec: the plan still needs its original length.
+            for value in buffer.iter_mut() {
+                value.re.zeroize();
+                value.im.zeroize();
+            }
+            buffer.spare_capacity_mut().zeroize();
+        }
+    }
+}
+
+impl ZeroizeOnDrop for RustFftScratch {}
+
+impl Drop for RustFftScratch {
+    fn drop(&mut self) {
+        self.zeroize();
+    }
 }
 
 /// Negacyclic FFT wrapper backed by RustFFT.

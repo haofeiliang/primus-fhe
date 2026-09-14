@@ -13,3 +13,6 @@ pub(crate) use glwe_external_product::{
     FourierGlweExternalProductContextRefMut, NttGlweExternalProductContextRefMut,
 };
 pub use ntru_external_product::{FourierNtruExternalProductContext, NttNtruExternalProductContext};
+pub(crate) use ntru_external_product::{
+    FourierNtruExternalProductContextRefMut, NttNtruExternalProductContextRefMut,
+};

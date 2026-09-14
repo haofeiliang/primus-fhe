@@ -1,3 +1,4 @@
+use primus_data::DataMut;
 use primus_fft::{Complex64, TorusFftValue};
 use primus_integer::FheUint;
 
@@ -22,13 +23,31 @@ use crate::ntru::{FourierNtru, NttNtru};
 pub struct FourierNtruExternalProductContext<T: TorusFftValue> {
     poly_length: usize,
     /// Carry bits reused while decomposing one coefficient polynomial.
-    pub(crate) carries: Vec<bool>,
+    carries: Vec<bool>,
     /// Coefficient-domain digits produced for one decomposition level.
-    pub(crate) decomposed_poly: Vec<T>,
+    decomposed_poly: Vec<T>,
     /// Fourier transform of `decomposed_poly`.
-    pub(crate) decomposed_fourier: Vec<Complex64>,
+    decomposed_fourier: Vec<Complex64>,
     /// Transform-domain sum of the current external products.
-    pub(crate) fourier_accumulator: FourierNtru<Vec<Complex64>>,
+    fourier_accumulator: FourierNtru<Vec<Complex64>>,
+}
+
+/// Mutable view selecting either the context-owned or caller-provided Fourier accumulator.
+/// Decomposition scratch remains borrowed from the owning context.
+pub(crate) struct FourierNtruExternalProductContextRefMut<'a, T: TorusFftValue> {
+    poly_length: usize,
+    pub(crate) carries: &'a mut [bool],
+    pub(crate) decomposed_poly: &'a mut [T],
+    pub(crate) decomposed_fourier: &'a mut [Complex64],
+    pub(crate) fourier_accumulator: FourierNtru<&'a mut [Complex64]>,
+}
+
+impl<T: TorusFftValue> FourierNtruExternalProductContextRefMut<'_, T> {
+    #[must_use]
+    #[inline]
+    pub(crate) fn poly_length(&self) -> usize {
+        self.poly_length
+    }
 }
 
 impl<T: TorusFftValue> FourierNtruExternalProductContext<T> {
@@ -59,6 +78,37 @@ impl<T: TorusFftValue> FourierNtruExternalProductContext<T> {
     pub fn poly_length(&self) -> usize {
         self.poly_length
     }
+
+    /// Borrows decomposition scratch and the context-owned accumulator.
+    #[inline]
+    pub(crate) fn as_mut(&mut self) -> FourierNtruExternalProductContextRefMut<'_, T> {
+        FourierNtruExternalProductContextRefMut {
+            poly_length: self.poly_length,
+            carries: &mut self.carries,
+            decomposed_poly: &mut self.decomposed_poly,
+            decomposed_fourier: &mut self.decomposed_fourier,
+            fourier_accumulator: FourierNtru(self.fourier_accumulator.as_mut()),
+        }
+    }
+
+    /// Borrows scratch while accumulating directly into `accumulator`.
+    /// The operation boundary must establish the output's transform length.
+    #[inline]
+    pub(crate) fn as_mut_with_accumulator<'a, S>(
+        &'a mut self,
+        accumulator: &'a mut FourierNtru<S>,
+    ) -> FourierNtruExternalProductContextRefMut<'a, T>
+    where
+        S: DataMut<Elem = Complex64>,
+    {
+        FourierNtruExternalProductContextRefMut {
+            poly_length: self.poly_length,
+            carries: &mut self.carries,
+            decomposed_poly: &mut self.decomposed_poly,
+            decomposed_fourier: &mut self.decomposed_fourier,
+            fourier_accumulator: FourierNtru(accumulator.as_mut()),
+        }
+    }
 }
 
 /// Pre-allocated scratch buffers for exact NTT NTRU gadget products.
@@ -79,13 +129,31 @@ impl<T: TorusFftValue> FourierNtruExternalProductContext<T> {
 pub struct NttNtruExternalProductContext<T: FheUint> {
     poly_length: usize,
     /// Modulus-adjusted coefficients reused as decomposition input.
-    pub(crate) adjusted_poly: Vec<T>,
+    adjusted_poly: Vec<T>,
     /// Carry bits reused while decomposing `adjusted_poly`.
-    pub(crate) carries: Vec<bool>,
+    carries: Vec<bool>,
     /// Digits for one decomposition level, transformed in place to NTT form.
-    pub(crate) decomposed_ntt: Vec<T>,
+    decomposed_ntt: Vec<T>,
     /// Transform-domain sum of the current external products.
-    pub(crate) ntt_accumulator: NttNtru<Vec<T>>,
+    ntt_accumulator: NttNtru<Vec<T>>,
+}
+
+/// Mutable view selecting either the context-owned or caller-provided NTT accumulator.
+/// Decomposition scratch remains borrowed from the owning context.
+pub(crate) struct NttNtruExternalProductContextRefMut<'a, T: FheUint> {
+    poly_length: usize,
+    pub(crate) adjusted_poly: &'a mut [T],
+    pub(crate) carries: &'a mut [bool],
+    pub(crate) decomposed_ntt: &'a mut [T],
+    pub(crate) ntt_accumulator: NttNtru<&'a mut [T]>,
+}
+
+impl<T: FheUint> NttNtruExternalProductContextRefMut<'_, T> {
+    #[must_use]
+    #[inline]
+    pub(crate) fn poly_length(&self) -> usize {
+        self.poly_length
+    }
 }
 
 impl<T: FheUint> NttNtruExternalProductContext<T> {
@@ -114,5 +182,36 @@ impl<T: FheUint> NttNtruExternalProductContext<T> {
     #[inline]
     pub fn poly_length(&self) -> usize {
         self.poly_length
+    }
+
+    /// Borrows decomposition scratch and the context-owned accumulator.
+    #[inline]
+    pub(crate) fn as_mut(&mut self) -> NttNtruExternalProductContextRefMut<'_, T> {
+        NttNtruExternalProductContextRefMut {
+            poly_length: self.poly_length,
+            adjusted_poly: &mut self.adjusted_poly,
+            carries: &mut self.carries,
+            decomposed_ntt: &mut self.decomposed_ntt,
+            ntt_accumulator: NttNtru(self.ntt_accumulator.as_mut()),
+        }
+    }
+
+    /// Borrows scratch while accumulating directly into `accumulator`.
+    /// The operation boundary must establish the output's transform length.
+    #[inline]
+    pub(crate) fn as_mut_with_accumulator<'a, S>(
+        &'a mut self,
+        accumulator: &'a mut NttNtru<S>,
+    ) -> NttNtruExternalProductContextRefMut<'a, T>
+    where
+        S: DataMut<Elem = T>,
+    {
+        NttNtruExternalProductContextRefMut {
+            poly_length: self.poly_length,
+            adjusted_poly: &mut self.adjusted_poly,
+            carries: &mut self.carries,
+            decomposed_ntt: &mut self.decomposed_ntt,
+            ntt_accumulator: NttNtru(accumulator.as_mut()),
+        }
     }
 }

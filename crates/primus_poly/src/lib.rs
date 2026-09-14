@@ -21,6 +21,7 @@
 mod macros;
 
 mod array;
+mod automorphism;
 
 mod big_uint_poly;
 mod crt;
@@ -30,6 +31,7 @@ mod ntt;
 mod poly;
 
 pub use array::{Array, ArrayBase, ArrayMut, ArrayRef};
+pub use automorphism::CoeffAutomorphismPermutation;
 
 pub use big_uint_poly::{BigUintPolynomial, BigUintPolynomialIter, BigUintPolynomialIterMut};
 

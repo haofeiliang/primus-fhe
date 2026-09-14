@@ -49,6 +49,11 @@ assert_eq!(values, expected);
 Construct and reuse a table outside repeated transform paths. The table is
 immutable and implements `Send + Sync`, so it may be shared across threads.
 
+`NttAutomorphismPermutation::new(degree, N)` caches `X -> X^degree` in the
+table's bit-reversed order. It requires odd `degree` in `[1, 2N)` and a
+power-of-two `N >= 2`. `apply_to` only permutes evaluations, preserving their
+residue range; homomorphic use still requires a scheme-specific key switch.
+
 ## Representation and ranges
 
 For `N = 2^log_n`, the forward transform consumes coefficients in

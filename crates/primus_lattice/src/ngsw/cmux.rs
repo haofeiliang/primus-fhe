@@ -1,4 +1,7 @@
 //! NGSW-controlled conditional multiplexers in the Fourier and NTT domains.
+//!
+//! The output buffer holds the coefficient difference during decomposition, so
+//! these operations use the context-owned accumulator instead of borrowing output.
 
 use core::borrow::Borrow;
 
@@ -59,8 +62,9 @@ where
         debug_assert_eq!(output.as_ref().len(), poly_length);
 
         ct1.sub_to(ct0, output, NativeModulus::new());
+        let mut context = context.as_mut();
         context.fourier_accumulator.set_zero();
-        accumulate_fourier_gadget_product(self.as_ref(), output.as_ref(), basis, fft, context);
+        accumulate_fourier_gadget_product(self.as_ref(), output.as_ref(), basis, fft, &mut context);
         context.fourier_accumulator.write_torus_form(output, fft);
         output.add_assign(ct0, NativeModulus::new());
     }
@@ -126,6 +130,7 @@ where
             return;
         }
 
+        let mut context = context.as_mut();
         context.fourier_accumulator.set_zero();
         for (control, candidate) in controls.zip(candidates) {
             candidate.sub_to(default, output, NativeModulus::new());
@@ -135,7 +140,7 @@ where
                 output.as_ref(),
                 basis,
                 fft,
-                context,
+                &mut context,
             );
         }
         context.fourier_accumulator.write_torus_form(output, fft);
@@ -168,8 +173,9 @@ where
         C: DataMut<Elem = T>,
     {
         input.mul_monomial_sub_one_to(exponent, output, NativeModulus::new());
+        let mut context = context.as_mut();
         context.fourier_accumulator.set_zero();
-        accumulate_fourier_gadget_product(self.as_ref(), output.as_ref(), basis, fft, context);
+        accumulate_fourier_gadget_product(self.as_ref(), output.as_ref(), basis, fft, &mut context);
         context.fourier_accumulator.write_torus_form(output, fft);
         output.add_assign(input, NativeModulus::new());
     }
@@ -221,8 +227,16 @@ where
         debug_assert_eq!(output.as_ref().len(), poly_length);
 
         ct1.sub_to(ct0, output, modulus);
+        let mut context = context.as_mut();
         context.ntt_accumulator.set_zero();
-        accumulate_ntt_gadget_product(self.as_ref(), output.as_ref(), basis, modulus, ntt, context);
+        accumulate_ntt_gadget_product(
+            self.as_ref(),
+            output.as_ref(),
+            basis,
+            modulus,
+            ntt,
+            &mut context,
+        );
         context.ntt_accumulator.write_coeff_form(output, ntt);
         output.add_assign(ct0, modulus);
     }
@@ -295,6 +309,7 @@ where
             return;
         }
 
+        let mut context = context.as_mut();
         context.ntt_accumulator.set_zero();
         for (control, candidate) in controls.zip(candidates) {
             candidate.sub_to(default, output, modulus);
@@ -305,7 +320,7 @@ where
                 basis,
                 modulus,
                 ntt,
-                context,
+                &mut context,
             );
         }
         context.ntt_accumulator.write_coeff_form(output, ntt);
@@ -345,8 +360,16 @@ where
         C: DataMut<Elem = T>,
     {
         input.mul_monomial_sub_one_to(exponent, output, modulus);
+        let mut context = context.as_mut();
         context.ntt_accumulator.set_zero();
-        accumulate_ntt_gadget_product(self.as_ref(), output.as_ref(), basis, modulus, ntt, context);
+        accumulate_ntt_gadget_product(
+            self.as_ref(),
+            output.as_ref(),
+            basis,
+            modulus,
+            ntt,
+            &mut context,
+        );
         context.ntt_accumulator.write_coeff_form(output, ntt);
         output.add_assign(input, modulus);
     }

@@ -65,6 +65,11 @@ assert_eq!(lhs.as_slice(), &[84, 13, 21, 4]);
 
 重复算术路径中的许多形状检查只是 `debug_assert*!` 诊断。release 调用方必须维持文档契约；iterator 的 `zip` 和 `chunks_exact` 不能替代边界验证。
 
+`CoeffAutomorphismPermutation` 缓存模 `X^N + 1` 的系数代换 `X -> X^d`。为
+2 次幂 `N >= 2` 和 `[1, 2N)` 内的奇数 `d` 构造后，使用 `apply_to` 处理规范
+residue。`apply_signed_to` 用于所需取负均可表示的小有符号系数。置换本身不执行
+密码学 key switching；对应的 NTT 置换位于 `primus_ntt`。
+
 ## 随机采样
 
 直接在 NTT 和 DCRT 表示中进行的采样仅支持 uniform 分布。若要采样非 uniform 的系数分布，应先构造系数域的 `Polynomial` 或 `CrtPolynomial`，再执行变换。CRT uniform-binary、sparse-ternary 和 Gaussian 采样会生成一个逻辑系数，并在每个分量模数下编码同一个值；其中 sparse ternary 分布满足 `P(0) = 1/2`、`P(1) = P(-1) = 1/4`。随机 API 要求 RNG 同时实现 `rand::Rng` 和 `rand::CryptoRng`。

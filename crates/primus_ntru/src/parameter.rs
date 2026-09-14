@@ -129,6 +129,20 @@ where
     }
 }
 
+/// Invalid NLev/NGSW basis or ciphertext layout.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum NlevParameterError {
+    /// The decomposition basis could not be constructed.
+    #[error(transparent)]
+    InvalidBasis(#[from] ApproxSignedBasisError),
+    /// The supplied basis belongs to another explicit or native modulus.
+    #[error("NLev basis must match the NTRU ciphertext modulus")]
+    BasisModulusMismatch,
+    /// N times the level count cannot be represented by usize.
+    #[error("NLev ciphertext length overflow")]
+    CiphertextLengthOverflow,
+}
+
 /// Parameters for NLev and NGSW ciphertexts in one NTRU modulus domain.
 ///
 /// This type binds the underlying NTRU encryption parameters to the
@@ -151,6 +165,29 @@ where
     T: FheUint,
     M: RingContext<T>,
 {
+    /// Reuses an owned basis with its existing levels and precomputation.
+    ///
+    /// # Errors
+    /// Returns an error if the explicit/native modulus differs from `ntru`,
+    /// or N times the level count overflows usize.
+    pub fn try_with_basis(
+        ntru: &NtruParameters<T, M>,
+        basis: ApproxSignedBasis<T>,
+    ) -> Result<Self, NlevParameterError> {
+        if basis.modulus() != ntru.cipher_modulus_value() {
+            return Err(NlevParameterError::BasisModulusMismatch);
+        }
+        let nlev_len = basis
+            .decompose_length()
+            .checked_mul(ntru.poly_length())
+            .ok_or(NlevParameterError::CiphertextLengthOverflow)?;
+        Ok(Self {
+            ntru: ntru.clone(),
+            basis,
+            nlev_len,
+        })
+    }
+
     /// Creates NLev/NGSW parameters from matching NTRU parameters.
     ///
     /// `log_basis` is the base-2 logarithm of the gadget basis.
@@ -160,7 +197,7 @@ where
     /// # Panics
     ///
     /// Panics if the decomposition parameters are invalid for the NTRU
-    /// ciphertext modulus.
+    /// ciphertext modulus, or the ciphertext layout overflows usize.
     #[must_use]
     #[inline]
     pub fn with_ntru_params(
@@ -178,18 +215,10 @@ where
         ntru: &NtruParameters<T, M>,
         log_basis: u32,
         reverse_length: Option<usize>,
-    ) -> Result<Self, ApproxSignedBasisError> {
+    ) -> Result<Self, NlevParameterError> {
         let basis =
             ApproxSignedBasis::try_new(ntru.cipher_modulus_value(), log_basis, reverse_length)?;
-        let nlev_len = basis
-            .decompose_length()
-            .checked_mul(ntru.poly_length())
-            .expect("NLev ciphertext length overflow");
-        Ok(Self {
-            ntru: ntru.clone(),
-            basis,
-            nlev_len,
-        })
+        Self::try_with_basis(ntru, basis)
     }
 
     /// Returns the underlying NTRU encryption parameters.

@@ -65,6 +65,13 @@ The wrappers deliberately do not store polynomial length, modulus values, transf
 
 Many shape checks in repeated arithmetic paths are `debug_assert*!` diagnostics. Release callers must uphold the documented contracts; iterator `zip` and `chunks_exact` operations are not substitutes for boundary validation.
 
+`CoeffAutomorphismPermutation` caches the coefficient substitution `X -> X^d`
+modulo `X^N + 1`. Construct it for a power-of-two `N >= 2` and odd `d` in
+`[1, 2N)`, then reuse `apply_to` on canonical residues. `apply_signed_to` is for
+small signed coefficients whose required negations are representable. The map
+does not perform cryptographic key switching. Its NTT counterpart lives in
+`primus_ntt`.
+
 ## Random sampling
 
 Direct NTT and DCRT sampling is uniform. To sample a non-uniform coefficient distribution, construct a coefficient-domain `Polynomial` or `CrtPolynomial` and then transform it. CRT uniform-binary, sparse-ternary, and Gaussian sampling draw one logical coefficient and encode that same value under every component modulus. The sparse ternary distribution has `P(0) = 1/2` and `P(1) = P(-1) = 1/4`. Random APIs require an RNG implementing both `rand::Rng` and `rand::CryptoRng`.

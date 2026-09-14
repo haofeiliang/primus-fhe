@@ -30,26 +30,44 @@
 //! must establish the same bound; conversion does not perform general reduction.
 //! The native Fourier representation accepts every signed coefficient.
 
+//! Same-secret automorphism, trace/reverse trace, coefficient projection and
+//! expansion use separate NTT/Fourier keys and reusable coefficient workspaces.
+//! [`NttNtruSchemeSwitchKey`] / [`FourierNtruSchemeSwitchKey`] convert coefficient
+//! NLev to transformed NGSW with independent key/output bases. Their
+//! secret-dependent-key and f/f²-weighted noise contracts require additional
+//! analysis when used for CBS in the NTRU TFHE backends.
+
 #![deny(missing_docs)]
 
+mod automorphism;
 mod ciphertext;
 mod error;
 mod key_switch;
 mod parameter;
+mod scheme_switch;
 mod secret_key;
+mod trace;
 
+pub use automorphism::{
+    FourierNtruAutomorphismContext, FourierNtruAutomorphismKey, NttNtruAutomorphismContext,
+    NttNtruAutomorphismKey,
+};
 pub use ciphertext::{
     FourierNgswCiphertext, FourierNlevCiphertext, FourierNtruCiphertext, NgswCiphertext,
     NlevCiphertext, NtruCiphertext, NttNgswCiphertext, NttNlevCiphertext, NttNtruCiphertext,
 };
 pub use error::NtruError;
 pub use key_switch::{FourierNtruKeySwitchingKey, NttNtruKeySwitchingKey};
-pub use parameter::{NlevParameters, NtruParameters};
+pub use parameter::{NlevParameterError, NlevParameters, NtruParameters};
 pub use primus_distr::SecretKeyDistr;
 pub use primus_lattice::context::{
     FourierNtruExternalProductContext, NttNtruExternalProductContext,
 };
+pub use scheme_switch::{FourierNtruSchemeSwitchKey, NttNtruSchemeSwitchKey};
 pub use secret_key::{
     FourierNtruDecryptContext, FourierNtruEncryptContext, FourierNtruGadgetEncryptContext,
     FourierNtruSecretKey, NtruSecretKey, NttNtruGadgetEncryptContext, NttNtruSecretKey,
+};
+pub use trace::{
+    FourierNtruTraceContext, FourierNtruTraceKey, NttNtruTraceContext, NttNtruTraceKey,
 };

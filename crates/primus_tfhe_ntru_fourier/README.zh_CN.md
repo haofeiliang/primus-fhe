@@ -1,0 +1,84 @@
+# primus_tfhe_ntru_fourier
+
+[English](README.md) | 简体中文
+
+基于 NTRU 的 TFHE Fourier 后端。使用原生 wrapping 模数。所有变换域密钥、值与 evaluator 必须使用同一 FFT table
+实例；仅长度相同不能证明 table 身份一致。
+API 和参数仍处于实验阶段；示例和基准是功能工作负载，不是安全参数建议。
+
+## 普通 PBS 与 ManyLUT
+
+`TfheContext` 绑定参数和变换 table。生成 client/server key，建立 encryptor、
+evaluator、decryptor，再通过 context 编译 LUT。[message/carry 示例](examples/ntru_fourier_basic.rs)
+展示多个输出共享一次 BR 和一次环密钥切换。普通 PBS 返回 client secret 下的 LWE；
+BR 后的 NTRU 密钥切换将 f_acc 转为 f_client。
+
+公开 PBS 检查 LUT 的输入域、编码模数、环长度及全部输出维数。原始 LWE 输入必须
+使用 context 的 external key、规范 residue 和 unsigned rounded 编码。
+可独立编程的输入为 `0..ceil(t/2)`，另一半按负循环关系扩展。ManyLUT 输出数量
+必须为 2 的幂，且满足 `ceil(t/2) <= N/count`；较低旋转分辨率会收窄输入噪声余量。
+Boolean/CBS 输出尺度允许区别于普通明文编码。
+
+## 可选 circuit bootstrapping
+
+`CircuitBootstrapParameters`、`CircuitBootstrapKey` 和 `CircuitBootstrapEvaluator`
+提供 CBS，普通 server key 无需携带 trace/SS 材料：
+
+```text
+external LWE -> gadget-scaled ManyLUT -> f_acc 下的一次 BR
+             -> reverse-trace 系数投影 -> NLev_f_acc[m]
+             -> scheme switch -> Fourier NGSW_f_acc[m]
+```
+
+CBS 保留 BR 的环 accumulator，不执行普通 PBS 后续的环密钥切换和 LWE 提取，
+也不依赖 packing。一般 ManyLUT accumulator 不满足目标消息零尾前提，不能用
+前缀展开替代所需的系数投影。
+
+context 提供 BR basis；CBS 参数分别选择 trace、scheme-switch 和 output basis。
+输出参数的噪声分布不参与密钥生成。仅内部 ManyLUT 将输出层数补齐到 2 的幂，
+最终 NGSW 保留原始层数。仅维数相同不能建立 basis 或秘密身份一致性。
+
+已有 context/client/server，以及应用选定的 `output_basis`、`trace_parameters`
+和 `scheme_switch_parameters` 时，设置与求值流程如下：
+
+```rust,ignore
+let output_parameters = NlevParameters::try_with_basis(
+    context.parameters().bootstrapping().ntru(), output_basis,
+)?;
+let parameters = CircuitBootstrapParameters::try_new(
+    context.parameters(), output_parameters, trace_parameters, scheme_switch_parameters,
+)?;
+let key = context.generate_circuit_bootstrap_key(&client, &parameters, &mut rng)?;
+let mut evaluator = context.circuit_bootstrap_evaluator(&server, &parameters, &key)?;
+let control = evaluator.circuit_bootstrap(&input);
+// 重复调用时复用调用方输出：
+evaluator.circuit_bootstrap_to(&input, &mut output);
+```
+
+包括 bit 在内，输入仍使用 unsigned rounded LWE 编码。CBS 输出使用指定的 gadget
+scalar，并非普通编码的 NTRU 明文。仅输入消息为 0/1 时才可把输出用作 CMUX 控制。
+两组求值密钥必须来自同一个 accumulator secret 和变换 table。
+
+Trace、scheme switching 的误差预算不同于普通 PBS。Scheme switching 将输入误差
+乘 f、分解误差乘 f²；其 `NGSW_f[f]` 求值密钥需要独立论证
+key-dependent-message/circular-security 假设。模逆元/原生整数归一化与 Fourier
+精度要求见 [NTRU 数值契约](../primus_ntru/README.zh_CN.md)。当前实现不提供安全证明、
+失败概率估计或推荐 CBS 参数。
+
+## 验证与性能
+
+```sh
+cargo test -p primus_tfhe_ntru_fourier
+cargo clippy -p primus_tfhe_ntru_fourier --all-targets -- -D warnings
+cargo +nightly test -p primus_tfhe_ntru_fourier --features simd
+cargo bench -p primus_tfhe_ntru_fourier --bench pbs
+cargo bench -p primus_tfhe_ntru_fourier --bench circuit_bootstrap
+```
+
+CBS 测试覆盖 LWE bit 到 NGSW、再消费为 CMUX 控制的完整路径、输出层数补齐、basis
+和容量错误，以及 evaluator 从首次调用起零在线分配。`circuit_bootstrap` 复用输出
+和工作区，覆盖 N=1024/4096、输入维数 N/16、BR/trace/SS 的 B=2^3/2^10，以及
+B=2^8、两层的输出。基准报告新增 CBS key 和 evaluator 实际请求且仍持有的堆字节数，
+不包括分配器开销、借用 table、普通 server key 和调用方输出。密钥生成和内存统计
+位于计时 closure 外。附加 `-- --test` 可检查 fixture，但不能得出耗时或可解密性结论。
+SIMD 复用现有依赖内核，不增加公开 ISA 选择接口。

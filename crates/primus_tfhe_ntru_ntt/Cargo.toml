@@ -11,6 +11,7 @@ primus_lattice = { path = "../primus_lattice" }
 primus_modulus = { path = "../primus_modulus" }
 primus_ntru = { path = "../primus_ntru" }
 primus_ntt = { path = "../primus_ntt" }
+primus_reduce = { path = "../primus_reduce" }
 primus_poly = { path = "../primus_poly" }
 primus_tfhe = { path = "../primus_tfhe" }
 primus_tfhe_ntru = { path = "../primus_tfhe_ntru" }
@@ -24,6 +25,10 @@ primus_lwe = { path = "../primus_lwe" }
 
 [[bench]]
 name = "pbs"
+harness = false
+
+[[bench]]
+name = "circuit_bootstrap"
 harness = false
 
 [features]

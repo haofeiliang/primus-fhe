@@ -61,9 +61,33 @@ impl<T: TorusFftValue> FourierNtruKeySwitchingKey<T> {
         let mut encoded_secret = Zeroizing::new(vec![T::ZERO; poly_length]);
         NativeModulus::new()
             .encode_signed_slice_to(input_secret_key.as_slice(), encoded_secret.as_mut_slice());
+        Self::generate_encoded(
+            encoded_secret.as_slice(),
+            output_secret_key,
+            parameters,
+            fft,
+            rng,
+            context,
+        )
+    }
+
+    /// Generates from native-ring coefficients, including an automorphed secret.
+    /// No inverse of that input secret is needed.
+    pub(crate) fn generate_encoded<Table, R>(
+        input_secret: &[T],
+        output_secret_key: &FourierNtruSecretKey,
+        parameters: &NlevParameters<T, NativeModulus<T>>,
+        fft: &mut FftEngine<'_, Table>,
+        rng: &mut R,
+        context: &mut FourierNtruGadgetEncryptContext<T>,
+    ) -> Self
+    where
+        Table: FftTable,
+        R: rand::Rng + rand::CryptoRng,
+    {
         let mut data = FourierNlev::zero(parameters.fourier_nlev_len());
         output_secret_key.encrypt_nlev_to(
-            &Polynomial::new(encoded_secret.as_slice()),
+            &Polynomial::new(input_secret),
             &mut data,
             parameters,
             fft,
@@ -72,7 +96,7 @@ impl<T: TorusFftValue> FourierNtruKeySwitchingKey<T> {
         );
         Self {
             data,
-            poly_length,
+            poly_length: parameters.poly_length(),
             basis: parameters.basis().clone(),
         }
     }
@@ -132,6 +156,16 @@ impl<T: TorusFftValue> FourierNtruKeySwitchingKey<T> {
             self.poly_length,
             "key-switch output length mismatch"
         );
+        self.assert_compatible(fft, context);
+        self.key_switch_kernel_to(input, output, fft, context);
+    }
+
+    /// Validates resources shared by standalone and automorphism key switching.
+    pub(crate) fn assert_compatible<Table: FftTable>(
+        &self,
+        fft: &FftEngine<'_, Table>,
+        context: &FourierNtruExternalProductContext<T>,
+    ) {
         assert_eq!(
             context.poly_length(),
             self.poly_length,
@@ -142,6 +176,20 @@ impl<T: TorusFftValue> FourierNtruKeySwitchingKey<T> {
             self.poly_length,
             "key-switch FFT length mismatch"
         );
+    }
+
+    /// Applies after the owning boundary has checked operand lengths and resources.
+    pub(crate) fn key_switch_kernel_to<Table, A, B>(
+        &self,
+        input: &NtruCiphertext<A>,
+        output: &mut NtruCiphertext<B>,
+        fft: &mut FftEngine<'_, Table>,
+        context: &mut FourierNtruExternalProductContext<T>,
+    ) where
+        Table: FftTable,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
+    {
         self.data.external_product_to(
             &Polynomial(input.as_ref()),
             output,

@@ -73,6 +73,13 @@ across threads. Each concurrent worker must create its own `FftEngine` (or its
 own scratch through `new_scratch`); mutable workspace is never shared between
 transform calls.
 
+The built-in scratch types securely erase their full buffers on drop. After
+processing secret data, `fft.zeroize_scratch()` erases the workspace while
+keeping it reusable. Ordinary transforms do not erase scratch on every call.
+Caller-owned inputs and outputs have their own lifetimes; this heap-buffer
+guarantee does not cover registers or compiler-created stack copies. Custom
+backends define their own scratch erasure behavior.
+
 Input and output lengths are exact:
 
 - coefficient slices contain `poly_length()` values;

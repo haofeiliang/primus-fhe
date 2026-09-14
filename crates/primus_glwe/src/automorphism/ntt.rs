@@ -5,59 +5,14 @@ use primus_data::{Data, DataMut};
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_integer::FheUint;
 use primus_lattice::glwe::{Glwe, NttGlwe};
-use primus_modulus::PowOf2Modulus;
-use primus_ntt::{NttTable, ReverseLsbs};
-use primus_poly::NttPolynomial;
-use primus_reduce::{FieldContext, ReduceMul};
-
-use super::CoeffAutoPermutation;
+use primus_ntt::{NttAutomorphismPermutation, NttTable};
+use primus_poly::{CoeffAutomorphismPermutation, NttPolynomial};
+use primus_reduce::FieldContext;
 
 use crate::{
     GlevParameters, GlweSecretKey, NttGadgetEncryptContext, NttGlweKeySwitchingContext,
     NttGlweKeySwitchingKey, NttGlweSecretKey,
 };
-
-/// Precomputed evaluation-point permutation for `X -> X^degree` in the
-/// bit-reversed NTT storage order used by this crate.
-#[derive(Clone)]
-struct NttAutoPermutation {
-    sources: Vec<u32>,
-}
-
-impl NttAutoPermutation {
-    fn new(degree: usize, poly_length: usize) -> Self {
-        assert!(
-            degree < 2 * poly_length && degree % 2 == 1,
-            "GLWE automorphism degree must be odd and less than 2N"
-        );
-        let log_n = poly_length.trailing_zeros();
-        let modulus = PowOf2Modulus::new(2 * poly_length);
-        let mut sources = vec![0; poly_length];
-
-        for i in 0..poly_length {
-            let mapped_exponent = modulus.reduce_mul(degree, 2 * i + 1);
-            let j = (mapped_exponent - 1) / 2;
-            let destination = i.reverse_lsbs(log_n);
-            let source = j.reverse_lsbs(log_n);
-            sources[destination] = source as u32;
-        }
-
-        Self { sources }
-    }
-
-    #[inline]
-    fn poly_length(&self) -> usize {
-        self.sources.len()
-    }
-
-    fn apply<T: FheUint>(&self, input: &[T], output: &mut [T]) {
-        debug_assert_eq!(input.len(), self.poly_length());
-        debug_assert_eq!(output.len(), self.poly_length());
-        for (output, &source) in output.iter_mut().zip(&self.sources) {
-            *output = input[source as usize];
-        }
-    }
-}
 
 /// Reusable workspace for coefficient- and NTT-domain GLWE automorphisms.
 pub struct NttGlweAutomorphismContext<T: FheUint> {
@@ -85,8 +40,8 @@ impl<T: FheUint> NttGlweAutomorphismContext<T> {
 pub struct NttGlweAutomorphismKey<T: FheUint> {
     degree: usize,
     key_switching: NttGlweKeySwitchingKey<T>,
-    coeff_permutation: CoeffAutoPermutation,
-    ntt_permutation: NttAutoPermutation,
+    coeff_permutation: CoeffAutomorphismPermutation,
+    ntt_permutation: NttAutomorphismPermutation,
 }
 
 impl<T: FheUint> NttGlweAutomorphismKey<T> {
@@ -100,6 +55,8 @@ impl<T: FheUint> NttGlweAutomorphismKey<T> {
     ///
     /// `secret_key` and `ntt_secret_key` must represent the same secret.
     /// This relationship is not checked.
+    /// Coefficients negated by the automorphism must have representable signed
+    /// negations, as required by [`CoeffAutomorphismPermutation::apply_signed_to`].
     pub fn generate<M, Table, R>(
         degree: usize,
         secret_key: &GlweSecretKey<T>,
@@ -151,8 +108,8 @@ impl<T: FheUint> NttGlweAutomorphismKey<T> {
         let size = secret_key.glwe_size();
         let poly_len = size.poly_length();
 
-        let coeff_permutation = CoeffAutoPermutation::new(degree, poly_len);
-        let ntt_permutation = NttAutoPermutation::new(degree, poly_len);
+        let coeff_permutation = CoeffAutomorphismPermutation::new(degree, poly_len);
+        let ntt_permutation = NttAutomorphismPermutation::new(degree, poly_len);
 
         let mut transformed_secret = vec![T::SignedInteger::ZERO; size.mask_len()];
 
@@ -160,7 +117,7 @@ impl<T: FheUint> NttGlweAutomorphismKey<T> {
             .iter()
             .zip(transformed_secret.chunks_exact_mut(poly_len))
         {
-            coeff_permutation.apply_secret::<T>(input, output);
+            coeff_permutation.apply_signed_to::<T>(input, output);
         }
 
         let transformed_secret = GlweSecretKey::new(transformed_secret, size, secret_key.distr());
@@ -270,7 +227,7 @@ impl<T: FheUint> NttGlweAutomorphismKey<T> {
             .zip(context.transformed.as_mut().chunks_exact_mut(poly_length))
         {
             self.coeff_permutation
-                .apply_residues(input_poly, output_poly, modulus);
+                .apply_to(input_poly, output_poly, modulus);
         }
 
         self.key_switching.key_switch_kernel_to(
@@ -356,12 +313,12 @@ impl<T: FheUint> NttGlweAutomorphismKey<T> {
             .chunks_exact(poly_length)
             .zip(transformed_mask.chunks_exact_mut(poly_length))
         {
-            self.ntt_permutation.apply(input_poly, permuted_ntt);
+            self.ntt_permutation.apply_to(input_poly, permuted_ntt);
             ntt.inverse_transform_slice(permuted_ntt);
             output_poly.copy_from_slice(permuted_ntt);
         }
 
-        self.ntt_permutation.apply(input_body, permuted_ntt);
+        self.ntt_permutation.apply_to(input_body, permuted_ntt);
         self.key_switching.key_switch_ntt_kernel_to(
             transformed_mask,
             &NttPolynomial::new(permuted_ntt.as_slice()),
@@ -385,39 +342,5 @@ impl<T: FheUint> NttGlweAutomorphismKey<T> {
     {
         self.key_switching
             .assert_compatible(modulus, ntt, &context.key_switching);
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use primus_modulus::BarrettModulus;
-    use primus_ntt::{NttTable, UintNttTable};
-
-    use super::{CoeffAutoPermutation, NttAutoPermutation};
-
-    #[test]
-    fn ntt_permutation_matches_coefficient_automorphism() {
-        const LOG_N: u32 = 4;
-        const N: usize = 1 << LOG_N;
-        const Q: u32 = 257;
-
-        let modulus = BarrettModulus::new(Q);
-        let ntt = UintNttTable::new(LOG_N, modulus).unwrap();
-        let input: Vec<u32> = (0..N).map(|index| (19 * index as u32 + 5) % Q).collect();
-        let mut input_ntt = input.clone();
-        ntt.transform_slice(&mut input_ntt);
-
-        for degree in [1, 3, N + 1, 2 * N - 1] {
-            let coefficient = CoeffAutoPermutation::new(degree, N);
-            let ntt_permutation = NttAutoPermutation::new(degree, N);
-
-            let mut expected = vec![0; N];
-            coefficient.apply_residues(&input, &mut expected, modulus);
-            ntt.transform_slice(&mut expected);
-
-            let mut actual = vec![0; N];
-            ntt_permutation.apply(&input_ntt, &mut actual);
-            assert_eq!(actual, expected, "degree {degree}");
-        }
     }
 }
