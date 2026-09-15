@@ -3,7 +3,7 @@
 制定日期：2026-09-15。
 依据：[重构分析报告](TFHE_REFACTOR_REVIEW.md)、[仓库规范](AGENTS.md) 和 [当前交接决定](HANDOFF.md)。
 
-本文把分析建议拆成可独立验收的实施步骤，供之后明确要求实现时使用。当前仅生成计划，以下步骤均未据此实施。分析报告基线为 `e493df6`；开始修改时应重新核对代码，不能把报告中的历史测试结果当作当前验证结果。
+本文把分析建议拆成可独立验收的实施步骤，供明确要求实现时使用。S0、S1 已于 2026-09-15 完成，起始源码基线为 `f9105515cb775baf8a2461306e46f154abef5333`；S2–S9 尚未实施。分析报告基线为 `e493df6`；后续开始修改时仍应重新核对代码，不能把历史测试结果当作当前验证结果。
 
 ## 1. 范围、顺序与完成目标
 
@@ -57,6 +57,38 @@
 
 **完成条件：** 已区分既有失败和本轮变更影响，能确定下一步的直接调用方及验证命令。此阶段不做顺手清理，也不提前采集所有性能数据；性能基线紧邻 S6 的实际修改采集。
 
+#### S0 执行结果（2026-09-15）
+
+**基线与范围：** 开始时工作区和暂存区均干净；已读取根 `AGENTS.md`、HANDOFF 及两份重构文档，未发现受影响子目录的补充 `AGENTS.md`。当前 HEAD 为 `f9105515cb775baf8a2461306e46f154abef5333`，七个 TFHE crate、`xtask`、`Cargo.toml`、`Cargo.lock` 和 `justfile` 相对报告基线 `e493df6` 均无差异。本步只更新实施状态文档，不修改源码、测试或配置。
+
+已用 `rg` 检索 workspace 的符号、导入和文档引用，覆盖 `src`、测试、示例、基准、README 及 `xtask`。报告对应符号仍存在，S1–S9 无需因源码漂移调整范围；本次是基线核对，不是重新完整审查七个 crate。
+
+| 后续步骤 | 当前入口及直接消费范围 |
+| --- | --- |
+| S1 | GLWE NTT 的 `circuit_bootstrap_{parameters,key,evaluator}.rs`、`context.rs` 和 family `boolean.rs`。CBS 直接消费在 GLWE NTT `tests/circuit_bootstrap.rs`；Boolean 由两路 GLWE 的 re-export、测试、示例及 PBS benchmark 消费。两项公开注释问题均仍存在。 |
+| S2 / S4 | 两族 `client.rs`；GLWE 的空 `Key` 泛型、`with_client_key` 及两族 raw `new` 仍存在，三类加密仍只有分配返回入口。迁移覆盖四后端 context/alias、GLWE Boolean，以及 family 的 `tests/lookup_table.rs`、NTRU `tests/key.rs`。 |
+| S3 | GLWE 参数仍接收完整 BSK 参数；三路 CBS 仍接收完整 output 参数。调用分布在 family 参数测试、GLWE NTT 参数 fixture、后端测试/示例/基准，以及两路 NTRU 的双语 README。 |
+| S5 | 两路 GLWE context 尚无 Boolean 工厂；Boolean 测试、四份 GLWE 示例及两份 PBS benchmark 仍手动组合参数和适配器。 |
+| S6 / S7 / S8 | `prepare_small_lwe`、四路 evaluator 的 ManyLUT 流程和输出 clone、现有平铺 CBS/BR 文件、LUT 包装与测试归属仍与报告一致；七 crate 仅两路 NTRU 后端有双语 README。 |
+| 范围外调用方 | 唯一直接 Rust 消费文件仍为 `xtask/src/ntru_params.rs`，涉及两路 NTRU context/keygen/PBS、参数/LUT 和 `server_key_bytes` 估算；另有底层 NTRU 双语 README 的 TFHE 链接。后续接口迁移须保留 `cargo check -p xtask --all-targets`。 |
+
+**本次实际验证：** 默认工具链为 `rustc 1.98.0 (88d9e12ae 2026-08-18)`、`cargo 1.98.0 (797e8a9bc 2026-08-05)`，host 为 `x86_64-unknown-linux-gnu`。下表的七包选择均使用第 4 节的完整数组。
+
+| 命令 | 结果 |
+| --- | --- |
+| `cargo fmt --all -- --check` | 通过，无格式写入 |
+| `cargo check "${tfhe_packages[@]}" --all-targets` | 通过，包含测试、示例及基准编译 |
+| `cargo test "${tfhe_packages[@]}"` | 37 passed、0 failed、0 ignored；七包 doctest 均为 0 |
+| `cargo clippy "${tfhe_packages[@]}" --all-targets -- -D warnings` | 通过 |
+| `cargo doc "${tfhe_packages[@]}" --no-deps` | 通过，无警告 |
+| `cargo check -p xtask --all-targets` | 通过 |
+
+**SIMD 入口：** 已核对七份 manifest、`justfile` 和 Cargo 解析后的 feature 图。`cargo +nightly tree "${tfhe_packages[@]}" --features simd --depth 0 --format '{p} features=[{f}]'` 确认七包均启用 `default,simd`；相关底层整数、编码、LWE、GLWE/NTRU、lattice、NTT 等 feature 也已传播。两路 GLWE 后端显式转发公共层及 family 的 SIMD；两路 NTRU 后端转发 family 和底层，但不显式转发 `primus_tfhe/simd`，GLWE family 也不显式转发该公共层 feature。因此不能以仅选择一个后端替代七包验证。
+
+`just simd` 仍仅选择 integer、modulus、barrett_derive、factor、rns、decompose 六包；保留第 4 节显式七包 nightly check/test 命令，维护入口调整留在 S9。已安装 nightly 为 `rustc 1.100.0-nightly (bff8e12ff 2026-08-26)`；本步只核对 SIMD 配置，没有重跑 SIMD 编译或测试。
+
+**结论与下一步：** S0 完成，默认验证未发现既有失败，无阻塞项。下一步是 S1 的契约文档修正，验证入口为 `cargo doc -p primus_tfhe_glwe -p primus_tfhe_glwe_ntt --no-deps`，并检查两路 GLWE Boolean re-export 的链接。未执行示例独立运行、Criterion 计时或整个 workspace 测试；性能基线仍在 S6 改动前采集。
+
 ### S1：先修复已确认的公开契约问题
 
 **范围：** GLWE NTT 的 CBS 参数/key/evaluator/context 文档，以及 GLWE family 的 Boolean 文档；位置见报告 §1。
@@ -69,6 +101,14 @@
 4. 将实际检查写入 `# Panics`，未检查的数学前提写入 `# Correctness`；不增加无法验证秘密来源的“自动安全检查”。
 
 **验证与完成条件：** 逐项对照实现确认文档真实，相关 rustdoc 能构建；没有把参数相同写成秘密相同。纯文字修正无需新建“错秘密必然失败”测试。
+
+#### S1 执行结果（2026-09-15）
+
+- 已修正 GLWE NTT 的 CBS 参数、key、evaluator、context 文档：生成和组合入口明确配套秘密及 NTT 表示前提，区分兼容性检查与无法检查的秘密来源；分配返回接口继承 `_to` 的输入域、编码、噪声、输出尺度和密钥前提，`# Panics` 对应实际维数/长度断言。
+- 已修正 GLWE family Boolean 的有效代表元和位数注释，说明外部模数 4 下的 `0/1` 与内部模数 8 的 LUT 尺度及 PBS 后平移。CBS 输出噪声参数不用于新鲜加密、context 构造分配工作区而在线 `_to` 复用工作区的描述也已澄清。
+- 对照 CBS 构造/求值、底层 scheme switching/trace 投影及 Boolean LUT/平移实现核对了契约，并为两后端 Boolean evaluator alias 补充到共享编码说明的链接；七个 Rust 文件仅修改注释，没有签名或执行代码变化。
+- `RUSTDOCFLAGS='-D warnings' cargo doc -p primus_tfhe_glwe -p primus_tfhe_glwe_ntt -p primus_tfhe_glwe_fourier --no-deps`、`cargo fmt --all -- --check`、`git diff --check` 均通过；已检查两后端生成的 Boolean re-export 页面及 evaluator 到 family 的链接。
+- 本步无新增测试，未重跑数值测试、SIMD 或性能基准；开始时已有的 S0 暂存内容保持不变。S1 完成，无阻塞项，下一步为 S2 的客户端泛型与构造器收敛。
 
 ### S2：删除空 Key 泛型，统一客户端构造器
 

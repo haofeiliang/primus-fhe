@@ -16,6 +16,9 @@ pub type BooleanDecryptor<'a, T> =
     primus_tfhe_glwe::BooleanDecryptor<'a, T, NativeModulus<T>, NativeModulus<T>>;
 
 /// Boolean gate evaluator backed by Fourier programmable bootstrapping.
+///
+/// See `BooleanEvaluator` in [`primus_tfhe_glwe`] for the external encoding
+/// and internal LUT scale.
 pub type BooleanEvaluator<'a, T, Table> = primus_tfhe_glwe::BooleanEvaluator<
     'a,
     T,

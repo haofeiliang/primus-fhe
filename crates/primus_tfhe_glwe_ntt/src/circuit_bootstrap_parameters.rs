@@ -29,15 +29,18 @@ pub enum CircuitBootstrapParameterError {
 
 /// Independent parameters for patched NTT circuit bootstrapping.
 ///
-/// The output basis controls the produced GGSW ciphertext. Trace and scheme
+/// The output basis controls the produced GGSW's gadget scalars; its noise
+/// distribution is not used to encrypt a fresh output. Trace and scheme
 /// switching use separate decomposition bases and noise distributions. Keeping
 /// these parameters separate from [`TfheParameters`] prevents ordinary PBS
 /// users from paying for circuit-bootstrapping key material.
 ///
 /// Construction validates representation and accumulator-capacity invariants;
 /// it does not estimate failure probability or security. Callers must select
-/// the three decomposition/noise parameter sets using a CBS noise and security
-/// analysis appropriate to their workload.
+/// the output basis and trace/scheme-switching parameters using a CBS noise
+/// and security analysis appropriate to their workload. Parameter compatibility
+/// does not establish that evaluation keys share a secret or NTT representation;
+/// see [`crate::CircuitBootstrapEvaluator::try_new`].
 #[derive(Clone)]
 pub struct CircuitBootstrapParameters<T: FheUint> {
     output: GgswParameters<T, BarrettModulus<T>>,

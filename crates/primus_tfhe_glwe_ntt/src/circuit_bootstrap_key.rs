@@ -21,7 +21,8 @@ pub enum CircuitBootstrapKeyError {
 ///
 /// The ordinary PBS bootstrapping key remains in [`crate::ServerKey`]. This
 /// object contains only the additional, optional circuit-bootstrapping
-/// material.
+/// material. Both keys must use the same accumulator secret and the evaluator's
+/// NTT representation; see [`crate::CircuitBootstrapEvaluator::try_new`].
 pub struct CircuitBootstrapKey<T: FheUint> {
     trace: NttGlweTraceKey<T>,
     scheme_switch: NttGlweSchemeSwitchKey<T>,
@@ -60,6 +61,15 @@ where
     Table: NttTable<ValueT = T>,
 {
     /// Generates the optional trace-projection and scheme-switching keys.
+    ///
+    /// # Correctness
+    ///
+    /// For circuit bootstrapping, generate the ordinary server key from the same
+    /// paired client secrets as `client_key` and use this context's NTT
+    /// representation for generation and evaluation. The returned key uses
+    /// `client_key`'s accumulator GLWE secret. Parameter/layout checks cannot
+    /// establish that another server key uses that secret; see
+    /// [`crate::CircuitBootstrapEvaluator::try_new`].
     pub fn try_generate_circuit_bootstrap_key<R>(
         &mut self,
         client_key: &ClientKey<T>,

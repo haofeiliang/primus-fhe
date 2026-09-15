@@ -7,10 +7,13 @@ use crate::{
     LweCiphertext, PlaintextEmbedding, RoundedCodec, TfheEvaluationError,
 };
 
-/// The complete plaintext modulus used by the Boolean gate encoding.
+/// The number of bits in the external Boolean plaintext modulus: `t = 2^2 = 4`.
 pub const BOOLEAN_PLAINTEXT_BITS: u32 = 2;
 
 /// An LWE ciphertext encoding false as 0 and true as 1 modulo 4.
+///
+/// Uses unsigned rounded LWE encoding with plaintext modulus 4. The internal
+/// gate LUT scale and post-PBS shift are handled by [`BooleanEvaluator`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[repr(transparent)]
 pub struct BooleanCiphertext<T: FheUint>(LweCiphertext<T>);
@@ -161,6 +164,11 @@ impl BooleanGate {
 ///
 /// The backend supplies only programmable bootstrapping; Boolean encodings,
 /// affine gate preprocessing, and accumulators are shared.
+/// Gate LUTs use opposite values at the rounded modulus-8 scale. After PBS,
+/// a positive shift at that scale restores the external 0/1 encoding modulo 4.
+/// These signed LUT values are internal accumulator values, not external
+/// Boolean plaintext representatives.
+///
 /// Online operations panic when passed ciphertexts with a dimension different
 /// from the configured external LWE dimension.
 pub struct BooleanEvaluator<'a, T, LM, GM, E>
@@ -510,7 +518,7 @@ pub enum BooleanError {
     #[error("Boolean TFHE requires plaintext modulus 4")]
     PlaintextModulusMustBeFour,
 
-    /// A decrypted value is neither the -1 nor +1 Boolean representative.
+    /// A decrypted value is neither 0 nor 1 under plaintext modulus 4.
     #[error("decrypted value is not a valid Boolean plaintext")]
     InvalidPlaintext,
 

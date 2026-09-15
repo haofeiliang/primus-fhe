@@ -6,7 +6,7 @@
 
 - `primus_lattice`、`primus_lwe`、`primus_glwe`、`primus_ntru` 的既有整理和已批准原语补充基本完成；不因 TFHE 重构重新开启其整体重构。
 - 七个 `primus_tfhe*` crate 的源码、API、测试、示例、基准、feature 和文档分析已完成，覆盖边界见 [TFHE_REFACTOR_REVIEW.md](TFHE_REFACTOR_REVIEW.md) §9。
-- [TFHE_REFACTOR_STEPS.md](TFHE_REFACTOR_STEPS.md) 已将建议拆为 S0–S9。实施尚未开始；后续获得实现指令时，从当前状态核对及指定步骤推进，不把分析或计划视为实现授权。
+- [TFHE_REFACTOR_STEPS.md](TFHE_REFACTOR_STEPS.md) 的 S0、S1 已完成：S0 确认默认验证基线和 SIMD 入口；S1 修正 CBS / Boolean 契约文档，相关 rustdoc 严格构建通过，未改变 API 或执行代码。详见该文档对应执行结果。S2–S9 尚未实施；下一步为 S2 的客户端泛型与构造器收敛，按后续明确指令推进。
 - GLWE NTT 与两路 NTRU 已有 CBS；Fourier GLWE CBS 尚未实现。NTRU packing 按用户决定排除，不是 CBS 的前置工作；其他可选扩展见步骤文档 §5。
 
 ## 已审范围索引

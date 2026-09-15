@@ -51,7 +51,7 @@ where
     circuit_key: &'a CircuitBootstrapKey<T>,
     lookup_table: ManyLookupTable<T>,
     projection_indices: Vec<usize>,
-    // try_new binds the key, parameters and table; this workspace stays private.
+    // try_new checks resource layouts/bases; secret and NTT identity are caller contracts.
     blind_rotation: NttGlweBlindRotationContext<T>,
     key_switching: NttGlweKeySwitchingContext<T>,
     trace: NttGlweTraceContext<T>,
@@ -69,6 +69,17 @@ where
 {
     /// Creates an evaluator and compiles the gadget-scaled identity
     /// PBSManyLUT used by circuit bootstrapping.
+    ///
+    /// Checks parameter, layout and decomposition-basis compatibility.
+    ///
+    /// # Correctness
+    ///
+    /// `server_key` and `circuit_key` must be generated from the same paired
+    /// client secrets, so blind rotation, trace projection and scheme switching
+    /// use the same accumulator GLWE secret. Both keys must use the NTT
+    /// representation of `context.table()`. Compatibility checks do not verify
+    /// secret or transform identity; see the underlying
+    /// [`primus_glwe::NttGlweSchemeSwitchKey::apply_to`] contract.
     pub fn try_new(
         context: &'a TfheContext<T, Table>,
         server_key: &'a ServerKey<T>,
@@ -131,6 +142,18 @@ where
     }
 
     /// Circuit-bootstraps into a newly allocated NTT GGSW ciphertext.
+    ///
+    /// The output uses the gadget scalars described by [`Self::circuit_bootstrap_to`].
+    ///
+    /// # Correctness
+    ///
+    /// Inherits [`Self::circuit_bootstrap_to`]'s input encoding, plaintext domain,
+    /// canonical-residue, noise and key/NTT representation requirements.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the input dimension differs from the configured external LWE
+    /// dimension. The output is allocated with the configured GGSW length.
     pub fn circuit_bootstrap(&mut self, input: &LweCiphertext<T>) -> NttGgsw<Vec<T>> {
         let mut output = NttGgsw::zero(self.parameters.output().ggsw_len());
         self.circuit_bootstrap_to(input, &mut output);
@@ -143,14 +166,21 @@ where
     ///
     /// # Correctness
     ///
-    /// Input must use this context's external key and unsigned rounded encoding,
-    /// with a plaintext in the independently programmed front half and canonical
-    /// residues. Noise must fit the coarser ManyLUT rotation intervals.
+    /// The key/NTT representation requirements of [`Self::try_new`] must hold.
+    /// Input must use the external client secret paired with `server_key`, this
+    /// context's external LWE modulus and unsigned rounded encoding, with a
+    /// plaintext in `0..ceil(t/2)` and canonical residues, where `t` is the TFHE
+    /// plaintext modulus. Noise must fit the coarser ManyLUT rotation intervals;
+    /// trace and scheme-switching errors must also fit the independent CBS
+    /// budget described by [`CircuitBootstrapParameters`]. CMUX consumption
+    /// requires plaintext 0 or 1. The output remains under the accumulator GLWE
+    /// secret and uses gadget scales, not ordinary LWE or Boolean encoding.
     ///
     /// # Panics
     ///
-    /// Panics before output writes if the input dimension or output GGSW layout
-    /// differs from the context. LUT parameters are fixed during construction.
+    /// Panics before output writes if the input dimension differs from the
+    /// configured external LWE dimension or the output length differs from the
+    /// configured GGSW length. LUT parameters are fixed during construction.
     pub fn circuit_bootstrap_to<S>(&mut self, input: &LweCiphertext<T>, output: &mut NttGgsw<S>)
     where
         S: DataMut<Elem = T>,

@@ -96,6 +96,12 @@ where
     }
 
     /// Generates the optional trace-projection and scheme-switching key material.
+    ///
+    /// # Correctness
+    ///
+    /// Inherits [`KeyGenerator::try_generate_circuit_bootstrap_key`]'s paired
+    /// client-secret and NTT representation requirements. Compatibility checks
+    /// do not establish that the ordinary server key uses the same secrets.
     pub fn generate_circuit_bootstrap_key<R>(
         &self,
         client_key: &ClientKey<T>,
@@ -108,7 +114,16 @@ where
         KeyGenerator::new(self).try_generate_circuit_bootstrap_key(client_key, parameters, rng)
     }
 
-    /// Creates an allocation-free patched NTT circuit-bootstrap evaluator.
+    /// Creates a patched NTT circuit-bootstrap evaluator with reusable workspace.
+    /// Its [`CircuitBootstrapEvaluator::circuit_bootstrap_to`] calls allocate no
+    /// heap memory after construction.
+    ///
+    /// # Correctness
+    ///
+    /// Inherits [`CircuitBootstrapEvaluator::try_new`]'s requirement that the
+    /// server and circuit keys use the same paired client secrets and this
+    /// context's NTT representation. Parameter/layout/basis checks do not verify
+    /// secret or transform identity.
     pub fn circuit_bootstrap_evaluator<'a>(
         &'a self,
         server_key: &'a ServerKey<T>,
