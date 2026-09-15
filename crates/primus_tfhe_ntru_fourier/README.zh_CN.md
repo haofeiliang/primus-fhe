@@ -24,6 +24,8 @@ Boolean/CBS 输出尺度允许区别于普通明文编码。
 `client_key.try_generate_public_key(context.parameters(), &mut rng)` 生成外部
 二进制前缀秘密下的 `LwePublicKey`；将其传入 `context.encryptor(&public_key)`
 即可使用 `encrypt`、`encrypt_padded`、`encrypt_centered`。
+三种加密均提供 `_to(message, output, rng)`，公钥和私钥客户端都可无分配地复用
+密文存储。消息或维数错误不会改变输出及 RNG。
 
 公钥生成及加密中的新鲜误差均使用 `external_lwe` 噪声采样器。总误差为
 `e^T r + e2 - e1^T s`，不能把该采样器视为最终密文噪声分布。参数必须满足

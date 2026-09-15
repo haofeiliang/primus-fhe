@@ -3,7 +3,7 @@
 //! These small parameters are for demonstration only, not for production.
 
 use primus_fft::{FftTable, RustFftTable};
-use primus_lwe::LweParameters;
+use primus_lwe::{LweCiphertext, LweParameters};
 use primus_modulus::NativeModulus;
 use primus_ntru::{NlevParameters, NtruParameters, SecretKeyDistr};
 use primus_tfhe_ntru_fourier::{NtruTfheParameters, TfheContext};
@@ -50,11 +50,16 @@ fn main() {
             }
         })
         .unwrap();
-    let input = encryptor.encrypt_padded(7u32, &mut rng).unwrap();
+    let mut input = LweCiphertext::zero(LWE_DIMENSION);
     let mut evaluator = context.evaluator(&server_key).unwrap();
     let mut outputs = vec![input.clone(); lut.output_count()];
-    evaluator.apply_many_lookup_table_to(&input, &lut, &mut outputs);
-    assert_eq!(decryptor.decrypt::<u32>(&outputs[0]).unwrap(), 3);
-    assert_eq!(decryptor.decrypt::<u32>(&outputs[1]).unwrap(), 1);
+    for message in [7u32, 2] {
+        encryptor
+            .encrypt_padded_to(message, &mut input, &mut rng)
+            .unwrap();
+        evaluator.apply_many_lookup_table_to(&input, &lut, &mut outputs);
+        assert_eq!(decryptor.decrypt::<u32>(&outputs[0]).unwrap(), message % 4);
+        assert_eq!(decryptor.decrypt::<u32>(&outputs[1]).unwrap(), message / 4);
+    }
     println!("NTRU/Fourier programmable bootstrap succeeded");
 }

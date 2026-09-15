@@ -6,7 +6,7 @@
 
 - `primus_lattice`、`primus_lwe`、`primus_glwe`、`primus_ntru` 的既有整理和已批准原语补充基本完成；不因 TFHE 重构重新开启其整体重构。
 - 七个 `primus_tfhe*` crate 的源码、API、测试、示例、基准、feature 和文档分析已完成，覆盖边界见 [TFHE_REFACTOR_REVIEW.md](TFHE_REFACTOR_REVIEW.md) §9。
-- [TFHE_REFACTOR_STEPS.md](TFHE_REFACTOR_STEPS.md) 的 S0–S3 已完成：按用户新增需求，S2 保留 GLWE 的 `Key` 泛型并为两族接入 `LwePublicKey`，同步 raw `try_new`、四后端 context、GLWE Boolean 及调用方。S3 已完成 GLWE BSK / 三路 CBS 输出参数收敛；S4–S9 尚未实施，下一步为 S4 的两族公钥/私钥三类加密 `_to`。
+- [TFHE_REFACTOR_STEPS.md](TFHE_REFACTOR_STEPS.md) 的 S0–S4 已完成：两族已接入 `LwePublicKey`，统一客户端 `try_new`；GLWE BSK / 三路 CBS 输出参数已收敛；公钥和私钥客户端均支持三类加密 `_to`。S5–S9 尚未实施，下一步为 S5 的 GLWE Boolean 工厂与推荐调用流程。
 - GLWE NTT 与两路 NTRU 已有 CBS；Fourier GLWE CBS 尚未实现。NTRU packing 按用户决定排除，不是 CBS 的前置工作；其他可选扩展见步骤文档 §5。
 
 ## 已审范围索引
@@ -26,7 +26,8 @@
 - 布局或 basis 相同不能证明实际秘密一致；Fourier table 身份、输入规范表示和噪声预算仍需遵守相应公开契约。NTT 模逆元与 Fourier 无符号整数除法不能共用误差结论。
 - 不恢复 raw Ciphertext、LweBatch 或万能 domain/表示包装；复用底层已有原语。参数、布局和 basis 的检查留在拥有契约的边界。
 
-- TFHE 公钥绑定外部 LWE 秘密：GLWE 按 order 使用 n 或 kN，NTRU 使用客户端二进制前缀。复用 LWE 公钥，不新增 NTRU 环公钥。生成直接借用 Signed/Encoded 视图；公钥总噪声及 PBS 输入余量需独立评估，不能把单项采样器当作总噪声。S4 的三类 `_to` 须同时覆盖公钥和私钥。
+- TFHE 公钥绑定外部 LWE 秘密：GLWE 按 order 使用 n 或 kN，NTRU 使用客户端二进制前缀。复用 LWE 公钥，不新增 NTRU 环公钥。生成直接借用 Signed/Encoded 视图；公钥总噪声及 PBS 输入余量需独立评估，不能把单项采样器当作总噪声。
+- 两族三类客户端 `_to` 直接复用底层 LWE 内核，消息与维数错误先于采样/写入；输出遵循 raw LWE 的 body 布局前提。分配返回接口保留各自的高效初始化路径。
 
 ## 按需读取的技术决定
 

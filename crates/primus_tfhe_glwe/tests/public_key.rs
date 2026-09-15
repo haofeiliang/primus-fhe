@@ -1,25 +1,41 @@
+#[path = "../../primus_tfhe_ntru/tests/support/allocations.rs"]
+mod allocations;
+
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_glwe::{GlweParameters, GlweSecretKey, GlweSize, SecretKeyDistr};
-use primus_lwe::{LweParameters, LwePublicKey, LweSecretKey};
+use primus_lwe::{LweCiphertext, LweParameters, LwePublicKey, LweSecretKey};
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_reduce::RingContext;
 use primus_tfhe_glwe::{
-    GlweClientError, GlweClientKey, GlweDecryptor, GlweEncryptor, GlweKeyError, GlwePbsOrder,
-    GlweTfheParameters,
+    GlweClientError, GlweClientKey, GlweDecryptor, GlweEncryptionKey, GlweEncryptor, GlweKeyError,
+    GlwePbsOrder, GlweTfheParameters,
 };
 use rand::{Rng, SeedableRng, rngs::StdRng};
 
-fn check<M: RingContext<u32>>(modulus: M) {
+fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
     for order in [
         GlwePbsOrder::BootstrapKeyswitch,
         GlwePbsOrder::KeyswitchBootstrap,
     ] {
         // Two different external dimensions and a signed ring secret including -1.
-        let small = LweParameters::new(4, 4, modulus, SecretKeyDistr::UniformBinary, 0.7);
-        let glwe = GlweParameters::new(2, 8, 4, modulus, SecretKeyDistr::UniformTernary, 0.7);
+        let small = LweParameters::new(
+            4,
+            plain_modulus,
+            modulus,
+            SecretKeyDistr::UniformBinary,
+            0.7,
+        );
+        let glwe = GlweParameters::new(
+            2,
+            8,
+            plain_modulus,
+            modulus,
+            SecretKeyDistr::UniformTernary,
+            1.4,
+        );
         let bsk = ApproxSignedBasis::new(glwe.cipher_modulus_value(), 8, None);
         let params = GlweTfheParameters::try_new(
-            small.clone(),
+            small,
             glwe,
             bsk,
             ApproxSignedBasis::new(modulus.explicit_value(), 8, None),
@@ -45,40 +61,8 @@ fn check<M: RingContext<u32>>(modulus: M) {
                 16
             }
         );
-        let encryptor = GlweEncryptor::try_new(&params, &public).unwrap();
-        let decryptor = GlweDecryptor::try_new(&params, &client).unwrap();
-        for message in 0..4u32 {
-            for ciphertext in [
-                encryptor.encrypt(message, &mut rng).unwrap(),
-                encryptor.encrypt_centered(message, &mut rng).unwrap(),
-            ] {
-                assert_eq!(decryptor.decrypt::<u32>(&ciphertext).unwrap(), message);
-            }
-            if message < 2 {
-                let input = encryptor.encrypt_padded(message, &mut rng).unwrap();
-                assert_eq!(decryptor.decrypt::<u32>(&input).unwrap(), message);
-            }
-        }
-        let seed = rng.next_u64();
-        let mut rng = StdRng::seed_from_u64(seed);
-        let mut expected_rng = StdRng::seed_from_u64(seed);
-        assert_eq!(
-            encryptor.encrypt(u64::MAX, &mut rng).unwrap_err(),
-            GlweClientError::MessageConversion
-        );
-        assert_eq!(
-            encryptor.encrypt(4u32, &mut rng).unwrap_err(),
-            GlweClientError::MessageOutOfRange
-        );
-        assert_eq!(
-            encryptor.encrypt_centered(4u32, &mut rng).unwrap_err(),
-            GlweClientError::MessageOutOfRange
-        );
-        assert_eq!(
-            encryptor.encrypt_padded(2u32, &mut rng).unwrap_err(),
-            GlweClientError::MessageOutsidePaddedDomain
-        );
-        assert_eq!(rng.next_u64(), expected_rng.next_u64());
+        check_reused_output(&params, &client, &public);
+        check_reused_output(&params, &client, &client);
 
         // Public-key binding must reject same-word-size foreign moduli, not just dimensions.
         let foreign_params = LweParameters::new(
@@ -129,6 +113,89 @@ fn check<M: RingContext<u32>>(modulus: M) {
 
 #[test]
 fn both_external_domains_support_public_clients_and_reject_incompatible_keys() {
-    check(NativeModulus::new());
-    check(BarrettModulus::new(132_120_577));
+    for plain_modulus in [4, 5] {
+        check(NativeModulus::new(), plain_modulus);
+        check(BarrettModulus::new(132_120_577), plain_modulus);
+    }
+}
+
+#[derive(Clone, Copy)]
+enum Encoding {
+    Unsigned,
+    Padded,
+    Centered,
+}
+
+fn check_reused_output<M, Key>(
+    parameters: &GlweTfheParameters<u32, M, M>,
+    client: &GlweClientKey<u32>,
+    key: &Key,
+) where
+    M: RingContext<u32>,
+    Key: GlweEncryptionKey<u32, M, M>,
+{
+    let encryptor = GlweEncryptor::try_new(parameters, key).unwrap();
+    let decryptor = GlweDecryptor::try_new(parameters, client).unwrap();
+    let dimension = parameters.ciphertext_lwe_dimension();
+    let t = u64::from(parameters.plain_modulus_value());
+    let mut rng = StdRng::seed_from_u64(0x434c_4945_4e54);
+    let mut expected_rng = StdRng::seed_from_u64(0x434c_4945_4e54);
+    let mut output = LweCiphertext::new(vec![u32::MAX; dimension + 1]);
+    for (encoding, limit) in [
+        (Encoding::Unsigned, t),
+        (Encoding::Padded, t.div_ceil(2)),
+        (Encoding::Centered, t),
+    ] {
+        let encrypt = |message, rng: &mut StdRng| match encoding {
+            Encoding::Unsigned => encryptor.encrypt(message, rng),
+            Encoding::Padded => encryptor.encrypt_padded(message, rng),
+            Encoding::Centered => encryptor.encrypt_centered(message, rng),
+        };
+        let encrypt_to = |message, output: &mut LweCiphertext<u32>, rng: &mut StdRng| match encoding
+        {
+            Encoding::Unsigned => encryptor.encrypt_to(message, output, rng),
+            Encoding::Padded => encryptor.encrypt_padded_to(message, output, rng),
+            Encoding::Centered => encryptor.encrypt_centered_to(message, output, rng),
+        };
+        // Compare identical randomness across the small domain, including the
+        // centered sign boundary, then overwrite the last ciphertext with zero.
+        for message in (0..limit).chain([0]) {
+            let expected = encrypt(message, &mut expected_rng).unwrap();
+            let (result, allocation) =
+                allocations::measure(|| encrypt_to(message, &mut output, &mut rng));
+            result.unwrap();
+            assert_eq!(allocation.count, 0, "client encryption must not allocate");
+            assert_eq!(output, expected);
+            assert_eq!(rng.next_u64(), expected_rng.next_u64());
+            assert_eq!(decryptor.decrypt::<u64>(&output).unwrap(), message);
+        }
+        let padded_error = matches!(encoding, Encoding::Padded)
+            .then_some((limit, GlweClientError::MessageOutsidePaddedDomain));
+        for (message, error) in [
+            (u64::MAX, GlweClientError::MessageConversion),
+            (t, GlweClientError::MessageOutOfRange),
+        ]
+        .into_iter()
+        .chain(padded_error)
+        {
+            let before = output.clone();
+            assert_eq!(encrypt(message, &mut rng).err(), Some(error.clone()));
+            assert_eq!(encrypt_to(message, &mut output, &mut rng), Err(error));
+            assert_eq!(output, before);
+            assert_eq!(rng.next_u64(), expected_rng.next_u64());
+        }
+        for actual in [0, dimension - 1, dimension + 1] {
+            let mut wrong = LweCiphertext::new(vec![u32::MAX; actual + 1]);
+            let before = wrong.clone();
+            assert_eq!(
+                encrypt_to(0, &mut wrong, &mut rng),
+                Err(GlweClientError::CiphertextDimensionMismatch {
+                    expected: dimension,
+                    actual
+                })
+            );
+            assert_eq!(wrong, before);
+            assert_eq!(rng.next_u64(), expected_rng.next_u64());
+        }
+    }
 }

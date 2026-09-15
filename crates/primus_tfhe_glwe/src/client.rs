@@ -73,12 +73,7 @@ where
         R: rand::Rng + rand::CryptoRng,
         Msg: TryInto<T>,
     {
-        let message = self.checked_message(message)?;
-        let modulus = self.parameters.plain_modulus_value();
-        let front_domain_len = modulus - (modulus >> 1u32);
-        if message >= front_domain_len {
-            return Err(GlweClientError::MessageOutsidePaddedDomain);
-        }
+        let message = self.checked_padded_message(message)?;
         Ok(self.key.encrypt_with_embedding(
             message,
             self.parameters,
@@ -107,6 +102,106 @@ where
             rng,
             PlaintextEmbedding::Centered,
         ))
+    }
+
+    /// Encrypts an unsigned message in `[0, t)` into existing storage.
+    ///
+    /// Overwrites all coefficients without allocating. Message conversion,
+    /// range and output dimension errors leave both output and RNG unchanged.
+    ///
+    /// # Correctness
+    ///
+    /// `output` must contain a body, as required by [`LweCiphertext`].
+    ///
+    /// # Panics
+    ///
+    /// A panicking RNG can leave partial output; see
+    /// [`LweSecretKeyRef::encrypt_encoded_to`] and [`LwePublicKey::encrypt_encoded_to`].
+    pub fn encrypt_to<R, Msg>(
+        &self,
+        message: Msg,
+        output: &mut LweCiphertext<T>,
+        rng: &mut R,
+    ) -> Result<(), GlweClientError>
+    where
+        R: rand::Rng + rand::CryptoRng,
+        Msg: TryInto<T>,
+    {
+        let message = self.checked_message(message)?;
+        self.encrypt_with_embedding_to(message, output, rng, PlaintextEmbedding::Unsigned)
+    }
+
+    /// Encrypts a padded message in `[0, ceil(t / 2))` into existing storage.
+    ///
+    /// Shares [`Self::encrypt_to`]'s storage, error and RNG-panic contracts.
+    pub fn encrypt_padded_to<R, Msg>(
+        &self,
+        message: Msg,
+        output: &mut LweCiphertext<T>,
+        rng: &mut R,
+    ) -> Result<(), GlweClientError>
+    where
+        R: rand::Rng + rand::CryptoRng,
+        Msg: TryInto<T>,
+    {
+        let message = self.checked_padded_message(message)?;
+        self.encrypt_with_embedding_to(message, output, rng, PlaintextEmbedding::Unsigned)
+    }
+
+    /// Encrypts a centered modular message in `[0, t)` into existing storage.
+    ///
+    /// Shares [`Self::encrypt_to`]'s storage, error and RNG-panic contracts.
+    pub fn encrypt_centered_to<R, Msg>(
+        &self,
+        message: Msg,
+        output: &mut LweCiphertext<T>,
+        rng: &mut R,
+    ) -> Result<(), GlweClientError>
+    where
+        R: rand::Rng + rand::CryptoRng,
+        Msg: TryInto<T>,
+    {
+        let message = self.checked_message(message)?;
+        self.encrypt_with_embedding_to(message, output, rng, PlaintextEmbedding::Centered)
+    }
+
+    fn encrypt_with_embedding_to<R>(
+        &self,
+        message: T,
+        output: &mut LweCiphertext<T>,
+        rng: &mut R,
+        embedding: PlaintextEmbedding,
+    ) -> Result<(), GlweClientError>
+    where
+        R: rand::Rng + rand::CryptoRng,
+    {
+        let expected = self.parameters.ciphertext_lwe_dimension();
+        let actual = output.dimension();
+        if actual != expected {
+            return Err(GlweClientError::CiphertextDimensionMismatch { expected, actual });
+        }
+        self.key
+            .encrypt_with_embedding_to(message, output, self.parameters, rng, embedding);
+        Ok(())
+    }
+
+    #[inline]
+    fn checked_padded_message<Msg>(&self, message: Msg) -> Result<T, GlweClientError>
+    where
+        Msg: TryInto<T>,
+    {
+        let message = message
+            .try_into()
+            .map_err(|_| GlweClientError::MessageConversion)?;
+        let modulus = self.parameters.plain_modulus_value();
+        if message >= modulus - (modulus >> 1u32) {
+            return Err(if message >= modulus {
+                GlweClientError::MessageOutOfRange
+            } else {
+                GlweClientError::MessageOutsidePaddedDomain
+            });
+        }
+        Ok(message)
     }
 
     #[inline]
@@ -171,6 +266,27 @@ where
     ) -> LweCiphertext<T>
     where
         R: rand::Rng + rand::CryptoRng;
+
+    /// Overwrites caller storage with the configured encoding and noise samplers.
+    ///
+    /// # Correctness
+    ///
+    /// Inherits [`Self::encrypt_with_embedding`]'s parameter and key contracts.
+    ///
+    /// # Panics
+    ///
+    /// Panics for a message outside `[0, t)` or an incompatible output length.
+    /// RNG panics may leave partial output; see [`LweSecretKeyRef::encrypt_encoded_to`]
+    /// and [`LwePublicKey::encrypt_encoded_to`].
+    fn encrypt_with_embedding_to<R>(
+        &self,
+        message: T,
+        output: &mut LweCiphertext<T>,
+        parameters: &GlweTfheParameters<T, LM, GM>,
+        rng: &mut R,
+        embedding: PlaintextEmbedding,
+    ) where
+        R: rand::Rng + rand::CryptoRng;
 }
 
 impl<T, LM, GM> GlweEncryptionKey<T, LM, GM> for GlweClientKey<T>
@@ -219,6 +335,43 @@ where
             }
         }
     }
+
+    fn encrypt_with_embedding_to<R>(
+        &self,
+        message: T,
+        output: &mut LweCiphertext<T>,
+        parameters: &GlweTfheParameters<T, LM, GM>,
+        rng: &mut R,
+        embedding: PlaintextEmbedding,
+    ) where
+        R: rand::Rng + rand::CryptoRng,
+    {
+        let lwe = parameters.small_lwe();
+        let plaintext = lwe.plaintext_codec().encode_value(message, embedding);
+        match parameters.pbs_order() {
+            GlwePbsOrder::BootstrapKeyswitch => {
+                self.small_lwe_secret_key().as_view().encrypt_encoded_to(
+                    plaintext,
+                    output,
+                    lwe.cipher_modulus(),
+                    lwe.cipher_modulus_uniform_distr(),
+                    lwe.noise_distribution(),
+                    rng,
+                )
+            }
+            GlwePbsOrder::KeyswitchBootstrap => {
+                let glwe = parameters.glwe();
+                LweSecretKeyRef::Signed(self.glwe_secret_key().as_slice()).encrypt_encoded_to(
+                    plaintext,
+                    output,
+                    glwe.cipher_modulus(),
+                    glwe.cipher_modulus_uniform_distr(),
+                    glwe.noise_distribution(),
+                    rng,
+                );
+            }
+        }
+    }
 }
 
 impl<T, LM, GM> GlweEncryptionKey<T, LM, GM> for LwePublicKey<T>
@@ -260,6 +413,25 @@ where
             GlwePbsOrder::KeyswitchBootstrap => parameters.glwe().noise_distribution(),
         };
         self.encrypt_encoded(plaintext, lwe.cipher_modulus(), noise, rng)
+    }
+
+    fn encrypt_with_embedding_to<R>(
+        &self,
+        message: T,
+        output: &mut LweCiphertext<T>,
+        parameters: &GlweTfheParameters<T, LM, GM>,
+        rng: &mut R,
+        embedding: PlaintextEmbedding,
+    ) where
+        R: rand::Rng + rand::CryptoRng,
+    {
+        let lwe = parameters.small_lwe();
+        let plaintext = lwe.plaintext_codec().encode_value(message, embedding);
+        let noise = match parameters.pbs_order() {
+            GlwePbsOrder::BootstrapKeyswitch => lwe.noise_distribution(),
+            GlwePbsOrder::KeyswitchBootstrap => parameters.glwe().noise_distribution(),
+        };
+        self.encrypt_encoded_to(plaintext, output, lwe.cipher_modulus(), noise, rng);
     }
 }
 

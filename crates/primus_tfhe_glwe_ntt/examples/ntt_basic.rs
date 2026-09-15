@@ -29,7 +29,7 @@ fn main() {
     let encryptor = context.encryptor(&public_key).unwrap();
     let decryptor = context.decryptor(&client_key).unwrap();
     let toggle = context.compile_lookup_table_slice(&[1u32, 0]).unwrap();
-    let input = encryptor.encrypt_padded(0u32, &mut rng).unwrap();
+    let mut input = encryptor.encrypt_padded(0u32, &mut rng).unwrap();
     let mut evaluator = context.evaluator(&server_key).unwrap();
     let output = evaluator.apply_lookup_table(&input, &toggle);
     assert_eq!(decryptor.decrypt::<u32>(&output).unwrap(), 1);
@@ -44,9 +44,13 @@ fn main() {
             }
         })
         .unwrap();
+    // Reuse the client ciphertext for the next input.
+    encryptor
+        .encrypt_padded_to(1u32, &mut input, &mut rng)
+        .unwrap();
     let outputs = evaluator.apply_many_lookup_table(&input, &paired);
-    assert_eq!(decryptor.decrypt::<u32>(&outputs[0]).unwrap(), 0);
-    assert_eq!(decryptor.decrypt::<u32>(&outputs[1]).unwrap(), 1);
+    assert_eq!(decryptor.decrypt::<u32>(&outputs[0]).unwrap(), 1);
+    assert_eq!(decryptor.decrypt::<u32>(&outputs[1]).unwrap(), 0);
 
     // The Boolean API is identical to the Fourier backend.
     let boolean_encryptor = BooleanEncryptor::new(context.parameters(), &client_key).unwrap();

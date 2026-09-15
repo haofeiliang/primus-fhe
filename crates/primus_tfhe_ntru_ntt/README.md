@@ -27,7 +27,9 @@ can differ from ordinary plaintext encoding.
 `client_key.try_generate_public_key(context.parameters(), &mut rng)` generates an
 `LwePublicKey` under the external binary prefix secret. Pass it to
 `context.encryptor(&public_key)` for `encrypt`, `encrypt_padded` and
-`encrypt_centered`.
+`encrypt_centered`. Their `_to(message, output, rng)` counterparts reuse existing
+ciphertext storage without allocation for both public and secret keys. Message
+and dimension errors leave output and RNG unchanged.
 
 Generation and fresh encryption errors use the `external_lwe` noise sampler.
 The total error is `e^T r + e2 - e1^T s`; that sampler does not describe the final

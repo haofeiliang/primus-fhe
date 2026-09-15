@@ -14,6 +14,14 @@
 //! Public-key identity and combined-noise requirements are documented on
 //! [`GlweEncryptionKey`]; generation parameters and storage size are documented
 //! on [`GlweClientKey::try_generate_public_key`].
+//!
+//! # Reusing client ciphertext storage
+//!
+//! [`GlweEncryptor::encrypt_to`], [`GlweEncryptor::encrypt_padded_to`] and
+//! [`GlweEncryptor::encrypt_centered_to`] overwrite an existing [`LweCiphertext`]
+//! without allocating, for either secret or public keys. Message and dimension
+//! errors leave output and RNG unchanged. Backend `Encryptor` aliases expose
+//! these same methods.
 
 #![deny(missing_docs)]
 

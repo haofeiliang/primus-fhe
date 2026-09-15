@@ -62,11 +62,7 @@ where
         R: rand::Rng + rand::CryptoRng,
         Msg: TryInto<T>,
     {
-        let message = self.checked_message(message)?;
-        let modulus = self.parameters.plain_modulus_value();
-        if message >= modulus - (modulus >> 1u32) {
-            return Err(NtruClientError::MessageOutsidePaddedDomain);
-        }
+        let message = self.checked_padded_message(message)?;
         Ok(self.key.encrypt_with_embedding(
             message,
             self.parameters,
@@ -92,6 +88,106 @@ where
             rng,
             PlaintextEmbedding::Centered,
         ))
+    }
+
+    /// Encrypts an unsigned message in `[0, t)` into existing storage.
+    ///
+    /// Overwrites all coefficients without allocating. Message conversion,
+    /// range and output dimension errors leave both output and RNG unchanged.
+    ///
+    /// # Correctness
+    ///
+    /// `output` must contain a body, as required by [`LweCiphertext`].
+    ///
+    /// # Panics
+    ///
+    /// A panicking RNG can leave partial output; see
+    /// [`LweSecretKeyRef::encrypt_encoded_to`] and [`LwePublicKey::encrypt_encoded_to`].
+    pub fn encrypt_to<R, Msg>(
+        &self,
+        message: Msg,
+        output: &mut LweCiphertext<T>,
+        rng: &mut R,
+    ) -> Result<(), NtruClientError>
+    where
+        R: rand::Rng + rand::CryptoRng,
+        Msg: TryInto<T>,
+    {
+        let message = self.checked_message(message)?;
+        self.encrypt_with_embedding_to(message, output, rng, PlaintextEmbedding::Unsigned)
+    }
+
+    /// Encrypts a padded message in `[0, ceil(t / 2))` into existing storage.
+    ///
+    /// Shares [`Self::encrypt_to`]'s storage, error and RNG-panic contracts.
+    pub fn encrypt_padded_to<R, Msg>(
+        &self,
+        message: Msg,
+        output: &mut LweCiphertext<T>,
+        rng: &mut R,
+    ) -> Result<(), NtruClientError>
+    where
+        R: rand::Rng + rand::CryptoRng,
+        Msg: TryInto<T>,
+    {
+        let message = self.checked_padded_message(message)?;
+        self.encrypt_with_embedding_to(message, output, rng, PlaintextEmbedding::Unsigned)
+    }
+
+    /// Encrypts a centered modular message in `[0, t)` into existing storage.
+    ///
+    /// Shares [`Self::encrypt_to`]'s storage, error and RNG-panic contracts.
+    pub fn encrypt_centered_to<R, Msg>(
+        &self,
+        message: Msg,
+        output: &mut LweCiphertext<T>,
+        rng: &mut R,
+    ) -> Result<(), NtruClientError>
+    where
+        R: rand::Rng + rand::CryptoRng,
+        Msg: TryInto<T>,
+    {
+        let message = self.checked_message(message)?;
+        self.encrypt_with_embedding_to(message, output, rng, PlaintextEmbedding::Centered)
+    }
+
+    fn encrypt_with_embedding_to<R>(
+        &self,
+        message: T,
+        output: &mut LweCiphertext<T>,
+        rng: &mut R,
+        embedding: PlaintextEmbedding,
+    ) -> Result<(), NtruClientError>
+    where
+        R: rand::Rng + rand::CryptoRng,
+    {
+        let expected = self.parameters.external_lwe().dimension();
+        let actual = output.dimension();
+        if actual != expected {
+            return Err(NtruClientError::CiphertextDimensionMismatch { expected, actual });
+        }
+        self.key
+            .encrypt_with_embedding_to(message, output, self.parameters, rng, embedding);
+        Ok(())
+    }
+
+    #[inline]
+    fn checked_padded_message<Msg>(&self, message: Msg) -> Result<T, NtruClientError>
+    where
+        Msg: TryInto<T>,
+    {
+        let message = message
+            .try_into()
+            .map_err(|_| NtruClientError::MessageConversion)?;
+        let modulus = self.parameters.plain_modulus_value();
+        if message >= modulus - (modulus >> 1u32) {
+            return Err(if message >= modulus {
+                NtruClientError::MessageOutOfRange
+            } else {
+                NtruClientError::MessageOutsidePaddedDomain
+            });
+        }
+        Ok(message)
     }
 
     /// Converts and range-checks one client message.
@@ -156,6 +252,27 @@ where
     ) -> LweCiphertext<T>
     where
         R: rand::Rng + rand::CryptoRng;
+
+    /// Overwrites caller storage with the configured encoding and noise samplers.
+    ///
+    /// # Correctness
+    ///
+    /// Inherits [`Self::encrypt_with_embedding`]'s parameter and key contracts.
+    ///
+    /// # Panics
+    ///
+    /// Panics for a message outside `[0, t)` or an incompatible output length.
+    /// RNG panics may leave partial output; see [`LweSecretKeyRef::encrypt_encoded_to`]
+    /// and [`LwePublicKey::encrypt_encoded_to`].
+    fn encrypt_with_embedding_to<R>(
+        &self,
+        message: T,
+        output: &mut LweCiphertext<T>,
+        parameters: &NtruTfheParameters<T, M>,
+        rng: &mut R,
+        embedding: PlaintextEmbedding,
+    ) where
+        R: rand::Rng + rand::CryptoRng;
 }
 
 impl<T, M> NtruEncryptionKey<T, M> for NtruClientKey<T>
@@ -191,6 +308,28 @@ where
             parameters.noise_distribution(),
             rng,
         )
+    }
+
+    fn encrypt_with_embedding_to<R>(
+        &self,
+        message: T,
+        output: &mut LweCiphertext<T>,
+        parameters: &NtruTfheParameters<T, M>,
+        rng: &mut R,
+        embedding: PlaintextEmbedding,
+    ) where
+        R: rand::Rng + rand::CryptoRng,
+    {
+        let lwe = parameters.external_lwe();
+        let plaintext = lwe.plaintext_codec().encode_value(message, embedding);
+        LweSecretKeyRef::Signed(self.external_lwe_secret_key()).encrypt_encoded_to(
+            plaintext,
+            output,
+            lwe.cipher_modulus(),
+            lwe.cipher_modulus_uniform_distr(),
+            lwe.noise_distribution(),
+            rng,
+        );
     }
 }
 
@@ -233,6 +372,27 @@ where
             lwe.noise_distribution(),
             rng,
         )
+    }
+
+    fn encrypt_with_embedding_to<R>(
+        &self,
+        message: T,
+        output: &mut LweCiphertext<T>,
+        parameters: &NtruTfheParameters<T, M>,
+        rng: &mut R,
+        embedding: PlaintextEmbedding,
+    ) where
+        R: rand::Rng + rand::CryptoRng,
+    {
+        let lwe = parameters.external_lwe();
+        let plaintext = lwe.plaintext_codec().encode_value(message, embedding);
+        self.encrypt_encoded_to(
+            plaintext,
+            output,
+            lwe.cipher_modulus(),
+            lwe.noise_distribution(),
+            rng,
+        );
     }
 }
 
