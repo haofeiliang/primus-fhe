@@ -10,7 +10,7 @@ use primus_integer::FheUint;
 use primus_lattice::ggsw::NttGgsw;
 use primus_lwe::LweCiphertext;
 use primus_ntt::NttTable;
-use primus_reduce::{Modulus, ReduceMul};
+use primus_reduce::ReduceMul;
 use primus_tfhe::{LookupTableError, ManyLookupTable};
 use primus_tfhe_glwe::GlwePbsOrder as PbsOrder;
 
@@ -108,7 +108,7 @@ where
             poly_length,
             parameters.many_lut_output_count(),
             tfhe.plain_modulus_value(),
-            tfhe.small_lwe().cipher_modulus().explicit_value(),
+            tfhe.small_lwe().cipher_modulus(),
             modulus,
             |input, output_index| {
                 let Some(&scalar) = gadget_scalars.get(output_index) else {

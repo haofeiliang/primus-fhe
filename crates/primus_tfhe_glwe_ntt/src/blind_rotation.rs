@@ -5,12 +5,12 @@ use primus_integer::FheUint;
 use primus_lattice::{GadgetSize, context::NttGlweExternalProductContext, glwe::Glwe, lwe::Lwe};
 use primus_ntt::NttTable;
 use primus_poly::Polynomial;
-use primus_reduce::FieldContext;
-use primus_tfhe::backend_support::{direct_exponent, modulus_switch, windowed_modulus_switch};
+use primus_reduce::{FieldContext, PrepareModulusSwitch};
+use primus_tfhe::backend_support::{RotationQuantizer, direct_exponent};
 
 use crate::NttGlweBootstrappingKey;
 
-impl<T: FheUint> NttGlweBootstrappingKey<T> {
+impl<T: FheUint, LM: PrepareModulusSwitch<ValueT = T>> NttGlweBootstrappingKey<T, LM> {
     /// Blind-rotates an explicit-modulus GLWE accumulator using this key.
     ///
     /// Uses this key's stored layout and decomposition basis.
@@ -41,10 +41,9 @@ impl<T: FheUint> NttGlweBootstrappingKey<T> {
         B: Data<Elem = T>,
         C: DataMut<Elem = T>,
     {
-        let two_n = self.size().glwe_size().poly_length() * 2;
-        let input_modulus = self.input_modulus();
+        let quantizer = self.input_quantizer();
         self.blind_rotate_with(input, accumulator, output, modulus, ntt, context, |x| {
-            modulus_switch(x, input_modulus, two_n)
+            quantizer.exponent(x)
         });
     }
 
@@ -119,8 +118,8 @@ impl<T: FheUint> NttGlweBootstrappingKey<T> {
             "blind-rotation input, lookup table or output layout mismatch"
         );
 
-        let input_modulus = self.input_modulus();
-        let exponent_of = |value| modulus_switch(value, input_modulus, two_n);
+        let quantizer = self.input_quantizer();
+        let exponent_of = |value| quantizer.exponent(value);
         let initial_exponent = exponent_of(input.b()).wrapping_neg() & (two_n - 1);
         let (mask, body) = output.a_b_mut_slices(poly_length);
         mask.fill(T::ZERO);
@@ -184,7 +183,7 @@ impl<T: FheUint> NttGlweBootstrappingKey<T> {
     }
 
     /// Requires resources and per-call layouts validated by the public BR/PBS
-    /// entry, or fixed by circuit-bootstrap construction. No release rechecks.
+    /// entry, or fixed by circuit-bootstrap construction.
     #[expect(
         clippy::too_many_arguments,
         reason = "keep modulus, transform and workspace roles explicit"
@@ -222,8 +221,12 @@ impl<T: FheUint> NttGlweBootstrappingKey<T> {
         );
 
         let input_modulus = self.input_modulus();
-        let exponent_of =
-            |value| windowed_modulus_switch(value, input_modulus, two_n, output_count);
+        let quantizer = if output_count == 1 {
+            self.input_quantizer()
+        } else {
+            RotationQuantizer::new(input_modulus, two_n, output_count)
+        };
+        let exponent_of = |value| quantizer.exponent(value);
         let initial_exponent = exponent_of(input.b()).wrapping_neg() & (two_n - 1);
         let (mask, body) = output.a_b_mut_slices(poly_length);
         mask.fill(T::ZERO);

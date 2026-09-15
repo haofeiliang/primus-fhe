@@ -7,11 +7,16 @@ use primus_lattice::{
 };
 use primus_modulus::NativeModulus;
 use primus_poly::Polynomial;
-use primus_tfhe::backend_support::{direct_exponent, modulus_switch, windowed_modulus_switch};
+use primus_reduce::PrepareModulusSwitch;
+use primus_tfhe::backend_support::{RotationQuantizer, direct_exponent};
 
 use crate::FourierGlweBootstrappingKey;
 
-impl<T: TorusFftValue> FourierGlweBootstrappingKey<T> {
+impl<T, LM> FourierGlweBootstrappingKey<T, LM>
+where
+    T: TorusFftValue,
+    LM: PrepareModulusSwitch<ValueT = T>,
+{
     /// Blind-rotates a native-torus GLWE accumulator using this key.
     ///
     /// Uses this key's stored layout and decomposition basis.
@@ -39,10 +44,9 @@ impl<T: TorusFftValue> FourierGlweBootstrappingKey<T> {
         B: Data<Elem = T>,
         C: DataMut<Elem = T>,
     {
-        let two_n = self.size().glwe_size().poly_length() * 2;
-        let modulus = self.input_modulus();
+        let quantizer = self.input_quantizer();
         self.blind_rotate_with(input, accumulator, output, fft, context, |x| {
-            modulus_switch(x, modulus, two_n)
+            quantizer.exponent(x)
         });
     }
 
@@ -106,8 +110,8 @@ impl<T: TorusFftValue> FourierGlweBootstrappingKey<T> {
             "blind-rotation input, lookup table or output layout mismatch"
         );
 
-        let modulus = self.input_modulus();
-        let exponent_of = |value| modulus_switch(value, modulus, two_n);
+        let quantizer = self.input_quantizer();
+        let exponent_of = |value| quantizer.exponent(value);
         let initial_exponent = exponent_of(input.b()).wrapping_neg() & (two_n - 1);
         let (mask, body) = output.a_b_mut_slices(poly_length);
         mask.fill(T::ZERO);
@@ -168,7 +172,7 @@ impl<T: TorusFftValue> FourierGlweBootstrappingKey<T> {
     }
 
     /// Requires resources and per-call layouts validated by the public BR/PBS
-    /// entry, or fixed by circuit-bootstrap construction. No release rechecks.
+    /// entry, or fixed by circuit-bootstrap construction.
     pub(crate) fn fourier_blind_rotate_many_lookup_table_kernel_to<Table, A, B, C>(
         &self,
         input: &Lwe<A>,
@@ -200,8 +204,12 @@ impl<T: TorusFftValue> FourierGlweBootstrappingKey<T> {
         );
 
         let input_modulus = self.input_modulus();
-        let exponent_of =
-            |value| windowed_modulus_switch(value, input_modulus, two_n, output_count);
+        let quantizer = if output_count == 1 {
+            self.input_quantizer()
+        } else {
+            RotationQuantizer::new(input_modulus, two_n, output_count)
+        };
+        let exponent_of = |value| quantizer.exponent(value);
         let initial_exponent = exponent_of(input.b()).wrapping_neg() & (two_n - 1);
         let (mask, body) = output.a_b_mut_slices(poly_length);
         mask.fill(T::ZERO);

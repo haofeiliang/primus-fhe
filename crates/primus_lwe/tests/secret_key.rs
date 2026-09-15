@@ -41,7 +41,7 @@ fn message_encryption_reuses_storage_for_both_embeddings() {
             };
             assert_eq!(output.0, expected.0.as_slice());
             let input = Lwe::new(&storage[..]);
-            assert_eq!(key.decrypt::<_, u32>(&input, &params), message);
+            assert_eq!(key.decrypt(&input, &params), message);
         }
     }
 }

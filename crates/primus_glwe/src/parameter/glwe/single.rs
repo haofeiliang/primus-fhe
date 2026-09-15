@@ -149,7 +149,7 @@ where
 {
     size: GlweSize,
     inner: GlweParametersInner<T, M>,
-    plaintext_codec: ScaledCodec<T>,
+    plaintext_codec: ScaledCodec<T, M>,
 }
 
 impl<T, M> GlweParameters<T, M>
@@ -171,8 +171,7 @@ where
         noise_standard_deviation: f64,
     ) -> Self {
         let size = GlweSize::new(dimension, poly_length);
-        let cipher_modulus_value = cipher_modulus.explicit_value();
-        let plaintext_codec = ScaledCodec::new(plain_modulus_value, cipher_modulus_value);
+        let plaintext_codec = ScaledCodec::new(plain_modulus_value, cipher_modulus);
 
         let inner =
             GlweParametersInner::new(cipher_modulus, secret_key_distr, noise_standard_deviation);
@@ -245,7 +244,7 @@ where
 
     /// Returns the preselected plaintext codec strategy.
     #[inline]
-    pub fn plaintext_codec(&self) -> &ScaledCodec<T> {
+    pub fn plaintext_codec(&self) -> &ScaledCodec<T, M> {
         &self.plaintext_codec
     }
 

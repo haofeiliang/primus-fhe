@@ -8,9 +8,10 @@
 //!
 //! The two marker supertraits [`RingContext`] and [`FieldContext`]
 //! aggregate the full ring / field operation sets respectively.
-//! [`RingContext`] also includes bounded signed encoding via [`EncodeSigned`]
-//! and mixed signed dot products via [`ReduceDotProductSigned`]. Each modulus
-//! backend implements these operations independently.
+//! [`RingContext`] also includes bounded signed encoding via [`EncodeSigned`],
+//! mixed signed dot products via [`ReduceDotProductSigned`], and fixed-pair
+//! modulus-switch preparation via [`PrepareModulusSwitch`]. Each modulus backend
+//! implements these capabilities; prepared conversions remain separate objects.
 //! These names describe supported operation sets rather than proving algebraic
 //! properties: in particular, [`FieldContext`] does not guarantee that the
 //! modulus is prime or that every nonzero residue is invertible.
@@ -18,8 +19,8 @@
 //! # Implementing [`RingContext`] / [`FieldContext`]
 //!
 //! Both are *marker* traits with blanket impls: implement every listed
-//! `Reduce*` trait and [`EncodeSigned`] for your modulus type to obtain
-//! [`RingContext`]. Implement [`ExplicitModulus`] and the additional
+//! `Reduce*` trait, [`EncodeSigned`], and [`PrepareModulusSwitch`] for your modulus
+//! type to obtain [`RingContext`]. Implement [`ExplicitModulus`] and the additional
 //! `LazyReduce*` / field traits to obtain [`FieldContext`]. Callers remain
 //! responsible for validating any required primality or invertibility assumptions.
 
@@ -30,6 +31,7 @@ mod error;
 
 mod lazy_ops;
 mod lazy_slice_ops;
+mod modulus_switch;
 mod ops;
 mod signed;
 mod slice_ops;
@@ -40,6 +42,7 @@ pub use common::{FieldContext, RingContext};
 pub use error::ReduceError;
 pub use lazy_ops::*;
 pub use lazy_slice_ops::*;
+pub use modulus_switch::{PrepareModulusSwitch, PreparedModulusSwitch};
 pub use ops::*;
 pub use signed::{EncodeSigned, ReduceDotProductSigned};
 pub use slice_ops::*;

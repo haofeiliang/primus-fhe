@@ -36,7 +36,7 @@ NTT secret, Fourier secret and NTT public keys share these ordinary encryption m
 | `encrypt_encoded_to` | Already encoded ciphertext-ring coefficients | Overwrite; no plaintext scaling |
 | `encrypt_zeros` / `encrypt_zeros_to` | Zero polynomial | Allocate / overwrite |
 
-Secret keys provide `decrypt`, `decrypt_to` and `phase_to`. Phase extraction returns noisy coefficient-domain values without decoding; both plaintext embeddings use the same decoder. Decryption returns the message's unsigned integer type.
+Secret keys provide `decrypt`, `decrypt_to` and `phase_to`. Phase extraction returns noisy coefficient-domain values without decoding; both plaintext embeddings use the same decoder. Decrypted polynomials use the ciphertext coefficient type `T`; applications handle output type conversion.
 
 ```text
 ntt_sk.encrypt_to(input, output, params, ntt_table, rng)

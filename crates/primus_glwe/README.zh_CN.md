@@ -36,7 +36,7 @@ NTT 私钥、Fourier 私钥和 NTT 公钥共享以下普通加密接口：
 | `encrypt_encoded_to` | 已编码的密文环系数 | 覆盖；不做明文缩放 |
 | `encrypt_zeros` / `encrypt_zeros_to` | 零多项式 | 分配 / 覆盖 |
 
-私钥提供 `decrypt`、`decrypt_to` 和 `phase_to`。Phase 提取返回带噪声的系数域值，不做解码；两种明文嵌入使用同一解码器。解密返回与明文相同的无符号整数类型。
+私钥提供 `decrypt`、`decrypt_to` 和 `phase_to`。Phase 提取返回带噪声的系数域值，不做解码；两种明文嵌入使用同一解码器。解密多项式使用密文系数类型 `T`，输出类型转换由应用处理。
 
 ```text
 ntt_sk.encrypt_to(input, output, params, ntt_table, rng)

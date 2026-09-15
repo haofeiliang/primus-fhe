@@ -68,7 +68,7 @@ fn run(order: PbsOrder) {
     let mut evaluator = context.evaluator(&server_key).unwrap();
     let mut output = LweCiphertext::zero(context.parameters().ciphertext_lwe_dimension());
     evaluator.apply_lookup_table_to(&input, &toggle, &mut output);
-    assert_eq!(decryptor.decrypt::<u32>(&output).unwrap(), 1);
+    assert_eq!(decryptor.decrypt(&output).unwrap(), 1);
 
     // Two functions share one blind rotation and ring key switch.
     let paired = context
@@ -86,8 +86,8 @@ fn run(order: PbsOrder) {
         .unwrap();
     let mut outputs = vec![output; paired.output_count()];
     evaluator.apply_many_lookup_table_to(&input, &paired, &mut outputs);
-    assert_eq!(decryptor.decrypt::<u32>(&outputs[0]).unwrap(), 1);
-    assert_eq!(decryptor.decrypt::<u32>(&outputs[1]).unwrap(), 0);
+    assert_eq!(decryptor.decrypt(&outputs[0]).unwrap(), 1);
+    assert_eq!(decryptor.decrypt(&outputs[1]).unwrap(), 0);
 
     // Boolean adapters manage the internal LUT scale and restore external 0/1.
     let boolean_encryptor = context.boolean_encryptor(&client_key).unwrap();

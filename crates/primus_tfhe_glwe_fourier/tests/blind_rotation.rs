@@ -8,7 +8,7 @@ use primus_lattice::{
     lwe::Lwe,
 };
 use primus_lwe::{LweParameters, LweSecretKey};
-use primus_modulus::NativeModulus;
+use primus_modulus::{NativeModulus, PowOf2Modulus};
 use primus_poly::Polynomial;
 use primus_tfhe_glwe_fourier::{FourierGlweBlindRotationContext, FourierGlweBootstrappingKey};
 use rand::{SeedableRng, rngs::StdRng};
@@ -47,10 +47,11 @@ fn functional_bootstrapping_key_blind_rotates() {
     let table = RustFftTable::new(POLY_LENGTH.trailing_zeros()).unwrap();
     let mut fft = FftEngine::new(&table);
     let mut rng = StdRng::seed_from_u64(42);
+    // Input quantization uses a different modulus from the accumulator.
     let lwe_params = LweParameters::new(
         LWE_DIMENSION,
         PLAINTEXT_MODULUS,
-        NativeModulus::new(),
+        PowOf2Modulus::new(1u32 << 31),
         SecretKeyDistr::UniformBinary,
         0.7,
     );
@@ -79,7 +80,7 @@ fn functional_bootstrapping_key_blind_rotates() {
 
     let switched_a = [3usize, 0, 7, 11];
     let switched_b = 23usize;
-    let shift = u32::BITS - TWO_N.trailing_zeros();
+    let shift = 31 - TWO_N.trailing_zeros();
     let mut lwe_data: Vec<u32> = switched_a
         .iter()
         .map(|&value| (value as u32) << shift)

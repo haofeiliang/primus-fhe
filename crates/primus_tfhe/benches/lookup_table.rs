@@ -13,7 +13,6 @@ use primus_tfhe::{compile_encoded_lookup_table, compile_encoded_many_lookup_tabl
 
 fn compile<M: RingContext<u32>>(c: &mut Criterion, name: &str, modulus: M) {
     const N: usize = 1024;
-    let input_modulus = modulus.explicit_value();
     let mut group = c.benchmark_group(format!("lut_compile/u32/{name}/n{N}"));
     for (t, count) in [(4u32, 4), (16, 1), (16, 4), (16, 16), (255, 4)] {
         let domain = t.div_ceil(2) as usize;
@@ -26,7 +25,7 @@ fn compile<M: RingContext<u32>>(c: &mut Criterion, name: &str, modulus: M) {
                             black_box(domain),
                             black_box(N),
                             black_box(t),
-                            input_modulus,
+                            modulus,
                             modulus,
                             |input| Ok(13 * input as u32),
                         )
@@ -43,7 +42,7 @@ fn compile<M: RingContext<u32>>(c: &mut Criterion, name: &str, modulus: M) {
                             black_box(N),
                             black_box(count),
                             black_box(t),
-                            input_modulus,
+                            modulus,
                             modulus,
                             |input, output| Ok(13 * input as u32 + output as u32),
                         )

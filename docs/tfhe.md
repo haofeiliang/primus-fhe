@@ -144,7 +144,71 @@ taskset -c 0 cargo bench -p primus_tfhe --bench lookup_table -- --sample-size 10
 taskset -c 0 cargo bench -p primus_tfhe_glwe_ntt -p primus_tfhe_glwe_fourier -p primus_tfhe_ntru_ntt -p primus_tfhe_ntru_fourier --bench pbs -- 'complete_pbs_(reused_output|many_4_reused_outputs)$' --sample-size 10 --warm-up-time 1 --measurement-time 3 --save-baseline p1_1 --noplot
 ```
 
-P1.2 比较时将 `--save-baseline p1_1` 改为 `--baseline p1_1`，避免覆盖原样本。原始 Criterion 数据位于 `target/criterion/**/p1_1/`，可能被清理；CSV 是持久摘要。原样本缺失时应使用 P1.1 提交的源码和 harness 重建，不能把 CSV 当成 Criterion 样本输入。记录没有分配计数，计时 benchmark 也未插入全局 allocator 计数开销。
+P1.1 数据作为初始参考，比较时使用 `--baseline p1_1`，避免覆盖原样本。P1.2 开始修改前，应在 P1.M 完成的源码上，用 `--save-baseline p1_2_before` 为 `lookup_table` benchmark 另存基线；修改后使用 `--baseline p1_2_before` 直接比较，以区分两步改动的影响，见[实施步骤](tfhe-plan.md#p12-单次几何扫描与直接填充)。
+
+P1.1 原始 Criterion 数据位于 `target/criterion/**/p1_1/`，可能被清理；CSV 是持久摘要。原样本缺失时应使用 P1.1 提交的源码和 harness 重建，不能把 CSV 当成 Criterion 样本输入。记录没有分配计数，计时 benchmark 也未插入全局 allocator 计数开销。
+
+## P1.M 模数侧缩放与量化
+
+P1.2 前置的跨层任务见 [P1.M](tfhe-plan.md)。
+`PrepareModulusSwitch` 在源模数上提供 `prepare_switch_to(target)`；关联的
+`PreparedModulusSwitch` 持有固定模数对和算术策略，执行只接收系数并返回规范目标
+剩余类。目标类型是准备方法的泛型，准备结果类型由源实现选择，无需为每对模数
+额外编写 trait 实现。`RingContext` 聚合准备能力，`FieldContext` 随之继承；
+准备 trait 仍可独立使用，执行对象不承担环运算职责。
+
+`ModulusSwitch` 集中二进制缩放、整除、余数分解及宽度策略；`switch_map` 在循环前
+选择算术，允许 codec 融合符号处理、输出写入和累加。逐值接口仍会选择保存的策略，
+预备对象本身不保证编译器消除所有分派。Barrett 倒数求商尚未实施。
+
+Rounded 构造时准备 `t → q` 编码和 `q → t` 解码；Scaled 保持 `m*round(q/t)`，
+只保存固定尺度与预备解码器。Centered/Unsigned 由 codec 处理，模切内核只接收
+非负规范源剩余类。绝对值舍入和解码复用模切内核，批量转换融合输出与累加；
+标量包装保留各自的特化路径。codec 仍仅要求模加法与准备能力，Uint/Compact 可用。
+codec、基础加解密及通用 TFHE client 的数值输入输出统一为系数类型 `T`，批量
+消息使用 `[T]`；应用负责类型转换，Boolean 等语义接口保留各自类型。参数构造
+复用 codec 校验；模数至少为 2 由 `ModulusSwitch` 准备时验证，codec 负责 `q > t`
+及 Scaled 的恢复条件。
+
+普通 PBS 的 `q_in → 2N` 转换在 GLWE BSK 生成或 NTRU 参数构造时准备。
+ManyLUT 的目标依赖 LUT 步长 `s`，在执行系数循环前准备，仍先量化到 `2N/s` 再乘 `s`。
+`RotationQuantizer` 依赖准备结果；`q_acc`、Boolean/CBS 尺度和稀疏算法参数独立。
+描述性模数元数据可继续使用 `Option<T>`。LUT 的单次几何扫描仍属于 P1.2。
+
+### P1.M 性能比较
+
+以下计时在编解码输入输出统一为 `T` 之前采集，作为阶段对照保留；类型接口及构造检查调整未重新计时。
+
+2026-09-16，与修改前提交 `21f278a` 比较，[41 项数据](benchmarks/tfhe-p1.m.csv)
+保存固定模数对接口完成后的 mean、95% 置信区间（ns），与修改前提交的耗时变化
+为 `(after/before - 1)*100%`。
+23 项 codec 使用修改前采集的 `modulus_before` 样本；18 项完整 PBS 使用该提交
+重新采集的 `p1_m_before` 样本。两者都固定相同依赖锁定版本、仓库构建配置和 CPU 0，
+硬件、工具链、默认 features 及 PBS 工作负载与 P1.1 相同。
+每项 10 samples、1 s warm-up；codec 测量 2 s，PBS 测量 3 s，顺序计时。
+
+- 批量 codec：耗时变化为 −14.99%～+2.75%；显式模数的 Scaled 居中编码加法为 −14.99%，4096 项整数移位居中编码为 −1.65%。
+- 单值 codec：Native 移位加法编码从 0.795 ns 增至 0.973 ns（+22.44%），移位解码为 −8.86%，比例编码为 −1.10%。保留这项单值成本，不宣称所有路径加速。
+- 标量包装保留各自的内联结构。另一次将提升与符号处理合并到通用 helper 的对照中，Native 单值加法编码增加约 30%，重复测量仍有回退，故未保留该合并；比例舍入和解码仍共用模切内核。
+- 完整 PBS：18 项为 −4.39%～+3.34%，没有一致的整体加速；不能把准备与执行接口重整等同于 PBS 性能提升。
+- 本轮没有测 SIMD 性能。CPU 未隔离且 SMT/boost 开启，区间只反映本次样本，不能排除环境和代码布局影响；这些数据不用于跨后端同安全强度比较。
+
+`RingContext` 聚合准备能力后，按相同配置复测 23 项 codec。相较本轮包装调整前的
+`ring_before`，最终批量 mean 变化为 −2.06%～+1.41%，Native 单值加法编码为
+0.976 ns（−0.01%）；原始结果保存在 `target/criterion/**/ring_final/`。
+本次未重新计时完整 PBS，上述 18 项 PBS 数据仍是固定模数对接口的阶段对照。
+
+复测可使用以下命令；应先在基线源码保存样本，再在修改后的源码比较，
+不同源码目录使用独立构建缓存并复制 Criterion 基线目录，避免混用编译产物。
+
+```sh
+taskset -c 0 cargo bench -p primus_encoding --bench plaintext_codec -- --sample-size 10 --warm-up-time 1 --measurement-time 2 --baseline modulus_before --noplot
+taskset -c 0 cargo bench -p primus_tfhe_glwe_ntt -p primus_tfhe_glwe_fourier -p primus_tfhe_ntru_ntt -p primus_tfhe_ntru_fourier --bench pbs -- 'complete_pbs_(reused_output|many_4_reused_outputs)$' --sample-size 10 --warm-up-time 1 --measurement-time 3 --baseline p1_m_before --noplot
+```
+
+首次采集时把 `--baseline` 改为 `--save-baseline`；比较时不要覆盖基线。
+原始样本在 `target/criterion/**/{modulus_before,p1_m_before,p1_m_pair_after}/`，
+其中 `p1_m_pair_after` 保存固定模数对接口的最终结果；CSV 是可在清理 target 后保留的摘要。
 
 ## 文献入口与证据边界
 

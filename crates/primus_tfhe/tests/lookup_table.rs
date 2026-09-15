@@ -2,12 +2,77 @@
 use std::{cmp::Reverse, fmt::Debug};
 
 use primus_integer::FheUint;
-use primus_modulus::{BarrettModulus, NativeModulus};
+use primus_modulus::{BarrettModulus, NativeModulus, PowOf2Modulus, UintModulus};
 use primus_reduce::RingContext;
-use primus_tfhe::backend_support::{modulus_switch, windowed_modulus_switch};
-use primus_tfhe::{
-    LookupTableError, compile_encoded_lookup_table, compile_encoded_many_lookup_table,
-};
+
+use primus_tfhe::{LookupTable, LookupTableError, ManyLookupTable};
+
+macro_rules! with_modulus {
+    ($q:expr, $modulus:ident, $body:block) => {
+        match $q {
+            None => {
+                let $modulus = NativeModulus::new();
+                $body
+            }
+            Some(q) if q.is_power_of_two() => {
+                let $modulus = PowOf2Modulus::new(q);
+                $body
+            }
+            Some(q) if q.leading_zeros() > 1 => {
+                let $modulus = BarrettModulus::new(q);
+                $body
+            }
+            Some(q) => {
+                let $modulus = UintModulus::new(q);
+                $body
+            }
+        }
+    };
+}
+
+fn compile_encoded_lookup_table<
+    T: FheUint,
+    M: RingContext<T>,
+    F: Fn(usize) -> Result<T, LookupTableError>,
+>(
+    d: usize,
+    n: usize,
+    t: T,
+    q: Option<T>,
+    acc: M,
+    output: F,
+) -> Result<LookupTable<T>, LookupTableError> {
+    with_modulus!(q, modulus, {
+        primus_tfhe::compile_encoded_lookup_table(d, n, t, modulus, acc, output)
+    })
+}
+fn compile_encoded_many_lookup_table<
+    T: FheUint,
+    M: RingContext<T>,
+    F: Fn(usize, usize) -> Result<T, LookupTableError>,
+>(
+    d: usize,
+    n: usize,
+    k: usize,
+    t: T,
+    q: Option<T>,
+    acc: M,
+    output: F,
+) -> Result<ManyLookupTable<T>, LookupTableError> {
+    with_modulus!(q, modulus, {
+        primus_tfhe::compile_encoded_many_lookup_table(d, n, k, t, modulus, acc, output)
+    })
+}
+fn modulus_switch<T: FheUint>(value: T, q: Option<T>, n: usize) -> usize {
+    with_modulus!(q, modulus, {
+        primus_tfhe::backend_support::modulus_switch(value, modulus, n)
+    })
+}
+fn windowed_modulus_switch<T: FheUint>(value: T, q: Option<T>, n: usize, w: usize) -> usize {
+    with_modulus!(q, modulus, {
+        primus_tfhe::backend_support::windowed_modulus_switch(value, modulus, n, w)
+    })
+}
 
 #[test]
 fn raw_compilation_validates_layout_encoding_and_canonical_outputs() {

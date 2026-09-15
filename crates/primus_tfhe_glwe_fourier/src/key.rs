@@ -3,6 +3,8 @@ use primus_glwe::{
     FourierGadgetEncryptContext, FourierGlweKeySwitchingKey, FourierGlweSecretKey, GlweSecretKey,
 };
 use primus_lwe::LweSecretKey;
+use primus_modulus::NativeModulus;
+use primus_reduce::Modulus;
 use primus_tfhe_glwe::GlweClientKey as ClientKey;
 
 use crate::{FourierGlweBootstrappingKey, TfheContext, TfheParameters, error::TfheKeyError};
@@ -12,7 +14,7 @@ use crate::{FourierGlweBootstrappingKey, TfheContext, TfheParameters, error::Tfh
 /// Both PBS orders share these key materials. [`crate::PbsOrder`] only changes
 /// the order in which the evaluator applies them.
 pub struct ServerKey<T: TorusFftValue> {
-    bootstrapping_key: FourierGlweBootstrappingKey<T>,
+    bootstrapping_key: FourierGlweBootstrappingKey<T, NativeModulus<T>>,
     glwe_key_switching_key: FourierGlweKeySwitchingKey<T>,
 }
 
@@ -21,7 +23,7 @@ impl<T: TorusFftValue> ServerKey<T> {
         let bootstrapping = parameters.bootstrapping();
         let key_switching = parameters.glwe_key_switching();
         self.bootstrapping_key.input_dimension() == parameters.small_lwe().dimension()
-            && self.bootstrapping_key.input_modulus()
+            && self.bootstrapping_key.input_modulus().explicit_value()
                 == parameters.small_lwe().cipher_modulus_value()
             && self.bootstrapping_key.size() == bootstrapping.size()
             && self.bootstrapping_key.basis() == bootstrapping.basis()
@@ -34,7 +36,7 @@ impl<T: TorusFftValue> ServerKey<T> {
 
     /// Returns the Fourier functional bootstrapping key.
     #[inline]
-    pub fn bootstrapping_key(&self) -> &FourierGlweBootstrappingKey<T> {
+    pub fn bootstrapping_key(&self) -> &FourierGlweBootstrappingKey<T, NativeModulus<T>> {
         &self.bootstrapping_key
     }
 
@@ -50,7 +52,7 @@ impl<T: TorusFftValue> ServerKey<T> {
     pub fn into_parts(
         self,
     ) -> (
-        FourierGlweBootstrappingKey<T>,
+        FourierGlweBootstrappingKey<T, NativeModulus<T>>,
         FourierGlweKeySwitchingKey<T>,
     ) {
         (self.bootstrapping_key, self.glwe_key_switching_key)

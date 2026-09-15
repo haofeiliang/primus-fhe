@@ -7,7 +7,7 @@ use primus_lattice::{
     lwe::Lwe,
 };
 use primus_lwe::{LweParameters, LweSecretKey};
-use primus_modulus::BarrettModulus;
+use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntt::{NttTable, UintNttTable};
 use primus_poly::Polynomial;
 use primus_tfhe_glwe_ntt::{NttGlweBlindRotationContext, NttGlweBootstrappingKey};
@@ -49,10 +49,11 @@ fn functional_bootstrapping_key_blind_rotates() {
     let modulus = BarrettModulus::new(MODULUS);
     let ntt = UintNttTable::new(POLY_LENGTH.trailing_zeros(), modulus).unwrap();
     let mut rng = StdRng::seed_from_u64(42);
+    // Input quantization uses a different modulus from the accumulator.
     let lwe_params = LweParameters::new(
         LWE_DIMENSION,
         PLAINTEXT_MODULUS,
-        modulus,
+        NativeModulus::new(),
         SecretKeyDistr::UniformBinary,
         0.7,
     );
@@ -86,7 +87,7 @@ fn functional_bootstrapping_key_blind_rotates() {
     let switched_a = [3usize, 0, 7, 11];
     let switched_b = 23usize;
     let encode_exponent =
-        |value: usize| ((value as u64 * MODULUS as u64 + (TWO_N / 2) as u64) / TWO_N as u64) as u32;
+        |value: usize| ((value as u64 * (1u64 << 32) + (TWO_N / 2) as u64) / TWO_N as u64) as u32;
     let mut lwe_data: Vec<u32> = switched_a
         .iter()
         .map(|&value| encode_exponent(value))

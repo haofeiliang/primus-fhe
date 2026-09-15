@@ -34,16 +34,11 @@ where
     }
 
     /// Encrypts an unsigned message in `[0, t)`.
-    pub fn encrypt<R, Msg>(
-        &self,
-        message: Msg,
-        rng: &mut R,
-    ) -> Result<LweCiphertext<T>, NtruClientError>
+    pub fn encrypt<R>(&self, message: T, rng: &mut R) -> Result<LweCiphertext<T>, NtruClientError>
     where
         R: rand::Rng + rand::CryptoRng,
-        Msg: TryInto<T>,
     {
-        let message = self.checked_message(message)?;
+        self.check_message(message)?;
         Ok(self.key.encrypt_with_embedding(
             message,
             self.parameters,
@@ -53,16 +48,15 @@ where
     }
 
     /// Encrypts an unsigned message in the programmable front half `[0, ceil(t / 2))`.
-    pub fn encrypt_padded<R, Msg>(
+    pub fn encrypt_padded<R>(
         &self,
-        message: Msg,
+        message: T,
         rng: &mut R,
     ) -> Result<LweCiphertext<T>, NtruClientError>
     where
         R: rand::Rng + rand::CryptoRng,
-        Msg: TryInto<T>,
     {
-        let message = self.checked_padded_message(message)?;
+        self.check_padded_message(message)?;
         Ok(self.key.encrypt_with_embedding(
             message,
             self.parameters,
@@ -72,16 +66,15 @@ where
     }
 
     /// Encrypts a centered modular message in `[0, t)`.
-    pub fn encrypt_centered<R, Msg>(
+    pub fn encrypt_centered<R>(
         &self,
-        message: Msg,
+        message: T,
         rng: &mut R,
     ) -> Result<LweCiphertext<T>, NtruClientError>
     where
         R: rand::Rng + rand::CryptoRng,
-        Msg: TryInto<T>,
     {
-        let message = self.checked_message(message)?;
+        self.check_message(message)?;
         Ok(self.key.encrypt_with_embedding(
             message,
             self.parameters,
@@ -92,8 +85,8 @@ where
 
     /// Encrypts an unsigned message in `[0, t)` into existing storage.
     ///
-    /// Overwrites all coefficients without allocating. Message conversion,
-    /// range and output dimension errors leave both output and RNG unchanged.
+    /// Overwrites all coefficients without allocating. Message range and output
+    /// dimension errors leave both output and RNG unchanged.
     ///
     /// # Correctness
     ///
@@ -103,51 +96,48 @@ where
     ///
     /// A panicking RNG can leave partial output; see
     /// [`LweSecretKeyRef::encrypt_encoded_to`] and [`LwePublicKey::encrypt_encoded_to`].
-    pub fn encrypt_to<R, Msg>(
+    pub fn encrypt_to<R>(
         &self,
-        message: Msg,
+        message: T,
         output: &mut LweCiphertext<T>,
         rng: &mut R,
     ) -> Result<(), NtruClientError>
     where
         R: rand::Rng + rand::CryptoRng,
-        Msg: TryInto<T>,
     {
-        let message = self.checked_message(message)?;
+        self.check_message(message)?;
         self.encrypt_with_embedding_to(message, output, rng, PlaintextEmbedding::Unsigned)
     }
 
     /// Encrypts a padded message in `[0, ceil(t / 2))` into existing storage.
     ///
     /// Shares [`Self::encrypt_to`]'s storage, error and RNG-panic contracts.
-    pub fn encrypt_padded_to<R, Msg>(
+    pub fn encrypt_padded_to<R>(
         &self,
-        message: Msg,
+        message: T,
         output: &mut LweCiphertext<T>,
         rng: &mut R,
     ) -> Result<(), NtruClientError>
     where
         R: rand::Rng + rand::CryptoRng,
-        Msg: TryInto<T>,
     {
-        let message = self.checked_padded_message(message)?;
+        self.check_padded_message(message)?;
         self.encrypt_with_embedding_to(message, output, rng, PlaintextEmbedding::Unsigned)
     }
 
     /// Encrypts a centered modular message in `[0, t)` into existing storage.
     ///
     /// Shares [`Self::encrypt_to`]'s storage, error and RNG-panic contracts.
-    pub fn encrypt_centered_to<R, Msg>(
+    pub fn encrypt_centered_to<R>(
         &self,
-        message: Msg,
+        message: T,
         output: &mut LweCiphertext<T>,
         rng: &mut R,
     ) -> Result<(), NtruClientError>
     where
         R: rand::Rng + rand::CryptoRng,
-        Msg: TryInto<T>,
     {
-        let message = self.checked_message(message)?;
+        self.check_message(message)?;
         self.encrypt_with_embedding_to(message, output, rng, PlaintextEmbedding::Centered)
     }
 
@@ -172,13 +162,7 @@ where
     }
 
     #[inline]
-    fn checked_padded_message<Msg>(&self, message: Msg) -> Result<T, NtruClientError>
-    where
-        Msg: TryInto<T>,
-    {
-        let message = message
-            .try_into()
-            .map_err(|_| NtruClientError::MessageConversion)?;
+    fn check_padded_message(&self, message: T) -> Result<(), NtruClientError> {
         let modulus = self.parameters.plain_modulus_value();
         if message >= modulus - (modulus >> 1u32) {
             return Err(if message >= modulus {
@@ -187,22 +171,15 @@ where
                 NtruClientError::MessageOutsidePaddedDomain
             });
         }
-        Ok(message)
+        Ok(())
     }
 
-    /// Converts and range-checks one client message.
     #[inline]
-    fn checked_message<Msg>(&self, message: Msg) -> Result<T, NtruClientError>
-    where
-        Msg: TryInto<T>,
-    {
-        let message = message
-            .try_into()
-            .map_err(|_| NtruClientError::MessageConversion)?;
+    fn check_message(&self, message: T) -> Result<(), NtruClientError> {
         if message >= self.parameters.plain_modulus_value() {
             return Err(NtruClientError::MessageOutOfRange);
         }
-        Ok(message)
+        Ok(())
     }
 }
 
@@ -421,10 +398,7 @@ where
     }
 
     /// Decrypts to the canonical representative in `[0, t)`.
-    pub fn decrypt<Msg>(&self, ciphertext: &LweCiphertext<T>) -> Result<Msg, NtruClientError>
-    where
-        Msg: TryFrom<T>,
-    {
+    pub fn decrypt(&self, ciphertext: &LweCiphertext<T>) -> Result<T, NtruClientError> {
         let expected = self.parameters.external_lwe().dimension();
         let actual = ciphertext.dimension();
         if actual != expected {
@@ -434,7 +408,7 @@ where
         let phase = LweSecretKeyRef::Signed(self.key.external_lwe_secret_key())
             .decrypt_phase(ciphertext, parameters.cipher_modulus());
         let message = parameters.plaintext_codec().decode_value(phase);
-        Msg::try_from(message).map_err(|_| NtruClientError::PlaintextConversion)
+        Ok(message)
     }
 }
 
@@ -455,9 +429,6 @@ pub enum NtruClientError {
     /// The client key does not match the parameter set.
     #[error(transparent)]
     IncompatibleKey(#[from] NtruKeyError),
-    /// The message cannot be represented by the ciphertext integer type.
-    #[error("message cannot be represented by the ciphertext integer type")]
-    MessageConversion,
     /// The message is outside `[0, t)`.
     #[error("message is outside the plaintext domain")]
     MessageOutOfRange,
@@ -472,7 +443,4 @@ pub enum NtruClientError {
         /// Supplied LWE dimension.
         actual: usize,
     },
-    /// The decoded word cannot be converted to the requested type.
-    #[error("decoded plaintext cannot be converted to the requested type")]
-    PlaintextConversion,
 }

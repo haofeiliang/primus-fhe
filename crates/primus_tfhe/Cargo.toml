@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 primus_integer = { path = "../primus_integer" }
 primus_reduce = { path = "../primus_reduce" }
+primus_modulus = { path = "../primus_modulus" }
 primus_poly = { path = "../primus_poly" }
 primus_encoding = { path = "../primus_encoding" }
 primus_lwe = { path = "../primus_lwe" }
@@ -14,7 +15,6 @@ thiserror = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true }
-primus_modulus = { path = "../primus_modulus" }
 
 [[bench]]
 name = "lookup_table"

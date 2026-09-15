@@ -24,9 +24,9 @@ use core::fmt;
 use primus_encoding::{PlaintextEmbedding, RoundedCodec};
 use primus_integer::FheUint;
 use primus_poly::{Polynomial, PolynomialOwned};
-use primus_reduce::RingContext;
+use primus_reduce::{PrepareModulusSwitch, ReduceAdd, RingContext};
 
-use crate::backend_support::modulus_switch;
+use crate::backend_support::RotationQuantizer;
 
 /// A lookup table compiled into an encoded negacyclic polynomial.
 ///
@@ -200,24 +200,25 @@ pub fn lookup_table_domain_len<T: FheUint>(
 /// function domain. Invalid encoding, layout, rotation centers or outputs return
 /// an error.
 #[doc(hidden)]
-pub fn compile_encoded_lookup_table<T, M, F>(
+pub fn compile_encoded_lookup_table<T, LM, M, F>(
     domain_len: usize,
     poly_length: usize,
     input_plaintext_modulus: T,
-    lwe_modulus: Option<T>,
+    lwe_modulus: LM,
     accumulator_modulus: M,
     encoded_output_at: F,
 ) -> Result<LookupTable<T>, LookupTableError>
 where
     T: FheUint,
     M: RingContext<T>,
+    LM: ReduceAdd<T, Output = T> + PrepareModulusSwitch<ValueT = T>,
     F: Fn(usize) -> Result<T, LookupTableError>,
 {
     validate_compilation(
         domain_len,
         poly_length,
         input_plaintext_modulus,
-        lwe_modulus,
+        lwe_modulus.explicit_value(),
     )?;
     let lwe_codec = RoundedCodec::new(input_plaintext_modulus, lwe_modulus);
     let polynomial = compile_encoded_polynomial(
@@ -232,7 +233,7 @@ where
         polynomial,
         encoding: LookupTableEncoding {
             input_plaintext_modulus,
-            input_ciphertext_modulus: lwe_modulus,
+            input_ciphertext_modulus: lwe_modulus.explicit_value(),
             accumulator_modulus: accumulator_modulus.explicit_value(),
         },
     })
@@ -241,24 +242,26 @@ where
 /// Fills one residue class after its input domain, power-of-two length, codec
 /// and modulus-switch width have been validated by the single/batch entry.
 /// Each callback value is still checked because it supplies fresh caller data.
-fn compile_encoded_polynomial<T, M, F>(
+fn compile_encoded_polynomial<T, LM, M, F>(
     domain_len: usize,
     poly_length: usize,
-    lwe_codec: &RoundedCodec<T>,
-    lwe_modulus: Option<T>,
+    lwe_codec: &RoundedCodec<T, LM>,
+    lwe_modulus: LM,
     accumulator_modulus: M,
     encoded_output_at: F,
 ) -> Result<PolynomialOwned<T>, LookupTableError>
 where
     T: FheUint,
     M: RingContext<T>,
+    LM: ReduceAdd<T, Output = T> + PrepareModulusSwitch<ValueT = T>,
     F: Fn(usize) -> Result<T, LookupTableError>,
 {
     let two_n = poly_length * 2;
+    let quantizer = RotationQuantizer::new(lwe_modulus, two_n, 1);
     let rotation_center = |input: usize| -> Result<usize, LookupTableError> {
         let input = T::try_from(input).map_err(|_| LookupTableError::PlaintextModulusTooLarge)?;
         let encoded = lwe_codec.encode_value(input, PlaintextEmbedding::Unsigned);
-        Ok(modulus_switch(encoded, lwe_modulus, two_n))
+        Ok(quantizer.exponent(encoded))
     };
 
     let mut polynomial = Polynomial::zero(poly_length);
@@ -323,25 +326,26 @@ where
 /// contracts; `output_count` must be a non-zero power of two dividing `N`.
 /// The front-half input domain must fit in `N / output_count` coefficients.
 #[doc(hidden)]
-pub fn compile_encoded_many_lookup_table<T, M, F>(
+pub fn compile_encoded_many_lookup_table<T, LM, M, F>(
     domain_len: usize,
     poly_length: usize,
     output_count: usize,
     input_plaintext_modulus: T,
-    lwe_modulus: Option<T>,
+    lwe_modulus: LM,
     accumulator_modulus: M,
     encoded_output_at: F,
 ) -> Result<ManyLookupTable<T>, LookupTableError>
 where
     T: FheUint,
     M: RingContext<T>,
+    LM: ReduceAdd<T, Output = T> + PrepareModulusSwitch<ValueT = T>,
     F: Fn(usize, usize) -> Result<T, LookupTableError>,
 {
     validate_compilation(
         domain_len,
         poly_length,
         input_plaintext_modulus,
-        lwe_modulus,
+        lwe_modulus.explicit_value(),
     )?;
     if output_count == 0 || !output_count.is_power_of_two() {
         return Err(LookupTableError::OutputCountMustBePowerOfTwo { output_count });
@@ -385,7 +389,7 @@ where
         polynomial,
         encoding: LookupTableEncoding {
             input_plaintext_modulus,
-            input_ciphertext_modulus: lwe_modulus,
+            input_ciphertext_modulus: lwe_modulus.explicit_value(),
             accumulator_modulus: accumulator_modulus.explicit_value(),
         },
         output_count,

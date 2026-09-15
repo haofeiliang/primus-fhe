@@ -186,12 +186,9 @@ fn check_messages<M: RingContext<u32>>(modulus: M) {
                 PlaintextEmbedding::Unsigned
             };
             key.encrypt_with_embedding_to(message, &mut output, &params, &mut rng, embedding);
-            assert_eq!(secret.decrypt::<_, u32>(&output, &params), message);
+            assert_eq!(secret.decrypt(&output, &params), message);
             let switched = switching.key_switch(&output, modulus);
-            assert_eq!(
-                output_secret.decrypt::<_, u32>(&switched, &output_params),
-                message
-            );
+            assert_eq!(output_secret.decrypt(&switched, &output_params), message);
         }
     }
 }
@@ -223,7 +220,6 @@ fn public_key_boundaries_reject_before_writing_or_sampling() {
         (4, 2, 97, 0),
         (4, 3, 101, 0),
         (4, 3, 97, 4),
-        (4, 3, 97, u64::MAX),
     ] {
         let bad_params = LweParameters::new(
             dimension,

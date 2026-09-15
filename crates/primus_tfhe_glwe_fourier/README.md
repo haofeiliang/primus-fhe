@@ -40,6 +40,11 @@ Use `boolean_encryptor`, `boolean_decryptor` and `boolean_evaluator` for `t=4`.
 The adapter handles the internal modulus-8 LUT scale. Use `evaluate_binary_to`,
 `not_to` and `mux_to` for repeated Boolean evaluation.
 
+Low-level `FourierGlweBootstrappingKey<T, LM>` retains the input modulus type `LM`, independently
+of the accumulator modulus. Key generation prepares the ordinary-PBS
+quantizer. ManyLUT prepares the stride-dependent conversion before coefficient
+processing; the high-level context keeps its existing parameter restrictions.
+
 ## Circuit bootstrapping
 
 Fourier GLWE CBS is not implemented. The [NTT backend](../primus_tfhe_glwe_ntt/README.md)

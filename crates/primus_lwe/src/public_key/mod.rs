@@ -200,14 +200,13 @@ impl<T: FheUint> LwePublicKey<T> {
     /// See [`Self::encrypt_with_embedding`] for correctness and panic conditions.
     #[must_use]
     #[inline]
-    pub fn encrypt<R, M, Msg>(
+    pub fn encrypt<R, M>(
         &self,
-        message: Msg,
+        message: T,
         params: &LweParameters<T, M>,
         rng: &mut R,
     ) -> LweCiphertext<T>
     where
-        Msg: TryInto<T>,
         R: rand::Rng + rand::CryptoRng,
         M: RingContext<T>,
     {
@@ -218,14 +217,13 @@ impl<T: FheUint> LwePublicKey<T> {
     ///
     /// See [`Self::encrypt_with_embedding_to`] for correctness and panic conditions.
     #[inline]
-    pub fn encrypt_to<R, M, Msg>(
+    pub fn encrypt_to<R, M>(
         &self,
-        message: Msg,
+        message: T,
         output: &mut Lwe<impl DataMut<Elem = T>>,
         params: &LweParameters<T, M>,
         rng: &mut R,
     ) where
-        Msg: TryInto<T>,
         R: rand::Rng + rand::CryptoRng,
         M: RingContext<T>,
     {
@@ -248,15 +246,14 @@ impl<T: FheUint> LwePublicKey<T> {
     /// modulus differs from the key's, or the message violates
     /// [`RoundedCodec::encode_value`](primus_encoding::RoundedCodec::encode_value).
     #[must_use]
-    pub fn encrypt_with_embedding<R, M, Msg>(
+    pub fn encrypt_with_embedding<R, M>(
         &self,
-        message: Msg,
+        message: T,
         params: &LweParameters<T, M>,
         rng: &mut R,
         embedding: PlaintextEmbedding,
     ) -> LweCiphertext<T>
     where
-        Msg: TryInto<T>,
         R: rand::Rng + rand::CryptoRng,
         M: RingContext<T>,
     {
@@ -285,15 +282,14 @@ impl<T: FheUint> LwePublicKey<T> {
     /// Panics before writing or sampling under the conditions of
     /// [`Self::encrypt_with_embedding`], or if the output length is not
     /// `self.dimension() + 1`. A panicking RNG can leave partial output.
-    pub fn encrypt_with_embedding_to<R, M, Msg>(
+    pub fn encrypt_with_embedding_to<R, M>(
         &self,
-        message: Msg,
+        message: T,
         output: &mut Lwe<impl DataMut<Elem = T>>,
         params: &LweParameters<T, M>,
         rng: &mut R,
         embedding: PlaintextEmbedding,
     ) where
-        Msg: TryInto<T>,
         R: rand::Rng + rand::CryptoRng,
         M: RingContext<T>,
     {

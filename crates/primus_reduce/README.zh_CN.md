@@ -94,6 +94,22 @@ LWE、GLWE 和 NTRU 均使用此有界转换。NTRU 参数会验证采样支持�
 
 [`primus_modulo`](../primus_modulo/README.zh_CN.md) 提供可选的 value-receiver 镜像，例如 `a.add_modulo(b, modulus)`。本 crate 的 modulus-side trait 仍是主要实现边界和 workspace 集成边界。
 
+## 预备模切
+
+`source.prepare_switch_to(target)` 通过 `PrepareModulusSwitch` 准备固定模数对。
+其关联的 `PreparedModulusSwitch` 用 `switch(value)` 转换规范源剩余类，返回
+`round(value*target/source) mod target`，中点向上舍入。两端都支持 Native 模数。
+这是整数比例舍入，与模除法独立。
+
+`RingContext` 包含 `PrepareModulusSwitch`，`FieldContext` 继承此能力。
+准备 trait 也可独立使用，因此 codec 只需准备能力和模加法。
+`PreparedModulusSwitch` 描述返回的转换对象，独立于源环上下文；自定义环上下文
+需实现准备能力。
+
+`switch_map` 为每个系数携带附属数据，可以融合符号处理、输出转换和累加，
+无需临时缓冲区。具体实现可在迭代前选择算术内核；默认实现调用 `switch`。
+迭代器或回调 panic 时，先前的回调效果不会回滚。
+
 ## 许可证
 
 本 crate 可由你选择使用 [Apache License, Version 2.0](../../LICENSE-APACHE-2.0) 或 [MIT License](../../LICENSE-MIT)。

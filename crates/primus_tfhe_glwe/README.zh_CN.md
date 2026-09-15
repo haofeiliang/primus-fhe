@@ -24,6 +24,9 @@ Basis/布局兼容不能证明实际秘密一致。
 ## 客户端与 LUT
 
 后端 context 生成配套密钥并提供 `encryptor` / `decryptor` 工厂。
+通用 client 加密接受 `T`，解密返回 `Result<T, GlweClientError>`，消息是 `[0,t)` 内的
+规范剩余类，消息类型转换由应用处理。Boolean 加密接受 `bool`，解密返回
+`Result<bool, BooleanError>`，并验证 Boolean 值。
 直接使用 family 时，构造入口为 `GlweEncryptor::try_new` 与 `GlweDecryptor::try_new`。
 加密接受 `GlweClientKey`，也接受通过
 `client_key.try_generate_public_key(parameters, rng)` 生成的 `LwePublicKey`；解密需要 client key。

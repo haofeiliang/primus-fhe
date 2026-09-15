@@ -28,7 +28,7 @@ where
     cipher_modulus: M,
     secret_key_sampler: SecretKeySampler<T>,
     noise_distribution: DiscreteGaussian<T>,
-    plaintext_codec: ScaledCodec<T>,
+    plaintext_codec: ScaledCodec<T, M>,
 }
 
 impl<T, M> NtruParameters<T, M>
@@ -61,7 +61,7 @@ where
             "NTRU polynomial length must be a supported power of two"
         );
 
-        let plaintext_codec = ScaledCodec::new(plain_modulus, cipher_modulus.explicit_value());
+        let plaintext_codec = ScaledCodec::new(plain_modulus, cipher_modulus);
         let modulus_minus_one = cipher_modulus.minus_one();
         let noise_distribution = DiscreteGaussian::new(noise_standard_deviation, modulus_minus_one)
             .expect("invalid Gaussian NTRU noise distribution");
@@ -106,7 +106,7 @@ where
 
     /// Returns the plaintext codec implementing the `Delta` embedding.
     #[inline]
-    pub fn plaintext_codec(&self) -> &ScaledCodec<T> {
+    pub fn plaintext_codec(&self) -> &ScaledCodec<T, M> {
         &self.plaintext_codec
     }
 

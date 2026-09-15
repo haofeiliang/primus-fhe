@@ -13,11 +13,15 @@
 绑定到 `f_client` 的二进制前缀，该 NTRU 秘密的其余系数为零。
 `bootstrapping` 描述 `f_acc` 下的 accumulator，`key_switching` 描述返回 `f_client` 的切换。
 环长度、明文模数与密文模数必须匹配，且 `1 <= external_lwe.dimension() <= N`。
+构造时同时准备普通 PBS 量化，并要求 `log2(2N) <= T::BITS`。
 
 普通 PBS 使用固定链：`f_acc` 下 BR → NTRU 密钥切换到 `f_client` → compact LWE extraction。
 没有 order 选项。外部输出按 `external_lwe().dimension()` 分配；使用配套的 context/client/server key。
 
 ## 客户端与 LUT
+
+Client 加密接受 `T`，解密返回 `Result<T, NtruClientError>`，消息是 `[0,t)` 内的
+规范剩余类，消息类型转换由应用按需处理。
 
 Context 提供 `encryptor`、`decryptor`；直接构造使用 `NtruEncryptor::try_new` 和
 `NtruDecryptor::try_new`。加密接受 client key，或通过

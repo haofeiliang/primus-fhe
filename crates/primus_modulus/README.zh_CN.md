@@ -63,6 +63,22 @@ assert_eq!(output, [11, 6, 50]);
 - `EncodeSigned` 转换无符号幅度小于显式模数的系数；Native 接受所有 signed 值。Native 保留位模式，PowOf2 使用掩码，Uint/Compact/Barrett 共享显式模数转换。默认切片方法统一检查一次等长，再使用具体类型的标量实现。
 - `ReduceDotProductSigned` 为 Native、PowOf2、Barrett 及派生 Barrett 融合有界 signed 编码与点积。入口统一检查等长，空切片返回零。Barrett 在宽累加前完成编码，保持 16 项乘积的累加界；SIMD 处理完整块，尾部走标量内核。
 
+## 预备模切
+
+五种模数及派生 Barrett 均实现 `PrepareModulusSwitch`，也可以直接使用
+`ModulusSwitch::new(source, target)` 准备模数对。两种入口都根据固定比例选择
+可复用内核：二进制缩放、精确乘除、余数分解或窄/宽整数算术。
+契约见 [`primus_reduce`](../primus_reduce/README.zh_CN.md#预备模切)。
+批量转换在循环前选择内核；当前未使用 Barrett 倒数求商优化。
+
+```rust
+use primus_modulus::{BarrettModulus, NativeModulus};
+use primus_modulus::reduce::{PrepareModulusSwitch, PreparedModulusSwitch};
+
+let conversion = BarrettModulus::new(97u32).prepare_switch_to(NativeModulus::new());
+let residue = conversion.switch(48);
+```
+
 ## 许可证
 
 本 crate 可由你选择使用 [Apache License, Version 2.0](../../LICENSE-APACHE-2.0) 或 [MIT License](../../LICENSE-MIT)。

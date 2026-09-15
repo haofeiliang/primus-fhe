@@ -2,13 +2,15 @@
 //!
 //! For canonical `x` modulo `q`, rotation quantization is
 //! `R(x, q, L) = floor((x * L + floor(q / 2)) / q) mod L`.
-//! Ties round upward, including the wrap from `L` to zero; `None` means
+//! Ties round upward, including the wrap from `L` to zero; `NativeModulus<T>` uses
 //! `q = 2^T::BITS`. With stride `s`, let `R_s(x) = s * R(x, q, 2N/s)`.
 //! Backends rotate the LUT by
 //! `-R_s(b) + sum(R_s(a[i]) * secret[i])`, quantizing each LWE coefficient
 //! separately. Quantizing the decrypted phase once is not equivalent.
 
 use primus_integer::FheUint;
+use primus_modulus::{NativeModulus, PowOf2Modulus};
+use primus_reduce::{PrepareModulusSwitch, PreparedModulusSwitch};
 
 /// Interprets a coefficient that is already an exponent in `[0, 2N)`.
 #[inline]
@@ -18,69 +20,78 @@ pub fn direct_exponent<T: FheUint>(value: T, two_n: usize) -> usize {
     exponent
 }
 
-/// Modulus-switches one LWE coefficient into an exponent in `[0, 2N)`.
-///
-/// # Correctness
-///
-/// `two_n` must be a power of two at least two. With an explicit nonzero
-/// modulus, `value` must be canonical and `two_n` must fit in `T`.
-/// With the native modulus, `log2(two_n)` must not exceed `T::BITS`.
-#[inline]
-pub fn modulus_switch<T: FheUint>(value: T, modulus: Option<T>, two_n: usize) -> usize {
-    match modulus {
-        Some(modulus) if T::try_from(two_n).ok() == Some(modulus) => direct_exponent(value, two_n),
-        Some(modulus) => explicit_modulus_switch(value, modulus, two_n),
-        None => native_modulus_switch(value, two_n),
+/// Prepared coefficient quantization for ordinary and interleaved PBS.
+/// The input modulus and target width are fixed before processing coefficients.
+#[derive(Clone, Copy, Debug)]
+pub struct RotationQuantizer<S: PreparedModulusSwitch> {
+    switch: S,
+    window: usize,
+}
+
+impl<S: PreparedModulusSwitch> RotationQuantizer<S> {
+    /// Prepares `window * R(value, q, two_n/window)`.
+    /// Rounding in the smaller domain preserves interleaved LUT residue classes.
+    ///
+    /// # Panics
+    /// Panics unless `two_n >= 2` and `window` are powers of two,
+    /// `window <= two_n/2`, and `log2(two_n/window) <= T::BITS`.
+    #[must_use]
+    pub fn new<T, M>(modulus: M, two_n: usize, window: usize) -> Self
+    where
+        T: FheUint,
+        M: PrepareModulusSwitch<ValueT = T, Prepared = S>,
+    {
+        assert!(
+            two_n >= 2 && two_n.is_power_of_two(),
+            "invalid rotation domain"
+        );
+        assert!(
+            window.is_power_of_two() && window <= two_n / 2,
+            "invalid rotation window"
+        );
+        let target_log = (two_n / window).trailing_zeros();
+        assert!(target_log <= T::BITS, "invalid modulus-switch target width");
+        let switch = if target_log == T::BITS {
+            modulus.prepare_switch_to(NativeModulus::new())
+        } else {
+            modulus.prepare_switch_to(PowOf2Modulus::new(T::ONE << target_log))
+        };
+        Self { switch, window }
+    }
+
+    /// Quantizes one canonical input coefficient into `[0,two_n)`.
+    ///
+    /// # Correctness
+    /// `value` must be canonical under the input modulus used at construction.
+    #[must_use]
+    #[inline]
+    pub fn exponent(&self, value: S::ValueT) -> usize {
+        let exponent: usize = self.switch.switch(value).try_into().unwrap();
+        exponent * self.window
     }
 }
 
-/// Modulus-switches one LWE coefficient to a multiple of `window` in
-/// `[0, 2N)`.
-///
-/// Computes `window * R(value, q, two_n / window)`: rounding happens in the
-/// smaller rotation domain, before scaling. Clearing low bits after ordinary
-/// modulus switching is not equivalent. Multiples of `window` preserve the
-/// residue classes of an interleaved PBSManyLUT accumulator.
-///
-/// # Correctness
-///
-/// Inherits [`modulus_switch`]'s coefficient requirements. `two_n` must be a
-/// power of two; `window` must be a power of two in `1..=two_n / 2`, leaving
-/// at least two virtual rotation positions. `two_n / window` must satisfy
-/// [`modulus_switch`]'s target-width requirements.
+/// Modulus-switches one canonical coefficient into `[0,two_n)`.
+/// For repeated coefficients, reuse [`RotationQuantizer`]. Its construction
+/// requirements and coefficient correctness contract apply.
+#[must_use]
 #[inline]
-pub fn windowed_modulus_switch<T: FheUint>(
-    value: T,
-    modulus: Option<T>,
-    two_n: usize,
-    window: usize,
-) -> usize {
-    debug_assert!(window.is_power_of_two());
-    debug_assert!(window < two_n && two_n.is_multiple_of(window));
-    modulus_switch(value, modulus, two_n / window) * window
+pub fn modulus_switch<T, M>(value: T, modulus: M, two_n: usize) -> usize
+where
+    T: FheUint,
+    M: PrepareModulusSwitch<ValueT = T>,
+{
+    RotationQuantizer::new(modulus, two_n, 1).exponent(value)
 }
 
-/// Rounds a native-torus coefficient into the rotation domain.
+/// Computes `window * R(value,q,two_n/window)`; clearing low bits after ordinary
+/// switching is not equivalent. Inherits [`RotationQuantizer`]'s contracts.
+#[must_use]
 #[inline]
-fn native_modulus_switch<T: FheUint>(value: T, two_n: usize) -> usize {
-    debug_assert!(two_n.is_power_of_two());
-    let target_log = two_n.trailing_zeros();
-    assert!(target_log <= T::BITS);
-    let shift = T::BITS - target_log;
-    let rounded = if shift == 0 {
-        value
-    } else {
-        value.wrapping_add(T::ONE << (shift - 1)) >> shift
-    };
-    rounded.try_into().unwrap() & (two_n - 1)
-}
-
-/// Rounds an explicitly reduced coefficient into the rotation domain.
-#[inline]
-fn explicit_modulus_switch<T: FheUint>(value: T, modulus: T, two_n: usize) -> usize {
-    debug_assert!(two_n.is_power_of_two());
-    let target = T::try_from(two_n).unwrap();
-    let (lo, hi) = value.carrying_mul(target, modulus >> 1u32);
-    let rounded = T::div_wide(lo, hi, modulus);
-    rounded.try_into().unwrap() & (two_n - 1)
+pub fn windowed_modulus_switch<T, M>(value: T, modulus: M, two_n: usize, window: usize) -> usize
+where
+    T: FheUint,
+    M: PrepareModulusSwitch<ValueT = T>,
+{
+    RotationQuantizer::new(modulus, two_n, window).exponent(value)
 }

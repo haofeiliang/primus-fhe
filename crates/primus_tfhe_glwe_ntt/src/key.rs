@@ -4,6 +4,7 @@ use primus_glwe::{
 use primus_integer::FheUint;
 use primus_lwe::LweSecretKey;
 use primus_ntt::NttTable;
+use primus_reduce::Modulus;
 use primus_tfhe_glwe::GlweClientKey as ClientKey;
 
 use crate::{NttGlweBootstrappingKey, TfheContext, TfheParameters, error::TfheKeyError};
@@ -13,7 +14,7 @@ use crate::{NttGlweBootstrappingKey, TfheContext, TfheParameters, error::TfheKey
 /// Both PBS orders share these key materials. [`crate::PbsOrder`] only changes
 /// the order in which the evaluator applies them.
 pub struct ServerKey<T: FheUint> {
-    bootstrapping_key: NttGlweBootstrappingKey<T>,
+    bootstrapping_key: NttGlweBootstrappingKey<T, primus_modulus::BarrettModulus<T>>,
     glwe_key_switching_key: NttGlweKeySwitchingKey<T>,
 }
 
@@ -22,7 +23,7 @@ impl<T: FheUint> ServerKey<T> {
         let bootstrapping = parameters.bootstrapping();
         let key_switching = parameters.glwe_key_switching();
         self.bootstrapping_key.input_dimension() == parameters.small_lwe().dimension()
-            && self.bootstrapping_key.input_modulus()
+            && self.bootstrapping_key.input_modulus().explicit_value()
                 == parameters.small_lwe().cipher_modulus_value()
             && self.bootstrapping_key.size() == bootstrapping.size()
             && self.bootstrapping_key.basis() == bootstrapping.basis()
@@ -36,7 +37,9 @@ impl<T: FheUint> ServerKey<T> {
 
     /// Returns the NTT functional bootstrapping key.
     #[inline]
-    pub fn bootstrapping_key(&self) -> &NttGlweBootstrappingKey<T> {
+    pub fn bootstrapping_key(
+        &self,
+    ) -> &NttGlweBootstrappingKey<T, primus_modulus::BarrettModulus<T>> {
         &self.bootstrapping_key
     }
 
@@ -49,7 +52,12 @@ impl<T: FheUint> ServerKey<T> {
     /// Decomposes this server key into its bootstrapping and key-switching
     /// keys.
     #[inline]
-    pub fn into_parts(self) -> (NttGlweBootstrappingKey<T>, NttGlweKeySwitchingKey<T>) {
+    pub fn into_parts(
+        self,
+    ) -> (
+        NttGlweBootstrappingKey<T, primus_modulus::BarrettModulus<T>>,
+        NttGlweKeySwitchingKey<T>,
+    ) {
         (self.bootstrapping_key, self.glwe_key_switching_key)
     }
 }

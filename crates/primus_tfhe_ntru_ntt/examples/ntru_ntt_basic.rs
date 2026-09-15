@@ -60,8 +60,8 @@ fn main() {
             .encrypt_padded_to(message, &mut input, &mut rng)
             .unwrap();
         evaluator.apply_many_lookup_table_to(&input, &lut, &mut outputs);
-        assert_eq!(decryptor.decrypt::<u32>(&outputs[0]).unwrap(), message % 4);
-        assert_eq!(decryptor.decrypt::<u32>(&outputs[1]).unwrap(), message / 4);
+        assert_eq!(decryptor.decrypt(&outputs[0]).unwrap(), message % 4);
+        assert_eq!(decryptor.decrypt(&outputs[1]).unwrap(), message / 4);
     }
     println!("NTRU/NTT programmable bootstrap succeeded");
 }

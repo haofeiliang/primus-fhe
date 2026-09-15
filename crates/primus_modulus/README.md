@@ -63,6 +63,24 @@ The operation traits, input ranges, output ranges, and slice-length requirements
 - `EncodeSigned` converts coefficients with unsigned magnitude less than the explicit modulus; Native accepts every signed value. Native preserves the bit pattern, PowOf2 applies its mask, and Uint/Compact/Barrett share the explicit-modulus conversion. The default slice method checks equal lengths once and uses the concrete scalar implementation.
 - `ReduceDotProductSigned` fuses bounded signed encoding with dot products for Native, PowOf2, Barrett and derived Barrett. It checks equal lengths once and returns zero for empty slices. Barrett encodes before wide accumulation, preserving the 16-product bound; SIMD handles full chunks and a scalar tail.
 
+## Prepared modulus switching
+
+All five modulus types and derived Barrett contexts implement `PrepareModulusSwitch`.
+`ModulusSwitch::new(source, target)` also prepares a pair directly. Both interfaces
+select a reusable kernel from the fixed ratio: binary scaling, exact multiplication
+or division, remainder decomposition, or narrow/wide integer arithmetic.
+Contracts are documented in [`primus_reduce`](../primus_reduce/README.md#prepared-modulus-switching).
+Batch switching selects the kernel before the loop; Barrett reciprocal quotient
+optimization is not used.
+
+```rust
+use primus_modulus::{BarrettModulus, NativeModulus};
+use primus_modulus::reduce::{PrepareModulusSwitch, PreparedModulusSwitch};
+
+let conversion = BarrettModulus::new(97u32).prepare_switch_to(NativeModulus::new());
+let residue = conversion.switch(48);
+```
+
 ## License
 
 Licensed under either the [Apache License, Version 2.0](../../LICENSE-APACHE-2.0) or the [MIT License](../../LICENSE-MIT), at your option.

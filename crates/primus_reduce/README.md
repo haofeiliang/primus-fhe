@@ -102,6 +102,24 @@ provides the operation without building a reduction context.
 
 [`primus_modulo`](../primus_modulo/README.md) provides an optional value-receiver mirror such as `a.add_modulo(b, modulus)`. The modulus-side traits in this crate remain the primary implementation and workspace integration boundary.
 
+## Prepared modulus switching
+
+`source.prepare_switch_to(target)` prepares a fixed modulus pair through
+`PrepareModulusSwitch`. Its associated `PreparedModulusSwitch` converts canonical
+source residues with `switch(value)`, returning `round(value*target/source) mod target`
+with ties upward. Native moduli are valid on either side. This is integer ratio
+rounding, independent of modular division.
+
+`RingContext` includes `PrepareModulusSwitch`; `FieldContext` inherits it.
+The preparation trait also works independently, so codecs need only preparation
+and modular addition. `PreparedModulusSwitch` describes the returned conversion,
+not the source ring context. Custom ring contexts must implement preparation.
+
+`switch_map` carries a payload beside each coefficient, allowing fused sign handling,
+output conversion and accumulation without a temporary buffer. Concrete implementations
+can select their arithmetic kernel before the iterator; the default uses `switch`.
+The iterator and callback may have partial effects if they panic.
+
 ## License
 
 Licensed under either the [Apache License, Version 2.0](../../LICENSE-APACHE-2.0) or the [MIT License](../../LICENSE-MIT), at your option.

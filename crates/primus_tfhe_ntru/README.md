@@ -13,13 +13,17 @@ See the [shared capability and encoding guide](../primus_tfhe/README.md).
 external LWE to a binary prefix of `f_client`; the rest of that NTRU secret is zero.
 `bootstrapping` describes the accumulator under `f_acc`, and `key_switching`
 describes the return to `f_client`. Ring lengths, plaintext moduli and ciphertext moduli must match, with
-`1 <= external_lwe.dimension() <= N`.
+`1 <= external_lwe.dimension() <= N`. Construction also prepares ordinary-PBS
+quantization and requires `log2(2N) <= T::BITS`.
 
 Ordinary PBS follows one fixed chain: BR under `f_acc` → NTRU key switch to
 `f_client` → compact LWE extraction. There is no order option. Allocate external
 outputs using `external_lwe().dimension()`; use paired context/client/server keys.
 
 ## Clients and LUTs
+
+Client encryption takes `T`, and decryption returns `Result<T, NtruClientError>`
+with a canonical residue in `[0,t)`; applications handle message type conversions.
 
 Contexts expose `encryptor` and `decryptor`; direct construction uses
 `NtruEncryptor::try_new` and `NtruDecryptor::try_new`. Encryption accepts the client

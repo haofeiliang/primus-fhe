@@ -34,6 +34,10 @@ FFT engine 和 evaluator 从同一个 context 创建。
 `t=4` 时使用 `boolean_encryptor`、`boolean_decryptor`、`boolean_evaluator`，由适配器处理
 内部模 8 的 LUT 尺度。通过 `evaluate_binary_to`、`not_to`、`mux_to` 重复求值。
 
+低层 `FourierGlweBootstrappingKey<T, LM>` 保留输入模数类型 `LM`，与 accumulator 模数独立。
+密钥生成时准备普通 PBS 量化参数；ManyLUT 在系数循环前按步长准备转换。
+高层 context 保持既有参数约束。
+
 ## Circuit bootstrapping
 
 Fourier GLWE CBS 尚未实现。已有 GLWE CBS 路径在 [NTT 后端](../primus_tfhe_glwe_ntt/README.zh_CN.md)，

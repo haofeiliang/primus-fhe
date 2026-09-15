@@ -48,21 +48,21 @@ fn main() {
     let secret = LweSecretKey::generate(&params, &mut rng);
 
     let ciphertext = secret.encrypt(3u32, &params, &mut rng);
-    assert_eq!(secret.decrypt::<_, u32>(&ciphertext, &params), 3);
+    assert_eq!(secret.decrypt(&ciphertext, &params), 3);
 
     let mut storage = vec![0u32; ciphertext.lwe_len()];
     secret.encrypt_to(2u32, &mut Lwe::new(&mut storage[..]), &params, &mut rng);
     assert_eq!(
-        secret.decrypt::<_, u32>(&Lwe::new(&storage[..]), &params),
+        secret.decrypt(&Lwe::new(&storage[..]), &params),
         2
     );
 
     let public = LwePublicKey::generate(secret.as_view(), &params, &mut rng);
     let messages = [0u32, 1, 2, 3];
     let batch = public.encrypt_batch(&messages, &params, &mut rng);
-    assert_eq!(secret.decrypt_batch::<_, u32>(&batch, &params), messages);
+    assert_eq!(secret.decrypt_batch(&batch, &params), messages);
     for (sample, &message) in LweIter::new(&batch, ciphertext.lwe_len()).zip(&messages) {
-        assert_eq!(secret.decrypt::<_, u32>(&sample, &params), message);
+        assert_eq!(secret.decrypt(&sample, &params), message);
     }
 
     let output_params = LweParameters::new(
@@ -83,7 +83,7 @@ fn main() {
     );
     let switched = switching.key_switch_batch(&batch, params.cipher_modulus());
     assert_eq!(
-        output_secret.decrypt_batch::<_, u32>(&switched, &output_params),
+        output_secret.decrypt_batch(&switched, &output_params),
         messages
     );
 }
@@ -100,10 +100,12 @@ fn main() {
 `cipher_modulus_value()` 对 Native 模数返回 `None`，对显式模数返回 `Some(q)`。
 噪声标准差以密文系数为单位。
 
-消息接口接受 `[0,t)` 内的规范剩余类。`encrypt` 使用 unsigned embedding；
-`encrypt_with_embedding` 通过 `primus_encoding` 中的 `PlaintextEmbedding::Unsigned`
+消息接口接受类型 `T`、位于 `[0,t)` 内的规范剩余类，批量及 packed 加密接受 `&[T]`。
+`encrypt` 使用 unsigned embedding；`encrypt_with_embedding` 通过 `primus_encoding` 中的 `PlaintextEmbedding::Unsigned`
 或 `PlaintextEmbedding::Centered` 选择编码。Centered embedding 仍接受无符号剩余类，
-其中 `t - 1` 表示 `-1`。两种编码都使用 `decrypt` 解密，结果位于 `[0,t)`。
+其中 `t - 1` 表示 `-1`。两种编码都使用 `decrypt` 解密，结果使用密文系数类型 `T`，
+位于 `[0,t)`。批量和 packed 解密同样返回 `Vec<T>` 或写入 `[T]`；应用在加密前、
+解密后按需转换整数类型或有明确语义的消息类型。
 
 对密文 `[a, b]`，私钥加密计算 `b = <a,s> + e + Encode(message) mod q`。
 只有相位噪声处于 codec 的解码余量内时，才能恢复原消息。私钥、密文和参数的维度及模数

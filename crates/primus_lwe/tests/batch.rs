@@ -140,7 +140,7 @@ fn check_batches<T: FheUint, M: RingContext<T>>(modulus: M, dimension: usize) {
                     )
                 };
                 assert_eq!(raw.as_slice(), &*batch);
-                assert_eq!(secret.decrypt_batch::<_, T>(batch, &params), messages);
+                assert_eq!(secret.decrypt_batch(batch, &params), messages);
                 let mut decrypted = vec![T::MAX; count];
                 secret.decrypt_batch_to(batch, &mut decrypted, &params);
                 assert_eq!(decrypted, messages);
@@ -239,26 +239,24 @@ fn batch_boundaries_validate_layout_and_reject_invalid_messages() {
         }
         // First-message failures occur before sampling; later failures may
         // leave completed ciphertexts or a partially initialized public-key tile.
-        for invalid in [4u64, u64::MAX] {
-            for index in [0, 9] {
-                let mut messages = [1u64; 10];
-                messages[index] = invalid;
-                let mut output = vec![17u32; 40];
-                let mut rng = StdRng::seed_from_u64(32);
-                assert!(
-                    catch_unwind(AssertUnwindSafe(|| {
-                        if use_public {
-                            public.encrypt_batch_to(&messages, &mut output, &params, &mut rng);
-                        } else {
-                            secret.encrypt_batch_to(&messages, &mut output, &params, &mut rng);
-                        }
-                    }))
-                    .is_err()
-                );
-                if index == 0 {
-                    assert!(output.iter().all(|&c| c == 17));
-                    assert_eq!(rng.next_u64(), StdRng::seed_from_u64(32).next_u64());
-                }
+        for index in [0, 9] {
+            let mut messages = [1u32; 10];
+            messages[index] = params.plain_modulus_value();
+            let mut output = vec![17u32; 40];
+            let mut rng = StdRng::seed_from_u64(32);
+            assert!(
+                catch_unwind(AssertUnwindSafe(|| {
+                    if use_public {
+                        public.encrypt_batch_to(&messages, &mut output, &params, &mut rng);
+                    } else {
+                        secret.encrypt_batch_to(&messages, &mut output, &params, &mut rng);
+                    }
+                }))
+                .is_err()
+            );
+            if index == 0 {
+                assert!(output.iter().all(|&c| c == 17));
+                assert_eq!(rng.next_u64(), StdRng::seed_from_u64(32).next_u64());
             }
         }
     }
@@ -278,7 +276,7 @@ fn batch_boundaries_validate_layout_and_reject_invalid_messages() {
     // can omit them, including a tail with no complete ciphertext at all.
     for length in [1, 7] {
         let input = vec![0u32; length];
-        assert!(catch_unwind(|| secret.decrypt_batch::<_, u32>(&input, &params)).is_err());
+        assert!(catch_unwind(|| secret.decrypt_batch(&input, &params)).is_err());
         assert!(
             catch_unwind(|| secret.decrypt_phase_batch(&input, params.cipher_modulus())).is_err()
         );

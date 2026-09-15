@@ -14,14 +14,13 @@ impl<T: FheUint> LweSecretKey<T> {
     /// See [`Self::encrypt_multi_messages_with_embedding`] for the layout,
     /// correctness and panic conditions.
     #[inline]
-    pub fn encrypt_multi_messages<R, M, Msg>(
+    pub fn encrypt_multi_messages<R, M>(
         &self,
-        messages: &[Msg],
+        messages: &[T],
         params: &LweParameters<T, M>,
         rng: &mut R,
     ) -> MultiMsgLweCiphertext<T>
     where
-        Msg: Copy + TryInto<T>,
         R: rand::Rng + rand::CryptoRng,
         M: RingContext<T>,
     {
@@ -47,17 +46,16 @@ impl<T: FheUint> LweSecretKey<T> {
     /// # Panics
     ///
     /// Panics if the message count exceeds `n`, the storage length overflows,
-    /// or a message cannot be represented by `T` or lies outside `[0,t)`.
+    /// or a message lies outside `[0,t)`.
     #[inline]
-    pub fn encrypt_multi_messages_with_embedding<R, M, Msg>(
+    pub fn encrypt_multi_messages_with_embedding<R, M>(
         &self,
-        messages: &[Msg],
+        messages: &[T],
         params: &LweParameters<T, M>,
         rng: &mut R,
         embedding: PlaintextEmbedding,
     ) -> MultiMsgLweCiphertext<T>
     where
-        Msg: Copy + TryInto<T>,
         R: rand::Rng + rand::CryptoRng,
         M: RingContext<T>,
     {
@@ -146,16 +144,14 @@ impl<T: FheUint> LweSecretKey<T> {
     /// # Panics
     ///
     /// Panics if storage is shorter than `params.dimension()`, the body count
-    /// exceeds that dimension, or a decoded residue cannot be represented by
-    /// `Msg`. For nonempty bodies, a mask/key length mismatch also panics.
+    /// exceeds that dimension, or a nonempty ciphertext has a mask/key length mismatch.
     #[inline]
-    pub fn decrypt_multi_messages<M, Msg>(
+    pub fn decrypt_multi_messages<M>(
         &self,
         cipher_text: &MultiMsgLwe<impl Data<Elem = T>>,
         params: &LweParameters<T, M>,
-    ) -> Vec<Msg>
+    ) -> Vec<T>
     where
-        Msg: TryFrom<T>,
         M: RingContext<T>,
     {
         let modulus = params.cipher_modulus();
@@ -182,13 +178,6 @@ impl<T: FheUint> LweSecretKey<T> {
         params.plaintext_codec().decode_slice_assign(&mut messages);
 
         messages
-            .into_iter()
-            .map(|message| {
-                Msg::try_from(message)
-                    .map_err(|_| "out of range integral type conversion attempted")
-                    .unwrap()
-            })
-            .collect()
     }
 
     /// Computes the phase mask product for body `index`; `index < dimension`

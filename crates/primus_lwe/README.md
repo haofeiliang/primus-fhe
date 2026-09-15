@@ -51,21 +51,21 @@ fn main() {
     let secret = LweSecretKey::generate(&params, &mut rng);
 
     let ciphertext = secret.encrypt(3u32, &params, &mut rng);
-    assert_eq!(secret.decrypt::<_, u32>(&ciphertext, &params), 3);
+    assert_eq!(secret.decrypt(&ciphertext, &params), 3);
 
     let mut storage = vec![0u32; ciphertext.lwe_len()];
     secret.encrypt_to(2u32, &mut Lwe::new(&mut storage[..]), &params, &mut rng);
     assert_eq!(
-        secret.decrypt::<_, u32>(&Lwe::new(&storage[..]), &params),
+        secret.decrypt(&Lwe::new(&storage[..]), &params),
         2
     );
 
     let public = LwePublicKey::generate(secret.as_view(), &params, &mut rng);
     let messages = [0u32, 1, 2, 3];
     let batch = public.encrypt_batch(&messages, &params, &mut rng);
-    assert_eq!(secret.decrypt_batch::<_, u32>(&batch, &params), messages);
+    assert_eq!(secret.decrypt_batch(&batch, &params), messages);
     for (sample, &message) in LweIter::new(&batch, ciphertext.lwe_len()).zip(&messages) {
-        assert_eq!(secret.decrypt::<_, u32>(&sample, &params), message);
+        assert_eq!(secret.decrypt(&sample, &params), message);
     }
 
     let output_params = LweParameters::new(
@@ -86,7 +86,7 @@ fn main() {
     );
     let switched = switching.key_switch_batch(&batch, params.cipher_modulus());
     assert_eq!(
-        output_secret.decrypt_batch::<_, u32>(&switched, &output_params),
+        output_secret.decrypt_batch(&switched, &output_params),
         messages
     );
 }
@@ -104,11 +104,14 @@ codec and samplers. In particular, `t >= 2` and `q > t`. `NativeModulus<T>` deno
 `Some(q)` for an explicit modulus. The noise standard deviation is measured in
 ciphertext coefficient units.
 
-Message APIs take canonical residues in `[0,t)`. `encrypt` uses unsigned
-embedding; `encrypt_with_embedding` selects `PlaintextEmbedding::Unsigned` or
+Message APIs take canonical residues of type `T` in `[0,t)`; batch and packed
+encryption take `&[T]`. `encrypt` uses unsigned embedding;
+`encrypt_with_embedding` selects `PlaintextEmbedding::Unsigned` or
 `PlaintextEmbedding::Centered` from `primus_encoding`. Centered embedding still
 takes unsigned residues: `t - 1` represents `-1`. Both embeddings use the same
-`decrypt` and return residues in `[0,t)`.
+`decrypt` and return residues in `[0,t)` using the ciphertext coefficient type `T`.
+Batch and packed decryption likewise return `Vec<T>` or write to `[T]`.
+Applications convert message types before encryption and after decryption.
 
 For an LWE ciphertext `[a, b]`, secret-key encryption sets
 `b = <a,s> + e + Encode(message) mod q`. Decoding recovers the message only while

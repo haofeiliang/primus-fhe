@@ -97,7 +97,7 @@ fn fresh_and_split_keys_support_both_pbs_orders() {
                     public_encryptor.encrypt_padded(message, &mut rng).unwrap(),
                 ] {
                     let output = evaluator.apply_lookup_table(&input, &lookup_table);
-                    assert_eq!(decryptor.decrypt::<u32>(&output).unwrap(), 1 - message);
+                    assert_eq!(decryptor.decrypt(&output).unwrap(), 1 - message);
                 }
             }
             let boolean_encryptor = context.boolean_encryptor(&public).unwrap();

@@ -12,14 +12,13 @@ impl<T: FheUint> LweSecretKey<T> {
     ///
     /// See [`Self::encrypt_with_embedding`] for correctness and panic conditions.
     #[inline]
-    pub fn encrypt<R, M, Msg>(
+    pub fn encrypt<R, M>(
         &self,
-        message: Msg,
+        message: T,
         params: &LweParameters<T, M>,
         rng: &mut R,
     ) -> LweCiphertext<T>
     where
-        Msg: TryInto<T>,
         R: rand::Rng + rand::CryptoRng,
         M: RingContext<T>,
     {
@@ -36,18 +35,16 @@ impl<T: FheUint> LweSecretKey<T> {
     ///
     /// # Panics
     ///
-    /// Panics before allocating or sampling if `message` cannot be represented
-    /// by `T` or lies outside `[0,t)`.
+    /// Panics before allocating or sampling if `message` lies outside `[0,t)`.
     #[inline]
-    pub fn encrypt_with_embedding<R, M, Msg>(
+    pub fn encrypt_with_embedding<R, M>(
         &self,
-        message: Msg,
+        message: T,
         params: &LweParameters<T, M>,
         rng: &mut R,
         embedding: PlaintextEmbedding,
     ) -> LweCiphertext<T>
     where
-        Msg: TryInto<T>,
         R: rand::Rng + rand::CryptoRng,
         M: RingContext<T>,
     {
@@ -67,14 +64,13 @@ impl<T: FheUint> LweSecretKey<T> {
     ///
     /// See [`Self::encrypt_with_embedding_to`] for contracts and panic conditions.
     #[inline]
-    pub fn encrypt_to<R, M, Msg>(
+    pub fn encrypt_to<R, M>(
         &self,
-        message: Msg,
+        message: T,
         output: &mut Lwe<impl DataMut<Elem = T>>,
         params: &LweParameters<T, M>,
         rng: &mut R,
     ) where
-        Msg: TryInto<T>,
         R: rand::Rng + rand::CryptoRng,
         M: RingContext<T>,
     {
@@ -90,19 +86,17 @@ impl<T: FheUint> LweSecretKey<T> {
     ///
     /// # Panics
     ///
-    /// Panics before writing if `message` cannot be represented by `T`, is outside
-    /// `[0,t)`, or the output length is not `self.dimension() + 1`. A panicking
-    /// RNG can leave partial output.
+    /// Panics before writing if `message` is outside `[0,t)` or the output length
+    /// is not `self.dimension() + 1`. A panicking RNG can leave partial output.
     #[inline]
-    pub fn encrypt_with_embedding_to<R, M, Msg>(
+    pub fn encrypt_with_embedding_to<R, M>(
         &self,
-        message: Msg,
+        message: T,
         output: &mut Lwe<impl DataMut<Elem = T>>,
         params: &LweParameters<T, M>,
         rng: &mut R,
         embedding: PlaintextEmbedding,
     ) where
-        Msg: TryInto<T>,
         R: rand::Rng + rand::CryptoRng,
         M: RingContext<T>,
     {
@@ -131,16 +125,14 @@ impl<T: FheUint> LweSecretKey<T> {
     ///
     /// # Panics
     ///
-    /// Panics if the ciphertext has no body, its mask length differs from the
-    /// key length, or the decoded residue cannot be represented by `Msg`.
+    /// Panics if the ciphertext has no body or its mask length differs from the key length.
     #[inline]
-    pub fn decrypt<M, Msg>(
+    pub fn decrypt<M>(
         &self,
         cipher_text: &Lwe<impl Data<Elem = T>>,
         params: &LweParameters<T, M>,
-    ) -> Msg
+    ) -> T
     where
-        Msg: TryFrom<T>,
         M: RingContext<T>,
     {
         let modulus = params.cipher_modulus();
@@ -160,14 +152,13 @@ impl<T: FheUint> LweSecretKey<T> {
     ///
     /// The correctness and panic conditions of [`Self::decrypt`] apply.
     #[inline]
-    pub fn decrypt_with_noise<M, Msg>(
+    pub fn decrypt_with_noise<M>(
         &self,
         cipher_text: &Lwe<impl Data<Elem = T>>,
         params: &LweParameters<T, M>,
         embedding: PlaintextEmbedding,
-    ) -> (Msg, T)
+    ) -> (T, T)
     where
-        Msg: TryFrom<T>,
         M: RingContext<T>,
     {
         let modulus = params.cipher_modulus();
@@ -179,9 +170,7 @@ impl<T: FheUint> LweSecretKey<T> {
         let fresh: T = params.plaintext_codec().encode_value(message, embedding);
 
         (
-            Msg::try_from(message)
-                .map_err(|_| "out of range integral type conversion attempted")
-                .unwrap(),
+            message,
             modulus
                 .reduce_sub(plaintext, fresh)
                 .min(modulus.reduce_sub(fresh, plaintext)),

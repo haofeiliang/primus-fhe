@@ -4,7 +4,31 @@
 
 use criterion::{BatchSize, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use primus_encoding::{PlaintextEmbedding, RoundedCodec, ScaledCodec};
+use primus_modulus::{BarrettModulus, NativeModulus, PowOf2Modulus, UintModulus};
 use std::hint::black_box;
+
+macro_rules! with_modulus {
+    ($q:expr, $modulus:ident, $body:block) => {
+        match $q {
+            None => {
+                let $modulus = NativeModulus::new();
+                $body
+            }
+            Some(q) if q.is_power_of_two() => {
+                let $modulus = PowOf2Modulus::new(q);
+                $body
+            }
+            Some(q) if q.leading_zeros() > 1 => {
+                let $modulus = BarrettModulus::new(q);
+                $body
+            }
+            Some(q) => {
+                let $modulus = UintModulus::new(q);
+                $body
+            }
+        }
+    };
+}
 
 const N: usize = 4096;
 const T: u64 = 12289;
@@ -35,44 +59,46 @@ fn bench_rounded_encode(c: &mut Criterion) {
         ("explicit_large", T, Some(u64::MAX - 58)),
         ("large_plaintext", (1 << 40) + 87, Some(u64::MAX - 58)),
     ] {
-        let codec = RoundedCodec::new(t, q);
-        let input = messages(N, t);
-        let mut output = vec![0; N];
-        group.throughput(Throughput::Elements(N as u64));
-        group.bench_function(BenchmarkId::new(format!("{name}/centered"), N), |b| {
-            b.iter(|| {
-                black_box(&codec).encode_slice_to(
-                    black_box(&input),
-                    black_box(&mut output),
-                    PlaintextEmbedding::Centered,
-                )
-            })
-        });
-        if matches!(name, "explicit_small" | "native" | "explicit_large") {
-            group.bench_function(BenchmarkId::new(format!("{name}/unsigned"), N), |b| {
+        with_modulus!(q, modulus, {
+            let codec = RoundedCodec::new(t, modulus);
+            let input = messages(N, t);
+            let mut output = vec![0; N];
+            group.throughput(Throughput::Elements(N as u64));
+            group.bench_function(BenchmarkId::new(format!("{name}/centered"), N), |b| {
                 b.iter(|| {
                     black_box(&codec).encode_slice_to(
                         black_box(&input),
                         black_box(&mut output),
-                        PlaintextEmbedding::Unsigned,
-                    )
-                })
-            });
-        }
-        // One short/long pair tracks dispatch cost without repeating the
-        // entire arithmetic matrix at every batch size.
-        if name == "exact_shift" {
-            group.throughput(Throughput::Elements(16));
-            group.bench_function(BenchmarkId::new("exact_shift/centered", 16), |b| {
-                b.iter(|| {
-                    black_box(&codec).encode_slice_to(
-                        black_box(&input[..16]),
-                        black_box(&mut output[..16]),
                         PlaintextEmbedding::Centered,
                     )
                 })
             });
-        }
+            if matches!(name, "explicit_small" | "native" | "explicit_large") {
+                group.bench_function(BenchmarkId::new(format!("{name}/unsigned"), N), |b| {
+                    b.iter(|| {
+                        black_box(&codec).encode_slice_to(
+                            black_box(&input),
+                            black_box(&mut output),
+                            PlaintextEmbedding::Unsigned,
+                        )
+                    })
+                });
+            }
+            // One short/long pair tracks dispatch cost without repeating the
+            // entire arithmetic matrix at every batch size.
+            if name == "exact_shift" {
+                group.throughput(Throughput::Elements(16));
+                group.bench_function(BenchmarkId::new("exact_shift/centered", 16), |b| {
+                    b.iter(|| {
+                        black_box(&codec).encode_slice_to(
+                            black_box(&input[..16]),
+                            black_box(&mut output[..16]),
+                            PlaintextEmbedding::Centered,
+                        )
+                    })
+                });
+            }
+        });
     }
     group.finish();
 }
@@ -87,27 +113,31 @@ fn bench_decode(c: &mut Criterion) {
         ("narrow", T, Some(Q)),
         ("wide", T, Some(u64::MAX - 58)),
     ] {
-        let codec = RoundedCodec::new(t, q);
-        let mut input = values(N, q);
-        input[..3].copy_from_slice(&[
-            0,
-            q.map_or(u64::MAX, |q| q - 1),
-            codec.encode_value(t - 1, PlaintextEmbedding::Unsigned),
-        ]);
-        let mut output = vec![0u64; N];
-        group.throughput(Throughput::Elements(N as u64));
-        group.bench_function(BenchmarkId::new(format!("{name}/to"), N), |b| {
-            b.iter(|| black_box(&codec).decode_slice_to(black_box(&input), black_box(&mut output)))
-        });
-        if name == "shift" {
-            group.bench_function(BenchmarkId::new("shift/assign", N), |b| {
-                b.iter_batched_ref(
-                    || input.clone(),
-                    |phase| black_box(&codec).decode_slice_assign(black_box(phase)),
-                    BatchSize::NumIterations(8),
-                )
+        with_modulus!(q, modulus, {
+            let codec = RoundedCodec::new(t, modulus);
+            let mut input = values(N, q);
+            input[..3].copy_from_slice(&[
+                0,
+                q.map_or(u64::MAX, |q| q - 1),
+                codec.encode_value(t - 1, PlaintextEmbedding::Unsigned),
+            ]);
+            let mut output = vec![0u64; N];
+            group.throughput(Throughput::Elements(N as u64));
+            group.bench_function(BenchmarkId::new(format!("{name}/to"), N), |b| {
+                b.iter(|| {
+                    black_box(&codec).decode_slice_to(black_box(&input), black_box(&mut output))
+                })
             });
-        }
+            if name == "shift" {
+                group.bench_function(BenchmarkId::new("shift/assign", N), |b| {
+                    b.iter_batched_ref(
+                        || input.clone(),
+                        |phase| black_box(&codec).decode_slice_assign(black_box(phase)),
+                        BatchSize::NumIterations(8),
+                    )
+                });
+            }
+        });
     }
     group.finish();
 }
@@ -115,7 +145,7 @@ fn bench_decode(c: &mut Criterion) {
 fn bench_u32(c: &mut Criterion) {
     let t = T as u32;
     let q = 536813569u32;
-    let codec = RoundedCodec::new(t, Some(q));
+    let codec = RoundedCodec::new(t, BarrettModulus::new(q));
     let input: Vec<u32> = messages(N, u64::from(t))
         .into_iter()
         .map(|m| m as u32)
@@ -149,30 +179,32 @@ fn bench_scaled_add(c: &mut Criterion) {
         ("native_shift", 256, None),
         ("explicit_multiply", T, Some(Q)),
     ] {
-        let codec = ScaledCodec::new(t, q);
-        let input = messages(N, t);
-        let mut acc = values(N, q);
-        group.bench_function(BenchmarkId::new(name, N), |b| {
-            // Every iteration leaves a canonical accumulator for the next one.
-            b.iter(|| {
-                black_box(&codec).add_encode_slice_assign(
-                    black_box(&mut acc),
-                    black_box(&input),
-                    PlaintextEmbedding::Centered,
-                )
-            })
+        with_modulus!(q, modulus, {
+            let codec = ScaledCodec::new(t, modulus);
+            let input = messages(N, t);
+            let mut acc = values(N, q);
+            group.bench_function(BenchmarkId::new(name, N), |b| {
+                // Every iteration leaves a canonical accumulator for the next one.
+                b.iter(|| {
+                    black_box(&codec).add_encode_slice_assign(
+                        black_box(&mut acc),
+                        black_box(&input),
+                        PlaintextEmbedding::Centered,
+                    )
+                })
+            });
         });
     }
     group.finish();
 }
 
 fn bench_scalar(c: &mut Criterion) {
-    let codec = RoundedCodec::new(256u64, None);
+    let codec = RoundedCodec::new(256u64, NativeModulus::new());
     let phase = codec.encode_value(255u64, PlaintextEmbedding::Unsigned);
     let mut acc = u64::MAX;
     let mut group = c.benchmark_group("rounded/scalar/u64");
     group.bench_function("native_shift/decode", |b| {
-        b.iter(|| black_box(&codec).decode_value::<u64>(black_box(phase)))
+        b.iter(|| black_box(&codec).decode_value(black_box(phase)))
     });
     group.bench_function("native_shift/add_encode", |b| {
         b.iter(|| {
@@ -183,7 +215,7 @@ fn bench_scalar(c: &mut Criterion) {
             )
         })
     });
-    let ratio = RoundedCodec::new(T, None);
+    let ratio = RoundedCodec::new(T, NativeModulus::new());
     group.bench_function("native_ratio/encode", |b| {
         b.iter(|| black_box(&ratio).encode_value(black_box(T - 1), PlaintextEmbedding::Centered))
     });

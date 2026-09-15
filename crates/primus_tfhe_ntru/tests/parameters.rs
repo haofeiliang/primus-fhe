@@ -97,3 +97,15 @@ fn rejects_mismatched_ring_or_plaintext_domains() {
         Some(NtruParameterError::CipherModulusMismatch)
     );
 }
+
+#[test]
+fn rejects_rotation_domain_wider_than_input_coefficients() {
+    let modulus = primus_modulus::NativeModulus::<u16>::new();
+    let external = LweParameters::new(1, 2, modulus, SecretKeyDistr::UniformBinary, 0.7);
+    let ring = NtruParameters::new(1 << 16, 2, modulus, SecretKeyDistr::UniformBinary, 0.7);
+    let gadget = NlevParameters::with_ntru_params(&ring, 4, None);
+    assert_eq!(
+        NtruTfheParameters::try_new(external, gadget.clone(), gadget).err(),
+        Some(NtruParameterError::RotationDomainTooLarge)
+    );
+}

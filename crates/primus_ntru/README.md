@@ -66,6 +66,9 @@ cargo run -p primus_ntru --example automorphism
 | `NttNtruAutomorphismKey::apply_to`, `FourierNtruAutomorphismKey::apply_to` | Coefficient NTRU to coefficient NTRU under the same secret |
 | `apply_ntt_to`, `apply_fourier_to` | Transformed NTRU to the corresponding transformed output under the same secret |
 
+Decryption returns coefficient polynomials with the ciphertext coefficient type
+`T`; applications handle any output type conversion.
+
 Evaluation keys own their decomposition basis. Reusable evaluation contexts
 contain only work buffers. Owning public operations validate all supplied sizes,
 moduli and transform/workspace lengths before output writes; the corresponding

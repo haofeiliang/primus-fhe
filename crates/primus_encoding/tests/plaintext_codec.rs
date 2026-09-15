@@ -2,6 +2,8 @@
 
 use primus_encoding::{PlaintextEmbedding, RoundedCodec, ScaledCodec};
 use primus_integer::FheUint;
+use primus_modulus::{BarrettModulus, NativeModulus, PowOf2Modulus, UintModulus};
+use primus_reduce::{PrepareModulusSwitch, ReduceAdd};
 
 fn round_half_up(numerator: u128, denominator: u128) -> u128 {
     (numerator + denominator / 2) / denominator
@@ -48,12 +50,32 @@ fn messages(t: u128) -> Vec<u128> {
 }
 
 fn check_encoding<T: FheUint + Into<u128> + TryFrom<u128>>(t: u128, q: u128) {
-    let explicit_q = (q != 1u128 << T::BITS).then(|| to_value(q));
-    let rounded = RoundedCodec::<T>::new(to_value(t), explicit_q);
+    if q == 1u128 << T::BITS {
+        check_encoding_with::<T, _>(t, q, NativeModulus::new());
+    } else {
+        check_encoding_with::<T, _>(t, q, UintModulus::new(to_value(q)));
+        if q.is_power_of_two() {
+            check_encoding_with::<T, _>(t, q, PowOf2Modulus::new(to_value(q)));
+        }
+        if q < 1u128 << (T::BITS - 2) {
+            check_encoding_with::<T, _>(t, q, BarrettModulus::new(to_value(q)));
+        }
+    }
+}
+
+fn check_encoding_with<
+    T: FheUint + Into<u128> + TryFrom<u128>,
+    M: ReduceAdd<T, Output = T> + PrepareModulusSwitch<ValueT = T>,
+>(
+    t: u128,
+    q: u128,
+    modulus: M,
+) {
+    let rounded = RoundedCodec::new(to_value(t), modulus);
     // Fixed scaling requires a stricter recovery bound than per-message rounding.
     let delta = round_half_up(q, t);
-    let scaled = (2 * (t * delta).abs_diff(q) * (t - 1) < q)
-        .then(|| ScaledCodec::<T>::new(to_value(t), explicit_q));
+    let scaled =
+        (2 * (t * delta).abs_diff(q) * (t - 1) < q).then(|| ScaledCodec::new(to_value(t), modulus));
     let messages: Vec<T> = messages(t).into_iter().map(to_value).collect();
 
     for embedding in [PlaintextEmbedding::Unsigned, PlaintextEmbedding::Centered] {
@@ -65,7 +87,7 @@ fn check_encoding<T: FheUint + Into<u128> + TryFrom<u128>>(t: u128, q: u128) {
             .iter()
             .map(|&c| to_value((q - 1 + c.into()) % q))
             .collect();
-        // RoundedCodec has separate scalar, output, in-place and accumulation loops.
+        // Check scalar results, output reuse, aliasing and modular accumulation.
         let mut output = vec![T::ZERO; messages.len()];
         rounded.encode_slice_to(&messages, &mut output, embedding);
         assert_eq!(output, expected, "t={t}, q={q}, embedding={embedding:?}");
@@ -168,37 +190,17 @@ fn decoding_matches_integer_oracle() {
             (11, (native - 1) / 11 + 1),
             (7, native - 1),
         ] {
-            let codec = RoundedCodec::<T>::new(to_value(t), (q != native).then(|| to_value(q)));
-            let mut phases = if q <= 256 {
-                (0..q).collect::<Vec<_>>()
+            if q == native {
+                check_decode::<T, _>(t, q, NativeModulus::new());
             } else {
-                // The first integer phase rounding up from m to m+1 is
-                // ceil((2m+1)*q/(2t)); test both sides, including the last cell.
-                messages(t)
-                    .into_iter()
-                    .flat_map(|m| {
-                        let boundary = ((2 * m + 1) * q).div_ceil(2 * t);
-                        [boundary - 1, boundary % q, (boundary + 1) % q]
-                    })
-                    .collect()
-            };
-            phases.extend([0, q - 1]);
-            phases.sort_unstable();
-            phases.dedup();
-            let expected: Vec<T> = phases
-                .iter()
-                .map(|&c| to_value(round_half_up(c * t, q) % t))
-                .collect();
-            let phases: Vec<T> = phases.into_iter().map(to_value).collect();
-            let mut output = vec![T::ZERO; phases.len()];
-            codec.decode_slice_to(&phases, &mut output);
-            assert_eq!(output, expected, "t={t}, q={q}");
-            for (&phase, &decoded) in phases.iter().zip(&expected) {
-                assert_eq!(codec.decode_value::<T>(phase), decoded);
+                check_decode::<T, _>(t, q, UintModulus::new(to_value(q)));
+                if q.is_power_of_two() {
+                    check_decode::<T, _>(t, q, PowOf2Modulus::new(to_value(q)));
+                }
+                if q < native / 4 {
+                    check_decode::<T, _>(t, q, BarrettModulus::new(to_value(q)));
+                }
             }
-            let mut inplace = phases;
-            codec.decode_slice_assign(&mut inplace);
-            assert_eq!(inplace, expected);
         }
     }
     check::<u16>();
@@ -206,19 +208,59 @@ fn decoding_matches_integer_oracle() {
     check::<u64>();
 }
 
+fn check_decode<
+    T: FheUint + Into<u128> + TryFrom<u128>,
+    M: ReduceAdd<T, Output = T> + PrepareModulusSwitch<ValueT = T>,
+>(
+    t: u128,
+    q: u128,
+    modulus: M,
+) {
+    let codec = RoundedCodec::<T, _>::new(to_value(t), modulus);
+    let mut phases = if q <= 256 {
+        (0..q).collect::<Vec<_>>()
+    } else {
+        // The first integer phase rounding up from m to m+1 is
+        // ceil((2m+1)*q/(2t)); test both sides, including the last cell.
+        messages(t)
+            .into_iter()
+            .flat_map(|m| {
+                let boundary = ((2 * m + 1) * q).div_ceil(2 * t);
+                [boundary - 1, boundary % q, (boundary + 1) % q]
+            })
+            .collect()
+    };
+    phases.extend([0, q - 1]);
+    phases.sort_unstable();
+    phases.dedup();
+    let expected: Vec<T> = phases
+        .iter()
+        .map(|&c| to_value(round_half_up(c * t, q) % t))
+        .collect();
+    let phases: Vec<T> = phases.into_iter().map(to_value).collect();
+    let mut output = vec![T::ZERO; phases.len()];
+    codec.decode_slice_to(&phases, &mut output);
+    assert_eq!(output, expected, "t={t}, q={q}");
+    for (&phase, &decoded) in phases.iter().zip(&expected) {
+        assert_eq!(codec.decode_value(phase), decoded);
+    }
+    let mut inplace = phases;
+    codec.decode_slice_assign(&mut inplace);
+    assert_eq!(inplace, expected);
+}
+
 #[test]
 fn rejects_invalid_messages_before_batch_writes() {
     use std::panic::{AssertUnwindSafe, catch_unwind};
 
-    let rounded = RoundedCodec::new(7u64, Some(131));
-    let scaled = ScaledCodec::new(7u64, Some(131));
+    let rounded = RoundedCodec::new(7u64, UintModulus::new(131));
+    let scaled = ScaledCodec::new(7u64, UintModulus::new(131));
     let embedding = PlaintextEmbedding::Centered;
     let mut output = [1, 2];
-    // Conversion failure is distinct from a representable residue outside [0,t).
     assert!(
         catch_unwind(AssertUnwindSafe(|| rounded.add_encode_slice_assign(
             &mut output,
-            &[0i32, -1],
+            &[0, 7],
             embedding
         )))
         .is_err()
@@ -244,5 +286,20 @@ fn rejects_invalid_messages_before_batch_writes() {
         .is_err()
     );
     assert_eq!(output, [1, 2]);
-    assert!(catch_unwind(|| ScaledCodec::new(12u64, Some(17))).is_err());
+}
+
+#[test]
+fn rejects_invalid_modulus_pairs() {
+    use std::panic::catch_unwind;
+
+    for t in [0u64, 1] {
+        assert!(catch_unwind(|| RoundedCodec::new(t, NativeModulus::new())).is_err());
+        assert!(catch_unwind(|| ScaledCodec::new(t, NativeModulus::new())).is_err());
+    }
+    for (t, q) in [(0u64, 17), (1, 17), (2, 2), (3, 2)] {
+        assert!(catch_unwind(|| RoundedCodec::new(t, UintModulus::new(q))).is_err());
+        assert!(catch_unwind(|| ScaledCodec::new(t, UintModulus::new(q))).is_err());
+    }
+    // This pair meets q > t but violates fixed-scale recovery.
+    assert!(catch_unwind(|| ScaledCodec::new(12u64, UintModulus::new(17))).is_err());
 }

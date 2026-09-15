@@ -8,14 +8,22 @@ Plaintext coefficient encoding and decoding for Primus FHE.
 
 | Codec | Encoding | Current use |
 | --- | --- | --- |
-| `RoundedCodec<T>` | `round(lift(m)*q/t) mod q` | LWE and TFHE lookup tables |
-| `ScaledCodec<T>` | `lift(m)*round(q/t) mod q` | Single-modulus GLWE/NTRU |
+| `RoundedCodec<T,M>` | `round(lift(m)*q/t) mod q` | LWE and TFHE lookup tables |
+| `ScaledCodec<T,M>` | `lift(m)*round(q/t) mod q` | Single-modulus GLWE/NTRU |
 | `BfvRnsCodec<T,M>` | `lift(m)*floor(Q/t) mod Q` | RNS coefficient scaling (`rns` feature) |
 
 Public types are available directly at the crate root; implementation modules
-are private. The single-modulus codecs accept
-`None` for the native modulus `2^T::BITS`. The two single-modulus codecs are independent;
-they share private integer-scaling and decoding kernels. When `t` divides `q`,
+are private. Single-modulus constructors take a typed modulus, for example
+`RoundedCodec::new(256u64, NativeModulus::new())` for `q=2^64`, or
+`RoundedCodec::new(7u64, BarrettModulus::new(131))`. They require `PrepareModulusSwitch` and `ReduceAdd`; the full `RingContext` is unnecessary.
+`RingContext` includes preparation, but codecs also support `UintModulus` and
+`CompactModulus` without requiring their full ring operation sets.
+`RoundedCodec` prepares fixed `t → q` and `q → t` conversions at construction.
+`ScaledCodec` keeps fixed-scale multiplication and shares the prepared decoder.
+Magnitude rounding and decoding reuse the modulus-switch kernels. Batch paths
+fuse signs, output writes and accumulation with their arithmetic without
+intermediate buffers; scalar wrappers retain their direct specialization paths.
+When `t` divides `q`,
 both encode with the exact integer scale `q/t`. Otherwise `RoundedCodec` rounds
 each scaled message, while `ScaledCodec` uses one rounded integer scale.
 
@@ -77,6 +85,9 @@ Single-modulus slice methods use `_to` for separate output and `_assign` for
 in-place updates. RNS uses `encode_coeffs_to`, `add_encode_coeffs_assign`, and
 `decode_coeffs_to`; polynomial length is inferred from the plaintext slice.
 Batch encoding validates message ranges and exact lengths before writing.
+Encoding inputs and decoding outputs use the coefficient type `T`, with
+canonical values in `[0,t)`. Scalar inputs are `T` and slices are `[T]`;
+applications handle integer or semantic type conversions at their boundaries.
 
 ## Source layout
 

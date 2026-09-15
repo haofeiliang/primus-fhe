@@ -8,12 +8,19 @@ Primus FHE 的明文系数编码与解码。
 
 | 编码器 | 编码规则 | 当前用途 |
 | --- | --- | --- |
-| `RoundedCodec<T>` | `round(lift(m)*q/t) mod q` | LWE 和 TFHE 查找表 |
-| `ScaledCodec<T>` | `lift(m)*round(q/t) mod q` | 单模数 GLWE/NTRU |
+| `RoundedCodec<T,M>` | `round(lift(m)*q/t) mod q` | LWE 和 TFHE 查找表 |
+| `ScaledCodec<T,M>` | `lift(m)*round(q/t) mod q` | 单模数 GLWE/NTRU |
 | `BfvRnsCodec<T,M>` | `lift(m)*floor(Q/t) mod Q` | RNS 系数缩放（`rns` feature） |
 
-公开类型直接从 crate 根部导出，实现模块保持私有。单模数编码器用 `None` 表示原生模数
-`2^T::BITS`。两个单模数编码器互相独立，复用私有的整数缩放与解码内核。
+公开类型直接从 crate 根部导出，实现模块保持私有。单模数构造器接收具体模数类型，
+例如 `RoundedCodec::new(256u64, NativeModulus::new())` 表示 `q=2^64`，
+`RoundedCodec::new(7u64, BarrettModulus::new(131))` 使用显式模数。
+所需能力为 `PrepareModulusSwitch` 和 `ReduceAdd`，无需完整 `RingContext`。
+`RingContext` 已包含准备能力；codec 也支持 `UintModulus`、`CompactModulus`，
+无需它们实现完整环运算。
+`RoundedCodec` 在构造时准备固定的 `t → q`、`q → t` 转换；`ScaledCodec`
+保留固定尺度乘法并复用预备解码转换。绝对值舍入和解码复用模切内核；批量路径将
+符号、输出写回和累加与各自算术融合，无需中间缓冲区；标量包装保留各自的直接特化路径。
 `t` 整除 `q` 时，两者都使用精确整数尺度 `q/t`；否则 `RoundedCodec`
 对每个缩放消息舍入，`ScaledCodec` 使用统一的舍入整数尺度。
 
@@ -65,6 +72,8 @@ RNS 编码输出系数域 `CrtPolynomial`，调用方单独执行 NTT 转换。
 单模数切片方法使用 `_to` 表示独立输出，`_assign` 表示原地更新。RNS 使用
 `encode_coeffs_to`、`add_encode_coeffs_assign` 和 `decode_coeffs_to`，从明文
 切片推导多项式长度。批量编码在写入前检查消息范围和精确长度。
+编码输入与解码输出统一使用系数类型 `T`，值为 `[0,t)` 内的规范剩余类。标量输入为
+`T`，切片为 `[T]`；整数类型或语义消息类型的转换由应用在边界处理。
 
 ## 源码结构
 

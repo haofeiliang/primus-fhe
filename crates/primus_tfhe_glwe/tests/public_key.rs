@@ -137,7 +137,7 @@ fn check_reused_output<M, Key>(
     let encryptor = GlweEncryptor::try_new(parameters, key).unwrap();
     let decryptor = GlweDecryptor::try_new(parameters, client).unwrap();
     let dimension = parameters.ciphertext_lwe_dimension();
-    let t = u64::from(parameters.plain_modulus_value());
+    let t = parameters.plain_modulus_value();
     let mut rng = StdRng::seed_from_u64(0x434c_4945_4e54);
     let mut expected_rng = StdRng::seed_from_u64(0x434c_4945_4e54);
     let mut output = LweCiphertext::new(vec![u32::MAX; dimension + 1]);
@@ -167,16 +167,13 @@ fn check_reused_output<M, Key>(
             assert_eq!(allocation.count, 0, "client encryption must not allocate");
             assert_eq!(output, expected);
             assert_eq!(rng.next_u64(), expected_rng.next_u64());
-            assert_eq!(decryptor.decrypt::<u64>(&output).unwrap(), message);
+            assert_eq!(decryptor.decrypt(&output).unwrap(), message);
         }
         let padded_error = matches!(encoding, Encoding::Padded)
             .then_some((limit, GlweClientError::MessageOutsidePaddedDomain));
-        for (message, error) in [
-            (u64::MAX, GlweClientError::MessageConversion),
-            (t, GlweClientError::MessageOutOfRange),
-        ]
-        .into_iter()
-        .chain(padded_error)
+        for (message, error) in [(t, GlweClientError::MessageOutOfRange)]
+            .into_iter()
+            .chain(padded_error)
         {
             let before = output.clone();
             assert_eq!(encrypt(message, &mut rng).err(), Some(error.clone()));

@@ -123,7 +123,7 @@ where
             self.glwe().poly_length(),
             output_count,
             plaintext_modulus,
-            self.small_lwe().cipher_modulus_value(),
+            self.small_lwe().cipher_modulus(),
             self.glwe().cipher_modulus(),
             |input, output_index| {
                 let output = output_at(input, output_index);
@@ -151,7 +151,7 @@ where
             domain_len,
             glwe.poly_length(),
             lwe.plain_modulus_value(),
-            lwe.cipher_modulus().explicit_value(),
+            lwe.cipher_modulus(),
             glwe.cipher_modulus(),
             encoded_output_at,
         )

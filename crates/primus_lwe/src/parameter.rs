@@ -22,7 +22,7 @@ where
     /// **LWE** cipher modulus minus one, refers to **q-1** in the paper.
     cipher_modulus_minus_one: T,
     cipher_modulus_uniform_distr: Uniform<T>,
-    plaintext_codec: RoundedCodec<T>,
+    plaintext_codec: RoundedCodec<T, M>,
     secret_key_sampler: SecretKeySampler<T>,
     /// The noise distribution.
     noise_distribution: DiscreteGaussian<T>,
@@ -64,8 +64,7 @@ where
         );
 
         let cipher_modulus_uniform_distr = cipher_modulus.uniform_distribution();
-        let plaintext_codec =
-            RoundedCodec::new(plain_modulus_value, cipher_modulus.explicit_value());
+        let plaintext_codec = RoundedCodec::new(plain_modulus_value, cipher_modulus);
 
         Self {
             dimension,
@@ -117,7 +116,7 @@ where
 
     /// Returns the preselected plaintext codec strategy.
     #[inline]
-    pub fn plaintext_codec(&self) -> &RoundedCodec<T> {
+    pub fn plaintext_codec(&self) -> &RoundedCodec<T, M> {
         &self.plaintext_codec
     }
 

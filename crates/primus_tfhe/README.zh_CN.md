@@ -89,3 +89,11 @@ just tfhe-simd
 ```sh
 cargo bench -p primus_tfhe --bench lookup_table
 ```
+
+## 保留模数类型的旋转量化
+
+raw LUT 编译接收独立的输入模数类型和 accumulator 模数类型。
+`backend_support::RotationQuantizer::new(input_modulus, two_n, window)` 准备固定
+模数对的转换，`exponent(value)` 无分配复用。GLWE 密钥和 NTRU 参数在构造时
+缓存普通 PBS 量化；ManyLUT 在系数循环前按步长准备，先在 `two_n/window`
+个位置内舍入，再乘 `window`。仅描述模数域的元数据仍使用 `Option<T>`。

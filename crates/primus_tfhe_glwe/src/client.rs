@@ -42,16 +42,11 @@ where
     }
 
     /// Encrypts an unsigned message in the range `[0, t)`.
-    pub fn encrypt<R, Msg>(
-        &self,
-        message: Msg,
-        rng: &mut R,
-    ) -> Result<LweCiphertext<T>, GlweClientError>
+    pub fn encrypt<R>(&self, message: T, rng: &mut R) -> Result<LweCiphertext<T>, GlweClientError>
     where
         R: rand::Rng + rand::CryptoRng,
-        Msg: TryInto<T>,
     {
-        let message = self.checked_message(message)?;
+        self.check_message(message)?;
         Ok(self.key.encrypt_with_embedding(
             message,
             self.parameters,
@@ -64,16 +59,15 @@ where
     ///
     /// This preserves the input-padding invariant required by an arbitrary
     /// (not necessarily negacyclic) programmable-bootstrap lookup table.
-    pub fn encrypt_padded<R, Msg>(
+    pub fn encrypt_padded<R>(
         &self,
-        message: Msg,
+        message: T,
         rng: &mut R,
     ) -> Result<LweCiphertext<T>, GlweClientError>
     where
         R: rand::Rng + rand::CryptoRng,
-        Msg: TryInto<T>,
     {
-        let message = self.checked_padded_message(message)?;
+        self.check_padded_message(message)?;
         Ok(self.key.encrypt_with_embedding(
             message,
             self.parameters,
@@ -86,16 +80,15 @@ where
     ///
     /// Values in the upper half of the plaintext domain represent negative
     /// values. For example, `3` represents `-1` when `t = 4`.
-    pub fn encrypt_centered<R, Msg>(
+    pub fn encrypt_centered<R>(
         &self,
-        message: Msg,
+        message: T,
         rng: &mut R,
     ) -> Result<LweCiphertext<T>, GlweClientError>
     where
         R: rand::Rng + rand::CryptoRng,
-        Msg: TryInto<T>,
     {
-        let message = self.checked_message(message)?;
+        self.check_message(message)?;
         Ok(self.key.encrypt_with_embedding(
             message,
             self.parameters,
@@ -106,8 +99,8 @@ where
 
     /// Encrypts an unsigned message in `[0, t)` into existing storage.
     ///
-    /// Overwrites all coefficients without allocating. Message conversion,
-    /// range and output dimension errors leave both output and RNG unchanged.
+    /// Overwrites all coefficients without allocating. Message range and output
+    /// dimension errors leave both output and RNG unchanged.
     ///
     /// # Correctness
     ///
@@ -117,51 +110,48 @@ where
     ///
     /// A panicking RNG can leave partial output; see
     /// [`LweSecretKeyRef::encrypt_encoded_to`] and [`LwePublicKey::encrypt_encoded_to`].
-    pub fn encrypt_to<R, Msg>(
+    pub fn encrypt_to<R>(
         &self,
-        message: Msg,
+        message: T,
         output: &mut LweCiphertext<T>,
         rng: &mut R,
     ) -> Result<(), GlweClientError>
     where
         R: rand::Rng + rand::CryptoRng,
-        Msg: TryInto<T>,
     {
-        let message = self.checked_message(message)?;
+        self.check_message(message)?;
         self.encrypt_with_embedding_to(message, output, rng, PlaintextEmbedding::Unsigned)
     }
 
     /// Encrypts a padded message in `[0, ceil(t / 2))` into existing storage.
     ///
     /// Shares [`Self::encrypt_to`]'s storage, error and RNG-panic contracts.
-    pub fn encrypt_padded_to<R, Msg>(
+    pub fn encrypt_padded_to<R>(
         &self,
-        message: Msg,
+        message: T,
         output: &mut LweCiphertext<T>,
         rng: &mut R,
     ) -> Result<(), GlweClientError>
     where
         R: rand::Rng + rand::CryptoRng,
-        Msg: TryInto<T>,
     {
-        let message = self.checked_padded_message(message)?;
+        self.check_padded_message(message)?;
         self.encrypt_with_embedding_to(message, output, rng, PlaintextEmbedding::Unsigned)
     }
 
     /// Encrypts a centered modular message in `[0, t)` into existing storage.
     ///
     /// Shares [`Self::encrypt_to`]'s storage, error and RNG-panic contracts.
-    pub fn encrypt_centered_to<R, Msg>(
+    pub fn encrypt_centered_to<R>(
         &self,
-        message: Msg,
+        message: T,
         output: &mut LweCiphertext<T>,
         rng: &mut R,
     ) -> Result<(), GlweClientError>
     where
         R: rand::Rng + rand::CryptoRng,
-        Msg: TryInto<T>,
     {
-        let message = self.checked_message(message)?;
+        self.check_message(message)?;
         self.encrypt_with_embedding_to(message, output, rng, PlaintextEmbedding::Centered)
     }
 
@@ -186,13 +176,7 @@ where
     }
 
     #[inline]
-    fn checked_padded_message<Msg>(&self, message: Msg) -> Result<T, GlweClientError>
-    where
-        Msg: TryInto<T>,
-    {
-        let message = message
-            .try_into()
-            .map_err(|_| GlweClientError::MessageConversion)?;
+    fn check_padded_message(&self, message: T) -> Result<(), GlweClientError> {
         let modulus = self.parameters.plain_modulus_value();
         if message >= modulus - (modulus >> 1u32) {
             return Err(if message >= modulus {
@@ -201,21 +185,15 @@ where
                 GlweClientError::MessageOutsidePaddedDomain
             });
         }
-        Ok(message)
+        Ok(())
     }
 
     #[inline]
-    fn checked_message<Msg>(&self, message: Msg) -> Result<T, GlweClientError>
-    where
-        Msg: TryInto<T>,
-    {
-        let message = message
-            .try_into()
-            .map_err(|_| GlweClientError::MessageConversion)?;
+    fn check_message(&self, message: T) -> Result<(), GlweClientError> {
         if message >= self.parameters.plain_modulus_value() {
             return Err(GlweClientError::MessageOutOfRange);
         }
-        Ok(message)
+        Ok(())
     }
 }
 
@@ -462,10 +440,7 @@ where
     }
 
     /// Decrypts to the canonical representative in `[0, t)`.
-    pub fn decrypt<Msg>(&self, ciphertext: &LweCiphertext<T>) -> Result<Msg, GlweClientError>
-    where
-        Msg: TryFrom<T>,
-    {
+    pub fn decrypt(&self, ciphertext: &LweCiphertext<T>) -> Result<T, GlweClientError> {
         let expected = self.parameters.ciphertext_lwe_dimension();
         let actual = ciphertext.dimension();
         if actual != expected {
@@ -490,7 +465,7 @@ where
                     .decode_value(phase)
             }
         };
-        Msg::try_from(message).map_err(|_| GlweClientError::PlaintextConversion)
+        Ok(message)
     }
 }
 
@@ -512,10 +487,6 @@ pub enum GlweClientError {
     #[error(transparent)]
     IncompatibleKey(#[from] GlweKeyError),
 
-    /// The input message cannot be represented by the ciphertext integer type.
-    #[error("message cannot be represented by the ciphertext integer type")]
-    MessageConversion,
-
     /// The input message is outside the plaintext domain `[0, t)`.
     #[error("message is outside the plaintext domain")]
     MessageOutOfRange,
@@ -532,8 +503,4 @@ pub enum GlweClientError {
         /// Actual LWE dimension.
         actual: usize,
     },
-
-    /// The decrypted representative cannot be converted to the requested type.
-    #[error("plaintext cannot be represented by the requested output type")]
-    PlaintextConversion,
 }

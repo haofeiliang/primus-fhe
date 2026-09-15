@@ -4,14 +4,16 @@ use super::prelude::*;
 use super::{ExplicitModulus, Modulus};
 
 /// A marker trait indicating the modulus can perform ring operations
-/// (reduce, add, sub, double, neg, mul, mul-add, square, exp, dot-product)
-/// and bounded signed encoding/dot products via [`EncodeSigned`] and
-/// [`ReduceDotProductSigned`].
+/// (reduce, add, sub, double, neg, mul, mul-add, square, exp, dot-product),
+/// bounded signed encoding/dot products via [`EncodeSigned`] and
+/// [`ReduceDotProductSigned`], and modulus-switch preparation via
+/// [`PrepareModulusSwitch`].
 ///
 /// Granted automatically (blanket impl) when the type implements every
-/// listed operation trait, together with [`EncodeSigned`].
+/// listed capability trait. The prepared conversion remains a separate object.
 pub trait RingContext<T: FheUint>:
     Modulus<ValueT = T>
+    + PrepareModulusSwitch
     + EncodeSigned<T>
     + Reduce<T, Output = T>
     + ReduceAssign<T>
@@ -47,6 +49,7 @@ pub trait RingContext<T: FheUint>:
 
 impl<T: FheUint, M> RingContext<T> for M where
     M: Modulus<ValueT = T>
+        + PrepareModulusSwitch
         + EncodeSigned<T>
         + Reduce<T, Output = T>
         + ReduceAssign<T>

@@ -82,7 +82,7 @@ where
             n,
             parameters.many_lut_output_count(),
             tfhe.plain_modulus_value(),
-            tfhe.external_lwe().cipher_modulus_value(),
+            tfhe.external_lwe().cipher_modulus(),
             modulus,
             |input, index| {
                 let Some(&scalar) = scalars.get(index) else {

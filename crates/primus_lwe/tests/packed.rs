@@ -35,7 +35,7 @@ fn packed_capacity_is_enforced() {
         .is_err()
     );
     let malformed = MultiMsgLweCiphertext::new(vec![0u32; params.dimension() + count]);
-    assert!(catch_unwind(|| key.decrypt_multi_messages::<_, u32>(&malformed, &params)).is_err());
+    assert!(catch_unwind(|| key.decrypt_multi_messages(&malformed, &params)).is_err());
 }
 
 #[test]
@@ -46,10 +46,7 @@ fn packed_samples_decrypt_independently() {
     check_packed_samples(BarrettModulus::new(1_125_899_906_826_241u64));
 }
 
-fn check_packed_samples<T: FheUint + From<u8>, M: RingContext<T>>(modulus: M)
-where
-    u8: TryFrom<T>,
-{
+fn check_packed_samples<T: FheUint, M: RingContext<T>>(modulus: M) {
     // Moving rotation splits exercise vector blocks and tails in both word widths.
     let dimension = 513;
     let params = LweParameters::new(
@@ -65,19 +62,16 @@ where
         SecretKeyDistr::UniformTernary,
     );
     let mut rng = StdRng::seed_from_u64(0x1_ee04);
-    let messages: Vec<u8> = (0..dimension).map(|i| (i % 4) as u8).collect();
-    let check = |ciphertext: MultiMsgLweCiphertext<T>, messages: &[u8]| {
+    let messages: Vec<T> = (0..dimension).map(|i| T::as_from(i % 4)).collect();
+    let check = |ciphertext: MultiMsgLweCiphertext<T>, messages: &[T]| {
         assert_eq!(ciphertext.0.len(), dimension + messages.len());
         let borrowed = MultiMsgLwe::new(ciphertext.0.as_slice());
-        assert_eq!(
-            key.decrypt_multi_messages::<_, u8>(&borrowed, &params),
-            messages
-        );
+        assert_eq!(key.decrypt_multi_messages(&borrowed, &params), messages);
         // The lattice extractor is independent of the packed phase helper,
         // exposing a rotation/sign error shared by encryption and decryption.
         for (index, &message) in messages.iter().enumerate() {
             let sample = ciphertext.extract_lwe_at(index, dimension, modulus);
-            assert_eq!(key.decrypt::<_, u8>(&sample, &params), message);
+            assert_eq!(key.decrypt(&sample, &params), message);
         }
     };
     for count in [0, 3, dimension] {
@@ -96,7 +90,7 @@ where
     for count in [0, 3] {
         check(
             key.encrypt_multi_zeros(count, &params, &mut rng),
-            &[0; 3][..count],
+            &[T::ZERO; 3][..count],
         );
     }
 }

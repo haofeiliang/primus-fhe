@@ -68,7 +68,7 @@ fn check_signed_generation<M: RingContext<u32>>(modulus: M) {
         let input = input_secret_key.encrypt(message, &input_parameters, &mut rng);
         key_switching_key.key_switch_to(&input, &mut output, modulus);
         assert_eq!(
-            output_secret_key.decrypt::<_, u32>(&output, &output_parameters),
+            output_secret_key.decrypt(&output, &output_parameters),
             message
         );
     }

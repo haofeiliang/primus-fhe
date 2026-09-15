@@ -79,10 +79,7 @@ where
                 assert_eq!(outputs, evaluator.apply_many_lookup_table(&input, &lut));
             }
             for (index, output) in outputs.iter().enumerate() {
-                assert_eq!(
-                    decryptor.decrypt::<u32>(output).unwrap(),
-                    value(message, index)
-                );
+                assert_eq!(decryptor.decrypt(output).unwrap(), value(message, index));
             }
             if output_count == 1 {
                 let (_, allocation) = allocations::measure(|| {
@@ -95,10 +92,7 @@ where
                     .encrypt_padded(message as u32, &mut rng)
                     .unwrap();
                 evaluator.apply_lookup_table_to(&public_input, &single, &mut output);
-                assert_eq!(
-                    decryptor.decrypt::<u32>(&output).unwrap(),
-                    value(message, 0)
-                );
+                assert_eq!(decryptor.decrypt(&output).unwrap(), value(message, 0));
             }
         }
     }
@@ -108,25 +102,66 @@ where
     let mut outputs = vec![input.clone(); 2];
     // Isolate each piece of LUT metadata, including equal-length wrong-domain tables.
     let mut mismatched_tables = Vec::new();
-    for (n, t, input_q) in [(N / 2, 16, None), (N, 8, None), (N, 16, Some(132_120_577))] {
+    for (n, t) in [(N / 2, 16), (N, 8)] {
         mismatched_tables.push((
-            compile_encoded_lookup_table(2, n, t, input_q, NativeModulus::new(), |_| Ok(0))
-                .unwrap(),
-            compile_encoded_many_lookup_table(2, n, 2, t, input_q, NativeModulus::new(), |_, _| {
-                Ok(0)
-            })
+            compile_encoded_lookup_table(
+                2,
+                n,
+                t,
+                NativeModulus::new(),
+                NativeModulus::new(),
+                |_| Ok(0),
+            )
+            .unwrap(),
+            compile_encoded_many_lookup_table(
+                2,
+                n,
+                2,
+                t,
+                NativeModulus::new(),
+                NativeModulus::new(),
+                |_, _| Ok(0),
+            )
             .unwrap(),
         ));
     }
     mismatched_tables.push((
-        compile_encoded_lookup_table(2, N, 16, None, BarrettModulus::new(132_120_577), |_| Ok(0))
-            .unwrap(),
+        compile_encoded_lookup_table(
+            2,
+            N,
+            16,
+            BarrettModulus::new(132_120_577),
+            NativeModulus::new(),
+            |_| Ok(0),
+        )
+        .unwrap(),
         compile_encoded_many_lookup_table(
             2,
             N,
             2,
             16,
-            None,
+            BarrettModulus::new(132_120_577),
+            NativeModulus::new(),
+            |_, _| Ok(0),
+        )
+        .unwrap(),
+    ));
+    mismatched_tables.push((
+        compile_encoded_lookup_table(
+            2,
+            N,
+            16,
+            NativeModulus::new(),
+            BarrettModulus::new(132_120_577),
+            |_| Ok(0),
+        )
+        .unwrap(),
+        compile_encoded_many_lookup_table(
+            2,
+            N,
+            2,
+            16,
+            NativeModulus::new(),
             BarrettModulus::new(132_120_577),
             |_, _| Ok(0),
         )
@@ -189,8 +224,8 @@ where
     }
     // Rejected calls leave the reusable evaluator usable.
     evaluator.apply_many_lookup_table_to(&input, &good, &mut outputs);
-    assert_eq!(decryptor.decrypt::<u32>(&outputs[0]).unwrap(), 3);
-    assert_eq!(decryptor.decrypt::<u32>(&outputs[1]).unwrap(), 0);
+    assert_eq!(decryptor.decrypt(&outputs[0]).unwrap(), 3);
+    assert_eq!(decryptor.decrypt(&outputs[1]).unwrap(), 0);
 }
 #[test]
 fn many_pbs_preserves_outputs_and_validates_domains() {

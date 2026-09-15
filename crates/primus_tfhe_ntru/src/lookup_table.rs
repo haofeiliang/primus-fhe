@@ -101,7 +101,7 @@ where
             domain_len,
             self.poly_length(),
             plaintext_modulus,
-            lwe.cipher_modulus_value(),
+            lwe.cipher_modulus(),
             self.bootstrapping().ntru().cipher_modulus(),
             |input| {
                 let output = output_at(input);
@@ -133,7 +133,7 @@ where
             self.poly_length(),
             output_count,
             plaintext_modulus,
-            lwe.cipher_modulus_value(),
+            lwe.cipher_modulus(),
             self.bootstrapping().ntru().cipher_modulus(),
             |input, output_index| {
                 let output = output_at(input, output_index);

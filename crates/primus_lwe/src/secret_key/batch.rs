@@ -11,32 +11,30 @@ impl<T: FheUint> LweSecretKey<T> {
     /// Encrypts independent messages with unsigned embedding in one allocation.
     /// See [`Self::encrypt_batch_with_embedding_to`] for contracts.
     #[must_use]
-    pub fn encrypt_batch<M, R, Msg>(
+    pub fn encrypt_batch<M, R>(
         &self,
-        messages: &[Msg],
+        messages: &[T],
         params: &LweParameters<T, M>,
         rng: &mut R,
     ) -> Vec<T>
     where
         M: RingContext<T>,
         R: rand::Rng + rand::CryptoRng,
-        Msg: Copy + TryInto<T>,
     {
         self.encrypt_batch_with_embedding(messages, params, rng, PlaintextEmbedding::Unsigned)
     }
 
     /// Encrypts independent messages with unsigned embedding into existing storage.
     /// See [`Self::encrypt_batch_with_embedding_to`] for contracts.
-    pub fn encrypt_batch_to<M, R, Msg>(
+    pub fn encrypt_batch_to<M, R>(
         &self,
-        messages: &[Msg],
+        messages: &[T],
         output: &mut [T],
         params: &LweParameters<T, M>,
         rng: &mut R,
     ) where
         M: RingContext<T>,
         R: rand::Rng + rand::CryptoRng,
-        Msg: Copy + TryInto<T>,
     {
         self.encrypt_batch_with_embedding_to(
             messages,
@@ -52,9 +50,9 @@ impl<T: FheUint> LweSecretKey<T> {
     /// See [`Self::encrypt_batch_with_embedding_to`] for contracts. Also panics
     /// if the total storage length overflows.
     #[must_use]
-    pub fn encrypt_batch_with_embedding<M, R, Msg>(
+    pub fn encrypt_batch_with_embedding<M, R>(
         &self,
-        messages: &[Msg],
+        messages: &[T],
         params: &LweParameters<T, M>,
         rng: &mut R,
         embedding: PlaintextEmbedding,
@@ -62,7 +60,6 @@ impl<T: FheUint> LweSecretKey<T> {
     where
         M: RingContext<T>,
         R: rand::Rng + rand::CryptoRng,
-        Msg: Copy + TryInto<T>,
     {
         let mut output = vec![T::ZERO; batch_len(self.dimension(), messages.len())];
         self.encrypt_batch_with_embedding_to(messages, &mut output, params, rng, embedding);
@@ -86,11 +83,11 @@ impl<T: FheUint> LweSecretKey<T> {
     ///
     /// Parameter dimension or output length mismatches, and length overflow,
     /// panic before writing or sampling.
-    /// Message conversion, encoding or RNG failures may leave partial output
+    /// Message range or RNG failures may leave partial output
     /// and may have consumed randomness for earlier messages.
-    pub fn encrypt_batch_with_embedding_to<M, R, Msg>(
+    pub fn encrypt_batch_with_embedding_to<M, R>(
         &self,
-        messages: &[Msg],
+        messages: &[T],
         output: &mut [T],
         params: &LweParameters<T, M>,
         rng: &mut R,
@@ -98,7 +95,6 @@ impl<T: FheUint> LweSecretKey<T> {
     ) where
         M: RingContext<T>,
         R: rand::Rng + rand::CryptoRng,
-        Msg: Copy + TryInto<T>,
     {
         assert_eq!(
             params.dimension(),
@@ -224,14 +220,12 @@ impl<T: FheUint> LweSecretKey<T> {
     ///
     /// # Panics
     ///
-    /// Panics if the parameter dimension differs from the key,
-    /// input contains an incomplete ciphertext, or a decoded
-    /// message cannot be represented by `Msg`. Empty input returns an empty vector.
+    /// Panics if the parameter dimension differs from the key or
+    /// input contains an incomplete ciphertext. Empty input returns an empty vector.
     #[must_use]
-    pub fn decrypt_batch<M, Msg>(&self, input: &[T], params: &LweParameters<T, M>) -> Vec<Msg>
+    pub fn decrypt_batch<M>(&self, input: &[T], params: &LweParameters<T, M>) -> Vec<T>
     where
         M: RingContext<T>,
-        Msg: TryFrom<T>,
     {
         assert_eq!(
             params.dimension(),
@@ -263,16 +257,10 @@ impl<T: FheUint> LweSecretKey<T> {
     /// # Panics
     ///
     /// Parameter dimension or input/output length mismatches, and length overflow,
-    /// panic before writing. Failure to represent
-    /// a decoded message as `Msg` may leave earlier outputs written.
-    pub fn decrypt_batch_to<M, Msg>(
-        &self,
-        input: &[T],
-        output: &mut [Msg],
-        params: &LweParameters<T, M>,
-    ) where
+    /// panic before writing.
+    pub fn decrypt_batch_to<M>(&self, input: &[T], output: &mut [T], params: &LweParameters<T, M>)
+    where
         M: RingContext<T>,
-        Msg: TryFrom<T>,
     {
         assert_eq!(
             params.dimension(),

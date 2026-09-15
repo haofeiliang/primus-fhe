@@ -26,6 +26,10 @@ allocate outputs. Basis/layout compatibility does not prove actual secret identi
 ## Clients and LUTs
 
 A backend context generates paired keys and exposes `encryptor` / `decryptor`.
+Generic client encryption takes `T`, and decryption returns
+`Result<T, GlweClientError>` with a canonical residue in `[0,t)`; applications
+handle message type conversions. Boolean encryption takes `bool`; decryption
+returns `Result<bool, BooleanError>` and validates the Boolean value.
 Direct family construction uses `GlweEncryptor::try_new` and `GlweDecryptor::try_new`.
 Encryption accepts either `GlweClientKey` or an `LwePublicKey` generated with
 `client_key.try_generate_public_key(parameters, rng)`; decryption needs the client key.

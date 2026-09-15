@@ -2,6 +2,7 @@ use primus_integer::FheUint;
 use primus_lwe::LweParameters;
 use primus_ntru::NlevParameters;
 use primus_reduce::RingContext;
+use primus_tfhe::backend_support::RotationQuantizer;
 
 use crate::NtruParameterError::{
     CipherModulusMismatch, ClientSecretKeyDistributionMismatch, ClientSecretKeyMustBeBinary,
@@ -21,6 +22,7 @@ where
     external_lwe: LweParameters<T, M>,
     bootstrapping: NlevParameters<T, M>,
     key_switching: NlevParameters<T, M>,
+    rotation_quantizer: RotationQuantizer<M::Prepared>,
 }
 
 impl<T, M> NtruTfheParameters<T, M>
@@ -34,7 +36,8 @@ where
     ///
     /// Returns an error unless the external LWE key is the binary coefficient
     /// prefix of an NTRU key, fits in `N`, and all three parameter domains
-    /// agree on `N`, `t`, and `q` where applicable.
+    /// agree on `N`, `t`, and `q` where applicable. The rotation domain `2N`
+    /// must fit the input coefficient bit width.
     pub fn try_new(
         external_lwe: LweParameters<T, M>,
         bootstrapping: NlevParameters<T, M>,
@@ -73,11 +76,24 @@ where
             return Err(CipherModulusMismatch);
         }
 
+        if (poly_length * 2).trailing_zeros() > T::BITS {
+            return Err(NtruParameterError::RotationDomainTooLarge);
+        }
+        let rotation_quantizer =
+            RotationQuantizer::new(external_lwe.cipher_modulus(), poly_length * 2, 1);
         Ok(Self {
+            rotation_quantizer,
             external_lwe,
             bootstrapping,
             key_switching,
         })
+    }
+
+    /// Returns the ordinary-PBS quantizer prepared with these parameters.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn rotation_quantizer(&self) -> RotationQuantizer<M::Prepared> {
+        self.rotation_quantizer
     }
 
     /// Returns the externally visible LWE parameters.
@@ -114,6 +130,9 @@ where
 /// An invalid combination of NTRU-based TFHE parameters.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum NtruParameterError {
+    /// The rotation domain exceeds the coefficient type's bit width.
+    #[error("rotation domain exceeds the input coefficient bit width")]
+    RotationDomainTooLarge,
     /// The external LWE and client NTRU secret must both be binary.
     #[error("NTRU TFHE requires a binary client secret key")]
     ClientSecretKeyMustBeBinary,

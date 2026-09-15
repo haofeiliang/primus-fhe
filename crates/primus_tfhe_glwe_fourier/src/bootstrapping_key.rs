@@ -6,30 +6,37 @@ use primus_glwe::{FourierGadgetEncryptContext, FourierGlweSecretKey, GlevParamet
 use primus_lattice::{GadgetSize, ggsw::FourierGgswIter};
 use primus_lwe::{LweParameters, LweSecretKey};
 use primus_modulus::NativeModulus;
-use primus_reduce::RingContext;
+use primus_reduce::{PrepareModulusSwitch, RingContext};
+use primus_tfhe::backend_support::RotationQuantizer;
 
 /// A Fourier bootstrapping key containing one GGSW encryption per input LWE
 /// secret coefficient.
 #[derive(Clone)]
-pub struct FourierGlweBootstrappingKey<T: TorusFftValue> {
+pub struct FourierGlweBootstrappingKey<T: TorusFftValue, LM: PrepareModulusSwitch<ValueT = T>> {
     data: Vec<Complex64>,
     input_dimension: usize,
-    input_modulus: Option<T>,
+    input_modulus: LM,
+    input_quantizer: RotationQuantizer<LM::Prepared>,
     size: GadgetSize,
     basis: ApproxSignedBasis<T>,
 }
 
-impl<T: TorusFftValue> FourierGlweBootstrappingKey<T> {
+impl<T: TorusFftValue, LM: PrepareModulusSwitch<ValueT = T>> FourierGlweBootstrappingKey<T, LM> {
     /// Returns the input LWE dimension.
     #[inline]
     pub fn input_dimension(&self) -> usize {
         self.input_dimension
     }
 
-    /// Returns the explicit input LWE modulus, or `None` for a native torus.
+    /// Returns the input LWE modulus with its arithmetic type preserved.
     #[inline]
-    pub fn input_modulus(&self) -> Option<T> {
+    pub fn input_modulus(&self) -> LM {
         self.input_modulus
+    }
+
+    #[inline]
+    pub(crate) fn input_quantizer(&self) -> RotationQuantizer<LM::Prepared> {
+        self.input_quantizer
     }
 
     /// Returns the GGSW/GLWE layout bound to this key.
@@ -67,8 +74,9 @@ impl<T: TorusFftValue> FourierGlweBootstrappingKey<T> {
     ///
     /// Panics if input key/parameter distributions are not binary or their
     /// dimensions differ, or if the output key, FFT or workspace layout is
-    /// incompatible. A key-length overflow also panics. Checks precede sampling.
-    pub fn generate_fourier<LM, Table, R>(
+    /// incompatible. Key-length overflow or a rotation domain wider than the input
+    /// coefficient type also panics. Checks precede sampling.
+    pub fn generate_fourier<Table, R>(
         input_secret_key: &LweSecretKey<T>,
         input_parameters: &LweParameters<T, LM>,
         output_secret_key: &FourierGlweSecretKey,
@@ -86,6 +94,11 @@ impl<T: TorusFftValue> FourierGlweBootstrappingKey<T> {
         assert_eq!(input_secret_key.dimension(), input_parameters.dimension());
         assert!(input_parameters.secret_key_distr().is_binary());
 
+        let input_quantizer = RotationQuantizer::new(
+            input_parameters.cipher_modulus(),
+            parameters.size().glwe_size().poly_length() * 2,
+            1,
+        );
         let input_dimension = input_secret_key.dimension();
         let ggsw_len = parameters.fourier_ggsw_len();
         let total_len = input_dimension
@@ -104,7 +117,8 @@ impl<T: TorusFftValue> FourierGlweBootstrappingKey<T> {
         Self {
             data,
             input_dimension,
-            input_modulus: input_parameters.cipher_modulus().explicit_value(),
+            input_modulus: input_parameters.cipher_modulus(),
+            input_quantizer,
             size: parameters.size(),
             basis: parameters.basis().clone(),
         }

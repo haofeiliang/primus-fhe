@@ -15,32 +15,30 @@ impl<T: FheUint> LwePublicKey<T> {
     /// Encrypts independent messages with unsigned embedding in one allocation.
     /// See [`Self::encrypt_batch_with_embedding_to`] for contracts.
     #[must_use]
-    pub fn encrypt_batch<M, R, Msg>(
+    pub fn encrypt_batch<M, R>(
         &self,
-        messages: &[Msg],
+        messages: &[T],
         params: &LweParameters<T, M>,
         rng: &mut R,
     ) -> Vec<T>
     where
         M: RingContext<T>,
         R: rand::Rng + rand::CryptoRng,
-        Msg: Copy + TryInto<T>,
     {
         self.encrypt_batch_with_embedding(messages, params, rng, PlaintextEmbedding::Unsigned)
     }
 
     /// Encrypts independent messages with unsigned embedding into existing storage.
     /// See [`Self::encrypt_batch_with_embedding_to`] for contracts.
-    pub fn encrypt_batch_to<M, R, Msg>(
+    pub fn encrypt_batch_to<M, R>(
         &self,
-        messages: &[Msg],
+        messages: &[T],
         output: &mut [T],
         params: &LweParameters<T, M>,
         rng: &mut R,
     ) where
         M: RingContext<T>,
         R: rand::Rng + rand::CryptoRng,
-        Msg: Copy + TryInto<T>,
     {
         self.encrypt_batch_with_embedding_to(
             messages,
@@ -56,9 +54,9 @@ impl<T: FheUint> LwePublicKey<T> {
     /// See [`Self::encrypt_batch_with_embedding_to`] for contracts. Also panics
     /// if the total storage length overflows.
     #[must_use]
-    pub fn encrypt_batch_with_embedding<M, R, Msg>(
+    pub fn encrypt_batch_with_embedding<M, R>(
         &self,
-        messages: &[Msg],
+        messages: &[T],
         params: &LweParameters<T, M>,
         rng: &mut R,
         embedding: PlaintextEmbedding,
@@ -66,7 +64,6 @@ impl<T: FheUint> LwePublicKey<T> {
     where
         M: RingContext<T>,
         R: rand::Rng + rand::CryptoRng,
-        Msg: Copy + TryInto<T>,
     {
         let mut output = vec![T::ZERO; batch_len(self.dimension(), messages.len())];
         self.encrypt_batch_with_embedding_to(messages, &mut output, params, rng, embedding);
@@ -90,12 +87,12 @@ impl<T: FheUint> LwePublicKey<T> {
     ///
     /// Parameter dimension, output length, or modulus mismatches, and length
     /// overflow, panic before writing or sampling.
-    /// Message conversion, encoding or RNG failures may leave partial output
+    /// Message range or RNG failures may leave partial output
     /// and consumed randomness. An interrupted tile may contain only noise and
     /// encoded messages, without the public-key row contributions.
-    pub fn encrypt_batch_with_embedding_to<M, R, Msg>(
+    pub fn encrypt_batch_with_embedding_to<M, R>(
         &self,
-        messages: &[Msg],
+        messages: &[T],
         output: &mut [T],
         params: &LweParameters<T, M>,
         rng: &mut R,
@@ -103,7 +100,6 @@ impl<T: FheUint> LwePublicKey<T> {
     ) where
         M: RingContext<T>,
         R: rand::Rng + rand::CryptoRng,
-        Msg: Copy + TryInto<T>,
     {
         assert_eq!(
             params.dimension(),

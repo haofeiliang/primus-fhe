@@ -44,7 +44,7 @@ fn padded_client_domain_matches_odd_and_even_lut_domains() {
                 .is_ok()
         );
         let input = encryptor.encrypt_padded(domain_len - 1, &mut rng).unwrap();
-        assert_eq!(decryptor.decrypt::<u32>(&input).unwrap(), domain_len - 1);
+        assert_eq!(decryptor.decrypt(&input).unwrap(), domain_len - 1);
         assert_eq!(
             encryptor.encrypt_padded(domain_len, &mut rng).unwrap_err(),
             GlweClientError::MessageOutsidePaddedDomain

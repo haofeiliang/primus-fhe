@@ -89,7 +89,7 @@ where
         ];
         let output_shift = RoundedCodec::new(
             boolean_accumulator_plaintext_modulus::<T>(),
-            parameters.small_lwe().cipher_modulus().explicit_value(),
+            parameters.small_lwe().cipher_modulus(),
         )
         .encode_value(T::ONE, PlaintextEmbedding::Unsigned);
         let dimension = parameters.ciphertext_lwe_dimension();
@@ -345,11 +345,8 @@ where
     GM: RingContext<T>,
 {
     let modulus = parameters.glwe().cipher_modulus();
-    let positive_value = RoundedCodec::new(
-        boolean_accumulator_plaintext_modulus::<T>(),
-        modulus.explicit_value(),
-    )
-    .encode_value(T::ONE, PlaintextEmbedding::Unsigned);
+    let positive_value = RoundedCodec::new(boolean_accumulator_plaintext_modulus::<T>(), modulus)
+        .encode_value(T::ONE, PlaintextEmbedding::Unsigned);
     let negative_value = modulus.reduce_neg(positive_value);
     parameters.compile_encoded_lookup_table(2, |input| {
         Ok(if positive[input] {

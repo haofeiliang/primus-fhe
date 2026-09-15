@@ -103,3 +103,13 @@ The shared raw-output LUT construction benchmark includes allocation and drop:
 ```sh
 cargo bench -p primus_tfhe --bench lookup_table
 ```
+
+## Typed rotation quantization
+
+Raw LUT compilation accepts independent typed input and accumulator moduli.
+`backend_support::RotationQuantizer::new(input_modulus, two_n, window)` prepares
+a fixed modulus-pair conversion; `exponent(value)` reuses it without allocation.
+GLWE keys and NTRU parameters cache ordinary-PBS quantization at construction.
+ManyLUT prepares its stride-dependent conversion before processing coefficients.
+For interleaved LUTs, it rounds in `two_n/window` positions before multiplying by
+`window`. Modulus metadata remains `Option<T>` where it only describes a domain.

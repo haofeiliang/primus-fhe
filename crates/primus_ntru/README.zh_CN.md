@@ -57,6 +57,8 @@ cargo run -p primus_ntru --example automorphism
 | `NttNtruAutomorphismKey::apply_to`、`FourierNtruAutomorphismKey::apply_to` | 系数 NTRU 自同构后写出同一私钥下的系数 NTRU |
 | `apply_ntt_to`、`apply_fourier_to` | 变换域 NTRU 自同构后保留对应变换表示和原私钥 |
 
+解密返回系数域多项式，使用密文系数类型 `T`；输出类型转换由应用按需处理。
+
 求值密钥持有自己的分解基；可复用求值 context 只保存工作缓冲区。拥有契约的公开
 操作在输出写入前检查传入尺寸、模数及变换和工作区长度；对应的低层 lattice 内核
 依赖这些契约。实际私钥一致性、输入 residue 的规范性及足够的噪声预算仍由调用方保证。

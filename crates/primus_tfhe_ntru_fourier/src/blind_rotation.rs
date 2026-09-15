@@ -3,7 +3,7 @@ use primus_fft::{FftEngine, FftTable, TorusFftValue};
 use primus_lattice::{lwe::Lwe, ntru::Ntru};
 use primus_modulus::NativeModulus;
 use primus_poly::{Polynomial, PolynomialOwned};
-use primus_tfhe::backend_support::windowed_modulus_switch;
+use primus_tfhe::backend_support::RotationQuantizer;
 
 use crate::{ServerKey, TfheParameters};
 
@@ -45,8 +45,13 @@ pub(crate) fn blind_rotate_lookup_table_to<T, Table, A>(
 {
     let poly_length = parameters.poly_length();
     let two_n = poly_length * 2;
-    let input_modulus = parameters.external_lwe().cipher_modulus_value();
-    let exponent_of = |value| windowed_modulus_switch(value, input_modulus, two_n, output_count);
+    let input_modulus = parameters.external_lwe().cipher_modulus();
+    let quantizer = if output_count == 1 {
+        parameters.rotation_quantizer()
+    } else {
+        RotationQuantizer::new(input_modulus, two_n, output_count)
+    };
+    let exponent_of = |value| quantizer.exponent(value);
     let initial_exponent = exponent_of(input.b()).wrapping_neg() & (two_n - 1);
     lookup_table.mul_monomial_to(
         initial_exponent,

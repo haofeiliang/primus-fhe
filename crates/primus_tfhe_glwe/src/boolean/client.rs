@@ -80,7 +80,7 @@ where
 
     /// Decrypts one Boolean ciphertext.
     pub fn decrypt(&self, ciphertext: &BooleanCiphertext<T>) -> Result<bool, BooleanError> {
-        let message = self.inner.decrypt::<T>(ciphertext.as_raw())?;
+        let message = self.inner.decrypt(ciphertext.as_raw())?;
         if message == T::ZERO {
             Ok(false)
         } else if message == T::ONE {
