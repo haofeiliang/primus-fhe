@@ -169,6 +169,20 @@ fn bench_order(c: &mut Criterion, order: PbsOrder) {
             black_box(evaluator.apply_lookup_table(black_box(&input), black_box(&lookup_table)));
         });
     });
+    group.bench_function("boolean_and_allocating", |b| {
+        b.iter(|| {
+            black_box(boolean_evaluator.and(black_box(&boolean_lhs), black_box(&boolean_rhs)))
+        });
+    });
+    group.bench_function("boolean_mux_allocating", |b| {
+        b.iter(|| {
+            black_box(boolean_evaluator.mux(
+                black_box(&boolean_lhs),
+                black_box(&boolean_lhs),
+                black_box(&boolean_rhs),
+            ))
+        });
+    });
     // One representative per binary input path: add, and subtract-then-double.
     for gate in [BooleanGate::And, BooleanGate::Xor] {
         group.bench_function(format!("boolean_{gate:?}").to_lowercase(), |b| {
@@ -212,6 +226,11 @@ fn bench_order(c: &mut Criterion, order: PbsOrder) {
                     .unwrap()
             })
             .collect();
+        group.bench_function(format!("complete_pbs_many_{count}_allocating"), |b| {
+            b.iter(|| {
+                black_box(evaluator.apply_many_lookup_table(black_box(&input), black_box(&many)))
+            });
+        });
         let mut outputs = vec![input.clone(); count];
         for shared in [false, true] {
             let kind = if shared { "many" } else { "separate" };

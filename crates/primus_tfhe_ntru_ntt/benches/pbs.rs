@@ -1,5 +1,5 @@
 //! Complete PBS: `NLev[1]` initialization, blind rotation, key switching and extraction.
-//! Reuses output and evaluator; key/LUT construction and encryption are not timed.
+//! Allocating and reused-output cases are separate; setup and encryption are not timed.
 //! u32, q = 132_120_577; fixed seed, N = 1024, LWE dimension 800.
 //! Regression workload, not a matched-security backend comparison.
 //!
@@ -54,7 +54,11 @@ fn pbs(c: &mut Criterion) {
                 black_box(&mut output),
             );
         });
-    }); // Each iteration produces the same 2/4 function outputs. Compare shared
+    });
+    c.bench_function("ntru_ntt/complete_pbs_allocating", |b| {
+        b.iter(|| black_box(evaluator.apply_lookup_table(black_box(&input), black_box(&lut))));
+    });
+    // Each iteration produces the same 2/4 function outputs. Compare shared
     // BR/KS against separate PBS calls; all tables, keys and outputs are reused.
     for count in [2, 4] {
         let value = |input: usize, output| ((input + output) % 4) as u32;
@@ -66,6 +70,16 @@ fn pbs(c: &mut Criterion) {
                     .unwrap()
             })
             .collect();
+        c.bench_function(
+            &format!("ntru_ntt/complete_pbs_many_{count}_allocating"),
+            |b| {
+                b.iter(|| {
+                    black_box(
+                        evaluator.apply_many_lookup_table(black_box(&input), black_box(&many)),
+                    )
+                });
+            },
+        );
         let mut outputs = vec![input.clone(); count];
         for shared in [false, true] {
             let kind = if shared { "many" } else { "separate" };

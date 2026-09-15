@@ -1,6 +1,7 @@
 use primus_fft::{FftEngine, FftTable, TorusFftValue};
 use primus_glwe::{FourierGlweKeySwitchingContext, GlweCiphertext};
 use primus_lwe::LweCiphertext;
+use primus_poly::Polynomial;
 use primus_tfhe::{LookupTable, ManyLookupTable, ProgrammableBootstrap, ProgrammableBootstrapMany};
 use primus_tfhe_glwe::GlwePbsOrder as PbsOrder;
 
@@ -104,7 +105,7 @@ where
         input: &LweCiphertext<T>,
         lookup_table: &LookupTable<T>,
     ) -> LweCiphertext<T> {
-        let mut output = input.clone();
+        let mut output = LweCiphertext::zero(self.context.parameters().ciphertext_lwe_dimension());
         self.apply_lookup_table_to(input, lookup_table, &mut output);
         output
     }
@@ -146,12 +147,14 @@ where
             "PBS output dimension mismatch"
         );
 
+        let glwe = parameters.glwe();
+        let result = self.evaluate_to_glwe(input, lookup_table.polynomial(), 1);
         match parameters.pbs_order() {
             PbsOrder::BootstrapKeyswitch => {
-                self.bootstrap_then_keyswitch(input, lookup_table, output)
+                result.extract_compact_lwe_to(output, glwe.poly_length(), glwe.cipher_modulus());
             }
             PbsOrder::KeyswitchBootstrap => {
-                self.keyswitch_then_bootstrap(input, lookup_table, output)
+                result.extract_lwe_to(output, glwe.poly_length(), glwe.cipher_modulus());
             }
         }
     }
@@ -172,7 +175,10 @@ where
         input: &LweCiphertext<T>,
         lookup_table: &ManyLookupTable<T>,
     ) -> Vec<LweCiphertext<T>> {
-        let mut outputs = vec![input.clone(); lookup_table.output_count()];
+        let dimension = self.context.parameters().ciphertext_lwe_dimension();
+        let mut outputs = (0..lookup_table.output_count())
+            .map(|_| LweCiphertext::zero(dimension))
+            .collect::<Vec<_>>();
         self.apply_many_lookup_table_to(input, lookup_table, &mut outputs);
         outputs
     }
@@ -223,26 +229,15 @@ where
         );
 
         let glwe = parameters.glwe();
+        let result = self.evaluate_to_glwe(
+            input,
+            lookup_table.polynomial(),
+            lookup_table.output_count(),
+        );
         match parameters.pbs_order() {
             PbsOrder::BootstrapKeyswitch => {
-                self.server_key
-                    .bootstrapping_key()
-                    .fourier_blind_rotate_many_lookup_table_kernel_to(
-                        input,
-                        lookup_table.polynomial(),
-                        lookup_table.output_count(),
-                        &mut self.main_glwe,
-                        &mut self.fft,
-                        &mut self.blind_rotation,
-                    );
-                self.server_key.glwe_key_switching_key().key_switch_to(
-                    &self.main_glwe,
-                    &mut self.switched,
-                    &mut self.fft,
-                    &mut self.key_switching,
-                );
                 for (index, output) in outputs.iter_mut().enumerate() {
-                    self.switched.extract_compact_lwe_at_to(
+                    result.extract_compact_lwe_at_to(
                         index,
                         output,
                         glwe.poly_length(),
@@ -251,19 +246,8 @@ where
                 }
             }
             PbsOrder::KeyswitchBootstrap => {
-                self.prepare_small_lwe(input);
-                self.server_key
-                    .bootstrapping_key()
-                    .fourier_blind_rotate_many_lookup_table_kernel_to(
-                        &self.small_lwe,
-                        lookup_table.polynomial(),
-                        lookup_table.output_count(),
-                        &mut self.main_glwe,
-                        &mut self.fft,
-                        &mut self.blind_rotation,
-                    );
                 for (index, output) in outputs.iter_mut().enumerate() {
-                    self.main_glwe.extract_lwe_at_to(
+                    result.extract_lwe_at_to(
                         index,
                         output,
                         glwe.poly_length(),
@@ -274,53 +258,46 @@ where
         }
     }
 
-    fn bootstrap_then_keyswitch(
+    /// Returns switched ring storage for BootstrapKeyswitch, main ring storage otherwise.
+    /// The caller has checked input/LUT compatibility and the output count.
+    /// A window of one gives ordinary modulus switching.
+    #[inline]
+    fn evaluate_to_glwe(
         &mut self,
         input: &LweCiphertext<T>,
-        lookup_table: &LookupTable<T>,
-        output: &mut LweCiphertext<T>,
-    ) {
+        lookup_table: &Polynomial<Vec<T>>,
+        output_count: usize,
+    ) -> &GlweCiphertext<Vec<T>> {
         let parameters = self.context.parameters();
-        let glwe = parameters.glwe();
+        let small_lwe = match parameters.pbs_order() {
+            PbsOrder::BootstrapKeyswitch => input,
+            PbsOrder::KeyswitchBootstrap => {
+                self.prepare_small_lwe(input);
+                &self.small_lwe
+            }
+        };
         self.server_key
             .bootstrapping_key()
-            .fourier_blind_rotate_lookup_table_kernel_to(
-                input,
-                lookup_table.polynomial(),
+            .fourier_blind_rotate_many_lookup_table_kernel_to(
+                small_lwe,
+                lookup_table,
+                output_count,
                 &mut self.main_glwe,
                 &mut self.fft,
                 &mut self.blind_rotation,
             );
-        self.server_key.glwe_key_switching_key().key_switch_to(
-            &self.main_glwe,
-            &mut self.switched,
-            &mut self.fft,
-            &mut self.key_switching,
-        );
-        self.switched
-            .extract_compact_lwe_to(output, glwe.poly_length(), glwe.cipher_modulus());
-    }
-
-    fn keyswitch_then_bootstrap(
-        &mut self,
-        input: &LweCiphertext<T>,
-        lookup_table: &LookupTable<T>,
-        output: &mut LweCiphertext<T>,
-    ) {
-        let parameters = self.context.parameters();
-        let glwe = parameters.glwe();
-        self.prepare_small_lwe(input);
-        self.server_key
-            .bootstrapping_key()
-            .fourier_blind_rotate_lookup_table_kernel_to(
-                &self.small_lwe,
-                lookup_table.polynomial(),
-                &mut self.main_glwe,
-                &mut self.fft,
-                &mut self.blind_rotation,
-            );
-        self.main_glwe
-            .extract_lwe_to(output, glwe.poly_length(), glwe.cipher_modulus());
+        match parameters.pbs_order() {
+            PbsOrder::BootstrapKeyswitch => {
+                self.server_key.glwe_key_switching_key().key_switch_to(
+                    &self.main_glwe,
+                    &mut self.switched,
+                    &mut self.fft,
+                    &mut self.key_switching,
+                );
+                &self.switched
+            }
+            PbsOrder::KeyswitchBootstrap => &self.main_glwe,
+        }
     }
 
     fn prepare_small_lwe(&mut self, input: &LweCiphertext<T>) {

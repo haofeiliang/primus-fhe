@@ -7,7 +7,7 @@ use std::hint::black_box;
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use primus_decompose::primitive::ApproxSignedBasis;
-use primus_fft::{FftTable, RustFftTable};
+use primus_fft::{FftTable, RustFftTable, TfheFftTable};
 use primus_glwe::{FourierGlweKeySwitchingContext, GlweCiphertext, GlweParameters, SecretKeyDistr};
 use primus_lwe::{LweCiphertext, LweParameters};
 use primus_modulus::NativeModulus;
@@ -56,8 +56,8 @@ fn order_name(order: PbsOrder) -> &'static str {
     }
 }
 
-fn bench_order(c: &mut Criterion, order: PbsOrder) {
-    let table = RustFftTable::new(POLY_LENGTH.trailing_zeros()).unwrap();
+fn bench_order<Table: FftTable>(c: &mut Criterion, order: PbsOrder, backend: &str) {
+    let table = Table::new(POLY_LENGTH.trailing_zeros()).unwrap();
     let context = TfheContext::try_new(parameters(order), table).unwrap();
     let mut rng = StdRng::seed_from_u64(42);
     let (client_key, server_key) = context.generate_keys(&mut rng).unwrap();
@@ -112,7 +112,7 @@ fn bench_order(c: &mut Criterion, order: PbsOrder) {
     let mut boolean_evaluator = context.boolean_evaluator(&server_key).unwrap();
 
     let mut group = c.benchmark_group(format!(
-        "tfhe_pbs/fourier/u32/{}/n{POLY_LENGTH}/k{GLWE_DIMENSION}/small_lwe{}/external_lwe{}",
+        "tfhe_pbs/fourier/{backend}/u32/{}/n{POLY_LENGTH}/k{GLWE_DIMENSION}/small_lwe{}/external_lwe{}",
         order_name(order),
         parameters.small_lwe().dimension(),
         parameters.ciphertext_lwe_dimension(),
@@ -185,6 +185,20 @@ fn bench_order(c: &mut Criterion, order: PbsOrder) {
             black_box(evaluator.apply_lookup_table(black_box(&input), black_box(&lookup_table)));
         });
     });
+    group.bench_function("boolean_and_allocating", |b| {
+        b.iter(|| {
+            black_box(boolean_evaluator.and(black_box(&boolean_lhs), black_box(&boolean_rhs)))
+        });
+    });
+    group.bench_function("boolean_mux_allocating", |b| {
+        b.iter(|| {
+            black_box(boolean_evaluator.mux(
+                black_box(&boolean_lhs),
+                black_box(&boolean_lhs),
+                black_box(&boolean_rhs),
+            ))
+        });
+    });
     // One representative per binary input path: add, and subtract-then-double.
     for gate in [BooleanGate::And, BooleanGate::Xor] {
         group.bench_function(format!("boolean_{gate:?}").to_lowercase(), |b| {
@@ -228,6 +242,11 @@ fn bench_order(c: &mut Criterion, order: PbsOrder) {
                     .unwrap()
             })
             .collect();
+        group.bench_function(format!("complete_pbs_many_{count}_allocating"), |b| {
+            b.iter(|| {
+                black_box(evaluator.apply_many_lookup_table(black_box(&input), black_box(&many)))
+            });
+        });
         let mut outputs = vec![input.clone(); count];
         for shared in [false, true] {
             let kind = if shared { "many" } else { "separate" };
@@ -258,7 +277,8 @@ fn bench_order(c: &mut Criterion, order: PbsOrder) {
 
 fn bench_pbs(c: &mut Criterion) {
     for order in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
-        bench_order(c, order);
+        bench_order::<RustFftTable>(c, order, "rustfft");
+        bench_order::<TfheFftTable>(c, order, "tfhe");
     }
 }
 

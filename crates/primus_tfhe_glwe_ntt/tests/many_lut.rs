@@ -1,3 +1,6 @@
+#[path = "../../primus_tfhe_ntru/tests/support/allocations.rs"]
+mod allocations;
+
 use primus_lwe::{LweCiphertext, LweParameters};
 use primus_tfhe::{
     ProgrammableBootstrapMany, compile_encoded_lookup_table, compile_encoded_many_lookup_table,
@@ -57,16 +60,17 @@ where
         ];
         for message in 0..8 {
             let input = encryptor.encrypt_padded(message as u32, &mut rng).unwrap();
-            if message == 0 {
-                outputs = evaluator.apply_many_lookup_table(&input, &lut);
-            } else {
-                // Exercise the representation-independent consumption boundary too.
+            let (_, allocation) = allocations::measure(|| {
                 ProgrammableBootstrapMany::apply_many_lookup_table_to(
                     &mut evaluator,
                     &input,
                     &lut,
                     &mut outputs,
                 );
+            });
+            assert_eq!(allocation.count, 0, "PBSManyLUT must reuse its workspace");
+            if message == 0 {
+                assert_eq!(outputs, evaluator.apply_many_lookup_table(&input, &lut));
             }
             for (index, output) in outputs.iter().enumerate() {
                 assert_eq!(
@@ -78,6 +82,12 @@ where
                 let single = context
                     .compile_lookup_table_fn(|input| value(input, 0))
                     .unwrap();
+                let mut output = outputs[0].clone();
+                let (_, allocation) = allocations::measure(|| {
+                    evaluator.apply_lookup_table_to(&input, &single, &mut output);
+                });
+                assert_eq!(allocation.count, 0, "PBS must reuse its workspace");
+                assert_eq!(outputs[0], output);
                 assert_eq!(outputs[0], evaluator.apply_lookup_table(&input, &single));
             }
         }

@@ -1,3 +1,6 @@
+#[path = "../../primus_tfhe_ntru/tests/support/allocations.rs"]
+mod allocations;
+
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_glwe::{GgswParameters, GlweParameters, NttGlweSecretKey, SecretKeyDistr};
 use primus_lattice::{
@@ -5,7 +8,7 @@ use primus_lattice::{
     ggsw::NttGgsw,
     glwe::{Glwe, NttGlwe},
 };
-use primus_lwe::LweParameters;
+use primus_lwe::{LweCiphertext, LweParameters};
 use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, U64NttTable};
 use primus_poly::Polynomial;
@@ -118,9 +121,30 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
                 circuit_parameters.many_lut_output_count(),
                 levels.next_power_of_two()
             );
+            let mut control =
+                NttGgsw::<Vec<u64>>::zero(circuit_parameters.output_size().ggsw_len());
             for bit in 0..=1u64 {
                 let input = encryptor.encrypt_padded(bit, &mut rng).unwrap();
-                let control = evaluator.circuit_bootstrap(&input);
+                if bit == 1 {
+                    for (dimension, length) in [
+                        (input.dimension() - 1, control.as_ref().len()),
+                        (input.dimension(), control.as_ref().len() - 1),
+                    ] {
+                        let bad_input = LweCiphertext::zero(dimension);
+                        let mut bad_output = NttGgsw::new(vec![7; length]);
+                        assert!(
+                            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                                evaluator.circuit_bootstrap_to(&bad_input, &mut bad_output);
+                            }))
+                            .is_err()
+                        );
+                        assert!(bad_output.as_ref().iter().all(|&value| value == 7));
+                    }
+                }
+                let (_, allocation) = allocations::measure(|| {
+                    evaluator.circuit_bootstrap_to(&input, &mut control);
+                });
+                assert_eq!(allocation.count, 0, "CBS must reuse its workspace");
                 let output_size = circuit_parameters.output_size();
                 let mut phase = Polynomial::new(vec![0u64; POLY_LENGTH]);
                 for (row, glev) in control.iter_ntt_glev(output_size.glev_len()).enumerate() {
@@ -170,15 +194,6 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
                     "PBS order {order:?}, control bit {bit}"
                 );
             }
-            let input = encryptor.encrypt_padded(0u64, &mut rng).unwrap();
-            let mut short = NttGgsw::new(vec![7; circuit_parameters.output_size().ggsw_len() - 1]);
-            assert!(
-                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    evaluator.circuit_bootstrap_to(&input, &mut short);
-                }))
-                .is_err()
-            );
-            assert!(short.as_ref().iter().all(|&value| value == 7));
         }
     }
 }

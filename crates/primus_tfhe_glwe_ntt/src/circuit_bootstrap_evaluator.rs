@@ -16,7 +16,7 @@ use primus_tfhe_glwe::GlwePbsOrder as PbsOrder;
 
 use crate::{
     CircuitBootstrapKey, CircuitBootstrapParameters, NttGlweBlindRotationContext, ServerKey,
-    TfheContext,
+    TfheContext, evaluator::prepare_small_lwe,
 };
 
 /// An error produced while constructing a circuit-bootstrap evaluator.
@@ -200,7 +200,15 @@ where
         let small_lwe = match tfhe.pbs_order() {
             PbsOrder::BootstrapKeyswitch => input,
             PbsOrder::KeyswitchBootstrap => {
-                self.prepare_small_lwe(input);
+                prepare_small_lwe(
+                    self.context,
+                    self.server_key,
+                    input,
+                    &mut self.main_glwe,
+                    &mut self.switched,
+                    &mut self.small_lwe,
+                    &mut self.key_switching,
+                );
                 &self.small_lwe
             }
         };
@@ -230,28 +238,6 @@ where
             self.context.parameters().glwe().cipher_modulus(),
             self.context.table(),
             &mut self.scheme_switch,
-        );
-    }
-
-    fn prepare_small_lwe(&mut self, input: &LweCiphertext<T>) {
-        let tfhe = self.context.parameters();
-        let glwe = tfhe.glwe();
-        input.inverse_extract_glwe_to(
-            &mut self.main_glwe,
-            glwe.poly_length(),
-            glwe.cipher_modulus(),
-        );
-        self.server_key.glwe_key_switching_key().key_switch_to(
-            &self.main_glwe,
-            &mut self.switched,
-            self.context.parameters().glwe().cipher_modulus(),
-            self.context.table(),
-            &mut self.key_switching,
-        );
-        self.switched.extract_compact_lwe_to(
-            &mut self.small_lwe,
-            glwe.poly_length(),
-            glwe.cipher_modulus(),
         );
     }
 }

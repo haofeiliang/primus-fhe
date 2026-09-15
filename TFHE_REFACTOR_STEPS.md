@@ -3,7 +3,7 @@
 制定日期：2026-09-15。
 依据：[重构分析报告](TFHE_REFACTOR_REVIEW.md)、[仓库规范](AGENTS.md) 和 [当前交接决定](HANDOFF.md)。
 
-本文把分析建议拆成可独立验收的实施步骤，供明确要求实现时使用。S0–S5 已于 2026-09-15 完成，起始源码基线为 `f9105515cb775baf8a2461306e46f154abef5333`；S6–S9 尚未实施。分析报告基线为 `e493df6`；后续开始修改时仍应重新核对代码，不能把历史测试结果当作当前验证结果。
+本文把分析建议拆成可独立验收的实施步骤，供明确要求实现时使用。S0–S6 已于 2026-09-15 完成，起始源码基线为 `f9105515cb775baf8a2461306e46f154abef5333`；S7–S9 尚未实施。分析报告基线为 `e493df6`；后续开始修改时仍应重新核对代码，不能把历史测试结果当作当前验证结果。
 
 ## 1. 范围、顺序与完成目标
 
@@ -252,6 +252,22 @@ S3a、S3b 及调用方迁移已完成。另统一了 GLWE 内外层 `cipher_modu
 **验证：** 独立 BR oracle、两种 order、ManyLUT count=1/2/4、count=1 与单 PBS 的既有等值关系、所有错误输出先拒绝、拒绝后 evaluator 仍可复用、CBS phase/CMUX。发生工作区调整时验证首次及后续在线调用的分配行为。
 
 **完成条件：** 重复阶段减少且数值分支局部可读，公开检查和输出不变性保留。完整 PBS/CBS 基准不存在无法解释的回退；若某个抽取 helper 导致回退，调整抽取边界或保留独立入口，不以可读性为由忽略证据。删除无收益实验。
+
+#### S6 执行结果（2026-09-15）
+
+按四后端顺序完成阶段复用：GLWE 单 PBS/ManyLUT 共用输入准备、BR 和普通后处理；NTT GLWE PBS/CBS 共用 `prepare_small_lwe`；NTRU 单 PBS/ManyLUT 共用 BR 与后置 KS。沿用现有缓冲区，不增加工作区类型；保留各公开入口的检查、单输出/多输出提取及 CBS 的独立后处理，未修改 CMUX ping-pong 或零指数分支。
+
+GLWE 单 PBS、四路 ManyLUT 和 Boolean 二元门/MUX 的分配返回入口按配置维数创建输出。补充 NTT GLWE 完整 CBS 基准、ManyLUT/Boolean 分配返回用例，以及 Fourier PBS 的 RustFFT/TfheFFT 等价配置。NTRU 双语 README 已同步基准覆盖。
+
+性能基线为 `37dd00a` 加上述基准补充，使用 rustc 1.98.0、默认 feature、Ryzen 9 9955HX3D，固定 CPU 2 串行执行。四路 PBS 与 NTT GLWE CBS 共 116 个用例比较前后版本，预热 0.3 秒、测量 1 秒；GLWE PBS 每例 10 个样本，其余 20 个。分配返回和复用输出分别计时；具体参数与完整命令入口见各 benchmark。
+
+首轮 NTT GLWE CBS 八例中位数变化在 ±1% 内；完整 PBS/ManyLUT 未见明显回退。对初测约 +3% 的 TfheFFT key-switch-then-bootstrap PBS，使用保存的前后版本按前/后/后/前交错复测（预热 0.5 秒、测量 2 秒）：前版 3.50–3.58 ms，后版约 3.50 ms。NTT 同顺序复测前版 3.54–3.55 ms、后版 3.53–3.56 ms，未见稳定回退；不据此宣称加速。
+
+- 七包默认 / nightly SIMD 测试各 38 项通过，覆盖独立 BR oracle、两种 order、ManyLUT count=1/2/4、拒绝后复用及三路 CBS phase/CMUX。
+- 复用现有分配计数器，四路 PBS/ManyLUT 和 NTT GLWE CBS 的首次、后续在线调用均无分配；CBS 补齐错误输入维数的拒绝写入覆盖。
+- workspace all-targets check、七包两配置 all-targets Clippy（`-D warnings`）、严格 rustdoc、六个示例及格式/diff 检查通过。
+
+未运行完整 workspace 测试或 SIMD 性能计时；NTRU CBS 内核未改动，其数值测试已覆盖。S6 无阻塞项，下一步为 S7。
 
 ### S7：按职责整理文件、共享包装与测试归属
 

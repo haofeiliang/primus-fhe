@@ -85,6 +85,9 @@ cargo bench -p primus_tfhe_ntru_ntt --bench pbs
 cargo bench -p primus_tfhe_ntru_ntt --bench circuit_bootstrap
 ```
 
+`pbs` 测量完整 PBS 和 2/4 输出的 ManyLUT，区分分配返回和复用输出的用例。
+准备工作位于计时之外。
+
 CBS 测试覆盖 LWE bit 到 NGSW、再消费为 CMUX 控制的完整路径、输出层数补齐、basis
 和容量错误，以及 evaluator 从首次调用起零在线分配。`circuit_bootstrap` 复用输出
 和工作区，覆盖 N=1024/4096、输入维数 N/16、BR/trace/SS 的 B=2^3/2^10，以及

@@ -1,6 +1,6 @@
 //! Complete PBS: `NLev[1]` initialization, blind rotation, key switching and extraction.
-//! Reuses output and evaluator; key/LUT construction and encryption are not timed.
-//! u32, the native torus with RustFFT; fixed seed, N = 1024, LWE dimension 800.
+//! Allocating and reused-output cases are separate; setup and encryption are not timed.
+//! u32, the native torus with RustFFT/TfheFFT; fixed seed, N = 1024, LWE dimension 800.
 //! Regression workload, not a matched-security backend comparison.
 //!
 //! cargo bench -p primus_tfhe_ntru_fourier --bench pbs
@@ -10,13 +10,13 @@ use std::hint::black_box;
 use rand::{SeedableRng, rngs::StdRng};
 
 use criterion::{Criterion, criterion_group, criterion_main};
-use primus_fft::{FftTable, RustFftTable};
+use primus_fft::{FftTable, RustFftTable, TfheFftTable};
 use primus_lwe::LweParameters;
 use primus_modulus::NativeModulus;
 use primus_ntru::{NlevParameters, NtruParameters, SecretKeyDistr};
 use primus_tfhe_ntru_fourier::{NtruTfheParameters, TfheContext};
 
-fn pbs(c: &mut Criterion) {
+fn backend<Table: FftTable>(c: &mut Criterion, backend: &str) {
     const N: usize = 1024;
     const LWE_DIMENSION: usize = 800;
     let modulus = NativeModulus::new();
@@ -35,7 +35,7 @@ fn pbs(c: &mut Criterion) {
         NlevParameters::with_ntru_params(&client, 9, None),
     )
     .unwrap();
-    let table = RustFftTable::new(N.trailing_zeros()).unwrap();
+    let table = Table::new(N.trailing_zeros()).unwrap();
     let context = TfheContext::try_new(parameters, table).unwrap();
     let mut rng = StdRng::seed_from_u64(42);
     let (client_key, server_key) = context.generate_keys(&mut rng).unwrap();
@@ -45,15 +45,25 @@ fn pbs(c: &mut Criterion) {
     let mut output = input.clone();
     let mut evaluator = context.evaluator(&server_key).unwrap();
 
-    c.bench_function("ntru_fourier/complete_pbs_reused_output", |bencher| {
-        bencher.iter(|| {
-            evaluator.apply_lookup_table_to(
-                black_box(&input),
-                black_box(&lut),
-                black_box(&mut output),
-            );
-        });
-    }); // Each iteration produces the same 2/4 function outputs. Compare shared
+    c.bench_function(
+        &format!("ntru_fourier/{backend}/complete_pbs_reused_output"),
+        |bencher| {
+            bencher.iter(|| {
+                evaluator.apply_lookup_table_to(
+                    black_box(&input),
+                    black_box(&lut),
+                    black_box(&mut output),
+                );
+            });
+        },
+    );
+    c.bench_function(
+        &format!("ntru_fourier/{backend}/complete_pbs_allocating"),
+        |b| {
+            b.iter(|| black_box(evaluator.apply_lookup_table(black_box(&input), black_box(&lut))));
+        },
+    );
+    // Each iteration produces the same 2/4 function outputs. Compare shared
     // BR/KS against separate PBS calls; all tables, keys and outputs are reused.
     for count in [2, 4] {
         let value = |input: usize, output| ((input + output) % 4) as u32;
@@ -65,11 +75,21 @@ fn pbs(c: &mut Criterion) {
                     .unwrap()
             })
             .collect();
+        c.bench_function(
+            &format!("ntru_fourier/{backend}/complete_pbs_many_{count}_allocating"),
+            |b| {
+                b.iter(|| {
+                    black_box(
+                        evaluator.apply_many_lookup_table(black_box(&input), black_box(&many)),
+                    )
+                });
+            },
+        );
         let mut outputs = vec![input.clone(); count];
         for shared in [false, true] {
             let kind = if shared { "many" } else { "separate" };
             c.bench_function(
-                &format!("ntru_fourier/complete_pbs_{kind}_{count}_reused_outputs"),
+                &format!("ntru_fourier/{backend}/complete_pbs_{kind}_{count}_reused_outputs"),
                 |b| {
                     b.iter(|| {
                         if shared {
@@ -93,6 +113,11 @@ fn pbs(c: &mut Criterion) {
             );
         }
     }
+}
+
+fn pbs(c: &mut Criterion) {
+    backend::<RustFftTable>(c, "rustfft");
+    backend::<TfheFftTable>(c, "tfhe");
 }
 
 criterion_group!(benches, pbs);

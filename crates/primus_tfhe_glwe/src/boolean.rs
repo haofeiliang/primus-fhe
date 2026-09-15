@@ -242,7 +242,9 @@ where
         lhs: &BooleanCiphertext<T>,
         rhs: &BooleanCiphertext<T>,
     ) -> BooleanCiphertext<T> {
-        let mut output = lhs.clone();
+        let mut output = BooleanCiphertext::from_raw(LweCiphertext::zero(
+            self.parameters.ciphertext_lwe_dimension(),
+        ));
         self.evaluate_binary_to(gate, lhs, rhs, &mut output);
         output
     }
@@ -338,7 +340,9 @@ where
         then_value: &BooleanCiphertext<T>,
         else_value: &BooleanCiphertext<T>,
     ) -> BooleanCiphertext<T> {
-        let mut output = condition.clone();
+        let mut output = BooleanCiphertext::from_raw(LweCiphertext::zero(
+            self.parameters.ciphertext_lwe_dimension(),
+        ));
         self.mux_to(condition, then_value, else_value, &mut output);
         output
     }

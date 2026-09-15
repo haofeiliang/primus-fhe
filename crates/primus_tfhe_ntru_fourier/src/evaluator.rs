@@ -1,5 +1,6 @@
 use primus_fft::{FftEngine, FftTable, TorusFftValue};
 use primus_modulus::NativeModulus;
+use primus_poly::Polynomial;
 use primus_tfhe::{
     LookupTable, LweCiphertext, ManyLookupTable, ProgrammableBootstrap, ProgrammableBootstrapMany,
     TfheEvaluationError,
@@ -105,21 +106,7 @@ where
             "PBS output dimension mismatch"
         );
 
-        blind_rotate_lookup_table_to(
-            self.server_key,
-            input,
-            lookup_table.polynomial(),
-            1,
-            &mut self.blind_rotation,
-            parameters,
-            &mut self.fft,
-        );
-        self.server_key.key_switching_key().key_switch_to(
-            &self.blind_rotation.current,
-            &mut self.blind_rotation.scratch,
-            &mut self.fft,
-            &mut self.blind_rotation.external_product,
-        );
+        self.blind_rotate_and_keyswitch(input, lookup_table.polynomial(), 1);
         self.blind_rotation
             .scratch
             .extract_compact_lwe_to(output, NativeModulus::new());
@@ -141,7 +128,10 @@ where
         input: &LweCiphertext<T>,
         lookup_table: &ManyLookupTable<T>,
     ) -> Vec<LweCiphertext<T>> {
-        let mut outputs = vec![input.clone(); lookup_table.output_count()];
+        let dimension = self.context.parameters().external_lwe().dimension();
+        let mut outputs = (0..lookup_table.output_count())
+            .map(|_| LweCiphertext::zero(dimension))
+            .collect::<Vec<_>>();
         self.apply_many_lookup_table_to(input, lookup_table, &mut outputs);
         outputs
     }
@@ -191,11 +181,35 @@ where
             "PBSManyLUT output ciphertext dimension mismatch"
         );
 
-        blind_rotate_lookup_table_to(
-            self.server_key,
+        self.blind_rotate_and_keyswitch(
             input,
             lookup_table.polynomial(),
             lookup_table.output_count(),
+        );
+        for (index, output) in outputs.iter_mut().enumerate() {
+            self.blind_rotation.scratch.extract_compact_lwe_at_to(
+                index,
+                output,
+                NativeModulus::new(),
+            );
+        }
+    }
+
+    /// Writes the BR result under the client ring secret into `blind_rotation.scratch`.
+    /// Input/LUT compatibility and the output count were checked by the caller.
+    #[inline]
+    fn blind_rotate_and_keyswitch(
+        &mut self,
+        input: &LweCiphertext<T>,
+        lookup_table: &Polynomial<Vec<T>>,
+        output_count: usize,
+    ) {
+        let parameters = self.context.parameters();
+        blind_rotate_lookup_table_to(
+            self.server_key,
+            input,
+            lookup_table,
+            output_count,
             &mut self.blind_rotation,
             parameters,
             &mut self.fft,
@@ -206,13 +220,6 @@ where
             &mut self.fft,
             &mut self.blind_rotation.external_product,
         );
-        for (index, output) in outputs.iter_mut().enumerate() {
-            self.blind_rotation.scratch.extract_compact_lwe_at_to(
-                index,
-                output,
-                NativeModulus::new(),
-            );
-        }
     }
 }
 
