@@ -48,3 +48,7 @@ harness = false
 [[bench]]
 name = "signed_encoding"
 harness = false
+
+[[bench]]
+name = "signed_dot_product"
+harness = false

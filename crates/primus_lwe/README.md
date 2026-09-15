@@ -60,7 +60,7 @@ fn main() {
         2
     );
 
-    let public = LwePublicKey::generate(&secret, &params, &mut rng);
+    let public = LwePublicKey::generate(secret.as_view(), &params, &mut rng);
     let messages = [0u32, 1, 2, 3];
     let batch = public.encrypt_batch(&messages, &params, &mut rng);
     assert_eq!(secret.decrypt_batch::<_, u32>(&batch, &params), messages);
@@ -133,6 +133,11 @@ message and circular distance from its selected encoding; it does not estimate
 a noise distribution or certify decryption correctness.
 
 ## Public-key encryption
+
+`LwePublicKey::generate` accepts `LweSecretKeyRef`: pass `secret.as_view()`
+for an owned LWE secret, or `LweSecretKeyRef::Signed` for GLWE/NTRU
+coefficients. Generation does not copy the secret. The borrowed coefficients
+must satisfy the view's range contract for the supplied modulus.
 
 The public key stores `n` rows `[A_i, b_i]`, with square `A` and `b = A s + e`:
 `n * (n + 1)` coefficients. Encryption samples sparse ternary `r` with

@@ -21,7 +21,12 @@ fn main() {
     let (client_key, server_key) = context.generate_keys(&mut rng).unwrap();
 
     // Raw programmable bootstrapping evaluates a compiled unary lookup table.
-    let encryptor = context.encryptor(&client_key).unwrap();
+    // Publish this LWE key to encrypt inputs; keep the client key for decryption.
+    // These demonstration parameters have no public-key security/noise assessment.
+    let public_key = client_key
+        .try_generate_public_key(context.parameters(), &mut rng)
+        .unwrap();
+    let encryptor = context.encryptor(&public_key).unwrap();
     let decryptor = context.decryptor(&client_key).unwrap();
     let toggle = context.compile_lookup_table_slice(&[1u32, 0]).unwrap();
     let input = encryptor.encrypt_padded(0u32, &mut rng).unwrap();

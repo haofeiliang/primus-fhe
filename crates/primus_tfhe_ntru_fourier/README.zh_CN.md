@@ -19,6 +19,18 @@ BR 后的 NTRU 密钥切换将 f_acc 转为 f_client。
 必须为 2 的幂，且满足 `ceil(t/2) <= N/count`；较低旋转分辨率会收窄输入噪声余量。
 Boolean/CBS 输出尺度允许区别于普通明文编码。
 
+## 公钥客户端
+
+`client_key.try_generate_public_key(context.parameters(), &mut rng)` 生成外部
+二进制前缀秘密下的 `LwePublicKey`；将其传入 `context.encryptor(&public_key)`
+即可使用 `encrypt`、`encrypt_padded`、`encrypt_centered`。
+
+公钥生成及加密中的新鲜误差均使用 `external_lwe` 噪声采样器。总误差为
+`e^T r + e2 - e1^T s`，不能把该采样器视为最终密文噪声分布。参数必须满足
+[底层公钥契约](../primus_lwe/README.zh_CN.md#公钥加密)及 PBS/ManyLUT 输入余量。
+公钥维数/模数检查不能验证实际秘密来源；使用配套的 client/server key。
+公钥存储 `n * (n + 1)` 个系数，不包括 NTRU 秘密的零填充部分。
+
 ## 可选 circuit bootstrapping
 
 `CircuitBootstrapParameters`、`CircuitBootstrapKey` 和 `CircuitBootstrapEvaluator`

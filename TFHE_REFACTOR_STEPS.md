@@ -3,7 +3,7 @@
 制定日期：2026-09-15。
 依据：[重构分析报告](TFHE_REFACTOR_REVIEW.md)、[仓库规范](AGENTS.md) 和 [当前交接决定](HANDOFF.md)。
 
-本文把分析建议拆成可独立验收的实施步骤，供明确要求实现时使用。S0、S1 已于 2026-09-15 完成，起始源码基线为 `f9105515cb775baf8a2461306e46f154abef5333`；S2–S9 尚未实施。分析报告基线为 `e493df6`；后续开始修改时仍应重新核对代码，不能把历史测试结果当作当前验证结果。
+本文把分析建议拆成可独立验收的实施步骤，供明确要求实现时使用。S0–S2 已于 2026-09-15 完成，起始源码基线为 `f9105515cb775baf8a2461306e46f154abef5333`；S3–S9 尚未实施。分析报告基线为 `e493df6`；后续开始修改时仍应重新核对代码，不能把历史测试结果当作当前验证结果。
 
 ## 1. 范围、顺序与完成目标
 
@@ -23,7 +23,7 @@
 | --- | --- | --- | --- |
 | S0 | 当前基线、范围和验证入口确认 | 无 | §9 |
 | S1 | CBS / Boolean 契约修正 | S0 | §1 |
-| S2 | 客户端泛型与构造器收敛 | S1 | §3.1 |
+| S2 | 两族 LWE 公钥客户端与构造器收敛 | S1 | §3.1（按新增公钥需求调整） |
 | S3 | GLWE BSK 与三路 CBS 参数收敛 | S2 | §3.2–3.3 |
 | S4 | 两族三类客户端加密 `_to` | S3 | §3.4 |
 | S5 | GLWE Boolean 工厂与推荐调用流程 | S4 | §3.5 |
@@ -110,20 +110,42 @@
 - `RUSTDOCFLAGS='-D warnings' cargo doc -p primus_tfhe_glwe -p primus_tfhe_glwe_ntt -p primus_tfhe_glwe_fourier --no-deps`、`cargo fmt --all -- --check`、`git diff --check` 均通过；已检查两后端生成的 Boolean re-export 页面及 evaluator 到 family 的链接。
 - 本步无新增测试，未重跑数值测试、SIMD 或性能基准；开始时已有的 S0 暂存内容保持不变。S1 完成，无阻塞项，下一步为 S2 的客户端泛型与构造器收敛。
 
-### S2：删除空 Key 泛型，统一客户端构造器
+### S2：接入两族 LWE 公钥客户端，统一构造器
 
-**范围：** 两族 `src/client.rs`，GLWE family Boolean 内部字段，两路 GLWE 的客户端 alias，以及全部调用方。
+**范围调整：** 用户明确纳入 TFHE 公钥客户端，两族对外均加密为 LWE，复用 `primus_lwe::LwePublicKey`。因此保留并实际使用 GLWE 的 `Key` 泛型，NTRU 增加对应支持；原先“删除空泛型”的前提不再成立。不新增底层 NTRU 环公钥加密。
 
 **修改：**
 
-1. 将 `GlweEncryptor` 收敛为直接借用 `GlweClientKey` 的类型，移除没有第二种实现的 `Key` 泛型及后端 alias 的对应泛型参数。
-2. 将 raw 客户端这一小组返回 `Result` 的构造器统一为 `try_new`：GLWE encryptor 的 `with_client_key`、GLWE decryptor 的 `new`、NTRU encryptor/decryptor 的 `new`。
-3. 保留 context 的 `encryptor`、`decryptor`、`evaluator` 工厂名。Boolean 自身的构造入口单独核对职责，不把此步扩成所有 `new` 的机械重命名。
-4. 同步公开导出、rustdoc、测试、示例和 benchmark，删除失效的未来公钥说明与导入；不保留弃用 alias。
+1. `LwePublicKey::generate` 接收 `LweSecretKeyRef`，直接借用 Encoded/Signed 秘密；同步所有 owned 调用方为 `as_view()`。提供公钥模数查询供客户端绑定边界检查。
+2. 两族 client key 提供 `try_generate_public_key(parameters, rng)`。GLWE 两种 order 分别绑定 small-LWE 秘密与 kN 系数向量；NTRU 只绑定 `f_client` 的二进制前缀。
+3. GLWE/NTRU encryptor 以 sealed encryption-key trait 支持实际的 client key 和 `LwePublicKey` 两种实现，共享消息转换、范围和编码入口。四后端 context/alias 及 GLWE Boolean encryptor 同步支持公钥。
+4. GLWE encryptor 的 `with_client_key`、GLWE decryptor 及 NTRU encryptor/decryptor 的 `new` 统一为 `try_new`；context 工厂和 Boolean 的构造器名称保留，不提供弃用兼容入口。
+5. 公钥生成和加密使用对应外部秘密路径的噪声采样器：GLWE 依 order 选择 small-LWE / accumulator GLWE，NTRU 使用 external-LWE。文档明确各采样器不等于公钥密文总噪声，安全性和 PBS/ManyLUT 余量需要独立选择；兼容性检查不能证明秘密来源一致。
+6. 同步公开导出、rustdoc、调用方、双语文档和四个 basic 示例。三类 `_to` 的公私钥支持留在 S4。
 
-**验证：** 检查两族、四后端及 workspace 调用方。保留两种 keygen 工作流；若解除“消耗完全相同 RNG 流”的偶然限制，必须各自使用配套的 client/server 验证，不能交叉混用。
+**验证：** 底层 Signed/Encoded 公钥生成差分；两族三种消息入口、GLWE 两种 order、native/explicit 模数、错误维数/模数与消息、拒绝前 RNG 不变；四后端配套 public/client/server 的 PBS，以及 GLWE Boolean 公钥输入。两种 GLWE keygen 工作流分别验证自己的配套密钥，不要求随机流一致。
 
-**完成条件：** 用户无需指定虚假的 Key 泛型；旧构造符号无活跃调用；密钥表示、借用关系和生成行为没有因命名整理而改变。
+**完成条件：** 泛型有两种真实实现；旧构造符号无活跃调用；公钥密文正确解密并可供配套 server key 求值；生成不复制秘密，原私钥表示、外部维数及 PBS 流程保持。
+
+#### S2 执行结果（2026-09-15）
+
+上述修改已完成。`Key` 使用静态分派，未加入通用 Backend/Domain 抽象或临时秘密副本。基础 LWE、两族客户端、四后端调用方和文档均已迁移，S3 的参数签名尚未改动。
+
+本步使用 S0 记录的 stable/nightly 工具链重新执行以下验证；“八包”为第 4 节七个 TFHE crate 加 `primus_lwe`。
+
+| 验证 | 结果 |
+| --- | --- |
+| `cargo fmt --all -- --check`、`git diff --check` | 通过 |
+| `cargo check --workspace --all-targets` | 通过，包含 xtask 与全部调用方 |
+| `cargo test <八包>` | 59 passed、0 failed（其中 TFHE 39 项） |
+| `cargo clippy <八包> -p xtask --all-targets -- -D warnings` | 通过 |
+| `RUSTDOCFLAGS='-D warnings' cargo doc <八包> --no-deps` | 通过 |
+| `cargo +nightly check <八包> --all-targets --features simd` | 通过 |
+| `cargo +nightly test <八包> --features simd` | 59 passed、0 failed |
+| 四后端 basic 示例独立运行 | 全部通过，使用公钥输入并消费 PBS/ManyLUT 输出 |
+
+未运行性能计时、完整 workspace 测试或公钥参数安全性/失败概率评估；功能 fixture 不作为生产参数。源码检查确认公钥生成借用秘密且在线公钥加密复用底层原语；未新增分配统计实验。S2 完成，无阻塞项，下一步为 S3。
+
 
 ### S3：收敛 GLWE BSK 与 CBS 输出参数
 
@@ -148,12 +170,12 @@
 
 ### S4：补齐两族客户端的可复用输出入口
 
-**范围：** 两族客户端、后端 alias/公开文档及聚焦的客户端测试。
+**范围：** 两族公钥/私钥客户端、后端 alias/公开文档及聚焦的客户端测试。
 
 **修改：**
 
 1. 增加 `encrypt_to(message, output, rng)`、`encrypt_padded_to(message, output, rng)`、`encrypt_centered_to(message, output, rng)`。
-2. 复用 `LweSecretKeyRef::encrypt_encoded_to` 等已有能力，保持 Signed / Encoded 私钥表示；用小型私有实现共享真实编码和加密逻辑。
+2. 分别复用 `LweSecretKeyRef::encrypt_encoded_to` 和 `LwePublicKey::encrypt_encoded_to`，保持 Signed / Encoded 私钥表示；通过现有 encryption-key 分派共享消息检查和编码逻辑。
 3. 消息转换、范围和输出维数检查全部先于 RNG 采样及写入；正常错误返回 `ClientError`。RNG panic 的部分写入语义引用底层契约。
 4. 保留现有分配返回的便利方法及其高效初始化路径，不强制先创建零密文再调用 `_to`。
 5. 默认沿用当前 owned 输出类型；仅在已经选定的实际调用方需要借用输出时采用已有 `Lwe` view，不在此步设计 batch 或重写 PBS trait。
@@ -279,7 +301,7 @@ cargo doc "${tfhe_packages[@]}" --no-deps
 | PBS `_assign` | 已有链式原地求值需求；先完成 S6 | 在覆盖输入前完成依赖输入的阶段；禁止 clone 隐藏分配；验证链式结果及拒绝语义 |
 | ServerKey 存储查询 | 决定替换 `xtask/src/ntru_params.rs` 的既有手写公式 | 优先复用 `Size` 或明确定义 `coefficient_bytes`；区分实际系数存储、allocator 占用及 CBS live heap；同步 xtask 消费方 |
 
-若选择算法补充，优先评估 Fourier GLWE CBS。公钥客户端、独立 KSK 噪声、small integer/message-carry 类型层继续等待明确需求。NTRU packing、序列化、GPU、多位 BR 不纳入本计划；特别是 packing 不能被重新引入为 CBS 的前置任务。
+若选择算法补充，优先评估 Fourier GLWE CBS。公钥客户端已按明确需求纳入 S2；独立 KSK 噪声、small integer/message-carry 类型层继续等待明确需求。NTRU packing、序列化、GPU、多位 BR 不纳入本计划；特别是 packing 不能被重新引入为 CBS 的前置任务。
 
 ## 6. 后续会话的使用方式
 

@@ -46,8 +46,8 @@ fn imported_client_coefficients_must_be_binary_and_zero_padded() {
     let parameters = parameters();
     let binary = imported_key([1, 0, 1, 1, 0, 0, 0, 0]);
     assert_eq!(binary.check_compatible(&parameters), Ok(()));
-    assert!(NtruEncryptor::new(&parameters, &binary).is_ok());
-    assert!(NtruDecryptor::new(&parameters, &binary).is_ok());
+    assert!(NtruEncryptor::try_new(&parameters, &binary).is_ok());
+    assert!(NtruDecryptor::try_new(&parameters, &binary).is_ok());
 
     // f = 2 + X is invertible over the native ring (f(1) is odd), but its
     // binary distribution label cannot make it a valid blind-rotation control.
@@ -68,11 +68,11 @@ fn imported_client_coefficients_must_be_binary_and_zero_padded() {
         let key = imported_key(coefficients);
         assert_eq!(key.check_compatible(&parameters), Err(expected.clone()));
         assert_eq!(
-            NtruEncryptor::new(&parameters, &key).err(),
+            NtruEncryptor::try_new(&parameters, &key).err(),
             Some(NtruClientError::IncompatibleKey(expected.clone()))
         );
         assert_eq!(
-            NtruDecryptor::new(&parameters, &key).err(),
+            NtruDecryptor::try_new(&parameters, &key).err(),
             Some(NtruClientError::IncompatibleKey(expected))
         );
     }
@@ -85,8 +85,8 @@ fn padded_client_domain_matches_odd_and_even_lut_domains() {
     let key = imported_key([1, 0, 1, 1, 0, 0, 0, 0]);
     for t in [3u32, 4, 5] {
         let parameters = parameters_with_plaintext(t);
-        let encryptor = NtruEncryptor::new(&parameters, &key).unwrap();
-        let decryptor = NtruDecryptor::new(&parameters, &key).unwrap();
+        let encryptor = NtruEncryptor::try_new(&parameters, &key).unwrap();
+        let decryptor = NtruDecryptor::try_new(&parameters, &key).unwrap();
         let domain_len = t.div_ceil(2);
         assert!(
             parameters

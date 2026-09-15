@@ -61,12 +61,16 @@ where
         KeyGenerator::new(self).generate(rng)
     }
 
-    /// Creates a client encryptor after checking the key once.
-    pub fn encryptor<'a>(
+    /// Creates a secret-key or public-key encryptor after checking compatibility.
+    /// Public-key contracts follow [`primus_tfhe_ntru::NtruEncryptionKey`].
+    pub fn encryptor<'a, Key>(
         &'a self,
-        client_key: &'a ClientKey<T>,
-    ) -> Result<Encryptor<'a, T>, TfheClientError> {
-        Encryptor::new(&self.parameters, client_key)
+        key: &'a Key,
+    ) -> Result<Encryptor<'a, T, Key>, TfheClientError>
+    where
+        Key: primus_tfhe_ntru::NtruEncryptionKey<T, primus_modulus::NativeModulus<T>>,
+    {
+        Encryptor::try_new(&self.parameters, key)
     }
 
     /// Creates a client decryptor after checking the key once.
@@ -74,7 +78,7 @@ where
         &'a self,
         client_key: &'a ClientKey<T>,
     ) -> Result<Decryptor<'a, T>, TfheClientError> {
-        Decryptor::new(&self.parameters, client_key)
+        Decryptor::try_new(&self.parameters, client_key)
     }
 
     /// Creates an evaluator with reusable FFT and coefficient workspaces.

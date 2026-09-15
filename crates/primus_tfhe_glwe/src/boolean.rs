@@ -3,8 +3,8 @@ use primus_reduce::RingContext;
 use primus_tfhe::{LookupTable, LookupTableError, ProgrammableBootstrap};
 
 use crate::{
-    GlweClientError, GlweClientKey, GlweDecryptor, GlweEncryptor, GlweTfheParameters,
-    LweCiphertext, PlaintextEmbedding, RoundedCodec, TfheEvaluationError,
+    GlweClientError, GlweClientKey, GlweDecryptor, GlweEncryptionKey, GlweEncryptor,
+    GlweTfheParameters, LweCiphertext, PlaintextEmbedding, RoundedCodec, TfheEvaluationError,
 };
 
 /// The number of bits in the external Boolean plaintext modulus: `t = 2^2 = 4`.
@@ -47,30 +47,33 @@ impl<T: FheUint> BooleanCiphertext<T> {
 }
 
 /// Encrypts Boolean values under the standard 0/1 encoding modulo 4.
-pub struct BooleanEncryptor<'a, T, LM, GM>
+/// Accepts a client secret key or LWE public key; public-key noise and identity
+/// requirements follow [`GlweEncryptionKey`].
+pub struct BooleanEncryptor<'a, T, LM, GM, Key = GlweClientKey<T>>
 where
     T: FheUint,
     LM: RingContext<T>,
     GM: RingContext<T>,
 {
-    inner: GlweEncryptor<'a, T, LM, GM, GlweClientKey<T>>,
+    inner: GlweEncryptor<'a, T, LM, GM, Key>,
 }
 
-impl<'a, T, LM, GM> BooleanEncryptor<'a, T, LM, GM>
+impl<'a, T, LM, GM, Key> BooleanEncryptor<'a, T, LM, GM, Key>
 where
     T: FheUint,
     LM: RingContext<T>,
     GM: RingContext<T>,
+    Key: GlweEncryptionKey<T, LM, GM>,
 {
     /// Creates a Boolean encryptor and validates the required plaintext
     /// modulus.
     pub fn new(
         parameters: &'a GlweTfheParameters<T, LM, GM>,
-        key: &'a GlweClientKey<T>,
+        key: &'a Key,
     ) -> Result<Self, BooleanError> {
         validate_boolean_parameters(parameters)?;
         Ok(Self {
-            inner: GlweEncryptor::with_client_key(parameters, key)?,
+            inner: GlweEncryptor::try_new(parameters, key)?,
         })
     }
 
@@ -114,7 +117,7 @@ where
     ) -> Result<Self, BooleanError> {
         validate_boolean_parameters(parameters)?;
         Ok(Self {
-            inner: GlweDecryptor::new(parameters, key)?,
+            inner: GlweDecryptor::try_new(parameters, key)?,
         })
     }
 

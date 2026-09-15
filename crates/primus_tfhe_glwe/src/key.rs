@@ -48,6 +48,53 @@ impl<T: FheUint> GlweClientKey<T> {
         }
     }
 
+    /// Generates an LWE public key for this client's external secret.
+    ///
+    /// Uses the small-LWE noise sampler for bootstrap-then-key-switch, or the
+    /// accumulator GLWE noise sampler for key-switch-then-bootstrap. The latter
+    /// borrows the signed `kN` coefficients without copying the secret.
+    /// Public-key storage contains `d * (d + 1)` coefficients for external
+    /// dimension `d` (`n` or `kN`).
+    ///
+    /// # Correctness
+    ///
+    /// The secret must satisfy [`LweSecretKeyRef`]'s range contract. Public-key
+    /// usage follows [`crate::GlweEncryptionKey`]'s noise and key-identity contracts
+    /// and [`crate::LwePublicKey`]'s security requirements.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the public-key storage length overflows `usize`.
+    pub fn try_generate_public_key<LM, GM, R>(
+        &self,
+        parameters: &GlweTfheParameters<T, LM, GM>,
+        rng: &mut R,
+    ) -> Result<crate::LwePublicKey<T>, GlweKeyError>
+    where
+        LM: RingContext<T>,
+        GM: RingContext<T>,
+        R: rand::Rng + rand::CryptoRng,
+    {
+        self.check_compatible(parameters)?;
+        let public = match parameters.pbs_order() {
+            GlwePbsOrder::BootstrapKeyswitch => {
+                crate::LwePublicKey::generate(self.lwe_secret_key(), parameters.small_lwe(), rng)
+            }
+            GlwePbsOrder::KeyswitchBootstrap => {
+                let glwe = parameters.glwe();
+                let lwe = crate::LweParameters::new(
+                    glwe.secret_key_len(),
+                    glwe.plain_modulus_value(),
+                    parameters.small_lwe().cipher_modulus(),
+                    glwe.secret_key_distr(),
+                    glwe.noise_distribution().standard_deviation(),
+                );
+                crate::LwePublicKey::generate(self.lwe_secret_key(), &lwe, rng)
+            }
+        };
+        Ok(public)
+    }
+
     /// Returns the small-LWE secret key used by the bootstrapping key.
     #[inline]
     pub fn small_lwe_secret_key(&self) -> &LweSecretKey<T> {

@@ -9,6 +9,11 @@
 - `signed_encoding`: bounded signed-to-residue conversion for Native/PowOf2/Barrett,
   u32/u64, at lengths 1024 and 16384. One iteration fills one slice of mixed
   signed coefficients in [-38, 38]; allocation and input generation are excluded.
+- `signed_dot_product`: Native/Barrett u32/u64 dot products with identical
+  ternary secrets in signed and pre-encoded form, at lengths 16, 1024, 1025,
+  and 4096. Each iteration computes one dot product; allocation and secret
+  encoding are excluded. This isolates arithmetic from the sampling and matrix
+  allocation measured by `primus_lwe`'s `public_key` generation benchmark.
 - `slice_arithmetic`: Native/Barrett u32/u64 subtraction, negation, broadcast
   scalar multiplication, scalar multiply-add, and in-place add/sub. Barrett
   output-add is included; Native output-add remains in `slice_moduli`.

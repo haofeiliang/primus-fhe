@@ -23,6 +23,21 @@ count is a power of two and requires `ceil(t/2) <= N/count`, reducing rotation
 resolution and thus the allowed input-noise margin. Boolean/CBS output scales
 can differ from ordinary plaintext encoding.
 
+## Public-key clients
+
+`client_key.try_generate_public_key(context.parameters(), &mut rng)` generates an
+`LwePublicKey` under the external binary prefix secret. Pass it to
+`context.encryptor(&public_key)` for `encrypt`, `encrypt_padded` and
+`encrypt_centered`.
+
+Generation and fresh encryption errors use the `external_lwe` noise sampler.
+The total error is `e^T r + e2 - e1^T s`; that sampler does not describe the final
+ciphertext noise. Parameters must satisfy the
+[underlying public-key contract](../primus_lwe/README.md#public-key-encryption)
+and the PBS/ManyLUT input margin. Dimension/modulus checks cannot verify secret
+identity; use paired client/server keys. Public-key storage contains
+`n * (n + 1)` coefficients, excluding the NTRU secret's zero padding.
+
 ## Optional circuit bootstrapping
 
 `CircuitBootstrapParameters`, `CircuitBootstrapKey` and `CircuitBootstrapEvaluator`

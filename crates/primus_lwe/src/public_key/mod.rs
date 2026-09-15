@@ -8,7 +8,7 @@ use primus_integer::FheUint;
 use primus_lattice::lwe::Lwe;
 use primus_reduce::RingContext;
 
-use crate::{LweCiphertext, LweParameters, LweSecretKey, PlaintextEmbedding};
+use crate::{LweCiphertext, LweParameters, LweSecretKeyRef, PlaintextEmbedding};
 
 // A full row block consumes whole random words for any ciphertext tile count.
 const ROWS_PER_BLOCK: usize = 16;
@@ -57,13 +57,14 @@ pub struct LwePublicKey<T: FheUint> {
 impl<T: FheUint> LwePublicKey<T> {
     /// Generates `n` independent zero encryptions under `secret_key`.
     ///
-    /// The encoded secret storage retains the backend's slice dot-product
-    /// kernel. Only the dimension and modulus identity are retained from
+    /// Borrows encoded or signed coefficients without copying the secret.
+    /// Only the dimension and modulus identity are retained from
     /// `params`; the plaintext codec and samplers remain caller-owned.
     ///
     /// # Correctness
     ///
-    /// The secret must contain canonical residues under `params`' modulus.
+    /// The secret must satisfy [`LweSecretKeyRef`]'s coefficient-range contract
+    /// under `params`' modulus.
     /// The [type's security and noise requirements](Self#correctness) apply.
     ///
     /// # Panics
@@ -72,7 +73,7 @@ impl<T: FheUint> LwePublicKey<T> {
     /// parameter dimension or the public-key storage length overflows `usize`.
     #[must_use]
     pub fn generate<M, R>(
-        secret_key: &LweSecretKey<T>,
+        secret_key: LweSecretKeyRef<'_, T>,
         params: &LweParameters<T, M>,
         rng: &mut R,
     ) -> Self
@@ -94,9 +95,15 @@ impl<T: FheUint> LwePublicKey<T> {
         let modulus = params.cipher_modulus();
         let uniform = params.cipher_modulus_uniform_distr();
         let noise = params.noise_distribution();
-        let secret = secret_key.as_view();
         for row in data.chunks_exact_mut(row_len) {
-            secret.encrypt_encoded_to(T::ZERO, &mut Lwe::new(row), modulus, uniform, noise, rng);
+            secret_key.encrypt_encoded_to(
+                T::ZERO,
+                &mut Lwe::new(row),
+                modulus,
+                uniform,
+                noise,
+                rng,
+            );
         }
         Self {
             data,
@@ -110,6 +117,13 @@ impl<T: FheUint> LwePublicKey<T> {
     #[inline]
     pub fn dimension(&self) -> usize {
         self.dimension
+    }
+
+    /// Returns `q - 1`, including `T::MAX` for the native modulus.
+    #[must_use]
+    #[inline]
+    pub fn cipher_modulus_minus_one(&self) -> T {
+        self.modulus_minus_one
     }
 
     /// Returns `n` row-major `[A_i, b_i]` blocks of `n + 1` canonical residues.

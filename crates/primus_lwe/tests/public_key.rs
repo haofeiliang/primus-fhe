@@ -37,7 +37,7 @@ fn check_equations<T: FheUint, M: RingContext<T>>(modulus: M) {
             .map(|&s| centered(s.as_into(), q))
             .collect();
         let mut rng = StdRng::seed_from_u64(0x1_ee11);
-        let key = LwePublicKey::generate(&secret, &params, &mut rng);
+        let key = LwePublicKey::generate(secret.as_view(), &params, &mut rng);
         assert_eq!(key.dimension(), dimension);
         assert_eq!(key.as_slice().len(), dimension * (dimension + 1));
 
@@ -161,7 +161,7 @@ fn check_messages<M: RingContext<u32>>(modulus: M) {
     let output_params = LweParameters::new(5, 4, modulus, SecretKeyDistr::UniformBinary, 3.2);
     let mut rng = StdRng::seed_from_u64(0x1_ee13);
     let secret = LweSecretKey::generate(&params, &mut rng);
-    let key = LwePublicKey::generate(&secret, &params, &mut rng);
+    let key = LwePublicKey::generate(secret.as_view(), &params, &mut rng);
     let output_secret = LweSecretKey::generate(&output_params, &mut rng);
     let switching = LweKeySwitchingKey::generate(
         secret.as_view(),
@@ -215,7 +215,7 @@ fn public_key_boundaries_reject_before_writing_or_sampling() {
     );
     let mut rng = StdRng::seed_from_u64(0x1_ee14);
     let secret = LweSecretKey::generate(&params, &mut rng);
-    let key = LwePublicKey::generate(&secret, &params, &mut rng);
+    let key = LwePublicKey::generate(secret.as_view(), &params, &mut rng);
     for (length, dimension, q, message) in [
         (0, 3, 97, 0),
         (3, 3, 97, 0),
@@ -257,10 +257,35 @@ fn public_key_boundaries_reject_before_writing_or_sampling() {
         let mut expected_rng = StdRng::seed_from_u64(seed);
         assert!(
             catch_unwind(AssertUnwindSafe(|| {
-                LwePublicKey::generate(&wrong_secret, &params, &mut rng)
+                LwePublicKey::generate(wrong_secret.as_view(), &params, &mut rng)
             }))
             .is_err()
         );
         assert_eq!(rng.next_u64(), expected_rng.next_u64());
     }
+}
+
+#[test]
+fn public_key_generation_matches_encoded_and_signed_secrets() {
+    fn check<M: RingContext<u32>>(modulus: M) {
+        let params = LweParameters::new(4, 4, modulus, SecretKeyDistr::UniformTernary, 0.7);
+        let signed = [1i32, -1, 0, -1];
+        // Independent canonical encoding of the same small signed secret.
+        let encoded = LweSecretKey::new(
+            vec![1, modulus.minus_one(), 0, modulus.minus_one()],
+            SecretKeyDistr::UniformTernary,
+        );
+        let mut signed_rng = StdRng::seed_from_u64(0x5055_424c_4943);
+        let mut encoded_rng = StdRng::seed_from_u64(0x5055_424c_4943);
+        let public = LwePublicKey::generate(
+            primus_lwe::LweSecretKeyRef::Signed(&signed),
+            &params,
+            &mut signed_rng,
+        );
+        let expected = LwePublicKey::generate(encoded.as_view(), &params, &mut encoded_rng);
+        assert_eq!(public.as_slice(), expected.as_slice());
+        assert_eq!(signed_rng.next_u64(), encoded_rng.next_u64());
+    }
+    check(NativeModulus::new());
+    check(BarrettModulus::new(132_120_577));
 }

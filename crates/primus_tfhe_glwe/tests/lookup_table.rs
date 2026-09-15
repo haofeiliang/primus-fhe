@@ -146,8 +146,8 @@ fn padded_client_domain_matches_odd_and_even_lut_domains() {
             ),
             GlwePbsOrder::BootstrapKeyswitch,
         );
-        let encryptor = GlweEncryptor::with_client_key(&parameters, &key).unwrap();
-        let decryptor = GlweDecryptor::new(&parameters, &key).unwrap();
+        let encryptor = GlweEncryptor::try_new(&parameters, &key).unwrap();
+        let decryptor = GlweDecryptor::try_new(&parameters, &key).unwrap();
         let domain_len = t.div_ceil(2);
         assert!(
             parameters

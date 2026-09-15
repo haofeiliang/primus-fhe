@@ -57,7 +57,7 @@ fn main() {
         2
     );
 
-    let public = LwePublicKey::generate(&secret, &params, &mut rng);
+    let public = LwePublicKey::generate(secret.as_view(), &params, &mut rng);
     let messages = [0u32, 1, 2, 3];
     let batch = public.encrypt_batch(&messages, &params, &mut rng);
     assert_eq!(secret.decrypt_batch::<_, u32>(&batch, &params), messages);
@@ -122,6 +122,10 @@ Raw 采样器必须使用相同模数。这些范围及采样器约定是调用�
 所选编码的环形距离；它不估计噪声分布，也不证明解密结果正确。
 
 ## 公钥加密
+
+`LwePublicKey::generate` 接收 `LweSecretKeyRef`：owned LWE 私钥传入
+`secret.as_view()`，GLWE/NTRU 系数可直接使用 `LweSecretKeyRef::Signed`，
+生成过程中无需复制秘密。借用视图仍须满足对应模数下的系数范围契约。
 
 公钥存储 `n` 行 `[A_i, b_i]`，其中 `A` 为方阵，`b = A s + e`，
 总计 `n * (n + 1)` 个系数。加密采样稀疏三元向量 `r`，分布为

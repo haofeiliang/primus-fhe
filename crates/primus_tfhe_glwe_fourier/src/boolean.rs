@@ -8,8 +8,8 @@ pub use crate::error::BooleanError;
 pub use primus_tfhe_glwe::{BooleanCiphertext, BooleanGate};
 
 /// Boolean encryptor for the native-torus Fourier backend.
-pub type BooleanEncryptor<'a, T> =
-    primus_tfhe_glwe::BooleanEncryptor<'a, T, NativeModulus<T>, NativeModulus<T>>;
+pub type BooleanEncryptor<'a, T, Key = crate::ClientKey<T>> =
+    primus_tfhe_glwe::BooleanEncryptor<'a, T, NativeModulus<T>, NativeModulus<T>, Key>;
 
 /// Boolean decryptor for the native-torus Fourier backend.
 pub type BooleanDecryptor<'a, T> =

@@ -29,7 +29,7 @@ fn public_batch_matches_independent_matrix_arithmetic() {
             SecretKeyDistr::gaussian(2.0),
         );
         let mut rng = StdRng::seed_from_u64(0x1_ee26);
-        let public = LwePublicKey::generate(&secret, &params, &mut rng);
+        let public = LwePublicKey::generate(secret.as_view(), &params, &mut rng);
         let plaintexts: Vec<u32> = [0, (q - 1) as u32, (q / 4) as u32]
             .into_iter()
             .cycle()
@@ -101,7 +101,7 @@ fn check_batches<T: FheUint, M: RingContext<T>>(modulus: M, dimension: usize) {
     );
     let mut rng = StdRng::seed_from_u64(0x1_ee21);
     let secret = LweSecretKey::generate(&params, &mut rng);
-    let public = LwePublicKey::generate(&secret, &params, &mut rng);
+    let public = LwePublicKey::generate(secret.as_view(), &params, &mut rng);
     for count in [0, 1, 7, 8, 17] {
         let messages: Vec<T> = (0..count).map(|i| T::as_from(i % 4)).collect();
         for embedding in [PlaintextEmbedding::Unsigned, PlaintextEmbedding::Centered] {
@@ -218,7 +218,7 @@ fn batch_boundaries_validate_layout_and_reject_invalid_messages() {
     );
     let mut rng = StdRng::seed_from_u64(0x1_ee24);
     let secret = LweSecretKey::generate(&params, &mut rng);
-    let public = LwePublicKey::generate(&secret, &params, &mut rng);
+    let public = LwePublicKey::generate(secret.as_view(), &params, &mut rng);
     for use_public in [false, true] {
         for length in [0, 7, 12] {
             let mut storage = vec![11; length];

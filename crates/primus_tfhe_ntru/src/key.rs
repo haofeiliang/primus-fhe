@@ -75,6 +75,37 @@ impl<T: FheUint> NtruClientKey<T> {
         LweSecretKeyRef::Signed(self.external_lwe_secret_key())
     }
 
+    /// Generates an LWE public key under the binary client coefficient prefix.
+    ///
+    /// Borrows only the active external LWE secret and uses `external_lwe`'s
+    /// noise sampler for public-key generation. Public-key storage contains
+    /// `n * (n + 1)` coefficients, excluding the client's zero padding.
+    ///
+    /// # Correctness
+    ///
+    /// Public-key usage follows [`crate::NtruEncryptionKey`]'s noise and key-identity
+    /// contracts and [`crate::LwePublicKey`]'s security requirements.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the public-key storage length overflows `usize`.
+    pub fn try_generate_public_key<M, R>(
+        &self,
+        parameters: &NtruTfheParameters<T, M>,
+        rng: &mut R,
+    ) -> Result<crate::LwePublicKey<T>, NtruKeyError>
+    where
+        M: RingContext<T>,
+        R: rand::Rng + rand::CryptoRng,
+    {
+        self.check_compatible(parameters)?;
+        Ok(crate::LwePublicKey::generate(
+            self.lwe_secret_key(),
+            parameters.external_lwe(),
+            rng,
+        ))
+    }
+
     /// Validates an imported key before binding it to TFHE parameters.
     ///
     /// Besides shapes and distribution labels, this checks the actual client

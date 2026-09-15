@@ -8,8 +8,8 @@ pub use crate::error::BooleanError;
 pub use primus_tfhe_glwe::{BooleanCiphertext, BooleanGate};
 
 /// Boolean encryptor for the explicit-modulus NTT backend.
-pub type BooleanEncryptor<'a, T> =
-    primus_tfhe_glwe::BooleanEncryptor<'a, T, BarrettModulus<T>, BarrettModulus<T>>;
+pub type BooleanEncryptor<'a, T, Key = crate::ClientKey<T>> =
+    primus_tfhe_glwe::BooleanEncryptor<'a, T, BarrettModulus<T>, BarrettModulus<T>, Key>;
 
 /// Boolean decryptor for the explicit-modulus NTT backend.
 pub type BooleanDecryptor<'a, T> =
