@@ -6,9 +6,7 @@ use std::hint::black_box;
 use criterion::{Criterion, criterion_group, criterion_main};
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{FftTable, RustFftTable};
-use primus_glwe::{
-    FourierGlweKeySwitchingContext, GgswParameters, GlweCiphertext, GlweParameters, SecretKeyDistr,
-};
+use primus_glwe::{FourierGlweKeySwitchingContext, GlweCiphertext, GlweParameters, SecretKeyDistr};
 use primus_lwe::{LweCiphertext, LweParameters};
 use primus_modulus::NativeModulus;
 use primus_tfhe_glwe_fourier::{
@@ -38,7 +36,7 @@ fn parameters(order: PbsOrder) -> TfheParameters<u32> {
         SecretKeyDistr::UniformBinary,
         3.2,
     );
-    let bootstrapping = GgswParameters::with_glwe_params(&glwe, 8, Some(3));
+    let bootstrapping = ApproxSignedBasis::new(glwe.cipher_modulus_value(), 8, Some(3));
     TfheParameters::try_new(
         lwe,
         glwe,

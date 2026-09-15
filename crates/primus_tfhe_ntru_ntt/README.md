@@ -53,27 +53,23 @@ switch or LWE extraction, and does not require packing. The general ManyLUT
 accumulator has no guaranteed zero message tail, so prefix expansion is not a
 valid substitute for its coefficient projections.
 
-The context supplies the BR basis. CBS parameters independently specify trace,
-scheme-switch and output bases; the output parameters' noise distribution is not
-used for generation. The output layer count is padded to a power of two only for
-the internal ManyLUT. The returned NGSW has the original, unpadded output levels.
-Matching dimensions alone do not establish basis or secret identity.
+CBS takes an output basis and full trace/scheme-switch encryption parameters;
+BR parameters and the output ring come from the TFHE context. Only the internal
+ManyLUT pads the output level count to a power of two; the NGSW retains the
+requested levels. Its scheme-switch key binds the complete output basis.
 
 Given an existing context/client/server and application-selected `output_basis`,
 `trace_parameters` and `scheme_switch_parameters`, setup and evaluation are:
 
 ```rust,ignore
-let output_parameters = NlevParameters::try_with_basis(
-    context.parameters().bootstrapping().ntru(), output_basis,
-)?;
 let parameters = CircuitBootstrapParameters::try_new(
-    context.parameters(), output_parameters, trace_parameters, scheme_switch_parameters,
+    context.parameters(), output_basis, trace_parameters, scheme_switch_parameters,
 )?;
 let key = context.generate_circuit_bootstrap_key(&client, &parameters, &mut rng)?;
 let mut evaluator = context.circuit_bootstrap_evaluator(&server, &parameters, &key)?;
-let control = evaluator.circuit_bootstrap(&input);
+let mut control = evaluator.circuit_bootstrap(&input);
 // Repeated calls reuse a caller-owned output:
-evaluator.circuit_bootstrap_to(&input, &mut output);
+evaluator.circuit_bootstrap_to(&input, &mut control);
 ```
 
 The input still uses unsigned rounded LWE encoding, including for bits. CBS output

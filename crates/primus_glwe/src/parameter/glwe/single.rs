@@ -87,7 +87,9 @@ where
         self.cipher_modulus
     }
 
-    /// Returns the representable cipher modulus value, when one exists.
+    /// Returns the explicit ciphertext modulus, or `None` for the native modulus
+    /// `2^T::BITS`, whose value cannot be represented in `T`.
+    #[must_use]
     #[inline]
     pub fn cipher_modulus_value(&self) -> Option<T> {
         self.cipher_modulus.explicit_value()
@@ -252,16 +254,12 @@ where
         self.inner.cipher_modulus()
     }
 
-    /// Returns the explicit ciphertext modulus.
-    ///
-    /// # Panics
-    ///
-    /// Panics for the native modulus, whose value is not representable in `T`.
+    /// Returns the explicit ciphertext modulus, or `None` for the native modulus
+    /// `2^T::BITS`, whose value cannot be represented in `T`.
+    #[must_use]
     #[inline]
-    pub fn cipher_modulus_value(&self) -> T {
-        self.inner
-            .cipher_modulus_value()
-            .expect("native cipher modulus has no representable modulus value")
+    pub fn cipher_modulus_value(&self) -> Option<T> {
+        self.inner.cipher_modulus_value()
     }
 
     /// Returns the cipher modulus minus one of this [`GlweParameters<T, M>`].
@@ -344,7 +342,7 @@ where
         glwe_params: &GlweParameters<T, M>,
         basis: ApproxSignedBasis<T>,
     ) -> Result<Self, GlevParameterError> {
-        if basis.modulus() != glwe_params.inner().cipher_modulus_value() {
+        if basis.modulus() != glwe_params.cipher_modulus_value() {
             return Err(GlevParameterError::BasisModulusMismatch);
         }
         Ok(Self {
@@ -383,7 +381,7 @@ where
         reverse_length: Option<usize>,
     ) -> Result<Self, GlevParameterError> {
         let basis = ApproxSignedBasis::try_new(
-            glwe_params.inner().cipher_modulus_value(),
+            glwe_params.cipher_modulus_value(),
             log_basis,
             reverse_length,
         )?;

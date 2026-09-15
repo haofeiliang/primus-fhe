@@ -76,7 +76,7 @@ where
         let n = tfhe.poly_length();
         let modulus = tfhe.bootstrapping().ntru().cipher_modulus();
         let domain_len = primus_tfhe::lookup_table_domain_len(tfhe.plain_modulus_value(), n)?;
-        let scalars: Vec<T> = parameters.output().basis().scalar_iter().collect();
+        let scalars: Vec<T> = parameters.output_basis().scalar_iter().collect();
         let lookup_table = primus_tfhe::compile_encoded_many_lookup_table(
             domain_len,
             n,
@@ -99,11 +99,11 @@ where
             parameters,
             circuit_key,
             lookup_table,
-            projection_indices: (0..parameters.output().decompose_length()).collect(),
+            projection_indices: (0..parameters.output_basis().decompose_length()).collect(),
             blind_rotation: BlindRotationWorkspace::new(n),
             trace: FourierNtruTraceContext::new(n),
             fft: context.new_fft_engine(),
-            projected: NlevCiphertext::zero(parameters.output().nlev_len()),
+            projected: NlevCiphertext::zero(parameters.output_nlev_len()),
         })
     }
 
@@ -113,7 +113,7 @@ where
         &mut self,
         input: &LweCiphertext<T>,
     ) -> FourierNgswCiphertext<Vec<Complex64>> {
-        let mut output = FourierNgswCiphertext::zero(self.parameters.output().fourier_nlev_len());
+        let mut output = FourierNgswCiphertext::zero(self.parameters.output_fourier_nlev_len());
         self.circuit_bootstrap_to(input, &mut output);
         output
     }
@@ -146,7 +146,7 @@ where
         );
         assert_eq!(
             output.as_ref().len(),
-            self.parameters.output().fourier_nlev_len(),
+            self.parameters.output_fourier_nlev_len(),
             "circuit-bootstrap NGSW output length mismatch"
         );
         blind_rotate_lookup_table_to(

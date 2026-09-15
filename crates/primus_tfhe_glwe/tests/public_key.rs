@@ -1,5 +1,5 @@
 use primus_decompose::primitive::ApproxSignedBasis;
-use primus_glwe::{GgswParameters, GlweParameters, GlweSecretKey, GlweSize, SecretKeyDistr};
+use primus_glwe::{GlweParameters, GlweSecretKey, GlweSize, SecretKeyDistr};
 use primus_lwe::{LweParameters, LwePublicKey, LweSecretKey};
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_reduce::RingContext;
@@ -17,7 +17,7 @@ fn check<M: RingContext<u32>>(modulus: M) {
         // Two different external dimensions and a signed ring secret including -1.
         let small = LweParameters::new(4, 4, modulus, SecretKeyDistr::UniformBinary, 0.7);
         let glwe = GlweParameters::new(2, 8, 4, modulus, SecretKeyDistr::UniformTernary, 0.7);
-        let bsk = GgswParameters::with_glwe_params(&glwe, 8, None);
+        let bsk = ApproxSignedBasis::new(glwe.cipher_modulus_value(), 8, None);
         let params = GlweTfheParameters::try_new(
             small.clone(),
             glwe,

@@ -6,6 +6,7 @@
 mod allocations;
 
 use criterion::{Criterion, criterion_group, criterion_main};
+use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{Complex64, FftTable, RustFftTable, TfheFftTable};
 use primus_lwe::LweParameters;
 use primus_modulus::NativeModulus;
@@ -28,7 +29,7 @@ fn backend<Table: FftTable>(c: &mut Criterion, backend: &str) {
             .unwrap();
             let cbs = CircuitBootstrapParameters::try_new(
                 &parameters,
-                NlevParameters::with_ntru_params(&acc, 8, Some(2)),
+                ApproxSignedBasis::new(acc.cipher_modulus_value(), 8, Some(2)),
                 NlevParameters::with_ntru_params(&acc, log_basis, None),
                 NlevParameters::with_ntru_params(&acc, log_basis, None),
             )
@@ -53,7 +54,7 @@ fn backend<Table: FftTable>(c: &mut Criterion, backend: &str) {
                     .unwrap()
             });
             let mut output =
-                FourierNgswCiphertext::<Vec<Complex64>>::zero(cbs.output().fourier_nlev_len());
+                FourierNgswCiphertext::<Vec<Complex64>>::zero(cbs.output_fourier_nlev_len());
             let name = format!(
                 "ntru_fourier/{backend}/cbs/n{n}/logb{log_basis}/dim{}/output_logb8_l2",
                 n / 16

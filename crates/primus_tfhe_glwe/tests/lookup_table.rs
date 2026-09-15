@@ -115,7 +115,7 @@ fn interleaved_residue_classes_preserve_independent_raw_scales() {
 #[test]
 fn padded_client_domain_matches_odd_and_even_lut_domains() {
     use primus_decompose::primitive::ApproxSignedBasis;
-    use primus_glwe::{GgswParameters, GlweParameters, GlweSecretKey, GlweSize, SecretKeyDistr};
+    use primus_glwe::{GlweParameters, GlweSecretKey, GlweSize, SecretKeyDistr};
     use primus_lwe::{LweParameters, LweSecretKey};
     use primus_tfhe_glwe::{
         GlweClientError, GlweClientKey, GlweDecryptor, GlweEncryptor, GlwePbsOrder,
@@ -128,7 +128,7 @@ fn padded_client_domain_matches_odd_and_even_lut_domains() {
         let modulus = NativeModulus::new();
         let lwe = LweParameters::new(4, t, modulus, SecretKeyDistr::UniformBinary, 0.7);
         let glwe = GlweParameters::new(1, 8, t, modulus, SecretKeyDistr::UniformBinary, 0.7);
-        let bsk = GgswParameters::with_glwe_params(&glwe, 8, None);
+        let bsk = ApproxSignedBasis::new(glwe.cipher_modulus_value(), 8, None);
         let parameters = GlweTfheParameters::try_new(
             lwe,
             glwe,

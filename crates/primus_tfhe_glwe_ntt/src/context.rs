@@ -39,7 +39,7 @@ where
             return Err(TfheContextError::PolynomialLengthMismatch { expected, actual });
         }
 
-        let expected = parameters.glwe().cipher_modulus_value();
+        let expected = parameters.glwe().cipher_modulus().value();
         let actual = table.modulus();
         if actual != expected {
             return Err(TfheContextError::ModulusMismatch { expected, actual });

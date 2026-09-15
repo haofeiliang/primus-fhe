@@ -6,6 +6,7 @@
 mod allocations;
 
 use criterion::{Criterion, criterion_group, criterion_main};
+use primus_decompose::primitive::ApproxSignedBasis;
 use primus_lwe::LweParameters;
 use primus_modulus::BarrettModulus;
 use primus_ntru::{NlevParameters, NtruParameters, NttNgswCiphertext, SecretKeyDistr};
@@ -28,7 +29,7 @@ fn circuit_bootstrap(c: &mut Criterion) {
             .unwrap();
             let cbs = CircuitBootstrapParameters::try_new(
                 &parameters,
-                NlevParameters::with_ntru_params(&acc, 8, Some(2)),
+                ApproxSignedBasis::new(acc.cipher_modulus_value(), 8, Some(2)),
                 NlevParameters::with_ntru_params(&acc, log_basis, None),
                 NlevParameters::with_ntru_params(&acc, log_basis, None),
             )
@@ -55,7 +56,7 @@ fn circuit_bootstrap(c: &mut Criterion) {
                     .circuit_bootstrap_evaluator(&server, &cbs, &key)
                     .unwrap()
             });
-            let mut output = NttNgswCiphertext::<Vec<u64>>::zero(cbs.output().nlev_len());
+            let mut output = NttNgswCiphertext::<Vec<u64>>::zero(cbs.output_nlev_len());
             let name = format!(
                 "ntru_ntt/cbs/n{n}/logb{log_basis}/dim{}/output_logb8_l2",
                 n / 16

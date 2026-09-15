@@ -21,7 +21,7 @@ fn parameters_with_order(order: PbsOrder) -> TfheParameters<u32> {
     TfheParameters::try_new(
         parameters.small_lwe().clone(),
         parameters.glwe().clone(),
-        parameters.bootstrapping().clone(),
+        parameters.bootstrapping().basis().clone(),
         parameters.glwe_key_switching().output().basis().clone(),
         order,
     )

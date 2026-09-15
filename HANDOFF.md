@@ -6,7 +6,7 @@
 
 - `primus_lattice`、`primus_lwe`、`primus_glwe`、`primus_ntru` 的既有整理和已批准原语补充基本完成；不因 TFHE 重构重新开启其整体重构。
 - 七个 `primus_tfhe*` crate 的源码、API、测试、示例、基准、feature 和文档分析已完成，覆盖边界见 [TFHE_REFACTOR_REVIEW.md](TFHE_REFACTOR_REVIEW.md) §9。
-- [TFHE_REFACTOR_STEPS.md](TFHE_REFACTOR_STEPS.md) 的 S0–S2 已完成：按用户新增需求，S2 保留 GLWE 的 `Key` 泛型并为两族接入 `LwePublicKey`，同步 raw `try_new`、四后端 context、GLWE Boolean 及调用方。S3–S9 尚未实施；下一步为 S3 的 GLWE BSK / 三路 CBS 参数收敛。
+- [TFHE_REFACTOR_STEPS.md](TFHE_REFACTOR_STEPS.md) 的 S0–S3 已完成：按用户新增需求，S2 保留 GLWE 的 `Key` 泛型并为两族接入 `LwePublicKey`，同步 raw `try_new`、四后端 context、GLWE Boolean 及调用方。S3 已完成 GLWE BSK / 三路 CBS 输出参数收敛；S4–S9 尚未实施，下一步为 S4 的两族公钥/私钥三类加密 `_to`。
 - GLWE NTT 与两路 NTRU 已有 CBS；Fourier GLWE CBS 尚未实现。NTRU packing 按用户决定排除，不是 CBS 的前置工作；其他可选扩展见步骤文档 §5。
 
 ## 已审范围索引
@@ -21,6 +21,7 @@
 ## 当前 TFHE 工作必须保留的边界
 
 - 普通 PBS 的输出 LWE、Boolean 内部尺度与 CBS gadget 尺度分别处理；GLWE 保留两种 order，NTRU 保留固定链。不能因 API 整齐改变秘密域和外部维数。
+- GLWE BSK 从 accumulator 与 basis 派生；CBS 输出只接收 basis、从 accumulator 派生布局，trace/SS 保留完整加密参数。GLWE CBS key 绑定输出布局，NTRU CBS key 绑定完整输出 basis。
 - CBS 保持可选独立参数/key/evaluator。一般 ManyLUT 不满足前缀展开的零尾前提，应走投影；NTRU CBS 留在 `f_acc` 下，不走普通 PBS 的后置 KS/extraction。
 - 布局或 basis 相同不能证明实际秘密一致；Fourier table 身份、输入规范表示和噪声预算仍需遵守相应公开契约。NTT 模逆元与 Fourier 无符号整数除法不能共用误差结论。
 - 不恢复 raw Ciphertext、LweBatch 或万能 domain/表示包装；复用底层已有原语。参数、布局和 basis 的检查留在拥有契约的边界。

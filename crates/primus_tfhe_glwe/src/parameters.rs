@@ -33,10 +33,9 @@ pub enum GlweParameterError {
     #[error("LWE and GLWE plaintext moduli must match")]
     PlainModulusMismatch,
 
-    /// The GGSW parameters were not derived from the configured accumulator
-    /// GLWE parameters.
-    #[error("bootstrapping GLWE parameters do not match the accumulator GLWE parameters")]
-    BootstrappingGlweParametersMismatch,
+    /// The bootstrapping basis or gadget layout is incompatible with the accumulator.
+    #[error("invalid GLWE bootstrapping parameters: {0}")]
+    BootstrappingParameters(GlevParameterError),
 
     /// The small LWE key does not fit in the main GLWE key capacity and
     /// therefore cannot be represented as a padded GLWE key with `k' <= k`.
@@ -85,43 +84,52 @@ where
     LM: RingContext<T>,
     GM: RingContext<T>,
 {
-    /// Creates parameters while deriving the padded GLWE key-switching layout.
+    /// Derives bootstrapping parameters and the padded GLWE key-switching layout
+    /// from one accumulator description.
     ///
-    /// `key_switching_basis` configures the GLWE key switch used by the selected
-    /// `pbs_order`; the bootstrapping basis remains part of `bootstrapping`.
+    /// Both gadget bases must belong to the accumulator modulus. Bootstrapping
+    /// uses its layout, secret distribution and noise; key switching inherits
+    /// its noise while targeting the padded binary `small_lwe` secret.
     ///
     /// # Errors
     ///
-    /// Returns an error when the LWE, GLWE, and bootstrapping parameters do not
-    /// form one TFHE parameter set.
+    /// Returns an error for incompatible secrets, plaintext/ciphertext moduli,
+    /// dimensions or decomposition bases, or a derived gadget layout overflow.
     pub fn try_new(
         small_lwe: LweParameters<T, LM>,
-        glwe: GlweParameters<T, GM>,
-        bootstrapping: GgswParameters<T, GM>,
+        accumulator_glwe: GlweParameters<T, GM>,
+        bootstrapping_basis: ApproxSignedBasis<T>,
         key_switching_basis: ApproxSignedBasis<T>,
         pbs_order: GlwePbsOrder,
     ) -> Result<Self, GlweParameterError> {
-        Self::validate_common(&small_lwe, &glwe, &bootstrapping)?;
+        if !small_lwe.secret_key_distr().is_binary() {
+            return Err(GlweParameterError::InputLweSecretKeyMustBeBinary);
+        }
+        if small_lwe.plain_modulus_value() != accumulator_glwe.plain_modulus_value() {
+            return Err(GlweParameterError::PlainModulusMismatch);
+        }
 
-        let capacity = glwe.secret_key_len();
+        let capacity = accumulator_glwe.secret_key_len();
         if small_lwe.dimension() > capacity {
             return Err(GlweParameterError::SmallLweDimensionExceedsGlweCapacity {
                 small_lwe_dimension: small_lwe.dimension(),
                 capacity,
             });
         }
-        if small_lwe.cipher_modulus().explicit_value() != glwe.cipher_modulus().explicit_value() {
+        if small_lwe.cipher_modulus_value() != accumulator_glwe.cipher_modulus_value() {
             return Err(GlweParameterError::CipherModulusMismatch);
         }
+        let bootstrapping = GgswParameters::try_with_basis(&accumulator_glwe, bootstrapping_basis)
+            .map_err(GlweParameterError::BootstrappingParameters)?;
         let glwe_key_switching = Self::derive_glwe_key_switching(
             small_lwe.dimension(),
             small_lwe.secret_key_distr(),
-            &glwe,
+            &accumulator_glwe,
             key_switching_basis,
         )?;
         Ok(Self {
             small_lwe,
-            glwe,
+            glwe: accumulator_glwe,
             bootstrapping,
             glwe_key_switching,
             pbs_order,
@@ -145,26 +153,6 @@ where
         );
         let output = GlevParameters::try_with_basis(&output_glwe, basis)?;
         Ok(GlweKeySwitchingParameters::new(glwe.dimension(), output))
-    }
-
-    fn validate_common(
-        small_lwe: &LweParameters<T, LM>,
-        glwe: &GlweParameters<T, GM>,
-        bootstrapping: &GgswParameters<T, GM>,
-    ) -> Result<(), GlweParameterError> {
-        if !small_lwe.secret_key_distr().is_binary() {
-            return Err(GlweParameterError::InputLweSecretKeyMustBeBinary);
-        }
-
-        if small_lwe.plain_modulus_value() != glwe.plain_modulus_value() {
-            return Err(GlweParameterError::PlainModulusMismatch);
-        }
-
-        if glwe.size() != bootstrapping.glwe_size() || glwe.inner() != bootstrapping.inner() {
-            return Err(GlweParameterError::BootstrappingGlweParametersMismatch);
-        }
-
-        Ok(())
     }
 
     /// Returns the small-LWE parameters used by the bootstrapping key.

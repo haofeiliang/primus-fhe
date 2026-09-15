@@ -1,5 +1,6 @@
 //! Parameters for the patched NTT circuit-bootstrapping workflow.
 
+use primus_decompose::primitive::ApproxSignedBasis;
 use primus_glwe::{GadgetSize, GgswParameters, GlevParameters};
 use primus_integer::FheUint;
 use primus_modulus::BarrettModulus;
@@ -9,6 +10,9 @@ use crate::TfheParameters;
 /// An invalid circuit-bootstrapping parameter set.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum CircuitBootstrapParameterError {
+    /// The output basis belongs to another explicit or native modulus.
+    #[error("circuit-bootstrap output basis modulus does not match the accumulator")]
+    OutputBasisModulusMismatch,
     /// A gadget parameter set uses a different GLWE dimension or polynomial
     /// length from the TFHE accumulator.
     #[error("circuit-bootstrap {role} GLWE layout does not match the TFHE accumulator")]
@@ -22,59 +26,56 @@ pub enum CircuitBootstrapParameterError {
         /// Role of the incompatible gadget parameter set.
         role: &'static str,
     },
-    /// The output decomposition has too many levels for one PBSManyLUT.
+    /// The output layout overflows or has too many levels for one PBSManyLUT.
     #[error("circuit-bootstrap output decomposition does not fit in the accumulator")]
     OutputDecompositionTooLarge,
 }
 
 /// Independent parameters for patched NTT circuit bootstrapping.
 ///
-/// The output basis controls the produced GGSW's gadget scalars; its noise
-/// distribution is not used to encrypt a fresh output. Trace and scheme
-/// switching use separate decomposition bases and noise distributions. Keeping
-/// these parameters separate from [`TfheParameters`] prevents ordinary PBS
-/// users from paying for circuit-bootstrapping key material.
+/// The output basis controls GGSW gadget scalars; its layout comes from the TFHE
+/// accumulator. Trace and scheme switching retain independent bases and noise
+/// distributions. The scheme-switch key binds the output layout, so another
+/// output basis with the same level count can reuse it.
 ///
-/// Construction validates representation and accumulator-capacity invariants;
-/// it does not estimate failure probability or security. Callers must select
-/// the output basis and trace/scheme-switching parameters using a CBS noise
-/// and security analysis appropriate to their workload. Parameter compatibility
-/// does not establish that evaluation keys share a secret or NTT representation;
-/// see [`crate::CircuitBootstrapEvaluator::try_new`].
+/// Construction checks representation and ManyLUT capacity. Callers must select
+/// these parameters using a CBS noise and security analysis. Matching parameters
+/// do not establish secret or NTT representation identity; see
+/// [`crate::CircuitBootstrapEvaluator::try_new`].
 #[derive(Clone)]
 pub struct CircuitBootstrapParameters<T: FheUint> {
-    output: GgswParameters<T, BarrettModulus<T>>,
+    output_basis: ApproxSignedBasis<T>,
+    output_size: GadgetSize,
     trace: GlevParameters<T, BarrettModulus<T>>,
     scheme_switch: GgswParameters<T, BarrettModulus<T>>,
     many_lut_output_count: usize,
 }
 
 impl<T: FheUint> CircuitBootstrapParameters<T> {
-    /// Validates circuit-bootstrapping parameters against a TFHE context.
+    /// Derives the output layout from the TFHE accumulator and `output_basis`.
+    ///
+    /// Returns an error if bases or key layouts use another accumulator domain,
+    /// the output layout overflows, or the padded levels exceed ManyLUT capacity.
     pub fn try_new(
         tfhe: &TfheParameters<T>,
-        output: GgswParameters<T, BarrettModulus<T>>,
+        output_basis: ApproxSignedBasis<T>,
         trace: GlevParameters<T, BarrettModulus<T>>,
         scheme_switch: GgswParameters<T, BarrettModulus<T>>,
     ) -> Result<Self, CircuitBootstrapParameterError> {
+        if output_basis.modulus() != tfhe.glwe().cipher_modulus_value() {
+            return Err(CircuitBootstrapParameterError::OutputBasisModulusMismatch);
+        }
         let glwe = tfhe.glwe();
-        for (role, parameters) in [
-            ("output", &output),
-            ("trace", &trace),
-            ("scheme-switch", &scheme_switch),
-        ] {
+        for (role, parameters) in [("trace", &trace), ("scheme-switch", &scheme_switch)] {
             if parameters.glwe_size() != glwe.size() {
                 return Err(CircuitBootstrapParameterError::GlweLayoutMismatch { role });
             }
-            if parameters.cipher_modulus().value() != glwe.cipher_modulus_value() {
+            if parameters.cipher_modulus().value() != glwe.cipher_modulus().value() {
                 return Err(CircuitBootstrapParameterError::CipherModulusMismatch { role });
             }
         }
 
-        let many_lut_output_count = output
-            .decompose_length()
-            .checked_next_power_of_two()
-            .ok_or(CircuitBootstrapParameterError::OutputDecompositionTooLarge)?;
+        let many_lut_output_count = output_basis.decompose_length().next_power_of_two();
         let lookup_domain_len =
             primus_tfhe::lookup_table_domain_len(tfhe.plain_modulus_value(), glwe.poly_length())
                 .map_err(|_| CircuitBootstrapParameterError::OutputDecompositionTooLarge)?;
@@ -82,22 +83,32 @@ impl<T: FheUint> CircuitBootstrapParameters<T> {
             return Err(CircuitBootstrapParameterError::OutputDecompositionTooLarge);
         }
 
+        let output_size = GadgetSize::try_new(glwe.size(), output_basis.decompose_length())
+            .map_err(|_| CircuitBootstrapParameterError::OutputDecompositionTooLarge)?;
         Ok(Self {
-            output,
+            output_basis,
+            output_size,
             trace,
             scheme_switch,
             many_lut_output_count,
         })
     }
 
-    /// Returns the gadget parameters of the output GGSW ciphertext.
+    /// Returns the gadget basis of the output ciphertext.
+    #[must_use]
     #[inline]
-    pub fn output(&self) -> &GgswParameters<T, BarrettModulus<T>> {
-        &self.output
+    pub fn output_basis(&self) -> &ApproxSignedBasis<T> {
+        &self.output_basis
     }
 
-    /// Returns the decomposition parameters used by trace automorphism
-    /// keys.
+    /// Returns the output GGSW layout derived from the TFHE accumulator.
+    #[must_use]
+    #[inline]
+    pub fn output_size(&self) -> GadgetSize {
+        self.output_size
+    }
+
+    /// Returns the trace key's encryption parameters.
     #[inline]
     pub fn trace(&self) -> &GlevParameters<T, BarrettModulus<T>> {
         &self.trace
@@ -115,17 +126,9 @@ impl<T: FheUint> CircuitBootstrapParameters<T> {
         self.many_lut_output_count
     }
 
-    pub(crate) fn output_size(&self) -> GadgetSize {
-        self.output.size()
-    }
-
     pub(crate) fn is_compatible(&self, tfhe: &TfheParameters<T>) -> bool {
         let glwe = tfhe.glwe();
-        [&self.output, &self.trace, &self.scheme_switch]
-            .into_iter()
-            .all(|parameters| {
-                parameters.glwe_size() == glwe.size()
-                    && parameters.cipher_modulus().value() == glwe.cipher_modulus_value()
-            })
+        self.output_size.glwe_size() == glwe.size()
+            && self.output_basis.modulus() == glwe.cipher_modulus_value()
     }
 }

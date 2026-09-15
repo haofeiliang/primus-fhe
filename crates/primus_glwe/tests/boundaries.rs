@@ -356,6 +356,8 @@ fn glev_construction_reuses_basis_and_rejects_incompatible_domains_or_layouts() 
         SecretKeyDistr::UniformBinary,
         0.7,
     );
+    assert_eq!(native.cipher_modulus_value(), None);
+    assert_eq!(explicit.cipher_modulus_value(), Some(257));
     for levels in [None, Some(2)] {
         let basis = ApproxSignedBasis::new(None, 3, levels);
         let params = GlevParameters::try_with_basis(&native, basis.clone()).unwrap();

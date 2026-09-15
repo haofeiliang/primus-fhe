@@ -54,14 +54,10 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
     });
     for levels in [2, 3] {
         // An odd level count exercises padding of the internal ManyLUT.
-        let output = NlevParameters::try_with_basis(
-            &accumulator,
-            ApproxSignedBasis::new(Some(Q), 8, Some(levels)),
-        )
-        .unwrap();
+        let output_basis = ApproxSignedBasis::new(Some(Q), 8, Some(levels));
         let parameters = CircuitBootstrapParameters::try_new(
             context.parameters(),
-            output,
+            output_basis,
             NlevParameters::with_ntru_params(&accumulator, 10, None),
             NlevParameters::with_ntru_params(&accumulator, 10, None),
         )
@@ -72,7 +68,7 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
         let mut evaluator = context
             .circuit_bootstrap_evaluator(&server, &parameters, &circuit_key)
             .unwrap();
-        let mut control = NttNgswCiphertext::<Vec<u64>>::zero(parameters.output().nlev_len());
+        let mut control = NttNgswCiphertext::<Vec<u64>>::zero(parameters.output_nlev_len());
         let mut selected = NtruCiphertext::<Vec<u64>>::zero(N);
         let mut transformed = NttNtruCiphertext::<Vec<u64>>::zero(N);
         let mut scratch = NttNtruExternalProductContext::new(N);
@@ -87,8 +83,7 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
             assert_eq!(allocation.allocated_bytes, 0);
             let mut phase = Polynomial::new(vec![0u64; N]);
             for (scalar, level) in parameters
-                .output()
-                .basis()
+                .output_basis()
                 .scalar_iter()
                 .zip(control.iter_ntt_ntru(N))
             {
@@ -115,7 +110,7 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
                 &choices[0],
                 &choices[1],
                 &mut selected,
-                parameters.output().basis(),
+                parameters.output_basis(),
                 modulus,
                 context.table(),
                 &mut scratch,
@@ -148,20 +143,26 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
         );
         assert!(control.as_ref().iter().all(|&value| value == 7));
         for role in 0..3 {
+            let output_basis = if role == 0 {
+                ApproxSignedBasis::new(Some(Q), 9, Some(levels))
+            } else {
+                parameters.output_basis().clone()
+            };
             let mut parts = [
-                parameters.output().clone(),
                 parameters.trace().clone(),
                 parameters.scheme_switch().clone(),
             ];
-            parts[role] = NlevParameters::with_ntru_params(
-                &accumulator,
-                9,
-                Some(parts[role].decompose_length()),
-            );
-            let [output, trace, scheme_switch] = parts;
+            if role > 0 {
+                parts[role - 1] = NlevParameters::with_ntru_params(
+                    &accumulator,
+                    9,
+                    Some(parts[role - 1].decompose_length()),
+                );
+            }
+            let [trace, scheme_switch] = parts;
             let foreign = CircuitBootstrapParameters::try_new(
                 context.parameters(),
-                output,
+                output_basis,
                 trace,
                 scheme_switch,
             )
@@ -189,9 +190,8 @@ fn circuit_parameters_check_capacity_ring_and_basis_domain() {
         .unwrap()
     };
     let tfhe = make(N as u64); // Only two interleaved outputs fit this domain.
-    let acc = tfhe.bootstrapping().ntru();
     let trace = tfhe.bootstrapping().clone();
-    let output = |levels| NlevParameters::with_ntru_params(acc, 8, Some(levels));
+    let output = |levels| ApproxSignedBasis::new(Some(Q), 8, Some(levels));
     assert!(
         CircuitBootstrapParameters::try_new(&tfhe, output(2), trace.clone(), trace.clone()).is_ok()
     );
@@ -220,7 +220,12 @@ fn circuit_parameters_check_capacity_ring_and_basis_domain() {
         ));
     }
     assert!(matches!(
-        NlevParameters::try_with_basis(acc, ApproxSignedBasis::new(None, 8, Some(2))),
-        Err(primus_ntru::NlevParameterError::BasisModulusMismatch)
+        CircuitBootstrapParameters::try_new(
+            &tfhe,
+            ApproxSignedBasis::new(None, 8, Some(2)),
+            trace.clone(),
+            trace,
+        ),
+        Err(Error::OutputBasisModulusMismatch)
     ));
 }

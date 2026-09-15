@@ -4,7 +4,7 @@
 //! production use.
 
 use primus_decompose::primitive::ApproxSignedBasis;
-use primus_glwe::{GgswParameters, GlweParameters, SecretKeyDistr};
+use primus_glwe::{GlweParameters, SecretKeyDistr};
 use primus_lwe::LweParameters;
 use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, U32NttTable};
@@ -35,7 +35,7 @@ fn parameters() -> TfheParameters<u32> {
         SecretKeyDistr::UniformBinary,
         0.7,
     );
-    let bootstrapping = GgswParameters::with_glwe_params(&glwe, 8, Some(3));
+    let bootstrapping = ApproxSignedBasis::new(glwe.cipher_modulus_value(), 8, Some(3));
     TfheParameters::try_new(
         lwe,
         glwe,

@@ -102,7 +102,7 @@ where
         let poly_length = glwe.poly_length();
         let domain_len =
             primus_tfhe::lookup_table_domain_len(tfhe.plain_modulus_value(), poly_length)?;
-        let gadget_scalars: Vec<T> = parameters.output().basis().scalar_iter().collect();
+        let gadget_scalars: Vec<T> = parameters.output_basis().scalar_iter().collect();
         let lookup_table = primus_tfhe::compile_encoded_many_lookup_table(
             domain_len,
             poly_length,
@@ -129,7 +129,7 @@ where
             parameters,
             circuit_key,
             lookup_table,
-            projection_indices: (0..parameters.output().glev_len() / glwe.glwe_len()).collect(),
+            projection_indices: (0..parameters.output_basis().decompose_length()).collect(),
             blind_rotation: NttGlweBlindRotationContext::new(tfhe.bootstrapping().size()),
             key_switching: NttGlweKeySwitchingContext::new(key_switching_glwe_size),
             trace: NttGlweTraceContext::new(glwe_size),
@@ -137,7 +137,7 @@ where
             main_glwe: GlweCiphertext::zero(glwe.glwe_len()),
             switched: GlweCiphertext::zero(tfhe.glwe_key_switching().output().glwe_len()),
             small_lwe: LweCiphertext::zero(tfhe.small_lwe().dimension()),
-            traced: GlevCiphertext::zero(parameters.output().glev_len()),
+            traced: GlevCiphertext::zero(parameters.output_size().glev_len()),
         })
     }
 
@@ -155,7 +155,7 @@ where
     /// Panics if the input dimension differs from the configured external LWE
     /// dimension. The output is allocated with the configured GGSW length.
     pub fn circuit_bootstrap(&mut self, input: &LweCiphertext<T>) -> NttGgsw<Vec<T>> {
-        let mut output = NttGgsw::zero(self.parameters.output().ggsw_len());
+        let mut output = NttGgsw::zero(self.parameters.output_size().ggsw_len());
         self.circuit_bootstrap_to(input, &mut output);
         output
     }
@@ -193,7 +193,7 @@ where
         );
         assert_eq!(
             output.as_ref().len(),
-            self.parameters.output().ggsw_len(),
+            self.parameters.output_size().ggsw_len(),
             "circuit-bootstrap output GGSW layout mismatch"
         );
 

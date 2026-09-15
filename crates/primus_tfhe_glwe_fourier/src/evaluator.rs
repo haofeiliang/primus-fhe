@@ -130,7 +130,7 @@ where
                 parameters.glwe().poly_length(),
                 parameters.plain_modulus_value(),
                 parameters.small_lwe().cipher_modulus_value(),
-                parameters.glwe().inner().cipher_modulus_value(),
+                parameters.glwe().cipher_modulus_value(),
             ),
             "PBS lookup-table encoding or polynomial length mismatch"
         );
@@ -200,7 +200,7 @@ where
                 parameters.glwe().poly_length(),
                 parameters.plain_modulus_value(),
                 parameters.small_lwe().cipher_modulus_value(),
-                parameters.glwe().inner().cipher_modulus_value(),
+                parameters.glwe().cipher_modulus_value(),
             ),
             "PBS lookup-table encoding or polynomial length mismatch"
         );

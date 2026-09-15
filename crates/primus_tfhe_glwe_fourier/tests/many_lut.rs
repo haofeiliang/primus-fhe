@@ -7,14 +7,14 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 const N: usize = 256;
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{FftTable, RustFftTable, TfheFftTable};
-use primus_glwe::{GgswParameters, GlweParameters, SecretKeyDistr};
+use primus_glwe::{GlweParameters, SecretKeyDistr};
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_tfhe_glwe_fourier::{PbsOrder, TfheContext, TfheParameters};
 fn parameters(order: PbsOrder) -> TfheParameters<u32> {
     let modulus = NativeModulus::new();
     let lwe = LweParameters::new(8, 16, modulus, SecretKeyDistr::UniformBinary, 0.7);
     let glwe = GlweParameters::new(1, N, 16, modulus, SecretKeyDistr::UniformBinary, 0.7);
-    let bsk = GgswParameters::with_glwe_params(&glwe, 8, None);
+    let bsk = ApproxSignedBasis::new(glwe.cipher_modulus_value(), 8, None);
     TfheParameters::try_new(lwe, glwe, bsk, ApproxSignedBasis::new(None, 8, None), order).unwrap()
 }
 

@@ -1,5 +1,5 @@
 use primus_decompose::primitive::ApproxSignedBasis;
-use primus_glwe::{GgswParameters, GlweParameters, SecretKeyDistr};
+use primus_glwe::{GlweParameters, SecretKeyDistr};
 use primus_lwe::LweParameters;
 use primus_modulus::NativeModulus;
 use primus_tfhe_glwe::{GlwePbsOrder, GlweTfheParameters};
@@ -12,7 +12,7 @@ const PLAIN_MODULUS: u32 = 4;
 type Components = (
     LweParameters<u32, NativeModulus<u32>>,
     GlweParameters<u32, NativeModulus<u32>>,
-    GgswParameters<u32, NativeModulus<u32>>,
+    ApproxSignedBasis<u32>,
 );
 
 fn components() -> Components {
@@ -31,23 +31,39 @@ fn components() -> Components {
         SecretKeyDistr::SparseTernary,
         3.2,
     );
-    let bootstrapping = GgswParameters::with_glwe_params(&glwe, 8, Some(3));
+    let bootstrapping = ApproxSignedBasis::new(glwe.cipher_modulus_value(), 8, Some(3));
     (small_lwe, glwe, bootstrapping)
 }
 
 #[test]
-fn derives_the_same_key_switching_layout_for_both_orders() {
+fn derives_bootstrapping_and_key_switching_for_both_orders() {
     for order in [
         GlwePbsOrder::BootstrapKeyswitch,
         GlwePbsOrder::KeyswitchBootstrap,
     ] {
         let (small_lwe, glwe, bootstrapping) = components();
+        let expected_bootstrapping_basis = bootstrapping.clone();
         let basis = ApproxSignedBasis::new(None, 4, Some(4));
         let parameters =
             GlweTfheParameters::try_new(small_lwe, glwe, bootstrapping, basis.clone(), order)
                 .unwrap();
 
-        assert_eq!(parameters.pbs_order(), order);
+        assert_eq!(
+            parameters.bootstrapping().basis(),
+            &expected_bootstrapping_basis
+        );
+        assert!(parameters.bootstrapping().inner() == parameters.glwe().inner());
+        assert_eq!(
+            parameters.bootstrapping().glwe_size(),
+            parameters.glwe().size()
+        );
+        assert_eq!(
+            parameters
+                .glwe_key_switching()
+                .output()
+                .noise_standard_deviation(),
+            parameters.glwe().noise_distribution().standard_deviation()
+        );
         assert_eq!(
             parameters.glwe_key_switching().input_dimension(),
             GLWE_DIMENSION
@@ -70,22 +86,30 @@ fn derives_the_same_key_switching_layout_for_both_orders() {
 }
 
 #[test]
-fn rejects_key_switching_basis_from_another_modulus() {
-    use primus_glwe::GlevParameterError;
+fn rejects_bases_from_another_modulus() {
+    use primus_glwe::GlevParameterError::BasisModulusMismatch;
     use primus_tfhe_glwe::GlweParameterError;
 
-    let (small_lwe, glwe, bootstrapping) = components();
-    let result = GlweTfheParameters::try_new(
-        small_lwe,
-        glwe,
-        bootstrapping,
-        ApproxSignedBasis::new(Some(257), 4, None),
-        GlwePbsOrder::BootstrapKeyswitch,
-    );
-    assert!(matches!(
-        result,
-        Err(GlweParameterError::KeySwitchingParameters(
-            GlevParameterError::BasisModulusMismatch
-        ))
-    ));
+    for (bsk_modulus, ksk_modulus, expected) in [
+        (
+            Some(257),
+            None,
+            GlweParameterError::BootstrappingParameters(BasisModulusMismatch),
+        ),
+        (
+            None,
+            Some(257),
+            GlweParameterError::KeySwitchingParameters(BasisModulusMismatch),
+        ),
+    ] {
+        let (small_lwe, glwe, _) = components();
+        let result = GlweTfheParameters::try_new(
+            small_lwe,
+            glwe,
+            ApproxSignedBasis::new(bsk_modulus, 4, Some(2)),
+            ApproxSignedBasis::new(ksk_modulus, 4, Some(2)),
+            GlwePbsOrder::BootstrapKeyswitch,
+        );
+        assert_eq!(result.err(), Some(expected));
+    }
 }

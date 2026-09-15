@@ -42,9 +42,9 @@ impl<T: FheUint> CircuitBootstrapKey<T> {
     pub(crate) fn is_compatible(&self, parameters: &CircuitBootstrapParameters<T>) -> bool {
         self.trace.poly_length() == parameters.trace().poly_length()
             && self.trace.basis() == parameters.trace().basis()
-            && self.scheme_switch.poly_length() == parameters.output().poly_length()
+            && self.scheme_switch.poly_length() == parameters.poly_length()
             && self.scheme_switch.key_basis() == parameters.scheme_switch().basis()
-            && self.scheme_switch.output_basis() == parameters.output().basis()
+            && self.scheme_switch.output_basis() == parameters.output_basis()
     }
 }
 
@@ -92,7 +92,7 @@ where
         let scheme_switch = NttNtruSchemeSwitchKey::generate(
             secret,
             &transformed,
-            parameters.output().basis(),
+            parameters.output_basis(),
             parameters.scheme_switch(),
             self.context.table(),
             rng,

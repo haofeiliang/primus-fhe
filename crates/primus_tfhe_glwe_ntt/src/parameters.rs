@@ -1,7 +1,7 @@
 //! Parameter types and built-in parameter sets for the NTT backend.
 
 use primus_decompose::primitive::ApproxSignedBasis;
-use primus_glwe::{GgswParameters, GlweParameters, SecretKeyDistr};
+use primus_glwe::{GlweParameters, SecretKeyDistr};
 use primus_lwe::LweParameters;
 use primus_modulus::BarrettModulus;
 use primus_tfhe_glwe::GlwePbsOrder as PbsOrder;
@@ -41,7 +41,7 @@ pub fn boolean_parameters()
         SecretKeyDistr::SparseTernary,
         6.4,
     );
-    let bootstrapping = GgswParameters::with_glwe_params(&glwe, 7, Some(3));
+    let bootstrapping = ApproxSignedBasis::new(glwe.cipher_modulus_value(), 7, Some(3));
     TfheParameters::try_new(
         lwe,
         glwe,

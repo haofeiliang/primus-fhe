@@ -1,6 +1,6 @@
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{FftTable, RustFftTable};
-use primus_glwe::{GadgetSize, GgswParameters, GlweCiphertext, GlweParameters, SecretKeyDistr};
+use primus_glwe::{GadgetSize, GlweCiphertext, GlweParameters, SecretKeyDistr};
 use primus_lwe::{LweCiphertext, LweParameters};
 use primus_modulus::NativeModulus;
 use primus_poly::Polynomial;
@@ -37,7 +37,11 @@ fn parameters_with_bases(
         SecretKeyDistr::UniformBinary,
         0.7,
     );
-    let bootstrapping = GgswParameters::with_glwe_params(&glwe, bootstrapping_log_basis, Some(3));
+    let bootstrapping = ApproxSignedBasis::new(
+        glwe.cipher_modulus_value(),
+        bootstrapping_log_basis,
+        Some(3),
+    );
     TfheParameters::try_new(
         lwe,
         glwe,

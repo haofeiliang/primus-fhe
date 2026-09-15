@@ -3,7 +3,7 @@
 制定日期：2026-09-15。
 依据：[重构分析报告](TFHE_REFACTOR_REVIEW.md)、[仓库规范](AGENTS.md) 和 [当前交接决定](HANDOFF.md)。
 
-本文把分析建议拆成可独立验收的实施步骤，供明确要求实现时使用。S0–S2 已于 2026-09-15 完成，起始源码基线为 `f9105515cb775baf8a2461306e46f154abef5333`；S3–S9 尚未实施。分析报告基线为 `e493df6`；后续开始修改时仍应重新核对代码，不能把历史测试结果当作当前验证结果。
+本文把分析建议拆成可独立验收的实施步骤，供明确要求实现时使用。S0–S3 已于 2026-09-15 完成，起始源码基线为 `f9105515cb775baf8a2461306e46f154abef5333`；S4–S9 尚未实施。分析报告基线为 `e493df6`；后续开始修改时仍应重新核对代码，不能把历史测试结果当作当前验证结果。
 
 ## 1. 范围、顺序与完成目标
 
@@ -167,6 +167,20 @@
 **验证：** 参数合法/非法 basis、两种 GLWE order、CBS level=2/3、输出 gadget phase 及 CMUX 消费。复用现有 NTRU CBS 测试；对 GLWE CBS 仅补独立缺口，如错误输出尺寸先拒绝且旧输出不变、奇数 levels 的 padding。
 
 **完成条件：** 调用方不再重复提供 accumulator 描述或无效输出噪声；普通 PBS 与 CBS 的尺度、维数、basis 契约均保持。所有旧签名调用迁移完毕。
+
+#### S3 执行结果（2026-09-15）
+
+S3a、S3b 及调用方迁移已完成。另统一了 GLWE 内外层 `cipher_modulus_value()` 的 `Option<T>` 语义：Native 返回 `None`，显式模数返回 `Some(q)`。输出 basis/布局及秘密域契约见对应 rustdoc 和双语 README。
+
+整理后保留两种 GLWE order、2/3 层 CBS、gadget phase、CMUX 和拒绝写入等独立覆盖；合并重复 basis 错误用例，删除由类型上界排除的溢出分支。现有 PBS/CBS benchmark 各自覆盖阶段、完整调用或后端差异，保留原工作负载。
+
+本轮复核与整理后的验证（八包为七个 TFHE crate 加 `primus_glwe`）：
+
+- 格式、diff 检查与 workspace all-targets check 通过。
+- 八包默认 / nightly SIMD 测试各 70 项通过；两配置 all-targets Clippy（`-D warnings`）通过。
+- 八包严格 rustdoc（`RUSTDOCFLAGS="-D warnings"`）通过；两路 GLWE PBS、两路 NTRU CBS 的 Criterion `--test` 共 68 个用例通过。
+
+未运行完整 workspace 测试、性能计时或噪声/安全性论证。S3 无阻塞项，下一步为 S4。
 
 ### S4：补齐两族客户端的可复用输出入口
 

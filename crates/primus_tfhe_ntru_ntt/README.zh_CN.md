@@ -45,25 +45,22 @@ CBS 保留 BR 的环 accumulator，不执行普通 PBS 后续的环密钥切换�
 也不依赖 packing。一般 ManyLUT accumulator 不满足目标消息零尾前提，不能用
 前缀展开替代所需的系数投影。
 
-context 提供 BR basis；CBS 参数分别选择 trace、scheme-switch 和 output basis。
-输出参数的噪声分布不参与密钥生成。仅内部 ManyLUT 将输出层数补齐到 2 的幂，
-最终 NGSW 保留原始层数。仅维数相同不能建立 basis 或秘密身份一致性。
+CBS 接收 output basis 和完整的 trace/scheme-switch 加密参数；BR 参数和输出环
+由 TFHE context 提供。仅内部 ManyLUT 将输出层数补齐到 2 的幂，NGSW 保留请求的
+层数。Scheme-switch key 绑定完整的 output basis。
 
 已有 context/client/server，以及应用选定的 `output_basis`、`trace_parameters`
 和 `scheme_switch_parameters` 时，设置与求值流程如下：
 
 ```rust,ignore
-let output_parameters = NlevParameters::try_with_basis(
-    context.parameters().bootstrapping().ntru(), output_basis,
-)?;
 let parameters = CircuitBootstrapParameters::try_new(
-    context.parameters(), output_parameters, trace_parameters, scheme_switch_parameters,
+    context.parameters(), output_basis, trace_parameters, scheme_switch_parameters,
 )?;
 let key = context.generate_circuit_bootstrap_key(&client, &parameters, &mut rng)?;
 let mut evaluator = context.circuit_bootstrap_evaluator(&server, &parameters, &key)?;
-let control = evaluator.circuit_bootstrap(&input);
+let mut control = evaluator.circuit_bootstrap(&input);
 // 重复调用时复用调用方输出：
-evaluator.circuit_bootstrap_to(&input, &mut output);
+evaluator.circuit_bootstrap_to(&input, &mut control);
 ```
 
 包括 bit 在内，输入仍使用 unsigned rounded LWE 编码。CBS 输出使用指定的 gadget
