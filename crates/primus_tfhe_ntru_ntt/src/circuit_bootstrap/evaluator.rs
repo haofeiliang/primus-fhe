@@ -1,14 +1,15 @@
 //! One blind rotation followed by reverse-trace projection and scheme switching.
 
 use primus_data::DataMut;
-use primus_fft::{Complex64, FftEngine, FftTable, TorusFftValue};
-use primus_ntru::{FourierNgswCiphertext, FourierNtruTraceContext, NlevCiphertext};
+use primus_integer::FheUint;
+use primus_ntru::{NlevCiphertext, NttNgswCiphertext, NttNtruTraceContext};
+use primus_ntt::NttTable;
 use primus_reduce::ReduceMul;
 use primus_tfhe::{LookupTableError, LweCiphertext, ManyLookupTable};
 
 use crate::{
     CircuitBootstrapKey, CircuitBootstrapParameters, ServerKey, TfheContext,
-    bootstrapping_key::{BlindRotationWorkspace, blind_rotate_lookup_table_to},
+    blind_rotation::{BlindRotationWorkspace, blind_rotate_lookup_table_to},
 };
 
 /// Failure to bind fixed CBS resources or compile its internal gadget-scaled LUT.
@@ -32,8 +33,8 @@ pub enum CircuitBootstrapEvaluationError {
 /// Output is NGSW under f_acc, unlike ordinary PBS's LWE output under f_client.
 pub struct CircuitBootstrapEvaluator<'a, T, Table>
 where
-    T: TorusFftValue,
-    Table: FftTable,
+    T: FheUint,
+    Table: NttTable<ValueT = T>,
 {
     context: &'a TfheContext<T, Table>,
     server_key: &'a ServerKey<T>,
@@ -42,21 +43,20 @@ where
     lookup_table: ManyLookupTable<T>,
     projection_indices: Vec<usize>,
     blind_rotation: BlindRotationWorkspace<T>,
-    trace: FourierNtruTraceContext<T>,
-    fft: FftEngine<'a, Table>,
+    trace: NttNtruTraceContext<T>,
     projected: NlevCiphertext<Vec<T>>,
 }
 
 impl<'a, T, Table> CircuitBootstrapEvaluator<'a, T, Table>
 where
-    T: TorusFftValue,
-    Table: FftTable,
+    T: FheUint,
+    Table: NttTable<ValueT = T>,
 {
     /// Binds resources and compiles gadget-scaled identity outputs once.
     ///
     /// # Correctness
     /// The server and circuit keys were generated from the same accumulator
-    /// secret and FFT table instance. Layout/basis checks do not prove identity.
+    /// secret and NTT representation. Layout/basis checks do not prove identity.
     pub fn try_new(
         context: &'a TfheContext<T, Table>,
         server_key: &'a ServerKey<T>,
@@ -101,19 +101,15 @@ where
             lookup_table,
             projection_indices: (0..parameters.output_basis().decompose_length()).collect(),
             blind_rotation: BlindRotationWorkspace::new(n),
-            trace: FourierNtruTraceContext::new(n),
-            fft: context.new_fft_engine(),
+            trace: NttNtruTraceContext::new(n),
             projected: NlevCiphertext::zero(parameters.output_nlev_len()),
         })
     }
 
     /// Allocates the output NGSW. Inherits [`Self::circuit_bootstrap_to`]'s contracts.
     #[must_use]
-    pub fn circuit_bootstrap(
-        &mut self,
-        input: &LweCiphertext<T>,
-    ) -> FourierNgswCiphertext<Vec<Complex64>> {
-        let mut output = FourierNgswCiphertext::zero(self.parameters.output_fourier_nlev_len());
+    pub fn circuit_bootstrap(&mut self, input: &LweCiphertext<T>) -> NttNgswCiphertext<Vec<T>> {
+        let mut output = NttNgswCiphertext::zero(self.parameters.output_nlev_len());
         self.circuit_bootstrap_to(input, &mut output);
         output
     }
@@ -126,17 +122,16 @@ where
     /// rounded LWE encoding, with m in `0..ceil(t/2)`. Canonical residues and a
     /// noise margin for the coarser ManyLUT windows are required. Trace and
     /// scheme-switch errors must fit the independent CBS budget, including f/f²
-    /// amplification, native halving and FFT rounding; see
-    /// [`CircuitBootstrapParameters`]. CMUX use requires m=0/1.
+    /// amplification; see [`CircuitBootstrapParameters`]. CMUX use requires m=0/1.
     /// The output uses gadget scales, not ordinary plaintext or Boolean encoding.
     ///
     /// # Panics
     /// Panics before output writes if input dimension or output NGSW length is
     /// wrong. Fixed LUT/resource compatibility was checked during construction.
-    pub fn circuit_bootstrap_to<S: DataMut<Elem = Complex64>>(
+    pub fn circuit_bootstrap_to<S: DataMut<Elem = T>>(
         &mut self,
         input: &LweCiphertext<T>,
-        output: &mut FourierNgswCiphertext<S>,
+        output: &mut NttNgswCiphertext<S>,
     ) {
         let tfhe = self.context.parameters();
         assert_eq!(
@@ -146,7 +141,7 @@ where
         );
         assert_eq!(
             output.as_ref().len(),
-            self.parameters.output_fourier_nlev_len(),
+            self.parameters.output_nlev_len(),
             "circuit-bootstrap NGSW output length mismatch"
         );
         blind_rotate_lookup_table_to(
@@ -156,7 +151,7 @@ where
             self.lookup_table.output_count(),
             &mut self.blind_rotation,
             tfhe,
-            &mut self.fft,
+            self.context.table(),
         );
         // A general ManyLUT accumulator does not have a zero message tail.
         // Reverse-trace projection is valid here; prefix expansion is not.
@@ -164,13 +159,15 @@ where
             &self.blind_rotation.current,
             &self.projection_indices,
             self.projected.as_mut(),
-            &mut self.fft,
+            tfhe.bootstrapping().ntru().cipher_modulus(),
+            self.context.table(),
             &mut self.trace,
         );
         self.circuit_key.scheme_switch_key().apply_to(
             &self.projected,
             output,
-            &mut self.fft,
+            tfhe.bootstrapping().ntru().cipher_modulus(),
+            self.context.table(),
             &mut self.blind_rotation.external_product,
         );
     }

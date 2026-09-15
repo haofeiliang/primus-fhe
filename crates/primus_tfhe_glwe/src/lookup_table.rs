@@ -118,14 +118,22 @@ where
     {
         let plaintext_modulus = self.plain_modulus_value();
         let codec = self.small_lwe().plaintext_codec();
-        self.compile_encoded_many_lookup_table(domain_len, output_count, |input, output_index| {
-            let output = output_at(input, output_index);
-            if output >= plaintext_modulus {
-                Err(LookupTableError::OutputOutOfRange { input })
-            } else {
-                Ok(codec.encode_value(output, PlaintextEmbedding::Unsigned))
-            }
-        })
+        primus_tfhe::compile_encoded_many_lookup_table(
+            domain_len,
+            self.glwe().poly_length(),
+            output_count,
+            plaintext_modulus,
+            self.small_lwe().cipher_modulus_value(),
+            self.glwe().cipher_modulus(),
+            |input, output_index| {
+                let output = output_at(input, output_index);
+                if output >= plaintext_modulus {
+                    Err(LookupTableError::OutputOutOfRange { input })
+                } else {
+                    Ok(codec.encode_value(output, PlaintextEmbedding::Unsigned))
+                }
+            },
+        )
     }
 
     /// Compiles values already encoded in the GLWE accumulator modulus.
@@ -142,29 +150,6 @@ where
         primus_tfhe::compile_encoded_lookup_table(
             domain_len,
             glwe.poly_length(),
-            lwe.plain_modulus_value(),
-            lwe.cipher_modulus().explicit_value(),
-            glwe.cipher_modulus(),
-            encoded_output_at,
-        )
-    }
-
-    /// Compiles raw accumulator residues for PBSManyLUT.
-    pub(crate) fn compile_encoded_many_lookup_table<F>(
-        &self,
-        domain_len: usize,
-        output_count: usize,
-        encoded_output_at: F,
-    ) -> Result<ManyLookupTable<T>, LookupTableError>
-    where
-        F: Fn(usize, usize) -> Result<T, LookupTableError>,
-    {
-        let lwe = self.small_lwe();
-        let glwe = self.glwe();
-        primus_tfhe::compile_encoded_many_lookup_table(
-            domain_len,
-            glwe.poly_length(),
-            output_count,
             lwe.plain_modulus_value(),
             lwe.cipher_modulus().explicit_value(),
             glwe.cipher_modulus(),

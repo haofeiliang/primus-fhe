@@ -1,18 +1,20 @@
-#[path = "../../primus_tfhe_ntru/tests/support/allocations.rs"]
+#[path = "../../primus_tfhe/tests/support/allocations.rs"]
 mod allocations;
 
 use primus_lwe::{LweCiphertext, LweParameters};
+use primus_modulus::BarrettModulus;
+use primus_ntru::{NlevParameters, NtruParameters, SecretKeyDistr};
+use primus_ntt::{NttTable, U32NttTable};
 use primus_tfhe::{
     ProgrammableBootstrapMany, compile_encoded_lookup_table, compile_encoded_many_lookup_table,
 };
+use primus_tfhe_ntru_ntt::{TfheContext, TfheParameters};
 use rand::{SeedableRng, rngs::StdRng};
 use std::panic::{AssertUnwindSafe, catch_unwind};
+
 const N: usize = 256;
-use primus_modulus::BarrettModulus;
-use primus_ntt::{NttTable, U32NttTable};
-use primus_tfhe_ntru_ntt::{TfheContext, TfheParameters};
 const Q: u32 = 132_120_577;
-use primus_ntru::{NlevParameters, NtruParameters, SecretKeyDistr};
+
 fn parameters() -> TfheParameters<u32> {
     let modulus = BarrettModulus::new(Q);
     let lwe = LweParameters::new(3, 16, modulus, SecretKeyDistr::UniformBinary, 0.7);
@@ -41,9 +43,17 @@ where
 {
     let mut rng = StdRng::seed_from_u64(0x4d41_4e59_5042_5301);
     let (client_key, server_key) = context.generate_keys(&mut rng).unwrap();
+    let public = client_key
+        .try_generate_public_key(context.parameters(), &mut rng)
+        .unwrap();
+    let public_encryptor = context.encryptor(&public).unwrap();
     let encryptor = context.encryptor(&client_key).unwrap();
     let decryptor = context.decryptor(&client_key).unwrap();
     let mut evaluator = context.evaluator(&server_key).unwrap();
+    let single = context
+        .compile_lookup_table_fn(|input| value(input, 0))
+        .unwrap();
+    let mut output = LweCiphertext::zero(context.parameters().external_lwe().dimension());
     for output_count in [1, 2, 4] {
         let flat: Vec<_> = (0..8)
             .flat_map(|input| (0..output_count).map(move |output| value(input, output)))
@@ -76,16 +86,20 @@ where
                 );
             }
             if output_count == 1 {
-                let single = context
-                    .compile_lookup_table_fn(|input| value(input, 0))
-                    .unwrap();
-                let mut output = outputs[0].clone();
                 let (_, allocation) = allocations::measure(|| {
                     evaluator.apply_lookup_table_to(&input, &single, &mut output);
                 });
                 assert_eq!(allocation.count, 0, "PBS must reuse its workspace");
                 assert_eq!(outputs[0], output);
                 assert_eq!(outputs[0], evaluator.apply_lookup_table(&input, &single));
+                let public_input = public_encryptor
+                    .encrypt_padded(message as u32, &mut rng)
+                    .unwrap();
+                evaluator.apply_lookup_table_to(&public_input, &single, &mut output);
+                assert_eq!(
+                    decryptor.decrypt::<u32>(&output).unwrap(),
+                    value(message, 0)
+                );
             }
         }
     }
@@ -144,7 +158,6 @@ where
         );
         assert_eq!(outputs, before);
     }
-    let single = context.compile_lookup_table_fn(|x| x as u32).unwrap();
     let wrong = LweCiphertext::zero(input.dimension() - 1);
     for bad_input in [false, true] {
         let mut output = if bad_input {

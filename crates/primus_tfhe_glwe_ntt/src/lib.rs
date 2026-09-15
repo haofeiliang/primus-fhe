@@ -16,46 +16,48 @@
 
 #![deny(missing_docs)]
 
-mod error;
+use primus_modulus::BarrettModulus;
 
+mod blind_rotation;
 mod bootstrapping_key;
-mod circuit_bootstrap_evaluator;
-mod circuit_bootstrap_key;
-mod circuit_bootstrap_parameters;
-mod client;
+mod circuit_bootstrap;
 mod context;
+mod error;
 mod evaluator;
 mod key;
-
 mod parameters;
 
 pub mod boolean;
 
-// Common TFHE API.
 pub use error::{
     LookupTableError, TfheClientError, TfheContextError, TfheEvaluationError, TfheKeyError,
     TfheParameterError,
 };
 
-pub use bootstrapping_key::{NttGlweBlindRotationContext, NttGlweBootstrappingKey};
-pub use circuit_bootstrap_evaluator::{CircuitBootstrapEvaluationError, CircuitBootstrapEvaluator};
-pub use circuit_bootstrap_key::{CircuitBootstrapKey, CircuitBootstrapKeyError};
-pub use circuit_bootstrap_parameters::{
-    CircuitBootstrapParameterError, CircuitBootstrapParameters,
+pub use blind_rotation::NttGlweBlindRotationContext;
+pub use bootstrapping_key::NttGlweBootstrappingKey;
+pub use circuit_bootstrap::{
+    CircuitBootstrapEvaluationError, CircuitBootstrapEvaluator, CircuitBootstrapKey,
+    CircuitBootstrapKeyError, CircuitBootstrapParameterError, CircuitBootstrapParameters,
 };
-pub use client::{Decryptor, Encryptor};
 pub use context::TfheContext;
 pub use evaluator::Evaluator;
 pub use key::{KeyGenerator, ServerKey};
+pub use parameters::{TfheParameters, boolean_parameters};
 pub use primus_tfhe::{LookupTable, LweCiphertext, LweSecretKeyRef, ManyLookupTable};
 pub use primus_tfhe_glwe::{GlweClientKey as ClientKey, GlwePbsOrder as PbsOrder};
 
-pub use parameters::TfheParameters;
-
-// Boolean API. Keep this group separate from future high-level APIs such as
-// `small_int`.
 pub use boolean::{
     BooleanCiphertext, BooleanDecryptor, BooleanEncryptor, BooleanError, BooleanEvaluator,
     BooleanGate,
 };
-pub use parameters::boolean_parameters;
+
+/// Encryptor role for the explicit-modulus NTT backend.
+///
+/// Accepts the client secret key or an external LWE public key.
+pub type Encryptor<'a, T, Key = ClientKey<T>> =
+    primus_tfhe_glwe::GlweEncryptor<'a, T, BarrettModulus<T>, BarrettModulus<T>, Key>;
+
+/// Client-key decryptor for the explicit-modulus NTT backend.
+pub type Decryptor<'a, T> =
+    primus_tfhe_glwe::GlweDecryptor<'a, T, BarrettModulus<T>, BarrettModulus<T>>;

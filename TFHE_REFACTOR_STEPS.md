@@ -3,7 +3,7 @@
 制定日期：2026-09-15。
 依据：[重构分析报告](TFHE_REFACTOR_REVIEW.md)、[仓库规范](AGENTS.md) 和 [当前交接决定](HANDOFF.md)。
 
-本文把分析建议拆成可独立验收的实施步骤，供明确要求实现时使用。S0–S6 已于 2026-09-15 完成，起始源码基线为 `f9105515cb775baf8a2461306e46f154abef5333`；S7–S9 尚未实施。分析报告基线为 `e493df6`；后续开始修改时仍应重新核对代码，不能把历史测试结果当作当前验证结果。
+本文把分析建议拆成可独立验收的实施步骤，供明确要求实现时使用。S0–S7 已于 2026-09-15 完成，起始源码基线为 `f9105515cb775baf8a2461306e46f154abef5333`；S8–S9 尚未实施。分析报告基线为 `e493df6`；后续开始修改时仍应重新核对代码，不能把历史测试结果当作当前验证结果。
 
 ## 1. 范围、顺序与完成目标
 
@@ -282,6 +282,16 @@ GLWE 单 PBS、四路 ManyLUT 和 Boolean 二元门/MUX 的分配返回入口按
 **验证与完成条件：** 每组搬迁后检查 import、导出、rustdoc 链接和测试归属，完成受影响 crate 的全 targets 检查。最终文件能按职责定位，测试保护的独立契约不减少；没有明确收益的拆分或共享提取可不实施，并简要记录理由。
 
 ManyLUT 编译期临时列的优化暂缓，除非确认存在频繁动态编译负担；本步不新增在线 scratch 参数，也不把测试整理扩成通用测试框架建设。
+
+#### S7 执行结果（2026-09-15）
+
+- 两路 GLWE 的 BSK 存储/生成与 BR API/kernel/workspace 已分文件，BR 通过已有访问器读取 key 的布局和 basis；两路 NTRU 的 BR 文件已按职责更名。
+- 三路 CBS 已聚合到 `circuit_bootstrap/{mod,parameters,key,evaluator}.rs`，GLWE family Boolean 拆为 `boolean/{mod,client,evaluator}.rs`。四后端的客户端 alias 和三个纯参数 alias 文件并入 crate root；NTT GLWE 的参数文件含开发 fixture，继续保留。公开 Boolean 命名空间和所有根导出保持。
+- 三个纯 LUT compiler 测试迁到 `primus_tfhe/tests/lookup_table.rs`，padded client 测试留在 family；共用分配计数器迁到公共层的 `tests/support`，同步所有测试和 benchmark 引用。两路 NTRU 单 PBS 的公钥覆盖并入 ManyLUT count=1 测试，basis/模数绑定测试独立保留在 `tests/context.rs`。
+- 删除 GLWE 仅有一个调用方的 encoded ManyLUT 转发层。保留被 Boolean 实际复用的 encoded 单 LUT 入口及跨 crate support API。两族其余明文包装继续保留：复杂布局已共享，再抽取少量检查/codec 调用不足以抵消新增跨 crate API 的成本；未修改 ManyLUT 编译期临时列。
+- 七包默认 / nightly SIMD 测试各 36 项通过，两配置 all-targets Clippy（`-D warnings`）、workspace all-targets check、严格 rustdoc 及格式/diff 检查通过。搬迁后核对公开导出、算法正文和本步相关 Markdown 链接；测试数减少两项来自 NTRU 单 PBS 合并，独立覆盖保留。
+
+本步没有改变公开签名、在线运算流程或 benchmark 工作负载，未运行性能计时、示例独立运行或完整 workspace 测试。README 的公开流程无需变更，缺失文档入口仍留给 S8。S7 无阻塞项，下一步为 S8。
 
 ### S8：补齐文档入口与可运行示例
 

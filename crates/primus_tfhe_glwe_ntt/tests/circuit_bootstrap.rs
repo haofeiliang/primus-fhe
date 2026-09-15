@@ -1,4 +1,4 @@
-#[path = "../../primus_tfhe_ntru/tests/support/allocations.rs"]
+#[path = "../../primus_tfhe/tests/support/allocations.rs"]
 mod allocations;
 
 use primus_decompose::primitive::ApproxSignedBasis;

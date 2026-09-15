@@ -1,4 +1,4 @@
-#[path = "support/allocations.rs"]
+#[path = "../../primus_tfhe/tests/support/allocations.rs"]
 mod allocations;
 
 use primus_lwe::{LweCiphertext, LweParameters, LwePublicKey, LweSecretKey};

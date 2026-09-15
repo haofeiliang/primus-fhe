@@ -2,7 +2,7 @@
 //! u64 functional workloads, not security parameter recommendations. Setup and
 //! memory accounting are outside timing; no post-BR ring key switch/extraction.
 //! cargo bench -p primus_tfhe_ntru_ntt --bench circuit_bootstrap -- 'n1024/logb10'
-#[path = "../../primus_tfhe_ntru/tests/support/allocations.rs"]
+#[path = "../../primus_tfhe/tests/support/allocations.rs"]
 mod allocations;
 
 use criterion::{Criterion, criterion_group, criterion_main};

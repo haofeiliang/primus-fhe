@@ -46,37 +46,6 @@ fn parameters(
 }
 
 #[test]
-fn evaluates_nontrivial_lookup_table() {
-    let parameters = parameters(CIPHER_MODULUS, 9, 9);
-    let table = U32NttTable::new(
-        POLY_LENGTH.trailing_zeros(),
-        parameters.bootstrapping().ntru().cipher_modulus(),
-    )
-    .unwrap();
-    let context = TfheContext::try_new(parameters, table).unwrap();
-    let mut rng = StdRng::seed_from_u64(0x4e54_5255_5446_4845);
-    let (client_key, server_key) = context.generate_keys(&mut rng).unwrap();
-    let public = client_key
-        .try_generate_public_key(context.parameters(), &mut rng)
-        .unwrap();
-    let secret_encryptor = context.encryptor(&client_key).unwrap();
-    let public_encryptor = context.encryptor(&public).unwrap();
-    let decryptor = context.decryptor(&client_key).unwrap();
-    let lut = context.compile_lookup_table_slice(&[1u32, 0]).unwrap();
-    let mut evaluator = context.evaluator(&server_key).unwrap();
-
-    for input in 0..2u32 {
-        for ciphertext in [
-            secret_encryptor.encrypt_padded(input, &mut rng).unwrap(),
-            public_encryptor.encrypt_padded(input, &mut rng).unwrap(),
-        ] {
-            let output = evaluator.apply_lookup_table(&ciphertext, &lut);
-            assert_eq!(decryptor.decrypt::<u32>(&output).unwrap(), 1 - input);
-        }
-    }
-}
-
-#[test]
 fn rejects_server_keys_with_same_layout_but_different_bases_or_modulus() {
     let original = parameters(CIPHER_MODULUS, 9, 9);
     let table = U32NttTable::new(

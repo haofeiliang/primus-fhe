@@ -1,5 +1,6 @@
-//! Shared NTRU-backend test/bench instrumentation. Counts allocations only on the
-//! calling thread and only within `measure`; it does not inspect allocator internals.
+//! Shared TFHE test/bench instrumentation. Counts successful allocations and
+//! reallocations on the calling thread within `measure`. Byte counts are requested
+//! sizes, excluding allocator overhead; they do not measure process memory.
 use std::{
     alloc::{GlobalAlloc, Layout, System},
     cell::Cell,

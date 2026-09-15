@@ -8,7 +8,7 @@ use primus_tfhe::{
 
 use crate::{
     ServerKey, TfheContext,
-    bootstrapping_key::{BlindRotationWorkspace, blind_rotate_lookup_table_to},
+    blind_rotation::{BlindRotationWorkspace, blind_rotate_lookup_table_to},
 };
 
 /// Allocation-free online evaluator for exact NTT NTRU programmable bootstrapping.

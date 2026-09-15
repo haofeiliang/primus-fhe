@@ -2,23 +2,23 @@
 
 审查日期：2026-09-14。源码基线：`e493df6`。开始时工作区和暂存区均无修改。
 用户所写的 `primus_thfe*` 按仓库实际名称 `primus_tfhe*` 理解，范围为七个 crate。
-本文是分析与实施建议；原审查仅新增本文。后续用户已明确纳入两族 TFHE LWE 公钥客户端，§3.1 的删除空泛型建议与 §5 的公钥后置安排已由 [实施步骤 S2](TFHE_REFACTOR_STEPS.md) 的当前方案替代；以下保留原审查基线结论。
+本文是分析与实施建议；原审查仅新增本文。后续用户已明确纳入两族 TFHE LWE 公钥客户端，§3.1 的删除空泛型建议与 §5 的公钥后置安排已由 [实施步骤 S2](TFHE_REFACTOR_STEPS.md) 的当前方案替代；以下保留原审查基线结论和行号。文件链接随 S7 搬迁更新到当前位置。
 
 ## 1. 已确认的问题
 
 ### P2：GLWE NTT CBS 没有在公开边界说明两组求值密钥必须来自同一秘密
 
-位置：[CBS evaluator 构造](crates/primus_tfhe_glwe_ntt/src/circuit_bootstrap_evaluator.rs)（第 70 行）、[CBS key 兼容性检查](crates/primus_tfhe_glwe_ntt/src/circuit_bootstrap_key.rs)（第 34 行）。
+位置：[CBS evaluator 构造](crates/primus_tfhe_glwe_ntt/src/circuit_bootstrap/evaluator.rs)（第 70 行）、[CBS key 兼容性检查](crates/primus_tfhe_glwe_ntt/src/circuit_bootstrap/key.rs)（第 34 行）。
 
 `CircuitBootstrapEvaluator::try_new(context, server_key, parameters, circuit_key)` 只验证参数、布局和分解基。调用方可以从同参数的两个不同 `ClientKey` 分别生成 `server_key` 与 `circuit_key`，构造仍会成功。随后 BR 产生第一个 GLWE 秘密下的 accumulator，trace/scheme switching 却使用第二个秘密，输出不再保证是所声明的 GGSW。
 
-这不是要求从求值密钥恢复并验证秘密，而是公开契约缺失：[底层 scheme switching](crates/primus_glwe/src/scheme_switch/ntt.rs)（第 133 行） 明确要求输入与密钥使用同一秘密，TFHE 的组合入口没有传达这一要求。布局相同不能建立秘密相同。两路 NTRU CBS 已在相同位置记录该前提，见 [NTT](crates/primus_tfhe_ntru_ntt/src/circuit_bootstrap_evaluator.rs)（第 57 行） 和 [Fourier](crates/primus_tfhe_ntru_fourier/src/circuit_bootstrap_evaluator.rs)（第 58 行）。
+这不是要求从求值密钥恢复并验证秘密，而是公开契约缺失：[底层 scheme switching](crates/primus_glwe/src/scheme_switch/ntt.rs)（第 133 行） 明确要求输入与密钥使用同一秘密，TFHE 的组合入口没有传达这一要求。布局相同不能建立秘密相同。两路 NTRU CBS 已在相同位置记录该前提，见 [NTT](crates/primus_tfhe_ntru_ntt/src/circuit_bootstrap/evaluator.rs)（第 57 行） 和 [Fourier](crates/primus_tfhe_ntru_fourier/src/circuit_bootstrap/evaluator.rs)（第 58 行）。
 
 建议：在 GLWE CBS 的 key 生成、evaluator 构造及 context 转发入口补充同一实际秘密、同一 NTT 表示的契约引用；分配返回的 `circuit_bootstrap` 也应继承 `_to` 的输入域、噪声与输出尺度要求。不要新增逐次秘密检查或自行设计 key fingerprint 系统。这里确认的是契约缺口，未运行异秘密混用的错误输出实验。
 
 ### P3：Boolean 的公开注释仍混有旧编码描述
 
-位置：[BooleanError::InvalidPlaintext](crates/primus_tfhe_glwe/src/boolean.rs)（第 513 行）。注释称有效代表元是 `-1/+1`，而 [BooleanDecryptor::decrypt](crates/primus_tfhe_glwe/src/boolean.rs)（第 131 行） 实际只接受 `0/1`。调用者依据错误注释导入 raw ciphertext 时可能选择错误编码并得到错误或 `InvalidPlaintext`。
+位置：[BooleanError::InvalidPlaintext](crates/primus_tfhe_glwe/src/boolean/mod.rs)（第 513 行）。注释称有效代表元是 `-1/+1`，而 [BooleanDecryptor::decrypt](crates/primus_tfhe_glwe/src/boolean/client.rs)（第 131 行） 实际只接受 `0/1`。调用者依据错误注释导入 raw ciphertext 时可能选择错误编码并得到错误或 `InvalidPlaintext`。
 
 建议：统一说明外部是 `t=4` 下的 `0/1`，内部 Boolean LUT 使用另一尺度，PBS 后还有平移修正；不要把内部正负 accumulator 值称为外部 Boolean 编码。顺手修正 `BOOLEAN_PLAINTEXT_BITS` 将位数称为模数的注释即可，不改变算法。
 
@@ -58,7 +58,7 @@
 
 ### 3.1 删除没有实际用途的 Key 泛型
 
-[GlweEncryptor](crates/primus_tfhe_glwe/src/client.rs)（第 15 行） 的 `Key` 泛型只有 `GlweClientKey<T>` 一种实现；[后端 alias](crates/primus_tfhe_glwe_ntt/src/client.rs)（第 5 行） 还明确以“将来加入公钥”为理由暴露默认泛型。当前没有第二种实现、对应 trait 或调用方。
+[GlweEncryptor](crates/primus_tfhe_glwe/src/client.rs)（第 15 行） 的 `Key` 泛型只有 `GlweClientKey<T>` 一种实现；[后端 alias](crates/primus_tfhe_glwe_ntt/src/lib.rs)（第 5 行） 还明确以“将来加入公钥”为理由暴露默认泛型。当前没有第二种实现、对应 trait 或调用方。
 
 建议直接改为 `GlweEncryptor<'a, T, LM, GM>`，字段使用 `&GlweClientKey<T>`。同步 Boolean 内部字段和两个 backend alias。将来需要公钥加密时根据真实所有权和参数契约设计入口，不保留空泛型位置。
 
@@ -90,7 +90,7 @@ GlweTfheParameters::try_new(
 
 ### 3.3 CBS 的 output 参数只描述实际使用的输出 basis
 
-两路 NTRU [CBS 参数](crates/primus_tfhe_ntru_ntt/src/circuit_bootstrap_parameters.rs)（第 50 行） 已说明 output 的加密噪声不被使用；GLWE CBS 同样用它的 basis/尺寸产生 gadget-scaled LUT，而不按 output noise 重新加密。
+两路 NTRU [CBS 参数](crates/primus_tfhe_ntru_ntt/src/circuit_bootstrap/parameters.rs)（第 50 行） 已说明 output 的加密噪声不被使用；GLWE CBS 同样用它的 basis/尺寸产生 gadget-scaled LUT，而不按 output noise 重新加密。
 
 建议三路 CBS 构造都优先接受 `output_basis`，从绑定的 accumulator 推导输出尺寸；trace 和 scheme-switch 继续接受完整加密参数，因为它们确实影响 key 生成。先复用 `ApproxSignedBasis`、`GadgetSize` 等现有类型，不新增只有 N、levels、basis 的公共包装层。
 
@@ -127,7 +127,7 @@ CircuitBootstrapParameters::try_new(
 
 ### 4.1 优先合并同一后端内部的 PBS 阶段
 
-[GLWE NTT evaluator](crates/primus_tfhe_glwe_ntt/src/evaluator.rs)（第 190 行） 中 ManyLUT 重复了普通 PBS 的 BR/KS 路径；[普通 evaluator 的 prepare_small_lwe](crates/primus_tfhe_glwe_ntt/src/evaluator.rs)（第 319 行） 与 [CBS 的同名方法](crates/primus_tfhe_glwe_ntt/src/circuit_bootstrap_evaluator.rs)（第 204 行） 也重复 inverse extraction→KS→compact extraction。两路 NTRU 的单输出和多输出同样重复 BR 后的 KS。
+[GLWE NTT evaluator](crates/primus_tfhe_glwe_ntt/src/evaluator.rs)（第 190 行） 中 ManyLUT 重复了普通 PBS 的 BR/KS 路径；[普通 evaluator 的 prepare_small_lwe](crates/primus_tfhe_glwe_ntt/src/evaluator.rs)（第 319 行） 与 [CBS 的同名方法](crates/primus_tfhe_glwe_ntt/src/circuit_bootstrap/evaluator.rs)（第 204 行） 也重复 inverse extraction→KS→compact extraction。两路 NTRU 的单输出和多输出同样重复 BR 后的 KS。
 
 建议按数学阶段收敛，而不是按参数个数抽象：
 

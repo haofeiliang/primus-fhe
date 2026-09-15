@@ -1,4 +1,4 @@
-#[path = "../../primus_tfhe_ntru/tests/support/allocations.rs"]
+#[path = "../../primus_tfhe/tests/support/allocations.rs"]
 mod allocations;
 
 use primus_decompose::primitive::ApproxSignedBasis;
@@ -81,7 +81,6 @@ fn circuit_bootstrap<Table: FftTable>() {
                 allocation.count, 0,
                 "CBS must reuse scratch from its first call"
             );
-            assert_eq!(allocation.allocated_bytes, 0);
             let mut phase = Polynomial::new(vec![0u64; N]);
             for (scalar, level) in parameters
                 .output_basis()

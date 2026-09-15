@@ -14,18 +14,15 @@
 
 #![deny(missing_docs)]
 
-mod bootstrapping_key;
-mod circuit_bootstrap_evaluator;
-mod circuit_bootstrap_key;
-mod circuit_bootstrap_parameters;
-mod client;
+use primus_modulus::NativeModulus;
+
+mod blind_rotation;
+mod circuit_bootstrap;
 mod context;
 mod error;
 mod evaluator;
 mod key;
-mod parameters;
 
-pub use client::{Decryptor, Encryptor};
 pub use context::TfheContext;
 pub use error::{
     LookupTableError, TfheClientError, TfheContextError, TfheEvaluationError, TfheKeyError,
@@ -33,13 +30,21 @@ pub use error::{
 };
 pub use evaluator::Evaluator;
 pub use key::{KeyGenerator, ServerKey};
-pub use parameters::TfheParameters;
 
 pub use primus_tfhe::{LookupTable, LweCiphertext, LweSecretKeyRef, ManyLookupTable};
 pub use primus_tfhe_ntru::{NtruClientKey as ClientKey, NtruTfheParameters};
 
-pub use circuit_bootstrap_evaluator::{CircuitBootstrapEvaluationError, CircuitBootstrapEvaluator};
-pub use circuit_bootstrap_key::{CircuitBootstrapKey, CircuitBootstrapKeyError};
-pub use circuit_bootstrap_parameters::{
-    CircuitBootstrapParameterError, CircuitBootstrapParameters,
+pub use circuit_bootstrap::{
+    CircuitBootstrapEvaluationError, CircuitBootstrapEvaluator, CircuitBootstrapKey,
+    CircuitBootstrapKeyError, CircuitBootstrapParameterError, CircuitBootstrapParameters,
 };
+
+/// Secret-key or LWE public-key encryptor for the Fourier NTRU backend.
+pub type Encryptor<'a, T, Key = ClientKey<T>> =
+    primus_tfhe_ntru::NtruEncryptor<'a, T, NativeModulus<T>, Key>;
+
+/// Client-key decryptor for the Fourier NTRU backend.
+pub type Decryptor<'a, T> = primus_tfhe_ntru::NtruDecryptor<'a, T, NativeModulus<T>>;
+
+/// NTRU-TFHE parameters for the native-torus Fourier backend.
+pub type TfheParameters<T> = primus_tfhe_ntru::NtruTfheParameters<T, NativeModulus<T>>;

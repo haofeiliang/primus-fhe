@@ -12,6 +12,9 @@ primus_lwe = { path = "../primus_lwe" }
 
 thiserror = { workspace = true }
 
+[dev-dependencies]
+primus_modulus = { path = "../primus_modulus" }
+
 [features]
 default = []
 simd = [
