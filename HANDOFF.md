@@ -5,8 +5,16 @@
 ## 当前状态与下一步
 
 - `primus_lattice`、`primus_lwe`、`primus_glwe`、`primus_ntru` 的既有整理和已批准原语补充基本完成；不因 TFHE 重构重新开启其整体重构。
-- 七个 `primus_tfhe*` crate 的 S0–S9 重构与最终验收已完成，无阻塞项。两族 LWE 公钥客户端、加密输出复用、参数收敛、Boolean 工厂及 PBS 阶段共享均已落实；模块、测试、示例和七组双语文档已整理。后续按实际需求选择下述独立扩展，不自动推进。
+- 七个 `primus_tfhe*` crate 的旧 S0–S9 重构与验收已完成，历史基线为 `81eb3f4`。当前新工作为 LUT/PBS 设计与 P1–P4 规划，允许有价值的大重构；不恢复旧步骤，也不把既有模块/API 选择视为永久限制。
 - GLWE NTT 与两路 NTRU 已有 CBS；当前能力矩阵见 [TFHE README](crates/primus_tfhe/README.zh_CN.md)。NTRU packing 按用户决定排除，不是 CBS 的前置工作。
+
+### 当前 LUT/PBS 任务
+
+- 当前范围：文档整理已完成，源码实施尚未开始。设计与数学边界见 [TFHE 总览](docs/tfhe.md)，任务、依赖及完成条件见 [实施步骤](docs/tfhe-plan.md)；进入 P3 时读取 [稀疏 PBS 依据](docs/tfhe-sparse-pbs.md)，并确认本地参考论文可用。
+- 已完成实施步骤：无；进行中：无；本步剩余：无。文档整理不计为实现完成。
+- 下一步：收到开始实施指令后执行 **P1.1 精确旋转与布局契约**，核对共享 LUT/模切及四后端实际消费规则，建立独立 oracle 和可复现基线，再推进 P1.2。
+- 有效未决项：LUT 元数据/最终命名在 P1 收敛；PBC 参数、安全/噪声条件在 P3.1 收敛；首个 MVB 算法与缩放在 P4.1 收敛。具体内容只维护在对应文档中。
+- 验证：本次只整理文档并核对本地链接/任务一致性，没有运行新的 Rust 测试或性能测量；历史验证不作为下一步的验收。
 
 ## 已审范围索引
 
@@ -47,13 +55,13 @@
 
 ## TFHE 可选扩展
 
-这些项目未实施，不影响本轮重构完成；仅在具体需求明确后启动：
+这些项目未实施，也未自动纳入当前 P1–P4 的交付；仅在具体需求明确后启动：
 
 - Fourier GLWE CBS、NTRU Boolean：分别复用已有 trace/SS 原语和 Boolean 编码/仿射逻辑，保留表示与尺度差异，补端到端验证。
 - batch client/PBS、PBS `_assign`：分别面向多个独立输入和链式原地求值；复用 evaluator，明确布局检查及覆盖输入前的依赖，不用 clone 隐藏分配。
 - ServerKey 存储量查询：用于替换 `xtask/src/ntru_params.rs` 的手写公式；明确系数存储、allocator 占用与 CBS live heap 的区别。
 
-独立 KSK 噪声、整数/message-carry 类型层继续等待明确需求。小型 family LUT 包装暂保留，避免为少量检查新增跨 crate API；ManyLUT 编译临时列仅在频繁动态编译成为实际负担时优化。序列化、GPU、多位 BR 不在本轮范围内。
+独立 KSK 噪声、完整整数/message-carry 类型层继续等待明确需求。原先暂缓 ManyLUT 临时列优化的选择已由当前 P1 计划替代；family LUT 包装按真实职责重新评估，输出数量与交错步长在 P1 一并分离。序列化、GPU、多位 BR 不属于当前四阶段的必要交付。
 
 ## 验证与恢复入口
 
