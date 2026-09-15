@@ -6,7 +6,7 @@
 
 - `primus_lattice`、`primus_lwe`、`primus_glwe`、`primus_ntru` 的既有整理和已批准原语补充基本完成；不因 TFHE 重构重新开启其整体重构。
 - 七个 `primus_tfhe*` crate 的源码、API、测试、示例、基准、feature 和文档分析已完成，覆盖边界见 [TFHE_REFACTOR_REVIEW.md](TFHE_REFACTOR_REVIEW.md) §9。
-- [TFHE_REFACTOR_STEPS.md](TFHE_REFACTOR_STEPS.md) 的 S0–S7 已完成：两族已接入 `LwePublicKey`，统一客户端 `try_new`；GLWE BSK / 三路 CBS 输出参数已收敛；公钥和私钥客户端均支持三类加密 `_to`；两路 GLWE context 已提供 Boolean 工厂；四后端已共享普通 PBS 阶段，NTT GLWE PBS/CBS 共用输入准备。文件职责、LUT 包装及测试归属已整理，公开导出保持。S8–S9 尚未实施，下一步为 S8 的双语文档入口与可运行示例。
+- [TFHE_REFACTOR_STEPS.md](TFHE_REFACTOR_STEPS.md) 的 S0–S8 已完成：两族已接入 `LwePublicKey`，统一客户端 `try_new`；GLWE BSK / 三路 CBS 输出参数已收敛；公钥和私钥客户端均支持三类加密 `_to`；两路 GLWE context 已提供 Boolean 工厂；四后端已共享普通 PBS 阶段，NTT GLWE PBS/CBS 共用输入准备。文件职责、LUT 包装及测试归属已整理，公开导出保持。七 crate 双语 README 已补齐，GLWE basic 合并两种 order，两路 NTRU 已有可运行的 CBS → CMUX 示例。下一步为 S9 总体验收与维护入口收尾。
 - GLWE NTT 与两路 NTRU 已有 CBS；Fourier GLWE CBS 尚未实现。NTRU packing 按用户决定排除，不是 CBS 的前置工作；其他可选扩展见步骤文档 §5。
 
 ## 已审范围索引
@@ -51,4 +51,4 @@
 
 - TFHE 各步骤的验证和显式七包 SIMD 命令见实施步骤文档 §4。分析基线的 `just simd` 未覆盖 TFHE；实际执行前核对当前 recipe，不能仅凭命令名认定覆盖。
 - 修改外积时还应覆盖 lattice、NTRU 及两路 NTRU TFHE；性能复测使用相应外积、NTRU primitives 和 TFHE PBS/CBS 基准，固定参数、CPU、工具链和 feature。
-- 公开接口入口：[LWE](crates/primus_lwe/README.zh_CN.md)、[GLWE](crates/primus_glwe/README.zh_CN.md)、[NTRU](crates/primus_ntru/README.zh_CN.md)、[lattice](crates/primus_lattice/README.zh_CN.md)、[NTRU NTT TFHE](crates/primus_tfhe_ntru_ntt/README.zh_CN.md)、[NTRU Fourier TFHE](crates/primus_tfhe_ntru_fourier/README.zh_CN.md)。
+- 公开接口入口：[LWE](crates/primus_lwe/README.zh_CN.md)、[GLWE](crates/primus_glwe/README.zh_CN.md)、[NTRU](crates/primus_ntru/README.zh_CN.md)、[lattice](crates/primus_lattice/README.zh_CN.md)、[TFHE 能力与各层入口](crates/primus_tfhe/README.zh_CN.md)。

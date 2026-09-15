@@ -5,12 +5,22 @@
 基于 NTRU 的 TFHE NTT 后端。使用显式域模数和 context 的 NTT 表示。
 API 和参数仍处于实验阶段；示例和基准是功能工作负载，不是安全参数建议。
 
+完整能力与编码约定见[公共指南](../primus_tfhe/README.zh_CN.md)，参数和秘密域见
+[NTRU family](../primus_tfhe_ntru/README.zh_CN.md)。两路 NTRU 后端均支持 PBS、ManyLUT 和 CBS，
+NTRU Boolean 适配器尚未实现。
+
 ## 普通 PBS 与 ManyLUT
 
 `TfheContext` 绑定参数和变换 table。生成 client/server key，建立 encryptor、
 evaluator、decryptor，再通过 context 编译 LUT。[message/carry 示例](examples/ntru_ntt_basic.rs)
 展示多个输出共享一次 BR 和一次环密钥切换。普通 PBS 返回 client secret 下的 LWE；
 BR 后的 NTRU 密钥切换将 f_acc 转为 f_client。
+
+```sh
+cargo run -p primus_tfhe_ntru_ntt --example ntru_ntt_basic
+```
+
+这里的 message/carry 是同一个输入的两个函数（`x % 4`、`x / 4`），不代表完整的加密整数系统。
 
 公开 PBS 检查 LUT 的输入域、编码模数、环长度及全部输出维数。原始 LWE 输入必须
 使用 context 的 external key、规范 residue 和 unsigned rounded 编码。
@@ -51,19 +61,15 @@ CBS 接收 output basis 和完整的 trace/scheme-switch 加密参数；BR 参�
 由 TFHE context 提供。仅内部 ManyLUT 将输出层数补齐到 2 的幂，NGSW 保留请求的
 层数。Scheme-switch key 绑定完整的 output basis。
 
-已有 context/client/server，以及应用选定的 `output_basis`、`trace_parameters`
-和 `scheme_switch_parameters` 时，设置与求值流程如下：
+运行 [CBS → CMUX 示例](examples/ntru_ntt_circuit_bootstrap.rs)：
 
-```rust,ignore
-let parameters = CircuitBootstrapParameters::try_new(
-    context.parameters(), output_basis, trace_parameters, scheme_switch_parameters,
-)?;
-let key = context.generate_circuit_bootstrap_key(&client, &parameters, &mut rng)?;
-let mut evaluator = context.circuit_bootstrap_evaluator(&server, &parameters, &key)?;
-let mut control = evaluator.circuit_bootstrap(&input);
-// 重复调用时复用调用方输出：
-evaluator.circuit_bootstrap_to(&input, &mut control);
+```sh
+cargo run -p primus_tfhe_ntru_ntt --example ntru_ntt_circuit_bootstrap
 ```
+
+示例创建配套的普通/CBS key，在 `f_acc` 下加密两个 NTRU 候选密文，再将外部 LWE bit
+重复转换为 gadget 尺度的 NGSW 控制。CMUX 在输入 0 时选第一个候选，输入 1 时选第二个。
+输入、control、选择结果和服务端 scratch 均复用，最后通过解密检查结果。
 
 包括 bit 在内，输入仍使用 unsigned rounded LWE 编码。CBS 输出使用指定的 gadget
 scalar，并非普通编码的 NTRU 明文。仅输入消息为 0/1 时才可把输出用作 CMUX 控制。

@@ -3,7 +3,7 @@
 制定日期：2026-09-15。
 依据：[重构分析报告](TFHE_REFACTOR_REVIEW.md)、[仓库规范](AGENTS.md) 和 [当前交接决定](HANDOFF.md)。
 
-本文把分析建议拆成可独立验收的实施步骤，供明确要求实现时使用。S0–S7 已于 2026-09-15 完成，起始源码基线为 `f9105515cb775baf8a2461306e46f154abef5333`；S8–S9 尚未实施。分析报告基线为 `e493df6`；后续开始修改时仍应重新核对代码，不能把历史测试结果当作当前验证结果。
+本文把分析建议拆成可独立验收的实施步骤，供明确要求实现时使用。S0–S8 已于 2026-09-15 完成，起始源码基线为 `f9105515cb775baf8a2461306e46f154abef5333`；S9 尚未实施。分析报告基线为 `e493df6`；后续开始修改时仍应重新核对代码，不能把历史测试结果当作当前验证结果。
 
 ## 1. 范围、顺序与完成目标
 
@@ -304,6 +304,15 @@ ManyLUT 编译期临时列的优化暂缓，除非确认存在频繁动态编译
 5. 说明普通消息、Boolean、CBS 三类尺度；明确 NTRU message/carry 示例是一次输入的多输出，不代表完整整数系统。`boolean_parameters()` 等开发 fixture 不作为生产默认参数宣传。
 
 **验证与完成条件：** 七 crate 均有明确入口；推荐示例实际运行，文档构建及链接检查通过；能力矩阵准确反映仍未实现的 Fourier GLWE CBS 和 NTRU Boolean。API rustdoc 应已在前面各步骤同步，本步只补全整体阅读路径。
+
+#### S8 执行结果（2026-09-15）
+
+- 七 crate 均有中英文 README：新增公共层、两族及 GLWE 两后端入口，更新两路 NTRU 文档。公共层集中能力矩阵及普通/Boolean/CBS 编码契约，family 说明参数和外部秘密域，backend 链接完整使用流程；语言入口、章节及跨 crate 链接对应。
+- GLWE 每后端合并为一个 basic 示例，同时运行两种 order，检查外部维数 n=4 / kN=256，展示公钥输入、单 PBS、ManyLUT、客户端与 Boolean 输出复用。删除重复的 `*_keyswitch_bootstrap` 示例；NTT basic 直接使用原 order 示例的小参数，`boolean_parameters()` 仍明确为开发 fixture。
+- 两路 NTRU 新增 `ntru_{ntt,fourier}_circuit_bootstrap` 示例，配套普通/CBS key、在 accumulator 秘密下加密 CMUX 候选、复用输入/control/输出和工作区，并解密验证 bit 0/1/0 选择结果为 1/3/1。README 的 `rust,ignore` CBS 片段改为可运行示例链接和命令；message/carry 明确为同一输入的两个函数。
+- 六个示例在默认和 nightly SIMD 下均实际运行通过；workspace all-targets check、七包两配置 all-targets Clippy（`-D warnings`）、严格 rustdoc、格式/diff 检查通过。七组双语章节、86 个 README 本地链接及示例命令目标均已检查。
+
+本步仅修改文档和示例，未改动库 API、数值内核、测试或 benchmark；未重跑完整数值测试和性能计时。Fourier 示例使用 RustFFT，TfheFFT 的既有测试/基准不在本步重新运行。Fourier GLWE CBS 与 NTRU Boolean 仍未实现。S8 无阻塞项，下一步为 S9 总体验收。
 
 ### S9：最终验收与维护状态收尾
 

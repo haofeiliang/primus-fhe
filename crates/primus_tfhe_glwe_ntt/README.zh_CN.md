@@ -1,0 +1,58 @@
+# primus_tfhe_glwe_ntt
+
+[English](README.md) | 简体中文
+
+基于 GLWE、采用显式域模数的 TFHE 后端。支持两种 PBS order、ManyLUT、Boolean 门及私钥/公钥客户端。
+完整能力与编码约定见[公共指南](../primus_tfhe/README.zh_CN.md)，
+参数与秘密域见 [GLWE family](../primus_tfhe_glwe/README.zh_CN.md)。
+
+## 运行完整示例
+
+```sh
+cargo run -p primus_tfhe_glwe_ntt --example ntt_basic
+```
+
+[示例源码](examples/ntt_basic.rs) 用相同流程运行两种 order：参数 → context → 配套密钥
+→ 公钥 encryptor / client decryptor → 编译 LUT → 复用 evaluator 与输出。
+涵盖单 PBS、双输出 ManyLUT、客户端 `encrypt_padded_to`、Boolean 门、NOT 和 MUX。
+
+`BootstrapKeyswitch` 的外部密文维数为 `n`，`KeyswitchBootstrap` 为 `kN`。
+示例打印并检查这两个维数（4 和 256），输入和输出均遵循选定的外部秘密域。
+所有 fixture 的维数、噪声和分解参数仅用于功能演示，不是生产安全或失败概率建议。
+
+## Context 与复用
+
+`TfheContext::try_new` 检查 NTT 长度和模数。NTT 域密钥与值必须采用所传 table 的表示。
+`boolean_parameters()` 是开发 fixture，不是经过论证的默认参数；示例直接选取自己的小参数。
+
+普通 LUT 使用 `compile_lookup_table_fn` / `compile_lookup_table_slice`，多输出使用
+`compile_many_lookup_table_*`。输入采用 unsigned padded 编码，并考虑 ManyLUT 较低的
+旋转分辨率。Evaluator 持有可变 scratch，创建一次后复用 `apply_lookup_table_to` /
+`apply_many_lookup_table_to`；这些入口在写入前检查全部输出维数。
+
+`t=4` 时使用 `boolean_encryptor`、`boolean_decryptor`、`boolean_evaluator`，由适配器处理
+内部模 8 的 LUT 尺度。通过 `evaluate_binary_to`、`not_to`、`mux_to` 重复求值。
+
+## Circuit bootstrapping
+
+可选 CBS 使用 `CircuitBootstrapParameters::try_new(context.parameters(),
+output_basis, trace, scheme_switch)`、`generate_circuit_bootstrap_key` 和
+`circuit_bootstrap_evaluator`。普通与 CBS key 必须来自同一 client key 和 NTT 表示。
+输出 basis 定义 GGSW gadget 尺度，输出布局从 accumulator 派生；circuit key 绑定
+输出布局及 trace/scheme-switch basis。CBS 保留 accumulator secret，跳过普通 PBS
+后处理；投影与 CMUX 消费见 [CBS 集成测试](tests/circuit_bootstrap.rs)。
+Trace/SS 噪声与秘密相关消息假设需要独立评估。
+
+## 验证与性能
+
+```sh
+cargo test -p primus_tfhe_glwe_ntt
+cargo clippy -p primus_tfhe_glwe_ntt --all-targets -- -D warnings
+cargo +nightly test -p primus_tfhe_glwe_ntt --features simd
+cargo bench -p primus_tfhe_glwe_ntt --bench pbs
+cargo bench -p primus_tfhe_glwe_ntt --bench circuit_bootstrap
+```
+
+`pbs` 分别测量分配返回和复用输出，覆盖两种 order、ManyLUT 与 Boolean 门。
+阶段用例用于定位开销，不能替代完整 PBS 测量。
+`circuit_bootstrap` 测量两种 order、2/3 输出层数下的完整 CBS。

@@ -1,24 +1,61 @@
-//! Minimal end-to-end use of the GLWE/NTT TFHE backend.
+//! GLWE/NTT PBS and Boolean evaluation with both execution orders.
 //!
-//! The small dimensions below keep the example fast. They are not a security
-//! recommendation.
+//! Small functional parameters for demonstration, not production use.
 
+use primus_decompose::primitive::ApproxSignedBasis;
+use primus_glwe::{GlweParameters, SecretKeyDistr};
+use primus_lwe::LweParameters;
+use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, U32NttTable};
-use primus_tfhe_glwe_ntt::{BooleanGate, LweCiphertext, TfheContext, boolean_parameters};
+use primus_tfhe_glwe_ntt::{BooleanGate, LweCiphertext, PbsOrder, TfheContext, TfheParameters};
 
-fn main() {
-    // A context validates both the NTT length and its explicit modulus.
-    let parameters = boolean_parameters();
-    let modulus = parameters.glwe().cipher_modulus();
-    let poly_length = parameters.glwe().poly_length();
-    let table = U32NttTable::new(poly_length.trailing_zeros(), modulus).unwrap();
+const LWE_DIMENSION: usize = 4;
+const GLWE_DIMENSION: usize = 1;
+const POLY_LENGTH: usize = 256;
+const PLAINTEXT_MODULUS: u32 = 4;
+const CIPHERTEXT_MODULUS: u32 = 132_120_577;
+
+fn parameters(order: PbsOrder) -> TfheParameters<u32> {
+    let modulus = BarrettModulus::new(CIPHERTEXT_MODULUS);
+    let lwe = LweParameters::new(
+        LWE_DIMENSION,
+        PLAINTEXT_MODULUS,
+        modulus,
+        SecretKeyDistr::UniformBinary,
+        0.7,
+    );
+    let glwe = GlweParameters::new(
+        GLWE_DIMENSION,
+        POLY_LENGTH,
+        PLAINTEXT_MODULUS,
+        modulus,
+        SecretKeyDistr::UniformBinary,
+        0.7,
+    );
+    let bootstrapping = ApproxSignedBasis::new(glwe.cipher_modulus_value(), 8, Some(3));
+    TfheParameters::try_new(
+        lwe,
+        glwe,
+        bootstrapping,
+        ApproxSignedBasis::new(Some(CIPHERTEXT_MODULUS), 4, Some(4)),
+        order,
+    )
+    .unwrap()
+}
+
+fn run(order: PbsOrder) {
+    let parameters = parameters(order);
+    let table = U32NttTable::new(
+        POLY_LENGTH.trailing_zeros(),
+        parameters.glwe().cipher_modulus(),
+    )
+    .unwrap();
     let context = TfheContext::try_new(parameters, table).unwrap();
 
     // The client key decrypts; the server key only evaluates homomorphically.
     let mut rng = rand::rng();
     let (client_key, server_key) = context.generate_keys(&mut rng).unwrap();
 
-    // Raw programmable bootstrapping evaluates a compiled unary lookup table.
     // Publish this LWE key to encrypt inputs; keep the client key for decryption.
     // These demonstration parameters have no public-key security/noise assessment.
     let public_key = client_key
@@ -28,6 +65,12 @@ fn main() {
     let decryptor = context.decryptor(&client_key).unwrap();
     let toggle = context.compile_lookup_table_slice(&[1u32, 0]).unwrap();
     let mut input = encryptor.encrypt_padded(0u32, &mut rng).unwrap();
+    // External inputs and outputs use n or kN according to the selected order.
+    let dimension = match order {
+        PbsOrder::BootstrapKeyswitch => LWE_DIMENSION,
+        PbsOrder::KeyswitchBootstrap => GLWE_DIMENSION * POLY_LENGTH,
+    };
+    assert_eq!(input.dimension(), dimension);
     let mut evaluator = context.evaluator(&server_key).unwrap();
     let mut output = LweCiphertext::zero(context.parameters().ciphertext_lwe_dimension());
     evaluator.apply_lookup_table_to(&input, &toggle, &mut output);
@@ -69,5 +112,11 @@ fn main() {
     boolean_evaluator.mux_to(&lhs, &lhs, &rhs, &mut output);
     assert!(boolean_decryptor.decrypt(&output).unwrap());
 
-    println!("raw PBS and Boolean NTT examples succeeded");
+    println!("{order:?}: external LWE dimension {dimension}; PBS and Boolean succeeded");
+}
+
+fn main() {
+    for order in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
+        run(order);
+    }
 }

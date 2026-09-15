@@ -6,6 +6,10 @@ NTT backend for NTRU-based TFHE. Uses an explicit field modulus and the context'
 APIs and parameters are experimental; examples and benchmarks are functional
 workloads, not security parameter recommendations.
 
+See the [shared capability and encoding guide](../primus_tfhe/README.md) and
+[NTRU family/key domains](../primus_tfhe_ntru/README.md). Both NTRU backends support
+PBS, ManyLUT and CBS; NTRU Boolean adapters are not implemented.
+
 ## Ordinary PBS and ManyLUT
 
 `TfheContext` binds parameters and a transform table. Generate paired client/server
@@ -13,6 +17,13 @@ keys, obtain an encryptor/evaluator/decryptor, and compile LUTs through the cont
 The [message/carry example](examples/ntru_ntt_basic.rs) demonstrates multiple outputs
 sharing one BR and one ring key switch. Ordinary PBS returns LWE under the client
 secret; its post-BR NTRU key switch maps f_acc to f_client.
+
+```sh
+cargo run -p primus_tfhe_ntru_ntt --example ntru_ntt_basic
+```
+
+Message/carry here means two functions (`x % 4`, `x / 4`) of one input;
+it is not a complete encrypted-integer system.
 
 Public PBS validates LUT input domain, encoding moduli, ring length and all output
 dimensions. Raw LWE input must use the context's external key, canonical residues
@@ -60,19 +71,16 @@ BR parameters and the output ring come from the TFHE context. Only the internal
 ManyLUT pads the output level count to a power of two; the NGSW retains the
 requested levels. Its scheme-switch key binds the complete output basis.
 
-Given an existing context/client/server and application-selected `output_basis`,
-`trace_parameters` and `scheme_switch_parameters`, setup and evaluation are:
+Run the [CBS → CMUX example](examples/ntru_ntt_circuit_bootstrap.rs):
 
-```rust,ignore
-let parameters = CircuitBootstrapParameters::try_new(
-    context.parameters(), output_basis, trace_parameters, scheme_switch_parameters,
-)?;
-let key = context.generate_circuit_bootstrap_key(&client, &parameters, &mut rng)?;
-let mut evaluator = context.circuit_bootstrap_evaluator(&server, &parameters, &key)?;
-let mut control = evaluator.circuit_bootstrap(&input);
-// Repeated calls reuse a caller-owned output:
-evaluator.circuit_bootstrap_to(&input, &mut control);
+```sh
+cargo run -p primus_tfhe_ntru_ntt --example ntru_ntt_circuit_bootstrap
 ```
+
+It builds paired ordinary/CBS keys, encrypts two NTRU candidates under `f_acc`,
+and repeatedly turns an external LWE bit into a gadget-scaled NGSW control.
+CMUX selects the first candidate for 0 and the second for 1. The example reuses
+input, control, selected output and server scratch, then decrypts to check the result.
 
 The input still uses unsigned rounded LWE encoding, including for bits. CBS output
 uses the selected gadget scalars; it is not an ordinary encoded NTRU plaintext.

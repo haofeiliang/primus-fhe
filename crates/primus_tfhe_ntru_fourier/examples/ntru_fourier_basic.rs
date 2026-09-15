@@ -40,7 +40,8 @@ fn main() {
     let encryptor = context.encryptor(&public_key).unwrap();
     let decryptor = context.decryptor(&client_key).unwrap();
     // t=16 leaves the programmable inputs 0..8. Split a short integer into
-    // its two low message bits and a carry with one shared PBS.
+    // its two low message bits and a carry with one shared PBS. This is
+    // one input with two outputs, not a complete encrypted-integer system.
     let lut = context
         .compile_many_lookup_table_fn(2, |input, output| {
             if output == 0 {

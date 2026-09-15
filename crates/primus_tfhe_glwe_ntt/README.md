@@ -1,0 +1,66 @@
+# primus_tfhe_glwe_ntt
+
+English | [简体中文](README.zh_CN.md)
+
+GLWE-based TFHE over an explicit field modulus. Supports both PBS orders, ManyLUT,
+Boolean gates and secret/public-key clients. See the [capability and encoding guide](../primus_tfhe/README.md)
+and [GLWE parameter/key domains](../primus_tfhe_glwe/README.md).
+
+## Run the complete example
+
+```sh
+cargo run -p primus_tfhe_glwe_ntt --example ntt_basic
+```
+
+The [example source](examples/ntt_basic.rs) runs both orders with the same
+workflow: parameters → context → paired keys → public-key encryptor/client decryptor
+→ compiled LUT → reusable evaluator/output. It demonstrates single PBS, two-output
+ManyLUT, client `encrypt_padded_to`, Boolean gates, NOT and MUX.
+
+For `BootstrapKeyswitch`, external ciphertexts have dimension `n`; for
+`KeyswitchBootstrap`, they have dimension `kN`. The example prints and checks these
+dimensions (4 and 256). Both inputs and outputs follow the chosen external key.
+All fixture dimensions, noise and decomposition choices are functional examples,
+not production security or failure-probability recommendations.
+
+## Context and reuse
+
+`TfheContext::try_new` checks the NTT length and modulus. NTT-domain keys and values
+must use the supplied table's NTT representation. `boolean_parameters()` is a
+development fixture, not a vetted default; the example selects its own small parameters.
+
+Compile ordinary LUTs with `compile_lookup_table_fn` / `compile_lookup_table_slice`,
+or their `compile_many_lookup_table_*` counterparts. Use unsigned padded input and
+account for ManyLUT's coarser rotation resolution. The evaluator holds mutable
+scratch; create it once and reuse `apply_lookup_table_to` / `apply_many_lookup_table_to`.
+These calls validate all output dimensions before writing.
+
+Use `boolean_encryptor`, `boolean_decryptor` and `boolean_evaluator` for `t=4`.
+The adapter handles the internal modulus-8 LUT scale. Use `evaluate_binary_to`,
+`not_to` and `mux_to` for repeated Boolean evaluation.
+
+## Circuit bootstrapping
+
+Optional CBS uses `CircuitBootstrapParameters::try_new(context.parameters(),
+output_basis, trace, scheme_switch)`, `generate_circuit_bootstrap_key` and
+`circuit_bootstrap_evaluator`. Ordinary and CBS keys must come from the same client
+key and NTT representation. The output basis defines GGSW gadget scales; output
+layout comes from the accumulator. The circuit key binds output layout and the
+trace/scheme-switch bases. CBS preserves the accumulator secret and skips ordinary
+PBS's postprocessing; see the [CBS integration test](tests/circuit_bootstrap.rs)
+for projection and CMUX consumption. Trace/SS noise and key-dependent-message
+assumptions need a separate assessment.
+
+## Validation and performance
+
+```sh
+cargo test -p primus_tfhe_glwe_ntt
+cargo clippy -p primus_tfhe_glwe_ntt --all-targets -- -D warnings
+cargo +nightly test -p primus_tfhe_glwe_ntt --features simd
+cargo bench -p primus_tfhe_glwe_ntt --bench pbs
+cargo bench -p primus_tfhe_glwe_ntt --bench circuit_bootstrap
+```
+
+`pbs` separates allocating/reused outputs and covers both orders, ManyLUT and
+Boolean gates. Stage cases help locate costs; they do not replace complete-PBS
+measurements. `circuit_bootstrap` measures complete CBS for both orders and 2/3 output levels.

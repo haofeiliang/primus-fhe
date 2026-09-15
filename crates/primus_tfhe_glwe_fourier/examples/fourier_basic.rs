@@ -1,7 +1,6 @@
-//! Minimal end-to-end use of the GLWE/Fourier TFHE backend.
+//! GLWE/Fourier PBS and Boolean evaluation with both execution orders.
 //!
-//! The small dimensions below keep the example fast. They are not a security
-//! recommendation.
+//! Small functional parameters for demonstration, not production use.
 
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{FftTable, RustFftTable};
@@ -15,7 +14,7 @@ const GLWE_DIMENSION: usize = 1;
 const POLY_LENGTH: usize = 256;
 const PLAINTEXT_MODULUS: u32 = 4;
 
-fn parameters() -> TfheParameters<u32> {
+fn parameters(order: PbsOrder) -> TfheParameters<u32> {
     let lwe = LweParameters::new(
         LWE_DIMENSION,
         PLAINTEXT_MODULUS,
@@ -37,21 +36,20 @@ fn parameters() -> TfheParameters<u32> {
         glwe,
         bootstrapping,
         ApproxSignedBasis::new(None, 4, Some(4)),
-        PbsOrder::BootstrapKeyswitch,
+        order,
     )
     .unwrap()
 }
 
-fn main() {
+fn run(order: PbsOrder) {
     // A context binds mathematical parameters to a particular FFT table.
     let table = RustFftTable::new(POLY_LENGTH.trailing_zeros()).unwrap();
-    let context = TfheContext::try_new(parameters(), table).unwrap();
+    let context = TfheContext::try_new(parameters(order), table).unwrap();
 
     // The client key decrypts; the server key only evaluates homomorphically.
     let mut rng = rand::rng();
     let (client_key, server_key) = context.generate_keys(&mut rng).unwrap();
 
-    // Raw programmable bootstrapping evaluates a compiled unary lookup table.
     // Publish this LWE key to encrypt inputs; keep the client key for decryption.
     // These demonstration parameters have no public-key security/noise assessment.
     let public_key = client_key
@@ -61,6 +59,12 @@ fn main() {
     let decryptor = context.decryptor(&client_key).unwrap();
     let toggle = context.compile_lookup_table_slice(&[1u32, 0]).unwrap();
     let mut input = encryptor.encrypt_padded(0u32, &mut rng).unwrap();
+    // External inputs and outputs use n or kN according to the selected order.
+    let dimension = match order {
+        PbsOrder::BootstrapKeyswitch => LWE_DIMENSION,
+        PbsOrder::KeyswitchBootstrap => GLWE_DIMENSION * POLY_LENGTH,
+    };
+    assert_eq!(input.dimension(), dimension);
     let mut evaluator = context.evaluator(&server_key).unwrap();
     let mut output = LweCiphertext::zero(context.parameters().ciphertext_lwe_dimension());
     evaluator.apply_lookup_table_to(&input, &toggle, &mut output);
@@ -85,8 +89,7 @@ fn main() {
     assert_eq!(decryptor.decrypt::<u32>(&outputs[0]).unwrap(), 1);
     assert_eq!(decryptor.decrypt::<u32>(&outputs[1]).unwrap(), 0);
 
-    // The Boolean layer uses the paper's t=4 encoding and hides its special
-    // accumulator and post-PBS correction.
+    // Boolean adapters manage the internal LUT scale and restore external 0/1.
     let boolean_encryptor = context.boolean_encryptor(&client_key).unwrap();
     let boolean_decryptor = context.boolean_decryptor(&client_key).unwrap();
     let lhs = boolean_encryptor.encrypt(true, &mut rng).unwrap();
@@ -103,5 +106,11 @@ fn main() {
     boolean_evaluator.mux_to(&lhs, &lhs, &rhs, &mut output);
     assert!(boolean_decryptor.decrypt(&output).unwrap());
 
-    println!("raw PBS and Boolean Fourier examples succeeded");
+    println!("{order:?}: external LWE dimension {dimension}; PBS and Boolean succeeded");
+}
+
+fn main() {
+    for order in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
+        run(order);
+    }
 }

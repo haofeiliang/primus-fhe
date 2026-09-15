@@ -1,0 +1,67 @@
+# primus_tfhe
+
+[English](README.md) | 简体中文
+
+公共 LUT 编译、编码元数据及 PBS trait 层，供 GLWE 和 NTRU 两族复用。
+本 crate 不持有客户端密钥、变换 table 或 evaluator 工作区。完整使用流程从下面的后端示例开始。
+
+## Crate 分工与能力
+
+| Family | NTT 后端 | Fourier 后端 |
+| --- | --- | --- |
+| [GLWE 参数与客户端](../primus_tfhe_glwe/README.zh_CN.md) | [GLWE NTT](../primus_tfhe_glwe_ntt/README.zh_CN.md) | [GLWE Fourier](../primus_tfhe_glwe_fourier/README.zh_CN.md) |
+| [NTRU 参数与客户端](../primus_tfhe_ntru/README.zh_CN.md) | [NTRU NTT](../primus_tfhe_ntru_ntt/README.zh_CN.md) | [NTRU Fourier](../primus_tfhe_ntru_fourier/README.zh_CN.md) |
+
+| 后端 | 密文模数 | PBS / ManyLUT | Boolean 门 | CBS |
+| --- | --- | --- | --- | --- |
+| GLWE NTT | 显式域模数 | 支持 | 支持 | 支持 |
+| GLWE Fourier | 原生 torus | 支持 | 支持 | 未实现 |
+| NTRU NTT | 显式域模数 | 支持 | 未实现 | 支持 |
+| NTRU Fourier | 原生 torus | 支持 | 未实现 | 支持 |
+
+四后端均支持私钥和 LWE 公钥客户端。Fourier 后端支持 RustFFT 与 TfheFFT。
+参数和 API 仍处于实验阶段；示例及 benchmark fixture 不是生产安全参数或失败概率建议。
+
+## LUT 与资源生命周期
+
+1. Family 参数描述外部 LWE 和 accumulator 环。
+2. 后端 context 绑定参数与 NTT/FFT table，并生成配套的 client/server key。
+3. 通过 family 参数或 context 编译 `LookupTable` / `ManyLookupTable`。
+   evaluator 创建一次，在线 `_to` 调用复用其 scratch。
+4. 调用方输出分配一次，后续加密与求值重复使用同一存储。
+
+单函数或切片为 `0..ceil(t/2)` 输入域编程，输出属于 `0..t`。
+另一半遵循负循环扩展，不能独立编程。ManyLUT 的 `output_count` 必须是非零的
+2 的幂，并满足 `ceil(t/2) <= N/output_count`。callback 接收 `(input, output_index)`，
+切片按输入优先排列。所有输出共享一次盲旋转（BR）和密钥切换，再分别提取。
+输出越多，旋转分辨率与输入噪声余量越低。这是一个输入求多个函数，不是独立密文批处理。
+
+## 编码与密钥契约
+
+| 接口 | 输入 / 输出含义 |
+| --- | --- |
+| 普通 `encrypt` | `0..t` 范围的 unsigned 消息 |
+| `encrypt_padded` | 相同 unsigned 尺度，输入限制为 `0..ceil(t/2)`，供普通 LUT 使用 |
+| `encrypt_centered` | 接收 `0..t` 的模代表元；上半区表示负数，例如 `t=4` 时 `3` 表示 `-1` |
+| GLWE Boolean | 外部 `false/true` 对应模 4 下的 `0/1`；内部 LUT 使用 rounded 模 8 尺度的正负值，随后平移恢复外部编码 |
+| CBS | 普通 unsigned LWE 输入转为指定 gadget 尺度的 GGSW/NGSW，秘密为 accumulator secret；`0/1` 输入可生成 CMUX 控制 |
+
+客户端解密返回 `0..t` 中的规范代表元。Centered 加密不能替代普通 LUT 的 unsigned
+输入契约。PBS 保留 LUT 的输出尺度，不会自动把 Boolean 或 gadget 输出改为普通消息编码。
+
+原始 `LweCiphertext` 不记录秘密、编码或噪声。调用方必须使用配套密钥、显式模数下的
+规范系数，并保证噪声余量。LUT 与维数错误在写入输出前拒绝，但这些检查不能验证实际
+秘密一致性。Fourier 密钥和 evaluator 必须使用同一 FFT table 实例。
+
+最小 trait 为 `ProgrammableBootstrap` 和 `ProgrammableBootstrapMany`。
+Encoded LUT compiler 与 `backend_support` 服务于后端实现；普通应用使用 context/family 编译入口。
+
+## 验证
+
+```sh
+cargo test -p primus_tfhe
+cargo doc -p primus_tfhe --no-deps
+```
+
+显式七包默认/SIMD 命令见[实施与验证步骤](../../TFHE_REFACTOR_STEPS.md)。
+各后端 README 提供可运行示例与 Criterion 命令。
