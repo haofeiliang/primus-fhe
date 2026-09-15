@@ -36,6 +36,22 @@
 切片按输入优先排列。所有输出共享一次盲旋转（BR）和密钥切换，再分别提取。
 输出越多，旋转分辨率与输入噪声余量越低。这是一个输入求多个函数，不是独立密文批处理。
 
+### 旋转布局
+
+令 `D` 为已编程前缀长度，`s = output_count`（普通 LUT 为 1），`M = N/s`。
+消息先编码为 `E(m) = round(m*q_in/t) mod q_in`，再映射到虚拟中心
+`R(E(m), q_in, 2M)`，其中 `R(x,q,L) = floor((x*L + floor(q/2))/q) mod L`，
+两次舍入遇到中点均向上。Native 的 `q_in` 为 `2^T::BITS`。合并两次舍入可能改变表内容。
+
+编译器选择最近中心的值，中点相等时选择较大的中心；最后在 `min(R(E(D), q_in, 2M), M)`
+追加值为 `-f(0)` 的中心以终止编程前缀，其后的系数不是额外的输入域。
+raw 输出必须已经是 `q_acc` 下的规范值，越界值会被拒绝。
+累加器模数与输出尺度均独立于 `q_in`。
+
+四后端逐个将 LWE 系数量化为 `s*R(x, q_in, 2N/s)`，旋转指数为
+`-R_s(b) + sum(R_s(a[i])*secret[i])`，不能替换为对解密相位的一次量化。
+旋转量是 `s` 的倍数，保留 `s*r+j` 上的各输出列；提取系数 `j` 时按负循环符号读取该列。
+
 ## 编码与密钥契约
 
 | 接口 | 输入 / 输出含义 |
@@ -68,3 +84,8 @@ just tfhe-simd
 这两个 [recipe](../../justfile) 覆盖七包默认 / nightly SIMD 的 check、Clippy 和测试；
 `tfhe` 还检查 `xtask` 调用方并构建文档。`just ci` 执行 workspace 检查及底层、TFHE 两组 SIMD 检查。
 各后端 README 提供可运行示例与 Criterion 命令。
+共享 raw 输出 LUT 的构造基准包含分配与释放：
+
+```sh
+cargo bench -p primus_tfhe --bench lookup_table
+```

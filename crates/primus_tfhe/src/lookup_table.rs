@@ -1,3 +1,24 @@
+//! Compilation geometry for the current unsigned front-half input domain.
+//!
+//! Let `N` be the polynomial length, `s` the interleaving stride and `D` the
+//! programmed prefix length. The virtual ring has `M = N / s` coefficients.
+//! For message `m`, first encode `E(m) = round(m * q_in / t) mod q_in`, then
+//! compute `c[m] = R(E(m), q_in, 2M)` using the rounding rule in
+//! [`crate::backend_support`]. Both rounds have upward ties for unsigned input.
+//! Combining the two rounds can move plateau boundaries.
+//!
+//! Append the terminating center
+//! `c[D] = min(R(E(D), q_in, 2M), M)` with value `-f(0)`. Each position in
+//! `0..M` receives the nearest center's value, with ties going to the higher
+//! center. All centers, including the terminating one, must be strictly
+//! increasing. This defines both the last plateau and the unprogrammed tail; the
+//! latter is not an additional valid input domain. Negative rotation positions
+//! use the ring's negacyclic extension.
+//!
+//! Lane `j` occupies coefficients `s*r + j`. Extracting coefficient `j` after
+//! multiplying by `X^(-s*r)` reads that lane at virtual position `r`, negating
+//! once for each crossing of `M`. Current ManyLUTs use `s = output_count`.
+
 use core::fmt;
 
 use primus_encoding::{PlaintextEmbedding, RoundedCodec};
@@ -169,8 +190,9 @@ pub fn lookup_table_domain_len<T: FheUint>(
 
 /// Compiles already encoded outputs into a negacyclic lookup-table polynomial.
 ///
-/// This cross-crate helper is hidden because family parameter types should own
-/// the user-facing compilation API and supply their validated encoding parameters. The input uses unsigned rounded encoding with
+/// This cross-crate helper is hidden because family parameter types own the
+/// user-facing compilation API and supply their validated parameters.
+/// The input uses unsigned rounded encoding with
 /// `input_plaintext_modulus` and `lwe_modulus`; raw outputs must be canonical
 /// accumulator residues but may use any output scale. `domain_len` is a non-empty
 /// prefix of the independently programmable front half. Only `0..domain_len`

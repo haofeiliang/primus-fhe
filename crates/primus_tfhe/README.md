@@ -42,6 +42,25 @@ then use separate extraction. More outputs reduce rotation resolution and the
 available input-noise margin. This is one input evaluated by multiple functions,
 not batching independent ciphertexts.
 
+### Rotation layout
+
+Let `D` be the programmed prefix length, `s = output_count` (one for an ordinary
+LUT), and `M = N/s`. A message is encoded as `E(m) = round(m*q_in/t) mod q_in`,
+then mapped to the virtual center `R(E(m), q_in, 2M)`. Here
+`R(x,q,L) = floor((x*L + floor(q/2))/q) mod L`; both rounds have upward ties.
+Native `q_in` is `2^T::BITS`. Combining these rounds can change the table.
+
+The compiler assigns the nearest center's value, breaking midpoint ties toward
+the higher center. A final center at `min(R(E(D), q_in, 2M), M)` carries `-f(0)` and ends
+the programmed prefix. Coefficients beyond it are not another input domain.
+Raw outputs must already be canonical under `q_acc`; out-of-range values are
+rejected. The accumulator modulus and output scale are independent of `q_in`.
+
+Every backend quantizes each LWE coefficient as `s*R(x, q_in, 2N/s)` and rotates
+by `-R_s(b) + sum(R_s(a[i])*secret[i])`. This is not a single quantization of the
+decrypted phase. The rotation is a multiple of `s`, preserving lanes at `s*r+j`;
+extracting coefficient `j` reads that lane with the negacyclic sign.
+
 ## Encoding and key contracts
 
 | Interface | Input / output meaning |
@@ -79,3 +98,8 @@ These [recipes](../../justfile) cover all seven crates with default/nightly SIMD
 checks, Clippy and tests; `tfhe` also checks the `xtask` consumer and builds docs.
 `just ci` runs workspace checks and both the lower-level and TFHE SIMD checks.
 Backend READMEs provide runnable examples and Criterion commands.
+The shared raw-output LUT construction benchmark includes allocation and drop:
+
+```sh
+cargo bench -p primus_tfhe --bench lookup_table
+```

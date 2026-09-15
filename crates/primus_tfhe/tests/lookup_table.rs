@@ -1,5 +1,10 @@
 //! Shared LUT compiler boundaries, raw scales, and rotation layout.
+use std::{cmp::Reverse, fmt::Debug};
+
+use primus_integer::FheUint;
 use primus_modulus::{BarrettModulus, NativeModulus};
+use primus_reduce::RingContext;
+use primus_tfhe::backend_support::{modulus_switch, windowed_modulus_switch};
 use primus_tfhe::{
     LookupTableError, compile_encoded_lookup_table, compile_encoded_many_lookup_table,
 };
@@ -87,74 +92,258 @@ fn raw_compilation_validates_layout_encoding_and_canonical_outputs() {
     }
 }
 
-#[test]
-fn interleaved_residue_classes_preserve_independent_raw_scales() {
-    // The two outputs deliberately do not use the ordinary q/t scale.
-    // This is needed by Boolean and gadget-scaled circuit bootstrapping.
-    let raw = |input: usize, output| {
-        Ok(if output == 0 {
-            input as u32
-        } else {
-            (1 << 29) + input as u32
+// Independent arithmetic uses u128 even for native u64; all test domains are
+// small enough that the products fit. No RoundedCodec or production rotation
+// helper participates in the expected LUT geometry.
+fn round_ratio(numerator: u128, denominator: u128) -> u128 {
+    (numerator + denominator / 2) / denominator
+}
+
+fn rotate<T>(input: &[T], exponent: usize, q: u128) -> Vec<T>
+where
+    T: FheUint + Into<u128> + TryFrom<u128, Error: Debug>,
+{
+    let n = input.len();
+    let mut output = vec![T::ZERO; n];
+    for (index, &value) in input.iter().enumerate() {
+        let degree = (index + exponent) % (2 * n);
+        let value = value.into();
+        let value = if degree < n { value } else { (q - value) % q };
+        output[degree % n] = T::try_from(value).unwrap();
+    }
+    output
+}
+
+fn raw_output(input: usize, output: usize, q: u128) -> u128 {
+    // Independent raw scales include zero and residues near q, as used by
+    // Boolean and gadget-scaled LUTs.
+    match output % 4 {
+        0 => input as u128,
+        1 => q - 1 - input as u128,
+        2 => q / 8 + 3 * input as u128,
+        _ => q / 3 - input as u128,
+    }
+}
+
+fn check_layout<T, M>(
+    n: usize,
+    t: usize,
+    domain: usize,
+    count: usize,
+    input_q: Option<T>,
+    modulus: M,
+) where
+    T: FheUint + Into<u128> + TryFrom<u128, Error: Debug>,
+    M: RingContext<T>,
+{
+    let q = input_q.map_or(1u128 << T::BITS, Into::into);
+    let output_q = modulus
+        .explicit_value()
+        .map_or(1u128 << T::BITS, Into::into);
+    let virtual_n = n / count;
+    let centers: Vec<_> = (0..=domain)
+        .map(|input| {
+            let encoded = round_ratio(input as u128 * q, t as u128);
+            (round_ratio(encoded * (2 * virtual_n) as u128, q) as usize).min(virtual_n)
         })
+        .collect();
+    assert!(centers.windows(2).all(|pair| pair[0] < pair[1]));
+
+    let check = |polynomial: &[T]| {
+        for position in 0..2 * virtual_n {
+            // Nearest-center search, with ties going to the higher center,
+            // is independent of the compiler's midpoint/fill implementation.
+            let nearest = (0..=domain)
+                .min_by_key(|&input| {
+                    (
+                        centers[input].abs_diff(position % virtual_n),
+                        Reverse(input),
+                    )
+                })
+                .unwrap();
+            let rotated = rotate(polynomial, (2 * n - position * count) % (2 * n), output_q);
+            for (output, &actual) in rotated.iter().take(count).enumerate() {
+                // The extra center terminates the programmed prefix with
+                // -f(0); that tail is not another valid message.
+                let value = raw_output(
+                    if nearest == domain { 0 } else { nearest },
+                    output,
+                    output_q,
+                );
+                let negate = (nearest == domain) ^ (position >= virtual_n);
+                let expected = if negate {
+                    (output_q - value) % output_q
+                } else {
+                    value
+                };
+                assert_eq!(
+                    actual.into(),
+                    expected,
+                    "bits={}, q={q}, output_q={output_q}, N={n}, t={t}, D={domain}, k={count}, position={position}, output={output}",
+                    T::BITS,
+                );
+            }
+        }
     };
+    let value = |input, output| Ok(T::try_from(raw_output(input, output, output_q)).unwrap());
+    let t = T::try_from(t as u128).unwrap();
     let many =
-        compile_encoded_many_lookup_table(2, 64, 2, 4, None, NativeModulus::new(), raw).unwrap();
-    assert!(many.is_compatible(64, 4, None, None));
-    for output in 0..2 {
-        let single = compile_encoded_lookup_table(2, 32, 4, None, NativeModulus::new(), |input| {
-            raw(input, output)
-        })
-        .unwrap();
-        for (index, &value) in single.polynomial().as_ref().iter().enumerate() {
-            assert_eq!(many.polynomial().as_ref()[index * 2 + output], value);
+        compile_encoded_many_lookup_table(domain, n, count, t, input_q, modulus, value).unwrap();
+    assert!(many.is_compatible(n, t, input_q, modulus.explicit_value()));
+    check(many.polynomial().as_ref());
+    if count == 1 {
+        let single =
+            compile_encoded_lookup_table(domain, n, t, input_q, modulus, |input| value(input, 0))
+                .unwrap();
+        assert!(single.is_compatible(n, t, input_q, modulus.explicit_value()));
+        check(single.polynomial().as_ref());
+    }
+}
+
+fn check_word_layouts<T>()
+where
+    T: FheUint + Into<u128> + TryFrom<u128, Error: Debug>,
+{
+    let word_max = T::try_from((1u128 << T::BITS) - 1).unwrap();
+    for q in [
+        None,
+        Some(T::try_from(97u128).unwrap()),
+        Some(T::try_from(128u128).unwrap()),
+        Some(word_max),
+    ] {
+        for t in [3usize, 4, 5, 6] {
+            for domain in [1, t.div_ceil(2)] {
+                for count in [1, 2, 4] {
+                    check_layout(32, t, domain, count, q, NativeModulus::new());
+                    check_layout(
+                        32,
+                        t,
+                        domain,
+                        count,
+                        q,
+                        BarrettModulus::new(T::try_from(97u128).unwrap()),
+                    );
+                }
+            }
         }
     }
 }
 
 #[test]
-fn odd_and_even_domains_preserve_both_sides_of_each_rotation_center() {
-    use primus_encoding::{PlaintextEmbedding, RoundedCodec};
-    const Q: u32 = 97;
-    const N: usize = 64;
-    for t in [3u32, 4, 5] {
-        for count in [1, 2, 4] {
-            let domain_len = t.div_ceil(2) as usize;
-            let table = compile_encoded_many_lookup_table(
-                domain_len,
-                N,
-                count,
+fn compiled_luts_match_independent_negacyclic_oracle() {
+    check_word_layouts::<u16>();
+    check_word_layouts::<u32>();
+    check_word_layouts::<u64>();
+    // Double rounding gives center 13, whereas round(32/3) would give 11.
+    // Here that difference moves the actual plateau boundaries as well.
+    check_layout(16, 3, 2, 1, Some(5u32), BarrettModulus::new(97));
+}
+
+#[test]
+fn rotation_center_collisions_are_rejected() {
+    for (n, t, q, expected) in [
+        (
+            4,
+            6u32,
+            10,
+            LookupTableError::RotationCenterCollision {
+                first_input: 1,
+                second_input: 2,
+                exponent: 2,
+            },
+        ),
+        (
+            2,
+            3,
+            5,
+            LookupTableError::RotationCenterCollision {
+                first_input: 1,
+                second_input: 2,
+                exponent: 2,
+            },
+        ),
+    ] {
+        assert_eq!(
+            compile_encoded_lookup_table(
+                t.div_ceil(2) as usize,
+                n,
                 t,
-                Some(Q),
-                BarrettModulus::new(Q),
-                |input, output| Ok((1 + input * count + output) as u32),
+                Some(q),
+                BarrettModulus::new(97u32),
+                |_| Ok(1)
             )
-            .unwrap();
-            let codec = RoundedCodec::new(t, Some(Q));
-            let two_virtual_n = 2 * N / count;
-            for input in 0..domain_len {
-                let encoded = codec.encode_value(input as u32, PlaintextEmbedding::Unsigned);
-                // Independent integer rounding oracle for the windowed exponent.
-                let center = (encoded as usize * two_virtual_n + Q as usize / 2) / Q as usize;
-                for offset in [-1isize, 0, 1] {
-                    let rotation = center.wrapping_add_signed(offset) & (two_virtual_n - 1);
-                    for output in 0..count {
-                        let index = rotation * count + output;
-                        // Coefficient `output` of X^(-rotation*count) * LUT.
-                        let coefficient = table.polynomial().as_ref()[index % N];
-                        let actual = if index < N || coefficient == 0 {
-                            coefficient
-                        } else {
-                            Q - coefficient
-                        };
-                        assert_eq!(
-                            actual,
-                            (1 + input * count + output) as u32,
-                            "t={t}, count={count}, input={input}, offset={offset}"
-                        );
-                    }
+            .unwrap_err(),
+            expected,
+        );
+        // The same virtual layout is used by the interleaved compiler.
+        assert_eq!(
+            compile_encoded_many_lookup_table(
+                t.div_ceil(2) as usize,
+                n * 2,
+                2,
+                t,
+                Some(q),
+                BarrettModulus::new(97u32),
+                |_, _| Ok(1)
+            )
+            .unwrap_err(),
+            expected,
+        );
+    }
+}
+
+fn check_quantization<T>()
+where
+    T: FheUint + Into<u128> + TryFrom<u128, Error: Debug>,
+{
+    let native_q = 1u128 << T::BITS;
+    let check = |q: u128, native: bool, length: usize, value: u128| {
+        let modulus = (!native).then(|| T::try_from(q).unwrap());
+        let input = T::try_from(value).unwrap();
+        let expected = round_ratio(value * length as u128, q) as usize % length;
+        assert_eq!(modulus_switch(input, modulus, length), expected);
+        for window in [1, length / 2] {
+            let expected = round_ratio(value * (length / window) as u128, q) as usize
+                % (length / window)
+                * window;
+            assert_eq!(
+                windowed_modulus_switch(input, modulus, length, window),
+                expected
+            );
+        }
+    };
+    for length in [2, 8, 64] {
+        for q in 2..=33u128 {
+            for value in 0..q {
+                check(q, false, length, value);
+            }
+        }
+        for (q, native) in [(native_q, true), (native_q - 1, false)] {
+            for value in [0, 1, q - 1] {
+                check(q, native, length, value);
+            }
+            for index in 0..length {
+                let threshold = ((2 * index + 1) as u128 * q).div_ceil(2 * length as u128);
+                for value in [threshold - 1, threshold, threshold + 1] {
+                    check(q, native, length, value);
                 }
             }
         }
     }
+    if usize::BITS > T::BITS {
+        let length = usize::try_from(native_q).unwrap();
+        for value in [0, native_q / 2, native_q - 1] {
+            check(native_q, true, length, value);
+        }
+    }
+}
+
+#[test]
+fn coefficient_quantization_matches_wide_integer_oracle() {
+    check_quantization::<u16>();
+    check_quantization::<u32>();
+    check_quantization::<u64>();
+    // Rounding in the virtual ring differs from clearing low bits afterward.
+    assert_eq!(windowed_modulus_switch(2u32, Some(16), 16, 4), 4);
+    assert_eq!(modulus_switch(2u32, Some(16), 16) & !3, 0);
 }

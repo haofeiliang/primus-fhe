@@ -13,7 +13,12 @@ primus_lwe = { path = "../primus_lwe" }
 thiserror = { workspace = true }
 
 [dev-dependencies]
+criterion = { workspace = true }
 primus_modulus = { path = "../primus_modulus" }
+
+[[bench]]
+name = "lookup_table"
+harness = false
 
 [features]
 default = []

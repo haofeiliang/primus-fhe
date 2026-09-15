@@ -1,4 +1,12 @@
 //! Low-level helpers shared by TFHE execution backends.
+//!
+//! For canonical `x` modulo `q`, rotation quantization is
+//! `R(x, q, L) = floor((x * L + floor(q / 2)) / q) mod L`.
+//! Ties round upward, including the wrap from `L` to zero; `None` means
+//! `q = 2^T::BITS`. With stride `s`, let `R_s(x) = s * R(x, q, 2N/s)`.
+//! Backends rotate the LUT by
+//! `-R_s(b) + sum(R_s(a[i]) * secret[i])`, quantizing each LWE coefficient
+//! separately. Quantizing the decrypted phase once is not equivalent.
 
 use primus_integer::FheUint;
 
@@ -11,6 +19,12 @@ pub fn direct_exponent<T: FheUint>(value: T, two_n: usize) -> usize {
 }
 
 /// Modulus-switches one LWE coefficient into an exponent in `[0, 2N)`.
+///
+/// # Correctness
+///
+/// `two_n` must be a power of two at least two. With an explicit nonzero
+/// modulus, `value` must be canonical and `two_n` must fit in `T`.
+/// With the native modulus, `log2(two_n)` must not exceed `T::BITS`.
 #[inline]
 pub fn modulus_switch<T: FheUint>(value: T, modulus: Option<T>, two_n: usize) -> usize {
     match modulus {
@@ -23,9 +37,17 @@ pub fn modulus_switch<T: FheUint>(value: T, modulus: Option<T>, two_n: usize) ->
 /// Modulus-switches one LWE coefficient to a multiple of `window` in
 /// `[0, 2N)`.
 ///
-/// `window` must be a non-zero power of two dividing `two_n`. The discarded
-/// low exponent bits keep the residue classes of an interleaved PBSManyLUT
-/// accumulator independent during blind rotation.
+/// Computes `window * R(value, q, two_n / window)`: rounding happens in the
+/// smaller rotation domain, before scaling. Clearing low bits after ordinary
+/// modulus switching is not equivalent. Multiples of `window` preserve the
+/// residue classes of an interleaved PBSManyLUT accumulator.
+///
+/// # Correctness
+///
+/// Inherits [`modulus_switch`]'s coefficient requirements. `two_n` must be a
+/// power of two; `window` must be a power of two in `1..=two_n / 2`, leaving
+/// at least two virtual rotation positions. `two_n / window` must satisfy
+/// [`modulus_switch`]'s target-width requirements.
 #[inline]
 pub fn windowed_modulus_switch<T: FheUint>(
     value: T,
@@ -34,7 +56,7 @@ pub fn windowed_modulus_switch<T: FheUint>(
     window: usize,
 ) -> usize {
     debug_assert!(window.is_power_of_two());
-    debug_assert!(window <= two_n && two_n.is_multiple_of(window));
+    debug_assert!(window < two_n && two_n.is_multiple_of(window));
     modulus_switch(value, modulus, two_n / window) * window
 }
 
@@ -61,21 +83,4 @@ fn explicit_modulus_switch<T: FheUint>(value: T, modulus: T, two_n: usize) -> us
     let (lo, hi) = value.carrying_mul(target, modulus >> 1u32);
     let rounded = T::div_wide(lo, hi, modulus);
     rounded.try_into().unwrap() & (two_n - 1)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{explicit_modulus_switch, native_modulus_switch};
-
-    #[test]
-    fn modulus_switch_rounding_matches_integer_oracles() {
-        assert_eq!(native_modulus_switch(1u32 << 28, 8), 1);
-        assert_eq!(native_modulus_switch(u32::MAX, 8), 0);
-
-        const Q: u32 = 132_120_577;
-        for value in [0, 1, Q / 8, Q / 2, Q - 1] {
-            let oracle = ((value as u64 * 8 + (Q / 2) as u64) / Q as u64) as usize & 7;
-            assert_eq!(explicit_modulus_switch(value, Q, 8), oracle);
-        }
-    }
 }

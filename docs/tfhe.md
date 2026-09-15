@@ -26,7 +26,7 @@
 | 编译产物缺少真实域和布局的完整表达 | 保存执行、兼容性检查和后续组合实际需要的紧凑元数据 |
 | `ManyLookupTable` 名称覆盖面大于实际算法 | 当前实现是交错式 PBSManyLUT，不能用它承载所有 MVB 算法 |
 
-几何计算可以从约 `O(kD)` 降为 `O(D)`；函数求值仍为 `O(kD)`，系数填充仍为 `O(N)`。这些首先影响 LUT 构造，不能据此宣称在线 PBS 加速。基线没有共享 LUT 编译的 Criterion benchmark。
+几何计算可以从约 `O(kD)` 降为 `O(D)`；函数求值仍为 `O(kD)`，系数填充仍为 `O(N)`。这些首先影响 LUT 构造，不能据此宣称在线 PBS 加速。构造成本使用 [共享 Criterion benchmark](../crates/primus_tfhe/benches/lookup_table.rs) 单独测量，P1.1 基线见下文。
 
 源码入口：
 
@@ -92,13 +92,59 @@ MVB 还存在基于 BR 展开的路线。因此编译产物应由选定算法决
 
 | 问题 | 收敛位置 |
 | --- | --- |
-| 哪些输入元数据必须保存在 LUT 中、哪些仅供编译 | P1.1 定契约，P1.3 由真实调用方决定字段与检查边界 |
+| LUT 的具体字段与检查边界 | P1.1 的语义决定见下文；P1.3 实现并完整迁移调用方 |
 | 类型/方法最终命名、family 包装是否还有独立职责 | P1.3，完整迁移后不留无用途兼容层 |
 | 任意 `k` 与 stride 补齐 | P1.3 完成，不再作为 P2 的重复任务 |
 | 奇数全域在实际参数下的中心分离与误差余量 | P2.3，条件不足的参数明确拒绝 |
 | PBC 桶数、复制数、失败重试和安全/噪声条件 | P3.1，见专项文档；不能用经验成功率代替论证 |
 | 首个 MVB 算法、适用模数和输出编码 | P4.1，先确认因子分解与误差，再定编译产物 |
 | 大 LUT、Fourier/三元/NTRU 稀疏移植 | 由应用或实测触发，分别补充方案 |
+
+## P1.1 的精确契约与元数据决定
+
+几何公式及边界已归位到 [共享 README](../crates/primus_tfhe/README.zh_CN.md)、[编译模块](../crates/primus_tfhe/src/lookup_table.rs) 与 [量化 helper](../crates/primus_tfhe/src/backend_support.rs)。编译时中心经历编码和模切两次舍入；例如 `N=16, s=1, t=3, q_in=5, m=1` 得到中心 13，理想化的一次舍入会得到 11，且两者填充边界不同。
+
+当前执行采用 `R_s(x) = s*R(x,q_in,2N/s)`，先缩小量化域再乘步长；各系数独立量化后，总旋转为 `-R_s(b) + ΣR_s(a_i)*secret_i`。当前合法 `s <= N`，虚拟旋转域至少有两个位置；不要求 helper 支持没有调用方的单位置退化域。
+
+| 语义信息 | 保存/计算决定（P1.3 落实布局 API） |
+| --- | --- |
+| `N` | 从多项式长度得到，不重复保存可失配的长度字段 |
+| `t, q_in, q_acc` | 继续保存，分别绑定输入编码、旋转量化与系数算术 |
+| `D` | 应保存真实编程前缀长度，不能仅用 `ceil(t/2)` 推断；用于公开范围契约及组合，不声称能从 raw LWE 检查真实消息 |
+| `k, s` | 保存有效输出数 `k`；首版固定 `s=next_power_of_two(k)`，可推导步长，不强制保存两份冗余数值；两者数学角色必须分开 |
+| 中心、区间与临时行 | 构造期计算即可，不保存在 LUT 中，不引入持久中心数组 |
+| 输出尺度、实际秘密、变换身份 | raw 输出尺度由调用工作流说明；不作为通用 LUT 兼容性检查的一部分。秘密与变换身份由后端/调用方承担 |
+
+四后端已核对到量化、初始化与提取入口：
+
+| 路径 | 实际消费契约 |
+| --- | --- |
+| GLWE NTT / Fourier，BR→KS | 使用 small-LWE 输入模数；平凡 GLWE 初始化，BR 后环 KS，提取各输出的 compact LWE |
+| GLWE NTT / Fourier，KS→BR | 外部 LWE 先逆提取和环 KS 成 small LWE，再使用相同 BR 量化；最后提取完整 LWE |
+| NTRU NTT / Fourier | 使用 external-LWE 输入模数；旋转 LUT 后经 NLev[1] 初始化，BR 后 KS 至客户端秘密，再 compact extraction |
+| CBS 消费布局 | 有效 gadget 数可能小于物理槽数；布局/basis 绑定和一般投影前提保持，普通 PBS 的后置 KS 不自动套入 CBS |
+
+[独立 oracle](../crates/primus_tfhe/tests/lookup_table.rs) 使用 u128 比例舍入、逐项负循环旋转和最近中心搜索，不调用生产 codec 或旋转原语计算期望值。覆盖 u16/u32/u64、Native/显式模数、完整小环、短域、raw 尺度、舍入中点/回绕、相邻中心及终止中心碰撞。它验证几何和量化，不证明完整 PBS 的噪声失败概率。
+
+## P1.1 性能基线
+
+2026-09-15，生产编译算法与 `7526ada` 相同；本步新增构造 harness、契约和 oracle，尚未进行 P1.2 优化。[28 项数据](benchmarks/tfhe-p1.1.csv) 保存 Criterion mean 与 95% 置信区间，单位 ns；10 项为构造，18 项为在线单输出/4 输出。它们是后续同配置回归的参照，不是跨后端同安全强度比较。
+
+- 环境：x86_64 Linux，AMD Ryzen 9 9955HX3D，固定 CPU 0；governor 为 powersave，boost 开启，未隔离该 CPU 或关闭 SMT。
+- 工具链：rustc 1.98.0（88d9e12ae），cargo 1.98.0；默认 features，无 nightly SIMD。使用仓库构建配置。
+- 依赖：Criterion 0.8.2、rand 0.10.2、RustFFT 6.4.1、tfhe-fft 0.10.1。后续依赖或环境变更应重测基线。
+- 采样：每项 10 samples、1 s warm-up、3 s measurement；各 benchmark 顺序执行，不并行计时。
+- 构造：u32、N=1024，Native 或 Barrett `q=132120577`，`t/k` 为 `4/4, 16/1, 16/4, 16/16, 255/4`；计入验证、几何、分配、填充和结果释放。
+- 在线：沿用四后端 `benches/pbs.rs`，seed=42，N=1024、t=4；GLWE small-LWE 维数 512，NTRU 为 800，详细秘密分布/分解/噪声参数以各 fixture 为准。覆盖 GLWE 两种 order 和 Fourier 两种 FFT；复用 key、LUT、scratch 和输出，计时不含 setup。在线 ID 的 `k1` 指 GLWE 维数，输出数看 `many_4` 字段。
+
+复测命令：
+
+```sh
+taskset -c 0 cargo bench -p primus_tfhe --bench lookup_table -- --sample-size 10 --warm-up-time 1 --measurement-time 3 --save-baseline p1_1 --noplot
+taskset -c 0 cargo bench -p primus_tfhe_glwe_ntt -p primus_tfhe_glwe_fourier -p primus_tfhe_ntru_ntt -p primus_tfhe_ntru_fourier --bench pbs -- 'complete_pbs_(reused_output|many_4_reused_outputs)$' --sample-size 10 --warm-up-time 1 --measurement-time 3 --save-baseline p1_1 --noplot
+```
+
+P1.2 比较时将 `--save-baseline p1_1` 改为 `--baseline p1_1`，避免覆盖原样本。原始 Criterion 数据位于 `target/criterion/**/p1_1/`，可能被清理；CSV 是持久摘要。原样本缺失时应使用 P1.1 提交的源码和 harness 重建，不能把 CSV 当成 Criterion 样本输入。记录没有分配计数，计时 benchmark 也未插入全局 allocator 计数开销。
 
 ## 文献入口与证据边界
 
