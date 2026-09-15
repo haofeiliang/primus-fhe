@@ -68,11 +68,14 @@ applications should use context/family compilation methods.
 
 ## Validation
 
+Run from the workspace root:
+
 ```sh
-cargo test -p primus_tfhe
-cargo doc -p primus_tfhe --no-deps
+just tfhe
+just tfhe-simd
 ```
 
-See [implementation and validation steps](../../TFHE_REFACTOR_STEPS.md) for the
-explicit seven-crate default/SIMD commands. Backend READMEs provide runnable examples
-and Criterion commands.
+These [recipes](../../justfile) cover all seven crates with default/nightly SIMD
+checks, Clippy and tests; `tfhe` also checks the `xtask` consumer and builds docs.
+`just ci` runs workspace checks and both the lower-level and TFHE SIMD checks.
+Backend READMEs provide runnable examples and Criterion commands.

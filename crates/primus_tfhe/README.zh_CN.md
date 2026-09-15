@@ -58,10 +58,13 @@ Encoded LUT compiler 与 `backend_support` 服务于后端实现；普通应用�
 
 ## 验证
 
+在 workspace 根目录运行：
+
 ```sh
-cargo test -p primus_tfhe
-cargo doc -p primus_tfhe --no-deps
+just tfhe
+just tfhe-simd
 ```
 
-显式七包默认/SIMD 命令见[实施与验证步骤](../../TFHE_REFACTOR_STEPS.md)。
+这两个 [recipe](../../justfile) 覆盖七包默认 / nightly SIMD 的 check、Clippy 和测试；
+`tfhe` 还检查 `xtask` 调用方并构建文档。`just ci` 执行 workspace 检查及底层、TFHE 两组 SIMD 检查。
 各后端 README 提供可运行示例与 Criterion 命令。

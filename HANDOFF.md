@@ -5,9 +5,8 @@
 ## 当前状态与下一步
 
 - `primus_lattice`、`primus_lwe`、`primus_glwe`、`primus_ntru` 的既有整理和已批准原语补充基本完成；不因 TFHE 重构重新开启其整体重构。
-- 七个 `primus_tfhe*` crate 的源码、API、测试、示例、基准、feature 和文档分析已完成，覆盖边界见 [TFHE_REFACTOR_REVIEW.md](TFHE_REFACTOR_REVIEW.md) §9。
-- [TFHE_REFACTOR_STEPS.md](TFHE_REFACTOR_STEPS.md) 的 S0–S8 已完成：两族已接入 `LwePublicKey`，统一客户端 `try_new`；GLWE BSK / 三路 CBS 输出参数已收敛；公钥和私钥客户端均支持三类加密 `_to`；两路 GLWE context 已提供 Boolean 工厂；四后端已共享普通 PBS 阶段，NTT GLWE PBS/CBS 共用输入准备。文件职责、LUT 包装及测试归属已整理，公开导出保持。七 crate 双语 README 已补齐，GLWE basic 合并两种 order，两路 NTRU 已有可运行的 CBS → CMUX 示例。下一步为 S9 总体验收与维护入口收尾。
-- GLWE NTT 与两路 NTRU 已有 CBS；Fourier GLWE CBS 尚未实现。NTRU packing 按用户决定排除，不是 CBS 的前置工作；其他可选扩展见步骤文档 §5。
+- 七个 `primus_tfhe*` crate 的 S0–S9 重构与最终验收已完成，无阻塞项。两族 LWE 公钥客户端、加密输出复用、参数收敛、Boolean 工厂及 PBS 阶段共享均已落实；模块、测试、示例和七组双语文档已整理。后续按实际需求选择下述独立扩展，不自动推进。
+- GLWE NTT 与两路 NTRU 已有 CBS；当前能力矩阵见 [TFHE README](crates/primus_tfhe/README.zh_CN.md)。NTRU packing 按用户决定排除，不是 CBS 的前置工作。
 
 ## 已审范围索引
 
@@ -16,7 +15,7 @@
 | 基础 crate | 已完整复审 data、distr、gcd、integer、reduce、modulo、modulus、barrett_derive、factor、poly、ntt、fft、rns（省略 `primus_` 前缀）；后续变化以 Git 为准。 |
 | encoding / lattice | encoding 已完整覆盖，跨表示调用方按边界抽查；lattice 已覆盖类型/API/宏、算术、extraction、CMUX/外积及维护材料，并同步共享置换和 NTRU 外积工作区。 |
 | LWE / GLWE / NTRU | LWE 包括私钥、公钥、batch、KS 和 Signed 路径；GLWE 包括自同构、trace/投影、packing、SS；NTRU 包括擦除、basis、常数 gadget、自同构、trace/投影、同秘密 SS，不含 packing。定向后续修改不代表再次全量复审全部依赖。 |
-| TFHE | 七 crate 分析报告已覆盖目标层；底层仅按消费契约抽查，未重做完整底层审计、性能测量或安全证明。 |
+| TFHE | 七 crate 分析及 `f910551..38b122f` 重构改动复审已完成，覆盖 API、数学契约、调用方、测试、示例、benchmark、feature 和双语文档，未确认需修复的问题；底层按消费契约抽查，不代表重新完整审计。 |
 
 ## 当前 TFHE 工作必须保留的边界
 
@@ -25,7 +24,6 @@
 - CBS 保持可选独立参数/key/evaluator。一般 ManyLUT 不满足前缀展开的零尾前提，应走投影；NTRU CBS 留在 `f_acc` 下，不走普通 PBS 的后置 KS/extraction。
 - 布局或 basis 相同不能证明实际秘密一致；Fourier table 身份、输入规范表示和噪声预算仍需遵守相应公开契约。NTT 模逆元与 Fourier 无符号整数除法不能共用误差结论。
 - 不恢复 raw Ciphertext、LweBatch 或万能 domain/表示包装；复用底层已有原语。参数、布局和 basis 的检查留在拥有契约的边界。
-
 - TFHE 公钥绑定外部 LWE 秘密：GLWE 按 order 使用 n 或 kN，NTRU 使用客户端二进制前缀。复用 LWE 公钥，不新增 NTRU 环公钥。生成直接借用 Signed/Encoded 视图；公钥总噪声及 PBS 输入余量需独立评估，不能把单项采样器当作总噪声。
 - 两族三类客户端 `_to` 直接复用底层 LWE 内核，消息与维数错误先于采样/写入；输出遵循 raw LWE 的 body 布局前提。分配返回接口保留各自的高效初始化路径。
 
@@ -47,8 +45,24 @@
 | NTRU SS/CBS 参数与安全 | f/f² 误差放大、KDM/circular-security 假设及生产失败概率需要独立论证，功能测试不构成证明。 |
 | 恒时与平台 | 未做全库恒时证明或非 x86 全量验证；拒绝采样/逆元不承诺恒时，平台内核变化后须针对性验证。 |
 
+## TFHE 可选扩展
+
+这些项目未实施，不影响本轮重构完成；仅在具体需求明确后启动：
+
+- Fourier GLWE CBS、NTRU Boolean：分别复用已有 trace/SS 原语和 Boolean 编码/仿射逻辑，保留表示与尺度差异，补端到端验证。
+- batch client/PBS、PBS `_assign`：分别面向多个独立输入和链式原地求值；复用 evaluator，明确布局检查及覆盖输入前的依赖，不用 clone 隐藏分配。
+- ServerKey 存储量查询：用于替换 `xtask/src/ntru_params.rs` 的手写公式；明确系数存储、allocator 占用与 CBS live heap 的区别。
+
+独立 KSK 噪声、整数/message-carry 类型层继续等待明确需求。小型 family LUT 包装暂保留，避免为少量检查新增跨 crate API；ManyLUT 编译临时列仅在频繁动态编译成为实际负担时优化。序列化、GPU、多位 BR 不在本轮范围内。
+
 ## 验证与恢复入口
 
-- TFHE 各步骤的验证和显式七包 SIMD 命令见实施步骤文档 §4。分析基线的 `just simd` 未覆盖 TFHE；实际执行前核对当前 recipe，不能仅凭命令名认定覆盖。
+- [justfile](justfile)：`just tfhe` 覆盖七包默认 check / Clippy / test / doc 及 `xtask` check；`just tfhe-simd` 覆盖七包 nightly SIMD check / Clippy / test。`just ci` 覆盖 workspace 检查及两组 SIMD；原 `just simd` 仍只覆盖六个底层包。示例与 Criterion 命令见各后端 README。
 - 修改外积时还应覆盖 lattice、NTRU 及两路 NTRU TFHE；性能复测使用相应外积、NTRU primitives 和 TFHE PBS/CBS 基准，固定参数、CPU、工具链和 feature。
 - 公开接口入口：[LWE](crates/primus_lwe/README.zh_CN.md)、[GLWE](crates/primus_glwe/README.zh_CN.md)、[NTRU](crates/primus_ntru/README.zh_CN.md)、[lattice](crates/primus_lattice/README.zh_CN.md)、[TFHE 能力与各层入口](crates/primus_tfhe/README.zh_CN.md)。
+
+### S9 验收摘要（2026-09-15）
+
+在 x86_64 Linux、stable 1.98.0 / nightly 1.100.0 下，七包默认/SIMD 测试各 36 项、workspace nextest all-targets 1470 项（含 Criterion 冒烟）、六包 SIMD nextest 392 项、LWE/GLWE SIMD 测试 50 项均通过；相关 check、Clippy、格式、严格 rustdoc 和六个示例的两配置运行通过。未重做性能计时、非 x86 验证或生产噪声/安全证明。
+
+详细实施与 S6 性能记录保留在 Git 历史；当前验证应按改动重跑，benchmark 冒烟不代表性能结论。
