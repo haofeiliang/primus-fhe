@@ -1,6 +1,6 @@
 # Module review route
 
-Use this route for a module directory, a `mod.rs` plus child files, or a named Rust module.
+Use this route only for full review of a module directory, a `mod.rs` plus child files, or a named Rust module. Bounded questions use the workflow in `SKILL.md`.
 
 ## Required coverage
 
@@ -14,7 +14,7 @@ Use this route for a module directory, a `mod.rs` plus child files, or a named R
 
 ## Optional delegation
 
-Delegate only when the module has independent lanes such as scalar versus SIMD implementations, separate mathematical representations, or API surface versus test/feature coverage. Keep inventory, caller tracing, finding adjudication, and final validation in the main agent.
+Use the workload-based delegation policy in `SKILL.md`. Independent representations or API versus validation work may be useful boundaries; keep the inventory and finding adjudication in the main agent.
 
 ## Coverage ledger
 

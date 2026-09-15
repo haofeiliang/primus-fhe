@@ -1,6 +1,6 @@
 # Shared review checklist
 
-Apply every section that is relevant to the requested scope. Record non-applicable sections in the coverage ledger instead of silently skipping them.
+Apply sections relevant to the selected depth and target. For full review, consider every section; record material exclusions or unverified paths without enumerating routine non-applicable items. Repository conventions remain in `AGENTS.md`.
 
 ## 1. Contract and representation
 
@@ -13,18 +13,16 @@ Apply every section that is relevant to the requested scope. Record non-applicab
 ## 2. Types and API surface
 
 - Does each type name expose its mathematical role and representation without unnecessary abbreviations?
-- Are equivalent roles named consistently across sibling modules and crates?
-- Does the type enforce a real invariant, prevent misuse, or own reusable state? Flag wrappers that only move parameters or branches without doing so.
+- Does the type enforce a real invariant, prevent misuse, or own reusable state? Check abstraction and naming choices against `AGENTS.md` and concrete callers.
 - Check visibility, re-exports, feature gates, trait implementations, conversions, ownership, borrowing, and the validity of `Default`.
-- Check `#[must_use]` on constructors, accessors, conversions, and pure computations whose discarded result is probably a mistake; do not add it to in-place operations.
 
 ## 3. Readability, maintainability, and macros
 
 - Confirm that key control flow, ownership, representation changes, and numerical invariants can be understood locally without unnecessary indirection.
-- Check whether helpers and abstractions centralize a real invariant or stable repeated structure. Flag one-off wrappers, fragmented control flow, premature generalization, and abstractions that hide important differences between numerical backends.
+- Trace helpers for fragmented control flow or hidden numerical differences; identify the concrete cost before recommending a change.
 - Comments should explain non-obvious contracts and algorithmic reasons rather than restate code. Dense optimized kernels should document the proof or invariant that justifies their shape.
 - For non-trivial declarative or procedural macros, inspect the definition, representative invocations, generated API, relevant expansion when needed, and diagnostic/maintenance cost.
-- Keep a complex macro only when it materially removes stable repetition, centralizes generated invariants that must remain synchronized, or performs necessary compile-time generation more clearly than ordinary Rust. Otherwise prefer explicit functions, generics, traits, or implementations and recommend removing the macro.
+- Assess macro expansion and diagnostic costs against the abstraction criteria in `AGENTS.md`.
 - Do not report style preference alone as a finding; identify the concrete comprehension, modification, diagnostic, or misuse cost.
 
 ## 4. Function families
@@ -39,11 +37,9 @@ Build a small signature matrix for non-trivial families. Include the operation s
 
 ## 5. Parameters
 
-- Names should identify roles such as `input`, `lhs`, `rhs`, `addend`, `acc`, `output`, `scratch`, `context`, and `modulus`.
-- Within one API layer and function family, keep equivalent roles in the same order. Do not impose one global order across public wrappers, trait methods, and private kernels when their established conventions differ.
-- Prefer output and accumulator placement that matches sibling APIs and makes aliasing clear.
+- Compare parameter roles and order within the relevant API layer and function family; make input/output aliasing explicit rather than imposing a workspace-wide order.
 - Check whether scalar values, slices, contexts, and scratch storage are passed with appropriate ownership and mutability.
-- Reject repeated parameters only when a context or type would centralize a proven invariant, remove confirmed duplication, prevent common misuse, or measurably improve a hot path.
+- Identify whether repeated parameters represent independent choices or duplicate an invariant already owned elsewhere.
 - Confirm exact length relationships and whether they belong in the signature, documentation, a public boundary check, or a private `debug_assert!`.
 
 ## 6. Correctness and safety
@@ -65,12 +61,12 @@ Build a small signature matrix for non-trivial families. Include the operation s
 
 - Search direct callers, trait adapters, public re-exports, tests, examples, benchmarks, and documentation.
 - Rustdoc for public APIs and non-trivial internals should state assumptions, representation changes, output range/location, accumulator behavior, panic conditions, and workspace requirements when signatures cannot.
-- Map every retained test to an independent contract, regression, or diagnostic purpose. Recommend deleting duplicate coverage, mechanical forwarding tests, checks of standard-library behavior, and temporary investigation tests.
+- Within the review scope, map tests to independent contracts or diagnostic purposes. Recommend cleanup only for demonstrated redundancy, without removing distinct boundary coverage or expanding a local review into crate-wide test cleanup.
 - Prefer deterministic inputs or a simple oracle and focused differential coverage for paired backends, but do not add a test merely to demonstrate an already-proven implementation.
-- Map every retained benchmark to a stable performance question or long-term regression signal. Recommend deleting redundant cases, comparisons whose alternative no longer exists, and investigative benchmarks after their decision is made.
+- Within scope, map benchmarks to stable performance questions; identify redundant cases or comparisons whose alternative no longer exists.
 - Benchmarks should measure equivalent work and keep setup outside timed closures unless setup is the subject.
 - Check feature combinations that change implementation or API surface.
 
 ## 9. Finding threshold
 
-Report a finding only when code and callers establish a concrete defect, contract mismatch, unsafe condition, maintainability inconsistency with real misuse cost, or durable coverage gap. Record plausible but unproven concerns as residual risks, not findings. Do not reopen a still-current `HANDOFF.md` decision unless new source, caller, or validation evidence contradicts the basis for that decision.
+Use the finding threshold and decision-handling rules in `SKILL.md`. Missing coverage alone is a validation recommendation, not evidence of incorrect behavior. Explain concrete misuse or maintenance costs separately from optional consistency preferences.

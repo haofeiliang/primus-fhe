@@ -1,34 +1,34 @@
 # Crate review route
 
-Use this route for a crate name, crate root, or crate `Cargo.toml`.
+Use this route only after selecting full review of a crate. Mentioning a crate or its `Cargo.toml` in a bounded question does not select this route.
 
 ## Required inventory
 
-Before delegation, the main agent inventories:
+The main agent inventories:
 
 - `Cargo.toml`, `src/**/*.rs`, crate-local `tests/`, `examples/`, and `benches/`.
 - Features, optional dependencies, build scripts, generated sources, public re-exports, and workspace callers.
 - Major representations, API families, scalar/SIMD or checked/lazy variants, and high-risk kernels.
 
-The main agent reads the crate root, manifest, all public API definitions, and every file cited by a finding. Delegation supplements this ownership; it does not replace it.
+Read every handwritten source file, including private kernels and feature-gated implementations; inspect generators and generated contracts where applicable. Coverage may be divided among agents. The main agent reads the crate root, manifest, public API definitions, and evidence for every proposed finding, and accounts for remaining files.
 
-## Read-only review lanes
+## Coverage dimensions and optional delegation
 
-When sub-agent delegation is available, use these three materially independent lanes:
+Cover all three dimensions, directly or through independent read-only assignments sized to the actual workload:
 
 1. **API and consistency:** types, visibility, re-exports, naming, function-family matrices, parameter design/order, ownership, rustdoc, and workspace callers.
 2. **Math, safety, and performance:** representations, ranges, overflow, validation boundaries, unsafe preconditions, scalar/SIMD agreement, allocation, dispatch, and hot loops.
 3. **Validation surface:** tests, examples, benchmarks, features, platform-specific paths, and cross-crate behavioral impact.
 
-Each lane is read-only and must return its inspected file list, precise evidence, residual gaps, and suggested validation. The main agent independently checks each proposed finding against source and callers, removes duplicates, resolves contradictions, and owns severity.
+Use the delegation policy in `SKILL.md`; do not start one agent per dimension automatically. For multiple crates, group shared infrastructure and separate backend work to avoid redundant inspections.
 
-If delegation is unavailable, execute all three lanes sequentially and state that fact. Never reduce crate coverage merely because only one agent is active.
+Inventory workspace references to the public surface. Read all contract-sensitive and high-risk caller bodies; lower-risk callers may be sampled with an explicit selection boundary. Inspect all crate-local tests, examples, benchmarks, and docs. Sequential work must provide the same coverage.
 
 ## Validation
 
 Start narrow and expand in proportion to risk:
 
-1. Named tests or feature-specific checks for suspected defects.
+1. Named tests or feature-specific checks for suspected defects; use formatting check mode if formatting is relevant.
 2. `cargo check -p <crate> --all-targets`.
 3. `cargo test -p <crate>`.
 4. `cargo clippy -p <crate> --all-targets -- -D warnings`.
@@ -44,7 +44,7 @@ Report:
 - Public API and workspace callers: exhaustive or precisely bounded.
 - Major implementation families and representations compared.
 - Tests, examples, benchmarks, features, generated and platform-specific paths inspected.
-- Delegation: lanes used and how findings were independently verified; or sequential fallback.
+- Delegation, if used: assignments completed, findings independently verified, and any work taken over.
 - Validation: commands run, failures, and intentionally unverified paths.
 
 A crate review is incomplete if it samples source files without an inventory, omits workspace callers of public contracts, or equates passing commands with source review.

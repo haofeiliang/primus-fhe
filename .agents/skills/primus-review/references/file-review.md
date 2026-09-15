@@ -1,6 +1,6 @@
 # File review route
 
-Use this route for one explicitly named `.rs` file.
+Use this route only for full review of one `.rs` file. A diff or a question about one function uses the bounded workflow in `SKILL.md`.
 
 ## Required coverage
 

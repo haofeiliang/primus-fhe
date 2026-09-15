@@ -33,7 +33,6 @@ Thumbs.db
 
 # Common LLM agent files
 CLAUDE.md
-AGENTS.md
 AGENT.md
 .claude
 .codex
@@ -41,4 +40,3 @@ AGENT.md
 
 temp
 docs
-HANDOFF.md

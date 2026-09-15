@@ -1,51 +1,51 @@
 ---
 name: primus-review
-description: Review Primus FHE Rust source at file, module, or crate scope. Use when the user asks to inspect, review, audit, or re-review Rust code in this repository, including readability, maintainability, API consistency, mathematical contracts, safety, performance, macro complexity, callers, tests, features, examples, benchmarks, and documentation.
+description: Review changes, investigate a specific code question, or fully audit Primus FHE Rust files, modules, and crates. Use for requested code reviews and source-based refactoring analysis; not for routine implementation or planning solely from an existing report.
 ---
 
 # Primus Review
 
-Perform an evidence-backed review without changing source code unless the user separately asks for implementation.
+Perform an evidence-backed review. Review or analysis alone does not authorize source changes; honor implementation authorization already given in the conversation.
 
-## Select the scope
+## Select depth before file scope
 
-1. Read `references/checklist.md` completely.
-2. Classify the requested target and read exactly one matching scope guide completely:
-   - A single `.rs` file: `references/file-review.md`.
-   - A Rust module directory, a `mod.rs` plus its child files, or a named module: `references/module-review.md`.
-   - A crate name, crate root, or `Cargo.toml`: `references/crate-review.md`.
-3. If the user's wording and path disagree, use the semantic target. For example, a directory path means module scope even if it contains `mod.rs`.
-4. If multiple targets are requested, inventory each target and use the largest applicable scope guide.
+Choose from the user's requested outcome, not merely the path or the presence of a crate name:
+
+| Depth | Coverage |
+| --- | --- |
+| Change review | Inspect the selected diff, affected definitions, imported contracts, callers, and relevant validation assets. Search beyond changed lines when their correctness depends on unchanged code. |
+| Focused analysis | Trace the named question, operation, or API family through its dependencies and consumers. Expand only where evidence requires it. |
+| Full review | Inventory and inspect the whole requested file, module, or crate, including its validation assets and contract-sensitive callers. |
+
+“Review this new constructor in crate X” is bounded; “fully review crate X” is exhaustive. An unqualified request to review a whole named file/module/crate uses full review. For mixed requests, assign depth per target rather than expanding every target to the largest scope. State the selected boundary briefly; ask only when missing scope materially prevents useful work.
+
+For change review and focused analysis, use the relevant sections of [checklist.md](references/checklist.md); no full-scope guide is required. For full review, read the entire checklist and the matching guide for each distinct scope: [file](references/file-review.md), [module](references/module-review.md), or [crate](references/crate-review.md). A whole crate directory is crate scope; an explicitly requested `src/lib.rs` file review remains file scope unless the user asks for the whole crate. A module directory is module scope. Exclusions must be explicit, and unfinished full coverage must not be reported as complete.
 
 ## Establish repository state
 
-- Read the applicable `AGENTS.md` files and `HANDOFF.md` before reviewing. Treat still-current decisions in `HANDOFF.md` as settled constraints; do not relabel them as findings or gaps without new contradictory evidence.
+- Follow applicable `AGENTS.md`. Read current status in `HANDOFF.md`, then only decisions or linked notes relevant to the target. Do not reread unchanged instructions already available in context.
+- Respect explicit user scope decisions. Verify mathematical premises against current contracts. Revisit historical implementation or performance choices when their assumptions, callers, parameters, platform, or measurements change; explain the new evidence rather than treating preferences as permanent prohibitions.
 - Inspect `git status` and the relevant staged and unstaged diffs. Treat existing changes as user-owned evidence, not as review fixes.
-- Inventory the files, feature gates, public re-exports, tests, examples, benchmarks, and workspace callers required by the selected scope.
-- Create a coverage ledger before drawing conclusions. The final response must distinguish inspected, sampled, and intentionally excluded surfaces.
+- Track inspected files, contract-sensitive callers, relevant features/assets, and gaps as work proceeds. A short task needs only a compact coverage statement; full reviews use the chosen guide's ledger.
 
 ## Review the target
 
 - Trace public contracts from their highest owning boundary into private kernels and representative callers.
 - Compare related APIs as a family rather than judging names and parameter order in isolation.
-- Check whether control flow, ownership, abstractions, and numerical invariants remain locally understandable and whether each layer of indirection or code generation has a concrete maintenance benefit.
-- Verify mathematical statements against implementation and call paths: input domain, representation, layout, normalization, output range, overflow bounds, panic behavior, and workspace requirements.
-- Concentrate release checks at safe public or batch boundaries. Accept `debug_assert!` or documented unchecked private kernels only when their preconditions are established before use and no memory-safety condition depends on debug mode.
-- For scalar and SIMD implementations of the same operation, verify semantic agreement, tail handling, dispatch, and feature coverage.
-- Run the narrowest useful validation after source inspection. Do not use successful commands as a substitute for coverage.
-- Do not add deterministic tests merely to demonstrate an already-proven implementation. Recommend a test only when it protects an independent public contract or provides durable differential diagnostics.
+- Use the checklist to examine numerical invariants and maintenance costs; distinguish actual defects from style preferences.
+- Choose validation from inspected risks. Pure reviews use read-only formatting checks (`cargo fmt --all -- --check`) when useful, never formatting writes. Do not change tests, repair unrelated failures, or weaken checks without implementation authorization. Passing commands do not establish source coverage.
+- Recommend tests for independent contracts or durable diagnostics, not merely to mirror the implementation. Keep test and benchmark cleanup within the requested scope.
 
 ## Use delegation deliberately
 
-- For one file, review directly unless the file contains clearly independent implementations that materially benefit from separate inspection.
-- For a module, delegate only independent lanes when doing so improves coverage; the main agent still owns the module inventory and validates every reported finding.
-- For a full crate, when sub-agent delegation is available, use the three read-only lanes defined in `references/crate-review.md`. If it is unavailable, execute the same lanes sequentially and disclose that in the coverage statement.
-- Never relay a sub-agent finding without checking the cited code, contract, and caller evidence yourself.
+- Delegate read-only work only when independent portions and sufficient workload justify it. Small targets can be reviewed directly; API, math/performance, and validation are coverage dimensions, not a required number of agents.
+- Assign explicit boundaries and request inspected files, evidence, gaps, and suggested checks. The main agent owns the inventory, adjudicates findings against source and callers, and resolves contradictions.
+- If a sub-agent fails or cannot finish, take over the uncovered work using its evidence; do not count unfinished work as reviewed or repeat verified coverage without a reason.
 
 ## Report results
 
-- Lead with confirmed findings ordered as P0 (critical), P1 (high), P2 (normal), and P3 (low), each with a precise file and line reference. Do not assign priorities to optional improvements or residual risks.
+- For defect reviews, lead with confirmed findings ordered as P0 (critical), P1 (high), P2 (normal), and P3 (low), each with a precise file and line reference. For refactoring analysis, organize around the requested decisions while keeping confirmed defects separate.
 - For every finding, state the violated contract, the triggering conditions, the observable impact, and why an existing boundary or invariant does not make it safe.
-- Separate confirmed defects from intentional design contracts, residual test gaps, and optional consistency improvements.
+- Separate confirmed defects from intentional contracts, residual risks, and improvements; do not assign defect priorities to optional improvements or unproven risks. A missing test alone is a validation recommendation, not a prioritized defect, unless it violates an explicit testing requirement; do not infer a behavior bug from absent coverage.
 - When there are no findings, say so plainly and name the most important residual risks or unverified paths.
-- End with the coverage ledger and validation performed. Do not update `HANDOFF.md` during a review unless the user asks; when asked, record only current recoverable state rather than a history log.
+- End with scope-sized coverage (inspected, sampled, excluded) and validation performed. Do not update `HANDOFF.md` during a review unless the user asks; when asked, record only current recoverable state rather than a history log.
