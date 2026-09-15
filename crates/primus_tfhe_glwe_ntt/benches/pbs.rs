@@ -11,8 +11,8 @@ use primus_glwe::{GlweCiphertext, NttGlweKeySwitchingContext};
 use primus_lwe::LweCiphertext;
 use primus_ntt::{NttTable, U32NttTable};
 use primus_tfhe_glwe_ntt::{
-    BooleanEncryptor, BooleanEvaluator, BooleanGate, NttGlweBlindRotationContext, PbsOrder,
-    TfheContext, TfheParameters, boolean_parameters,
+    BooleanGate, NttGlweBlindRotationContext, PbsOrder, TfheContext, TfheParameters,
+    boolean_parameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -86,13 +86,11 @@ fn bench_order(c: &mut Criterion, order: PbsOrder) {
     );
     switched.extract_compact_lwe_to(&mut small_lwe, poly_length, modulus);
 
-    let boolean_encryptor = BooleanEncryptor::new(parameters, &client_key).unwrap();
+    let boolean_encryptor = context.boolean_encryptor(&client_key).unwrap();
     let boolean_lhs = boolean_encryptor.encrypt(true, &mut rng).unwrap();
     let boolean_rhs = boolean_encryptor.encrypt(false, &mut rng).unwrap();
     let mut boolean_output = boolean_lhs.clone();
-    let pbs_evaluator = context.evaluator(&server_key).unwrap();
-    let mut boolean_evaluator =
-        BooleanEvaluator::try_new(context.parameters(), pbs_evaluator).unwrap();
+    let mut boolean_evaluator = context.boolean_evaluator(&server_key).unwrap();
 
     let glwe_dimension = parameters.glwe().dimension();
     let mut group = c.benchmark_group(format!(

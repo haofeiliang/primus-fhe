@@ -8,9 +8,7 @@ use primus_fft::{FftTable, RustFftTable};
 use primus_glwe::{GlweParameters, SecretKeyDistr};
 use primus_lwe::LweParameters;
 use primus_modulus::NativeModulus;
-use primus_tfhe_glwe_fourier::{
-    BooleanDecryptor, BooleanEncryptor, BooleanEvaluator, PbsOrder, TfheContext, TfheParameters,
-};
+use primus_tfhe_glwe_fourier::{BooleanGate, LweCiphertext, PbsOrder, TfheContext, TfheParameters};
 
 const LWE_DIMENSION: usize = 4;
 const GLWE_DIMENSION: usize = 1;
@@ -64,7 +62,8 @@ fn main() {
     let toggle = context.compile_lookup_table_slice(&[1u32, 0]).unwrap();
     let mut input = encryptor.encrypt_padded(0u32, &mut rng).unwrap();
     let mut evaluator = context.evaluator(&server_key).unwrap();
-    let output = evaluator.apply_lookup_table(&input, &toggle);
+    let mut output = LweCiphertext::zero(context.parameters().ciphertext_lwe_dimension());
+    evaluator.apply_lookup_table_to(&input, &toggle, &mut output);
     assert_eq!(decryptor.decrypt::<u32>(&output).unwrap(), 1);
 
     // Two functions share one blind rotation and ring key switch.
@@ -81,26 +80,28 @@ fn main() {
     encryptor
         .encrypt_padded_to(1u32, &mut input, &mut rng)
         .unwrap();
-    let outputs = evaluator.apply_many_lookup_table(&input, &paired);
+    let mut outputs = vec![output; paired.output_count()];
+    evaluator.apply_many_lookup_table_to(&input, &paired, &mut outputs);
     assert_eq!(decryptor.decrypt::<u32>(&outputs[0]).unwrap(), 1);
     assert_eq!(decryptor.decrypt::<u32>(&outputs[1]).unwrap(), 0);
 
     // The Boolean layer uses the paper's t=4 encoding and hides its special
     // accumulator and post-PBS correction.
-    let boolean_encryptor = BooleanEncryptor::new(context.parameters(), &client_key).unwrap();
-    let boolean_decryptor = BooleanDecryptor::new(context.parameters(), &client_key).unwrap();
+    let boolean_encryptor = context.boolean_encryptor(&client_key).unwrap();
+    let boolean_decryptor = context.boolean_decryptor(&client_key).unwrap();
     let lhs = boolean_encryptor.encrypt(true, &mut rng).unwrap();
     let rhs = boolean_encryptor.encrypt(false, &mut rng).unwrap();
-    let pbs_evaluator = context.evaluator(&server_key).unwrap();
-    let mut boolean_evaluator =
-        BooleanEvaluator::try_new(context.parameters(), pbs_evaluator).unwrap();
+    let mut boolean_evaluator = context.boolean_evaluator(&server_key).unwrap();
 
-    let and = boolean_evaluator.and(&lhs, &rhs);
-    let xor = boolean_evaluator.xor(&lhs, &rhs);
-    let selected = boolean_evaluator.mux(&lhs, &xor, &and);
-    assert!(!boolean_decryptor.decrypt(&and).unwrap());
-    assert!(boolean_decryptor.decrypt(&xor).unwrap());
-    assert!(boolean_decryptor.decrypt(&selected).unwrap());
+    let mut output = rhs.clone();
+    for (gate, expected) in [(BooleanGate::And, false), (BooleanGate::Xor, true)] {
+        boolean_evaluator.evaluate_binary_to(gate, &lhs, &rhs, &mut output);
+        assert_eq!(boolean_decryptor.decrypt(&output).unwrap(), expected);
+    }
+    boolean_evaluator.not_to(&lhs, &mut output);
+    assert!(!boolean_decryptor.decrypt(&output).unwrap());
+    boolean_evaluator.mux_to(&lhs, &lhs, &rhs, &mut output);
+    assert!(boolean_decryptor.decrypt(&output).unwrap());
 
     println!("raw PBS and Boolean Fourier examples succeeded");
 }

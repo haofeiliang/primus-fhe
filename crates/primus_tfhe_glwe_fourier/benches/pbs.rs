@@ -1,5 +1,7 @@
-use rand::{SeedableRng, rngs::StdRng};
-// cargo bench -p primus_tfhe_glwe_fourier --bench pbs
+//! PBS stages and complete evaluations with precomputed keys and reusable scratch.
+//! Allocating and reused-output cases are named separately; setup is not timed.
+//!
+//! cargo bench -p primus_tfhe_glwe_fourier --bench pbs
 
 use std::hint::black_box;
 
@@ -10,9 +12,9 @@ use primus_glwe::{FourierGlweKeySwitchingContext, GlweCiphertext, GlweParameters
 use primus_lwe::{LweCiphertext, LweParameters};
 use primus_modulus::NativeModulus;
 use primus_tfhe_glwe_fourier::{
-    BooleanEncryptor, BooleanEvaluator, BooleanGate, FourierGlweBlindRotationContext, PbsOrder,
-    TfheContext, TfheParameters,
+    BooleanGate, FourierGlweBlindRotationContext, PbsOrder, TfheContext, TfheParameters,
 };
+use rand::{SeedableRng, rngs::StdRng};
 
 // Performance-comparison profile, not a security recommendation.
 const LWE_DIMENSION: usize = 512;
@@ -103,13 +105,11 @@ fn bench_order(c: &mut Criterion, order: PbsOrder) {
     );
     switched.extract_compact_lwe_to(&mut small_lwe, POLY_LENGTH, modulus);
 
-    let boolean_encryptor = BooleanEncryptor::new(parameters, &client_key).unwrap();
+    let boolean_encryptor = context.boolean_encryptor(&client_key).unwrap();
     let boolean_lhs = boolean_encryptor.encrypt(true, &mut rng).unwrap();
     let boolean_rhs = boolean_encryptor.encrypt(false, &mut rng).unwrap();
     let mut boolean_output = boolean_lhs.clone();
-    let pbs_evaluator = context.evaluator(&server_key).unwrap();
-    let mut boolean_evaluator =
-        BooleanEvaluator::try_new(context.parameters(), pbs_evaluator).unwrap();
+    let mut boolean_evaluator = context.boolean_evaluator(&server_key).unwrap();
 
     let mut group = c.benchmark_group(format!(
         "tfhe_pbs/fourier/u32/{}/n{POLY_LENGTH}/k{GLWE_DIMENSION}/small_lwe{}/external_lwe{}",

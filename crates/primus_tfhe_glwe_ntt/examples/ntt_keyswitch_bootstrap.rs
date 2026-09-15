@@ -8,9 +8,7 @@ use primus_glwe::{GlweParameters, SecretKeyDistr};
 use primus_lwe::LweParameters;
 use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, U32NttTable};
-use primus_tfhe_glwe_ntt::{
-    BooleanDecryptor, BooleanEncryptor, BooleanEvaluator, PbsOrder, TfheContext, TfheParameters,
-};
+use primus_tfhe_glwe_ntt::{PbsOrder, TfheContext, TfheParameters};
 
 const LWE_DIMENSION: usize = 4;
 const GLWE_DIMENSION: usize = 1;
@@ -70,13 +68,11 @@ fn main() {
     assert_eq!(decryptor.decrypt::<u32>(&output).unwrap(), 1);
 
     // The Boolean client and evaluator select the same order automatically.
-    let boolean_encryptor = BooleanEncryptor::new(context.parameters(), &client_key).unwrap();
-    let boolean_decryptor = BooleanDecryptor::new(context.parameters(), &client_key).unwrap();
+    let boolean_encryptor = context.boolean_encryptor(&client_key).unwrap();
+    let boolean_decryptor = context.boolean_decryptor(&client_key).unwrap();
     let lhs = boolean_encryptor.encrypt(true, &mut rng).unwrap();
     let rhs = boolean_encryptor.encrypt(false, &mut rng).unwrap();
-    let pbs_evaluator = context.evaluator(&server_key).unwrap();
-    let mut boolean_evaluator =
-        BooleanEvaluator::try_new(context.parameters(), pbs_evaluator).unwrap();
+    let mut boolean_evaluator = context.boolean_evaluator(&server_key).unwrap();
     let xor = boolean_evaluator.xor(&lhs, &rhs);
     assert!(boolean_decryptor.decrypt(&xor).unwrap());
 

@@ -6,7 +6,7 @@
 
 - `primus_lattice`、`primus_lwe`、`primus_glwe`、`primus_ntru` 的既有整理和已批准原语补充基本完成；不因 TFHE 重构重新开启其整体重构。
 - 七个 `primus_tfhe*` crate 的源码、API、测试、示例、基准、feature 和文档分析已完成，覆盖边界见 [TFHE_REFACTOR_REVIEW.md](TFHE_REFACTOR_REVIEW.md) §9。
-- [TFHE_REFACTOR_STEPS.md](TFHE_REFACTOR_STEPS.md) 的 S0–S4 已完成：两族已接入 `LwePublicKey`，统一客户端 `try_new`；GLWE BSK / 三路 CBS 输出参数已收敛；公钥和私钥客户端均支持三类加密 `_to`。S5–S9 尚未实施，下一步为 S5 的 GLWE Boolean 工厂与推荐调用流程。
+- [TFHE_REFACTOR_STEPS.md](TFHE_REFACTOR_STEPS.md) 的 S0–S5 已完成：两族已接入 `LwePublicKey`，统一客户端 `try_new`；GLWE BSK / 三路 CBS 输出参数已收敛；公钥和私钥客户端均支持三类加密 `_to`；两路 GLWE context 已提供 Boolean 工厂。S6–S9 尚未实施，下一步为 S6：先测量目标路径，再按后端整理 PBS 阶段复用和输出创建。
 - GLWE NTT 与两路 NTRU 已有 CBS；Fourier GLWE CBS 尚未实现。NTRU packing 按用户决定排除，不是 CBS 的前置工作；其他可选扩展见步骤文档 §5。
 
 ## 已审范围索引

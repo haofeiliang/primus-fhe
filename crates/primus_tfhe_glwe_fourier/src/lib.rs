@@ -7,6 +7,12 @@
 //! rotation resolution; [`ManyLookupTable`] describes the layout and noise tradeoff.
 //! Public PBS checks LUT encoding/moduli/length and all output dimensions before
 //! writing. Raw input key, encoding and noise remain caller requirements.
+//!
+//! Use [`TfheContext::boolean_encryptor`], [`TfheContext::boolean_decryptor`] and
+//! [`TfheContext::boolean_evaluator`] to bind Boolean operations to the same
+//! context (`t = 4`). Create the evaluator once, then reuse output storage with
+//! [`BooleanEvaluator::evaluate_binary_to`], [`BooleanEvaluator::not_to`] and
+//! [`BooleanEvaluator::mux_to`].
 
 #![deny(missing_docs)]
 

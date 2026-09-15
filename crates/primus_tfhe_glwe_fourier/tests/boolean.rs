@@ -3,19 +3,12 @@ use primus_fft::{FftTable, RustFftTable};
 use primus_glwe::{GlweParameters, SecretKeyDistr};
 use primus_lwe::LweParameters;
 use primus_modulus::NativeModulus;
-use primus_tfhe_glwe_fourier::{
-    BooleanDecryptor, BooleanEncryptor, BooleanEvaluator, BooleanGate, PbsOrder, TfheContext,
-    TfheParameters,
-};
+use primus_tfhe_glwe_fourier::{BooleanGate, PbsOrder, TfheContext, TfheParameters};
 use rand::{SeedableRng, rngs::StdRng};
 
 const POLY_LENGTH: usize = 256;
 
-fn parameters() -> TfheParameters<u32> {
-    parameters_with_order(PbsOrder::BootstrapKeyswitch)
-}
-
-fn parameters_with_order(pbs_order: PbsOrder) -> TfheParameters<u32> {
+fn parameters(pbs_order: PbsOrder) -> TfheParameters<u32> {
     let lwe = LweParameters::new(
         4,
         4,
@@ -43,77 +36,76 @@ fn parameters_with_order(pbs_order: PbsOrder) -> TfheParameters<u32> {
 }
 
 #[test]
-fn evaluates_boolean_gates_with_keyswitch_then_bootstrap() {
-    let table = RustFftTable::new(POLY_LENGTH.trailing_zeros()).unwrap();
-    let context =
-        TfheContext::try_new(parameters_with_order(PbsOrder::KeyswitchBootstrap), table).unwrap();
-    let mut rng = StdRng::seed_from_u64(42);
-    let (client_key, server_key) = context.generate_keys(&mut rng).unwrap();
-    let encryptor = BooleanEncryptor::new(context.parameters(), &client_key).unwrap();
-    let decryptor = BooleanDecryptor::new(context.parameters(), &client_key).unwrap();
-    let pbs_evaluator = context.evaluator(&server_key).unwrap();
-    let mut evaluator = BooleanEvaluator::try_new(context.parameters(), pbs_evaluator).unwrap();
-    let dimension = context.parameters().ciphertext_lwe_dimension();
+fn boolean_factories_support_truth_tables_and_reused_output_in_both_orders() {
+    for order in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
+        let table = RustFftTable::new(POLY_LENGTH.trailing_zeros()).unwrap();
+        let context = TfheContext::try_new(parameters(order), table).unwrap();
+        let mut rng = StdRng::seed_from_u64(42);
+        let (client_key, server_key) = context.generate_keys(&mut rng).unwrap();
+        let encryptor = context.boolean_encryptor(&client_key).unwrap();
+        let decryptor = context.boolean_decryptor(&client_key).unwrap();
+        let mut evaluator = context.boolean_evaluator(&server_key).unwrap();
+        let inputs = [
+            encryptor.encrypt(false, &mut rng).unwrap(),
+            encryptor.encrypt(true, &mut rng).unwrap(),
+        ];
+        let mut output = inputs[0].clone();
+        assert_eq!(
+            output.as_raw().dimension(),
+            context.parameters().ciphertext_lwe_dimension()
+        );
 
-    for lhs in [false, true] {
-        for rhs in [false, true] {
-            let lhs_ciphertext = encryptor.encrypt(lhs, &mut rng).unwrap();
-            let rhs_ciphertext = encryptor.encrypt(rhs, &mut rng).unwrap();
-            assert_eq!(lhs_ciphertext.as_raw().dimension(), dimension);
-            for (gate, expected) in [
-                (BooleanGate::And, lhs & rhs),
-                (BooleanGate::Nand, !(lhs & rhs)),
-                (BooleanGate::Or, lhs | rhs),
-                (BooleanGate::Nor, !(lhs | rhs)),
-                (BooleanGate::Xor, lhs ^ rhs),
-                (BooleanGate::Xnor, !(lhs ^ rhs)),
-            ] {
-                let output = evaluator.evaluate_binary(gate, &lhs_ciphertext, &rhs_ciphertext);
-                assert_eq!(decryptor.decrypt(&output).unwrap(), expected, "{gate:?}");
+        for lhs in [false, true] {
+            for rhs in [false, true] {
+                for (gate, expected) in [
+                    (BooleanGate::And, lhs & rhs),
+                    (BooleanGate::Nand, !(lhs & rhs)),
+                    (BooleanGate::Or, lhs | rhs),
+                    (BooleanGate::Nor, !(lhs | rhs)),
+                    (BooleanGate::Xor, lhs ^ rhs),
+                    (BooleanGate::Xnor, !(lhs ^ rhs)),
+                ] {
+                    evaluator.evaluate_binary_to(
+                        gate,
+                        &inputs[lhs as usize],
+                        &inputs[rhs as usize],
+                        &mut output,
+                    );
+                    assert_eq!(
+                        decryptor.decrypt(&output).unwrap(),
+                        expected,
+                        "{order:?} {gate:?}"
+                    );
+                }
             }
         }
-    }
-}
-
-#[test]
-fn evaluates_boolean_helpers_and_reused_output() {
-    let table = RustFftTable::new(POLY_LENGTH.trailing_zeros()).unwrap();
-    let context = TfheContext::try_new(parameters(), table).unwrap();
-    let mut rng = StdRng::seed_from_u64(42);
-    let (client_key, server_key) = context.generate_keys(&mut rng).unwrap();
-    let encryptor = BooleanEncryptor::new(context.parameters(), &client_key).unwrap();
-    let decryptor = BooleanDecryptor::new(context.parameters(), &client_key).unwrap();
-    let pbs_evaluator = context.evaluator(&server_key).unwrap();
-    let mut evaluator = BooleanEvaluator::try_new(context.parameters(), pbs_evaluator).unwrap();
-
-    for value in [false, true] {
-        let input = encryptor.encrypt(value, &mut rng).unwrap();
-        let output = evaluator.not(&input);
-        assert_eq!(decryptor.decrypt(&output).unwrap(), !value);
-    }
-
-    for condition in [false, true] {
-        for then_value in [false, true] {
-            for else_value in [false, true] {
-                let condition_ciphertext = encryptor.encrypt(condition, &mut rng).unwrap();
-                let then_ciphertext = encryptor.encrypt(then_value, &mut rng).unwrap();
-                let else_ciphertext = encryptor.encrypt(else_value, &mut rng).unwrap();
-                let output =
-                    evaluator.mux(&condition_ciphertext, &then_ciphertext, &else_ciphertext);
-                assert_eq!(
-                    decryptor.decrypt(&output).unwrap(),
-                    if condition { then_value } else { else_value }
-                );
+        for value in [false, true] {
+            evaluator.not_to(&inputs[value as usize], &mut output);
+            assert_eq!(decryptor.decrypt(&output).unwrap(), !value);
+        }
+        for condition in [false, true] {
+            for then_value in [false, true] {
+                for else_value in [false, true] {
+                    evaluator.mux_to(
+                        &inputs[condition as usize],
+                        &inputs[then_value as usize],
+                        &inputs[else_value as usize],
+                        &mut output,
+                    );
+                    assert_eq!(
+                        decryptor.decrypt(&output).unwrap(),
+                        if condition { then_value } else { else_value }
+                    );
+                }
             }
         }
-    }
 
-    let true_ciphertext = encryptor.encrypt(true, &mut rng).unwrap();
-    let mut current = encryptor.encrypt(false, &mut rng).unwrap();
-    let mut next = current.clone();
-    for _ in 0..16 {
-        evaluator.evaluate_binary_to(BooleanGate::Nand, &current, &true_ciphertext, &mut next);
-        core::mem::swap(&mut current, &mut next);
+        // Feed gate results into subsequent gates while reusing both buffers.
+        let mut current = inputs[0].clone();
+        for step in 0..16 {
+            evaluator.evaluate_binary_to(BooleanGate::Nand, &current, &inputs[1], &mut output);
+            core::mem::swap(&mut current, &mut output);
+            assert_eq!(decryptor.decrypt(&current).unwrap(), step % 2 == 0);
+        }
     }
-    assert!(!decryptor.decrypt(&current).unwrap());
 }

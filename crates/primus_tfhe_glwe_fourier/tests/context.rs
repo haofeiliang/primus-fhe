@@ -100,17 +100,9 @@ fn fresh_and_split_keys_support_both_pbs_orders() {
                     assert_eq!(decryptor.decrypt::<u32>(&output).unwrap(), 1 - message);
                 }
             }
-            let boolean_encryptor =
-                primus_tfhe_glwe_fourier::BooleanEncryptor::new(context.parameters(), &public)
-                    .unwrap();
-            let boolean_decryptor =
-                primus_tfhe_glwe_fourier::BooleanDecryptor::new(context.parameters(), client)
-                    .unwrap();
-            let mut boolean_evaluator = primus_tfhe_glwe_fourier::BooleanEvaluator::try_new(
-                context.parameters(),
-                evaluator,
-            )
-            .unwrap();
+            let boolean_encryptor = context.boolean_encryptor(&public).unwrap();
+            let boolean_decryptor = context.boolean_decryptor(client).unwrap();
+            let mut boolean_evaluator = context.boolean_evaluator(server).unwrap();
             let lhs = boolean_encryptor.encrypt(true, &mut rng).unwrap();
             let rhs = boolean_encryptor.encrypt(false, &mut rng).unwrap();
             assert!(

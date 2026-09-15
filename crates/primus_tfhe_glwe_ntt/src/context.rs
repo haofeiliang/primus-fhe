@@ -4,6 +4,7 @@ use primus_tfhe::{LookupTable, ManyLookupTable};
 use primus_tfhe_glwe::GlweClientKey as ClientKey;
 
 use crate::{
+    BooleanDecryptor, BooleanEncryptor, BooleanError, BooleanEvaluator,
     CircuitBootstrapEvaluationError, CircuitBootstrapEvaluator, CircuitBootstrapKey,
     CircuitBootstrapKeyError, CircuitBootstrapParameters, Decryptor, Encryptor, Evaluator,
     KeyGenerator, ServerKey, TfheParameters,
@@ -101,6 +102,39 @@ where
         server_key: &'a ServerKey<T>,
     ) -> Result<Evaluator<'a, T, Table>, TfheEvaluationError> {
         Evaluator::try_new(self, server_key)
+    }
+
+    /// Creates a Boolean encryptor for a secret or public key, requiring `t = 4`.
+    /// Public-key contracts follow [`primus_tfhe_glwe::GlweEncryptionKey`].
+    pub fn boolean_encryptor<'a, Key>(
+        &'a self,
+        key: &'a Key,
+    ) -> Result<BooleanEncryptor<'a, T, Key>, BooleanError>
+    where
+        Key: primus_tfhe_glwe::GlweEncryptionKey<
+                T,
+                primus_modulus::BarrettModulus<T>,
+                primus_modulus::BarrettModulus<T>,
+            >,
+    {
+        BooleanEncryptor::new(&self.parameters, key)
+    }
+
+    /// Creates a Boolean decryptor after checking `t = 4` and the client key.
+    pub fn boolean_decryptor<'a>(
+        &'a self,
+        client_key: &'a ClientKey<T>,
+    ) -> Result<BooleanDecryptor<'a, T>, BooleanError> {
+        BooleanDecryptor::new(&self.parameters, client_key)
+    }
+
+    /// Creates a Boolean evaluator with this context's PBS, gate LUTs and workspace.
+    /// Requires `t = 4`; online `_to` operations reuse the allocated storage.
+    pub fn boolean_evaluator<'a>(
+        &'a self,
+        server_key: &'a ServerKey<T>,
+    ) -> Result<BooleanEvaluator<'a, T, Table>, BooleanError> {
+        BooleanEvaluator::try_new(&self.parameters, self.evaluator(server_key)?)
     }
 
     /// Generates the optional trace-projection and scheme-switching key material.

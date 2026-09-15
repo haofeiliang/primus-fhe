@@ -3,7 +3,7 @@
 制定日期：2026-09-15。
 依据：[重构分析报告](TFHE_REFACTOR_REVIEW.md)、[仓库规范](AGENTS.md) 和 [当前交接决定](HANDOFF.md)。
 
-本文把分析建议拆成可独立验收的实施步骤，供明确要求实现时使用。S0–S4 已于 2026-09-15 完成，起始源码基线为 `f9105515cb775baf8a2461306e46f154abef5333`；S5–S9 尚未实施。分析报告基线为 `e493df6`；后续开始修改时仍应重新核对代码，不能把历史测试结果当作当前验证结果。
+本文把分析建议拆成可独立验收的实施步骤，供明确要求实现时使用。S0–S5 已于 2026-09-15 完成，起始源码基线为 `f9105515cb775baf8a2461306e46f154abef5333`；S6–S9 尚未实施。分析报告基线为 `e493df6`；后续开始修改时仍应重新核对代码，不能把历史测试结果当作当前验证结果。
 
 ## 1. 范围、顺序与完成目标
 
@@ -222,6 +222,18 @@ S3a、S3b 及调用方迁移已完成。另统一了 GLWE 内外层 `cipher_modu
 4. 使用已有 `evaluate_binary_to`、`not_to`、`mux_to`；不为六个门重复实现一套 `_to`。
 
 **验证与完成条件：** 两种 order 下六门真值表、NOT、MUX 和重复输出正确；两个后端的示例均能编译运行，调用方无需反复手动传递同一 context 参数。到此可单独验收第一轮 API 改善。
+
+#### S5 执行结果（2026-09-15）
+
+两路 GLWE context 已提供三种 Boolean 工厂，直接组合现有适配器和 PBS evaluator，返回已有 `BooleanError`；加密工厂支持公钥和私钥。泛型 `BooleanEvaluator::try_new` 保留，并明确独立传入参数时的匹配契约。
+
+四个 GLWE 示例及 benchmark 的构造代码已迁移；basic 示例展示 LUT 与 Boolean 的 `_to` 输出复用。合并原先按 order 分散的 Boolean 测试，两种顺序均覆盖六门真值表、NOT、MUX 和连续门输出；现有 context 测试通过工厂验证公钥输入。
+
+- 格式、diff 检查与 workspace all-targets check 通过。
+- GLWE family 及两个后端默认 / nightly SIMD 测试各 22 项通过；两配置 all-targets Clippy（`-D warnings`）通过。
+- 三包严格 rustdoc 和四个 GLWE 示例独立运行通过。
+
+未改动门运算内核或 benchmark 计时工作负载，未运行性能计时或完整 workspace 测试。S5 无阻塞项，下一步为 S6。
 
 ### S6：整理同后端阶段复用与输出创建
 

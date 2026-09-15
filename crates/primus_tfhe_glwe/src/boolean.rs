@@ -197,6 +197,15 @@ where
     E: ProgrammableBootstrap<T>,
 {
     /// Creates a Boolean evaluator from a backend PBS implementation.
+    /// Allocates gate LUTs and reusable ciphertext workspace.
+    ///
+    /// # Correctness
+    ///
+    /// `parameters` must describe `bootstrapper`'s external LWE dimension,
+    /// input encoding, ciphertext moduli and accumulator polynomial length.
+    /// `bootstrapper` must preserve the LUT output scale as required by
+    /// [`ProgrammableBootstrap::apply_lookup_table_to`]. This constructor cannot
+    /// check that binding through the trait; backend context factories supply it.
     pub fn try_new(
         parameters: &'a GlweTfheParameters<T, LM, GM>,
         bootstrapper: E,
