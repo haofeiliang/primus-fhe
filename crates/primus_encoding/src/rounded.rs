@@ -15,11 +15,14 @@ use primus_reduce::{PrepareModulusSwitch, PreparedModulusSwitch, ReduceAdd};
 /// coefficient loops while hiding strategy-specific precomputation.
 #[derive(Clone, Copy, Debug)]
 pub struct RoundedCodec<T: FheUint, M: PrepareModulusSwitch<ValueT = T>> {
-    t: T,
-    centered_half: T,
-    encoder: ModulusSwitch<T>,
-    modulus: M,
-    decoder: M::Prepared,
+    plaintext_modulus: T,
+    /// First canonical plaintext representative interpreted as negative: `ceil(t/2)`.
+    centered_negative_start: T,
+    /// Prepared `t -> q` conversion for unsigned messages or centered magnitudes.
+    encoding_switch: ModulusSwitch<T>,
+    ciphertext_modulus: M,
+    /// Prepared `q -> t` conversion for canonical ciphertext residues.
+    decoding_switch: M::Prepared,
 }
 
 impl<T, M> RoundedCodec<T, M>
@@ -36,30 +39,30 @@ where
     /// Panics if `t <= 1` or an explicit `q` is not greater than `t`.
     #[must_use]
     #[inline]
-    pub fn new(t: T, modulus: M) -> Self {
-        helpers::validate_moduli(t, modulus);
-        let plaintext_modulus = UintModulus(t);
+    pub fn new(plaintext_modulus: T, ciphertext_modulus: M) -> Self {
+        helpers::validate_moduli(plaintext_modulus, ciphertext_modulus);
+        let plaintext_modulus_context = UintModulus(plaintext_modulus);
         Self {
-            t,
-            centered_half: helpers::centered_half(t),
-            encoder: plaintext_modulus.prepare_switch_to(modulus),
-            decoder: modulus.prepare_switch_to(plaintext_modulus),
-            modulus,
+            plaintext_modulus,
+            centered_negative_start: helpers::centered_negative_start(plaintext_modulus),
+            encoding_switch: plaintext_modulus_context.prepare_switch_to(ciphertext_modulus),
+            decoding_switch: ciphertext_modulus.prepare_switch_to(plaintext_modulus_context),
+            ciphertext_modulus,
         }
     }
 
     /// Returns the plaintext modulus `t` used by this codec.
     #[must_use]
     #[inline]
-    pub fn t(&self) -> T {
-        self.t
+    pub fn plaintext_modulus(&self) -> T {
+        self.plaintext_modulus
     }
 
     /// Returns the ciphertext modulus used for encoding and decoding.
     #[must_use]
     #[inline]
-    pub fn modulus(&self) -> M {
-        self.modulus
+    pub fn ciphertext_modulus(&self) -> M {
+        self.ciphertext_modulus
     }
 }
 
@@ -76,7 +79,7 @@ where
     #[must_use]
     #[inline]
     pub fn decode_value(&self, value: T) -> T {
-        self.decoder.switch(value)
+        self.decoding_switch.switch(value)
     }
 
     /// Replaces ciphertext residues with canonical plaintext residues in `[0,t)`.
@@ -86,7 +89,7 @@ where
     /// Every input must be in `[0,q)`. This range is not checked.
     #[inline]
     pub fn decode_slice_assign(&self, values: &mut [T]) {
-        decode::assign(&self.decoder, values);
+        decode::assign(&self.decoding_switch, values);
     }
 
     /// Decodes into an equally sized output slice of canonical residues in `[0,t)`.
@@ -100,7 +103,7 @@ where
     /// Panics if the slices differ in length, before writing any output.
     #[inline]
     pub fn decode_slice_to(&self, input: &[T], output: &mut [T]) {
-        decode::to(&self.decoder, input, output);
+        decode::to(&self.decoding_switch, input, output);
     }
 }
 
@@ -117,7 +120,7 @@ where
     #[must_use]
     #[inline]
     pub fn encode_value(&self, message: T, embedding: PlaintextEmbedding) -> T {
-        check_message(message, self.t);
+        check_message(message, self.plaintext_modulus);
         let mut output = T::ZERO;
         self.encode::<false, _>(core::iter::once((&mut output, message)), embedding);
         output
@@ -177,7 +180,7 @@ where
         message: T,
         embedding: PlaintextEmbedding,
     ) {
-        check_message(message, self.t);
+        check_message(message, self.plaintext_modulus);
         self.encode::<true, _>(core::iter::once((accumulator, message)), embedding);
     }
 
@@ -215,7 +218,11 @@ where
     fn validate(&self, messages: &[T], output_len: usize) {
         assert_eq!(messages.len(), output_len, "encoding slice length mismatch");
         assert!(
-            messages.iter().copied().max().is_none_or(|m| m < self.t),
+            messages
+                .iter()
+                .copied()
+                .max()
+                .is_none_or(|m| m < self.plaintext_modulus),
             "message outside plaintext domain"
         );
     }
@@ -232,26 +239,29 @@ where
     {
         let write = |value, out: &mut T| {
             *out = if ADD {
-                self.modulus.reduce_add(*out, value)
+                self.ciphertext_modulus.reduce_add(*out, value)
             } else {
                 value
             };
         };
         match embedding {
             PlaintextEmbedding::Unsigned => {
-                self.encoder
+                self.encoding_switch
                     .switch_map(input.map(|(out, m)| (m, out)), write);
             }
             PlaintextEmbedding::Centered => {
-                self.encoder.switch_map(
+                self.encoding_switch.switch_map(
                     input.map(|(out, m)| {
-                        let (magnitude, negative) =
-                            lift_centered_from_raw(m, self.t, self.centered_half);
+                        let (magnitude, negative) = lift_centered_from_raw(
+                            m,
+                            self.plaintext_modulus,
+                            self.centered_negative_start,
+                        );
                         (magnitude, (negative, out))
                     }),
                     |value, (negative, out)| {
                         let value = if negative {
-                            self.modulus.minus_one() - value + T::ONE
+                            self.ciphertext_modulus.minus_one() - value + T::ONE
                         } else {
                             value
                         };

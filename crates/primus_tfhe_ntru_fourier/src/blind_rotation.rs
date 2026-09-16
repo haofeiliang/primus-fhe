@@ -28,13 +28,14 @@ impl<T: TorusFftValue> BlindRotationWorkspace<T> {
 /// Blind-rotates a LUT and initializes an encrypted native NTRU accumulator.
 ///
 /// On return, `workspace.current` contains the encrypted selected LUT phase.
-// The caller validates LUT compatibility; stride comes from the compiled table.
-// A stride of one preserves the ordinary PBS modulus-switching path.
+// The caller validates LUT compatibility; the rotation step equals the
+// padded output count.
+// A rotation step of one preserves the ordinary PBS modulus-switching path.
 pub(crate) fn blind_rotate_lookup_table_to<T, Table, A>(
     server_key: &ServerKey<T>,
     input: &Lwe<A>,
     lookup_table: &PolynomialOwned<T>,
-    stride: usize,
+    rotation_step: usize,
     workspace: &mut BlindRotationWorkspace<T>,
     parameters: &TfheParameters<T>,
     fft: &mut FftEngine<'_, Table>,
@@ -46,10 +47,10 @@ pub(crate) fn blind_rotate_lookup_table_to<T, Table, A>(
     let poly_length = parameters.poly_length();
     let two_n = poly_length * 2;
     let input_modulus = parameters.external_lwe().cipher_modulus();
-    let quantizer = if stride == 1 {
+    let quantizer = if rotation_step == 1 {
         parameters.rotation_quantizer()
     } else {
-        RotationQuantizer::new(input_modulus, two_n, stride)
+        RotationQuantizer::new(input_modulus, two_n, rotation_step)
     };
     let exponent_of = |value| quantizer.exponent(value);
     let initial_exponent = exponent_of(input.b()).wrapping_neg() & (two_n - 1);

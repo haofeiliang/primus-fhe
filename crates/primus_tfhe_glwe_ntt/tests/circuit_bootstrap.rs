@@ -119,7 +119,7 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
             .circuit_bootstrap_evaluator(&server_key, &circuit_parameters, &circuit_key)
             .unwrap();
         assert_eq!(
-            circuit_parameters.lookup_table_stride(),
+            circuit_parameters.lookup_table_padded_output_count(),
             levels.next_power_of_two()
         );
         let mut control = NttGgsw::<Vec<u64>>::zero(circuit_parameters.output_size().ggsw_len());

@@ -14,7 +14,8 @@ where
     /// Compiles a unary function over the independently programmable front
     /// half `0..ceil(t_in/2)` of the input plaintext domain.
     ///
-    /// Outputs use unsigned rounded encoding and must belong to `0..output_codec.t()`.
+    /// Outputs use unsigned rounded encoding and must belong to
+    /// `0..output_codec.plaintext_modulus()`.
     /// The codec's ciphertext modulus must equal the accumulator modulus; its plaintext
     /// modulus is independent of `t_in`. Ordinary PBS preserves this output encoding
     /// under the external LWE secret. Decode with this codec and the client's
@@ -28,7 +29,7 @@ where
         OM: PrepareModulusSwitch<ValueT = T> + ReduceAdd<T, Output = T>,
         F: Fn(usize) -> T,
     {
-        let domain_len = self.lookup_table_domain_len()?;
+        let domain_len = self.front_half_domain_len()?;
         self.compile_lookup_table_outputs(output_codec, domain_len, function)
     }
 
@@ -42,7 +43,7 @@ where
     where
         OM: PrepareModulusSwitch<ValueT = T> + ReduceAdd<T, Output = T>,
     {
-        let domain_len = self.lookup_table_domain_len()?;
+        let domain_len = self.front_half_domain_len()?;
         if outputs.len() != domain_len {
             return Err(LookupTableError::DomainLengthMismatch {
                 expected: domain_len,
@@ -50,6 +51,66 @@ where
             });
         }
         self.compile_lookup_table_outputs(output_codec, domain_len, |input| outputs[input])
+    }
+
+    /// Compiles a unary function over all of `0..t_in` for odd `t_in`.
+    ///
+    /// Uses the output-codec contract of [`Self::compile_lookup_table_fn`].
+    /// Requires `t_in <= N` and distinct signed-folded rotation centers; see
+    /// [`LookupTable::try_new_odd_full_domain`] for interval and noise requirements.
+    /// The callback is visited in folded-center order, not input order.
+    pub fn compile_odd_full_domain_lookup_table_fn<OM, F>(
+        &self,
+        output_codec: &RoundedCodec<T, OM>,
+        function: F,
+    ) -> Result<LookupTable<T>, LookupTableError>
+    where
+        OM: PrepareModulusSwitch<ValueT = T> + ReduceAdd<T, Output = T>,
+        F: Fn(usize) -> T,
+    {
+        let coefficient_modulus = self.glwe().cipher_modulus();
+        if output_codec.ciphertext_modulus().explicit_value()
+            != coefficient_modulus.explicit_value()
+        {
+            return Err(LookupTableError::OutputModulusMismatch);
+        }
+        LookupTable::try_new_odd_full_domain(
+            self.glwe().poly_length(),
+            self.plain_modulus_value(),
+            self.small_lwe().cipher_modulus(),
+            coefficient_modulus,
+            |input| {
+                let output = function(input);
+                if output >= output_codec.plaintext_modulus() {
+                    Err(LookupTableError::OutputOutOfRange { input })
+                } else {
+                    Ok(output_codec.encode_value(output, PlaintextEmbedding::Unsigned))
+                }
+            },
+        )
+    }
+
+    /// Slice form of [`Self::compile_odd_full_domain_lookup_table_fn`].
+    /// Supply exactly `t_in` outputs in plaintext input order.
+    pub fn compile_odd_full_domain_lookup_table_slice<OM>(
+        &self,
+        output_codec: &RoundedCodec<T, OM>,
+        outputs: &[T],
+    ) -> Result<LookupTable<T>, LookupTableError>
+    where
+        OM: PrepareModulusSwitch<ValueT = T> + ReduceAdd<T, Output = T>,
+    {
+        let expected = self
+            .plain_modulus_value()
+            .try_into()
+            .map_err(|_| LookupTableError::PlaintextModulusTooLarge)?;
+        if outputs.len() != expected {
+            return Err(LookupTableError::DomainLengthMismatch {
+                expected,
+                actual: outputs.len(),
+            });
+        }
+        self.compile_odd_full_domain_lookup_table_fn(output_codec, |input| outputs[input])
     }
 
     /// Compiles `output_count` functions over the independently programmable
@@ -70,7 +131,7 @@ where
         OM: PrepareModulusSwitch<ValueT = T> + ReduceAdd<T, Output = T>,
         F: Fn(usize, usize) -> T,
     {
-        let domain_len = self.lookup_table_domain_len()?;
+        let domain_len = self.front_half_domain_len()?;
         self.compile_interleaved_lookup_table_outputs(
             output_codec,
             domain_len,
@@ -93,7 +154,7 @@ where
     where
         OM: PrepareModulusSwitch<ValueT = T> + ReduceAdd<T, Output = T>,
     {
-        let domain_len = self.lookup_table_domain_len()?;
+        let domain_len = self.front_half_domain_len()?;
         let expected = domain_len
             .checked_mul(output_count)
             .ok_or(LookupTableError::ManyTableLengthOverflow)?;
@@ -112,8 +173,8 @@ where
     }
 
     /// Returns the front-half domain constrained by the GLWE rotation ring.
-    fn lookup_table_domain_len(&self) -> Result<usize, LookupTableError> {
-        primus_tfhe::lookup_table_domain_len(self.plain_modulus_value(), self.glwe().poly_length())
+    fn front_half_domain_len(&self) -> Result<usize, LookupTableError> {
+        primus_tfhe::front_half_domain_len(self.plain_modulus_value(), self.glwe().poly_length())
     }
 
     /// Validates and encodes user outputs before compiling the polynomial.
@@ -127,13 +188,14 @@ where
         OM: PrepareModulusSwitch<ValueT = T> + ReduceAdd<T, Output = T>,
         F: Fn(usize) -> T,
     {
-        if output_codec.modulus().explicit_value() != self.glwe().cipher_modulus().explicit_value()
+        if output_codec.ciphertext_modulus().explicit_value()
+            != self.glwe().cipher_modulus().explicit_value()
         {
             return Err(LookupTableError::OutputModulusMismatch);
         }
         self.compile_encoded_lookup_table(domain_len, |input| {
             let output = output_at(input);
-            if output >= output_codec.t() {
+            if output >= output_codec.plaintext_modulus() {
                 Err(LookupTableError::OutputOutOfRange { input })
             } else {
                 Ok(output_codec.encode_value(output, PlaintextEmbedding::Unsigned))
@@ -152,7 +214,8 @@ where
         OM: PrepareModulusSwitch<ValueT = T> + ReduceAdd<T, Output = T>,
         F: Fn(usize, usize) -> T,
     {
-        if output_codec.modulus().explicit_value() != self.glwe().cipher_modulus().explicit_value()
+        if output_codec.ciphertext_modulus().explicit_value()
+            != self.glwe().cipher_modulus().explicit_value()
         {
             return Err(LookupTableError::OutputModulusMismatch);
         }
@@ -166,7 +229,7 @@ where
             self.glwe().cipher_modulus(),
             |input, output_index| {
                 let output = output_at(input, output_index);
-                if output >= output_codec.t() {
+                if output >= output_codec.plaintext_modulus() {
                     Err(LookupTableError::OutputOutOfRange { input })
                 } else {
                     Ok(output_codec.encode_value(output, PlaintextEmbedding::Unsigned))

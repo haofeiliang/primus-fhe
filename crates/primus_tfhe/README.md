@@ -33,11 +33,12 @@ benchmark fixtures are not production security or failure-probability recommenda
    context. Create an evaluator once; its scratch is reused by online `_to` calls.
 4. Allocate caller outputs once, then encrypt and evaluate into the same storage.
 
-A unary function or slice programs `0..ceil(t_in/2)` with outputs in `0..t_out`,
+The front-half unary function or slice compiler programs `0..ceil(t_in/2)` with outputs in `0..t_out`,
 as selected by the output codec.
-The other half follows negacyclic extension and is not independently programmable.
+Its remaining inputs are not independently programmed. Odd full-domain compilation
+is a separate entry point described below.
 For an interleaved LUT (ManyLUT), the effective output count `k` is positive and
-the stride is `s = next_power_of_two(k)`, with `ceil(t/2) <= N/s`.
+the padded output count is `s = next_power_of_two(k)`, with `ceil(t/2) <= N/s`.
 The callback receives `(input, output_index)` once per effective pair, in
 input-major order; slices contain `D*k` values in the same order. With `k=3`,
 three outputs occupy four slots: the compiler zeros the fourth slot without
@@ -47,37 +48,64 @@ then use separate extraction. More outputs reduce rotation resolution and the
 available input-noise margin. This is one input evaluated by multiple functions,
 not batching independent ciphertexts.
 
-### Rotation layout
+### Front-half rotation layout
 
-Let `D = input_domain_len()` be the programmed prefix length, `s = stride()`
-(one for an ordinary LUT), and `M = N/s`. A message is encoded as `E(m) = round(m*q_in/t) mod q_in`,
-then mapped to the virtual center `R(E(m), q_in, 2M)`. Here
+Let `D = input_domain_len()` be the programmed prefix length, `s = padded_output_count()`
+(one for an ordinary LUT), and `M = N/s` the coefficients per output. An **output
+group** contains `k` encoded function values followed by `s-k` zeros. An **input
+interval** repeats that input's output group. Output `j` occupies coefficients
+`s*r+j`; its `M` coefficients include repetitions and the negacyclic tail.
+
+Neither `k` nor the plaintext modulus `t` must be a power of two. The padded
+count `s = next_power_of_two(k)` always is and divides `N`. Distinct encoded
+centers, the input-domain bound and an adequate noise margin are still required.
+
+A message is encoded as `E(m) = round(m*q_in/t) mod q_in`,
+then mapped to `R(E(m), q_in, 2M)` in per-output coefficient coordinates. Here
 `R(x,q,L) = floor((x*L + floor(q/2))/q) mod L`; both rounds have upward ties.
 Native `q_in` is `2^T::BITS`. Combining these rounds can change the table.
 
 The compiler assigns the nearest center's value, breaking midpoint ties toward
 the higher center. A final center at `min(R(E(D), q_in, 2M), M)` carries `-f(0)` and ends
 the programmed prefix. Coefficients beyond it are not another input domain.
-Raw outputs must already be canonical under `q_acc`; out-of-range values are
-rejected. The accumulator modulus and output scale are independent of `q_in`.
+
+For example, with `q_in=2^32`, `N=64`, `t=8`, `k=3` and `D=4`, let
+`F(m) = [f0(m), f1(m), f2(m), 0]` denote an encoded output group. The layout is:
+
+```text
+F(0) × 2 | F(1) × 4 | F(2) × 4 | F(3) × 4 | -F(0) × 2
+```
+
+These aligned centers give equal full interval lengths, but the first interval
+is split across the polynomial boundary, with a negated tail. For a non-power-of-two
+`t` or centers that do not align exactly, interval lengths may differ. The same
+compiler handles both cases; `M` is not a repetition count.
+
+The constructor's `input_ciphertext_modulus` is `q_in`; `coefficient_modulus`
+is `q_acc`, shared by the LUT polynomial and accumulator. Raw outputs must already
+be canonical under `q_acc`; out-of-range values are rejected. The coefficient
+modulus and output scale are independent of `q_in`.
 
 Single and ManyLUT compilation share one scan of the centers and intervals.
-Each interval is filled directly in the result polynomial using its first row
-as the output-value buffer. With built-in modulus types and a nonallocating
+Each interval is filled directly in the result polynomial by writing and then
+repeating its first output group. With built-in modulus types and a nonallocating
 callback, compilation allocates only the result polynomial. Callback errors or
 invalid outputs stop compilation without returning a partial table.
 
-Every backend quantizes each LWE coefficient as `s*R(x, q_in, 2N/s)` and rotates
+Every backend uses `rotation_step = padded_output_count()`, quantizes each LWE coefficient
+as `s*R(x, q_in, 2N/s)` and rotates
 by `-R_s(b) + sum(R_s(a[i])*secret[i])`. This is not a single quantization of the
-decrypted phase. The rotation is a multiple of `s`, preserving lanes at `s*r+j`;
-extracting coefficient `j` reads that lane with the negacyclic sign.
+decrypted phase. Compilation uses the same `2N/s` quantization domain with step
+one. Execution multiplies by `s`; since `s` divides `N`, output indices modulo `s`
+are preserved even across negacyclic wrap. Extracting coefficient `j` reads that
+output with the negacyclic sign.
 
 ## Encoding and key contracts
 
 | Interface | Input / output meaning |
 | --- | --- |
 | Ordinary `encrypt` | Unsigned message in `0..t` |
-| `encrypt_padded` | Same unsigned scale, restricted to `0..ceil(t/2)` for ordinary LUT input |
+| `encrypt_padded` | Same unsigned scale, restricted to `0..ceil(t/2)` for front-half LUT input |
 | `encrypt_centered` | Modular representative in `0..t`; upper-half values represent negatives, e.g. `3` means `-1` for `t=4` |
 | GLWE Boolean | External `false/true` is `0/1` modulo 4; internal LUTs use signed values at the rounded modulus-8 scale, followed by a restoring shift |
 | CBS | Ordinary unsigned LWE input becomes GGSW/NGSW at the selected gadget scales, under the accumulator secret; a `0/1` input yields a CMUX control |
@@ -103,9 +131,9 @@ responsible for keeping the input within the table's programmed prefix.
 
 ### Choosing the output encoding
 
-The four family/context `compile_*_lookup_table_fn/slice` methods take
-`&RoundedCodec<T, M>` as their first argument. Input parameters still determine
-`0..ceil(t_in/2)` and rotation centers. The output codec determines `t_out`,
+Family/context LUT compilation methods take `&RoundedCodec<T, M>` as their first
+argument. Input parameters determine the rotation centers and, together with the
+chosen compilation mode, the input domain. The output codec determines `t_out`,
 validates values in `0..t_out` and encodes them with unsigned embedding.
 All columns of an interleaved LUT use that codec. Its ciphertext modulus must
 match the accumulator, or compilation returns `OutputModulusMismatch`.
@@ -137,6 +165,40 @@ continues to describe the input and accumulator, without equating `t_out` to
 match the previous output encoding; a context does not infer that change from
 raw ciphertexts. Custom encodings, per-column scales and Boolean/CBS gadget
 outputs use the raw constructors and retain their own decoding contracts.
+
+## Odd full-domain PBS
+
+Use `compile_odd_full_domain_lookup_table_fn(&output_codec, function)` or its
+`_slice` form to program **all of `0..t_in`**, with odd `t_in >= 3` and `t_in <= N`.
+Slices contain exactly `t_in` outputs in input order. Encrypt with ordinary
+`encrypt`, then use the existing `apply_lookup_table_to` and output codec to decode.
+For example, in a context configured with `t_in=15` and an output codec for `t_out=8`:
+
+```rust,ignore
+let lut = context.compile_odd_full_domain_lookup_table_fn(
+    &output_codec, |x| ((x * x + 3) % 8) as u32,
+).unwrap();
+let input = encryptor.encrypt(14u32, &mut rng).unwrap();
+evaluator.apply_lookup_table_to(&input, &lut, &mut output);
+let message = output_codec.decode_value(decryptor.decrypt_phase(&output).unwrap());
+assert_eq!(message, 7);
+```
+
+The raw constructor is `LookupTable::try_new_odd_full_domain`. It computes the
+actual centers `c[m] = R(E(m), q_in, 2N)`, folding each center in `N..2N` back by
+`N` and storing the negated output. Negacyclic extraction restores its sign.
+Folded-center order is `0, (t+1)/2, 1, (t+3)/2, ...`; each callback runs once in
+that order. Nearest-center intervals retain upward midpoint ties; the terminal
+center at `N` carries `-f(0)` and handles wraparound. Colliding folded centers
+return `RotationCenterCollision`, even when `t_in <= N`.
+
+Typical spacing is `N/t_in`, so the noise margin is about half that of front-half
+compilation. Capacity and collision checks establish LUT geometry, not a PBS
+failure probability. Account for input error and per-coefficient modulus switching.
+This entry supports single-output odd domains; interleaved and bivariate compilers
+retain their front-half contracts. No extra key or online evaluator is needed.
+The [derivation and parameter examples](../../docs/tfhe.md#p23-奇数明文模数全域)
+explain the signed folding and its limits.
 
 ## Bounded two-input PBS
 
@@ -183,6 +245,22 @@ prevents plaintext-index wrap; it does not establish a noise margin. This is a
 bounded single-output workflow, not arbitrary-precision integer arithmetic or
 LWE-to-ring packing. See the runnable [NTRU NTT example](../primus_tfhe_ntru_ntt/examples/ntru_ntt_basic.rs).
 
+## Source layout
+
+The three public types are exported from the crate root. Odd full-domain compilation
+is a `LookupTable` constructor; `InterleavedLookupTable` owns output lanes and
+`BivariateLookupTable` owns input packing.
+
+| File | Responsibility |
+| --- | --- |
+| [lookup_table.rs](src/lookup_table.rs) | Exports and shared encoding metadata |
+| [single.rs](src/lookup_table/single.rs) | Single-output type with both front-half and odd full-domain constructors |
+| [interleaved.rs](src/lookup_table/interleaved.rs) | Multi-output type, padded output count and effective output count |
+| [bivariate.rs](src/lookup_table/bivariate.rs) | Input bounds and packing tied to an ordinary LUT |
+| [compile.rs](src/lookup_table/compile.rs) | Shared encoding validation, midpoints and negacyclic tail filling |
+| [compile/front_half.rs](src/lookup_table/compile/front_half.rs) | Front-half single/interleaved compilation, domain and slot capacity checks |
+| [compile/odd_full_domain.rs](src/lookup_table/compile/odd_full_domain.rs) | Odd-domain checks, signed centers and interval filling |
+
 ## Validation
 
 Run from the workspace root:
@@ -204,12 +282,13 @@ cargo bench -p primus_tfhe --bench lookup_table
 
 ## Typed rotation quantization
 
-Raw LUT compilation accepts independent typed input and accumulator moduli.
-`backend_support::RotationQuantizer::new(input_modulus, two_n, window)` prepares
+Raw LUT compilation accepts independent typed input and coefficient moduli.
+`backend_support::RotationQuantizer::new(input_modulus, two_n, rotation_step)` prepares
 a fixed modulus-pair conversion; `exponent(value)` reuses it without allocation.
 The rotation domain `two_n = 2N` must be representable by the input coefficient
-type; the target `two_n/window` is an explicit power of two, even for Native input.
+type; the target `two_n/rotation_step` is an explicit power of two, even for Native input.
 GLWE keys and NTRU parameters cache ordinary-PBS quantization at construction.
-ManyLUT prepares its stride-dependent conversion before processing coefficients.
-For interleaved LUTs, it rounds in `two_n/window` positions before multiplying by
-`window`. Modulus metadata remains `Option<T>` where it only describes a domain.
+ManyLUT prepares its conversion for the rotation step before processing coefficients.
+For interleaved LUTs, it rounds in `two_n/rotation_step` positions before multiplying by
+`rotation_step`, which equals the LUT padded output count. Modulus metadata remains `Option<T>`
+where it only describes a domain.

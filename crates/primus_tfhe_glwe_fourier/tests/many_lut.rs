@@ -18,8 +18,8 @@ const N: usize = 256;
 
 fn parameters(order: PbsOrder) -> TfheParameters<u32> {
     let modulus = NativeModulus::new();
-    let lwe = LweParameters::new(8, 16, modulus, SecretKeyDistr::UniformBinary, 0.7);
-    let glwe = GlweParameters::new(1, N, 16, modulus, SecretKeyDistr::UniformBinary, 0.7);
+    let lwe = LweParameters::new(8, 15, modulus, SecretKeyDistr::UniformBinary, 0.7);
+    let glwe = GlweParameters::new(1, N, 15, modulus, SecretKeyDistr::UniformBinary, 0.7);
     let bsk = ApproxSignedBasis::new(glwe.cipher_modulus_value(), 8, None);
     TfheParameters::try_new(lwe, glwe, bsk, ApproxSignedBasis::new(None, 8, None), order).unwrap()
 }
@@ -42,9 +42,9 @@ where
     let encryptor = context.encryptor(&client_key).unwrap();
     let decryptor = context.decryptor(&client_key).unwrap();
     let mut evaluator = context.evaluator(&server_key).unwrap();
-    // Input centers use t_in=16; output values use the independent t_out=8 scale.
+    // Input centers use t_in=15; output values use the independent t_out=8 scale.
     let output_codec = RoundedCodec::new(8, context.parameters().small_lwe().cipher_modulus());
-    // Shared tests cover LUT geometry; keep stride 1 and padded/full stride 4 here.
+    // Shared tests cover geometry; keep output counts 1, 3 (padded to 4), and 4 here.
     for output_count in [1, 3, 4] {
         let flat: Vec<_> = (0..8)
             .flat_map(|input| (0..output_count).map(move |output| value(input, output)))
@@ -101,7 +101,7 @@ where
     let mut outputs = vec![input.clone(); 3];
     // Isolate each piece of LUT metadata, including equal-length wrong-domain tables.
     let mut mismatched_tables = Vec::new();
-    for (n, t) in [(N / 2, 16), (N, 8)] {
+    for (n, t) in [(N / 2, 15), (N, 8)] {
         mismatched_tables.push((
             LookupTable::try_new(2, n, t, NativeModulus::new(), NativeModulus::new(), |_| {
                 Ok(0)
@@ -123,7 +123,7 @@ where
         LookupTable::try_new(
             2,
             N,
-            16,
+            15,
             BarrettModulus::new(132_120_577),
             NativeModulus::new(),
             |_| Ok(0),
@@ -133,7 +133,7 @@ where
             2,
             N,
             3,
-            16,
+            15,
             BarrettModulus::new(132_120_577),
             NativeModulus::new(),
             |_, _| Ok(0),
@@ -144,7 +144,7 @@ where
         LookupTable::try_new(
             2,
             N,
-            16,
+            15,
             NativeModulus::new(),
             BarrettModulus::new(132_120_577),
             |_| Ok(0),
@@ -154,7 +154,7 @@ where
             2,
             N,
             3,
-            16,
+            15,
             NativeModulus::new(),
             BarrettModulus::new(132_120_577),
             |_, _| Ok(0),
@@ -258,6 +258,24 @@ where
         assert_eq!(
             output_codec.decode_value(decryptor.decrypt_phase(&result).unwrap()),
             x * x + y
+        );
+    }
+
+    // Reuse this odd-modulus fixture for the full domain, including the upper
+    // half. Keep a distinct output scale and a function with f(0) != 0.
+    let values: Vec<_> = (0..15).map(|m| ((m * m + 3) % 8) as u32).collect();
+    let full = context
+        .compile_odd_full_domain_lookup_table_slice(&output_codec, &values)
+        .unwrap();
+    for (message, &expected) in values.iter().enumerate() {
+        let input = encryptor.encrypt(message as u32, &mut rng).unwrap();
+        let (_, allocation) = allocations::measure(|| {
+            evaluator.apply_lookup_table_to(&input, &full, &mut result);
+        });
+        assert_eq!(allocation.count, 0, "full-domain PBS must reuse storage");
+        assert_eq!(
+            output_codec.decode_value(decryptor.decrypt_phase(&result).unwrap()),
+            expected
         );
     }
 }

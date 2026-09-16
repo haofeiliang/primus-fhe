@@ -12,7 +12,8 @@ Primus FHE 的明文系数编码与解码。
 | `ScaledCodec<T,M>` | `lift(m)*round(q/t) mod q` | 单模数 GLWE/NTRU |
 | `BfvRnsCodec<T,M>` | `lift(m)*floor(Q/t) mod Q` | RNS 系数缩放（`rns` feature） |
 
-公开类型直接从 crate 根部导出，实现模块保持私有。单模数构造器接收具体模数类型，
+公开类型直接从 crate 根部导出，实现模块保持私有。单模数构造器为
+`new(plaintext_modulus, ciphertext_modulus)`，密文模数使用具体模数类型，
 例如 `RoundedCodec::new(256u64, NativeModulus::new())` 表示 `q=2^64`，
 `RoundedCodec::new(7u64, BarrettModulus::new(131))` 使用显式模数。
 所需能力为 `PrepareModulusSwitch` 和 `ReduceAdd`，无需完整 `RingContext`。
@@ -37,8 +38,9 @@ Primus FHE 的明文系数编码与解码。
 比例舍入内核。批处理算术策略均在系数循环外选择。
 
 TFHE 输入编码来自参数；普通 LUT 编译显式接收输出 `RoundedCodec`。
-`t()` 与 `modulus()` 分别公开输出明文模数和密文模数。明文模数可以与输入不同，
-密文模数须与 accumulator 一致。客户端可返回 raw phase，供同一个输出 codec 解码。
+`plaintext_modulus()` 与 `ciphertext_modulus()` 分别公开输出明文模数和密文模数。
+明文模数可以与输入不同，密文模数须与 accumulator 一致。客户端可返回 raw phase，
+供同一个输出 codec 解码。
 
 这些类型负责系数编码。目前未实现 BFV/BGV 整数槽打包、BGV 的无缩放明文
 提升，以及 CKKS 的典范嵌入。

@@ -36,12 +36,16 @@ explains the common input scale and amplified error.
 
 Public PBS validates LUT encoding moduli, ring length and all output
 dimensions. Raw LWE input must use the context's external key, canonical residues
-and unsigned rounded encoding. Independently programmable inputs are
+and unsigned rounded encoding. Front-half compilation programs inputs in
 `0..ceil(t/2)`; the remaining half follows negacyclic extension. ManyLUT output
-count `k` must be positive; its stride `s = next_power_of_two(k)` requires
-`ceil(t/2) <= N/s`. A larger stride reduces rotation resolution and thus the
+count `k` must be positive; its padded output count `s = next_power_of_two(k)` requires
+`ceil(t/2) <= N/s`. A larger padded output count reduces rotation resolution and thus the
 allowed input-noise margin. Boolean/CBS output scales
 can differ from ordinary plaintext encoding.
+
+For odd full domains, use the context's `compile_odd_full_domain_lookup_table_fn`
+/ `_slice` with ordinary `encrypt` and the existing single-output evaluator.
+See the [shared contract](../primus_tfhe/README.md#odd-full-domain-pbs).
 
 ## Public-key clients
 
@@ -78,7 +82,7 @@ valid substitute for its coefficient projections.
 
 CBS takes an output basis and full trace/scheme-switch encryption parameters;
 BR parameters and the output ring come from the TFHE context. The internal
-interleaved LUT keeps the requested level count and pads only its stride with
+interleaved LUT keeps the requested level count and pads each output group with
 zero slots; projections and the NGSW retain the requested levels. Its scheme-switch key binds the complete output basis.
 
 Run the [CBS → CMUX example](examples/ntru_ntt_circuit_bootstrap.rs):

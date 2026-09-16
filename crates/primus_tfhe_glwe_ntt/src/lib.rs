@@ -4,7 +4,7 @@
 //! one blind rotation and ring key switch, reusing its existing workspace.
 //! Compile with [`TfheContext::compile_interleaved_lookup_table_fn`] or the input-major
 //! slice variant. The next power of two of the output count determines the
-//! rotation stride; [`InterleavedLookupTable`] describes the layout and noise tradeoff.
+//! rotation step; [`InterleavedLookupTable`] describes the layout and noise tradeoff.
 //! Public PBS checks LUT encoding/moduli/length and all output dimensions before
 //! writing. Raw input key, encoding and noise remain caller requirements.
 //!

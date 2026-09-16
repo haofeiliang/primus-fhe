@@ -3,7 +3,7 @@
 //! For canonical `x` modulo `q`, rotation quantization is
 //! `R(x, q, L) = floor((x * L + floor(q / 2)) / q) mod L`.
 //! Ties round upward, including the wrap from `L` to zero; `NativeModulus<T>` uses
-//! `q = 2^T::BITS`. With stride `s`, let `R_s(x) = s * R(x, q, 2N/s)`.
+//! `q = 2^T::BITS`. With rotation step `s`, let `R_s(x) = s * R(x, q, 2N/s)`.
 //! Backends rotate the LUT by
 //! `-R_s(b) + sum(R_s(a[i]) * secret[i])`, quantizing each LWE coefficient
 //! separately. Quantizing the decrypted phase once is not equivalent.
@@ -25,18 +25,21 @@ pub fn direct_exponent<T: FheUint>(value: T, two_n: usize) -> usize {
 #[derive(Clone, Copy, Debug)]
 pub struct RotationQuantizer<S: PreparedModulusSwitch> {
     switch: S,
-    window: usize,
+    rotation_step: usize,
 }
 
 impl<S: PreparedModulusSwitch> RotationQuantizer<S> {
-    /// Prepares `window * R(value, q, two_n/window)`.
+    /// Prepares `rotation_step * R(value, q, two_n/rotation_step)`.
     /// Rounding in the smaller domain preserves interleaved LUT residue classes.
+    /// Execution uses `two_n = 2N` and the LUT's padded output count `s` as the
+    /// step. Compilation uses `two_n = 2N/s` and step one to obtain centers in
+    /// per-output coefficient coordinates.
     ///
     /// # Panics
-    /// Panics unless `two_n >= 2` and `window` are powers of two,
-    /// `window <= two_n/2`, and `two_n` is representable by `T`.
+    /// Panics unless `two_n >= 2` and `rotation_step` are powers of two,
+    /// `rotation_step <= two_n/2`, and `two_n` is representable by `T`.
     #[must_use]
-    pub fn new<T, M>(modulus: M, two_n: usize, window: usize) -> Self
+    pub fn new<T, M>(modulus: M, two_n: usize, rotation_step: usize) -> Self
     where
         T: FheUint,
         M: PrepareModulusSwitch<ValueT = T, Prepared = S>,
@@ -46,14 +49,17 @@ impl<S: PreparedModulusSwitch> RotationQuantizer<S> {
             "invalid rotation domain"
         );
         assert!(
-            window.is_power_of_two() && window <= two_n / 2,
-            "invalid rotation window"
+            rotation_step.is_power_of_two() && rotation_step <= two_n / 2,
+            "invalid rotation step"
         );
         let rotation_domain =
             T::try_from(two_n).expect("rotation domain must fit the input coefficient type");
-        let target = rotation_domain >> window.trailing_zeros();
+        let target = rotation_domain >> rotation_step.trailing_zeros();
         let switch = modulus.prepare_switch_to(PowOf2Modulus::new(target));
-        Self { switch, window }
+        Self {
+            switch,
+            rotation_step,
+        }
     }
 
     /// Quantizes one canonical input coefficient into `[0,two_n)`.
@@ -64,7 +70,7 @@ impl<S: PreparedModulusSwitch> RotationQuantizer<S> {
     #[inline]
     pub fn exponent(&self, value: S::ValueT) -> usize {
         let exponent: usize = self.switch.switch(value).try_into().unwrap();
-        exponent * self.window
+        exponent * self.rotation_step
     }
 }
 
@@ -81,14 +87,20 @@ where
     RotationQuantizer::new(modulus, two_n, 1).exponent(value)
 }
 
-/// Computes `window * R(value,q,two_n/window)`; clearing low bits after ordinary
-/// switching is not equivalent. Inherits [`RotationQuantizer`]'s contracts.
+/// Computes `rotation_step * R(value,q,two_n/rotation_step)`.
+/// Clearing low bits after ordinary switching is not equivalent.
+/// Inherits [`RotationQuantizer`]'s contracts.
 #[must_use]
 #[inline]
-pub fn windowed_modulus_switch<T, M>(value: T, modulus: M, two_n: usize, window: usize) -> usize
+pub fn modulus_switch_with_step<T, M>(
+    value: T,
+    modulus: M,
+    two_n: usize,
+    rotation_step: usize,
+) -> usize
 where
     T: FheUint,
     M: PrepareModulusSwitch<ValueT = T>,
 {
-    RotationQuantizer::new(modulus, two_n, window).exponent(value)
+    RotationQuantizer::new(modulus, two_n, rotation_step).exponent(value)
 }

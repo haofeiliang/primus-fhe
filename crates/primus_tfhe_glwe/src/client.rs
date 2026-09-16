@@ -57,8 +57,8 @@ where
 
     /// Encrypts a message in the padded domain `[0, ceil(t / 2))`.
     ///
-    /// This preserves the input-padding invariant required by an arbitrary
-    /// (not necessarily negacyclic) programmable-bootstrap lookup table.
+    /// Use this range with front-half LUT compilation; odd full-domain LUTs
+    /// accept [`Self::encrypt`]'s entire unsigned domain.
     pub fn encrypt_padded<R>(
         &self,
         message: T,

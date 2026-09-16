@@ -101,7 +101,7 @@ where
     /// Returns the plaintext modulus `t`.
     #[inline]
     pub fn plain_modulus(&self) -> T {
-        self.plaintext_codec.t()
+        self.plaintext_codec.plaintext_modulus()
     }
 
     /// Returns the plaintext codec implementing the `Delta` embedding.

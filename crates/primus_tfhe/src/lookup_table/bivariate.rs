@@ -2,7 +2,8 @@ use primus_encoding::{PlaintextEmbedding, RoundedCodec};
 use primus_integer::FheUint;
 use primus_reduce::{PrepareModulusSwitch, ReduceAdd, RingContext};
 
-use crate::{LookupTable, LookupTableError, LweCiphertext};
+use super::LookupTable;
+use crate::{LookupTableError, LweCiphertext};
 
 /// A bounded two-input function evaluated by packing `z = x + B*y` before PBS.
 ///
@@ -54,26 +55,26 @@ impl<T: FheUint, M: RingContext<T>> BivariateLookupTable<T, M> {
         OM: PrepareModulusSwitch<ValueT = T> + ReduceAdd<T, Output = T>,
         F: Fn(usize, usize) -> T,
     {
-        let domain_len = lhs_domain_len
+        let input_domain_len = lhs_domain_len
             .checked_mul(rhs_domain_len)
             .filter(|&length| length != 0)
             .ok_or(LookupTableError::InvalidBivariateDomain {
                 lhs_domain_len,
                 rhs_domain_len,
             })?;
-        let modulus = input_codec.modulus();
-        if output_codec.modulus().explicit_value() != modulus.explicit_value() {
+        let modulus = input_codec.ciphertext_modulus();
+        if output_codec.ciphertext_modulus().explicit_value() != modulus.explicit_value() {
             return Err(LookupTableError::OutputModulusMismatch);
         }
         let lookup_table = LookupTable::try_new(
-            domain_len,
+            input_domain_len,
             poly_length,
-            input_codec.t(),
+            input_codec.plaintext_modulus(),
             modulus,
             modulus,
             |input| {
                 let output = function(input % lhs_domain_len, input / lhs_domain_len);
-                if output >= output_codec.t() {
+                if output >= output_codec.plaintext_modulus() {
                     return Err(LookupTableError::OutputOutOfRange { input });
                 }
                 Ok(output_codec.encode_value(output, PlaintextEmbedding::Unsigned))

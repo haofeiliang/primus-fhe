@@ -75,7 +75,7 @@ where
         }
         let n = tfhe.poly_length();
         let modulus = tfhe.bootstrapping().ntru().cipher_modulus();
-        let domain_len = primus_tfhe::lookup_table_domain_len(tfhe.plain_modulus_value(), n)?;
+        let domain_len = primus_tfhe::front_half_domain_len(tfhe.plain_modulus_value(), n)?;
         let scalars: Vec<T> = parameters.output_basis().scalar_iter().collect();
         let lookup_table = InterleavedLookupTable::try_new(
             domain_len,
@@ -151,7 +151,7 @@ where
             self.server_key,
             input,
             self.lookup_table.polynomial(),
-            self.lookup_table.stride(),
+            self.lookup_table.padded_output_count(),
             &mut self.blind_rotation,
             tfhe,
             &mut self.fft,

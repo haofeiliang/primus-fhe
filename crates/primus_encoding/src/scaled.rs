@@ -6,7 +6,7 @@ use super::{
 use crate::PlaintextEmbedding;
 use primus_integer::FheUint;
 use primus_modulus::UintModulus;
-use primus_reduce::{PrepareModulusSwitch, PreparedModulusSwitch, ReduceAdd};
+use primus_reduce::{Modulus, PrepareModulusSwitch, PreparedModulusSwitch, ReduceAdd};
 
 /// Fixed rounded scaling: `lift(m) * delta mod q`, returned in `[0,q)`, where
 /// `delta = round(q/t)` with ties upward.
@@ -18,10 +18,10 @@ use primus_reduce::{PrepareModulusSwitch, PreparedModulusSwitch, ReduceAdd};
 /// Accumulators and decoding inputs must be canonical ciphertext residues.
 #[derive(Clone, Copy, Debug)]
 pub struct ScaledCodec<T: FheUint, M: PrepareModulusSwitch<ValueT = T>> {
-    t: T,
-    decoder: M::Prepared,
+    plaintext_modulus: T,
+    decoding_switch: M::Prepared,
     scale: IntegerScale<T>,
-    modulus: M,
+    ciphertext_modulus: M,
 }
 
 impl<T, M> ScaledCodec<T, M>
@@ -29,7 +29,8 @@ where
     T: FheUint,
     M: ReduceAdd<T, Output = T> + PrepareModulusSwitch<ValueT = T>,
 {
-    /// Constructs a fixed-scale codec; `NativeModulus<T>` denotes `q = 2^T::BITS`.
+    /// Constructs a fixed-scale codec for plaintext modulus `t` and ciphertext
+    /// modulus `q`; `NativeModulus<T>` denotes `q = 2^T::BITS`.
     ///
     /// The scale-recovery bound below is a conservative sufficient condition
     /// for noiseless recovery with either lift.
@@ -39,43 +40,29 @@ where
     /// Panics unless `t >= 2`, `q > t`, and
     /// `abs(t*round(q/t)-q)*(t-1) < q/2`.
     #[must_use]
-    pub fn new(t: T, modulus: M) -> Self {
-        validate_moduli(t, modulus);
-        let plaintext_modulus = UintModulus(t);
+    pub fn new(plaintext_modulus: T, ciphertext_modulus: M) -> Self {
+        validate_moduli(plaintext_modulus, ciphertext_modulus);
+        let plaintext_modulus_context = UintModulus(plaintext_modulus);
         // Preparing from UintModulus validates both moduli before calling M's implementation.
-        let delta = plaintext_modulus.prepare_switch_to(modulus).switch(T::ONE);
-        let decoder = modulus.prepare_switch_to(plaintext_modulus);
-        // q may be native; q-1 is representable and determines q % t.
-        let remainder = modulus.minus_one() % t + T::ONE;
-        let remainder = if remainder == t { T::ZERO } else { remainder };
-        let drift = remainder.min(t - remainder);
-        let (lo, hi) = drift.carrying_mul(t - T::ONE, T::ZERO);
-        let fits = hi == T::ZERO
-            && match modulus.explicit_value() {
-                Some(q) => lo <= (q - T::ONE) / T::TWO,
-                None => lo < (T::ONE << (T::BITS - 1)),
-            };
-        assert!(
-            fits,
-            "ciphertext modulus too small for fixed rounded scaling"
-        );
-        // If epsilon=t*delta-q <= 0, (t-1)*delta < q immediately.
-        // Otherwise epsilon*(t-1)<q implies epsilon<delta, hence
-        // (t-1)*delta=q+epsilon-delta<q. Products need no modular reduction.
+        let delta = plaintext_modulus_context
+            .prepare_switch_to(ciphertext_modulus)
+            .switch(T::ONE);
+        let decoding_switch = ciphertext_modulus.prepare_switch_to(plaintext_modulus_context);
+        validate_scale_recovery(plaintext_modulus, ciphertext_modulus);
         let scale = IntegerScale::new(delta);
         Self {
-            t,
-            decoder,
+            plaintext_modulus,
+            decoding_switch,
             scale,
-            modulus,
+            ciphertext_modulus,
         }
     }
 
     /// Returns the plaintext modulus.
     #[must_use]
     #[inline]
-    pub fn t(&self) -> T {
-        self.t
+    pub fn plaintext_modulus(&self) -> T {
+        self.plaintext_modulus
     }
 
     /// Encodes a residue in `[0,t)` into a canonical residue in `[0,q)` with the selected lift.
@@ -86,7 +73,7 @@ where
     #[must_use]
     #[inline]
     pub fn encode_value(&self, message: T, embedding: PlaintextEmbedding) -> T {
-        check_message(message, self.t());
+        check_message(message, self.plaintext_modulus());
         self.encode_raw(message, embedding)
     }
 
@@ -97,13 +84,15 @@ where
     fn encode_raw(&self, message: T, embedding: PlaintextEmbedding) -> T {
         let (m, negative) = match embedding {
             PlaintextEmbedding::Unsigned => (message, false),
-            PlaintextEmbedding::Centered => {
-                lift_centered_from_raw(message, self.t(), super::helpers::centered_half(self.t()))
-            }
+            PlaintextEmbedding::Centered => lift_centered_from_raw(
+                message,
+                self.plaintext_modulus(),
+                super::helpers::centered_negative_start(self.plaintext_modulus()),
+            ),
         };
         let value = self.scale.encode_magnitude(m);
         if negative {
-            self.scale.neg_nonzero(value, self.modulus)
+            self.scale.neg_nonzero(value, self.ciphertext_modulus)
         } else {
             value
         }
@@ -120,9 +109,9 @@ where
         self.validate(messages, output.len());
         self.scale.apply::<false, _, _>(
             output.iter_mut().zip(messages.iter().copied()),
-            self.t,
+            self.plaintext_modulus,
             embedding,
-            self.modulus,
+            self.ciphertext_modulus,
         );
     }
 
@@ -140,9 +129,9 @@ where
                 let m = *out;
                 (out, m)
             }),
-            self.t,
+            self.plaintext_modulus,
             embedding,
-            self.modulus,
+            self.ciphertext_modulus,
         );
     }
 
@@ -167,9 +156,9 @@ where
         self.validate(messages, accumulator.len());
         self.scale.apply::<true, _, _>(
             accumulator.iter_mut().zip(messages.iter().copied()),
-            self.t,
+            self.plaintext_modulus,
             embedding,
-            self.modulus,
+            self.ciphertext_modulus,
         );
     }
 
@@ -177,7 +166,11 @@ where
     fn validate(&self, messages: &[T], output_len: usize) {
         assert_eq!(messages.len(), output_len, "encoding slice length mismatch");
         assert!(
-            messages.iter().copied().max().is_none_or(|m| m < self.t()),
+            messages
+                .iter()
+                .copied()
+                .max()
+                .is_none_or(|m| m < self.plaintext_modulus()),
             "message outside plaintext domain"
         );
     }
@@ -190,7 +183,7 @@ where
     #[must_use]
     #[inline]
     pub fn decode_value(&self, value: T) -> T {
-        self.decoder.switch(value)
+        self.decoding_switch.switch(value)
     }
 
     /// Replaces ciphertext residues with canonical plaintext residues in `[0,t)`.
@@ -199,7 +192,7 @@ where
     ///
     /// Every input must be in `[0,q)`. This range is not checked.
     pub fn decode_slice_assign(&self, values: &mut [T]) {
-        decode::assign(&self.decoder, values);
+        decode::assign(&self.decoding_switch, values);
     }
 
     /// Decodes into an equally sized output slice of canonical residues in `[0,t)`.
@@ -212,6 +205,45 @@ where
     ///
     /// Panics if the slices differ in length, before writing any output.
     pub fn decode_slice_to(&self, input: &[T], output: &mut [T]) {
-        decode::to(&self.decoder, input, output);
+        decode::to(&self.decoding_switch, input, output);
     }
+}
+
+/// Checks a sufficient bound for noiseless recovery under both plaintext embeddings.
+/// The caller has already validated `t = plaintext_modulus >= 2` and `q > t`.
+///
+/// For `delta = round(q/t)` and `epsilon = t*delta-q`, decoding `m*delta` rounds
+/// `m + m*epsilon/q` modulo `t`. Since either lift has `abs(m) <= t-1`, the strict
+/// bound `abs(epsilon)*(t-1) < q/2` keeps every message inside its rounding cell.
+/// This reserves no particular noise budget; noise adds `t*e` to the error.
+///
+/// It also gives `(t-1)*delta < q`, as required by `IntegerScale`: this is immediate
+/// for `epsilon <= 0`; otherwise `epsilon*(t-1) < q = t*delta-epsilon` implies
+/// `epsilon < delta`, hence `(t-1)*delta = q+epsilon-delta < q`.
+fn validate_scale_recovery<T, M>(plaintext_modulus: T, ciphertext_modulus: M)
+where
+    T: FheUint,
+    M: Modulus<ValueT = T>,
+{
+    // For q = a*t+r, nearest-integer scaling gives abs(epsilon) = min(r, t-r).
+    // Compute r via q-1 so Native q = 2^T::BITS need not be represented in T.
+    let remainder = ciphertext_modulus.minus_one() % plaintext_modulus + T::ONE;
+    let remainder = if remainder == plaintext_modulus {
+        T::ZERO
+    } else {
+        remainder
+    };
+    let scale_error = remainder.min(plaintext_modulus - remainder);
+    let (max_error, high) = scale_error.carrying_mul(plaintext_modulus - T::ONE, T::ZERO);
+    // The product must be below q/2 <= 2^(BITS-1), so a nonzero high word fails.
+    // For explicit q, integer error < q/2 is exactly error <= floor((q-1)/2).
+    let within_rounding_radius = high == T::ZERO
+        && match ciphertext_modulus.explicit_value() {
+            Some(q) => max_error <= (q - T::ONE) / T::TWO,
+            None => max_error < (T::ONE << (T::BITS - 1)),
+        };
+    assert!(
+        within_rounding_radius,
+        "ciphertext modulus too small for fixed rounded scaling"
+    );
 }

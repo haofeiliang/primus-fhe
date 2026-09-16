@@ -195,7 +195,7 @@ fn public_blind_rotation_rejects_mismatches_before_output_writes() {
     }
 
     // Raw LUT APIs own their checks independently of the evaluator's metadata.
-    for (input_len, lookup_len, output_len, count) in [
+    for (input_len, lookup_len, output_len, rotation_step) in [
         (input_len - 1, POLY_LENGTH, glwe_len, None),
         (input_len, POLY_LENGTH - 1, glwe_len, None),
         (input_len, POLY_LENGTH, glwe_len - 1, None),
@@ -211,11 +211,11 @@ fn public_blind_rotation_rejects_mismatches_before_output_writes() {
         let mut output = GlweCiphertext::new(vec![17u32; output_len]);
         let before = output.as_ref().to_vec();
         let rejected = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            if let Some(count) = count {
+            if let Some(rotation_step) = rotation_step {
                 key.fourier_blind_rotate_interleaved_lookup_table_to(
                     &input,
                     &lookup,
-                    count,
+                    rotation_step,
                     &mut output,
                     &mut fft,
                     &mut scratch,

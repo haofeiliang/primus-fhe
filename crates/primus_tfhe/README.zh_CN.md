@@ -30,40 +30,62 @@
    evaluator 创建一次，在线 `_to` 调用复用其 scratch。
 4. 调用方输出分配一次，后续加密与求值重复使用同一存储。
 
-单函数或切片为 `0..ceil(t_in/2)` 输入域编程，输出属于输出 codec 指定的 `0..t_out`。
-另一半遵循负循环扩展，不能独立编程。交错 LUT（ManyLUT）的有效输出数 `k` 为正，
-步长为 `s = next_power_of_two(k)`，满足 `ceil(t/2) <= N/s`。callback 按输入优先
+前半区单函数或切片编译器为 `0..ceil(t_in/2)` 输入域编程，输出属于输出 codec 指定的 `0..t_out`。
+其余输入不独立编程；奇数全域使用下文的独立入口。交错 LUT（ManyLUT）的有效输出数 `k` 为正，
+补齐后的输出数为 `s = next_power_of_two(k)`，满足 `ceil(t/2) <= N/s`。callback 按输入优先
 顺序接收 `(input, output_index)`，每个有效组合调用一次；切片包含相同顺序的 `D*k` 个值。
 例如 `k=3` 时三个输出占用四个槽：编译器将第四槽置零，不调用 callback；求值端只返回三个密文。
 所有输出共享一次盲旋转（BR）和密钥切换，再分别提取。
 输出越多，旋转分辨率与输入噪声余量越低。这是一个输入求多个函数，不是独立密文批处理。
 
-### 旋转布局
+### 前半区旋转布局
 
-令 `D = input_domain_len()` 为已编程前缀长度，`s = stride()`（普通 LUT 为 1），`M = N/s`。
-消息先编码为 `E(m) = round(m*q_in/t) mod q_in`，再映射到虚拟中心
+令 `D = input_domain_len()` 为已编程前缀长度，`s = padded_output_count()`（普通 LUT 为 1），
+每个输出占用的系数数为 `M = N/s`。一个**输出组**包含 `k` 个已编码函数值和 `s-k` 个零；
+一个**输入区间**重复该输入的输出组。输出 `j` 占用系数 `s*r+j`，其 `M` 个系数
+包括重复项和负循环尾部。
+
+`k` 和明文模数 `t` 都不必是二次幂；补齐数量 `s = next_power_of_two(k)` 始终是二次幂，
+且整除 `N`。仍须满足实际编码中心不碰撞、输入域限制和噪声余量要求。
+
+消息先编码为 `E(m) = round(m*q_in/t) mod q_in`，再映射到每输出系数坐标中的中心
 `R(E(m), q_in, 2M)`，其中 `R(x,q,L) = floor((x*L + floor(q/2))/q) mod L`，
 两次舍入遇到中点均向上。Native 的 `q_in` 为 `2^T::BITS`。合并两次舍入可能改变表内容。
 
 编译器选择最近中心的值，中点相等时选择较大的中心；最后在 `min(R(E(D), q_in, 2M), M)`
 追加值为 `-f(0)` 的中心以终止编程前缀，其后的系数不是额外的输入域。
-raw 输出必须已经是 `q_acc` 下的规范值，越界值会被拒绝。
-累加器模数与输出尺度均独立于 `q_in`。
+
+例如 `q_in=2^32`、`N=64`、`t=8`、`k=3`、`D=4` 时，以
+`F(m) = [f0(m), f1(m), f2(m), 0]` 表示已编码输出组，布局为：
+
+```text
+F(0) × 2 | F(1) × 4 | F(2) × 4 | F(3) × 4 | -F(0) × 2
+```
+
+这些对齐的中心对应等长的完整区间，但首个区间被多项式边界拆分，尾部取负。
+非二次幂 `t` 或中心未精确对齐时，区间长度可以不同。两种情况使用同一个编译器；
+`M` 不是重复次数。
+
+构造器的 `input_ciphertext_modulus` 即 `q_in`；`coefficient_modulus` 即 LUT 多项式
+与累加器共用的 `q_acc`。raw 输出必须已经是 `q_acc` 下的规范值，越界值会被拒绝。
+系数模数与输出尺度均独立于 `q_in`。
 
 单输出与 ManyLUT 共用一次中心和区间扫描。每个区间直接写入结果多项式，
-首行兼作输出值缓冲区；使用内置模数类型且 callback 不分配时，编译过程仅分配结果多项式。
+先写首个输出组，再重复填充；使用内置模数类型且 callback 不分配时，编译过程仅分配结果多项式。
 callback 报错或输出越界时立即停止，不返回部分编译的表。
 
-四后端逐个将 LWE 系数量化为 `s*R(x, q_in, 2N/s)`，旋转指数为
+四后端使用 `rotation_step = padded_output_count()`，逐个将 LWE 系数量化为 `s*R(x, q_in, 2N/s)`，旋转指数为
 `-R_s(b) + sum(R_s(a[i])*secret[i])`，不能替换为对解密相位的一次量化。
-旋转量是 `s` 的倍数，保留 `s*r+j` 上的各输出列；提取系数 `j` 时按负循环符号读取该列。
+编译端使用同一个 `2N/s` 量化域，步长为 1；执行端再乘以 `s`。
+由于 `s` 整除 `N`，跨越负循环边界也保留输出索引模 `s` 的余数；
+提取系数 `j` 时按负循环符号读取对应输出。
 
 ## 编码与密钥契约
 
 | 接口 | 输入 / 输出含义 |
 | --- | --- |
 | 普通 `encrypt` | `0..t` 范围的 unsigned 消息 |
-| `encrypt_padded` | 相同 unsigned 尺度，输入限制为 `0..ceil(t/2)`，供普通 LUT 使用 |
+| `encrypt_padded` | 相同 unsigned 尺度，输入限制为 `0..ceil(t/2)`，供前半区 LUT 使用 |
 | `encrypt_centered` | 接收 `0..t` 的模代表元；上半区表示负数，例如 `t=4` 时 `3` 表示 `-1` |
 | GLWE Boolean | 外部 `false/true` 对应模 4 下的 `0/1`；内部 LUT 使用 rounded 模 8 尺度的正负值，随后平移恢复外部编码 |
 | CBS | 普通 unsigned LWE 输入转为指定 gadget 尺度的 GGSW/NGSW，秘密为 accumulator secret；`0/1` 输入可生成 CMUX 控制 |
@@ -84,8 +106,8 @@ callback 报错或输出越界时立即停止，不返回部分编译的表。
 
 ### 选择输出编码
 
-两族参数/context 的四个 `compile_*_lookup_table_fn/slice` 方法均以
-`&RoundedCodec<T, M>` 为第一个参数。输入参数仍决定 `0..ceil(t_in/2)` 与旋转中心；
+两族参数/context 的 LUT 编译方法均以 `&RoundedCodec<T, M>` 为第一个参数。
+输入参数决定旋转中心，并与所选编译模式共同决定输入域；
 输出 codec 决定 `t_out`，检查输出位于 `0..t_out`，并按 unsigned embedding 编码。
 交错 LUT 的各列共用这个 codec。其密文模数必须与 accumulator 一致，否则返回
 `OutputModulusMismatch`。现有完整 PBS 链仍要求 `q_in = q_acc = q_out`；
@@ -114,6 +136,34 @@ LUT 兼容性元数据仍描述输入与 accumulator，不要求 `t_out = t_in`�
 继续串联 PBS 时，下一次输入编码和 LUT 几何必须与上一次输出编码一致；context 不会从
 raw 密文推断编码变化。自定义编码、逐列尺度及 Boolean/CBS gadget 输出使用 raw 构造器，
 遵循各自的解码契约。
+
+## 奇数全域 PBS
+
+使用 `compile_odd_full_domain_lookup_table_fn(&output_codec, function)` 或其 `_slice`
+形式，编程整个 **`0..t_in`**。要求奇数 `t_in >= 3`、`t_in <= N`；切片按输入顺序包含
+恰好 `t_in` 个输出。输入用普通 `encrypt`，随后复用 `apply_lookup_table_to` 和输出 codec 解码。
+例如，context 配置 `t_in=15`，输出 codec 配置 `t_out=8`：
+
+```rust,ignore
+let lut = context.compile_odd_full_domain_lookup_table_fn(
+    &output_codec, |x| ((x * x + 3) % 8) as u32,
+).unwrap();
+let input = encryptor.encrypt(14u32, &mut rng).unwrap();
+evaluator.apply_lookup_table_to(&input, &lut, &mut output);
+let message = output_codec.decode_value(decryptor.decrypt_phase(&output).unwrap());
+assert_eq!(message, 7);
+```
+
+raw 入口为 `LookupTable::try_new_odd_full_domain`。它计算真实中心
+`c[m] = R(E(m), q_in, 2N)`，将 `N..2N` 中心减去 `N` 并写入取负后的输出，
+提取时的负循环符号将其恢复。折叠中心按 `0, (t+1)/2, 1, (t+3)/2, ...` 输入顺序排列，
+callback 按此顺序各调用一次。区间取最近中心、中点取较大中心；`N` 处补 `-f(0)`，
+处理回绕。即使 `t_in <= N`，折叠中心碰撞仍返回 `RotationCenterCollision`。
+
+典型中心间距为 `N/t_in`，噪声余量约为前半区编译的一半。容量与碰撞检查只保证 LUT
+几何可表示，不提供 PBS 失败概率；仍需计入输入误差和逐系数模切误差。
+此入口仅支持单输出奇数全域，交错与双输入编译器保持前半区契约；无需新增密钥或在线 evaluator。
+[推导与参数示例](../../docs/tfhe.md#p23-奇数明文模数全域)说明符号折叠及其限制。
 
 ## 有界双输入 PBS
 
@@ -155,6 +205,21 @@ BR 前可能发生的密钥切换误差及逐系数模切舍入。容量条件�
 这是有界单输出工作流，不是任意精度整数运算或 LWE 到环密文的 packing。
 完整运行示例见 [NTRU NTT](../primus_tfhe_ntru_ntt/examples/ntru_ntt_basic.rs)。
 
+## 源码组织
+
+三种公开类型均从 crate 根导出。奇数全域是 `LookupTable` 的构造方式，
+输出槽布局由 `InterleavedLookupTable` 管理，双输入打包由 `BivariateLookupTable` 管理。
+
+| 文件 | 职责 |
+| --- | --- |
+| [lookup_table.rs](src/lookup_table.rs) | 统一导出与共用编码元数据 |
+| [single.rs](src/lookup_table/single.rs) | 单输出类型，集中前半区和奇数全域构造器 |
+| [interleaved.rs](src/lookup_table/interleaved.rs) | 多输出类型及补齐输出数、有效数量接口 |
+| [bivariate.rs](src/lookup_table/bivariate.rs) | 双输入范围、打包与普通 LUT 的绑定 |
+| [compile.rs](src/lookup_table/compile.rs) | 共用编码校验、中点与负循环尾部填充 |
+| [compile/front_half.rs](src/lookup_table/compile/front_half.rs) | 前半区单输出/交错编译、域与槽容量检查 |
+| [compile/odd_full_domain.rs](src/lookup_table/compile/odd_full_domain.rs) | 奇数域检查、中心折叠与区间填充 |
+
 ## 验证
 
 在 workspace 根目录运行：
@@ -175,10 +240,10 @@ cargo bench -p primus_tfhe --bench lookup_table
 
 ## 保留模数类型的旋转量化
 
-raw LUT 编译接收独立的输入模数类型和 accumulator 模数类型。
-`backend_support::RotationQuantizer::new(input_modulus, two_n, window)` 准备固定
+raw LUT 编译接收独立的输入模数类型和系数模数类型。
+`backend_support::RotationQuantizer::new(input_modulus, two_n, rotation_step)` 准备固定
 模数对的转换，`exponent(value)` 无分配复用。旋转域 `two_n = 2N` 必须能由输入
-系数类型表示；即使输入使用 Native 模数，目标 `two_n/window` 也为显式二次幂。
+系数类型表示；即使输入使用 Native 模数，目标 `two_n/rotation_step` 也为显式二次幂。
 GLWE 密钥和 NTRU 参数在构造时
-缓存普通 PBS 量化；ManyLUT 在系数循环前按步长准备，先在 `two_n/window`
-个位置内舍入，再乘 `window`。仅描述模数域的元数据仍使用 `Option<T>`。
+缓存普通 PBS 量化；ManyLUT 在系数循环前按旋转步长准备，先在 `two_n/rotation_step`
+个位置内舍入，再乘与 LUT 补齐输出数相等的 `rotation_step`。仅描述模数域的元数据仍使用 `Option<T>`。

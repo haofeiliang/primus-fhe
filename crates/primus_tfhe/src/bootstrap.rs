@@ -13,10 +13,10 @@ pub trait ProgrammableBootstrap<T: FheUint> {
     /// The raw input must use that key and the LUT's unsigned rounded input
     /// encoding. Explicit-modulus coefficients must be canonical. Actual key,
     /// plaintext encoding and noise cannot be checked from a raw ciphertext.
-    /// Ordinary family-compiled functions program the front half `0..ceil(t/2)`;
-    /// raw compilation may select a shorter prefix. Only the compiled input
-    /// domain has the requested function values. The other half of the rotation
-    /// ring is the negacyclic extension.
+    /// Front-half compilation programs `0..ceil(t/2)` or a shorter raw prefix;
+    /// explicit odd full-domain compilation programs all of `0..t`. Only the
+    /// compiled input domain has the requested function values. The second half
+    /// of the rotation ring is always the negacyclic extension.
     /// Boolean gates deliberately use that extension and a different output scale.
     /// Input noise and modulus-switch rounding must stay within the selected LUT
     /// interval. Outputs retain the scale chosen at compilation, including raw

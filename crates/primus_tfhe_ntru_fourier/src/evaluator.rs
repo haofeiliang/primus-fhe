@@ -181,7 +181,11 @@ where
             "PBSManyLUT output ciphertext dimension mismatch"
         );
 
-        self.blind_rotate_and_keyswitch(input, lookup_table.polynomial(), lookup_table.stride());
+        self.blind_rotate_and_keyswitch(
+            input,
+            lookup_table.polynomial(),
+            lookup_table.padded_output_count(),
+        );
         for (index, output) in outputs.iter_mut().enumerate() {
             self.blind_rotation.scratch.extract_compact_lwe_at_to(
                 index,
@@ -192,20 +196,21 @@ where
     }
 
     /// Writes the BR result under the client ring secret into `blind_rotation.scratch`.
-    /// Input/LUT compatibility was checked by the caller; stride comes from the compiled table.
+    /// The caller checked input/LUT compatibility. The rotation step equals
+    /// the compiled LUT padded output count.
     #[inline]
     fn blind_rotate_and_keyswitch(
         &mut self,
         input: &LweCiphertext<T>,
         lookup_table: &Polynomial<Vec<T>>,
-        stride: usize,
+        rotation_step: usize,
     ) {
         let parameters = self.context.parameters();
         blind_rotate_lookup_table_to(
             self.server_key,
             input,
             lookup_table,
-            stride,
+            rotation_step,
             &mut self.blind_rotation,
             parameters,
             &mut self.fft,

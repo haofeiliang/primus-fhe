@@ -1,4 +1,4 @@
-use super::helpers::{centered_half, lift_centered_from_raw};
+use super::helpers::{centered_negative_start, lift_centered_from_raw};
 use crate::PlaintextEmbedding;
 use primus_integer::FheUint;
 use primus_reduce::{Modulus, ReduceAdd};
@@ -53,7 +53,10 @@ impl<T: FheUint> IntegerScale<T> {
     /// Requires `0 < value < q`. Negative lifts have positive magnitude and
     /// the scale invariant ensures their encodings satisfy this condition.
     #[inline]
-    pub(super) fn neg_nonzero<M: Modulus<ValueT = T>>(&self, value: T, modulus: M) -> T {
+    pub(super) fn neg_nonzero<M>(&self, value: T, modulus: M) -> T
+    where
+        M: Modulus<ValueT = T>,
+    {
         // q-1 is representable for every modulus; nonzero input keeps both operations in range.
         debug_assert!(value != T::ZERO);
         modulus.minus_one() - value + T::ONE
@@ -120,9 +123,9 @@ fn apply_kernel<'a, T, const ADD: bool, I, E, N, A>(
             }
         }
         PlaintextEmbedding::Centered => {
-            let half = centered_half(t);
+            let negative_start = centered_negative_start(t);
             for (out, m) in input {
-                let (magnitude, negative) = lift_centered_from_raw(m, t, half);
+                let (magnitude, negative) = lift_centered_from_raw(m, t, negative_start);
                 let value = encode(magnitude);
                 let value = if negative { neg(value) } else { value };
                 *out = if ADD { add(*out, value) } else { value };

@@ -54,7 +54,7 @@ impl<T: FheUint> CircuitBootstrapParameters<T> {
     /// Derives the output layout from the TFHE accumulator and `output_basis`.
     ///
     /// Returns an error if bases or key layouts use another accumulator domain,
-    /// the output layout overflows, or the interleaving stride exceeds LUT capacity.
+    /// the output layout overflows, or the padded output count exceeds LUT capacity.
     pub fn try_new(
         tfhe: &TfheParameters<T>,
         output_basis: ApproxSignedBasis<T>,
@@ -74,11 +74,11 @@ impl<T: FheUint> CircuitBootstrapParameters<T> {
             }
         }
 
-        let lookup_table_stride = output_basis.decompose_length().next_power_of_two();
+        let lookup_table_padded_output_count = output_basis.decompose_length().next_power_of_two();
         let lookup_domain_len =
-            primus_tfhe::lookup_table_domain_len(tfhe.plain_modulus_value(), glwe.poly_length())
+            primus_tfhe::front_half_domain_len(tfhe.plain_modulus_value(), glwe.poly_length())
                 .map_err(|_| CircuitBootstrapParameterError::OutputDecompositionTooLarge)?;
-        if lookup_table_stride > glwe.poly_length() / lookup_domain_len {
+        if lookup_table_padded_output_count > glwe.poly_length() / lookup_domain_len {
             return Err(CircuitBootstrapParameterError::OutputDecompositionTooLarge);
         }
 
@@ -118,10 +118,10 @@ impl<T: FheUint> CircuitBootstrapParameters<T> {
         &self.scheme_switch
     }
 
-    /// Returns the interleaving stride for the output gadget levels.
+    /// Returns the LUT padded output count for the output gadget levels.
     #[must_use]
     #[inline]
-    pub fn lookup_table_stride(&self) -> usize {
+    pub fn lookup_table_padded_output_count(&self) -> usize {
         self.output_basis.decompose_length().next_power_of_two()
     }
 

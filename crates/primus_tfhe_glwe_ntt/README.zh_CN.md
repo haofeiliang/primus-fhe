@@ -25,17 +25,20 @@ cargo run -p primus_tfhe_glwe_ntt --example ntt_basic
 `TfheContext::try_new` 检查 NTT 长度和模数。NTT 域密钥与值必须采用所传 table 的表示。
 `boolean_parameters()` 是开发 fixture，不是经过论证的默认参数；示例直接选取自己的小参数。
 
-普通 LUT 使用 `compile_lookup_table_fn` / `compile_lookup_table_slice`，多输出使用
+前半区 LUT 使用 `compile_lookup_table_fn` / `compile_lookup_table_slice`，多输出使用
 `compile_interleaved_lookup_table_*`，第一个参数均为输出 `RoundedCodec`。输出尺度不同时，
 用 `decrypt_phase` 与该 codec 解码。输入采用 unsigned padded 编码，并考虑 ManyLUT 较低的
 旋转分辨率。Evaluator 持有可变 scratch，创建一次后复用 `apply_lookup_table_to` /
 `apply_interleaved_lookup_table_to`；这些入口在写入前检查全部输出维数。
 
+奇数全域使用 context 的 `compile_odd_full_domain_lookup_table_fn` / `_slice` 与普通
+`encrypt`，复用现有单输出 evaluator。条件见[共享契约](../primus_tfhe/README.zh_CN.md#奇数全域-pbs)。
+
 `t=4` 时使用 `boolean_encryptor`、`boolean_decryptor`、`boolean_evaluator`，由适配器处理
 内部模 8 的 LUT 尺度。通过 `evaluate_binary_to`、`not_to`、`mux_to` 重复求值。
 
 低层 `NttGlweBootstrappingKey<T, LM>` 保留输入模数类型 `LM`，与 accumulator 模数独立。
-密钥生成时准备普通 PBS 量化参数；ManyLUT 在系数循环前按步长准备转换。
+密钥生成时准备普通 PBS 量化参数；ManyLUT 在系数循环前按旋转步长准备转换。
 高层 context 保持既有参数约束。
 
 ## Circuit bootstrapping

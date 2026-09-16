@@ -53,6 +53,42 @@ fn padded_inputs_and_lut_output_codecs_use_independent_domains() {
             encryptor.encrypt_padded(domain_len, &mut rng).unwrap_err(),
             GlweClientError::MessageOutsidePaddedDomain
         );
+        let full_codec = RoundedCodec::new(8, NativeModulus::new());
+        if t % 2 == 1 {
+            assert_eq!(
+                parameters
+                    .compile_odd_full_domain_lookup_table_slice(&full_codec, &[0])
+                    .unwrap_err(),
+                LookupTableError::DomainLengthMismatch {
+                    expected: t as usize,
+                    actual: 1
+                },
+            );
+            assert_eq!(
+                parameters
+                    .compile_odd_full_domain_lookup_table_fn(&full_codec, |_| 8)
+                    .unwrap_err(),
+                LookupTableError::OutputOutOfRange { input: 0 },
+            );
+            let wrong_codec = RoundedCodec::new(8, primus_modulus::PowOf2Modulus::new(1 << 16));
+            assert_eq!(
+                parameters
+                    .compile_odd_full_domain_lookup_table_fn(&wrong_codec, |_| panic!(
+                        "must reject before callback"
+                    ))
+                    .unwrap_err(),
+                LookupTableError::OutputModulusMismatch,
+            );
+        } else {
+            assert_eq!(
+                parameters
+                    .compile_odd_full_domain_lookup_table_fn(&full_codec, |_| panic!(
+                        "must reject before callback"
+                    ))
+                    .unwrap_err(),
+                LookupTableError::EvenPlaintextModulus,
+            );
+        }
         if t == 4 {
             // Callers supply D*k values; the compiler owns the padding to D*s.
             assert_eq!(

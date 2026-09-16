@@ -29,10 +29,13 @@ LUT 编译的第一个参数为输出 `RoundedCodec`。示例采用 `t_in=16 →
 
 公开 PBS 检查 LUT 的编码模数、环长度及全部输出维数。原始 LWE 输入必须
 使用 context 的 external key、规范 residue 和 unsigned rounded 编码。
-可独立编程的输入为 `0..ceil(t/2)`，另一半按负循环关系扩展。ManyLUT 输出数量
-`k` 必须为正，步长 `s = next_power_of_two(k)` 须满足 `ceil(t/2) <= N/s`；
-步长越大，旋转分辨率越低，输入噪声余量越小。
+前半区编译可独立编程的输入为 `0..ceil(t/2)`，另一半按负循环关系扩展。ManyLUT 输出数量
+`k` 必须为正，补齐输出数 `s = next_power_of_two(k)` 须满足 `ceil(t/2) <= N/s`；
+补齐输出数越大，旋转分辨率越低，输入噪声余量越小。
 Boolean/CBS 输出尺度允许区别于普通明文编码。
+
+奇数全域使用 context 的 `compile_odd_full_domain_lookup_table_fn` / `_slice` 与普通
+`encrypt`，复用现有单输出 evaluator。条件见[共享契约](../primus_tfhe/README.zh_CN.md#奇数全域-pbs)。
 
 ## 公钥客户端
 
@@ -64,7 +67,7 @@ CBS 保留 BR 的环 accumulator，不执行普通 PBS 后续的环密钥切换�
 前缀展开替代所需的系数投影。
 
 CBS 接收 output basis 和完整的 trace/scheme-switch 加密参数；BR 参数和输出环
-由 TFHE context 提供。内部交错 LUT 保留请求的层数，仅以零槽补齐步长；
+由 TFHE context 提供。内部交错 LUT 保留请求的层数，仅在每个输出组中补零；
 投影与 NGSW 都保留请求的层数。Scheme-switch key 绑定完整的 output basis。
 
 运行 [CBS → CMUX 示例](examples/ntru_fourier_circuit_bootstrap.rs)：

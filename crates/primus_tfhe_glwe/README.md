@@ -39,7 +39,7 @@ See [LWE public-key noise and identity requirements](../primus_lwe/README.md#pub
 
 `encrypt`, `encrypt_padded` and `encrypt_centered` have corresponding
 `*_to(message, output, rng)` methods. These reuse output storage; message or dimension
-errors leave output and RNG unchanged. For ordinary LUT input, use `encrypt_padded`.
+errors leave output and RNG unchanged. For front-half LUT input, use `encrypt_padded`.
 LUT compilation methods on parameters are also available through backend contexts.
 
 LUT compilation takes an explicit output `RoundedCodec` first. Reuse
@@ -48,6 +48,11 @@ codec with another plaintext modulus and the same ciphertext modulus. Decode
 that output with `output_codec.decode_value(decryptor.decrypt_phase(&output)?)`.
 See [choosing the output encoding](../primus_tfhe/README.md#choosing-the-output-encoding)
 for range checks, raw output and subsequent PBS contracts.
+
+For odd full domains, use `compile_odd_full_domain_lookup_table_fn` / `_slice`
+and ordinary `encrypt`. The output codec and PBS evaluator are unchanged. See
+[odd full-domain PBS](../primus_tfhe/README.md#odd-full-domain-pbs) for capacity,
+folded-center and noise requirements.
 
 For bounded two-input functions, use the shared `BivariateLookupTable` to pack
 `x+B*y` and pass its ordinary LUT to the existing evaluator. See

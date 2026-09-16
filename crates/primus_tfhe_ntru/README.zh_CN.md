@@ -31,7 +31,7 @@ Context 提供 `encryptor`、`decryptor`；直接构造使用 `NtruEncryptor::tr
 
 `encrypt`、`encrypt_padded` 和 `encrypt_centered` 均提供
 `*_to(message, output, rng)`。两类密钥都可复用输出存储，消息或维数错误先于采样和写入。
-普通 family/context LUT 使用 padded unsigned 输入；centered 模消息有独立的编码契约。
+前半区 family/context LUT 使用 padded unsigned 输入；centered 模消息有独立的编码契约。
 
 ManyLUT 编译同一个输入的多个函数。后端示例计算 `x % 4`、`x / 4` 和 `x % 2`，
 不代表已经实现完整的加密整数类型或算术系统。
@@ -40,6 +40,10 @@ LUT 编译的第一个参数为显式输出 `RoundedCodec`。沿用输入尺度�
 `parameters.external_lwe().plaintext_codec()`；也可用另一明文模数与相同密文模数构造 codec，
 再用 `output_codec.decode_value(decryptor.decrypt_phase(&output)?)` 解码输出。
 范围检查、raw 输出与后续 PBS 契约见[选择输出编码](../primus_tfhe/README.zh_CN.md#选择输出编码)。
+
+奇数全域使用 `compile_odd_full_domain_lookup_table_fn` / `_slice`，输入改用普通
+`encrypt`；输出 codec 与既有 PBS 求值入口相同。容量、折叠中心和噪声条件见
+[奇数全域 PBS](../primus_tfhe/README.zh_CN.md#奇数全域-pbs)。
 
 有界双输入函数使用共享 `BivariateLookupTable` 打包 `x+B*y`，再把其中的普通 LUT
 交给现有 evaluator。范围、共同编码与误差放大条件见[有界双输入 PBS](../primus_tfhe/README.zh_CN.md#有界双输入-pbs)。

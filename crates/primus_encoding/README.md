@@ -13,7 +13,8 @@ Plaintext coefficient encoding and decoding for Primus FHE.
 | `BfvRnsCodec<T,M>` | `lift(m)*floor(Q/t) mod Q` | RNS coefficient scaling (`rns` feature) |
 
 Public types are available directly at the crate root; implementation modules
-are private. Single-modulus constructors take a typed modulus, for example
+are private. Single-modulus constructors use `new(plaintext_modulus, ciphertext_modulus)`
+with a typed ciphertext modulus, for example
 `RoundedCodec::new(256u64, NativeModulus::new())` for `q=2^64`, or
 `RoundedCodec::new(7u64, BarrettModulus::new(131))`. They require `PrepareModulusSwitch` and `ReduceAdd`; the full `RingContext` is unnecessary.
 `RingContext` includes preparation, but codecs also support `UintModulus` and
@@ -42,8 +43,9 @@ native high-product or explicit narrow/wide ratio kernels. All batch arithmetic
 dispatch occurs outside coefficient loops.
 
 TFHE input encoding comes from its parameters; ordinary LUT compilation takes
-an explicit output `RoundedCodec`. Its `t()` and `modulus()` expose the output
-plaintext and ciphertext moduli. The plaintext modulus may differ from the input,
+an explicit output `RoundedCodec`. Its `plaintext_modulus()` and
+`ciphertext_modulus()` expose the output plaintext and ciphertext moduli.
+The plaintext modulus may differ from the input,
 while the ciphertext modulus must match the accumulator. Clients can return a
 raw phase for decoding with that same output codec.
 

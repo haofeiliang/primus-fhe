@@ -25,7 +25,7 @@ pub enum CircuitBootstrapParameterError {
         /// The incompatible parameter role.
         role: &'static str,
     },
-    /// The interleaving stride leaves too few programmable input slots.
+    /// The LUT padded output count leaves too few programmable input slots.
     #[error("circuit-bootstrap output levels do not fit the ManyLUT accumulator")]
     OutputDecompositionTooLarge,
     /// Trace normalization requires an odd field modulus with Shoup headroom.
@@ -77,11 +77,11 @@ impl<T: FheUint> CircuitBootstrapParameters<T> {
         if q & T::ONE != T::ONE || q >= T::ONE << (T::BITS - 1) {
             return Err(CircuitBootstrapParameterError::UnsupportedTraceModulus);
         }
-        let lookup_table_stride = output_basis.decompose_length().next_power_of_two();
+        let lookup_table_padded_output_count = output_basis.decompose_length().next_power_of_two();
         let domain =
-            primus_tfhe::lookup_table_domain_len(tfhe.plain_modulus_value(), tfhe.poly_length())
+            primus_tfhe::front_half_domain_len(tfhe.plain_modulus_value(), tfhe.poly_length())
                 .map_err(|_| CircuitBootstrapParameterError::OutputDecompositionTooLarge)?;
-        if lookup_table_stride > tfhe.poly_length() / domain {
+        if lookup_table_padded_output_count > tfhe.poly_length() / domain {
             return Err(CircuitBootstrapParameterError::OutputDecompositionTooLarge);
         }
         let poly_length = tfhe.poly_length();
@@ -130,9 +130,9 @@ impl<T: FheUint> CircuitBootstrapParameters<T> {
         &self.scheme_switch
     }
 
-    /// Returns the interleaving stride for the output gadget levels.
+    /// Returns the LUT padded output count for the output gadget levels.
     #[must_use]
-    pub fn lookup_table_stride(&self) -> usize {
+    pub fn lookup_table_padded_output_count(&self) -> usize {
         self.output_basis.decompose_length().next_power_of_two()
     }
 

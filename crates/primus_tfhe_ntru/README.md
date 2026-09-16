@@ -33,7 +33,7 @@ Decryption requires the client key. See [LWE public-key noise and identity requi
 
 `encrypt`, `encrypt_padded` and `encrypt_centered` each provide
 `*_to(message, output, rng)`. Both key types reuse output storage and reject message
-or dimension errors before sampling/writing. Use padded unsigned input with ordinary
+or dimension errors before sampling/writing. Use padded unsigned input with front-half
 family/context LUTs; centered modular messages have a separate encoding contract.
 
 ManyLUT compiles several functions of one input. The backend message/carry example
@@ -46,6 +46,11 @@ codec with another plaintext modulus and the same ciphertext modulus. Decode
 that output with `output_codec.decode_value(decryptor.decrypt_phase(&output)?)`.
 See [choosing the output encoding](../primus_tfhe/README.md#choosing-the-output-encoding)
 for range checks, raw output and subsequent PBS contracts.
+
+For odd full domains, use `compile_odd_full_domain_lookup_table_fn` / `_slice`
+and ordinary `encrypt`. The output codec and PBS evaluator are unchanged. See
+[odd full-domain PBS](../primus_tfhe/README.md#odd-full-domain-pbs) for capacity,
+folded-center and noise requirements.
 
 For bounded two-input functions, use the shared `BivariateLookupTable` to pack
 `x+B*y` and pass its ordinary LUT to the existing evaluator. See

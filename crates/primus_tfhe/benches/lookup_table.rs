@@ -14,15 +14,15 @@ use primus_tfhe::{InterleavedLookupTable, LookupTable};
 fn compile<M: RingContext<u32>>(c: &mut Criterion, name: &str, modulus: M) {
     const N: usize = 1024;
     let mut group = c.benchmark_group(format!("lut_compile/u32/{name}/n{N}"));
-    for (t, count) in [(4u32, 4), (16, 1), (16, 3), (16, 4), (16, 16), (255, 4)] {
-        let domain = t.div_ceil(2) as usize;
-        let id = BenchmarkId::new(format!("t{t}"), format!("k{count}"));
-        if count == 1 {
+    for (t, output_count) in [(4u32, 4), (16, 1), (16, 3), (16, 4), (16, 16), (255, 4)] {
+        let input_domain_len = t.div_ceil(2) as usize;
+        let id = BenchmarkId::new(format!("t{t}"), format!("k{output_count}"));
+        if output_count == 1 {
             group.bench_function(id, |b| {
                 b.iter(|| {
                     black_box(
                         LookupTable::try_new(
-                            black_box(domain),
+                            black_box(input_domain_len),
                             black_box(N),
                             black_box(t),
                             modulus,
@@ -38,9 +38,9 @@ fn compile<M: RingContext<u32>>(c: &mut Criterion, name: &str, modulus: M) {
                 b.iter(|| {
                     black_box(
                         InterleavedLookupTable::try_new(
-                            black_box(domain),
+                            black_box(input_domain_len),
                             black_box(N),
-                            black_box(count),
+                            black_box(output_count),
                             black_box(t),
                             modulus,
                             modulus,

@@ -16,7 +16,7 @@
 | 阶段 | 步骤 | 阶段完成的含义 |
 | --- | --- | --- |
 | P1 公共 LUT | P1.1 → P1.M → P1.2 → P1.3 → P1.R → P1.4 | 精确几何、直接编译、分离数量/步长，统一量化边界并迁移现有调用方 |
-| P2 基础功能 | P2.1 → P2.2；P2.3 可独立推进 | 输出编码可选、有界双输入、经验证的奇数全域模式 |
+| P2 基础功能 | P2.1 → P2.2 / P2.3 | 输出编码可选、有界双输入、经验证的奇数全域模式 |
 | P3 稀疏 GLWE NTT | P3.1 → P3.2 → P3.3 → P3.4 → P3.5 | 固定重量二元完整 PBS、参数契约、可复现的成本比较 |
 | P4 MVB | P4.1 → P4.2 → P4.3 | 一种具体 MVB 的实现与适用范围，不包含所有大 LUT 研究路线 |
 
@@ -55,7 +55,7 @@
 先在 P1.M 完成的源码上采集构造对照，以区分模切接口调整和本步几何优化的影响；P1.1 数据继续作为初始参照。
 
 - 几何计算与输出求值/布局填充分离；所有列共享中心和边界，Many 直接写最终多项式。
-- 单输出复用相同几何；必要的短行 scratch 仅分配一次，不增加大型重复几何存储。
+- 单输出复用相同几何；必要的输出组 scratch 仅分配一次，不增加大型重复几何存储。
 - 收尾时由编译函数直接推进中心与系数区间，普通区间和负循环尾部各用一个私有填充函数；以重整前的 P1.2 实现复测。涉及有效数量/步长的校验和 family 包装留给 P1.3。
 - 暂时保持既有公共输入域和二次幂输出数量约束，降低与 API 迁移的耦合；保留回调报错和原始输出 residue 检查。
 - uniform/power-of-two 特化只在等价且有实测收益时加入，不是本步前提。
@@ -124,13 +124,13 @@
 
 ## P2.3 奇数明文模数全域
 
-**依赖：** P1；若使用 P2.1 输出入口，再声明该依赖。
+**依赖：** P1、P2.1（显式输出 codec）；不依赖 P2.2。
 
 - 推导带符号中心折叠，用真实 codec/模切验证排序、符号、碰撞和回绕。
 - 明确独立编译模式和参数条件，不推广为任意偶数模数全域开关。
 - 小奇数模数遍历全域与区间边界，验证中心不足的拒绝行为；区分几何余量与完整 PBS 失败概率。
 
-**完成条件：** 全域语义和适用条件有独立依据及端到端验证；前半区接口行为保持明确。
+**完成条件：** 全域语义和适用条件有独立依据及端到端验证；前半区接口行为保持明确。接口、符号推导及验证边界见 [P2.3 决定](tfhe.md#p23-奇数明文模数全域)。
 
 ## P3.1 稀疏方案与参数收敛
 
@@ -206,7 +206,7 @@
 - 与逐函数独立 PBS、交错 ManyLUT 比较相同逻辑输出，小域使用独立函数 oracle。
 - 根据真实调用方调整多输出 trait；无收益时保持具体接口。
 
-**完成条件：** 完整多输出工作流正确。将有效数量与 stride 分开不等于实现了 MVB；本实现也不代表所有 MVB 路线。
+**完成条件：** 完整多输出工作流正确。将有效数量与补齐输出数分开不等于实现了 MVB；本实现也不代表所有 MVB 路线。
 
 ## P4.3 比较与应用入口
 
@@ -224,7 +224,7 @@
 | --- | --- |
 | 共享层 | [lookup_table](../crates/primus_tfhe/src/lookup_table.rs)、[backend_support](../crates/primus_tfhe/src/backend_support.rs)、[bootstrap](../crates/primus_tfhe/src/bootstrap.rs)、[公开测试](../crates/primus_tfhe/tests/lookup_table.rs) |
 | Family | [GLWE LUT](../crates/primus_tfhe_glwe/src/lookup_table.rs)、[NTRU LUT](../crates/primus_tfhe_ntru/src/lookup_table.rs) 及 parameters；编码与 raw 入口 |
-| 四后端 | 各 `context.rs`、`evaluator.rs`、`blind_rotation.rs`；两种 GLWE order、NTRU 固定链、stride 和提取位置 |
+| 四后端 | 各 `context.rs`、`evaluator.rs`、`blind_rotation.rs`；两种 GLWE order、NTRU 固定链、旋转步长和提取位置 |
 | Boolean | [公共 evaluator](../crates/primus_tfhe_glwe/src/boolean/evaluator.rs) 及 NTT/Fourier 测试 |
 | 三个 CBS | [GLWE NTT](../crates/primus_tfhe_glwe_ntt/src/circuit_bootstrap)、[NTRU NTT](../crates/primus_tfhe_ntru_ntt/src/circuit_bootstrap)、[NTRU Fourier](../crates/primus_tfhe_ntru_fourier/src/circuit_bootstrap) 的 parameters/key/evaluator |
 | Workspace | 按旧符号检索所有 crate、xtask、测试、示例、benchmark；此索引不替代实际搜索 |

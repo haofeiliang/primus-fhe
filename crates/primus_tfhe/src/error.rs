@@ -18,6 +18,9 @@ pub enum LookupTableError {
     /// The rounded input encoding requires `t > 1` and explicit `q > t`.
     #[error("invalid lookup-table input encoding")]
     InvalidInputEncoding,
+    /// Full-domain signed folding requires an odd plaintext modulus.
+    #[error("full-domain lookup-table compilation requires an odd plaintext modulus")]
+    EvenPlaintextModulus,
     /// The selected input domain must be a non-empty prefix of the front half.
     #[error("lookup-table input domain {domain_len} must belong to 1..={max_domain_len}")]
     InvalidInputDomain {
@@ -43,30 +46,36 @@ pub enum LookupTableError {
     /// The plaintext modulus cannot be used as a platform-sized domain length.
     #[error("plaintext modulus is too large for lookup-table compilation")]
     PlaintextModulusTooLarge,
-    /// More plaintext values exist than available rotation coefficients.
+    /// The input domain needs more coefficients than each output has available.
     #[error(
-        "plaintext domain of length {domain_len} exceeds rotation domain of length {rotation_domain_len}"
+        "plaintext domain of length {domain_len} exceeds the {coefficients_per_output} coefficients available per output"
     )]
     PlaintextDomainTooLarge {
         /// Number of independently programmable plaintext inputs.
         domain_len: usize,
-        /// Number of accumulator coefficients.
-        rotation_domain_len: usize,
+        /// Coefficient capacity used by this check: polynomial length `N` for
+        /// the initial domain check, `N / s` for the interleaved layout check,
+        /// where `s` is the padded output count.
+        coefficients_per_output: usize,
     },
-    /// Adjacent messages, or the last message and the negacyclic boundary,
-    /// collide after encoding and modulus switching.
+    /// Adjacent centers in compilation order collide after encoding, modulus
+    /// switching and, for an odd full domain, signed folding.
     #[error(
-        "rotation-center collision between inputs {first_input} and {second_input} at exponent {exponent}"
+        "rotation-center collision between inputs {first_input} and {second_input} at compilation position {center_position}"
     )]
     RotationCenterCollision {
-        /// First adjacent plaintext input.
+        /// Input at the first center in compilation order.
         first_input: usize,
-        /// Second adjacent input, or the domain length at the negacyclic boundary.
+        /// Input at the next center; front-half compilation uses the domain length
+        /// for its terminating center, odd full-domain compilation uses input zero.
         second_input: usize,
-        /// Colliding rotation exponent.
-        exponent: usize,
+        /// Center position in the compiler's per-output coefficient coordinates.
+        /// For an interleaved table, multiply by the padded output count to get
+        /// the position in polynomial coefficient coordinates. Odd full-domain
+        /// centers are folded modulo the polynomial length.
+        center_position: usize,
     },
-    /// A slice has the wrong front-half domain length.
+    /// A slice has the wrong domain length for the selected compilation mode.
     #[error("lookup-table domain length mismatch: expected {expected}, got {actual}")]
     DomainLengthMismatch {
         /// Required output count.

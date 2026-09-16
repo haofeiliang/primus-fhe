@@ -225,7 +225,11 @@ where
         );
 
         let glwe = parameters.glwe();
-        let result = self.evaluate_to_glwe(input, lookup_table.polynomial(), lookup_table.stride());
+        let result = self.evaluate_to_glwe(
+            input,
+            lookup_table.polynomial(),
+            lookup_table.padded_output_count(),
+        );
         match parameters.pbs_order() {
             PbsOrder::BootstrapKeyswitch => {
                 for (index, output) in outputs.iter_mut().enumerate() {
@@ -251,14 +255,15 @@ where
     }
 
     /// Returns switched ring storage for BootstrapKeyswitch, main ring storage otherwise.
-    /// The caller has checked input/LUT compatibility; stride comes from the compiled table.
-    /// A stride of one gives ordinary modulus switching.
+    /// The caller checked input/LUT compatibility. The rotation step equals
+    /// the compiled LUT padded output count.
+    /// A rotation step of one gives ordinary modulus switching.
     #[inline]
     fn evaluate_to_glwe(
         &mut self,
         input: &LweCiphertext<T>,
         lookup_table: &Polynomial<Vec<T>>,
-        stride: usize,
+        rotation_step: usize,
     ) -> &GlweCiphertext<Vec<T>> {
         let parameters = self.context.parameters();
         let small_lwe = match parameters.pbs_order() {
@@ -281,7 +286,7 @@ where
             .ntt_blind_rotate_interleaved_lookup_table_kernel_to(
                 small_lwe,
                 lookup_table,
-                stride,
+                rotation_step,
                 &mut self.main_glwe,
                 parameters.glwe().cipher_modulus(),
                 self.context.table(),

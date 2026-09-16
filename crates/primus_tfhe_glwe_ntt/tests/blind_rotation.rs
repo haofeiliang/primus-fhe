@@ -212,7 +212,7 @@ fn functional_bootstrapping_key_blind_rotates() {
     blind_rotation_context.resize(ggsw_params.size());
     let input_len = LWE_DIMENSION + 1;
     let glwe_len = ggsw_params.glwe_len();
-    for (input_len, lookup_len, output_len, stride) in [
+    for (input_len, lookup_len, output_len, rotation_step) in [
         (input_len - 1, POLY_LENGTH, glwe_len, None),
         (input_len, POLY_LENGTH - 1, glwe_len, None),
         (input_len, POLY_LENGTH, glwe_len - 1, None),
@@ -229,11 +229,11 @@ fn functional_bootstrapping_key_blind_rotates() {
         let before = output.as_ref().to_vec();
         assert!(
             std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                if let Some(stride) = stride {
+                if let Some(rotation_step) = rotation_step {
                     key.ntt_blind_rotate_interleaved_lookup_table_to(
                         &input,
                         &lookup,
-                        stride,
+                        rotation_step,
                         &mut output,
                         modulus,
                         &ntt,

@@ -30,8 +30,8 @@
 
 源码入口：
 
-- [共享 LUT](../crates/primus_tfhe/src/lookup_table.rs)：类型、构造器和编码元数据；[编译内核](../crates/primus_tfhe/src/lookup_table/compile.rs) 集中几何校验与填充，错误定义位于 [error.rs](../crates/primus_tfhe/src/error.rs)。
-- [有界双输入](../crates/primus_tfhe/src/bivariate_lookup_table.rs)：绑定矩形输入域、打包基数与普通 LUT，复用现有 PBS。
+- [共享 LUT](../crates/primus_tfhe/src/lookup_table.rs)：统一导出与编码元数据；单输出、交错多输出与双输入类型分别位于 `single.rs`、`interleaved.rs`、`bivariate.rs`。[前半区内核](../crates/primus_tfhe/src/lookup_table/compile/front_half.rs) 与[奇数全域内核](../crates/primus_tfhe/src/lookup_table/compile/odd_full_domain.rs) 分别处理两种几何，错误定义位于 [error.rs](../crates/primus_tfhe/src/error.rs)。
+- [有界双输入](../crates/primus_tfhe/src/lookup_table/bivariate.rs)：绑定矩形输入域、打包基数与普通 LUT，复用现有 PBS。
 - [旋转量化](../crates/primus_tfhe/src/backend_support.rs)：普通与 windowed modulus switch。
 - [PBS trait](../crates/primus_tfhe/src/bootstrap.rs)：公共功能契约。
 - [GLWE NTT CBS](../crates/primus_tfhe_glwe_ntt/src/circuit_bootstrap/evaluator.rs)：有效输出补齐与投影的实际调用方。
@@ -82,7 +82,7 @@ MVB 还存在基于 BR 展开的路线。因此编译产物应由选定算法决
 ## 公共 API 的设计方向
 
 - 集中编译配置和几何扫描，复用 `RoundedCodec`；没有跨 LUT 复用需求时，不永久保存中心数组。
-- 单输出可复用步长为 1 的编译核心。按输入行求值并直接填最终布局，不再逐列分配多项式；必要的短行 scratch 只分配一次。
+- 单输出可复用步长为 1 的编译核心。按输入行求值并直接填最终布局，不再逐列分配多项式；必要的短输出组 scratch 只分配一次。
 - 普通 `LookupTable` 和交错 `InterleavedLookupTable` 保存各自必要的域、模数和布局信息。
 - MVB 程序与加密 LUT 使用各自实际表示，不在普通 LUT 中堆积可选字段。
 - 小型普通 PBS trait 可以保留。多输出 trait 描述结果和调用契约，不将“一次 BR、一次环 KS”承诺给所有未来算法。
@@ -95,7 +95,7 @@ MVB 还存在基于 BR 展开的路线。因此编译产物应由选定算法决
 | --- | --- |
 | LUT 的具体字段与检查边界 | 见 P1.1 元数据决定与 P1.3 API 决定 |
 | 类型/方法命名、family 包装职责 | 见 P1.3；保留实际检查/编码职责，不留旧 API 兼容层 |
-| 任意 `k` 与 stride 补齐 | 见 P1.3，不再作为 P2 的重复任务 |
+| 任意 `k` 与补齐输出数补齐 | 见 P1.3，不再作为 P2 的重复任务 |
 | 奇数全域在实际参数下的中心分离与误差余量 | P2.3，条件不足的参数明确拒绝 |
 | PBC 桶数、复制数、失败重试和安全/噪声条件 | P3.1，见专项文档；不能用经验成功率代替论证 |
 | 首个 MVB 算法、适用模数和输出编码 | P4.1，先确认因子分解与误差，再定编译产物 |
@@ -103,7 +103,7 @@ MVB 还存在基于 BR 展开的路线。因此编译产物应由选定算法决
 
 ## P1.1 的精确契约与元数据决定
 
-几何公式及边界已归位到 [共享 README](../crates/primus_tfhe/README.zh_CN.md)、[编译模块](../crates/primus_tfhe/src/lookup_table/compile.rs) 与 [量化 helper](../crates/primus_tfhe/src/backend_support.rs)。编译时中心经历编码和模切两次舍入；例如 `N=16, s=1, t=3, q_in=5, m=1` 得到中心 13，理想化的一次舍入会得到 11，且两者填充边界不同。
+几何公式及边界已归位到 [共享 README](../crates/primus_tfhe/README.zh_CN.md)、[前半区编译模块](../crates/primus_tfhe/src/lookup_table/compile/front_half.rs) 与 [量化 helper](../crates/primus_tfhe/src/backend_support.rs)。编译时中心经历编码和模切两次舍入；例如 `N=16, s=1, t=3, q_in=5, m=1` 得到中心 13，理想化的一次舍入会得到 11，且两者填充边界不同。
 
 当前执行采用 `R_s(x) = s*R(x,q_in,2N/s)`，先缩小量化域再乘步长；各系数独立量化后，总旋转为 `-R_s(b) + ΣR_s(a_i)*secret_i`。当前合法 `s <= N`，虚拟旋转域至少有两个位置；不要求 helper 支持没有调用方的单位置退化域。
 
@@ -245,11 +245,11 @@ PBS 融合原型将 `(LWE 系数, GGSW)` 交给 quantizer 的批量入口，回�
 ## P1.2 共享几何与直接填充
 
 单输出和交错 LUT 共用一次中心/区间扫描，几何工作为 `O(D)`；回调求值仍为
-`O(kD)`，系数填充仍为 `O(N)`。每个非空区间的首行直接接收输出值，随后复制到
+`O(kD)`，系数填充仍为 `O(N)`。每个非空区间的首个输出组直接接收输出值，随后复制到
 区间其余位置；多输出按已初始化前缀倍增复制，单输出直接 `fill`。
-首行 `f(0)` 同时供负循环尾部使用，不额外求值或分配 scratch/中心数组。
-编译函数直接推进中心和边界；中心使用虚拟环坐标，填充函数接收实际系数切片。
-`fill_input_interval` 负责求值、检查和区间填充，`fill_negated_tail` 负责复用首行填充尾部。
+首个输出组 `f(0)` 同时供负循环尾部使用，不额外求值或分配 scratch/中心数组。
+编译函数直接推进中心和边界；中心使用每输出系数坐标，填充函数接收实际系数切片。
+`fill_input_interval` 负责求值、检查和区间填充，`fill_negated_tail` 负责复用首个输出组填充尾部。
 公共输入域、二次幂输出数量和编码契约保持不变；数量/步长的分离属于 P1.3。
 
 ### 构造时间与分配
@@ -268,7 +268,7 @@ PBS 融合原型将 `(LWE 系数, GGSW)` 交给 quantizer 的批量入口，回�
 分配使用现有线程局部计数器单独测量相同负载，未插入 Criterion 计时路径。
 字节数是累计成功申请的大小，不含 allocator 开销，也不是峰值内存；回调本身不分配。
 保留“只分配结果”的回归检查及回调顺序/错误中止检查，临时记录程序已移除。
-P1.1 的独立几何 oracle 继续覆盖每个系数，并补充虚拟环长度为 1、没有尾部的边界。
+P1.1 的独立几何 oracle 继续覆盖每个系数，并补充每个输出仅占一个系数、没有尾部的边界。
 
 单输出保留约 1 ns 的差异；这些测量不代表所有输入大小、SIMD 或非 x86 平台的表现。
 本步没有改动在线 PBS 内核，也未重新计时在线 PBS；构造收益不能视为在线加速。
@@ -311,10 +311,10 @@ taskset -c 0 cargo bench -p primus_tfhe --bench lookup_table -- --sample-size 10
 ## P1.3 布局 API 决定
 
 - 普通表为 `LookupTable`，交错表为 `InterleavedLookupTable`；raw 编译统一为各自的 `try_new`，接收已编码输出并返回 `Result`。旧自由函数与 `ManyLookupTable` 名称删除，不保留兼容层。
-- 两类表保存真实 `D`；交错表保存有效数量 `k`，通过 `stride()` 推导 `s=next_power_of_two(k)`。编译器只对 `0..k` 调用回调并补零槽，输入优先切片长度为 `D*k`，BR 接收 `s`，提取和输出切片使用 `k`。
+- 两类表保存真实 `D`；交错表保存有效数量 `k`，通过 `padded_output_count()` 推导 `s=next_power_of_two(k)`。编译器只对 `0..k` 调用回调并补零槽，输入优先切片长度为 `D*k`，BR 接收 `s`，提取和输出切片使用 `k`。
 - Family/context 的 `compile_lookup_table_*` 与 `compile_interleaved_lookup_table_*` 保留：它们从参数取得默认域，检查明文输出/切片长度并编码。直接使用构造器的 Boolean/CBS 保留各自 raw 输出尺度。
 - `ProgrammableBootstrapInterleaved` 只描述交错表的多输出契约；“一次 BR、一次环 KS”属于当前四后端的具体实现。未来 MVB 程序按实际表示另定接口，不借交错表名称泛化。
-- 三路 CBS 以 gadget 层数构造 LUT，补齐由共享编译器负责；参数以 `lookup_table_stride()` 描述物理步长。投影与 GGSW/NGSW 保持真实层数，GLWE key 仍绑定输出布局，NTRU key 仍绑定完整输出 basis。
+- 三路 CBS 以 gadget 层数构造 LUT，补齐由共享编译器负责；参数以 `lookup_table_padded_output_count()` 描述 LUT 补齐输出数。投影与 GGSW/NGSW 保持真实层数，GLWE key 仍绑定输出布局，NTRU key 仍绑定完整输出 basis。
 
 公开契约见共享及后端 rustdoc/README。构造基准新增 `t16/k3`，旧 case 名称与历史 CSV 保留；最终同配置计时见 [P1.4 验收](#p14-阶段验收)。
 
@@ -435,9 +435,9 @@ Native 的额外位运算扫描成本较小；Barrett 的量化成本接近翻�
 | Boolean / 三路 CBS | Boolean 内外尺度；CBS 的真实层数、GLWE 布局绑定和 NTRU 完整 basis 绑定、投影零尾及 CMUX 消费；NTRU CBS 保留 accumulator 秘密 |
 | 维护资产与 workspace | 旧符号搜索、七包公开导出、14 份 README、相关测试/基准及六个示例；workspace all-targets 编译覆盖其余调用方和 xtask |
 
-修正 GLWE BR 注释，明确直接量化到 `2N/s` 后乘 `s`；raw BR 测试将实际表示步长的局部变量改为 `stride`。同步四后端双语 README，整理相关 import，统一旧居中 CSV 的换行符且不改数据。维护资产按独立契约精简如下：
+修正 GLWE BR 注释，明确直接量化到 `2N/s` 后乘 `s`；raw BR 测试使用 `rotation_step` 表示旋转步长。同步四后端双语 README，整理相关 import，统一旧居中 CSV 的换行符且不改数据。维护资产按独立契约精简如下：
 
-- ManyLUT 端到端保留 `k=1/3/4`、消息 `0/3/4/7`；分配包装与 scalar 等价只用代表性非零消息验证，PBS 调用合计从 501 次降至 147 次。完整小域几何留在共享整数 oracle，各后端仍验证 stride 1、补零/满槽、错误先于写入和工作区复用。
+- ManyLUT 端到端保留 `k=1/3/4`、消息 `0/3/4/7`；分配包装与 scalar 等价只用代表性非零消息验证，PBS 调用合计从 501 次降至 147 次。完整小域几何留在共享整数 oracle，各后端仍验证补齐输出数 1、补零/满槽、错误先于写入和工作区复用。
 - 三路 CBS 保留三层 gadget 和 `1→0` 控制序列，CBS 调用从 26 次降至 10 次；保留每层 phase、CMUX、零尾、布局/basis 绑定和独立参数边界。Boolean 保留所有真值表，反馈链从 16 步降到 4 步。GLWE context 专测 split-key 工作流，fresh 路径由 PBS/Boolean 覆盖；NTRU metadata 拒绝测试改用 `N=16,n=4`。
 - Criterion 用例从 166 项精简到 97 项：删除重复的 allocating 包装、Boolean XOR/NOT 微基准、已由 lattice 覆盖的系数提取，以及独立旧 key-switch 对照文件。保留 LUT 构造、BR/KS 阶段、完整 PBS/CBS、ManyLUT 与独立 PBS 的等价比较、AND/MUX。NTRU CBS 的尺寸/分解基数矩阵继续承担耗时和内存比较。
 
@@ -531,3 +531,65 @@ LUT 读取 oracle，以及容量/模数/输出/缓冲区拒绝边界。显式 `q
 各 43 项 TFHE 测试，相关 Clippy 与默认文档通过。修改后的 NTRU NTT basic 示例在两配置
 均运行通过。端到端共增加 18 次 PBS，不增加 keygen；未做性能计时、其余 workspace
 测试、非 x86 或生产噪声/安全性验证。
+
+## P2.3 奇数明文模数全域
+
+采用独立的单输出编译入口，返回原有 `LookupTable`，不增加域策略 enum、持久中心数组或
+后端分支。`input_domain_len()` 为 `t`，原兼容性字段已经足够。两族参数和四后端 context
+提供 `compile_odd_full_domain_lookup_table_fn/slice`，沿用 P2.1 的独立输出 codec；
+raw 入口为 `LookupTable::try_new_odd_full_domain`。交错与双输入入口仍编译前半区。
+使用方式和公开前提见 [共享 README](../crates/primus_tfhe/README.zh_CN.md#奇数全域-pbs)。
+
+三个公开类型统一归入 `lookup_table/`：`single.rs` 集中 `LookupTable` 的两种构造器和访问器，
+`interleaved.rs` 管理输出槽布局，`bivariate.rs` 持有普通 LUT 与输入打包参数。
+`compile/` 按前半区和奇数全域分开编译算法，入口承担几何检查；共用编码检查、中点与负循环
+尾部填充留在 `compile.rs`。域选择不改变输出表示，因此奇数全域作为单输出的构造方式，
+不成为第四种 LUT 类型。隐藏域长度 helper 命名为 `front_half_domain_len`，family 和 CBS
+调用方显式表达前半区语义。
+
+### 符号与排序依据
+
+奇数模数通过 accumulator 的带符号折叠支持任意全域函数，参考
+[Hippogryph §2.2.3](https://www.nicolasbon.com/assets/pdf/25Hippogriph.pdf)。以下是适配本库
+两次整数舍入的推导，未直接采用论文中理想化的等宽区间。
+
+令 `t=2h+1`，`E(m)=round(m*q/t)`，`c[m]=R(E(m),q,2N)`。对 `c[m]>=N`，
+把中心减去 `N`，并将输出编码值取负；提取时的负循环符号恢复原输出。理想折叠位置为
+`j*N/t`，其对应输入为偶数 `j` 时的 `j/2`、奇数 `j` 时的 `h+1+j/2`，因此输入访问顺序为
+`0,h+1,1,h+2,...,h`。例如 `t=5` 时为 `0,3,1,4,2`，符号依次为 `+,-,+,-,+`。
+
+排序也适用于真实编码：记 `a=q*j/(2t)`，在密文域先减去上半区的 `q/2`。
+偶数 `q` 下，折叠编码为 `round(a)`；奇数 `q` 下，偶数 `j` 为 `round(a)`，
+奇数 `j` 为 `floor(a)+1/2`。相邻 `a` 增加 `q/(2t)>1/2`，故这些值不递减。
+再乘 `2N/q` 并舍入仍保序，但可能合并中心。`t<=N` 保证两消息半区量化后仍在对应的
+旋转半区；编译器以真实 codec/quantizer 顺序扫描，拒绝不严格递增的折叠中心。
+这避免排序分配，同时保留对双重舍入和中心不足的检查。
+
+### 区间与边界
+
+设真实折叠中心为 `0=d[0]<...<d[t-1]<N`，追加 `d[t]=N`、值 `-f(0)`。
+相邻区间边界为 `ceil((d[j]+d[j+1])/2)`，相等距离归较大中心。最后一段填 `-f(0)`，
+经负循环扩展得到零点左侧的 `f(0)`，覆盖负相位回绕；上半区输入还原为各自的正输出。
+有效输入从前半区扩展到全 `0..t`，旋转多项式仍满足负循环关系。
+
+要求奇数 `t>=3`、`t<=N`，以及共用的 `q>t`、`2N` 可表示和规范输出条件。
+`t` 无须为素数。容量不是充分条件：`t=5,q=8,N=8` 的折叠中心存在碰撞，应拒绝；
+`t=5,q=7,N=8` 得到 `0,1,2,6,7`，可表示但余量很小。不能把两次舍入合并为
+`round(2N*m/t)`，也不能仅从理想间距判定几何有效。
+
+典型折叠中心间距为 `N/t`，前半区约为 `2N/t`。具体输入的可容纳整数旋转偏差由左右
+实际中点决定，最小中心间距的一半只提供保守几何界。完整 PBS 还需计入输入加密噪声、
+BR 前的密钥切换、逐系数模切以及后续外积/KS 的输出噪声；本步不提供生产失败概率。
+
+### 验证资产
+
+增加两个共享测试，使用独立宽整数编码和带符号中心拷贝的最近邻 oracle：遍历
+`t=3/5/9/15` 的全域和 `0..2N` 的每个位置，覆盖三种字宽、Native/显式模数、两次舍入、
+碰撞、回绕、中点、规范输出和回调错误中止。原分配测试覆盖新构造器，仍只分配结果多项式。
+四后端既有 fixture 改用 `t_in=15`、保留 `t_out=8`，复用原密钥逐一测试 15 个消息，
+覆盖两种 GLWE order、两种 FFT 及零在线分配；没有新增 keygen 或测试程序。
+共增加两个测试和 135 次小参数 PBS，无新增 benchmark 或性能改善结论。
+
+默认七包测试、nightly `just tfhe-simd` 均通过，各 45 项；相关默认/SIMD all-targets
+Clippy、workspace all-targets check、格式和严格 rustdoc 通过。未重跑未修改的示例、
+其余 workspace 测试、性能计时、非 x86 或生产噪声/安全性验证。

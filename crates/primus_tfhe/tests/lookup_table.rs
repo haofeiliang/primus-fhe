@@ -70,9 +70,14 @@ fn modulus_switch<T: FheUint>(value: T, q: Option<T>, n: usize) -> usize {
         primus_tfhe::backend_support::modulus_switch(value, modulus, n)
     })
 }
-fn windowed_modulus_switch<T: FheUint>(value: T, q: Option<T>, n: usize, w: usize) -> usize {
+fn modulus_switch_with_step<T: FheUint>(
+    value: T,
+    q: Option<T>,
+    n: usize,
+    rotation_step: usize,
+) -> usize {
     with_modulus!(q, modulus, {
-        primus_tfhe::backend_support::windowed_modulus_switch(value, modulus, n, w)
+        primus_tfhe::backend_support::modulus_switch_with_step(value, modulus, n, rotation_step)
     })
 }
 
@@ -140,7 +145,7 @@ fn raw_compilation_validates_layout_encoding_and_canonical_outputs() {
             64,
             LookupTableError::PlaintextDomainTooLarge {
                 domain_len: 2,
-                rotation_domain_len: 1,
+                coefficients_per_output: 1,
             },
         ),
     ] {
@@ -161,6 +166,14 @@ fn compilation_allocates_only_the_result() {
         });
         assert_eq!(
             (single.count, single.allocated_bytes),
+            (1, N * size_of::<u32>())
+        );
+        let (_, full) = allocations::measure(|| {
+            LookupTable::try_new_odd_full_domain(N, 15, modulus, modulus, |input| Ok(input as u32))
+                .unwrap()
+        });
+        assert_eq!(
+            (full.count, full.allocated_bytes),
             (1, N * size_of::<u32>())
         );
         for count in [1, 3, 4, 16] {
@@ -262,32 +275,37 @@ fn check_layout<T, M>(
     let output_q = modulus
         .explicit_value()
         .map_or(1u128 << T::BITS, Into::into);
-    let stride = count.next_power_of_two();
-    let virtual_n = n / stride;
+    let padded_output_count = count.next_power_of_two();
+    let coefficients_per_output = n / padded_output_count;
     let centers: Vec<_> = (0..=domain)
         .map(|input| {
             let encoded = round_ratio(input as u128 * q, t as u128);
-            (round_ratio(encoded * (2 * virtual_n) as u128, q) as usize).min(virtual_n)
+            (round_ratio(encoded * (2 * coefficients_per_output) as u128, q) as usize)
+                .min(coefficients_per_output)
         })
         .collect();
     assert!(centers.windows(2).all(|pair| pair[0] < pair[1]));
 
     let check = |polynomial: &[T]| {
-        for row in polynomial.chunks_exact(stride) {
-            assert!(row[count..].iter().all(|&value| value == T::ZERO));
+        for output_group in polynomial.chunks_exact(padded_output_count) {
+            assert!(output_group[count..].iter().all(|&value| value == T::ZERO));
         }
-        for position in 0..2 * virtual_n {
+        for position in 0..2 * coefficients_per_output {
             // Nearest-center search, with ties going to the higher center,
             // is independent of the compiler's midpoint/fill implementation.
             let nearest = (0..=domain)
                 .min_by_key(|&input| {
                     (
-                        centers[input].abs_diff(position % virtual_n),
+                        centers[input].abs_diff(position % coefficients_per_output),
                         Reverse(input),
                     )
                 })
                 .unwrap();
-            let rotated = rotate(polynomial, (2 * n - position * stride) % (2 * n), output_q);
+            let rotated = rotate(
+                polynomial,
+                (2 * n - position * padded_output_count) % (2 * n),
+                output_q,
+            );
             for (output, &actual) in rotated.iter().take(count).enumerate() {
                 // The extra center terminates the programmed prefix with
                 // -f(0); that tail is not another valid message.
@@ -296,7 +314,7 @@ fn check_layout<T, M>(
                     output,
                     output_q,
                 );
-                let negate = (nearest == domain) ^ (position >= virtual_n);
+                let negate = (nearest == domain) ^ (position >= coefficients_per_output);
                 let expected = if negate {
                     (output_q - value) % output_q
                 } else {
@@ -319,7 +337,7 @@ fn check_layout<T, M>(
     let many = compile_interleaved(domain, n, count, t, input_q, modulus, value).unwrap();
     assert_eq!(many.input_domain_len(), domain);
     assert_eq!(many.output_count(), count);
-    assert_eq!(many.stride(), stride);
+    assert_eq!(many.padded_output_count(), padded_output_count);
     assert!(many.is_compatible(n, t, input_q, modulus.explicit_value()));
     check(many.polynomial().as_ref());
     if count == 1 {
@@ -365,7 +383,7 @@ fn compiled_luts_match_independent_negacyclic_oracle() {
     check_word_layouts::<u16>();
     check_word_layouts::<u32>();
     check_word_layouts::<u64>();
-    // A one-coefficient virtual ring has no stored terminating plateau.
+    // A layout with one coefficient per output has no stored terminating plateau.
     for count in [1, 4] {
         check_layout(count, 2, 1, count, None::<u32>, NativeModulus::new());
     }
@@ -384,7 +402,7 @@ fn rotation_center_collisions_are_rejected() {
             LookupTableError::RotationCenterCollision {
                 first_input: 1,
                 second_input: 2,
-                exponent: 2,
+                center_position: 2,
             },
         ),
         (
@@ -394,7 +412,7 @@ fn rotation_center_collisions_are_rejected() {
             LookupTableError::RotationCenterCollision {
                 first_input: 1,
                 second_input: 2,
-                exponent: 2,
+                center_position: 2,
             },
         ),
     ] {
@@ -410,7 +428,7 @@ fn rotation_center_collisions_are_rejected() {
             .unwrap_err(),
             expected,
         );
-        // The same virtual layout is used by the interleaved compiler.
+        // Interleaving preserves these centers in per-output coordinates.
         assert_eq!(
             compile_interleaved(
                 t.div_ceil(2) as usize,
@@ -437,12 +455,12 @@ where
         let input = T::try_from(value).unwrap();
         let expected = round_ratio(value * length as u128, q) as usize % length;
         assert_eq!(modulus_switch(input, modulus, length), expected);
-        for window in [1, length / 2] {
-            let expected = round_ratio(value * (length / window) as u128, q) as usize
-                % (length / window)
-                * window;
+        for rotation_step in [1, length / 2] {
+            let expected = round_ratio(value * (length / rotation_step) as u128, q) as usize
+                % (length / rotation_step)
+                * rotation_step;
             assert_eq!(
-                windowed_modulus_switch(input, modulus, length, window),
+                modulus_switch_with_step(input, modulus, length, rotation_step),
                 expected
             );
         }
@@ -475,11 +493,15 @@ where
 fn quantizer_and_lut_reject_unrepresentable_rotation_domains() {
     let modulus = NativeModulus::<u16>::new();
     for two_n in [1 << 16, 1 << 17] {
-        // A smaller virtual target must not bypass the physical-domain boundary.
-        for window in [1, 2] {
+        // A smaller quantization target must not bypass the 2N boundary.
+        for rotation_step in [1, 2] {
             assert!(
                 std::panic::catch_unwind(|| {
-                    primus_tfhe::backend_support::RotationQuantizer::new(modulus, two_n, window)
+                    primus_tfhe::backend_support::RotationQuantizer::new(
+                        modulus,
+                        two_n,
+                        rotation_step,
+                    )
                 })
                 .is_err()
             );
@@ -487,7 +509,7 @@ fn quantizer_and_lut_reject_unrepresentable_rotation_domains() {
                 InterleavedLookupTable::try_new(
                     1,
                     two_n / 2,
-                    window,
+                    rotation_step,
                     2,
                     modulus,
                     modulus,
@@ -505,8 +527,8 @@ fn coefficient_quantization_matches_wide_integer_oracle() {
     check_quantization::<u16>();
     check_quantization::<u32>();
     check_quantization::<u64>();
-    // Rounding in the virtual ring differs from clearing low bits afterward.
-    assert_eq!(windowed_modulus_switch(2u32, Some(16), 16, 4), 4);
+    // Rounding in the smaller domain differs from clearing low bits afterward.
+    assert_eq!(modulus_switch_with_step(2u32, Some(16), 16, 4), 4);
     assert_eq!(modulus_switch(2u32, Some(16), 16) & !3, 0);
 }
 
@@ -680,5 +702,155 @@ fn bivariate_boundaries_reject_before_callbacks_or_output_writes() {
         let mut output = initial.clone();
         assert!(catch_unwind(AssertUnwindSafe(|| lut.pack_to(lhs, rhs, &mut output))).is_err());
         assert_eq!(&output, initial);
+    }
+}
+
+fn check_odd_full_domain<T, M>(n: usize, t: usize, input_q: Option<T>, modulus: M)
+where
+    T: FheUint + Into<u128> + TryFrom<u128, Error: Debug>,
+    M: RingContext<T>,
+{
+    let q = input_q.map_or(1u128 << T::BITS, Into::into);
+    let output_q = modulus
+        .explicit_value()
+        .map_or(1u128 << T::BITS, Into::into);
+    let centers: Vec<_> = (0..t)
+        .map(|m| {
+            (round_ratio(round_ratio(m as u128 * q, t as u128) * (2 * n) as u128, q)
+                % (2 * n) as u128) as usize
+        })
+        .collect();
+    let calls: Vec<_> = (0..t).map(|_| Cell::new(0)).collect();
+    let value = |m| ((m + 1) % t) as u128;
+    let result = with_modulus!(input_q, input_modulus, {
+        LookupTable::try_new_odd_full_domain(n, T::as_from(t), input_modulus, modulus, |m| {
+            calls[m].set(calls[m].get() + 1);
+            Ok(T::try_from(value(m)).unwrap())
+        })
+    });
+    let mut folded: Vec<_> = centers.iter().map(|c| c % n).collect();
+    folded.sort_unstable();
+    if folded.windows(2).any(|pair| pair[0] == pair[1]) {
+        assert!(matches!(
+            result,
+            Err(LookupTableError::RotationCenterCollision { .. })
+        ));
+        return;
+    }
+    let lut = result.unwrap();
+    assert_eq!(lut.input_domain_len(), t);
+    assert!(lut.is_compatible(n, T::as_from(t), input_q, modulus.explicit_value()));
+    assert!(calls.iter().all(|count| count.get() == 1));
+
+    // Search signed copies of every *unfolded* center independently of the
+    // compiler's input ordering. Every rotation checks a plateau or its boundary,
+    // including midpoint ties and both sides of the seams at 0, N and 2N.
+    let mut candidates = Vec::new();
+    for (m, &center) in centers.iter().enumerate() {
+        for copy in -2i64..=2 {
+            let output = if copy % 2 == 0 {
+                value(m)
+            } else {
+                (output_q - value(m)) % output_q
+            };
+            candidates.push((center as i64 + copy * n as i64, output));
+        }
+        assert_eq!(
+            rotate(
+                lut.polynomial().as_ref(),
+                (2 * n - center) % (2 * n),
+                output_q
+            )[0]
+            .into(),
+            value(m),
+        );
+    }
+    for position in 0..2 * n {
+        let &(_, expected) = candidates
+            .iter()
+            .min_by_key(|&&(center, _)| (center.abs_diff(position as i64), Reverse(center)))
+            .unwrap();
+        let actual = rotate(
+            lut.polynomial().as_ref(),
+            (2 * n - position) % (2 * n),
+            output_q,
+        )[0];
+        assert_eq!(
+            actual.into(),
+            expected,
+            "q={q}, t={t}, N={n}, position={position}"
+        );
+    }
+}
+
+#[test]
+fn odd_full_domain_matches_signed_integer_oracle() {
+    fn check<T: FheUint + Into<u128> + TryFrom<u128, Error: Debug>>() {
+        for t in [3usize, 5, 9, 15] {
+            for q in [
+                None,
+                Some(t as u128 + 1),
+                Some(t as u128 + 2),
+                Some(97),
+                Some(128),
+                Some((1u128 << T::BITS) - 1),
+            ] {
+                let q = q.map(|q| T::try_from(q).unwrap());
+                check_odd_full_domain(16, t, q, NativeModulus::new());
+                check_odd_full_domain(16, t, q, BarrettModulus::new(T::try_from(97u128).unwrap()));
+            }
+        }
+    }
+    check::<u16>();
+    check::<u32>();
+    check::<u64>();
+}
+
+#[test]
+fn odd_full_domain_rejects_invalid_domains_and_outputs() {
+    for (n, t, q, expected) in [
+        (0, 3, 97, LookupTableError::InvalidPolynomialLength),
+        (8, 1, 97, LookupTableError::InvalidInputEncoding),
+        (8, 3, 3, LookupTableError::InvalidInputEncoding),
+        (8, 4, 97, LookupTableError::EvenPlaintextModulus),
+        (
+            8,
+            9,
+            97,
+            LookupTableError::PlaintextDomainTooLarge {
+                domain_len: 9,
+                coefficients_per_output: 8,
+            },
+        ),
+    ] {
+        assert_eq!(
+            LookupTable::try_new_odd_full_domain(
+                n,
+                t,
+                BarrettModulus::new(q),
+                BarrettModulus::new(97u32),
+                |_| panic!("invalid parameters must precede callbacks"),
+            )
+            .unwrap_err(),
+            expected
+        );
+    }
+    let modulus = BarrettModulus::new(97u32);
+    for error in [
+        LookupTableError::EncodedOutputOutOfRange { input: 3 },
+        LookupTableError::OutputOutOfRange { input: 3 },
+    ] {
+        let calls = Cell::new(0);
+        let result = LookupTable::try_new_odd_full_domain(16, 5, modulus, modulus, |m| {
+            calls.set(calls.get() + 1);
+            match m {
+                0 => Ok(1),
+                3 if matches!(error, LookupTableError::EncodedOutputOutOfRange { .. }) => Ok(97),
+                3 => Err(error.clone()),
+                _ => panic!("callback must stop at the first invalid output"),
+            }
+        });
+        assert_eq!(result.unwrap_err(), error);
+        assert_eq!(calls.get(), 2);
     }
 }

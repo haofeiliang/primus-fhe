@@ -125,18 +125,18 @@ where
 
     /// Blind-rotates an interleaved PBSManyLUT accumulator.
     ///
-    /// Each input coefficient is quantized directly to `2N / stride`, then
-    /// multiplied by `stride`, preserving the independently programmed residue
-    /// classes. `stride` must be a non-zero power of two dividing the
-    /// polynomial length `N`.
+    /// Each input coefficient is quantized directly to `2N / rotation_step`, then
+    /// multiplied by `rotation_step`, preserving the independent output columns.
+    /// `rotation_step` is the LUT padded output count: a nonzero power of two
+    /// dividing `N`.
     ///
     /// Inherits [`Self::fourier_blind_rotate_lookup_table_to`]'s requirements.
-    /// An invalid stride panics before output writes.
+    /// An invalid rotation step panics before output writes.
     pub fn fourier_blind_rotate_interleaved_lookup_table_to<Table, A, B, C>(
         &self,
         input: &Lwe<A>,
         lookup_table: &Polynomial<B>,
-        stride: usize,
+        rotation_step: usize,
         output: &mut TorusGlwe<C>,
         fft: &mut FftEngine<'_, Table>,
         context: &mut FourierGlweBlindRotationContext<T>,
@@ -148,8 +148,8 @@ where
     {
         let poly_length = self.size().glwe_size().poly_length();
         assert!(
-            stride.is_power_of_two() && poly_length.is_multiple_of(stride),
-            "PBSManyLUT stride must be a non-zero power-of-two divisor of N"
+            rotation_step.is_power_of_two() && poly_length.is_multiple_of(rotation_step),
+            "PBSManyLUT rotation step must be a non-zero power-of-two divisor of N"
         );
         assert_eq!(
             (
@@ -164,7 +164,7 @@ where
         self.fourier_blind_rotate_interleaved_lookup_table_kernel_to(
             input,
             lookup_table,
-            stride,
+            rotation_step,
             output,
             fft,
             context,
@@ -177,7 +177,7 @@ where
         &self,
         input: &Lwe<A>,
         lookup_table: &Polynomial<B>,
-        stride: usize,
+        rotation_step: usize,
         output: &mut TorusGlwe<C>,
         fft: &mut FftEngine<'_, Table>,
         context: &mut FourierGlweBlindRotationContext<T>,
@@ -190,8 +190,8 @@ where
         let poly_length = self.size().glwe_size().poly_length();
         let two_n = poly_length * 2;
         debug_assert!(
-            stride.is_power_of_two() && poly_length.is_multiple_of(stride),
-            "PBSManyLUT stride must be a non-zero power-of-two divisor of N"
+            rotation_step.is_power_of_two() && poly_length.is_multiple_of(rotation_step),
+            "PBSManyLUT rotation step must be a non-zero power-of-two divisor of N"
         );
         debug_assert_eq!(
             (
@@ -204,10 +204,10 @@ where
         );
 
         let input_modulus = self.input_modulus();
-        let quantizer = if stride == 1 {
+        let quantizer = if rotation_step == 1 {
             self.input_quantizer()
         } else {
-            RotationQuantizer::new(input_modulus, two_n, stride)
+            RotationQuantizer::new(input_modulus, two_n, rotation_step)
         };
         let exponent_of = |value| quantizer.exponent(value);
         let initial_exponent = exponent_of(input.b()).wrapping_neg() & (two_n - 1);

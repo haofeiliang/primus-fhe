@@ -206,6 +206,35 @@ where
             .compile_lookup_table_slice(output_codec, outputs)
     }
 
+    /// See [`primus_tfhe_glwe::GlweTfheParameters::compile_odd_full_domain_lookup_table_fn`].
+    #[inline]
+    pub fn compile_odd_full_domain_lookup_table_fn<OM, F>(
+        &self,
+        output_codec: &RoundedCodec<T, OM>,
+        function: F,
+    ) -> Result<LookupTable<T>, LookupTableError>
+    where
+        OM: PrepareModulusSwitch<ValueT = T> + ReduceAdd<T, Output = T>,
+        F: Fn(usize) -> T,
+    {
+        self.parameters
+            .compile_odd_full_domain_lookup_table_fn(output_codec, function)
+    }
+
+    /// See [`primus_tfhe_glwe::GlweTfheParameters::compile_odd_full_domain_lookup_table_slice`].
+    #[inline]
+    pub fn compile_odd_full_domain_lookup_table_slice<OM>(
+        &self,
+        output_codec: &RoundedCodec<T, OM>,
+        outputs: &[T],
+    ) -> Result<LookupTable<T>, LookupTableError>
+    where
+        OM: PrepareModulusSwitch<ValueT = T> + ReduceAdd<T, Output = T>,
+    {
+        self.parameters
+            .compile_odd_full_domain_lookup_table_slice(output_codec, outputs)
+    }
+
     /// See [`primus_tfhe_glwe::GlweTfheParameters::compile_interleaved_lookup_table_fn`].
     #[inline]
     pub fn compile_interleaved_lookup_table_fn<OM, F>(

@@ -101,7 +101,7 @@ where
         let modulus = glwe.cipher_modulus();
         let poly_length = glwe.poly_length();
         let domain_len =
-            primus_tfhe::lookup_table_domain_len(tfhe.plain_modulus_value(), poly_length)?;
+            primus_tfhe::front_half_domain_len(tfhe.plain_modulus_value(), poly_length)?;
         let gadget_scalars: Vec<T> = parameters.output_basis().scalar_iter().collect();
         let lookup_table = InterleavedLookupTable::try_new(
             domain_len,
@@ -215,7 +215,7 @@ where
             .ntt_blind_rotate_interleaved_lookup_table_kernel_to(
                 small_lwe,
                 self.lookup_table.polynomial(),
-                self.lookup_table.stride(),
+                self.lookup_table.padded_output_count(),
                 &mut self.main_glwe,
                 self.context.parameters().glwe().cipher_modulus(),
                 self.context.table(),

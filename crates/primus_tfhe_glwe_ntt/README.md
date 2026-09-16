@@ -29,7 +29,7 @@ not production security or failure-probability recommendations.
 must use the supplied table's NTT representation. `boolean_parameters()` is a
 development fixture, not a vetted default; the example selects its own small parameters.
 
-Compile ordinary LUTs with `compile_lookup_table_fn` / `compile_lookup_table_slice`,
+Compile front-half LUTs with `compile_lookup_table_fn` / `compile_lookup_table_slice`,
 or their `compile_interleaved_lookup_table_*` counterparts, passing an output
 `RoundedCodec` first. Decode a different output scale using `decrypt_phase` and
 that codec. Use unsigned padded input and
@@ -37,13 +37,17 @@ account for ManyLUT's coarser rotation resolution. The evaluator holds mutable
 scratch; create it once and reuse `apply_lookup_table_to` / `apply_interleaved_lookup_table_to`.
 These calls validate all output dimensions before writing.
 
+For odd full domains, use the context's `compile_odd_full_domain_lookup_table_fn`
+/ `_slice` with ordinary `encrypt` and the existing single-output evaluator.
+See the [shared contract](../primus_tfhe/README.md#odd-full-domain-pbs).
+
 Use `boolean_encryptor`, `boolean_decryptor` and `boolean_evaluator` for `t=4`.
 The adapter handles the internal modulus-8 LUT scale. Use `evaluate_binary_to`,
 `not_to` and `mux_to` for repeated Boolean evaluation.
 
 Low-level `NttGlweBootstrappingKey<T, LM>` retains the input modulus type `LM`, independently
 of the accumulator modulus. Key generation prepares the ordinary-PBS
-quantizer. ManyLUT prepares the stride-dependent conversion before coefficient
+quantizer. ManyLUT prepares the conversion for the rotation step before coefficient
 processing; the high-level context keeps its existing parameter restrictions.
 
 ## Circuit bootstrapping

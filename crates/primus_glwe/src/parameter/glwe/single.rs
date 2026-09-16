@@ -239,7 +239,7 @@ where
 
     /// Returns the plain modulus value of this [`GlweParameters<T, M>`].
     pub fn plain_modulus_value(&self) -> T {
-        self.plaintext_codec.t()
+        self.plaintext_codec.plaintext_modulus()
     }
 
     /// Returns the preselected plaintext codec strategy.
