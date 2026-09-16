@@ -101,48 +101,44 @@ fn rejects_incompatible_ntt_tables() {
 }
 
 #[test]
-fn fresh_and_split_keys_support_both_pbs_orders() {
+fn split_keys_support_both_pbs_orders() {
     for order in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
         let modulus = BarrettModulus::new(MODULUS);
         let table = U32NttTable::new(POLY_LENGTH.trailing_zeros(), modulus).unwrap();
         let context = TfheContext::try_new(parameters(order), table).unwrap();
-        let mut rng = StdRng::seed_from_u64(42);
-        let (client_key, server_key) = context.generate_keys(&mut rng).unwrap();
-        // Validate each workflow with its own paired secrets and server key.
-        let mut split_rng = StdRng::seed_from_u64(43);
+        let mut rng = StdRng::seed_from_u64(43);
+        // Fresh key generation is covered by the PBS and Boolean tests.
         let mut generator = KeyGenerator::new(&context);
-        let split_client = generator.generate_client_key(&mut split_rng);
-        let split_server = generator
-            .try_generate_server_key(&split_client, &mut split_rng)
+        let client = generator.generate_client_key(&mut rng);
+        let server = generator
+            .try_generate_server_key(&client, &mut rng)
             .unwrap();
         let lookup_table = context.compile_lookup_table_slice(&[1u32, 0]).unwrap();
-        for (client, server) in [(&client_key, &server_key), (&split_client, &split_server)] {
-            let public = client
-                .try_generate_public_key(context.parameters(), &mut rng)
-                .unwrap();
-            let secret_encryptor = context.encryptor(client).unwrap();
-            let public_encryptor = context.encryptor(&public).unwrap();
-            let decryptor = context.decryptor(client).unwrap();
-            let mut evaluator = context.evaluator(server).unwrap();
-            for message in 0..2u32 {
-                for input in [
-                    secret_encryptor.encrypt_padded(message, &mut rng).unwrap(),
-                    public_encryptor.encrypt_padded(message, &mut rng).unwrap(),
-                ] {
-                    let output = evaluator.apply_lookup_table(&input, &lookup_table);
-                    assert_eq!(decryptor.decrypt(&output).unwrap(), 1 - message);
-                }
+        let public = client
+            .try_generate_public_key(context.parameters(), &mut rng)
+            .unwrap();
+        let secret_encryptor = context.encryptor(&client).unwrap();
+        let public_encryptor = context.encryptor(&public).unwrap();
+        let decryptor = context.decryptor(&client).unwrap();
+        let mut evaluator = context.evaluator(&server).unwrap();
+        for message in 0..2u32 {
+            for input in [
+                secret_encryptor.encrypt_padded(message, &mut rng).unwrap(),
+                public_encryptor.encrypt_padded(message, &mut rng).unwrap(),
+            ] {
+                let output = evaluator.apply_lookup_table(&input, &lookup_table);
+                assert_eq!(decryptor.decrypt(&output).unwrap(), 1 - message);
             }
-            let boolean_encryptor = context.boolean_encryptor(&public).unwrap();
-            let boolean_decryptor = context.boolean_decryptor(client).unwrap();
-            let mut boolean_evaluator = context.boolean_evaluator(server).unwrap();
-            let lhs = boolean_encryptor.encrypt(true, &mut rng).unwrap();
-            let rhs = boolean_encryptor.encrypt(false, &mut rng).unwrap();
-            assert!(
-                boolean_decryptor
-                    .decrypt(&boolean_evaluator.xor(&lhs, &rhs))
-                    .unwrap()
-            );
         }
+        let boolean_encryptor = context.boolean_encryptor(&public).unwrap();
+        let boolean_decryptor = context.boolean_decryptor(&client).unwrap();
+        let mut boolean_evaluator = context.boolean_evaluator(&server).unwrap();
+        let lhs = boolean_encryptor.encrypt(true, &mut rng).unwrap();
+        let rhs = boolean_encryptor.encrypt(false, &mut rng).unwrap();
+        assert!(
+            boolean_decryptor
+                .decrypt(&boolean_evaluator.xor(&lhs, &rhs))
+                .unwrap()
+        );
     }
 }

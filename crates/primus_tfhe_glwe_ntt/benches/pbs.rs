@@ -1,5 +1,5 @@
 //! PBS stages and complete evaluations with precomputed keys and reusable scratch.
-//! Allocating and reused-output cases are named separately; setup is not timed.
+//! Outputs and scratch are reused; setup is not timed.
 //! Uses `boolean_parameters()` with a fixed seed; these are regression workloads.
 //!
 //! cargo bench -p primus_tfhe_glwe_ntt --bench pbs
@@ -59,8 +59,6 @@ fn bench_order(c: &mut Criterion, order: PbsOrder) {
     let mut switched: GlweCiphertext<Vec<u32>> =
         GlweCiphertext::zero(parameters.glwe_key_switching().output().glwe_len());
     let mut small_lwe: LweCiphertext<u32> = LweCiphertext::zero(parameters.small_lwe().dimension());
-    let mut external_lwe: LweCiphertext<u32> =
-        LweCiphertext::zero(parameters.ciphertext_lwe_dimension());
 
     match order {
         PbsOrder::BootstrapKeyswitch => server_key
@@ -101,15 +99,6 @@ fn bench_order(c: &mut Criterion, order: PbsOrder) {
     ));
     group.sample_size(10);
 
-    if order == PbsOrder::KeyswitchBootstrap {
-        group.bench_function("inverse_sample_extraction", |b| {
-            b.iter(|| {
-                input.inverse_extract_glwe_to(black_box(&mut main_glwe), poly_length, modulus);
-                black_box(&main_glwe);
-            });
-        });
-    }
-
     group.bench_function("glwe_key_switching", |b| {
         b.iter(|| {
             server_key.glwe_key_switching_key().key_switch_to(
@@ -120,12 +109,6 @@ fn bench_order(c: &mut Criterion, order: PbsOrder) {
                 &mut key_switching,
             );
             black_box(&switched);
-        });
-    });
-    group.bench_function("compact_sample_extraction", |b| {
-        b.iter(|| {
-            switched.extract_compact_lwe_to(black_box(&mut small_lwe), poly_length, modulus);
-            black_box(&small_lwe);
         });
     });
     group.bench_function("blind_rotation", |b| {
@@ -145,15 +128,6 @@ fn bench_order(c: &mut Criterion, order: PbsOrder) {
             black_box(&main_glwe);
         });
     });
-    if order == PbsOrder::KeyswitchBootstrap {
-        group.bench_function("full_sample_extraction", |b| {
-            b.iter(|| {
-                main_glwe.extract_lwe_to(black_box(&mut external_lwe), poly_length, modulus);
-                black_box(&external_lwe);
-            });
-        });
-    }
-
     group.bench_function("complete_pbs_reused_output", |b| {
         b.iter(|| {
             evaluator.apply_lookup_table_to(
@@ -164,42 +138,15 @@ fn bench_order(c: &mut Criterion, order: PbsOrder) {
             black_box(&output);
         });
     });
-    group.bench_function("complete_pbs_allocating", |b| {
+    // One PBS for a binary gate; two PBS calls for MUX.
+    group.bench_function("boolean_and", |b| {
         b.iter(|| {
-            black_box(evaluator.apply_lookup_table(black_box(&input), black_box(&lookup_table)));
-        });
-    });
-    group.bench_function("boolean_and_allocating", |b| {
-        b.iter(|| {
-            black_box(boolean_evaluator.and(black_box(&boolean_lhs), black_box(&boolean_rhs)))
-        });
-    });
-    group.bench_function("boolean_mux_allocating", |b| {
-        b.iter(|| {
-            black_box(boolean_evaluator.mux(
-                black_box(&boolean_lhs),
+            boolean_evaluator.evaluate_binary_to(
+                BooleanGate::And,
                 black_box(&boolean_lhs),
                 black_box(&boolean_rhs),
-            ))
-        });
-    });
-    // One representative per binary input path: add, and subtract-then-double.
-    for gate in [BooleanGate::And, BooleanGate::Xor] {
-        group.bench_function(format!("boolean_{gate:?}").to_lowercase(), |b| {
-            b.iter(|| {
-                boolean_evaluator.evaluate_binary_to(
-                    gate,
-                    black_box(&boolean_lhs),
-                    black_box(&boolean_rhs),
-                    black_box(&mut boolean_output),
-                );
-                black_box(&boolean_output);
-            });
-        });
-    }
-    group.bench_function("boolean_not", |b| {
-        b.iter(|| {
-            boolean_evaluator.not_to(black_box(&boolean_lhs), black_box(&mut boolean_output));
+                black_box(&mut boolean_output),
+            );
             black_box(&boolean_output);
         });
     });
@@ -214,9 +161,10 @@ fn bench_order(c: &mut Criterion, order: PbsOrder) {
             black_box(&boolean_output);
         });
     });
-    // Each iteration produces the same 2/4 function outputs. Compare shared
-    // BR/KS against separate PBS calls; all tables, keys and outputs are reused.
-    for count in [2, 4] {
+    // Each iteration produces the same 3/4 function outputs. Compare shared
+    // BR/KS against separate PBS calls; k=3 also exercises a padded fourth slot.
+    // All tables, keys and outputs are reused.
+    for count in [3, 4] {
         let value = |input: usize, output| ((input + output) % 4) as u32;
         let many = context
             .compile_interleaved_lookup_table_fn(count, value)
@@ -228,13 +176,6 @@ fn bench_order(c: &mut Criterion, order: PbsOrder) {
                     .unwrap()
             })
             .collect();
-        group.bench_function(format!("complete_pbs_many_{count}_allocating"), |b| {
-            b.iter(|| {
-                black_box(
-                    evaluator.apply_interleaved_lookup_table(black_box(&input), black_box(&many)),
-                )
-            });
-        });
         let mut outputs = vec![input.clone(); count];
         for shared in [false, true] {
             let kind = if shared { "many" } else { "separate" };

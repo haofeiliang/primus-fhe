@@ -60,6 +60,6 @@ cargo +nightly test -p primus_tfhe_glwe_fourier --features simd
 cargo bench -p primus_tfhe_glwe_fourier --bench pbs
 ```
 
-`pbs` separates allocating/reused outputs and covers both orders, ManyLUT and
-Boolean gates. Stage cases help locate costs; they do not replace complete-PBS
-measurements. Fourier PBS benchmarks cover both RustFFT and TfheFFT.
+`pbs` reuses output buffers and covers both orders, 3/4-output ManyLUT versus
+separate PBS calls, and Boolean AND/MUX. BR and key-switch stages locate costs;
+coefficient extraction is benchmarked in `primus_lattice`. Fourier PBS benchmarks cover both RustFFT and TfheFFT.

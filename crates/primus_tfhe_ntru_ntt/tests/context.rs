@@ -5,8 +5,8 @@ use primus_ntt::{NttTable, U32NttTable};
 use primus_tfhe_ntru_ntt::{NtruTfheParameters, TfheContext, TfheEvaluationError};
 use rand::{SeedableRng, rngs::StdRng};
 
-const POLY_LENGTH: usize = 256;
-const LWE_DIMENSION: usize = 64;
+const POLY_LENGTH: usize = 16;
+const LWE_DIMENSION: usize = 4;
 const PLAIN_MODULUS: u32 = 4;
 const CIPHER_MODULUS: u32 = 132_120_577;
 

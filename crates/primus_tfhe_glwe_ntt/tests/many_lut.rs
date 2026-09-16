@@ -1,17 +1,19 @@
 #[path = "../../primus_tfhe/tests/support/allocations.rs"]
 mod allocations;
 
-use primus_lwe::{LweCiphertext, LweParameters};
-use primus_tfhe::{InterleavedLookupTable, LookupTable, ProgrammableBootstrapInterleaved};
-use rand::{SeedableRng, rngs::StdRng};
-use std::panic::{AssertUnwindSafe, catch_unwind};
-const N: usize = 256;
-use primus_modulus::BarrettModulus;
-use primus_ntt::{NttTable, U32NttTable};
-use primus_tfhe_glwe_ntt::{PbsOrder, TfheContext, TfheParameters};
-const Q: u32 = 132_120_577;
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_glwe::{GlweParameters, SecretKeyDistr};
+use primus_lwe::{LweCiphertext, LweParameters};
+use primus_modulus::BarrettModulus;
+use primus_ntt::{NttTable, U32NttTable};
+use primus_tfhe::{InterleavedLookupTable, LookupTable, ProgrammableBootstrapInterleaved};
+use primus_tfhe_glwe_ntt::{PbsOrder, TfheContext, TfheParameters};
+use rand::{SeedableRng, rngs::StdRng};
+use std::panic::{AssertUnwindSafe, catch_unwind};
+
+const N: usize = 256;
+const Q: u32 = 132_120_577;
+
 fn parameters(order: PbsOrder) -> TfheParameters<u32> {
     let modulus = BarrettModulus::new(Q);
     let lwe = LweParameters::new(8, 16, modulus, SecretKeyDistr::UniformBinary, 0.7);
@@ -45,7 +47,8 @@ where
     let encryptor = context.encryptor(&client_key).unwrap();
     let decryptor = context.decryptor(&client_key).unwrap();
     let mut evaluator = context.evaluator(&server_key).unwrap();
-    for output_count in [1, 2, 3, 4] {
+    // Shared tests cover LUT geometry; keep stride 1 and padded/full stride 4 here.
+    for output_count in [1, 3, 4] {
         let flat: Vec<_> = (0..8)
             .flat_map(|input| (0..output_count).map(move |output| value(input, output)))
             .collect();
@@ -56,7 +59,7 @@ where
             LweCiphertext::zero(context.parameters().ciphertext_lwe_dimension());
             output_count
         ];
-        for message in 0..8 {
+        for message in [0, 3, 4, 7] {
             let input = encryptor.encrypt_padded(message as u32, &mut rng).unwrap();
             let (_, allocation) = allocations::measure(|| {
                 ProgrammableBootstrapInterleaved::apply_interleaved_lookup_table_to(
@@ -67,7 +70,7 @@ where
                 );
             });
             assert_eq!(allocation.count, 0, "PBSManyLUT must reuse its workspace");
-            if message == 0 {
+            if output_count == 3 && message == 3 {
                 assert_eq!(
                     outputs,
                     evaluator.apply_interleaved_lookup_table(&input, &lut)
@@ -76,7 +79,7 @@ where
             for (index, output) in outputs.iter().enumerate() {
                 assert_eq!(decryptor.decrypt(output).unwrap(), value(message, index));
             }
-            if output_count == 1 {
+            if output_count == 1 && message == 3 {
                 let single = context
                     .compile_lookup_table_fn(|input| value(input, 0))
                     .unwrap();

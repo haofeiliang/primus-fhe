@@ -107,8 +107,8 @@ cargo bench -p primus_tfhe_ntru_fourier --bench pbs
 cargo bench -p primus_tfhe_ntru_fourier --bench circuit_bootstrap
 ```
 
-`pbs` measures complete PBS and 2/4-output ManyLUT, with allocating and
-reused-output cases separated. The Fourier cases use both RustFFT and TfheFFT.
+`pbs` reuses output buffers and measures complete PBS and 3/4-output ManyLUT
+against separate PBS calls. The Fourier cases use both RustFFT and TfheFFT.
 
 CBS tests exercise LWE bits through NGSW and CMUX, non-power-of-two level counts, basis and
 capacity errors, and zero online allocations from the first evaluator call.

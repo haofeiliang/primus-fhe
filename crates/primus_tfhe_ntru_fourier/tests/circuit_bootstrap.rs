@@ -52,131 +52,131 @@ fn circuit_bootstrap<Table: FftTable>() {
         transformed.write_torus_form(&mut output, &mut fft);
         output
     });
-    for levels in [2, 3] {
-        // An odd level count exercises padding of the internal ManyLUT.
-        let output_basis = ApproxSignedBasis::new(None, 8, Some(levels));
-        let parameters = CircuitBootstrapParameters::try_new(
+    // Three gadget levels exercise multiple scales and an internal padding slot.
+    let levels = 3;
+    let output_basis = ApproxSignedBasis::new(None, 8, Some(levels));
+    let parameters = CircuitBootstrapParameters::try_new(
+        context.parameters(),
+        output_basis,
+        NlevParameters::with_ntru_params(&accumulator, 10, None),
+        NlevParameters::with_ntru_params(&accumulator, 10, None),
+    )
+    .unwrap();
+    let circuit_key = context
+        .generate_circuit_bootstrap_key(&client, &parameters, &mut rng)
+        .unwrap();
+    let mut evaluator = context
+        .circuit_bootstrap_evaluator(&server, &parameters, &circuit_key)
+        .unwrap();
+    let mut control =
+        FourierNgswCiphertext::<Vec<Complex64>>::zero(parameters.output_fourier_nlev_len());
+    let mut selected = NtruCiphertext::<Vec<u64>>::zero(N);
+    let mut transformed = FourierNtruCiphertext::<Vec<Complex64>>::zero(N / 2);
+    let mut scratch = FourierNtruExternalProductContext::new(N);
+    // A zero result must overwrite the previous nonzero control.
+    for bit in [1u64, 0] {
+        let input = encryptor.encrypt_padded(bit, &mut rng).unwrap();
+        let (_, allocation) =
+            allocations::measure(|| evaluator.circuit_bootstrap_to(&input, &mut control));
+        assert_eq!(
+            allocation.count, 0,
+            "CBS must reuse scratch from its first call"
+        );
+        let mut phase = Polynomial::new(vec![0u64; N]);
+        for (scalar, level) in parameters
+            .output_basis()
+            .scalar_iter()
+            .zip(control.iter_ntru(N / 2))
+        {
+            key.phase_to(&level, &mut phase, &mut fft, &mut decrypt);
+            for (&actual, &f) in phase
+                .as_ref()
+                .iter()
+                .zip(client.accumulator_ntru_secret_key().as_slice())
+            {
+                let q = 1u128 << 64;
+                let value =
+                    (u128::from(scalar) * u128::from(f.unsigned_abs()) * u128::from(bit)) % q;
+                let expected = if f < 0 { (q - value) % q } else { value };
+                let distance = (u128::from(actual) + q - expected) % q;
+                // Separate native/FFT fixture bound, not an NTT noise model.
+                assert!(distance.min(q - distance) < (1 << 32));
+            }
+        }
+        control.cmux_to(
+            &choices[0],
+            &choices[1],
+            &mut selected,
+            parameters.output_basis(),
+            &mut fft,
+            &mut scratch,
+        );
+        selected.write_fourier_form(&mut transformed, &mut fft);
+        assert_eq!(
+            key.decrypt(&transformed, &accumulator, &mut fft, &mut decrypt)
+                .as_ref(),
+            &[if bit == 0 { 1 } else { 3 }; N]
+        );
+    }
+    control.as_mut().fill(Complex64::new(7.0, 0.0));
+    let invalid = primus_tfhe::LweCiphertext::zero(15);
+    assert!(
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(
+            || evaluator.circuit_bootstrap_to(&invalid, &mut control)
+        ))
+        .is_err()
+    );
+    assert!(
+        control
+            .as_ref()
+            .iter()
+            .all(|&value| value == Complex64::new(7.0, 0.0))
+    );
+    let input = encryptor.encrypt_padded(1u64, &mut rng).unwrap();
+    let short_len = control.as_ref().len() - 1;
+    assert!(
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| evaluator
+            .circuit_bootstrap_to(
+                &input,
+                &mut FourierNgswCiphertext::new(&mut control.as_mut()[..short_len])
+            )))
+        .is_err()
+    );
+    assert!(
+        control
+            .as_ref()
+            .iter()
+            .all(|&value| value == Complex64::new(7.0, 0.0))
+    );
+    for role in 0..3 {
+        let output_basis = if role == 0 {
+            ApproxSignedBasis::new(None, 9, Some(levels))
+        } else {
+            parameters.output_basis().clone()
+        };
+        let mut parts = [
+            parameters.trace().clone(),
+            parameters.scheme_switch().clone(),
+        ];
+        if role > 0 {
+            parts[role - 1] = NlevParameters::with_ntru_params(
+                &accumulator,
+                9,
+                Some(parts[role - 1].decompose_length()),
+            );
+        }
+        let [trace, scheme_switch] = parts;
+        let foreign = CircuitBootstrapParameters::try_new(
             context.parameters(),
             output_basis,
-            NlevParameters::with_ntru_params(&accumulator, 10, None),
-            NlevParameters::with_ntru_params(&accumulator, 10, None),
+            trace,
+            scheme_switch,
         )
         .unwrap();
-        let circuit_key = context
-            .generate_circuit_bootstrap_key(&client, &parameters, &mut rng)
-            .unwrap();
-        let mut evaluator = context
-            .circuit_bootstrap_evaluator(&server, &parameters, &circuit_key)
-            .unwrap();
-        let mut control =
-            FourierNgswCiphertext::<Vec<Complex64>>::zero(parameters.output_fourier_nlev_len());
-        let mut selected = NtruCiphertext::<Vec<u64>>::zero(N);
-        let mut transformed = FourierNtruCiphertext::<Vec<Complex64>>::zero(N / 2);
-        let mut scratch = FourierNtruExternalProductContext::new(N);
-        for bit in [0u64, 1, 0] {
-            let input = encryptor.encrypt_padded(bit, &mut rng).unwrap();
-            let (_, allocation) =
-                allocations::measure(|| evaluator.circuit_bootstrap_to(&input, &mut control));
-            assert_eq!(
-                allocation.count, 0,
-                "CBS must reuse scratch from its first call"
-            );
-            let mut phase = Polynomial::new(vec![0u64; N]);
-            for (scalar, level) in parameters
-                .output_basis()
-                .scalar_iter()
-                .zip(control.iter_ntru(N / 2))
-            {
-                key.phase_to(&level, &mut phase, &mut fft, &mut decrypt);
-                for (&actual, &f) in phase
-                    .as_ref()
-                    .iter()
-                    .zip(client.accumulator_ntru_secret_key().as_slice())
-                {
-                    let q = 1u128 << 64;
-                    let value =
-                        (u128::from(scalar) * u128::from(f.unsigned_abs()) * u128::from(bit)) % q;
-                    let expected = if f < 0 { (q - value) % q } else { value };
-                    let distance = (u128::from(actual) + q - expected) % q;
-                    // Separate native/FFT fixture bound, not an NTT noise model.
-                    assert!(distance.min(q - distance) < (1 << 32));
-                }
-            }
-            control.cmux_to(
-                &choices[0],
-                &choices[1],
-                &mut selected,
-                parameters.output_basis(),
-                &mut fft,
-                &mut scratch,
-            );
-            selected.write_fourier_form(&mut transformed, &mut fft);
-            assert_eq!(
-                key.decrypt(&transformed, &accumulator, &mut fft, &mut decrypt)
-                    .as_ref(),
-                &[if bit == 0 { 1 } else { 3 }; N]
-            );
-        }
-        control.as_mut().fill(Complex64::new(7.0, 0.0));
-        let invalid = primus_tfhe::LweCiphertext::zero(15);
-        assert!(
-            std::panic::catch_unwind(std::panic::AssertUnwindSafe(
-                || evaluator.circuit_bootstrap_to(&invalid, &mut control)
-            ))
-            .is_err()
-        );
-        assert!(
-            control
-                .as_ref()
-                .iter()
-                .all(|&value| value == Complex64::new(7.0, 0.0))
-        );
-        let input = encryptor.encrypt_padded(1u64, &mut rng).unwrap();
-        let short_len = control.as_ref().len() - 1;
-        assert!(
-            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| evaluator
-                .circuit_bootstrap_to(
-                    &input,
-                    &mut FourierNgswCiphertext::new(&mut control.as_mut()[..short_len])
-                )))
-            .is_err()
-        );
-        assert!(
-            control
-                .as_ref()
-                .iter()
-                .all(|&value| value == Complex64::new(7.0, 0.0))
-        );
-        for role in 0..3 {
-            let output_basis = if role == 0 {
-                ApproxSignedBasis::new(None, 9, Some(levels))
-            } else {
-                parameters.output_basis().clone()
-            };
-            let mut parts = [
-                parameters.trace().clone(),
-                parameters.scheme_switch().clone(),
-            ];
-            if role > 0 {
-                parts[role - 1] = NlevParameters::with_ntru_params(
-                    &accumulator,
-                    9,
-                    Some(parts[role - 1].decompose_length()),
-                );
-            }
-            let [trace, scheme_switch] = parts;
-            let foreign = CircuitBootstrapParameters::try_new(
-                context.parameters(),
-                output_basis,
-                trace,
-                scheme_switch,
-            )
-            .unwrap();
-            assert!(matches!(
-                context.circuit_bootstrap_evaluator(&server, &foreign, &circuit_key),
-                Err(CircuitBootstrapEvaluationError::IncompatibleCircuitBootstrapKey)
-            ));
-        }
+        assert!(matches!(
+            context.circuit_bootstrap_evaluator(&server, &foreign, &circuit_key),
+            Err(CircuitBootstrapEvaluationError::IncompatibleCircuitBootstrapKey)
+        ));
     }
 }
 

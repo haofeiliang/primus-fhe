@@ -99,6 +99,18 @@ fn padded_client_domain_matches_odd_and_even_lut_domains() {
             encryptor.encrypt_padded(domain_len, &mut rng).unwrap_err(),
             NtruClientError::MessageOutsidePaddedDomain
         );
+        if t == 4 {
+            // Callers supply D*k values; the compiler owns the padding to D*s.
+            assert_eq!(
+                parameters
+                    .compile_interleaved_lookup_table_slice(3, &[0; 8])
+                    .unwrap_err(),
+                primus_tfhe_ntru::LookupTableError::DomainLengthMismatch {
+                    expected: 6,
+                    actual: 8
+                }
+            );
+        }
         assert_eq!(
             parameters
                 .compile_interleaved_lookup_table_slice(usize::MAX, &[])

@@ -315,7 +315,7 @@ taskset -c 0 cargo bench -p primus_tfhe --bench lookup_table -- --sample-size 10
 - `ProgrammableBootstrapInterleaved` 只描述交错表的多输出契约；“一次 BR、一次环 KS”属于当前四后端的具体实现。未来 MVB 程序按实际表示另定接口，不借交错表名称泛化。
 - 三路 CBS 以 gadget 层数构造 LUT，补齐由共享编译器负责；参数以 `lookup_table_stride()` 描述物理步长。投影与 GGSW/NGSW 保持真实层数，GLWE key 仍绑定输出布局，NTRU key 仍绑定完整输出 basis。
 
-公开契约见共享及后端 rustdoc/README。构造基准新增 `t16/k3`，旧 case 名称与历史 CSV 保留；最终同配置计时属于 P1.4。
+公开契约见共享及后端 rustdoc/README。构造基准新增 `t16/k3`，旧 case 名称与历史 CSV 保留；最终同配置计时见 [P1.4 验收](#p14-阶段验收)。
 
 ## P1.R 取整策略取舍
 
@@ -390,6 +390,61 @@ PBS 参数、LUT 与 `RotationQuantizer` 现统一要求 `2N` 能由 `T` 表示�
 Native 的额外位运算扫描成本较小；Barrett 的量化成本接近翻倍，但绝对增加约 `0.8 μs`，只占所测完整 PBS 的约 `0.02%`。完整 PBS 本轮未观察到明确的开销增加；均值差异不作为加速结论，也不外推至其他参数或稀疏 BR。
 
 **接入决定：** 居中补偿值得继续，但本步交付为可行性验证；不增加尚未完整定义的公开策略。正式接入需绑定实际 BR 秘密分布、定义跨字宽的精确累积与 body 舍入、覆盖两种 GLWE order 的修正位置，以及明确哪些 LUT 布局允许 shift。固定重量稀疏秘密、NTRU/CBS 和生产失败概率不在本次原型验证范围。后续可以先独立接入无 shift 的居中策略；现有默认 PBS、codec、LUT API 不变，P1.4 不依赖该扩展。
+
+## P1.4 阶段验收
+
+### 最终性能对照
+
+2026-09-16，重新构建 P1.1 基线 `21f278a`，与 `d5da1cb` 加本步维护资产修改比较；没有直接拿历史 CSV 的计时作分母。两版锁文件、编译配置和既有 PBS 参数/函数一致。当前构造基准增加 `t16/k3`，四后端 PBS 基准以 `k=3` 替换 `k=2`，保留 `k=4` 和逐函数 PBS 对照。有效输出与补零槽不同的情况成为长期性能覆盖。
+
+环境为 Ryzen 9 9955HX3D、逻辑 CPU 2、rustc 1.98.0、Criterion 0.8.2、默认 features。沿用仓库编译配置，前后版本顺序运行，机器未隔离、SMT/boost 开启、未固定频率。首轮每项 10 个样本、预热 1 秒、测量 3 秒；复测每项 20 个样本，保持预热/测量时间，逐用例交替前后版本，并交替先后顺序。
+
+[完整数据](benchmarks/tfhe-p1.4.csv) 保留各轮 mean、95% 置信区间、百分比变化及构造分配量。`initial` 含 28 项等价对照和 11 项新增 `k=3` 数据；`paired` 复测两项单输出构造和 18 项在线 PBS；`rustfft_recheck` 单独重测波动较大的两项 NTRU RustFFT。新增项的 before 留空，不构造不存在的旧版 `k=3` 基线。
+
+构造测量包含校验、几何、函数求值、结果分配、填充及释放，模数 setup 不计时。统一为 `u32,N=1024,D=ceil(t/2)`，Native 与 Barrett `q=132120577`；raw 输出为 `13*input+column`。首轮结果如下：
+
+| t / k | Native 前 → 后（ns） | Barrett 前 → 后（ns） |
+| --- | --- | --- |
+| 4 / 4 | 551.06 → 121.24 | 558.58 → 142.70 |
+| 16 / 1 | 81.69 → 93.71 | 100.43 → 117.92 |
+| 16 / 3 | 新增 → 220.07 | 新增 → 242.49 |
+| 16 / 4 | 627.14 → 213.75 | 703.78 → 239.84 |
+| 16 / 16 | 1090.92 → 161.81 | 1361.26 → 196.15 |
+| 255 / 4 | 2624.43 → 828.96 | 2992.85 → 1149.85 |
+
+多输出的八项等价构造耗时下降 **61.6%～85.6%**。单输出构造首轮增加 12.0/17.5 ns；交替复测 Native 为 79.55→96.28 ns、Barrett 为 97.00→120.57 ns，增加 16.7/23.6 ns。保留共享顺序编译器的实现取舍，并明确记录这项构造退化；不能宣称所有 LUT 构造都加速。
+
+分配使用同一工作负载和测试 allocator 单独探测，未将 allocator 计数加入 Criterion 计时。旧单输出为一次 4096 B 分配；旧多输出为 `k+1` 次、累计 8192 B。当前全部 12 项均为一次 4096 B 最终多项式分配，释放字节数与分配相等。这里是请求分配的累计字节数，不是峰值 RSS；既有公开测试继续保护一次结果分配契约。
+
+在线测量复用 key、LUT、evaluator/scratch 和输出，计时完整 PBS。四后端覆盖两种 GLWE order、两种 Fourier table 以及 NTRU 固定链；每次产生一个或四个逻辑输出，新增三输出只报告当前耗时。GLWE 使用 `n=512,N=1024`，NTRU 使用 `n=800,N=1024`，其余参数和 seed 见各后端 `benches/pbs.rs`；这些是回归配置，不是同安全级别的跨后端比较。
+
+在线 PBS 首轮 18 项变化为 −2.33%～+5.54%，没有稳定的整体加速。交替复测中，GLWE/NTRU NTT 项增加约 0.9%～3.3%，Fourier 多数在 −2.4%～+1.7%；GLWE NTT 首轮也有约 0.7%～1.2% 的增加，保留为小幅性能退化信号。NTRU RustFFT 第二轮出现明显运行间波动（旧版约 4.3～4.5 ms，首轮约 2.7 ms），单独重测后两版恢复到约 2.7 ms，差异 −0.31%/+0.42%。各轮均完整保留，不把异常轮解释为加速；本机条件不足以把几个百分点的变化可靠归因到某个内核。新增九项三输出 PBS 为 2.122～4.173 ms，仅表示当前配置下的绝对耗时。
+
+复现时，分别在对应版本执行共享 `lookup_table` 和四后端 `pbs` benchmark，筛选 `^(lut_compile/|.*complete_pbs_(reused_output|many_[34]_reused_outputs)$)`；传入 `--warm-up-time 1 --measurement-time 3 --sample-size 10`，复测改为 20 个样本并逐项交替运行。原始 Criterion 数据保留在 `target/criterion-p1.4/{before,after}/**/{p1_4,p1_4_recheck,p1_4_rustfft_recheck}/`。CSV 为持久摘要，不能替代原始样本；重建基线须使用对应源码与等价 harness。
+
+### 覆盖与维护资产
+
+本步定向核对 P1 的共享实现、实际调用方和维护资产，未发现未迁移的公开旧 API 或需修复的功能缺陷。覆盖如下：
+
+| 范围 | 核对与验证的契约 |
+| --- | --- |
+| 共享 LUT/量化 | Native、Barrett、显式二次幂、奇数/近字宽模数及多字宽整数 oracle；精确两次舍入、短/完整前缀、回绕、中心冲突、旋转域边界、回调顺序和错误中止、补零及一次结果分配 |
+| GLWE/NTRU family | 明文范围、编码与 raw 职责；在既有测试中补充 `k=3` 的切片长度断言：接收 `D*k`，拒绝调用者自行补齐的 `D*s` |
+| 四后端 | 按 `s` 量化、按 `k` 提取；两种 GLWE order、NTRU 固定秘密链、Fourier 两种 table；真实三输出、非法元数据/尺寸在写入前拒绝、首次及复用调用无额外分配 |
+| Boolean / 三路 CBS | Boolean 内外尺度；CBS 的真实层数、GLWE 布局绑定和 NTRU 完整 basis 绑定、投影零尾及 CMUX 消费；NTRU CBS 保留 accumulator 秘密 |
+| 维护资产与 workspace | 旧符号搜索、七包公开导出、14 份 README、相关测试/基准及六个示例；workspace all-targets 编译覆盖其余调用方和 xtask |
+
+修正 GLWE BR 注释，明确直接量化到 `2N/s` 后乘 `s`；raw BR 测试将实际表示步长的局部变量改为 `stride`。同步四后端双语 README，整理相关 import，统一旧居中 CSV 的换行符且不改数据。维护资产按独立契约精简如下：
+
+- ManyLUT 端到端保留 `k=1/3/4`、消息 `0/3/4/7`；分配包装与 scalar 等价只用代表性非零消息验证，PBS 调用合计从 501 次降至 147 次。完整小域几何留在共享整数 oracle，各后端仍验证 stride 1、补零/满槽、错误先于写入和工作区复用。
+- 三路 CBS 保留三层 gadget 和 `1→0` 控制序列，CBS 调用从 26 次降至 10 次；保留每层 phase、CMUX、零尾、布局/basis 绑定和独立参数边界。Boolean 保留所有真值表，反馈链从 16 步降到 4 步。GLWE context 专测 split-key 工作流，fresh 路径由 PBS/Boolean 覆盖；NTRU metadata 拒绝测试改用 `N=16,n=4`。
+- Criterion 用例从 166 项精简到 97 项：删除重复的 allocating 包装、Boolean XOR/NOT 微基准、已由 lattice 覆盖的系数提取，以及独立旧 key-switch 对照文件。保留 LUT 构造、BR/KS 阶段、完整 PBS/CBS、ManyLUT 与独立 PBS 的等价比较、AND/MUX。NTRU CBS 的尺寸/分解基数矩阵继续承担耗时和内存比较。
+
+GitHub workflow 使用 `cargo nextest run --workspace` 和 nightly `--all-features`，未选择 benches；不把 bench 删减计作 CI 提速。按 CI 的 `CARGO_BUILD_RUSTFLAGS=''`、本机两个 nextest 测试线程，七包测试阶段默认由 0.908→0.547 秒、nightly all-features 由 0.887→0.539 秒。两配置仍各 41 项测试，没有 ignore/skip；不含编译，也不是 GitHub runner 总时长。精简后的 8 个 benchmark target 共 97 项冒烟通过；冒烟不代表重新计时。没有新增重复示例或永久调查程序。
+
+实际验证：`just tfhe`、`just tfhe-simd` 全部通过，七包默认/nightly SIMD 各 41 项测试；包含 all-targets check、Clippy、默认文档构建及 xtask 检查。`cargo check --workspace --all-targets` 通过。`primus_modulus`、`primus_encoding`、`primus_barrett_derive` 的默认/derive 与 nightly SIMD 测试分别 33/34 项通过。六个现有示例在默认和 nightly SIMD 配置下共运行 12 次，均通过。相关本地文档链接、格式和最终 diff 检查通过；未运行其余 workspace 测试。
+
+未测 SIMD 性能、非 x86 平台或生产失败概率/安全性；没有重新完整审计底层 CMUX、外积、投影和密钥生成。P2 的编码/双输入/奇数全域、P3 稀疏 BR、P4 MVB 及正式居中策略仍属后续工作。
 
 ## 文献入口与证据边界
 

@@ -125,10 +125,10 @@ where
 
     /// Blind-rotates an interleaved PBSManyLUT accumulator.
     ///
-    /// Every modulus-switched exponent is rounded to a multiple of
-    /// `stride`, preserving the independently programmed residue
+    /// Each input coefficient is quantized directly to `2N / stride`, then
+    /// multiplied by `stride`, preserving the independently programmed residue
     /// classes. `stride` must be a non-zero power of two dividing the
-    /// polynomial length.
+    /// polynomial length `N`.
     ///
     /// Inherits [`Self::fourier_blind_rotate_lookup_table_to`]'s requirements.
     /// An invalid stride panics before output writes.

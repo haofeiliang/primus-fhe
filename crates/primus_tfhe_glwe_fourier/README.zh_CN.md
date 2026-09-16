@@ -52,6 +52,6 @@ cargo +nightly test -p primus_tfhe_glwe_fourier --features simd
 cargo bench -p primus_tfhe_glwe_fourier --bench pbs
 ```
 
-`pbs` 分别测量分配返回和复用输出，覆盖两种 order、ManyLUT 与 Boolean 门。
-阶段用例用于定位开销，不能替代完整 PBS 测量。
+`pbs` 复用输出，覆盖两种 order、3/4 输出 ManyLUT 与独立 PBS 的对照，以及 Boolean AND/MUX。
+BR 和密钥切换阶段用于定位开销；系数提取的基准集中在 `primus_lattice`。
 Fourier PBS 基准同时覆盖 RustFFT 和 TfheFFT。

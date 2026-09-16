@@ -52,7 +52,8 @@ where
         .compile_lookup_table_fn(|input| value(input, 0))
         .unwrap();
     let mut output = LweCiphertext::zero(context.parameters().external_lwe().dimension());
-    for output_count in [1, 2, 3, 4] {
+    // Shared tests cover LUT geometry; keep stride 1 and padded/full stride 4 here.
+    for output_count in [1, 3, 4] {
         let flat: Vec<_> = (0..8)
             .flat_map(|input| (0..output_count).map(move |output| value(input, output)))
             .collect();
@@ -63,7 +64,7 @@ where
             LweCiphertext::zero(context.parameters().external_lwe().dimension());
             output_count
         ];
-        for message in 0..8 {
+        for message in [0, 3, 4, 7] {
             let input = encryptor.encrypt_padded(message as u32, &mut rng).unwrap();
             let (_, allocation) = allocations::measure(|| {
                 ProgrammableBootstrapInterleaved::apply_interleaved_lookup_table_to(
@@ -74,7 +75,7 @@ where
                 );
             });
             assert_eq!(allocation.count, 0, "PBSManyLUT must reuse its workspace");
-            if message == 0 {
+            if output_count == 3 && message == 3 {
                 assert_eq!(
                     outputs,
                     evaluator.apply_interleaved_lookup_table(&input, &lut)
@@ -83,7 +84,7 @@ where
             for (index, output) in outputs.iter().enumerate() {
                 assert_eq!(decryptor.decrypt(output).unwrap(), value(message, index));
             }
-            if output_count == 1 {
+            if output_count == 1 && message == 3 {
                 let (_, allocation) = allocations::measure(|| {
                     evaluator.apply_lookup_table_to(&input, &single, &mut output);
                 });

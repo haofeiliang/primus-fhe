@@ -65,9 +65,6 @@ fn circuit_bootstrap(c: &mut Criterion) {
                     black_box(&output);
                 });
             });
-            group.bench_function("allocating", |b| {
-                b.iter(|| black_box(evaluator.circuit_bootstrap(black_box(&input))));
-            });
             group.finish();
         }
     }

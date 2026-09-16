@@ -5,8 +5,8 @@ use primus_ntru::{NlevParameters, NtruParameters, SecretKeyDistr};
 use primus_tfhe_ntru_fourier::{NtruTfheParameters, TfheContext, TfheEvaluationError};
 use rand::{SeedableRng, rngs::StdRng};
 
-const POLY_LENGTH: usize = 256;
-const LWE_DIMENSION: usize = 64;
+const POLY_LENGTH: usize = 16;
+const LWE_DIMENSION: usize = 4;
 const PLAIN_MODULUS: u32 = 4;
 
 fn parameters(

@@ -1,5 +1,5 @@
 //! Complete PBS: `NLev[1]` initialization, blind rotation, key switching and extraction.
-//! Allocating and reused-output cases are separate; setup and encryption are not timed.
+//! Outputs and scratch are reused; setup and encryption are not timed.
 //! u32, the native torus with RustFFT/TfheFFT; fixed seed, N = 1024, LWE dimension 800.
 //! Regression workload, not a matched-security backend comparison.
 //!
@@ -57,15 +57,10 @@ fn backend<Table: FftTable>(c: &mut Criterion, backend: &str) {
             });
         },
     );
-    c.bench_function(
-        &format!("ntru_fourier/{backend}/complete_pbs_allocating"),
-        |b| {
-            b.iter(|| black_box(evaluator.apply_lookup_table(black_box(&input), black_box(&lut))));
-        },
-    );
-    // Each iteration produces the same 2/4 function outputs. Compare shared
-    // BR/KS against separate PBS calls; all tables, keys and outputs are reused.
-    for count in [2, 4] {
+    // Each iteration produces the same 3/4 function outputs. Compare shared
+    // BR/KS against separate PBS calls; k=3 also exercises a padded fourth slot.
+    // All tables, keys and outputs are reused.
+    for count in [3, 4] {
         let value = |input: usize, output| ((input + output) % 4) as u32;
         let many = context
             .compile_interleaved_lookup_table_fn(count, value)
@@ -77,17 +72,6 @@ fn backend<Table: FftTable>(c: &mut Criterion, backend: &str) {
                     .unwrap()
             })
             .collect();
-        c.bench_function(
-            &format!("ntru_fourier/{backend}/complete_pbs_many_{count}_allocating"),
-            |b| {
-                b.iter(|| {
-                    black_box(
-                        evaluator
-                            .apply_interleaved_lookup_table(black_box(&input), black_box(&many)),
-                    )
-                });
-            },
-        );
         let mut outputs = vec![input.clone(); count];
         for shared in [false, true] {
             let kind = if shared { "many" } else { "separate" };

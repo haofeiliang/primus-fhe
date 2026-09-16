@@ -77,123 +77,123 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
         }
 
         let encryptor = context.encryptor(&client_key).unwrap();
-        for levels in [2, 3] {
-            let circuit_parameters = CircuitBootstrapParameters::try_new(
-                context.parameters(),
-                ApproxSignedBasis::new(Some(MODULUS), 8, Some(levels)),
-                GgswParameters::with_glwe_params(glwe, 10, None),
-                GgswParameters::with_glwe_params(glwe, 10, None),
-            )
+        // Three gadget levels exercise multiple scales and an internal padding slot.
+        let levels = 3;
+        let circuit_parameters = CircuitBootstrapParameters::try_new(
+            context.parameters(),
+            ApproxSignedBasis::new(Some(MODULUS), 8, Some(levels)),
+            GgswParameters::with_glwe_params(glwe, 10, None),
+            GgswParameters::with_glwe_params(glwe, 10, None),
+        )
+        .unwrap();
+        let circuit_key = context
+            .generate_circuit_bootstrap_key(&client_key, &circuit_parameters, &mut rng)
             .unwrap();
-            let circuit_key = context
-                .generate_circuit_bootstrap_key(&client_key, &circuit_parameters, &mut rng)
-                .unwrap();
-            let incompatible_trace =
-                GgswParameters::with_glwe_params(context.parameters().glwe(), 9, None);
-            let incompatible_parameters = CircuitBootstrapParameters::try_new(
-                context.parameters(),
-                circuit_parameters.output_basis().clone(),
-                incompatible_trace,
-                circuit_parameters.scheme_switch().clone(),
-            )
+        let incompatible_trace =
+            GgswParameters::with_glwe_params(context.parameters().glwe(), 9, None);
+        let incompatible_parameters = CircuitBootstrapParameters::try_new(
+            context.parameters(),
+            circuit_parameters.output_basis().clone(),
+            incompatible_trace,
+            circuit_parameters.scheme_switch().clone(),
+        )
+        .unwrap();
+        assert!(matches!(
+            context.circuit_bootstrap_evaluator(
+                &server_key,
+                &incompatible_parameters,
+                &circuit_key,
+            ),
+            Err(CircuitBootstrapEvaluationError::IncompatibleCircuitBootstrapKey)
+        ));
+        // GLWE scheme switching binds output layout, so another output basis
+        // with the same level count can reuse this circuit key.
+        let circuit_parameters = CircuitBootstrapParameters::try_new(
+            context.parameters(),
+            ApproxSignedBasis::new(Some(MODULUS), 9, Some(levels)),
+            circuit_parameters.trace().clone(),
+            circuit_parameters.scheme_switch().clone(),
+        )
+        .unwrap();
+        let mut evaluator = context
+            .circuit_bootstrap_evaluator(&server_key, &circuit_parameters, &circuit_key)
             .unwrap();
-            assert!(matches!(
-                context.circuit_bootstrap_evaluator(
-                    &server_key,
-                    &incompatible_parameters,
-                    &circuit_key,
-                ),
-                Err(CircuitBootstrapEvaluationError::IncompatibleCircuitBootstrapKey)
-            ));
-            // GLWE scheme switching binds output layout, so another output basis
-            // with the same level count can reuse this circuit key.
-            let circuit_parameters = CircuitBootstrapParameters::try_new(
-                context.parameters(),
-                ApproxSignedBasis::new(Some(MODULUS), 9, Some(levels)),
-                circuit_parameters.trace().clone(),
-                circuit_parameters.scheme_switch().clone(),
-            )
-            .unwrap();
-            let mut evaluator = context
-                .circuit_bootstrap_evaluator(&server_key, &circuit_parameters, &circuit_key)
-                .unwrap();
-            assert_eq!(
-                circuit_parameters.lookup_table_stride(),
-                levels.next_power_of_two()
-            );
-            let mut control =
-                NttGgsw::<Vec<u64>>::zero(circuit_parameters.output_size().ggsw_len());
-            for bit in 0..=1u64 {
-                let input = encryptor.encrypt_padded(bit, &mut rng).unwrap();
-                if bit == 1 {
-                    for (dimension, length) in [
-                        (input.dimension() - 1, control.as_ref().len()),
-                        (input.dimension(), control.as_ref().len() - 1),
-                    ] {
-                        let bad_input = LweCiphertext::zero(dimension);
-                        let mut bad_output = NttGgsw::new(vec![7; length]);
-                        assert!(
-                            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                                evaluator.circuit_bootstrap_to(&bad_input, &mut bad_output);
-                            }))
-                            .is_err()
-                        );
-                        assert!(bad_output.as_ref().iter().all(|&value| value == 7));
-                    }
+        assert_eq!(
+            circuit_parameters.lookup_table_stride(),
+            levels.next_power_of_two()
+        );
+        let mut control = NttGgsw::<Vec<u64>>::zero(circuit_parameters.output_size().ggsw_len());
+        // A zero result must overwrite the previous nonzero control.
+        for bit in [1u64, 0] {
+            let input = encryptor.encrypt_padded(bit, &mut rng).unwrap();
+            if bit == 1 {
+                for (dimension, length) in [
+                    (input.dimension() - 1, control.as_ref().len()),
+                    (input.dimension(), control.as_ref().len() - 1),
+                ] {
+                    let bad_input = LweCiphertext::zero(dimension);
+                    let mut bad_output = NttGgsw::new(vec![7; length]);
+                    assert!(
+                        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                            evaluator.circuit_bootstrap_to(&bad_input, &mut bad_output);
+                        }))
+                        .is_err()
+                    );
+                    assert!(bad_output.as_ref().iter().all(|&value| value == 7));
                 }
-                let (_, allocation) = allocations::measure(|| {
-                    evaluator.circuit_bootstrap_to(&input, &mut control);
-                });
-                assert_eq!(allocation.count, 0, "CBS must reuse its workspace");
-                let output_size = circuit_parameters.output_size();
-                let mut phase = Polynomial::new(vec![0u64; POLY_LENGTH]);
-                for (row, glev) in control.iter_ntt_glev(output_size.glev_len()).enumerate() {
-                    let secret = client_key.glwe_secret_key().iter().nth(row);
-                    for (scalar, level) in circuit_parameters
-                        .output_basis()
-                        .scalar_iter()
-                        .zip(glev.iter_ntt_glwe(glwe.glwe_len()))
-                    {
-                        main_secret.phase_to(&level, &mut phase, modulus, context.table());
-                        for (index, &actual) in phase.as_ref().iter().enumerate() {
-                            // Mask rows encrypt -g_l * bit * s_r; the body row
-                            // encrypts the constant g_l * bit, with a zero tail.
-                            let coefficient =
-                                secret.map_or(i128::from(index == 0), |s| -i128::from(s[index]));
-                            let expected = (coefficient * i128::from(scalar) * i128::from(bit))
-                                .rem_euclid(i128::from(MODULUS))
-                                as u64;
-                            let distance = actual.abs_diff(expected);
-                            let distance = distance.min(MODULUS - distance);
-                            // Functional fixture bound, below the smallest gadget step.
-                            assert!(
-                                distance < (1 << 22),
-                                "order {order:?}, levels {levels}, bit {bit}, row {row}, index {index}: distance {distance}"
-                            );
-                        }
-                    }
-                }
-                let mut selected: Glwe<Vec<u64>> = Glwe::zero(glwe.glwe_len());
-                let mut external_product =
-                    NttGlweExternalProductContext::new(circuit_parameters.output_size());
-                control.cmux_to(
-                    &choices[0],
-                    &choices[1],
-                    &mut selected,
-                    circuit_parameters.output_basis(),
-                    modulus,
-                    context.table(),
-                    &mut external_product,
-                );
-                let selected = selected.into_ntt_form(context.table());
-                assert_eq!(
-                    main_secret
-                        .decrypt(&selected, glwe, context.table())
-                        .as_ref(),
-                    vec![if bit == 0 { 1 } else { 3 }; POLY_LENGTH],
-                    "PBS order {order:?}, control bit {bit}"
-                );
             }
+            let (_, allocation) = allocations::measure(|| {
+                evaluator.circuit_bootstrap_to(&input, &mut control);
+            });
+            assert_eq!(allocation.count, 0, "CBS must reuse its workspace");
+            let output_size = circuit_parameters.output_size();
+            let mut phase = Polynomial::new(vec![0u64; POLY_LENGTH]);
+            for (row, glev) in control.iter_ntt_glev(output_size.glev_len()).enumerate() {
+                let secret = client_key.glwe_secret_key().iter().nth(row);
+                for (scalar, level) in circuit_parameters
+                    .output_basis()
+                    .scalar_iter()
+                    .zip(glev.iter_ntt_glwe(glwe.glwe_len()))
+                {
+                    main_secret.phase_to(&level, &mut phase, modulus, context.table());
+                    for (index, &actual) in phase.as_ref().iter().enumerate() {
+                        // Mask rows encrypt -g_l * bit * s_r; the body row
+                        // encrypts the constant g_l * bit, with a zero tail.
+                        let coefficient =
+                            secret.map_or(i128::from(index == 0), |s| -i128::from(s[index]));
+                        let expected = (coefficient * i128::from(scalar) * i128::from(bit))
+                            .rem_euclid(i128::from(MODULUS))
+                            as u64;
+                        let distance = actual.abs_diff(expected);
+                        let distance = distance.min(MODULUS - distance);
+                        // Functional fixture bound, below the smallest gadget step.
+                        assert!(
+                            distance < (1 << 22),
+                            "order {order:?}, levels {levels}, bit {bit}, row {row}, index {index}: distance {distance}"
+                        );
+                    }
+                }
+            }
+            let mut selected: Glwe<Vec<u64>> = Glwe::zero(glwe.glwe_len());
+            let mut external_product =
+                NttGlweExternalProductContext::new(circuit_parameters.output_size());
+            control.cmux_to(
+                &choices[0],
+                &choices[1],
+                &mut selected,
+                circuit_parameters.output_basis(),
+                modulus,
+                context.table(),
+                &mut external_product,
+            );
+            let selected = selected.into_ntt_form(context.table());
+            assert_eq!(
+                main_secret
+                    .decrypt(&selected, glwe, context.table())
+                    .as_ref(),
+                vec![if bit == 0 { 1 } else { 3 }; POLY_LENGTH],
+                "PBS order {order:?}, control bit {bit}"
+            );
         }
     }
 }

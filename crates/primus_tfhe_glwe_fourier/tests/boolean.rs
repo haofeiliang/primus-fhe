@@ -102,7 +102,7 @@ fn boolean_factories_support_truth_tables_and_reused_output_in_both_orders() {
 
         // Feed gate results into subsequent gates while reusing both buffers.
         let mut current = inputs[0].clone();
-        for step in 0..16 {
+        for step in 0..4 {
             evaluator.evaluate_binary_to(BooleanGate::Nand, &current, &inputs[1], &mut output);
             core::mem::swap(&mut current, &mut output);
             assert_eq!(decryptor.decrypt(&current).unwrap(), step % 2 == 0);

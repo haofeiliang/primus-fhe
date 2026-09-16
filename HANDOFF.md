@@ -10,15 +10,16 @@
 
 ### 当前 LUT/PBS 任务
 
-- 已完成：**P1.1、P1.M、P1.2、P1.3、P1.R 旋转域边界与居中量化可行性验证**。设计和测量依据见 [TFHE 总览](docs/tfhe.md)，完成条件见 [实施步骤](docs/tfhe-plan.md)。
-- 下一步：**P1.4 阶段验收与资产整理**，按最终迁移范围汇总同配置构造/在线 PBS 性能，并核对维护资产；尚未开始 P2。
+- 已完成：**P1.1、P1.M、P1.2、P1.3、P1.R、P1.4**，P1 已完成。设计和测量依据见 [TFHE 总览](docs/tfhe.md)，完成条件见 [实施步骤](docs/tfhe-plan.md)。
+- 进行中：无；本步剩余：无。下一步：**P2.1 输入与输出编码分离**，入口为实施步骤对应章节及两族 LUT 编译包装；尚未开始 P2。
 - P1.R 有效边界：PBS 参数、LUT 与 quantizer 均要求 `2N` 能由输入系数类型表示；quantizer 的 Native 目标分支已删除，Native 输入及通用模切的 Native 目标保留。均匀二元 `u32` 居中原型的所测量化方差约减半，完整 PBS 未观察到明确开销增加；固定 half-shift 存在合法 LUT 的零噪声反例，正式执行/API 保持原样。后续模切内核优化保持统一接口；PBS 批量融合未见稳定收益，临时入口与后端原型已删除。实验方法、数据与后续接入条件只维护在总览，临时原型不进入公共库。
 - P1.3 有效边界：公开类型为 `LookupTable` / `InterleavedLookupTable`，已编码输出通过各自 `try_new` 构造；旧自由函数和 `ManyLookupTable` API 已删除。保存真实输入前缀 `D` 和有效数量 `k`，步长 `s=next_power_of_two(k)` 可推导；编译器补零槽，回调/切片及输出只包含 `k` 列。四后端 BR 按 `s` 量化、按 `k` 提取，三路 CBS 以 gadget 层数构造并保持原布局/basis 绑定。Family/context 保留明文检查与编码职责，多输出 trait 明确限定为 `ProgrammableBootstrapInterleaved`。
-- P1.2 有效边界：单输出与交错表共用顺序主循环，中心使用虚拟坐标、填充使用实际系数切片；区间求值与负循环尾部各有私有填充函数。输出按输入优先顺序写最终多项式，没有逐列多项式、中心数组或行 scratch 分配。前半输入域、回调错误及 raw residue 检查保留。[首次构造/分配比较](docs/benchmarks/tfhe-p1.2.csv)和[主循环重整对照](docs/benchmarks/tfhe-p1.2-flow.csv)分开记录；历史性能数字不代表 P1.3 计时。
+- P1.2 有效边界：单输出与交错表共用顺序主循环，中心使用虚拟坐标、填充使用实际系数切片；区间求值与负循环尾部各有私有填充函数。输出按输入优先顺序写最终多项式，没有逐列多项式、中心数组或行 scratch 分配。前半输入域、回调错误及 raw residue 检查保留。[首次构造/分配比较](docs/benchmarks/tfhe-p1.2.csv)和[主循环重整对照](docs/benchmarks/tfhe-p1.2-flow.csv)分开记录；最终同配置比较见 [P1.4 验收](docs/tfhe.md#p14-阶段验收)：所测多输出构造耗时下降 61.6%～85.6%，全部只分配最终多项式；单输出构造增加约 12～24 ns，在线 PBS 未见稳定整体加速，NTT 存在几个百分点的退化信号。
 - P1.M 有效边界：`RingContext` 聚合 `PrepareModulusSwitch`，`FieldContext` 继承准备能力；`PreparedModulusSwitch` 执行固定模数对的规范模切，保持独立。codec 只要求准备能力和模加法，构造时准备转换，Scaled 保持固定尺度；绝对值舍入和解码共用模切内核，批量融合符号与输出，标量包装保留各自特化路径。普通 PBS 量化在 GLWE BSK/NTRU 参数构造时准备，ManyLUT 按步长在系数循环前准备。输入与 accumulator 模数独立，描述性元数据仍可使用 `Option<T>`；紧凑范围内的模切已按分子宽度使用倒数求商和一次精确修正；Barrett/派生 Barrett 复用已有倒数，公共准备/执行接口不变。
 - 编解码输入输出统一为系数类型 `T`：codec、基础加解密和通用 TFHE client 不再转换消息类型，批量输入为 `&[T]`；应用负责转换，Boolean 保留 `bool` 和值域检查。参数构造复用 codec 校验；模数有效性由模切准备验证，codec 保留 `q > t` 和 Scaled 恢复条件。
-- 有效未决项：P1.4 最终性能验收；奇数全域条件在 P2.3 收敛；PBC 参数、安全/噪声条件在 P3.1 收敛；首个 MVB 算法与缩放在 P4.1 收敛。居中/shifted 的正式接入和带辅助密钥的漂移抑制为后续候选，不构成 P1–P4 的隐含交付。具体内容只维护在对应文档中。
-- 当前验证：底层模切/codec 默认 33 项、SIMD 34 项测试通过，含独立整数 oracle、穷举小字宽及 derive；相关 check、Clippy 和文档通过。`just tfhe`、`just tfhe-simd` 通过，七个 TFHE crate 默认/nightly SIMD 各 41 项测试通过，含旋转域边界、四后端 PBS、三路 CBS 和既有分配检查；默认覆盖 xtask check 和七包文档。内核/codec/GLWE PBS 共 41 项性能对照及两轮批量融合比较见总览，居中原型既有结论仍保留。未重跑其余 workspace 测试、示例、非 x86 或构造性能；P1.4 仍需最终同配置构造/在线性能验收。
+- 有效未决项：奇数全域条件在 P2.3 收敛；PBC 参数、安全/噪声条件在 P3.1 收敛；首个 MVB 算法与缩放在 P4.1 收敛。居中/shifted 的正式接入和带辅助密钥的漂移抑制为后续候选，不构成 P1–P4 的隐含交付。具体内容只维护在对应文档中。
+- 测试/基准有效边界：保留 41 项独立测试，端到端 ManyLUT 用代表性消息与 `k=1/3/4`，三路 CBS 用三层和 `1→0` 复用序列；共享整数 oracle、两种 GLWE order、两种 FFT 和错误边界保留。Criterion 精简为 8 个 target、97 项，重点测复用输出；GitHub CI 未执行 benches。精简依据和本机测试阶段耗时见总览。
+- 当前验证：P1.4 的 `just tfhe`、`just tfhe-simd`、workspace all-targets check 通过；七个 TFHE crate 默认/nightly SIMD 各 41 项测试，相关 Clippy 与默认文档通过。模切/codec/derive 默认 33 项、SIMD 34 项测试通过。六个示例在默认/SIMD 下共 12 次运行通过。最终性能包含 28 项等价对照、11 项新增三输出计时及针对性复测，方法和数据只维护在总览。未运行其余 workspace 测试，未测 SIMD 性能、非 x86 或生产失败概率/安全性。
 
 ## 已审范围索引
 
