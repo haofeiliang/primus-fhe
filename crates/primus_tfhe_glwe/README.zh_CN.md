@@ -43,6 +43,9 @@ LUT 编译的第一个参数为显式输出 `RoundedCodec`。沿用输入尺度�
 再用 `output_codec.decode_value(decryptor.decrypt_phase(&output)?)` 解码输出。
 范围检查、raw 输出与后续 PBS 契约见[选择输出编码](../primus_tfhe/README.zh_CN.md#选择输出编码)。
 
+有界双输入函数使用共享 `BivariateLookupTable` 打包 `x+B*y`，再把其中的普通 LUT
+交给现有 evaluator。范围、共同编码与误差放大条件见[有界双输入 PBS](../primus_tfhe/README.zh_CN.md#有界双输入-pbs)。
+
 ## Boolean 与 CBS
 
 `BooleanCiphertext` 包装外部采用模 4 下 `0/1` 编码的 LWE。

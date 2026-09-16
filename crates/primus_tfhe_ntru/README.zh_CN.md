@@ -41,12 +41,15 @@ LUT 编译的第一个参数为显式输出 `RoundedCodec`。沿用输入尺度�
 再用 `output_codec.decode_value(decryptor.decrypt_phase(&output)?)` 解码输出。
 范围检查、raw 输出与后续 PBS 契约见[选择输出编码](../primus_tfhe/README.zh_CN.md#选择输出编码)。
 
+有界双输入函数使用共享 `BivariateLookupTable` 打包 `x+B*y`，再把其中的普通 LUT
+交给现有 evaluator。范围、共同编码与误差放大条件见[有界双输入 PBS](../primus_tfhe/README.zh_CN.md#有界双输入-pbs)。
+
 ## CBS 与示例
 
 两后端均提供可选的 CBS 参数、密钥和 evaluator。CBS 从 BR 后分支，在 `f_acc` 下执行
 系数投影、trace/scheme switching，跳过普通 PBS 的返回密钥切换与提取。
 输出 NGSW 使用 gadget 尺度；输入为 `0/1` 时可控制 CMUX，其候选密文也必须使用 `f_acc`。
-本 TFHE 层不提供 NTRU Boolean 适配器或 packing。
+本 TFHE 层不提供 NTRU Boolean 适配器或 LWE 到环密文的 packing。
 
 后端 README 链接到可运行的 PBS 和 CBS → CMUX 示例。Fixture 不构成生产噪声余量或
 安全性论证；NTRU scheme switching 需要独立的秘密相关消息假设，见 [NTRU 契约](../primus_ntru/README.zh_CN.md)。

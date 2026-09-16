@@ -26,6 +26,14 @@ pub enum LookupTableError {
         /// Largest independently programmable domain length.
         max_domain_len: usize,
     },
+    /// Bivariate domain lengths must be nonzero and their product must fit `usize`.
+    #[error("invalid bivariate domain lengths: {lhs_domain_len} by {rhs_domain_len}")]
+    InvalidBivariateDomain {
+        /// Number of possible left-hand messages; also the packing base.
+        lhs_domain_len: usize,
+        /// Number of possible right-hand messages.
+        rhs_domain_len: usize,
+    },
     /// A raw output is not canonical under the accumulator modulus.
     #[error("encoded lookup-table output for input {input} is outside the accumulator modulus")]
     EncodedOutputOutOfRange {

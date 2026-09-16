@@ -33,7 +33,8 @@ benchmark fixtures are not production security or failure-probability recommenda
    context. Create an evaluator once; its scratch is reused by online `_to` calls.
 4. Allocate caller outputs once, then encrypt and evaluate into the same storage.
 
-A unary function or slice programs `0..ceil(t/2)` with outputs in `0..t`.
+A unary function or slice programs `0..ceil(t_in/2)` with outputs in `0..t_out`,
+as selected by the output codec.
 The other half follows negacyclic extension and is not independently programmable.
 For an interleaved LUT (ManyLUT), the effective output count `k` is positive and
 the stride is `s = next_power_of_two(k)`, with `ceil(t/2) <= N/s`.
@@ -136,6 +137,51 @@ continues to describe the input and accumulator, without equating `t_out` to
 match the previous output encoding; a context does not infer that change from
 raw ciphertexts. Custom encodings, per-column scales and Boolean/CBS gadget
 outputs use the raw constructors and retain their own decoding contracts.
+
+## Bounded two-input PBS
+
+`BivariateLookupTable::try_new(B, R, N, input_codec, output_codec, function)`
+compiles `f(x,y)` for `0 <= x < B`, `0 <= y < R` using `z = x + B*y`.
+`B` and `R` must be positive and `D = B*R <= ceil(t_in/2)`; the ordinary LUT
+capacity and rotation-center checks also apply. Only the prefix `0..D` is
+compiled, with `x` varying fastest. `B` need not be a power of two.
+The output codec selects `t_out` independently but must use the same ciphertext
+modulus. The shared type works with all four backends and owns no keys or scratch.
+
+For an NTRU context with `t_in=16`, reuse the existing client and evaluator:
+
+```rust
+use primus_tfhe::BivariateLookupTable;
+
+let compare = BivariateLookupTable::try_new(
+    3, 2, context.parameters().poly_length(),
+    context.parameters().external_lwe().plaintext_codec(),
+    &output_codec, |x, y| u32::from(x > y),
+).unwrap();
+let lhs = encryptor.encrypt_padded(2u32, &mut rng).unwrap();
+let rhs = encryptor.encrypt_padded(1u32, &mut rng).unwrap();
+compare.pack_to(&lhs, &rhs, &mut packed);
+evaluator.apply_lookup_table_to(&packed, compare.lookup_table(), &mut output);
+assert_eq!(output_codec.decode_value(decryptor.decrypt_phase(&output).unwrap()), 1);
+```
+
+Allocate `packed` and `output` once with the external LWE dimension.
+`pack_to` writes `lhs + B*rhs` in one modular multiply-add pass, without allocation;
+it rejects unequal lengths or missing bodies before writing. Inputs must share
+an actual secret, ciphertext modulus and the supplied unsigned input codec, with
+canonical coefficients and messages inside the stated bounds. These semantic
+conditions cannot be checked from raw ciphertexts. GLWE uses its order-dependent
+external dimension and `small_lwe().plaintext_codec()`; no extra key material is needed.
+
+Rounding matters even before encryption noise. For `E(m)=round(m*q/t_in)`,
+packing produces `E(x+B*y) + e_x + B*e_y + rho` modulo `q`, where
+`rho = E(x)+B*E(y)-E(x+B*y)`. If `t_in` divides `q`, `rho=0`; otherwise a conservative
+bound is `|rho| <= (B+2)/2` ciphertext units. Include this discrepancy and the
+amplified input errors in the PBS input-noise budget, together with any pre-BR
+key-switch error and per-coefficient modulus-switch rounding. The capacity bound
+prevents plaintext-index wrap; it does not establish a noise margin. This is a
+bounded single-output workflow, not arbitrary-precision integer arithmetic or
+LWE-to-ring packing. See the runnable [NTRU NTT example](../primus_tfhe_ntru_ntt/examples/ntru_ntt_basic.rs).
 
 ## Validation
 

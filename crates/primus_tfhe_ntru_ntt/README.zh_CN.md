@@ -26,6 +26,10 @@ cargo run -p primus_tfhe_ntru_ntt --example ntru_ntt_basic
 LUT 编译的第一个参数为输出 `RoundedCodec`。示例采用 `t_in=16 → t_out=4`，
 通过 `decrypt_phase` 与该 codec 解码；输入几何仍遵循参数编码。
 
+同一示例还用 `BivariateLookupTable` 比较 `0..3` 内的加密 `x` 与 `0..2` 内的加密 `y`，
+打包 `x+3*y` 后调用一次普通 PBS，复用密钥、evaluator scratch 和输出缓冲区。
+共同输入尺度和误差放大条件见[共享双输入契约](../primus_tfhe/README.zh_CN.md#有界双输入-pbs)。
+
 公开 PBS 检查 LUT 的编码模数、环长度及全部输出维数。原始 LWE 输入必须
 使用 context 的 external key、规范 residue 和 unsigned rounded 编码。
 可独立编程的输入为 `0..ceil(t/2)`，另一半按负循环关系扩展。ManyLUT 输出数量

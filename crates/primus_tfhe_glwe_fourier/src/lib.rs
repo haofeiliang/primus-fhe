@@ -37,7 +37,9 @@ pub use bootstrapping_key::FourierGlweBootstrappingKey;
 pub use context::TfheContext;
 pub use evaluator::Evaluator;
 pub use key::{KeyGenerator, ServerKey};
-pub use primus_tfhe::{InterleavedLookupTable, LookupTable, LweCiphertext, LweSecretKeyRef};
+pub use primus_tfhe::{
+    BivariateLookupTable, InterleavedLookupTable, LookupTable, LweCiphertext, LweSecretKeyRef,
+};
 pub use primus_tfhe_glwe::{GlweClientKey as ClientKey, GlwePbsOrder as PbsOrder};
 
 pub use boolean::{

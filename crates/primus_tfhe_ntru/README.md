@@ -47,13 +47,18 @@ that output with `output_codec.decode_value(decryptor.decrypt_phase(&output)?)`.
 See [choosing the output encoding](../primus_tfhe/README.md#choosing-the-output-encoding)
 for range checks, raw output and subsequent PBS contracts.
 
+For bounded two-input functions, use the shared `BivariateLookupTable` to pack
+`x+B*y` and pass its ordinary LUT to the existing evaluator. See
+[bounded two-input PBS](../primus_tfhe/README.md#bounded-two-input-pbs) for input
+bounds, common encoding and the amplified-error budget.
+
 ## CBS and examples
 
 Both backends provide optional CBS parameters, keys and evaluators. CBS branches
 after BR, projects coefficients and applies trace/scheme switching under `f_acc`;
 it skips ordinary PBS's return key switch and extraction. Its NGSW output uses
 gadget scales and can control CMUX for `0/1` inputs. CMUX candidates must also use
-`f_acc`. NTRU Boolean adapters and packing are not provided by this TFHE layer.
+`f_acc`. NTRU Boolean adapters and LWE-to-ring packing are not provided by this TFHE layer.
 
 Backend READMEs link runnable PBS and CBS → CMUX examples. Fixtures do not establish
 production noise margins or security; NTRU scheme switching requires separate

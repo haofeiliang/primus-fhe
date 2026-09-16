@@ -10,8 +10,8 @@
 
 | 层 | 拥有的职责 |
 | --- | --- |
-| 应用层 | 整数/布尔语义、有效范围、message/carry、多输入打包和执行图 |
-| `primus_tfhe` | 公开 LUT 编译、输入到旋转位置的规则、布局元数据、小型功能接口 |
+| 应用层 | 整数/布尔语义、有效范围、message/carry、多输入范围与噪声预算、执行图 |
+| `primus_tfhe` | 公开 LUT 编译、输入到旋转位置的规则、布局元数据、有界双输入打包、小型功能接口 |
 | GLWE/NTRU、NTT/Fourier 后端 | 累加器初始化、BSK、盲旋转策略、表示变换、scratch、密钥切换和后处理 |
 
 本轮优先公共 LUT、基础功能入口、稀疏 GLWE NTT 和一种具体 MVB。其他 full-domain、tree、multi-bit、摊销方案是候选扩展，不要求全部实现后才能验收。§5 Binary-NTT shallow 方案单独研究。
@@ -31,6 +31,7 @@
 源码入口：
 
 - [共享 LUT](../crates/primus_tfhe/src/lookup_table.rs)：类型、构造器和编码元数据；[编译内核](../crates/primus_tfhe/src/lookup_table/compile.rs) 集中几何校验与填充，错误定义位于 [error.rs](../crates/primus_tfhe/src/error.rs)。
+- [有界双输入](../crates/primus_tfhe/src/bivariate_lookup_table.rs)：绑定矩形输入域、打包基数与普通 LUT，复用现有 PBS。
 - [旋转量化](../crates/primus_tfhe/src/backend_support.rs)：普通与 windowed modulus switch。
 - [PBS trait](../crates/primus_tfhe/src/bootstrap.rs)：公共功能契约。
 - [GLWE NTT CBS](../crates/primus_tfhe_glwe_ntt/src/circuit_bootstrap/evaluator.rs)：有效输出补齐与投影的实际调用方。
@@ -74,7 +75,7 @@ MVB 还存在基于 BR 展开的路线。因此编译产物应由选定算法决
 
 ### 双输入与全域
 
-对于 `0 <= x < B`、有界 `y`，可用 `F(x + B*y) = f(x,y)`。调用层负责容量、共同编码尺度、线性组合误差和输入范围；不能仅因整数索引可打包就假定实际密文编码一致。
+对于 `0 <= x < B`、有界 `y`，可用 `F(x + B*y) = f(x,y)`。共享构造器核对公开域的容量并绑定打包基数；调用层负责实际共同编码尺度、线性组合误差和输入范围。不能仅因整数索引可打包就假定实际密文编码一致。
 
 奇数明文模数可使用带符号的中心折叠编程全域，代价包括更窄的有效区间。必须以真实 codec 和模切中心验证构造。其他 full-domain 情形可能需要多阶段算法，不能只增加一个不区分数学前提的布尔选项。
 
@@ -499,3 +500,34 @@ Boolean、CBS、自定义/逐列编码仍走 raw 构造器，其尺度、秘密�
 各 41 项 TFHE 测试，相关 Clippy 与默认文档通过。encoding 默认 5 项测试和 all-targets
 Clippy 通过，四个修改后的 basic 示例在两配置下共 8 次运行通过。未重跑其余 workspace
 测试、性能计时、非 x86 或生产噪声/安全性验证。
+
+
+## P2.2 有界双输入 PBS
+
+共享 `BivariateLookupTable<T, M>` 绑定普通 `LookupTable`、打包基数 `B` 和模数。
+构造时显式接收矩形域 `B × R`、环长及输入/输出 `RoundedCodec`，只编译 `D=B*R`
+个输入，并以 `(z % B, z / B)` 调用函数。它复用原 LUT 几何与兼容性元数据，不新增
+后端 trait、evaluator 或密钥，也不提供整数/message-carry 状态层。
+
+在线 `pack_to` 校验三个密文的存储长度，再调用现有模标量乘加切片内核，一遍写入
+`lhs+B*rhs`，无临时分配。调用方持有一个打包缓冲区，将 `lookup_table()` 交给现有
+单输出 PBS。范围和完整契约只维护在 [共享 README](../crates/primus_tfhe/README.zh_CN.md#有界双输入-pbs)
+与类型 rustdoc；NTRU NTT basic 示例给出公钥输入比较，四后端共用此入口。
+
+编码决定：使用同一 unsigned rounded 输入尺度，并将非线性舍入偏差计入输入误差，
+不假定 `E(x)+B*E(y)=E(x+B*y)`。设 `epsilon(m)=E(m)-m*q/t`，有
+`rho=epsilon(x)+B*epsilon(y)-epsilon(x+B*y)`，因此 `|rho| <= (B+2)/2`；
+`t` 整除 `q` 时偏差为零。输入噪声先变为 `e_x+B*e_y+rho`，再计入 BR 前可能发生的
+密钥切换及逐系数模切误差。`B*R <= ceil(t/2)` 保证合法整数索引留在编程前缀内，
+不证明噪声余量。输出仍由独立 codec 解码；当前路径要求输入、累加器、输出密文模数相同。
+
+验证资产仅增加两个共享测试：Native/Barrett 小矩形域的独立整数编码、线性组合与
+LUT 读取 oracle，以及容量/模数/输出/缓冲区拒绝边界。显式 `q=131,t=16` 确实产生非零
+舍入偏差。四后端已有固定 seed fixture 各配置补两个 `B=3,R=2` 的端到端输入，复用
+密钥和 scratch，覆盖两种 GLWE order、两种 FFT 及打包/PBS 零在线分配。
+没有新建测试程序或 Criterion benchmark；不声称性能改善或生产参数安全性。
+
+验证通过 `just tfhe`、`just tfhe-simd`、workspace all-targets check：默认/nightly SIMD
+各 43 项 TFHE 测试，相关 Clippy 与默认文档通过。修改后的 NTRU NTT basic 示例在两配置
+均运行通过。端到端共增加 18 次 PBS，不增加 keygen；未做性能计时、其余 workspace
+测试、非 x86 或生产噪声/安全性验证。

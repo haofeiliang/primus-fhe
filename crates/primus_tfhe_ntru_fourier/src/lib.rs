@@ -31,7 +31,9 @@ pub use error::{
 pub use evaluator::Evaluator;
 pub use key::{KeyGenerator, ServerKey};
 
-pub use primus_tfhe::{InterleavedLookupTable, LookupTable, LweCiphertext, LweSecretKeyRef};
+pub use primus_tfhe::{
+    BivariateLookupTable, InterleavedLookupTable, LookupTable, LweCiphertext, LweSecretKeyRef,
+};
 pub use primus_tfhe_ntru::{NtruClientKey as ClientKey, NtruTfheParameters};
 
 pub use circuit_bootstrap::{

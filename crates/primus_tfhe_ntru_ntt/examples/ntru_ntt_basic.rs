@@ -7,7 +7,7 @@ use primus_lwe::{LweCiphertext, LweParameters};
 use primus_modulus::BarrettModulus;
 use primus_ntru::{NlevParameters, NtruParameters, SecretKeyDistr};
 use primus_ntt::{NttTable, U32NttTable};
-use primus_tfhe_ntru_ntt::{NtruTfheParameters, TfheContext};
+use primus_tfhe_ntru_ntt::{BivariateLookupTable, NtruTfheParameters, TfheContext};
 
 fn main() {
     const N: usize = 256;
@@ -70,6 +70,27 @@ fn main() {
         assert_eq!(
             output_codec.decode_value(decryptor.decrypt_phase(&outputs[2]).unwrap()),
             message % 2
+        );
+    }
+    // Compare independent encrypted x in 0..3 and y in 0..2 via z=x+3*y.
+    // Their common input scale is q/16; output bits use the q/4 codec above.
+    let compare = BivariateLookupTable::try_new(
+        3,
+        2,
+        N,
+        context.parameters().external_lwe().plaintext_codec(),
+        &output_codec,
+        |x, y| u32::from(x > y),
+    )
+    .unwrap();
+    for (x, y) in [(2u32, 1u32), (0, 1)] {
+        let lhs = encryptor.encrypt_padded(x, &mut rng).unwrap();
+        let rhs = encryptor.encrypt_padded(y, &mut rng).unwrap();
+        compare.pack_to(&lhs, &rhs, &mut input);
+        evaluator.apply_lookup_table_to(&input, compare.lookup_table(), &mut outputs[0]);
+        assert_eq!(
+            output_codec.decode_value(decryptor.decrypt_phase(&outputs[0]).unwrap()),
+            u32::from(x > y)
         );
     }
     println!("NTRU/NTT programmable bootstrap succeeded");

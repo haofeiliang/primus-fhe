@@ -49,6 +49,11 @@ that output with `output_codec.decode_value(decryptor.decrypt_phase(&output)?)`.
 See [choosing the output encoding](../primus_tfhe/README.md#choosing-the-output-encoding)
 for range checks, raw output and subsequent PBS contracts.
 
+For bounded two-input functions, use the shared `BivariateLookupTable` to pack
+`x+B*y` and pass its ordinary LUT to the existing evaluator. See
+[bounded two-input PBS](../primus_tfhe/README.md#bounded-two-input-pbs) for input
+bounds, common encoding and the amplified-error budget.
+
 ## Boolean and CBS
 
 `BooleanCiphertext` wraps an LWE with the external `0/1` encoding modulo 4.

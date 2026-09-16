@@ -6,7 +6,9 @@ use primus_lwe::{LweCiphertext, LweParameters};
 use primus_modulus::BarrettModulus;
 use primus_ntru::{NlevParameters, NtruParameters, SecretKeyDistr};
 use primus_ntt::{NttTable, U32NttTable};
-use primus_tfhe::{InterleavedLookupTable, LookupTable, ProgrammableBootstrapInterleaved};
+use primus_tfhe::{
+    BivariateLookupTable, InterleavedLookupTable, LookupTable, ProgrammableBootstrapInterleaved,
+};
 use primus_tfhe_ntru_ntt::{TfheContext, TfheParameters};
 use rand::{SeedableRng, rngs::StdRng};
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -251,6 +253,32 @@ where
         output_codec.decode_value(decryptor.decrypt_phase(&outputs[2]).unwrap()),
         3
     );
+
+    // A non-power-of-two base and short domain share the same keys and PBS scratch.
+    let bivariate = BivariateLookupTable::try_new(
+        3,
+        2,
+        N,
+        context.parameters().external_lwe().plaintext_codec(),
+        &output_codec,
+        |x, y| (x * x + y) as u32,
+    )
+    .unwrap();
+    let mut packed = input.clone();
+    let mut result = input;
+    for (x, y) in [(2u32, 1u32), (1, 0)] {
+        let lhs = encryptor.encrypt_padded(x, &mut rng).unwrap();
+        let rhs = encryptor.encrypt_padded(y, &mut rng).unwrap();
+        let (_, allocation) = allocations::measure(|| {
+            bivariate.pack_to(&lhs, &rhs, &mut packed);
+            evaluator.apply_lookup_table_to(&packed, bivariate.lookup_table(), &mut result);
+        });
+        assert_eq!(allocation.count, 0, "packing and PBS must reuse storage");
+        assert_eq!(
+            output_codec.decode_value(decryptor.decrypt_phase(&result).unwrap()),
+            x * x + y
+        );
+    }
 }
 #[test]
 fn many_pbs_preserves_outputs_and_validates_domains() {

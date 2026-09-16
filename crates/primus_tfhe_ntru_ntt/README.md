@@ -29,6 +29,11 @@ encrypted-integer system.
 LUT compilation takes an output `RoundedCodec` first; the example decodes
 with `decrypt_phase` and that codec. Input geometry keeps the parameter encoding.
 
+The same example also compares encrypted `x` in `0..3` and `y` in `0..2` with
+`BivariateLookupTable`, packing `x+3*y` before one ordinary PBS. It reuses keys,
+evaluator scratch and output buffers. The [shared two-input contract](../primus_tfhe/README.md#bounded-two-input-pbs)
+explains the common input scale and amplified error.
+
 Public PBS validates LUT encoding moduli, ring length and all output
 dimensions. Raw LWE input must use the context's external key, canonical residues
 and unsigned rounded encoding. Independently programmable inputs are

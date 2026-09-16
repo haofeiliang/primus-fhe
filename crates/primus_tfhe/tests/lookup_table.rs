@@ -4,11 +4,14 @@ use std::{cell::Cell, cmp::Reverse, fmt::Debug};
 #[path = "support/allocations.rs"]
 mod allocations;
 
+use primus_encoding::RoundedCodec;
 use primus_integer::FheUint;
 use primus_modulus::{BarrettModulus, NativeModulus, PowOf2Modulus, UintModulus};
 use primus_reduce::RingContext;
 
-use primus_tfhe::{InterleavedLookupTable, LookupTable, LookupTableError};
+use primus_tfhe::{
+    BivariateLookupTable, InterleavedLookupTable, LookupTable, LookupTableError, LweCiphertext,
+};
 
 macro_rules! with_modulus {
     ($q:expr, $modulus:ident, $body:block) => {
@@ -505,4 +508,177 @@ fn coefficient_quantization_matches_wide_integer_oracle() {
     // Rounding in the virtual ring differs from clearing low bits afterward.
     assert_eq!(windowed_modulus_switch(2u32, Some(16), 16, 4), 4);
     assert_eq!(modulus_switch(2u32, Some(16), 16) & !3, 0);
+}
+
+#[test]
+fn bivariate_packing_and_lut_match_integer_oracles() {
+    fn check<M: RingContext<u32>>(modulus: M) {
+        const N: usize = 32;
+        let q = modulus.explicit_value().map_or(1u128 << 32, u128::from);
+        let input_codec = RoundedCodec::new(16, modulus);
+        let output_codec = RoundedCodec::new(8, modulus);
+        let mut saw_rounding_discrepancy = false;
+        for (base, rhs_len) in [(1, 3), (3, 2), (4, 2)] {
+            let calls = Cell::new(0);
+            let lut = BivariateLookupTable::try_new(
+                base,
+                rhs_len,
+                N,
+                &input_codec,
+                &output_codec,
+                |x, y| {
+                    assert!(x < base && y < rhs_len);
+                    assert_eq!(calls.replace(calls.get() + 1), x + base * y);
+                    ((x * x + y) % 8) as u32
+                },
+            )
+            .unwrap();
+            assert_eq!(calls.get(), base * rhs_len);
+            assert_eq!(
+                (lut.lhs_domain_len(), lut.rhs_domain_len()),
+                (base, rhs_len)
+            );
+            assert_eq!(lut.lookup_table().input_domain_len(), base * rhs_len);
+
+            // Deterministic masks and a binary secret; 33 coefficients include a SIMD tail.
+            let mut lhs =
+                LweCiphertext::new((0..33).map(|i| (q - 1 - i) as u32).collect::<Vec<_>>());
+            let mut rhs = LweCiphertext::new(
+                (0..33)
+                    .map(|i| ((q / 3 + 17 * i) % q) as u32)
+                    .collect::<Vec<_>>(),
+            );
+            let dot = |ciphertext: &LweCiphertext<u32>| -> u128 {
+                ciphertext
+                    .a()
+                    .iter()
+                    .enumerate()
+                    .filter(|(i, _)| i % 2 == 0)
+                    .map(|(_, &a)| u128::from(a))
+                    .sum()
+            };
+            let mut packed = LweCiphertext::zero(32);
+            for y in 0..rhs_len {
+                for x in 0..base {
+                    let ex = round_ratio(x as u128 * q, 16);
+                    let ey = round_ratio(y as u128 * q, 16);
+                    let ez = round_ratio((x + base * y) as u128 * q, 16);
+                    let rho = (ex + base as u128 * ey) as i128 - ez as i128;
+                    saw_rounding_discrepancy |= rho != 0;
+                    assert!(2 * rho.abs() <= (base + 2) as i128);
+                    // Known errors e_x=-2 and e_y=1 exercise amplification and modular wrap.
+                    *lhs.b_mut() = ((dot(&lhs) + ex + q - 2) % q) as u32;
+                    *rhs.b_mut() = ((dot(&rhs) + ey + 1) % q) as u32;
+                    let (_, allocation) =
+                        allocations::measure(|| lut.pack_to(&lhs, &rhs, &mut packed));
+                    assert_eq!(allocation.count, 0);
+                    for ((&a, &b), &actual) in
+                        lhs.as_ref().iter().zip(rhs.as_ref()).zip(packed.as_ref())
+                    {
+                        assert_eq!(
+                            u128::from(actual),
+                            (u128::from(a) + base as u128 * u128::from(b)) % q
+                        );
+                    }
+                    let phase = (u128::from(packed.b()) + q - dot(&packed) % q) % q;
+                    assert_eq!(phase, (ex + base as u128 * ey + q - 2 + base as u128) % q);
+                    // Inspect the LUT at the actual packed encoding, not an ideal E(x+B*y).
+                    let rotation = round_ratio((ex + base as u128 * ey) % q * (2 * N) as u128, q)
+                        as usize
+                        % (2 * N);
+                    let rotated = rotate(
+                        lut.lookup_table().polynomial().as_ref(),
+                        (2 * N - rotation) % (2 * N),
+                        q,
+                    );
+                    let expected = round_ratio(((x * x + y) % 8) as u128 * q, 8);
+                    assert_eq!(u128::from(rotated[0]), expected);
+                }
+            }
+        }
+        assert_eq!(saw_rounding_discrepancy, !q.is_multiple_of(16));
+    }
+    check(NativeModulus::new());
+    check(BarrettModulus::new(131));
+}
+
+#[test]
+fn bivariate_boundaries_reject_before_callbacks_or_output_writes() {
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+    let input_codec = RoundedCodec::new(16u32, NativeModulus::new());
+    let output_codec = RoundedCodec::new(8u32, NativeModulus::new());
+    for (lhs, rhs, expected) in [
+        (
+            0,
+            2,
+            LookupTableError::InvalidBivariateDomain {
+                lhs_domain_len: 0,
+                rhs_domain_len: 2,
+            },
+        ),
+        (
+            2,
+            0,
+            LookupTableError::InvalidBivariateDomain {
+                lhs_domain_len: 2,
+                rhs_domain_len: 0,
+            },
+        ),
+        (
+            usize::MAX,
+            2,
+            LookupTableError::InvalidBivariateDomain {
+                lhs_domain_len: usize::MAX,
+                rhs_domain_len: 2,
+            },
+        ),
+        (
+            3,
+            3,
+            LookupTableError::InvalidInputDomain {
+                domain_len: 9,
+                max_domain_len: 8,
+            },
+        ),
+    ] {
+        assert_eq!(
+            BivariateLookupTable::try_new(
+                lhs,
+                rhs,
+                16,
+                &input_codec,
+                &output_codec,
+                |_, _| panic!("invalid domain must precede callback")
+            )
+            .unwrap_err(),
+            expected
+        );
+    }
+    let wrong_codec = RoundedCodec::new(8, BarrettModulus::new(131));
+    assert_eq!(
+        BivariateLookupTable::try_new(3, 2, 16, &input_codec, &wrong_codec, |_, _| panic!(
+            "wrong modulus must precede callback"
+        ))
+        .unwrap_err(),
+        LookupTableError::OutputModulusMismatch
+    );
+    assert_eq!(
+        BivariateLookupTable::try_new(3, 2, 16, &input_codec, &output_codec, |_, _| 8).unwrap_err(),
+        LookupTableError::OutputOutOfRange { input: 0 }
+    );
+    let lut =
+        BivariateLookupTable::try_new(3, 2, 16, &input_codec, &output_codec, |x, y| (x + y) as u32)
+            .unwrap();
+    let input = LweCiphertext::zero(4);
+    let short = LweCiphertext::zero(3);
+    let empty = LweCiphertext::new(Vec::new());
+    for (lhs, rhs, initial) in [
+        (&input, &short, &input),
+        (&input, &input, &short),
+        (&empty, &empty, &empty),
+    ] {
+        let mut output = initial.clone();
+        assert!(catch_unwind(AssertUnwindSafe(|| lut.pack_to(lhs, rhs, &mut output))).is_err());
+        assert_eq!(&output, initial);
+    }
 }

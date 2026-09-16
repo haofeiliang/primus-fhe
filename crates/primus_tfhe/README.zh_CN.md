@@ -30,7 +30,7 @@
    evaluator 创建一次，在线 `_to` 调用复用其 scratch。
 4. 调用方输出分配一次，后续加密与求值重复使用同一存储。
 
-单函数或切片为 `0..ceil(t/2)` 输入域编程，输出属于 `0..t`。
+单函数或切片为 `0..ceil(t_in/2)` 输入域编程，输出属于输出 codec 指定的 `0..t_out`。
 另一半遵循负循环扩展，不能独立编程。交错 LUT（ManyLUT）的有效输出数 `k` 为正，
 步长为 `s = next_power_of_two(k)`，满足 `ceil(t/2) <= N/s`。callback 按输入优先
 顺序接收 `(input, output_index)`，每个有效组合调用一次；切片包含相同顺序的 `D*k` 个值。
@@ -114,6 +114,46 @@ LUT 兼容性元数据仍描述输入与 accumulator，不要求 `t_out = t_in`�
 继续串联 PBS 时，下一次输入编码和 LUT 几何必须与上一次输出编码一致；context 不会从
 raw 密文推断编码变化。自定义编码、逐列尺度及 Boolean/CBS gadget 输出使用 raw 构造器，
 遵循各自的解码契约。
+
+## 有界双输入 PBS
+
+`BivariateLookupTable::try_new(B, R, N, input_codec, output_codec, function)`
+通过 `z = x + B*y` 编译 `0 <= x < B`、`0 <= y < R` 上的 `f(x,y)`。
+`B`、`R` 必须为正，`D = B*R <= ceil(t_in/2)`，并满足普通 LUT 的容量和旋转中心检查。
+只编译 `0..D` 前缀，回调按 `x` 优先变化的顺序求值；`B` 不必是二次幂。
+输出 codec 独立选择 `t_out`，但必须使用相同密文模数。
+这个共享类型适用于四个后端，不持有密钥或 scratch。
+
+例如，对 `t_in=16` 的 NTRU context 复用已有客户端和 evaluator：
+
+```rust
+use primus_tfhe::BivariateLookupTable;
+
+let compare = BivariateLookupTable::try_new(
+    3, 2, context.parameters().poly_length(),
+    context.parameters().external_lwe().plaintext_codec(),
+    &output_codec, |x, y| u32::from(x > y),
+).unwrap();
+let lhs = encryptor.encrypt_padded(2u32, &mut rng).unwrap();
+let rhs = encryptor.encrypt_padded(1u32, &mut rng).unwrap();
+compare.pack_to(&lhs, &rhs, &mut packed);
+evaluator.apply_lookup_table_to(&packed, compare.lookup_table(), &mut output);
+assert_eq!(output_codec.decode_value(decryptor.decrypt_phase(&output).unwrap()), 1);
+```
+
+按外部 LWE 维数一次性分配 `packed` 和 `output`。
+`pack_to` 用一遍模乘加写入 `lhs + B*rhs`，不分配内存；长度不同或缺少 body 时在写入前拒绝。
+两输入必须具有相同的实际秘密、密文模数及传入的 unsigned 输入 codec，系数规范、明文不超出各自边界。
+raw 密文无法验证这些语义条件。GLWE 使用其 order 对应的外部维数与
+`small_lwe().plaintext_codec()`，无需增加密钥材料。
+
+即使不考虑加密噪声，也不能忽略编码舍入。令 `E(m)=round(m*q/t_in)`，打包相位为
+`E(x+B*y) + e_x + B*e_y + rho` 模 `q`，其中
+`rho = E(x)+B*E(y)-E(x+B*y)`。`t_in` 整除 `q` 时 `rho=0`，否则可用保守界
+`|rho| <= (B+2)/2`（密文单位）。PBS 输入噪声预算需计入这个偏差、放大的输入误差、
+BR 前可能发生的密钥切换误差及逐系数模切舍入。容量条件防止明文索引回绕，不能证明噪声余量。
+这是有界单输出工作流，不是任意精度整数运算或 LWE 到环密文的 packing。
+完整运行示例见 [NTRU NTT](../primus_tfhe_ntru_ntt/examples/ntru_ntt_basic.rs)。
 
 ## 验证
 
