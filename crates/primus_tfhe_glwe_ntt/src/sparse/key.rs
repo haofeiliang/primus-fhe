@@ -9,6 +9,8 @@ use primus_lattice::{
 };
 use primus_modulus::BarrettModulus;
 use primus_ntt::NttTable;
+use primus_reduce::PrepareModulusSwitch;
+use primus_tfhe::backend_support::RotationQuantizer;
 use zeroize::Zeroizing;
 
 use crate::{ClientKey, KeyGenerator, TfheKeyError};
@@ -50,8 +52,8 @@ pub enum SparseBootstrappingKeyError {
 ///
 /// Generation retains only the public mapping and ciphertexts, never the support
 /// or matching. Input and accumulator use the context's explicit modulus.
-/// This experimental key is not yet consumed by [`crate::Evaluator`]; sparse
-/// blind rotation and full PBS integration are separate implementation stages.
+/// [`Self::ntt_blind_rotate_lookup_table_to`] provides raw sparse blind rotation.
+/// This experimental key is not yet consumed by [`crate::Evaluator`].
 ///
 /// Successful mapping conditions the joint distribution of the public map and
 /// secret. Fixed-weight security and complete PBS noise bounds need independent
@@ -63,6 +65,7 @@ pub struct SparseGlweBootstrappingKey<T: FheUint> {
     hamming_weight: usize,
     copy_count: usize,
     modulus: BarrettModulus<T>,
+    input_quantizer: RotationQuantizer<<BarrettModulus<T> as PrepareModulusSwitch>::Prepared>,
     size: GadgetSize,
     basis: ApproxSignedBasis<T>,
 }
@@ -96,6 +99,12 @@ impl<T: FheUint> SparseGlweBootstrappingKey<T> {
     #[must_use]
     pub fn input_modulus(&self) -> BarrettModulus<T> {
         self.modulus
+    }
+
+    pub(super) fn input_quantizer(
+        &self,
+    ) -> RotationQuantizer<<BarrettModulus<T> as PrepareModulusSwitch>::Prepared> {
+        self.input_quantizer
     }
 
     /// Returns the explicit accumulator modulus.
@@ -292,6 +301,11 @@ where
             hamming_weight,
             copy_count,
             modulus: parameters.small_lwe().cipher_modulus(),
+            input_quantizer: RotationQuantizer::new(
+                parameters.small_lwe().cipher_modulus(),
+                2 * size.glwe_size().poly_length(),
+                1,
+            ),
             size,
             basis: gadget.basis().clone(),
         })

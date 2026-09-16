@@ -10,6 +10,7 @@
 //!
 //! [`KeyGenerator::try_generate_sparse_bootstrapping_key`] builds an experimental
 //! [`SparseGlweBootstrappingKey`] with public buckets and encrypted selections.
+//! Its raw LUT blind rotation reuses [`SparseGlweBlindRotationContext`].
 //! Sparse evaluation is not yet integrated into [`Evaluator`].
 //!
 //! Use [`TfheContext::boolean_encryptor`], [`TfheContext::boolean_decryptor`] and
@@ -53,7 +54,9 @@ pub use primus_tfhe::{
     BivariateLookupTable, InterleavedLookupTable, LookupTable, LweCiphertext, LweSecretKeyRef,
 };
 pub use primus_tfhe_glwe::{GlweClientKey as ClientKey, GlwePbsOrder as PbsOrder};
-pub use sparse::{SparseBootstrappingKeyError, SparseGlweBootstrappingKey};
+pub use sparse::{
+    SparseBootstrappingKeyError, SparseGlweBlindRotationContext, SparseGlweBootstrappingKey,
+};
 
 pub use boolean::{
     BooleanCiphertext, BooleanDecryptor, BooleanEncryptor, BooleanError, BooleanEvaluator,

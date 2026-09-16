@@ -50,7 +50,7 @@ of the accumulator modulus. Key generation prepares the ordinary-PBS
 quantizer. ManyLUT prepares the conversion for the rotation step before coefficient
 processing; the high-level context keeps its existing parameter restrictions.
 
-## Experimental sparse bootstrapping keys
+## Experimental sparse keys and blind rotation
 
 `KeyGenerator::try_generate_sparse_bootstrapping_key(&client_key, copy_count,
 bucket_count, &mut rng)` generates a `SparseGlweBootstrappingKey` from the client's
@@ -62,9 +62,24 @@ maps with the same secret. Failure returns an error without a partial key.
 The key stores coefficient GGSWs and public bucket indices. `bucket(j)` borrows
 the increasing input indices and their GGSWs, followed by one encrypted dummy;
 unoccupied buckets encrypt one in the dummy. Private matching buffers are erased
-on drop. This stage provides key generation and inspection; `Evaluator` still
-uses the classic BSK. Sparse blind rotation is the next stage. These parameters
-have no certified security level or full PBS failure bound; see the
+on drop.
+
+Raw blind rotation takes a small-LWE input and an encoded LUT polynomial, and
+overwrites a coefficient-domain GLWE under the accumulator secret:
+
+```rust,ignore
+let mut scratch = SparseGlweBlindRotationContext::new(&key);
+key.ntt_blind_rotate_lookup_table_to(
+    &input, lut.polynomial(), &mut output, context.table(), &mut scratch,
+);
+```
+
+Allocate the output and scratch once. Evaluation quantizes each input coefficient
+once, aggregates each bucket in coefficient form, transforms it to NTT form, and
+performs one external product per bucket without online allocation. It uses
+ordinary rotation step one; key switching, extraction and interleaved PBS are not
+integrated here. `Evaluator` still uses the classic BSK. These parameters have
+no certified security level or full PBS failure bound; see the
 [design contract](../../docs/tfhe-sparse-pbs.md).
 
 ## Circuit bootstrapping

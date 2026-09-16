@@ -463,6 +463,23 @@ where
                 modulus_switch_with_step(input, modulus, length, rotation_step),
                 expected
             );
+            with_modulus!(modulus, modulus, {
+                let quantizer = primus_tfhe::backend_support::RotationQuantizer::new(
+                    modulus,
+                    length,
+                    rotation_step,
+                );
+                let inputs = [T::ZERO, input, T::try_from(q - 1).unwrap()];
+                let mut outputs = [usize::MAX; 3];
+                quantizer.exponent_slice_to(&inputs, &mut outputs);
+                for (value, actual) in inputs.into_iter().zip(outputs) {
+                    let expected = round_ratio(value.into() * (length / rotation_step) as u128, q)
+                        as usize
+                        % (length / rotation_step)
+                        * rotation_step;
+                    assert_eq!(actual, expected);
+                }
+            });
         }
     };
     for length in [2, 8, 64] {
@@ -530,6 +547,17 @@ fn coefficient_quantization_matches_wide_integer_oracle() {
     // Rounding in the smaller domain differs from clearing low bits afterward.
     assert_eq!(modulus_switch_with_step(2u32, Some(16), 16, 4), 4);
     assert_eq!(modulus_switch(2u32, Some(16), 16) & !3, 0);
+
+    let quantizer =
+        primus_tfhe::backend_support::RotationQuantizer::new(NativeModulus::<u32>::new(), 512, 1);
+    let mut output = [7; 2];
+    assert!(
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            quantizer.exponent_slice_to(&[0], &mut output);
+        }))
+        .is_err()
+    );
+    assert_eq!(output, [7; 2]);
 }
 
 #[test]

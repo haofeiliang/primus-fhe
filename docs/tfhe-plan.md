@@ -156,7 +156,7 @@
 
 **完成条件：** 秘密分布和结构符合 P3.1；evaluator 可由持有的 key 数据建立，不依赖 keygen 的明文秘密或临时缓存。
 
-**已完成的实现：** NTT 后端的 `KeyGenerator::try_generate_sparse_bootstrapping_key` 生成 `SparseGlweBootstrappingKey`，保存公开桶映射和系数域选择/dummy GGSW；支持集、匹配和明文位只存在于会擦除的 keygen 临时缓冲区。已验证完整匹配、最多八次重试、实际重量校验及加密语义，见[实现入口](tfhe-sparse-pbs.md#p32-实现入口)。下一步 P3.3 实现盲旋转。
+**已完成的实现：** NTT 后端的 `KeyGenerator::try_generate_sparse_bootstrapping_key` 生成 `SparseGlweBootstrappingKey`，保存公开桶映射和系数域选择/dummy GGSW；支持集、匹配和明文位只存在于会擦除的 keygen 临时缓冲区。已验证完整匹配、最多八次重试、实际重量校验及加密语义，见[实现入口](tfhe-sparse-pbs.md#p32-实现入口)。
 
 ## P3.3 参考盲旋转
 
@@ -168,6 +168,8 @@
 - 有噪声时比较解码/误差界，不要求不同算法密文字节相同。
 
 **完成条件：** 满足旋转不变量，外积次数等于桶数；经典路径仍可作为功能和成本对照。
+
+**已完成的实现：** `SparseGlweBootstrappingKey::ntt_blind_rotate_lookup_table_to` 与 `SparseGlweBlindRotationContext` 提供步长 1 的参考盲旋转；逐输入量化、逐桶聚合、NTT 和一次外积，在线零分配。小环全指数 oracle、同秘密经典对照与真实加密输入验证见 [P3.3 实现与验证](tfhe-sparse-pbs.md#p33-参考盲旋转实现与验证)。下一步 P3.4 测量聚合、变换及工作区，再决定优化。
 
 ## P3.4 聚合、表示与工作区优化
 

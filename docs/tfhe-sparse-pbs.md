@@ -190,7 +190,7 @@ P3.2 的 `SparseGlweBootstrappingKey<T>` 放在 `primus_tfhe_glwe_ntt`；长期�
 
 | 数据 | 保存/建立位置 |
 | --- | --- |
-| `n,h,c,b`、输入/输出共享的模数、GGSW size/basis | 具体 BSK；与实际秘密及现有参数绑定；普通量化器在 P3.3 接入 BR 时准备 |
+| `n,h,c,b`、输入/输出共享的模数、GGSW size/basis、普通量化器 | 具体 BSK；与实际秘密及现有参数绑定，量化器在 keygen 准备 |
 | `bucket_offsets[b+1]`、`input_indices[cn]` | 具体 BSK；公开展开映射，evaluator 直接借用 |
 | `[bucket][entry...,dummy][row][level][component][coefficient]` | 单个系数数组；每桶 dummy 位于该桶条目之后 |
 | 支持集、匹配 owner/前驱、明文选择位 | keygen 私有临时数据；不放入 server key |
@@ -216,7 +216,7 @@ P3.2 的 `SparseGlweBootstrappingKey<T>` 放在 `primus_tfhe_glwe_ntt`；长期�
 - 入口先校验上下文兼容性、固定重量分布、实际二元系数/重量、桶参数及存储长度，再消费随机数。匹配成功后按桶批量加密，直接在最终分配中原地 inverse NTT。支持集、匹配工作区、选择位用 `Zeroizing`，NTT 秘密和 gadget context 沿用已有擦除契约。
 - 保留四项聚焦测试：216 个小图与暴力匹配对照；强制第二/第八次成功及八次耗尽；[公开入口与加密语义](../crates/primus_tfhe_glwe_ntt/tests/sparse_key.rs)覆盖实际支持集恰好一次、每桶选择/dummy 总和为 1、公开空桶及非法输入在采样前拒绝。测试只在客户端侧恢复合成测试密钥的选择位，不给 server 增加明文辅助数据。
 
-P3.2 未接入 sparse BR、普通/交错 PBS 或 CBS；当前 evaluator 和 benchmark 继续使用经典 BSK。P3.3 从持有的 key 元数据准备量化器与工作区，再实现聚合和外积。
+参考 sparse BR 入口见下节 P3.3；当前完整 evaluator 和 benchmark 继续使用经典 BSK。
 
 ### P3.2 匹配表示与测量
 
@@ -231,6 +231,52 @@ P3.2 未接入 sparse BR、普通/交错 PBS 或 CBS；当前 evaluator 和 benc
 | `(2048,128)` | 279–300 ns → 208–228 ns | 21.81–22.16 µs → 19.64–19.71 µs |
 
 保留桶路径表示：上述场景两轮均未观察到退化，`n=512,h=32` 的匹配耗时下降约 24%–29%。另外检查 `n=128,h=32,c=3,b=32` 的高冲突随机图、`h=32,c=2,b=64` 的长增广路径和 `h=32,c=3,b=64` 的无匹配图，耗时也均下降。四组共 512 张随机图及两张构造图的成功状态和最终分配与基线一致；原有 216 图穷举 oracle 改用不连续的原始输入索引，测试数不变。仅拆分函数的原型出现退化信号，已撤回；本次未测完整 keygen/PBS，临时程序未加入常驻 benchmark 或 CI。
+
+## P3.3 参考盲旋转实现与验证
+
+[参考实现](../crates/primus_tfhe_glwe_ntt/src/sparse/blind_rotation.rs)提供
+`SparseGlweBootstrappingKey::ntt_blind_rotate_lookup_table_to(input, lookup_table, output, ntt, context)`，
+模数与 basis 取自 key。`SparseGlweBlindRotationContext::new(&key)` 一次建立全部 scratch；
+无需客户端或 keygen 缓存，可用于相同输入维数和 gadget 布局的其他 sparse key。
+
+公开入口在写入前检查输入、LUT、输出、工作区及 NTT 长度/模数。采用步长 1，使用
+`RotationQuantizer::exponent_slice_to` 批量量化全部 `a_i` 到已有 `usize` 工作区，复用
+`switch_map` 在循环前选择内核；`b` 单独量化并初始化 `(0, X^{-R(b)}P)`。
+每桶清零聚合 GGSW，累加所有旋转副本及独立
+dummy，整体转 NTT，再做一次外积。输出与 scratch 交替使用，奇数桶数时最后复制回输出。
+没有按秘密占用或公开指数跳过桶，外积次数严格为 `bucket_count`。
+完整 PBS、两种 order 的 KS/提取接入与交错步长仍在 P3.5；本阶段未实现 CBS。
+
+只新增[一项集成测试](../crates/primus_tfhe_glwe_ntt/tests/sparse_blind_rotation.rs)，
+同一客户端秘密生成经典/稀疏 BSK。独立整数模切及逐项单项式 oracle 检查全部输出相位，
+不复用生产旋转 helper，也不比较不同噪声密文的字节：
+
+- `N=16` 穷举全部 32 个总旋转指数，并检查 `q-1` 模切回绕；包含 `k=1,c=3,b=8`
+  和 `k=2,c=1,b=17`，覆盖奇偶桶数、公开空桶、多行 GGSW 与跨调用 scratch 重用。
+- `N=256,k=1,c=3,b=8` 使用截断 basis、真实 LWE 加密和编译 LUT，检查前半域四个输入。
+- 每次稀疏 BR 都测量在线分配并断言为零；非法输入/LUT/输出长度和 NTT 模数在输出写入前拒绝。
+
+所有配置使用 `n=16,h=4,q=132120577,t=8,noise=0.7`，固定 seed 见测试。
+一次临时相位诊断中，上述三组的最大模距离（稀疏/经典）分别为
+`21574/11463`、`21899/15711`、`26396/15544`，均小于解码半间距约 `8.26e6`；
+诊断输出已删除。这些有限样本不认证安全性或完整 PBS 尾概率，也不代表成本参数组。
+没有新增常驻 benchmark；BR 分项耗时、实际常驻量与峰值测量留给 P3.4。
+
+### 批量量化快速路径的取舍
+
+`q_in == 2N` 且 `rotation_step == 1` 时，底层准备阶段已经选择 `Identity`。
+步长大于 1 时，目标为 `2N/rotation_step`，仍须舍入后恢复步长；例如
+`q_in=2N=16, step=4` 时 `2 -> 4`、`15 -> 0`，不能直接复制输入。
+
+2026-09-17，在 Ryzen 9 9955HX3D、rustc 1.98.0、默认 feature/release、固定逻辑 CPU 2
+上，用临时 Criterion 比较原实现与快速路径：`u32`，Native、Barrett `q=132120577`
+和二次幂 `q=2N=2048`，批长 `16/512`、步长 `1/4`；准备和分配在计时外，
+每次迭代量化一个切片。每组 50 samples、0.1 s warmup、0.7 s measurement，两轮交换版本顺序，
+计时前逐项比较输出。步长 1 的独立分支使批长 512 的 Native/Barrett 分别快约 13%/5%，
+但 Native、步长 4、批长 16 慢约 5%–6%；再加相等模数的直接转换分支，使 Native、
+步长 1、批长 16 慢约 66%–70%。无分支的系数域左移替代乘法也使相等模数、步长 1、
+批长 16 慢约 4%–5%；左移再加步长 1 分支的收益不稳定。因此保留原实现，
+不新增相等模数标志或步长分支。临时原型和基准已删除，未据此推断完整 BR/PBS 性能。
 
 ## 论文校勘与表示选择
 

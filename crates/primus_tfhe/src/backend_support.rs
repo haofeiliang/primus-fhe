@@ -72,6 +72,29 @@ impl<S: PreparedModulusSwitch> RotationQuantizer<S> {
         let exponent: usize = self.switch.switch(value).try_into().unwrap();
         exponent * self.rotation_step
     }
+
+    /// Quantizes coefficients into an equally sized slice of rotation exponents.
+    /// Fuses conversion to `usize`, rotation-step scaling and output writes with
+    /// the prepared switch's batch operation, without intermediate allocation.
+    ///
+    /// # Correctness
+    /// Every input coefficient must satisfy [`Self::exponent`]'s source range.
+    ///
+    /// # Panics
+    /// Panics if the slices differ in length, before writing any output.
+    #[inline]
+    pub fn exponent_slice_to(&self, input: &[S::ValueT], output: &mut [usize]) {
+        assert_eq!(
+            input.len(),
+            output.len(),
+            "rotation exponent slice length mismatch"
+        );
+        self.switch
+            .switch_map(input.iter().copied().zip(output), |value, out| {
+                let exponent: usize = value.try_into().unwrap();
+                *out = exponent * self.rotation_step;
+            });
+    }
 }
 
 /// Modulus-switches one canonical coefficient into `[0,two_n)`.

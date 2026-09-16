@@ -41,7 +41,7 @@ cargo run -p primus_tfhe_glwe_ntt --example ntt_basic
 密钥生成时准备普通 PBS 量化参数；ManyLUT 在系数循环前按旋转步长准备转换。
 高层 context 保持既有参数约束。
 
-## 实验性稀疏自举密钥
+## 实验性稀疏密钥与盲旋转
 
 `KeyGenerator::try_generate_sparse_bootstrapping_key(&client_key, copy_count,
 bucket_count, &mut rng)` 从客户端的固定重量二元 **small-LWE** 秘密生成
@@ -51,7 +51,19 @@ bucket_count, &mut rng)` 从客户端的固定重量二元 **small-LWE** 秘密�
 
 密钥保存系数域 GGSW 和公开桶索引。`bucket(j)` 借用递增的输入索引及对应 GGSW，
 最后额外包含一个加密 dummy；未占用桶的 dummy 加密 1。私有匹配缓冲区在释放时擦除。
-本阶段提供密钥生成和读取，`Evaluator` 仍使用经典 BSK；稀疏盲旋转在下一阶段实现。
+
+低层盲旋转接收 small-LWE 输入和已编码 LUT 多项式，覆盖写入 accumulator 秘密下的系数域 GLWE：
+
+```rust,ignore
+let mut scratch = SparseGlweBlindRotationContext::new(&key);
+key.ntt_blind_rotate_lookup_table_to(
+    &input, lut.polynomial(), &mut output, context.table(), &mut scratch,
+);
+```
+
+输出与工作区只需分配一次。执行时每个输入系数量化一次，逐桶在系数域聚合、转 NTT，
+每桶一次外积，在线不分配。当前采用普通旋转步长 1；此入口尚未整合 key switch、
+提取或交错 PBS，`Evaluator` 仍使用经典 BSK。
 这些参数尚无经认证的安全等级或完整 PBS 失败率，见[设计契约](../../docs/tfhe-sparse-pbs.md)。
 
 ## Circuit bootstrapping
