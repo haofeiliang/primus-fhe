@@ -10,12 +10,13 @@
 
 ### 当前 LUT/PBS 任务
 
-- 已完成：**P1.1、P1.M 固定模数对的准备与执行接口**。P1.M 是 P1.2 的独立前置任务；设计见 [TFHE 总览](docs/tfhe.md)，完成条件见 [实施步骤](docs/tfhe-plan.md)。
-- 下一步：**P1.2 单次几何扫描与直接填充**，尚未开始；保持 P1.1 的编码/旋转契约及 [28 项基线](docs/benchmarks/tfhe-p1.1.csv)。
+- 已完成：**P1.1、P1.M、P1.2 单次几何扫描与直接填充（含主循环重整收尾）**。设计和测量依据见 [TFHE 总览](docs/tfhe.md)，完成条件见 [实施步骤](docs/tfhe-plan.md)。
+- 下一步：**P1.3 布局 API 与调用方完整迁移**，尚未开始；分开有效输出数与交错步长，迁移七个 TFHE crate 及实际调用方，保持 P1.1 编码/旋转和各后端秘密域契约。
+- P1.2 有效边界：单输出与 ManyLUT 共用顺序主循环，中心使用虚拟坐标、填充使用实际系数切片；区间求值与负循环尾部各有私有填充函数。输出按输入优先顺序写最终多项式，没有逐列多项式、中心数组或行 scratch 分配。前半输入域、二次幂输出数、回调错误及 raw residue 检查保留。[首次构造/分配比较](docs/benchmarks/tfhe-p1.2.csv)和[主循环重整对照](docs/benchmarks/tfhe-p1.2-flow.csv)分开记录；在线 PBS 内核未改动。
 - P1.M 有效边界：`RingContext` 聚合 `PrepareModulusSwitch`，`FieldContext` 继承准备能力；`PreparedModulusSwitch` 执行固定模数对的规范模切，保持独立。codec 只要求准备能力和模加法，构造时准备转换，Scaled 保持固定尺度；绝对值舍入和解码共用模切内核，批量融合符号与输出，标量包装保留各自特化路径。普通 PBS 量化在 GLWE BSK/NTRU 参数构造时准备，ManyLUT 按步长在系数循环前准备。输入与 accumulator 模数独立，描述性元数据仍可使用 `Option<T>`；Barrett 倒数求商未实施。
 - 编解码输入输出统一为系数类型 `T`：codec、基础加解密和通用 TFHE client 不再转换消息类型，批量输入为 `&[T]`；应用负责转换，Boolean 保留 `bool` 和值域检查。参数构造复用 codec 校验；模数有效性由模切准备验证，codec 保留 `q > t` 和 Scaled 恢复条件。
 - 有效未决项：P1.3 落实元数据字段和最终命名（语义已在 P1.1 收敛）；PBC 参数、安全/噪声条件在 P3.1 收敛；首个 MVB 算法与缩放在 P4.1 收敛。具体内容只维护在对应文档中。
-- 验证：workspace 303 项测试与 all-targets Clippy（含 derive/rns）、受影响 12 包 nightly SIMD 146 项测试与 all-targets Clippy、workspace 严格 rustdoc 和 LWE basic 示例均通过（测试数包含 doctest）。本轮统一编解码消息类型并整理构造检查，未重新计时；[41 项阶段对照](docs/benchmarks/tfhe-p1.m.csv)及此前 23 项 codec 复测见总览，标量包装合并的性能回退已撤回。未测 SIMD 性能或非 x86 平台；P1.4 按最终迁移范围重新验收。
+- 验证：七个 TFHE crate 默认与 nightly SIMD 的 all-targets check / Clippy、各 39 项测试通过，含四后端 PBS/CBS 调用方及独立几何 oracle；格式、共享库严格 rustdoc、七包文档和 `xtask` check 通过。本步复测构造，未重新计时在线 PBS、SIMD 或非 x86 路径，也未重跑无关底层包测试；P1.4 按最终迁移范围重新验收。
 
 ## 已审范围索引
 

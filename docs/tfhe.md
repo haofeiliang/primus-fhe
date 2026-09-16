@@ -16,7 +16,7 @@
 
 本轮优先公共 LUT、基础功能入口、稀疏 GLWE NTT 和一种具体 MVB。其他 full-domain、tree、multi-bit、摊销方案是候选扩展，不要求全部实现后才能验收。§5 Binary-NTT shallow 方案单独研究。
 
-## 当前实现中已确认的设计问题
+## 分析基线中的设计问题
 
 | 现状 | 影响与处理方向 |
 | --- | --- |
@@ -144,7 +144,7 @@ taskset -c 0 cargo bench -p primus_tfhe --bench lookup_table -- --sample-size 10
 taskset -c 0 cargo bench -p primus_tfhe_glwe_ntt -p primus_tfhe_glwe_fourier -p primus_tfhe_ntru_ntt -p primus_tfhe_ntru_fourier --bench pbs -- 'complete_pbs_(reused_output|many_4_reused_outputs)$' --sample-size 10 --warm-up-time 1 --measurement-time 3 --save-baseline p1_1 --noplot
 ```
 
-P1.1 数据作为初始参考，比较时使用 `--baseline p1_1`，避免覆盖原样本。P1.2 开始修改前，应在 P1.M 完成的源码上，用 `--save-baseline p1_2_before` 为 `lookup_table` benchmark 另存基线；修改后使用 `--baseline p1_2_before` 直接比较，以区分两步改动的影响，见[实施步骤](tfhe-plan.md#p12-单次几何扫描与直接填充)。
+P1.1 数据作为初始参考，比较时使用 `--baseline p1_1`，避免覆盖原样本。P1.2 使用 P1.M 完成后的源码另存构造基线，以区分两步改动的影响，见下文的 P1.2 比较。
 
 P1.1 原始 Criterion 数据位于 `target/criterion/**/p1_1/`，可能被清理；CSV 是持久摘要。原样本缺失时应使用 P1.1 提交的源码和 harness 重建，不能把 CSV 当成 Criterion 样本输入。记录没有分配计数，计时 benchmark 也未插入全局 allocator 计数开销。
 
@@ -209,6 +209,72 @@ taskset -c 0 cargo bench -p primus_tfhe_glwe_ntt -p primus_tfhe_glwe_fourier -p 
 首次采集时把 `--baseline` 改为 `--save-baseline`；比较时不要覆盖基线。
 原始样本在 `target/criterion/**/{modulus_before,p1_m_before,p1_m_pair_after}/`，
 其中 `p1_m_pair_after` 保存固定模数对接口的最终结果；CSV 是可在清理 target 后保留的摘要。
+
+## P1.2 共享几何与直接填充
+
+单输出和交错 LUT 共用一次中心/区间扫描，几何工作为 `O(D)`；回调求值仍为
+`O(kD)`，系数填充仍为 `O(N)`。每个非空区间的首行直接接收输出值，随后复制到
+区间其余位置；多输出按已初始化前缀倍增复制，单输出直接 `fill`。
+首行 `f(0)` 同时供负循环尾部使用，不额外求值或分配 scratch/中心数组。
+编译函数直接推进中心和边界；中心使用虚拟环坐标，填充函数接收实际系数切片。
+`fill_input_interval` 负责求值、检查和区间填充，`fill_negated_tail` 负责复用首行填充尾部。
+公共输入域、二次幂输出数量和编码契约保持不变；数量/步长的分离属于 P1.3。
+
+### 构造时间与分配
+
+2026-09-16，首版直接填充（主循环重整前）对照 P1.M 完成后的提交 `ea2d6a4`，使用同一构造 harness。
+[10 项数据](benchmarks/tfhe-p1.2.csv) 保存修改前后的 Criterion mean、95% 置信区间
+（ns）及分配计数。硬件、CPU 0、工具链、依赖、默认 features 和采样设置与 P1.1
+相同；每次迭代编译并释放一个 LUT，计入验证、准备编码/量化、几何、分配和填充。
+
+| 构造项 | Native 耗时变化 | Barrett 耗时变化 | 分配次数 | 累计申请字节 |
+| --- | --- | --- | --- | --- |
+| 单输出 `t=16` | +1.48%（79.80 → 80.98 ns） | +0.47%（105.10 → 105.59 ns） | 1 → 1 | 4096 → 4096 |
+| 4 输出 `t=4,16,255` | −78.77%～−67.78% | −79.37%～−68.34% | 5 → 1 | 8192 → 4096 |
+| 16 输出 `t=16` | −85.89% | −87.37% | 17 → 1 | 8192 → 4096 |
+
+分配使用现有线程局部计数器单独测量相同负载，未插入 Criterion 计时路径。
+字节数是累计成功申请的大小，不含 allocator 开销，也不是峰值内存；回调本身不分配。
+保留“只分配结果”的回归检查及回调顺序/错误中止检查，临时记录程序已移除。
+P1.1 的独立几何 oracle 继续覆盖每个系数，并补充虚拟环长度为 1、没有尾部的边界。
+
+单输出保留约 1 ns 的差异；这些测量不代表所有输入大小、SIMD 或非 x86 平台的表现。
+本步没有改动在线 PBS 内核，也未重新计时在线 PBS；构造收益不能视为在线加速。
+
+```sh
+# 在 ea2d6a4 保存基线；每项 10 samples、1 s warm-up、3 s measurement。
+taskset -c 0 cargo bench -p primus_tfhe --bench lookup_table -- --sample-size 10 --warm-up-time 1 --measurement-time 3 --save-baseline p1_2_before --noplot
+# 在 P1.2 源码比较，避免覆盖修改前样本。
+taskset -c 0 cargo bench -p primus_tfhe --bench lookup_table -- --sample-size 10 --warm-up-time 1 --measurement-time 3 --baseline p1_2_before --noplot
+```
+
+原始样本位于 `target/criterion/**/{p1_2_before,p1_2_after}/`；CSV 为持久摘要。
+重建基线须使用对应源码与相同 harness，不能将 CSV 当作 Criterion 原始样本。
+
+### 主循环重整对照
+
+2026-09-16，重整前重新采集双回调版本的基线 `p1_2_flow_before`。
+该版本是当时未提交的 P1.2 工作区，`lookup_table.rs` 的 SHA-256 前缀为
+`bdc360afcbca46e6`；重整后为 `768bbaaff5e3a5c2`。
+[10 项对照](benchmarks/tfhe-p1.2-flow.csv) 保存 mean 与 95% 置信区间。
+沿用上述 CPU 0、工具链、默认 features、工作负载和采样设置，顺序计时。
+
+| t / 输出数 | Native 前 → 后（ns） | 变化 | Barrett 前 → 后（ns） | 变化 |
+| --- | --- | --- | --- | --- |
+| 4 / 4 | 123.04 → 126.97 | +3.20% | 132.65 → 131.87 | −0.58% |
+| 16 / 1 | 80.40 → 80.89 | +0.62% | 103.95 → 106.21 | +2.17% |
+| 16 / 4 | 218.73 → 224.73 | +2.75% | 238.72 → 241.24 | +1.05% |
+| 16 / 16 | 146.40 → 146.63 | +0.16% | 196.18 → 182.07 | −7.19% |
+| 255 / 4 | 805.04 → 804.63 | −0.05% | 1046.82 → 1034.44 | −1.18% |
+
+重整后保留顺序控制流和一次结果分配；本次测得部分构造项增加约 0.2～6 ns，
+其余项降低约 0.4～14 ns，不据此宣称整体加速。尾部填充保留 `#[inline]`：
+初次拆分时该函数未自动内联，Native 16 输出约增加 11%，内联后恢复到约 147 ns。
+既有独立 oracle、回调顺序/错误中止及分配测试继续验证相同契约。
+
+复测沿用上述构造命令，重整前使用 `--save-baseline p1_2_flow_before`，
+重整后使用 `--baseline p1_2_flow_before`。原始样本另存于
+`target/criterion/**/{p1_2_flow_before,p1_2_flow_after}/`。
 
 ## 文献入口与证据边界
 

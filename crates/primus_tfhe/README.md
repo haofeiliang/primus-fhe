@@ -36,8 +36,9 @@ benchmark fixtures are not production security or failure-probability recommenda
 A unary function or slice programs `0..ceil(t/2)` with outputs in `0..t`.
 The other half follows negacyclic extension and is not independently programmable.
 For ManyLUT, `output_count` is a non-zero power of two and
-`ceil(t/2) <= N/output_count`. The callback receives `(input, output_index)`;
-slices are input-major. All outputs share one blind rotation (BR) and key switch,
+`ceil(t/2) <= N/output_count`. The callback receives `(input, output_index)` once
+per pair, in input-major order; slices use the same order.
+All outputs share one blind rotation (BR) and key switch,
 then use separate extraction. More outputs reduce rotation resolution and the
 available input-noise margin. This is one input evaluated by multiple functions,
 not batching independent ciphertexts.
@@ -55,6 +56,12 @@ the higher center. A final center at `min(R(E(D), q_in, 2M), M)` carries `-f(0)`
 the programmed prefix. Coefficients beyond it are not another input domain.
 Raw outputs must already be canonical under `q_acc`; out-of-range values are
 rejected. The accumulator modulus and output scale are independent of `q_in`.
+
+Single and ManyLUT compilation share one scan of the centers and intervals.
+Each interval is filled directly in the result polynomial using its first row
+as the output-value buffer. With built-in modulus types and a nonallocating
+callback, compilation allocates only the result polynomial. Callback errors or
+invalid outputs stop compilation without returning a partial table.
 
 Every backend quantizes each LWE coefficient as `s*R(x, q_in, 2N/s)` and rotates
 by `-R_s(b) + sum(R_s(a[i])*secret[i])`. This is not a single quantization of the

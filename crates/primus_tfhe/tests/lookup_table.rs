@@ -1,5 +1,8 @@
 //! Shared LUT compiler boundaries, raw scales, and rotation layout.
-use std::{cmp::Reverse, fmt::Debug};
+use std::{cell::Cell, cmp::Reverse, fmt::Debug};
+
+#[path = "support/allocations.rs"]
+mod allocations;
 
 use primus_integer::FheUint;
 use primus_modulus::{BarrettModulus, NativeModulus, PowOf2Modulus, UintModulus};
@@ -157,6 +160,69 @@ fn raw_compilation_validates_layout_encoding_and_canonical_outputs() {
     }
 }
 
+#[test]
+fn compilation_allocates_only_the_result() {
+    fn check<M: RingContext<u32>>(modulus: M) {
+        const N: usize = 1024;
+        let q = modulus.explicit_value();
+        let (_, single) = allocations::measure(|| {
+            compile_encoded_lookup_table(8, N, 16, q, modulus, |input| Ok(input as u32)).unwrap()
+        });
+        assert_eq!(
+            (single.count, single.allocated_bytes),
+            (1, N * size_of::<u32>())
+        );
+        for count in [1, 4, 16] {
+            let (_, many) = allocations::measure(|| {
+                compile_encoded_many_lookup_table(8, N, count, 16, q, modulus, |input, output| {
+                    Ok((input + output) as u32)
+                })
+                .unwrap()
+            });
+            assert_eq!(
+                (many.count, many.allocated_bytes),
+                (1, N * size_of::<u32>())
+            );
+        }
+    }
+    check(NativeModulus::new());
+    check(BarrettModulus::new(132_120_577));
+}
+
+#[test]
+fn many_outputs_are_evaluated_once_in_input_order_and_stop_on_error() {
+    for expected in [
+        None,
+        Some(LookupTableError::OutputOutOfRange { input: 1 }),
+        Some(LookupTableError::EncodedOutputOutOfRange { input: 1 }),
+    ] {
+        let calls = Cell::new(0);
+        let result = compile_encoded_many_lookup_table(
+            3,
+            32,
+            4,
+            8u32,
+            Some(97),
+            BarrettModulus::new(97),
+            |input, output| {
+                assert_eq!(calls.replace(calls.get() + 1), input * 4 + output);
+                if (input, output) == (1, 2) {
+                    match &expected {
+                        Some(error @ LookupTableError::OutputOutOfRange { .. }) => {
+                            return Err(error.clone());
+                        }
+                        Some(LookupTableError::EncodedOutputOutOfRange { .. }) => return Ok(97),
+                        _ => {}
+                    }
+                }
+                Ok((input + output) as u32)
+            },
+        );
+        assert_eq!(result.err(), expected);
+        assert_eq!(calls.get(), if expected.is_some() { 7 } else { 12 });
+    }
+}
+
 // Independent arithmetic uses u128 even for native u64; all test domains are
 // small enough that the products fit. No RoundedCodec or production rotation
 // helper participates in the expected LUT geometry.
@@ -299,6 +365,10 @@ fn compiled_luts_match_independent_negacyclic_oracle() {
     check_word_layouts::<u16>();
     check_word_layouts::<u32>();
     check_word_layouts::<u64>();
+    // A one-coefficient virtual ring has no stored terminating plateau.
+    for count in [1, 4] {
+        check_layout(count, 2, 1, count, None::<u32>, NativeModulus::new());
+    }
     // Double rounding gives center 13, whereas round(32/3) would give 11.
     // Here that difference moves the actual plateau boundaries as well.
     check_layout(16, 3, 2, 1, Some(5u32), BarrettModulus::new(97));
