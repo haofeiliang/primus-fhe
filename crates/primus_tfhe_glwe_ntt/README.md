@@ -50,6 +50,23 @@ of the accumulator modulus. Key generation prepares the ordinary-PBS
 quantizer. ManyLUT prepares the conversion for the rotation step before coefficient
 processing; the high-level context keeps its existing parameter restrictions.
 
+## Experimental sparse bootstrapping keys
+
+`KeyGenerator::try_generate_sparse_bootstrapping_key(&client_key, copy_count,
+bucket_count, &mut rng)` generates a `SparseGlweBootstrappingKey` from the client's
+fixed-weight binary **small-LWE** secret in either PBS order. The experimental
+profiles use `copy_count=3`, `bucket_count=2*h`. Generation checks the actual
+binary coefficients and weight, then tries at most eight independent public
+maps with the same secret. Failure returns an error without a partial key.
+
+The key stores coefficient GGSWs and public bucket indices. `bucket(j)` borrows
+the increasing input indices and their GGSWs, followed by one encrypted dummy;
+unoccupied buckets encrypt one in the dummy. Private matching buffers are erased
+on drop. This stage provides key generation and inspection; `Evaluator` still
+uses the classic BSK. Sparse blind rotation is the next stage. These parameters
+have no certified security level or full PBS failure bound; see the
+[design contract](../../docs/tfhe-sparse-pbs.md).
+
 ## Circuit bootstrapping
 
 Optional CBS uses `CircuitBootstrapParameters::try_new(context.parameters(),

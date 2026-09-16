@@ -10,8 +10,10 @@
 
 ### 当前 LUT/PBS 任务
 
-- 已完成：**P1.1、P1.M、P1.2、P1.3、P1.R、P1.4、P2.1、P2.2、P2.3**。设计和测量依据见 [TFHE 总览](docs/tfhe.md)，完成条件见 [实施步骤](docs/tfhe-plan.md)。
-- 进行中：无；本步剩余：无。下一步：**P3.1 稀疏方案与参数收敛**，入口为实施步骤对应章节及 [稀疏 PBS](docs/tfhe-sparse-pbs.md)；尚未开始 P3.1。
+- 已完成：**P1.1、P1.M、P1.2、P1.3、P1.R、P1.4、P2.1、P2.2、P2.3、P3.1、P3.2**。设计和测量依据见 [TFHE 总览](docs/tfhe.md)，完成条件见 [实施步骤](docs/tfhe-plan.md)。
+- 进行中：无；本步剩余：无。下一步：**P3.3 参考盲旋转**，先读 [P3 实现契约](docs/tfhe-sparse-pbs.md)及其 P3.2 实现入口；尚未开始 P3.3。
+- P3.1 有效边界：首版 GLWE NTT、一般固定重量二元实际 BR 秘密；实验参数组为每索引 3 个不同桶、桶数 `2h`、私有完整匹配，固定秘密最多尝试 8 个独立映射。首版 BSK 按桶保存系数域选择 GGSW 和独立 dummy；P3.3 逐桶聚合、转 NTT、一次外积，复用现有量化和 LUT。失败上界、条件联合分布、误差递推、存储与两组参数只维护在专项文档；8 轮耗尽概率不等于公开映射的统计距离。两种 order/普通交错 LUT 在 P3.5 验收，CBS 等扩展未承诺。
+- P3.2 有效边界：NTT `KeyGenerator::try_generate_sparse_bootstrapping_key` 从 client 的 small-LWE 固定重量二元秘密生成独立 `SparseGlweBootstrappingKey<T>`。公开桶映射为 CSR，`bucket(j)` 借用递增索引及对应系数 GGSW，最后额外含 dummy。实际系数/重量、桶参数和长度先验证；先直接占用空闲候选桶，冲突时以桶为节点搜索并逆向搬移；内部直接保存原始输入索引，三个私有缓冲区复用，固定秘密最多重试八次，成功后才分配密文并逐桶批量加密/原地 inverse NTT。私有支持集、匹配及选择位会擦除，未保存明文位置；没有新增参数包装/策略 trait。P3.3 再准备量化器和执行 scratch；当前 ServerKey/evaluator 仍为经典路径。
 - LUT 源码边界：三个公开类型统一从 `lookup_table` 导出，`single.rs` 集中 `LookupTable` 的全部 API，`interleaved.rs` 管理输出布局，`bivariate.rs` 绑定输入打包；`compile/` 分别实现前半区与奇数全域。编码/域/槽容量在编译入口检查，中点与负循环尾部填充共用。奇数全域仍是单输出构造方式；隐藏 helper 改名为 `front_half_domain_len`，family/CBS 调用方已同步。命名区分 `input_ciphertext_modulus` 与 `coefficient_modulus`、布局 `padded_output_count`（补齐输出数）/`coefficients_per_output`（每输出系数数）与执行端 `rotation_step`；CBS 使用 `lookup_table_padded_output_count()`，一次性量化入口为 `modulus_switch_with_step`。见 [源码组织](crates/primus_tfhe/README.zh_CN.md#源码组织)。
 - P2.3 有效边界：`LookupTable::try_new_odd_full_domain` 与两族/四后端的 `compile_odd_full_domain_lookup_table_fn/slice` 支持单输出整个 `0..t_in`，要求奇数 `t_in>=3`、`t_in<=N`、真实折叠中心不碰撞。回调按折叠中心顺序访问，切片按输入顺序；上半区取负及 `N` 处的 `-f(0)` 处理负循环符号和回绕。输入用普通 unsigned `encrypt`，输出沿用 P2.1 codec；复用原 LUT 元数据、密钥和 evaluator，无在线分支/分配。交错与双输入编译仍用前半区。几何余量不构成完整 PBS 失败概率。见 [P2.3 决定](docs/tfhe.md#p23-奇数明文模数全域)。
 - P2.2 有效边界：共享 `BivariateLookupTable<T, M>` 绑定普通 LUT、基数 `B` 与模数，编译矩形域 `0..B × 0..R`，要求正域且 `B*R <= ceil(t_in/2)`。两输入用同一 unsigned rounded codec 和外部秘密；`pack_to` 一遍模乘加写 `lhs+B*rhs`，调用方复用打包缓冲区再调用现有普通 PBS。输入误差为 `e_x+B*e_y+rho`，`rho=E(x)+B*E(y)-E(x+B*y)`；噪声余量是调用前提，容量检查不证明解密成功。输出 codec、秘密域与 P2.1 一致，不新增后端执行接口或密钥。见 [P2.2 决定](docs/tfhe.md#p22-有界双输入-pbs)。
@@ -21,9 +23,9 @@
 - P1.2 有效边界：单输出与交错表共用顺序主循环，中心使用每输出系数坐标、填充使用实际系数切片；区间求值与负循环尾部各有私有填充函数。输出按输入优先顺序写最终多项式，没有逐列多项式、中心数组或输出组 scratch 分配。前半输入域、回调错误及 raw residue 检查保留。[首次构造/分配比较](docs/benchmarks/tfhe-p1.2.csv)和[主循环重整对照](docs/benchmarks/tfhe-p1.2-flow.csv)分开记录；最终同配置比较见 [P1.4 验收](docs/tfhe.md#p14-阶段验收)：所测多输出构造耗时下降 61.6%～85.6%，全部只分配最终多项式；单输出构造增加约 12～24 ns，在线 PBS 未见稳定整体加速，NTT 存在几个百分点的退化信号。
 - P1.M 有效边界：`RingContext` 聚合 `PrepareModulusSwitch`，`FieldContext` 继承准备能力；`PreparedModulusSwitch` 执行固定模数对的规范模切，保持独立。codec 只要求准备能力和模加法，构造时准备转换，Scaled 保持固定尺度；绝对值舍入和解码共用模切内核，批量融合符号与输出，标量包装保留各自特化路径。普通 PBS 量化在 GLWE BSK/NTRU 参数构造时准备，ManyLUT 按步长在系数循环前准备。输入与 accumulator 模数独立，描述性元数据仍可使用 `Option<T>`；紧凑范围内的模切已按分子宽度使用倒数求商和一次精确修正；Barrett/派生 Barrett 复用已有倒数，公共准备/执行接口不变。
 - 编解码输入输出统一为系数类型 `T`：codec、基础加解密和通用 TFHE client 不再转换消息类型，批量输入为 `&[T]`；应用负责转换，Boolean 保留 `bool` 和值域检查。参数构造复用 codec 校验；模数有效性由模切准备验证，codec 保留 `q > t` 和 Scaled 恢复条件。 单模数 codec 的明文模数访问器统一为 `plaintext_modulus()`；`RoundedCodec` 的密文模数访问器为 `ciphertext_modulus()`，workspace 调用方已同步。
-- 有效未决项：PBC 参数、安全/噪声条件在 P3.1 收敛；首个 MVB 算法与缩放在 P4.1 收敛。居中/shifted 的正式接入和带辅助密钥的漂移抑制为后续候选，不构成 P1–P4 的隐含交付。具体内容只维护在对应文档中。
-- 测试/基准有效边界：保留 45 项独立测试。ManyLUT 使用代表性消息与 `k=1/3/4`，三路 CBS 使用三层和 `1→0`；两种 GLWE order、两种 FFT 和错误边界保留。P2.3 增加两个共享整数 oracle/拒绝测试，将既有四后端 fixture 改为 `15→8` 并遍历全域，共增加 135 次小参数 PBS，不增加 keygen 或测试程序。P2.2 的两个打包输入继续复用同一 fixture。Criterion 仍为 8 个 target、97 项；GitHub CI 未执行 benches。
-- 当前验证：本次提取 `ScaledCodec` 的固定缩放恢复检查后，encoding 默认/nightly SIMD 各 5 项测试、默认 all-targets check/Clippy、严格 rustdoc、workspace all-targets check 和格式检查均通过。原判定条件与算术不变，仅抽取私有函数并补充推导；没有新增测试或 benchmark，LUT `output_count` 保持 `usize`。未重跑其余 crate 测试、SIMD Clippy、示例及性能计时；历史验证与测量留在总览。
+- 有效未决项：P3 的实验方案已收敛，但固定重量/补零目标/evaluation keys 的生产安全、成功映射条件分布的影响和完整 PBS 尾界仍未认证；不得用功能测试关闭。首个 MVB 算法与缩放在 P4.1 收敛。居中/shifted 的正式接入和带辅助密钥的漂移抑制为后续候选，不构成 P1–P4 的隐含交付。具体内容只维护在对应文档中。
+- 测试/基准有效边界：保留 49 项独立测试；P3.2 新增两个私有匹配测试、两个稀疏 key 集成测试，未增加 benchmark。ManyLUT 使用代表性消息与 `k=1/3/4`，三路 CBS 使用三层和 `1→0`；两种 GLWE order、两种 FFT 和错误边界保留。P2.3 增加两个共享整数 oracle/拒绝测试，将既有四后端 fixture 改为 `15→8` 并遍历全域，共增加 135 次小参数 PBS，不增加 keygen 或测试程序。P2.2 的两个打包输入继续复用同一 fixture。Criterion 仍为 8 个 target、97 项；GitHub CI 未执行 benches。
+- 当前验证：P3.2 桶路径匹配的 NTT crate 默认 12 项测试、all-targets check/Clippy、严格私有 rustdoc、格式和 diff 检查通过；原有 oracle 改用不连续原始索引，重试和稀疏 key 语义测试保留。临时 Criterion 两轮交换顺序均未见退化，512 张随机图及两张构造图的分配与旧版一致；方法与范围见 [P3.2 测量](docs/tfhe-sparse-pbs.md#p32-匹配表示与测量)。未新增常驻测试/benchmark，本轮未重跑 SIMD、全 workspace 或完整 keygen/PBS 性能。
 
 ## 已审范围索引
 

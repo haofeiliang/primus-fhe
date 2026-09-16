@@ -41,6 +41,19 @@ cargo run -p primus_tfhe_glwe_ntt --example ntt_basic
 密钥生成时准备普通 PBS 量化参数；ManyLUT 在系数循环前按旋转步长准备转换。
 高层 context 保持既有参数约束。
 
+## 实验性稀疏自举密钥
+
+`KeyGenerator::try_generate_sparse_bootstrapping_key(&client_key, copy_count,
+bucket_count, &mut rng)` 从客户端的固定重量二元 **small-LWE** 秘密生成
+`SparseGlweBootstrappingKey`，适用于两种 PBS order。实验参数取 `copy_count=3`、
+`bucket_count=2*h`。生成入口检查实际二元系数和重量，固定同一秘密最多尝试八个
+独立公开映射；耗尽后返回错误，不返回部分密钥。
+
+密钥保存系数域 GGSW 和公开桶索引。`bucket(j)` 借用递增的输入索引及对应 GGSW，
+最后额外包含一个加密 dummy；未占用桶的 dummy 加密 1。私有匹配缓冲区在释放时擦除。
+本阶段提供密钥生成和读取，`Evaluator` 仍使用经典 BSK；稀疏盲旋转在下一阶段实现。
+这些参数尚无经认证的安全等级或完整 PBS 失败率，见[设计契约](../../docs/tfhe-sparse-pbs.md)。
+
 ## Circuit bootstrapping
 
 可选 CBS 使用 `CircuitBootstrapParameters::try_new(context.parameters(),

@@ -8,6 +8,10 @@
 //! Public PBS checks LUT encoding/moduli/length and all output dimensions before
 //! writing. Raw input key, encoding and noise remain caller requirements.
 //!
+//! [`KeyGenerator::try_generate_sparse_bootstrapping_key`] builds an experimental
+//! [`SparseGlweBootstrappingKey`] with public buckets and encrypted selections.
+//! Sparse evaluation is not yet integrated into [`Evaluator`].
+//!
 //! Use [`TfheContext::boolean_encryptor`], [`TfheContext::boolean_decryptor`] and
 //! [`TfheContext::boolean_evaluator`] to bind Boolean operations to the same
 //! context (`t = 4`). Create the evaluator once, then reuse output storage with
@@ -26,6 +30,7 @@ mod error;
 mod evaluator;
 mod key;
 mod parameters;
+mod sparse;
 
 pub mod boolean;
 
@@ -48,6 +53,7 @@ pub use primus_tfhe::{
     BivariateLookupTable, InterleavedLookupTable, LookupTable, LweCiphertext, LweSecretKeyRef,
 };
 pub use primus_tfhe_glwe::{GlweClientKey as ClientKey, GlwePbsOrder as PbsOrder};
+pub use sparse::{SparseBootstrappingKeyError, SparseGlweBootstrappingKey};
 
 pub use boolean::{
     BooleanCiphertext, BooleanDecryptor, BooleanEncryptor, BooleanError, BooleanEvaluator,

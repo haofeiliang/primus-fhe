@@ -1,142 +1,282 @@
-# 稀疏私钥 PBS：实现依据与待决项
+# 稀疏私钥 PBS：P3 实现契约
 
-本文件服务于 [P3 实施步骤](tfhe-plan.md)，共享职责见 [设计总览](tfhe.md)。它保存恢复实现所需的算法不变量和论文校勘；不代表算法已在 Primus 实现，也不代替参数安全论证。
+本文固定 P3.1 的方案、参数和验收边界，供 P3.2–P3.5 直接实施。首版是 **GLWE NTT、一般固定重量二元 BR 秘密、系数域桶聚合**。参数用于开发与比较，尚无生产安全等级或完整 PBS 失败概率保证。
 
-来源：[New Techniques for Fast and Shallow FHE Bootstrapping and Beyond](../temp/2026-1730.pdf)，Aayush Jain、Huijia Lin、Zeyu Liu、Sagnik Saha。页码均为该本地 PDF 的 1-based 物理页码。不要依赖上次会话的临时 PDF 提取文本或截图。
+来源是 [2026-1730.pdf](../temp/2026-1730.pdf)：Aayush Jain、Huijia Lin、Zeyu Liu、Sagnik Saha，*New Techniques for Fast and Shallow FHE Bootstrapping and Beyond*。本文页码是 PDF 的一基页码；本次核对 §3.4、§4、§7.1，逐页查看 p.17–19 的公式/伪码和 p.43 的参数表。文件 SHA-256：`0ba34c2052e2fc717e17271ac04058096075bfd21e8922b7009c9328119eef12`。下文的匹配上界与 Primus 噪声递推是本项目推导，不是论文给出的具体安全结论。
 
-## 阅读范围与路线区分
+## 首版决定
 
-| 原文 | 实施用途 |
+| 项目 | 决定 |
 | --- | --- |
-| §3.2–3.4，约 pp.9–13 | PBC 和相关基础条件 |
-| §4，pp.13–19 | 稀疏秘密、桶聚合、功能 BR、存储方案，P3 的主要依据 |
-| §5，pp.20–25 | Binary-NTT shallow 方案，独立研究路线 |
-| §7，pp.42–45，及后部附录 | 实现、性能、估算和参数限制 |
+| 实际 BR 秘密 | 复用 `SecretKeyDistr::FixedHammingWeightBinary`；长度 `n`、重量 `h`，均匀选择支持集；不采用结构化 one-hot |
+| 公开映射 | 每个输入索引独立、均匀选择 `c` 个不同桶；两个首版参数组均取 `c=3, bucket_count=2h` |
+| 私有分配 | 在支持集与桶之间求完整匹配；每个支持索引只选一个副本，每桶至多选一个索引 |
+| 失败行为 | 固定同一秘密，独立重采整个公开映射；最多 8 次。耗尽后返回错误，不返回部分 key，不重采秘密或自动退回经典路径 |
+| BSK | 每个副本独立加密选择位，每桶额外独立加密一个 dummy；按桶保存系数域 GGSW |
+| 在线执行 | 输入旋转量计算一次；逐桶系数旋转/相加，整桶转 NTT，再做一次 external product |
+| 共享层 | 复用 LUT、`RotationQuantizer`、GGSW、分解和外积；不向 `primus_tfhe::lookup_table` 加稀疏参数或策略 trait |
+| 首版组合 | P3.5 接普通/交错 LUT 和两种 GLWE order；CBS、Fourier、稀疏三元、NTRU 不在本次支持承诺中 |
 
-上一轮核对了这些相关部分和关键页面，没有重新完成整篇安全证明。开始 P3.1 时须针对选定参数读取原文对应证明与假设。
+参数中的 `h` 只约束**进入 BR 的 small-LWE 秘密**。KS→BR 顺序的外部秘密仍是 accumulator 的 `kN` 维系数展开；不能把它改标成固定重量二元分布。以下用 `k` 表示 GLWE 维数，`b` 表示桶数，`s` 表示交错 LUT 的 `padded_output_count`，避免与输出函数个数混用。
 
-**首版范围：** GLWE NTT、实际 BR 秘密为固定重量二元分布。保留经典路径作对照。Fourier、三元和 NTRU 移植需要各自论证，不因它们共享 LUT 就自动成立。
+## 公开映射、匹配与分布
 
-## 核心旋转不变量
+### 映射与完整匹配
 
-令秘密 `s ∈ {0,1}^n`、重量 `h`。令 `α_i` 与 `β` 为输入 LWE 经既定量化约定得到的旋转量。按论文符号说明，目标累加器相位为：
+对每个 `i in 0..n`，从 `0..b` 中均匀无放回抽取 `c` 个桶。可以使用无偏整数采样并拒绝该索引已选中的桶；**不**先独立哈希三次再保留重复副本。后一种模型的失败概率不同。不同索引的选择独立，不使用支持集构造或调节桶负载。
 
-```text
-P(X) · X^(-β + Σ α_i s_i)  mod (X^N + 1)
+首版直接保存展开后的映射，不新增公开 seed 格式、哈希版本或序列化契约，也不公开 keygen RNG 的状态。映射按桶展开，桶内索引递增。同一个索引恰好出现 `c` 次，同一桶内不重复。
+
+keygen 私下按支持索引递增顺序执行增广路匹配：先直接占用第一个空闲候选桶，仅在候选桶全部被占用时初始化搜索工作区并完整搜索可达桶，允许重新安置原索引。单轮找不到增广路才算映射失败；不使用有踢出次数上限的随机 cuckoo 插入，避免将启发式超时误当成图上无匹配。候选顺序与完整 BFS 相同；匹配直接保存原始输入索引，BFS 记录桶之间的前驱，找到空桶后沿路径逆向搬移。全部直接分配时为 `O(b+ch)`，最坏工作量仍为 `O(h(ch+b))`，只发生在 keygen。
+
+公开构造边界检查 `0<h<n`、`c>=1`、`b>=max(h,c)`、长度乘加不溢出；生成时检查实际秘密的每项为 `0/1` 且总重量确为 `h`。仅检查分布标签不能保护从原始系数构造的密钥。首版参数组的 `c=3,b=2h` 满足这些条件；这些参数不是任意 `h` 都合法的隐藏默认值。
+
+### 单轮失败上界
+
+令 `F` 是映射，`H` 是任一固定的大小为 `h` 的支持集。由 Hall 条件，匹配失败时，存在 `r` 个支持索引，其全部邻居位于某 `r-1` 个桶中。对所有选择作 union bound：
+
+\[
+\Pr[\operatorname{Fail}(F,H)]\le U(h,b,c)
+=\min\left(1,\sum_{r=c+1}^{h}
+ {h\choose r}{b\choose r-1}
+ \left(\frac{{r-1\choose c}}{{b\choose c}}\right)^r\right).
+\]
+
+空和取零。这是**每个索引选择不同桶**、完整匹配、独立均匀映射模型的上界；未假定桶负载相等。具体数字可用以下精确有理数计算复现，不依赖采样未观察到失败：
+
+```python
+from fractions import Fraction
+from math import comb
+
+def failure_bound(h, b, c):
+    return min(Fraction(1), sum((
+        Fraction(comb(h, r) * comb(b, r - 1))
+        * Fraction(comb(r - 1, c), comb(b, c)) ** r
+        for r in range(c + 1, h + 1)
+    ), Fraction()))
 ```
 
-实现必须与 P1 建立的实际符号、窗口量化和回绕一致；这里不另立一套模切公式。独立 oracle 应直接算总指数并执行负循环旋转，而不是调用桶聚合本身。
+|参数组| `(h,b,c)` | 单轮失败上界 `U` | 8 轮耗尽上界 `U^8` |
+| --- | --- | --- | --- |
+| 回归 | `(4,8,3)` | `5.69425e-6`，约 `2^-17.42` | 小于 `2^-139.37` |
+| 成本比较 | `(32,64,3)` | `5.92266e-8`，约 `2^-24.01` | 小于 `2^-192.07` |
 
-### 结构化 one-hot 热身方案
+表中指数仅描述**理想独立采样下的匹配失败**。实际使用 `CryptoRng`；这些值不是 LWE 安全位数，也不是 PBS 解密失败率。
 
-每组恰好一个非零位置时，可聚合：
+### 重试后秘密与公开映射的联合分布
 
-```text
-G_j = Σ(i ∈ C_j) X^α_i · GGSW(s_i)
-```
+秘密先采样一次，失败只重采映射。由于映射对输入索引的重标号对称，完整匹配的成功概率 `p` 对每个大小为 `h` 的 `H` 相同。因此，8 轮内返回成功时，`H` 的边缘分布仍均匀，但返回的 `(H,F)` 是原独立联合分布在“匹配成功”上的条件分布，二者**不再独立**。
 
-其明文是所选单项式，每组一次 external product。该秘密分布有额外结构，不能直接替代均匀固定重量秘密，或在 benchmark 中与后者混为同一参数。
+在该模型中，此条件分布与原独立联合分布的统计距离是单轮失败概率 `1-p`，至多 `U`。8 轮只把“没有生成 key”的概率压到 `(1-p)^8`，**不会**把上述距离也压到 `U^8`。所以成本参数组的 `2^-24` 上界不足以推出 128-bit 安全；不以秘密熵或成功解密作替代证明。
 
-### 一般固定重量：PBC 桶方案
+失败映射、支持集、匹配、明文选择位和重试轨迹都不进入 server key；失败只返回统一错误。首版 keygen 不承诺恒时，匹配和重试在持有秘密的本地环境执行。不要把它直接当作可观察内部执行的远程密钥生成协议。
 
-使用公开映射将原始位置复制到若干桶，再根据秘密支持集生成私有选择：
+论文 §7.1 的 `c=3,b=h+3` 使用经验成功率和额外熵损失猜想；本轮不采用。其 `b≈1.5h` 引用的成功率也不能直接用于我们的无放回映射。选择 `2h` 是以更多外积换取上述可独立复算的失败上界，并不把参数提升为生产配置。
 
-- 每个非零位置被选中恰好一次；
-- 每个桶最多选择一个位置；
-- 复制的位置不能被重复计入；
-- 未使用桶对应恒等作用。
+## 聚合与旋转不变量
 
-用 `buckets` 表示桶数，避免与 LUT 有效输出数 `k` 混淆。桶聚合为：
+设桶 `j` 的公开索引列表为 `C_j`，私有位 `u_{j,i}` 只在匹配选择了副本 `(j,i)` 时为 1；`d_j=1-sum_i u_{j,i}`。生成独立 GGSW 加密 `K_{j,i}=Enc(u_{j,i})` 和 `D_j=Enc(d_j)`。所有行/层使用同一个 accumulator 秘密、模数和 basis。
 
-```text
-G_j = Σ(i ∈ C_j) X^α_i · GGSW(u_j,i) + GGSW(d_j)
-```
+对输入 `(a,b_lwe)`，使用现有量化器：
 
-`u_j,i` 是加密的私有选择位；`d_j = 1` 表示空桶，非空桶时为 0。空桶得到加密的 `1`，不能得到加密的 `0`。依次 external product 后恢复上述总指数。
+\[
+R_s(x)=s\operatorname{round}_{\uparrow}\left(\frac{2N}{sq_{\rm in}}x\right)\pmod{2N},
+\quad \alpha_i=R_s(a_i),\quad\beta=R_s(b_{\rm lwe}).
+\]
 
-公开映射可以暴露桶结构，不能暴露支持集、匹配结果或原始明文选择位。不能简单把复制位置全部加密成原始 `s_i`；那会重复计入同一个非零项。
+普通 LUT 取 `s=1`，交错 LUT 取其补齐输出数。对每个系数分别量化，不能先求点积再量化。这里 `q_in` 可以在低层为 Native，但 `2N` 必须由系数类型表示；当前完整 GLWE NTT 链使用显式 `q_in=q_acc=q`。
 
-三元版本需要区分正负选择并使用 `X^α` 与 `X^-α`，不是给 `X^α` 乘一个负系数。首版不包含该扩展。
+从真实 LUT `P` 初始化平凡 GLWE `A_0=(0,X^{-beta}P)`。每桶计算：
 
-## 参数与成本
+\[
+G_j=D_j+\sum_{i\in C_j}X^{\alpha_i}K_{j,i},\qquad
+A_{j+1}=G_j\mathbin{\boxdot}A_j.
+\]
 
-目标是将 external product 数量由 `n` 降至 `buckets = O(h)`。设位置复制数为 `c`，桶内旋转/加法仍涉及约 `O(cn)` 个条目；不能声称整个计算或密钥大小都降成 `O(h)`。
+`G_j` 的明文是一个单项式：占用桶为所选 `X^{alpha_i}`，未占用桶为 `1`。因此忽略加密和分解误差，最终相位为：
 
-- 桶聚合噪声随参与的密文数量增长；约平方根级估计不是完整误差/失败概率界。
-- 明确输入秘密与实际 BR 秘密；GLWE KS→BR 顺序下，外部大维数秘密不需要被误标成稀疏秘密。
-- 映射失败、重新选择公开 seed 和最终映射分布会进入安全分析。
-- 文中较激进的 `c=3, buckets=h+3` 与重试设置涉及额外猜想；不能未经复核就作为默认。较保守桶数也需按实际参数验证其依据。
-- 复用仓库的 `FixedHammingWeightBinary`，不新造等价分布；普通经典与稀疏比较要使用相同实际秘密分布。
+\[
+P(X)X^{-\beta+\sum_{i\in H}\alpha_i}
+=P(X)X^{-\beta+\sum_{i=0}^{n-1}\alpha_i s_i}
+\pmod{X^N+1}.
+\]
 
-## 数据与工作区归属
+执行总共 `b` 次外积，处理全部 `cn` 个副本。没有公开的“活跃桶”列表；即使某副本的选择位为零，它也有独立加密噪声。不能在每个副本中直接加密原始 `s_i`，否则支持位置重复旋转 `c` 次。未占用桶需要 **Enc(1)**，不是 Enc(0)。首版不按特殊指数省略外积，以保持固定、易核对的执行模型。
 
-| 所属部分 | 数据或责任 |
+## 噪声预算与两种顺序
+
+以下两类误差分别检查：**旋转是否落在正确 LUT 区间**，以及**输出相位是否仍可解码**。桶数减少不意味着总噪声同比减少。
+
+### 输入与旋转量化
+
+写 `phase=b_lwe-<a,s>=E_in(m)+e_pre mod q`、`rho=2N/q`，并把每个模切的舍入余量提升为 `epsilon_x in [-s/2,s/2]`。相对于 LUT 的实际中心 `-R_s(E_in(m))`，总旋转偏差为：
+
+\[
+\delta_r=-\rho e_{\rm pre}-\epsilon_b
+ +\sum_{i\in H}\epsilon_{a_i}+\epsilon_{E_{\rm in}(m)}.
+\]
+
+因而有保守界 `|delta_r| <= rho*|e_pre| + s(h+2)/2`（按模 `2N` 的相应提升解释）。必须小于当前 LUT 在该中心两侧的有效距离；不能用容量 `D<=N/s` 代替这个条件。最后一个编码中心项不可遗漏，尤其是非二次幂明文。居中/shifted 舍入未接入，不在这里暗中改变原量化器。
+
+### 聚合与外积
+
+设 `L_j=|C_j|`，每个原始 GGSW 行误差系数独立、中心化，实际标准差为 `sigma_g`。单项式仅置换/变号，故聚合行误差有方差 `(L_j+1)*sigma_g^2`，**`+1` 来自 dummy，包括加密零的 dummy**。公开桶不等长，不能用平均桶长替代最坏桶长。
+
+给出更直接的递推：令 `D_g(A)` 是 accumulator 的 gadget digits，`G` 是 gadget 矩阵，`rho_g=D_g(A)G-A`。设桶明文为单项式 `M_j`，聚合 GGSW 行误差为 `e_{j,r,l}`，则
+
+\[
+E_{j+1}=M_jE_j+M_j\operatorname{phase}(\rho_g)
+ +\sum_{r,l}D_g(A_j)_{r,l}\,e_{j,r,l}.
+\]
+
+`M_j` 的系数范数为 1，不放大已有误差。设 `B=2^log_basis`、层数 `ell`、`eps_g=basis.approximate_error_bound()`、accumulator 秘密为 `S=(S_1,...,S_k)`，每个原始行误差系数绝对值不超过 `E_g`。逐项卷积给出不依赖独立性近似的保守界：
+
+\[
+\|E_b\|_\infty\le\|E_0\|_\infty
+ +b\,\mathrm{eps}_g\left(1+\sum_r\|S_r\|_1\right)
+ +(k+1)\ell N\frac B2 E_g\,(cn+b).
+\]
+
+平凡 LUT 初始化的 `E_0=0`。`eps_g` 应取现有 basis 的返回值，不假设 `B^ell>=q`。NTT 是有限域精确变换，不另加浮点变换误差。
+
+用于选实验参数的常见估算是：将 digits 视为均匀且与当前行误差独立，新增外积方差约为
+
+\[
+(k+1)\ell N(B^2/12)\,\sigma_g^2(cn+b),
+\]
+
+再计入逐桶分解残差。这里 digits 依赖此前的密文与复用 key，且实际采样器截断、离散化；该估算不是尾概率证明。特别是 `cn+b` 约为经典路径的三倍，不能只把经典公式里的 `n` 换成 `b` 后继续使用原噪声预算。
+
+### 完整链
+
+| 顺序 | 旋转前误差 `e_pre` | 输出解码需要控制的误差 |
+| --- | --- | --- |
+| BootstrapKeyswitch | small-LWE 输入误差；若用公钥加密，使用其总误差 | BR 聚合/外积误差 + 后置 GLWE KS 的加密与分解误差 |
+| KeyswitchBootstrap | 外部 `kN` 维输入误差 + 前置 GLWE KS 的加密与分解误差 | BR 聚合/外积误差 |
+
+提取本身只重排/选取相位，不新增随机噪声。前置 KS 的目标是补零后的 small-LWE 秘密；其非零支持只在前 `n` 项，不能视为在整个补零环中均匀固定重量。安全估计还须覆盖该结构、所有 evaluation-key 消息及所依赖的 circular/KDM 假设。
+
+Primus 当前两种链都保持同一个密文模数，没有论文中 `Q -> Q' -> q` 的输出模切；因此不能照抄其 `q/Q` 噪声缩减因子或普通 LWE KS 公式。KS 用实际 `GlweKeySwitchingParameters`、basis、目标秘密范数单独计入。输出误差必须落在输出 codec 对目标编码的真实解码区间内；不同 `t_out`、奇数全域、双输入打包和 CBS 都需要自己的余量。
+
+## 首版参数与经典对照
+
+两个参数组都是**未经安全认证的实验参数**，使用 `u32`、`BarrettModulus`、`q_in=q_acc=132120577`、GLWE 维数 `k=1`、`t_in=t_out=8`、unsigned rounded codec，首轮测前半区。该已有 NTT 素数满足 `2N | q-1`；不修改现有 `boolean_parameters()` 默认值。
+
+| 参数 | 小型回归 | 成本比较 |
+| --- | --- | --- |
+| `n,h` | `16,4` | `512,32` |
+| `N` | `256` | `1024` |
+| 实际 BR 秘密 | `FixedHammingWeightBinary(h=4)` | `FixedHammingWeightBinary(h=32)` |
+| accumulator 秘密 | `UniformBinary` | `SparseTernary`（现有 `P(0)=1/2` 分布，不是固定重量） |
+| small-LWE 噪声参数 | `0.7` | `3.2*q/2^14` |
+| GLWE / BSK / KS 噪声参数 | `0.7` | `6.4` |
+| BR basis 构造参数 | `log_basis=9, reverse_length=None`，`ell=3, eps_g=0` | `log_basis=7, reverse_length=Some(3)`，`ell=3, eps_g=32` |
+| KS basis 构造参数 | `log_basis=9, reverse_length=None`，`ell=3, eps_ks=0` | `log_basis=2, reverse_length=Some(13)`，`ell=13, eps_ks=1` |
+| `c,b,最大尝试次数` | `3,8,8` | `3,64,8` |
+
+成本参数组从已有 NTT benchmark 的模数、环、噪声和 basis 出发，显式把 BR 分布改为固定重量，并选 `t=8` 留出普通/交错输出空间。它与论文参数没有相同安全等级的承诺。KS→BR 的外部加密噪声来自 GLWE 参数，不是表中的 small-LWE 噪声。
+
+回归组取 `log_basis=9` 是因为 `q` 的位宽为 27，恰好三层且不丢低位。现有 `ApproxSignedBasis` 的完整层数是位宽除以 `log_basis` **向下取整**；`reverse_length=None` 本身不保证零分解误差。
+
+上述启发式外积估算给出成本参数组的 `sigma_BR≈7.41e5`，而 `q/(2*t_out)≈8.26e6`；这只支持将其作为实验起点。严格最坏界远大于此，未给出完整链的目标失败率。P3.3/P3.5 应测实际相位误差与 LUT 余量；若失败，重新调整双方相同的参数，不能挑选成功 seed 或放宽断言。`sigma` 参数也不能直接当成有限精度采样器的精确实际标准差。
+
+论文 Table 3 的一般二元参数为 `(n,h,N,q,Q,Q')=(1024,43,1024,512,2^28,2^12)`、`(1024,31,1024,512,2^28,2^12)` 和 `(2048,70,2048,2^12,2^54,2^35)`。这些是 OpenFHE 场景，不能把 `h` 或 STD128 标签移植到上述单素数链；论文对该标签给出的估计也只有约 120 bit。我们没有重跑 lattice-estimator，没有得到 Primus 的生产安全结论。
+
+对照必须用**同一把客户端秘密**分别生成经典和稀疏 BSK；相同模数、噪声、basis、LUT、输入/输出尺度、order 和输入样本。经典路径仍逐个处理全部二元系数，不向 evaluator 暴露支持集来跳过零。不能用经典均匀二元秘密与稀疏固定重量秘密的差异冒充算法收益。允许原路径按公开旋转指数为零跳过 CMUX，记录实际计数而不禁用已有优化。
+
+## 密钥布局、所有权和存储
+
+P3.2 的 `SparseGlweBootstrappingKey<T>` 放在 `primus_tfhe_glwe_ntt`；长期保存的是**系数域** GGSW，不以 `NttGgsw` 名称包装未变换的数据。`sparse/` 中分离私有 PBC、key 和后续 BR 实现，不创建通用 PBC/backend trait。P3.5 再让 server/evaluator 在调用入口选择经典或稀疏执行，LUT 构造器不承担策略选择。
+
+| 数据 | 保存/建立位置 |
 | --- | --- |
-| 共享 LUT | 输入域、旋转量化、输出布局；不保存秘密重量或 PBC seed |
-| keygen | 私有支持集与匹配、选择位/dummy 的加密、失败重试 |
-| 具体稀疏 BSK | 公开 seed/展开后的桶索引、偏移、加密选择位与 dummy、必要参数 |
-| evaluator 初始化 | 由持有的 key 建立执行数据；不依赖 keygen 的明文秘密或未保存临时缓存 |
-| evaluator scratch | 输入旋转量、桶聚合 GGSW、变换和 external product 工作区、累加器缓冲 |
-| 后处理 | 保留现有 order、秘密转换及 CBS 独立链的契约 |
+| `n,h,c,b`、输入/输出共享的模数、GGSW size/basis | 具体 BSK；与实际秘密及现有参数绑定；普通量化器在 P3.3 接入 BR 时准备 |
+| `bucket_offsets[b+1]`、`input_indices[cn]` | 具体 BSK；公开展开映射，evaluator 直接借用 |
+| `[bucket][entry...,dummy][row][level][component][coefficient]` | 单个系数数组；每桶 dummy 位于该桶条目之后 |
+| 支持集、匹配 owner/前驱、明文选择位 | keygen 私有临时数据；不放入 server key |
+| 全部输入的 `alpha[n]`、一份系数聚合 GGSW、一份 NTT GGSW、GLWE ping-pong 和外积 context | evaluator 独占、初始化时一次分配；每次调用复用 |
+| KSK、客户端秘密、LUT 元数据 | 沿用现有归属；不在 sparse key 中重复保存 |
 
-桶映射在 keygen 或 evaluator 初始化时建立，不每次 PBS 重建。重复使用的 `α_i` 可以每次输入在 scratch 中计算一次；经典路径无需被迫分配数组。策略选择放在外层，避免逐系数动态调度。
+若一份 GGSW 含 `G=(k+1)^2*ell*N` 个系数，经典 BSK 存 `nG` 个，稀疏 BSK 存 `(cn+b)G` 个。CSR 偏移只描述 `input_indices`，桶 `j` 的密文起点为 `(bucket_offsets[j]+j)*G`，dummy 起点为 `(bucket_offsets[j+1]+j)*G`；不再保存一份可推导的密文偏移数组。
 
-## 表示方案及校勘
+生成时复用 `NttGlweSecretKey` 的常数 GGSW 加密和已有 inverse NTT，逐份写入最终系数存储；不同时保存整份 NTT BSK 和系数 BSK。匹配成功后才分配/加密这些密文。每个副本和 dummy 都重新取加密随机数，不能复用 Enc(0) 或噪声样本。evaluator 只需要 key、NTT table 与 scratch，不依赖 keygen 的秘密缓存。
 
-### 系数旋转切片
+在 64-bit 平台、`T=u32` 的成本参数组中：
 
-论文讨论存储 `[-p, p, -p]`，以连续切片实现负循环旋转，系数存储约增为三倍。若 `p` 长度为 `N`、目标为 `X^r p mod (X^N+1)`、`0 <= r < 2N`，使用零基切片：
+- 经典 BSK 系数载荷为 **24 MiB**，稀疏为 **75 MiB**，另加公开映射约 12.5 KiB；不含 KSK、allocator 和对象元数据。
+- BR 名义上从最多 `512` 次 CMUX 外积变为 `64` 次外积；聚合仍读 `1536` 份选择 GGSW，并加 `64` 份 dummy。不能据此宣称八倍加速或 O(h) 密钥大小。
+- 参考在线 scratch 系数数为 `2G+(2k+4)N`，另有 `N` 个 carry bool 和 `n` 个 `usize` 旋转量，约 **125 KiB**；另有调用方输出 GLWE **8 KiB**。这是 BR 工作区，不含 LUT、table、完整 evaluator 的 KS/输入/多输出缓冲区或容量开销。
+- keygen 峰值为最终 BSK 加单份 GGSW/变换、加密和匹配工作区，另计客户端/NTT 秘密及 KSK；避免整 key 的隐式 clone。P3.4 用实际分配验证这些公式。
+
+## P3.2 实现入口
+
+- [KeyGenerator 与稀疏 key](../crates/primus_tfhe_glwe_ntt/src/sparse/key.rs)：`try_generate_sparse_bootstrapping_key(&client, copy_count, bucket_count, rng)` 复用已验证的 context，返回独立 BSK。首版共享 context 的显式模数，没有新增模数泛型、参数包装或稀疏 ServerKey。
+- [私有 PBC](../crates/primus_tfhe_glwe_ntt/src/sparse/pbc.rs)：逐索引无放回采样、完整增广路匹配、固定秘密最多八次尝试；CSR 只在匹配成功后生成，桶内索引递增。
+- `bucket(j)` 返回公开索引切片和 GGSW 迭代器；密文比索引多一项，最后为 dummy。所有权在 BSK，读取不依赖 client/keygen，公开 API 不返回匹配或占用位。
+- 入口先校验上下文兼容性、固定重量分布、实际二元系数/重量、桶参数及存储长度，再消费随机数。匹配成功后按桶批量加密，直接在最终分配中原地 inverse NTT。支持集、匹配工作区、选择位用 `Zeroizing`，NTT 秘密和 gadget context 沿用已有擦除契约。
+- 保留四项聚焦测试：216 个小图与暴力匹配对照；强制第二/第八次成功及八次耗尽；[公开入口与加密语义](../crates/primus_tfhe_glwe_ntt/tests/sparse_key.rs)覆盖实际支持集恰好一次、每桶选择/dummy 总和为 1、公开空桶及非法输入在采样前拒绝。测试只在客户端侧恢复合成测试密钥的选择位，不给 server 增加明文辅助数据。
+
+P3.2 未接入 sparse BR、普通/交错 PBS 或 CBS；当前 evaluator 和 benchmark 继续使用经典 BSK。P3.3 从持有的 key 元数据准备量化器与工作区，再实现聚合和外积。
+
+### P3.2 匹配表示与测量
+
+`augment` 分为直接占空桶、`find_relocation_path` 搜索、`apply_relocation_path` 搬移三步。桶直接保存原始输入索引，搜索前驱表示“哪个桶的占用者可以搬进当前桶”；起始桶的前驱指向自身，作为放入新索引的终点。工作区从四个数组减为三个，删除 `assigned_buckets` 和非零位置转换，少一次分配及 `h` 个 `usize`；私有数组仍在释放时擦除。
+
+2026-09-17，Ryzen 9 9955HX3D、rustc 1.98.0、默认 feature/release，固定逻辑 CPU 2；临时 Criterion 使用 100 samples、0.5 s warmup、2 s measurement，同一程序包含基线和当前版，两轮交换执行顺序。**基线已包含此前的直接占空桶优化**。匹配计时复用工作区，每次处理一个图，循环使用 128 张随机图；图由 `StdRng`、seed `0x504243+n` 预先生成，非零索引为 `p*n/h`，`p in 0..h`。完整桶映射生成包含采样、分配、匹配、CSR 转换和结果释放，两版本都从 seed `0x5033504243` 开始。下表为两轮点估计范围，均取 `c=3,b=2h`。
+
+| `(n,h)` | 匹配：基线 → 桶路径版 | 完整桶映射生成：基线 → 桶路径版 |
+| --- | --- | --- |
+| `(16,4)` | 7.89–8.85 ns → 7.56–7.76 ns | 346–358 ns → 310–314 ns |
+| `(512,32)` | 55.7–56.2 ns → 39.7–42.7 ns | 5.58–5.79 µs → 5.08–5.11 µs |
+| `(2048,128)` | 279–300 ns → 208–228 ns | 21.81–22.16 µs → 19.64–19.71 µs |
+
+保留桶路径表示：上述场景两轮均未观察到退化，`n=512,h=32` 的匹配耗时下降约 24%–29%。另外检查 `n=128,h=32,c=3,b=32` 的高冲突随机图、`h=32,c=2,b=64` 的长增广路径和 `h=32,c=3,b=64` 的无匹配图，耗时也均下降。四组共 512 张随机图及两张构造图的成功状态和最终分配与基线一致；原有 216 图穷举 oracle 改用不连续的原始输入索引，测试数不变。仅拆分函数的原型出现退化信号，已撤回；本次未测完整 keygen/PBS，临时程序未加入常驻 benchmark 或 CI。
+
+## 论文校勘与表示选择
+
+### 旋转切片
+
+对于长度 `N` 的 `p`，以 `[-p,p,-p]` 保存三段，`0<=r<2N` 的 `X^r p mod (X^N+1)` 对应：
 
 ```text
-buffer = [-p, p, -p]
-start  = N - r       if 0 <= r < N
-         3N - r      if N <= r < 2N
+start = N - r       if r < N
+        3N - r      otherwise
 result = buffer[start .. start + N]
 ```
 
-p.19 文中第二段给出的 `2N-r` 在 `r=N` 时得到 `p`，应为 `-p`。上述修正曾用 `N=8` 遍历全部 `2N` 个旋转检查；这是历史独立实验，正式实现仍须落下一个最小回归 oracle，不依赖临时文件。
+p.19 的第二段使用 `2N-r`，在 `r=N` 时给出 `p`，应为 `-p`。P3.1 用独立逐项乘单项式 oracle 复核了 `N=2,4,8,16` 的全部 60 个指数。首版直接用已有系数旋转/相加；三倍存储的切片优化留给 P3.4 实测，不把临时脚本当成未来 kernel 的回归测试。
 
-### 累加器初始化
+### 初始化与噪声表述
 
-p.18 Algorithm 2 定义了 `P(X)`，伪码初始化却只出现常数与旋转，未使用该多项式。应按功能 PBS 的相位不变量重建初始化，不能直接抄伪码。相位正负号与输入/旋转模数也须对照 Primus 的实际约定。
+p.18 Algorithm 2 在 `Boot` 定义了 `P(X)`，但 `BlindRot` 初始化使用常数且未消费 `P`。Primus 必须按前述相位不变量从真实 LUT 初始化，不能照抄该伪码。论文的输入相位记号也不同，以本仓库 `b-<a,s>` 为准。
 
-### NTT 预计算权衡
+p.17 的聚合标准差仅写 `sqrt(|C_j|)*sigma`，按 Algorithm 2 显式添加的独立 dummy 应计为 `sqrt(|C_j|+1)*sigma`。其 `O(sigma_output)` 表述没有给出可直接使用的有限参数尾界；本轮采用逐项递推，保留生产失败概率问题。
 
-- 系数域聚合后，每桶变换一次，是首版可验证的实现方向。
-- 预计算全部 `2N` 个旋转的 NTT 表示会大幅扩大 BSK；论文实验中有超过 10 GB 的配置，带宽成本使一般二元方案并不必然更快。
-- 两者都属于后端表示决策。P3.4 用实际测量选择，不把预计算存储固化为共享 LUT 契约。
+### NTT 与空间换时间
 
-## 性能证据的使用范围
+每桶聚合后转换整个 GGSW，再用现有 NTT external product；这是一次**GGSW 变换**，包含 `(k+1)^2*ell` 个多项式 NTT，不是一个多项式 NTT。变换/外积边界保持现有规范模表示与 basis 顺序。
 
-§7 / Table 2 的一般稀疏二元 gate 场景给出 OpenFHE 基线 `36.5 ms → 7.9 ms`。功能 3-bit 场景的 `391.5 ms → 53.5 ms` 中，作者方案数值带星号，来自微基准估算，不能当作完整功能 PBS 实测。
+不默认预计算所有 `2N` 个旋转的 NTT 形式。论文一般二元实现的超大 key 已遇到带宽瓶颈；P3.4 先测聚合、变换、外积占比再选择表示。`[-p,p,-p]` 也会将对应系数存储扩大约三倍，不能只报告减少的算术次数。
 
-论文对部分标准标签重新估计的安全位数与标签不同，例如所列 STD128 参数的估计约为 120 bit。Primus 比较须公开实际参数和依据，不只引用标签或加速倍数。
+## 后续验收与仍未解决的研究问题
 
-P3 至少分别报告：
-
-- 完整功能 PBS 的延迟，以及普通/交错 LUT 的实际支持范围；
-- 桶聚合、NTT、external product 的成本构成；
-- keygen 与失败重试行为；
-- BSK 存储、evaluator 工作区、在线分配；
-- CPU、工具链、feature、参数、秘密分布及计时是否含 setup。
-
-不能承诺论文倍数能迁移到 Primus，也不能用随机成功解密代替安全与噪声结论。
-
-## §5 Binary-NTT shallow 方案
-
-该方案的二元性位于 NTT 槽，依赖 `s²=s` 的不同秘密结构，涉及新的 RLWE 假设、乘法树和相关表示。它与系数二元稀疏秘密不同，也不是普通 LWE→GGSW CBS 的同义词。
-
-论文讨论浅变换层数与潜在 GPU 收益，其中有估算成分。本轮 P3 不实现该路线，不为其提前加入新环表示、modulus chain 或通用 backend trait。若后续选择它，先独立分析假设、原语和参数。
-
-## P3 开工检查点
-
-| 未决问题 | 必须形成的结果 |
+| 步骤 | 必须保留的少量独立证据 |
 | --- | --- |
-| PBC 具体映射和参数 | 选定算法、复制数、桶数、失败重试条件及依据 |
-| 秘密分布与安全 | 原始/条件分布、公开映射的影响、可陈述的安全范围 |
-| 噪声预算 | 聚合、分解、外积与完整 PBS 的误差来源和参数约束 |
-| BSK 与 scratch | 尺寸公式、所有权、初始化/在线边界及峰值存储 |
-| 首版组合范围 | 两种 GLWE order、普通/交错 LUT、CBS 各自是否满足条件 |
-| 测量基线 | 等价秘密分布、参数和功能，区分论文外部数字与 Primus 实测 |
+| P3.2 | 合成小图对完整匹配 oracle；唯一覆盖、同桶去重、未占用桶 dummy；强制构造失败再成功/8 次耗尽，秘密保持不变；小参数 key 的布局与加密语义。用同一测试的表驱动场景，不增加大规模随机压力测试 |
+| P3.3 | 小环独立单项式总指数 oracle，覆盖指数 `0,N,2N-1` 和回绕；同一 quantizer 下比较相位/解码，不比较不同加密的密文字节；确认每桶一次外积、scratch 复用 |
+| P3.4 | Criterion 分别测聚合、GGSW 变换、外积和 BR；setup 在计时外；报告 BSK/scratch、在线分配、CPU/工具链/feature。无有意义收益就保留清楚的参考实现 |
+| P3.5 | 同一小 fixture 覆盖两种 order、普通/交错 `k_out=3`（补齐为 4）；经典对照和完整 PBS 延迟，统计 keygen 尝试次数及实际相位余量；不用 Boolean gate 或微基准代替完整 PBS |
 
-逐项收敛时原位替换为当前决定与证据，保留尚未解决的项；不能把这张表当作已有实现的验收记录。
+论文 Table 2 的一般二元 gate 数字 `36.5ms -> 7.9ms` 是外部结果；功能 3-bit 的 `391.5ms -> 53.5ms` 中后者标星，来自微基准估算。P3.1 没有执行 Primus PBS 性能计时，也不承诺复现该倍数。
+
+P3.1 本次验证范围：核对固定重量采样、两种 order 的实际秘密、keygen、NTT GGSW、basis 误差界、外积 scratch 与现有参数/benchmark。临时独立检查穷举 `(n,h,c,b)=(4,3,2,4)` 的全部映射和支持集，共 5184 例，与暴力匹配一致；每个支持集失败概率均为 `1/36`。另复算上述 Hall 上界、模数/NTT 整除条件和存储数值。未改 Rust、未新增 CI 测试或 benchmark；这些设计检查不能代替 P3.2–P3.5 的实现验证。
+
+源码恢复入口：[固定重量采样](../crates/primus_distr/src/common.rs)、[实际客户端秘密](../crates/primus_tfhe_glwe/src/key.rs)、[NTT keygen](../crates/primus_tfhe_glwe_ntt/src/key.rs)、[GGSW 加密](../crates/primus_glwe/src/secret_key/ntt/gadget.rs)、[分解误差界](../crates/primus_decompose/src/primitive/basis.rs)、[外积](../crates/primus_lattice/src/ggsw/external_product.rs)及其[工作区](../crates/primus_lattice/src/context/glwe_external_product.rs)。
+
+以下问题保持开放，但不阻塞**明确标为实验**的 P3.2–P3.5：
+
+1. 固定重量 small-LWE、补零 KS 目标、相关 evaluation keys 的具体攻击估计与安全假设；成功条件下公开映射的影响不能仅凭熵或 `U^8` 消除。
+2. 结合实际离散采样器、分解相关性、GLWE KS、重复求值和各 LUT 编码的完整尾界；普通 LUT 的实验结论不能自动推广到 CBS。
+3. 是否需要为了安全目标增加复制数/桶数或采用不同 PBC，及其成本；参数一旦改变，重新计算失败与噪声界并同步经典对照。
+
+论文 §5 的 Binary-NTT shallow 路线使用 NTT 槽二元秘密、不同 RLWE 假设和乘法树；不等同于这里的系数二元稀疏秘密或 LWE→GGSW CBS。本轮不为它加入新环表示、modulus chain 或通用 backend trait。
