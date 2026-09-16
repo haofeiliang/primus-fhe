@@ -462,10 +462,37 @@ where
             }
         }
     }
-    if usize::BITS > T::BITS {
-        let length = usize::try_from(native_q).unwrap();
-        for value in [0, native_q / 2, native_q - 1] {
-            check(native_q, true, length, value);
+    let length = 1usize << (usize::BITS.min(T::BITS) - 1);
+    for value in [0, native_q / 2, native_q - 1] {
+        check(native_q, true, length, value);
+    }
+}
+
+#[test]
+fn quantizer_and_lut_reject_unrepresentable_rotation_domains() {
+    let modulus = NativeModulus::<u16>::new();
+    for two_n in [1 << 16, 1 << 17] {
+        // A smaller virtual target must not bypass the physical-domain boundary.
+        for window in [1, 2] {
+            assert!(
+                std::panic::catch_unwind(|| {
+                    primus_tfhe::backend_support::RotationQuantizer::new(modulus, two_n, window)
+                })
+                .is_err()
+            );
+            assert_eq!(
+                InterleavedLookupTable::try_new(
+                    1,
+                    two_n / 2,
+                    window,
+                    2,
+                    modulus,
+                    modulus,
+                    |_, _| panic!("invalid rotation domain must precede output generation"),
+                )
+                .unwrap_err(),
+                LookupTableError::InvalidPolynomialLength,
+            );
         }
     }
 }

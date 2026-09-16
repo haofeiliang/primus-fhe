@@ -51,7 +51,10 @@ pub(crate) fn basic(
             type Prepared = ::primus_modulus::ModulusSwitch<#ty>;
             #[inline]
             fn prepare_switch_to<M: ::primus_modulus::reduce::Modulus<ValueT = #ty>>(self, target: M) -> Self::Prepared {
-                ::primus_modulus::ModulusSwitch::new(self, target)
+                ::primus_modulus::reduce::PrepareModulusSwitch::prepare_switch_to(
+                    ::primus_modulus::BarrettModulus::from_parts(#modulus, [#r0, #r1]),
+                    target,
+                )
             }
         }
         impl ::std::marker::Copy for #name {}

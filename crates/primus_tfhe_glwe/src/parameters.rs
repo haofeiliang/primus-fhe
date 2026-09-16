@@ -29,6 +29,10 @@ pub enum GlweParameterError {
     #[error("TFHE bootstrapping requires a binary input LWE secret key")]
     InputLweSecretKeyMustBeBinary,
 
+    /// The rotation domain `2N` cannot be represented by the input coefficient type.
+    #[error("rotation domain must fit the input coefficient type")]
+    RotationDomainTooLarge,
+
     /// The LWE ciphertext and GLWE accumulator use different plaintext spaces.
     #[error("LWE and GLWE plaintext moduli must match")]
     PlainModulusMismatch,
@@ -94,7 +98,8 @@ where
     /// # Errors
     ///
     /// Returns an error for incompatible secrets, plaintext/ciphertext moduli,
-    /// dimensions or decomposition bases, or a derived gadget layout overflow.
+    /// dimensions or decomposition bases, a rotation domain `2N` not representable
+    /// by `T`, or a derived gadget layout overflow.
     pub fn try_new(
         small_lwe: LweParameters<T, LM>,
         accumulator_glwe: GlweParameters<T, GM>,
@@ -118,6 +123,9 @@ where
         }
         if small_lwe.cipher_modulus_value() != accumulator_glwe.cipher_modulus_value() {
             return Err(GlweParameterError::CipherModulusMismatch);
+        }
+        if T::try_from(accumulator_glwe.poly_length() * 2).is_err() {
+            return Err(GlweParameterError::RotationDomainTooLarge);
         }
         let bootstrapping = GgswParameters::try_with_basis(&accumulator_glwe, bootstrapping_basis)
             .map_err(GlweParameterError::BootstrappingParameters)?;

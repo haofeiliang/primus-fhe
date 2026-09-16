@@ -75,7 +75,7 @@ impl<T: FheUint, LM: PrepareModulusSwitch<ValueT = T>> NttGlweBootstrappingKey<T
     ///
     /// Panics on non-binary input key distributions, incompatible key/parameter
     /// layouts, NTT length/modulus or gadget workspace, key storage overflow,
-    /// or a rotation domain wider than the input coefficient type.
+    /// or a rotation domain `2N` not representable by the input coefficient type.
     pub fn generate_ntt<M, Table, R>(
         input_secret_key: &LweSecretKey<T>,
         input_parameters: &LweParameters<T, LM>,

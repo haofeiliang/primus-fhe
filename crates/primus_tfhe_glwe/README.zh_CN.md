@@ -12,6 +12,7 @@
 `GlweTfheParameters::try_new(small_lwe, accumulator_glwe, bootstrapping_basis,
 key_switching_basis, order)` 从 accumulator 派生 BSK 布局，从 small LWE 派生
 补零的密钥切换目标。明文与密文模数必须匹配，small secret 必须是二进制，且 `n <= kN`。
+旋转域 `2N` 必须能由输入系数类型 `T` 表示。
 
 | `GlwePbsOrder` | 完整 PBS 链 | 外部 LWE 秘密 / 维数 |
 | --- | --- | --- |

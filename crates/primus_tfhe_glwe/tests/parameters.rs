@@ -113,3 +113,37 @@ fn rejects_bases_from_another_modulus() {
         assert_eq!(result.err(), Some(expected));
     }
 }
+
+#[test]
+fn rotation_domain_must_be_representable_by_input_coefficients() {
+    use primus_tfhe_glwe::GlweParameterError;
+
+    let modulus = NativeModulus::<u16>::new();
+    for (log_n, expected) in [
+        (14, None),
+        (15, Some(GlweParameterError::RotationDomainTooLarge)),
+        (16, Some(GlweParameterError::RotationDomainTooLarge)),
+    ] {
+        let small_lwe = LweParameters::new(1, 2, modulus, SecretKeyDistr::UniformBinary, 0.7);
+        let glwe = GlweParameters::new(
+            1,
+            1 << log_n,
+            2,
+            modulus,
+            SecretKeyDistr::UniformBinary,
+            0.7,
+        );
+        let basis = ApproxSignedBasis::new(None, 4, None);
+        assert_eq!(
+            GlweTfheParameters::try_new(
+                small_lwe,
+                glwe,
+                basis.clone(),
+                basis,
+                GlwePbsOrder::BootstrapKeyswitch,
+            )
+            .err(),
+            expected,
+        );
+    }
+}

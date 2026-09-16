@@ -15,7 +15,7 @@ pub struct ModulusSwitch<T: FheUint> {
 /// `p` the target modulus, and `w = T::BITS`. Rounding uses ties upward.
 /// Native moduli equal `2^w`; explicit moduli fit in `T`.
 #[derive(Clone, Copy, Debug)]
-enum Kernel<T> {
+enum Kernel<T: FheUint> {
     /// `q = p`: the canonical input is already the output.
     Identity,
     /// `q = 2^a > p = 2^b`: rounded right shift by `a - b`.
@@ -51,6 +51,17 @@ enum Kernel<T> {
     /// General explicit pair requiring wide arithmetic: divide the two-word
     /// numerator `x * p + floor(q / 2)` by `q`, then wrap the rounded endpoint.
     Wide { source: T, target: T },
+    /// Compact explicit `q` to explicit `p`: divide the biased two-word
+    /// product using `floor(2^(2w) / q)` and one exact quotient correction.
+    Barrett {
+        source: BarrettModulus<T>,
+        target: T,
+    },
+    /// Compact explicit pair whose biased numerator fits one word: the high
+    /// reciprocal limb `floor(2^w/q)` suffices for an estimate within one.
+    BarrettNarrow { source: T, reciprocal: T, target: T },
+    /// Compact explicit `q` to native `p`, using the same reciprocal quotient.
+    BarrettToNative { source: BarrettModulus<T> },
     /// Explicit `q` to native `p = 2^w`: divide the two-word numerator
     /// `x * 2^w + floor(q / 2)` by `q` when no expansion shortcut applies.
     ToNative { source: T },
@@ -65,10 +76,8 @@ impl<T: FheUint> ModulusSwitch<T> {
     pub fn new<S: Modulus<ValueT = T>, D: Modulus<ValueT = T>>(source: S, target: D) -> Self {
         let source = source.explicit_value();
         let target = target.explicit_value();
-        assert!(source.is_none_or(|q| q >= T::TWO), "invalid source modulus");
-        assert!(target.is_none_or(|q| q >= T::TWO), "invalid target modulus");
         Self {
-            kernel: prepare(source, target),
+            kernel: prepare(source, target, None),
         }
     }
 }
@@ -80,8 +89,16 @@ fn binary_log<T: FheUint>(modulus: Option<T>) -> Option<u32> {
     }
 }
 
-/// Both modulus values are valid; None represents the native modulus.
-fn prepare<T: FheUint>(source: Option<T>, target: Option<T>) -> Kernel<T> {
+/// None represents the native modulus. Reuse a source Barrett context when
+/// available; other source types only construct one if the chosen kernel needs it.
+/// When supplied, `barrett` must represent `source`.
+fn prepare<T: FheUint>(
+    source: Option<T>,
+    target: Option<T>,
+    barrett: Option<BarrettModulus<T>>,
+) -> Kernel<T> {
+    assert!(source.is_none_or(|q| q >= T::TWO), "invalid source modulus");
+    assert!(target.is_none_or(|q| q >= T::TWO), "invalid target modulus");
     if source == target {
         return Kernel::Identity;
     }
@@ -116,6 +133,16 @@ fn prepare<T: FheUint>(source: Option<T>, target: Option<T>) -> Kernel<T> {
                     Kernel::Multiply(quotient)
                 };
             }
+            // Preserve a binary divisor as a shift, even when remainder
+            // decomposition could fit its numerator in one word.
+            if source.is_power_of_two()
+                && let Some(target) = target
+            {
+                return Kernel::PowerOfTwo {
+                    source_log: source.trailing_zeros(),
+                    target,
+                };
+            }
             // target = quotient*source + remainder. For x < source, both
             // terms and their sum are canonical; only the biased remainder
             // product needs a width check before selecting this kernel.
@@ -143,6 +170,26 @@ fn prepare<T: FheUint>(source: Option<T>, target: Option<T>) -> Kernel<T> {
                 };
             }
         }
+    }
+    if let Some(source) = source.filter(|q| q.leading_zeros() > 1 && !q.is_power_of_two()) {
+        // Keep the exact-ratio and remainder-decomposition shortcuts above.
+        let source = barrett.unwrap_or_else(|| BarrettModulus::new_unchecked(source));
+        return match target {
+            Some(target)
+                if (source.value() - T::ONE)
+                    .checked_mul(target)
+                    .and_then(|x| x.checked_add(source.value() >> 1u32))
+                    .is_some() =>
+            {
+                Kernel::BarrettNarrow {
+                    source: source.value(),
+                    reciprocal: source.ratio()[1],
+                    target,
+                }
+            }
+            Some(target) => Kernel::Barrett { source, target },
+            None => Kernel::BarrettToNative { source },
+        };
     }
     match (source, target) {
         (None, Some(target)) => Kernel::Native { target },
@@ -218,12 +265,45 @@ impl<T: FheUint> PreparedModulusSwitch for ModulusSwitch<T> {
                 let (lo, hi) = x.carrying_mul(target, source >> 1u32);
                 canonical(T::div_wide(lo, hi, source), target)
             }),
+            Kernel::Barrett { source, target } => map(input, output, |x| {
+                let (lo, hi) = x.carrying_mul(target, source.value() >> 1u32);
+                canonical(barrett_quotient(lo, hi, source), target)
+            }),
+            Kernel::BarrettNarrow {
+                source,
+                reciprocal,
+                target,
+            } => map(input, output, |x| {
+                let numerator = x * target + (source >> 1u32);
+                let quotient = numerator.widening_mul_hw(reciprocal);
+                let remainder = numerator - quotient * source;
+                canonical(quotient + T::as_from(remainder >= source), target)
+            }),
+            Kernel::BarrettToNative { source } => map(input, output, |x| {
+                barrett_quotient(source.value() >> 1u32, x, source)
+            }),
             Kernel::ToNative { source } => map(input, output, |x| {
                 // x < source makes the high limb valid for div_wide.
                 T::div_wide(source >> 1u32, x, source)
             }),
         }
     }
+}
+
+/// For `n = hi*B + lo < q*B` and `q < B/4`, returns `floor(n/q)`.
+/// With `mu = floor(B²/q)`, `floor(n*mu/B²)` underestimates by at most one.
+/// The quotient fits one word; the residual is below `2q < B`, so its low
+/// limb suffices for the exact correction, including when `n` spans two words.
+#[inline]
+fn barrett_quotient<T: FheUint>(lo: T, hi: T, source: BarrettModulus<T>) -> T {
+    let [r0, r1] = source.ratio();
+    let ah = lo.widening_mul_hw(r0);
+    let b = lo.carrying_mul(r1, ah);
+    let c = hi.widening_mul(r0);
+    let upper = b.1.carrying_add(c.1, b.0.overflowing_add(c.0).1).0;
+    let quotient = hi.wrapping_mul(r1).wrapping_add(upper);
+    let remainder = lo.wrapping_sub(quotient.wrapping_mul(source.value()));
+    quotient + T::as_from(remainder >= source.value())
 }
 
 #[inline]
@@ -261,10 +341,15 @@ macro_rules! impl_prepare {
         }
     )+};
 }
-impl_prepare!(
-    NativeModulus,
-    PowOf2Modulus,
-    UintModulus,
-    CompactModulus,
-    BarrettModulus
-);
+impl_prepare!(NativeModulus, PowOf2Modulus, UintModulus, CompactModulus);
+
+impl<T: FheUint> PrepareModulusSwitch for BarrettModulus<T> {
+    type Prepared = ModulusSwitch<T>;
+
+    #[inline]
+    fn prepare_switch_to<D: Modulus<ValueT = T>>(self, target: D) -> Self::Prepared {
+        ModulusSwitch {
+            kernel: prepare(Some(self.value()), target.explicit_value(), Some(self)),
+        }
+    }
+}

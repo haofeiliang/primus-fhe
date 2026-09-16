@@ -37,7 +37,7 @@ where
     /// Returns an error unless the external LWE key is the binary coefficient
     /// prefix of an NTRU key, fits in `N`, and all three parameter domains
     /// agree on `N`, `t`, and `q` where applicable. The rotation domain `2N`
-    /// must fit the input coefficient bit width.
+    /// must be representable by `T`.
     pub fn try_new(
         external_lwe: LweParameters<T, M>,
         bootstrapping: NlevParameters<T, M>,
@@ -76,7 +76,7 @@ where
             return Err(CipherModulusMismatch);
         }
 
-        if (poly_length * 2).trailing_zeros() > T::BITS {
+        if T::try_from(poly_length * 2).is_err() {
             return Err(NtruParameterError::RotationDomainTooLarge);
         }
         let rotation_quantizer =
@@ -130,8 +130,8 @@ where
 /// An invalid combination of NTRU-based TFHE parameters.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum NtruParameterError {
-    /// The rotation domain exceeds the coefficient type's bit width.
-    #[error("rotation domain exceeds the input coefficient bit width")]
+    /// The rotation domain `2N` cannot be represented by the input coefficient type.
+    #[error("rotation domain must fit the input coefficient type")]
     RotationDomainTooLarge,
     /// The external LWE and client NTRU secret must both be binary.
     #[error("NTRU TFHE requires a binary client secret key")]

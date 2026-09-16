@@ -13,7 +13,7 @@
 绑定到 `f_client` 的二进制前缀，该 NTRU 秘密的其余系数为零。
 `bootstrapping` 描述 `f_acc` 下的 accumulator，`key_switching` 描述返回 `f_client` 的切换。
 环长度、明文模数与密文模数必须匹配，且 `1 <= external_lwe.dimension() <= N`。
-构造时同时准备普通 PBS 量化，并要求 `log2(2N) <= T::BITS`。
+构造时同时准备普通 PBS 量化，并要求旋转域 `2N` 能由 `T` 表示。
 
 普通 PBS 使用固定链：`f_acc` 下 BR → NTRU 密钥切换到 `f_client` → compact LWE extraction。
 没有 order 选项。外部输出按 `external_lwe().dimension()` 分配；使用配套的 context/client/server key。

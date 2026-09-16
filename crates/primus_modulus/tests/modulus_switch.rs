@@ -2,6 +2,7 @@
 use primus_modulus::integer::FheUint;
 use primus_modulus::reduce::{Modulus, PrepareModulusSwitch, PreparedModulusSwitch};
 use primus_modulus::{BarrettModulus, CompactModulus, NativeModulus, PowOf2Modulus, UintModulus};
+use rand::{RngExt, SeedableRng, rngs::StdRng};
 
 fn value<T: TryFrom<u128>>(x: u128) -> T {
     T::try_from(x).ok().unwrap()
@@ -24,6 +25,8 @@ where
     let r = target.explicit_value().map(Into::into).unwrap_or(native);
     let conversion = source.prepare_switch_to(target);
     let mut inputs = points(q);
+    let mut rng = StdRng::seed_from_u64((q ^ r) as u64);
+    inputs.extend((0..32).map(|_| rng.random_range(0..q)));
     for m in [0, r / 2, r - 1] {
         // Equivalent to ceil(((m+1)*q-floor(q/2))/r), avoiding 2^128.
         let boundary = (m * q + q.div_ceil(2)).div_ceil(r);
@@ -101,6 +104,7 @@ fn fixed_pairs_match_integer_oracle() {
             131,
             257,
             root + 1,
+            native / 4 - 1,
             native / 2,
             native / 2 + 1,
             native - 1,
@@ -118,6 +122,27 @@ fn fixed_pairs_match_integer_oracle() {
     cases::<u16>();
     cases::<u32>();
     cases::<u64>();
+}
+
+#[test]
+fn compact_quotients_exhaust_small_word_residues() {
+    // Near the compact limit, wide products and quotient corrections are common.
+    for q in [257u16, 16381, 16383] {
+        let source = BarrettModulus::new(q);
+        for p in [2u32, 131, 32769, 65535, 65536] {
+            let conversion = if p == 65536 {
+                source.prepare_switch_to(NativeModulus::new())
+            } else {
+                source.prepare_switch_to(UintModulus::new(p as u16))
+            };
+            conversion.switch_map((0..q).map(|x| (x, x)), |y, i| {
+                let expected =
+                    ((i as u64 * u64::from(p) + u64::from(q / 2)) / u64::from(q)) % u64::from(p);
+                assert_eq!(u64::from(y), expected, "q={q}, p={p}, x={i}");
+                assert_eq!(conversion.switch(i), y);
+            });
+        }
+    }
 }
 #[cfg(feature = "derive")]
 #[test]

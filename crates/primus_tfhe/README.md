@@ -124,6 +124,8 @@ cargo bench -p primus_tfhe --bench lookup_table
 Raw LUT compilation accepts independent typed input and accumulator moduli.
 `backend_support::RotationQuantizer::new(input_modulus, two_n, window)` prepares
 a fixed modulus-pair conversion; `exponent(value)` reuses it without allocation.
+The rotation domain `two_n = 2N` must be representable by the input coefficient
+type; the target `two_n/window` is an explicit power of two, even for Native input.
 GLWE keys and NTRU parameters cache ordinary-PBS quantization at construction.
 ManyLUT prepares its stride-dependent conversion before processing coefficients.
 For interleaved LUTs, it rounds in `two_n/window` positions before multiplying by

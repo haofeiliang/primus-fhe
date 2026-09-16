@@ -74,8 +74,8 @@ impl<T: TorusFftValue, LM: PrepareModulusSwitch<ValueT = T>> FourierGlweBootstra
     ///
     /// Panics if input key/parameter distributions are not binary or their
     /// dimensions differ, or if the output key, FFT or workspace layout is
-    /// incompatible. Key-length overflow or a rotation domain wider than the input
-    /// coefficient type also panics. Checks precede sampling.
+    /// incompatible. Key-length overflow or a rotation domain `2N` not representable
+    /// by the input coefficient type also panics. Checks precede sampling.
     pub fn generate_fourier<Table, R>(
         input_secret_key: &LweSecretKey<T>,
         input_parameters: &LweParameters<T, LM>,

@@ -104,6 +104,8 @@ cargo bench -p primus_tfhe --bench lookup_table
 
 raw LUT 编译接收独立的输入模数类型和 accumulator 模数类型。
 `backend_support::RotationQuantizer::new(input_modulus, two_n, window)` 准备固定
-模数对的转换，`exponent(value)` 无分配复用。GLWE 密钥和 NTRU 参数在构造时
+模数对的转换，`exponent(value)` 无分配复用。旋转域 `two_n = 2N` 必须能由输入
+系数类型表示；即使输入使用 Native 模数，目标 `two_n/window` 也为显式二次幂。
+GLWE 密钥和 NTRU 参数在构造时
 缓存普通 PBS 量化；ManyLUT 在系数循环前按步长准备，先在 `two_n/window`
 个位置内舍入，再乘 `window`。仅描述模数域的元数据仍使用 `Option<T>`。

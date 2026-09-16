@@ -52,3 +52,7 @@ harness = false
 [[bench]]
 name = "signed_dot_product"
 harness = false
+
+[[bench]]
+name = "modulus_switch"
+harness = false

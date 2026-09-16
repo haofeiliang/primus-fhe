@@ -99,13 +99,19 @@ fn rejects_mismatched_ring_or_plaintext_domains() {
 }
 
 #[test]
-fn rejects_rotation_domain_wider_than_input_coefficients() {
+fn rotation_domain_must_be_representable_by_input_coefficients() {
     let modulus = primus_modulus::NativeModulus::<u16>::new();
-    let external = LweParameters::new(1, 2, modulus, SecretKeyDistr::UniformBinary, 0.7);
-    let ring = NtruParameters::new(1 << 16, 2, modulus, SecretKeyDistr::UniformBinary, 0.7);
-    let gadget = NlevParameters::with_ntru_params(&ring, 4, None);
-    assert_eq!(
-        NtruTfheParameters::try_new(external, gadget.clone(), gadget).err(),
-        Some(NtruParameterError::RotationDomainTooLarge)
-    );
+    for (log_n, expected) in [
+        (14, None),
+        (15, Some(NtruParameterError::RotationDomainTooLarge)),
+        (16, Some(NtruParameterError::RotationDomainTooLarge)),
+    ] {
+        let external = LweParameters::new(1, 2, modulus, SecretKeyDistr::UniformBinary, 0.7);
+        let ring = NtruParameters::new(1 << log_n, 2, modulus, SecretKeyDistr::UniformBinary, 0.7);
+        let gadget = NlevParameters::with_ntru_params(&ring, 4, None);
+        assert_eq!(
+            NtruTfheParameters::try_new(external, gadget.clone(), gadget).err(),
+            expected,
+        );
+    }
 }

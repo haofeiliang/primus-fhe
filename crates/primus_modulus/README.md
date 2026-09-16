@@ -70,8 +70,15 @@ All five modulus types and derived Barrett contexts implement `PrepareModulusSwi
 select a reusable kernel from the fixed ratio: binary scaling, exact multiplication
 or division, remainder decomposition, or narrow/wide integer arithmetic.
 Contracts are documented in [`primus_reduce`](../primus_reduce/README.md#prepared-modulus-switching).
-Batch switching selects the kernel before the loop; Barrett reciprocal quotient
-optimization is not used.
+Batch switching selects the kernel before the loop. Compact-range source moduli
+use reciprocal quotient estimates with an exact correction when no binary or
+expansion shortcut applies. Preparation selects one-word or two-word arithmetic
+from the numerator bound. Barrett and derived Barrett sources reuse their stored
+reciprocal through `prepare_switch_to`; direct construction and other source
+types compute it only when needed. Callers use the same execution interface.
+
+The `modulus_switch` benchmark measures cached scalar calls and batches; the
+`primus_encoding` codec benchmarks and TFHE PBS benchmarks cover consumers.
 
 ```rust
 use primus_modulus::{BarrettModulus, NativeModulus};

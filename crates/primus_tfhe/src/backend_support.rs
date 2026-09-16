@@ -9,7 +9,7 @@
 //! separately. Quantizing the decrypted phase once is not equivalent.
 
 use primus_integer::FheUint;
-use primus_modulus::{NativeModulus, PowOf2Modulus};
+use primus_modulus::PowOf2Modulus;
 use primus_reduce::{PrepareModulusSwitch, PreparedModulusSwitch};
 
 /// Interprets a coefficient that is already an exponent in `[0, 2N)`.
@@ -34,7 +34,7 @@ impl<S: PreparedModulusSwitch> RotationQuantizer<S> {
     ///
     /// # Panics
     /// Panics unless `two_n >= 2` and `window` are powers of two,
-    /// `window <= two_n/2`, and `log2(two_n/window) <= T::BITS`.
+    /// `window <= two_n/2`, and `two_n` is representable by `T`.
     #[must_use]
     pub fn new<T, M>(modulus: M, two_n: usize, window: usize) -> Self
     where
@@ -49,13 +49,10 @@ impl<S: PreparedModulusSwitch> RotationQuantizer<S> {
             window.is_power_of_two() && window <= two_n / 2,
             "invalid rotation window"
         );
-        let target_log = (two_n / window).trailing_zeros();
-        assert!(target_log <= T::BITS, "invalid modulus-switch target width");
-        let switch = if target_log == T::BITS {
-            modulus.prepare_switch_to(NativeModulus::new())
-        } else {
-            modulus.prepare_switch_to(PowOf2Modulus::new(T::ONE << target_log))
-        };
+        let rotation_domain =
+            T::try_from(two_n).expect("rotation domain must fit the input coefficient type");
+        let target = rotation_domain >> window.trailing_zeros();
+        let switch = modulus.prepare_switch_to(PowOf2Modulus::new(target));
         Self { switch, window }
     }
 

@@ -13,7 +13,8 @@ See the [shared capability and encoding guide](../primus_tfhe/README.md).
 `GlweTfheParameters::try_new(small_lwe, accumulator_glwe, bootstrapping_basis,
 key_switching_basis, order)` derives BSK layout from the accumulator and the
 padded key-switch target from the small LWE. Plaintext and ciphertext moduli must
-match, the small secret must be binary, and `n <= kN`.
+match, the small secret must be binary, and `n <= kN`. The rotation domain `2N`
+must be representable by the input coefficient type `T`.
 
 | `GlwePbsOrder` | Complete PBS chain | External LWE secret / dimension |
 | --- | --- | --- |
