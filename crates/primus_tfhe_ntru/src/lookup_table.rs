@@ -1,7 +1,7 @@
 use primus_encoding::PlaintextEmbedding;
 use primus_integer::FheUint;
 use primus_reduce::RingContext;
-use primus_tfhe::{LookupTable, LookupTableError, ManyLookupTable};
+use primus_tfhe::{InterleavedLookupTable, LookupTable, LookupTableError};
 
 use crate::NtruTfheParameters;
 
@@ -42,18 +42,19 @@ where
     /// front half `0..ceil(t/2)` of the plaintext domain into one PBSManyLUT accumulator.
     ///
     /// Function arguments are `(input, output_index)` and outputs belong to `0..t`.
-    /// The output count must be a non-zero power of two with `ceil(t/2) <= N / count`.
-    /// See [`ManyLookupTable`] for the reduced rotation resolution.
-    pub fn compile_many_lookup_table_fn<F>(
+    /// The output count must be nonzero. With `s = next_power_of_two(output_count)`,
+    /// the front-half domain must satisfy `ceil(t/2) <= N / s`; unused slots are zero.
+    /// See [`InterleavedLookupTable`] for the reduced rotation resolution.
+    pub fn compile_interleaved_lookup_table_fn<F>(
         &self,
         output_count: usize,
         function: F,
-    ) -> Result<ManyLookupTable<T>, LookupTableError>
+    ) -> Result<InterleavedLookupTable<T>, LookupTableError>
     where
         F: Fn(usize, usize) -> T,
     {
         let domain_len = self.lookup_table_domain_len()?;
-        self.compile_many_lookup_table_outputs(domain_len, output_count, function)
+        self.compile_interleaved_lookup_table_outputs(domain_len, output_count, function)
     }
 
     /// Compiles input-major multi-output values into one PBSManyLUT
@@ -61,11 +62,11 @@ where
     ///
     /// `outputs` must contain `domain_len * output_count` values, ordered by
     /// plaintext input and then output index.
-    pub fn compile_many_lookup_table_slice(
+    pub fn compile_interleaved_lookup_table_slice(
         &self,
         output_count: usize,
         outputs: &[T],
-    ) -> Result<ManyLookupTable<T>, LookupTableError> {
+    ) -> Result<InterleavedLookupTable<T>, LookupTableError> {
         let domain_len = self.lookup_table_domain_len()?;
         let expected = domain_len
             .checked_mul(output_count)
@@ -76,7 +77,7 @@ where
                 actual: outputs.len(),
             });
         }
-        self.compile_many_lookup_table_outputs(domain_len, output_count, |input, output| {
+        self.compile_interleaved_lookup_table_outputs(domain_len, output_count, |input, output| {
             outputs[input * output_count + output]
         })
     }
@@ -97,7 +98,7 @@ where
     {
         let lwe = self.external_lwe();
         let plaintext_modulus = self.plain_modulus_value();
-        primus_tfhe::compile_encoded_lookup_table(
+        LookupTable::try_new(
             domain_len,
             self.poly_length(),
             plaintext_modulus,
@@ -117,18 +118,18 @@ where
     }
 
     /// Encodes all output columns; the shared compiler owns their interleaved layout.
-    fn compile_many_lookup_table_outputs<F>(
+    fn compile_interleaved_lookup_table_outputs<F>(
         &self,
         domain_len: usize,
         output_count: usize,
         output_at: F,
-    ) -> Result<ManyLookupTable<T>, LookupTableError>
+    ) -> Result<InterleavedLookupTable<T>, LookupTableError>
     where
         F: Fn(usize, usize) -> T,
     {
         let lwe = self.external_lwe();
         let plaintext_modulus = self.plain_modulus_value();
-        primus_tfhe::compile_encoded_many_lookup_table(
+        InterleavedLookupTable::try_new(
             domain_len,
             self.poly_length(),
             output_count,

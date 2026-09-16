@@ -30,9 +30,9 @@ must use the supplied table's NTT representation. `boolean_parameters()` is a
 development fixture, not a vetted default; the example selects its own small parameters.
 
 Compile ordinary LUTs with `compile_lookup_table_fn` / `compile_lookup_table_slice`,
-or their `compile_many_lookup_table_*` counterparts. Use unsigned padded input and
+or their `compile_interleaved_lookup_table_*` counterparts. Use unsigned padded input and
 account for ManyLUT's coarser rotation resolution. The evaluator holds mutable
-scratch; create it once and reuse `apply_lookup_table_to` / `apply_many_lookup_table_to`.
+scratch; create it once and reuse `apply_lookup_table_to` / `apply_interleaved_lookup_table_to`.
 These calls validate all output dimensions before writing.
 
 Use `boolean_encryptor`, `boolean_decryptor` and `boolean_evaluator` for `t=4`.

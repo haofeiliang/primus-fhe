@@ -130,21 +130,21 @@ impl<T: FheUint, LM: PrepareModulusSwitch<ValueT = T>> NttGlweBootstrappingKey<T
     /// Blind-rotates an interleaved PBSManyLUT accumulator.
     ///
     /// Every modulus-switched exponent is rounded to a multiple of
-    /// `output_count`, preserving the independently programmed residue
-    /// classes. `output_count` must be a non-zero power of two dividing the
+    /// `stride`, preserving the independently programmed residue
+    /// classes. `stride` must be a non-zero power of two dividing the
     /// polynomial length.
     ///
     /// Inherits [`Self::ntt_blind_rotate_lookup_table_to`]'s requirements.
-    /// An invalid output count panics before output writes.
+    /// An invalid stride panics before output writes.
     #[expect(
         clippy::too_many_arguments,
         reason = "keep modulus, transform and workspace roles explicit"
     )]
-    pub fn ntt_blind_rotate_many_lookup_table_to<M, Table, A, B, C>(
+    pub fn ntt_blind_rotate_interleaved_lookup_table_to<M, Table, A, B, C>(
         &self,
         input: &Lwe<A>,
         lookup_table: &Polynomial<B>,
-        output_count: usize,
+        stride: usize,
         output: &mut Glwe<C>,
         modulus: M,
         ntt: &Table,
@@ -158,8 +158,8 @@ impl<T: FheUint, LM: PrepareModulusSwitch<ValueT = T>> NttGlweBootstrappingKey<T
     {
         let poly_length = self.size().glwe_size().poly_length();
         assert!(
-            output_count.is_power_of_two() && poly_length.is_multiple_of(output_count),
-            "PBSManyLUT output count must be a non-zero power-of-two divisor of N"
+            stride.is_power_of_two() && poly_length.is_multiple_of(stride),
+            "PBSManyLUT stride must be a non-zero power-of-two divisor of N"
         );
         assert_eq!(
             (
@@ -171,10 +171,10 @@ impl<T: FheUint, LM: PrepareModulusSwitch<ValueT = T>> NttGlweBootstrappingKey<T
             "PBSManyLUT input, table, or output layout mismatch"
         );
         self.assert_compatible(modulus, ntt, context);
-        self.ntt_blind_rotate_many_lookup_table_kernel_to(
+        self.ntt_blind_rotate_interleaved_lookup_table_kernel_to(
             input,
             lookup_table,
-            output_count,
+            stride,
             output,
             modulus,
             ntt,
@@ -188,11 +188,11 @@ impl<T: FheUint, LM: PrepareModulusSwitch<ValueT = T>> NttGlweBootstrappingKey<T
         clippy::too_many_arguments,
         reason = "keep modulus, transform and workspace roles explicit"
     )]
-    pub(crate) fn ntt_blind_rotate_many_lookup_table_kernel_to<M, Table, A, B, C>(
+    pub(crate) fn ntt_blind_rotate_interleaved_lookup_table_kernel_to<M, Table, A, B, C>(
         &self,
         input: &Lwe<A>,
         lookup_table: &Polynomial<B>,
-        output_count: usize,
+        stride: usize,
         output: &mut Glwe<C>,
         modulus: M,
         ntt: &Table,
@@ -207,8 +207,8 @@ impl<T: FheUint, LM: PrepareModulusSwitch<ValueT = T>> NttGlweBootstrappingKey<T
         let poly_length = self.size().glwe_size().poly_length();
         let two_n = poly_length * 2;
         debug_assert!(
-            output_count.is_power_of_two() && poly_length.is_multiple_of(output_count),
-            "PBSManyLUT output count must be a non-zero power-of-two divisor of N"
+            stride.is_power_of_two() && poly_length.is_multiple_of(stride),
+            "PBSManyLUT stride must be a non-zero power-of-two divisor of N"
         );
         debug_assert_eq!(
             (
@@ -221,10 +221,10 @@ impl<T: FheUint, LM: PrepareModulusSwitch<ValueT = T>> NttGlweBootstrappingKey<T
         );
 
         let input_modulus = self.input_modulus();
-        let quantizer = if output_count == 1 {
+        let quantizer = if stride == 1 {
             self.input_quantizer()
         } else {
-            RotationQuantizer::new(input_modulus, two_n, output_count)
+            RotationQuantizer::new(input_modulus, two_n, stride)
         };
         let exponent_of = |value| quantizer.exponent(value);
         let initial_exponent = exponent_of(input.b()).wrapping_neg() & (two_n - 1);

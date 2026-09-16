@@ -191,7 +191,7 @@ fn functional_bootstrapping_key_blind_rotates() {
                             table,
                             &mut blind_rotation_context,
                         ),
-                        _ => key.ntt_blind_rotate_many_lookup_table_to(
+                        _ => key.ntt_blind_rotate_interleaved_lookup_table_to(
                             &input,
                             &lookup_table,
                             1,
@@ -230,7 +230,7 @@ fn functional_bootstrapping_key_blind_rotates() {
         assert!(
             std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 if let Some(count) = count {
-                    key.ntt_blind_rotate_many_lookup_table_to(
+                    key.ntt_blind_rotate_interleaved_lookup_table_to(
                         &input,
                         &lookup,
                         count,

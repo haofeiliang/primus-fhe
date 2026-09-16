@@ -51,7 +51,7 @@ fn padded_client_domain_matches_odd_and_even_lut_domains() {
         );
         assert_eq!(
             parameters
-                .compile_many_lookup_table_slice(usize::MAX, &[])
+                .compile_interleaved_lookup_table_slice(usize::MAX, &[])
                 .unwrap_err(),
             LookupTableError::ManyTableLengthOverflow
         );

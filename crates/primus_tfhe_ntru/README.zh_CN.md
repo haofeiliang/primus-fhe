@@ -33,8 +33,8 @@ Context 提供 `encryptor`、`decryptor`；直接构造使用 `NtruEncryptor::tr
 `*_to(message, output, rng)`。两类密钥都可复用输出存储，消息或维数错误先于采样和写入。
 普通 family/context LUT 使用 padded unsigned 输入；centered 模消息有独立的编码契约。
 
-ManyLUT 编译同一个输入的多个函数。后端 message/carry 示例将输入拆为 `x % 4` 与
-`x / 4`，不代表已经实现完整的加密整数类型或算术系统。
+ManyLUT 编译同一个输入的多个函数。后端示例计算 `x % 4`、`x / 4` 和 `x % 2`，
+不代表已经实现完整的加密整数类型或算术系统。
 
 ## CBS 与示例
 

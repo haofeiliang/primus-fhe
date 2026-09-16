@@ -62,7 +62,9 @@ fn pbs(c: &mut Criterion) {
     // BR/KS against separate PBS calls; all tables, keys and outputs are reused.
     for count in [2, 4] {
         let value = |input: usize, output| ((input + output) % 4) as u32;
-        let many = context.compile_many_lookup_table_fn(count, value).unwrap();
+        let many = context
+            .compile_interleaved_lookup_table_fn(count, value)
+            .unwrap();
         let singles: Vec<_> = (0..count)
             .map(|output| {
                 context
@@ -75,7 +77,8 @@ fn pbs(c: &mut Criterion) {
             |b| {
                 b.iter(|| {
                     black_box(
-                        evaluator.apply_many_lookup_table(black_box(&input), black_box(&many)),
+                        evaluator
+                            .apply_interleaved_lookup_table(black_box(&input), black_box(&many)),
                     )
                 });
             },
@@ -88,7 +91,7 @@ fn pbs(c: &mut Criterion) {
                 |b| {
                     b.iter(|| {
                         if shared {
-                            evaluator.apply_many_lookup_table_to(
+                            evaluator.apply_interleaved_lookup_table_to(
                                 black_box(&input),
                                 black_box(&many),
                                 black_box(&mut outputs),

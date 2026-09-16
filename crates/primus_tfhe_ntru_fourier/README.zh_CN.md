@@ -21,12 +21,14 @@ BR 后的 NTRU 密钥切换将 f_acc 转为 f_client。
 cargo run -p primus_tfhe_ntru_fourier --example ntru_fourier_basic
 ```
 
-这里的 message/carry 是同一个输入的两个函数（`x % 4`、`x / 4`），不代表完整的加密整数系统。
+示例从一个输入计算 message、carry 和 parity（`x % 4`、`x / 4`、`x % 2`），
+三个输出占用四个交错槽，不代表完整的加密整数系统。
 
-公开 PBS 检查 LUT 的输入域、编码模数、环长度及全部输出维数。原始 LWE 输入必须
+公开 PBS 检查 LUT 的编码模数、环长度及全部输出维数。原始 LWE 输入必须
 使用 context 的 external key、规范 residue 和 unsigned rounded 编码。
 可独立编程的输入为 `0..ceil(t/2)`，另一半按负循环关系扩展。ManyLUT 输出数量
-必须为 2 的幂，且满足 `ceil(t/2) <= N/count`；较低旋转分辨率会收窄输入噪声余量。
+`k` 必须为正，步长 `s = next_power_of_two(k)` 须满足 `ceil(t/2) <= N/s`；
+步长越大，旋转分辨率越低，输入噪声余量越小。
 Boolean/CBS 输出尺度允许区别于普通明文编码。
 
 ## 公钥客户端
@@ -59,8 +61,8 @@ CBS 保留 BR 的环 accumulator，不执行普通 PBS 后续的环密钥切换�
 前缀展开替代所需的系数投影。
 
 CBS 接收 output basis 和完整的 trace/scheme-switch 加密参数；BR 参数和输出环
-由 TFHE context 提供。仅内部 ManyLUT 将输出层数补齐到 2 的幂，NGSW 保留请求的
-层数。Scheme-switch key 绑定完整的 output basis。
+由 TFHE context 提供。内部交错 LUT 保留请求的层数，仅以零槽补齐步长；
+投影与 NGSW 都保留请求的层数。Scheme-switch key 绑定完整的 output basis。
 
 运行 [CBS → CMUX 示例](examples/ntru_fourier_circuit_bootstrap.rs)：
 
@@ -95,7 +97,7 @@ cargo bench -p primus_tfhe_ntru_fourier --bench circuit_bootstrap
 `pbs` 测量完整 PBS 和 2/4 输出的 ManyLUT，区分分配返回和复用输出的用例。
 Fourier 用例同时覆盖 RustFFT 和 TfheFFT。
 
-CBS 测试覆盖 LWE bit 到 NGSW、再消费为 CMUX 控制的完整路径、输出层数补齐、basis
+CBS 测试覆盖 LWE bit 到 NGSW、再消费为 CMUX 控制的完整路径、非二次幂层数、basis
 和容量错误，以及 evaluator 从首次调用起零在线分配。`circuit_bootstrap` 复用输出
 和工作区，覆盖 N=1024/4096、输入维数 N/16、BR/trace/SS 的 B=2^3/2^10，以及
 B=2^8、两层的输出。基准报告新增 CBS key 和 evaluator 实际请求且仍持有的堆字节数，

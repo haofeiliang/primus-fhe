@@ -1,6 +1,6 @@
 use primus_integer::FheUint;
 use primus_ntt::NttTable;
-use primus_tfhe::{LookupTable, ManyLookupTable};
+use primus_tfhe::{InterleavedLookupTable, LookupTable};
 use primus_tfhe_glwe::GlweClientKey as ClientKey;
 
 use crate::{
@@ -198,32 +198,33 @@ where
 
     /// Compiles several functions on `0..ceil(t/2)` into one PBSManyLUT accumulator.
     ///
-    /// The output count must be a non-zero power of two with
-    /// `ceil(t/2) <= N / output_count`. Function arguments are `(input, output_index)`.
-    /// See [`ManyLookupTable`] for the rotation-resolution tradeoff.
+    /// The output count must be nonzero, with
+    /// `ceil(t/2) <= N / next_power_of_two(output_count)`. Function arguments are
+    /// `(input, output_index)`; padding slots are filled with zero.
+    /// See [`InterleavedLookupTable`] for the rotation-resolution tradeoff.
     #[inline]
-    pub fn compile_many_lookup_table_fn<F>(
+    pub fn compile_interleaved_lookup_table_fn<F>(
         &self,
         output_count: usize,
         function: F,
-    ) -> Result<ManyLookupTable<T>, LookupTableError>
+    ) -> Result<InterleavedLookupTable<T>, LookupTableError>
     where
         F: Fn(usize, usize) -> T,
     {
         self.parameters
-            .compile_many_lookup_table_fn(output_count, function)
+            .compile_interleaved_lookup_table_fn(output_count, function)
     }
 
     /// Compiles input-major multi-output values into one PBSManyLUT
     /// accumulator, ordered `[input][output_index]` for `0..ceil(t/2)` inputs.
     #[inline]
-    pub fn compile_many_lookup_table_slice(
+    pub fn compile_interleaved_lookup_table_slice(
         &self,
         output_count: usize,
         outputs: &[T],
-    ) -> Result<ManyLookupTable<T>, LookupTableError> {
+    ) -> Result<InterleavedLookupTable<T>, LookupTableError> {
         self.parameters
-            .compile_many_lookup_table_slice(output_count, outputs)
+            .compile_interleaved_lookup_table_slice(output_count, outputs)
     }
 
     /// Decomposes this context into its parameters and NTT table.

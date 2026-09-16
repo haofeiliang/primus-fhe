@@ -3,7 +3,9 @@ use primus_integer::FheUint;
 use primus_lwe::LweCiphertext;
 use primus_ntt::NttTable;
 use primus_poly::Polynomial;
-use primus_tfhe::{LookupTable, ManyLookupTable, ProgrammableBootstrap, ProgrammableBootstrapMany};
+use primus_tfhe::{
+    InterleavedLookupTable, LookupTable, ProgrammableBootstrap, ProgrammableBootstrapInterleaved,
+};
 use primus_tfhe_glwe::GlwePbsOrder as PbsOrder;
 
 use crate::{NttGlweBlindRotationContext, ServerKey, TfheContext, error::TfheEvaluationError};
@@ -40,19 +42,19 @@ where
     }
 }
 
-impl<T, Table> ProgrammableBootstrapMany<T> for Evaluator<'_, T, Table>
+impl<T, Table> ProgrammableBootstrapInterleaved<T> for Evaluator<'_, T, Table>
 where
     T: FheUint,
     Table: NttTable<ValueT = T>,
 {
     #[inline]
-    fn apply_many_lookup_table_to(
+    fn apply_interleaved_lookup_table_to(
         &mut self,
         input: &LweCiphertext<T>,
-        lookup_table: &ManyLookupTable<T>,
+        lookup_table: &InterleavedLookupTable<T>,
         outputs: &mut [LweCiphertext<T>],
     ) {
-        Evaluator::apply_many_lookup_table_to(self, input, lookup_table, outputs)
+        Evaluator::apply_interleaved_lookup_table_to(self, input, lookup_table, outputs)
     }
 }
 
@@ -157,23 +159,23 @@ where
     ///
     /// Shares one blind rotation and one ring key switch.
     ///
-    /// Inherits [`ProgrammableBootstrapMany::apply_many_lookup_table_to`]'s input encoding,
+    /// Inherits [`ProgrammableBootstrapInterleaved::apply_interleaved_lookup_table_to`]'s input encoding,
     /// key, noise and output-scale requirements.
     ///
     /// # Panics
     ///
     /// Panics on an incompatible input dimension or LUT encoding/moduli/length.
     #[must_use]
-    pub fn apply_many_lookup_table(
+    pub fn apply_interleaved_lookup_table(
         &mut self,
         input: &LweCiphertext<T>,
-        lookup_table: &ManyLookupTable<T>,
+        lookup_table: &InterleavedLookupTable<T>,
     ) -> Vec<LweCiphertext<T>> {
         let dimension = self.context.parameters().ciphertext_lwe_dimension();
         let mut outputs = (0..lookup_table.output_count())
             .map(|_| LweCiphertext::zero(dimension))
             .collect::<Vec<_>>();
-        self.apply_many_lookup_table_to(input, lookup_table, &mut outputs);
+        self.apply_interleaved_lookup_table_to(input, lookup_table, &mut outputs);
         outputs
     }
 
@@ -181,17 +183,17 @@ where
     ///
     /// Shares one blind rotation and one ring key switch.
     ///
-    /// Inherits [`ProgrammableBootstrapMany::apply_many_lookup_table_to`]'s input encoding,
+    /// Inherits [`ProgrammableBootstrapInterleaved::apply_interleaved_lookup_table_to`]'s input encoding,
     /// key, noise and output-scale requirements.
     ///
     /// # Panics
     ///
     /// Panics before output writes on incompatible LUT encoding/moduli/length
     /// or ciphertext dimensions. A wrong output count is also rejected.
-    pub fn apply_many_lookup_table_to(
+    pub fn apply_interleaved_lookup_table_to(
         &mut self,
         input: &LweCiphertext<T>,
-        lookup_table: &ManyLookupTable<T>,
+        lookup_table: &InterleavedLookupTable<T>,
         outputs: &mut [LweCiphertext<T>],
     ) {
         let parameters = self.context.parameters();
@@ -223,11 +225,7 @@ where
         );
 
         let glwe = parameters.glwe();
-        let result = self.evaluate_to_glwe(
-            input,
-            lookup_table.polynomial(),
-            lookup_table.output_count(),
-        );
+        let result = self.evaluate_to_glwe(input, lookup_table.polynomial(), lookup_table.stride());
         match parameters.pbs_order() {
             PbsOrder::BootstrapKeyswitch => {
                 for (index, output) in outputs.iter_mut().enumerate() {
@@ -253,14 +251,14 @@ where
     }
 
     /// Returns switched ring storage for BootstrapKeyswitch, main ring storage otherwise.
-    /// The caller has checked input/LUT compatibility and the output count.
-    /// A window of one gives ordinary modulus switching.
+    /// The caller has checked input/LUT compatibility; stride comes from the compiled table.
+    /// A stride of one gives ordinary modulus switching.
     #[inline]
     fn evaluate_to_glwe(
         &mut self,
         input: &LweCiphertext<T>,
         lookup_table: &Polynomial<Vec<T>>,
-        output_count: usize,
+        stride: usize,
     ) -> &GlweCiphertext<Vec<T>> {
         let parameters = self.context.parameters();
         let small_lwe = match parameters.pbs_order() {
@@ -280,10 +278,10 @@ where
         };
         self.server_key
             .bootstrapping_key()
-            .ntt_blind_rotate_many_lookup_table_kernel_to(
+            .ntt_blind_rotate_interleaved_lookup_table_kernel_to(
                 small_lwe,
                 lookup_table,
-                output_count,
+                stride,
                 &mut self.main_glwe,
                 parameters.glwe().cipher_modulus(),
                 self.context.table(),

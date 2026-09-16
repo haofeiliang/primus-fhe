@@ -25,7 +25,7 @@ pub enum CircuitBootstrapParameterError {
         /// The incompatible parameter role.
         role: &'static str,
     },
-    /// The padded output levels leave too few programmable input slots.
+    /// The interleaving stride leaves too few programmable input slots.
     #[error("circuit-bootstrap output levels do not fit the ManyLUT accumulator")]
     OutputDecompositionTooLarge,
     /// Trace normalization requires an odd field modulus with Shoup headroom.
@@ -49,7 +49,6 @@ pub struct CircuitBootstrapParameters<T: FheUint> {
     trace: NlevParameters<T, BarrettModulus<T>>,
     scheme_switch: NlevParameters<T, BarrettModulus<T>>,
     input_plain_modulus: T,
-    many_lut_output_count: usize,
 }
 
 impl<T: FheUint> CircuitBootstrapParameters<T> {
@@ -78,11 +77,11 @@ impl<T: FheUint> CircuitBootstrapParameters<T> {
         if q & T::ONE != T::ONE || q >= T::ONE << (T::BITS - 1) {
             return Err(CircuitBootstrapParameterError::UnsupportedTraceModulus);
         }
-        let many_lut_output_count = output_basis.decompose_length().next_power_of_two();
+        let lookup_table_stride = output_basis.decompose_length().next_power_of_two();
         let domain =
             primus_tfhe::lookup_table_domain_len(tfhe.plain_modulus_value(), tfhe.poly_length())
                 .map_err(|_| CircuitBootstrapParameterError::OutputDecompositionTooLarge)?;
-        if many_lut_output_count > tfhe.poly_length() / domain {
+        if lookup_table_stride > tfhe.poly_length() / domain {
             return Err(CircuitBootstrapParameterError::OutputDecompositionTooLarge);
         }
         let poly_length = tfhe.poly_length();
@@ -95,7 +94,6 @@ impl<T: FheUint> CircuitBootstrapParameters<T> {
             trace,
             scheme_switch,
             input_plain_modulus: tfhe.plain_modulus_value(),
-            many_lut_output_count,
         })
     }
 
@@ -132,10 +130,10 @@ impl<T: FheUint> CircuitBootstrapParameters<T> {
         &self.scheme_switch
     }
 
-    /// Returns the padded power-of-two output count for the internal ManyLUT.
+    /// Returns the interleaving stride for the output gadget levels.
     #[must_use]
-    pub fn many_lut_output_count(&self) -> usize {
-        self.many_lut_output_count
+    pub fn lookup_table_stride(&self) -> usize {
+        self.output_basis.decompose_length().next_power_of_two()
     }
 
     pub(crate) fn is_compatible(&self, tfhe: &TfheParameters<T>) -> bool {

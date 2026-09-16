@@ -9,19 +9,19 @@ use std::hint::black_box;
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_reduce::RingContext;
-use primus_tfhe::{compile_encoded_lookup_table, compile_encoded_many_lookup_table};
+use primus_tfhe::{InterleavedLookupTable, LookupTable};
 
 fn compile<M: RingContext<u32>>(c: &mut Criterion, name: &str, modulus: M) {
     const N: usize = 1024;
     let mut group = c.benchmark_group(format!("lut_compile/u32/{name}/n{N}"));
-    for (t, count) in [(4u32, 4), (16, 1), (16, 4), (16, 16), (255, 4)] {
+    for (t, count) in [(4u32, 4), (16, 1), (16, 3), (16, 4), (16, 16), (255, 4)] {
         let domain = t.div_ceil(2) as usize;
         let id = BenchmarkId::new(format!("t{t}"), format!("k{count}"));
         if count == 1 {
             group.bench_function(id, |b| {
                 b.iter(|| {
                     black_box(
-                        compile_encoded_lookup_table(
+                        LookupTable::try_new(
                             black_box(domain),
                             black_box(N),
                             black_box(t),
@@ -37,7 +37,7 @@ fn compile<M: RingContext<u32>>(c: &mut Criterion, name: &str, modulus: M) {
             group.bench_function(id, |b| {
                 b.iter(|| {
                     black_box(
-                        compile_encoded_many_lookup_table(
+                        InterleavedLookupTable::try_new(
                             black_box(domain),
                             black_box(N),
                             black_box(count),

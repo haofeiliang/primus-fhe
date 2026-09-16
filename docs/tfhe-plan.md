@@ -68,6 +68,7 @@
 
 - 分开有效输出数 `k` 与交错步长 `s`；支持 `k=3, s=4`，提取 `0..k`，由编译器补齐其余槽。
 - 收敛普通/交错 LUT 命名及必要元数据，集中兼容性检查。
+- 将 `compile_encoded_lookup_table` / `compile_encoded_many_lookup_table` 迁为对应 LUT 类型的 `try_new` 关联构造器；保留已编码输出与 `Result` 契约，迁移调用方并删除自由函数。
 - 同步两族 LUT 包装、四个 context/evaluator/BR、三个 CBS；CBS 以有效数量构造 LUT，以实际布局绑定 key、量化和提取。
 - 保持 Boolean raw 尺度、普通/CBS 输出的独立语义；更新多输出 trait 中只适用于交错算法的执行承诺。
 - 若移除 family wrapper，明确谁接收其检查/编码职责；全 workspace 迁移后删除旧 API，不留无用途兼容层。

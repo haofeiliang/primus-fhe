@@ -1,10 +1,10 @@
 //! Fourier backend for GLWE-based TFHE.
 //!
-//! [`Evaluator::apply_many_lookup_table_to`] evaluates interleaved outputs with
+//! [`Evaluator::apply_interleaved_lookup_table_to`] evaluates interleaved outputs with
 //! one blind rotation and ring key switch, reusing its existing workspace.
-//! Compile with [`TfheContext::compile_many_lookup_table_fn`] or the input-major
-//! slice variant. The output count is a non-zero power of two and reduces the
-//! rotation resolution; [`ManyLookupTable`] describes the layout and noise tradeoff.
+//! Compile with [`TfheContext::compile_interleaved_lookup_table_fn`] or the input-major
+//! slice variant. The next power of two of the output count determines the
+//! rotation stride; [`InterleavedLookupTable`] describes the layout and noise tradeoff.
 //! Public PBS checks LUT encoding/moduli/length and all output dimensions before
 //! writing. Raw input key, encoding and noise remain caller requirements.
 //!
@@ -37,7 +37,7 @@ pub use bootstrapping_key::FourierGlweBootstrappingKey;
 pub use context::TfheContext;
 pub use evaluator::Evaluator;
 pub use key::{KeyGenerator, ServerKey};
-pub use primus_tfhe::{LookupTable, LweCiphertext, LweSecretKeyRef, ManyLookupTable};
+pub use primus_tfhe::{InterleavedLookupTable, LookupTable, LweCiphertext, LweSecretKeyRef};
 pub use primus_tfhe_glwe::{GlweClientKey as ClientKey, GlwePbsOrder as PbsOrder};
 
 pub use boolean::{

@@ -2,7 +2,7 @@
 
 本文保存设计依据、职责边界和待决问题；实施任务见 [实施步骤](tfhe-plan.md)，稀疏方案见 [稀疏 PBS](tfhe-sparse-pbs.md)。当前进度只记录在 [HANDOFF](../HANDOFF.md)，不在多份文件中维护状态。
 
-分析基线为 `81eb3f4`（2026-09-15）。旧 S0–S9 已结束，本轮使用 P1–P4 编号。这里的类型名称是设计建议，尚不是已实现的 API。允许有价值的破坏性 API 变更，并须完整迁移调用方。
+分析基线为 `81eb3f4`（2026-09-15）。旧 S0–S9 已结束，本轮使用 P1–P4 编号。已落实的 API 决定见对应步骤章节；后续算法的名称仍为设计建议。允许有价值的破坏性 API 变更，并须完整迁移调用方。
 
 ## 设计目标与范围
 
@@ -30,7 +30,7 @@
 
 源码入口：
 
-- [共享 LUT](../crates/primus_tfhe/src/lookup_table.rs)：类型、域检查和编译。
+- [共享 LUT](../crates/primus_tfhe/src/lookup_table.rs)：类型、构造器和编码元数据；[编译内核](../crates/primus_tfhe/src/lookup_table/compile.rs) 集中几何校验与填充，错误定义位于 [error.rs](../crates/primus_tfhe/src/error.rs)。
 - [旋转量化](../crates/primus_tfhe/src/backend_support.rs)：普通与 windowed modulus switch。
 - [PBS trait](../crates/primus_tfhe/src/bootstrap.rs)：公共功能契约。
 - [GLWE NTT CBS](../crates/primus_tfhe_glwe_ntt/src/circuit_bootstrap/evaluator.rs)：有效输出补齐与投影的实际调用方。
@@ -82,19 +82,19 @@ MVB 还存在基于 BR 展开的路线。因此编译产物应由选定算法决
 
 - 集中编译配置和几何扫描，复用 `RoundedCodec`；没有跨 LUT 复用需求时，不永久保存中心数组。
 - 单输出可复用步长为 1 的编译核心。按输入行求值并直接填最终布局，不再逐列分配多项式；必要的短行 scratch 只分配一次。
-- 普通 LUT 和交错 LUT 保存各自必要的域、模数和布局信息；`InterleavedLookupTable` 是建议名称。
+- 普通 `LookupTable` 和交错 `InterleavedLookupTable` 保存各自必要的域、模数和布局信息。
 - MVB 程序与加密 LUT 使用各自实际表示，不在普通 LUT 中堆积可选字段。
 - 小型普通 PBS trait 可以保留。多输出 trait 描述结果和调用契约，不将“一次 BR、一次环 KS”承诺给所有未来算法。
 - 通用接口的扩展由第二个真实实现/调用方驱动；不先设计万能 backend trait，也不预设必须增加编译器对象、缓存或 `*_to` API。
 - 保留后端可用的环密文阶段，为 CBS、MVB 和未来加密 LUT 组合服务；不强行统一 GLWE/NTRU 的初始化与后处理。
 
-## 开工前需收敛的问题
+## 设计决定与待决问题
 
 | 问题 | 收敛位置 |
 | --- | --- |
-| LUT 的具体字段与检查边界 | P1.1 的语义决定见下文；P1.3 实现并完整迁移调用方 |
-| 类型/方法最终命名、family 包装是否还有独立职责 | P1.3，完整迁移后不留无用途兼容层 |
-| 任意 `k` 与 stride 补齐 | P1.3 完成，不再作为 P2 的重复任务 |
+| LUT 的具体字段与检查边界 | 见 P1.1 元数据决定与 P1.3 API 决定 |
+| 类型/方法命名、family 包装职责 | 见 P1.3；保留实际检查/编码职责，不留旧 API 兼容层 |
+| 任意 `k` 与 stride 补齐 | 见 P1.3，不再作为 P2 的重复任务 |
 | 奇数全域在实际参数下的中心分离与误差余量 | P2.3，条件不足的参数明确拒绝 |
 | PBC 桶数、复制数、失败重试和安全/噪声条件 | P3.1，见专项文档；不能用经验成功率代替论证 |
 | 首个 MVB 算法、适用模数和输出编码 | P4.1，先确认因子分解与误差，再定编译产物 |
@@ -102,7 +102,7 @@ MVB 还存在基于 BR 展开的路线。因此编译产物应由选定算法决
 
 ## P1.1 的精确契约与元数据决定
 
-几何公式及边界已归位到 [共享 README](../crates/primus_tfhe/README.zh_CN.md)、[编译模块](../crates/primus_tfhe/src/lookup_table.rs) 与 [量化 helper](../crates/primus_tfhe/src/backend_support.rs)。编译时中心经历编码和模切两次舍入；例如 `N=16, s=1, t=3, q_in=5, m=1` 得到中心 13，理想化的一次舍入会得到 11，且两者填充边界不同。
+几何公式及边界已归位到 [共享 README](../crates/primus_tfhe/README.zh_CN.md)、[编译模块](../crates/primus_tfhe/src/lookup_table/compile.rs) 与 [量化 helper](../crates/primus_tfhe/src/backend_support.rs)。编译时中心经历编码和模切两次舍入；例如 `N=16, s=1, t=3, q_in=5, m=1` 得到中心 13，理想化的一次舍入会得到 11，且两者填充边界不同。
 
 当前执行采用 `R_s(x) = s*R(x,q_in,2N/s)`，先缩小量化域再乘步长；各系数独立量化后，总旋转为 `-R_s(b) + ΣR_s(a_i)*secret_i`。当前合法 `s <= N`，虚拟旋转域至少有两个位置；不要求 helper 支持没有调用方的单位置退化域。
 
@@ -110,7 +110,7 @@ MVB 还存在基于 BR 展开的路线。因此编译产物应由选定算法决
 | --- | --- |
 | `N` | 从多项式长度得到，不重复保存可失配的长度字段 |
 | `t, q_in, q_acc` | 继续保存，分别绑定输入编码、旋转量化与系数算术 |
-| `D` | 应保存真实编程前缀长度，不能仅用 `ceil(t/2)` 推断；用于公开范围契约及组合，不声称能从 raw LWE 检查真实消息 |
+| `D` | 保存真实编程前缀长度，由 `input_domain_len()` 返回，不能仅用 `ceil(t/2)` 推断；用于公开范围契约及组合，不声称能从 raw LWE 检查真实消息 |
 | `k, s` | 保存有效输出数 `k`；首版固定 `s=next_power_of_two(k)`，可推导步长，不强制保存两份冗余数值；两者数学角色必须分开 |
 | 中心、区间与临时行 | 构造期计算即可，不保存在 LUT 中，不引入持久中心数组 |
 | 输出尺度、实际秘密、变换身份 | raw 输出尺度由调用工作流说明；不作为通用 LUT 兼容性检查的一部分。秘密与变换身份由后端/调用方承担 |
@@ -275,6 +275,16 @@ taskset -c 0 cargo bench -p primus_tfhe --bench lookup_table -- --sample-size 10
 复测沿用上述构造命令，重整前使用 `--save-baseline p1_2_flow_before`，
 重整后使用 `--baseline p1_2_flow_before`。原始样本另存于
 `target/criterion/**/{p1_2_flow_before,p1_2_flow_after}/`。
+
+## P1.3 布局 API 决定
+
+- 普通表为 `LookupTable`，交错表为 `InterleavedLookupTable`；raw 编译统一为各自的 `try_new`，接收已编码输出并返回 `Result`。旧自由函数与 `ManyLookupTable` 名称删除，不保留兼容层。
+- 两类表保存真实 `D`；交错表保存有效数量 `k`，通过 `stride()` 推导 `s=next_power_of_two(k)`。编译器只对 `0..k` 调用回调并补零槽，输入优先切片长度为 `D*k`，BR 接收 `s`，提取和输出切片使用 `k`。
+- Family/context 的 `compile_lookup_table_*` 与 `compile_interleaved_lookup_table_*` 保留：它们从参数取得默认域，检查明文输出/切片长度并编码。直接使用构造器的 Boolean/CBS 保留各自 raw 输出尺度。
+- `ProgrammableBootstrapInterleaved` 只描述交错表的多输出契约；“一次 BR、一次环 KS”属于当前四后端的具体实现。未来 MVB 程序按实际表示另定接口，不借交错表名称泛化。
+- 三路 CBS 以 gadget 层数构造 LUT，补齐由共享编译器负责；参数以 `lookup_table_stride()` 描述物理步长。投影与 GGSW/NGSW 保持真实层数，GLWE key 仍绑定输出布局，NTRU key 仍绑定完整输出 basis。
+
+公开契约见共享及后端 rustdoc/README。构造基准新增 `t16/k3`，旧 case 名称与历史 CSV 保留；最终同配置计时属于 P1.4。
 
 ## 文献入口与证据边界
 

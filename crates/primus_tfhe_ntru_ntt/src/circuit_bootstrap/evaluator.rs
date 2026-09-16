@@ -5,7 +5,7 @@ use primus_integer::FheUint;
 use primus_ntru::{NlevCiphertext, NttNgswCiphertext, NttNtruTraceContext};
 use primus_ntt::NttTable;
 use primus_reduce::ReduceMul;
-use primus_tfhe::{LookupTableError, LweCiphertext, ManyLookupTable};
+use primus_tfhe::{InterleavedLookupTable, LookupTableError, LweCiphertext};
 
 use crate::{
     CircuitBootstrapKey, CircuitBootstrapParameters, ServerKey, TfheContext,
@@ -40,7 +40,7 @@ where
     server_key: &'a ServerKey<T>,
     parameters: &'a CircuitBootstrapParameters<T>,
     circuit_key: &'a CircuitBootstrapKey<T>,
-    lookup_table: ManyLookupTable<T>,
+    lookup_table: InterleavedLookupTable<T>,
     projection_indices: Vec<usize>,
     blind_rotation: BlindRotationWorkspace<T>,
     trace: NttNtruTraceContext<T>,
@@ -77,17 +77,15 @@ where
         let modulus = tfhe.bootstrapping().ntru().cipher_modulus();
         let domain_len = primus_tfhe::lookup_table_domain_len(tfhe.plain_modulus_value(), n)?;
         let scalars: Vec<T> = parameters.output_basis().scalar_iter().collect();
-        let lookup_table = primus_tfhe::compile_encoded_many_lookup_table(
+        let lookup_table = InterleavedLookupTable::try_new(
             domain_len,
             n,
-            parameters.many_lut_output_count(),
+            parameters.output_basis().decompose_length(),
             tfhe.plain_modulus_value(),
             tfhe.external_lwe().cipher_modulus(),
             modulus,
             |input, index| {
-                let Some(&scalar) = scalars.get(index) else {
-                    return Ok(T::ZERO);
-                };
+                let scalar = scalars[index];
                 let input =
                     T::try_from(input).map_err(|_| LookupTableError::PlaintextModulusTooLarge)?;
                 Ok(modulus.reduce_mul(scalar, input))
@@ -148,7 +146,7 @@ where
             self.server_key,
             input,
             self.lookup_table.polynomial(),
-            self.lookup_table.output_count(),
+            self.lookup_table.stride(),
             &mut self.blind_rotation,
             tfhe,
             self.context.table(),

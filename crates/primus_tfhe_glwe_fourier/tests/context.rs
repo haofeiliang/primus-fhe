@@ -211,7 +211,7 @@ fn public_blind_rotation_rejects_mismatches_before_output_writes() {
         let before = output.as_ref().to_vec();
         let rejected = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             if let Some(count) = count {
-                key.fourier_blind_rotate_many_lookup_table_to(
+                key.fourier_blind_rotate_interleaved_lookup_table_to(
                     &input,
                     &lookup,
                     count,

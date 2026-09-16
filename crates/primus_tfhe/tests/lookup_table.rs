@@ -8,7 +8,7 @@ use primus_integer::FheUint;
 use primus_modulus::{BarrettModulus, NativeModulus, PowOf2Modulus, UintModulus};
 use primus_reduce::RingContext;
 
-use primus_tfhe::{LookupTable, LookupTableError, ManyLookupTable};
+use primus_tfhe::{InterleavedLookupTable, LookupTable, LookupTableError};
 
 macro_rules! with_modulus {
     ($q:expr, $modulus:ident, $body:block) => {
@@ -33,11 +33,7 @@ macro_rules! with_modulus {
     };
 }
 
-fn compile_encoded_lookup_table<
-    T: FheUint,
-    M: RingContext<T>,
-    F: Fn(usize) -> Result<T, LookupTableError>,
->(
+fn compile_single<T: FheUint, M: RingContext<T>, F: Fn(usize) -> Result<T, LookupTableError>>(
     d: usize,
     n: usize,
     t: T,
@@ -46,10 +42,10 @@ fn compile_encoded_lookup_table<
     output: F,
 ) -> Result<LookupTable<T>, LookupTableError> {
     with_modulus!(q, modulus, {
-        primus_tfhe::compile_encoded_lookup_table(d, n, t, modulus, acc, output)
+        LookupTable::try_new(d, n, t, modulus, acc, output)
     })
 }
-fn compile_encoded_many_lookup_table<
+fn compile_interleaved<
     T: FheUint,
     M: RingContext<T>,
     F: Fn(usize, usize) -> Result<T, LookupTableError>,
@@ -61,9 +57,9 @@ fn compile_encoded_many_lookup_table<
     q: Option<T>,
     acc: M,
     output: F,
-) -> Result<ManyLookupTable<T>, LookupTableError> {
+) -> Result<InterleavedLookupTable<T>, LookupTableError> {
     with_modulus!(q, modulus, {
-        primus_tfhe::compile_encoded_many_lookup_table(d, n, k, t, modulus, acc, output)
+        InterleavedLookupTable::try_new(d, n, k, t, modulus, acc, output)
     })
 }
 fn modulus_switch<T: FheUint>(value: T, q: Option<T>, n: usize) -> usize {
@@ -113,14 +109,14 @@ fn raw_compilation_validates_layout_encoding_and_canonical_outputs() {
         (2, 64, 1, Some(97), LookupTableError::InvalidInputEncoding),
         (2, 64, 4, Some(4), LookupTableError::InvalidInputEncoding),
     ] {
-        let error = compile_encoded_lookup_table(domain, n, t, q, modulus, |_| {
+        let error = compile_single(domain, n, t, q, modulus, |_| {
             panic!("invalid compilation arguments must precede output generation")
         })
         .unwrap_err();
         assert_eq!(error, expected);
     }
     assert_eq!(
-        compile_encoded_lookup_table(2, 64, 4, Some(97), modulus, |input| Ok(if input == 0 {
+        compile_single(2, 64, 4, Some(97), modulus, |input| Ok(if input == 0 {
             1
         } else {
             97
@@ -129,18 +125,11 @@ fn raw_compilation_validates_layout_encoding_and_canonical_outputs() {
         LookupTableError::EncodedOutputOutOfRange { input: 1 },
     );
     for (count, expected) in [
+        (0, LookupTableError::EmptyOutputs),
         (
-            0,
-            LookupTableError::OutputCountMustBePowerOfTwo { output_count: 0 },
-        ),
-        (
-            3,
-            LookupTableError::OutputCountMustBePowerOfTwo { output_count: 3 },
-        ),
-        (
-            128,
+            usize::MAX,
             LookupTableError::OutputCountTooLarge {
-                output_count: 128,
+                output_count: usize::MAX,
                 poly_length: 64,
             },
         ),
@@ -153,8 +142,7 @@ fn raw_compilation_validates_layout_encoding_and_canonical_outputs() {
         ),
     ] {
         assert_eq!(
-            compile_encoded_many_lookup_table(2, 64, count, 4, Some(97), modulus, |_, _| Ok(0))
-                .unwrap_err(),
+            compile_interleaved(2, 64, count, 4, Some(97), modulus, |_, _| Ok(0)).unwrap_err(),
             expected
         );
     }
@@ -166,15 +154,15 @@ fn compilation_allocates_only_the_result() {
         const N: usize = 1024;
         let q = modulus.explicit_value();
         let (_, single) = allocations::measure(|| {
-            compile_encoded_lookup_table(8, N, 16, q, modulus, |input| Ok(input as u32)).unwrap()
+            compile_single(8, N, 16, q, modulus, |input| Ok(input as u32)).unwrap()
         });
         assert_eq!(
             (single.count, single.allocated_bytes),
             (1, N * size_of::<u32>())
         );
-        for count in [1, 4, 16] {
+        for count in [1, 3, 4, 16] {
             let (_, many) = allocations::measure(|| {
-                compile_encoded_many_lookup_table(8, N, count, 16, q, modulus, |input, output| {
+                compile_interleaved(8, N, count, 16, q, modulus, |input, output| {
                     Ok((input + output) as u32)
                 })
                 .unwrap()
@@ -197,7 +185,7 @@ fn many_outputs_are_evaluated_once_in_input_order_and_stop_on_error() {
         Some(LookupTableError::EncodedOutputOutOfRange { input: 1 }),
     ] {
         let calls = Cell::new(0);
-        let result = compile_encoded_many_lookup_table(
+        let result = compile_interleaved(
             3,
             32,
             4,
@@ -271,7 +259,8 @@ fn check_layout<T, M>(
     let output_q = modulus
         .explicit_value()
         .map_or(1u128 << T::BITS, Into::into);
-    let virtual_n = n / count;
+    let stride = count.next_power_of_two();
+    let virtual_n = n / stride;
     let centers: Vec<_> = (0..=domain)
         .map(|input| {
             let encoded = round_ratio(input as u128 * q, t as u128);
@@ -281,6 +270,9 @@ fn check_layout<T, M>(
     assert!(centers.windows(2).all(|pair| pair[0] < pair[1]));
 
     let check = |polynomial: &[T]| {
+        for row in polynomial.chunks_exact(stride) {
+            assert!(row[count..].iter().all(|&value| value == T::ZERO));
+        }
         for position in 0..2 * virtual_n {
             // Nearest-center search, with ties going to the higher center,
             // is independent of the compiler's midpoint/fill implementation.
@@ -292,7 +284,7 @@ fn check_layout<T, M>(
                     )
                 })
                 .unwrap();
-            let rotated = rotate(polynomial, (2 * n - position * count) % (2 * n), output_q);
+            let rotated = rotate(polynomial, (2 * n - position * stride) % (2 * n), output_q);
             for (output, &actual) in rotated.iter().take(count).enumerate() {
                 // The extra center terminates the programmed prefix with
                 // -f(0); that tail is not another valid message.
@@ -316,16 +308,21 @@ fn check_layout<T, M>(
             }
         }
     };
-    let value = |input, output| Ok(T::try_from(raw_output(input, output, output_q)).unwrap());
+    let value = |input, output| {
+        assert!(output < count, "padding slots must not invoke the callback");
+        Ok(T::try_from(raw_output(input, output, output_q)).unwrap())
+    };
     let t = T::try_from(t as u128).unwrap();
-    let many =
-        compile_encoded_many_lookup_table(domain, n, count, t, input_q, modulus, value).unwrap();
+    let many = compile_interleaved(domain, n, count, t, input_q, modulus, value).unwrap();
+    assert_eq!(many.input_domain_len(), domain);
+    assert_eq!(many.output_count(), count);
+    assert_eq!(many.stride(), stride);
     assert!(many.is_compatible(n, t, input_q, modulus.explicit_value()));
     check(many.polynomial().as_ref());
     if count == 1 {
         let single =
-            compile_encoded_lookup_table(domain, n, t, input_q, modulus, |input| value(input, 0))
-                .unwrap();
+            compile_single(domain, n, t, input_q, modulus, |input| value(input, 0)).unwrap();
+        assert_eq!(single.input_domain_len(), domain);
         assert!(single.is_compatible(n, t, input_q, modulus.explicit_value()));
         check(single.polynomial().as_ref());
     }
@@ -344,7 +341,7 @@ where
     ] {
         for t in [3usize, 4, 5, 6] {
             for domain in [1, t.div_ceil(2)] {
-                for count in [1, 2, 4] {
+                for count in [1, 2, 3, 4, 5] {
                     check_layout(32, t, domain, count, q, NativeModulus::new());
                     check_layout(
                         32,
@@ -399,7 +396,7 @@ fn rotation_center_collisions_are_rejected() {
         ),
     ] {
         assert_eq!(
-            compile_encoded_lookup_table(
+            compile_single(
                 t.div_ceil(2) as usize,
                 n,
                 t,
@@ -412,7 +409,7 @@ fn rotation_center_collisions_are_rejected() {
         );
         // The same virtual layout is used by the interleaved compiler.
         assert_eq!(
-            compile_encoded_many_lookup_table(
+            compile_interleaved(
                 t.div_ceil(2) as usize,
                 n * 2,
                 2,

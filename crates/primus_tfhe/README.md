@@ -29,15 +29,18 @@ benchmark fixtures are not production security or failure-probability recommenda
 1. A family parameter set describes the external LWE and accumulator ring.
 2. A backend context binds those parameters to an NTT/FFT table and generates
    paired client/server keys.
-3. Compile `LookupTable` or `ManyLookupTable` through the family parameters or
+3. Compile `LookupTable` or `InterleavedLookupTable` through the family parameters or
    context. Create an evaluator once; its scratch is reused by online `_to` calls.
 4. Allocate caller outputs once, then encrypt and evaluate into the same storage.
 
 A unary function or slice programs `0..ceil(t/2)` with outputs in `0..t`.
 The other half follows negacyclic extension and is not independently programmable.
-For ManyLUT, `output_count` is a non-zero power of two and
-`ceil(t/2) <= N/output_count`. The callback receives `(input, output_index)` once
-per pair, in input-major order; slices use the same order.
+For an interleaved LUT (ManyLUT), the effective output count `k` is positive and
+the stride is `s = next_power_of_two(k)`, with `ceil(t/2) <= N/s`.
+The callback receives `(input, output_index)` once per effective pair, in
+input-major order; slices contain `D*k` values in the same order. With `k=3`,
+three outputs occupy four slots: the compiler zeros the fourth slot without
+calling the callback, and the evaluator returns exactly three ciphertexts.
 All outputs share one blind rotation (BR) and key switch,
 then use separate extraction. More outputs reduce rotation resolution and the
 available input-noise margin. This is one input evaluated by multiple functions,
@@ -45,8 +48,8 @@ not batching independent ciphertexts.
 
 ### Rotation layout
 
-Let `D` be the programmed prefix length, `s = output_count` (one for an ordinary
-LUT), and `M = N/s`. A message is encoded as `E(m) = round(m*q_in/t) mod q_in`,
+Let `D = input_domain_len()` be the programmed prefix length, `s = stride()`
+(one for an ordinary LUT), and `M = N/s`. A message is encoded as `E(m) = round(m*q_in/t) mod q_in`,
 then mapped to the virtual center `R(E(m), q_in, 2M)`. Here
 `R(x,q,L) = floor((x*L + floor(q/2))/q) mod L`; both rounds have upward ties.
 Native `q_in` is `2^T::BITS`. Combining these rounds can change the table.
@@ -88,9 +91,14 @@ paired keys, canonical explicit-modulus coefficients and an adequate noise margi
 LUT and dimension checks happen before output writes; they cannot verify secret
 identity. Fourier keys and evaluators must use the same FFT table instance.
 
-The minimal traits are `ProgrammableBootstrap` and `ProgrammableBootstrapMany`.
-Encoded LUT compilers and `backend_support` serve backend implementations; ordinary
-applications should use context/family compilation methods.
+The minimal traits are `ProgrammableBootstrap` and `ProgrammableBootstrapInterleaved`.
+Ordinary applications use context/family compilation methods, which validate and
+encode plaintext outputs. `LookupTable::try_new` and `InterleavedLookupTable::try_new`
+accept already encoded outputs and an explicit programmed prefix length; Boolean
+and CBS paths use these constructors for their distinct output scales.
+Compatibility checks bind polynomial length and encoding moduli; callers remain
+responsible for keeping the input within the table's programmed prefix.
+`backend_support` serves backend implementations.
 
 ## Validation
 

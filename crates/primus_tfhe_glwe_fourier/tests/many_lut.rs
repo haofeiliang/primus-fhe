@@ -2,9 +2,7 @@
 mod allocations;
 
 use primus_lwe::{LweCiphertext, LweParameters};
-use primus_tfhe::{
-    ProgrammableBootstrapMany, compile_encoded_lookup_table, compile_encoded_many_lookup_table,
-};
+use primus_tfhe::{InterleavedLookupTable, LookupTable, ProgrammableBootstrapInterleaved};
 use rand::{SeedableRng, rngs::StdRng};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 const N: usize = 256;
@@ -39,12 +37,12 @@ where
     let encryptor = context.encryptor(&client_key).unwrap();
     let decryptor = context.decryptor(&client_key).unwrap();
     let mut evaluator = context.evaluator(&server_key).unwrap();
-    for output_count in [1, 2, 4] {
+    for output_count in [1, 2, 3, 4] {
         let flat: Vec<_> = (0..8)
             .flat_map(|input| (0..output_count).map(move |output| value(input, output)))
             .collect();
         let lut = context
-            .compile_many_lookup_table_slice(output_count, &flat)
+            .compile_interleaved_lookup_table_slice(output_count, &flat)
             .unwrap();
         let mut outputs = vec![
             LweCiphertext::zero(context.parameters().ciphertext_lwe_dimension());
@@ -53,7 +51,7 @@ where
         for message in 0..8 {
             let input = encryptor.encrypt_padded(message as u32, &mut rng).unwrap();
             let (_, allocation) = allocations::measure(|| {
-                ProgrammableBootstrapMany::apply_many_lookup_table_to(
+                ProgrammableBootstrapInterleaved::apply_interleaved_lookup_table_to(
                     &mut evaluator,
                     &input,
                     &lut,
@@ -62,7 +60,10 @@ where
             });
             assert_eq!(allocation.count, 0, "PBSManyLUT must reuse its workspace");
             if message == 0 {
-                assert_eq!(outputs, evaluator.apply_many_lookup_table(&input, &lut));
+                assert_eq!(
+                    outputs,
+                    evaluator.apply_interleaved_lookup_table(&input, &lut)
+                );
             }
             for (index, output) in outputs.iter().enumerate() {
                 assert_eq!(decryptor.decrypt(output).unwrap(), value(message, index));
@@ -83,25 +84,22 @@ where
     }
 
     let input = encryptor.encrypt_padded(3u32, &mut rng).unwrap();
-    let good = context.compile_many_lookup_table_fn(2, value).unwrap();
-    let mut outputs = vec![input.clone(); 2];
+    let good = context
+        .compile_interleaved_lookup_table_fn(3, value)
+        .unwrap();
+    let mut outputs = vec![input.clone(); 3];
     // Isolate each piece of LUT metadata, including equal-length wrong-domain tables.
     let mut mismatched_tables = Vec::new();
     for (n, t) in [(N / 2, 16), (N, 8)] {
         mismatched_tables.push((
-            compile_encoded_lookup_table(
-                2,
-                n,
-                t,
-                NativeModulus::new(),
-                NativeModulus::new(),
-                |_| Ok(0),
-            )
+            LookupTable::try_new(2, n, t, NativeModulus::new(), NativeModulus::new(), |_| {
+                Ok(0)
+            })
             .unwrap(),
-            compile_encoded_many_lookup_table(
+            InterleavedLookupTable::try_new(
                 2,
                 n,
-                2,
+                3,
                 t,
                 NativeModulus::new(),
                 NativeModulus::new(),
@@ -111,7 +109,7 @@ where
         ));
     }
     mismatched_tables.push((
-        compile_encoded_lookup_table(
+        LookupTable::try_new(
             2,
             N,
             16,
@@ -120,10 +118,10 @@ where
             |_| Ok(0),
         )
         .unwrap(),
-        compile_encoded_many_lookup_table(
+        InterleavedLookupTable::try_new(
             2,
             N,
-            2,
+            3,
             16,
             BarrettModulus::new(132_120_577),
             NativeModulus::new(),
@@ -132,7 +130,7 @@ where
         .unwrap(),
     ));
     mismatched_tables.push((
-        compile_encoded_lookup_table(
+        LookupTable::try_new(
             2,
             N,
             16,
@@ -141,10 +139,10 @@ where
             |_| Ok(0),
         )
         .unwrap(),
-        compile_encoded_many_lookup_table(
+        InterleavedLookupTable::try_new(
             2,
             N,
-            2,
+            3,
             16,
             NativeModulus::new(),
             BarrettModulus::new(132_120_577),
@@ -163,7 +161,7 @@ where
         assert_eq!(outputs, before);
         assert!(
             catch_unwind(AssertUnwindSafe(|| {
-                evaluator.apply_many_lookup_table_to(&input, &many, &mut outputs);
+                evaluator.apply_interleaved_lookup_table_to(&input, &many, &mut outputs);
             }))
             .is_err()
         );
@@ -190,15 +188,16 @@ where
         );
         assert_eq!(output, before);
     }
+    // Four physical slots still require exactly three output ciphertexts.
     for case in 0..3 {
-        let mut outputs = vec![input.clone(); if case == 0 { 1 } else { 2 }];
+        let mut outputs = vec![input.clone(); if case == 0 { 4 } else { 3 }];
         if case == 1 {
             outputs[1] = wrong.clone();
         }
         let before = outputs.clone();
         assert!(
             catch_unwind(AssertUnwindSafe(|| {
-                evaluator.apply_many_lookup_table_to(
+                evaluator.apply_interleaved_lookup_table_to(
                     if case == 2 { &wrong } else { &input },
                     &good,
                     &mut outputs,
@@ -209,9 +208,10 @@ where
         assert_eq!(outputs, before);
     }
     // Rejected calls leave the reusable evaluator usable.
-    evaluator.apply_many_lookup_table_to(&input, &good, &mut outputs);
+    evaluator.apply_interleaved_lookup_table_to(&input, &good, &mut outputs);
     assert_eq!(decryptor.decrypt(&outputs[0]).unwrap(), 3);
     assert_eq!(decryptor.decrypt(&outputs[1]).unwrap(), 0);
+    assert_eq!(decryptor.decrypt(&outputs[2]).unwrap(), 3);
 }
 #[test]
 fn many_pbs_preserves_outputs_and_validates_domains() {

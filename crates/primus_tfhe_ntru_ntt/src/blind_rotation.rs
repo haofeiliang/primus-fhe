@@ -28,13 +28,13 @@ impl<T: FheUint> BlindRotationWorkspace<T> {
 ///
 /// On return, `workspace.current` contains an `NTRU_f_acc` encryption of the
 /// selected LUT phase.
-// The evaluator validates the LUT domain, length and window before this kernel.
-// A window of one preserves the ordinary PBS modulus-switching path.
+// The caller validates LUT compatibility; stride comes from the compiled table.
+// A stride of one preserves the ordinary PBS modulus-switching path.
 pub(crate) fn blind_rotate_lookup_table_to<T, Table, A>(
     server_key: &ServerKey<T>,
     input: &Lwe<A>,
     lookup_table: &PolynomialOwned<T>,
-    output_count: usize,
+    stride: usize,
     workspace: &mut BlindRotationWorkspace<T>,
     parameters: &TfheParameters<T>,
     ntt: &Table,
@@ -46,10 +46,10 @@ pub(crate) fn blind_rotate_lookup_table_to<T, Table, A>(
     let poly_length = parameters.poly_length();
     let two_n = poly_length * 2;
     let input_modulus = parameters.external_lwe().cipher_modulus();
-    let quantizer = if output_count == 1 {
+    let quantizer = if stride == 1 {
         parameters.rotation_quantizer()
     } else {
-        RotationQuantizer::new(input_modulus, two_n, output_count)
+        RotationQuantizer::new(input_modulus, two_n, stride)
     };
     let exponent_of = |value| quantizer.exponent(value);
     let initial_exponent = exponent_of(input.b()).wrapping_neg() & (two_n - 1);

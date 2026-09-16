@@ -39,16 +39,13 @@ fn main() {
         .unwrap();
     let encryptor = context.encryptor(&public_key).unwrap();
     let decryptor = context.decryptor(&client_key).unwrap();
-    // t=16 leaves the programmable inputs 0..8. Split a short integer into
-    // its two low message bits and a carry with one shared PBS. This is
-    // one input with two outputs, not a complete encrypted-integer system.
+    // t=16 leaves the programmable inputs 0..8. Compute message, carry and
+    // parity with one PBS: three outputs occupy four interleaved slots.
     let lut = context
-        .compile_many_lookup_table_fn(2, |input, output| {
-            if output == 0 {
-                (input % 4) as u32
-            } else {
-                (input / 4) as u32
-            }
+        .compile_interleaved_lookup_table_fn(3, |input, output| match output {
+            0 => (input % 4) as u32,
+            1 => (input / 4) as u32,
+            _ => (input % 2) as u32,
         })
         .unwrap();
     let mut input = LweCiphertext::zero(LWE_DIMENSION);
@@ -58,9 +55,10 @@ fn main() {
         encryptor
             .encrypt_padded_to(message, &mut input, &mut rng)
             .unwrap();
-        evaluator.apply_many_lookup_table_to(&input, &lut, &mut outputs);
+        evaluator.apply_interleaved_lookup_table_to(&input, &lut, &mut outputs);
         assert_eq!(decryptor.decrypt(&outputs[0]).unwrap(), message % 4);
         assert_eq!(decryptor.decrypt(&outputs[1]).unwrap(), message / 4);
+        assert_eq!(decryptor.decrypt(&outputs[2]).unwrap(), message % 2);
     }
     println!("NTRU/Fourier programmable bootstrap succeeded");
 }

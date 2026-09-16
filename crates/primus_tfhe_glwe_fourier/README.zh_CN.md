@@ -27,9 +27,9 @@ FFT table 实例；长度相同不能证明表示兼容。示例使用 `RustFftT
 FFT engine 和 evaluator 从同一个 context 创建。
 
 普通 LUT 使用 `compile_lookup_table_fn` / `compile_lookup_table_slice`，多输出使用
-`compile_many_lookup_table_*`。输入采用 unsigned padded 编码，并考虑 ManyLUT 较低的
+`compile_interleaved_lookup_table_*`。输入采用 unsigned padded 编码，并考虑 ManyLUT 较低的
 旋转分辨率。Evaluator 持有可变 scratch，创建一次后复用 `apply_lookup_table_to` /
-`apply_many_lookup_table_to`；这些入口在写入前检查全部输出维数。
+`apply_interleaved_lookup_table_to`；这些入口在写入前检查全部输出维数。
 
 `t=4` 时使用 `boolean_encryptor`、`boolean_decryptor`、`boolean_evaluator`，由适配器处理
 内部模 8 的 LUT 尺度。通过 `evaluate_binary_to`、`not_to`、`mux_to` 重复求值。

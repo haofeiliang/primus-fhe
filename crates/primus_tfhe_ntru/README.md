@@ -37,7 +37,7 @@ or dimension errors before sampling/writing. Use padded unsigned input with ordi
 family/context LUTs; centered modular messages have a separate encoding contract.
 
 ManyLUT compiles several functions of one input. The backend message/carry example
-splits an input into `x % 4` and `x / 4`; it does not implement a complete encrypted
+computes `x % 4`, `x / 4` and `x % 2`; it does not implement a complete encrypted
 integer type or arithmetic system.
 
 ## CBS and examples

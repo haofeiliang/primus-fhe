@@ -26,20 +26,21 @@
 
 1. Family 参数描述外部 LWE 和 accumulator 环。
 2. 后端 context 绑定参数与 NTT/FFT table，并生成配套的 client/server key。
-3. 通过 family 参数或 context 编译 `LookupTable` / `ManyLookupTable`。
+3. 通过 family 参数或 context 编译 `LookupTable` / `InterleavedLookupTable`。
    evaluator 创建一次，在线 `_to` 调用复用其 scratch。
 4. 调用方输出分配一次，后续加密与求值重复使用同一存储。
 
 单函数或切片为 `0..ceil(t/2)` 输入域编程，输出属于 `0..t`。
-另一半遵循负循环扩展，不能独立编程。ManyLUT 的 `output_count` 必须是非零的
-2 的幂，并满足 `ceil(t/2) <= N/output_count`。callback 按输入优先顺序接收
-`(input, output_index)`，每对调用一次；切片使用相同顺序。
+另一半遵循负循环扩展，不能独立编程。交错 LUT（ManyLUT）的有效输出数 `k` 为正，
+步长为 `s = next_power_of_two(k)`，满足 `ceil(t/2) <= N/s`。callback 按输入优先
+顺序接收 `(input, output_index)`，每个有效组合调用一次；切片包含相同顺序的 `D*k` 个值。
+例如 `k=3` 时三个输出占用四个槽：编译器将第四槽置零，不调用 callback；求值端只返回三个密文。
 所有输出共享一次盲旋转（BR）和密钥切换，再分别提取。
 输出越多，旋转分辨率与输入噪声余量越低。这是一个输入求多个函数，不是独立密文批处理。
 
 ### 旋转布局
 
-令 `D` 为已编程前缀长度，`s = output_count`（普通 LUT 为 1），`M = N/s`。
+令 `D = input_domain_len()` 为已编程前缀长度，`s = stride()`（普通 LUT 为 1），`M = N/s`。
 消息先编码为 `E(m) = round(m*q_in/t) mod q_in`，再映射到虚拟中心
 `R(E(m), q_in, 2M)`，其中 `R(x,q,L) = floor((x*L + floor(q/2))/q) mod L`，
 两次舍入遇到中点均向上。Native 的 `q_in` 为 `2^T::BITS`。合并两次舍入可能改变表内容。
@@ -74,8 +75,12 @@ callback 报错或输出越界时立即停止，不返回部分编译的表。
 规范系数，并保证噪声余量。LUT 与维数错误在写入输出前拒绝，但这些检查不能验证实际
 秘密一致性。Fourier 密钥和 evaluator 必须使用同一 FFT table 实例。
 
-最小 trait 为 `ProgrammableBootstrap` 和 `ProgrammableBootstrapMany`。
-Encoded LUT compiler 与 `backend_support` 服务于后端实现；普通应用使用 context/family 编译入口。
+最小 trait 为 `ProgrammableBootstrap` 和 `ProgrammableBootstrapInterleaved`。
+普通应用使用 context/family 编译入口，由其检查并编码明文输出。
+`LookupTable::try_new` 与 `InterleavedLookupTable::try_new` 接收已编码输出和显式的
+编程前缀长度，Boolean 与 CBS 通过它们使用各自的输出尺度。
+兼容性检查绑定多项式长度与编码模数；输入位于已编程前缀内仍由调用方保证。
+`backend_support` 服务于后端实现。
 
 ## 验证
 

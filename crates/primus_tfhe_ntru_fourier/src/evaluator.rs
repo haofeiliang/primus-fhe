@@ -2,8 +2,8 @@ use primus_fft::{FftEngine, FftTable, TorusFftValue};
 use primus_modulus::NativeModulus;
 use primus_poly::Polynomial;
 use primus_tfhe::{
-    LookupTable, LweCiphertext, ManyLookupTable, ProgrammableBootstrap, ProgrammableBootstrapMany,
-    TfheEvaluationError,
+    InterleavedLookupTable, LookupTable, LweCiphertext, ProgrammableBootstrap,
+    ProgrammableBootstrapInterleaved, TfheEvaluationError,
 };
 
 use crate::{
@@ -116,23 +116,23 @@ where
     ///
     /// Shares one blind rotation and one ring key switch.
     ///
-    /// Inherits [`ProgrammableBootstrapMany::apply_many_lookup_table_to`]'s input encoding,
+    /// Inherits [`ProgrammableBootstrapInterleaved::apply_interleaved_lookup_table_to`]'s input encoding,
     /// key, noise and output-scale requirements.
     ///
     /// # Panics
     ///
     /// Panics on an incompatible input dimension or LUT encoding/moduli/length.
     #[must_use]
-    pub fn apply_many_lookup_table(
+    pub fn apply_interleaved_lookup_table(
         &mut self,
         input: &LweCiphertext<T>,
-        lookup_table: &ManyLookupTable<T>,
+        lookup_table: &InterleavedLookupTable<T>,
     ) -> Vec<LweCiphertext<T>> {
         let dimension = self.context.parameters().external_lwe().dimension();
         let mut outputs = (0..lookup_table.output_count())
             .map(|_| LweCiphertext::zero(dimension))
             .collect::<Vec<_>>();
-        self.apply_many_lookup_table_to(input, lookup_table, &mut outputs);
+        self.apply_interleaved_lookup_table_to(input, lookup_table, &mut outputs);
         outputs
     }
 
@@ -140,17 +140,17 @@ where
     ///
     /// Shares one blind rotation and one ring key switch.
     ///
-    /// Inherits [`ProgrammableBootstrapMany::apply_many_lookup_table_to`]'s input encoding,
+    /// Inherits [`ProgrammableBootstrapInterleaved::apply_interleaved_lookup_table_to`]'s input encoding,
     /// key, noise and output-scale requirements.
     ///
     /// # Panics
     ///
     /// Panics before output writes on incompatible LUT encoding/moduli/length
     /// or ciphertext dimensions. A wrong output count is also rejected.
-    pub fn apply_many_lookup_table_to(
+    pub fn apply_interleaved_lookup_table_to(
         &mut self,
         input: &LweCiphertext<T>,
-        lookup_table: &ManyLookupTable<T>,
+        lookup_table: &InterleavedLookupTable<T>,
         outputs: &mut [LweCiphertext<T>],
     ) {
         let parameters = self.context.parameters();
@@ -181,11 +181,7 @@ where
             "PBSManyLUT output ciphertext dimension mismatch"
         );
 
-        self.blind_rotate_and_keyswitch(
-            input,
-            lookup_table.polynomial(),
-            lookup_table.output_count(),
-        );
+        self.blind_rotate_and_keyswitch(input, lookup_table.polynomial(), lookup_table.stride());
         for (index, output) in outputs.iter_mut().enumerate() {
             self.blind_rotation.scratch.extract_compact_lwe_at_to(
                 index,
@@ -196,20 +192,20 @@ where
     }
 
     /// Writes the BR result under the client ring secret into `blind_rotation.scratch`.
-    /// Input/LUT compatibility and the output count were checked by the caller.
+    /// Input/LUT compatibility was checked by the caller; stride comes from the compiled table.
     #[inline]
     fn blind_rotate_and_keyswitch(
         &mut self,
         input: &LweCiphertext<T>,
         lookup_table: &Polynomial<Vec<T>>,
-        output_count: usize,
+        stride: usize,
     ) {
         let parameters = self.context.parameters();
         blind_rotate_lookup_table_to(
             self.server_key,
             input,
             lookup_table,
-            output_count,
+            stride,
             &mut self.blind_rotation,
             parameters,
             &mut self.fft,
@@ -239,18 +235,18 @@ where
     }
 }
 
-impl<T, Table> ProgrammableBootstrapMany<T> for Evaluator<'_, T, Table>
+impl<T, Table> ProgrammableBootstrapInterleaved<T> for Evaluator<'_, T, Table>
 where
     T: TorusFftValue,
     Table: FftTable,
 {
     #[inline]
-    fn apply_many_lookup_table_to(
+    fn apply_interleaved_lookup_table_to(
         &mut self,
         input: &LweCiphertext<T>,
-        lookup_table: &ManyLookupTable<T>,
+        lookup_table: &InterleavedLookupTable<T>,
         outputs: &mut [LweCiphertext<T>],
     ) {
-        Self::apply_many_lookup_table_to(self, input, lookup_table, outputs);
+        Self::apply_interleaved_lookup_table_to(self, input, lookup_table, outputs);
     }
 }

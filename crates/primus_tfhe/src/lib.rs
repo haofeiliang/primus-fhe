@@ -12,10 +12,7 @@ mod lookup_table;
 #[doc(hidden)]
 pub mod backend_support;
 
-pub use bootstrap::{ProgrammableBootstrap, ProgrammableBootstrapMany};
-pub use error::TfheEvaluationError;
-pub use lookup_table::{
-    LookupTable, LookupTableError, ManyLookupTable, compile_encoded_lookup_table,
-    compile_encoded_many_lookup_table, lookup_table_domain_len,
-};
+pub use bootstrap::{ProgrammableBootstrap, ProgrammableBootstrapInterleaved};
+pub use error::{LookupTableError, TfheEvaluationError};
+pub use lookup_table::{InterleavedLookupTable, LookupTable, lookup_table_domain_len};
 pub use primus_lwe::{LweCiphertext, LweSecretKeyRef};

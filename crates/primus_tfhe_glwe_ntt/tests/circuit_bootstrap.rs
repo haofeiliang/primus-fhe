@@ -118,7 +118,7 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
                 .circuit_bootstrap_evaluator(&server_key, &circuit_parameters, &circuit_key)
                 .unwrap();
             assert_eq!(
-                circuit_parameters.many_lut_output_count(),
+                circuit_parameters.lookup_table_stride(),
                 levels.next_power_of_two()
             );
             let mut control =

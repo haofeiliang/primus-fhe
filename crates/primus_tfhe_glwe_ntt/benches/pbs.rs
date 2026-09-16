@@ -218,7 +218,9 @@ fn bench_order(c: &mut Criterion, order: PbsOrder) {
     // BR/KS against separate PBS calls; all tables, keys and outputs are reused.
     for count in [2, 4] {
         let value = |input: usize, output| ((input + output) % 4) as u32;
-        let many = context.compile_many_lookup_table_fn(count, value).unwrap();
+        let many = context
+            .compile_interleaved_lookup_table_fn(count, value)
+            .unwrap();
         let singles: Vec<_> = (0..count)
             .map(|output| {
                 context
@@ -228,7 +230,9 @@ fn bench_order(c: &mut Criterion, order: PbsOrder) {
             .collect();
         group.bench_function(format!("complete_pbs_many_{count}_allocating"), |b| {
             b.iter(|| {
-                black_box(evaluator.apply_many_lookup_table(black_box(&input), black_box(&many)))
+                black_box(
+                    evaluator.apply_interleaved_lookup_table(black_box(&input), black_box(&many)),
+                )
             });
         });
         let mut outputs = vec![input.clone(); count];
@@ -237,7 +241,7 @@ fn bench_order(c: &mut Criterion, order: PbsOrder) {
             group.bench_function(format!("complete_pbs_{kind}_{count}_reused_outputs"), |b| {
                 b.iter(|| {
                     if shared {
-                        evaluator.apply_many_lookup_table_to(
+                        evaluator.apply_interleaved_lookup_table_to(
                             black_box(&input),
                             black_box(&many),
                             black_box(&mut outputs),

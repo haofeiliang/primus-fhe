@@ -11,7 +11,7 @@ use primus_lattice::ggsw::NttGgsw;
 use primus_lwe::LweCiphertext;
 use primus_ntt::NttTable;
 use primus_reduce::ReduceMul;
-use primus_tfhe::{LookupTableError, ManyLookupTable};
+use primus_tfhe::{InterleavedLookupTable, LookupTableError};
 use primus_tfhe_glwe::GlwePbsOrder as PbsOrder;
 
 use crate::{
@@ -49,7 +49,7 @@ where
     server_key: &'a ServerKey<T>,
     parameters: &'a CircuitBootstrapParameters<T>,
     circuit_key: &'a CircuitBootstrapKey<T>,
-    lookup_table: ManyLookupTable<T>,
+    lookup_table: InterleavedLookupTable<T>,
     projection_indices: Vec<usize>,
     // try_new checks resource layouts/bases; secret and NTT identity are caller contracts.
     blind_rotation: NttGlweBlindRotationContext<T>,
@@ -103,17 +103,15 @@ where
         let domain_len =
             primus_tfhe::lookup_table_domain_len(tfhe.plain_modulus_value(), poly_length)?;
         let gadget_scalars: Vec<T> = parameters.output_basis().scalar_iter().collect();
-        let lookup_table = primus_tfhe::compile_encoded_many_lookup_table(
+        let lookup_table = InterleavedLookupTable::try_new(
             domain_len,
             poly_length,
-            parameters.many_lut_output_count(),
+            parameters.output_basis().decompose_length(),
             tfhe.plain_modulus_value(),
             tfhe.small_lwe().cipher_modulus(),
             modulus,
             |input, output_index| {
-                let Some(&scalar) = gadget_scalars.get(output_index) else {
-                    return Ok(T::ZERO);
-                };
+                let scalar = gadget_scalars[output_index];
                 let input =
                     T::try_from(input).map_err(|_| LookupTableError::PlaintextModulusTooLarge)?;
                 Ok(modulus.reduce_mul(scalar, input))
@@ -214,10 +212,10 @@ where
         };
         self.server_key
             .bootstrapping_key()
-            .ntt_blind_rotate_many_lookup_table_kernel_to(
+            .ntt_blind_rotate_interleaved_lookup_table_kernel_to(
                 small_lwe,
                 self.lookup_table.polynomial(),
-                self.lookup_table.output_count(),
+                self.lookup_table.stride(),
                 &mut self.main_glwe,
                 self.context.parameters().glwe().cipher_modulus(),
                 self.context.table(),

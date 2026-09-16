@@ -1,6 +1,6 @@
 use primus_integer::FheUint;
 
-use crate::{LookupTable, LweCiphertext, ManyLookupTable};
+use crate::{InterleavedLookupTable, LookupTable, LweCiphertext};
 
 /// Minimal interface implemented by a complete TFHE programmable-bootstrap
 /// backend.
@@ -34,30 +34,30 @@ pub trait ProgrammableBootstrap<T: FheUint> {
     );
 }
 
-/// Interface for one blind rotation evaluating several interleaved lookup
-/// tables.
-pub trait ProgrammableBootstrapMany<T: FheUint> {
+/// Interface for evaluating an interleaved lookup table on one LWE input.
+pub trait ProgrammableBootstrapInterleaved<T: FheUint> {
     /// Applies every output in `lookup_table` to `input` and overwrites
     /// `outputs` under the backend's external client key.
     ///
-    /// `outputs.len()` must equal [`ManyLookupTable::output_count`]. All outputs
-    /// share a blind rotation and ring key switch; only extraction is repeated.
+    /// `outputs.len()` must equal [`InterleavedLookupTable::output_count`]. Padding
+    /// slots in the table do not produce additional output ciphertexts.
     ///
     /// # Correctness
     ///
     /// Inherits [`ProgrammableBootstrap::apply_lookup_table_to`]'s key,
-    /// encoding and noise requirements. The rotation resolution is `N / k` for
-    /// `k` outputs. Account for the coarser per-coefficient modulus switching
+    /// encoding and noise requirements. The rotation resolution is `N / s`, where
+    /// `s = next_power_of_two(k)` for `k` effective outputs. Account for the
+    /// coarser per-coefficient modulus switching
     /// when choosing a noise budget; a valid layout alone does not ensure recovery.
     ///
     /// # Panics
     ///
     /// In addition to the single-output contract, rejects a wrong output count
     /// or any wrong output dimension before writing any output.
-    fn apply_many_lookup_table_to(
+    fn apply_interleaved_lookup_table_to(
         &mut self,
         input: &LweCiphertext<T>,
-        lookup_table: &ManyLookupTable<T>,
+        lookup_table: &InterleavedLookupTable<T>,
         outputs: &mut [LweCiphertext<T>],
     );
 }

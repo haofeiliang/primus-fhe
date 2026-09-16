@@ -78,7 +78,7 @@ fn run(order: PbsOrder) {
 
     // Two functions share one blind rotation and ring key switch.
     let paired = context
-        .compile_many_lookup_table_fn(2, |input, output| {
+        .compile_interleaved_lookup_table_fn(2, |input, output| {
             if output == 0 {
                 input as u32
             } else {
@@ -91,7 +91,7 @@ fn run(order: PbsOrder) {
         .encrypt_padded_to(1u32, &mut input, &mut rng)
         .unwrap();
     let mut outputs = vec![output; paired.output_count()];
-    evaluator.apply_many_lookup_table_to(&input, &paired, &mut outputs);
+    evaluator.apply_interleaved_lookup_table_to(&input, &paired, &mut outputs);
     assert_eq!(decryptor.decrypt(&outputs[0]).unwrap(), 1);
     assert_eq!(decryptor.decrypt(&outputs[1]).unwrap(), 0);
 

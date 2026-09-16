@@ -47,8 +47,8 @@ pub use key::{GlweClientKey, GlweKeyError};
 pub use parameters::{GlweParameterError, GlwePbsOrder, GlweTfheParameters};
 
 pub use primus_tfhe::{
-    LookupTable, LookupTableError, LweCiphertext, LweSecretKeyRef, ManyLookupTable,
-    ProgrammableBootstrap, ProgrammableBootstrapMany, TfheEvaluationError,
+    InterleavedLookupTable, LookupTable, LookupTableError, LweCiphertext, LweSecretKeyRef,
+    ProgrammableBootstrap, ProgrammableBootstrapInterleaved, TfheEvaluationError,
 };
 
 pub use primus_glwe::SecretKeyDistr;

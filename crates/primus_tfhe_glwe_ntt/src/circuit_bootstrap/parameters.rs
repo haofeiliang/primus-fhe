@@ -48,14 +48,13 @@ pub struct CircuitBootstrapParameters<T: FheUint> {
     output_size: GadgetSize,
     trace: GlevParameters<T, BarrettModulus<T>>,
     scheme_switch: GgswParameters<T, BarrettModulus<T>>,
-    many_lut_output_count: usize,
 }
 
 impl<T: FheUint> CircuitBootstrapParameters<T> {
     /// Derives the output layout from the TFHE accumulator and `output_basis`.
     ///
     /// Returns an error if bases or key layouts use another accumulator domain,
-    /// the output layout overflows, or the padded levels exceed ManyLUT capacity.
+    /// the output layout overflows, or the interleaving stride exceeds LUT capacity.
     pub fn try_new(
         tfhe: &TfheParameters<T>,
         output_basis: ApproxSignedBasis<T>,
@@ -75,11 +74,11 @@ impl<T: FheUint> CircuitBootstrapParameters<T> {
             }
         }
 
-        let many_lut_output_count = output_basis.decompose_length().next_power_of_two();
+        let lookup_table_stride = output_basis.decompose_length().next_power_of_two();
         let lookup_domain_len =
             primus_tfhe::lookup_table_domain_len(tfhe.plain_modulus_value(), glwe.poly_length())
                 .map_err(|_| CircuitBootstrapParameterError::OutputDecompositionTooLarge)?;
-        if many_lut_output_count > glwe.poly_length() / lookup_domain_len {
+        if lookup_table_stride > glwe.poly_length() / lookup_domain_len {
             return Err(CircuitBootstrapParameterError::OutputDecompositionTooLarge);
         }
 
@@ -90,7 +89,6 @@ impl<T: FheUint> CircuitBootstrapParameters<T> {
             output_size,
             trace,
             scheme_switch,
-            many_lut_output_count,
         })
     }
 
@@ -120,10 +118,11 @@ impl<T: FheUint> CircuitBootstrapParameters<T> {
         &self.scheme_switch
     }
 
-    /// Returns the padded power-of-two output count used by PBSManyLUT.
+    /// Returns the interleaving stride for the output gadget levels.
+    #[must_use]
     #[inline]
-    pub fn many_lut_output_count(&self) -> usize {
-        self.many_lut_output_count
+    pub fn lookup_table_stride(&self) -> usize {
+        self.output_basis.decompose_length().next_power_of_two()
     }
 
     pub(crate) fn is_compatible(&self, tfhe: &TfheParameters<T>) -> bool {

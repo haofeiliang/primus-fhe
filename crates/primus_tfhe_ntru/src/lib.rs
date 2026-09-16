@@ -32,8 +32,8 @@ pub use parameters::{NtruParameterError, NtruTfheParameters};
 
 pub use primus_ntru::{NlevParameters, NtruParameters, NtruSecretKey};
 pub use primus_tfhe::{
-    LookupTable, LookupTableError, LweCiphertext, LweSecretKeyRef, ManyLookupTable,
-    ProgrammableBootstrap, ProgrammableBootstrapMany, TfheEvaluationError,
+    InterleavedLookupTable, LookupTable, LookupTableError, LweCiphertext, LweSecretKeyRef,
+    ProgrammableBootstrap, ProgrammableBootstrapInterleaved, TfheEvaluationError,
 };
 
 /// LWE public key used by the public-key client encryptor.

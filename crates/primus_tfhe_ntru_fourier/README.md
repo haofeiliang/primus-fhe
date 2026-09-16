@@ -23,15 +23,17 @@ secret; its post-BR NTRU key switch maps f_acc to f_client.
 cargo run -p primus_tfhe_ntru_fourier --example ntru_fourier_basic
 ```
 
-Message/carry here means two functions (`x % 4`, `x / 4`) of one input;
-it is not a complete encrypted-integer system.
+The example computes message, carry and parity (`x % 4`, `x / 4`, `x % 2`)
+from one input: three outputs occupy four interleaved slots. It is not a complete
+encrypted-integer system.
 
-Public PBS validates LUT input domain, encoding moduli, ring length and all output
+Public PBS validates LUT encoding moduli, ring length and all output
 dimensions. Raw LWE input must use the context's external key, canonical residues
 and unsigned rounded encoding. Independently programmable inputs are
 `0..ceil(t/2)`; the remaining half follows negacyclic extension. ManyLUT output
-count is a power of two and requires `ceil(t/2) <= N/count`, reducing rotation
-resolution and thus the allowed input-noise margin. Boolean/CBS output scales
+count `k` must be positive; its stride `s = next_power_of_two(k)` requires
+`ceil(t/2) <= N/s`. A larger stride reduces rotation resolution and thus the
+allowed input-noise margin. Boolean/CBS output scales
 can differ from ordinary plaintext encoding.
 
 ## Public-key clients
@@ -68,9 +70,9 @@ accumulator has no guaranteed zero message tail, so prefix expansion is not a
 valid substitute for its coefficient projections.
 
 CBS takes an output basis and full trace/scheme-switch encryption parameters;
-BR parameters and the output ring come from the TFHE context. Only the internal
-ManyLUT pads the output level count to a power of two; the NGSW retains the
-requested levels. Its scheme-switch key binds the complete output basis.
+BR parameters and the output ring come from the TFHE context. The internal
+interleaved LUT keeps the requested level count and pads only its stride with
+zero slots; projections and the NGSW retain the requested levels. Its scheme-switch key binds the complete output basis.
 
 Run the [CBS → CMUX example](examples/ntru_fourier_circuit_bootstrap.rs):
 
@@ -108,7 +110,7 @@ cargo bench -p primus_tfhe_ntru_fourier --bench circuit_bootstrap
 `pbs` measures complete PBS and 2/4-output ManyLUT, with allocating and
 reused-output cases separated. The Fourier cases use both RustFFT and TfheFFT.
 
-CBS tests exercise LWE bits through NGSW and CMUX, padded output counts, basis and
+CBS tests exercise LWE bits through NGSW and CMUX, non-power-of-two level counts, basis and
 capacity errors, and zero online allocations from the first evaluator call.
 `circuit_bootstrap` measures reused output/workspace at N=1024/4096, input dimension
 N/16, B=2^3/2^10 for BR/trace/SS, and output B=2^8 with two levels. It reports live
