@@ -1,6 +1,7 @@
 #[path = "../../primus_tfhe/tests/support/allocations.rs"]
 mod allocations;
 
+use primus_encoding::RoundedCodec;
 use primus_lwe::{LweCiphertext, LweParameters};
 use primus_modulus::BarrettModulus;
 use primus_ntru::{NlevParameters, NtruParameters, SecretKeyDistr};
@@ -48,8 +49,10 @@ where
     let encryptor = context.encryptor(&client_key).unwrap();
     let decryptor = context.decryptor(&client_key).unwrap();
     let mut evaluator = context.evaluator(&server_key).unwrap();
+    // Input centers use t_in=16; output values use the independent t_out=8 scale.
+    let output_codec = RoundedCodec::new(8, context.parameters().external_lwe().cipher_modulus());
     let single = context
-        .compile_lookup_table_fn(|input| value(input, 0))
+        .compile_lookup_table_fn(&output_codec, |input| value(input, 0))
         .unwrap();
     let mut output = LweCiphertext::zero(context.parameters().external_lwe().dimension());
     // Shared tests cover LUT geometry; keep stride 1 and padded/full stride 4 here.
@@ -58,7 +61,7 @@ where
             .flat_map(|input| (0..output_count).map(move |output| value(input, output)))
             .collect();
         let lut = context
-            .compile_interleaved_lookup_table_slice(output_count, &flat)
+            .compile_interleaved_lookup_table_slice(&output_codec, output_count, &flat)
             .unwrap();
         let mut outputs = vec![
             LweCiphertext::zero(context.parameters().external_lwe().dimension());
@@ -82,7 +85,10 @@ where
                 );
             }
             for (index, output) in outputs.iter().enumerate() {
-                assert_eq!(decryptor.decrypt(output).unwrap(), value(message, index));
+                assert_eq!(
+                    output_codec.decode_value(decryptor.decrypt_phase(output).unwrap()),
+                    value(message, index)
+                );
             }
             if output_count == 1 && message == 3 {
                 let (_, allocation) = allocations::measure(|| {
@@ -95,14 +101,17 @@ where
                     .encrypt_padded(message as u32, &mut rng)
                     .unwrap();
                 evaluator.apply_lookup_table_to(&public_input, &single, &mut output);
-                assert_eq!(decryptor.decrypt(&output).unwrap(), value(message, 0));
+                assert_eq!(
+                    output_codec.decode_value(decryptor.decrypt_phase(&output).unwrap()),
+                    value(message, 0)
+                );
             }
         }
     }
 
     let input = encryptor.encrypt_padded(3u32, &mut rng).unwrap();
     let good = context
-        .compile_interleaved_lookup_table_fn(3, value)
+        .compile_interleaved_lookup_table_fn(&output_codec, 3, value)
         .unwrap();
     let mut outputs = vec![input.clone(); 3];
     // Isolate each piece of LUT metadata, including equal-length wrong-domain tables.
@@ -230,9 +239,18 @@ where
     }
     // Rejected calls leave the reusable evaluator usable.
     evaluator.apply_interleaved_lookup_table_to(&input, &good, &mut outputs);
-    assert_eq!(decryptor.decrypt(&outputs[0]).unwrap(), 3);
-    assert_eq!(decryptor.decrypt(&outputs[1]).unwrap(), 0);
-    assert_eq!(decryptor.decrypt(&outputs[2]).unwrap(), 3);
+    assert_eq!(
+        output_codec.decode_value(decryptor.decrypt_phase(&outputs[0]).unwrap()),
+        3
+    );
+    assert_eq!(
+        output_codec.decode_value(decryptor.decrypt_phase(&outputs[1]).unwrap()),
+        0
+    );
+    assert_eq!(
+        output_codec.decode_value(decryptor.decrypt_phase(&outputs[2]).unwrap()),
+        3
+    );
 }
 #[test]
 fn many_pbs_preserves_outputs_and_validates_domains() {

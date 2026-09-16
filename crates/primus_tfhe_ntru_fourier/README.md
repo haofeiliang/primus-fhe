@@ -24,8 +24,11 @@ cargo run -p primus_tfhe_ntru_fourier --example ntru_fourier_basic
 ```
 
 The example computes message, carry and parity (`x % 4`, `x / 4`, `x % 2`)
-from one input: three outputs occupy four interleaved slots. It is not a complete
+from one input with `t_in=16 → t_out=4`: three outputs occupy four interleaved slots. It is not a complete
 encrypted-integer system.
+
+LUT compilation takes an output `RoundedCodec` first; the example decodes
+with `decrypt_phase` and that codec. Input geometry keeps the parameter encoding.
 
 Public PBS validates LUT encoding moduli, ring length and all output
 dimensions. Raw LWE input must use the context's external key, canonical residues

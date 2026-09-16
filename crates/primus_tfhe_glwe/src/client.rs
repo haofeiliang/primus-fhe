@@ -439,33 +439,45 @@ where
         Ok(Self { parameters, key })
     }
 
-    /// Decrypts to the canonical representative in `[0, t)`.
+    /// Decrypts using the parameter codec to a canonical message in `[0, t)`.
+    /// For a different LUT output codec, decode [`Self::decrypt_phase`] instead.
     pub fn decrypt(&self, ciphertext: &LweCiphertext<T>) -> Result<T, GlweClientError> {
+        let phase = self.decrypt_phase(ciphertext)?;
+        Ok(self
+            .parameters
+            .small_lwe()
+            .plaintext_codec()
+            .decode_value(phase))
+    }
+
+    /// Returns the noisy LWE phase as a canonical residue in `[0, q)`.
+    ///
+    /// Uses the external client secret and ciphertext modulus, without message
+    /// decoding. For ordinary PBS output, pass the phase to the LUT's output codec.
+    ///
+    /// # Correctness
+    ///
+    /// The ciphertext must use this client's external secret and modulus, with
+    /// canonical coefficients in `[0, q)`. Only its dimension is checked;
+    /// the ciphertext does not carry encoding metadata.
+    pub fn decrypt_phase(&self, ciphertext: &LweCiphertext<T>) -> Result<T, GlweClientError> {
         let expected = self.parameters.ciphertext_lwe_dimension();
         let actual = ciphertext.dimension();
         if actual != expected {
             return Err(GlweClientError::CiphertextDimensionMismatch { expected, actual });
         }
-
-        let message: T = match self.parameters.pbs_order() {
-            GlwePbsOrder::BootstrapKeyswitch => {
-                let parameters = self.parameters.small_lwe();
-                self.key
-                    .small_lwe_secret_key()
-                    .decrypt(ciphertext, parameters)
-            }
+        let phase = match self.parameters.pbs_order() {
+            GlwePbsOrder::BootstrapKeyswitch => self
+                .key
+                .small_lwe_secret_key()
+                .as_view()
+                .decrypt_phase(ciphertext, self.parameters.small_lwe().cipher_modulus()),
             GlwePbsOrder::KeyswitchBootstrap => {
-                // TFHE construction validates equal t and q for both key domains.
-                let parameters = self.parameters.glwe();
-                let phase = LweSecretKeyRef::Signed(self.key.glwe_secret_key().as_slice())
-                    .decrypt_phase(ciphertext, parameters.cipher_modulus());
-                self.parameters
-                    .small_lwe()
-                    .plaintext_codec()
-                    .decode_value(phase)
+                LweSecretKeyRef::Signed(self.key.glwe_secret_key().as_slice())
+                    .decrypt_phase(ciphertext, self.parameters.glwe().cipher_modulus())
             }
         };
-        Ok(message)
+        Ok(phase)
     }
 }
 

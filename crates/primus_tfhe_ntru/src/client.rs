@@ -397,18 +397,36 @@ where
         Ok(Self { parameters, key })
     }
 
-    /// Decrypts to the canonical representative in `[0, t)`.
+    /// Decrypts using the parameter codec to a canonical message in `[0, t)`.
+    /// For a different LUT output codec, decode [`Self::decrypt_phase`] instead.
     pub fn decrypt(&self, ciphertext: &LweCiphertext<T>) -> Result<T, NtruClientError> {
+        let phase = self.decrypt_phase(ciphertext)?;
+        Ok(self
+            .parameters
+            .external_lwe()
+            .plaintext_codec()
+            .decode_value(phase))
+    }
+
+    /// Returns the noisy LWE phase as a canonical residue in `[0, q)`.
+    ///
+    /// Uses the external client secret and ciphertext modulus, without message
+    /// decoding. For ordinary PBS output, pass the phase to the LUT's output codec.
+    ///
+    /// # Correctness
+    ///
+    /// The ciphertext must use this client's external secret and modulus, with
+    /// canonical coefficients in `[0, q)`. Only its dimension is checked;
+    /// the ciphertext does not carry encoding metadata.
+    pub fn decrypt_phase(&self, ciphertext: &LweCiphertext<T>) -> Result<T, NtruClientError> {
         let expected = self.parameters.external_lwe().dimension();
         let actual = ciphertext.dimension();
         if actual != expected {
             return Err(NtruClientError::CiphertextDimensionMismatch { expected, actual });
         }
-        let parameters = self.parameters.external_lwe();
         let phase = LweSecretKeyRef::Signed(self.key.external_lwe_secret_key())
-            .decrypt_phase(ciphertext, parameters.cipher_modulus());
-        let message = parameters.plaintext_codec().decode_value(phase);
-        Ok(message)
+            .decrypt_phase(ciphertext, self.parameters.external_lwe().cipher_modulus());
+        Ok(phase)
     }
 }
 

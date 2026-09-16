@@ -3,6 +3,7 @@
 //! Small functional parameters for demonstration, not production use.
 
 use primus_decompose::primitive::ApproxSignedBasis;
+use primus_encoding::RoundedCodec;
 use primus_fft::{FftTable, RustFftTable};
 use primus_glwe::{GlweParameters, SecretKeyDistr};
 use primus_lwe::LweParameters;
@@ -57,7 +58,12 @@ fn run(order: PbsOrder) {
         .unwrap();
     let encryptor = context.encryptor(&public_key).unwrap();
     let decryptor = context.decryptor(&client_key).unwrap();
-    let toggle = context.compile_lookup_table_slice(&[1u32, 0]).unwrap();
+    let toggle = context
+        .compile_lookup_table_slice(
+            context.parameters().small_lwe().plaintext_codec(),
+            &[1u32, 0],
+        )
+        .unwrap();
     let mut input = encryptor.encrypt_padded(0u32, &mut rng).unwrap();
     // External inputs and outputs use n or kN according to the selected order.
     let dimension = match order {
@@ -70,13 +76,14 @@ fn run(order: PbsOrder) {
     evaluator.apply_lookup_table_to(&input, &toggle, &mut output);
     assert_eq!(decryptor.decrypt(&output).unwrap(), 1);
 
-    // Two functions share one blind rotation and ring key switch.
+    // Two functions share one PBS; input uses t=4, output uses t=8.
+    let output_codec = RoundedCodec::new(8, context.parameters().glwe().cipher_modulus());
     let paired = context
-        .compile_interleaved_lookup_table_fn(2, |input, output| {
+        .compile_interleaved_lookup_table_fn(&output_codec, 2, |input, output| {
             if output == 0 {
-                input as u32
+                (input + 4) as u32
             } else {
-                (1 - input) as u32
+                (7 - input) as u32
             }
         })
         .unwrap();
@@ -86,8 +93,14 @@ fn run(order: PbsOrder) {
         .unwrap();
     let mut outputs = vec![output; paired.output_count()];
     evaluator.apply_interleaved_lookup_table_to(&input, &paired, &mut outputs);
-    assert_eq!(decryptor.decrypt(&outputs[0]).unwrap(), 1);
-    assert_eq!(decryptor.decrypt(&outputs[1]).unwrap(), 0);
+    assert_eq!(
+        output_codec.decode_value(decryptor.decrypt_phase(&outputs[0]).unwrap()),
+        5
+    );
+    assert_eq!(
+        output_codec.decode_value(decryptor.decrypt_phase(&outputs[1]).unwrap()),
+        6
+    );
 
     // Boolean adapters manage the internal LUT scale and restore external 0/1.
     let boolean_encryptor = context.boolean_encryptor(&client_key).unwrap();

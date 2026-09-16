@@ -42,7 +42,12 @@ fn pbs(c: &mut Criterion) {
     let (client_key, server_key) = context.generate_keys(&mut rng).unwrap();
     let encryptor = context.encryptor(&client_key).unwrap();
     let input = encryptor.encrypt_padded(1u32, &mut rng).unwrap();
-    let lut = context.compile_lookup_table_slice(&[1u32, 0]).unwrap();
+    let lut = context
+        .compile_lookup_table_slice(
+            context.parameters().external_lwe().plaintext_codec(),
+            &[1u32, 0],
+        )
+        .unwrap();
     let mut output = input.clone();
     let mut evaluator = context.evaluator(&server_key).unwrap();
 
@@ -61,12 +66,19 @@ fn pbs(c: &mut Criterion) {
     for count in [3, 4] {
         let value = |input: usize, output| ((input + output) % 4) as u32;
         let many = context
-            .compile_interleaved_lookup_table_fn(count, value)
+            .compile_interleaved_lookup_table_fn(
+                context.parameters().external_lwe().plaintext_codec(),
+                count,
+                value,
+            )
             .unwrap();
         let singles: Vec<_> = (0..count)
             .map(|output| {
                 context
-                    .compile_lookup_table_fn(|input| value(input, output))
+                    .compile_lookup_table_fn(
+                        context.parameters().external_lwe().plaintext_codec(),
+                        |input| value(input, output),
+                    )
                     .unwrap()
             })
             .collect();

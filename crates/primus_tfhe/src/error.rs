@@ -80,8 +80,11 @@ pub enum LookupTableError {
         /// Accumulator polynomial length.
         poly_length: usize,
     },
-    /// A function output lies outside the plaintext domain.
-    #[error("lookup-table output for input {input} is outside the plaintext domain")]
+    /// The output codec uses a different modulus from the accumulator.
+    #[error("output codec ciphertext modulus differs from the accumulator modulus")]
+    OutputModulusMismatch,
+    /// A function output lies outside the output codec's plaintext domain.
+    #[error("lookup-table output for input {input} is outside the output plaintext domain")]
     OutputOutOfRange {
         /// Input whose output is invalid.
         input: usize,

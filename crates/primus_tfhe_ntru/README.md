@@ -40,6 +40,13 @@ ManyLUT compiles several functions of one input. The backend message/carry examp
 computes `x % 4`, `x / 4` and `x % 2`; it does not implement a complete encrypted
 integer type or arithmetic system.
 
+LUT compilation takes an explicit output `RoundedCodec` first. Reuse
+`parameters.external_lwe().plaintext_codec()` for the input scale, or construct a
+codec with another plaintext modulus and the same ciphertext modulus. Decode
+that output with `output_codec.decode_value(decryptor.decrypt_phase(&output)?)`.
+See [choosing the output encoding](../primus_tfhe/README.md#choosing-the-output-encoding)
+for range checks, raw output and subsequent PBS contracts.
+
 ## CBS and examples
 
 Both backends provide optional CBS parameters, keys and evaluators. CBS branches

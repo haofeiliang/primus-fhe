@@ -68,7 +68,7 @@ callback 报错或输出越界时立即停止，不返回部分编译的表。
 | GLWE Boolean | 外部 `false/true` 对应模 4 下的 `0/1`；内部 LUT 使用 rounded 模 8 尺度的正负值，随后平移恢复外部编码 |
 | CBS | 普通 unsigned LWE 输入转为指定 gadget 尺度的 GGSW/NGSW，秘密为 accumulator secret；`0/1` 输入可生成 CMUX 控制 |
 
-客户端解密返回 `0..t` 中的规范代表元。Centered 加密不能替代普通 LUT 的 unsigned
+客户端 `decrypt` 使用参数 codec，返回 `0..t` 中的规范代表元。Centered 加密不能替代普通 LUT 的 unsigned
 输入契约。PBS 保留 LUT 的输出尺度，不会自动把 Boolean 或 gadget 输出改为普通消息编码。
 
 原始 `LweCiphertext` 不记录秘密、编码或噪声。调用方必须使用配套密钥、显式模数下的
@@ -81,6 +81,39 @@ callback 报错或输出越界时立即停止，不返回部分编译的表。
 编程前缀长度，Boolean 与 CBS 通过它们使用各自的输出尺度。
 兼容性检查绑定多项式长度与编码模数；输入位于已编程前缀内仍由调用方保证。
 `backend_support` 服务于后端实现。
+
+### 选择输出编码
+
+两族参数/context 的四个 `compile_*_lookup_table_fn/slice` 方法均以
+`&RoundedCodec<T, M>` 为第一个参数。输入参数仍决定 `0..ceil(t_in/2)` 与旋转中心；
+输出 codec 决定 `t_out`，检查输出位于 `0..t_out`，并按 unsigned embedding 编码。
+交错 LUT 的各列共用这个 codec。其密文模数必须与 accumulator 一致，否则返回
+`OutputModulusMismatch`。现有完整 PBS 链仍要求 `q_in = q_acc = q_out`；
+选择不同的明文模数不会改变密文模数。
+
+例如，在 `t_in=16` 的 NTRU context 中，用 `t_out=4` 编码 `x % 4`：
+
+```rust
+use primus_encoding::RoundedCodec;
+
+let output_codec = RoundedCodec::new(4u32, context.parameters().external_lwe().cipher_modulus());
+let lut = context.compile_lookup_table_fn(&output_codec, |x| (x % 4) as u32).unwrap();
+let input = encryptor.encrypt_padded(7u32, &mut rng).unwrap();
+let output = evaluator.apply_lookup_table(&input, &lut);
+let message = output_codec.decode_value(decryptor.decrypt_phase(&output).unwrap());
+assert_eq!(message, 3);
+```
+
+GLWE 用 `context.parameters().glwe().cipher_modulus()` 构造输出 codec。
+沿用参数编码时，传入 `small_lwe().plaintext_codec()`（GLWE）或
+`external_lwe().plaintext_codec()`（NTRU），随后仍可用普通 `decrypt`。
+各后端 basic 示例展示了无需额外密钥的独立输出编码。
+
+`decrypt_phase` 返回外部 LWE 秘密下的规范带噪剩余类，调用方保留输出 codec 用于解码。
+LUT 兼容性元数据仍描述输入与 accumulator，不要求 `t_out = t_in`。
+继续串联 PBS 时，下一次输入编码和 LUT 几何必须与上一次输出编码一致；context 不会从
+raw 密文推断编码变化。自定义编码、逐列尺度及 Boolean/CBS gadget 输出使用 raw 构造器，
+遵循各自的解码契约。
 
 ## 验证
 

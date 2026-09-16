@@ -41,10 +41,11 @@ rounded scale alone does not imply this identity. Other parameters use the
 native high-product or explicit narrow/wide ratio kernels. All batch arithmetic
 dispatch occurs outside coefficient loops.
 
-TFHE obtains its per-message codec from its own parameter layer. GLWE TFHE can
-reuse its small-LWE codec because construction validates equal plaintext and
-ciphertext moduli. NTRU lookup-table construction creates its output codec once
-at the compilation boundary.
+TFHE input encoding comes from its parameters; ordinary LUT compilation takes
+an explicit output `RoundedCodec`. Its `t()` and `modulus()` expose the output
+plaintext and ciphertext moduli. The plaintext modulus may differ from the input,
+while the ciphertext modulus must match the accumulator. Clients can return a
+raw phase for decoding with that same output codec.
 
 These are coefficient codecs. BFV/BGV integer slot packing, BGV's unscaled
 plaintext lifting, and CKKS canonical embedding are not implemented.

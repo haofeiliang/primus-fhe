@@ -14,7 +14,7 @@ cargo run -p primus_tfhe_glwe_fourier --example fourier_basic
 
 [示例源码](examples/fourier_basic.rs) 用相同流程运行两种 order：参数 → context → 配套密钥
 → 公钥 encryptor / client decryptor → 编译 LUT → 复用 evaluator 与输出。
-涵盖单 PBS、双输出 ManyLUT、客户端 `encrypt_padded_to`、Boolean 门、NOT 和 MUX。
+涵盖单 PBS、`t_in=4 → t_out=8` 的双输出 ManyLUT、客户端 `encrypt_padded_to`、Boolean 门、NOT 和 MUX。
 
 `BootstrapKeyswitch` 的外部密文维数为 `n`，`KeyswitchBootstrap` 为 `kN`。
 示例打印并检查这两个维数（4 和 256），输入和输出均遵循选定的外部秘密域。
@@ -27,7 +27,8 @@ FFT table 实例；长度相同不能证明表示兼容。示例使用 `RustFftT
 FFT engine 和 evaluator 从同一个 context 创建。
 
 普通 LUT 使用 `compile_lookup_table_fn` / `compile_lookup_table_slice`，多输出使用
-`compile_interleaved_lookup_table_*`。输入采用 unsigned padded 编码，并考虑 ManyLUT 较低的
+`compile_interleaved_lookup_table_*`，第一个参数均为输出 `RoundedCodec`。输出尺度不同时，
+用 `decrypt_phase` 与该 codec 解码。输入采用 unsigned padded 编码，并考虑 ManyLUT 较低的
 旋转分辨率。Evaluator 持有可变 scratch，创建一次后复用 `apply_lookup_table_to` /
 `apply_interleaved_lookup_table_to`；这些入口在写入前检查全部输出维数。
 

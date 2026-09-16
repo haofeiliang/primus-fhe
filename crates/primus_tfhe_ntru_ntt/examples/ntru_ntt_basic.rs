@@ -2,6 +2,7 @@
 //!
 //! These small parameters are for demonstration only, not for production.
 
+use primus_encoding::RoundedCodec;
 use primus_lwe::{LweCiphertext, LweParameters};
 use primus_modulus::BarrettModulus;
 use primus_ntru::{NlevParameters, NtruParameters, SecretKeyDistr};
@@ -40,10 +41,11 @@ fn main() {
         .unwrap();
     let encryptor = context.encryptor(&public_key).unwrap();
     let decryptor = context.decryptor(&client_key).unwrap();
-    // t=16 leaves the programmable inputs 0..8. Compute message, carry and
-    // parity with one PBS: three outputs occupy four interleaved slots.
+    // Input t=16 leaves programmable inputs 0..8. Encode message, carry and
+    // parity with output t=4; three outputs occupy four interleaved slots.
+    let output_codec = RoundedCodec::new(4, context.parameters().external_lwe().cipher_modulus());
     let lut = context
-        .compile_interleaved_lookup_table_fn(3, |input, output| match output {
+        .compile_interleaved_lookup_table_fn(&output_codec, 3, |input, output| match output {
             0 => (input % 4) as u32,
             1 => (input / 4) as u32,
             _ => (input % 2) as u32,
@@ -57,9 +59,18 @@ fn main() {
             .encrypt_padded_to(message, &mut input, &mut rng)
             .unwrap();
         evaluator.apply_interleaved_lookup_table_to(&input, &lut, &mut outputs);
-        assert_eq!(decryptor.decrypt(&outputs[0]).unwrap(), message % 4);
-        assert_eq!(decryptor.decrypt(&outputs[1]).unwrap(), message / 4);
-        assert_eq!(decryptor.decrypt(&outputs[2]).unwrap(), message % 2);
+        assert_eq!(
+            output_codec.decode_value(decryptor.decrypt_phase(&outputs[0]).unwrap()),
+            message % 4
+        );
+        assert_eq!(
+            output_codec.decode_value(decryptor.decrypt_phase(&outputs[1]).unwrap()),
+            message / 4
+        );
+        assert_eq!(
+            output_codec.decode_value(decryptor.decrypt_phase(&outputs[2]).unwrap()),
+            message % 2
+        );
     }
     println!("NTRU/NTT programmable bootstrap succeeded");
 }

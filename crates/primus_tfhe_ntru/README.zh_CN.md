@@ -36,6 +36,11 @@ Context 提供 `encryptor`、`decryptor`；直接构造使用 `NtruEncryptor::tr
 ManyLUT 编译同一个输入的多个函数。后端示例计算 `x % 4`、`x / 4` 和 `x % 2`，
 不代表已经实现完整的加密整数类型或算术系统。
 
+LUT 编译的第一个参数为显式输出 `RoundedCodec`。沿用输入尺度时传入
+`parameters.external_lwe().plaintext_codec()`；也可用另一明文模数与相同密文模数构造 codec，
+再用 `output_codec.decode_value(decryptor.decrypt_phase(&output)?)` 解码输出。
+范围检查、raw 输出与后续 PBS 契约见[选择输出编码](../primus_tfhe/README.zh_CN.md#选择输出编码)。
+
 ## CBS 与示例
 
 两后端均提供可选的 CBS 参数、密钥和 evaluator。CBS 从 BR 后分支，在 `f_acc` 下执行

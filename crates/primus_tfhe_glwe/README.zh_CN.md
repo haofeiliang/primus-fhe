@@ -38,6 +38,11 @@ Basis/布局兼容不能证明实际秘密一致。
 `*_to(message, output, rng)`，可复用输出存储；消息或维数错误不改变输出和 RNG。
 普通 LUT 输入使用 `encrypt_padded`。参数上的 LUT 编译接口也可通过后端 context 调用。
 
+LUT 编译的第一个参数为显式输出 `RoundedCodec`。沿用输入尺度时传入
+`parameters.small_lwe().plaintext_codec()`；也可用另一明文模数与相同密文模数构造 codec，
+再用 `output_codec.decode_value(decryptor.decrypt_phase(&output)?)` 解码输出。
+范围检查、raw 输出与后续 PBS 契约见[选择输出编码](../primus_tfhe/README.zh_CN.md#选择输出编码)。
+
 ## Boolean 与 CBS
 
 `BooleanCiphertext` 包装外部采用模 4 下 `0/1` 编码的 LWE。

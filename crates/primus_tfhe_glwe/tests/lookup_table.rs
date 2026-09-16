@@ -1,8 +1,9 @@
+use primus_encoding::RoundedCodec;
 use primus_modulus::NativeModulus;
 use primus_tfhe_glwe::LookupTableError;
 
 #[test]
-fn padded_client_domain_matches_odd_and_even_lut_domains() {
+fn padded_inputs_and_lut_output_codecs_use_independent_domains() {
     use primus_decompose::primitive::ApproxSignedBasis;
     use primus_glwe::{GlweParameters, GlweSecretKey, GlweSize, SecretKeyDistr};
     use primus_lwe::{LweParameters, LweSecretKey};
@@ -40,7 +41,10 @@ fn padded_client_domain_matches_odd_and_even_lut_domains() {
         let domain_len = t.div_ceil(2);
         assert!(
             parameters
-                .compile_lookup_table_slice(&vec![0; domain_len as usize])
+                .compile_lookup_table_slice(
+                    parameters.small_lwe().plaintext_codec(),
+                    &vec![0; domain_len as usize]
+                )
                 .is_ok()
         );
         let input = encryptor.encrypt_padded(domain_len - 1, &mut rng).unwrap();
@@ -53,17 +57,68 @@ fn padded_client_domain_matches_odd_and_even_lut_domains() {
             // Callers supply D*k values; the compiler owns the padding to D*s.
             assert_eq!(
                 parameters
-                    .compile_interleaved_lookup_table_slice(3, &[0; 8])
+                    .compile_interleaved_lookup_table_slice(
+                        parameters.small_lwe().plaintext_codec(),
+                        3,
+                        &[0; 8]
+                    )
                     .unwrap_err(),
                 LookupTableError::DomainLengthMismatch {
                     expected: 6,
                     actual: 8
                 }
             );
+
+            // Larger output domain, unchanged two-entry input domain.
+            let output_codec = RoundedCodec::new(8, NativeModulus::new());
+            let single = parameters
+                .compile_lookup_table_slice(&output_codec, &[7, 4])
+                .unwrap();
+            let many = parameters
+                .compile_interleaved_lookup_table_fn(&output_codec, 1, |input, _| [7, 4][input])
+                .unwrap();
+            assert_eq!(single.input_domain_len(), 2);
+            assert_eq!(single.polynomial(), many.polynomial());
+            assert_eq!(single.polynomial().as_ref()[0], 7u32 << 29);
+            assert_eq!(
+                parameters
+                    .compile_lookup_table_fn(&output_codec, |_| 8)
+                    .unwrap_err(),
+                LookupTableError::OutputOutOfRange { input: 0 }
+            );
+            assert_eq!(
+                parameters
+                    .compile_interleaved_lookup_table_slice(&output_codec, 1, &[0, 8])
+                    .unwrap_err(),
+                LookupTableError::OutputOutOfRange { input: 1 }
+            );
+            // Canonical residues alone cannot detect a codec with the wrong q.
+            let wrong_codec = RoundedCodec::new(8, primus_modulus::PowOf2Modulus::new(1 << 16));
+            assert_eq!(
+                parameters
+                    .compile_lookup_table_fn(&wrong_codec, |_| panic!(
+                        "must reject before callback"
+                    ))
+                    .unwrap_err(),
+                LookupTableError::OutputModulusMismatch
+            );
+            assert_eq!(
+                parameters
+                    .compile_interleaved_lookup_table_fn(&wrong_codec, 1, |_, _| panic!(
+                        "must reject before callback"
+                    ))
+                    .unwrap_err(),
+                LookupTableError::OutputModulusMismatch
+            );
         }
+
         assert_eq!(
             parameters
-                .compile_interleaved_lookup_table_slice(usize::MAX, &[])
+                .compile_interleaved_lookup_table_slice(
+                    parameters.small_lwe().plaintext_codec(),
+                    usize::MAX,
+                    &[]
+                )
                 .unwrap_err(),
             LookupTableError::ManyTableLengthOverflow
         );

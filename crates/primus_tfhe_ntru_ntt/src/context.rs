@@ -1,5 +1,7 @@
+use primus_encoding::RoundedCodec;
 use primus_integer::FheUint;
 use primus_ntt::NttTable;
+use primus_reduce::{PrepareModulusSwitch, ReduceAdd};
 use primus_tfhe::InterleavedLookupTable;
 
 use crate::{
@@ -117,56 +119,64 @@ where
         crate::CircuitBootstrapEvaluator::try_new(self, server_key, parameters, circuit_key)
     }
 
-    /// Compiles a unary function into a negacyclic lookup-table polynomial.
+    /// See [`primus_tfhe_ntru::NtruTfheParameters::compile_lookup_table_fn`].
     #[inline]
-    pub fn compile_lookup_table_fn<F>(
+    pub fn compile_lookup_table_fn<OM, F>(
         &self,
+        output_codec: &RoundedCodec<T, OM>,
         function: F,
     ) -> Result<LookupTable<T>, LookupTableError>
     where
+        OM: PrepareModulusSwitch<ValueT = T> + ReduceAdd<T, Output = T>,
         F: Fn(usize) -> T,
     {
-        self.parameters.compile_lookup_table_fn(function)
+        self.parameters
+            .compile_lookup_table_fn(output_codec, function)
     }
 
-    /// Compiles one output for each programmable front-half input.
+    /// See [`primus_tfhe_ntru::NtruTfheParameters::compile_lookup_table_slice`].
     #[inline]
-    pub fn compile_lookup_table_slice(
+    pub fn compile_lookup_table_slice<OM>(
         &self,
+        output_codec: &RoundedCodec<T, OM>,
         outputs: &[T],
-    ) -> Result<LookupTable<T>, LookupTableError> {
-        self.parameters.compile_lookup_table_slice(outputs)
+    ) -> Result<LookupTable<T>, LookupTableError>
+    where
+        OM: PrepareModulusSwitch<ValueT = T> + ReduceAdd<T, Output = T>,
+    {
+        self.parameters
+            .compile_lookup_table_slice(output_codec, outputs)
     }
 
-    /// Compiles several functions on `0..ceil(t/2)` into one PBSManyLUT accumulator.
-    ///
-    /// The output count must be nonzero, with
-    /// `ceil(t/2) <= N / next_power_of_two(output_count)`. Function arguments are
-    /// `(input, output_index)`; padding slots are filled with zero.
-    /// See [`InterleavedLookupTable`] for the rotation-resolution tradeoff.
+    /// See [`primus_tfhe_ntru::NtruTfheParameters::compile_interleaved_lookup_table_fn`].
     #[inline]
-    pub fn compile_interleaved_lookup_table_fn<F>(
+    pub fn compile_interleaved_lookup_table_fn<OM, F>(
         &self,
+        output_codec: &RoundedCodec<T, OM>,
         output_count: usize,
         function: F,
     ) -> Result<InterleavedLookupTable<T>, LookupTableError>
     where
+        OM: PrepareModulusSwitch<ValueT = T> + ReduceAdd<T, Output = T>,
         F: Fn(usize, usize) -> T,
     {
         self.parameters
-            .compile_interleaved_lookup_table_fn(output_count, function)
+            .compile_interleaved_lookup_table_fn(output_codec, output_count, function)
     }
 
-    /// Compiles input-major multi-output values into one PBSManyLUT
-    /// accumulator, ordered `[input][output_index]` for `0..ceil(t/2)` inputs.
+    /// See [`primus_tfhe_ntru::NtruTfheParameters::compile_interleaved_lookup_table_slice`].
     #[inline]
-    pub fn compile_interleaved_lookup_table_slice(
+    pub fn compile_interleaved_lookup_table_slice<OM>(
         &self,
+        output_codec: &RoundedCodec<T, OM>,
         output_count: usize,
         outputs: &[T],
-    ) -> Result<InterleavedLookupTable<T>, LookupTableError> {
+    ) -> Result<InterleavedLookupTable<T>, LookupTableError>
+    where
+        OM: PrepareModulusSwitch<ValueT = T> + ReduceAdd<T, Output = T>,
+    {
         self.parameters
-            .compile_interleaved_lookup_table_slice(output_count, outputs)
+            .compile_interleaved_lookup_table_slice(output_codec, output_count, outputs)
     }
 
     /// Decomposes this context into parameters and its NTT table.

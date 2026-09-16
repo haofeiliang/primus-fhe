@@ -10,8 +10,9 @@
 
 ### 当前 LUT/PBS 任务
 
-- 已完成：**P1.1、P1.M、P1.2、P1.3、P1.R、P1.4**，P1 已完成。设计和测量依据见 [TFHE 总览](docs/tfhe.md)，完成条件见 [实施步骤](docs/tfhe-plan.md)。
-- 进行中：无；本步剩余：无。下一步：**P2.1 输入与输出编码分离**，入口为实施步骤对应章节及两族 LUT 编译包装；尚未开始 P2。
+- 已完成：**P1.1、P1.M、P1.2、P1.3、P1.R、P1.4、P2.1**。设计和测量依据见 [TFHE 总览](docs/tfhe.md)，完成条件见 [实施步骤](docs/tfhe-plan.md)。
+- 进行中：无；本步剩余：无。下一步：**P2.2 有界双输入入口**，入口为实施步骤对应章节；P2.3 尚未开始。
+- P2.1 有效边界：两族参数/四后端 context 的四个普通 LUT 编译方法显式接收输出 `RoundedCodec`，输入参数只决定输入域和旋转中心；输出值域按 codec 的 `t_out` 检查，codec 的密文模数必须等于 accumulator。当前完整 PBS 链仍保持同一密文模数，允许不同明文模数/尺度。两族 client 新增 `decrypt_phase`，由调用方的输出 codec 解码；`decrypt` 仍用参数 codec。原尺度调用方显式传入参数 codec，raw Boolean/CBS 入口与 LUT 元数据不变。下一次 PBS 的输入编码必须匹配上一输出，context 不从 raw 密文推断编码。见 [P2.1 决定](docs/tfhe.md#p21-输入与输出编码分离)。
 - P1.R 有效边界：PBS 参数、LUT 与 quantizer 均要求 `2N` 能由输入系数类型表示；quantizer 的 Native 目标分支已删除，Native 输入及通用模切的 Native 目标保留。均匀二元 `u32` 居中原型的所测量化方差约减半，完整 PBS 未观察到明确开销增加；固定 half-shift 存在合法 LUT 的零噪声反例，正式执行/API 保持原样。后续模切内核优化保持统一接口；PBS 批量融合未见稳定收益，临时入口与后端原型已删除。实验方法、数据与后续接入条件只维护在总览，临时原型不进入公共库。
 - P1.3 有效边界：公开类型为 `LookupTable` / `InterleavedLookupTable`，已编码输出通过各自 `try_new` 构造；旧自由函数和 `ManyLookupTable` API 已删除。保存真实输入前缀 `D` 和有效数量 `k`，步长 `s=next_power_of_two(k)` 可推导；编译器补零槽，回调/切片及输出只包含 `k` 列。四后端 BR 按 `s` 量化、按 `k` 提取，三路 CBS 以 gadget 层数构造并保持原布局/basis 绑定。Family/context 保留明文检查与编码职责，多输出 trait 明确限定为 `ProgrammableBootstrapInterleaved`。
 - P1.2 有效边界：单输出与交错表共用顺序主循环，中心使用虚拟坐标、填充使用实际系数切片；区间求值与负循环尾部各有私有填充函数。输出按输入优先顺序写最终多项式，没有逐列多项式、中心数组或行 scratch 分配。前半输入域、回调错误及 raw residue 检查保留。[首次构造/分配比较](docs/benchmarks/tfhe-p1.2.csv)和[主循环重整对照](docs/benchmarks/tfhe-p1.2-flow.csv)分开记录；最终同配置比较见 [P1.4 验收](docs/tfhe.md#p14-阶段验收)：所测多输出构造耗时下降 61.6%～85.6%，全部只分配最终多项式；单输出构造增加约 12～24 ns，在线 PBS 未见稳定整体加速，NTT 存在几个百分点的退化信号。
@@ -19,7 +20,7 @@
 - 编解码输入输出统一为系数类型 `T`：codec、基础加解密和通用 TFHE client 不再转换消息类型，批量输入为 `&[T]`；应用负责转换，Boolean 保留 `bool` 和值域检查。参数构造复用 codec 校验；模数有效性由模切准备验证，codec 保留 `q > t` 和 Scaled 恢复条件。
 - 有效未决项：奇数全域条件在 P2.3 收敛；PBC 参数、安全/噪声条件在 P3.1 收敛；首个 MVB 算法与缩放在 P4.1 收敛。居中/shifted 的正式接入和带辅助密钥的漂移抑制为后续候选，不构成 P1–P4 的隐含交付。具体内容只维护在对应文档中。
 - 测试/基准有效边界：保留 41 项独立测试，端到端 ManyLUT 用代表性消息与 `k=1/3/4`，三路 CBS 用三层和 `1→0` 复用序列；共享整数 oracle、两种 GLWE order、两种 FFT 和错误边界保留。Criterion 精简为 8 个 target、97 项，重点测复用输出；GitHub CI 未执行 benches。精简依据和本机测试阶段耗时见总览。
-- 当前验证：P1.4 的 `just tfhe`、`just tfhe-simd`、workspace all-targets check 通过；七个 TFHE crate 默认/nightly SIMD 各 41 项测试，相关 Clippy 与默认文档通过。模切/codec/derive 默认 33 项、SIMD 34 项测试通过。六个示例在默认/SIMD 下共 12 次运行通过。最终性能包含 28 项等价对照、11 项新增三输出计时及针对性复测，方法和数据只维护在总览。未运行其余 workspace 测试，未测 SIMD 性能、非 x86 或生产失败概率/安全性。
+- 当前验证：P2.1 的 `just tfhe`、`just tfhe-simd`、workspace all-targets check 通过；默认/nightly SIMD 各 41 项 TFHE 测试，相关 Clippy 与默认文档通过。encoding 默认 5 项测试和 all-targets Clippy 通过。四个修改后的 basic 示例在默认/SIMD 下共 8 次运行通过。既有 ManyLUT 用例改为 `16→8`，示例为 GLWE `4→8`、NTRU `16→4`；未增加测试函数、PBS 执行次数或 benchmark。未重做性能计时、其余 workspace 测试及非 x86/生产噪声安全验证；P1 历史测量留在总览。
 
 ## 已审范围索引
 

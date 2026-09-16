@@ -81,7 +81,7 @@ extracting coefficient `j` reads that lane with the negacyclic sign.
 | GLWE Boolean | External `false/true` is `0/1` modulo 4; internal LUTs use signed values at the rounded modulus-8 scale, followed by a restoring shift |
 | CBS | Ordinary unsigned LWE input becomes GGSW/NGSW at the selected gadget scales, under the accumulator secret; a `0/1` input yields a CMUX control |
 
-Client decryption returns a canonical representative in `0..t`. Centered encryption
+Client `decrypt` uses the parameter codec and returns a canonical representative in `0..t`. Centered encryption
 is not a replacement for the unsigned input contract of ordinary LUTs. PBS preserves
 the LUT's output scale; it does not automatically convert Boolean or gadget outputs
 to ordinary messages.
@@ -99,6 +99,43 @@ and CBS paths use these constructors for their distinct output scales.
 Compatibility checks bind polynomial length and encoding moduli; callers remain
 responsible for keeping the input within the table's programmed prefix.
 `backend_support` serves backend implementations.
+
+### Choosing the output encoding
+
+The four family/context `compile_*_lookup_table_fn/slice` methods take
+`&RoundedCodec<T, M>` as their first argument. Input parameters still determine
+`0..ceil(t_in/2)` and rotation centers. The output codec determines `t_out`,
+validates values in `0..t_out` and encodes them with unsigned embedding.
+All columns of an interleaved LUT use that codec. Its ciphertext modulus must
+match the accumulator, or compilation returns `OutputModulusMismatch`.
+The current complete PBS chains also require `q_in = q_acc = q_out`;
+choosing a different plaintext modulus does not change the ciphertext modulus.
+
+For an NTRU context with `t_in=16`, compute `x % 4` at output modulus `t_out=4`:
+
+```rust
+use primus_encoding::RoundedCodec;
+
+let output_codec = RoundedCodec::new(4u32, context.parameters().external_lwe().cipher_modulus());
+let lut = context.compile_lookup_table_fn(&output_codec, |x| (x % 4) as u32).unwrap();
+let input = encryptor.encrypt_padded(7u32, &mut rng).unwrap();
+let output = evaluator.apply_lookup_table(&input, &lut);
+let message = output_codec.decode_value(decryptor.decrypt_phase(&output).unwrap());
+assert_eq!(message, 3);
+```
+
+For GLWE use `context.parameters().glwe().cipher_modulus()` to construct the
+output codec. To keep the parameter encoding, pass `small_lwe().plaintext_codec()`
+(GLWE) or `external_lwe().plaintext_codec()` (NTRU); ordinary `decrypt` then applies.
+The basic backend examples show independent output encoding without extra keys.
+
+`decrypt_phase` returns a canonical noisy residue under the external LWE secret;
+the caller retains the output codec for decoding. LUT compatibility metadata
+continues to describe the input and accumulator, without equating `t_out` to
+`t_in`. Chaining another PBS requires its input encoding and LUT geometry to
+match the previous output encoding; a context does not infer that change from
+raw ciphertexts. Custom encodings, per-column scales and Boolean/CBS gadget
+outputs use the raw constructors and retain their own decoding contracts.
 
 ## Validation
 

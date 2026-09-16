@@ -42,6 +42,13 @@ See [LWE public-key noise and identity requirements](../primus_lwe/README.md#pub
 errors leave output and RNG unchanged. For ordinary LUT input, use `encrypt_padded`.
 LUT compilation methods on parameters are also available through backend contexts.
 
+LUT compilation takes an explicit output `RoundedCodec` first. Reuse
+`parameters.small_lwe().plaintext_codec()` for the input scale, or construct a
+codec with another plaintext modulus and the same ciphertext modulus. Decode
+that output with `output_codec.decode_value(decryptor.decrypt_phase(&output)?)`.
+See [choosing the output encoding](../primus_tfhe/README.md#choosing-the-output-encoding)
+for range checks, raw output and subsequent PBS contracts.
+
 ## Boolean and CBS
 
 `BooleanCiphertext` wraps an LWE with the external `0/1` encoding modulo 4.

@@ -46,7 +46,12 @@ fn bench_order(c: &mut Criterion, order: PbsOrder) {
     let parameters = context.parameters();
     let encryptor = context.encryptor(&client_key).unwrap();
     let input = encryptor.encrypt_padded(1u32, &mut rng).unwrap();
-    let lookup_table = context.compile_lookup_table_slice(&[1u32, 0]).unwrap();
+    let lookup_table = context
+        .compile_lookup_table_slice(
+            context.parameters().small_lwe().plaintext_codec(),
+            &[1u32, 0],
+        )
+        .unwrap();
     let mut evaluator = context.evaluator(&server_key).unwrap();
     let mut output = input.clone();
 
@@ -167,12 +172,19 @@ fn bench_order(c: &mut Criterion, order: PbsOrder) {
     for count in [3, 4] {
         let value = |input: usize, output| ((input + output) % 4) as u32;
         let many = context
-            .compile_interleaved_lookup_table_fn(count, value)
+            .compile_interleaved_lookup_table_fn(
+                context.parameters().small_lwe().plaintext_codec(),
+                count,
+                value,
+            )
             .unwrap();
         let singles: Vec<_> = (0..count)
             .map(|output| {
                 context
-                    .compile_lookup_table_fn(|input| value(input, output))
+                    .compile_lookup_table_fn(
+                        context.parameters().small_lwe().plaintext_codec(),
+                        |input| value(input, output),
+                    )
                     .unwrap()
             })
             .collect();

@@ -80,7 +80,12 @@ fn split_keys_support_both_pbs_orders() {
         let server = generator
             .try_generate_server_key(&client, &mut rng)
             .unwrap();
-        let lookup_table = context.compile_lookup_table_slice(&[1u32, 0]).unwrap();
+        let lookup_table = context
+            .compile_lookup_table_slice(
+                context.parameters().small_lwe().plaintext_codec(),
+                &[1u32, 0],
+            )
+            .unwrap();
         let public = client
             .try_generate_public_key(context.parameters(), &mut rng)
             .unwrap();

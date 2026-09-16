@@ -192,8 +192,12 @@ fn run_ntt(config: &Config) -> Result<(), String> {
         .map_err(|error| format!("failed to generate NTT server key: {error}"))?;
     let server_key_time = server_started.elapsed();
 
-    let lookup_table =
-        make_lookup_table(config, |function| context.compile_lookup_table_fn(function))?;
+    let lookup_table = make_lookup_table(config, |function| {
+        context.compile_lookup_table_fn(
+            context.parameters().external_lwe().plaintext_codec(),
+            function,
+        )
+    })?;
     let encryptor = context
         .encryptor(&client_key)
         .map_err(|error| format!("failed to create NTT encryptor: {error}"))?;
@@ -290,8 +294,12 @@ fn run_fourier(config: &Config) -> Result<(), String> {
         client_key.accumulator_ntru_secret_key(),
         &mut context.new_fft_engine(),
     );
-    let lookup_table =
-        make_lookup_table(config, |function| context.compile_lookup_table_fn(function))?;
+    let lookup_table = make_lookup_table(config, |function| {
+        context.compile_lookup_table_fn(
+            context.parameters().external_lwe().plaintext_codec(),
+            function,
+        )
+    })?;
     let encryptor = context
         .encryptor(&client_key)
         .map_err(|error| format!("failed to create Fourier encryptor: {error}"))?;

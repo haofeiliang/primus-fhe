@@ -23,6 +23,9 @@ cargo run -p primus_tfhe_ntru_ntt --example ntru_ntt_basic
 示例从一个输入计算 message、carry 和 parity（`x % 4`、`x / 4`、`x % 2`），
 三个输出占用四个交错槽，不代表完整的加密整数系统。
 
+LUT 编译的第一个参数为输出 `RoundedCodec`。示例采用 `t_in=16 → t_out=4`，
+通过 `decrypt_phase` 与该 codec 解码；输入几何仍遵循参数编码。
+
 公开 PBS 检查 LUT 的编码模数、环长度及全部输出维数。原始 LWE 输入必须
 使用 context 的 external key、规范 residue 和 unsigned rounded 编码。
 可独立编程的输入为 `0..ceil(t/2)`，另一半按负循环关系扩展。ManyLUT 输出数量

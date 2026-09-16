@@ -54,6 +54,13 @@ where
     pub fn t(&self) -> T {
         self.t
     }
+
+    /// Returns the ciphertext modulus used for encoding and decoding.
+    #[must_use]
+    #[inline]
+    pub fn modulus(&self) -> M {
+        self.modulus
+    }
 }
 
 impl<T, M> RoundedCodec<T, M>

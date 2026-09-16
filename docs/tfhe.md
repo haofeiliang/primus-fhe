@@ -473,3 +473,29 @@ GitHub workflow 使用 `cargo nextest run --workspace` 和 nightly `--all-featur
 - 实施中收敛的跨层决定替换本文待决项；不追加聊天记录，不把候选方案写成已实现能力。
 - 已完成步骤由 Git 记录实现，HANDOFF 保留完成编号、当前步骤、未决项和下一步。完成本轮后，将长期契约归位并删除失效计划。
 - 规划文件随项目维护，源码链接使用相对路径。`temp/` 中的论文仍是本地参考资料；进入 P3 前须确认原文可用，缺失时先取得同版本原文，不能只凭本笔记实现。
+
+
+## P2.1 输入与输出编码分离
+
+普通 family/context 的四个 LUT 编译方法以 `&RoundedCodec<T, M>` 为第一个参数。
+输入参数继续决定 `t_in`、可编程域和精确旋转中心；输出 codec 决定输出值域 `0..t_out`
+及 unsigned rounded 尺度。编译边界核对 codec 的密文模数等于 accumulator 模数，
+然后按输出值域检查。未新增 codec trait、持久编译配置或 LUT 输出元数据。
+
+当前完整 PBS 链仍要求输入、accumulator、外部输出的密文模数相同；本步支持的是
+不同的**明文模数与尺度**。普通 PBS 输出仍属于原外部 LWE 秘密，客户端新增
+`decrypt_phase` 返回规范带噪 residue，由调用方保留的输出 codec 解码。
+默认尺度通过显式传入参数 codec 复用；`decrypt` 继续使用参数 codec。
+公开工作流、串联条件与 raw 编码边界见[共享指南](../crates/primus_tfhe/README.zh_CN.md#选择输出编码)。
+Boolean、CBS、自定义/逐列编码仍走 raw 构造器，其尺度、秘密域和数学条件未改变。
+
+验证复用已有 fixture：两族轻量测试覆盖 `t_in=4 → t_out=8`、输出越界及错误密文模数
+先于 callback 拒绝；四后端 ManyLUT 改为 `16→8`，保留单输出对照、两种 GLWE order、
+两种 FFT、元数据拒绝及零在线分配。测试函数总数和 PBS 执行次数未增加。
+四个 basic 示例展示 GLWE `4→8` 与 NTRU `16→4`；benchmark 仅迁移显式 codec 参数，
+维持原有计时负载。在线内核未改，本步不声称性能改善。
+
+验证通过 `just tfhe`、`just tfhe-simd`、workspace all-targets check：默认/nightly SIMD
+各 41 项 TFHE 测试，相关 Clippy 与默认文档通过。encoding 默认 5 项测试和 all-targets
+Clippy 通过，四个修改后的 basic 示例在两配置下共 8 次运行通过。未重跑其余 workspace
+测试、性能计时、非 x86 或生产噪声/安全性验证。

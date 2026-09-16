@@ -15,7 +15,7 @@ cargo run -p primus_tfhe_glwe_ntt --example ntt_basic
 The [example source](examples/ntt_basic.rs) runs both orders with the same
 workflow: parameters → context → paired keys → public-key encryptor/client decryptor
 → compiled LUT → reusable evaluator/output. It demonstrates single PBS, two-output
-ManyLUT, client `encrypt_padded_to`, Boolean gates, NOT and MUX.
+ManyLUT with `t_in=4 → t_out=8`, client `encrypt_padded_to`, Boolean gates, NOT and MUX.
 
 For `BootstrapKeyswitch`, external ciphertexts have dimension `n`; for
 `KeyswitchBootstrap`, they have dimension `kN`. The example prints and checks these
@@ -30,7 +30,9 @@ must use the supplied table's NTT representation. `boolean_parameters()` is a
 development fixture, not a vetted default; the example selects its own small parameters.
 
 Compile ordinary LUTs with `compile_lookup_table_fn` / `compile_lookup_table_slice`,
-or their `compile_interleaved_lookup_table_*` counterparts. Use unsigned padded input and
+or their `compile_interleaved_lookup_table_*` counterparts, passing an output
+`RoundedCodec` first. Decode a different output scale using `decrypt_phase` and
+that codec. Use unsigned padded input and
 account for ManyLUT's coarser rotation resolution. The evaluator holds mutable
 scratch; create it once and reuse `apply_lookup_table_to` / `apply_interleaved_lookup_table_to`.
 These calls validate all output dimensions before writing.
