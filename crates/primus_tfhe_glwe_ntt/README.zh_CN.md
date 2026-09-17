@@ -61,7 +61,7 @@ key.ntt_blind_rotate_lookup_table_to(
 );
 ```
 
-输出与工作区只需分配一次。执行时每个输入系数量化一次，逐桶在系数域聚合、转 NTT，
+输出与工作区只需分配一次。执行时每个输入系数量化一次，每桶从 dummy 初始化聚合结果、原地转 NTT，
 每桶一次外积，在线不分配。当前采用普通旋转步长 1；此入口尚未整合 key switch、
 提取或交错 PBS，`Evaluator` 仍使用经典 BSK。
 这些参数尚无经认证的安全等级或完整 PBS 失败率，见[设计契约](../../docs/tfhe-sparse-pbs.md)。
@@ -84,8 +84,13 @@ cargo clippy -p primus_tfhe_glwe_ntt --all-targets -- -D warnings
 cargo +nightly test -p primus_tfhe_glwe_ntt --features simd
 cargo bench -p primus_tfhe_glwe_ntt --bench pbs
 cargo bench -p primus_tfhe_glwe_ntt --bench circuit_bootstrap
+cargo bench -p primus_tfhe_glwe_ntt --bench sparse_blind_rotation
 ```
 
 `pbs` 复用输出，覆盖两种 order、3/4 输出 ManyLUT 与独立 PBS 的对照，以及 Boolean AND/MUX。
 BR 和密钥切换阶段用于定位开销；系数提取的基准集中在 `primus_lattice`。
 `circuit_bootstrap` 测量两种 order、2/3 输出层数下的完整 CBS。
+
+`sparse_blind_rotation` 在同一固定重量客户端秘密下，对照两组 P3 实验参数的稀疏/经典原始 BR，
+不含 key switch 和提取；每次迭代处理四个预先加密输入中的一个。内存及分项测量见
+[P3 设计记录](../../docs/tfhe-sparse-pbs.md#p34-聚合表示与工作区测量)。

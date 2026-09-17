@@ -2,12 +2,7 @@
 
 use primus_data::{Data, DataMut};
 use primus_integer::FheUint;
-use primus_lattice::{
-    context::NttGlweExternalProductContext,
-    ggsw::{Ggsw, NttGgsw},
-    glwe::Glwe,
-    lwe::Lwe,
-};
+use primus_lattice::{context::NttGlweExternalProductContext, ggsw::Ggsw, glwe::Glwe, lwe::Lwe};
 use primus_ntt::NttTable;
 use primus_poly::Polynomial;
 
@@ -81,7 +76,6 @@ impl<T: FheUint> SparseGlweBootstrappingKey<T> {
         let SparseGlweBlindRotationContext {
             input_exponents,
             aggregate,
-            aggregate_ntt,
             scratch,
             external_product,
         } = context;
@@ -92,24 +86,36 @@ impl<T: FheUint> SparseGlweBootstrappingKey<T> {
         mask.fill(T::ZERO);
         lookup_table.mul_monomial_to(initial_exponent, &mut Polynomial(body), modulus);
 
+        // Bound the aggregation working set while keeping complete polynomials.
+        // Small GGSWs fit in one tile; larger ones reuse each tile across entries.
+        let tile_length = (16 * 1024 / size_of::<T>() / poly_length).max(1) * poly_length;
         let mut output_is_current = true;
         for bucket_index in 0..self.bucket_count() {
-            let (indices, mut selections) = self.bucket(bucket_index);
-            aggregate.set_zero();
-            for (&input_index, selection) in indices.iter().zip(&mut selections) {
-                aggregate.add_mul_monomial_assign(
-                    &selection,
-                    input_exponents[input_index],
-                    poly_length,
-                    modulus,
-                );
+            let (indices, ciphertexts) = self.bucket_data(bucket_index);
+            let (selections, dummy) = ciphertexts.split_at(indices.len() * size.ggsw_len());
+            // Every bucket has a dummy, even if publicly empty. It overwrites the
+            // previous bucket's NTT values before adding the rotated selections.
+            aggregate.copy_from_slice(dummy);
+            for (tile_index, tile) in aggregate.chunks_mut(tile_length).enumerate() {
+                let start = tile_index * tile_length;
+                let end = start + tile.len();
+                for (&input_index, selection) in
+                    indices.iter().zip(selections.chunks_exact(size.ggsw_len()))
+                {
+                    let exponent = input_exponents[input_index];
+                    for (acc, source) in tile
+                        .chunks_exact_mut(poly_length)
+                        .zip(selection[start..end].chunks_exact(poly_length))
+                    {
+                        Polynomial(acc).add_mul_monomial_assign(
+                            &Polynomial(source),
+                            exponent,
+                            modulus,
+                        );
+                    }
+                }
             }
-            // The final entry is always the dummy, including publicly empty buckets.
-            let dummy = selections
-                .next()
-                .expect("sparse bucket must contain a dummy");
-            aggregate.add_assign(&dummy, modulus);
-            aggregate.write_ntt_form(aggregate_ntt, ntt);
+            let aggregate_ntt = Ggsw::new(aggregate.as_mut_slice()).into_ntt_form(ntt);
             if output_is_current {
                 aggregate_ntt.external_product_to(
                     output,
@@ -139,12 +145,11 @@ impl<T: FheUint> SparseGlweBootstrappingKey<T> {
 
 /// Reusable workspace for [`SparseGlweBootstrappingKey`] blind rotation.
 ///
-/// Stores input exponents, coefficient and NTT aggregates, a GLWE buffer and
+/// Stores input exponents, one aggregate transformed in place, a GLWE buffer and
 /// external-product scratch. It contains no secret support or matching data.
 pub struct SparseGlweBlindRotationContext<T: FheUint> {
     input_exponents: Vec<usize>,
-    aggregate: Ggsw<Vec<T>>,
-    aggregate_ntt: NttGgsw<Vec<T>>,
+    aggregate: Vec<T>,
     scratch: Glwe<Vec<T>>,
     external_product: NttGlweExternalProductContext<T>,
 }
@@ -157,8 +162,7 @@ impl<T: FheUint> SparseGlweBlindRotationContext<T> {
         let size = key.size();
         Self {
             input_exponents: vec![0; key.input_dimension()],
-            aggregate: Ggsw::zero(size.ggsw_len()),
-            aggregate_ntt: NttGgsw::zero(size.ggsw_len()),
+            aggregate: vec![T::ZERO; size.ggsw_len()],
             scratch: Glwe::zero(size.glwe_len()),
             external_product: NttGlweExternalProductContext::new(size),
         }

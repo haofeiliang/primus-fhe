@@ -49,8 +49,9 @@ fn expected_rotation(lut: &[u32], input: &[u32], secret: &[u32]) -> Vec<u32> {
 fn sparse_rotation_matches_direct_phase_and_classic_with_reused_scratch() {
     // Small rings exhaust all rotations; odd buckets exercise the final copy and
     // guarantee a publicly empty bucket (16 entries in 17 buckets). k=2 covers
-    // aggregation across every GGSW row. The larger ring uses encrypted LWE inputs.
-    for (n, k, copies, buckets) in [(16usize, 1, 3, 8), (16, 2, 1, 17), (256, 1, 3, 8)] {
+    // aggregation across every GGSW row. The larger k=2 ring uses encrypted LWE
+    // inputs and spans multiple aggregation tiles, including a short final tile.
+    for (n, k, copies, buckets) in [(16usize, 1, 3, 8), (16, 2, 1, 17), (256, 2, 3, 8)] {
         let modulus = BarrettModulus::new(Q);
         let lwe = LweParameters::new(
             16,

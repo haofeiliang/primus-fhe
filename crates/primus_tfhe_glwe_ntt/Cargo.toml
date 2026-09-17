@@ -33,6 +33,10 @@ harness = false
 name = "circuit_bootstrap"
 harness = false
 
+[[bench]]
+name = "sparse_blind_rotation"
+harness = false
+
 [features]
 default = []
 simd = [

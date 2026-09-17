@@ -143,6 +143,13 @@ impl<T: FheUint> SparseGlweBootstrappingKey<T> {
     /// Panics if `bucket_index >= self.bucket_count()`.
     #[must_use]
     pub fn bucket(&self, bucket_index: usize) -> (&[usize], GgswIter<'_, T>) {
+        let (indices, ciphertexts) = self.bucket_data(bucket_index);
+        (indices, GgswIter::new(ciphertexts, self.size.ggsw_len()))
+    }
+
+    /// Borrows a bucket's indices and contiguous GGSW storage, including its final
+    /// dummy. Splitting the dummy off allows aggregation to start with a copy.
+    pub(super) fn bucket_data(&self, bucket_index: usize) -> (&[usize], &[T]) {
         assert!(
             bucket_index < self.bucket_count(),
             "sparse bucket index out of bounds"
@@ -152,10 +159,7 @@ impl<T: FheUint> SparseGlweBootstrappingKey<T> {
         let ggsw_len = self.size.ggsw_len();
         let ciphertexts =
             &self.data[(start + bucket_index) * ggsw_len..(end + bucket_index + 1) * ggsw_len];
-        (
-            &self.map.input_indices[start..end],
-            GgswIter::new(ciphertexts, ggsw_len),
-        )
+        (&self.map.input_indices[start..end], ciphertexts)
     }
 }
 

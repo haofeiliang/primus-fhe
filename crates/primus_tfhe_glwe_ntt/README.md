@@ -75,8 +75,9 @@ key.ntt_blind_rotate_lookup_table_to(
 ```
 
 Allocate the output and scratch once. Evaluation quantizes each input coefficient
-once, aggregates each bucket in coefficient form, transforms it to NTT form, and
-performs one external product per bucket without online allocation. It uses
+once, initializes each bucket aggregate from its dummy, transforms the aggregate
+in place to NTT form, and performs one external product per bucket without online
+allocation. It uses
 ordinary rotation step one; key switching, extraction and interleaved PBS are not
 integrated here. `Evaluator` still uses the classic BSK. These parameters have
 no certified security level or full PBS failure bound; see the
@@ -102,8 +103,14 @@ cargo clippy -p primus_tfhe_glwe_ntt --all-targets -- -D warnings
 cargo +nightly test -p primus_tfhe_glwe_ntt --features simd
 cargo bench -p primus_tfhe_glwe_ntt --bench pbs
 cargo bench -p primus_tfhe_glwe_ntt --bench circuit_bootstrap
+cargo bench -p primus_tfhe_glwe_ntt --bench sparse_blind_rotation
 ```
 
 `pbs` reuses output buffers and covers both orders, 3/4-output ManyLUT versus
 separate PBS calls, and Boolean AND/MUX. BR and key-switch stages locate costs;
 coefficient extraction is benchmarked in `primus_lattice`. `circuit_bootstrap` measures complete CBS for both orders and 2/3 output levels.
+
+`sparse_blind_rotation` compares raw sparse and classic BR under the same fixed-weight
+client secret for both P3 experimental profiles. It excludes key switching and
+extraction; each iteration evaluates one of four pre-encrypted inputs. Memory and
+stage measurements are recorded in the [P3 design notes](../../docs/tfhe-sparse-pbs.md#p34-聚合表示与工作区测量).
