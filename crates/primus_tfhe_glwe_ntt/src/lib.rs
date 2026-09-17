@@ -11,7 +11,8 @@
 //! [`KeyGenerator::try_generate_sparse_bootstrapping_key`] builds an experimental
 //! [`SparseGlweBootstrappingKey`] with public buckets and encrypted selections.
 //! Its raw LUT blind rotation reuses [`SparseGlweBlindRotationContext`].
-//! Sparse evaluation is not yet integrated into [`Evaluator`].
+//! [`KeyGenerator::try_generate_sparse_server_key`] integrates this path with
+//! [`Evaluator`] for ordinary and interleaved PBS in both orders.
 //!
 //! Use [`TfheContext::boolean_encryptor`], [`TfheContext::boolean_decryptor`] and
 //! [`TfheContext::boolean_evaluator`] to bind Boolean operations to the same
@@ -48,7 +49,7 @@ pub use circuit_bootstrap::{
 };
 pub use context::TfheContext;
 pub use evaluator::Evaluator;
-pub use key::{KeyGenerator, ServerKey};
+pub use key::{BootstrappingKey, KeyGenerator, ServerKey};
 pub use parameters::{TfheParameters, boolean_parameters};
 pub use primus_tfhe::{
     BivariateLookupTable, InterleavedLookupTable, LookupTable, LweCiphertext, LweSecretKeyRef,

@@ -22,6 +22,9 @@
 四后端均支持私钥和 LWE 公钥客户端。Fourier 后端支持 RustFFT 与 TfheFFT。
 参数和 API 仍处于实验阶段；示例及 benchmark fixture 不是生产安全参数或失败概率建议。
 
+GLWE NTT 另支持固定重量二元 small 秘密的[实验性稀疏 PBS](../primus_tfhe_glwe_ntt/README.zh_CN.md#实验性稀疏-pbs)：
+两种 order、普通/交错 LUT；稀疏 CBS 尚不支持。
+
 ## LUT 与资源生命周期
 
 1. Family 参数描述外部 LWE 和 accumulator 环。

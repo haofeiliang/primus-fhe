@@ -53,7 +53,8 @@ pub enum SparseBootstrappingKeyError {
 /// Generation retains only the public mapping and ciphertexts, never the support
 /// or matching. Input and accumulator use the context's explicit modulus.
 /// [`Self::ntt_blind_rotate_lookup_table_to`] provides raw sparse blind rotation.
-/// This experimental key is not yet consumed by [`crate::Evaluator`].
+/// [`KeyGenerator::try_generate_sparse_server_key`] pairs it with a GLWE KSK
+/// for ordinary and interleaved evaluation in [`crate::Evaluator`].
 ///
 /// Successful mapping conditions the joint distribution of the public map and
 /// secret. Fixed-weight security and complete PBS noise bounds need independent

@@ -13,8 +13,8 @@ use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, U64NttTable};
 use primus_poly::Polynomial;
 use primus_tfhe_glwe_ntt::{
-    CircuitBootstrapEvaluationError, CircuitBootstrapParameters, PbsOrder, TfheContext,
-    TfheParameters,
+    CircuitBootstrapEvaluationError, CircuitBootstrapParameters, KeyGenerator, PbsOrder,
+    TfheContext, TfheParameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -27,7 +27,7 @@ fn parameters(order: PbsOrder, plain_modulus: u64) -> TfheParameters<u64> {
         4,
         plain_modulus,
         modulus,
-        SecretKeyDistr::UniformBinary,
+        SecretKeyDistr::fixed_hamming_weight_binary(4, 2),
         0.7,
     );
     let glwe = GlweParameters::new(
@@ -89,6 +89,17 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
         let circuit_key = context
             .generate_circuit_bootstrap_key(&client_key, &circuit_parameters, &mut rng)
             .unwrap();
+        let sparse_server_key = KeyGenerator::new(&context)
+            .try_generate_sparse_server_key(&client_key, 3, 4, &mut rng)
+            .unwrap();
+        assert!(matches!(
+            context.circuit_bootstrap_evaluator(
+                &sparse_server_key,
+                &circuit_parameters,
+                &circuit_key,
+            ),
+            Err(CircuitBootstrapEvaluationError::UnsupportedSparseBootstrapping)
+        ));
         let incompatible_trace =
             GgswParameters::with_glwe_params(context.parameters().glwe(), 9, None);
         let incompatible_parameters = CircuitBootstrapParameters::try_new(

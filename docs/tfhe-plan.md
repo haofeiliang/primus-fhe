@@ -169,7 +169,7 @@
 
 **完成条件：** 满足旋转不变量，外积次数等于桶数；经典路径仍可作为功能和成本对照。
 
-**已完成的实现：** `SparseGlweBootstrappingKey::ntt_blind_rotate_lookup_table_to` 与 `SparseGlweBlindRotationContext` 提供步长 1 的参考盲旋转；逐输入量化、逐桶聚合、NTT 和一次外积，在线零分配。小环全指数 oracle、同秘密经典对照与真实加密输入验证见 [P3.3 实现与验证](tfhe-sparse-pbs.md#p33-参考盲旋转实现与验证)。下一步 P3.4 测量聚合、变换及工作区，再决定优化。
+**已完成的实现：** `SparseGlweBootstrappingKey::ntt_blind_rotate_lookup_table_to` 与 `SparseGlweBlindRotationContext` 提供步长 1 的参考盲旋转；逐输入量化、逐桶聚合、NTT 和一次外积，在线零分配。小环全指数 oracle、同秘密经典对照与真实加密输入验证见 [P3.3 实现与验证](tfhe-sparse-pbs.md#p33-参考盲旋转实现与验证)。后续聚合、变换及工作区测量见 P3.4。
 
 ## P3.4 聚合、表示与工作区优化
 
@@ -182,7 +182,7 @@
 
 **完成条件：** 保留的优化有可复现依据，参考 oracle 不随优化共用同一易错实现。
 
-**已完成的实现：** 测量两组参数的聚合、NTT、外积、原始 BR 及实际分配；保留 dummy 初始化、按整多项式分块聚合和原地 NTT，工作区减少一份 GGSW。连续旋转切片及其他无稳定收益的原型未保留，仅新增四项原始 BR 对照基准。默认/SIMD 性能和内存边界见 [P3.4 测量](tfhe-sparse-pbs.md#p34-聚合表示与工作区测量)。下一步 P3.5 接入完整 PBS。
+**已完成的实现：** 测量两组参数的聚合、NTT、外积、原始 BR 及实际分配；保留 dummy 初始化、按整多项式分块聚合和原地 NTT，工作区减少一份 GGSW。连续旋转切片及其他无稳定收益的原型未保留，仅新增四项原始 BR 对照基准。默认/SIMD 性能和内存边界见 [P3.4 测量](tfhe-sparse-pbs.md#p34-聚合表示与工作区测量)。完整 PBS 接入见 P3.5。
 
 ## P3.5 完整 PBS 与组合验收
 
@@ -194,6 +194,13 @@
 - 标明已实现组合；Fourier、三元、NTRU 移植另立方案，不作为首版条件。
 
 **完成条件：** 完整功能 PBS 通过，gate/微基准不能替代它；所有承诺的组合有验证。未完成的 CBS 组合明确作为未决项，不自动列为支持。
+
+**已完成的实现：** `ServerKey` 保存经典或稀疏 BSK，`try_generate_sparse_server_key` 复用原 KSK，
+evaluator 在 BR 入口分派并只分配对应工作区。两种 order、普通/三输出交错 LUT 和不同输出尺度
+通过完整 PBS 与零分配验证；CBS 明确拒绝稀疏 key。完整 PBS、keygen、常驻/峰值内存、
+相位余量与匹配诊断见 [P3.5 验收](tfhe-sparse-pbs.md#p35-完整-pbs-接入与验收)。
+历史 n=512 成本组稀疏 PBS 耗时约减少 30%–37%，小组更慢，仍由调用方显式选择；安全及完整尾界未认证。
+下一步 P4.1 选定 MVB 算法与编码。
 
 ## P4.1 MVB 算法与编码选型
 

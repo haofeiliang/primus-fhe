@@ -41,33 +41,41 @@ cargo run -p primus_tfhe_glwe_ntt --example ntt_basic
 密钥生成时准备普通 PBS 量化参数；ManyLUT 在系数循环前按旋转步长准备转换。
 高层 context 保持既有参数约束。
 
-## 实验性稀疏密钥与盲旋转
+## 实验性稀疏 PBS
 
-`KeyGenerator::try_generate_sparse_bootstrapping_key(&client_key, copy_count,
-bucket_count, &mut rng)` 从客户端的固定重量二元 **small-LWE** 秘密生成
-`SparseGlweBootstrappingKey`，适用于两种 PBS order。实验参数取 `copy_count=3`、
-`bucket_count=2*h`。生成入口检查实际二元系数和重量，固定同一秘密最多尝试八个
-独立公开映射；耗尽后返回错误，不返回部分密钥。
-
-密钥保存系数域 GGSW 和公开桶索引。`bucket(j)` 借用递增的输入索引及对应 GGSW，
-最后额外包含一个加密 dummy；未占用桶的 dummy 加密 1。私有匹配缓冲区在释放时擦除。
-
-低层盲旋转接收 small-LWE 输入和已编码 LUT 多项式，覆盖写入 accumulator 秘密下的系数域 GLWE：
+将 **small-LWE** 分布设为 `SecretKeyDistr::fixed_hamming_weight_binary(n, h)`，
+显式生成稀疏 server key：
 
 ```rust,ignore
-let mut scratch = SparseGlweBlindRotationContext::new(&key);
-key.ntt_blind_rotate_lookup_table_to(
-    &input, lut.polynomial(), &mut output, context.table(), &mut scratch,
-);
+let mut generator = KeyGenerator::new(&context);
+let client_key = generator.generate_client_key(&mut rng);
+let server_key = generator.try_generate_sparse_server_key(&client_key, 3, 2 * h, &mut rng)?;
+let mut evaluator = context.evaluator(&server_key)?;
+evaluator.apply_lookup_table_to(&input, &lut, &mut output);
+// 同一 evaluator 支持 apply_interleaved_lookup_table_to。
 ```
 
-输出与工作区只需分配一次。执行时每个输入系数量化一次，每桶从 dummy 初始化聚合结果、原地转 NTT，
-每桶一次外积，在线不分配。当前采用普通旋转步长 1；此入口尚未整合 key switch、
-提取或交错 PBS，`Evaluator` 仍使用经典 BSK。
-这些参数尚无经认证的安全等级或完整 PBS 失败率，见[设计契约](../../docs/tfhe-sparse-pbs.md)。
+两种 order 均以该 small 秘密进行盲旋转。`BootstrapKeyswitch` 的外部维数仍为 `n`，
+`KeyswitchBootstrap` 仍为 `kN`。普通/交错 PBS 共用既有 LUT 编译、输出 codec、KS 和提取，
+`_to` 调用零分配。Evaluator 只为所选算法分配 scratch，在盲旋转入口分派一次。
+原有密钥工厂继续生成经典密钥。需要低层密钥的调用方通过 `ServerKey::bootstrapping_key()`
+返回的 `BootstrappingKey::{Classic, Sparse}` 选择对应类型。
+
+生成入口检查实际二元系数和重量，固定同一秘密最多尝试八个独立公开桶映射，错误时不返回部分密钥。
+实验参数采用三个副本、`2*h` 个桶。系数域 GGSW 加密私有选择位，每桶另有一个 dummy；
+未占用桶的 dummy 加密 1。私有匹配缓冲区在释放时擦除。
+
+低层普通盲旋转使用 `try_generate_sparse_bootstrapping_key` 返回的 `SparseGlweBootstrappingKey`，
+配套 `SparseGlweBlindRotationContext::new(&key)`，调用 `ntt_blind_rotate_lookup_table_to`。
+输入为 small-LWE 和已编码多项式，输出为 accumulator GLWE，旋转步长为 1。
+
+稀疏聚合噪声和交错旋转步长需要单独预算。这些参数尚无经认证的安全等级或完整 PBS 失败率，
+见 [P3 契约与测量](../../docs/tfhe-sparse-pbs.md#p35-完整-pbs-接入与验收)。
 
 ## Circuit bootstrapping
 
+CBS 要求经典 server key；稀疏密钥返回
+`CircuitBootstrapEvaluationError::UnsupportedSparseBootstrapping`，其 gadget 尺度噪声尚未验收。
 可选 CBS 使用 `CircuitBootstrapParameters::try_new(context.parameters(),
 output_basis, trace, scheme_switch)`、`generate_circuit_bootstrap_key` 和
 `circuit_bootstrap_evaluator`。普通与 CBS key 必须来自同一 client key 和 NTT 表示。
@@ -84,13 +92,14 @@ cargo clippy -p primus_tfhe_glwe_ntt --all-targets -- -D warnings
 cargo +nightly test -p primus_tfhe_glwe_ntt --features simd
 cargo bench -p primus_tfhe_glwe_ntt --bench pbs
 cargo bench -p primus_tfhe_glwe_ntt --bench circuit_bootstrap
-cargo bench -p primus_tfhe_glwe_ntt --bench sparse_blind_rotation
+cargo bench -p primus_tfhe_glwe_ntt --bench sparse_pbs
 ```
 
 `pbs` 复用输出，覆盖两种 order、3/4 输出 ManyLUT 与独立 PBS 的对照，以及 Boolean AND/MUX。
 BR 和密钥切换阶段用于定位开销；系数提取的基准集中在 `primus_lattice`。
 `circuit_bootstrap` 测量两种 order、2/3 输出层数下的完整 CBS。
 
-`sparse_blind_rotation` 在同一固定重量客户端秘密下，对照两组 P3 实验参数的稀疏/经典原始 BR，
-不含 key switch 和提取；每次迭代处理四个预先加密输入中的一个。内存及分项测量见
-[P3 设计记录](../../docs/tfhe-sparse-pbs.md#p34-聚合表示与工作区测量)。
+`sparse_pbs` 在同一固定重量客户端秘密下，对照经典/稀疏完整 PBS：两种 order、普通与三输出
+交错 LUT，以及完整 server key 生成（`n/h/N=728/32/1024`，共 10 项）。PBS 计时前准备输入、evaluator 和输出，
+每次迭代处理四个加密输入中的一个。内存、小参数诊断及默认/SIMD 结果见
+[P3 测量记录](../../docs/tfhe-sparse-pbs.md#p35-完整-pbs-接入与验收)。

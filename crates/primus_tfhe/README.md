@@ -24,6 +24,10 @@ All four backends support secret-key and LWE public-key clients. Fourier backend
 support RustFFT and TfheFFT. Parameters and APIs are experimental; example and
 benchmark fixtures are not production security or failure-probability recommendations.
 
+GLWE NTT also supports [experimental sparse PBS](../primus_tfhe_glwe_ntt/README.md#experimental-sparse-pbs)
+for fixed-weight binary small secrets: both orders and ordinary/interleaved LUTs.
+Sparse CBS is not supported.
+
 ## LUTs and resource lifetime
 
 1. A family parameter set describes the external LWE and accumulator ring.

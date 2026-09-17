@@ -34,7 +34,7 @@ name = "circuit_bootstrap"
 harness = false
 
 [[bench]]
-name = "sparse_blind_rotation"
+name = "sparse_pbs"
 harness = false
 
 [features]

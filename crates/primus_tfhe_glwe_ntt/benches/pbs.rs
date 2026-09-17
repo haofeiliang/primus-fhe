@@ -11,8 +11,8 @@ use primus_glwe::{GlweCiphertext, NttGlweKeySwitchingContext};
 use primus_lwe::LweCiphertext;
 use primus_ntt::{NttTable, U32NttTable};
 use primus_tfhe_glwe_ntt::{
-    BooleanGate, NttGlweBlindRotationContext, PbsOrder, TfheContext, TfheParameters,
-    boolean_parameters,
+    BooleanGate, BootstrappingKey, NttGlweBlindRotationContext, PbsOrder, TfheContext,
+    TfheParameters, boolean_parameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -43,6 +43,9 @@ fn bench_order(c: &mut Criterion, order: PbsOrder) {
     let context = TfheContext::try_new(parameters, table).unwrap();
     let mut rng = StdRng::seed_from_u64(42);
     let (client_key, server_key) = context.generate_keys(&mut rng).unwrap();
+    let BootstrappingKey::Classic(bootstrapping_key) = server_key.bootstrapping_key() else {
+        panic!("classic benchmark requires a classic server key");
+    };
     let parameters = context.parameters();
     let encryptor = context.encryptor(&client_key).unwrap();
     let input = encryptor.encrypt_padded(1u32, &mut rng).unwrap();
@@ -66,16 +69,14 @@ fn bench_order(c: &mut Criterion, order: PbsOrder) {
     let mut small_lwe: LweCiphertext<u32> = LweCiphertext::zero(parameters.small_lwe().dimension());
 
     match order {
-        PbsOrder::BootstrapKeyswitch => server_key
-            .bootstrapping_key()
-            .ntt_blind_rotate_lookup_table_to(
-                &input,
-                lookup_table.polynomial(),
-                &mut main_glwe,
-                modulus,
-                context.table(),
-                &mut blind_rotation,
-            ),
+        PbsOrder::BootstrapKeyswitch => bootstrapping_key.ntt_blind_rotate_lookup_table_to(
+            &input,
+            lookup_table.polynomial(),
+            &mut main_glwe,
+            modulus,
+            context.table(),
+            &mut blind_rotation,
+        ),
         PbsOrder::KeyswitchBootstrap => {
             input.inverse_extract_glwe_to(&mut main_glwe, poly_length, modulus)
         }
@@ -122,7 +123,7 @@ fn bench_order(c: &mut Criterion, order: PbsOrder) {
             PbsOrder::KeyswitchBootstrap => &small_lwe,
         };
         b.iter(|| {
-            black_box(server_key.bootstrapping_key()).ntt_blind_rotate_lookup_table_to(
+            black_box(bootstrapping_key).ntt_blind_rotate_lookup_table_to(
                 black_box(blind_rotation_input),
                 black_box(lookup_table.polynomial()),
                 black_box(&mut main_glwe),

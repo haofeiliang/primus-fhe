@@ -9,19 +9,23 @@ use primus_glwe::{
 use primus_integer::FheUint;
 use primus_lattice::ggsw::NttGgsw;
 use primus_lwe::LweCiphertext;
+use primus_modulus::BarrettModulus;
 use primus_ntt::NttTable;
 use primus_reduce::ReduceMul;
 use primus_tfhe::{InterleavedLookupTable, LookupTableError};
 use primus_tfhe_glwe::GlwePbsOrder as PbsOrder;
 
 use crate::{
-    CircuitBootstrapKey, CircuitBootstrapParameters, NttGlweBlindRotationContext, ServerKey,
-    TfheContext, evaluator::prepare_small_lwe,
+    BootstrappingKey, CircuitBootstrapKey, CircuitBootstrapParameters, NttGlweBlindRotationContext,
+    NttGlweBootstrappingKey, ServerKey, TfheContext, evaluator::prepare_small_lwe,
 };
 
 /// An error produced while constructing a circuit-bootstrap evaluator.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum CircuitBootstrapEvaluationError {
+    /// Sparse aggregation has not been validated for gadget-scaled CBS outputs.
+    #[error("sparse circuit bootstrapping is not supported")]
+    UnsupportedSparseBootstrapping,
     /// The ordinary PBS server key does not match the TFHE context.
     #[error("TFHE server key is incompatible with the circuit-bootstrap context")]
     IncompatibleServerKey,
@@ -47,6 +51,7 @@ where
 {
     context: &'a TfheContext<T, Table>,
     server_key: &'a ServerKey<T>,
+    bootstrapping_key: &'a NttGlweBootstrappingKey<T, BarrettModulus<T>>,
     parameters: &'a CircuitBootstrapParameters<T>,
     circuit_key: &'a CircuitBootstrapKey<T>,
     lookup_table: InterleavedLookupTable<T>,
@@ -70,7 +75,8 @@ where
     /// Creates an evaluator and compiles the gadget-scaled identity
     /// PBSManyLUT used by circuit bootstrapping.
     ///
-    /// Checks parameter, layout and decomposition-basis compatibility.
+    /// Checks parameter, layout and decomposition-basis compatibility. Sparse
+    /// server keys are rejected until their CBS noise and gadget scales are validated.
     ///
     /// # Correctness
     ///
@@ -90,6 +96,9 @@ where
         if !server_key.is_compatible(tfhe) {
             return Err(CircuitBootstrapEvaluationError::IncompatibleServerKey);
         }
+        let BootstrappingKey::Classic(bootstrapping_key) = server_key.bootstrapping_key() else {
+            return Err(CircuitBootstrapEvaluationError::UnsupportedSparseBootstrapping);
+        };
         if !parameters.is_compatible(tfhe) {
             return Err(CircuitBootstrapEvaluationError::IncompatibleParameters);
         }
@@ -124,6 +133,7 @@ where
         Ok(Self {
             context,
             server_key,
+            bootstrapping_key,
             parameters,
             circuit_key,
             lookup_table,
@@ -210,8 +220,7 @@ where
                 &self.small_lwe
             }
         };
-        self.server_key
-            .bootstrapping_key()
+        self.bootstrapping_key
             .ntt_blind_rotate_interleaved_lookup_table_kernel_to(
                 small_lwe,
                 self.lookup_table.polynomial(),

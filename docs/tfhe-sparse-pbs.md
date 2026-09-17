@@ -15,7 +15,7 @@
 | BSK | 每个副本独立加密选择位，每桶额外独立加密一个 dummy；按桶保存系数域 GGSW |
 | 在线执行 | 输入旋转量计算一次；逐桶系数旋转/相加，整桶转 NTT，再做一次 external product |
 | 共享层 | 复用 LUT、`RotationQuantizer`、GGSW、分解和外积；不向 `primus_tfhe::lookup_table` 加稀疏参数或策略 trait |
-| 首版组合 | P3.5 接普通/交错 LUT 和两种 GLWE order；CBS、Fourier、稀疏三元、NTRU 不在本次支持承诺中 |
+| 首版组合 | 已接普通/交错 LUT 和两种 GLWE order；CBS、Fourier、稀疏三元、NTRU 不在本次支持承诺中 |
 
 参数中的 `h` 只约束**进入 BR 的 small-LWE 秘密**。KS→BR 顺序的外部秘密仍是 accumulator 的 `kN` 维系数展开；不能把它改标成固定重量二元分布。以下用 `k` 表示 GLWE 维数，`b` 表示桶数，`s` 表示交错 LUT 的 `padded_output_count`，避免与输出函数个数混用。
 
@@ -160,6 +160,9 @@ Primus 当前两种链都保持同一个密文模数，没有论文中 `Q -> Q' 
 
 ## 首版参数与经典对照
 
+以下为 P3.1–P3.5 首轮测量使用的历史参数。当前常驻 `sparse_pbs` 基准已将成本组
+`n` 提高到 728，`h=32`、`N=1024` 和其余参数保持不变；下文成本组的历史耗时、内存及误差数字仍对应 `n=512`。
+
 两个参数组都是**未经安全认证的实验参数**，使用 `u32`、`BarrettModulus`、`q_in=q_acc=132120577`、GLWE 维数 `k=1`、`t_in=t_out=8`、unsigned rounded codec，首轮测前半区。该已有 NTT 素数满足 `2N | q-1`；不修改现有 `boolean_parameters()` 默认值。
 
 | 参数 | 小型回归 | 成本比较 |
@@ -186,7 +189,7 @@ Primus 当前两种链都保持同一个密文模数，没有论文中 `Q -> Q' 
 
 ## 密钥布局、所有权和存储
 
-P3.2 的 `SparseGlweBootstrappingKey<T>` 放在 `primus_tfhe_glwe_ntt`；长期保存的是**系数域** GGSW，不以 `NttGgsw` 名称包装未变换的数据。`sparse/` 中分离私有 PBC、key 和后续 BR 实现，不创建通用 PBC/backend trait。P3.5 再让 server/evaluator 在调用入口选择经典或稀疏执行，LUT 构造器不承担策略选择。
+P3.2 的 `SparseGlweBootstrappingKey<T>` 放在 `primus_tfhe_glwe_ntt`；长期保存的是**系数域** GGSW，不以 `NttGgsw` 名称包装未变换的数据。`sparse/` 中分离私有 PBC、key 和后续 BR 实现，不创建通用 PBC/backend trait。P3.5 已让 server/evaluator 在调用入口选择经典或稀疏执行，LUT 构造器不承担策略选择。
 
 | 数据 | 保存/建立位置 |
 | --- | --- |
@@ -216,7 +219,7 @@ P3.2 的 `SparseGlweBootstrappingKey<T>` 放在 `primus_tfhe_glwe_ntt`；长期�
 - 入口先校验上下文兼容性、固定重量分布、实际二元系数/重量、桶参数及存储长度，再消费随机数。匹配成功后按桶批量加密，直接在最终分配中原地 inverse NTT。支持集、匹配工作区、选择位用 `Zeroizing`，NTT 秘密和 gadget context 沿用已有擦除契约。
 - 保留四项聚焦测试：216 个小图与暴力匹配对照；强制第二/第八次成功及八次耗尽；[公开入口与加密语义](../crates/primus_tfhe_glwe_ntt/tests/sparse_key.rs)覆盖实际支持集恰好一次、每桶选择/dummy 总和为 1、公开空桶及非法输入在采样前拒绝。测试只在客户端侧恢复合成测试密钥的选择位，不给 server 增加明文辅助数据。
 
-参考 sparse BR 入口见下节 P3.3；当前完整 PBS evaluator 及其 benchmark 继续使用经典 BSK，原始稀疏/经典 BR 对照见 P3.4。
+参考 sparse BR 入口见下节 P3.3；完整 PBS 接入与验收见 P3.5，历史原始稀疏/经典 BR 对照见 P3.4。
 
 ### P3.2 匹配表示与测量
 
@@ -245,7 +248,7 @@ P3.2 的 `SparseGlweBootstrappingKey<T>` 放在 `primus_tfhe_glwe_ntt`；长期�
 每桶从独立 dummy 复制初始化聚合 GGSW，累加所有旋转副本，
 原地转 NTT，再做一次外积。输出与 scratch 交替使用，奇数桶数时最后复制回输出。
 没有按秘密占用或公开指数跳过桶，外积次数严格为 `bucket_count`。
-完整 PBS、两种 order 的 KS/提取接入与交错步长仍在 P3.5；本阶段未实现 CBS。
+完整 PBS、两种 order 的 KS/提取与交错步长已在 P3.5 接入；CBS 不在本次支持范围。
 
 只新增[一项集成测试](../crates/primus_tfhe_glwe_ntt/tests/sparse_blind_rotation.rs)，
 同一客户端秘密生成经典/稀疏 BSK。独立整数模切及逐项单项式 oracle 检查全部输出相位，
@@ -312,7 +315,7 @@ P3.2 的 `SparseGlweBootstrappingKey<T>` 放在 `primus_tfhe_glwe_ntt`；长期�
 
 默认小组两轮下降约 4.0%/2.1%，SIMD 大组下降约 2.1%/2.3%。默认大组变化为 +0.2%/−9.4%，SIMD 小组为 −0.3%/+1.2%，不作稳定加速结论。保留优化的主要收益是工作区减少，耗时改善只按上述测量范围解释。小组稀疏仍慢于经典；大组当前稀疏比同秘密经典少约 27%–36% 耗时，不能由外积次数比值推导倍数。经典路径照常跳过公开零旋转：小组四个输入均为 16 次有效 CMUX，大组分别为 511/510/512/512 次；稀疏始终执行 8/64 次外积。
 
-复现入口：`cargo bench -p primus_tfhe_glwe_ntt --bench sparse_blind_rotation`。测量结果限于上述硬件、参数和固定输入，均为原始 BR，不含 KS、提取或完整 PBS。
+历史复现入口（提交 `c424162`）：`cargo bench -p primus_tfhe_glwe_ntt --bench sparse_blind_rotation`。测量结果限于上述硬件、参数和固定输入，均为原始 BR，不含 KS、提取或完整 PBS。
 
 ### 内存边界
 
@@ -325,7 +328,108 @@ P3.2 的 `SparseGlweBootstrappingKey<T>` 放在 `primus_tfhe_glwe_ntt`；长期�
 
 工作区分别减少约 39.5%/38.4%，构造分配从 8 次减为 7 次；两组在线分配次数和峰值增量均为零。基准测得的工作区大小与上文公式一致。密钥布局及常驻量未增加，未同时保存系数/NTT 两份 BSK。
 
-常驻基准仅新增 [`sparse_blind_rotation`](../crates/primus_tfhe_glwe_ntt/benches/sparse_blind_rotation.rs)，两组参数各比较经典/稀疏原始 BR，共四项。分项、分配和表示选型的临时程序不进入 CI。完整 PBS、两种 order 和交错 LUT 接入仍属于 P3.5；上述功能和有限样本不认证安全性或完整链失败概率。
+P3.4 当时新增 `sparse_blind_rotation`，两组参数各比较经典/稀疏原始 BR，共四项；P3.5 已将其替换为完整 PBS 基准。分项、分配和表示选型的临时程序不进入 CI。上述功能和有限样本不认证安全性或完整链失败概率。
+
+## P3.5 完整 PBS 接入与验收
+
+### 接口与有效范围
+
+`KeyGenerator::try_generate_sparse_server_key` 配对稀疏 BSK 和既有 GLWE KSK；
+`ServerKey::bootstrapping_key()` / `into_parts()` 的 BSK 类型改为
+`BootstrappingKey::{Classic, Sparse}`。原有生成入口继续生成经典 key。
+Evaluator 将所选 key 引用与其 scratch 配对，只分配一套 BR 工作区，在线在 BR 入口分派一次。
+LUT 编译、输出 codec、输入/输出检查、KS 与提取共用原路径。
+
+普通 LUT 复用 key 中的步长 1 量化器，交错 LUT 在系数循环前按 `padded_output_count`
+准备量化器；mask 和 body 使用相同步长。稀疏条件始终绑定实际 BR 的 small-LWE 秘密。
+两种 order 的外部维数分别保持 `n` / `kN`，KS 的目标始终为补零 small 秘密。
+兼容性检查绑定 sparse weight、模数、维数、布局与 basis，但不能验证实际秘密身份。
+
+只新增[一项完整 PBS 测试](../crates/primus_tfhe_glwe_ntt/tests/sparse_pbs.rs)：同一客户端的
+经典/稀疏对照，两种 order，普通和三输出四槽交错 LUT，`t_in=8 → t_out=16`，四个前半区消息，
+解码/相位余量、步长切换复用、零分配及写入前拒绝。为覆盖截断误差，该测试 BR basis 为
+`log_basis=7, levels=3`，其余采用小参数。现有 CBS fixture 增加稀疏 key 拒绝检查；
+`CircuitBootstrapEvaluationError::UnsupportedSparseBootstrapping` 明确保留 gadget 尺度验收边界。
+Fourier、稀疏三元和 NTRU 未新增支持。
+
+### 完整性能与内存
+
+2026-09-17，Ryzen 9 9955HX3D，固定逻辑 CPU 2，release；默认 rustc 1.98.0，
+SIMD 为 nightly 1.100.0（2026-08-26）加 `simd` feature。使用上文两组参数，未改变安全/噪声假设。
+每个 order 从 `StdRng` seed `0x5035_4252+n` 生成同一客户端的经典 key、稀疏 key，
+再加密 `0..4` 四个输入；计时前验证全部输出。单输出为 `(3*m+1)%8`，三输出为
+`(m+2*i)%8`。每次迭代执行一次完整 PBS（含 KS/提取），复用 evaluator 与输出。
+
+Criterion：PBS 30 samples、keygen 10 samples，0.2 s warmup、1 s measurement、1,000 resamples。
+各配置一轮，下面为点估计，不能视作跨机器或稳定尾延迟结论；大组稀疏路径的置信区间较宽，
+例如默认 BK 单输出为 2.30–2.45 ms。BK/KB 分别指 `BootstrapKeyswitch` / `KeyswitchBootstrap`。
+
+| 参数 / order | 默认单输出：经典 → 稀疏 | 默认三输出：经典 → 稀疏 | SIMD 单输出：经典 → 稀疏 | SIMD 三输出：经典 → 稀疏 |
+| --- | --- | --- | --- | --- |
+| 小参数 BK | 28.53 → 31.72 µs | 28.46 → 31.59 µs | 28.58 → 34.30 µs | 28.76 → 33.56 µs |
+| 小参数 KB | 30.16 → 31.75 µs | 30.25 → 31.89 µs | 27.99 → 35.46 µs | 27.98 → 34.75 µs |
+| 成本组 BK | 3.529 → 2.363 ms | 3.525 → 2.250 ms | 3.515 → 2.464 ms | 3.511 → 2.349 ms |
+| 成本组 KB | 3.536 → 2.267 ms | 3.525 → 2.224 ms | 3.520 → 2.316 ms | 3.496 → 2.262 ms |
+
+同一工作负载下，成本组稀疏完整 PBS 在本轮耗时约减少 30%–37%；小参数反而约慢 5%–27%。
+三输出和单输出的接近耗时来自共享 BR/KS；不表示三个独立输入的吞吐。
+经典 BR 保留公开零指数跳过：成本组 BK 普通/交错分别跳过 0/3 个，KB 为 1/4 个（每组 2048 个 mask 系数）；
+小组均为零。稀疏 BR 固定处理全部桶。
+
+完整 server key 生成包含 BSK、KSK 和结果释放，复用 generator，排除客户端与 NTT table。
+两种 order 的生成算法相同，仅保留 BK 计时：
+
+| 参数 | 默认：经典 → 稀疏 | SIMD：经典 → 稀疏 |
+| --- | --- | --- |
+| 小参数 | 0.311 → 1.122 ms | 0.310 → 1.122 ms |
+| 成本组 | 32.24 → 118.26 ms | 31.50 → 115.84 ms |
+
+下表为实际 allocator 请求字节，不含 allocator 开销/RSS。常驻包括 BSK、basis、映射及 KSK；
+keygen 峰值将新建 generator 与临时缓冲区计入，已有 context/client 排除。
+Evaluator 包含 BR、KS 和输入/中间密文工作区；不含调用方输出。两种 order 和默认/SIMD 数值相同。
+
+| 参数 / key | BSK 系数 payload | Server key 常驻 B | Keygen 峰值 B | Evaluator 工作区 B |
+| --- | --- | ---: | ---: | ---: |
+| 小参数 / 经典 | 192 KiB | 202,824 | 209,992 | 14,916 |
+| 小参数 / 稀疏 | 672 KiB | 694,800 | 701,968 | 27,332 |
+| 成本组 / 经典 | 24 MiB | 25,272,512 | 25,342,144 | 61,444 |
+| 成本组 / 稀疏 | 75 MiB | 78,762,696 | 78,832,328 | 114,692 |
+
+Evaluator 构造分别为经典 12 / 稀疏 14 次分配；所有测量的在线普通/交错 `_to` 调用零分配。
+稀疏 BSK 的映射额外占用成本组 12,808 B / 小组 456 B；没有保存第二份 NTT BSK。
+调用方每个 LWE 输出另占 `4*(dimension+1)` B，三输出乘三。
+
+常驻 [`sparse_pbs`](../crates/primus_tfhe_glwe_ntt/benches/sparse_pbs.rs) 替换四项原始 BR 基准，
+只保留成本组的八项完整 PBS 和两项 keygen。当前 `DIMENSION=728`，已通过默认/SIMD 的
+基准冒烟与固定输入解码检查，未重新计时；复现上表历史数据需将其设回 512。运行当前基准：
+`cargo bench -p primus_tfhe_glwe_ntt --bench sparse_pbs`；SIMD 使用 `cargo +nightly bench` 并加
+`--features simd`。小参数仅替换该基准中的维数、重量、噪声和两组 basis 为上文小参数后测量；
+诊断程序未保留为常驻 target，GitHub CI 不执行 benchmarks。
+
+### 相位余量与匹配诊断
+
+对上述固定输入，临时诊断按 `min(|phase-E(f(m))|, q-|phase-E(f(m))|)` 计算环形输出误差。
+`q/(2*t_out)` 的保守整数解码半径为 8,257,535；普通每项四个输出、交错每项十二个输出。
+默认/SIMD 的实际误差和内存记录一致。
+
+| 参数 / order | 经典：普通 / 交错最大误差 | 稀疏：普通 / 交错最大误差 | 量化后相对输入中心最大偏移：普通 / 交错 |
+| --- | ---: | ---: | ---: |
+| 小参数 BK | 37,192 / 35,446 | 25,575 / 61,028 | 0 / 4 |
+| 小参数 KB | 32,115 / 21,948 | 75,557 / 49,230 | 1 / 4 |
+| 成本组 BK | 588,867 / 782,762 | 1,262,445 / 1,066,009 | 4 / 12 |
+| 成本组 KB | 688,593 / 836,663 | 1,717,958 / 1,943,283 | 2 / 8 |
+
+偏移以实际进入 BR 的密文逐系数量化计算，KB 包含前置 KS，单位为原始旋转指数；两条路径
+在本样本中得到相同最大偏移。对应中心间半距为小组 32 / 成本组 128，交错步长为 4。
+最小输出解码余量仍大于 6.31e6；这些有限点不提供尾概率或重复求值保证。
+
+额外对每组固定非零索引 `i*n/h`、`i in 0..h`，使用生产映射/匹配实现、seed
+`0x5035_4d41+n` 连续生成 64 个成功映射，各组总尝试次数均为 64，无重试。
+这只统计映射阶段，不是 64 次大密钥加密，也不能据此宣称匹配不失败；八轮耗尽上界和条件分布仍沿用前文。
+
+默认及 nightly SIMD 均通过 NTT 后端 14 项测试、all-targets check/Clippy；严格私有 rustdoc、
+workspace all-targets check、格式及 diff 检查通过。未跑全 workspace 数值测试或非 x86 路径，
+未认证生产安全、完整链失败率及稀疏 CBS。
 
 ## 论文校勘与表示选择
 

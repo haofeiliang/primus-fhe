@@ -8,7 +8,11 @@ use primus_tfhe::{
 };
 use primus_tfhe_glwe::GlwePbsOrder as PbsOrder;
 
-use crate::{NttGlweBlindRotationContext, ServerKey, TfheContext, error::TfheEvaluationError};
+use crate::{
+    BootstrappingKey, NttGlweBlindRotationContext, NttGlweBootstrappingKey, ServerKey,
+    SparseGlweBlindRotationContext, SparseGlweBootstrappingKey, TfheContext,
+    error::TfheEvaluationError,
+};
 
 /// Reusable NTT workspace for programmable bootstrapping.
 pub struct Evaluator<'a, T, Table>
@@ -19,11 +23,24 @@ where
     context: &'a TfheContext<T, Table>,
     server_key: &'a ServerKey<T>,
     // try_new binds the key, parameters and table; this workspace stays private.
-    blind_rotation: NttGlweBlindRotationContext<T>,
+    blind_rotation: BlindRotation<'a, T>,
     key_switching: NttGlweKeySwitchingContext<T>,
     main_glwe: GlweCiphertext<Vec<T>>,
     switched: GlweCiphertext<Vec<T>>,
     small_lwe: LweCiphertext<T>,
+}
+
+// Pair each borrowed key with its own scratch once, avoiding mismatched variants
+// and allocating only the workspace for the selected algorithm.
+enum BlindRotation<'a, T: FheUint> {
+    Classic {
+        key: &'a NttGlweBootstrappingKey<T, primus_modulus::BarrettModulus<T>>,
+        scratch: NttGlweBlindRotationContext<T>,
+    },
+    Sparse {
+        key: &'a SparseGlweBootstrappingKey<T>,
+        scratch: SparseGlweBlindRotationContext<T>,
+    },
 }
 
 impl<T, Table> ProgrammableBootstrap<T> for Evaluator<'_, T, Table>
@@ -78,7 +95,16 @@ where
         Ok(Self {
             context,
             server_key,
-            blind_rotation: NttGlweBlindRotationContext::new(parameters.bootstrapping().size()),
+            blind_rotation: match server_key.bootstrapping_key() {
+                BootstrappingKey::Classic(key) => BlindRotation::Classic {
+                    key,
+                    scratch: NttGlweBlindRotationContext::new(key.size()),
+                },
+                BootstrappingKey::Sparse(key) => BlindRotation::Sparse {
+                    key,
+                    scratch: SparseGlweBlindRotationContext::new(key),
+                },
+            },
             key_switching: key_switching_context,
             main_glwe: GlweCiphertext::zero(parameters.glwe().glwe_len()),
             switched: GlweCiphertext::zero(parameters.glwe_key_switching().output().glwe_len()),
@@ -281,17 +307,27 @@ where
                 &self.small_lwe
             }
         };
-        self.server_key
-            .bootstrapping_key()
-            .ntt_blind_rotate_interleaved_lookup_table_kernel_to(
-                small_lwe,
-                lookup_table,
-                rotation_step,
-                &mut self.main_glwe,
-                parameters.glwe().cipher_modulus(),
-                self.context.table(),
-                &mut self.blind_rotation,
-            );
+        match &mut self.blind_rotation {
+            BlindRotation::Classic { key, scratch } => key
+                .ntt_blind_rotate_interleaved_lookup_table_kernel_to(
+                    small_lwe,
+                    lookup_table,
+                    rotation_step,
+                    &mut self.main_glwe,
+                    parameters.glwe().cipher_modulus(),
+                    self.context.table(),
+                    scratch,
+                ),
+            BlindRotation::Sparse { key, scratch } => key
+                .ntt_blind_rotate_interleaved_lookup_table_kernel_to(
+                    small_lwe,
+                    lookup_table,
+                    rotation_step,
+                    &mut self.main_glwe,
+                    self.context.table(),
+                    scratch,
+                ),
+        }
         match parameters.pbs_order() {
             PbsOrder::BootstrapKeyswitch => {
                 self.server_key.glwe_key_switching_key().key_switch_to(

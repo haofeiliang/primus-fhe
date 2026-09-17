@@ -50,42 +50,48 @@ of the accumulator modulus. Key generation prepares the ordinary-PBS
 quantizer. ManyLUT prepares the conversion for the rotation step before coefficient
 processing; the high-level context keeps its existing parameter restrictions.
 
-## Experimental sparse keys and blind rotation
+## Experimental sparse PBS
 
-`KeyGenerator::try_generate_sparse_bootstrapping_key(&client_key, copy_count,
-bucket_count, &mut rng)` generates a `SparseGlweBootstrappingKey` from the client's
-fixed-weight binary **small-LWE** secret in either PBS order. The experimental
-profiles use `copy_count=3`, `bucket_count=2*h`. Generation checks the actual
-binary coefficients and weight, then tries at most eight independent public
-maps with the same secret. Failure returns an error without a partial key.
-
-The key stores coefficient GGSWs and public bucket indices. `bucket(j)` borrows
-the increasing input indices and their GGSWs, followed by one encrypted dummy;
-unoccupied buckets encrypt one in the dummy. Private matching buffers are erased
-on drop.
-
-Raw blind rotation takes a small-LWE input and an encoded LUT polynomial, and
-overwrites a coefficient-domain GLWE under the accumulator secret:
+Set the **small-LWE** distribution to `SecretKeyDistr::fixed_hamming_weight_binary(n, h)`
+and generate a sparse server key explicitly:
 
 ```rust,ignore
-let mut scratch = SparseGlweBlindRotationContext::new(&key);
-key.ntt_blind_rotate_lookup_table_to(
-    &input, lut.polynomial(), &mut output, context.table(), &mut scratch,
-);
+let mut generator = KeyGenerator::new(&context);
+let client_key = generator.generate_client_key(&mut rng);
+let server_key = generator.try_generate_sparse_server_key(&client_key, 3, 2 * h, &mut rng)?;
+let mut evaluator = context.evaluator(&server_key)?;
+evaluator.apply_lookup_table_to(&input, &lut, &mut output);
+// The same evaluator supports apply_interleaved_lookup_table_to.
 ```
 
-Allocate the output and scratch once. Evaluation quantizes each input coefficient
-once, initializes each bucket aggregate from its dummy, transforms the aggregate
-in place to NTT form, and performs one external product per bucket without online
-allocation. It uses
-ordinary rotation step one; key switching, extraction and interleaved PBS are not
-integrated here. `Evaluator` still uses the classic BSK. These parameters have
-no certified security level or full PBS failure bound; see the
-[design contract](../../docs/tfhe-sparse-pbs.md).
+Both orders use that small secret for blind rotation. External dimensions remain
+`n` for `BootstrapKeyswitch` and `kN` for `KeyswitchBootstrap`. Ordinary and interleaved
+PBS share the usual LUT compiler, output codec, key switch and extraction; `_to`
+calls allocate nothing. The evaluator allocates only the selected algorithm's
+scratch and dispatches once at the blind-rotation boundary. The existing key
+factories generate classic keys. `ServerKey::bootstrapping_key()` now returns
+`BootstrappingKey::{Classic, Sparse}` for callers needing the raw key.
+
+Generation checks actual binary coefficients and weight, then tries at most eight
+independent public bucket maps with the same secret. Errors return no partial key.
+The experimental profiles use three copies and `2*h` buckets. Coefficient GGSWs
+encode private selections and a dummy per bucket; unoccupied buckets encrypt one
+in the dummy. Private matching buffers are erased on drop.
+
+For raw ordinary blind rotation, `try_generate_sparse_bootstrapping_key` returns
+`SparseGlweBootstrappingKey`; pair it with `SparseGlweBlindRotationContext::new(&key)`
+and call `ntt_blind_rotate_lookup_table_to` with a small-LWE input and encoded
+polynomial. This lower-level call outputs an accumulator GLWE at rotation step one.
+
+Sparse aggregation and interleaved rotation steps require their own noise budget.
+These parameters have no certified security level or full PBS failure bound; see
+[the P3 contract and measurements](../../docs/tfhe-sparse-pbs.md#p35-完整-pbs-接入与验收).
 
 ## Circuit bootstrapping
 
-Optional CBS uses `CircuitBootstrapParameters::try_new(context.parameters(),
+CBS requires a classic server key; sparse keys return
+`CircuitBootstrapEvaluationError::UnsupportedSparseBootstrapping` because their
+gadget-scale noise has not been validated. Optional CBS uses `CircuitBootstrapParameters::try_new(context.parameters(),
 output_basis, trace, scheme_switch)`, `generate_circuit_bootstrap_key` and
 `circuit_bootstrap_evaluator`. Ordinary and CBS keys must come from the same client
 key and NTT representation. The output basis defines GGSW gadget scales; output
@@ -103,14 +109,16 @@ cargo clippy -p primus_tfhe_glwe_ntt --all-targets -- -D warnings
 cargo +nightly test -p primus_tfhe_glwe_ntt --features simd
 cargo bench -p primus_tfhe_glwe_ntt --bench pbs
 cargo bench -p primus_tfhe_glwe_ntt --bench circuit_bootstrap
-cargo bench -p primus_tfhe_glwe_ntt --bench sparse_blind_rotation
+cargo bench -p primus_tfhe_glwe_ntt --bench sparse_pbs
 ```
 
 `pbs` reuses output buffers and covers both orders, 3/4-output ManyLUT versus
 separate PBS calls, and Boolean AND/MUX. BR and key-switch stages locate costs;
 coefficient extraction is benchmarked in `primus_lattice`. `circuit_bootstrap` measures complete CBS for both orders and 2/3 output levels.
 
-`sparse_blind_rotation` compares raw sparse and classic BR under the same fixed-weight
-client secret for both P3 experimental profiles. It excludes key switching and
-extraction; each iteration evaluates one of four pre-encrypted inputs. Memory and
-stage measurements are recorded in the [P3 design notes](../../docs/tfhe-sparse-pbs.md#p34-聚合表示与工作区测量).
+`sparse_pbs` compares classic and sparse complete PBS under one fixed-weight client
+secret: both orders, ordinary and three-output interleaved LUTs, plus complete
+server-key generation (10 cases, `n/h/N=728/32/1024`). Inputs, evaluator and outputs are
+prepared outside PBS timing. Each iteration processes one of four encrypted
+inputs. Memory, small-profile diagnostics and default/SIMD results are recorded
+in the [P3 measurements](../../docs/tfhe-sparse-pbs.md#p35-完整-pbs-接入与验收).

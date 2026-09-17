@@ -5,6 +5,7 @@ use primus_integer::FheUint;
 use primus_lattice::{context::NttGlweExternalProductContext, ggsw::Ggsw, glwe::Glwe, lwe::Lwe};
 use primus_ntt::NttTable;
 use primus_poly::Polynomial;
+use primus_tfhe::backend_support::RotationQuantizer;
 
 use super::SparseGlweBootstrappingKey;
 
@@ -73,13 +74,47 @@ impl<T: FheUint> SparseGlweBootstrappingKey<T> {
             "sparse blind-rotation NTT modulus mismatch"
         );
 
+        self.ntt_blind_rotate_interleaved_lookup_table_kernel_to(
+            input,
+            lookup_table,
+            1,
+            output,
+            ntt,
+            context,
+        );
+    }
+
+    /// The public raw wrapper or evaluator has checked layouts, table and LUT.
+    /// The rotation step is the compiled LUT's padded output count; every mask
+    /// and body coefficient must use this same step to preserve output slots.
+    pub(crate) fn ntt_blind_rotate_interleaved_lookup_table_kernel_to<Table, A, B, C>(
+        &self,
+        input: &Lwe<A>,
+        lookup_table: &Polynomial<B>,
+        rotation_step: usize,
+        output: &mut Glwe<C>,
+        ntt: &Table,
+        context: &mut SparseGlweBlindRotationContext<T>,
+    ) where
+        Table: NttTable<ValueT = T>,
+        A: Data<Elem = T>,
+        B: Data<Elem = T>,
+        C: DataMut<Elem = T>,
+    {
+        let size = self.size();
+        let poly_length = size.glwe_size().poly_length();
+        let modulus = self.input_modulus();
         let SparseGlweBlindRotationContext {
             input_exponents,
             aggregate,
             scratch,
             external_product,
         } = context;
-        let quantizer = self.input_quantizer();
+        let quantizer = if rotation_step == 1 {
+            self.input_quantizer()
+        } else {
+            RotationQuantizer::new(modulus, 2 * poly_length, rotation_step)
+        };
         quantizer.exponent_slice_to(input.a(), input_exponents);
         let initial_exponent = quantizer.exponent(input.b()).wrapping_neg() & (2 * poly_length - 1);
         let (mask, body) = output.a_b_mut_slices(poly_length);
