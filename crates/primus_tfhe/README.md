@@ -24,6 +24,9 @@ All four backends support secret-key and LWE public-key clients. Fourier backend
 support RustFFT and TfheFFT. Parameters and APIs are experimental; example and
 benchmark fixtures are not production security or failure-probability recommendations.
 
+Classic GLWE PBS supports binary/ternary small secrets in both backends, including
+NTT CBS and MVB. NTRU BR secrets remain binary.
+
 GLWE NTT also supports [experimental sparse PBS](../primus_tfhe_glwe_ntt/README.md#experimental-sparse-pbs)
 for fixed-weight binary small secrets: both orders and ordinary/interleaved/factorized LUTs.
 Sparse CBS is not supported.
@@ -312,10 +315,9 @@ from `keyswitch_accumulator`, reusing their existing workspace:
 
 BK/KB denote `BootstrapKeyswitch` / `KeyswitchBootstrap`. Output KS writes a separate
 buffer and preserves the BR result; an MVB algorithm determines its own postprocessing
-and KS placement. Current BR binary-secret restrictions remain. Ternary support must
-address control keys, encoded LWE residues to signed GLWE secret conversion, and
-parameter compatibility together. Automorphism algorithms and auxiliary keys are
-not implemented.
+and KS placement. Classic GLWE BR selects binary controls or ternary pairs outside the loop;
+encoded LWE residues are converted to signed GLWE secrets at key construction.
+NTRU ternary, bucketed sparse ternary and automorphism algorithms remain unimplemented.
 
 ## Validation
 

@@ -1,7 +1,7 @@
 use primus_glwe::{GlweCiphertext, NttGlweKeySwitchingContext};
 use primus_integer::FheUint;
 use primus_lwe::LweCiphertext;
-use primus_ntt::NttTable;
+use primus_ntt::MonomialNttTable;
 use primus_poly::Polynomial;
 use primus_tfhe::{
     InterleavedLookupTable, LookupTable, ProgrammableBootstrap, ProgrammableBootstrapInterleaved,
@@ -21,7 +21,7 @@ pub use factorized::{FactorizedEvaluator, NttFactorizedLookupTable};
 pub struct Evaluator<'a, T, Table>
 where
     T: FheUint,
-    Table: NttTable<ValueT = T>,
+    Table: MonomialNttTable<ValueT = T>,
 {
     context: &'a TfheContext<T, Table>,
     server_key: &'a ServerKey<T>,
@@ -51,7 +51,7 @@ enum BlindRotation<'a, T: FheUint> {
 impl<T, Table> ProgrammableBootstrap<T> for Evaluator<'_, T, Table>
 where
     T: FheUint,
-    Table: NttTable<ValueT = T>,
+    Table: MonomialNttTable<ValueT = T>,
 {
     #[inline]
     fn apply_lookup_table_to(
@@ -67,7 +67,7 @@ where
 impl<T, Table> ProgrammableBootstrapInterleaved<T> for Evaluator<'_, T, Table>
 where
     T: FheUint,
-    Table: NttTable<ValueT = T>,
+    Table: MonomialNttTable<ValueT = T>,
 {
     #[inline]
     fn apply_interleaved_lookup_table_to(
@@ -83,7 +83,7 @@ where
 impl<'a, T, Table> Evaluator<'a, T, Table>
 where
     T: FheUint,
-    Table: NttTable<ValueT = T>,
+    Table: MonomialNttTable<ValueT = T>,
 {
     /// Creates an evaluator after checking the server-key layout.
     pub fn try_new(
@@ -103,7 +103,7 @@ where
             blind_rotation: match server_key.bootstrapping_key() {
                 BootstrappingKey::Classic(key) => BlindRotation::Classic {
                     key,
-                    scratch: NttGlweBlindRotationContext::new(key.size()),
+                    scratch: NttGlweBlindRotationContext::new(key),
                 },
                 BootstrappingKey::Sparse(key) => BlindRotation::Sparse {
                     key,
@@ -372,7 +372,7 @@ pub(crate) fn keyswitch_input_to_small_lwe<T, Table>(
     key_switching: &mut NttGlweKeySwitchingContext<T>,
 ) where
     T: FheUint,
-    Table: NttTable<ValueT = T>,
+    Table: MonomialNttTable<ValueT = T>,
 {
     let glwe = context.parameters().glwe();
     input.inverse_extract_glwe_to(main_glwe, glwe.poly_length(), glwe.cipher_modulus());

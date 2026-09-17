@@ -8,7 +8,7 @@ use primus_lattice::{
     ggsw::{GgswIter, NttGgsw},
 };
 use primus_modulus::BarrettModulus;
-use primus_ntt::NttTable;
+use primus_ntt::MonomialNttTable;
 use primus_reduce::PrepareModulusSwitch;
 use primus_tfhe::rotation::RotationQuantizer;
 use zeroize::Zeroizing;
@@ -167,7 +167,7 @@ impl<T: FheUint> SparseGlweBootstrappingKey<T> {
 impl<T, Table> KeyGenerator<'_, T, Table>
 where
     T: FheUint,
-    Table: NttTable<ValueT = T>,
+    Table: MonomialNttTable<ValueT = T>,
 {
     /// Generates a sparse BSK from this client's fixed-weight small-LWE secret.
     ///

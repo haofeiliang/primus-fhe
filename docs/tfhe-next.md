@@ -1,12 +1,12 @@
 # TFHE 后续算法候选
 
-本文承接 [P1–P4](tfhe-plan.md)，记录值得补充的能力、应用价值与启动条件，避免把论文清单当作必须全部实现的计划。当前优先推进 **ternary LWE secret 的经典 GLWE PBS**，具体设计见 [ternary 专项](tfhe-ternary.md)。当前实施状态以 [HANDOFF](../HANDOFF.md) 为准。
+本文承接 [P1–P4](tfhe-plan.md)，记录值得补充的能力、应用价值与启动条件，避免把论文清单当作必须全部实现的计划。**ternary LWE secret 的经典 GLWE PBS 已完成**，具体设计与测量见 [ternary 专项](tfhe-ternary.md)。当前实施状态以 [HANDOFF](../HANDOFF.md) 为准。
 
 ## 1. 优先级与应用目标
 
 | 顺序 | 候选 | 解决的问题 | 建议的首个交付范围 |
 | --- | --- | --- | --- |
-| 1 | Ternary LWE secret | 支持实际 BR 秘密取 `-1/0/1`，扩展密钥分布与参数选择 | 经典 GLWE NTT/Fourier；每系数两份控制 GGSW、一次融合外积；普通、交错 PBS 与已有组合入口 |
+| 已完成 | Ternary LWE secret | 支持实际 BR 秘密取 `-1/0/1`，扩展密钥分布与参数选择 | 经典 GLWE NTT/Fourier；每系数两份控制 GGSW、一次融合外积；普通、交错 PBS 与已有组合入口 |
 | 2 | 通用 FDFB | 支持无 padding bit 的完整消息空间，包括二次幂明文模数上的任意函数 | 先选择一种两阶段方案，显式管理中间编码、偏移与噪声；不同时实现全部变体 |
 | 2 | Digit / bit extraction | 将单个多位整数拆成低基数数字或比特，供大 LUT、比较、进位、S-box 等使用 | 明确输入位宽、基数、输出编码；与 FDFB 一起选择算法及共享计算 |
 | 3 | HLUT / LFBS | 单个累加器装不下的多数字、大输入域函数 | 固定一个 8-bit S-box 或两个 4-bit 输入的函数做原型对照，再选择正式路线 |
@@ -17,7 +17,7 @@
 
 这里的优先级是工程建议，不是对论文优劣的统一排名。比较时固定功能、输入/输出表示、目标失败率与安全目标，分别报告在线成本、keygen、密钥大小和工作区。
 
-## 2. Ternary：先扩展经典 GLWE
+## 2. Ternary：经典 GLWE 已完成
 
 用户提出的融合分解为首选，每个系数两份控制 GGSW、一次外积；准确恒等式、噪声递推、与 Joye–Paillier 组合控制的区别及 T1–T3 只在 [ternary 专项](tfhe-ternary.md)维护。NTRU 还需处理可逆秘密与 padding，桶聚合稀疏 ternary 还需隐藏正负 selector，均独立安排。
 

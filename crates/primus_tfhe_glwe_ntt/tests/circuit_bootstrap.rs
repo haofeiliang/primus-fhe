@@ -21,15 +21,13 @@ use rand::{SeedableRng, rngs::StdRng};
 const POLY_LENGTH: usize = 256;
 const MODULUS: u64 = 1_125_899_906_826_241;
 
-fn parameters(order: PbsOrder, plain_modulus: u64) -> TfheParameters<u64> {
+fn parameters(
+    order: PbsOrder,
+    plain_modulus: u64,
+    distribution: SecretKeyDistr,
+) -> TfheParameters<u64> {
     let modulus = BarrettModulus::new(MODULUS);
-    let lwe = LweParameters::new(
-        4,
-        plain_modulus,
-        modulus,
-        SecretKeyDistr::fixed_hamming_weight_binary(4, 2),
-        0.7,
-    );
+    let lwe = LweParameters::new(4, plain_modulus, modulus, distribution, 0.7);
     let glwe = GlweParameters::new(
         1,
         POLY_LENGTH,
@@ -52,8 +50,21 @@ fn parameters(order: PbsOrder, plain_modulus: u64) -> TfheParameters<u64> {
 
 #[test]
 fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
-    for order in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
-        let tfhe = parameters(order, 4);
+    for (order, distribution) in [
+        (
+            PbsOrder::BootstrapKeyswitch,
+            SecretKeyDistr::fixed_hamming_weight_binary(4, 2),
+        ),
+        (
+            PbsOrder::BootstrapKeyswitch,
+            SecretKeyDistr::fixed_composition_ternary(4, 1, 1),
+        ),
+        (
+            PbsOrder::KeyswitchBootstrap,
+            SecretKeyDistr::fixed_composition_ternary(4, 1, 1),
+        ),
+    ] {
+        let tfhe = parameters(order, 4, distribution);
         let modulus = BarrettModulus::new(MODULUS);
         let table = U64NttTable::new(POLY_LENGTH.trailing_zeros(), modulus).unwrap();
         let context = TfheContext::try_new(tfhe, table).unwrap();
@@ -89,17 +100,19 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
         let circuit_key = context
             .generate_circuit_bootstrap_key(&client_key, &circuit_parameters, &mut rng)
             .unwrap();
-        let sparse_server_key = KeyGenerator::new(&context)
-            .try_generate_sparse_server_key(&client_key, 3, 4, &mut rng)
-            .unwrap();
-        assert!(matches!(
-            context.circuit_bootstrap_evaluator(
-                &sparse_server_key,
-                &circuit_parameters,
-                &circuit_key,
-            ),
-            Err(CircuitBootstrapEvaluationError::UnsupportedSparseBootstrapping)
-        ));
+        if distribution.is_binary() {
+            let sparse_server_key = KeyGenerator::new(&context)
+                .try_generate_sparse_server_key(&client_key, 3, 4, &mut rng)
+                .unwrap();
+            assert!(matches!(
+                context.circuit_bootstrap_evaluator(
+                    &sparse_server_key,
+                    &circuit_parameters,
+                    &circuit_key,
+                ),
+                Err(CircuitBootstrapEvaluationError::UnsupportedSparseBootstrapping)
+            ));
+        }
         let incompatible_trace =
             GgswParameters::with_glwe_params(context.parameters().glwe(), 9, None);
         let incompatible_parameters = CircuitBootstrapParameters::try_new(
@@ -212,7 +225,11 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
 #[test]
 fn circuit_parameters_check_capacity_layout_and_basis_domain() {
     use primus_tfhe_glwe_ntt::CircuitBootstrapParameterError as Error;
-    let tfhe = parameters(PbsOrder::BootstrapKeyswitch, POLY_LENGTH as u64);
+    let tfhe = parameters(
+        PbsOrder::BootstrapKeyswitch,
+        POLY_LENGTH as u64,
+        SecretKeyDistr::fixed_hamming_weight_binary(4, 2),
+    );
     let trace = tfhe.bootstrapping();
     let output = |levels| ApproxSignedBasis::new(Some(MODULUS), 8, Some(levels));
     let valid = CircuitBootstrapParameters::try_new(&tfhe, output(2), trace.clone(), trace.clone())

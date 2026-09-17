@@ -138,6 +138,25 @@ Sparse aggregation and interleaved rotation steps require their own noise budget
 These parameters have no certified security level or full PBS failure bound; see
 [the P3 contract and measurements](../../docs/tfhe-sparse-pbs.md#p35-完整-pbs-接入与验收).
 
+## Binary and ternary small secrets
+
+Select `SecretKeyDistr::UniformTernary` or another ternary family in `LweParameters`;
+the key-generation and evaluator APIs are unchanged. The basic example uses this
+configuration. Both PBS orders, ordinary/interleaved LUTs and public-key inputs work.
+Binary keeps one GGSW per coordinate; ternary stores independently encrypted
+`(positive, negative)` controls and combines them for one external product per coordinate.
+
+At the low level, `NttGlweBlindRotationContext::new(&key)` allocates scratch
+for the key's control family; `resize` preserves that family. `iter_binary_controls` /
+`iter_ternary_controls` expose single controls or pairs, returning `None` for the other
+family. Server-key compatibility includes the small-secret distribution. Dispatch
+occurs outside the rotation loop and online scratch is reused; fusion adds BSK and
+temporary GGSW storage.
+
+NTT contexts/BR require `MonomialNttTable`, implemented by every built-in NTT table.
+Classic ternary also supports CBS and factorized MVB. Bucketed sparse PBS still
+requires fixed-weight binary; the `SparseTernary` distribution does not select it.
+
 ## Circuit bootstrapping
 
 CBS requires a classic server key; sparse keys return
@@ -159,6 +178,7 @@ cargo test -p primus_tfhe_glwe_ntt
 cargo clippy -p primus_tfhe_glwe_ntt --all-targets -- -D warnings
 cargo +nightly test -p primus_tfhe_glwe_ntt --features simd
 cargo bench -p primus_tfhe_glwe_ntt --bench pbs
+cargo bench -p primus_tfhe_glwe_ntt --bench ternary_pbs
 cargo bench -p primus_tfhe_glwe_ntt --bench circuit_bootstrap
 cargo bench -p primus_tfhe_glwe_ntt --bench sparse_pbs
 cargo bench -p primus_tfhe_glwe_ntt --bench mvb
@@ -181,3 +201,7 @@ same Scaled threshold outputs, in both orders with classic/sparse keys. It has
 and 7 construction/preparation cases. Online timings include KS and extraction;
 memory and error diagnostics were measured separately. These cost fixtures use
 small-secret dimension 728 and are not certified production parameters.
+
+`ternary_pbs` compares complete binary, fused ternary and two-CMUX PBS at
+`n=728, N=1024` with BR→KS, and separately times BSK+KSK generation. Timing and
+key/workspace measurements are recorded in the [T3 profile and results](../../docs/tfhe-ternary.md#t3完整-glwe-接入与验收已完成).

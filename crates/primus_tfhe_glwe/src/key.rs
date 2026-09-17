@@ -1,4 +1,4 @@
-use num_traits::ConstZero;
+use num_traits::{ConstOne, ConstZero};
 use primus_integer::FheUint;
 use primus_lattice::GlweSize;
 use primus_reduce::RingContext;
@@ -110,8 +110,14 @@ impl<T: FheUint> GlweClientKey<T> {
     /// Returns the padded GLWE key used as the target of TFHE GLWE key switching.
     ///
     /// The small LWE coefficients occupy the prefix in their natural order;
-    /// the remaining coefficients are zero. `parameters` must already have
-    /// passed [`Self::check_compatible`].
+    /// the remaining coefficients are zero. Ternary `q-1` residues are decoded
+    /// to signed `-1`, including for explicit moduli. `parameters` must already
+    /// have passed [`Self::check_compatible`].
+    ///
+    /// # Panics
+    ///
+    /// Panics if the small secret is not binary/ternary, or a coefficient lies
+    /// outside its declared support under the supplied modulus.
     pub fn padded_small_glwe_secret_key<LM, GM>(
         &self,
         parameters: &GlweTfheParameters<T, LM, GM>,
@@ -130,14 +136,23 @@ impl<T: FheUint> GlweClientKey<T> {
         let mut key = vec![T::SignedInteger::ZERO; capacity];
         let distribution = lwe_secret_key.distr();
         assert!(
-            distribution.is_binary(),
-            "TFHE small LWE secret keys must use a binary distribution"
+            distribution.is_binary() || distribution.is_ternary(),
+            "TFHE small LWE secret keys must use a binary or ternary distribution"
         );
+        let minus_one = parameters.small_lwe().cipher_modulus().minus_one();
         key[..lwe_dimension]
             .iter_mut()
             .zip(lwe_secret_key.as_ref())
             .for_each(|(output, &coefficient)| {
-                *output = coefficient.cast_to_signed();
+                *output = if coefficient <= T::ONE {
+                    coefficient.cast_to_signed()
+                } else {
+                    assert!(
+                        distribution.is_ternary() && coefficient == minus_one,
+                        "small LWE secret coefficient is outside its declared support"
+                    );
+                    -T::SignedInteger::ONE
+                };
             });
 
         GlweSecretKey::new(

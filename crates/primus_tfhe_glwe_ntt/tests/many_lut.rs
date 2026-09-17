@@ -19,7 +19,13 @@ const Q: u32 = 132_120_577;
 
 fn parameters(order: PbsOrder) -> TfheParameters<u32> {
     let modulus = BarrettModulus::new(Q);
-    let lwe = LweParameters::new(8, 15, modulus, SecretKeyDistr::UniformBinary, 0.7);
+    let lwe = LweParameters::new(
+        8,
+        15,
+        modulus,
+        SecretKeyDistr::fixed_composition_ternary(8, 2, 2),
+        0.7,
+    );
     let glwe = GlweParameters::new(1, N, 15, modulus, SecretKeyDistr::UniformBinary, 0.7);
     let bsk = ApproxSignedBasis::new(glwe.cipher_modulus_value(), 8, None);
     TfheParameters::try_new(
@@ -43,7 +49,7 @@ fn value(input: usize, output: usize) -> u32 {
 
 fn check_context<TABLE>(context: TfheContext<u32, TABLE>)
 where
-    TABLE: NttTable<ValueT = u32>,
+    TABLE: primus_ntt::MonomialNttTable<ValueT = u32>,
 {
     let mut rng = StdRng::seed_from_u64(0x4d41_4e59_5042_5301);
     let (client_key, server_key) = context.generate_keys(&mut rng).unwrap();

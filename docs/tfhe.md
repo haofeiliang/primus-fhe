@@ -170,7 +170,7 @@ BR 前的密钥切换、逐系数模切以及后续外积/KS 的输出噪声；�
 
 四后端将 BR 与后置 KS 分开，GLWE BR 始终产生 accumulator 秘密下的系数域 GLWE；NTRU 保持自身初始化与环秘密转换。CBS 消费原始 BR 结果。阶段 helper 暂留私有，复用原 scratch、检查和一次算法分派，不预建统一 backend trait。[秘密域与缓冲区流程](../crates/primus_tfhe/README.zh_CN.md#后端执行阶段)。
 
-MVB 已在这些阶段上接入，具体乘法与 KS 顺序见[专项设计](tfhe-mvb.md)。Ternary 的控制密钥、`q-1→-1` 转换及兼容性须一起实施，见[后续设计](tfhe-ternary.md)。P4.0 重构未测得稳定性能回退，方法见[测量记录](benchmarks/tfhe.md#p40-阶段拆分)。
+MVB 已在这些阶段上接入，具体乘法与 KS 顺序见[专项设计](tfhe-mvb.md)。Ternary 的控制密钥、`q-1→-1` 转换及兼容性已在经典 GLWE 两后端接入，见[设计与测量](tfhe-ternary.md)。P4.0 重构未测得稳定性能回退，方法见[测量记录](benchmarks/tfhe.md#p40-阶段拆分)。
 
 ## 验证入口
 

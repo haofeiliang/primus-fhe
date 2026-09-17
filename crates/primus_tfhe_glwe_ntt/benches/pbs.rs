@@ -58,7 +58,7 @@ fn bench_order(c: &mut Criterion, order: PbsOrder) {
     let mut evaluator = context.evaluator(&server_key).unwrap();
     let mut output = input.clone();
 
-    let mut blind_rotation = NttGlweBlindRotationContext::new(parameters.bootstrapping().size());
+    let mut blind_rotation = NttGlweBlindRotationContext::new(bootstrapping_key);
     let mut key_switching = NttGlweKeySwitchingContext::new(
         parameters.glwe_key_switching().output().size().glwe_size(),
     );

@@ -5,9 +5,9 @@
 ## 当前任务
 
 - 旧 S0–S9 及 LUT/PBS 的 **P1–P4 已完成**；[完成索引](docs/tfhe-plan.md)只用于恢复，不重开旧步骤。基础 crate 的既有整理也不自动重启。
-- 当前方向是 **ternary LWE secret 的经典 GLWE PBS**；[T1/T2 的 NTT/Fourier 单步原语与成本对照](docs/tfhe-ternary.md#6-实施顺序与完成条件)已完成。下一步为 T3：完整 GLWE TFHE 接入，参数尚未放开 ternary。
-- 选用用户的融合式：`ACC += (GGSW(s⁺)-X^-α GGSW(s⁻)) ⊠ ((X^α-1)ACC)`。每坐标两份控制、一次外积；保留 binary 路径。负指数取自同一量化结果，笔记的噪声均值抵消尚需验证。
-- 两后端保留完整组合 GGSW 工作区，控制组合调用各自的 `sub_mul_monomial_to`，随后调用已有外积。Fourier 用同一 FFT 表的整数尺度单项式变换，复用 digit buffer；实测成本较小，暂不增加直接生成接口。NTT 逐多项式组合原型没有稳定收益，已移除。默认/SIMD 单步测量与 scratch 见专项文档，不外推为完整 PBS 性能。
+- **T1–T3 已完成**：[经典 GLWE ternary PBS](docs/tfhe-ternary.md#6-实施顺序与完成条件)已接入 NTT/Fourier 两后端，含两种 order、普通/交错 LUT、公钥客户端与 NTT CBS/MVB。small-LWE 分布选择 ternary；binary 路径保留。
+- 采用融合式 `ACC += (GGSW(s⁺)-X^-α GGSW(s⁻)) ⊠ ((X^α-1)ACC)`。每坐标两份控制、一次外积；负指数取自同一量化结果。两后端保留完整组合 GGSW 工作区，NTT 要求 `MonomialNttTable`。低层 BR context 从 BSK 构造，控制迭代器显式区分 binary 与 ternary 对。
+- n=728 完整 PBS 的默认/SIMD 成本、密钥和 scratch 见专项文档；不将等算术成本解释为等安全或等失败率。下一算法由用户按[候选清单](docs/tfhe-next.md)选择，不自动启动。
 
 ## 有效边界与未决项
 

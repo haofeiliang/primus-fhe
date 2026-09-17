@@ -147,3 +147,56 @@ fn rotation_domain_must_be_representable_by_input_coefficients() {
         );
     }
 }
+
+fn check_ternary_padding<M: primus_reduce::RingContext<u32>>(modulus: M) {
+    use primus_glwe::GlweSecretKey;
+    use primus_lwe::LweSecretKey;
+    use primus_tfhe_glwe::{GlweClientKey, GlweParameterError};
+
+    // Five LWE coefficients occupy two length-four GLWE components.
+    let glwe = GlweParameters::new(2, 4, 2, modulus, SecretKeyDistr::UniformBinary, 0.7);
+    let basis = ApproxSignedBasis::new(modulus.explicit_value(), 2, None);
+    for distribution in [
+        SecretKeyDistr::SparseTernary,
+        SecretKeyDistr::UniformTernary,
+        SecretKeyDistr::ternary(0.2, 0.5),
+        SecretKeyDistr::fixed_hamming_weight_ternary(5, 4),
+        SecretKeyDistr::fixed_composition_ternary(5, 2, 2),
+        SecretKeyDistr::gaussian(0.7),
+    ] {
+        let result = GlweTfheParameters::try_new(
+            LweParameters::new(5, 2, modulus, distribution, 0.7),
+            glwe.clone(),
+            basis.clone(),
+            basis.clone(),
+            GlwePbsOrder::BootstrapKeyswitch,
+        );
+        if !distribution.is_ternary() {
+            assert_eq!(
+                result.err(),
+                Some(GlweParameterError::UnsupportedInputLweSecretKey)
+            );
+            continue;
+        }
+        let parameters = result.unwrap();
+        let client = GlweClientKey::new(
+            LweSecretKey::new(
+                vec![0, 1, modulus.minus_one(), modulus.minus_one(), 1],
+                distribution,
+            ),
+            GlweSecretKey::<u32>::new(vec![0; 8], glwe.size(), glwe.secret_key_distr()),
+            parameters.pbs_order(),
+        );
+        client.check_compatible(&parameters).unwrap();
+        let padded = client.padded_small_glwe_secret_key(&parameters);
+        assert_eq!(padded.as_slice(), &[0, 1, -1, -1, 1, 0, 0, 0]);
+        assert_eq!(padded.distr(), distribution);
+    }
+}
+
+#[test]
+fn ternary_parameters_and_padded_keys_preserve_signed_coefficients() {
+    check_ternary_padding(NativeModulus::new());
+    check_ternary_padding(primus_modulus::BarrettModulus::new(257));
+    check_ternary_padding(primus_modulus::PowOf2Modulus::new(256));
+}

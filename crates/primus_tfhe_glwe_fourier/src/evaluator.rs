@@ -86,7 +86,7 @@ where
             context,
             server_key,
             fft: context.new_fft_engine(),
-            blind_rotation: FourierGlweBlindRotationContext::new(parameters.bootstrapping().size()),
+            blind_rotation: FourierGlweBlindRotationContext::new(server_key.bootstrapping_key()),
             key_switching: key_switching_context,
             main_glwe: GlweCiphertext::zero(parameters.glwe().glwe_len()),
             switched: GlweCiphertext::zero(parameters.glwe_key_switching().output().glwe_len()),

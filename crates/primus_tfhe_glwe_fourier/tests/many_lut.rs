@@ -18,7 +18,13 @@ const N: usize = 256;
 
 fn parameters(order: PbsOrder) -> TfheParameters<u32> {
     let modulus = NativeModulus::new();
-    let lwe = LweParameters::new(8, 15, modulus, SecretKeyDistr::UniformBinary, 0.7);
+    let lwe = LweParameters::new(
+        8,
+        15,
+        modulus,
+        SecretKeyDistr::fixed_composition_ternary(8, 2, 2),
+        0.7,
+    );
     let glwe = GlweParameters::new(1, N, 15, modulus, SecretKeyDistr::UniformBinary, 0.7);
     let bsk = ApproxSignedBasis::new(glwe.cipher_modulus_value(), 8, None);
     TfheParameters::try_new(lwe, glwe, bsk, ApproxSignedBasis::new(None, 8, None), order).unwrap()

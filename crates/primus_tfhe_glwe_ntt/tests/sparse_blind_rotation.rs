@@ -98,7 +98,7 @@ fn sparse_rotation_matches_direct_phase_and_classic_with_reused_scratch() {
             &mut NttGadgetEncryptContext::new(size),
         );
         let mut sparse_scratch = SparseGlweBlindRotationContext::new(&sparse);
-        let mut classic_scratch = NttGlweBlindRotationContext::new(size);
+        let mut classic_scratch = NttGlweBlindRotationContext::new(&classic);
         let mut sparse_output = Glwe::<Vec<u32>>::zero(size.glwe_len());
         let mut classic_output = Glwe::<Vec<u32>>::zero(size.glwe_len());
         let codec = RoundedCodec::new(T, modulus);

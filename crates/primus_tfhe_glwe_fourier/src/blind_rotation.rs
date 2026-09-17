@@ -3,7 +3,10 @@
 use primus_data::{Data, DataMut};
 use primus_fft::{FftEngine, FftTable, TorusFftValue};
 use primus_lattice::{
-    GadgetSize, context::FourierGlweExternalProductContext, glwe::TorusGlwe, lwe::Lwe,
+    GadgetSize,
+    context::{FourierGlweExternalProductContext, FourierGlweTernaryCmuxContext},
+    glwe::TorusGlwe,
+    lwe::Lwe,
 };
 use primus_modulus::NativeModulus;
 use primus_poly::Polynomial;
@@ -302,9 +305,14 @@ where
             "blind-rotation FFT polynomial length mismatch"
         );
         assert_eq!(
-            context.external_product.size(),
+            context.size(),
             self.size(),
             "blind-rotation workspace gadget layout mismatch"
+        );
+        assert_eq!(
+            matches!(context.cmux, CmuxContext::Binary(_)),
+            self.input_distribution().is_binary(),
+            "blind-rotation workspace control layout mismatch"
         );
         debug_assert_eq!(
             context.scratch.as_ref().len(),
@@ -327,70 +335,139 @@ where
         C: DataMut<Elem = T>,
         F: Fn(T) -> usize,
     {
-        let FourierGlweBlindRotationContext {
-            scratch,
-            external_product,
-        } = context;
-        let mut output_is_current = true;
-        for (&coefficient, control) in input.a().iter().zip(self.iter_fourier_ggsw()) {
-            let exponent = exponent_of(coefficient);
-            if exponent == 0 {
-                continue;
-            }
-            if output_is_current {
-                control.cmux_monomial_to(
-                    output,
-                    exponent,
-                    scratch,
-                    self.basis(),
-                    fft,
-                    external_product,
-                );
-            } else {
-                control.cmux_monomial_to(
-                    scratch,
-                    exponent,
-                    output,
-                    self.basis(),
-                    fft,
-                    external_product,
+        let FourierGlweBlindRotationContext { scratch, cmux } = context;
+        // Dispatch once per blind rotation; the coordinate loop has no secret-
+        // distribution branch, and both paths share initialization and swapping.
+        match cmux {
+            CmuxContext::Binary(product) => {
+                let controls = self
+                    .iter_binary_controls()
+                    .expect("binary workspace requires a binary key");
+                rotate_controls(
+                    input.a(),
+                    controls,
+                    output.as_mut(),
+                    scratch.as_mut(),
+                    exponent_of,
+                    |control, exponent, input, output| {
+                        control.cmux_monomial_to(
+                            &TorusGlwe::new(input),
+                            exponent,
+                            &mut TorusGlwe::new(output),
+                            self.basis(),
+                            fft,
+                            product,
+                        );
+                    },
                 );
             }
-            output_is_current = !output_is_current;
-        }
-        if !output_is_current {
-            output.as_mut().copy_from_slice(scratch.as_ref());
+            CmuxContext::Ternary(product) => {
+                let controls = self
+                    .iter_ternary_controls()
+                    .expect("ternary workspace requires a ternary key");
+                rotate_controls(
+                    input.a(),
+                    controls,
+                    output.as_mut(),
+                    scratch.as_mut(),
+                    exponent_of,
+                    |(positive, negative), exponent, input, output| {
+                        positive.cmux_ternary_monomial_to(
+                            &negative,
+                            &TorusGlwe::new(input),
+                            exponent,
+                            &mut TorusGlwe::new(output),
+                            self.basis(),
+                            fft,
+                            product,
+                        );
+                    },
+                );
+            }
         }
     }
 }
 
 /// Reusable workspace for Fourier blind rotation.
+///
+/// Construction selects only the binary or ternary scratch required by the key.
+/// Resizing retains that control layout; construct a new workspace to change it.
 pub struct FourierGlweBlindRotationContext<T: TorusFftValue> {
     scratch: TorusGlwe<Vec<T>>,
-    external_product: FourierGlweExternalProductContext<T>,
+    cmux: CmuxContext<T>,
+}
+
+enum CmuxContext<T: TorusFftValue> {
+    Binary(FourierGlweExternalProductContext<T>),
+    Ternary(FourierGlweTernaryCmuxContext<T>),
 }
 
 impl<T: TorusFftValue> FourierGlweBlindRotationContext<T> {
-    /// Creates a workspace for a checked GLWE size.
-    pub fn new(size: GadgetSize) -> Self {
+    /// Allocates scratch matching the key's gadget and control layouts.
+    #[must_use]
+    pub fn new<LM: PrepareModulusSwitch<ValueT = T>>(
+        key: &FourierGlweBootstrappingKey<T, LM>,
+    ) -> Self {
+        let size = key.size();
         Self {
             scratch: TorusGlwe::zero(size.glwe_len()),
-            external_product: FourierGlweExternalProductContext::new(size),
+            cmux: if key.input_distribution().is_binary() {
+                CmuxContext::Binary(FourierGlweExternalProductContext::new(size))
+            } else {
+                CmuxContext::Ternary(FourierGlweTernaryCmuxContext::new(size))
+            },
         }
     }
 
-    /// Rebinds the workspace to another decomposition layout without reallocating.
-    pub fn rebind(&mut self, size: GadgetSize) {
-        self.external_product.rebind(size);
+    fn size(&self) -> GadgetSize {
+        match &self.cmux {
+            CmuxContext::Binary(context) => context.size(),
+            CmuxContext::Ternary(context) => context.size(),
+        }
     }
 
-    /// Rebinds the workspace to a new GLWE layout.
+    /// Resizes scratch for a new gadget layout, retaining binary/ternary mode.
+    /// An unchanged size is allocation-free; a changed size may allocate.
     pub fn resize(&mut self, size: GadgetSize) {
-        if self.external_product.size().glwe_size() == size.glwe_size() {
-            self.rebind(size);
+        if self.size() == size {
             return;
         }
-        self.external_product.resize(size);
+        match &mut self.cmux {
+            CmuxContext::Binary(context) => context.resize(size),
+            CmuxContext::Ternary(context) => *context = FourierGlweTernaryCmuxContext::new(size),
+        }
         self.scratch.0.resize(size.glwe_len(), T::ZERO);
+    }
+}
+
+/// Applies one control per input coordinate, skipping public zero exponents.
+/// The caller has checked lengths and initialized `output`; `step` overwrites
+/// the next accumulator. Alternating buffers avoids a copy at every coordinate.
+fn rotate_controls<T: Copy, I: Iterator, E, F>(
+    input: &[T],
+    controls: I,
+    output: &mut [T],
+    scratch: &mut [T],
+    exponent_of: E,
+    mut step: F,
+) where
+    E: Fn(T) -> usize,
+    F: FnMut(I::Item, usize, &[T], &mut [T]),
+{
+    let mut output_is_current = true;
+    for (&coefficient, control) in input.iter().zip(controls) {
+        let exponent = exponent_of(coefficient);
+        if exponent == 0 {
+            continue;
+        }
+        if output_is_current {
+            step(control, exponent, output, scratch);
+        } else {
+            step(control, exponent, scratch, output);
+        }
+        output_is_current = !output_is_current;
+    }
+    if !output_is_current {
+        output.copy_from_slice(scratch);
     }
 }

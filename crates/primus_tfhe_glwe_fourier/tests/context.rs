@@ -14,21 +14,16 @@ use rand::{SeedableRng, rngs::StdRng};
 const POLY_LENGTH: usize = 256;
 
 fn parameters(order: PbsOrder) -> TfheParameters<u32> {
-    parameters_with_bases(order, 8, 4)
+    parameters_with_bases(order, 8, 4, SecretKeyDistr::UniformBinary)
 }
 
 fn parameters_with_bases(
     order: PbsOrder,
     bootstrapping_log_basis: u32,
     key_switching_log_basis: u32,
+    distribution: SecretKeyDistr,
 ) -> TfheParameters<u32> {
-    let lwe = LweParameters::new(
-        4,
-        4,
-        NativeModulus::new(),
-        SecretKeyDistr::UniformBinary,
-        0.7,
-    );
+    let lwe = LweParameters::new(4, 4, NativeModulus::new(), distribution, 0.7);
     let glwe = GlweParameters::new(
         1,
         POLY_LENGTH,
@@ -72,7 +67,16 @@ fn rejects_a_fourier_table_with_the_wrong_length() {
 fn split_keys_support_both_pbs_orders() {
     for order in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
         let table = RustFftTable::new(POLY_LENGTH.trailing_zeros()).unwrap();
-        let context = TfheContext::try_new(parameters(order), table).unwrap();
+        let context = TfheContext::try_new(
+            parameters_with_bases(
+                order,
+                8,
+                4,
+                SecretKeyDistr::fixed_composition_ternary(4, 1, 1),
+            ),
+            table,
+        )
+        .unwrap();
         let mut rng = StdRng::seed_from_u64(43);
         // Fresh key generation is covered by the PBS and Boolean tests.
         let mut generator = KeyGenerator::new(&context);
@@ -124,12 +128,17 @@ fn server_keys_are_bound_to_both_decomposition_bases() {
     .unwrap();
     let mut rng = StdRng::seed_from_u64(42);
     let (_, server_key) = source.generate_keys(&mut rng).unwrap();
-    for (bootstrapping_log_basis, key_switching_log_basis) in [(8, 5), (7, 4)] {
+    for (bootstrapping_log_basis, key_switching_log_basis, distribution) in [
+        (8, 5, SecretKeyDistr::UniformBinary),
+        (7, 4, SecretKeyDistr::UniformBinary),
+        (8, 4, SecretKeyDistr::UniformTernary),
+    ] {
         let incompatible = TfheContext::try_new(
             parameters_with_bases(
                 PbsOrder::BootstrapKeyswitch,
                 bootstrapping_log_basis,
                 key_switching_log_basis,
+                distribution,
             ),
             RustFftTable::new(POLY_LENGTH.trailing_zeros()).unwrap(),
         )
@@ -157,7 +166,7 @@ fn public_blind_rotation_rejects_mismatches_before_output_writes() {
     let input = LweCiphertext::new(vec![0u32; input_len]);
     let accumulator = GlweCiphertext::<Vec<u32>>::zero(glwe_len);
     let mut fft = context.new_fft_engine();
-    let mut scratch = FourierGlweBlindRotationContext::new(size);
+    let mut scratch = FourierGlweBlindRotationContext::new(key);
 
     // Both accumulator entry points share the same checked rotation wrapper.
     for (input_len, accumulator_len, output_len) in [
@@ -236,7 +245,8 @@ fn public_blind_rotation_rejects_mismatches_before_output_writes() {
 
     let wrong_table = RustFftTable::new((POLY_LENGTH * 2).trailing_zeros()).unwrap();
     let mut wrong_fft = primus_fft::FftEngine::new(&wrong_table);
-    let mut wrong_scratch = FourierGlweBlindRotationContext::new(GadgetSize::new(
+    let mut wrong_scratch = FourierGlweBlindRotationContext::new(key);
+    wrong_scratch.resize(GadgetSize::new(
         size.glwe_size(),
         size.decompose_length() + 1,
     ));

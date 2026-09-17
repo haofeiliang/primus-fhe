@@ -8,16 +8,12 @@ use crate::{
 
 use super::{FourierGlweExternalProductContext, NttGlweExternalProductContext};
 
-/// Reusable scratch for [`FourierGgsw::cmux_ternary_monomial_to`].
+/// Fixed-layout scratch for [`FourierGgsw::cmux_ternary_monomial_to`].
 ///
 /// Holds one combined Fourier GGSW, one length-`N/2` integer-scale monomial
-/// transform, and an external-product context. The latter's digit buffer also
-/// holds the coefficient monomial before decomposition starts. The output GLWE
-/// supplies the difference buffer; evaluation allocates nothing and needs no reset.
-///
-/// The size fixes polynomial length, GLWE dimension, and decomposition levels.
-/// It does not bind an FFT table: controls must use the supplied engine's exact
-/// table instance and normalized torus scale, with a matching native basis.
+/// transform, and an external-product context whose digit buffer first holds
+/// the coefficient monomial. The output GLWE supplies the difference buffer.
+/// Does not bind an FFT table; see the operation's representation requirements.
 pub struct FourierGlweTernaryCmuxContext<T: TorusFftValue> {
     pub(crate) combined_control: FourierGgsw<Vec<Complex64>>,
     pub(crate) control_factor_fourier: Vec<Complex64>,
@@ -42,14 +38,11 @@ impl<T: TorusFftValue> FourierGlweTernaryCmuxContext<T> {
     }
 }
 
-/// Reusable scratch for [`NttGgsw::cmux_ternary_monomial_to`].
+/// Fixed-layout scratch for [`NttGgsw::cmux_ternary_monomial_to`].
 ///
 /// Holds one combined GGSW, one length-`N` monomial NTT vector, and an
 /// external-product context. The output GLWE supplies the coefficient-domain
-/// difference buffer. Evaluation allocates nothing and needs no manual reset.
-///
-/// The size fixes polynomial length, GLWE dimension, and decomposition levels;
-/// callers must still supply compatible controls, basis, modulus, and NTT table.
+/// difference buffer. See the operation's modulus and representation requirements.
 pub struct NttGlweTernaryCmuxContext<T: FheUint> {
     pub(crate) combined_control: NttGgsw<Vec<T>>,
     /// NTT of `-X^-exponent`, shared by every polynomial of the negative control.

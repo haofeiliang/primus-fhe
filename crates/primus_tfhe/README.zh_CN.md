@@ -22,6 +22,9 @@
 四后端均支持私钥和 LWE 公钥客户端。Fourier 后端支持 RustFFT 与 TfheFFT。
 参数和 API 仍处于实验阶段；示例及 benchmark fixture 不是生产安全参数或失败概率建议。
 
+GLWE 两后端的经典 PBS 支持 binary/ternary small secret；NTT 的 CBS 和 MVB 同样支持。
+NTRU 的 BR 秘密仍限于 binary。
+
 GLWE NTT 另支持固定重量二元 small 秘密的[实验性稀疏 PBS](../primus_tfhe_glwe_ntt/README.zh_CN.md#实验性稀疏-pbs)：
 两种 order、普通/交错/分解式 LUT；稀疏 CBS 尚不支持。
 
@@ -261,9 +264,9 @@ Scaled codec；接入下一次 Rounded 输入 PBS 时须计入编码中心差异
 | CBS | 消费 accumulator 秘密下的 BR 结果，继续投影/SS | 保持 `f_acc`，继续各自的投影/SS |
 
 BK/KB 分别为 `BootstrapKeyswitch` / `KeyswitchBootstrap`。后置 KS 写独立缓冲区，
-保留 BR 结果；MVB 的具体后处理与 KS 位置由所选算法决定。当前 BR 的 binary 限制仍生效。
-支持 ternary 时须一起处理控制密钥、LWE 剩余类到 signed GLWE 私钥的转换和参数兼容性；
-automorphism 算法及其辅助密钥尚未接入。
+保留 BR 结果；MVB 的具体后处理与 KS 位置由所选算法决定。GLWE 经典 BR 在循环外选择
+binary 单控制或 ternary 控制对；LWE 剩余类到 signed GLWE 私钥的转换在密钥构造边界完成。
+NTRU ternary、桶聚合稀疏 ternary 及 automorphism 算法尚未接入。
 
 ## 验证
 

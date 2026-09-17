@@ -44,11 +44,10 @@ macro_rules! impl_ntt_monomial {
             ///
             /// # Correctness
             ///
-            /// Uses the table, exponent, canonical-value and scratch contracts of
+            /// Inherits the contracts and allocation behavior of
             /// [`Self::mul_monomial_assign`]. Both ciphertexts have equal lengths,
             /// matching layouts and compatible keys; gadget bases and level/row
-            /// order must match. The accumulator is not cleared. No allocation
-            /// or coefficient-domain conversion is performed.
+            /// order must match. The accumulator is not cleared.
             ///
             /// # Panics
             ///
@@ -85,10 +84,9 @@ macro_rules! impl_ntt_monomial {
             ///
             /// # Correctness
             ///
-            /// Uses the table, exponent, canonical-value and scratch contracts of
+            /// Inherits the contracts and allocation behavior of
             /// [`Self::mul_monomial_assign`]. Input and output have equal lengths
             /// and matching layouts and gadget bases. Output is fully overwritten.
-            /// No allocation or coefficient-domain conversion is performed.
             ///
             /// # Panics
             ///
@@ -118,11 +116,10 @@ macro_rules! impl_ntt_monomial {
             ///
             /// # Correctness
             ///
-            /// Uses the table, exponent, canonical-value and scratch contracts of
+            /// Inherits the contracts and allocation behavior of
             /// [`Self::mul_monomial_assign`]. All ciphertexts have equal lengths,
             /// matching layouts and compatible keys; gadget bases and level/row
             /// order must match. Output is fully overwritten with canonical values.
-            /// No allocation or coefficient-domain conversion is performed.
             ///
             /// # Panics
             ///

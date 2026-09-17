@@ -1,6 +1,6 @@
 # TFHE 历史测量索引
 
-本目录 CSV 保存历史摘要；算法契约见 [TFHE 总览](../tfhe.md)，P3 / MVB / ternary 的方法及数据分别见 [稀疏 PBS](../tfhe-sparse-pbs.md)、[MVB](../tfhe-mvb.md#8-p43-测量与应用选择) 与 [Ternary T1/T2](../tfhe-ternary.md#6-实施顺序与完成条件)。源码或参数变化后按当前任务复测，不以历史数据声明当前性能。
+本目录 CSV 保存历史摘要；算法契约见 [TFHE 总览](../tfhe.md)，P3 / MVB / ternary 的方法及数据分别见 [稀疏 PBS](../tfhe-sparse-pbs.md)、[MVB](../tfhe-mvb.md#8-p43-测量与应用选择) 与 [Ternary T1–T3](../tfhe-ternary.md#6-实施顺序与完成条件)。源码或参数变化后按当前任务复测，不以历史数据声明当前性能。
 
 共同边界：Ryzen 9 9955HX3D、x86_64 Linux，仓库构建配置；CPU 未隔离，boost/SMT 开启，计时串行。默认 rustc 1.98.0、Criterion 0.8.2；SIMD 若列出则为 nightly 1.100.0（2026-08-26）。耗时 CSV 为均值及 95% 置信区间（ns），不能当作 Criterion 原始样本或跨后端等安全参数比较。
 

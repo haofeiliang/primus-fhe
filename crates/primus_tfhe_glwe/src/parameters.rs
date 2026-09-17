@@ -24,10 +24,9 @@ pub enum GlwePbsOrder {
 /// An invalid combination of GLWE-based TFHE parameters.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum GlweParameterError {
-    /// The current functional bootstrapping-key implementation requires a
-    /// binary input LWE secret key.
-    #[error("TFHE bootstrapping requires a binary input LWE secret key")]
-    InputLweSecretKeyMustBeBinary,
+    /// Classic blind rotation supports binary and ternary input LWE secrets.
+    #[error("TFHE bootstrapping requires a binary or ternary input LWE secret key")]
+    UnsupportedInputLweSecretKey,
 
     /// The rotation domain `2N` cannot be represented by the input coefficient type.
     #[error("rotation domain must fit the input coefficient type")]
@@ -93,7 +92,7 @@ where
     ///
     /// Both gadget bases must belong to the accumulator modulus. Bootstrapping
     /// uses its layout, secret distribution and noise; key switching inherits
-    /// its noise while targeting the padded binary `small_lwe` secret.
+    /// its noise while targeting the padded binary or ternary `small_lwe` secret.
     ///
     /// # Errors
     ///
@@ -107,8 +106,9 @@ where
         key_switching_basis: ApproxSignedBasis<T>,
         pbs_order: GlwePbsOrder,
     ) -> Result<Self, GlweParameterError> {
-        if !small_lwe.secret_key_distr().is_binary() {
-            return Err(GlweParameterError::InputLweSecretKeyMustBeBinary);
+        let distribution = small_lwe.secret_key_distr();
+        if !distribution.is_binary() && !distribution.is_ternary() {
+            return Err(GlweParameterError::UnsupportedInputLweSecretKey);
         }
         if small_lwe.plain_modulus_value() != accumulator_glwe.plain_modulus_value() {
             return Err(GlweParameterError::PlainModulusMismatch);

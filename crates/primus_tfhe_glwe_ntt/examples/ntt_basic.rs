@@ -22,7 +22,8 @@ fn parameters(order: PbsOrder) -> TfheParameters<u32> {
         LWE_DIMENSION,
         PLAINTEXT_MODULUS,
         modulus,
-        SecretKeyDistr::UniformBinary,
+        // Selects fused ternary BR; the client/evaluator API is unchanged.
+        SecretKeyDistr::UniformTernary,
         0.7,
     );
     let glwe = GlweParameters::new(

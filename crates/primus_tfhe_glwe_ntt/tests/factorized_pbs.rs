@@ -19,16 +19,10 @@ const N: usize = 128;
 const Q: u32 = 132_120_577;
 const DOMAIN: usize = 8;
 
-fn context(order: PbsOrder) -> TfheContext<u32, U32NttTable> {
+fn context(order: PbsOrder, distribution: SecretKeyDistr) -> TfheContext<u32, U32NttTable> {
     let modulus = BarrettModulus::new(Q);
     let parameters = TfheParameters::try_new(
-        LweParameters::new(
-            8,
-            15,
-            modulus,
-            SecretKeyDistr::fixed_hamming_weight_binary(8, 2),
-            0.7,
-        ),
+        LweParameters::new(8, 15, modulus, distribution, 0.7),
         // d=2 also exercises multiplication of all mask components, not just a,b.
         GlweParameters::new(2, N, 15, modulus, SecretKeyDistr::UniformBinary, 0.7),
         ApproxSignedBasis::new(Some(Q), 8, None),
@@ -54,7 +48,7 @@ fn value(m: usize, i: usize) -> u32 {
 #[test]
 fn factorized_pbs_reuses_workspace_and_preserves_both_external_secrets() {
     for order in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
-        let context = context(order);
+        let context = context(order, SecretKeyDistr::fixed_hamming_weight_binary(8, 2));
         let modulus = context.parameters().glwe().cipher_modulus();
         let codec = ScaledCodec::new(8, modulus);
         let mut rng = StdRng::seed_from_u64(0x5034_3201);
@@ -156,7 +150,8 @@ fn factorized_pbs_reuses_workspace_and_preserves_both_external_secrets() {
         let lut = context
             .compile_factorized_lookup_table_fn(&codec, DOMAIN, 3, value)
             .unwrap();
-        let other_context = self::context(order); // Same q,N, but deliberately a different instance.
+        // Same q,N, but deliberately a different instance.
+        let other_context = self::context(order, SecretKeyDistr::fixed_hamming_weight_binary(8, 2));
         let foreign = other_context
             .compile_factorized_lookup_table_fn(&codec, DOMAIN, 3, value)
             .unwrap();
@@ -213,5 +208,38 @@ fn factorized_pbs_reuses_workspace_and_preserves_both_external_secrets() {
             ),
             Err(LookupTableError::OutputModulusMismatch)
         ));
+    }
+}
+
+// The broad binary/classic/sparse matrix above owns program-validation cases.
+// This case protects the ternary BR -> public-factor composition in both orders.
+#[test]
+fn factorized_pbs_accepts_ternary_controls_without_online_allocation() {
+    for order in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
+        let context = context(order, SecretKeyDistr::fixed_composition_ternary(8, 2, 2));
+        let mut rng = StdRng::seed_from_u64(0x0054_334d_5642);
+        let (client, server) = context.generate_keys(&mut rng).unwrap();
+        let codec = ScaledCodec::new(8, context.parameters().glwe().cipher_modulus());
+        let lut = context
+            .compile_factorized_lookup_table_fn(&codec, DOMAIN, 3, value)
+            .unwrap();
+        let encryptor = context.encryptor(&client).unwrap();
+        let decryptor = context.decryptor(&client).unwrap();
+        let mut evaluator = context.factorized_evaluator(&server).unwrap();
+        let mut outputs =
+            vec![LweCiphertext::zero(context.parameters().ciphertext_lwe_dimension()); 3];
+        for message in [0, 3, 7] {
+            let input = encryptor.encrypt_padded(message, &mut rng).unwrap();
+            let (_, allocation) = allocations::measure(|| {
+                evaluator.apply_lookup_table_to(&input, &lut, &mut outputs)
+            });
+            assert_eq!(allocation.count, 0);
+            for (i, output) in outputs.iter().enumerate() {
+                assert_eq!(
+                    codec.decode_value(decryptor.decrypt_phase(output).unwrap()),
+                    value(message as usize, i)
+                );
+            }
+        }
     }
 }

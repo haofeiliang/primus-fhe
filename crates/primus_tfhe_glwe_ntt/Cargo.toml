@@ -41,6 +41,10 @@ harness = false
 name = "mvb"
 harness = false
 
+[[bench]]
+name = "ternary_pbs"
+harness = false
+
 [features]
 default = []
 simd = [

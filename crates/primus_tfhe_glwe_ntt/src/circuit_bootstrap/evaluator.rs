@@ -10,7 +10,7 @@ use primus_integer::FheUint;
 use primus_lattice::ggsw::NttGgsw;
 use primus_lwe::LweCiphertext;
 use primus_modulus::BarrettModulus;
-use primus_ntt::NttTable;
+use primus_ntt::MonomialNttTable;
 use primus_reduce::ReduceMul;
 use primus_tfhe::{InterleavedLookupTable, LookupTableError};
 use primus_tfhe_glwe::GlwePbsOrder as PbsOrder;
@@ -47,7 +47,7 @@ pub enum CircuitBootstrapEvaluationError {
 pub struct CircuitBootstrapEvaluator<'a, T, Table>
 where
     T: FheUint,
-    Table: NttTable<ValueT = T>,
+    Table: MonomialNttTable<ValueT = T>,
 {
     context: &'a TfheContext<T, Table>,
     server_key: &'a ServerKey<T>,
@@ -70,7 +70,7 @@ where
 impl<'a, T, Table> CircuitBootstrapEvaluator<'a, T, Table>
 where
     T: FheUint,
-    Table: NttTable<ValueT = T>,
+    Table: MonomialNttTable<ValueT = T>,
 {
     /// Creates an evaluator and compiles the gadget-scaled identity
     /// PBSManyLUT used by circuit bootstrapping.
@@ -138,7 +138,7 @@ where
             circuit_key,
             lookup_table,
             projection_indices: (0..parameters.output_basis().decompose_length()).collect(),
-            blind_rotation: NttGlweBlindRotationContext::new(tfhe.bootstrapping().size()),
+            blind_rotation: NttGlweBlindRotationContext::new(bootstrapping_key),
             key_switching: NttGlweKeySwitchingContext::new(key_switching_glwe_size),
             trace: NttGlweTraceContext::new(glwe_size),
             scheme_switch: NttGlweSchemeSwitchContext::new(parameters.scheme_switch().size()),

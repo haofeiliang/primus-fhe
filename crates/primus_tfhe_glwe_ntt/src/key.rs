@@ -5,7 +5,7 @@ use primus_glwe::{
 use primus_integer::FheUint;
 use primus_lwe::LweSecretKey;
 use primus_modulus::BarrettModulus;
-use primus_ntt::NttTable;
+use primus_ntt::MonomialNttTable;
 use primus_reduce::Modulus;
 use primus_tfhe_glwe::GlweClientKey as ClientKey;
 
@@ -19,7 +19,7 @@ use crate::{
 /// Classic keys store NTT GGSWs; sparse keys store coefficient GGSWs and public
 /// buckets. Both target the same accumulator secret and use the small-LWE input.
 pub enum BootstrappingKey<T: FheUint> {
-    /// One NTT GGSW per input coefficient.
+    /// One binary control or a ternary control pair per input coefficient.
     Classic(NttGlweBootstrappingKey<T, BarrettModulus<T>>),
     /// Bucketed selections for a fixed-weight binary input secret.
     Sparse(SparseGlweBootstrappingKey<T>),
@@ -28,13 +28,18 @@ pub enum BootstrappingKey<T: FheUint> {
 impl<T: FheUint> BootstrappingKey<T> {
     fn is_compatible(&self, parameters: &TfheParameters<T>) -> bool {
         let (dimension, input_modulus, size, basis, cipher_modulus) = match self {
-            Self::Classic(key) => (
-                key.input_dimension(),
-                key.input_modulus().explicit_value(),
-                key.size(),
-                key.basis(),
-                key.cipher_modulus(),
-            ),
+            Self::Classic(key) => {
+                if key.input_distribution() != parameters.small_lwe().secret_key_distr() {
+                    return false;
+                }
+                (
+                    key.input_dimension(),
+                    key.input_modulus().explicit_value(),
+                    key.size(),
+                    key.basis(),
+                    key.cipher_modulus(),
+                )
+            }
             Self::Sparse(key) => {
                 if parameters.small_lwe().secret_key_distr()
                     != (SecretKeyDistr::FixedHammingWeightBinary {
@@ -107,7 +112,7 @@ impl<T: FheUint> ServerKey<T> {
 pub struct KeyGenerator<'a, T, Table>
 where
     T: FheUint,
-    Table: NttTable<ValueT = T>,
+    Table: MonomialNttTable<ValueT = T>,
 {
     pub(crate) context: &'a TfheContext<T, Table>,
     pub(crate) gadget: NttGadgetEncryptContext<T>,
@@ -116,7 +121,7 @@ where
 impl<'a, T, Table> KeyGenerator<'a, T, Table>
 where
     T: FheUint,
-    Table: NttTable<ValueT = T>,
+    Table: MonomialNttTable<ValueT = T>,
 {
     /// Creates a key generator with reusable NTT gadget scratch.
     pub fn new(context: &'a TfheContext<T, Table>) -> Self {

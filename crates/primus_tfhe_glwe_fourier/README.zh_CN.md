@@ -42,6 +42,18 @@ FFT engine 和 evaluator 从同一个 context 创建。
 密钥生成时准备普通 PBS 量化参数；ManyLUT 在系数循环前按旋转步长准备转换。
 高层 context 保持既有参数约束。
 
+## Binary 与 ternary small 秘密
+
+在 `LweParameters` 中选择 `SecretKeyDistr::UniformTernary` 或其他 ternary 家族，
+即可沿用原有密钥生成与 evaluator 接口；basic 示例使用该配置。两种 PBS order、
+普通/交错 LUT 和公钥输入均支持。Binary 每坐标仍保存一份 GGSW；ternary 保存独立
+加密的 `(positive, negative)` 控制对，每坐标通过组合控制执行一次外积。
+
+低层使用 `FourierGlweBlindRotationContext::new(&key)` 创建匹配控制类型的工作区，
+`resize` 保持该类型。`iter_binary_controls` / `iter_ternary_controls` 分别返回单控制或
+控制对；类型不匹配时返回 `None`。ServerKey 兼容性检查包括 small secret 分布。
+循环外选择内核，在线复用工作区；融合方案增加 BSK 和临时 GGSW 存储。
+
 ## Circuit bootstrapping
 
 Fourier GLWE CBS 尚未实现。已有 GLWE CBS 路径在 [NTT 后端](../primus_tfhe_glwe_ntt/README.zh_CN.md)，
@@ -54,8 +66,13 @@ cargo test -p primus_tfhe_glwe_fourier
 cargo clippy -p primus_tfhe_glwe_fourier --all-targets -- -D warnings
 cargo +nightly test -p primus_tfhe_glwe_fourier --features simd
 cargo bench -p primus_tfhe_glwe_fourier --bench pbs
+cargo bench -p primus_tfhe_glwe_fourier --bench ternary_pbs
 ```
 
 `pbs` 复用输出，覆盖两种 order、3/4 输出 ManyLUT 与独立 PBS 的对照，以及 Boolean AND/MUX。
 BR 和密钥切换阶段用于定位开销；系数提取的基准集中在 `primus_lattice`。
 Fourier PBS 基准同时覆盖 RustFFT 和 TfheFFT。
+
+`ternary_pbs` 在 `n=728, N=1024`、BR→KS 下比较 binary、融合 ternary 和双 CMUX
+完整 PBS，另测 BSK+KSK 生成。参数、耗时及密钥/工作区测量见
+[T3 测量](../../docs/tfhe-ternary.md#t3完整-glwe-接入与验收已完成)。

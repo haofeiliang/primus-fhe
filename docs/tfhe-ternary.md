@@ -1,6 +1,6 @@
 # Ternary LWE secret 与融合盲旋转
 
-本文记录算法选择、数学契约和实施进度。**T1/T2 的 NTT/Fourier 单步原语已实现；完整 ternary TFHE 支持尚未接入**。算法清单见 [后续候选](tfhe-next.md)，当前任务以 [HANDOFF](../HANDOFF.md) 为准。
+本文记录算法选择、数学契约和实施进度。**T1–T3 已完成：NTT/Fourier 单步原语和完整经典 GLWE ternary TFHE 已接入**。算法清单见 [后续候选](tfhe-next.md)，当前任务以 [HANDOFF](../HANDOFF.md) 为准。
 
 首个目标为经典 **GLWE NTT / Fourier**：真正进入 BR 的 small-LWE 秘密可以取 `-1/0/1`。沿用现有 LUT、量化和两种 PBS order；binary 路径保留。NTRU ternary、桶聚合稀疏 ternary、automorphism BR 分开安排。
 
@@ -109,7 +109,7 @@ Fourier 实现还须计入浮点运算与逆变换误差；上式是其精确环
 - 两份控制必须使用相同 accumulator 秘密、模数、basis、维度和变换表；独立加密。
 - 由密钥布局在 BR 循环外选择 binary / ternary 内核，不在逐系数算术内再判断秘密分布。
 - 经典/稀疏保持现有执行区分。`SparseTernary` 是一个采样分布名称，不自动选择 P3 的桶聚合算法。
-- 现有 `iter_ntt_ggsw` / Fourier 迭代器隐含“一坐标一控制”；实施时迁移消费者，明确 binary 控制与 ternary 控制对的区别，不能仅把底层数组长度翻倍。
+- `iter_binary_controls` 返回一坐标一控制，`iter_ternary_controls` 返回一坐标一对；不匹配时返回 `None`。BSK 保存输入分布，server key 兼容性同时检查它。
 
 ### NTT 首选实现
 
@@ -140,15 +140,15 @@ T2 使用 `FourierGgsw::sub_mul_monomial_to`：通过现有 `forward_as_integer`
 
 ## 5. 当前代码的接入点
 
-| 位置 | 要处理的契约 |
+| 位置 | 已落实的契约 |
 | --- | --- |
 | [SecretKeyDistr](../crates/primus_distr/src/secret_key_distr.rs) 与 [LweSecretKey](../crates/primus_lwe/src/secret_key/owned.rs) | 已有 ternary 采样与模 `q` 剩余类存储，继续复用 |
-| [GLWE TFHE 参数](../crates/primus_tfhe_glwe/src/parameters.rs) | 当前只接受 binary small-LWE；扩大接受范围时同步真实密钥、BSK/KSK 的兼容性 |
-| [GLWE client key](../crates/primus_tfhe_glwe/src/key.rs) | padded ring secret 当前直接 `cast_to_signed`；显式模数下须将 `q-1` 还原为 `-1`，其余 padding 保持零 |
-| [NTT BSK](../crates/primus_tfhe_glwe_ntt/src/bootstrapping_key.rs) / [Fourier BSK](../crates/primus_tfhe_glwe_fourier/src/bootstrapping_key.rs) | 按 ternary 系数生成互斥的两个加密 selector，明确布局与溢出边界 |
+| [GLWE TFHE 参数](../crates/primus_tfhe_glwe/src/parameters.rs) | 接受全部 binary/ternary small-LWE 家族，拒绝 Gaussian；保留模数/维数/basis 约束 |
+| [GLWE client key](../crates/primus_tfhe_glwe/src/key.rs) | 构造 padded ring secret 时按输入模数将 `q-1` 还原为 `-1`，其余 padding 保持零 |
+| [NTT BSK](../crates/primus_tfhe_glwe_ntt/src/bootstrapping_key.rs) / [Fourier BSK](../crates/primus_tfhe_glwe_fourier/src/bootstrapping_key.rs) | 按实际系数生成相邻的正负 selector，独立加密；验证支持集与分布，检查长度溢出，清除临时 selector 数组 |
 | [Ternary CMUX](../crates/primus_lattice/src/ggsw/ternary.rs) 与 [外积](../crates/primus_lattice/src/ggsw/external_product.rs) | T1/T2 已增加 NTT/Fourier 融合单步及对应 scratch；binary CMUX 仍只接收 bit 控制 |
 | [NTT BR](../crates/primus_tfhe_glwe_ntt/src/blind_rotation.rs) / [Fourier BR](../crates/primus_tfhe_glwe_fourier/src/blind_rotation.rs) | 循环外分派，复用量化、初始化、buffer 交换与公开零指数跳过 |
-| ServerKey / evaluator / CBS / MVB | 两种 order 都以 small-LWE 为 BR 秘密；迁移布局消费者并验证后处理，不能只放开参数枚举 |
+| ServerKey / evaluator / CBS / MVB | 两种 order、普通/交错 LUT、公钥客户端及 NTT CBS/MVB 已接通；桶聚合路径仍拒绝 ternary |
 
 Ternary 剩余类到有符号系数的转换在 key 构造/导入边界完成。仅需处理当前支持的 `0/1/q-1`，不为这个任务设计一般整数解码框架；也不能把明文 codec 的缩放解码用于秘密系数。
 
@@ -156,7 +156,7 @@ Ternary 剩余类到有符号系数的转换在 key 构造/导入边界完成。
 
 ## 6. 实施顺序与完成条件
 
-以下按独立实施单元推进；T1/T2 完成，下一步为 T3。
+三个实施单元均已完成；以下保留实现选择及测量口径，后续修改按相关前提复测。
 
 ### T1：NTT 单步原语与成本对照（已完成）
 
@@ -236,7 +236,7 @@ GGSW 方法，没有扩展全部 Fourier 密文的单项式方法族。零指数
 常驻验证集中在已有文件：`lattice/tests/ternary_cmux.rs` 用 `u32/u64`、两种 FFT 后端、
 完整/截断分解检查独立系数 oracle；`lattice/tests/fourier.rs` 直接检查稠密 GGSW 的单项式减法；
 `glwe/tests/cmux.rs` 用真实独立加密控制和 schoolbook phase 检查三个秘密值。小环遍历全部
-指数并复用脏 scratch。没有新增完整 PBS 测试矩阵，TFHE 参数仍未放开 ternary。
+指数并复用脏 scratch。当时没有新增完整 PBS 测试矩阵；端到端接入在 T3 完成。
 
 #### T2 测量与取舍
 
@@ -294,14 +294,83 @@ FFT 表和 engine 自身的变换工作区。外积 context 为
 | 1024 / 1 / 2 | 49 | 105 |
 | 1024 / 2 / 3 | 65 | 265 |
 
-### T3：完整 GLWE 接入与验收
+### T3：完整 GLWE 接入与验收（已完成）
 
-- 同步共享参数、client padded signed key、两后端 BSK、KSK、ServerKey 和 evaluator；保留 binary 路径。
-- 验证两种 order、普通/交错 LUT、输入输出编码及公开密钥入口。覆盖 GLWE NTT 已有的 CBS 与 MVB 组合；若某组合尚未满足噪声/表示条件，须在拥有契约的公开入口明确拒绝，不能默默回退到 binary。
-- 最少常驻测试：单步独立 oracle、模数相关的 `-1` 转换、聚焦端到端与在线零分配；复用现有表驱动测试，不新增“分布 × LUT × order × backend”全笛卡尔积。
-- 用 `n=728` 作为与现有成本组衔接的测量起点，在各后端固定参数比较 binary、双 CMUX ternary 与融合 ternary。它是相同算术配置的成本比较，不表示三者安全强度或失败率自动相同。
-- Criterion 的 setup、keygen、workspace 分配移出在线计时；keygen/key/scratch 另行报告。默认/SIMD 按实际支持分别测量；最终只保留有长期诊断价值的 benchmark，统计实验不进入普通 CI。
-- 同步双语 README、示例、注释与 HANDOFF，明确已支持与尚未支持的组合。
+应用只需在 `LweParameters` 选择 ternary 家族，密钥生成、LUT、client 和 evaluator 的调用不变。
+不向 LUT 添加秘密分布参数。两种 order 都以 small-LWE 进入 BR；KS 输出仍为补零后的
+同一 small secret。参数原有 `q > t >= 2` 保证 `+1/-1` 可区分，无须重复检查 `q=2`。
+
+低层变化：
+
+- BSK 记录 `input_distribution()`，提供 `iter_binary_controls` / `iter_ternary_controls`。
+  Ternary 连续存储每坐标的正负控制；临时明文 selector 在释放时擦除。
+- `NttGlweBlindRotationContext::new(&key)` / Fourier 对应构造器仅创建所需类型的 scratch。
+  `resize` 保持 binary/ternary 类型；更换类型需重建工作区。移除无调用方的 `rebind`。
+- BR 在循环外选择 binary CMUX 或 ternary 融合 CMUX；共同复用初始化、量化、零指数跳过
+  和交替输出缓冲。Ternary 负指数从同一个量化指数导出，交错 LUT 的列对齐规则不变。
+- NTT context/evaluator 要求 `MonomialNttTable`；仓库的 U32/U64/Uint 表均实现该能力。
+  不增加通用控制策略 trait，classic/sparse 的既有区分不变。
+
+验证复用已有端到端测试：两种 order、普通/交错 LUT、不同输出尺度、有界双输入、奇数全域、
+导入 client key 和 LWE 公钥。NTT CBS 的投影/CMUX 消费及 MVB 的 Scaled 输出也包含 ternary。
+保留 binary Boolean 和 sparse/classic 路径覆盖。新增的常驻检查集中于 Native/Barrett/PowOf2
+秘密系数还原，以及 ternary MVB；不为五种分布展开完整 PBS 矩阵。在线 `_to` 分配数为零。
+验收通过 `just tfhe`、`just tfhe-simd`（各 56 项测试）、workspace all-target check，
+以及更新后的 NTT/Fourier basic 示例；默认检查同时包含 Clippy 和文档构建。
+
+#### T3 测量
+
+常驻 `primus_tfhe_glwe_{ntt,fourier}/benches/ternary_pbs.rs` 固定 `u32, n=728, N=1024,
+k=1, t=4`，只测 BR→KS 的普通单输出 PBS。NTT 使用 `q=132120577`；Fourier 使用 `q=2^32`，
+分别运行 RustFFT / TFHE-FFT。BSK 为 `log B=8, ℓ=3`，KSK 为 `log B=2, ℓ=13`；
+small LWE 噪声标准差为 `3.2*q/16384`，GLWE 为 6.4，accumulator secret 为 SparseTernary。
+small secret 分别为 UniformBinary / UniformTernary，固定 seed `0x54335042`。
+这些是算术成本配置，不表示等安全强度或等失败率，也不直接横比不同 q 的后端。
+
+每次在线迭代处理一个输入，交替使用预先加密的 0/1 和同一个 `[1,0]` LUT，包含 BR、环 KS、
+compact extraction。融合与双 CMUX 使用同一 ternary BSK/KSK/输入；双 CMUX 仅为 benchmark
+参照，不增加生产执行策略。计时前检查实际输出；零分配由端到端测试覆盖。Keygen 单独测 BSK+KSK，复用
+client、表及 generator，排除返回密钥的析构。每后端只有 3 个在线和 2 个 keygen 用例。
+
+测量机器、CPU 2、nightly 与 T1/T2 相同；默认和 SIMD 均用同一工具链，串行执行，
+1 s warm-up、3 s measurement、在线 20 samples、keygen 10 samples。数值和 95% 区间见
+[CSV](benchmarks/tfhe-ternary-t3.csv)。
+
+下表为完整 PBS 均值（ms）；降幅相对于同一配置的双 CMUX。
+
+| 后端 / feature | Binary | Ternary 双 CMUX | Ternary 融合 | 融合降幅 |
+| --- | ---: | ---: | ---: | ---: |
+| ntt / default | 5.278 | 10.522 | 7.932 | 24.6% |
+| ntt / simd | 5.020 | 10.092 | 7.750 | 23.2% |
+| rustfft / default | 6.244 | 15.097 | 9.216 | 39.0% |
+| rustfft / simd | 6.440 | 15.146 | 9.054 | 40.2% |
+| tfhe_fft / default | 5.387 | 13.161 | 8.191 | 37.8% |
+| tfhe_fft / simd | 5.273 | 13.088 | 8.248 | 37.0% |
+
+| BSK+KSK 生成（ms） | 默认 binary / ternary | SIMD binary / ternary |
+| --- | ---: | ---: |
+| ntt | 48.73 / 98.76 | 48.56 / 98.34 |
+| rustfft | 54.46 / 115.83 | 54.29 / 113.95 |
+| tfhe_fft | 54.33 / 115.32 | 53.17 / 114.21 |
+
+上述测量使用了分配计数器；常驻 benchmark 精简后移除该计数器及内存打印，保留解密预检。
+密钥按有效元素 payload 计；evaluator 按当时构造的净分配请求字节数计，包含内部 BR/KS/GLWE/LWE
+缓冲及 Fourier engine scratch，不含表、密钥、调用方输出、栈上元数据和 allocator 额外开销。
+默认/SIMD 相同：
+
+| 后端 | BSK binary → ternary（MiB） | KSK（KiB） | Evaluator binary → ternary（KiB） |
+| --- | ---: | ---: | ---: |
+| NTT | 34.125 → 68.250 | 104 | 60.848 → 112.848 |
+| RustFFT / TFHE-FFT | 68.250 → 136.500 | 208 | 100.848 → 204.848 |
+
+融合减少了双 CMUX 的完整在线成本，但仍比 binary 慢；BSK 翻倍，组合 GGSW 与单项式
+工作区分别额外增加 NTT **52 KiB**、Fourier **104 KiB**。完整负载仍有收益，保留当前融合实现；
+本轮未重新实现按行组合或直接 Fourier 单项式生成，不能据此宣称当前实现已达最优。
+
+```sh
+taskset -c 2 cargo +nightly bench -p primus_tfhe_glwe_ntt -p primus_tfhe_glwe_fourier --bench ternary_pbs -- --warm-up-time 1 --measurement-time 3 --sample-size 20 --save-baseline t3-default --noplot
+taskset -c 2 cargo +nightly bench -p primus_tfhe_glwe_ntt -p primus_tfhe_glwe_fourier --bench ternary_pbs --features simd -- --warm-up-time 1 --measurement-time 3 --sample-size 20 --save-baseline t3-simd --noplot
+```
 
 ## 7. 独立的后续工作
 
@@ -312,5 +381,6 @@ FFT 表和 engine 自身的变换工作区。外积 context 为
 ## 8. 证据边界
 
 本机笔记与现有参数/key、BSK、NTT BR/CMUX/外积、单项式 NTT、Fourier 表契约已作定向核对。
-T1/T2 已有 NTT/Fourier 单步实现、独立 oracle、真实控制加密验证和单步性能测量；尚无完整
-ternary PBS 或完整噪声统计论证。单步性能不能代替 T3 的整把密钥访问和端到端测量。
+T1/T2 覆盖单步独立 oracle、真实控制加密及单步性能；T3 覆盖完整 GLWE ternary PBS、
+组合功能、在线分配和整把密钥访问下的性能。尚无完整噪声统计论证；功能成功、有限样本和
+相同算术参数下的成本对照不构成生产失败率或等安全证明。

@@ -52,7 +52,7 @@ fn functional_bootstrapping_key_blind_rotates() {
         LWE_DIMENSION,
         PLAINTEXT_MODULUS,
         PowOf2Modulus::new(1u32 << 31),
-        SecretKeyDistr::UniformBinary,
+        SecretKeyDistr::UniformTernary,
         0.7,
     );
     let glwe_params = GlweParameters::new(
@@ -64,7 +64,10 @@ fn functional_bootstrapping_key_blind_rotates() {
         0.7,
     );
     let ggsw_params = GlevParameters::with_glwe_params(&glwe_params, 8, None);
-    let input_secret_key = LweSecretKey::new(vec![1u32, 0, 1, 1], SecretKeyDistr::UniformBinary);
+    let input_secret_key = LweSecretKey::new(
+        vec![1u32, 0, (1u32 << 31) - 1, 1],
+        SecretKeyDistr::UniformTernary,
+    );
     let (_, output_secret_key) =
         FourierGlweSecretKey::generate_pair(&glwe_params, &mut fft, &mut rng);
     let mut gadget_context = FourierGadgetEncryptContext::new(ggsw_params.size());
@@ -76,6 +79,13 @@ fn functional_bootstrapping_key_blind_rotates() {
         &mut fft,
         &mut rng,
         &mut gadget_context,
+    );
+
+    assert!(key.iter_binary_controls().is_none());
+    assert_eq!(key.iter_ternary_controls().unwrap().len(), LWE_DIMENSION);
+    assert_eq!(
+        key.as_slice().len(),
+        2 * LWE_DIMENSION * ggsw_params.fourier_ggsw_len()
     );
 
     let switched_a = [3usize, 0, 7, 11];
@@ -103,7 +113,7 @@ fn functional_bootstrapping_key_blind_rotates() {
     accumulator_fourier.write_torus_form(&mut accumulator, &mut fft);
 
     let mut output: TorusGlwe<Vec<u32>> = TorusGlwe::zero(ggsw_params.glwe_len());
-    let mut blind_rotation_context = FourierGlweBlindRotationContext::new(ggsw_params.size());
+    let mut blind_rotation_context = FourierGlweBlindRotationContext::new(&key);
     key.fourier_blind_rotate_to(
         &input,
         &accumulator,
@@ -112,7 +122,7 @@ fn functional_bootstrapping_key_blind_rotates() {
         &mut blind_rotation_context,
     );
 
-    let expected_exponent = (TWO_N + 3 + 7 + 11 - switched_b) & (TWO_N - 1);
+    let expected_exponent = (TWO_N + 3 - 7 + 11 - switched_b) & (TWO_N - 1);
     let mut output_fourier = FourierGlweOwned::zero(ggsw_params.fourier_glwe_len());
     output.write_fourier_form(&mut output_fourier, &mut fft);
     let mut decrypt_context = FourierGlweDecryptContext::new(POLY_LENGTH);

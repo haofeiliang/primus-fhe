@@ -147,6 +147,10 @@ fn sparse_key_rejects_invalid_parameters_and_actual_secret_before_sampling() {
             Error::UnsupportedSecretDistribution,
         ),
         (
+            SecretKeyDistr::SparseTernary,
+            Error::UnsupportedSecretDistribution,
+        ),
+        (
             SecretKeyDistr::fixed_hamming_weight_binary(16, 0),
             Error::InvalidHammingWeight,
         ),

@@ -75,8 +75,7 @@ fn bench_order<Table: FftTable>(c: &mut Criterion, order: PbsOrder, backend: &st
 
     let modulus = parameters.glwe().cipher_modulus();
     let mut fft = context.new_fft_engine();
-    let bootstrapping = parameters.bootstrapping();
-    let mut blind_rotation = FourierGlweBlindRotationContext::new(bootstrapping.size());
+    let mut blind_rotation = FourierGlweBlindRotationContext::new(server_key.bootstrapping_key());
     let key_switching_parameters = parameters.glwe_key_switching().output();
     let mut key_switching =
         FourierGlweKeySwitchingContext::new(key_switching_parameters.glwe_size());

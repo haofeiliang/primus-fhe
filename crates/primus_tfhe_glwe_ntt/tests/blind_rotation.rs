@@ -54,7 +54,7 @@ fn functional_bootstrapping_key_blind_rotates() {
         LWE_DIMENSION,
         PLAINTEXT_MODULUS,
         NativeModulus::new(),
-        SecretKeyDistr::UniformBinary,
+        SecretKeyDistr::UniformTernary,
         0.7,
     );
     let glwe_params = GlweParameters::new(
@@ -66,7 +66,8 @@ fn functional_bootstrapping_key_blind_rotates() {
         0.7,
     );
     let ggsw_params = GlevParameters::with_glwe_params(&glwe_params, 8, None);
-    let input_secret_key = LweSecretKey::new(vec![1u32, 0, 1, 1], SecretKeyDistr::UniformBinary);
+    let input_secret_key =
+        LweSecretKey::new(vec![1u32, 0, u32::MAX, 1], SecretKeyDistr::UniformTernary);
     let coeff_output_secret_key = GlweSecretKey::generate(
         glwe_params.size(),
         glwe_params.secret_key_sampler(),
@@ -82,6 +83,13 @@ fn functional_bootstrapping_key_blind_rotates() {
         &ntt,
         &mut rng,
         &mut gadget_context,
+    );
+
+    assert!(key.iter_binary_controls().is_none());
+    assert_eq!(key.iter_ternary_controls().unwrap().len(), LWE_DIMENSION);
+    assert_eq!(
+        key.as_slice().len(),
+        2 * LWE_DIMENSION * ggsw_params.ggsw_len()
     );
 
     let switched_a = [3usize, 0, 7, 11];
@@ -107,7 +115,7 @@ fn functional_bootstrapping_key_blind_rotates() {
     let accumulator = accumulator_ntt.into_coeff_form(&ntt);
 
     let mut output: Glwe<Vec<u32>> = Glwe::zero(ggsw_params.glwe_len());
-    let mut blind_rotation_context = NttGlweBlindRotationContext::new(ggsw_params.size());
+    let mut blind_rotation_context = NttGlweBlindRotationContext::new(&key);
     key.ntt_blind_rotate_to(
         &input,
         &accumulator,
@@ -117,7 +125,7 @@ fn functional_bootstrapping_key_blind_rotates() {
         &mut blind_rotation_context,
     );
 
-    let expected_exponent = (TWO_N + 3 + 7 + 11 - switched_b) & (TWO_N - 1);
+    let expected_exponent = (TWO_N + 3 - 7 + 11 - switched_b) & (TWO_N - 1);
     let output_ntt = output.into_ntt_form(&ntt);
     assert_eq!(
         output_secret_key

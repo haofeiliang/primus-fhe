@@ -118,6 +118,22 @@ evaluator.apply_lookup_table_to(&input, &lut, &mut output);
 稀疏聚合噪声和交错旋转步长需要单独预算。这些参数尚无经认证的安全等级或完整 PBS 失败率，
 见 [P3 契约与测量](../../docs/tfhe-sparse-pbs.md#p35-完整-pbs-接入与验收)。
 
+## Binary 与 ternary small 秘密
+
+在 `LweParameters` 中选择 `SecretKeyDistr::UniformTernary` 或其他 ternary 家族，
+即可沿用原有密钥生成与 evaluator 接口；basic 示例使用该配置。两种 PBS order、
+普通/交错 LUT 和公钥输入均支持。Binary 每坐标仍保存一份 GGSW；ternary 保存独立
+加密的 `(positive, negative)` 控制对，每坐标通过组合控制执行一次外积。
+
+低层使用 `NttGlweBlindRotationContext::new(&key)` 创建匹配控制类型的工作区，
+`resize` 保持该类型。`iter_binary_controls` / `iter_ternary_controls` 分别返回单控制或
+控制对；类型不匹配时返回 `None`。ServerKey 兼容性检查包括 small secret 分布。
+循环外选择内核，在线复用工作区；融合方案增加 BSK 和临时 GGSW 存储。
+
+NTT context/BR 要求 `MonomialNttTable`，仓库内置 NTT 表均实现此能力。
+经典 ternary 同样支持 CBS 和分解式 MVB；桶聚合稀疏路径仍只支持固定重量 binary，
+`SparseTernary` 分布不自动选择桶聚合算法。
+
 ## Circuit bootstrapping
 
 CBS 要求经典 server key；稀疏密钥返回
@@ -137,6 +153,7 @@ cargo test -p primus_tfhe_glwe_ntt
 cargo clippy -p primus_tfhe_glwe_ntt --all-targets -- -D warnings
 cargo +nightly test -p primus_tfhe_glwe_ntt --features simd
 cargo bench -p primus_tfhe_glwe_ntt --bench pbs
+cargo bench -p primus_tfhe_glwe_ntt --bench ternary_pbs
 cargo bench -p primus_tfhe_glwe_ntt --bench circuit_bootstrap
 cargo bench -p primus_tfhe_glwe_ntt --bench sparse_pbs
 cargo bench -p primus_tfhe_glwe_ntt --bench mvb
@@ -155,3 +172,7 @@ BR 和密钥切换阶段用于定位开销；系数提取的基准集中在 `pri
 两种 order 和经典/稀疏密钥。共 20 项在线负载（三输出可比较组和交错容量不足的
 17 输出组）与 7 项构造/预处理负载。在线计时包括 KS 与提取；内存和误差另行测量。
 这些成本参数的 small-LWE 维数为 728，不是已认证的生产参数。
+
+`ternary_pbs` 在 `n=728, N=1024`、BR→KS 下比较 binary、融合 ternary 和双 CMUX
+完整 PBS，另测 BSK+KSK 生成。参数、耗时及密钥/工作区测量见
+[T3 测量](../../docs/tfhe-ternary.md#t3完整-glwe-接入与验收已完成)。

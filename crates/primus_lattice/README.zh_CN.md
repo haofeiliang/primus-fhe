@@ -96,8 +96,8 @@ Context 提供可复用 scratch，不是已经验证的 basis/table/modulus doma
 `s⁺, s⁻` 旋转得到 `X^(exponent * (s⁺-s⁻))` 倍的输入。两份控制使用相同的密钥、
 basis，以及 NTT 表或同一个 FFT 表实例。Fourier 控制使用 native-torus 缩放与对应的 native
 basis。指数已经量化到 `0..2N`；零指数精确复制输入。在线运算复用 context，
-不分配内存。这是 lattice 单步原语；完整 TFHE ternary 密钥生成与求值的接入见
-[ternary 计划](../../docs/tfhe-ternary.md)。
+不分配内存。这是 lattice 单步原语；完整 GLWE TFHE ternary 密钥生成与求值见
+[ternary 设计](../../docs/tfhe-ternary.md)。
 
 ## 示例
 

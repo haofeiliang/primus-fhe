@@ -23,6 +23,8 @@ impl<T: TorusFftValue> ServerKey<T> {
         let bootstrapping = parameters.bootstrapping();
         let key_switching = parameters.glwe_key_switching();
         self.bootstrapping_key.input_dimension() == parameters.small_lwe().dimension()
+            && self.bootstrapping_key.input_distribution()
+                == parameters.small_lwe().secret_key_distr()
             && self.bootstrapping_key.input_modulus().explicit_value()
                 == parameters.small_lwe().cipher_modulus_value()
             && self.bootstrapping_key.size() == bootstrapping.size()

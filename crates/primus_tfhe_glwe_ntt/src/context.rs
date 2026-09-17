@@ -1,6 +1,6 @@
 use primus_encoding::{RoundedCodec, ScaledCodec};
 use primus_integer::FheUint;
-use primus_ntt::NttTable;
+use primus_ntt::MonomialNttTable;
 use primus_reduce::{PrepareModulusSwitch, ReduceAdd, RingContext};
 use primus_tfhe::{FactorizedLookupTable, InterleavedLookupTable, LookupTable};
 use primus_tfhe_glwe::GlweClientKey as ClientKey;
@@ -20,7 +20,7 @@ use crate::{
 pub struct TfheContext<T, Table>
 where
     T: FheUint,
-    Table: NttTable<ValueT = T>,
+    Table: MonomialNttTable<ValueT = T>,
 {
     parameters: TfheParameters<T>,
     table: Table,
@@ -29,7 +29,7 @@ where
 impl<T, Table> TfheContext<T, Table>
 where
     T: FheUint,
-    Table: NttTable<ValueT = T>,
+    Table: MonomialNttTable<ValueT = T>,
 {
     /// Binds TFHE parameters to a compatible NTT table.
     pub fn try_new(

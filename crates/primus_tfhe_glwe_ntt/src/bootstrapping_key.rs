@@ -3,18 +3,25 @@
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_glwe::{GlevParameters, NttGadgetEncryptContext, NttGlweSecretKey};
 use primus_integer::FheUint;
-use primus_lattice::{GadgetSize, ggsw::NttGgswIter};
+use primus_lattice::{
+    GadgetSize,
+    ggsw::{NttGgsw, NttGgswIter},
+};
 use primus_lwe::{LweParameters, LweSecretKey};
 use primus_ntt::NttTable;
 use primus_reduce::{FieldContext, PrepareModulusSwitch, RingContext};
 use primus_tfhe::rotation::RotationQuantizer;
+use primus_tfhe_glwe::SecretKeyDistr;
+use zeroize::Zeroizing;
 
-/// An NTT bootstrapping key containing one GGSW encryption per input LWE
-/// secret coefficient.
+/// An NTT bootstrapping key containing one control per binary input coefficient
+/// or an adjacent `(positive, negative)` pair per ternary coefficient. Each pair
+/// independently encrypts `[s=1]` and `[s=-1]` under the same accumulator key.
 #[derive(Clone)]
 pub struct NttGlweBootstrappingKey<T: FheUint, LM: PrepareModulusSwitch<ValueT = T>> {
     data: Vec<T>,
     input_dimension: usize,
+    input_distribution: SecretKeyDistr,
     input_modulus: LM,
     input_quantizer: RotationQuantizer<LM::Prepared>,
     size: GadgetSize,
@@ -27,6 +34,13 @@ impl<T: FheUint, LM: PrepareModulusSwitch<ValueT = T>> NttGlweBootstrappingKey<T
     #[inline]
     pub fn input_dimension(&self) -> usize {
         self.input_dimension
+    }
+
+    /// Returns the input secret distribution, which fixes the control layout.
+    #[must_use]
+    #[inline]
+    pub fn input_distribution(&self) -> SecretKeyDistr {
+        self.input_distribution
     }
 
     /// Returns the input LWE modulus with its arithmetic type preserved.
@@ -64,8 +78,8 @@ impl<T: FheUint, LM: PrepareModulusSwitch<ValueT = T>> NttGlweBootstrappingKey<T
         &self.data
     }
 
-    /// Generates an NTT bootstrapping key encrypting every binary input LWE
-    /// secret coefficient under `output_secret_key`.
+    /// Generates an NTT bootstrapping key encrypting the binary coefficients or ternary
+    /// selector pairs of the input LWE secret under `output_secret_key`.
     ///
     /// # Correctness
     ///
@@ -73,7 +87,7 @@ impl<T: FheUint, LM: PrepareModulusSwitch<ValueT = T>> NttGlweBootstrappingKey<T
     ///
     /// # Panics
     ///
-    /// Panics on non-binary input key distributions, incompatible key/parameter
+    /// Panics on unsupported distributions or invalid secret coefficients, incompatible key/parameter
     /// layouts, NTT length/modulus or gadget workspace, key storage overflow,
     /// or a rotation domain `2N` not representable by the input coefficient type.
     pub fn generate_ntt<M, Table, R>(
@@ -91,32 +105,68 @@ impl<T: FheUint, LM: PrepareModulusSwitch<ValueT = T>> NttGlweBootstrappingKey<T
         Table: NttTable<ValueT = T>,
         R: rand::Rng + rand::CryptoRng,
     {
-        assert!(input_secret_key.distr().is_binary());
+        let input_distribution = input_secret_key.distr();
+        assert!(
+            input_distribution.is_binary() || input_distribution.is_ternary(),
+            "bootstrapping requires a binary or ternary input LWE secret"
+        );
         assert_eq!(input_secret_key.dimension(), input_parameters.dimension());
-        assert!(input_parameters.secret_key_distr().is_binary());
+        assert_eq!(input_distribution, input_parameters.secret_key_distr());
+        let input_dimension = input_secret_key.dimension();
+        let control_count = input_dimension
+            .checked_mul(if input_distribution.is_binary() { 1 } else { 2 })
+            .expect("bootstrapping control count overflow");
+        // Only ternary key generation needs a temporary selector array. It is
+        // erased on drop; the evaluation key retains only encrypted selectors.
+        let mut selectors = Zeroizing::new(Vec::new());
+        let plaintexts = if input_distribution.is_binary() {
+            assert!(
+                input_secret_key.as_ref().iter().all(|&x| x <= T::ONE),
+                "binary LWE secret coefficient is outside {{0, 1}}"
+            );
+            input_secret_key.as_ref()
+        } else {
+            let minus_one = input_parameters.cipher_modulus().minus_one();
+            selectors.resize(control_count, T::ZERO);
+            for (&coefficient, pair) in input_secret_key
+                .as_ref()
+                .iter()
+                .zip(selectors.as_chunks_mut::<2>().0.iter_mut())
+            {
+                assert!(
+                    coefficient <= T::ONE || coefficient == minus_one,
+                    "ternary LWE secret coefficient is outside {{0, 1, q-1}}"
+                );
+                pair[0] = if coefficient == T::ONE {
+                    T::ONE
+                } else {
+                    T::ZERO
+                };
+                pair[1] = if coefficient == minus_one {
+                    T::ONE
+                } else {
+                    T::ZERO
+                };
+            }
+            selectors.as_slice()
+        };
         let input_quantizer = RotationQuantizer::new(
             input_parameters.cipher_modulus(),
             parameters.size().glwe_size().poly_length() * 2,
             1,
         );
-        let input_dimension = input_secret_key.dimension();
         let ggsw_len = parameters.ggsw_len();
-        let total_len = input_dimension
+        let total_len = control_count
             .checked_mul(ggsw_len)
             .expect("NTT bootstrapping-key length overflow");
         let mut data = vec![T::ZERO; total_len];
-        output_secret_key.encrypt_ggsw_constant_batch_to(
-            input_secret_key.as_ref(),
-            &mut data,
-            parameters,
-            ntt,
-            rng,
-            context,
-        );
+        output_secret_key
+            .encrypt_ggsw_constant_batch_to(plaintexts, &mut data, parameters, ntt, rng, context);
 
         Self {
             data,
             input_dimension,
+            input_distribution,
             input_modulus: input_parameters.cipher_modulus(),
             input_quantizer,
             size: parameters.size(),
@@ -125,9 +175,30 @@ impl<T: FheUint, LM: PrepareModulusSwitch<ValueT = T>> NttGlweBootstrappingKey<T
         }
     }
 
-    /// Iterates over the NTT GGSW encryptions.
-    #[inline]
-    pub fn iter_ntt_ggsw(&self) -> NttGgswIter<'_, T> {
-        NttGgswIter::new(&self.data, self.size.ggsw_len())
+    /// Borrows one control per input coordinate, or returns `None` for a ternary key.
+    #[must_use]
+    pub fn iter_binary_controls(&self) -> Option<NttGgswIter<'_, T>> {
+        self.input_distribution
+            .is_binary()
+            .then(|| NttGgswIter::new(&self.data, self.size.ggsw_len()))
+    }
+
+    /// Borrows `(positive, negative)` controls per input coordinate, or returns
+    /// `None` for a binary key. The two encryptions in each pair are independent.
+    #[must_use]
+    #[expect(
+        clippy::type_complexity,
+        reason = "expose the positive/negative pair without another public type"
+    )]
+    pub fn iter_ternary_controls(
+        &self,
+    ) -> Option<impl ExactSizeIterator<Item = (NttGgsw<&[T]>, NttGgsw<&[T]>)>> {
+        self.input_distribution.is_ternary().then(|| {
+            let len = self.size.ggsw_len();
+            self.data.chunks_exact(2 * len).map(move |pair| {
+                let (positive, negative) = pair.split_at(len);
+                (NttGgsw::new(positive), NttGgsw::new(negative))
+            })
+        })
     }
 }

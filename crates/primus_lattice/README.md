@@ -102,8 +102,8 @@ encrypted bits `s⁺, s⁻` to rotate by `X^(exponent * (s⁺-s⁻))`. Both cont
 the same key, basis, and NTT table or exact FFT table instance. Fourier controls
 use native-torus scale and a matching native basis. The exponent is already
 quantized into `0..2N`; zero copies the input exactly. Evaluation reuses its
-context without allocation. This is a lattice primitive; complete TFHE ternary key generation
-and evaluation are tracked separately in the [ternary plan](../../docs/tfhe-ternary.md).
+context without allocation. This is a lattice primitive; complete GLWE TFHE ternary key generation
+and evaluation are described in the [ternary design](../../docs/tfhe-ternary.md).
 
 ## Example
 

@@ -19,7 +19,7 @@ where
 {
     /// Rotates `input` by an encrypted ternary multiple of `exponent`.
     ///
-    /// `self` and `negative` encrypt mutually exclusive bits `s⁺` and `s⁻`.
+    /// `self` and `negative` encrypt bits `s⁺` and `s⁻`.
     /// For `s = s⁺ - s⁻`, the ideal output is `X^(exponent * s) * input`.
     /// This computes `input + (self - X^-exponent * negative) ⊠ ((X^exponent - 1) * input)`
     /// with one external product. Decomposition, control noise, and Fourier
@@ -29,11 +29,10 @@ where
     /// # Correctness
     ///
     /// Both controls, input, output, basis, and engine must satisfy
-    /// [`Self::external_product_to`] with `context.size()`. Controls encrypt bits
-    /// under the same key and native basis, and at most one bit is one; this is
-    /// unchecked. Independent control encryption is required for the usual
-    /// noise estimate. Both controls must use the engine's exact table instance,
-    /// Fourier ordering, and normalized torus scale.
+    /// [`Self::external_product_to`] with `context.size()`. Control bits must be
+    /// mutually exclusive (unchecked) and use the same key and native basis.
+    /// The usual noise estimate requires independent encryptions. Both controls
+    /// must use the engine's exact table instance, ordering, and normalized torus scale.
     ///
     /// `exponent` is already quantized into `0..2N`. Its negative is derived from
     /// that same exponent modulo `2N`. The monomial is transformed at integer
@@ -106,7 +105,7 @@ where
 {
     /// Rotates `input` by an encrypted ternary multiple of `exponent`.
     ///
-    /// `self` and `negative` encrypt mutually exclusive bits `s⁺` and `s⁻`.
+    /// `self` and `negative` encrypt bits `s⁺` and `s⁻`.
     /// For `s = s⁺ - s⁻`, the ideal output is `X^(exponent * s) * input`.
     /// This uses one external product:
     /// `output = input + (self - X^-exponent * negative) ⊠ ((X^exponent - 1) * input)`.
@@ -116,8 +115,8 @@ where
     /// # Correctness
     ///
     /// Both controls, input, output, basis, modulus, and table must satisfy
-    /// [`Self::external_product_to`] with `context.size()`. Controls encrypt bits
-    /// under the same key and basis, and at most one bit is one; this is unchecked.
+    /// [`Self::external_product_to`] with `context.size()`. Control bits must be
+    /// mutually exclusive (unchecked) and use the same key and basis.
     /// Independent control encryption is required for the usual noise estimate.
     /// `exponent` is already quantized and must be in `0..2N`. Its negative is
     /// derived modulo `2N`, not by separately quantizing a negated LWE coefficient.

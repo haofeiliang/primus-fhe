@@ -1,7 +1,7 @@
 use primus_glwe::NttGlweCiphertext;
 use primus_integer::FheUint;
 use primus_lwe::LweCiphertext;
-use primus_ntt::NttTable;
+use primus_ntt::MonomialNttTable;
 use primus_poly::{NttPolynomial, NttPolynomialOwned, PolynomialOwned};
 use primus_tfhe::FactorizedLookupTable;
 
@@ -17,7 +17,7 @@ use crate::{PbsOrder, ServerKey, TfheContext, TfheEvaluationError};
 pub struct NttFactorizedLookupTable<'a, T, Table>
 where
     T: FheUint,
-    Table: NttTable<ValueT = T>,
+    Table: MonomialNttTable<ValueT = T>,
 {
     context: &'a TfheContext<T, Table>,
     common_polynomial: PolynomialOwned<T>,
@@ -29,7 +29,7 @@ where
 impl<'a, T, Table> NttFactorizedLookupTable<'a, T, Table>
 where
     T: FheUint,
-    Table: NttTable<ValueT = T>,
+    Table: MonomialNttTable<ValueT = T>,
 {
     /// Consumes a coefficient program and prepares its factors with `context`.
     ///
@@ -98,7 +98,7 @@ where
 pub struct FactorizedEvaluator<'a, T, Table>
 where
     T: FheUint,
-    Table: NttTable<ValueT = T>,
+    Table: MonomialNttTable<ValueT = T>,
 {
     evaluator: Evaluator<'a, T, Table>,
     shared_rotation: NttGlweCiphertext<Vec<T>>,
@@ -107,7 +107,7 @@ where
 impl<'a, T, Table> FactorizedEvaluator<'a, T, Table>
 where
     T: FheUint,
-    Table: NttTable<ValueT = T>,
+    Table: MonomialNttTable<ValueT = T>,
 {
     /// Creates the workspace after validating the server key's parameters.
     ///

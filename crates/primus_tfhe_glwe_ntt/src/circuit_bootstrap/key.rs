@@ -2,7 +2,7 @@
 
 use primus_glwe::{GadgetSize, NttGlweSchemeSwitchKey, NttGlweSecretKey, NttGlweTraceKey};
 use primus_integer::FheUint;
-use primus_ntt::NttTable;
+use primus_ntt::MonomialNttTable;
 
 use crate::{CircuitBootstrapParameters, ClientKey, KeyGenerator, TfheKeyError};
 
@@ -58,7 +58,7 @@ impl<T: FheUint> CircuitBootstrapKey<T> {
 impl<'a, T, Table> KeyGenerator<'a, T, Table>
 where
     T: FheUint,
-    Table: NttTable<ValueT = T>,
+    Table: MonomialNttTable<ValueT = T>,
 {
     /// Generates the optional trace-projection and scheme-switching keys.
     ///
