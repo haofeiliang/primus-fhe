@@ -271,6 +271,12 @@ context and its separate evaluator reuses scratch. Odd full-domain MVB, other
 backends and CBS outputs are outside this implementation. Algebra and noise
 conditions are detailed in the [MVB design](../../docs/tfhe-mvb.md).
 
+The [threshold example](../primus_tfhe_glwe_ntt/examples/mvb_thresholds.rs) converts
+one encrypted score into 17 flags beyond the interleaved layout's capacity.
+[Measured costs](../../docs/tfhe-mvb.md#8-p43-测量与应用选择) compare both orders and
+classic/sparse keys with identical Scaled output centers, including factor norms
+and the additional output error.
+
 ## Source layout
 
 The four public types are exported from the crate root. Odd full-domain compilation

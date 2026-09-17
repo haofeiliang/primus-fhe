@@ -73,7 +73,19 @@ context、输入、输出数量和全部输出维数，在线零分配。额外�
 
 相位解码使用输出 codec。因子范数会放大 BR 噪声；串联 PBS 时还需考虑 Scaled 与
 Rounded 中心差异。见[共享契约](../primus_tfhe/README.zh_CN.md#固定尺度分解式-mvb)及
-[功能测试](tests/factorized_pbs.rs)；性能比较留待 P4.3。
+[功能测试](tests/factorized_pbs.rs)。
+
+运行[阈值示例](examples/mvb_thresholds.rs)：
+
+```sh
+cargo run -p primus_tfhe_glwe_ntt --release --example mvb_thresholds
+```
+
+示例把 `0..64` 的一个加密分数转换为 17 个数值阈值标志，复用编译产物和全部密文缓冲区。
+N=1024 时，交错布局仅为每个输出留下 32 个位置，无法容纳 64 个输入。
+每个阈值的差分因子仅有两项、一范数为 2，限制其噪声放大。
+交错容量和输入噪声余量足够时优先考虑交错；分解式以更大的程序/构造成本保留步长 1。
+实测与选择条件见 [P4.3 记录](../../docs/tfhe-mvb.md#8-p43-测量与应用选择)。
 
 ## 实验性稀疏 PBS
 
@@ -127,6 +139,7 @@ cargo +nightly test -p primus_tfhe_glwe_ntt --features simd
 cargo bench -p primus_tfhe_glwe_ntt --bench pbs
 cargo bench -p primus_tfhe_glwe_ntt --bench circuit_bootstrap
 cargo bench -p primus_tfhe_glwe_ntt --bench sparse_pbs
+cargo bench -p primus_tfhe_glwe_ntt --bench mvb
 ```
 
 `pbs` 复用输出，覆盖两种 order、3/4 输出 ManyLUT 与独立 PBS 的对照，以及 Boolean AND/MUX。
@@ -137,3 +150,8 @@ BR 和密钥切换阶段用于定位开销；系数提取的基准集中在 `pri
 交错 LUT，以及完整 server key 生成（`n/h/N=728/32/1024`，共 10 项）。PBS 计时前准备输入、evaluator 和输出，
 每次迭代处理四个加密输入中的一个。内存、小参数诊断及默认/SIMD 结果见
 [P3 测量记录](../../docs/tfhe-sparse-pbs.md#p35-完整-pbs-接入与验收)。
+
+`mvb` 在相同 Scaled 阈值输出下比较独立 PBS、交错 ManyLUT 与分解式 MVB，覆盖
+两种 order 和经典/稀疏密钥。共 20 项在线负载（三输出可比较组和交错容量不足的
+17 输出组）与 7 项构造/预处理负载。在线计时包括 KS 与提取；内存和误差另行测量。
+这些成本参数的 small-LWE 维数为 728，不是已认证的生产参数。

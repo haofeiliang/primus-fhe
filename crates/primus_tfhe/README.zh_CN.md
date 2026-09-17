@@ -225,6 +225,10 @@ Scaled codec；接入下一次 Rounded 输入 PBS 时须计入编码中心差异
 支持经典/稀疏密钥和两种 order。预处理产物借用一个 context，独立 evaluator 复用工作区。
 本实现不含奇数全域 MVB、其他后端和 CBS 输出；代数与噪声条件见 [MVB 设计](../../docs/tfhe-mvb.md)。
 
+[阈值示例](../primus_tfhe_glwe_ntt/examples/mvb_thresholds.rs) 把一个加密分数转换为
+交错布局容量之外的 17 个标志。[成本测量](../../docs/tfhe-mvb.md#8-p43-测量与应用选择)
+在相同 Scaled 输出中心下比较两种 order 与经典/稀疏密钥，并记录因子范数和额外输出误差。
+
 ## 源码组织
 
 四种公开类型均从 crate 根导出。奇数全域是 `LookupTable` 的构造方式，

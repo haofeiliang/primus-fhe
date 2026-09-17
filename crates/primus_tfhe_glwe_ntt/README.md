@@ -85,7 +85,21 @@ ordinary evaluators are unchanged. The program stores `(output_count+1)*N` coeff
 Use the output codec to decode phases. Factor norms amplify BR noise, and Scaled
 centers can differ from Rounded centers when chaining PBS. See the
 [shared contract](../primus_tfhe/README.md#fixed-scale-factorized-mvb) and
-[functional test](tests/factorized_pbs.rs). Performance comparisons are deferred to P4.3.
+[functional test](tests/factorized_pbs.rs).
+
+Run the [threshold example](examples/mvb_thresholds.rs):
+
+```sh
+cargo run -p primus_tfhe_glwe_ntt --release --example mvb_thresholds
+```
+
+It turns one encrypted score in `0..64` into 17 numeric threshold flags, reusing
+one compiled program and all ciphertext buffers. At N=1024 the interleaved
+layout would leave only 32 positions for 64 inputs. Each threshold has a
+two-term difference factor with L1 norm 2, limiting its noise amplification.
+Prefer interleaving when it fits with enough input-noise margin; factorization
+retains step-one resolution at a higher program/compilation cost. See the
+[measurements and selection conditions](../../docs/tfhe-mvb.md#8-p43-测量与应用选择).
 
 ## Experimental sparse PBS
 
@@ -147,6 +161,7 @@ cargo +nightly test -p primus_tfhe_glwe_ntt --features simd
 cargo bench -p primus_tfhe_glwe_ntt --bench pbs
 cargo bench -p primus_tfhe_glwe_ntt --bench circuit_bootstrap
 cargo bench -p primus_tfhe_glwe_ntt --bench sparse_pbs
+cargo bench -p primus_tfhe_glwe_ntt --bench mvb
 ```
 
 `pbs` reuses output buffers and covers both orders, 3/4-output ManyLUT versus
@@ -159,3 +174,10 @@ server-key generation (10 cases, `n/h/N=728/32/1024`). Inputs, evaluator and out
 prepared outside PBS timing. Each iteration processes one of four encrypted
 inputs. Memory, small-profile diagnostics and default/SIMD results are recorded
 in the [P3 measurements](../../docs/tfhe-sparse-pbs.md#p35-完整-pbs-接入与验收).
+
+`mvb` compares independent PBS, interleaved ManyLUT and factorized MVB with the
+same Scaled threshold outputs, in both orders with classic/sparse keys. It has
+20 online cases (3 comparable outputs and 17 outputs beyond interleaved capacity)
+and 7 construction/preparation cases. Online timings include KS and extraction;
+memory and error diagnostics were measured separately. These cost fixtures use
+small-secret dimension 728 and are not certified production parameters.

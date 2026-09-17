@@ -30,7 +30,7 @@
 
 源码入口：
 
-- [共享 LUT](../crates/primus_tfhe/src/lookup_table.rs)：统一导出与编码元数据；单输出、交错多输出与双输入类型分别位于 `single.rs`、`interleaved.rs`、`bivariate.rs`。[前半区内核](../crates/primus_tfhe/src/lookup_table/compile/front_half.rs) 与[奇数全域内核](../crates/primus_tfhe/src/lookup_table/compile/odd_full_domain.rs) 分别处理两种几何，错误定义位于 [error.rs](../crates/primus_tfhe/src/error.rs)。
+- [共享 LUT](../crates/primus_tfhe/src/lookup_table.rs)：统一导出与编码元数据；单输出、交错多输出、双输入与分解式 MVB 类型分别位于 `single.rs`、`interleaved.rs`、`bivariate.rs`、`factorized.rs`。[前半区内核](../crates/primus_tfhe/src/lookup_table/compile/front_half.rs) 与[奇数全域内核](../crates/primus_tfhe/src/lookup_table/compile/odd_full_domain.rs) 分别处理两种几何，错误定义位于 [error.rs](../crates/primus_tfhe/src/error.rs)。
 - [有界双输入](../crates/primus_tfhe/src/lookup_table/bivariate.rs)：绑定矩形输入域、打包基数与普通 LUT，复用现有 PBS。
 - [旋转量化](../crates/primus_tfhe/src/rotation.rs)：普通与 windowed modulus switch。
 - [PBS trait](../crates/primus_tfhe/src/bootstrap.rs)：公共功能契约。
@@ -657,4 +657,7 @@ BK 在每个公开乘法之后 KS，KB 在共享 BR 之前 KS。
 成本模型集中维护在 [MVB 专项文档](tfhe-mvb.md)。独立整数 oracle 已检查分解、所有
 旋转、真实几何和解码充分条件。P4.2 已据此实现共享系数产物、NTT 预处理和独立
 evaluator，完成默认/SIMD 功能验证；实际接口与验证边界也维护在专项文档。
-P4.3 再作公平性能比较和应用入口。
+P4.3 的[比较与应用入口](tfhe-mvb.md#8-p43-测量与应用选择)覆盖同编码的独立 PBS、
+交错 ManyLUT 和 MVB。17 个低范数阈值展示了交错容量之外共享 BR 的价值；交错
+容量和输入余量足够时，仍优先考虑交错。BK 保留逐输出 KS，完整结果、内存与噪声
+限制集中在专项文档；加密 LUT、tree/LFBS、其他 FDFB 和摊销等待具体应用需求。
