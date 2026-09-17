@@ -10,7 +10,7 @@ use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, U32NttTable};
 use primus_poly::Polynomial;
 use primus_tfhe_glwe_ntt::{
-    KeyGenerator, NttGlweBlindRotationContext, NttGlweBootstrappingKey, PbsOrder,
+    ClientKey, KeyGenerator, NttGlweBlindRotationContext, NttGlweBootstrappingKey, PbsOrder,
     SparseGlweBlindRotationContext, TfheContext, TfheParameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
@@ -82,7 +82,7 @@ fn sparse_rotation_matches_direct_phase_and_classic_with_reused_scratch() {
         let ntt = context.table();
         let mut rng = StdRng::seed_from_u64(0x5033_4252 + n as u64 + k as u64);
         let mut generator = KeyGenerator::new(&context);
-        let client = generator.generate_client_key(&mut rng);
+        let client = ClientKey::generate(context.parameters(), &mut rng);
         let sparse = generator
             .try_generate_sparse_bootstrapping_key(&client, copies, buckets, &mut rng)
             .unwrap();
@@ -92,7 +92,7 @@ fn sparse_rotation_matches_direct_phase_and_classic_with_reused_scratch() {
             client.small_lwe_secret_key(),
             parameters.small_lwe(),
             &output_key,
-            parameters.bootstrapping(),
+            parameters.blind_rotation_ggsw(),
             ntt,
             &mut rng,
             &mut NttGadgetEncryptContext::new(size),
@@ -171,7 +171,10 @@ fn sparse_rotation_matches_direct_phase_and_classic_with_reused_scratch() {
             check(&Lwe::new(vec![Q - 1; 17]), &lut);
         } else {
             let function = |m: usize| (3 * m as u32 + 1) % T;
-            let lut = context.compile_lookup_table_fn(&codec, function).unwrap();
+            let lut = context
+                .parameters()
+                .compile_lookup_table_fn(&codec, function)
+                .unwrap();
             for message in 0..T / 2 {
                 let input = client.small_lwe_secret_key().encrypt(
                     message,

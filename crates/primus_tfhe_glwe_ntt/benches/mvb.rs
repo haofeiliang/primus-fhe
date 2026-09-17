@@ -16,8 +16,8 @@ use primus_lwe::{LweCiphertext, LweParameters};
 use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, U32NttTable};
 use primus_tfhe_glwe_ntt::{
-    FactorizedLookupTable, InterleavedLookupTable, KeyGenerator, LookupTable, LookupTableError,
-    NttFactorizedLookupTable, PbsOrder, TfheContext, TfheParameters,
+    ClientKey, FactorizedLookupTable, InterleavedLookupTable, KeyGenerator, LookupTable,
+    LookupTableError, NttFactorizedLookupTable, PbsOrder, TfheContext, TfheParameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -65,7 +65,7 @@ fn bench_mvb(c: &mut Criterion) {
     for (domain, count) in [(8, 3), (64, 17)] {
         for order in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
             let context = context(order, domain);
-            let modulus = context.parameters().glwe().cipher_modulus();
+            let modulus = context.parameters().accumulator_glwe().cipher_modulus();
             let codec = ScaledCodec::new(2, modulus);
             let value = |m, i| threshold(m, i, domain, count);
             let encoded = |m, i| Ok(codec.encode_value(value(m, i), PlaintextEmbedding::Unsigned));
@@ -100,7 +100,7 @@ fn bench_mvb(c: &mut Criterion) {
                     domain,
                     N,
                     count,
-                    context.parameters().small_lwe().plaintext_codec(),
+                    context.parameters().input_plaintext_codec(),
                     &codec,
                     value,
                 )
@@ -146,7 +146,7 @@ fn bench_mvb(c: &mut Criterion) {
 
             let mut rng = StdRng::seed_from_u64(0x5034_3300 + domain as u64);
             let mut generator = KeyGenerator::new(&context);
-            let client = generator.generate_client_key(&mut rng);
+            let client = ClientKey::generate(context.parameters(), &mut rng);
             let classic = generator
                 .try_generate_server_key(&client, &mut rng)
                 .unwrap();
@@ -161,7 +161,7 @@ fn bench_mvb(c: &mut Criterion) {
                 .map(|&m| encryptor.encrypt_padded(m as u32, &mut rng).unwrap())
                 .collect();
             let mut outputs =
-                vec![LweCiphertext::zero(context.parameters().ciphertext_lwe_dimension()); count];
+                vec![LweCiphertext::zero(context.parameters().external_lwe_dimension()); count];
             let mut group = c.benchmark_group(format!("mvb/D{domain}/k{count}/{order:?}"));
             group.sampling_mode(SamplingMode::Flat);
             for (name, key) in [("classic", &classic), ("sparse", &sparse)] {

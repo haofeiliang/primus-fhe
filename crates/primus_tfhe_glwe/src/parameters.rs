@@ -1,6 +1,7 @@
 //! Parameters for GLWE-based TFHE.
 
 use primus_decompose::primitive::ApproxSignedBasis;
+use primus_encoding::RoundedCodec;
 use primus_glwe::GlevParameterError;
 use primus_integer::FheUint;
 use primus_reduce::RingContext;
@@ -12,7 +13,7 @@ use crate::{
 
 /// Execution order of programmable bootstrapping and key switching.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum GlwePbsOrder {
+pub enum PbsOrder {
     /// Blind rotation is followed by a GLWE key switch and compact sample
     /// extraction back to the small LWE key.
     BootstrapKeyswitch,
@@ -23,7 +24,7 @@ pub enum GlwePbsOrder {
 
 /// An invalid combination of GLWE-based TFHE parameters.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum GlweParameterError {
+pub enum TfheParameterError {
     /// Classic blind rotation supports binary and ternary input LWE secrets.
     #[error("TFHE bootstrapping requires a binary or ternary input LWE secret key")]
     UnsupportedInputLweSecretKey,
@@ -68,20 +69,20 @@ pub enum GlweParameterError {
 /// backend-specific context binds it to an FFT/NTT table and validates the
 /// table separately.
 #[derive(Clone)]
-pub struct GlweTfheParameters<T, LM, GM>
+pub struct TfheParameters<T, LM, GM>
 where
     T: FheUint,
     LM: RingContext<T>,
     GM: RingContext<T>,
 {
     small_lwe: LweParameters<T, LM>,
-    glwe: GlweParameters<T, GM>,
-    bootstrapping: GgswParameters<T, GM>,
+    accumulator_glwe: GlweParameters<T, GM>,
+    blind_rotation_ggsw: GgswParameters<T, GM>,
     glwe_key_switching: GlweKeySwitchingParameters<T, GM>,
-    pbs_order: GlwePbsOrder,
+    pbs_order: PbsOrder,
 }
 
-impl<T, LM, GM> GlweTfheParameters<T, LM, GM>
+impl<T, LM, GM> TfheParameters<T, LM, GM>
 where
     T: FheUint,
     LM: RingContext<T>,
@@ -102,33 +103,34 @@ where
     pub fn try_new(
         small_lwe: LweParameters<T, LM>,
         accumulator_glwe: GlweParameters<T, GM>,
-        bootstrapping_basis: ApproxSignedBasis<T>,
+        blind_rotation_basis: ApproxSignedBasis<T>,
         key_switching_basis: ApproxSignedBasis<T>,
-        pbs_order: GlwePbsOrder,
-    ) -> Result<Self, GlweParameterError> {
+        pbs_order: PbsOrder,
+    ) -> Result<Self, TfheParameterError> {
         let distribution = small_lwe.secret_key_distr();
         if !distribution.is_binary() && !distribution.is_ternary() {
-            return Err(GlweParameterError::UnsupportedInputLweSecretKey);
+            return Err(TfheParameterError::UnsupportedInputLweSecretKey);
         }
         if small_lwe.plain_modulus_value() != accumulator_glwe.plain_modulus_value() {
-            return Err(GlweParameterError::PlainModulusMismatch);
+            return Err(TfheParameterError::PlainModulusMismatch);
         }
 
         let capacity = accumulator_glwe.secret_key_len();
         if small_lwe.dimension() > capacity {
-            return Err(GlweParameterError::SmallLweDimensionExceedsGlweCapacity {
+            return Err(TfheParameterError::SmallLweDimensionExceedsGlweCapacity {
                 small_lwe_dimension: small_lwe.dimension(),
                 capacity,
             });
         }
         if small_lwe.cipher_modulus_value() != accumulator_glwe.cipher_modulus_value() {
-            return Err(GlweParameterError::CipherModulusMismatch);
+            return Err(TfheParameterError::CipherModulusMismatch);
         }
         if T::try_from(accumulator_glwe.poly_length() * 2).is_err() {
-            return Err(GlweParameterError::RotationDomainTooLarge);
+            return Err(TfheParameterError::RotationDomainTooLarge);
         }
-        let bootstrapping = GgswParameters::try_with_basis(&accumulator_glwe, bootstrapping_basis)
-            .map_err(GlweParameterError::BootstrappingParameters)?;
+        let blind_rotation_ggsw =
+            GgswParameters::try_with_basis(&accumulator_glwe, blind_rotation_basis)
+                .map_err(TfheParameterError::BootstrappingParameters)?;
         let glwe_key_switching = Self::derive_glwe_key_switching(
             small_lwe.dimension(),
             small_lwe.secret_key_distr(),
@@ -137,8 +139,8 @@ where
         )?;
         Ok(Self {
             small_lwe,
-            glwe: accumulator_glwe,
-            bootstrapping,
+            accumulator_glwe,
+            blind_rotation_ggsw,
             glwe_key_switching,
             pbs_order,
         })
@@ -147,65 +149,84 @@ where
     fn derive_glwe_key_switching(
         small_lwe_dimension: usize,
         small_lwe_distr: SecretKeyDistr,
-        glwe: &GlweParameters<T, GM>,
+        accumulator_glwe: &GlweParameters<T, GM>,
         basis: ApproxSignedBasis<T>,
-    ) -> Result<GlweKeySwitchingParameters<T, GM>, GlweParameterError> {
-        let output_dimension = small_lwe_dimension.div_ceil(glwe.poly_length());
+    ) -> Result<GlweKeySwitchingParameters<T, GM>, TfheParameterError> {
+        let output_dimension = small_lwe_dimension.div_ceil(accumulator_glwe.poly_length());
         let output_glwe = GlweParameters::new(
             output_dimension,
-            glwe.poly_length(),
-            glwe.plain_modulus_value(),
-            glwe.cipher_modulus(),
+            accumulator_glwe.poly_length(),
+            accumulator_glwe.plain_modulus_value(),
+            accumulator_glwe.cipher_modulus(),
             small_lwe_distr,
-            glwe.noise_distribution().standard_deviation(),
+            accumulator_glwe.noise_distribution().standard_deviation(),
         );
         let output = GlevParameters::try_with_basis(&output_glwe, basis)?;
-        Ok(GlweKeySwitchingParameters::new(glwe.dimension(), output))
+        Ok(GlweKeySwitchingParameters::new(
+            accumulator_glwe.dimension(),
+            output,
+        ))
     }
 
     /// Returns the small-LWE parameters used by the bootstrapping key.
+    #[must_use]
     #[inline]
     pub fn small_lwe(&self) -> &LweParameters<T, LM> {
         &self.small_lwe
     }
 
-    /// Returns the GGSW parameters used by programmable bootstrapping.
+    /// Returns the GGSW encryption and decomposition parameters for blind-rotation controls.
+    #[must_use]
     #[inline]
-    pub fn bootstrapping(&self) -> &GgswParameters<T, GM> {
-        &self.bootstrapping
+    pub fn blind_rotation_ggsw(&self) -> &GgswParameters<T, GM> {
+        &self.blind_rotation_ggsw
     }
 
     /// Returns the GLWE accumulator parameters.
+    #[must_use]
     #[inline]
-    pub fn glwe(&self) -> &crate::GlweParameters<T, GM> {
-        &self.glwe
+    pub fn accumulator_glwe(&self) -> &GlweParameters<T, GM> {
+        &self.accumulator_glwe
     }
 
     /// Returns the GLWE key-switching parameters shared by both PBS orders.
+    #[must_use]
     #[inline]
     pub fn glwe_key_switching(&self) -> &GlweKeySwitchingParameters<T, GM> {
         &self.glwe_key_switching
     }
 
     /// Returns the selected PBS execution order.
+    #[must_use]
     #[inline]
-    pub fn pbs_order(&self) -> GlwePbsOrder {
+    pub fn pbs_order(&self) -> PbsOrder {
         self.pbs_order
     }
 
     /// Returns the dimension of ciphertexts exposed by the client API.
+    #[must_use]
     #[inline]
-    pub fn ciphertext_lwe_dimension(&self) -> usize {
+    pub fn external_lwe_dimension(&self) -> usize {
         match self.pbs_order() {
-            GlwePbsOrder::BootstrapKeyswitch => self.small_lwe.dimension(),
-            GlwePbsOrder::KeyswitchBootstrap => self.glwe.secret_key_len(),
+            PbsOrder::BootstrapKeyswitch => self.small_lwe.dimension(),
+            PbsOrder::KeyswitchBootstrap => self.accumulator_glwe.secret_key_len(),
         }
     }
 
     /// Returns the plaintext modulus shared by LWE ciphertexts and the GLWE
     /// accumulator.
+    #[must_use]
     #[inline]
     pub fn plain_modulus_value(&self) -> T {
         self.small_lwe.plain_modulus_value()
+    }
+
+    /// Returns the rounded encoding shared by client inputs and LUT input domains.
+    /// LUT outputs may use a different codec; the accumulator's fixed-scale
+    /// GLWE codec does not determine the PBS input encoding.
+    #[must_use]
+    #[inline]
+    pub fn input_plaintext_codec(&self) -> &RoundedCodec<T, LM> {
+        self.small_lwe.plaintext_codec()
     }
 }

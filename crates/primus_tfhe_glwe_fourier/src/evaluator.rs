@@ -5,7 +5,7 @@ use primus_poly::Polynomial;
 use primus_tfhe::{
     InterleavedLookupTable, LookupTable, ProgrammableBootstrap, ProgrammableBootstrapInterleaved,
 };
-use primus_tfhe_glwe::GlwePbsOrder as PbsOrder;
+use primus_tfhe_glwe::PbsOrder;
 
 use crate::{FourierGlweBlindRotationContext, ServerKey, TfheContext, error::TfheEvaluationError};
 
@@ -88,7 +88,7 @@ where
             fft: context.new_fft_engine(),
             blind_rotation: FourierGlweBlindRotationContext::new(server_key.bootstrapping_key()),
             key_switching: key_switching_context,
-            main_glwe: GlweCiphertext::zero(parameters.glwe().glwe_len()),
+            main_glwe: GlweCiphertext::zero(parameters.accumulator_glwe().glwe_len()),
             switched: GlweCiphertext::zero(parameters.glwe_key_switching().output().glwe_len()),
             small_lwe: LweCiphertext::zero(parameters.small_lwe().dimension()),
         })
@@ -109,7 +109,7 @@ where
         input: &LweCiphertext<T>,
         lookup_table: &LookupTable<T>,
     ) -> LweCiphertext<T> {
-        let mut output = LweCiphertext::zero(self.context.parameters().ciphertext_lwe_dimension());
+        let mut output = LweCiphertext::zero(self.context.parameters().external_lwe_dimension());
         self.apply_lookup_table_to(input, lookup_table, &mut output);
         output
     }
@@ -132,14 +132,14 @@ where
         let parameters = self.context.parameters();
         assert!(
             lookup_table.is_compatible(
-                parameters.glwe().poly_length(),
+                parameters.accumulator_glwe().poly_length(),
                 parameters.plain_modulus_value(),
                 parameters.small_lwe().cipher_modulus_value(),
-                parameters.glwe().cipher_modulus_value(),
+                parameters.accumulator_glwe().cipher_modulus_value(),
             ),
             "PBS lookup-table encoding or polynomial length mismatch"
         );
-        let expected_dimension = parameters.ciphertext_lwe_dimension();
+        let expected_dimension = parameters.external_lwe_dimension();
         assert_eq!(
             input.dimension(),
             expected_dimension,
@@ -151,7 +151,7 @@ where
             "PBS output dimension mismatch"
         );
 
-        let glwe = parameters.glwe();
+        let glwe = parameters.accumulator_glwe();
         self.blind_rotate(input, lookup_table.polynomial(), 1);
         match parameters.pbs_order() {
             PbsOrder::BootstrapKeyswitch => {
@@ -185,7 +185,7 @@ where
         input: &LweCiphertext<T>,
         lookup_table: &InterleavedLookupTable<T>,
     ) -> Vec<LweCiphertext<T>> {
-        let dimension = self.context.parameters().ciphertext_lwe_dimension();
+        let dimension = self.context.parameters().external_lwe_dimension();
         let mut outputs = (0..lookup_table.output_count())
             .map(|_| LweCiphertext::zero(dimension))
             .collect::<Vec<_>>();
@@ -213,14 +213,14 @@ where
         let parameters = self.context.parameters();
         assert!(
             lookup_table.is_compatible(
-                parameters.glwe().poly_length(),
+                parameters.accumulator_glwe().poly_length(),
                 parameters.plain_modulus_value(),
                 parameters.small_lwe().cipher_modulus_value(),
-                parameters.glwe().cipher_modulus_value(),
+                parameters.accumulator_glwe().cipher_modulus_value(),
             ),
             "PBS lookup-table encoding or polynomial length mismatch"
         );
-        let expected_dimension = parameters.ciphertext_lwe_dimension();
+        let expected_dimension = parameters.external_lwe_dimension();
         assert_eq!(
             input.dimension(),
             expected_dimension,
@@ -238,7 +238,7 @@ where
             "PBSManyLUT output ciphertext dimension mismatch"
         );
 
-        let glwe = parameters.glwe();
+        let glwe = parameters.accumulator_glwe();
         self.blind_rotate(
             input,
             lookup_table.polynomial(),
@@ -317,7 +317,7 @@ where
     /// Converts an external kN LWE to `small_lwe` under the small-LWE secret,
     /// reusing `main_glwe` and `switched` for inverse extraction and ring KS.
     fn keyswitch_input_to_small_lwe(&mut self, input: &LweCiphertext<T>) {
-        let glwe = self.context.parameters().glwe();
+        let glwe = self.context.parameters().accumulator_glwe();
         input.inverse_extract_glwe_to(
             &mut self.main_glwe,
             glwe.poly_length(),

@@ -8,9 +8,13 @@ to [NTT](../primus_tfhe_glwe_ntt/README.md) or
 [Fourier](../primus_tfhe_glwe_fourier/README.md).
 See the [shared capability and encoding guide](../primus_tfhe/README.md).
 
+The shared layer and both backends use the same role names: `Encryptor`, `Decryptor`,
+`ClientKey`, `EncryptionKey`, `PbsOrder` and `TfheParameters`. Client ciphertexts are
+`LweCiphertext`; GLWE describes the PBS accumulator family.
+
 ## Parameters and external key domain
 
-`GlweTfheParameters::try_new(small_lwe, accumulator_glwe, bootstrapping_basis,
+`TfheParameters::try_new(small_lwe, accumulator_glwe, blind_rotation_basis,
 key_switching_basis, order)` derives BSK layout from the accumulator and the
 padded key-switch target from the small LWE. Plaintext and ciphertext moduli must
 match, the small secret must belong to a binary or ternary family, and `n <= kN`. The rotation domain `2N`
@@ -19,23 +23,29 @@ Ternary LWE keys store `0/1/q-1`; padded GLWE key construction maps `q-1` to sig
 Uniform, custom-probability, fixed-weight and fixed-composition distributions use the
 same workflow. Gaussian small secrets are unsupported.
 
-| `GlwePbsOrder` | Complete PBS chain | External LWE secret / dimension |
+| `PbsOrder` | Complete PBS chain | External LWE secret / dimension |
 | --- | --- | --- |
 | `BootstrapKeyswitch` | BR → ring key switch → compact extraction | Small LWE / `n` |
 | `KeyswitchBootstrap` | Inverse extraction → ring key switch → compact extraction → BR → full extraction | GLWE coefficient vector / `kN` |
 
-Both orders return to their external secret. Use `ciphertext_lwe_dimension()` to
-allocate outputs. Basis/layout compatibility does not prove actual secret identity.
+Both orders return to their external secret. Use `external_lwe_dimension()` to
+allocate outputs and `client_key.external_lwe_secret_key()` to borrow that secret.
+`accumulator_glwe()` describes the accumulator domain; `blind_rotation_ggsw()`
+describes its GGSW controls, and `glwe_key_switching()` describes the ring key switch.
+Basis/layout compatibility does not prove actual secret identity.
 
 ## Clients and LUTs
 
-A backend context generates paired keys and exposes `encryptor` / `decryptor`.
+`ClientKey::generate(&parameters, &mut rng)` generates client secrets without
+transform tables. For a paired client/server key, use `context.generate_keys`;
+the backend reuses the transformed secret during server-key generation.
+The context also exposes `encryptor` / `decryptor`.
 Generic client encryption takes `T`, and decryption returns
-`Result<T, GlweClientError>` with a canonical residue in `[0,t)`; applications
+`Result<T, TfheClientError>` with a canonical residue in `[0,t)`; applications
 handle message type conversions. Boolean encryption takes `bool`; decryption
 returns `Result<bool, BooleanError>` and validates the Boolean value.
-Direct family construction uses `GlweEncryptor::try_new` and `GlweDecryptor::try_new`.
-Encryption accepts either `GlweClientKey` or an `LwePublicKey` generated with
+Direct family construction uses `Encryptor::try_new` and `Decryptor::try_new`.
+Encryption accepts either `ClientKey` or an `LwePublicKey` generated with
 `client_key.try_generate_public_key(parameters, rng)`; decryption needs the client key.
 The public key follows the selected external domain, including the signed `kN` secret.
 See [LWE public-key noise and identity requirements](../primus_lwe/README.md#public-key-encryption).
@@ -43,10 +53,11 @@ See [LWE public-key noise and identity requirements](../primus_lwe/README.md#pub
 `encrypt`, `encrypt_padded` and `encrypt_centered` have corresponding
 `*_to(message, output, rng)` methods. These reuse output storage; message or dimension
 errors leave output and RNG unchanged. For front-half LUT input, use `encrypt_padded`.
-LUT compilation methods on parameters are also available through backend contexts.
+Compile ordinary LUTs through `context.parameters().compile_lookup_table_fn(...)`
+and the corresponding slice, interleaved or odd full-domain methods.
 
 LUT compilation takes an explicit output `RoundedCodec` first. Reuse
-`parameters.small_lwe().plaintext_codec()` for the input scale, or construct a
+`parameters.input_plaintext_codec()` for the input scale, or construct a
 codec with another plaintext modulus and the same ciphertext modulus. Decode
 that output with `output_codec.decode_value(decryptor.decrypt_phase(&output)?)`.
 See [choosing the output encoding](../primus_tfhe/README.md#choosing-the-output-encoding)
@@ -64,12 +75,18 @@ bounds, common encoding and the amplified-error budget.
 
 ## Boolean and CBS
 
-`BooleanCiphertext` wraps an LWE with the external `0/1` encoding modulo 4.
+Boolean operations use `LweCiphertext<T>` with unsigned rounded `0/1` encoding modulo 4.
+`BooleanEncryptor` accepts a secret or public key and provides `encrypt` / `encrypt_to`;
+`BooleanDecryptor` requires the client secret and rejects decoded values other than 0/1.
+Both client types use `try_new(parameters, key)` and require plaintext modulus 4.
 Backend `boolean_encryptor`, `boolean_decryptor` and `boolean_evaluator` factories
 bind the same parameters. Reuse `evaluate_binary_to`, `not_to` and `mux_to`; the
 shared evaluator owns affine preprocessing, internal LUT scales and correction.
-Its generic `try_new` also accepts a custom PBS implementation, whose parameters
-must match the supplied family parameters.
+`BooleanEvaluator<T, M, E>::try_new` also accepts a custom PBS implementation, whose
+parameters must match the supplied family parameters. The evaluator retains the
+modulus, dimension and encoding constants it needs without borrowing those parameters.
+Raw inputs must use the Boolean encoding and the matching external key; these
+properties cannot be verified from an LWE ciphertext.
 
 CBS is an optional backend facility. NTT supports it with separate output basis,
 trace/scheme-switch parameters and keys; Fourier GLWE CBS is not implemented.

@@ -3,7 +3,9 @@ use primus_glwe::{GlweParameters, SecretKeyDistr};
 use primus_lwe::LweParameters;
 use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, U32NttTable};
-use primus_tfhe_glwe_ntt::{BooleanGate, PbsOrder, TfheContext, TfheParameters};
+use primus_tfhe_glwe_ntt::{
+    BooleanError, BooleanGate, LweCiphertext, PbsOrder, TfheContext, TfheParameters,
+};
 use rand::{SeedableRng, rngs::StdRng};
 
 const POLY_LENGTH: usize = 256;
@@ -46,10 +48,22 @@ fn boolean_factories_support_truth_tables_and_reused_output_in_both_orders() {
             encryptor.encrypt(false, &mut rng).unwrap(),
             encryptor.encrypt(true, &mut rng).unwrap(),
         ];
-        let mut output = inputs[0].clone();
+        let mut output = LweCiphertext::zero(context.parameters().external_lwe_dimension());
+        encryptor.encrypt_to(false, &mut output, &mut rng).unwrap();
+        assert!(!decryptor.decrypt(&output).unwrap());
         assert_eq!(
-            output.as_raw().dimension(),
-            context.parameters().ciphertext_lwe_dimension()
+            output.dimension(),
+            context.parameters().external_lwe_dimension()
+        );
+
+        let invalid = context
+            .encryptor(&client_key)
+            .unwrap()
+            .encrypt(2, &mut rng)
+            .unwrap();
+        assert_eq!(
+            decryptor.decrypt(&invalid),
+            Err(BooleanError::InvalidPlaintext)
         );
 
         for lhs in [false, true] {
@@ -78,6 +92,7 @@ fn boolean_factories_support_truth_tables_and_reused_output_in_both_orders() {
         }
         for value in [false, true] {
             evaluator.not_to(&inputs[value as usize], &mut output);
+            assert_eq!(evaluator.not(&inputs[value as usize]), output);
             assert_eq!(decryptor.decrypt(&output).unwrap(), !value);
         }
         for condition in [false, true] {

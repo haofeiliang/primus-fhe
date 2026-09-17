@@ -1,11 +1,9 @@
 use primus_fft::{FftEngine, FftTable, TorusFftValue};
-use primus_glwe::{
-    FourierGadgetEncryptContext, FourierGlweKeySwitchingKey, FourierGlweSecretKey, GlweSecretKey,
-};
+use primus_glwe::{FourierGadgetEncryptContext, FourierGlweKeySwitchingKey, FourierGlweSecretKey};
 use primus_lwe::LweSecretKey;
 use primus_modulus::NativeModulus;
 use primus_reduce::Modulus;
-use primus_tfhe_glwe::GlweClientKey as ClientKey;
+use primus_tfhe_glwe::ClientKey;
 
 use crate::{FourierGlweBootstrappingKey, TfheContext, TfheParameters, error::TfheKeyError};
 
@@ -20,15 +18,15 @@ pub struct ServerKey<T: TorusFftValue> {
 
 impl<T: TorusFftValue> ServerKey<T> {
     pub(crate) fn is_compatible(&self, parameters: &TfheParameters<T>) -> bool {
-        let bootstrapping = parameters.bootstrapping();
+        let blind_rotation_ggsw = parameters.blind_rotation_ggsw();
         let key_switching = parameters.glwe_key_switching();
         self.bootstrapping_key.input_dimension() == parameters.small_lwe().dimension()
             && self.bootstrapping_key.input_distribution()
                 == parameters.small_lwe().secret_key_distr()
             && self.bootstrapping_key.input_modulus().explicit_value()
                 == parameters.small_lwe().cipher_modulus_value()
-            && self.bootstrapping_key.size() == bootstrapping.size()
-            && self.bootstrapping_key.basis() == bootstrapping.basis()
+            && self.bootstrapping_key.size() == blind_rotation_ggsw.size()
+            && self.bootstrapping_key.basis() == blind_rotation_ggsw.basis()
             && self.glwe_key_switching_key.input_dimension() == key_switching.input_dimension()
             && self.glwe_key_switching_key.output_dimension() == key_switching.output_dimension()
             && self.glwe_key_switching_key.poly_length() == key_switching.poly_length()
@@ -79,29 +77,12 @@ where
 {
     /// Creates a key generator with reusable Fourier scratch.
     pub fn new(context: &'a TfheContext<T, Table>) -> Self {
-        let bootstrapping_parameters = context.parameters().bootstrapping();
+        let blind_rotation_ggsw = context.parameters().blind_rotation_ggsw();
         Self {
             context,
             fft: context.new_fft_engine(),
-            gadget: FourierGadgetEncryptContext::new(bootstrapping_parameters.size()),
+            gadget: FourierGadgetEncryptContext::new(blind_rotation_ggsw.size()),
         }
-    }
-
-    /// Generates fresh client-side secret keys.
-    pub fn generate_client_key<R>(&self, rng: &mut R) -> ClientKey<T>
-    where
-        R: rand::Rng + rand::CryptoRng,
-    {
-        let parameters = self.context.parameters();
-        ClientKey::new(
-            LweSecretKey::generate(parameters.small_lwe(), rng),
-            GlweSecretKey::generate(
-                parameters.glwe().size(),
-                parameters.glwe().secret_key_sampler(),
-                rng,
-            ),
-            parameters.pbs_order(),
-        )
     }
 
     /// Generates a server key from an existing compatible client key.
@@ -136,13 +117,13 @@ where
         R: rand::Rng + rand::CryptoRng,
     {
         let parameters = self.context.parameters();
-        let bootstrapping_parameters = parameters.bootstrapping();
-        self.gadget.resize(bootstrapping_parameters.size());
+        let blind_rotation_ggsw = parameters.blind_rotation_ggsw();
+        self.gadget.resize(blind_rotation_ggsw.size());
         let bootstrapping_key = FourierGlweBootstrappingKey::generate_fourier(
             client_key.small_lwe_secret_key(),
             parameters.small_lwe(),
             &main_glwe_secret_key,
-            bootstrapping_parameters,
+            blind_rotation_ggsw,
             &mut self.fft,
             rng,
             &mut self.gadget,
@@ -189,7 +170,7 @@ where
         let parameters = self.context.parameters();
         let small_lwe_secret_key = LweSecretKey::generate(parameters.small_lwe(), rng);
         let (glwe_secret_key, main_glwe_secret_key) =
-            FourierGlweSecretKey::generate_pair(parameters.glwe(), &mut self.fft, rng);
+            FourierGlweSecretKey::generate_pair(parameters.accumulator_glwe(), &mut self.fft, rng);
         let client_key = ClientKey::new(
             small_lwe_secret_key,
             glwe_secret_key,

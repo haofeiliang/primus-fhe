@@ -6,6 +6,9 @@ GLWE-based TFHE over the native torus. Supports both PBS orders, ManyLUT,
 Boolean gates and secret/public-key clients. See the [capability and encoding guide](../primus_tfhe/README.md)
 and [GLWE parameter/key domains](../primus_tfhe_glwe/README.md).
 
+`Encryptor`, `Decryptor` and `TfheParameters` specialize the shared types to
+`NativeModulus`; `ClientKey`, `EncryptionKey` and `PbsOrder` are re-exported directly.
+
 ## Run the complete example
 
 ```sh
@@ -30,7 +33,8 @@ evaluator must use the same FFT table instance; matching lengths do not establis
 representation identity. The example uses `RustFftTable`; `TfheFftTable` is also
 supported. Create FFT engines and evaluators from the same context.
 
-Compile front-half LUTs with `compile_lookup_table_fn` / `compile_lookup_table_slice`,
+Compile front-half LUTs through `context.parameters()` with
+`compile_lookup_table_fn` / `compile_lookup_table_slice`,
 or their `compile_interleaved_lookup_table_*` counterparts, passing an output
 `RoundedCodec` first. Decode a different output scale using `decrypt_phase` and
 that codec. Use unsigned padded input and
@@ -38,12 +42,14 @@ account for ManyLUT's coarser rotation resolution. The evaluator holds mutable
 scratch; create it once and reuse `apply_lookup_table_to` / `apply_interleaved_lookup_table_to`.
 These calls validate all output dimensions before writing.
 
-For odd full domains, use the context's `compile_odd_full_domain_lookup_table_fn`
+For odd full domains, use the parameters' `compile_odd_full_domain_lookup_table_fn`
 / `_slice` with ordinary `encrypt` and the existing single-output evaluator.
 See the [shared contract](../primus_tfhe/README.md#odd-full-domain-pbs).
 
 Use `boolean_encryptor`, `boolean_decryptor` and `boolean_evaluator` for `t=4`.
-The adapter handles the internal modulus-8 LUT scale. Use `evaluate_binary_to`,
+These APIs use ordinary `LweCiphertext` buffers with Boolean 0/1 encoding modulo 4.
+The encryptor accepts secret or public keys and supports `encrypt_to`.
+The evaluator handles the internal modulus-8 LUT scale. Use `evaluate_binary_to`,
 `not_to` and `mux_to` for repeated Boolean evaluation.
 
 Low-level `FourierGlweBootstrappingKey<T, LM>` retains the input modulus type `LM`, independently

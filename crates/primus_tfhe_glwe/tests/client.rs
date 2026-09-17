@@ -7,16 +7,13 @@ use primus_lwe::{LweCiphertext, LweParameters, LwePublicKey, LweSecretKey};
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_reduce::RingContext;
 use primus_tfhe_glwe::{
-    GlweClientError, GlweClientKey, GlweDecryptor, GlweEncryptionKey, GlweEncryptor, GlweKeyError,
-    GlwePbsOrder, GlweTfheParameters,
+    BooleanDecryptor, BooleanEncryptor, BooleanError, ClientKey, Decryptor, EncryptionKey,
+    Encryptor, PbsOrder, TfheClientError, TfheKeyError, TfheParameters,
 };
 use rand::{Rng, SeedableRng, rngs::StdRng};
 
 fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
-    for order in [
-        GlwePbsOrder::BootstrapKeyswitch,
-        GlwePbsOrder::KeyswitchBootstrap,
-    ] {
+    for order in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
         // Two different external dimensions and a signed ring secret including -1.
         let small = LweParameters::new(
             4,
@@ -34,7 +31,7 @@ fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
             1.4,
         );
         let bsk = ApproxSignedBasis::new(glwe.cipher_modulus_value(), 8, None);
-        let params = GlweTfheParameters::try_new(
+        let params = TfheParameters::try_new(
             small,
             glwe,
             bsk,
@@ -42,7 +39,7 @@ fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
             order,
         )
         .unwrap();
-        let client = GlweClientKey::new(
+        let client = ClientKey::new(
             LweSecretKey::new(vec![1, 0, 1, 1], SecretKeyDistr::UniformBinary),
             GlweSecretKey::new(
                 vec![1, -1, 0, 1, 0, -1, 0, 1, 1, 0, -1, 0, 1, 0, 0, -1],
@@ -55,7 +52,7 @@ fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
         let public = client.try_generate_public_key(&params, &mut rng).unwrap();
         assert_eq!(
             public.dimension(),
-            if order == GlwePbsOrder::BootstrapKeyswitch {
+            if order == PbsOrder::BootstrapKeyswitch {
                 4
             } else {
                 16
@@ -75,26 +72,26 @@ fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
         let foreign_secret = LweSecretKey::generate(&foreign_params, &mut rng);
         let foreign = LwePublicKey::generate(foreign_secret.as_view(), &foreign_params, &mut rng);
         assert_eq!(
-            GlweEncryptor::try_new(&params, &foreign).err(),
-            Some(GlweClientError::PublicKeyModulusMismatch)
+            Encryptor::try_new(&params, &foreign).err(),
+            Some(TfheClientError::PublicKeyModulusMismatch)
         );
         let short_params = LweParameters::new(3, 4, modulus, SecretKeyDistr::UniformBinary, 0.7);
         let short_secret = LweSecretKey::generate(&short_params, &mut rng);
         let short = LwePublicKey::generate(short_secret.as_view(), &short_params, &mut rng);
         assert_eq!(
-            GlweEncryptor::try_new(&params, &short).err(),
-            Some(GlweClientError::PublicKeyDimensionMismatch {
+            Encryptor::try_new(&params, &short).err(),
+            Some(TfheClientError::PublicKeyDimensionMismatch {
                 expected: public.dimension(),
                 actual: 3,
             })
         );
-        let wrong_order = if order == GlwePbsOrder::BootstrapKeyswitch {
-            GlwePbsOrder::KeyswitchBootstrap
+        let wrong_order = if order == PbsOrder::BootstrapKeyswitch {
+            PbsOrder::KeyswitchBootstrap
         } else {
-            GlwePbsOrder::BootstrapKeyswitch
+            PbsOrder::BootstrapKeyswitch
         };
         let (small_key, ring_key, _) = client.into_parts();
-        let wrong_client = GlweClientKey::new(small_key, ring_key, wrong_order);
+        let wrong_client = ClientKey::new(small_key, ring_key, wrong_order);
         let seed = rng.next_u64();
         let mut rng = StdRng::seed_from_u64(seed);
         let mut expected_rng = StdRng::seed_from_u64(seed);
@@ -102,7 +99,7 @@ fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
             wrong_client
                 .try_generate_public_key(&params, &mut rng)
                 .err(),
-            Some(GlweKeyError::GlwePbsOrderMismatch {
+            Some(TfheKeyError::PbsOrderMismatch {
                 expected: order,
                 actual: wrong_order,
             })
@@ -119,6 +116,32 @@ fn both_external_domains_support_public_clients_and_reject_incompatible_keys() {
     }
 }
 
+#[test]
+fn boolean_clients_reject_other_plaintext_moduli() {
+    let mut rng = StdRng::seed_from_u64(0x424f_4f4c);
+    let modulus = NativeModulus::<u32>::new();
+    for t in [3, 5] {
+        let parameters = TfheParameters::try_new(
+            LweParameters::new(4, t, modulus, SecretKeyDistr::UniformBinary, 0.7),
+            GlweParameters::new(1, 8, t, modulus, SecretKeyDistr::UniformTernary, 0.7),
+            ApproxSignedBasis::new(None, 8, None),
+            ApproxSignedBasis::new(None, 8, None),
+            PbsOrder::BootstrapKeyswitch,
+        )
+        .unwrap();
+        let client = ClientKey::generate(&parameters, &mut rng);
+        client.check_compatible(&parameters).unwrap();
+        assert_eq!(
+            BooleanEncryptor::try_new(&parameters, &client).err(),
+            Some(BooleanError::PlaintextModulusMustBeFour),
+        );
+        assert_eq!(
+            BooleanDecryptor::try_new(&parameters, &client).err(),
+            Some(BooleanError::PlaintextModulusMustBeFour),
+        );
+    }
+}
+
 #[derive(Clone, Copy)]
 enum Encoding {
     Unsigned,
@@ -127,16 +150,16 @@ enum Encoding {
 }
 
 fn check_reused_output<M, Key>(
-    parameters: &GlweTfheParameters<u32, M, M>,
-    client: &GlweClientKey<u32>,
+    parameters: &TfheParameters<u32, M, M>,
+    client: &ClientKey<u32>,
     key: &Key,
 ) where
     M: RingContext<u32>,
-    Key: GlweEncryptionKey<u32, M, M>,
+    Key: EncryptionKey<u32, M, M>,
 {
-    let encryptor = GlweEncryptor::try_new(parameters, key).unwrap();
-    let decryptor = GlweDecryptor::try_new(parameters, client).unwrap();
-    let dimension = parameters.ciphertext_lwe_dimension();
+    let encryptor = Encryptor::try_new(parameters, key).unwrap();
+    let decryptor = Decryptor::try_new(parameters, client).unwrap();
+    let dimension = parameters.external_lwe_dimension();
     let t = parameters.plain_modulus_value();
     let mut rng = StdRng::seed_from_u64(0x434c_4945_4e54);
     let mut expected_rng = StdRng::seed_from_u64(0x434c_4945_4e54);
@@ -170,8 +193,8 @@ fn check_reused_output<M, Key>(
             assert_eq!(decryptor.decrypt(&output).unwrap(), message);
         }
         let padded_error = matches!(encoding, Encoding::Padded)
-            .then_some((limit, GlweClientError::MessageOutsidePaddedDomain));
-        for (message, error) in [(t, GlweClientError::MessageOutOfRange)]
+            .then_some((limit, TfheClientError::MessageOutsidePaddedDomain));
+        for (message, error) in [(t, TfheClientError::MessageOutOfRange)]
             .into_iter()
             .chain(padded_error)
         {
@@ -186,7 +209,7 @@ fn check_reused_output<M, Key>(
             let before = wrong.clone();
             assert_eq!(
                 encrypt_to(0, &mut wrong, &mut rng),
-                Err(GlweClientError::CiphertextDimensionMismatch {
+                Err(TfheClientError::CiphertextDimensionMismatch {
                     expected: dimension,
                     actual
                 })

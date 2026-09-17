@@ -6,6 +6,9 @@ GLWE-based TFHE over an explicit field modulus. Supports both PBS orders, ManyLU
 Boolean gates and secret/public-key clients. See the [capability and encoding guide](../primus_tfhe/README.md)
 and [GLWE parameter/key domains](../primus_tfhe_glwe/README.md).
 
+`Encryptor`, `Decryptor` and `TfheParameters` specialize the shared types to
+`BarrettModulus`; `ClientKey`, `EncryptionKey` and `PbsOrder` are re-exported directly.
+
 ## Run the complete example
 
 ```sh
@@ -29,7 +32,8 @@ not production security or failure-probability recommendations.
 must use the supplied table's NTT representation. `boolean_parameters()` is a
 development fixture, not a vetted default; the example selects its own small parameters.
 
-Compile front-half LUTs with `compile_lookup_table_fn` / `compile_lookup_table_slice`,
+Compile front-half LUTs through `context.parameters()` with
+`compile_lookup_table_fn` / `compile_lookup_table_slice`,
 or their `compile_interleaved_lookup_table_*` counterparts, passing an output
 `RoundedCodec` first. Decode a different output scale using `decrypt_phase` and
 that codec. Use unsigned padded input and
@@ -37,12 +41,14 @@ account for ManyLUT's coarser rotation resolution. The evaluator holds mutable
 scratch; create it once and reuse `apply_lookup_table_to` / `apply_interleaved_lookup_table_to`.
 These calls validate all output dimensions before writing.
 
-For odd full domains, use the context's `compile_odd_full_domain_lookup_table_fn`
+For odd full domains, use the parameters' `compile_odd_full_domain_lookup_table_fn`
 / `_slice` with ordinary `encrypt` and the existing single-output evaluator.
 See the [shared contract](../primus_tfhe/README.md#odd-full-domain-pbs).
 
 Use `boolean_encryptor`, `boolean_decryptor` and `boolean_evaluator` for `t=4`.
-The adapter handles the internal modulus-8 LUT scale. Use `evaluate_binary_to`,
+These APIs use ordinary `LweCiphertext` buffers with Boolean 0/1 encoding modulo 4.
+The encryptor accepts secret or public keys and supports `encrypt_to`.
+The evaluator handles the internal modulus-8 LUT scale. Use `evaluate_binary_to`,
 `not_to` and `mux_to` for repeated Boolean evaluation.
 
 Low-level `NttGlweBootstrappingKey<T, LM>` retains the input modulus type `LM`, independently
@@ -57,13 +63,13 @@ Compile once with an unsigned `ScaledCodec`, then reuse a dedicated evaluator:
 ```rust,ignore
 use primus_encoding::ScaledCodec;
 
-let codec = ScaledCodec::new(2u32, context.parameters().glwe().cipher_modulus());
+let codec = ScaledCodec::new(2u32, context.parameters().accumulator_glwe().cipher_modulus());
 // This example assumes t_in >= 8 and sufficient input/output noise margins.
 let lut = context.compile_factorized_lookup_table_fn(
     &codec, 4, 3, |m, i| u32::from(m > i),
 )?;
 let mut evaluator = context.factorized_evaluator(&server_key)?;
-let mut outputs = vec![LweCiphertext::zero(context.parameters().ciphertext_lwe_dimension()); 3];
+let mut outputs = vec![LweCiphertext::zero(context.parameters().external_lwe_dimension()); 3];
 let input = encryptor.encrypt_padded(2, &mut rng)?;
 evaluator.apply_lookup_table_to(&input, &lut, &mut outputs);
 assert_eq!(codec.decode_value(decryptor.decrypt_phase(&outputs[1])?), 1);
@@ -108,7 +114,7 @@ and generate a sparse server key explicitly:
 
 ```rust,ignore
 let mut generator = KeyGenerator::new(&context);
-let client_key = generator.generate_client_key(&mut rng);
+let client_key = ClientKey::generate(context.parameters(), &mut rng);
 let server_key = generator.try_generate_sparse_server_key(&client_key, 3, 2 * h, &mut rng)?;
 let mut evaluator = context.evaluator(&server_key)?;
 evaluator.apply_lookup_table_to(&input, &lut, &mut output);

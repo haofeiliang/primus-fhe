@@ -1,13 +1,12 @@
 use primus_glwe::{
-    GlweSecretKey, NttGadgetEncryptContext, NttGlweKeySwitchingKey, NttGlweSecretKey,
-    SecretKeyDistr,
+    NttGadgetEncryptContext, NttGlweKeySwitchingKey, NttGlweSecretKey, SecretKeyDistr,
 };
 use primus_integer::FheUint;
 use primus_lwe::LweSecretKey;
 use primus_modulus::BarrettModulus;
 use primus_ntt::MonomialNttTable;
 use primus_reduce::Modulus;
-use primus_tfhe_glwe::GlweClientKey as ClientKey;
+use primus_tfhe_glwe::ClientKey;
 
 use crate::{
     NttGlweBootstrappingKey, SparseBootstrappingKeyError, SparseGlweBootstrappingKey, TfheContext,
@@ -59,9 +58,9 @@ impl<T: FheUint> BootstrappingKey<T> {
         };
         dimension == parameters.small_lwe().dimension()
             && input_modulus == parameters.small_lwe().cipher_modulus_value()
-            && size == parameters.bootstrapping().size()
-            && basis == parameters.bootstrapping().basis()
-            && cipher_modulus == parameters.glwe().cipher_modulus_value()
+            && size == parameters.blind_rotation_ggsw().size()
+            && basis == parameters.blind_rotation_ggsw().basis()
+            && cipher_modulus == parameters.accumulator_glwe().cipher_modulus_value()
     }
 }
 
@@ -125,28 +124,11 @@ where
 {
     /// Creates a key generator with reusable NTT gadget scratch.
     pub fn new(context: &'a TfheContext<T, Table>) -> Self {
-        let parameters = context.parameters().bootstrapping();
+        let parameters = context.parameters().blind_rotation_ggsw();
         Self {
             context,
             gadget: NttGadgetEncryptContext::new(parameters.size()),
         }
-    }
-
-    /// Generates fresh client-side secret keys.
-    pub fn generate_client_key<R>(&self, rng: &mut R) -> ClientKey<T>
-    where
-        R: rand::Rng + rand::CryptoRng,
-    {
-        let parameters = self.context.parameters();
-        ClientKey::new(
-            LweSecretKey::generate(parameters.small_lwe(), rng),
-            GlweSecretKey::generate(
-                parameters.glwe().size(),
-                parameters.glwe().secret_key_sampler(),
-                rng,
-            ),
-            parameters.pbs_order(),
-        )
     }
 
     /// Generates a server key from an existing compatible client key.
@@ -213,12 +195,12 @@ where
         R: rand::Rng + rand::CryptoRng,
     {
         let parameters = self.context.parameters();
-        self.gadget.resize(parameters.bootstrapping().size());
+        self.gadget.resize(parameters.blind_rotation_ggsw().size());
         let bootstrapping_key = NttGlweBootstrappingKey::generate_ntt(
             client_key.small_lwe_secret_key(),
             parameters.small_lwe(),
             &main_glwe_secret_key,
-            parameters.bootstrapping(),
+            parameters.blind_rotation_ggsw(),
             self.context.table(),
             rng,
             &mut self.gadget,
@@ -264,8 +246,11 @@ where
     {
         let parameters = self.context.parameters();
         let small_lwe_secret_key = LweSecretKey::generate(parameters.small_lwe(), rng);
-        let (glwe_secret_key, main_glwe_secret_key) =
-            NttGlweSecretKey::generate_pair(parameters.glwe(), self.context.table(), rng);
+        let (glwe_secret_key, main_glwe_secret_key) = NttGlweSecretKey::generate_pair(
+            parameters.accumulator_glwe(),
+            self.context.table(),
+            rng,
+        );
         let client_key = ClientKey::new(
             small_lwe_secret_key,
             glwe_secret_key,

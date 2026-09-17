@@ -3,9 +3,9 @@ use primus_integer::FheUint;
 use primus_reduce::{PrepareModulusSwitch, ReduceAdd, RingContext};
 use primus_tfhe::{InterleavedLookupTable, LookupTable, LookupTableError};
 
-use crate::{GlweTfheParameters, PlaintextEmbedding};
+use crate::{PlaintextEmbedding, TfheParameters};
 
-impl<T, LM, GM> GlweTfheParameters<T, LM, GM>
+impl<T, LM, GM> TfheParameters<T, LM, GM>
 where
     T: FheUint,
     LM: RingContext<T>,
@@ -68,25 +68,13 @@ where
         OM: PrepareModulusSwitch<ValueT = T> + ReduceAdd<T, Output = T>,
         F: Fn(usize) -> T,
     {
-        let coefficient_modulus = self.glwe().cipher_modulus();
-        if output_codec.ciphertext_modulus().explicit_value()
-            != coefficient_modulus.explicit_value()
-        {
-            return Err(LookupTableError::OutputModulusMismatch);
-        }
+        self.check_output_modulus(output_codec)?;
         LookupTable::try_new_odd_full_domain(
-            self.glwe().poly_length(),
+            self.accumulator_glwe().poly_length(),
             self.plain_modulus_value(),
             self.small_lwe().cipher_modulus(),
-            coefficient_modulus,
-            |input| {
-                let output = function(input);
-                if output >= output_codec.plaintext_modulus() {
-                    Err(LookupTableError::OutputOutOfRange { input })
-                } else {
-                    Ok(output_codec.encode_value(output, PlaintextEmbedding::Unsigned))
-                }
-            },
+            self.accumulator_glwe().cipher_modulus(),
+            |input| encode_output(function(input), input, output_codec),
         )
     }
 
@@ -174,7 +162,10 @@ where
 
     /// Returns the front-half domain constrained by the GLWE rotation ring.
     fn front_half_domain_len(&self) -> Result<usize, LookupTableError> {
-        primus_tfhe::front_half_domain_len(self.plain_modulus_value(), self.glwe().poly_length())
+        primus_tfhe::front_half_domain_len(
+            self.plain_modulus_value(),
+            self.accumulator_glwe().poly_length(),
+        )
     }
 
     /// Validates and encodes user outputs before compiling the polynomial.
@@ -188,18 +179,9 @@ where
         OM: PrepareModulusSwitch<ValueT = T> + ReduceAdd<T, Output = T>,
         F: Fn(usize) -> T,
     {
-        if output_codec.ciphertext_modulus().explicit_value()
-            != self.glwe().cipher_modulus().explicit_value()
-        {
-            return Err(LookupTableError::OutputModulusMismatch);
-        }
+        self.check_output_modulus(output_codec)?;
         self.compile_encoded_lookup_table(domain_len, |input| {
-            let output = output_at(input);
-            if output >= output_codec.plaintext_modulus() {
-                Err(LookupTableError::OutputOutOfRange { input })
-            } else {
-                Ok(output_codec.encode_value(output, PlaintextEmbedding::Unsigned))
-            }
+            encode_output(output_at(input), input, output_codec)
         })
     }
 
@@ -214,28 +196,34 @@ where
         OM: PrepareModulusSwitch<ValueT = T> + ReduceAdd<T, Output = T>,
         F: Fn(usize, usize) -> T,
     {
-        if output_codec.ciphertext_modulus().explicit_value()
-            != self.glwe().cipher_modulus().explicit_value()
-        {
-            return Err(LookupTableError::OutputModulusMismatch);
-        }
+        self.check_output_modulus(output_codec)?;
         let plaintext_modulus = self.plain_modulus_value();
         InterleavedLookupTable::try_new(
             domain_len,
-            self.glwe().poly_length(),
+            self.accumulator_glwe().poly_length(),
             output_count,
             plaintext_modulus,
             self.small_lwe().cipher_modulus(),
-            self.glwe().cipher_modulus(),
+            self.accumulator_glwe().cipher_modulus(),
             |input, output_index| {
-                let output = output_at(input, output_index);
-                if output >= output_codec.plaintext_modulus() {
-                    Err(LookupTableError::OutputOutOfRange { input })
-                } else {
-                    Ok(output_codec.encode_value(output, PlaintextEmbedding::Unsigned))
-                }
+                encode_output(output_at(input, output_index), input, output_codec)
             },
         )
+    }
+
+    fn check_output_modulus<OM>(
+        &self,
+        output_codec: &RoundedCodec<T, OM>,
+    ) -> Result<(), LookupTableError>
+    where
+        OM: PrepareModulusSwitch<ValueT = T> + ReduceAdd<T, Output = T>,
+    {
+        if output_codec.ciphertext_modulus().explicit_value()
+            != self.accumulator_glwe().cipher_modulus_value()
+        {
+            return Err(LookupTableError::OutputModulusMismatch);
+        }
+        Ok(())
     }
 
     /// Compiles values already encoded in the GLWE accumulator modulus.
@@ -248,7 +236,7 @@ where
         F: Fn(usize) -> Result<T, LookupTableError>,
     {
         let lwe = self.small_lwe();
-        let glwe = self.glwe();
+        let glwe = self.accumulator_glwe();
         LookupTable::try_new(
             domain_len,
             glwe.poly_length(),
@@ -258,4 +246,19 @@ where
             encoded_output_at,
         )
     }
+}
+
+fn encode_output<T, OM>(
+    output: T,
+    input: usize,
+    output_codec: &RoundedCodec<T, OM>,
+) -> Result<T, LookupTableError>
+where
+    T: FheUint,
+    OM: PrepareModulusSwitch<ValueT = T> + ReduceAdd<T, Output = T>,
+{
+    if output >= output_codec.plaintext_modulus() {
+        return Err(LookupTableError::OutputOutOfRange { input });
+    }
+    Ok(output_codec.encode_value(output, PlaintextEmbedding::Unsigned))
 }

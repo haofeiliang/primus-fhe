@@ -8,8 +8,7 @@ fn padded_inputs_and_lut_output_codecs_use_independent_domains() {
     use primus_glwe::{GlweParameters, GlweSecretKey, GlweSize, SecretKeyDistr};
     use primus_lwe::{LweParameters, LweSecretKey};
     use primus_tfhe_glwe::{
-        GlweClientError, GlweClientKey, GlweDecryptor, GlweEncryptor, GlwePbsOrder,
-        GlweTfheParameters,
+        ClientKey, Decryptor, Encryptor, PbsOrder, TfheClientError, TfheParameters,
     };
     use rand::{SeedableRng, rngs::StdRng};
 
@@ -19,30 +18,30 @@ fn padded_inputs_and_lut_output_codecs_use_independent_domains() {
         let lwe = LweParameters::new(4, t, modulus, SecretKeyDistr::UniformBinary, 0.7);
         let glwe = GlweParameters::new(1, 8, t, modulus, SecretKeyDistr::UniformBinary, 0.7);
         let bsk = ApproxSignedBasis::new(glwe.cipher_modulus_value(), 8, None);
-        let parameters = GlweTfheParameters::try_new(
+        let parameters = TfheParameters::try_new(
             lwe,
             glwe,
             bsk,
             ApproxSignedBasis::new(None, 8, None),
-            GlwePbsOrder::BootstrapKeyswitch,
+            PbsOrder::BootstrapKeyswitch,
         )
         .unwrap();
-        let key = GlweClientKey::new(
+        let key = ClientKey::new(
             LweSecretKey::new(vec![1, 0, 1, 1], SecretKeyDistr::UniformBinary),
             GlweSecretKey::new(
                 vec![1; 8],
                 GlweSize::new(1, 8),
                 SecretKeyDistr::UniformBinary,
             ),
-            GlwePbsOrder::BootstrapKeyswitch,
+            PbsOrder::BootstrapKeyswitch,
         );
-        let encryptor = GlweEncryptor::try_new(&parameters, &key).unwrap();
-        let decryptor = GlweDecryptor::try_new(&parameters, &key).unwrap();
+        let encryptor = Encryptor::try_new(&parameters, &key).unwrap();
+        let decryptor = Decryptor::try_new(&parameters, &key).unwrap();
         let domain_len = t.div_ceil(2);
         assert!(
             parameters
                 .compile_lookup_table_slice(
-                    parameters.small_lwe().plaintext_codec(),
+                    parameters.input_plaintext_codec(),
                     &vec![0; domain_len as usize]
                 )
                 .is_ok()
@@ -51,7 +50,7 @@ fn padded_inputs_and_lut_output_codecs_use_independent_domains() {
         assert_eq!(decryptor.decrypt(&input).unwrap(), domain_len - 1);
         assert_eq!(
             encryptor.encrypt_padded(domain_len, &mut rng).unwrap_err(),
-            GlweClientError::MessageOutsidePaddedDomain
+            TfheClientError::MessageOutsidePaddedDomain
         );
         let full_codec = RoundedCodec::new(8, NativeModulus::new());
         if t % 2 == 1 {
@@ -94,7 +93,7 @@ fn padded_inputs_and_lut_output_codecs_use_independent_domains() {
             assert_eq!(
                 parameters
                     .compile_interleaved_lookup_table_slice(
-                        parameters.small_lwe().plaintext_codec(),
+                        parameters.input_plaintext_codec(),
                         3,
                         &[0; 8]
                     )
@@ -151,7 +150,7 @@ fn padded_inputs_and_lut_output_codecs_use_independent_domains() {
         assert_eq!(
             parameters
                 .compile_interleaved_lookup_table_slice(
-                    parameters.small_lwe().plaintext_codec(),
+                    parameters.input_plaintext_codec(),
                     usize::MAX,
                     &[]
                 )

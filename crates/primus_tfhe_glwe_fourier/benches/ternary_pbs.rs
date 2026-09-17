@@ -18,7 +18,7 @@ use primus_lwe::{LweCiphertext, LweParameters};
 use primus_modulus::NativeModulus;
 use primus_poly::Polynomial;
 use primus_tfhe::rotation::RotationQuantizer;
-use primus_tfhe_glwe_fourier::{KeyGenerator, PbsOrder, TfheContext, TfheParameters};
+use primus_tfhe_glwe_fourier::{ClientKey, KeyGenerator, PbsOrder, TfheContext, TfheParameters};
 use rand::{SeedableRng, rngs::StdRng};
 
 const N: usize = 1024;
@@ -50,12 +50,12 @@ fn bench_backend<Table: FftTable>(c: &mut Criterion, backend: &str) {
         ("ternary", SecretKeyDistr::UniformTernary),
     ] {
         let parameters = parameters(distribution);
-        let modulus = parameters.glwe().cipher_modulus();
+        let modulus = parameters.accumulator_glwe().cipher_modulus();
         let table = Table::new(N.trailing_zeros()).unwrap();
         let context = TfheContext::try_new(parameters, table).unwrap();
         let mut rng = StdRng::seed_from_u64(0x5433_5042);
         let mut generator = KeyGenerator::new(&context);
-        let client = generator.generate_client_key(&mut rng);
+        let client = ClientKey::generate(context.parameters(), &mut rng);
         let server = generator
             .try_generate_server_key(&client, &mut rng)
             .unwrap();
@@ -66,7 +66,8 @@ fn bench_backend<Table: FftTable>(c: &mut Criterion, backend: &str) {
             .map(|m| encryptor.encrypt_padded(m, &mut rng).unwrap())
             .collect();
         let lut = context
-            .compile_lookup_table_slice(context.parameters().small_lwe().plaintext_codec(), &[1, 0])
+            .parameters()
+            .compile_lookup_table_slice(context.parameters().input_plaintext_codec(), &[1, 0])
             .unwrap();
         let mut output = LweCiphertext::zero(DIMENSION);
         let mut evaluator = context.evaluator(&server).unwrap();

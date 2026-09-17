@@ -18,7 +18,9 @@ use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, U32NttTable};
 use primus_poly::Polynomial;
 use primus_tfhe::rotation::RotationQuantizer;
-use primus_tfhe_glwe_ntt::{BootstrappingKey, KeyGenerator, PbsOrder, TfheContext, TfheParameters};
+use primus_tfhe_glwe_ntt::{
+    BootstrappingKey, ClientKey, KeyGenerator, PbsOrder, TfheContext, TfheParameters,
+};
 use rand::{SeedableRng, rngs::StdRng};
 
 const N: usize = 1024;
@@ -51,13 +53,13 @@ fn bench_pbs(c: &mut Criterion) {
         ("ternary", SecretKeyDistr::UniformTernary),
     ] {
         let parameters = parameters(distribution);
-        let modulus = parameters.glwe().cipher_modulus();
+        let modulus = parameters.accumulator_glwe().cipher_modulus();
         let backend = "ntt";
         let table = U32NttTable::new(N.trailing_zeros(), modulus).unwrap();
         let context = TfheContext::try_new(parameters, table).unwrap();
         let mut rng = StdRng::seed_from_u64(0x5433_5042);
         let mut generator = KeyGenerator::new(&context);
-        let client = generator.generate_client_key(&mut rng);
+        let client = ClientKey::generate(context.parameters(), &mut rng);
         let server = generator
             .try_generate_server_key(&client, &mut rng)
             .unwrap();
@@ -70,7 +72,8 @@ fn bench_pbs(c: &mut Criterion) {
             .map(|m| encryptor.encrypt_padded(m, &mut rng).unwrap())
             .collect();
         let lut = context
-            .compile_lookup_table_slice(context.parameters().small_lwe().plaintext_codec(), &[1, 0])
+            .parameters()
+            .compile_lookup_table_slice(context.parameters().input_plaintext_codec(), &[1, 0])
             .unwrap();
         let mut output = LweCiphertext::zero(DIMENSION);
         let mut evaluator = context.evaluator(&server).unwrap();

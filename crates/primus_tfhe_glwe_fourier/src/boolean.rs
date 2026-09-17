@@ -5,7 +5,7 @@ use primus_modulus::NativeModulus;
 use crate::Evaluator;
 
 pub use crate::error::BooleanError;
-pub use primus_tfhe_glwe::{BooleanCiphertext, BooleanGate};
+pub use primus_tfhe_glwe::BooleanGate;
 
 /// Boolean encryptor for the native-torus Fourier backend.
 pub type BooleanEncryptor<'a, T, Key = crate::ClientKey<T>> =
@@ -19,10 +19,5 @@ pub type BooleanDecryptor<'a, T> =
 ///
 /// See `BooleanEvaluator` in [`primus_tfhe_glwe`] for the external encoding
 /// and internal LUT scale.
-pub type BooleanEvaluator<'a, T, Table> = primus_tfhe_glwe::BooleanEvaluator<
-    'a,
-    T,
-    NativeModulus<T>,
-    NativeModulus<T>,
-    Evaluator<'a, T, Table>,
->;
+pub type BooleanEvaluator<'a, T, Table> =
+    primus_tfhe_glwe::BooleanEvaluator<T, NativeModulus<T>, Evaluator<'a, T, Table>>;

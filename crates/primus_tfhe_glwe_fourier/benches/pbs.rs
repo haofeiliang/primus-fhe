@@ -65,22 +65,20 @@ fn bench_order<Table: FftTable>(c: &mut Criterion, order: PbsOrder, backend: &st
     let encryptor = context.encryptor(&client_key).unwrap();
     let input = encryptor.encrypt_padded(1u32, &mut rng).unwrap();
     let lookup_table = context
-        .compile_lookup_table_slice(
-            context.parameters().small_lwe().plaintext_codec(),
-            &[1u32, 0],
-        )
+        .parameters()
+        .compile_lookup_table_slice(context.parameters().input_plaintext_codec(), &[1u32, 0])
         .unwrap();
     let mut evaluator = context.evaluator(&server_key).unwrap();
     let mut output = input.clone();
 
-    let modulus = parameters.glwe().cipher_modulus();
+    let modulus = parameters.accumulator_glwe().cipher_modulus();
     let mut fft = context.new_fft_engine();
     let mut blind_rotation = FourierGlweBlindRotationContext::new(server_key.bootstrapping_key());
     let key_switching_parameters = parameters.glwe_key_switching().output();
     let mut key_switching =
         FourierGlweKeySwitchingContext::new(key_switching_parameters.glwe_size());
     let mut main_glwe: GlweCiphertext<Vec<u32>> =
-        GlweCiphertext::zero(parameters.glwe().glwe_len());
+        GlweCiphertext::zero(parameters.accumulator_glwe().glwe_len());
     let mut switched: GlweCiphertext<Vec<u32>> =
         GlweCiphertext::zero(parameters.glwe_key_switching().output().glwe_len());
     let mut small_lwe: LweCiphertext<u32> = LweCiphertext::zero(parameters.small_lwe().dimension());
@@ -117,7 +115,7 @@ fn bench_order<Table: FftTable>(c: &mut Criterion, order: PbsOrder, backend: &st
         "tfhe_pbs/fourier/{backend}/u32/{}/n{POLY_LENGTH}/k{GLWE_DIMENSION}/small_lwe{}/external_lwe{}",
         order_name(order),
         parameters.small_lwe().dimension(),
-        parameters.ciphertext_lwe_dimension(),
+        parameters.external_lwe_dimension(),
     ));
     group.sample_size(10);
 
@@ -187,8 +185,9 @@ fn bench_order<Table: FftTable>(c: &mut Criterion, order: PbsOrder, backend: &st
     for count in [3, 4] {
         let value = |input: usize, output| ((input + output) % 4) as u32;
         let many = context
+            .parameters()
             .compile_interleaved_lookup_table_fn(
-                context.parameters().small_lwe().plaintext_codec(),
+                context.parameters().input_plaintext_codec(),
                 count,
                 value,
             )
@@ -196,8 +195,9 @@ fn bench_order<Table: FftTable>(c: &mut Criterion, order: PbsOrder, backend: &st
         let singles: Vec<_> = (0..count)
             .map(|output| {
                 context
+                    .parameters()
                     .compile_lookup_table_fn(
-                        context.parameters().small_lwe().plaintext_codec(),
+                        context.parameters().input_plaintext_codec(),
                         |input| value(input, output),
                     )
                     .unwrap()

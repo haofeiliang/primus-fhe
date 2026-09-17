@@ -61,10 +61,10 @@ impl<T: FheUint> CircuitBootstrapParameters<T> {
         trace: GlevParameters<T, BarrettModulus<T>>,
         scheme_switch: GgswParameters<T, BarrettModulus<T>>,
     ) -> Result<Self, CircuitBootstrapParameterError> {
-        if output_basis.modulus() != tfhe.glwe().cipher_modulus_value() {
+        if output_basis.modulus() != tfhe.accumulator_glwe().cipher_modulus_value() {
             return Err(CircuitBootstrapParameterError::OutputBasisModulusMismatch);
         }
-        let glwe = tfhe.glwe();
+        let glwe = tfhe.accumulator_glwe();
         for (role, parameters) in [("trace", &trace), ("scheme-switch", &scheme_switch)] {
             if parameters.glwe_size() != glwe.size() {
                 return Err(CircuitBootstrapParameterError::GlweLayoutMismatch { role });
@@ -126,7 +126,7 @@ impl<T: FheUint> CircuitBootstrapParameters<T> {
     }
 
     pub(crate) fn is_compatible(&self, tfhe: &TfheParameters<T>) -> bool {
-        let glwe = tfhe.glwe();
+        let glwe = tfhe.accumulator_glwe();
         self.output_size.glwe_size() == glwe.size()
             && self.output_basis.modulus() == glwe.cipher_modulus_value()
     }

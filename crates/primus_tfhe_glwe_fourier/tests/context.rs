@@ -5,8 +5,8 @@ use primus_lwe::{LweCiphertext, LweParameters};
 use primus_modulus::NativeModulus;
 use primus_poly::Polynomial;
 use primus_tfhe_glwe_fourier::{
-    FourierGlweBlindRotationContext, KeyGenerator, PbsOrder, TfheContext, TfheContextError,
-    TfheEvaluationError, TfheParameters,
+    ClientKey, FourierGlweBlindRotationContext, KeyGenerator, PbsOrder, TfheContext,
+    TfheContextError, TfheEvaluationError, TfheParameters,
 };
 
 use rand::{SeedableRng, rngs::StdRng};
@@ -80,15 +80,13 @@ fn split_keys_support_both_pbs_orders() {
         let mut rng = StdRng::seed_from_u64(43);
         // Fresh key generation is covered by the PBS and Boolean tests.
         let mut generator = KeyGenerator::new(&context);
-        let client = generator.generate_client_key(&mut rng);
+        let client = ClientKey::generate(context.parameters(), &mut rng);
         let server = generator
             .try_generate_server_key(&client, &mut rng)
             .unwrap();
         let lookup_table = context
-            .compile_lookup_table_slice(
-                context.parameters().small_lwe().plaintext_codec(),
-                &[1u32, 0],
-            )
+            .parameters()
+            .compile_lookup_table_slice(context.parameters().input_plaintext_codec(), &[1u32, 0])
             .unwrap();
         let public = client
             .try_generate_public_key(context.parameters(), &mut rng)

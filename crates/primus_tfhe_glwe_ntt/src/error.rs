@@ -3,10 +3,7 @@
 use primus_integer::FheUint;
 
 pub use primus_tfhe::{LookupTableError, TfheEvaluationError};
-pub use primus_tfhe_glwe::{
-    BooleanError, GlweClientError as TfheClientError, GlweKeyError as TfheKeyError,
-    GlweParameterError as TfheParameterError,
-};
+pub use primus_tfhe_glwe::{BooleanError, TfheClientError, TfheKeyError, TfheParameterError};
 
 /// An incompatibility between TFHE parameters and an NTT table.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]

@@ -36,9 +36,9 @@ fn encrypted_selections_cover_the_support_once_with_dummy_per_bucket() {
     let context = context(SecretKeyDistr::fixed_hamming_weight_binary(16, 4));
     let mut generator = KeyGenerator::new(&context);
     let mut rng = StdRng::seed_from_u64(0x5350_4152_5345);
-    let client = generator.generate_client_key(&mut rng);
+    let client = ClientKey::generate(context.parameters(), &mut rng);
     let ntt = context.table();
-    let glwe = context.parameters().glwe();
+    let glwe = context.parameters().accumulator_glwe();
     let output_key = NttGlweSecretKey::from_coeff_secret_key(client.glwe_secret_key(), ntt);
     let mut message = PolynomialOwned::zero(N);
     message.as_mut()[0] = 1;
@@ -47,7 +47,7 @@ fn encrypted_selections_cover_the_support_once_with_dummy_per_bucket() {
     let input = output_key
         .encrypt(&message, glwe, ntt, &mut rng)
         .into_coeff_form(ntt);
-    let size = context.parameters().bootstrapping().size();
+    let size = context.parameters().blind_rotation_ggsw().size();
     let mut external_product = NttGlweExternalProductContext::new(size);
     let mut control = NttGgsw::<Vec<u32>>::zero(size.ggsw_len());
     let mut product = GlweCiphertext::<Vec<u32>>::zero(size.glwe_len());
@@ -66,7 +66,10 @@ fn encrypted_selections_cover_the_support_once_with_dummy_per_bucket() {
         assert_eq!(key.cipher_modulus(), Some(Q));
         assert_eq!(key.input_modulus(), glwe.cipher_modulus());
         assert_eq!(key.size(), size);
-        assert_eq!(key.basis(), context.parameters().bootstrapping().basis());
+        assert_eq!(
+            key.basis(),
+            context.parameters().blind_rotation_ggsw().basis()
+        );
         assert_eq!(
             key.as_slice().len(),
             (16 * copy_count + bucket_count) * size.ggsw_len()
@@ -119,7 +122,7 @@ fn sparse_key_rejects_invalid_parameters_and_actual_secret_before_sampling() {
     let distribution = SecretKeyDistr::fixed_hamming_weight_binary(16, 4);
     let context = context(distribution);
     let mut generator = KeyGenerator::new(&context);
-    let client = generator.generate_client_key(&mut StdRng::seed_from_u64(42));
+    let client = ClientKey::generate(context.parameters(), &mut StdRng::seed_from_u64(42));
     let mut check = |client: &ClientKey<u32>, copies, buckets, expected| {
         let mut rng = StdRng::seed_from_u64(43);
         let result =
@@ -162,7 +165,7 @@ fn sparse_key_rejects_invalid_parameters_and_actual_secret_before_sampling() {
         let context = self::context(distribution);
         let mut generator = KeyGenerator::new(&context);
         let mut rng = StdRng::seed_from_u64(44);
-        let client = generator.generate_client_key(&mut rng);
+        let client = ClientKey::generate(context.parameters(), &mut rng);
         let mut rng = StdRng::seed_from_u64(45);
         let mut expected_rng = StdRng::seed_from_u64(45);
         let result = generator.try_generate_sparse_bootstrapping_key(&client, 3, 32, &mut rng);

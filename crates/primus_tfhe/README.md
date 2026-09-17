@@ -161,7 +161,7 @@ assert_eq!(message, 3);
 ```
 
 For GLWE use `context.parameters().glwe().cipher_modulus()` to construct the
-output codec. To keep the parameter encoding, pass `small_lwe().plaintext_codec()`
+output codec. To keep the parameter encoding, pass `input_plaintext_codec()`
 (GLWE) or `external_lwe().plaintext_codec()` (NTRU); ordinary `decrypt` then applies.
 The basic backend examples show independent output encoding without extra keys.
 
@@ -240,7 +240,7 @@ it rejects unequal lengths or missing bodies before writing. Inputs must share
 an actual secret, ciphertext modulus and the supplied unsigned input codec, with
 canonical coefficients and messages inside the stated bounds. These semantic
 conditions cannot be checked from raw ciphertexts. GLWE uses its order-dependent
-external dimension and `small_lwe().plaintext_codec()`; no extra key material is needed.
+external dimension and `input_plaintext_codec()`; no extra key material is needed.
 
 Rounding matters even before encryption noise. For `E(m)=round(m*q/t_in)`,
 packing produces `E(x+B*y) + e_x + B*e_y + rho` modulo `q`, where

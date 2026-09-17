@@ -6,6 +6,9 @@
 完整能力与编码约定见[公共指南](../primus_tfhe/README.zh_CN.md)，
 参数与秘密域见 [GLWE family](../primus_tfhe_glwe/README.zh_CN.md)。
 
+`Encryptor`、`Decryptor` 和 `TfheParameters` 是公共类型固定为 `NativeModulus` 的别名；
+`ClientKey`、`EncryptionKey` 和 `PbsOrder` 直接重导出。
+
 ## 运行完整示例
 
 ```sh
@@ -26,17 +29,19 @@ cargo run -p primus_tfhe_glwe_fourier --example fourier_basic
 FFT table 实例；长度相同不能证明表示兼容。示例使用 `RustFftTable`，也支持 `TfheFftTable`。
 FFT engine 和 evaluator 从同一个 context 创建。
 
-前半区 LUT 使用 `compile_lookup_table_fn` / `compile_lookup_table_slice`，多输出使用
+前半区 LUT 通过 `context.parameters()` 上的
+`compile_lookup_table_fn` / `compile_lookup_table_slice` 编译，多输出使用
 `compile_interleaved_lookup_table_*`，第一个参数均为输出 `RoundedCodec`。输出尺度不同时，
 用 `decrypt_phase` 与该 codec 解码。输入采用 unsigned padded 编码，并考虑 ManyLUT 较低的
 旋转分辨率。Evaluator 持有可变 scratch，创建一次后复用 `apply_lookup_table_to` /
 `apply_interleaved_lookup_table_to`；这些入口在写入前检查全部输出维数。
 
-奇数全域使用 context 的 `compile_odd_full_domain_lookup_table_fn` / `_slice` 与普通
+奇数全域使用 parameters 的 `compile_odd_full_domain_lookup_table_fn` / `_slice` 与普通
 `encrypt`，复用现有单输出 evaluator。条件见[共享契约](../primus_tfhe/README.zh_CN.md#奇数全域-pbs)。
 
-`t=4` 时使用 `boolean_encryptor`、`boolean_decryptor`、`boolean_evaluator`，由适配器处理
-内部模 8 的 LUT 尺度。通过 `evaluate_binary_to`、`not_to`、`mux_to` 重复求值。
+`t=4` 时使用 `boolean_encryptor`、`boolean_decryptor`、`boolean_evaluator`，
+直接复用采用模 4 下 Boolean `0/1` 编码的 `LweCiphertext`。Encryptor 支持私钥或公钥及
+`encrypt_to`；evaluator 处理内部模 8 的 LUT 尺度，通过 `evaluate_binary_to`、`not_to`、`mux_to` 重复求值。
 
 低层 `FourierGlweBootstrappingKey<T, LM>` 保留输入模数类型 `LM`，与 accumulator 模数独立。
 密钥生成时准备普通 PBS 量化参数；ManyLUT 在系数循环前按旋转步长准备转换。

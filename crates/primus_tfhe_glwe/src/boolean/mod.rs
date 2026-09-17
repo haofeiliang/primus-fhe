@@ -1,6 +1,4 @@
-use crate::{
-    GlweClientError, GlweTfheParameters, LookupTableError, LweCiphertext, TfheEvaluationError,
-};
+use crate::{LookupTableError, TfheClientError, TfheEvaluationError, TfheParameters};
 use primus_integer::FheUint;
 use primus_reduce::RingContext;
 
@@ -13,44 +11,8 @@ pub use evaluator::{BooleanEvaluator, BooleanGate};
 /// The number of bits in the external Boolean plaintext modulus: `t = 2^2 = 4`.
 pub const BOOLEAN_PLAINTEXT_BITS: u32 = 2;
 
-/// An LWE ciphertext encoding false as 0 and true as 1 modulo 4.
-///
-/// Uses unsigned rounded LWE encoding with plaintext modulus 4. The internal
-/// gate LUT scale and post-PBS shift are handled by [`BooleanEvaluator`].
-#[derive(Debug, Clone, PartialEq, Eq)]
-#[repr(transparent)]
-pub struct BooleanCiphertext<T: FheUint>(LweCiphertext<T>);
-
-impl<T: FheUint> BooleanCiphertext<T> {
-    /// Wraps a raw ciphertext that is known to use the Boolean encoding.
-    ///
-    /// This operation cannot verify the encrypted plaintext.
-    #[inline]
-    pub fn from_raw(ciphertext: LweCiphertext<T>) -> Self {
-        Self(ciphertext)
-    }
-
-    /// Returns the underlying raw LWE ciphertext.
-    #[inline]
-    pub fn as_raw(&self) -> &LweCiphertext<T> {
-        &self.0
-    }
-
-    /// Returns the underlying mutable raw LWE ciphertext.
-    #[inline]
-    pub fn as_raw_mut(&mut self) -> &mut LweCiphertext<T> {
-        &mut self.0
-    }
-
-    /// Decomposes this wrapper into its raw LWE ciphertext.
-    #[inline]
-    pub fn into_raw(self) -> LweCiphertext<T> {
-        self.0
-    }
-}
-
 fn validate_boolean_parameters<T, LM, GM>(
-    parameters: &GlweTfheParameters<T, LM, GM>,
+    parameters: &TfheParameters<T, LM, GM>,
 ) -> Result<(), BooleanError>
 where
     T: FheUint,
@@ -82,7 +44,7 @@ pub enum BooleanError {
 
     /// Raw client-side encryption or decryption failed.
     #[error(transparent)]
-    Client(#[from] GlweClientError),
+    Client(#[from] TfheClientError),
 
     /// Lookup-table compilation failed.
     #[error(transparent)]

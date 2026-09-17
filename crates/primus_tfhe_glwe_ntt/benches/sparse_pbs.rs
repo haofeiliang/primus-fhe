@@ -15,7 +15,7 @@ use primus_glwe::{GlweParameters, SecretKeyDistr};
 use primus_lwe::{LweCiphertext, LweParameters};
 use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, U32NttTable};
-use primus_tfhe_glwe_ntt::{KeyGenerator, PbsOrder, TfheContext, TfheParameters};
+use primus_tfhe_glwe_ntt::{ClientKey, KeyGenerator, PbsOrder, TfheContext, TfheParameters};
 use rand::{SeedableRng, rngs::StdRng};
 
 const Q: u32 = 132_120_577;
@@ -50,7 +50,7 @@ fn bench_sparse(c: &mut Criterion) {
         let context = context(order);
         let mut rng = StdRng::seed_from_u64(0x5035_4252 + DIMENSION as u64);
         let mut generator = KeyGenerator::new(&context);
-        let client = generator.generate_client_key(&mut rng);
+        let client = ClientKey::generate(context.parameters(), &mut rng);
         let classic = generator
             .try_generate_server_key(&client, &mut rng)
             .unwrap();
@@ -64,12 +64,14 @@ fn bench_sparse(c: &mut Criterion) {
             .collect();
         let codec = RoundedCodec::new(8, BarrettModulus::new(Q));
         let single = context
+            .parameters()
             .compile_lookup_table_fn(&codec, |m| (3 * m as u32 + 1) % 8)
             .unwrap();
         let many = context
+            .parameters()
             .compile_interleaved_lookup_table_fn(&codec, 3, |m, i| ((m + 2 * i) % 8) as u32)
             .unwrap();
-        let dimension = context.parameters().ciphertext_lwe_dimension();
+        let dimension = context.parameters().external_lwe_dimension();
         let mut outputs = vec![LweCiphertext::zero(dimension); 3];
         let mut group =
             c.benchmark_group(format!("sparse_pbs/n{DIMENSION}/h{WEIGHT}/N{N}/{order:?}"));

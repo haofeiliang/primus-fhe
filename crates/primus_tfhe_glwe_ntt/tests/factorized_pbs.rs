@@ -10,8 +10,8 @@ use primus_lwe::{LweCiphertext, LweParameters};
 use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, U32NttTable};
 use primus_tfhe_glwe_ntt::{
-    FactorizedLookupTable, InterleavedLookupTable, KeyGenerator, LookupTable, LookupTableError,
-    NttFactorizedLookupTable, PbsOrder, TfheContext, TfheParameters,
+    ClientKey, FactorizedLookupTable, InterleavedLookupTable, KeyGenerator, LookupTable,
+    LookupTableError, NttFactorizedLookupTable, PbsOrder, TfheContext, TfheParameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -49,18 +49,18 @@ fn value(m: usize, i: usize) -> u32 {
 fn factorized_pbs_reuses_workspace_and_preserves_both_external_secrets() {
     for order in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
         let context = context(order, SecretKeyDistr::fixed_hamming_weight_binary(8, 2));
-        let modulus = context.parameters().glwe().cipher_modulus();
+        let modulus = context.parameters().accumulator_glwe().cipher_modulus();
         let codec = ScaledCodec::new(8, modulus);
         let mut rng = StdRng::seed_from_u64(0x5034_3201);
         let mut generator = KeyGenerator::new(&context);
-        let client = generator.generate_client_key(&mut rng);
+        let client = ClientKey::generate(context.parameters(), &mut rng);
         let classic = generator
             .try_generate_server_key(&client, &mut rng)
             .unwrap();
         let sparse = generator
             .try_generate_sparse_server_key(&client, 3, 4, &mut rng)
             .unwrap();
-        let dimension = context.parameters().ciphertext_lwe_dimension();
+        let dimension = context.parameters().external_lwe_dimension();
         assert_eq!(
             dimension,
             if order == PbsOrder::BootstrapKeyswitch {
@@ -219,7 +219,7 @@ fn factorized_pbs_accepts_ternary_controls_without_online_allocation() {
         let context = context(order, SecretKeyDistr::fixed_composition_ternary(8, 2, 2));
         let mut rng = StdRng::seed_from_u64(0x0054_334d_5642);
         let (client, server) = context.generate_keys(&mut rng).unwrap();
-        let codec = ScaledCodec::new(8, context.parameters().glwe().cipher_modulus());
+        let codec = ScaledCodec::new(8, context.parameters().accumulator_glwe().cipher_modulus());
         let lut = context
             .compile_factorized_lookup_table_fn(&codec, DOMAIN, 3, value)
             .unwrap();
@@ -227,7 +227,7 @@ fn factorized_pbs_accepts_ternary_controls_without_online_allocation() {
         let decryptor = context.decryptor(&client).unwrap();
         let mut evaluator = context.factorized_evaluator(&server).unwrap();
         let mut outputs =
-            vec![LweCiphertext::zero(context.parameters().ciphertext_lwe_dimension()); 3];
+            vec![LweCiphertext::zero(context.parameters().external_lwe_dimension()); 3];
         for message in [0, 3, 7] {
             let input = encryptor.encrypt_padded(message, &mut rng).unwrap();
             let (_, allocation) = allocations::measure(|| {

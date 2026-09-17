@@ -72,7 +72,7 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
         let (client_key, server_key) = context.generate_keys(&mut rng).unwrap();
         let main_secret =
             NttGlweSecretKey::from_coeff_secret_key(client_key.glwe_secret_key(), context.table());
-        let glwe = context.parameters().glwe();
+        let glwe = context.parameters().accumulator_glwe();
         let mut choices: [Glwe<Vec<u64>>; 2] =
             core::array::from_fn(|_| Glwe::zero(glwe.glwe_len()));
         for (value, choice) in [1u64, 3].into_iter().zip(&mut choices) {
@@ -114,7 +114,7 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
             ));
         }
         let incompatible_trace =
-            GgswParameters::with_glwe_params(context.parameters().glwe(), 9, None);
+            GgswParameters::with_glwe_params(context.parameters().accumulator_glwe(), 9, None);
         let incompatible_parameters = CircuitBootstrapParameters::try_new(
             context.parameters(),
             circuit_parameters.output_basis().clone(),
@@ -230,11 +230,14 @@ fn circuit_parameters_check_capacity_layout_and_basis_domain() {
         POLY_LENGTH as u64,
         SecretKeyDistr::fixed_hamming_weight_binary(4, 2),
     );
-    let trace = tfhe.bootstrapping();
+    let trace = tfhe.blind_rotation_ggsw();
     let output = |levels| ApproxSignedBasis::new(Some(MODULUS), 8, Some(levels));
     let valid = CircuitBootstrapParameters::try_new(&tfhe, output(2), trace.clone(), trace.clone())
         .unwrap();
-    assert_eq!(valid.output_size().glwe_size(), tfhe.glwe().size());
+    assert_eq!(
+        valid.output_size().glwe_size(),
+        tfhe.accumulator_glwe().size()
+    );
     assert!(matches!(
         CircuitBootstrapParameters::try_new(&tfhe, output(3), trace.clone(), trace.clone()),
         Err(Error::OutputDecompositionTooLarge)

@@ -60,7 +60,7 @@ fn main() {
         Err(LookupTableError::PlaintextDomainTooLarge { .. })
     ));
     let mut evaluator = context.factorized_evaluator(&server).unwrap();
-    let dimension = context.parameters().ciphertext_lwe_dimension();
+    let dimension = context.parameters().external_lwe_dimension();
     let mut input = LweCiphertext::zero(dimension);
     let mut outputs = vec![LweCiphertext::zero(dimension); OUTPUTS];
     for score in [12u32, 45] {

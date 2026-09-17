@@ -128,7 +128,7 @@ client 的 `decrypt_phase` 返回规范带噪 residue，由保留的输出 codec
 
 ## P2.3 奇数明文模数全域
 
-`LookupTable::try_new_odd_full_domain` 及两族/四后端 `compile_odd_full_domain_lookup_table_fn/slice` 编译整个 `0..t`，返回原有单输出类型。输入用普通 unsigned 加密，输出独立 codec；交错与双输入仍用前半区。[公开前提](../crates/primus_tfhe/README.zh_CN.md#奇数全域-pbs)。
+`LookupTable::try_new_odd_full_domain` 及两族参数上的 `compile_odd_full_domain_lookup_table_fn/slice`（GLWE 通过 `context.parameters()` 调用） 编译整个 `0..t`，返回原有单输出类型。输入用普通 unsigned 加密，输出独立 codec；交错与双输入仍用前半区。[公开前提](../crates/primus_tfhe/README.zh_CN.md#奇数全域-pbs)。
 
 ### 符号与排序依据
 

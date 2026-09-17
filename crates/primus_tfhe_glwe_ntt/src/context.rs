@@ -1,9 +1,9 @@
-use primus_encoding::{RoundedCodec, ScaledCodec};
+use primus_encoding::ScaledCodec;
 use primus_integer::FheUint;
 use primus_ntt::MonomialNttTable;
-use primus_reduce::{PrepareModulusSwitch, ReduceAdd, RingContext};
-use primus_tfhe::{FactorizedLookupTable, InterleavedLookupTable, LookupTable};
-use primus_tfhe_glwe::GlweClientKey as ClientKey;
+use primus_reduce::RingContext;
+use primus_tfhe::FactorizedLookupTable;
+use primus_tfhe_glwe::{ClientKey, EncryptionKey};
 
 use crate::{
     BooleanDecryptor, BooleanEncryptor, BooleanError, BooleanEvaluator,
@@ -36,13 +36,13 @@ where
         parameters: TfheParameters<T>,
         table: Table,
     ) -> Result<Self, TfheContextError<T>> {
-        let expected = parameters.glwe().poly_length();
+        let expected = parameters.accumulator_glwe().poly_length();
         let actual = table.poly_length();
         if actual != expected {
             return Err(TfheContextError::PolynomialLengthMismatch { expected, actual });
         }
 
-        let expected = parameters.glwe().cipher_modulus().value();
+        let expected = parameters.accumulator_glwe().cipher_modulus().value();
         let actual = table.modulus();
         if actual != expected {
             return Err(TfheContextError::ModulusMismatch { expected, actual });
@@ -75,17 +75,13 @@ where
     }
 
     /// Creates a secret-key or public-key encryptor after checking compatibility.
-    /// Public-key contracts follow [`primus_tfhe_glwe::GlweEncryptionKey`].
+    /// Public-key contracts follow [`EncryptionKey`].
     pub fn encryptor<'a, Key>(
         &'a self,
         key: &'a Key,
     ) -> Result<Encryptor<'a, T, Key>, TfheClientError>
     where
-        Key: primus_tfhe_glwe::GlweEncryptionKey<
-                T,
-                primus_modulus::BarrettModulus<T>,
-                primus_modulus::BarrettModulus<T>,
-            >,
+        Key: EncryptionKey<T, primus_modulus::BarrettModulus<T>, primus_modulus::BarrettModulus<T>>,
     {
         Encryptor::try_new(&self.parameters, key)
     }
@@ -135,15 +131,15 @@ where
         F: Fn(usize, usize) -> T,
     {
         if output_codec.ciphertext_modulus().explicit_value()
-            != self.parameters.glwe().cipher_modulus_value()
+            != self.parameters.accumulator_glwe().cipher_modulus_value()
         {
             return Err(LookupTableError::OutputModulusMismatch);
         }
         let lookup_table = FactorizedLookupTable::try_new(
             input_domain_len,
-            self.parameters.glwe().poly_length(),
+            self.parameters.accumulator_glwe().poly_length(),
             output_count,
-            self.parameters.small_lwe().plaintext_codec(),
+            self.parameters.input_plaintext_codec(),
             output_codec,
             function,
         )?;
@@ -151,19 +147,15 @@ where
     }
 
     /// Creates a Boolean encryptor for a secret or public key, requiring `t = 4`.
-    /// Public-key contracts follow [`primus_tfhe_glwe::GlweEncryptionKey`].
+    /// Public-key contracts follow [`EncryptionKey`].
     pub fn boolean_encryptor<'a, Key>(
         &'a self,
         key: &'a Key,
     ) -> Result<BooleanEncryptor<'a, T, Key>, BooleanError>
     where
-        Key: primus_tfhe_glwe::GlweEncryptionKey<
-                T,
-                primus_modulus::BarrettModulus<T>,
-                primus_modulus::BarrettModulus<T>,
-            >,
+        Key: EncryptionKey<T, primus_modulus::BarrettModulus<T>, primus_modulus::BarrettModulus<T>>,
     {
-        BooleanEncryptor::new(&self.parameters, key)
+        BooleanEncryptor::try_new(&self.parameters, key)
     }
 
     /// Creates a Boolean decryptor after checking `t = 4` and the client key.
@@ -171,7 +163,7 @@ where
         &'a self,
         client_key: &'a ClientKey<T>,
     ) -> Result<BooleanDecryptor<'a, T>, BooleanError> {
-        BooleanDecryptor::new(&self.parameters, client_key)
+        BooleanDecryptor::try_new(&self.parameters, client_key)
     }
 
     /// Creates a Boolean evaluator with this context's PBS, gate LUTs and workspace.
@@ -219,95 +211,6 @@ where
         circuit_key: &'a CircuitBootstrapKey<T>,
     ) -> Result<CircuitBootstrapEvaluator<'a, T, Table>, CircuitBootstrapEvaluationError> {
         CircuitBootstrapEvaluator::try_new(self, server_key, parameters, circuit_key)
-    }
-
-    /// See [`primus_tfhe_glwe::GlweTfheParameters::compile_lookup_table_fn`].
-    #[inline]
-    pub fn compile_lookup_table_fn<OM, F>(
-        &self,
-        output_codec: &RoundedCodec<T, OM>,
-        function: F,
-    ) -> Result<LookupTable<T>, LookupTableError>
-    where
-        OM: PrepareModulusSwitch<ValueT = T> + ReduceAdd<T, Output = T>,
-        F: Fn(usize) -> T,
-    {
-        self.parameters
-            .compile_lookup_table_fn(output_codec, function)
-    }
-
-    /// See [`primus_tfhe_glwe::GlweTfheParameters::compile_lookup_table_slice`].
-    #[inline]
-    pub fn compile_lookup_table_slice<OM>(
-        &self,
-        output_codec: &RoundedCodec<T, OM>,
-        outputs: &[T],
-    ) -> Result<LookupTable<T>, LookupTableError>
-    where
-        OM: PrepareModulusSwitch<ValueT = T> + ReduceAdd<T, Output = T>,
-    {
-        self.parameters
-            .compile_lookup_table_slice(output_codec, outputs)
-    }
-
-    /// See [`primus_tfhe_glwe::GlweTfheParameters::compile_odd_full_domain_lookup_table_fn`].
-    #[inline]
-    pub fn compile_odd_full_domain_lookup_table_fn<OM, F>(
-        &self,
-        output_codec: &RoundedCodec<T, OM>,
-        function: F,
-    ) -> Result<LookupTable<T>, LookupTableError>
-    where
-        OM: PrepareModulusSwitch<ValueT = T> + ReduceAdd<T, Output = T>,
-        F: Fn(usize) -> T,
-    {
-        self.parameters
-            .compile_odd_full_domain_lookup_table_fn(output_codec, function)
-    }
-
-    /// See [`primus_tfhe_glwe::GlweTfheParameters::compile_odd_full_domain_lookup_table_slice`].
-    #[inline]
-    pub fn compile_odd_full_domain_lookup_table_slice<OM>(
-        &self,
-        output_codec: &RoundedCodec<T, OM>,
-        outputs: &[T],
-    ) -> Result<LookupTable<T>, LookupTableError>
-    where
-        OM: PrepareModulusSwitch<ValueT = T> + ReduceAdd<T, Output = T>,
-    {
-        self.parameters
-            .compile_odd_full_domain_lookup_table_slice(output_codec, outputs)
-    }
-
-    /// See [`primus_tfhe_glwe::GlweTfheParameters::compile_interleaved_lookup_table_fn`].
-    #[inline]
-    pub fn compile_interleaved_lookup_table_fn<OM, F>(
-        &self,
-        output_codec: &RoundedCodec<T, OM>,
-        output_count: usize,
-        function: F,
-    ) -> Result<InterleavedLookupTable<T>, LookupTableError>
-    where
-        OM: PrepareModulusSwitch<ValueT = T> + ReduceAdd<T, Output = T>,
-        F: Fn(usize, usize) -> T,
-    {
-        self.parameters
-            .compile_interleaved_lookup_table_fn(output_codec, output_count, function)
-    }
-
-    /// See [`primus_tfhe_glwe::GlweTfheParameters::compile_interleaved_lookup_table_slice`].
-    #[inline]
-    pub fn compile_interleaved_lookup_table_slice<OM>(
-        &self,
-        output_codec: &RoundedCodec<T, OM>,
-        output_count: usize,
-        outputs: &[T],
-    ) -> Result<InterleavedLookupTable<T>, LookupTableError>
-    where
-        OM: PrepareModulusSwitch<ValueT = T> + ReduceAdd<T, Output = T>,
-    {
-        self.parameters
-            .compile_interleaved_lookup_table_slice(output_codec, output_count, outputs)
     }
 
     /// Decomposes this context into its parameters and NTT table.

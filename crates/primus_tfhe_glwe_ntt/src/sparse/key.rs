@@ -222,7 +222,7 @@ where
         let offsets_len = bucket_count
             .checked_add(1)
             .ok_or(Error::StorageSizeOverflow)?;
-        let size = parameters.bootstrapping().size();
+        let size = parameters.blind_rotation_ggsw().size();
         let data_len = entry_count
             .checked_add(bucket_count)
             .and_then(|count| count.checked_mul(size.ggsw_len()))
@@ -256,7 +256,7 @@ where
 
         let ntt = self.context.table();
         let output_key = NttGlweSecretKey::from_coeff_secret_key(client_key.glwe_secret_key(), ntt);
-        let gadget = parameters.bootstrapping();
+        let gadget = parameters.blind_rotation_ggsw();
         self.gadget.resize(size);
         let mut data = vec![T::ZERO; data_len];
         let max_bucket_len = map

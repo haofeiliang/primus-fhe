@@ -9,7 +9,7 @@ use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, U32NttTable};
 use primus_tfhe::{ProgrammableBootstrap, ProgrammableBootstrapInterleaved};
 use primus_tfhe_glwe_ntt::{
-    KeyGenerator, PbsOrder, TfheContext, TfheEvaluationError, TfheParameters,
+    ClientKey, KeyGenerator, PbsOrder, TfheContext, TfheEvaluationError, TfheParameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -45,7 +45,7 @@ fn sparse_pbs_preserves_external_secret_and_interleaved_outputs_in_both_orders()
         let context = context(order, 4, 7);
         let mut generator = KeyGenerator::new(&context);
         let mut rng = StdRng::seed_from_u64(0x5035_5042);
-        let client = generator.generate_client_key(&mut rng);
+        let client = ClientKey::generate(context.parameters(), &mut rng);
         let sparse_key = generator
             .try_generate_sparse_server_key(&client, 3, 8, &mut rng)
             .unwrap();
@@ -54,7 +54,7 @@ fn sparse_pbs_preserves_external_secret_and_interleaved_outputs_in_both_orders()
             .unwrap();
         let mut sparse = context.evaluator(&sparse_key).unwrap();
         let mut classic = context.evaluator(&classic_key).unwrap();
-        let dimension = context.parameters().ciphertext_lwe_dimension();
+        let dimension = context.parameters().external_lwe_dimension();
         assert_eq!(
             dimension,
             if order == PbsOrder::BootstrapKeyswitch {
@@ -69,8 +69,12 @@ fn sparse_pbs_preserves_external_secret_and_interleaved_outputs_in_both_orders()
         let codec = RoundedCodec::new(16, BarrettModulus::new(Q));
         let function = |m: usize| (3 * m as u32 + 1) % 16;
         let functions = |m: usize, i: usize| (m + 2 * i) as u32;
-        let single = context.compile_lookup_table_fn(&codec, function).unwrap();
+        let single = context
+            .parameters()
+            .compile_lookup_table_fn(&codec, function)
+            .unwrap();
         let many = context
+            .parameters()
             .compile_interleaved_lookup_table_fn(&codec, 3, functions)
             .unwrap();
         assert_eq!(many.padded_output_count(), 4);

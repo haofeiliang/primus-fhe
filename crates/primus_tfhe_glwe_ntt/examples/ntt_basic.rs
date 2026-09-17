@@ -49,7 +49,7 @@ fn run(order: PbsOrder) {
     let parameters = parameters(order);
     let table = U32NttTable::new(
         POLY_LENGTH.trailing_zeros(),
-        parameters.glwe().cipher_modulus(),
+        parameters.accumulator_glwe().cipher_modulus(),
     )
     .unwrap();
     let context = TfheContext::try_new(parameters, table).unwrap();
@@ -66,10 +66,8 @@ fn run(order: PbsOrder) {
     let encryptor = context.encryptor(&public_key).unwrap();
     let decryptor = context.decryptor(&client_key).unwrap();
     let toggle = context
-        .compile_lookup_table_slice(
-            context.parameters().small_lwe().plaintext_codec(),
-            &[1u32, 0],
-        )
+        .parameters()
+        .compile_lookup_table_slice(context.parameters().input_plaintext_codec(), &[1u32, 0])
         .unwrap();
     let mut input = encryptor.encrypt_padded(0u32, &mut rng).unwrap();
     // External inputs and outputs use n or kN according to the selected order.
@@ -79,13 +77,15 @@ fn run(order: PbsOrder) {
     };
     assert_eq!(input.dimension(), dimension);
     let mut evaluator = context.evaluator(&server_key).unwrap();
-    let mut output = LweCiphertext::zero(context.parameters().ciphertext_lwe_dimension());
+    let mut output = LweCiphertext::zero(context.parameters().external_lwe_dimension());
     evaluator.apply_lookup_table_to(&input, &toggle, &mut output);
     assert_eq!(decryptor.decrypt(&output).unwrap(), 1);
 
     // Two functions share one PBS; input uses t=4, output uses t=8.
-    let output_codec = RoundedCodec::new(8, context.parameters().glwe().cipher_modulus());
+    let output_codec =
+        RoundedCodec::new(8, context.parameters().accumulator_glwe().cipher_modulus());
     let paired = context
+        .parameters()
         .compile_interleaved_lookup_table_fn(&output_codec, 2, |input, output| {
             if output == 0 {
                 (input + 4) as u32
@@ -110,10 +110,13 @@ fn run(order: PbsOrder) {
     );
 
     // The Boolean API is identical to the Fourier backend.
-    let boolean_encryptor = context.boolean_encryptor(&client_key).unwrap();
+    let boolean_encryptor = context.boolean_encryptor(&public_key).unwrap();
     let boolean_decryptor = context.boolean_decryptor(&client_key).unwrap();
     let lhs = boolean_encryptor.encrypt(true, &mut rng).unwrap();
-    let rhs = boolean_encryptor.encrypt(false, &mut rng).unwrap();
+    let mut rhs = LweCiphertext::zero(dimension);
+    boolean_encryptor
+        .encrypt_to(false, &mut rhs, &mut rng)
+        .unwrap();
     let mut boolean_evaluator = context.boolean_evaluator(&server_key).unwrap();
 
     let mut output = rhs.clone();

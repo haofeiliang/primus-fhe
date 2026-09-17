@@ -133,7 +133,7 @@ assert_eq!(message, 3);
 ```
 
 GLWE 用 `context.parameters().glwe().cipher_modulus()` 构造输出 codec。
-沿用参数编码时，传入 `small_lwe().plaintext_codec()`（GLWE）或
+沿用参数编码时，传入 `input_plaintext_codec()`（GLWE）或
 `external_lwe().plaintext_codec()`（NTRU），随后仍可用普通 `decrypt`。
 各后端 basic 示例展示了无需额外密钥的独立输出编码。
 
@@ -201,7 +201,7 @@ assert_eq!(output_codec.decode_value(decryptor.decrypt_phase(&output).unwrap()),
 `pack_to` 用一遍模乘加写入 `lhs + B*rhs`，不分配内存；长度不同或缺少 body 时在写入前拒绝。
 两输入必须具有相同的实际秘密、密文模数及传入的 unsigned 输入 codec，系数规范、明文不超出各自边界。
 raw 密文无法验证这些语义条件。GLWE 使用其 order 对应的外部维数与
-`small_lwe().plaintext_codec()`，无需增加密钥材料。
+`input_plaintext_codec()`，无需增加密钥材料。
 
 即使不考虑加密噪声，也不能忽略编码舍入。令 `E(m)=round(m*q/t_in)`，打包相位为
 `E(x+B*y) + e_x + B*e_y + rho` 模 `q`，其中

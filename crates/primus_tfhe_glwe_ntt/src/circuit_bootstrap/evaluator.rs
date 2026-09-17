@@ -13,7 +13,7 @@ use primus_modulus::BarrettModulus;
 use primus_ntt::MonomialNttTable;
 use primus_reduce::ReduceMul;
 use primus_tfhe::{InterleavedLookupTable, LookupTableError};
-use primus_tfhe_glwe::GlwePbsOrder as PbsOrder;
+use primus_tfhe_glwe::PbsOrder;
 
 use crate::{
     BootstrappingKey, CircuitBootstrapKey, CircuitBootstrapParameters, NttGlweBlindRotationContext,
@@ -106,7 +106,7 @@ where
             return Err(CircuitBootstrapEvaluationError::IncompatibleCircuitBootstrapKey);
         }
 
-        let glwe = tfhe.glwe();
+        let glwe = tfhe.accumulator_glwe();
         let modulus = glwe.cipher_modulus();
         let poly_length = glwe.poly_length();
         let domain_len =
@@ -196,7 +196,7 @@ where
         let tfhe = self.context.parameters();
         assert_eq!(
             input.dimension(),
-            tfhe.ciphertext_lwe_dimension(),
+            tfhe.external_lwe_dimension(),
             "circuit-bootstrap input dimension mismatch"
         );
         assert_eq!(
@@ -226,7 +226,10 @@ where
                 self.lookup_table.polynomial(),
                 self.lookup_table.padded_output_count(),
                 &mut self.main_glwe,
-                self.context.parameters().glwe().cipher_modulus(),
+                self.context
+                    .parameters()
+                    .accumulator_glwe()
+                    .cipher_modulus(),
                 self.context.table(),
                 &mut self.blind_rotation,
             );
@@ -235,14 +238,20 @@ where
             &self.main_glwe,
             &self.projection_indices,
             self.traced.as_mut(),
-            self.context.parameters().glwe().cipher_modulus(),
+            self.context
+                .parameters()
+                .accumulator_glwe()
+                .cipher_modulus(),
             self.context.table(),
             &mut self.trace,
         );
         self.circuit_key.scheme_switch_key().apply_to(
             &self.traced,
             output,
-            self.context.parameters().glwe().cipher_modulus(),
+            self.context
+                .parameters()
+                .accumulator_glwe()
+                .cipher_modulus(),
             self.context.table(),
             &mut self.scheme_switch,
         );

@@ -64,12 +64,11 @@ where
             .flat_map(|input| (0..output_count).map(move |output| value(input, output)))
             .collect();
         let lut = context
+            .parameters()
             .compile_interleaved_lookup_table_slice(&output_codec, output_count, &flat)
             .unwrap();
-        let mut outputs = vec![
-            LweCiphertext::zero(context.parameters().ciphertext_lwe_dimension());
-            output_count
-        ];
+        let mut outputs =
+            vec![LweCiphertext::zero(context.parameters().external_lwe_dimension()); output_count];
         for message in [0, 3, 4, 7] {
             let input = encryptor.encrypt_padded(message as u32, &mut rng).unwrap();
             let (_, allocation) = allocations::measure(|| {
@@ -95,6 +94,7 @@ where
             }
             if output_count == 1 && message == 3 {
                 let single = context
+                    .parameters()
                     .compile_lookup_table_fn(&output_codec, |input| value(input, 0))
                     .unwrap();
                 let mut output = outputs[0].clone();
@@ -110,6 +110,7 @@ where
 
     let input = encryptor.encrypt_padded(3u32, &mut rng).unwrap();
     let good = context
+        .parameters()
         .compile_interleaved_lookup_table_fn(&output_codec, 3, value)
         .unwrap();
     let mut outputs = vec![input.clone(); 3];
@@ -198,6 +199,7 @@ where
         assert_eq!(outputs, before);
     }
     let single = context
+        .parameters()
         .compile_lookup_table_fn(&output_codec, |x| x as u32)
         .unwrap();
     let wrong = LweCiphertext::zero(input.dimension() - 1);
@@ -259,7 +261,7 @@ where
         3,
         2,
         N,
-        context.parameters().small_lwe().plaintext_codec(),
+        context.parameters().input_plaintext_codec(),
         &output_codec,
         |x, y| (x * x + y) as u32,
     )
@@ -284,6 +286,7 @@ where
     // half. Keep a distinct output scale and a function with f(0) != 0.
     let values: Vec<_> = (0..15).map(|m| ((m * m + 3) % 8) as u32).collect();
     let full = context
+        .parameters()
         .compile_odd_full_domain_lookup_table_slice(&output_codec, &values)
         .unwrap();
     for (message, &expected) in values.iter().enumerate() {

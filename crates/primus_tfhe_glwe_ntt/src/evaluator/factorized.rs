@@ -42,10 +42,10 @@ where
         let parameters = context.parameters();
         assert!(
             lookup_table.is_compatible(
-                parameters.glwe().poly_length(),
+                parameters.accumulator_glwe().poly_length(),
                 parameters.plain_modulus_value(),
                 parameters.small_lwe().cipher_modulus_value(),
-                parameters.glwe().cipher_modulus_value(),
+                parameters.accumulator_glwe().cipher_modulus_value(),
             ),
             "MVB lookup-table encoding or polynomial length mismatch"
         );
@@ -121,7 +121,9 @@ where
     ) -> Result<Self, TfheEvaluationError> {
         Ok(Self {
             evaluator: Evaluator::try_new(context, server_key)?,
-            shared_rotation: NttGlweCiphertext::zero(context.parameters().glwe().glwe_len()),
+            shared_rotation: NttGlweCiphertext::zero(
+                context.parameters().accumulator_glwe().glwe_len(),
+            ),
         })
     }
 
@@ -135,11 +137,7 @@ where
         input: &LweCiphertext<T>,
         lookup_table: &NttFactorizedLookupTable<'_, T, Table>,
     ) -> Vec<LweCiphertext<T>> {
-        let dimension = self
-            .evaluator
-            .context
-            .parameters()
-            .ciphertext_lwe_dimension();
+        let dimension = self.evaluator.context.parameters().external_lwe_dimension();
         let mut outputs = (0..lookup_table.output_count())
             .map(|_| LweCiphertext::zero(dimension))
             .collect::<Vec<_>>();
@@ -178,7 +176,7 @@ where
             "MVB program was prepared by a different context"
         );
         let parameters = evaluator.context.parameters();
-        let dimension = parameters.ciphertext_lwe_dimension();
+        let dimension = parameters.external_lwe_dimension();
         assert_eq!(input.dimension(), dimension, "MVB input dimension mismatch");
         assert_eq!(
             outputs.len(),
@@ -190,7 +188,7 @@ where
             "MVB output ciphertext dimension mismatch"
         );
 
-        let glwe = parameters.glwe();
+        let glwe = parameters.accumulator_glwe();
         let table = evaluator.context.table();
         evaluator.blind_rotate(input, &lookup_table.common_polynomial, 1);
         evaluator
