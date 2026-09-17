@@ -10,8 +10,9 @@
 
 ### 当前 LUT/PBS 任务
 
-- 已完成：**P1.1、P1.M、P1.2、P1.3、P1.R、P1.4、P2.1、P2.2、P2.3、P3.1、P3.2、P3.3、P3.4、P3.5、P4.0**。设计和测量依据见 [TFHE 总览](docs/tfhe.md)，完成条件见 [实施步骤](docs/tfhe-plan.md)。
-- 进行中：无；本步剩余：无。下一步 **P4.1 MVB 算法与编码选型**，入口见实施步骤。
+- 已完成：**P1.1、P1.M、P1.2、P1.3、P1.R、P1.4、P2.1、P2.2、P2.3、P3.1、P3.2、P3.3、P3.4、P3.5、P4.0、P4.1**。设计和测量依据见 [TFHE 总览](docs/tfhe.md)，完成条件见 [实施步骤](docs/tfhe-plan.md)。
+- 进行中：无；本步剩余：无。下一步 **P4.2 首个 MVB 实现**，入口见 [MVB 方案](docs/tfhe-mvb.md) 和实施步骤。
+- P4.1 有效边界：首版固定尺度差分分解，`V=(Delta*inv2)*sum(X^j)`、`W_i=(1-X)p_i`，GLWE NTT 奇数 q；输入复用 Rounded 前半区/短前缀真实几何，统一 Scaled 输出，任意正输出数、步长 1。复用经典/稀疏 BR；BK 每输出乘后 KS，KB 前置 KS 一次。共享系数产物与绑定 context 的 NTT 预处理分离，独立 evaluator 只加一个共享 NTT GLWE 缓冲，不增加普通 PBS 内存。本阶段只完成论文/源码契约、代数、噪声/成本模型及独立整数 oracle，没有新增 Rust API。Native/Fourier/NTRU、odd full-domain、CBS、ternary/unfolding 不纳入首版；完整决定和 P4.2 最小验证矩阵只维护在专项文档。
 - P4.0 有效边界：共享量化公开为 `rotation::RotationQuantizer`，一次性模切包装删除；`bootstrap` 仍为普通/交错两个小 trait。四后端分开 BR 与后置 KS，BR 总是保留 accumulator 秘密下的系数域环密文，现有工作区、两种 order、经典/稀疏分派及零分配契约保持。阶段 helper 暂留私有，MVB 按选定算法接入；ternary 后续一起处理控制密钥、剩余类到有符号秘密的转换及参数兼容性，automorphism 暂不实现，当前 binary 限制及稀疏 CBS 拒绝保持。见 [P4.0 决定与测量](docs/tfhe.md#p40-共享旋转契约与后端执行阶段)。
 - P3.1 有效边界：首版 GLWE NTT、一般固定重量二元实际 BR 秘密；实验参数组为每索引 3 个不同桶、桶数 `2h`、私有完整匹配，固定秘密最多尝试 8 个独立映射。首版 BSK 按桶保存系数域选择 GGSW 和独立 dummy；P3.3 逐桶聚合、转 NTT、一次外积，复用现有量化和 LUT。失败上界、条件联合分布、误差递推、存储与两组参数只维护在专项文档；8 轮耗尽概率不等于公开映射的统计距离。两种 order/普通交错 LUT 已在 P3.5 验收，CBS 等扩展未承诺。
 - P3.2 有效边界：NTT `KeyGenerator::try_generate_sparse_bootstrapping_key` 从 client 的 small-LWE 固定重量二元秘密生成独立 `SparseGlweBootstrappingKey<T>`。公开桶映射为 CSR，`bucket(j)` 借用递增索引及对应系数 GGSW，最后额外含 dummy。实际系数/重量、桶参数和长度先验证；先直接占用空闲候选桶，冲突时以桶为节点搜索并逆向搬移；内部直接保存原始输入索引，三个私有缓冲区复用，固定秘密最多重试八次，成功后才分配密文并逐桶批量加密/原地 inverse NTT。私有支持集、匹配及选择位会擦除，未保存明文位置；没有新增参数包装/策略 trait；完整 ServerKey/evaluator 接入见 P3.5。
@@ -27,9 +28,9 @@
 - P1.2 有效边界：单输出与交错表共用顺序主循环，中心使用每输出系数坐标、填充使用实际系数切片；区间求值与负循环尾部各有私有填充函数。输出按输入优先顺序写最终多项式，没有逐列多项式、中心数组或输出组 scratch 分配。前半输入域、回调错误及 raw residue 检查保留。[首次构造/分配比较](docs/benchmarks/tfhe-p1.2.csv)和[主循环重整对照](docs/benchmarks/tfhe-p1.2-flow.csv)分开记录；最终同配置比较见 [P1.4 验收](docs/tfhe.md#p14-阶段验收)：所测多输出构造耗时下降 61.6%～85.6%，全部只分配最终多项式；单输出构造增加约 12～24 ns，在线 PBS 未见稳定整体加速，NTT 存在几个百分点的退化信号。
 - P1.M 有效边界：`RingContext` 聚合 `PrepareModulusSwitch`，`FieldContext` 继承准备能力；`PreparedModulusSwitch` 执行固定模数对的规范模切，保持独立。codec 只要求准备能力和模加法，构造时准备转换，Scaled 保持固定尺度；绝对值舍入和解码共用模切内核，批量融合符号与输出，标量包装保留各自特化路径。普通 PBS 量化在 GLWE BSK/NTRU 参数构造时准备，ManyLUT 按步长在系数循环前准备。输入与 accumulator 模数独立，描述性元数据仍可使用 `Option<T>`；紧凑范围内的模切已按分子宽度使用倒数求商和一次精确修正；Barrett/派生 Barrett 复用已有倒数，公共准备/执行接口不变。
 - 编解码输入输出统一为系数类型 `T`：codec、基础加解密和通用 TFHE client 不再转换消息类型，批量输入为 `&[T]`；应用负责转换，Boolean 保留 `bool` 和值域检查。参数构造复用 codec 校验；模数有效性由模切准备验证，codec 保留 `q > t` 和 Scaled 恢复条件。 单模数 codec 的明文模数访问器统一为 `plaintext_modulus()`；`RoundedCodec` 的密文模数访问器为 `ciphertext_modulus()`，workspace 调用方已同步。
-- 有效未决项：P3 的实验方案已收敛，但固定重量/补零目标/evaluation keys 的生产安全、成功映射条件分布的影响和完整 PBS 尾界仍未认证；不得用功能测试关闭。首个 MVB 算法与缩放在 P4.1 收敛。居中/shifted 的正式接入和带辅助密钥的漂移抑制为后续候选，不构成 P1–P4 的隐含交付。具体内容只维护在对应文档中。
+- 有效未决项：P3 的实验方案已收敛，但固定重量/补零目标/evaluation keys 的生产安全、成功映射条件分布的影响和完整 PBS 尾界仍未认证；不得用功能测试关闭。首个 MVB 算法与缩放已在 P4.1 收敛，实际加密行为与性能留待 P4.2/P4.3，不能从代数验证推出生产失败率。居中/shifted 的正式接入和带辅助密钥的漂移抑制为后续候选，不构成 P1–P4 的隐含交付。具体内容只维护在对应文档中。
 - 测试/基准有效边界：P3.2 保留两个私有匹配测试、两个稀疏 key 集成测试；P3.3 只新增一项表驱动 BR 集成测试，覆盖小环全指数、公开空桶、奇偶桶数、k=2、截断 basis、真实加密输入、输出写入前拒绝和零分配；P3.4 将加密场景改为 k=2 以覆盖跨块及较短尾块，不增加测试数。ManyLUT 使用代表性消息与 `k=1/3/4`，三路 CBS 使用三层和 `1→0`；两种 GLWE order、两种 FFT 和错误边界保留。P2.3 增加两个共享整数 oracle/拒绝测试，将既有四后端 fixture 改为 `15→8` 并遍历全域，共增加 135 次小参数 PBS，不增加 keygen 或测试程序。P2.2 的两个打包输入继续复用同一 fixture。P3.5 新增一项完整 sparse PBS 测试，CBS 拒绝复用现有 fixture；成本组 8 项完整 PBS、2 项 keygen 替换原始 BR 四项基准，Criterion 为 9 个 target、107 项。小组/内存/相位与匹配诊断不进入常驻测试或基准；GitHub CI 未执行 benches。
-- 当前验证：P4.0 的 `just tfhe`、`just tfhe-simd` 通过，七包默认/nightly SIMD 各 51 项测试，包含普通/交错、Boolean、CBS、稀疏 PBS 与零分配断言；相关 all-targets check/Clippy、严格私有 rustdoc、workspace all-targets check、格式和 diff 检查通过。现有 Criterion 完成 52 组重构前后对照及两项波动 case 的两轮复测，未观察到稳定退化；未新增测试或 benchmark case，数据见 P4.0 记录。未重跑全 workspace 数值测试、非 x86 或生产安全/完整尾概率验证。
+- 当前验证：P4.1 完成定向源码契约核对和独立整数 oracle：714 个整数分解、59,724 个全多项式旋转等式、60 组几何、3,024 次消息恢复、170,952 次解码充分条件检查，另核对半尺度与编码反例；文档链接和 diff 检查通过。本步只有文档修改，未重跑 Rust 测试/性能测量。P4.0 的七包默认/SIMD 各 51 项测试、零分配及 52 组性能回归记录保留在总览，不代表新增 MVB 已实现或验收。
 
 ## 已审范围索引
 
