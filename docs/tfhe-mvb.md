@@ -1,7 +1,7 @@
 # TFHE 首个 MVB：固定尺度差分分解
 
-本文是 **P4.1 的选型与 P4.2 的实现依据**，源码分析基线为 `1a34b41`。
-这里定义的 MVB 类型和入口尚未实现；当前进度见 [HANDOFF](../HANDOFF.md)，
+本文保存 **P4.1 的选型与 P4.2 的实现契约**，选型时源码分析基线为 `1a34b41`。
+具体入口已在 P4.2 实现；当前进度见 [HANDOFF](../HANDOFF.md)，
 任务划分见 [实施步骤](tfhe-plan.md#p41-mvb-算法与编码选型)。
 
 ## 1. 选型与适用范围
@@ -182,30 +182,31 @@ nnz(W_i) <= D
 
 ## 5. 编译产物、预处理与工作区
 
-以下为 P4.2 的接口方向，具体签名按已有错误类型和真实调用方收敛：
+P4.2 的具体接口如下，使用流程见 [GLWE NTT README](../crates/primus_tfhe_glwe_ntt/README.zh_CN.md#固定尺度分解式-mvb)：
 
 1. **共享 `FactorizedLookupTable<T>`**：保存输入几何/编码兼容性、共同系数域多项式
    `V` 和 `k` 个系数域因子 `W_i`。构造时显式接收输入 Rounded、输出 Scaled codec
    与 `output_count: usize`，集中验证域、奇数 `q`、真实中心及输出范围；不使用
    `InterleavedLookupTable`，也不增加一个含可选字段的通用 LUT。
-2. **后端 NTT 产物**：消费共享产物，把 `W_i` 原地变为 NTT 形式，保留原始 `V`。
+2. **`NttFactorizedLookupTable::new(context, lookup_table)`**：消费共享产物，把 `W_i` 原地变为 NTT 形式，保留原始 `V`。
    预处理一次、多次执行；不同时永久保存全部系数域和 NTT 因子。产物借用生成它的
-   context，在与 evaluator 绑定时检查同一 context，封住异表混用。仅检查相同
+   context，在 evaluator 执行时检查同一 context，封住异表混用。仅检查相同
    `q,N` 不足以保证 NTT 求值顺序和根一致；不为此扩充通用 `NttTable` trait。
 3. **独立 `FactorizedEvaluator`**：复用普通 `Evaluator` 的内部阶段和已有 scratch，
    仅增加一个共享 BR 结果的 NTT 缓冲区。普通 PBS evaluator 不因 MVB 增加内存。
-   输入/产物/context/输出数量及所有输出维数在写输出前验证；内部阶段可提升为
-   后端内可见，不公开万能 BR 接口。
-4. context 的便捷编译入口直接返回已准备的 NTT 产物，使应用只需“编译一次 →
-   创建 evaluator → 对多个输入执行”。共享产物构造和后端准备保留明确边界，不增
-   MVB trait；`ProgrammableBootstrapInterleaved` 的契约不变。
+   输入/产物/context/输出数量及所有输出维数在写输出前验证。实现放在普通 evaluator
+   的子模块，直接复用其私有阶段与缓冲区，无需扩大可见性。
+4. context 的 `compile_factorized_lookup_table_fn(&output_codec, D, k, function)`
+   直接返回已准备的 NTT 产物；`factorized_evaluator(&server_key)` 创建工作区，
+   `apply_lookup_table_to` 重复求值。共享产物构造和后端准备保持独立，不增加 MVB
+   trait；`ProgrammableBootstrapInterleaved` 的契约不变。
 
 输入仍采用真实 Rounded 中心。构造每个 `p_i` 时可复用单输出编译核心，回调返回
 尚未缩放的消息值，负尾由编译器在 `q` 中表示；先保存原首尾值，再在同一最终数组内
 逆序求差分，进入模 `q` 的规范存储。公共输出范围检查不能交给 raw 编译器的 residue 检查代替。
 不新增有符号秘密/消息包装，也不把乘数在 `t_out` 中约简。
 
-`ScaledCodec` 唯一需要的小补充是与 Rounded 对应的 `ciphertext_modulus()` 只读访问器，
+`ScaledCodec` 新增与 Rounded 对应的 `ciphertext_modulus()` 只读访问器，
 供构造器检查模数兼容性。`Delta` 可通过 `encode_value(1, Unsigned)` 获得，无须新增
 尺度 trait 或自定义比例构造器。
 
@@ -260,7 +261,7 @@ P4.3 比较必须使用同一输入域、同一 `f_i`、相同 Scaled 输出中�
 
 ## 7. P4.1 检查与 P4.2 验收入口
 
-本步没有修改 Rust API 或增加常驻测试/基准。完成源码契约核对，以及独立 Python
+P4.1 未修改 Rust API 或增加常驻测试/基准；当时完成源码契约核对，以及独立 Python
 整数原型（不调用生产 codec、旋转、NTT 或 LUT helper）的以下检查：
 
 | 检查 | 枚举范围与结果 |
@@ -275,7 +276,7 @@ P4.3 比较必须使用同一输入域、同一 `f_i`、相同 Scaled 输出中�
 计算整数比例舍入。这些检查支持代数和编码选择，不是加密执行、NTT 实现正确性、
 生产失败率或性能验证。临时原型不保留为第二套常驻测试。
 
-P4.2 用最少的持久测试保护以下独立契约：
+P4.2 使用两个共享层测试和一个后端集成测试保护以下独立契约：
 
 - 小环整数 oracle：全旋转、非二次幂 `t_in`、短域、零/负差分、空负尾和接缝；明确
   区分输入几何与后乘分解的 oracle，覆盖输出范围/模数/数量的构造拒绝。
@@ -285,5 +286,13 @@ P4.2 用最少的持久测试保护以下独立契约：
 - 首版不加入 odd full-domain、Native/Fourier/NTRU、CBS 输出、ternary 或 unfolding。
   奇数全域在代数上可复用分解，但必须按其折叠几何另验范数和接缝后才扩展入口。
 
-P4.2 完成后，P4.3 再决定应用示例和性能结论。阶段内不提供推测的生产参数，也不
-把论文其他方案或所有候选后端变为本步的隐含交付。
+实际验证入口为 [共享整数 oracle 与拒绝测试](../crates/primus_tfhe/tests/factorized_lookup_table.rs)
+和 [完整 MVB 测试](../crates/primus_tfhe_glwe_ntt/tests/factorized_pbs.rs)。后者复用
+`n/h/d/N=8/2/2/128、q=132120577、t_in=15、t_out=8` 的两组 order fixture，
+经典/稀疏分别检查 1/3/17 输出和消息 0/3/7；三输出与相同 Scaled 编码的独立 PBS、
+交错 ManyLUT 对照。17 输出在 MVB 成功，交错因 `N/32=4<D=8` 拒绝。
+这些是固定 seed 的功能参数。默认/SIMD 的解码、秘密域、写入前拒绝及在线零分配均通过。
+共享层另用 N=1 验证输出数大于 N 和空负尾接缝。
+
+本步没有新增 benchmark 或性能结论；P4.3 再作比较和应用示例。阶段内不提供推测的
+生产参数，也不把论文其他方案或所有候选后端变为本步的隐含交付。

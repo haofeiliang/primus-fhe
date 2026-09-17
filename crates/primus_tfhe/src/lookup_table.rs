@@ -2,11 +2,13 @@
 //!
 //! - `single`: one output; front-half and odd full-domain constructors.
 //! - `interleaved`: multiple output lanes sharing one blind rotation.
+//! - `factorized`: a common polynomial and fixed-scale difference factors for MVB.
 //! - `bivariate`: bounded input packing followed by a single-output lookup.
 //! - `compile`: input geometry, validation and polynomial filling.
 
 mod bivariate;
 mod compile;
+mod factorized;
 mod interleaved;
 mod single;
 
@@ -14,6 +16,7 @@ use primus_integer::FheUint;
 
 pub use bivariate::BivariateLookupTable;
 pub use compile::front_half_domain_len;
+pub use factorized::FactorizedLookupTable;
 pub use interleaved::InterleavedLookupTable;
 pub use single::LookupTable;
 

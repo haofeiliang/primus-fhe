@@ -21,6 +21,9 @@ pub enum LookupTableError {
     /// Full-domain signed folding requires an odd plaintext modulus.
     #[error("full-domain lookup-table compilation requires an odd plaintext modulus")]
     EvenPlaintextModulus,
+    /// Fixed-scale difference factorization requires an explicit odd coefficient modulus.
+    #[error("factorized lookup tables require an explicit odd coefficient modulus")]
+    UnsupportedFactorizationModulus,
     /// The selected input domain must be a non-empty prefix of the front half.
     #[error("lookup-table input domain {domain_len} must belong to 1..={max_domain_len}")]
     InvalidInputDomain {

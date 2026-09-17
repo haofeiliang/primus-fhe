@@ -14,6 +14,9 @@ use crate::{
     error::TfheEvaluationError,
 };
 
+mod factorized;
+pub use factorized::{FactorizedEvaluator, NttFactorizedLookupTable};
+
 /// Reusable NTT workspace for programmable bootstrapping.
 pub struct Evaluator<'a, T, Table>
 where

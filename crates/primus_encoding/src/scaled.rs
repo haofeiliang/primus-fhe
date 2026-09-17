@@ -65,6 +65,13 @@ where
         self.plaintext_modulus
     }
 
+    /// Returns the ciphertext modulus used for encoding and decoding.
+    #[must_use]
+    #[inline]
+    pub fn ciphertext_modulus(&self) -> M {
+        self.ciphertext_modulus
+    }
+
     /// Encodes a residue in `[0,t)` into a canonical residue in `[0,q)` with the selected lift.
     ///
     /// # Panics

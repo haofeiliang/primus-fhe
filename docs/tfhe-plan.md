@@ -250,6 +250,11 @@ evaluator 在 BR 入口分派并只分配对应工作区。两种 order、普通
 **完成条件：** 选定范围内的完整多输出工作流正确，默认/SIMD 验证及在线零分配通过；
 公开契约与双语文档完整。首版不扩展 odd full-domain、其他后端、CBS 或秘密分布。
 
+**完成记录：** 已实现共享 `FactorizedLookupTable`、绑定 context 的
+`NttFactorizedLookupTable` 和独立 `FactorizedEvaluator`。经典/稀疏、两种 order、
+Scaled 输出与既有 PBS 对照及在线零分配通过；新增两个共享测试和一个集成测试。
+实际接口、验证参数与边界见 [MVB 实现契约](tfhe-mvb.md#5-编译产物预处理与工作区)。
+
 ## P4.3 比较与应用入口
 
 **依赖：** P4.2。

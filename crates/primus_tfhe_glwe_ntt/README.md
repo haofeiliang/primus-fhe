@@ -2,7 +2,7 @@
 
 English | [简体中文](README.zh_CN.md)
 
-GLWE-based TFHE over an explicit field modulus. Supports both PBS orders, ManyLUT,
+GLWE-based TFHE over an explicit field modulus. Supports both PBS orders, ManyLUT, factorized MVB,
 Boolean gates and secret/public-key clients. See the [capability and encoding guide](../primus_tfhe/README.md)
 and [GLWE parameter/key domains](../primus_tfhe_glwe/README.md).
 
@@ -49,6 +49,43 @@ Low-level `NttGlweBootstrappingKey<T, LM>` retains the input modulus type `LM`, 
 of the accumulator modulus. Key generation prepares the ordinary-PBS
 quantizer. ManyLUT prepares the conversion for the rotation step before coefficient
 processing; the high-level context keeps its existing parameter restrictions.
+
+## Fixed-scale factorized MVB
+
+Compile once with an unsigned `ScaledCodec`, then reuse a dedicated evaluator:
+
+```rust,ignore
+use primus_encoding::ScaledCodec;
+
+let codec = ScaledCodec::new(2u32, context.parameters().glwe().cipher_modulus());
+// This example assumes t_in >= 8 and sufficient input/output noise margins.
+let lut = context.compile_factorized_lookup_table_fn(
+    &codec, 4, 3, |m, i| u32::from(m > i),
+)?;
+let mut evaluator = context.factorized_evaluator(&server_key)?;
+let mut outputs = vec![LweCiphertext::zero(context.parameters().ciphertext_lwe_dimension()); 3];
+let input = encryptor.encrypt_padded(2, &mut rng)?;
+evaluator.apply_lookup_table_to(&input, &lut, &mut outputs);
+assert_eq!(codec.decode_value(decryptor.decrypt_phase(&outputs[1])?), 1);
+```
+
+The arguments after the codec are the input prefix length and exact output count.
+Compilation returns `NttFactorizedLookupTable`, borrowing this context; a different
+context instance is rejected even with identical q and N. Lower-level callers
+can compile `FactorizedLookupTable` and consume it through `NttFactorizedLookupTable::new`.
+NTT preparation transforms the factors in place and retains no coefficient copies.
+
+Classic and sparse keys work in both orders. BK runs BR once, then multiplies and
+key-switches each output; KB switches the input once, then runs BR and the products.
+Rotation step remains one for any positive output count. `_to` checks context,
+input, output count and every output dimension before writing, and allocates nothing.
+Extra workspace is one `(d+1)*N`-coefficient NTT GLWE, independent of output count;
+ordinary evaluators are unchanged. The program stores `(output_count+1)*N` coefficients.
+
+Use the output codec to decode phases. Factor norms amplify BR noise, and Scaled
+centers can differ from Rounded centers when chaining PBS. See the
+[shared contract](../primus_tfhe/README.md#fixed-scale-factorized-mvb) and
+[functional test](tests/factorized_pbs.rs). Performance comparisons are deferred to P4.3.
 
 ## Experimental sparse PBS
 

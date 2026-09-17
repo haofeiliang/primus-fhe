@@ -13,19 +13,19 @@ Start with a backend example below for an end-to-end workflow.
 | [GLWE parameters and clients](../primus_tfhe_glwe/README.md) | [GLWE NTT](../primus_tfhe_glwe_ntt/README.md) | [GLWE Fourier](../primus_tfhe_glwe_fourier/README.md) |
 | [NTRU parameters and clients](../primus_tfhe_ntru/README.md) | [NTRU NTT](../primus_tfhe_ntru_ntt/README.md) | [NTRU Fourier](../primus_tfhe_ntru_fourier/README.md) |
 
-| Backend | Ciphertext modulus | PBS / ManyLUT | Boolean gates | CBS |
-| --- | --- | --- | --- | --- |
-| GLWE NTT | Explicit field | Yes | Yes | Yes |
-| GLWE Fourier | Native torus | Yes | Yes | Not implemented |
-| NTRU NTT | Explicit field | Yes | Not implemented | Yes |
-| NTRU Fourier | Native torus | Yes | Not implemented | Yes |
+| Backend | Ciphertext modulus | PBS / ManyLUT | Factorized MVB | Boolean gates | CBS |
+| --- | --- | --- | --- | --- | --- |
+| GLWE NTT | Explicit field | Yes | Yes | Yes | Yes |
+| GLWE Fourier | Native torus | Yes | Not implemented | Yes | Not implemented |
+| NTRU NTT | Explicit field | Yes | Not implemented | Not implemented | Yes |
+| NTRU Fourier | Native torus | Yes | Not implemented | Not implemented | Yes |
 
 All four backends support secret-key and LWE public-key clients. Fourier backends
 support RustFFT and TfheFFT. Parameters and APIs are experimental; example and
 benchmark fixtures are not production security or failure-probability recommendations.
 
 GLWE NTT also supports [experimental sparse PBS](../primus_tfhe_glwe_ntt/README.md#experimental-sparse-pbs)
-for fixed-weight binary small secrets: both orders and ordinary/interleaved LUTs.
+for fixed-weight binary small secrets: both orders and ordinary/interleaved/factorized LUTs.
 Sparse CBS is not supported.
 
 ## LUTs and resource lifetime
@@ -135,7 +135,7 @@ responsible for keeping the input within the table's programmed prefix.
 
 ### Choosing the output encoding
 
-Family/context LUT compilation methods take `&RoundedCodec<T, M>` as their first
+Ordinary and interleaved family/context LUT compilation methods take `&RoundedCodec<T, M>` as their first
 argument. Input parameters determine the rotation centers and, together with the
 chosen compilation mode, the input domain. The output codec determines `t_out`,
 validates values in `0..t_out` and encodes them with unsigned embedding.
@@ -249,11 +249,34 @@ prevents plaintext-index wrap; it does not establish a noise margin. This is a
 bounded single-output workflow, not arbitrary-precision integer arithmetic or
 LWE-to-ring packing. See the runnable [NTRU NTT example](../primus_tfhe_ntru_ntt/examples/ntru_ntt_basic.rs).
 
+## Fixed-scale factorized MVB
+
+`FactorizedLookupTable::try_new(D, N, output_count, input_codec, output_codec, function)`
+compiles a nonempty front-half prefix using Rounded input and unsigned Scaled output.
+The coefficient modulus must be explicit and odd. For each unscaled integer LUT
+`p_i`, it stores `W_i=(1-X)*p_i` and a common `V=(delta*inv2)*sum(X^j)`, satisfying
+`V*W_i=delta*p_i` in the negacyclic ring. The callback receives `(input, output_index)`
+once per pair, with **output index outermost**. Factors remain canonical modulo q,
+not modulo the plaintext modulus; signed lifts determine their noise amplification.
+
+All outputs share one BR at step one and then apply separate public polynomial
+products. Positive output count is unpadded and does not reduce input capacity;
+each output instead amplifies BR error by its factor. Input geometry alone is
+not a sufficient noise budget. The Scaled codec must be retained for phase
+decoding; chaining into Rounded-input PBS must account for differing centers.
+
+The first backend is [GLWE NTT](../primus_tfhe_glwe_ntt/README.md#fixed-scale-factorized-mvb),
+using classic or sparse keys and both orders. Its prepared program borrows one
+context and its separate evaluator reuses scratch. Odd full-domain MVB, other
+backends and CBS outputs are outside this implementation. Algebra and noise
+conditions are detailed in the [MVB design](../../docs/tfhe-mvb.md).
+
 ## Source layout
 
-The three public types are exported from the crate root. Odd full-domain compilation
+The four public types are exported from the crate root. Odd full-domain compilation
 is a `LookupTable` constructor; `InterleavedLookupTable` owns output lanes and
-`BivariateLookupTable` owns input packing.
+`BivariateLookupTable` owns input packing. `FactorizedLookupTable` owns the common
+polynomial and coefficient-domain difference factors.
 
 | File | Responsibility |
 | --- | --- |
@@ -263,6 +286,7 @@ is a `LookupTable` constructor; `InterleavedLookupTable` owns output lanes and
 | [single.rs](src/lookup_table/single.rs) | Single-output type with both front-half and odd full-domain constructors |
 | [interleaved.rs](src/lookup_table/interleaved.rs) | Multi-output type, padded output count and effective output count |
 | [bivariate.rs](src/lookup_table/bivariate.rs) | Input bounds and packing tied to an ordinary LUT |
+| [factorized.rs](src/lookup_table/factorized.rs) | Fixed-scale common polynomial and negacyclic difference factors |
 | [compile.rs](src/lookup_table/compile.rs) | Shared encoding validation, midpoints and negacyclic tail filling |
 | [compile/front_half.rs](src/lookup_table/compile/front_half.rs) | Front-half single/interleaved compilation, domain and slot capacity checks |
 | [compile/odd_full_domain.rs](src/lookup_table/compile/odd_full_domain.rs) | Odd-domain checks, signed centers and interval filling |

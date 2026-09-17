@@ -14,6 +14,7 @@ pub mod rotation;
 pub use bootstrap::{ProgrammableBootstrap, ProgrammableBootstrapInterleaved};
 pub use error::{LookupTableError, TfheEvaluationError};
 pub use lookup_table::{
-    BivariateLookupTable, InterleavedLookupTable, LookupTable, front_half_domain_len,
+    BivariateLookupTable, FactorizedLookupTable, InterleavedLookupTable, LookupTable,
+    front_half_domain_len,
 };
 pub use primus_lwe::{LweCiphertext, LweSecretKeyRef};

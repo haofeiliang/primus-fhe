@@ -2,7 +2,7 @@
 
 [English](README.md) | 简体中文
 
-基于 GLWE、采用显式域模数的 TFHE 后端。支持两种 PBS order、ManyLUT、Boolean 门及私钥/公钥客户端。
+基于 GLWE、采用显式域模数的 TFHE 后端。支持两种 PBS order、ManyLUT、分解式 MVB、Boolean 门及私钥/公钥客户端。
 完整能力与编码约定见[公共指南](../primus_tfhe/README.zh_CN.md)，
 参数与秘密域见 [GLWE family](../primus_tfhe_glwe/README.zh_CN.md)。
 
@@ -40,6 +40,40 @@ cargo run -p primus_tfhe_glwe_ntt --example ntt_basic
 低层 `NttGlweBootstrappingKey<T, LM>` 保留输入模数类型 `LM`，与 accumulator 模数独立。
 密钥生成时准备普通 PBS 量化参数；ManyLUT 在系数循环前按旋转步长准备转换。
 高层 context 保持既有参数约束。
+
+## 固定尺度分解式 MVB
+
+使用 unsigned `ScaledCodec` 编译一次，随后复用独立 evaluator：
+
+```rust,ignore
+use primus_encoding::ScaledCodec;
+
+let codec = ScaledCodec::new(2u32, context.parameters().glwe().cipher_modulus());
+// 此例要求 t_in >= 8，并具备足够的输入和输出噪声余量。
+let lut = context.compile_factorized_lookup_table_fn(
+    &codec, 4, 3, |m, i| u32::from(m > i),
+)?;
+let mut evaluator = context.factorized_evaluator(&server_key)?;
+let mut outputs = vec![LweCiphertext::zero(context.parameters().ciphertext_lwe_dimension()); 3];
+let input = encryptor.encrypt_padded(2, &mut rng)?;
+evaluator.apply_lookup_table_to(&input, &lut, &mut outputs);
+assert_eq!(codec.decode_value(decryptor.decrypt_phase(&outputs[1])?), 1);
+```
+
+codec 后依次是输入前缀长度和有效输出数。编译返回借用本 context 的
+`NttFactorizedLookupTable`；即使 q、N 相同，换一个 context 实例执行也会拒绝。
+低层调用方可先编译 `FactorizedLookupTable`，再交给 `NttFactorizedLookupTable::new` 消费。
+NTT 预处理原地变换因子，不保留其系数域副本。
+
+两种 order 均支持经典/稀疏密钥。BK 共享一次 BR，再逐输出乘法和 KS；KB 先共享
+输入 KS，再 BR 和逐输出乘法。任意正输出数均保持旋转步长 1。`_to` 在写入前检查
+context、输入、输出数量和全部输出维数，在线零分配。额外工作区仅为一个包含
+`(d+1)*N` 个系数的 NTT GLWE，与输出数量无关；普通 evaluator 不变。
+程序保存 `(output_count+1)*N` 个系数。
+
+相位解码使用输出 codec。因子范数会放大 BR 噪声；串联 PBS 时还需考虑 Scaled 与
+Rounded 中心差异。见[共享契约](../primus_tfhe/README.zh_CN.md#固定尺度分解式-mvb)及
+[功能测试](tests/factorized_pbs.rs)；性能比较留待 P4.3。
 
 ## 实验性稀疏 PBS
 

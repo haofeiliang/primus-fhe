@@ -12,18 +12,18 @@
 | [GLWE 参数与客户端](../primus_tfhe_glwe/README.zh_CN.md) | [GLWE NTT](../primus_tfhe_glwe_ntt/README.zh_CN.md) | [GLWE Fourier](../primus_tfhe_glwe_fourier/README.zh_CN.md) |
 | [NTRU 参数与客户端](../primus_tfhe_ntru/README.zh_CN.md) | [NTRU NTT](../primus_tfhe_ntru_ntt/README.zh_CN.md) | [NTRU Fourier](../primus_tfhe_ntru_fourier/README.zh_CN.md) |
 
-| 后端 | 密文模数 | PBS / ManyLUT | Boolean 门 | CBS |
-| --- | --- | --- | --- | --- |
-| GLWE NTT | 显式域模数 | 支持 | 支持 | 支持 |
-| GLWE Fourier | 原生 torus | 支持 | 支持 | 未实现 |
-| NTRU NTT | 显式域模数 | 支持 | 未实现 | 支持 |
-| NTRU Fourier | 原生 torus | 支持 | 未实现 | 支持 |
+| 后端 | 密文模数 | PBS / ManyLUT | 分解式 MVB | Boolean 门 | CBS |
+| --- | --- | --- | --- | --- | --- |
+| GLWE NTT | 显式域模数 | 支持 | 支持 | 支持 | 支持 |
+| GLWE Fourier | 原生 torus | 支持 | 未实现 | 支持 | 未实现 |
+| NTRU NTT | 显式域模数 | 支持 | 未实现 | 未实现 | 支持 |
+| NTRU Fourier | 原生 torus | 支持 | 未实现 | 未实现 | 支持 |
 
 四后端均支持私钥和 LWE 公钥客户端。Fourier 后端支持 RustFFT 与 TfheFFT。
 参数和 API 仍处于实验阶段；示例及 benchmark fixture 不是生产安全参数或失败概率建议。
 
 GLWE NTT 另支持固定重量二元 small 秘密的[实验性稀疏 PBS](../primus_tfhe_glwe_ntt/README.zh_CN.md#实验性稀疏-pbs)：
-两种 order、普通/交错 LUT；稀疏 CBS 尚不支持。
+两种 order、普通/交错/分解式 LUT；稀疏 CBS 尚不支持。
 
 ## LUT 与资源生命周期
 
@@ -109,7 +109,7 @@ callback 报错或输出越界时立即停止，不返回部分编译的表。
 
 ### 选择输出编码
 
-两族参数/context 的 LUT 编译方法均以 `&RoundedCodec<T, M>` 为第一个参数。
+两族参数/context 的普通和交错 LUT 编译方法以 `&RoundedCodec<T, M>` 为第一个参数。
 输入参数决定旋转中心，并与所选编译模式共同决定输入域；
 输出 codec 决定 `t_out`，检查输出位于 `0..t_out`，并按 unsigned embedding 编码。
 交错 LUT 的各列共用这个 codec。其密文模数必须与 accumulator 一致，否则返回
@@ -208,10 +208,28 @@ BR 前可能发生的密钥切换误差及逐系数模切舍入。容量条件�
 这是有界单输出工作流，不是任意精度整数运算或 LWE 到环密文的 packing。
 完整运行示例见 [NTRU NTT](../primus_tfhe_ntru_ntt/examples/ntru_ntt_basic.rs)。
 
+## 固定尺度分解式 MVB
+
+`FactorizedLookupTable::try_new(D, N, output_count, input_codec, output_codec, function)`
+使用 Rounded 输入和 unsigned Scaled 输出编译非空前半区前缀。系数模数须显式且为奇数。
+对每个未缩放整数 LUT `p_i`，保存 `W_i=(1-X)*p_i` 和共同多项式
+`V=(delta*inv2)*sum(X^j)`，满足负循环环中的 `V*W_i=delta*p_i`。
+callback 每个组合调用一次，参数为 `(input, output_index)`，**外层遍历输出索引**。
+因子以模 q 的规范 residue 保存，不在明文模数下约简；有符号整数 lift 决定噪声放大。
+
+全部输出共享一次步长为 1 的 BR，再分别乘公开多项式。正输出数不补齐、不降低输入容量；
+代价是各输出的因子会放大 BR 噪声，输入几何检查不能代替噪声预算。解密相位须使用保留的
+Scaled codec；接入下一次 Rounded 输入 PBS 时须计入编码中心差异。
+
+首版后端为 [GLWE NTT](../primus_tfhe_glwe_ntt/README.zh_CN.md#固定尺度分解式-mvb)，
+支持经典/稀疏密钥和两种 order。预处理产物借用一个 context，独立 evaluator 复用工作区。
+本实现不含奇数全域 MVB、其他后端和 CBS 输出；代数与噪声条件见 [MVB 设计](../../docs/tfhe-mvb.md)。
+
 ## 源码组织
 
-三种公开类型均从 crate 根导出。奇数全域是 `LookupTable` 的构造方式，
+四种公开类型均从 crate 根导出。奇数全域是 `LookupTable` 的构造方式，
 输出槽布局由 `InterleavedLookupTable` 管理，双输入打包由 `BivariateLookupTable` 管理。
+`FactorizedLookupTable` 保存共同多项式与系数域差分因子。
 
 | 文件 | 职责 |
 | --- | --- |
@@ -221,6 +239,7 @@ BR 前可能发生的密钥切换误差及逐系数模切舍入。容量条件�
 | [single.rs](src/lookup_table/single.rs) | 单输出类型，集中前半区和奇数全域构造器 |
 | [interleaved.rs](src/lookup_table/interleaved.rs) | 多输出类型及补齐输出数、有效数量接口 |
 | [bivariate.rs](src/lookup_table/bivariate.rs) | 双输入范围、打包与普通 LUT 的绑定 |
+| [factorized.rs](src/lookup_table/factorized.rs) | 固定尺度共同多项式与负循环差分因子 |
 | [compile.rs](src/lookup_table/compile.rs) | 共用编码校验、中点与负循环尾部填充 |
 | [compile/front_half.rs](src/lookup_table/compile/front_half.rs) | 前半区单输出/交错编译、域与槽容量检查 |
 | [compile/odd_full_domain.rs](src/lookup_table/compile/odd_full_domain.rs) | 奇数域检查、中心折叠与区间填充 |

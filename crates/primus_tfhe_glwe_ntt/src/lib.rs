@@ -8,6 +8,11 @@
 //! Public PBS checks LUT encoding/moduli/length and all output dimensions before
 //! writing. Raw input key, encoding and noise remain caller requirements.
 //!
+//! [`TfheContext::compile_factorized_lookup_table_fn`] prepares fixed-scale MVB
+//! for [`FactorizedEvaluator`]: one BR at step one, followed by per-output
+//! polynomial products and extraction/KS. [`NttFactorizedLookupTable`] borrows
+//! the preparing context; outputs use the supplied [`primus_encoding::ScaledCodec`].
+//!
 //! [`KeyGenerator::try_generate_sparse_bootstrapping_key`] builds an experimental
 //! [`SparseGlweBootstrappingKey`] with public buckets and encrypted selections.
 //! Its raw LUT blind rotation reuses [`SparseGlweBlindRotationContext`].
@@ -48,11 +53,12 @@ pub use circuit_bootstrap::{
     CircuitBootstrapKeyError, CircuitBootstrapParameterError, CircuitBootstrapParameters,
 };
 pub use context::TfheContext;
-pub use evaluator::Evaluator;
+pub use evaluator::{Evaluator, FactorizedEvaluator, NttFactorizedLookupTable};
 pub use key::{BootstrappingKey, KeyGenerator, ServerKey};
 pub use parameters::{TfheParameters, boolean_parameters};
 pub use primus_tfhe::{
-    BivariateLookupTable, InterleavedLookupTable, LookupTable, LweCiphertext, LweSecretKeyRef,
+    BivariateLookupTable, FactorizedLookupTable, InterleavedLookupTable, LookupTable,
+    LweCiphertext, LweSecretKeyRef,
 };
 pub use primus_tfhe_glwe::{GlweClientKey as ClientKey, GlwePbsOrder as PbsOrder};
 pub use sparse::{
