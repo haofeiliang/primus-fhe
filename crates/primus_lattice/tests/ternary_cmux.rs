@@ -1,4 +1,5 @@
 use primus_decompose::primitive::ApproxSignedBasis;
+use primus_fft::{FftEngine, FftTable, RustFftTable, TfheFftTable, TorusFftValue};
 use primus_lattice::{
     GadgetSize, GlweSize, context::NttGlweTernaryCmuxContext, ggsw::Ggsw, glwe::Glwe,
 };
@@ -27,6 +28,88 @@ fn rotate(input: &[u32], exponent: isize) -> Vec<u32> {
         }
     }
     output
+}
+
+fn check_fourier_rotation<T: TorusFftValue, Table: FftTable>() {
+    use primus_lattice::{context::FourierGlweTernaryCmuxContext, ggsw::FourierGgswOwned};
+    let table = Table::new(N.trailing_zeros()).unwrap();
+    let mut fft = FftEngine::new(&table);
+    let glwe_size = GlweSize::new(2, N);
+    let stride = T::MAX / T::try_from(37usize).unwrap();
+    let input = Glwe::new(
+        (0..glwe_size.glwe_len())
+            .map(|i| {
+                stride
+                    .wrapping_mul(T::try_from(i).unwrap())
+                    .wrapping_add(T::ONE)
+            })
+            .collect::<Vec<_>>(),
+    );
+    for levels in [T::BITS as usize / 8, T::BITS as usize / 8 - 1] {
+        let basis = ApproxSignedBasis::<T>::new(None, 8, Some(levels));
+        let size = GadgetSize::new(glwe_size, levels);
+        let mut diagonal = Ggsw::new(vec![T::ZERO; size.ggsw_len()]);
+        for row in 0..glwe_size.component_count() {
+            for (level, scalar) in basis.scalar_iter().enumerate() {
+                diagonal.as_mut()[(row * levels + level) * glwe_size.glwe_len() + row * N] = scalar;
+            }
+        }
+        let mut one = FourierGgswOwned::zero(size.fourier_ggsw_len());
+        diagonal.write_fourier_form(&mut one, &mut fft);
+        let zero = FourierGgswOwned::zero(size.fourier_ggsw_len());
+        let mut context = FourierGlweTernaryCmuxContext::new(size);
+        let mut output = Glwe::new(vec![T::MAX; glwe_size.glwe_len()]);
+        // Numerical regression budget for this small ring: 2^-40 of the torus,
+        // at least one integer unit, separate from the decomposition error.
+        let floating_budget = T::ONE << T::BITS.saturating_sub(40);
+        for secret in [1isize, -1, 0] {
+            let positive = if secret == 1 { &one } else { &zero };
+            let negative = if secret == -1 { &one } else { &zero };
+            for exponent in (1..2 * N).chain([0]) {
+                positive.cmux_ternary_monomial_to(
+                    negative,
+                    &input,
+                    exponent,
+                    &mut output,
+                    &basis,
+                    &mut fft,
+                    &mut context,
+                );
+                let mut expected = vec![T::ZERO; glwe_size.glwe_len()];
+                for (i, &value) in input.as_ref().iter().enumerate() {
+                    let position = (i as isize % N as isize + exponent as isize * secret)
+                        .rem_euclid(2 * N as isize) as usize;
+                    expected[i / N * N + position % N] = if position < N {
+                        value
+                    } else {
+                        value.wrapping_neg()
+                    };
+                }
+                let bound = if secret == 0 || exponent == 0 {
+                    T::ZERO
+                } else {
+                    basis.approximate_error_bound() + floating_budget
+                };
+                for (&actual, expected) in output.as_ref().iter().zip(expected) {
+                    let distance = actual
+                        .wrapping_sub(expected)
+                        .min(expected.wrapping_sub(actual));
+                    assert!(
+                        distance <= bound,
+                        "s={secret}, exponent={exponent}, levels={levels}: {distance:?} > {bound:?}"
+                    );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn fourier_ternary_rotation_preserves_integer_scale_and_bounds_rounding_error() {
+    check_fourier_rotation::<u32, RustFftTable>();
+    check_fourier_rotation::<u64, RustFftTable>();
+    check_fourier_rotation::<u32, TfheFftTable>();
+    check_fourier_rotation::<u64, TfheFftTable>();
 }
 
 #[test]

@@ -61,7 +61,7 @@ Wrappers are generic over storage `S` using [`primus_data`](../primus_data/READM
 | Extraction | `extract_lwe_at_to`, compact extraction, packed RLWE extraction, `inverse_extract_glwe_to` |
 | External products | Fourier/NTT GGSW and NTRU gadget products; DCRT GLev polynomial products and GGSW products |
 | CMUX | GGSW/NGSW `cmux_to`, `cmux_k_to`, `cmux_monomial_to` |
-| Ternary rotation | NTT GGSW `cmux_ternary_monomial_to`, using a positive/negative control pair and one external product |
+| Ternary rotation | NTT/Fourier GGSW `cmux_ternary_monomial_to`, using a positive/negative control pair and one external product |
 
 Availability depends on the type and representation; this is a family overview, not a promise that every type has every method. RNS scalar/factor inputs use `primus_rns::Residues` and `ResidueFactors` in modulus order.
 
@@ -72,6 +72,11 @@ and `add_mul_monomial_assign`, plus `sub_mul_monomial_to` for `self - rhs * X^ex
 Pass the modulus, monomial NTT table, and a length-`N` scratch slice after the operands.
 The operations overwrite scratch with one monomial transform shared by all ciphertext
 polynomials, without allocation or conversion to coefficients.
+
+`FourierGgsw::sub_mul_monomial_to` performs the same subtraction using an FFT
+engine and scratch slices of `N` torus words and `N/2` complex values. It
+transforms the monomial at integer scale using the ciphertexts' exact table
+instance, preserving their torus scale and evaluation order.
 
 Full GLWE extraction flattens all mask polynomials into an LWE mask. Compact extraction requires the omitted secret-key suffix to be zero. Packed `MultiMsgLwe` represents one RLWE mask; conversion from truncated GLWE requires `k == 1`. Inverse extraction embeds the constant-term LWE sample and zero-fills unused storage; it does not reconstruct all coefficients of the original GLWE plaintext.
 
@@ -84,7 +89,7 @@ Checks belong at the highest layer that owns these parameters. This crate delibe
 | Workspace | What it binds |
 | --- | --- |
 | `FourierGlweExternalProductContext` / `NttGlweExternalProductContext` | GLWE layout and decomposition level count through `GadgetSize` |
-| `NttGlweTernaryCmuxContext` | Fixed `GadgetSize`; combined GGSW, monomial NTT, and external-product scratch |
+| `NttGlweTernaryCmuxContext` / `FourierGlweTernaryCmuxContext` | Fixed `GadgetSize`; combined GGSW, transformed monomial, and external-product scratch |
 | `FourierNtruExternalProductContext` / `NttNtruExternalProductContext` | Polynomial length for scalar NTRU gadget products |
 | `DcrtGlevMulContext` | RNS gadget layout and BigUint limb-width requirements |
 
@@ -94,9 +99,10 @@ Overwriting external products initialize their accumulator, and other scratch is
 
 `positive.cmux_ternary_monomial_to(&negative, ...)` uses mutually exclusive
 encrypted bits `s⁺, s⁻` to rotate by `X^(exponent * (s⁺-s⁻))`. Both controls use
-the same key, basis, and NTT table. The exponent is already quantized into
-`0..2N`; zero copies the input exactly. Evaluation reuses its context without
-allocation. This is a lattice primitive; complete TFHE ternary key generation
+the same key, basis, and NTT table or exact FFT table instance. Fourier controls
+use native-torus scale and a matching native basis. The exponent is already
+quantized into `0..2N`; zero copies the input exactly. Evaluation reuses its
+context without allocation. This is a lattice primitive; complete TFHE ternary key generation
 and evaluation are tracked separately in the [ternary plan](../../docs/tfhe-ternary.md).
 
 ## Example

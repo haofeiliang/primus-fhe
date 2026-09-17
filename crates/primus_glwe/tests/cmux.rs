@@ -1,4 +1,4 @@
-use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable};
+use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable, TfheFftTable};
 use primus_glwe::{
     FourierGadgetEncryptContext, FourierGlweDecryptContext, FourierGlweEncryptContext,
     FourierGlweSecretKey, GlevParameters, GlweParameters, NttGadgetEncryptContext,
@@ -197,7 +197,7 @@ fn ntt_cmux_selects_requested_glwe() {
 
 #[test]
 fn ntt_ternary_cmux_rotates_phase_with_encrypted_controls() {
-    use common::{K, N, assert_phase, encrypt, message, phase, secret};
+    use common::{K, N, encrypt, message, phase, secret};
     use primus_glwe::GlweSecretKey;
     use primus_lattice::context::NttGlweTernaryCmuxContext;
 
@@ -238,20 +238,98 @@ fn ntt_ternary_cmux_rotates_phase_with_encrypted_controls() {
                 &ntt,
                 &mut context,
             );
-            let mut expected = vec![0; N];
-            for (i, &value) in input_phase.iter().enumerate() {
-                let index =
-                    (i as isize + exponent as isize * selector).rem_euclid(2 * N as isize) as usize;
-                expected[index % N] = if index < N || value == 0 {
-                    value
-                } else {
-                    Q - value
-                };
-            }
-            assert_phase(output.as_ref(), &expected, &secret, u128::from(Q));
+            assert_rotated_phase(
+                &input_phase,
+                output.as_ref(),
+                &secret,
+                u128::from(Q),
+                exponent as isize * selector,
+            );
             if exponent == 0 {
                 assert_eq!(output.as_ref(), input.as_ref());
             }
         }
     }
+}
+
+// Independent signed-index rotation, followed by the shared schoolbook phase oracle.
+fn assert_rotated_phase(input: &[u64], output: &[u64], secret: &[i64], q: u128, exponent: isize) {
+    let n = input.len();
+    let mut expected = vec![0; n];
+    for (i, &value) in input.iter().enumerate() {
+        let index = (i as isize + exponent).rem_euclid(2 * n as isize) as usize;
+        expected[index % n] = if index < n || value == 0 {
+            value
+        } else {
+            (q - u128::from(value)) as u64
+        };
+    }
+    common::assert_phase(output, &expected, secret, q);
+}
+
+fn check_fourier_ternary_cmux<Table: FftTable>() {
+    use common::{K, N, encrypt, message, phase, secret};
+    use primus_glwe::GlweSecretKey;
+    use primus_lattice::context::FourierGlweTernaryCmuxContext;
+
+    const Q: u128 = 1 << 64;
+    let table = Table::new(N.trailing_zeros()).unwrap();
+    let mut fft = FftEngine::new(&table);
+    let glwe = GlweParameters::new(
+        K,
+        N,
+        16u64,
+        NativeModulus::new(),
+        SecretKeyDistr::SparseTernary,
+        0.7,
+    );
+    let params = GlevParameters::with_glwe_params(&glwe, 8, Some(3));
+    let secret = secret();
+    let coeff_key = GlweSecretKey::<u64>::new(secret.clone(), glwe.size(), glwe.secret_key_distr());
+    let key = FourierGlweSecretKey::from_coeff_secret_key(&coeff_key, &mut fft);
+    let mut rng = StdRng::seed_from_u64(51);
+    let input = encrypt(&message(Q), &secret, Q, &mut rng);
+    let input_phase = phase(input.as_ref(), &secret, Q);
+    let mut controls = vec![Complex64::default(); 2 * params.fourier_ggsw_len()];
+    let mut encrypt_context = FourierGadgetEncryptContext::new(params.size());
+    let mut context = FourierGlweTernaryCmuxContext::new(params.size());
+    let mut output = Glwe::new(vec![u64::MAX; params.glwe_len()]);
+    for selector in [1isize, -1, 0] {
+        key.encrypt_ggsw_constant_batch_to(
+            &[u64::from(selector == 1), u64::from(selector == -1)],
+            &mut controls,
+            &params,
+            &mut fft,
+            &mut rng,
+            &mut encrypt_context,
+        );
+        let (positive, negative) = controls.split_at(params.fourier_ggsw_len());
+        for exponent in (1..2 * N).chain([0]) {
+            FourierGgsw::new(positive).cmux_ternary_monomial_to(
+                &FourierGgsw::new(negative),
+                &input,
+                exponent,
+                &mut output,
+                params.basis(),
+                &mut fft,
+                &mut context,
+            );
+            assert_rotated_phase(
+                &input_phase,
+                output.as_ref(),
+                &secret,
+                Q,
+                exponent as isize * selector,
+            );
+            if exponent == 0 {
+                assert_eq!(output.as_ref(), input.as_ref());
+            }
+        }
+    }
+}
+
+#[test]
+fn fourier_ternary_cmux_rotates_phase_with_encrypted_controls() {
+    check_fourier_ternary_cmux::<RustFftTable>();
+    check_fourier_ternary_cmux::<TfheFftTable>();
 }

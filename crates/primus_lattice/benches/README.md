@@ -6,7 +6,7 @@ key switching, and PBS must also be measured in their owning TFHE/scheme crates.
 
 | Target | Path and operations |
 | --- | --- |
-| `glwe_fourier` | GGSW external product and monomial CMUX, RustFFT and TFHE FFT |
+| `glwe_fourier` | GGSW external product, monomial CMUX, and ternary fused/two-CMUX comparison, both FFT backends |
 | `glwe_ntt` | GGSW coefficient-output/NTT-output external product, monomial CMUX, and ternary fused/two-CMUX comparison |
 | `ntru_fourier` | NGSW coefficient/Fourier-output external product and monomial CMUX, both FFT backends |
 | `ntru_ntt` | NGSW coefficient/NTT-output external product and monomial CMUX |

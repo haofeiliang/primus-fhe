@@ -1,6 +1,6 @@
 # Ternary LWE secret 与融合盲旋转
 
-本文记录算法选择、数学契约和实施进度。**T1 的 NTT 单步原语已实现；完整 ternary TFHE 支持尚未接入**。算法清单见 [后续候选](tfhe-next.md)，当前任务以 [HANDOFF](../HANDOFF.md) 为准。
+本文记录算法选择、数学契约和实施进度。**T1/T2 的 NTT/Fourier 单步原语已实现；完整 ternary TFHE 支持尚未接入**。算法清单见 [后续候选](tfhe-next.md)，当前任务以 [HANDOFF](../HANDOFF.md) 为准。
 
 首个目标为经典 **GLWE NTT / Fourier**：真正进入 BR 的 small-LWE 秘密可以取 `-1/0/1`。沿用现有 LUT、量化和两种 PBS order；binary 路径保留。NTRU ternary、桶聚合稀疏 ternary、automorphism BR 分开安排。
 
@@ -127,7 +127,10 @@ Fourier 实现还须计入浮点运算与逆变换误差；上式是其精确环
 
 组合仍可在 Fourier 域逐点完成，单项式因子必须是**整数尺度**，不能通过 torus 缩放生成。变换顺序依赖实际 `FftTable` 实例，不能硬编码另一张表的自然频率顺序。
 
-当前没有与 `MonomialNttTable` 对应的直接单项式接口。原型可用现有 `forward_as_integer` 变换单个单项式，建立正确性和成本参照；再决定是否增加与表绑定的直接生成能力。避免为全部 `2N` 指数预存 `O(N²)` 张量，也避免每坐标重新变换完整 GGSW。最终选择取决于与双 CMUX 的实测对照。
+T2 使用 `FourierGgsw::sub_mul_monomial_to`：通过现有 `forward_as_integer` 变换一个单项式，
+随后逐点组合完整 GGSW。系数单项式复用外积的 digit buffer，组合后由分解覆盖；不重新变换
+控制密文。实测单项式 FFT 只占基准融合单步的约 2.6%–3.4%，因此暂不增加直接生成接口、
+频率布局 trait 或按指数预存的表。此选择适用于当前测量布局，后续可按完整 PBS 成本复核。
 
 ### 成本预期与限制
 
@@ -143,7 +146,7 @@ Fourier 实现还须计入浮点运算与逆变换误差；上式是其精确环
 | [GLWE TFHE 参数](../crates/primus_tfhe_glwe/src/parameters.rs) | 当前只接受 binary small-LWE；扩大接受范围时同步真实密钥、BSK/KSK 的兼容性 |
 | [GLWE client key](../crates/primus_tfhe_glwe/src/key.rs) | padded ring secret 当前直接 `cast_to_signed`；显式模数下须将 `q-1` 还原为 `-1`，其余 padding 保持零 |
 | [NTT BSK](../crates/primus_tfhe_glwe_ntt/src/bootstrapping_key.rs) / [Fourier BSK](../crates/primus_tfhe_glwe_fourier/src/bootstrapping_key.rs) | 按 ternary 系数生成互斥的两个加密 selector，明确布局与溢出边界 |
-| [Ternary CMUX](../crates/primus_lattice/src/ggsw/ternary.rs) 与 [外积](../crates/primus_lattice/src/ggsw/external_product.rs) | T1 已增加 NTT 一次融合外积及对应 scratch；binary CMUX 仍只接收 bit 控制，Fourier 待 T2 |
+| [Ternary CMUX](../crates/primus_lattice/src/ggsw/ternary.rs) 与 [外积](../crates/primus_lattice/src/ggsw/external_product.rs) | T1/T2 已增加 NTT/Fourier 融合单步及对应 scratch；binary CMUX 仍只接收 bit 控制 |
 | [NTT BR](../crates/primus_tfhe_glwe_ntt/src/blind_rotation.rs) / [Fourier BR](../crates/primus_tfhe_glwe_fourier/src/blind_rotation.rs) | 循环外分派，复用量化、初始化、buffer 交换与公开零指数跳过 |
 | ServerKey / evaluator / CBS / MVB | 两种 order 都以 small-LWE 为 BR 秘密；迁移布局消费者并验证后处理，不能只放开参数枚举 |
 
@@ -153,7 +156,7 @@ Ternary 剩余类到有符号系数的转换在 key 构造/导入边界完成。
 
 ## 6. 实施顺序与完成条件
 
-以下按独立实施单元推进；T1 完成，T2/T3 尚未实施。
+以下按独立实施单元推进；T1/T2 完成，下一步为 T3。
 
 ### T1：NTT 单步原语与成本对照（已完成）
 
@@ -221,11 +224,75 @@ taskset -c 2 cargo +nightly bench -p primus_lattice --bench glwe_ntt --features 
 | 1024 / 1 / 2 | 25 | 53 |
 | 1024 / 2 / 3 | 33 | 133 |
 
-### T2：Fourier 单步原语
+### T2：Fourier 单步原语（已完成）
 
-- 建立整数尺度、表实例及单项式频率布局的契约，对照系数域 oracle。
-- 先测单多项式 FFT 原型，再按证据决定直接单项式生成；检查浮点误差与完整单步成本。
-- T1/T2 只增加底层能力，不提前把尚未接入的 TFHE 参数声明为支持 ternary。
+入口为 `positive.cmux_ternary_monomial_to(&negative, &input, exponent, &mut output,
+&basis, &mut fft, &mut context)`，工作区为 `FourierGlweTernaryCmuxContext::new(size)`。
+组合调用 `FourierGgsw::sub_mul_monomial_to`，保持与 NTT 相同的数学职责；Fourier 方法显式
+接收 FFT engine、长度 `N` 的整数 scratch 和长度 `N/2` 的复数 scratch。只增加实际使用的
+GGSW 方法，没有扩展全部 Fourier 密文的单项式方法族。零指数 CMUX 精确复制输入；
+单独调用 `sub_mul_monomial_to` 的零指数则计算 `self - rhs`。
+
+常驻验证集中在已有文件：`lattice/tests/ternary_cmux.rs` 用 `u32/u64`、两种 FFT 后端、
+完整/截断分解检查独立系数 oracle；`lattice/tests/fourier.rs` 直接检查稠密 GGSW 的单项式减法；
+`glwe/tests/cmux.rs` 用真实独立加密控制和 schoolbook phase 检查三个秘密值。小环遍历全部
+指数并复用脏 scratch。没有新增完整 PBS 测试矩阵，TFHE 参数仍未放开 ternary。
+
+#### T2 测量与取舍
+
+测量日期、机器、CPU 2、nightly 工具链与 Criterion 设置同 T1；两种配置均使用 nightly。
+固定 `u64, q=2^64, log B=8, α=floor(N/3)`，分别使用 RustFFT / TFHE-FFT 的表布局。
+数据生成、表和控制变换、分配均在计时外；每次迭代执行一次完整单步并返回系数域结果。
+下表为接口提取前的均值，95% 区间与接口提取后的复测见 [CSV](benchmarks/tfhe-ternary-t2.csv)。
+
+| FFT / N / k / ℓ | 默认：双 CMUX → 融合（µs） | SIMD：双 CMUX → 融合（µs） |
+| --- | --- | --- |
+| RustFFT / 1024 / 1 / 3 | 23.908 → 14.037（−41.3%） | 23.861 → 14.176（−40.6%） |
+| RustFFT / 2048 / 1 / 3 | 53.449 → 31.137（−41.7%） | 53.444 → 31.493（−41.1%） |
+| RustFFT / 1024 / 1 / 2 | 20.858 → 12.157（−41.7%） | 20.503 → 12.142（−40.8%） |
+| RustFFT / 1024 / 2 / 3 | 37.583 → 23.187（−38.3%） | 38.531 → 22.926（−40.5%） |
+| TFHE-FFT / 1024 / 1 / 3 | 22.324 → 12.898（−42.2%） | 21.838 → 12.547（−42.5%） |
+| TFHE-FFT / 2048 / 1 / 3 | 46.122 → 27.420（−40.5%） | 46.392 → 26.845（−42.1%） |
+| TFHE-FFT / 1024 / 1 / 2 | 18.673 → 11.052（−40.8%） | 19.738 → 11.355（−42.5%） |
+| TFHE-FFT / 1024 / 2 / 3 | 34.459 → 21.387（−37.9%） | 34.857 → 20.744（−40.5%） |
+
+常驻入口复用 `primus_lattice/benches/glwe_fourier.rs` 的四组布局和两种后端，新增
+`ternary_two_cmux` / `ternary_fused`。稠密算术控制与热工作区的限制同 T1，不能外推完整 PBS
+或等安全参数的性能。
+
+控制组合提取为 `sub_mul_monomial_to` 后，分轮复测曾出现少量 3%–5% 的上升；随后将原内联
+实现和新接口放在同一进程、同一工作区中逐项对照。八项布局/后端的变化为默认
+**−0.27%～+0.69%**、SIMD **−0.47%～+0.39%**，未重现明显回退，因此保留接口拆分。
+CSV 的 `t2-interface-paired-*` 保存同进程结果；临时 `t2_inline_reference` 已移除。
+
+```sh
+taskset -c 2 cargo +nightly bench -p primus_lattice --bench glwe_fourier -- 'ternary_' --warm-up-time 1 --measurement-time 3 --sample-size 50 --save-baseline t2-fft-default --noplot
+taskset -c 2 cargo +nightly bench -p primus_lattice --bench glwe_fourier --features simd -- 'ternary_' --warm-up-time 1 --measurement-time 3 --sample-size 50 --save-baseline t2-fft-simd --noplot
+```
+
+一次性拆分测量包含单项式清零、写入 `±1` 和整数 FFT，输出复用已有缓冲。
+`N=1024, k=1, ℓ=3` 时默认耗时为 RustFFT **0.477 µs**、TFHE-FFT **0.331 µs**，
+SIMD 为 **0.472/0.336 µs**。直接生成接口尚未实现或对测；按这部分的成本占比选择保留 FFT，
+不宣称它已经是最快实现。拆分用例已移除，CSV 中保留 `t2_profile_monomial_fft` 数据。
+
+浮点诊断采用上述四组布局、无噪声对角控制、三种秘密值和
+`α∈{0,1,⌊N/3⌋,N/2,N,N+1,2N−1}`。先独立计算 `Y=(X^α−1)C` 并舍入到保留的 gadget
+位数，再按控制计算理想增量，从而将分解残差与浮点误差分开。两种后端和 feature 下观测到的
+最大浮点偏差不超过 **10240 个 u64 单位（约 5.55×10^-16 torus）**；这是有限确定性样本，
+不是全局误差界或失败率证明。同一诊断逐次记录的在线分配数为零；大型诊断已移除，常驻小环
+测试保留数值回归覆盖，完整 PBS 分配验收属于 T3。
+
+Scratch 按逻辑 payload 计，不含 `Vec` 元数据、allocator 开销、输入、输出、控制密钥、
+FFT 表和 engine 自身的变换工作区。外积 context 为
+`N*sizeof(T)+8(k+2)N+N` 字节；融合新增 `[ℓ(k+1)²+1]*(N/2)*sizeof(Complex64)`。
+系数单项式复用 digit buffer；双 CMUX 则额外需要 `(k+1)N*sizeof(T)` 的中间 GLWE。
+
+| N / k / ℓ（u64） | 双 CMUX scratch（KiB） | 融合 scratch（KiB） |
+| --- | --- | --- |
+| 1024 / 1 / 3 | 49 | 137 |
+| 2048 / 1 / 3 | 98 | 274 |
+| 1024 / 1 / 2 | 49 | 105 |
+| 1024 / 2 / 3 | 65 | 265 |
 
 ### T3：完整 GLWE 接入与验收
 
@@ -245,5 +312,5 @@ taskset -c 2 cargo +nightly bench -p primus_lattice --bench glwe_ntt --features 
 ## 8. 证据边界
 
 本机笔记与现有参数/key、BSK、NTT BR/CMUX/外积、单项式 NTT、Fourier 表契约已作定向核对。
-T1 已有 NTT 单步实现、独立 oracle、真实控制加密验证和单步性能测量；尚无完整 ternary PBS、
-Fourier 单步或完整噪声统计论证。单步性能不能代替 T3 的整把密钥访问和端到端测量。
+T1/T2 已有 NTT/Fourier 单步实现、独立 oracle、真实控制加密验证和单步性能测量；尚无完整
+ternary PBS 或完整噪声统计论证。单步性能不能代替 T3 的整把密钥访问和端到端测量。

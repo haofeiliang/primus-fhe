@@ -5,9 +5,9 @@
 ## 当前任务
 
 - 旧 S0–S9 及 LUT/PBS 的 **P1–P4 已完成**；[完成索引](docs/tfhe-plan.md)只用于恢复，不重开旧步骤。基础 crate 的既有整理也不自动重启。
-- 当前方向是 **ternary LWE secret 的经典 GLWE PBS**；[T1 的 NTT 单步原语与成本对照](docs/tfhe-ternary.md#6-实施顺序与完成条件)已完成。下一步为 T2：Fourier 单步原语；完整 GLWE TFHE 接入仍属于 T3，参数尚未放开 ternary。
+- 当前方向是 **ternary LWE secret 的经典 GLWE PBS**；[T1/T2 的 NTT/Fourier 单步原语与成本对照](docs/tfhe-ternary.md#6-实施顺序与完成条件)已完成。下一步为 T3：完整 GLWE TFHE 接入，参数尚未放开 ternary。
 - 选用用户的融合式：`ACC += (GGSW(s⁺)-X^-α GGSW(s⁻)) ⊠ ((X^α-1)ACC)`。每坐标两份控制、一次外积；保留 binary 路径。负指数取自同一量化结果，笔记的噪声均值抵消尚需验证。
-- T1 保留完整组合 GGSW 工作区，控制组合复用通用 NTT `sub_mul_monomial_to`，随后调用已有外积；逐多项式组合原型没有稳定收益，已移除。接口、测试、scratch 和默认/SIMD 单步测量见专项文档；不外推为完整 PBS 性能。
+- 两后端保留完整组合 GGSW 工作区，控制组合调用各自的 `sub_mul_monomial_to`，随后调用已有外积。Fourier 用同一 FFT 表的整数尺度单项式变换，复用 digit buffer；实测成本较小，暂不增加直接生成接口。NTT 逐多项式组合原型没有稳定收益，已移除。默认/SIMD 单步测量与 scratch 见专项文档，不外推为完整 PBS 性能。
 
 ## 有效边界与未决项
 

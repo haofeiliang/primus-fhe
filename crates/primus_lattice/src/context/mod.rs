@@ -13,7 +13,7 @@ pub use glwe_external_product::{FourierGlweExternalProductContext, NttGlweExtern
 pub(crate) use glwe_external_product::{
     FourierGlweExternalProductContextRefMut, NttGlweExternalProductContextRefMut,
 };
-pub use glwe_ternary_cmux::NttGlweTernaryCmuxContext;
+pub use glwe_ternary_cmux::{FourierGlweTernaryCmuxContext, NttGlweTernaryCmuxContext};
 pub use ntru_external_product::{FourierNtruExternalProductContext, NttNtruExternalProductContext};
 pub(crate) use ntru_external_product::{
     FourierNtruExternalProductContextRefMut, NttNtruExternalProductContextRefMut,

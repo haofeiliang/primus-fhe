@@ -7,7 +7,7 @@ use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{FftEngine, FftTable, RustFftTable, TfheFftTable};
 use primus_lattice::{
     GadgetSize, GlweSize,
-    context::FourierGlweExternalProductContext,
+    context::{FourierGlweExternalProductContext, FourierGlweTernaryCmuxContext},
     ggsw::{FourierGgswOwned, Ggsw},
     glwe::Glwe,
 };
@@ -49,6 +49,19 @@ fn fourier(
     coeff_key.write_fourier_form(&mut key, &mut fft);
     let mut output = Glwe::new(vec![0u64; glwe_len]);
     let mut context = FourierGlweExternalProductContext::new(size);
+    let negative_coeff_key = Ggsw::new(
+        (0..size.ggsw_len())
+            .map(|i| {
+                (i as u64)
+                    .wrapping_mul(0xa24b_aed4_963e_e407)
+                    .wrapping_add(13)
+            })
+            .collect::<Vec<_>>(),
+    );
+    let mut negative_key = FourierGgswOwned::zero(size.fourier_ggsw_len());
+    negative_coeff_key.write_fourier_form(&mut negative_key, &mut fft);
+    let mut intermediate = Glwe::new(vec![0u64; glwe_len]);
+    let mut ternary_context = FourierGlweTernaryCmuxContext::new(size);
 
     let mut group = c.benchmark_group(format!(
         "glwe/fourier/{backend}/u64/native/n{}/k{dimension}/logb{LOG_B}/l{levels}",
@@ -77,6 +90,41 @@ fn fourier(
                 black_box(&mut context),
             )
         });
+    });
+    // Same two controls and coefficient-domain endpoint. Setup and allocation
+    // are outside timing; each iteration evaluates one ternary step.
+    group.bench_function("ternary_two_cmux", |b| {
+        b.iter(|| {
+            black_box(&key).cmux_monomial_to(
+                black_box(&input),
+                black_box(exponent),
+                black_box(&mut intermediate),
+                black_box(&basis),
+                black_box(&mut fft),
+                black_box(&mut context),
+            );
+            black_box(&negative_key).cmux_monomial_to(
+                black_box(&intermediate),
+                black_box(2 * table.poly_length() - exponent),
+                black_box(&mut output),
+                black_box(&basis),
+                black_box(&mut fft),
+                black_box(&mut context),
+            );
+        })
+    });
+    group.bench_function("ternary_fused", |b| {
+        b.iter(|| {
+            black_box(&key).cmux_ternary_monomial_to(
+                black_box(&negative_key),
+                black_box(&input),
+                black_box(exponent),
+                black_box(&mut output),
+                black_box(&basis),
+                black_box(&mut fft),
+                black_box(&mut ternary_context),
+            );
+        })
     });
     group.finish();
 }

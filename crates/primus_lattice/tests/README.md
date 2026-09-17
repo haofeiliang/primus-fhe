@@ -10,12 +10,12 @@ key generation, and decryptability belong to the higher-level scheme crates.
 | `layout.rs` | Checked size boundaries, gadget level preservation across representations, RNS workspace compatibility |
 | `arithmetic.rs` | Borrowed/owned single-modulus arithmetic, scalar/factor products and fused accumulation |
 | `rns_arithmetic.rs` | Component/modulus order and per-modulus scalar/factor arithmetic (`rns`) |
-| `fourier.rs` | Complex arithmetic and integer-polynomial/torus-ciphertext scaling with both FFT backends |
+| `fourier.rs` | Complex arithmetic, polynomial scaling, and GGSW monomial subtraction against a coefficient oracle with both FFT backends |
 | `polynomial_products.rs` | Negacyclic monomial signs and NTT/DCRT polynomial overwrite/accumulation |
 | `extraction.rs` | GLWE/RLWE/NTRU sample order and phase signs, compact padding, packed extraction and allocation reuse |
 | `plaintext_and_gadget.rs` | Body-only plaintext updates, trivial ciphertext clearing, selected gadget diagonals |
 | `external_product.rs` | Gadget product oracles, coefficient/borrowed transform outputs, independent NLev/control levels, dirty-output clearing and workspace reuse |
-| `ternary_cmux.rs` | NTT ternary rotation against an independent negacyclic oracle, all small-ring exponents, decomposition residual and scratch reuse |
+| `ternary_cmux.rs` | NTT/Fourier ternary rotation against an independent negacyclic oracle, all small-ring exponents, decomposition/rounding error and scratch reuse |
 
 Keep one focused oracle or differential test per independent contract. Local
 macros exercise the ciphertext type matrix without copying test bodies; these
