@@ -32,7 +32,7 @@ GLWE NTT 另支持固定重量二元 small 秘密的[实验性稀疏 PBS](../pri
 
 1. Family 参数描述外部 LWE 和 accumulator 环。
 2. 后端 context 绑定参数与 NTT/FFT table，并生成配套的 client/server key。
-3. 通过 family 参数或 context 编译 `LookupTable` / `InterleavedLookupTable`。
+3. 通过 family 参数 编译 `LookupTable` / `InterleavedLookupTable`。
    evaluator 创建一次，在线 `_to` 调用复用其 scratch。
 4. 调用方输出分配一次，后续加密与求值重复使用同一存储。
 
@@ -104,7 +104,7 @@ callback 报错或输出越界时立即停止，不返回部分编译的表。
 秘密一致性。Fourier 密钥和 evaluator 必须使用同一 FFT table 实例。
 
 最小 trait 为 `ProgrammableBootstrap` 和 `ProgrammableBootstrapInterleaved`。
-普通应用使用 context/family 编译入口，由其检查并编码明文输出。
+普通应用使用 参数 编译入口，由其检查并编码明文输出。
 `LookupTable::try_new` 与 `InterleavedLookupTable::try_new` 接收已编码输出和显式的
 编程前缀长度，Boolean 与 CBS 通过它们使用各自的输出尺度。
 兼容性检查绑定多项式长度与编码模数；输入位于已编程前缀内仍由调用方保证。
@@ -112,7 +112,7 @@ callback 报错或输出越界时立即停止，不返回部分编译的表。
 
 ### 选择输出编码
 
-两族参数/context 的普通和交错 LUT 编译方法以 `&RoundedCodec<T, M>` 为第一个参数。
+两族参数 的普通和交错 LUT 编译方法以 `&RoundedCodec<T, M>` 为第一个参数。
 输入参数决定旋转中心，并与所选编译模式共同决定输入域；
 输出 codec 决定 `t_out`，检查输出位于 `0..t_out`，并按 unsigned embedding 编码。
 交错 LUT 的各列共用这个 codec。其密文模数必须与 accumulator 一致，否则返回
@@ -125,16 +125,15 @@ callback 报错或输出越界时立即停止，不返回部分编译的表。
 use primus_encoding::RoundedCodec;
 
 let output_codec = RoundedCodec::new(4u32, context.parameters().external_lwe().cipher_modulus());
-let lut = context.compile_lookup_table_fn(&output_codec, |x| (x % 4) as u32).unwrap();
+let lut = context.parameters().compile_lookup_table_fn(&output_codec, |x| (x % 4) as u32).unwrap();
 let input = encryptor.encrypt_padded(7u32, &mut rng).unwrap();
 let output = evaluator.apply_lookup_table(&input, &lut);
 let message = output_codec.decode_value(decryptor.decrypt_phase(&output).unwrap());
 assert_eq!(message, 3);
 ```
 
-GLWE 用 `context.parameters().glwe().cipher_modulus()` 构造输出 codec。
-沿用参数编码时，传入 `input_plaintext_codec()`（GLWE）或
-`external_lwe().plaintext_codec()`（NTRU），随后仍可用普通 `decrypt`。
+GLWE 用 `context.parameters().accumulator_glwe().cipher_modulus()` 构造输出 codec。
+沿用参数编码时，传入 `input_plaintext_codec()`，随后仍可用普通 `decrypt`。
 各后端 basic 示例展示了无需额外密钥的独立输出编码。
 
 `decrypt_phase` 返回外部 LWE 秘密下的规范带噪剩余类，调用方保留输出 codec 用于解码。
@@ -151,7 +150,7 @@ raw 密文推断编码变化。自定义编码、逐列尺度及 Boolean/CBS gad
 例如，context 配置 `t_in=15`，输出 codec 配置 `t_out=8`：
 
 ```rust,ignore
-let lut = context.compile_odd_full_domain_lookup_table_fn(
+let lut = context.parameters().compile_odd_full_domain_lookup_table_fn(
     &output_codec, |x| ((x * x + 3) % 8) as u32,
 ).unwrap();
 let input = encryptor.encrypt(14u32, &mut rng).unwrap();
@@ -187,7 +186,7 @@ use primus_tfhe::BivariateLookupTable;
 
 let compare = BivariateLookupTable::try_new(
     3, 2, context.parameters().poly_length(),
-    context.parameters().external_lwe().plaintext_codec(),
+    context.parameters().input_plaintext_codec(),
     &output_codec, |x, y| u32::from(x > y),
 ).unwrap();
 let lhs = encryptor.encrypt_padded(2u32, &mut rng).unwrap();

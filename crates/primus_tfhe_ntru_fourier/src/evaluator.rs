@@ -64,7 +64,7 @@ where
         input: &LweCiphertext<T>,
         lookup_table: &LookupTable<T>,
     ) -> LweCiphertext<T> {
-        let mut output = LweCiphertext::zero(self.context.parameters().external_lwe().dimension());
+        let mut output = LweCiphertext::zero(self.context.parameters().external_lwe_dimension());
         self.apply_lookup_table_to(input, lookup_table, &mut output);
         output
     }
@@ -90,11 +90,11 @@ where
                 parameters.poly_length(),
                 parameters.plain_modulus_value(),
                 parameters.external_lwe().cipher_modulus_value(),
-                parameters.bootstrapping().ntru().cipher_modulus_value(),
+                parameters.accumulator_ntru().cipher_modulus_value(),
             ),
             "PBS lookup-table encoding or polynomial length mismatch"
         );
-        let lwe_dimension = parameters.external_lwe().dimension();
+        let lwe_dimension = parameters.external_lwe_dimension();
         assert_eq!(
             input.dimension(),
             lwe_dimension,
@@ -107,7 +107,7 @@ where
         );
 
         self.blind_rotate(input, lookup_table.polynomial(), 1);
-        self.keyswitch_accumulator();
+        self.key_switch_accumulator();
         self.blind_rotation
             .scratch
             .extract_compact_lwe_to(output, NativeModulus::new());
@@ -129,7 +129,7 @@ where
         input: &LweCiphertext<T>,
         lookup_table: &InterleavedLookupTable<T>,
     ) -> Vec<LweCiphertext<T>> {
-        let dimension = self.context.parameters().external_lwe().dimension();
+        let dimension = self.context.parameters().external_lwe_dimension();
         let mut outputs = (0..lookup_table.output_count())
             .map(|_| LweCiphertext::zero(dimension))
             .collect::<Vec<_>>();
@@ -160,11 +160,11 @@ where
                 parameters.poly_length(),
                 parameters.plain_modulus_value(),
                 parameters.external_lwe().cipher_modulus_value(),
-                parameters.bootstrapping().ntru().cipher_modulus_value(),
+                parameters.accumulator_ntru().cipher_modulus_value(),
             ),
             "PBS lookup-table encoding or polynomial length mismatch"
         );
-        let lwe_dimension = parameters.external_lwe().dimension();
+        let lwe_dimension = parameters.external_lwe_dimension();
         assert_eq!(
             input.dimension(),
             lwe_dimension,
@@ -187,7 +187,7 @@ where
             lookup_table.polynomial(),
             lookup_table.padded_output_count(),
         );
-        self.keyswitch_accumulator();
+        self.key_switch_accumulator();
         for (index, output) in outputs.iter_mut().enumerate() {
             self.blind_rotation.scratch.extract_compact_lwe_at_to(
                 index,
@@ -223,7 +223,7 @@ where
     /// `blind_rotation.scratch`, ready for compact LWE extraction. CBS consumes
     /// `blind_rotation.current` directly and does not perform this key switch.
     #[inline]
-    fn keyswitch_accumulator(&mut self) {
+    fn key_switch_accumulator(&mut self) {
         self.server_key.key_switching_key().key_switch_to(
             &self.blind_rotation.current,
             &mut self.blind_rotation.scratch,

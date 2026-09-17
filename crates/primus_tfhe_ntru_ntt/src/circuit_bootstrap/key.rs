@@ -59,6 +59,8 @@ where
     /// selects the independent noise/decomposition/security budgets described on
     /// [`CircuitBootstrapParameters`]. Actual secret identity must be shared with
     /// the server key later used by the evaluator.
+    /// Accumulator coefficients inherit
+    /// [`NttNtruSecretKey::try_from_coeff_secret_key`]'s magnitude bound.
     pub fn try_generate_circuit_bootstrap_key<R>(
         &mut self,
         client_key: &ClientKey<T>,
@@ -71,9 +73,7 @@ where
         if !parameters.is_compatible(self.context.parameters()) {
             return Err(CircuitBootstrapKeyError::IncompatibleParameters);
         }
-        client_key
-            .check_compatible(self.context.parameters())
-            .map_err(TfheKeyError::from)?;
+        client_key.check_compatible(self.context.parameters())?;
         let secret = client_key.accumulator_ntru_secret_key();
         let transformed = NttNtruSecretKey::try_from_coeff_secret_key(
             secret,

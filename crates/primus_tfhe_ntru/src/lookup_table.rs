@@ -3,9 +3,9 @@ use primus_integer::FheUint;
 use primus_reduce::{PrepareModulusSwitch, ReduceAdd, RingContext};
 use primus_tfhe::{InterleavedLookupTable, LookupTable, LookupTableError};
 
-use crate::NtruTfheParameters;
+use crate::TfheParameters;
 
-impl<T, M> NtruTfheParameters<T, M>
+impl<T, M> TfheParameters<T, M>
 where
     T: FheUint,
     M: RingContext<T>,
@@ -67,25 +67,14 @@ where
         OM: PrepareModulusSwitch<ValueT = T> + ReduceAdd<T, Output = T>,
         F: Fn(usize) -> T,
     {
-        let coefficient_modulus = self.bootstrapping().ntru().cipher_modulus();
-        if output_codec.ciphertext_modulus().explicit_value()
-            != coefficient_modulus.explicit_value()
-        {
-            return Err(LookupTableError::OutputModulusMismatch);
-        }
+        let coefficient_modulus = self.accumulator_ntru().cipher_modulus();
+        self.check_output_modulus(output_codec)?;
         LookupTable::try_new_odd_full_domain(
             self.poly_length(),
             self.plain_modulus_value(),
             self.external_lwe().cipher_modulus(),
             coefficient_modulus,
-            |input| {
-                let output = function(input);
-                if output >= output_codec.plaintext_modulus() {
-                    Err(LookupTableError::OutputOutOfRange { input })
-                } else {
-                    Ok(output_codec.encode_value(output, PlaintextEmbedding::Unsigned))
-                }
-            },
+            |input| encode_output(function(input), input, output_codec),
         )
     }
 
@@ -171,6 +160,21 @@ where
         )
     }
 
+    fn check_output_modulus<OM>(
+        &self,
+        output_codec: &RoundedCodec<T, OM>,
+    ) -> Result<(), LookupTableError>
+    where
+        OM: PrepareModulusSwitch<ValueT = T> + ReduceAdd<T, Output = T>,
+    {
+        if output_codec.ciphertext_modulus().explicit_value()
+            != self.accumulator_ntru().cipher_modulus_value()
+        {
+            return Err(LookupTableError::OutputModulusMismatch);
+        }
+        Ok(())
+    }
+
     /// Returns the front-half domain constrained by the NTRU rotation ring.
     fn front_half_domain_len(&self) -> Result<usize, LookupTableError> {
         primus_tfhe::front_half_domain_len(self.plain_modulus_value(), self.poly_length())
@@ -188,12 +192,8 @@ where
         F: Fn(usize) -> T,
     {
         let lwe = self.external_lwe();
-        let coefficient_modulus = self.bootstrapping().ntru().cipher_modulus();
-        if output_codec.ciphertext_modulus().explicit_value()
-            != coefficient_modulus.explicit_value()
-        {
-            return Err(LookupTableError::OutputModulusMismatch);
-        }
+        let coefficient_modulus = self.accumulator_ntru().cipher_modulus();
+        self.check_output_modulus(output_codec)?;
         let plaintext_modulus = self.plain_modulus_value();
         LookupTable::try_new(
             domain_len,
@@ -201,14 +201,7 @@ where
             plaintext_modulus,
             lwe.cipher_modulus(),
             coefficient_modulus,
-            |input| {
-                let output = output_at(input);
-                if output >= output_codec.plaintext_modulus() {
-                    Err(LookupTableError::OutputOutOfRange { input })
-                } else {
-                    Ok(output_codec.encode_value(output, PlaintextEmbedding::Unsigned))
-                }
-            },
+            |input| encode_output(output_at(input), input, output_codec),
         )
     }
 
@@ -225,12 +218,8 @@ where
         F: Fn(usize, usize) -> T,
     {
         let lwe = self.external_lwe();
-        let coefficient_modulus = self.bootstrapping().ntru().cipher_modulus();
-        if output_codec.ciphertext_modulus().explicit_value()
-            != coefficient_modulus.explicit_value()
-        {
-            return Err(LookupTableError::OutputModulusMismatch);
-        }
+        let coefficient_modulus = self.accumulator_ntru().cipher_modulus();
+        self.check_output_modulus(output_codec)?;
         let plaintext_modulus = self.plain_modulus_value();
         InterleavedLookupTable::try_new(
             domain_len,
@@ -240,13 +229,23 @@ where
             lwe.cipher_modulus(),
             coefficient_modulus,
             |input, output_index| {
-                let output = output_at(input, output_index);
-                if output >= output_codec.plaintext_modulus() {
-                    Err(LookupTableError::OutputOutOfRange { input })
-                } else {
-                    Ok(output_codec.encode_value(output, PlaintextEmbedding::Unsigned))
-                }
+                encode_output(output_at(input, output_index), input, output_codec)
             },
         )
     }
+}
+
+fn encode_output<T, OM>(
+    output: T,
+    input: usize,
+    output_codec: &RoundedCodec<T, OM>,
+) -> Result<T, LookupTableError>
+where
+    T: FheUint,
+    OM: PrepareModulusSwitch<ValueT = T> + ReduceAdd<T, Output = T>,
+{
+    if output >= output_codec.plaintext_modulus() {
+        return Err(LookupTableError::OutputOutOfRange { input });
+    }
+    Ok(output_codec.encode_value(output, PlaintextEmbedding::Unsigned))
 }

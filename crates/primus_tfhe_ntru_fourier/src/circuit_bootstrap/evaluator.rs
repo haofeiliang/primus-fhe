@@ -74,7 +74,7 @@ where
             return Err(CircuitBootstrapEvaluationError::IncompatibleCircuitBootstrapKey);
         }
         let n = tfhe.poly_length();
-        let modulus = tfhe.bootstrapping().ntru().cipher_modulus();
+        let modulus = tfhe.accumulator_ntru().cipher_modulus();
         let domain_len = primus_tfhe::front_half_domain_len(tfhe.plain_modulus_value(), n)?;
         let scalars: Vec<T> = parameters.output_basis().scalar_iter().collect();
         let lookup_table = InterleavedLookupTable::try_new(
@@ -139,7 +139,7 @@ where
         let tfhe = self.context.parameters();
         assert_eq!(
             input.dimension(),
-            tfhe.external_lwe().dimension(),
+            tfhe.external_lwe_dimension(),
             "circuit-bootstrap input dimension mismatch"
         );
         assert_eq!(

@@ -7,7 +7,7 @@ use primus_lwe::{LweCiphertext, LweParameters};
 use primus_modulus::BarrettModulus;
 use primus_ntru::{NlevParameters, NtruParameters, SecretKeyDistr};
 use primus_ntt::{NttTable, U32NttTable};
-use primus_tfhe_ntru_ntt::{BivariateLookupTable, NtruTfheParameters, TfheContext};
+use primus_tfhe_ntru_ntt::{BivariateLookupTable, TfheContext, TfheParameters};
 
 fn main() {
     const N: usize = 256;
@@ -23,7 +23,7 @@ fn main() {
     );
     let accumulator = NtruParameters::new(N, 16, modulus, SecretKeyDistr::SparseTernary, 0.7);
     let client = NtruParameters::new(N, 16, modulus, SecretKeyDistr::UniformBinary, 0.7);
-    let parameters = NtruTfheParameters::try_new(
+    let parameters = TfheParameters::try_new(
         external_lwe,
         NlevParameters::with_ntru_params(&accumulator, 9, None),
         NlevParameters::with_ntru_params(&client, 9, None),
@@ -33,7 +33,7 @@ fn main() {
     let context = TfheContext::try_new(parameters, table).unwrap();
 
     let mut rng = rand::rng();
-    let (client_key, server_key) = context.generate_keys(&mut rng).unwrap();
+    let (client_key, server_key) = context.try_generate_keys(&mut rng).unwrap();
     // Publish this LWE key to encrypt inputs; keep the client key for decryption.
     // These demonstration parameters have no public-key security/noise assessment.
     let public_key = client_key
@@ -45,6 +45,7 @@ fn main() {
     // parity with output t=4; three outputs occupy four interleaved slots.
     let output_codec = RoundedCodec::new(4, context.parameters().external_lwe().cipher_modulus());
     let lut = context
+        .parameters()
         .compile_interleaved_lookup_table_fn(&output_codec, 3, |input, output| match output {
             0 => (input % 4) as u32,
             1 => (input / 4) as u32,
@@ -78,7 +79,7 @@ fn main() {
         3,
         2,
         N,
-        context.parameters().external_lwe().plaintext_codec(),
+        context.parameters().input_plaintext_codec(),
         &output_codec,
         |x, y| u32::from(x > y),
     )

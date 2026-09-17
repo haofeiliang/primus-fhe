@@ -2,8 +2,8 @@
 //!
 //! [`Evaluator::apply_interleaved_lookup_table_to`] evaluates interleaved outputs with
 //! one blind rotation and ring key switch, reusing its existing workspace.
-//! Compile with [`TfheContext::compile_interleaved_lookup_table_fn`] or the input-major
-//! slice variant. The next power of two of the output count determines the
+//! Compile through [`TfheParameters::compile_interleaved_lookup_table_fn`] or its
+//! input-major slice variant. The next power of two of the output count determines the
 //! rotation step; [`InterleavedLookupTable`] describes the layout and noise tradeoff.
 //! Public PBS checks LUT encoding/moduli/length and all output dimensions before
 //! writing. Raw input key, encoding and noise remain caller requirements.
@@ -34,7 +34,7 @@ pub use key::{KeyGenerator, ServerKey};
 pub use primus_tfhe::{
     BivariateLookupTable, InterleavedLookupTable, LookupTable, LweCiphertext, LweSecretKeyRef,
 };
-pub use primus_tfhe_ntru::{NtruClientKey as ClientKey, NtruTfheParameters};
+pub use primus_tfhe_ntru::{ClientKey, EncryptionKey, LwePublicKey};
 
 pub use circuit_bootstrap::{
     CircuitBootstrapEvaluationError, CircuitBootstrapEvaluator, CircuitBootstrapKey,
@@ -43,10 +43,10 @@ pub use circuit_bootstrap::{
 
 /// Secret-key or LWE public-key encryptor for the Fourier NTRU backend.
 pub type Encryptor<'a, T, Key = ClientKey<T>> =
-    primus_tfhe_ntru::NtruEncryptor<'a, T, NativeModulus<T>, Key>;
+    primus_tfhe_ntru::Encryptor<'a, T, NativeModulus<T>, Key>;
 
 /// Client-key decryptor for the Fourier NTRU backend.
-pub type Decryptor<'a, T> = primus_tfhe_ntru::NtruDecryptor<'a, T, NativeModulus<T>>;
+pub type Decryptor<'a, T> = primus_tfhe_ntru::Decryptor<'a, T, NativeModulus<T>>;
 
 /// NTRU-TFHE parameters for the native-torus Fourier backend.
-pub type TfheParameters<T> = primus_tfhe_ntru::NtruTfheParameters<T, NativeModulus<T>>;
+pub type TfheParameters<T> = primus_tfhe_ntru::TfheParameters<T, NativeModulus<T>>;

@@ -1,12 +1,8 @@
-use primus_encoding::RoundedCodec;
 use primus_fft::{FftEngine, FftTable, TorusFftValue};
-use primus_reduce::{PrepareModulusSwitch, ReduceAdd};
-use primus_tfhe::InterleavedLookupTable;
 
 use crate::{
-    ClientKey, Decryptor, Encryptor, Evaluator, KeyGenerator, LookupTable, LookupTableError,
-    ServerKey, TfheClientError, TfheContextError, TfheEvaluationError, TfheKeyError,
-    TfheParameters,
+    ClientKey, Decryptor, Encryptor, Evaluator, KeyGenerator, ServerKey, TfheClientError,
+    TfheContextError, TfheEvaluationError, TfheKeyError, TfheParameters,
 };
 
 /// Validated binding between native NTRU TFHE parameters and one Fourier table.
@@ -35,42 +31,46 @@ where
     }
 
     /// Returns the validated mathematical parameters.
+    #[must_use]
     #[inline]
     pub fn parameters(&self) -> &TfheParameters<T> {
         &self.parameters
     }
 
     /// Returns the immutable Fourier table.
+    #[must_use]
     #[inline]
     pub fn table(&self) -> &Table {
         &self.table
     }
 
     /// Creates an FFT engine with independent reusable backend scratch.
+    #[must_use]
     #[inline]
     pub fn new_fft_engine(&self) -> FftEngine<'_, Table> {
         FftEngine::new(&self.table)
     }
 
     /// Generates a fresh client/server key pair.
-    pub fn generate_keys<R>(
+    /// Inherits [`KeyGenerator::try_generate`]'s rejection-sampling errors.
+    pub fn try_generate_keys<R>(
         &self,
         rng: &mut R,
     ) -> Result<(ClientKey<T>, ServerKey<T>), TfheKeyError>
     where
         R: rand::Rng + rand::CryptoRng,
     {
-        KeyGenerator::new(self).generate(rng)
+        KeyGenerator::new(self).try_generate(rng)
     }
 
     /// Creates a secret-key or public-key encryptor after checking compatibility.
-    /// Public-key contracts follow [`primus_tfhe_ntru::NtruEncryptionKey`].
+    /// Public-key contracts follow [`primus_tfhe_ntru::EncryptionKey`].
     pub fn encryptor<'a, Key>(
         &'a self,
         key: &'a Key,
     ) -> Result<Encryptor<'a, T, Key>, TfheClientError>
     where
-        Key: primus_tfhe_ntru::NtruEncryptionKey<T, primus_modulus::NativeModulus<T>>,
+        Key: primus_tfhe_ntru::EncryptionKey<T, primus_modulus::NativeModulus<T>>,
     {
         Encryptor::try_new(&self.parameters, key)
     }
@@ -95,7 +95,7 @@ where
 
     /// Generates optional CBS material under this client's accumulator secret.
     /// Inherits [`KeyGenerator::try_generate_circuit_bootstrap_key`]'s contracts.
-    pub fn generate_circuit_bootstrap_key<R: rand::Rng + rand::CryptoRng>(
+    pub fn try_generate_circuit_bootstrap_key<R: rand::Rng + rand::CryptoRng>(
         &self,
         client_key: &ClientKey<T>,
         parameters: &crate::CircuitBootstrapParameters<T>,
@@ -118,96 +118,8 @@ where
         crate::CircuitBootstrapEvaluator::try_new(self, server_key, parameters, circuit_key)
     }
 
-    /// See [`primus_tfhe_ntru::NtruTfheParameters::compile_lookup_table_fn`].
-    #[inline]
-    pub fn compile_lookup_table_fn<OM, F>(
-        &self,
-        output_codec: &RoundedCodec<T, OM>,
-        function: F,
-    ) -> Result<LookupTable<T>, LookupTableError>
-    where
-        OM: PrepareModulusSwitch<ValueT = T> + ReduceAdd<T, Output = T>,
-        F: Fn(usize) -> T,
-    {
-        self.parameters
-            .compile_lookup_table_fn(output_codec, function)
-    }
-
-    /// See [`primus_tfhe_ntru::NtruTfheParameters::compile_lookup_table_slice`].
-    #[inline]
-    pub fn compile_lookup_table_slice<OM>(
-        &self,
-        output_codec: &RoundedCodec<T, OM>,
-        outputs: &[T],
-    ) -> Result<LookupTable<T>, LookupTableError>
-    where
-        OM: PrepareModulusSwitch<ValueT = T> + ReduceAdd<T, Output = T>,
-    {
-        self.parameters
-            .compile_lookup_table_slice(output_codec, outputs)
-    }
-
-    /// See [`primus_tfhe_ntru::NtruTfheParameters::compile_odd_full_domain_lookup_table_fn`].
-    #[inline]
-    pub fn compile_odd_full_domain_lookup_table_fn<OM, F>(
-        &self,
-        output_codec: &RoundedCodec<T, OM>,
-        function: F,
-    ) -> Result<LookupTable<T>, LookupTableError>
-    where
-        OM: PrepareModulusSwitch<ValueT = T> + ReduceAdd<T, Output = T>,
-        F: Fn(usize) -> T,
-    {
-        self.parameters
-            .compile_odd_full_domain_lookup_table_fn(output_codec, function)
-    }
-
-    /// See [`primus_tfhe_ntru::NtruTfheParameters::compile_odd_full_domain_lookup_table_slice`].
-    #[inline]
-    pub fn compile_odd_full_domain_lookup_table_slice<OM>(
-        &self,
-        output_codec: &RoundedCodec<T, OM>,
-        outputs: &[T],
-    ) -> Result<LookupTable<T>, LookupTableError>
-    where
-        OM: PrepareModulusSwitch<ValueT = T> + ReduceAdd<T, Output = T>,
-    {
-        self.parameters
-            .compile_odd_full_domain_lookup_table_slice(output_codec, outputs)
-    }
-
-    /// See [`primus_tfhe_ntru::NtruTfheParameters::compile_interleaved_lookup_table_fn`].
-    #[inline]
-    pub fn compile_interleaved_lookup_table_fn<OM, F>(
-        &self,
-        output_codec: &RoundedCodec<T, OM>,
-        output_count: usize,
-        function: F,
-    ) -> Result<InterleavedLookupTable<T>, LookupTableError>
-    where
-        OM: PrepareModulusSwitch<ValueT = T> + ReduceAdd<T, Output = T>,
-        F: Fn(usize, usize) -> T,
-    {
-        self.parameters
-            .compile_interleaved_lookup_table_fn(output_codec, output_count, function)
-    }
-
-    /// See [`primus_tfhe_ntru::NtruTfheParameters::compile_interleaved_lookup_table_slice`].
-    #[inline]
-    pub fn compile_interleaved_lookup_table_slice<OM>(
-        &self,
-        output_codec: &RoundedCodec<T, OM>,
-        output_count: usize,
-        outputs: &[T],
-    ) -> Result<InterleavedLookupTable<T>, LookupTableError>
-    where
-        OM: PrepareModulusSwitch<ValueT = T> + ReduceAdd<T, Output = T>,
-    {
-        self.parameters
-            .compile_interleaved_lookup_table_slice(output_codec, output_count, outputs)
-    }
-
     /// Decomposes this context into parameters and its Fourier table.
+    #[must_use]
     #[inline]
     pub fn into_parts(self) -> (TfheParameters<T>, Table) {
         (self.parameters, self.table)

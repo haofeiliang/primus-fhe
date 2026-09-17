@@ -11,7 +11,7 @@ use primus_fft::{Complex64, FftTable, RustFftTable, TfheFftTable};
 use primus_lwe::LweParameters;
 use primus_modulus::NativeModulus;
 use primus_ntru::{FourierNgswCiphertext, NlevParameters, NtruParameters, SecretKeyDistr};
-use primus_tfhe_ntru_fourier::{CircuitBootstrapParameters, NtruTfheParameters, TfheContext};
+use primus_tfhe_ntru_fourier::{CircuitBootstrapParameters, TfheContext, TfheParameters};
 use rand::{SeedableRng, rngs::StdRng};
 use std::{hint::black_box, time::Duration};
 
@@ -21,7 +21,7 @@ fn backend<Table: FftTable>(c: &mut Criterion, backend: &str) {
         for log_basis in [3, 10] {
             let acc = NtruParameters::new(n, 4, modulus, SecretKeyDistr::SparseTernary, 0.7);
             let client = NtruParameters::new(n, 4, modulus, SecretKeyDistr::UniformBinary, 0.7);
-            let parameters = NtruTfheParameters::try_new(
+            let parameters = TfheParameters::try_new(
                 LweParameters::new(n / 16, 4, modulus, SecretKeyDistr::UniformBinary, 0.7),
                 NlevParameters::with_ntru_params(&acc, log_basis, None),
                 NlevParameters::with_ntru_params(&client, log_basis, None),
@@ -37,7 +37,7 @@ fn backend<Table: FftTable>(c: &mut Criterion, backend: &str) {
             let context =
                 TfheContext::try_new(parameters, Table::new(n.trailing_zeros()).unwrap()).unwrap();
             let mut rng = StdRng::seed_from_u64(42);
-            let (client, server) = context.generate_keys(&mut rng).unwrap();
+            let (client, server) = context.try_generate_keys(&mut rng).unwrap();
             let input = context
                 .encryptor(&client)
                 .unwrap()
@@ -45,7 +45,7 @@ fn backend<Table: FftTable>(c: &mut Criterion, backend: &str) {
                 .unwrap();
             let (key, key_memory) = allocations::measure(|| {
                 context
-                    .generate_circuit_bootstrap_key(&client, &cbs, &mut rng)
+                    .try_generate_circuit_bootstrap_key(&client, &cbs, &mut rng)
                     .unwrap()
             });
             let (mut evaluator, workspace_memory) = allocations::measure(|| {

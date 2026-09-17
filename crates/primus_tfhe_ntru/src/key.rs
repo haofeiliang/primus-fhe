@@ -4,17 +4,17 @@ use primus_ntru::NtruSecretKey;
 use primus_reduce::RingContext;
 use primus_tfhe::LweSecretKeyRef;
 
-use crate::NtruTfheParameters;
+use crate::TfheParameters;
 
 /// Coefficient-domain client and accumulator secrets for NTRU TFHE.
 #[derive(Clone)]
-pub struct NtruClientKey<T: FheUint> {
+pub struct ClientKey<T: FheUint> {
     client_ntru_secret_key: NtruSecretKey<T>,
     accumulator_ntru_secret_key: NtruSecretKey<T>,
     external_lwe_dimension: usize,
 }
 
-impl<T: FheUint> NtruClientKey<T> {
+impl<T: FheUint> ClientKey<T> {
     /// Imports the two coefficient-domain NTRU secrets.
     ///
     /// This constructor only checks that the external LWE dimension fits in
@@ -26,6 +26,7 @@ impl<T: FheUint> NtruClientKey<T> {
     ///
     /// Panics unless the external LWE dimension belongs to the client NTRU
     /// polynomial.
+    #[must_use]
     #[inline]
     pub fn new(
         client_ntru_secret_key: NtruSecretKey<T>,
@@ -44,12 +45,14 @@ impl<T: FheUint> NtruClientKey<T> {
     }
 
     /// Returns the client NTRU key used by external LWE ciphertexts.
+    #[must_use]
     #[inline]
     pub fn client_ntru_secret_key(&self) -> &NtruSecretKey<T> {
         &self.client_ntru_secret_key
     }
 
     /// Returns the accumulator NTRU key used during blind rotation.
+    #[must_use]
     #[inline]
     pub fn accumulator_ntru_secret_key(&self) -> &NtruSecretKey<T> {
         &self.accumulator_ntru_secret_key
@@ -58,21 +61,24 @@ impl<T: FheUint> NtruClientKey<T> {
     /// Returns the active prefix used as the external LWE key.
     ///
     /// [`Self::check_compatible`] verifies that imported coefficients are binary.
+    #[must_use]
     #[inline]
-    pub fn external_lwe_secret_key(&self) -> &[T::SignedInteger] {
+    pub fn external_lwe_secret_coefficients(&self) -> &[T::SignedInteger] {
         &self.client_ntru_secret_key.as_slice()[..self.external_lwe_dimension]
     }
 
     /// Returns the number of active coefficients in the padded client key.
+    #[must_use]
     #[inline]
     pub fn external_lwe_dimension(&self) -> usize {
         self.external_lwe_dimension
     }
 
     /// Returns the client NTRU coefficients as the external LWE key.
+    #[must_use]
     #[inline]
-    pub fn lwe_secret_key(&self) -> LweSecretKeyRef<'_, T> {
-        LweSecretKeyRef::Signed(self.external_lwe_secret_key())
+    pub fn external_lwe_secret_key(&self) -> LweSecretKeyRef<'_, T> {
+        LweSecretKeyRef::Signed(self.external_lwe_secret_coefficients())
     }
 
     /// Generates an LWE public key under the binary client coefficient prefix.
@@ -83,7 +89,7 @@ impl<T: FheUint> NtruClientKey<T> {
     ///
     /// # Correctness
     ///
-    /// Public-key usage follows [`crate::NtruEncryptionKey`]'s noise and key-identity
+    /// Public-key usage follows [`crate::EncryptionKey`]'s noise and key-identity
     /// contracts and [`crate::LwePublicKey`]'s security requirements.
     ///
     /// # Panics
@@ -91,16 +97,16 @@ impl<T: FheUint> NtruClientKey<T> {
     /// Panics if the public-key storage length overflows `usize`.
     pub fn try_generate_public_key<M, R>(
         &self,
-        parameters: &NtruTfheParameters<T, M>,
+        parameters: &TfheParameters<T, M>,
         rng: &mut R,
-    ) -> Result<crate::LwePublicKey<T>, NtruKeyError>
+    ) -> Result<crate::LwePublicKey<T>, TfheKeyError>
     where
         M: RingContext<T>,
         R: rand::Rng + rand::CryptoRng,
     {
         self.check_compatible(parameters)?;
         Ok(crate::LwePublicKey::generate(
-            self.lwe_secret_key(),
+            self.external_lwe_secret_key(),
             parameters.external_lwe(),
             rng,
         ))
@@ -112,10 +118,7 @@ impl<T: FheUint> NtruClientKey<T> {
     /// coefficients: the active prefix must contain only zero and one, and
     /// the remaining coefficients must be zero. NTRU distribution labels alone
     /// do not establish the binary control values required by blind rotation.
-    pub fn check_compatible<M>(
-        &self,
-        parameters: &NtruTfheParameters<T, M>,
-    ) -> Result<(), NtruKeyError>
+    pub fn check_compatible<M>(&self, parameters: &TfheParameters<T, M>) -> Result<(), TfheKeyError>
     where
         M: RingContext<T>,
     {
@@ -123,16 +126,16 @@ impl<T: FheUint> NtruClientKey<T> {
         if self.client_ntru_secret_key.poly_length() != expected
             || self.accumulator_ntru_secret_key.poly_length() != expected
         {
-            return Err(NtruKeyError::PolynomialLengthMismatch);
+            return Err(TfheKeyError::PolynomialLengthMismatch);
         }
         if self.client_ntru_secret_key.distr()
-            != parameters.key_switching().ntru().secret_key_distr()
+            != parameters.ntru_key_switching().ntru().secret_key_distr()
         {
-            return Err(NtruKeyError::ClientSecretKeyDistributionMismatch);
+            return Err(TfheKeyError::ClientSecretKeyDistributionMismatch);
         }
-        let expected_lwe_dimension = parameters.external_lwe().dimension();
+        let expected_lwe_dimension = parameters.external_lwe_dimension();
         if self.external_lwe_dimension != expected_lwe_dimension {
-            return Err(NtruKeyError::ExternalLweDimensionMismatch);
+            return Err(TfheKeyError::ExternalLweDimensionMismatch);
         }
         let (active, padding) = self
             .client_ntru_secret_key
@@ -151,20 +154,21 @@ impl<T: FheUint> NtruClientKey<T> {
                 bits | coefficient
             });
         if active_bits & !T::SignedInteger::ONE != T::SignedInteger::ZERO {
-            return Err(NtruKeyError::ClientSecretKeyMustBeBinary);
+            return Err(TfheKeyError::ClientSecretKeyMustBeBinary);
         }
         if padding_bits != T::SignedInteger::ZERO {
-            return Err(NtruKeyError::ClientSecretKeyPaddingMismatch);
+            return Err(TfheKeyError::ClientSecretKeyPaddingMismatch);
         }
         if self.accumulator_ntru_secret_key.distr()
-            != parameters.bootstrapping().ntru().secret_key_distr()
+            != parameters.accumulator_ntru().secret_key_distr()
         {
-            return Err(NtruKeyError::AccumulatorSecretKeyDistributionMismatch);
+            return Err(TfheKeyError::AccumulatorSecretKeyDistributionMismatch);
         }
         Ok(())
     }
 
     /// Decomposes the client key into client and accumulator NTRU secrets.
+    #[must_use]
     #[inline]
     pub fn into_parts(self) -> (NtruSecretKey<T>, NtruSecretKey<T>, usize) {
         (
@@ -175,9 +179,12 @@ impl<T: FheUint> NtruClientKey<T> {
     }
 }
 
-/// An incompatibility between NTRU TFHE parameters and client keys.
+/// An error validating or generating NTRU TFHE keys.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum NtruKeyError {
+pub enum TfheKeyError {
+    /// NTRU rejection sampling or conversion could not produce a usable secret.
+    #[error(transparent)]
+    Ntru(#[from] primus_ntru::NtruError),
     /// At least one NTRU secret has the wrong polynomial length.
     #[error("NTRU client-key polynomial length mismatch")]
     PolynomialLengthMismatch,

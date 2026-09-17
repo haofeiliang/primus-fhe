@@ -9,10 +9,10 @@ use primus_ntru::{
 use crate::{ClientKey, TfheContext, TfheKeyError, TfheParameters};
 
 /// Fourier evaluation keys for NTRU TFHE.
-/// The initializer and controls share the stored bootstrapping basis.
+/// The initializer and controls share the stored blind-rotation basis.
 pub struct ServerKey<T: TorusFftValue> {
     initializer: FourierNlev<Vec<Complex64>>,
-    bootstrapping_basis: ApproxSignedBasis<T>,
+    blind_rotation_basis: ApproxSignedBasis<T>,
     controls: Vec<Complex64>,
     key_switching_key: FourierNtruKeySwitchingKey<T>,
 }
@@ -25,8 +25,8 @@ impl<T: TorusFftValue> ServerKey<T> {
     }
 
     /// Returns the common initializer/control decomposition basis.
-    pub(crate) fn bootstrapping_basis(&self) -> &ApproxSignedBasis<T> {
-        &self.bootstrapping_basis
+    pub(crate) fn blind_rotation_basis(&self) -> &ApproxSignedBasis<T> {
+        &self.blind_rotation_basis
     }
 
     /// Returns the post-bootstrap `f_acc -> f_client` key-switching key.
@@ -44,12 +44,12 @@ impl<T: TorusFftValue> ServerKey<T> {
 
     /// Checks the generated ring and decomposition parameters before evaluation.
     pub(crate) fn is_compatible(&self, parameters: &TfheParameters<T>) -> bool {
-        self.initializer.as_ref().len() == parameters.bootstrapping().fourier_nlev_len()
-            && &self.bootstrapping_basis == parameters.bootstrapping().basis()
+        self.initializer.as_ref().len() == parameters.blind_rotation().fourier_nlev_len()
+            && &self.blind_rotation_basis == parameters.blind_rotation().basis()
             && self.key_switching_key.poly_length() == parameters.poly_length()
-            && self.key_switching_key.basis() == parameters.key_switching().basis()
+            && self.key_switching_key.basis() == parameters.ntru_key_switching().basis()
             && self.controls.len()
-                == parameters.external_lwe().dimension() * self.initializer.as_ref().len()
+                == parameters.external_lwe_dimension() * self.initializer.as_ref().len()
     }
 }
 
@@ -70,6 +70,7 @@ where
     Table: FftTable,
 {
     /// Creates a key generator with reusable FFT and encryption workspaces.
+    #[must_use]
     pub fn new(context: &'a TfheContext<T, Table>) -> Self {
         Self {
             fft: context.new_fft_engine(),
@@ -78,28 +79,32 @@ where
         }
     }
 
-    /// Generates fresh coefficient-domain client and accumulator secrets.
-    pub fn generate_client_key<R>(&mut self, rng: &mut R) -> Result<ClientKey<T>, TfheKeyError>
+    /// Generates coefficient-domain client and accumulator secrets accepted by this backend.
+    ///
+    /// Rejection sampling checks native-ring invertibility and Fourier inverse stability.
+    /// The transformed secrets are discarded; use [`Self::try_generate`] when
+    /// generating a paired server key so those representations can be reused.
+    /// Returns a key-generation error when the bounded search is exhausted.
+    pub fn try_generate_client_key<R>(&mut self, rng: &mut R) -> Result<ClientKey<T>, TfheKeyError>
     where
         R: rand::Rng + rand::CryptoRng,
     {
         let parameters = self.context.parameters();
-        let lwe_dimension = parameters.external_lwe().dimension();
+        let lwe_dimension = parameters.external_lwe_dimension();
         let (client, _) = FourierNtruSecretKey::generate_padded_binary_pair(
-            parameters.key_switching().ntru(),
+            parameters.ntru_key_switching().ntru(),
             lwe_dimension,
             &mut self.fft,
             rng,
         )?;
-        let (accumulator, _) = FourierNtruSecretKey::generate_pair(
-            parameters.bootstrapping().ntru(),
-            &mut self.fft,
-            rng,
-        )?;
+        let (accumulator, _) =
+            FourierNtruSecretKey::generate_pair(parameters.accumulator_ntru(), &mut self.fft, rng)?;
         Ok(ClientKey::new(client, accumulator, lwe_dimension))
     }
 
     /// Generates a server key from an existing compatible client key.
+    /// Returns an error for incompatible parameters, a noninvertible secret,
+    /// or an unstable Fourier inverse.
     pub fn try_generate_server_key<R>(
         &mut self,
         client_key: &ClientKey<T>,
@@ -144,14 +149,14 @@ where
         let key_switching_key = FourierNtruKeySwitchingKey::generate(
             client_key.accumulator_ntru_secret_key(),
             client_fourier,
-            parameters.key_switching(),
+            parameters.ntru_key_switching(),
             &mut self.fft,
             rng,
             &mut self.gadget,
         );
         ServerKey {
             initializer,
-            bootstrapping_basis: parameters.bootstrapping().basis().clone(),
+            blind_rotation_basis: parameters.blind_rotation().basis().clone(),
             controls,
             key_switching_key,
         }
@@ -167,11 +172,11 @@ where
         R: rand::Rng + rand::CryptoRng,
     {
         let parameters = self.context.parameters();
-        let mut initializer = FourierNlev::zero(parameters.bootstrapping().fourier_nlev_len());
+        let mut initializer = FourierNlev::zero(parameters.blind_rotation().fourier_nlev_len());
         accumulator_fourier.encrypt_nlev_constant_to(
             T::ONE,
             &mut initializer,
-            parameters.bootstrapping(),
+            parameters.blind_rotation(),
             &mut self.fft,
             rng,
             &mut self.gadget,
@@ -190,17 +195,16 @@ where
         R: rand::Rng + rand::CryptoRng,
     {
         let parameters = self.context.parameters();
-        let nlev_len = parameters.bootstrapping().fourier_nlev_len();
+        let nlev_len = parameters.blind_rotation().fourier_nlev_len();
         let total_len = parameters
-            .external_lwe()
-            .dimension()
+            .external_lwe_dimension()
             .checked_mul(nlev_len)
             .expect("Fourier NGSW control batch length overflow");
         let mut controls = vec![Complex64::default(); total_len];
         accumulator_fourier.encrypt_ngsw_signed_constant_batch_to(
-            client_key.external_lwe_secret_key(),
+            client_key.external_lwe_secret_coefficients(),
             &mut controls,
-            parameters.bootstrapping(),
+            parameters.blind_rotation(),
             &mut self.fft,
             rng,
             &mut self.gadget,
@@ -208,24 +212,25 @@ where
         controls
     }
 
-    /// Generates a fresh compatible client/server key pair.
-    pub fn generate<R>(&mut self, rng: &mut R) -> Result<(ClientKey<T>, ServerKey<T>), TfheKeyError>
+    /// Generates a fresh compatible client/server key pair, reusing transformed secrets.
+    /// Returns a key-generation error when the bounded rejection search is exhausted.
+    pub fn try_generate<R>(
+        &mut self,
+        rng: &mut R,
+    ) -> Result<(ClientKey<T>, ServerKey<T>), TfheKeyError>
     where
         R: rand::Rng + rand::CryptoRng,
     {
         let parameters = self.context.parameters();
-        let lwe_dimension = parameters.external_lwe().dimension();
+        let lwe_dimension = parameters.external_lwe_dimension();
         let (client, client_fourier) = FourierNtruSecretKey::generate_padded_binary_pair(
-            parameters.key_switching().ntru(),
+            parameters.ntru_key_switching().ntru(),
             lwe_dimension,
             &mut self.fft,
             rng,
         )?;
-        let (accumulator, accumulator_fourier) = FourierNtruSecretKey::generate_pair(
-            parameters.bootstrapping().ntru(),
-            &mut self.fft,
-            rng,
-        )?;
+        let (accumulator, accumulator_fourier) =
+            FourierNtruSecretKey::generate_pair(parameters.accumulator_ntru(), &mut self.fft, rng)?;
         let client_key = ClientKey::new(client, accumulator, lwe_dimension);
         client_key.check_compatible(parameters)?;
         let server_key = self.generate_server_key_from_transformed(

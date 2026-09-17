@@ -111,4 +111,32 @@ Native 的额外位运算扫描成本较小；Barrett 的量化成本接近翻�
 - P3.2–P3.5 的分项、BR、完整 PBS、keygen、内存和相位诊断只在[稀疏专项](../tfhe-sparse-pbs.md)维护，历史成本组为 n=512。
 - [tfhe-p4.3.csv](tfhe-p4.3.csv)、[resources](tfhe-p4.3-resources.csv)、[noise](tfhe-p4.3-noise.csv) 的 n=728 MVB 负载、测量方法和 KS 对照只在 [MVB 专项](../tfhe-mvb.md#8-p43-测量与应用选择)维护。
 
+## NTRU 盲旋转缓冲区交换
+
+2026-09-18，在 `444286d` 后的 NTRU API 整理基础上单独比较盲旋转末尾的 `copy_from_slice` 与 `core::mem::swap`，两版其余实现相同。CPU 0、默认 features，30 samples、1 s warm-up、3 s measurement。使用两个 NTRU 后端现有 `pbs` 基准：seed=42、u32、n=800、N=1024、t=4，NTT 的 q=132120577，Fourier 为 Native；复用密钥、LUT、工作区及输出。
+
+| 后端 | 输出数 | 复制均值 ms | 交换均值 ms | 耗时变化（95% CI） |
+| --- | --- | --- | --- | --- |
+| NTT | 1 | 2.1081 | 2.0899 | −0.86%（−0.96%～−0.78%） |
+| NTT | 3 | 2.1102 | 2.0893 | −0.99%（−1.05%～−0.93%） |
+| NTT | 4 | 2.1144 | 2.0950 | −0.92%（−1.24%～−0.40%） |
+| RustFFT | 1 | 2.7070 | 2.7076 | +0.02%（−0.39%～+0.49%） |
+| RustFFT | 3 | 2.6973 | 2.6986 | +0.05%（−0.07%～+0.16%） |
+| RustFFT | 4 | 2.6998 | 2.6901 | −0.36%（−0.45%～−0.25%） |
+| TfheFFT | 1 | 2.2526 | 2.2380 | −0.65%（−0.84%～−0.46%） |
+| TfheFFT | 3 | 2.2556 | 2.2334 | −0.99%（−1.08%～−0.89%） |
+| TfheFFT | 4 | 2.2503 | 2.2446 | −0.25%（−0.38%～−0.12%） |
+
+单输出输入有 800 个非零旋转，不执行末尾复制/交换，作为对照；三、四输出各有 799 个非零旋转，覆盖修改分支。本轮未观察到明显退化，但未修改的对照路径也变快，不能将差值归因于交换优化。保留交换以消除一次多项式复制；两版均通过复用 evaluator 时零次、奇数次、偶数次 CMUX 的正确性与零分配检查。未测 SIMD 性能。
+
+复现时将两个后端 `blind_rotation.rs` 末尾的交换恢复为 `workspace.current.as_mut().copy_from_slice(workspace.scratch.as_ref())`，先运行：
+
+```bash
+taskset -c 0 cargo bench -p primus_tfhe_ntru_ntt -p primus_tfhe_ntru_fourier --bench pbs -- \
+  'complete_pbs_(reused_output|many_[34]_reused_outputs)$' \
+  --save-baseline ntru_buffer_copy --sample-size 30 --warm-up-time 1 --measurement-time 3 --noplot
+```
+
+然后恢复交换实现，将 `--save-baseline ntru_buffer_copy` 换为 `--baseline ntru_buffer_copy`。本轮原始样本目录为 `target/criterion/ntru_*/{ntru_buffer_copy,ntru_buffer_swap}/`。
+
 清理 target 后须用对应源码、参数与等价 harness 重建 Criterion 基线；CSV 是持久摘要。所有测量均有具体功能/噪声边界，不是方案排名或安全认证。

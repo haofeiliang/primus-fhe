@@ -52,7 +52,7 @@ impl<T: TorusFftValue> CircuitBootstrapParameters<T> {
         trace: NlevParameters<T, NativeModulus<T>>,
         scheme_switch: NlevParameters<T, NativeModulus<T>>,
     ) -> Result<Self, CircuitBootstrapParameterError> {
-        if output_basis.modulus() != tfhe.bootstrapping().ntru().cipher_modulus_value() {
+        if output_basis.modulus() != tfhe.accumulator_ntru().cipher_modulus_value() {
             return Err(CircuitBootstrapParameterError::OutputBasisModulusMismatch);
         }
         for (role, parameters) in [("trace", &trace), ("scheme-switch", &scheme_switch)] {

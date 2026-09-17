@@ -14,7 +14,8 @@ PBS, ManyLUT and CBS; NTRU Boolean adapters are not implemented.
 ## Ordinary PBS and ManyLUT
 
 `TfheContext` binds parameters and a transform table. Generate paired client/server
-keys, obtain an encryptor/evaluator/decryptor, and compile LUTs through the context.
+keys with `context.try_generate_keys`, obtain an encryptor/evaluator/decryptor,
+and compile LUTs through `context.parameters()`.
 The [message/carry example](examples/ntru_fourier_basic.rs) demonstrates multiple outputs
 sharing one BR and one ring key switch. Ordinary PBS returns LWE under the client
 secret; its post-BR NTRU key switch maps f_acc to f_client.
@@ -30,18 +31,9 @@ encrypted-integer system.
 LUT compilation takes an output `RoundedCodec` first; the example decodes
 with `decrypt_phase` and that codec. Input geometry keeps the parameter encoding.
 
-Public PBS validates LUT encoding moduli, ring length and all output
-dimensions. Raw LWE input must use the context's external key, canonical residues
-and unsigned rounded encoding. Front-half compilation programs inputs in
-`0..ceil(t/2)`; the remaining half follows negacyclic extension. ManyLUT output
-count `k` must be positive; its padded output count `s = next_power_of_two(k)` requires
-`ceil(t/2) <= N/s`. A larger padded output count reduces rotation resolution and thus the
-allowed input-noise margin. Boolean/CBS output scales
-can differ from ordinary plaintext encoding.
-
-For odd full domains, use the context's `compile_odd_full_domain_lookup_table_fn`
-/ `_slice` with ordinary `encrypt` and the existing single-output evaluator.
-See the [shared contract](../primus_tfhe/README.md#odd-full-domain-pbs).
+The [shared encoding guide](../primus_tfhe/README.md#choosing-the-output-encoding)
+and [NTRU client/LUT contract](../primus_tfhe_ntru/README.md#clients-and-luts)
+cover input domains, output codecs, odd full-domain PBS and ManyLUT noise margins.
 
 ## Public-key clients
 
@@ -52,34 +44,18 @@ See the [shared contract](../primus_tfhe/README.md#odd-full-domain-pbs).
 ciphertext storage without allocation for both public and secret keys. Message
 and dimension errors leave output and RNG unchanged.
 
-Generation and fresh encryption errors use the `external_lwe` noise sampler.
-The total error is `e^T r + e2 - e1^T s`; that sampler does not describe the final
-ciphertext noise. Parameters must satisfy the
-[underlying public-key contract](../primus_lwe/README.md#public-key-encryption)
-and the PBS/ManyLUT input margin. Dimension/modulus checks cannot verify secret
-identity; use paired client/server keys. Public-key storage contains
-`n * (n + 1)` coefficients, excluding the NTRU secret's zero padding.
+Public-key noise, storage and key-identity requirements are described in the
+[NTRU client contract](../primus_tfhe_ntru/README.md#clients-and-luts).
 
 ## Optional circuit bootstrapping
 
 `CircuitBootstrapParameters`, `CircuitBootstrapKey` and `CircuitBootstrapEvaluator`
-add CBS without adding trace/SS material to ordinary server keys:
-
-```text
-external LWE -> gadget-scaled ManyLUT -> one BR under f_acc
-             -> reverse-trace coefficient projections -> NLev_f_acc[m]
-             -> scheme switch -> Fourier NGSW_f_acc[m]
-```
-
-CBS retains the BR ring accumulator. It does not perform ordinary PBS's ring key
-switch or LWE extraction, and does not require packing. The general ManyLUT
-accumulator has no guaranteed zero message tail, so prefix expansion is not a
-valid substitute for its coefficient projections.
-
-CBS takes an output basis and full trace/scheme-switch encryption parameters;
-BR parameters and the output ring come from the TFHE context. The internal
-interleaved LUT keeps the requested level count and pads each output group with
-zero slots; projections and the NGSW retain the requested levels. Its scheme-switch key binds the complete output basis.
+provide optional CBS material. Use `context.try_generate_circuit_bootstrap_key`
+and `context.circuit_bootstrap_evaluator`; ordinary server keys remain independent.
+Fourier CBS outputs `FourierNgswCiphertext`. Budget native coefficient halving
+and FFT errors, and use the same FFT table instance throughout.
+The [shared CBS contract](../primus_tfhe_ntru/README.md#cbs-and-examples)
+describes gadget scales, accumulator-key identity and independent noise/security budgets.
 
 Run the [CBS → CMUX example](examples/ntru_fourier_circuit_bootstrap.rs):
 
@@ -91,18 +67,6 @@ It builds paired ordinary/CBS keys, encrypts two NTRU candidates under `f_acc`,
 and repeatedly turns an external LWE bit into a gadget-scaled NGSW control.
 CMUX selects the first candidate for 0 and the second for 1. The example reuses
 input, control, selected output and server scratch, then decrypts to check the result.
-
-The input still uses unsigned rounded LWE encoding, including for bits. CBS output
-uses the selected gadget scalars; it is not an ordinary encoded NTRU plaintext.
-Use the output as CMUX control only when the input message is 0/1. The two key
-objects must originate from the same accumulator secret and transform table.
-
-Trace and scheme-switch error budgets differ from ordinary PBS. Scheme switching
-multiplies input error by f and decomposition error by f². Its evaluation key
-contains `NGSW_f[f]`, requiring a justified key-dependent-message/circular-security
-assumption. See [NTRU numerical contracts](../primus_ntru/README.md) for modular
-versus native normalization and Fourier precision. These implementations do not
-supply a security proof, failure-probability estimate or recommended CBS parameters.
 
 ## Validation and performance
 

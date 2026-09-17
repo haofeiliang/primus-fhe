@@ -11,7 +11,7 @@ use primus_ntru::{
 use primus_ntt::{NttTable, U64NttTable};
 use primus_poly::Polynomial;
 use primus_tfhe_ntru_ntt::{
-    CircuitBootstrapEvaluationError, CircuitBootstrapParameters, NtruTfheParameters, TfheContext,
+    CircuitBootstrapEvaluationError, CircuitBootstrapParameters, TfheContext, TfheParameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -24,7 +24,7 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
     let lwe = LweParameters::new(16, 4, modulus, SecretKeyDistr::UniformBinary, 0.7);
     let accumulator = NtruParameters::new(N, 4, modulus, SecretKeyDistr::SparseTernary, 0.7);
     let client = NtruParameters::new(N, 4, modulus, SecretKeyDistr::UniformBinary, 0.7);
-    let tfhe = NtruTfheParameters::try_new(
+    let tfhe = TfheParameters::try_new(
         lwe,
         NlevParameters::with_ntru_params(&accumulator, 10, None),
         NlevParameters::with_ntru_params(&client, 10, None),
@@ -33,7 +33,7 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
     let context =
         TfheContext::try_new(tfhe, U64NttTable::new(N.trailing_zeros(), modulus).unwrap()).unwrap();
     let mut rng = StdRng::seed_from_u64(0x004e_5454_5f43_4253);
-    let (client, server) = context.generate_keys(&mut rng).unwrap();
+    let (client, server) = context.try_generate_keys(&mut rng).unwrap();
     let key = NttNtruSecretKey::try_from_coeff_secret_key(
         client.accumulator_ntru_secret_key(),
         modulus,
@@ -63,7 +63,7 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
     )
     .unwrap();
     let circuit_key = context
-        .generate_circuit_bootstrap_key(&client, &parameters, &mut rng)
+        .try_generate_circuit_bootstrap_key(&client, &parameters, &mut rng)
         .unwrap();
     let mut evaluator = context
         .circuit_bootstrap_evaluator(&server, &parameters, &circuit_key)
@@ -180,7 +180,7 @@ fn circuit_parameters_check_capacity_ring_and_basis_domain() {
     let make = |plain| {
         let acc = NtruParameters::new(N, plain, modulus, SecretKeyDistr::SparseTernary, 0.7);
         let client = NtruParameters::new(N, plain, modulus, SecretKeyDistr::UniformBinary, 0.7);
-        NtruTfheParameters::try_new(
+        TfheParameters::try_new(
             LweParameters::new(16, plain, modulus, SecretKeyDistr::UniformBinary, 0.7),
             NlevParameters::with_ntru_params(&acc, 10, None),
             NlevParameters::with_ntru_params(&client, 10, None),
@@ -188,7 +188,7 @@ fn circuit_parameters_check_capacity_ring_and_basis_domain() {
         .unwrap()
     };
     let tfhe = make(N as u64); // Only two interleaved outputs fit this domain.
-    let trace = tfhe.bootstrapping().clone();
+    let trace = tfhe.blind_rotation().clone();
     let output = |levels| ApproxSignedBasis::new(Some(Q), 8, Some(levels));
     assert!(
         CircuitBootstrapParameters::try_new(&tfhe, output(2), trace.clone(), trace.clone()).is_ok()

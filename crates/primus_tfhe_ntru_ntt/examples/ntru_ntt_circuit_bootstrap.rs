@@ -12,7 +12,7 @@ use primus_ntru::{
 };
 use primus_ntt::{NttTable, U64NttTable};
 use primus_poly::Polynomial;
-use primus_tfhe_ntru_ntt::{CircuitBootstrapParameters, NtruTfheParameters, TfheContext};
+use primus_tfhe_ntru_ntt::{CircuitBootstrapParameters, TfheContext, TfheParameters};
 use rand::{SeedableRng, rngs::StdRng};
 
 const N: usize = 256;
@@ -23,7 +23,7 @@ fn main() {
     let lwe = LweParameters::new(16, 4, modulus, SecretKeyDistr::UniformBinary, 0.7);
     let accumulator = NtruParameters::new(N, 4, modulus, SecretKeyDistr::SparseTernary, 0.7);
     let client_parameters = NtruParameters::new(N, 4, modulus, SecretKeyDistr::UniformBinary, 0.7);
-    let tfhe = NtruTfheParameters::try_new(
+    let tfhe = TfheParameters::try_new(
         lwe,
         NlevParameters::with_ntru_params(&accumulator, 10, None),
         NlevParameters::with_ntru_params(&client_parameters, 10, None),
@@ -32,7 +32,7 @@ fn main() {
     let context =
         TfheContext::try_new(tfhe, U64NttTable::new(N.trailing_zeros(), modulus).unwrap()).unwrap();
     let mut rng = StdRng::seed_from_u64(0x004e_5454_5f43_4253);
-    let (client_key, server_key) = context.generate_keys(&mut rng).unwrap();
+    let (client_key, server_key) = context.try_generate_keys(&mut rng).unwrap();
     // CMUX candidates are encrypted under f_acc, the CBS output secret.
     let accumulator_key = NttNtruSecretKey::try_from_coeff_secret_key(
         client_key.accumulator_ntru_secret_key(),
@@ -62,7 +62,7 @@ fn main() {
     )
     .unwrap();
     let cbs_key = context
-        .generate_circuit_bootstrap_key(&client_key, &cbs_parameters, &mut rng)
+        .try_generate_circuit_bootstrap_key(&client_key, &cbs_parameters, &mut rng)
         .unwrap();
     let mut evaluator = context
         .circuit_bootstrap_evaluator(&server_key, &cbs_parameters, &cbs_key)
@@ -71,8 +71,7 @@ fn main() {
     let mut selected = NtruCiphertext::<Vec<u64>>::zero(N);
     let mut transformed = NttNtruCiphertext::<Vec<u64>>::zero(N);
     let mut scratch = NttNtruExternalProductContext::new(N);
-    let mut input =
-        primus_tfhe::LweCiphertext::zero(context.parameters().external_lwe().dimension());
+    let mut input = primus_tfhe::LweCiphertext::zero(context.parameters().external_lwe_dimension());
     for bit in [0u64, 1, 0] {
         encryptor
             .encrypt_padded_to(bit, &mut input, &mut rng)

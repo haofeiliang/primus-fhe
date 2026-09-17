@@ -60,7 +60,7 @@ impl<T: FheUint> CircuitBootstrapParameters<T> {
         trace: NlevParameters<T, BarrettModulus<T>>,
         scheme_switch: NlevParameters<T, BarrettModulus<T>>,
     ) -> Result<Self, CircuitBootstrapParameterError> {
-        if output_basis.modulus() != tfhe.bootstrapping().ntru().cipher_modulus_value() {
+        if output_basis.modulus() != tfhe.accumulator_ntru().cipher_modulus_value() {
             return Err(CircuitBootstrapParameterError::OutputBasisModulusMismatch);
         }
         for (role, parameters) in [("trace", &trace), ("scheme-switch", &scheme_switch)] {
@@ -68,7 +68,7 @@ impl<T: FheUint> CircuitBootstrapParameters<T> {
                 return Err(CircuitBootstrapParameterError::PolynomialLengthMismatch { role });
             }
             if parameters.ntru().cipher_modulus_value()
-                != tfhe.bootstrapping().ntru().cipher_modulus_value()
+                != tfhe.accumulator_ntru().cipher_modulus_value()
             {
                 return Err(CircuitBootstrapParameterError::CipherModulusMismatch { role });
             }
@@ -139,6 +139,6 @@ impl<T: FheUint> CircuitBootstrapParameters<T> {
     pub(crate) fn is_compatible(&self, tfhe: &TfheParameters<T>) -> bool {
         self.input_plain_modulus == tfhe.plain_modulus_value()
             && self.poly_length == tfhe.poly_length()
-            && self.output_basis.modulus() == tfhe.bootstrapping().ntru().cipher_modulus_value()
+            && self.output_basis.modulus() == tfhe.accumulator_ntru().cipher_modulus_value()
     }
 }

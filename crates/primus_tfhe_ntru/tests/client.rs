@@ -6,8 +6,7 @@ use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntru::{NlevParameters, NtruParameters, NtruSecretKey, SecretKeyDistr};
 use primus_reduce::RingContext;
 use primus_tfhe_ntru::{
-    NtruClientError, NtruClientKey, NtruDecryptor, NtruEncryptionKey, NtruEncryptor, NtruKeyError,
-    NtruTfheParameters,
+    ClientKey, Decryptor, EncryptionKey, Encryptor, TfheClientError, TfheKeyError, TfheParameters,
 };
 use rand::{Rng, SeedableRng, rngs::StdRng};
 
@@ -19,7 +18,7 @@ fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
         SecretKeyDistr::UniformBinary,
         1.4,
     );
-    let params = NtruTfheParameters::try_new(
+    let params = TfheParameters::try_new(
         LweParameters::new(
             4,
             plain_modulus,
@@ -31,7 +30,7 @@ fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
         NlevParameters::with_ntru_params(&ring, 8, None),
     )
     .unwrap();
-    let client = NtruClientKey::new(
+    let client = ClientKey::new(
         NtruSecretKey::new(vec![1, 0, 1, 1, 0, 0, 0, 0], SecretKeyDistr::UniformBinary),
         NtruSecretKey::new(vec![1, 0, 0, 0, 0, 0, 0, 0], SecretKeyDistr::UniformBinary),
         4,
@@ -52,20 +51,20 @@ fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
     let foreign_secret = LweSecretKey::generate(&foreign_params, &mut rng);
     let foreign = LwePublicKey::generate(foreign_secret.as_view(), &foreign_params, &mut rng);
     assert_eq!(
-        NtruEncryptor::try_new(&params, &foreign).err(),
-        Some(NtruClientError::PublicKeyModulusMismatch)
+        Encryptor::try_new(&params, &foreign).err(),
+        Some(TfheClientError::PublicKeyModulusMismatch)
     );
     let full_params = LweParameters::new(8, 4, modulus, SecretKeyDistr::UniformBinary, 0.7);
     let full_secret = LweSecretKey::generate(&full_params, &mut rng);
     let full = LwePublicKey::generate(full_secret.as_view(), &full_params, &mut rng);
     assert_eq!(
-        NtruEncryptor::try_new(&params, &full).err(),
-        Some(NtruClientError::PublicKeyDimensionMismatch {
+        Encryptor::try_new(&params, &full).err(),
+        Some(TfheClientError::PublicKeyDimensionMismatch {
             expected: 4,
             actual: 8
         })
     );
-    let bad_client = NtruClientKey::new(
+    let bad_client = ClientKey::new(
         NtruSecretKey::new(vec![1, -1, 1, 1, 0, 0, 0, 0], SecretKeyDistr::UniformBinary),
         NtruSecretKey::new(vec![1, 0, 0, 0, 0, 0, 0, 0], SecretKeyDistr::UniformBinary),
         4,
@@ -75,7 +74,7 @@ fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
     let mut expected_rng = StdRng::seed_from_u64(seed);
     assert_eq!(
         bad_client.try_generate_public_key(&params, &mut rng).err(),
-        Some(NtruKeyError::ClientSecretKeyMustBeBinary)
+        Some(TfheKeyError::ClientSecretKeyMustBeBinary)
     );
     assert_eq!(rng.next_u64(), expected_rng.next_u64());
 }
@@ -96,16 +95,16 @@ enum Encoding {
 }
 
 fn check_reused_output<M, Key>(
-    parameters: &NtruTfheParameters<u32, M>,
-    client: &NtruClientKey<u32>,
+    parameters: &TfheParameters<u32, M>,
+    client: &ClientKey<u32>,
     key: &Key,
 ) where
     M: RingContext<u32>,
-    Key: NtruEncryptionKey<u32, M>,
+    Key: EncryptionKey<u32, M>,
 {
-    let encryptor = NtruEncryptor::try_new(parameters, key).unwrap();
-    let decryptor = NtruDecryptor::try_new(parameters, client).unwrap();
-    let dimension = parameters.external_lwe().dimension();
+    let encryptor = Encryptor::try_new(parameters, key).unwrap();
+    let decryptor = Decryptor::try_new(parameters, client).unwrap();
+    let dimension = parameters.external_lwe_dimension();
     let t = parameters.plain_modulus_value();
     let mut rng = StdRng::seed_from_u64(0x434c_4945_4e54);
     let mut expected_rng = StdRng::seed_from_u64(0x434c_4945_4e54);
@@ -139,8 +138,8 @@ fn check_reused_output<M, Key>(
             assert_eq!(decryptor.decrypt(&output).unwrap(), message);
         }
         let padded_error = matches!(encoding, Encoding::Padded)
-            .then_some((limit, NtruClientError::MessageOutsidePaddedDomain));
-        for (message, error) in [(t, NtruClientError::MessageOutOfRange)]
+            .then_some((limit, TfheClientError::MessageOutsidePaddedDomain));
+        for (message, error) in [(t, TfheClientError::MessageOutOfRange)]
             .into_iter()
             .chain(padded_error)
         {
@@ -155,7 +154,7 @@ fn check_reused_output<M, Key>(
             let before = wrong.clone();
             assert_eq!(
                 encrypt_to(0, &mut wrong, &mut rng),
-                Err(NtruClientError::CiphertextDimensionMismatch {
+                Err(TfheClientError::CiphertextDimensionMismatch {
                     expected: dimension,
                     actual
                 })

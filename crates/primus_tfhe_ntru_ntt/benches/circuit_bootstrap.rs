@@ -11,7 +11,7 @@ use primus_lwe::LweParameters;
 use primus_modulus::BarrettModulus;
 use primus_ntru::{NlevParameters, NtruParameters, NttNgswCiphertext, SecretKeyDistr};
 use primus_ntt::{NttTable, U64NttTable};
-use primus_tfhe_ntru_ntt::{CircuitBootstrapParameters, NtruTfheParameters, TfheContext};
+use primus_tfhe_ntru_ntt::{CircuitBootstrapParameters, TfheContext, TfheParameters};
 use rand::{SeedableRng, rngs::StdRng};
 use std::{hint::black_box, time::Duration};
 
@@ -21,7 +21,7 @@ fn circuit_bootstrap(c: &mut Criterion) {
         for log_basis in [3, 10] {
             let acc = NtruParameters::new(n, 4, modulus, SecretKeyDistr::SparseTernary, 0.7);
             let client = NtruParameters::new(n, 4, modulus, SecretKeyDistr::UniformBinary, 0.7);
-            let parameters = NtruTfheParameters::try_new(
+            let parameters = TfheParameters::try_new(
                 LweParameters::new(n / 16, 4, modulus, SecretKeyDistr::UniformBinary, 0.7),
                 NlevParameters::with_ntru_params(&acc, log_basis, None),
                 NlevParameters::with_ntru_params(&client, log_basis, None),
@@ -40,7 +40,7 @@ fn circuit_bootstrap(c: &mut Criterion) {
             )
             .unwrap();
             let mut rng = StdRng::seed_from_u64(42);
-            let (client, server) = context.generate_keys(&mut rng).unwrap();
+            let (client, server) = context.try_generate_keys(&mut rng).unwrap();
             let input = context
                 .encryptor(&client)
                 .unwrap()
@@ -48,7 +48,7 @@ fn circuit_bootstrap(c: &mut Criterion) {
                 .unwrap();
             let (key, key_memory) = allocations::measure(|| {
                 context
-                    .generate_circuit_bootstrap_key(&client, &cbs, &mut rng)
+                    .try_generate_circuit_bootstrap_key(&client, &cbs, &mut rng)
                     .unwrap()
             });
             let (mut evaluator, workspace_memory) = allocations::measure(|| {

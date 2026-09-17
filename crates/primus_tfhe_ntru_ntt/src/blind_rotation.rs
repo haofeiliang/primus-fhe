@@ -58,21 +58,21 @@ pub(crate) fn blind_rotate_lookup_table_to<T, Table, A>(
     lookup_table.mul_monomial_to(
         initial_exponent,
         &mut Polynomial(workspace.scratch.as_mut()),
-        parameters.bootstrapping().ntru().cipher_modulus(),
+        parameters.accumulator_ntru().cipher_modulus(),
     );
     // Evaluator binding checked the initializer's shape/basis; this workspace
     // was constructed at the same ring length. NLev[1] encrypts the rotated LUT.
     server_key.initializer().external_product_to(
         &Polynomial(workspace.scratch.as_ref()),
         &mut workspace.current,
-        server_key.bootstrapping_basis(),
-        parameters.bootstrapping().ntru().cipher_modulus(),
+        server_key.blind_rotation_basis(),
+        parameters.accumulator_ntru().cipher_modulus(),
         ntt,
         &mut workspace.external_product,
     );
 
-    let basis = server_key.bootstrapping_basis();
-    let modulus = parameters.bootstrapping().ntru().cipher_modulus();
+    let basis = server_key.blind_rotation_basis();
+    let modulus = parameters.accumulator_ntru().cipher_modulus();
     let mut output_is_current = true;
     for (&coefficient, control) in input.a().iter().zip(server_key.iter_controls()) {
         let exponent = exponent_of(coefficient);
@@ -103,9 +103,8 @@ pub(crate) fn blind_rotate_lookup_table_to<T, Table, A>(
         output_is_current = !output_is_current;
     }
     if !output_is_current {
-        workspace
-            .current
-            .as_mut()
-            .copy_from_slice(workspace.scratch.as_ref());
+        // Both buffers are owned workspace; keep the result in current
+        // without copying the polynomial.
+        core::mem::swap(&mut workspace.current, &mut workspace.scratch);
     }
 }

@@ -16,7 +16,7 @@ use primus_ntru::{NlevParameters, NtruParameters, NtruSecretKey, SecretKeyDistr}
 use primus_ntt::{NttTable, U32NttTable};
 use primus_reduce::RingContext;
 use primus_tfhe::{LookupTable, LweCiphertext};
-use primus_tfhe_ntru::NtruTfheParameters;
+use primus_tfhe_ntru::TfheParameters;
 use rand::{RngExt, SeedableRng, rngs::StdRng};
 
 const DEFAULT_NTT_MODULUS: u32 = 132_120_577;
@@ -183,7 +183,7 @@ fn run_ntt(config: &Config) -> Result<(), String> {
     let mut key_generator = primus_tfhe_ntru_ntt::KeyGenerator::new(&context);
     let client_started = Instant::now();
     let client_key = key_generator
-        .generate_client_key(&mut rng)
+        .try_generate_client_key(&mut rng)
         .map_err(|error| format!("failed to generate NTT client key: {error}"))?;
     let client_key_time = client_started.elapsed();
     let server_started = Instant::now();
@@ -193,10 +193,9 @@ fn run_ntt(config: &Config) -> Result<(), String> {
     let server_key_time = server_started.elapsed();
 
     let lookup_table = make_lookup_table(config, |function| {
-        context.compile_lookup_table_fn(
-            context.parameters().external_lwe().plaintext_codec(),
-            function,
-        )
+        context
+            .parameters()
+            .compile_lookup_table_fn(context.parameters().input_plaintext_codec(), function)
     })?;
     let encryptor = context
         .encryptor(&client_key)
@@ -220,7 +219,7 @@ fn run_ntt(config: &Config) -> Result<(), String> {
             measure_output(
                 output,
                 expected,
-                client_key.external_lwe_secret_key(),
+                client_key.external_lwe_secret_coefficients(),
                 context.parameters().external_lwe(),
             )
         },
@@ -231,7 +230,7 @@ fn run_ntt(config: &Config) -> Result<(), String> {
         client_key_time,
         server_key_time,
         server_key_bytes: server_key_bytes(config, config.poly_length, size_of::<u32>())?,
-        client_shape: KeyShape::from_coefficients(client_key.external_lwe_secret_key()),
+        client_shape: KeyShape::from_coefficients(client_key.external_lwe_secret_coefficients()),
         accumulator_shape: KeyShape::from_coefficients(
             client_key.accumulator_ntru_secret_key().as_slice(),
         ),
@@ -277,7 +276,7 @@ fn run_fourier(config: &Config) -> Result<(), String> {
     let mut key_generator = primus_tfhe_ntru_fourier::KeyGenerator::new(&context);
     let client_started = Instant::now();
     let client_key = key_generator
-        .generate_client_key(&mut rng)
+        .try_generate_client_key(&mut rng)
         .map_err(|error| format!("failed to generate Fourier client key: {error}"))?;
     let client_key_time = client_started.elapsed();
     let server_started = Instant::now();
@@ -295,10 +294,9 @@ fn run_fourier(config: &Config) -> Result<(), String> {
         &mut context.new_fft_engine(),
     );
     let lookup_table = make_lookup_table(config, |function| {
-        context.compile_lookup_table_fn(
-            context.parameters().external_lwe().plaintext_codec(),
-            function,
-        )
+        context
+            .parameters()
+            .compile_lookup_table_fn(context.parameters().input_plaintext_codec(), function)
     })?;
     let encryptor = context
         .encryptor(&client_key)
@@ -322,7 +320,7 @@ fn run_fourier(config: &Config) -> Result<(), String> {
             measure_output(
                 output,
                 expected,
-                client_key.external_lwe_secret_key(),
+                client_key.external_lwe_secret_coefficients(),
                 context.parameters().external_lwe(),
             )
         },
@@ -333,7 +331,7 @@ fn run_fourier(config: &Config) -> Result<(), String> {
         client_key_time,
         server_key_time,
         server_key_bytes: server_key_bytes(config, config.poly_length / 2, size_of::<Complex64>())?,
-        client_shape: KeyShape::from_coefficients(client_key.external_lwe_secret_key()),
+        client_shape: KeyShape::from_coefficients(client_key.external_lwe_secret_coefficients()),
         accumulator_shape: KeyShape::from_coefficients(
             client_key.accumulator_ntru_secret_key().as_slice(),
         ),
@@ -351,7 +349,7 @@ fn make_parameters<M>(
     external_lwe: LweParameters<u32, M>,
     accumulator: &NtruParameters<u32, M>,
     client: &NtruParameters<u32, M>,
-) -> Result<NtruTfheParameters<u32, M>, String>
+) -> Result<TfheParameters<u32, M>, String>
 where
     M: RingContext<u32>,
 {
@@ -367,7 +365,7 @@ where
         Some(config.key_switching_levels),
     )
     .map_err(|error| format!("invalid key-switching decomposition: {error}"))?;
-    NtruTfheParameters::try_new(external_lwe, bootstrapping, key_switching)
+    TfheParameters::try_new(external_lwe, bootstrapping, key_switching)
         .map_err(|error| format!("invalid NTRU TFHE parameters: {error}"))
 }
 

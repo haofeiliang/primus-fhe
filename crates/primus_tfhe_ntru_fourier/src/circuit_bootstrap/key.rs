@@ -70,9 +70,7 @@ where
         if !parameters.is_compatible(self.context.parameters()) {
             return Err(CircuitBootstrapKeyError::IncompatibleParameters);
         }
-        client_key
-            .check_compatible(self.context.parameters())
-            .map_err(TfheKeyError::from)?;
+        client_key.check_compatible(self.context.parameters())?;
         let secret = client_key.accumulator_ntru_secret_key();
         let transformed = FourierNtruSecretKey::try_from_coeff_secret_key(secret, &mut self.fft)
             .map_err(TfheKeyError::from)?;

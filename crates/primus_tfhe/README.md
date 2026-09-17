@@ -128,7 +128,7 @@ LUT and dimension checks happen before output writes; they cannot verify secret
 identity. Fourier keys and evaluators must use the same FFT table instance.
 
 The minimal traits are `ProgrammableBootstrap` and `ProgrammableBootstrapInterleaved`.
-Ordinary applications use context/family compilation methods, which validate and
+Ordinary applications use parameter compilation methods, which validate and
 encode plaintext outputs. `LookupTable::try_new` and `InterleavedLookupTable::try_new`
 accept already encoded outputs and an explicit programmed prefix length; Boolean
 and CBS paths use these constructors for their distinct output scales.
@@ -138,7 +138,7 @@ responsible for keeping the input within the table's programmed prefix.
 
 ### Choosing the output encoding
 
-Ordinary and interleaved family/context LUT compilation methods take `&RoundedCodec<T, M>` as their first
+Ordinary and interleaved parameter LUT compilation methods take `&RoundedCodec<T, M>` as their first
 argument. Input parameters determine the rotation centers and, together with the
 chosen compilation mode, the input domain. The output codec determines `t_out`,
 validates values in `0..t_out` and encodes them with unsigned embedding.
@@ -153,16 +153,15 @@ For an NTRU context with `t_in=16`, compute `x % 4` at output modulus `t_out=4`:
 use primus_encoding::RoundedCodec;
 
 let output_codec = RoundedCodec::new(4u32, context.parameters().external_lwe().cipher_modulus());
-let lut = context.compile_lookup_table_fn(&output_codec, |x| (x % 4) as u32).unwrap();
+let lut = context.parameters().compile_lookup_table_fn(&output_codec, |x| (x % 4) as u32).unwrap();
 let input = encryptor.encrypt_padded(7u32, &mut rng).unwrap();
 let output = evaluator.apply_lookup_table(&input, &lut);
 let message = output_codec.decode_value(decryptor.decrypt_phase(&output).unwrap());
 assert_eq!(message, 3);
 ```
 
-For GLWE use `context.parameters().glwe().cipher_modulus()` to construct the
-output codec. To keep the parameter encoding, pass `input_plaintext_codec()`
-(GLWE) or `external_lwe().plaintext_codec()` (NTRU); ordinary `decrypt` then applies.
+For GLWE use `context.parameters().accumulator_glwe().cipher_modulus()` to construct the
+output codec. To keep the parameter encoding, pass `input_plaintext_codec()` in either family; ordinary `decrypt` then applies.
 The basic backend examples show independent output encoding without extra keys.
 
 `decrypt_phase` returns a canonical noisy residue under the external LWE secret;
@@ -182,7 +181,7 @@ Slices contain exactly `t_in` outputs in input order. Encrypt with ordinary
 For example, in a context configured with `t_in=15` and an output codec for `t_out=8`:
 
 ```rust,ignore
-let lut = context.compile_odd_full_domain_lookup_table_fn(
+let lut = context.parameters().compile_odd_full_domain_lookup_table_fn(
     &output_codec, |x| ((x * x + 3) % 8) as u32,
 ).unwrap();
 let input = encryptor.encrypt(14u32, &mut rng).unwrap();
@@ -224,7 +223,7 @@ use primus_tfhe::BivariateLookupTable;
 
 let compare = BivariateLookupTable::try_new(
     3, 2, context.parameters().poly_length(),
-    context.parameters().external_lwe().plaintext_codec(),
+    context.parameters().input_plaintext_codec(),
     &output_codec, |x, y| u32::from(x > y),
 ).unwrap();
 let lhs = encryptor.encrypt_padded(2u32, &mut rng).unwrap();
