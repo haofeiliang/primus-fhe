@@ -1,12 +1,6 @@
 # 实现决定参考
 
-这些记录从 HANDOFF 迁入，保留尚不能仅凭当前源码恢复的设计理由和过去选择。按涉及的 crate/符号读取对应章节；不要求每次任务完整加载，也不把它们当作全仓库不可更改的规则。
-
-- 用户明确排除的工作范围由当前 HANDOFF 和会话指令确认；数学前提应对照当前 rustdoc 与实现。
-- 既有实现选择可在调用方、参数、平台或证据改变后重新评估；说明改变了哪项前提。历史性能结论需要复测，不能当作当前测量结果。
-- 公开契约和局部算法理由今后维护在对应 rustdoc、README、源码或 benchmark 注释；确认信息有可靠落点后，删除这里重复的记录，不追加任务日志。
-
-按目标检索章节：基础算术；多项式/变换/RNS；lattice/encoding/LWE；GLWE/NTRU/TFHE；NTRU 外积性能。
+按涉及的 crate/符号读取对应章节；这些是既有数学边界、实现取舍和未决记录，不是每次都要加载的全仓库规则。当前任务与用户排除项见 [HANDOFF](../../HANDOFF.md)，开发规范见 [AGENTS](../../AGENTS.md)。参数、调用方、平台或证据变化后可重新评估；公开契约及局部理由有可靠落点后，删除这里的重复记录。
 
 ## 基础算术的仍有效决定
 
@@ -51,8 +45,6 @@
 
 ## Lattice、编码与 LWE 的仍有效决定
 
-- 检查留在拥有契约的公开/批量/构造边界；底层内核接受已建立的布局、basis/table/modulus
-  前提，不重新逐层添加 `assert_compatible`，尤其不在 trace 内逐次校验自同构资源。
 - 低层求值 context 保持工作区职责；不为减少参数而恢复 `NttGadgetDomain`、混入 basis/table/modulus
   或引入万能表示 trait。NTT CMUX 的局部 `too_many_arguments` 豁免有意保留。
 - RNS `sub_mul_scalar_assign` 暂不提供；字节接口不增加假想 Data/显式大小端变体；
@@ -98,3 +90,16 @@
   owning context 因而仍保留 accumulator 容量，此改动减少复制，不承诺减少工作区容量。
 - NTT 系数入口转发公开变换入口曾出现实测回退；各入口直接调用同一私有 kernel 的形态有意保留。
   不恢复无收益的 inline 提示。完整 KSK 未测得显著加速，不因少一次复制就宣称明显收益。
+
+
+## 待核实事项
+
+以下从旧 HANDOFF 迁入，本次仅整理记录，未重新审查源码；在对应工作开始时核对。
+
+| 范围 | 既有问题 / 触发条件 |
+| --- | --- |
+| CRT Gaussian 编码 | `primus_glwe_rns::CrtGlweParameters::new` 在 `q_i <= floor(12σ)` 时可能产生非规范 residue；处理参数边界时核对支持集检查 |
+| GLWE RNS 测试 | `tests/glev.rs::test_key_switching` 曾仅打印解码结果；整理该 crate 时确认，补独立断言或删除重复案例 |
+| reduce 文档 | `ReduceMulAddSlice` 曾称五种 fused 形态都需要而生产调用只有三种；概览漏列 reduce_once、double、mul-add；整理该 crate 时核对 |
+| NTRU SS/CBS | f/f² 误差放大、KDM/circular-security 假设与生产失败率尚需独立论证 |
+| 恒时与平台 | 未完成全库恒时证明或非 x86 全量验证；拒绝采样/逆元不承诺恒时，平台内核变化后针对性验证 |

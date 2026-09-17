@@ -1,8 +1,8 @@
 # 稀疏私钥 PBS：P3 实现契约
 
-本文固定 P3.1 的方案、参数和验收边界，供 P3.2–P3.5 直接实施。首版是 **GLWE NTT、一般固定重量二元 BR 秘密、系数域桶聚合**。参数用于开发与比较，尚无生产安全等级或完整 PBS 失败概率保证。
+本文保存已实现的 **GLWE NTT、固定重量二元 BR 秘密、系数域桶聚合**契约，以及表示/参数取舍的测量依据。参数用于开发与比较，尚无生产安全等级或完整 PBS 失败概率保证。
 
-来源是 [2026-1730.pdf](../temp/2026-1730.pdf)：Aayush Jain、Huijia Lin、Zeyu Liu、Sagnik Saha，*New Techniques for Fast and Shallow FHE Bootstrapping and Beyond*。本文页码是 PDF 的一基页码；本次核对 §3.4、§4、§7.1，逐页查看 p.17–19 的公式/伪码和 p.43 的参数表。文件 SHA-256：`0ba34c2052e2fc717e17271ac04058096075bfd21e8922b7009c9328119eef12`。下文的匹配上界与 Primus 噪声递推是本项目推导，不是论文给出的具体安全结论。
+来源是 [2026-1730.pdf](../temp/2026-1730.pdf)：Aayush Jain、Huijia Lin、Zeyu Liu、Sagnik Saha，*New Techniques for Fast and Shallow FHE Bootstrapping and Beyond*。本文使用 PDF 一基页码，依据 §3.4、§4、§7.1，重点为 p.17–19 的公式/伪码和 p.43 参数表。文件 SHA-256：`0ba34c2052e2fc717e17271ac04058096075bfd21e8922b7009c9328119eef12`。下文的匹配上界与 Primus 噪声递推是本项目推导，不是论文给出的具体安全结论。
 
 ## 首版决定
 
@@ -15,7 +15,7 @@
 | BSK | 每个副本独立加密选择位，每桶额外独立加密一个 dummy；按桶保存系数域 GGSW |
 | 在线执行 | 输入旋转量计算一次；逐桶系数旋转/相加，整桶转 NTT，再做一次 external product |
 | 共享层 | 复用 LUT、`RotationQuantizer`、GGSW、分解和外积；不向 `primus_tfhe::lookup_table` 加稀疏参数或策略 trait |
-| 首版组合 | 已接普通/交错 LUT 和两种 GLWE order；CBS、Fourier、稀疏三元、NTRU 不在本次支持承诺中 |
+| 首版组合 | 普通/交错 LUT、两种 GLWE order，后续接入 [MVB](tfhe-mvb.md)；CBS、Fourier、稀疏三元、NTRU 未支持 |
 
 参数中的 `h` 只约束**进入 BR 的 small-LWE 秘密**。KS→BR 顺序的外部秘密仍是 accumulator 的 `kN` 维系数展开；不能把它改标成固定重量二元分布。以下用 `k` 表示 GLWE 维数，`b` 表示桶数，`s` 表示交错 LUT 的 `padded_output_count`，避免与输出函数个数混用。
 
@@ -181,7 +181,7 @@ Primus 当前两种链都保持同一个密文模数，没有论文中 `Q -> Q' 
 
 回归组取 `log_basis=9` 是因为 `q` 的位宽为 27，恰好三层且不丢低位。现有 `ApproxSignedBasis` 的完整层数是位宽除以 `log_basis` **向下取整**；`reverse_length=None` 本身不保证零分解误差。
 
-上述启发式外积估算给出成本参数组的 `sigma_BR≈7.41e5`，而 `q/(2*t_out)≈8.26e6`；这只支持将其作为实验起点。严格最坏界远大于此，未给出完整链的目标失败率。P3.3/P3.5 应测实际相位误差与 LUT 余量；若失败，重新调整双方相同的参数，不能挑选成功 seed 或放宽断言。`sigma` 参数也不能直接当成有限精度采样器的精确实际标准差。
+上述启发式外积估算给出成本参数组的 `sigma_BR≈7.41e5`，而 `q/(2*t_out)≈8.26e6`；这只支持将其作为实验起点。严格最坏界远大于此，未给出完整链的目标失败率。参数变更后须重测相位误差与 LUT 余量；失败时调整双方相同参数，不能挑选成功 seed 或放宽断言。`sigma` 参数也不能直接当成有限精度采样器的精确实际标准差。
 
 论文 Table 3 的一般二元参数为 `(n,h,N,q,Q,Q')=(1024,43,1024,512,2^28,2^12)`、`(1024,31,1024,512,2^28,2^12)` 和 `(2048,70,2048,2^12,2^54,2^35)`。这些是 OpenFHE 场景，不能把 `h` 或 STD128 标签移植到上述单素数链；论文对该标签给出的估计也只有约 120 bit。我们没有重跑 lattice-estimator，没有得到 Primus 的生产安全结论。
 
@@ -213,7 +213,7 @@ P3.2 的 `SparseGlweBootstrappingKey<T>` 放在 `primus_tfhe_glwe_ntt`；长期�
 
 ## P3.2 实现入口
 
-- [KeyGenerator 与稀疏 key](../crates/primus_tfhe_glwe_ntt/src/sparse/key.rs)：`try_generate_sparse_bootstrapping_key(&client, copy_count, bucket_count, rng)` 复用已验证的 context，返回独立 BSK。首版共享 context 的显式模数，没有新增模数泛型、参数包装或稀疏 ServerKey。
+- [KeyGenerator 与稀疏 key](../crates/primus_tfhe_glwe_ntt/src/sparse/key.rs)：`try_generate_sparse_bootstrapping_key(&client, copy_count, bucket_count, rng)` 复用已验证的 context，返回独立 BSK。复用 context 的显式模数，不另建参数包装；完整 server key 入口见 P3.5。
 - [私有 PBC](../crates/primus_tfhe_glwe_ntt/src/sparse/pbc.rs)：逐索引无放回采样、完整增广路匹配、固定秘密最多八次尝试；CSR 只在匹配成功后生成，桶内索引递增。
 - `bucket(j)` 返回公开索引切片和 GGSW 迭代器；密文比索引多一项，最后为 dummy。所有权在 BSK，读取不依赖 client/keygen，公开 API 不返回匹配或占用位。
 - 入口先校验上下文兼容性、固定重量分布、实际二元系数/重量、桶参数及存储长度，再消费随机数。匹配成功后按桶批量加密，直接在最终分配中原地 inverse NTT。支持集、匹配工作区、选择位用 `Zeroizing`，NTT 秘密和 gadget context 沿用已有擦除契约。
@@ -250,19 +250,7 @@ P3.2 的 `SparseGlweBootstrappingKey<T>` 放在 `primus_tfhe_glwe_ntt`；长期�
 没有按秘密占用或公开指数跳过桶，外积次数严格为 `bucket_count`。
 完整 PBS、两种 order 的 KS/提取与交错步长已在 P3.5 接入；CBS 不在本次支持范围。
 
-只新增[一项集成测试](../crates/primus_tfhe_glwe_ntt/tests/sparse_blind_rotation.rs)，
-同一客户端秘密生成经典/稀疏 BSK。独立整数模切及逐项单项式 oracle 检查全部输出相位，
-不复用生产旋转 helper，也不比较不同噪声密文的字节：
-
-- `N=16` 穷举全部 32 个总旋转指数，并检查 `q-1` 模切回绕；包含 `k=1,c=3,b=8`
-  和 `k=2,c=1,b=17`，覆盖奇偶桶数、公开空桶、多行 GGSW 与跨调用 scratch 重用。
-- `N=256,k=2,c=3,b=8` 使用截断 basis、真实 LWE 加密和编译 LUT，检查前半域四个输入及不满一块的聚合尾部。
-- 每次稀疏 BR 都测量在线分配并断言为零；非法输入/LUT/输出长度和 NTT 模数在输出写入前拒绝。
-
-所有配置使用 `n=16,h=4,q=132120577,t=8,noise=0.7`，固定 seed 见测试。
-各系数相位与独立旋转 oracle 的距离必须小于解码半间距约 `8.26e6`，并检查解码一致。
-这些有限样本不认证安全性或完整 PBS 尾概率，也不代表成本参数组；成本组的四个固定输入
-在下述 benchmark setup 中另行检查。
+[BR 集成测试](../crates/primus_tfhe_glwe_ntt/tests/sparse_blind_rotation.rs)使用同秘密经典对照和独立整数模切/单项式 oracle：N=16 遍历全部总指数，覆盖 q-1 回绕、奇偶桶数、空桶和多行 GGSW；N=256 使用截断 basis 与真实加密输入，覆盖分块尾部。检查相位/解码、scratch 复用、零在线分配，以及错误在写入前拒绝，不比较不同噪声密文的字节。
 
 ### 批量量化快速路径的取舍
 
@@ -400,8 +388,7 @@ Evaluator 构造分别为经典 12 / 稀疏 14 次分配；所有测量的在线
 调用方每个 LWE 输出另占 `4*(dimension+1)` B，三输出乘三。
 
 常驻 [`sparse_pbs`](../crates/primus_tfhe_glwe_ntt/benches/sparse_pbs.rs) 替换四项原始 BR 基准，
-只保留成本组的八项完整 PBS 和两项 keygen。当前 `DIMENSION=728`，已通过默认/SIMD 的
-基准冒烟与固定输入解码检查，未重新计时；复现上表历史数据需将其设回 512。运行当前基准：
+只保留成本组的八项完整 PBS 和两项 keygen。当前 `DIMENSION=728`；后续计时见 [P4.0](benchmarks/tfhe.md#p40-阶段拆分)和 [P4.3](tfhe-mvb.md#8-p43-测量与应用选择)，上表仍为 n=512。复现上表需设回 512。运行当前基准：
 `cargo bench -p primus_tfhe_glwe_ntt --bench sparse_pbs`；SIMD 使用 `cargo +nightly bench` 并加
 `--features simd`。小参数仅替换该基准中的维数、重量、噪声和两组 basis 为上文小参数后测量；
 诊断程序未保留为常驻 target，GitHub CI 不执行 benchmarks。
@@ -426,10 +413,6 @@ Evaluator 构造分别为经典 12 / 稀疏 14 次分配；所有测量的在线
 额外对每组固定非零索引 `i*n/h`、`i in 0..h`，使用生产映射/匹配实现、seed
 `0x5035_4d41+n` 连续生成 64 个成功映射，各组总尝试次数均为 64，无重试。
 这只统计映射阶段，不是 64 次大密钥加密，也不能据此宣称匹配不失败；八轮耗尽上界和条件分布仍沿用前文。
-
-默认及 nightly SIMD 均通过 NTT 后端 14 项测试、all-targets check/Clippy；严格私有 rustdoc、
-workspace all-targets check、格式及 diff 检查通过。未跑全 workspace 数值测试或非 x86 路径，
-未认证生产安全、完整链失败率及稀疏 CBS。
 
 ## 论文校勘与表示选择
 
@@ -457,25 +440,12 @@ p.17 的聚合标准差仅写 `sqrt(|C_j|)*sigma`，按 Algorithm 2 显式添加
 
 不默认预计算所有 `2N` 个旋转的 NTT 形式。论文一般二元实现的超大 key 已遇到带宽瓶颈；P3.4 按上述分项测量保留系数域 BSK 和逐桶 NTT。`[-p,p,-p]` 也会将对应系数存储扩大约三倍，不能只报告减少的算术次数。
 
-## 后续验收与仍未解决的研究问题
+## 未解决的研究问题
 
-| 步骤 | 必须保留的少量独立证据 |
-| --- | --- |
-| P3.2 | 合成小图对完整匹配 oracle；唯一覆盖、同桶去重、未占用桶 dummy；强制构造失败再成功/8 次耗尽，秘密保持不变；小参数 key 的布局与加密语义。用同一测试的表驱动场景，不增加大规模随机压力测试 |
-| P3.3 | 小环独立单项式总指数 oracle，覆盖指数 `0,N,2N-1` 和回绕；同一 quantizer 下比较相位/解码，不比较不同加密的密文字节；确认每桶一次外积、scratch 复用 |
-| P3.4 | Criterion 分别测聚合、GGSW 变换、外积和 BR；setup 在计时外；报告 BSK/scratch、在线分配、CPU/工具链/feature。无有意义收益就保留清楚的参考实现 |
-| P3.5 | 同一小 fixture 覆盖两种 order、普通/交错 `k_out=3`（补齐为 4）；经典对照和完整 PBS 延迟，统计 keygen 尝试次数及实际相位余量；不用 Boolean gate 或微基准代替完整 PBS |
+1. 固定重量 small-LWE、补零 KS 目标和相关 evaluation keys 的具体攻击估计与安全假设；成功条件下公开映射的影响不能仅凭熵或 `U^8` 消除。
+2. 实际离散采样器、分解相关性、GLWE KS、重复求值及各 LUT 编码的完整尾界；普通 LUT 的实验结论不能自动推广到 CBS。
+3. 安全目标是否需要增加复制数/桶数或采用其他 PBC；改变参数后须重算失败/噪声界并同步经典对照。
 
-论文 Table 2 的一般二元 gate 数字 `36.5ms -> 7.9ms` 是外部结果；功能 3-bit 的 `391.5ms -> 53.5ms` 中后者标星，来自微基准估算。P3.1 没有执行 Primus PBS 性能计时，也不承诺复现该倍数。
+论文 Table 2 的 gate 倍数属于外部结果，功能 3-bit 项还包含标星的微基准估计，不作为 Primus 目标。§5 Binary-NTT shallow 使用 NTT 槽二元秘密、不同 RLWE 假设和乘法树，与本文系数二元稀疏秘密及 LWE→GGSW CBS 不同，见[候选清单](tfhe-next.md#6-保留但暂缓)。
 
-P3.1 本次验证范围：核对固定重量采样、两种 order 的实际秘密、keygen、NTT GGSW、basis 误差界、外积 scratch 与现有参数/benchmark。临时独立检查穷举 `(n,h,c,b)=(4,3,2,4)` 的全部映射和支持集，共 5184 例，与暴力匹配一致；每个支持集失败概率均为 `1/36`。另复算上述 Hall 上界、模数/NTT 整除条件和存储数值。未改 Rust、未新增 CI 测试或 benchmark；这些设计检查不能代替 P3.2–P3.5 的实现验证。
-
-源码恢复入口：[固定重量采样](../crates/primus_distr/src/common.rs)、[实际客户端秘密](../crates/primus_tfhe_glwe/src/key.rs)、[NTT keygen](../crates/primus_tfhe_glwe_ntt/src/key.rs)、[GGSW 加密](../crates/primus_glwe/src/secret_key/ntt/gadget.rs)、[分解误差界](../crates/primus_decompose/src/primitive/basis.rs)、[外积](../crates/primus_lattice/src/ggsw/external_product.rs)及其[工作区](../crates/primus_lattice/src/context/glwe_external_product.rs)。
-
-以下问题保持开放，但不阻塞**明确标为实验**的 P3.2–P3.5：
-
-1. 固定重量 small-LWE、补零 KS 目标、相关 evaluation keys 的具体攻击估计与安全假设；成功条件下公开映射的影响不能仅凭熵或 `U^8` 消除。
-2. 结合实际离散采样器、分解相关性、GLWE KS、重复求值和各 LUT 编码的完整尾界；普通 LUT 的实验结论不能自动推广到 CBS。
-3. 是否需要为了安全目标增加复制数/桶数或采用不同 PBC，及其成本；参数一旦改变，重新计算失败与噪声界并同步经典对照。
-
-论文 §5 的 Binary-NTT shallow 路线使用 NTT 槽二元秘密、不同 RLWE 假设和乘法树；不等同于这里的系数二元稀疏秘密或 LWE→GGSW CBS。本轮不为它加入新环表示、modulus chain 或通用 backend trait。
+底层恢复入口：[固定重量采样](../crates/primus_distr/src/common.rs)、[客户端秘密](../crates/primus_tfhe_glwe/src/key.rs)、[NTT keygen](../crates/primus_tfhe_glwe_ntt/src/key.rs)、[GGSW 加密](../crates/primus_glwe/src/secret_key/ntt/gadget.rs)、[basis 误差界](../crates/primus_decompose/src/primitive/basis.rs)、[外积](../crates/primus_lattice/src/ggsw/external_product.rs)与[工作区](../crates/primus_lattice/src/context/glwe_external_product.rs)。
