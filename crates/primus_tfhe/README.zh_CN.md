@@ -105,7 +105,7 @@ callback 报错或输出越界时立即停止，不返回部分编译的表。
 `LookupTable::try_new` 与 `InterleavedLookupTable::try_new` 接收已编码输出和显式的
 编程前缀长度，Boolean 与 CBS 通过它们使用各自的输出尺度。
 兼容性检查绑定多项式长度与编码模数；输入位于已编程前缀内仍由调用方保证。
-`backend_support` 服务于后端实现。
+`rotation` 集中 LUT 编译与 BR 执行共用的旋转量化契约。
 
 ### 选择输出编码
 
@@ -215,6 +215,8 @@ BR 前可能发生的密钥切换误差及逐系数模切舍入。容量条件�
 
 | 文件 | 职责 |
 | --- | --- |
+| [bootstrap.rs](src/bootstrap.rs) | 完整普通/交错 PBS 的 LWE 输入输出契约 |
+| [rotation.rs](src/rotation.rs) | LUT 编译与 BR 共用的准备、标量和批量量化 |
 | [lookup_table.rs](src/lookup_table.rs) | 统一导出与共用编码元数据 |
 | [single.rs](src/lookup_table/single.rs) | 单输出类型，集中前半区和奇数全域构造器 |
 | [interleaved.rs](src/lookup_table/interleaved.rs) | 多输出类型及补齐输出数、有效数量接口 |
@@ -222,6 +224,23 @@ BR 前可能发生的密钥切换误差及逐系数模切舍入。容量条件�
 | [compile.rs](src/lookup_table/compile.rs) | 共用编码校验、中点与负循环尾部填充 |
 | [compile/front_half.rs](src/lookup_table/compile/front_half.rs) | 前半区单输出/交错编译、域与槽容量检查 |
 | [compile/odd_full_domain.rs](src/lookup_table/compile/odd_full_domain.rs) | 奇数域检查、中心折叠与区间填充 |
+
+### 后端执行阶段
+
+共享 trait 描述完整求值，不规定 BSK 算法、秘密分布或变换表示。各后端内部将
+`blind_rotate` 与 `keyswitch_accumulator` 分开，复用原工作区：
+
+| 阶段 | GLWE | NTRU |
+| --- | --- | --- |
+| BR 输入 | BK 直接使用 small-LWE；KB 先 ring KS、compact extraction 得到 small-LWE | 客户端秘密下的外部 LWE |
+| BR 结果 | `main_glwe`，accumulator 秘密下的系数域 GLWE | `blind_rotation.current`，`f_acc` 下的系数域 NTRU |
+| 普通/交错输出 | BK 将 accumulator KS 至补零 small 秘密后 compact extraction；KB 直接提取 kN LWE | KS 至客户端环秘密后 compact extraction |
+| CBS | 消费 accumulator 秘密下的 BR 结果，继续投影/SS | 保持 `f_acc`，继续各自的投影/SS |
+
+BK/KB 分别为 `BootstrapKeyswitch` / `KeyswitchBootstrap`。后置 KS 写独立缓冲区，
+保留 BR 结果；MVB 的具体后处理与 KS 位置由所选算法决定。当前 BR 的 binary 限制仍生效。
+支持 ternary 时须一起处理控制密钥、LWE 剩余类到 signed GLWE 私钥的转换和参数兼容性；
+automorphism 算法及其辅助密钥尚未接入。
 
 ## 验证
 
@@ -244,7 +263,7 @@ cargo bench -p primus_tfhe --bench lookup_table
 ## 保留模数类型的旋转量化
 
 raw LUT 编译接收独立的输入模数类型和系数模数类型。
-`backend_support::RotationQuantizer::new(input_modulus, two_n, rotation_step)` 准备固定
+`rotation::RotationQuantizer::new(input_modulus, two_n, rotation_step)` 准备固定
 模数对的转换，`exponent(value)` 无分配复用。旋转域 `two_n = 2N` 必须能由输入
 系数类型表示；即使输入使用 Native 模数，目标 `two_n/rotation_step` 也为显式二次幂。
 GLWE 密钥和 NTRU 参数在构造时

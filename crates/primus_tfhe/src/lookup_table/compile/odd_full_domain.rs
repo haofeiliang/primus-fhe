@@ -6,7 +6,7 @@ use primus_poly::PolynomialOwned;
 use primus_reduce::{PrepareModulusSwitch, ReduceAdd, RingContext};
 
 use super::{fill_negated_tail, upper_midpoint, validate_input_encoding};
-use crate::{LookupTableError, backend_support::RotationQuantizer};
+use crate::{LookupTableError, rotation::RotationQuantizer};
 
 /// Compiles all t messages; the returned domain length is the validated usize t.
 /// Upper-half centers carry negated values so negacyclic extraction restores them.

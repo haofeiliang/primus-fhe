@@ -6,7 +6,7 @@ use primus_lattice::{GadgetSize, context::NttGlweExternalProductContext, glwe::G
 use primus_ntt::NttTable;
 use primus_poly::Polynomial;
 use primus_reduce::{FieldContext, PrepareModulusSwitch};
-use primus_tfhe::backend_support::{RotationQuantizer, direct_exponent};
+use primus_tfhe::rotation::RotationQuantizer;
 
 use crate::NttGlweBootstrappingKey;
 
@@ -259,7 +259,10 @@ impl<T: FheUint, LM: PrepareModulusSwitch<ValueT = T>> NttGlweBootstrappingKey<T
     {
         let two_n = 2 * self.size().glwe_size().poly_length();
         self.blind_rotate_with(input, accumulator, output, modulus, ntt, context, |x| {
-            direct_exponent(x, two_n)
+            // This entry already receives exponents; do not quantize them again.
+            let exponent = x.try_into().unwrap();
+            debug_assert!(exponent < two_n);
+            exponent
         });
     }
 

@@ -3,13 +3,15 @@ use primus_fft::{FftEngine, FftTable, TorusFftValue};
 use primus_lattice::{lwe::Lwe, ntru::Ntru};
 use primus_modulus::NativeModulus;
 use primus_poly::{Polynomial, PolynomialOwned};
-use primus_tfhe::backend_support::RotationQuantizer;
+use primus_tfhe::rotation::RotationQuantizer;
 
 use crate::{ServerKey, TfheParameters};
 
 /// Coefficient buffers and Fourier external-product scratch reused online.
 pub(crate) struct BlindRotationWorkspace<T: TorusFftValue> {
+    /// Coefficient-domain result under the accumulator secret after BR.
     pub(crate) current: Ntru<Vec<T>>,
+    /// BR temporary storage, then coefficient output under the client secret after KS.
     pub(crate) scratch: Ntru<Vec<T>>,
     pub(crate) external_product: primus_ntru::FourierNtruExternalProductContext<T>,
 }
@@ -25,12 +27,12 @@ impl<T: TorusFftValue> BlindRotationWorkspace<T> {
     }
 }
 
-/// Blind-rotates a LUT and initializes an encrypted native NTRU accumulator.
+/// Initializes and blind-rotates an encrypted native NTRU accumulator.
 ///
-/// On return, `workspace.current` contains the encrypted selected LUT phase.
-// The caller validates LUT compatibility; the rotation step equals the
-// padded output count.
-// A rotation step of one preserves the ordinary PBS modulus-switching path.
+/// Writes the selected LUT phase to coefficient-domain `workspace.current`
+/// under `f_acc`, reusing `workspace.scratch` as temporary storage. The caller
+/// established input/LUT compatibility; `rotation_step` is the LUT's padded
+/// output count (one for ordinary PBS).
 pub(crate) fn blind_rotate_lookup_table_to<T, Table, A>(
     server_key: &ServerKey<T>,
     input: &Lwe<A>,

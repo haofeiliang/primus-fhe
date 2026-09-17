@@ -20,7 +20,9 @@ where
     fft: FftEngine<'a, Table>,
     blind_rotation: FourierGlweBlindRotationContext<T>,
     key_switching: FourierGlweKeySwitchingContext<T>,
+    // After BR: coefficient GLWE under the accumulator secret, in either order.
     main_glwe: GlweCiphertext<Vec<T>>,
+    // Ring KS output under the padded small-LWE secret.
     switched: GlweCiphertext<Vec<T>>,
     small_lwe: LweCiphertext<T>,
 }
@@ -150,13 +152,19 @@ where
         );
 
         let glwe = parameters.glwe();
-        let result = self.evaluate_to_glwe(input, lookup_table.polynomial(), 1);
+        self.blind_rotate(input, lookup_table.polynomial(), 1);
         match parameters.pbs_order() {
             PbsOrder::BootstrapKeyswitch => {
-                result.extract_compact_lwe_to(output, glwe.poly_length(), glwe.cipher_modulus());
+                self.keyswitch_accumulator();
+                self.switched.extract_compact_lwe_to(
+                    output,
+                    glwe.poly_length(),
+                    glwe.cipher_modulus(),
+                );
             }
             PbsOrder::KeyswitchBootstrap => {
-                result.extract_lwe_to(output, glwe.poly_length(), glwe.cipher_modulus());
+                self.main_glwe
+                    .extract_lwe_to(output, glwe.poly_length(), glwe.cipher_modulus());
             }
         }
     }
@@ -231,15 +239,16 @@ where
         );
 
         let glwe = parameters.glwe();
-        let result = self.evaluate_to_glwe(
+        self.blind_rotate(
             input,
             lookup_table.polynomial(),
             lookup_table.padded_output_count(),
         );
         match parameters.pbs_order() {
             PbsOrder::BootstrapKeyswitch => {
+                self.keyswitch_accumulator();
                 for (index, output) in outputs.iter_mut().enumerate() {
-                    result.extract_compact_lwe_at_to(
+                    self.switched.extract_compact_lwe_at_to(
                         index,
                         output,
                         glwe.poly_length(),
@@ -249,7 +258,7 @@ where
             }
             PbsOrder::KeyswitchBootstrap => {
                 for (index, output) in outputs.iter_mut().enumerate() {
-                    result.extract_lwe_at_to(
+                    self.main_glwe.extract_lwe_at_to(
                         index,
                         output,
                         glwe.poly_length(),
@@ -260,22 +269,22 @@ where
         }
     }
 
-    /// Returns switched ring storage for BootstrapKeyswitch, main ring storage otherwise.
-    /// The caller checked input/LUT compatibility. The rotation step equals
-    /// the compiled LUT padded output count.
-    /// A rotation step of one gives ordinary modulus switching.
+    /// Prepares the small-LWE input for the selected order, then writes the BR
+    /// result to `main_glwe` in coefficient form under the accumulator secret.
+    /// The caller checked input/LUT compatibility; `rotation_step` is the LUT's
+    /// padded output count (one for ordinary PBS). No output key switch occurs.
     #[inline]
-    fn evaluate_to_glwe(
+    fn blind_rotate(
         &mut self,
         input: &LweCiphertext<T>,
         lookup_table: &Polynomial<Vec<T>>,
         rotation_step: usize,
-    ) -> &GlweCiphertext<Vec<T>> {
+    ) {
         let parameters = self.context.parameters();
         let small_lwe = match parameters.pbs_order() {
             PbsOrder::BootstrapKeyswitch => input,
             PbsOrder::KeyswitchBootstrap => {
-                self.prepare_small_lwe(input);
+                self.keyswitch_input_to_small_lwe(input);
                 &self.small_lwe
             }
         };
@@ -289,21 +298,25 @@ where
                 &mut self.fft,
                 &mut self.blind_rotation,
             );
-        match parameters.pbs_order() {
-            PbsOrder::BootstrapKeyswitch => {
-                self.server_key.glwe_key_switching_key().key_switch_to(
-                    &self.main_glwe,
-                    &mut self.switched,
-                    &mut self.fft,
-                    &mut self.key_switching,
-                );
-                &self.switched
-            }
-            PbsOrder::KeyswitchBootstrap => &self.main_glwe,
-        }
     }
 
-    fn prepare_small_lwe(&mut self, input: &LweCiphertext<T>) {
+    /// Switches `main_glwe` from the accumulator secret to the padded small
+    /// secret in coefficient-domain `switched`, ready for compact extraction.
+    /// Ordinary/interleaved PBS calls this only for BootstrapKeyswitch; the
+    /// accumulator remains available for consumers needing its original secret.
+    #[inline]
+    fn keyswitch_accumulator(&mut self) {
+        self.server_key.glwe_key_switching_key().key_switch_to(
+            &self.main_glwe,
+            &mut self.switched,
+            &mut self.fft,
+            &mut self.key_switching,
+        );
+    }
+
+    /// Converts an external kN LWE to `small_lwe` under the small-LWE secret,
+    /// reusing `main_glwe` and `switched` for inverse extraction and ring KS.
+    fn keyswitch_input_to_small_lwe(&mut self, input: &LweCiphertext<T>) {
         let glwe = self.context.parameters().glwe();
         input.inverse_extract_glwe_to(
             &mut self.main_glwe,

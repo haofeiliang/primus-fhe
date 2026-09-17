@@ -2,13 +2,15 @@ use primus_integer::FheUint;
 use primus_lattice::{lwe::Lwe, ntru::Ntru};
 use primus_ntt::NttTable;
 use primus_poly::{Polynomial, PolynomialOwned};
-use primus_tfhe::backend_support::RotationQuantizer;
+use primus_tfhe::rotation::RotationQuantizer;
 
 use crate::{ServerKey, TfheParameters};
 
 /// Coefficient buffers and external-product scratch reused by one evaluator.
 pub(crate) struct BlindRotationWorkspace<T: FheUint> {
+    /// Coefficient-domain result under the accumulator secret after BR.
     pub(crate) current: Ntru<Vec<T>>,
+    /// BR temporary storage, then coefficient output under the client secret after KS.
     pub(crate) scratch: Ntru<Vec<T>>,
     pub(crate) external_product: primus_ntru::NttNtruExternalProductContext<T>,
 }
@@ -24,13 +26,12 @@ impl<T: FheUint> BlindRotationWorkspace<T> {
     }
 }
 
-/// Blind-rotates a lookup table and initializes an encrypted NTRU accumulator.
+/// Initializes and blind-rotates an encrypted NTRU accumulator.
 ///
-/// On return, `workspace.current` contains an `NTRU_f_acc` encryption of the
-/// selected LUT phase.
-// The caller validates LUT compatibility; the rotation step equals the
-// padded output count.
-// A rotation step of one preserves the ordinary PBS modulus-switching path.
+/// Writes the selected LUT phase to coefficient-domain `workspace.current`
+/// under `f_acc`, reusing `workspace.scratch` as temporary storage. The caller
+/// established input/LUT compatibility; `rotation_step` is the LUT's padded
+/// output count (one for ordinary PBS).
 pub(crate) fn blind_rotate_lookup_table_to<T, Table, A>(
     server_key: &ServerKey<T>,
     input: &Lwe<A>,

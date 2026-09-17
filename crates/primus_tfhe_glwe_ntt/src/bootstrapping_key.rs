@@ -7,7 +7,7 @@ use primus_lattice::{GadgetSize, ggsw::NttGgswIter};
 use primus_lwe::{LweParameters, LweSecretKey};
 use primus_ntt::NttTable;
 use primus_reduce::{FieldContext, PrepareModulusSwitch, RingContext};
-use primus_tfhe::backend_support::RotationQuantizer;
+use primus_tfhe::rotation::RotationQuantizer;
 
 /// An NTT bootstrapping key containing one GGSW encryption per input LWE
 /// secret coefficient.

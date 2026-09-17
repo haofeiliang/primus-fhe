@@ -1,4 +1,8 @@
-//! Low-level helpers shared by TFHE execution backends.
+//! Rotation quantization shared by LUT compilation and blind rotation.
+//!
+//! Compilation and execution use the same rounding and rotation-step rules.
+//! These operations act on public ciphertext coefficients; the blind-rotation
+//! key and algorithm determine how encrypted secret coefficients select rotations.
 //!
 //! For canonical `x` modulo `q`, rotation quantization is
 //! `R(x, q, L) = floor((x * L + floor(q / 2)) / q) mod L`.
@@ -11,14 +15,6 @@
 use primus_integer::FheUint;
 use primus_modulus::PowOf2Modulus;
 use primus_reduce::{PrepareModulusSwitch, PreparedModulusSwitch};
-
-/// Interprets a coefficient that is already an exponent in `[0, 2N)`.
-#[inline]
-pub fn direct_exponent<T: FheUint>(value: T, two_n: usize) -> usize {
-    let exponent = value.try_into().unwrap();
-    debug_assert!(exponent < two_n);
-    exponent
-}
 
 /// Prepared coefficient quantization for ordinary and interleaved PBS.
 /// The input modulus and target width are fixed before processing coefficients.
@@ -95,35 +91,4 @@ impl<S: PreparedModulusSwitch> RotationQuantizer<S> {
                 *out = exponent * self.rotation_step;
             });
     }
-}
-
-/// Modulus-switches one canonical coefficient into `[0,two_n)`.
-/// For repeated coefficients, reuse [`RotationQuantizer`]. Its construction
-/// requirements and coefficient correctness contract apply.
-#[must_use]
-#[inline]
-pub fn modulus_switch<T, M>(value: T, modulus: M, two_n: usize) -> usize
-where
-    T: FheUint,
-    M: PrepareModulusSwitch<ValueT = T>,
-{
-    RotationQuantizer::new(modulus, two_n, 1).exponent(value)
-}
-
-/// Computes `rotation_step * R(value,q,two_n/rotation_step)`.
-/// Clearing low bits after ordinary switching is not equivalent.
-/// Inherits [`RotationQuantizer`]'s contracts.
-#[must_use]
-#[inline]
-pub fn modulus_switch_with_step<T, M>(
-    value: T,
-    modulus: M,
-    two_n: usize,
-    rotation_step: usize,
-) -> usize
-where
-    T: FheUint,
-    M: PrepareModulusSwitch<ValueT = T>,
-{
-    RotationQuantizer::new(modulus, two_n, rotation_step).exponent(value)
 }

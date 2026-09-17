@@ -17,7 +17,7 @@ use primus_tfhe_glwe::GlwePbsOrder as PbsOrder;
 
 use crate::{
     BootstrappingKey, CircuitBootstrapKey, CircuitBootstrapParameters, NttGlweBlindRotationContext,
-    NttGlweBootstrappingKey, ServerKey, TfheContext, evaluator::prepare_small_lwe,
+    NttGlweBootstrappingKey, ServerKey, TfheContext, evaluator::keyswitch_input_to_small_lwe,
 };
 
 /// An error produced while constructing a circuit-bootstrap evaluator.
@@ -208,7 +208,7 @@ where
         let small_lwe = match tfhe.pbs_order() {
             PbsOrder::BootstrapKeyswitch => input,
             PbsOrder::KeyswitchBootstrap => {
-                prepare_small_lwe(
+                keyswitch_input_to_small_lwe(
                     self.context,
                     self.server_key,
                     input,

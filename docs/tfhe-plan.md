@@ -18,7 +18,7 @@
 | P1 公共 LUT | P1.1 → P1.M → P1.2 → P1.3 → P1.R → P1.4 | 精确几何、直接编译、分离数量/步长，统一量化边界并迁移现有调用方 |
 | P2 基础功能 | P2.1 → P2.2 / P2.3 | 输出编码可选、有界双输入、经验证的奇数全域模式 |
 | P3 稀疏 GLWE NTT | P3.1 → P3.2 → P3.3 → P3.4 → P3.5 | 固定重量二元完整 PBS、参数契约、可复现的成本比较 |
-| P4 MVB | P4.1 → P4.2 → P4.3 | 一种具体 MVB 的实现与适用范围，不包含所有大 LUT 研究路线 |
+| P4 MVB | P4.0 → P4.1 → P4.2 → P4.3 | 一种具体 MVB 的实现与适用范围，不包含所有大 LUT 研究路线 |
 
 默认按 P1、P2、P3、P4 推进。P3 与 P4 在 P1 完成后，可先做各自的设计收敛；稀疏 BR 不依赖双输入或奇数全域。P4 若选择依赖新输出编码/域的方案，再显式依赖相应 P2 步骤。
 
@@ -200,11 +200,27 @@ evaluator 在 BR 入口分派并只分配对应工作区。两种 order、普通
 通过完整 PBS 与零分配验证；CBS 明确拒绝稀疏 key。完整 PBS、keygen、常驻/峰值内存、
 相位余量与匹配诊断见 [P3.5 验收](tfhe-sparse-pbs.md#p35-完整-pbs-接入与验收)。
 历史 n=512 成本组稀疏 PBS 耗时约减少 30%–37%，小组更慢，仍由调用方显式选择；安全及完整尾界未认证。
-下一步 P4.1 选定 MVB 算法与编码。
+先完成 P4.0 的共享旋转契约与执行阶段整理，再在 P4.1 选定 MVB 算法与编码。
+
+## P4.0 共享旋转契约与后端执行阶段整理
+
+**依赖：** P3.5。
+
+- `backend_support` 归位为公开 `rotation` 模块；保留准备、标量和批量量化，删除仅测试调用的一次性模切包装，直接指数转换留在后端入口。
+- `bootstrap` 保留普通/交错两个小 trait，明确完整求值契约与 BR 实现、秘密分布相互独立。
+- 四后端分开 BR 与后置 KS；GLWE 明确前置 KS 得到 small-LWE，BR 总是写入 accumulator 秘密下的系数域 GLWE；NTRU 保留自身初始化与秘密域。CBS 继续消费原 BR 结果。
+- 复用现有缓冲区与边界检查，保持两种 order、输出尺度、单次算法分派及在线零分配；不新增通用 backend trait 或假想的 MVB 产物。
+- 同步 workspace 调用方、现有量化 oracle、README 和恢复文档，比较重构前后的普通/交错及稀疏完整 PBS。
+
+**完成条件：** 七个 TFHE 包的默认/SIMD 验证通过，热路径性能完成同配置对照。binary 限制保持；ternary 后续须同时处理 BR 控制密钥、规范剩余类到有符号秘密的转换及参数兼容性。Automorphism 暂不实现。
+
+**完成记录：** 共享模块与四后端迁移完成，默认/SIMD 各 51 项测试通过；现有基准完成
+52 组前后对照及波动 case 复测，未观察到稳定退化，没有增加测试或 benchmark case。
+决定、测量方法与数据见 [P4.0 记录](tfhe.md#p40-共享旋转契约与后端执行阶段)。下一步 P4.1。
 
 ## P4.1 MVB 算法与编码选型
 
-**依赖：** P1；具体输出/域需求可引入相应 P2 依赖。
+**依赖：** P4.0；具体输出/域需求可引入相应 P2 依赖。
 
 - 比较交错 ManyLUT、因子分解与 BR 展开，选择有实际应用场景的首版算法和后端。
 - 对所选域证明分解/恢复，明确 `1/2`、native/显式模数、舍入、系数范数及输出噪声。
@@ -237,7 +253,7 @@ evaluator 在 BR 入口分派并只分配对应工作区。两种 order、普通
 
 | 范围 | 当前入口 / 重点 |
 | --- | --- |
-| 共享层 | [lookup_table](../crates/primus_tfhe/src/lookup_table.rs)、[backend_support](../crates/primus_tfhe/src/backend_support.rs)、[bootstrap](../crates/primus_tfhe/src/bootstrap.rs)、[公开测试](../crates/primus_tfhe/tests/lookup_table.rs) |
+| 共享层 | [lookup_table](../crates/primus_tfhe/src/lookup_table.rs)、[rotation](../crates/primus_tfhe/src/rotation.rs)、[bootstrap](../crates/primus_tfhe/src/bootstrap.rs)、[公开测试](../crates/primus_tfhe/tests/lookup_table.rs) |
 | Family | [GLWE LUT](../crates/primus_tfhe_glwe/src/lookup_table.rs)、[NTRU LUT](../crates/primus_tfhe_ntru/src/lookup_table.rs) 及 parameters；编码与 raw 入口 |
 | 四后端 | 各 `context.rs`、`evaluator.rs`、`blind_rotation.rs`；两种 GLWE order、NTRU 固定链、旋转步长和提取位置 |
 | Boolean | [公共 evaluator](../crates/primus_tfhe_glwe/src/boolean/evaluator.rs) 及 NTT/Fourier 测试 |

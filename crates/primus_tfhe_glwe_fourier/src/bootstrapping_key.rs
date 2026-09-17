@@ -7,7 +7,7 @@ use primus_lattice::{GadgetSize, ggsw::FourierGgswIter};
 use primus_lwe::{LweParameters, LweSecretKey};
 use primus_modulus::NativeModulus;
 use primus_reduce::{PrepareModulusSwitch, RingContext};
-use primus_tfhe::backend_support::RotationQuantizer;
+use primus_tfhe::rotation::RotationQuantizer;
 
 /// A Fourier bootstrapping key containing one GGSW encryption per input LWE
 /// secret coefficient.

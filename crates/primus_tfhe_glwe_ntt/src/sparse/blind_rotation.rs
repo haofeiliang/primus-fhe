@@ -5,7 +5,7 @@ use primus_integer::FheUint;
 use primus_lattice::{context::NttGlweExternalProductContext, ggsw::Ggsw, glwe::Glwe, lwe::Lwe};
 use primus_ntt::NttTable;
 use primus_poly::Polynomial;
-use primus_tfhe::backend_support::RotationQuantizer;
+use primus_tfhe::rotation::RotationQuantizer;
 
 use super::SparseGlweBootstrappingKey;
 

@@ -8,7 +8,7 @@ use primus_lattice::{
 use primus_modulus::NativeModulus;
 use primus_poly::Polynomial;
 use primus_reduce::PrepareModulusSwitch;
-use primus_tfhe::backend_support::{RotationQuantizer, direct_exponent};
+use primus_tfhe::rotation::RotationQuantizer;
 
 use crate::FourierGlweBootstrappingKey;
 
@@ -245,7 +245,10 @@ where
     {
         let two_n = 2 * self.size().glwe_size().poly_length();
         self.blind_rotate_with(input, accumulator, output, fft, context, |x| {
-            direct_exponent(x, two_n)
+            // This entry already receives exponents; do not quantize them again.
+            let exponent = x.try_into().unwrap();
+            debug_assert!(exponent < two_n);
+            exponent
         });
     }
 

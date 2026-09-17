@@ -131,7 +131,7 @@ accept already encoded outputs and an explicit programmed prefix length; Boolean
 and CBS paths use these constructors for their distinct output scales.
 Compatibility checks bind polynomial length and encoding moduli; callers remain
 responsible for keeping the input within the table's programmed prefix.
-`backend_support` serves backend implementations.
+`rotation` owns the quantization contract shared by LUT compilation and blind rotation.
 
 ### Choosing the output encoding
 
@@ -257,6 +257,8 @@ is a `LookupTable` constructor; `InterleavedLookupTable` owns output lanes and
 
 | File | Responsibility |
 | --- | --- |
+| [bootstrap.rs](src/bootstrap.rs) | Complete ordinary/interleaved PBS contracts for LWE inputs and outputs |
+| [rotation.rs](src/rotation.rs) | Prepared, scalar and batch quantization shared by compilation and BR |
 | [lookup_table.rs](src/lookup_table.rs) | Exports and shared encoding metadata |
 | [single.rs](src/lookup_table/single.rs) | Single-output type with both front-half and odd full-domain constructors |
 | [interleaved.rs](src/lookup_table/interleaved.rs) | Multi-output type, padded output count and effective output count |
@@ -264,6 +266,26 @@ is a `LookupTable` constructor; `InterleavedLookupTable` owns output lanes and
 | [compile.rs](src/lookup_table/compile.rs) | Shared encoding validation, midpoints and negacyclic tail filling |
 | [compile/front_half.rs](src/lookup_table/compile/front_half.rs) | Front-half single/interleaved compilation, domain and slot capacity checks |
 | [compile/odd_full_domain.rs](src/lookup_table/compile/odd_full_domain.rs) | Odd-domain checks, signed centers and interval filling |
+
+### Backend execution stages
+
+The shared traits describe complete evaluation without prescribing a BSK algorithm,
+secret distribution or transform representation. Backends separate `blind_rotate`
+from `keyswitch_accumulator`, reusing their existing workspace:
+
+| Stage | GLWE | NTRU |
+| --- | --- | --- |
+| BR input | BK uses small LWE directly; KB first applies ring KS and compact extraction to obtain small LWE | External LWE under the client secret |
+| BR result | `main_glwe`, coefficient GLWE under the accumulator secret | `blind_rotation.current`, coefficient NTRU under `f_acc` |
+| Ordinary/interleaved output | BK switches to the padded small secret before compact extraction; KB extracts kN LWE directly | Switch to the client ring secret, then compact extraction |
+| CBS | Consume the BR result under the accumulator secret, then projection/SS | Keep `f_acc` for its projection/SS path |
+
+BK/KB denote `BootstrapKeyswitch` / `KeyswitchBootstrap`. Output KS writes a separate
+buffer and preserves the BR result; an MVB algorithm determines its own postprocessing
+and KS placement. Current BR binary-secret restrictions remain. Ternary support must
+address control keys, encoded LWE residues to signed GLWE secret conversion, and
+parameter compatibility together. Automorphism algorithms and auxiliary keys are
+not implemented.
 
 ## Validation
 
@@ -287,7 +309,7 @@ cargo bench -p primus_tfhe --bench lookup_table
 ## Typed rotation quantization
 
 Raw LUT compilation accepts independent typed input and coefficient moduli.
-`backend_support::RotationQuantizer::new(input_modulus, two_n, rotation_step)` prepares
+`rotation::RotationQuantizer::new(input_modulus, two_n, rotation_step)` prepares
 a fixed modulus-pair conversion; `exponent(value)` reuses it without allocation.
 The rotation domain `two_n = 2N` must be representable by the input coefficient
 type; the target `two_n/rotation_step` is an explicit power of two, even for Native input.

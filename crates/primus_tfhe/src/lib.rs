@@ -9,8 +9,7 @@ mod bootstrap;
 mod error;
 mod lookup_table;
 
-#[doc(hidden)]
-pub mod backend_support;
+pub mod rotation;
 
 pub use bootstrap::{ProgrammableBootstrap, ProgrammableBootstrapInterleaved};
 pub use error::{LookupTableError, TfheEvaluationError};

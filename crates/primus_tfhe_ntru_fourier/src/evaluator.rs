@@ -106,7 +106,8 @@ where
             "PBS output dimension mismatch"
         );
 
-        self.blind_rotate_and_keyswitch(input, lookup_table.polynomial(), 1);
+        self.blind_rotate(input, lookup_table.polynomial(), 1);
+        self.keyswitch_accumulator();
         self.blind_rotation
             .scratch
             .extract_compact_lwe_to(output, NativeModulus::new());
@@ -181,11 +182,12 @@ where
             "PBSManyLUT output ciphertext dimension mismatch"
         );
 
-        self.blind_rotate_and_keyswitch(
+        self.blind_rotate(
             input,
             lookup_table.polynomial(),
             lookup_table.padded_output_count(),
         );
+        self.keyswitch_accumulator();
         for (index, output) in outputs.iter_mut().enumerate() {
             self.blind_rotation.scratch.extract_compact_lwe_at_to(
                 index,
@@ -195,11 +197,11 @@ where
         }
     }
 
-    /// Writes the BR result under the client ring secret into `blind_rotation.scratch`.
-    /// The caller checked input/LUT compatibility. The rotation step equals
-    /// the compiled LUT padded output count.
+    /// Writes the coefficient-domain BR result under the accumulator secret to
+    /// `blind_rotation.current`. The caller checked input/LUT compatibility;
+    /// `rotation_step` is the LUT's padded output count. No client key switch occurs.
     #[inline]
-    fn blind_rotate_and_keyswitch(
+    fn blind_rotate(
         &mut self,
         input: &LweCiphertext<T>,
         lookup_table: &Polynomial<Vec<T>>,
@@ -215,6 +217,13 @@ where
             parameters,
             &mut self.fft,
         );
+    }
+
+    /// Switches the BR accumulator to the client ring secret in coefficient-domain
+    /// `blind_rotation.scratch`, ready for compact LWE extraction. CBS consumes
+    /// `blind_rotation.current` directly and does not perform this key switch.
+    #[inline]
+    fn keyswitch_accumulator(&mut self) {
         self.server_key.key_switching_key().key_switch_to(
             &self.blind_rotation.current,
             &mut self.blind_rotation.scratch,

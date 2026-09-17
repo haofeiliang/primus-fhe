@@ -1,3 +1,10 @@
+//! Complete LWE-to-LWE programmable-bootstrap interfaces.
+//!
+//! These traits describe the compiled program and external ciphertext contract.
+//! Backends own blind-rotation algorithms, compatible key distributions, transform
+//! representations and reusable workspace. Interleaving is a specific LUT layout;
+//! other multi-value programs need interfaces matching their actual representation.
+
 use primus_integer::FheUint;
 
 use crate::{InterleavedLookupTable, LookupTable, LweCiphertext};

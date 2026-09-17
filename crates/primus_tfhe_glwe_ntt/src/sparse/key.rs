@@ -10,7 +10,7 @@ use primus_lattice::{
 use primus_modulus::BarrettModulus;
 use primus_ntt::NttTable;
 use primus_reduce::PrepareModulusSwitch;
-use primus_tfhe::backend_support::RotationQuantizer;
+use primus_tfhe::rotation::RotationQuantizer;
 use zeroize::Zeroizing;
 
 use crate::{ClientKey, KeyGenerator, TfheKeyError};

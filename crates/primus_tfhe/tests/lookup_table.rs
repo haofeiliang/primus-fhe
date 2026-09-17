@@ -11,6 +11,7 @@ use primus_reduce::RingContext;
 
 use primus_tfhe::{
     BivariateLookupTable, InterleavedLookupTable, LookupTable, LookupTableError, LweCiphertext,
+    rotation::RotationQuantizer,
 };
 
 macro_rules! with_modulus {
@@ -65,22 +66,6 @@ fn compile_interleaved<
         InterleavedLookupTable::try_new(d, n, k, t, modulus, acc, output)
     })
 }
-fn modulus_switch<T: FheUint>(value: T, q: Option<T>, n: usize) -> usize {
-    with_modulus!(q, modulus, {
-        primus_tfhe::backend_support::modulus_switch(value, modulus, n)
-    })
-}
-fn modulus_switch_with_step<T: FheUint>(
-    value: T,
-    q: Option<T>,
-    n: usize,
-    rotation_step: usize,
-) -> usize {
-    with_modulus!(q, modulus, {
-        primus_tfhe::backend_support::modulus_switch_with_step(value, modulus, n, rotation_step)
-    })
-}
-
 #[test]
 fn raw_compilation_validates_layout_encoding_and_canonical_outputs() {
     let modulus = BarrettModulus::new(97u32);
@@ -445,67 +430,6 @@ fn rotation_center_collisions_are_rejected() {
     }
 }
 
-fn check_quantization<T>()
-where
-    T: FheUint + Into<u128> + TryFrom<u128, Error: Debug>,
-{
-    let native_q = 1u128 << T::BITS;
-    let check = |q: u128, native: bool, length: usize, value: u128| {
-        let modulus = (!native).then(|| T::try_from(q).unwrap());
-        let input = T::try_from(value).unwrap();
-        let expected = round_ratio(value * length as u128, q) as usize % length;
-        assert_eq!(modulus_switch(input, modulus, length), expected);
-        for rotation_step in [1, length / 2] {
-            let expected = round_ratio(value * (length / rotation_step) as u128, q) as usize
-                % (length / rotation_step)
-                * rotation_step;
-            assert_eq!(
-                modulus_switch_with_step(input, modulus, length, rotation_step),
-                expected
-            );
-            with_modulus!(modulus, modulus, {
-                let quantizer = primus_tfhe::backend_support::RotationQuantizer::new(
-                    modulus,
-                    length,
-                    rotation_step,
-                );
-                let inputs = [T::ZERO, input, T::try_from(q - 1).unwrap()];
-                let mut outputs = [usize::MAX; 3];
-                quantizer.exponent_slice_to(&inputs, &mut outputs);
-                for (value, actual) in inputs.into_iter().zip(outputs) {
-                    let expected = round_ratio(value.into() * (length / rotation_step) as u128, q)
-                        as usize
-                        % (length / rotation_step)
-                        * rotation_step;
-                    assert_eq!(actual, expected);
-                }
-            });
-        }
-    };
-    for length in [2, 8, 64] {
-        for q in 2..=33u128 {
-            for value in 0..q {
-                check(q, false, length, value);
-            }
-        }
-        for (q, native) in [(native_q, true), (native_q - 1, false)] {
-            for value in [0, 1, q - 1] {
-                check(q, native, length, value);
-            }
-            for index in 0..length {
-                let threshold = ((2 * index + 1) as u128 * q).div_ceil(2 * length as u128);
-                for value in [threshold - 1, threshold, threshold + 1] {
-                    check(q, native, length, value);
-                }
-            }
-        }
-    }
-    let length = 1usize << (usize::BITS.min(T::BITS) - 1);
-    for value in [0, native_q / 2, native_q - 1] {
-        check(native_q, true, length, value);
-    }
-}
-
 #[test]
 fn quantizer_and_lut_reject_unrepresentable_rotation_domains() {
     let modulus = NativeModulus::<u16>::new();
@@ -514,11 +438,7 @@ fn quantizer_and_lut_reject_unrepresentable_rotation_domains() {
         for rotation_step in [1, 2] {
             assert!(
                 std::panic::catch_unwind(|| {
-                    primus_tfhe::backend_support::RotationQuantizer::new(
-                        modulus,
-                        two_n,
-                        rotation_step,
-                    )
+                    RotationQuantizer::new(modulus, two_n, rotation_step)
                 })
                 .is_err()
             );
@@ -539,25 +459,79 @@ fn quantizer_and_lut_reject_unrepresentable_rotation_domains() {
     }
 }
 
-#[test]
-fn coefficient_quantization_matches_wide_integer_oracle() {
-    check_quantization::<u16>();
-    check_quantization::<u32>();
-    check_quantization::<u64>();
-    // Rounding in the smaller domain differs from clearing low bits afterward.
-    assert_eq!(modulus_switch_with_step(2u32, Some(16), 16, 4), 4);
-    assert_eq!(modulus_switch(2u32, Some(16), 16) & !3, 0);
+mod rotation {
+    use super::*;
 
-    let quantizer =
-        primus_tfhe::backend_support::RotationQuantizer::new(NativeModulus::<u32>::new(), 512, 1);
-    let mut output = [7; 2];
-    assert!(
-        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            quantizer.exponent_slice_to(&[0], &mut output);
-        }))
-        .is_err()
-    );
-    assert_eq!(output, [7; 2]);
+    fn check_quantization<T>()
+    where
+        T: FheUint + Into<u128> + TryFrom<u128, Error: Debug>,
+    {
+        let native_q = 1u128 << T::BITS;
+        let check = |q: u128, native: bool, length: usize, value: u128| {
+            let modulus = (!native).then(|| T::try_from(q).unwrap());
+            let input = T::try_from(value).unwrap();
+            with_modulus!(modulus, modulus, {
+                for rotation_step in [1, length / 2] {
+                    let quantizer = RotationQuantizer::new(modulus, length, rotation_step);
+                    let expected = |value: T| {
+                        round_ratio(value.into() * (length / rotation_step) as u128, q) as usize
+                            % (length / rotation_step)
+                            * rotation_step
+                    };
+                    assert_eq!(quantizer.exponent(input), expected(input));
+                    let inputs = [T::ZERO, input, T::try_from(q - 1).unwrap()];
+                    let mut outputs = [usize::MAX; 3];
+                    quantizer.exponent_slice_to(&inputs, &mut outputs);
+                    for (value, actual) in inputs.into_iter().zip(outputs) {
+                        assert_eq!(actual, expected(value));
+                    }
+                }
+            });
+        };
+        for length in [2, 8, 64] {
+            for q in 2..=33u128 {
+                for value in 0..q {
+                    check(q, false, length, value);
+                }
+            }
+            for (q, native) in [(native_q, true), (native_q - 1, false)] {
+                for value in [0, 1, q - 1] {
+                    check(q, native, length, value);
+                }
+                for index in 0..length {
+                    let threshold = ((2 * index + 1) as u128 * q).div_ceil(2 * length as u128);
+                    for value in [threshold - 1, threshold, threshold + 1] {
+                        check(q, native, length, value);
+                    }
+                }
+            }
+        }
+        let length = 1usize << (usize::BITS.min(T::BITS) - 1);
+        for value in [0, native_q / 2, native_q - 1] {
+            check(native_q, true, length, value);
+        }
+    }
+
+    #[test]
+    fn coefficient_quantization_matches_wide_integer_oracle() {
+        check_quantization::<u16>();
+        check_quantization::<u32>();
+        check_quantization::<u64>();
+        // Rounding in the smaller domain differs from clearing low bits afterward.
+        let modulus = PowOf2Modulus::new(16u32);
+        assert_eq!(RotationQuantizer::new(modulus, 16, 4).exponent(2), 4);
+        assert_eq!(RotationQuantizer::new(modulus, 16, 1).exponent(2) & !3, 0);
+
+        let quantizer = RotationQuantizer::new(NativeModulus::<u32>::new(), 512, 1);
+        let mut output = [7; 2];
+        assert!(
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                quantizer.exponent_slice_to(&[0], &mut output);
+            }))
+            .is_err()
+        );
+        assert_eq!(output, [7; 2]);
+    }
 }
 
 #[test]

@@ -2,7 +2,7 @@ use primus_integer::FheUint;
 use primus_lwe::LweParameters;
 use primus_ntru::NlevParameters;
 use primus_reduce::RingContext;
-use primus_tfhe::backend_support::RotationQuantizer;
+use primus_tfhe::rotation::RotationQuantizer;
 
 use crate::NtruParameterError::{
     CipherModulusMismatch, ClientSecretKeyDistributionMismatch, ClientSecretKeyMustBeBinary,

@@ -6,7 +6,7 @@
 //! Repeating this group fills that input's interval; interval lengths may differ.
 //! For message `m`, first encode `E(m) = round(m * q_in / t) mod q_in`, then
 //! compute `c[m] = R(E(m), q_in, 2M)` using the rounding rule in
-//! [`crate::backend_support`]. Both rounds have upward ties for unsigned input.
+//! [`crate::rotation`]. Both rounds have upward ties for unsigned input.
 //! Combining the two rounds can move plateau boundaries.
 //!
 //! Centers use per-output coefficient coordinates. Append the terminating center
@@ -28,7 +28,7 @@ use primus_poly::PolynomialOwned;
 use primus_reduce::{PrepareModulusSwitch, ReduceAdd, RingContext};
 
 use super::{fill_negated_tail, repeat_output_group, upper_midpoint, validate_input_encoding};
-use crate::{LookupTableError, backend_support::RotationQuantizer};
+use crate::{LookupTableError, rotation::RotationQuantizer};
 
 /// Returns the independently programmable front-half plaintext-domain length.
 #[doc(hidden)]

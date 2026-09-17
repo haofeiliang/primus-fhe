@@ -32,7 +32,7 @@
 
 - [共享 LUT](../crates/primus_tfhe/src/lookup_table.rs)：统一导出与编码元数据；单输出、交错多输出与双输入类型分别位于 `single.rs`、`interleaved.rs`、`bivariate.rs`。[前半区内核](../crates/primus_tfhe/src/lookup_table/compile/front_half.rs) 与[奇数全域内核](../crates/primus_tfhe/src/lookup_table/compile/odd_full_domain.rs) 分别处理两种几何，错误定义位于 [error.rs](../crates/primus_tfhe/src/error.rs)。
 - [有界双输入](../crates/primus_tfhe/src/lookup_table/bivariate.rs)：绑定矩形输入域、打包基数与普通 LUT，复用现有 PBS。
-- [旋转量化](../crates/primus_tfhe/src/backend_support.rs)：普通与 windowed modulus switch。
+- [旋转量化](../crates/primus_tfhe/src/rotation.rs)：普通与 windowed modulus switch。
 - [PBS trait](../crates/primus_tfhe/src/bootstrap.rs)：公共功能契约。
 - [GLWE NTT CBS](../crates/primus_tfhe_glwe_ntt/src/circuit_bootstrap/evaluator.rs)：有效输出补齐与投影的实际调用方。
 
@@ -103,7 +103,7 @@ MVB 还存在基于 BR 展开的路线。因此编译产物应由选定算法决
 
 ## P1.1 的精确契约与元数据决定
 
-几何公式及边界已归位到 [共享 README](../crates/primus_tfhe/README.zh_CN.md)、[前半区编译模块](../crates/primus_tfhe/src/lookup_table/compile/front_half.rs) 与 [量化 helper](../crates/primus_tfhe/src/backend_support.rs)。编译时中心经历编码和模切两次舍入；例如 `N=16, s=1, t=3, q_in=5, m=1` 得到中心 13，理想化的一次舍入会得到 11，且两者填充边界不同。
+几何公式及边界已归位到 [共享 README](../crates/primus_tfhe/README.zh_CN.md)、[前半区编译模块](../crates/primus_tfhe/src/lookup_table/compile/front_half.rs) 与 [量化 helper](../crates/primus_tfhe/src/rotation.rs)。编译时中心经历编码和模切两次舍入；例如 `N=16, s=1, t=3, q_in=5, m=1` 得到中心 13，理想化的一次舍入会得到 11，且两者填充边界不同。
 
 当前执行采用 `R_s(x) = s*R(x,q_in,2N/s)`，先缩小量化域再乘步长；各系数独立量化后，总旋转为 `-R_s(b) + ΣR_s(a_i)*secret_i`。当前合法 `s <= N`，虚拟旋转域至少有两个位置；不要求 helper 支持没有调用方的单位置退化域。
 
@@ -593,3 +593,55 @@ BR 前的密钥切换、逐系数模切以及后续外积/KS 的输出噪声；�
 默认七包测试、nightly `just tfhe-simd` 均通过，各 45 项；相关默认/SIMD all-targets
 Clippy、workspace all-targets check、格式和严格 rustdoc 通过。未重跑未修改的示例、
 其余 workspace 测试、性能计时、非 x86 或生产噪声/安全性验证。
+
+## P4.0 共享旋转契约与后端执行阶段
+
+共享执行接口分为两类职责：`bootstrap` 描述完整 LWE→LWE 求值，`rotation` 提供 LUT
+编译与 BR 执行共用的量化规则。`RotationQuantizer` 从隐藏的 `backend_support`
+迁入公开 `rotation` 模块，保留固定模数对准备、标量和批量执行；没有生产调用方的
+一次性模切包装删除。已经量化好的指数由 GLWE 低层入口直接转换，不再归入模切接口。
+量化公式、舍入、步长及范围前提均不改变。
+
+四后端内部将 `blind_rotate` 与 `keyswitch_accumulator` 分开，具体中间结果的
+秘密域、表示和工作区见 [后端执行阶段](../crates/primus_tfhe/README.zh_CN.md#后端执行阶段)。
+GLWE 的 BR 结果现在始终指向 accumulator 秘密下的系数域 GLWE，不再让同一 helper
+随 order 返回不同秘密下的密文。NTRU 继续使用自己的初始化与环秘密转换；CBS
+保持消费原始 BR 结果。阶段函数暂留私有，现有 scratch、边界检查和一次算法分派复用，
+没有新增分配或统一后端 trait。
+
+这为 P4.1 留下明确的后处理位置，但不提前决定 MVB 的共享 BR 产物、表示或 KS
+顺序。Ternary 后续必须同时更新实际 BR 控制密钥、参数兼容性以及 `q-1 → -1` 的
+LWE 规范剩余类到有符号 GLWE 秘密转换；当前 binary 条件和稀疏 CBS 拒绝保持。
+Automorphism 的控制算法及辅助密钥等待具体实施任务，不预留空接口。
+
+验证复用原有测试与基准。量化测试直接覆盖 prepared quantizer 的标量/批量整数
+oracle，删除一次性包装的重复断言，没有增加测试或 Criterion case。
+
+### 验证与性能对照
+
+`just tfhe`、`just tfhe-simd` 通过，默认/nightly SIMD 各 51 项测试，包括现有 PBS、
+CBS、稀疏路径及零分配断言；相关 Clippy、严格私有 rustdoc、workspace all-targets
+check、格式和 diff 检查通过。未重跑其余 workspace 数值测试、非 x86 或生产安全证明。
+
+基线为 `683a44c`，重构前后保存独立 Criterion 可执行文件，同一 Ryzen 9 9955HX3D
+固定 CPU 2，默认 rustc 1.98.0 / SIMD nightly 1.100.0（2026-08-26），计时期间无并行
+编译。沿用四后端 `pbs` 的固定 seed/参数，筛选单输出与三输出交错完整 PBS；另测
+`sparse_pbs` 的 n=728、h=32、N=1024 组，两种 order、经典/稀疏及单输出/交错都保留。
+setup 不计时，复用 evaluator 和输出。每次迭代仍执行一个原有工作负载。
+
+[逐项数据](benchmarks/tfhe-p4.0.csv) 使用均值纳秒，变化为 `after/before - 1`，正值表示
+耗时增加。第 1 轮每个可执行文件先 before 后 after，预热 0.2 秒、目标采样 1 秒；
+普通组 10 个样本、稀疏参数组 30 个样本，bootstrap 重采样 1000 次。下表为单轮范围，
+不用于宣称加速或跨配置的等安全比较：
+
+| 负载 | 配置 | 对照数 | 耗时变化范围 |
+| --- | --- | ---: | ---: |
+| 四后端普通/三输出 PBS | 默认 | 18 | −1.99%～+1.98% |
+| 四后端普通/三输出 PBS | SIMD | 18 | −3.89%～+1.55% |
+| n728 经典/稀疏完整 PBS | 默认 | 8 | −8.65%～+1.09% |
+| n728 经典/稀疏完整 PBS | SIMD | 8 | −1.76%～+5.06% |
+
+SIMD n728 的 KB 经典单输出/交错初测增加 4.77%/5.06%，因此仅针对这两项追加两轮：
+预热 0.5 秒、目标采样 3 秒、30 样本，第 2 轮先 after 后 before，第 3 轮恢复原顺序。
+两轮变化分别为 +1.88%/+1.35% 与 −2.08%/−1.75%，未重复首轮退化信号。
+本次未观察到稳定性能回退，保留阶段拆分；不把单轮减少视为稳定收益。
