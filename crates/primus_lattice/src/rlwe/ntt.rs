@@ -41,6 +41,7 @@ impl_mul_scalar_single_modulus!(NttRlwe);
 impl_mul_factor_single_modulus!(NttRlwe);
 impl_plaintext_single_modulus!(NttRlwe, NttPolynomial);
 impl_ntt_polynomial_mul!(NttRlwe);
+impl_ntt_monomial!(NttRlwe);
 
 impl_intt!(NttRlwe, Rlwe);
 

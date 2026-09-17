@@ -7,7 +7,7 @@ key switching, and PBS must also be measured in their owning TFHE/scheme crates.
 | Target | Path and operations |
 | --- | --- |
 | `glwe_fourier` | GGSW external product and monomial CMUX, RustFFT and TFHE FFT |
-| `glwe_ntt` | GGSW coefficient-output/NTT-output external product and monomial CMUX |
+| `glwe_ntt` | GGSW coefficient-output/NTT-output external product, monomial CMUX, and ternary fused/two-CMUX comparison |
 | `ntru_fourier` | NGSW coefficient/Fourier-output external product and monomial CMUX, both FFT backends |
 | `ntru_ntt` | NGSW coefficient/NTT-output external product and monomial CMUX |
 | `rns_glev` (`rns`) | CRT/BigUint GLev products and CRT accumulation |
@@ -21,6 +21,10 @@ endpoints differ from the coefficient-output cases; these are not equivalent
 workloads for a speedup comparison.
 Monomial CMUX is the blind-rotation operation; binary and multi-control CMUX
 are not additional baseline cases.
+`ternary_fused` and `ternary_two_cmux` measure the same ideal ternary rotation
+using the same two controls, input, and nonzero exponent. The latter executes
+positive then negative CMUX with a preallocated intermediate GLWE. Both return
+coefficients; noisy/approximately decomposed outputs need not match bit for bit.
 
 ## Parameters and interpretation
 

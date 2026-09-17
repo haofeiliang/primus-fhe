@@ -37,6 +37,7 @@ impl_mul_scalar_single_modulus!(NttGlwe);
 impl_mul_factor_single_modulus!(NttGlwe);
 impl_plaintext_single_modulus!(NttGlwe, NttPolynomial);
 impl_ntt_polynomial_mul!(NttGlwe);
+impl_ntt_monomial!(NttGlwe);
 
 impl_intt!(NttGlwe, Glwe);
 

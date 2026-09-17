@@ -6,7 +6,7 @@ use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_lattice::{
     GadgetSize, GlweSize,
-    context::NttGlweExternalProductContext,
+    context::{NttGlweExternalProductContext, NttGlweTernaryCmuxContext},
     ggsw::Ggsw,
     glwe::{Glwe, NttGlwe},
 };
@@ -36,6 +36,14 @@ fn ntt(c: &mut Criterion, log_n: u32, levels: usize, dimension: usize) {
     let mut output = Glwe::new(vec![0u32; glwe_len]);
     let mut ntt_output = NttGlwe::new(vec![0u32; glwe_len]);
     let mut context = NttGlweExternalProductContext::new(size);
+    let negative_key = Ggsw::new(
+        (0..size.ggsw_len())
+            .map(|i| ((i as u64 * 1_000_003 + 13) % u64::from(Q)) as u32)
+            .collect::<Vec<_>>(),
+    )
+    .into_ntt_form(&table);
+    let mut intermediate = Glwe::new(vec![0u32; glwe_len]);
+    let mut ternary_context = NttGlweTernaryCmuxContext::new(size);
 
     let mut group = c.benchmark_group(format!(
         "glwe/ntt/u32/q{Q}/n{}/k{dimension}/logb{LOG_B}/l{levels}",
@@ -76,6 +84,45 @@ fn ntt(c: &mut Criterion, log_n: u32, levels: usize, dimension: usize) {
                 black_box(modulus),
                 black_box(&table),
                 black_box(&mut context),
+            )
+        });
+    });
+    // Same controls, input, exponent, basis, and coefficient-domain endpoint.
+    // One iteration is one ternary step; key generation and scratch allocation
+    // stay outside timing. These dense controls measure arithmetic, not noise.
+    group.bench_function("ternary_two_cmux", |b| {
+        b.iter(|| {
+            black_box(&key).cmux_monomial_to(
+                black_box(&input),
+                black_box(exponent),
+                black_box(&mut intermediate),
+                black_box(&basis),
+                black_box(modulus),
+                black_box(&table),
+                black_box(&mut context),
+            );
+            black_box(&negative_key).cmux_monomial_to(
+                black_box(&intermediate),
+                black_box(2 * table.poly_length() - exponent),
+                black_box(&mut output),
+                black_box(&basis),
+                black_box(modulus),
+                black_box(&table),
+                black_box(&mut context),
+            );
+        });
+    });
+    group.bench_function("ternary_fused", |b| {
+        b.iter(|| {
+            black_box(&key).cmux_ternary_monomial_to(
+                black_box(&negative_key),
+                black_box(&input),
+                black_box(exponent),
+                black_box(&mut output),
+                black_box(&basis),
+                black_box(modulus),
+                black_box(&table),
+                black_box(&mut ternary_context),
             )
         });
     });

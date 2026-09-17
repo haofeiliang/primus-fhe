@@ -14,6 +14,8 @@ use primus_ntt::{NttTable, UintNttTable};
 use primus_poly::Polynomial;
 use rand::{SeedableRng, rngs::StdRng};
 
+mod common;
+
 const DIMENSION: usize = 1;
 const POLY_LENGTH: usize = 256;
 const PLAINTEXT_MODULUS: u32 = 16;
@@ -190,5 +192,66 @@ fn ntt_cmux_selects_requested_glwe() {
             secret_key.decrypt(&output_ntt, &glwe_params, &ntt).as_ref(),
             messages[selected].as_slice()
         );
+    }
+}
+
+#[test]
+fn ntt_ternary_cmux_rotates_phase_with_encrypted_controls() {
+    use common::{K, N, assert_phase, encrypt, message, phase, secret};
+    use primus_glwe::GlweSecretKey;
+    use primus_lattice::context::NttGlweTernaryCmuxContext;
+
+    const Q: u64 = 132_120_577;
+    let modulus = BarrettModulus::new(Q);
+    let ntt = UintNttTable::new(N.trailing_zeros(), modulus).unwrap();
+    let glwe = GlweParameters::new(K, N, 16, modulus, SecretKeyDistr::SparseTernary, 0.7);
+    let params = GlevParameters::with_glwe_params(&glwe, 8, Some(3));
+    let secret = secret();
+    let coeff_key = GlweSecretKey::new(secret.clone(), glwe.size(), glwe.secret_key_distr());
+    let key = NttGlweSecretKey::from_coeff_secret_key(&coeff_key, &ntt);
+    let mut rng = StdRng::seed_from_u64(51);
+    let input = encrypt(&message(u128::from(Q)), &secret, u128::from(Q), &mut rng);
+    let input_phase = phase(input.as_ref(), &secret, u128::from(Q));
+    let mut controls = vec![0; 2 * params.ggsw_len()];
+    let mut encrypt_context = NttGadgetEncryptContext::new(params.size());
+    let mut context = NttGlweTernaryCmuxContext::new(params.size());
+    let mut output = Glwe::new(vec![Q - 1; params.glwe_len()]);
+
+    for selector in [1isize, -1, 0] {
+        key.encrypt_ggsw_constant_batch_to(
+            &[u64::from(selector == 1), u64::from(selector == -1)],
+            &mut controls,
+            &params,
+            &ntt,
+            &mut rng,
+            &mut encrypt_context,
+        );
+        let (positive, negative) = controls.split_at(params.ggsw_len());
+        for exponent in (1..2 * N).chain([0]) {
+            NttGgsw::new(positive).cmux_ternary_monomial_to(
+                &NttGgsw::new(negative),
+                &input,
+                exponent,
+                &mut output,
+                params.basis(),
+                modulus,
+                &ntt,
+                &mut context,
+            );
+            let mut expected = vec![0; N];
+            for (i, &value) in input_phase.iter().enumerate() {
+                let index =
+                    (i as isize + exponent as isize * selector).rem_euclid(2 * N as isize) as usize;
+                expected[index % N] = if index < N || value == 0 {
+                    value
+                } else {
+                    Q - value
+                };
+            }
+            assert_phase(output.as_ref(), &expected, &secret, u128::from(Q));
+            if exponent == 0 {
+                assert_eq!(output.as_ref(), input.as_ref());
+            }
+        }
     }
 }

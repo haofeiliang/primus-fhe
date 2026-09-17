@@ -1,6 +1,6 @@
 # Ternary LWE secret 与融合盲旋转
 
-本文记录下一阶段的算法选择、数学契约和实施建议；**尚未实现 ternary TFHE 支持**。算法清单见 [后续候选](tfhe-next.md)，实际进度以 [HANDOFF](../HANDOFF.md) 为准。
+本文记录算法选择、数学契约和实施进度。**T1 的 NTT 单步原语已实现；完整 ternary TFHE 支持尚未接入**。算法清单见 [后续候选](tfhe-next.md)，当前任务以 [HANDOFF](../HANDOFF.md) 为准。
 
 首个目标为经典 **GLWE NTT / Fourier**：真正进入 BR 的 small-LWE 秘密可以取 `-1/0/1`。沿用现有 LUT、量化和两种 PBS order；binary 路径保留。NTRU ternary、桶聚合稀疏 ternary、automorphism BR 分开安排。
 
@@ -143,7 +143,7 @@ Fourier 实现还须计入浮点运算与逆变换误差；上式是其精确环
 | [GLWE TFHE 参数](../crates/primus_tfhe_glwe/src/parameters.rs) | 当前只接受 binary small-LWE；扩大接受范围时同步真实密钥、BSK/KSK 的兼容性 |
 | [GLWE client key](../crates/primus_tfhe_glwe/src/key.rs) | padded ring secret 当前直接 `cast_to_signed`；显式模数下须将 `q-1` 还原为 `-1`，其余 padding 保持零 |
 | [NTT BSK](../crates/primus_tfhe_glwe_ntt/src/bootstrapping_key.rs) / [Fourier BSK](../crates/primus_tfhe_glwe_fourier/src/bootstrapping_key.rs) | 按 ternary 系数生成互斥的两个加密 selector，明确布局与溢出边界 |
-| [CMUX](../crates/primus_lattice/src/ggsw/cmux.rs) 与 [外积](../crates/primus_lattice/src/ggsw/external_product.rs) | binary CMUX 不能直接接收 `-1`；新增一次融合外积的单步能力及对应 scratch |
+| [Ternary CMUX](../crates/primus_lattice/src/ggsw/ternary.rs) 与 [外积](../crates/primus_lattice/src/ggsw/external_product.rs) | T1 已增加 NTT 一次融合外积及对应 scratch；binary CMUX 仍只接收 bit 控制，Fourier 待 T2 |
 | [NTT BR](../crates/primus_tfhe_glwe_ntt/src/blind_rotation.rs) / [Fourier BR](../crates/primus_tfhe_glwe_fourier/src/blind_rotation.rs) | 循环外分派，复用量化、初始化、buffer 交换与公开零指数跳过 |
 | ServerKey / evaluator / CBS / MVB | 两种 order 都以 small-LWE 为 BR 秘密；迁移布局消费者并验证后处理，不能只放开参数枚举 |
 
@@ -153,13 +153,73 @@ Ternary 剩余类到有符号系数的转换在 key 构造/导入边界完成。
 
 ## 6. 实施顺序与完成条件
 
-以下为后续实施单元；本次只记录设计。
+以下按独立实施单元推进；T1 完成，T2/T3 尚未实施。
 
-### T1：NTT 单步原语与成本对照
+### T1：NTT 单步原语与成本对照（已完成）
 
-- 建立 selector pair 的单步契约，复用单项式 NTT 和已有外积；先保留简单的完整组合缓冲实现。
-- 用独立负循环 oracle 覆盖三个秘密值及 `α=0,N,2N-1`；小环可遍历全部指数，检查近似分解误差而非要求有噪声密文逐位相等。
-- 同参数比较双 CMUX 与融合外积；分开测量控制组合、分解/变换和完整单步，核对 scratch。没有收益时先定位成本，不根据外积次数宣布优化成立。
+入口为 `positive.cmux_ternary_monomial_to(&negative, &input, exponent, &mut output,
+&basis, modulus, &ntt, &mut context)`，工作区为
+`NttGlweTernaryCmuxContext::new(size)`。两份控制显式传入，工作区固定 `GadgetSize`；
+没有新增跨后端策略 trait，也没有改变 binary 入口。控制组合调用通用 NTT
+`sub_mul_monomial_to`：生成一次 `NTT(-X^-α)`，复用逐点 fused multiply-add 写入完整 GGSW，
+再调用已有外积累加内核。NTT 单项式方法由 `impl_ntt_monomial!` 为单模数密文统一提供；
+其 scratch 由调用方复用，不在逐多项式循环里重新生成单项式变换。
+
+保留两个聚焦测试：lattice 的 `u32` 无噪声对角控制用独立负循环 oracle 检查两个分解深度下的
+逐系数误差界；GLWE 的 `u64` 真实加密控制由独立 schoolbook phase 检查旋转结果。
+分别使用 `N=16/32, k=2`，遍历三个秘密值和所有 `2N` 个指数，复用脏输出和工作区，
+并在最后回到零指数检查精确复制。没有新增完整 PBS 测试矩阵；在线整体分配检查留在 T3。
+
+#### T1 测量与取舍
+
+2026-09-17，Ryzen 9 9955HX3D / x86_64 Linux，固定 CPU 2、串行计时，boost/SMT 开启且 CPU
+未隔离。两种 feature 配置均用 nightly 1.100.0（2026-08-26）、仓库构建配置和 Criterion 0.8.2；
+50 samples、1 s warm-up、3 s measurement。`u32, q=132120577, log B=8, α=floor(N/3)`。
+下表为均值；95% 区间及拆分结果见 [CSV](benchmarks/tfhe-ternary-t1.csv)。
+
+| N / k / ℓ | 默认：双 CMUX → 融合（µs） | SIMD：双 CMUX → 融合（µs） |
+| --- | --- | --- |
+| 1024 / 1 / 3 | 37.480 → 22.095（−41.0%） | 40.134 → 22.652（−43.6%） |
+| 2048 / 1 / 3 | 75.960 → 45.661（−39.9%） | 78.617 → 46.959（−40.3%） |
+| 1024 / 1 / 2 | 27.772 → 16.088（−42.1%） | 29.869 → 16.654（−44.2%） |
+| 1024 / 2 / 3 | 60.799 → 37.588（−38.2%） | 64.997 → 38.503（−40.8%） |
+
+常驻入口为 `primus_lattice/benches/glwe_ntt.rs` 的 `ternary_two_cmux` / `ternary_fused`，
+复用已有四组布局。每次迭代仅计算一个完整 ternary 单步，输出均为系数域；控制变换、分配和
+数据生成在计时外。复用固定的稠密算术控制，未模拟真实加密噪声或整把 BSK 的顺序访存。
+这证明所测单步有收益，不代表等安全参数或完整 PBS 的加速比。
+
+将内联控制组合迁入通用 NTT 单项式接口后，按相同配置和四组布局复测融合单步，默认耗时变化
+**−2.40%～−0.41%**，SIMD 为 **−2.26%～+0.40%**，未见明显回退。CSV 中
+`t1-monomial-before/after-default/simd` 记录此次对照；scratch 大小不变，不据此宣称算法加速。
+
+```sh
+taskset -c 2 cargo +nightly bench -p primus_lattice --bench glwe_ntt -- 'ternary_' --warm-up-time 1 --measurement-time 3 --sample-size 50 --save-baseline t1-default --noplot
+taskset -c 2 cargo +nightly bench -p primus_lattice --bench glwe_ntt --features simd -- 'ternary_' --warm-up-time 1 --measurement-time 3 --sample-size 50 --save-baseline t1-simd --noplot
+```
+
+一次性成本拆分使用 `N=1024, ℓ=3, k=1/2`：控制组合包括生成 `NTT(-X^-α)` 和完整 GGSW 的逐点
+乘加；分解/变换对预先计算的 `Y` 执行所有 `(k+1)ℓ` 个 digit NTT，不含密钥乘加、逆变换或加回
+原输入。默认配置的组合耗时为 **3.44/7.70 µs**，分解/变换为 **11.94/17.83 µs**；同轮完整
+融合为 **23.27/39.45 µs**。SIMD 分别为 **3.28/7.24、11.32/17.08、21.93/36.74 µs**。
+独立测量存在缓存与计时差异，不把各段耗时相加当作完整单步耗时。
+
+还比较了在每个 digit NTT 后逐多项式组合、立即累加到 NTT GLWE 的原型；先检查它与完整缓冲
+版本的原始输出相等，再在相同进程内计时。四项耗时变化为 **−1.1%、−0.6%、−1.0%、+1.7%**
+（默认 k1/k2、SIMD k1/k2）。原型虽节省 scratch，却需要另一套外积分解循环；收益不稳定，
+故未保留。拆分与原型 benchmark 一并移除，仅在 CSV 留下结果。T3 若整把密钥访存暴露出瓶颈，
+再重新衡量这种取舍。
+
+工作区按逻辑 payload 计数，不含 `Vec` 元数据、allocator 开销、输入、输出、控制密钥或 NTT 表。
+外积 context 为 `(k+3)N*sizeof(T)+N*sizeof(bool)`；融合额外使用
+`[ℓ(k+1)²N+N]*sizeof(T)`。双 CMUX 则在外积 context 外需要一个 `(k+1)N` 的中间 GLWE。
+
+| N / k / ℓ（u32） | 双 CMUX scratch（KiB） | 融合 scratch（KiB） |
+| --- | --- | --- |
+| 1024 / 1 / 3 | 25 | 69 |
+| 2048 / 1 / 3 | 50 | 138 |
+| 1024 / 1 / 2 | 25 | 53 |
+| 1024 / 2 / 3 | 33 | 133 |
 
 ### T2：Fourier 单步原语
 
@@ -184,4 +244,6 @@ Ternary 剩余类到有符号系数的转换在 key 构造/导入边界完成。
 
 ## 8. 证据边界
 
-本机笔记与现有参数/key、BSK、NTT BR/CMUX/外积、单项式 NTT、Fourier 表契约已作定向核对；临时独立小环脚本检查了理想旋转恒等式。尚无真实 ternary PBS 实现、性能测量或完整噪声统计论证。T1–T3 的验证须针对实际代码完成。
+本机笔记与现有参数/key、BSK、NTT BR/CMUX/外积、单项式 NTT、Fourier 表契约已作定向核对。
+T1 已有 NTT 单步实现、独立 oracle、真实控制加密验证和单步性能测量；尚无完整 ternary PBS、
+Fourier 单步或完整噪声统计论证。单步性能不能代替 T3 的整把密钥访问和端到端测量。

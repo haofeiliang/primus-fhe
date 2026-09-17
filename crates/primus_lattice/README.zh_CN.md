@@ -52,16 +52,22 @@ Fourier 输出则省去这一步转换和舍入。`NGSW.external_product_nlev_to
 | --- | --- |
 | 基础算术 | `add_assign`、`sub_assign`、`neg_assign` 及相应输出形式 |
 | Scalar/factor 算术 | `mul_scalar_*`、`mul_factor_*` 及支持的融合累加 |
-| 多项式运算 | 系数形式的单项式操作；NTT、Fourier、DCRT 形式的多项式乘法与累加 |
+| 多项式运算 | 系数/NTT 形式的单项式操作；NTT、Fourier、DCRT 形式的多项式乘法与累加 |
 | 明文与 gadget 更新 | `add_plaintext_assign`、`set_trivial`、`add_gadget_diagonal_assign` |
 | 表示转换 | `into_ntt_form`、`write_ntt_form`、逆变换到系数形式、`write_fourier_form`、`write_torus_form` |
 | 样本抽取 | `extract_lwe_at_to`、紧凑抽取、打包 RLWE 抽取、`inverse_extract_glwe_to` |
 | 外积 | Fourier/NTT GGSW 与 NTRU gadget product；DCRT GLev 多项式乘法和 GGSW 乘法 |
 | CMUX | GGSW/NGSW 的 `cmux_to`、`cmux_k_to`、`cmux_monomial_to` |
+| Ternary 旋转 | NTT GGSW 的 `cmux_ternary_monomial_to`，使用正负控制对和一次外积 |
 
 实际支持的接口取决于类型和表示；此表是运算族概览，不表示每个类型都具有全部方法。RNS scalar/factor 参数使用按模数顺序排列的 `primus_rns::Residues` 和 `ResidueFactors`。
 
 `*_assign` 原地修改接收者，`*_to` 写入独立输出，`add_*_assign` 累加到已初始化的存储。消费式算术和转换可以复用可变存储，而返回新抽取样本的分配式接口会分配结果；不能仅凭没有后缀就认定方法不分配，应以方法契约为准。
+
+单模数 NTT 密文提供 `mul_monomial_assign`、`mul_monomial_to`、`add_mul_monomial_assign`，
+以及计算 `self - rhs * X^exponent` 的 `sub_mul_monomial_to`。操作数之后依次传入 modulus、
+单项式 NTT 表和长度为 `N` 的 scratch 切片。各操作只生成一次单项式变换并覆盖 scratch，
+供密文的所有多项式共用，不分配内存或转换回系数域。
 
 完整 GLWE 抽取把全部掩码多项式展平为 LWE 掩码。紧凑抽取要求省略的秘密密钥后缀为零。`MultiMsgLwe` 只能表示单个 RLWE 掩码，从截断 GLWE 转换时要求 `k == 1`。逆抽取嵌入常数项 LWE 样本，并把未使用的存储填零；它不会恢复原 GLWE 明文的全部系数。
 
@@ -74,12 +80,19 @@ Fourier 输出则省去这一步转换和舍入。`NGSW.external_product_nlev_to
 | 工作区 | 绑定的内容 |
 | --- | --- |
 | `FourierGlweExternalProductContext` / `NttGlweExternalProductContext` | 通过 `GadgetSize` 绑定 GLWE 布局和分解层数 |
+| `NttGlweTernaryCmuxContext` | 固定的 `GadgetSize`；组合 GGSW、单项式 NTT 和外积工作区 |
 | `FourierNtruExternalProductContext` / `NttNtruExternalProductContext` | 标量 NTRU gadget product 的多项式长度 |
 | `DcrtGlevMulContext` | RNS gadget 布局和 BigUint limb 宽度要求 |
 
-Context 提供可复用 scratch，不是已经验证的 basis/table/modulus domain。GLWE context 支持在 GLWE 形状不变时 `rebind`，以及缓冲区大小变化时 `resize`。DCRT 的兼容性还包括 RNS 模数乘积的 limb 宽度。拥有参数的调用方必须先建立兼容性，再进入内核。
+Context 提供可复用 scratch，不是已经验证的 basis/table/modulus domain。GLWE 外积 context 支持在 GLWE 形状不变时 `rebind`，以及缓冲区大小变化时 `resize`。DCRT 的兼容性还包括 RNS 模数乘积的 limb 宽度。拥有参数的调用方必须先建立兼容性，再进入内核。
 
 覆盖式外积会初始化累加器，其他 scratch 也会先写后读，因此合法调用之间不需要手动 reset。累加接口保留原输出，要求输出已初始化。CMUX 的选择语义还要求控制密文加密比特；`cmux_k_to` 要求至多一个控制比特为一。噪声增长和可解密性仍由更高层负责。
+
+`positive.cmux_ternary_monomial_to(&negative, ...)` 以互斥的加密比特
+`s⁺, s⁻` 旋转得到 `X^(exponent * (s⁺-s⁻))` 倍的输入。两份控制使用相同的密钥、
+basis 和 NTT 表。指数已经量化到 `0..2N`；零指数精确复制输入。在线运算复用 context，
+不分配内存。这是 lattice 单步原语；完整 TFHE ternary 密钥生成与求值的接入见
+[ternary 计划](../../docs/tfhe-ternary.md)。
 
 ## 示例
 

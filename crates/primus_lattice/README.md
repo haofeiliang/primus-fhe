@@ -55,16 +55,23 @@ Wrappers are generic over storage `S` using [`primus_data`](../primus_data/READM
 | --- | --- |
 | Basic arithmetic | `add_assign`, `sub_assign`, `neg_assign` and corresponding output forms |
 | Scalar/factor arithmetic | `mul_scalar_*`, `mul_factor_*`, and supported fused accumulations |
-| Polynomial operations | Monomials in coefficient form; polynomial multiplication/accumulation in NTT, Fourier, or DCRT form |
+| Polynomial operations | Monomials in coefficient/NTT form; polynomial multiplication/accumulation in NTT, Fourier, or DCRT form |
 | Plaintext and gadget updates | `add_plaintext_assign`, `set_trivial`, `add_gadget_diagonal_assign` |
 | Conversions | `into_ntt_form`, `write_ntt_form`, inverse coefficient conversions, `write_fourier_form`, `write_torus_form` |
 | Extraction | `extract_lwe_at_to`, compact extraction, packed RLWE extraction, `inverse_extract_glwe_to` |
 | External products | Fourier/NTT GGSW and NTRU gadget products; DCRT GLev polynomial products and GGSW products |
 | CMUX | GGSW/NGSW `cmux_to`, `cmux_k_to`, `cmux_monomial_to` |
+| Ternary rotation | NTT GGSW `cmux_ternary_monomial_to`, using a positive/negative control pair and one external product |
 
 Availability depends on the type and representation; this is a family overview, not a promise that every type has every method. RNS scalar/factor inputs use `primus_rns::Residues` and `ResidueFactors` in modulus order.
 
 `*_assign` mutates its receiver; `*_to` writes a separate output. `add_*_assign` accumulates into initialized storage. Consuming arithmetic and conversions can reuse mutable storage, while allocation-returning extraction methods allocate their result; consult the method contract rather than assuming an unsuffixed method is allocation-free.
+
+Single-modulus NTT ciphertexts provide `mul_monomial_assign`, `mul_monomial_to`,
+and `add_mul_monomial_assign`, plus `sub_mul_monomial_to` for `self - rhs * X^exponent`.
+Pass the modulus, monomial NTT table, and a length-`N` scratch slice after the operands.
+The operations overwrite scratch with one monomial transform shared by all ciphertext
+polynomials, without allocation or conversion to coefficients.
 
 Full GLWE extraction flattens all mask polynomials into an LWE mask. Compact extraction requires the omitted secret-key suffix to be zero. Packed `MultiMsgLwe` represents one RLWE mask; conversion from truncated GLWE requires `k == 1`. Inverse extraction embeds the constant-term LWE sample and zero-fills unused storage; it does not reconstruct all coefficients of the original GLWE plaintext.
 
@@ -77,12 +84,20 @@ Checks belong at the highest layer that owns these parameters. This crate delibe
 | Workspace | What it binds |
 | --- | --- |
 | `FourierGlweExternalProductContext` / `NttGlweExternalProductContext` | GLWE layout and decomposition level count through `GadgetSize` |
+| `NttGlweTernaryCmuxContext` | Fixed `GadgetSize`; combined GGSW, monomial NTT, and external-product scratch |
 | `FourierNtruExternalProductContext` / `NttNtruExternalProductContext` | Polynomial length for scalar NTRU gadget products |
 | `DcrtGlevMulContext` | RNS gadget layout and BigUint limb-width requirements |
 
-Contexts provide reusable scratch, not a validated basis/table/modulus domain. GLWE contexts support `rebind` for unchanged GLWE shape and `resize` when buffer sizes change. DCRT compatibility includes the RNS product's limb width. Owning callers must establish compatibility before entering the kernels.
+Contexts provide reusable scratch, not a validated basis/table/modulus domain. GLWE external-product contexts support `rebind` for unchanged GLWE shape and `resize` when buffer sizes change. DCRT compatibility includes the RNS product's limb width. Owning callers must establish compatibility before entering the kernels.
 
 Overwriting external products initialize their accumulator, and other scratch is written before use: no manual reset is needed between valid calls. Accumulating APIs preserve the existing output and require it to be initialized. CMUX selection additionally requires bit controls; `cmux_k_to` requires at most one active control. Noise growth and decryptability remain higher-layer obligations.
+
+`positive.cmux_ternary_monomial_to(&negative, ...)` uses mutually exclusive
+encrypted bits `s⁺, s⁻` to rotate by `X^(exponent * (s⁺-s⁻))`. Both controls use
+the same key, basis, and NTT table. The exponent is already quantized into
+`0..2N`; zero copies the input exactly. Evaluation reuses its context without
+allocation. This is a lattice primitive; complete TFHE ternary key generation
+and evaluation are tracked separately in the [ternary plan](../../docs/tfhe-ternary.md).
 
 ## Example
 

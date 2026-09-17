@@ -35,6 +35,7 @@ impl_basic_operation_single_modulus!(NttNtru);
 impl_neg_single_modulus!(NttNtru);
 impl_mul_scalar_single_modulus!(NttNtru);
 impl_mul_factor_single_modulus!(NttNtru);
+impl_ntt_monomial!(NttNtru);
 
 impl<S, T> NttNtru<S>
 where

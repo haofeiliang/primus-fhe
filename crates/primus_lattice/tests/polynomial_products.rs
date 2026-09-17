@@ -34,7 +34,7 @@ fn expected(acc: &[u32], rhs: &[u32], exponent: usize, n: usize, qs: &[u32]) -> 
 }
 
 #[test]
-fn coefficient_monomial_accumulation_matches_oracle_and_ntt_product() {
+fn coefficient_and_ntt_monomials_match_negacyclic_oracle() {
     const N: usize = 32;
     const Q: u32 = 193;
     let modulus = BarrettModulus::new(Q);
@@ -49,6 +49,8 @@ fn coefficient_monomial_accumulation_matches_oracle_and_ntt_product() {
             for p in transformed_rhs.chunks_exact_mut(N) { table.transform_slice(p); }
             for p in transformed_acc.chunks_exact_mut(N) { table.transform_slice(p); }
             let ntt_rhs = $ntt::new(transformed_rhs.as_slice());
+            let ntt_acc = $ntt::new(transformed_acc.as_slice());
+            let mut scratch = vec![Q - 1; N];
             for exponent in 0..2 * N {
                 let oracle = expected(&acc, &rhs, exponent, N, &[Q]);
                 let mut storage = acc.clone();
@@ -61,13 +63,22 @@ fn coefficient_monomial_accumulation_matches_oracle_and_ntt_product() {
                 output.as_mut().copy_from_slice(&rhs);
                 output.mul_monomial_assign(exponent, $($length,)? modulus);
                 assert_eq!(output.as_ref(), product);
-                let mut monomial = vec![0; N];
-                monomial[exponent % N] = if exponent < N { 1 } else { Q - 1 };
-                table.transform_slice(&mut monomial);
                 let mut ntt_output = $ntt::new(transformed_acc.clone());
-                ntt_output.add_mul_ntt_polynomial_assign(&ntt_rhs, &NttPolynomial(monomial), modulus);
-                for p in ntt_output.as_mut().chunks_exact_mut(N) { table.inverse_transform_slice(p); }
-                assert_eq!(ntt_output.as_ref(), oracle, "{} exponent {exponent}", stringify!($ntt));
+                ntt_output.add_mul_monomial_assign(&ntt_rhs, exponent, modulus, &table, &mut scratch);
+                ntt_output.write_coeff_form(&mut output, &table);
+                assert_eq!(output.as_ref(), oracle, "{} exponent {exponent}", stringify!($ntt));
+                ntt_rhs.mul_monomial_to(exponent, &mut ntt_output, modulus, &table, &mut scratch);
+                ntt_output.write_coeff_form(&mut output, &table);
+                assert_eq!(output.as_ref(), product);
+                ntt_output.as_mut().copy_from_slice(&transformed_rhs);
+                ntt_output.mul_monomial_assign(exponent, modulus, &table, &mut scratch);
+                ntt_output.write_coeff_form(&mut output, &table);
+                assert_eq!(output.as_ref(), product);
+                ntt_acc.sub_mul_monomial_to(&ntt_rhs, exponent, &mut ntt_output, modulus, &table, &mut scratch);
+                ntt_output.write_coeff_form(&mut output, &table);
+                // -X^e = X^(e+N), with the exponent reduced modulo 2N.
+                let difference = expected(&acc, &rhs, (exponent + N) % (2 * N), N, &[Q]);
+                assert_eq!(output.as_ref(), difference);
             }
         }};
     }

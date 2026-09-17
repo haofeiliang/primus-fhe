@@ -41,5 +41,6 @@ impl_neg_single_modulus!(NttGlev);
 impl_mul_scalar_single_modulus!(NttGlev);
 impl_mul_factor_single_modulus!(NttGlev);
 impl_ntt_polynomial_mul!(NttGlev);
+impl_ntt_monomial!(NttGlev);
 
 impl_intt!(NttGlev, Glev);

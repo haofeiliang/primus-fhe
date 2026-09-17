@@ -1,6 +1,6 @@
 # TFHE 后续算法候选
 
-本文承接 [P1–P4](tfhe-plan.md)，记录值得补充的能力、应用价值与启动条件，避免把论文清单当作必须全部实现的计划。当前优先分析 **ternary LWE secret 的经典 GLWE PBS**，具体设计见 [ternary 专项](tfhe-ternary.md)。当前实施状态以 [HANDOFF](../HANDOFF.md) 为准。
+本文承接 [P1–P4](tfhe-plan.md)，记录值得补充的能力、应用价值与启动条件，避免把论文清单当作必须全部实现的计划。当前优先推进 **ternary LWE secret 的经典 GLWE PBS**，具体设计见 [ternary 专项](tfhe-ternary.md)。当前实施状态以 [HANDOFF](../HANDOFF.md) 为准。
 
 ## 1. 优先级与应用目标
 
