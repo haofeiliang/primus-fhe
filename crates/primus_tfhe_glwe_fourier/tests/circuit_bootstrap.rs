@@ -1,33 +1,51 @@
+#[path = "../../primus_tfhe/tests/support/allocations.rs"]
+mod allocations;
+
 use primus_decompose::primitive::ApproxSignedBasis;
-use primus_fft::{FftTable, RustFftTable, TfheFftTable};
+use primus_fft::{Complex64, FftTable, RustFftTable, TfheFftTable};
 use primus_glwe::{
-    FourierGlweEncryptContext, FourierGlweSchemeSwitchContext, FourierGlweSecretKey,
-    FourierGlweTraceContext, GlevParameters, GlweParameters, SecretKeyDistr,
+    FourierGlweEncryptContext, FourierGlweSecretKey, GlevParameters, GlweParameters, SecretKeyDistr,
 };
 use primus_lattice::{
+    context::FourierGlweExternalProductContext,
     ggsw::{FourierGgsw, Ggsw},
-    glev::Glev,
-    glwe::{FourierGlwe, Glwe},
+    glwe::Glwe,
 };
-use primus_lwe::LweParameters;
+use primus_lwe::{LweCiphertext, LweParameters};
 use primus_modulus::NativeModulus;
 use primus_poly::Polynomial;
 use primus_tfhe_glwe_fourier::{
-    CircuitBootstrapKeyError, CircuitBootstrapParameterError, CircuitBootstrapParameters,
-    ClientKey, KeyGenerator, PbsOrder, TfheContext, TfheParameters,
+    CircuitBootstrapEvaluationError, CircuitBootstrapKeyError, CircuitBootstrapParameterError,
+    CircuitBootstrapParameters, ClientKey, KeyGenerator, PbsOrder, TfheContext, TfheParameters,
 };
 use rand::{RngExt, SeedableRng, rngs::StdRng};
 
-const POLY_LENGTH: usize = 32;
+const POLY_LENGTH: usize = 128;
 const DIMENSION: usize = 2;
 
 fn parameters(dimension: usize, poly_length: usize, plaintext_modulus: u64) -> TfheParameters<u64> {
+    parameters_with_order_and_distribution(
+        dimension,
+        poly_length,
+        plaintext_modulus,
+        PbsOrder::BootstrapKeyswitch,
+        SecretKeyDistr::fixed_hamming_weight_binary(4, 2),
+    )
+}
+
+fn parameters_with_order_and_distribution(
+    dimension: usize,
+    poly_length: usize,
+    plaintext_modulus: u64,
+    order: PbsOrder,
+    distribution: SecretKeyDistr,
+) -> TfheParameters<u64> {
     TfheParameters::try_new(
         LweParameters::new(
             4,
             plaintext_modulus,
             NativeModulus::new(),
-            SecretKeyDistr::UniformBinary,
+            distribution,
             0.7,
         ),
         GlweParameters::new(
@@ -38,9 +56,10 @@ fn parameters(dimension: usize, poly_length: usize, plaintext_modulus: u64) -> T
             SecretKeyDistr::UniformTernary,
             0.7,
         ),
-        ApproxSignedBasis::new(None, 8, Some(3)),
-        ApproxSignedBasis::new(None, 8, Some(4)),
-        PbsOrder::BootstrapKeyswitch,
+        // Retain enough precision below the smallest CBS output gadget scale.
+        ApproxSignedBasis::new(None, 8, Some(6)),
+        ApproxSignedBasis::new(None, 8, Some(6)),
+        order,
     )
     .unwrap()
 }
@@ -80,119 +99,221 @@ fn phase(ciphertext: &[u64], secret: &[i64]) -> Vec<u64> {
     phase
 }
 
-fn generated_keys_project_and_scheme_switch<Table: FftTable>() {
+fn circuit_bootstrap<Table: FftTable>(order: PbsOrder, distribution: SecretKeyDistr) {
     let context = TfheContext::try_new(
-        parameters(DIMENSION, POLY_LENGTH, 4),
+        parameters_with_order_and_distribution(DIMENSION, POLY_LENGTH, 4, order, distribution),
         Table::new(POLY_LENGTH.trailing_zeros()).unwrap(),
     )
     .unwrap();
     let parameters = circuit_parameters(context.parameters());
-    let mut rng = StdRng::seed_from_u64(0x4342_534b_4559);
+    let mut rng = StdRng::seed_from_u64(0x4342_534b_4559 ^ order as u64);
     let client = ClientKey::generate(context.parameters(), &mut rng);
     let mut generator = KeyGenerator::new(&context);
     let key = generator
         .try_generate_circuit_bootstrap_key(&client, &parameters, &mut rng)
         .unwrap();
     // CBS leaves a different gadget layout in the reusable generator.
-    generator
+    let server = generator
         .try_generate_server_key(&client, &mut rng)
         .unwrap();
-
+    // GLWE scheme switching binds the output layout, not its exact gadget basis.
+    let parameters = CircuitBootstrapParameters::try_new(
+        context.parameters(),
+        ApproxSignedBasis::new(None, 9, Some(3)),
+        parameters.trace().clone(),
+        parameters.scheme_switch().clone(),
+    )
+    .unwrap();
+    let mut evaluator = context
+        .circuit_bootstrap_evaluator(&server, &parameters, &key)
+        .unwrap();
     assert_eq!(parameters.lookup_table_padded_output_count(), 4);
-    assert_eq!(key.trace_key().basis(), parameters.trace().basis());
-    assert_eq!(
-        key.trace_key().automorphism_count(),
-        POLY_LENGTH.trailing_zeros() as usize
-    );
-    assert_eq!(
-        key.scheme_switch_key().key_basis(),
-        parameters.scheme_switch().basis()
-    );
-    assert_eq!(
-        key.scheme_switch_key().key_size(),
-        parameters.scheme_switch().size()
-    );
-    assert_eq!(
-        key.scheme_switch_key().output_size(),
-        parameters.output_size()
-    );
 
     let mut fft = context.new_fft_engine();
     let secret = FourierGlweSecretKey::from_coeff_secret_key(client.glwe_secret_key(), &mut fft);
     let glwe = context.parameters().accumulator_glwe();
-    // A nonzero tail requires full projection, not prefix-only expansion.
-    let mut message = vec![1u64 << 56; POLY_LENGTH];
-    for (coefficient, scalar) in message
-        .iter_mut()
-        .zip(parameters.output_basis().scalar_iter())
-    {
-        *coefficient = scalar;
-    }
-    let mut encrypted = FourierGlwe::<Vec<_>>::zero(glwe.size().fourier_glwe_len());
-    secret.encrypt_encoded_to(
-        &Polynomial::new(message),
-        &mut encrypted,
-        glwe,
-        &mut fft,
-        &mut rng,
-        &mut FourierGlweEncryptContext::new(POLY_LENGTH),
-    );
-    let mut input = Glwe::new(vec![0u64; glwe.glwe_len()]);
-    encrypted.write_torus_form(&mut input, &mut fft);
-    let mut projected = Glev::new(vec![0u64; parameters.output_size().glev_len()]);
-    key.trace_key().project_coefficients_to(
-        &input,
-        &[0, 1, 2],
-        projected.as_mut(),
-        &mut fft,
-        &mut FourierGlweTraceContext::new(glwe.size()),
-    );
-    let mut output = FourierGgsw::<Vec<_>>::zero(parameters.output_size().fourier_ggsw_len());
-    key.scheme_switch_key().apply_to(
-        &projected,
-        &mut output,
-        &mut fft,
-        &mut FourierGlweSchemeSwitchContext::new(parameters.scheme_switch().size()),
-    );
+    let mut encrypt = FourierGlweEncryptContext::new(POLY_LENGTH);
+    let messages = [1u64, 3].map(|offset| {
+        (0..POLY_LENGTH)
+            .map(|i| (i as u64 + offset) % 4)
+            .collect::<Vec<_>>()
+    });
+    let choices = messages.each_ref().map(|message| {
+        let encrypted = secret.encrypt(
+            &Polynomial::new(message.as_slice()),
+            glwe,
+            &mut fft,
+            &mut rng,
+            &mut encrypt,
+        );
+        let mut output = Glwe::<Vec<u64>>::zero(glwe.glwe_len());
+        encrypted.write_torus_form(&mut output, &mut fft);
+        output
+    });
+    let encryptor = context.encryptor(&client).unwrap();
+    let mut control = FourierGgsw::<Vec<_>>::zero(parameters.output_size().fourier_ggsw_len());
     let mut coefficients = Ggsw::new(vec![0u64; parameters.output_size().ggsw_len()]);
-    output.write_torus_form(&mut coefficients, &mut fft);
-    // Leave at least a factor-four margin to the smallest programmed gadget scale.
+    let mut selected = Glwe::new(vec![0u64; glwe.glwe_len()]);
+    let mut external_product = FourierGlweExternalProductContext::new(parameters.output_size());
+    // Functional fixture bound, with a factor-four margin to the smallest scale.
     let tolerance = parameters.output_basis().scalar_iter().min().unwrap() / 4;
-    for (row, levels) in coefficients
-        .as_ref()
-        .chunks_exact(parameters.output_size().glev_len())
-        .enumerate()
-    {
-        for (scalar, ciphertext) in parameters
-            .output_basis()
-            .scalar_iter()
-            .zip(levels.chunks_exact(glwe.glwe_len()))
+    // Reuse the output for a zero control after a nonzero control, without clearing it.
+    for bit in [1u64, 0] {
+        let input = encryptor.encrypt_padded(bit, &mut rng).unwrap();
+        let (_, allocation) =
+            allocations::measure(|| evaluator.circuit_bootstrap_to(&input, &mut control));
+        assert_eq!(
+            allocation.count, 0,
+            "CBS must reuse workspace from the first call"
+        );
+        control.write_torus_form(&mut coefficients, &mut fft);
+        for (row, levels) in coefficients
+            .as_ref()
+            .chunks_exact(parameters.output_size().glev_len())
+            .enumerate()
         {
-            for (index, actual) in phase(ciphertext, client.glwe_secret_key().as_slice())
-                .into_iter()
-                .enumerate()
+            for (scalar, ciphertext) in parameters
+                .output_basis()
+                .scalar_iter()
+                .zip(levels.chunks_exact(glwe.glwe_len()))
             {
-                let expected = if row == DIMENSION {
-                    if index == 0 { scalar } else { 0 }
-                } else {
-                    (client.glwe_secret_key().as_slice()[row * POLY_LENGTH + index] as u64)
-                        .wrapping_mul(scalar)
-                        .wrapping_neg()
-                };
-                let error = actual.wrapping_sub(expected);
-                assert!(
-                    error.min(error.wrapping_neg()) < tolerance,
-                    "row={row}, scale={scalar}, coefficient={index}"
-                );
+                for (index, actual) in phase(ciphertext, client.glwe_secret_key().as_slice())
+                    .into_iter()
+                    .enumerate()
+                {
+                    let coefficient = if row == DIMENSION {
+                        u64::from(index == 0)
+                    } else {
+                        (client.glwe_secret_key().as_slice()[row * POLY_LENGTH + index] as u64)
+                            .wrapping_neg()
+                    };
+                    let expected = coefficient.wrapping_mul(scalar).wrapping_mul(bit);
+                    let error = actual.wrapping_sub(expected);
+                    assert!(
+                        error.min(error.wrapping_neg()) < tolerance,
+                        "order={order:?}, distribution={distribution:?}, bit={bit}, row={row}, scale={scalar}, coefficient={index}"
+                    );
+                }
             }
+        }
+        control.cmux_to(
+            &choices[0],
+            &choices[1],
+            &mut selected,
+            parameters.output_basis(),
+            &mut fft,
+            &mut external_product,
+        );
+        let mut decoded = phase(selected.as_ref(), client.glwe_secret_key().as_slice());
+        glwe.plaintext_codec().decode_slice_assign(&mut decoded);
+        assert_eq!(
+            decoded, messages[bit as usize],
+            "order={order:?}, distribution={distribution:?}, bit={bit}"
+        );
+    }
+}
+
+#[test]
+fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
+    for order in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
+        for distribution in [
+            SecretKeyDistr::fixed_hamming_weight_binary(4, 2),
+            SecretKeyDistr::fixed_composition_ternary(4, 1, 1),
+        ] {
+            circuit_bootstrap::<RustFftTable>(order, distribution);
+            circuit_bootstrap::<TfheFftTable>(order, distribution);
         }
     }
 }
 
 #[test]
-fn additional_keys_feed_trace_and_scheme_switch_with_both_ffts() {
-    generated_keys_project_and_scheme_switch::<RustFftTable>();
-    generated_keys_project_and_scheme_switch::<TfheFftTable>();
+fn evaluator_rejects_resource_mismatches_and_checks_shapes_before_writes() {
+    use CircuitBootstrapEvaluationError as Error;
+    let context = TfheContext::try_new(
+        parameters(DIMENSION, POLY_LENGTH, 4),
+        RustFftTable::new(POLY_LENGTH.trailing_zeros()).unwrap(),
+    )
+    .unwrap();
+    let mut rng = StdRng::seed_from_u64(42);
+    let (client, server) = context.generate_keys(&mut rng).unwrap();
+    let parameters = circuit_parameters(context.parameters());
+    let key = context
+        .generate_circuit_bootstrap_key(&client, &parameters, &mut rng)
+        .unwrap();
+    // Keep level counts equal for basis mismatches, so layout checks cannot mask them.
+    for (output, trace, scheme_switch) in [
+        (
+            ApproxSignedBasis::new(None, 8, Some(2)),
+            parameters.trace().clone(),
+            parameters.scheme_switch().clone(),
+        ),
+        (
+            parameters.output_basis().clone(),
+            GlevParameters::with_glwe_params(context.parameters().accumulator_glwe(), 7, Some(7)),
+            parameters.scheme_switch().clone(),
+        ),
+        (
+            parameters.output_basis().clone(),
+            parameters.trace().clone(),
+            GlevParameters::with_glwe_params(context.parameters().accumulator_glwe(), 9, Some(5)),
+        ),
+    ] {
+        let foreign =
+            CircuitBootstrapParameters::try_new(context.parameters(), output, trace, scheme_switch)
+                .unwrap();
+        assert!(matches!(
+            context.circuit_bootstrap_evaluator(&server, &foreign, &key),
+            Err(Error::IncompatibleCircuitBootstrapKey)
+        ));
+    }
+    let foreign_tfhe = parameters_with_order_and_distribution(
+        DIMENSION,
+        POLY_LENGTH,
+        4,
+        PbsOrder::BootstrapKeyswitch,
+        SecretKeyDistr::fixed_composition_ternary(4, 1, 1),
+    );
+    let foreign_context = TfheContext::try_new(
+        foreign_tfhe,
+        RustFftTable::new(POLY_LENGTH.trailing_zeros()).unwrap(),
+    )
+    .unwrap();
+    assert!(matches!(
+        foreign_context.circuit_bootstrap_evaluator(&server, &parameters, &key),
+        Err(Error::IncompatibleServerKey)
+    ));
+    let foreign_parameters = circuit_parameters(&parameters_with_order_and_distribution(
+        DIMENSION,
+        POLY_LENGTH,
+        8,
+        PbsOrder::BootstrapKeyswitch,
+        SecretKeyDistr::fixed_hamming_weight_binary(4, 2),
+    ));
+    assert!(matches!(
+        context.circuit_bootstrap_evaluator(&server, &foreign_parameters, &key),
+        Err(Error::IncompatibleParameters)
+    ));
+
+    let mut evaluator = context
+        .circuit_bootstrap_evaluator(&server, &parameters, &key)
+        .unwrap();
+    let input_dimension = context.parameters().external_lwe_dimension();
+    let output_len = parameters.output_size().fourier_ggsw_len();
+    for (dimension, length) in [
+        (input_dimension - 1, output_len),
+        (input_dimension, output_len - 1),
+    ] {
+        let input = LweCiphertext::zero(dimension);
+        let marker = Complex64::new(7.0, -3.0);
+        let mut output = FourierGgsw::new(vec![marker; length]);
+        assert!(
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(
+                || evaluator.circuit_bootstrap_to(&input, &mut output)
+            ))
+            .is_err()
+        );
+        assert!(output.as_ref().iter().all(|&value| value == marker));
+    }
 }
 
 #[test]

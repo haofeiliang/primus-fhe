@@ -55,7 +55,6 @@ where
     parameters: &'a CircuitBootstrapParameters<T>,
     circuit_key: &'a CircuitBootstrapKey<T>,
     lookup_table: InterleavedLookupTable<T>,
-    projection_indices: Vec<usize>,
     // try_new checks resource layouts/bases; secret and NTT identity are caller contracts.
     blind_rotation: NttGlweBlindRotationContext<T>,
     key_switching: NttGlweKeySwitchingContext<T>,
@@ -137,7 +136,6 @@ where
             parameters,
             circuit_key,
             lookup_table,
-            projection_indices: (0..parameters.output_basis().decompose_length()).collect(),
             blind_rotation: NttGlweBlindRotationContext::new(bootstrapping_key),
             key_switching: NttGlweKeySwitchingContext::new(key_switching_glwe_size),
             trace: NttGlweTraceContext::new(glwe_size),
@@ -234,9 +232,9 @@ where
                 &mut self.blind_rotation,
             );
 
-        self.circuit_key.trace_key().project_coefficients_to(
+        self.circuit_key.trace_key().project_prefix_coefficients_to(
             &self.main_glwe,
-            &self.projection_indices,
+            self.parameters.output_basis().decompose_length(),
             self.traced.as_mut(),
             self.context
                 .parameters()

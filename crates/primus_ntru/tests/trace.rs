@@ -67,6 +67,7 @@ enum Operation<'a> {
     Trace(usize),
     Reverse(usize),
     Project(&'a [usize]),
+    ProjectPrefix(usize),
     Expand(usize),
 }
 
@@ -106,6 +107,16 @@ fn check_operations(
             assert_phase(cipher, &expected, secret, q);
         }
     }
+    // The new prefix interface preserves the general path's exact ciphertext,
+    // even for a nonzero message tail and a non-power-of-two output count.
+    for count in [0, 1, 3, N] {
+        let indices: Vec<_> = (0..count).collect();
+        let mut reference = vec![0; count * N];
+        run(Operation::Project(&indices), &mut reference);
+        output.resize(count * N, 7);
+        run(Operation::ProjectPrefix(count), &mut output);
+        assert_eq!(output, reference);
+    }
     for log_count in 0..=N.trailing_zeros() {
         let count = 1 << log_count;
         output.resize(count * N, 7);
@@ -133,6 +144,9 @@ fn check_operations(
         (Operation::Expand(4), 3 * N),
         (Operation::Project(&[0, N]), 2 * N),
         (Operation::Project(&[0, 1]), N),
+        (Operation::ProjectPrefix(N + 1), (N + 1) * N),
+        (Operation::ProjectPrefix(0), N),
+        (Operation::ProjectPrefix(3), 3 * N - 1),
     ] {
         let mut output = vec![7; len];
         assert!(catch_unwind(AssertUnwindSafe(|| run(operation, &mut output))).is_err());
@@ -200,6 +214,14 @@ fn ntt_trace_projection_and_expansion_match_ring_phases() {
                 &mut context,
             ),
             Operation::Expand(count) => trace.expand_partial_coefficients_to(
+                &input,
+                count,
+                output,
+                modulus,
+                &table,
+                &mut context,
+            ),
+            Operation::ProjectPrefix(count) => trace.project_prefix_coefficients_to(
                 &input,
                 count,
                 output,
@@ -297,6 +319,9 @@ fn fourier_trace<Table: FftTable>() {
             ),
             Operation::Project(indices) => {
                 trace.project_coefficients_to(&input, indices, output, &mut fft, &mut context)
+            }
+            Operation::ProjectPrefix(count) => {
+                trace.project_prefix_coefficients_to(&input, count, output, &mut fft, &mut context)
             }
             Operation::Expand(count) => {
                 trace.expand_partial_coefficients_to(&input, count, output, &mut fft, &mut context)

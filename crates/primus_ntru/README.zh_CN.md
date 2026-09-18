@@ -89,7 +89,10 @@ Sample extraction、NLev/NGSW 外积与 CMUX 位于
 两条数值路径的误差分布不同，不能相互替换。
 
 `project_coefficient(s)_to` 将指定系数移到常数位后做 reverse trace，支持重复及
-乱序索引。`expand_coefficients_to` 使用展开树，按自然顺序展开整个消息。
+乱序索引。`project_prefix_coefficients_to(input, count, ...)` 接受 `0..=N` 内
+任意 count，为 `0..count` 执行相同的反向 trace，无需索引数组或明文零尾；
+count 为 1 时仍执行完整反向 trace。
+`expand_coefficients_to` 使用展开树，按自然顺序展开整个消息。
 `expand_partial_coefficients_to(input, count, ...)` 要求 count 为不大于 N 的
 2 的幂，且目标消息仅在前 count 个位置非零；使用 count-1 次 automorphism，
 直接复用输出存储展开树。一般输入会得到残余类多项式，不能承诺常数消息。

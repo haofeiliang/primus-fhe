@@ -3,7 +3,7 @@
 English | [简体中文](README.zh_CN.md)
 
 GLWE-based TFHE over the native torus. Supports both PBS orders, ManyLUT,
-Boolean gates and secret/public-key clients. See the [capability and encoding guide](../primus_tfhe/README.md)
+Boolean gates, classic CBS and secret/public-key clients. See the [capability and encoding guide](../primus_tfhe/README.md)
 and [GLWE parameter/key domains](../primus_tfhe_glwe/README.md).
 
 `Encryptor`, `Decryptor` and `TfheParameters` specialize the shared types to
@@ -74,9 +74,9 @@ temporary GGSW storage.
 
 ## Circuit bootstrapping
 
-`CircuitBootstrapParameters` and `CircuitBootstrapKey` provide optional CBS key
-material. The complete Fourier CBS evaluator is pending; the [NTT backend](../primus_tfhe_glwe_ntt/README.md)
-already provides the complete GLWE CBS path.
+Classic CBS supports binary/ternary small secrets, both PBS orders and both FFT
+engines. It produces Fourier GGSW under the accumulator secret. Sparse CBS is
+not supported.
 
 Construct `CircuitBootstrapParameters::try_new(tfhe, output_basis, trace, scheme_switch)`
 with a native output basis and independent native `GlevParameters` / `GgswParameters`
@@ -88,9 +88,17 @@ level count can reuse the key.
 Generate ordinary PBS and CBS keys from the same `ClientKey` using a reusable
 `KeyGenerator`: `try_generate_server_key`, then `try_generate_circuit_bootstrap_key`.
 `TfheContext::generate_circuit_bootstrap_key` is the convenience entry point.
-The optional key exposes `trace_key().project_coefficients_to` and
-`scheme_switch_key().apply_to`; both use the accumulator secret and must be consumed
-with the generating context's FFT table. Ordinary `ServerKey` carries no CBS material.
+Both keys must use the same client secrets and the generating context's FFT table;
+layout/basis checks cannot establish identity. Ordinary `ServerKey` carries no CBS material.
+
+Create the evaluator with `context.circuit_bootstrap_evaluator(&server, &parameters, &circuit_key)`.
+`circuit_bootstrap_to` writes into an existing `FourierGgsw` containing
+`parameters.output_size().fourier_ggsw_len()` complex values, without online allocations.
+`circuit_bootstrap` allocates the output. The pipeline reuses the ordinary evaluator's
+input KS/BR workspace, then projects each gadget level and performs scheme switching.
+Input uses unsigned rounded LWE encoding in `0..ceil(t/2)`; its noise must fit the
+coarser ManyLUT intervals. CMUX requires input 0 or 1. The result remains under the
+accumulator secret with gadget scales; it does not pass through the ordinary PBS output KS.
 
 Native reverse trace retains the low-level per-stage integer halving. Its rounding,
 trace key switching, scheme-switch decomposition and FFT precision require a CBS

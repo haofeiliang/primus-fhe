@@ -15,6 +15,31 @@ use common::{K, N, assert_phase, encrypt, message, phase, secret};
 
 const Q: u64 = 1_125_899_906_826_241;
 
+// Prefix projection must preserve the general path's exact rounding, including
+// count=1 with a nonzero message tail. It is not prefix-only expansion.
+fn check_prefix_projection(reference: &[u64], mut project: impl FnMut(usize, &mut [u64])) {
+    let glwe_len = GlweSize::new(K, N).glwe_len();
+    for count in [0, 1, 3, N] {
+        let mut output = vec![7; count * glwe_len];
+        project(count, &mut output);
+        assert_eq!(output, reference[..count * glwe_len]);
+    }
+    for (count, length) in [
+        (N + 1, (N + 1) * glwe_len),
+        (0, glwe_len),
+        (3, 3 * glwe_len - 1),
+    ] {
+        let mut output = vec![7; length];
+        assert!(
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                project(count, &mut output);
+            }))
+            .is_err()
+        );
+        assert!(output.iter().all(|&value| value == 7));
+    }
+}
+
 // The input message has a zero tail, but its encrypted masks/body are dense.
 // A schoolbook phase oracle checks every output coefficient after early stopping.
 fn check_partial_expansion(
@@ -162,6 +187,18 @@ fn ntt_trace_projection_and_packing() {
         expected[0] = m[i];
         assert_phase(c, &expected, &s, Q.into());
     }
+    let mut projected = vec![0; N * size.glwe_len()];
+    key.project_coefficients_to(
+        &input,
+        &(0..N).collect::<Vec<_>>(),
+        &mut projected,
+        modulus,
+        &ntt,
+        &mut context,
+    );
+    check_prefix_projection(&projected, |count, output| {
+        key.project_prefix_coefficients_to(&input, count, output, modulus, &ntt, &mut context);
+    });
     let mut expanded = vec![0; N * size.glwe_len()];
     key.expand_coefficients_to(&input, &mut expanded, modulus, &ntt, &mut context);
     check_partial_expansion(&input, &expanded, &s, Q.into(), |input, count, output| {
@@ -296,6 +333,17 @@ fn fourier_trace_projection_and_packing_backend<Table: FftTable>() {
         expected[0] = m[i];
         assert_phase(c, &expected, &s, q);
     }
+    let mut projected = vec![0; N * size.glwe_len()];
+    key.project_coefficients_to(
+        &input,
+        &(0..N).collect::<Vec<_>>(),
+        &mut projected,
+        &mut fft,
+        &mut context,
+    );
+    check_prefix_projection(&projected, |count, output| {
+        key.project_prefix_coefficients_to(&input, count, output, &mut fft, &mut context);
+    });
     let mut expanded = vec![0; N * size.glwe_len()];
     key.expand_coefficients_to(&input, &mut expanded, &mut fft, &mut context);
     check_partial_expansion(&input, &expanded, &s, q, |input, count, output| {

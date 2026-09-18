@@ -41,7 +41,6 @@ where
     parameters: &'a CircuitBootstrapParameters<T>,
     circuit_key: &'a CircuitBootstrapKey<T>,
     lookup_table: InterleavedLookupTable<T>,
-    projection_indices: Vec<usize>,
     blind_rotation: BlindRotationWorkspace<T>,
     trace: NttNtruTraceContext<T>,
     projected: NlevCiphertext<Vec<T>>,
@@ -97,7 +96,6 @@ where
             parameters,
             circuit_key,
             lookup_table,
-            projection_indices: (0..parameters.output_basis().decompose_length()).collect(),
             blind_rotation: BlindRotationWorkspace::new(n),
             trace: NttNtruTraceContext::new(n),
             projected: NlevCiphertext::zero(parameters.output_nlev_len()),
@@ -153,9 +151,9 @@ where
         );
         // A general ManyLUT accumulator does not have a zero message tail.
         // Reverse-trace projection is valid here; prefix expansion is not.
-        self.circuit_key.trace_key().project_coefficients_to(
+        self.circuit_key.trace_key().project_prefix_coefficients_to(
             &self.blind_rotation.current,
-            &self.projection_indices,
+            self.parameters.output_basis().decompose_length(),
             self.projected.as_mut(),
             tfhe.accumulator_ntru().cipher_modulus(),
             self.context.table(),

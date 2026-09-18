@@ -74,13 +74,14 @@ NTT 的 `encrypt_truncated_zeros`、`phase_truncated` 和 `decrypt_truncated` �
 | `apply_partial_to(input, r, ...)` | `d * sum_j M[j*d] X^(j*d)`，其中 `d=N/r` |
 | `apply_reverse_partial_to(input, r, ...)` | `sum_j M[j*d] X^(j*d)` |
 | `project_coefficient_to` / `project_coefficients_to` | 常数 `M[index]` / 按选择顺序排列的常数 |
+| `project_prefix_coefficients_to(input, count, ...)` | 常数 `M[0]` 到 `M[count-1]`，无需明文零尾 |
 | `expand_coefficients_to` | 按系数顺序排列的 `N` 个常数 GLWE |
 | `expand_partial_coefficients_to(input, count, ...)` | 明文高位全零时，展开前 `count` 项为常数 |
 | `pack_lwe_to` / `pack_lwes_to` | LWE 消息对应的常数 / `p` 个 LWE 的 `sum_i m[i] X^(i*N/p)` |
 
 Partial trace 的 `retained_coefficient_count`（`r`）是 `1..=N` 内的 2 的幂。它在一个 GLWE 中保留等间隔位置：`N=8, r=2` 保留索引 0 和 4。`r=N` 复制输入，`r=1` 为 full trace。反向 trace 每级先缩放，再自同构和相加：NTT 乘 `2^-1 mod q`，Fourier 对无符号系数取 `floor(x/2)`。NTT 域运算不直接继承 torus RevHomTrace 的噪声界。
 
-投影支持任意索引、重复索引和空选择，每个索引执行一次反向 trace，写入 `indices.len() * size.glwe_len()` 个值。部分展开在 `count` 个输出 GLWE 块中构建共享树，先按 `count` 归一化一次，再执行 `count-1` 次自同构。`count` 必须是 `1..=N` 内的 2 的幂；`count=1` 复制输入，`count=N` 为完整展开。NTT 归一化使用域上的逆元，Fourier 使用无符号向下除法。两条路径具有不同的误差行为。
+投影支持任意索引、重复索引和空选择，每个索引执行一次反向 trace，写入 `indices.len() * size.glwe_len()` 个值。前缀投影接受 `0..=N` 内任意 `count`，复用相同计算且无需索引数组；即使 `count=1` 也执行完整反向 trace。部分展开在 `count` 个输出 GLWE 块中构建共享树，先按 `count` 归一化一次，再执行 `count-1` 次自同构。`count` 必须是 `1..=N` 内的 2 的幂；`count=1` 复制输入，`count=N` 为完整展开。NTT 归一化使用域上的逆元，Fourier 使用无符号向下除法。两条路径具有不同的误差行为。
 
 部分展开产生常数的前提是明文 `count..N` 项全零。这个未检查前提针对明文，不针对密文 mask 或 body。否则第 `i` 个输出的目标为 `sum_j M[i+j*count] X^(j*count)`。所有输出保持环次数 `N`，使用普通 trace context。
 

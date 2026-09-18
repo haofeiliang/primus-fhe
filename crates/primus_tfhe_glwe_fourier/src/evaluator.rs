@@ -273,13 +273,15 @@ where
     /// result to `main_glwe` in coefficient form under the accumulator secret.
     /// The caller checked input/LUT compatibility; `rotation_step` is the LUT's
     /// padded output count (one for ordinary PBS). No output key switch occurs.
+    /// Returns the accumulator and FFT engine for CBS post-processing using
+    /// the same workspace and table.
     #[inline]
-    fn blind_rotate(
+    pub(crate) fn blind_rotate(
         &mut self,
         input: &LweCiphertext<T>,
         lookup_table: &Polynomial<Vec<T>>,
         rotation_step: usize,
-    ) {
+    ) -> (&GlweCiphertext<Vec<T>>, &mut FftEngine<'a, Table>) {
         let parameters = self.context.parameters();
         let small_lwe = match parameters.pbs_order() {
             PbsOrder::BootstrapKeyswitch => input,
@@ -298,6 +300,7 @@ where
                 &mut self.fft,
                 &mut self.blind_rotation,
             );
+        (&self.main_glwe, &mut self.fft)
     }
 
     /// Switches `main_glwe` from the accumulator secret to the padded small

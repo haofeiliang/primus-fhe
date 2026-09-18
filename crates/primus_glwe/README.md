@@ -74,13 +74,14 @@ Both automorphism keys provide coefficient-domain `apply_to`. `NttGlweAutomorphi
 | `apply_partial_to(input, r, ...)` | `d * sum_j M[j*d] X^(j*d)`, where `d=N/r` |
 | `apply_reverse_partial_to(input, r, ...)` | `sum_j M[j*d] X^(j*d)` |
 | `project_coefficient_to` / `project_coefficients_to` | Constant `M[index]` / constants in selection order |
+| `project_prefix_coefficients_to(input, count, ...)` | Constants `M[0]` through `M[count-1]`, with no zero-tail assumption |
 | `expand_coefficients_to` | `N` constant GLWEs in coefficient order |
 | `expand_partial_coefficients_to(input, count, ...)` | First `count` constants, assuming a zero message tail |
 | `pack_lwe_to` / `pack_lwes_to` | Constant LWE message / `sum_i m[i] X^(i*N/p)` for `p` LWEs |
 
 Partial trace's `retained_coefficient_count` (`r`) is a power of two in `1..=N`. It retains equally spaced positions in one GLWE: `N=8, r=2` retains indices 0 and 4. `r=N` copies the input; `r=1` is full trace. Reverse trace scales before each automorphism/addition: NTT multiplies by `2^-1 mod q`; Fourier uses unsigned coefficient `floor(x/2)`. The NTT field operation does not inherit the torus RevHomTrace noise bound.
 
-Projection accepts arbitrary indices, including duplicates and an empty selection. It uses one reverse trace per index and writes `indices.len() * size.glwe_len()` values. Partial expansion instead builds a shared tree in `count` output GLWE blocks, using `count-1` automorphisms after normalizing once by `count`. `count` must be a power of two in `1..=N`; `count=1` copies the input and `count=N` is full expansion. NTT normalization uses the field inverse; Fourier uses unsigned floor division. These paths have different error behavior.
+Projection accepts arbitrary indices, including duplicates and an empty selection. It uses one reverse trace per index and writes `indices.len() * size.glwe_len()` values. Prefix projection accepts any `count` in `0..=N`, uses the same arithmetic, and needs no index array; even `count=1` performs a full reverse trace. Partial expansion instead builds a shared tree in `count` output GLWE blocks, using `count-1` automorphisms after normalizing once by `count`. `count` must be a power of two in `1..=N`; `count=1` copies the input and `count=N` is full expansion. NTT normalization uses the field inverse; Fourier uses unsigned floor division. These paths have different error behavior.
 
 For partial expansion to produce constants, message coefficients `count..N` must be zero. This unchecked premise concerns the message, not ciphertext masks or bodies. Otherwise output `i` targets `sum_j M[i+j*count] X^(j*count)`. All outputs retain ring degree `N` and use the ordinary trace context.
 

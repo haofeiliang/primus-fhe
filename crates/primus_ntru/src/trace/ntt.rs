@@ -274,14 +274,69 @@ impl<T: FheUint> NttNtruTraceKey<T> {
         Table: NttTable<ValueT = T>,
         A: Data<Elem = T>,
     {
-        self.check_batch(input.as_ref(), indices.len(), output, modulus, ntt, context);
-        let n = self.poly_length();
         assert!(
-            indices.iter().all(|&index| index < n),
+            indices.iter().all(|&index| index < self.poly_length()),
             "projection index outside polynomial"
         );
+        self.project_indices_to(
+            input,
+            indices.iter().copied(),
+            output,
+            modulus,
+            ntt,
+            context,
+        );
+    }
+
+    /// Projects coefficients `0..count` into consecutive constant-message NTRUs.
+    /// Accepts any `count` in `0..=N`; no zero message tail is required.
+    /// Uses one full reverse trace per coefficient, with the same rounding and
+    /// error behavior as [`Self::project_coefficients_to`], and allocates nothing.
+    /// Inherits that method's numerical and representation requirements.
+    ///
+    /// # Panics
+    /// Panics before writes if `count > N`, output does not contain exactly
+    /// `count * N` coefficients, or input/backend/workspace layouts differ
+    /// from the key. Zero count requires empty output and still validates resources.
+    pub fn project_prefix_coefficients_to<M, Table, A>(
+        &self,
+        input: &NtruCiphertext<A>,
+        count: usize,
+        output: &mut [T],
+        modulus: M,
+        ntt: &Table,
+        context: &mut NttNtruTraceContext<T>,
+    ) where
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+        A: Data<Elem = T>,
+    {
+        assert!(
+            count <= self.poly_length(),
+            "projection prefix exceeds polynomial length"
+        );
+        self.project_indices_to(input, 0..count, output, modulus, ntt, context);
+    }
+
+    // Public callers validate the index range. Check the remaining layouts
+    // once, then use the same arithmetic for a slice iterator or a prefix range.
+    fn project_indices_to<M, Table, A>(
+        &self,
+        input: &NtruCiphertext<A>,
+        indices: impl ExactSizeIterator<Item = usize>,
+        output: &mut [T],
+        modulus: M,
+        ntt: &Table,
+        context: &mut NttNtruTraceContext<T>,
+    ) where
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+        A: Data<Elem = T>,
+    {
+        self.check_batch(input.as_ref(), indices.len(), output, modulus, ntt, context);
+        let n = self.poly_length();
         let exponents = PowOf2Modulus::new(2 * n);
-        for (&index, output) in indices.iter().zip(output.chunks_exact_mut(n)) {
+        for (index, output) in indices.zip(output.chunks_exact_mut(n)) {
             input.mul_monomial_to(
                 exponents.reduce_neg(index),
                 &mut NtruCiphertext::new(&mut *output),

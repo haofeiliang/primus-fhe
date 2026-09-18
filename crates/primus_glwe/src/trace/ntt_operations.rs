@@ -254,6 +254,67 @@ impl<T: FheUint> NttGlweTraceKey<T> {
         Table: NttTable<ValueT = T>,
         A: Data<Elem = T>,
     {
+        assert!(
+            indices
+                .iter()
+                .all(|&index| index < self.glwe_size.poly_length()),
+            "projection index outside polynomial"
+        );
+        self.project_indices_to(
+            input,
+            indices.iter().copied(),
+            output,
+            modulus,
+            ntt,
+            context,
+        );
+    }
+
+    /// Projects coefficients `0..count` into consecutive constant-message GLWEs.
+    /// Accepts any `count` in `0..=N`; no zero message tail is required.
+    /// Uses one full reverse trace per coefficient, with the same rounding and
+    /// error behavior as [`Self::project_coefficients_to`], and allocates nothing.
+    /// Inherits that method's numerical and representation requirements.
+    ///
+    /// # Panics
+    /// Panics before writes if `count > N`, output does not contain exactly
+    /// `count * size.glwe_len()` coefficients, or input/backend/workspace layouts differ
+    /// from the key. Zero count requires empty output and still validates resources.
+    pub fn project_prefix_coefficients_to<M, Table, A>(
+        &self,
+        input: &Glwe<A>,
+        count: usize,
+        output: &mut [T],
+        modulus: M,
+        ntt: &Table,
+        context: &mut NttGlweTraceContext<T>,
+    ) where
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+        A: Data<Elem = T>,
+    {
+        assert!(
+            count <= self.glwe_size.poly_length(),
+            "projection prefix exceeds polynomial length"
+        );
+        self.project_indices_to(input, 0..count, output, modulus, ntt, context);
+    }
+
+    // Public callers validate the index range. Check the remaining layouts
+    // once, then use the same arithmetic for a slice iterator or a prefix range.
+    fn project_indices_to<M, Table, A>(
+        &self,
+        input: &Glwe<A>,
+        indices: impl ExactSizeIterator<Item = usize>,
+        output: &mut [T],
+        modulus: M,
+        ntt: &Table,
+        context: &mut NttGlweTraceContext<T>,
+    ) where
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+        A: Data<Elem = T>,
+    {
         let glwe_len = self.glwe_size.glwe_len();
         let poly_length = self.glwe_size.poly_length();
         assert_eq!(
@@ -269,14 +330,10 @@ impl<T: FheUint> NttGlweTraceKey<T> {
                 .expect("projection output length overflow"),
             "projection output length mismatch"
         );
-        assert!(
-            indices.iter().all(|&index| index < poly_length),
-            "projection index outside polynomial"
-        );
         self.assert_compatible(modulus, ntt, context);
 
         let exponent_modulus = PowOf2Modulus::new(2 * poly_length);
-        for (&index, output) in indices.iter().zip(output.chunks_exact_mut(glwe_len)) {
+        for (index, output) in indices.zip(output.chunks_exact_mut(glwe_len)) {
             input.mul_monomial_to(
                 exponent_modulus.reduce_neg(index),
                 &mut Glwe::new(&mut *output),

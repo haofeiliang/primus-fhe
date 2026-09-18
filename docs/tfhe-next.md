@@ -90,7 +90,7 @@
 
 以下不属于新密码算法，按实际调用需求安排：
 
-- Fourier GLWE CBS、NTRU Boolean：复用已有原语，分别验证表示/输出尺度与完整链。
+- Fourier GLWE CBS 已接入完整链，B1.3 补充误差、成本与示例；NTRU Boolean 按 B2 复用门算法并验证完整链，见[后端补齐计划](tfhe-backend-plan.md)。
 - Batch client/PBS、PBS `_assign`：明确独立输入调度、缓冲区别名与覆盖顺序，复用 evaluator，不用 clone 隐藏分配。
 - ServerKey 存储量查询：可替换 `xtask/src/ntru_params.rs` 的手写公式，区分系数载荷、allocator 请求量与进程内存。
 - 独立 KSK 噪声分析、整数/message-carry 层、序列化和 GPU 等，等待具体需求，不扩入 ternary 任务。

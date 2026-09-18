@@ -2,7 +2,7 @@
 
 [English](README.md) | 简体中文
 
-基于 GLWE、采用原生 torus 的 TFHE 后端。支持两种 PBS order、ManyLUT、Boolean 门及私钥/公钥客户端。
+基于 GLWE、采用原生 torus 的 TFHE 后端。支持两种 PBS order、ManyLUT、Boolean 门、经典 CBS 及私钥/公钥客户端。
 完整能力与编码约定见[公共指南](../primus_tfhe/README.zh_CN.md)，
 参数与秘密域见 [GLWE family](../primus_tfhe_glwe/README.zh_CN.md)。
 
@@ -61,9 +61,8 @@ FFT engine 和 evaluator 从同一个 context 创建。
 
 ## Circuit bootstrapping
 
-`CircuitBootstrapParameters` 和 `CircuitBootstrapKey` 已提供可选的 CBS 密钥材料；
-完整 Fourier CBS evaluator 尚待接入。[NTT 后端](../primus_tfhe_glwe_ntt/README.zh_CN.md)
-已提供完整 GLWE CBS 路径。
+经典 CBS 支持 binary/ternary small 秘密、两种 PBS order 和两种 FFT，输出为 accumulator
+私钥下的 Fourier GGSW。稀疏 CBS 尚不支持。
 
 通过 `CircuitBootstrapParameters::try_new(tfhe, output_basis, trace, scheme_switch)`
 传入 Native 输出 basis，以及独立的 Native `GlevParameters` / `GgswParameters`，
@@ -73,10 +72,16 @@ FFT engine 和 evaluator 从同一个 context 创建。
 
 使用同一个 `ClientKey`，通过可复用的 `KeyGenerator` 依次调用
 `try_generate_server_key` 和 `try_generate_circuit_bootstrap_key`。
-`TfheContext::generate_circuit_bootstrap_key` 提供便捷入口。附加密钥通过
-`trace_key().project_coefficients_to` 与 `scheme_switch_key().apply_to` 供底层原语使用；
-二者均使用 accumulator 私钥，求值须使用生成密钥的 context 所持有的 FFT table。
-普通 `ServerKey` 不包含 CBS 材料。
+`TfheContext::generate_circuit_bootstrap_key` 提供便捷入口。两类密钥必须使用同一组客户端
+私钥和生成时的 FFT table；布局/basis 检查不能证明实际身份。普通 `ServerKey` 不包含 CBS 材料。
+
+通过 `context.circuit_bootstrap_evaluator(&server, &parameters, &circuit_key)` 创建 evaluator。
+`circuit_bootstrap_to` 覆盖写入已有 `FourierGgsw`，其长度为
+`parameters.output_size().fourier_ggsw_len()` 个复数，在线不分配；`circuit_bootstrap` 则分配输出。
+完整链复用普通 evaluator 的输入 KS/BR 工作区，再投影各 gadget 层并执行 scheme switching。
+输入使用 unsigned rounded LWE 编码，消息位于 `0..ceil(t/2)`，噪声须适应较粗的 ManyLUT
+旋转区间。用于 CMUX 时输入须为 0 或 1。结果保留在 accumulator 私钥下并采用 gadget
+尺度，不经过普通 PBS 的输出 KS。
 
 Native reverse trace 沿用底层逐级整数除二；其舍入、trace key switching、scheme-switch
 分解与 FFT 精度均需计入 CBS 误差预算。参数检查不验证噪声或安全性。

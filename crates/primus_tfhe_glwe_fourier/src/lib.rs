@@ -16,8 +16,9 @@
 //!
 //! [`CircuitBootstrapParameters`] and [`CircuitBootstrapKey`] provide optional
 //! trace-projection and scheme-switch keys, generated through
-//! [`KeyGenerator::try_generate_circuit_bootstrap_key`]. A complete Fourier CBS
-//! evaluator is not yet available.
+//! [`KeyGenerator::try_generate_circuit_bootstrap_key`]. Use
+//! [`TfheContext::circuit_bootstrap_evaluator`] for classic binary/ternary CBS
+//! producing Fourier GGSW under the accumulator secret, with either PBS order.
 
 #![deny(missing_docs)]
 
@@ -41,8 +42,8 @@ pub use error::{
 pub use blind_rotation::FourierGlweBlindRotationContext;
 pub use bootstrapping_key::FourierGlweBootstrappingKey;
 pub use circuit_bootstrap::{
-    CircuitBootstrapKey, CircuitBootstrapKeyError, CircuitBootstrapParameterError,
-    CircuitBootstrapParameters,
+    CircuitBootstrapEvaluationError, CircuitBootstrapEvaluator, CircuitBootstrapKey,
+    CircuitBootstrapKeyError, CircuitBootstrapParameterError, CircuitBootstrapParameters,
 };
 pub use context::TfheContext;
 pub use evaluator::Evaluator;

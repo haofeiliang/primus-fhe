@@ -20,13 +20,22 @@ pub enum CircuitBootstrapKeyError {
 /// context's FFT table. The ordinary PBS keys remain in [`crate::ServerKey`].
 /// Layout and basis equality do not establish secret or FFT representation
 /// identity; consumers must use the same secret and FFT table instance as
-/// generation. The complete Fourier CBS evaluator is not yet provided.
+/// generation; see [`crate::CircuitBootstrapEvaluator::try_new`].
 pub struct CircuitBootstrapKey<T: TorusFftValue> {
     trace: FourierGlweTraceKey<T>,
     scheme_switch: FourierGlweSchemeSwitchKey<T>,
 }
 
 impl<T: TorusFftValue> CircuitBootstrapKey<T> {
+    pub(crate) fn is_compatible(&self, parameters: &CircuitBootstrapParameters<T>) -> bool {
+        // Generation binds both keys to the same GLWE layout. The scheme-switch
+        // key exposes that layout; the trace key only needs a basis comparison.
+        self.scheme_switch.output_size() == parameters.output_size()
+            && self.scheme_switch.key_size() == parameters.scheme_switch().size()
+            && self.scheme_switch.key_basis() == parameters.scheme_switch().basis()
+            && self.trace.basis() == parameters.trace().basis()
+    }
+
     /// Returns the key for reverse-trace coefficient projection.
     #[must_use]
     #[inline]

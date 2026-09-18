@@ -74,8 +74,9 @@ Boolean 运算直接使用 `LweCiphertext<T>`，采用模 4 下 unsigned rounded
 但传入的 family 参数必须匹配。求值器只保存所需模数、维数和编码常量，不借用这套参数。
 Raw 输入必须采用 Boolean 编码及匹配的外部秘密，这些性质无法从 LWE 密文本身验证。
 
-CBS 是后端的可选能力。NTT 提供独立的 output basis、trace/scheme-switch 参数及密钥；
-Fourier GLWE CBS 尚未实现。CBS 输出留在 accumulator secret 下，使用 gadget 尺度。
+CBS 是两个后端的可选能力，提供独立的 output basis、trace/scheme-switch 参数及密钥，
+支持两种 PBS order 和经典 binary/ternary small secret。CBS 输出留在 accumulator
+secret 下，使用 gadget 尺度；稀疏 CBS 尚不支持。
 
 ## 示例与验证
 

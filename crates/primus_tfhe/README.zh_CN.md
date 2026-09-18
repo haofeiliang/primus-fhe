@@ -15,14 +15,14 @@
 | 后端 | 密文模数 | PBS / ManyLUT | 分解式 MVB | Boolean 门 | CBS |
 | --- | --- | --- | --- | --- | --- |
 | GLWE NTT | 显式域模数 | 支持 | 支持 | 支持 | 支持 |
-| GLWE Fourier | 原生 torus | 支持 | 未实现 | 支持 | 仅参数/密钥 |
+| GLWE Fourier | 原生 torus | 支持 | 未实现 | 支持 | 支持 |
 | NTRU NTT | 显式域模数 | 支持 | 未实现 | 未实现 | 支持 |
 | NTRU Fourier | 原生 torus | 支持 | 未实现 | 未实现 | 支持 |
 
 四后端均支持私钥和 LWE 公钥客户端。Fourier 后端支持 RustFFT 与 TfheFFT。
 参数和 API 仍处于实验阶段；示例及 benchmark fixture 不是生产安全参数或失败概率建议。
 
-GLWE 两后端的经典 PBS 支持 binary/ternary small secret；NTT 的 CBS 和 MVB 同样支持。
+GLWE 两后端的经典 PBS 和 CBS 支持 binary/ternary small secret；NTT 的 MVB 同样支持。
 NTRU 的 BR 秘密仍限于 binary。
 
 GLWE NTT 另支持固定重量二元 small 秘密的[实验性稀疏 PBS](../primus_tfhe_glwe_ntt/README.zh_CN.md#实验性稀疏-pbs)：

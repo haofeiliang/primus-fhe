@@ -88,9 +88,10 @@ modulus, dimension and encoding constants it needs without borrowing those param
 Raw inputs must use the Boolean encoding and the matching external key; these
 properties cannot be verified from an LWE ciphertext.
 
-CBS is an optional backend facility. NTT supports it with separate output basis,
-trace/scheme-switch parameters and keys; Fourier GLWE CBS is not implemented.
-CBS outputs remain under the accumulator secret and use gadget scales.
+CBS is an optional facility in both backends, with separate output basis,
+trace/scheme-switch parameters and keys. Both PBS orders and classic binary/ternary
+small secrets are supported. CBS outputs remain under the accumulator secret and
+use gadget scales; sparse CBS is not supported.
 
 ## Examples and validation
 

@@ -68,14 +68,13 @@ fn ntt_primitives(c: &mut Criterion) {
             let partial_input = sk
                 .encrypt(&partial_message, &params, &table, &mut rng)
                 .into_coeff_form(&table);
-            let indices: Vec<_> = (0..count).collect();
-            let mut selected = vec![0; indices.len() * size.glwe_len()];
-            group.throughput(Throughput::Elements(indices.len() as u64));
+            let mut selected = vec![0; count * size.glwe_len()];
+            group.throughput(Throughput::Elements(count as u64));
             group.bench_function(format!("project/{count}"), |b| {
                 b.iter(|| {
-                    key.project_coefficients_to(
+                    key.project_prefix_coefficients_to(
                         black_box(&partial_input),
-                        &indices,
+                        count,
                         &mut selected,
                         modulus,
                         &table,
@@ -199,14 +198,13 @@ fn fourier_primitives(c: &mut Criterion) {
             );
             let mut partial_input = Glwe::new(vec![0u64; size.glwe_len()]);
             encrypted.write_torus_form(&mut partial_input, &mut fft);
-            let indices: Vec<_> = (0..count).collect();
-            let mut selected = vec![0; indices.len() * size.glwe_len()];
-            group.throughput(Throughput::Elements(indices.len() as u64));
+            let mut selected = vec![0; count * size.glwe_len()];
+            group.throughput(Throughput::Elements(count as u64));
             group.bench_function(format!("project/{count}"), |b| {
                 b.iter(|| {
-                    key.project_coefficients_to(
+                    key.project_prefix_coefficients_to(
                         black_box(&partial_input),
-                        &indices,
+                        count,
                         &mut selected,
                         &mut fft,
                         &mut trace,

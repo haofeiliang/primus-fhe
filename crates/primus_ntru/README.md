@@ -108,6 +108,9 @@ have different error distributions and are not interchangeable.
 
 `project_coefficient(s)_to` moves each requested coefficient to the constant
 position, then applies reverse trace. Indices may repeat or arrive out of order.
+`project_prefix_coefficients_to(input, count, ...)` accepts any count in `0..=N`
+and uses the same reverse traces for `0..count`, without an index array or a
+zero-tail message requirement. A count of one still performs full reverse trace.
 `expand_coefficients_to` expands the whole message in natural order using a tree.
 `expand_partial_coefficients_to(input, count, ...)` requires a power-of-two
 count <= N and a target message supported on the first count positions. It uses

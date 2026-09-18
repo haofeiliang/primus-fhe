@@ -2,7 +2,8 @@ use primus_fft::{FftEngine, FftTable, TorusFftValue};
 use primus_tfhe_glwe::{ClientKey, EncryptionKey};
 
 use crate::{
-    BooleanDecryptor, BooleanEncryptor, BooleanError, BooleanEvaluator, CircuitBootstrapKey,
+    BooleanDecryptor, BooleanEncryptor, BooleanError, BooleanEvaluator,
+    CircuitBootstrapEvaluationError, CircuitBootstrapEvaluator, CircuitBootstrapKey,
     CircuitBootstrapKeyError, CircuitBootstrapParameters, Decryptor, Encryptor, Evaluator,
     KeyGenerator, ServerKey, TfheParameters,
     error::{TfheClientError, TfheContextError, TfheEvaluationError, TfheKeyError},
@@ -81,6 +82,21 @@ where
         R: rand::Rng + rand::CryptoRng,
     {
         KeyGenerator::new(self).try_generate_circuit_bootstrap_key(client_key, parameters, rng)
+    }
+
+    /// Creates a classic binary/ternary CBS evaluator with reusable workspace.
+    ///
+    /// # Correctness
+    ///
+    /// Inherits [`CircuitBootstrapEvaluator::try_new`]'s paired-secret and FFT
+    /// table requirements. Layout and basis checks cannot establish identity.
+    pub fn circuit_bootstrap_evaluator<'a>(
+        &'a self,
+        server_key: &'a ServerKey<T>,
+        parameters: &'a CircuitBootstrapParameters<T>,
+        circuit_key: &'a CircuitBootstrapKey<T>,
+    ) -> Result<CircuitBootstrapEvaluator<'a, T, Table>, CircuitBootstrapEvaluationError> {
+        CircuitBootstrapEvaluator::try_new(self, server_key, parameters, circuit_key)
     }
 
     /// Creates a secret-key or public-key encryptor after checking compatibility.

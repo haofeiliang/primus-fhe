@@ -16,7 +16,7 @@ Start with a backend example below for an end-to-end workflow.
 | Backend | Ciphertext modulus | PBS / ManyLUT | Factorized MVB | Boolean gates | CBS |
 | --- | --- | --- | --- | --- | --- |
 | GLWE NTT | Explicit field | Yes | Yes | Yes | Yes |
-| GLWE Fourier | Native torus | Yes | Not implemented | Yes | Parameters/keys only |
+| GLWE Fourier | Native torus | Yes | Not implemented | Yes | Yes |
 | NTRU NTT | Explicit field | Yes | Not implemented | Not implemented | Yes |
 | NTRU Fourier | Native torus | Yes | Not implemented | Not implemented | Yes |
 
@@ -24,8 +24,8 @@ All four backends support secret-key and LWE public-key clients. Fourier backend
 support RustFFT and TfheFFT. Parameters and APIs are experimental; example and
 benchmark fixtures are not production security or failure-probability recommendations.
 
-Classic GLWE PBS supports binary/ternary small secrets in both backends, including
-NTT CBS and MVB. NTRU BR secrets remain binary.
+Classic GLWE PBS and CBS support binary/ternary small secrets in both backends;
+NTT MVB also supports both. NTRU BR secrets remain binary.
 
 GLWE NTT also supports [experimental sparse PBS](../primus_tfhe_glwe_ntt/README.md#experimental-sparse-pbs)
 for fixed-weight binary small secrets: both orders and ordinary/interleaved/factorized LUTs.

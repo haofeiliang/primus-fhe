@@ -40,7 +40,6 @@ where
     parameters: &'a CircuitBootstrapParameters<T>,
     circuit_key: &'a CircuitBootstrapKey<T>,
     lookup_table: InterleavedLookupTable<T>,
-    projection_indices: Vec<usize>,
     blind_rotation: BlindRotationWorkspace<T>,
     trace: FourierNtruTraceContext<T>,
     fft: FftEngine<'a, Table>,
@@ -97,7 +96,6 @@ where
             parameters,
             circuit_key,
             lookup_table,
-            projection_indices: (0..parameters.output_basis().decompose_length()).collect(),
             blind_rotation: BlindRotationWorkspace::new(n),
             trace: FourierNtruTraceContext::new(n),
             fft: context.new_fft_engine(),
@@ -158,9 +156,9 @@ where
         );
         // A general ManyLUT accumulator does not have a zero message tail.
         // Reverse-trace projection is valid here; prefix expansion is not.
-        self.circuit_key.trace_key().project_coefficients_to(
+        self.circuit_key.trace_key().project_prefix_coefficients_to(
             &self.blind_rotation.current,
-            &self.projection_indices,
+            self.parameters.output_basis().decompose_length(),
             self.projected.as_mut(),
             &mut self.fft,
             &mut self.trace,
