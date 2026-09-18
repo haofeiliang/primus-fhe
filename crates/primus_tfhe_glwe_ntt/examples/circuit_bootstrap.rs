@@ -1,14 +1,14 @@
-//! NTRU/NTT circuit bootstrapping followed by CMUX.
+//! GLWE/NTT circuit bootstrapping followed by CMUX.
 //!
 //! Fixed seed and small functional parameters for demonstration only. CBS noise
 //! and secret-dependent-message security require a separate production assessment.
 
+use primus_glwe::SecretKeyDistr;
 use primus_lwe::LweParameters;
 use primus_modulus::BarrettModulus;
-use primus_ntru::SecretKeyDistr;
 use primus_ntt::U64NttTable;
-use primus_tfhe_ntru_ntt::{
-    CircuitBootstrapConfig, DecompositionConfig, TfheConfig, TfheContext, TfheParameters,
+use primus_tfhe_glwe_ntt::{
+    CircuitBootstrapConfig, DecompositionConfig, PbsOrder, TfheConfig, TfheContext, TfheParameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -17,9 +17,10 @@ const Q: u64 = 1_125_899_906_826_241;
 
 fn main() {
     let modulus = BarrettModulus::new(Q);
-    let lwe = LweParameters::new(16, 4, modulus, SecretKeyDistr::UniformBinary, 0.7);
+    let lwe = LweParameters::new(4, 4, modulus, SecretKeyDistr::UniformBinary, 0.7);
     let parameters = TfheParameters::try_from_config(TfheConfig {
-        external_lwe: lwe,
+        small_lwe: lwe,
+        accumulator_dimension: 1,
         poly_length: N,
         accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,
         accumulator_noise_standard_deviation: 0.7,
@@ -31,7 +32,7 @@ fn main() {
             log_basis: 10,
             level_count: None,
         },
-        key_switching_noise_standard_deviation: 0.7,
+        pbs_order: PbsOrder::BootstrapKeyswitch,
     })
     .unwrap();
     let context = TfheContext::<_, U64NttTable>::try_from_parameters(parameters).unwrap();
@@ -57,7 +58,7 @@ fn main() {
         .try_generate_keys(Some(cbs_config), &mut rng)
         .unwrap();
     let encryptor = context.encryptor(&client_key).unwrap();
-    // CMUX candidates use f_acc, the CBS output secret.
+    // CMUX candidates use the accumulator secret, shared with the CBS output.
     let mut accumulator = context.accumulator_client(&client_key).unwrap();
     let choices = [1, 3].map(|message| accumulator.encrypt(&[message; N], &mut rng));
     let mut evaluator = context.circuit_bootstrap_evaluator(&server_key).unwrap();
@@ -69,7 +70,7 @@ fn main() {
         encryptor
             .encrypt_padded_to(bit, &mut input, &mut rng)
             .unwrap();
-        // Server-side: ordinary LWE bit -> gadget-scaled NGSW -> selected NTRU.
+        // Server-side: ordinary LWE bit -> gadget-scaled GGSW -> selected GLWE.
         evaluator.circuit_bootstrap_to(&input, &mut control);
         evaluator.cmux_to(&control, &choices[0], &choices[1], &mut selected);
         accumulator.decrypt_to(&selected, &mut decoded);

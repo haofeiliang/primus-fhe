@@ -45,6 +45,37 @@ GLWE NTT 另支持固定重量二元 small 秘密的[实验性稀疏 PBS](../pri
 并用 `#[source]` 保留原因。稀疏匹配保留算法专属错误。Context 错误不承诺 `Clone`/`Eq`，
 因为其包含的底层建表错误未提供这些 trait。
 
+## CBS 输出与消费
+
+四后端都在同一个 CBS evaluator 中绑定输出布局与消费参数：
+
+```rust,ignore
+let mut cbs = context.circuit_bootstrap_evaluator(&server)?;
+let mut accumulator = context.accumulator_client(&client)?;
+let choices = [accumulator.encrypt(&lhs, &mut rng), accumulator.encrypt(&rhs, &mut rng)];
+let mut control = cbs.allocate_output();
+let mut selected = accumulator.allocate_ciphertext();
+let mut decoded = vec![0; lhs.len()];
+
+cbs.circuit_bootstrap_to(&input_bit, &mut control);
+cbs.cmux_to(&control, &choices[0], &choices[1], &mut selected);
+accumulator.decrypt_to(&selected, &mut decoded);
+```
+
+`allocate_output` 返回后端原有的 GGSW/NGSW，环密文仍是系数域 GLWE/NTRU。
+`cmux_to` 在控制位为 0/1 时选择 lhs/rhs；`external_product_to(control, input, output)`
+也允许非 bit 的 gadget 控制。控制必须使用此 evaluator 的输出 basis、accumulator 私钥和变换表示，
+候选使用该私钥/模数与相同编码。身份及噪声余量由调用方保证；所有密文长度在写输出前检查。
+
+`AccumulatorClient` 持有已准备的 accumulator 私钥与复用转换缓冲区，并借用 context。
+它使用 accumulator codec 加解密 N 个无符号系数；该环域与外部 LWE 客户端分开。
+NTT 持有一份变换密文缓冲，Fourier 另持有 FFT engine 及原有加解密 scratch。
+形状错误在写入或消耗随机数前 panic；明文越界可能消耗随机数。
+NTRU 准备的密钥校验/变换失败返回 `KeyGenerationError`，GLWE 准备返回 `TfheKeyError`。
+
+准备一次，随后复用 `_to` 调用。GLWE CBS/CMUX 通过切换分解布局共享 scheme-switch 外积工作区，
+NTRU 复用 BR 的外积工作区；服务端未增加消费缓冲区。
+
 ## LUT 与资源生命周期
 
 后端接受具名 `TfheConfig` 并派生公共环参数，`TfheContext::try_from_parameters`

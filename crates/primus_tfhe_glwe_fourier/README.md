@@ -130,6 +130,12 @@ See the [CBS analysis](../../docs/tfhe-cbs.md) for error sources, observed margi
 the smallest gadget scale, key/workspace sizes and timings. This profile is not a
 production parameter recommendation; sparse CBS remains unsupported.
 
+Use `evaluator.allocate_output()` to allocate the raw CBS control, then
+`evaluator.cmux_to(control, lhs, rhs, output)` or `external_product_to(control, input, output)`.
+`context.accumulator_client(&client)` binds ring encryption/decryption and conversion scratch.
+See the [shared consumption contracts](../primus_tfhe/README.md#cbs-output-and-consumption)
+and [complete example](examples/circuit_bootstrap.rs).
+
 Error ownership and conversion rules follow the [shared TFHE error boundaries](../primus_tfhe/README.md#error-boundaries).
 
 ## Validation and performance

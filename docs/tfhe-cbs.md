@@ -17,6 +17,8 @@ BK（`BootstrapKeyswitch`）的 CBS 输入维数为 n，KB（`KeyswitchBootstrap
 
 [可运行示例](../crates/primus_tfhe_glwe_fourier/examples/circuit_bootstrap.rs) 将 LWE bit 转为 GGSW 控制，
 选择两条非恒定 GLWE 消息之一；覆盖两种 order、复用工作区与 `1→0` 控制。
+`evaluator.allocate_output()` 分配控制，`evaluator.cmux_to(...)` 复用绑定的 basis/FFT/scratch；
+`context.accumulator_client(&client)` 准备环私钥表示并加解密系数域候选，示例无需手工变换秘密。
 CMUX 之后的 GLWE 仍属于 accumulator 私钥，不能直接交给外部 small-LWE decryptor。
 
 ```sh
@@ -156,7 +158,10 @@ taskset -c 2 cargo +nightly bench -p primus_tfhe_glwe_fourier --bench circuit_bo
 | 调用方 GGSW 输出 | 98,304 |
 
 CBS 比普通 evaluator 增加 **162 KiB**：trace scratch 73 KiB、scheme-switch scratch 33 KiB、
-三层系数 GLev 48 KiB、内部 LUT 8 KiB。输出另由调用方持有；示例中的 CMUX 和解密工作区不属于 CBS。
+三层系数 GLev 48 KiB、内部 LUT 8 KiB。输出另由调用方持有。以上为 B1.3 构造测量；
+B1.6 的 CMUX/外积复用 scheme-switch 缓冲，不再单独准备消费 scratch。
+`AccumulatorClient` 的私钥变换、密文变换缓冲、FFT engine 及加解密 scratch 单独归客户端；
+最新高层构造与完整消费成本由 B1.7 对照，不用历史数值替代当前测量。
 当前 CBS 复用整个普通 evaluator，因此 BK 也持有其中未用于 CBS 后置 KS 的缓冲；本步不重构该布局。
 首次及后续 `circuit_bootstrap_to` 均测得零次堆分配。
 

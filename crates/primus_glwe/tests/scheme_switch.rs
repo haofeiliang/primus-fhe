@@ -1,6 +1,6 @@
 use primus_glwe::{
-    GlevParameters, GlweParameters, GlweSecretKey, NttGadgetEncryptContext,
-    NttGlweSchemeSwitchContext, NttGlweSchemeSwitchKey, NttGlweSecretKey, SecretKeyDistr,
+    GlevParameters, GlweParameters, GlweSecretKey, NttGadgetEncryptContext, NttGlweSchemeSwitchKey,
+    NttGlweSecretKey, SecretKeyDistr,
 };
 use primus_lattice::{
     context::NttGlweExternalProductContext,
@@ -62,7 +62,7 @@ fn ntt_scheme_switch_produces_an_external_product_control() {
     );
     let input_glev = input_glev.into_coeff_form(&ntt);
     let mut control: NttGgsw<Vec<u64>> = NttGgsw::zero(output_parameters.ggsw_len());
-    let mut scheme_context = NttGlweSchemeSwitchContext::new(scheme_parameters.size());
+    let mut scheme_context = NttGlweExternalProductContext::new(scheme_parameters.size());
     scheme_key.apply_to(
         &input_glev,
         &mut control,
@@ -127,8 +127,7 @@ fn fourier_scheme_switch<Table: primus_fft::FftTable>() {
     use common::{K, N, assert_phase, encrypt, message, secret};
     use primus_fft::FftEngine;
     use primus_glwe::{
-        FourierGadgetEncryptContext, FourierGlweSchemeSwitchContext, FourierGlweSchemeSwitchKey,
-        FourierGlweSecretKey, GlweSize,
+        FourierGadgetEncryptContext, FourierGlweSchemeSwitchKey, FourierGlweSecretKey, GlweSize,
     };
     use primus_lattice::{
         context::FourierGlweExternalProductContext,
@@ -174,7 +173,7 @@ fn fourier_scheme_switch<Table: primus_fft::FftTable>() {
         block.copy_from_slice(encrypt(&m, &secret(), 1u128 << 64, &mut rng).as_ref());
     }
     let mut output = FourierGgsw::<Vec<_>>::zero(output_params.fourier_ggsw_len());
-    let mut context = FourierGlweSchemeSwitchContext::new(key_params.size());
+    let mut context = FourierGlweExternalProductContext::new(key_params.size());
     key.apply_to(&input, &mut output, &mut fft, &mut context);
 
     // Check every row and level, including the directly transformed body row.
@@ -264,7 +263,7 @@ fn fourier_scheme_switch<Table: primus_fft::FftTable>() {
                     &Glev::new(&input.as_ref()[..input_len]),
                     &mut output,
                     engine,
-                    &mut FourierGlweSchemeSwitchContext::new(size),
+                    &mut FourierGlweExternalProductContext::new(size),
                 );
             }))
             .is_err()

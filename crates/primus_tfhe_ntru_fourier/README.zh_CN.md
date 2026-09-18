@@ -80,6 +80,11 @@ cargo run -p primus_tfhe_ntru_fourier --example ntru_fourier_circuit_bootstrap
 重复转换为 gadget 尺度的 NGSW 控制。CMUX 在输入 0 时选第一个候选，输入 1 时选第二个。
 输入、control、选择结果和服务端 scratch 均复用，最后通过解密检查结果。
 
+使用 `evaluator.allocate_output()` 分配原有 CBS 控制密文，随后调用
+`evaluator.cmux_to(control, lhs, rhs, output)` 或 `external_product_to(control, input, output)`。
+`context.accumulator_client(&client)` 绑定环加解密与转换工作区。
+详见[公共消费契约](../primus_tfhe/README.zh_CN.md#cbs-输出与消费)及[完整示例](examples/ntru_fourier_circuit_bootstrap.rs)。
+
 错误归属与转换规则见[公共 TFHE 错误边界](../primus_tfhe/README.zh_CN.md#错误边界)。
 
 ## 验证与性能

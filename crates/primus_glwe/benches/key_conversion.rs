@@ -10,13 +10,13 @@
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use primus_fft::{FftEngine, FftTable, RustFftTable};
 use primus_glwe::{
-    FourierGadgetEncryptContext, FourierGlweKeySwitchingContext, FourierGlweSchemeSwitchContext,
-    FourierGlweSchemeSwitchKey, FourierGlweSecretKey, FourierLwePackingKeySwitchingKey,
-    GlevParameters, GlweParameters, NttGadgetEncryptContext, NttGlweKeySwitchingContext,
-    NttGlweSchemeSwitchContext, NttGlweSchemeSwitchKey, NttGlweSecretKey,
+    FourierGadgetEncryptContext, FourierGlweKeySwitchingContext, FourierGlweSchemeSwitchKey,
+    FourierGlweSecretKey, FourierLwePackingKeySwitchingKey, GlevParameters, GlweParameters,
+    NttGadgetEncryptContext, NttGlweKeySwitchingContext, NttGlweSchemeSwitchKey, NttGlweSecretKey,
     NttLwePackingKeySwitchingKey, SecretKeyDistr,
 };
 use primus_lattice::{
+    context::{FourierGlweExternalProductContext, NttGlweExternalProductContext},
     ggsw::{FourierGgsw, NttGgsw},
     glev::{FourierGlev, Glev, NttGlev},
     glwe::Glwe,
@@ -114,7 +114,7 @@ fn ntt_conversion(c: &mut Criterion) {
             &mut rng,
             &mut gadget,
         );
-        let mut context = NttGlweSchemeSwitchContext::new(glev.size());
+        let mut context = NttGlweExternalProductContext::new(glev.size());
         let mut message = Polynomial::new(vec![0; n]);
         message.as_mut()[0] = 1;
         let mut input = NttGlev::<Vec<_>>::zero(glev.glev_len());
@@ -220,7 +220,7 @@ fn fourier_conversion(c: &mut Criterion) {
             &mut rng,
             &mut gadget,
         );
-        let mut context = FourierGlweSchemeSwitchContext::new(glev.size());
+        let mut context = FourierGlweExternalProductContext::new(glev.size());
         let mut message = Polynomial::new(vec![0; n]);
         message.as_mut()[0] = 1;
         let mut input = FourierGlev::<Vec<_>>::zero(glev.fourier_glev_len());

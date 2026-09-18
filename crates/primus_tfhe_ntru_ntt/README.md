@@ -95,6 +95,12 @@ and repeatedly turns an external LWE bit into a gadget-scaled NGSW control.
 CMUX selects the first candidate for 0 and the second for 1. The example reuses
 input, control, selected output and server scratch, then decrypts to check the result.
 
+Use `evaluator.allocate_output()` to allocate the raw CBS control, then
+`evaluator.cmux_to(control, lhs, rhs, output)` or `external_product_to(control, input, output)`.
+`context.accumulator_client(&client)` binds ring encryption/decryption and conversion scratch.
+See the [shared consumption contracts](../primus_tfhe/README.md#cbs-output-and-consumption)
+and [complete example](examples/ntru_ntt_circuit_bootstrap.rs).
+
 Error ownership and conversion rules follow the [shared TFHE error boundaries](../primus_tfhe/README.md#error-boundaries).
 
 ## Validation and performance

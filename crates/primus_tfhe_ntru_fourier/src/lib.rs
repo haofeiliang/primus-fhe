@@ -17,6 +17,7 @@
 
 use primus_modulus::NativeModulus;
 
+mod accumulator;
 mod blind_rotation;
 mod circuit_bootstrap;
 mod context;
@@ -24,6 +25,7 @@ mod error;
 mod evaluator;
 mod key;
 
+pub use accumulator::AccumulatorClient;
 pub use context::TfheContext;
 pub use error::{
     CircuitBootstrapParameterError, KeyGenerationError, LookupTableError, TfheClientError,

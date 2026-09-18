@@ -61,6 +61,15 @@ where
         FftEngine::new(&self.table)
     }
 
+    /// Prepares private-key encryption/decryption in the accumulator ring domain.
+    /// Inherits [`crate::AccumulatorClient::try_new`]'s contracts and errors.
+    pub fn accumulator_client(
+        &self,
+        client_key: &ClientKey<T>,
+    ) -> Result<crate::AccumulatorClient<'_, T, Table>, crate::KeyGenerationError> {
+        crate::AccumulatorClient::try_new(self, client_key)
+    }
+
     /// Generates a fresh client/server pair; `None` selects PBS only and
     /// `Some(config)` also generates the configured CBS material.
     /// Inherits [`KeyGenerator::try_generate`]'s rejection-sampling errors and CBS requirements.

@@ -1,7 +1,8 @@
 //! One blind rotation followed by reverse-trace projection and scheme switching.
 
-use primus_data::DataMut;
+use primus_data::{Data, DataMut};
 use primus_fft::{Complex64, FftEngine, FftTable, TorusFftValue};
+use primus_ntru::NtruCiphertext;
 use primus_ntru::{FourierNgswCiphertext, FourierNtruTraceContext, NlevCiphertext};
 use primus_reduce::ReduceMul;
 use primus_tfhe::{InterleavedLookupTable, LookupTableError, LweCiphertext};
@@ -103,13 +104,113 @@ where
         })
     }
 
+    /// Allocates a zeroed Fourier NGSW with this evaluator's output layout.
+    /// Allocate once and reuse it with [`Self::circuit_bootstrap_to`].
+    #[must_use]
+    pub fn allocate_output(&self) -> FourierNgswCiphertext<Vec<Complex64>> {
+        FourierNgswCiphertext::zero(self.parameters.output_fourier_nlev_len())
+    }
+
+    /// Selects `lhs` for an encrypted zero and `rhs` for an encrypted one.
+    /// Overwrites the coefficient-domain output without allocating or resetting scratch.
+    ///
+    /// # Correctness
+    /// `control` must encrypt a bit with this evaluator's output basis, accumulator
+    /// secret and transform representation. Both candidates must use that secret,
+    /// modulus and the same encoding; their noise must permit the external product.
+    /// Fourier controls must use the bound FFT table instance.
+    /// See [`FourierNgswCiphertext::cmux_to`] for the underlying numerical contract.
+    ///
+    /// # Panics
+    /// Panics before output writes if any ciphertext has the wrong length.
+    pub fn cmux_to<A, B, C, D>(
+        &mut self,
+        control: &FourierNgswCiphertext<A>,
+        lhs: &NtruCiphertext<B>,
+        rhs: &NtruCiphertext<C>,
+        output: &mut NtruCiphertext<D>,
+    ) where
+        A: Data<Elem = Complex64>,
+        B: Data<Elem = T>,
+        C: Data<Elem = T>,
+        D: DataMut<Elem = T>,
+    {
+        let ring_len = self.context.parameters().poly_length();
+        assert_eq!(
+            (
+                control.as_ref().len(),
+                lhs.as_ref().len(),
+                rhs.as_ref().len(),
+                output.as_ref().len()
+            ),
+            (
+                self.parameters.output_fourier_nlev_len(),
+                ring_len,
+                ring_len,
+                ring_len
+            ),
+            "CMUX ciphertext layout mismatch"
+        );
+        control.cmux_to(
+            lhs,
+            rhs,
+            output,
+            self.parameters.output_basis(),
+            &mut self.fft,
+            &mut self.blind_rotation.external_product,
+        );
+    }
+
+    /// Multiplies a coefficient-domain accumulator ciphertext by a gadget control.
+    /// Overwrites output without allocating. The control need not encrypt a bit.
+    ///
+    /// # Correctness
+    /// Inherits [`Self::cmux_to`]'s basis, secret, encoding, transform and residue
+    /// requirements, with the noise budget appropriate to this multiplication.
+    /// See [`FourierNgswCiphertext::external_product_to`].
+    ///
+    /// # Panics
+    /// Panics before output writes if any ciphertext has the wrong length.
+    pub fn external_product_to<A, B, C>(
+        &mut self,
+        control: &FourierNgswCiphertext<A>,
+        input: &NtruCiphertext<B>,
+        output: &mut NtruCiphertext<C>,
+    ) where
+        A: Data<Elem = Complex64>,
+        B: Data<Elem = T>,
+        C: DataMut<Elem = T>,
+    {
+        let ring_len = self.context.parameters().poly_length();
+        assert_eq!(
+            (
+                control.as_ref().len(),
+                input.as_ref().len(),
+                output.as_ref().len()
+            ),
+            (
+                self.parameters.output_fourier_nlev_len(),
+                ring_len,
+                ring_len
+            ),
+            "external-product ciphertext layout mismatch"
+        );
+        control.external_product_to(
+            input,
+            output,
+            self.parameters.output_basis(),
+            &mut self.fft,
+            &mut self.blind_rotation.external_product,
+        );
+    }
+
     /// Allocates the output NGSW. Inherits [`Self::circuit_bootstrap_to`]'s contracts.
     #[must_use]
     pub fn circuit_bootstrap(
         &mut self,
         input: &LweCiphertext<T>,
     ) -> FourierNgswCiphertext<Vec<Complex64>> {
-        let mut output = FourierNgswCiphertext::zero(self.parameters.output_fourier_nlev_len());
+        let mut output = self.allocate_output();
         self.circuit_bootstrap_to(input, &mut output);
         output
     }

@@ -108,6 +108,11 @@ cargo run --release -p primus_tfhe_glwe_fourier --example circuit_bootstrap
 尺度的观测余量、密钥/工作区大小和耗时见 [CBS 专项](../../docs/tfhe-cbs.md)。
 该 profile 不是生产参数建议；稀疏 CBS 仍不支持。
 
+使用 `evaluator.allocate_output()` 分配原有 CBS 控制密文，随后调用
+`evaluator.cmux_to(control, lhs, rhs, output)` 或 `external_product_to(control, input, output)`。
+`context.accumulator_client(&client)` 绑定环加解密与转换工作区。
+详见[公共消费契约](../primus_tfhe/README.zh_CN.md#cbs-输出与消费)及[完整示例](examples/circuit_bootstrap.rs)。
+
 错误归属与转换规则见[公共 TFHE 错误边界](../primus_tfhe/README.zh_CN.md#错误边界)。
 
 ## 验证与性能

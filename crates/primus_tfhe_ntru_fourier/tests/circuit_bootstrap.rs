@@ -6,8 +6,7 @@ use primus_fft::{Complex64, FftTable, RustFftTable, TfheFftTable};
 use primus_lwe::LweParameters;
 use primus_modulus::NativeModulus;
 use primus_ntru::{
-    FourierNgswCiphertext, FourierNtruCiphertext, FourierNtruExternalProductContext,
-    FourierNtruSecretKey, NlevParameters, NtruCiphertext, NtruParameters, SecretKeyDistr,
+    FourierNgswCiphertext, FourierNtruSecretKey, NlevParameters, NtruParameters, SecretKeyDistr,
 };
 use primus_poly::Polynomial;
 use primus_tfhe_ntru_fourier::{
@@ -60,7 +59,6 @@ fn circuit_bootstrap<Table: FftTable>() {
         &mut fft,
     )
     .unwrap();
-    let mut encrypt = primus_ntru::FourierNtruEncryptContext::new(N);
     let mut decrypt = primus_ntru::FourierNtruDecryptContext::new(N);
     let encryptor = context.encryptor(&client).unwrap();
     // The same CBS-enabled server key also supports ordinary PBS.
@@ -84,30 +82,35 @@ fn circuit_bootstrap<Table: FftTable>() {
         1
     );
 
-    let choices = [1, 3].map(|message| {
-        let transformed = key.encrypt(
-            &Polynomial::new(vec![message; N]),
-            &accumulator,
-            &mut fft,
-            &mut rng,
-            &mut encrypt,
+    let mut accumulator_client = context.accumulator_client(&client).unwrap();
+    let choices = [1u64, 3].map(|message| {
+        let mut output = accumulator_client.allocate_ciphertext();
+        let (_, allocation) = allocations::measure(|| {
+            accumulator_client.encrypt_to(&[message; N], &mut output, &mut rng)
+        });
+        assert_eq!(
+            allocation.count, 0,
+            "accumulator encryption must reuse its workspace"
         );
-        let mut output = NtruCiphertext::<Vec<u64>>::zero(N);
-        transformed.write_torus_form(&mut output, &mut fft);
         output
     });
 
     let mut evaluator = context.circuit_bootstrap_evaluator(&server).unwrap();
-    let mut control =
-        FourierNgswCiphertext::<Vec<Complex64>>::zero(parameters.output_fourier_nlev_len());
-    let mut selected = NtruCiphertext::<Vec<u64>>::zero(N);
-    let mut transformed = FourierNtruCiphertext::<Vec<Complex64>>::zero(N / 2);
-    let mut scratch = FourierNtruExternalProductContext::new(N);
+    let mut control = evaluator.allocate_output();
+    let mut selected = accumulator_client.allocate_ciphertext();
+    let mut product = accumulator_client.allocate_ciphertext();
+    let mut decoded = vec![0; N];
+    let mut decoded_product = vec![0; N];
     // A zero result must overwrite the previous nonzero control.
     for bit in [1u64, 0] {
         let input = encryptor.encrypt_padded(bit, &mut rng).unwrap();
-        let (_, allocation) =
-            allocations::measure(|| evaluator.circuit_bootstrap_to(&input, &mut control));
+        let (_, allocation) = allocations::measure(|| {
+            evaluator.circuit_bootstrap_to(&input, &mut control);
+            evaluator.cmux_to(&control, &choices[0], &choices[1], &mut selected);
+            evaluator.external_product_to(&control, &choices[1], &mut product);
+            accumulator_client.decrypt_to(&selected, &mut decoded);
+            accumulator_client.decrypt_to(&product, &mut decoded_product);
+        });
         assert_eq!(
             allocation.count, 0,
             "CBS must reuse scratch from its first call"
@@ -133,20 +136,8 @@ fn circuit_bootstrap<Table: FftTable>() {
                 assert!(distance.min(q - distance) < (1 << 32));
             }
         }
-        control.cmux_to(
-            &choices[0],
-            &choices[1],
-            &mut selected,
-            parameters.output_basis(),
-            &mut fft,
-            &mut scratch,
-        );
-        selected.write_fourier_form(&mut transformed, &mut fft);
-        assert_eq!(
-            key.decrypt(&transformed, &accumulator, &mut fft, &mut decrypt)
-                .as_ref(),
-            &[if bit == 0 { 1 } else { 3 }; N]
-        );
+        assert_eq!(decoded, vec![if bit == 0 { 1 } else { 3 }; N]);
+        assert_eq!(decoded_product, vec![3 * bit; N]);
     }
     control.as_mut().fill(Complex64::new(7.0, 0.0));
     let invalid = primus_tfhe::LweCiphertext::zero(15);

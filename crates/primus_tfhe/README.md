@@ -49,6 +49,44 @@ explicit `map_err` to retain their role and `#[source]` to retain the underlying
 Sparse matching keeps its algorithm-specific error. Transform context errors do not
 promise `Clone`/`Eq`, since their underlying table errors do not provide those traits.
 
+## CBS output and consumption
+
+All four backends bind CBS output layout and consumption to the same evaluator:
+
+```rust,ignore
+let mut cbs = context.circuit_bootstrap_evaluator(&server)?;
+let mut accumulator = context.accumulator_client(&client)?;
+let choices = [accumulator.encrypt(&lhs, &mut rng), accumulator.encrypt(&rhs, &mut rng)];
+let mut control = cbs.allocate_output();
+let mut selected = accumulator.allocate_ciphertext();
+let mut decoded = vec![0; lhs.len()];
+
+cbs.circuit_bootstrap_to(&input_bit, &mut control);
+cbs.cmux_to(&control, &choices[0], &choices[1], &mut selected);
+accumulator.decrypt_to(&selected, &mut decoded);
+```
+
+`allocate_output` returns the backend's raw GGSW/NGSW, and ring ciphertexts remain
+coefficient-domain GLWE/NTRU values. `cmux_to` selects `lhs` for zero and `rhs` for one;
+`external_product_to(control, input, output)` also accepts non-bit gadget controls.
+Controls must use this evaluator's output basis, accumulator secret and transform
+representation. Candidates must use that secret/modulus and a common encoding.
+These identities and the noise margin remain caller contracts; every ciphertext
+length is checked before output writes.
+
+`AccumulatorClient` owns the prepared accumulator secret and reusable conversion
+buffers, borrowing its context. It encrypts/decrypts N unsigned coefficients using
+the accumulator codec; this ring domain is separate from external LWE clients.
+NTT uses a transformed ciphertext buffer; Fourier also owns an FFT engine and the
+existing encryption/decryption scratch. Invalid shapes panic before writes or RNG
+consumption; invalid plaintext values may consume randomness. NTRU preparation
+returns `KeyGenerationError` for key validation or secret conversion failures;
+GLWE preparation returns `TfheKeyError`.
+
+Construct once and reuse `_to` calls. GLWE CBS/CMUX share the scheme-switch
+external-product scratch by rebinding its decomposition layout; NTRU reuses BR's
+scratch. No additional server-side consumption buffers are allocated.
+
 ## LUTs and resource lifetime
 
 Backends accept named `TfheConfig` choices and derive shared ring parameters;

@@ -34,10 +34,7 @@ pub use parameter::{
 };
 pub use primus_distr::SecretKeyDistr;
 pub use public_key::{NttGlwePublicEncryptContext, NttGlwePublicKey};
-pub use scheme_switch::{
-    FourierGlweSchemeSwitchContext, FourierGlweSchemeSwitchKey, NttGlweSchemeSwitchContext,
-    NttGlweSchemeSwitchKey,
-};
+pub use scheme_switch::{FourierGlweSchemeSwitchKey, NttGlweSchemeSwitchKey};
 pub use secret_key::{
     FourierGadgetEncryptContext, FourierGlweDecryptContext, FourierGlweEncryptContext,
     FourierGlweSecretKey, GlweSecretKey, NttGadgetEncryptContext, NttGlweSecretKey,

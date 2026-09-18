@@ -96,7 +96,7 @@ Trace key 的 packing 使用 [RevHomTrace 算法](https://github.com/Stirling75/
 
 批量输入为完整 LWE 组成的平坦切片。输出消息系数连续，数量无需为 2 的幂，也不依赖 trace key。使用已有的 `NttGlweKeySwitchingContext::new(output_size.glwe_size())` 或 Fourier 对应类型；同一工作区支持变化的批量数量。批量求值将分解数字组成多项式，顺序读取变换域密钥；单条 LWE 使用标量数字，无需数字变换。两条路径最后都仅对每个输出分量做一次逆变换。目标明文的零尾部仍可能包含噪声。解码余量需要覆盖输入噪声、由输入私钥加权的分解误差和累计密钥噪声；Fourier 还包含浮点误差。NTT 密钥存储 `input_dimension * output_size.glev_len()` 个剩余类，Fourier 存储 `input_dimension * output_size.fourier_glev_len()` 个复数。
 
-`NttGlweSchemeSwitchKey<T>` 和 `FourierGlweSchemeSwitchKey<T>` 通过 `apply_to` 将系数域 GLev 转换为密钥对应变换域的 GGSW。传入 `generate` 的两种私钥表示必须对应同一个私钥。使用 `key.key_size()` 构造对应的 scheme-switch context。输出继承输入 GLev 的 gadget 缩放；`key.key_basis()` 只控制 external product 分解，可以不同于输出基。每个 mask row 使用私钥多项式取负后的加密，body row 直接变换输入。Fourier 乘积直接累加到输出，无需逆 FFT 再正向 FFT。
+`NttGlweSchemeSwitchKey<T>` 和 `FourierGlweSchemeSwitchKey<T>` 通过 `apply_to` 将系数域 GLev 转换为密钥对应变换域的 GGSW。传入 `generate` 的两种私钥表示必须对应同一个私钥。使用 `key.key_size()` 构造 `primus_lattice::context::{NttGlweExternalProductContext, FourierGlweExternalProductContext}`。工作区可与其他外积共享：GLWE 布局不变时，`rebind` 无分配切换分解层数；scheme switch 前恢复为 `key.key_size()`。输出继承输入 GLev 的 gadget 缩放；`key.key_basis()` 只控制 external product 分解，可以不同于输出基。每个 mask row 使用私钥多项式取负后的加密，body row 直接变换输入。Fourier 乘积直接累加到输出，无需逆 FFT 再正向 FFT。
 
 ## 源码与测试
 

@@ -23,6 +23,7 @@
 
 use primus_modulus::NativeModulus;
 
+mod accumulator;
 mod blind_rotation;
 mod bootstrapping_key;
 mod circuit_bootstrap;
@@ -38,6 +39,7 @@ pub use error::{
     TfheContextError, TfheEvaluationError, TfheKeyError, TfheParameterError,
 };
 
+pub use accumulator::AccumulatorClient;
 pub use blind_rotation::FourierGlweBlindRotationContext;
 pub use bootstrapping_key::FourierGlweBootstrappingKey;
 pub use circuit_bootstrap::{

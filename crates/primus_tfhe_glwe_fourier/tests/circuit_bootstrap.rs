@@ -3,17 +3,10 @@ mod allocations;
 
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{Complex64, FftTable, RustFftTable, TfheFftTable};
-use primus_glwe::{
-    FourierGlweEncryptContext, FourierGlweSecretKey, GlevParameters, GlweParameters, SecretKeyDistr,
-};
-use primus_lattice::{
-    context::FourierGlweExternalProductContext,
-    ggsw::{FourierGgsw, Ggsw},
-    glwe::Glwe,
-};
+use primus_glwe::{GlevParameters, GlweParameters, SecretKeyDistr};
+use primus_lattice::ggsw::{FourierGgsw, Ggsw};
 use primus_lwe::{LweCiphertext, LweParameters};
 use primus_modulus::NativeModulus;
-use primus_poly::Polynomial;
 use primus_tfhe_glwe_fourier::{
     CircuitBootstrapConfig, CircuitBootstrapEvaluator, CircuitBootstrapParameterError,
     CircuitBootstrapParameters, ClientKey, DecompositionConfig, KeyGenerationError, KeyGenerator,
@@ -147,26 +140,24 @@ fn circuit_bootstrap<Table: FftTable>(order: PbsOrder, distribution: SecretKeyDi
     assert_eq!(parameters.lookup_table_padded_output_count(), 4);
 
     let mut fft = context.new_fft_engine();
-    let secret = FourierGlweSecretKey::from_coeff_secret_key(client.glwe_secret_key(), &mut fft);
     let glwe = context.parameters().accumulator_glwe();
-    let mut encrypt = FourierGlweEncryptContext::new(POLY_LENGTH);
     let messages = [1u64, 3].map(|offset| {
         (0..POLY_LENGTH)
             .map(|i| (i as u64 + offset) % 4)
             .collect::<Vec<_>>()
     });
+    let mut accumulator_client = context.accumulator_client(&client).unwrap();
     let choices = messages.each_ref().map(|message| {
-        let encrypted = secret.encrypt(
-            &Polynomial::new(message.as_slice()),
-            glwe,
-            &mut fft,
-            &mut rng,
-            &mut encrypt,
+        let mut output = accumulator_client.allocate_ciphertext();
+        let (_, allocation) =
+            allocations::measure(|| accumulator_client.encrypt_to(message, &mut output, &mut rng));
+        assert_eq!(
+            allocation.count, 0,
+            "accumulator encryption must reuse its workspace"
         );
-        let mut output = Glwe::<Vec<u64>>::zero(glwe.glwe_len());
-        encrypted.write_torus_form(&mut output, &mut fft);
         output
     });
+
     let encryptor = context.encryptor(&client).unwrap();
     // The same CBS-enabled server key also supports ordinary PBS.
     let identity = context
@@ -189,17 +180,35 @@ fn circuit_bootstrap<Table: FftTable>(order: PbsOrder, distribution: SecretKeyDi
         1
     );
 
-    let mut control = FourierGgsw::<Vec<_>>::zero(parameters.output_size().fourier_ggsw_len());
+    let mut control = evaluator.allocate_output();
     let mut coefficients = Ggsw::new(vec![0u64; parameters.output_size().ggsw_len()]);
-    let mut selected = Glwe::new(vec![0u64; glwe.glwe_len()]);
-    let mut external_product = FourierGlweExternalProductContext::new(parameters.output_size());
+    let mut selected = accumulator_client.allocate_ciphertext();
+    let mut product = accumulator_client.allocate_ciphertext();
+    let mut decoded = vec![0; POLY_LENGTH];
+    let mut decoded_product = vec![0; POLY_LENGTH];
+    // Raw ciphertext containers carry no layout; the bound entry must reject
+    // a short control before touching a reused output.
+    selected.as_mut().fill(7);
+    let short_control = FourierGgsw::new(&control.as_ref()[..control.as_ref().len() - 1]);
+    assert!(
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            evaluator.cmux_to(&short_control, &choices[0], &choices[1], &mut selected);
+        }))
+        .is_err()
+    );
+    assert!(selected.as_ref().iter().all(|&value| value == 7));
     // Functional fixture bound, with a factor-four margin to the smallest scale.
     let tolerance = parameters.output_basis().scalar_iter().min().unwrap() / 4;
     // Reuse the output for a zero control after a nonzero control, without clearing it.
     for bit in [1u64, 0] {
         let input = encryptor.encrypt_padded(bit, &mut rng).unwrap();
-        let (_, allocation) =
-            allocations::measure(|| evaluator.circuit_bootstrap_to(&input, &mut control));
+        let (_, allocation) = allocations::measure(|| {
+            evaluator.circuit_bootstrap_to(&input, &mut control);
+            evaluator.cmux_to(&control, &choices[0], &choices[1], &mut selected);
+            evaluator.external_product_to(&control, &choices[1], &mut product);
+            accumulator_client.decrypt_to(&selected, &mut decoded);
+            accumulator_client.decrypt_to(&product, &mut decoded_product);
+        });
         assert_eq!(
             allocation.count, 0,
             "CBS must reuse workspace from the first call"
@@ -234,19 +243,13 @@ fn circuit_bootstrap<Table: FftTable>(order: PbsOrder, distribution: SecretKeyDi
                 }
             }
         }
-        control.cmux_to(
-            &choices[0],
-            &choices[1],
-            &mut selected,
-            parameters.output_basis(),
-            &mut fft,
-            &mut external_product,
-        );
-        let mut decoded = phase(selected.as_ref(), client.glwe_secret_key().as_slice());
-        glwe.plaintext_codec().decode_slice_assign(&mut decoded);
+        assert_eq!(decoded, messages[bit as usize]);
         assert_eq!(
-            decoded, messages[bit as usize],
-            "order={order:?}, distribution={distribution:?}, bit={bit}"
+            decoded_product,
+            messages[1]
+                .iter()
+                .map(|&value| value * bit)
+                .collect::<Vec<_>>()
         );
     }
 }

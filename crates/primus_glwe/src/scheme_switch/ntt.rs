@@ -16,20 +16,6 @@ use zeroize::Zeroizing;
 
 use crate::{GlevParameters, GlweSecretKey, NttGadgetEncryptContext, NttGlweSecretKey};
 
-/// Reusable workspace for GLev-to-GGSW scheme switching.
-pub struct NttGlweSchemeSwitchContext<T: FheUint> {
-    external_product: NttGlweExternalProductContext<T>,
-}
-
-impl<T: FheUint> NttGlweSchemeSwitchContext<T> {
-    /// Creates workspace for the scheme-switching key's gadget layout.
-    pub fn new(key_size: GadgetSize) -> Self {
-        Self {
-            external_product: NttGlweExternalProductContext::new(key_size),
-        }
-    }
-}
-
 /// NTT GGSW encryptions of the negated GLWE secret polynomials.
 ///
 /// One key ciphertext is stored for every mask row. The GGSW body row is
@@ -130,6 +116,10 @@ impl<T: FheUint> NttGlweSchemeSwitchKey<T> {
     /// Uses the stored layout and key decomposition basis. The output preserves
     /// the input GLev's gadget scaling; the key basis only decomposes products.
     ///
+    /// Bind `context` to [`Self::key_size`]. It can be reused by other external
+    /// products through [`NttGlweExternalProductContext::rebind`]; restore the
+    /// key layout before calling this method.
+    ///
     /// # Correctness
     ///
     /// The input GLev must be encrypted under the secret used to generate this key.
@@ -146,7 +136,7 @@ impl<T: FheUint> NttGlweSchemeSwitchKey<T> {
         output: &mut NttGgsw<B>,
         modulus: M,
         ntt: &Table,
-        context: &mut NttGlweSchemeSwitchContext<T>,
+        context: &mut NttGlweExternalProductContext<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
@@ -179,7 +169,7 @@ impl<T: FheUint> NttGlweSchemeSwitchKey<T> {
             "NTT ciphertext modulus mismatch"
         );
         assert_eq!(
-            context.external_product.size(),
+            context.size(),
             self.key_size,
             "scheme-switch workspace layout mismatch"
         );
@@ -204,7 +194,7 @@ impl<T: FheUint> NttGlweSchemeSwitchKey<T> {
                     key_basis,
                     modulus,
                     ntt,
-                    &mut context.external_product,
+                    context,
                 );
             }
         }

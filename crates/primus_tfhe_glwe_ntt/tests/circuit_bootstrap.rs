@@ -3,11 +3,7 @@ mod allocations;
 
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_glwe::{GgswParameters, GlweParameters, NttGlweSecretKey, SecretKeyDistr};
-use primus_lattice::{
-    context::NttGlweExternalProductContext,
-    ggsw::NttGgsw,
-    glwe::{Glwe, NttGlwe},
-};
+use primus_lattice::ggsw::NttGgsw;
 use primus_lwe::{LweCiphertext, LweParameters};
 use primus_modulus::BarrettModulus;
 use primus_ntt::U64NttTable;
@@ -94,19 +90,18 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
         let main_secret =
             NttGlweSecretKey::from_coeff_secret_key(client_key.glwe_secret_key(), context.table());
         let glwe = context.parameters().accumulator_glwe();
-        let mut choices: [Glwe<Vec<u64>>; 2] =
-            core::array::from_fn(|_| Glwe::zero(glwe.glwe_len()));
-        for (value, choice) in [1u64, 3].into_iter().zip(&mut choices) {
-            let mut encrypted: NttGlwe<Vec<u64>> = NttGlwe::zero(glwe.glwe_len());
-            main_secret.encrypt_to(
-                &Polynomial::new(vec![value; POLY_LENGTH]),
-                &mut encrypted,
-                glwe,
-                context.table(),
-                &mut rng,
+        let mut accumulator_client = context.accumulator_client(&client_key).unwrap();
+        let choices = [1u64, 3].map(|message| {
+            let mut output = accumulator_client.allocate_ciphertext();
+            let (_, allocation) = allocations::measure(|| {
+                accumulator_client.encrypt_to(&[message; POLY_LENGTH], &mut output, &mut rng)
+            });
+            assert_eq!(
+                allocation.count, 0,
+                "accumulator encryption must reuse its workspace"
             );
-            encrypted.write_coeff_form(choice, context.table());
-        }
+            output
+        });
 
         let encryptor = context.encryptor(&client_key).unwrap();
         // The same CBS-enabled server key also supports ordinary PBS.
@@ -186,7 +181,11 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
             circuit_parameters.lookup_table_padded_output_count(),
             levels.next_power_of_two()
         );
-        let mut control = NttGgsw::<Vec<u64>>::zero(circuit_parameters.output_size().ggsw_len());
+        let mut control = evaluator.allocate_output();
+        let mut selected = accumulator_client.allocate_ciphertext();
+        let mut product = accumulator_client.allocate_ciphertext();
+        let mut decoded = vec![0; POLY_LENGTH];
+        let mut decoded_product = vec![0; POLY_LENGTH];
         // A zero result must overwrite the previous nonzero control.
         for bit in [1u64, 0] {
             let input = encryptor.encrypt_padded(bit, &mut rng).unwrap();
@@ -208,6 +207,10 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
             }
             let (_, allocation) = allocations::measure(|| {
                 evaluator.circuit_bootstrap_to(&input, &mut control);
+                evaluator.cmux_to(&control, &choices[0], &choices[1], &mut selected);
+                evaluator.external_product_to(&control, &choices[1], &mut product);
+                accumulator_client.decrypt_to(&selected, &mut decoded);
+                accumulator_client.decrypt_to(&product, &mut decoded_product);
             });
             assert_eq!(allocation.count, 0, "CBS must reuse its workspace");
             let output_size = circuit_parameters.output_size();
@@ -238,26 +241,8 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
                     }
                 }
             }
-            let mut selected: Glwe<Vec<u64>> = Glwe::zero(glwe.glwe_len());
-            let mut external_product =
-                NttGlweExternalProductContext::new(circuit_parameters.output_size());
-            control.cmux_to(
-                &choices[0],
-                &choices[1],
-                &mut selected,
-                circuit_parameters.output_basis(),
-                modulus,
-                context.table(),
-                &mut external_product,
-            );
-            let selected = selected.into_ntt_form(context.table());
-            assert_eq!(
-                main_secret
-                    .decrypt(&selected, glwe, context.table())
-                    .as_ref(),
-                vec![if bit == 0 { 1 } else { 3 }; POLY_LENGTH],
-                "PBS order {order:?}, control bit {bit}"
-            );
+            assert_eq!(decoded, vec![if bit == 0 { 1 } else { 3 }; POLY_LENGTH]);
+            assert_eq!(decoded_product, vec![3 * bit; POLY_LENGTH]);
         }
     }
 }

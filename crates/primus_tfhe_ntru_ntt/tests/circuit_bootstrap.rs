@@ -5,8 +5,7 @@ use primus_decompose::primitive::ApproxSignedBasis;
 use primus_lwe::LweParameters;
 use primus_modulus::BarrettModulus;
 use primus_ntru::{
-    NlevParameters, NtruCiphertext, NtruParameters, NttNgswCiphertext, NttNtruCiphertext,
-    NttNtruExternalProductContext, NttNtruSecretKey, SecretKeyDistr,
+    NlevParameters, NtruParameters, NttNgswCiphertext, NttNtruSecretKey, SecretKeyDistr,
 };
 use primus_ntt::U64NttTable;
 use primus_poly::Polynomial;
@@ -14,7 +13,7 @@ use primus_tfhe_ntru_ntt::{
     CircuitBootstrapConfig, CircuitBootstrapEvaluator, CircuitBootstrapParameters,
     DecompositionConfig, TfheContext, TfheEvaluationError, TfheParameters,
 };
-use rand::{SeedableRng, rngs::StdRng};
+use rand::{RngExt, SeedableRng, rngs::StdRng};
 
 const N: usize = 256;
 const Q: u64 = 1_125_899_906_826_241;
@@ -84,28 +83,63 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
         1
     );
 
-    let choices = [1, 3].map(|message| {
-        let transformed = key.encrypt(
-            &Polynomial::new(vec![message; N]),
-            &accumulator,
-            context.table(),
-            &mut rng,
+    let mut accumulator_client = context.accumulator_client(&client).unwrap();
+    let choices = [1u64, 3].map(|message| {
+        let mut output = accumulator_client.allocate_ciphertext();
+        let (_, allocation) = allocations::measure(|| {
+            accumulator_client.encrypt_to(&[message; N], &mut output, &mut rng)
+        });
+        assert_eq!(
+            allocation.count, 0,
+            "accumulator encryption must reuse its workspace"
         );
-        let mut output = NtruCiphertext::<Vec<u64>>::zero(N);
-        transformed.write_coeff_form(&mut output, context.table());
         output
     });
 
     let mut evaluator = context.circuit_bootstrap_evaluator(&server).unwrap();
-    let mut control = NttNgswCiphertext::<Vec<u64>>::zero(parameters.output_nlev_len());
-    let mut selected = NtruCiphertext::<Vec<u64>>::zero(N);
-    let mut transformed = NttNtruCiphertext::<Vec<u64>>::zero(N);
-    let mut scratch = NttNtruExternalProductContext::new(N);
+    let mut control = evaluator.allocate_output();
+    let mut selected = accumulator_client.allocate_ciphertext();
+    let mut product = accumulator_client.allocate_ciphertext();
+    let mut decoded = vec![0; N];
+    let mut decoded_product = vec![0; N];
+    // Client shape failures precede sampling or writes, even with reused storage.
+    selected.as_mut().fill(7);
+    let mut rejected_rng = StdRng::seed_from_u64(43);
+    let mut untouched_rng = StdRng::seed_from_u64(43);
+    assert!(
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            accumulator_client.encrypt_to(&[0; N - 1], &mut selected, &mut rejected_rng);
+        }))
+        .is_err()
+    );
+    assert_eq!(rejected_rng.random::<u64>(), untouched_rng.random::<u64>());
+    assert!(selected.as_ref().iter().all(|&value| value == 7));
+    decoded.fill(7);
+    assert!(
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            accumulator_client.decrypt_to(&selected, &mut decoded[..N - 1]);
+        }))
+        .is_err()
+    );
+    assert!(decoded.iter().all(|&value| value == 7));
+    let short_input = primus_ntru::NtruCiphertext::new(&choices[0].as_ref()[..N - 1]);
+    assert!(
+        std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            evaluator.external_product_to(&control, &short_input, &mut selected);
+        }))
+        .is_err()
+    );
+    assert!(selected.as_ref().iter().all(|&value| value == 7));
     // A zero result must overwrite the previous nonzero control.
     for bit in [1u64, 0] {
         let input = encryptor.encrypt_padded(bit, &mut rng).unwrap();
-        let (_, allocation) =
-            allocations::measure(|| evaluator.circuit_bootstrap_to(&input, &mut control));
+        let (_, allocation) = allocations::measure(|| {
+            evaluator.circuit_bootstrap_to(&input, &mut control);
+            evaluator.cmux_to(&control, &choices[0], &choices[1], &mut selected);
+            evaluator.external_product_to(&control, &choices[1], &mut product);
+            accumulator_client.decrypt_to(&selected, &mut decoded);
+            accumulator_client.decrypt_to(&product, &mut decoded_product);
+        });
         assert_eq!(
             allocation.count, 0,
             "CBS must reuse scratch from its first call"
@@ -134,21 +168,8 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
                 assert!(distance.min(u128::from(Q) - distance) < (1 << 24));
             }
         }
-        control.cmux_to(
-            &choices[0],
-            &choices[1],
-            &mut selected,
-            parameters.output_basis(),
-            modulus,
-            context.table(),
-            &mut scratch,
-        );
-        selected.write_ntt_form(&mut transformed, context.table());
-        assert_eq!(
-            key.decrypt(&transformed, &accumulator, context.table())
-                .as_ref(),
-            &[if bit == 0 { 1 } else { 3 }; N]
-        );
+        assert_eq!(decoded, vec![if bit == 0 { 1 } else { 3 }; N]);
+        assert_eq!(decoded_product, vec![3 * bit; N]);
     }
     control.as_mut().fill(7);
     let invalid = primus_tfhe::LweCiphertext::zero(15);

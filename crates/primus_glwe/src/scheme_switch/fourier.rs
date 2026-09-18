@@ -16,21 +16,6 @@ use zeroize::Zeroizing;
 
 use crate::{FourierGadgetEncryptContext, FourierGlweSecretKey, GlevParameters, GlweSecretKey};
 
-/// Reusable workspace for GLev-to-Fourier-GGSW scheme switching.
-pub struct FourierGlweSchemeSwitchContext<T: TorusFftValue> {
-    external_product: FourierGlweExternalProductContext<T>,
-}
-
-impl<T: TorusFftValue> FourierGlweSchemeSwitchContext<T> {
-    /// Creates workspace for the scheme-switching key's gadget layout.
-    #[must_use]
-    pub fn new(key_size: GadgetSize) -> Self {
-        Self {
-            external_product: FourierGlweExternalProductContext::new(key_size),
-        }
-    }
-}
-
 /// Fourier GGSW encryptions of the negated GLWE secret polynomials.
 ///
 /// Each mask row is obtained by an external product with an encryption of
@@ -135,6 +120,10 @@ impl<T: TorusFftValue> FourierGlweSchemeSwitchKey<T> {
     /// Preserves the input's gadget scaling; the key basis only decomposes
     /// external products. Overwrites output without allocating or inverse FFTs.
     ///
+    /// Bind `context` to [`Self::key_size`]. It can be reused by other external
+    /// products through [`FourierGlweExternalProductContext::rebind`]; restore the
+    /// key layout before calling this method.
+    ///
     /// # Correctness
     ///
     /// Input must use the secret from key generation. Use the same FFT table
@@ -150,7 +139,7 @@ impl<T: TorusFftValue> FourierGlweSchemeSwitchKey<T> {
         input: &Glev<A>,
         output: &mut FourierGgsw<B>,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierGlweSchemeSwitchContext<T>,
+        context: &mut FourierGlweExternalProductContext<T>,
     ) where
         Table: FftTable,
         A: Data<Elem = T>,
@@ -172,7 +161,7 @@ impl<T: TorusFftValue> FourierGlweSchemeSwitchKey<T> {
             "scheme-switch FFT polynomial length mismatch"
         );
         assert_eq!(
-            context.external_product.size(),
+            context.size(),
             self.key_size,
             "scheme-switch workspace layout mismatch"
         );
@@ -186,13 +175,7 @@ impl<T: TorusFftValue> FourierGlweSchemeSwitchKey<T> {
                 .iter_glwe(size.glwe_len())
                 .zip(row.iter_glwe_mut(size.fourier_glwe_len()))
             {
-                key.external_product_fourier_to(
-                    &input,
-                    &mut output,
-                    &self.key_basis,
-                    fft,
-                    &mut context.external_product,
-                );
+                key.external_product_fourier_to(&input, &mut output, &self.key_basis, fft, context);
             }
         }
         let mut body = rows

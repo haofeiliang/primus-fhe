@@ -13,10 +13,10 @@ use std::hint::black_box;
 use criterion::{Criterion, criterion_group, criterion_main};
 use primus_fft::{FftTable, RustFftTable, TfheFftTable};
 use primus_glwe::{
-    FourierGlweDecryptContext, FourierGlweSchemeSwitchContext, FourierGlweSecretKey,
-    FourierGlweTraceContext, GlevCiphertext, GlweCiphertext,
+    FourierGlweDecryptContext, FourierGlweSecretKey, FourierGlweTraceContext, GlevCiphertext,
+    GlweCiphertext,
 };
-use primus_lattice::ggsw::FourierGgsw;
+use primus_lattice::{context::FourierGlweExternalProductContext, ggsw::FourierGgsw};
 use primus_poly::Polynomial;
 use primus_tfhe::InterleavedLookupTable;
 use primus_tfhe_glwe_fourier::{FourierGlweBlindRotationContext, PbsOrder};
@@ -99,7 +99,7 @@ fn bench_backend<Table: FftTable>(c: &mut Criterion, backend: &str) {
             let mut projected =
                 GlevCiphertext::<Vec<u64>>::zero(parameters.output_size().glev_len());
             let mut scheme_switch =
-                FourierGlweSchemeSwitchContext::new(parameters.scheme_switch().size());
+                FourierGlweExternalProductContext::new(parameters.scheme_switch().size());
             server
                 .bootstrapping_key()
                 .fourier_blind_rotate_interleaved_lookup_table_to(

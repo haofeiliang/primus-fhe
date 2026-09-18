@@ -1,6 +1,8 @@
-use primus_data::DataMut;
+use primus_data::{Data, DataMut};
 use primus_fft::{Complex64, FftTable, TorusFftValue};
-use primus_glwe::{FourierGlweSchemeSwitchContext, FourierGlweTraceContext, GlevCiphertext};
+use primus_glwe::GlweCiphertext;
+use primus_glwe::{FourierGlweTraceContext, GlevCiphertext};
+use primus_lattice::context::FourierGlweExternalProductContext;
 use primus_lattice::ggsw::FourierGgsw;
 use primus_lwe::LweCiphertext;
 use primus_reduce::ReduceMul;
@@ -27,7 +29,7 @@ where
     input_dimension: usize,
     lookup_table: InterleavedLookupTable<T>,
     trace: FourierGlweTraceContext<T>,
-    scheme_switch: FourierGlweSchemeSwitchContext<T>,
+    external_product: FourierGlweExternalProductContext<T>,
     projected: GlevCiphertext<Vec<T>>,
 }
 
@@ -102,16 +104,120 @@ where
             input_dimension: tfhe.external_lwe_dimension(),
             lookup_table,
             trace: FourierGlweTraceContext::new(glwe.size()),
-            scheme_switch: FourierGlweSchemeSwitchContext::new(parameters.scheme_switch().size()),
+            external_product: FourierGlweExternalProductContext::new(
+                parameters.scheme_switch().size(),
+            ),
             projected: GlevCiphertext::zero(parameters.output_size().glev_len()),
         })
+    }
+
+    /// Allocates a zeroed Fourier GGSW with this evaluator's output layout.
+    /// Allocate once and reuse it with [`Self::circuit_bootstrap_to`].
+    #[must_use]
+    pub fn allocate_output(&self) -> FourierGgsw<Vec<Complex64>> {
+        FourierGgsw::zero(self.parameters.output_size().fourier_ggsw_len())
+    }
+
+    /// Selects `lhs` for an encrypted zero and `rhs` for an encrypted one.
+    /// Overwrites the coefficient-domain output without allocating or resetting scratch.
+    ///
+    /// # Correctness
+    /// `control` must encrypt a bit with this evaluator's output basis, accumulator
+    /// secret and transform representation. Both candidates must use that secret,
+    /// modulus and the same encoding; their noise must permit the external product.
+    /// Fourier controls must use the bound FFT table instance.
+    /// See [`FourierGgsw::cmux_to`] for the underlying numerical contract.
+    ///
+    /// # Panics
+    /// Panics before output writes if any ciphertext has the wrong length.
+    pub fn cmux_to<A, B, C, D>(
+        &mut self,
+        control: &FourierGgsw<A>,
+        lhs: &GlweCiphertext<B>,
+        rhs: &GlweCiphertext<C>,
+        output: &mut GlweCiphertext<D>,
+    ) where
+        A: Data<Elem = Complex64>,
+        B: Data<Elem = T>,
+        C: Data<Elem = T>,
+        D: DataMut<Elem = T>,
+    {
+        let ring_len = self.parameters.output_size().glwe_size().glwe_len();
+        assert_eq!(
+            (
+                control.as_ref().len(),
+                lhs.as_ref().len(),
+                rhs.as_ref().len(),
+                output.as_ref().len()
+            ),
+            (
+                self.parameters.output_size().fourier_ggsw_len(),
+                ring_len,
+                ring_len,
+                ring_len
+            ),
+            "CMUX ciphertext layout mismatch"
+        );
+        self.external_product.rebind(self.parameters.output_size());
+        control.cmux_to(
+            lhs,
+            rhs,
+            output,
+            self.parameters.output_basis(),
+            self.pbs.fft_mut(),
+            &mut self.external_product,
+        );
+    }
+
+    /// Multiplies a coefficient-domain accumulator ciphertext by a gadget control.
+    /// Overwrites output without allocating. The control need not encrypt a bit.
+    ///
+    /// # Correctness
+    /// Inherits [`Self::cmux_to`]'s basis, secret, encoding, transform and residue
+    /// requirements, with the noise budget appropriate to this multiplication.
+    /// See [`FourierGgsw::external_product_to`].
+    ///
+    /// # Panics
+    /// Panics before output writes if any ciphertext has the wrong length.
+    pub fn external_product_to<A, B, C>(
+        &mut self,
+        control: &FourierGgsw<A>,
+        input: &GlweCiphertext<B>,
+        output: &mut GlweCiphertext<C>,
+    ) where
+        A: Data<Elem = Complex64>,
+        B: Data<Elem = T>,
+        C: DataMut<Elem = T>,
+    {
+        let ring_len = self.parameters.output_size().glwe_size().glwe_len();
+        assert_eq!(
+            (
+                control.as_ref().len(),
+                input.as_ref().len(),
+                output.as_ref().len()
+            ),
+            (
+                self.parameters.output_size().fourier_ggsw_len(),
+                ring_len,
+                ring_len
+            ),
+            "external-product ciphertext layout mismatch"
+        );
+        self.external_product.rebind(self.parameters.output_size());
+        control.external_product_to(
+            input,
+            output,
+            self.parameters.output_basis(),
+            self.pbs.fft_mut(),
+            &mut self.external_product,
+        );
     }
 
     /// Allocates a Fourier GGSW output. Inherits [`Self::circuit_bootstrap_to`]'s
     /// encoding, secret, FFT representation, noise and input-dimension contracts.
     #[must_use]
     pub fn circuit_bootstrap(&mut self, input: &LweCiphertext<T>) -> FourierGgsw<Vec<Complex64>> {
-        let mut output = FourierGgsw::zero(self.parameters.output_size().fourier_ggsw_len());
+        let mut output = self.allocate_output();
         self.circuit_bootstrap_to(input, &mut output);
         output
     }
@@ -164,11 +270,14 @@ where
             fft,
             &mut self.trace,
         );
+        // CMUX can bind the same buffers to a different output decomposition.
+        self.external_product
+            .rebind(self.parameters.scheme_switch().size());
         self.circuit_key.scheme_switch_key().apply_to(
             &self.projected,
             output,
             fft,
-            &mut self.scheme_switch,
+            &mut self.external_product,
         );
     }
 }

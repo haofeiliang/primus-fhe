@@ -94,6 +94,10 @@ where
         })
     }
 
+    pub(crate) fn fft_mut(&mut self) -> &mut FftEngine<'a, Table> {
+        &mut self.fft
+    }
+
     /// Applies a compiled lookup table and returns a refreshed ciphertext in
     /// the external LWE dimension selected by the PBS order.
     ///

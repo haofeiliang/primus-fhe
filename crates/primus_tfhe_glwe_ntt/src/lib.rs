@@ -29,6 +29,7 @@
 
 use primus_modulus::BarrettModulus;
 
+mod accumulator;
 mod blind_rotation;
 mod bootstrapping_key;
 mod circuit_bootstrap;
@@ -47,6 +48,7 @@ pub use error::{
     TfheKeyError, TfheParameterError,
 };
 
+pub use accumulator::AccumulatorClient;
 pub use blind_rotation::NttGlweBlindRotationContext;
 pub use bootstrapping_key::NttGlweBootstrappingKey;
 pub use circuit_bootstrap::{
