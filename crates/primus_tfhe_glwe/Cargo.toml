@@ -18,6 +18,7 @@ rand = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
+primus_test_allocations = { path = "../../test-support/allocations" }
 primus_modulus = { path = "../primus_modulus" }
 
 [features]

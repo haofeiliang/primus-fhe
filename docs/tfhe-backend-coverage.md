@@ -13,7 +13,7 @@
 可以明确安排的工程补齐包括：
 
 1. **GLWE Fourier 经典 CBS**：B1.1–B1.3 已完成完整链、误差/成本测量与使用示例，见 [CBS 专项](tfhe-cbs.md)。
-2. **NTRU 两后端 Boolean 适配**：B2.1 已共享门算法并接入客户端/工厂，B2.2 待完成全部门语义和串联验收。
+2. **NTRU 两后端 Boolean 适配**：B2 已完成共享门算法、客户端/工厂，以及完整门真值表和串联验收。
 3. **NTRU NTT 分解式 MVB**：现有奇数模数分解、NTRU 公开多项式乘法、KS 和提取足以组成流程。
 4. **GLWE Fourier 固定重量二元稀疏 PBS**：桶聚合代数可迁移，先实现系数域聚合的参考路径；收益须独立测量。
 
@@ -35,7 +35,7 @@
 | 经典 ternary BR | 支持 | 支持 | 未接入 | 未接入 |
 | 固定重量 binary 使用经典 BR | 支持 | 支持 | 需生成可逆客户端秘密 | 还受奇数重量/逆元稳定性限制 |
 | 固定重量 binary 桶聚合 BR | 支持 | 未接入 | 未接入 | 未接入 |
-| Boolean 门、NOT、MUX | 支持 | 支持 | 已接入，B2.2 待验收 | 已接入，B2.2 待验收 |
+| Boolean 门、NOT、MUX | 支持 | 支持 | 支持 | 支持 |
 | CBS | 经典 binary/ternary → GGSW | 经典 binary/ternary → Fourier GGSW | binary → NGSW | binary → NGSW |
 | 固定尺度差分 MVB | 支持，含经典/稀疏 | 未接入 | 未接入 | 未接入 |
 | 两种 PBS order | 支持 BK / KB | 支持 BK / KB | 固定 NTRU 链 | 固定 NTRU 链 |
@@ -114,7 +114,7 @@ NTT 在可用的显式模数环内做精确变换；Fourier 用原生整数表�
 
 B2.1 已将 [BooleanEvaluator](../crates/primus_tfhe/src/boolean.rs) 移入 `primus_tfhe`，以维数、codec、环长度和模数绑定，GLWE/NTRU 共用同一份门算法。两族各自绑定参数与客户端错误，保留独立 `BooleanEncryptor` / `BooleanDecryptor` 和原始 `LweCiphertext`。四后端 context 均提供 Boolean 工厂；没有新增 BSK 方案或改变 NTRU KS 链。
 
-外部 `t=4`、内部模 8 尺度的代表 NAND、公钥输入和零分配复用已在 NTRU NTT、RustFFT/TfheFFT 验证，GLWE 原真值表保持通过。六种二元门、NOT、MUX 的完整 NTRU 真值表、串联和错误边界留在 B2.2；不将代表路径通过当作该步骤已经完成。
+外部 `t=4`、内部模 8 尺度已在 NTRU NTT、RustFFT/TfheFFT 验证：六种二元门、NOT、MUX 的完整真值表、混合门链、维数/参数错误、公钥代表输入和零分配复用均通过。四后端复用从 GLWE 提取的[共同用例](../test-support/tfhe/src/boolean.rs)，不复制纯门逻辑测试；小参数功能 fixture 不代替生产噪声尾界分析。
 
 ### 4.3 NTRU NTT 分解式 MVB
 
@@ -228,7 +228,7 @@ Full-domain FDFB、通用数字拆分、HLUT/LFBS、multi-bit 等属于[新算�
 
 ## 7. 建议执行顺序与验收规模
 
-1. **先整理高层接口，再补明确缺口**：GLWE Fourier 经典 CBS 的 B1.1–B1.3、四后端具名参数/自动建表、求值密钥绑定和 CBS 消费接口的 B1.4–B1.6 已完成；B1.7 成本验收与 B2.1 NTRU Boolean 接入也已完成；按[分步计划](tfhe-backend-plan.md)继续 B2.2 门语义验收。此顺序减少重复迁移，Boolean 算法本身不依赖 CBS。
+1. **先整理高层接口，再补明确缺口**：B1 的 GLWE Fourier 经典 CBS、四后端高层接口与成本验收，以及 B2 的 NTRU Boolean 接入与门语义验收均已完成。此顺序减少重复迁移，Boolean 算法本身不依赖 CBS；后续按[分步计划](tfhe-backend-plan.md)推进。
 2. **再扩展已有多输出路线**：NTRU NTT MVB；同步补 GLWE NTT sparse×Boolean/bivariate/odd-full 的小型组合验证。
 3. **处理性能型移植与受限表示**：GLWE Fourier sparse PBS、Native 偶尺度 MVB。先完成参考路径，再测收益，避免一次混入频域聚合等额外优化。
 4. **按实际应用选择实验组合**：NTT sparse CBS、NTRU ternary、NTRU sparse；分别通过前置条件后，再组合到其他上层功能。

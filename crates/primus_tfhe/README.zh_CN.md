@@ -17,11 +17,8 @@ Boolean evaluator 持有门 LUT 与 LWE 工作区；客户端密钥、变换 tab
 | --- | --- | --- | --- | --- | --- |
 | GLWE NTT | 显式域模数 | 支持 | 支持 | 支持 | 支持 |
 | GLWE Fourier | 原生 torus | 支持 | 未实现 | 支持 | 支持 |
-| NTRU NTT | 显式域模数 | 支持 | 未实现 | 已接入¹ | 支持 |
-| NTRU Fourier | 原生 torus | 支持 | 未实现 | 已接入¹ | 支持 |
-
-¹ NTRU Boolean 工厂及代表 NAND、公钥、复用路径已验证；完整真值表和串联验收留在
-[B2.2](../../docs/tfhe-backend-plan.md#b22门语义与串联验收)。
+| NTRU NTT | 显式域模数 | 支持 | 未实现 | 支持 | 支持 |
+| NTRU Fourier | 原生 torus | 支持 | 未实现 | 支持 | 支持 |
 
 四后端均支持私钥和 LWE 公钥客户端。Fourier 后端支持 RustFFT 与 TfheFFT。
 参数和 API 仍处于实验阶段；示例及 benchmark fixture 不是生产安全参数或失败概率建议。
@@ -64,13 +61,21 @@ let mut gates = context.boolean_evaluator(&server)?;
 let lhs = encryptor.encrypt(true, &mut rng)?;
 let rhs = encryptor.encrypt(false, &mut rng)?;
 let mut output = LweCiphertext::zero(context.parameters().external_lwe_dimension());
+let mut next = LweCiphertext::zero(output.dimension());
 gates.evaluate_binary_to(BooleanGate::Nand, &lhs, &rhs, &mut output);
 assert!(decryptor.decrypt(&output)?);
+gates.mux_to(&output, &rhs, &lhs, &mut next);
+core::mem::swap(&mut output, &mut next);
+assert!(!decryptor.decrypt(&output)?);
 ```
 
 `BooleanEvaluator` 在两族间共享仿射预处理、内部模 8 正负 LUT 和恢复输出编码的平移。
 二元门使用一次 PBS，NOT 无需 PBS，MUX 使用两次。通过 `evaluate_binary_to`、`not_to`、
 `mux_to` 和已有输出复用存储。
+输出保持外部 Boolean 编码，可直接送入后续门。
+客户端维数错误返回 `BooleanError::Client`，门求值维数错误则 panic。
+原始密文不携带密钥身份或编码元数据，这些仍由调用方保证。
+
 `BooleanEvaluator::try_new(dimension, poly_length, input_codec, coefficient_modulus, bootstrapper)`
 是自定义后端入口；调用方须保证参数绑定正确、后端保留 LUT 输出尺度。
 构造返回 `TfheEvaluationError`：输入明文模数不是 4，或显式密文模数不大于 8 时返回

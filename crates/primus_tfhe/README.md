@@ -18,11 +18,8 @@ Start with a backend example below for an end-to-end workflow.
 | --- | --- | --- | --- | --- | --- |
 | GLWE NTT | Explicit field | Yes | Yes | Yes | Yes |
 | GLWE Fourier | Native torus | Yes | Not implemented | Yes | Yes |
-| NTRU NTT | Explicit field | Yes | Not implemented | Integrated¹ | Yes |
-| NTRU Fourier | Native torus | Yes | Not implemented | Integrated¹ | Yes |
-
-¹ NTRU Boolean factories and representative NAND/public-key/reuse paths are verified.
-Full gate truth tables and chained evaluation remain in [B2.2](../../docs/tfhe-backend-plan.md#b22门语义与串联验收).
+| NTRU NTT | Explicit field | Yes | Not implemented | Yes | Yes |
+| NTRU Fourier | Native torus | Yes | Not implemented | Yes | Yes |
 
 All four backends support secret-key and LWE public-key clients. Fourier backends
 support RustFFT and TfheFFT. Parameters and APIs are experimental; example and
@@ -69,13 +66,21 @@ let mut gates = context.boolean_evaluator(&server)?;
 let lhs = encryptor.encrypt(true, &mut rng)?;
 let rhs = encryptor.encrypt(false, &mut rng)?;
 let mut output = LweCiphertext::zero(context.parameters().external_lwe_dimension());
+let mut next = LweCiphertext::zero(output.dimension());
 gates.evaluate_binary_to(BooleanGate::Nand, &lhs, &rhs, &mut output);
 assert!(decryptor.decrypt(&output)?);
+gates.mux_to(&output, &rhs, &lhs, &mut next);
+core::mem::swap(&mut output, &mut next);
+assert!(!decryptor.decrypt(&output)?);
 ```
 
 `BooleanEvaluator` shares affine preprocessing, signed modulus-8 LUTs and the
 restoring output shift between families. Binary gates use one PBS; NOT uses none,
 and MUX uses two. Reuse `evaluate_binary_to`, `not_to` and `mux_to` with existing outputs.
+Outputs keep the external Boolean encoding and can feed subsequent gates directly.
+Client dimension errors return `BooleanError::Client`; gate dimension mismatches panic.
+Raw ciphertexts do not carry key identity or encoding metadata; those remain caller contracts.
+
 `BooleanEvaluator::try_new(dimension, poly_length, input_codec, coefficient_modulus, bootstrapper)`
 is the custom-backend boundary: the caller must bind those arguments to the backend
 and preserve LUT output scales. It returns `TfheEvaluationError`, including

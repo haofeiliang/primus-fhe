@@ -1,16 +1,17 @@
-#[path = "../../primus_tfhe/tests/support/allocations.rs"]
-mod allocations;
-
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_glwe::{GlweParameters, GlweSecretKey, GlweSize, SecretKeyDistr};
 use primus_lwe::{LweCiphertext, LweParameters, LwePublicKey, LweSecretKey};
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_reduce::RingContext;
+use primus_test_allocations as allocations;
 use primus_tfhe_glwe::{
     BooleanDecryptor, BooleanEncryptor, BooleanError, ClientKey, Decryptor, EncryptionKey,
     Encryptor, PbsOrder, TfheClientError, TfheKeyError, TfheParameters,
 };
 use rand::{Rng, SeedableRng, rngs::StdRng};
+
+#[global_allocator]
+static ALLOCATOR: allocations::CountingAllocator = allocations::CountingAllocator;
 
 fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
     for order in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {

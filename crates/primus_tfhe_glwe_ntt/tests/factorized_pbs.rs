@@ -1,6 +1,3 @@
-#[path = "../../primus_tfhe/tests/support/allocations.rs"]
-mod allocations;
-
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use primus_decompose::primitive::ApproxSignedBasis;
@@ -9,11 +6,15 @@ use primus_glwe::{GlweParameters, SecretKeyDistr};
 use primus_lwe::{LweCiphertext, LweParameters};
 use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, U32NttTable};
+use primus_test_allocations as allocations;
 use primus_tfhe_glwe_ntt::{
     ClientKey, FactorizedLookupTable, InterleavedLookupTable, KeyGenerator, LookupTable,
     LookupTableError, NttFactorizedLookupTable, PbsOrder, TfheContext, TfheParameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
+
+#[global_allocator]
+static ALLOCATOR: allocations::CountingAllocator = allocations::CountingAllocator;
 
 const N: usize = 128;
 const Q: u32 = 132_120_577;

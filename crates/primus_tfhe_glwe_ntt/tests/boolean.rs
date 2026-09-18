@@ -3,9 +3,8 @@ use primus_glwe::{GlweParameters, SecretKeyDistr};
 use primus_lwe::LweParameters;
 use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, U32NttTable};
-use primus_tfhe_glwe_ntt::{
-    BooleanError, BooleanGate, LweCiphertext, PbsOrder, TfheContext, TfheParameters,
-};
+use primus_tfhe_glwe_ntt::{BooleanError, LweCiphertext, PbsOrder, TfheContext, TfheParameters};
+use primus_tfhe_test_support::boolean;
 use rand::{SeedableRng, rngs::StdRng};
 
 const POLY_LENGTH: usize = 256;
@@ -66,58 +65,14 @@ fn boolean_factories_support_truth_tables_and_reused_output_in_both_orders() {
             Err(BooleanError::InvalidPlaintext)
         );
 
-        for lhs in [false, true] {
-            for rhs in [false, true] {
-                for (gate, expected) in [
-                    (BooleanGate::And, lhs & rhs),
-                    (BooleanGate::Nand, !(lhs & rhs)),
-                    (BooleanGate::Or, lhs | rhs),
-                    (BooleanGate::Nor, !(lhs | rhs)),
-                    (BooleanGate::Xor, lhs ^ rhs),
-                    (BooleanGate::Xnor, !(lhs ^ rhs)),
-                ] {
-                    evaluator.evaluate_binary_to(
-                        gate,
-                        &inputs[lhs as usize],
-                        &inputs[rhs as usize],
-                        &mut output,
-                    );
-                    assert_eq!(
-                        decryptor.decrypt(&output).unwrap(),
-                        expected,
-                        "{order:?} {gate:?}"
-                    );
-                }
-            }
-        }
-        for value in [false, true] {
-            evaluator.not_to(&inputs[value as usize], &mut output);
-            assert_eq!(evaluator.not(&inputs[value as usize]), output);
-            assert_eq!(decryptor.decrypt(&output).unwrap(), !value);
-        }
-        for condition in [false, true] {
-            for then_value in [false, true] {
-                for else_value in [false, true] {
-                    evaluator.mux_to(
-                        &inputs[condition as usize],
-                        &inputs[then_value as usize],
-                        &inputs[else_value as usize],
-                        &mut output,
-                    );
-                    assert_eq!(
-                        decryptor.decrypt(&output).unwrap(),
-                        if condition { then_value } else { else_value }
-                    );
-                }
-            }
-        }
-
-        // Feed gate results into subsequent gates while reusing both buffers.
-        let mut current = inputs[0].clone();
-        for step in 0..4 {
-            evaluator.evaluate_binary_to(BooleanGate::Nand, &current, &inputs[1], &mut output);
-            core::mem::swap(&mut current, &mut output);
-            assert_eq!(decryptor.decrypt(&current).unwrap(), step % 2 == 0);
-        }
+        let mut current = output.clone();
+        boolean::check_dimension_errors(&mut evaluator, &inputs[0]);
+        boolean::check_truth_tables_and_chain(
+            &mut evaluator,
+            &inputs,
+            &mut output,
+            &mut current,
+            |ciphertext| decryptor.decrypt(ciphertext).unwrap(),
+        );
     }
 }

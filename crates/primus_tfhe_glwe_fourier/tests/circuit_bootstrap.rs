@@ -1,18 +1,19 @@
-#[path = "../../primus_tfhe/tests/support/allocations.rs"]
-mod allocations;
-
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{Complex64, FftTable, RustFftTable, TfheFftTable};
 use primus_glwe::{GlevParameters, GlweParameters, SecretKeyDistr};
 use primus_lattice::ggsw::{FourierGgsw, Ggsw};
 use primus_lwe::{LweCiphertext, LweParameters};
 use primus_modulus::NativeModulus;
+use primus_test_allocations as allocations;
 use primus_tfhe_glwe_fourier::{
     CircuitBootstrapConfig, CircuitBootstrapEvaluator, CircuitBootstrapParameterError,
     CircuitBootstrapParameters, ClientKey, DecompositionConfig, KeyGenerationError, KeyGenerator,
     PbsOrder, TfheContext, TfheEvaluationError, TfheParameters,
 };
 use rand::{RngExt, SeedableRng, rngs::StdRng};
+
+#[global_allocator]
+static ALLOCATOR: allocations::CountingAllocator = allocations::CountingAllocator;
 
 const POLY_LENGTH: usize = 128;
 const DIMENSION: usize = 2;

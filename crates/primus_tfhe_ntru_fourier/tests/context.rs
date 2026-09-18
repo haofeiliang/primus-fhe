@@ -74,5 +74,9 @@ fn rejects_server_keys_with_same_layout_but_different_bases() {
             incompatible.evaluator(&server_key).err(),
             Some(TfheEvaluationError::IncompatibleServerKey)
         );
+        assert_eq!(
+            incompatible.boolean_evaluator(&server_key).err(),
+            Some(TfheEvaluationError::IncompatibleServerKey)
+        );
     }
 }

@@ -15,6 +15,7 @@ primus_lwe = { path = "../primus_lwe" }
 thiserror = { workspace = true }
 
 [dev-dependencies]
+primus_test_allocations = { path = "../../test-support/allocations" }
 criterion = { workspace = true }
 
 [[bench]]

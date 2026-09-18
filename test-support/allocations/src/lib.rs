@@ -1,14 +1,16 @@
-//! Shared TFHE test/bench instrumentation. Counts successful allocations and
+//! Test/bench instrumentation. Counts successful allocations and
 //! reallocations on the calling thread within `measure`. Byte counts are requested
 //! sizes, excluding allocator overhead; they do not measure process memory.
+//!
+//! Each measuring test or benchmark binary must install [`CountingAllocator`]
+//! with `#[global_allocator]`; merely importing this crate leaves its allocator unchanged.
 use std::{
     alloc::{GlobalAlloc, Layout, System},
     cell::Cell,
 };
 
-struct CountingAllocator;
-#[global_allocator]
-static ALLOCATOR: CountingAllocator = CountingAllocator;
+/// System allocator with opt-in, per-thread allocation measurement.
+pub struct CountingAllocator;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Allocations {

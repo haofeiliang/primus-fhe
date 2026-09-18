@@ -1,18 +1,19 @@
-#[path = "../../primus_tfhe/tests/support/allocations.rs"]
-mod allocations;
-
 use primus_encoding::{PlaintextEmbedding, RoundedCodec};
 use primus_lwe::{LweCiphertext, LweParameters};
 use primus_modulus::BarrettModulus;
 use primus_ntru::{NlevParameters, NtruParameters, SecretKeyDistr};
 use primus_ntt::{NttTable, U32NttTable};
 use primus_reduce::ReduceAdd;
+use primus_test_allocations as allocations;
 use primus_tfhe::{
     BivariateLookupTable, InterleavedLookupTable, LookupTable, ProgrammableBootstrapInterleaved,
 };
 use primus_tfhe_ntru_ntt::{TfheContext, TfheParameters};
 use rand::{SeedableRng, rngs::StdRng};
 use std::panic::{AssertUnwindSafe, catch_unwind};
+
+#[global_allocator]
+static ALLOCATOR: allocations::CountingAllocator = allocations::CountingAllocator;
 
 const N: usize = 256;
 const Q: u32 = 132_120_577;

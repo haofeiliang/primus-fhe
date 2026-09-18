@@ -2,8 +2,6 @@
 //! u64 functional workloads, not security parameter recommendations. Setup and
 //! memory accounting are outside timing; no post-BR ring key switch/extraction.
 //! cargo bench -p primus_tfhe_ntru_fourier --bench circuit_bootstrap -- 'n1024/logb10'
-#[path = "../../primus_tfhe/tests/support/allocations.rs"]
-mod allocations;
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use primus_decompose::primitive::ApproxSignedBasis;
@@ -11,11 +9,15 @@ use primus_fft::{Complex64, FftTable, RustFftTable, TfheFftTable};
 use primus_lwe::LweParameters;
 use primus_modulus::NativeModulus;
 use primus_ntru::{FourierNgswCiphertext, NlevParameters, NtruParameters, SecretKeyDistr};
+use primus_test_allocations as allocations;
 use primus_tfhe_ntru_fourier::{
     CircuitBootstrapEvaluator, CircuitBootstrapParameters, TfheContext, TfheParameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
 use std::{hint::black_box, time::Duration};
+
+#[global_allocator]
+static ALLOCATOR: allocations::CountingAllocator = allocations::CountingAllocator;
 
 fn backend<Table: FftTable>(c: &mut Criterion, backend: &str) {
     let modulus = NativeModulus::<u64>::new();

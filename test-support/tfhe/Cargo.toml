@@ -1,0 +1,9 @@
+[package]
+name = "primus_tfhe_test_support"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+primus_reduce = { path = "../../crates/primus_reduce" }
+primus_tfhe = { path = "../../crates/primus_tfhe" }

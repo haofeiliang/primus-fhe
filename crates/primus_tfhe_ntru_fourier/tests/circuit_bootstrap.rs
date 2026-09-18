@@ -1,6 +1,3 @@
-#[path = "../../primus_tfhe/tests/support/allocations.rs"]
-mod allocations;
-
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{Complex64, FftTable, RustFftTable, TfheFftTable};
 use primus_lwe::LweParameters;
@@ -9,11 +6,15 @@ use primus_ntru::{
     FourierNgswCiphertext, FourierNtruSecretKey, NlevParameters, NtruParameters, SecretKeyDistr,
 };
 use primus_poly::Polynomial;
+use primus_test_allocations as allocations;
 use primus_tfhe_ntru_fourier::{
     CircuitBootstrapConfig, CircuitBootstrapEvaluator, CircuitBootstrapParameters,
     DecompositionConfig, TfheContext, TfheEvaluationError, TfheParameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
+
+#[global_allocator]
+static ALLOCATOR: allocations::CountingAllocator = allocations::CountingAllocator;
 
 const N: usize = 256;
 

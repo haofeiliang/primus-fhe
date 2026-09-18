@@ -2,8 +2,6 @@
 //! u64 functional workloads, not security parameter recommendations. Setup and
 //! memory accounting are outside timing; no post-BR ring key switch/extraction.
 //! cargo bench -p primus_tfhe_ntru_ntt --bench circuit_bootstrap -- 'n1024/logb10'
-#[path = "../../primus_tfhe/tests/support/allocations.rs"]
-mod allocations;
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use primus_decompose::primitive::ApproxSignedBasis;
@@ -11,11 +9,15 @@ use primus_lwe::LweParameters;
 use primus_modulus::BarrettModulus;
 use primus_ntru::{NlevParameters, NtruParameters, NttNgswCiphertext, SecretKeyDistr};
 use primus_ntt::{NttTable, U64NttTable};
+use primus_test_allocations as allocations;
 use primus_tfhe_ntru_ntt::{
     CircuitBootstrapEvaluator, CircuitBootstrapParameters, TfheContext, TfheParameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
 use std::{hint::black_box, time::Duration};
+
+#[global_allocator]
+static ALLOCATOR: allocations::CountingAllocator = allocations::CountingAllocator;
 
 fn circuit_bootstrap(c: &mut Criterion) {
     let modulus = BarrettModulus::new(1_125_899_906_826_241u64);

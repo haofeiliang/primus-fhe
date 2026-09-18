@@ -1,6 +1,3 @@
-#[path = "../../primus_tfhe/tests/support/allocations.rs"]
-mod allocations;
-
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_encoding::{PlaintextEmbedding, RoundedCodec};
 use primus_glwe::{GlweParameters, NttGadgetEncryptContext, NttGlweSecretKey, SecretKeyDistr};
@@ -9,11 +6,15 @@ use primus_lwe::LweParameters;
 use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, U32NttTable};
 use primus_poly::Polynomial;
+use primus_test_allocations as allocations;
 use primus_tfhe_glwe_ntt::{
     ClientKey, KeyGenerator, NttGlweBlindRotationContext, NttGlweBootstrappingKey, PbsOrder,
     SparseGlweBlindRotationContext, TfheContext, TfheParameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
+
+#[global_allocator]
+static ALLOCATOR: allocations::CountingAllocator = allocations::CountingAllocator;
 
 const Q: u32 = 132_120_577;
 const T: u32 = 8;

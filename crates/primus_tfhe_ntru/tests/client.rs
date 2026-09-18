@@ -1,14 +1,16 @@
-#[path = "../../primus_tfhe/tests/support/allocations.rs"]
-mod allocations;
-
 use primus_lwe::{LweCiphertext, LweParameters, LwePublicKey, LweSecretKey};
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntru::{NlevParameters, NtruParameters, NtruSecretKey, SecretKeyDistr};
 use primus_reduce::RingContext;
+use primus_test_allocations as allocations;
 use primus_tfhe_ntru::{
-    ClientKey, Decryptor, EncryptionKey, Encryptor, TfheClientError, TfheKeyError, TfheParameters,
+    BooleanDecryptor, BooleanEncryptor, BooleanError, ClientKey, Decryptor, EncryptionKey,
+    Encryptor, TfheClientError, TfheKeyError, TfheParameters,
 };
 use rand::{Rng, SeedableRng, rngs::StdRng};
+
+#[global_allocator]
+static ALLOCATOR: allocations::CountingAllocator = allocations::CountingAllocator;
 
 fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
     let ring = NtruParameters::new(
@@ -40,6 +42,7 @@ fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
     assert_eq!(public.dimension(), 4); // Active prefix, not the full ring length.
     check_reused_output(&params, &client, &public);
     check_reused_output(&params, &client, &client);
+    check_boolean_errors(&params, &client);
 
     let foreign_params = LweParameters::new(
         4,
@@ -79,8 +82,53 @@ fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
     assert_eq!(rng.next_u64(), expected_rng.next_u64());
 }
 
+fn check_boolean_errors<M: RingContext<u32>>(
+    parameters: &TfheParameters<u32, M>,
+    client: &ClientKey<u32>,
+) {
+    if parameters.plain_modulus_value() != 4 {
+        assert_eq!(
+            BooleanEncryptor::try_new(parameters, client).err(),
+            Some(BooleanError::PlaintextModulusMustBeFour)
+        );
+        assert_eq!(
+            BooleanDecryptor::try_new(parameters, client).err(),
+            Some(BooleanError::PlaintextModulusMustBeFour)
+        );
+        return;
+    }
+    let encryptor = BooleanEncryptor::try_new(parameters, client).unwrap();
+    let decryptor = BooleanDecryptor::try_new(parameters, client).unwrap();
+    let raw_encryptor = Encryptor::try_new(parameters, client).unwrap();
+    let mut rng = StdRng::seed_from_u64(0xB202);
+    for message in [2, 3] {
+        let invalid = raw_encryptor.encrypt(message, &mut rng).unwrap();
+        assert_eq!(
+            decryptor.decrypt(&invalid),
+            Err(BooleanError::InvalidPlaintext)
+        );
+    }
+    let dimension = parameters.external_lwe_dimension();
+    let mut wrong = LweCiphertext::new(vec![1; dimension]);
+    let before = wrong.clone();
+    let seed = rng.next_u64();
+    let mut rng = StdRng::seed_from_u64(seed);
+    let mut expected_rng = StdRng::seed_from_u64(seed);
+    let error = BooleanError::Client(TfheClientError::CiphertextDimensionMismatch {
+        expected: dimension,
+        actual: dimension - 1,
+    });
+    assert_eq!(
+        encryptor.encrypt_to(true, &mut wrong, &mut rng),
+        Err(error.clone())
+    );
+    assert_eq!(wrong, before);
+    assert_eq!(rng.next_u64(), expected_rng.next_u64());
+    assert_eq!(decryptor.decrypt(&wrong), Err(error));
+}
+
 #[test]
-fn public_clients_use_only_the_binary_prefix_and_reject_incompatible_keys() {
+fn clients_preserve_encodings_and_reject_incompatible_inputs() {
     for plain_modulus in [4, 5] {
         check(NativeModulus::new(), plain_modulus);
         check(BarrettModulus::new(132_120_577), plain_modulus);

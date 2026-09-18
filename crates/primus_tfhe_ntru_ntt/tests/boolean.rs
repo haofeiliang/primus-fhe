@@ -1,14 +1,16 @@
-#[path = "../../primus_tfhe/tests/support/allocations.rs"]
-mod allocations;
-
 use primus_lwe::LweParameters;
 use primus_modulus::BarrettModulus;
 use primus_ntru::SecretKeyDistr;
 use primus_ntt::U32NttTable;
+use primus_test_allocations as allocations;
 use primus_tfhe_ntru_ntt::{
     BooleanGate, DecompositionConfig, LweCiphertext, TfheConfig, TfheContext, TfheParameters,
 };
+use primus_tfhe_test_support::boolean;
 use rand::{SeedableRng, rngs::StdRng};
+
+#[global_allocator]
+static ALLOCATOR: allocations::CountingAllocator = allocations::CountingAllocator;
 
 fn check_context() {
     let parameters = TfheParameters::<u32>::try_from_config(TfheConfig {
@@ -43,17 +45,32 @@ fn check_context() {
     let public_encryptor = context.boolean_encryptor(&public).unwrap();
     let decryptor = context.boolean_decryptor(&client).unwrap();
     let mut evaluator = context.boolean_evaluator(&server).unwrap();
-    let lhs = encryptor.encrypt(true, &mut rng).unwrap();
+    let inputs = [
+        encryptor.encrypt(false, &mut rng).unwrap(),
+        encryptor.encrypt(true, &mut rng).unwrap(),
+    ];
     let mut rhs = LweCiphertext::zero(context.parameters().external_lwe_dimension());
     let mut output = rhs.clone();
-    // NAND reaches both signs of the internal t=8 LUT, including its negacyclic
-    // extension at 1+1. Reuse output for true -> false -> true under external t=4.
+    let mut current = output.clone();
+    let (_, allocation) = allocations::measure(|| {
+        boolean::check_truth_tables_and_chain(
+            &mut evaluator,
+            &inputs,
+            &mut output,
+            &mut current,
+            |ciphertext| decryptor.decrypt(ciphertext).unwrap(),
+        );
+    });
+    assert_eq!(allocation.count, 0, "Boolean gates must reuse storage");
+    boolean::check_dimension_errors(&mut evaluator, &inputs[0]);
+
+    // Keep one public-key path and confirm reuse after rejected calls.
     for bit in [false, true, false] {
         let (_, allocation) = allocations::measure(|| {
             public_encryptor
                 .encrypt_to(bit, &mut rhs, &mut rng)
                 .unwrap();
-            evaluator.evaluate_binary_to(BooleanGate::Nand, &lhs, &rhs, &mut output);
+            evaluator.evaluate_binary_to(BooleanGate::Nand, &inputs[1], &rhs, &mut output);
             assert_eq!(decryptor.decrypt(&output).unwrap(), !bit);
         });
         assert_eq!(allocation.count, 0, "Boolean operations must reuse storage");
@@ -61,6 +78,6 @@ fn check_context() {
 }
 
 #[test]
-fn boolean_binding_preserves_output_scale_and_reuses_storage() {
+fn boolean_gates_preserve_truth_tables_chaining_and_storage() {
     check_context();
 }

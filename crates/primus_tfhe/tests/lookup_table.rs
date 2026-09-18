@@ -1,18 +1,19 @@
 //! Shared LUT compiler boundaries, raw scales, and rotation layout.
 use std::{cell::Cell, cmp::Reverse, fmt::Debug};
 
-#[path = "support/allocations.rs"]
-mod allocations;
-
 use primus_encoding::RoundedCodec;
 use primus_integer::FheUint;
 use primus_modulus::{BarrettModulus, NativeModulus, PowOf2Modulus, UintModulus};
 use primus_reduce::RingContext;
 
+use primus_test_allocations as allocations;
 use primus_tfhe::{
     BivariateLookupTable, InterleavedLookupTable, LookupTable, LookupTableError, LweCiphertext,
     rotation::RotationQuantizer,
 };
+
+#[global_allocator]
+static ALLOCATOR: allocations::CountingAllocator = allocations::CountingAllocator;
 
 macro_rules! with_modulus {
     ($q:expr, $modulus:ident, $body:block) => {

@@ -1,6 +1,3 @@
-#[path = "../../primus_tfhe/tests/support/allocations.rs"]
-mod allocations;
-
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_lwe::LweParameters;
 use primus_modulus::BarrettModulus;
@@ -9,11 +6,15 @@ use primus_ntru::{
 };
 use primus_ntt::U64NttTable;
 use primus_poly::Polynomial;
+use primus_test_allocations as allocations;
 use primus_tfhe_ntru_ntt::{
     CircuitBootstrapConfig, CircuitBootstrapEvaluator, CircuitBootstrapParameters,
     DecompositionConfig, TfheContext, TfheEvaluationError, TfheParameters,
 };
 use rand::{RngExt, SeedableRng, rngs::StdRng};
+
+#[global_allocator]
+static ALLOCATOR: allocations::CountingAllocator = allocations::CountingAllocator;
 
 const N: usize = 256;
 const Q: u64 = 1_125_899_906_826_241;
