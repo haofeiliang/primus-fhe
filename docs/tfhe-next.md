@@ -2,6 +2,8 @@
 
 本文承接 [P1–P4](tfhe-plan.md)，记录值得补充的能力、应用价值与启动条件，避免把论文清单当作必须全部实现的计划。**ternary LWE secret 的经典 GLWE PBS 已完成**，具体设计与测量见 [ternary 专项](tfhe-ternary.md)。当前实施状态以 [HANDOFF](../HANDOFF.md) 为准。
 
+已有算法在四个后端的覆盖差异、可直接补齐项和组合前置条件见[后端覆盖与补齐路线](tfhe-backend-coverage.md)，执行任务见 [B1–B8 分步计划](tfhe-backend-plan.md)。
+
 ## 1. 优先级与应用目标
 
 | 顺序 | 候选 | 解决的问题 | 建议的首个交付范围 |

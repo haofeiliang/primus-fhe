@@ -61,8 +61,25 @@ FFT engine 和 evaluator 从同一个 context 创建。
 
 ## Circuit bootstrapping
 
-Fourier GLWE CBS 尚未实现。已有 GLWE CBS 路径在 [NTT 后端](../primus_tfhe_glwe_ntt/README.zh_CN.md)，
-其模归一化保证不能直接用于未来的 Fourier 实现。
+`CircuitBootstrapParameters` 和 `CircuitBootstrapKey` 已提供可选的 CBS 密钥材料；
+完整 Fourier CBS evaluator 尚待接入。[NTT 后端](../primus_tfhe_glwe_ntt/README.zh_CN.md)
+已提供完整 GLWE CBS 路径。
+
+通过 `CircuitBootstrapParameters::try_new(tfhe, output_basis, trace, scheme_switch)`
+传入 Native 输出 basis，以及独立的 Native `GlevParameters` / `GgswParameters`，
+分别用于 trace 和 scheme switch。构造器检查 accumulator GLWE 布局与补齐后的 gadget
+层数容量，并绑定输入明文模数。Scheme-switch key 绑定输出布局；层数相同的其他输出 basis
+可以复用该密钥。
+
+使用同一个 `ClientKey`，通过可复用的 `KeyGenerator` 依次调用
+`try_generate_server_key` 和 `try_generate_circuit_bootstrap_key`。
+`TfheContext::generate_circuit_bootstrap_key` 提供便捷入口。附加密钥通过
+`trace_key().project_coefficients_to` 与 `scheme_switch_key().apply_to` 供底层原语使用；
+二者均使用 accumulator 私钥，求值须使用生成密钥的 context 所持有的 FFT table。
+普通 `ServerKey` 不包含 CBS 材料。
+
+Native reverse trace 沿用底层逐级整数除二；其舍入、trace key switching、scheme-switch
+分解与 FFT 精度均需计入 CBS 误差预算。参数检查不验证噪声或安全性。
 
 ## 验证与性能
 

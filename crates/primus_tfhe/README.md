@@ -16,7 +16,7 @@ Start with a backend example below for an end-to-end workflow.
 | Backend | Ciphertext modulus | PBS / ManyLUT | Factorized MVB | Boolean gates | CBS |
 | --- | --- | --- | --- | --- | --- |
 | GLWE NTT | Explicit field | Yes | Yes | Yes | Yes |
-| GLWE Fourier | Native torus | Yes | Not implemented | Yes | Not implemented |
+| GLWE Fourier | Native torus | Yes | Not implemented | Yes | Parameters/keys only |
 | NTRU NTT | Explicit field | Yes | Not implemented | Not implemented | Yes |
 | NTRU Fourier | Native torus | Yes | Not implemented | Not implemented | Yes |
 

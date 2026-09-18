@@ -13,6 +13,11 @@
 //! context (`t = 4`). Create the evaluator once, then reuse output storage with
 //! [`BooleanEvaluator::evaluate_binary_to`], [`BooleanEvaluator::not_to`] and
 //! [`BooleanEvaluator::mux_to`].
+//!
+//! [`CircuitBootstrapParameters`] and [`CircuitBootstrapKey`] provide optional
+//! trace-projection and scheme-switch keys, generated through
+//! [`KeyGenerator::try_generate_circuit_bootstrap_key`]. A complete Fourier CBS
+//! evaluator is not yet available.
 
 #![deny(missing_docs)]
 
@@ -20,6 +25,7 @@ use primus_modulus::NativeModulus;
 
 mod blind_rotation;
 mod bootstrapping_key;
+mod circuit_bootstrap;
 mod context;
 mod error;
 mod evaluator;
@@ -34,6 +40,10 @@ pub use error::{
 
 pub use blind_rotation::FourierGlweBlindRotationContext;
 pub use bootstrapping_key::FourierGlweBootstrappingKey;
+pub use circuit_bootstrap::{
+    CircuitBootstrapKey, CircuitBootstrapKeyError, CircuitBootstrapParameterError,
+    CircuitBootstrapParameters,
+};
 pub use context::TfheContext;
 pub use evaluator::Evaluator;
 pub use key::{KeyGenerator, ServerKey};

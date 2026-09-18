@@ -65,9 +65,9 @@ where
     T: TorusFftValue,
     Table: FftTable,
 {
-    context: &'a TfheContext<T, Table>,
-    fft: FftEngine<'a, Table>,
-    gadget: FourierGadgetEncryptContext<T>,
+    pub(crate) context: &'a TfheContext<T, Table>,
+    pub(crate) fft: FftEngine<'a, Table>,
+    pub(crate) gadget: FourierGadgetEncryptContext<T>,
 }
 
 impl<'a, T, Table> KeyGenerator<'a, T, Table>

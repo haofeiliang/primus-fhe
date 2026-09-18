@@ -74,9 +74,27 @@ temporary GGSW storage.
 
 ## Circuit bootstrapping
 
-Fourier GLWE CBS is not implemented. The [NTT backend](../primus_tfhe_glwe_ntt/README.md)
-provides the existing GLWE CBS path; its modular normalization guarantees must not
-be applied to a future Fourier implementation.
+`CircuitBootstrapParameters` and `CircuitBootstrapKey` provide optional CBS key
+material. The complete Fourier CBS evaluator is pending; the [NTT backend](../primus_tfhe_glwe_ntt/README.md)
+already provides the complete GLWE CBS path.
+
+Construct `CircuitBootstrapParameters::try_new(tfhe, output_basis, trace, scheme_switch)`
+with a native output basis and independent native `GlevParameters` / `GgswParameters`
+for trace and scheme switching. It checks the accumulator GLWE layout and capacity
+for the padded gadget-level count, and binds the input plaintext modulus.
+The scheme-switch key binds the output layout; another output basis with the same
+level count can reuse the key.
+
+Generate ordinary PBS and CBS keys from the same `ClientKey` using a reusable
+`KeyGenerator`: `try_generate_server_key`, then `try_generate_circuit_bootstrap_key`.
+`TfheContext::generate_circuit_bootstrap_key` is the convenience entry point.
+The optional key exposes `trace_key().project_coefficients_to` and
+`scheme_switch_key().apply_to`; both use the accumulator secret and must be consumed
+with the generating context's FFT table. Ordinary `ServerKey` carries no CBS material.
+
+Native reverse trace retains the low-level per-stage integer halving. Its rounding,
+trace key switching, scheme-switch decomposition and FFT precision require a CBS
+error budget; these parameter checks do not validate noise or security.
 
 ## Validation and performance
 

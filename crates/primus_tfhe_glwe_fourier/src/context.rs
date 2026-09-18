@@ -2,8 +2,9 @@ use primus_fft::{FftEngine, FftTable, TorusFftValue};
 use primus_tfhe_glwe::{ClientKey, EncryptionKey};
 
 use crate::{
-    BooleanDecryptor, BooleanEncryptor, BooleanError, BooleanEvaluator, Decryptor, Encryptor,
-    Evaluator, KeyGenerator, ServerKey, TfheParameters,
+    BooleanDecryptor, BooleanEncryptor, BooleanError, BooleanEvaluator, CircuitBootstrapKey,
+    CircuitBootstrapKeyError, CircuitBootstrapParameters, Decryptor, Encryptor, Evaluator,
+    KeyGenerator, ServerKey, TfheParameters,
     error::{TfheClientError, TfheContextError, TfheEvaluationError, TfheKeyError},
 };
 
@@ -63,6 +64,23 @@ where
         R: rand::Rng + rand::CryptoRng,
     {
         KeyGenerator::new(self).generate(rng)
+    }
+
+    /// Generates optional CBS trace-projection and scheme-switch keys.
+    ///
+    /// Inherits [`KeyGenerator::try_generate_circuit_bootstrap_key`]'s secret
+    /// and FFT table requirements. Reuse a [`KeyGenerator`] when generating
+    /// ordinary PBS and CBS keys together.
+    pub fn generate_circuit_bootstrap_key<R>(
+        &self,
+        client_key: &ClientKey<T>,
+        parameters: &CircuitBootstrapParameters<T>,
+        rng: &mut R,
+    ) -> Result<CircuitBootstrapKey<T>, CircuitBootstrapKeyError>
+    where
+        R: rand::Rng + rand::CryptoRng,
+    {
+        KeyGenerator::new(self).try_generate_circuit_bootstrap_key(client_key, parameters, rng)
     }
 
     /// Creates a secret-key or public-key encryptor after checking compatibility.

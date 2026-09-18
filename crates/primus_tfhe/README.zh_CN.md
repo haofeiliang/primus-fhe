@@ -15,7 +15,7 @@
 | 后端 | 密文模数 | PBS / ManyLUT | 分解式 MVB | Boolean 门 | CBS |
 | --- | --- | --- | --- | --- | --- |
 | GLWE NTT | 显式域模数 | 支持 | 支持 | 支持 | 支持 |
-| GLWE Fourier | 原生 torus | 支持 | 未实现 | 支持 | 未实现 |
+| GLWE Fourier | 原生 torus | 支持 | 未实现 | 支持 | 仅参数/密钥 |
 | NTRU NTT | 显式域模数 | 支持 | 未实现 | 未实现 | 支持 |
 | NTRU Fourier | 原生 torus | 支持 | 未实现 | 未实现 | 支持 |
 
