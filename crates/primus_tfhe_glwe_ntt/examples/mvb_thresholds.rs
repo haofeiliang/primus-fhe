@@ -1,13 +1,14 @@
 //! Turn one encrypted score in 0..64 into 17 numeric threshold flags.
 //! Functional cost parameters, not certified production parameters.
 
-use primus_decompose::primitive::ApproxSignedBasis;
 use primus_encoding::ScaledCodec;
-use primus_glwe::{GlweParameters, SecretKeyDistr};
+use primus_glwe::SecretKeyDistr;
 use primus_lwe::{LweCiphertext, LweParameters};
 use primus_modulus::BarrettModulus;
-use primus_ntt::{NttTable, U32NttTable};
-use primus_tfhe_glwe_ntt::{LookupTableError, PbsOrder, TfheContext, TfheParameters};
+use primus_ntt::U32NttTable;
+use primus_tfhe_glwe_ntt::{
+    DecompositionConfig, LookupTableError, PbsOrder, TfheConfig, TfheContext, TfheParameters,
+};
 use rand::{SeedableRng, rngs::StdRng};
 
 fn main() {
@@ -16,25 +17,30 @@ fn main() {
     const DOMAIN: usize = 64;
     const OUTPUTS: usize = 17;
     let modulus = BarrettModulus::new(Q);
-    let parameters = TfheParameters::try_new(
-        LweParameters::new(
+    let parameters = TfheParameters::try_from_config(TfheConfig {
+        small_lwe: LweParameters::new(
             728,
             128,
             modulus,
             SecretKeyDistr::fixed_hamming_weight_binary(728, 32),
             3.2 * f64::from(Q) / 16384.0,
         ),
-        GlweParameters::new(1, N, 128, modulus, SecretKeyDistr::SparseTernary, 6.4),
-        ApproxSignedBasis::new(Some(Q), 7, Some(3)),
-        ApproxSignedBasis::new(Some(Q), 2, Some(13)),
-        PbsOrder::KeyswitchBootstrap,
-    )
+        accumulator_dimension: 1,
+        poly_length: N,
+        accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,
+        accumulator_noise_standard_deviation: 6.4,
+        blind_rotation: DecompositionConfig {
+            log_basis: 7,
+            level_count: Some(3),
+        },
+        key_switching: DecompositionConfig {
+            log_basis: 2,
+            level_count: Some(13),
+        },
+        pbs_order: PbsOrder::KeyswitchBootstrap,
+    })
     .unwrap();
-    let context = TfheContext::try_new(
-        parameters,
-        U32NttTable::new(N.trailing_zeros(), modulus).unwrap(),
-    )
-    .unwrap();
+    let context = TfheContext::<_, U32NttTable>::try_from_parameters(parameters).unwrap();
     let mut rng = StdRng::seed_from_u64(0x4d56_4201);
     let (client, server) = context.generate_keys(&mut rng).unwrap();
     let encryptor = context.encryptor(&client).unwrap();

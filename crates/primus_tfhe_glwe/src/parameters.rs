@@ -5,6 +5,7 @@ use primus_encoding::RoundedCodec;
 use primus_glwe::GlevParameterError;
 use primus_integer::FheUint;
 use primus_reduce::RingContext;
+use primus_tfhe::DecompositionConfig;
 
 use crate::{
     GgswParameters, GlevParameters, GlweKeySwitchingParameters, GlweParameters, LweParameters,
@@ -20,6 +21,67 @@ pub enum PbsOrder {
     /// A GLWE key switch and compact sample extraction first produce a small
     /// LWE ciphertext, which is then bootstrapped.
     KeyswitchBootstrap,
+}
+
+/// GLWE-TFHE choices with one shared plaintext/ciphertext modulus domain.
+///
+/// The accumulator and padded key-switch target inherit `t` and `q` from
+/// `small_lwe`. Blind rotation and key switching use the accumulator noise,
+/// as in [`TfheParameters::try_new`].
+#[derive(Clone)]
+pub struct TfheConfig<T: FheUint, M: RingContext<T>> {
+    /// Input secret, dimension, moduli and fresh LWE encryption noise.
+    pub small_lwe: LweParameters<T, M>,
+    /// Number of secret polynomials in the accumulator.
+    pub accumulator_dimension: usize,
+    /// Accumulator polynomial length `N`.
+    pub poly_length: usize,
+    /// Coefficient distribution of the accumulator secret.
+    pub accumulator_secret_key_distr: SecretKeyDistr,
+    /// Standard deviation for accumulator and evaluation-key encryption.
+    pub accumulator_noise_standard_deviation: f64,
+    /// GGSW decomposition for blind rotation.
+    pub blind_rotation: DecompositionConfig,
+    /// Decomposition for the GLWE key switch.
+    pub key_switching: DecompositionConfig,
+    /// Order determining the external LWE secret domain.
+    pub pbs_order: PbsOrder,
+}
+
+impl<T: FheUint, M: RingContext<T>> TfheParameters<T, M, M> {
+    /// Derives accumulator and gadget parameters from named independent choices.
+    ///
+    /// Returns the compatibility and basis errors of [`Self::try_new`].
+    ///
+    /// # Panics
+    ///
+    /// Inherits [`GlweParameters::new`]'s layout, sampler and codec requirements.
+    pub fn try_from_config(config: TfheConfig<T, M>) -> Result<Self, TfheParameterError> {
+        let modulus = config.small_lwe.cipher_modulus();
+        let accumulator = GlweParameters::new(
+            config.accumulator_dimension,
+            config.poly_length,
+            config.small_lwe.plain_modulus_value(),
+            modulus,
+            config.accumulator_secret_key_distr,
+            config.accumulator_noise_standard_deviation,
+        );
+        let blind_rotation = config
+            .blind_rotation
+            .try_build(modulus)
+            .map_err(|error| TfheParameterError::BootstrappingParameters(error.into()))?;
+        let key_switching = config
+            .key_switching
+            .try_build(modulus)
+            .map_err(|error| TfheParameterError::KeySwitchingParameters(error.into()))?;
+        Self::try_new(
+            config.small_lwe,
+            accumulator,
+            blind_rotation,
+            key_switching,
+            config.pbs_order,
+        )
+    }
 }
 
 /// An invalid combination of GLWE-based TFHE parameters.

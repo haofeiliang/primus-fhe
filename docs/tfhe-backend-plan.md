@@ -1,12 +1,12 @@
 # TFHE 后端补齐分步计划
 
-依据：[后端覆盖分析](tfhe-backend-coverage.md)，源码基线 `7f1ef55`。本计划把已有算法的后端补齐拆成可独立验收的步骤；不重开已完成的 P1–P4、T1–T3，也不扩入 FDFB 等[新算法选型](tfhe-next.md)。
+依据：[后端覆盖分析](tfhe-backend-coverage.md)，初始源码基线 `7f1ef55`。本计划把已有算法的后端补齐与必要的高层接口整理拆成可独立验收的步骤；不重开已完成的 P1–P4、T1–T3，也不扩入 FDFB 等[新算法选型](tfhe-next.md)。
 
-B1 已完成，以下保留完成入口与 B2–B8 的后续计划。当前任务与下一步记录在 [HANDOFF](../HANDOFF.md)，算法依据仍由覆盖分析和各专项文档维护。
+B1.1–B1.4 已完成，下一步 B1.5。B1.4–B1.7 整理四后端高层接口，分析与性能对照基线为 `66ae701`；B2–B8 保留原编号。当前任务与下一步记录在 [HANDOFF](../HANDOFF.md)，算法依据仍由覆盖分析和各专项文档维护。
 
 ## 执行方式
 
-- 推荐按 **`执行 B1.1` → `执行 B1.2` → …** 推进。`B1` 表示整个阶段；明确要求“执行 B1”时，完成其所有满足前置条件的子步骤。
+- 接下来推荐按 **`执行 B1.5` → `执行 B1.6` → `执行 B1.7` → `执行 B2.1` → …** 推进。`B1` 表示整个阶段；明确要求“执行 B1”时，完成其所有满足前置条件的剩余子步骤。
 - 每步先核对 Git 状态、HANDOFF、本步及依赖结论；保留用户修改和暂存状态。编号不隐含暂存、提交或启动后续步骤。
 - **工程接入**：现成代数与原语支持实现，仍需正常验证。**原型验证**：先回答未决问题，结论可以是通过、缩小范围或暂缓。
 - “依赖原型通过”不同于“原型步骤已结束”。原型不成立时保留结论及最小反例，删除无长期价值的实验代码，暂缓依赖分支；其他独立阶段仍可执行。
@@ -16,8 +16,8 @@ B1 已完成，以下保留完成入口与 B2–B8 的后续计划。当前任�
 
 | 阶段 | 目标 | 子步骤 | 性质及主要依赖 |
 | --- | --- | --- | --- |
-| B1 | GLWE Fourier 经典 CBS | B1.1–B1.3 | 工程接入；无新增算法前置 |
-| B2 | NTRU 两后端 Boolean | B2.1–B2.2 | 工程接入；可与 B1 独立安排 |
+| B1 | GLWE Fourier 经典 CBS、四后端高层接口整理 | B1.1–B1.7 | B1.1–B1.4 已完成；B1.5–B1.7 为后续工程整理，无新增算法前置 |
+| B2 | NTRU 两后端 Boolean | B2.1–B2.2 | 工程接入；先完成 B1.7，使用整理后的接口 |
 | B3 | NTRU NTT MVB、既有 sparse 组合验收 | B3.1–B3.3 | 工程接入；B3.3 建议在 B2 的 Boolean 迁移后执行 |
 | B4 | GLWE Fourier 二元稀疏 PBS | B4.1–B4.3 | 参考实现与收益验证；不含 sparse CBS/ternary |
 | B5 | Native 偶尺度 MVB | B5.1–B5.4 | 原型通过后接入两族 Fourier；NTRU 接入还依赖 B3.1 |
@@ -25,9 +25,11 @@ B1 已完成，以下保留完成入口与 B2–B8 的后续计划。当前任�
 | B7 | NTRU 经典 ternary | B7.1–B7.4 | 先明确采样与控制原语，再接完整链；不依赖 sparse 算法 |
 | B8 | NTRU 二元桶聚合 PBS | B8.1–B8.3 | 独立方案原型；复用 B4.1 的纯匹配组件，不依赖 B7 |
 
-表格顺序是推荐工作顺序，不把独立能力强制串成依赖链。例如 B5 原型失败不阻止 NTT sparse CBS；NTRU binary 桶聚合也不必等待 ternary。
+完成 B1 的接口整理后，后续能力沿用其参数、密钥和 evaluator 构造约定，避免重复迁移；这是工程顺序，Boolean 等算法并不依赖 CBS。其余独立能力不强制串成依赖链，例如 B5 原型失败不阻止 NTT sparse CBS；NTRU binary 桶聚合也不必等待 ternary。
 
-## B1：GLWE Fourier 经典 CBS（已完成）
+## B1：经典 CBS 与四后端高层接口整理
+
+### B1.1–B1.3：GLWE Fourier 经典 CBS（已完成）
 
 | 步骤 | 完成入口 |
 | --- | --- |
@@ -38,12 +40,70 @@ B1 已完成，以下保留完成入口与 B2–B8 的后续计划。当前任�
 保留 Native 逐级整数除二与逐系数 RevHomTrace；共享正向展开树优化暂缓。经典 CBS 已支持，
 生产误差尾界未认证，sparse CBS 仍由 B6 独立验证；不因 BR 输出类型相同而自动开放。
 
+### B1.4–B1.7 的共同设计边界
+
+基线 `66ae701` 的 [CBS 示例](../crates/primus_tfhe_glwe_fourier/examples/circuit_bootstrap.rs)需要分别构造参数、变换表、普通与 CBS 密钥；得到 GGSW 后，还要为加密、CMUX 和解密手工准备 basis、秘密变换与 scratch。`circuit_bootstrap_to(input, output)` 本身已经简洁，主要整理构造过程和输出消费过程。
+
+- **覆盖四后端及其公共层**：统一同一角色的高层名称和工作流，保留 GLWE/NTRU 秘密域、NTRU 初始化与拒绝采样、NTT/Fourier 表示和归一化差异；不增加万能后端 trait、能力泛型框架或算法注册表。
+- **构造时绑定，在线复用**：参数、密钥材料、basis、变换表和工作区在所属构造边界校验并绑定。在线调用主要提供输入、LUT/控制密文与输出；不重复变换秘密、编译 LUT、分配或 clone 大对象。
+- **显式保留数学选择**：秘密分布、噪声、各用途的独立分解 basis、输出尺度和适用的 PBS order 由调用方选择；只派生重复的模数、长度与布局，不暗设“安全参数”。
+- **一个常用密钥入口，按用途配置工作区**：`ServerKey` 聚合普通 PBS 及可选 CBS 材料，不再叠加一个同义的 `EvaluationKey`。普通 PBS、CBS、MVB 仍使用各自 evaluator，避免普通调用承担全部算法的 scratch。
+- **保留必要的高级入口**：底层 GGSW/NGSW、NTT/Fourier 类型及算术函数继续可用；显式表注入、多 CBS 配置等已有实验用途可以保留直接构造路径。普通工作流无需手工拼装这些资源。
+- **不扩大算法支持**：GLWE CBS 的同层数输出 basis 复用与 NTRU CBS 的精确输出 basis 绑定分别保留；稀疏 CBS 继续拒绝。Boolean 加密器/解密器保持独立，保留 LWE 私钥/公钥加密。
+
+完成状态见各步；剩余构造器名称和所有权在实施时结合现有类型确定。每步同步受影响调用方与文档，B1.7 只做集成收尾，不能把中途的编译或接口迁移问题留到最后。
+
+### B1.4：参数与 context 构造（已完成）
+
+- **入口**：[公共分解/CBS 配置](../crates/primus_tfhe/src/parameters.rs)、[GLWE 配置](../crates/primus_tfhe_glwe/src/parameters.rs)、[NTRU 配置](../crates/primus_tfhe_ntru/src/parameters.rs)。两族 `TfheParameters::try_from_config` 从一份 LWE 参数派生环域；四后端 `TfheContext::<_, Table>::try_from_parameters` 自动建表，CBS 的 `try_from_config` 派生环域并保留独立 output/trace/scheme-switch 分解与 trace/SS 噪声。
+- **边界**：现有 `try_new` 保留直接绑定底层参数/预计算 basis 或显式变换表的用途；未新增 trait 或安全默认值。无效 basis 返回带用途的错误；环布局、采样器和 codec 延续底层构造器的 panic 契约，见 rustdoc。GLWE 普通 BR/KS 仍共同使用 accumulator 噪声；NTRU KS 噪声独立配置。
+- **验证**：`RUSTDOCFLAGS='-D warnings' just tfhe`、`just tfhe-simd`，以及四后端共 8 个 release 示例通过。复用既有 CBS 相位/CMUX/零分配测试，仅增加轻量配置契约覆盖；在线 kernel、evaluator 工作区和支持组合未改变。
+- **下一步**：普通/CBS 密钥仍分别构造，归 B1.5；输出分配及低层消费参数归 B1.6。本步未进行耗时测量，不据此声称性能改善。
+
+#### B1.7 对照基线与恢复入口
+
+基线 `66ae701` 的流程是：分别构造 LWE 与环参数及带模数的 basis → 显式建表 → `TfheContext::try_new` → 配套普通/CBS 密钥。当前示例用具名配置与自动建表替换前两步；参数数值保持原样。
+
+| 后端 | 当前推荐工作流 | 基线已有的测量入口 |
+| --- | --- | --- |
+| GLWE NTT | [PBS/Boolean](../crates/primus_tfhe_glwe_ntt/examples/ntt_basic.rs)、[MVB](../crates/primus_tfhe_glwe_ntt/examples/mvb_thresholds.rs) | [完整 PBS](../crates/primus_tfhe_glwe_ntt/benches/pbs.rs) |
+| GLWE Fourier | [PBS/Boolean](../crates/primus_tfhe_glwe_fourier/examples/fourier_basic.rs)、[CBS](../crates/primus_tfhe_glwe_fourier/examples/circuit_bootstrap.rs) | [完整 PBS](../crates/primus_tfhe_glwe_fourier/benches/pbs.rs)、[B1.3 CBS](../crates/primus_tfhe_glwe_fourier/benches/circuit_bootstrap.rs) |
+| NTRU NTT | [PBS/ManyLUT](../crates/primus_tfhe_ntru_ntt/examples/ntru_ntt_basic.rs)、[CBS](../crates/primus_tfhe_ntru_ntt/examples/ntru_ntt_circuit_bootstrap.rs) | [完整 PBS](../crates/primus_tfhe_ntru_ntt/benches/pbs.rs) |
+| NTRU Fourier | [PBS/ManyLUT](../crates/primus_tfhe_ntru_fourier/examples/ntru_fourier_basic.rs)、[CBS](../crates/primus_tfhe_ntru_fourier/examples/ntru_fourier_circuit_bootstrap.rs) | [完整 PBS](../crates/primus_tfhe_ntru_fourier/benches/pbs.rs) |
+
+PBS 代表筛选为 `complete_pbs_reused_output$`；B1.3 CBS 的参数、采样与默认/SIMD 命令见 [CBS 专项](tfhe-cbs.md)。B1.7 在基线与新实现中使用相同负载重新采样；已有 CSV 仅是历史摘要，不替代对照测量，也不增加机械构造转发的独立基准。
+
+### B1.5：求值密钥组织与绑定
+
+- **前置**：B1.4。
+- **范围**：在 `ServerKey` 中聚合普通 PBS 材料和可选 CBS 配置、trace/scheme-switch 等附加材料；生成时显式选择能力，并从同一 client/context 生成配套材料。常用 CBS evaluator 构造只接收该 server key，不再要求调用方另传一组 CBS 参数和密钥。
+- **约束**：PBS-only 不生成或持有 CBS 大型材料；`CircuitBootstrapKey` 可作为组件或高级入口保留，不是普通调用方必须管理的第二份顶层密钥。保持 NTRU 可失败生成语义；缺失能力、参数/布局不兼容和未支持组合在构造 evaluator 时拒绝。
+- **身份边界**：结构聚合不能证明任意导入或手工组合材料来自同一秘密/变换表。保留已有可检查条件与不可检查的正确性契约，不用虚假的身份检查替代，也不为假想导入用途增加 ID 注册机制。
+- **验收**：普通 PBS 与 CBS 能从同一 `ServerKey` 构造各自 evaluator；PBS-only、CBS-enabled、缺失能力和不兼容配置有最少必要覆盖。保持 GLWE/NTRU 各自输出 basis 复用规则，迁移四后端生成入口与调用方；普通 PBS 密钥载荷和在线开销不因启用新组织方式而增长。
+
+### B1.6：CBS 输出与消费接口
+
+- **前置**：B1.5。
+- **范围**：由已绑定布局提供 CBS 输出分配入口；优先在现有 CBS evaluator 上提供绑定 basis、表与 scratch 的 CMUX/外积入口。增加 accumulator 域加密/解密适配器，集中准备对应秘密表示和可复用工作区，使 CBS→CMUX 示例使用高层工作流。
+- **约束**：明确外部 LWE 秘密域与 accumulator GLWE/NTRU 秘密域的区别，沿用现有客户端命名与所有权习惯；不把环密文操作塞进普通 LWE 加密器。输出仍是底层 GGSW/NGSW 或环密文，不添加仅转发访问器的密文包装。
+- **资源**：输出工厂的分配发生在准备阶段；在线 `*_to` 复用输出和 scratch，说明覆盖写入、允许的别名与输出表示。优先复用已有 CBS 工作区；新增消费 scratch 若无法复用，记录原因和大小。
+- **验收**：四后端的代表 CBS→CMUX 完整例子无需手工传 basis/table/scratch 或变换客户端秘密。利用既有相位、CMUX 与分配测试验证输出、跨调用复用和首次在线调用零分配；底层实验入口仍可直接使用。不为机械 wrapper 添加独立基准。
+
+### B1.7：跨后端集成与成本验收
+
+- **前置**：B1.4–B1.6。
+- **范围**：检查四后端公共名称、参数与密钥构造、能力拒绝、输出消费和 scratch 契约；清理本轮失去用途的转发、旧入口与重复资产，完成示例、双语 README 和专项文档的一致性收尾。
+- **验证**：运行 `just tfhe` / `just tfhe-simd`，对实际受影响且未被 recipe 覆盖的底层包补检查；沿用现有独立契约测试，不扩展分布×order×FFT 的完整组合矩阵。示例展示推荐工作流，低层数值测试仍可直接使用原语。
+- **性能**：以 `66ae701` 为改造前基线，复用 B1.3 CBS 基准及四后端已有代表完整 PBS 负载，在相同 CPU、工具链、features、参数和复用条件下比较。确认在线耗时无可归因的回退、首次调用零分配，并核对 PBS-only/CBS-enabled 的密钥载荷、构造资源与 scratch；新增 CMUX 绑定按等价完整消费流程对照，区分构造成本与在线成本。
+- **完成条件**：常用代码只需明确数学配置、生成配套密钥、构造所需 evaluator，再复用输入/输出；底层表示及高级实验入口仍可表达原有合法用法。若封装造成重复存储、变换或热路径回退，在本阶段解决并记录取舍，之后再执行 B2.1。
+
 ## B2：NTRU 两后端 Boolean
 
 入口：[现有 Boolean 层](../crates/primus_tfhe_glwe/src/boolean/mod.rs)、[完整 PBS trait](../crates/primus_tfhe/src/bootstrap.rs)、[NTRU 客户端](../crates/primus_tfhe_ntru/src/client/mod.rs)。
 
 ### B2.1：共享门算法与 NTRU 绑定
 
+- **前置**：B1.7 的高层接口整理；这是调用方迁移顺序，不要求 Boolean 使用 CBS 材料。
 - **范围**：把实际可共用的 Boolean 门预处理、LUT 和求值工作区移到合适的共享位置；同步迁移 GLWE，并接入 NTRU NTT/Fourier，使提取立即有两个 family 消费者。
 - **约束**：公共层不能反向依赖 family 的参数/客户端错误；以必要的普通参数或小型构造边界解决绑定，不增加万能参数 trait。保留独立 `BooleanEncryptor` / `BooleanDecryptor`、私钥/公钥加密和原始 `LweCiphertext`。
 - **验收**：外部 `t=4`、内部模 8 正负 LUT 尺度及输出平移一致；两族入口可构造、加密、求值和解密，GLWE 既有调用方同步迁移。

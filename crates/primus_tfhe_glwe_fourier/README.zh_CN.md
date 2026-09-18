@@ -6,7 +6,7 @@
 完整能力与编码约定见[公共指南](../primus_tfhe/README.zh_CN.md)，
 参数与秘密域见 [GLWE family](../primus_tfhe_glwe/README.zh_CN.md)。
 
-`Encryptor`、`Decryptor` 和 `TfheParameters` 是公共类型固定为 `NativeModulus` 的别名；
+`Encryptor`、`Decryptor`、`TfheConfig` 和 `TfheParameters` 是公共类型固定为 `NativeModulus` 的别名；
 `ClientKey`、`EncryptionKey` 和 `PbsOrder` 直接重导出。
 
 ## 运行完整示例
@@ -24,6 +24,10 @@ cargo run -p primus_tfhe_glwe_fourier --example fourier_basic
 所有 fixture 的维数、噪声和分解参数仅用于功能演示，不是生产安全或失败概率建议。
 
 ## Context 与复用
+
+先用 `TfheParameters::try_from_config(TfheConfig { .. })` 声明数学参数，再调用
+`TfheContext::<_, RustFftTable>::try_from_parameters(parameters)` 自动创建匹配的变换表。
+表类型仍由调用方选择，建表失败返回底层 FFT 错误；已有表可用 `try_new(parameters, table)` 显式注入。
 
 `TfheContext::try_new` 检查 FFT 长度。所有变换域密钥、值与 evaluator 必须使用同一
 FFT table 实例；长度相同不能证明表示兼容。示例使用 `RustFftTable`，也支持 `TfheFftTable`。
@@ -64,10 +68,11 @@ FFT engine 和 evaluator 从同一个 context 创建。
 经典 CBS 支持 binary/ternary small 秘密、两种 PBS order 和两种 FFT，输出为 accumulator
 私钥下的 Fourier GGSW。稀疏 CBS 尚不支持。
 
-通过 `CircuitBootstrapParameters::try_new(tfhe, output_basis, trace, scheme_switch)`
-传入 Native 输出 basis，以及独立的 Native `GlevParameters` / `GgswParameters`，
-分别用于 trace 和 scheme switch。构造器检查 accumulator GLWE 布局与补齐后的 gadget
-层数容量，并绑定输入明文模数。Scheme-switch key 绑定输出布局；层数相同的其他输出 basis
+通过 `CircuitBootstrapParameters::try_from_config(tfhe, config)` 指定
+`CircuitBootstrapConfig` 中的 output/trace/scheme-switch 分解及独立的 trace/SS 噪声。
+Native 模数、环布局与秘密分布从 accumulator 派生，构造器检查补齐后的 gadget
+层数容量并绑定输入明文模数。`try_new` 仍可直接绑定已有 basis 与 GLev/GGSW 参数。
+Scheme-switch key 绑定输出布局；层数相同的其他输出 basis
 可以复用该密钥。
 
 使用同一个 `ClientKey`，通过可复用的 `KeyGenerator` 依次调用

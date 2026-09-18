@@ -12,6 +12,10 @@ NTRU Boolean 适配器尚未实现。
 
 ## 普通 PBS 与 ManyLUT
 
+先用 `TfheParameters::try_from_config(TfheConfig { .. })` 声明数学参数，再调用
+`TfheContext::<_, RustFftTable>::try_from_parameters(parameters)` 自动创建匹配的变换表。
+表类型仍由调用方选择，建表失败返回底层 FFT 错误；已有表可用 `try_new(parameters, table)` 显式注入。
+
 `TfheContext` 绑定参数和变换 table。通过 `context.try_generate_keys` 生成配套密钥，
 建立 encryptor、evaluator、decryptor，再通过 `context.parameters()` 编译 LUT。[message/carry 示例](examples/ntru_fourier_basic.rs)
 展示多个输出共享一次 BR 和一次环密钥切换。普通 PBS 返回 client secret 下的 LWE；
@@ -43,6 +47,10 @@ LUT 编译的第一个参数为输出 `RoundedCodec`。示例采用 `t_in=16 →
 [NTRU 客户端契约](../primus_tfhe_ntru/README.zh_CN.md#客户端与-lut)。
 
 ## 可选 circuit bootstrapping
+
+使用 `CircuitBootstrapParameters::try_from_config(tfhe, config)`，通过
+`CircuitBootstrapConfig` 独立选择 output/trace/scheme-switch 分解和 trace/SS 噪声；
+长度、模数与 accumulator 秘密分布自动派生。`try_new` 仍可绑定已有 basis/NLev 参数。
 
 `CircuitBootstrapParameters`、`CircuitBootstrapKey` 和 `CircuitBootstrapEvaluator`
 提供可选 CBS 材料。使用 `context.try_generate_circuit_bootstrap_key` 和

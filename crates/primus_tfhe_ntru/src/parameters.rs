@@ -1,14 +1,38 @@
 use primus_encoding::RoundedCodec;
 use primus_integer::FheUint;
 use primus_lwe::LweParameters;
-use primus_ntru::{NlevParameters, NtruParameters};
+use primus_ntru::{NlevParameterError, NlevParameters, NtruParameters, SecretKeyDistr};
 use primus_reduce::RingContext;
+use primus_tfhe::DecompositionConfig;
 use primus_tfhe::rotation::RotationQuantizer;
 
 use crate::TfheParameterError::{
     CipherModulusMismatch, ClientSecretKeyDistributionMismatch, ClientSecretKeyMustBeBinary,
     InvalidLweDimension, PlainModulusMismatch, PolynomialLengthMismatch,
 };
+
+/// NTRU-TFHE choices with one shared ring length and modulus domain.
+///
+/// The accumulator and padded client NTRU parameters inherit `t` and `q` from
+/// `external_lwe`; the client NTRU secret inherits its distribution as well.
+#[derive(Clone)]
+pub struct TfheConfig<T: FheUint, M: RingContext<T>> {
+    /// External secret prefix, dimension, moduli and fresh LWE encryption noise.
+    pub external_lwe: LweParameters<T, M>,
+    /// Common NTRU polynomial length `N`.
+    pub poly_length: usize,
+    /// Coefficient distribution of the accumulator secret.
+    pub accumulator_secret_key_distr: SecretKeyDistr,
+    /// Standard deviation for accumulator and blind-rotation-key encryption.
+    pub accumulator_noise_standard_deviation: f64,
+    /// NLev initializer and NGSW control decomposition.
+    pub blind_rotation: DecompositionConfig,
+    /// Decomposition for the post-bootstrap NTRU key switch.
+    pub key_switching: DecompositionConfig,
+    /// Standard deviation for encryption under the padded client NTRU secret.
+    pub key_switching_noise_standard_deviation: f64,
+}
+
 /// Mathematical parameters for NTRU-based TFHE.
 ///
 /// The blind-rotation parameters describe ciphertexts under the accumulator
@@ -31,6 +55,45 @@ where
     T: FheUint,
     M: RingContext<T>,
 {
+    /// Derives both NTRU domains and their gadget parameters from named choices.
+    ///
+    /// Returns the compatibility errors of [`Self::try_new`] or an invalid
+    /// gadget decomposition error, with its blind-rotation/key-switch role.
+    ///
+    /// # Panics
+    ///
+    /// Inherits [`NtruParameters::new`]'s layout, sampler and codec requirements.
+    pub fn try_from_config(config: TfheConfig<T, M>) -> Result<Self, TfheParameterError> {
+        let modulus = config.external_lwe.cipher_modulus();
+        let accumulator = NtruParameters::new(
+            config.poly_length,
+            config.external_lwe.plain_modulus_value(),
+            modulus,
+            config.accumulator_secret_key_distr,
+            config.accumulator_noise_standard_deviation,
+        );
+        let client = NtruParameters::new(
+            config.poly_length,
+            config.external_lwe.plain_modulus_value(),
+            modulus,
+            config.external_lwe.secret_key_distr(),
+            config.key_switching_noise_standard_deviation,
+        );
+        let blind_rotation = NlevParameters::try_with_ntru_params(
+            &accumulator,
+            config.blind_rotation.log_basis,
+            config.blind_rotation.level_count,
+        )
+        .map_err(TfheParameterError::BootstrappingParameters)?;
+        let key_switching = NlevParameters::try_with_ntru_params(
+            &client,
+            config.key_switching.log_basis,
+            config.key_switching.level_count,
+        )
+        .map_err(TfheParameterError::KeySwitchingParameters)?;
+        Self::try_new(config.external_lwe, blind_rotation, key_switching)
+    }
+
     /// Creates one NTRU TFHE parameter set.
     ///
     /// # Errors
@@ -156,6 +219,12 @@ where
 /// An invalid combination of NTRU-based TFHE parameters.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum TfheParameterError {
+    /// Invalid NLev/NGSW decomposition or layout for blind rotation.
+    #[error("invalid NTRU bootstrapping parameters: {0}")]
+    BootstrappingParameters(NlevParameterError),
+    /// Invalid NLev decomposition or layout for the NTRU key switch.
+    #[error("invalid NTRU key-switching parameters: {0}")]
+    KeySwitchingParameters(NlevParameterError),
     /// The rotation domain `2N` cannot be represented by the input coefficient type.
     #[error("rotation domain must fit the input coefficient type")]
     RotationDomainTooLarge,

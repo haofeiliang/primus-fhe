@@ -1,15 +1,27 @@
 //! Independently selected gadget bases for NTRU circuit bootstrapping.
 
-use primus_decompose::primitive::ApproxSignedBasis;
+use primus_decompose::{ApproxSignedBasisError, primitive::ApproxSignedBasis};
 use primus_integer::FheUint;
 use primus_modulus::BarrettModulus;
 use primus_ntru::NlevParameters;
 
-use crate::TfheParameters;
+use crate::{CircuitBootstrapConfig, TfheParameters};
 
 /// An incompatible circuit-bootstrap parameter set.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum CircuitBootstrapParameterError {
+    /// The configured output radix or retained-level count is invalid.
+    #[error("invalid circuit-bootstrap output basis: {0}")]
+    InvalidOutputBasis(#[from] ApproxSignedBasisError),
+    /// A configured key decomposition or derived gadget layout is invalid.
+    #[error("invalid circuit-bootstrap {role} parameters: {source}")]
+    GadgetParameters {
+        /// Key role: trace or scheme-switch.
+        role: &'static str,
+        /// Invalid basis or gadget layout.
+        #[source]
+        source: primus_ntru::NlevParameterError,
+    },
     /// The output basis belongs to another explicit or native modulus.
     #[error("circuit-bootstrap output basis modulus does not match the accumulator")]
     OutputBasisModulusMismatch,
@@ -52,6 +64,45 @@ pub struct CircuitBootstrapParameters<T: FheUint> {
 }
 
 impl<T: FheUint> CircuitBootstrapParameters<T> {
+    /// Derives all CBS ring domains from TFHE, keeping bases and noise independent.
+    ///
+    /// Returns basis/layout errors or insufficient interleaved LUT capacity.
+    /// The direct [`Self::try_new`] constructor also accepts prepared bases and
+    /// independently constructed key parameters.
+    ///
+    /// # Panics
+    ///
+    /// Inherits [`primus_ntru::NtruParameters::new`]'s noise sampler requirements.
+    pub fn try_from_config(
+        tfhe: &TfheParameters<T>,
+        config: CircuitBootstrapConfig,
+    ) -> Result<Self, CircuitBootstrapParameterError> {
+        let accumulator = tfhe.accumulator_ntru();
+        let output_basis = config.output.try_build(accumulator.cipher_modulus())?;
+        let key_parameters = |role, decomposition: crate::DecompositionConfig, noise| {
+            let ring = primus_ntru::NtruParameters::new(
+                accumulator.poly_length(),
+                accumulator.plain_modulus(),
+                accumulator.cipher_modulus(),
+                accumulator.secret_key_distr(),
+                noise,
+            );
+            NlevParameters::try_with_ntru_params(
+                &ring,
+                decomposition.log_basis,
+                decomposition.level_count,
+            )
+            .map_err(|source| CircuitBootstrapParameterError::GadgetParameters { role, source })
+        };
+        let trace = key_parameters("trace", config.trace, config.trace_noise_standard_deviation)?;
+        let scheme_switch = key_parameters(
+            "scheme-switch",
+            config.scheme_switch,
+            config.scheme_switch_noise_standard_deviation,
+        )?;
+        Self::try_new(tfhe, output_basis, trace, scheme_switch)
+    }
+
     /// Checks the accumulator ring, modulus and capacity for the input domain.
     /// The output layout is derived from the TFHE accumulator and `output_basis`.
     pub fn try_new(

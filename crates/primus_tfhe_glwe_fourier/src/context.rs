@@ -28,6 +28,17 @@ where
     T: TorusFftValue,
     Table: FftTable,
 {
+    /// Builds the selected FFT table using the accumulator polynomial length.
+    ///
+    /// Returns the table constructor's error. Use [`Self::try_new`] to inject
+    /// an existing table instead; all transformed keys must use the bound table.
+    pub fn try_from_parameters(
+        parameters: TfheParameters<T>,
+    ) -> Result<Self, primus_fft::FftError> {
+        let table = Table::new(parameters.accumulator_glwe().poly_length().trailing_zeros())?;
+        Ok(Self { parameters, table })
+    }
+
     /// Binds TFHE parameters to a compatible Fourier table.
     pub fn try_new(parameters: TfheParameters<T>, table: Table) -> Result<Self, TfheContextError> {
         let expected = parameters.accumulator_glwe().poly_length();

@@ -6,7 +6,7 @@
 完整能力与编码约定见[公共指南](../primus_tfhe/README.zh_CN.md)，
 参数与秘密域见 [GLWE family](../primus_tfhe_glwe/README.zh_CN.md)。
 
-`Encryptor`、`Decryptor` 和 `TfheParameters` 是公共类型固定为 `BarrettModulus` 的别名；
+`Encryptor`、`Decryptor`、`TfheConfig` 和 `TfheParameters` 是公共类型固定为 `BarrettModulus` 的别名；
 `ClientKey`、`EncryptionKey` 和 `PbsOrder` 直接重导出。
 
 ## 运行完整示例
@@ -24,6 +24,10 @@ cargo run -p primus_tfhe_glwe_ntt --example ntt_basic
 所有 fixture 的维数、噪声和分解参数仅用于功能演示，不是生产安全或失败概率建议。
 
 ## Context 与复用
+
+先用 `TfheParameters::try_from_config(TfheConfig { .. })` 声明数学参数，再调用
+`TfheContext::<_, U32NttTable>::try_from_parameters(parameters)` 自动创建匹配的变换表。
+表类型仍由调用方选择，建表失败返回底层 NTT 错误；已有表可用 `try_new(parameters, table)` 显式注入。
 
 `TfheContext::try_new` 检查 NTT 长度和模数。NTT 域密钥与值必须采用所传 table 的表示。
 `boolean_parameters()` 是开发 fixture，不是经过论证的默认参数；示例直接选取自己的小参数。
@@ -143,12 +147,13 @@ NTT context/BR 要求 `MonomialNttTable`，仓库内置 NTT 表均实现此能�
 
 CBS 要求经典 server key；稀疏密钥返回
 `CircuitBootstrapEvaluationError::UnsupportedSparseBootstrapping`，其 gadget 尺度噪声尚未验收。
-可选 CBS 使用 `CircuitBootstrapParameters::try_new(context.parameters(),
-output_basis, trace, scheme_switch)`、`generate_circuit_bootstrap_key` 和
+可选 CBS 使用 `CircuitBootstrapParameters::try_from_config(context.parameters(), config)`、`generate_circuit_bootstrap_key` 和
 `circuit_bootstrap_evaluator`。普通与 CBS key 必须来自同一 client key 和 NTT 表示。
 输出 basis 定义 GGSW gadget 尺度，输出布局从 accumulator 派生；circuit key 绑定
 输出布局及 trace/scheme-switch basis。CBS 保留 accumulator secret，跳过普通 PBS
 后处理；投影与 CMUX 消费见 [CBS 集成测试](tests/circuit_bootstrap.rs)。
+`CircuitBootstrapConfig` 具名指定 output/trace/scheme-switch 分解和独立的 trace/SS 噪声，
+环参数从 accumulator 派生；`try_new` 保留已有底层参数的直接绑定入口。
 Trace/SS 噪声与秘密相关消息假设需要独立评估。
 
 ## 验证与性能

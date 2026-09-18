@@ -3,16 +3,18 @@
 //! Fixed seed and small functional parameters for demonstration only. CBS noise
 //! and secret-dependent-message security require a separate production assessment.
 
-use primus_decompose::primitive::ApproxSignedBasis;
-use primus_fft::{Complex64, FftTable, RustFftTable};
+use primus_fft::{Complex64, RustFftTable};
 use primus_lwe::LweParameters;
 use primus_modulus::NativeModulus;
 use primus_ntru::{
     FourierNgswCiphertext, FourierNtruCiphertext, FourierNtruExternalProductContext,
-    FourierNtruSecretKey, NlevParameters, NtruCiphertext, NtruParameters, SecretKeyDistr,
+    FourierNtruSecretKey, NtruCiphertext, SecretKeyDistr,
 };
 use primus_poly::Polynomial;
-use primus_tfhe_ntru_fourier::{CircuitBootstrapParameters, TfheContext, TfheParameters};
+use primus_tfhe_ntru_fourier::{
+    CircuitBootstrapConfig, CircuitBootstrapParameters, DecompositionConfig, TfheConfig,
+    TfheContext, TfheParameters,
+};
 use rand::{SeedableRng, rngs::StdRng};
 
 const N: usize = 256;
@@ -20,16 +22,24 @@ const N: usize = 256;
 fn main() {
     let modulus = NativeModulus::<u64>::new();
     let lwe = LweParameters::new(16, 4, modulus, SecretKeyDistr::UniformBinary, 0.7);
-    let accumulator = NtruParameters::new(N, 4, modulus, SecretKeyDistr::SparseTernary, 0.7);
-    let client_parameters = NtruParameters::new(N, 4, modulus, SecretKeyDistr::UniformBinary, 0.7);
-    let tfhe = TfheParameters::try_new(
-        lwe,
-        NlevParameters::with_ntru_params(&accumulator, 10, None),
-        NlevParameters::with_ntru_params(&client_parameters, 10, None),
-    )
+    let parameters = TfheParameters::try_from_config(TfheConfig {
+        external_lwe: lwe,
+        poly_length: N,
+        accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,
+        accumulator_noise_standard_deviation: 0.7,
+        blind_rotation: DecompositionConfig {
+            log_basis: 10,
+            level_count: None,
+        },
+        key_switching: DecompositionConfig {
+            log_basis: 10,
+            level_count: None,
+        },
+        key_switching_noise_standard_deviation: 0.7,
+    })
     .unwrap();
-    let context =
-        TfheContext::try_new(tfhe, RustFftTable::new(N.trailing_zeros()).unwrap()).unwrap();
+    let context = TfheContext::<_, RustFftTable>::try_from_parameters(parameters).unwrap();
+    let accumulator = context.parameters().accumulator_ntru();
     let mut rng = StdRng::seed_from_u64(0x004e_5454_5f43_4253);
     let (client_key, server_key) = context.try_generate_keys(&mut rng).unwrap();
     // All transformed values share this context's FFT table.
@@ -46,7 +56,7 @@ fn main() {
     let choices = [1, 3].map(|message| {
         let transformed = accumulator_key.encrypt(
             &Polynomial::new(vec![message; N]),
-            &accumulator,
+            accumulator,
             &mut fft,
             &mut rng,
             &mut encrypt,
@@ -56,12 +66,24 @@ fn main() {
         output
     });
     // CBS adds independent output, trace and scheme-switch bases.
-    let output_basis = ApproxSignedBasis::new(None, 8, Some(2));
-    let cbs_parameters = CircuitBootstrapParameters::try_new(
+    let cbs_parameters = CircuitBootstrapParameters::try_from_config(
         context.parameters(),
-        output_basis,
-        NlevParameters::with_ntru_params(&accumulator, 10, None),
-        NlevParameters::with_ntru_params(&accumulator, 10, None),
+        CircuitBootstrapConfig {
+            output: DecompositionConfig {
+                log_basis: 8,
+                level_count: Some(2),
+            },
+            trace: DecompositionConfig {
+                log_basis: 10,
+                level_count: None,
+            },
+            trace_noise_standard_deviation: 0.7,
+            scheme_switch: DecompositionConfig {
+                log_basis: 10,
+                level_count: None,
+            },
+            scheme_switch_noise_standard_deviation: 0.7,
+        },
     )
     .unwrap();
     let cbs_key = context
@@ -94,7 +116,7 @@ fn main() {
         selected.write_fourier_form(&mut transformed, &mut fft);
         assert_eq!(
             accumulator_key
-                .decrypt(&transformed, &accumulator, &mut fft, &mut decrypt)
+                .decrypt(&transformed, accumulator, &mut fft, &mut decrypt)
                 .as_ref(),
             &[if bit == 0 { 1 } else { 3 }; N]
         );

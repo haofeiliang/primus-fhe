@@ -47,11 +47,12 @@ pub use boolean::{
 };
 pub use client::{Decryptor, EncryptionKey, Encryptor, TfheClientError};
 pub use key::{ClientKey, TfheKeyError};
-pub use parameters::{PbsOrder, TfheParameterError, TfheParameters};
+pub use parameters::{PbsOrder, TfheConfig, TfheParameterError, TfheParameters};
 
 pub use primus_tfhe::{
-    BivariateLookupTable, InterleavedLookupTable, LookupTable, LookupTableError, LweCiphertext,
-    LweSecretKeyRef, ProgrammableBootstrap, ProgrammableBootstrapInterleaved, TfheEvaluationError,
+    BivariateLookupTable, CircuitBootstrapConfig, DecompositionConfig, InterleavedLookupTable,
+    LookupTable, LookupTableError, LweCiphertext, LweSecretKeyRef, ProgrammableBootstrap,
+    ProgrammableBootstrapInterleaved, TfheEvaluationError,
 };
 
 pub use primus_glwe::SecretKeyDistr;

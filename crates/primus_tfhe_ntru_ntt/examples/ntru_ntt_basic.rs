@@ -5,9 +5,11 @@
 use primus_encoding::RoundedCodec;
 use primus_lwe::{LweCiphertext, LweParameters};
 use primus_modulus::BarrettModulus;
-use primus_ntru::{NlevParameters, NtruParameters, SecretKeyDistr};
-use primus_ntt::{NttTable, U32NttTable};
-use primus_tfhe_ntru_ntt::{BivariateLookupTable, TfheContext, TfheParameters};
+use primus_ntru::SecretKeyDistr;
+use primus_ntt::U32NttTable;
+use primus_tfhe_ntru_ntt::{
+    BivariateLookupTable, DecompositionConfig, TfheConfig, TfheContext, TfheParameters,
+};
 
 fn main() {
     const N: usize = 256;
@@ -21,16 +23,23 @@ fn main() {
         SecretKeyDistr::UniformBinary,
         0.7,
     );
-    let accumulator = NtruParameters::new(N, 16, modulus, SecretKeyDistr::SparseTernary, 0.7);
-    let client = NtruParameters::new(N, 16, modulus, SecretKeyDistr::UniformBinary, 0.7);
-    let parameters = TfheParameters::try_new(
+    let parameters = TfheParameters::try_from_config(TfheConfig {
         external_lwe,
-        NlevParameters::with_ntru_params(&accumulator, 9, None),
-        NlevParameters::with_ntru_params(&client, 9, None),
-    )
+        poly_length: N,
+        accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,
+        accumulator_noise_standard_deviation: 0.7,
+        blind_rotation: DecompositionConfig {
+            log_basis: 9,
+            level_count: None,
+        },
+        key_switching: DecompositionConfig {
+            log_basis: 9,
+            level_count: None,
+        },
+        key_switching_noise_standard_deviation: 0.7,
+    })
     .unwrap();
-    let table = U32NttTable::new(N.trailing_zeros(), modulus).unwrap();
-    let context = TfheContext::try_new(parameters, table).unwrap();
+    let context = TfheContext::<_, U32NttTable>::try_from_parameters(parameters).unwrap();
 
     let mut rng = rand::rng();
     let (client_key, server_key) = context.try_generate_keys(&mut rng).unwrap();

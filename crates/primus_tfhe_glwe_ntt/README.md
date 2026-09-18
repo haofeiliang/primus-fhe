@@ -6,7 +6,7 @@ GLWE-based TFHE over an explicit field modulus. Supports both PBS orders, ManyLU
 Boolean gates and secret/public-key clients. See the [capability and encoding guide](../primus_tfhe/README.md)
 and [GLWE parameter/key domains](../primus_tfhe_glwe/README.md).
 
-`Encryptor`, `Decryptor` and `TfheParameters` specialize the shared types to
+`Encryptor`, `Decryptor`, `TfheConfig` and `TfheParameters` specialize the shared types to
 `BarrettModulus`; `ClientKey`, `EncryptionKey` and `PbsOrder` are re-exported directly.
 
 ## Run the complete example
@@ -27,6 +27,11 @@ All fixture dimensions, noise and decomposition choices are functional examples,
 not production security or failure-probability recommendations.
 
 ## Context and reuse
+
+Declare mathematical choices with `TfheParameters::try_from_config(TfheConfig { .. })`,
+then use `TfheContext::<_, U32NttTable>::try_from_parameters(parameters)` to build a
+matching transform table. The caller still selects the table type; construction
+returns the underlying NTT error. Use `try_new(parameters, table)` to inject an existing table.
 
 `TfheContext::try_new` checks the NTT length and modulus. NTT-domain keys and values
 must use the supplied table's NTT representation. `boolean_parameters()` is a
@@ -167,14 +172,16 @@ requires fixed-weight binary; the `SparseTernary` distribution does not select i
 
 CBS requires a classic server key; sparse keys return
 `CircuitBootstrapEvaluationError::UnsupportedSparseBootstrapping` because their
-gadget-scale noise has not been validated. Optional CBS uses `CircuitBootstrapParameters::try_new(context.parameters(),
-output_basis, trace, scheme_switch)`, `generate_circuit_bootstrap_key` and
+gadget-scale noise has not been validated. Optional CBS uses `CircuitBootstrapParameters::try_from_config(context.parameters(), config)`, `generate_circuit_bootstrap_key` and
 `circuit_bootstrap_evaluator`. Ordinary and CBS keys must come from the same client
 key and NTT representation. The output basis defines GGSW gadget scales; output
 layout comes from the accumulator. The circuit key binds output layout and the
 trace/scheme-switch bases. CBS preserves the accumulator secret and skips ordinary
 PBS's postprocessing; see the [CBS integration test](tests/circuit_bootstrap.rs)
-for projection and CMUX consumption. Trace/SS noise and key-dependent-message
+for projection and CMUX consumption. `CircuitBootstrapConfig` names output/trace/scheme-switch decompositions and independent
+trace/SS noise; ring parameters come from the accumulator. `try_new` retains direct binding
+of existing low-level parameters.
+Trace/SS noise and key-dependent-message
 assumptions need a separate assessment.
 
 ## Validation and performance

@@ -49,7 +49,8 @@ pub use context::TfheContext;
 pub use evaluator::Evaluator;
 pub use key::{KeyGenerator, ServerKey};
 pub use primus_tfhe::{
-    BivariateLookupTable, InterleavedLookupTable, LookupTable, LweCiphertext, LweSecretKeyRef,
+    BivariateLookupTable, CircuitBootstrapConfig, DecompositionConfig, InterleavedLookupTable,
+    LookupTable, LweCiphertext, LweSecretKeyRef,
 };
 pub use primus_tfhe_glwe::{ClientKey, EncryptionKey, PbsOrder};
 
@@ -69,3 +70,6 @@ pub type Decryptor<'a, T> = primus_tfhe_glwe::Decryptor<'a, T, NativeModulus<T>,
 /// GLWE-TFHE parameters for the native-torus Fourier backend.
 pub type TfheParameters<T> =
     primus_tfhe_glwe::TfheParameters<T, NativeModulus<T>, NativeModulus<T>>;
+
+/// Named mathematical choices for this backend; moduli are derived from the LWE parameters.
+pub type TfheConfig<T> = primus_tfhe_glwe::TfheConfig<T, NativeModulus<T>>;

@@ -6,7 +6,7 @@ GLWE-based TFHE over the native torus. Supports both PBS orders, ManyLUT,
 Boolean gates, classic CBS and secret/public-key clients. See the [capability and encoding guide](../primus_tfhe/README.md)
 and [GLWE parameter/key domains](../primus_tfhe_glwe/README.md).
 
-`Encryptor`, `Decryptor` and `TfheParameters` specialize the shared types to
+`Encryptor`, `Decryptor`, `TfheConfig` and `TfheParameters` specialize the shared types to
 `NativeModulus`; `ClientKey`, `EncryptionKey` and `PbsOrder` are re-exported directly.
 
 ## Run the complete example
@@ -27,6 +27,11 @@ All fixture dimensions, noise and decomposition choices are functional examples,
 not production security or failure-probability recommendations.
 
 ## Context and reuse
+
+Declare mathematical choices with `TfheParameters::try_from_config(TfheConfig { .. })`,
+then use `TfheContext::<_, RustFftTable>::try_from_parameters(parameters)` to build a
+matching transform table. The caller still selects the table type; construction
+returns the underlying FFT error. Use `try_new(parameters, table)` to inject an existing table.
 
 `TfheContext::try_new` checks the FFT length. Every transformed key, value and
 evaluator must use the same FFT table instance; matching lengths do not establish
@@ -78,10 +83,11 @@ Classic CBS supports binary/ternary small secrets, both PBS orders and both FFT
 engines. It produces Fourier GGSW under the accumulator secret. Sparse CBS is
 not supported.
 
-Construct `CircuitBootstrapParameters::try_new(tfhe, output_basis, trace, scheme_switch)`
-with a native output basis and independent native `GlevParameters` / `GgswParameters`
-for trace and scheme switching. It checks the accumulator GLWE layout and capacity
-for the padded gadget-level count, and binds the input plaintext modulus.
+Use `CircuitBootstrapParameters::try_from_config(tfhe, config)` with a
+`CircuitBootstrapConfig` naming output/trace/scheme-switch decompositions and independent
+trace/SS noise. The native modulus, ring layout and secret distribution come from the
+accumulator; construction checks padded gadget-level capacity and binds the input
+plaintext modulus. `try_new` also accepts existing bases and GLev/GGSW parameters.
 The scheme-switch key binds the output layout; another output basis with the same
 level count can reuse the key.
 

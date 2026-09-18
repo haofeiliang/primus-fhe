@@ -3,11 +3,11 @@
 //! These small parameters are for demonstration only, not for production.
 
 use primus_encoding::RoundedCodec;
-use primus_fft::{FftTable, RustFftTable};
+use primus_fft::RustFftTable;
 use primus_lwe::{LweCiphertext, LweParameters};
 use primus_modulus::NativeModulus;
-use primus_ntru::{NlevParameters, NtruParameters, SecretKeyDistr};
-use primus_tfhe_ntru_fourier::{TfheContext, TfheParameters};
+use primus_ntru::SecretKeyDistr;
+use primus_tfhe_ntru_fourier::{DecompositionConfig, TfheConfig, TfheContext, TfheParameters};
 
 fn main() {
     const N: usize = 256;
@@ -20,16 +20,23 @@ fn main() {
         SecretKeyDistr::UniformBinary,
         0.7,
     );
-    let accumulator = NtruParameters::new(N, 16, modulus, SecretKeyDistr::SparseTernary, 0.7);
-    let client = NtruParameters::new(N, 16, modulus, SecretKeyDistr::UniformBinary, 0.7);
-    let parameters = TfheParameters::try_new(
+    let parameters = TfheParameters::try_from_config(TfheConfig {
         external_lwe,
-        NlevParameters::with_ntru_params(&accumulator, 8, Some(4)),
-        NlevParameters::with_ntru_params(&client, 8, Some(4)),
-    )
+        poly_length: N,
+        accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,
+        accumulator_noise_standard_deviation: 0.7,
+        blind_rotation: DecompositionConfig {
+            log_basis: 8,
+            level_count: Some(4),
+        },
+        key_switching: DecompositionConfig {
+            log_basis: 8,
+            level_count: Some(4),
+        },
+        key_switching_noise_standard_deviation: 0.7,
+    })
     .unwrap();
-    let table = RustFftTable::new(N.trailing_zeros()).unwrap();
-    let context = TfheContext::try_new(parameters, table).unwrap();
+    let context = TfheContext::<_, RustFftTable>::try_from_parameters(parameters).unwrap();
 
     let mut rng = rand::rng();
     let (client_key, server_key) = context.try_generate_keys(&mut rng).unwrap();

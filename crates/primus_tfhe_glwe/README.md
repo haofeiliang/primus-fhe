@@ -14,6 +14,13 @@ The shared layer and both backends use the same role names: `Encryptor`, `Decryp
 
 ## Parameters and external key domain
 
+Prefer `TfheParameters::try_from_config(TfheConfig { .. })`: specify `t/q` once in
+`small_lwe`, then name the accumulator dimension, length, secret distribution and
+noise, the blind-rotation/key-switch `DecompositionConfig { log_basis, level_count }`,
+and PBS order. `level_count: None` retains the full decomposition; bases inherit
+the shared modulus. GLWE evaluation keys inherit accumulator noise. Use the direct
+constructor below when supplying existing ring parameters or prepared bases.
+
 `TfheParameters::try_new(small_lwe, accumulator_glwe, blind_rotation_basis,
 key_switching_basis, order)` derives BSK layout from the accumulator and the
 padded key-switch target from the small LWE. Plaintext and ciphertext moduli must

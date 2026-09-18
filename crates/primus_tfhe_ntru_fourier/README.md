@@ -13,6 +13,11 @@ PBS, ManyLUT and CBS; NTRU Boolean adapters are not implemented.
 
 ## Ordinary PBS and ManyLUT
 
+Declare mathematical choices with `TfheParameters::try_from_config(TfheConfig { .. })`,
+then use `TfheContext::<_, RustFftTable>::try_from_parameters(parameters)` to build a
+matching transform table. The caller still selects the table type; construction
+returns the underlying FFT error. Use `try_new(parameters, table)` to inject an existing table.
+
 `TfheContext` binds parameters and a transform table. Generate paired client/server
 keys with `context.try_generate_keys`, obtain an encryptor/evaluator/decryptor,
 and compile LUTs through `context.parameters()`.
@@ -48,6 +53,11 @@ Public-key noise, storage and key-identity requirements are described in the
 [NTRU client contract](../primus_tfhe_ntru/README.md#clients-and-luts).
 
 ## Optional circuit bootstrapping
+
+Use `CircuitBootstrapParameters::try_from_config(tfhe, config)` with a
+`CircuitBootstrapConfig` selecting output/trace/scheme-switch decompositions and
+independent trace/SS noise. Length, modulus and accumulator secret distribution are
+derived automatically. `try_new` still accepts existing bases/NLev parameters.
 
 `CircuitBootstrapParameters`, `CircuitBootstrapKey` and `CircuitBootstrapEvaluator`
 provide optional CBS material. Use `context.try_generate_circuit_bootstrap_key`

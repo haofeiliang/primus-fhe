@@ -3,16 +3,18 @@
 //! Fixed seed and small functional parameters for demonstration only. CBS noise
 //! and secret-dependent-message security require a separate production assessment.
 
-use primus_decompose::primitive::ApproxSignedBasis;
 use primus_lwe::LweParameters;
 use primus_modulus::BarrettModulus;
 use primus_ntru::{
-    NlevParameters, NtruCiphertext, NtruParameters, NttNgswCiphertext, NttNtruCiphertext,
-    NttNtruExternalProductContext, NttNtruSecretKey, SecretKeyDistr,
+    NtruCiphertext, NttNgswCiphertext, NttNtruCiphertext, NttNtruExternalProductContext,
+    NttNtruSecretKey, SecretKeyDistr,
 };
-use primus_ntt::{NttTable, U64NttTable};
+use primus_ntt::U64NttTable;
 use primus_poly::Polynomial;
-use primus_tfhe_ntru_ntt::{CircuitBootstrapParameters, TfheContext, TfheParameters};
+use primus_tfhe_ntru_ntt::{
+    CircuitBootstrapConfig, CircuitBootstrapParameters, DecompositionConfig, TfheConfig,
+    TfheContext, TfheParameters,
+};
 use rand::{SeedableRng, rngs::StdRng};
 
 const N: usize = 256;
@@ -21,16 +23,24 @@ const Q: u64 = 1_125_899_906_826_241;
 fn main() {
     let modulus = BarrettModulus::new(Q);
     let lwe = LweParameters::new(16, 4, modulus, SecretKeyDistr::UniformBinary, 0.7);
-    let accumulator = NtruParameters::new(N, 4, modulus, SecretKeyDistr::SparseTernary, 0.7);
-    let client_parameters = NtruParameters::new(N, 4, modulus, SecretKeyDistr::UniformBinary, 0.7);
-    let tfhe = TfheParameters::try_new(
-        lwe,
-        NlevParameters::with_ntru_params(&accumulator, 10, None),
-        NlevParameters::with_ntru_params(&client_parameters, 10, None),
-    )
+    let parameters = TfheParameters::try_from_config(TfheConfig {
+        external_lwe: lwe,
+        poly_length: N,
+        accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,
+        accumulator_noise_standard_deviation: 0.7,
+        blind_rotation: DecompositionConfig {
+            log_basis: 10,
+            level_count: None,
+        },
+        key_switching: DecompositionConfig {
+            log_basis: 10,
+            level_count: None,
+        },
+        key_switching_noise_standard_deviation: 0.7,
+    })
     .unwrap();
-    let context =
-        TfheContext::try_new(tfhe, U64NttTable::new(N.trailing_zeros(), modulus).unwrap()).unwrap();
+    let context = TfheContext::<_, U64NttTable>::try_from_parameters(parameters).unwrap();
+    let accumulator = context.parameters().accumulator_ntru();
     let mut rng = StdRng::seed_from_u64(0x004e_5454_5f43_4253);
     let (client_key, server_key) = context.try_generate_keys(&mut rng).unwrap();
     // CMUX candidates are encrypted under f_acc, the CBS output secret.
@@ -44,7 +54,7 @@ fn main() {
     let choices = [1, 3].map(|message| {
         let transformed = accumulator_key.encrypt(
             &Polynomial::new(vec![message; N]),
-            &accumulator,
+            accumulator,
             context.table(),
             &mut rng,
         );
@@ -53,12 +63,24 @@ fn main() {
         output
     });
     // CBS adds independent output, trace and scheme-switch bases.
-    let output_basis = ApproxSignedBasis::new(Some(Q), 8, Some(2));
-    let cbs_parameters = CircuitBootstrapParameters::try_new(
+    let cbs_parameters = CircuitBootstrapParameters::try_from_config(
         context.parameters(),
-        output_basis,
-        NlevParameters::with_ntru_params(&accumulator, 10, None),
-        NlevParameters::with_ntru_params(&accumulator, 10, None),
+        CircuitBootstrapConfig {
+            output: DecompositionConfig {
+                log_basis: 8,
+                level_count: Some(2),
+            },
+            trace: DecompositionConfig {
+                log_basis: 10,
+                level_count: None,
+            },
+            trace_noise_standard_deviation: 0.7,
+            scheme_switch: DecompositionConfig {
+                log_basis: 10,
+                level_count: None,
+            },
+            scheme_switch_noise_standard_deviation: 0.7,
+        },
     )
     .unwrap();
     let cbs_key = context
@@ -91,7 +113,7 @@ fn main() {
         selected.write_ntt_form(&mut transformed, context.table());
         assert_eq!(
             accumulator_key
-                .decrypt(&transformed, &accumulator, context.table())
+                .decrypt(&transformed, accumulator, context.table())
                 .as_ref(),
             &[if bit == 0 { 1 } else { 3 }; N]
         );

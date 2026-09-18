@@ -57,8 +57,8 @@ pub use evaluator::{Evaluator, FactorizedEvaluator, NttFactorizedLookupTable};
 pub use key::{BootstrappingKey, KeyGenerator, ServerKey};
 pub use parameters::{TfheParameters, boolean_parameters};
 pub use primus_tfhe::{
-    BivariateLookupTable, FactorizedLookupTable, InterleavedLookupTable, LookupTable,
-    LweCiphertext, LweSecretKeyRef,
+    BivariateLookupTable, CircuitBootstrapConfig, DecompositionConfig, FactorizedLookupTable,
+    InterleavedLookupTable, LookupTable, LweCiphertext, LweSecretKeyRef,
 };
 pub use primus_tfhe_glwe::{ClientKey, EncryptionKey, PbsOrder};
 pub use sparse::{
@@ -78,3 +78,6 @@ pub type Encryptor<'a, T, Key = ClientKey<T>> =
 /// Client-key decryptor for the explicit-modulus NTT backend.
 pub type Decryptor<'a, T> =
     primus_tfhe_glwe::Decryptor<'a, T, BarrettModulus<T>, BarrettModulus<T>>;
+
+/// Named mathematical choices for this backend; moduli are derived from the LWE parameters.
+pub type TfheConfig<T> = primus_tfhe_glwe::TfheConfig<T, BarrettModulus<T>>;

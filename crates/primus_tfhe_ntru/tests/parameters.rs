@@ -1,10 +1,58 @@
 use primus_lwe::LweParameters;
 use primus_modulus::BarrettModulus;
 use primus_ntru::{NlevParameters, NtruParameters, SecretKeyDistr};
-use primus_tfhe_ntru::{TfheParameterError, TfheParameters};
+use primus_tfhe_ntru::{DecompositionConfig, TfheConfig, TfheParameterError, TfheParameters};
 
 const N: usize = 256;
 const Q: u32 = 132_120_577;
+
+#[test]
+fn config_derives_domains_and_keeps_key_switch_noise_independent() {
+    let config = TfheConfig {
+        external_lwe: LweParameters::new(
+            8,
+            4,
+            BarrettModulus::new(Q),
+            SecretKeyDistr::UniformBinary,
+            0.7,
+        ),
+        poly_length: N,
+        accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,
+        accumulator_noise_standard_deviation: 1.25,
+        blind_rotation: DecompositionConfig {
+            log_basis: 9,
+            level_count: Some(3),
+        },
+        key_switching: DecompositionConfig {
+            log_basis: 6,
+            level_count: Some(4),
+        },
+        key_switching_noise_standard_deviation: 2.5,
+    };
+    let parameters = TfheParameters::try_from_config(config.clone()).unwrap();
+    let accumulator = parameters.accumulator_ntru();
+    let client = parameters.ntru_key_switching().ntru();
+    for ring in [accumulator, client] {
+        assert_eq!(ring.poly_length(), N);
+        assert_eq!(ring.cipher_modulus_value(), Some(Q));
+        assert_eq!(ring.plain_modulus(), 4);
+    }
+    assert_eq!(
+        accumulator.secret_key_distr(),
+        SecretKeyDistr::SparseTernary
+    );
+    assert_eq!(client.secret_key_distr(), SecretKeyDistr::UniformBinary);
+    assert_eq!(accumulator.noise_distribution().standard_deviation(), 1.25);
+    assert_eq!(client.noise_distribution().standard_deviation(), 2.5);
+    assert_eq!(parameters.blind_rotation().basis().log_basis(), 9);
+    assert_eq!(parameters.ntru_key_switching().basis().log_basis(), 6);
+    let mut invalid = config;
+    invalid.key_switching.level_count = Some(0);
+    assert!(matches!(
+        TfheParameters::try_from_config(invalid),
+        Err(TfheParameterError::KeySwitchingParameters(_))
+    ));
+}
 
 fn ntru(
     poly_length: usize,

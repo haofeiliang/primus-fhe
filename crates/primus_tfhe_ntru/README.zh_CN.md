@@ -9,6 +9,12 @@
 
 ## 参数与密钥域
 
+推荐使用 `TfheParameters::try_from_config(TfheConfig { .. })`：`external_lwe` 提供
+外部维数、秘密分布、`t/q` 与客户端加密噪声；具名字段选择公共环长度、accumulator
+分布与噪声、两种 `DecompositionConfig { log_basis, level_count }` 和独立的
+key-switch 噪声。客户端 NTRU 域自动复用外部秘密分布与公共环参数，无需重复构造。
+`level_count: None` 保留完整分解。已持有 NLev 参数时也可使用下述直接入口。
+
 `TfheParameters::try_new(external_lwe, blind_rotation, ntru_key_switching)` 将外部 LWE
 绑定到 `f_client` 的二进制前缀，该 NTRU 秘密的其余系数为零。
 `blind_rotation` 描述 `f_acc` 下的 accumulator，`ntru_key_switching` 描述返回 `f_client` 的切换。

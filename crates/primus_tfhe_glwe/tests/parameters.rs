@@ -2,7 +2,7 @@ use primus_decompose::primitive::ApproxSignedBasis;
 use primus_glwe::{GlweParameters, SecretKeyDistr};
 use primus_lwe::LweParameters;
 use primus_modulus::NativeModulus;
-use primus_tfhe_glwe::{PbsOrder, TfheParameters};
+use primus_tfhe_glwe::{DecompositionConfig, PbsOrder, TfheConfig, TfheParameters};
 
 const LWE_DIMENSION: usize = 630;
 const GLWE_DIMENSION: usize = 1;
@@ -41,8 +41,28 @@ fn derives_bootstrapping_and_key_switching_for_both_orders() {
         let (small_lwe, glwe, bootstrapping) = components();
         let expected_blind_rotation_basis = bootstrapping.clone();
         let basis = ApproxSignedBasis::new(None, 4, Some(4));
-        let parameters =
-            TfheParameters::try_new(small_lwe, glwe, bootstrapping, basis.clone(), order).unwrap();
+        let parameters = TfheParameters::try_from_config(TfheConfig {
+            small_lwe,
+            accumulator_dimension: GLWE_DIMENSION,
+            poly_length: POLY_LENGTH,
+            accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,
+            accumulator_noise_standard_deviation: 3.2,
+            blind_rotation: DecompositionConfig {
+                log_basis: 8,
+                level_count: Some(3),
+            },
+            key_switching: DecompositionConfig {
+                log_basis: 4,
+                level_count: Some(4),
+            },
+            pbs_order: order,
+        })
+        .unwrap();
+        assert!(parameters.accumulator_glwe().inner() == glwe.inner());
+        assert_eq!(
+            parameters.accumulator_glwe().plain_modulus_value(),
+            PLAIN_MODULUS
+        );
 
         assert_eq!(
             parameters.blind_rotation_ggsw().basis(),

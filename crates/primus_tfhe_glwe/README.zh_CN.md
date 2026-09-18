@@ -13,6 +13,12 @@ GLWE 表示 PBS 累加器所属的方案家族。
 
 ## 参数与外部密钥域
 
+推荐使用 `TfheParameters::try_from_config(TfheConfig { .. })`：只在 `small_lwe`
+中指定一次 `t/q`，具名字段选择 accumulator 的维数、长度、秘密分布和噪声，以及
+blind rotation、key switching 的 `DecompositionConfig { log_basis, level_count }`
+和 PBS order。`level_count: None` 保留完整分解；各 basis 自动绑定同一模数。
+GLWE evaluation key 沿用 accumulator 噪声。已持有环参数或预计算 basis 时，使用下述直接入口。
+
 `TfheParameters::try_new(small_lwe, accumulator_glwe, blind_rotation_basis,
 key_switching_basis, order)` 从 accumulator 派生 BSK 布局，从 small LWE 派生
 补零的密钥切换目标。明文与密文模数必须匹配，small secret 支持 binary 或 ternary 家族，且 `n <= kN`。

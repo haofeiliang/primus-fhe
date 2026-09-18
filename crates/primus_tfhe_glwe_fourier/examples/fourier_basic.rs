@@ -2,13 +2,15 @@
 //!
 //! Small functional parameters for demonstration, not production use.
 
-use primus_decompose::primitive::ApproxSignedBasis;
 use primus_encoding::RoundedCodec;
-use primus_fft::{FftTable, RustFftTable};
-use primus_glwe::{GlweParameters, SecretKeyDistr};
+use primus_fft::RustFftTable;
+use primus_glwe::SecretKeyDistr;
 use primus_lwe::LweParameters;
 use primus_modulus::NativeModulus;
-use primus_tfhe_glwe_fourier::{BooleanGate, LweCiphertext, PbsOrder, TfheContext, TfheParameters};
+use primus_tfhe_glwe_fourier::{
+    BooleanGate, DecompositionConfig, LweCiphertext, PbsOrder, TfheConfig, TfheContext,
+    TfheParameters,
+};
 
 const LWE_DIMENSION: usize = 4;
 const GLWE_DIMENSION: usize = 1;
@@ -24,29 +26,27 @@ fn parameters(order: PbsOrder) -> TfheParameters<u32> {
         SecretKeyDistr::UniformTernary,
         0.7,
     );
-    let glwe = GlweParameters::new(
-        GLWE_DIMENSION,
-        POLY_LENGTH,
-        PLAINTEXT_MODULUS,
-        NativeModulus::new(),
-        SecretKeyDistr::UniformBinary,
-        0.7,
-    );
-    let bootstrapping = ApproxSignedBasis::new(glwe.cipher_modulus_value(), 8, Some(3));
-    TfheParameters::try_new(
-        lwe,
-        glwe,
-        bootstrapping,
-        ApproxSignedBasis::new(None, 4, Some(4)),
-        order,
-    )
+    TfheParameters::try_from_config(TfheConfig {
+        small_lwe: lwe,
+        accumulator_dimension: GLWE_DIMENSION,
+        poly_length: POLY_LENGTH,
+        accumulator_secret_key_distr: SecretKeyDistr::UniformBinary,
+        accumulator_noise_standard_deviation: 0.7,
+        blind_rotation: DecompositionConfig {
+            log_basis: 8,
+            level_count: Some(3),
+        },
+        key_switching: DecompositionConfig {
+            log_basis: 4,
+            level_count: Some(4),
+        },
+        pbs_order: order,
+    })
     .unwrap()
 }
 
 fn run(order: PbsOrder) {
-    // A context binds mathematical parameters to a particular FFT table.
-    let table = RustFftTable::new(POLY_LENGTH.trailing_zeros()).unwrap();
-    let context = TfheContext::try_new(parameters(order), table).unwrap();
+    let context = TfheContext::<_, RustFftTable>::try_from_parameters(parameters(order)).unwrap();
 
     // The client key decrypts; the server key only evaluates homomorphically.
     let mut rng = rand::rng();

@@ -12,7 +12,7 @@
 
 可以明确安排的工程补齐包括：
 
-1. **GLWE Fourier 经典 CBS**：B1 已完成完整链、误差/成本测量与使用示例，见 [CBS 专项](tfhe-cbs.md)。
+1. **GLWE Fourier 经典 CBS**：B1.1–B1.3 已完成完整链、误差/成本测量与使用示例，见 [CBS 专项](tfhe-cbs.md)。
 2. **NTRU 两后端 Boolean 适配**：现有完整 LWE→LWE PBS 能承载同一套门运算。
 3. **NTRU NTT 分解式 MVB**：现有奇数模数分解、NTRU 公开多项式乘法、KS 和提取足以组成流程。
 4. **GLWE Fourier 固定重量二元稀疏 PBS**：桶聚合代数可迁移，先实现系数域聚合的参考路径；收益须独立测量。
@@ -93,7 +93,7 @@ NTT 在可用的显式模数环内做精确变换；Fourier 用原生整数表�
 
 ### 4.1 GLWE Fourier 经典 CBS
 
-**B1 已完成。** [CBS 模块](../crates/primus_tfhe_glwe_fourier/src/circuit_bootstrap/mod.rs)提供参数、附加密钥与完整 evaluator，KeyGenerator/context 提供生成与求值入口。复用普通 evaluator 的前置 KS/BR 与 FFT 工作区，再接 `FourierGlweTraceKey::project_prefix_coefficients_to` 和 `FourierGlweSchemeSwitchKey::apply_to`。四后端的 CBS 均直接按 gadget 层数投影前缀，不保存连续索引数组。
+**B1.1–B1.3 已完成。** [CBS 模块](../crates/primus_tfhe_glwe_fourier/src/circuit_bootstrap/mod.rs)提供参数、附加密钥与完整 evaluator，KeyGenerator/context 提供生成与求值入口。复用普通 evaluator 的前置 KS/BR 与 FFT 工作区，再接 `FourierGlweTraceKey::project_prefix_coefficients_to` 和 `FourierGlweSchemeSwitchKey::apply_to`。四后端的 CBS 均直接按 gadget 层数投影前缀，不保存连续索引数组。
 
 阶段划分：
 
@@ -228,7 +228,7 @@ Full-domain FDFB、通用数字拆分、HLUT/LFBS、multi-bit 等属于[新算�
 
 ## 7. 建议执行顺序与验收规模
 
-1. **先补高层明确缺口**：GLWE Fourier 经典 CBS 的 B1 已完成；下一项 NTRU Boolean 可独立实施。
+1. **先整理高层接口，再补明确缺口**：GLWE Fourier 经典 CBS 的 B1.1–B1.3、四后端具名参数/自动建表的 B1.4 已完成；按[分步计划](tfhe-backend-plan.md)继续 B1.5–B1.7 的求值密钥、CBS 消费接口与集成验收，再接 B2 的 NTRU Boolean。此顺序减少重复迁移，Boolean 算法本身不依赖 CBS。
 2. **再扩展已有多输出路线**：NTRU NTT MVB；同步补 GLWE NTT sparse×Boolean/bivariate/odd-full 的小型组合验证。
 3. **处理性能型移植与受限表示**：GLWE Fourier sparse PBS、Native 偶尺度 MVB。先完成参考路径，再测收益，避免一次混入频域聚合等额外优化。
 4. **按实际应用选择实验组合**：NTT sparse CBS、NTRU ternary、NTRU sparse；分别通过前置条件后，再组合到其他上层功能。

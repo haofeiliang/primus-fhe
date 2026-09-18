@@ -9,6 +9,14 @@ See the [shared capability and encoding guide](../primus_tfhe/README.md).
 
 ## Parameters and key domains
 
+Prefer `TfheParameters::try_from_config(TfheConfig { .. })`: `external_lwe` supplies
+the external dimension, secret distribution, `t/q` and client encryption noise.
+Named fields select the common ring length, accumulator distribution/noise, two
+`DecompositionConfig { log_basis, level_count }` values and independent key-switch
+noise. The client NTRU domain inherits the external secret distribution and common
+ring parameters. `level_count: None` retains the full decomposition. The direct
+constructor below also accepts existing NLev parameters.
+
 `TfheParameters::try_new(external_lwe, blind_rotation, ntru_key_switching)` binds the
 external LWE to a binary prefix of `f_client`; the rest of that NTRU secret is zero.
 `blind_rotation` describes the accumulator under `f_acc`, and `ntru_key_switching`

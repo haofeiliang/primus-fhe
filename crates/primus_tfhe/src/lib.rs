@@ -8,6 +8,7 @@
 mod bootstrap;
 mod error;
 mod lookup_table;
+mod parameters;
 
 pub mod rotation;
 
@@ -17,4 +18,5 @@ pub use lookup_table::{
     BivariateLookupTable, FactorizedLookupTable, InterleavedLookupTable, LookupTable,
     front_half_domain_len,
 };
+pub use parameters::{CircuitBootstrapConfig, DecompositionConfig};
 pub use primus_lwe::{LweCiphertext, LweSecretKeyRef};

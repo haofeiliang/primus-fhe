@@ -21,6 +21,21 @@ where
     T: FheUint,
     Table: NttTable<ValueT = T>,
 {
+    /// Builds the selected NTT table using the accumulator length and modulus.
+    ///
+    /// Returns the table constructor's error, including an unavailable primitive
+    /// root or unsupported modulus. Use [`Self::try_new`] to inject an existing table.
+    pub fn try_from_parameters(
+        parameters: TfheParameters<T>,
+    ) -> Result<Self, primus_ntt::NttError<T>> {
+        let accumulator = parameters.accumulator_ntru();
+        let table = Table::new(
+            accumulator.poly_length().trailing_zeros(),
+            accumulator.cipher_modulus(),
+        )?;
+        Ok(Self { parameters, table })
+    }
+
     /// Binds parameters to a compatible NTT table.
     pub fn try_new(
         parameters: TfheParameters<T>,

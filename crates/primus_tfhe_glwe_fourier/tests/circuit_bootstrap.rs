@@ -15,8 +15,9 @@ use primus_lwe::{LweCiphertext, LweParameters};
 use primus_modulus::NativeModulus;
 use primus_poly::Polynomial;
 use primus_tfhe_glwe_fourier::{
-    CircuitBootstrapEvaluationError, CircuitBootstrapKeyError, CircuitBootstrapParameterError,
-    CircuitBootstrapParameters, ClientKey, KeyGenerator, PbsOrder, TfheContext, TfheParameters,
+    CircuitBootstrapConfig, CircuitBootstrapEvaluationError, CircuitBootstrapKeyError,
+    CircuitBootstrapParameterError, CircuitBootstrapParameters, ClientKey, DecompositionConfig,
+    KeyGenerator, PbsOrder, TfheContext, TfheParameters,
 };
 use rand::{RngExt, SeedableRng, rngs::StdRng};
 
@@ -65,11 +66,24 @@ fn parameters_with_order_and_distribution(
 }
 
 fn circuit_parameters(tfhe: &TfheParameters<u64>) -> CircuitBootstrapParameters<u64> {
-    CircuitBootstrapParameters::try_new(
+    CircuitBootstrapParameters::try_from_config(
         tfhe,
-        ApproxSignedBasis::new(None, 8, Some(3)),
-        GlevParameters::with_glwe_params(tfhe.accumulator_glwe(), 8, Some(7)),
-        GlevParameters::with_glwe_params(tfhe.accumulator_glwe(), 10, Some(5)),
+        CircuitBootstrapConfig {
+            output: DecompositionConfig {
+                log_basis: 8,
+                level_count: Some(3),
+            },
+            trace: DecompositionConfig {
+                log_basis: 8,
+                level_count: Some(7),
+            },
+            trace_noise_standard_deviation: 0.7,
+            scheme_switch: DecompositionConfig {
+                log_basis: 10,
+                level_count: Some(5),
+            },
+            scheme_switch_noise_standard_deviation: 0.7,
+        },
     )
     .unwrap()
 }
@@ -100,9 +114,8 @@ fn phase(ciphertext: &[u64], secret: &[i64]) -> Vec<u64> {
 }
 
 fn circuit_bootstrap<Table: FftTable>(order: PbsOrder, distribution: SecretKeyDistr) {
-    let context = TfheContext::try_new(
+    let context = TfheContext::<_, Table>::try_from_parameters(
         parameters_with_order_and_distribution(DIMENSION, POLY_LENGTH, 4, order, distribution),
-        Table::new(POLY_LENGTH.trailing_zeros()).unwrap(),
     )
     .unwrap();
     let parameters = circuit_parameters(context.parameters());
@@ -320,6 +333,50 @@ fn evaluator_rejects_resource_mismatches_and_checks_shapes_before_writes() {
 fn circuit_parameters_check_native_basis_layout_and_padded_capacity() {
     use CircuitBootstrapParameterError as Error;
     let tfhe = parameters(DIMENSION, POLY_LENGTH, POLY_LENGTH as u64);
+    let config = CircuitBootstrapConfig {
+        output: DecompositionConfig {
+            log_basis: 8,
+            level_count: Some(2),
+        },
+        trace: DecompositionConfig {
+            log_basis: 9,
+            level_count: Some(3),
+        },
+        trace_noise_standard_deviation: 1.25,
+        scheme_switch: DecompositionConfig {
+            log_basis: 10,
+            level_count: Some(4),
+        },
+        scheme_switch_noise_standard_deviation: 2.5,
+    };
+    let configured = CircuitBootstrapParameters::try_from_config(&tfhe, config).unwrap();
+    assert_eq!(
+        configured.output_size().glwe_size(),
+        tfhe.accumulator_glwe().size()
+    );
+    assert_eq!(configured.trace().basis().log_basis(), 9);
+    assert_eq!(configured.trace().basis().decompose_length(), 3);
+    assert_eq!(configured.trace().noise_standard_deviation(), 1.25);
+    assert_eq!(configured.scheme_switch().basis().log_basis(), 10);
+    assert_eq!(configured.scheme_switch().basis().decompose_length(), 4);
+    assert_eq!(configured.scheme_switch().noise_standard_deviation(), 2.5);
+    for role in ["output", "trace", "scheme-switch"] {
+        let mut invalid = config;
+        match role {
+            "output" => invalid.output.level_count = Some(0),
+            "trace" => invalid.trace.level_count = Some(0),
+            _ => invalid.scheme_switch.level_count = Some(0),
+        }
+        let error = CircuitBootstrapParameters::try_from_config(&tfhe, invalid)
+            .err()
+            .unwrap();
+        match role {
+            "output" => assert!(matches!(error, Error::InvalidOutputBasis(_))),
+            _ => assert!(
+                matches!(error, Error::GadgetParameters { role: actual, .. } if actual == role)
+            ),
+        }
+    }
     let trace = tfhe.blind_rotation_ggsw();
     let make =
         |basis| CircuitBootstrapParameters::try_new(&tfhe, basis, trace.clone(), trace.clone());

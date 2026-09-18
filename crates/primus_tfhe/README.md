@@ -33,6 +33,12 @@ Sparse CBS is not supported.
 
 ## LUTs and resource lifetime
 
+Backends accept named `TfheConfig` choices and derive shared ring parameters;
+`TfheContext::try_from_parameters` creates the selected transform table.
+This crate supplies `DecompositionConfig` (radix and retained levels) and
+`CircuitBootstrapConfig` (independent output/trace/scheme-switch choices).
+Backends bind these choices to their own modulus, layout and representation.
+
 1. A family parameter set describes the external LWE and accumulator ring.
 2. A backend context binds those parameters to an NTT/FFT table and generates
    paired client/server keys.

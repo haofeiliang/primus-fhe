@@ -28,12 +28,13 @@ mod parameters;
 
 pub use client::{Decryptor, EncryptionKey, Encryptor, TfheClientError};
 pub use key::{ClientKey, TfheKeyError};
-pub use parameters::{TfheParameterError, TfheParameters};
+pub use parameters::{TfheConfig, TfheParameterError, TfheParameters};
 
 pub use primus_ntru::{NlevParameters, NtruParameters, NtruSecretKey};
 pub use primus_tfhe::{
-    BivariateLookupTable, InterleavedLookupTable, LookupTable, LookupTableError, LweCiphertext,
-    LweSecretKeyRef, ProgrammableBootstrap, ProgrammableBootstrapInterleaved, TfheEvaluationError,
+    BivariateLookupTable, CircuitBootstrapConfig, DecompositionConfig, InterleavedLookupTable,
+    LookupTable, LookupTableError, LweCiphertext, LweSecretKeyRef, ProgrammableBootstrap,
+    ProgrammableBootstrapInterleaved, TfheEvaluationError,
 };
 
 /// LWE public key used by the public-key client encryptor.

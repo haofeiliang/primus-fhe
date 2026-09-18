@@ -10,11 +10,11 @@ use primus_lattice::{
 };
 use primus_lwe::{LweCiphertext, LweParameters};
 use primus_modulus::BarrettModulus;
-use primus_ntt::{NttTable, U64NttTable};
+use primus_ntt::U64NttTable;
 use primus_poly::Polynomial;
 use primus_tfhe_glwe_ntt::{
-    CircuitBootstrapEvaluationError, CircuitBootstrapParameters, KeyGenerator, PbsOrder,
-    TfheContext, TfheParameters,
+    CircuitBootstrapConfig, CircuitBootstrapEvaluationError, CircuitBootstrapParameters,
+    DecompositionConfig, KeyGenerator, PbsOrder, TfheContext, TfheParameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -66,8 +66,7 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
     ] {
         let tfhe = parameters(order, 4, distribution);
         let modulus = BarrettModulus::new(MODULUS);
-        let table = U64NttTable::new(POLY_LENGTH.trailing_zeros(), modulus).unwrap();
-        let context = TfheContext::try_new(tfhe, table).unwrap();
+        let context = TfheContext::<_, U64NttTable>::try_from_parameters(tfhe).unwrap();
         let mut rng = StdRng::seed_from_u64(0x0050_4154_4348_4544 ^ order as u64);
         let (client_key, server_key) = context.generate_keys(&mut rng).unwrap();
         let main_secret =
@@ -90,11 +89,24 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
         let encryptor = context.encryptor(&client_key).unwrap();
         // Three gadget levels exercise multiple scales and an internal padding slot.
         let levels = 3;
-        let circuit_parameters = CircuitBootstrapParameters::try_new(
+        let circuit_parameters = CircuitBootstrapParameters::try_from_config(
             context.parameters(),
-            ApproxSignedBasis::new(Some(MODULUS), 8, Some(levels)),
-            GgswParameters::with_glwe_params(glwe, 10, None),
-            GgswParameters::with_glwe_params(glwe, 10, None),
+            CircuitBootstrapConfig {
+                output: DecompositionConfig {
+                    log_basis: 8,
+                    level_count: Some(levels),
+                },
+                trace: DecompositionConfig {
+                    log_basis: 10,
+                    level_count: None,
+                },
+                trace_noise_standard_deviation: 0.7,
+                scheme_switch: DecompositionConfig {
+                    log_basis: 10,
+                    level_count: None,
+                },
+                scheme_switch_noise_standard_deviation: 0.7,
+            },
         )
         .unwrap();
         let circuit_key = context
@@ -230,6 +242,50 @@ fn circuit_parameters_check_capacity_layout_and_basis_domain() {
         POLY_LENGTH as u64,
         SecretKeyDistr::fixed_hamming_weight_binary(4, 2),
     );
+    let config = CircuitBootstrapConfig {
+        output: DecompositionConfig {
+            log_basis: 8,
+            level_count: Some(2),
+        },
+        trace: DecompositionConfig {
+            log_basis: 9,
+            level_count: Some(3),
+        },
+        trace_noise_standard_deviation: 1.25,
+        scheme_switch: DecompositionConfig {
+            log_basis: 10,
+            level_count: Some(4),
+        },
+        scheme_switch_noise_standard_deviation: 2.5,
+    };
+    let configured = CircuitBootstrapParameters::try_from_config(&tfhe, config).unwrap();
+    assert_eq!(
+        configured.output_size().glwe_size(),
+        tfhe.accumulator_glwe().size()
+    );
+    assert_eq!(configured.trace().basis().log_basis(), 9);
+    assert_eq!(configured.trace().basis().decompose_length(), 3);
+    assert_eq!(configured.trace().noise_standard_deviation(), 1.25);
+    assert_eq!(configured.scheme_switch().basis().log_basis(), 10);
+    assert_eq!(configured.scheme_switch().basis().decompose_length(), 4);
+    assert_eq!(configured.scheme_switch().noise_standard_deviation(), 2.5);
+    for role in ["output", "trace", "scheme-switch"] {
+        let mut invalid = config;
+        match role {
+            "output" => invalid.output.level_count = Some(0),
+            "trace" => invalid.trace.level_count = Some(0),
+            _ => invalid.scheme_switch.level_count = Some(0),
+        }
+        let error = CircuitBootstrapParameters::try_from_config(&tfhe, invalid)
+            .err()
+            .unwrap();
+        match role {
+            "output" => assert!(matches!(error, Error::InvalidOutputBasis(_))),
+            _ => assert!(
+                matches!(error, Error::GadgetParameters { role: actual, .. } if actual == role)
+            ),
+        }
+    }
     let trace = tfhe.blind_rotation_ggsw();
     let output = |levels| ApproxSignedBasis::new(Some(MODULUS), 8, Some(levels));
     let valid = CircuitBootstrapParameters::try_new(&tfhe, output(2), trace.clone(), trace.clone())

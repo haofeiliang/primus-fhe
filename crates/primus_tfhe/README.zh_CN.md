@@ -30,6 +30,11 @@ GLWE NTT 另支持固定重量二元 small 秘密的[实验性稀疏 PBS](../pri
 
 ## LUT 与资源生命周期
 
+后端接受具名 `TfheConfig` 并派生公共环参数，`TfheContext::try_from_parameters`
+自动创建选定类型的变换表。本 crate 提供 `DecompositionConfig`（分解基与保留层数）
+及 `CircuitBootstrapConfig`（独立的 output/trace/scheme-switch 配置），
+由各后端绑定自己的模数、布局与表示。
+
 1. Family 参数描述外部 LWE 和 accumulator 环。
 2. 后端 context 绑定参数与 NTT/FFT table，并生成配套的 client/server key。
 3. 通过 family 参数 编译 `LookupTable` / `InterleavedLookupTable`。
