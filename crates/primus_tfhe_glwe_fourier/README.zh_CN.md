@@ -20,8 +20,8 @@ cargo run -p primus_tfhe_glwe_fourier --example fourier_basic
 涵盖单 PBS、`t_in=4 → t_out=8` 的双输出 ManyLUT、客户端 `encrypt_padded_to`、Boolean 门、NOT 和 MUX。
 
 `BootstrapKeyswitch` 的外部密文维数为 `n`，`KeyswitchBootstrap` 为 `kN`。
-示例打印并检查这两个维数（4 和 256），输入和输出均遵循选定的外部秘密域。
-所有 fixture 的维数、噪声和分解参数仅用于功能演示，不是生产安全或失败概率建议。
+输入和输出均遵循选定的外部秘密域。示例的维数、噪声和分解参数仅用于功能演示，
+不是生产安全或失败概率建议。
 
 ## Context 与复用
 
@@ -48,21 +48,12 @@ FFT engine 和 evaluator 从同一个 context 创建。
 直接复用采用模 4 下 Boolean `0/1` 编码的 `LweCiphertext`。Encryptor 支持私钥或公钥及
 `encrypt_to`；evaluator 处理内部模 8 的 LUT 尺度，通过 `evaluate_binary_to`、`not_to`、`mux_to` 重复求值。
 
-低层 `FourierGlweBootstrappingKey<T, LM>` 保留输入模数类型 `LM`，与 accumulator 模数独立。
-密钥生成时准备普通 PBS 量化参数；ManyLUT 在系数循环前按旋转步长准备转换。
-高层 context 保持既有参数约束。
-
 ## Binary 与 ternary small 秘密
 
 在 `LweParameters` 中选择 `SecretKeyDistr::UniformTernary` 或其他 ternary 家族，
 即可沿用原有密钥生成与 evaluator 接口；basic 示例使用该配置。两种 PBS order、
-普通/交错 LUT 和公钥输入均支持。Binary 每坐标仍保存一份 GGSW；ternary 保存独立
-加密的 `(positive, negative)` 控制对，每坐标通过组合控制执行一次外积。
-
-低层使用 `FourierGlweBlindRotationContext::new(&key)` 创建匹配控制类型的工作区，
-`resize` 保持该类型。`iter_binary_controls` / `iter_ternary_controls` 分别返回单控制或
-控制对；类型不匹配时返回 `None`。ServerKey 兼容性检查包括 small secret 分布。
-循环外选择内核，在线复用工作区；融合方案增加 BSK 和临时 GGSW 存储。
+普通/交错 LUT 和公钥输入均支持。Ternary 比 binary 需要更多密钥与工作区存储，
+见[设计与成本](../../docs/tfhe-ternary.md)。
 
 ## Circuit bootstrapping
 
@@ -104,9 +95,7 @@ Native reverse trace 沿用底层逐级整数除二；其舍入、trace key swit
 cargo run --release -p primus_tfhe_glwe_fourier --example circuit_bootstrap
 ```
 
-示例与基准共享 `n=728, N=1024`、三层输出的 binary profile。误差来源、最小 gadget
-尺度的观测余量、密钥/工作区大小和耗时见 [CBS 专项](../../docs/tfhe-cbs.md)。
-该 profile 不是生产参数建议；稀疏 CBS 仍不支持。
+参数选择的误差预算与成本见 [CBS 专项](../../docs/tfhe-cbs.md)。示例参数不是生产参数建议。
 
 使用 `evaluator.allocate_output()` 分配原有 CBS 控制密文，随后调用
 `evaluator.cmux_to(control, lhs, rhs, output)` 或 `external_product_to(control, input, output)`。
@@ -115,24 +104,6 @@ cargo run --release -p primus_tfhe_glwe_fourier --example circuit_bootstrap
 
 错误归属与转换规则见[公共 TFHE 错误边界](../primus_tfhe/README.zh_CN.md#错误边界)。
 
-## 验证与性能
+## 进一步阅读
 
-```sh
-cargo test -p primus_tfhe_glwe_fourier
-cargo clippy -p primus_tfhe_glwe_fourier --all-targets -- -D warnings
-cargo +nightly test -p primus_tfhe_glwe_fourier --features simd
-cargo bench -p primus_tfhe_glwe_fourier --bench pbs
-cargo bench -p primus_tfhe_glwe_fourier --bench ternary_pbs
-cargo bench -p primus_tfhe_glwe_fourier --bench circuit_bootstrap
-```
-
-`pbs` 复用输出，覆盖两种 order、3/4 输出 ManyLUT 与独立 PBS 的对照，以及 Boolean AND/MUX。
-BR 和密钥切换阶段用于定位开销；系数提取的基准集中在 `primus_lattice`。
-Fourier PBS 基准同时覆盖 RustFFT 和 TfheFFT。
-
-`ternary_pbs` 在 `n=728, N=1024`、BR→KS 下比较 binary、融合 ternary 和双 CMUX
-完整 PBS，另测 BSK+KSK 生成。参数、耗时及密钥/工作区测量见
-[T3 测量](../../docs/tfhe-ternary.md#t3完整-glwe-接入与验收已完成)。
-
-`circuit_bootstrap` 测量两种 order、两种 FFT 的完整 CBS，并按 FFT 各测一次 BR、
-三层投影与 scheme switch。Setup 和相位检查不计时，在线复用全部缓冲。
+[实现设计与开发验证](../../docs/tfhe.md) · [基准与测量](../../docs/benchmarks/tfhe.md)

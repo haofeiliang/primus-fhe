@@ -76,8 +76,7 @@ Boolean 运算直接使用 `LweCiphertext<T>`，采用模 4 下 unsigned rounded
 两种客户端均以 `try_new(parameters, key)` 构造，要求明文模数为 4。
 后端 `boolean_encryptor`、`boolean_decryptor`、`boolean_evaluator` 工厂绑定同一参数。
 通过 `evaluate_binary_to`、`not_to`、`mux_to` 复用输出；共享 evaluator 负责仿射预处理、
-内部 LUT 尺度与修正。门求值已移入 `primus_tfhe`，自定义后端构造器接受普通维数、输入 codec
-和 accumulator 模数，返回 `TfheEvaluationError`；`BooleanError` 只负责 Boolean 客户端操作。
+内部 LUT 尺度与修正。求值器构造返回 `TfheEvaluationError`，`BooleanError` 用于客户端操作。
 详见[公共 Boolean 契约](../primus_tfhe/README.zh_CN.md#boolean-门)。
 Raw 输入必须采用 Boolean 编码及匹配的外部秘密，这些性质无法从 LWE 密文本身验证。
 
@@ -85,12 +84,11 @@ CBS 是两个后端的可选能力，提供独立的 output basis、trace/scheme
 支持两种 PBS order 和经典 binary/ternary small secret。CBS 输出留在 accumulator
 secret 下，使用 gadget 尺度；稀疏 CBS 尚不支持。
 
-## 示例与验证
+## 示例
 
 后端 basic 示例展示两种 order、公钥输入、LUT 和复用输出的 Boolean 运算。
 所有示例 fixture，包括 NTT 的 `boolean_parameters()`，均用于开发，不是生产参数建议。
 
-```sh
-cargo test -p primus_tfhe_glwe
-cargo doc -p primus_tfhe_glwe --no-deps
-```
+## 进一步阅读
+
+[实现设计与开发验证](../../docs/tfhe.md) · [基准与测量](../../docs/benchmarks/tfhe.md)

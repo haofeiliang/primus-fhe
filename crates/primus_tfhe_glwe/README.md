@@ -89,9 +89,7 @@ Both client types use `try_new(parameters, key)` and require plaintext modulus 4
 Backend `boolean_encryptor`, `boolean_decryptor` and `boolean_evaluator` factories
 bind the same parameters. Reuse `evaluate_binary_to`, `not_to` and `mux_to`; the
 shared evaluator owns affine preprocessing, internal LUT scales and correction.
-Gate evaluation now belongs to `primus_tfhe`; its custom-backend constructor accepts
-ordinary dimensions, an input codec and the accumulator modulus. Construction returns
-`TfheEvaluationError`; `BooleanError` covers only Boolean client operations.
+Evaluator construction returns `TfheEvaluationError`; `BooleanError` covers client operations.
 See the [shared Boolean contract](../primus_tfhe/README.md#boolean-gates).
 Raw inputs must use the Boolean encoding and the matching external key; these
 properties cannot be verified from an LWE ciphertext.
@@ -101,13 +99,12 @@ trace/scheme-switch parameters and keys. Both PBS orders and classic binary/tern
 small secrets are supported. CBS outputs remain under the accumulator secret and
 use gadget scales; sparse CBS is not supported.
 
-## Examples and validation
+## Examples
 
 Follow the backend basic examples to see both orders, public-key input, LUTs and
 Boolean operations with reused output. All example fixtures, including NTT's
 `boolean_parameters()`, are for development, not production recommendations.
 
-```sh
-cargo test -p primus_tfhe_glwe
-cargo doc -p primus_tfhe_glwe --no-deps
-```
+## Further reading
+
+[Implementation and developer validation](../../docs/tfhe.md) · [Benchmarks and measurements](../../docs/benchmarks/tfhe.md)

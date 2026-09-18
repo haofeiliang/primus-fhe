@@ -8,7 +8,7 @@
 | 固定重量二元桶聚合 | [稀疏 PBS：推导、布局、测量](tfhe-sparse-pbs.md) |
 | 同一输入、多函数输出 | [固定尺度分解式 MVB](tfhe-mvb.md) |
 | 下一阶段 | [候选算法](tfhe-next.md)、[ternary 与 T1–T3](tfhe-ternary.md) |
-| P1 / P4.0 历史性能与复现条件 | [测量索引](benchmarks/tfhe.md) |
+| 当前基准入口与历史测量 | [测量索引](benchmarks/tfhe.md) |
 
 ## 职责与执行边界
 
@@ -24,11 +24,19 @@ CBS 在密钥生成时通过 `Some(CircuitBootstrapConfig)` 可选启用，附�
 
 相同布局/basis 不证明实际秘密相同；Fourier table 身份、规范剩余类与噪声预算由各公开契约承担。TFHE 公钥复用 `LwePublicKey` 并绑定外部 LWE 秘密，GLWE 按 order 为 n 或 kN，NTRU 为 client 前缀；公钥总噪声单独计入 PBS 输入预算。
 
+### 错误组织
+
+公共 LUT/evaluator 错误由 `primus_tfhe` 定义；两族的 `error` 模块集中维护参数、客户端及
+密钥生成错误，NTT/Fourier 后端重导出。变换表错误留在后端 context，稀疏匹配保留专用错误。
+不增加跨全部操作的总错误；只有无歧义转换使用 `#[from]`。BR/KS、trace/SS 在调用点
+显式 `map_err` 标明用途，并以 `#[source]` 保留原因。表错误不保证 `Clone`/`Eq`，context 错误不额外承诺它们。
+公开错误入口见 [README](../crates/primus_tfhe/README.zh_CN.md#错误边界)。
+
 ## P1.1 精确几何与元数据
 
 编译中心经历 `message → RoundedCodec → modulus switch` 两次舍入，不能合并为理想化的一次比例舍入。例如 `N=16,s=1,t=3,q_in=5,m=1` 的真实中心为 13，一次舍入为 11，填充边界也不同。
 
-执行量化为 `R_s(x)=s*R(x,q_in,2N/s)`，总旋转为 `-R_s(b)+ΣR_s(a_i)*secret_i`。先缩小量化域再乘步长，不能先求点积再量化。要求 `s<=N`，且物理 `2N` 本身可由系数类型表示。
+旋转域要求 `s<=N`，且物理 `2N` 本身可由系数类型表示；逐系数量化与区间填充见下文。
 
 | 信息 | 归属 |
 | --- | --- |
@@ -40,6 +48,44 @@ CBS 在密钥生成时通过 `Some(CircuitBootstrapConfig)` 可选启用，附�
 | 输出尺度、实际秘密、变换身份 | 由调用工作流及后端承担，不混入通用 raw LUT 的兼容性检查 |
 
 `D<=N/s` 只是容量条件，还须检查真实中心分离；几何余量不是完整 PBS 失败概率。负循环尾部、回绕、短前缀及非均匀中心按真实中点处理，未编程位置不成为额外有效输入域。
+
+### 前半区旋转布局
+
+令 `D = input_domain_len()` 为已编程前缀长度，`s = padded_output_count()`（普通 LUT 为 1），
+每个输出占用的系数数为 `M = N/s`。一个**输出组**包含 `k` 个已编码函数值和 `s-k` 个零；
+一个**输入区间**重复该输入的输出组。输出 `j` 占用系数 `s*r+j`，其 `M` 个系数
+包括重复项和负循环尾部。
+
+`k` 和明文模数 `t` 都不必是二次幂；补齐数量 `s = next_power_of_two(k)` 始终是二次幂，
+且整除 `N`。仍须满足实际编码中心不碰撞、输入域限制和噪声余量要求。
+
+消息先编码为 `E(m) = round(m*q_in/t) mod q_in`，再映射到每输出系数坐标中的中心
+`R(E(m), q_in, 2M)`，其中 `R(x,q,L) = floor((x*L + floor(q/2))/q) mod L`，
+两次舍入遇到中点均向上。Native 的 `q_in` 为 `2^T::BITS`。合并两次舍入可能改变表内容。
+
+编译器选择最近中心的值，中点相等时选择较大的中心；最后在 `min(R(E(D), q_in, 2M), M)`
+追加值为 `-f(0)` 的中心以终止编程前缀，其后的系数不是额外的输入域。
+
+例如 `q_in=2^32`、`N=64`、`t=8`、`k=3`、`D=4` 时，以
+`F(m) = [f0(m), f1(m), f2(m), 0]` 表示已编码输出组，布局为：
+
+```text
+F(0) × 2 | F(1) × 4 | F(2) × 4 | F(3) × 4 | -F(0) × 2
+```
+
+这些对齐的中心对应等长的完整区间，但首个区间被多项式边界拆分，尾部取负。
+非二次幂 `t` 或中心未精确对齐时，区间长度可以不同。两种情况使用同一个编译器；
+`M` 不是重复次数。
+
+构造器的 `input_ciphertext_modulus` 即 `q_in`；`coefficient_modulus` 即 LUT 多项式
+与累加器共用的 `q_acc`。raw 输出必须已经是 `q_acc` 下的规范值，越界值会被拒绝。
+系数模数与输出尺度均独立于 `q_in`。
+
+四后端使用 `rotation_step = padded_output_count()`，逐个将 LWE 系数量化为 `s*R(x, q_in, 2N/s)`，旋转指数为
+`-R_s(b) + sum(R_s(a[i])*secret[i])`，不能替换为对解密相位的一次量化。
+编译端使用同一个 `2N/s` 量化域，步长为 1；执行端再乘以 `s`。
+由于 `s` 整除 `N`，跨越负循环边界也保留输出索引模 `s` 的余数；
+提取系数 `j` 时按负循环符号读取对应输出。
 
 ## P1.M 模数侧缩放与量化
 
@@ -58,6 +104,7 @@ codec、基础加解密与通用 client 的输入输出统一为 T / `[T]`，类
 单输出和交错表共用顺序中心/区间扫描：几何 `O(D)`、函数求值 `O(kD)`、最终系数填充 `O(N)`。首个输出组直接写最终多项式，区间内复制；单输出使用 fill。首组 `f(0)` 复用于负循环尾部，不另分配中心或逐列多项式。
 
 中心用每输出系数坐标，填充接收实际系数切片；`fill_input_interval` 负责求值/检查/区间填充，`fill_negated_tail` 收尾。当前全部只分配最终结果。多输出构造有显著收益，单输出存在小幅成本增加，见[最终对照](benchmarks/tfhe.md#p14-最终对照)。
+使用内置模数类型且 callback 不分配时，仅分配结果多项式；callback 报错或输出越界时停止，不返回部分表。
 
 ## P1.3 布局 API 决定
 
@@ -67,7 +114,25 @@ codec、基础加解密与通用 client 的输入输出统一为 T / `[T]`，类
 - `ProgrammableBootstrapInterleaved` 只承诺交错求值，不泛指所有 MVB；一次 BR/环 KS 是当前后端实现。分解式 MVB 使用独立产物/evaluator。
 - 三路 CBS 以真实 gadget 层数构造、投影，参数通过 `lookup_table_padded_output_count()` 表达补齐数。
 
-共享源码按 [single](../crates/primus_tfhe/src/lookup_table/single.rs)、[interleaved](../crates/primus_tfhe/src/lookup_table/interleaved.rs)、[bivariate](../crates/primus_tfhe/src/lookup_table/bivariate.rs)、[factorized](../crates/primus_tfhe/src/lookup_table/factorized.rs) 分开；编译算法分别位于 [front_half](../crates/primus_tfhe/src/lookup_table/compile/front_half.rs) 与 [odd_full_domain](../crates/primus_tfhe/src/lookup_table/compile/odd_full_domain.rs)。奇数全域改变编译几何，不另建一种输出表示。
+### 源码组织
+
+四种公开类型均从 crate 根导出。奇数全域是 `LookupTable` 的构造方式，
+输出槽布局由 `InterleavedLookupTable` 管理，双输入打包由 `BivariateLookupTable` 管理。
+`FactorizedLookupTable` 保存共同多项式与系数域差分因子。全部因子共用一块连续空间，
+`factors()` 返回 `PolynomialIter`；`into_polynomials()` 将共同多项式与扁平因子缓冲移交后端准备。
+
+| 文件 | 职责 |
+| --- | --- |
+| [bootstrap.rs](../crates/primus_tfhe/src/bootstrap.rs) | 完整普通/交错 PBS 的 LWE 输入输出契约 |
+| [rotation.rs](../crates/primus_tfhe/src/rotation.rs) | LUT 编译与 BR 共用的准备、标量和批量量化 |
+| [lookup_table.rs](../crates/primus_tfhe/src/lookup_table.rs) | 统一导出与共用编码元数据 |
+| [single.rs](../crates/primus_tfhe/src/lookup_table/single.rs) | 单输出类型，集中前半区和奇数全域构造器 |
+| [interleaved.rs](../crates/primus_tfhe/src/lookup_table/interleaved.rs) | 多输出类型及补齐输出数、有效数量接口 |
+| [bivariate.rs](../crates/primus_tfhe/src/lookup_table/bivariate.rs) | 双输入范围、打包与普通 LUT 的绑定 |
+| [factorized.rs](../crates/primus_tfhe/src/lookup_table/factorized.rs) | 固定尺度共同多项式与负循环差分因子 |
+| [compile.rs](../crates/primus_tfhe/src/lookup_table/compile.rs) | 共用编码校验、中点与负循环尾部填充 |
+| [compile/front_half.rs](../crates/primus_tfhe/src/lookup_table/compile/front_half.rs) | 前半区单输出/交错编译、域与槽容量检查 |
+| [compile/odd_full_domain.rs](../crates/primus_tfhe/src/lookup_table/compile/odd_full_domain.rs) | 奇数域检查、中心折叠与区间填充 |
 
 ## P1.R 取整策略取舍
 
@@ -168,7 +233,23 @@ BR 前的密钥切换、逐系数模切以及后续外积/KS 的输出噪声；�
 
 [bootstrap](../crates/primus_tfhe/src/bootstrap.rs) 描述完整 LWE→LWE 求值，[rotation](../crates/primus_tfhe/src/rotation.rs) 提供 LUT/BR 共用的 prepared quantizer；旧 `backend_support` 及无生产调用的一次性模切包装已删除。已量化指数的直接转换留在低层入口。
 
-四后端将 BR 与后置 KS 分开，GLWE BR 始终产生 accumulator 秘密下的系数域 GLWE；NTRU 保持自身初始化与环秘密转换。CBS 消费原始 BR 结果。阶段 helper 暂留私有，复用原 scratch、检查和一次算法分派，不预建统一 backend trait。[秘密域与缓冲区流程](../crates/primus_tfhe/README.zh_CN.md#后端执行阶段)。
+### 后端执行阶段
+
+共享 trait 描述完整求值，不规定 BSK 算法、秘密分布或变换表示。各后端内部将
+`blind_rotate` 与 `keyswitch_accumulator` 分开；阶段 helper 保持私有，复用工作区、
+检查与入口处的一次算法分派：
+
+| 阶段 | GLWE | NTRU |
+| --- | --- | --- |
+| BR 输入 | BK 直接使用 small-LWE；KB 先 ring KS、compact extraction 得到 small-LWE | 客户端秘密下的外部 LWE |
+| BR 结果 | `main_glwe`，accumulator 秘密下的系数域 GLWE | `blind_rotation.current`，`f_acc` 下的系数域 NTRU |
+| 普通/交错输出 | BK 将 accumulator KS 至补零 small 秘密后 compact extraction；KB 直接提取 kN LWE | KS 至客户端环秘密后 compact extraction |
+| CBS | 消费 accumulator 秘密下的 BR 结果，继续投影/SS | 保持 `f_acc`，继续各自的投影/SS |
+
+BK/KB 分别为 `BootstrapKeyswitch` / `KeyswitchBootstrap`。后置 KS 写独立缓冲区，
+保留 BR 结果；MVB 的具体后处理与 KS 位置由所选算法决定。GLWE 经典 BR 在循环外选择
+binary 单控制或 ternary 控制对；LWE 剩余类到 signed GLWE 私钥的转换在密钥构造边界完成。
+NTRU ternary、桶聚合稀疏 ternary 及 automorphism 算法尚未接入。
 
 MVB 已在这些阶段上接入，具体乘法与 KS 顺序见[专项设计](tfhe-mvb.md)。Ternary 的控制密钥、`q-1→-1` 转换及兼容性已在经典 GLWE 两后端接入，见[设计与测量](tfhe-ternary.md)。P4.0 重构未测得稳定性能回退，方法见[测量记录](benchmarks/tfhe.md#p40-阶段拆分)。
 
@@ -176,4 +257,27 @@ MVB 已在这些阶段上接入，具体乘法与 KS 顺序见[专项设计](tfh
 
 共享整数 oracle 保护中心、区间、双输入和分解恒等式；后端 fixture 覆盖 Native/Barrett、两种 GLWE order、两种 Fourier table、实际秘密域、普通/交错/CBS 与在线零分配。按实际支持配置复用 fixture，不机械扩张笛卡尔积。
 
-跨七包验证使用 [justfile](../justfile) 的 `just tfhe` / `just tfhe-simd`；修改 encoding、lattice 或 GLWE/NTRU 底层契约时额外覆盖相应消费者。接口迁移搜索整个 workspace，不能以文档入口表替代调用方检索。历史命令通过、benchmark 冒烟和有限噪声样本均不替代当前验证或生产安全证明。
+修改 encoding、lattice 或 GLWE/NTRU 底层契约时额外覆盖相应消费者。接口迁移搜索整个 workspace，不能以文档入口表替代调用方检索。历史命令通过、benchmark 冒烟和有限噪声样本均不替代当前验证或生产安全证明。
+
+在 workspace 根目录运行：
+
+```sh
+just tfhe
+just tfhe-simd
+```
+
+两条 [recipe](../justfile) 均检查七个 TFHE crate 和共享测试辅助的 check、Clippy、测试；`tfhe` 还检查
+`xtask` 并构建文档。`just ci` 另执行 workspace 与底层 SIMD 检查。
+局部修改可先运行 `cargo test -p <crate>`、`cargo clippy -p <crate> --all-targets -- -D warnings`
+及 `cargo doc -p <crate> --no-deps`，SIMD 测试使用 nightly 和 `--features simd`。
+
+验收资产按 [后端覆盖](tfhe-backend-coverage.md#5-现有能力的组合缺口) 和
+[分步计划](tfhe-backend-plan.md) 定位：Boolean 共用门真值表与门链；sparse 的受控输入误差
+见 [B3.3](tfhe-sparse-pbs.md#b33-已有上层组合验收)；MVB 的同尺度对照、容量与误差见
+[GLWE](tfhe-mvb.md) / [NTRU](tfhe-mvb-ntru.md)。NTRU CBS 的
+[NTT](../crates/primus_tfhe_ntru_ntt/tests/circuit_bootstrap.rs) /
+[Fourier](../crates/primus_tfhe_ntru_fourier/tests/circuit_bootstrap.rs) 用例覆盖 LWE→NGSW→CMUX、
+非二次幂层数、basis/容量错误和首调用零分配。
+
+当前基准入口、计时边界与历史数据统一见[测量索引](benchmarks/tfhe.md)。README 保存
+推荐工作流、公开契约与用户需要的限制；测试覆盖、阶段验收和内部布局在本页及各专项维护。

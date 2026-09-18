@@ -164,4 +164,4 @@ cargo run -p primus_tfhe_ntru_ntt --release --example ntru_ntt_mvb_thresholds
 - 大范数或不同分布/噪声配置需要重新验收，不能由本组阈值推断全部函数都适合 MVB。
 
 B3.2 完成既有链的验收，没有改变 KS 顺序，也没有开放 NTRU ternary、桶聚合、
-Fourier 或 odd full-domain MVB。下一步由 [B3.3](tfhe-backend-plan.md#b33glwe-ntt-sparse-的三个现有组合)单独验证 GLWE 的已有 sparse 组合。
+Fourier 或 odd full-domain MVB。GLWE 的已有 sparse 组合由 [B3.3](tfhe-sparse-pbs.md#b33-已有上层组合验收)单独验收。

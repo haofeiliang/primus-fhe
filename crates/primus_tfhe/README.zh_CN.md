@@ -31,21 +31,16 @@ GLWE NTT 另支持固定重量二元 small 秘密的[实验性稀疏 PBS](../pri
 
 ## 错误边界
 
-错误按操作职责命名，从 crate 根导出。Family 的 `error` 模块集中定义 NTT/Fourier
-后端可共享的错误，不增加覆盖全部操作的总错误类型。
+错误按操作职责命名，从 crate 根导出；按调用的操作处理相应错误类型。
 
 | 操作 | 错误 |
 | --- | --- |
 | LUT 编译 / 普通、Boolean 或 CBS evaluator 绑定 | 公共 `LookupTableError` / `TfheEvaluationError` |
 | TFHE / CBS 参数准备 | Family `TfheParameterError` / `CircuitBootstrapParameterError` |
 | Client key 兼容性 / 客户端操作 | Family `TfheKeyError` / `TfheClientError` |
-| Boolean 客户端构造、加密和解密 | Family `BooleanError`；原始客户端错误通过 `#[from]` 进入 `Client` |
+| Boolean 客户端构造、加密和解密 | Family `BooleanError`；`Client` 分支保留底层客户端错误 |
 | 常规或独立 CBS 密钥生成 | Family `KeyGenerationError`；NTRU 采样/变换直接进入 `Ntru` 分支 |
 | 自动建表或显式绑定表 | 后端 `TfheContextError`；`TransformTable` 保留底层 FFT/NTT 错误 |
-
-只有无歧义转换使用 `#[from]`。BR/KS、trace/SS 的失败由调用点显式 `map_err` 标明用途，
-并用 `#[source]` 保留原因。稀疏匹配保留算法专属错误。Context 错误不承诺 `Clone`/`Eq`，
-因为其包含的底层建表错误未提供这些 trait。
 
 ## Boolean 门
 
@@ -79,7 +74,7 @@ assert!(!decryptor.decrypt(&output)?);
 `BooleanEvaluator::try_new(dimension, poly_length, input_codec, coefficient_modulus, bootstrapper)`
 是自定义后端入口；调用方须保证参数绑定正确、后端保留 LUT 输出尺度。
 构造返回 `TfheEvaluationError`：输入明文模数不是 4，或显式密文模数不大于 8 时返回
-`InvalidBooleanEncoding`。共享求值器不依赖 family 参数或客户端错误。
+`InvalidBooleanEncoding`。
 
 ## CBS 输出与消费
 
@@ -105,12 +100,10 @@ accumulator.decrypt_to(&selected, &mut decoded);
 
 `AccumulatorClient` 持有已准备的 accumulator 私钥与复用转换缓冲区，并借用 context。
 它使用 accumulator codec 加解密 N 个无符号系数；该环域与外部 LWE 客户端分开。
-NTT 持有一份变换密文缓冲，Fourier 另持有 FFT engine 及原有加解密 scratch。
 形状错误在写入或消耗随机数前 panic；明文越界可能消耗随机数。
 NTRU 准备的密钥校验/变换失败返回 `KeyGenerationError`，GLWE 准备返回 `TfheKeyError`。
 
-准备一次，随后复用 `_to` 调用。GLWE CBS/CMUX 通过切换分解布局共享 scheme-switch 外积工作区，
-NTRU 复用 BR 的外积工作区；服务端未增加消费缓冲区。
+准备一次，随后复用 `_to` 调用与输出缓冲，在线无需分配。
 
 ## LUT 与资源生命周期
 
@@ -134,47 +127,11 @@ server key 持有对应参数和材料，各 evaluator 只持有自身工作区�
 所有输出共享一次盲旋转（BR）和密钥切换，再分别提取。
 输出越多，旋转分辨率与输入噪声余量越低。这是一个输入求多个函数，不是独立密文批处理。
 
-### 前半区旋转布局
-
-令 `D = input_domain_len()` 为已编程前缀长度，`s = padded_output_count()`（普通 LUT 为 1），
-每个输出占用的系数数为 `M = N/s`。一个**输出组**包含 `k` 个已编码函数值和 `s-k` 个零；
-一个**输入区间**重复该输入的输出组。输出 `j` 占用系数 `s*r+j`，其 `M` 个系数
-包括重复项和负循环尾部。
-
-`k` 和明文模数 `t` 都不必是二次幂；补齐数量 `s = next_power_of_two(k)` 始终是二次幂，
-且整除 `N`。仍须满足实际编码中心不碰撞、输入域限制和噪声余量要求。
-
-消息先编码为 `E(m) = round(m*q_in/t) mod q_in`，再映射到每输出系数坐标中的中心
-`R(E(m), q_in, 2M)`，其中 `R(x,q,L) = floor((x*L + floor(q/2))/q) mod L`，
-两次舍入遇到中点均向上。Native 的 `q_in` 为 `2^T::BITS`。合并两次舍入可能改变表内容。
-
-编译器选择最近中心的值，中点相等时选择较大的中心；最后在 `min(R(E(D), q_in, 2M), M)`
-追加值为 `-f(0)` 的中心以终止编程前缀，其后的系数不是额外的输入域。
-
-例如 `q_in=2^32`、`N=64`、`t=8`、`k=3`、`D=4` 时，以
-`F(m) = [f0(m), f1(m), f2(m), 0]` 表示已编码输出组，布局为：
-
-```text
-F(0) × 2 | F(1) × 4 | F(2) × 4 | F(3) × 4 | -F(0) × 2
-```
-
-这些对齐的中心对应等长的完整区间，但首个区间被多项式边界拆分，尾部取负。
-非二次幂 `t` 或中心未精确对齐时，区间长度可以不同。两种情况使用同一个编译器；
-`M` 不是重复次数。
-
-构造器的 `input_ciphertext_modulus` 即 `q_in`；`coefficient_modulus` 即 LUT 多项式
-与累加器共用的 `q_acc`。raw 输出必须已经是 `q_acc` 下的规范值，越界值会被拒绝。
-系数模数与输出尺度均独立于 `q_in`。
-
-单输出与 ManyLUT 共用一次中心和区间扫描。每个区间直接写入结果多项式，
-先写首个输出组，再重复填充；使用内置模数类型且 callback 不分配时，编译过程仅分配结果多项式。
-callback 报错或输出越界时立即停止，不返回部分编译的表。
-
-四后端使用 `rotation_step = padded_output_count()`，逐个将 LWE 系数量化为 `s*R(x, q_in, 2N/s)`，旋转指数为
-`-R_s(b) + sum(R_s(a[i])*secret[i])`，不能替换为对解密相位的一次量化。
-编译端使用同一个 `2N/s` 量化域，步长为 1；执行端再乘以 `s`。
-由于 `s` 整除 `N`，跨越负循环边界也保留输出索引模 `s` 的余数；
-提取系数 `j` 时按负循环符号读取对应输出。
+Raw 构造器 `LookupTable::try_new` / `InterleavedLookupTable::try_new` 显式接收
+编程前缀长度 `D` 和已编码输出。`input_ciphertext_modulus` 描述输入量化模数，
+`coefficient_modulus` 描述 LUT/累加器模数，raw 输出必须是后者下的规范值。
+`k` 和明文模数都不必是二次幂；补齐数量 `s` 必须与容量、实际中心分离和噪声余量相容。
+构造失败不会返回部分表。输出槽、重复区间与舍入规则见[旋转布局设计](../../docs/tfhe.md#前半区旋转布局)。
 
 ## 编码与密钥契约
 
@@ -319,66 +276,10 @@ GLWE 支持经典/稀疏密钥和两种 order；NTRU 共享加密初始化和 BR
 预处理产物借用一个 context，独立 evaluator 复用工作区。
 本实现不含奇数全域 MVB、Fourier 后端和 CBS 输出；代数与噪声条件见 [MVB 设计](../../docs/tfhe-mvb.md)。
 
-[阈值示例](../primus_tfhe_glwe_ntt/examples/mvb_thresholds.rs) 把一个加密分数转换为
-交错布局容量之外的 17 个标志。[成本测量](../../docs/tfhe-mvb.md#8-p43-测量与应用选择)
-在相同 Scaled 输出中心下比较两种 order 与经典/稀疏密钥，并记录因子范数和额外输出误差。
-[NTRU 阈值示例](../primus_tfhe_ntru_ntt/examples/ntru_ntt_mvb_thresholds.rs)与
-[NTRU 测量](../../docs/tfhe-mvb-ntru.md)单独记录其加密初始化、逐输出 KS 和相关误差。
-
-## 源码组织
-
-四种公开类型均从 crate 根导出。奇数全域是 `LookupTable` 的构造方式，
-输出槽布局由 `InterleavedLookupTable` 管理，双输入打包由 `BivariateLookupTable` 管理。
-`FactorizedLookupTable` 保存共同多项式与系数域差分因子。全部因子共用一块连续空间，
-`factors()` 返回 `PolynomialIter`；`into_polynomials()` 将共同多项式与扁平因子缓冲移交后端准备。
-
-| 文件 | 职责 |
-| --- | --- |
-| [bootstrap.rs](src/bootstrap.rs) | 完整普通/交错 PBS 的 LWE 输入输出契约 |
-| [rotation.rs](src/rotation.rs) | LUT 编译与 BR 共用的准备、标量和批量量化 |
-| [lookup_table.rs](src/lookup_table.rs) | 统一导出与共用编码元数据 |
-| [single.rs](src/lookup_table/single.rs) | 单输出类型，集中前半区和奇数全域构造器 |
-| [interleaved.rs](src/lookup_table/interleaved.rs) | 多输出类型及补齐输出数、有效数量接口 |
-| [bivariate.rs](src/lookup_table/bivariate.rs) | 双输入范围、打包与普通 LUT 的绑定 |
-| [factorized.rs](src/lookup_table/factorized.rs) | 固定尺度共同多项式与负循环差分因子 |
-| [compile.rs](src/lookup_table/compile.rs) | 共用编码校验、中点与负循环尾部填充 |
-| [compile/front_half.rs](src/lookup_table/compile/front_half.rs) | 前半区单输出/交错编译、域与槽容量检查 |
-| [compile/odd_full_domain.rs](src/lookup_table/compile/odd_full_domain.rs) | 奇数域检查、中心折叠与区间填充 |
-
-### 后端执行阶段
-
-共享 trait 描述完整求值，不规定 BSK 算法、秘密分布或变换表示。各后端内部将
-`blind_rotate` 与 `keyswitch_accumulator` 分开，复用原工作区：
-
-| 阶段 | GLWE | NTRU |
-| --- | --- | --- |
-| BR 输入 | BK 直接使用 small-LWE；KB 先 ring KS、compact extraction 得到 small-LWE | 客户端秘密下的外部 LWE |
-| BR 结果 | `main_glwe`，accumulator 秘密下的系数域 GLWE | `blind_rotation.current`，`f_acc` 下的系数域 NTRU |
-| 普通/交错输出 | BK 将 accumulator KS 至补零 small 秘密后 compact extraction；KB 直接提取 kN LWE | KS 至客户端环秘密后 compact extraction |
-| CBS | 消费 accumulator 秘密下的 BR 结果，继续投影/SS | 保持 `f_acc`，继续各自的投影/SS |
-
-BK/KB 分别为 `BootstrapKeyswitch` / `KeyswitchBootstrap`。后置 KS 写独立缓冲区，
-保留 BR 结果；MVB 的具体后处理与 KS 位置由所选算法决定。GLWE 经典 BR 在循环外选择
-binary 单控制或 ternary 控制对；LWE 剩余类到 signed GLWE 私钥的转换在密钥构造边界完成。
-NTRU ternary、桶聚合稀疏 ternary 及 automorphism 算法尚未接入。
-
-## 验证
-
-在 workspace 根目录运行：
-
-```sh
-just tfhe
-just tfhe-simd
-```
-
-这两个 [recipe](../../justfile) 覆盖七包默认 / nightly SIMD 的 check、Clippy 和测试；
-`tfhe` 还检查 `xtask` 调用方并构建文档。`just ci` 执行 workspace 检查及底层、TFHE 两组 SIMD 检查。
-各后端 README 提供可运行示例与 Criterion 命令。
-共享 raw 输出 LUT 的构造基准包含分配与释放：
-
-```sh
-cargo bench -p primus_tfhe --bench lookup_table
-```
+[GLWE](../primus_tfhe_glwe_ntt/examples/mvb_thresholds.rs) 和
+[NTRU](../primus_tfhe_ntru_ntt/examples/ntru_ntt_mvb_thresholds.rs) 阈值示例展示一个加密分数
+生成交错容量之外的 17 个标志。算法选择参考 [GLWE 成本](../../docs/tfhe-mvb.md#8-p43-测量与应用选择)
+和 [NTRU 成本](../../docs/tfhe-mvb-ntru.md)。
 
 ## 保留模数类型的旋转量化
 
@@ -386,6 +287,9 @@ raw LUT 编译接收独立的输入模数类型和系数模数类型。
 `rotation::RotationQuantizer::new(input_modulus, two_n, rotation_step)` 准备固定
 模数对的转换，`exponent(value)` 无分配复用。旋转域 `two_n = 2N` 必须能由输入
 系数类型表示；即使输入使用 Native 模数，目标 `two_n/rotation_step` 也为显式二次幂。
-GLWE 密钥和 NTRU 参数在构造时
-缓存普通 PBS 量化；ManyLUT 在系数循环前按旋转步长准备，先在 `two_n/rotation_step`
-个位置内舍入，再乘与 LUT 补齐输出数相等的 `rotation_step`。仅描述模数域的元数据仍使用 `Option<T>`。
+交错旋转先在 `two_n/rotation_step` 个位置内舍入，再乘与 LUT 补齐输出数相等的
+`rotation_step`。完整几何及准备阶段的实现见[设计文档](../../docs/tfhe.md#p11-精确几何与元数据)。
+
+## 进一步阅读
+
+[实现设计与开发验证](../../docs/tfhe.md) · [基准与测量](../../docs/benchmarks/tfhe.md)

@@ -152,6 +152,7 @@ Native 系数域旋转并累加 selector GGSW 与 dummy
 | --- | --- |
 | sparse × 普通/ManyLUT × 两种 order | [sparse_pbs.rs](../crates/primus_tfhe_glwe_ntt/tests/sparse_pbs.rs)：对照经典路径、解码/相位距离及零分配 |
 | sparse × MVB × 两种 order | [factorized_pbs.rs](../crates/primus_tfhe_glwe_ntt/tests/factorized_pbs.rs)：1/3/17 输出，包括交错布局容量之外的情况 |
+| sparse × Boolean/双输入/奇数全域 × 两种 order | [sparse_pbs.rs](../crates/primus_tfhe_glwe_ntt/tests/sparse_pbs.rs)：门链、受控输入误差、相位/解码与零分配，见 §5.2 |
 | ternary × MVB × 两种 order | 同一 MVB 测试文件中的独立 ternary fixture |
 | ternary × CBS × 两种 order | [circuit_bootstrap.rs](../crates/primus_tfhe_glwe_ntt/tests/circuit_bootstrap.rs)：逐行/层相位及 CMUX |
 | ternary × 双输入/奇数全域 × 两种 order | [many_lut.rs](../crates/primus_tfhe_glwe_ntt/tests/many_lut.rs) |
@@ -159,11 +160,11 @@ Native 系数域旋转并累加 selector GGSW 与 dummy
 
 GLWE Fourier 的 [many_lut.rs](../crates/primus_tfhe_glwe_fourier/tests/many_lut.rs) 已覆盖 ternary、两种 order、两种 FFT、交错/双输入/奇数全域。因此这些不属于该后端待补的算法。
 
-### 5.2 已有执行路径兼容，宜补少量组合验证
+### 5.2 已有 sparse 上层组合验收（B3.3 已完成）
 
-**GLWE NTT sparse × Boolean / bivariate / odd-full**：统一 evaluator 可以分派到 sparse BR；这些上层操作最终使用已有普通 LUT。当前定向检索未找到三者各自的专门 sparse 端到端测试。
+**GLWE NTT sparse × Boolean / bivariate / odd-full** 已在两种 order 下通过聚焦端到端验证；沿用统一 evaluator 的 sparse BR 分派，未改变算法或新增类型。
 
-这里优先补聚焦的组合验收，不引入新算法或复制整套测试矩阵。分别覆盖门预处理误差、`x+B*y` 的噪声放大、奇数全域较窄的旋转区间；可以复用同一把固定重量密钥及 evaluator。
+两个小型 fixed-weight fixture 分别覆盖 Boolean 真值表/门链和共用密钥的双输入/奇数全域；受控输入偏移检查门预处理、`x+3*y` 放大及非整除编码差、全域折叠两侧和回绕。相位/解码和首调用零分配均验证，详见[参数与代表点](tfhe-sparse-pbs.md#b33-已有上层组合验收)。这些功能样本不提供生产失败概率结论。
 
 ### 5.3 稀疏 CBS：先验证，不能只取消检查
 
@@ -229,7 +230,7 @@ Full-domain FDFB、通用数字拆分、HLUT/LFBS、multi-bit 等属于[新算�
 ## 7. 建议执行顺序与验收规模
 
 1. **先整理高层接口，再补明确缺口**：B1 的 GLWE Fourier 经典 CBS、四后端高层接口与成本验收，以及 B2 的 NTRU Boolean 接入与门语义验收均已完成。此顺序减少重复迁移，Boolean 算法本身不依赖 CBS；后续按[分步计划](tfhe-backend-plan.md)推进。
-2. **再扩展已有多输出路线**：NTRU NTT MVB 完整链、误差和成本验收已完成；接下来补 GLWE NTT sparse×Boolean/bivariate/odd-full 的小型组合验证。
+2. **再扩展已有多输出路线**：NTRU NTT MVB 完整链、误差和成本，以及 GLWE NTT sparse×Boolean/bivariate/odd-full 的组合验收均已完成。
 3. **处理性能型移植与受限表示**：GLWE Fourier sparse PBS、Native 偶尺度 MVB。先完成参考路径，再测收益，避免一次混入频域聚合等额外优化。
 4. **按实际应用选择实验组合**：NTT sparse CBS、NTRU ternary、NTRU sparse；分别通过前置条件后，再组合到其他上层功能。
 

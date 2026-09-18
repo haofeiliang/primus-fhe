@@ -84,8 +84,8 @@ bounds, common encoding and the amplified-error budget.
 With plaintext modulus 4, use backend `boolean_encryptor(key)`, `boolean_decryptor(client)`
 and `boolean_evaluator(server)` factories. The independent `BooleanEncryptor` /
 `BooleanDecryptor` bind NTRU family keys and parameters; encryption accepts a private
-or LWE public key. They return the family `BooleanError`, with `#[from]` for raw
-`TfheClientError` through `Client`. Evaluator construction returns shared `TfheEvaluationError`.
+or LWE public key. They return the family `BooleanError`, whose `Client` variant
+retains underlying `TfheClientError`. Evaluator construction returns `TfheEvaluationError`.
 Gate preprocessing, signed LUTs and output correction use the same `primus_tfhe::BooleanEvaluator`
 as GLWE. See [usage and encoding contracts](../primus_tfhe/README.md#boolean-gates).
 
@@ -100,9 +100,7 @@ gadget scales and can control CMUX for `0/1` inputs. CMUX candidates must also u
 
 CBS parameters select independent output, trace and scheme-switch bases. The internal
 ManyLUT pads its output groups; the projected NLev and output NGSW retain the requested
-level count. The scheme-switch key binds the complete output basis. General ManyLUT
-accumulators have no guaranteed zero message tail, so reverse-trace coefficient
-projection cannot be replaced by prefix expansion.
+level count. The scheme-switch key binds the complete output basis.
 
 Ordinary and CBS keys must share the accumulator secret and transform table. Scheme
 switching multiplies input error by f and decomposition error by f²; its `NGSW_f[f]`
@@ -113,9 +111,6 @@ NTT uses modular trace normalization; Fourier adds native halving and FFT errors
 Backend READMEs link runnable PBS and CBS → CMUX examples. Fixtures do not establish
 production noise margins or security.
 
-## Validation
+## Further reading
 
-```sh
-cargo test -p primus_tfhe_ntru
-cargo doc -p primus_tfhe_ntru --no-deps
-```
+[Implementation and developer validation](../../docs/tfhe.md) · [Benchmarks and measurements](../../docs/benchmarks/tfhe.md)

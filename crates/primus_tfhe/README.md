@@ -34,22 +34,17 @@ Sparse CBS is not supported.
 
 ## Error boundaries
 
-Errors are named by operation and re-exported at crate roots. Family `error` modules
-own definitions shared by their NTT/Fourier backends; there is no catch-all error type.
+Errors are named by operation and re-exported at crate roots. Handle the error
+type returned by the operation you call.
 
 | Operation | Error |
 | --- | --- |
 | LUT compilation / ordinary, Boolean or CBS evaluator binding | Shared `LookupTableError` / `TfheEvaluationError` |
 | TFHE / CBS parameter preparation | Family `TfheParameterError` / `CircuitBootstrapParameterError` |
 | Client-key compatibility / client operations | Family `TfheKeyError` / `TfheClientError` |
-| Boolean client construction, encryption and decryption | Family `BooleanError`; raw client failures enter `Client` via `#[from]` |
+| Boolean client construction, encryption and decryption | Family `BooleanError`; `Client` retains underlying client failures |
 | Ordinary or standalone CBS key generation | Family `KeyGenerationError`; NTRU sampling/conversion enters `Ntru` directly |
 | Automatic table creation or explicit table binding | Backend `TfheContextError`; `TransformTable` retains the underlying FFT/NTT error |
-
-`#[from]` is reserved for unambiguous conversions. BR/KS and trace/SS failures use
-explicit `map_err` to retain their role and `#[source]` to retain the underlying cause.
-Sparse matching keeps its algorithm-specific error. Transform context errors do not
-promise `Clone`/`Eq`, since their underlying table errors do not provide those traits.
 
 ## Boolean gates
 
@@ -85,7 +80,6 @@ Raw ciphertexts do not carry key identity or encoding metadata; those remain cal
 is the custom-backend boundary: the caller must bind those arguments to the backend
 and preserve LUT output scales. It returns `TfheEvaluationError`, including
 `InvalidBooleanEncoding` for input modulus other than 4 or explicit ciphertext moduli at most 8.
-Family parameter or client-error types do not enter the shared evaluator.
 
 ## CBS output and consumption
 
@@ -115,15 +109,12 @@ length is checked before output writes.
 `AccumulatorClient` owns the prepared accumulator secret and reusable conversion
 buffers, borrowing its context. It encrypts/decrypts N unsigned coefficients using
 the accumulator codec; this ring domain is separate from external LWE clients.
-NTT uses a transformed ciphertext buffer; Fourier also owns an FFT engine and the
-existing encryption/decryption scratch. Invalid shapes panic before writes or RNG
+Invalid shapes panic before writes or RNG
 consumption; invalid plaintext values may consume randomness. NTRU preparation
 returns `KeyGenerationError` for key validation or secret conversion failures;
 GLWE preparation returns `TfheKeyError`.
 
-Construct once and reuse `_to` calls. GLWE CBS/CMUX share the scheme-switch
-external-product scratch by rebinding its decomposition layout; NTRU reuses BR's
-scratch. No additional server-side consumption buffers are allocated.
+Construct once and reuse `_to` calls and output buffers for allocation-free evaluation.
 
 ## LUTs and resource lifetime
 
@@ -157,57 +148,13 @@ then use separate extraction. More outputs reduce rotation resolution and the
 available input-noise margin. This is one input evaluated by multiple functions,
 not batching independent ciphertexts.
 
-### Front-half rotation layout
-
-Let `D = input_domain_len()` be the programmed prefix length, `s = padded_output_count()`
-(one for an ordinary LUT), and `M = N/s` the coefficients per output. An **output
-group** contains `k` encoded function values followed by `s-k` zeros. An **input
-interval** repeats that input's output group. Output `j` occupies coefficients
-`s*r+j`; its `M` coefficients include repetitions and the negacyclic tail.
-
-Neither `k` nor the plaintext modulus `t` must be a power of two. The padded
-count `s = next_power_of_two(k)` always is and divides `N`. Distinct encoded
-centers, the input-domain bound and an adequate noise margin are still required.
-
-A message is encoded as `E(m) = round(m*q_in/t) mod q_in`,
-then mapped to `R(E(m), q_in, 2M)` in per-output coefficient coordinates. Here
-`R(x,q,L) = floor((x*L + floor(q/2))/q) mod L`; both rounds have upward ties.
-Native `q_in` is `2^T::BITS`. Combining these rounds can change the table.
-
-The compiler assigns the nearest center's value, breaking midpoint ties toward
-the higher center. A final center at `min(R(E(D), q_in, 2M), M)` carries `-f(0)` and ends
-the programmed prefix. Coefficients beyond it are not another input domain.
-
-For example, with `q_in=2^32`, `N=64`, `t=8`, `k=3` and `D=4`, let
-`F(m) = [f0(m), f1(m), f2(m), 0]` denote an encoded output group. The layout is:
-
-```text
-F(0) × 2 | F(1) × 4 | F(2) × 4 | F(3) × 4 | -F(0) × 2
-```
-
-These aligned centers give equal full interval lengths, but the first interval
-is split across the polynomial boundary, with a negated tail. For a non-power-of-two
-`t` or centers that do not align exactly, interval lengths may differ. The same
-compiler handles both cases; `M` is not a repetition count.
-
-The constructor's `input_ciphertext_modulus` is `q_in`; `coefficient_modulus`
-is `q_acc`, shared by the LUT polynomial and accumulator. Raw outputs must already
-be canonical under `q_acc`; out-of-range values are rejected. The coefficient
-modulus and output scale are independent of `q_in`.
-
-Single and ManyLUT compilation share one scan of the centers and intervals.
-Each interval is filled directly in the result polynomial by writing and then
-repeating its first output group. With built-in modulus types and a nonallocating
-callback, compilation allocates only the result polynomial. Callback errors or
-invalid outputs stop compilation without returning a partial table.
-
-Every backend uses `rotation_step = padded_output_count()`, quantizes each LWE coefficient
-as `s*R(x, q_in, 2N/s)` and rotates
-by `-R_s(b) + sum(R_s(a[i])*secret[i])`. This is not a single quantization of the
-decrypted phase. Compilation uses the same `2N/s` quantization domain with step
-one. Execution multiplies by `s`; since `s` divides `N`, output indices modulo `s`
-are preserved even across negacyclic wrap. Extracting coefficient `j` reads that
-output with the negacyclic sign.
+Raw constructors `LookupTable::try_new` / `InterleavedLookupTable::try_new` accept
+an explicit prefix length `D` and encoded outputs. `input_ciphertext_modulus`
+describes input quantization; `coefficient_modulus` is the LUT/accumulator modulus,
+and raw outputs must be canonical under it. Neither `k` nor the plaintext modulus
+must be a power of two; padded count `s` must fit capacity, distinct centers and
+noise margins. Failed construction returns no partial table. See the
+[rotation layout design](../../docs/tfhe.md#前半区旋转布局) for output lanes, repeated intervals and rounding.
 
 ## Encoding and key contracts
 
@@ -377,74 +324,11 @@ one context and its separate evaluator reuses scratch. Odd full-domain MVB,
 Fourier backends and CBS outputs are outside this implementation. Algebra and noise
 conditions are detailed in the [MVB design](../../docs/tfhe-mvb.md).
 
-The [threshold example](../primus_tfhe_glwe_ntt/examples/mvb_thresholds.rs) converts
-one encrypted score into 17 flags beyond the interleaved layout's capacity.
-[Measured costs](../../docs/tfhe-mvb.md#8-p43-测量与应用选择) compare both orders and
-classic/sparse keys with identical Scaled output centers, including factor norms
-and the additional output error.
-The [NTRU threshold example](../primus_tfhe_ntru_ntt/examples/ntru_ntt_mvb_thresholds.rs)
-and [NTRU measurements](../../docs/tfhe-mvb-ntru.md) cover its encrypted initializer,
-per-output KS and correlated errors separately.
-
-## Source layout
-
-The four public types are exported from the crate root. Odd full-domain compilation
-is a `LookupTable` constructor; `InterleavedLookupTable` owns output lanes and
-`BivariateLookupTable` owns input packing. `FactorizedLookupTable` owns the common
-polynomial and coefficient-domain difference factors. Factors share one contiguous
-allocation; `factors()` returns a `PolynomialIter`, and `into_polynomials()` moves
-the common polynomial and flat factor buffer into backend preparation.
-
-| File | Responsibility |
-| --- | --- |
-| [bootstrap.rs](src/bootstrap.rs) | Complete ordinary/interleaved PBS contracts for LWE inputs and outputs |
-| [rotation.rs](src/rotation.rs) | Prepared, scalar and batch quantization shared by compilation and BR |
-| [lookup_table.rs](src/lookup_table.rs) | Exports and shared encoding metadata |
-| [single.rs](src/lookup_table/single.rs) | Single-output type with both front-half and odd full-domain constructors |
-| [interleaved.rs](src/lookup_table/interleaved.rs) | Multi-output type, padded output count and effective output count |
-| [bivariate.rs](src/lookup_table/bivariate.rs) | Input bounds and packing tied to an ordinary LUT |
-| [factorized.rs](src/lookup_table/factorized.rs) | Fixed-scale common polynomial and negacyclic difference factors |
-| [compile.rs](src/lookup_table/compile.rs) | Shared encoding validation, midpoints and negacyclic tail filling |
-| [compile/front_half.rs](src/lookup_table/compile/front_half.rs) | Front-half single/interleaved compilation, domain and slot capacity checks |
-| [compile/odd_full_domain.rs](src/lookup_table/compile/odd_full_domain.rs) | Odd-domain checks, signed centers and interval filling |
-
-### Backend execution stages
-
-The shared traits describe complete evaluation without prescribing a BSK algorithm,
-secret distribution or transform representation. Backends separate `blind_rotate`
-from `keyswitch_accumulator`, reusing their existing workspace:
-
-| Stage | GLWE | NTRU |
-| --- | --- | --- |
-| BR input | BK uses small LWE directly; KB first applies ring KS and compact extraction to obtain small LWE | External LWE under the client secret |
-| BR result | `main_glwe`, coefficient GLWE under the accumulator secret | `blind_rotation.current`, coefficient NTRU under `f_acc` |
-| Ordinary/interleaved output | BK switches to the padded small secret before compact extraction; KB extracts kN LWE directly | Switch to the client ring secret, then compact extraction |
-| CBS | Consume the BR result under the accumulator secret, then projection/SS | Keep `f_acc` for its projection/SS path |
-
-BK/KB denote `BootstrapKeyswitch` / `KeyswitchBootstrap`. Output KS writes a separate
-buffer and preserves the BR result; an MVB algorithm determines its own postprocessing
-and KS placement. Classic GLWE BR selects binary controls or ternary pairs outside the loop;
-encoded LWE residues are converted to signed GLWE secrets at key construction.
-NTRU ternary, bucketed sparse ternary and automorphism algorithms remain unimplemented.
-
-## Validation
-
-Run from the workspace root:
-
-```sh
-just tfhe
-just tfhe-simd
-```
-
-These [recipes](../../justfile) cover all seven crates with default/nightly SIMD
-checks, Clippy and tests; `tfhe` also checks the `xtask` consumer and builds docs.
-`just ci` runs workspace checks and both the lower-level and TFHE SIMD checks.
-Backend READMEs provide runnable examples and Criterion commands.
-The shared raw-output LUT construction benchmark includes allocation and drop:
-
-```sh
-cargo bench -p primus_tfhe --bench lookup_table
-```
+The [GLWE](../primus_tfhe_glwe_ntt/examples/mvb_thresholds.rs) and
+[NTRU](../primus_tfhe_ntru_ntt/examples/ntru_ntt_mvb_thresholds.rs) threshold examples
+turn one encrypted score into 17 flags beyond interleaved capacity. For algorithm
+selection, see [GLWE costs](../../docs/tfhe-mvb.md#8-p43-测量与应用选择)
+and [NTRU costs](../../docs/tfhe-mvb-ntru.md).
 
 ## Typed rotation quantization
 
@@ -453,8 +337,10 @@ Raw LUT compilation accepts independent typed input and coefficient moduli.
 a fixed modulus-pair conversion; `exponent(value)` reuses it without allocation.
 The rotation domain `two_n = 2N` must be representable by the input coefficient
 type; the target `two_n/rotation_step` is an explicit power of two, even for Native input.
-GLWE keys and NTRU parameters cache ordinary-PBS quantization at construction.
-ManyLUT prepares its conversion for the rotation step before processing coefficients.
-For interleaved LUTs, it rounds in `two_n/rotation_step` positions before multiplying by
-`rotation_step`, which equals the LUT padded output count. Modulus metadata remains `Option<T>`
-where it only describes a domain.
+Interleaved rotation rounds in `two_n/rotation_step` positions before multiplying
+by `rotation_step`, which equals the LUT padded output count. See the
+[design note](../../docs/tfhe.md#p11-精确几何与元数据) for full geometry and preparation details.
+
+## Further reading
+
+[Implementation and developer validation](../../docs/tfhe.md) · [Benchmarks and measurements](../../docs/benchmarks/tfhe.md)

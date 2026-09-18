@@ -68,7 +68,7 @@ ManyLUT 编译同一个输入的多个函数。后端示例计算 `x % 4`、`x /
 明文模数采用 4 时，通过后端 `boolean_encryptor(key)`、`boolean_decryptor(client)` 和
 `boolean_evaluator(server)` 工厂构造。独立的 `BooleanEncryptor` / `BooleanDecryptor`
 绑定 NTRU family 参数与密钥；加密支持私钥或 LWE 公钥，错误为本族 `BooleanError`，
-其中原始 `TfheClientError` 通过 `#[from]` 进入 `Client`。求值器构造返回公共 `TfheEvaluationError`。
+`Client` 分支保留底层 `TfheClientError`。求值器构造返回 `TfheEvaluationError`。
 门预处理、正负 LUT 和输出修正与 GLWE 共用 `primus_tfhe::BooleanEvaluator`，
 用法和编码约定见[公共 Boolean 契约](../primus_tfhe/README.zh_CN.md#boolean-门)。
 
@@ -81,7 +81,6 @@ ManyLUT 编译同一个输入的多个函数。后端示例计算 `x % 4`、`x /
 
 CBS 参数独立选择 output、trace 和 scheme-switch basis。内部 ManyLUT 仅在输出组中
 补零，投影 NLev 和输出 NGSW 保留请求的层数；scheme-switch key 绑定完整 output basis。
-一般 ManyLUT accumulator 不保证消息零尾，reverse-trace 系数投影不能用前缀展开替代。
 
 普通与 CBS 密钥必须共享 accumulator secret 和变换 table。Scheme switching 将输入
 误差乘 f、分解误差乘 f²；`NGSW_f[f]` 材料需要独立论证 key-dependent-message/
@@ -91,9 +90,6 @@ NTT 使用模逆元归一化；Fourier 还引入原生整数除二和 FFT 误差
 后端 README 链接到可运行的 PBS 和 CBS → CMUX 示例。Fixture 不构成生产噪声余量或
 安全性论证。
 
-## 验证
+## 进一步阅读
 
-```sh
-cargo test -p primus_tfhe_ntru
-cargo doc -p primus_tfhe_ntru --no-deps
-```
+[实现设计与开发验证](../../docs/tfhe.md) · [基准与测量](../../docs/benchmarks/tfhe.md)

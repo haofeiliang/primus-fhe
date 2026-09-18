@@ -57,8 +57,6 @@ LUT 编译的第一个参数为输出 `RoundedCodec`。示例采用 `t_in=16 →
 密钥，再从 context 绑定 `boolean_encryptor`（私钥/公钥）、`boolean_decryptor` 和
 `boolean_evaluator`。`evaluate_binary_to`、`not_to`、`mux_to` 复用原始 LWE 输出，无需附加求值密钥。
 示例和编码契约见[公共指南](../primus_tfhe/README.zh_CN.md#boolean-门)。
-[集成测试](tests/boolean.rs)覆盖六种二元门、NOT、MUX、门链、维数错误和零分配复用，
-另保留公钥 NAND 路径。
 
 ## 固定尺度分解式 MVB
 
@@ -83,15 +81,13 @@ for (output, expected) in outputs.iter().zip([2, 1, 0]) {
 
 输入采用参数的 Rounded 前半区编码，输出统一为相同奇数密文模数下的 unsigned Scaled
 编码；保留输出 codec 解密。输出数量不补齐，也不降低旋转分辨率。
-全部因子共用一块连续缓冲，准备程序消费该缓冲并原地变换，求值通过 `NttPolynomialIter` 借用各因子。
 
 全部输出共享共同多项式的一次 `NLev[1]` 初始化和 BR；随后各自乘因子、执行 NTRU KS，
 再提取外部客户端秘密下的 compact LWE。因子范数放大初始化与 BR 误差，KS 误差在其后加入。
-普通 PBS 工作区不变。程序的 context 身份、输入维数、准确输出数量及所有输出维数均在
+程序的 context 身份、输入维数、准确输出数量及所有输出维数均在
 写输出前检查；`_to` 调用零分配。
 
-[集成测试](tests/factorized_pbs.rs)覆盖 1/3/17 输出，包括交错容量之外的情况，
-并与相同 Scaled 编码的单输出 PBS 对照。代数和编码限制见[共享契约](../primus_tfhe/README.zh_CN.md#固定尺度分解式-mvb)。
+代数和编码限制见[共享契约](../primus_tfhe/README.zh_CN.md#固定尺度分解式-mvb)。
 
 运行[阈值示例](examples/ntru_ntt_mvb_thresholds.rs)，将 `0..64` 的一个加密分数
 转换为交错容量之外的 17 个数值标志：
@@ -101,9 +97,7 @@ cargo run -p primus_tfhe_ntru_ntt --release --example ntru_ntt_mvb_thresholds
 ```
 
 示例复用程序和密文缓冲，并用保留的 Scaled codec 解码；数值标志与 Boolean evaluator
-的编码不同。[NTRU 测量](../../docs/tfhe-mvb-ntru.md)在相同 Scaled 输出下对照重复 PBS、
-ManyLUT 和 MVB，记录初始化/BR/KS 误差、输出相关性和内存。参数采用固定重量二元秘密、
-经典 BR 和可逆性拒绝采样，不是生产参数。
+的编码不同。与重复 PBS 或交错 ManyLUT 比较时，参考 [NTRU MVB 成本与噪声](../../docs/tfhe-mvb-ntru.md)。
 
 ## 可选 circuit bootstrapping
 
@@ -144,23 +138,6 @@ cargo run -p primus_tfhe_ntru_ntt --example ntru_ntt_circuit_bootstrap
 
 错误归属与转换规则见[公共 TFHE 错误边界](../primus_tfhe/README.zh_CN.md#错误边界)。
 
-## 验证与性能
+## 进一步阅读
 
-```sh
-cargo test -p primus_tfhe_ntru_ntt
-cargo clippy -p primus_tfhe_ntru_ntt --all-targets -- -D warnings
-cargo +nightly test -p primus_tfhe_ntru_ntt --features simd
-cargo bench -p primus_tfhe_ntru_ntt --bench pbs
-cargo bench -p primus_tfhe_ntru_ntt --bench circuit_bootstrap
-```
-
-`pbs` 复用输出，测量完整 PBS，并比较 3/4 输出 ManyLUT 与独立 PBS 调用。
-准备工作位于计时之外。
-
-CBS 测试覆盖 LWE bit 到 NGSW、再消费为 CMUX 控制的完整路径、非二次幂层数、basis
-和容量错误，以及 evaluator 从首次调用起零在线分配。`circuit_bootstrap` 复用输出
-和工作区，覆盖 N=1024/4096、输入维数 N/16、BR/trace/SS 的 B=2^3/2^10，以及
-B=2^8、两层的输出。基准报告新增 CBS key 和 evaluator 实际请求且仍持有的堆字节数，
-不包括分配器开销、借用 table、普通 server key 和调用方输出。密钥生成和内存统计
-位于计时 closure 外。附加 `-- --test` 可检查 fixture，但不能得出耗时或可解密性结论。
-SIMD 复用现有依赖内核，不增加公开 ISA 选择接口。
+[实现设计与开发验证](../../docs/tfhe.md) · [基准与测量](../../docs/benchmarks/tfhe.md)

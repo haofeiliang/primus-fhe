@@ -61,9 +61,6 @@ Set `external_lwe` plaintext modulus to 4 and generate ordinary PBS keys with
 `boolean_decryptor` and `boolean_evaluator` from that context. Reuse raw LWE outputs
 with `evaluate_binary_to`, `not_to` and `mux_to`; no additional evaluation key is needed.
 See the [shared example and contracts](../primus_tfhe/README.md#boolean-gates).
-The [integration test](tests/boolean.rs) covers all six binary gates, NOT, MUX,
-chained evaluation, dimension errors and zero-allocation reuse, plus a public-key NAND path.
-Both RustFFT and TfheFFT run the same cases.
 
 ## Optional circuit bootstrapping
 
@@ -111,25 +108,6 @@ and [complete example](examples/ntru_fourier_circuit_bootstrap.rs).
 
 Error ownership and conversion rules follow the [shared TFHE error boundaries](../primus_tfhe/README.md#error-boundaries).
 
-## Validation and performance
+## Further reading
 
-```sh
-cargo test -p primus_tfhe_ntru_fourier
-cargo clippy -p primus_tfhe_ntru_fourier --all-targets -- -D warnings
-cargo +nightly test -p primus_tfhe_ntru_fourier --features simd
-cargo bench -p primus_tfhe_ntru_fourier --bench pbs
-cargo bench -p primus_tfhe_ntru_fourier --bench circuit_bootstrap
-```
-
-`pbs` reuses output buffers and measures complete PBS and 3/4-output ManyLUT
-against separate PBS calls. The Fourier cases use both RustFFT and TfheFFT.
-
-CBS tests exercise LWE bits through NGSW and CMUX, non-power-of-two level counts, basis and
-capacity errors, and zero online allocations from the first evaluator call.
-`circuit_bootstrap` measures reused output/workspace at N=1024/4096, input dimension
-N/16, B=2^3/2^10 for BR/trace/SS, and output B=2^8 with two levels. It reports live
-requested heap bytes for the additional CBS key and evaluator; these exclude
-allocator overhead, borrowed tables, ordinary server material and caller output.
-Key generation and accounting are outside timed closures. Add `-- --test` to
-smoke-test fixtures; smoke tests establish neither timing nor decryptability.
-SIMD uses existing dependency kernels, with no public ISA-selection API.
+[Implementation and developer validation](../../docs/tfhe.md) · [Benchmarks and measurements](../../docs/benchmarks/tfhe.md)

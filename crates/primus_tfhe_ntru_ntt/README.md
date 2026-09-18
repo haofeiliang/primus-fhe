@@ -66,8 +66,6 @@ Set `external_lwe` plaintext modulus to 4 and generate ordinary PBS keys with
 `boolean_decryptor` and `boolean_evaluator` from that context. Reuse raw LWE outputs
 with `evaluate_binary_to`, `not_to` and `mux_to`; no additional evaluation key is needed.
 See the [shared example and contracts](../primus_tfhe/README.md#boolean-gates).
-The [integration test](tests/boolean.rs) covers all six binary gates, NOT, MUX,
-chained evaluation, dimension errors and zero-allocation reuse, plus a public-key NAND path.
 
 ## Fixed-scale factorized MVB
 
@@ -93,19 +91,15 @@ for (output, expected) in outputs.iter().zip([2, 1, 0]) {
 Inputs use the context's Rounded front-half encoding; outputs share unsigned
 Scaled encoding under the same odd ciphertext modulus. Keep the output codec
 for decoding. Output count is unpadded and does not reduce rotation resolution.
-The program consumes one contiguous coefficient-factor buffer and transforms it
-in place; evaluation borrows each factor through `NttPolynomialIter`.
 
 One `NLev[1]` initialization and BR of the common polynomial are shared. Each
 output multiplies its factor, performs an NTRU key switch and extracts compact
 LWE under the external client secret. Factor norms amplify initialization and
-BR error; key-switch error is added afterward. Ordinary PBS workspace stays unchanged.
+BR error; key-switch error is added afterward.
 Context identity, input dimension, exact output count and every output dimension
 are checked before output writes; `_to` calls allocate nothing.
 
-The [integration test](tests/factorized_pbs.rs) covers 1/3/17 outputs, including
-interleaved capacity overflow, and compares against identical Scaled single-output
-PBS. Algebra and encoding limits follow the [shared contract](../primus_tfhe/README.md#fixed-scale-factorized-mvb).
+Algebra and encoding limits follow the [shared contract](../primus_tfhe/README.md#fixed-scale-factorized-mvb).
 
 Run the [threshold example](examples/ntru_ntt_mvb_thresholds.rs) to turn one
 encrypted score in `0..64` into 17 numeric flags beyond interleaved capacity:
@@ -116,10 +110,8 @@ cargo run -p primus_tfhe_ntru_ntt --release --example ntru_ntt_mvb_thresholds
 
 It reuses the program and ciphertext buffers, decoding with the retained Scaled
 codec. These numeric flags use a different encoding from the Boolean evaluator.
-The [NTRU measurements](../../docs/tfhe-mvb-ntru.md) compare identical Scaled
-outputs from repeated PBS, ManyLUT and MVB, including initializer/BR/KS error,
-output correlations and memory. They use a fixed-weight binary secret with
-classic BR and invertibility rejection; they are not production parameters.
+See [NTRU MVB costs and noise](../../docs/tfhe-mvb-ntru.md) when comparing it with
+repeated PBS or interleaved ManyLUT.
 
 ## Optional circuit bootstrapping
 
@@ -167,25 +159,6 @@ and [complete example](examples/ntru_ntt_circuit_bootstrap.rs).
 
 Error ownership and conversion rules follow the [shared TFHE error boundaries](../primus_tfhe/README.md#error-boundaries).
 
-## Validation and performance
+## Further reading
 
-```sh
-cargo test -p primus_tfhe_ntru_ntt
-cargo clippy -p primus_tfhe_ntru_ntt --all-targets -- -D warnings
-cargo +nightly test -p primus_tfhe_ntru_ntt --features simd
-cargo bench -p primus_tfhe_ntru_ntt --bench pbs
-cargo bench -p primus_tfhe_ntru_ntt --bench circuit_bootstrap
-```
-
-`pbs` reuses output buffers and measures complete PBS and 3/4-output ManyLUT
-against separate PBS calls. Setup is outside timing.
-
-CBS tests exercise LWE bits through NGSW and CMUX, non-power-of-two level counts, basis and
-capacity errors, and zero online allocations from the first evaluator call.
-`circuit_bootstrap` measures reused output/workspace at N=1024/4096, input dimension
-N/16, B=2^3/2^10 for BR/trace/SS, and output B=2^8 with two levels. It reports live
-requested heap bytes for the additional CBS key and evaluator; these exclude
-allocator overhead, borrowed tables, ordinary server material and caller output.
-Key generation and accounting are outside timed closures. Add `-- --test` to
-smoke-test fixtures; smoke tests establish neither timing nor decryptability.
-SIMD uses existing dependency kernels, with no public ISA-selection API.
+[Implementation and developer validation](../../docs/tfhe.md) · [Benchmarks and measurements](../../docs/benchmarks/tfhe.md)

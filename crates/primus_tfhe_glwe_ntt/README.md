@@ -21,10 +21,9 @@ workflow: parameters → context → paired keys → public-key encryptor/client
 ManyLUT with `t_in=4 → t_out=8`, client `encrypt_padded_to`, Boolean gates, NOT and MUX.
 
 For `BootstrapKeyswitch`, external ciphertexts have dimension `n`; for
-`KeyswitchBootstrap`, they have dimension `kN`. The example prints and checks these
-dimensions (4 and 256). Both inputs and outputs follow the chosen external key.
-All fixture dimensions, noise and decomposition choices are functional examples,
-not production security or failure-probability recommendations.
+`KeyswitchBootstrap`, they have dimension `kN`. Both inputs and outputs follow
+the chosen external key. Example dimensions, noise and decomposition choices are
+for functional demonstration, not production security or failure-probability recommendations.
 
 ## Context and reuse
 
@@ -57,11 +56,6 @@ The encryptor accepts secret or public keys and supports `encrypt_to`.
 The evaluator handles the internal modulus-8 LUT scale. Use `evaluate_binary_to`,
 `not_to` and `mux_to` for repeated Boolean evaluation.
 
-Low-level `NttGlweBootstrappingKey<T, LM>` retains the input modulus type `LM`, independently
-of the accumulator modulus. Key generation prepares the ordinary-PBS
-quantizer. ManyLUT prepares the conversion for the rotation step before coefficient
-processing; the high-level context keeps its existing parameter restrictions.
-
 ## Fixed-scale factorized MVB
 
 Compile once with an unsigned `ScaledCodec`, then reuse a dedicated evaluator:
@@ -85,20 +79,17 @@ The arguments after the codec are the input prefix length and exact output count
 Compilation returns `NttFactorizedLookupTable`, borrowing this context; a different
 context instance is rejected even with identical q and N. Lower-level callers
 can compile `FactorizedLookupTable` and consume it through `NttFactorizedLookupTable::new`.
-Factors share one contiguous buffer. NTT preparation transforms it in place,
-and evaluation borrows each factor through `NttPolynomialIter`, without copies.
 
 Classic and sparse keys work in both orders. BK runs BR once, then multiplies and
 key-switches each output; KB switches the input once, then runs BR and the products.
 Rotation step remains one for any positive output count. `_to` checks context,
 input, output count and every output dimension before writing, and allocates nothing.
-Extra workspace is one `(d+1)*N`-coefficient NTT GLWE, independent of output count;
-ordinary evaluators are unchanged. The program stores `(output_count+1)*N` coefficients.
+Extra workspace is one `(d+1)*N`-coefficient NTT GLWE, independent of output count.
+The program stores `(output_count+1)*N` coefficients.
 
 Use the output codec to decode phases. Factor norms amplify BR noise, and Scaled
 centers can differ from Rounded centers when chaining PBS. See the
-[shared contract](../primus_tfhe/README.md#fixed-scale-factorized-mvb) and
-[functional test](tests/factorized_pbs.rs).
+[shared contract](../primus_tfhe/README.md#fixed-scale-factorized-mvb).
 
 Run the [threshold example](examples/mvb_thresholds.rs):
 
@@ -131,16 +122,18 @@ evaluator.apply_lookup_table_to(&input, &lut, &mut output);
 Both orders use that small secret for blind rotation. External dimensions remain
 `n` for `BootstrapKeyswitch` and `kN` for `KeyswitchBootstrap`. Ordinary and interleaved
 PBS share the usual LUT compiler, output codec, key switch and extraction; `_to`
-calls allocate nothing. The evaluator allocates only the selected algorithm's
-scratch and dispatches once at the blind-rotation boundary. The existing key
-factories generate classic keys. `ServerKey::bootstrapping_key()` now returns
+calls allocate nothing. Ordinary key factories generate classic keys; use the
+sparse factory above to select this algorithm. `ServerKey::bootstrapping_key()` returns
 `BootstrappingKey::{Classic, Sparse}` for callers needing the raw key.
+
+Sparse server keys also work with `context.boolean_evaluator(&server_key)` when
+`t=4`, and with bounded bivariate or odd full-domain LUTs through the ordinary
+evaluator. Account for gate preprocessing, packing error amplification and the
+narrower odd full-domain input margin when choosing parameters.
 
 Generation checks actual binary coefficients and weight, then tries at most eight
 independent public bucket maps with the same secret. Errors return no partial key.
-The experimental profiles use three copies and `2*h` buckets. Coefficient GGSWs
-encode private selections and a dummy per bucket; unoccupied buckets encrypt one
-in the dummy. Private matching buffers are erased on drop.
+The example uses three copies and `2*h` buckets.
 
 For raw ordinary blind rotation, `try_generate_sparse_bootstrapping_key` returns
 `SparseGlweBootstrappingKey`; pair it with `SparseGlweBlindRotationContext::new(&key)`
@@ -149,22 +142,15 @@ polynomial. This lower-level call outputs an accumulator GLWE at rotation step o
 
 Sparse aggregation and interleaved rotation steps require their own noise budget.
 These parameters have no certified security level or full PBS failure bound; see
-[the P3 contract and measurements](../../docs/tfhe-sparse-pbs.md#p35-完整-pbs-接入与验收).
+[sparse PBS design and measurements](../../docs/tfhe-sparse-pbs.md#p35-完整-pbs-接入与验收).
 
 ## Binary and ternary small secrets
 
 Select `SecretKeyDistr::UniformTernary` or another ternary family in `LweParameters`;
 the key-generation and evaluator APIs are unchanged. The basic example uses this
 configuration. Both PBS orders, ordinary/interleaved LUTs and public-key inputs work.
-Binary keeps one GGSW per coordinate; ternary stores independently encrypted
-`(positive, negative)` controls and combines them for one external product per coordinate.
-
-At the low level, `NttGlweBlindRotationContext::new(&key)` allocates scratch
-for the key's control family; `resize` preserves that family. `iter_binary_controls` /
-`iter_ternary_controls` expose single controls or pairs, returning `None` for the other
-family. Server-key compatibility includes the small-secret distribution. Dispatch
-occurs outside the rotation loop and online scratch is reused; fusion adds BSK and
-temporary GGSW storage.
+Ternary keys require more key and workspace storage than binary keys; see the
+[ternary design and costs](../../docs/tfhe-ternary.md).
 
 NTT contexts/BR require `MonomialNttTable`, implemented by every built-in NTT table.
 Classic ternary also supports CBS and factorized MVB. Bucketed sparse PBS still
@@ -194,8 +180,7 @@ cannot verify identity. Bound parameters are available via
 The output basis defines GGSW gadget scales; output
 layout comes from the accumulator. The circuit key binds output layout and the
 trace/scheme-switch bases. CBS preserves the accumulator secret and skips ordinary
-PBS's postprocessing; see the [CBS integration test](tests/circuit_bootstrap.rs)
-for projection and CMUX consumption. `CircuitBootstrapConfig` names output/trace/scheme-switch decompositions and independent
+PBS's postprocessing. `CircuitBootstrapConfig` names output/trace/scheme-switch decompositions and independent
 trace/SS noise; ring parameters come from the accumulator. `try_new` retains direct binding
 of existing low-level parameters.
 Trace/SS noise and key-dependent-message
@@ -203,45 +188,13 @@ assumptions need a separate assessment.
 
 Use `evaluator.allocate_output()` to allocate the raw CBS control, then
 `evaluator.cmux_to(control, lhs, rhs, output)` or `external_product_to(control, input, output)`.
-`context.accumulator_client(&client)` binds coefficient-ring encryption/decryption with one
-N-element scratch buffer, erased on drop. It skips the body's forward NTT and reuses
-outputs and scratch without allocation.
+`context.accumulator_client(&client)` binds coefficient-ring encryption/decryption
+and reuses outputs and workspace without allocation.
 See the [shared consumption contracts](../primus_tfhe/README.md#cbs-output-and-consumption)
 and [complete example](examples/circuit_bootstrap.rs).
 
 Error ownership and conversion rules follow the [shared TFHE error boundaries](../primus_tfhe/README.md#error-boundaries).
 
-## Validation and performance
+## Further reading
 
-```sh
-cargo test -p primus_tfhe_glwe_ntt
-cargo clippy -p primus_tfhe_glwe_ntt --all-targets -- -D warnings
-cargo +nightly test -p primus_tfhe_glwe_ntt --features simd
-cargo bench -p primus_tfhe_glwe_ntt --bench pbs
-cargo bench -p primus_tfhe_glwe_ntt --bench ternary_pbs
-cargo bench -p primus_tfhe_glwe_ntt --bench circuit_bootstrap
-cargo bench -p primus_tfhe_glwe_ntt --bench sparse_pbs
-cargo bench -p primus_tfhe_glwe_ntt --bench mvb
-```
-
-`pbs` reuses output buffers and covers both orders, 3/4-output ManyLUT versus
-separate PBS calls, and Boolean AND/MUX. BR and key-switch stages locate costs;
-coefficient extraction is benchmarked in `primus_lattice`. `circuit_bootstrap` measures complete CBS for both orders and 2/3 output levels.
-
-`sparse_pbs` compares classic and sparse complete PBS under one fixed-weight client
-secret: both orders, ordinary and three-output interleaved LUTs, plus complete
-server-key generation (10 cases, `n/h/N=728/32/1024`). Inputs, evaluator and outputs are
-prepared outside PBS timing. Each iteration processes one of four encrypted
-inputs. Memory, small-profile diagnostics and default/SIMD results are recorded
-in the [P3 measurements](../../docs/tfhe-sparse-pbs.md#p35-完整-pbs-接入与验收).
-
-`mvb` compares independent PBS, interleaved ManyLUT and factorized MVB with the
-same Scaled threshold outputs, in both orders with classic/sparse keys. It has
-20 online cases (3 comparable outputs and 17 outputs beyond interleaved capacity)
-and 7 construction/preparation cases. Online timings include KS and extraction;
-memory and error diagnostics were measured separately. These cost fixtures use
-small-secret dimension 728 and are not certified production parameters.
-
-`ternary_pbs` compares complete binary, fused ternary and two-CMUX PBS at
-`n=728, N=1024` with BR→KS, and separately times BSK+KSK generation. Timing and
-key/workspace measurements are recorded in the [T3 profile and results](../../docs/tfhe-ternary.md#t3完整-glwe-接入与验收已完成).
+[Implementation and developer validation](../../docs/tfhe.md) · [Benchmarks and measurements](../../docs/benchmarks/tfhe.md)

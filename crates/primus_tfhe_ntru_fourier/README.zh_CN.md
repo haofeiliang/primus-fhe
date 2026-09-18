@@ -53,8 +53,6 @@ LUT 编译的第一个参数为输出 `RoundedCodec`。示例采用 `t_in=16 →
 密钥，再从 context 绑定 `boolean_encryptor`（私钥/公钥）、`boolean_decryptor` 和
 `boolean_evaluator`。`evaluate_binary_to`、`not_to`、`mux_to` 复用原始 LWE 输出，无需附加求值密钥。
 示例和编码契约见[公共指南](../primus_tfhe/README.zh_CN.md#boolean-门)。
-[集成测试](tests/boolean.rs)覆盖六种二元门、NOT、MUX、门链、维数错误和零分配复用，
-另保留公钥 NAND 路径。RustFFT 与 TfheFFT 使用同一组用例。
 
 ## 可选 circuit bootstrapping
 
@@ -96,23 +94,6 @@ cargo run -p primus_tfhe_ntru_fourier --example ntru_fourier_circuit_bootstrap
 
 错误归属与转换规则见[公共 TFHE 错误边界](../primus_tfhe/README.zh_CN.md#错误边界)。
 
-## 验证与性能
+## 进一步阅读
 
-```sh
-cargo test -p primus_tfhe_ntru_fourier
-cargo clippy -p primus_tfhe_ntru_fourier --all-targets -- -D warnings
-cargo +nightly test -p primus_tfhe_ntru_fourier --features simd
-cargo bench -p primus_tfhe_ntru_fourier --bench pbs
-cargo bench -p primus_tfhe_ntru_fourier --bench circuit_bootstrap
-```
-
-`pbs` 复用输出，测量完整 PBS，并比较 3/4 输出 ManyLUT 与独立 PBS 调用。
-Fourier 用例同时覆盖 RustFFT 和 TfheFFT。
-
-CBS 测试覆盖 LWE bit 到 NGSW、再消费为 CMUX 控制的完整路径、非二次幂层数、basis
-和容量错误，以及 evaluator 从首次调用起零在线分配。`circuit_bootstrap` 复用输出
-和工作区，覆盖 N=1024/4096、输入维数 N/16、BR/trace/SS 的 B=2^3/2^10，以及
-B=2^8、两层的输出。基准报告新增 CBS key 和 evaluator 实际请求且仍持有的堆字节数，
-不包括分配器开销、借用 table、普通 server key 和调用方输出。密钥生成和内存统计
-位于计时 closure 外。附加 `-- --test` 可检查 fixture，但不能得出耗时或可解密性结论。
-SIMD 复用现有依赖内核，不增加公开 ISA 选择接口。
+[实现设计与开发验证](../../docs/tfhe.md) · [基准与测量](../../docs/benchmarks/tfhe.md)

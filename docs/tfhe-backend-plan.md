@@ -2,11 +2,11 @@
 
 依据：[后端覆盖分析](tfhe-backend-coverage.md)，初始源码基线 `7f1ef55`。本计划把已有算法的后端补齐与必要的高层接口整理拆成可独立验收的步骤；不重开已完成的 P1–P4、T1–T3，也不扩入 FDFB 等[新算法选型](tfhe-next.md)。
 
-B1、B2、B3.1–B3.2 已完成，下一步 B3.3。B1.4–B1.7 整理四后端高层接口，分析与性能对照基线为 `66ae701`；B2–B8 保留原编号。当前任务与下一步记录在 [HANDOFF](../HANDOFF.md)，算法依据仍由覆盖分析和各专项文档维护。
+B1–B3 已完成，下一步 B4.1。B1.4–B1.7 整理四后端高层接口，分析与性能对照基线为 `66ae701`；B2–B8 保留原编号。当前任务与下一步记录在 [HANDOFF](../HANDOFF.md)，算法依据仍由覆盖分析和各专项文档维护。
 
 ## 执行方式
 
-- 接下来推荐按 **`执行 B3.3` → `执行 B4.1` → …** 推进。`B1` 表示整个阶段；明确要求“执行 B1”时，完成其所有满足前置条件的剩余子步骤。
+- 接下来推荐按 **`执行 B4.1` → `执行 B4.2` → …** 推进。`B1` 表示整个阶段；明确要求“执行 B1”时，完成其所有满足前置条件的剩余子步骤。
 - 每步先核对 Git 状态、HANDOFF、本步及依赖结论；保留用户修改和暂存状态。编号不隐含暂存、提交或启动后续步骤。
 - **工程接入**：现成代数与原语支持实现，仍需正常验证。**原型验证**：先回答未决问题，结论可以是通过、缩小范围或暂缓。
 - “依赖原型通过”不同于“原型步骤已结束”。原型不成立时保留结论及最小反例，删除无长期价值的实验代码，暂缓依赖分支；其他独立阶段仍可执行。
@@ -18,7 +18,7 @@ B1、B2、B3.1–B3.2 已完成，下一步 B3.3。B1.4–B1.7 整理四后端�
 | --- | --- | --- | --- |
 | B1 | GLWE Fourier 经典 CBS、四后端高层接口整理 | B1.1–B1.7 | 全部完成；[接口成本验收](tfhe-api-costs.md) |
 | B2 | NTRU 两后端 Boolean | B2.1–B2.2 | 已完成共享算法、绑定、完整门语义和串联验收 |
-| B3 | NTRU NTT MVB、既有 sparse 组合验收 | B3.1–B3.3 | MVB 完整链及误差/成本已完成；sparse 组合待验收 |
+| B3 | NTRU NTT MVB、既有 sparse 组合验收 | B3.1–B3.3 | 全部完成；[MVB 测量](tfhe-mvb-ntru.md)、[sparse 组合](tfhe-sparse-pbs.md#b33-已有上层组合验收) |
 | B4 | GLWE Fourier 二元稀疏 PBS | B4.1–B4.3 | 参考实现与收益验证；不含 sparse CBS/ternary |
 | B5 | Native 偶尺度 MVB | B5.1–B5.4 | 原型通过后接入两族 Fourier；NTRU 接入还依赖 B3.1 |
 | B6 | sparse CBS | B6.1–B6.3 | NTT 先验证；Fourier 还依赖 B1、B4 的对应能力 |
@@ -105,12 +105,11 @@ Fourier 因原型噪声增加，按用户决定暂不接入。不阻塞 B2.1。
 - 保留[五项在线基准](../crates/primus_tfhe_ntru_ntt/benches/mvb.rs)、[17 阈值应用示例](../crates/primus_tfhe_ntru_ntt/examples/ntru_ntt_mvb_thresholds.rs)与双语用法。`just tfhe`、`just tfhe-simd` 及两配置的 release 示例通过。
 - 本组小范数 MVB 相对重复 PBS 有明显收益，三输出与交错接近；不推断所有函数更快，不提供生产安全/尾概率结论，也未比较 NTRU 连续存储改动前后的耗时。
 
-### B3.3：GLWE NTT sparse 的三个现有组合
+### B3.3：GLWE NTT sparse 的三个现有组合（已完成）
 
-- **前置**：无新算法依赖；推荐在 B2.1 后执行，直接验证迁移后的 Boolean 层。
-- **范围**：补 sparse×Boolean、sparse×有界双输入、sparse×奇数明文全域的聚焦端到端验证。
-- **验收**：覆盖门预处理、`x+B*y` 误差放大和较窄全域旋转区间；复用少量 fixed-weight 密钥/工作区，以代表点覆盖两种 order。发现问题时只修复该组合的实际契约。
-- **边界**：这些路径已经能够分派到 sparse BR，优先增加缺失证据，不另造 evaluator 或重复共享 LUT 测试。
+- [两个新增测试](../crates/primus_tfhe_glwe_ntt/tests/sparse_pbs.rs)覆盖 sparse×Boolean、有界双输入和奇数明文全域，两种 order 均复用小型 fixed-weight 密钥/工作区；Boolean 复用共同真值表和串联断言。
+- 受控相位偏移覆盖门预处理、`x+3*y` 的噪声放大及编码舍入差、奇数全域的较窄输入余量；检查输出相位、解码及首次调用零分配。参数和代表点见[专项记录](tfhe-sparse-pbs.md#b33-已有上层组合验收)。
+- `just tfhe`、`just tfhe-simd` 通过；无需修改生产 API 或内核，也未增加 benchmark。sparse CBS、ternary 和其他后端仍按各自阶段验收。
 
 ## B4：GLWE Fourier 固定重量二元稀疏 PBS
 
