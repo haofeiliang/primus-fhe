@@ -107,6 +107,20 @@ The [integration test](tests/factorized_pbs.rs) covers 1/3/17 outputs, including
 interleaved capacity overflow, and compares against identical Scaled single-output
 PBS. Algebra and encoding limits follow the [shared contract](../primus_tfhe/README.md#fixed-scale-factorized-mvb).
 
+Run the [threshold example](examples/ntru_ntt_mvb_thresholds.rs) to turn one
+encrypted score in `0..64` into 17 numeric flags beyond interleaved capacity:
+
+```sh
+cargo run -p primus_tfhe_ntru_ntt --release --example ntru_ntt_mvb_thresholds
+```
+
+It reuses the program and ciphertext buffers, decoding with the retained Scaled
+codec. These numeric flags use a different encoding from the Boolean evaluator.
+The [NTRU measurements](../../docs/tfhe-mvb-ntru.md) compare identical Scaled
+outputs from repeated PBS, ManyLUT and MVB, including initializer/BR/KS error,
+output correlations and memory. They use a fixed-weight binary secret with
+classic BR and invertibility rejection; they are not production parameters.
+
 ## Optional circuit bootstrapping
 
 Choose a `CircuitBootstrapConfig` selecting output/trace/scheme-switch decompositions and

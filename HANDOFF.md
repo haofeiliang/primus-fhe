@@ -4,7 +4,7 @@
 
 ## 当前任务
 
-- **B3.1 已完成**：NTRU NTT MVB 共享 `NLev[1]` 初始化与 BR，各输出乘因子后独立 KS/提取；预处理产物借用 context，独立 evaluator 只多一个 NTT 多项式，复用普通密钥和工作区结构。公共 LUT 与两 NTT 后端的因子统一为连续缓冲，编译直接填充、准备原地变换、求值使用 `NttPolynomialIter`。1/3/17 输出、相同 Scaled 单输出 PBS 对照、奇数尺度初始化、写入前拒绝及首次调用零分配通过；默认/SIMD 与严格 rustdoc 通过。下一步 **B3.2：MVB 误差与成本对照**，由用户启动；不套用 GLWE 测量结果。见[分步计划](docs/tfhe-backend-plan.md)、[NTRU MVB 用法](crates/primus_tfhe_ntru_ntt/README.zh_CN.md#固定尺度分解式-mvb)。
+- **B3.1–B3.2 已完成**：NTRU NTT MVB 共享 `NLev[1]` 初始化与 BR，各输出乘因子后独立 KS/提取，额外一个 NTT 多项式；公共 LUT 与两 NTT 后端使用连续因子缓冲和多项式迭代器。接口验收及 n=728、h=32 经典 BR 的默认/SIMD 成本、分阶段误差和输出相关性见 [NTRU 测量](docs/tfhe-mvb-ntru.md)。保留五项在线基准与一个应用示例，临时统计代码已删除；`just tfhe`、`just tfhe-simd` 和两配置 release 示例通过。下一步 **B3.3：GLWE NTT sparse 的 Boolean/bivariate/odd-full 组合验收**，由用户启动；见[分步计划](docs/tfhe-backend-plan.md)。
 - **B2.1–B2.2 已完成**：Boolean 门算法、LUT 和 LWE 工作区由 `primus_tfhe` 共享，四后端提供 Boolean 工厂，保留独立加解密器及私钥/公钥加密。客户端错误归 family `BooleanError`，求值器构造归共享 `TfheEvaluationError`。共同真值表、混合门链、错误边界和 NTRU 首调用零分配通过；NTRU 覆盖 NTT 与两种 FFT，默认/SIMD 检查和测试通过。见[公共用法](crates/primus_tfhe/README.zh_CN.md#boolean-门)。
 - **GLWE NTT 系数域加解密已接入**：[算法、性能与误差](docs/glwe-coefficient-client.md)。在 `NttGlweSecretKey` 增加三个固有方法，NTT `AccumulatorClient` 改用 N 系数、析构时擦除的 scratch；高层接口不变，保持精确等价和在线零分配。u64 Fourier 原型真实相位噪声 RMS 增加约 6%–13%，按用户决定暂不接入；不重开全底层整理。
 - **B1.1–B1.7 已完成**：[分步计划](docs/tfhe-backend-plan.md)、[高层接口与成本验收](docs/tfhe-api-costs.md)。四后端使用具名配置、自动建表、带可选 CBS 的 `ServerKey`、绑定消费与 accumulator 客户端；GLWE NTT 的 CBS 参数现在也绑定输入明文模数。默认/SIMD、严格 rustdoc、底层回归及九个 release 示例通过；四后端完整消费首调用零分配，复用 scratch 省去独立 CMUX 缓冲。对 `66ae701` 的当前时间/资源对照已记录；NTRU NTT 微型 fixture 对资源放置敏感，不声称所有负载等时。稀疏 CBS 仍拒绝，正式尾界未认证；逐系数 RevHomTrace 保留，共享 automorphism 优化暂缓。
@@ -19,7 +19,7 @@
 
 - Ternary 首批为 GLWE NTT/Fourier；NTRU ternary、桶聚合稀疏 ternary 分开安排。Automorphism BR 暂缓；NTRU packing 按用户决定排除。
 - 已实现能力以 [TFHE README](crates/primus_tfhe/README.zh_CN.md)为准。稀疏 CBS 仍拒绝；MVB 当前限定 GLWE/NTRU NTT、奇数 q、Rounded 前半区输入和 unsigned Scaled 输出，NTRU BR 秘密仍为 binary。
-- 连续因子存储减少分配，但没有统一在线收益：固定 CPU 的两轮 GLWE 17 输出对照中，BK 慢约 3%，KB 接近；具体原因未定位。[测量与复现](docs/tfhe-mvb.md#连续因子存储的成本对照)保留该限制，NTRU 耗时仍待 B3.2。
+- 连续因子存储减少分配，但没有统一在线收益：固定 CPU 的两轮 GLWE 17 输出对照中，BK 慢约 3%，KB 接近；具体原因未定位。[测量与复现](docs/tfhe-mvb.md#连续因子存储的成本对照)保留该限制；B3.2 比较当前 NTRU 算法选择，未比较 NTRU 存储变更前后。
 - [稀疏 PBS](docs/tfhe-sparse-pbs.md)的条件映射分布及完整安全/尾界、[MVB](docs/tfhe-mvb.md)的相关噪声、[居中/shift](docs/tfhe.md#p1r-取整策略取舍)正式接入均未完成理论认证或实现扩展，功能测试不关闭这些问题。
 - 历史 n=512 的稀疏测量不能当作当前 n=728 的结果；参数与测量入口见各专项文档和[测量索引](docs/benchmarks/tfhe.md)。
 

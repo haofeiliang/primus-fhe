@@ -2,11 +2,11 @@
 
 依据：[后端覆盖分析](tfhe-backend-coverage.md)，初始源码基线 `7f1ef55`。本计划把已有算法的后端补齐与必要的高层接口整理拆成可独立验收的步骤；不重开已完成的 P1–P4、T1–T3，也不扩入 FDFB 等[新算法选型](tfhe-next.md)。
 
-B1、B2、B3.1 已完成，下一步 B3.2。B1.4–B1.7 整理四后端高层接口，分析与性能对照基线为 `66ae701`；B2–B8 保留原编号。当前任务与下一步记录在 [HANDOFF](../HANDOFF.md)，算法依据仍由覆盖分析和各专项文档维护。
+B1、B2、B3.1–B3.2 已完成，下一步 B3.3。B1.4–B1.7 整理四后端高层接口，分析与性能对照基线为 `66ae701`；B2–B8 保留原编号。当前任务与下一步记录在 [HANDOFF](../HANDOFF.md)，算法依据仍由覆盖分析和各专项文档维护。
 
 ## 执行方式
 
-- 接下来推荐按 **`执行 B3.2` → `执行 B3.3` → …** 推进。`B1` 表示整个阶段；明确要求“执行 B1”时，完成其所有满足前置条件的剩余子步骤。
+- 接下来推荐按 **`执行 B3.3` → `执行 B4.1` → …** 推进。`B1` 表示整个阶段；明确要求“执行 B1”时，完成其所有满足前置条件的剩余子步骤。
 - 每步先核对 Git 状态、HANDOFF、本步及依赖结论；保留用户修改和暂存状态。编号不隐含暂存、提交或启动后续步骤。
 - **工程接入**：现成代数与原语支持实现，仍需正常验证。**原型验证**：先回答未决问题，结论可以是通过、缩小范围或暂缓。
 - “依赖原型通过”不同于“原型步骤已结束”。原型不成立时保留结论及最小反例，删除无长期价值的实验代码，暂缓依赖分支；其他独立阶段仍可执行。
@@ -18,7 +18,7 @@ B1、B2、B3.1 已完成，下一步 B3.2。B1.4–B1.7 整理四后端高层接
 | --- | --- | --- | --- |
 | B1 | GLWE Fourier 经典 CBS、四后端高层接口整理 | B1.1–B1.7 | 全部完成；[接口成本验收](tfhe-api-costs.md) |
 | B2 | NTRU 两后端 Boolean | B2.1–B2.2 | 已完成共享算法、绑定、完整门语义和串联验收 |
-| B3 | NTRU NTT MVB、既有 sparse 组合验收 | B3.1–B3.3 | B3.1 完整链已完成；误差/成本与 sparse 组合待验收 |
+| B3 | NTRU NTT MVB、既有 sparse 组合验收 | B3.1–B3.3 | MVB 完整链及误差/成本已完成；sparse 组合待验收 |
 | B4 | GLWE Fourier 二元稀疏 PBS | B4.1–B4.3 | 参考实现与收益验证；不含 sparse CBS/ternary |
 | B5 | Native 偶尺度 MVB | B5.1–B5.4 | 原型通过后接入两族 Fourier；NTRU 接入还依赖 B3.1 |
 | B6 | sparse CBS | B6.1–B6.3 | NTT 先验证；Fourier 还依赖 B1、B4 的对应能力 |
@@ -96,13 +96,14 @@ Fourier 因原型噪声增加，按用户决定暂不接入。不阻塞 B2.1。
 - [预处理产物与独立 evaluator](../crates/primus_tfhe_ntru_ntt/src/evaluator/factorized.rs)借用 context，接通 `NLev[1] 初始化 V → BR → 各 W_i 乘法 → 逐输出 NTRU KS → compact extraction`；工厂与 GLWE NTT 同名，使用普通服务端密钥。
 - 保持奇数 `q`、Rounded 前半区输入、统一 unsigned Scaled 输出；额外一个 NTT 多项式保存共享旋转结果，各输出复用 BR/KS 缓冲。公共 LUT 与两后端的因子共用连续存储，原地变换、通过既有多项式迭代器借用；普通 evaluator 的工作区不变。
 - [聚焦测试](../crates/primus_tfhe_ntru_ntt/tests/factorized_pbs.rs)覆盖相同 Scaled 编码的单输出 PBS 对照、1/3/17 输出、超出交错容量、奇数尺度初始化、context/形状/模数拒绝、覆盖写入及首次调用零分配。`just tfhe`、`just tfhe-simd` 与严格 rustdoc 通过。
-- [双语用法](../crates/primus_tfhe_ntru_ntt/README.zh_CN.md#固定尺度分解式-mvb)与 [NTRU 误差来源](tfhe-mvb.md#ntru-ntt-的初始化与后处理)已同步；耗时、误差统计和应用示例仍由 B3.2 验收。
+- [双语用法](../crates/primus_tfhe_ntru_ntt/README.zh_CN.md#固定尺度分解式-mvb)与 [NTRU 误差来源](tfhe-mvb.md#ntru-ntt-的初始化与后处理)已同步；耗时、误差统计和应用示例见 B3.2。
 
-### B3.2：MVB 误差与成本对照
+### B3.2：MVB 误差与成本对照（已完成）
 
-- **前置**：B3.1。
-- **范围**：记录 `||W_i||_1`、NLev 初始化/BR 误差放大、逐输出 KS 误差与输出间相关性；对照同一后端的重复 PBS 和可容纳时的交错 ManyLUT。
-- **验收**：同一输入、输出函数、编码、参数及复用策略下报告耗时、密钥、额外 scratch；补一个有应用含义的例子及双语文档。不能声称 MVB 对全部函数更快。
+- [NTRU 测量](tfhe-mvb-ntru.md)记录 n=728、h=32 经典 BR 的两组等价 Scaled 阈值负载，比较重复 PBS、可容纳时的交错 ManyLUT 与 MVB；默认/SIMD 均测完整调用、密钥、程序与工作区。
+- 临时分阶段诊断核对因子范数、初始化/BR 放大、逐输出 KS 与最终相位，记录输出相关性；正式调用与诊断逐字一致，所有在线路径首调用零分配。误差与资源汇总在默认/SIMD 下相同；临时诊断已删除，不进入普通 CI。
+- 保留[五项在线基准](../crates/primus_tfhe_ntru_ntt/benches/mvb.rs)、[17 阈值应用示例](../crates/primus_tfhe_ntru_ntt/examples/ntru_ntt_mvb_thresholds.rs)与双语用法。`just tfhe`、`just tfhe-simd` 及两配置的 release 示例通过。
+- 本组小范数 MVB 相对重复 PBS 有明显收益，三输出与交错接近；不推断所有函数更快，不提供生产安全/尾概率结论，也未比较 NTRU 连续存储改动前后的耗时。
 
 ### B3.3：GLWE NTT sparse 的三个现有组合
 

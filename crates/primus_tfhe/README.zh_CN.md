@@ -322,6 +322,8 @@ GLWE 支持经典/稀疏密钥和两种 order；NTRU 共享加密初始化和 BR
 [阈值示例](../primus_tfhe_glwe_ntt/examples/mvb_thresholds.rs) 把一个加密分数转换为
 交错布局容量之外的 17 个标志。[成本测量](../../docs/tfhe-mvb.md#8-p43-测量与应用选择)
 在相同 Scaled 输出中心下比较两种 order 与经典/稀疏密钥，并记录因子范数和额外输出误差。
+[NTRU 阈值示例](../primus_tfhe_ntru_ntt/examples/ntru_ntt_mvb_thresholds.rs)与
+[NTRU 测量](../../docs/tfhe-mvb-ntru.md)单独记录其加密初始化、逐输出 KS 和相关误差。
 
 ## 源码组织
 

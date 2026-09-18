@@ -111,6 +111,13 @@ Native 的额外位运算扫描成本较小；Barrett 的量化成本接近翻�
 - P3.2–P3.5 的分项、BR、完整 PBS、keygen、内存和相位诊断只在[稀疏专项](../tfhe-sparse-pbs.md)维护，历史成本组为 n=512。
 - [tfhe-p4.3.csv](tfhe-p4.3.csv)、[resources](tfhe-p4.3-resources.csv)、[noise](tfhe-p4.3-noise.csv) 的 n=728 MVB 负载、测量方法和 KS 对照只在 [MVB 专项](../tfhe-mvb.md#8-p43-测量与应用选择)维护。
 
+## NTRU NTT MVB
+
+[计时](tfhe-b3.2.csv)、[资源](tfhe-b3.2-resources.csv)、[误差](tfhe-b3.2-noise.csv)
+记录 B3.2 的 n=728、h=32 经典 BR，3/17 个 Scaled 阈值输出。方法、默认/SIMD 对照、
+NLev 初始化/BR/逐输出 KS 的误差与相关性只在 [NTRU MVB 测量](../tfhe-mvb-ntru.md)维护。
+这不是连续因子存储变更前后的性能对照，也不与 GLWE 参数作等安全比较。
+
 ## NTRU 盲旋转缓冲区交换
 
 2026-09-18，在 `444286d` 后的 NTRU API 整理基础上单独比较盲旋转末尾的 `copy_from_slice` 与 `core::mem::swap`，两版其余实现相同。CPU 0、默认 features，30 samples、1 s warm-up、3 s measurement。使用两个 NTRU 后端现有 `pbs` 基准：seed=42、u32、n=800、N=1024、t=4，NTT 的 q=132120577，Fourier 为 Native；复用密钥、LUT、工作区及输出。

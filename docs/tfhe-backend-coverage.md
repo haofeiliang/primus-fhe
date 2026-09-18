@@ -14,7 +14,7 @@
 
 1. **GLWE Fourier 经典 CBS**：B1.1–B1.3 已完成完整链、误差/成本测量与使用示例，见 [CBS 专项](tfhe-cbs.md)。
 2. **NTRU 两后端 Boolean 适配**：B2 已完成共享门算法、客户端/工厂，以及完整门真值表和串联验收。
-3. **NTRU NTT 分解式 MVB**：B3.1 已接通完整链并完成接口验收，B3.2 待测误差和成本。
+3. **NTRU NTT 分解式 MVB**：B3.1–B3.2 已完成完整链、误差/相关性和成本验收，见 [NTRU MVB 测量](tfhe-mvb-ntru.md)。
 4. **GLWE Fourier 固定重量二元稀疏 PBS**：桶聚合代数可迁移，先实现系数域聚合的参考路径；收益须独立测量。
 
 优先做原型的组合是 **Native 偶尺度 MVB、稀疏 CBS、NTRU ternary 与 NTRU 桶聚合**。其中有的代数已成立，但尚未建立完整的表示、采样或误差契约。不要把“尚未验证”写成“数学上不适配”，也不要把“有底层原语”写成“已有完整功能”。
@@ -127,7 +127,7 @@ B2.1 已将 [BooleanEvaluator](../crates/primus_tfhe/src/boolean.rs) 移入 `pri
 
 NTRU 的[预处理产物和独立 MVB evaluator](../crates/primus_tfhe_ntru_ntt/src/evaluator/factorized.rs)复用现有 BR/KS 工作区，只增加一个 NTT 多项式保存共享旋转结果。采用乘后逐输出 KS，使 KS 误差不再被 `W_i` 放大；共享一次 KS 是后续独立的成本/误差取舍。
 
-[验收](../crates/primus_tfhe_ntru_ntt/tests/factorized_pbs.rs)覆盖与单输出 Scaled LUT 的对照、1/3/17 输出、超出交错容量、奇数尺度初始化、context/维数错误及零分配复用。误差预算仍需计入因子放大的初始化/BR 误差和各输出 KS 误差；B3.2 将单独测量，不能套用 GLWE 的耗时或误差结果。
+[验收](../crates/primus_tfhe_ntru_ntt/tests/factorized_pbs.rs)覆盖与单输出 Scaled LUT 的对照、1/3/17 输出、超出交错容量、奇数尺度初始化、context/维数错误及零分配复用。[B3.2](tfhe-mvb-ntru.md)已完成 n=728 负载的默认/SIMD 计时、资源及分阶段误差诊断：因子放大初始化/BR 误差，各输出再加入 KS 误差；测得相关输出，不能套用独立噪声假设或 GLWE 数值。
 
 ### 4.4 GLWE Fourier 固定重量二元稀疏 PBS
 
@@ -229,7 +229,7 @@ Full-domain FDFB、通用数字拆分、HLUT/LFBS、multi-bit 等属于[新算�
 ## 7. 建议执行顺序与验收规模
 
 1. **先整理高层接口，再补明确缺口**：B1 的 GLWE Fourier 经典 CBS、四后端高层接口与成本验收，以及 B2 的 NTRU Boolean 接入与门语义验收均已完成。此顺序减少重复迁移，Boolean 算法本身不依赖 CBS；后续按[分步计划](tfhe-backend-plan.md)推进。
-2. **再扩展已有多输出路线**：NTRU NTT MVB 完整链已接入，接下来测量误差与成本，再补 GLWE NTT sparse×Boolean/bivariate/odd-full 的小型组合验证。
+2. **再扩展已有多输出路线**：NTRU NTT MVB 完整链、误差和成本验收已完成；接下来补 GLWE NTT sparse×Boolean/bivariate/odd-full 的小型组合验证。
 3. **处理性能型移植与受限表示**：GLWE Fourier sparse PBS、Native 偶尺度 MVB。先完成参考路径，再测收益，避免一次混入频域聚合等额外优化。
 4. **按实际应用选择实验组合**：NTT sparse CBS、NTRU ternary、NTRU sparse；分别通过前置条件后，再组合到其他上层功能。
 

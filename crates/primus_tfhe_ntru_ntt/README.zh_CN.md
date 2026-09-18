@@ -93,6 +93,18 @@ for (output, expected) in outputs.iter().zip([2, 1, 0]) {
 [集成测试](tests/factorized_pbs.rs)覆盖 1/3/17 输出，包括交错容量之外的情况，
 并与相同 Scaled 编码的单输出 PBS 对照。代数和编码限制见[共享契约](../primus_tfhe/README.zh_CN.md#固定尺度分解式-mvb)。
 
+运行[阈值示例](examples/ntru_ntt_mvb_thresholds.rs)，将 `0..64` 的一个加密分数
+转换为交错容量之外的 17 个数值标志：
+
+```sh
+cargo run -p primus_tfhe_ntru_ntt --release --example ntru_ntt_mvb_thresholds
+```
+
+示例复用程序和密文缓冲，并用保留的 Scaled codec 解码；数值标志与 Boolean evaluator
+的编码不同。[NTRU 测量](../../docs/tfhe-mvb-ntru.md)在相同 Scaled 输出下对照重复 PBS、
+ManyLUT 和 MVB，记录初始化/BR/KS 误差、输出相关性和内存。参数采用固定重量二元秘密、
+经典 BR 和可逆性拒绝采样，不是生产参数。
+
 ## 可选 circuit bootstrapping
 
 通过 `CircuitBootstrapConfig` 独立选择 output/trace/scheme-switch 分解和 trace/SS 噪声；

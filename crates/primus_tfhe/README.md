@@ -382,6 +382,9 @@ one encrypted score into 17 flags beyond the interleaved layout's capacity.
 [Measured costs](../../docs/tfhe-mvb.md#8-p43-测量与应用选择) compare both orders and
 classic/sparse keys with identical Scaled output centers, including factor norms
 and the additional output error.
+The [NTRU threshold example](../primus_tfhe_ntru_ntt/examples/ntru_ntt_mvb_thresholds.rs)
+and [NTRU measurements](../../docs/tfhe-mvb-ntru.md) cover its encrypted initializer,
+per-output KS and correlated errors separately.
 
 ## Source layout
 

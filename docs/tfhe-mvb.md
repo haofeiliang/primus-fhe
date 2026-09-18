@@ -1,6 +1,6 @@
 # TFHE 首个 MVB：固定尺度差分分解
 
-本文保存固定尺度差分分解的数学与实现契约，以及 P4.3 的 GLWE 成本/应用选择。B3.1 已接入 NTRU NTT，其初始化与后处理见第 5 节；NTRU 测量留在 B3.2，不套用 GLWE 数值。当前状态见 [HANDOFF](../HANDOFF.md)，阶段对应关系见[实施索引](tfhe-plan.md)和[后端计划](tfhe-backend-plan.md)。
+本文保存固定尺度差分分解的数学与实现契约，以及 P4.3 的 GLWE 成本/应用选择。NTRU NTT 的初始化与后处理见第 5 节，[B3.2 误差与成本](tfhe-mvb-ntru.md)独立记录，不套用 GLWE 数值。当前状态见 [HANDOFF](../HANDOFF.md)，阶段对应关系见[实施索引](tfhe-plan.md)和[后端计划](tfhe-backend-plan.md)。
 
 ## 1. 选型与适用范围
 
@@ -239,7 +239,7 @@ taskset -c 2 cargo bench -p primus_tfhe_glwe_ntt --bench mvb -- \
 
 连续存储简化分配与所有权，但不保证在线加速；本组 BK 有约 3% 回退，尚未确定其具体来源。
 因子间还有逆 NTT 和 KS 的大量访存，地址连续不能保证下一个因子已驻留缓存。
-这里没有测量 NTRU 的时间收益，其完整误差/成本比较仍属于 B3.2。
+这里没有比较 NTRU 存储变更前后的耗时；其当前完整误差/成本比较见 [B3.2](tfhe-mvb-ntru.md)。
 
 ### GLWE NTT 的在线缓冲区流转
 
@@ -273,7 +273,7 @@ for each W_i_ntt:
 NTRU 初始化本身带有噪声。令 `e_shared` 表示初始化和 BR 完成后的总相位误差，
 输出误差为 `coeff_0(W_i*e_shared) + e_KS,i`。模逆元仅在公开 `V` 的构造中使用，
 不对带噪声的旋转结果做模除二。公开因子不改变秘密域，逐输出 KS 避免其误差再次
-被因子放大；输出间仍共享相关误差。误差实测和完整成本对照属于 B3.2。
+被因子放大；输出间仍共享相关误差。[B3.2](tfhe-mvb-ntru.md)记录分阶段实测、完整成本和应用示例。
 
 ## 6. 成本模型与比较方式
 
