@@ -134,6 +134,22 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
                 Err(TfheEvaluationError::UnsupportedSparseBootstrapping)
             ));
         }
+        let other_input_domain = CircuitBootstrapParameters::try_new(
+            &parameters(order, 8, distribution),
+            circuit_parameters.output_basis().clone(),
+            circuit_parameters.trace().clone(),
+            circuit_parameters.scheme_switch().clone(),
+        )
+        .unwrap();
+        assert!(matches!(
+            CircuitBootstrapEvaluator::try_from_parts(
+                &context,
+                &server_key,
+                &other_input_domain,
+                circuit_key,
+            ),
+            Err(TfheEvaluationError::IncompatibleCircuitBootstrapParameters)
+        ));
         let incompatible_trace =
             GgswParameters::with_glwe_params(context.parameters().accumulator_glwe(), 9, None);
         let incompatible_parameters = CircuitBootstrapParameters::try_new(

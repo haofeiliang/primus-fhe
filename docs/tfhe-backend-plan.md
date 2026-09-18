@@ -2,11 +2,11 @@
 
 依据：[后端覆盖分析](tfhe-backend-coverage.md)，初始源码基线 `7f1ef55`。本计划把已有算法的后端补齐与必要的高层接口整理拆成可独立验收的步骤；不重开已完成的 P1–P4、T1–T3，也不扩入 FDFB 等[新算法选型](tfhe-next.md)。
 
-B1.1–B1.6 已完成，下一步 B1.7。B1.4–B1.7 整理四后端高层接口，分析与性能对照基线为 `66ae701`；B2–B8 保留原编号。当前任务与下一步记录在 [HANDOFF](../HANDOFF.md)，算法依据仍由覆盖分析和各专项文档维护。
+B1.1–B1.7 已完成，下一步 B2.1。B1.4–B1.7 整理四后端高层接口，分析与性能对照基线为 `66ae701`；B2–B8 保留原编号。当前任务与下一步记录在 [HANDOFF](../HANDOFF.md)，算法依据仍由覆盖分析和各专项文档维护。
 
 ## 执行方式
 
-- 接下来推荐按 **`执行 B1.7` → `执行 B2.1` → …** 推进。`B1` 表示整个阶段；明确要求“执行 B1”时，完成其所有满足前置条件的剩余子步骤。
+- 接下来推荐按 **`执行 B2.1` → `执行 B2.2` → …** 推进。`B1` 表示整个阶段；明确要求“执行 B1”时，完成其所有满足前置条件的剩余子步骤。
 - 每步先核对 Git 状态、HANDOFF、本步及依赖结论；保留用户修改和暂存状态。编号不隐含暂存、提交或启动后续步骤。
 - **工程接入**：现成代数与原语支持实现，仍需正常验证。**原型验证**：先回答未决问题，结论可以是通过、缩小范围或暂缓。
 - “依赖原型通过”不同于“原型步骤已结束”。原型不成立时保留结论及最小反例，删除无长期价值的实验代码，暂缓依赖分支；其他独立阶段仍可执行。
@@ -16,7 +16,7 @@ B1.1–B1.6 已完成，下一步 B1.7。B1.4–B1.7 整理四后端高层接口
 
 | 阶段 | 目标 | 子步骤 | 性质及主要依赖 |
 | --- | --- | --- | --- |
-| B1 | GLWE Fourier 经典 CBS、四后端高层接口整理 | B1.1–B1.7 | B1.1–B1.6 已完成；B1.7 为集成与成本验收，无新增算法前置 |
+| B1 | GLWE Fourier 经典 CBS、四后端高层接口整理 | B1.1–B1.7 | 全部完成；[接口成本验收](tfhe-api-costs.md) |
 | B2 | NTRU 两后端 Boolean | B2.1–B2.2 | 工程接入；先完成 B1.7，使用整理后的接口 |
 | B3 | NTRU NTT MVB、既有 sparse 组合验收 | B3.1–B3.3 | 工程接入；B3.3 建议在 B2 的 Boolean 迁移后执行 |
 | B4 | GLWE Fourier 二元稀疏 PBS | B4.1–B4.3 | 参考实现与收益验证；不含 sparse CBS/ternary |
@@ -51,66 +51,22 @@ B1.1–B1.6 已完成，下一步 B1.7。B1.4–B1.7 整理四后端高层接口
 - **保留必要的高级入口**：底层 GGSW/NGSW、NTT/Fourier 类型及算术函数继续可用；显式表注入、多 CBS 配置等已有实验用途可以保留直接构造路径。普通工作流无需手工拼装这些资源。
 - **不扩大算法支持**：GLWE CBS 的同层数输出 basis 复用与 NTRU CBS 的精确输出 basis 绑定分别保留；稀疏 CBS 继续拒绝。Boolean 加密器/解密器保持独立，保留 LWE 私钥/公钥加密。
 
-完成状态见各步；剩余构造器名称和所有权在实施时结合现有类型确定。每步同步受影响调用方与文档，B1.7 只做集成收尾，不能把中途的编译或接口迁移问题留到最后。
+### B1.4–B1.7：高层接口（已完成）
 
-### B1.4：参数与 context 构造（已完成）
+| 步骤 | 完成入口与边界 |
+| --- | --- |
+| B1.4：参数与 context 构造 | 两族 `TfheConfig`、公共 `DecompositionConfig` / `CircuitBootstrapConfig`；自动建表与显式注入并存，数学选择仍显式。见[资源生命周期](../crates/primus_tfhe/README.zh_CN.md#lut-与资源生命周期) |
+| B1.5：配套密钥与错误整理 | `try_generate_keys(Option<CircuitBootstrapConfig>, rng)`、可选 CBS 组件和独立配置高级入口；删除无实质作用的 options 包装及重复错误。见[错误边界](../crates/primus_tfhe/README.zh_CN.md#错误边界) |
+| B1.6：输出消费 | `allocate_output`、绑定 CMUX/外积与 `AccumulatorClient`；GLWE scheme switch 直接使用 lattice 外积工作区，四后端消费复用既有 scratch。见[完整用法](../crates/primus_tfhe/README.zh_CN.md#cbs-输出与消费) |
+| B1.7：集成与成本 | 统一 CBS 输入明文模数绑定，补全契约与双语文档；[当前验收与测量](tfhe-api-costs.md)记录默认/SIMD、底层与九个 release 示例验证，以及对 `66ae701` 的 PBS/CBS/完整消费、构造和工作区对照 |
 
-- **入口**：[公共分解/CBS 配置](../crates/primus_tfhe/src/parameters.rs)、[GLWE 配置](../crates/primus_tfhe_glwe/src/parameters.rs)、[NTRU 配置](../crates/primus_tfhe_ntru/src/parameters.rs)。两族 `TfheParameters::try_from_config` 从一份 LWE 参数派生环域；四后端 `TfheContext::<_, Table>::try_from_parameters` 自动建表，CBS 的 `try_from_config` 派生环域并保留独立 output/trace/scheme-switch 分解与 trace/SS 噪声。
-- **边界**：现有 `try_new` 保留直接绑定底层参数/预计算 basis 或显式变换表的用途；未新增 trait 或安全默认值。无效 basis 返回带用途的错误；环布局、采样器和 codec 延续底层构造器的 panic 契约，见 rustdoc。GLWE 普通 BR/KS 仍共同使用 accumulator 噪声；NTRU KS 噪声独立配置。
-- **验证**：`RUSTDOCFLAGS='-D warnings' just tfhe`、`just tfhe-simd`，以及四后端共 8 个 release 示例通过。复用既有 CBS 相位/CMUX/零分配测试，仅增加轻量配置契约覆盖；在线 kernel、evaluator 工作区和支持组合未改变。
-- **后续归属**：密钥绑定见 B1.5，输出分配及低层消费参数归 B1.6。本步未进行耗时测量，不据此声称性能改善。
+四后端工作流从各自 basic/CBS 示例恢复，GLWE NTT 另有 MVB 示例，入口见[公共能力指南](../crates/primus_tfhe/README.zh_CN.md)。
+常用代码无需手工拼装 basis/table/scratch；没有新增测试矩阵或为了转发接口保留独立 benchmark。
+NTRU NTT 小 fixture 的资源放置敏感性及未保留的性能试验见验收文档，不能据此宣称所有参数等时。
 
-#### B1.7 对照基线与恢复入口
-
-基线 `66ae701` 的流程是：分别构造 LWE 与环参数及带模数的 basis → 显式建表 → `TfheContext::try_new` → 配套普通/CBS 密钥。当前示例使用具名配置、自动建表和按能力配套生成密钥；参数数值保持原样。
-
-| 后端 | 当前推荐工作流 | 基线已有的测量入口 |
-| --- | --- | --- |
-| GLWE NTT | [PBS/Boolean](../crates/primus_tfhe_glwe_ntt/examples/ntt_basic.rs)、[CBS](../crates/primus_tfhe_glwe_ntt/examples/circuit_bootstrap.rs)、[MVB](../crates/primus_tfhe_glwe_ntt/examples/mvb_thresholds.rs) | [完整 PBS](../crates/primus_tfhe_glwe_ntt/benches/pbs.rs) |
-| GLWE Fourier | [PBS/Boolean](../crates/primus_tfhe_glwe_fourier/examples/fourier_basic.rs)、[CBS](../crates/primus_tfhe_glwe_fourier/examples/circuit_bootstrap.rs) | [完整 PBS](../crates/primus_tfhe_glwe_fourier/benches/pbs.rs)、[B1.3 CBS](../crates/primus_tfhe_glwe_fourier/benches/circuit_bootstrap.rs) |
-| NTRU NTT | [PBS/ManyLUT](../crates/primus_tfhe_ntru_ntt/examples/ntru_ntt_basic.rs)、[CBS](../crates/primus_tfhe_ntru_ntt/examples/ntru_ntt_circuit_bootstrap.rs) | [完整 PBS](../crates/primus_tfhe_ntru_ntt/benches/pbs.rs) |
-| NTRU Fourier | [PBS/ManyLUT](../crates/primus_tfhe_ntru_fourier/examples/ntru_fourier_basic.rs)、[CBS](../crates/primus_tfhe_ntru_fourier/examples/ntru_fourier_circuit_bootstrap.rs) | [完整 PBS](../crates/primus_tfhe_ntru_fourier/benches/pbs.rs) |
-
-PBS 代表筛选为 `complete_pbs_reused_output$`；B1.3 CBS 的参数、采样与默认/SIMD 命令见 [CBS 专项](tfhe-cbs.md)。B1.7 在基线与新实现中使用相同负载重新采样；已有 CSV 仅是历史摘要，不替代对照测量，也不增加机械构造转发的独立基准。
-
-### B1.5：求值密钥组织与绑定（已完成）
-
-- **入口**：四后端统一 `context.try_generate_keys(circuit_bootstrap, rng)` / `KeyGenerator::try_generate`；已有客户端使用 `try_generate_server_key(client, circuit_bootstrap, rng)`。`None` 仅生成经典 PBS，`Some(config)` 同时生成配套 CBS；常规与独立 CBS 生成统一使用 family `KeyGenerationError`，保留 NTRU 可失败采样/变换。
-- **所有权与绑定**：`ServerKey` 通过可选 Box 持有 CBS 组件，组件拥有已准备参数。`context.circuit_bootstrap_evaluator(&server)` 绑定该组件；普通 evaluator、CBS evaluator 仍各自分配工作区。PBS-only 仅增加一个可空指针，不增加 CBS 堆材料或工作区；原在线算法未改。组合生成复用已有 accumulator 秘密变换。
-- **高级入口与边界**：独立 `try_generate_circuit_bootstrap_key` 接收参数所有权；`CircuitBootstrapEvaluator::try_from_parts` 保留多配置实验和 GLWE 同层数输出 basis 复用，NTRU 仍绑定精确输出 basis。缺失 CBS 返回 `MissingCircuitBootstrapKey`，稀疏 CBS 继续拒绝。手工组合须保证同一秘密及变换表示，布局检查不证明身份。
-- **验证**：`RUSTDOCFLAGS='-D warnings' just tfhe`、`just tfhe-simd` 及 8 个 release 示例通过；既有测试覆盖同一 server 的 PBS/CBS、首次在线零分配、缺失能力、配置错误在采样前拒绝、输出 basis 约束和 generator 工作区复用。未新增测试矩阵或基准；保留独立 CBS 堆成本和多 basis 扫描的高级基准入口。
-- **下一步**：B1.6 收拢输出分配、CMUX 消费和 accumulator 客户端。B1.7 再与 `66ae701` 测量对比；本步不声称耗时改善。
-
-#### B1.5 收尾：按修改类别收敛类型与错误（已完成）
-
-基于 B1.4/B1.5 的密钥绑定实现完成以下整理；错误职责的长期约定见[公共 TFHE README](../crates/primus_tfhe/README.zh_CN.md#错误边界)。
-
-| 类别 | 修改内容 | 结果与边界 |
-| --- | --- | --- |
-| 类型精简 | 删除只有一个字段的 `ServerKeyOptions`，生成入口直接接收 `Option<CircuitBootstrapConfig>`；保留配置/已准备参数、CBS 密钥组件与独立 evaluator | `None` 仅 PBS，`Some(config)` 配套生成 CBS；无需新 builder、能力 trait 或密文包装 |
-| 错误职责与归属 | `primus_tfhe::TfheEvaluationError` 统一普通/CBS evaluator 绑定；两族 `error` 模块集中参数、客户端、密钥校验、CBS 参数与 `KeyGenerationError`；后端保留 context/算法专属错误 | 删除重复 `ServerKeyError`、`CircuitBootstrapKeyError`、`CircuitBootstrapEvaluationError`；CBS 参数错误同族两后端共享；稀疏匹配错误仍独立 |
-| 错误转换与来源 | `TfheKeyError` 只描述客户端密钥兼容性；NTRU 采样/变换错误直接进入 `KeyGenerationError`；context 两种构造方式统一返回自身错误并保留建表来源 | 唯一且无需上下文的映射才使用 `#[from]`；BR/KS、trace/SS 等用途由调用点 `map_err` 指定，底层原因使用 `#[source]` |
-| 调用方与验证 | 同步七个 TFHE crate、xtask、示例、基准、双语文档和交接 | 复用现有测试，补最少的用途分类与来源链回归；默认/SIMD、严格 rustdoc 和代表示例通过；不增加基准或改在线内核 |
-
-本轮净减少 12 个错误类型定义和 1 个单字段配置类型。沿用现有集成测试，补充 BR/KS 用途与来源链、自动建表失败和 NTRU 非可逆秘密转换的轻量回归；严格 rustdoc 的 `just tfhe`、`just tfhe-simd` 与当时的 8 个 release 示例均通过。在线算法及 scratch 未改变，本轮未增加基准或进行耗时测量。
-
-错误沿依赖方向向上组合，共享层不依赖后端。不增加覆盖所有操作的总 `Error`，也不为了自动 `?` 给每个祖先错误都添加转换；`#[from]` 不负责推断失败用途或连续跨越多层包装。
-
-### B1.6：CBS 输出与消费接口（已完成）
-
-- **公共工作流**：四后端 `CircuitBootstrapEvaluator::allocate_output` 分配原有 GGSW/NGSW；`cmux_to(control, lhs, rhs, output)` 与 `external_product_to(control, input, output)` 绑定输出 basis、模数、表和 scratch。契约与用法见[公共 README](../crates/primus_tfhe/README.zh_CN.md#cbs-输出与消费)，高级显式组合与底层原语保留。
-- **Accumulator 客户端**：`context.accumulator_client(&client)` 准备私钥变换和复用工作区；`encrypt[_to]` / `decrypt[_to]` 加解密 N 个无符号系数，`allocate_ciphertext` 分配系数域环密文。一个客户端角色集中真实的秘密表示与工作区绑定；普通 LWE 与 Boolean 客户端职责不变。NTRU 转换失败复用 `KeyGenerationError`，未增加错误类型。
-- **资源**：GLWE 删除两个只包装外积 scratch 的 `SchemeSwitchContext`，底层 scheme switch 直接接收已有外积 context。CBS/消费之间用无分配 `rebind` 切换 key/output 分解层数；NTRU 直接复用 BR 外积工作区。四后端均未增加服务端消费缓冲。客户端单独缓存秘密及一份变换密文；Fourier 另持有 FFT engine 和原有加解密 scratch。
-- **验证**：沿用既有 CBS 相位/CMUX 测试，加入完整消费链与首调用零分配检查，覆盖不同 output/SS basis、`1→0` 复用及少量写入前形状拒绝；没有新增测试矩阵或 benchmark。`RUSTDOCFLAGS='-D warnings' just tfhe`、`just tfhe-simd`、底层 GLWE 默认/SIMD check/Clippy/test 和严格 rustdoc、九个 release 示例全部通过。
-- **示例与后续**：迁移原有三个 CBS 示例，补 GLWE NTT 的完整 CBS→CMUX 示例；四后端均无需手工传 basis/table/scratch 或转换客户端秘密。本步保留数值算法，未测耗时；B1.7 按 `66ae701` 对照普通 PBS、CBS 和完整消费的时间与资源。
-
-### B1.7：跨后端集成与成本验收
-
-- **前置**：B1.4–B1.6。
-- **范围**：检查四后端公共名称、参数与密钥构造、能力拒绝、输出消费和 scratch 契约；清理本轮失去用途的转发、旧入口与重复资产，完成示例、双语 README 和专项文档的一致性收尾。
-- **验证**：运行 `just tfhe` / `just tfhe-simd`，对实际受影响且未被 recipe 覆盖的底层包补检查；沿用现有独立契约测试，不扩展分布×order×FFT 的完整组合矩阵。示例展示推荐工作流，低层数值测试仍可直接使用原语。
-- **性能**：以 `66ae701` 为改造前基线，复用 B1.3 CBS 基准及四后端已有代表完整 PBS 负载，在相同 CPU、工具链、features、参数和复用条件下比较。确认在线耗时无可归因的回退、首次调用零分配，并核对 PBS-only/CBS-enabled 的密钥载荷、构造资源与 scratch；新增 CMUX 绑定按等价完整消费流程对照，区分构造成本与在线成本。
-- **完成条件**：常用代码只需明确数学配置、生成配套密钥、构造所需 evaluator，再复用输入/输出；底层表示及高级实验入口仍可表达原有合法用法。若封装造成重复存储、变换或热路径回退，在本阶段解决并记录取舍，之后再执行 B2.1。
+下层仅沿真实依赖整理，不添加统一 TFHE context 到 lattice。
+[GLWE 系数域加解密](glwe-coefficient-client.md)已验证减少变换、耗时和 scratch，并接入精确等价的 NTT 路径；
+Fourier 因原型噪声增加，按用户决定暂不接入。不阻塞 B2.1。
 
 ## B2：NTRU 两后端 Boolean
 

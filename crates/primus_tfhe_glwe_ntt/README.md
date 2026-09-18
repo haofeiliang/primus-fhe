@@ -202,7 +202,9 @@ assumptions need a separate assessment.
 
 Use `evaluator.allocate_output()` to allocate the raw CBS control, then
 `evaluator.cmux_to(control, lhs, rhs, output)` or `external_product_to(control, input, output)`.
-`context.accumulator_client(&client)` binds ring encryption/decryption and conversion scratch.
+`context.accumulator_client(&client)` binds coefficient-ring encryption/decryption with one
+N-element scratch buffer, erased on drop. It skips the body's forward NTT and reuses
+outputs and scratch without allocation.
 See the [shared consumption contracts](../primus_tfhe/README.md#cbs-output-and-consumption)
 and [complete example](examples/circuit_bootstrap.rs).
 

@@ -169,7 +169,8 @@ Trace/SS 噪声与秘密相关消息假设需要独立评估。
 
 使用 `evaluator.allocate_output()` 分配原有 CBS 控制密文，随后调用
 `evaluator.cmux_to(control, lhs, rhs, output)` 或 `external_product_to(control, input, output)`。
-`context.accumulator_client(&client)` 绑定环加解密与转换工作区。
+`context.accumulator_client(&client)` 绑定系数域环加解密，使用一个长度为 N、析构时擦除的
+scratch 缓冲，省去 body 的正 NTT；复用输出和工作区，在线不分配。
 详见[公共消费契约](../primus_tfhe/README.zh_CN.md#cbs-输出与消费)及[完整示例](examples/circuit_bootstrap.rs)。
 
 错误归属与转换规则见[公共 TFHE 错误边界](../primus_tfhe/README.zh_CN.md#错误边界)。

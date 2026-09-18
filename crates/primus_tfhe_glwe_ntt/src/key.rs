@@ -153,6 +153,11 @@ where
     /// Invalid CBS configuration is rejected before sampling evaluation material.
     /// Enabling CBS inherits [`Self::try_generate_circuit_bootstrap_key`]'s
     /// mathematical and security requirements.
+    ///
+    /// # Correctness
+    /// Imported accumulator coefficients must have unsigned magnitude below q;
+    /// see [`NttGlweSecretKey::from_coeff_secret_key`]. Compatibility checks do not
+    /// establish this bound.
     pub fn try_generate_server_key<R>(
         &mut self,
         client_key: &ClientKey<T>,

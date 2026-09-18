@@ -10,8 +10,9 @@ use crate::{CircuitBootstrapConfig, CircuitBootstrapParameterError, TfheParamete
 /// Independent parameters for patched NTT circuit bootstrapping.
 ///
 /// The output basis controls GGSW gadget scalars; its layout comes from the TFHE
-/// accumulator. Trace and scheme switching retain independent bases and noise
-/// distributions. The scheme-switch key binds the output layout, so another
+/// accumulator. The input plaintext modulus is bound when checking LUT capacity.
+/// Trace and scheme switching retain independent bases and noise distributions.
+/// The scheme-switch key binds the output layout, so another
 /// output basis with the same level count can reuse it.
 ///
 /// Construction checks representation and ManyLUT capacity. Callers must select
@@ -24,6 +25,7 @@ pub struct CircuitBootstrapParameters<T: FheUint> {
     output_size: GadgetSize,
     trace: GlevParameters<T, BarrettModulus<T>>,
     scheme_switch: GgswParameters<T, BarrettModulus<T>>,
+    input_plaintext_modulus: T,
 }
 
 impl<T: FheUint> CircuitBootstrapParameters<T> {
@@ -105,6 +107,7 @@ impl<T: FheUint> CircuitBootstrapParameters<T> {
             output_size,
             trace,
             scheme_switch,
+            input_plaintext_modulus: tfhe.plain_modulus_value(),
         })
     }
 
@@ -145,5 +148,6 @@ impl<T: FheUint> CircuitBootstrapParameters<T> {
         let glwe = tfhe.accumulator_glwe();
         self.output_size.glwe_size() == glwe.size()
             && self.output_basis.modulus() == glwe.cipher_modulus_value()
+            && self.input_plaintext_modulus == tfhe.plain_modulus_value()
     }
 }

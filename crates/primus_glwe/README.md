@@ -46,7 +46,14 @@ ntt_sk.phase_to(input, output, modulus, ntt_table)
 fourier_sk.phase_to(input, output, fft, context)
 ```
 
-NTT secret-key ordinary operations need no context. Fourier operations use `FourierGlweEncryptContext<T>` / `FourierGlweDecryptContext`; NTT public encryption uses `NttGlwePublicEncryptContext<T>`. Construct these with `N` and reuse them at that length. Contexts hold scratch, not parameters, and erase secret intermediates on drop.
+NTT-domain secret-key operations need no context. Fourier operations use `FourierGlweEncryptContext<T>` / `FourierGlweDecryptContext`; NTT public encryption uses `NttGlwePublicEncryptContext<T>`. Construct these with `N` and reuse them at that length. Contexts hold scratch, not parameters, and erase secret intermediates on drop.
+
+For coefficient ciphertexts, `NttGlweSecretKey` provides `encrypt_coeff_to`, `phase_coeff_to`
+and `decrypt_coeff_to`. They take an additional N-element scratch slice as the last argument,
+reuse all buffers, and save the body's forward NTT. Encryption accepts unsigned plaintexts
+and matches `encrypt_to` followed by inverse NTT exactly for the same RNG state.
+Scratch needs no initialization and retains secret-dependent products after encryption;
+use an erasing owner such as `zeroize::Zeroizing<Vec<T>>`.
 
 `_to` paths reuse output and scratch. Checked layout and transform-length mismatches fail before output writes; matching lengths do not establish transform representation compatibility. Invalid plaintext values may panic after partial writes or randomness consumption. Encoded NTT inputs must be canonical residues in `[0, q)`; callers guarantee this range.
 
@@ -124,7 +131,7 @@ All benches use `(k, N) = (1, 1024)` and `(2, 4096)`. Each iteration performs on
 
 | Bench | Work measured |
 | --- | --- |
-| [encryption](benches/encryption.rs) | Secret/public encryption, secret decryption, GLev/GGSW generation and batches of 8 constant GGSWs; includes sampling, coding and required transforms |
+| [encryption](benches/encryption.rs) | Secret/public encryption, secret decryption (including coefficient NTT paths), GLev/GGSW generation and batches of 8 constant GGSWs; includes sampling, coding and required transforms |
 | [primitives](benches/primitives.rs) | Ordinary/reverse trace; projection and partial expansion for 8 and `N/8` coefficients; full expansion; packing 1, 8 and `N` LWEs; direct Fourier automorphism on both FFT backends |
 | [key_conversion](benches/key_conversion.rs) | Independent-key packing of 1, 8 and `N` LWEs (input dimension 512; single-LWE cases cover bases `2^3` and `2^10`); NTT/Fourier GLev-to-GGSW scheme switching |
 

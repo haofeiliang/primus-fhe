@@ -250,6 +250,48 @@ fn ntt_operations_reject_incompatible_domains_and_workspace_before_writes() {
         .is_err()
     );
     assert_eq!(phase.as_ref(), vec![7u32; N]);
+
+    // Coefficient entry points share these checks; no RNG, output or scratch
+    // change is allowed for a bad layout or transform domain.
+    for (polynomial_len, ciphertext_len, scratch_len, ntt) in [
+        (N - 1, 2 * N, N, &table),
+        (N, 2 * N - 1, N, &table),
+        (N, 3 * N, N, &table),
+        (N, 2 * N, N - 1, &table),
+        (N, 2 * N, N + 1, &table),
+        (N, 2 * N, N, &wrong_table),
+        (N, 2 * N, N, &wrong_length_table),
+    ] {
+        let mut polynomial = Polynomial::new(vec![7; polynomial_len]);
+        let mut ciphertext = GlweCiphertext::new(vec![7; ciphertext_len]);
+        let mut scratch = vec![7; scratch_len];
+        let mut rng = StdRng::seed_from_u64(43);
+        let mut expected_rng = StdRng::seed_from_u64(43);
+        assert!(
+            catch_unwind(AssertUnwindSafe(|| {
+                key.encrypt_coeff_to(
+                    &polynomial,
+                    &mut ciphertext,
+                    &params,
+                    ntt,
+                    &mut rng,
+                    &mut scratch,
+                );
+            }))
+            .is_err()
+        );
+        assert_eq!(ciphertext.as_ref(), vec![7; ciphertext_len]);
+        assert_eq!(scratch, vec![7; scratch_len]);
+        assert_eq!(rng.next_u64(), expected_rng.next_u64());
+        assert!(
+            catch_unwind(AssertUnwindSafe(|| {
+                key.decrypt_coeff_to(&ciphertext, &mut polynomial, &params, ntt, &mut scratch);
+            }))
+            .is_err()
+        );
+        assert_eq!(polynomial.as_ref(), vec![7; polynomial_len]);
+        assert_eq!(scratch, vec![7; scratch_len]);
+    }
 }
 
 #[test]

@@ -161,7 +161,7 @@ CBS 比普通 evaluator 增加 **162 KiB**：trace scratch 73 KiB、scheme-switc
 三层系数 GLev 48 KiB、内部 LUT 8 KiB。输出另由调用方持有。以上为 B1.3 构造测量；
 B1.6 的 CMUX/外积复用 scheme-switch 缓冲，不再单独准备消费 scratch。
 `AccumulatorClient` 的私钥变换、密文变换缓冲、FFT engine 及加解密 scratch 单独归客户端；
-最新高层构造与完整消费成本由 B1.7 对照，不用历史数值替代当前测量。
+最新高层构造与完整消费成本见 [B1.7 对照](tfhe-api-costs.md)，不用历史数值替代当前测量。
 当前 CBS 复用整个普通 evaluator，因此 BK 也持有其中未用于 CBS 后置 KS 的缓冲；本步不重构该布局。
 首次及后续 `circuit_bootstrap_to` 均测得零次堆分配。
 

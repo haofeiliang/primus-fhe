@@ -63,6 +63,8 @@ where
     /// `client_key`'s accumulator GLWE secret. Parameter/layout checks cannot
     /// establish that another server key uses that secret; see
     /// [`crate::CircuitBootstrapEvaluator::try_from_parts`].
+    /// Imported accumulator coefficients must also satisfy
+    /// [`NttGlweSecretKey::from_coeff_secret_key`]'s unsigned-magnitude bound.
     pub fn try_generate_circuit_bootstrap_key<R>(
         &mut self,
         client_key: &ClientKey<T>,

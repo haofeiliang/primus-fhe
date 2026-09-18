@@ -145,4 +145,16 @@ taskset -c 0 cargo bench -p primus_tfhe_ntru_ntt -p primus_tfhe_ntru_fourier --b
 三层输出的 binary profile。两种 FFT/order、默认/SIMD 的方法、资源和余量只在
 [CBS 专项](../tfhe-cbs.md)维护；这是新增能力，没有旧版 Fourier CBS 基线。
 
+## B1.7 高层接口验收
+
+[计时 CSV](tfhe-b1.7.csv) 与[资源 CSV](tfhe-b1.7-resources.csv) 对照 `66ae701` 与 B1.7。
+方法、fixture、复测/资源放置诊断、内存口径及下层边界集中在[验收文档](../tfhe-api-costs.md)。
+
+## GLWE 系数域加解密原型
+
+[计时 CSV](glwe-coefficient-client.csv) 与[误差 CSV](glwe-coefficient-client-noise.csv)记录默认/SIMD、
+NTT 与两种 FFT 的完整客户端操作。变换次数、scratch、独立环相位校验及 Fourier 误差取舍见
+[验证文档](../glwe-coefficient-client.md)；NTT 已接入，Fourier 暂不接入。
+[NTT 接入计时](glwe-ntt-coefficient.csv)补充正式入口在两种 table、默认/SIMD 下的完整操作对照。
+
 清理 target 后须用对应源码、参数与等价 harness 重建 Criterion 基线；CSV 是持久摘要。所有测量均有具体功能/噪声边界，不是方案排名或安全认证。

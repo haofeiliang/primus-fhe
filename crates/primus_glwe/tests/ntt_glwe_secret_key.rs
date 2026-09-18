@@ -1,11 +1,14 @@
 use primus_encoding::PlaintextEmbedding;
-use primus_glwe::{GlweParameters, NttGlweCiphertext, NttGlweSecretKey, SecretKeyDistr};
+use primus_glwe::{
+    GlweCiphertext, GlweParameters, NttGlweCiphertext, NttGlweSecretKey, SecretKeyDistr,
+};
 use primus_integer::FheUint;
 use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, PrimitiveRoot, UintNttTable};
 use primus_poly::{Polynomial, PolynomialOwned};
 use primus_reduce::ReduceAdd;
-use rand::{SeedableRng, rngs::StdRng};
+use rand::{Rng, SeedableRng, rngs::StdRng};
+use zeroize::Zeroizing;
 
 const DIMENSION: usize = 2;
 const POLY_LENGTH: usize = 256;
@@ -39,11 +42,35 @@ where
             0.7,
         );
         let (_, secret_key) = NttGlweSecretKey::generate_pair(&params, &ntt, &mut rng);
-        let mut cipher = secret_key.encrypt(&message, &params, &ntt, &mut rng);
-        assert_eq!(
-            secret_key.decrypt(&cipher, &params, &ntt).as_ref(),
-            messages
-        );
+        let mut cipher = NttGlweCiphertext::<Vec<T>>::zero(params.glwe_len());
+        let mut coefficients = GlweCiphertext::<Vec<T>>::zero(params.glwe_len());
+        let mut expected_coefficients = GlweCiphertext::<Vec<T>>::zero(params.glwe_len());
+        let mut phase = PolynomialOwned::zero(POLY_LENGTH);
+        let mut expected_phase = PolynomialOwned::zero(POLY_LENGTH);
+        let mut scratch = Zeroizing::new(vec![T::MAX; POLY_LENGTH]);
+        let mut direct_rng = StdRng::seed_from_u64(17);
+        let mut reference_rng = StdRng::seed_from_u64(17);
+        // Exact ciphertext/phase equality also checks noise and mask sampling order.
+        // Reuse dirty output and scratch for a zero message after a nonzero one.
+        for input in [&message, &PolynomialOwned::zero(POLY_LENGTH)] {
+            secret_key.encrypt_to(input, &mut cipher, &params, &ntt, &mut reference_rng);
+            cipher.write_coeff_form(&mut expected_coefficients, &ntt);
+            secret_key.encrypt_coeff_to(
+                input,
+                &mut coefficients,
+                &params,
+                &ntt,
+                &mut direct_rng,
+                &mut scratch,
+            );
+            assert_eq!(coefficients.as_ref(), expected_coefficients.as_ref());
+            secret_key.phase_to(&cipher, &mut expected_phase, modulus, &ntt);
+            secret_key.phase_coeff_to(&coefficients, &mut phase, modulus, &ntt, &mut scratch);
+            assert_eq!(phase.as_ref(), expected_phase.as_ref());
+            secret_key.decrypt_coeff_to(&coefficients, &mut phase, &params, &ntt, &mut scratch);
+            assert_eq!(phase.as_ref(), input.as_ref());
+        }
+        assert_eq!(direct_rng.next_u64(), reference_rng.next_u64());
 
         secret_key.encrypt_centered_to(&message, &mut cipher, &params, &ntt, &mut rng);
         assert_eq!(

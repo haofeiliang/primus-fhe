@@ -46,7 +46,13 @@ ntt_sk.phase_to(input, output, modulus, ntt_table)
 fourier_sk.phase_to(input, output, fft, context)
 ```
 
-NTT 私钥的普通运算无需 context。Fourier 运算使用 `FourierGlweEncryptContext<T>` / `FourierGlweDecryptContext`；NTT 公钥加密使用 `NttGlwePublicEncryptContext<T>`。这些 context 按 `N` 构造，并在相同长度下复用。Context 保存工作区而非参数，析构时擦除私密中间值。
+NTT 域私钥运算无需 context。Fourier 运算使用 `FourierGlweEncryptContext<T>` / `FourierGlweDecryptContext`；NTT 公钥加密使用 `NttGlwePublicEncryptContext<T>`。这些 context 按 `N` 构造，并在相同长度下复用。Context 保存工作区而非参数，析构时擦除私密中间值。
+
+对于系数域密文，`NttGlweSecretKey` 提供 `encrypt_coeff_to`、`phase_coeff_to`
+和 `decrypt_coeff_to`，最后一个参数是长度为 N 的 scratch 切片。
+它们复用所有缓冲，省去 body 的正 NTT。加密接收无符号明文；相同 RNG 状态下，
+结果与 `encrypt_to` 后逆 NTT 精确一致。Scratch 无需初始化，加密后保留依赖私钥的乘积，
+应由 `zeroize::Zeroizing<Vec<T>>` 等负责擦除的类型持有。
 
 `_to` 路径复用输出和工作区。布局和变换长度检查失败会在写输出前报错；长度相同并不代表变换表示兼容。无效明文值可能在部分写入或消耗随机数后触发 panic。已编码的 NTT 输入必须是 `[0, q)` 中的规范剩余类，该范围由调用方保证。
 
@@ -124,7 +130,7 @@ cargo bench -p primus_glwe -- --test
 
 | 基准 | 测量内容 |
 | --- | --- |
-| [encryption](benches/encryption.rs) | 私钥/公钥加密、私钥解密、GLev/GGSW 生成及 8 个常数 GGSW 的批量加密；包含采样、编解码及必要变换 |
+| [encryption](benches/encryption.rs) | 私钥/公钥加密、私钥解密（含 NTT 系数域路径）、GLev/GGSW 生成及 8 个常数 GGSW 的批量加密；包含采样、编解码及必要变换 |
 | [primitives](benches/primitives.rs) | 普通/反向 trace；8 和 `N/8` 项的投影与部分展开；完整展开；1、8、`N` 条 LWE packing；两种 FFT 后端的直接 Fourier 自同构 |
 | [key_conversion](benches/key_conversion.rs) | 独立私钥下 1、8、`N` 条 LWE packing（输入维数 512；单条用例覆盖基数 `2^3` 和 `2^10`）；NTT/Fourier GLev-to-GGSW scheme switching |
 

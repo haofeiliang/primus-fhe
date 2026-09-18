@@ -14,7 +14,7 @@ use primus_fft::{FftEngine, FftTable, RustFftTable};
 use primus_glwe::{
     FourierGadgetEncryptContext, FourierGgswCiphertext, FourierGlevCiphertext,
     FourierGlweDecryptContext, FourierGlweEncryptContext, FourierGlweSecretKey, GlevParameters,
-    GlweParameters, NttGadgetEncryptContext, NttGgswCiphertext, NttGlevCiphertext,
+    GlweCiphertext, GlweParameters, NttGadgetEncryptContext, NttGgswCiphertext, NttGlevCiphertext,
     NttGlwePublicEncryptContext, NttGlwePublicKey, NttGlweSecretKey, SecretKeyDistr,
 };
 use primus_modulus::{BarrettModulus, NativeModulus};
@@ -22,6 +22,7 @@ use primus_ntt::{NttTable, UintNttTable};
 use primus_poly::Polynomial;
 use rand::{SeedableRng, rngs::StdRng};
 use std::{hint::black_box, time::Duration};
+use zeroize::Zeroizing;
 
 const SIZES: [(usize, usize); 2] = [(1, 1024), (2, 4096)];
 const LOG_BASE: u32 = 10;
@@ -86,6 +87,50 @@ fn ntt_encryption(c: &mut Criterion) {
                     &mut plaintext,
                     black_box(&params),
                     &ntt,
+                );
+                black_box(plaintext.as_ref());
+            })
+        });
+        let mut coefficients = GlweCiphertext::<Vec<u64>>::zero(params.glwe_len());
+        let mut coefficient_scratch = Zeroizing::new(vec![0; n]);
+        sk.encrypt_coeff_to(
+            &message,
+            &mut coefficients,
+            &params,
+            &ntt,
+            &mut rng,
+            &mut coefficient_scratch,
+        );
+        sk.decrypt_coeff_to(
+            &coefficients,
+            &mut plaintext,
+            &params,
+            &ntt,
+            &mut coefficient_scratch,
+        );
+        assert_eq!(plaintext.as_ref(), message.as_ref());
+        let coefficient_decrypt_input = coefficients.clone();
+        group.bench_function("encrypt_coeff_to", |b| {
+            b.iter(|| {
+                sk.encrypt_coeff_to(
+                    black_box(&message),
+                    &mut coefficients,
+                    black_box(&params),
+                    &ntt,
+                    &mut rng,
+                    &mut coefficient_scratch,
+                );
+                black_box(coefficients.as_ref());
+            })
+        });
+        group.bench_function("decrypt_coeff_to", |b| {
+            b.iter(|| {
+                sk.decrypt_coeff_to(
+                    black_box(&coefficient_decrypt_input),
+                    &mut plaintext,
+                    black_box(&params),
+                    &ntt,
+                    &mut coefficient_scratch,
                 );
                 black_box(plaintext.as_ref());
             })
