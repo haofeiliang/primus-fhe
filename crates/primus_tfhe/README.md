@@ -2,8 +2,9 @@
 
 English | [简体中文](README.zh_CN.md)
 
-Shared LUT compilation, encoding metadata and PBS traits for the GLWE and NTRU
-families. This crate owns no client keys, transform tables or evaluator workspace.
+Shared LUT compilation, encoding metadata, PBS traits and Boolean gate evaluation
+for the GLWE and NTRU families. Boolean evaluators own gate LUTs and LWE workspace;
+client keys, transform tables and ring evaluation workspace remain in their owning layers.
 Start with a backend example below for an end-to-end workflow.
 
 ## Crate map and capabilities
@@ -17,8 +18,11 @@ Start with a backend example below for an end-to-end workflow.
 | --- | --- | --- | --- | --- | --- |
 | GLWE NTT | Explicit field | Yes | Yes | Yes | Yes |
 | GLWE Fourier | Native torus | Yes | Not implemented | Yes | Yes |
-| NTRU NTT | Explicit field | Yes | Not implemented | Not implemented | Yes |
-| NTRU Fourier | Native torus | Yes | Not implemented | Not implemented | Yes |
+| NTRU NTT | Explicit field | Yes | Not implemented | Integrated¹ | Yes |
+| NTRU Fourier | Native torus | Yes | Not implemented | Integrated¹ | Yes |
+
+¹ NTRU Boolean factories and representative NAND/public-key/reuse paths are verified.
+Full gate truth tables and chained evaluation remain in [B2.2](../../docs/tfhe-backend-plan.md#b22门语义与串联验收).
 
 All four backends support secret-key and LWE public-key clients. Fourier backends
 support RustFFT and TfheFFT. Parameters and APIs are experimental; example and
@@ -38,9 +42,10 @@ own definitions shared by their NTT/Fourier backends; there is no catch-all erro
 
 | Operation | Error |
 | --- | --- |
-| LUT compilation / ordinary or CBS evaluator binding | Shared `LookupTableError` / `TfheEvaluationError` |
+| LUT compilation / ordinary, Boolean or CBS evaluator binding | Shared `LookupTableError` / `TfheEvaluationError` |
 | TFHE / CBS parameter preparation | Family `TfheParameterError` / `CircuitBootstrapParameterError` |
 | Client-key compatibility / client operations | Family `TfheKeyError` / `TfheClientError` |
+| Boolean client construction, encryption and decryption | Family `BooleanError`; raw client failures enter `Client` via `#[from]` |
 | Ordinary or standalone CBS key generation | Family `KeyGenerationError`; NTRU sampling/conversion enters `Ntru` directly |
 | Automatic table creation or explicit table binding | Backend `TfheContextError`; `TransformTable` retains the underlying FFT/NTT error |
 
@@ -48,6 +53,34 @@ own definitions shared by their NTT/Fourier backends; there is no catch-all erro
 explicit `map_err` to retain their role and `#[source]` to retain the underlying cause.
 Sparse matching keeps its algorithm-specific error. Transform context errors do not
 promise `Clone`/`Eq`, since their underlying table errors do not provide those traits.
+
+## Boolean gates
+
+For parameters with `t=4`, all four contexts provide `boolean_encryptor(key)`,
+`boolean_decryptor(client)` and `boolean_evaluator(server)`. The encryptor accepts
+private or LWE public keys; the decryptor requires the client secret. They use raw
+`LweCiphertext<T>` with unsigned rounded 0/1 encoding and reject non-Boolean decoded values.
+Boolean evaluation uses ordinary PBS keys, without CBS material.
+
+```rust,ignore
+let encryptor = context.boolean_encryptor(&client)?;
+let decryptor = context.boolean_decryptor(&client)?;
+let mut gates = context.boolean_evaluator(&server)?;
+let lhs = encryptor.encrypt(true, &mut rng)?;
+let rhs = encryptor.encrypt(false, &mut rng)?;
+let mut output = LweCiphertext::zero(context.parameters().external_lwe_dimension());
+gates.evaluate_binary_to(BooleanGate::Nand, &lhs, &rhs, &mut output);
+assert!(decryptor.decrypt(&output)?);
+```
+
+`BooleanEvaluator` shares affine preprocessing, signed modulus-8 LUTs and the
+restoring output shift between families. Binary gates use one PBS; NOT uses none,
+and MUX uses two. Reuse `evaluate_binary_to`, `not_to` and `mux_to` with existing outputs.
+`BooleanEvaluator::try_new(dimension, poly_length, input_codec, coefficient_modulus, bootstrapper)`
+is the custom-backend boundary: the caller must bind those arguments to the backend
+and preserve LUT output scales. It returns `TfheEvaluationError`, including
+`InvalidBooleanEncoding` for input modulus other than 4 or explicit ciphertext moduli at most 8.
+Family parameter or client-error types do not enter the shared evaluator.
 
 ## CBS output and consumption
 
@@ -178,7 +211,7 @@ output with the negacyclic sign.
 | Ordinary `encrypt` | Unsigned message in `0..t` |
 | `encrypt_padded` | Same unsigned scale, restricted to `0..ceil(t/2)` for front-half LUT input |
 | `encrypt_centered` | Modular representative in `0..t`; upper-half values represent negatives, e.g. `3` means `-1` for `t=4` |
-| GLWE Boolean | External `false/true` is `0/1` modulo 4; internal LUTs use signed values at the rounded modulus-8 scale, followed by a restoring shift |
+| Boolean (both families) | External `false/true` is `0/1` modulo 4; internal LUTs use signed values at the rounded modulus-8 scale, followed by a restoring shift |
 | CBS | Ordinary unsigned LWE input becomes GGSW/NGSW at the selected gadget scales, under the accumulator secret; a `0/1` input yields a CMUX control |
 
 Client `decrypt` uses the parameter codec and returns a canonical representative in `0..t`. Centered encryption

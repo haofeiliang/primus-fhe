@@ -2,9 +2,9 @@ use primus_integer::FheUint;
 use primus_ntt::NttTable;
 
 use crate::{
-    CircuitBootstrapConfig, ClientKey, Decryptor, Encryptor, Evaluator, KeyGenerationError,
-    KeyGenerator, ServerKey, TfheClientError, TfheContextError, TfheEvaluationError,
-    TfheParameters,
+    BooleanDecryptor, BooleanEncryptor, BooleanError, BooleanEvaluator, CircuitBootstrapConfig,
+    ClientKey, Decryptor, EncryptionKey, Encryptor, Evaluator, KeyGenerationError, KeyGenerator,
+    ServerKey, TfheClientError, TfheContextError, TfheEvaluationError, TfheParameters,
 };
 
 /// Validated binding between NTRU TFHE parameters and one exact NTT table.
@@ -116,6 +116,41 @@ where
         server_key: &'a ServerKey<T>,
     ) -> Result<Evaluator<'a, T, Table>, TfheEvaluationError> {
         Evaluator::try_new(self, server_key)
+    }
+
+    /// Creates a Boolean encryptor for a secret or public key, requiring `t = 4`.
+    /// Public-key contracts follow [`EncryptionKey`].
+    pub fn boolean_encryptor<'a, Key>(
+        &'a self,
+        key: &'a Key,
+    ) -> Result<BooleanEncryptor<'a, T, Key>, BooleanError>
+    where
+        Key: EncryptionKey<T, primus_modulus::BarrettModulus<T>>,
+    {
+        BooleanEncryptor::try_new(&self.parameters, key)
+    }
+
+    /// Creates a Boolean decryptor after checking `t = 4` and the client key.
+    pub fn boolean_decryptor<'a>(
+        &'a self,
+        client_key: &'a ClientKey<T>,
+    ) -> Result<BooleanDecryptor<'a, T>, BooleanError> {
+        BooleanDecryptor::try_new(&self.parameters, client_key)
+    }
+
+    /// Creates a Boolean evaluator with this context's PBS, gate LUTs and workspace.
+    /// Requires `t = 4`; online `_to` operations reuse the allocated storage.
+    pub fn boolean_evaluator<'a>(
+        &'a self,
+        server_key: &'a ServerKey<T>,
+    ) -> Result<BooleanEvaluator<'a, T, Table>, TfheEvaluationError> {
+        BooleanEvaluator::try_new(
+            self.parameters.external_lwe_dimension(),
+            self.parameters.accumulator_ntru().poly_length(),
+            self.parameters.input_plaintext_codec(),
+            self.parameters.accumulator_ntru().cipher_modulus(),
+            self.evaluator(server_key)?,
+        )
     }
 
     /// Generates optional CBS material under this client's accumulator secret.

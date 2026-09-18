@@ -96,6 +96,22 @@ pub enum TfheClientError {
     },
 }
 
+/// An error produced by Boolean client construction, encryption or decryption.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum BooleanError {
+    /// Gate bootstrapping uses the 0/1 encoding modulo 4.
+    #[error("Boolean TFHE requires plaintext modulus 4")]
+    PlaintextModulusMustBeFour,
+
+    /// A decrypted value is neither 0 nor 1 under plaintext modulus 4.
+    #[error("decrypted value is not a valid Boolean plaintext")]
+    InvalidPlaintext,
+
+    /// Raw client-side encryption or decryption failed.
+    #[error(transparent)]
+    Client(#[from] TfheClientError),
+}
+
 /// An incompatible circuit-bootstrap parameter set.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum CircuitBootstrapParameterError {

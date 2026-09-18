@@ -194,8 +194,14 @@ where
     pub fn boolean_evaluator<'a>(
         &'a self,
         server_key: &'a ServerKey<T>,
-    ) -> Result<BooleanEvaluator<'a, T, Table>, BooleanError> {
-        BooleanEvaluator::try_new(&self.parameters, self.evaluator(server_key)?)
+    ) -> Result<BooleanEvaluator<'a, T, Table>, TfheEvaluationError> {
+        BooleanEvaluator::try_new(
+            self.parameters.external_lwe_dimension(),
+            self.parameters.accumulator_glwe().poly_length(),
+            self.parameters.input_plaintext_codec(),
+            self.parameters.accumulator_glwe().cipher_modulus(),
+            self.evaluator(server_key)?,
+        )
     }
 
     /// Generates the optional trace-projection and scheme-switching key material.

@@ -63,12 +63,21 @@ ManyLUT 编译同一个输入的多个函数。后端示例计算 `x % 4`、`x /
 有界双输入函数使用共享 `BivariateLookupTable` 打包 `x+B*y`，再把其中的普通 LUT
 交给现有 evaluator。范围、共同编码与误差放大条件见[有界双输入 PBS](../primus_tfhe/README.zh_CN.md#有界双输入-pbs)。
 
+## Boolean 客户端与门
+
+明文模数采用 4 时，通过后端 `boolean_encryptor(key)`、`boolean_decryptor(client)` 和
+`boolean_evaluator(server)` 工厂构造。独立的 `BooleanEncryptor` / `BooleanDecryptor`
+绑定 NTRU family 参数与密钥；加密支持私钥或 LWE 公钥，错误为本族 `BooleanError`，
+其中原始 `TfheClientError` 通过 `#[from]` 进入 `Client`。求值器构造返回公共 `TfheEvaluationError`。
+门预处理、正负 LUT 和输出修正与 GLWE 共用 `primus_tfhe::BooleanEvaluator`，
+用法和编码约定见[公共 Boolean 契约](../primus_tfhe/README.zh_CN.md#boolean-门)。
+
 ## CBS 与示例
 
 两后端均提供可选的 CBS 参数、密钥和 evaluator。CBS 从 BR 后分支，在 `f_acc` 下执行
 系数投影、trace/scheme switching，跳过普通 PBS 的返回密钥切换与提取。
 包括 bit 在内，输入使用 unsigned rounded LWE 编码。输出 NGSW 使用 gadget 尺度；输入为 `0/1` 时可控制 CMUX，其候选密文也必须使用 `f_acc`。
-本 TFHE 层不提供 NTRU Boolean 适配器或 LWE 到环密文的 packing。
+本 TFHE 层不提供 LWE 到环密文的 packing。
 
 CBS 参数独立选择 output、trace 和 scheme-switch basis。内部 ManyLUT 仅在输出组中
 补零，投影 NLev 和输出 NGSW 保留请求的层数；scheme-switch key 绑定完整 output basis。

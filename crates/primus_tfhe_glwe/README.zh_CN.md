@@ -76,8 +76,9 @@ Boolean 运算直接使用 `LweCiphertext<T>`，采用模 4 下 unsigned rounded
 两种客户端均以 `try_new(parameters, key)` 构造，要求明文模数为 4。
 后端 `boolean_encryptor`、`boolean_decryptor`、`boolean_evaluator` 工厂绑定同一参数。
 通过 `evaluate_binary_to`、`not_to`、`mux_to` 复用输出；共享 evaluator 负责仿射预处理、
-内部 LUT 尺度与修正。`BooleanEvaluator<T, M, E>::try_new` 也接受自定义 PBS 实现，
-但传入的 family 参数必须匹配。求值器只保存所需模数、维数和编码常量，不借用这套参数。
+内部 LUT 尺度与修正。门求值已移入 `primus_tfhe`，自定义后端构造器接受普通维数、输入 codec
+和 accumulator 模数，返回 `TfheEvaluationError`；`BooleanError` 只负责 Boolean 客户端操作。
+详见[公共 Boolean 契约](../primus_tfhe/README.zh_CN.md#boolean-门)。
 Raw 输入必须采用 Boolean 编码及匹配的外部秘密，这些性质无法从 LWE 密文本身验证。
 
 CBS 是两个后端的可选能力，提供独立的 output basis、trace/scheme-switch 参数及密钥，

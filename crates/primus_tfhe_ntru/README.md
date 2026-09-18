@@ -79,6 +79,16 @@ For bounded two-input functions, use the shared `BivariateLookupTable` to pack
 [bounded two-input PBS](../primus_tfhe/README.md#bounded-two-input-pbs) for input
 bounds, common encoding and the amplified-error budget.
 
+## Boolean clients and gates
+
+With plaintext modulus 4, use backend `boolean_encryptor(key)`, `boolean_decryptor(client)`
+and `boolean_evaluator(server)` factories. The independent `BooleanEncryptor` /
+`BooleanDecryptor` bind NTRU family keys and parameters; encryption accepts a private
+or LWE public key. They return the family `BooleanError`, with `#[from]` for raw
+`TfheClientError` through `Client`. Evaluator construction returns shared `TfheEvaluationError`.
+Gate preprocessing, signed LUTs and output correction use the same `primus_tfhe::BooleanEvaluator`
+as GLWE. See [usage and encoding contracts](../primus_tfhe/README.md#boolean-gates).
+
 ## CBS and examples
 
 Both backends provide optional CBS parameters, keys and evaluators. CBS branches
@@ -86,7 +96,7 @@ after BR, projects coefficients and applies trace/scheme switching under `f_acc`
 it skips ordinary PBS's return key switch and extraction. Input uses unsigned rounded
 LWE encoding, including for bits. Its NGSW output uses
 gadget scales and can control CMUX for `0/1` inputs. CMUX candidates must also use
-`f_acc`. NTRU Boolean adapters and LWE-to-ring packing are not provided by this TFHE layer.
+`f_acc`. LWE-to-ring packing is not provided by this TFHE layer.
 
 CBS parameters select independent output, trace and scheme-switch bases. The internal
 ManyLUT pads its output groups; the projected NLev and output NGSW retain the requested

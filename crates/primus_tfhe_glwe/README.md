@@ -89,9 +89,10 @@ Both client types use `try_new(parameters, key)` and require plaintext modulus 4
 Backend `boolean_encryptor`, `boolean_decryptor` and `boolean_evaluator` factories
 bind the same parameters. Reuse `evaluate_binary_to`, `not_to` and `mux_to`; the
 shared evaluator owns affine preprocessing, internal LUT scales and correction.
-`BooleanEvaluator<T, M, E>::try_new` also accepts a custom PBS implementation, whose
-parameters must match the supplied family parameters. The evaluator retains the
-modulus, dimension and encoding constants it needs without borrowing those parameters.
+Gate evaluation now belongs to `primus_tfhe`; its custom-backend constructor accepts
+ordinary dimensions, an input codec and the accumulator modulus. Construction returns
+`TfheEvaluationError`; `BooleanError` covers only Boolean client operations.
+See the [shared Boolean contract](../primus_tfhe/README.md#boolean-gates).
 Raw inputs must use the Boolean encoding and the matching external key; these
 properties cannot be verified from an LWE ciphertext.
 

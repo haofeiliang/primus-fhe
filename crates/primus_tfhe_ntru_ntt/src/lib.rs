@@ -19,6 +19,7 @@ use primus_modulus::BarrettModulus;
 
 mod accumulator;
 mod blind_rotation;
+pub mod boolean;
 mod circuit_bootstrap;
 mod context;
 mod error;
@@ -26,6 +27,9 @@ mod evaluator;
 mod key;
 
 pub use accumulator::AccumulatorClient;
+pub use boolean::{
+    BooleanDecryptor, BooleanEncryptor, BooleanError, BooleanEvaluator, BooleanGate,
+};
 pub use context::TfheContext;
 pub use error::{
     CircuitBootstrapParameterError, KeyGenerationError, LookupTableError, TfheClientError,

@@ -1,7 +1,7 @@
 pub use primus_tfhe::{LookupTableError, TfheEvaluationError};
 pub use primus_tfhe_ntru::{
-    CircuitBootstrapParameterError, KeyGenerationError, TfheClientError, TfheKeyError,
-    TfheParameterError,
+    BooleanError, CircuitBootstrapParameterError, KeyGenerationError, TfheClientError,
+    TfheKeyError, TfheParameterError,
 };
 
 /// Failure to construct a Fourier table or bind it to NTRU TFHE parameters.

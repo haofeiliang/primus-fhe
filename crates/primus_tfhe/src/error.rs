@@ -3,6 +3,9 @@
 /// An error produced while constructing a TFHE evaluator.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum TfheEvaluationError {
+    /// Boolean gates require input modulus 4 and signed LUT values at modulus-8 scale.
+    #[error("Boolean evaluation requires plaintext modulus 4 and ciphertext moduli greater than 8")]
+    InvalidBooleanEncoding,
     /// The server key was generated for a different parameter layout.
     #[error("TFHE server key is incompatible with the evaluation context")]
     IncompatibleServerKey,

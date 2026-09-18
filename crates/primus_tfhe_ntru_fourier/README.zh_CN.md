@@ -8,7 +8,7 @@ API 和参数仍处于实验阶段；示例和基准是功能工作负载，不�
 
 完整能力与编码约定见[公共指南](../primus_tfhe/README.zh_CN.md)，参数和秘密域见
 [NTRU family](../primus_tfhe_ntru/README.zh_CN.md)。两路 NTRU 后端均支持 PBS、ManyLUT 和 CBS，
-NTRU Boolean 适配器尚未实现。
+Boolean 适配器已接入共享门求值器；验证范围见[公共指南](../primus_tfhe/README.zh_CN.md#boolean-门)。
 
 ## 普通 PBS 与 ManyLUT
 
@@ -46,6 +46,15 @@ LUT 编译的第一个参数为输出 `RoundedCodec`。示例采用 `t_in=16 →
 
 公钥噪声、存储和密钥身份要求集中于
 [NTRU 客户端契约](../primus_tfhe_ntru/README.zh_CN.md#客户端与-lut)。
+
+## Boolean 门
+
+将 `external_lwe` 明文模数设为 4，通过 `context.try_generate_keys(None, rng)` 生成普通 PBS
+密钥，再从 context 绑定 `boolean_encryptor`（私钥/公钥）、`boolean_decryptor` 和
+`boolean_evaluator`。`evaluate_binary_to`、`not_to`、`mux_to` 复用原始 LWE 输出，无需附加求值密钥。
+示例和编码契约见[公共指南](../primus_tfhe/README.zh_CN.md#boolean-门)。
+[接入测试](tests/boolean.rs)验证 NAND 正负 LUT/输出修正、公钥输入及零分配复用；
+完整门语义和串联验收留在 B2.2。
 
 ## 可选 circuit bootstrapping
 

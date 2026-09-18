@@ -2,8 +2,9 @@
 
 [English](README.md) | 简体中文
 
-公共 LUT 编译、编码元数据及 PBS trait 层，供 GLWE 和 NTRU 两族复用。
-本 crate 不持有客户端密钥、变换 table 或 evaluator 工作区。完整使用流程从下面的后端示例开始。
+公共 LUT 编译、编码元数据、PBS trait 及 Boolean 门求值层，供 GLWE 和 NTRU 两族复用。
+Boolean evaluator 持有门 LUT 与 LWE 工作区；客户端密钥、变换 table 和环求值工作区仍由各自层管理。
+完整使用流程从下面的后端示例开始。
 
 ## Crate 分工与能力
 
@@ -16,8 +17,11 @@
 | --- | --- | --- | --- | --- | --- |
 | GLWE NTT | 显式域模数 | 支持 | 支持 | 支持 | 支持 |
 | GLWE Fourier | 原生 torus | 支持 | 未实现 | 支持 | 支持 |
-| NTRU NTT | 显式域模数 | 支持 | 未实现 | 未实现 | 支持 |
-| NTRU Fourier | 原生 torus | 支持 | 未实现 | 未实现 | 支持 |
+| NTRU NTT | 显式域模数 | 支持 | 未实现 | 已接入¹ | 支持 |
+| NTRU Fourier | 原生 torus | 支持 | 未实现 | 已接入¹ | 支持 |
+
+¹ NTRU Boolean 工厂及代表 NAND、公钥、复用路径已验证；完整真值表和串联验收留在
+[B2.2](../../docs/tfhe-backend-plan.md#b22门语义与串联验收)。
 
 四后端均支持私钥和 LWE 公钥客户端。Fourier 后端支持 RustFFT 与 TfheFFT。
 参数和 API 仍处于实验阶段；示例及 benchmark fixture 不是生产安全参数或失败概率建议。
@@ -35,15 +39,42 @@ GLWE NTT 另支持固定重量二元 small 秘密的[实验性稀疏 PBS](../pri
 
 | 操作 | 错误 |
 | --- | --- |
-| LUT 编译 / 普通或 CBS evaluator 绑定 | 公共 `LookupTableError` / `TfheEvaluationError` |
+| LUT 编译 / 普通、Boolean 或 CBS evaluator 绑定 | 公共 `LookupTableError` / `TfheEvaluationError` |
 | TFHE / CBS 参数准备 | Family `TfheParameterError` / `CircuitBootstrapParameterError` |
 | Client key 兼容性 / 客户端操作 | Family `TfheKeyError` / `TfheClientError` |
+| Boolean 客户端构造、加密和解密 | Family `BooleanError`；原始客户端错误通过 `#[from]` 进入 `Client` |
 | 常规或独立 CBS 密钥生成 | Family `KeyGenerationError`；NTRU 采样/变换直接进入 `Ntru` 分支 |
 | 自动建表或显式绑定表 | 后端 `TfheContextError`；`TransformTable` 保留底层 FFT/NTT 错误 |
 
 只有无歧义转换使用 `#[from]`。BR/KS、trace/SS 的失败由调用点显式 `map_err` 标明用途，
 并用 `#[source]` 保留原因。稀疏匹配保留算法专属错误。Context 错误不承诺 `Clone`/`Eq`，
 因为其包含的底层建表错误未提供这些 trait。
+
+## Boolean 门
+
+参数采用 `t=4` 时，四后端 context 均提供 `boolean_encryptor(key)`、
+`boolean_decryptor(client)` 和 `boolean_evaluator(server)`。加密器接受私钥或 LWE 公钥，
+解密器需要 client secret；直接使用 unsigned rounded `0/1` 编码的 `LweCiphertext<T>`，
+解密拒绝非 Boolean 值。门求值使用普通 PBS 密钥，无需 CBS 材料。
+
+```rust,ignore
+let encryptor = context.boolean_encryptor(&client)?;
+let decryptor = context.boolean_decryptor(&client)?;
+let mut gates = context.boolean_evaluator(&server)?;
+let lhs = encryptor.encrypt(true, &mut rng)?;
+let rhs = encryptor.encrypt(false, &mut rng)?;
+let mut output = LweCiphertext::zero(context.parameters().external_lwe_dimension());
+gates.evaluate_binary_to(BooleanGate::Nand, &lhs, &rhs, &mut output);
+assert!(decryptor.decrypt(&output)?);
+```
+
+`BooleanEvaluator` 在两族间共享仿射预处理、内部模 8 正负 LUT 和恢复输出编码的平移。
+二元门使用一次 PBS，NOT 无需 PBS，MUX 使用两次。通过 `evaluate_binary_to`、`not_to`、
+`mux_to` 和已有输出复用存储。
+`BooleanEvaluator::try_new(dimension, poly_length, input_codec, coefficient_modulus, bootstrapper)`
+是自定义后端入口；调用方须保证参数绑定正确、后端保留 LUT 输出尺度。
+构造返回 `TfheEvaluationError`：输入明文模数不是 4，或显式密文模数不大于 8 时返回
+`InvalidBooleanEncoding`。共享求值器不依赖 family 参数或客户端错误。
 
 ## CBS 输出与消费
 
@@ -147,7 +178,7 @@ callback 报错或输出越界时立即停止，不返回部分编译的表。
 | 普通 `encrypt` | `0..t` 范围的 unsigned 消息 |
 | `encrypt_padded` | 相同 unsigned 尺度，输入限制为 `0..ceil(t/2)`，供前半区 LUT 使用 |
 | `encrypt_centered` | 接收 `0..t` 的模代表元；上半区表示负数，例如 `t=4` 时 `3` 表示 `-1` |
-| GLWE Boolean | 外部 `false/true` 对应模 4 下的 `0/1`；内部 LUT 使用 rounded 模 8 尺度的正负值，随后平移恢复外部编码 |
+| 两族 Boolean | 外部 `false/true` 对应模 4 下的 `0/1`；内部 LUT 使用 rounded 模 8 尺度的正负值，随后平移恢复外部编码 |
 | CBS | 普通 unsigned LWE 输入转为指定 gadget 尺度的 GGSW/NGSW，秘密为 accumulator secret；`0/1` 输入可生成 CMUX 控制 |
 
 客户端 `decrypt` 使用参数 codec，返回 `0..t` 中的规范代表元。Centered 加密不能替代普通 LUT 的 unsigned

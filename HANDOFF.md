@@ -4,8 +4,9 @@
 
 ## 当前任务
 
+- **B2.1 已完成**：Boolean 门算法、LUT 和 LWE 工作区移入 `primus_tfhe`，GLWE/NTRU 共用；NTRU 两后端增加三个 Boolean 工厂，加密器与解密器保持独立，加密器支持私钥/公钥。客户端错误归 family `BooleanError`，求值器构造归共享 `TfheEvaluationError`。GLWE 既有回归及 NTRU NTT、两种 FFT 的代表 NAND/公钥/零分配复用通过；完整门语义、串联及错误边界留在 **B2.2**，由用户启动。见[分步计划](docs/tfhe-backend-plan.md)、[公共用法](crates/primus_tfhe/README.zh_CN.md#boolean-门)。
 - **GLWE NTT 系数域加解密已接入**：[算法、性能与误差](docs/glwe-coefficient-client.md)。在 `NttGlweSecretKey` 增加三个固有方法，NTT `AccumulatorClient` 改用 N 系数、析构时擦除的 scratch；高层接口不变，保持精确等价和在线零分配。u64 Fourier 原型真实相位噪声 RMS 增加约 6%–13%，按用户决定暂不接入；不重开全底层整理。
-- **B1.1–B1.7 已完成**：[分步计划](docs/tfhe-backend-plan.md)、[高层接口与成本验收](docs/tfhe-api-costs.md)。四后端使用具名配置、自动建表、带可选 CBS 的 `ServerKey`、绑定消费与 accumulator 客户端；GLWE NTT 的 CBS 参数现在也绑定输入明文模数。默认/SIMD、严格 rustdoc、底层回归及九个 release 示例通过；四后端完整消费首调用零分配，复用 scratch 省去独立 CMUX 缓冲。对 `66ae701` 的当前时间/资源对照已记录；NTRU NTT 微型 fixture 对资源放置敏感，不声称所有负载等时。计划下一步仍为 **B2.1**，由用户指定启动。稀疏 CBS 仍拒绝，正式尾界未认证；逐系数 RevHomTrace 保留，共享 automorphism 优化暂缓。
+- **B1.1–B1.7 已完成**：[分步计划](docs/tfhe-backend-plan.md)、[高层接口与成本验收](docs/tfhe-api-costs.md)。四后端使用具名配置、自动建表、带可选 CBS 的 `ServerKey`、绑定消费与 accumulator 客户端；GLWE NTT 的 CBS 参数现在也绑定输入明文模数。默认/SIMD、严格 rustdoc、底层回归及九个 release 示例通过；四后端完整消费首调用零分配，复用 scratch 省去独立 CMUX 缓冲。对 `66ae701` 的当前时间/资源对照已记录；NTRU NTT 微型 fixture 对资源放置敏感，不声称所有负载等时。稀疏 CBS 仍拒绝，正式尾界未认证；逐系数 RevHomTrace 保留，共享 automorphism 优化暂缓。
 - 旧 S0–S9 及 LUT/PBS 的 **P1–P4 已完成**；[完成索引](docs/tfhe-plan.md)只用于恢复，不重开旧步骤。基础 crate 的既有整理也不自动重启。
 - **T1–T3 已完成**：[经典 GLWE ternary PBS](docs/tfhe-ternary.md#6-实施顺序与完成条件)已接入 NTT/Fourier 两后端，含两种 order、普通/交错 LUT、公钥客户端与 NTT CBS/MVB。small-LWE 分布选择 ternary；binary 路径保留。
 - GLWE 公共层与两个后端统一使用 `Encryptor`、`Decryptor`、`ClientKey`、`EncryptionKey`、`PbsOrder` 和 `TfheParameters`；底层保留数学/表示前缀。参数以 `accumulator_glwe`、`blind_rotation_ggsw` 和 `external_lwe_dimension` 区分角色。`ClientKey::generate` 负责系数域密钥生成；客户端统一编码后由 `EncryptionKey` 加密。Boolean 客户端以 `try_new` 构造，保留私钥/公钥加密并直接使用 `LweCiphertext`；普通 LUT 从 `context.parameters()` 编译，NTT 专属 MVB 仍由 context 准备。入口见 [GLWE README](crates/primus_tfhe_glwe/README.zh_CN.md)。

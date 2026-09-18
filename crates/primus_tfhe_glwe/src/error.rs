@@ -1,6 +1,6 @@
 //! Errors owned by the GLWE TFHE parameter, client and key-generation boundaries.
 
-use crate::{LookupTableError, PbsOrder, TfheEvaluationError};
+use crate::PbsOrder;
 use primus_decompose::ApproxSignedBasisError;
 use primus_glwe::GlevParameterError;
 
@@ -129,7 +129,7 @@ pub enum TfheClientError {
     },
 }
 
-/// An error produced by the Boolean TFHE layer.
+/// An error produced by Boolean client construction, encryption or decryption.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum BooleanError {
     /// Gate bootstrapping uses the 0/1 encoding modulo 4.
@@ -143,14 +143,6 @@ pub enum BooleanError {
     /// Raw client-side encryption or decryption failed.
     #[error(transparent)]
     Client(#[from] TfheClientError),
-
-    /// Lookup-table compilation failed.
-    #[error(transparent)]
-    LookupTable(#[from] LookupTableError),
-
-    /// Backend evaluator construction failed.
-    #[error(transparent)]
-    Evaluation(#[from] TfheEvaluationError),
 }
 
 /// An invalid circuit-bootstrapping parameter set.

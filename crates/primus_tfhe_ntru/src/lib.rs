@@ -21,24 +21,27 @@
 
 #![deny(missing_docs)]
 
+mod boolean;
 mod client;
 mod error;
 mod key;
 mod lookup_table;
 mod parameters;
 
+pub use boolean::{BooleanDecryptor, BooleanEncryptor};
 pub use client::{Decryptor, EncryptionKey, Encryptor};
 pub use error::{
-    CircuitBootstrapParameterError, KeyGenerationError, TfheClientError, TfheKeyError,
-    TfheParameterError,
+    BooleanError, CircuitBootstrapParameterError, KeyGenerationError, TfheClientError,
+    TfheKeyError, TfheParameterError,
 };
 pub use key::ClientKey;
 pub use parameters::{TfheConfig, TfheParameters};
 
 pub use primus_ntru::{NlevParameters, NtruParameters, NtruSecretKey};
 pub use primus_tfhe::{
-    BivariateLookupTable, CircuitBootstrapConfig, DecompositionConfig, InterleavedLookupTable,
-    LookupTable, LookupTableError, LweCiphertext, LweSecretKeyRef, ProgrammableBootstrap,
+    BOOLEAN_PLAINTEXT_BITS, BivariateLookupTable, BooleanEvaluator, BooleanGate,
+    CircuitBootstrapConfig, DecompositionConfig, InterleavedLookupTable, LookupTable,
+    LookupTableError, LweCiphertext, LweSecretKeyRef, ProgrammableBootstrap,
     ProgrammableBootstrapInterleaved, TfheEvaluationError,
 };
 

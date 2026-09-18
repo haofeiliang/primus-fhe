@@ -36,15 +36,13 @@ mod parameters;
 
 mod boolean;
 
-use primus_encoding::{PlaintextEmbedding, RoundedCodec};
+use primus_encoding::PlaintextEmbedding;
 use primus_glwe::{
     GgswParameters, GlevParameters, GlweKeySwitchingParameters, GlweParameters, GlweSecretKey,
 };
 use primus_lwe::{LweParameters, LweSecretKey};
 
-pub use boolean::{
-    BOOLEAN_PLAINTEXT_BITS, BooleanDecryptor, BooleanEncryptor, BooleanEvaluator, BooleanGate,
-};
+pub use boolean::{BooleanDecryptor, BooleanEncryptor};
 pub use client::{Decryptor, EncryptionKey, Encryptor};
 pub use error::{
     BooleanError, CircuitBootstrapParameterError, KeyGenerationError, TfheClientError,
@@ -54,8 +52,9 @@ pub use key::ClientKey;
 pub use parameters::{PbsOrder, TfheConfig, TfheParameters};
 
 pub use primus_tfhe::{
-    BivariateLookupTable, CircuitBootstrapConfig, DecompositionConfig, InterleavedLookupTable,
-    LookupTable, LookupTableError, LweCiphertext, LweSecretKeyRef, ProgrammableBootstrap,
+    BOOLEAN_PLAINTEXT_BITS, BivariateLookupTable, BooleanEvaluator, BooleanGate,
+    CircuitBootstrapConfig, DecompositionConfig, InterleavedLookupTable, LookupTable,
+    LookupTableError, LweCiphertext, LweSecretKeyRef, ProgrammableBootstrap,
     ProgrammableBootstrapInterleaved, TfheEvaluationError,
 };
 

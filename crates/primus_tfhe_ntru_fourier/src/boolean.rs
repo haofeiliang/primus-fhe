@@ -9,11 +9,10 @@ pub use primus_tfhe::BooleanGate;
 
 /// Boolean encryptor for the native-torus Fourier backend.
 pub type BooleanEncryptor<'a, T, Key = crate::ClientKey<T>> =
-    primus_tfhe_glwe::BooleanEncryptor<'a, T, NativeModulus<T>, NativeModulus<T>, Key>;
+    primus_tfhe_ntru::BooleanEncryptor<'a, T, NativeModulus<T>, Key>;
 
 /// Boolean decryptor for the native-torus Fourier backend.
-pub type BooleanDecryptor<'a, T> =
-    primus_tfhe_glwe::BooleanDecryptor<'a, T, NativeModulus<T>, NativeModulus<T>>;
+pub type BooleanDecryptor<'a, T> = primus_tfhe_ntru::BooleanDecryptor<'a, T, NativeModulus<T>>;
 
 /// Boolean gate evaluator backed by Fourier programmable bootstrapping.
 ///

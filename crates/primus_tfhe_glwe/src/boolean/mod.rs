@@ -1,15 +1,11 @@
 use crate::{BooleanError, TfheParameters};
 use primus_integer::FheUint;
 use primus_reduce::RingContext;
+use primus_tfhe::BOOLEAN_PLAINTEXT_BITS;
 
 mod client;
-mod evaluator;
 
 pub use client::{BooleanDecryptor, BooleanEncryptor};
-pub use evaluator::{BooleanEvaluator, BooleanGate};
-
-/// The number of bits in the external Boolean plaintext modulus: `t = 2^2 = 4`.
-pub const BOOLEAN_PLAINTEXT_BITS: u32 = 2;
 
 fn validate_boolean_parameters<T, LM, GM>(
     parameters: &TfheParameters<T, LM, GM>,
@@ -19,14 +15,9 @@ where
     LM: RingContext<T>,
     GM: RingContext<T>,
 {
-    if parameters.plain_modulus_value() == boolean_plaintext_modulus::<T>() {
+    if parameters.plain_modulus_value() == T::ONE << BOOLEAN_PLAINTEXT_BITS {
         Ok(())
     } else {
         Err(BooleanError::PlaintextModulusMustBeFour)
     }
-}
-
-#[inline]
-fn boolean_plaintext_modulus<T: FheUint>() -> T {
-    T::ONE << BOOLEAN_PLAINTEXT_BITS
 }

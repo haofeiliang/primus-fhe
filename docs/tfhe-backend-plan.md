@@ -2,11 +2,11 @@
 
 依据：[后端覆盖分析](tfhe-backend-coverage.md)，初始源码基线 `7f1ef55`。本计划把已有算法的后端补齐与必要的高层接口整理拆成可独立验收的步骤；不重开已完成的 P1–P4、T1–T3，也不扩入 FDFB 等[新算法选型](tfhe-next.md)。
 
-B1.1–B1.7 已完成，下一步 B2.1。B1.4–B1.7 整理四后端高层接口，分析与性能对照基线为 `66ae701`；B2–B8 保留原编号。当前任务与下一步记录在 [HANDOFF](../HANDOFF.md)，算法依据仍由覆盖分析和各专项文档维护。
+B1.1–B1.7、B2.1 已完成，下一步 B2.2。B1.4–B1.7 整理四后端高层接口，分析与性能对照基线为 `66ae701`；B2–B8 保留原编号。当前任务与下一步记录在 [HANDOFF](../HANDOFF.md)，算法依据仍由覆盖分析和各专项文档维护。
 
 ## 执行方式
 
-- 接下来推荐按 **`执行 B2.1` → `执行 B2.2` → …** 推进。`B1` 表示整个阶段；明确要求“执行 B1”时，完成其所有满足前置条件的剩余子步骤。
+- 接下来推荐按 **`执行 B2.2` → `执行 B3.1` → …** 推进。`B1` 表示整个阶段；明确要求“执行 B1”时，完成其所有满足前置条件的剩余子步骤。
 - 每步先核对 Git 状态、HANDOFF、本步及依赖结论；保留用户修改和暂存状态。编号不隐含暂存、提交或启动后续步骤。
 - **工程接入**：现成代数与原语支持实现，仍需正常验证。**原型验证**：先回答未决问题，结论可以是通过、缩小范围或暂缓。
 - “依赖原型通过”不同于“原型步骤已结束”。原型不成立时保留结论及最小反例，删除无长期价值的实验代码，暂缓依赖分支；其他独立阶段仍可执行。
@@ -17,7 +17,7 @@ B1.1–B1.7 已完成，下一步 B2.1。B1.4–B1.7 整理四后端高层接口
 | 阶段 | 目标 | 子步骤 | 性质及主要依赖 |
 | --- | --- | --- | --- |
 | B1 | GLWE Fourier 经典 CBS、四后端高层接口整理 | B1.1–B1.7 | 全部完成；[接口成本验收](tfhe-api-costs.md) |
-| B2 | NTRU 两后端 Boolean | B2.1–B2.2 | 工程接入；先完成 B1.7，使用整理后的接口 |
+| B2 | NTRU 两后端 Boolean | B2.1–B2.2 | B2.1 已完成共享算法与绑定；B2.2 待验收完整门语义和串联 |
 | B3 | NTRU NTT MVB、既有 sparse 组合验收 | B3.1–B3.3 | 工程接入；B3.3 建议在 B2 的 Boolean 迁移后执行 |
 | B4 | GLWE Fourier 二元稀疏 PBS | B4.1–B4.3 | 参考实现与收益验证；不含 sparse CBS/ternary |
 | B5 | Native 偶尺度 MVB | B5.1–B5.4 | 原型通过后接入两族 Fourier；NTRU 接入还依赖 B3.1 |
@@ -70,14 +70,15 @@ Fourier 因原型噪声增加，按用户决定暂不接入。不阻塞 B2.1。
 
 ## B2：NTRU 两后端 Boolean
 
-入口：[现有 Boolean 层](../crates/primus_tfhe_glwe/src/boolean/mod.rs)、[完整 PBS trait](../crates/primus_tfhe/src/bootstrap.rs)、[NTRU 客户端](../crates/primus_tfhe_ntru/src/client/mod.rs)。
+入口：[共享 Boolean 求值器](../crates/primus_tfhe/src/boolean.rs)、[完整 PBS trait](../crates/primus_tfhe/src/bootstrap.rs)、[NTRU 客户端](../crates/primus_tfhe_ntru/src/client/mod.rs)。
 
-### B2.1：共享门算法与 NTRU 绑定
+### B2.1：共享门算法与 NTRU 绑定（已完成）
 
-- **前置**：B1.7 的高层接口整理；这是调用方迁移顺序，不要求 Boolean 使用 CBS 材料。
-- **范围**：把实际可共用的 Boolean 门预处理、LUT 和求值工作区移到合适的共享位置；同步迁移 GLWE，并接入 NTRU NTT/Fourier，使提取立即有两个 family 消费者。
-- **约束**：公共层不能反向依赖 family 的参数/客户端错误；以必要的普通参数或小型构造边界解决绑定，不增加万能参数 trait。保留独立 `BooleanEncryptor` / `BooleanDecryptor`、私钥/公钥加密和原始 `LweCiphertext`。
-- **验收**：外部 `t=4`、内部模 8 正负 LUT 尺度及输出平移一致；两族入口可构造、加密、求值和解密，GLWE 既有调用方同步迁移。
+- `primus_tfhe::BooleanEvaluator` / `BooleanGate` 共享门预处理、四个正负 LUT 和 LWE 工作区；构造只接受维数、环长度、Rounded codec、accumulator 模数与 PBS 实现，不依赖 family 参数或客户端错误。
+- GLWE 已迁移；NTRU 两后端增加 `boolean_encryptor`、`boolean_decryptor`、`boolean_evaluator` 工厂。独立加解密器保留私钥/公钥输入，密文继续使用原始 `LweCiphertext`；不需要 CBS 材料。
+- Boolean 客户端返回 family `BooleanError`，通过 `Client(#[from] TfheClientError)` 保留原因；求值器构造统一返回 `TfheEvaluationError`，内部 LUT 错误沿既有 `LookupTable` 转换。
+- 外部 `t=4`、内部模 8 正负值及输出平移保持一致。GLWE 既有真值表回归通过；NTRU 的 [NTT](../crates/primus_tfhe_ntru_ntt/tests/boolean.rs) / [Fourier](../crates/primus_tfhe_ntru_fourier/tests/boolean.rs) 代表 NAND、公钥输入和复用测试通过，Fourier 覆盖两种 FFT；在线零分配。默认/SIMD 七包检查与测试、严格 rustdoc 通过。
+- 在线门算法和 PBS 内核未改变，没有新增 benchmark；常见用法与错误边界见[公共指南](../crates/primus_tfhe/README.zh_CN.md#boolean-门)。完整 NTRU 门语义和串联仍由 B2.2 验收。
 
 ### B2.2：门语义与串联验收
 

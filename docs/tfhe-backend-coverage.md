@@ -13,7 +13,7 @@
 可以明确安排的工程补齐包括：
 
 1. **GLWE Fourier 经典 CBS**：B1.1–B1.3 已完成完整链、误差/成本测量与使用示例，见 [CBS 专项](tfhe-cbs.md)。
-2. **NTRU 两后端 Boolean 适配**：现有完整 LWE→LWE PBS 能承载同一套门运算。
+2. **NTRU 两后端 Boolean 适配**：B2.1 已共享门算法并接入客户端/工厂，B2.2 待完成全部门语义和串联验收。
 3. **NTRU NTT 分解式 MVB**：现有奇数模数分解、NTRU 公开多项式乘法、KS 和提取足以组成流程。
 4. **GLWE Fourier 固定重量二元稀疏 PBS**：桶聚合代数可迁移，先实现系数域聚合的参考路径；收益须独立测量。
 
@@ -35,7 +35,7 @@
 | 经典 ternary BR | 支持 | 支持 | 未接入 | 未接入 |
 | 固定重量 binary 使用经典 BR | 支持 | 支持 | 需生成可逆客户端秘密 | 还受奇数重量/逆元稳定性限制 |
 | 固定重量 binary 桶聚合 BR | 支持 | 未接入 | 未接入 | 未接入 |
-| Boolean 门、NOT、MUX | 支持 | 支持 | 未接入 | 未接入 |
+| Boolean 门、NOT、MUX | 支持 | 支持 | 已接入，B2.2 待验收 | 已接入，B2.2 待验收 |
 | CBS | 经典 binary/ternary → GGSW | 经典 binary/ternary → Fourier GGSW | binary → NGSW | binary → NGSW |
 | 固定尺度差分 MVB | 支持，含经典/稀疏 | 未接入 | 未接入 | 未接入 |
 | 两种 PBS order | 支持 BK / KB | 支持 BK / KB | 固定 NTRU 链 | 固定 NTRU 链 |
@@ -112,9 +112,9 @@ NTT 在可用的显式模数环内做精确变换；Fourier 用原生整数表�
 
 两后端已经实现 `ProgrammableBootstrap`，保留 raw LUT 的输出尺度，并返回原外部客户端秘密下的 LWE；可承载现有 Boolean 的仿射预处理、正负 LUT 和输出平移。
 
-当前障碍是 [BooleanEvaluator](../crates/primus_tfhe_glwe/src/boolean/evaluator.rs) 的构造器与 LUT helper 绑定了 GLWE 参数，而非门算法需要 GLWE。出现 NTRU 消费者时可将真正共用的门求值与 LUT 构造部分下移 `primus_tfhe`；两族仍负责自己的参数和客户端绑定。保留独立 `BooleanEncryptor` / `BooleanDecryptor`，使用现有 `LweCiphertext`。
+B2.1 已将 [BooleanEvaluator](../crates/primus_tfhe/src/boolean.rs) 移入 `primus_tfhe`，以维数、codec、环长度和模数绑定，GLWE/NTRU 共用同一份门算法。两族各自绑定参数与客户端错误，保留独立 `BooleanEncryptor` / `BooleanDecryptor` 和原始 `LweCiphertext`。四后端 context 均提供 Boolean 工厂；没有新增 BSK 方案或改变 NTRU KS 链。
 
-以 `t=4`、既有内部模 8 尺度为首批契约；验证六种二元门、NOT、MUX、私钥/公钥输入和串联后的编码。无需新增 BSK 方案或改变 NTRU KS 链。
+外部 `t=4`、内部模 8 尺度的代表 NAND、公钥输入和零分配复用已在 NTRU NTT、RustFFT/TfheFFT 验证，GLWE 原真值表保持通过。六种二元门、NOT、MUX 的完整 NTRU 真值表、串联和错误边界留在 B2.2；不将代表路径通过当作该步骤已经完成。
 
 ### 4.3 NTRU NTT 分解式 MVB
 
@@ -228,7 +228,7 @@ Full-domain FDFB、通用数字拆分、HLUT/LFBS、multi-bit 等属于[新算�
 
 ## 7. 建议执行顺序与验收规模
 
-1. **先整理高层接口，再补明确缺口**：GLWE Fourier 经典 CBS 的 B1.1–B1.3、四后端具名参数/自动建表、求值密钥绑定和 CBS 消费接口的 B1.4–B1.6 已完成；按[分步计划](tfhe-backend-plan.md)继续 B1.7 的集成与成本验收，再接 B2 的 NTRU Boolean。此顺序减少重复迁移，Boolean 算法本身不依赖 CBS。
+1. **先整理高层接口，再补明确缺口**：GLWE Fourier 经典 CBS 的 B1.1–B1.3、四后端具名参数/自动建表、求值密钥绑定和 CBS 消费接口的 B1.4–B1.6 已完成；B1.7 成本验收与 B2.1 NTRU Boolean 接入也已完成；按[分步计划](tfhe-backend-plan.md)继续 B2.2 门语义验收。此顺序减少重复迁移，Boolean 算法本身不依赖 CBS。
 2. **再扩展已有多输出路线**：NTRU NTT MVB；同步补 GLWE NTT sparse×Boolean/bivariate/odd-full 的小型组合验证。
 3. **处理性能型移植与受限表示**：GLWE Fourier sparse PBS、Native 偶尺度 MVB。先完成参考路径，再测收益，避免一次混入频域聚合等额外优化。
 4. **按实际应用选择实验组合**：NTT sparse CBS、NTRU ternary、NTRU sparse；分别通过前置条件后，再组合到其他上层功能。
@@ -241,7 +241,7 @@ Full-domain FDFB、通用数字拆分、HLUT/LFBS、multi-bit 等属于[新算�
 - 在线路径复用同一 evaluator、scratch 和输出，检查覆盖写入、跨调用缓冲区状态及零额外分配。
 - 参数探索/噪声统计与常规测试分离。基准复用现有工作负载，只为新决策增加必要 case；性能收益由同参数完整流程确认。
 
-不要先引入统一所有后端的万能 trait。`primus_tfhe` 保留 LUT/编码与完整 PBS 契约；两族共享层负责客户端与参数；NTT/Fourier 保留各自预处理、工作区和数值约束。出现第二个实际消费者时再提取 Boolean 算法或纯桶匹配组件。
+不要先引入统一所有后端的万能 trait。`primus_tfhe` 保留 LUT/编码与完整 PBS 契约；两族共享层负责客户端与参数；NTT/Fourier 保留各自预处理、工作区和数值约束。Boolean 算法已由两族共享；纯桶匹配组件仍等第二个实际消费者出现后再提取。
 
 ## 8. 本次分析的证据与验证边界
 

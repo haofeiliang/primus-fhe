@@ -9,7 +9,8 @@ workloads, not security parameter recommendations.
 
 See the [shared capability and encoding guide](../primus_tfhe/README.md) and
 [NTRU family/key domains](../primus_tfhe_ntru/README.md). Both NTRU backends support
-PBS, ManyLUT and CBS; NTRU Boolean adapters are not implemented.
+PBS, ManyLUT and CBS; Boolean adapters now share the GLWE gate evaluator.
+See the [Boolean integration status](../primus_tfhe/README.md#boolean-gates).
 
 ## Ordinary PBS and ManyLUT
 
@@ -52,6 +53,16 @@ and dimension errors leave output and RNG unchanged.
 
 Public-key noise, storage and key-identity requirements are described in the
 [NTRU client contract](../primus_tfhe_ntru/README.md#clients-and-luts).
+
+## Boolean gates
+
+Set `external_lwe` plaintext modulus to 4 and generate ordinary PBS keys with
+`context.try_generate_keys(None, rng)`. Bind `boolean_encryptor` (private/public key),
+`boolean_decryptor` and `boolean_evaluator` from that context. Reuse raw LWE outputs
+with `evaluate_binary_to`, `not_to` and `mux_to`; no additional evaluation key is needed.
+See the [shared example and contracts](../primus_tfhe/README.md#boolean-gates).
+The [integration test](tests/boolean.rs) checks NAND's signed LUT/output correction,
+public-key inputs and zero-allocation reuse; full gate/chain acceptance follows in B2.2.
 
 ## Optional circuit bootstrapping
 
