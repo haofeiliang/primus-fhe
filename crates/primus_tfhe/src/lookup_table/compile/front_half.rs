@@ -67,10 +67,38 @@ where
     LM: ReduceAdd<T, Output = T> + PrepareModulusSwitch<ValueT = T>,
     F: Fn(usize, usize) -> Result<T, LookupTableError>,
 {
+    validate(
+        input_domain_len,
+        poly_length,
+        output_count,
+        input_plaintext_modulus,
+        input_ciphertext_modulus.explicit_value(),
+    )?;
+    let mut polynomial = PolynomialOwned::zero(poly_length);
+    compile_to(
+        input_domain_len,
+        output_count,
+        input_plaintext_modulus,
+        input_ciphertext_modulus,
+        coefficient_modulus,
+        encoded_output_at,
+        polynomial.as_mut(),
+    )?;
+    Ok(polynomial)
+}
+
+/// Checks encoding and capacity before allocating one polynomial or a batch.
+pub(in crate::lookup_table) fn validate<T: FheUint>(
+    input_domain_len: usize,
+    poly_length: usize,
+    output_count: usize,
+    input_plaintext_modulus: T,
+    input_ciphertext_modulus: Option<T>,
+) -> Result<(), LookupTableError> {
     validate_input_encoding(
         poly_length,
         input_plaintext_modulus,
-        input_ciphertext_modulus.explicit_value(),
+        input_ciphertext_modulus,
     )?;
     let max_domain_len = front_half_domain_len(input_plaintext_modulus, poly_length)?;
     if input_domain_len == 0 || input_domain_len > max_domain_len {
@@ -97,6 +125,29 @@ where
             coefficients_per_output,
         });
     }
+    Ok(())
+}
+
+/// Fills a polynomial whose encoding and shape have passed `validate`.
+/// Overwrites every coefficient on success; a center collision or invalid
+/// callback value may leave a partially written output.
+pub(in crate::lookup_table) fn compile_to<T, LM, M, F>(
+    input_domain_len: usize,
+    output_count: usize,
+    input_plaintext_modulus: T,
+    input_ciphertext_modulus: LM,
+    coefficient_modulus: M,
+    encoded_output_at: F,
+    coefficients: &mut [T],
+) -> Result<(), LookupTableError>
+where
+    T: FheUint,
+    M: RingContext<T>,
+    LM: ReduceAdd<T, Output = T> + PrepareModulusSwitch<ValueT = T>,
+    F: Fn(usize, usize) -> Result<T, LookupTableError>,
+{
+    let padded_output_count = output_count.next_power_of_two();
+    let coefficients_per_output = coefficients.len() / padded_output_count;
 
     let input_codec = RoundedCodec::new(input_plaintext_modulus, input_ciphertext_modulus);
     let center_quantizer =
@@ -107,8 +158,6 @@ where
         center_quantizer.exponent(encoded)
     };
     let coefficient_modulus_value = coefficient_modulus.explicit_value();
-    let mut polynomial = PolynomialOwned::zero(poly_length);
-    let coefficients = polynomial.as_mut();
 
     // Centers use per-output coordinates; slice boundaries index the polynomial.
     let mut center_position = 0;
@@ -146,7 +195,7 @@ where
         padded_output_count,
         coefficient_modulus,
     );
-    Ok(polynomial)
+    Ok(())
 }
 
 /// Evaluates one output group and repeats it through a nonempty input interval.

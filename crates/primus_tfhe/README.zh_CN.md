@@ -17,7 +17,7 @@ Boolean evaluator 持有门 LUT 与 LWE 工作区；客户端密钥、变换 tab
 | --- | --- | --- | --- | --- | --- |
 | GLWE NTT | 显式域模数 | 支持 | 支持 | 支持 | 支持 |
 | GLWE Fourier | 原生 torus | 支持 | 未实现 | 支持 | 支持 |
-| NTRU NTT | 显式域模数 | 支持 | 未实现 | 支持 | 支持 |
+| NTRU NTT | 显式域模数 | 支持 | 支持 | 支持 | 支持 |
 | NTRU Fourier | 原生 torus | 支持 | 未实现 | 支持 | 支持 |
 
 四后端均支持私钥和 LWE 公钥客户端。Fourier 后端支持 RustFFT 与 TfheFFT。
@@ -313,9 +313,11 @@ callback 每个组合调用一次，参数为 `(input, output_index)`，**外层
 代价是各输出的因子会放大 BR 噪声，输入几何检查不能代替噪声预算。解密相位须使用保留的
 Scaled codec；接入下一次 Rounded 输入 PBS 时须计入编码中心差异。
 
-首版后端为 [GLWE NTT](../primus_tfhe_glwe_ntt/README.zh_CN.md#固定尺度分解式-mvb)，
-支持经典/稀疏密钥和两种 order。预处理产物借用一个 context，独立 evaluator 复用工作区。
-本实现不含奇数全域 MVB、其他后端和 CBS 输出；代数与噪声条件见 [MVB 设计](../../docs/tfhe-mvb.md)。
+[GLWE NTT](../primus_tfhe_glwe_ntt/README.zh_CN.md#固定尺度分解式-mvb) 与
+[NTRU NTT](../primus_tfhe_ntru_ntt/README.zh_CN.md#固定尺度分解式-mvb) 均支持此程序。
+GLWE 支持经典/稀疏密钥和两种 order；NTRU 共享加密初始化和 BR，再对每个乘法结果执行 KS。
+预处理产物借用一个 context，独立 evaluator 复用工作区。
+本实现不含奇数全域 MVB、Fourier 后端和 CBS 输出；代数与噪声条件见 [MVB 设计](../../docs/tfhe-mvb.md)。
 
 [阈值示例](../primus_tfhe_glwe_ntt/examples/mvb_thresholds.rs) 把一个加密分数转换为
 交错布局容量之外的 17 个标志。[成本测量](../../docs/tfhe-mvb.md#8-p43-测量与应用选择)
@@ -325,7 +327,8 @@ Scaled codec；接入下一次 Rounded 输入 PBS 时须计入编码中心差异
 
 四种公开类型均从 crate 根导出。奇数全域是 `LookupTable` 的构造方式，
 输出槽布局由 `InterleavedLookupTable` 管理，双输入打包由 `BivariateLookupTable` 管理。
-`FactorizedLookupTable` 保存共同多项式与系数域差分因子。
+`FactorizedLookupTable` 保存共同多项式与系数域差分因子。全部因子共用一块连续空间，
+`factors()` 返回 `PolynomialIter`；`into_polynomials()` 将共同多项式与扁平因子缓冲移交后端准备。
 
 | 文件 | 职责 |
 | --- | --- |

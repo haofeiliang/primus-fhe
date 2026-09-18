@@ -10,8 +10,11 @@ use primus_reduce::RingContext;
 
 use crate::LookupTableError;
 
-pub(super) use front_half::compile as compile_front_half;
 pub use front_half::front_half_domain_len;
+pub(super) use front_half::{
+    compile as compile_front_half, compile_to as compile_front_half_to,
+    validate as validate_front_half,
+};
 pub(super) use odd_full_domain::compile as compile_odd_full_domain;
 
 pub(super) fn validate_input_encoding<T: FheUint>(

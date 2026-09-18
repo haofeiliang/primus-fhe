@@ -145,7 +145,7 @@ where
         let domain_len = self.front_half_domain_len()?;
         let expected = domain_len
             .checked_mul(output_count)
-            .ok_or(LookupTableError::ManyTableLengthOverflow)?;
+            .ok_or(LookupTableError::TableLengthOverflow)?;
         if outputs.len() != expected {
             return Err(LookupTableError::DomainLengthMismatch {
                 expected,

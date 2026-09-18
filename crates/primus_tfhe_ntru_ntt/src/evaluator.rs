@@ -1,3 +1,7 @@
+mod factorized;
+
+pub use factorized::{FactorizedEvaluator, NttFactorizedLookupTable};
+
 use primus_integer::FheUint;
 use primus_ntt::NttTable;
 use primus_poly::Polynomial;

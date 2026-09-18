@@ -104,9 +104,9 @@ pub enum LookupTableError {
         /// Supplied output count.
         actual: usize,
     },
-    /// The flattened PBSManyLUT table length does not fit in `usize`.
-    #[error("many-LUT flattened table length overflows usize")]
-    ManyTableLengthOverflow,
+    /// The flattened LUT or factor buffer length does not fit in `usize`.
+    #[error("flattened lookup-table length overflows usize")]
+    TableLengthOverflow,
     /// A lookup table must have at least one output.
     #[error("lookup table requires at least one output")]
     EmptyOutputs,

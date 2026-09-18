@@ -155,7 +155,7 @@ fn padded_inputs_and_lut_output_codecs_use_independent_domains() {
                     &[]
                 )
                 .unwrap_err(),
-            LookupTableError::ManyTableLengthOverflow
+            LookupTableError::TableLengthOverflow
         );
     }
 }

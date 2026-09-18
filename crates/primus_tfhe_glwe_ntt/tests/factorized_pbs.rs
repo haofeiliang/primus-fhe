@@ -85,9 +85,15 @@ fn factorized_pbs_reuses_workspace_and_preserves_both_external_secrets() {
         for key in [&classic, &sparse] {
             let mut evaluator = context.factorized_evaluator(key).unwrap();
             for count in [1, 3, 17] {
-                let lut = context
-                    .compile_factorized_lookup_table_fn(&codec, DOMAIN, count, value)
-                    .unwrap();
+                let (lut, allocation) = allocations::measure(|| {
+                    context
+                        .compile_factorized_lookup_table_fn(&codec, DOMAIN, count, value)
+                        .unwrap()
+                });
+                assert_eq!(
+                    allocation.count, 2,
+                    "preparation must reuse the factor buffer"
+                );
                 assert_eq!(
                     (
                         lut.input_domain_len(),

@@ -8,13 +8,13 @@
 
 ## 1. 结论
 
-**当前最全面的是 `primus_tfhe_glwe_ntt`。** 它同时支持经典 binary/ternary BR、固定重量二元稀疏 BR、两种 PBS order、Boolean、CBS 和分解式 MVB。`primus_tfhe_ntru_ntt` 与 `primus_tfhe_ntru_fourier` 的高层算法基本对齐，主要区别在模数、变换和误差处理。
+**当前最全面的是 `primus_tfhe_glwe_ntt`。** 它同时支持经典 binary/ternary BR、固定重量二元稀疏 BR、两种 PBS order、Boolean、CBS 和分解式 MVB。NTRU 两后端均支持普通/交错 PBS、Boolean 和 CBS；`primus_tfhe_ntru_ntt` 另已接入奇数模数分解式 MVB，Fourier 的偶尺度路线仍待 B5 验证。
 
 可以明确安排的工程补齐包括：
 
 1. **GLWE Fourier 经典 CBS**：B1.1–B1.3 已完成完整链、误差/成本测量与使用示例，见 [CBS 专项](tfhe-cbs.md)。
 2. **NTRU 两后端 Boolean 适配**：B2 已完成共享门算法、客户端/工厂，以及完整门真值表和串联验收。
-3. **NTRU NTT 分解式 MVB**：现有奇数模数分解、NTRU 公开多项式乘法、KS 和提取足以组成流程。
+3. **NTRU NTT 分解式 MVB**：B3.1 已接通完整链并完成接口验收，B3.2 待测误差和成本。
 4. **GLWE Fourier 固定重量二元稀疏 PBS**：桶聚合代数可迁移，先实现系数域聚合的参考路径；收益须独立测量。
 
 优先做原型的组合是 **Native 偶尺度 MVB、稀疏 CBS、NTRU ternary 与 NTRU 桶聚合**。其中有的代数已成立，但尚未建立完整的表示、采样或误差契约。不要把“尚未验证”写成“数学上不适配”，也不要把“有底层原语”写成“已有完整功能”。
@@ -37,7 +37,7 @@
 | 固定重量 binary 桶聚合 BR | 支持 | 未接入 | 未接入 | 未接入 |
 | Boolean 门、NOT、MUX | 支持 | 支持 | 支持 | 支持 |
 | CBS | 经典 binary/ternary → GGSW | 经典 binary/ternary → Fourier GGSW | binary → NGSW | binary → NGSW |
-| 固定尺度差分 MVB | 支持，含经典/稀疏 | 未接入 | 未接入 | 未接入 |
+| 固定尺度差分 MVB | 支持，含经典/稀疏 | 未接入 | 支持，经典 binary | 未接入 |
 | 两种 PBS order | 支持 BK / KB | 支持 BK / KB | 固定 NTRU 链 | 固定 NTRU 链 |
 
 几个容易混淆的概念：
@@ -82,7 +82,7 @@ NTT 在可用的显式模数环内做精确变换；Fourier 用原生整数表�
 | 算法 | 共享计算 | 每输出计算与主要限制 |
 | --- | --- | --- |
 | Interleaved ManyLUT | 一次 BR 和普通链中的 KS | 提取各槽位；`s=next_power_of_two(k)` 降低旋转分辨率 |
-| 当前 factorized MVB | 对共同 `V` 做一次步长 1 的 BR | 乘公开 `W_i`；GLWE BK 逐输出 KS，KB 直接提取；因子放大共享 BR 噪声 |
+| 当前 factorized MVB | 对共同 `V` 做一次步长 1 的 BR | 乘公开 `W_i`；GLWE BK / NTRU 逐输出 KS，GLWE KB 直接提取；因子放大共享初始化/BR 噪声 |
 | 当前 CBS | gadget-scale ManyLUT 的 BR | 投影各 gadget level，随后 scheme switch；最低尺度的噪声余量尤其重要 |
 
 输出越多不一定应当选 MVB。它保留输入旋转分辨率，但后乘因子、逐输出 KS 和因子范数可能使其慢于或噪声大于交错 ManyLUT。既有选择和测量见 [MVB 专项](tfhe-mvb.md)。
@@ -118,16 +118,16 @@ B2.1 已将 [BooleanEvaluator](../crates/primus_tfhe/src/boolean.rs) 移入 `pri
 
 ### 4.3 NTRU NTT 分解式 MVB
 
-共享 [FactorizedLookupTable](../crates/primus_tfhe/src/lookup_table/factorized.rs) 已能产生奇数 `q` 下的 `V` 和 `W_i`。NTRU 密文乘公开多项式仍属于原秘密域：`phase_f(W*c)=W*phase_f(c)`。已有 [NttNtru 多项式乘法](../crates/primus_lattice/src/ntru/ntt.rs)足以支持：
+共享 [FactorizedLookupTable](../crates/primus_tfhe/src/lookup_table/factorized.rs) 产生奇数 `q` 下的 `V` 和 `W_i`。NTRU 密文乘公开多项式仍属于原秘密域：`phase_f(W*c)=W*phase_f(c)`。B3.1 已用 [NttNtru 多项式乘法](../crates/primus_lattice/src/ntru/ntt.rs)接通：
 
 ```text
 用 NLev_f_acc[1] 初始化 V → BR 一次并保存
 → 每输出乘 W_i → 每输出 NTRU KS → compact LWE extraction
 ```
 
-需要增加 NTRU 的预处理产物和独立 MVB evaluator，复用现有 BR/KS 工作区契约。首批采用乘后逐输出 KS，使 KS 误差不再被 `W_i` 放大；共享一次 KS 是后续独立的成本/误差取舍。
+NTRU 的[预处理产物和独立 MVB evaluator](../crates/primus_tfhe_ntru_ntt/src/evaluator/factorized.rs)复用现有 BR/KS 工作区，只增加一个 NTT 多项式保存共享旋转结果。采用乘后逐输出 KS，使 KS 误差不再被 `W_i` 放大；共享一次 KS 是后续独立的成本/误差取舍。
 
-验收包含与单输出 Scaled LUT 的差分、多个输入/输出数、超出交错布局容量的输出数量、复用输出与分配检查。预算为因子放大的初始化/BR 误差，再加各输出的 KS 误差；不能照搬 GLWE fixture 或声称等安全参数。
+[验收](../crates/primus_tfhe_ntru_ntt/tests/factorized_pbs.rs)覆盖与单输出 Scaled LUT 的对照、1/3/17 输出、超出交错容量、奇数尺度初始化、context/维数错误及零分配复用。误差预算仍需计入因子放大的初始化/BR 误差和各输出 KS 误差；B3.2 将单独测量，不能套用 GLWE 的耗时或误差结果。
 
 ### 4.4 GLWE Fourier 固定重量二元稀疏 PBS
 
@@ -229,7 +229,7 @@ Full-domain FDFB、通用数字拆分、HLUT/LFBS、multi-bit 等属于[新算�
 ## 7. 建议执行顺序与验收规模
 
 1. **先整理高层接口，再补明确缺口**：B1 的 GLWE Fourier 经典 CBS、四后端高层接口与成本验收，以及 B2 的 NTRU Boolean 接入与门语义验收均已完成。此顺序减少重复迁移，Boolean 算法本身不依赖 CBS；后续按[分步计划](tfhe-backend-plan.md)推进。
-2. **再扩展已有多输出路线**：NTRU NTT MVB；同步补 GLWE NTT sparse×Boolean/bivariate/odd-full 的小型组合验证。
+2. **再扩展已有多输出路线**：NTRU NTT MVB 完整链已接入，接下来测量误差与成本，再补 GLWE NTT sparse×Boolean/bivariate/odd-full 的小型组合验证。
 3. **处理性能型移植与受限表示**：GLWE Fourier sparse PBS、Native 偶尺度 MVB。先完成参考路径，再测收益，避免一次混入频域聚合等额外优化。
 4. **按实际应用选择实验组合**：NTT sparse CBS、NTRU ternary、NTRU sparse；分别通过前置条件后，再组合到其他上层功能。
 

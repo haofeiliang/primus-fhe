@@ -1,12 +1,11 @@
-use primus_glwe::NttGlweCiphertext;
 use primus_integer::FheUint;
-use primus_lwe::LweCiphertext;
-use primus_ntt::MonomialNttTable;
+use primus_lattice::ntru::NttNtru;
+use primus_ntt::NttTable;
 use primus_poly::{NttPolynomialIter, PolynomialIterMut, PolynomialOwned};
-use primus_tfhe::FactorizedLookupTable;
+use primus_tfhe::{FactorizedLookupTable, LweCiphertext};
 
 use super::Evaluator;
-use crate::{PbsOrder, ServerKey, TfheContext, TfheEvaluationError};
+use crate::{ServerKey, TfheContext, TfheEvaluationError};
 
 /// A factorized MVB program prepared for one borrowed NTT context.
 ///
@@ -17,7 +16,7 @@ use crate::{PbsOrder, ServerKey, TfheContext, TfheEvaluationError};
 pub struct NttFactorizedLookupTable<'a, T, Table>
 where
     T: FheUint,
-    Table: MonomialNttTable<ValueT = T>,
+    Table: NttTable<ValueT = T>,
 {
     context: &'a TfheContext<T, Table>,
     common_polynomial: PolynomialOwned<T>,
@@ -29,7 +28,7 @@ where
 impl<'a, T, Table> NttFactorizedLookupTable<'a, T, Table>
 where
     T: FheUint,
-    Table: MonomialNttTable<ValueT = T>,
+    Table: NttTable<ValueT = T>,
 {
     /// Consumes a coefficient program and prepares its factors with `context`.
     ///
@@ -42,10 +41,10 @@ where
         let parameters = context.parameters();
         assert!(
             lookup_table.is_compatible(
-                parameters.accumulator_glwe().poly_length(),
+                parameters.accumulator_ntru().poly_length(),
                 parameters.plain_modulus_value(),
-                parameters.small_lwe().cipher_modulus_value(),
-                parameters.accumulator_glwe().cipher_modulus_value(),
+                parameters.external_lwe().cipher_modulus_value(),
+                parameters.accumulator_ntru().cipher_modulus_value(),
             ),
             "MVB lookup-table encoding or polynomial length mismatch"
         );
@@ -85,25 +84,24 @@ where
 
 /// Reusable workspace for fixed-scale factorized MVB.
 ///
-/// Shares one classic or sparse blind rotation at step one. Each output then
-/// multiplies by its public difference factor. BootstrapKeyswitch performs KS
-/// after each product; KeyswitchBootstrap switches the input once before BR.
-/// External secrets and dimensions are the same as for [`Evaluator`].
-/// Only one extra full GLWE in NTT form is allocated beyond the ordinary
-/// evaluator's workspace, independently of the number of outputs.
+/// Initializes V with `NLev[1]`, shares one blind rotation at step one, then
+/// multiplies each public factor before switching from the accumulator secret
+/// to the client secret and extracting compact LWE. Only one extra NTT polynomial
+/// is allocated beyond the ordinary evaluator's workspace, regardless of the
+/// output count. Outputs use the same external secret and dimension as [`Evaluator`].
 pub struct FactorizedEvaluator<'a, T, Table>
 where
     T: FheUint,
-    Table: MonomialNttTable<ValueT = T>,
+    Table: NttTable<ValueT = T>,
 {
     evaluator: Evaluator<'a, T, Table>,
-    shared_rotation: NttGlweCiphertext<Vec<T>>,
+    shared_rotation: NttNtru<Vec<T>>,
 }
 
 impl<'a, T, Table> FactorizedEvaluator<'a, T, Table>
 where
     T: FheUint,
-    Table: MonomialNttTable<ValueT = T>,
+    Table: NttTable<ValueT = T>,
 {
     /// Creates the workspace after validating the server key's parameters.
     ///
@@ -117,9 +115,7 @@ where
     ) -> Result<Self, TfheEvaluationError> {
         Ok(Self {
             evaluator: Evaluator::try_new(context, server_key)?,
-            shared_rotation: NttGlweCiphertext::zero(
-                context.parameters().accumulator_glwe().glwe_len(),
-            ),
+            shared_rotation: NttNtru::zero(context.parameters().poly_length()),
         })
     }
 
@@ -147,10 +143,10 @@ where
     ///
     /// Input coefficients must be canonical under the context's modulus and use
     /// its external client secret and unsigned Rounded encoding, with a message
-    /// in `0..lookup_table.input_domain_len()`. Input noise, any pre-BR KS noise,
-    /// and coefficient-wise quantization error must stay within that message's
-    /// LUT interval. Each difference factor amplifies the shared BR noise; BK
-    /// adds a separate KS error after multiplication. These conditions are not
+    /// in `0..lookup_table.input_domain_len()`. Input noise and coefficient-wise
+    /// quantization error must stay within that message's LUT interval. Each
+    /// difference factor amplifies the shared initialization and BR noise;
+    /// a separate NTRU key-switch error follows each product. These conditions are not
     /// checked. Decode each output phase with the unsigned Scaled codec used at
     /// compilation, not necessarily the parameter codec. See
     /// [`FactorizedLookupTable`] for the factorization and noise bound.
@@ -184,41 +180,26 @@ where
             "MVB output ciphertext dimension mismatch"
         );
 
-        let glwe = parameters.accumulator_glwe();
+        let modulus = parameters.accumulator_ntru().cipher_modulus();
         let table = evaluator.context.table();
         evaluator.blind_rotate(input, &lookup_table.common_polynomial, 1);
         evaluator
-            .main_glwe
+            .blind_rotation
+            .current
             .write_ntt_form(&mut self.shared_rotation, table);
-        let factors = NttPolynomialIter::new(&lookup_table.factors, glwe.poly_length());
+        let factors = NttPolynomialIter::new(&lookup_table.factors, parameters.poly_length());
         for (factor, output) in factors.zip(outputs) {
-            // Borrow the existing main buffer in NTT form, then restore its
-            // coefficient representation before KS/extraction. The shared BR
-            // result remains intact for the next output.
-            let mut product = NttGlweCiphertext::new(evaluator.main_glwe.as_mut());
-            self.shared_rotation.mul_ntt_polynomial_to(
-                &factor,
-                &mut product,
-                glwe.cipher_modulus(),
-            );
+            // Reuse current for the NTT product, then restore coefficient form
+            // before key switching. The shared BR result remains intact.
+            let mut product = NttNtru::new(evaluator.blind_rotation.current.as_mut());
+            self.shared_rotation
+                .mul_ntt_polynomial_to(&factor, &mut product, modulus);
             product.into_coeff_form(table);
-            match parameters.pbs_order() {
-                PbsOrder::BootstrapKeyswitch => {
-                    evaluator.keyswitch_accumulator();
-                    evaluator.switched.extract_compact_lwe_to(
-                        output,
-                        glwe.poly_length(),
-                        glwe.cipher_modulus(),
-                    );
-                }
-                PbsOrder::KeyswitchBootstrap => {
-                    evaluator.main_glwe.extract_lwe_to(
-                        output,
-                        glwe.poly_length(),
-                        glwe.cipher_modulus(),
-                    );
-                }
-            }
+            evaluator.key_switch_accumulator();
+            evaluator
+                .blind_rotation
+                .scratch
+                .extract_compact_lwe_to(output, modulus);
         }
     }
 }

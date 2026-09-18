@@ -102,6 +102,10 @@ fn rejects_server_keys_with_same_layout_but_different_bases_or_modulus() {
             incompatible.boolean_evaluator(&server_key).err(),
             Some(TfheEvaluationError::IncompatibleServerKey)
         );
+        assert_eq!(
+            incompatible.factorized_evaluator(&server_key).err(),
+            Some(TfheEvaluationError::IncompatibleServerKey)
+        );
     }
 }
 

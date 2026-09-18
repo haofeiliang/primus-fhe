@@ -8,6 +8,7 @@ API 和参数仍处于实验阶段；示例和基准是功能工作负载，不�
 完整能力与编码约定见[公共指南](../primus_tfhe/README.zh_CN.md)，参数和秘密域见
 [NTRU family](../primus_tfhe_ntru/README.zh_CN.md)。两路 NTRU 后端均支持 PBS、ManyLUT 和 CBS，
 Boolean 门使用共享求值器，契约见[公共指南](../primus_tfhe/README.zh_CN.md#boolean-门)。
+NTT 后端另支持固定尺度分解式 MVB。
 
 ## 普通 PBS 与 ManyLUT
 
@@ -58,6 +59,39 @@ LUT 编译的第一个参数为输出 `RoundedCodec`。示例采用 `t_in=16 →
 示例和编码契约见[公共指南](../primus_tfhe/README.zh_CN.md#boolean-门)。
 [集成测试](tests/boolean.rs)覆盖六种二元门、NOT、MUX、门链、维数错误和零分配复用，
 另保留公钥 NAND 路径。
+
+## 固定尺度分解式 MVB
+
+`context.compile_factorized_lookup_table_fn` 准备绑定本 context 的程序；
+`context.factorized_evaluator(&server)` 复用普通 PBS 密钥和工作区，只多一份 NTT 多项式。
+以下使用 `t_in=16` 的 context：
+
+```rust,ignore
+let codec = ScaledCodec::new(4u32, context.parameters().accumulator_ntru().cipher_modulus());
+let program = context.compile_factorized_lookup_table_fn(&codec, 8, 3, |m, i| {
+    match i { 0 => (m % 4) as u32, 1 => (m / 4) as u32, _ => (m % 2) as u32 }
+})?;
+let input = context.encryptor(&client)?.encrypt_padded(6, &mut rng)?;
+let decryptor = context.decryptor(&client)?;
+let mut mvb = context.factorized_evaluator(&server)?;
+let mut outputs = vec![LweCiphertext::zero(context.parameters().external_lwe_dimension()); 3];
+mvb.apply_lookup_table_to(&input, &program, &mut outputs);
+for (output, expected) in outputs.iter().zip([2, 1, 0]) {
+    assert_eq!(codec.decode_value(decryptor.decrypt_phase(output)?), expected);
+}
+```
+
+输入采用参数的 Rounded 前半区编码，输出统一为相同奇数密文模数下的 unsigned Scaled
+编码；保留输出 codec 解密。输出数量不补齐，也不降低旋转分辨率。
+全部因子共用一块连续缓冲，准备程序消费该缓冲并原地变换，求值通过 `NttPolynomialIter` 借用各因子。
+
+全部输出共享共同多项式的一次 `NLev[1]` 初始化和 BR；随后各自乘因子、执行 NTRU KS，
+再提取外部客户端秘密下的 compact LWE。因子范数放大初始化与 BR 误差，KS 误差在其后加入。
+普通 PBS 工作区不变。程序的 context 身份、输入维数、准确输出数量及所有输出维数均在
+写输出前检查；`_to` 调用零分配。
+
+[集成测试](tests/factorized_pbs.rs)覆盖 1/3/17 输出，包括交错容量之外的情况，
+并与相同 Scaled 编码的单输出 PBS 对照。代数和编码限制见[共享契约](../primus_tfhe/README.zh_CN.md#固定尺度分解式-mvb)。
 
 ## 可选 circuit bootstrapping
 

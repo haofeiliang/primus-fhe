@@ -18,7 +18,7 @@ Start with a backend example below for an end-to-end workflow.
 | --- | --- | --- | --- | --- | --- |
 | GLWE NTT | Explicit field | Yes | Yes | Yes | Yes |
 | GLWE Fourier | Native torus | Yes | Not implemented | Yes | Yes |
-| NTRU NTT | Explicit field | Yes | Not implemented | Yes | Yes |
+| NTRU NTT | Explicit field | Yes | Yes | Yes | Yes |
 | NTRU Fourier | Native torus | Yes | Not implemented | Yes | Yes |
 
 All four backends support secret-key and LWE public-key clients. Fourier backends
@@ -369,10 +369,12 @@ each output instead amplifies BR error by its factor. Input geometry alone is
 not a sufficient noise budget. The Scaled codec must be retained for phase
 decoding; chaining into Rounded-input PBS must account for differing centers.
 
-The first backend is [GLWE NTT](../primus_tfhe_glwe_ntt/README.md#fixed-scale-factorized-mvb),
-using classic or sparse keys and both orders. Its prepared program borrows one
-context and its separate evaluator reuses scratch. Odd full-domain MVB, other
-backends and CBS outputs are outside this implementation. Algebra and noise
+Both [GLWE NTT](../primus_tfhe_glwe_ntt/README.md#fixed-scale-factorized-mvb) and
+[NTRU NTT](../primus_tfhe_ntru_ntt/README.md#fixed-scale-factorized-mvb) support this program.
+GLWE supports classic/sparse keys and both orders; NTRU shares its encrypted
+initialization and BR, then key-switches each product. Each prepared program borrows
+one context and its separate evaluator reuses scratch. Odd full-domain MVB,
+Fourier backends and CBS outputs are outside this implementation. Algebra and noise
 conditions are detailed in the [MVB design](../../docs/tfhe-mvb.md).
 
 The [threshold example](../primus_tfhe_glwe_ntt/examples/mvb_thresholds.rs) converts
@@ -386,7 +388,9 @@ and the additional output error.
 The four public types are exported from the crate root. Odd full-domain compilation
 is a `LookupTable` constructor; `InterleavedLookupTable` owns output lanes and
 `BivariateLookupTable` owns input packing. `FactorizedLookupTable` owns the common
-polynomial and coefficient-domain difference factors.
+polynomial and coefficient-domain difference factors. Factors share one contiguous
+allocation; `factors()` returns a `PolynomialIter`, and `into_polynomials()` moves
+the common polynomial and flat factor buffer into backend preparation.
 
 | File | Responsibility |
 | --- | --- |

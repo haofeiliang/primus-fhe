@@ -7,7 +7,11 @@
 //! rotation step; [`InterleavedLookupTable`] describes the layout and noise tradeoff.
 //! Public PBS checks LUT encoding/moduli/length and all output dimensions before
 //! writing. Raw input key, encoding and noise remain caller requirements.
-
+//!
+//! [`FactorizedEvaluator`] shares one encrypted initialization and blind rotation,
+//! then multiplies each public factor before its NTRU key switch and extraction.
+//! Prepare the factors with [`TfheContext::compile_factorized_lookup_table_fn`].
+//!
 //! [`CircuitBootstrapEvaluator`] optionally keeps the BR accumulator under f_acc,
 //! projects gadget-scaled outputs and converts NLev to NGSW. Select its additional
 //! keys and independent noise parameters with [`CircuitBootstrapConfig`] during key
@@ -35,12 +39,12 @@ pub use error::{
     CircuitBootstrapParameterError, KeyGenerationError, LookupTableError, TfheClientError,
     TfheContextError, TfheEvaluationError, TfheKeyError, TfheParameterError,
 };
-pub use evaluator::Evaluator;
+pub use evaluator::{Evaluator, FactorizedEvaluator, NttFactorizedLookupTable};
 pub use key::{KeyGenerator, ServerKey};
 
 pub use primus_tfhe::{
-    BivariateLookupTable, CircuitBootstrapConfig, DecompositionConfig, InterleavedLookupTable,
-    LookupTable, LweCiphertext, LweSecretKeyRef,
+    BivariateLookupTable, CircuitBootstrapConfig, DecompositionConfig, FactorizedLookupTable,
+    InterleavedLookupTable, LookupTable, LweCiphertext, LweSecretKeyRef,
 };
 pub use primus_tfhe_ntru::{ClientKey, EncryptionKey, LwePublicKey};
 

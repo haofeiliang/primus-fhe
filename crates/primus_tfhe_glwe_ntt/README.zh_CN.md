@@ -73,7 +73,7 @@ assert_eq!(codec.decode_value(decryptor.decrypt_phase(&outputs[1])?), 1);
 codec 后依次是输入前缀长度和有效输出数。编译返回借用本 context 的
 `NttFactorizedLookupTable`；即使 q、N 相同，换一个 context 实例执行也会拒绝。
 低层调用方可先编译 `FactorizedLookupTable`，再交给 `NttFactorizedLookupTable::new` 消费。
-NTT 预处理原地变换因子，不保留其系数域副本。
+全部因子共用一块连续缓冲，NTT 预处理原地变换，求值通过 `NttPolynomialIter` 借用各因子，无需复制。
 
 两种 order 均支持经典/稀疏密钥。BK 共享一次 BR，再逐输出乘法和 KS；KB 先共享
 输入 KS，再 BR 和逐输出乘法。任意正输出数均保持旋转步长 1。`_to` 在写入前检查

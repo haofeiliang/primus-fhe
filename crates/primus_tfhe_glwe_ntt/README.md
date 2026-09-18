@@ -85,7 +85,8 @@ The arguments after the codec are the input prefix length and exact output count
 Compilation returns `NttFactorizedLookupTable`, borrowing this context; a different
 context instance is rejected even with identical q and N. Lower-level callers
 can compile `FactorizedLookupTable` and consume it through `NttFactorizedLookupTable::new`.
-NTT preparation transforms the factors in place and retains no coefficient copies.
+Factors share one contiguous buffer. NTT preparation transforms it in place,
+and evaluation borrows each factor through `NttPolynomialIter`, without copies.
 
 Classic and sparse keys work in both orders. BK runs BR once, then multiplies and
 key-switches each output; KB switches the input once, then runs BR and the products.

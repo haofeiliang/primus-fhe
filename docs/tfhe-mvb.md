@@ -1,11 +1,12 @@
 # TFHE 首个 MVB：固定尺度差分分解
 
-本文保存固定尺度差分分解的数学与实现契约，以及 P4.3 的成本/应用选择。当前状态见 [HANDOFF](../HANDOFF.md)，阶段对应关系见[实施索引](tfhe-plan.md)。
+本文保存固定尺度差分分解的数学与实现契约，以及 P4.3 的 GLWE 成本/应用选择。B3.1 已接入 NTRU NTT，其初始化与后处理见第 5 节；NTRU 测量留在 B3.2，不套用 GLWE 数值。当前状态见 [HANDOFF](../HANDOFF.md)，阶段对应关系见[实施索引](tfhe-plan.md)和[后端计划](tfhe-backend-plan.md)。
 
 ## 1. 选型与适用范围
 
 选择**共享阶梯多项式的盲旋转，再乘各输出的整数差分多项式**。
-首版为 GLWE NTT，复用经典/稀疏 BR、两种 PBS order、已有 KSK 和提取原语。
+GLWE NTT 复用经典/稀疏 BR、两种 PBS order、已有 KSK 和提取原语；
+NTRU NTT 使用加密初始化、经典 binary BR 和逐输出 NTRU KS。
 输入沿用 unsigned `RoundedCodec` 的前半区/短前缀；所有输出共用一个 unsigned
 `ScaledCodec`。一个程序有 `k >= 1` 个输出，数量不必为二次幂，也不要求 `k <= N`。
 量化步长始终为 1，不增加新的秘密分布或控制密钥。
@@ -118,9 +119,9 @@ Rounded LUT 求差分，跳变可达到 `q/t_out` 的量级，不能再声称其
   同一恒等式仍成立；若 `Delta` 为奇数，这个通用共同因子不存在。例如 `q=256,t=3`
   的合法 Scaled 尺度为 85，`2A=85 mod 256` 无解，向下除二会把尺度改成 84。
 
-首版只交付 GLWE NTT 的奇数 `q`。Fourier/Native 后续需明确偶尺度条件或另一编码方案，
+当前 GLWE/NTRU NTT 均使用奇数 `q`。Fourier/Native 后续需明确偶尺度条件或另一编码方案，
 并核对整数乘数 FFT 与 torus FFT 的区别及浮点误差；不通过一次模逆或系数右移泛化。
-NTRU 的初始化和后处理保持独立，首版不自动扩展到它。
+NTRU 的初始化和后处理保持独立，见第 5 节。
 
 ## 4. 噪声与容量条件
 
@@ -128,7 +129,7 @@ NTRU 的初始化和后处理保持独立，首版不自动扩展到它。
 普通 PBS 几何，不能用输出成功解码替代输入位置条件。
 
 令共享 BR 结果为 `X^(-r)V + e_BR(X)`，各输出公开乘法后的误差为 `W_i*e_BR`。
-本库首版两种顺序如下：
+GLWE 的两种顺序如下：
 
 | Order | 完整流程 | 提取后的输出误差 |
 | --- | --- | --- |
@@ -179,13 +180,16 @@ nnz(W_i) <= D
 
 ## 5. 编译产物、预处理与工作区
 
-P4.2 的具体接口如下，使用流程见 [GLWE NTT README](../crates/primus_tfhe_glwe_ntt/README.zh_CN.md#固定尺度分解式-mvb)：
+两族 NTT 后端采用以下接口，使用流程见 [GLWE NTT README](../crates/primus_tfhe_glwe_ntt/README.zh_CN.md#固定尺度分解式-mvb) 与 [NTRU NTT README](../crates/primus_tfhe_ntru_ntt/README.zh_CN.md#固定尺度分解式-mvb)：
 
 1. **共享 `FactorizedLookupTable<T>`**：保存输入几何/编码兼容性、共同系数域多项式
-   `V` 和 `k` 个系数域因子 `W_i`。构造时显式接收输入 Rounded、输出 Scaled codec
+   `V` 和连续 `Vec<T>` 中的 `k` 个系数域因子 `W_i`，每因子占连续 `N` 项。
+   `factors()` 返回 `PolynomialIter`；构造直接写入最终缓冲，不逐因子分配再拼接。
+   构造时显式接收输入 Rounded、输出 Scaled codec
    与 `output_count: usize`，集中验证域、奇数 `q`、真实中心及输出范围；不使用
    `InterleavedLookupTable`，也不增加一个含可选字段的通用 LUT。
 2. **`NttFactorizedLookupTable::new(context, lookup_table)`**：消费共享产物，把 `W_i` 原地变为 NTT 形式，保留原始 `V`。
+   两后端用 `PolynomialIterMut` 准备因子、`NttPolynomialIter` 访问 NTT 因子；准备不另分配。
    预处理一次、多次执行；不同时永久保存全部系数域和 NTT 因子。产物借用生成它的
    context，在 evaluator 执行时检查同一 context，封住异表混用。仅检查相同
    `q,N` 不足以保证 NTT 求值顺序和根一致；不为此扩充通用 `NttTable` trait。
@@ -207,7 +211,37 @@ P4.2 的具体接口如下，使用流程见 [GLWE NTT README](../crates/primus_
 供构造器检查模数兼容性。`Delta` 可通过 `encode_value(1, Unsigned)` 获得，无须新增
 尺度 trait 或自定义比例构造器。
 
-### 在线缓冲区流转
+### 连续因子存储的成本对照
+
+公共构造只分配 `V` 与全部因子两个缓冲，两后端 NTT 准备不另分配，在线仍零分配。
+输入形状先验证一次，各因子直接写入最终切片；`k*N` 与交错表长度溢出共用
+`LookupTableError::TableLengthOverflow`。因子系数总量不变，省去逐因子 Vec 元数据。
+
+2026-09-18 对照 `31b9a67` 的 GLWE 实现与连续存储版本，复用第 8 节的
+`D/k=64/17`、经典 BSK 负载。Ryzen 9 9955HX3D、rustc 1.98.0、默认 feature、
+`taskset -c 2`，每项 20 样本、预热 1 秒、测量 2 秒；预编译后按旧/新顺序串行跑两轮。
+下表范围是两轮均值，不是置信区间：
+
+| 项目 | 分散存储 | 连续存储 | 每轮相对变化 |
+| --- | ---: | ---: | ---: |
+| 编译、NTT 准备与析构 | 22.698–22.719 µs | 22.262–22.363 µs | −1.9% / −1.6% |
+| 单独 NTT 准备 | 6.170–6.277 µs | 6.196–6.218 µs | −0.9% / +0.4% |
+| 完整 MVB，BK | 5.175–5.230 ms | 5.337–5.418 ms | +3.6% / +3.1% |
+| 完整 MVB，KB | 5.050–5.141 ms | 5.049–5.074 ms | +0.5% / −1.8% |
+
+复现时对两个版本分别使用现有基准，无需新增测量入口：
+
+```sh
+taskset -c 2 cargo bench -p primus_tfhe_glwe_ntt --bench mvb -- \
+  '^(mvb_compile/D64/k17/(factorized|prepare_ntt)|mvb/D64/k17/[^/]+/classic/factorized)$' \
+  --sample-size 20 --warm-up-time 1 --measurement-time 2
+```
+
+连续存储简化分配与所有权，但不保证在线加速；本组 BK 有约 3% 回退，尚未确定其具体来源。
+因子间还有逆 NTT 和 KS 的大量访存，地址连续不能保证下一个因子已驻留缓存。
+这里没有测量 NTRU 的时间收益，其完整误差/成本比较仍属于 B3.2。
+
+### GLWE NTT 的在线缓冲区流转
 
 令 `L=(d+1)N`，新 scratch 仅为 `L` 个 `T`，与输出数量无关：
 
@@ -227,6 +261,19 @@ for each W_i_ntt:
 [evaluator 阶段](../crates/primus_tfhe_glwe_ntt/src/evaluator.rs)足够完成这个流程。
 每次写入覆盖完整多项式，范围保持规范 residue；无需逐输出 GLWE 分配或 clone。
 新增 context 绑定只保护新预处理产物，不替代 server key 的实际秘密与生成表契约。
+
+### NTRU NTT 的初始化与后处理
+
+[实现](../crates/primus_tfhe_ntru_ntt/src/evaluator/factorized.rs)复用普通 evaluator 的
+`NLev[1] 初始化 V → BR`，将结果变换到独立 NTT 缓冲；逐输出乘已准备的 `W_i` 后，
+在原 BR 缓冲中逆变换、执行 `f_acc → f_client` 的 NTRU KS，再提取 compact LWE。
+全部输出使用原外部 LWE 秘密和维数。普通 PBS 工作区不变，MVB 只多 `N` 个 `T`，
+不随输出数增长；程序仍只保存一份系数 `V` 和各 NTT 因子，不增加密钥材料。
+
+NTRU 初始化本身带有噪声。令 `e_shared` 表示初始化和 BR 完成后的总相位误差，
+输出误差为 `coeff_0(W_i*e_shared) + e_KS,i`。模逆元仅在公开 `V` 的构造中使用，
+不对带噪声的旋转结果做模除二。公开因子不改变秘密域，逐输出 KS 避免其误差再次
+被因子放大；输出间仍共享相关误差。误差实测和完整成本对照属于 B3.2。
 
 ## 6. 成本模型与比较方式
 
@@ -261,10 +308,11 @@ for each W_i_ntt:
 - [共享整数 oracle 与拒绝测试](../crates/primus_tfhe/tests/factorized_lookup_table.rs)：全旋转、非二次幂 t_in、短域、零/负差分、空负尾/接缝、构造拒绝；N=1 验证输出数大于 N。
 - [完整 MVB](../crates/primus_tfhe_glwe_ntt/tests/factorized_pbs.rs)：同一 fixture 覆盖经典/稀疏、两种 order、1/3/17 输出和消息 0/3/7。三输出与相同 Scaled 编码的独立/交错 PBS 对照；17 输出 MVB 成功，交错因容量拒绝。
 - 功能参数为 `n/h/d/N=8/2/2/128,q=132120577,t_in=15,t_out=8`；验证实际秘密域、同 context 绑定、所有输出检查先于写入及在线零分配。默认/SIMD 按实际实现验证。
+- [NTRU NTT 完整链](../crates/primus_tfhe_ntru_ntt/tests/factorized_pbs.rs)：`n/N=3/128`、同一 `q` 和 `t_in=15`，验证 1/3/17 输出及 Scaled `t_out=8` 单输出对照；另检查 `t_out=2` 的奇数尺度初始化。包含 context/形状/模数拒绝、覆盖写入和首次调用零分配。
 
 选型时的独立整数原型另检查了分解、全旋转、真实几何和严格解码不等式，以及 Native 奇尺度、噪声乘 inv2、Scaled/Rounded 不同中心和错误 mod t 的反例；未保留第二套常驻测试。上述证据不构成生产参数或完整失败率证明。
 
-首版未接 odd full-domain、Native/Fourier/NTRU、CBS、ternary 或 unfolding。奇数全域的代数可复用，但须按折叠几何重验范数与接缝后扩展入口。
+当前未接 odd full-domain、Native/Fourier、CBS 或 unfolding；NTRU BR 秘密仍限 binary。奇数全域的代数可复用，但须按折叠几何重验范数与接缝后扩展入口。
 
 ## 8. P4.3 测量与应用选择
 

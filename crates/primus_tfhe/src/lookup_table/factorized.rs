@@ -1,9 +1,12 @@
 use primus_encoding::{PlaintextEmbedding, RoundedCodec, ScaledCodec};
 use primus_integer::FheUint;
-use primus_poly::PolynomialOwned;
+use primus_poly::{PolynomialIter, PolynomialOwned};
 use primus_reduce::{PrepareModulusSwitch, ReduceAdd, RingContext};
 
-use super::{LookupTableEncoding, compile::compile_front_half};
+use super::{
+    LookupTableEncoding,
+    compile::{compile_front_half_to, validate_front_half},
+};
 use crate::LookupTableError;
 
 /// Fixed-scale multi-value bootstrapping (MVB) via negacyclic differences.
@@ -23,7 +26,7 @@ use crate::LookupTableError;
 #[derive(Clone, Debug)]
 pub struct FactorizedLookupTable<T: FheUint> {
     common_polynomial: PolynomialOwned<T>,
-    factors: Vec<PolynomialOwned<T>>,
+    factors: Vec<T>,
     input_domain_len: usize,
     output_plaintext_modulus: T,
     encoding: LookupTableEncoding<T>,
@@ -63,36 +66,43 @@ impl<T: FheUint> FactorizedLookupTable<T> {
             .explicit_value()
             .filter(|q| *q % T::TWO == T::ONE)
             .ok_or(LookupTableError::UnsupportedFactorizationModulus)?;
-        let factors = (0..output_count)
-            .map(|output_index| {
-                let mut factor = compile_front_half(
-                    input_domain_len,
-                    poly_length,
-                    1,
-                    input_codec.plaintext_modulus(),
-                    input_codec.ciphertext_modulus(),
-                    modulus,
-                    |input, _| {
-                        let value = function(input, output_index);
-                        if value >= output_codec.plaintext_modulus() {
-                            return Err(LookupTableError::OutputOutOfRange { input });
-                        }
-                        Ok(value)
-                    },
-                )?;
-                // Multiplication by (1-X) in the negacyclic ring: the wrapped
-                // last coefficient adds at index zero. Reverse traversal keeps
-                // each predecessor intact, including when the negative tail is empty.
-                let coefficients = factor.as_mut();
-                let seam = modulus.reduce_add(coefficients[0], coefficients[poly_length - 1]);
-                for index in (1..poly_length).rev() {
-                    coefficients[index] =
-                        modulus.reduce_sub(coefficients[index], coefficients[index - 1]);
-                }
-                coefficients[0] = seam;
-                Ok(factor)
-            })
-            .collect::<Result<Vec<_>, LookupTableError>>()?;
+        validate_front_half(
+            input_domain_len,
+            poly_length,
+            1,
+            input_codec.plaintext_modulus(),
+            input_codec.ciphertext_modulus().explicit_value(),
+        )?;
+        let factors_len = output_count
+            .checked_mul(poly_length)
+            .ok_or(LookupTableError::TableLengthOverflow)?;
+        let mut factors = vec![T::ZERO; factors_len];
+        for (output_index, coefficients) in factors.chunks_exact_mut(poly_length).enumerate() {
+            compile_front_half_to(
+                input_domain_len,
+                1,
+                input_codec.plaintext_modulus(),
+                input_codec.ciphertext_modulus(),
+                modulus,
+                |input, _| {
+                    let value = function(input, output_index);
+                    if value >= output_codec.plaintext_modulus() {
+                        return Err(LookupTableError::OutputOutOfRange { input });
+                    }
+                    Ok(value)
+                },
+                coefficients,
+            )?;
+            // Multiplication by (1-X) in the negacyclic ring: the wrapped
+            // last coefficient adds at index zero. Reverse traversal keeps
+            // each predecessor intact, including when the negative tail is empty.
+            let seam = modulus.reduce_add(coefficients[0], coefficients[poly_length - 1]);
+            for index in (1..poly_length).rev() {
+                coefficients[index] =
+                    modulus.reduce_sub(coefficients[index], coefficients[index - 1]);
+            }
+            coefficients[0] = seam;
+        }
         let delta = output_codec.encode_value(T::ONE, PlaintextEmbedding::Unsigned);
         // q is odd, hence (q/2 + 1) is its inverse of two. Scale V before BR;
         // applying this inverse to the noisy BR output would magnify its error.
@@ -119,7 +129,7 @@ impl<T: FheUint> FactorizedLookupTable<T> {
     /// Returns the number of factors and extracted outputs, without padding.
     #[must_use]
     pub fn output_count(&self) -> usize {
-        self.factors.len()
+        self.factors.len() / self.common_polynomial.poly_length()
     }
 
     /// Returns the plaintext modulus of the shared unsigned Scaled output codec.
@@ -152,16 +162,19 @@ impl<T: FheUint> FactorizedLookupTable<T> {
         &self.common_polynomial
     }
 
-    /// Returns the coefficient-domain W_i, stored as canonical residues modulo q.
+    /// Borrows the coefficient-domain W_i in output order from contiguous storage.
+    /// Each factor contains N canonical residues modulo q.
     /// Use their small signed integer lifts when computing noise amplification.
     #[must_use]
-    pub fn factors(&self) -> &[PolynomialOwned<T>] {
-        &self.factors
+    pub fn factors(&self) -> PolynomialIter<'_, T> {
+        PolynomialIter::new(&self.factors, self.common_polynomial.poly_length())
     }
 
-    /// Consumes this table for backend preparation, returning V and all W_i.
+    /// Consumes this table for backend preparation, returning V and contiguous W_i.
+    /// The factor buffer contains `output_count() * N` coefficients in output
+    /// order, where N is the length of V. No coefficient data is copied.
     #[must_use]
-    pub fn into_polynomials(self) -> (PolynomialOwned<T>, Vec<PolynomialOwned<T>>) {
+    pub fn into_polynomials(self) -> (PolynomialOwned<T>, Vec<T>) {
         (self.common_polynomial, self.factors)
     }
 }

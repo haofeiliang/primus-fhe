@@ -9,6 +9,7 @@ workloads, not security parameter recommendations.
 See the [shared capability and encoding guide](../primus_tfhe/README.md) and
 [NTRU family/key domains](../primus_tfhe_ntru/README.md). Both NTRU backends support
 PBS, ManyLUT, Boolean gates and CBS.
+The NTT backend additionally supports fixed-scale factorized MVB.
 See the [shared Boolean contracts](../primus_tfhe/README.md#boolean-gates).
 
 ## Ordinary PBS and ManyLUT
@@ -67,6 +68,44 @@ with `evaluate_binary_to`, `not_to` and `mux_to`; no additional evaluation key i
 See the [shared example and contracts](../primus_tfhe/README.md#boolean-gates).
 The [integration test](tests/boolean.rs) covers all six binary gates, NOT, MUX,
 chained evaluation, dimension errors and zero-allocation reuse, plus a public-key NAND path.
+
+## Fixed-scale factorized MVB
+
+`context.compile_factorized_lookup_table_fn` prepares a program bound to this
+context; `context.factorized_evaluator(&server)` reuses ordinary PBS keys and
+workspace plus one NTT polynomial. For a context with `t_in=16`:
+
+```rust,ignore
+let codec = ScaledCodec::new(4u32, context.parameters().accumulator_ntru().cipher_modulus());
+let program = context.compile_factorized_lookup_table_fn(&codec, 8, 3, |m, i| {
+    match i { 0 => (m % 4) as u32, 1 => (m / 4) as u32, _ => (m % 2) as u32 }
+})?;
+let input = context.encryptor(&client)?.encrypt_padded(6, &mut rng)?;
+let decryptor = context.decryptor(&client)?;
+let mut mvb = context.factorized_evaluator(&server)?;
+let mut outputs = vec![LweCiphertext::zero(context.parameters().external_lwe_dimension()); 3];
+mvb.apply_lookup_table_to(&input, &program, &mut outputs);
+for (output, expected) in outputs.iter().zip([2, 1, 0]) {
+    assert_eq!(codec.decode_value(decryptor.decrypt_phase(output)?), expected);
+}
+```
+
+Inputs use the context's Rounded front-half encoding; outputs share unsigned
+Scaled encoding under the same odd ciphertext modulus. Keep the output codec
+for decoding. Output count is unpadded and does not reduce rotation resolution.
+The program consumes one contiguous coefficient-factor buffer and transforms it
+in place; evaluation borrows each factor through `NttPolynomialIter`.
+
+One `NLev[1]` initialization and BR of the common polynomial are shared. Each
+output multiplies its factor, performs an NTRU key switch and extracts compact
+LWE under the external client secret. Factor norms amplify initialization and
+BR error; key-switch error is added afterward. Ordinary PBS workspace stays unchanged.
+Context identity, input dimension, exact output count and every output dimension
+are checked before output writes; `_to` calls allocate nothing.
+
+The [integration test](tests/factorized_pbs.rs) covers 1/3/17 outputs, including
+interleaved capacity overflow, and compares against identical Scaled single-output
+PBS. Algebra and encoding limits follow the [shared contract](../primus_tfhe/README.md#fixed-scale-factorized-mvb).
 
 ## Optional circuit bootstrapping
 

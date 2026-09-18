@@ -165,7 +165,7 @@ fn padded_inputs_and_lut_output_codecs_use_independent_domains() {
                     &[]
                 )
                 .unwrap_err(),
-            primus_tfhe_ntru::LookupTableError::ManyTableLengthOverflow
+            primus_tfhe_ntru::LookupTableError::TableLengthOverflow
         );
     }
 }
