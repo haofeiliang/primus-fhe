@@ -12,8 +12,7 @@ use primus_ntru::{
 use primus_ntt::U64NttTable;
 use primus_poly::Polynomial;
 use primus_tfhe_ntru_ntt::{
-    CircuitBootstrapConfig, CircuitBootstrapParameters, DecompositionConfig, TfheConfig,
-    TfheContext, TfheParameters,
+    CircuitBootstrapConfig, DecompositionConfig, TfheConfig, TfheContext, TfheParameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -42,7 +41,28 @@ fn main() {
     let context = TfheContext::<_, U64NttTable>::try_from_parameters(parameters).unwrap();
     let accumulator = context.parameters().accumulator_ntru();
     let mut rng = StdRng::seed_from_u64(0x004e_5454_5f43_4253);
-    let (client_key, server_key) = context.try_generate_keys(&mut rng).unwrap();
+    // CBS adds independent output, trace and scheme-switch bases.
+    let cbs_config = CircuitBootstrapConfig {
+        output: DecompositionConfig {
+            log_basis: 8,
+            level_count: Some(2),
+        },
+        trace: DecompositionConfig {
+            log_basis: 10,
+            level_count: None,
+        },
+        trace_noise_standard_deviation: 0.7,
+        scheme_switch: DecompositionConfig {
+            log_basis: 10,
+            level_count: None,
+        },
+        scheme_switch_noise_standard_deviation: 0.7,
+    };
+    let (client_key, server_key) = context
+        .try_generate_keys(Some(cbs_config), &mut rng)
+        .unwrap();
+    let cbs_key = server_key.circuit_bootstrap_key().unwrap();
+    let cbs_parameters = cbs_key.parameters();
     // CMUX candidates are encrypted under f_acc, the CBS output secret.
     let accumulator_key = NttNtruSecretKey::try_from_coeff_secret_key(
         client_key.accumulator_ntru_secret_key(),
@@ -62,33 +82,7 @@ fn main() {
         transformed.write_coeff_form(&mut output, context.table());
         output
     });
-    // CBS adds independent output, trace and scheme-switch bases.
-    let cbs_parameters = CircuitBootstrapParameters::try_from_config(
-        context.parameters(),
-        CircuitBootstrapConfig {
-            output: DecompositionConfig {
-                log_basis: 8,
-                level_count: Some(2),
-            },
-            trace: DecompositionConfig {
-                log_basis: 10,
-                level_count: None,
-            },
-            trace_noise_standard_deviation: 0.7,
-            scheme_switch: DecompositionConfig {
-                log_basis: 10,
-                level_count: None,
-            },
-            scheme_switch_noise_standard_deviation: 0.7,
-        },
-    )
-    .unwrap();
-    let cbs_key = context
-        .try_generate_circuit_bootstrap_key(&client_key, &cbs_parameters, &mut rng)
-        .unwrap();
-    let mut evaluator = context
-        .circuit_bootstrap_evaluator(&server_key, &cbs_parameters, &cbs_key)
-        .unwrap();
+    let mut evaluator = context.circuit_bootstrap_evaluator(&server_key).unwrap();
     let mut control = NttNgswCiphertext::<Vec<u64>>::zero(cbs_parameters.output_nlev_len());
     let mut selected = NtruCiphertext::<Vec<u64>>::zero(N);
     let mut transformed = NttNtruCiphertext::<Vec<u64>>::zero(N);

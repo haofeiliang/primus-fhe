@@ -5,11 +5,15 @@ use primus_lattice::nlev::NttNlev;
 use primus_ntru::{NttNtruGadgetEncryptContext, NttNtruKeySwitchingKey, NttNtruSecretKey};
 use primus_ntt::NttTable;
 
-use crate::{ClientKey, TfheContext, TfheKeyError, TfheParameters};
+use crate::{
+    CircuitBootstrapConfig, CircuitBootstrapKey, CircuitBootstrapParameters, ClientKey,
+    KeyGenerationError, TfheContext, TfheParameters,
+};
 
 /// Exact NTT evaluation keys for NTRU TFHE.
 /// The initializer and controls share the stored blind-rotation basis.
 pub struct ServerKey<T: FheUint> {
+    circuit_bootstrap: Option<Box<CircuitBootstrapKey<T>>>,
     initializer: NttNlev<Vec<T>>,
     blind_rotation_basis: ApproxSignedBasis<T>,
     controls: Vec<T>,
@@ -17,6 +21,12 @@ pub struct ServerKey<T: FheUint> {
 }
 
 impl<T: FheUint> ServerKey<T> {
+    /// Returns the bound CBS parameters and keys, if requested during generation.
+    #[must_use]
+    pub fn circuit_bootstrap_key(&self) -> Option<&CircuitBootstrapKey<T>> {
+        self.circuit_bootstrap.as_deref()
+    }
+
     /// Returns the NLev encryption of one used to initialize the accumulator.
     #[inline]
     pub(crate) fn initializer(&self) -> &NttNlev<Vec<T>> {
@@ -82,7 +92,10 @@ where
     /// The transformed secrets are discarded; use [`Self::try_generate`] when
     /// generating a paired server key so those representations can be reused.
     /// Returns a key-generation error when the bounded search is exhausted.
-    pub fn try_generate_client_key<R>(&self, rng: &mut R) -> Result<ClientKey<T>, TfheKeyError>
+    pub fn try_generate_client_key<R>(
+        &self,
+        rng: &mut R,
+    ) -> Result<ClientKey<T>, KeyGenerationError>
     where
         R: rand::Rng + rand::CryptoRng,
     {
@@ -102,7 +115,10 @@ where
         Ok(ClientKey::new(client, accumulator, lwe_dimension))
     }
 
-    /// Generates a server key from an existing compatible client key.
+    /// Generates the selected capabilities from one compatible client key.
+    /// Invalid CBS configuration is rejected before sampling evaluation material.
+    /// Enabling CBS inherits [`Self::try_generate_circuit_bootstrap_key`]'s
+    /// mathematical and security requirements.
     ///
     /// # Correctness
     /// Accumulator coefficients must satisfy
@@ -113,11 +129,13 @@ where
     pub fn try_generate_server_key<R>(
         &mut self,
         client_key: &ClientKey<T>,
+        circuit_bootstrap: Option<CircuitBootstrapConfig>,
         rng: &mut R,
-    ) -> Result<ServerKey<T>, TfheKeyError>
+    ) -> Result<ServerKey<T>, KeyGenerationError>
     where
         R: rand::Rng + rand::CryptoRng,
     {
+        let circuit_parameters = self.prepare_circuit_bootstrap(circuit_bootstrap)?;
         let parameters = self.context.parameters();
         client_key.check_compatible(parameters)?;
         let table = self.context.table();
@@ -136,6 +154,7 @@ where
             client_key,
             &client_ntt,
             &accumulator_ntt,
+            circuit_parameters,
             rng,
         ))
     }
@@ -146,6 +165,7 @@ where
         client_key: &ClientKey<T>,
         client_ntt: &NttNtruSecretKey<T>,
         accumulator_ntt: &NttNtruSecretKey<T>,
+        circuit_parameters: Option<CircuitBootstrapParameters<T>>,
         rng: &mut R,
     ) -> ServerKey<T>
     where
@@ -162,7 +182,16 @@ where
             rng,
             &mut self.gadget,
         );
+        let circuit_bootstrap = circuit_parameters.map(|parameters| {
+            Box::new(self.generate_circuit_bootstrap_key_with_main(
+                client_key,
+                accumulator_ntt,
+                parameters,
+                rng,
+            ))
+        });
         ServerKey {
+            circuit_bootstrap,
             initializer,
             blind_rotation_basis: parameters.blind_rotation().basis().clone(),
             controls,
@@ -219,15 +248,19 @@ where
         controls
     }
 
-    /// Generates a fresh compatible client/server key pair, reusing transformed secrets.
+    /// Generates a fresh pair with the selected capabilities, reusing transformed secrets.
+    /// Enabling CBS inherits [`Self::try_generate_circuit_bootstrap_key`]'s
+    /// mathematical and security requirements.
     /// Returns a key-generation error when the bounded rejection search is exhausted.
     pub fn try_generate<R>(
         &mut self,
+        circuit_bootstrap: Option<CircuitBootstrapConfig>,
         rng: &mut R,
-    ) -> Result<(ClientKey<T>, ServerKey<T>), TfheKeyError>
+    ) -> Result<(ClientKey<T>, ServerKey<T>), KeyGenerationError>
     where
         R: rand::Rng + rand::CryptoRng,
     {
+        let circuit_parameters = self.prepare_circuit_bootstrap(circuit_bootstrap)?;
         let parameters = self.context.parameters();
         let lwe_dimension = parameters.external_lwe_dimension();
         let (client, client_ntt) = NttNtruSecretKey::generate_padded_binary_pair(
@@ -247,8 +280,21 @@ where
             &client_key,
             &client_ntt,
             &accumulator_ntt,
+            circuit_parameters,
             rng,
         );
         Ok((client_key, server_key))
+    }
+
+    fn prepare_circuit_bootstrap(
+        &self,
+        circuit_bootstrap: Option<CircuitBootstrapConfig>,
+    ) -> Result<Option<CircuitBootstrapParameters<T>>, KeyGenerationError> {
+        circuit_bootstrap
+            .map(|config| {
+                CircuitBootstrapParameters::try_from_config(self.context.parameters(), config)
+            })
+            .transpose()
+            .map_err(Into::into)
     }
 }

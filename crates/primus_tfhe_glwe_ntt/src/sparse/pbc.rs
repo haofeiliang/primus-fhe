@@ -1,7 +1,7 @@
 use rand::distr::{Distribution, Uniform};
 use zeroize::Zeroizing;
 
-use super::SparseBootstrappingKeyError;
+use crate::SparseBootstrappingKeyError;
 
 /// No assignment or no visited predecessor. Valid indices fit checked allocations.
 pub(super) const EMPTY: usize = usize::MAX;

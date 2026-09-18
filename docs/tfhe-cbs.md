@@ -11,7 +11,9 @@ B1.1–B1.3 已完成。公开工作流见 [English README](../crates/primus_tfh
 
 BK（`BootstrapKeyswitch`）的 CBS 输入维数为 n，KB（`KeyswitchBootstrap`）为 kN。
 两者输出均留在 accumulator 私钥下；CBS 不执行普通 BK PBS 的后置 KS。
-普通 server key 与附加 CBS key 必须来自同一 client，并使用同一个 FFT table 实例。
+通过 `Some(config)` 配套生成普通与 CBS 材料，
+`context.circuit_bootstrap_evaluator(&server)` 绑定参数和附加密钥。高级 `try_from_parts`
+组合仍须由调用方保证同一 client 和同一 FFT table 实例。
 
 [可运行示例](../crates/primus_tfhe_glwe_fourier/examples/circuit_bootstrap.rs) 将 LWE bit 转为 GGSW 控制，
 选择两条非恒定 GLWE 消息之一；覆盖两种 order、复用工作区与 `1→0` 控制。

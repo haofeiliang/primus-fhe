@@ -1,8 +1,8 @@
 //! Parameters for GLWE-based TFHE.
 
+use crate::TfheParameterError;
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_encoding::RoundedCodec;
-use primus_glwe::GlevParameterError;
 use primus_integer::FheUint;
 use primus_reduce::RingContext;
 use primus_tfhe::DecompositionConfig;
@@ -82,47 +82,6 @@ impl<T: FheUint, M: RingContext<T>> TfheParameters<T, M, M> {
             config.pbs_order,
         )
     }
-}
-
-/// An invalid combination of GLWE-based TFHE parameters.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum TfheParameterError {
-    /// Classic blind rotation supports binary and ternary input LWE secrets.
-    #[error("TFHE bootstrapping requires a binary or ternary input LWE secret key")]
-    UnsupportedInputLweSecretKey,
-
-    /// The rotation domain `2N` cannot be represented by the input coefficient type.
-    #[error("rotation domain must fit the input coefficient type")]
-    RotationDomainTooLarge,
-
-    /// The LWE ciphertext and GLWE accumulator use different plaintext spaces.
-    #[error("LWE and GLWE plaintext moduli must match")]
-    PlainModulusMismatch,
-
-    /// The bootstrapping basis or gadget layout is incompatible with the accumulator.
-    #[error("invalid GLWE bootstrapping parameters: {0}")]
-    BootstrappingParameters(GlevParameterError),
-
-    /// The small LWE key does not fit in the main GLWE key capacity and
-    /// therefore cannot be represented as a padded GLWE key with `k' <= k`.
-    #[error(
-        "small LWE dimension {small_lwe_dimension} exceeds GLWE secret-key capacity {capacity}"
-    )]
-    SmallLweDimensionExceedsGlweCapacity {
-        /// Configured small LWE dimension.
-        small_lwe_dimension: usize,
-        /// Main GLWE secret-key capacity `kN`.
-        capacity: usize,
-    },
-
-    /// GLWE key switching and compact extraction require matching small-LWE
-    /// and GLWE ciphertext moduli.
-    #[error("TFHE GLWE key switching requires matching LWE and GLWE ciphertext moduli")]
-    CipherModulusMismatch,
-
-    /// The GLWE key-switching basis or output gadget layout is incompatible.
-    #[error("invalid GLWE key-switching parameters: {0}")]
-    KeySwitchingParameters(#[from] GlevParameterError),
 }
 
 /// Mathematical parameters for GLWE-based TFHE.
@@ -223,7 +182,8 @@ where
             small_lwe_distr,
             accumulator_glwe.noise_distribution().standard_deviation(),
         );
-        let output = GlevParameters::try_with_basis(&output_glwe, basis)?;
+        let output = GlevParameters::try_with_basis(&output_glwe, basis)
+            .map_err(TfheParameterError::KeySwitchingParameters)?;
         Ok(GlweKeySwitchingParameters::new(
             accumulator_glwe.dimension(),
             output,

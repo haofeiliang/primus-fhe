@@ -57,7 +57,7 @@ fn bench_backend<Table: FftTable>(c: &mut Criterion, backend: &str) {
         let mut generator = KeyGenerator::new(&context);
         let client = ClientKey::generate(context.parameters(), &mut rng);
         let server = generator
-            .try_generate_server_key(&client, &mut rng)
+            .try_generate_server_key(&client, None, &mut rng)
             .unwrap();
         let bsk = server.bootstrapping_key();
         let encryptor = context.encryptor(&client).unwrap();
@@ -161,7 +161,7 @@ fn bench_backend<Table: FftTable>(c: &mut Criterion, backend: &str) {
                 || (),
                 |()| {
                     generator
-                        .try_generate_server_key(black_box(&client), &mut rng)
+                        .try_generate_server_key(black_box(&client), None, &mut rng)
                         .unwrap()
                 },
                 BatchSize::PerIteration,

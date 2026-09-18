@@ -42,7 +42,7 @@ fn main() {
     .unwrap();
     let context = TfheContext::<_, U32NttTable>::try_from_parameters(parameters).unwrap();
     let mut rng = StdRng::seed_from_u64(0x4d56_4201);
-    let (client, server) = context.generate_keys(&mut rng).unwrap();
+    let (client, server) = context.try_generate_keys(None, &mut rng).unwrap();
     let encryptor = context.encryptor(&client).unwrap();
     let decryptor = context.decryptor(&client).unwrap();
     let output_codec = ScaledCodec::new(2, modulus);

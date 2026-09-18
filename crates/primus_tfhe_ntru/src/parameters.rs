@@ -1,11 +1,12 @@
 use primus_encoding::RoundedCodec;
 use primus_integer::FheUint;
 use primus_lwe::LweParameters;
-use primus_ntru::{NlevParameterError, NlevParameters, NtruParameters, SecretKeyDistr};
+use primus_ntru::{NlevParameters, NtruParameters, SecretKeyDistr};
 use primus_reduce::RingContext;
 use primus_tfhe::DecompositionConfig;
 use primus_tfhe::rotation::RotationQuantizer;
 
+use crate::TfheParameterError;
 use crate::TfheParameterError::{
     CipherModulusMismatch, ClientSecretKeyDistributionMismatch, ClientSecretKeyMustBeBinary,
     InvalidLweDimension, PlainModulusMismatch, PolynomialLengthMismatch,
@@ -214,41 +215,4 @@ where
     pub fn plain_modulus_value(&self) -> T {
         self.external_lwe.plain_modulus_value()
     }
-}
-
-/// An invalid combination of NTRU-based TFHE parameters.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum TfheParameterError {
-    /// Invalid NLev/NGSW decomposition or layout for blind rotation.
-    #[error("invalid NTRU bootstrapping parameters: {0}")]
-    BootstrappingParameters(NlevParameterError),
-    /// Invalid NLev decomposition or layout for the NTRU key switch.
-    #[error("invalid NTRU key-switching parameters: {0}")]
-    KeySwitchingParameters(NlevParameterError),
-    /// The rotation domain `2N` cannot be represented by the input coefficient type.
-    #[error("rotation domain must fit the input coefficient type")]
-    RotationDomainTooLarge,
-    /// The external LWE and client NTRU secret must both be binary.
-    #[error("NTRU TFHE requires a binary client secret key")]
-    ClientSecretKeyMustBeBinary,
-    /// The external LWE and padded NTRU views describe different distributions.
-    #[error("the external LWE and client NTRU secret-key distributions must match")]
-    ClientSecretKeyDistributionMismatch,
-    /// The external LWE key cannot fit in one zero-padded NTRU polynomial.
-    #[error("external LWE dimension {lwe_dimension} must belong to 1..={poly_length}")]
-    InvalidLweDimension {
-        /// Configured external LWE dimension.
-        lwe_dimension: usize,
-        /// Configured NTRU polynomial length.
-        poly_length: usize,
-    },
-    /// The accumulator and key-switching rings have different lengths.
-    #[error("NTRU polynomial lengths do not match")]
-    PolynomialLengthMismatch,
-    /// The LWE and NTRU plaintext spaces differ.
-    #[error("LWE and NTRU plaintext moduli do not match")]
-    PlainModulusMismatch,
-    /// The LWE and NTRU ciphertext rings differ.
-    #[error("LWE and NTRU ciphertext moduli do not match")]
-    CipherModulusMismatch,
 }

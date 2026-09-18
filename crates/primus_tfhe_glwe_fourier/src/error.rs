@@ -1,11 +1,17 @@
 //! Errors produced by the Fourier TFHE backend.
 
 pub use primus_tfhe::{LookupTableError, TfheEvaluationError};
-pub use primus_tfhe_glwe::{BooleanError, TfheClientError, TfheKeyError, TfheParameterError};
+pub use primus_tfhe_glwe::{
+    BooleanError, CircuitBootstrapParameterError, KeyGenerationError, TfheClientError,
+    TfheKeyError, TfheParameterError,
+};
 
-/// An incompatibility between TFHE parameters and a Fourier table.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+/// Failure to construct a Fourier table or bind it to TFHE parameters.
+#[derive(Debug, thiserror::Error)]
 pub enum TfheContextError {
+    /// The selected transform table could not be constructed.
+    #[error("failed to construct transform table: {0}")]
+    TransformTable(#[from] primus_fft::FftError),
     /// The Fourier table was built for a different polynomial length.
     #[error("FFT polynomial length mismatch: expected {expected}, got {actual}")]
     PolynomialLengthMismatch {

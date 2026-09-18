@@ -13,9 +13,10 @@ NTRU Boolean 适配器尚未实现。
 
 先用 `TfheParameters::try_from_config(TfheConfig { .. })` 声明数学参数，再调用
 `TfheContext::<_, U32NttTable>::try_from_parameters(parameters)` 自动创建匹配的变换表。
-表类型仍由调用方选择，建表失败返回底层 NTT 错误；已有表可用 `try_new(parameters, table)` 显式注入。
+表类型仍由调用方选择，建表失败通过 `TfheContextError::TransformTable` 保留底层 NTT 错误；
+已有表可用 `try_new(parameters, table)` 显式注入。
 
-`TfheContext` 绑定参数和变换 table。通过 `context.try_generate_keys` 生成配套密钥，
+`TfheContext` 绑定参数和变换 table。通过 `context.try_generate_keys(circuit_bootstrap, rng)` 生成配套密钥，
 建立 encryptor、evaluator、decryptor，再通过 `context.parameters()` 编译 LUT。[message/carry 示例](examples/ntru_ntt_basic.rs)
 展示多个输出共享一次 BR 和一次环密钥切换。普通 PBS 返回 client secret 下的 LWE；
 BR 后的 NTRU 密钥切换将 f_acc 转为 f_client。
@@ -51,13 +52,22 @@ LUT 编译的第一个参数为输出 `RoundedCodec`。示例采用 `t_in=16 →
 
 ## 可选 circuit bootstrapping
 
-使用 `CircuitBootstrapParameters::try_from_config(tfhe, config)`，通过
-`CircuitBootstrapConfig` 独立选择 output/trace/scheme-switch 分解和 trace/SS 噪声；
-长度、模数与 accumulator 秘密分布自动派生。`try_new` 仍可绑定已有 basis/NLev 参数。
+通过 `CircuitBootstrapConfig` 独立选择 output/trace/scheme-switch 分解和 trace/SS 噪声；
+长度、模数与 accumulator 秘密分布自动派生。`CircuitBootstrapParameters::try_new` 仍可绑定已有 basis/NLev 参数。
 
-`CircuitBootstrapParameters`、`CircuitBootstrapKey` 和 `CircuitBootstrapEvaluator`
-提供可选 CBS 材料。使用 `context.try_generate_circuit_bootstrap_key` 和
-`context.circuit_bootstrap_evaluator`；普通 server key 独立于这些材料。
+通过 `context.try_generate_keys(Some(config), &mut rng)`
+生成配套 client/server key。`ServerKey` 持有 CBS 参数及 trace/scheme-switch key，
+与普通 PBS 材料从同一组私钥和变换表生成。仅需 PBS 时使用 `None`，
+不分配 CBS 密钥材料或工作区。`context.evaluator(&server)` 与
+`context.circuit_bootstrap_evaluator(&server)` 共用这份 server key；未启用 CBS 时后者返回
+`MissingCircuitBootstrapKey`。各 evaluator 只分配自身需要的工作区。生成错误为
+`KeyGenerationError`，NTRU 采样/变换失败通过 `Ntru` 分支返回，`ClientKey` 仅表示兼容性错误。
+
+高级组合仍可使用接收已准备参数所有权的 `try_generate_circuit_bootstrap_key`，以及显式传入
+参数和材料的 `CircuitBootstrapEvaluator::try_from_parts`。调用方负责配套私钥与生成时的
+变换表示；布局检查不能证明身份。绑定的参数可通过
+`server.circuit_bootstrap_key().unwrap().parameters()` 访问。
+
 NTT CBS 输出 `NttNgswCiphertext`，trace 归一化要求奇数 q 且 q 小于 `2^(T::BITS-1)`。
 Gadget 尺度、accumulator 密钥身份及独立噪声/安全预算见
 [共享 CBS 契约](../primus_tfhe_ntru/README.zh_CN.md#cbs-与示例)。
@@ -71,6 +81,8 @@ cargo run -p primus_tfhe_ntru_ntt --example ntru_ntt_circuit_bootstrap
 示例创建配套的普通/CBS key，在 `f_acc` 下加密两个 NTRU 候选密文，再将外部 LWE bit
 重复转换为 gadget 尺度的 NGSW 控制。CMUX 在输入 0 时选第一个候选，输入 1 时选第二个。
 输入、control、选择结果和服务端 scratch 均复用，最后通过解密检查结果。
+
+错误归属与转换规则见[公共 TFHE 错误边界](../primus_tfhe/README.zh_CN.md#错误边界)。
 
 ## 验证与性能
 

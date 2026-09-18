@@ -20,7 +20,7 @@
 
 普通 PBS、Boolean 内部尺度、CBS gadget 尺度分别处理。GLWE 保留 BR→KS / KS→BR 及各自外部秘密维数；NTRU 保留真实 `NLev[1]` 初始化和固定秘密链。稀疏性、ternary 都作用于真正进入 BR 的秘密，LUT 不保存这类策略。
 
-CBS 使用独立可选参数/key/evaluator；GLWE key 绑定输出布局，NTRU key 绑定完整输出 basis。一般交错 LUT 不满足前缀展开的零尾前提，应走投影；NTRU CBS 留在 accumulator 秘密下，不执行普通 PBS 的后置 KS/extraction，也不依赖 packing。
+CBS 在密钥生成时通过 `Some(CircuitBootstrapConfig)` 可选启用，附加参数/key 由 `ServerKey` 持有，evaluator 独立分配工作区；GLWE key 绑定输出布局，NTRU key 绑定完整输出 basis。一般交错 LUT 不满足前缀展开的零尾前提，应走投影；NTRU CBS 留在 accumulator 秘密下，不执行普通 PBS 的后置 KS/extraction，也不依赖 packing。
 
 相同布局/basis 不证明实际秘密相同；Fourier table 身份、规范剩余类与噪声预算由各公开契约承担。TFHE 公钥复用 `LwePublicKey` 并绑定外部 LWE 秘密，GLWE 按 order 为 n 或 kN，NTRU 为 client 前缀；公钥总噪声单独计入 PBS 输入预算。
 

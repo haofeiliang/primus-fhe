@@ -16,10 +16,11 @@ PBS, ManyLUT and CBS; NTRU Boolean adapters are not implemented.
 Declare mathematical choices with `TfheParameters::try_from_config(TfheConfig { .. })`,
 then use `TfheContext::<_, RustFftTable>::try_from_parameters(parameters)` to build a
 matching transform table. The caller still selects the table type; construction
-returns the underlying FFT error. Use `try_new(parameters, table)` to inject an existing table.
+preserves FFT failures in `TfheContextError::TransformTable`. Use
+`try_new(parameters, table)` to inject an existing table.
 
 `TfheContext` binds parameters and a transform table. Generate paired client/server
-keys with `context.try_generate_keys`, obtain an encryptor/evaluator/decryptor,
+keys with `context.try_generate_keys(circuit_bootstrap, rng)`, obtain an encryptor/evaluator/decryptor,
 and compile LUTs through `context.parameters()`.
 The [message/carry example](examples/ntru_fourier_basic.rs) demonstrates multiple outputs
 sharing one BR and one ring key switch. Ordinary PBS returns LWE under the client
@@ -54,14 +55,26 @@ Public-key noise, storage and key-identity requirements are described in the
 
 ## Optional circuit bootstrapping
 
-Use `CircuitBootstrapParameters::try_from_config(tfhe, config)` with a
-`CircuitBootstrapConfig` selecting output/trace/scheme-switch decompositions and
+Choose a `CircuitBootstrapConfig` selecting output/trace/scheme-switch decompositions and
 independent trace/SS noise. Length, modulus and accumulator secret distribution are
-derived automatically. `try_new` still accepts existing bases/NLev parameters.
+derived automatically. `CircuitBootstrapParameters::try_new` still accepts existing bases/NLev parameters.
 
-`CircuitBootstrapParameters`, `CircuitBootstrapKey` and `CircuitBootstrapEvaluator`
-provide optional CBS material. Use `context.try_generate_circuit_bootstrap_key`
-and `context.circuit_bootstrap_evaluator`; ordinary server keys remain independent.
+Generate a paired client/server key with
+`context.try_generate_keys(Some(config), &mut rng)`.
+The `ServerKey` owns the CBS parameters and trace/scheme-switch keys, generated with
+its ordinary PBS material from the same secrets and transform table. Use
+`None` for PBS only: no CBS key material or CBS workspace is allocated.
+Both `context.evaluator(&server)` and `context.circuit_bootstrap_evaluator(&server)`
+use that server key; the latter returns `MissingCircuitBootstrapKey` when CBS is absent.
+Only the selected evaluator allocates its workspace. Key generation returns `KeyGenerationError`;
+NTRU sampling/conversion failures use its `Ntru` variant; `ClientKey` reports compatibility failures.
+
+For advanced composition, `try_generate_circuit_bootstrap_key` owns its prepared parameters,
+and `CircuitBootstrapEvaluator::try_from_parts` accepts explicit parameters and material.
+The caller must pair secrets and use the generating transform representation; layout checks
+cannot verify identity. Bound parameters are available via
+`server.circuit_bootstrap_key().unwrap().parameters()`.
+
 Fourier CBS outputs `FourierNgswCiphertext`. Budget native coefficient halving
 and FFT errors, and use the same FFT table instance throughout.
 The [shared CBS contract](../primus_tfhe_ntru/README.md#cbs-and-examples)
@@ -77,6 +90,8 @@ It builds paired ordinary/CBS keys, encrypts two NTRU candidates under `f_acc`,
 and repeatedly turns an external LWE bit into a gadget-scaled NGSW control.
 CMUX selects the first candidate for 0 and the second for 1. The example reuses
 input, control, selected output and server scratch, then decrypts to check the result.
+
+Error ownership and conversion rules follow the [shared TFHE error boundaries](../primus_tfhe/README.md#error-boundaries).
 
 ## Validation and performance
 

@@ -54,7 +54,12 @@ fn server_keys_are_bound_to_their_decomposition_bases() {
     let source =
         TfheContext::try_new(parameters(PbsOrder::BootstrapKeyswitch), source_table).unwrap();
     let mut rng = StdRng::seed_from_u64(0x4241_5349_534b_4559);
-    let (_, server_key) = source.generate_keys(&mut rng).unwrap();
+    let (_, server_key) = source.try_generate_keys(None, &mut rng).unwrap();
+    assert!(server_key.circuit_bootstrap_key().is_none());
+    assert!(matches!(
+        source.circuit_bootstrap_evaluator(&server_key),
+        Err(primus_tfhe_glwe_ntt::TfheEvaluationError::MissingCircuitBootstrapKey)
+    ));
 
     for incompatible in [
         parameters_with_bases(
@@ -92,13 +97,10 @@ fn rejects_incompatible_ntt_tables() {
     let error = TfheContext::try_new(parameters(PbsOrder::BootstrapKeyswitch), wrong_length)
         .err()
         .expect("the length mismatch must be rejected");
-    assert_eq!(
-        error,
-        TfheContextError::PolynomialLengthMismatch {
-            expected: POLY_LENGTH,
-            actual: POLY_LENGTH * 2,
-        }
-    );
+    assert!(matches!(error,
+        TfheContextError::PolynomialLengthMismatch { expected: POLY_LENGTH, actual }
+        if actual == POLY_LENGTH * 2
+    ));
 
     const OTHER_MODULUS: u32 = 998_244_353;
     let wrong_modulus = U32NttTable::new(
@@ -109,13 +111,13 @@ fn rejects_incompatible_ntt_tables() {
     let error = TfheContext::try_new(parameters(PbsOrder::BootstrapKeyswitch), wrong_modulus)
         .err()
         .expect("the modulus mismatch must be rejected");
-    assert_eq!(
+    assert!(matches!(
         error,
         TfheContextError::ModulusMismatch {
             expected: MODULUS,
-            actual: OTHER_MODULUS,
+            actual: OTHER_MODULUS
         }
-    );
+    ));
 }
 
 #[test]
@@ -138,7 +140,7 @@ fn split_keys_support_both_pbs_orders() {
         let mut generator = KeyGenerator::new(&context);
         let client = ClientKey::generate(context.parameters(), &mut rng);
         let server = generator
-            .try_generate_server_key(&client, &mut rng)
+            .try_generate_server_key(&client, None, &mut rng)
             .unwrap();
         let lookup_table = context
             .parameters()

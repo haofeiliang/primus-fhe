@@ -61,7 +61,7 @@ fn bench_pbs(c: &mut Criterion) {
         let mut generator = KeyGenerator::new(&context);
         let client = ClientKey::generate(context.parameters(), &mut rng);
         let server = generator
-            .try_generate_server_key(&client, &mut rng)
+            .try_generate_server_key(&client, None, &mut rng)
             .unwrap();
         let BootstrappingKey::Classic(bsk) = server.bootstrapping_key() else {
             unreachable!()
@@ -170,7 +170,7 @@ fn bench_pbs(c: &mut Criterion) {
                 || (),
                 |()| {
                     generator
-                        .try_generate_server_key(black_box(&client), &mut rng)
+                        .try_generate_server_key(black_box(&client), None, &mut rng)
                         .unwrap()
                 },
                 BatchSize::PerIteration,

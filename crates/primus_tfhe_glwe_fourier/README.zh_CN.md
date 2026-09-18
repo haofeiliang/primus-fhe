@@ -27,7 +27,8 @@ cargo run -p primus_tfhe_glwe_fourier --example fourier_basic
 
 先用 `TfheParameters::try_from_config(TfheConfig { .. })` 声明数学参数，再调用
 `TfheContext::<_, RustFftTable>::try_from_parameters(parameters)` 自动创建匹配的变换表。
-表类型仍由调用方选择，建表失败返回底层 FFT 错误；已有表可用 `try_new(parameters, table)` 显式注入。
+表类型仍由调用方选择，建表失败通过 `TfheContextError::TransformTable` 保留底层 FFT 错误；
+已有表可用 `try_new(parameters, table)` 显式注入。
 
 `TfheContext::try_new` 检查 FFT 长度。所有变换域密钥、值与 evaluator 必须使用同一
 FFT table 实例；长度相同不能证明表示兼容。示例使用 `RustFftTable`，也支持 `TfheFftTable`。
@@ -68,19 +69,24 @@ FFT engine 和 evaluator 从同一个 context 创建。
 经典 CBS 支持 binary/ternary small 秘密、两种 PBS order 和两种 FFT，输出为 accumulator
 私钥下的 Fourier GGSW。稀疏 CBS 尚不支持。
 
-通过 `CircuitBootstrapParameters::try_from_config(tfhe, config)` 指定
-`CircuitBootstrapConfig` 中的 output/trace/scheme-switch 分解及独立的 trace/SS 噪声。
+通过 `CircuitBootstrapConfig` 指定 output/trace/scheme-switch 分解及独立的 trace/SS 噪声。
 Native 模数、环布局与秘密分布从 accumulator 派生，构造器检查补齐后的 gadget
-层数容量并绑定输入明文模数。`try_new` 仍可直接绑定已有 basis 与 GLev/GGSW 参数。
+层数容量并绑定输入明文模数。`CircuitBootstrapParameters::try_new` 仍可直接绑定已有 basis 与 GLev/GGSW 参数。
 Scheme-switch key 绑定输出布局；层数相同的其他输出 basis
 可以复用该密钥。
 
-使用同一个 `ClientKey`，通过可复用的 `KeyGenerator` 依次调用
-`try_generate_server_key` 和 `try_generate_circuit_bootstrap_key`。
-`TfheContext::generate_circuit_bootstrap_key` 提供便捷入口。两类密钥必须使用同一组客户端
-私钥和生成时的 FFT table；布局/basis 检查不能证明实际身份。普通 `ServerKey` 不包含 CBS 材料。
+通过 `context.try_generate_keys(Some(config), &mut rng)`
+生成配套 client/server key。`ServerKey` 持有 CBS 参数及 trace/scheme-switch key，
+与普通 PBS 材料从同一组私钥和变换表生成。仅需 PBS 时使用 `None`，
+不分配 CBS 密钥材料或工作区。`context.evaluator(&server)` 与
+`context.circuit_bootstrap_evaluator(&server)` 共用这份 server key；未启用 CBS 时后者返回
+`MissingCircuitBootstrapKey`。各 evaluator 只分配自身需要的工作区。生成错误为 `KeyGenerationError`。
 
-通过 `context.circuit_bootstrap_evaluator(&server, &parameters, &circuit_key)` 创建 evaluator。
+高级组合仍可使用接收已准备参数所有权的 `try_generate_circuit_bootstrap_key`，以及显式传入
+参数和材料的 `CircuitBootstrapEvaluator::try_from_parts`。调用方负责配套私钥与生成时的
+变换表示；布局检查不能证明身份。绑定的参数可通过
+`server.circuit_bootstrap_key().unwrap().parameters()` 访问。
+
 `circuit_bootstrap_to` 覆盖写入已有 `FourierGgsw`，其长度为
 `parameters.output_size().fourier_ggsw_len()` 个复数，在线不分配；`circuit_bootstrap` 则分配输出。
 完整链复用普通 evaluator 的输入 KS/BR 工作区，再投影各 gadget 层并执行 scheme switching。
@@ -101,6 +107,8 @@ cargo run --release -p primus_tfhe_glwe_fourier --example circuit_bootstrap
 示例与基准共享 `n=728, N=1024`、三层输出的 binary profile。误差来源、最小 gadget
 尺度的观测余量、密钥/工作区大小和耗时见 [CBS 专项](../../docs/tfhe-cbs.md)。
 该 profile 不是生产参数建议；稀疏 CBS 仍不支持。
+
+错误归属与转换规则见[公共 TFHE 错误边界](../primus_tfhe/README.zh_CN.md#错误边界)。
 
 ## 验证与性能
 

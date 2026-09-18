@@ -17,28 +17,9 @@ use primus_tfhe_glwe::PbsOrder;
 
 use crate::{
     BootstrappingKey, CircuitBootstrapKey, CircuitBootstrapParameters, NttGlweBlindRotationContext,
-    NttGlweBootstrappingKey, ServerKey, TfheContext, evaluator::keyswitch_input_to_small_lwe,
+    NttGlweBootstrappingKey, ServerKey, TfheContext, TfheEvaluationError,
+    evaluator::keyswitch_input_to_small_lwe,
 };
-
-/// An error produced while constructing a circuit-bootstrap evaluator.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum CircuitBootstrapEvaluationError {
-    /// Sparse aggregation has not been validated for gadget-scaled CBS outputs.
-    #[error("sparse circuit bootstrapping is not supported")]
-    UnsupportedSparseBootstrapping,
-    /// The ordinary PBS server key does not match the TFHE context.
-    #[error("TFHE server key is incompatible with the circuit-bootstrap context")]
-    IncompatibleServerKey,
-    /// The circuit parameters belong to a different TFHE accumulator.
-    #[error("circuit-bootstrap parameters are incompatible with the TFHE context")]
-    IncompatibleParameters,
-    /// The trace-projection or scheme-switching key has another layout.
-    #[error("circuit-bootstrap key is incompatible with its parameters")]
-    IncompatibleCircuitBootstrapKey,
-    /// The circuit-bootstrap PBSManyLUT could not be compiled.
-    #[error(transparent)]
-    LookupTable(#[from] LookupTableError),
-}
 
 /// Reusable evaluator for the patched NTT circuit-bootstrap workflow.
 ///
@@ -71,6 +52,26 @@ where
     T: FheUint,
     Table: MonomialNttTable<ValueT = T>,
 {
+    /// Binds the CBS parameters and material carried by one server key.
+    /// Returns an error if CBS was not requested during key generation.
+    ///
+    /// # Correctness
+    /// Inherits [`Self::try_from_parts`]'s secret and transform requirements.
+    /// Bundled generation pairs secrets; layout checks do not establish identity
+    /// for externally assembled material or another transform representation.
+    pub fn try_new(
+        context: &'a TfheContext<T, Table>,
+        server_key: &'a ServerKey<T>,
+    ) -> Result<Self, TfheEvaluationError> {
+        if matches!(server_key.bootstrapping_key(), BootstrappingKey::Sparse(_)) {
+            return Err(TfheEvaluationError::UnsupportedSparseBootstrapping);
+        }
+        let key = server_key
+            .circuit_bootstrap_key()
+            .ok_or(TfheEvaluationError::MissingCircuitBootstrapKey)?;
+        Self::try_from_parts(context, server_key, key.parameters(), key)
+    }
+
     /// Creates an evaluator and compiles the gadget-scaled identity
     /// PBSManyLUT used by circuit bootstrapping.
     ///
@@ -85,24 +86,24 @@ where
     /// representation of `context.table()`. Compatibility checks do not verify
     /// secret or transform identity; see the underlying
     /// [`primus_glwe::NttGlweSchemeSwitchKey::apply_to`] contract.
-    pub fn try_new(
+    pub fn try_from_parts(
         context: &'a TfheContext<T, Table>,
         server_key: &'a ServerKey<T>,
         parameters: &'a CircuitBootstrapParameters<T>,
         circuit_key: &'a CircuitBootstrapKey<T>,
-    ) -> Result<Self, CircuitBootstrapEvaluationError> {
+    ) -> Result<Self, TfheEvaluationError> {
         let tfhe = context.parameters();
         if !server_key.is_compatible(tfhe) {
-            return Err(CircuitBootstrapEvaluationError::IncompatibleServerKey);
+            return Err(TfheEvaluationError::IncompatibleServerKey);
         }
         let BootstrappingKey::Classic(bootstrapping_key) = server_key.bootstrapping_key() else {
-            return Err(CircuitBootstrapEvaluationError::UnsupportedSparseBootstrapping);
+            return Err(TfheEvaluationError::UnsupportedSparseBootstrapping);
         };
         if !parameters.is_compatible(tfhe) {
-            return Err(CircuitBootstrapEvaluationError::IncompatibleParameters);
+            return Err(TfheEvaluationError::IncompatibleCircuitBootstrapParameters);
         }
         if !circuit_key.is_compatible(parameters) {
-            return Err(CircuitBootstrapEvaluationError::IncompatibleCircuitBootstrapKey);
+            return Err(TfheEvaluationError::IncompatibleCircuitBootstrapKey);
         }
 
         let glwe = tfhe.accumulator_glwe();

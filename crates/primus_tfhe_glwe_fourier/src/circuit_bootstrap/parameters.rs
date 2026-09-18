@@ -1,38 +1,9 @@
-use primus_decompose::{ApproxSignedBasisError, primitive::ApproxSignedBasis};
+use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::TorusFftValue;
 use primus_glwe::{GadgetSize, GgswParameters, GlevParameters};
 use primus_modulus::NativeModulus;
 
-use crate::{CircuitBootstrapConfig, TfheParameters};
-
-/// An invalid circuit-bootstrapping parameter set.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum CircuitBootstrapParameterError {
-    /// The configured output radix or retained-level count is invalid.
-    #[error("invalid circuit-bootstrap output basis: {0}")]
-    InvalidOutputBasis(#[from] ApproxSignedBasisError),
-    /// A configured key decomposition or derived gadget layout is invalid.
-    #[error("invalid circuit-bootstrap {role} parameters: {source}")]
-    GadgetParameters {
-        /// Key role: trace or scheme-switch.
-        role: &'static str,
-        /// Invalid basis or gadget layout.
-        #[source]
-        source: primus_glwe::GlevParameterError,
-    },
-    /// The output basis belongs to an explicit rather than native modulus.
-    #[error("circuit-bootstrap output basis modulus does not match the accumulator")]
-    OutputBasisModulusMismatch,
-    /// A key's GLWE dimension or polynomial length differs from the accumulator.
-    #[error("circuit-bootstrap {role} GLWE layout does not match the TFHE accumulator")]
-    GlweLayoutMismatch {
-        /// Role of the incompatible key parameter set.
-        role: &'static str,
-    },
-    /// The output layout overflows or its levels exceed interleaved LUT capacity.
-    #[error("circuit-bootstrap output decomposition does not fit in the accumulator")]
-    OutputDecompositionTooLarge,
-}
+use crate::{CircuitBootstrapConfig, CircuitBootstrapParameterError, TfheParameters};
 
 /// Optional CBS parameters, separate from ordinary PBS server-key parameters.
 ///

@@ -6,6 +6,21 @@ pub enum TfheEvaluationError {
     /// The server key was generated for a different parameter layout.
     #[error("TFHE server key is incompatible with the evaluation context")]
     IncompatibleServerKey,
+    /// The server key was generated without CBS material.
+    #[error("server key has no circuit-bootstrap material")]
+    MissingCircuitBootstrapKey,
+    /// Sparse aggregation has not been validated for gadget-scaled CBS outputs.
+    #[error("sparse circuit bootstrapping is not supported")]
+    UnsupportedSparseBootstrapping,
+    /// CBS parameters belong to another accumulator or input domain.
+    #[error("circuit-bootstrap parameters do not match the TFHE context")]
+    IncompatibleCircuitBootstrapParameters,
+    /// CBS material has a different layout or decomposition basis.
+    #[error("circuit-bootstrap key is incompatible with its parameters")]
+    IncompatibleCircuitBootstrapKey,
+    /// Compiling an evaluator's internal LUT failed.
+    #[error(transparent)]
+    LookupTable(#[from] LookupTableError),
 }
 
 /// An error produced while compiling a TFHE lookup table.

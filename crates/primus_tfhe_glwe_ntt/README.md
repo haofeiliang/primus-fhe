@@ -31,7 +31,8 @@ not production security or failure-probability recommendations.
 Declare mathematical choices with `TfheParameters::try_from_config(TfheConfig { .. })`,
 then use `TfheContext::<_, U32NttTable>::try_from_parameters(parameters)` to build a
 matching transform table. The caller still selects the table type; construction
-returns the underlying NTT error. Use `try_new(parameters, table)` to inject an existing table.
+preserves NTT failures in `TfheContextError::TransformTable`. Use
+`try_new(parameters, table)` to inject an existing table.
 
 `TfheContext::try_new` checks the NTT length and modulus. NTT-domain keys and values
 must use the supplied table's NTT representation. `boolean_parameters()` is a
@@ -171,10 +172,25 @@ requires fixed-weight binary; the `SparseTernary` distribution does not select i
 ## Circuit bootstrapping
 
 CBS requires a classic server key; sparse keys return
-`CircuitBootstrapEvaluationError::UnsupportedSparseBootstrapping` because their
-gadget-scale noise has not been validated. Optional CBS uses `CircuitBootstrapParameters::try_from_config(context.parameters(), config)`, `generate_circuit_bootstrap_key` and
-`circuit_bootstrap_evaluator`. Ordinary and CBS keys must come from the same client
-key and NTT representation. The output basis defines GGSW gadget scales; output
+`TfheEvaluationError::UnsupportedSparseBootstrapping` because their
+gadget-scale noise has not been validated.
+
+Generate a paired client/server key with
+`context.try_generate_keys(Some(config), &mut rng)`.
+The `ServerKey` owns the CBS parameters and trace/scheme-switch keys, generated with
+its ordinary PBS material from the same secrets and transform table. Use
+`None` for PBS only: no CBS key material or CBS workspace is allocated.
+Both `context.evaluator(&server)` and `context.circuit_bootstrap_evaluator(&server)`
+use that server key; the latter returns `MissingCircuitBootstrapKey` when CBS is absent.
+Only the selected evaluator allocates its workspace. Key generation returns `KeyGenerationError`.
+
+For advanced composition, `try_generate_circuit_bootstrap_key` owns its prepared parameters,
+and `CircuitBootstrapEvaluator::try_from_parts` accepts explicit parameters and material.
+The caller must pair secrets and use the generating transform representation; layout checks
+cannot verify identity. Bound parameters are available via
+`server.circuit_bootstrap_key().unwrap().parameters()`.
+
+The output basis defines GGSW gadget scales; output
 layout comes from the accumulator. The circuit key binds output layout and the
 trace/scheme-switch bases. CBS preserves the accumulator secret and skips ordinary
 PBS's postprocessing; see the [CBS integration test](tests/circuit_bootstrap.rs)
@@ -183,6 +199,8 @@ trace/SS noise; ring parameters come from the accumulator. `try_new` retains dir
 of existing low-level parameters.
 Trace/SS noise and key-dependent-message
 assumptions need a separate assessment.
+
+Error ownership and conversion rules follow the [shared TFHE error boundaries](../primus_tfhe/README.md#error-boundaries).
 
 ## Validation and performance
 

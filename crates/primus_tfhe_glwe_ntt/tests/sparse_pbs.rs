@@ -50,7 +50,7 @@ fn sparse_pbs_preserves_external_secret_and_interleaved_outputs_in_both_orders()
             .try_generate_sparse_server_key(&client, 3, 8, &mut rng)
             .unwrap();
         let classic_key = generator
-            .try_generate_server_key(&client, &mut rng)
+            .try_generate_server_key(&client, None, &mut rng)
             .unwrap();
         let mut sparse = context.evaluator(&sparse_key).unwrap();
         let mut classic = context.evaluator(&classic_key).unwrap();

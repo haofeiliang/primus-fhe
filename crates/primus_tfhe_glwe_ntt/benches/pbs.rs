@@ -42,7 +42,7 @@ fn bench_order(c: &mut Criterion, order: PbsOrder) {
     let table = U32NttTable::new(poly_length.trailing_zeros(), modulus).unwrap();
     let context = TfheContext::try_new(parameters, table).unwrap();
     let mut rng = StdRng::seed_from_u64(42);
-    let (client_key, server_key) = context.generate_keys(&mut rng).unwrap();
+    let (client_key, server_key) = context.try_generate_keys(None, &mut rng).unwrap();
     let BootstrappingKey::Classic(bootstrapping_key) = server_key.bootstrapping_key() else {
         panic!("classic benchmark requires a classic server key");
     };

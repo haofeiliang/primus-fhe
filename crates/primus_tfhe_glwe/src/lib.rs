@@ -29,6 +29,7 @@
 #![deny(missing_docs)]
 
 mod client;
+mod error;
 mod key;
 mod lookup_table;
 mod parameters;
@@ -42,12 +43,15 @@ use primus_glwe::{
 use primus_lwe::{LweParameters, LweSecretKey};
 
 pub use boolean::{
-    BOOLEAN_PLAINTEXT_BITS, BooleanDecryptor, BooleanEncryptor, BooleanError, BooleanEvaluator,
-    BooleanGate,
+    BOOLEAN_PLAINTEXT_BITS, BooleanDecryptor, BooleanEncryptor, BooleanEvaluator, BooleanGate,
 };
-pub use client::{Decryptor, EncryptionKey, Encryptor, TfheClientError};
-pub use key::{ClientKey, TfheKeyError};
-pub use parameters::{PbsOrder, TfheConfig, TfheParameterError, TfheParameters};
+pub use client::{Decryptor, EncryptionKey, Encryptor};
+pub use error::{
+    BooleanError, CircuitBootstrapParameterError, KeyGenerationError, TfheClientError,
+    TfheKeyError, TfheParameterError,
+};
+pub use key::ClientKey;
+pub use parameters::{PbsOrder, TfheConfig, TfheParameters};
 
 pub use primus_tfhe::{
     BivariateLookupTable, CircuitBootstrapConfig, DecompositionConfig, InterleavedLookupTable,

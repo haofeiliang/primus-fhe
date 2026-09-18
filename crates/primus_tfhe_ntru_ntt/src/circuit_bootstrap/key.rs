@@ -4,29 +4,25 @@ use primus_integer::FheUint;
 use primus_ntru::{NttNtruSchemeSwitchKey, NttNtruSecretKey, NttNtruTraceKey};
 use primus_ntt::NttTable;
 
-use crate::{CircuitBootstrapParameters, ClientKey, KeyGenerator, TfheKeyError};
-
-/// Failure while generating optional circuit-bootstrap material.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum CircuitBootstrapKeyError {
-    /// The CBS parameters belong to a different accumulator or input domain.
-    #[error("circuit-bootstrap parameters do not match this TFHE context")]
-    IncompatibleParameters,
-    /// The supplied client key is incompatible or cannot be transformed.
-    #[error(transparent)]
-    ClientKey(#[from] TfheKeyError),
-}
+use crate::{CircuitBootstrapParameters, ClientKey, KeyGenerationError, KeyGenerator};
 
 /// Additional keys for NTRU CBS; ordinary BR material remains in [`crate::ServerKey`].
 /// Both keys use the accumulator secret, not the post-PBS client secret.
 /// Publishing the scheme-switch material requires the secret-dependent-message
 /// security assumption documented on [`NttNtruSchemeSwitchKey`].
 pub struct CircuitBootstrapKey<T: FheUint> {
+    parameters: CircuitBootstrapParameters<T>,
     trace: NttNtruTraceKey<T>,
     scheme_switch: NttNtruSchemeSwitchKey<T>,
 }
 
 impl<T: FheUint> CircuitBootstrapKey<T> {
+    /// Returns the CBS parameters selected when this material was generated.
+    #[must_use]
+    pub fn parameters(&self) -> &CircuitBootstrapParameters<T> {
+        &self.parameters
+    }
+
     /// Returns the reverse-trace projection key under f_acc.
     #[must_use]
     pub fn trace_key(&self) -> &NttNtruTraceKey<T> {
@@ -64,14 +60,14 @@ where
     pub fn try_generate_circuit_bootstrap_key<R>(
         &mut self,
         client_key: &ClientKey<T>,
-        parameters: &CircuitBootstrapParameters<T>,
+        parameters: CircuitBootstrapParameters<T>,
         rng: &mut R,
-    ) -> Result<CircuitBootstrapKey<T>, CircuitBootstrapKeyError>
+    ) -> Result<CircuitBootstrapKey<T>, KeyGenerationError>
     where
         R: rand::Rng + rand::CryptoRng,
     {
         if !parameters.is_compatible(self.context.parameters()) {
-            return Err(CircuitBootstrapKeyError::IncompatibleParameters);
+            return Err(KeyGenerationError::IncompatibleCircuitBootstrapParameters);
         }
         client_key.check_compatible(self.context.parameters())?;
         let secret = client_key.accumulator_ntru_secret_key();
@@ -79,11 +75,32 @@ where
             secret,
             parameters.trace().ntru().cipher_modulus(),
             self.context.table(),
+        )?;
+        Ok(
+            self.generate_circuit_bootstrap_key_with_main(
+                client_key,
+                &transformed,
+                parameters,
+                rng,
+            ),
         )
-        .map_err(TfheKeyError::from)?;
+    }
+
+    /// Uses the accumulator transform already prepared for ordinary PBS key generation.
+    pub(crate) fn generate_circuit_bootstrap_key_with_main<R>(
+        &mut self,
+        client_key: &ClientKey<T>,
+        transformed: &NttNtruSecretKey<T>,
+        parameters: CircuitBootstrapParameters<T>,
+        rng: &mut R,
+    ) -> CircuitBootstrapKey<T>
+    where
+        R: rand::Rng + rand::CryptoRng,
+    {
+        let secret = client_key.accumulator_ntru_secret_key();
         let trace = NttNtruTraceKey::generate(
             secret,
-            &transformed,
+            transformed,
             parameters.trace(),
             self.context.table(),
             rng,
@@ -91,16 +108,17 @@ where
         );
         let scheme_switch = NttNtruSchemeSwitchKey::generate(
             secret,
-            &transformed,
+            transformed,
             parameters.output_basis(),
             parameters.scheme_switch(),
             self.context.table(),
             rng,
             &mut self.gadget,
         );
-        Ok(CircuitBootstrapKey {
+        CircuitBootstrapKey {
+            parameters,
             trace,
             scheme_switch,
-        })
+        }
     }
 }

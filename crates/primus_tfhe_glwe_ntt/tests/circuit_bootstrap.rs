@@ -13,8 +13,8 @@ use primus_modulus::BarrettModulus;
 use primus_ntt::U64NttTable;
 use primus_poly::Polynomial;
 use primus_tfhe_glwe_ntt::{
-    CircuitBootstrapConfig, CircuitBootstrapEvaluationError, CircuitBootstrapParameters,
-    DecompositionConfig, KeyGenerator, PbsOrder, TfheContext, TfheParameters,
+    CircuitBootstrapConfig, CircuitBootstrapEvaluator, CircuitBootstrapParameters,
+    DecompositionConfig, KeyGenerator, PbsOrder, TfheContext, TfheEvaluationError, TfheParameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -68,7 +68,29 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
         let modulus = BarrettModulus::new(MODULUS);
         let context = TfheContext::<_, U64NttTable>::try_from_parameters(tfhe).unwrap();
         let mut rng = StdRng::seed_from_u64(0x0050_4154_4348_4544 ^ order as u64);
-        let (client_key, server_key) = context.generate_keys(&mut rng).unwrap();
+        // Three gadget levels exercise multiple scales and an internal padding slot.
+        let levels = 3;
+        let cbs_config = CircuitBootstrapConfig {
+            output: DecompositionConfig {
+                log_basis: 8,
+                level_count: Some(levels),
+            },
+            trace: DecompositionConfig {
+                log_basis: 10,
+                level_count: None,
+            },
+            trace_noise_standard_deviation: 0.7,
+            scheme_switch: DecompositionConfig {
+                log_basis: 10,
+                level_count: None,
+            },
+            scheme_switch_noise_standard_deviation: 0.7,
+        };
+        let (client_key, server_key) = context
+            .try_generate_keys(Some(cbs_config), &mut rng)
+            .unwrap();
+        let circuit_key = server_key.circuit_bootstrap_key().unwrap();
+        let circuit_parameters = circuit_key.parameters();
         let main_secret =
             NttGlweSecretKey::from_coeff_secret_key(client_key.glwe_secret_key(), context.table());
         let glwe = context.parameters().accumulator_glwe();
@@ -87,42 +109,34 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
         }
 
         let encryptor = context.encryptor(&client_key).unwrap();
-        // Three gadget levels exercise multiple scales and an internal padding slot.
-        let levels = 3;
-        let circuit_parameters = CircuitBootstrapParameters::try_from_config(
-            context.parameters(),
-            CircuitBootstrapConfig {
-                output: DecompositionConfig {
-                    log_basis: 8,
-                    level_count: Some(levels),
-                },
-                trace: DecompositionConfig {
-                    log_basis: 10,
-                    level_count: None,
-                },
-                trace_noise_standard_deviation: 0.7,
-                scheme_switch: DecompositionConfig {
-                    log_basis: 10,
-                    level_count: None,
-                },
-                scheme_switch_noise_standard_deviation: 0.7,
-            },
-        )
-        .unwrap();
-        let circuit_key = context
-            .generate_circuit_bootstrap_key(&client_key, &circuit_parameters, &mut rng)
+        // The same CBS-enabled server key also supports ordinary PBS.
+        let identity = context
+            .parameters()
+            .compile_lookup_table_fn(context.parameters().input_plaintext_codec(), |message| {
+                message as u64
+            })
             .unwrap();
+        let input = encryptor.encrypt_padded(1u64, &mut rng).unwrap();
+        let output = context
+            .evaluator(&server_key)
+            .unwrap()
+            .apply_lookup_table(&input, &identity);
+        assert_eq!(
+            context
+                .decryptor(&client_key)
+                .unwrap()
+                .decrypt(&output)
+                .unwrap(),
+            1
+        );
+
         if distribution.is_binary() {
             let sparse_server_key = KeyGenerator::new(&context)
                 .try_generate_sparse_server_key(&client_key, 3, 4, &mut rng)
                 .unwrap();
             assert!(matches!(
-                context.circuit_bootstrap_evaluator(
-                    &sparse_server_key,
-                    &circuit_parameters,
-                    &circuit_key,
-                ),
-                Err(CircuitBootstrapEvaluationError::UnsupportedSparseBootstrapping)
+                context.circuit_bootstrap_evaluator(&sparse_server_key),
+                Err(TfheEvaluationError::UnsupportedSparseBootstrapping)
             ));
         }
         let incompatible_trace =
@@ -135,25 +149,39 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
         )
         .unwrap();
         assert!(matches!(
-            context.circuit_bootstrap_evaluator(
+            CircuitBootstrapEvaluator::try_from_parts(
+                &context,
                 &server_key,
                 &incompatible_parameters,
-                &circuit_key,
+                circuit_key
             ),
-            Err(CircuitBootstrapEvaluationError::IncompatibleCircuitBootstrapKey)
+            Err(TfheEvaluationError::IncompatibleCircuitBootstrapKey)
         ));
         // GLWE scheme switching binds output layout, so another output basis
         // with the same level count can reuse this circuit key.
-        let circuit_parameters = CircuitBootstrapParameters::try_new(
+        let alternate = CircuitBootstrapParameters::try_new(
             context.parameters(),
             ApproxSignedBasis::new(Some(MODULUS), 9, Some(levels)),
             circuit_parameters.trace().clone(),
             circuit_parameters.scheme_switch().clone(),
         )
         .unwrap();
-        let mut evaluator = context
-            .circuit_bootstrap_evaluator(&server_key, &circuit_parameters, &circuit_key)
-            .unwrap();
+        let (circuit_parameters, mut evaluator) = match order {
+            PbsOrder::BootstrapKeyswitch => (
+                circuit_parameters,
+                context.circuit_bootstrap_evaluator(&server_key).unwrap(),
+            ),
+            PbsOrder::KeyswitchBootstrap => (
+                &alternate,
+                CircuitBootstrapEvaluator::try_from_parts(
+                    &context,
+                    &server_key,
+                    &alternate,
+                    circuit_key,
+                )
+                .unwrap(),
+            ),
+        };
         assert_eq!(
             circuit_parameters.lookup_table_padded_output_count(),
             levels.next_power_of_two()

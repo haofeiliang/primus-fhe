@@ -1,11 +1,17 @@
 use primus_integer::FheUint;
 
 pub use primus_tfhe::{LookupTableError, TfheEvaluationError};
-pub use primus_tfhe_ntru::{TfheClientError, TfheKeyError, TfheParameterError};
+pub use primus_tfhe_ntru::{
+    CircuitBootstrapParameterError, KeyGenerationError, TfheClientError, TfheKeyError,
+    TfheParameterError,
+};
 
-/// An incompatibility between NTRU TFHE parameters and an NTT table.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+/// Failure to construct an NTT table or bind it to NTRU TFHE parameters.
+#[derive(Debug, thiserror::Error)]
 pub enum TfheContextError<T: FheUint> {
+    /// The selected transform table could not be constructed.
+    #[error("failed to construct transform table: {0}")]
+    TransformTable(#[from] primus_ntt::NttError<T>),
     /// The NTT table uses another polynomial length.
     #[error("NTT polynomial length mismatch: expected {expected}, got {actual}")]
     PolynomialLengthMismatch {

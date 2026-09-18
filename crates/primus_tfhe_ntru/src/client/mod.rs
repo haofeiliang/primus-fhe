@@ -7,7 +7,7 @@ use primus_integer::FheUint;
 use primus_lwe::LweCiphertext;
 use primus_reduce::RingContext;
 
-use crate::{ClientKey, TfheKeyError, TfheParameters};
+use crate::{ClientKey, TfheClientError, TfheParameters};
 
 /// Encrypts external LWE messages with a client secret key or [`primus_lwe::LwePublicKey`].
 ///
@@ -245,37 +245,4 @@ where
             .decrypt_phase(ciphertext, self.parameters.external_lwe().cipher_modulus());
         Ok(phase)
     }
-}
-
-/// An error produced by the NTRU TFHE client API.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum TfheClientError {
-    /// The public key has the wrong external LWE dimension.
-    #[error("public-key LWE dimension mismatch: expected {expected}, got {actual}")]
-    PublicKeyDimensionMismatch {
-        /// Required external LWE dimension.
-        expected: usize,
-        /// Supplied public-key dimension.
-        actual: usize,
-    },
-    /// The public key uses a different ciphertext modulus.
-    #[error("public-key ciphertext modulus mismatch")]
-    PublicKeyModulusMismatch,
-    /// The client key does not match the parameter set.
-    #[error(transparent)]
-    IncompatibleKey(#[from] TfheKeyError),
-    /// The message is outside `[0, t)`.
-    #[error("message is outside the plaintext domain")]
-    MessageOutOfRange,
-    /// The message violates the input-padding convention.
-    #[error("message is outside the programmable padded domain")]
-    MessageOutsidePaddedDomain,
-    /// The ciphertext has the wrong LWE dimension.
-    #[error("ciphertext LWE dimension mismatch: expected {expected}, got {actual}")]
-    CiphertextDimensionMismatch {
-        /// Expected external LWE dimension.
-        expected: usize,
-        /// Supplied LWE dimension.
-        actual: usize,
-    },
 }

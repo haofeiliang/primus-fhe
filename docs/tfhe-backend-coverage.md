@@ -228,7 +228,7 @@ Full-domain FDFB、通用数字拆分、HLUT/LFBS、multi-bit 等属于[新算�
 
 ## 7. 建议执行顺序与验收规模
 
-1. **先整理高层接口，再补明确缺口**：GLWE Fourier 经典 CBS 的 B1.1–B1.3、四后端具名参数/自动建表的 B1.4 已完成；按[分步计划](tfhe-backend-plan.md)继续 B1.5–B1.7 的求值密钥、CBS 消费接口与集成验收，再接 B2 的 NTRU Boolean。此顺序减少重复迁移，Boolean 算法本身不依赖 CBS。
+1. **先整理高层接口，再补明确缺口**：GLWE Fourier 经典 CBS 的 B1.1–B1.3、四后端具名参数/自动建表和求值密钥绑定的 B1.4–B1.5 已完成；按[分步计划](tfhe-backend-plan.md)继续 B1.6–B1.7 的 CBS 消费接口与集成验收，再接 B2 的 NTRU Boolean。此顺序减少重复迁移，Boolean 算法本身不依赖 CBS。
 2. **再扩展已有多输出路线**：NTRU NTT MVB；同步补 GLWE NTT sparse×Boolean/bivariate/odd-full 的小型组合验证。
 3. **处理性能型移植与受限表示**：GLWE Fourier sparse PBS、Native 偶尺度 MVB。先完成参考路径，再测收益，避免一次混入频域聚合等额外优化。
 4. **按实际应用选择实验组合**：NTT sparse CBS、NTRU ternary、NTRU sparse；分别通过前置条件后，再组合到其他上层功能。

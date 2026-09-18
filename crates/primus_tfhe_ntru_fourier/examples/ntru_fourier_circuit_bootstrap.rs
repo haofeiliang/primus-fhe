@@ -12,8 +12,7 @@ use primus_ntru::{
 };
 use primus_poly::Polynomial;
 use primus_tfhe_ntru_fourier::{
-    CircuitBootstrapConfig, CircuitBootstrapParameters, DecompositionConfig, TfheConfig,
-    TfheContext, TfheParameters,
+    CircuitBootstrapConfig, DecompositionConfig, TfheConfig, TfheContext, TfheParameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -41,7 +40,28 @@ fn main() {
     let context = TfheContext::<_, RustFftTable>::try_from_parameters(parameters).unwrap();
     let accumulator = context.parameters().accumulator_ntru();
     let mut rng = StdRng::seed_from_u64(0x004e_5454_5f43_4253);
-    let (client_key, server_key) = context.try_generate_keys(&mut rng).unwrap();
+    // CBS adds independent output, trace and scheme-switch bases.
+    let cbs_config = CircuitBootstrapConfig {
+        output: DecompositionConfig {
+            log_basis: 8,
+            level_count: Some(2),
+        },
+        trace: DecompositionConfig {
+            log_basis: 10,
+            level_count: None,
+        },
+        trace_noise_standard_deviation: 0.7,
+        scheme_switch: DecompositionConfig {
+            log_basis: 10,
+            level_count: None,
+        },
+        scheme_switch_noise_standard_deviation: 0.7,
+    };
+    let (client_key, server_key) = context
+        .try_generate_keys(Some(cbs_config), &mut rng)
+        .unwrap();
+    let cbs_key = server_key.circuit_bootstrap_key().unwrap();
+    let cbs_parameters = cbs_key.parameters();
     // All transformed values share this context's FFT table.
     let mut fft = context.new_fft_engine();
     // CMUX candidates are encrypted under f_acc, the CBS output secret.
@@ -65,33 +85,7 @@ fn main() {
         transformed.write_torus_form(&mut output, &mut fft);
         output
     });
-    // CBS adds independent output, trace and scheme-switch bases.
-    let cbs_parameters = CircuitBootstrapParameters::try_from_config(
-        context.parameters(),
-        CircuitBootstrapConfig {
-            output: DecompositionConfig {
-                log_basis: 8,
-                level_count: Some(2),
-            },
-            trace: DecompositionConfig {
-                log_basis: 10,
-                level_count: None,
-            },
-            trace_noise_standard_deviation: 0.7,
-            scheme_switch: DecompositionConfig {
-                log_basis: 10,
-                level_count: None,
-            },
-            scheme_switch_noise_standard_deviation: 0.7,
-        },
-    )
-    .unwrap();
-    let cbs_key = context
-        .try_generate_circuit_bootstrap_key(&client_key, &cbs_parameters, &mut rng)
-        .unwrap();
-    let mut evaluator = context
-        .circuit_bootstrap_evaluator(&server_key, &cbs_parameters, &cbs_key)
-        .unwrap();
+    let mut evaluator = context.circuit_bootstrap_evaluator(&server_key).unwrap();
     let mut control =
         FourierNgswCiphertext::<Vec<Complex64>>::zero(cbs_parameters.output_fourier_nlev_len());
     let mut selected = NtruCiphertext::<Vec<u64>>::zero(N);

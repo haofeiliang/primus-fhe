@@ -14,11 +14,10 @@
 //! [`BooleanEvaluator::evaluate_binary_to`], [`BooleanEvaluator::not_to`] and
 //! [`BooleanEvaluator::mux_to`].
 //!
-//! [`CircuitBootstrapParameters`] and [`CircuitBootstrapKey`] provide optional
-//! trace-projection and scheme-switch keys, generated through
-//! [`KeyGenerator::try_generate_circuit_bootstrap_key`]. Use
-//! [`TfheContext::circuit_bootstrap_evaluator`] for classic binary/ternary CBS
-//! producing Fourier GGSW under the accumulator secret, with either PBS order.
+//! Select optional CBS material with [`CircuitBootstrapConfig`] during paired key generation.
+//! [`TfheContext::circuit_bootstrap_evaluator`] binds its parameters and keys from
+//! [`ServerKey`] for classic binary/ternary CBS producing Fourier GGSW under the
+//! accumulator secret, with either PBS order.
 
 #![deny(missing_docs)]
 
@@ -35,15 +34,14 @@ mod key;
 pub mod boolean;
 
 pub use error::{
-    LookupTableError, TfheClientError, TfheContextError, TfheEvaluationError, TfheKeyError,
-    TfheParameterError,
+    CircuitBootstrapParameterError, KeyGenerationError, LookupTableError, TfheClientError,
+    TfheContextError, TfheEvaluationError, TfheKeyError, TfheParameterError,
 };
 
 pub use blind_rotation::FourierGlweBlindRotationContext;
 pub use bootstrapping_key::FourierGlweBootstrappingKey;
 pub use circuit_bootstrap::{
-    CircuitBootstrapEvaluationError, CircuitBootstrapEvaluator, CircuitBootstrapKey,
-    CircuitBootstrapKeyError, CircuitBootstrapParameterError, CircuitBootstrapParameters,
+    CircuitBootstrapEvaluator, CircuitBootstrapKey, CircuitBootstrapParameters,
 };
 pub use context::TfheContext;
 pub use evaluator::Evaluator;

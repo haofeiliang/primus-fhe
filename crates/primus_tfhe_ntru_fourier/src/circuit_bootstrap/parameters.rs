@@ -1,40 +1,11 @@
 //! Independently selected gadget bases for NTRU circuit bootstrapping.
 
-use primus_decompose::{ApproxSignedBasisError, primitive::ApproxSignedBasis};
+use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::TorusFftValue;
 use primus_modulus::NativeModulus;
 use primus_ntru::NlevParameters;
 
-use crate::{CircuitBootstrapConfig, TfheParameters};
-
-/// An incompatible circuit-bootstrap parameter set.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum CircuitBootstrapParameterError {
-    /// The configured output radix or retained-level count is invalid.
-    #[error("invalid circuit-bootstrap output basis: {0}")]
-    InvalidOutputBasis(#[from] ApproxSignedBasisError),
-    /// A configured key decomposition or derived gadget layout is invalid.
-    #[error("invalid circuit-bootstrap {role} parameters: {source}")]
-    GadgetParameters {
-        /// Key role: trace or scheme-switch.
-        role: &'static str,
-        /// Invalid basis or gadget layout.
-        #[source]
-        source: primus_ntru::NlevParameterError,
-    },
-    /// The output basis belongs to another explicit or native modulus.
-    #[error("circuit-bootstrap output basis modulus does not match the accumulator")]
-    OutputBasisModulusMismatch,
-    /// A gadget parameter set uses another ring length.
-    #[error("circuit-bootstrap {role} polynomial length differs from the accumulator")]
-    PolynomialLengthMismatch {
-        /// The incompatible parameter role.
-        role: &'static str,
-    },
-    /// The LUT padded output count leaves too few programmable input slots.
-    #[error("circuit-bootstrap output levels do not fit the ManyLUT accumulator")]
-    OutputDecompositionTooLarge,
-}
+use crate::{CircuitBootstrapConfig, CircuitBootstrapParameterError, TfheParameters};
 
 /// Optional CBS parameters, separate from ordinary PBS server-key parameters.
 ///

@@ -15,9 +15,9 @@ use primus_lwe::{LweCiphertext, LweParameters};
 use primus_modulus::NativeModulus;
 use primus_poly::Polynomial;
 use primus_tfhe_glwe_fourier::{
-    CircuitBootstrapConfig, CircuitBootstrapEvaluationError, CircuitBootstrapKeyError,
-    CircuitBootstrapParameterError, CircuitBootstrapParameters, ClientKey, DecompositionConfig,
-    KeyGenerator, PbsOrder, TfheContext, TfheParameters,
+    CircuitBootstrapConfig, CircuitBootstrapEvaluator, CircuitBootstrapParameterError,
+    CircuitBootstrapParameters, ClientKey, DecompositionConfig, KeyGenerationError, KeyGenerator,
+    PbsOrder, TfheContext, TfheEvaluationError, TfheParameters,
 };
 use rand::{RngExt, SeedableRng, rngs::StdRng};
 
@@ -65,27 +65,27 @@ fn parameters_with_order_and_distribution(
     .unwrap()
 }
 
-fn circuit_parameters(tfhe: &TfheParameters<u64>) -> CircuitBootstrapParameters<u64> {
-    CircuitBootstrapParameters::try_from_config(
-        tfhe,
-        CircuitBootstrapConfig {
-            output: DecompositionConfig {
-                log_basis: 8,
-                level_count: Some(3),
-            },
-            trace: DecompositionConfig {
-                log_basis: 8,
-                level_count: Some(7),
-            },
-            trace_noise_standard_deviation: 0.7,
-            scheme_switch: DecompositionConfig {
-                log_basis: 10,
-                level_count: Some(5),
-            },
-            scheme_switch_noise_standard_deviation: 0.7,
+fn circuit_config() -> CircuitBootstrapConfig {
+    CircuitBootstrapConfig {
+        output: DecompositionConfig {
+            log_basis: 8,
+            level_count: Some(3),
         },
-    )
-    .unwrap()
+        trace: DecompositionConfig {
+            log_basis: 8,
+            level_count: Some(7),
+        },
+        trace_noise_standard_deviation: 0.7,
+        scheme_switch: DecompositionConfig {
+            log_basis: 10,
+            level_count: Some(5),
+        },
+        scheme_switch_noise_standard_deviation: 0.7,
+    }
+}
+
+fn circuit_parameters(tfhe: &TfheParameters<u64>) -> CircuitBootstrapParameters<u64> {
+    CircuitBootstrapParameters::try_from_config(tfhe, circuit_config()).unwrap()
 }
 
 // Exact native-ring phase, independent of FFT and sample extraction.
@@ -118,28 +118,32 @@ fn circuit_bootstrap<Table: FftTable>(order: PbsOrder, distribution: SecretKeyDi
         parameters_with_order_and_distribution(DIMENSION, POLY_LENGTH, 4, order, distribution),
     )
     .unwrap();
-    let parameters = circuit_parameters(context.parameters());
     let mut rng = StdRng::seed_from_u64(0x4342_534b_4559 ^ order as u64);
     let client = ClientKey::generate(context.parameters(), &mut rng);
     let mut generator = KeyGenerator::new(&context);
-    let key = generator
-        .try_generate_circuit_bootstrap_key(&client, &parameters, &mut rng)
-        .unwrap();
-    // CBS leaves a different gadget layout in the reusable generator.
     let server = generator
-        .try_generate_server_key(&client, &mut rng)
+        .try_generate_server_key(&client, Some(circuit_config()), &mut rng)
         .unwrap();
+    let key = server.circuit_bootstrap_key().unwrap();
+    let parameters = key.parameters();
     // GLWE scheme switching binds the output layout, not its exact gadget basis.
-    let parameters = CircuitBootstrapParameters::try_new(
+    let alternate = CircuitBootstrapParameters::try_new(
         context.parameters(),
         ApproxSignedBasis::new(None, 9, Some(3)),
         parameters.trace().clone(),
         parameters.scheme_switch().clone(),
     )
     .unwrap();
-    let mut evaluator = context
-        .circuit_bootstrap_evaluator(&server, &parameters, &key)
-        .unwrap();
+    let (parameters, mut evaluator) = match order {
+        PbsOrder::BootstrapKeyswitch => (
+            parameters,
+            context.circuit_bootstrap_evaluator(&server).unwrap(),
+        ),
+        PbsOrder::KeyswitchBootstrap => (
+            &alternate,
+            CircuitBootstrapEvaluator::try_from_parts(&context, &server, &alternate, key).unwrap(),
+        ),
+    };
     assert_eq!(parameters.lookup_table_padded_output_count(), 4);
 
     let mut fft = context.new_fft_engine();
@@ -164,6 +168,27 @@ fn circuit_bootstrap<Table: FftTable>(order: PbsOrder, distribution: SecretKeyDi
         output
     });
     let encryptor = context.encryptor(&client).unwrap();
+    // The same CBS-enabled server key also supports ordinary PBS.
+    let identity = context
+        .parameters()
+        .compile_lookup_table_fn(context.parameters().input_plaintext_codec(), |message| {
+            message as u64
+        })
+        .unwrap();
+    let input = encryptor.encrypt_padded(1u64, &mut rng).unwrap();
+    let output = context
+        .evaluator(&server)
+        .unwrap()
+        .apply_lookup_table(&input, &identity);
+    assert_eq!(
+        context
+            .decryptor(&client)
+            .unwrap()
+            .decrypt(&output)
+            .unwrap(),
+        1
+    );
+
     let mut control = FourierGgsw::<Vec<_>>::zero(parameters.output_size().fourier_ggsw_len());
     let mut coefficients = Ggsw::new(vec![0u64; parameters.output_size().ggsw_len()]);
     let mut selected = Glwe::new(vec![0u64; glwe.glwe_len()]);
@@ -241,17 +266,22 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
 
 #[test]
 fn evaluator_rejects_resource_mismatches_and_checks_shapes_before_writes() {
-    use CircuitBootstrapEvaluationError as Error;
+    use TfheEvaluationError as Error;
     let context = TfheContext::try_new(
         parameters(DIMENSION, POLY_LENGTH, 4),
         RustFftTable::new(POLY_LENGTH.trailing_zeros()).unwrap(),
     )
     .unwrap();
     let mut rng = StdRng::seed_from_u64(42);
-    let (client, server) = context.generate_keys(&mut rng).unwrap();
+    let client = ClientKey::generate(context.parameters(), &mut rng);
     let parameters = circuit_parameters(context.parameters());
-    let key = context
-        .generate_circuit_bootstrap_key(&client, &parameters, &mut rng)
+    let mut generator = KeyGenerator::new(&context);
+    let key = generator
+        .try_generate_circuit_bootstrap_key(&client, parameters.clone(), &mut rng)
+        .unwrap();
+    // CBS leaves a different gadget layout; the next PBS generation must resize it.
+    let server = generator
+        .try_generate_server_key(&client, None, &mut rng)
         .unwrap();
     // Keep level counts equal for basis mismatches, so layout checks cannot mask them.
     for (output, trace, scheme_switch) in [
@@ -275,7 +305,7 @@ fn evaluator_rejects_resource_mismatches_and_checks_shapes_before_writes() {
             CircuitBootstrapParameters::try_new(context.parameters(), output, trace, scheme_switch)
                 .unwrap();
         assert!(matches!(
-            context.circuit_bootstrap_evaluator(&server, &foreign, &key),
+            CircuitBootstrapEvaluator::try_from_parts(&context, &server, &foreign, &key),
             Err(Error::IncompatibleCircuitBootstrapKey)
         ));
     }
@@ -292,7 +322,7 @@ fn evaluator_rejects_resource_mismatches_and_checks_shapes_before_writes() {
     )
     .unwrap();
     assert!(matches!(
-        foreign_context.circuit_bootstrap_evaluator(&server, &parameters, &key),
+        CircuitBootstrapEvaluator::try_from_parts(&foreign_context, &server, &parameters, &key),
         Err(Error::IncompatibleServerKey)
     ));
     let foreign_parameters = circuit_parameters(&parameters_with_order_and_distribution(
@@ -303,13 +333,12 @@ fn evaluator_rejects_resource_mismatches_and_checks_shapes_before_writes() {
         SecretKeyDistr::fixed_hamming_weight_binary(4, 2),
     ));
     assert!(matches!(
-        context.circuit_bootstrap_evaluator(&server, &foreign_parameters, &key),
-        Err(Error::IncompatibleParameters)
+        CircuitBootstrapEvaluator::try_from_parts(&context, &server, &foreign_parameters, &key),
+        Err(Error::IncompatibleCircuitBootstrapParameters)
     ));
 
-    let mut evaluator = context
-        .circuit_bootstrap_evaluator(&server, &parameters, &key)
-        .unwrap();
+    let mut evaluator =
+        CircuitBootstrapEvaluator::try_from_parts(&context, &server, &parameters, &key).unwrap();
     let input_dimension = context.parameters().external_lwe_dimension();
     let output_len = parameters.output_size().fourier_ggsw_len();
     for (dimension, length) in [
@@ -435,21 +464,30 @@ fn incompatible_parameters_and_client_keys_are_rejected_before_sampling() {
         let mut rng = StdRng::seed_from_u64(43);
         let mut untouched_rng = StdRng::seed_from_u64(43);
         assert!(matches!(
-            context.generate_circuit_bootstrap_key(&client, &foreign, &mut rng),
-            Err(CircuitBootstrapKeyError::IncompatibleParameters)
+            context.try_generate_circuit_bootstrap_key(&client, foreign, &mut rng),
+            Err(KeyGenerationError::IncompatibleCircuitBootstrapParameters)
         ));
         assert_eq!(rng.random::<u64>(), untouched_rng.random::<u64>());
     }
+    let mut invalid = circuit_config();
+    invalid.output.level_count = Some(0);
+    let mut rng = StdRng::seed_from_u64(43);
+    let mut untouched_rng = StdRng::seed_from_u64(43);
+    assert!(matches!(
+        context.try_generate_keys(Some(invalid), &mut rng),
+        Err(KeyGenerationError::CircuitBootstrapParameters(_))
+    ));
+    assert_eq!(rng.random::<u64>(), untouched_rng.random::<u64>());
     let foreign_client = ClientKey::generate(&parameters(DIMENSION + 1, POLY_LENGTH, 4), &mut rng);
     let mut rng = StdRng::seed_from_u64(43);
     let mut untouched_rng = StdRng::seed_from_u64(43);
     assert!(matches!(
-        context.generate_circuit_bootstrap_key(
+        context.try_generate_circuit_bootstrap_key(
             &foreign_client,
-            &circuit_parameters(context.parameters()),
+            circuit_parameters(context.parameters()),
             &mut rng
         ),
-        Err(CircuitBootstrapKeyError::ClientKey(_))
+        Err(KeyGenerationError::ClientKey(_))
     ));
     assert_eq!(rng.random::<u64>(), untouched_rng.random::<u64>());
 }

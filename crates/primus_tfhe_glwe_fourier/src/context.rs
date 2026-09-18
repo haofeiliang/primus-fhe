@@ -2,11 +2,11 @@ use primus_fft::{FftEngine, FftTable, TorusFftValue};
 use primus_tfhe_glwe::{ClientKey, EncryptionKey};
 
 use crate::{
-    BooleanDecryptor, BooleanEncryptor, BooleanError, BooleanEvaluator,
-    CircuitBootstrapEvaluationError, CircuitBootstrapEvaluator, CircuitBootstrapKey,
-    CircuitBootstrapKeyError, CircuitBootstrapParameters, Decryptor, Encryptor, Evaluator,
-    KeyGenerator, ServerKey, TfheParameters,
-    error::{TfheClientError, TfheContextError, TfheEvaluationError, TfheKeyError},
+    BooleanDecryptor, BooleanEncryptor, BooleanError, BooleanEvaluator, CircuitBootstrapConfig,
+    CircuitBootstrapEvaluator, CircuitBootstrapKey, CircuitBootstrapParameters, Decryptor,
+    Encryptor, Evaluator, KeyGenerationError, KeyGenerator, ServerKey, TfheEvaluationError,
+    TfheParameters,
+    error::{TfheClientError, TfheContextError},
 };
 
 /// A validated binding between native-torus TFHE parameters and an FFT table.
@@ -30,11 +30,9 @@ where
 {
     /// Builds the selected FFT table using the accumulator polynomial length.
     ///
-    /// Returns the table constructor's error. Use [`Self::try_new`] to inject
+    /// Preserves table-construction failures in [`TfheContextError`]. Use [`Self::try_new`] to inject
     /// an existing table instead; all transformed keys must use the bound table.
-    pub fn try_from_parameters(
-        parameters: TfheParameters<T>,
-    ) -> Result<Self, primus_fft::FftError> {
+    pub fn try_from_parameters(parameters: TfheParameters<T>) -> Result<Self, TfheContextError> {
         let table = Table::new(parameters.accumulator_glwe().poly_length().trailing_zeros())?;
         Ok(Self { parameters, table })
     }
@@ -67,47 +65,47 @@ where
         FftEngine::new(&self.table)
     }
 
-    /// Generates a fresh compatible client/server key pair.
-    pub fn generate_keys<R>(
+    /// Generates a fresh client/server pair; `None` selects PBS only and
+    /// `Some(config)` also generates the configured CBS material.
+    /// Inherits [`KeyGenerator::try_generate`]'s CBS requirements.
+    pub fn try_generate_keys<R>(
         &self,
+        circuit_bootstrap: Option<CircuitBootstrapConfig>,
         rng: &mut R,
-    ) -> Result<(ClientKey<T>, ServerKey<T>), TfheKeyError>
+    ) -> Result<(ClientKey<T>, ServerKey<T>), KeyGenerationError>
     where
         R: rand::Rng + rand::CryptoRng,
     {
-        KeyGenerator::new(self).generate(rng)
+        KeyGenerator::new(self).try_generate(circuit_bootstrap, rng)
     }
 
     /// Generates optional CBS trace-projection and scheme-switch keys.
     ///
     /// Inherits [`KeyGenerator::try_generate_circuit_bootstrap_key`]'s secret
     /// and FFT table requirements. Reuse a [`KeyGenerator`] when generating
-    /// ordinary PBS and CBS keys together.
-    pub fn generate_circuit_bootstrap_key<R>(
+    /// multiple standalone CBS keys. For paired generation, use [`Self::try_generate_keys`].
+    pub fn try_generate_circuit_bootstrap_key<R>(
         &self,
         client_key: &ClientKey<T>,
-        parameters: &CircuitBootstrapParameters<T>,
+        parameters: CircuitBootstrapParameters<T>,
         rng: &mut R,
-    ) -> Result<CircuitBootstrapKey<T>, CircuitBootstrapKeyError>
+    ) -> Result<CircuitBootstrapKey<T>, KeyGenerationError>
     where
         R: rand::Rng + rand::CryptoRng,
     {
         KeyGenerator::new(self).try_generate_circuit_bootstrap_key(client_key, parameters, rng)
     }
 
-    /// Creates a classic binary/ternary CBS evaluator with reusable workspace.
+    /// Binds the server key's optional CBS material to reusable workspace.
+    /// Returns an error if the capability is absent or incompatible.
     ///
     /// # Correctness
-    ///
-    /// Inherits [`CircuitBootstrapEvaluator::try_new`]'s paired-secret and FFT
-    /// table requirements. Layout and basis checks cannot establish identity.
+    /// Inherits [`CircuitBootstrapEvaluator::try_new`]'s transform requirements.
     pub fn circuit_bootstrap_evaluator<'a>(
         &'a self,
         server_key: &'a ServerKey<T>,
-        parameters: &'a CircuitBootstrapParameters<T>,
-        circuit_key: &'a CircuitBootstrapKey<T>,
-    ) -> Result<CircuitBootstrapEvaluator<'a, T, Table>, CircuitBootstrapEvaluationError> {
-        CircuitBootstrapEvaluator::try_new(self, server_key, parameters, circuit_key)
+    ) -> Result<CircuitBootstrapEvaluator<'a, T, Table>, TfheEvaluationError> {
+        CircuitBootstrapEvaluator::try_new(self, server_key)
     }
 
     /// Creates a secret-key or public-key encryptor after checking compatibility.

@@ -28,12 +28,30 @@ NTRU 的 BR 秘密仍限于 binary。
 GLWE NTT 另支持固定重量二元 small 秘密的[实验性稀疏 PBS](../primus_tfhe_glwe_ntt/README.zh_CN.md#实验性稀疏-pbs)：
 两种 order、普通/交错/分解式 LUT；稀疏 CBS 尚不支持。
 
+## 错误边界
+
+错误按操作职责命名，从 crate 根导出。Family 的 `error` 模块集中定义 NTT/Fourier
+后端可共享的错误，不增加覆盖全部操作的总错误类型。
+
+| 操作 | 错误 |
+| --- | --- |
+| LUT 编译 / 普通或 CBS evaluator 绑定 | 公共 `LookupTableError` / `TfheEvaluationError` |
+| TFHE / CBS 参数准备 | Family `TfheParameterError` / `CircuitBootstrapParameterError` |
+| Client key 兼容性 / 客户端操作 | Family `TfheKeyError` / `TfheClientError` |
+| 常规或独立 CBS 密钥生成 | Family `KeyGenerationError`；NTRU 采样/变换直接进入 `Ntru` 分支 |
+| 自动建表或显式绑定表 | 后端 `TfheContextError`；`TransformTable` 保留底层 FFT/NTT 错误 |
+
+只有无歧义转换使用 `#[from]`。BR/KS、trace/SS 的失败由调用点显式 `map_err` 标明用途，
+并用 `#[source]` 保留原因。稀疏匹配保留算法专属错误。Context 错误不承诺 `Clone`/`Eq`，
+因为其包含的底层建表错误未提供这些 trait。
+
 ## LUT 与资源生命周期
 
 后端接受具名 `TfheConfig` 并派生公共环参数，`TfheContext::try_from_parameters`
 自动创建选定类型的变换表。本 crate 提供 `DecompositionConfig`（分解基与保留层数）
 及 `CircuitBootstrapConfig`（独立的 output/trace/scheme-switch 配置），
-由各后端绑定自己的模数、布局与表示。
+由各后端绑定自己的模数、布局与表示。`Option<CircuitBootstrapConfig>` 在配套密钥生成时选择是否启用 CBS；
+server key 持有对应参数和材料，各 evaluator 只持有自身工作区。
 
 1. Family 参数描述外部 LWE 和 accumulator 环。
 2. 后端 context 绑定参数与 NTT/FFT table，并生成配套的 client/server key。

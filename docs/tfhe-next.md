@@ -90,7 +90,7 @@
 
 以下不属于新密码算法，按实际调用需求安排：
 
-- Fourier GLWE CBS 的 B1.1–B1.3 已完成，误差、成本与示例见 [CBS 专项](tfhe-cbs.md)。B1.4 已提供四后端具名参数和自动建表；继续 B1.5–B1.7 整理密钥、消费接口并验收，再由 B2 接入 NTRU Boolean，见[后端补齐计划](tfhe-backend-plan.md)。
+- Fourier GLWE CBS 的 B1.1–B1.3 已完成，误差、成本与示例见 [CBS 专项](tfhe-cbs.md)。B1.4–B1.5 已提供四后端具名参数、自动建表与密钥绑定；继续 B1.6–B1.7 整理消费接口并验收，再由 B2 接入 NTRU Boolean，见[后端补齐计划](tfhe-backend-plan.md)。
 - Batch client/PBS、PBS `_assign`：明确独立输入调度、缓冲区别名与覆盖顺序，复用 evaluator，不用 clone 隐藏分配。
 - ServerKey 存储量查询：可替换 `xtask/src/ntru_params.rs` 的手写公式，区分系数载荷、allocator 请求量与进程内存。
 - 独立 KSK 噪声分析、整数/message-carry 层、序列化和 GPU 等，等待具体需求，不扩入 ternary 任务。

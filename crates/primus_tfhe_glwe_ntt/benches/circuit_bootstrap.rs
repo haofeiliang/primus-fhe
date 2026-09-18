@@ -12,7 +12,9 @@ use primus_lattice::ggsw::NttGgsw;
 use primus_lwe::LweParameters;
 use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, U64NttTable};
-use primus_tfhe_glwe_ntt::{CircuitBootstrapParameters, PbsOrder, TfheContext, TfheParameters};
+use primus_tfhe_glwe_ntt::{
+    CircuitBootstrapEvaluator, CircuitBootstrapParameters, PbsOrder, TfheContext, TfheParameters,
+};
 use rand::{SeedableRng, rngs::StdRng};
 
 fn circuit_bootstrap(c: &mut Criterion) {
@@ -35,7 +37,7 @@ fn circuit_bootstrap(c: &mut Criterion) {
         let table = U64NttTable::new(N.trailing_zeros(), modulus).unwrap();
         let context = TfheContext::try_new(parameters, table).unwrap();
         let mut rng = StdRng::seed_from_u64(42);
-        let (client, server) = context.generate_keys(&mut rng).unwrap();
+        let (client, server) = context.try_generate_keys(None, &mut rng).unwrap();
         let input = context
             .encryptor(&client)
             .unwrap()
@@ -49,12 +51,13 @@ fn circuit_bootstrap(c: &mut Criterion) {
                 GgswParameters::with_glwe_params(&glwe, 10, None),
             )
             .unwrap();
+            // Reuse ordinary PBS material across the output-basis sweep.
             let key = context
-                .generate_circuit_bootstrap_key(&client, &parameters, &mut rng)
+                .try_generate_circuit_bootstrap_key(&client, parameters.clone(), &mut rng)
                 .unwrap();
-            let mut evaluator = context
-                .circuit_bootstrap_evaluator(&server, &parameters, &key)
-                .unwrap();
+            let mut evaluator =
+                CircuitBootstrapEvaluator::try_from_parts(&context, &server, &parameters, &key)
+                    .unwrap();
             let mut output = NttGgsw::<Vec<u64>>::zero(parameters.output_size().ggsw_len());
             let mut group = c.benchmark_group(format!(
                 "glwe_ntt/cbs/{name}/u64/n{N}/small_lwe4/output_logb9_l{levels}"

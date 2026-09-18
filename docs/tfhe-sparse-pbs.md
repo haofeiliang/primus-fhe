@@ -337,7 +337,7 @@ LUT 编译、输出 codec、输入/输出检查、KS 与提取共用原路径。
 经典/稀疏对照，两种 order，普通和三输出四槽交错 LUT，`t_in=8 → t_out=16`，四个前半区消息，
 解码/相位余量、步长切换复用、零分配及写入前拒绝。为覆盖截断误差，该测试 BR basis 为
 `log_basis=7, levels=3`，其余采用小参数。现有 CBS fixture 增加稀疏 key 拒绝检查；
-`CircuitBootstrapEvaluationError::UnsupportedSparseBootstrapping` 明确保留 gadget 尺度验收边界。
+`TfheEvaluationError::UnsupportedSparseBootstrapping` 明确保留 gadget 尺度验收边界。
 Fourier、稀疏三元和 NTRU 未新增支持。
 
 ### 完整性能与内存

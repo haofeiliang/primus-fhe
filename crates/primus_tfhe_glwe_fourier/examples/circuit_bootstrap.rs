@@ -12,22 +12,18 @@ use primus_lattice::{
     glwe::{FourierGlwe, Glwe},
 };
 use primus_poly::Polynomial;
-use primus_tfhe_glwe_fourier::{ClientKey, KeyGenerator, PbsOrder};
+use primus_tfhe_glwe_fourier::PbsOrder;
 use rand::{SeedableRng, rngs::StdRng};
 
 fn main() {
     for order in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
         let context = profile::context::<TfheFftTable>(order);
-        let parameters = profile::parameters(context.parameters());
         let mut rng = StdRng::seed_from_u64(profile::SEED);
-        let client = ClientKey::generate(context.parameters(), &mut rng);
-        let mut generator = KeyGenerator::new(&context);
-        let server = generator
-            .try_generate_server_key(&client, &mut rng)
+        let (client, server) = context
+            .try_generate_keys(Some(profile::circuit_bootstrap()), &mut rng)
             .unwrap();
-        let key = generator
-            .try_generate_circuit_bootstrap_key(&client, &parameters, &mut rng)
-            .unwrap();
+        let key = server.circuit_bootstrap_key().unwrap();
+        let parameters = key.parameters();
 
         // Both candidate GLWEs and the CBS output use the accumulator secret.
         let glwe = context.parameters().accumulator_glwe();
@@ -50,9 +46,7 @@ fn main() {
         });
 
         let encryptor = context.encryptor(&client).unwrap();
-        let mut evaluator = context
-            .circuit_bootstrap_evaluator(&server, &parameters, &key)
-            .unwrap();
+        let mut evaluator = context.circuit_bootstrap_evaluator(&server).unwrap();
         let mut control = FourierGgsw::<Vec<_>>::zero(parameters.output_size().fourier_ggsw_len());
         let mut selected = Glwe::<Vec<u64>>::zero(glwe.glwe_len());
         let mut external_product = FourierGlweExternalProductContext::new(parameters.output_size());

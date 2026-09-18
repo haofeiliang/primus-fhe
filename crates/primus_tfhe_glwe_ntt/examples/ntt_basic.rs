@@ -52,7 +52,7 @@ fn run(order: PbsOrder) {
 
     // The client key decrypts; the server key only evaluates homomorphically.
     let mut rng = rand::rng();
-    let (client_key, server_key) = context.generate_keys(&mut rng).unwrap();
+    let (client_key, server_key) = context.try_generate_keys(None, &mut rng).unwrap();
 
     // Publish this LWE key to encrypt inputs; keep the client key for decryption.
     // These demonstration parameters have no public-key security/noise assessment.

@@ -44,7 +44,7 @@ where
     TABLE: NttTable<ValueT = u32>,
 {
     let mut rng = StdRng::seed_from_u64(0x4d41_4e59_5042_5301);
-    let (client_key, server_key) = context.try_generate_keys(&mut rng).unwrap();
+    let (client_key, server_key) = context.try_generate_keys(None, &mut rng).unwrap();
     let public = client_key
         .try_generate_public_key(context.parameters(), &mut rng)
         .unwrap();

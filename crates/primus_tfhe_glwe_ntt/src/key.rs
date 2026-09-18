@@ -9,8 +9,9 @@ use primus_reduce::Modulus;
 use primus_tfhe_glwe::ClientKey;
 
 use crate::{
+    CircuitBootstrapConfig, CircuitBootstrapKey, CircuitBootstrapParameters, KeyGenerationError,
     NttGlweBootstrappingKey, SparseBootstrappingKeyError, SparseGlweBootstrappingKey, TfheContext,
-    TfheParameters, error::TfheKeyError,
+    TfheParameters,
 };
 
 /// Blind-rotation key selected when generating a server key.
@@ -69,11 +70,18 @@ impl<T: FheUint> BootstrappingKey<T> {
 /// Both PBS orders share these key materials. [`crate::PbsOrder`] only changes
 /// the order in which the evaluator applies them.
 pub struct ServerKey<T: FheUint> {
+    circuit_bootstrap: Option<Box<CircuitBootstrapKey<T>>>,
     bootstrapping_key: BootstrappingKey<T>,
     glwe_key_switching_key: NttGlweKeySwitchingKey<T>,
 }
 
 impl<T: FheUint> ServerKey<T> {
+    /// Returns the bound CBS parameters and keys, if requested during generation.
+    #[must_use]
+    pub fn circuit_bootstrap_key(&self) -> Option<&CircuitBootstrapKey<T>> {
+        self.circuit_bootstrap.as_deref()
+    }
+
     pub(crate) fn is_compatible(&self, parameters: &TfheParameters<T>) -> bool {
         let key_switching = parameters.glwe_key_switching();
         self.bootstrapping_key.is_compatible(parameters)
@@ -99,11 +107,21 @@ impl<T: FheUint> ServerKey<T> {
     }
 
     /// Decomposes this server key into its bootstrapping and key-switching
-    /// keys.
+    /// keys and optional CBS material.
     #[must_use]
     #[inline]
-    pub fn into_parts(self) -> (BootstrappingKey<T>, NttGlweKeySwitchingKey<T>) {
-        (self.bootstrapping_key, self.glwe_key_switching_key)
+    pub fn into_parts(
+        self,
+    ) -> (
+        BootstrappingKey<T>,
+        NttGlweKeySwitchingKey<T>,
+        Option<CircuitBootstrapKey<T>>,
+    ) {
+        (
+            self.bootstrapping_key,
+            self.glwe_key_switching_key,
+            self.circuit_bootstrap.map(|key| *key),
+        )
     }
 }
 
@@ -131,15 +149,20 @@ where
         }
     }
 
-    /// Generates a server key from an existing compatible client key.
+    /// Generates the selected capabilities from one compatible client key.
+    /// Invalid CBS configuration is rejected before sampling evaluation material.
+    /// Enabling CBS inherits [`Self::try_generate_circuit_bootstrap_key`]'s
+    /// mathematical and security requirements.
     pub fn try_generate_server_key<R>(
         &mut self,
         client_key: &ClientKey<T>,
+        circuit_bootstrap: Option<CircuitBootstrapConfig>,
         rng: &mut R,
-    ) -> Result<ServerKey<T>, TfheKeyError>
+    ) -> Result<ServerKey<T>, KeyGenerationError>
     where
         R: rand::Rng + rand::CryptoRng,
     {
+        let circuit_parameters = self.prepare_circuit_bootstrap(circuit_bootstrap)?;
         let parameters = self.context.parameters();
         client_key.check_compatible(parameters)?;
 
@@ -147,7 +170,12 @@ where
             client_key.glwe_secret_key(),
             self.context.table(),
         );
-        Ok(self.generate_server_key_with_main(client_key, main_glwe_secret_key, rng))
+        Ok(self.generate_server_key_with_main(
+            client_key,
+            main_glwe_secret_key,
+            circuit_parameters,
+            rng,
+        ))
     }
 
     /// Generates a complete sparse PBS server key for an existing client.
@@ -177,6 +205,7 @@ where
             self.try_generate_sparse_bootstrapping_key(client_key, copy_count, bucket_count, rng)?;
         let glwe_key_switching_key = self.generate_glwe_key_switching_key(client_key, rng);
         Ok(ServerKey {
+            circuit_bootstrap: None,
             bootstrapping_key: BootstrappingKey::Sparse(bootstrapping_key),
             glwe_key_switching_key,
         })
@@ -184,11 +213,12 @@ where
 
     /// The caller has checked the client key and prepared its matching main
     /// transform with this context's table. Taking ownership bounds its lifetime
-    /// to BSK generation, before allocating the key-switching material.
+    /// to BSK and optional CBS generation, before allocating key-switching material.
     fn generate_server_key_with_main<R>(
         &mut self,
         client_key: &ClientKey<T>,
         main_glwe_secret_key: NttGlweSecretKey<T>,
+        circuit_parameters: Option<CircuitBootstrapParameters<T>>,
         rng: &mut R,
     ) -> ServerKey<T>
     where
@@ -205,9 +235,18 @@ where
             rng,
             &mut self.gadget,
         );
+        let circuit_bootstrap = circuit_parameters.map(|parameters| {
+            Box::new(self.generate_circuit_bootstrap_key_with_main(
+                client_key,
+                &main_glwe_secret_key,
+                parameters,
+                rng,
+            ))
+        });
         drop(main_glwe_secret_key);
         let glwe_key_switching_key = self.generate_glwe_key_switching_key(client_key, rng);
         ServerKey {
+            circuit_bootstrap,
             bootstrapping_key: BootstrappingKey::Classic(bootstrapping_key),
             glwe_key_switching_key,
         }
@@ -239,11 +278,18 @@ where
         )
     }
 
-    /// Generates a fresh compatible client/server key pair.
-    pub fn generate<R>(&mut self, rng: &mut R) -> Result<(ClientKey<T>, ServerKey<T>), TfheKeyError>
+    /// Generates a fresh compatible pair with the selected evaluation capabilities.
+    /// Enabling CBS inherits [`Self::try_generate_circuit_bootstrap_key`]'s
+    /// mathematical and security requirements.
+    pub fn try_generate<R>(
+        &mut self,
+        circuit_bootstrap: Option<CircuitBootstrapConfig>,
+        rng: &mut R,
+    ) -> Result<(ClientKey<T>, ServerKey<T>), KeyGenerationError>
     where
         R: rand::Rng + rand::CryptoRng,
     {
+        let circuit_parameters = self.prepare_circuit_bootstrap(circuit_bootstrap)?;
         let parameters = self.context.parameters();
         let small_lwe_secret_key = LweSecretKey::generate(parameters.small_lwe(), rng);
         let (glwe_secret_key, main_glwe_secret_key) = NttGlweSecretKey::generate_pair(
@@ -257,7 +303,24 @@ where
             parameters.pbs_order(),
         );
         client_key.check_compatible(parameters)?;
-        let server_key = self.generate_server_key_with_main(&client_key, main_glwe_secret_key, rng);
+        let server_key = self.generate_server_key_with_main(
+            &client_key,
+            main_glwe_secret_key,
+            circuit_parameters,
+            rng,
+        );
         Ok((client_key, server_key))
+    }
+
+    fn prepare_circuit_bootstrap(
+        &self,
+        circuit_bootstrap: Option<CircuitBootstrapConfig>,
+    ) -> Result<Option<CircuitBootstrapParameters<T>>, KeyGenerationError> {
+        circuit_bootstrap
+            .map(|config| {
+                CircuitBootstrapParameters::try_from_config(self.context.parameters(), config)
+            })
+            .transpose()
+            .map_err(Into::into)
     }
 }

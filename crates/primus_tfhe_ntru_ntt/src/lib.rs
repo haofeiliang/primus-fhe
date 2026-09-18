@@ -9,8 +9,9 @@
 //! writing. Raw input key, encoding and noise remain caller requirements.
 
 //! [`CircuitBootstrapEvaluator`] optionally keeps the BR accumulator under f_acc,
-//! projects gadget-scaled outputs and converts NLev to NGSW. Its additional keys
-//! and independent noise/security parameters are separate from ordinary PBS.
+//! projects gadget-scaled outputs and converts NLev to NGSW. Select its additional
+//! keys and independent noise parameters with [`CircuitBootstrapConfig`] during key
+//! generation, then bind the evaluator from the resulting [`ServerKey`].
 
 #![deny(missing_docs)]
 
@@ -25,8 +26,8 @@ mod key;
 
 pub use context::TfheContext;
 pub use error::{
-    LookupTableError, TfheClientError, TfheContextError, TfheEvaluationError, TfheKeyError,
-    TfheParameterError,
+    CircuitBootstrapParameterError, KeyGenerationError, LookupTableError, TfheClientError,
+    TfheContextError, TfheEvaluationError, TfheKeyError, TfheParameterError,
 };
 pub use evaluator::Evaluator;
 pub use key::{KeyGenerator, ServerKey};
@@ -38,8 +39,7 @@ pub use primus_tfhe::{
 pub use primus_tfhe_ntru::{ClientKey, EncryptionKey, LwePublicKey};
 
 pub use circuit_bootstrap::{
-    CircuitBootstrapEvaluationError, CircuitBootstrapEvaluator, CircuitBootstrapKey,
-    CircuitBootstrapKeyError, CircuitBootstrapParameterError, CircuitBootstrapParameters,
+    CircuitBootstrapEvaluator, CircuitBootstrapKey, CircuitBootstrapParameters,
 };
 
 /// Secret-key or LWE public-key encryptor for the exact NTT NTRU backend.

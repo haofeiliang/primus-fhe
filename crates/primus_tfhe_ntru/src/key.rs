@@ -4,7 +4,7 @@ use primus_ntru::NtruSecretKey;
 use primus_reduce::RingContext;
 use primus_tfhe::LweSecretKeyRef;
 
-use crate::TfheParameters;
+use crate::{TfheKeyError, TfheParameters};
 
 /// Coefficient-domain client and accumulator secrets for NTRU TFHE.
 #[derive(Clone)]
@@ -177,30 +177,4 @@ impl<T: FheUint> ClientKey<T> {
             self.external_lwe_dimension,
         )
     }
-}
-
-/// An error validating or generating NTRU TFHE keys.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum TfheKeyError {
-    /// NTRU rejection sampling or conversion could not produce a usable secret.
-    #[error(transparent)]
-    Ntru(#[from] primus_ntru::NtruError),
-    /// At least one NTRU secret has the wrong polynomial length.
-    #[error("NTRU client-key polynomial length mismatch")]
-    PolynomialLengthMismatch,
-    /// The client NTRU secret was sampled from a different binary distribution.
-    #[error("NTRU client secret-key distribution mismatch")]
-    ClientSecretKeyDistributionMismatch,
-    /// At least one active client-key coefficient is neither zero nor one.
-    #[error("NTRU TFHE client secret-key coefficients must be binary")]
-    ClientSecretKeyMustBeBinary,
-    /// The active client-key prefix has the wrong LWE dimension.
-    #[error("NTRU client key has the wrong external LWE dimension")]
-    ExternalLweDimensionMismatch,
-    /// At least one coefficient after the active LWE prefix is nonzero.
-    #[error("NTRU client key has a nonzero coefficient in its padded suffix")]
-    ClientSecretKeyPaddingMismatch,
-    /// The accumulator key distribution differs from its parameter set.
-    #[error("NTRU accumulator secret-key distribution mismatch")]
-    AccumulatorSecretKeyDistributionMismatch,
 }

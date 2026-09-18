@@ -4,7 +4,7 @@ use primus_lattice::GlweSize;
 use primus_reduce::RingContext;
 use primus_tfhe::LweSecretKeyRef;
 
-use crate::{GlweSecretKey, LweSecretKey, PbsOrder, TfheParameters};
+use crate::{GlweSecretKey, LweSecretKey, PbsOrder, TfheKeyError, TfheParameters};
 
 /// The complete client-side secret material for GLWE-based TFHE.
 ///
@@ -250,52 +250,4 @@ impl<T: FheUint> ClientKey<T> {
             self.pbs_order,
         )
     }
-}
-
-/// An incompatibility between secret keys and TFHE parameters.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum TfheKeyError {
-    /// The client key was created for a different PBS order.
-    #[error("PBS order mismatch: expected {expected:?}, got {actual:?}")]
-    PbsOrderMismatch {
-        /// PBS order required by the parameters.
-        expected: PbsOrder,
-        /// PBS order associated with the client key.
-        actual: PbsOrder,
-    },
-
-    /// The LWE secret key has the wrong dimension.
-    #[error("LWE secret-key dimension mismatch: expected {expected}, got {actual}")]
-    LweDimensionMismatch {
-        /// Dimension required by the parameters.
-        expected: usize,
-        /// Dimension found in the key.
-        actual: usize,
-    },
-
-    /// The LWE secret-key distribution does not match the parameters.
-    #[error("LWE secret-key distribution mismatch")]
-    LweSecretKeyDistributionMismatch,
-
-    /// The GLWE secret key has the wrong dimension.
-    #[error("GLWE secret-key dimension mismatch: expected {expected}, got {actual}")]
-    GlweDimensionMismatch {
-        /// Dimension required by the parameters.
-        expected: usize,
-        /// Dimension found in the key.
-        actual: usize,
-    },
-
-    /// The GLWE secret key has the wrong polynomial length.
-    #[error("GLWE polynomial length mismatch: expected {expected}, got {actual}")]
-    PolynomialLengthMismatch {
-        /// Polynomial length required by the parameters.
-        expected: usize,
-        /// Polynomial length found in the key.
-        actual: usize,
-    },
-
-    /// The GLWE secret-key distribution does not match the parameters.
-    #[error("GLWE secret-key distribution mismatch")]
-    GlweSecretKeyDistributionMismatch,
 }

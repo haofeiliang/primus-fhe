@@ -188,7 +188,7 @@ fn run_ntt(config: &Config) -> Result<(), String> {
     let client_key_time = client_started.elapsed();
     let server_started = Instant::now();
     let server_key = key_generator
-        .try_generate_server_key(&client_key, &mut rng)
+        .try_generate_server_key(&client_key, None, &mut rng)
         .map_err(|error| format!("failed to generate NTT server key: {error}"))?;
     let server_key_time = server_started.elapsed();
 
@@ -281,7 +281,7 @@ fn run_fourier(config: &Config) -> Result<(), String> {
     let client_key_time = client_started.elapsed();
     let server_started = Instant::now();
     let server_key = key_generator
-        .try_generate_server_key(&client_key, &mut rng)
+        .try_generate_server_key(&client_key, None, &mut rng)
         .map_err(|error| format!("failed to generate Fourier server key: {error}"))?;
     let server_key_time = server_started.elapsed();
 

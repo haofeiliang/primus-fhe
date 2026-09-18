@@ -27,7 +27,8 @@ cargo run -p primus_tfhe_glwe_ntt --example ntt_basic
 
 先用 `TfheParameters::try_from_config(TfheConfig { .. })` 声明数学参数，再调用
 `TfheContext::<_, U32NttTable>::try_from_parameters(parameters)` 自动创建匹配的变换表。
-表类型仍由调用方选择，建表失败返回底层 NTT 错误；已有表可用 `try_new(parameters, table)` 显式注入。
+表类型仍由调用方选择，建表失败通过 `TfheContextError::TransformTable` 保留底层 NTT 错误；
+已有表可用 `try_new(parameters, table)` 显式注入。
 
 `TfheContext::try_new` 检查 NTT 长度和模数。NTT 域密钥与值必须采用所传 table 的表示。
 `boolean_parameters()` 是开发 fixture，不是经过论证的默认参数；示例直接选取自己的小参数。
@@ -146,15 +147,27 @@ NTT context/BR 要求 `MonomialNttTable`，仓库内置 NTT 表均实现此能�
 ## Circuit bootstrapping
 
 CBS 要求经典 server key；稀疏密钥返回
-`CircuitBootstrapEvaluationError::UnsupportedSparseBootstrapping`，其 gadget 尺度噪声尚未验收。
-可选 CBS 使用 `CircuitBootstrapParameters::try_from_config(context.parameters(), config)`、`generate_circuit_bootstrap_key` 和
-`circuit_bootstrap_evaluator`。普通与 CBS key 必须来自同一 client key 和 NTT 表示。
+`TfheEvaluationError::UnsupportedSparseBootstrapping`，其 gadget 尺度噪声尚未验收。
+通过 `context.try_generate_keys(Some(config), &mut rng)`
+生成配套 client/server key。`ServerKey` 持有 CBS 参数及 trace/scheme-switch key，
+与普通 PBS 材料从同一组私钥和变换表生成。仅需 PBS 时使用 `None`，
+不分配 CBS 密钥材料或工作区。`context.evaluator(&server)` 与
+`context.circuit_bootstrap_evaluator(&server)` 共用这份 server key；未启用 CBS 时后者返回
+`MissingCircuitBootstrapKey`。各 evaluator 只分配自身需要的工作区。生成错误为 `KeyGenerationError`。
+
+高级组合仍可使用接收已准备参数所有权的 `try_generate_circuit_bootstrap_key`，以及显式传入
+参数和材料的 `CircuitBootstrapEvaluator::try_from_parts`。调用方负责配套私钥与生成时的
+变换表示；布局检查不能证明身份。绑定的参数可通过
+`server.circuit_bootstrap_key().unwrap().parameters()` 访问。
+
 输出 basis 定义 GGSW gadget 尺度，输出布局从 accumulator 派生；circuit key 绑定
 输出布局及 trace/scheme-switch basis。CBS 保留 accumulator secret，跳过普通 PBS
 后处理；投影与 CMUX 消费见 [CBS 集成测试](tests/circuit_bootstrap.rs)。
 `CircuitBootstrapConfig` 具名指定 output/trace/scheme-switch 分解和独立的 trace/SS 噪声，
 环参数从 accumulator 派生；`try_new` 保留已有底层参数的直接绑定入口。
 Trace/SS 噪声与秘密相关消息假设需要独立评估。
+
+错误归属与转换规则见[公共 TFHE 错误边界](../primus_tfhe/README.zh_CN.md#错误边界)。
 
 ## 验证与性能
 

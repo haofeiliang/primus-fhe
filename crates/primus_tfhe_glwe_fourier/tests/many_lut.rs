@@ -44,7 +44,7 @@ where
     TABLE: FftTable,
 {
     let mut rng = StdRng::seed_from_u64(0x4d41_4e59_5042_5301);
-    let (client_key, server_key) = context.generate_keys(&mut rng).unwrap();
+    let (client_key, server_key) = context.try_generate_keys(None, &mut rng).unwrap();
     let encryptor = context.encryptor(&client_key).unwrap();
     let decryptor = context.decryptor(&client_key).unwrap();
     let mut evaluator = context.evaluator(&server_key).unwrap();

@@ -31,6 +31,24 @@ GLWE NTT also supports [experimental sparse PBS](../primus_tfhe_glwe_ntt/README.
 for fixed-weight binary small secrets: both orders and ordinary/interleaved/factorized LUTs.
 Sparse CBS is not supported.
 
+## Error boundaries
+
+Errors are named by operation and re-exported at crate roots. Family `error` modules
+own definitions shared by their NTT/Fourier backends; there is no catch-all error type.
+
+| Operation | Error |
+| --- | --- |
+| LUT compilation / ordinary or CBS evaluator binding | Shared `LookupTableError` / `TfheEvaluationError` |
+| TFHE / CBS parameter preparation | Family `TfheParameterError` / `CircuitBootstrapParameterError` |
+| Client-key compatibility / client operations | Family `TfheKeyError` / `TfheClientError` |
+| Ordinary or standalone CBS key generation | Family `KeyGenerationError`; NTRU sampling/conversion enters `Ntru` directly |
+| Automatic table creation or explicit table binding | Backend `TfheContextError`; `TransformTable` retains the underlying FFT/NTT error |
+
+`#[from]` is reserved for unambiguous conversions. BR/KS and trace/SS failures use
+explicit `map_err` to retain their role and `#[source]` to retain the underlying cause.
+Sparse matching keeps its algorithm-specific error. Transform context errors do not
+promise `Clone`/`Eq`, since their underlying table errors do not provide those traits.
+
 ## LUTs and resource lifetime
 
 Backends accept named `TfheConfig` choices and derive shared ring parameters;
@@ -38,6 +56,8 @@ Backends accept named `TfheConfig` choices and derive shared ring parameters;
 This crate supplies `DecompositionConfig` (radix and retained levels) and
 `CircuitBootstrapConfig` (independent output/trace/scheme-switch choices).
 Backends bind these choices to their own modulus, layout and representation.
+`Option<CircuitBootstrapConfig>` selects optional CBS during paired key generation; the server key
+owns its parameters and material, while each evaluator owns only its own workspace.
 
 1. A family parameter set describes the external LWE and accumulator ring.
 2. A backend context binds those parameters to an NTT/FFT table and generates

@@ -2,6 +2,7 @@ use primus_lwe::LweParameters;
 use primus_modulus::BarrettModulus;
 use primus_ntru::{NlevParameters, NtruParameters, SecretKeyDistr};
 use primus_tfhe_ntru::{DecompositionConfig, TfheConfig, TfheParameterError, TfheParameters};
+use std::error::Error;
 
 const N: usize = 256;
 const Q: u32 = 132_120_577;
@@ -46,12 +47,27 @@ fn config_derives_domains_and_keeps_key_switch_noise_independent() {
     assert_eq!(client.noise_distribution().standard_deviation(), 2.5);
     assert_eq!(parameters.blind_rotation().basis().log_basis(), 9);
     assert_eq!(parameters.ntru_key_switching().basis().log_basis(), 6);
-    let mut invalid = config;
-    invalid.key_switching.level_count = Some(0);
-    assert!(matches!(
-        TfheParameters::try_from_config(invalid),
-        Err(TfheParameterError::KeySwitchingParameters(_))
-    ));
+    for blind_rotation in [true, false] {
+        let mut invalid = config.clone();
+        let decomposition = if blind_rotation {
+            &mut invalid.blind_rotation
+        } else {
+            &mut invalid.key_switching
+        };
+        decomposition.level_count = Some(0);
+        let error = TfheParameters::try_from_config(invalid).err().unwrap();
+        assert!(matches!(
+            (&error, blind_rotation),
+            (TfheParameterError::BootstrappingParameters(_), true)
+                | (TfheParameterError::KeySwitchingParameters(_), false)
+        ));
+        assert!(
+            error
+                .source()
+                .unwrap()
+                .is::<primus_ntru::NlevParameterError>()
+        );
+    }
 }
 
 fn ntru(

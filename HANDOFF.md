@@ -4,7 +4,7 @@
 
 ## 当前任务
 
-- **B1.1–B1.4 已完成，下一步骤 B1.5**：[分步计划](docs/tfhe-backend-plan.md)记录四后端具名 `TfheConfig` / CBS 配置与自动建表入口，后续依次整理 `ServerKey` 能力组织、CBS 输出消费，再做集成与成本验收；对照基线仍为 `66ae701`。本步 `just tfhe`（严格 rustdoc）、`just tfhe-simd` 与 8 个 release 示例通过，未测耗时；普通/CBS key 仍分开，在线算法与 scratch 未改。GLWE Fourier 经典 CBS 的[成本与误差](docs/tfhe-cbs.md)保留历史结论；正式尾界未认证，稀疏 CBS 仍不支持。逐系数 RevHomTrace 保留，共享 automorphism 优化暂缓。后续实施待用户指定。
+- **B1.1–B1.5 已完成，含类型与错误收尾**：[分步计划](docs/tfhe-backend-plan.md)记录四后端具名参数、自动建表与 `ServerKey` 可选 CBS 绑定。生成入口统一为 `try_generate_keys(None/Some(config), rng)`，常用 CBS evaluator 只接收 server key；高级 `try_from_parts` 保留输出 basis 复用与显式组合。普通/CBS 密钥生成统一为 family `KeyGenerationError`，evaluator 绑定统一为公共 `TfheEvaluationError`；错误归属与转换见[错误边界](crates/primus_tfhe/README.zh_CN.md#错误边界)。本轮严格 rustdoc 的 `just tfhe`、`just tfhe-simd` 与 8 个 release 示例通过。下一步由用户指定 **B1.6**，B1.7 对照基线仍为 `66ae701`；在线算法/scratch 未改，未测耗时。GLWE Fourier CBS 的[成本与误差](docs/tfhe-cbs.md)保留历史结论；正式尾界未认证，稀疏 CBS 仍拒绝。逐系数 RevHomTrace 保留，共享 automorphism 优化暂缓。
 - 旧 S0–S9 及 LUT/PBS 的 **P1–P4 已完成**；[完成索引](docs/tfhe-plan.md)只用于恢复，不重开旧步骤。基础 crate 的既有整理也不自动重启。
 - **T1–T3 已完成**：[经典 GLWE ternary PBS](docs/tfhe-ternary.md#6-实施顺序与完成条件)已接入 NTT/Fourier 两后端，含两种 order、普通/交错 LUT、公钥客户端与 NTT CBS/MVB。small-LWE 分布选择 ternary；binary 路径保留。
 - GLWE 公共层与两个后端统一使用 `Encryptor`、`Decryptor`、`ClientKey`、`EncryptionKey`、`PbsOrder` 和 `TfheParameters`；底层保留数学/表示前缀。参数以 `accumulator_glwe`、`blind_rotation_ggsw` 和 `external_lwe_dimension` 区分角色。`ClientKey::generate` 负责系数域密钥生成；客户端统一编码后由 `EncryptionKey` 加密。Boolean 客户端以 `try_new` 构造，保留私钥/公钥加密并直接使用 `LweCiphertext`；普通 LUT 从 `context.parameters()` 编译，NTT 专属 MVB 仍由 context 准备。入口见 [GLWE README](crates/primus_tfhe_glwe/README.zh_CN.md)。

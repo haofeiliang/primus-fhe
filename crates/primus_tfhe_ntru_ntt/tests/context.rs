@@ -4,6 +4,7 @@ use primus_ntru::{NlevParameters, NtruParameters, SecretKeyDistr};
 use primus_ntt::{NttTable, U32NttTable};
 use primus_tfhe_ntru_ntt::{TfheContext, TfheEvaluationError, TfheParameters};
 use rand::{SeedableRng, rngs::StdRng};
+use std::error::Error;
 
 const POLY_LENGTH: usize = 16;
 const LWE_DIMENSION: usize = 4;
@@ -55,7 +56,12 @@ fn rejects_server_keys_with_same_layout_but_different_bases_or_modulus() {
     .unwrap();
     let context = TfheContext::try_new(original, table).unwrap();
     let mut rng = StdRng::seed_from_u64(0x4e54_5255_4241_5349);
-    let (_, server_key) = context.try_generate_keys(&mut rng).unwrap();
+    let (_, server_key) = context.try_generate_keys(None, &mut rng).unwrap();
+    assert!(server_key.circuit_bootstrap_key().is_none());
+    assert!(matches!(
+        context.circuit_bootstrap_evaluator(&server_key),
+        Err(primus_tfhe_ntru_ntt::TfheEvaluationError::MissingCircuitBootstrapKey)
+    ));
     assert!(context.evaluator(&server_key).is_ok());
 
     // Both moduli have 27 bits; bases 2^8 and 2^9 both retain three levels.
@@ -93,4 +99,38 @@ fn rejects_server_keys_with_same_layout_but_different_bases_or_modulus() {
             Some(TfheEvaluationError::IncompatibleServerKey)
         );
     }
+}
+
+#[test]
+fn construction_errors_preserve_transform_sources() {
+    use primus_ntru::{NtruError, NtruSecretKey};
+    use primus_tfhe_ntru_ntt::{ClientKey, KeyGenerationError, KeyGenerator, TfheContextError};
+
+    let error = TfheContext::<_, U32NttTable>::try_from_parameters(parameters(19, 2, 2))
+        .err()
+        .unwrap();
+    assert!(matches!(&error, TfheContextError::TransformTable(_)));
+    assert!(error.source().unwrap().is::<primus_ntt::NttError<u32>>());
+
+    let context =
+        TfheContext::<_, U32NttTable>::try_from_parameters(parameters(CIPHER_MODULUS, 9, 9))
+            .unwrap();
+    // Compatible shape/distributions do not imply an invertible secret.
+    let client = ClientKey::new(
+        NtruSecretKey::new(vec![0; POLY_LENGTH], SecretKeyDistr::UniformBinary),
+        NtruSecretKey::new(vec![0; POLY_LENGTH], SecretKeyDistr::SparseTernary),
+        LWE_DIMENSION,
+    );
+    let error = KeyGenerator::new(&context)
+        .try_generate_server_key(&client, None, &mut StdRng::seed_from_u64(42))
+        .err()
+        .unwrap();
+    assert_eq!(
+        error,
+        KeyGenerationError::Ntru(NtruError::NonInvertibleSecretKey)
+    );
+    assert_eq!(
+        error.source().unwrap().downcast_ref::<NtruError>(),
+        Some(&NtruError::NonInvertibleSecretKey)
+    );
 }

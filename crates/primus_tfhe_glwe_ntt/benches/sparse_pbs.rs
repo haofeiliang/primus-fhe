@@ -52,7 +52,7 @@ fn bench_sparse(c: &mut Criterion) {
         let mut generator = KeyGenerator::new(&context);
         let client = ClientKey::generate(context.parameters(), &mut rng);
         let classic = generator
-            .try_generate_server_key(&client, &mut rng)
+            .try_generate_server_key(&client, None, &mut rng)
             .unwrap();
         let sparse = generator
             .try_generate_sparse_server_key(&client, 3, 2 * WEIGHT, &mut rng)
@@ -127,7 +127,11 @@ fn bench_sparse(c: &mut Criterion) {
                 b.iter(|| {
                     black_box(
                         generator
-                            .try_generate_server_key(black_box(&client), &mut rng)
+                            .try_generate_server_key(
+                                black_box(&client),
+                                Default::default(),
+                                &mut rng,
+                            )
                             .unwrap(),
                     )
                 })

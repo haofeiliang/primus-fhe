@@ -25,7 +25,7 @@ key-switch 噪声。客户端 NTRU 域自动复用外部秘密分布与公共环
 没有 order 选项。外部输出按 `external_lwe_dimension()` 分配；使用配套的 context/client/server key。
 
 客户端秘密通过后端 `KeyGenerator::try_generate_client_key` 生成：NTT 拒绝采样检查
-可逆性，Fourier 还检查逆元稳定性。生成配套密钥时优先使用 `context.try_generate_keys`
+可逆性，Fourier 还检查逆元稳定性。生成配套密钥时优先使用 `context.try_generate_keys(circuit_bootstrap, rng)`
 或 `KeyGenerator::try_generate`，复用变换后的秘密。共享 `TfheKeyError` 表达结构不兼容
 及底层 NTRU 生成/转换失败。`ClientKey::new` 导入系数秘密，参数绑定检查二进制前缀与
 零填充，可逆性由后端转换检查。

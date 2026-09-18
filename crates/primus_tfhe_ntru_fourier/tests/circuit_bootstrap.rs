@@ -11,8 +11,8 @@ use primus_ntru::{
 };
 use primus_poly::Polynomial;
 use primus_tfhe_ntru_fourier::{
-    CircuitBootstrapConfig, CircuitBootstrapEvaluationError, CircuitBootstrapParameters,
-    DecompositionConfig, TfheContext, TfheParameters,
+    CircuitBootstrapConfig, CircuitBootstrapEvaluator, CircuitBootstrapParameters,
+    DecompositionConfig, TfheContext, TfheEvaluationError, TfheParameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -31,7 +31,29 @@ fn circuit_bootstrap<Table: FftTable>() {
     .unwrap();
     let context = TfheContext::<_, Table>::try_from_parameters(tfhe).unwrap();
     let mut rng = StdRng::seed_from_u64(0x004e_5454_5f43_4253);
-    let (client, server) = context.try_generate_keys(&mut rng).unwrap();
+    // Three gadget levels exercise multiple scales and an internal padding slot.
+    let levels = 3;
+    let cbs_config = CircuitBootstrapConfig {
+        output: DecompositionConfig {
+            log_basis: 8,
+            level_count: Some(levels),
+        },
+        trace: DecompositionConfig {
+            log_basis: 10,
+            level_count: None,
+        },
+        trace_noise_standard_deviation: 0.7,
+        scheme_switch: DecompositionConfig {
+            log_basis: 10,
+            level_count: None,
+        },
+        scheme_switch_noise_standard_deviation: 0.7,
+    };
+    let (client, server) = context
+        .try_generate_keys(Some(cbs_config), &mut rng)
+        .unwrap();
+    let circuit_key = server.circuit_bootstrap_key().unwrap();
+    let parameters = circuit_key.parameters();
     let mut fft = context.new_fft_engine();
     let key = FourierNtruSecretKey::try_from_coeff_secret_key(
         client.accumulator_ntru_secret_key(),
@@ -41,6 +63,27 @@ fn circuit_bootstrap<Table: FftTable>() {
     let mut encrypt = primus_ntru::FourierNtruEncryptContext::new(N);
     let mut decrypt = primus_ntru::FourierNtruDecryptContext::new(N);
     let encryptor = context.encryptor(&client).unwrap();
+    // The same CBS-enabled server key also supports ordinary PBS.
+    let identity = context
+        .parameters()
+        .compile_lookup_table_fn(context.parameters().input_plaintext_codec(), |message| {
+            message as u64
+        })
+        .unwrap();
+    let input = encryptor.encrypt_padded(1u64, &mut rng).unwrap();
+    let output = context
+        .evaluator(&server)
+        .unwrap()
+        .apply_lookup_table(&input, &identity);
+    assert_eq!(
+        context
+            .decryptor(&client)
+            .unwrap()
+            .decrypt(&output)
+            .unwrap(),
+        1
+    );
+
     let choices = [1, 3].map(|message| {
         let transformed = key.encrypt(
             &Polynomial::new(vec![message; N]),
@@ -53,34 +96,8 @@ fn circuit_bootstrap<Table: FftTable>() {
         transformed.write_torus_form(&mut output, &mut fft);
         output
     });
-    // Three gadget levels exercise multiple scales and an internal padding slot.
-    let levels = 3;
-    let parameters = CircuitBootstrapParameters::try_from_config(
-        context.parameters(),
-        CircuitBootstrapConfig {
-            output: DecompositionConfig {
-                log_basis: 8,
-                level_count: Some(levels),
-            },
-            trace: DecompositionConfig {
-                log_basis: 10,
-                level_count: None,
-            },
-            trace_noise_standard_deviation: 0.7,
-            scheme_switch: DecompositionConfig {
-                log_basis: 10,
-                level_count: None,
-            },
-            scheme_switch_noise_standard_deviation: 0.7,
-        },
-    )
-    .unwrap();
-    let circuit_key = context
-        .try_generate_circuit_bootstrap_key(&client, &parameters, &mut rng)
-        .unwrap();
-    let mut evaluator = context
-        .circuit_bootstrap_evaluator(&server, &parameters, &circuit_key)
-        .unwrap();
+
+    let mut evaluator = context.circuit_bootstrap_evaluator(&server).unwrap();
     let mut control =
         FourierNgswCiphertext::<Vec<Complex64>>::zero(parameters.output_fourier_nlev_len());
     let mut selected = NtruCiphertext::<Vec<u64>>::zero(N);
@@ -187,8 +204,8 @@ fn circuit_bootstrap<Table: FftTable>() {
         )
         .unwrap();
         assert!(matches!(
-            context.circuit_bootstrap_evaluator(&server, &foreign, &circuit_key),
-            Err(CircuitBootstrapEvaluationError::IncompatibleCircuitBootstrapKey)
+            CircuitBootstrapEvaluator::try_from_parts(&context, &server, &foreign, circuit_key),
+            Err(TfheEvaluationError::IncompatibleCircuitBootstrapKey)
         ));
     }
 }

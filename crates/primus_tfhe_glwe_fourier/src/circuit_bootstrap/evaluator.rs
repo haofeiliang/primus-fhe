@@ -6,24 +6,10 @@ use primus_lwe::LweCiphertext;
 use primus_reduce::ReduceMul;
 use primus_tfhe::{InterleavedLookupTable, LookupTableError};
 
-use crate::{CircuitBootstrapKey, CircuitBootstrapParameters, Evaluator, ServerKey, TfheContext};
-
-/// Failure to bind CBS resources or compile the gadget-scaled identity LUT.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum CircuitBootstrapEvaluationError {
-    /// The ordinary PBS server key does not match the TFHE context.
-    #[error("TFHE server key is incompatible with the circuit-bootstrap context")]
-    IncompatibleServerKey,
-    /// CBS parameters use another accumulator layout or input plaintext modulus.
-    #[error("circuit-bootstrap parameters are incompatible with the TFHE context")]
-    IncompatibleParameters,
-    /// The additional key uses another output layout, trace basis or scheme-switch basis.
-    #[error("circuit-bootstrap key is incompatible with its parameters")]
-    IncompatibleCircuitBootstrapKey,
-    /// The internal interleaved LUT could not be compiled.
-    #[error(transparent)]
-    LookupTable(#[from] LookupTableError),
-}
+use crate::{
+    CircuitBootstrapKey, CircuitBootstrapParameters, Evaluator, ServerKey, TfheContext,
+    TfheEvaluationError,
+};
 
 /// Classic binary/ternary CBS producing Fourier GGSW under the accumulator secret.
 ///
@@ -50,6 +36,23 @@ where
     T: TorusFftValue,
     Table: FftTable,
 {
+    /// Binds the CBS parameters and material carried by one server key.
+    /// Returns an error if CBS was not requested during key generation.
+    ///
+    /// # Correctness
+    /// Inherits [`Self::try_from_parts`]'s secret and transform requirements.
+    /// Bundled generation pairs secrets; layout checks do not establish identity
+    /// for externally assembled material or another transform representation.
+    pub fn try_new(
+        context: &'a TfheContext<T, Table>,
+        server_key: &'a ServerKey<T>,
+    ) -> Result<Self, TfheEvaluationError> {
+        let key = server_key
+            .circuit_bootstrap_key()
+            .ok_or(TfheEvaluationError::MissingCircuitBootstrapKey)?;
+        Self::try_from_parts(context, server_key, key.parameters(), key)
+    }
+
     /// Checks resource layouts/bases, compiles the gadget-scaled identity LUT
     /// and allocates reusable workspace.
     ///
@@ -60,21 +63,20 @@ where
     /// checks cannot verify actual secret or transform identity. See
     /// [`primus_glwe::FourierGlweSchemeSwitchKey::apply_to`] for the underlying
     /// representation and error requirements.
-    pub fn try_new(
+    pub fn try_from_parts(
         context: &'a TfheContext<T, Table>,
         server_key: &'a ServerKey<T>,
         parameters: &'a CircuitBootstrapParameters<T>,
         circuit_key: &'a CircuitBootstrapKey<T>,
-    ) -> Result<Self, CircuitBootstrapEvaluationError> {
+    ) -> Result<Self, TfheEvaluationError> {
         let tfhe = context.parameters();
         if !parameters.is_compatible(tfhe) {
-            return Err(CircuitBootstrapEvaluationError::IncompatibleParameters);
+            return Err(TfheEvaluationError::IncompatibleCircuitBootstrapParameters);
         }
         if !circuit_key.is_compatible(parameters) {
-            return Err(CircuitBootstrapEvaluationError::IncompatibleCircuitBootstrapKey);
+            return Err(TfheEvaluationError::IncompatibleCircuitBootstrapKey);
         }
-        let pbs = Evaluator::try_new(context, server_key)
-            .map_err(|_| CircuitBootstrapEvaluationError::IncompatibleServerKey)?;
+        let pbs = Evaluator::try_new(context, server_key)?;
         let glwe = tfhe.accumulator_glwe();
         let modulus = glwe.cipher_modulus();
         let domain_len =

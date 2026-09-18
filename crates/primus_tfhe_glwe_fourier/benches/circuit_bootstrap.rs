@@ -19,29 +19,21 @@ use primus_glwe::{
 use primus_lattice::ggsw::FourierGgsw;
 use primus_poly::Polynomial;
 use primus_tfhe::InterleavedLookupTable;
-use primus_tfhe_glwe_fourier::{
-    ClientKey, FourierGlweBlindRotationContext, KeyGenerator, PbsOrder,
-};
+use primus_tfhe_glwe_fourier::{FourierGlweBlindRotationContext, PbsOrder};
 use rand::{SeedableRng, rngs::StdRng};
 
 fn bench_backend<Table: FftTable>(c: &mut Criterion, backend: &str) {
     for order in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
         let context = profile::context::<Table>(order);
-        let parameters = profile::parameters(context.parameters());
         let mut rng = StdRng::seed_from_u64(profile::SEED);
-        let client = ClientKey::generate(context.parameters(), &mut rng);
-        let mut generator = KeyGenerator::new(&context);
-        let server = generator
-            .try_generate_server_key(&client, &mut rng)
+        let (client, server) = context
+            .try_generate_keys(Some(profile::circuit_bootstrap()), &mut rng)
             .unwrap();
-        let key = generator
-            .try_generate_circuit_bootstrap_key(&client, &parameters, &mut rng)
-            .unwrap();
+        let key = server.circuit_bootstrap_key().unwrap();
+        let parameters = key.parameters();
         let encryptor = context.encryptor(&client).unwrap();
         let inputs = [0u64, 1].map(|m| encryptor.encrypt_padded(m, &mut rng).unwrap());
-        let mut evaluator = context
-            .circuit_bootstrap_evaluator(&server, &parameters, &key)
-            .unwrap();
+        let mut evaluator = context.circuit_bootstrap_evaluator(&server).unwrap();
         let mut output = FourierGgsw::<Vec<_>>::zero(parameters.output_size().fourier_ggsw_len());
         let glwe = context.parameters().accumulator_glwe();
         let mut fft = context.new_fft_engine();

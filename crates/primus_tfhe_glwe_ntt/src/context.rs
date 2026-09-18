@@ -6,13 +6,11 @@ use primus_tfhe::FactorizedLookupTable;
 use primus_tfhe_glwe::{ClientKey, EncryptionKey};
 
 use crate::{
-    BooleanDecryptor, BooleanEncryptor, BooleanError, BooleanEvaluator,
-    CircuitBootstrapEvaluationError, CircuitBootstrapEvaluator, CircuitBootstrapKey,
-    CircuitBootstrapKeyError, CircuitBootstrapParameters, Decryptor, Encryptor, Evaluator,
-    FactorizedEvaluator, KeyGenerator, NttFactorizedLookupTable, ServerKey, TfheParameters,
-    error::{
-        LookupTableError, TfheClientError, TfheContextError, TfheEvaluationError, TfheKeyError,
-    },
+    BooleanDecryptor, BooleanEncryptor, BooleanError, BooleanEvaluator, CircuitBootstrapConfig,
+    CircuitBootstrapEvaluator, CircuitBootstrapKey, CircuitBootstrapParameters, Decryptor,
+    Encryptor, Evaluator, FactorizedEvaluator, KeyGenerationError, KeyGenerator,
+    NttFactorizedLookupTable, ServerKey, TfheEvaluationError, TfheParameters,
+    error::{LookupTableError, TfheClientError, TfheContextError},
 };
 
 /// A validated binding between explicit-modulus TFHE parameters and an NTT
@@ -33,11 +31,9 @@ where
 {
     /// Builds the selected NTT table using the accumulator length and modulus.
     ///
-    /// Returns the table constructor's error, including an unavailable primitive
+    /// Preserves table-construction errors, including an unavailable primitive
     /// root or unsupported modulus. Use [`Self::try_new`] to inject an existing table.
-    pub fn try_from_parameters(
-        parameters: TfheParameters<T>,
-    ) -> Result<Self, primus_ntt::NttError<T>> {
+    pub fn try_from_parameters(parameters: TfheParameters<T>) -> Result<Self, TfheContextError<T>> {
         let accumulator = parameters.accumulator_glwe();
         let table = Table::new(
             accumulator.poly_length().trailing_zeros(),
@@ -78,15 +74,18 @@ where
         &self.table
     }
 
-    /// Generates a fresh compatible client/server key pair.
-    pub fn generate_keys<R>(
+    /// Generates a fresh client/server pair; `None` selects PBS only and
+    /// `Some(config)` also generates the configured CBS material.
+    /// Inherits [`KeyGenerator::try_generate`]'s CBS requirements.
+    pub fn try_generate_keys<R>(
         &self,
+        circuit_bootstrap: Option<CircuitBootstrapConfig>,
         rng: &mut R,
-    ) -> Result<(ClientKey<T>, ServerKey<T>), TfheKeyError>
+    ) -> Result<(ClientKey<T>, ServerKey<T>), KeyGenerationError>
     where
         R: rand::Rng + rand::CryptoRng,
     {
-        KeyGenerator::new(self).generate(rng)
+        KeyGenerator::new(self).try_generate(circuit_bootstrap, rng)
     }
 
     /// Creates a secret-key or public-key encryptor after checking compatibility.
@@ -197,35 +196,28 @@ where
     /// Inherits [`KeyGenerator::try_generate_circuit_bootstrap_key`]'s paired
     /// client-secret and NTT representation requirements. Compatibility checks
     /// do not establish that the ordinary server key uses the same secrets.
-    pub fn generate_circuit_bootstrap_key<R>(
+    pub fn try_generate_circuit_bootstrap_key<R>(
         &self,
         client_key: &ClientKey<T>,
-        parameters: &CircuitBootstrapParameters<T>,
+        parameters: CircuitBootstrapParameters<T>,
         rng: &mut R,
-    ) -> Result<CircuitBootstrapKey<T>, CircuitBootstrapKeyError>
+    ) -> Result<CircuitBootstrapKey<T>, KeyGenerationError>
     where
         R: rand::Rng + rand::CryptoRng,
     {
         KeyGenerator::new(self).try_generate_circuit_bootstrap_key(client_key, parameters, rng)
     }
 
-    /// Creates a patched NTT circuit-bootstrap evaluator with reusable workspace.
-    /// Its [`CircuitBootstrapEvaluator::circuit_bootstrap_to`] calls allocate no
-    /// heap memory after construction.
+    /// Binds the server key's optional CBS material to reusable workspace.
+    /// Returns an error if the capability is absent or incompatible.
     ///
     /// # Correctness
-    ///
-    /// Inherits [`CircuitBootstrapEvaluator::try_new`]'s requirement that the
-    /// server and circuit keys use the same paired client secrets and this
-    /// context's NTT representation. Parameter/layout/basis checks do not verify
-    /// secret or transform identity.
+    /// Inherits [`CircuitBootstrapEvaluator::try_new`]'s transform requirements.
     pub fn circuit_bootstrap_evaluator<'a>(
         &'a self,
         server_key: &'a ServerKey<T>,
-        parameters: &'a CircuitBootstrapParameters<T>,
-        circuit_key: &'a CircuitBootstrapKey<T>,
-    ) -> Result<CircuitBootstrapEvaluator<'a, T, Table>, CircuitBootstrapEvaluationError> {
-        CircuitBootstrapEvaluator::try_new(self, server_key, parameters, circuit_key)
+    ) -> Result<CircuitBootstrapEvaluator<'a, T, Table>, TfheEvaluationError> {
+        CircuitBootstrapEvaluator::try_new(self, server_key)
     }
 
     /// Decomposes this context into its parameters and NTT table.

@@ -2,8 +2,9 @@ use primus_integer::FheUint;
 use primus_ntt::NttTable;
 
 use crate::{
-    ClientKey, Decryptor, Encryptor, Evaluator, KeyGenerator, ServerKey, TfheClientError,
-    TfheContextError, TfheEvaluationError, TfheKeyError, TfheParameters,
+    CircuitBootstrapConfig, ClientKey, Decryptor, Encryptor, Evaluator, KeyGenerationError,
+    KeyGenerator, ServerKey, TfheClientError, TfheContextError, TfheEvaluationError,
+    TfheParameters,
 };
 
 /// Validated binding between NTRU TFHE parameters and one exact NTT table.
@@ -23,11 +24,9 @@ where
 {
     /// Builds the selected NTT table using the accumulator length and modulus.
     ///
-    /// Returns the table constructor's error, including an unavailable primitive
+    /// Preserves table-construction errors, including an unavailable primitive
     /// root or unsupported modulus. Use [`Self::try_new`] to inject an existing table.
-    pub fn try_from_parameters(
-        parameters: TfheParameters<T>,
-    ) -> Result<Self, primus_ntt::NttError<T>> {
+    pub fn try_from_parameters(parameters: TfheParameters<T>) -> Result<Self, TfheContextError<T>> {
         let accumulator = parameters.accumulator_ntru();
         let table = Table::new(
             accumulator.poly_length().trailing_zeros(),
@@ -68,16 +67,18 @@ where
         &self.table
     }
 
-    /// Generates a fresh client/server key pair.
-    /// Inherits [`KeyGenerator::try_generate`]'s rejection-sampling errors.
+    /// Generates a fresh client/server pair; `None` selects PBS only and
+    /// `Some(config)` also generates the configured CBS material.
+    /// Inherits [`KeyGenerator::try_generate`]'s rejection-sampling errors and CBS requirements.
     pub fn try_generate_keys<R>(
         &self,
+        circuit_bootstrap: Option<CircuitBootstrapConfig>,
         rng: &mut R,
-    ) -> Result<(ClientKey<T>, ServerKey<T>), TfheKeyError>
+    ) -> Result<(ClientKey<T>, ServerKey<T>), KeyGenerationError>
     where
         R: rand::Rng + rand::CryptoRng,
     {
-        KeyGenerator::new(self).try_generate(rng)
+        KeyGenerator::new(self).try_generate(circuit_bootstrap, rng)
     }
 
     /// Creates a secret-key or public-key encryptor after checking compatibility.
@@ -113,24 +114,22 @@ where
     pub fn try_generate_circuit_bootstrap_key<R: rand::Rng + rand::CryptoRng>(
         &self,
         client_key: &ClientKey<T>,
-        parameters: &crate::CircuitBootstrapParameters<T>,
+        parameters: crate::CircuitBootstrapParameters<T>,
         rng: &mut R,
-    ) -> Result<crate::CircuitBootstrapKey<T>, crate::CircuitBootstrapKeyError> {
+    ) -> Result<crate::CircuitBootstrapKey<T>, crate::KeyGenerationError> {
         KeyGenerator::new(self).try_generate_circuit_bootstrap_key(client_key, parameters, rng)
     }
 
-    /// Binds an allocation-free online CBS evaluator to ordinary and optional keys.
-    /// Inherits [`crate::CircuitBootstrapEvaluator::try_new`]'s key-identity contract.
+    /// Binds the server key's optional CBS material to reusable workspace.
+    /// Returns an error if the capability is absent or incompatible.
+    ///
+    /// # Correctness
+    /// Inherits [`crate::CircuitBootstrapEvaluator::try_new`]'s transform requirements.
     pub fn circuit_bootstrap_evaluator<'a>(
         &'a self,
         server_key: &'a ServerKey<T>,
-        parameters: &'a crate::CircuitBootstrapParameters<T>,
-        circuit_key: &'a crate::CircuitBootstrapKey<T>,
-    ) -> Result<
-        crate::CircuitBootstrapEvaluator<'a, T, Table>,
-        crate::CircuitBootstrapEvaluationError,
-    > {
-        crate::CircuitBootstrapEvaluator::try_new(self, server_key, parameters, circuit_key)
+    ) -> Result<crate::CircuitBootstrapEvaluator<'a, T, Table>, crate::TfheEvaluationError> {
+        crate::CircuitBootstrapEvaluator::try_new(self, server_key)
     }
 
     /// Decomposes this context into parameters and its NTT table.

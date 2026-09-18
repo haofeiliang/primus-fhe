@@ -55,7 +55,7 @@ fn factorized_pbs_reuses_workspace_and_preserves_both_external_secrets() {
         let mut generator = KeyGenerator::new(&context);
         let client = ClientKey::generate(context.parameters(), &mut rng);
         let classic = generator
-            .try_generate_server_key(&client, &mut rng)
+            .try_generate_server_key(&client, None, &mut rng)
             .unwrap();
         let sparse = generator
             .try_generate_sparse_server_key(&client, 3, 4, &mut rng)
@@ -218,7 +218,7 @@ fn factorized_pbs_accepts_ternary_controls_without_online_allocation() {
     for order in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
         let context = context(order, SecretKeyDistr::fixed_composition_ternary(8, 2, 2));
         let mut rng = StdRng::seed_from_u64(0x0054_334d_5642);
-        let (client, server) = context.generate_keys(&mut rng).unwrap();
+        let (client, server) = context.try_generate_keys(None, &mut rng).unwrap();
         let codec = ScaledCodec::new(8, context.parameters().accumulator_glwe().cipher_modulus());
         let lut = context
             .compile_factorized_lookup_table_fn(&codec, DOMAIN, 3, value)

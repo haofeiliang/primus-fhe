@@ -22,13 +22,18 @@
 #![deny(missing_docs)]
 
 mod client;
+mod error;
 mod key;
 mod lookup_table;
 mod parameters;
 
-pub use client::{Decryptor, EncryptionKey, Encryptor, TfheClientError};
-pub use key::{ClientKey, TfheKeyError};
-pub use parameters::{TfheConfig, TfheParameterError, TfheParameters};
+pub use client::{Decryptor, EncryptionKey, Encryptor};
+pub use error::{
+    CircuitBootstrapParameterError, KeyGenerationError, TfheClientError, TfheKeyError,
+    TfheParameterError,
+};
+pub use key::ClientKey;
+pub use parameters::{TfheConfig, TfheParameters};
 
 pub use primus_ntru::{NlevParameters, NtruParameters, NtruSecretKey};
 pub use primus_tfhe::{

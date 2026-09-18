@@ -1,47 +1,11 @@
 //! Parameters for the patched NTT circuit-bootstrapping workflow.
 
-use primus_decompose::{ApproxSignedBasisError, primitive::ApproxSignedBasis};
+use primus_decompose::primitive::ApproxSignedBasis;
 use primus_glwe::{GadgetSize, GgswParameters, GlevParameters};
 use primus_integer::FheUint;
 use primus_modulus::BarrettModulus;
 
-use crate::{CircuitBootstrapConfig, TfheParameters};
-
-/// An invalid circuit-bootstrapping parameter set.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum CircuitBootstrapParameterError {
-    /// The configured output radix or retained-level count is invalid.
-    #[error("invalid circuit-bootstrap output basis: {0}")]
-    InvalidOutputBasis(#[from] ApproxSignedBasisError),
-    /// A configured key decomposition or derived gadget layout is invalid.
-    #[error("invalid circuit-bootstrap {role} parameters: {source}")]
-    GadgetParameters {
-        /// Key role: trace or scheme-switch.
-        role: &'static str,
-        /// Invalid basis or gadget layout.
-        #[source]
-        source: primus_glwe::GlevParameterError,
-    },
-    /// The output basis belongs to another explicit or native modulus.
-    #[error("circuit-bootstrap output basis modulus does not match the accumulator")]
-    OutputBasisModulusMismatch,
-    /// A gadget parameter set uses a different GLWE dimension or polynomial
-    /// length from the TFHE accumulator.
-    #[error("circuit-bootstrap {role} GLWE layout does not match the TFHE accumulator")]
-    GlweLayoutMismatch {
-        /// Role of the incompatible gadget parameter set.
-        role: &'static str,
-    },
-    /// A gadget parameter set uses a different ciphertext modulus.
-    #[error("circuit-bootstrap {role} modulus does not match the TFHE accumulator")]
-    CipherModulusMismatch {
-        /// Role of the incompatible gadget parameter set.
-        role: &'static str,
-    },
-    /// The output layout overflows or has too many levels for one PBSManyLUT.
-    #[error("circuit-bootstrap output decomposition does not fit in the accumulator")]
-    OutputDecompositionTooLarge,
-}
+use crate::{CircuitBootstrapConfig, CircuitBootstrapParameterError, TfheParameters};
 
 /// Independent parameters for patched NTT circuit bootstrapping.
 ///

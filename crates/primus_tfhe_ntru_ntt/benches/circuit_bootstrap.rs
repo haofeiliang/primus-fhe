@@ -11,7 +11,9 @@ use primus_lwe::LweParameters;
 use primus_modulus::BarrettModulus;
 use primus_ntru::{NlevParameters, NtruParameters, NttNgswCiphertext, SecretKeyDistr};
 use primus_ntt::{NttTable, U64NttTable};
-use primus_tfhe_ntru_ntt::{CircuitBootstrapParameters, TfheContext, TfheParameters};
+use primus_tfhe_ntru_ntt::{
+    CircuitBootstrapEvaluator, CircuitBootstrapParameters, TfheContext, TfheParameters,
+};
 use rand::{SeedableRng, rngs::StdRng};
 use std::{hint::black_box, time::Duration};
 
@@ -40,21 +42,20 @@ fn circuit_bootstrap(c: &mut Criterion) {
             )
             .unwrap();
             let mut rng = StdRng::seed_from_u64(42);
-            let (client, server) = context.try_generate_keys(&mut rng).unwrap();
+            let (client, server) = context.try_generate_keys(None, &mut rng).unwrap();
             let input = context
                 .encryptor(&client)
                 .unwrap()
                 .encrypt_padded(1u64, &mut rng)
                 .unwrap();
+            // Standalone CBS generation isolates its heap cost from ordinary PBS keys.
             let (key, key_memory) = allocations::measure(|| {
                 context
-                    .try_generate_circuit_bootstrap_key(&client, &cbs, &mut rng)
+                    .try_generate_circuit_bootstrap_key(&client, cbs.clone(), &mut rng)
                     .unwrap()
             });
             let (mut evaluator, workspace_memory) = allocations::measure(|| {
-                context
-                    .circuit_bootstrap_evaluator(&server, &cbs, &key)
-                    .unwrap()
+                CircuitBootstrapEvaluator::try_from_parts(&context, &server, &cbs, &key).unwrap()
             });
             let mut output = NttNgswCiphertext::<Vec<u64>>::zero(cbs.output_nlev_len());
             let name = format!(

@@ -31,7 +31,8 @@ not production security or failure-probability recommendations.
 Declare mathematical choices with `TfheParameters::try_from_config(TfheConfig { .. })`,
 then use `TfheContext::<_, RustFftTable>::try_from_parameters(parameters)` to build a
 matching transform table. The caller still selects the table type; construction
-returns the underlying FFT error. Use `try_new(parameters, table)` to inject an existing table.
+preserves FFT failures in `TfheContextError::TransformTable`. Use
+`try_new(parameters, table)` to inject an existing table.
 
 `TfheContext::try_new` checks the FFT length. Every transformed key, value and
 evaluator must use the same FFT table instance; matching lengths do not establish
@@ -83,21 +84,28 @@ Classic CBS supports binary/ternary small secrets, both PBS orders and both FFT
 engines. It produces Fourier GGSW under the accumulator secret. Sparse CBS is
 not supported.
 
-Use `CircuitBootstrapParameters::try_from_config(tfhe, config)` with a
-`CircuitBootstrapConfig` naming output/trace/scheme-switch decompositions and independent
+Choose a `CircuitBootstrapConfig` naming output/trace/scheme-switch decompositions and independent
 trace/SS noise. The native modulus, ring layout and secret distribution come from the
 accumulator; construction checks padded gadget-level capacity and binds the input
-plaintext modulus. `try_new` also accepts existing bases and GLev/GGSW parameters.
+plaintext modulus. `CircuitBootstrapParameters::try_new` also accepts existing bases and GLev/GGSW parameters.
 The scheme-switch key binds the output layout; another output basis with the same
 level count can reuse the key.
 
-Generate ordinary PBS and CBS keys from the same `ClientKey` using a reusable
-`KeyGenerator`: `try_generate_server_key`, then `try_generate_circuit_bootstrap_key`.
-`TfheContext::generate_circuit_bootstrap_key` is the convenience entry point.
-Both keys must use the same client secrets and the generating context's FFT table;
-layout/basis checks cannot establish identity. Ordinary `ServerKey` carries no CBS material.
+Generate a paired client/server key with
+`context.try_generate_keys(Some(config), &mut rng)`.
+The `ServerKey` owns the CBS parameters and trace/scheme-switch keys, generated with
+its ordinary PBS material from the same secrets and transform table. Use
+`None` for PBS only: no CBS key material or CBS workspace is allocated.
+Both `context.evaluator(&server)` and `context.circuit_bootstrap_evaluator(&server)`
+use that server key; the latter returns `MissingCircuitBootstrapKey` when CBS is absent.
+Only the selected evaluator allocates its workspace. Key generation returns `KeyGenerationError`.
 
-Create the evaluator with `context.circuit_bootstrap_evaluator(&server, &parameters, &circuit_key)`.
+For advanced composition, `try_generate_circuit_bootstrap_key` owns its prepared parameters,
+and `CircuitBootstrapEvaluator::try_from_parts` accepts explicit parameters and material.
+The caller must pair secrets and use the generating transform representation; layout checks
+cannot verify identity. Bound parameters are available via
+`server.circuit_bootstrap_key().unwrap().parameters()`.
+
 `circuit_bootstrap_to` writes into an existing `FourierGgsw` containing
 `parameters.output_size().fourier_ggsw_len()` complex values, without online allocations.
 `circuit_bootstrap` allocates the output. The pipeline reuses the ordinary evaluator's
@@ -121,6 +129,8 @@ The example and benchmark share an `n=728, N=1024`, three-level binary profile.
 See the [CBS analysis](../../docs/tfhe-cbs.md) for error sources, observed margin at
 the smallest gadget scale, key/workspace sizes and timings. This profile is not a
 production parameter recommendation; sparse CBS remains unsupported.
+
+Error ownership and conversion rules follow the [shared TFHE error boundaries](../primus_tfhe/README.md#error-boundaries).
 
 ## Validation and performance
 

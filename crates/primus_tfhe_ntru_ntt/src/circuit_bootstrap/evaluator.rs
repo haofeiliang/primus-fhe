@@ -8,26 +8,9 @@ use primus_reduce::ReduceMul;
 use primus_tfhe::{InterleavedLookupTable, LookupTableError, LweCiphertext};
 
 use crate::{
-    CircuitBootstrapKey, CircuitBootstrapParameters, ServerKey, TfheContext,
+    CircuitBootstrapKey, CircuitBootstrapParameters, ServerKey, TfheContext, TfheEvaluationError,
     blind_rotation::{BlindRotationWorkspace, blind_rotate_lookup_table_to},
 };
-
-/// Failure to bind fixed CBS resources or compile its internal gadget-scaled LUT.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum CircuitBootstrapEvaluationError {
-    /// Ordinary BR material is incompatible with the TFHE context.
-    #[error("server key does not match the circuit-bootstrap context")]
-    IncompatibleServerKey,
-    /// CBS ring or input-domain parameters do not match the context.
-    #[error("circuit-bootstrap parameters do not match the TFHE context")]
-    IncompatibleParameters,
-    /// The additional key uses a different ring, trace/key/output basis.
-    #[error("circuit-bootstrap key does not match its parameters")]
-    IncompatibleCircuitBootstrapKey,
-    /// The internal ManyLUT could not be compiled.
-    #[error(transparent)]
-    LookupTable(#[from] LookupTableError),
-}
 
 /// Allocation-free online NTRU circuit bootstrapping with optional evaluation keys.
 /// Output is NGSW under f_acc, unlike ordinary PBS's LWE output under f_client.
@@ -51,26 +34,43 @@ where
     T: FheUint,
     Table: NttTable<ValueT = T>,
 {
+    /// Binds the CBS parameters and material carried by one server key.
+    /// Returns an error if CBS was not requested during key generation.
+    ///
+    /// # Correctness
+    /// Inherits [`Self::try_from_parts`]'s secret and transform requirements.
+    /// Bundled generation pairs secrets; layout checks do not establish identity
+    /// for externally assembled material or another transform representation.
+    pub fn try_new(
+        context: &'a TfheContext<T, Table>,
+        server_key: &'a ServerKey<T>,
+    ) -> Result<Self, TfheEvaluationError> {
+        let key = server_key
+            .circuit_bootstrap_key()
+            .ok_or(TfheEvaluationError::MissingCircuitBootstrapKey)?;
+        Self::try_from_parts(context, server_key, key.parameters(), key)
+    }
+
     /// Binds resources and compiles gadget-scaled identity outputs once.
     ///
     /// # Correctness
     /// The server and circuit keys were generated from the same accumulator
     /// secret and NTT representation. Layout/basis checks do not prove identity.
-    pub fn try_new(
+    pub fn try_from_parts(
         context: &'a TfheContext<T, Table>,
         server_key: &'a ServerKey<T>,
         parameters: &'a CircuitBootstrapParameters<T>,
         circuit_key: &'a CircuitBootstrapKey<T>,
-    ) -> Result<Self, CircuitBootstrapEvaluationError> {
+    ) -> Result<Self, TfheEvaluationError> {
         let tfhe = context.parameters();
         if !server_key.is_compatible(tfhe) {
-            return Err(CircuitBootstrapEvaluationError::IncompatibleServerKey);
+            return Err(TfheEvaluationError::IncompatibleServerKey);
         }
         if !parameters.is_compatible(tfhe) {
-            return Err(CircuitBootstrapEvaluationError::IncompatibleParameters);
+            return Err(TfheEvaluationError::IncompatibleCircuitBootstrapParameters);
         }
         if !circuit_key.is_compatible(parameters) {
-            return Err(CircuitBootstrapEvaluationError::IncompatibleCircuitBootstrapKey);
+            return Err(TfheEvaluationError::IncompatibleCircuitBootstrapKey);
         }
         let n = tfhe.poly_length();
         let modulus = tfhe.accumulator_ntru().cipher_modulus();

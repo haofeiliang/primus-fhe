@@ -38,7 +38,7 @@ fn backend<Table: FftTable>(c: &mut Criterion, backend: &str) {
     let table = Table::new(N.trailing_zeros()).unwrap();
     let context = TfheContext::try_new(parameters, table).unwrap();
     let mut rng = StdRng::seed_from_u64(42);
-    let (client_key, server_key) = context.try_generate_keys(&mut rng).unwrap();
+    let (client_key, server_key) = context.try_generate_keys(None, &mut rng).unwrap();
     let encryptor = context.encryptor(&client_key).unwrap();
     let input = encryptor.encrypt_padded(1u32, &mut rng).unwrap();
     let lut = context

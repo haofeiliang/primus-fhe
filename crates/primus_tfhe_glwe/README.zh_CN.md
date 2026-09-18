@@ -40,7 +40,7 @@ Basis/布局兼容不能证明实际秘密一致。
 ## 客户端与 LUT
 
 `ClientKey::generate(&parameters, &mut rng)` 生成客户端秘密，无需变换表。
-同时生成配套客户端/服务端密钥时使用 `context.generate_keys`，后端会在生成服务端密钥时
+同时生成配套客户端/服务端密钥时使用 `context.try_generate_keys(circuit_bootstrap, rng)`，后端会在生成服务端密钥时
 复用变换后的秘密。Context 也提供 `encryptor` / `decryptor` 工厂。
 通用 client 加密接受 `T`，解密返回 `Result<T, TfheClientError>`，消息是 `[0,t)` 内的
 规范剩余类，消息类型转换由应用处理。Boolean 加密接受 `bool`，解密返回

@@ -5,4 +5,4 @@ mod key;
 mod pbc;
 
 pub use blind_rotation::SparseGlweBlindRotationContext;
-pub use key::{SparseBootstrappingKeyError, SparseGlweBootstrappingKey};
+pub use key::SparseGlweBootstrappingKey;

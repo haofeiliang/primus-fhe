@@ -8,6 +8,7 @@ use primus_tfhe_glwe_fourier::{
     ClientKey, FourierGlweBlindRotationContext, KeyGenerator, PbsOrder, TfheContext,
     TfheContextError, TfheEvaluationError, TfheParameters,
 };
+use std::error::Error;
 
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -54,13 +55,36 @@ fn rejects_a_fourier_table_with_the_wrong_length() {
         .err()
         .expect("the mismatched table must be rejected");
 
-    assert_eq!(
-        error,
-        TfheContextError::PolynomialLengthMismatch {
-            expected: POLY_LENGTH,
-            actual: POLY_LENGTH * 2,
-        }
+    assert!(matches!(error,
+        TfheContextError::PolynomialLengthMismatch { expected: POLY_LENGTH, actual }
+        if actual == POLY_LENGTH * 2
+    ));
+    // N=2 is a valid ring shape, but this FFT backend requires N >= 4.
+    let tfhe = parameters(PbsOrder::BootstrapKeyswitch);
+    let tiny_ring = GlweParameters::new(
+        2,
+        2,
+        4,
+        NativeModulus::new(),
+        SecretKeyDistr::UniformBinary,
+        0.7,
     );
+    let tiny = TfheParameters::try_new(
+        tfhe.small_lwe().clone(),
+        tiny_ring,
+        tfhe.blind_rotation_ggsw().basis().clone(),
+        tfhe.glwe_key_switching().output().basis().clone(),
+        PbsOrder::BootstrapKeyswitch,
+    )
+    .unwrap();
+    let error = TfheContext::<_, RustFftTable>::try_from_parameters(tiny)
+        .err()
+        .unwrap();
+    assert!(matches!(
+        &error,
+        TfheContextError::TransformTable(primus_fft::FftError::InvalidLogN { log_n: 1, .. })
+    ));
+    assert!(error.source().unwrap().is::<primus_fft::FftError>());
 }
 
 #[test]
@@ -82,7 +106,7 @@ fn split_keys_support_both_pbs_orders() {
         let mut generator = KeyGenerator::new(&context);
         let client = ClientKey::generate(context.parameters(), &mut rng);
         let server = generator
-            .try_generate_server_key(&client, &mut rng)
+            .try_generate_server_key(&client, None, &mut rng)
             .unwrap();
         let lookup_table = context
             .parameters()
@@ -125,7 +149,12 @@ fn server_keys_are_bound_to_both_decomposition_bases() {
     )
     .unwrap();
     let mut rng = StdRng::seed_from_u64(42);
-    let (_, server_key) = source.generate_keys(&mut rng).unwrap();
+    let (_, server_key) = source.try_generate_keys(None, &mut rng).unwrap();
+    assert!(server_key.circuit_bootstrap_key().is_none());
+    assert!(matches!(
+        source.circuit_bootstrap_evaluator(&server_key),
+        Err(primus_tfhe_glwe_fourier::TfheEvaluationError::MissingCircuitBootstrapKey)
+    ));
     for (bootstrapping_log_basis, key_switching_log_basis, distribution) in [
         (8, 5, SecretKeyDistr::UniformBinary),
         (7, 4, SecretKeyDistr::UniformBinary),
@@ -156,7 +185,7 @@ fn public_blind_rotation_rejects_mismatches_before_output_writes() {
     )
     .unwrap();
     let mut rng = StdRng::seed_from_u64(42);
-    let (_, server_key) = context.generate_keys(&mut rng).unwrap();
+    let (_, server_key) = context.try_generate_keys(None, &mut rng).unwrap();
     let key = server_key.bootstrapping_key();
     let size = key.size();
     let input_len = key.input_dimension() + 1;

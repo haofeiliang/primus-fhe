@@ -42,15 +42,15 @@ mod sparse;
 pub mod boolean;
 
 pub use error::{
-    LookupTableError, TfheClientError, TfheContextError, TfheEvaluationError, TfheKeyError,
-    TfheParameterError,
+    CircuitBootstrapParameterError, KeyGenerationError, LookupTableError,
+    SparseBootstrappingKeyError, TfheClientError, TfheContextError, TfheEvaluationError,
+    TfheKeyError, TfheParameterError,
 };
 
 pub use blind_rotation::NttGlweBlindRotationContext;
 pub use bootstrapping_key::NttGlweBootstrappingKey;
 pub use circuit_bootstrap::{
-    CircuitBootstrapEvaluationError, CircuitBootstrapEvaluator, CircuitBootstrapKey,
-    CircuitBootstrapKeyError, CircuitBootstrapParameterError, CircuitBootstrapParameters,
+    CircuitBootstrapEvaluator, CircuitBootstrapKey, CircuitBootstrapParameters,
 };
 pub use context::TfheContext;
 pub use evaluator::{Evaluator, FactorizedEvaluator, NttFactorizedLookupTable};
@@ -61,9 +61,7 @@ pub use primus_tfhe::{
     InterleavedLookupTable, LookupTable, LweCiphertext, LweSecretKeyRef,
 };
 pub use primus_tfhe_glwe::{ClientKey, EncryptionKey, PbsOrder};
-pub use sparse::{
-    SparseBootstrappingKeyError, SparseGlweBlindRotationContext, SparseGlweBootstrappingKey,
-};
+pub use sparse::{SparseGlweBlindRotationContext, SparseGlweBootstrappingKey};
 
 pub use boolean::{
     BooleanDecryptor, BooleanEncryptor, BooleanError, BooleanEvaluator, BooleanGate,

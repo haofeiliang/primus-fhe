@@ -148,7 +148,7 @@ fn bench_mvb(c: &mut Criterion) {
             let mut generator = KeyGenerator::new(&context);
             let client = ClientKey::generate(context.parameters(), &mut rng);
             let classic = generator
-                .try_generate_server_key(&client, &mut rng)
+                .try_generate_server_key(&client, None, &mut rng)
                 .unwrap();
             let sparse = generator
                 .try_generate_sparse_server_key(&client, 3, 2 * WEIGHT, &mut rng)

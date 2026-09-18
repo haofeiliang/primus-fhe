@@ -44,7 +44,7 @@ Basis/layout compatibility does not prove actual secret identity.
 ## Clients and LUTs
 
 `ClientKey::generate(&parameters, &mut rng)` generates client secrets without
-transform tables. For a paired client/server key, use `context.generate_keys`;
+transform tables. For a paired client/server key, use `context.try_generate_keys(circuit_bootstrap, rng)`;
 the backend reuses the transformed secret during server-key generation.
 The context also exposes `encryptor` / `decryptor`.
 Generic client encryption takes `T`, and decryption returns

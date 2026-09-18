@@ -3,29 +3,25 @@
 use primus_fft::{FftTable, TorusFftValue};
 use primus_ntru::{FourierNtruSchemeSwitchKey, FourierNtruSecretKey, FourierNtruTraceKey};
 
-use crate::{CircuitBootstrapParameters, ClientKey, KeyGenerator, TfheKeyError};
-
-/// Failure while generating optional circuit-bootstrap material.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum CircuitBootstrapKeyError {
-    /// The CBS parameters belong to a different accumulator or input domain.
-    #[error("circuit-bootstrap parameters do not match this TFHE context")]
-    IncompatibleParameters,
-    /// The supplied client key is incompatible or cannot be transformed.
-    #[error(transparent)]
-    ClientKey(#[from] TfheKeyError),
-}
+use crate::{CircuitBootstrapParameters, ClientKey, KeyGenerationError, KeyGenerator};
 
 /// Additional keys for NTRU CBS; ordinary BR material remains in [`crate::ServerKey`].
 /// Both keys use the accumulator secret, not the post-PBS client secret.
 /// Publishing the scheme-switch material requires the secret-dependent-message
 /// security assumption documented on [`FourierNtruSchemeSwitchKey`].
 pub struct CircuitBootstrapKey<T: TorusFftValue> {
+    parameters: CircuitBootstrapParameters<T>,
     trace: FourierNtruTraceKey<T>,
     scheme_switch: FourierNtruSchemeSwitchKey<T>,
 }
 
 impl<T: TorusFftValue> CircuitBootstrapKey<T> {
+    /// Returns the CBS parameters selected when this material was generated.
+    #[must_use]
+    pub fn parameters(&self) -> &CircuitBootstrapParameters<T> {
+        &self.parameters
+    }
+
     /// Returns the reverse-trace projection key under f_acc.
     #[must_use]
     pub fn trace_key(&self) -> &FourierNtruTraceKey<T> {
@@ -61,22 +57,43 @@ where
     pub fn try_generate_circuit_bootstrap_key<R>(
         &mut self,
         client_key: &ClientKey<T>,
-        parameters: &CircuitBootstrapParameters<T>,
+        parameters: CircuitBootstrapParameters<T>,
         rng: &mut R,
-    ) -> Result<CircuitBootstrapKey<T>, CircuitBootstrapKeyError>
+    ) -> Result<CircuitBootstrapKey<T>, KeyGenerationError>
     where
         R: rand::Rng + rand::CryptoRng,
     {
         if !parameters.is_compatible(self.context.parameters()) {
-            return Err(CircuitBootstrapKeyError::IncompatibleParameters);
+            return Err(KeyGenerationError::IncompatibleCircuitBootstrapParameters);
         }
         client_key.check_compatible(self.context.parameters())?;
         let secret = client_key.accumulator_ntru_secret_key();
-        let transformed = FourierNtruSecretKey::try_from_coeff_secret_key(secret, &mut self.fft)
-            .map_err(TfheKeyError::from)?;
+        let transformed = FourierNtruSecretKey::try_from_coeff_secret_key(secret, &mut self.fft)?;
+        Ok(
+            self.generate_circuit_bootstrap_key_with_main(
+                client_key,
+                &transformed,
+                parameters,
+                rng,
+            ),
+        )
+    }
+
+    /// Uses the accumulator transform already prepared for ordinary PBS key generation.
+    pub(crate) fn generate_circuit_bootstrap_key_with_main<R>(
+        &mut self,
+        client_key: &ClientKey<T>,
+        transformed: &FourierNtruSecretKey,
+        parameters: CircuitBootstrapParameters<T>,
+        rng: &mut R,
+    ) -> CircuitBootstrapKey<T>
+    where
+        R: rand::Rng + rand::CryptoRng,
+    {
+        let secret = client_key.accumulator_ntru_secret_key();
         let trace = FourierNtruTraceKey::generate(
             secret,
-            &transformed,
+            transformed,
             parameters.trace(),
             &mut self.fft,
             rng,
@@ -84,16 +101,17 @@ where
         );
         let scheme_switch = FourierNtruSchemeSwitchKey::generate(
             secret,
-            &transformed,
+            transformed,
             parameters.output_basis(),
             parameters.scheme_switch(),
             &mut self.fft,
             rng,
             &mut self.gadget,
         );
-        Ok(CircuitBootstrapKey {
+        CircuitBootstrapKey {
+            parameters,
             trace,
             scheme_switch,
-        })
+        }
     }
 }

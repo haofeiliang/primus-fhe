@@ -3,6 +3,7 @@ use primus_glwe::{GlweParameters, SecretKeyDistr};
 use primus_lwe::LweParameters;
 use primus_modulus::NativeModulus;
 use primus_tfhe_glwe::{DecompositionConfig, PbsOrder, TfheConfig, TfheParameters};
+use std::error::Error;
 
 const LWE_DIMENSION: usize = 630;
 const GLWE_DIMENSION: usize = 1;
@@ -129,7 +130,15 @@ fn rejects_bases_from_another_modulus() {
             ApproxSignedBasis::new(ksk_modulus, 4, Some(2)),
             PbsOrder::BootstrapKeyswitch,
         );
-        assert_eq!(result.err(), Some(expected));
+        let error = result.err().unwrap();
+        assert_eq!(error, expected);
+        assert_eq!(
+            error
+                .source()
+                .unwrap()
+                .downcast_ref::<primus_glwe::GlevParameterError>(),
+            Some(&BasisModulusMismatch),
+        );
     }
 }
 

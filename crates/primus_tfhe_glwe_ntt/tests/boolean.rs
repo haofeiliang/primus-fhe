@@ -40,7 +40,7 @@ fn boolean_factories_support_truth_tables_and_reused_output_in_both_orders() {
         let table = U32NttTable::new(POLY_LENGTH.trailing_zeros(), modulus).unwrap();
         let context = TfheContext::try_new(parameters(order), table).unwrap();
         let mut rng = StdRng::seed_from_u64(42);
-        let (client_key, server_key) = context.generate_keys(&mut rng).unwrap();
+        let (client_key, server_key) = context.try_generate_keys(None, &mut rng).unwrap();
         let encryptor = context.boolean_encryptor(&client_key).unwrap();
         let decryptor = context.boolean_decryptor(&client_key).unwrap();
         let mut evaluator = context.boolean_evaluator(&server_key).unwrap();
