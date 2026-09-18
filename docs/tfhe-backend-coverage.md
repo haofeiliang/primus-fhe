@@ -12,7 +12,7 @@
 
 可以明确安排的工程补齐包括：
 
-1. **GLWE Fourier 经典 CBS**：B1.1–B1.2 已接入完整链；B1.3 补充误差、成本与使用示例。
+1. **GLWE Fourier 经典 CBS**：B1 已完成完整链、误差/成本测量与使用示例，见 [CBS 专项](tfhe-cbs.md)。
 2. **NTRU 两后端 Boolean 适配**：现有完整 LWE→LWE PBS 能承载同一套门运算。
 3. **NTRU NTT 分解式 MVB**：现有奇数模数分解、NTRU 公开多项式乘法、KS 和提取足以组成流程。
 4. **GLWE Fourier 固定重量二元稀疏 PBS**：桶聚合代数可迁移，先实现系数域聚合的参考路径；收益须独立测量。
@@ -93,7 +93,7 @@ NTT 在可用的显式模数环内做精确变换；Fourier 用原生整数表�
 
 ### 4.1 GLWE Fourier 经典 CBS
 
-**B1.1–B1.2 已完成工程接入。** [CBS 模块](../crates/primus_tfhe_glwe_fourier/src/circuit_bootstrap/mod.rs)提供参数、附加密钥与完整 evaluator，KeyGenerator/context 提供生成与求值入口。复用普通 evaluator 的前置 KS/BR 与 FFT 工作区，再接 `FourierGlweTraceKey::project_prefix_coefficients_to` 和 `FourierGlweSchemeSwitchKey::apply_to`。四后端的 CBS 均直接按 gadget 层数投影前缀，不保存连续索引数组。
+**B1 已完成。** [CBS 模块](../crates/primus_tfhe_glwe_fourier/src/circuit_bootstrap/mod.rs)提供参数、附加密钥与完整 evaluator，KeyGenerator/context 提供生成与求值入口。复用普通 evaluator 的前置 KS/BR 与 FFT 工作区，再接 `FourierGlweTraceKey::project_prefix_coefficients_to` 和 `FourierGlweSchemeSwitchKey::apply_to`。四后端的 CBS 均直接按 gadget 层数投影前缀，不保存连续索引数组。
 
 阶段划分：
 
@@ -102,11 +102,11 @@ NTT 在可用的显式模数环内做精确变换；Fourier 用原生整数表�
 → 各层系数投影 → GLev → Fourier GGSW
 ```
 
-[完整链测试](../crates/primus_tfhe_glwe_fourier/tests/circuit_bootstrap.rs)覆盖两种 order × RustFFT/TfheFFT × 经典 binary/ternary，检查每行、每层相位及 `CBS→CMUX`、输出覆盖和首次调用零分配；另检查资源兼容性与写入前形状校验。Sparse CBS 仍不支持。B1.3 补充误差、成本与使用示例；预算包含逐级整数除二、trace KS、scheme-switch 分解及 FFT 误差。
+[完整链测试](../crates/primus_tfhe_glwe_fourier/tests/circuit_bootstrap.rs)覆盖两种 order × RustFFT/TfheFFT × 经典 binary/ternary，检查每行、每层相位及 `CBS→CMUX`、输出覆盖和首次调用零分配；另检查资源兼容性与写入前形状校验。Sparse CBS 仍不支持。[B1.3 专项](tfhe-cbs.md)记录逐级整数除二、trace KS、scheme-switch 分解及 FFT 误差，以及 n=728 的成本、密钥/scratch 和最小尺度余量。
 
 基础证据：[NTT CBS](../crates/primus_tfhe_glwe_ntt/src/circuit_bootstrap/evaluator.rs)、[Fourier projection](../crates/primus_glwe/src/trace/fourier_operations.rs)、[Fourier scheme switch](../crates/primus_glwe/src/scheme_switch/fourier.rs)。底层已有两种 FFT 的[trace 测试](../crates/primus_glwe/tests/trace_packing.rs)和[scheme-switch 测试](../crates/primus_glwe/tests/scheme_switch.rs)。
 
-前缀接口沿用逐系数 reverse trace，投影 `k` 项需 `k*log2(N)` 次 automorphism。根据现有展开树可推导剪枝候选：共享偶/奇分支后，理论次数为 `sum_{j=0}^{log2(N)-1} min(2^j,k)`；例如 `N=1024, k=3` 时从 30 次降到 27 次。这不是已实现或实测的加速：树顺序及归一化位置会改变，必须独立验证 Native 舍入、NTT 模逆元和 key-switch/FFT 误差，再比较完整 CBS。不能直接用只展开 `k` 项的 `expand_partial_coefficients_to`，因为 ManyLUT 消息尾部通常非零。
+前缀接口沿用逐系数 reverse trace，投影 k 项需 `k*log2(N)` 次 automorphism。共享正向展开树按当前决定暂缓：它会改变归一化和误差传播，不能作为保持 RevHomTrace 数值行为的内部优化直接替换。
 
 ### 4.2 NTRU 两后端 Boolean
 
@@ -228,7 +228,7 @@ Full-domain FDFB、通用数字拆分、HLUT/LFBS、multi-bit 等属于[新算�
 
 ## 7. 建议执行顺序与验收规模
 
-1. **先补高层明确缺口**：GLWE Fourier 经典 CBS 已接通，待 B1.3 补充测量与示例；NTRU Boolean 可独立实施。
+1. **先补高层明确缺口**：GLWE Fourier 经典 CBS 的 B1 已完成；下一项 NTRU Boolean 可独立实施。
 2. **再扩展已有多输出路线**：NTRU NTT MVB；同步补 GLWE NTT sparse×Boolean/bivariate/odd-full 的小型组合验证。
 3. **处理性能型移植与受限表示**：GLWE Fourier sparse PBS、Native 偶尺度 MVB。先完成参考路径，再测收益，避免一次混入频域聚合等额外优化。
 4. **按实际应用选择实验组合**：NTT sparse CBS、NTRU ternary、NTRU sparse；分别通过前置条件后，再组合到其他上层功能。

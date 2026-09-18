@@ -86,6 +86,17 @@ FFT engine 和 evaluator 从同一个 context 创建。
 Native reverse trace 沿用底层逐级整数除二；其舍入、trace key switching、scheme-switch
 分解与 FFT 精度均需计入 CBS 误差预算。参数检查不验证噪声或安全性。
 
+[CBS→CMUX 示例](examples/circuit_bootstrap.rs) 用 LWE bit 选择两条加密 GLWE 消息之一，
+展示两种 order 与输出复用：
+
+```sh
+cargo run --release -p primus_tfhe_glwe_fourier --example circuit_bootstrap
+```
+
+示例与基准共享 `n=728, N=1024`、三层输出的 binary profile。误差来源、最小 gadget
+尺度的观测余量、密钥/工作区大小和耗时见 [CBS 专项](../../docs/tfhe-cbs.md)。
+该 profile 不是生产参数建议；稀疏 CBS 仍不支持。
+
 ## 验证与性能
 
 ```sh
@@ -94,6 +105,7 @@ cargo clippy -p primus_tfhe_glwe_fourier --all-targets -- -D warnings
 cargo +nightly test -p primus_tfhe_glwe_fourier --features simd
 cargo bench -p primus_tfhe_glwe_fourier --bench pbs
 cargo bench -p primus_tfhe_glwe_fourier --bench ternary_pbs
+cargo bench -p primus_tfhe_glwe_fourier --bench circuit_bootstrap
 ```
 
 `pbs` 复用输出，覆盖两种 order、3/4 输出 ManyLUT 与独立 PBS 的对照，以及 Boolean AND/MUX。
@@ -103,3 +115,6 @@ Fourier PBS 基准同时覆盖 RustFFT 和 TfheFFT。
 `ternary_pbs` 在 `n=728, N=1024`、BR→KS 下比较 binary、融合 ternary 和双 CMUX
 完整 PBS，另测 BSK+KSK 生成。参数、耗时及密钥/工作区测量见
 [T3 测量](../../docs/tfhe-ternary.md#t3完整-glwe-接入与验收已完成)。
+
+`circuit_bootstrap` 测量两种 order、两种 FFT 的完整 CBS，并按 FFT 各测一次 BR、
+三层投影与 scheme switch。Setup 和相位检查不计时，在线复用全部缓冲。

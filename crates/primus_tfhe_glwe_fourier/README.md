@@ -104,6 +104,18 @@ Native reverse trace retains the low-level per-stage integer halving. Its roundi
 trace key switching, scheme-switch decomposition and FFT precision require a CBS
 error budget; these parameter checks do not validate noise or security.
 
+Run the [CBS→CMUX example](examples/circuit_bootstrap.rs) to select between two
+encrypted GLWE messages using an LWE bit, with reusable outputs in both orders:
+
+```sh
+cargo run --release -p primus_tfhe_glwe_fourier --example circuit_bootstrap
+```
+
+The example and benchmark share an `n=728, N=1024`, three-level binary profile.
+See the [CBS analysis](../../docs/tfhe-cbs.md) for error sources, observed margin at
+the smallest gadget scale, key/workspace sizes and timings. This profile is not a
+production parameter recommendation; sparse CBS remains unsupported.
+
 ## Validation and performance
 
 ```sh
@@ -112,6 +124,7 @@ cargo clippy -p primus_tfhe_glwe_fourier --all-targets -- -D warnings
 cargo +nightly test -p primus_tfhe_glwe_fourier --features simd
 cargo bench -p primus_tfhe_glwe_fourier --bench pbs
 cargo bench -p primus_tfhe_glwe_fourier --bench ternary_pbs
+cargo bench -p primus_tfhe_glwe_fourier --bench circuit_bootstrap
 ```
 
 `pbs` reuses output buffers and covers both orders, 3/4-output ManyLUT versus
@@ -121,3 +134,7 @@ coefficient extraction is benchmarked in `primus_lattice`. Fourier PBS benchmark
 `ternary_pbs` compares complete binary, fused ternary and two-CMUX PBS at
 `n=728, N=1024` with BR→KS, and separately times BSK+KSK generation. Timing and
 key/workspace measurements are recorded in the [T3 profile and results](../../docs/tfhe-ternary.md#t3完整-glwe-接入与验收已完成).
+
+`circuit_bootstrap` measures complete CBS in both orders and both FFT engines,
+plus BR, three-level projection and scheme switching once per engine. Setup and
+phase checks are outside timing; all online buffers are reused.

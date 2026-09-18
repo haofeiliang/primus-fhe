@@ -139,4 +139,10 @@ taskset -c 0 cargo bench -p primus_tfhe_ntru_ntt -p primus_tfhe_ntru_fourier --b
 
 然后恢复交换实现，将 `--save-baseline ntru_buffer_copy` 换为 `--baseline ntru_buffer_copy`。本轮原始样本目录为 `target/criterion/ntru_*/{ntru_buffer_copy,ntru_buffer_swap}/`。
 
+## B1.3 GLWE Fourier CBS
+
+[计时 CSV](tfhe-b1.3.csv) 与[逐层误差 CSV](tfhe-b1.3-noise.csv) 对应 n=728、N=1024、
+三层输出的 binary profile。两种 FFT/order、默认/SIMD 的方法、资源和余量只在
+[CBS 专项](../tfhe-cbs.md)维护；这是新增能力，没有旧版 Fourier CBS 基线。
+
 清理 target 后须用对应源码、参数与等价 harness 重建 Criterion 基线；CSV 是持久摘要。所有测量均有具体功能/噪声边界，不是方案排名或安全认证。

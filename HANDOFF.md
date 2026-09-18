@@ -4,7 +4,7 @@
 
 ## 当前任务
 
-- **B1.1–B1.2 已完成，下一步 B1.3**：[算法覆盖分析](docs/tfhe-backend-coverage.md)、[分步计划](docs/tfhe-backend-plan.md)。GLWE Fourier 已接通经典 binary/ternary CBS，复用普通 evaluator 的前置 KS/BR 和 FFT 工作区，再投影→scheme switch；两种 order × 两种 FFT 的测试覆盖逐行/层相位、CBS→CMUX、覆盖写入和首次调用零分配。B1.3 补充误差、成本与示例；后续步骤待用户指定，稀疏 CBS 仍不支持。
+- **B1 已完成，下一建议步骤 B2.1**：[分步计划](docs/tfhe-backend-plan.md)、[算法覆盖](docs/tfhe-backend-coverage.md)。GLWE Fourier 经典 binary/ternary CBS 已接通；[B1.3 专项](docs/tfhe-cbs.md)记录 n=728/N=1024 binary 的两种 FFT/order、默认/SIMD 成本、最小尺度余量、密钥/scratch 与 CBS→CMUX 示例。现有小测试覆盖完整功能，重型诊断已移除；正式尾界未认证，稀疏 CBS 仍不支持。按当前决定保留逐系数 RevHomTrace，暂不优化共享 automorphism。后续步骤待用户指定。
 - 旧 S0–S9 及 LUT/PBS 的 **P1–P4 已完成**；[完成索引](docs/tfhe-plan.md)只用于恢复，不重开旧步骤。基础 crate 的既有整理也不自动重启。
 - **T1–T3 已完成**：[经典 GLWE ternary PBS](docs/tfhe-ternary.md#6-实施顺序与完成条件)已接入 NTT/Fourier 两后端，含两种 order、普通/交错 LUT、公钥客户端与 NTT CBS/MVB。small-LWE 分布选择 ternary；binary 路径保留。
 - GLWE 公共层与两个后端统一使用 `Encryptor`、`Decryptor`、`ClientKey`、`EncryptionKey`、`PbsOrder` 和 `TfheParameters`；底层保留数学/表示前缀。参数以 `accumulator_glwe`、`blind_rotation_ggsw` 和 `external_lwe_dimension` 区分角色。`ClientKey::generate` 负责系数域密钥生成；客户端统一编码后由 `EncryptionKey` 加密。Boolean 客户端以 `try_new` 构造，保留私钥/公钥加密并直接使用 `LweCiphertext`；普通 LUT 从 `context.parameters()` 编译，NTT 专属 MVB 仍由 context 准备。入口见 [GLWE README](crates/primus_tfhe_glwe/README.zh_CN.md)。

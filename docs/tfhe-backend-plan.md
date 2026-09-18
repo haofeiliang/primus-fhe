@@ -2,7 +2,7 @@
 
 依据：[后端覆盖分析](tfhe-backend-coverage.md)，源码基线 `7f1ef55`。本计划把已有算法的后端补齐拆成可独立验收的步骤；不重开已完成的 P1–P4、T1–T3，也不扩入 FDFB 等[新算法选型](tfhe-next.md)。
 
-制定时所有 B 步骤尚未开始。实际进度与下一步记录在 [HANDOFF](../HANDOFF.md)，算法依据仍由覆盖分析和各专项文档维护。
+B1 已完成，以下保留完成入口与 B2–B8 的后续计划。当前任务与下一步记录在 [HANDOFF](../HANDOFF.md)，算法依据仍由覆盖分析和各专项文档维护。
 
 ## 执行方式
 
@@ -27,29 +27,16 @@
 
 表格顺序是推荐工作顺序，不把独立能力强制串成依赖链。例如 B5 原型失败不阻止 NTT sparse CBS；NTRU binary 桶聚合也不必等待 ternary。
 
-## B1：GLWE Fourier 经典 CBS
+## B1：GLWE Fourier 经典 CBS（已完成）
 
-入口：[GLWE Fourier](../crates/primus_tfhe_glwe_fourier/src/lib.rs)、[NTT CBS 参照](../crates/primus_tfhe_glwe_ntt/src/circuit_bootstrap/mod.rs)、[Fourier trace](../crates/primus_glwe/src/trace/fourier_operations.rs)、[scheme switch](../crates/primus_glwe/src/scheme_switch/fourier.rs)。
+| 步骤 | 完成入口 |
+| --- | --- |
+| B1.1：参数与附加密钥 | [CBS 模块](../crates/primus_tfhe_glwe_fourier/src/circuit_bootstrap/mod.rs)，独立 output/trace/scheme-switch basis 与配套密钥 |
+| B1.2：完整 evaluator | [实现](../crates/primus_tfhe_glwe_fourier/src/circuit_bootstrap/evaluator.rs)、[测试](../crates/primus_tfhe_glwe_fourier/tests/circuit_bootstrap.rs)，两种 order/FFT、binary/ternary、逐层相位、CMUX 与零分配 |
+| B1.3：误差、成本与示例 | [CBS 专项](tfhe-cbs.md)、[示例](../crates/primus_tfhe_glwe_fourier/examples/circuit_bootstrap.rs)、[基准](../crates/primus_tfhe_glwe_fourier/benches/circuit_bootstrap.rs) |
 
-### B1.1：CBS 参数与附加密钥
-
-- **范围**：增加 Fourier CBS 参数、附加密钥及生成入口，分别描述 output、trace、scheme-switch basis；绑定 accumulator 秘密和 FFT table 契约。沿用现有高层命名。
-- **约束**：Native reverse trace 的逐级整数除二保留在已有原语中；不复制 NTT 模逆元归一化。不改变普通 PBS server key 的必要材料。
-- **验收**：实际生成可被现有 trace/scheme-switch 原语消费的附加密钥；检查布局、basis 与不兼容参数边界。构建调用方与 rustdoc；完整 CBS 状态仍为待 B1.2。
-
-### B1.2：完整经典 CBS evaluator
-
-- **前置**：B1.1。
-- **范围**：接通必要的前置 KS、gadget-scale ManyLUT BR、系数投影、GLev→Fourier GGSW；两种 order、经典 binary/ternary 使用同一阶段结构，scratch 一次分配。
-- **验收**：代表 fixture 覆盖两种 order、两种 FFT 与两类控制；逐行/层检查输出相位，再执行 `CBS→CMUX`。检查复用工作区、覆盖写入和零在线分配。
-- **完成边界**：经典 CBS 可用；sparse CBS 保持不支持，不因其 BR 产物同类型就自动开放。
-
-### B1.3：误差、成本与使用示例
-
-- **前置**：B1.2。
-- **范围**：整理低层及完整 CBS 的误差来源，记录最小 gadget scale 的余量；补一个可运行示例和必要的 Criterion 工作负载，同步双语 README。
-- **验收**：覆盖 native halving、trace KS、scheme-switch 分解和 FFT 误差的测量解释；列出密钥与 scratch 成本。完成本阶段默认/SIMD 验证，删除重复测试和临时诊断。
-- **性能边界**：这是新增能力，不制造“旧 Fourier CBS”基线；可报告阶段成本，不能用跨后端未匹配安全参数作速度排名。
+保留 Native 逐级整数除二与逐系数 RevHomTrace；共享正向展开树优化暂缓。经典 CBS 已支持，
+生产误差尾界未认证，sparse CBS 仍由 B6 独立验证；不因 BR 输出类型相同而自动开放。
 
 ## B2：NTRU 两后端 Boolean
 
@@ -235,4 +222,4 @@
 下一步及其前置条件：
 ```
 
-完成用户指定的步骤或阶段后停在该边界，不自动提交或执行下一项。本轮仅制定计划；建议首次实施指令为 **“执行 B1.1”**。
+完成用户指定的步骤或阶段后停在该边界，不自动提交或执行下一项。
