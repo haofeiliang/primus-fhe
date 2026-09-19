@@ -4,9 +4,8 @@
 
 ## 当前任务
 
-- **B4 已完成**：B4.2 已提交为 `5102a4b`。B4.3 增加一个 Fourier `sparse_pbs` 基准；n=728、两种 FFT/order、普通/ManyLUT 的默认/SIMD 完整链、阶段和资源测量见[专项](docs/tfhe-sparse-pbs.md#b43-fourier-成本与保留方案)。h=32 测得收益但存在运行波动，h=128 的所测 BK 单输出更慢；16 KiB 分块没有一致收益，未保留。下一步 **B5.1** Native 偶尺度 MVB 原型，不自动启动。
-- **B4.3 后续优化已落实，尚未暂存/提交**：Native 加减切片共用 wrapping 循环，恢复旋转累加内联；Fourier 常数批次复用相邻相同值的层变换，新增系数输出批次供 sparse keygen 使用。数值路径与 RNG 消费保持，缓存仅在批内有效、准备耗时依赖输入。固定 CPU 的两轮完整 PBS 收益不稳定，sparse keygen 下降约 0.8%–3.5%，见[方法与限制](docs/tfhe-sparse-pbs.md#native-加减切片与常数准备优化)。`just tfhe` / `just tfhe-simd`、受影响底层四包默认/SIMD check/Clippy/test 及 GLWE/modulus 严格 rustdoc 均通过；不增加持久基准或统计测试。
-- **NTT 后续优化已落实，尚未暂存/提交**：常数 GGSW 直接填充层值，Barrett 加减切片共用自动向量化循环；sparse keygen 改用直接系数域 GGSW，精确保持密文/RNG，复用已有 N 系数 scratch。常数准备对 sparse 总耗时没有稳定收益；Barrett 的 BK 单输出补测快约 3.7%–6.8%；系数输出使 sparse keygen 默认快约 1.6%–2.1%、SIMD 快约 4.3%–4.8%。异常轮次及经典控制的小幅退化信号见[专项](docs/tfhe-sparse-pbs.md#ntt-后续优化)。NTT keygen 基准已排除返回密钥析构。TFHE 与受影响底层九包默认/SIMD check、Clippy、test 及 GLWE/modulus 严格 rustdoc 均通过；无新统计测试或持久基准，不自动启动 B5.1。
+- **B5.1 原型通过，下一步 B5.2**：[Native 偶尺度 MVB](docs/tfhe-mvb-fourier.md)记录两种 FFT、u32/u64、经典 binary BK 的完整三输出原型、独立系数卷积、分阶段误差与两轮成本。`t_out=8/10` 偶尺度接受、`t_out=3` 奇尺度拒绝；默认/SIMD 诊断一致、首调用零分配。公共构造器仍拒绝 Native，生产代码/API 未放开；不从所测小整数因子推断任意参数精度。B5.2 验收正式接口及 KB/ternary，NTRU 和 sparse 组合分别留给 B5.3/B5.4；不自动启动。
+- **B4 及后续内核优化已提交为 `1f6bab2`**：Fourier sparse 完整基准、常数准备与 NTT 系数 GGSW 优化见[稀疏 PBS](docs/tfhe-sparse-pbs.md)。Native/Barrett 加减保留普通循环，Shoup u64 原地乘法改用普通循环；[u64 测量与取舍](docs/simd-u64.md)保留微基准退化和完整消费者无稳定收益的边界，Native 后续原型已撤回。历史验证与具体性能前提见专项，不自动重开优化。
 - **B3 已完成**：NTRU NTT MVB 的算法、布局和成本见[NTRU 测量](docs/tfhe-mvb-ntru.md)；GLWE NTT sparse×Boolean/bivariate/odd-full 已完成两种 order 的受控误差、门链、相位/解码与首调用零分配验收，见[分步计划](docs/tfhe-backend-plan.md)。
 - **B2.1–B2.2 已完成**：Boolean 门算法、LUT 和 LWE 工作区由 `primus_tfhe` 共享，四后端提供 Boolean 工厂，保留独立加解密器及私钥/公钥加密。客户端错误归 family `BooleanError`，求值器构造归共享 `TfheEvaluationError`。共同真值表、混合门链、错误边界和 NTRU 首调用零分配通过；NTRU 覆盖 NTT 与两种 FFT，默认/SIMD 检查和测试通过。见[公共用法](crates/primus_tfhe/README.zh_CN.md#boolean-门)。
 - **GLWE NTT 系数域加解密已接入**：[算法、性能与误差](docs/glwe-coefficient-client.md)。在 `NttGlweSecretKey` 增加三个固有方法，NTT `AccumulatorClient` 改用 N 系数、析构时擦除的 scratch；高层接口不变，保持精确等价和在线零分配。u64 Fourier 原型真实相位噪声 RMS 增加约 6%–13%，按用户决定暂不接入；不重开全底层整理。

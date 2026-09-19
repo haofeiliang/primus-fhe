@@ -40,6 +40,10 @@ NTRU CBS 的 [NTT](../../crates/primus_tfhe_ntru_ntt/benches/circuit_bootstrap.r
 
 ## 历史测量环境
 
+[Native 偶尺度 MVB 原型](../tfhe-mvb-fourier.md)记录 B5.1 的两种 FFT、u32/u64
+整数因子乘法与经典 BK 完整链；[计时](tfhe-b5.1.csv)、[误差](tfhe-b5.1-noise.csv)。
+临时原型已清理，正式基准入口随后端工程接入安排。
+
 [u64 SIMD 补测](../simd-u64.md)记录加减改动前后、其他 modulus / Shoup 内核的
 默认/SIMD 对照及 u64 完整 sparse PBS / keygen；[CSV](simd-u64.csv)保留负向结果和隔离复测。
 
