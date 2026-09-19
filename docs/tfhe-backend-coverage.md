@@ -8,7 +8,7 @@
 
 ## 1. 结论
 
-**当前最全面的是 `primus_tfhe_glwe_ntt`。** 它同时支持经典 binary/ternary BR、固定重量二元稀疏 BR、两种 PBS order、Boolean、CBS 和分解式 MVB。NTRU 两后端均支持普通/交错 PBS、Boolean 和 CBS；`primus_tfhe_ntru_ntt` 另已接入奇数模数分解式 MVB。两族 Fourier 均已接入 Native 偶尺度 MVB；NTRU 初始化与 KS 已独立验收。
+**GLWE 两后端的主要算法线已补齐。** 两者均支持经典 binary/ternary BR、固定重量二元稀疏 BR、两种 PBS order、Boolean、经典 CBS 和含 sparse 的分解式 MVB；NTT 对 sparse 上层组合的验收仍更全面。NTRU 两后端均支持普通/交错 PBS、Boolean 和 CBS；`primus_tfhe_ntru_ntt` 另已接入奇数模数分解式 MVB。两族 Fourier 均已接入 Native 偶尺度 MVB；NTRU 初始化与 KS 已独立验收。
 
 可以明确安排的工程补齐包括：
 
@@ -37,7 +37,7 @@
 | 固定重量 binary 桶聚合 BR | 支持 | 支持，收益取决于重量/负载 | 未接入 | 未接入 |
 | Boolean 门、NOT、MUX | 支持 | 支持 | 支持 | 支持 |
 | CBS | 经典 binary/ternary → GGSW | 经典 binary/ternary → Fourier GGSW | binary → NGSW | binary → NGSW |
-| 固定尺度差分 MVB | 支持，含经典/稀疏 | 支持，偶尺度 u32/u64、经典 binary/ternary | 支持，经典 binary | 支持，偶尺度 u32/u64、经典 binary |
+| 固定尺度差分 MVB | 支持，含经典/稀疏 | 支持，偶尺度 u32/u64、经典/稀疏 | 支持，经典 binary | 支持，偶尺度 u32/u64、经典 binary |
 | 两种 PBS order | 支持 BK / KB | 支持 BK / KB | 固定 NTRU 链 | 固定 NTRU 链 |
 
 几个容易混淆的概念：
@@ -186,7 +186,9 @@ GLWE [NTT](../crates/primus_tfhe_glwe_ntt/src/circuit_bootstrap/evaluator.rs) �
 
 **B5.2 已接入 GLWE Fourier**：共享构造器接受 Native 偶尺度，整数 Fourier 因子与 evaluator 支持两种 order、经典 binary/ternary、u32/u64；context 绑定、首调用零分配和错误边界已验收。不从本组小整数因子推断任意 u64 参数可用。详细推导见 [MVB 的除二边界](tfhe-mvb.md#12-的边界)。
 
-**B5.3 已接入 NTRU Fourier**：两种 FFT、u32/u64 使用原 NLev 初始化和 binary BR，逐输出 KS/提取；因子准备绑定 context，首调用零分配。`n=728,N=1024` 的独立整数卷积诊断分离初始化、BR、FFT 乘法和 KS 误差，见 [NTRU 验收](tfhe-mvb-fourier.md#b53ntru-接入与独立误差验收)。成本及跨算法比较留给 B5.4。
+**B5.3 已接入 NTRU Fourier**：两种 FFT、u32/u64 使用原 NLev 初始化和 binary BR，逐输出 KS/提取；因子准备绑定 context，首调用零分配。`n=728,N=1024` 的独立整数卷积诊断分离初始化、BR、FFT 乘法和 KS 误差，见 [NTRU 验收](tfhe-mvb-fourier.md#b53ntru-接入与独立误差验收)。组合及跨算法成本见 [B5.4](tfhe-mvb-fourier-costs.md)。
+
+**B5.4 组合已通过**：GLWE Fourier sparse×MVB 覆盖两种 order、两种 FFT、u32/u64，默认/SIMD 全前半域诊断正确且在线零分配；两族 Fourier 的 3/17 阈值输出、资源、误差和算法选择见[成本验收](tfhe-mvb-fourier-costs.md)。
 
 ### 5.5 NTRU ternary：控制代数与秘密采样分别处理
 
@@ -233,7 +235,7 @@ Full-domain FDFB、通用数字拆分、HLUT/LFBS、multi-bit 等属于[新算�
 
 1. **先整理高层接口，再补明确缺口**：B1 的 GLWE Fourier 经典 CBS、四后端高层接口与成本验收，以及 B2 的 NTRU Boolean 接入与门语义验收均已完成。此顺序减少重复迁移，Boolean 算法本身不依赖 CBS；后续按[分步计划](tfhe-backend-plan.md)推进。
 2. **再扩展已有多输出路线**：NTRU NTT MVB 完整链、误差和成本，以及 GLWE NTT sparse×Boolean/bivariate/odd-full 的组合验收均已完成。
-3. **处理性能型移植与受限表示**：GLWE Fourier sparse PBS 参考路径及 B4.3 成本验收已完成；Native 偶尺度 MVB 的 GLWE/NTRU 接入与独立误差验收已完成，B5.4 再验收组合与成本，不混入频域聚合等额外优化。
+3. **处理性能型移植与受限表示**：GLWE Fourier sparse PBS 参考路径及 B4.3 成本验收已完成；Native 偶尺度 MVB 的 GLWE/NTRU 接入与独立误差验收已完成，B5.4 记录 sparse 组合与算法成本，不混入频域聚合等额外优化。
 4. **按实际应用选择实验组合**：NTT sparse CBS、NTRU ternary、NTRU sparse；分别通过前置条件后，再组合到其他上层功能。
 
 测试按独立契约选择代表点，不展开所有秘密分布×order×输出数×FFT×codec 的完整笛卡尔积。建议：

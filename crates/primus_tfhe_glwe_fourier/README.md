@@ -78,11 +78,11 @@ The arguments after the codec are the input prefix length and exact output count
 even with equal parameters. Lower-level callers may prepare a shared
 `FactorizedLookupTable` through `FourierFactorizedLookupTable::new`.
 
-Supports u32/u64, RustFFT/TfheFFT and classic binary/ternary keys in both orders.
+Supports u32/u64, RustFFT/TfheFFT, classic binary/ternary and fixed-weight sparse binary keys in both orders.
 The actual `delta=round(2^BITS/t_out)` must be even; odd scales return
 `LookupTableError::OddFactorizationScale`. The plaintext modulus need not be a
-power of two: 10 works for both supported widths. Sparse MVB remains unsupported;
-its evaluator construction returns `UnsupportedSparseBootstrapping`.
+power of two: 10 works for both supported widths. Sparse MVB uses the same
+`KeyGenerator::try_generate_sparse_server_key` as ordinary sparse PBS.
 
 Factors are prepared once as signed integers, without torus scaling. One BR is
 shared; BK key-switches each product, while KB switches the input before BR.
@@ -96,6 +96,16 @@ Successful construction does not establish a noise budget, including for u64.
 Decode with the supplied Scaled codec; account for different Rounded centers when
 chaining. See the [encoding contract](../primus_tfhe/README.md#fixed-scale-factorized-mvb)
 and [precision evidence and limits](../../docs/tfhe-mvb-fourier.md).
+
+The [17-threshold example](examples/fourier_mvb_thresholds.rs) turns one score in
+`0..64` into 17 numeric flags where interleaving cannot fit. These Scaled `t_out=2`
+flags require their own codec; they are not Boolean gate ciphertexts or inputs at
+another plaintext modulus. Algorithm choice depends on factor norms, available
+interleaved capacity, output count and key size; see [measured costs](../../docs/tfhe-mvb-fourier-costs.md).
+
+```sh
+cargo run -p primus_tfhe_glwe_fourier --example fourier_mvb_thresholds
+```
 
 ## Binary and ternary small secrets
 

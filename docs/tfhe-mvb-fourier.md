@@ -3,7 +3,7 @@
 **B5.2–B5.3 已完成两族 Fourier 正式接入。** 使用入口见
 [GLWE README](../crates/primus_tfhe_glwe_fourier/README.zh_CN.md#固定尺度分解式-mvb) 与
 [NTRU README](../crates/primus_tfhe_ntru_fourier/README.zh_CN.md#固定尺度分解式-mvb)。
-接口与误差验收分别见 [B5.2](#b52正式接口与验收) / [B5.3](#b53ntru-接入与独立误差验收)；下一步 B5.4。
+接口与误差验收分别见 [B5.2](#b52正式接口与验收) / [B5.3](#b53ntru-接入与独立误差验收)；应用、sparse 组合与成本见 [B5.4](tfhe-mvb-fourier-costs.md)。
 
 以下原型记录以 `1f6bab2` 为基线，覆盖 RustFFT/TfheFFT、Native u32/u64、小整数
 差分因子和经典 binary BK 链。历史测量不代表任意因子/参数的精度或当前实现的耗时，
@@ -205,9 +205,9 @@ BK 逐输出 KS，KB 先切换输入再做共享 BR。空间不随输出数增�
   下降函数、交替 0/9、阈值三输出；与同 Scaled 编码的独立 PBS 对照，检查相位余量
   和首次/重复调用零分配。small-LWE 外部维数 8，KB 外部维数 256。
 - 独立边界：单输出、跨 context、输入/输出长度、每项编译元数据、不同输出模数、
-  奇尺度及 sparse key 拒绝。最后一项输出维数错误也须在任何输出写入前失败，随后仍可复用工作区。
+  奇尺度边界。最后一项输出维数错误也须在任何输出写入前失败，随后仍可复用工作区。
 
-默认两测试合计约 0.65 秒。没有新增统计测试或持久 benchmark。原有
+B5.2 当时两测试默认合计约 0.65 秒，未新增统计测试或持久 benchmark。原有
 [基本示例](../crates/primus_tfhe_glwe_fourier/examples/fourier_basic.rs)补充偶尺度 MVB，
 复用两种 order 的 ternary 密钥、公钥输入及输出缓冲；不复制参数构造。
 
@@ -215,8 +215,8 @@ BK 逐输出 KS，KB 先切换输入再做共享 BR。空间不随输出数增�
 默认/SIMD release 基本示例。参数只用于功能验证，仍须自行预算因子放大与
 `delta_b-sum(delta_a*s)` 的 FFT 相位误差。
 
-**后续边界**：NTRU 初始化/KS 已由下文 B5.3 核对；Fourier sparse×MVB 当前明确拒绝，
-其组合验收及与重复/交错 PBS 的应用成本比较归 B5.4。新接口不提供尾概率或安全认证。
+**后续接入**：NTRU 初始化/KS 已由下文 B5.3 核对；[B5.4](tfhe-mvb-fourier-costs.md)
+补充并开放 GLWE sparse×MVB，记录与重复/交错 PBS 的成本。功能验收不提供尾概率或安全认证。
 
 ## B5.3：NTRU 接入与独立误差验收
 
@@ -309,5 +309,5 @@ SIMD nightly 1.100.0（bff8e12ff），后端 feature 为 `simd`。两次均使�
 不能将 RMS 直接相加；成功解码也不认证任意因子范数、参数或失败概率。
 
 验证包括 `just tfhe` / `just tfhe-simd`、严格 rustdoc、默认/SIMD release 基本示例。
-临时诊断已清理，无新增持久 benchmark；本步不测耗时，算法成本与 Fourier sparse×MVB
-组合仍留给 B5.4，不以 GLWE 原型计时替代 NTRU 性能结论。
+临时诊断已清理，B5.3 不新增持久 benchmark 或测量耗时；后续算法成本与 Fourier sparse×MVB
+组合见 [B5.4](tfhe-mvb-fourier-costs.md)，不以 GLWE 原型计时替代 NTRU 性能结论。

@@ -68,10 +68,10 @@ codec 后的参数分别为输入前缀长度和实际输出数。`FourierFactor
 借用本 context；即使参数相同，另一个实例也会被拒绝。底层调用方可先编译共享
 `FactorizedLookupTable`，再用 `FourierFactorizedLookupTable::new` 准备。
 
-支持 u32/u64、RustFFT/TfheFFT、经典 binary/ternary 密钥及两种 order。
+支持 u32/u64、RustFFT/TfheFFT、经典 binary/ternary 和固定重量 sparse binary 密钥及两种 order。
 实际 `delta=round(2^BITS/t_out)` 必须为偶数；奇尺度返回
 `LookupTableError::OddFactorizationScale`。明文模数不必为二次幂，10 在两种字宽下
-都可用。稀疏 MVB 暂不支持，其 evaluator 构造返回 `UnsupportedSparseBootstrapping`。
+都可用。稀疏 MVB 复用普通 sparse PBS 的 `KeyGenerator::try_generate_sparse_server_key`。
 
 因子按有符号整数一次准备，不做 torus 缩放。所有输出共享一次 BR；BK 逐输出 KS，
 KB 在 BR 前切换输入。`apply_lookup_table_to` 在写入前检查 context 和全部维数，
@@ -82,6 +82,15 @@ N 个 torus 系数和 `output_count*N/2` 个复数，不保留因子的系数副
 u64 同样如此。须用提供的 Scaled codec 解码，串联时计入与 Rounded 中心的差异。
 见[编码约定](../primus_tfhe/README.zh_CN.md#固定尺度分解式-mvb)和
 [精度证据与限制](../../docs/tfhe-mvb-fourier.md)。
+
+[17 阈值示例](examples/fourier_mvb_thresholds.rs) 将 `0..64` 的一个分数转为交错容量之外的
+17 个数值标志。这些 Scaled `t_out=2` 标志须按对应 codec 使用，不能直接当作 Boolean 门
+密文或另一明文模数的输入。算法选择取决于因子范数、交错容量、输出数和密钥大小；
+见[成本测量](../../docs/tfhe-mvb-fourier-costs.md)。
+
+```sh
+cargo run -p primus_tfhe_glwe_fourier --example fourier_mvb_thresholds
+```
 
 ## Binary 与 ternary small 秘密
 

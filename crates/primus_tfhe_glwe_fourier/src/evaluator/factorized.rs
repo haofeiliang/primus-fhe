@@ -5,7 +5,7 @@ use primus_poly::{FourierPolynomial, FourierPolynomialIter, PolynomialIter, Poly
 use primus_tfhe::FactorizedLookupTable;
 
 use super::Evaluator;
-use crate::{BootstrappingKey, PbsOrder, ServerKey, TfheContext, TfheEvaluationError};
+use crate::{PbsOrder, ServerKey, TfheContext, TfheEvaluationError};
 
 /// Native even-scale MVB program prepared for one borrowed Fourier context.
 ///
@@ -87,7 +87,7 @@ impl<'a, T: TorusFftValue, Table: FftTable> FourierFactorizedLookupTable<'a, T, 
     }
 }
 
-/// Reusable workspace for Native even-scale MVB with classic binary/ternary BR.
+/// Reusable workspace for Native even-scale MVB with classic binary/ternary or sparse binary BR.
 ///
 /// Both PBS orders retain their usual external secrets and dimensions. BK does
 /// KS after each product; KB switches the input once before the shared BR.
@@ -102,8 +102,7 @@ pub struct FactorizedEvaluator<'a, T: TorusFftValue, Table: FftTable> {
 }
 
 impl<'a, T: TorusFftValue, Table: FftTable> FactorizedEvaluator<'a, T, Table> {
-    /// Creates workspace after checking the server key. Sparse keys are rejected
-    /// because their combination with Fourier MVB has not been validated.
+    /// Creates workspace after checking the server key.
     ///
     /// # Correctness
     /// Inherits [`Evaluator::try_new`]'s secret and Fourier table requirements.
@@ -111,9 +110,6 @@ impl<'a, T: TorusFftValue, Table: FftTable> FactorizedEvaluator<'a, T, Table> {
         context: &'a TfheContext<T, Table>,
         server_key: &'a ServerKey<T>,
     ) -> Result<Self, TfheEvaluationError> {
-        if matches!(server_key.bootstrapping_key(), BootstrappingKey::Sparse(_)) {
-            return Err(TfheEvaluationError::UnsupportedSparseBootstrapping);
-        }
         let evaluator = Evaluator::try_new(context, server_key)?;
         let glwe = context.parameters().accumulator_glwe();
         Ok(Self {
@@ -145,7 +141,8 @@ impl<'a, T: TorusFftValue, Table: FftTable> FactorizedEvaluator<'a, T, Table> {
     /// encoding, with a message in `0..lookup_table.input_domain_len()`. Input
     /// noise, pre-BR KS (for KB), and coefficient-wise quantization must keep
     /// the rotation in that message's LUT interval. Each integer factor W
-    /// amplifies BR noise; public FFT multiplication adds phase error
+    /// amplifies BR noise, including encrypted-zero/dummy aggregation for sparse
+    /// keys. Public FFT multiplication adds phase error
     /// `delta_b - sum(delta_a[j]*s[j])`, followed by output KS error for BK.
     /// Budget these together: the Scaled recovery condition for result y is
     /// `abs((t*delta-q)*y + t*e) < q/2`, q=2^BITS. No noise bound is checked.

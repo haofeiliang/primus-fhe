@@ -29,9 +29,10 @@ Classic GLWE PBS and CBS support binary/ternary small secrets in both backends;
 MVB also supports both. NTRU BR secrets remain binary.
 
 Both GLWE backends support experimental sparse PBS for fixed-weight binary small
-secrets, with both orders and ordinary/interleaved LUTs. [NTT](../primus_tfhe_glwe_ntt/README.md#experimental-sparse-pbs)
-also supports factorized LUTs; [Fourier](../primus_tfhe_glwe_fourier/README.md#experimental-sparse-pbs)
-uses native coefficient aggregation. Sparse ternary and sparse CBS are not supported.
+secrets, with both orders and ordinary/interleaved/factorized LUTs.
+[NTT](../primus_tfhe_glwe_ntt/README.md#experimental-sparse-pbs) and
+[Fourier](../primus_tfhe_glwe_fourier/README.md#experimental-sparse-pbs) retain their
+respective exact-transform and native coefficient-aggregation paths. Sparse ternary and sparse CBS are not supported.
 
 ## Error boundaries
 
@@ -325,7 +326,7 @@ Both [GLWE NTT](../primus_tfhe_glwe_ntt/README.md#fixed-scale-factorized-mvb) an
 GLWE NTT supports classic/sparse keys and both orders; NTRU NTT shares its encrypted
 initialization and BR, then key-switches each product.
 [GLWE Fourier](../primus_tfhe_glwe_fourier/README.md#fixed-scale-factorized-mvb)
-supports classic binary/ternary keys and both orders with u32/u64 and an even
+supports classic binary/ternary and sparse binary keys in both orders with u32/u64 and an even
 Native scale; it transforms factors as signed integers and also requires an FFT
 error budget. [NTRU Fourier](../primus_tfhe_ntru_fourier/README.md#fixed-scale-factorized-mvb)
 supports the same widths and Native scales with binary keys; its factors amplify
@@ -339,7 +340,7 @@ The [GLWE](../primus_tfhe_glwe_ntt/examples/mvb_thresholds.rs) and
 [NTRU](../primus_tfhe_ntru_ntt/examples/ntru_ntt_mvb_thresholds.rs) threshold examples
 turn one encrypted score into 17 flags beyond interleaved capacity. For algorithm
 selection, see [GLWE costs](../../docs/tfhe-mvb.md#8-p43-测量与应用选择)
-and [NTRU costs](../../docs/tfhe-mvb-ntru.md).
+and [NTRU costs](../../docs/tfhe-mvb-ntru.md) for NTT, or [Fourier costs](../../docs/tfhe-mvb-fourier-costs.md).
 
 ## Typed rotation quantization
 

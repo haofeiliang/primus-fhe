@@ -150,7 +150,7 @@ where
         Evaluator::try_new(self, server_key)
     }
 
-    /// Creates classic binary/ternary MVB workspace. Inherits
+    /// Creates classic or sparse MVB workspace. Inherits
     /// [`FactorizedEvaluator::try_new`]'s key and Fourier table requirements.
     pub fn factorized_evaluator<'a>(
         &'a self,

@@ -34,6 +34,10 @@ harness = false
 name = "circuit_bootstrap"
 harness = false
 
+[[bench]]
+name = "mvb"
+harness = false
+
 [features]
 default = []
 simd = [

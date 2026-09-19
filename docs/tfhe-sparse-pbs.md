@@ -15,7 +15,7 @@
 | BSK | 每个副本独立加密选择位，每桶额外独立加密一个 dummy；按桶保存系数域 GGSW |
 | 在线执行 | 输入旋转量计算一次；逐桶系数旋转/相加，将聚合 GGSW 转 NTT/Fourier，再做一次 external product |
 | 共享层 | 复用 LUT、`RotationQuantizer`、GGSW、分解和外积；不向 `primus_tfhe::lookup_table` 加稀疏参数或策略 trait |
-| 已接入组合 | 两后端普通/交错 LUT、两种 GLWE order；NTT 另有 [MVB](tfhe-mvb.md)。Sparse CBS、稀疏三元及 NTRU 未支持 |
+| 已接入组合 | 两后端普通/交错 LUT、两种 GLWE order、MVB（[NTT](tfhe-mvb.md)、[Fourier](tfhe-mvb-fourier-costs.md)）。Sparse CBS、稀疏三元及 NTRU 未支持 |
 
 参数中的 `h` 只约束**进入 BR 的 small-LWE 秘密**。KS→BR 顺序的外部秘密仍是 accumulator 的 `kN` 维系数展开；不能把它改标成固定重量二元分布。以下用 `k` 表示 GLWE 维数，`b` 表示桶数，`s` 表示交错 LUT 的 `padded_output_count`，避免与输出函数个数混用。
 

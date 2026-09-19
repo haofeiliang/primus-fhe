@@ -9,7 +9,7 @@ use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_test_allocations as allocations;
 use primus_tfhe_glwe_fourier::{
     FactorizedLookupTable, FourierFactorizedLookupTable, KeyGenerator, LookupTable,
-    LookupTableError, PbsOrder, TfheContext, TfheEvaluationError, TfheParameters,
+    LookupTableError, PbsOrder, TfheContext, TfheParameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -71,54 +71,63 @@ fn check_complete<T: TorusFftValue, Table: FftTable>(order: PbsOrder, ternary: b
         ),
         (DOMAIN, 3, T::as_from(10usize))
     );
-    let mut evaluator = context.factorized_evaluator(&server).unwrap();
-    let encryptor = context.encryptor(&client).unwrap();
-    let decryptor = context.decryptor(&client).unwrap();
-    let dimension = context.parameters().external_lwe_dimension();
-    assert_eq!(
-        dimension,
-        if order == PbsOrder::BootstrapKeyswitch {
-            DIM
-        } else {
-            2 * N
-        }
-    );
-    let mut outputs = vec![LweCiphertext::zero(dimension); 3];
-    let mut ordinary = context.evaluator(&server).unwrap();
-    let singles: Vec<_> = (0..3)
-        .map(|i| {
-            LookupTable::try_new(DOMAIN, N, T::as_from(15usize), modulus, modulus, |m| {
-                Ok(codec.encode_value(T::as_from(value(m, i)), Unsigned))
-            })
+    let sparse = (!ternary).then(|| {
+        KeyGenerator::new(&context)
+            .try_generate_sparse_server_key(&client, 3, 8, &mut rng)
             .unwrap()
-        })
-        .collect();
-    let mut reference = LweCiphertext::zero(dimension);
-    for message in [0, 3, 7] {
-        let input = encryptor
-            .encrypt_padded(T::as_from(message), &mut rng)
-            .unwrap();
-        let (_, allocation) =
-            allocations::measure(|| evaluator.apply_lookup_table_to(&input, &lut, &mut outputs));
+    });
+    // Reuse the same client/program for classic and sparse binary controls.
+    for server in std::iter::once(&server).chain(sparse.as_ref()) {
+        let mut evaluator = context.factorized_evaluator(server).unwrap();
+        let encryptor = context.encryptor(&client).unwrap();
+        let decryptor = context.decryptor(&client).unwrap();
+        let dimension = context.parameters().external_lwe_dimension();
         assert_eq!(
-            allocation.count, 0,
-            "first and reused MVB calls must not allocate"
+            dimension,
+            if order == PbsOrder::BootstrapKeyswitch {
+                DIM
+            } else {
+                2 * N
+            }
         );
-        for (i, output) in outputs.iter().enumerate() {
-            let expected = T::as_from(value(message, i));
-            let phase = decryptor.decrypt_phase(output).unwrap();
-            assert_eq!(codec.decode_value(phase), expected);
-            // Keep a deterministic margin, not just a rounded decoding check.
-            let error = phase
-                .wrapping_sub(codec.encode_value(expected, Unsigned))
-                .into_signed_f64()
-                .abs();
-            assert!(error * T::TORUS_SCALE < 0.01);
-            ordinary.apply_lookup_table_to(&input, &singles[i], &mut reference);
+        let mut outputs = vec![LweCiphertext::zero(dimension); 3];
+        let mut ordinary = context.evaluator(server).unwrap();
+        let singles: Vec<_> = (0..3)
+            .map(|i| {
+                LookupTable::try_new(DOMAIN, N, T::as_from(15usize), modulus, modulus, |m| {
+                    Ok(codec.encode_value(T::as_from(value(m, i)), Unsigned))
+                })
+                .unwrap()
+            })
+            .collect();
+        let mut reference = LweCiphertext::zero(dimension);
+        for message in [0, 3, 7] {
+            let input = encryptor
+                .encrypt_padded(T::as_from(message), &mut rng)
+                .unwrap();
+            let (_, allocation) = allocations::measure(|| {
+                evaluator.apply_lookup_table_to(&input, &lut, &mut outputs)
+            });
             assert_eq!(
-                codec.decode_value(decryptor.decrypt_phase(&reference).unwrap()),
-                expected
+                allocation.count, 0,
+                "first and reused MVB calls must not allocate"
             );
+            for (i, output) in outputs.iter().enumerate() {
+                let expected = T::as_from(value(message, i));
+                let phase = decryptor.decrypt_phase(output).unwrap();
+                assert_eq!(codec.decode_value(phase), expected);
+                // Keep a deterministic margin, not just a rounded decoding check.
+                let error = phase
+                    .wrapping_sub(codec.encode_value(expected, Unsigned))
+                    .into_signed_f64()
+                    .abs();
+                assert!(error * T::TORUS_SCALE < 0.01);
+                ordinary.apply_lookup_table_to(&input, &singles[i], &mut reference);
+                assert_eq!(
+                    codec.decode_value(decryptor.decrypt_phase(&reference).unwrap()),
+                    expected
+                );
+            }
         }
     }
 }
@@ -256,13 +265,5 @@ fn factorized_boundaries_precede_output_writes_and_recover_workspace() {
             |_, _| panic!()
         ),
         Err(LookupTableError::OddFactorizationScale)
-    ));
-
-    let sparse = KeyGenerator::new(&context)
-        .try_generate_sparse_server_key(&client, 3, 8, &mut rng)
-        .unwrap();
-    assert!(matches!(
-        context.factorized_evaluator(&sparse),
-        Err(TfheEvaluationError::UnsupportedSparseBootstrapping)
     ));
 }

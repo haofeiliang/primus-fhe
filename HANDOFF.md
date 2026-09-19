@@ -4,7 +4,7 @@
 
 ## 当前任务
 
-- **B5.3 已完成，下一步 B5.4**：[NTRU Fourier MVB](docs/tfhe-mvb-fourier.md#b53ntru-接入与独立误差验收)已接入 u32/u64、两种 FFT 和 binary BR；context 准备连续整数 Fourier 因子，独立 evaluator 共享 NLev 初始化/BR、逐输出 KS。额外 N 个复数，在线首调用零分配；两个聚焦测试、基本公钥示例、双语文档已同步。n=728 的初始化/BR/FFT/KS 独立误差诊断默认/SIMD 一致，临时诊断已清理；不从功能样本推断任意参数精度。B5.2 已提交为 `7707c22`，本步未测性能。Fourier sparse×MVB 仍拒绝；组合与算法成本留给 B5.4，不自动启动。
+- **B5.1–B5.4 已完成，下一步 B6.1，不自动启动**：两族 Native 偶尺度 Fourier MVB 的[表示与独立误差](docs/tfhe-mvb-fourier.md)、[应用/组合/成本](docs/tfhe-mvb-fourier-costs.md)已验收。GLWE 支持经典 binary/ternary 和 sparse binary，两种 order；NTRU 保留 binary。n=728、N=1024 的默认/SIMD 等编码重复/交错/MVB 对照、3/17 阈值示例、完整域误差与资源已记录，在线首调用零分配。默认/SIMD TFHE 检查、严格 rustdoc 与示例通过；临时诊断已清理。B5.3 已提交为 `be7a06c`；不从功能样本推断任意因子/参数精度或自动选择算法。
 - **B4 及后续内核优化已提交为 `1f6bab2`**：Fourier sparse 完整基准、常数准备与 NTT 系数 GGSW 优化见[稀疏 PBS](docs/tfhe-sparse-pbs.md)。Native/Barrett 加减保留普通循环，Shoup u64 原地乘法改用普通循环；[u64 测量与取舍](docs/simd-u64.md)保留微基准退化和完整消费者无稳定收益的边界，Native 后续原型已撤回。历史验证与具体性能前提见专项，不自动重开优化。
 - **B3 已完成**：NTRU NTT MVB 的算法、布局和成本见[NTRU 测量](docs/tfhe-mvb-ntru.md)；GLWE NTT sparse×Boolean/bivariate/odd-full 已完成两种 order 的受控误差、门链、相位/解码与首调用零分配验收，见[分步计划](docs/tfhe-backend-plan.md)。
 - **B2.1–B2.2 已完成**：Boolean 门算法、LUT 和 LWE 工作区由 `primus_tfhe` 共享，四后端提供 Boolean 工厂，保留独立加解密器及私钥/公钥加密。客户端错误归 family `BooleanError`，求值器构造归共享 `TfheEvaluationError`。共同真值表、混合门链、错误边界和 NTRU 首调用零分配通过；NTRU 覆盖 NTT 与两种 FFT，默认/SIMD 检查和测试通过。见[公共用法](crates/primus_tfhe/README.zh_CN.md#boolean-门)。
@@ -20,7 +20,7 @@
 ## 有效边界与未决项
 
 - Ternary 首批为 GLWE NTT/Fourier；NTRU ternary、桶聚合稀疏 ternary 分开安排。Automorphism BR 暂缓；NTRU packing 按用户决定排除。
-- 已实现能力以 [TFHE README](crates/primus_tfhe/README.zh_CN.md)为准。稀疏 CBS 仍拒绝；MVB 采用 Rounded 前半区输入和 unsigned Scaled 输出；GLWE/NTRU NTT 使用奇数 q，GLWE Fourier 支持 u32/u64 Native 偶尺度及经典密钥。NTRU Fourier 支持相同 Native 偶尺度与字宽，BR 秘密仍为 binary；Fourier sparse×MVB 尚未接入。
+- 已实现能力以 [TFHE README](crates/primus_tfhe/README.zh_CN.md)为准。稀疏 CBS 仍拒绝；MVB 采用 Rounded 前半区输入和 unsigned Scaled 输出；GLWE/NTRU NTT 使用奇数 q，GLWE Fourier 支持 u32/u64 Native 偶尺度及经典/稀疏密钥。NTRU Fourier 支持相同 Native 偶尺度与字宽，BR 秘密仍为 binary。Scaled 数值标志不可直接送入 Boolean 门或沿用原输入编码。
 - 连续因子存储减少分配，但没有统一在线收益：固定 CPU 的两轮 GLWE 17 输出对照中，BK 慢约 3%，KB 接近；具体原因未定位。[测量与复现](docs/tfhe-mvb.md#连续因子存储的成本对照)保留该限制；B3.2 比较当前 NTRU 算法选择，未比较 NTRU 存储变更前后。
 - [稀疏 PBS](docs/tfhe-sparse-pbs.md)的条件映射分布及完整安全/尾界、[MVB](docs/tfhe-mvb.md)的相关噪声、[居中/shift](docs/tfhe.md#p1r-取整策略取舍)正式接入均未完成理论认证或实现扩展，功能测试不关闭这些问题。
 - 历史 n=512 的稀疏测量不能当作当前 n=728 的结果；参数与测量入口见各专项文档和[测量索引](docs/benchmarks/tfhe.md)。

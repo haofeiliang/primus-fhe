@@ -26,8 +26,8 @@ Boolean evaluator 持有门 LUT 与 LWE 工作区；客户端密钥、变换 tab
 GLWE 两后端的经典 PBS 和 CBS 支持 binary/ternary small secret；MVB 同样支持。
 NTRU 的 BR 秘密仍限于 binary。
 
-GLWE 两后端均支持固定重量二元 small 秘密的实验性稀疏 PBS：两种 order、普通/交错 LUT。
-[NTT](../primus_tfhe_glwe_ntt/README.zh_CN.md#实验性稀疏-pbs) 另支持分解式 LUT；
+GLWE 两后端均支持固定重量二元 small 秘密的实验性稀疏 PBS：两种 order、普通/交错/分解式 LUT。
+[NTT](../primus_tfhe_glwe_ntt/README.zh_CN.md#实验性稀疏-pbs) 使用精确变换，
 [Fourier](../primus_tfhe_glwe_fourier/README.zh_CN.md#实验性稀疏-pbs) 使用 Native 系数域聚合。
 Sparse ternary 和 sparse CBS 尚不支持。
 
@@ -278,7 +278,7 @@ Scaled codec；接入下一次 Rounded 输入 PBS 时须计入编码中心差异
 [NTRU NTT](../primus_tfhe_ntru_ntt/README.zh_CN.md#固定尺度分解式-mvb) 均支持此程序。
 GLWE NTT 支持经典/稀疏密钥和两种 order；NTRU NTT 共享加密初始化和 BR，再逐输出 KS。
 [GLWE Fourier](../primus_tfhe_glwe_fourier/README.zh_CN.md#固定尺度分解式-mvb)
-支持 u32/u64、Native 偶尺度、经典 binary/ternary 和两种 order；因子按有符号整数变换，
+支持 u32/u64、Native 偶尺度、经典 binary/ternary、sparse binary 和两种 order；因子按有符号整数变换，
 还须预算 FFT 误差。[NTRU Fourier](../primus_tfhe_ntru_fourier/README.zh_CN.md#固定尺度分解式-mvb)
 支持相同字宽和 Native 尺度，秘密为 binary；因子同时放大加密初始化和 BR 噪声，之后逐输出 KS。
 `t_out` 不必为二次幂，检查的是实际尺度。
@@ -288,7 +288,7 @@ GLWE NTT 支持经典/稀疏密钥和两种 order；NTRU NTT 共享加密初始�
 [GLWE](../primus_tfhe_glwe_ntt/examples/mvb_thresholds.rs) 和
 [NTRU](../primus_tfhe_ntru_ntt/examples/ntru_ntt_mvb_thresholds.rs) 阈值示例展示一个加密分数
 生成交错容量之外的 17 个标志。算法选择参考 [GLWE 成本](../../docs/tfhe-mvb.md#8-p43-测量与应用选择)
-和 [NTRU 成本](../../docs/tfhe-mvb-ntru.md)。
+和 [NTRU 成本](../../docs/tfhe-mvb-ntru.md)（NTT），以及 [Fourier 成本](../../docs/tfhe-mvb-fourier-costs.md)。
 
 ## 保留模数类型的旋转量化
 

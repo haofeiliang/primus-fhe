@@ -70,6 +70,14 @@ let value = codec.decode_value(decryptor.decrypt_phase(&outputs[0])?);
 及 [NTRU 精度验收](../../docs/tfhe-mvb-fourier.md#b53ntru-接入与独立误差验收)。
 [基本示例](examples/ntru_fourier_basic.rs) 复用公钥输入，分别用显式输出 codec 执行 ManyLUT 与 MVB。
 
+[17 阈值示例](examples/ntru_fourier_mvb_thresholds.rs) 将 `0..64` 的分数转为交错容量之外的
+数值标志。其 Scaled `t_out=2` 输出不能直接当作 Boolean 门密文或另一明文模数的输入。
+重复 PBS、交错与 MVB 的选择，包括密钥/工作区和噪声取舍，见[成本测量](../../docs/tfhe-mvb-fourier-costs.md)。
+
+```sh
+cargo run -p primus_tfhe_ntru_fourier --example ntru_fourier_mvb_thresholds
+```
+
 ## 公钥客户端
 
 `client_key.try_generate_public_key(context.parameters(), &mut rng)` 生成外部

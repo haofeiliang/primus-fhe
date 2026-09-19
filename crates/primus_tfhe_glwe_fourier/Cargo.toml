@@ -42,6 +42,10 @@ harness = false
 name = "sparse_pbs"
 harness = false
 
+[[bench]]
+name = "mvb"
+harness = false
+
 [features]
 default = []
 simd = [

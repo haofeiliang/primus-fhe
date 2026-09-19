@@ -84,6 +84,16 @@ center differences before another Rounded-input PBS. See the
 The [basic example](examples/ntru_fourier_basic.rs) reuses public-key inputs for
 ManyLUT and MVB with explicit output codecs.
 
+The [17-threshold example](examples/ntru_fourier_mvb_thresholds.rs) evaluates a score in
+`0..64` beyond interleaved capacity. Its Scaled `t_out=2` numeric flags are not
+Boolean gate ciphertexts or inputs at another plaintext modulus. See
+[measured algorithm costs](../../docs/tfhe-mvb-fourier-costs.md) for the tradeoff
+between repeated PBS, interleaving and MVB, including key/workspace sizes and noise.
+
+```sh
+cargo run -p primus_tfhe_ntru_fourier --example ntru_fourier_mvb_thresholds
+```
+
 ## Public-key clients
 
 `client_key.try_generate_public_key(context.parameters(), &mut rng)` generates an

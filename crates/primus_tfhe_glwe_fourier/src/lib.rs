@@ -25,7 +25,8 @@
 //!
 //! [`TfheContext::compile_factorized_lookup_table_fn`] prepares Native even-scale
 //! MVB with unsigned Scaled outputs. [`FactorizedEvaluator`] shares one classic
-//! binary/ternary BR across outputs, then multiplies by integer Fourier factors.
+//! binary/ternary or sparse binary BR across outputs, then multiplies by integer
+//! Fourier factors.
 //! Both orders support u32/u64; factor amplification and FFT error need a noise budget.
 
 #![deny(missing_docs)]

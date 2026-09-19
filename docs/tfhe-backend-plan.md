@@ -2,11 +2,11 @@
 
 依据：[后端覆盖分析](tfhe-backend-coverage.md)，初始源码基线 `7f1ef55`。本计划把已有算法的后端补齐与必要的高层接口整理拆成可独立验收的步骤；不重开已完成的 P1–P4、T1–T3，也不扩入 FDFB 等[新算法选型](tfhe-next.md)。
 
-B1–B4 已完成，B5.1–B5.3 已完成两族 Fourier MVB 接入，下一步 B5.4。B1.4–B1.7 整理四后端高层接口，分析与性能对照基线为 `66ae701`；B2–B8 保留原编号。当前任务与下一步记录在 [HANDOFF](../HANDOFF.md)，算法依据仍由覆盖分析和各专项文档维护。
+B1–B5 已完成，下一步 B6.1。B1.4–B1.7 整理四后端高层接口，分析与性能对照基线为 `66ae701`；B2–B8 保留原编号。当前任务与下一步记录在 [HANDOFF](../HANDOFF.md)，算法依据仍由覆盖分析和各专项文档维护。
 
 ## 执行方式
 
-- 接下来推荐按 **`执行 B5.4` → 后续满足前置条件的步骤** 推进。`B1` 表示整个阶段；明确要求“执行 B1”时，完成其所有满足前置条件的剩余子步骤。
+- 接下来推荐按 **`执行 B6.1` → 后续满足前置条件的步骤** 推进。`B1` 表示整个阶段；明确要求“执行 B1”时，完成其所有满足前置条件的剩余子步骤。
 - 每步先核对 Git 状态、HANDOFF、本步及依赖结论；保留用户修改和暂存状态。编号不隐含暂存、提交或启动后续步骤。
 - **工程接入**：现成代数与原语支持实现，仍需正常验证。**原型验证**：先回答未决问题，结论可以是通过、缩小范围或暂缓。
 - “依赖原型通过”不同于“原型步骤已结束”。原型不成立时保留结论及最小反例，删除无长期价值的实验代码，暂缓依赖分支；其他独立阶段仍可执行。
@@ -20,7 +20,7 @@ B1–B4 已完成，B5.1–B5.3 已完成两族 Fourier MVB 接入，下一步 B
 | B2 | NTRU 两后端 Boolean | B2.1–B2.2 | 已完成共享算法、绑定、完整门语义和串联验收 |
 | B3 | NTRU NTT MVB、既有 sparse 组合验收 | B3.1–B3.3 | 全部完成；[MVB 测量](tfhe-mvb-ntru.md)、[sparse 组合](tfhe-sparse-pbs.md#b33-已有上层组合验收) |
 | B4 | GLWE Fourier 二元稀疏 PBS | B4.1–B4.3 | 已完成密钥、完整 PBS 与成本验收；保留参考实现，不含 sparse CBS/ternary |
-| B5 | Native 偶尺度 MVB | B5.1–B5.4 | B5.1–B5.3 已完成；下一步组合与应用成本验收 |
+| B5 | Native 偶尺度 MVB | B5.1–B5.4 | 全部完成；[表示与误差](tfhe-mvb-fourier.md)、[组合与成本](tfhe-mvb-fourier-costs.md) |
 | B6 | sparse CBS | B6.1–B6.3 | NTT 先验证；Fourier 还依赖 B1、B4 的对应能力 |
 | B7 | NTRU 经典 ternary | B7.1–B7.4 | 先明确采样与控制原语，再接完整链；不依赖 sparse 算法 |
 | B8 | NTRU 二元桶聚合 PBS | B8.1–B8.3 | 独立方案原型；复用 B4.1 的纯匹配组件，不依赖 B7 |
@@ -125,31 +125,15 @@ Fourier 因原型噪声增加，按用户决定暂不接入。不阻塞 B2.1。
 
 入口：[除二边界](tfhe-mvb.md#12-的边界)、[覆盖分析 §5.4](tfhe-backend-coverage.md#54-native-偶尺度-mvbglwentru-fourier-的共同前置工作)。
 
-### B5.1：表示与误差原型（已通过）
+| 步骤 | 完成入口与结论 |
+| --- | --- |
+| B5.1：表示与误差原型 | [整数因子、独立卷积与分阶段误差](tfhe-mvb-fourier.md)，Native 偶尺度成立，奇尺度拒绝；临时原型已清理 |
+| B5.2：GLWE 正式接入 | [接口与验收](tfhe-mvb-fourier.md#b52正式接口与验收)，两种 FFT/order、u32/u64、经典 binary/ternary；context 绑定与首调用零分配 |
+| B5.3：NTRU 正式接入 | [独立初始化/BR/FFT/KS 误差](tfhe-mvb-fourier.md#b53ntru-接入与独立误差验收)，两种 FFT、u32/u64、binary BR；额外 N 个复数、首调用零分配 |
+| B5.4：应用、组合与成本 | [完整验收](tfhe-mvb-fourier-costs.md)，开放 GLWE sparse×MVB；两族默认/SIMD 的重复/交错/MVB 等编码对照、3/17 阈值示例、因子范数/完整误差/资源/时间；临时诊断已清理 |
 
-- **结果**：[表示、独立卷积参照、分阶段误差与成本](tfhe-mvb-fourier.md)。复用 `forward_as_integer` 和现有 Fourier 公开乘法，无新增生产类型或内核。
-- **验证范围**：两种 FFT、u32/u64、`n=728,N=1024` 的经典 binary BK 三输出；`t_out=8/10` 偶尺度成功，`t_out=3` 奇尺度拒绝。独立小整数乘法另覆盖 `N=16/1024/4096`。
-- **余量与成本**：默认/SIMD 诊断一致、首调用零分配；u64 的新增乘法相位误差单独计入，完整输出保留明确解码余量；两轮默认计时见专项。不推断任意因子/参数均满足精度。
-- **边界**：临时原型已清理；本步仅提供表示/误差证据，正式接入归 B5.2，NTRU 归 B5.3，sparse 组合及交错算法对照归 B5.4。
-
-### B5.2：GLWE Fourier MVB 正式接入（已完成）
-
-- **实现**：共享编译器增加 Native 偶尺度分支和 `OddFactorizationScale`，保留奇数 q 路径；context 编译/准备 `FourierFactorizedLookupTable`，独立 `FactorizedEvaluator` 复用普通 evaluator 的 BR/KS。
-- **契约**：两种 FFT、u32/u64、两种 order 与经典 binary/ternary；连续整数 FFT 因子绑定同一 context，新增共享 Fourier GLWE 和一个乘积多项式，在线零分配。因子放大与 FFT 相位误差仍由参数预算承担。
-- **验收**：[聚焦测试](../crates/primus_tfhe_glwe_fourier/tests/factorized_pbs.rs)、默认/SIMD TFHE 检查及复用公钥输入的基本示例；[表示与完成边界](tfhe-mvb-fourier.md#b52正式接口与验收)。无新增持久基准，算法比较留给 B5.4。
-- **边界**：NTRU 初始化与后处理已由 B5.3 独立验收；Fourier sparse×MVB 仍由 B5.4 验收，当前构造拒绝。
-
-### B5.3：NTRU Fourier MVB 正式接入（已完成）
-
-- **实现**：复用共享 Native 偶尺度编译器；NTRU context 提供整数 Fourier 因子准备和独立 evaluator，共享 `NLev[1]` 初始化与 binary BR，逐输出乘法后 KS/提取。支持两种 FFT、u32/u64，额外工作区为 N 个复数，在线零分配。
-- **验收**：[两个聚焦测试](../crates/primus_tfhe_ntru_fourier/tests/factorized_pbs.rs)覆盖同 Scaled 单 PBS 参照、多输出/复用、context 及写入前边界；既有基本示例复用公钥输入。默认/SIMD TFHE 检查通过。
-- **独立误差**：`n=728,N=1024,h=33`，逐阶段分离初始化、BR、整数因子乘法的 FFT 相位误差与 KS；默认/SIMD 摘要一致。参数、精确卷积核对与适用边界见 [B5.3 记录](tfhe-mvb-fourier.md#b53ntru-接入与独立误差验收)。临时诊断已移除，不增加 CI 统计或持久基准；成本比较留给 B5.4。
-
-### B5.4：应用、组合与成本验收
-
-- **前置**：B5.2；NTRU 部分还依赖 B5.3。
-- **范围**：比较每个后端内重复 PBS、交错 ManyLUT、MVB 的等价输出负载；覆盖交错容量之外的示例。B4 已验收时补一组 GLWE Fourier sparse×MVB 验证，否则明确保留该组合未验证状态。
-- **验收**：记录因子范数、完整误差、输出编码衔接、资源和时间，更新双语说明及当前覆盖矩阵；原型与临时性能分支完成取舍后清理。
+保留独立算法入口：交错容量、MVB 的因子放大/FFT 相位误差及 sparse 的额外密钥成本
+由具体参数决定。不自动选择算法，也不从功能样本推断任意因子/参数的精度或正式噪声尾界。
 
 ## B6：稀疏 CBS
 

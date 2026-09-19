@@ -12,6 +12,7 @@
 | --- | --- |
 | `primus_tfhe / lookup_table` | raw LUT 构造，包含分配与析构 |
 | 四后端 `/ pbs` | 完整 PBS、3/4 输出交错 ManyLUT 与独立 PBS；GLWE 另含 Boolean AND/MUX、两种 order 和 BR/KS 分项，Fourier 覆盖两种 FFT；系数提取基准归 `primus_lattice` |
+| 两族 Fourier `/ mvb` | Native u32/u64、3/17 个同 Scaled 阈值，重复/交错/MVB；GLWE 两种 order、经典/稀疏；[B5.4 成本与误差](../tfhe-mvb-fourier-costs.md) |
 | GLWE 两后端 `/ ternary_pbs` | `n=728,N=1024`、BR→KS 的 binary / 融合 ternary / 双 CMUX 完整 PBS，另测 BSK+KSK；[方法与结果](../tfhe-ternary.md#t3完整-glwe-接入与验收已完成) |
 | `primus_tfhe_glwe_ntt / sparse_pbs` | 同一 fixed-weight 客户端下的经典/稀疏完整 PBS、两种 order、普通/三输出交错及 server key 生成；当前 `n/h/N=728/32/1024`，每次处理四个输入之一；[专项](../tfhe-sparse-pbs.md#p35-完整-pbs-接入与验收)区分历史 n=512 数据；[NTT 后续优化](../tfhe-sparse-pbs.md#ntt-后续优化)记录常数、Barrett 切片与系数 GGSW 对照 |
 | `primus_tfhe_glwe_fourier / sparse_pbs` | 同一 fixed-weight 客户端下的经典/稀疏完整 PBS、两种 FFT/order、普通/三输出及 server key 生成；`n/h/N=728/32/1024`；[成本与适用范围](../tfhe-sparse-pbs.md#b43-fourier-成本与保留方案)，[计时 CSV](tfhe-b4.3.csv)，[Native/常数准备优化](../tfhe-sparse-pbs.md#native-加减切片与常数准备优化) |
@@ -43,7 +44,7 @@ NTRU CBS 的 [NTT](../../crates/primus_tfhe_ntru_ntt/benches/circuit_bootstrap.r
 [Native 偶尺度 MVB 原型](../tfhe-mvb-fourier.md)记录 B5.1 的两种 FFT、u32/u64
 整数因子乘法与经典 BK 完整链；[计时](tfhe-b5.1.csv)、[误差](tfhe-b5.1-noise.csv)。
 [B5.3 NTRU 诊断](../tfhe-mvb-fourier.md#b53ntru-接入与独立误差验收)另记录 NLev 初始化、BR、
-公开乘法和 KS 的[独立误差摘要](tfhe-b5.3-noise.csv)。临时诊断已清理，正式成本基准留给 B5.4。
+公开乘法和 KS 的[独立误差摘要](tfhe-b5.3-noise.csv)。临时诊断已清理，正式成本基准与完整域验收见 [B5.4](../tfhe-mvb-fourier-costs.md)。
 
 [u64 SIMD 补测](../simd-u64.md)记录加减改动前后、其他 modulus / Shoup 内核的
 默认/SIMD 对照及 u64 完整 sparse PBS / keygen；[CSV](simd-u64.csv)保留负向结果和隔离复测。
