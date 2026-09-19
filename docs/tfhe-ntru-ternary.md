@@ -1,8 +1,8 @@
 # NTRU ternary：秘密采样与融合单步
 
 [B7 分步计划](tfhe-backend-plan.md#b7ntru-经典-ternary)的恢复入口。
-**B7.1 采样前置和 B7.2 NTT NGSW 融合单步已完成；TFHE 参数及导入密钥仍限制 binary。**
-Fourier 单步与完整链分别留给 B7.3/B7.4；不包含桶聚合 ternary。
+**B7.1 采样前置及 B7.2/B7.3 NTT/Fourier NGSW 融合单步已完成；TFHE 参数及导入密钥仍限制 binary。**
+完整链留给 B7.4；不包含桶聚合 ternary。
 
 ## 1. 目标分布与秘密身份
 
@@ -180,10 +180,99 @@ Criterion 30 samples、warm-up 1 s、measurement 2 s。以下为 Criterion 时�
 没有额外实现逐行组合或改变既有 binary 内核；此处也不宣称达到最优。
 
 两路基准重复使用同一对控制，不能外推整把 BSK 的缓存/带宽成本，也不比较等安全参数。
-完整 NTRU ternary PBS、误差累积及资源成本留给 B7.4；Fourier 必须先通过 B7.3。
+完整 NTRU ternary PBS、误差累积及资源成本留给 B7.4；Fourier 单步见下一节。
 
 复现命令见基准文件顶部；本次使用 `taskset -c 2`，默认/SIMD 都使用上述 nightly，
 Criterion 参数为 `--save-baseline b72-default --noplot` / `--save-baseline b72-simd --noplot`。
 
 B7.2 已通过 lattice/NTRU 默认与 SIMD 的 all-targets check、Clippy 和测试，
 以及 `just tfhe`、`just tfhe-simd`、lattice/NTRU 严格 rustdoc。
+
+## 6. B7.3：Fourier NGSW ternary 融合单步
+
+### 实现与数值契约
+
+`FourierNgsw::cmux_ternary_monomial_to` 沿用 §5 的代数，一次组合、一次外积。
+`FourierNtruTernaryCmuxContext::new(N, levels)` 保存组合 NGSW 和普通外积工作区，
+单项式准备复用其系数及 Fourier digit 缓冲；随后分解覆盖这两个缓冲，无额外分配。
+输出先保存 `(X^a-1)C`，外积在工作区内累加，逆变换后加回输入。零指数精确复制。
+
+`FourierNgsw::sub_mul_monomial_to` 与现有 GGSW 方法使用
+[同一实现](../crates/primus_lattice/src/macros/fourier_monomial.rs)：先在系数缓冲写
+一个 `±1` 的 signed bit pattern，再以**整数尺度**变换并执行逐点减乘。
+控制始终是 Native torus 尺度，必须由 engine 对应的同一个表实例产生；不能在
+RustFFT/TfheFFT 的频率排列之间混用。原 binary 内核不变。
+
+Fourier 误差在 §5 的分解/控制误差之外，还包含单项式变换、控制组合、digit FFT、
+复数乘加和输出舍入。不能将融合输出与两次 CMUX 输出直接作相等断言。
+
+### 聚焦验证
+
+- 扩展既有 [Fourier 算术测试](../crates/primus_lattice/tests/fourier.rs)：GGSW/NGSW
+  共用一个系数 oracle，覆盖两个 FFT 的全部小环指数、各层及脏 scratch；
+  独立调用 helper 的零指数是 `self-rhs`，与 CMUX 的零指数复制不同。
+- 在 [真实控制测试](../crates/primus_ntru/tests/ternary_cmux.rs)中增加一个表驱动测试：
+  u32/u64 × 两种 FFT，`N=32, logB=8, L=3/7, sigma=0.7`，固定 seed `0xB703`。
+  覆盖 `s=-1/0/1` 和全部 `0..2N` 指数；signed 秘密的精确 wrapping schoolbook
+  卷积给出独立输入/输出相位。融合和两次 CMUX 分别对照理想旋转，从首次调用起检查
+  融合零分配，工作区跨调用复用，最后检查零指数精确复制。
+- 相位预算使用实际控制系数的误差与分解界，另计恢复每个控制行时的系数舍入；
+  FFT 部分采用该小环的数值回归 allowance：每个输出系数 `max(1, 2^(BITS-40))`，
+  再乘 `||f||₁`。两次 CMUX 计两次分解与浮点 allowance。这是明确的数值回归预算，
+  **不是任意环长/密钥的解析 FFT 上界或失败率认证**。
+
+### 单步成本、误差与保留决定
+
+扩展既有 [ternary_cmux 基准](../crates/primus_ntru/benches/ternary_cmux.rs)，
+不新增基准 target。两种 FFT 均测 `N=1024, t=16, logB=8, sigma=3.2`，
+Native u32 用 `L=3`，u64 用 `L=6`；秘密为 SparseTernary，seed `0xB703`。
+每次迭代完整执行一组真实 `(0,1)` 控制、`a=N/3` 的旋转，包含单项式变换和输出恢复；
+对照使用同一输入、同一控制做两次 binary CMUX。密钥、表和缓冲区在计时外构造。
+
+测量机器、CPU 绑定、nightly 和 Criterion 设置同 §5。以下为时间点估计：
+
+| FFT / 类型 / feature | 两次 binary（µs） | 融合（µs） | 时间减少 |
+| --- | ---: | ---: | ---: |
+| RustFFT / u32 / default | 6.5913 | 4.2110 | 36.1% |
+| RustFFT / u32 / SIMD | 6.6069 | 4.1876 | 36.6% |
+| RustFFT / u64 / default | 15.242 | 9.0551 | 40.6% |
+| RustFFT / u64 / SIMD | 16.017 | 8.8725 | 44.6% |
+| TfheFFT / u32 / default | 5.2179 | 3.4800 | 33.3% |
+| TfheFFT / u32 / SIMD | 5.3883 | 3.4723 | 35.6% |
+| TfheFFT / u64 / default | 12.810 | 7.6567 | 40.2% |
+| TfheFFT / u64 / SIMD | 13.770 | 7.4518 | 45.9% |
+
+基准在计时外用独立系数卷积求相位，相对于理想 `X^-a` 旋转输入相位的最大误差如下。
+这是一次固定输入/控制的观测；默认/SIMD 在表中精度内相同，不能当作统计尾界。
+
+| FFT / 类型 | 融合 `max |error|/q` | 两次 CMUX `max |error|/q` |
+| --- | ---: | ---: |
+| RustFFT / u32 | 1.217e-5 | 1.124e-5 |
+| TfheFFT / u32 | 1.217e-5 | 1.124e-5 |
+| RustFFT / u64 | 8.816e-14 | 9.533e-14 |
+| TfheFFT / u64 | 7.607e-14 | 6.760e-14 |
+
+本组误差小于 `t=16` 的半编码间距 `1/32`；该比较仅说明单步增量的量级，
+未计入输入加密误差，也不保证多步累积后的解码正确率。
+
+按实际构造分配的字节计，排除共同 input/output、表和 FFT engine scratch：
+
+| 类型 | 正负控制合计 | 两次 CMUX scratch（含中间密文） | 融合 scratch | 增量 |
+| --- | ---: | ---: | ---: | ---: |
+| u32，L=3 | 48 KiB | 25 KiB | 45 KiB | 20 KiB |
+| u64，L=6 | 96 KiB | 33 KiB | 73 KiB | 40 KiB |
+
+原外积工作区含 `N` 个系数、`N` 个 bool、共 `N` 个 Complex64；融合增加 `LN/2`
+个 Complex64，双 CMUX 则增加 `N` 个系数。空间差为 `8LN-N*sizeof(T)` 字节。
+本组默认/SIMD 均减少约 33%–46% 的完整单步时间，保留实现。
+SIMD 本身并非对所有路径提速；此处不改动底层 SIMD 内核。
+
+基准重复读取同一对控制，不能外推整把 BSK 的缓存/带宽成本。完整 BR、已有上层组合、
+客户端分布和误差累积留给 B7.4；本步不放宽 TFHE 的 binary 限制。
+复现使用基准文件顶部命令，附 `taskset -c 2`，默认/SIMD 都用上述 nightly，过滤 `fourier`，
+Criterion 参数为 `--save-baseline b73-default --noplot` / `--save-baseline b73-simd --noplot`。
+
+
+B7.3 已通过 lattice/NTRU/GLWE 默认与 SIMD 的 all-targets check、Clippy 和测试，
+以及 `just tfhe`、`just tfhe-simd`、相关底层及 TFHE 包的严格 rustdoc。
+Cargo 仍报告两个后端同名 `circuit_bootstrap` 示例的既有输出文件名冲突警告，检查成功。

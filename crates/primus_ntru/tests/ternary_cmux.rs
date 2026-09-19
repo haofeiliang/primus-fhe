@@ -1,6 +1,11 @@
-use primus_modulus::BarrettModulus;
+use num_traits::{ConstOne, ConstZero};
+use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable, TfheFftTable, TorusFftValue};
+use primus_integer::SignedInteger;
+use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntru::{
-    NlevParameters, NtruCiphertext, NtruParameters, NttNgswCiphertext,
+    FourierNgswCiphertext, FourierNtruEncryptContext, FourierNtruExternalProductContext,
+    FourierNtruGadgetEncryptContext, FourierNtruSecretKey, FourierNtruTernaryCmuxContext,
+    NgswCiphertext, NlevParameters, NtruCiphertext, NtruParameters, NttNgswCiphertext,
     NttNtruExternalProductContext, NttNtruSecretKey, NttNtruTernaryCmuxContext, SecretKeyDistr,
 };
 use primus_ntt::{NttTable, UintNttTable};
@@ -159,4 +164,190 @@ fn encrypted_ternary_step_matches_phase_oracle_and_two_binary_cmuxes_without_all
             }
         }
     }
+}
+
+// Exact Native phase; signed secrets are embedded as wrapping bit patterns.
+fn native_phase<T: TorusFftValue>(cipher: &[T], secret: &[T::SignedInteger]) -> Vec<T> {
+    let mut output = vec![T::ZERO; N];
+    for (i, &value) in cipher.iter().enumerate() {
+        for (j, &secret) in secret.iter().enumerate() {
+            let product = value.wrapping_mul(secret.cast_to_unsigned());
+            if i + j < N {
+                output[i + j] = output[i + j].wrapping_add(product);
+            } else {
+                output[i + j - N] = output[i + j - N].wrapping_sub(product);
+            }
+        }
+    }
+    output
+}
+
+fn native_distance<T: TorusFftValue>(lhs: T, rhs: T) -> T {
+    lhs.wrapping_sub(rhs).min(rhs.wrapping_sub(lhs))
+}
+
+fn check_fourier_step<T: TorusFftValue, Table: FftTable>() {
+    let table = Table::new(N.trailing_zeros()).unwrap();
+    let mut fft = FftEngine::new(&table);
+    let params = NtruParameters::new(
+        N,
+        T::try_from(16).unwrap(),
+        NativeModulus::new(),
+        SecretKeyDistr::SparseTernary,
+        0.7,
+    );
+    let gadget = NlevParameters::with_ntru_params(&params, 8, Some(T::BITS as usize / 8 - 1));
+    let basis = gadget.basis();
+    let mut rng = StdRng::seed_from_u64(0xB703);
+    let (coeff, key) = FourierNtruSecretKey::generate_pair(&params, &mut fft, &mut rng).unwrap();
+    let message = Polynomial::new(
+        (0..N)
+            .map(|i| T::try_from(i % 16).unwrap())
+            .collect::<Vec<_>>(),
+    );
+    let mut input = NtruCiphertext::<Vec<T>>::zero(N);
+    key.encrypt(
+        &message,
+        &params,
+        &mut fft,
+        &mut rng,
+        &mut FourierNtruEncryptContext::new(N),
+    )
+    .write_torus_form(&mut input, &mut fft);
+    let input_phase = native_phase(input.as_ref(), coeff.as_slice());
+    let secret_norm = T::try_from(
+        coeff
+            .as_slice()
+            .iter()
+            .filter(|&&v| v != T::SignedInteger::ZERO)
+            .count(),
+    )
+    .unwrap();
+    let mut controls = vec![Complex64::default(); 2 * gadget.fourier_nlev_len()];
+    let mut encrypt_context = FourierNtruGadgetEncryptContext::new(N);
+    let mut fused = FourierNtruTernaryCmuxContext::new(N, gadget.decompose_length());
+    let mut binary = FourierNtruExternalProductContext::new(N);
+    let mut output = NtruCiphertext::new(vec![T::MAX; N]);
+    let mut intermediate = NtruCiphertext::<Vec<T>>::zero(N);
+    let mut reference = NtruCiphertext::<Vec<T>>::zero(N);
+    let mut control_coeff = NgswCiphertext::<Vec<T>>::zero(gadget.nlev_len());
+
+    for secret in [1isize, -1, 0] {
+        let bits = [secret == 1, secret == -1];
+        key.encrypt_ngsw_signed_constant_batch_to(
+            &bits.map(|bit| {
+                if bit {
+                    T::SignedInteger::ONE
+                } else {
+                    T::SignedInteger::ZERO
+                }
+            }),
+            &mut controls,
+            &gadget,
+            &mut fft,
+            &mut rng,
+            &mut encrypt_context,
+        );
+        let mut control_error_sum = T::ZERO;
+        for (control, bit) in controls.chunks_exact(gadget.fourier_nlev_len()).zip(bits) {
+            FourierNgswCiphertext::new(control).write_torus_form(&mut control_coeff, &mut fft);
+            for (row, scalar) in control_coeff
+                .as_ref()
+                .as_chunks::<N>()
+                .0
+                .iter()
+                .zip(basis.scalar_iter())
+            {
+                let phase = native_phase(row, coeff.as_slice());
+                control_error_sum += phase
+                    .iter()
+                    .zip(coeff.as_slice())
+                    .map(|(&actual, &f)| {
+                        let expected = if bit {
+                            scalar.wrapping_mul(f.cast_to_unsigned())
+                        } else {
+                            T::ZERO
+                        };
+                        native_distance(actual, expected)
+                    })
+                    .max()
+                    .unwrap();
+            }
+        }
+        // Recovering each control row rounds its coefficients: account for
+        // ||f||_1/2 per row as well as the measured control error. The separate
+        // 2^-40 torus allowance (at least one integer unit) is a numerical
+        // regression budget for this small ring, not a general FFT error proof.
+        let floating_budget = T::ONE << T::BITS.saturating_sub(40);
+        let residual_bound = secret_norm * basis.approximate_error_bound();
+        let noise_bound = T::try_from(N).unwrap()
+            * (basis.basis_value() / T::TWO)
+            * (control_error_sum + secret_norm * T::try_from(gadget.decompose_length()).unwrap());
+        let fused_bound = residual_bound + noise_bound + secret_norm * floating_budget;
+        let binary_bound = T::TWO * (residual_bound + secret_norm * floating_budget) + noise_bound;
+        let (positive, negative) = controls.split_at(gadget.fourier_nlev_len());
+        let positive = FourierNgswCiphertext::new(positive);
+        let negative = FourierNgswCiphertext::new(negative);
+        for exponent in (1..2 * N).chain([0]) {
+            let (_, allocations) = measure(|| {
+                positive.cmux_ternary_monomial_to(
+                    &negative,
+                    &input,
+                    exponent,
+                    &mut output,
+                    basis,
+                    &mut fft,
+                    &mut fused,
+                )
+            });
+            assert_eq!(allocations.count, 0);
+            positive.cmux_monomial_to(
+                &input,
+                exponent,
+                &mut intermediate,
+                basis,
+                &mut fft,
+                &mut binary,
+            );
+            negative.cmux_monomial_to(
+                &intermediate,
+                (2 * N - exponent) % (2 * N),
+                &mut reference,
+                basis,
+                &mut fft,
+                &mut binary,
+            );
+            let mut expected = vec![T::ZERO; N];
+            for (i, &value) in input_phase.iter().enumerate() {
+                let index =
+                    (i as isize + exponent as isize * secret).rem_euclid(2 * N as isize) as usize;
+                expected[index % N] = if index < N {
+                    value
+                } else {
+                    value.wrapping_neg()
+                };
+            }
+            for (actual, bound) in [(&output, fused_bound), (&reference, binary_bound)] {
+                let actual = native_phase(actual.as_ref(), coeff.as_slice());
+                for (&value, &expected) in actual.iter().zip(&expected) {
+                    let error = native_distance(value, expected);
+                    assert!(
+                        error <= bound,
+                        "s={secret}, a={exponent}: {error:?} > {bound:?}"
+                    );
+                }
+            }
+            if exponent == 0 {
+                assert_eq!(output.as_ref(), input.as_ref());
+            }
+        }
+    }
+}
+
+#[test]
+fn fourier_ternary_step_matches_independent_phase_and_two_cmuxes_without_allocation() {
+    check_fourier_step::<u32, RustFftTable>();
+    check_fourier_step::<u64, RustFftTable>();
+    check_fourier_step::<u32, TfheFftTable>();
+    check_fourier_step::<u64, TfheFftTable>();
 }

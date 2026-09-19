@@ -10,6 +10,7 @@
 //! - [`common`]: constructors, byte I/O, zero initialization
 //! - [`iter`], [`rlwe`]: ciphertext iterators and RLWE polynomial views
 //! - [`monomial`]: coefficient-domain monomial products
+//! - [`fourier_monomial`]: Fourier monomial subtraction with integer-scale factors
 //! - [`ntt_monomial`]: NTT-domain monomial products with reusable scratch
 //! - [`ntt_polynomial`], [`dcrt_polynomial`]: same-domain polynomial products
 //! - [`plaintext`], [`gadget`]: encoded body operations and gadget diagonal injection
@@ -34,6 +35,8 @@ mod ntt;
 mod ntt_polynomial;
 #[macro_use]
 mod ntt_monomial;
+#[macro_use]
+mod fourier_monomial;
 #[macro_use]
 mod monomial;
 #[macro_use]

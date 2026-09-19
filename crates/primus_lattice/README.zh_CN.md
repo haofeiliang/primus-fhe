@@ -58,7 +58,7 @@ Fourier 输出则省去这一步转换和舍入。`NGSW.external_product_nlev_to
 | 样本抽取 | `extract_lwe_at_to`、紧凑抽取、打包 RLWE 抽取、`inverse_extract_glwe_to` |
 | 外积 | Fourier/NTT GGSW 与 NTRU gadget product；DCRT GLev 多项式乘法和 GGSW 乘法 |
 | CMUX | GGSW/NGSW 的 `cmux_to`、`cmux_k_to`、`cmux_monomial_to` |
-| Ternary 旋转 | NTT/Fourier GGSW 和 NTT NGSW 的 `cmux_ternary_monomial_to`，使用正负控制对和一次外积 |
+| Ternary 旋转 | NTT/Fourier GGSW 和 NGSW 的 `cmux_ternary_monomial_to`，使用正负控制对和一次外积 |
 
 实际支持的接口取决于类型和表示；此表是运算族概览，不表示每个类型都具有全部方法。RNS scalar/factor 参数使用按模数顺序排列的 `primus_rns::Residues` 和 `ResidueFactors`。
 
@@ -69,7 +69,7 @@ Fourier 输出则省去这一步转换和舍入。`NGSW.external_product_nlev_to
 单项式 NTT 表和长度为 `N` 的 scratch 切片。各操作只生成一次单项式变换并覆盖 scratch，
 供密文的所有多项式共用，不分配内存或转换回系数域。
 
-`FourierGgsw::sub_mul_monomial_to` 使用 FFT engine、`N` 个 torus 整数和 `N/2` 个复数的
+`FourierGgsw` 与 `FourierNgsw` 的 `sub_mul_monomial_to` 使用 FFT engine、`N` 个 torus 整数和 `N/2` 个复数的
 scratch 执行相同减法。它用密文对应的同一个表实例，以整数尺度变换单项式，保持密文的
 torus 缩放和频率排列。
 
@@ -86,7 +86,7 @@ torus 缩放和频率排列。
 | `FourierGlweExternalProductContext` / `NttGlweExternalProductContext` | 通过 `GadgetSize` 绑定 GLWE 布局和分解层数 |
 | `NttGlweTernaryCmuxContext` / `FourierGlweTernaryCmuxContext` | 固定的 `GadgetSize`；组合 GGSW、单项式变换和外积工作区 |
 | `FourierNtruExternalProductContext` / `NttNtruExternalProductContext` | 标量 NTRU gadget product 的多项式长度 |
-| `NttNtruTernaryCmuxContext` | 固定多项式长度和层数；组合 NGSW 与可复用的外积 scratch |
+| `NttNtruTernaryCmuxContext` / `FourierNtruTernaryCmuxContext` | 固定多项式长度和层数；组合 NGSW 与可复用的外积 scratch |
 | `DcrtGlevMulContext` | RNS gadget 布局和 BigUint limb 宽度要求 |
 
 Context 提供可复用 scratch，不是已经验证的 basis/table/modulus domain。GLWE 外积 context 支持在 GLWE 形状不变时 `rebind`，以及缓冲区大小变化时 `resize`。DCRT 的兼容性还包括 RNS 模数乘积的 limb 宽度。拥有参数的调用方必须先建立兼容性，再进入内核。
@@ -99,7 +99,7 @@ basis，以及 NTT 表或同一个 FFT 表实例。Fourier 控制使用 native-t
 basis。指数已经量化到 `0..2N`；零指数精确复制输入。在线运算复用 context，
 不分配内存。这是 lattice 单步原语；完整 GLWE TFHE ternary 密钥生成与求值见
 [ternary 设计](../../docs/tfhe-ternary.md)。
-NGSW 形式目前仅支持 NTT；NTRU TFHE 层仍要求 binary 控制。
+NGSW 形式支持 NTT 和 Fourier；NTRU TFHE 层仍要求 binary 控制。
 
 ## 示例
 

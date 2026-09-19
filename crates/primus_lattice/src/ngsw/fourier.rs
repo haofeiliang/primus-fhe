@@ -40,5 +40,6 @@ impl_fourier_iter_sub!(
 
 impl_fourier_basic_operation!(FourierNgsw);
 impl_fourier_polynomial!(FourierNgsw);
+impl_fourier_monomial!(FourierNgsw);
 
 impl_fourier_conversion!(Ngsw, FourierNgsw);

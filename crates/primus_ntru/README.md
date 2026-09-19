@@ -72,13 +72,15 @@ cargo run -p primus_ntru --example automorphism
 | `encrypt_nlev_to`, `encrypt_ngsw_to` | Encoded polynomial to transformed gadget rows, without plaintext codec scaling |
 | `encrypt_nlev_constant_to` | Constant ring element to transformed NLev |
 | `encrypt_ngsw_signed_constant_batch_to` | Signed constants to contiguous transformed NGSWs |
-| `NttNgswCiphertext::cmux_ternary_monomial_to` | Positive/negative bit controls rotate coefficient NTRU with one external product |
+| NTT/Fourier NGSW `cmux_ternary_monomial_to` | Positive/negative bit controls rotate coefficient NTRU with one external product |
 | `NttNtruKeySwitchingKey`, `FourierNtruKeySwitchingKey` | Coefficient NTRU under an input secret to coefficient NTRU under the output secret |
 | `NttNtruAutomorphismKey::apply_to`, `FourierNtruAutomorphismKey::apply_to` | Coefficient NTRU to coefficient NTRU under the same secret |
 | `apply_ntt_to`, `apply_fourier_to` | Transformed NTRU to the corresponding transformed output under the same secret |
 
-For NTT ternary rotation, allocate `NttNtruTernaryCmuxContext::new(N, levels)`
-once and reuse it with mutually exclusive positive/negative NGSW controls.
+For ternary rotation, allocate `NttNtruTernaryCmuxContext::new(N, levels)` or
+`FourierNtruTernaryCmuxContext::new(N, levels)` once, and reuse it with mutually
+exclusive positive/negative NGSW controls. Fourier uses a native basis and both
+controls must use the engine's exact FFT table instance and torus scale.
 The exponent is already quantized into `0..2N`; its negative is derived internally.
 This low-level primitive does not enable ternary in the NTRU TFHE layer.
 
@@ -174,7 +176,9 @@ stay outside timed closures. Add `-- --test` for fixture smoke checks; those
 checks do not measure performance or establish decryptability.
 
 `ternary_cmux` compares one fused rotation against two binary CMUXes, with
-real encrypted controls, u32/u64 and reusable scratch at `N=1024`.
+real encrypted controls, u32/u64 and reusable scratch at `N=1024`, for NTT and
+both FFT backends. Fourier setup reports phase error against independent
+coefficient convolution outside timing.
 
 NTT scalar products use the existing CPU dispatch and optional dependency SIMD
 support. No ISA choice is added to the public NTRU API. Compare timings only

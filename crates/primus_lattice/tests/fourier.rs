@@ -124,57 +124,65 @@ fn sub_mul_monomial<Table: FftTable>() {
     use primus_lattice::{
         GadgetSize, GlweSize,
         ggsw::{FourierGgsw, Ggsw},
+        ngsw::{FourierNgsw, Ngsw},
     };
     let table = Table::new(4).unwrap();
     let mut fft = FftEngine::new(&table);
     let n = fft.poly_length();
     let size = GadgetSize::new(GlweSize::new(2, n), 2);
-    let lhs = Ggsw::new(
-        (0..size.ggsw_len())
-            .map(|i| (i as u32).wrapping_mul(0x9e37_79b9))
-            .collect::<Vec<_>>(),
-    );
-    let rhs = Ggsw::new(
-        (0..size.ggsw_len())
-            .map(|i| (i as u32).wrapping_mul(0xa24b_aed5).wrapping_add(1))
-            .collect::<Vec<_>>(),
-    );
-    let mut lhs_fourier = FourierGgsw::<Vec<Complex64>>::zero(size.fourier_ggsw_len());
-    let mut rhs_fourier = lhs_fourier.clone();
-    lhs.write_fourier_form(&mut lhs_fourier, &mut fft);
-    rhs.write_fourier_form(&mut rhs_fourier, &mut fft);
-    let mut output = lhs_fourier.clone();
-    let mut recovered = lhs.clone();
-    let mut coefficient_scratch = vec![0u32; n];
-    let mut fourier_scratch = vec![Complex64::default(); fft.fourier_length()];
-    // Independent signed-index oracle across every row/level/component. Zero
-    // comes last to check that it subtracts rhs after dirty scratch is reused.
-    for exponent in (1..2 * n).chain([0]) {
-        lhs_fourier.sub_mul_monomial_to(
-            &rhs_fourier,
-            exponent,
-            &mut output,
-            &mut fft,
-            &mut coefficient_scratch,
-            &mut fourier_scratch,
-        );
-        output.write_torus_form(&mut recovered, &mut fft);
-        let mut expected = lhs.as_ref().to_vec();
-        for (i, &value) in rhs.as_ref().iter().enumerate() {
-            let position = (i % n + exponent) % (2 * n);
-            let target = &mut expected[i / n * n + position % n];
-            *target = if position < n {
-                target.wrapping_sub(value)
-            } else {
-                target.wrapping_add(value)
-            };
-        }
-        assert_eq!(recovered.as_ref(), expected, "exponent={exponent}");
+    macro_rules! check {
+        ($coeff:ident, $fourier:ident, $polynomials:expr) => {{
+            let lhs = $coeff::new(
+                (0..n * $polynomials)
+                    .map(|i| (i as u32).wrapping_mul(0x9e37_79b9))
+                    .collect::<Vec<_>>(),
+            );
+            let rhs = $coeff::new(
+                (0..n * $polynomials)
+                    .map(|i| (i as u32).wrapping_mul(0xa24b_aed5).wrapping_add(1))
+                    .collect::<Vec<_>>(),
+            );
+            let mut lhs_fourier =
+                $fourier::<Vec<Complex64>>::zero(fft.fourier_length() * $polynomials);
+            let mut rhs_fourier = lhs_fourier.clone();
+            lhs.write_fourier_form(&mut lhs_fourier, &mut fft);
+            rhs.write_fourier_form(&mut rhs_fourier, &mut fft);
+            let mut output = lhs_fourier.clone();
+            let mut recovered = lhs.clone();
+            let mut coefficient_scratch = vec![0u32; n];
+            let mut fourier_scratch = vec![Complex64::default(); fft.fourier_length()];
+            // Independent signed-index oracle across every row/level/component. Zero
+            // comes last to check that it subtracts rhs after dirty scratch is reused.
+            for exponent in (1..2 * n).chain([0]) {
+                lhs_fourier.sub_mul_monomial_to(
+                    &rhs_fourier,
+                    exponent,
+                    &mut output,
+                    &mut fft,
+                    &mut coefficient_scratch,
+                    &mut fourier_scratch,
+                );
+                output.write_torus_form(&mut recovered, &mut fft);
+                let mut expected = lhs.as_ref().to_vec();
+                for (i, &value) in rhs.as_ref().iter().enumerate() {
+                    let position = (i % n + exponent) % (2 * n);
+                    let target = &mut expected[i / n * n + position % n];
+                    *target = if position < n {
+                        target.wrapping_sub(value)
+                    } else {
+                        target.wrapping_add(value)
+                    };
+                }
+                assert_eq!(recovered.as_ref(), expected, "exponent={exponent}");
+            }
+        }};
     }
+    check!(Ggsw, FourierGgsw, size.ggsw_len() / n);
+    check!(Ngsw, FourierNgsw, 2);
 }
 
 #[test]
-fn fourier_ggsw_sub_mul_monomial_matches_coefficient_oracle() {
+fn fourier_gadget_sub_mul_monomial_matches_coefficient_oracle() {
     sub_mul_monomial::<RustFftTable>();
     sub_mul_monomial::<TfheFftTable>();
 }

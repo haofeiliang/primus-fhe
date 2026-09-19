@@ -20,4 +20,4 @@ pub(crate) use ntru_external_product::{
     FourierNtruExternalProductContextRefMut, NttNtruExternalProductContextRefMut,
 };
 
-pub use ntru_ternary_cmux::NttNtruTernaryCmuxContext;
+pub use ntru_ternary_cmux::{FourierNtruTernaryCmuxContext, NttNtruTernaryCmuxContext};

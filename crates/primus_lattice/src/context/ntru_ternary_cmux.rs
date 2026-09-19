@@ -1,8 +1,9 @@
+use primus_fft::{Complex64, TorusFftValue};
 use primus_integer::FheUint;
 
-use crate::ngsw::NttNgsw;
+use crate::ngsw::{FourierNgsw, NttNgsw};
 
-use super::NttNtruExternalProductContext;
+use super::{FourierNtruExternalProductContext, NttNtruExternalProductContext};
 
 /// Fixed-layout scratch for [`NttNgsw::cmux_ternary_monomial_to`].
 ///
@@ -46,5 +47,52 @@ impl<T: FheUint> NttNtruTernaryCmuxContext<T> {
     #[must_use]
     pub fn decompose_length(&self) -> usize {
         self.combined_control.as_ref().len() / self.poly_length()
+    }
+}
+
+/// Fixed-layout scratch for [`FourierNgsw::cmux_ternary_monomial_to`].
+///
+/// Holds one combined Fourier NGSW and an external-product context. Its
+/// coefficient and Fourier digit buffers first hold the integer monomial and
+/// its transform; decomposition overwrites both afterwards. The output NTRU
+/// supplies the coefficient difference buffer. This does not bind an FFT table.
+pub struct FourierNtruTernaryCmuxContext<T: TorusFftValue> {
+    pub(crate) combined_control: FourierNgsw<Vec<Complex64>>,
+    pub(crate) external_product: FourierNtruExternalProductContext<T>,
+}
+
+impl<T: TorusFftValue> FourierNtruTernaryCmuxContext<T> {
+    /// Allocates all buffers for `decompose_length` Fourier NGSW levels.
+    ///
+    /// # Panics
+    /// Panics unless `poly_length` is a power of two of at least two and
+    /// `decompose_length` is nonzero, or `(poly_length / 2) * decompose_length`
+    /// overflows `usize`.
+    #[must_use]
+    pub fn new(poly_length: usize, decompose_length: usize) -> Self {
+        assert!(
+            poly_length >= 2 && poly_length.is_power_of_two(),
+            "NTRU polynomial length must be a power of two of at least two"
+        );
+        assert!(decompose_length > 0, "NGSW must contain at least one level");
+        let control_length = (poly_length / 2)
+            .checked_mul(decompose_length)
+            .expect("Fourier NGSW ciphertext length must fit in usize");
+        Self {
+            combined_control: FourierNgsw::zero(control_length),
+            external_product: FourierNtruExternalProductContext::new(poly_length),
+        }
+    }
+
+    /// Returns the coefficient polynomial length shared by input and output.
+    #[must_use]
+    pub fn poly_length(&self) -> usize {
+        self.external_product.poly_length()
+    }
+
+    /// Returns the level count bound to the combined-control scratch.
+    #[must_use]
+    pub fn decompose_length(&self) -> usize {
+        self.combined_control.as_ref().len() / (self.poly_length() / 2)
     }
 }

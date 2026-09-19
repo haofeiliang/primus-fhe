@@ -6,9 +6,12 @@ use std::{hint::black_box, time::Duration};
 
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use num_traits::{ConstOne, ConstZero};
-use primus_integer::FheUint;
-use primus_modulus::BarrettModulus;
+use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable, TfheFftTable, TorusFftValue};
+use primus_integer::{FheUint, SignedInteger};
+use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntru::{
+    FourierNgswCiphertext, FourierNtruEncryptContext, FourierNtruExternalProductContext,
+    FourierNtruGadgetEncryptContext, FourierNtruSecretKey, FourierNtruTernaryCmuxContext,
     NlevParameters, NtruCiphertext, NtruParameters, NttNgswCiphertext,
     NttNtruExternalProductContext, NttNtruSecretKey, NttNtruTernaryCmuxContext, SecretKeyDistr,
 };
@@ -116,9 +119,177 @@ fn ntt<T: FheUint + PrimitiveRoot>(c: &mut Criterion, q: T, levels: usize) {
     group.finish();
 }
 
+// Exact coefficient-domain phase for the numerical diagnostic outside timing.
+fn native_phase<T: TorusFftValue>(cipher: &[T], secret: &[T::SignedInteger]) -> Vec<T> {
+    let n = cipher.len();
+    let mut output = vec![T::ZERO; n];
+    for (i, &value) in cipher.iter().enumerate() {
+        for (j, &secret) in secret.iter().enumerate() {
+            let product = value.wrapping_mul(secret.cast_to_unsigned());
+            if i + j < n {
+                output[i + j] = output[i + j].wrapping_add(product);
+            } else {
+                output[i + j - n] = output[i + j - n].wrapping_sub(product);
+            }
+        }
+    }
+    output
+}
+
+fn fourier<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str, levels: usize) {
+    const N: usize = 1024;
+    let table = Table::new(N.trailing_zeros()).unwrap();
+    let mut fft = FftEngine::new(&table);
+    let params = NtruParameters::new(
+        N,
+        T::try_from(16).unwrap(),
+        NativeModulus::new(),
+        SecretKeyDistr::SparseTernary,
+        3.2,
+    );
+    let gadget = NlevParameters::with_ntru_params(&params, 8, Some(levels));
+    let mut rng = StdRng::seed_from_u64(0xB703);
+    let (coeff, key) = FourierNtruSecretKey::generate_pair(&params, &mut fft, &mut rng).unwrap();
+    let message = Polynomial::new(
+        (0..N)
+            .map(|i| T::try_from(i % 16).unwrap())
+            .collect::<Vec<_>>(),
+    );
+    let mut input = NtruCiphertext::<Vec<T>>::zero(N);
+    key.encrypt(
+        &message,
+        &params,
+        &mut fft,
+        &mut rng,
+        &mut FourierNtruEncryptContext::new(N),
+    )
+    .write_torus_form(&mut input, &mut fft);
+    let mut controls = vec![Complex64::default(); 2 * gadget.fourier_nlev_len()];
+    key.encrypt_ngsw_signed_constant_batch_to(
+        &[T::SignedInteger::ZERO, T::SignedInteger::ONE],
+        &mut controls,
+        &gadget,
+        &mut fft,
+        &mut rng,
+        &mut FourierNtruGadgetEncryptContext::new(N),
+    );
+    let (positive, negative) = controls.split_at(gadget.fourier_nlev_len());
+    let positive = FourierNgswCiphertext::new(positive);
+    let negative = FourierNgswCiphertext::new(negative);
+    let exponent = N / 3;
+    let mut output = NtruCiphertext::<Vec<T>>::zero(N);
+    let (mut fused, fused_allocations) =
+        measure(|| FourierNtruTernaryCmuxContext::<T>::new(N, levels));
+    let ((mut binary, mut intermediate), binary_allocations) = measure(|| {
+        (
+            FourierNtruExternalProductContext::<T>::new(N),
+            NtruCiphertext::<Vec<T>>::zero(N),
+        )
+    });
+    let input_phase = native_phase(input.as_ref(), coeff.as_slice());
+    let max_rotation_error = |output: &NtruCiphertext<Vec<T>>| {
+        let actual = native_phase(output.as_ref(), coeff.as_slice());
+        input_phase
+            .iter()
+            .enumerate()
+            .map(|(i, &value)| {
+                let index = (i + 2 * N - exponent) % (2 * N);
+                let expected = if index < N {
+                    value
+                } else {
+                    value.wrapping_neg()
+                };
+                let error = actual[index % N]
+                    .wrapping_sub(expected)
+                    .min(expected.wrapping_sub(actual[index % N]));
+                error.into_torus_f64()
+            })
+            .fold(0.0, f64::max)
+    };
+    positive.cmux_ternary_monomial_to(
+        &negative,
+        &input,
+        exponent,
+        &mut output,
+        gadget.basis(),
+        &mut fft,
+        &mut fused,
+    );
+    let fused_error = max_rotation_error(&output);
+    positive.cmux_monomial_to(
+        &input,
+        exponent,
+        &mut intermediate,
+        gadget.basis(),
+        &mut fft,
+        &mut binary,
+    );
+    negative.cmux_monomial_to(
+        &intermediate,
+        2 * N - exponent,
+        &mut output,
+        gadget.basis(),
+        &mut fft,
+        &mut binary,
+    );
+    let binary_error = max_rotation_error(&output);
+    eprintln!(
+        "{backend}/u{}: controls={} B, fused scratch={} B, two-CMUX scratch={} B; max phase error/q fused={fused_error:.3e}, two-CMUX={binary_error:.3e}",
+        T::BITS,
+        std::mem::size_of_val(controls.as_slice()),
+        fused_allocations.allocated_bytes,
+        binary_allocations.allocated_bytes,
+    );
+    let mut group = c.benchmark_group(format!(
+        "ntru/ternary/fourier/{backend}/u{}/n{N}/logb8/l{levels}",
+        T::BITS
+    ));
+    group.throughput(Throughput::Elements(1));
+    group.bench_function("fused", |b| {
+        b.iter(|| {
+            black_box(&positive).cmux_ternary_monomial_to(
+                black_box(&negative),
+                black_box(&input),
+                black_box(exponent),
+                &mut output,
+                gadget.basis(),
+                &mut fft,
+                &mut fused,
+            );
+            black_box(output.as_ref());
+        })
+    });
+    group.bench_function("two_binary", |b| {
+        b.iter(|| {
+            black_box(&positive).cmux_monomial_to(
+                black_box(&input),
+                black_box(exponent),
+                &mut intermediate,
+                gadget.basis(),
+                &mut fft,
+                &mut binary,
+            );
+            black_box(&negative).cmux_monomial_to(
+                &intermediate,
+                black_box(2 * N - exponent),
+                &mut output,
+                gadget.basis(),
+                &mut fft,
+                &mut binary,
+            );
+            black_box(output.as_ref());
+        })
+    });
+    group.finish();
+}
+
 fn benchmarks(c: &mut Criterion) {
     ntt(c, 132_120_577u32, 3);
     ntt(c, 1_125_899_906_826_241u64, 6);
+    fourier::<u32, RustFftTable>(c, "rustfft", 3);
+    fourier::<u64, RustFftTable>(c, "rustfft", 6);
+    fourier::<u32, TfheFftTable>(c, "tfhefft", 3);
+    fourier::<u64, TfheFftTable>(c, "tfhefft", 6);
 }
 
 criterion_group! {
