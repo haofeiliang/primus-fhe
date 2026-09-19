@@ -12,8 +12,8 @@ pub enum TfheEvaluationError {
     /// The server key was generated without CBS material.
     #[error("server key has no circuit-bootstrap material")]
     MissingCircuitBootstrapKey,
-    /// Sparse aggregation has not been validated for gadget-scaled CBS outputs.
-    #[error("sparse circuit bootstrapping is not supported")]
+    /// The selected evaluator does not support sparse bootstrapping.
+    #[error("sparse bootstrapping is not supported by this evaluator")]
     UnsupportedSparseBootstrapping,
     /// CBS parameters belong to another accumulator or input domain.
     #[error("circuit-bootstrap parameters do not match the TFHE context")]
@@ -39,9 +39,12 @@ pub enum LookupTableError {
     /// Full-domain signed folding requires an odd plaintext modulus.
     #[error("full-domain lookup-table compilation requires an odd plaintext modulus")]
     EvenPlaintextModulus,
-    /// Fixed-scale difference factorization requires an explicit odd coefficient modulus.
-    #[error("factorized lookup tables require an explicit odd coefficient modulus")]
+    /// Fixed-scale difference factorization supports odd explicit moduli and Native.
+    #[error("factorized lookup tables require an odd explicit coefficient modulus or Native")]
     UnsupportedFactorizationModulus,
+    /// Native difference factorization requires an even Scaled output scale.
+    #[error("Native factorized lookup tables require an even output scale")]
+    OddFactorizationScale,
     /// The selected input domain must be a non-empty prefix of the front half.
     #[error("lookup-table input domain {domain_len} must belong to 1..={max_domain_len}")]
     InvalidInputDomain {

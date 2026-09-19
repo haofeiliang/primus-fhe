@@ -16,14 +16,14 @@ Boolean evaluator 持有门 LUT 与 LWE 工作区；客户端密钥、变换 tab
 | 后端 | 密文模数 | PBS / ManyLUT | 分解式 MVB | Boolean 门 | CBS |
 | --- | --- | --- | --- | --- | --- |
 | GLWE NTT | 显式域模数 | 支持 | 支持 | 支持 | 支持 |
-| GLWE Fourier | 原生 torus | 支持 | 未实现 | 支持 | 支持 |
+| GLWE Fourier | 原生 torus | 支持 | 偶尺度，u32/u64 | 支持 | 支持 |
 | NTRU NTT | 显式域模数 | 支持 | 支持 | 支持 | 支持 |
 | NTRU Fourier | 原生 torus | 支持 | 未实现 | 支持 | 支持 |
 
 四后端均支持私钥和 LWE 公钥客户端。Fourier 后端支持 RustFFT 与 TfheFFT。
 参数和 API 仍处于实验阶段；示例及 benchmark fixture 不是生产安全参数或失败概率建议。
 
-GLWE 两后端的经典 PBS 和 CBS 支持 binary/ternary small secret；NTT 的 MVB 同样支持。
+GLWE 两后端的经典 PBS 和 CBS 支持 binary/ternary small secret；MVB 同样支持。
 NTRU 的 BR 秘密仍限于 binary。
 
 GLWE 两后端均支持固定重量二元 small 秘密的实验性稀疏 PBS：两种 order、普通/交错 LUT。
@@ -263,9 +263,10 @@ BR 前可能发生的密钥切换误差及逐系数模切舍入。容量条件�
 ## 固定尺度分解式 MVB
 
 `FactorizedLookupTable::try_new(D, N, output_count, input_codec, output_codec, function)`
-使用 Rounded 输入和 unsigned Scaled 输出编译非空前半区前缀。系数模数须显式且为奇数。
-对每个未缩放整数 LUT `p_i`，保存 `W_i=(1-X)*p_i` 和共同多项式
-`V=(delta*inv2)*sum(X^j)`，满足负循环环中的 `V*W_i=delta*p_i`。
+使用 Rounded 输入和 unsigned Scaled 输出编译非空前半区前缀。系数模数可以显式且为奇数，
+或为 Native 且实际 Scaled 输出尺度为偶数；显式偶模数仍不支持。
+对每个未缩放整数 LUT `p_i`，保存 `W_i=(1-X)*p_i` 和共同多项式 `V=A*sum(X^j)`；
+奇数 q 使用 `A=delta*inv2 mod q`，Native 使用整数 `A=delta/2`，满足 `V*W_i=delta*p_i`。
 callback 每个组合调用一次，参数为 `(input, output_index)`，**外层遍历输出索引**。
 因子以模 q 的规范 residue 保存，不在明文模数下约简；有符号整数 lift 决定噪声放大。
 
@@ -275,9 +276,12 @@ Scaled codec；接入下一次 Rounded 输入 PBS 时须计入编码中心差异
 
 [GLWE NTT](../primus_tfhe_glwe_ntt/README.zh_CN.md#固定尺度分解式-mvb) 与
 [NTRU NTT](../primus_tfhe_ntru_ntt/README.zh_CN.md#固定尺度分解式-mvb) 均支持此程序。
-GLWE 支持经典/稀疏密钥和两种 order；NTRU 共享加密初始化和 BR，再对每个乘法结果执行 KS。
+GLWE NTT 支持经典/稀疏密钥和两种 order；NTRU NTT 共享加密初始化和 BR，再逐输出 KS。
+[GLWE Fourier](../primus_tfhe_glwe_fourier/README.zh_CN.md#固定尺度分解式-mvb)
+支持 u32/u64、Native 偶尺度、经典 binary/ternary 和两种 order；因子按有符号整数变换，
+还须预算 FFT 误差。`t_out` 不必为二次幂，检查的是实际尺度。
 预处理产物借用一个 context，独立 evaluator 复用工作区。
-本实现不含奇数全域 MVB、Fourier 后端和 CBS 输出；代数与噪声条件见 [MVB 设计](../../docs/tfhe-mvb.md)。
+本实现不含奇数全域 MVB、NTRU Fourier 和 CBS 输出；代数与噪声条件见 [MVB 设计](../../docs/tfhe-mvb.md)。
 
 [GLWE](../primus_tfhe_glwe_ntt/examples/mvb_thresholds.rs) 和
 [NTRU](../primus_tfhe_ntru_ntt/examples/ntru_ntt_mvb_thresholds.rs) 阈值示例展示一个加密分数

@@ -16,13 +16,17 @@ fn round_ratio(numerator: i64, denominator: i64) -> i64 {
 // Independent signed negacyclic arithmetic; no production LUT, rotation or NTT helper.
 fn multiply(lhs: &[i64], rhs: &[i64], q: i64) -> Vec<i64> {
     let n = lhs.len();
-    let mut result = vec![0; n];
+    let mut result = vec![0i128; n];
     for (i, &a) in lhs.iter().enumerate() {
         for (j, &b) in rhs.iter().enumerate() {
+            let (a, b) = (i128::from(a), i128::from(b));
             result[(i + j) % n] += if i + j < n { a * b } else { -a * b };
         }
     }
-    result.into_iter().map(|x| x.rem_euclid(q)).collect()
+    result
+        .into_iter()
+        .map(|x| x.rem_euclid(q.into()) as i64)
+        .collect()
 }
 
 fn rotate_negative(poly: &[i64], rotation: usize, q: i64) -> Vec<i64> {
@@ -42,7 +46,14 @@ fn rotate_negative(poly: &[i64], rotation: usize, q: i64) -> Vec<i64> {
 
 #[test]
 fn factorization_and_all_rotations_match_integer_geometry() {
-    fn check<M: RingContext<u32>>(n: usize, t: u32, domain: usize, input_modulus: M) {
+    fn check<LM: RingContext<u32>, OM: RingContext<u32>>(
+        n: usize,
+        t: u32,
+        domain: usize,
+        input_modulus: LM,
+        output_modulus: OM,
+        output_moduli: &[u32],
+    ) {
         let input_q = input_modulus.explicit_value().map_or(1i64 << 32, i64::from);
         let input_codec = RoundedCodec::new(t, input_modulus);
         let centers: Vec<_> = (0..=domain)
@@ -54,9 +65,11 @@ fn factorization_and_all_rotations_match_integer_geometry() {
                 .min(n as i64)
             })
             .collect();
-        for output_t in [2, 8] {
-            const Q: i64 = 97;
-            let output_codec = ScaledCodec::new(output_t, BarrettModulus::new(Q as u32));
+        for &output_t in output_moduli {
+            let q = output_modulus
+                .explicit_value()
+                .map_or(1i64 << 32, i64::from);
+            let output_codec = ScaledCodec::new(output_t, output_modulus);
             let value = |m: usize, i: usize| match i {
                 0 => 0,
                 1 => output_t - 1,
@@ -78,14 +91,19 @@ fn factorization_and_all_rotations_match_integer_geometry() {
             assert_eq!(lut.output_count(), 3); // Even N=1 supports more than N outputs.
             assert_eq!(lut.input_domain_len(), domain);
             assert_eq!(lut.output_plaintext_modulus(), output_t);
-            assert!(lut.is_compatible(n, t, input_modulus.explicit_value(), Some(Q as u32)));
+            assert!(lut.is_compatible(
+                n,
+                t,
+                input_modulus.explicit_value(),
+                output_modulus.explicit_value()
+            ));
             let common: Vec<_> = lut
                 .common_polynomial()
                 .as_ref()
                 .iter()
                 .map(|&x| i64::from(x))
                 .collect();
-            let delta = round_ratio(Q, output_t.into());
+            let delta = round_ratio(q, output_t.into());
             for (i, factor) in lut.factors().enumerate() {
                 // Nearest-center search, with ties choosing the higher center,
                 // supplies p independently of the compiler's interval scan.
@@ -117,18 +135,18 @@ fn factorization_and_all_rotations_match_integer_geometry() {
                     factor,
                     signed_differences
                         .iter()
-                        .map(|x| x.rem_euclid(Q))
+                        .map(|x| x.rem_euclid(q))
                         .collect::<Vec<_>>()
                 );
-                let scaled: Vec<_> = p.iter().map(|x| (delta * x).rem_euclid(Q)).collect();
+                let scaled: Vec<_> = p.iter().map(|x| (delta * x).rem_euclid(q)).collect();
                 for rotation in 0..2 * n {
                     assert_eq!(
-                        multiply(&rotate_negative(&common, rotation, Q), &factor, Q),
-                        rotate_negative(&scaled, rotation, Q)
+                        multiply(&rotate_negative(&common, rotation, q), &factor, q),
+                        rotate_negative(&scaled, rotation, q)
                     );
                 }
                 for (m, &center) in centers[..domain].iter().enumerate() {
-                    let phase = rotate_negative(&scaled, center as usize, Q)[0];
+                    let phase = rotate_negative(&scaled, center as usize, q)[0];
                     assert_eq!(output_codec.decode_value(phase as u32), value(m, i));
                 }
             }
@@ -136,9 +154,39 @@ fn factorization_and_all_rotations_match_integer_geometry() {
     }
     // Empty negative tail, ordinary/short domains, nonbinary t, and double rounding.
     for (n, t, domain, q) in [(1, 2, 1, 97), (8, 8, 4, 97), (16, 15, 4, 97), (16, 3, 2, 5)] {
-        check(n, t, domain, BarrettModulus::new(q));
+        check(
+            n,
+            t,
+            domain,
+            BarrettModulus::new(q),
+            BarrettModulus::new(97),
+            &[2, 8],
+        );
+        check(
+            n,
+            t,
+            domain,
+            BarrettModulus::new(q),
+            NativeModulus::new(),
+            &[8, 10],
+        );
     }
-    check(16, 5, 3, NativeModulus::new());
+    check(
+        16,
+        5,
+        3,
+        NativeModulus::new(),
+        BarrettModulus::new(97),
+        &[2, 8],
+    );
+    check(
+        16,
+        5,
+        3,
+        NativeModulus::new(),
+        NativeModulus::new(),
+        &[8, 10],
+    );
 }
 
 #[test]
@@ -190,7 +238,18 @@ fn factorized_compilation_rejects_invalid_domains_moduli_and_values() {
             LookupTableError::UnsupportedFactorizationModulus
         );
     }
-    reject_modulus(NativeModulus::new());
+    assert_eq!(
+        FactorizedLookupTable::try_new(
+            4,
+            8,
+            1,
+            &input,
+            &ScaledCodec::new(3, NativeModulus::new()),
+            |_, _| panic!("odd scale must precede callback")
+        )
+        .unwrap_err(),
+        LookupTableError::OddFactorizationScale
+    );
     reject_modulus(BarrettModulus::new(98));
     assert_eq!(
         FactorizedLookupTable::try_new(4, 8, 3, &input, &output, |m, i| if i == 1 && m == 2 {

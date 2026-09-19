@@ -8,7 +8,7 @@
 
 ## 1. 结论
 
-**当前最全面的是 `primus_tfhe_glwe_ntt`。** 它同时支持经典 binary/ternary BR、固定重量二元稀疏 BR、两种 PBS order、Boolean、CBS 和分解式 MVB。NTRU 两后端均支持普通/交错 PBS、Boolean 和 CBS；`primus_tfhe_ntru_ntt` 另已接入奇数模数分解式 MVB。Fourier 偶尺度路线已通过 B5.1 的 GLWE 原型，尚待正式接入和 NTRU 独立验证。
+**当前最全面的是 `primus_tfhe_glwe_ntt`。** 它同时支持经典 binary/ternary BR、固定重量二元稀疏 BR、两种 PBS order、Boolean、CBS 和分解式 MVB。NTRU 两后端均支持普通/交错 PBS、Boolean 和 CBS；`primus_tfhe_ntru_ntt` 另已接入奇数模数分解式 MVB。GLWE Fourier 已接入 Native 偶尺度 MVB；NTRU Fourier 仍待 B5.3 接入与独立验证。
 
 可以明确安排的工程补齐包括：
 
@@ -17,7 +17,7 @@
 3. **NTRU NTT 分解式 MVB**：B3.1–B3.2 已完成完整链、误差/相关性和成本验收，见 [NTRU MVB 测量](tfhe-mvb-ntru.md)。
 4. **GLWE Fourier 固定重量二元稀疏 PBS**：B4 已完成共享映射、系数域桶聚合、完整求值及成本验收；低重量负载有收益，保留参考实现。
 
-**Native 偶尺度 MVB** 已完成首个 GLWE 原型；仍需原型验证的组合包括 **稀疏 CBS、NTRU ternary 与 NTRU 桶聚合**。其中有的代数已成立，但尚未建立完整的表示、采样或误差契约。不要把“尚未验证”写成“数学上不适配”，也不要把“有底层原语”写成“已有完整功能”。
+**Native 偶尺度 MVB** 已完成 GLWE 原型与正式接入；仍需原型验证的组合包括 **稀疏 CBS、NTRU ternary 与 NTRU 桶聚合**。其中有的代数已成立，但尚未建立完整的表示、采样或误差契约。不要把“尚未验证”写成“数学上不适配”，也不要把“有底层原语”写成“已有完整功能”。
 
 ## 2. 当前能力矩阵
 
@@ -37,13 +37,13 @@
 | 固定重量 binary 桶聚合 BR | 支持 | 支持，收益取决于重量/负载 | 未接入 | 未接入 |
 | Boolean 门、NOT、MUX | 支持 | 支持 | 支持 | 支持 |
 | CBS | 经典 binary/ternary → GGSW | 经典 binary/ternary → Fourier GGSW | binary → NGSW | binary → NGSW |
-| 固定尺度差分 MVB | 支持，含经典/稀疏 | 未接入 | 支持，经典 binary | 未接入 |
+| 固定尺度差分 MVB | 支持，含经典/稀疏 | 支持，偶尺度 u32/u64、经典 binary/ternary | 支持，经典 binary | 未接入 |
 | 两种 PBS order | 支持 BK / KB | 支持 BK / KB | 固定 NTRU 链 | 固定 NTRU 链 |
 
 几个容易混淆的概念：
 
 - **秘密分布与 BR 算法是两条轴。** `FixedHammingWeightBinary` 可使用逐坐标经典 BSK；只有专门的 sparse key 生成入口才选择桶聚合。`SparseTernary` 也只是一个 ternary 分布名称，不会自动使用桶聚合。
-- **奇数明文全域与奇数密文模数不同。** Fourier 能执行奇数 `t_in` 的全域 LUT；当前 MVB 限制的是输出/累加器的 `q`。
+- **奇数明文全域与奇数密文模数不同。** Fourier 能执行奇数 `t_in` 的全域 LUT；MVB 仍采用前半域输入，输出/累加器须用奇数 `q`，或 Native 配偶尺度。
 - **ManyLUT、MVB、CBS 的产物不同。** 前两者产生同一输入的多个 LWE 输出；CBS 产生 accumulator 秘密下的 GGSW/NGSW，供外积或 CMUX 使用。
 - **有界双输入是 LWE 线性组合，不是 LWE→环密文 packing。** 通用 digit extraction、任意二次幂明文全域 FDFB 等也不能仅凭已有 LUT 就标为完成。
 
@@ -184,7 +184,7 @@ GLWE [NTT](../crates/primus_tfhe_glwe_ntt/src/circuit_bootstrap/evaluator.rs) �
 
 **B5.1 已通过**：独立整数负循环卷积核对了 `V*W_i=Delta*p_i`；复用整数 FFT 与公开乘法，完成两种 FFT、u32/u64、`n=728,N=1024` 经典 binary BK 三输出原型。`t_out=8/10` 成功，奇尺度 `t_out=3` 拒绝；分离了 BR、公开乘法与 KS 误差，并记录默认/SIMD 诊断和两轮默认成本，见 [Fourier MVB 专项](tfhe-mvb-fourier.md)。NTRU 的加密初始化和逐输出 KS 仍须独立验证，不能共享未经核对的噪声参数。
 
-当前公共构造器仍拒绝 Native；B5.2 再扩展其显式契约并验收 KB/ternary，不从本组小整数因子推断任意 u64 参数可用。详细推导见 [MVB 的除二边界](tfhe-mvb.md#12-的边界)。
+**B5.2 已接入 GLWE Fourier**：共享构造器接受 Native 偶尺度，整数 Fourier 因子与 evaluator 支持两种 order、经典 binary/ternary、u32/u64；context 绑定、首调用零分配和错误边界已验收。不从本组小整数因子推断任意 u64 参数可用。详细推导见 [MVB 的除二边界](tfhe-mvb.md#12-的边界)。
 
 ### 5.5 NTRU ternary：控制代数与秘密采样分别处理
 
@@ -231,7 +231,7 @@ Full-domain FDFB、通用数字拆分、HLUT/LFBS、multi-bit 等属于[新算�
 
 1. **先整理高层接口，再补明确缺口**：B1 的 GLWE Fourier 经典 CBS、四后端高层接口与成本验收，以及 B2 的 NTRU Boolean 接入与门语义验收均已完成。此顺序减少重复迁移，Boolean 算法本身不依赖 CBS；后续按[分步计划](tfhe-backend-plan.md)推进。
 2. **再扩展已有多输出路线**：NTRU NTT MVB 完整链、误差和成本，以及 GLWE NTT sparse×Boolean/bivariate/odd-full 的组合验收均已完成。
-3. **处理性能型移植与受限表示**：GLWE Fourier sparse PBS 参考路径及 B4.3 成本验收已完成；Native 偶尺度 MVB 按 B5 独立验证，不混入频域聚合等额外优化。
+3. **处理性能型移植与受限表示**：GLWE Fourier sparse PBS 参考路径及 B4.3 成本验收已完成；Native 偶尺度 MVB 的 GLWE 原型/接入已完成，NTRU 按 B5.3 独立验证，不混入频域聚合等额外优化。
 4. **按实际应用选择实验组合**：NTT sparse CBS、NTRU ternary、NTRU sparse；分别通过前置条件后，再组合到其他上层功能。
 
 测试按独立契约选择代表点，不展开所有秘密分布×order×输出数×FFT×codec 的完整笛卡尔积。建议：

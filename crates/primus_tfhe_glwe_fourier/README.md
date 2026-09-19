@@ -3,7 +3,7 @@
 English | [简体中文](README.zh_CN.md)
 
 GLWE-based TFHE over the native torus. Supports both PBS orders, ManyLUT,
-Boolean gates, classic CBS and secret/public-key clients. See the [capability and encoding guide](../primus_tfhe/README.md)
+even-scale MVB, Boolean gates, classic CBS and secret/public-key clients. See the [capability and encoding guide](../primus_tfhe/README.md)
 and [GLWE parameter/key domains](../primus_tfhe_glwe/README.md).
 
 `Encryptor`, `Decryptor`, `TfheConfig` and `TfheParameters` specialize the shared types to
@@ -18,7 +18,7 @@ cargo run -p primus_tfhe_glwe_fourier --example fourier_basic
 The [example source](examples/fourier_basic.rs) runs both orders with the same
 workflow: parameters → context → paired keys → public-key encryptor/client decryptor
 → compiled LUT → reusable evaluator/output. It demonstrates single PBS, two-output
-ManyLUT with `t_in=4 → t_out=8`, client `encrypt_padded_to`, Boolean gates, NOT and MUX.
+ManyLUT with `t_in=4 → t_out=8`, Scaled `t_out=10` MVB, client `encrypt_padded_to`, Boolean gates, NOT and MUX.
 
 For `BootstrapKeyswitch`, external ciphertexts have dimension `n`; for
 `KeyswitchBootstrap`, they have dimension `kN`. Both inputs and outputs follow
@@ -56,6 +56,46 @@ These APIs use ordinary `LweCiphertext` buffers with Boolean 0/1 encoding modulo
 The encryptor accepts secret or public keys and supports `encrypt_to`.
 The evaluator handles the internal modulus-8 LUT scale. Use `evaluate_binary_to`,
 `not_to` and `mux_to` for repeated Boolean evaluation.
+
+## Fixed-scale factorized MVB
+
+Use unsigned Rounded inputs and an explicit unsigned `ScaledCodec` for outputs:
+
+```rust,ignore
+let codec = ScaledCodec::new(10u32, NativeModulus::new());
+// Assumes t_in >= 8 and sufficient noise margins.
+let lut = context.compile_factorized_lookup_table_fn(
+    &codec, 4, 3, |m, i| u32::from(m > i),
+)?;
+let mut evaluator = context.factorized_evaluator(&server_key)?;
+let mut outputs = vec![LweCiphertext::zero(context.parameters().external_lwe_dimension()); 3];
+evaluator.apply_lookup_table_to(&input, &lut, &mut outputs);
+let value = codec.decode_value(decryptor.decrypt_phase(&outputs[0])?);
+```
+
+The arguments after the codec are the input prefix length and exact output count.
+`FourierFactorizedLookupTable` borrows this context; a different instance is rejected
+even with equal parameters. Lower-level callers may prepare a shared
+`FactorizedLookupTable` through `FourierFactorizedLookupTable::new`.
+
+Supports u32/u64, RustFFT/TfheFFT and classic binary/ternary keys in both orders.
+The actual `delta=round(2^BITS/t_out)` must be even; odd scales return
+`LookupTableError::OddFactorizationScale`. The plaintext modulus need not be a
+power of two: 10 works for both supported widths. Sparse MVB remains unsupported;
+its evaluator construction returns `UnsupportedSparseBootstrapping`.
+
+Factors are prepared once as signed integers, without torus scaling. One BR is
+shared; BK key-switches each product, while KB switches the input before BR.
+`apply_lookup_table_to` checks context and all dimensions before writing and
+allocates nothing. Extra workspace is `(d+2)*N/2` complex values, independent of
+output count. The prepared program stores N torus coefficients and `output_count*N/2`
+complex values; it retains no coefficient copy of the factors.
+
+Factor norms amplify BR noise, and Fourier products add numerical phase error.
+Successful construction does not establish a noise budget, including for u64.
+Decode with the supplied Scaled codec; account for different Rounded centers when
+chaining. See the [encoding contract](../primus_tfhe/README.md#fixed-scale-factorized-mvb)
+and [precision evidence and limits](../../docs/tfhe-mvb-fourier.md).
 
 ## Binary and ternary small secrets
 

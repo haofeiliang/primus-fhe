@@ -17,7 +17,7 @@ Start with a backend example below for an end-to-end workflow.
 | Backend | Ciphertext modulus | PBS / ManyLUT | Factorized MVB | Boolean gates | CBS |
 | --- | --- | --- | --- | --- | --- |
 | GLWE NTT | Explicit field | Yes | Yes | Yes | Yes |
-| GLWE Fourier | Native torus | Yes | Not implemented | Yes | Yes |
+| GLWE Fourier | Native torus | Yes | Even scale, u32/u64 | Yes | Yes |
 | NTRU NTT | Explicit field | Yes | Yes | Yes | Yes |
 | NTRU Fourier | Native torus | Yes | Not implemented | Yes | Yes |
 
@@ -26,7 +26,7 @@ support RustFFT and TfheFFT. Parameters and APIs are experimental; example and
 benchmark fixtures are not production security or failure-probability recommendations.
 
 Classic GLWE PBS and CBS support binary/ternary small secrets in both backends;
-NTT MVB also supports both. NTRU BR secrets remain binary.
+MVB also supports both. NTRU BR secrets remain binary.
 
 Both GLWE backends support experimental sparse PBS for fixed-weight binary small
 secrets, with both orders and ordinary/interleaved LUTs. [NTT](../primus_tfhe_glwe_ntt/README.md#experimental-sparse-pbs)
@@ -306,8 +306,10 @@ LWE-to-ring packing. See the runnable [NTRU NTT example](../primus_tfhe_ntru_ntt
 
 `FactorizedLookupTable::try_new(D, N, output_count, input_codec, output_codec, function)`
 compiles a nonempty front-half prefix using Rounded input and unsigned Scaled output.
-The coefficient modulus must be explicit and odd. For each unscaled integer LUT
-`p_i`, it stores `W_i=(1-X)*p_i` and a common `V=(delta*inv2)*sum(X^j)`, satisfying
+The coefficient modulus may be explicit and odd, or Native with an even Scaled
+output scale. Explicit even moduli are unsupported. For each unscaled integer LUT
+`p_i`, it stores `W_i=(1-X)*p_i` and a common `V=A*sum(X^j)`, where A is
+`delta*inv2 mod q` for odd q and integer `delta/2` for Native, satisfying
 `V*W_i=delta*p_i` in the negacyclic ring. The callback receives `(input, output_index)`
 once per pair, with **output index outermost**. Factors remain canonical modulo q,
 not modulo the plaintext modulus; signed lifts determine their noise amplification.
@@ -320,11 +322,15 @@ decoding; chaining into Rounded-input PBS must account for differing centers.
 
 Both [GLWE NTT](../primus_tfhe_glwe_ntt/README.md#fixed-scale-factorized-mvb) and
 [NTRU NTT](../primus_tfhe_ntru_ntt/README.md#fixed-scale-factorized-mvb) support this program.
-GLWE supports classic/sparse keys and both orders; NTRU shares its encrypted
-initialization and BR, then key-switches each product. Each prepared program borrows
-one context and its separate evaluator reuses scratch. Odd full-domain MVB,
-Fourier backends and CBS outputs are outside this implementation. Algebra and noise
-conditions are detailed in the [MVB design](../../docs/tfhe-mvb.md).
+GLWE NTT supports classic/sparse keys and both orders; NTRU NTT shares its encrypted
+initialization and BR, then key-switches each product.
+[GLWE Fourier](../primus_tfhe_glwe_fourier/README.md#fixed-scale-factorized-mvb)
+supports classic binary/ternary keys and both orders with u32/u64 and an even
+Native scale; it transforms factors as signed integers and also requires an FFT
+error budget. `t_out` need not be a power of two: check the actual scale.
+Each prepared program borrows one context and its separate evaluator reuses scratch.
+Odd full-domain MVB, NTRU Fourier and CBS outputs remain outside this implementation.
+Algebra and noise conditions are detailed in the [MVB design](../../docs/tfhe-mvb.md).
 
 The [GLWE](../primus_tfhe_glwe_ntt/examples/mvb_thresholds.rs) and
 [NTRU](../primus_tfhe_ntru_ntt/examples/ntru_ntt_mvb_thresholds.rs) threshold examples

@@ -1,9 +1,11 @@
-# Native 偶尺度 MVB 原型
+# Native 偶尺度 MVB：Fourier 实现与验证
 
-**B5.1 原型通过；公共 Fourier MVB 尚未接入。** 在 `1f6bab2` 上复用现有
-GLWE Fourier 原语，验证了 RustFFT/TfheFFT、Native u32/u64、小整数差分因子与
-经典 binary、BootstrapKeyswitch 完整链。下一步为 [B5.2](tfhe-backend-plan.md#b52glwe-fourier-mvb-正式接入)。
-本结论不代表任意字宽、因子范数或噪声参数均可用，也不覆盖 NTRU 初始化。
+**B5.2 已完成 GLWE Fourier 正式接入。** 使用入口见[后端 README](../crates/primus_tfhe_glwe_fourier/README.zh_CN.md#固定尺度分解式-mvb)，
+接口、工作区与验收范围见[下文](#b52正式接口与验收)。下一步为 B5.3 NTRU Fourier。
+
+以下原型记录以 `1f6bab2` 为基线，覆盖 RustFFT/TfheFFT、Native u32/u64、小整数
+差分因子和经典 binary BK 链。历史测量不代表任意因子/参数的精度或当前实现的耗时，
+也不覆盖 NTRU 初始化。
 
 ## 表示与执行
 
@@ -14,7 +16,7 @@ GLWE Fourier 原语，验证了 RustFFT/TfheFFT、Native u32/u64、小整数差�
 
 原型使用已有 raw `LookupTable::try_new` 编译未缩放的 `p_i`，保留负尾，
 再按有符号整数差分构造 `W_i`；另编译相同 Scaled 输出的独立 PBS 参照。
-`FactorizedLookupTable::try_new` 未修改，原型也验证它仍拒绝 Native。
+B5.1 当时未修改 `FactorizedLookupTable::try_new`；其 Native 分支现已由 B5.2 接入。
 
 ```text
 准备：W_i 的负系数保留为 Native 二补码
@@ -31,7 +33,7 @@ GLWE Fourier 原语，验证了 RustFFT/TfheFFT、Native u32/u64、小整数差�
 均要求因子与密文使用同一 table 实例；未把 RustFFT 的顺序用于 TfheFFT。
 密文前向变换带 `2^-w` 缩放，整数因子不带此缩放，逆变换只恢复一次 torus 尺度。
 
-本轮无需新增底层 trait、密钥类型或乘法内核。B5.2 应复用这些原语及普通 evaluator
+无需新增底层 trait、密钥类型或乘法内核。B5.2 复用这些原语及普通 evaluator
 的 BR/KS 阶段，另持有共享 Fourier 结果，集中管理逐输出乘积 scratch。
 原型的分散因子 Vec 和独立系数缓冲只是诊断布局，不作为正式 API/存储设计。
 
@@ -167,7 +169,7 @@ case 顺序；没有测 SIMD 延迟，也不把默认/SIMD 误差一致解释为
 SIMD release 各执行一次完整诊断。正式接入前可按本节参数、函数和执行顺序重建
 原型；两轮计时保存均值及 95% 区间，不保留临时程序、构建分支或 Criterion 原始样本。
 
-## 实际验证
+## B5.1 实际验证
 
 原型默认/SIMD release 诊断全部通过；补充输入平台检查后重跑，记录数值保持一致。
 已有 `primus_fft --test negacyclic` 与 `primus_tfhe --test factorized_lookup_table`
@@ -175,12 +177,41 @@ SIMD release 各执行一次完整诊断。正式接入前可按本节参数、�
 其 nightly 命令启用 `primus_integer/simd`。格式、文档链接及 CSV 完整性检查通过。
 没有修改生产 Rust 代码，未重复运行全 workspace 测试。
 
-## B5.2 的边界
+## B5.2：正式接口与验收
 
-- 可以接入 Native 偶尺度构造、两种 FFT 的整数因子准备与 GLWE 完整 evaluator；
-  奇数尺度明确报错，奇数 q 的既有分支保持原契约。
-- 本轮验证的是 u32/u64、N=1024 的经典 binary BK 三输出，以及 N≤4096 的
-  独立小整数乘法；不能由此开放任意精度保证。KB/ternary 在 B5.2 独立验收。
-- NTRU 初始化/KS 在 B5.3 核对；sparse×MVB、更多输出及与交错算法的成本选择
-  留给 B5.4。没有新增安全认证或噪声尾界结论。
-- 公共构造器、README 支持矩阵和生产代码本步不变；正式公开支持由后续工程步骤交付。
+共享 `FactorizedLookupTable` 对 Native 检查实际尺度奇偶，奇尺度返回
+`LookupTableError::OddFactorizationScale`；显式偶模数保持拒绝，奇数 q 分支保持原语义。
+原有整数几何 oracle 扩充 Native 输出和非二次幂 `t_out=10`，包含空负尾及全部旋转，
+仍只有两个共享编译测试。
+
+Fourier context 提供 `compile_factorized_lookup_table_fn` / `factorized_evaluator`，
+与 NTT 的调用习惯一致；显式准备可用 `FourierFactorizedLookupTable::new`。
+预处理消费系数程序，保留 V 和一段连续 `Vec<Complex64>` 因子，不保留因子系数副本。
+产物借用 context，执行时核对指针身份；相同参数不足以证明 table 表示相同。
+字宽目前限定 u32/u64，准备 u16 会在变换前 panic。
+
+工作区复用普通 evaluator，额外持有 `(d+1)*N/2` 复数的共享 BR 结果和 `N/2`
+复数的乘积 scratch。逐分量点乘、逆 FFT 直接写回普通 evaluator 的系数 GLWE；
+BK 逐输出 KS，KB 先切换输入再做共享 BR。空间不随输出数增长，普通 PBS 工作区不变。
+无需增加密钥材料或向底层暴露内部 scratch；本步未重测完整性能，不把 B5.1
+原型计时解释为该缓冲区布局的性能保证。
+
+[两个后端测试](../crates/primus_tfhe_glwe_fourier/tests/factorized_pbs.rs)分别负责：
+
+- 完整链：`n=8,d=2,N=128,t_in=15,t_out=10`，两种 FFT、u32/u64、两种 order；
+  binary/ternary 按字宽和 FFT 配对覆盖，避免全笛卡尔积。固定 seed，消息 0/3/7，
+  下降函数、交替 0/9、阈值三输出；与同 Scaled 编码的独立 PBS 对照，检查相位余量
+  和首次/重复调用零分配。small-LWE 外部维数 8，KB 外部维数 256。
+- 独立边界：单输出、跨 context、输入/输出长度、每项编译元数据、不同输出模数、
+  奇尺度及 sparse key 拒绝。最后一项输出维数错误也须在任何输出写入前失败，随后仍可复用工作区。
+
+默认两测试合计约 0.65 秒。没有新增统计测试或持久 benchmark。原有
+[基本示例](../crates/primus_tfhe_glwe_fourier/examples/fourier_basic.rs)补充偶尺度 MVB，
+复用两种 order 的 ternary 密钥、公钥输入及输出缓冲；不复制参数构造。
+
+验证：`just tfhe` / `just tfhe-simd`，共享编译与后端聚焦测试，严格 rustdoc，
+默认/SIMD release 基本示例。参数只用于功能验证，仍须自行预算因子放大与
+`delta_b-sum(delta_a*s)` 的 FFT 相位误差。
+
+**后续边界**：NTRU 初始化/KS 由 B5.3 核对；Fourier sparse×MVB 当前明确拒绝，
+其组合验收及与重复/交错 PBS 的应用成本比较归 B5.4。新接口不提供尾概率或安全认证。

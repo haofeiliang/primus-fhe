@@ -2,7 +2,7 @@
 
 [English](README.md) | 简体中文
 
-基于 GLWE、采用原生 torus 的 TFHE 后端。支持两种 PBS order、ManyLUT、Boolean 门、经典 CBS 及私钥/公钥客户端。
+基于 GLWE、采用原生 torus 的 TFHE 后端。支持两种 PBS order、ManyLUT、偶尺度 MVB、Boolean 门、经典 CBS 及私钥/公钥客户端。
 完整能力与编码约定见[公共指南](../primus_tfhe/README.zh_CN.md)，
 参数与秘密域见 [GLWE family](../primus_tfhe_glwe/README.zh_CN.md)。
 
@@ -17,7 +17,7 @@ cargo run -p primus_tfhe_glwe_fourier --example fourier_basic
 
 [示例源码](examples/fourier_basic.rs) 用相同流程运行两种 order：参数 → context → 配套密钥
 → 公钥 encryptor / client decryptor → 编译 LUT → 复用 evaluator 与输出。
-涵盖单 PBS、`t_in=4 → t_out=8` 的双输出 ManyLUT、客户端 `encrypt_padded_to`、Boolean 门、NOT 和 MUX。
+涵盖单 PBS、`t_in=4 → t_out=8` 的双输出 ManyLUT、Scaled `t_out=10` 的 MVB、客户端 `encrypt_padded_to`、Boolean 门、NOT 和 MUX。
 
 `BootstrapKeyswitch` 的外部密文维数为 `n`，`KeyswitchBootstrap` 为 `kN`。
 输入和输出均遵循选定的外部秘密域。示例的维数、噪声和分解参数仅用于功能演示，
@@ -47,6 +47,41 @@ FFT engine 和 evaluator 从同一个 context 创建。
 `t=4` 时使用 `boolean_encryptor`、`boolean_decryptor`、`boolean_evaluator`，
 直接复用采用模 4 下 Boolean `0/1` 编码的 `LweCiphertext`。Encryptor 支持私钥或公钥及
 `encrypt_to`；evaluator 处理内部模 8 的 LUT 尺度，通过 `evaluate_binary_to`、`not_to`、`mux_to` 重复求值。
+
+## 固定尺度分解式 MVB
+
+输入使用 unsigned Rounded 编码，输出显式提供 unsigned `ScaledCodec`：
+
+```rust,ignore
+let codec = ScaledCodec::new(10u32, NativeModulus::new());
+// 假定 t_in >= 8，且输入和输出都有足够的噪声余量。
+let lut = context.compile_factorized_lookup_table_fn(
+    &codec, 4, 3, |m, i| u32::from(m > i),
+)?;
+let mut evaluator = context.factorized_evaluator(&server_key)?;
+let mut outputs = vec![LweCiphertext::zero(context.parameters().external_lwe_dimension()); 3];
+evaluator.apply_lookup_table_to(&input, &lut, &mut outputs);
+let value = codec.decode_value(decryptor.decrypt_phase(&outputs[0])?);
+```
+
+codec 后的参数分别为输入前缀长度和实际输出数。`FourierFactorizedLookupTable`
+借用本 context；即使参数相同，另一个实例也会被拒绝。底层调用方可先编译共享
+`FactorizedLookupTable`，再用 `FourierFactorizedLookupTable::new` 准备。
+
+支持 u32/u64、RustFFT/TfheFFT、经典 binary/ternary 密钥及两种 order。
+实际 `delta=round(2^BITS/t_out)` 必须为偶数；奇尺度返回
+`LookupTableError::OddFactorizationScale`。明文模数不必为二次幂，10 在两种字宽下
+都可用。稀疏 MVB 暂不支持，其 evaluator 构造返回 `UnsupportedSparseBootstrapping`。
+
+因子按有符号整数一次准备，不做 torus 缩放。所有输出共享一次 BR；BK 逐输出 KS，
+KB 在 BR 前切换输入。`apply_lookup_table_to` 在写入前检查 context 和全部维数，
+在线不分配；额外工作区为 `(d+2)*N/2` 个复数，不随输出数增长。预处理程序存储
+N 个 torus 系数和 `output_count*N/2` 个复数，不保留因子的系数副本。
+
+因子范数放大 BR 噪声，Fourier 乘法另引入相位数值误差；构造成功不代表噪声预算成立，
+u64 同样如此。须用提供的 Scaled codec 解码，串联时计入与 Rounded 中心的差异。
+见[编码约定](../primus_tfhe/README.zh_CN.md#固定尺度分解式-mvb)和
+[精度证据与限制](../../docs/tfhe-mvb-fourier.md)。
 
 ## Binary 与 ternary small 秘密
 

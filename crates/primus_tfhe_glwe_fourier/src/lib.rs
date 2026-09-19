@@ -22,6 +22,11 @@
 //! For fixed-weight binary small secrets, [`KeyGenerator::try_generate_sparse_server_key`]
 //! selects coefficient-aggregation sparse PBS through the same [`Evaluator`].
 //! Ordinary and interleaved LUTs support both orders; sparse CBS remains unsupported.
+//!
+//! [`TfheContext::compile_factorized_lookup_table_fn`] prepares Native even-scale
+//! MVB with unsigned Scaled outputs. [`FactorizedEvaluator`] shares one classic
+//! binary/ternary BR across outputs, then multiplies by integer Fourier factors.
+//! Both orders support u32/u64; factor amplification and FFT error need a noise budget.
 
 #![deny(missing_docs)]
 
@@ -52,11 +57,11 @@ pub use circuit_bootstrap::{
     CircuitBootstrapEvaluator, CircuitBootstrapKey, CircuitBootstrapParameters,
 };
 pub use context::TfheContext;
-pub use evaluator::Evaluator;
+pub use evaluator::{Evaluator, FactorizedEvaluator, FourierFactorizedLookupTable};
 pub use key::{BootstrappingKey, KeyGenerator, ServerKey};
 pub use primus_tfhe::{
-    BivariateLookupTable, CircuitBootstrapConfig, DecompositionConfig, InterleavedLookupTable,
-    LookupTable, LweCiphertext, LweSecretKeyRef,
+    BivariateLookupTable, CircuitBootstrapConfig, DecompositionConfig, FactorizedLookupTable,
+    InterleavedLookupTable, LookupTable, LweCiphertext, LweSecretKeyRef,
 };
 pub use primus_tfhe_glwe::{ClientKey, EncryptionKey, PbsOrder};
 pub use sparse::{SparseGlweBlindRotationContext, SparseGlweBootstrappingKey};

@@ -13,6 +13,9 @@ use crate::{
     error::TfheEvaluationError,
 };
 
+mod factorized;
+pub use factorized::{FactorizedEvaluator, FourierFactorizedLookupTable};
+
 /// Reusable Fourier workspace for programmable bootstrapping.
 pub struct Evaluator<'a, T, Table>
 where

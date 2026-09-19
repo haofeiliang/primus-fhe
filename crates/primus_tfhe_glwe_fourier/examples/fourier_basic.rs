@@ -1,8 +1,8 @@
-//! GLWE/Fourier PBS and Boolean evaluation with both execution orders.
+//! GLWE/Fourier PBS, MVB and Boolean evaluation with both execution orders.
 //!
 //! Small functional parameters for demonstration, not production use.
 
-use primus_encoding::RoundedCodec;
+use primus_encoding::{RoundedCodec, ScaledCodec};
 use primus_fft::RustFftTable;
 use primus_glwe::SecretKeyDistr;
 use primus_lwe::LweParameters;
@@ -103,6 +103,27 @@ fn run(order: PbsOrder) {
         6
     );
 
+    // MVB shares BR without interleaved slots. The actual Native scale for
+    // t_out=10 is even; decode with this Scaled codec, not the input codec.
+    let scaled = ScaledCodec::new(10, NativeModulus::new());
+    let factored = context
+        .compile_factorized_lookup_table_fn(&scaled, 2, 2, |m, i| {
+            if i == 0 {
+                (m + 4) as u32
+            } else {
+                (9 - m) as u32
+            }
+        })
+        .unwrap();
+    let mut mvb = context.factorized_evaluator(&server_key).unwrap();
+    mvb.apply_lookup_table_to(&input, &factored, &mut outputs);
+    for (output, expected) in outputs.iter().zip([5, 8]) {
+        assert_eq!(
+            scaled.decode_value(decryptor.decrypt_phase(output).unwrap()),
+            expected
+        );
+    }
+
     // Boolean adapters manage the internal LUT scale and restore external 0/1.
     let boolean_encryptor = context.boolean_encryptor(&public_key).unwrap();
     let boolean_decryptor = context.boolean_decryptor(&client_key).unwrap();
@@ -123,7 +144,7 @@ fn run(order: PbsOrder) {
     boolean_evaluator.mux_to(&lhs, &lhs, &rhs, &mut output);
     assert!(boolean_decryptor.decrypt(&output).unwrap());
 
-    println!("{order:?}: external LWE dimension {dimension}; PBS and Boolean succeeded");
+    println!("{order:?}: external LWE dimension {dimension}; PBS, MVB and Boolean succeeded");
 }
 
 fn main() {

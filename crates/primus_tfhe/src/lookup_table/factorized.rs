@@ -13,11 +13,12 @@ use crate::LookupTableError;
 ///
 /// For each output, let `p_i` be the unscaled integer front-half LUT, including
 /// its signed tail. This stores `V = (delta/2) * (1 + X + ... + X^(N-1))`
-/// and `W_i = (1-X)*p_i` modulo an odd `q`, so `V*W_i = delta*p_i` in
-/// `Z_q[X]/(X^N+1)`. The division by two is modular and occurs only in the
-/// noiseless public `V`. Factors are reduced modulo **q**, never the plaintext
-/// modulus. Backends blind-rotate `V` once at step one, then multiply by each
-/// factor. Output count does not reduce the input's rotation resolution.
+/// and `W_i = (1-X)*p_i`, so `V*W_i = delta*p_i` in `Z_q[X]/(X^N+1)`.
+/// For odd explicit `q`, division by two is modular. For Native `q = 2^BITS`,
+/// delta must be even and division is ordinary integer halving. In both cases
+/// it occurs only in the noiseless public `V`. Factors are reduced modulo **q**,
+/// never the plaintext modulus. Backends blind-rotate `V` once at step one, then
+/// multiply by each factor. Output count does not reduce the input's rotation resolution.
 ///
 /// Inputs use unsigned rounded encoding; all outputs share unsigned fixed-scale
 /// encoding. Multiplication amplifies BR error by the integer factor: a bound is
@@ -36,8 +37,10 @@ impl<T: FheUint> FactorizedLookupTable<T> {
     /// Compiles `function(input, output_index)` over a nonempty front-half prefix.
     ///
     /// Requires `1 <= input_domain_len <= ceil(t_in/2)`, valid single-output
-    /// rotation geometry, a positive `output_count` and an explicit odd output
-    /// ciphertext modulus. Output count need not be a power of two or at most N.
+    /// rotation geometry, a positive `output_count` and either an explicit odd
+    /// output ciphertext modulus or Native with an even output scale. Explicit
+    /// even moduli remain unsupported. Output count need not be a power of two
+    /// or at most N.
     /// Each result must be below `output_codec.plaintext_modulus()`.
     /// On success the callback runs once per pair, with `output_index` outermost
     /// and increasing input indices within each output.
@@ -62,10 +65,15 @@ impl<T: FheUint> FactorizedLookupTable<T> {
             return Err(LookupTableError::EmptyOutputs);
         }
         let modulus = output_codec.ciphertext_modulus();
-        let q = modulus
-            .explicit_value()
-            .filter(|q| *q % T::TWO == T::ONE)
-            .ok_or(LookupTableError::UnsupportedFactorizationModulus)?;
+        let delta = output_codec.encode_value(T::ONE, PlaintextEmbedding::Unsigned);
+        // Solve 2A = delta only for the noiseless common polynomial. Native
+        // has no inverse of two; truncating an odd scale would change the LUT.
+        let half_scale = match modulus.explicit_value() {
+            Some(q) if q % T::TWO == T::ONE => modulus.reduce_mul(delta, q / T::TWO + T::ONE),
+            Some(_) => return Err(LookupTableError::UnsupportedFactorizationModulus),
+            None if delta % T::TWO == T::ZERO => delta / T::TWO,
+            None => return Err(LookupTableError::OddFactorizationScale),
+        };
         validate_front_half(
             input_domain_len,
             poly_length,
@@ -103,10 +111,6 @@ impl<T: FheUint> FactorizedLookupTable<T> {
             }
             coefficients[0] = seam;
         }
-        let delta = output_codec.encode_value(T::ONE, PlaintextEmbedding::Unsigned);
-        // q is odd, hence (q/2 + 1) is its inverse of two. Scale V before BR;
-        // applying this inverse to the noisy BR output would magnify its error.
-        let half_scale = modulus.reduce_mul(delta, q / T::TWO + T::ONE);
         Ok(Self {
             common_polynomial: PolynomialOwned::new(vec![half_scale; poly_length]),
             factors,
@@ -115,7 +119,7 @@ impl<T: FheUint> FactorizedLookupTable<T> {
             encoding: LookupTableEncoding {
                 input_plaintext_modulus: input_codec.plaintext_modulus(),
                 input_ciphertext_modulus: input_codec.ciphertext_modulus().explicit_value(),
-                coefficient_modulus: Some(q),
+                coefficient_modulus: modulus.explicit_value(),
             },
         })
     }

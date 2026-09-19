@@ -119,10 +119,10 @@ Rounded LUT 求差分，跳变可达到 `q/t_out` 的量级，不能再声称其
   同一恒等式仍成立；若 `Delta` 为奇数，这个通用共同因子不存在。例如 `q=256,t=3`
   的合法 Scaled 尺度为 85，`2A=85 mod 256` 无解，向下除二会把尺度改成 84。
 
-当前 GLWE/NTRU NTT 均使用奇数 `q`。[B5.1 Fourier 原型](tfhe-mvb-fourier.md)已验证
-Native 偶尺度、小整数因子 FFT 与两种 FFT/u32/u64 的经典 GLWE 完整链；公共构造器
-仍只支持奇数 q，正式接入归 B5.2。不通过一次模逆或系数右移泛化。
-NTRU 的初始化和后处理保持独立，见第 5 节及 B5.3。
+GLWE/NTRU NTT 使用奇数 `q`；[GLWE Fourier](tfhe-mvb-fourier.md)已接入 Native
+偶尺度、两种 FFT/u32/u64 的经典 binary/ternary 完整链。共享构造器接受这两种模数
+情况，不通过一次模逆或系数右移泛化；Fourier 因子准备与误差要求见专项。
+NTRU 的初始化和后处理保持独立，Fourier 移植归 B5.3。
 
 ## 4. 噪声与容量条件
 
@@ -183,11 +183,11 @@ nnz(W_i) <= D
 
 两族 NTT 后端采用以下接口，使用流程见 [GLWE NTT README](../crates/primus_tfhe_glwe_ntt/README.zh_CN.md#固定尺度分解式-mvb) 与 [NTRU NTT README](../crates/primus_tfhe_ntru_ntt/README.zh_CN.md#固定尺度分解式-mvb)：
 
-1. **共享 `FactorizedLookupTable<T>`**：保存输入几何/编码兼容性、共同系数域多项式
+1. **共享 `FactorizedLookupTable<T>`**（也供 Fourier 准备使用）：保存输入几何/编码兼容性、共同系数域多项式
    `V` 和连续 `Vec<T>` 中的 `k` 个系数域因子 `W_i`，每因子占连续 `N` 项。
    `factors()` 返回 `PolynomialIter`；构造直接写入最终缓冲，不逐因子分配再拼接。
    构造时显式接收输入 Rounded、输出 Scaled codec
-   与 `output_count: usize`，集中验证域、奇数 `q`、真实中心及输出范围；不使用
+   与 `output_count: usize`，集中验证域、奇数 q 或 Native 偶尺度、真实中心及输出范围；不使用
    `InterleavedLookupTable`，也不增加一个含可选字段的通用 LUT。
 2. **`NttFactorizedLookupTable::new(context, lookup_table)`**：消费共享产物，把 `W_i` 原地变为 NTT 形式，保留原始 `V`。
    两后端用 `PolynomialIterMut` 准备因子、`NttPolynomialIter` 访问 NTT 因子；准备不另分配。
