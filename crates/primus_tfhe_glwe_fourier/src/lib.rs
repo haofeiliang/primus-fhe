@@ -18,6 +18,10 @@
 //! [`TfheContext::circuit_bootstrap_evaluator`] binds its parameters and keys from
 //! [`ServerKey`] for classic binary/ternary CBS producing Fourier GGSW under the
 //! accumulator secret, with either PBS order.
+//!
+//! For fixed-weight binary small secrets, [`KeyGenerator::try_generate_sparse_server_key`]
+//! selects coefficient-aggregation sparse PBS through the same [`Evaluator`].
+//! Ordinary and interleaved LUTs support both orders; sparse CBS remains unsupported.
 
 #![deny(missing_docs)]
 
@@ -49,13 +53,13 @@ pub use circuit_bootstrap::{
 };
 pub use context::TfheContext;
 pub use evaluator::Evaluator;
-pub use key::{KeyGenerator, ServerKey};
+pub use key::{BootstrappingKey, KeyGenerator, ServerKey};
 pub use primus_tfhe::{
     BivariateLookupTable, CircuitBootstrapConfig, DecompositionConfig, InterleavedLookupTable,
     LookupTable, LweCiphertext, LweSecretKeyRef,
 };
 pub use primus_tfhe_glwe::{ClientKey, EncryptionKey, PbsOrder};
-pub use sparse::SparseGlweBootstrappingKey;
+pub use sparse::{SparseGlweBlindRotationContext, SparseGlweBootstrappingKey};
 
 pub use boolean::{
     BooleanDecryptor, BooleanEncryptor, BooleanError, BooleanEvaluator, BooleanGate,

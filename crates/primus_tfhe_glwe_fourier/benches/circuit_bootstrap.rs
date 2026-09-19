@@ -19,7 +19,7 @@ use primus_glwe::{
 use primus_lattice::{context::FourierGlweExternalProductContext, ggsw::FourierGgsw};
 use primus_poly::Polynomial;
 use primus_tfhe::InterleavedLookupTable;
-use primus_tfhe_glwe_fourier::{FourierGlweBlindRotationContext, PbsOrder};
+use primus_tfhe_glwe_fourier::{BootstrappingKey, FourierGlweBlindRotationContext, PbsOrder};
 use rand::{SeedableRng, rngs::StdRng};
 
 fn bench_backend<Table: FftTable>(c: &mut Criterion, backend: &str) {
@@ -29,6 +29,9 @@ fn bench_backend<Table: FftTable>(c: &mut Criterion, backend: &str) {
         let (client, server) = context
             .try_generate_keys(Some(profile::circuit_bootstrap()), &mut rng)
             .unwrap();
+        let BootstrappingKey::Classic(bootstrapping_key) = server.bootstrapping_key() else {
+            panic!("CBS benchmark requires a classic key");
+        };
         let key = server.circuit_bootstrap_key().unwrap();
         let parameters = key.parameters();
         let encryptor = context.encryptor(&client).unwrap();
@@ -92,24 +95,21 @@ fn bench_backend<Table: FftTable>(c: &mut Criterion, backend: &str) {
                 |m, level| Ok(scalars[level].wrapping_mul(m as u64)),
             )
             .unwrap();
-            let mut blind_rotation =
-                FourierGlweBlindRotationContext::new(server.bootstrapping_key());
+            let mut blind_rotation = FourierGlweBlindRotationContext::new(bootstrapping_key);
             let mut accumulator = GlweCiphertext::<Vec<u64>>::zero(glwe.glwe_len());
             let mut trace = FourierGlweTraceContext::new(glwe.size());
             let mut projected =
                 GlevCiphertext::<Vec<u64>>::zero(parameters.output_size().glev_len());
             let mut scheme_switch =
                 FourierGlweExternalProductContext::new(parameters.scheme_switch().size());
-            server
-                .bootstrapping_key()
-                .fourier_blind_rotate_interleaved_lookup_table_to(
-                    &inputs[1],
-                    lut.polynomial(),
-                    lut.padded_output_count(),
-                    &mut accumulator,
-                    &mut fft,
-                    &mut blind_rotation,
-                );
+            bootstrapping_key.fourier_blind_rotate_interleaved_lookup_table_to(
+                &inputs[1],
+                lut.polynomial(),
+                lut.padded_output_count(),
+                &mut accumulator,
+                &mut fft,
+                &mut blind_rotation,
+            );
             key.trace_key().project_prefix_coefficients_to(
                 &accumulator,
                 scalars.len(),
@@ -119,16 +119,14 @@ fn bench_backend<Table: FftTable>(c: &mut Criterion, backend: &str) {
             );
             group.bench_function("blind_rotation", |b| {
                 b.iter(|| {
-                    server
-                        .bootstrapping_key()
-                        .fourier_blind_rotate_interleaved_lookup_table_to(
-                            black_box(&inputs[1]),
-                            black_box(lut.polynomial()),
-                            lut.padded_output_count(),
-                            black_box(&mut accumulator),
-                            &mut fft,
-                            &mut blind_rotation,
-                        );
+                    bootstrapping_key.fourier_blind_rotate_interleaved_lookup_table_to(
+                        black_box(&inputs[1]),
+                        black_box(lut.polynomial()),
+                        lut.padded_output_count(),
+                        black_box(&mut accumulator),
+                        &mut fft,
+                        &mut blind_rotation,
+                    );
                     black_box(&accumulator);
                 })
             });

@@ -18,7 +18,9 @@ use primus_lwe::{LweCiphertext, LweParameters};
 use primus_modulus::NativeModulus;
 use primus_poly::Polynomial;
 use primus_tfhe::rotation::RotationQuantizer;
-use primus_tfhe_glwe_fourier::{ClientKey, KeyGenerator, PbsOrder, TfheContext, TfheParameters};
+use primus_tfhe_glwe_fourier::{
+    BootstrappingKey, ClientKey, KeyGenerator, PbsOrder, TfheContext, TfheParameters,
+};
 use rand::{SeedableRng, rngs::StdRng};
 
 const N: usize = 1024;
@@ -59,7 +61,9 @@ fn bench_backend<Table: FftTable>(c: &mut Criterion, backend: &str) {
         let server = generator
             .try_generate_server_key(&client, None, &mut rng)
             .unwrap();
-        let bsk = server.bootstrapping_key();
+        let BootstrappingKey::Classic(bsk) = server.bootstrapping_key() else {
+            panic!("ternary benchmark requires a classic key");
+        };
         let encryptor = context.encryptor(&client).unwrap();
         let decryptor = context.decryptor(&client).unwrap();
         let inputs: Vec<_> = (0..2)

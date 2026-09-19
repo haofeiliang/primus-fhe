@@ -65,18 +65,39 @@ configuration. Both PBS orders, ordinary/interleaved LUTs and public-key inputs 
 Ternary keys require more key and workspace storage than binary keys; see the
 [ternary design and costs](../../docs/tfhe-ternary.md).
 
-## Experimental sparse key material
+## Experimental sparse PBS
 
-For a `FixedHammingWeightBinary` small-LWE secret, use
-`KeyGenerator::try_generate_sparse_bootstrapping_key(&client, copy_count, bucket_count, rng)`.
-It returns `SparseGlweBootstrappingKey<T>` with native coefficient GGSWs;
-`bucket(j)` borrows public input indices and one selector per index, followed by a dummy.
-Errors use `SparseBootstrappingKeyError`. The private matching is erased after generation.
+For a `FixedHammingWeightBinary` small-LWE secret, explicitly generate a sparse
+server key, then use the ordinary evaluator and LUT APIs:
 
-This currently exposes key material only; `ServerKey` and `Evaluator` still use classic PBS.
-Sparse BR, full sparse PBS and sparse CBS are not available in this backend.
-Mapping success does not certify fixed-weight security or noise bounds; see the
-[sparse construction and limitations](../../docs/tfhe-sparse-pbs.md).
+```rust,ignore
+let server = KeyGenerator::new(&context)
+    .try_generate_sparse_server_key(&client, copy_count, bucket_count, &mut rng)?;
+let mut evaluator = context.evaluator(&server)?;
+evaluator.apply_lookup_table_to(&input, &lut, &mut output);
+```
+
+Both PBS orders, ordinary LUTs and ManyLUT work with RustFFT and TfheFFT. Require
+`0 < h < n`, `copy_count >= 1` and `bucket_count >= max(copy_count, h)`.
+Generation returns `SparseBootstrappingKeyError`; its `BucketMap` variant preserves
+mapping failures. Matching retries at most eight public maps with the same secret.
+The private matching is erased after generation.
+
+The sparse BSK stores `(copy_count*n + bucket_count)` coefficient GGSWs. Every
+bucket contributes an external product, including unoccupied buckets and encrypted
+zero entries. Key storage, aggregation noise and transform costs must be budgeted;
+speedups depend on the workload. Fixed-weight security and complete noise bounds
+remain experimental; see the [construction and limitations](../../docs/tfhe-sparse-pbs.md).
+Sparse ternary and sparse CBS are not supported; CBS construction returns
+`UnsupportedSparseBootstrapping` for sparse server keys.
+
+`ServerKey::bootstrapping_key()` and `into_parts()` expose `BootstrappingKey::{Classic, Sparse}`;
+the evaluator binds and dispatches the selected workspace automatically. Raw composition
+uses `try_generate_sparse_bootstrapping_key`, `SparseGlweBlindRotationContext::new(&key)`
+and `fourier_blind_rotate_lookup_table_to` / `fourier_blind_rotate_interleaved_lookup_table_to`.
+These raw calls output coefficient GLWE under the accumulator secret, without key
+switching or extraction. `bucket(j)` borrows public input indices and their selectors,
+followed by one dummy.
 
 ## Circuit bootstrapping
 

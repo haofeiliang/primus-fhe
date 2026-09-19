@@ -8,7 +8,8 @@ use primus_lattice::{
     ggsw::{FourierGgsw, Ggsw, GgswIter},
 };
 use primus_modulus::NativeModulus;
-use primus_tfhe::sparse::BucketMap;
+use primus_reduce::PrepareModulusSwitch;
+use primus_tfhe::{rotation::RotationQuantizer, sparse::BucketMap};
 use zeroize::Zeroizing;
 
 use crate::{ClientKey, KeyGenerator, SparseBootstrappingKeyError};
@@ -23,8 +24,10 @@ use crate::{ClientKey, KeyGenerator, SparseBootstrappingKeyError};
 /// Generation retains only the public mapping and ciphertexts, never the support
 /// or matching. Input and accumulator use the native modulus `2^T::BITS`.
 /// Ciphertexts are generated in Fourier form and converted to torus coefficients;
-/// this conversion can incur rounding error. They are ready for coefficient-domain
-/// bucket aggregation, but this key does not yet have a sparse PBS evaluator.
+/// this conversion can incur rounding error. Raw blind rotation is available via
+/// [`Self::fourier_blind_rotate_lookup_table_to`].
+/// [`KeyGenerator::try_generate_sparse_server_key`] pairs this key with the GLWE
+/// KSK for ordinary/interleaved evaluation in [`crate::Evaluator`].
 ///
 /// Successful mapping conditions the joint distribution of the public map and
 /// secret. Fixed-weight security and complete PBS noise bounds need independent
@@ -35,6 +38,7 @@ pub struct SparseGlweBootstrappingKey<T: TorusFftValue> {
     input_dimension: usize,
     hamming_weight: usize,
     copy_count: usize,
+    input_quantizer: RotationQuantizer<<NativeModulus<T> as PrepareModulusSwitch>::Prepared>,
     size: GadgetSize,
     basis: ApproxSignedBasis<T>,
 }
@@ -68,6 +72,12 @@ impl<T: TorusFftValue> SparseGlweBootstrappingKey<T> {
     #[must_use]
     pub fn input_modulus(&self) -> NativeModulus<T> {
         NativeModulus::new()
+    }
+
+    pub(super) fn input_quantizer(
+        &self,
+    ) -> RotationQuantizer<<NativeModulus<T> as PrepareModulusSwitch>::Prepared> {
+        self.input_quantizer
     }
 
     /// Returns `None` for the native accumulator modulus `2^T::BITS`.
@@ -255,6 +265,11 @@ where
             input_dimension,
             hamming_weight,
             copy_count,
+            input_quantizer: RotationQuantizer::new(
+                NativeModulus::<T>::new(),
+                2 * size.glwe_size().poly_length(),
+                1,
+            ),
             size,
             basis: gadget.basis().clone(),
         })

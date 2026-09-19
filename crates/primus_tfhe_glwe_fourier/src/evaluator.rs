@@ -7,7 +7,11 @@ use primus_tfhe::{
 };
 use primus_tfhe_glwe::PbsOrder;
 
-use crate::{FourierGlweBlindRotationContext, ServerKey, TfheContext, error::TfheEvaluationError};
+use crate::{
+    BootstrappingKey, FourierGlweBlindRotationContext, FourierGlweBootstrappingKey, ServerKey,
+    SparseGlweBlindRotationContext, SparseGlweBootstrappingKey, TfheContext,
+    error::TfheEvaluationError,
+};
 
 /// Reusable Fourier workspace for programmable bootstrapping.
 pub struct Evaluator<'a, T, Table>
@@ -18,13 +22,26 @@ where
     context: &'a TfheContext<T, Table>,
     server_key: &'a ServerKey<T>,
     fft: FftEngine<'a, Table>,
-    blind_rotation: FourierGlweBlindRotationContext<T>,
+    blind_rotation: BlindRotation<'a, T>,
     key_switching: FourierGlweKeySwitchingContext<T>,
     // After BR: coefficient GLWE under the accumulator secret, in either order.
     main_glwe: GlweCiphertext<Vec<T>>,
     // Ring KS output under the padded small-LWE secret.
     switched: GlweCiphertext<Vec<T>>,
     small_lwe: LweCiphertext<T>,
+}
+
+// Pair each borrowed key with its own scratch once, avoiding mismatched variants
+// and allocating only the workspace for the selected algorithm.
+enum BlindRotation<'a, T: TorusFftValue> {
+    Classic {
+        key: &'a FourierGlweBootstrappingKey<T, primus_modulus::NativeModulus<T>>,
+        scratch: FourierGlweBlindRotationContext<T>,
+    },
+    Sparse {
+        key: &'a SparseGlweBootstrappingKey<T>,
+        scratch: SparseGlweBlindRotationContext<T>,
+    },
 }
 
 impl<T, Table> ProgrammableBootstrap<T> for Evaluator<'_, T, Table>
@@ -86,7 +103,16 @@ where
             context,
             server_key,
             fft: context.new_fft_engine(),
-            blind_rotation: FourierGlweBlindRotationContext::new(server_key.bootstrapping_key()),
+            blind_rotation: match server_key.bootstrapping_key() {
+                BootstrappingKey::Classic(key) => BlindRotation::Classic {
+                    key,
+                    scratch: FourierGlweBlindRotationContext::new(key),
+                },
+                BootstrappingKey::Sparse(key) => BlindRotation::Sparse {
+                    key,
+                    scratch: SparseGlweBlindRotationContext::new(key),
+                },
+            },
             key_switching: key_switching_context,
             main_glwe: GlweCiphertext::zero(parameters.accumulator_glwe().glwe_len()),
             switched: GlweCiphertext::zero(parameters.glwe_key_switching().output().glwe_len()),
@@ -294,16 +320,26 @@ where
                 &self.small_lwe
             }
         };
-        self.server_key
-            .bootstrapping_key()
-            .fourier_blind_rotate_interleaved_lookup_table_kernel_to(
-                small_lwe,
-                lookup_table,
-                rotation_step,
-                &mut self.main_glwe,
-                &mut self.fft,
-                &mut self.blind_rotation,
-            );
+        match &mut self.blind_rotation {
+            BlindRotation::Classic { key, scratch } => key
+                .fourier_blind_rotate_interleaved_lookup_table_kernel_to(
+                    small_lwe,
+                    lookup_table,
+                    rotation_step,
+                    &mut self.main_glwe,
+                    &mut self.fft,
+                    scratch,
+                ),
+            BlindRotation::Sparse { key, scratch } => key
+                .fourier_blind_rotate_interleaved_lookup_table_kernel_to(
+                    small_lwe,
+                    lookup_table,
+                    rotation_step,
+                    &mut self.main_glwe,
+                    &mut self.fft,
+                    scratch,
+                ),
+        }
         (&self.main_glwe, &mut self.fft)
     }
 

@@ -5,8 +5,8 @@ use primus_lwe::{LweCiphertext, LweParameters};
 use primus_modulus::NativeModulus;
 use primus_poly::Polynomial;
 use primus_tfhe_glwe_fourier::{
-    ClientKey, FourierGlweBlindRotationContext, KeyGenerator, PbsOrder, TfheContext,
-    TfheContextError, TfheEvaluationError, TfheParameters,
+    BootstrappingKey, ClientKey, FourierGlweBlindRotationContext, KeyGenerator, PbsOrder,
+    TfheContext, TfheContextError, TfheEvaluationError, TfheParameters,
 };
 use std::error::Error;
 
@@ -186,7 +186,9 @@ fn public_blind_rotation_rejects_mismatches_before_output_writes() {
     .unwrap();
     let mut rng = StdRng::seed_from_u64(42);
     let (_, server_key) = context.try_generate_keys(None, &mut rng).unwrap();
-    let key = server_key.bootstrapping_key();
+    let BootstrappingKey::Classic(key) = server_key.bootstrapping_key() else {
+        panic!("raw classic rotation test requires a classic key");
+    };
     let size = key.size();
     let input_len = key.input_dimension() + 1;
     let glwe_len = size.glwe_len();

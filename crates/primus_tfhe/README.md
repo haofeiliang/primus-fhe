@@ -28,10 +28,10 @@ benchmark fixtures are not production security or failure-probability recommenda
 Classic GLWE PBS and CBS support binary/ternary small secrets in both backends;
 NTT MVB also supports both. NTRU BR secrets remain binary.
 
-GLWE NTT also supports [experimental sparse PBS](../primus_tfhe_glwe_ntt/README.md#experimental-sparse-pbs)
-for fixed-weight binary small secrets: both orders and ordinary/interleaved/factorized LUTs.
-Sparse CBS is not supported. GLWE Fourier exposes [sparse key material only](../primus_tfhe_glwe_fourier/README.md#experimental-sparse-key-material);
-its sparse evaluation path is not implemented.
+Both GLWE backends support experimental sparse PBS for fixed-weight binary small
+secrets, with both orders and ordinary/interleaved LUTs. [NTT](../primus_tfhe_glwe_ntt/README.md#experimental-sparse-pbs)
+also supports factorized LUTs; [Fourier](../primus_tfhe_glwe_fourier/README.md#experimental-sparse-pbs)
+uses native coefficient aggregation. Sparse ternary and sparse CBS are not supported.
 
 ## Error boundaries
 

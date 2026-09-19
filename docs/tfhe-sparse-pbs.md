@@ -1,10 +1,10 @@
 # 稀疏私钥 PBS：实现契约
 
-本文保存已实现的 **GLWE NTT、固定重量二元 BR 秘密、系数域桶聚合**契约，以及表示/参数取舍的测量依据。Fourier 已补齐系数域密钥材料，完整 BR/PBS 尚未接入，见 [B4.1](#b41-fourier-密钥材料与共享匹配)。参数用于开发与比较，尚无生产安全等级或完整 PBS 失败概率保证。
+本文保存已实现的 **GLWE NTT/Fourier、固定重量二元 BR 秘密、系数域桶聚合**契约，以及表示/参数取舍的测量依据。NTT 的历史测量与 Fourier 新增参考路径分开记录，后者见 [B4.2](#b42-fourier-稀疏-br-与完整-pbs)。参数用于开发与比较，尚无生产安全等级或完整 PBS 失败概率保证。
 
 来源是 [2026-1730.pdf](../temp/2026-1730.pdf)：Aayush Jain、Huijia Lin、Zeyu Liu、Sagnik Saha，*New Techniques for Fast and Shallow FHE Bootstrapping and Beyond*。本文使用 PDF 一基页码，依据 §3.4、§4、§7.1，重点为 p.17–19 的公式/伪码和 p.43 参数表。文件 SHA-256：`0ba34c2052e2fc717e17271ac04058096075bfd21e8922b7009c9328119eef12`。下文的匹配上界与 Primus 噪声递推是本项目推导，不是论文给出的具体安全结论。
 
-## 首版决定
+## 实现范围
 
 | 项目 | 决定 |
 | --- | --- |
@@ -13,9 +13,9 @@
 | 私有分配 | 在支持集与桶之间求完整匹配；每个支持索引只选一个副本，每桶至多选一个索引 |
 | 失败行为 | 固定同一秘密，独立重采整个公开映射；最多 8 次。耗尽后返回错误，不返回部分 key，不重采秘密或自动退回经典路径 |
 | BSK | 每个副本独立加密选择位，每桶额外独立加密一个 dummy；按桶保存系数域 GGSW |
-| 在线执行 | 输入旋转量计算一次；逐桶系数旋转/相加，整桶转 NTT，再做一次 external product |
+| 在线执行 | 输入旋转量计算一次；逐桶系数旋转/相加，将聚合 GGSW 转 NTT/Fourier，再做一次 external product |
 | 共享层 | 复用 LUT、`RotationQuantizer`、GGSW、分解和外积；不向 `primus_tfhe::lookup_table` 加稀疏参数或策略 trait |
-| 首版组合 | 普通/交错 LUT、两种 GLWE order，后续接入 [MVB](tfhe-mvb.md)；CBS、Fourier、稀疏三元、NTRU 未支持 |
+| 已接入组合 | 两后端普通/交错 LUT、两种 GLWE order；NTT 另有 [MVB](tfhe-mvb.md)。Sparse CBS、稀疏三元及 NTRU 未支持 |
 
 参数中的 `h` 只约束**进入 BR 的 small-LWE 秘密**。KS→BR 顺序的外部秘密仍是 accumulator 的 `kN` 维系数展开；不能把它改标成固定重量二元分布。以下用 `k` 表示 GLWE 维数，`b` 表示桶数，`s` 表示交错 LUT 的 `padded_output_count`，避免与输出函数个数混用。
 
@@ -193,7 +193,7 @@ Primus 当前两种链都保持同一个密文模数，没有论文中 `Q -> Q' 
 
 | 数据 | 保存/建立位置 |
 | --- | --- |
-| `n,h,c,b`、输入/输出共享的模数、GGSW size/basis；NTT 另存普通量化器 | 具体 BSK；与实际秘密及现有参数绑定，NTT 量化器在 keygen 准备 |
+| `n,h,c,b`、输入/输出共享的模数、GGSW size/basis、普通量化器 | 具体 BSK；与实际秘密及现有参数绑定，量化器在 keygen 准备 |
 | `bucket_offsets[b+1]`、`input_indices[cn]` | 具体 BSK；公开展开映射，evaluator 直接借用 |
 | `[bucket][entry...,dummy][row][level][component][coefficient]` | 单个系数数组；每桶 dummy 位于该桶条目之后 |
 | 支持集、匹配 owner/前驱、明文选择位 | keygen 私有临时数据；不放入 server key |
@@ -239,13 +239,31 @@ Primus 当前两种链都保持同一个密文模数，没有论文中 `Q -> Q' 
 
 [共享 `BucketMap`](../crates/primus_tfhe/src/sparse.rs) 的 `try_generate` 接收严格递增的非零输入索引，检查索引、桶数及映射存储边界后采样。返回公开 CSR 映射和用 `Zeroizing` 包装的私有分配；未占用桶使用 `BucketMap::UNASSIGNED`，调用方在加密后丢弃私有分配。`Matching` 仍为私有实现，抽取没有改变候选采样、增广路径选择或八次尝试的随机数消费顺序。
 
-[Fourier keygen](../crates/primus_tfhe_glwe_fourier/src/sparse/key.rs) 沿用 `try_generate_sparse_bootstrapping_key`，逐份独立加密 selector/dummy。复用现有 Fourier 常数 GGSW 加密，将每份结果 inverse FFT 写入最终 Native 系数数组；临时只保存一份 Fourier GGSW。这里的 FFT→整数转换会引入舍入误差，B4.2 必须把它计入桶聚合与外积误差，不能套用 NTT 精确变换的结论。
+[Fourier keygen](../crates/primus_tfhe_glwe_fourier/src/sparse/key.rs) 沿用 `try_generate_sparse_bootstrapping_key`，逐份独立加密 selector/dummy。复用现有 Fourier 常数 GGSW 加密，将每份结果 inverse FFT 写入最终 Native 系数数组；临时只保存一份 Fourier GGSW。这里的 FFT→整数转换会引入舍入误差，必须计入桶聚合与外积误差，不能套用 NTT 精确变换的结论。
 
 纯映射错误定义在共享层；GLWE family 的 `SparseBootstrappingKeyError::BucketMap(#[from] BucketMapError)` 直接保留桶参数、非零索引、映射存储和匹配失败信息。外层负责客户端、分布、重量、实际系数及 GGSW 存储错误，并由两后端重导出；不再复制底层分支或把非法索引转换为私钥系数错误。GGSW 存储检查留在后端，映射缓冲区检查由共享入口承担。所有返回的校验错误均在消耗随机数前发生。
 
 [Fourier 聚焦测试](../crates/primus_tfhe_glwe_fourier/tests/sparse_key.rs) 使用 `u64,n=16,h=4,N=128,k=1,t=8`、`log_basis=8,ell=6` 和噪声参数 `0.7`，分别运行 RustFFT/TfheFFT；`(c,b)=(3,8)` 验证多副本，`(1,17)` 保证存在公开空桶。对加密 GLWE 做外积并解密，核对每个支持索引恰好一次、每桶 selector/dummy 总和为 1、首尾多项式系数及错误前 RNG 不变。原 216 图匹配 oracle、受控重试和 NTT 密钥/完整 PBS 回归继续保留。
 
-本步没有性能结论：Fourier 仅提供密钥材料，BR、两种 order 的完整 PBS 和在线工作区留到 B4.2；收益测量留到 B4.3。条件映射分布、安全和完整尾界仍未闭合。
+此步只交付密钥材料；完整 BR/PBS 见 B4.2，收益测量属于 B4.3。条件映射分布、安全和完整尾界仍未闭合。
+
+## B4.2 Fourier 稀疏 BR 与完整 PBS
+
+[实现](../crates/primus_tfhe_glwe_fourier/src/sparse/blind_rotation.rs)批量量化输入 mask，body 使用同一 `RotationQuantizer`；普通量化器在 keygen 准备，ManyLUT 根据 padded output count 准备步长。每桶从 dummy 拷贝开始，逐条目执行 Native 单项式旋转/相加，再把整份聚合 GGSW 转为 Fourier 并执行一次外积。系数域 GLWE 在调用方输出与 scratch 之间交替，奇数桶最后拷回输出；公开空桶也保留 dummy 外积。
+
+Fourier `ServerKey` 通过 `BootstrappingKey::{Classic,Sparse}` 持有具体表示，`try_generate_sparse_server_key` 生成相同秘密域的配套 KSK。高层 evaluator 在 BR 入口分派一次，保留原 BK 的后置 KS/compact extraction 和 KB 的前置 KS/full extraction。只分配所选工作区；raw BR 无 KS/提取。CBS 的 `try_new` 和 `try_from_parts` 均拒绝稀疏 key，不能靠提供独立 CBS 材料绕过限制。
+
+Fourier BR 的额外存储为 `n` 个公开指数、一份系数聚合 GGSW、一份 Fourier 聚合 GGSW、一份 GLWE 与底层外积工作区；变换引擎由 evaluator 复用。聚合前复制 dummy、外积覆盖下一个 accumulator，重复调用不需要调用方清零。本步采用清晰的逐条目遍历，没有移植 NTT 的缓存分块，也没有逐项频域累积；具体成本由 B4.3 比较。
+
+误差来自 keygen 的 Fourier→系数转换、全部 selector/dummy 加密噪声、聚合后的 FFT、分解/外积及 GLWE 逆变换；KS 另按 order 位于 BR 前或后。Native 系数加减和单项式旋转本身是精确环运算，但这不消除已有的密钥舍入误差。下列相位检查覆盖整条被测路径的总误差，没有分离噪声来源或建立概率尾界：
+
+| 验收 | 固定 fixture 与检查 |
+| --- | --- |
+| [原始 BR](../crates/primus_tfhe_glwe_fourier/tests/sparse_blind_rotation.rs) | u32，`n=16,h=4,N=16,t=8`，basis `8×3`，噪声参数 `0.7`；`(k,c,b)=(1,3,8),(2,1,17)`。两种 FFT，独立整数模切/负循环旋转/GLWE 相位 oracle 对照经典 BR；普通全部旋转、step=4、舍入半点、模回绕、奇偶桶、空桶、k=2、首调用零分配及 raw 拒绝前输出不变 |
+| [完整 PBS](../crates/primus_tfhe_glwe_fourier/tests/sparse_pbs.rs) | u64，`n=16,h=4,N=256,k=1,c=3,b=8,t_in=15,t_out=16`，BR/KS basis `8×6`，噪声参数 `0.7`，accumulator 为 UniformTernary；两种 FFT/order，共用客户端对照经典链，消息 `0,3,7` 加 `±q/1024` 受控输入偏移；普通/三输出 LUT、step 1→4→1、相位/解码及首调用零分配 |
+| 绑定与 CBS 边界 | 拒绝不同重量/basis 的 sparse server key，两个 CBS 构造入口均返回 `UnsupportedSparseBootstrapping` |
+
+相位误差必须小于对应输出解码半径：u32 为 `2^28`，u64 为 `2^59`。这些固定小型 fixture 保护表示、布局和组合契约，不证明生产安全/失败率；尚未为 Fourier sparse 的 Boolean/bivariate/odd-full 等组合做独立验收，也没有性能收益结论。默认/SIMD 验证入口为 `just tfhe` / `just tfhe-simd`，下一步为 B4.3。
 
 ## P3.3 参考盲旋转实现与验证
 

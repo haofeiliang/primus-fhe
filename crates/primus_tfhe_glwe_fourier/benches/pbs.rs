@@ -12,7 +12,8 @@ use primus_glwe::{FourierGlweKeySwitchingContext, GlweCiphertext, GlweParameters
 use primus_lwe::{LweCiphertext, LweParameters};
 use primus_modulus::NativeModulus;
 use primus_tfhe_glwe_fourier::{
-    BooleanGate, FourierGlweBlindRotationContext, PbsOrder, TfheContext, TfheParameters,
+    BooleanGate, BootstrappingKey, FourierGlweBlindRotationContext, PbsOrder, TfheContext,
+    TfheParameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -61,6 +62,9 @@ fn bench_order<Table: FftTable>(c: &mut Criterion, order: PbsOrder, backend: &st
     let context = TfheContext::try_new(parameters(order), table).unwrap();
     let mut rng = StdRng::seed_from_u64(42);
     let (client_key, server_key) = context.try_generate_keys(None, &mut rng).unwrap();
+    let BootstrappingKey::Classic(bootstrapping_key) = server_key.bootstrapping_key() else {
+        panic!("classic benchmark requires a classic key");
+    };
     let parameters = context.parameters();
     let encryptor = context.encryptor(&client_key).unwrap();
     let input = encryptor.encrypt_padded(1u32, &mut rng).unwrap();
@@ -73,7 +77,7 @@ fn bench_order<Table: FftTable>(c: &mut Criterion, order: PbsOrder, backend: &st
 
     let modulus = parameters.accumulator_glwe().cipher_modulus();
     let mut fft = context.new_fft_engine();
-    let mut blind_rotation = FourierGlweBlindRotationContext::new(server_key.bootstrapping_key());
+    let mut blind_rotation = FourierGlweBlindRotationContext::new(bootstrapping_key);
     let key_switching_parameters = parameters.glwe_key_switching().output();
     let mut key_switching =
         FourierGlweKeySwitchingContext::new(key_switching_parameters.glwe_size());
@@ -84,15 +88,13 @@ fn bench_order<Table: FftTable>(c: &mut Criterion, order: PbsOrder, backend: &st
     let mut small_lwe: LweCiphertext<u32> = LweCiphertext::zero(parameters.small_lwe().dimension());
 
     match order {
-        PbsOrder::BootstrapKeyswitch => server_key
-            .bootstrapping_key()
-            .fourier_blind_rotate_lookup_table_to(
-                &input,
-                lookup_table.polynomial(),
-                &mut main_glwe,
-                &mut fft,
-                &mut blind_rotation,
-            ),
+        PbsOrder::BootstrapKeyswitch => bootstrapping_key.fourier_blind_rotate_lookup_table_to(
+            &input,
+            lookup_table.polynomial(),
+            &mut main_glwe,
+            &mut fft,
+            &mut blind_rotation,
+        ),
         PbsOrder::KeyswitchBootstrap => {
             input.inverse_extract_glwe_to(&mut main_glwe, POLY_LENGTH, modulus)
         }
@@ -136,7 +138,7 @@ fn bench_order<Table: FftTable>(c: &mut Criterion, order: PbsOrder, backend: &st
             PbsOrder::KeyswitchBootstrap => &small_lwe,
         };
         b.iter(|| {
-            black_box(server_key.bootstrapping_key()).fourier_blind_rotate_lookup_table_to(
+            black_box(bootstrapping_key).fourier_blind_rotate_lookup_table_to(
                 black_box(blind_rotation_input),
                 black_box(lookup_table.polynomial()),
                 black_box(&mut main_glwe),

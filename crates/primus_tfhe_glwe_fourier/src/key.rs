@@ -1,22 +1,61 @@
 use primus_fft::{FftEngine, FftTable, TorusFftValue};
-use primus_glwe::{FourierGadgetEncryptContext, FourierGlweKeySwitchingKey, FourierGlweSecretKey};
+use primus_glwe::{
+    FourierGadgetEncryptContext, FourierGlweKeySwitchingKey, FourierGlweSecretKey, SecretKeyDistr,
+};
 use primus_lwe::LweSecretKey;
 use primus_modulus::NativeModulus;
-use primus_reduce::Modulus;
 use primus_tfhe_glwe::ClientKey;
 
 use crate::{
     CircuitBootstrapConfig, CircuitBootstrapKey, CircuitBootstrapParameters,
-    FourierGlweBootstrappingKey, KeyGenerationError, TfheContext, TfheParameters,
+    FourierGlweBootstrappingKey, KeyGenerationError, SparseBootstrappingKeyError,
+    SparseGlweBootstrappingKey, TfheContext, TfheParameters,
 };
 
-/// Fourier-domain evaluation keys used by a TFHE server.
+/// Blind-rotation key selected when generating a server key.
+///
+/// Classic keys store Fourier GGSWs; sparse keys store coefficient GGSWs and public
+/// buckets. Both target the same accumulator secret and use the small-LWE input.
+pub enum BootstrappingKey<T: TorusFftValue> {
+    /// One binary control or a ternary control pair per input coefficient.
+    Classic(FourierGlweBootstrappingKey<T, NativeModulus<T>>),
+    /// Bucketed selections for a fixed-weight binary input secret.
+    Sparse(SparseGlweBootstrappingKey<T>),
+}
+
+impl<T: TorusFftValue> BootstrappingKey<T> {
+    fn is_compatible(&self, parameters: &TfheParameters<T>) -> bool {
+        // Both variants and the backend parameters fix the modulus to Native<T>.
+        let (dimension, distribution, size, basis) = match self {
+            Self::Classic(key) => (
+                key.input_dimension(),
+                key.input_distribution(),
+                key.size(),
+                key.basis(),
+            ),
+            Self::Sparse(key) => (
+                key.input_dimension(),
+                SecretKeyDistr::FixedHammingWeightBinary {
+                    hamming_weight: key.hamming_weight(),
+                },
+                key.size(),
+                key.basis(),
+            ),
+        };
+        dimension == parameters.small_lwe().dimension()
+            && distribution == parameters.small_lwe().secret_key_distr()
+            && size == parameters.blind_rotation_ggsw().size()
+            && basis == parameters.blind_rotation_ggsw().basis()
+    }
+}
+
+/// Classic or sparse evaluation keys used by a Fourier TFHE server.
 ///
 /// Both PBS orders share these key materials. [`crate::PbsOrder`] only changes
 /// the order in which the evaluator applies them.
 pub struct ServerKey<T: TorusFftValue> {
     circuit_bootstrap: Option<Box<CircuitBootstrapKey<T>>>,
-    bootstrapping_key: FourierGlweBootstrappingKey<T, NativeModulus<T>>,
+    bootstrapping_key: BootstrappingKey<T>,
     glwe_key_switching_key: FourierGlweKeySwitchingKey<T>,
 }
 
@@ -28,15 +67,8 @@ impl<T: TorusFftValue> ServerKey<T> {
     }
 
     pub(crate) fn is_compatible(&self, parameters: &TfheParameters<T>) -> bool {
-        let blind_rotation_ggsw = parameters.blind_rotation_ggsw();
         let key_switching = parameters.glwe_key_switching();
-        self.bootstrapping_key.input_dimension() == parameters.small_lwe().dimension()
-            && self.bootstrapping_key.input_distribution()
-                == parameters.small_lwe().secret_key_distr()
-            && self.bootstrapping_key.input_modulus().explicit_value()
-                == parameters.small_lwe().cipher_modulus_value()
-            && self.bootstrapping_key.size() == blind_rotation_ggsw.size()
-            && self.bootstrapping_key.basis() == blind_rotation_ggsw.basis()
+        self.bootstrapping_key.is_compatible(parameters)
             && self.glwe_key_switching_key.input_dimension() == key_switching.input_dimension()
             && self.glwe_key_switching_key.output_dimension() == key_switching.output_dimension()
             && self.glwe_key_switching_key.poly_length() == key_switching.poly_length()
@@ -44,9 +76,10 @@ impl<T: TorusFftValue> ServerKey<T> {
             && self.glwe_key_switching_key.basis() == key_switching.output().basis()
     }
 
-    /// Returns the Fourier functional bootstrapping key.
+    /// Returns the selected classic or sparse blind-rotation key.
+    #[must_use]
     #[inline]
-    pub fn bootstrapping_key(&self) -> &FourierGlweBootstrappingKey<T, NativeModulus<T>> {
+    pub fn bootstrapping_key(&self) -> &BootstrappingKey<T> {
         &self.bootstrapping_key
     }
 
@@ -60,14 +93,10 @@ impl<T: TorusFftValue> ServerKey<T> {
     /// keys and optional CBS material.
     #[must_use]
     #[inline]
-    #[expect(
-        clippy::type_complexity,
-        reason = "expose owned key components without another public wrapper"
-    )]
     pub fn into_parts(
         self,
     ) -> (
-        FourierGlweBootstrappingKey<T, NativeModulus<T>>,
+        BootstrappingKey<T>,
         FourierGlweKeySwitchingKey<T>,
         Option<CircuitBootstrapKey<T>>,
     ) {
@@ -79,7 +108,7 @@ impl<T: TorusFftValue> ServerKey<T> {
     }
 }
 
-/// Generates client and Fourier-domain server keys for one TFHE context.
+/// Generates client and classic or sparse server keys for one Fourier context.
 pub struct KeyGenerator<'a, T, Table>
 where
     T: TorusFftValue,
@@ -134,6 +163,39 @@ where
         ))
     }
 
+    /// Generates a complete sparse PBS server key for an existing client.
+    ///
+    /// Uses the client's fixed-weight binary small-LWE secret in both PBS orders.
+    /// The GLWE key-switching key has the same domains as in classic PBS. Sparse
+    /// generation checks parameters and privately retries matching before KSK
+    /// allocation; a failure returns no partial server key.
+    ///
+    /// # Errors
+    /// Inherits [`Self::try_generate_sparse_bootstrapping_key`]'s errors.
+    ///
+    /// # Correctness
+    /// Inherits that method's secret and security requirements. The caller must
+    /// budget sparse aggregation noise and, for interleaved LUTs, coarser rotations.
+    pub fn try_generate_sparse_server_key<R>(
+        &mut self,
+        client_key: &ClientKey<T>,
+        copy_count: usize,
+        bucket_count: usize,
+        rng: &mut R,
+    ) -> Result<ServerKey<T>, SparseBootstrappingKeyError>
+    where
+        R: rand::Rng + rand::CryptoRng,
+    {
+        let bootstrapping_key =
+            self.try_generate_sparse_bootstrapping_key(client_key, copy_count, bucket_count, rng)?;
+        let glwe_key_switching_key = self.generate_glwe_key_switching_key(client_key, rng);
+        Ok(ServerKey {
+            circuit_bootstrap: None,
+            bootstrapping_key: BootstrappingKey::Sparse(bootstrapping_key),
+            glwe_key_switching_key,
+        })
+    }
+
     /// The caller has checked the client key and prepared its matching main
     /// transform with this context's table. Taking ownership bounds its lifetime
     /// to BSK and optional CBS generation, before allocating key-switching material.
@@ -171,7 +233,7 @@ where
         let glwe_key_switching_key = self.generate_glwe_key_switching_key(client_key, rng);
         ServerKey {
             circuit_bootstrap,
-            bootstrapping_key,
+            bootstrapping_key: BootstrappingKey::Classic(bootstrapping_key),
             glwe_key_switching_key,
         }
     }

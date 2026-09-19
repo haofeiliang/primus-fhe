@@ -55,17 +55,34 @@ FFT engine 和 evaluator 从同一个 context 创建。
 普通/交错 LUT 和公钥输入均支持。Ternary 比 binary 需要更多密钥与工作区存储，
 见[设计与成本](../../docs/tfhe-ternary.md)。
 
-## 实验性稀疏密钥材料
+## 实验性稀疏 PBS
 
-small-LWE 秘密采用 `FixedHammingWeightBinary` 时，可调用
-`KeyGenerator::try_generate_sparse_bootstrapping_key(&client, copy_count, bucket_count, rng)`。
-返回的 `SparseGlweBootstrappingKey<T>` 保存 Native 系数域 GGSW；
-`bucket(j)` 借用公开输入索引及对应 selector，最后一项为 dummy。
-生成错误使用 `SparseBootstrappingKeyError`，私有匹配在生成结束后擦除。
+small-LWE 秘密采用 `FixedHammingWeightBinary` 时，显式生成稀疏 server key，
+随后复用普通 evaluator 和 LUT 接口：
 
-目前只提供密钥材料，`ServerKey` 和 `Evaluator` 仍执行经典 PBS；
-本后端尚无 sparse BR、完整稀疏 PBS 或 sparse CBS。
-匹配成功不代表固定重量安全性或噪声界已认证，见[稀疏构造与限制](../../docs/tfhe-sparse-pbs.md)。
+```rust,ignore
+let server = KeyGenerator::new(&context)
+    .try_generate_sparse_server_key(&client, copy_count, bucket_count, &mut rng)?;
+let mut evaluator = context.evaluator(&server)?;
+evaluator.apply_lookup_table_to(&input, &lut, &mut output);
+```
+
+RustFFT/TfheFFT 均支持两种 PBS order、普通 LUT 和 ManyLUT。
+要求 `0 < h < n`、`copy_count >= 1`、`bucket_count >= max(copy_count, h)`。
+生成返回 `SparseBootstrappingKeyError`，其 `BucketMap` 分支保留映射错误；
+固定同一秘密，最多尝试八份公开映射，私有匹配在生成结束后擦除。
+
+稀疏 BSK 保存 `(copy_count*n + bucket_count)` 份系数域 GGSW。每桶均执行一次外积，
+未占用桶及加密零条目也会贡献噪声；需要考虑密钥存储、聚合噪声与变换成本，
+实际加速取决于负载。固定重量安全性及完整噪声界仍属实验范围，见[构造与限制](../../docs/tfhe-sparse-pbs.md)。
+不支持 sparse ternary 和 sparse CBS；CBS 构造遇到稀疏 server key 时返回
+`UnsupportedSparseBootstrapping`。
+
+`ServerKey::bootstrapping_key()` 和 `into_parts()` 返回 `BootstrappingKey::{Classic, Sparse}`，
+evaluator 自动绑定并分派所选工作区。底层组合可使用 `try_generate_sparse_bootstrapping_key`、
+`SparseGlweBlindRotationContext::new(&key)` 以及 `fourier_blind_rotate_lookup_table_to` /
+`fourier_blind_rotate_interleaved_lookup_table_to`；它们输出 accumulator 秘密下的系数域 GLWE，
+不做密钥切换或提取。`bucket(j)` 借用公开输入索引及对应 selector，最后一项为 dummy。
 
 ## Circuit bootstrapping
 

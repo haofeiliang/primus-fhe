@@ -26,9 +26,10 @@ Boolean evaluator 持有门 LUT 与 LWE 工作区；客户端密钥、变换 tab
 GLWE 两后端的经典 PBS 和 CBS 支持 binary/ternary small secret；NTT 的 MVB 同样支持。
 NTRU 的 BR 秘密仍限于 binary。
 
-GLWE NTT 另支持固定重量二元 small 秘密的[实验性稀疏 PBS](../primus_tfhe_glwe_ntt/README.zh_CN.md#实验性稀疏-pbs)：
-两种 order、普通/交错/分解式 LUT；稀疏 CBS 尚不支持。GLWE Fourier 目前只提供
-[稀疏密钥材料](../primus_tfhe_glwe_fourier/README.zh_CN.md#实验性稀疏密钥材料)，尚无稀疏求值路径。
+GLWE 两后端均支持固定重量二元 small 秘密的实验性稀疏 PBS：两种 order、普通/交错 LUT。
+[NTT](../primus_tfhe_glwe_ntt/README.zh_CN.md#实验性稀疏-pbs) 另支持分解式 LUT；
+[Fourier](../primus_tfhe_glwe_fourier/README.zh_CN.md#实验性稀疏-pbs) 使用 Native 系数域聚合。
+Sparse ternary 和 sparse CBS 尚不支持。
 
 ## 错误边界
 

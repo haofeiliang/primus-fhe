@@ -9,8 +9,8 @@ use primus_reduce::ReduceMul;
 use primus_tfhe::{InterleavedLookupTable, LookupTableError};
 
 use crate::{
-    CircuitBootstrapKey, CircuitBootstrapParameters, Evaluator, ServerKey, TfheContext,
-    TfheEvaluationError,
+    BootstrappingKey, CircuitBootstrapKey, CircuitBootstrapParameters, Evaluator, ServerKey,
+    TfheContext, TfheEvaluationError,
 };
 
 /// Classic binary/ternary CBS producing Fourier GGSW under the accumulator secret.
@@ -39,7 +39,7 @@ where
     Table: FftTable,
 {
     /// Binds the CBS parameters and material carried by one server key.
-    /// Returns an error if CBS was not requested during key generation.
+    /// Rejects sparse server keys, or keys without CBS material.
     ///
     /// # Correctness
     /// Inherits [`Self::try_from_parts`]'s secret and transform requirements.
@@ -49,6 +49,9 @@ where
         context: &'a TfheContext<T, Table>,
         server_key: &'a ServerKey<T>,
     ) -> Result<Self, TfheEvaluationError> {
+        if matches!(server_key.bootstrapping_key(), BootstrappingKey::Sparse(_)) {
+            return Err(TfheEvaluationError::UnsupportedSparseBootstrapping);
+        }
         let key = server_key
             .circuit_bootstrap_key()
             .ok_or(TfheEvaluationError::MissingCircuitBootstrapKey)?;
@@ -56,7 +59,8 @@ where
     }
 
     /// Checks resource layouts/bases, compiles the gadget-scaled identity LUT
-    /// and allocates reusable workspace.
+    /// and allocates reusable workspace. Sparse server keys are rejected until
+    /// their CBS noise and gadget scales are validated.
     ///
     /// # Correctness
     ///
@@ -71,6 +75,9 @@ where
         parameters: &'a CircuitBootstrapParameters<T>,
         circuit_key: &'a CircuitBootstrapKey<T>,
     ) -> Result<Self, TfheEvaluationError> {
+        if matches!(server_key.bootstrapping_key(), BootstrappingKey::Sparse(_)) {
+            return Err(TfheEvaluationError::UnsupportedSparseBootstrapping);
+        }
         let tfhe = context.parameters();
         if !parameters.is_compatible(tfhe) {
             return Err(TfheEvaluationError::IncompatibleCircuitBootstrapParameters);
