@@ -17,7 +17,7 @@
 3. **NTRU NTT 分解式 MVB**：B3.1–B3.2 已完成完整链、误差/相关性和成本验收，见 [NTRU MVB 测量](tfhe-mvb-ntru.md)。
 4. **GLWE Fourier 固定重量二元稀疏 PBS**：B4 已完成共享映射、系数域桶聚合、完整求值及成本验收；低重量负载有收益，保留参考实现。
 
-**Native 偶尺度 MVB** 已完成 GLWE/NTRU 正式接入及各自误差验收；仍需原型验证的组合包括 **稀疏 CBS、NTRU ternary 与 NTRU 桶聚合**。其中有的代数已成立，但尚未建立完整的表示、采样或误差契约。不要把“尚未验证”写成“数学上不适配”，也不要把“有底层原语”写成“已有完整功能”。
+**Native 偶尺度 MVB** 已完成 GLWE/NTRU 正式接入及各自误差验收；**NTT sparse CBS 原型已通过，待正式接入**。仍需原型验证的组合包括 **Fourier 稀疏 CBS、NTRU ternary 与 NTRU 桶聚合**。其中有的代数已成立，但尚未建立完整的表示、采样或误差契约。不要把“尚未验证”写成“数学上不适配”，也不要把“有底层原语”写成“已有完整功能”。
 
 ## 2. 当前能力矩阵
 
@@ -168,9 +168,9 @@ GLWE Fourier 的 [many_lut.rs](../crates/primus_tfhe_glwe_fourier/tests/many_lut
 
 ### 5.3 稀疏 CBS：先验证，不能只取消检查
 
-GLWE [NTT](../crates/primus_tfhe_glwe_ntt/src/circuit_bootstrap/evaluator.rs) 与 [Fourier](../crates/primus_tfhe_glwe_fourier/src/circuit_bootstrap/evaluator.rs) 的 CBS 构造器对稀疏 key 均明确返回 `UnsupportedSparseBootstrapping`，原因是 sparse BR 与 gadget-scale 输出的噪声组合尚未验证。它不是 NTT 或稀疏代数本身不适配 CBS。
+GLWE [NTT](../crates/primus_tfhe_glwe_ntt/src/circuit_bootstrap/evaluator.rs) 与 [Fourier](../crates/primus_tfhe_glwe_fourier/src/circuit_bootstrap/evaluator.rs) 的公开 CBS 构造器对稀疏 key 均仍返回 `UnsupportedSparseBootstrapping`。NTT 的 B6.1 原型已通过，等待 B6.2 正式绑定；Fourier 的误差组合仍待 B6.3 验证。该拒绝不是稀疏代数本身不适配 CBS。
 
-先在 NTT 上做小原型：同一 fixed-weight client 对照经典/稀疏 BR，检查每个 gadget level 经 projection/scheme switch 后的相位以及 CMUX 余量。特别计入桶内所有加密零和 dummy 的噪声，以及最小输出尺度。通过后才修改高层支持范围；Fourier 经典 CBS 与稀疏 BR 已接入，sparse CBS 仍须独立原型验收。
+**B6.1 已通过**：[原型记录](tfhe-sparse-cbs.md)在同一 fixed-weight client 下对照经典/稀疏 BR，验证桶内加密零/dummy 的噪声合成、逐行/层相位、独立整数卷积和非恒定 CMUX。u64、n=728、N=1024、两种 order 的 BR `(10,4/5)` 与输出 `(8,3)` 满足本组余量，默认/SIMD 结果一致；更小 gadget 尺度不纳入通过配置。材料、工作区及成本已记录，临时原型已清理，支持矩阵仍按公开 API 标记。
 
 ### 5.4 Native 偶尺度 MVB：GLWE/NTRU Fourier 的共同前置工作
 

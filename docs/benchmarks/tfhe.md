@@ -49,6 +49,10 @@ NTRU CBS 的 [NTT](../../crates/primus_tfhe_ntru_ntt/benches/circuit_bootstrap.r
 [u64 SIMD 补测](../simd-u64.md)记录加减改动前后、其他 modulus / Shoup 内核的
 默认/SIMD 对照及 u64 完整 sparse PBS / keygen；[CSV](simd-u64.csv)保留负向结果和隔离复测。
 
+[B6.1 NTT sparse CBS 原型](../tfhe-sparse-cbs.md)记录同客户端经典/稀疏的逐层尺度、
+非恒定 CMUX、桶内加密零/dummy 噪声及资源；[计时](tfhe-b6.1.csv)、
+[逐层相位](tfhe-b6.1-noise.csv)、[桶噪声](tfhe-b6.1-buckets.csv)。临时原型已清理，未增加 CI 统计或持久基准。
+
 共同边界：Ryzen 9 9955HX3D、x86_64 Linux，仓库构建配置；CPU 未隔离，boost/SMT 开启，计时串行。默认 rustc 1.98.0、Criterion 0.8.2；SIMD 若列出则为 nightly 1.100.0（2026-08-26）。耗时 CSV 为均值及 95% 置信区间，单位见列名，不能当作 Criterion 原始样本或跨后端等安全参数比较。
 
 ## P1.1 初始基线

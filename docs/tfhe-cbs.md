@@ -172,4 +172,5 @@ B1.6 的 CMUX/外积复用 scheme-switch 缓冲，不再单独准备消费 scrat
 默认/SIMD 阶段验证使用 `just tfhe` / `just tfhe-simd`，另运行底层 GLWE/NTRU 测试；严格 rustdoc 与示例单独验证。
 
 尚无生产安全或尾概率认证；稀疏 CBS、其他字宽/参数的噪声余量、非 x86 性能不由本轮结果覆盖。
+NTT sparse CBS 的独立原型与接入边界见 [B6.1](tfhe-sparse-cbs.md)，不替代 Fourier 的组合验证。
 下一步骤按[后端补齐计划](tfhe-backend-plan.md)由用户指定。
