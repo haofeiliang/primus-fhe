@@ -36,6 +36,39 @@ LUT 编译的第一个参数为输出 `RoundedCodec`。示例采用 `t_in=16 →
 [共享编码指南](../primus_tfhe/README.zh_CN.md#选择输出编码)与
 [NTRU 客户端/LUT 契约](../primus_tfhe_ntru/README.zh_CN.md#客户端与-lut)。
 
+## 实验性稀疏 PBS
+
+`external_lwe` 使用 `SecretKeyDistr::fixed_hamming_weight_binary(n, h)`，要求
+**奇数** `h` 且 `0<h<n`。先固定一份通过筛选的客户端，再选择桶聚合：
+
+```rust,ignore
+let mut generator = KeyGenerator::new(&context);
+let client = generator.try_generate_client_key(&mut rng)?;
+let server = generator.try_generate_sparse_server_key(&client, 3, 2 * h, &mut rng)?;
+let mut evaluator = context.evaluator(&server)?;
+```
+
+`TfheContext` 也提供固定客户端入口。普通/交错 LUT 复用原有 `ServerKey`、evaluator
+和输出缓冲；`server.sparse_bootstrapping_key()` 可访问系数控制和公开映射。
+CBS 和分解式 MVB 对稀疏 key 返回 `UnsupportedSparseBootstrapping`，
+包括通过独立 CBS 材料绑定的入口。
+
+偶数重量在 Native 环内不可逆，采样前返回
+`KeyGenerationError::Ntru(NonInvertibleSecretKey)`；奇数重量仍需通过 Fourier
+逆元稳定性筛选。映射最多重试八次，保持客户端不变；映射与稀疏参数错误使用
+`KeyGenerationError::SparseBootstrapping`。筛选影响秘密/映射分布，
+不构成安全性或失败概率认证。
+
+支持 u32/u64 和 RustFFT/TfheFFT。Fourier 材料必须使用同一个 FFT table 实例。
+selector 从 Fourier 恢复到 Native 系数后保存，系数聚合精确；恢复、各桶 FFT、
+初始化、外积和返回 KS 都需计入数值/噪声预算。
+
+运行同时使用两种 FFT 的[稀疏 message/carry 示例](examples/ntru_fourier_sparse.rs)：
+
+```sh
+cargo run -p primus_tfhe_ntru_fourier --release --example ntru_fourier_sparse
+```
+
 ## 固定尺度分解式 MVB
 
 通过 `context.compile_factorized_lookup_table_fn(&codec, input_domain_len,
@@ -106,7 +139,7 @@ binary/ternary 前缀秘密下的 `LwePublicKey`；将其传入 `context.encrypt
 与普通 PBS 材料从同一组私钥和变换表生成。仅需 PBS 时使用 `None`，
 不分配 CBS 密钥材料或工作区。`context.evaluator(&server)` 与
 `context.circuit_bootstrap_evaluator(&server)` 共用这份 server key；未启用 CBS 时后者返回
-`MissingCircuitBootstrapKey`。各 evaluator 只分配自身需要的工作区。生成错误为
+`MissingCircuitBootstrapKey`（经典 key），稀疏 key 则明确拒绝。各 evaluator 只分配自身需要的工作区。生成错误为
 `KeyGenerationError`，NTRU 采样/变换失败通过 `Ntru` 分支返回，`ClientKey` 仅表示兼容性错误。
 
 高级组合仍可使用接收已准备参数所有权的 `try_generate_circuit_bootstrap_key`，以及显式传入

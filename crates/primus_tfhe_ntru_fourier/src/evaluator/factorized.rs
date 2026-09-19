@@ -102,6 +102,7 @@ pub struct FactorizedEvaluator<'a, T: TorusFftValue, Table: FftTable> {
 
 impl<'a, T: TorusFftValue, Table: FftTable> FactorizedEvaluator<'a, T, Table> {
     /// Creates workspace after checking the server key.
+    /// Rejects sparse keys; sparse MVB needs a separate numerical/noise validation.
     ///
     /// # Correctness
     /// Inherits [`Evaluator::try_new`]'s Fourier table requirements.
@@ -109,6 +110,9 @@ impl<'a, T: TorusFftValue, Table: FftTable> FactorizedEvaluator<'a, T, Table> {
         context: &'a TfheContext<T, Table>,
         server_key: &'a ServerKey<T>,
     ) -> Result<Self, TfheEvaluationError> {
+        if server_key.sparse_bootstrapping_key().is_some() {
+            return Err(TfheEvaluationError::UnsupportedSparseBootstrapping);
+        }
         let evaluator = Evaluator::try_new(context, server_key)?;
         let fourier_length = context.table().fourier_length();
         Ok(Self {

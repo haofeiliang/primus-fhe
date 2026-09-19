@@ -36,7 +36,7 @@ where
     Table: FftTable,
 {
     /// Binds the CBS parameters and material carried by one server key.
-    /// Returns an error if CBS was not requested during key generation.
+    /// Rejects sparse keys or absent CBS material.
     ///
     /// # Correctness
     /// Inherits [`Self::try_from_parts`]'s secret and transform requirements.
@@ -46,6 +46,9 @@ where
         context: &'a TfheContext<T, Table>,
         server_key: &'a ServerKey<T>,
     ) -> Result<Self, TfheEvaluationError> {
+        if server_key.sparse_bootstrapping_key().is_some() {
+            return Err(TfheEvaluationError::UnsupportedSparseBootstrapping);
+        }
         let key = server_key
             .circuit_bootstrap_key()
             .ok_or(TfheEvaluationError::MissingCircuitBootstrapKey)?;
@@ -53,6 +56,7 @@ where
     }
 
     /// Binds resources and compiles gadget-scaled identity outputs once.
+    /// Rejects sparse server keys.
     ///
     /// # Correctness
     /// The server and circuit keys were generated from the same accumulator
@@ -63,6 +67,9 @@ where
         parameters: &'a CircuitBootstrapParameters<T>,
         circuit_key: &'a CircuitBootstrapKey<T>,
     ) -> Result<Self, TfheEvaluationError> {
+        if server_key.sparse_bootstrapping_key().is_some() {
+            return Err(TfheEvaluationError::UnsupportedSparseBootstrapping);
+        }
         let tfhe = context.parameters();
         if !server_key.is_compatible(tfhe) {
             return Err(TfheEvaluationError::IncompatibleServerKey);
@@ -97,7 +104,7 @@ where
             parameters,
             circuit_key,
             lookup_table,
-            blind_rotation: BlindRotationWorkspace::new(tfhe),
+            blind_rotation: BlindRotationWorkspace::new(tfhe, server_key),
             trace: FourierNtruTraceContext::new(n),
             fft: context.new_fft_engine(),
             projected: NlevCiphertext::zero(parameters.output_nlev_len()),
@@ -157,7 +164,7 @@ where
             output,
             self.parameters.output_basis(),
             &mut self.fft,
-            self.blind_rotation.cmux.external_product(),
+            self.blind_rotation.rotation.external_product(),
         );
     }
 
@@ -200,7 +207,7 @@ where
             output,
             self.parameters.output_basis(),
             &mut self.fft,
-            self.blind_rotation.cmux.external_product(),
+            self.blind_rotation.rotation.external_product(),
         );
     }
 
@@ -268,7 +275,7 @@ where
             &self.projected,
             output,
             &mut self.fft,
-            self.blind_rotation.cmux.external_product(),
+            self.blind_rotation.rotation.external_product(),
         );
     }
 }

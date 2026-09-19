@@ -7,6 +7,11 @@
 //! rotation step; [`InterleavedLookupTable`] describes the layout and noise tradeoff.
 //! Public PBS checks LUT encoding/moduli/length and all output dimensions before
 //! writing. Raw input key, encoding and noise remain caller requirements.
+//!
+//! [`KeyGenerator::try_generate_sparse_server_key`] prepares coefficient NGSW
+//! buckets for a fixed odd-weight binary client. Ordinary and interleaved PBS
+//! reuse [`Evaluator`]; sparse CBS and factorized MVB are rejected. Coefficient
+//! recovery, aggregate FFTs and external products require a numerical error budget.
 
 //! [`CircuitBootstrapEvaluator`] optionally keeps the BR accumulator under f_acc,
 //! projects gadget-scaled outputs and converts NLev to NGSW. Select its additional
@@ -31,6 +36,7 @@ mod context;
 mod error;
 mod evaluator;
 mod key;
+mod sparse;
 
 pub use accumulator::AccumulatorClient;
 pub use boolean::{
@@ -38,11 +44,13 @@ pub use boolean::{
 };
 pub use context::TfheContext;
 pub use error::{
-    CircuitBootstrapParameterError, KeyGenerationError, LookupTableError, TfheClientError,
-    TfheContextError, TfheEvaluationError, TfheKeyError, TfheParameterError,
+    CircuitBootstrapParameterError, KeyGenerationError, LookupTableError,
+    SparseBootstrappingKeyError, TfheClientError, TfheContextError, TfheEvaluationError,
+    TfheKeyError, TfheParameterError,
 };
 pub use evaluator::{Evaluator, FactorizedEvaluator, FourierFactorizedLookupTable};
 pub use key::{KeyGenerator, ServerKey};
+pub use sparse::SparseNtruBootstrappingKey;
 
 pub use primus_tfhe::{
     BivariateLookupTable, CircuitBootstrapConfig, DecompositionConfig, FactorizedLookupTable,

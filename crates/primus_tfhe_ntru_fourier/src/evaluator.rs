@@ -48,7 +48,7 @@ where
             context,
             server_key,
             fft: context.new_fft_engine(),
-            blind_rotation: BlindRotationWorkspace::new(context.parameters()),
+            blind_rotation: BlindRotationWorkspace::new(context.parameters(), server_key),
         })
     }
 
@@ -230,7 +230,7 @@ where
             &self.blind_rotation.current,
             &mut self.blind_rotation.scratch,
             &mut self.fft,
-            self.blind_rotation.cmux.external_product(),
+            self.blind_rotation.rotation.external_product(),
         );
     }
 }

@@ -35,9 +35,10 @@ secrets, with both orders and ordinary/interleaved/factorized LUTs.
 respective exact-transform and native coefficient-aggregation paths. Both support sparse CBS;
 sparse ternary remains unsupported.
 
-[NTRU NTT sparse PBS](../primus_tfhe_ntru_ntt/README.md#experimental-sparse-pbs)
-supports ordinary and interleaved LUTs for a fixed invertible binary client.
-Its CBS/MVB combinations are rejected; NTRU Fourier bucket aggregation is not available.
+NTRU [NTT](../primus_tfhe_ntru_ntt/README.md#experimental-sparse-pbs) and
+[Fourier](../primus_tfhe_ntru_fourier/README.md#experimental-sparse-pbs) sparse PBS
+support ordinary/interleaved LUTs for fixed-weight binary clients. Fourier requires
+odd weight and a stable inverse. Both reject sparse CBS/MVB.
 
 ## Error boundaries
 

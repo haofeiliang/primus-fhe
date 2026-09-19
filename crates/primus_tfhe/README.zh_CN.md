@@ -31,8 +31,9 @@ GLWE 两后端均支持固定重量二元 small 秘密的实验性稀疏 PBS：�
 [Fourier](../primus_tfhe_glwe_fourier/README.zh_CN.md#实验性稀疏-pbs) 使用 Native 系数域聚合。
 两后端均支持 sparse CBS；sparse ternary 尚不支持。
 
-[NTRU NTT 稀疏 PBS](../primus_tfhe_ntru_ntt/README.zh_CN.md#实验性稀疏-pbs)
-支持固定可逆二元客户端的普通和交错 LUT；CBS/MVB 组合明确拒绝，NTRU Fourier 尚无桶聚合。
+NTRU [NTT](../primus_tfhe_ntru_ntt/README.zh_CN.md#实验性稀疏-pbs) 和
+[Fourier](../primus_tfhe_ntru_fourier/README.zh_CN.md#实验性稀疏-pbs) 稀疏 PBS
+支持固定重量二元客户端的普通/交错 LUT；Fourier 要求奇数重量及稳定逆元。两者均拒绝 sparse CBS/MVB。
 
 ## 错误边界
 

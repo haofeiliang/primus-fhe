@@ -88,6 +88,24 @@ where
         KeyGenerator::new(self).try_generate(circuit_bootstrap, rng)
     }
 
+    /// Generates experimental sparse PBS material for a fixed-weight binary client.
+    /// Inherits [`KeyGenerator::try_generate_sparse_server_key`]'s sampling, errors
+    /// and noise contracts. Reuses the ordinary evaluator; CBS/MVB are unsupported.
+    pub fn try_generate_sparse_server_key<R: rand::Rng + rand::CryptoRng>(
+        &self,
+        client_key: &ClientKey<T>,
+        copy_count: usize,
+        bucket_count: usize,
+        rng: &mut R,
+    ) -> Result<ServerKey<T>, KeyGenerationError> {
+        KeyGenerator::new(self).try_generate_sparse_server_key(
+            client_key,
+            copy_count,
+            bucket_count,
+            rng,
+        )
+    }
+
     /// Creates a secret-key or public-key encryptor after checking compatibility.
     /// Public-key contracts follow [`primus_tfhe_ntru::EncryptionKey`].
     pub fn encryptor<'a, Key>(

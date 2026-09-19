@@ -1,8 +1,8 @@
 # NTRU 固定重量二元桶聚合
 
 [B8 分步计划](tfhe-backend-plan.md#b8ntru-固定重量二元桶聚合-pbs)的恢复入口。
-**B8.1–B8.2 NTT 桶聚合与完整 PBS 已接入。** 普通/ManyLUT 复用原有 evaluator；
-sparse CBS/MVB 明确拒绝。下一步 B8.3 独立验证 Fourier，不自动启动。
+**B8.1–B8.3 NTT/Fourier 桶聚合与完整 PBS 已接入。** 普通/ManyLUT 复用原有 evaluator；
+两后端都明确拒绝 sparse CBS/MVB。Fourier 使用奇数重量，其独立误差与成本见第 8 节。
 
 ## 1. 秘密身份与两次条件化
 
@@ -164,8 +164,8 @@ u32/u64 用 `U32NttTable/U64NttTable`。仅检查第一个占用桶、第一个�
   两个 NTRU 缓冲，奇偶桶数均保证最终 accumulator 位于 `current`。
 - CBS 工厂及 `try_from_parts` 都返回 `UnsupportedSparseBootstrapping`，MVB 工厂同样拒绝。
   初次交付只验收普通/ManyLUT；不继承经典 CBS/MVB 或其他上层组合的误差结论。
-- Fourier 需独立验证。这里的 `h=32` 在 Native 环不可逆，B8.3 必须显式选择奇数重量，
-  并重新检查逆元稳定性、系数恢复和 FFT 聚合误差；不能静默修改重量。
+- Fourier 的独立验证见第 8 节。这里的 `h=32` 在 Native 环不可逆，Fourier 显式选择奇数
+  重量，并检查逆元稳定性、系数恢复和 FFT 聚合误差；不静默修改重量。
 
 ## 6. B8.2 完整链与误差
 
@@ -256,4 +256,162 @@ taskset -c 2 cargo +nightly bench -p primus_tfhe_ntru_ntt --bench sparse_pbs --f
 
 本步验收通过 `just tfhe`（`RUSTDOCFLAGS=-D warnings`）、`just tfhe-simd`、
 `cargo check --workspace --all-targets` 及默认/SIMD release 的 `ntru_ntt_sparse` 示例。
-B8.2 到此完成；B8.3 Fourier 仍需独立验收，不能直接沿用本组偶数重量与精度结论。
+B8.2 到此完成；下节独立验收 Fourier，未沿用 NTT 的偶数重量与精度结论。
+
+## 8. B8.3 Fourier 接入与独立验收
+
+### 采样、表示与公开边界
+
+Fourier 已接入普通/ManyLUT，接口与 NTT 对齐：`try_generate_sparse_server_key` 接受
+固定客户端，返回原有 `ServerKey`，由原有 evaluator 选择 sparse 工作区。
+CBS（包括独立材料入口）和 MVB 仍明确拒绝。未添加额外高层 evaluator 类型或自动选型。
+
+在 Native、`N=2^k` 下，模二有 `X^N+1=(X+1)^N`，因此 binary 多项式可逆当且仅当
+`f(1)=h` 为奇数。采样和导入后的 sparse 生成都在消耗 RNG 前拒绝偶数重量，
+错误为 `KeyGenerationError::Ntru(NonInvertibleSecretKey)`。B8.2 的 `h=32` 不可沿用；
+本步显式选择 **h=33**。奇数重量仍经过既有 Fourier guard：每个频点的模平方有限且
+大于 `f64::EPSILON`，最多 1024 次客户端候选；固定客户端转换失败直接返回，不换秘密。
+该 guard 只排除数值不稳定逆元，不证明下游误差足够小。
+
+第 1 节的分布公式仍适用，此处 `A` 改为 Native 可逆性及 Fourier guard 的接受事件。
+奇数重量使模二条件恒成立，但不能忽略数值筛选或公开映射的条件化，也不能直接沿用
+GLWE 安全估计。固定客户端之后，匹配失败仍只重采 map，最多八次。
+
+[实现](../crates/primus_tfhe_ntru_fourier/src/sparse.rs)保存
+`[bucket][entry...,dummy][level][Native coefficient]`。逐 selector/dummy 使用已有
+Fourier NGSW 加密并恢复到系数域，独立采样；临时存储仅一份 Fourier NGSW。
+在线先精确 wrapping 旋转相加，再变换完成的 aggregate，一桶一次外积；空桶、零指数、
+加密零及 dummy 都参与。外积 scratch 由初始化、BR 和返回 KS 共用，另保留聚合的
+系数/Fourier 缓冲和批量指数。所有变换域材料仍要求同一 FFT table 实例。
+
+### 误差来源与独立参考
+
+令存储的系数控制为 `A_j`，其行相位误差 `e_(j,l)` **已经包含 keygen 从 Fourier
+恢复到整数系数的误差**。旋转和聚合是精确 Native 环运算；公开空桶也有 dummy 噪声。
+
+定义 `nu_j = 实际 Fourier 外积输出 - 整数外积参考`。参考复用 basis 的 digit 契约，
+乘法与相加使用独立 wrapping 负循环卷积，不调用 FFT。它同时捕捉 aggregate forward、
+乘加和 backward 的误差；单独测得的 aggregate FFT 往返差只用于定位，不重复加入预算。
+在第 3 节公式上，每桶新增 `f_acc*nu_j`：
+
+```text
+Delta_j <= ||f_acc||1*eps + N*(B/2)*sum_l ||e_(j,l)||inf
+           + ||f_acc||1*||nu_j||inf
+```
+
+初始化用恢复到系数域的 NLev 行建立整数参考，定义对应差 `nu_I`：
+
+```text
+||E_I||inf <= eps + N*(B/2)*sum_l ||e_(I,l)||inf
+             + ||f_acc||1*||nu_I||inf
+```
+
+这里 `nu_I` 还包括“原 Fourier 行与恢复行”之间的参考差，不能只称为一次 FFT 舍入。
+返回 KS 的残差项仍乘 `f_acc`，其数值差项则乘 `f_client`；最终 compact extraction
+精确保留对应相位。输入噪声和量化仍先决定 LUT 索引是否正确；三输出步长为四，
+`h=33` 的逐项最坏量化界 `(h+1)*4/2=68` 已超过理想消息半间距 64，成功样本不认证尾界。
+
+[小环回归](../crates/primus_tfhe_ntru_fourier/tests/sparse_bucket.rs)直接消费正式 sparse key：
+`N=32,n=16,h=5,logB=8` 完整层数、`sigma=0.7,seed=0xB803`，两 FFT、u32/u64。
+独立行相位恢复选择，检查每个支持恰好生效一次、dummy、系数聚合的精确线性关系、
+初始化及每桶预算、零/跨边界指数和首调用零分配。数值差另设 `max(1,q/2^40)` 量级的
+固定回归余量，属于这个 fixture 的诊断阈值，不是一般 FFT 误差证明。
+普通测试不保留统计输出；以下是移除诊断打印前的最大值（整数单位，默认/SIMD 相同）：
+
+| 字宽 / FFT | 初始化误差 | 初始化参考差 | 原控制行误差 | aggregate 往返差 | 外积数值差 | 单步新增相位误差 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| u32 / 两 FFT | 785 | 257 | 5 | 0 | 0 | 6,200 |
+| u64 / RustFFT | 5,952 | 1,392 | 5 | 16 | 2,303 | 12,914 |
+| u64 / TfheFFT | 4,594 | 960 | 5 | 16 | 1,898 | 13,088 |
+
+[完整链回归](../crates/primus_tfhe_ntru_fourier/tests/sparse_pbs.rs)使用 `N=256,n=16,h=5`，
+两 FFT/字宽及同一客户端的经典对照；独立 LWE 整数相位和完整量化旋转检查单输出/三输出，
+覆盖奇偶桶数、公开空桶、零 mask、复用、零分配及错误先于 RNG/输出写入。
+包括偶数重量采样/导入的拒绝，以及独立有效 CBS 材料不能绕过 sparse 限制。
+
+另做 `N=1024,n=728,h=33,c=3,b=66` 的临时分阶段诊断，完整执行所有桶，再返回 KS。
+公开 key 使用正式生成入口；为访问中间量，独立生成同一秘密下的 NLev initializer/KSK。
+`seed=0xB803`、输入 7、单输出及三输出，其他配置与下述基准相同。完整向量相位通过
+整数卷积恢复，误差均为无穷范数；[逐项 CSV](benchmarks/tfhe-b8.3-noise.csv)保留两种 feature。
+
+| 字宽 / FFT | 初始化最大误差 | BR 后最大误差 | KS 最大新增误差 | 最终最大误差 | 最长桶往返差 | 最长桶外积数值差 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| u32 / 两 FFT | 5,151 | 10,367 | 10,225 | 15,561 | 0 | 0 |
+| u64 / RustFFT | 14,355 | 191,632 | 19,436 | 195,680 | 8 | 704 |
+| u64 / TfheFFT | 13,528 | 231,052 | 22,219 | 219,104 | 7 | 640 |
+
+每列取两种输出数的最大值，并不来自同一次调用。默认/SIMD 整数结果相同，所有槽解码正确。
+本诊断的随机数顺序和控制与成本基准不同，不能逐项相减归因。临时代码已移除，不增加 CI；
+复现时按上述 seed 依次生成 client、sparse server、独立 initializer/KSK、输入，再分别执行
+步长 1/4 的 BR 和 KS，在最长桶以整数外积核对输出。保留的小环回归负责细分误差诊断。
+
+### 完整成本与保留方案
+
+基准为 [Fourier sparse_pbs](../crates/primus_tfhe_ntru_fourier/benches/sparse_pbs.rs)：
+`N/n/h=1024/728/33,c=3,b=66`，Native u32/u64，两种 FFT，BR/KS `logB=8` 完整层数
+（分别 4/8 层），全部 `sigma=0.7`，accumulator 为 SparseTernary；Rounded 输入 `t=16`、
+输出 `t=8`，函数 `(m+2i)%8`。setup 检查全部八个 padded 输入、最终相位和零分配。
+classic/sparse 复用同一个可逆 client 和输入，keygen 计时 RNG 独立，避免 Criterion
+迭代数改变后续 setup。新路径没有改前性能基线，此处比较算法选择，非等安全后端比较。
+
+2026-09-19，`3b96bf9` 加本步修改；与第 7 节相同 CPU 2、nightly、20 samples、
+1 s warm-up / 2 s measurement，串行测量。复用在线输出/scratch；keygen 包含完整 server
+及分配，复用生成工作区，客户端采样不计时，密钥析构移出计时。
+[CSV](benchmarks/tfhe-b8.3.csv)保留初测和 u64 在线复测的均值与 95% 区间。
+
+| 字宽 / FFT / feature | 单输出 classic → sparse (ms) | 三输出 classic → sparse (ms) | keygen classic → sparse (ms) |
+| --- | ---: | ---: | ---: |
+| u32 / RustFFT / 默认 | 3.009 → 0.916 | 2.981 → 0.878 | 32.825 → 114.743 |
+| u32 / RustFFT / SIMD | 2.957 → 0.917 | 2.955 → 0.876 | 32.882 → 114.471 |
+| u32 / TfheFFT / 默认 | 2.364 → 0.830 | 2.363 → 0.794 | 32.605 → 113.073 |
+| u32 / TfheFFT / SIMD | 2.427 → 0.814 | 2.423 → 0.781 | 32.711 → 113.519 |
+| u64 / RustFFT / 默认 | 6.841 → 6.096 | 6.859 → 6.079 | 69.826 → 253.503 |
+| u64 / RustFFT / SIMD | 6.822 → 5.776 | 6.826 → 5.740 | 70.224 → 254.162 |
+| u64 / TfheFFT / 默认 | 5.847 → 6.162 | 5.856 → 5.899 | 69.646 → 255.807 |
+| u64 / TfheFFT / SIMD | 5.820 → 5.875 | 5.825 → 5.710 | 69.277 → 251.527 |
+
+u64 在线栏采用针对性复测：初测 TfheFFT/default 单输出 sparse 均值 7.690 ms，
+复测 6.162 ms，未定位该次升高的原因；初测及区间仍保留，未选删异常样本。
+u32 在线快约 **65%–71%**；u64 RustFFT 两轮快约 **8%–16%**；TfheFFT u64 没有稳定收益，
+复测约 **快 2% 到慢 5.4%**。SIMD 也没有跨负载的一致收益，不据此改底层内核。
+全部 sparse server keygen 为经典的约 **3.47–3.67 倍**。
+
+保留请求堆字节（两 FFT/feature 相同）：
+
+| 字宽 / 算法 | server key | evaluator scratch |
+| --- | ---: | ---: |
+| u32 / classic | 23,920,736 | 46,080 |
+| u32 / sparse | 36,947,640 | 101,056 |
+| u64 / classic | 47,841,664 | 58,368 |
+| u64 / sparse | 147,605,464 | 195,264 |
+
+不含客户端、借用 table、LUT、调用方输入/输出、栈或 allocator 元数据，不代表生成峰值。
+控制数从 728 增为 `cn+b=2250`，外积数降为 66。经典每系数占等效 8 字节（`N/2` complex），
+稀疏存 Native 系数；因此 u32 key 约大 **1.54 倍**，u64 约大 **3.09 倍**。在线还必须读取
+全部系数控制，不能用外积次数直接预测时间。保留显式选择，不在 u64 自动切换。
+
+setup 最终输出相位到预期编码的最大圆周距离除以 `q`（默认/SIMD 相同）：
+
+| 字宽 / FFT / 算法 | 单输出 | 三输出 |
+| --- | ---: | ---: |
+| u32 / 两 FFT / classic | 2.255873e-5 | 4.101195e-5 |
+| u32 / 两 FFT / sparse | 1.516892e-6 | 2.850546e-6 |
+| u64 / RustFFT / classic | 1.163653e-14 | 1.783990e-14 |
+| u64 / RustFFT / sparse | 4.128642e-15 | 5.829538e-15 |
+| u64 / TfheFFT / classic | 1.073967e-14 | 1.337645e-14 |
+| u64 / TfheFFT / sparse | 5.336009e-15 | 5.566728e-15 |
+
+不同控制加密噪声、转换次数与完整链均影响这些值；有限样本不能认证噪声分布排序、
+完整失败率或条件秘密的安全性。可用范围仅指本组功能与数值诊断通过的配置。
+
+复现命令：
+
+```sh
+taskset -c 2 cargo +nightly bench -p primus_tfhe_ntru_fourier --bench sparse_pbs -- --warm-up-time 1 --measurement-time 2 --sample-size 20 --save-baseline b83-default --noplot
+taskset -c 2 cargo +nightly bench -p primus_tfhe_ntru_fourier --bench sparse_pbs --features simd -- --warm-up-time 1 --measurement-time 2 --sample-size 20 --save-baseline b83-simd --noplot
+```
+
+u64 复测在 `--` 后增加筛选 `'u64/.*/complete_pbs'`，baseline 名增加 `-repeat`。
+
+本步通过 `just tfhe`（严格 rustdoc）、`just tfhe-simd`、workspace all-targets check，
+以及默认/SIMD release 的双 FFT 稀疏示例。B1–B8 到此完成，不自动启动后续算法。

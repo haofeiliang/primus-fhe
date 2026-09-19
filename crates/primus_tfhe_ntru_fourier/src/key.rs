@@ -20,13 +20,50 @@ pub struct ServerKey<T: TorusFftValue> {
     circuit_bootstrap: Option<Box<CircuitBootstrapKey<T>>>,
     initializer: FourierNlev<Vec<Complex64>>,
     blind_rotation_basis: ApproxSignedBasis<T>,
-    controls: Vec<Complex64>,
+    controls: Controls<T>,
     input_distribution: SecretKeyDistr,
     key_switching_key: FourierNtruKeySwitchingKey<T>,
 }
 
+enum Controls<T: TorusFftValue> {
+    Classic(Vec<Complex64>),
+    Sparse(crate::SparseNtruBootstrappingKey<T>),
+}
+
 impl<T: TorusFftValue> ServerKey<T> {
-    /// Returns the client secret distribution that determines the control layout.
+    /// Returns coefficient-domain bucket selections when this is a sparse server key.
+    #[must_use]
+    pub fn sparse_bootstrapping_key(&self) -> Option<&crate::SparseNtruBootstrappingKey<T>> {
+        match &self.controls {
+            Controls::Classic(_) => None,
+            Controls::Sparse(key) => Some(key),
+        }
+    }
+
+    fn classic_controls(&self) -> &[Complex64] {
+        match &self.controls {
+            Controls::Classic(data) => data,
+            Controls::Sparse(_) => panic!("classic control iterator requires a classic key"),
+        }
+    }
+
+    pub(crate) fn from_sparse(
+        parameters: &TfheParameters<T>,
+        initializer: FourierNlev<Vec<Complex64>>,
+        controls: crate::SparseNtruBootstrappingKey<T>,
+        key_switching_key: FourierNtruKeySwitchingKey<T>,
+    ) -> Self {
+        Self {
+            circuit_bootstrap: None,
+            initializer,
+            blind_rotation_basis: parameters.blind_rotation().basis().clone(),
+            controls: Controls::Sparse(controls),
+            input_distribution: parameters.external_lwe().secret_key_distr(),
+            key_switching_key,
+        }
+    }
+
+    /// Returns the declared client secret distribution.
     #[must_use]
     pub fn input_distribution(&self) -> SecretKeyDistr {
         self.input_distribution
@@ -60,7 +97,7 @@ impl<T: TorusFftValue> ServerKey<T> {
         &self,
     ) -> impl ExactSizeIterator<Item = FourierNgsw<&[Complex64]>> {
         debug_assert!(self.input_distribution.is_binary());
-        self.controls
+        self.classic_controls()
             .chunks_exact(self.initializer.as_ref().len())
             .map(FourierNgsw::new)
     }
@@ -71,10 +108,12 @@ impl<T: TorusFftValue> ServerKey<T> {
     ) -> impl ExactSizeIterator<Item = (FourierNgsw<&[Complex64]>, FourierNgsw<&[Complex64]>)> {
         debug_assert!(self.input_distribution.is_ternary());
         let len = self.initializer.as_ref().len();
-        self.controls.chunks_exact(2 * len).map(move |pair| {
-            let (positive, negative) = pair.split_at(len);
-            (FourierNgsw::new(positive), FourierNgsw::new(negative))
-        })
+        self.classic_controls()
+            .chunks_exact(2 * len)
+            .map(move |pair| {
+                let (positive, negative) = pair.split_at(len);
+                (FourierNgsw::new(positive), FourierNgsw::new(negative))
+            })
     }
 
     /// Checks the generated ring and decomposition parameters before evaluation.
@@ -84,14 +123,22 @@ impl<T: TorusFftValue> ServerKey<T> {
             && &self.blind_rotation_basis == parameters.blind_rotation().basis()
             && self.key_switching_key.poly_length() == parameters.poly_length()
             && self.key_switching_key.basis() == parameters.ntru_key_switching().basis()
-            && self.controls.len()
-                == parameters.external_lwe_dimension()
-                    * if self.input_distribution.is_binary() {
-                        1
-                    } else {
-                        2
-                    }
-                    * self.initializer.as_ref().len()
+            && match &self.controls {
+                Controls::Classic(data) => {
+                    data.len()
+                        == parameters.external_lwe_dimension()
+                            * if self.input_distribution.is_binary() {
+                                1
+                            } else {
+                                2
+                            }
+                            * self.initializer.as_ref().len()
+                }
+                Controls::Sparse(key) => {
+                    key.input_dimension() == parameters.external_lwe_dimension()
+                        && key.ngsw_len / 2 == self.initializer.as_ref().len()
+                }
+            }
     }
 }
 
@@ -218,14 +265,14 @@ where
             circuit_bootstrap,
             initializer,
             blind_rotation_basis: parameters.blind_rotation().basis().clone(),
-            controls,
+            controls: Controls::Classic(controls),
             input_distribution: parameters.external_lwe().secret_key_distr(),
             key_switching_key,
         }
     }
 
     /// Generates `NLEV_f_acc[1]` directly for accumulator initialization.
-    fn generate_initializer<R>(
+    pub(crate) fn generate_initializer<R>(
         &mut self,
         accumulator_fourier: &FourierNtruSecretKey,
         rng: &mut R,

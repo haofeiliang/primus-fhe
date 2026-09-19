@@ -42,6 +42,42 @@ The [shared encoding guide](../primus_tfhe/README.md#choosing-the-output-encodin
 and [NTRU client/LUT contract](../primus_tfhe_ntru/README.md#clients-and-luts)
 cover input domains, output codecs, odd full-domain PBS and ManyLUT noise margins.
 
+## Experimental sparse PBS
+
+Select `SecretKeyDistr::fixed_hamming_weight_binary(n, h)` for `external_lwe`,
+with **odd** `h` and `0<h<n`. Fix one accepted client before choosing bucket aggregation:
+
+```rust,ignore
+let mut generator = KeyGenerator::new(&context);
+let client = generator.try_generate_client_key(&mut rng)?;
+let server = generator.try_generate_sparse_server_key(&client, 3, 2 * h, &mut rng)?;
+let mut evaluator = context.evaluator(&server)?;
+```
+
+The fixed-client factory is also available on `TfheContext`. Ordinary and
+interleaved LUT calls reuse the existing `ServerKey`, evaluator and output buffers.
+`server.sparse_bootstrapping_key()` exposes coefficient controls and the public map.
+CBS and factorized MVB reject sparse keys with `UnsupportedSparseBootstrapping`,
+including CBS binding with standalone material.
+
+Even weight is noninvertible in the Native ring and returns
+`KeyGenerationError::Ntru(NonInvertibleSecretKey)` before sampling. Odd weight
+still requires a stable Fourier inverse. Mapping retries at most eight times
+without changing the client; mapping and sparse validation errors use
+`KeyGenerationError::SparseBootstrapping`. Acceptance conditions the secret/map
+distribution and does not certify security or a failure probability.
+
+Supports u32/u64 with RustFFT and TfheFFT. Keep all Fourier material on the same
+FFT table instance. Stored selectors are recovered from Fourier to Native
+coefficients, then aggregated exactly; recovery, each aggregate FFT, initialization,
+external products and return KS all contribute to the numerical/noise budget.
+
+Run the [sparse message/carry example](examples/ntru_fourier_sparse.rs), which uses both FFTs:
+
+```sh
+cargo run -p primus_tfhe_ntru_fourier --release --example ntru_fourier_sparse
+```
+
 ## Fixed-scale factorized MVB
 
 Use `context.compile_factorized_lookup_table_fn(&codec, input_domain_len,
@@ -126,7 +162,8 @@ The `ServerKey` owns the CBS parameters and trace/scheme-switch keys, generated 
 its ordinary PBS material from the same secrets and transform table. Use
 `None` for PBS only: no CBS key material or CBS workspace is allocated.
 Both `context.evaluator(&server)` and `context.circuit_bootstrap_evaluator(&server)`
-use that server key; the latter returns `MissingCircuitBootstrapKey` when CBS is absent.
+use that server key; the latter returns `MissingCircuitBootstrapKey` when CBS is absent
+from a classic key, and rejects sparse keys.
 Only the selected evaluator allocates its workspace. Key generation returns `KeyGenerationError`;
 NTRU sampling/conversion failures use its `Ntru` variant; `ClientKey` reports compatibility failures.
 
