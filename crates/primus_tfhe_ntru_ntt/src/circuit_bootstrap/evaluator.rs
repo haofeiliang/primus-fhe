@@ -4,7 +4,7 @@ use primus_data::{Data, DataMut};
 use primus_integer::FheUint;
 use primus_ntru::NtruCiphertext;
 use primus_ntru::{NlevCiphertext, NttNgswCiphertext, NttNtruTraceContext};
-use primus_ntt::NttTable;
+use primus_ntt::MonomialNttTable;
 use primus_reduce::ReduceMul;
 use primus_tfhe::{InterleavedLookupTable, LookupTableError, LweCiphertext};
 
@@ -18,7 +18,7 @@ use crate::{
 pub struct CircuitBootstrapEvaluator<'a, T, Table>
 where
     T: FheUint,
-    Table: NttTable<ValueT = T>,
+    Table: MonomialNttTable<ValueT = T>,
 {
     context: &'a TfheContext<T, Table>,
     server_key: &'a ServerKey<T>,
@@ -33,7 +33,7 @@ where
 impl<'a, T, Table> CircuitBootstrapEvaluator<'a, T, Table>
 where
     T: FheUint,
-    Table: NttTable<ValueT = T>,
+    Table: MonomialNttTable<ValueT = T>,
 {
     /// Binds the CBS parameters and material carried by one server key.
     /// Returns an error if CBS was not requested during key generation.
@@ -97,7 +97,7 @@ where
             parameters,
             circuit_key,
             lookup_table,
-            blind_rotation: BlindRotationWorkspace::new(n),
+            blind_rotation: BlindRotationWorkspace::new(tfhe),
             trace: NttNtruTraceContext::new(n),
             projected: NlevCiphertext::zero(parameters.output_nlev_len()),
         })
@@ -160,7 +160,7 @@ where
                 .accumulator_ntru()
                 .cipher_modulus(),
             self.context.table(),
-            &mut self.blind_rotation.external_product,
+            self.blind_rotation.cmux.external_product(),
         );
     }
 
@@ -203,7 +203,7 @@ where
                 .accumulator_ntru()
                 .cipher_modulus(),
             self.context.table(),
-            &mut self.blind_rotation.external_product,
+            self.blind_rotation.cmux.external_product(),
         );
     }
 
@@ -269,7 +269,7 @@ where
             output,
             tfhe.accumulator_ntru().cipher_modulus(),
             self.context.table(),
-            &mut self.blind_rotation.external_product,
+            self.blind_rotation.cmux.external_product(),
         );
     }
 }

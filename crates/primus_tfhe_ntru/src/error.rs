@@ -15,9 +15,9 @@ pub enum TfheParameterError {
     /// The rotation domain `2N` cannot be represented by the input coefficient type.
     #[error("rotation domain must fit the input coefficient type")]
     RotationDomainTooLarge,
-    /// The external LWE and client NTRU secret must both be binary.
-    #[error("NTRU TFHE requires a binary client secret key")]
-    ClientSecretKeyMustBeBinary,
+    /// The external LWE and client NTRU distributions must be binary or ternary.
+    #[error("NTRU TFHE requires a binary or ternary client secret-key distribution")]
+    UnsupportedClientSecretKeyDistribution,
     /// The external LWE and padded NTRU views describe different distributions.
     #[error("the external LWE and client NTRU secret-key distributions must match")]
     ClientSecretKeyDistributionMismatch,
@@ -46,12 +46,12 @@ pub enum TfheKeyError {
     /// At least one NTRU secret has the wrong polynomial length.
     #[error("NTRU client-key polynomial length mismatch")]
     PolynomialLengthMismatch,
-    /// The client NTRU secret was sampled from a different binary distribution.
+    /// The client NTRU secret was sampled from a different distribution.
     #[error("NTRU client secret-key distribution mismatch")]
     ClientSecretKeyDistributionMismatch,
-    /// At least one active client-key coefficient is neither zero nor one.
-    #[error("NTRU TFHE client secret-key coefficients must be binary")]
-    ClientSecretKeyMustBeBinary,
+    /// An active coefficient is outside the declared binary or ternary domain.
+    #[error("NTRU TFHE client coefficients do not match their binary or ternary domain")]
+    InvalidClientSecretKeyCoefficient,
     /// The active client-key prefix has the wrong LWE dimension.
     #[error("NTRU client key has the wrong external LWE dimension")]
     ExternalLweDimensionMismatch,

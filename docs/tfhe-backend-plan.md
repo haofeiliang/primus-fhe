@@ -2,11 +2,11 @@
 
 依据：[后端覆盖分析](tfhe-backend-coverage.md)，初始源码基线 `7f1ef55`。本计划把已有算法的后端补齐与必要的高层接口整理拆成可独立验收的步骤；不重开已完成的 P1–P4、T1–T3，也不扩入 FDFB 等[新算法选型](tfhe-next.md)。
 
-B1–B6 与 B7.1–B7.3 已完成；GLWE 两后端 sparse CBS 已正式接入，NTRU ternary 已具备采样前置和 NTT/Fourier 融合单步，下一步 B7.4。B1.4–B1.7 整理四后端高层接口，分析与性能对照基线为 `66ae701`；B2–B8 保留原编号。当前任务与下一步记录在 [HANDOFF](../HANDOFF.md)，算法依据仍由覆盖分析和各专项文档维护。
+B1–B7 已完成；GLWE 两后端 sparse CBS 与 NTRU 两后端经典 ternary 已正式接入，下一步 B8.1。B1.4–B1.7 整理四后端高层接口，分析与性能对照基线为 `66ae701`；B2–B8 保留原编号。当前任务与下一步记录在 [HANDOFF](../HANDOFF.md)，算法依据仍由覆盖分析和各专项文档维护。
 
 ## 执行方式
 
-- 接下来推荐按 **`执行 B7.4` → 后续满足前置条件的步骤** 推进。`B1` 表示整个阶段；明确要求“执行 B1”时，完成其所有满足前置条件的剩余子步骤。
+- 接下来推荐按 **`执行 B8.1` → 后续满足前置条件的步骤** 推进。`B1` 表示整个阶段；明确要求“执行 B1”时，完成其所有满足前置条件的剩余子步骤。
 - 每步先核对 Git 状态、HANDOFF、本步及依赖结论；保留用户修改和暂存状态。编号不隐含暂存、提交或启动后续步骤。
 - **工程接入**：现成代数与原语支持实现，仍需正常验证。**原型验证**：先回答未决问题，结论可以是通过、缩小范围或暂缓。
 - “依赖原型通过”不同于“原型步骤已结束”。原型不成立时保留结论及最小反例，删除无长期价值的实验代码，暂缓依赖分支；其他独立阶段仍可执行。
@@ -22,7 +22,7 @@ B1–B6 与 B7.1–B7.3 已完成；GLWE 两后端 sparse CBS 已正式接入，
 | B4 | GLWE Fourier 二元稀疏 PBS | B4.1–B4.3 | 已完成密钥、完整 PBS 与成本验收；保留参考实现，不含 sparse CBS/ternary |
 | B5 | Native 偶尺度 MVB | B5.1–B5.4 | 全部完成；[表示与误差](tfhe-mvb-fourier.md)、[组合与成本](tfhe-mvb-fourier-costs.md) |
 | B6 | sparse CBS | B6.1–B6.3 | 已完成 NTT/Fourier 独立误差验证与正式接入 |
-| B7 | NTRU 经典 ternary | B7.1–B7.4 | 采样前置与 NTT/Fourier 单步已完成；下一步 B7.4 接完整链 |
+| B7 | NTRU 经典 ternary | B7.1–B7.4 | 已完成采样、两后端融合单步、完整链及上层代表组合验收 |
 | B8 | NTRU 二元桶聚合 PBS | B8.1–B8.3 | 独立方案原型；复用 B4.1 的纯匹配组件，不依赖 B7 |
 
 完成 B1 的接口整理后，后续能力沿用其参数、密钥和 evaluator 构造约定，避免重复迁移；这是工程顺序，Boolean 等算法并不依赖 CBS。其余独立能力不强制串成依赖链，例如 B5 原型失败不阻止 NTT sparse CBS；NTRU binary 桶聚合也不必等待 ternary。
@@ -161,24 +161,22 @@ Fourier 因原型噪声增加，按用户决定暂不接入。不阻塞 B2.1。
 ### B7.1：秘密采样与可逆性前置（已完成）
 
 - **实现**：NTT/Fourier 共用各自的 `generate_padded_pair` 路径，支持五种 ternary 候选分布、有效前缀固定重量和零 padding；完整长度生成复用同一拒绝循环。Native 固定偶数非零重量在采样前返回 `NonInvertibleSecretKey`；NTT 逐候选求逆，Fourier 另检查复数逆元数值条件，最多 1024 次。
-- **验证与边界**：[秘密采样专项](tfhe-ntru-ternary.md)记录后端条件分布、安全与误差未决项，以及精确系数相位、两 FFT 和失败路径测试。不新增统计 CI 或基准；TFHE 上层仍只接受 binary，未将 ternary 密钥送入原 CMUX。
+- **验证与边界**：[秘密采样专项](tfhe-ntru-ternary.md)记录后端条件分布、安全与误差未决项，以及精确系数相位、两 FFT 和失败路径测试。不新增统计 CI 或基准；本步仅处理采样，高层控制布局在 B7.4 接入。
 
 ### B7.2：NTT NGSW ternary 单步（已完成）
 
-- **实现**：`NttNgsw::cmux_ternary_monomial_to` 与固定 `N/levels` 的工作区；正负控制组合后执行一次外积，单项式因子复用 digit 缓冲，零指数精确复制，在线零分配。原 binary 内核和 TFHE 限制保留。
+- **实现**：`NttNgsw::cmux_ternary_monomial_to` 与固定 `N/levels` 的工作区；正负控制组合后执行一次外积，单项式因子复用 digit 缓冲，零指数精确复制，在线零分配。原 binary 内核不变，高层接入见 B7.4。
 - **验收**：独立系数旋转、真实控制相位及两次 binary CMUX 参照通过，覆盖 `-1/0/1` 和全部小环指数；u32/u64 默认/SIMD 单步快 35%–42%，本组 scratch 多 8/40 KiB，保留实现。推导、参数、基准与限制见 [B7.2 专项](tfhe-ntru-ternary.md#5-b72ntt-ngsw-ternary-融合单步)；不外推完整 PBS。
 
 ### B7.3：Fourier NGSW ternary 单步（已完成）
 
 - **实现**：`FourierNgsw::cmux_ternary_monomial_to` 和固定布局工作区；NGSW/GGSW 共用整数尺度单项式组合 helper。复用外积的两种 digit 缓冲，无额外单项式存储；一次外积、零指数精确复制、在线零分配。
-- **验收**：u32/u64 × 两种 FFT，独立系数相位、全部小环指数与两次 CMUX 参照通过；默认/SIMD 单步时间减少 33%–46%，本组 scratch 多 20/40 KiB。参数、误差与限制见 [B7.3 专项](tfhe-ntru-ternary.md#6-b73fourier-ngsw-ternary-融合单步)。完整链仍限制 binary。
+- **验收**：u32/u64 × 两种 FFT，独立系数相位、全部小环指数与两次 CMUX 参照通过；默认/SIMD 单步时间减少 33%–46%，本组 scratch 多 20/40 KiB。参数、误差与限制见 [B7.3 专项](tfhe-ntru-ternary.md#6-b73fourier-ngsw-ternary-融合单步)；完整链接入见 B7.4。
 
-### B7.4：完整 NTRU 链、客户端与已有上层组合
+### B7.4：完整 NTRU 链、客户端与已有上层组合（已完成）
 
-- **前置**：B7.1 通过；对应后端的 B7.2/B7.3 通过。
-- **范围**：参数和导入 key 检查、成对 selector BSK、BR 分派及密钥生成完整迁移；保留 binary 热路径。优先两后端同步接入；若仅一个后端通过，另一个明确拒绝 ternary，不能继承公共参数放宽后误走 binary 路径。
-- **验收**：普通/ManyLUT、公钥客户端、既有 CBS 和已完成的 Boolean/MVB 各选择代表组合；检查秘密身份、零 padding、输出尺度、分配和性能。未完成的功能不变成此步的隐藏依赖。
-- **文档**：区分“经典 ternary”与“桶聚合 ternary”；后者不在本阶段范围。
+- **实现**：参数及导入 key 接受 binary/ternary，保留 signed prefix 和零 padding；BSK 存相邻正负 selector，临时明文在释放时擦除。两后端在 BR 循环外选择 CMUX 内核，初始化/返回 KS/CBS 消费复用对应外积 scratch。NTT context 要求 `MonomialNttTable`，高层工厂调用方式不变。
+- **验收**：[B7 专项](tfhe-ntru-ternary.md#7-b74完整链与已有上层组合)记录普通/ManyLUT、公钥、Boolean、CBS、MVB 的代表组合、两种 FFT、零分配、n=800 的 u32/u64 默认/SIMD 完整成本与边界。完整噪声尾界和条件秘密安全估计未认证；桶聚合不在此阶段。
 
 ## B8：NTRU 固定重量二元桶聚合 PBS
 

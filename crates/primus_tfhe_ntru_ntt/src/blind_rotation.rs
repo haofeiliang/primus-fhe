@@ -1,6 +1,6 @@
 use primus_integer::FheUint;
 use primus_lattice::{lwe::Lwe, ntru::Ntru};
-use primus_ntt::NttTable;
+use primus_ntt::MonomialNttTable;
 use primus_poly::{Polynomial, PolynomialOwned};
 use primus_tfhe::rotation::RotationQuantizer;
 
@@ -12,16 +12,40 @@ pub(crate) struct BlindRotationWorkspace<T: FheUint> {
     pub(crate) current: Ntru<Vec<T>>,
     /// BR temporary storage, then coefficient output under the client secret after KS.
     pub(crate) scratch: Ntru<Vec<T>>,
-    pub(crate) external_product: primus_ntru::NttNtruExternalProductContext<T>,
+    pub(crate) cmux: CmuxContext<T>,
 }
 
 impl<T: FheUint> BlindRotationWorkspace<T> {
     /// Allocates all NTT blind-rotation storage once.
-    pub(crate) fn new(poly_length: usize) -> Self {
+    pub(crate) fn new(parameters: &TfheParameters<T>) -> Self {
+        let poly_length = parameters.poly_length();
         Self {
             current: Ntru::zero(poly_length),
             scratch: Ntru::zero(poly_length),
-            external_product: primus_ntru::NttNtruExternalProductContext::new(poly_length),
+            cmux: if parameters.external_lwe().secret_key_distr().is_binary() {
+                CmuxContext::Binary(primus_ntru::NttNtruExternalProductContext::new(poly_length))
+            } else {
+                CmuxContext::Ternary(primus_ntru::NttNtruTernaryCmuxContext::new(
+                    poly_length,
+                    parameters.blind_rotation().decompose_length(),
+                ))
+            },
+        }
+    }
+}
+
+pub(crate) enum CmuxContext<T: FheUint> {
+    Binary(primus_ntru::NttNtruExternalProductContext<T>),
+    Ternary(primus_ntru::NttNtruTernaryCmuxContext<T>),
+}
+
+impl<T: FheUint> CmuxContext<T> {
+    pub(crate) fn external_product(
+        &mut self,
+    ) -> &mut primus_ntru::NttNtruExternalProductContext<T> {
+        match self {
+            Self::Binary(context) => context,
+            Self::Ternary(context) => context.external_product_context(),
         }
     }
 }
@@ -42,7 +66,7 @@ pub(crate) fn blind_rotate_lookup_table_to<T, Table, A>(
     ntt: &Table,
 ) where
     T: FheUint,
-    Table: NttTable<ValueT = T>,
+    Table: MonomialNttTable<ValueT = T>,
     A: primus_data::RawData<Elem = T> + primus_data::Data,
 {
     let poly_length = parameters.poly_length();
@@ -68,43 +92,61 @@ pub(crate) fn blind_rotate_lookup_table_to<T, Table, A>(
         server_key.blind_rotation_basis(),
         parameters.accumulator_ntru().cipher_modulus(),
         ntt,
-        &mut workspace.external_product,
+        workspace.cmux.external_product(),
     );
 
     let basis = server_key.blind_rotation_basis();
     let modulus = parameters.accumulator_ntru().cipher_modulus();
+    // One public layout dispatch per BR; the coordinate loop stays specialized.
+    match &mut workspace.cmux {
+        CmuxContext::Binary(product) => rotate_controls(
+            input.a(),
+            server_key.iter_binary_controls(),
+            &mut workspace.current,
+            &mut workspace.scratch,
+            exponent_of,
+            |control, exponent, input, output| {
+                control.cmux_monomial_to(input, exponent, output, basis, modulus, ntt, product)
+            },
+        ),
+        CmuxContext::Ternary(product) => rotate_controls(
+            input.a(),
+            server_key.iter_ternary_controls(),
+            &mut workspace.current,
+            &mut workspace.scratch,
+            exponent_of,
+            |(positive, negative), exponent, input, output| {
+                positive.cmux_ternary_monomial_to(
+                    &negative, input, exponent, output, basis, modulus, ntt, product,
+                )
+            },
+        ),
+    }
+}
+
+// Own both buffers so the final result can stay in `current` by swapping them.
+fn rotate_controls<T: FheUint, I: Iterator>(
+    input: &[T],
+    controls: I,
+    current: &mut Ntru<Vec<T>>,
+    scratch: &mut Ntru<Vec<T>>,
+    exponent_of: impl Fn(T) -> usize,
+    mut step: impl FnMut(I::Item, usize, &Ntru<Vec<T>>, &mut Ntru<Vec<T>>),
+) {
     let mut output_is_current = true;
-    for (&coefficient, control) in input.a().iter().zip(server_key.iter_controls()) {
+    for (&coefficient, control) in input.iter().zip(controls) {
         let exponent = exponent_of(coefficient);
         if exponent == 0 {
             continue;
         }
         if output_is_current {
-            control.cmux_monomial_to(
-                &workspace.current,
-                exponent,
-                &mut workspace.scratch,
-                basis,
-                modulus,
-                ntt,
-                &mut workspace.external_product,
-            );
+            step(control, exponent, current, scratch);
         } else {
-            control.cmux_monomial_to(
-                &workspace.scratch,
-                exponent,
-                &mut workspace.current,
-                basis,
-                modulus,
-                ntt,
-                &mut workspace.external_product,
-            );
+            step(control, exponent, scratch, current);
         }
         output_is_current = !output_is_current;
     }
     if !output_is_current {
-        // Both buffers are owned workspace; keep the result in current
-        // without copying the polynomial.
-        core::mem::swap(&mut workspace.current, &mut workspace.scratch);
+        core::mem::swap(current, scratch);
     }
 }

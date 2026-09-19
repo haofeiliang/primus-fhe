@@ -69,7 +69,7 @@ explicit preparation uses `FourierFactorizedLookupTable::new(context, coefficien
 The prepared program stores N torus coefficients and `output_count*N/2` complex
 values, with no retained coefficient copy of the factors.
 
-All outputs share encrypted `NLev[1]` initialization and one binary BR. Each
+All outputs share encrypted `NLev[1]` initialization and one binary or ternary BR. Each
 factor product is then key-switched from `f_acc` to `f_client` and compactly
 extracted into the usual external LWE dimension. No additional key is needed.
 The evaluator adds two Fourier polynomials (N complex values), independent of
@@ -97,7 +97,7 @@ cargo run -p primus_tfhe_ntru_fourier --example ntru_fourier_mvb_thresholds
 ## Public-key clients
 
 `client_key.try_generate_public_key(context.parameters(), &mut rng)` generates an
-`LwePublicKey` under the external binary prefix secret. Pass it to
+`LwePublicKey` under the external binary/ternary prefix secret. Pass it to
 `context.encryptor(&public_key)` for `encrypt`, `encrypt_padded` and
 `encrypt_centered`. Their `_to(message, output, rng)` counterparts reuse existing
 ciphertext storage without allocation for both public and secret keys. Message

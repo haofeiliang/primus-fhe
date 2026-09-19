@@ -19,7 +19,7 @@ impl<T: FheUint> ClientKey<T> {
     ///
     /// This constructor only checks that the external LWE dimension fits in
     /// the client key. Binding the imported key to TFHE parameters must call
-    /// [`Self::check_compatible`] to validate its distributions, binary prefix,
+    /// [`Self::check_compatible`] to validate its distributions, coefficient domain,
     /// and zero padding before use.
     ///
     /// # Panics
@@ -60,7 +60,7 @@ impl<T: FheUint> ClientKey<T> {
 
     /// Returns the active prefix used as the external LWE key.
     ///
-    /// [`Self::check_compatible`] verifies that imported coefficients are binary.
+    /// [`Self::check_compatible`] verifies that imported coefficients match their binary or ternary domain.
     #[must_use]
     #[inline]
     pub fn external_lwe_secret_coefficients(&self) -> &[T::SignedInteger] {
@@ -81,7 +81,7 @@ impl<T: FheUint> ClientKey<T> {
         LweSecretKeyRef::Signed(self.external_lwe_secret_coefficients())
     }
 
-    /// Generates an LWE public key under the binary client coefficient prefix.
+    /// Generates an LWE public key under the active client coefficient prefix.
     ///
     /// Borrows only the active external LWE secret and uses `external_lwe`'s
     /// noise sampler for public-key generation. Public-key storage contains
@@ -115,9 +115,9 @@ impl<T: FheUint> ClientKey<T> {
     /// Validates an imported key before binding it to TFHE parameters.
     ///
     /// Besides shapes and distribution labels, this checks the actual client
-    /// coefficients: the active prefix must contain only zero and one, and
+    /// coefficients: the active prefix must belong to its binary or ternary domain, and
     /// the remaining coefficients must be zero. NTRU distribution labels alone
-    /// do not establish the binary control values required by blind rotation.
+    /// do not establish the control values required by blind rotation.
     pub fn check_compatible<M>(&self, parameters: &TfheParameters<T, M>) -> Result<(), TfheKeyError>
     where
         M: RingContext<T>,
@@ -143,18 +143,21 @@ impl<T: FheUint> ClientKey<T> {
             .split_at(self.external_lwe_dimension);
         // Aggregate both complete slices before inspecting the result, so
         // rejection does not stop at the first invalid secret coefficient.
-        let active_bits = active
-            .iter()
-            .fold(T::SignedInteger::ZERO, |bits, &coefficient| {
-                bits | coefficient
-            });
+        let minimum = if parameters.external_lwe().secret_key_distr().is_binary() {
+            T::SignedInteger::ZERO
+        } else {
+            -T::SignedInteger::ONE
+        };
+        let invalid_coefficient = active.iter().fold(false, |invalid, &coefficient| {
+            invalid | (coefficient < minimum) | (coefficient > T::SignedInteger::ONE)
+        });
         let padding_bits = padding
             .iter()
             .fold(T::SignedInteger::ZERO, |bits, &coefficient| {
                 bits | coefficient
             });
-        if active_bits & !T::SignedInteger::ONE != T::SignedInteger::ZERO {
-            return Err(TfheKeyError::ClientSecretKeyMustBeBinary);
+        if invalid_coefficient {
+            return Err(TfheKeyError::InvalidClientSecretKeyCoefficient);
         }
         if padding_bits != T::SignedInteger::ZERO {
             return Err(TfheKeyError::ClientSecretKeyPaddingMismatch);

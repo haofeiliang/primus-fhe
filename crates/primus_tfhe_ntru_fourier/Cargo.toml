@@ -17,6 +17,8 @@ primus_poly = { path = "../primus_poly" }
 primus_tfhe = { path = "../primus_tfhe" }
 primus_tfhe_ntru = { path = "../primus_tfhe_ntru" }
 
+num-traits = { workspace = true }
+zeroize = { workspace = true }
 rand = { workspace = true }
 thiserror = { workspace = true }
 

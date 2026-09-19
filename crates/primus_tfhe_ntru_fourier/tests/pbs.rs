@@ -3,7 +3,7 @@ use primus_fft::{FftTable, RustFftTable, TfheFftTable};
 use primus_lwe::{LweCiphertext, LweParameters};
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntru::{NlevParameters, NtruParameters, SecretKeyDistr};
-use primus_reduce::ReduceAdd;
+use primus_reduce::{ReduceAdd, ReduceSub};
 use primus_test_allocations as allocations;
 use primus_tfhe::{
     BivariateLookupTable, InterleavedLookupTable, LookupTable, ProgrammableBootstrapInterleaved,
@@ -17,11 +17,11 @@ static ALLOCATOR: allocations::CountingAllocator = allocations::CountingAllocato
 
 const N: usize = 256;
 
-fn parameters() -> TfheParameters<u32> {
+fn parameters(distr: SecretKeyDistr) -> TfheParameters<u32> {
     let modulus = NativeModulus::new();
-    let lwe = LweParameters::new(3, 15, modulus, SecretKeyDistr::UniformBinary, 0.7);
+    let lwe = LweParameters::new(4, 15, modulus, distr, 0.7);
     let acc = NtruParameters::new(N, 15, modulus, SecretKeyDistr::SparseTernary, 0.7);
-    let client = NtruParameters::new(N, 15, modulus, SecretKeyDistr::UniformBinary, 0.7);
+    let client = NtruParameters::new(N, 15, modulus, distr, 0.7);
     TfheParameters::try_new(
         lwe,
         NlevParameters::with_ntru_params(&acc, 8, None),
@@ -45,6 +45,33 @@ where
 {
     let mut rng = StdRng::seed_from_u64(0x4d41_4e59_5042_5301);
     let (client_key, server_key) = context.try_generate_keys(None, &mut rng).unwrap();
+    assert_eq!(
+        server_key.input_distribution(),
+        context.parameters().external_lwe().secret_key_distr()
+    );
+    assert!(
+        client_key.client_ntru_secret_key().as_slice()[4..]
+            .iter()
+            .all(|&v| v == 0)
+    );
+    let other_distribution = if server_key.input_distribution().is_binary() {
+        SecretKeyDistr::UniformTernary
+    } else {
+        let prefix = client_key.external_lwe_secret_coefficients();
+        assert!(prefix.contains(&-1) && prefix.contains(&0) && prefix.contains(&1));
+        SecretKeyDistr::UniformBinary
+    };
+    let incompatible =
+        TfheContext::<_, TABLE>::try_from_parameters(parameters(other_distribution)).unwrap();
+    assert_eq!(
+        incompatible.evaluator(&server_key).err(),
+        Some(primus_tfhe::TfheEvaluationError::IncompatibleServerKey)
+    );
+    // Re-import the generated coefficient secrets through the validation path.
+    let imported = primus_tfhe_ntru_fourier::KeyGenerator::new(&context)
+        .try_generate_server_key(&client_key, None, &mut rng)
+        .unwrap();
+    assert!(context.evaluator(&imported).is_ok());
     let public = client_key
         .try_generate_public_key(context.parameters(), &mut rng)
         .unwrap();
@@ -76,6 +103,8 @@ where
         {
             if secret == 1 {
                 body = modulus.reduce_add(body, mask);
+            } else if secret == -1 {
+                body = modulus.reduce_sub(body, mask);
             }
         }
         *input.b_mut() = body;
@@ -330,10 +359,23 @@ where
 }
 #[test]
 fn pbs_preserves_outputs_and_validates_domains() {
-    check_context(
-        TfheContext::try_new(parameters(), RustFftTable::new(N.trailing_zeros()).unwrap()).unwrap(),
-    );
-    check_context(
-        TfheContext::try_new(parameters(), TfheFftTable::new(N.trailing_zeros()).unwrap()).unwrap(),
-    );
+    for distr in [
+        SecretKeyDistr::UniformBinary,
+        SecretKeyDistr::fixed_composition_ternary(4, 1, 2),
+    ] {
+        check_context(
+            TfheContext::try_new(
+                parameters(distr),
+                RustFftTable::new(N.trailing_zeros()).unwrap(),
+            )
+            .unwrap(),
+        );
+        check_context(
+            TfheContext::try_new(
+                parameters(distr),
+                TfheFftTable::new(N.trailing_zeros()).unwrap(),
+            )
+            .unwrap(),
+        );
+    }
 }

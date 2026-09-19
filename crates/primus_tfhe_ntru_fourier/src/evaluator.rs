@@ -44,12 +44,11 @@ where
         if !server_key.is_compatible(context.parameters()) {
             return Err(TfheEvaluationError::IncompatibleServerKey);
         }
-        let poly_length = context.parameters().poly_length();
         Ok(Self {
             context,
             server_key,
             fft: context.new_fft_engine(),
-            blind_rotation: BlindRotationWorkspace::new(poly_length),
+            blind_rotation: BlindRotationWorkspace::new(context.parameters()),
         })
     }
 
@@ -231,7 +230,7 @@ where
             &self.blind_rotation.current,
             &mut self.blind_rotation.scratch,
             &mut self.fft,
-            &mut self.blind_rotation.external_product,
+            self.blind_rotation.cmux.external_product(),
         );
     }
 }

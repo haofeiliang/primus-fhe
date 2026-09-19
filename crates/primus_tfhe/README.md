@@ -25,8 +25,8 @@ All four backends support secret-key and LWE public-key clients. Fourier backend
 support RustFFT and TfheFFT. Parameters and APIs are experimental; example and
 benchmark fixtures are not production security or failure-probability recommendations.
 
-Classic GLWE PBS and CBS support binary/ternary small secrets in both backends;
-MVB also supports both. NTRU BR secrets remain binary.
+Classic GLWE and NTRU PBS, CBS and MVB support binary/ternary input secrets in
+both backends. NTRU client secrets must also pass the backend's invertibility screening.
 
 Both GLWE backends support experimental sparse PBS for fixed-weight binary small
 secrets, with both orders and ordinary/interleaved/factorized LUTs.
@@ -330,7 +330,7 @@ initialization and BR, then key-switches each product.
 supports classic binary/ternary and sparse binary keys in both orders with u32/u64 and an even
 Native scale; it transforms factors as signed integers and also requires an FFT
 error budget. [NTRU Fourier](../primus_tfhe_ntru_fourier/README.md#fixed-scale-factorized-mvb)
-supports the same widths and Native scales with binary keys; its factors amplify
+supports the same widths and Native scales with binary/ternary keys; its factors amplify
 both encrypted initialization and BR noise before per-output key switching.
 `t_out` need not be a power of two: check the actual scale.
 Each prepared program borrows one context and its separate evaluator reuses scratch.

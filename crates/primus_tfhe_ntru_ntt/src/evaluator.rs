@@ -3,7 +3,7 @@ mod factorized;
 pub use factorized::{FactorizedEvaluator, NttFactorizedLookupTable};
 
 use primus_integer::FheUint;
-use primus_ntt::NttTable;
+use primus_ntt::MonomialNttTable;
 use primus_poly::Polynomial;
 use primus_tfhe::{
     InterleavedLookupTable, LookupTable, LweCiphertext, ProgrammableBootstrap,
@@ -19,7 +19,7 @@ use crate::{
 pub struct Evaluator<'a, T, Table>
 where
     T: FheUint,
-    Table: NttTable<ValueT = T>,
+    Table: MonomialNttTable<ValueT = T>,
 {
     context: &'a TfheContext<T, Table>,
     server_key: &'a ServerKey<T>,
@@ -29,7 +29,7 @@ where
 impl<'a, T, Table> Evaluator<'a, T, Table>
 where
     T: FheUint,
-    Table: NttTable<ValueT = T>,
+    Table: MonomialNttTable<ValueT = T>,
 {
     /// Creates reusable evaluation state after checking the server key once.
     pub fn try_new(
@@ -39,11 +39,10 @@ where
         if !server_key.is_compatible(context.parameters()) {
             return Err(TfheEvaluationError::IncompatibleServerKey);
         }
-        let poly_length = context.parameters().poly_length();
         Ok(Self {
             context,
             server_key,
-            blind_rotation: BlindRotationWorkspace::new(poly_length),
+            blind_rotation: BlindRotationWorkspace::new(context.parameters()),
         })
     }
 
@@ -228,7 +227,7 @@ where
             &mut self.blind_rotation.scratch,
             parameters.ntru_key_switching().ntru().cipher_modulus(),
             self.context.table(),
-            &mut self.blind_rotation.external_product,
+            self.blind_rotation.cmux.external_product(),
         );
     }
 }
@@ -236,7 +235,7 @@ where
 impl<T, Table> ProgrammableBootstrap<T> for Evaluator<'_, T, Table>
 where
     T: FheUint,
-    Table: NttTable<ValueT = T>,
+    Table: MonomialNttTable<ValueT = T>,
 {
     #[inline]
     fn apply_lookup_table_to(
@@ -252,7 +251,7 @@ where
 impl<T, Table> ProgrammableBootstrapInterleaved<T> for Evaluator<'_, T, Table>
 where
     T: FheUint,
-    Table: NttTable<ValueT = T>,
+    Table: MonomialNttTable<ValueT = T>,
 {
     #[inline]
     fn apply_interleaved_lookup_table_to(

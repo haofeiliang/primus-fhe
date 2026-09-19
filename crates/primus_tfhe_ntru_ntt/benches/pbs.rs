@@ -1,55 +1,101 @@
 //! Complete PBS: `NLev[1]` initialization, blind rotation, key switching and extraction.
-//! Outputs and scratch are reused; setup and encryption are not timed.
-//! u32, q = 132_120_577; fixed seed, N = 1024, LWE dimension 800.
+//! PBS outputs/scratch and key-generator workspace are reused; input encryption is not timed.
+//! u32/q=132_120_577 and u64/q=1_125_899_906_826_241; fixed seed, N = 1024, LWE dimension 800.
+//! Binary/ternary PBS and server-key generation (drop outside timing).
 //! Regression workload, not a matched-security backend comparison.
 //!
+//! SIMD: use cargo +nightly bench with --features simd.
 //! cargo bench -p primus_tfhe_ntru_ntt --bench pbs
 
+use primus_test_allocations::{CountingAllocator, measure};
 use std::hint::black_box;
 
 use rand::{SeedableRng, rngs::StdRng};
 
-use criterion::{Criterion, criterion_group, criterion_main};
+use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
+use primus_integer::FheUint;
 use primus_lwe::LweParameters;
 use primus_modulus::BarrettModulus;
 use primus_ntru::{NlevParameters, NtruParameters, SecretKeyDistr};
-use primus_ntt::{NttTable, U32NttTable};
+use primus_ntt::{MonomialNttTable, U32NttTable, U64NttTable};
 use primus_tfhe_ntru_ntt::{TfheContext, TfheParameters};
 
-fn pbs(c: &mut Criterion) {
+#[global_allocator]
+static ALLOCATOR: CountingAllocator = CountingAllocator;
+
+fn backend<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
+    c: &mut Criterion,
+    q: T,
+    label: &str,
+    distr: SecretKeyDistr,
+) {
     const N: usize = 1024;
     const LWE_DIMENSION: usize = 800;
-    const Q: u32 = 132_120_577;
-    let modulus = BarrettModulus::new(Q);
-    let external_lwe = LweParameters::new(
-        LWE_DIMENSION,
-        4,
+    let modulus = BarrettModulus::new(q);
+    let external_lwe = LweParameters::new(LWE_DIMENSION, T::as_from(4usize), modulus, distr, 0.7);
+    let accumulator = NtruParameters::new(
+        N,
+        T::as_from(4usize),
         modulus,
-        SecretKeyDistr::UniformBinary,
+        SecretKeyDistr::SparseTernary,
         0.7,
     );
-    let accumulator = NtruParameters::new(N, 4, modulus, SecretKeyDistr::SparseTernary, 0.7);
-    let client = NtruParameters::new(N, 4, modulus, SecretKeyDistr::UniformBinary, 0.7);
+    let client = NtruParameters::new(N, T::as_from(4usize), modulus, distr, 0.7);
     let parameters = TfheParameters::try_new(
         external_lwe,
         NlevParameters::with_ntru_params(&accumulator, 9, None),
         NlevParameters::with_ntru_params(&client, 9, None),
     )
     .unwrap();
-    let table = U32NttTable::new(N.trailing_zeros(), modulus).unwrap();
+    let table = Table::new(N.trailing_zeros(), modulus).unwrap();
     let context = TfheContext::try_new(parameters, table).unwrap();
     let mut rng = StdRng::seed_from_u64(42);
-    let (client_key, server_key) = context.try_generate_keys(None, &mut rng).unwrap();
+    let ((client_key, server_key), keys) =
+        measure(|| context.try_generate_keys(None, &mut rng).unwrap());
     let encryptor = context.encryptor(&client_key).unwrap();
-    let input = encryptor.encrypt_padded(1u32, &mut rng).unwrap();
+    let input = encryptor.encrypt_padded(T::ONE, &mut rng).unwrap();
     let lut = context
         .parameters()
-        .compile_lookup_table_slice(context.parameters().input_plaintext_codec(), &[1u32, 0])
+        .compile_lookup_table_slice(
+            context.parameters().input_plaintext_codec(),
+            &[T::ONE, T::ZERO],
+        )
         .unwrap();
     let mut output = input.clone();
-    let mut evaluator = context.evaluator(&server_key).unwrap();
+    let (mut evaluator, scratch) = measure(|| context.evaluator(&server_key).unwrap());
+    let (_, online) = measure(|| evaluator.apply_lookup_table_to(&input, &lut, &mut output));
+    assert_eq!(online.count, 0);
+    let phase = context
+        .decryptor(&client_key)
+        .unwrap()
+        .decrypt_phase(&output)
+        .unwrap();
+    let magnitude: f64 = phase.min(q - phase).as_into();
+    let q_value: f64 = q.as_into();
+    let error = magnitude / q_value;
+    assert!(
+        error < 0.125,
+        "fixed fixture exceeds the t=4 decoding margin"
+    );
+    eprintln!(
+        "{label}: client+server heap={} B, evaluator heap={} B, phase error/q={error:.6e}",
+        keys.allocated_bytes - keys.released_bytes,
+        scratch.allocated_bytes - scratch.released_bytes
+    );
+    let mut key_generator = primus_tfhe_ntru_ntt::KeyGenerator::new(&context);
+    c.bench_function(&format!("{label}/server_keygen"), |b| {
+        b.iter_batched(
+            || (),
+            |_| {
+                key_generator
+                    .try_generate_server_key(&client_key, None, &mut rng)
+                    .unwrap()
+            },
+            BatchSize::PerIteration,
+        );
+    });
 
-    c.bench_function("ntru_ntt/complete_pbs_reused_output", |bencher| {
+    c.bench_function(&format!("{label}/complete_pbs_reused_output"), |bencher| {
         bencher.iter(|| {
             evaluator.apply_lookup_table_to(
                 black_box(&input),
@@ -61,8 +107,11 @@ fn pbs(c: &mut Criterion) {
     // Each iteration produces the same 3/4 function outputs. Compare shared
     // BR/KS against separate PBS calls; k=3 also exercises a padded fourth slot.
     // All tables, keys and outputs are reused.
+    if T::BITS != 32 || distr.is_ternary() {
+        return;
+    }
     for count in [3, 4] {
-        let value = |input: usize, output| ((input + output) % 4) as u32;
+        let value = |input: usize, output| T::as_from((input + output) % 4);
         let many = context
             .parameters()
             .compile_interleaved_lookup_table_fn(
@@ -86,7 +135,7 @@ fn pbs(c: &mut Criterion) {
         for shared in [false, true] {
             let kind = if shared { "many" } else { "separate" };
             c.bench_function(
-                &format!("ntru_ntt/complete_pbs_{kind}_{count}_reused_outputs"),
+                &format!("{label}/complete_pbs_{kind}_{count}_reused_outputs"),
                 |b| {
                     b.iter(|| {
                         if shared {
@@ -109,6 +158,21 @@ fn pbs(c: &mut Criterion) {
                 },
             );
         }
+    }
+}
+
+fn pbs(c: &mut Criterion) {
+    for (suffix, distr) in [
+        ("", SecretKeyDistr::UniformBinary),
+        ("/ternary", SecretKeyDistr::UniformTernary),
+    ] {
+        backend::<_, U32NttTable>(c, 132_120_577u32, &format!("ntru_ntt{suffix}"), distr);
+        backend::<_, U64NttTable>(
+            c,
+            1_125_899_906_826_241u64,
+            &format!("ntru_ntt/u64{suffix}"),
+            distr,
+        );
     }
 }
 

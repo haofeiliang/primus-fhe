@@ -105,7 +105,8 @@ use native-torus scale and a matching native basis. The exponent is already
 quantized into `0..2N`; zero copies the input exactly. Evaluation reuses its
 context without allocation. This is a lattice primitive; complete GLWE TFHE ternary key generation
 and evaluation are described in the [ternary design](../../docs/tfhe-ternary.md).
-The NGSW form supports NTT and Fourier; the NTRU TFHE layer still requires binary controls.
+The NGSW form supports NTT and Fourier; complete NTRU integration is described in the
+[NTRU ternary design](../../docs/tfhe-ntru-ternary.md).
 
 ## Example
 

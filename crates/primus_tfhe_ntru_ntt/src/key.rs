@@ -1,9 +1,12 @@
+use num_traits::{ConstOne, ConstZero};
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_integer::FheUint;
 use primus_lattice::ngsw::NttNgsw;
 use primus_lattice::nlev::NttNlev;
+use primus_ntru::SecretKeyDistr;
 use primus_ntru::{NttNtruGadgetEncryptContext, NttNtruKeySwitchingKey, NttNtruSecretKey};
-use primus_ntt::NttTable;
+use primus_ntt::MonomialNttTable;
+use zeroize::Zeroizing;
 
 use crate::{
     CircuitBootstrapConfig, CircuitBootstrapKey, CircuitBootstrapParameters, ClientKey,
@@ -17,10 +20,17 @@ pub struct ServerKey<T: FheUint> {
     initializer: NttNlev<Vec<T>>,
     blind_rotation_basis: ApproxSignedBasis<T>,
     controls: Vec<T>,
+    input_distribution: SecretKeyDistr,
     key_switching_key: NttNtruKeySwitchingKey<T>,
 }
 
 impl<T: FheUint> ServerKey<T> {
+    /// Returns the client secret distribution that determines the control layout.
+    #[must_use]
+    pub fn input_distribution(&self) -> SecretKeyDistr {
+        self.input_distribution
+    }
+
     /// Returns the bound CBS parameters and keys, if requested during generation.
     #[must_use]
     pub fn circuit_bootstrap_key(&self) -> Option<&CircuitBootstrapKey<T>> {
@@ -45,20 +55,40 @@ impl<T: FheUint> ServerKey<T> {
     }
 
     /// Iterates over the contiguous NGSW controls without allocation.
-    pub(crate) fn iter_controls(&self) -> impl ExactSizeIterator<Item = NttNgsw<&[T]>> {
+    pub(crate) fn iter_binary_controls(&self) -> impl ExactSizeIterator<Item = NttNgsw<&[T]>> {
+        debug_assert!(self.input_distribution.is_binary());
         self.controls
             .chunks_exact(self.initializer.as_ref().len())
             .map(NttNgsw::new)
     }
 
+    /// Borrows adjacent positive/negative controls for each ternary coordinate.
+    pub(crate) fn iter_ternary_controls(
+        &self,
+    ) -> impl ExactSizeIterator<Item = (NttNgsw<&[T]>, NttNgsw<&[T]>)> {
+        debug_assert!(self.input_distribution.is_ternary());
+        let len = self.initializer.as_ref().len();
+        self.controls.chunks_exact(2 * len).map(move |pair| {
+            let (positive, negative) = pair.split_at(len);
+            (NttNgsw::new(positive), NttNgsw::new(negative))
+        })
+    }
+
     /// Checks the generated ring and decomposition parameters before evaluation.
     pub(crate) fn is_compatible(&self, parameters: &TfheParameters<T>) -> bool {
-        self.initializer.as_ref().len() == parameters.blind_rotation().nlev_len()
+        self.input_distribution == parameters.external_lwe().secret_key_distr()
+            && self.initializer.as_ref().len() == parameters.blind_rotation().nlev_len()
             && &self.blind_rotation_basis == parameters.blind_rotation().basis()
             && self.key_switching_key.poly_length() == parameters.poly_length()
             && self.key_switching_key.basis() == parameters.ntru_key_switching().basis()
             && self.controls.len()
-                == parameters.external_lwe_dimension() * self.initializer.as_ref().len()
+                == parameters.external_lwe_dimension()
+                    * if self.input_distribution.is_binary() {
+                        1
+                    } else {
+                        2
+                    }
+                    * self.initializer.as_ref().len()
     }
 }
 
@@ -66,7 +96,7 @@ impl<T: FheUint> ServerKey<T> {
 pub struct KeyGenerator<'a, T, Table>
 where
     T: FheUint,
-    Table: NttTable<ValueT = T>,
+    Table: MonomialNttTable<ValueT = T>,
 {
     pub(crate) context: &'a TfheContext<T, Table>,
     pub(crate) gadget: NttNtruGadgetEncryptContext<T>,
@@ -75,7 +105,7 @@ where
 impl<'a, T, Table> KeyGenerator<'a, T, Table>
 where
     T: FheUint,
-    Table: NttTable<ValueT = T>,
+    Table: MonomialNttTable<ValueT = T>,
 {
     /// Creates a key generator with reusable gadget-encryption workspace.
     #[must_use]
@@ -195,6 +225,7 @@ where
             initializer,
             blind_rotation_basis: parameters.blind_rotation().basis().clone(),
             controls,
+            input_distribution: parameters.external_lwe().secret_key_distr(),
             key_switching_key,
         }
     }
@@ -221,7 +252,7 @@ where
         initializer
     }
 
-    /// Encrypts every binary client coefficient as one contiguous NTT NGSW.
+    /// Encrypts binary coefficients or adjacent ternary selector pairs as NTT NGSWs.
     fn generate_controls<R>(
         &mut self,
         client_key: &ClientKey<T>,
@@ -233,13 +264,38 @@ where
     {
         let parameters = self.context.parameters();
         let nlev_len = parameters.blind_rotation().nlev_len();
-        let total_len = parameters
-            .external_lwe_dimension()
+        let coefficients = client_key.external_lwe_secret_coefficients();
+        // Only ternary generation allocates temporary selectors; erase them on drop.
+        let mut selectors = Zeroizing::new(Vec::new());
+        let plaintexts = if parameters.external_lwe().secret_key_distr().is_binary() {
+            coefficients
+        } else {
+            let count = coefficients
+                .len()
+                .checked_mul(2)
+                .expect("NGSW control count overflow");
+            selectors.resize(count, T::SignedInteger::ZERO);
+            for (&coefficient, pair) in coefficients.iter().zip(selectors.as_chunks_mut::<2>().0) {
+                pair[0] = if coefficient == T::SignedInteger::ONE {
+                    T::SignedInteger::ONE
+                } else {
+                    T::SignedInteger::ZERO
+                };
+                pair[1] = if coefficient == -T::SignedInteger::ONE {
+                    T::SignedInteger::ONE
+                } else {
+                    T::SignedInteger::ZERO
+                };
+            }
+            selectors.as_slice()
+        };
+        let total_len = plaintexts
+            .len()
             .checked_mul(nlev_len)
             .expect("NGSW control batch length overflow");
         let mut controls = vec![T::ZERO; total_len];
         accumulator_ntt.encrypt_ngsw_signed_constant_batch_to(
-            client_key.external_lwe_secret_coefficients(),
+            plaintexts,
             &mut controls,
             parameters.blind_rotation(),
             self.context.table(),

@@ -1,6 +1,6 @@
 use primus_encoding::ScaledCodec;
 use primus_integer::FheUint;
-use primus_ntt::NttTable;
+use primus_ntt::MonomialNttTable;
 use primus_reduce::RingContext;
 
 use crate::{
@@ -15,7 +15,7 @@ use crate::{
 pub struct TfheContext<T, Table>
 where
     T: FheUint,
-    Table: NttTable<ValueT = T>,
+    Table: MonomialNttTable<ValueT = T>,
 {
     parameters: TfheParameters<T>,
     table: Table,
@@ -24,7 +24,7 @@ where
 impl<T, Table> TfheContext<T, Table>
 where
     T: FheUint,
-    Table: NttTable<ValueT = T>,
+    Table: MonomialNttTable<ValueT = T>,
 {
     /// Builds the selected NTT table using the accumulator length and modulus.
     ///

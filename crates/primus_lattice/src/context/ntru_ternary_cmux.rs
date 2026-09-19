@@ -43,6 +43,15 @@ impl<T: FheUint> NttNtruTernaryCmuxContext<T> {
         self.external_product.poly_length()
     }
 
+    /// Borrows the existing external-product scratch for initialization or key switching.
+    ///
+    /// Its length must stay unchanged. The next ternary CMUX overwrites its contents,
+    /// so alternating these operations requires neither extra storage nor a reset.
+    #[must_use]
+    pub fn external_product_context(&mut self) -> &mut NttNtruExternalProductContext<T> {
+        &mut self.external_product
+    }
+
     /// Returns the level count bound to the combined-control scratch.
     #[must_use]
     pub fn decompose_length(&self) -> usize {
@@ -88,6 +97,15 @@ impl<T: TorusFftValue> FourierNtruTernaryCmuxContext<T> {
     #[must_use]
     pub fn poly_length(&self) -> usize {
         self.external_product.poly_length()
+    }
+
+    /// Borrows the existing external-product scratch for initialization or key switching.
+    ///
+    /// Its length must stay unchanged. The next ternary CMUX overwrites its contents,
+    /// so alternating these operations requires neither extra storage nor a reset.
+    #[must_use]
+    pub fn external_product_context(&mut self) -> &mut FourierNtruExternalProductContext<T> {
+        &mut self.external_product
     }
 
     /// Returns the level count bound to the combined-control scratch.

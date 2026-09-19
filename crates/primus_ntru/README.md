@@ -82,7 +82,7 @@ For ternary rotation, allocate `NttNtruTernaryCmuxContext::new(N, levels)` or
 exclusive positive/negative NGSW controls. Fourier uses a native basis and both
 controls must use the engine's exact FFT table instance and torus scale.
 The exponent is already quantized into `0..2N`; its negative is derived internally.
-This low-level primitive does not enable ternary in the NTRU TFHE layer.
+The NTRU TFHE backends use this primitive for classic ternary blind rotation.
 
 Decryption returns coefficient polynomials with the ciphertext coefficient type
 `T`; applications handle any output type conversion.

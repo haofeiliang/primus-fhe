@@ -18,7 +18,7 @@ ring parameters. `level_count: None` retains the full decomposition. The direct
 constructor below also accepts existing NLev parameters.
 
 `TfheParameters::try_new(external_lwe, blind_rotation, ntru_key_switching)` binds the
-external LWE to a binary prefix of `f_client`; the rest of that NTRU secret is zero.
+external LWE to a binary or ternary prefix of `f_client`; the rest of that NTRU secret is zero.
 `blind_rotation` describes the accumulator under `f_acc`, and `ntru_key_switching`
 describes the return to `f_client`. Ring lengths, plaintext moduli and ciphertext moduli must match, with
 `1 <= external_lwe.dimension() <= N`. Construction also prepares ordinary-PBS
@@ -34,8 +34,16 @@ stability. For paired client/server keys, prefer `context.try_generate_keys(circ
 `KeyGenerator::try_generate` to reuse transformed secrets. The shared `TfheKeyError`
 reports structural incompatibility; `KeyGenerationError::Ntru` preserves underlying
 NTRU generation/conversion failures.
-`ClientKey::new` imports coefficient secrets; parameter binding validates the binary
-prefix and zero padding, while backend conversion checks invertibility.
+`ClientKey::new` imports coefficient secrets; parameter binding validates the declared binary/ternary coefficient domain
+and zero padding, while backend conversion checks invertibility.
+
+Classic PBS/ManyLUT, Boolean, CBS and MVB accept binary or ternary client secrets.
+Select the distribution in `external_lwe`; key and evaluator construction stay the same.
+Ternary stores positive/negative NGSW controls per coordinate and uses one fused external
+product. `SparseTernary` describes the secret distribution; it does not select bucket
+aggregation. With Native, fixed nonzero weight must be odd and Fourier inverse screening
+still applies. Generated secrets follow the backend's conditional distribution, so an
+unconditioned ternary security estimate does not directly apply.
 
 ## Clients and LUTs
 
@@ -45,7 +53,7 @@ with a canonical residue in `[0,t)`; applications handle message type conversion
 Contexts expose `encryptor` and `decryptor`; direct construction uses
 `Encryptor::try_new` and `Decryptor::try_new`. Encryption accepts the client
 key or `LwePublicKey` from `client_key.try_generate_public_key(parameters, rng)`.
-This is an external LWE public key under the binary prefix, not an NTRU ring public key.
+This is an external LWE public key under the active prefix, not an NTRU ring public key.
 Decryption requires the client key. Generation and fresh encryption use the
 `external_lwe` noise sampler, but the combined error is `e^T r + e2 - e1^T s`.
 The public key stores `n * (n + 1)` coefficients for the active prefix. Dimension/modulus

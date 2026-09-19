@@ -8,8 +8,8 @@ use primus_tfhe::rotation::RotationQuantizer;
 
 use crate::TfheParameterError;
 use crate::TfheParameterError::{
-    CipherModulusMismatch, ClientSecretKeyDistributionMismatch, ClientSecretKeyMustBeBinary,
-    InvalidLweDimension, PlainModulusMismatch, PolynomialLengthMismatch,
+    CipherModulusMismatch, ClientSecretKeyDistributionMismatch, InvalidLweDimension,
+    PlainModulusMismatch, PolynomialLengthMismatch, UnsupportedClientSecretKeyDistribution,
 };
 
 /// NTRU-TFHE choices with one shared ring length and modulus domain.
@@ -99,7 +99,7 @@ where
     ///
     /// # Errors
     ///
-    /// Returns an error unless the external LWE key is the binary coefficient
+    /// Returns an error unless the external LWE key is the binary or ternary coefficient
     /// prefix of an NTRU key, fits in `N`, and all three parameter domains
     /// agree on `N`, `t`, and `q` where applicable. The rotation domain `2N`
     /// must be representable by `T`.
@@ -110,8 +110,10 @@ where
     ) -> Result<Self, TfheParameterError> {
         let external_distr = external_lwe.secret_key_distr();
         let client_ntru_distr = ntru_key_switching.ntru().secret_key_distr();
-        if !external_distr.is_binary() || !client_ntru_distr.is_binary() {
-            return Err(ClientSecretKeyMustBeBinary);
+        if !(external_distr.is_binary() || external_distr.is_ternary())
+            || !(client_ntru_distr.is_binary() || client_ntru_distr.is_ternary())
+        {
+            return Err(UnsupportedClientSecretKeyDistribution);
         }
         if external_distr != client_ntru_distr {
             return Err(ClientSecretKeyDistributionMismatch);

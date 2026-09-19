@@ -10,6 +10,8 @@ API 和参数仍处于实验阶段；示例和基准是功能工作负载，不�
 Boolean 门使用共享求值器，契约见[公共指南](../primus_tfhe/README.zh_CN.md#boolean-门)。
 NTT 后端另支持固定尺度分解式 MVB。
 
+自定义 NTT 表须实现 `MonomialNttTable`；内置 `UintNttTable` 已支持。
+
 ## 普通 PBS 与 ManyLUT
 
 先用 `TfheParameters::try_from_config(TfheConfig { .. })` 声明数学参数，再调用
@@ -43,7 +45,7 @@ LUT 编译的第一个参数为输出 `RoundedCodec`。示例采用 `t_in=16 →
 ## 公钥客户端
 
 `client_key.try_generate_public_key(context.parameters(), &mut rng)` 生成外部
-二进制前缀秘密下的 `LwePublicKey`；将其传入 `context.encryptor(&public_key)`
+binary/ternary 前缀秘密下的 `LwePublicKey`；将其传入 `context.encryptor(&public_key)`
 即可使用 `encrypt`、`encrypt_padded`、`encrypt_centered`。
 三种加密均提供 `_to(message, output, rng)`，公钥和私钥客户端都可无分配地复用
 密文存储。消息或维数错误不会改变输出及 RNG。

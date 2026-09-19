@@ -70,7 +70,7 @@ Ternary 旋转一次构造 `NttNtruTernaryCmuxContext::new(N, levels)` 或
 `FourierNtruTernaryCmuxContext::new(N, levels)`，随后复用工作区，传入互斥的正负 NGSW
 比特控制。Fourier 使用 Native basis，两份控制必须使用 engine 对应的同一个 FFT 表实例
 和 torus 缩放。指数已量化到 `0..2N`，负指数由内部派生。
-该底层原语尚未开放 NTRU TFHE 层的 ternary 支持。
+NTRU TFHE 后端使用此原语执行经典 ternary blind rotation。
 
 解密返回系数域多项式，使用密文系数类型 `T`；输出类型转换由应用按需处理。
 

@@ -19,13 +19,13 @@ const N: usize = 128;
 const DIM: usize = 8;
 const DOMAIN: usize = 8;
 
-fn context<T: TorusFftValue, Table: FftTable>() -> TfheContext<T, Table> {
+fn context<T: TorusFftValue, Table: FftTable>(distr: SecretKeyDistr) -> TfheContext<T, Table> {
     let parameters = TfheParameters::try_from_config(TfheConfig {
         external_lwe: LweParameters::new(
             DIM,
             T::as_from(15usize),
             NativeModulus::new(),
-            SecretKeyDistr::fixed_hamming_weight_binary(DIM, 3),
+            distr,
             0.7,
         ),
         poly_length: N,
@@ -53,8 +53,8 @@ fn value(m: usize, i: usize) -> usize {
     }
 }
 
-fn check_complete<T: TorusFftValue, Table: FftTable>() {
-    let context = context::<T, Table>();
+fn check_complete<T: TorusFftValue, Table: FftTable>(distr: SecretKeyDistr) {
+    let context = context::<T, Table>(distr);
     let mut rng = StdRng::seed_from_u64(0x4235_3301);
     let (client, server) = context.try_generate_keys(None, &mut rng).unwrap();
     let modulus = NativeModulus::new();
@@ -118,15 +118,20 @@ fn check_complete<T: TorusFftValue, Table: FftTable>() {
 
 #[test]
 fn factorized_pbs_preserves_scaled_outputs_and_reuses_workspace() {
-    check_complete::<u32, RustFftTable>();
-    check_complete::<u32, TfheFftTable>();
-    check_complete::<u64, RustFftTable>();
-    check_complete::<u64, TfheFftTable>();
+    for distr in [
+        SecretKeyDistr::fixed_hamming_weight_binary(DIM, 3),
+        SecretKeyDistr::fixed_composition_ternary(DIM, 1, 2),
+    ] {
+        check_complete::<u32, RustFftTable>(distr);
+        check_complete::<u32, TfheFftTable>(distr);
+        check_complete::<u64, RustFftTable>(distr);
+        check_complete::<u64, TfheFftTable>(distr);
+    }
 }
 
 #[test]
 fn factorized_boundaries_precede_output_writes_and_recover_workspace() {
-    let context = context::<u32, RustFftTable>();
+    let context = context::<u32, RustFftTable>(SecretKeyDistr::fixed_hamming_weight_binary(DIM, 3));
     let mut rng = StdRng::seed_from_u64(0x4235_3302);
     let (client, server) = context.try_generate_keys(None, &mut rng).unwrap();
     let codec = ScaledCodec::new(8u32, NativeModulus::new());
@@ -142,7 +147,8 @@ fn factorized_boundaries_precede_output_writes_and_recover_workspace() {
         .unwrap()
     };
     let lut = FourierFactorizedLookupTable::new(&context, compile(&context));
-    let other = self::context::<u32, RustFftTable>();
+    let other =
+        self::context::<u32, RustFftTable>(SecretKeyDistr::fixed_hamming_weight_binary(DIM, 3));
     let foreign = FourierFactorizedLookupTable::new(&other, compile(&other));
     let input = context
         .encryptor(&client)

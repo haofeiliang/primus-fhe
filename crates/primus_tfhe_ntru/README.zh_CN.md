@@ -16,7 +16,7 @@ key-switch 噪声。客户端 NTRU 域自动复用外部秘密分布与公共环
 `level_count: None` 保留完整分解。已持有 NLev 参数时也可使用下述直接入口。
 
 `TfheParameters::try_new(external_lwe, blind_rotation, ntru_key_switching)` 将外部 LWE
-绑定到 `f_client` 的二进制前缀，该 NTRU 秘密的其余系数为零。
+绑定到 `f_client` 的 binary 或 ternary 前缀，该 NTRU 秘密的其余系数为零。
 `blind_rotation` 描述 `f_acc` 下的 accumulator，`ntru_key_switching` 描述返回 `f_client` 的切换。
 环长度、明文模数与密文模数必须匹配，且 `1 <= external_lwe.dimension() <= N`。
 构造时同时准备普通 PBS 量化，并要求旋转域 `2N` 能由 `T` 表示。
@@ -28,7 +28,13 @@ key-switch 噪声。客户端 NTRU 域自动复用外部秘密分布与公共环
 可逆性，Fourier 还检查逆元稳定性。生成配套密钥时优先使用 `context.try_generate_keys(circuit_bootstrap, rng)`
 或 `KeyGenerator::try_generate`，复用变换后的秘密。共享 `TfheKeyError` 表达结构不兼容，
 `KeyGenerationError::Ntru` 保留底层 NTRU 生成/转换失败。`ClientKey::new` 导入系数秘密，
-参数绑定检查二进制前缀与零填充，可逆性由后端转换检查。
+参数绑定检查声明的 binary/ternary 系数范围与零填充，可逆性由后端转换检查。
+
+经典 PBS/ManyLUT、Boolean、CBS 和 MVB 均支持 binary/ternary 客户端秘密。
+在 `external_lwe` 中选择 `SecretKeyDistr` 即可，密钥与 evaluator 的构造流程相同。
+Ternary 每坐标保存正负两份 NGSW，融合单步使用一次外积；`SparseTernary` 表示秘密分布，
+不启用桶聚合。Native 下固定非零总重量必须为奇数，且仍需通过 Fourier 逆元筛选；
+生成结果服从后端接受条件下的分布，不能直接沿用未筛选 ternary 的安全估计。
 
 ## 客户端与 LUT
 
@@ -38,7 +44,7 @@ Client 加密接受 `T`，解密返回 `Result<T, TfheClientError>`，消息是 
 Context 提供 `encryptor`、`decryptor`；直接构造使用 `Encryptor::try_new` 和
 `Decryptor::try_new`。加密接受 client key，或通过
 `client_key.try_generate_public_key(parameters, rng)` 生成的 `LwePublicKey`。
-这是二进制前缀秘密下的外部 LWE 公钥，不是 NTRU 环公钥。解密需要 client key。
+这是有效前缀秘密下的外部 LWE 公钥，不是 NTRU 环公钥。解密需要 client key。
 公钥生成和新鲜加密误差均使用 `external_lwe` 噪声采样器，但总误差为
 `e^T r + e2 - e1^T s`。公钥存储 active prefix 对应的 `n * (n + 1)` 个系数。
 维数/模数检查不能证明密钥身份；使用配套密钥，并为 PBS/ManyLUT 预算组合噪声。

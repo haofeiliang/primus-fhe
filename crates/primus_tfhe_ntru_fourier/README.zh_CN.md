@@ -60,7 +60,7 @@ let value = codec.decode_value(decryptor.decrypt_phase(&outputs[0])?);
 另一个实例也会被拒绝。显式准备入口为 `FourierFactorizedLookupTable::new(context, coefficient_lut)`。
 程序存储 N 个 torus 系数和 `output_count*N/2` 个复数，不保留因子的系数副本。
 
-全部输出共享 `NLev[1]` 加密初始化和一次 binary BR，再对每个因子乘积从 `f_acc`
+全部输出共享 `NLev[1]` 加密初始化和一次 binary 或 ternary BR，再对每个因子乘积从 `f_acc`
 切换到 `f_client`，提取为通常的外部 LWE 维数。无需附加密钥。Evaluator 额外持有
 两个 Fourier 多项式（N 个复数），空间不随输出数增长；`_to` 在写入前检查全部维数，在线零分配。
 
@@ -81,7 +81,7 @@ cargo run -p primus_tfhe_ntru_fourier --example ntru_fourier_mvb_thresholds
 ## 公钥客户端
 
 `client_key.try_generate_public_key(context.parameters(), &mut rng)` 生成外部
-二进制前缀秘密下的 `LwePublicKey`；将其传入 `context.encryptor(&public_key)`
+binary/ternary 前缀秘密下的 `LwePublicKey`；将其传入 `context.encryptor(&public_key)`
 即可使用 `encrypt`、`encrypt_padded`、`encrypt_centered`。
 三种加密均提供 `_to(message, output, rng)`，公钥和私钥客户端都可无分配地复用
 密文存储。消息或维数错误不会改变输出及 RNG。

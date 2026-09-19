@@ -77,7 +77,7 @@ fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
     let mut expected_rng = StdRng::seed_from_u64(seed);
     assert_eq!(
         bad_client.try_generate_public_key(&params, &mut rng).err(),
-        Some(TfheKeyError::ClientSecretKeyMustBeBinary)
+        Some(TfheKeyError::InvalidClientSecretKeyCoefficient)
     );
     assert_eq!(rng.next_u64(), expected_rng.next_u64());
 }

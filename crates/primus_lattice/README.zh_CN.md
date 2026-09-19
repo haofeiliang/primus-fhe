@@ -99,7 +99,8 @@ basis，以及 NTT 表或同一个 FFT 表实例。Fourier 控制使用 native-t
 basis。指数已经量化到 `0..2N`；零指数精确复制输入。在线运算复用 context，
 不分配内存。这是 lattice 单步原语；完整 GLWE TFHE ternary 密钥生成与求值见
 [ternary 设计](../../docs/tfhe-ternary.md)。
-NGSW 形式支持 NTT 和 Fourier；NTRU TFHE 层仍要求 binary 控制。
+NGSW 形式支持 NTT 和 Fourier；完整 NTRU 接入见
+[NTRU ternary 设计](../../docs/tfhe-ntru-ternary.md)。
 
 ## 示例
 

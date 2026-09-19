@@ -97,7 +97,7 @@ where
             parameters,
             circuit_key,
             lookup_table,
-            blind_rotation: BlindRotationWorkspace::new(n),
+            blind_rotation: BlindRotationWorkspace::new(tfhe),
             trace: FourierNtruTraceContext::new(n),
             fft: context.new_fft_engine(),
             projected: NlevCiphertext::zero(parameters.output_nlev_len()),
@@ -157,7 +157,7 @@ where
             output,
             self.parameters.output_basis(),
             &mut self.fft,
-            &mut self.blind_rotation.external_product,
+            self.blind_rotation.cmux.external_product(),
         );
     }
 
@@ -200,7 +200,7 @@ where
             output,
             self.parameters.output_basis(),
             &mut self.fft,
-            &mut self.blind_rotation.external_product,
+            self.blind_rotation.cmux.external_product(),
         );
     }
 
@@ -268,7 +268,7 @@ where
             &self.projected,
             output,
             &mut self.fft,
-            &mut self.blind_rotation.external_product,
+            self.blind_rotation.cmux.external_product(),
         );
     }
 }

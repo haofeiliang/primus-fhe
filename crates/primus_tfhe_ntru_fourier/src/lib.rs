@@ -15,7 +15,7 @@
 
 //! [`TfheContext::compile_factorized_lookup_table_fn`] prepares Native even-scale
 //! MVB with unsigned Scaled outputs. [`FactorizedEvaluator`] shares NLev
-//! initialization and binary BR, then multiplies integer Fourier factors before
+//! initialization and binary/ternary BR, then multiplies integer Fourier factors before
 //! each output key switch. Supports u32/u64; initialization, BR and FFT errors
 //! require an independent NTRU noise budget.
 

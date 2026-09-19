@@ -18,11 +18,11 @@ static ALLOCATOR: allocations::CountingAllocator = allocations::CountingAllocato
 
 const N: usize = 256;
 
-fn circuit_bootstrap<Table: FftTable>() {
+fn circuit_bootstrap<Table: FftTable>(distr: SecretKeyDistr) {
     let modulus = NativeModulus::<u64>::new();
-    let lwe = LweParameters::new(16, 4, modulus, SecretKeyDistr::UniformBinary, 0.7);
+    let lwe = LweParameters::new(16, 4, modulus, distr, 0.7);
     let accumulator = NtruParameters::new(N, 4, modulus, SecretKeyDistr::SparseTernary, 0.7);
-    let client = NtruParameters::new(N, 4, modulus, SecretKeyDistr::UniformBinary, 0.7);
+    let client = NtruParameters::new(N, 4, modulus, distr, 0.7);
     let tfhe = TfheParameters::try_new(
         lwe,
         NlevParameters::with_ntru_params(&accumulator, 10, None),
@@ -204,8 +204,13 @@ fn circuit_bootstrap<Table: FftTable>() {
 
 #[test]
 fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
-    circuit_bootstrap::<RustFftTable>();
-    circuit_bootstrap::<TfheFftTable>();
+    for distr in [
+        SecretKeyDistr::UniformBinary,
+        SecretKeyDistr::fixed_composition_ternary(16, 3, 4),
+    ] {
+        circuit_bootstrap::<RustFftTable>(distr);
+        circuit_bootstrap::<TfheFftTable>(distr);
+    }
 }
 
 #[test]

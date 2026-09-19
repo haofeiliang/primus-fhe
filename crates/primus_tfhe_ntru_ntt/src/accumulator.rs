@@ -4,7 +4,7 @@ use crate::{ClientKey, KeyGenerationError, TfheContext};
 use primus_data::{Data, DataMut};
 use primus_integer::FheUint;
 use primus_ntru::{NtruCiphertext, NttNtruCiphertext, NttNtruSecretKey};
-use primus_ntt::NttTable;
+use primus_ntt::MonomialNttTable;
 use primus_poly::Polynomial;
 
 /// Prepared private-key client for the accumulator NTRU domain.
@@ -17,7 +17,7 @@ use primus_poly::Polynomial;
 pub struct AccumulatorClient<'a, T, Table>
 where
     T: FheUint,
-    Table: NttTable<ValueT = T>,
+    Table: MonomialNttTable<ValueT = T>,
 {
     context: &'a TfheContext<T, Table>,
     secret: NttNtruSecretKey<T>,
@@ -27,7 +27,7 @@ where
 impl<'a, T, Table> AccumulatorClient<'a, T, Table>
 where
     T: FheUint,
-    Table: NttTable<ValueT = T>,
+    Table: MonomialNttTable<ValueT = T>,
 {
     /// Validates the client key and prepares its accumulator representation once.
     /// Returns NTRU conversion failures, including a noninvertible secret.

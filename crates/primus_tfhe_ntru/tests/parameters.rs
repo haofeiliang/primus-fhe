@@ -99,7 +99,27 @@ fn accepts_a_smaller_external_dimension_and_rejects_an_oversized_one() {
     let external = LweParameters::new(N, 4, modulus, SecretKeyDistr::UniformBinary, 0.7);
     assert_eq!(
         TfheParameters::try_new(external, nlev(&accumulator), nlev(&nonbinary_client)).err(),
-        Some(TfheParameterError::ClientSecretKeyMustBeBinary)
+        Some(TfheParameterError::ClientSecretKeyDistributionMismatch)
+    );
+
+    for distr in [
+        SecretKeyDistr::UniformTernary,
+        SecretKeyDistr::SparseTernary,
+        SecretKeyDistr::ternary(0.2, 0.3),
+        SecretKeyDistr::fixed_hamming_weight_ternary(N, 7),
+        SecretKeyDistr::fixed_composition_ternary(N, 3, 4),
+    ] {
+        let external = LweParameters::new(N, 4, modulus, distr, 0.7);
+        assert!(
+            TfheParameters::try_new(external, nlev(&accumulator), nlev(&ntru(N, 4, Q, distr)))
+                .is_ok()
+        );
+    }
+    let gaussian = SecretKeyDistr::gaussian(3.2);
+    let external = LweParameters::new(N, 4, modulus, gaussian, 0.7);
+    assert_eq!(
+        TfheParameters::try_new(external, nlev(&accumulator), nlev(&ntru(N, 4, Q, gaussian))).err(),
+        Some(TfheParameterError::UnsupportedClientSecretKeyDistribution)
     );
 
     let client = ntru(N, 4, Q, SecretKeyDistr::UniformBinary);

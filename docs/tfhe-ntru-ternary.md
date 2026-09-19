@@ -1,8 +1,8 @@
-# NTRU ternary：秘密采样与融合单步
+# NTRU ternary：秘密采样、融合单步与完整链
 
 [B7 分步计划](tfhe-backend-plan.md#b7ntru-经典-ternary)的恢复入口。
-**B7.1 采样前置及 B7.2/B7.3 NTT/Fourier NGSW 融合单步已完成；TFHE 参数及导入密钥仍限制 binary。**
-完整链留给 B7.4；不包含桶聚合 ternary。
+**B7.1–B7.4 已完成：秘密采样、NTT/Fourier 融合单步及完整 TFHE 链均支持经典 ternary。**
+本组不包含桶聚合 ternary；完整失败率与条件秘密安全估计仍需独立论证。
 
 ## 1. 目标分布与秘密身份
 
@@ -25,7 +25,7 @@
 
 底层两个后端统一提供 `generate_padded_pair`，替换原 `generate_padded_binary_pair`；
 `generate_pair` 以 `n=N` 复用相同路径。底层入口沿用全部 NTRU 采样器（含 Gaussian），
-**这不扩大 TFHE 控制代数**；后续经典 ternary BR 仅处理 binary/ternary 家族。
+**这不扩大 TFHE 控制代数**；经典 ternary BR 仅处理 binary/ternary 家族。
 分布标记只记录候选规则，不记录补零长度或接受条件；TFHE 参数仍负责绑定外部维数。
 
 ## 2. 两种接受条件
@@ -180,7 +180,7 @@ Criterion 30 samples、warm-up 1 s、measurement 2 s。以下为 Criterion 时�
 没有额外实现逐行组合或改变既有 binary 内核；此处也不宣称达到最优。
 
 两路基准重复使用同一对控制，不能外推整把 BSK 的缓存/带宽成本，也不比较等安全参数。
-完整 NTRU ternary PBS、误差累积及资源成本留给 B7.4；Fourier 单步见下一节。
+完整 NTRU ternary PBS、误差累积及资源成本见 §7；Fourier 单步见下一节。
 
 复现命令见基准文件顶部；本次使用 `taskset -c 2`，默认/SIMD 都使用上述 nightly，
 Criterion 参数为 `--save-baseline b72-default --noplot` / `--save-baseline b72-simd --noplot`。
@@ -268,7 +268,7 @@ Native u32 用 `L=3`，u64 用 `L=6`；秘密为 SparseTernary，seed `0xB703`�
 SIMD 本身并非对所有路径提速；此处不改动底层 SIMD 内核。
 
 基准重复读取同一对控制，不能外推整把 BSK 的缓存/带宽成本。完整 BR、已有上层组合、
-客户端分布和误差累积留给 B7.4；本步不放宽 TFHE 的 binary 限制。
+客户端分布和误差累积见 §7。
 复现使用基准文件顶部命令，附 `taskset -c 2`，默认/SIMD 都用上述 nightly，过滤 `fourier`，
 Criterion 参数为 `--save-baseline b73-default --noplot` / `--save-baseline b73-simd --noplot`。
 
@@ -276,3 +276,135 @@ Criterion 参数为 `--save-baseline b73-default --noplot` / `--save-baseline b7
 B7.3 已通过 lattice/NTRU/GLWE 默认与 SIMD 的 all-targets check、Clippy 和测试，
 以及 `just tfhe`、`just tfhe-simd`、相关底层及 TFHE 包的严格 rustdoc。
 Cargo 仍报告两个后端同名 `circuit_bootstrap` 示例的既有输出文件名冲突警告，检查成功。
+
+
+## 7. B7.4：完整链与已有上层组合
+
+### 选择、布局与工作区
+
+在 `TfheConfig.external_lwe` 选择 binary/ternary 分布，两后端沿用原有
+`try_generate_keys`、encryptor/decryptor 和 evaluator 工厂。外部 LWE 秘密是
+同一个 `f_client` 的 signed active prefix；生成保留 `n..N` 零 padding，
+返回的 LWE 同样使用此前缀。导入 key 除形状和分布标签外，检查真实系数范围：
+binary 为 `{0,1}`，ternary 为 `{-1,0,1}`，两者后缀均为零；后端转换仍检查可逆性。
+非法分布返回 `UnsupportedClientSecretKeyDistribution`，非法系数返回
+`InvalidClientSecretKeyCoefficient`；私钥/公钥客户端继续复用既有 signed LWE 原语。
+
+每个 ternary 坐标连续存放 `NGSW([s_i=1])`、`NGSW([s_i=-1])`，独立采样各自噪声。
+临时 selector 用 `Zeroizing` 释放时擦除；binary 直接借用原秘密，不增加 selector 分配。
+`ServerKey::input_distribution()` 记录控制布局，evaluator 绑定时核对，防止错用控制数。
+
+BR 在坐标循环外分派到 binary CMUX 或融合 ternary CMUX，负指数由同一量化结果派生；
+普通/交错 LUT 使用原 rotation step。工作区只持有所选布局，交替两份 NTRU 缓冲，
+结束后通过交换所有权恢复输出位置。新增的组合 NGSW 是唯一的 ternary 堆存储增量，
+初始化、返回 KS 和 CBS 的外积消费借用 ternary context 内部已有的外积工作区。
+NTT 高层的表约束改为 `MonomialNttTable`；内置 `U32NttTable`、`U64NttTable` 和
+`UintNttTable` 均实现它。不同表实现不能混作同一性能基线。
+
+### 完整误差链与验证范围
+
+NTRU PBS 首先通过 `NLev_f_acc[1]` 加密旋转后的 LUT，再依次执行各坐标 CMUX，
+最后切换到 `f_client` 并紧凑提取。每个 ternary 步骤将已有相位误差作负循环旋转，
+再加入 §5 的分解及正负控制误差；Fourier 另有 §6 的变换、组合和恢复误差。
+量化误差影响最终选中的 LUT 位置，初始化误差和返回 KS 误差也必须计入。
+因此单步浮点预算不能直接当作完整 PBS 预算，更不能把两份加密零控制当成无噪声操作。
+
+CBS 共用 ternary BR，随后留在 `f_acc` 下做 trace/scheme switch；MVB 共用同一 BR，
+再按整数因子放大其误差并逐输出 KS。没有引入另一套高层控制类型或选择参数。
+
+测试扩展已有 fixture，不新增大型统计测试或 benchmark target：
+
+- 公共参数接受五种 ternary 分布、拒绝 Gaussian；导入 key 检查正负越界、binary
+  标签下的负一、非零 padding。已有底层测试继续负责 Native 固定偶数重量拒绝和条件采样。
+- 两后端 [PBS](../crates/primus_tfhe_ntru_ntt/tests/pbs.rs) /
+  [Fourier PBS](../crates/primus_tfhe_ntru_fourier/tests/pbs.rs) 保留 binary 并加入
+  `n=4,h_-=1,h_+=2`：确保正、零、负系数出现，核对生成与导入路径、公钥、不同输出尺度、
+  交错 `1/3/4` 输出、双输入及奇数全域。无噪声输入触发零/奇数/偶数个非零旋转，
+  保护跳过与最终缓冲交换；不兼容的控制分布在 evaluator 绑定时拒绝。
+- Boolean 复用真值表/门链和公钥 NAND；CBS 使用 u64、`n=16,h_-=3,h_+=4`，
+  保留逐层相位及 `CBS→CMUX/外积`；MVB 保留 Scaled 相位/解码与普通 PBS 参照，
+  Fourier 同时覆盖 u32/u64。两种 FFT 均保留，所有 `_to` 从首次调用起检查零分配。
+- 两个 basic 示例改用 UniformTernary，展示同一公钥客户端和 ManyLUT/MVB 流程。
+
+### 完整成本与适用边界
+
+复用两后端 `benches/pbs.rs`，增加 u32/u64 × binary/ternary 的完整 PBS 与 server-key
+生成。`N=1024,n=800,t=4,logB=9`、完整分解、三个噪声标准差均为 0.7，seed 42；
+输入消息 1，LUT `[1,0]`。秘密分别为 UniformBinary/UniformTernary，accumulator
+为 SparseTernary。NTT 的 q 分别为 132120577 / 1125899906826241，Fourier 为 Native。
+这些是功能/性能 fixture，不是等安全或已认证失败率的参数。
+
+NTT 使用 `U32NttTable/U64NttTable`；Fourier 分别使用 RustFFT/TfheFFT。
+每次 PBS 迭代执行初始化、所有坐标的 BR、返回 KS 和提取；server-key 计时使用固定
+client key 和复用的 key-generator 工作区，包含秘密重新转换、初始化控制、完整 BSK/KSK
+生成及输出分配，析构位于计时外。它不包含 client secret 拒绝采样或可选 CBS key。
+资源数字是构造时净存活堆字节，不含 allocator 元数据、共享 table、栈上容器或进程峰值。
+测量机器、CPU 2、nightly 和 native CPU 设置同 §5；20 samples、warm-up 1 s、
+measurement 2 s，较慢的 keygen 自动延长到足够取得 20 个样本。
+
+时间点估计如下，单位 ms，每格为 **binary / ternary**：
+
+| 后端 / 类型 | PBS default | PBS SIMD | server keygen default | server keygen SIMD |
+| --- | ---: | ---: | ---: | ---: |
+| NTT / u32 | 2.107 / 2.992 | 2.069 / 3.054 | 25.54 / 50.82 | 25.63 / 50.93 |
+| NTT / u64 | 10.069 / 17.209 | 6.998 / 10.970 | 49.08 / 104.46 | 46.96 / 100.04 |
+| RustFFT / u32 | 2.701 / 3.611 | 2.741 / 3.592 | 27.18 / 57.53 | 26.76 / 56.89 |
+| RustFFT / u64 | 6.918 / 8.981 | 6.961 / 9.295 | 67.99 / 139.81 | 66.68 / 136.76 |
+| TfheFFT / u32 | 2.227 / 2.828 | 2.276 / 2.958 | 26.69 / 57.08 | 26.89 / 56.56 |
+| TfheFFT / u64 | 5.701 / 7.727 | 5.933 / 7.840 | 67.46 / 138.00 | 66.62 / 136.38 |
+
+两种布局每坐标都只有一次外积，但 ternary 还需读取两份控制、准备单项式并组合控制；
+本组完整 PBS 比 binary 慢约 27%–71%，server keygen 约为 1.99–2.14 倍。
+这不是 §5/§6 的“融合 vs 两次 CMUX”比较，也不能从秘密分布不同的计时推出等安全收益。
+NTT u64 的 SIMD 有明显收益，Fourier 的 SIMD 则没有一致提速；本步不改底层 SIMD。
+
+为保护原 binary 路径，同机重测 `33a5d9d` 的既有 u32 单输出 PBS：
+
+| 后端 | default 修改前 → 后（ms） | SIMD 修改前 → 后（ms） |
+| --- | ---: | ---: |
+| NTT | 2.1023 → 2.1074 | 2.0963 → 2.0688 |
+| RustFFT | 2.6957 → 2.7010 | 2.6959 → 2.7414 |
+| TfheFFT | 2.2721 → 2.2270 | 2.2580 → 2.2764 |
+
+变化为约 −2.0%～+1.7%，没有明显整体退化；未建立旧版 u64 基线。
+测量中曾出现多个无关负载同时约翻倍的轮次，重新串行测量后恢复上述量级；
+表中使用恢复后的结果，不将 Criterion 对异常轮次的 `change` 当作优化收益。
+CPU 未隔离，这组短测不用于声称百分之一量级的改善。
+
+净存活堆字节如下，每格仍为 **binary / ternary**；两个 FFT 的资源数字相同：
+
+| 后端 / 类型 | client + server key（B） | evaluator（B） |
+| --- | ---: | ---: |
+| NTT / u32 | 9,863,240 / 19,693,640 | 21,504 / 33,792 |
+| NTT / u64 | 32,866,544 / 65,634,544 | 41,984 / 82,944 |
+| Fourier / u32 | 19,718,216 / 39,379,016 | 46,080 / 70,656 |
+| Fourier / u64 | 46,006,608 / 91,881,808 | 58,368 / 115,712 |
+
+client+server 包括两份系数秘密、初始化控制、BSK 和返回 KSK；控制部分加倍，固定项不变。
+evaluator 包含其 FFT engine scratch；ternary 增量分别为 NTT 12/40 KiB、Fourier
+24/56 KiB，正好是组合 NGSW。所有在线 `_to` 仍从首调用起零分配。
+
+基准在计时外解密完整 PBS 输出相位，对照 LUT 的理想输出零。下表为固定 seed、
+固定输入的一次 `|phase error|/q`；default/SIMD 在所列精度内相同：
+
+| 后端 / 类型 | binary | ternary |
+| --- | ---: | ---: |
+| NTT / u32 | 1.824e-4 | 8.812e-4 |
+| NTT / u64 | 1.296e-10 | 2.526e-10 |
+| RustFFT / u32 | 2.250e-5 | 1.368e-5 |
+| TfheFFT / u32 | 2.250e-5 | 1.368e-5 |
+| RustFFT / u64 | 4.444e-15 | 1.364e-14 |
+| TfheFFT / u64 | 5.420e-15 | 2.485e-14 |
+
+这些结果小于本组 `t=4` 的半编码间距 `1/8`，包含输入加密、初始化、完整 BR 和返回 KS；
+它们既不是 RMS/尾界，也不表示某种秘密分布噪声更低。可逆性及 Fourier 稳定性条件下
+的秘密分布、安全估计和完整失败概率仍未认证；固定重量 ternary 不使用桶聚合。
+
+复现时在两个 NTRU TFHE 后端运行现有 `pbs` 基准，筛选
+`'complete_pbs_reused_output|server_keygen'`，附 `taskset -c 2`、上述 Criterion 参数和
+独立 `--save-baseline` 名称。默认/SIMD 均使用同一 nightly；SIMD 命令见基准文件顶部。
+旧版对照只运行其原有 u32 binary 单输出，保持原 `U32NttTable`。
+
+B7.4 已通过 `just tfhe`、`just tfhe-simd`，lattice/NTRU 默认与 SIMD 的 all-targets
+check、Clippy 和测试，以及相关底层/TFHE 包的严格 rustdoc；两个更新后的 basic 示例
+以 release 模式运行通过。保留此前同名 `circuit_bootstrap` 示例的 Cargo 输出名警告。

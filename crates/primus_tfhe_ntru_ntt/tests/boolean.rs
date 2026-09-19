@@ -12,15 +12,9 @@ use rand::{SeedableRng, rngs::StdRng};
 #[global_allocator]
 static ALLOCATOR: allocations::CountingAllocator = allocations::CountingAllocator;
 
-fn check_context() {
+fn check_context(distr: SecretKeyDistr) {
     let parameters = TfheParameters::<u32>::try_from_config(TfheConfig {
-        external_lwe: LweParameters::new(
-            3,
-            4,
-            BarrettModulus::new(132_120_577),
-            SecretKeyDistr::UniformBinary,
-            0.7,
-        ),
+        external_lwe: LweParameters::new(4, 4, BarrettModulus::new(132_120_577), distr, 0.7),
         poly_length: 256,
         accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,
         accumulator_noise_standard_deviation: 0.7,
@@ -79,5 +73,10 @@ fn check_context() {
 
 #[test]
 fn boolean_gates_preserve_truth_tables_chaining_and_storage() {
-    check_context();
+    for distr in [
+        SecretKeyDistr::UniformBinary,
+        SecretKeyDistr::fixed_composition_ternary(4, 1, 2),
+    ] {
+        check_context(distr);
+    }
 }

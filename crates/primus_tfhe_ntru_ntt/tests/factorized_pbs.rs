@@ -19,15 +19,9 @@ const N: usize = 128;
 const Q: u32 = 132_120_577;
 const DOMAIN: usize = 8;
 
-fn context() -> TfheContext<u32, U32NttTable> {
+fn context(distr: SecretKeyDistr) -> TfheContext<u32, U32NttTable> {
     let parameters = TfheParameters::try_from_config(TfheConfig {
-        external_lwe: LweParameters::new(
-            3,
-            15,
-            BarrettModulus::new(Q),
-            SecretKeyDistr::UniformBinary,
-            0.7,
-        ),
+        external_lwe: LweParameters::new(3, 15, BarrettModulus::new(Q), distr, 0.7),
         poly_length: N,
         accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,
         accumulator_noise_standard_deviation: 0.7,
@@ -53,9 +47,8 @@ fn value(message: usize, output: usize) -> u32 {
     }
 }
 
-#[test]
-fn factorized_pbs_preserves_scaled_outputs_and_reuses_workspace() {
-    let context = context();
+fn check_complete(distr: SecretKeyDistr) {
+    let context = context(distr);
     let modulus = context.parameters().accumulator_ntru().cipher_modulus();
     let codec = ScaledCodec::new(8, modulus);
     let mut rng = StdRng::seed_from_u64(0xB301);
@@ -146,7 +139,7 @@ fn factorized_pbs_preserves_scaled_outputs_and_reuses_workspace() {
         .compile_factorized_lookup_table_fn(&codec, DOMAIN, 3, value)
         .unwrap();
     // Identical parameters do not establish NTT context identity.
-    let other_context = self::context();
+    let other_context = self::context(distr);
     let foreign = other_context
         .compile_factorized_lookup_table_fn(&codec, DOMAIN, 3, value)
         .unwrap();
@@ -201,4 +194,14 @@ fn factorized_pbs_preserves_scaled_outputs_and_reuses_workspace() {
         ),
         Err(LookupTableError::OutputModulusMismatch)
     ));
+}
+
+#[test]
+fn factorized_pbs_preserves_scaled_outputs_and_reuses_workspace() {
+    for distr in [
+        SecretKeyDistr::UniformBinary,
+        SecretKeyDistr::fixed_composition_ternary(3, 1, 2),
+    ] {
+        check_complete(distr);
+    }
 }

@@ -374,7 +374,7 @@ taskset -c 2 cargo +nightly bench -p primus_tfhe_glwe_ntt -p primus_tfhe_glwe_fo
 
 ## 7. 独立的后续工作
 
-**NTRU ternary：** 同类恒等式可以作用于 NGSW 控制，但当前 client key 还必须是可逆 NTRU 多项式。Native、二次幂 `N` 下至少要求 `f(1)` 为奇数；固定偶数非零重量 ternary 不会因重试而满足该条件。[B7.1–B7.3](tfhe-ntru-ternary.md)已完成底层采样/拒绝条件、padding、条件分布说明及 NTT/Fourier NGSW 融合单步；完整链留给 B7.4，TFHE 仍限制 binary。
+**NTRU ternary：** 同类恒等式可以作用于 NGSW 控制，但当前 client key 还必须是可逆 NTRU 多项式。Native、二次幂 `N` 下至少要求 `f(1)` 为奇数；固定偶数非零重量 ternary 不会因重试而满足该条件。[B7](tfhe-ntru-ternary.md)已完成底层采样/拒绝条件、padding、条件分布说明、NTT/Fourier NGSW 融合单步及完整 TFHE 链。公钥、Boolean、CBS、MVB 的代表组合已验收；条件秘密的安全估计和完整噪声尾界仍需独立论证。
 
 **桶聚合稀疏 ternary：** 可以研究复用 support matching，但正负选择密文、dummy、聚合规则和公开映射的联合分布需要重新分析。不把 `SecretKeyDistr::SparseTernary` 与 P3 的固定重量二元桶算法混同。
 

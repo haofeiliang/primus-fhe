@@ -19,12 +19,11 @@ static ALLOCATOR: allocations::CountingAllocator = allocations::CountingAllocato
 const N: usize = 256;
 const Q: u64 = 1_125_899_906_826_241;
 
-#[test]
-fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
+fn circuit_bootstrap(distr: SecretKeyDistr) {
     let modulus = BarrettModulus::new(Q);
-    let lwe = LweParameters::new(16, 4, modulus, SecretKeyDistr::UniformBinary, 0.7);
+    let lwe = LweParameters::new(16, 4, modulus, distr, 0.7);
     let accumulator = NtruParameters::new(N, 4, modulus, SecretKeyDistr::SparseTernary, 0.7);
-    let client = NtruParameters::new(N, 4, modulus, SecretKeyDistr::UniformBinary, 0.7);
+    let client = NtruParameters::new(N, 4, modulus, distr, 0.7);
     let tfhe = TfheParameters::try_new(
         lwe,
         NlevParameters::with_ntru_params(&accumulator, 10, None),
@@ -221,6 +220,16 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
             CircuitBootstrapEvaluator::try_from_parts(&context, &server, &foreign, circuit_key),
             Err(TfheEvaluationError::IncompatibleCircuitBootstrapKey)
         ));
+    }
+}
+
+#[test]
+fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
+    for distr in [
+        SecretKeyDistr::UniformBinary,
+        SecretKeyDistr::fixed_composition_ternary(16, 3, 4),
+    ] {
+        circuit_bootstrap(distr);
     }
 }
 

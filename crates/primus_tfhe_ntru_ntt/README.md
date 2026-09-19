@@ -12,6 +12,8 @@ PBS, ManyLUT, Boolean gates and CBS.
 The NTT backend additionally supports fixed-scale factorized MVB.
 See the [shared Boolean contracts](../primus_tfhe/README.md#boolean-gates).
 
+Custom NTT tables must implement `MonomialNttTable`; built-in `UintNttTable` supports it.
+
 ## Ordinary PBS and ManyLUT
 
 Declare mathematical choices with `TfheParameters::try_from_config(TfheConfig { .. })`,
@@ -50,7 +52,7 @@ cover input domains, output codecs, odd full-domain PBS and ManyLUT noise margin
 ## Public-key clients
 
 `client_key.try_generate_public_key(context.parameters(), &mut rng)` generates an
-`LwePublicKey` under the external binary prefix secret. Pass it to
+`LwePublicKey` under the external binary/ternary prefix secret. Pass it to
 `context.encryptor(&public_key)` for `encrypt`, `encrypt_padded` and
 `encrypt_centered`. Their `_to(message, output, rng)` counterparts reuse existing
 ciphertext storage without allocation for both public and secret keys. Message

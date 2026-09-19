@@ -20,7 +20,7 @@ fn main() {
         LWE_DIMENSION,
         16,
         modulus,
-        SecretKeyDistr::UniformBinary,
+        SecretKeyDistr::UniformTernary,
         0.7,
     );
     let parameters = TfheParameters::try_from_config(TfheConfig {

@@ -3,7 +3,7 @@
 //! # Public-key clients
 //!
 //! [`ClientKey::try_generate_public_key`] returns an [`LwePublicKey`] under
-//! the active binary prefix of the client secret. Pass it to
+//! the active binary or ternary prefix of the client secret. Pass it to
 //! [`Encryptor::try_new`] or a backend context's `encryptor`; keep the paired
 //! client key for decryption.
 //!
