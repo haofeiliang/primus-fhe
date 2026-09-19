@@ -49,6 +49,38 @@ The [shared encoding guide](../primus_tfhe/README.md#choosing-the-output-encodin
 and [NTRU client/LUT contract](../primus_tfhe_ntru/README.md#clients-and-luts)
 cover input domains, output codecs, odd full-domain PBS and ManyLUT noise margins.
 
+## Experimental sparse PBS
+
+Select `SecretKeyDistr::fixed_hamming_weight_binary(n, h)` for `external_lwe`,
+with `0<h<n`. Generate the invertible client once, then explicitly choose bucket
+aggregation; selecting a low-weight distribution alone still uses classic BR.
+
+```rust,ignore
+let mut generator = KeyGenerator::new(&context);
+let client = generator.try_generate_client_key(&mut rng)?;
+let server = generator.try_generate_sparse_server_key(&client, 3, 2 * h, &mut rng)?;
+let mut evaluator = context.evaluator(&server)?;
+```
+
+The fixed-client factory also exists on `TfheContext`. It returns the usual
+`ServerKey`, with coefficient NGSW selectors accessible through
+`sparse_bootstrapping_key()`. Ordinary and interleaved LUT calls reuse the same
+evaluator and buffers. CBS and factorized MVB return `UnsupportedSparseBootstrapping`,
+including CBS binding with standalone material.
+
+Map generation retries at most eight times without changing the client; errors
+return through `KeyGenerationError::SparseBootstrapping`, preserving `BucketMap`
+failures. NTRU conversion errors remain `KeyGenerationError::Ntru`.
+Invertibility and successful matching condition the secret/map distribution.
+Budget initialization, every bucket, coarser ManyLUT rotations and return KS;
+this experimental path does not certify security or a failure probability.
+
+Run the [sparse message/carry example](examples/ntru_ntt_sparse.rs):
+
+```sh
+cargo run -p primus_tfhe_ntru_ntt --release --example ntru_ntt_sparse
+```
+
 ## Public-key clients
 
 `client_key.try_generate_public_key(context.parameters(), &mut rng)` generates an
@@ -127,7 +159,8 @@ The `ServerKey` owns the CBS parameters and trace/scheme-switch keys, generated 
 its ordinary PBS material from the same secrets and transform table. Use
 `None` for PBS only: no CBS key material or CBS workspace is allocated.
 Both `context.evaluator(&server)` and `context.circuit_bootstrap_evaluator(&server)`
-use that server key; the latter returns `MissingCircuitBootstrapKey` when CBS is absent.
+use that server key; the latter returns `MissingCircuitBootstrapKey` when CBS is absent
+from a classic key, and rejects sparse keys.
 Only the selected evaluator allocates its workspace. Key generation returns `KeyGenerationError`;
 NTRU sampling/conversion failures use its `Ntru` variant; `ClientKey` reports compatibility failures.
 

@@ -31,6 +31,9 @@ GLWE 两后端均支持固定重量二元 small 秘密的实验性稀疏 PBS：�
 [Fourier](../primus_tfhe_glwe_fourier/README.zh_CN.md#实验性稀疏-pbs) 使用 Native 系数域聚合。
 两后端均支持 sparse CBS；sparse ternary 尚不支持。
 
+[NTRU NTT 稀疏 PBS](../primus_tfhe_ntru_ntt/README.zh_CN.md#实验性稀疏-pbs)
+支持固定可逆二元客户端的普通和交错 LUT；CBS/MVB 组合明确拒绝，NTRU Fourier 尚无桶聚合。
+
 ## 错误边界
 
 错误按操作职责命名，从 crate 根导出；按调用的操作处理相应错误类型。
@@ -41,7 +44,7 @@ GLWE 两后端均支持固定重量二元 small 秘密的实验性稀疏 PBS：�
 | TFHE / CBS 参数准备 | Family `TfheParameterError` / `CircuitBootstrapParameterError` |
 | Client key 兼容性 / 客户端操作 | Family `TfheKeyError` / `TfheClientError` |
 | Boolean 客户端构造、加密和解密 | Family `BooleanError`；`Client` 分支保留底层客户端错误 |
-| 常规、稀疏 server 或独立 CBS 密钥生成 | Family `KeyGenerationError`；NTRU 采样/变换直接进入 `Ntru` 分支；GLWE 稀疏失败进入 `SparseBootstrapping` |
+| 常规、稀疏 server 或独立 CBS 密钥生成 | Family `KeyGenerationError`；NTRU 采样/变换直接进入 `Ntru` 分支；稀疏失败进入 `SparseBootstrapping` |
 | GLWE 原始稀疏 BSK 生成 | Family `SparseBootstrappingKeyError`；`BucketMap` 分支保留底层映射错误 |
 | 自动建表或显式绑定表 | 后端 `TfheContextError`；`TransformTable` 保留底层 FFT/NTT 错误 |
 

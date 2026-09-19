@@ -42,6 +42,34 @@ LUT 编译的第一个参数为输出 `RoundedCodec`。示例采用 `t_in=16 →
 [共享编码指南](../primus_tfhe/README.zh_CN.md#选择输出编码)与
 [NTRU 客户端/LUT 契约](../primus_tfhe_ntru/README.zh_CN.md#客户端与-lut)。
 
+## 实验性稀疏 PBS
+
+`external_lwe` 使用 `SecretKeyDistr::fixed_hamming_weight_binary(n, h)`，要求
+`0<h<n`。先生成一份可逆客户端，再显式选择桶聚合；仅选择低重量分布仍使用经典 BR。
+
+```rust,ignore
+let mut generator = KeyGenerator::new(&context);
+let client = generator.try_generate_client_key(&mut rng)?;
+let server = generator.try_generate_sparse_server_key(&client, 3, 2 * h, &mut rng)?;
+let mut evaluator = context.evaluator(&server)?;
+```
+
+`TfheContext` 也提供固定客户端的生成入口。返回原有 `ServerKey`，通过
+`sparse_bootstrapping_key()` 可访问系数域 NGSW selector。普通和交错 LUT
+复用原有 evaluator 与缓冲区。CBS 和分解式 MVB 返回 `UnsupportedSparseBootstrapping`，
+包括使用独立 CBS 材料的绑定方式。
+
+映射最多重试八次，保持客户端不变；通过 `KeyGenerationError::SparseBootstrapping`
+返回错误并保留底层 `BucketMap` 失败。NTRU 转换错误仍进入 `KeyGenerationError::Ntru`。
+可逆性和匹配成功共同影响秘密/映射分布。需预算初始化、每个桶、ManyLUT 粗粒度旋转
+和返回 KS 的误差；此实验路径未认证安全性或失败概率。
+
+运行[稀疏 message/carry 示例](examples/ntru_ntt_sparse.rs)：
+
+```sh
+cargo run -p primus_tfhe_ntru_ntt --release --example ntru_ntt_sparse
+```
+
 ## 公钥客户端
 
 `client_key.try_generate_public_key(context.parameters(), &mut rng)` 生成外部
@@ -110,8 +138,8 @@ cargo run -p primus_tfhe_ntru_ntt --release --example ntru_ntt_mvb_thresholds
 生成配套 client/server key。`ServerKey` 持有 CBS 参数及 trace/scheme-switch key，
 与普通 PBS 材料从同一组私钥和变换表生成。仅需 PBS 时使用 `None`，
 不分配 CBS 密钥材料或工作区。`context.evaluator(&server)` 与
-`context.circuit_bootstrap_evaluator(&server)` 共用这份 server key；未启用 CBS 时后者返回
-`MissingCircuitBootstrapKey`。各 evaluator 只分配自身需要的工作区。生成错误为
+`context.circuit_bootstrap_evaluator(&server)` 共用这份 server key；经典 key 未启用 CBS 时后者返回
+`MissingCircuitBootstrapKey`，稀疏 key 则明确拒绝。各 evaluator 只分配自身需要的工作区。生成错误为
 `KeyGenerationError`，NTRU 采样/变换失败通过 `Ntru` 分支返回，`ClientKey` 仅表示兼容性错误。
 
 高级组合仍可使用接收已准备参数所有权的 `try_generate_circuit_bootstrap_key`，以及显式传入

@@ -104,6 +104,7 @@ where
     Table: MonomialNttTable<ValueT = T>,
 {
     /// Creates the workspace after validating the server key's parameters.
+    /// Rejects sparse keys; sparse MVB requires a separate noise validation.
     ///
     /// # Correctness
     ///
@@ -113,6 +114,9 @@ where
         context: &'a TfheContext<T, Table>,
         server_key: &'a ServerKey<T>,
     ) -> Result<Self, TfheEvaluationError> {
+        if server_key.sparse_bootstrapping_key().is_some() {
+            return Err(TfheEvaluationError::UnsupportedSparseBootstrapping);
+        }
         Ok(Self {
             evaluator: Evaluator::try_new(context, server_key)?,
             shared_rotation: NttNtru::zero(context.parameters().poly_length()),

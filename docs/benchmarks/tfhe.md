@@ -19,6 +19,7 @@
 | `primus_tfhe_glwe_ntt / sparse_pbs` | 同一 fixed-weight 客户端下的经典/稀疏完整 PBS、两种 order、普通/三输出交错及 server key 生成；当前 `n/h/N=728/32/1024`，每次处理四个输入之一；[专项](../tfhe-sparse-pbs.md#p35-完整-pbs-接入与验收)区分历史 n=512 数据；[NTT 后续优化](../tfhe-sparse-pbs.md#ntt-后续优化)记录常数、Barrett 切片与系数 GGSW 对照 |
 | `primus_tfhe_glwe_fourier / sparse_pbs` | 同一 fixed-weight 客户端下的经典/稀疏完整 PBS、两种 FFT/order、普通/三输出及 server key 生成；`n/h/N=728/32/1024`；[成本与适用范围](../tfhe-sparse-pbs.md#b43-fourier-成本与保留方案)，[计时 CSV](tfhe-b4.3.csv)，[Native/常数准备优化](../tfhe-sparse-pbs.md#native-加减切片与常数准备优化) |
 | `primus_tfhe_glwe_ntt / mvb` | 相同 Scaled 阈值输出的重复 PBS / 交错 / MVB，3/17 输出、两种 order、经典/稀疏；构造/预处理另测；[GLWE MVB](../tfhe-mvb.md#8-p43-测量与应用选择) |
+| `primus_tfhe_ntru_ntt / sparse_pbs` | n/h/N=728/32/1024，同一可逆客户端的经典/稀疏单输出、三输出与完整 server keygen；setup 检查八个输入、误差和零分配，报告 key/evaluator 堆字节；[B8.2 成本](../tfhe-ntru-sparse.md#7-b82-完整成本)、[CSV](tfhe-b8.2.csv) |
 | `primus_tfhe_ntru_ntt / mvb` | 五项等价在线负载，包含初始化、BR、乘法、KS 和提取；[NTRU MVB](../tfhe-mvb-ntru.md) |
 | `primus_tfhe_glwe_ntt / circuit_bootstrap` | 两种 order、经典/稀疏完整 CBS；n/h/N=728/32/1024、输出 `(8,3)`；setup 检查逐行/层、CMUX 与零分配，见[稀疏 CBS](../tfhe-sparse-cbs.md#6-b62-正式接入) |
 | `primus_tfhe_glwe_fourier / circuit_bootstrap` | 两种 order/FFT、经典/稀疏的八项完整 CBS；n/h/N=728/32/1024；setup 检查逐层相位、CMUX 和资源，见 [B6.3](../tfhe-cbs.md#7-b63-fourier-sparse-cbs) |

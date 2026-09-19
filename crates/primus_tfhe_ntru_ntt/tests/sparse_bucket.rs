@@ -1,16 +1,17 @@
-//! B8.1 prototype: NTRU initialization and one bucket, before a sparse server-key API.
+//! Sparse key selection semantics and independent NLev/bucket error budgets.
 
 use num_traits::{ConstOne, ConstZero};
 use primus_integer::{AsInto, FheUint};
+use primus_lwe::LweParameters;
 use primus_modulus::BarrettModulus;
 use primus_ntru::{
     NgswCiphertext, NlevParameters, NtruCiphertext, NtruParameters, NttNlevCiphertext,
     NttNtruExternalProductContext, NttNtruGadgetEncryptContext, NttNtruSecretKey, SecretKeyDistr,
 };
-use primus_ntt::{NttTable, U32NttTable, U64NttTable};
+use primus_ntt::{MonomialNttTable, U32NttTable, U64NttTable};
 use primus_poly::Polynomial;
 use primus_test_allocations::{CountingAllocator, measure};
-use primus_tfhe::sparse::BucketMap;
+use primus_tfhe_ntru_ntt::{ClientKey, KeyGenerator, TfheContext, TfheParameters};
 use rand::{SeedableRng, rngs::StdRng};
 use zeroize::Zeroizing;
 
@@ -61,7 +62,7 @@ fn max_error(actual: &[i128], expected: &[i128], q: i128) -> i128 {
         .unwrap()
 }
 
-fn check_bucket<T: FheUint, Table: NttTable<ValueT = T>>(q: T) {
+fn check_bucket<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T) {
     const N: usize = 32;
     const DIM: usize = 16;
     const WEIGHT: usize = 4;
@@ -79,7 +80,6 @@ fn check_bucket<T: FheUint, Table: NttTable<ValueT = T>>(q: T) {
     // An even weight is valid for this odd-q NTT ring. Rejection never edits a bit.
     let (client, _) =
         NttNtruSecretKey::generate_padded_pair(&client_params, DIM, &ntt, &mut rng).unwrap();
-    let client_before = Zeroizing::new(client.as_slice().to_vec());
     let nonzero_indices = Zeroizing::new(
         client.as_slice()[..DIM]
             .iter()
@@ -102,12 +102,29 @@ fn check_bucket<T: FheUint, Table: NttTable<ValueT = T>>(q: T) {
         0.7,
     );
     let gadget = NlevParameters::with_ntru_params(&params, 8, None);
+    let context = TfheContext::try_new(
+        TfheParameters::try_new(
+            LweParameters::new(
+                DIM,
+                T::as_from(16usize),
+                modulus,
+                client_params.secret_key_distr(),
+                0.7,
+            ),
+            gadget.clone(),
+            NlevParameters::with_ntru_params(&client_params, 8, None),
+        )
+        .unwrap(),
+        ntt,
+    )
+    .unwrap();
+    let ntt = context.table();
     let basis = gadget.basis();
     let scalars: Vec<i128> = basis.scalar_iter().map(|v| v.as_into()).collect();
     let digit_bound: i128 = basis.basis_value().as_into();
     let digit_bound = digit_bound / 2;
     let residual: i128 = basis.approximate_error_bound().as_into();
-    let (secret, key) = NttNtruSecretKey::generate_pair(&params, &ntt, &mut rng).unwrap();
+    let (secret, key) = NttNtruSecretKey::generate_pair(&params, ntt, &mut rng).unwrap();
     let secret_coefficients: Vec<i128> = secret.as_slice().iter().map(|&v| v.as_into()).collect();
     let secret_norm: i128 = secret_coefficients.iter().map(|v| v.abs()).sum();
 
@@ -117,7 +134,7 @@ fn check_bucket<T: FheUint, Table: NttTable<ValueT = T>>(q: T) {
         T::ONE,
         &mut initializer,
         &gadget,
-        &ntt,
+        ntt,
         &mut rng,
         &mut NttNtruGadgetEncryptContext::new(N),
     );
@@ -145,7 +162,7 @@ fn check_bucket<T: FheUint, Table: NttTable<ValueT = T>>(q: T) {
     let mut product = NtruCiphertext::<Vec<T>>::zero(N);
     let mut scratch = NttNtruExternalProductContext::new(N);
     let (_, allocations) = measure(|| {
-        initializer.external_product_to(&encoded, &mut input, basis, modulus, &ntt, &mut scratch);
+        initializer.external_product_to(&encoded, &mut input, basis, modulus, ntt, &mut scratch);
     });
     assert_eq!(allocations.count, 0);
     let input_phase = phase(input.as_ref(), secret.as_slice(), q_wide);
@@ -154,41 +171,13 @@ fn check_bucket<T: FheUint, Table: NttTable<ValueT = T>>(q: T) {
 
     // c=1,b>n guarantees publicly empty buckets as well as occupied/nonempty ones.
     for (copies, buckets) in [(3, 8), (1, DIM + 1)] {
-        let (map, selected) =
-            BucketMap::try_generate(DIM, copies, buckets, &nonzero_indices, &mut rng).unwrap();
-        assert_eq!(client.as_slice(), client_before.as_slice());
-        let mut recovered: Vec<_> = selected
-            .iter()
-            .copied()
-            .filter(|&i| i != BucketMap::UNASSIGNED)
-            .collect();
-        recovered.sort_unstable();
-        assert_eq!(recovered, *nonzero_indices);
-
-        // Final coefficient layout: [bucket][entry...,dummy][level][coefficient].
-        // Every slot gets fresh noise, including zero selectors and zero dummies.
-        let mut bits = Zeroizing::new(Vec::new());
-        for (bucket, &chosen) in selected.iter().enumerate() {
-            let start = map.bucket_offsets()[bucket];
-            let end = map.bucket_offsets()[bucket + 1];
-            bits.extend(map.input_indices()[start..end].iter().map(|&i| {
-                if i == chosen {
-                    T::SignedInteger::ONE
-                } else {
-                    T::SignedInteger::ZERO
-                }
-            }));
-            bits.push(if chosen == BucketMap::UNASSIGNED {
-                T::SignedInteger::ONE
-            } else {
-                T::SignedInteger::ZERO
-            });
-        }
-        let mut data = vec![T::ZERO; bits.len() * gadget.nlev_len()];
-        key.encrypt_ngsw_signed_constant_batch_to(&bits, &mut data, &gadget, &ntt, &mut rng);
-        for polynomial in data.as_chunks_mut::<N>().0.iter_mut() {
-            ntt.inverse_transform_slice(polynomial);
-        }
+        let imported = ClientKey::new(client.clone(), secret.clone(), DIM);
+        let server = KeyGenerator::new(&context)
+            .try_generate_sparse_server_key(&imported, copies, buckets, &mut rng)
+            .unwrap();
+        let key = server.sparse_bootstrapping_key().unwrap();
+        let data = key.as_slice();
+        assert_eq!(data.len(), (copies * DIM + buckets) * gadget.nlev_len());
         // Independently recover every row phase, including encrypted zeros.
         let row_phases: Vec<_> = data
             .as_chunks::<N>()
@@ -196,22 +185,43 @@ fn check_bucket<T: FheUint, Table: NttTable<ValueT = T>>(q: T) {
             .iter()
             .map(|row| phase(row, secret.as_slice(), q_wide))
             .collect();
+        // Decode only the top control row with the independent phase oracle.
+        let top = *scalars.last().unwrap();
+        let zero = vec![0; N];
+        let one: Vec<_> = secret_coefficients
+            .iter()
+            .map(|&f| (f * top).rem_euclid(q_wide))
+            .collect();
+        let bits: Vec<_> = row_phases
+            .chunks_exact(scalars.len())
+            .map(|rows| {
+                let row = rows.last().unwrap();
+                let e0 = max_error(row, &zero, q_wide);
+                let e1 = max_error(row, &one, q_wide);
+                assert!(e0.min(e1) < q_wide / 1000);
+                usize::from(e1 < e0)
+            })
+            .collect();
         let mut aggregate = vec![q - T::ONE; gadget.nlev_len()];
         let mut public_empty = 0;
-        for (bucket, &chosen) in selected.iter().enumerate() {
-            let start = map.bucket_offsets()[bucket];
-            let end = map.bucket_offsets()[bucket + 1];
-            let indices = &map.input_indices()[start..end];
+        let mut start = 0;
+        let mut selected_counts = [0; DIM];
+        let mut copy_counts = [0; DIM];
+        for bucket in 0..key.bucket_count() {
+            let (indices, _) = key.bucket(bucket);
             public_empty += usize::from(indices.is_empty());
             let first = start + bucket;
-            let dummy = end + bucket;
-            assert_eq!(
-                bits[first..=dummy]
-                    .iter()
-                    .filter(|&&v| v == T::SignedInteger::ONE)
-                    .count(),
-                1
-            );
+            let dummy = first + indices.len();
+            start += indices.len();
+            assert_eq!(bits[first..=dummy].iter().sum::<usize>(), 1);
+            let mut chosen = None;
+            for (&index, &bit) in indices.iter().zip(&bits[first..dummy]) {
+                copy_counts[index] += 1;
+                selected_counts[index] += bit;
+                if bit == 1 {
+                    chosen = Some(index);
+                }
+            }
             let controls = &data[first * gadget.nlev_len()..dummy * gadget.nlev_len()];
             let dummy_control = &data[dummy * gadget.nlev_len()..(dummy + 1) * gadget.nlev_len()];
             // Include identity, sign change, and both sides of negacyclic wrap.
@@ -219,11 +229,7 @@ fn check_bucket<T: FheUint, Table: NttTable<ValueT = T>>(q: T) {
                 let exponents: Vec<_> = (0..DIM)
                     .map(|i| shift.map_or(0, |s| (s + 7 * i) % (2 * N)))
                     .collect();
-                let exponent = if chosen == BucketMap::UNASSIGNED {
-                    0
-                } else {
-                    exponents[chosen]
-                };
+                let exponent = chosen.map_or(0, |i| exponents[i]);
                 let (_, allocations) = measure(|| {
                     aggregate.copy_from_slice(dummy_control);
                     for (&i, control) in
@@ -243,13 +249,13 @@ fn check_bucket<T: FheUint, Table: NttTable<ValueT = T>>(q: T) {
                         }
                     }
                     NgswCiphertext::new(aggregate.as_mut_slice())
-                        .into_ntt_form(&ntt)
+                        .into_ntt_form(ntt)
                         .external_product_to(
                             &input,
                             &mut product,
                             basis,
                             modulus,
-                            &ntt,
+                            ntt,
                             &mut scratch,
                         );
                 });
@@ -295,6 +301,10 @@ fn check_bucket<T: FheUint, Table: NttTable<ValueT = T>>(q: T) {
                         <= init_bound + bucket_bound
                 );
             }
+        }
+        assert_eq!(copy_counts, [copies; DIM]);
+        for (index, count) in selected_counts.into_iter().enumerate() {
+            assert_eq!(count, usize::from(nonzero_indices.contains(&index)));
         }
         if copies == 1 {
             assert!(public_empty > 0);

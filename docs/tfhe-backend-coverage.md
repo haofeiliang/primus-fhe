@@ -17,7 +17,7 @@
 3. **NTRU NTT 分解式 MVB**：B3.1–B3.2 已完成完整链、误差/相关性和成本验收，见 [NTRU MVB 测量](tfhe-mvb-ntru.md)。
 4. **GLWE Fourier 固定重量二元稀疏 PBS**：B4 已完成共享映射、系数域桶聚合、完整求值及成本验收；低重量负载有收益，保留参考实现。
 
-**Native 偶尺度 MVB** 已完成 GLWE/NTRU 正式接入及各自误差验收；**GLWE 两后端 sparse CBS 已正式接入**。仍需原型验证的组合包括 **NTRU 桶聚合**。其中有的代数已成立，但尚未建立完整的表示、采样或误差契约。不要把“尚未验证”写成“数学上不适配”，也不要把“有底层原语”写成“已有完整功能”。
+**Native 偶尺度 MVB** 已完成 GLWE/NTRU 正式接入及各自误差验收；**GLWE 两后端 sparse CBS 已正式接入**。**NTRU NTT 桶聚合普通/ManyLUT 已实验性接入**；仍需原型验证的组合包括 **NTRU Fourier 桶聚合及 NTRU sparse CBS/MVB**。其中有的代数已成立，但尚未建立完整的表示、采样或误差契约。不要把“尚未验证”写成“数学上不适配”，也不要把“有底层原语”写成“已有完整功能”。
 
 ## 2. 当前能力矩阵
 
@@ -34,7 +34,7 @@
 | 经典 binary BR | 支持 | 支持 | 支持 | 支持 |
 | 经典 ternary BR | 支持 | 支持 | 支持 | 支持 |
 | 固定重量 binary 使用经典 BR | 支持 | 支持 | 需生成可逆客户端秘密 | 还受奇数重量/逆元稳定性限制 |
-| 固定重量 binary 桶聚合 BR | 支持 | 支持，收益取决于重量/负载 | 未接入 | 未接入 |
+| 固定重量 binary 桶聚合 BR | 支持 | 支持，收益取决于重量/负载 | 实验性支持普通/ManyLUT | 未接入 |
 | Boolean 门、NOT、MUX | 支持 | 支持 | 支持 | 支持 |
 | CBS | 经典 binary/ternary、稀疏 binary → GGSW | 经典 binary/ternary、稀疏 binary → Fourier GGSW | binary/ternary → NGSW | binary/ternary → NGSW |
 | 固定尺度差分 MVB | 支持，含经典/稀疏 | 支持，偶尺度 u32/u64、经典/稀疏 | 支持，经典 binary/ternary | 支持，偶尺度 u32/u64、经典 binary/ternary |
@@ -218,7 +218,7 @@ NGSW 同样可加密桶内 selector 并形成单项式控制，但现成 GLWE sp
 
 Native 二元固定重量 `h` 为偶数时 `f(1)` 为偶数，重试不能解决；应在参数边界明确拒绝这种组合。奇数重量通过该代数条件，也仍需满足 Fourier 稳定性与所选分布的安全要求。NTT 没有同一条模 2 障碍，但仍须拒绝不可逆候选。
 
-**B8.1 NTT 单桶原型已通过**：复用可逆前缀采样和共享 `BucketMap`，u32/u64 的 selector/dummy 聚合、独立整数相位、初始化/单桶预算及零分配通过，另记录 n=728 的默认/SIMD 数值诊断。[专项](tfhe-ntru-sparse.md)给出可逆性与映射两次条件化的契约，不继承 GLWE 的秘密分布结论。尚无 sparse server key 或完整 PBS API；B8.2 再核对完整链、量化/KS、资源与成本，Fourier 留给 B8.3。**低重量秘密使用经典 BR 已可表达，不等于桶聚合后端已经实现。**
+**B8.1–B8.2 NTT 完整链已验收**：复用可逆前缀采样和共享 `BucketMap`，专用系数 NGSW 控制接入原有 `ServerKey` 与普通/ManyLUT evaluator。独立行相位、初始化/单桶预算、完整旋转/KS 相位及零分配通过。n=728 默认/SIMD 对照中，在线快约 39%–67%，server keygen 约为经典的 3.20–3.31 倍，key 约大 3.08 倍，保持显式选择。[专项](tfhe-ntru-sparse.md)记录采样的两次条件化和完整成本，不继承 GLWE 的秘密分布或安全结论。sparse CBS/MVB 明确拒绝，Fourier 留给 B8.3。低重量秘密使用经典 BR 仍是独立选择。
 
 ## 6. 当前不适配与有意保留的边界
 

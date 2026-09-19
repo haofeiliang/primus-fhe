@@ -150,9 +150,12 @@ pub enum CircuitBootstrapParameterError {
     UnsupportedTraceModulus,
 }
 
-/// Failure to generate ordinary or circuit-bootstrap keys for this TFHE family.
+/// Failure to generate classic, sparse or circuit-bootstrap keys for this TFHE family.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum KeyGenerationError {
+    /// Sparse blind-rotation key generation failed.
+    #[error(transparent)]
+    SparseBootstrapping(#[from] SparseBootstrappingKeyError),
     /// The supplied client secrets do not match the TFHE parameters.
     #[error(transparent)]
     ClientKey(#[from] TfheKeyError),
@@ -165,4 +168,24 @@ pub enum KeyGenerationError {
     /// NTRU rejection sampling or transform conversion failed.
     #[error("NTRU key generation or conversion failed: {0}")]
     Ntru(#[from] primus_ntru::NtruError),
+}
+
+/// Failure to construct an experimental NTRU sparse bootstrapping key.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum SparseBootstrappingKeyError {
+    /// Bucket selections require a fixed-weight binary client secret.
+    #[error("sparse bootstrapping requires a fixed-weight binary client secret")]
+    UnsupportedSecretDistribution,
+    /// The public weight must satisfy `0 < h < n`.
+    #[error("sparse Hamming weight must satisfy 0 < h < n")]
+    InvalidHammingWeight,
+    /// Actual client coefficients have a different weight from the declared one.
+    #[error("client coefficients do not match the declared Hamming weight")]
+    InvalidSecretWeight,
+    /// Public map validation or private matching failed.
+    #[error(transparent)]
+    BucketMap(#[from] primus_tfhe::sparse::BucketMapError),
+    /// Coefficient NGSW storage exceeds addressable allocation sizes.
+    #[error("sparse NGSW storage size overflow")]
+    StorageSizeOverflow,
 }

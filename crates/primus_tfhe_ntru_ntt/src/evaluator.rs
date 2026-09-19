@@ -42,7 +42,7 @@ where
         Ok(Self {
             context,
             server_key,
-            blind_rotation: BlindRotationWorkspace::new(context.parameters()),
+            blind_rotation: BlindRotationWorkspace::new(context.parameters(), server_key),
         })
     }
 
@@ -227,7 +227,7 @@ where
             &mut self.blind_rotation.scratch,
             parameters.ntru_key_switching().ntru().cipher_modulus(),
             self.context.table(),
-            self.blind_rotation.cmux.external_product(),
+            self.blind_rotation.rotation.external_product(),
         );
     }
 }

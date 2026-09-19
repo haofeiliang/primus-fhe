@@ -12,20 +12,24 @@ pub(crate) struct BlindRotationWorkspace<T: FheUint> {
     pub(crate) current: Ntru<Vec<T>>,
     /// BR temporary storage, then coefficient output under the client secret after KS.
     pub(crate) scratch: Ntru<Vec<T>>,
-    pub(crate) cmux: CmuxContext<T>,
+    pub(crate) rotation: RotationContext<T>,
 }
 
 impl<T: FheUint> BlindRotationWorkspace<T> {
     /// Allocates all NTT blind-rotation storage once.
-    pub(crate) fn new(parameters: &TfheParameters<T>) -> Self {
+    pub(crate) fn new(parameters: &TfheParameters<T>, server_key: &ServerKey<T>) -> Self {
         let poly_length = parameters.poly_length();
         Self {
             current: Ntru::zero(poly_length),
             scratch: Ntru::zero(poly_length),
-            cmux: if parameters.external_lwe().secret_key_distr().is_binary() {
-                CmuxContext::Binary(primus_ntru::NttNtruExternalProductContext::new(poly_length))
+            rotation: if server_key.sparse_bootstrapping_key().is_some() {
+                RotationContext::Sparse(crate::sparse::SparseWorkspace::new(parameters))
+            } else if parameters.external_lwe().secret_key_distr().is_binary() {
+                RotationContext::Binary(primus_ntru::NttNtruExternalProductContext::new(
+                    poly_length,
+                ))
             } else {
-                CmuxContext::Ternary(primus_ntru::NttNtruTernaryCmuxContext::new(
+                RotationContext::Ternary(primus_ntru::NttNtruTernaryCmuxContext::new(
                     poly_length,
                     parameters.blind_rotation().decompose_length(),
                 ))
@@ -34,16 +38,18 @@ impl<T: FheUint> BlindRotationWorkspace<T> {
     }
 }
 
-pub(crate) enum CmuxContext<T: FheUint> {
+pub(crate) enum RotationContext<T: FheUint> {
+    Sparse(crate::sparse::SparseWorkspace<T>),
     Binary(primus_ntru::NttNtruExternalProductContext<T>),
     Ternary(primus_ntru::NttNtruTernaryCmuxContext<T>),
 }
 
-impl<T: FheUint> CmuxContext<T> {
+impl<T: FheUint> RotationContext<T> {
     pub(crate) fn external_product(
         &mut self,
     ) -> &mut primus_ntru::NttNtruExternalProductContext<T> {
         match self {
+            Self::Sparse(context) => &mut context.external_product,
             Self::Binary(context) => context,
             Self::Ternary(context) => context.external_product_context(),
         }
@@ -92,14 +98,28 @@ pub(crate) fn blind_rotate_lookup_table_to<T, Table, A>(
         server_key.blind_rotation_basis(),
         parameters.accumulator_ntru().cipher_modulus(),
         ntt,
-        workspace.cmux.external_product(),
+        workspace.rotation.external_product(),
     );
 
     let basis = server_key.blind_rotation_basis();
     let modulus = parameters.accumulator_ntru().cipher_modulus();
     // One public layout dispatch per BR; the coordinate loop stays specialized.
-    match &mut workspace.cmux {
-        CmuxContext::Binary(product) => rotate_controls(
+    match &mut workspace.rotation {
+        RotationContext::Sparse(scratch) => {
+            quantizer.exponent_slice_to(input.a(), &mut scratch.exponents);
+            crate::sparse::rotate_buckets(
+                server_key
+                    .sparse_bootstrapping_key()
+                    .expect("sparse workspace requires a sparse key"),
+                scratch,
+                &mut workspace.current,
+                &mut workspace.scratch,
+                basis,
+                modulus,
+                ntt,
+            );
+        }
+        RotationContext::Binary(product) => rotate_controls(
             input.a(),
             server_key.iter_binary_controls(),
             &mut workspace.current,
@@ -109,7 +129,7 @@ pub(crate) fn blind_rotate_lookup_table_to<T, Table, A>(
                 control.cmux_monomial_to(input, exponent, output, basis, modulus, ntt, product)
             },
         ),
-        CmuxContext::Ternary(product) => rotate_controls(
+        RotationContext::Ternary(product) => rotate_controls(
             input.a(),
             server_key.iter_ternary_controls(),
             &mut workspace.current,

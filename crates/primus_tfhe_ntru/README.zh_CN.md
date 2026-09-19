@@ -36,6 +36,10 @@ Ternary 每坐标保存正负两份 NGSW，融合单步使用一次外积；`Spa
 不启用桶聚合。Native 下固定非零总重量必须为奇数，且仍需通过 Fourier 逆元筛选；
 生成结果服从后端接受条件下的分布，不能直接沿用未筛选 ternary 的安全估计。
 
+[NTT 桶聚合](../primus_tfhe_ntru_ntt/README.zh_CN.md#实验性稀疏-pbs)由固定重量二元客户端
+的专用 server-key 入口显式选择，支持普通/ManyLUT PBS，拒绝 sparse CBS/MVB。
+可逆客户端固定后才采样公开映射；匹配失败不会重采客户端。
+
 ## 客户端与 LUT
 
 Client 加密接受 `T`，解密返回 `Result<T, TfheClientError>`，消息是 `[0,t)` 内的

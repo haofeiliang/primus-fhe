@@ -3,6 +3,9 @@
 /// An error produced while constructing a TFHE evaluator.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum TfheEvaluationError {
+    /// The requested evaluator has not been validated with sparse bootstrapping keys.
+    #[error("this evaluator does not support sparse bootstrapping keys")]
+    UnsupportedSparseBootstrapping,
     /// Boolean gates require input modulus 4 and signed LUT values at modulus-8 scale.
     #[error("Boolean evaluation requires plaintext modulus 4 and ciphertext moduli greater than 8")]
     InvalidBooleanEncoding,

@@ -45,6 +45,11 @@ aggregation. With Native, fixed nonzero weight must be odd and Fourier inverse s
 still applies. Generated secrets follow the backend's conditional distribution, so an
 unconditioned ternary security estimate does not directly apply.
 
+[NTT bucket aggregation](../primus_tfhe_ntru_ntt/README.md#experimental-sparse-pbs)
+is an explicit server-key choice for fixed-weight binary clients. It supports
+ordinary/ManyLUT PBS; sparse CBS/MVB are rejected. The public map is sampled after
+fixing the invertible client, and matching failure never resamples that client.
+
 ## Clients and LUTs
 
 Client encryption takes `T`, and decryption returns `Result<T, TfheClientError>`

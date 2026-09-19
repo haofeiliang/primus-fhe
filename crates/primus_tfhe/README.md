@@ -35,6 +35,10 @@ secrets, with both orders and ordinary/interleaved/factorized LUTs.
 respective exact-transform and native coefficient-aggregation paths. Both support sparse CBS;
 sparse ternary remains unsupported.
 
+[NTRU NTT sparse PBS](../primus_tfhe_ntru_ntt/README.md#experimental-sparse-pbs)
+supports ordinary and interleaved LUTs for a fixed invertible binary client.
+Its CBS/MVB combinations are rejected; NTRU Fourier bucket aggregation is not available.
+
 ## Error boundaries
 
 Errors are named by operation and re-exported at crate roots. Handle the error
@@ -46,7 +50,7 @@ type returned by the operation you call.
 | TFHE / CBS parameter preparation | Family `TfheParameterError` / `CircuitBootstrapParameterError` |
 | Client-key compatibility / client operations | Family `TfheKeyError` / `TfheClientError` |
 | Boolean client construction, encryption and decryption | Family `BooleanError`; `Client` retains underlying client failures |
-| Ordinary, sparse server, or standalone CBS key generation | Family `KeyGenerationError`; NTRU sampling/conversion enters `Ntru` directly; GLWE sparse failures enter `SparseBootstrapping` |
+| Ordinary, sparse server, or standalone CBS key generation | Family `KeyGenerationError`; NTRU sampling/conversion enters `Ntru` directly; sparse failures enter `SparseBootstrapping` |
 | Raw sparse GLWE BSK generation | Family `SparseBootstrappingKeyError`; `BucketMap` retains underlying mapping failures |
 | Automatic table creation or explicit table binding | Backend `TfheContextError`; `TransformTable` retains the underlying FFT/NTT error |
 
