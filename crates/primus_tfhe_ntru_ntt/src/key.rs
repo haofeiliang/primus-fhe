@@ -101,7 +101,7 @@ where
     {
         let parameters = self.context.parameters();
         let lwe_dimension = parameters.external_lwe_dimension();
-        let (client, _) = NttNtruSecretKey::generate_padded_binary_pair(
+        let (client, _) = NttNtruSecretKey::generate_padded_pair(
             parameters.ntru_key_switching().ntru(),
             lwe_dimension,
             self.context.table(),
@@ -263,7 +263,7 @@ where
         let circuit_parameters = self.prepare_circuit_bootstrap(circuit_bootstrap)?;
         let parameters = self.context.parameters();
         let lwe_dimension = parameters.external_lwe_dimension();
-        let (client, client_ntt) = NttNtruSecretKey::generate_padded_binary_pair(
+        let (client, client_ntt) = NttNtruSecretKey::generate_padded_pair(
             parameters.ntru_key_switching().ntru(),
             lwe_dimension,
             self.context.table(),

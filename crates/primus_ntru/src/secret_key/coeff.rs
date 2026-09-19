@@ -74,7 +74,8 @@ impl<T: FheUint> NtruSecretKey<T> {
         self.key.len()
     }
 
-    /// Returns the distribution used to sample this key.
+    /// Returns the proposal distribution. Transform-domain key generation
+    /// conditions it on invertibility and, for Fourier, the numerical guard.
     #[inline]
     pub fn distr(&self) -> SecretKeyDistr {
         self.distr

@@ -35,6 +35,16 @@ NTT generation rejects keys with a zero evaluation. Fourier generation checks
 native-ring invertibility (odd coefficient sum) and the stability of the complex
 inverse. These conditions differ. Bounded rejection sampling can fail, and its
 attempt count and inversion routines are not promised constant time.
+
+`generate_padded_pair(params, active_length, ...)` samples only the active
+prefix and leaves the suffix zero; fixed weights apply to that prefix. It uses
+the same samplers as full-length generation, including ternary. Generation tries
+at most 1024 candidates. Native fixed binary/ternary distributions with even
+nonzero count return `NonInvertibleSecretKey` before sampling; otherwise an
+unsuccessful search returns `KeyGenerationExhausted`. A returned key follows the
+proposal distribution **conditioned on backend acceptance**; `distr()` records
+the proposal.
+
 General NTRU supports nonbinary secrets. The NTRU TFHE layer separately validates
 the binary, zero-padded control-secret requirement for blind rotation.
 

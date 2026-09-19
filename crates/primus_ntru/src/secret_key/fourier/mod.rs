@@ -92,7 +92,7 @@ impl FourierNtruSecretKey {
         self.poly_length
     }
 
-    /// Returns the distribution used to sample the coefficient key.
+    /// Returns the proposal distribution before backend rejection sampling.
     #[inline]
     pub fn distr(&self) -> SecretKeyDistr {
         self.distr
@@ -173,12 +173,14 @@ impl FourierNtruSecretKey {
     /// returns its signed coefficient and Fourier representations.
     ///
     /// Secret buffers are allocated once, reused across rejected candidates,
-    /// and erased on drop, including exhausted searches and unwinding.
+    /// and erased on drop, including exhausted searches and unwinding. See
+    /// [`Self::generate_padded_pair`] for the accepted distribution.
     ///
     /// # Errors
     ///
     /// Returns [`NtruError::KeyGenerationExhausted`] if no acceptable key is
-    /// found within the bounded search.
+    /// found within 1024 attempts. A fixed binary/ternary weight with even total
+    /// nonzero count returns [`NtruError::NonInvertibleSecretKey`] before sampling.
     ///
     /// # Panics
     ///
@@ -194,50 +196,36 @@ impl FourierNtruSecretKey {
         Table: FftTable,
         R: rand::Rng + rand::CryptoRng,
     {
-        assert_eq!(fft.poly_length(), params.poly_length());
-
-        let mut coefficient_key =
-            NtruSecretKey::allocate(params.poly_length(), params.secret_key_distr());
-        let mut transformed = Self::allocate(params.poly_length(), params.secret_key_distr());
-        let mut native_coefficients = Zeroizing::new(vec![T::ZERO; params.poly_length()]);
-        let sampler = params.secret_key_sampler();
-        for _ in 0..crate::parameter::KEY_GENERATION_ATTEMPTS {
-            sampler.sample_signed_to(&mut coefficient_key.key, rng);
-            if !Self::is_unit_mod_two(&coefficient_key) {
-                continue;
-            }
-            match transformed.try_update_from_coeff_secret_key(
-                &coefficient_key,
-                &mut native_coefficients,
-                fft,
-            ) {
-                Ok(()) => return Ok((coefficient_key, transformed)),
-                Err(NtruError::UnstableFourierInverse) => {}
-                Err(error) => return Err(error),
-            }
-        }
-        Err(NtruError::KeyGenerationExhausted)
+        Self::generate_padded_pair(params, params.poly_length(), fft, rng)
     }
 
-    /// Rejection-samples a stable binary prefix padded to the NTRU ring.
+    /// Rejection-samples a coefficient prefix padded to the NTRU ring.
     ///
     /// The coefficient key contains `active_length` coefficients sampled from
-    /// the configured binary distribution followed by zeros. The same key can
-    /// therefore be viewed as a smaller external LWE secret after compact
-    /// extraction.
+    /// the configured distribution followed by zeros. Fixed weights apply to
+    /// this prefix, not to the full ring. The same key can therefore be viewed
+    /// as a smaller external LWE secret after compact extraction.
     ///
+    /// Returns the first accepted candidate within 1024 attempts. Its distribution
+    /// is the configured prefix distribution conditioned on backend acceptance;
+    /// [`NtruSecretKey::distr`] records the proposal, not this conditioning.
     /// Buffers are reused and erased as in [`Self::generate_pair`].
     ///
     /// # Errors
     ///
-    /// Returns [`NtruError::KeyGenerationExhausted`] if the search is exhausted.
+    /// Returns [`NtruError::NonInvertibleSecretKey`] before sampling if a fixed
+    /// binary/ternary weight has even total nonzero count. Otherwise each candidate
+    /// must have odd coefficient sum and a finite Fourier norm squared greater
+    /// than `f64::EPSILON` at every evaluation. Returns
+    /// [`NtruError::KeyGenerationExhausted`] if no candidate passes within 1024 attempts.
+    /// This numerical guard does not certify downstream noise or precision.
     ///
     /// # Panics
     ///
-    /// Panics unless the parameter distribution is binary and
-    /// `active_length` belongs to `1..=N`. Also panics if a fixed Hamming weight
-    /// exceeds `active_length`, or the FFT length differs from the parameters.
-    pub fn generate_padded_binary_pair<T, Table, R>(
+    /// Panics unless `active_length` belongs to `1..=N`. Also panics if a fixed
+    /// weight exceeds `active_length` or its sum overflows, or the FFT length
+    /// differs from the parameters.
+    pub fn generate_padded_pair<T, Table, R>(
         params: &NtruParameters<T, NativeModulus<T>>,
         active_length: usize,
         fft: &mut FftEngine<'_, Table>,
@@ -248,9 +236,13 @@ impl FourierNtruSecretKey {
         Table: FftTable,
         R: rand::Rng + rand::CryptoRng,
     {
-        assert!(params.secret_key_distr().is_binary());
-        assert!((1..=params.poly_length()).contains(&active_length));
+        assert!(
+            (1..=params.poly_length()).contains(&active_length),
+            "NTRU active length must belong to 1..=N"
+        );
         assert_eq!(fft.poly_length(), params.poly_length());
+
+        Self::check_fixed_weight_parity(params.secret_key_distr(), active_length)?;
 
         let mut coefficient_key =
             NtruSecretKey::allocate(params.poly_length(), params.secret_key_distr());
@@ -273,6 +265,34 @@ impl FourierNtruSecretKey {
             }
         }
         Err(NtruError::KeyGenerationExhausted)
+    }
+
+    /// Fixed binary/ternary weights determine f(1) mod 2 before sampling.
+    /// Check their prefix bounds first, so malformed counts are still caller
+    /// errors rather than being mistaken for a valid but impossible distribution.
+    fn check_fixed_weight_parity(
+        distribution: SecretKeyDistr,
+        active_length: usize,
+    ) -> Result<(), NtruError> {
+        let nonzero_weight = match distribution {
+            SecretKeyDistr::FixedHammingWeightBinary { hamming_weight }
+            | SecretKeyDistr::FixedHammingWeightTernary { hamming_weight } => hamming_weight,
+            SecretKeyDistr::FixedCompositionTernary {
+                negative_one_weight,
+                one_weight,
+            } => negative_one_weight
+                .checked_add(one_weight)
+                .expect("ternary Hamming weights must fit in usize"),
+            _ => return Ok(()),
+        };
+        assert!(
+            nonzero_weight <= active_length,
+            "NTRU nonzero weight must not exceed the active length"
+        );
+        if nonzero_weight % 2 == 0 {
+            return Err(NtruError::NonInvertibleSecretKey);
+        }
+        Ok(())
     }
 
     pub(super) fn assert_domain<T, Table>(

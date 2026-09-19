@@ -61,7 +61,7 @@ impl<T: FheUint> NttNtruSecretKey<T> {
         self.key.as_ref().len()
     }
 
-    /// Returns the distribution used to sample the coefficient key.
+    /// Returns the proposal distribution before backend rejection sampling.
     #[inline]
     pub fn distr(&self) -> SecretKeyDistr {
         self.distr
@@ -150,7 +150,8 @@ impl<T: FheUint> NttNtruSecretKey<T> {
     /// and NTT representations.
     ///
     /// Secret buffers are allocated once, reused across rejected candidates,
-    /// and erased on drop, including exhausted searches and unwinding.
+    /// and erased on drop, including exhausted searches and unwinding. See
+    /// [`Self::generate_padded_pair`] for the accepted distribution.
     ///
     /// # Errors
     ///
@@ -171,35 +172,19 @@ impl<T: FheUint> NttNtruSecretKey<T> {
         Table: NttTable<ValueT = T>,
         R: rand::Rng + rand::CryptoRng,
     {
-        assert_eq!(ntt_table.poly_length(), params.poly_length());
-        assert_eq!(ntt_table.modulus(), params.cipher_modulus().value());
-
-        let mut coefficient_key =
-            NtruSecretKey::allocate(params.poly_length(), params.secret_key_distr());
-        let mut transformed = Self::allocate(params.poly_length(), params.secret_key_distr());
-        let sampler = params.secret_key_sampler();
-        for _ in 0..crate::parameter::KEY_GENERATION_ATTEMPTS {
-            sampler.sample_signed_to(&mut coefficient_key.key, rng);
-            match transformed.try_update_from_coeff_secret_key(
-                &coefficient_key,
-                params.cipher_modulus(),
-                ntt_table,
-            ) {
-                Ok(()) => return Ok((coefficient_key, transformed)),
-                Err(NtruError::NonInvertibleSecretKey) => {}
-                Err(error) => return Err(error),
-            }
-        }
-        Err(NtruError::KeyGenerationExhausted)
+        Self::generate_padded_pair(params, params.poly_length(), ntt_table, rng)
     }
 
-    /// Rejection-samples an invertible binary prefix padded to the NTRU ring.
+    /// Rejection-samples an invertible coefficient prefix padded to the NTRU ring.
     ///
     /// The returned coefficient key has `active_length` coefficients sampled
-    /// from the configured binary distribution followed by zeros. This supports
-    /// compact extraction into a smaller LWE dimension while retaining an NTRU
-    /// key switch.
+    /// from the configured distribution followed by zeros. Fixed weights apply
+    /// to this prefix, not to the full ring. This supports compact extraction
+    /// into a smaller LWE dimension while retaining an NTRU key switch.
     ///
+    /// Returns the first accepted candidate within 1024 attempts. Its distribution
+    /// is the configured prefix distribution conditioned on backend acceptance;
+    /// [`NtruSecretKey::distr`] records the proposal, not this conditioning.
     /// Buffers are reused and erased as in [`Self::generate_pair`].
     ///
     /// # Errors
@@ -208,11 +193,10 @@ impl<T: FheUint> NttNtruSecretKey<T> {
     ///
     /// # Panics
     ///
-    /// Panics unless the parameter distribution is binary and
-    /// `active_length` belongs to `1..=N`. Also panics if a fixed Hamming weight
-    /// exceeds `active_length`, or the NTT table length or modulus differs from
-    /// the parameters.
-    pub fn generate_padded_binary_pair<M, Table, R>(
+    /// Panics unless `active_length` belongs to `1..=N`. Also panics if a fixed
+    /// weight exceeds `active_length` or its sum overflows, or the NTT table
+    /// length or modulus differs from the parameters.
+    pub fn generate_padded_pair<M, Table, R>(
         params: &NtruParameters<T, M>,
         active_length: usize,
         ntt_table: &Table,
@@ -223,8 +207,10 @@ impl<T: FheUint> NttNtruSecretKey<T> {
         Table: NttTable<ValueT = T>,
         R: rand::Rng + rand::CryptoRng,
     {
-        assert!(params.secret_key_distr().is_binary());
-        assert!((1..=params.poly_length()).contains(&active_length));
+        assert!(
+            (1..=params.poly_length()).contains(&active_length),
+            "NTRU active length must belong to 1..=N"
+        );
         assert_eq!(ntt_table.poly_length(), params.poly_length());
         assert_eq!(ntt_table.modulus(), params.cipher_modulus().value());
 

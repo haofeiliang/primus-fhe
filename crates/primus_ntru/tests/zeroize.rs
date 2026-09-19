@@ -252,12 +252,7 @@ fn secret_buffers_are_reused_and_erased() {
             3,
             || {
                 if padded {
-                    NttNtruSecretKey::generate_padded_binary_pair(
-                        &ntt_params,
-                        N / 2,
-                        &ntt,
-                        &mut words,
-                    )
+                    NttNtruSecretKey::generate_padded_pair(&ntt_params, N / 2, &ntt, &mut words)
                 } else {
                     NttNtruSecretKey::generate_pair(&ntt_params, &ntt, &mut words)
                 }
@@ -279,7 +274,7 @@ fn secret_buffers_are_reused_and_erased() {
             4,
             || {
                 if padded {
-                    FourierNtruSecretKey::generate_padded_binary_pair(
+                    FourierNtruSecretKey::generate_padded_pair(
                         &fourier_params,
                         N / 2,
                         &mut fft,
@@ -312,14 +307,14 @@ fn secret_buffers_are_reused_and_erased() {
         assert!(words.0.next().is_none());
     }
 
-    // Every weight-two candidate is nonzero but fails the parity check before
+    // Every all-one candidate is nonzero but fails the parity check before
     // FFT. Both retry paths allocate all four buffers once and erase them when
     // the search exhausts its attempt bound.
     let rejecting_params = NtruParameters::new(
         N,
         4,
         NativeModulus::<u32>::new(),
-        SecretKeyDistr::FixedHammingWeightBinary { hamming_weight: 2 },
+        SecretKeyDistr::binary(1.0),
         0.7,
     );
     for padded in [false, true] {
@@ -327,7 +322,7 @@ fn secret_buffers_are_reused_and_erased() {
             4,
             || {
                 if padded {
-                    FourierNtruSecretKey::generate_padded_binary_pair(
+                    FourierNtruSecretKey::generate_padded_pair(
                         &rejecting_params,
                         N / 2,
                         &mut fft,

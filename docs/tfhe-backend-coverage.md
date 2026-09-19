@@ -202,11 +202,13 @@ ACC += (NGSW(s+) - X^(-a) NGSW(s-)) ⊠ ((X^a-1) ACC)
 
 NTT NGSW 已有变换域单项式操作；仍需补专用 ternary CMUX/workspace、两份 selector 的 key 布局及 BR 分派。Fourier 还缺对应 NGSW 融合 helper，应沿用整数单项式变换与同一 FFT table 的契约。
 
-关键前置条件是 **`f_client` 本身必须可逆**，且 active prefix/padding 与外部 LWE 密钥一致。当前 TFHE 参数和 padded key generator 只接受 binary，不能仅删除参数检查：
+关键前置条件是 **`f_client` 本身必须可逆**，且 active prefix/padding 与外部 LWE 密钥一致。B7.1 已将底层 `generate_padded_pair` 扩展到 ternary；当前 TFHE 参数及控制内核仍只接受 binary，不能仅删除参数检查：
 
 - NTT 必须验证候选秘密在所选环内可逆。
 - Native、`N=2^k` 下，`f(1)` 必须为奇数；固定 ternary 非零总数 `h_+ + h_-` 为偶数时必不可逆。Fourier 还检查逆元数值稳定性。
 - 采样、拒绝条件、实际条件分布和安全估计必须一致；普通 PBS 通过后，再覆盖公钥输入、ManyLUT 和 CBS。
+
+采样前置已完成，实际条件分布、固定重量拒绝与验证边界见 [B7.1 专项](tfhe-ntru-ternary.md)。
 
 依据：[NTRU 参数限制](../crates/primus_tfhe_ntru/src/parameters.rs)、[Native 可逆性检查](../crates/primus_ntru/src/secret_key/fourier/mod.rs)、[NTT NGSW 单项式](../crates/primus_lattice/src/ngsw/ntt.rs)、[ternary 后续工作](tfhe-ternary.md#7-独立的后续工作)。
 

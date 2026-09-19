@@ -2,11 +2,11 @@
 
 依据：[后端覆盖分析](tfhe-backend-coverage.md)，初始源码基线 `7f1ef55`。本计划把已有算法的后端补齐与必要的高层接口整理拆成可独立验收的步骤；不重开已完成的 P1–P4、T1–T3，也不扩入 FDFB 等[新算法选型](tfhe-next.md)。
 
-B1–B6 已完成，GLWE 两后端 sparse CBS 已正式接入，下一步 B7.1。B1.4–B1.7 整理四后端高层接口，分析与性能对照基线为 `66ae701`；B2–B8 保留原编号。当前任务与下一步记录在 [HANDOFF](../HANDOFF.md)，算法依据仍由覆盖分析和各专项文档维护。
+B1–B6 与 B7.1 已完成；GLWE 两后端 sparse CBS 已正式接入，NTRU ternary 的采样前置已具备，下一步 B7.2。B1.4–B1.7 整理四后端高层接口，分析与性能对照基线为 `66ae701`；B2–B8 保留原编号。当前任务与下一步记录在 [HANDOFF](../HANDOFF.md)，算法依据仍由覆盖分析和各专项文档维护。
 
 ## 执行方式
 
-- 接下来推荐按 **`执行 B7.1` → 后续满足前置条件的步骤** 推进。`B1` 表示整个阶段；明确要求“执行 B1”时，完成其所有满足前置条件的剩余子步骤。
+- 接下来推荐按 **`执行 B7.2` → 后续满足前置条件的步骤** 推进。`B1` 表示整个阶段；明确要求“执行 B1”时，完成其所有满足前置条件的剩余子步骤。
 - 每步先核对 Git 状态、HANDOFF、本步及依赖结论；保留用户修改和暂存状态。编号不隐含暂存、提交或启动后续步骤。
 - **工程接入**：现成代数与原语支持实现，仍需正常验证。**原型验证**：先回答未决问题，结论可以是通过、缩小范围或暂缓。
 - “依赖原型通过”不同于“原型步骤已结束”。原型不成立时保留结论及最小反例，删除无长期价值的实验代码，暂缓依赖分支；其他独立阶段仍可执行。
@@ -22,7 +22,7 @@ B1–B6 已完成，GLWE 两后端 sparse CBS 已正式接入，下一步 B7.1�
 | B4 | GLWE Fourier 二元稀疏 PBS | B4.1–B4.3 | 已完成密钥、完整 PBS 与成本验收；保留参考实现，不含 sparse CBS/ternary |
 | B5 | Native 偶尺度 MVB | B5.1–B5.4 | 全部完成；[表示与误差](tfhe-mvb-fourier.md)、[组合与成本](tfhe-mvb-fourier-costs.md) |
 | B6 | sparse CBS | B6.1–B6.3 | 已完成 NTT/Fourier 独立误差验证与正式接入 |
-| B7 | NTRU 经典 ternary | B7.1–B7.4 | 先明确采样与控制原语，再接完整链；不依赖 sparse 算法 |
+| B7 | NTRU 经典 ternary | B7.1–B7.4 | B7.1 采样前置已完成；下一步控制原语，再接完整链；不依赖 sparse 算法 |
 | B8 | NTRU 二元桶聚合 PBS | B8.1–B8.3 | 独立方案原型；复用 B4.1 的纯匹配组件，不依赖 B7 |
 
 完成 B1 的接口整理后，后续能力沿用其参数、密钥和 evaluator 构造约定，避免重复迁移；这是工程顺序，Boolean 等算法并不依赖 CBS。其余独立能力不强制串成依赖链，例如 B5 原型失败不阻止 NTT sparse CBS；NTRU binary 桶聚合也不必等待 ternary。
@@ -158,11 +158,10 @@ Fourier 因原型噪声增加，按用户决定暂不接入。不阻塞 B2.1。
 
 入口：[NTRU ternary 条件](tfhe-backend-coverage.md#55-ntru-ternary控制代数与秘密采样分别处理)、[既有 GLWE ternary](tfhe-ternary.md)。
 
-### B7.1：秘密采样与可逆性前置
+### B7.1：秘密采样与可逆性前置（已完成）
 
-- **范围**：明确首批支持的 ternary 分布、active prefix、零 padding、可逆性和 bounded rejection 策略，验证 lower-level padded ternary 生成路径。
-- **通过条件**：Native 对固定 composition 的偶数 `h_++h_-` 明确拒绝；NTT 逐候选检查可逆；Fourier 另检查逆元稳定性。记录实际条件分布及尚未证明的安全结论，不能用采样通过率代替证明。
-- **边界**：此步不放开 TFHE 上层 binary 限制，不把 ternary 密钥送入原 binary CMUX。
+- **实现**：NTT/Fourier 共用各自的 `generate_padded_pair` 路径，支持五种 ternary 候选分布、有效前缀固定重量和零 padding；完整长度生成复用同一拒绝循环。Native 固定偶数非零重量在采样前返回 `NonInvertibleSecretKey`；NTT 逐候选求逆，Fourier 另检查复数逆元数值条件，最多 1024 次。
+- **验证与边界**：[秘密采样专项](tfhe-ntru-ternary.md)记录后端条件分布、安全与误差未决项，以及精确系数相位、两 FFT 和失败路径测试。不新增统计 CI 或基准；TFHE 上层仍只接受 binary，未将 ternary 密钥送入原 CMUX。
 
 ### B7.2：NTT NGSW ternary 单步
 
