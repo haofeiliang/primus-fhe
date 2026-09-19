@@ -9,7 +9,7 @@ workloads, not security parameter recommendations.
 
 See the [shared capability and encoding guide](../primus_tfhe/README.md) and
 [NTRU family/key domains](../primus_tfhe_ntru/README.md). Both NTRU backends support
-PBS, ManyLUT, Boolean gates and CBS.
+PBS, ManyLUT, factorized MVB, Boolean gates and CBS.
 See the [shared Boolean contracts](../primus_tfhe/README.md#boolean-gates).
 
 ## Ordinary PBS and ManyLUT
@@ -22,7 +22,7 @@ preserves FFT failures in `TfheContextError::TransformTable`. Use
 
 `TfheContext` binds parameters and a transform table. Generate paired client/server
 keys with `context.try_generate_keys(circuit_bootstrap, rng)`, obtain an encryptor/evaluator/decryptor,
-and compile LUTs through `context.parameters()`.
+and compile ordinary/interleaved LUTs through `context.parameters()`.
 The [message/carry example](examples/ntru_fourier_basic.rs) demonstrates multiple outputs
 sharing one BR and one ring key switch. Ordinary PBS returns LWE under the client
 secret; its post-BR NTRU key switch maps f_acc to f_client.
@@ -41,6 +41,48 @@ with `decrypt_phase` and that codec. Input geometry keeps the parameter encoding
 The [shared encoding guide](../primus_tfhe/README.md#choosing-the-output-encoding)
 and [NTRU client/LUT contract](../primus_tfhe_ntru/README.md#clients-and-luts)
 cover input domains, output codecs, odd full-domain PBS and ManyLUT noise margins.
+
+## Fixed-scale factorized MVB
+
+Use `context.compile_factorized_lookup_table_fn(&codec, input_domain_len,
+output_count, function)` with an unsigned `ScaledCodec` and a nonempty front-half
+input prefix. The actual Native scale must be even; odd scales return
+`LookupTableError::OddFactorizationScale`. Both u32/u64 and RustFFT/TfheFFT are supported.
+The plaintext modulus need not be a power of two: `t_out=10` works for both widths.
+
+```rust,ignore
+use primus_encoding::ScaledCodec;
+
+let codec = ScaledCodec::new(10u32, NativeModulus::new());
+let lut = context.compile_factorized_lookup_table_fn(
+    &codec, 8, 3, |m, i| u32::from(m > i),
+)?; // Assumes t_in >= 15 and sufficient noise margins.
+let mut evaluator = context.factorized_evaluator(&server_key)?;
+let mut outputs = vec![LweCiphertext::zero(context.parameters().external_lwe_dimension()); 3];
+evaluator.apply_lookup_table_to(&input, &lut, &mut outputs);
+let value = codec.decode_value(decryptor.decrypt_phase(&outputs[0])?);
+```
+
+`FourierFactorizedLookupTable` prepares integer Fourier factors once and borrows
+one context. A different context instance is rejected even with equal parameters;
+explicit preparation uses `FourierFactorizedLookupTable::new(context, coefficient_lut)`.
+The prepared program stores N torus coefficients and `output_count*N/2` complex
+values, with no retained coefficient copy of the factors.
+
+All outputs share encrypted `NLev[1]` initialization and one binary BR. Each
+factor product is then key-switched from `f_acc` to `f_client` and compactly
+extracted into the usual external LWE dimension. No additional key is needed.
+The evaluator adds two Fourier polynomials (N complex values), independent of
+output count, and `_to` checks all dimensions before writing with no online allocation.
+
+Factors amplify **initialization and BR noise**. FFT products add phase error
+`f_acc * delta_c`, followed by per-output key-switch error. Successful compilation
+does not certify a noise budget; decode with the supplied Scaled codec and budget
+center differences before another Rounded-input PBS. See the
+[shared encoding contract](../primus_tfhe/README.md#fixed-scale-factorized-mvb) and
+[NTRU precision evidence](../../docs/tfhe-mvb-fourier.md#b53ntru-接入与独立误差验收).
+The [basic example](examples/ntru_fourier_basic.rs) reuses public-key inputs for
+ManyLUT and MVB with explicit output codecs.
 
 ## Public-key clients
 

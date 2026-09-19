@@ -1,7 +1,9 @@
 # Native 偶尺度 MVB：Fourier 实现与验证
 
-**B5.2 已完成 GLWE Fourier 正式接入。** 使用入口见[后端 README](../crates/primus_tfhe_glwe_fourier/README.zh_CN.md#固定尺度分解式-mvb)，
-接口、工作区与验收范围见[下文](#b52正式接口与验收)。下一步为 B5.3 NTRU Fourier。
+**B5.2–B5.3 已完成两族 Fourier 正式接入。** 使用入口见
+[GLWE README](../crates/primus_tfhe_glwe_fourier/README.zh_CN.md#固定尺度分解式-mvb) 与
+[NTRU README](../crates/primus_tfhe_ntru_fourier/README.zh_CN.md#固定尺度分解式-mvb)。
+接口与误差验收分别见 [B5.2](#b52正式接口与验收) / [B5.3](#b53ntru-接入与独立误差验收)；下一步 B5.4。
 
 以下原型记录以 `1f6bab2` 为基线，覆盖 RustFFT/TfheFFT、Native u32/u64、小整数
 差分因子和经典 binary BK 链。历史测量不代表任意因子/参数的精度或当前实现的耗时，
@@ -213,5 +215,99 @@ BK 逐输出 KS，KB 先切换输入再做共享 BR。空间不随输出数增�
 默认/SIMD release 基本示例。参数只用于功能验证，仍须自行预算因子放大与
 `delta_b-sum(delta_a*s)` 的 FFT 相位误差。
 
-**后续边界**：NTRU 初始化/KS 由 B5.3 核对；Fourier sparse×MVB 当前明确拒绝，
+**后续边界**：NTRU 初始化/KS 已由下文 B5.3 核对；Fourier sparse×MVB 当前明确拒绝，
 其组合验收及与重复/交错 PBS 的应用成本比较归 B5.4。新接口不提供尾概率或安全认证。
+
+## B5.3：NTRU 接入与独立误差验收
+
+### 接口与工作区
+
+以 `7707c22` 加本步实现为基线。NTRU Fourier 提供与其他 MVB 后端一致的
+`compile_factorized_lookup_table_fn` / `factorized_evaluator`；共享 Native 编译器不再修改。
+`FourierFactorizedLookupTable` 消费系数程序，保留 V 与连续整数 Fourier 因子，绑定同一
+context；支持 u32/u64、两种 FFT 和现有 binary NGSW 控制，不增加密钥类型或底层 trait。
+
+NTRU 在线链保持独立：
+
+```text
+NLev_f_acc[1] 初始化旋转后的 V → 一次 binary BR → 共享 Fourier NTRU
+  → 每个整数因子 W_i：公开乘法 → 系数 NTRU → f_acc 到 f_client 的 KS → compact LWE
+```
+
+MVB evaluator 在普通工作区之外持有共享 Fourier NTRU 和一个 Fourier 乘积：共 N 个复数，
+与输出数无关；乘积逆变换写回现有 `current`，KS 写入现有 `scratch`。
+初始化、BR 及 KS 都使用原 server key，输出秘密和维数不变。公开程序占
+`N*sizeof(T) + k*N/2*sizeof(Complex64)` 的元素存储，不保留因子系数副本。
+不对带噪声的结果除二，也不将 KS 提前到因子乘法之前。
+
+[两个聚焦测试](../crates/primus_tfhe_ntru_fourier/tests/factorized_pbs.rs)共用小功能参数
+`n=8,h=3,N=128,t_in=15,t_out=10`，初始化/BR 与 KS 分解均为 `logB=8,L=3`，
+三处加密噪声标准差为 0.7。两种 FFT、u32/u64 均检查消息 0/3/7/0、三种函数、
+同 Scaled 单 PBS 对照、完整相位余量和首调用/复用零分配；另保留单输出、跨 context、
+编译元数据、输入/全部输出维数及失败后复用。默认合计约 0.24 秒。
+原基本示例复用 public-key 输入、同一 server key 和输出缓冲，演示 ManyLUT 与 MVB。
+
+### NTRU 独立诊断
+
+大参数诊断使用临时内部观测，不进入普通测试或增加公开访问器。以下参数和执行顺序
+用于复现；正式调用的输出逐字与分阶段路径对照。每组先以 seed=`0x42353310` 生成一对
+client/server key，再依次加密 16 个输入，消息 `m=j%8`；两种 FFT、u32/u64 分别重置 seed。
+
+| 参数 | 取值 |
+| --- | --- |
+| Native 字宽、环与外部维数 | u32/u64；N=1024，n=728 |
+| 客户端秘密 | 固定重量 binary h=33，剩余 N−n 系数补零 |
+| Accumulator 秘密 | SparseTernary |
+| 输入与输出 | Rounded t_in=15，D=8；unsigned Scaled t_out=10；k=3 |
+| 输入噪声标准差 | `3.2*2^w/16384` |
+| 初始化/BR 与 KS 噪声标准差 | 均为 0.7 个整数单位 |
+| 初始化/BR、KS 分解 | 均为 logB=8、L=3 |
+| 函数 | `9-m`、`9*(m%2)`、`[m>=3]` |
+| 因子 `(nnz,L1)` | `(8,18)`、`(8,72)`、`(2,2)` |
+
+h=33 满足 Native NTRU 所需的奇数重量，密钥生成仍检查可逆性与 Fourier 逆元稳定性。
+低重量使用逐坐标经典 BR，不是桶聚合；本组不是 GLWE 的等安全/等噪声参数。
+尤其两种字宽使用相同整数噪声与分解层数，不将数值大小直接解释为精度优劣。
+
+记 `b̄=R(b)`、`A=sum(R(a_j)*s_j) mod 2N`，使用实际逐系数量化结果：
+
+1. 单独执行正式 NLev 初始化外积，精确求相位 `f_acc*c_init`，减去 `X^-b̄ V` 得到
+   `e_init`。随后执行正式 BR，减去 `X^(A-b̄)V` 得到 `e_shared`；
+   `e_BR=e_shared-X^A e_init` 包含 BR 新增的控制加密、分解和数值误差。
+2. 各因子分别计算 `u_i=coeff_0(W_i*X^A e_init)` 和 `v_i=coeff_0(W_i*e_BR)`。
+   独立 i128 负循环卷积计算精确 `c_shared*W_i` 及其相位，核对乘法与取相位交换，
+   并检查 `|u_i+v_i| <= ||W_i||_1*||e_shared||_infinity`。
+3. 实际 FFT 乘法得到 `c_product`，令 `delta_c=c_product-exact(c_shared*W_i)`，
+   核对新增相位误差 `eta_i=coeff_0(f_acc*delta_c)`。这使用系数秘密和精确整数卷积，
+   不用 FFT 解密充当 oracle；本组长度与小整数因子在 i128 范围内。
+4. 执行实际 KS/提取，外部 LWE 相位减去乘后相位，定义 `k_i`；核对最终误差
+   `e_i=u_i+v_i+eta_i+k_i mod 2^w`，并确认实际旋转位置的理想 LUT 系数等于目标 Scaled 中心。
+5. 每项输出用 Scaled 解码，与相同编码的独立 PBS 比较。分阶段密文与公开 MVB 完整调用
+   逐字一致；所有完整输出相位误差小于 0.01q。
+
+环境为 x86_64 Linux、仓库 `target-cpu=native`；默认 rustc 1.98.0（88d9e12ae），
+SIMD nightly 1.100.0（bff8e12ff），后端 feature 为 `simd`。两次均使用 release 编译。
+默认与 SIMD 诊断均通过，科学记数法保留小数点后九位的[误差摘要](benchmarks/tfhe-b5.3-noise.csv)
+一致，只保存一份。初始化/BR/shared 各统计 16×N 个系数，后续各统计 16×3 个提取系数；
+下表单位均为 q，RMS 未去均值。除 FFT 误差单列范围外，两种 FFT 在表中精度下一致。
+
+| 误差阶段 | u32 RMS / 最大绝对值 | u64 RMS / 最大绝对值 |
+| --- | ---: | ---: |
+| 初始化 | 3.579e−7 / 7.632e−7 | 1.192e−8 / 1.192e−8 |
+| BR 新增 | 1.482e−5 / 5.966e−5 | 2.191e−6 / 9.358e−6 |
+| 共享初始化与 BR | 1.482e−5 / 6.010e−5 | 2.191e−6 / 9.346e−6 |
+| 乘后初始化贡献 | 3.632e−6 / 8.116e−6 | 1.205e−7 / 2.146e−7 |
+| 乘后 BR 贡献 | 2.766e−4 / 8.592e−4 | 2.858e−5 / 7.671e−5 |
+| 公开 FFT 乘法相位误差 | 0 / 0 | (2.705–2.882)e−16 / (7.576e−16–1.057e−15) |
+| KS 前 | 2.756e−4 / 8.577e−4 | 2.860e−5 / 7.671e−5 |
+| KS 新增 | 8.060e−7 / 1.945e−6 | 4.297e−7 / 1.192e−6 |
+| 完整 MVB | 2.757e−4 / 8.565e−4 | 2.859e−5 / 7.671e−5 |
+| 同编码独立 PBS | 1.242e−5 / 3.654e−5 | 2.041e−6 / 5.364e−6 |
+
+初始化贡献非零，已被因子放大，不能套用 GLWE 平凡初始化。u32 的零只表示本组
+乘法在提取相位上未观察到差异；u64 的额外 FFT 误差非零。各项相关且统计对象不同，
+不能将 RMS 直接相加；成功解码也不认证任意因子范数、参数或失败概率。
+
+验证包括 `just tfhe` / `just tfhe-simd`、严格 rustdoc、默认/SIMD release 基本示例。
+临时诊断已清理，无新增持久 benchmark；本步不测耗时，算法成本与 Fourier sparse×MVB
+组合仍留给 B5.4，不以 GLWE 原型计时替代 NTRU 性能结论。

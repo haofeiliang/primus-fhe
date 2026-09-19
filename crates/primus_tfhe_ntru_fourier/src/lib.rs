@@ -13,6 +13,12 @@
 //! keys and independent noise parameters with [`CircuitBootstrapConfig`] during key
 //! generation, then bind the evaluator from the resulting [`ServerKey`].
 
+//! [`TfheContext::compile_factorized_lookup_table_fn`] prepares Native even-scale
+//! MVB with unsigned Scaled outputs. [`FactorizedEvaluator`] shares NLev
+//! initialization and binary BR, then multiplies integer Fourier factors before
+//! each output key switch. Supports u32/u64; initialization, BR and FFT errors
+//! require an independent NTRU noise budget.
+
 #![deny(missing_docs)]
 
 use primus_modulus::NativeModulus;
@@ -35,12 +41,12 @@ pub use error::{
     CircuitBootstrapParameterError, KeyGenerationError, LookupTableError, TfheClientError,
     TfheContextError, TfheEvaluationError, TfheKeyError, TfheParameterError,
 };
-pub use evaluator::Evaluator;
+pub use evaluator::{Evaluator, FactorizedEvaluator, FourierFactorizedLookupTable};
 pub use key::{KeyGenerator, ServerKey};
 
 pub use primus_tfhe::{
-    BivariateLookupTable, CircuitBootstrapConfig, DecompositionConfig, InterleavedLookupTable,
-    LookupTable, LweCiphertext, LweSecretKeyRef,
+    BivariateLookupTable, CircuitBootstrapConfig, DecompositionConfig, FactorizedLookupTable,
+    InterleavedLookupTable, LookupTable, LweCiphertext, LweSecretKeyRef,
 };
 pub use primus_tfhe_ntru::{ClientKey, EncryptionKey, LwePublicKey};
 

@@ -122,7 +122,7 @@ Rounded LUT 求差分，跳变可达到 `q/t_out` 的量级，不能再声称其
 GLWE/NTRU NTT 使用奇数 `q`；[GLWE Fourier](tfhe-mvb-fourier.md)已接入 Native
 偶尺度、两种 FFT/u32/u64 的经典 binary/ternary 完整链。共享构造器接受这两种模数
 情况，不通过一次模逆或系数右移泛化；Fourier 因子准备与误差要求见专项。
-NTRU 的初始化和后处理保持独立，Fourier 移植归 B5.3。
+NTRU Fourier 也已接入相同 Native 编译契约，binary 初始化、BR 与后处理的独立验收见 [B5.3](tfhe-mvb-fourier.md#b53ntru-接入与独立误差验收)。
 
 ## 4. 噪声与容量条件
 

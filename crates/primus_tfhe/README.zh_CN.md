@@ -18,7 +18,7 @@ Boolean evaluator 持有门 LUT 与 LWE 工作区；客户端密钥、变换 tab
 | GLWE NTT | 显式域模数 | 支持 | 支持 | 支持 | 支持 |
 | GLWE Fourier | 原生 torus | 支持 | 偶尺度，u32/u64 | 支持 | 支持 |
 | NTRU NTT | 显式域模数 | 支持 | 支持 | 支持 | 支持 |
-| NTRU Fourier | 原生 torus | 支持 | 未实现 | 支持 | 支持 |
+| NTRU Fourier | 原生 torus | 支持 | 偶尺度，u32/u64 | 支持 | 支持 |
 
 四后端均支持私钥和 LWE 公钥客户端。Fourier 后端支持 RustFFT 与 TfheFFT。
 参数和 API 仍处于实验阶段；示例及 benchmark fixture 不是生产安全参数或失败概率建议。
@@ -279,9 +279,11 @@ Scaled codec；接入下一次 Rounded 输入 PBS 时须计入编码中心差异
 GLWE NTT 支持经典/稀疏密钥和两种 order；NTRU NTT 共享加密初始化和 BR，再逐输出 KS。
 [GLWE Fourier](../primus_tfhe_glwe_fourier/README.zh_CN.md#固定尺度分解式-mvb)
 支持 u32/u64、Native 偶尺度、经典 binary/ternary 和两种 order；因子按有符号整数变换，
-还须预算 FFT 误差。`t_out` 不必为二次幂，检查的是实际尺度。
+还须预算 FFT 误差。[NTRU Fourier](../primus_tfhe_ntru_fourier/README.zh_CN.md#固定尺度分解式-mvb)
+支持相同字宽和 Native 尺度，秘密为 binary；因子同时放大加密初始化和 BR 噪声，之后逐输出 KS。
+`t_out` 不必为二次幂，检查的是实际尺度。
 预处理产物借用一个 context，独立 evaluator 复用工作区。
-本实现不含奇数全域 MVB、NTRU Fourier 和 CBS 输出；代数与噪声条件见 [MVB 设计](../../docs/tfhe-mvb.md)。
+本实现不含奇数全域 MVB 和 CBS 输出；代数与噪声条件见 [MVB 设计](../../docs/tfhe-mvb.md)。
 
 [GLWE](../primus_tfhe_glwe_ntt/examples/mvb_thresholds.rs) 和
 [NTRU](../primus_tfhe_ntru_ntt/examples/ntru_ntt_mvb_thresholds.rs) 阈值示例展示一个加密分数

@@ -1,9 +1,13 @@
+use primus_encoding::ScaledCodec;
 use primus_fft::{FftEngine, FftTable, TorusFftValue};
+use primus_reduce::RingContext;
 
 use crate::{
     BooleanDecryptor, BooleanEncryptor, BooleanError, BooleanEvaluator, CircuitBootstrapConfig,
-    ClientKey, Decryptor, EncryptionKey, Encryptor, Evaluator, KeyGenerationError, KeyGenerator,
-    ServerKey, TfheClientError, TfheContextError, TfheEvaluationError, TfheParameters,
+    ClientKey, Decryptor, EncryptionKey, Encryptor, Evaluator, FactorizedEvaluator,
+    FactorizedLookupTable, FourierFactorizedLookupTable, KeyGenerationError, KeyGenerator,
+    LookupTableError, ServerKey, TfheClientError, TfheContextError, TfheEvaluationError,
+    TfheParameters,
 };
 
 /// Validated binding between native NTRU TFHE parameters and one Fourier table.
@@ -112,6 +116,53 @@ where
         server_key: &'a ServerKey<T>,
     ) -> Result<Evaluator<'a, T, Table>, TfheEvaluationError> {
         Evaluator::try_new(self, server_key)
+    }
+
+    /// Creates NTRU MVB workspace. Inherits
+    /// [`FactorizedEvaluator::try_new`]'s key and Fourier table requirements.
+    pub fn factorized_evaluator<'a>(
+        &'a self,
+        server_key: &'a ServerKey<T>,
+    ) -> Result<FactorizedEvaluator<'a, T, Table>, TfheEvaluationError> {
+        FactorizedEvaluator::try_new(self, server_key)
+    }
+
+    /// Compiles and Fourier-prepares a Native even-scale MVB program.
+    ///
+    /// `input_domain_len` selects a nonempty prefix of the parameter codec's
+    /// front half; `output_count` is positive and unpadded. The output codec
+    /// must use Native and have an even scale, including for nonbinary plaintext
+    /// moduli. Callback order follows [`FactorizedLookupTable::try_new`].
+    /// The result is bound to this context; factor amplification and FFT error
+    /// must satisfy [`FactorizedEvaluator::apply_lookup_table_to`]'s noise budget.
+    ///
+    /// # Panics
+    /// Panics for coefficient types other than u32/u64.
+    pub fn compile_factorized_lookup_table_fn<OM, F>(
+        &self,
+        output_codec: &ScaledCodec<T, OM>,
+        input_domain_len: usize,
+        output_count: usize,
+        function: F,
+    ) -> Result<FourierFactorizedLookupTable<'_, T, Table>, LookupTableError>
+    where
+        OM: RingContext<T>,
+        F: Fn(usize, usize) -> T,
+    {
+        if output_codec.ciphertext_modulus().explicit_value()
+            != self.parameters.accumulator_ntru().cipher_modulus_value()
+        {
+            return Err(LookupTableError::OutputModulusMismatch);
+        }
+        let lookup_table = FactorizedLookupTable::try_new(
+            input_domain_len,
+            self.parameters.accumulator_ntru().poly_length(),
+            output_count,
+            self.parameters.input_plaintext_codec(),
+            output_codec,
+            function,
+        )?;
+        Ok(FourierFactorizedLookupTable::new(self, lookup_table))
     }
 
     /// Creates a Boolean encryptor for a secret or public key, requiring `t = 4`.

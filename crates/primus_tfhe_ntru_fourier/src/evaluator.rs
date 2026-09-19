@@ -11,6 +11,9 @@ use crate::{
     blind_rotation::{BlindRotationWorkspace, blind_rotate_lookup_table_to},
 };
 
+mod factorized;
+pub use factorized::{FactorizedEvaluator, FourierFactorizedLookupTable};
+
 /// Allocation-free online evaluator for Fourier NTRU programmable bootstrapping.
 pub struct Evaluator<'a, T, Table>
 where

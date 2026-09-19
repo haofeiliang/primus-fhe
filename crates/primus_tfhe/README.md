@@ -19,7 +19,7 @@ Start with a backend example below for an end-to-end workflow.
 | GLWE NTT | Explicit field | Yes | Yes | Yes | Yes |
 | GLWE Fourier | Native torus | Yes | Even scale, u32/u64 | Yes | Yes |
 | NTRU NTT | Explicit field | Yes | Yes | Yes | Yes |
-| NTRU Fourier | Native torus | Yes | Not implemented | Yes | Yes |
+| NTRU Fourier | Native torus | Yes | Even scale, u32/u64 | Yes | Yes |
 
 All four backends support secret-key and LWE public-key clients. Fourier backends
 support RustFFT and TfheFFT. Parameters and APIs are experimental; example and
@@ -327,9 +327,12 @@ initialization and BR, then key-switches each product.
 [GLWE Fourier](../primus_tfhe_glwe_fourier/README.md#fixed-scale-factorized-mvb)
 supports classic binary/ternary keys and both orders with u32/u64 and an even
 Native scale; it transforms factors as signed integers and also requires an FFT
-error budget. `t_out` need not be a power of two: check the actual scale.
+error budget. [NTRU Fourier](../primus_tfhe_ntru_fourier/README.md#fixed-scale-factorized-mvb)
+supports the same widths and Native scales with binary keys; its factors amplify
+both encrypted initialization and BR noise before per-output key switching.
+`t_out` need not be a power of two: check the actual scale.
 Each prepared program borrows one context and its separate evaluator reuses scratch.
-Odd full-domain MVB, NTRU Fourier and CBS outputs remain outside this implementation.
+Odd full-domain MVB and CBS outputs remain outside this implementation.
 Algebra and noise conditions are detailed in the [MVB design](../../docs/tfhe-mvb.md).
 
 The [GLWE](../primus_tfhe_glwe_ntt/examples/mvb_thresholds.rs) and

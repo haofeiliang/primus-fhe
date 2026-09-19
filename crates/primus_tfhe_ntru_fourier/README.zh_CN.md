@@ -7,7 +7,7 @@
 API 和参数仍处于实验阶段；示例和基准是功能工作负载，不是安全参数建议。
 
 完整能力与编码约定见[公共指南](../primus_tfhe/README.zh_CN.md)，参数和秘密域见
-[NTRU family](../primus_tfhe_ntru/README.zh_CN.md)。两路 NTRU 后端均支持 PBS、ManyLUT 和 CBS，
+[NTRU family](../primus_tfhe_ntru/README.zh_CN.md)。两路 NTRU 后端均支持 PBS、ManyLUT、分解式 MVB 和 CBS，
 Boolean 门使用共享求值器，契约见[公共指南](../primus_tfhe/README.zh_CN.md#boolean-门)。
 
 ## 普通 PBS 与 ManyLUT
@@ -18,7 +18,7 @@ Boolean 门使用共享求值器，契约见[公共指南](../primus_tfhe/README
 已有表可用 `try_new(parameters, table)` 显式注入。
 
 `TfheContext` 绑定参数和变换 table。通过 `context.try_generate_keys(circuit_bootstrap, rng)` 生成配套密钥，
-建立 encryptor、evaluator、decryptor，再通过 `context.parameters()` 编译 LUT。[message/carry 示例](examples/ntru_fourier_basic.rs)
+建立 encryptor、evaluator、decryptor，再通过 `context.parameters()` 编译普通/交错 LUT。[message/carry 示例](examples/ntru_fourier_basic.rs)
 展示多个输出共享一次 BR 和一次环密钥切换。普通 PBS 返回 client secret 下的 LWE；
 BR 后的 NTRU 密钥切换将 f_acc 转为 f_client。
 
@@ -35,6 +35,40 @@ LUT 编译的第一个参数为输出 `RoundedCodec`。示例采用 `t_in=16 →
 输入域、输出 codec、奇数全域 PBS 和 ManyLUT 噪声余量见
 [共享编码指南](../primus_tfhe/README.zh_CN.md#选择输出编码)与
 [NTRU 客户端/LUT 契约](../primus_tfhe_ntru/README.zh_CN.md#客户端与-lut)。
+
+## 固定尺度分解式 MVB
+
+通过 `context.compile_factorized_lookup_table_fn(&codec, input_domain_len,
+output_count, function)` 编译，输出显式提供 unsigned `ScaledCodec`，输入选择非空前半域前缀。
+实际 Native 尺度必须为偶数，奇尺度返回 `LookupTableError::OddFactorizationScale`。
+支持 u32/u64 和 RustFFT/TfheFFT；明文模数不必为二次幂，`t_out=10` 在两种字宽下均可用。
+
+```rust,ignore
+use primus_encoding::ScaledCodec;
+
+let codec = ScaledCodec::new(10u32, NativeModulus::new());
+let lut = context.compile_factorized_lookup_table_fn(
+    &codec, 8, 3, |m, i| u32::from(m > i),
+)?; // 假定 t_in >= 15，且有足够的噪声余量。
+let mut evaluator = context.factorized_evaluator(&server_key)?;
+let mut outputs = vec![LweCiphertext::zero(context.parameters().external_lwe_dimension()); 3];
+evaluator.apply_lookup_table_to(&input, &lut, &mut outputs);
+let value = codec.decode_value(decryptor.decrypt_phase(&outputs[0])?);
+```
+
+`FourierFactorizedLookupTable` 一次准备整数 Fourier 因子并借用一个 context；即使参数相同，
+另一个实例也会被拒绝。显式准备入口为 `FourierFactorizedLookupTable::new(context, coefficient_lut)`。
+程序存储 N 个 torus 系数和 `output_count*N/2` 个复数，不保留因子的系数副本。
+
+全部输出共享 `NLev[1]` 加密初始化和一次 binary BR，再对每个因子乘积从 `f_acc`
+切换到 `f_client`，提取为通常的外部 LWE 维数。无需附加密钥。Evaluator 额外持有
+两个 Fourier 多项式（N 个复数），空间不随输出数增长；`_to` 在写入前检查全部维数，在线零分配。
+
+因子会放大**初始化和 BR 噪声**；FFT 乘法引入 `f_acc * delta_c` 相位误差，之后还有
+每个输出的 KS 误差。构造成功不代表噪声预算成立；须用提供的 Scaled codec 解码，
+接入下一次 Rounded 输入 PBS 时计入中心差异。详见[共享编码契约](../primus_tfhe/README.zh_CN.md#固定尺度分解式-mvb)
+及 [NTRU 精度验收](../../docs/tfhe-mvb-fourier.md#b53ntru-接入与独立误差验收)。
+[基本示例](examples/ntru_fourier_basic.rs) 复用公钥输入，分别用显式输出 codec 执行 ManyLUT 与 MVB。
 
 ## 公钥客户端
 

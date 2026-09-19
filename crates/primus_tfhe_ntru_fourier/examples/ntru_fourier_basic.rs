@@ -2,7 +2,7 @@
 //!
 //! These small parameters are for demonstration only, not for production.
 
-use primus_encoding::RoundedCodec;
+use primus_encoding::{RoundedCodec, ScaledCodec};
 use primus_fft::RustFftTable;
 use primus_lwe::{LweCiphertext, LweParameters};
 use primus_modulus::NativeModulus;
@@ -50,14 +50,22 @@ fn main() {
     // Input t=16 leaves programmable inputs 0..8. Encode message, carry and
     // parity with output t=4; three outputs occupy four interleaved slots.
     let output_codec = RoundedCodec::new(4, context.parameters().external_lwe().cipher_modulus());
+    let value = |input: usize, output: usize| match output {
+        0 => (input % 4) as u32,
+        1 => (input / 4) as u32,
+        _ => (input % 2) as u32,
+    };
     let lut = context
         .parameters()
-        .compile_interleaved_lookup_table_fn(&output_codec, 3, |input, output| match output {
-            0 => (input % 4) as u32,
-            1 => (input / 4) as u32,
-            _ => (input % 2) as u32,
-        })
+        .compile_interleaved_lookup_table_fn(&output_codec, 3, value)
         .unwrap();
+    // MVB shares initialization and BR, then switches each product separately.
+    // Native t_out=10 has an even Scaled delta; use this codec for its outputs.
+    let scaled = ScaledCodec::new(10, modulus);
+    let factorized = context
+        .compile_factorized_lookup_table_fn(&scaled, 8, 3, value)
+        .unwrap();
+    let mut mvb = context.factorized_evaluator(&server_key).unwrap();
     let mut input = LweCiphertext::zero(LWE_DIMENSION);
     let mut evaluator = context.evaluator(&server_key).unwrap();
     let mut outputs = vec![input.clone(); lut.output_count()];
@@ -78,6 +86,13 @@ fn main() {
             output_codec.decode_value(decryptor.decrypt_phase(&outputs[2]).unwrap()),
             message % 2
         );
+        mvb.apply_lookup_table_to(&input, &factorized, &mut outputs);
+        for (index, output) in outputs.iter().enumerate() {
+            assert_eq!(
+                scaled.decode_value(decryptor.decrypt_phase(output).unwrap()),
+                value(message as usize, index)
+            );
+        }
     }
-    println!("NTRU/Fourier programmable bootstrap succeeded");
+    println!("NTRU/Fourier ManyLUT and MVB succeeded");
 }

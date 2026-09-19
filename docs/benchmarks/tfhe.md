@@ -42,7 +42,8 @@ NTRU CBS 的 [NTT](../../crates/primus_tfhe_ntru_ntt/benches/circuit_bootstrap.r
 
 [Native 偶尺度 MVB 原型](../tfhe-mvb-fourier.md)记录 B5.1 的两种 FFT、u32/u64
 整数因子乘法与经典 BK 完整链；[计时](tfhe-b5.1.csv)、[误差](tfhe-b5.1-noise.csv)。
-临时原型已清理，正式基准入口随后端工程接入安排。
+[B5.3 NTRU 诊断](../tfhe-mvb-fourier.md#b53ntru-接入与独立误差验收)另记录 NLev 初始化、BR、
+公开乘法和 KS 的[独立误差摘要](tfhe-b5.3-noise.csv)。临时诊断已清理，正式成本基准留给 B5.4。
 
 [u64 SIMD 补测](../simd-u64.md)记录加减改动前后、其他 modulus / Shoup 内核的
 默认/SIMD 对照及 u64 完整 sparse PBS / keygen；[CSV](simd-u64.csv)保留负向结果和隔离复测。

@@ -61,7 +61,7 @@ ManyLUT compiles several functions of one input. The backend message/carry examp
 computes `x % 4`, `x / 4` and `x % 2`; it does not implement a complete encrypted
 integer type or arithmetic system.
 
-Compile LUTs through `context.parameters().compile_*`.
+Compile ordinary/interleaved LUTs through `context.parameters().compile_*`.
 LUT compilation takes an explicit output `RoundedCodec` first. Reuse
 `parameters.input_plaintext_codec()` for the input scale, or construct a
 codec with another plaintext modulus and the same ciphertext modulus. Decode
@@ -78,6 +78,11 @@ For bounded two-input functions, use the shared `BivariateLookupTable` to pack
 `x+B*y` and pass its ordinary LUT to the existing evaluator. See
 [bounded two-input PBS](../primus_tfhe/README.md#bounded-two-input-pbs) for input
 bounds, common encoding and the amplified-error budget.
+
+For factorized MVB, compile through `context.compile_factorized_lookup_table_fn`
+with an unsigned `ScaledCodec`, then bind `context.factorized_evaluator(&server_key)`.
+See the backend contracts for [odd-q NTT](../primus_tfhe_ntru_ntt/README.md#fixed-scale-factorized-mvb)
+and [Native even-scale Fourier](../primus_tfhe_ntru_fourier/README.md#fixed-scale-factorized-mvb).
 
 ## Boolean clients and gates
 
