@@ -61,9 +61,14 @@ cargo run -p primus_ntru --example automorphism
 | `encrypt_nlev_to`、`encrypt_ngsw_to` | 编码多项式写出变换域 gadget 行，不进行明文 codec 缩放 |
 | `encrypt_nlev_constant_to` | 常数环元素写出变换域 NLev |
 | `encrypt_ngsw_signed_constant_batch_to` | 有符号常数写出连续的变换域 NGSW |
+| `NttNgswCiphertext::cmux_ternary_monomial_to` | 正负比特控制通过一次外积旋转系数域 NTRU |
 | `NttNtruKeySwitchingKey`、`FourierNtruKeySwitchingKey` | 输入私钥下的系数 NTRU 切换到输出私钥下的系数 NTRU |
 | `NttNtruAutomorphismKey::apply_to`、`FourierNtruAutomorphismKey::apply_to` | 系数 NTRU 自同构后写出同一私钥下的系数 NTRU |
 | `apply_ntt_to`、`apply_fourier_to` | 变换域 NTRU 自同构后保留对应变换表示和原私钥 |
+
+NTT ternary 旋转一次构造 `NttNtruTernaryCmuxContext::new(N, levels)`，随后复用工作区，
+传入互斥的正负 NGSW 比特控制。指数已量化到 `0..2N`，负指数由内部派生。
+该底层原语尚未开放 NTRU TFHE 层的 ternary 支持。
 
 解密返回系数域多项式，使用密文系数类型 `T`；输出类型转换由应用按需处理。
 
@@ -128,6 +133,7 @@ cargo +nightly test -p primus_ntru --features simd
 cargo bench -p primus_ntru --bench encryption
 cargo bench -p primus_ntru --bench primitives -- 'ntt/n4096/logb3'
 cargo bench -p primus_ntru --bench constant_gadget
+cargo bench -p primus_ntru --bench ternary_cmux
 ```
 
 `encryption` 测量普通加密和未解码相位提取。`primitives` 测量 key switching、
@@ -137,6 +143,9 @@ cargo bench -p primus_ntru --bench constant_gadget
 覆盖两个 FFT 后端。`constant_gadget` 保留常数 NLev 和八控制位 NGSW 生成基准。
 设置、table、密钥生成及分配位于计时 closure 外。附加 `-- --test` 可执行 fixture
 冒烟检查；该检查不测量性能，也不能证明可解密性。
+
+`ternary_cmux` 使用真实加密控制，在 `N=1024` 下比较融合旋转和两次 binary CMUX，
+覆盖 u32/u64 并复用工作区。
 
 NTT 标量产品复用已有 CPU dispatch 与依赖的可选 SIMD 支持，NTRU 公开 API 不新增
 ISA 选择参数。仅比较匹配工作负载的耗时；这些后端参数并不具有相同的安全强度。

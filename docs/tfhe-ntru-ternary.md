@@ -1,8 +1,8 @@
-# NTRU ternary：秘密采样与后端条件
+# NTRU ternary：秘密采样与融合单步
 
 [B7 分步计划](tfhe-backend-plan.md#b7ntru-经典-ternary)的恢复入口。
-**B7.1 已完成底层采样前置；TFHE 参数、导入密钥和 binary CMUX 限制仍保留。**
-NGSW 融合单步及完整链分别留给 B7.2–B7.4；不包含桶聚合 ternary。
+**B7.1 采样前置和 B7.2 NTT NGSW 融合单步已完成；TFHE 参数及导入密钥仍限制 binary。**
+Fourier 单步与完整链分别留给 B7.3/B7.4；不包含桶聚合 ternary。
 
 ## 1. 目标分布与秘密身份
 
@@ -94,9 +94,96 @@ NTT 的可逆性条件与 Fourier 的奇偶性、数值条件也不能视为相�
   失败候选和耗尽时擦除；[普通加解密测试](../crates/primus_ntru/tests/secret_key.rs)覆盖 u32/u64。
   [TFHE 参数测试](../crates/primus_tfhe_ntru/tests/parameters.rs)继续拒绝非 binary 客户端秘密。
 
-CI 只保留 `N=32,n=23` 的四个新增聚焦测试，不新增采样统计或 benchmark。
-该步没有在线内核变化，也不宣称性能改善。B7.2 下一步验证 NTT NGSW ternary 融合单步，
-尚未开放完整 NTRU ternary PBS。
+B7.1 只增加 `N=32,n=23` 的四个聚焦测试，不增加采样统计或 benchmark；
+该步没有在线内核变化，不宣称性能改善。尚未开放完整 NTRU ternary PBS。
 
 本步已通过 `primus_ntru` 默认/SIMD 的 all-targets check、测试和 Clippy，
 以及 `just tfhe`、`just tfhe-simd` 和 NTRU 四包的严格 rustdoc 检查。
+
+## 5. B7.2：NTT NGSW ternary 融合单步
+
+### 代数与调用契约
+
+`NttNgsw::cmux_ternary_monomial_to` 使用互斥比特 `s⁺,s⁻` 的独立 NGSW 加密，
+计算一次外积：
+
+```text
+D = (X^a - 1) C
+G = NGSW(s⁺) - X^(-a) NGSW(s⁻)
+C_out = C + G ⊠ D
+```
+
+忽略噪声和分解误差，乘子 `1+(s⁺-X^-a s⁻)(X^a-1)` 在
+`s=s⁺-s⁻` 为 `1/-1/0` 时分别等于 `X^a/X^-a/1`。
+两份控制均在 accumulator NTRU 秘密 `f` 下，使用同一个模数、NTT 布局和 gadget basis。
+`a` 已量化到 `0..2N`；内部从它派生 `2N-a`，不再量化负 LWE 系数。
+零指数直接复制输入，输入输出均为系数表示，输出保持规范剩余类。
+
+[实现](../crates/primus_lattice/src/ngsw/ternary.rs)复用已有 `sub_mul_monomial_to` 和
+NTRU gadget-product 内核。先在 NTT 中组合控制，再分解 `D` 并完成一次外积；
+不修改原 binary CMUX。构造
+`NttNtruTernaryCmuxContext::new(N, levels)` 后，在线复用工作区，不要求清零或分配。
+组合控制使用外积的 digit 缓冲临时保存单项式因子，随后的分解完全覆盖它；输出在分解期间
+保存 `D`，所以乘积在 context 的独立 accumulator 中累加。
+
+### 误差与验收
+
+若每行控制的相位误差为 `e_l⁺,e_l⁻`，组合后为 `e_l⁺-X^-a e_l⁻`。
+令 `r` 为 `D` 的重构误差、`d_l` 为分解 digit，则输出相对于理想旋转的相位误差是：
+
+```text
+f * (s⁺-X^-a s⁻) * r + sum_l d_l * (e_l⁺-X^-a e_l⁻)
+```
+
+这解释了为什么两份加密零控制也会带来噪声，以及融合和两次 binary CMUX 不必产生
+相同密文或相同噪声。对互斥控制和 `||r||∞ <= E`，可用的保守单步界为
+`||f||₁ E + N (B/2) sum_l (||e_l⁺||∞ + ||e_l⁻||∞)`；这里不是完整 PBS 尾界。
+
+新增两个测试，分别承担独立契约：
+
+- [lattice 无噪声 oracle](../crates/primus_lattice/tests/ternary_cmux.rs)：u32、
+  `N=16`、两种截断深度，覆盖 `-1/0/1`、全部 `0..2N` 指数、负循环符号、
+  规范输出和脏工作区复用；误差受 basis 的重构界约束。
+- [真实控制测试](../crates/primus_ntru/tests/ternary_cmux.rs)：u64、`N=32`、
+  固定 seed。由 signed 秘密做独立 schoolbook 卷积，核对融合与两次 binary CMUX
+  相对于理想相位的误差；界使用本次实际控制误差，避免 Gaussian 概率断言。
+  全部符号/指数的融合调用从首次起零分配，零指数精确复制。
+
+### 单步成本与保留决定
+
+[基准](../crates/primus_ntru/benches/ternary_cmux.rs)每次迭代执行一个完整 ternary
+旋转：包含控制组合、系数旋转差分、分解、NTT/INTT 和输出相加。
+参照路径顺次用同一对控制做正、负两次 binary CMUX；两者都读取真实独立加密的 `(0,1)`
+控制，输出和工作区预分配，公共指数 `a=N/3`。只比较同一行参数下的两种算法。
+
+测量：AMD Ryzen 9 9955HX3D，固定 CPU 2，
+`rustc 1.100.0-nightly (bff8e12ff 2026-08-26)`；仓库 `target-cpu=native`，
+Criterion 30 samples、warm-up 1 s、measurement 2 s。以下为 Criterion 时间点估计：
+
+| 类型 / feature | `q` / `N` / `logB,L` | 两次 binary（µs） | 融合（µs） | 时间减少 |
+| --- | --- | ---: | ---: | ---: |
+| u32 / default | 132120577 / 1024 / 8,3 | 18.126 | 10.475 | 42.2% |
+| u32 / SIMD | 同上 | 17.964 | 10.650 | 40.7% |
+| u64 / default | 1125899906826241 / 1024 / 8,6 | 61.509 | 40.003 | 35.0% |
+| u64 / SIMD | 同上 | 53.108 | 31.849 | 40.0% |
+
+按构造时实际分配的缓冲区字节计，排除共同 input/output、NTT 表和栈上容器：
+
+| 类型 | 正负控制合计 | 两次 CMUX scratch（含中间密文） | 融合 scratch | 增量 |
+| --- | ---: | ---: | ---: | ---: |
+| u32，L=3 | 24 KiB | 17 KiB | 25 KiB | 8 KiB |
+| u64，L=6 | 96 KiB | 33 KiB | 73 KiB | 40 KiB |
+
+原外积工作区为 `3N` 个系数加 `N` 个 bool 字节；两次 CMUX 增加 `N` 个系数的中间密文，
+融合增加 `LN` 个系数的组合控制。因此两种完整步骤相差 `(L-1)N*sizeof(T)`，没有另存
+单项式多项式。固定布局带来的空间代价换取本组 35%–42% 的时间减少，保留此实现。
+没有额外实现逐行组合或改变既有 binary 内核；此处也不宣称达到最优。
+
+两路基准重复使用同一对控制，不能外推整把 BSK 的缓存/带宽成本，也不比较等安全参数。
+完整 NTRU ternary PBS、误差累积及资源成本留给 B7.4；Fourier 必须先通过 B7.3。
+
+复现命令见基准文件顶部；本次使用 `taskset -c 2`，默认/SIMD 都使用上述 nightly，
+Criterion 参数为 `--save-baseline b72-default --noplot` / `--save-baseline b72-simd --noplot`。
+
+B7.2 已通过 lattice/NTRU 默认与 SIMD 的 all-targets check、Clippy 和测试，
+以及 `just tfhe`、`just tfhe-simd`、lattice/NTRU 严格 rustdoc。

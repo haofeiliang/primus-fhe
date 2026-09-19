@@ -170,3 +170,59 @@ fn ternary_rotation_matches_negacyclic_oracle_with_bounded_decomposition_error()
         }
     }
 }
+
+#[test]
+fn ngsw_ternary_rotation_matches_negacyclic_oracle() {
+    use primus_lattice::{context::NttNtruTernaryCmuxContext, ngsw::Ngsw, ntru::Ntru};
+    let modulus = BarrettModulus::new(Q);
+    let ntt = UintNttTable::new(N.trailing_zeros(), modulus).unwrap();
+    let input = Ntru::new(
+        (0..N)
+            .map(|i| ((i as u64 * 0x9e37_79b9 + 1) % u64::from(Q)) as u32)
+            .collect::<Vec<_>>(),
+    );
+    for levels in [3, 2] {
+        let basis = ApproxSignedBasis::new(Some(Q), 8, Some(levels));
+        // Noiseless NGSW(1): each coefficient row is the constant gadget scalar.
+        let mut one = Ngsw::zero(N * levels);
+        for (level, scalar) in basis.scalar_iter().enumerate() {
+            one.as_mut()[level * N] = scalar;
+        }
+        let one = one.into_ntt_form(&ntt);
+        let zero = Ngsw::new(vec![0u32; N * levels]).into_ntt_form(&ntt);
+        let mut context = NttNtruTernaryCmuxContext::new(N, levels);
+        let mut output = Ntru::new(vec![Q - 1; N]);
+        for secret in [1, -1, 0] {
+            let positive = if secret == 1 { &one } else { &zero };
+            let negative = if secret == -1 { &one } else { &zero };
+            // Traverse all signs and wrap boundaries, then reuse dirty scratch
+            // for the public zero-exponent copy path.
+            for exponent in (1..2 * N).chain([0]) {
+                positive.cmux_ternary_monomial_to(
+                    negative,
+                    &input,
+                    exponent,
+                    &mut output,
+                    &basis,
+                    modulus,
+                    &ntt,
+                    &mut context,
+                );
+                let expected = rotate(input.as_ref(), exponent as isize * secret);
+                let bound = if secret == 0 || exponent == 0 {
+                    0
+                } else {
+                    basis.approximate_error_bound()
+                };
+                for (&actual, expected) in output.as_ref().iter().zip(expected) {
+                    assert!(actual < Q);
+                    let distance = actual.abs_diff(expected);
+                    assert!(
+                        distance.min(Q - distance) <= bound,
+                        "s={secret}, exponent={exponent}, levels={levels}: {actual} != {expected}"
+                    );
+                }
+            }
+        }
+    }
+}

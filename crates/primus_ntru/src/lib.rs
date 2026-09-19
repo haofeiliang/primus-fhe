@@ -61,7 +61,7 @@ pub use key_switch::{FourierNtruKeySwitchingKey, NttNtruKeySwitchingKey};
 pub use parameter::{NlevParameterError, NlevParameters, NtruParameters};
 pub use primus_distr::SecretKeyDistr;
 pub use primus_lattice::context::{
-    FourierNtruExternalProductContext, NttNtruExternalProductContext,
+    FourierNtruExternalProductContext, NttNtruExternalProductContext, NttNtruTernaryCmuxContext,
 };
 pub use scheme_switch::{FourierNtruSchemeSwitchKey, NttNtruSchemeSwitchKey};
 pub use secret_key::{

@@ -3,6 +3,7 @@ mod coeff;
 mod external_product;
 mod fourier;
 mod ntt;
+mod ternary;
 
 pub use coeff::{Ngsw, NgswIter, NgswIterMut};
 pub use fourier::{FourierNgsw, FourierNgswIter, FourierNgswIterMut, FourierNgswOwned};

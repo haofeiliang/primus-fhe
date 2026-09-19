@@ -61,7 +61,7 @@ Wrappers are generic over storage `S` using [`primus_data`](../primus_data/READM
 | Extraction | `extract_lwe_at_to`, compact extraction, packed RLWE extraction, `inverse_extract_glwe_to` |
 | External products | Fourier/NTT GGSW and NTRU gadget products; DCRT GLev polynomial products and GGSW products |
 | CMUX | GGSW/NGSW `cmux_to`, `cmux_k_to`, `cmux_monomial_to` |
-| Ternary rotation | NTT/Fourier GGSW `cmux_ternary_monomial_to`, using a positive/negative control pair and one external product |
+| Ternary rotation | NTT/Fourier GGSW and NTT NGSW `cmux_ternary_monomial_to`, using a positive/negative control pair and one external product |
 
 Availability depends on the type and representation; this is a family overview, not a promise that every type has every method. RNS scalar/factor inputs use `primus_rns::Residues` and `ResidueFactors` in modulus order.
 
@@ -91,6 +91,7 @@ Checks belong at the highest layer that owns these parameters. This crate delibe
 | `FourierGlweExternalProductContext` / `NttGlweExternalProductContext` | GLWE layout and decomposition level count through `GadgetSize` |
 | `NttGlweTernaryCmuxContext` / `FourierGlweTernaryCmuxContext` | Fixed `GadgetSize`; combined GGSW, transformed monomial, and external-product scratch |
 | `FourierNtruExternalProductContext` / `NttNtruExternalProductContext` | Polynomial length for scalar NTRU gadget products |
+| `NttNtruTernaryCmuxContext` | Fixed polynomial length and level count; combined NGSW and reusable external-product scratch |
 | `DcrtGlevMulContext` | RNS gadget layout and BigUint limb-width requirements |
 
 Contexts provide reusable scratch, not a validated basis/table/modulus domain. GLWE external-product contexts support `rebind` for unchanged GLWE shape and `resize` when buffer sizes change. DCRT compatibility includes the RNS product's limb width. Owning callers must establish compatibility before entering the kernels.
@@ -104,6 +105,7 @@ use native-torus scale and a matching native basis. The exponent is already
 quantized into `0..2N`; zero copies the input exactly. Evaluation reuses its
 context without allocation. This is a lattice primitive; complete GLWE TFHE ternary key generation
 and evaluation are described in the [ternary design](../../docs/tfhe-ternary.md).
+The NGSW form currently supports NTT only; the NTRU TFHE layer still requires binary controls.
 
 ## Example
 

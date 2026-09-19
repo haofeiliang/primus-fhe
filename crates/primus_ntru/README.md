@@ -72,9 +72,15 @@ cargo run -p primus_ntru --example automorphism
 | `encrypt_nlev_to`, `encrypt_ngsw_to` | Encoded polynomial to transformed gadget rows, without plaintext codec scaling |
 | `encrypt_nlev_constant_to` | Constant ring element to transformed NLev |
 | `encrypt_ngsw_signed_constant_batch_to` | Signed constants to contiguous transformed NGSWs |
+| `NttNgswCiphertext::cmux_ternary_monomial_to` | Positive/negative bit controls rotate coefficient NTRU with one external product |
 | `NttNtruKeySwitchingKey`, `FourierNtruKeySwitchingKey` | Coefficient NTRU under an input secret to coefficient NTRU under the output secret |
 | `NttNtruAutomorphismKey::apply_to`, `FourierNtruAutomorphismKey::apply_to` | Coefficient NTRU to coefficient NTRU under the same secret |
 | `apply_ntt_to`, `apply_fourier_to` | Transformed NTRU to the corresponding transformed output under the same secret |
+
+For NTT ternary rotation, allocate `NttNtruTernaryCmuxContext::new(N, levels)`
+once and reuse it with mutually exclusive positive/negative NGSW controls.
+The exponent is already quantized into `0..2N`; its negative is derived internally.
+This low-level primitive does not enable ternary in the NTRU TFHE layer.
 
 Decryption returns coefficient polynomials with the ciphertext coefficient type
 `T`; applications handle any output type conversion.
@@ -153,6 +159,7 @@ cargo +nightly test -p primus_ntru --features simd
 cargo bench -p primus_ntru --bench encryption
 cargo bench -p primus_ntru --bench primitives -- 'ntt/n4096/logb3'
 cargo bench -p primus_ntru --bench constant_gadget
+cargo bench -p primus_ntru --bench ternary_cmux
 ```
 
 `encryption` measures ordinary encryption and undecoded phase extraction.
@@ -165,6 +172,9 @@ Fourier covers both FFT backends. `constant_gadget` retains constant NLev and
 eight-control NGSW generation. Setup, tables, key generation and allocations
 stay outside timed closures. Add `-- --test` for fixture smoke checks; those
 checks do not measure performance or establish decryptability.
+
+`ternary_cmux` compares one fused rotation against two binary CMUXes, with
+real encrypted controls, u32/u64 and reusable scratch at `N=1024`.
 
 NTT scalar products use the existing CPU dispatch and optional dependency SIMD
 support. No ISA choice is added to the public NTRU API. Compare timings only
