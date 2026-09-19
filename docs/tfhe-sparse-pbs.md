@@ -15,7 +15,7 @@
 | BSK | 每个副本独立加密选择位，每桶额外独立加密一个 dummy；按桶保存系数域 GGSW |
 | 在线执行 | 输入旋转量计算一次；逐桶系数旋转/相加，将聚合 GGSW 转 NTT/Fourier，再做一次 external product |
 | 共享层 | 复用 LUT、`RotationQuantizer`、GGSW、分解和外积；不向 `primus_tfhe::lookup_table` 加稀疏参数或策略 trait |
-| 已接入组合 | 两后端普通/交错 LUT、两种 GLWE order、MVB（[NTT](tfhe-mvb.md)、[Fourier](tfhe-mvb-fourier-costs.md)）。Sparse CBS、稀疏三元及 NTRU 未支持 |
+| 已接入组合 | 两后端普通/交错 LUT、两种 GLWE order、MVB（[NTT](tfhe-mvb.md)、[Fourier](tfhe-mvb-fourier-costs.md)）。[NTT sparse CBS](tfhe-sparse-cbs.md) 已接入；Fourier sparse CBS、稀疏三元及 NTRU 未支持 |
 
 参数中的 `h` 只约束**进入 BR 的 small-LWE 秘密**。KS→BR 顺序的外部秘密仍是 accumulator 的 `kN` 维系数展开；不能把它改标成固定重量二元分布。以下用 `k` 表示 GLWE 维数，`b` 表示桶数，`s` 表示交错 LUT 的 `padded_output_count`，避免与输出函数个数混用。
 
@@ -512,9 +512,9 @@ LUT 编译、输出 codec、输入/输出检查、KS 与提取共用原路径。
 P3.5 的[完整 PBS 测试](../crates/primus_tfhe_glwe_ntt/tests/sparse_pbs.rs)覆盖同一客户端的
 经典/稀疏对照，两种 order，普通和三输出四槽交错 LUT，`t_in=8 → t_out=16`，四个前半区消息，
 解码/相位余量、步长切换复用、零分配及写入前拒绝。为覆盖截断误差，该测试 BR basis 为
-`log_basis=7, levels=3`，其余采用小参数。现有 CBS fixture 增加稀疏 key 拒绝检查；
-`TfheEvaluationError::UnsupportedSparseBootstrapping` 明确保留 gadget 尺度验收边界。
-Fourier、稀疏三元和 NTRU 未新增支持。
+`log_basis=7, levels=3`，其余采用小参数。P3.5 当时拒绝 sparse CBS；
+[后续 B6.1/B6.2](tfhe-sparse-cbs.md)已完成 NTT gadget 尺度验收与正式绑定。
+Fourier sparse CBS、稀疏三元和 NTRU 仍未支持。
 
 ### 完整性能与内存
 

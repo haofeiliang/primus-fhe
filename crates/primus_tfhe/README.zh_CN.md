@@ -29,7 +29,7 @@ NTRU 的 BR 秘密仍限于 binary。
 GLWE 两后端均支持固定重量二元 small 秘密的实验性稀疏 PBS：两种 order、普通/交错/分解式 LUT。
 [NTT](../primus_tfhe_glwe_ntt/README.zh_CN.md#实验性稀疏-pbs) 使用精确变换，
 [Fourier](../primus_tfhe_glwe_fourier/README.zh_CN.md#实验性稀疏-pbs) 使用 Native 系数域聚合。
-Sparse ternary 和 sparse CBS 尚不支持。
+NTT 另支持 sparse CBS；Fourier sparse CBS 和 sparse ternary 尚不支持。
 
 ## 错误边界
 
@@ -41,8 +41,8 @@ Sparse ternary 和 sparse CBS 尚不支持。
 | TFHE / CBS 参数准备 | Family `TfheParameterError` / `CircuitBootstrapParameterError` |
 | Client key 兼容性 / 客户端操作 | Family `TfheKeyError` / `TfheClientError` |
 | Boolean 客户端构造、加密和解密 | Family `BooleanError`；`Client` 分支保留底层客户端错误 |
-| 常规或独立 CBS 密钥生成 | Family `KeyGenerationError`；NTRU 采样/变换直接进入 `Ntru` 分支 |
-| GLWE 稀疏密钥生成 | Family `SparseBootstrappingKeyError`；`BucketMap` 分支保留底层映射错误 |
+| 常规、NTT 稀疏 server 或独立 CBS 密钥生成 | Family `KeyGenerationError`；NTRU 采样/变换直接进入 `Ntru` 分支；NTT 稀疏失败进入 `SparseBootstrapping` |
+| GLWE 原始稀疏 BSK / Fourier 稀疏 server 生成 | Family `SparseBootstrappingKeyError`；`BucketMap` 分支保留底层映射错误 |
 | 自动建表或显式绑定表 | 后端 `TfheContextError`；`TransformTable` 保留底层 FFT/NTT 错误 |
 
 ## Boolean 门

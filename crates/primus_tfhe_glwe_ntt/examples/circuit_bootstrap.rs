@@ -1,4 +1,5 @@
 //! GLWE/NTT circuit bootstrapping followed by CMUX.
+//! Pass `--sparse` to generate a fixed-weight bucketed server key.
 //!
 //! Fixed seed and small functional parameters for demonstration only. CBS noise
 //! and secret-dependent-message security require a separate production assessment.
@@ -8,7 +9,8 @@ use primus_lwe::LweParameters;
 use primus_modulus::BarrettModulus;
 use primus_ntt::U64NttTable;
 use primus_tfhe_glwe_ntt::{
-    CircuitBootstrapConfig, DecompositionConfig, PbsOrder, TfheConfig, TfheContext, TfheParameters,
+    CircuitBootstrapConfig, ClientKey, DecompositionConfig, KeyGenerator, PbsOrder, TfheConfig,
+    TfheContext, TfheParameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -17,7 +19,13 @@ const Q: u64 = 1_125_899_906_826_241;
 
 fn main() {
     let modulus = BarrettModulus::new(Q);
-    let lwe = LweParameters::new(4, 4, modulus, SecretKeyDistr::UniformBinary, 0.7);
+    let lwe = LweParameters::new(
+        4,
+        4,
+        modulus,
+        SecretKeyDistr::fixed_hamming_weight_binary(4, 2),
+        0.7,
+    );
     let parameters = TfheParameters::try_from_config(TfheConfig {
         small_lwe: lwe,
         accumulator_dimension: 1,
@@ -54,9 +62,14 @@ fn main() {
         },
         scheme_switch_noise_standard_deviation: 0.7,
     };
-    let (client_key, server_key) = context
-        .try_generate_keys(Some(cbs_config), &mut rng)
-        .unwrap();
+    let client_key = ClientKey::generate(context.parameters(), &mut rng);
+    let mut generator = KeyGenerator::new(&context);
+    let server_key = if std::env::args().any(|arg| arg == "--sparse") {
+        generator.try_generate_sparse_server_key(&client_key, 3, 4, Some(cbs_config), &mut rng)
+    } else {
+        generator.try_generate_server_key(&client_key, Some(cbs_config), &mut rng)
+    }
+    .unwrap();
     let encryptor = context.encryptor(&client_key).unwrap();
     // CMUX candidates use the accumulator secret, shared with the CBS output.
     let mut accumulator = context.accumulator_client(&client_key).unwrap();

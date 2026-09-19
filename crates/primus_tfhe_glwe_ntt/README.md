@@ -113,7 +113,7 @@ and generate a sparse server key explicitly:
 ```rust,ignore
 let mut generator = KeyGenerator::new(&context);
 let client_key = ClientKey::generate(context.parameters(), &mut rng);
-let server_key = generator.try_generate_sparse_server_key(&client_key, 3, 2 * h, &mut rng)?;
+let server_key = generator.try_generate_sparse_server_key(&client_key, 3, 2 * h, None, &mut rng)?;
 let mut evaluator = context.evaluator(&server_key)?;
 evaluator.apply_lookup_table_to(&input, &lut, &mut output);
 // The same evaluator supports apply_interleaved_lookup_table_to.
@@ -158,9 +158,8 @@ requires fixed-weight binary; the `SparseTernary` distribution does not select i
 
 ## Circuit bootstrapping
 
-CBS requires a classic server key; sparse keys return
-`TfheEvaluationError::UnsupportedSparseBootstrapping` because their
-gadget-scale noise has not been validated.
+CBS supports classic binary/ternary and fixed-weight binary sparse server keys
+in both orders. Both produce the same NTT GGSW layout and share trace/scheme-switch material.
 
 Generate a paired client/server key with
 `context.try_generate_keys(Some(config), &mut rng)`.
@@ -169,7 +168,10 @@ its ordinary PBS material from the same secrets and transform table. Use
 `None` for PBS only: no CBS key material or CBS workspace is allocated.
 Both `context.evaluator(&server)` and `context.circuit_bootstrap_evaluator(&server)`
 use that server key; the latter returns `MissingCircuitBootstrapKey` when CBS is absent.
-Only the selected evaluator allocates its workspace. Key generation returns `KeyGenerationError`.
+Only the selected evaluator allocates its workspace. For sparse CBS, use
+`generator.try_generate_sparse_server_key(&client, copies, buckets, Some(config), &mut rng)`.
+Both server-key factories return `KeyGenerationError`; `SparseBootstrapping` preserves
+sparse generation failures, including their source errors.
 
 For advanced composition, `try_generate_circuit_bootstrap_key` owns its prepared parameters,
 and `CircuitBootstrapEvaluator::try_from_parts` accepts explicit parameters and material.
@@ -184,14 +186,17 @@ PBS's postprocessing. `CircuitBootstrapConfig` names output/trace/scheme-switch 
 trace/SS noise; ring parameters come from the accumulator. `try_new` retains direct binding
 of existing low-level parameters.
 Trace/SS noise and key-dependent-message
-assumptions need a separate assessment.
+assumptions need a separate assessment. Sparse CBS must also budget every bucket's
+aggregation noise, including zero selectors and dummies, against the smallest output
+gadget scale; successful ordinary PBS or CMUX decoding alone does not establish that margin.
+See the [validated parameter scope](../../docs/tfhe-sparse-cbs.md#3-最小尺度与可用范围).
 
 Use `evaluator.allocate_output()` to allocate the raw CBS control, then
 `evaluator.cmux_to(control, lhs, rhs, output)` or `external_product_to(control, input, output)`.
 `context.accumulator_client(&client)` binds coefficient-ring encryption/decryption
 and reuses outputs and workspace without allocation.
 See the [shared consumption contracts](../primus_tfhe/README.md#cbs-output-and-consumption)
-and [complete example](examples/circuit_bootstrap.rs).
+and [complete example](examples/circuit_bootstrap.rs) (pass `--sparse` for sparse CBS).
 
 Error ownership and conversion rules follow the [shared TFHE error boundaries](../primus_tfhe/README.md#error-boundaries).
 

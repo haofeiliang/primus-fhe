@@ -23,7 +23,8 @@ use crate::{ClientKey, KeyGenerator, SparseBootstrappingKeyError};
 /// or matching. Input and accumulator use the context's explicit modulus.
 /// [`Self::ntt_blind_rotate_lookup_table_to`] provides raw sparse blind rotation.
 /// [`KeyGenerator::try_generate_sparse_server_key`] pairs it with a GLWE KSK
-/// for ordinary and interleaved evaluation in [`crate::Evaluator`].
+/// for ordinary/interleaved evaluation in [`crate::Evaluator`] and optional
+/// circuit-bootstrap material for [`crate::CircuitBootstrapEvaluator`].
 ///
 /// Successful mapping conditions the joint distribution of the public map and
 /// secret. Fixed-weight security and complete PBS noise bounds need independent

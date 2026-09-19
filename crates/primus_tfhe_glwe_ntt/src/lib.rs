@@ -17,7 +17,9 @@
 //! [`SparseGlweBootstrappingKey`] with public buckets and encrypted selections.
 //! Its raw LUT blind rotation reuses [`SparseGlweBlindRotationContext`].
 //! [`KeyGenerator::try_generate_sparse_server_key`] integrates this path with
-//! [`Evaluator`] for ordinary and interleaved PBS in both orders.
+//! [`Evaluator`] for ordinary and interleaved PBS in both orders. An optional
+//! [`CircuitBootstrapConfig`] adds material for [`CircuitBootstrapEvaluator`];
+//! classic and sparse CBS share trace projection and scheme switching.
 //!
 //! Use [`TfheContext::boolean_encryptor`], [`TfheContext::boolean_decryptor`] and
 //! [`TfheContext::boolean_evaluator`] to bind Boolean operations to the same

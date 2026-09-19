@@ -2,26 +2,24 @@
 //! switching.
 
 use primus_data::{Data, DataMut};
-use primus_glwe::{
-    GlevCiphertext, GlweCiphertext, NttGlweKeySwitchingContext, NttGlweTraceContext,
-};
+use primus_glwe::{GlevCiphertext, GlweCiphertext, NttGlweTraceContext};
 use primus_integer::FheUint;
 use primus_lattice::context::NttGlweExternalProductContext;
 use primus_lattice::ggsw::NttGgsw;
 use primus_lwe::LweCiphertext;
-use primus_modulus::BarrettModulus;
 use primus_ntt::MonomialNttTable;
 use primus_reduce::ReduceMul;
 use primus_tfhe::{InterleavedLookupTable, LookupTableError};
-use primus_tfhe_glwe::PbsOrder;
 
 use crate::{
-    BootstrappingKey, CircuitBootstrapKey, CircuitBootstrapParameters, NttGlweBlindRotationContext,
-    NttGlweBootstrappingKey, ServerKey, TfheContext, TfheEvaluationError,
-    evaluator::keyswitch_input_to_small_lwe,
+    CircuitBootstrapKey, CircuitBootstrapParameters, Evaluator, ServerKey, TfheContext,
+    TfheEvaluationError,
 };
 
-/// Reusable evaluator for the patched NTT circuit-bootstrap workflow.
+/// Classic binary/ternary or sparse binary CBS producing NTT GGSW controls.
+///
+/// Both key variants share trace projection and scheme switching. Workspace
+/// contains only the selected blind-rotation algorithm's scratch.
 ///
 /// After construction, [`Self::circuit_bootstrap_to`] reuses all scratch
 /// buffers and performs no heap allocation.
@@ -31,19 +29,12 @@ where
     Table: MonomialNttTable<ValueT = T>,
 {
     context: &'a TfheContext<T, Table>,
-    server_key: &'a ServerKey<T>,
-    bootstrapping_key: &'a NttGlweBootstrappingKey<T, BarrettModulus<T>>,
+    pbs: Evaluator<'a, T, Table>,
     parameters: &'a CircuitBootstrapParameters<T>,
     circuit_key: &'a CircuitBootstrapKey<T>,
     lookup_table: InterleavedLookupTable<T>,
-    // try_new checks resource layouts/bases; secret and NTT identity are caller contracts.
-    blind_rotation: NttGlweBlindRotationContext<T>,
-    key_switching: NttGlweKeySwitchingContext<T>,
     trace: NttGlweTraceContext<T>,
     external_product: NttGlweExternalProductContext<T>,
-    main_glwe: GlweCiphertext<Vec<T>>,
-    switched: GlweCiphertext<Vec<T>>,
-    small_lwe: LweCiphertext<T>,
     traced: GlevCiphertext<Vec<T>>,
 }
 
@@ -63,9 +54,6 @@ where
         context: &'a TfheContext<T, Table>,
         server_key: &'a ServerKey<T>,
     ) -> Result<Self, TfheEvaluationError> {
-        if matches!(server_key.bootstrapping_key(), BootstrappingKey::Sparse(_)) {
-            return Err(TfheEvaluationError::UnsupportedSparseBootstrapping);
-        }
         let key = server_key
             .circuit_bootstrap_key()
             .ok_or(TfheEvaluationError::MissingCircuitBootstrapKey)?;
@@ -75,8 +63,9 @@ where
     /// Creates an evaluator and compiles the gadget-scaled identity
     /// PBSManyLUT used by circuit bootstrapping.
     ///
-    /// Checks parameter, layout and decomposition-basis compatibility. Sparse
-    /// server keys are rejected until their CBS noise and gadget scales are validated.
+    /// Checks parameter, layout and decomposition-basis compatibility and binds
+    /// the server key's classic or sparse blind rotation. These checks do not
+    /// establish a noise margin for the selected output gadget scales.
     ///
     /// # Correctness
     ///
@@ -93,12 +82,6 @@ where
         circuit_key: &'a CircuitBootstrapKey<T>,
     ) -> Result<Self, TfheEvaluationError> {
         let tfhe = context.parameters();
-        if !server_key.is_compatible(tfhe) {
-            return Err(TfheEvaluationError::IncompatibleServerKey);
-        }
-        let BootstrappingKey::Classic(bootstrapping_key) = server_key.bootstrapping_key() else {
-            return Err(TfheEvaluationError::UnsupportedSparseBootstrapping);
-        };
         if !parameters.is_compatible(tfhe) {
             return Err(TfheEvaluationError::IncompatibleCircuitBootstrapParameters);
         }
@@ -106,6 +89,7 @@ where
             return Err(TfheEvaluationError::IncompatibleCircuitBootstrapKey);
         }
 
+        let pbs = Evaluator::try_new(context, server_key)?;
         let glwe = tfhe.accumulator_glwe();
         let modulus = glwe.cipher_modulus();
         let poly_length = glwe.poly_length();
@@ -127,23 +111,16 @@ where
             },
         )?;
 
-        let key_switching_glwe_size = tfhe.glwe_key_switching().output().glwe_size();
         let glwe_size = glwe.size();
 
         Ok(Self {
             context,
-            server_key,
-            bootstrapping_key,
+            pbs,
             parameters,
             circuit_key,
             lookup_table,
-            blind_rotation: NttGlweBlindRotationContext::new(bootstrapping_key),
-            key_switching: NttGlweKeySwitchingContext::new(key_switching_glwe_size),
             trace: NttGlweTraceContext::new(glwe_size),
             external_product: NttGlweExternalProductContext::new(parameters.scheme_switch().size()),
-            main_glwe: GlweCiphertext::zero(glwe.glwe_len()),
-            switched: GlweCiphertext::zero(tfhe.glwe_key_switching().output().glwe_len()),
-            small_lwe: LweCiphertext::zero(tfhe.small_lwe().dimension()),
             traced: GlevCiphertext::zero(parameters.output_size().glev_len()),
         })
     }
@@ -286,8 +263,9 @@ where
     /// plaintext in `0..ceil(t/2)` and canonical residues, where `t` is the TFHE
     /// plaintext modulus. Noise must fit the coarser ManyLUT rotation intervals;
     /// trace and scheme-switching errors must also fit the independent CBS
-    /// budget described by [`CircuitBootstrapParameters`]. CMUX consumption
-    /// requires plaintext 0 or 1. The output remains under the accumulator GLWE
+    /// budget described by [`CircuitBootstrapParameters`]. For sparse keys, include
+    /// aggregation noise from every bucket, including zero selections and dummies.
+    /// CMUX consumption requires plaintext 0 or 1. The output remains under the accumulator GLWE
     /// secret and uses gadget scales, not ordinary LWE or Boolean encoding.
     ///
     /// # Panics
@@ -311,37 +289,14 @@ where
             "circuit-bootstrap output GGSW layout mismatch"
         );
 
-        let small_lwe = match tfhe.pbs_order() {
-            PbsOrder::BootstrapKeyswitch => input,
-            PbsOrder::KeyswitchBootstrap => {
-                keyswitch_input_to_small_lwe(
-                    self.context,
-                    self.server_key,
-                    input,
-                    &mut self.main_glwe,
-                    &mut self.switched,
-                    &mut self.small_lwe,
-                    &mut self.key_switching,
-                );
-                &self.small_lwe
-            }
-        };
-        self.bootstrapping_key
-            .ntt_blind_rotate_interleaved_lookup_table_kernel_to(
-                small_lwe,
-                self.lookup_table.polynomial(),
-                self.lookup_table.padded_output_count(),
-                &mut self.main_glwe,
-                self.context
-                    .parameters()
-                    .accumulator_glwe()
-                    .cipher_modulus(),
-                self.context.table(),
-                &mut self.blind_rotation,
-            );
+        let accumulator = self.pbs.blind_rotate(
+            input,
+            self.lookup_table.polynomial(),
+            self.lookup_table.padded_output_count(),
+        );
 
         self.circuit_key.trace_key().project_prefix_coefficients_to(
-            &self.main_glwe,
+            accumulator,
             self.parameters.output_basis().decompose_length(),
             self.traced.as_mut(),
             self.context

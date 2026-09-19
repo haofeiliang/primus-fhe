@@ -99,7 +99,7 @@ N=1024 时，交错布局仅为每个输出留下 32 个位置，无法容纳 64
 ```rust,ignore
 let mut generator = KeyGenerator::new(&context);
 let client_key = ClientKey::generate(context.parameters(), &mut rng);
-let server_key = generator.try_generate_sparse_server_key(&client_key, 3, 2 * h, &mut rng)?;
+let server_key = generator.try_generate_sparse_server_key(&client_key, 3, 2 * h, None, &mut rng)?;
 let mut evaluator = context.evaluator(&server_key)?;
 evaluator.apply_lookup_table_to(&input, &lut, &mut output);
 // 同一 evaluator 支持 apply_interleaved_lookup_table_to。
@@ -138,14 +138,17 @@ NTT context/BR 要求 `MonomialNttTable`，仓库内置 NTT 表均实现此能�
 
 ## Circuit bootstrapping
 
-CBS 要求经典 server key；稀疏密钥返回
-`TfheEvaluationError::UnsupportedSparseBootstrapping`，其 gadget 尺度噪声尚未验收。
+CBS 在两种 order 下均支持经典 binary/ternary 及固定重量 binary 稀疏 server key。
+两条路径输出相同布局的 NTT GGSW，共用 trace/scheme-switch 材料。
+
 通过 `context.try_generate_keys(Some(config), &mut rng)`
 生成配套 client/server key。`ServerKey` 持有 CBS 参数及 trace/scheme-switch key，
 与普通 PBS 材料从同一组私钥和变换表生成。仅需 PBS 时使用 `None`，
 不分配 CBS 密钥材料或工作区。`context.evaluator(&server)` 与
 `context.circuit_bootstrap_evaluator(&server)` 共用这份 server key；未启用 CBS 时后者返回
-`MissingCircuitBootstrapKey`。各 evaluator 只分配自身需要的工作区。生成错误为 `KeyGenerationError`。
+`MissingCircuitBootstrapKey`。各 evaluator 只分配自身需要的工作区。稀疏 CBS 使用
+`generator.try_generate_sparse_server_key(&client, copies, buckets, Some(config), &mut rng)`。
+两种 server-key 工厂均返回 `KeyGenerationError`；`SparseBootstrapping` 分支保留稀疏生成错误及其来源。
 
 高级组合仍可使用接收已准备参数所有权的 `try_generate_circuit_bootstrap_key`，以及显式传入
 参数和材料的 `CircuitBootstrapEvaluator::try_from_parts`。调用方负责配套私钥与生成时的
@@ -157,12 +160,14 @@ CBS 要求经典 server key；稀疏密钥返回
 后处理。
 `CircuitBootstrapConfig` 具名指定 output/trace/scheme-switch 分解和独立的 trace/SS 噪声，
 环参数从 accumulator 派生；`try_new` 保留已有底层参数的直接绑定入口。
-Trace/SS 噪声与秘密相关消息假设需要独立评估。
+Trace/SS 噪声与秘密相关消息假设需要独立评估。稀疏 CBS 还须针对最小输出 gadget 尺度，
+计入每个桶的聚合噪声，包括加密零和 dummy；普通 PBS 或 CMUX 解码正确本身不能证明该余量。
+见[已验证参数范围](../../docs/tfhe-sparse-cbs.md#3-最小尺度与可用范围)。
 
 使用 `evaluator.allocate_output()` 分配原有 CBS 控制密文，随后调用
 `evaluator.cmux_to(control, lhs, rhs, output)` 或 `external_product_to(control, input, output)`。
 `context.accumulator_client(&client)` 绑定系数域环加解密，复用输出和工作区，在线不分配。
-详见[公共消费契约](../primus_tfhe/README.zh_CN.md#cbs-输出与消费)及[完整示例](examples/circuit_bootstrap.rs)。
+详见[公共消费契约](../primus_tfhe/README.zh_CN.md#cbs-输出与消费)及[完整示例](examples/circuit_bootstrap.rs)（传入 `--sparse` 使用稀疏 CBS）。
 
 错误归属与转换规则见[公共 TFHE 错误边界](../primus_tfhe/README.zh_CN.md#错误边界)。
 

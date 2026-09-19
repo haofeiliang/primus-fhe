@@ -59,7 +59,7 @@ fn factorized_pbs_reuses_workspace_and_preserves_both_external_secrets() {
             .try_generate_server_key(&client, None, &mut rng)
             .unwrap();
         let sparse = generator
-            .try_generate_sparse_server_key(&client, 3, 4, &mut rng)
+            .try_generate_sparse_server_key(&client, 3, 4, None, &mut rng)
             .unwrap();
         let dimension = context.parameters().external_lwe_dimension();
         assert_eq!(

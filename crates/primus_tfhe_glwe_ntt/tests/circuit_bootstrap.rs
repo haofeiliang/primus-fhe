@@ -10,7 +10,7 @@ use primus_tfhe_glwe_ntt::{
     CircuitBootstrapConfig, CircuitBootstrapEvaluator, CircuitBootstrapParameters,
     DecompositionConfig, KeyGenerator, PbsOrder, TfheContext, TfheEvaluationError, TfheParameters,
 };
-use rand::{SeedableRng, rngs::StdRng};
+use rand::{Rng, SeedableRng, rngs::StdRng};
 
 #[global_allocator]
 static ALLOCATOR: allocations::CountingAllocator = allocations::CountingAllocator;
@@ -47,18 +47,31 @@ fn parameters(
 
 #[test]
 fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
-    for (order, distribution) in [
+    for (order, distribution, sparse) in [
         (
             PbsOrder::BootstrapKeyswitch,
             SecretKeyDistr::fixed_hamming_weight_binary(4, 2),
+            false,
+        ),
+        (
+            PbsOrder::BootstrapKeyswitch,
+            SecretKeyDistr::fixed_hamming_weight_binary(4, 2),
+            true,
+        ),
+        (
+            PbsOrder::KeyswitchBootstrap,
+            SecretKeyDistr::fixed_hamming_weight_binary(4, 2),
+            true,
         ),
         (
             PbsOrder::BootstrapKeyswitch,
             SecretKeyDistr::fixed_composition_ternary(4, 1, 1),
+            false,
         ),
         (
             PbsOrder::KeyswitchBootstrap,
             SecretKeyDistr::fixed_composition_ternary(4, 1, 1),
+            false,
         ),
     ] {
         let tfhe = parameters(order, 4, distribution);
@@ -83,19 +96,40 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
             },
             scheme_switch_noise_standard_deviation: 0.7,
         };
-        let (client_key, server_key) = context
+        let (client_key, classic_server_key) = context
             .try_generate_keys(Some(cbs_config), &mut rng)
             .unwrap();
-        let circuit_key = server_key.circuit_bootstrap_key().unwrap();
+        let sparse_server_key = sparse.then(|| {
+            // Bundled generation and separately paired CBS material share the same evaluator.
+            let config = (order == PbsOrder::BootstrapKeyswitch).then_some(cbs_config);
+            KeyGenerator::new(&context)
+                .try_generate_sparse_server_key(&client_key, 3, 4, config, &mut rng)
+                .unwrap()
+        });
+        let server_key = sparse_server_key.as_ref().unwrap_or(&classic_server_key);
+        if sparse && order == PbsOrder::KeyswitchBootstrap {
+            assert!(matches!(
+                context.circuit_bootstrap_evaluator(server_key),
+                Err(TfheEvaluationError::MissingCircuitBootstrapKey)
+            ));
+        }
+        let circuit_key = server_key
+            .circuit_bootstrap_key()
+            .unwrap_or_else(|| classic_server_key.circuit_bootstrap_key().unwrap());
         let circuit_parameters = circuit_key.parameters();
         let main_secret =
             NttGlweSecretKey::from_coeff_secret_key(client_key.glwe_secret_key(), context.table());
         let glwe = context.parameters().accumulator_glwe();
         let mut accumulator_client = context.accumulator_client(&client_key).unwrap();
-        let choices = [1u64, 3].map(|message| {
+        let messages = [0u64, 1].map(|offset| {
+            (0..POLY_LENGTH)
+                .map(|i| (i as u64 + offset) % 4)
+                .collect::<Vec<_>>()
+        });
+        let choices = messages.each_ref().map(|message| {
             let mut output = accumulator_client.allocate_ciphertext();
             let (_, allocation) = allocations::measure(|| {
-                accumulator_client.encrypt_to(&[message; POLY_LENGTH], &mut output, &mut rng)
+                accumulator_client.encrypt_to(message, &mut output, &mut rng)
             });
             assert_eq!(
                 allocation.count, 0,
@@ -114,7 +148,7 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
             .unwrap();
         let input = encryptor.encrypt_padded(1u64, &mut rng).unwrap();
         let output = context
-            .evaluator(&server_key)
+            .evaluator(server_key)
             .unwrap()
             .apply_lookup_table(&input, &identity);
         assert_eq!(
@@ -126,15 +160,21 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
             1
         );
 
-        if distribution.is_binary() {
-            let sparse_server_key = KeyGenerator::new(&context)
-                .try_generate_sparse_server_key(&client_key, 3, 4, &mut rng)
-                .unwrap();
-            assert!(matches!(
-                context.circuit_bootstrap_evaluator(&sparse_server_key),
-                Err(TfheEvaluationError::UnsupportedSparseBootstrapping)
-            ));
-        }
+        let other_context = TfheContext::<_, U64NttTable>::try_from_parameters(parameters(
+            order,
+            4,
+            SecretKeyDistr::UniformBinary,
+        ))
+        .unwrap();
+        assert!(matches!(
+            CircuitBootstrapEvaluator::try_from_parts(
+                &other_context,
+                server_key,
+                circuit_parameters,
+                circuit_key
+            ),
+            Err(TfheEvaluationError::IncompatibleServerKey)
+        ));
         let other_input_domain = CircuitBootstrapParameters::try_new(
             &parameters(order, 8, distribution),
             circuit_parameters.output_basis().clone(),
@@ -145,7 +185,7 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
         assert!(matches!(
             CircuitBootstrapEvaluator::try_from_parts(
                 &context,
-                &server_key,
+                server_key,
                 &other_input_domain,
                 circuit_key,
             ),
@@ -163,7 +203,7 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
         assert!(matches!(
             CircuitBootstrapEvaluator::try_from_parts(
                 &context,
-                &server_key,
+                server_key,
                 &incompatible_parameters,
                 circuit_key
             ),
@@ -173,7 +213,7 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
         // with the same level count can reuse this circuit key.
         let alternate = CircuitBootstrapParameters::try_new(
             context.parameters(),
-            ApproxSignedBasis::new(Some(MODULUS), 9, Some(levels)),
+            ApproxSignedBasis::new(Some(MODULUS), if sparse { 8 } else { 9 }, Some(levels)),
             circuit_parameters.trace().clone(),
             circuit_parameters.scheme_switch().clone(),
         )
@@ -181,13 +221,13 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
         let (circuit_parameters, mut evaluator) = match order {
             PbsOrder::BootstrapKeyswitch => (
                 circuit_parameters,
-                context.circuit_bootstrap_evaluator(&server_key).unwrap(),
+                context.circuit_bootstrap_evaluator(server_key).unwrap(),
             ),
             PbsOrder::KeyswitchBootstrap => (
                 &alternate,
                 CircuitBootstrapEvaluator::try_from_parts(
                     &context,
-                    &server_key,
+                    server_key,
                     &alternate,
                     circuit_key,
                 )
@@ -252,14 +292,17 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
                         let distance = distance.min(MODULUS - distance);
                         // Functional fixture bound, below the smallest gadget step.
                         assert!(
-                            distance < (1 << 22),
-                            "order {order:?}, levels {levels}, bit {bit}, row {row}, index {index}: distance {distance}"
+                            distance < scalar / 8,
+                            "order {order:?}, sparse {sparse}, bit {bit}, row {row}, scalar {scalar}, index {index}: distance {distance}"
                         );
                     }
                 }
             }
-            assert_eq!(decoded, vec![if bit == 0 { 1 } else { 3 }; POLY_LENGTH]);
-            assert_eq!(decoded_product, vec![3 * bit; POLY_LENGTH]);
+            assert_eq!(decoded, messages[bit as usize]);
+            assert_eq!(
+                decoded_product,
+                messages[1].iter().map(|m| m * bit).collect::<Vec<_>>()
+            );
         }
     }
 }
@@ -288,6 +331,26 @@ fn circuit_parameters_check_capacity_layout_and_basis_domain() {
         },
         scheme_switch_noise_standard_deviation: 2.5,
     };
+    let context = TfheContext::<_, U64NttTable>::try_from_parameters(tfhe.clone()).unwrap();
+    let mut rng = StdRng::seed_from_u64(0x4236_0200);
+    let client = primus_tfhe_glwe_ntt::ClientKey::generate(&tfhe, &mut rng);
+    let mut invalid = config;
+    invalid.output.level_count = Some(0);
+    let mut rng = StdRng::seed_from_u64(0x4236_0201);
+    let error = KeyGenerator::new(&context)
+        .try_generate_sparse_server_key(&client, 3, 4, Some(invalid), &mut rng)
+        .err()
+        .unwrap();
+    assert!(matches!(
+        error,
+        primus_tfhe_glwe_ntt::KeyGenerationError::CircuitBootstrapParameters(
+            Error::InvalidOutputBasis(_)
+        )
+    ));
+    assert_eq!(
+        rng.next_u64(),
+        StdRng::seed_from_u64(0x4236_0201).next_u64()
+    );
     let configured = CircuitBootstrapParameters::try_from_config(&tfhe, config).unwrap();
     assert_eq!(
         configured.output_size().glwe_size(),

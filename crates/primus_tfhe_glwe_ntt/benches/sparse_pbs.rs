@@ -56,7 +56,7 @@ fn bench_sparse(c: &mut Criterion) {
             .try_generate_server_key(&client, None, &mut rng)
             .unwrap();
         let sparse = generator
-            .try_generate_sparse_server_key(&client, 3, 2 * WEIGHT, &mut rng)
+            .try_generate_sparse_server_key(&client, 3, 2 * WEIGHT, None, &mut rng)
             .unwrap();
         let encryptor = context.encryptor(&client).unwrap();
         let decryptor = context.decryptor(&client).unwrap();
@@ -136,6 +136,7 @@ fn bench_sparse(c: &mut Criterion) {
                                         black_box(&client),
                                         3,
                                         2 * WEIGHT,
+                                        None,
                                         &mut rng,
                                     )
                                     .unwrap()

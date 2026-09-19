@@ -297,12 +297,12 @@ where
     /// The caller checked input/LUT compatibility; `rotation_step` is the LUT's
     /// padded output count (one for ordinary PBS). No output key switch occurs.
     #[inline]
-    fn blind_rotate(
+    pub(crate) fn blind_rotate(
         &mut self,
         input: &LweCiphertext<T>,
         lookup_table: &Polynomial<Vec<T>>,
         rotation_step: usize,
-    ) {
+    ) -> &GlweCiphertext<Vec<T>> {
         let parameters = self.context.parameters();
         let small_lwe = match parameters.pbs_order() {
             PbsOrder::BootstrapKeyswitch => input,
@@ -340,6 +340,7 @@ where
                     scratch,
                 ),
         }
+        &self.main_glwe
     }
 
     /// Switches `main_glwe` from the accumulator secret to the padded small

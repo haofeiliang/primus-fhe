@@ -17,7 +17,7 @@
 3. **NTRU NTT 分解式 MVB**：B3.1–B3.2 已完成完整链、误差/相关性和成本验收，见 [NTRU MVB 测量](tfhe-mvb-ntru.md)。
 4. **GLWE Fourier 固定重量二元稀疏 PBS**：B4 已完成共享映射、系数域桶聚合、完整求值及成本验收；低重量负载有收益，保留参考实现。
 
-**Native 偶尺度 MVB** 已完成 GLWE/NTRU 正式接入及各自误差验收；**NTT sparse CBS 原型已通过，待正式接入**。仍需原型验证的组合包括 **Fourier 稀疏 CBS、NTRU ternary 与 NTRU 桶聚合**。其中有的代数已成立，但尚未建立完整的表示、采样或误差契约。不要把“尚未验证”写成“数学上不适配”，也不要把“有底层原语”写成“已有完整功能”。
+**Native 偶尺度 MVB** 已完成 GLWE/NTRU 正式接入及各自误差验收；**NTT sparse CBS 已正式接入**。仍需原型验证的组合包括 **Fourier 稀疏 CBS、NTRU ternary 与 NTRU 桶聚合**。其中有的代数已成立，但尚未建立完整的表示、采样或误差契约。不要把“尚未验证”写成“数学上不适配”，也不要把“有底层原语”写成“已有完整功能”。
 
 ## 2. 当前能力矩阵
 
@@ -36,7 +36,7 @@
 | 固定重量 binary 使用经典 BR | 支持 | 支持 | 需生成可逆客户端秘密 | 还受奇数重量/逆元稳定性限制 |
 | 固定重量 binary 桶聚合 BR | 支持 | 支持，收益取决于重量/负载 | 未接入 | 未接入 |
 | Boolean 门、NOT、MUX | 支持 | 支持 | 支持 | 支持 |
-| CBS | 经典 binary/ternary → GGSW | 经典 binary/ternary → Fourier GGSW | binary → NGSW | binary → NGSW |
+| CBS | 经典 binary/ternary、稀疏 binary → GGSW | 经典 binary/ternary → Fourier GGSW | binary → NGSW | binary → NGSW |
 | 固定尺度差分 MVB | 支持，含经典/稀疏 | 支持，偶尺度 u32/u64、经典/稀疏 | 支持，经典 binary | 支持，偶尺度 u32/u64、经典 binary |
 | 两种 PBS order | 支持 BK / KB | 支持 BK / KB | 固定 NTRU 链 | 固定 NTRU 链 |
 
@@ -154,7 +154,7 @@ Native 系数域旋转并累加 selector GGSW 与 dummy
 | sparse × MVB × 两种 order | [factorized_pbs.rs](../crates/primus_tfhe_glwe_ntt/tests/factorized_pbs.rs)：1/3/17 输出，包括交错布局容量之外的情况 |
 | sparse × Boolean/双输入/奇数全域 × 两种 order | [sparse_pbs.rs](../crates/primus_tfhe_glwe_ntt/tests/sparse_pbs.rs)：门链、受控输入误差、相位/解码与零分配，见 §5.2 |
 | ternary × MVB × 两种 order | 同一 MVB 测试文件中的独立 ternary fixture |
-| ternary × CBS × 两种 order | [circuit_bootstrap.rs](../crates/primus_tfhe_glwe_ntt/tests/circuit_bootstrap.rs)：逐行/层相位及 CMUX |
+| ternary / sparse binary × CBS × 两种 order | [circuit_bootstrap.rs](../crates/primus_tfhe_glwe_ntt/tests/circuit_bootstrap.rs)：逐行/层相位及 CMUX |
 | ternary × 双输入/奇数全域 × 两种 order | [many_lut.rs](../crates/primus_tfhe_glwe_ntt/tests/many_lut.rs) |
 | ternary × 公钥输入 × Boolean XOR × 两种 order | [context.rs](../crates/primus_tfhe_glwe_ntt/tests/context.rs)；完整门真值表另有 binary fixture |
 
@@ -168,9 +168,9 @@ GLWE Fourier 的 [many_lut.rs](../crates/primus_tfhe_glwe_fourier/tests/many_lut
 
 ### 5.3 稀疏 CBS：先验证，不能只取消检查
 
-GLWE [NTT](../crates/primus_tfhe_glwe_ntt/src/circuit_bootstrap/evaluator.rs) 与 [Fourier](../crates/primus_tfhe_glwe_fourier/src/circuit_bootstrap/evaluator.rs) 的公开 CBS 构造器对稀疏 key 均仍返回 `UnsupportedSparseBootstrapping`。NTT 的 B6.1 原型已通过，等待 B6.2 正式绑定；Fourier 的误差组合仍待 B6.3 验证。该拒绝不是稀疏代数本身不适配 CBS。
+GLWE [NTT](../crates/primus_tfhe_glwe_ntt/src/circuit_bootstrap/evaluator.rs) 已在 B6.2 正式绑定经典/稀疏 CBS，复用普通 evaluator 的 BR 工作区及相同后处理。[Fourier](../crates/primus_tfhe_glwe_fourier/src/circuit_bootstrap/evaluator.rs) 仍返回 `UnsupportedSparseBootstrapping`，其误差组合待 B6.3 独立验证；该拒绝不是稀疏代数本身不适配 CBS。
 
-**B6.1 已通过**：[原型记录](tfhe-sparse-cbs.md)在同一 fixed-weight client 下对照经典/稀疏 BR，验证桶内加密零/dummy 的噪声合成、逐行/层相位、独立整数卷积和非恒定 CMUX。u64、n=728、N=1024、两种 order 的 BR `(10,4/5)` 与输出 `(8,3)` 满足本组余量，默认/SIMD 结果一致；更小 gadget 尺度不纳入通过配置。材料、工作区及成本已记录，临时原型已清理，支持矩阵仍按公开 API 标记。
+**B6.1 已通过**：[原型记录](tfhe-sparse-cbs.md)在同一 fixed-weight client 下对照经典/稀疏 BR，验证桶内加密零/dummy 的噪声合成、逐行/层相位、独立整数卷积和非恒定 CMUX。u64、n=728、N=1024、两种 order 的 BR `(10,4/5)` 与输出 `(8,3)` 满足本组余量，默认/SIMD 结果一致；更小 gadget 尺度不纳入通过配置。材料、工作区及成本已记录，临时原型已清理。B6.2 的正式测试保留两种 order、逐行/层相位、非恒定 CMUX、错误边界和零分配；大参数诊断置于现有 CBS benchmark 的 setup，避免增加 CI 统计负担。
 
 ### 5.4 Native 偶尺度 MVB：GLWE/NTRU Fourier 的共同前置工作
 
@@ -236,7 +236,7 @@ Full-domain FDFB、通用数字拆分、HLUT/LFBS、multi-bit 等属于[新算�
 1. **先整理高层接口，再补明确缺口**：B1 的 GLWE Fourier 经典 CBS、四后端高层接口与成本验收，以及 B2 的 NTRU Boolean 接入与门语义验收均已完成。此顺序减少重复迁移，Boolean 算法本身不依赖 CBS；后续按[分步计划](tfhe-backend-plan.md)推进。
 2. **再扩展已有多输出路线**：NTRU NTT MVB 完整链、误差和成本，以及 GLWE NTT sparse×Boolean/bivariate/odd-full 的组合验收均已完成。
 3. **处理性能型移植与受限表示**：GLWE Fourier sparse PBS 参考路径及 B4.3 成本验收已完成；Native 偶尺度 MVB 的 GLWE/NTRU 接入与独立误差验收已完成，B5.4 记录 sparse 组合与算法成本，不混入频域聚合等额外优化。
-4. **按实际应用选择实验组合**：NTT sparse CBS、NTRU ternary、NTRU sparse；分别通过前置条件后，再组合到其他上层功能。
+4. **按实际应用选择实验组合**：Fourier sparse CBS、NTRU ternary、NTRU sparse；分别通过前置条件后，再组合到其他上层功能。
 
 测试按独立契约选择代表点，不展开所有秘密分布×order×输出数×FFT×codec 的完整笛卡尔积。建议：
 

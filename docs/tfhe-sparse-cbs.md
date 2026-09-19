@@ -1,9 +1,11 @@
-# NTT sparse CBS：B6.1 组合原型
+# NTT sparse CBS：参数、误差与接入
 
-**原型通过，可进入 B6.2 正式接入。** 基线 `18a1288`，复用现有 sparse BR、
-RevHomTrace 和 scheme switch；没有增加生产 API、密钥类型或数值内核。
-公开 CBS 构造器仍返回 `UnsupportedSparseBootstrapping`，普通测试和基准数量不变。
-Fourier 的聚合变换与 Native halving 须由 B6.3 单独验证。
+**B6.1 原型通过，B6.2 已正式接入。** NTT CBS 复用 classic/sparse BR 绑定及公共后处理；
+稀疏服务器密钥支持可选 CBS 材料，见[正式接口与验收](#6-b62-正式接入)。
+Fourier 仍拒绝 sparse CBS，其聚合变换与 Native halving 须由 B6.3 独立验证。
+
+下文第 1–5 节记录 B6.1 在基线 `18a1288` 上的原型。原型当时未改变公开拒绝边界，
+没有增加生产 API、密钥类型或数值内核；历史数据不代替后续版本的测量。
 
 ## 1. 组合与误差来源
 
@@ -162,9 +164,9 @@ CPU 未隔离/锁频，powersave governor、boost/SMT 开启；置信区间不�
 
 相对经典 CBS，没有新增一种密钥材料；同一 trace/scheme-switch key 可直接复用。
 Sparse 的 BSK 约 3.1 倍大，工作区额外持有聚合 GGSW 和 728 个旋转指数。
-这些是原型布局的资源，B6.2 正式绑定应重新核对。没有测量 keygen 时间，也未把它计入在线收益。
+这些是原型布局的资源；B6.2 的正式工作区复核见第 6 节。没有测量 keygen 时间，也未把它计入在线收益。
 
-## 5. 复现入口与后续接入
+## 5. 原型复现入口
 
 临时原型与分配/相位统计代码已移除，避免将重型统计加入 CI。复测时按第 2 节固定生成次序：
 
@@ -179,7 +181,54 @@ Sparse 的 BSK 约 3.1 倍大，工作区额外持有聚合 GGSW 和 728 个旋�
 默认/SIMD 原型、公开经典逐元素参照及独立整数卷积均通过。
 清理后复跑既有 `circuit_bootstrap` 测试（默认/SIMD），确认公开拒绝和经典链未改变。
 
-**B6.2** 应让 CBS 复用已有 classic/sparse BR 的绑定与各自 scratch，并让稀疏 server key
-携带可选 CBS 材料；不新增通用后端 trait。保留参数/布局与同一秘密、同一 NTT 表示的契约，
-以少量正式回归保护两种 order、逐层相位、CMUX、复用和零分配。完整参数尾界由应用预算承担，
-不把本原型阈值硬编码成公开构造器的通用噪声判断。
+
+
+## 6. B6.2 正式接入
+
+`CircuitBootstrapEvaluator` 组合普通 `Evaluator`，由已有 `BlindRotation::{Classic,Sparse}`
+绑定密钥和所选 scratch；前置 KS/BR 不再重复实现，后续投影与 scheme switch 共用。
+没有新增公开类型、数值 kernel 或第二份 BR 工作区。原始两种 BSK 的表示保持显式区分。
+
+`try_generate_sparse_server_key(client, copies, buckets, Option<CircuitBootstrapConfig>, rng)`
+支持附加 CBS 材料，返回 `KeyGenerationError`；`SparseBootstrapping(#[from])` 保留底层错误。
+无效 CBS 配置先于采样拒绝。仅需 PBS 的调用方传 `None`，缺少 CBS 材料仍返回
+`MissingCircuitBootstrapKey`。高级 `try_from_parts` 可复用同 client 的独立 CBS key，
+仍由调用方保证秘密与 NTT 表示一致，构造器只检查参数、布局与 basis。
+
+[现有测试](../crates/primus_tfhe_glwe_ntt/tests/circuit_bootstrap.rs)保留两个测试入口：
+在小型 fixture 中补两种 order 的 sparse 链、bundled/独立材料、每行/层 gadget 相位、
+非恒定 CMUX、外积、`1→0` 复用及首调用零分配。检查输入域/密钥/basis 不兼容、
+缺少 CBS、写入前长度拒绝和无效 CBS 配置不消耗随机数。原有 ternary 两种 order 保留。
+
+[现有 CBS benchmark](../crates/primus_tfhe_glwe_ntt/benches/circuit_bootstrap.rs)以四项
+n=728 的经典/稀疏、BK/KB 完整 CBS 替换原四项小型层数扫描。复用第 2 节 BR L=5、
+输出 `(8,3)`、第一 seed 与生成顺序；setup 检查所有行/层 `<g_l/8`、非恒定 CMUX 和
+首调用/复用零分配，并报告 workspace 净请求字节。每迭代处理输入池中一个密文，
+CMUX、检查和资源构造不计时。大参数统计不进入普通 CI 测试。
+
+公开构造器不硬编码原型的噪声阈值；最小 gadget 尺度与完整尾界仍由应用预算承担。
+
+### 正式入口复测
+
+2026-09-19，基于 `507978d` 的 B6.2 工作树；沿用第 4 节硬件、工具链、CPU 2、
+20 samples / 1 s warm-up / 2 s measurement / Flat sampling。默认和 SIMD 串行运行，
+计时期间不编译。完整 CBS 的均值及 95% CI（ms）：
+
+| order / key | 默认 | SIMD |
+| --- | ---: | ---: |
+| BK / classic | 34.346 [33.816, 34.906] | 21.511 [21.438, 21.594] |
+| BK / sparse | 21.388 [20.623, 22.177] | 18.138 [17.855, 18.478] |
+| KB / classic | 33.539 [33.243, 33.868] | 21.786 [21.548, 22.081] |
+| KB / sparse | 20.611 [19.916, 21.365] | 17.980 [17.788, 18.291] |
+
+同 feature 下稀疏路径本轮约快 1.19–1.63 倍。与 B6.1 的历史计时没有交替测量，
+因此这组数据只描述当前入口的成本，不用于判断封装前后的微小性能变化。
+原始样本位于 `target/criterion/glwe_ntt_cbs_u64_n728*/{classic,sparse}/b6_2_{default,simd}/`。
+
+两种 order/default/SIMD 的 evaluator 净请求字节均为经典 288,456 B、稀疏 458,120 B，
+调用方输出 98,304 B，与 B6.1 的 BR L=5 原型一致。计数包含 LUT 与所选工作区，
+排除 context、密钥、栈和 allocator 元数据；它不是 RSS。构造器没有增加在线分配。
+
+`just tfhe`、`just tfhe-simd`、改动三包的严格 rustdoc、经典/`--sparse` 两种 release 示例
+以及上述两套基准均通过。修改后的 Markdown 本地链接检查通过。Fourier sparse CBS
+仍由 B6.3 单独验证；本步未改变其公开拒绝边界。

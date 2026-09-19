@@ -187,6 +187,9 @@ pub enum KeyGenerationError {
     /// The supplied client secrets do not match the TFHE parameters.
     #[error(transparent)]
     ClientKey(#[from] TfheKeyError),
+    /// Sparse blind-rotation key generation failed.
+    #[error(transparent)]
+    SparseBootstrapping(#[from] SparseBootstrappingKeyError),
     /// The requested CBS configuration cannot be prepared.
     #[error(transparent)]
     CircuitBootstrapParameters(#[from] CircuitBootstrapParameterError),

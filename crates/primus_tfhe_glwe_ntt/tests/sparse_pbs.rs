@@ -61,7 +61,7 @@ fn sparse_pbs_preserves_external_secret_and_interleaved_outputs_in_both_orders()
         let mut rng = StdRng::seed_from_u64(0x5035_5042);
         let client = ClientKey::generate(context.parameters(), &mut rng);
         let sparse_key = generator
-            .try_generate_sparse_server_key(&client, 3, 8, &mut rng)
+            .try_generate_sparse_server_key(&client, 3, 8, None, &mut rng)
             .unwrap();
         let classic_key = generator
             .try_generate_server_key(&client, None, &mut rng)
@@ -173,7 +173,7 @@ fn sparse_boolean_gates_chain_in_both_orders_without_allocating() {
         let mut rng = StdRng::seed_from_u64(0xB303_0004);
         let client = ClientKey::generate(context.parameters(), &mut rng);
         let server = KeyGenerator::new(&context)
-            .try_generate_sparse_server_key(&client, 3, 8, &mut rng)
+            .try_generate_sparse_server_key(&client, 3, 8, None, &mut rng)
             .unwrap();
         let encryptor = context.boolean_encryptor(&client).unwrap();
         let decryptor = context.boolean_decryptor(&client).unwrap();
@@ -219,7 +219,7 @@ fn sparse_bivariate_and_odd_full_domain_respect_input_margins_in_both_orders() {
         let mut rng = StdRng::seed_from_u64(0xB303_000F);
         let client = ClientKey::generate(context.parameters(), &mut rng);
         let server = KeyGenerator::new(&context)
-            .try_generate_sparse_server_key(&client, 3, 8, &mut rng)
+            .try_generate_sparse_server_key(&client, 3, 8, None, &mut rng)
             .unwrap();
         let encryptor = context.encryptor(&client).unwrap();
         let decryptor = context.decryptor(&client).unwrap();
