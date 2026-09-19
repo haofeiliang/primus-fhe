@@ -2,11 +2,11 @@
 
 依据：[后端覆盖分析](tfhe-backend-coverage.md)，初始源码基线 `7f1ef55`。本计划把已有算法的后端补齐与必要的高层接口整理拆成可独立验收的步骤；不重开已完成的 P1–P4、T1–T3，也不扩入 FDFB 等[新算法选型](tfhe-next.md)。
 
-B1–B3 和 B4.1–B4.2 已完成，下一步 B4.3。B1.4–B1.7 整理四后端高层接口，分析与性能对照基线为 `66ae701`；B2–B8 保留原编号。当前任务与下一步记录在 [HANDOFF](../HANDOFF.md)，算法依据仍由覆盖分析和各专项文档维护。
+B1–B4 已完成，下一步 B5.1。B1.4–B1.7 整理四后端高层接口，分析与性能对照基线为 `66ae701`；B2–B8 保留原编号。当前任务与下一步记录在 [HANDOFF](../HANDOFF.md)，算法依据仍由覆盖分析和各专项文档维护。
 
 ## 执行方式
 
-- 接下来推荐按 **`执行 B4.3` → 后续满足前置条件的步骤** 推进。`B1` 表示整个阶段；明确要求“执行 B1”时，完成其所有满足前置条件的剩余子步骤。
+- 接下来推荐按 **`执行 B5.1` → 后续满足前置条件的步骤** 推进。`B1` 表示整个阶段；明确要求“执行 B1”时，完成其所有满足前置条件的剩余子步骤。
 - 每步先核对 Git 状态、HANDOFF、本步及依赖结论；保留用户修改和暂存状态。编号不隐含暂存、提交或启动后续步骤。
 - **工程接入**：现成代数与原语支持实现，仍需正常验证。**原型验证**：先回答未决问题，结论可以是通过、缩小范围或暂缓。
 - “依赖原型通过”不同于“原型步骤已结束”。原型不成立时保留结论及最小反例，删除无长期价值的实验代码，暂缓依赖分支；其他独立阶段仍可执行。
@@ -19,7 +19,7 @@ B1–B3 和 B4.1–B4.2 已完成，下一步 B4.3。B1.4–B1.7 整理四后端
 | B1 | GLWE Fourier 经典 CBS、四后端高层接口整理 | B1.1–B1.7 | 全部完成；[接口成本验收](tfhe-api-costs.md) |
 | B2 | NTRU 两后端 Boolean | B2.1–B2.2 | 已完成共享算法、绑定、完整门语义和串联验收 |
 | B3 | NTRU NTT MVB、既有 sparse 组合验收 | B3.1–B3.3 | 全部完成；[MVB 测量](tfhe-mvb-ntru.md)、[sparse 组合](tfhe-sparse-pbs.md#b33-已有上层组合验收) |
-| B4 | GLWE Fourier 二元稀疏 PBS | B4.1–B4.3 | B4.1–B4.2 密钥与完整 PBS 已完成；B4.3 收益待测，不含 sparse CBS/ternary |
+| B4 | GLWE Fourier 二元稀疏 PBS | B4.1–B4.3 | 已完成密钥、完整 PBS 与成本验收；保留参考实现，不含 sparse CBS/ternary |
 | B5 | Native 偶尺度 MVB | B5.1–B5.4 | 原型通过后接入两族 Fourier；NTRU 接入还依赖 B3.1 |
 | B6 | sparse CBS | B6.1–B6.3 | NTT 先验证；Fourier 还依赖 B1、B4 的对应能力 |
 | B7 | NTRU 经典 ternary | B7.1–B7.4 | 先明确采样与控制原语，再接完整链；不依赖 sparse 算法 |
@@ -111,28 +111,15 @@ Fourier 因原型噪声增加，按用户决定暂不接入。不阻塞 B2.1。
 - 受控相位偏移覆盖门预处理、`x+3*y` 的噪声放大及编码舍入差、奇数全域的较窄输入余量；检查输出相位、解码及首次调用零分配。参数和代表点见[专项记录](tfhe-sparse-pbs.md#b33-已有上层组合验收)。
 - `just tfhe`、`just tfhe-simd` 通过；无需修改生产 API 或内核，也未增加 benchmark。sparse CBS、ternary 和其他后端仍按各自阶段验收。
 
-## B4：GLWE Fourier 固定重量二元稀疏 PBS
+## B4：GLWE Fourier 固定重量二元稀疏 PBS（已完成）
 
-入口：[NTT sparse](../crates/primus_tfhe_glwe_ntt/src/sparse/mod.rs)、[BucketMap/Matching](../crates/primus_tfhe/src/sparse.rs)、[稀疏专项](tfhe-sparse-pbs.md)。
+| 步骤 | 完成入口与结论 |
+| --- | --- |
+| B4.1：共享匹配与 Fourier 密钥 | [BucketMap/Matching](../crates/primus_tfhe/src/sparse.rs) 与系数 selector/dummy；[构造与错误边界](tfhe-sparse-pbs.md#b41-fourier-密钥材料与共享匹配) |
+| B4.2：参考 BR 与完整 PBS | Native 系数聚合→FFT→外积，两种 FFT/order、普通/ManyLUT；[相位、组合与零分配验收](tfhe-sparse-pbs.md#b42-fourier-稀疏-br-与完整-pbs) |
+| B4.3：性能与保留方案 | n=728 的同客户端经典/稀疏完整链、聚合/FFT/外积及资源对照；[测量与取舍](tfhe-sparse-pbs.md#b43-fourier-成本与保留方案) |
 
-### B4.1：纯匹配组件与 Fourier sparse key（已完成）
-
-- **实现**：纯索引映射/私有匹配移入 `primus_tfhe::sparse`，保留算法注释、采样顺序及八次重试；NTT 调用方已迁移。Fourier 提供系数域 selector/dummy 密钥，复用一份 Fourier GGSW 临时缓冲，具体表示与加密留在后端。
-- **边界**：映射入口负责索引/桶参数及映射分配检查；GLWE family 统一稀疏密钥错误，两后端重导出。此步只生成 Fourier 密钥材料，不开放完整 sparse PBS/CBS 或改变聚合策略。
-- **验收**：原匹配穷举/重试测试保留；新增共享公开边界和两种 FFT 的 selector/dummy 测试，NTT 回归通过。`just tfhe` / `just tfhe-simd` 通过；参数与局限见[稀疏专项](tfhe-sparse-pbs.md#b41-fourier-密钥材料与共享匹配)。
-
-### B4.2：参考 BR 与完整 PBS（已完成）
-
-- **实现**：[Fourier sparse BR](../crates/primus_tfhe_glwe_fourier/src/sparse/blind_rotation.rs) 按 Native 系数旋转/相加，逐桶变换聚合 GGSW 并做外积。显式 `try_generate_sparse_server_key` 接入两种 order、普通/ManyLUT，evaluator 只准备所选经典/稀疏工作区。
-- **验收**：三项新增测试覆盖两种 FFT、u32 原始 BR 的独立整数相位/经典参照、u64 完整链的受控输入偏移、异尺度输出、step 1→4→1 复用、零分配、布局拒绝和稀疏 CBS 的两个拒绝入口。`just tfhe` / `just tfhe-simd` 及严格 rustdoc 通过；具体参数与误差限制见[专项](tfhe-sparse-pbs.md#b42-fourier-稀疏-br-与完整-pbs)。
-- **边界**：保持逐条目系数聚合参考实现，未引入频域逐项聚合或 NTT 的分块优化。性能、完整失败概率及 sparse CBS/ternary 未验收；收益与资源测量属于 B4.3。
-
-### B4.3：性能与保留方案
-
-- **前置**：B4.2。
-- **范围**：比较同一后端、同一 fixed-weight secret 分布下经典/稀疏完整 PBS；报告聚合、变换、外积、密钥大小与 scratch。代表性能负载使用 `n>=728`，不将小功能 fixture 当作性能依据。
-- **验收**：明确哪些负载有收益、哪些受聚合变换或带宽限制。仅有解释和实测依据时才尝试进一步优化；优化无收益则保留清晰参考实现。
-- **分支决定**：若参考算法本身既无可用收益也无明确独立用途，记录适用范围不足并暂缓依赖它的扩展，不为“矩阵全绿”持续增添实现。
+保留逐条目聚合参考实现：h=32 的所测负载有在线收益，h=128 的所测单输出负载无收益；16 KiB 分块原型未显示稳定收益，已删除。只增加一个持久完整 PBS 基准，不增加统计测试或生产 API。稀疏安全/尾界、CBS、ternary 及其他上层组合仍按各自前置条件验收，不因性能测量开放。
 
 ## B5：Native 偶尺度 MVB
 

@@ -5,7 +5,7 @@ use primus_fft::{Complex64, FftTable, TorusFftValue};
 use primus_glwe::{FourierGlweSecretKey, SecretKeyDistr};
 use primus_lattice::{
     GadgetSize,
-    ggsw::{FourierGgsw, Ggsw, GgswIter},
+    ggsw::{FourierGgsw, GgswIter},
 };
 use primus_modulus::NativeModulus;
 use primus_reduce::PrepareModulusSwitch;
@@ -220,6 +220,27 @@ where
         )?;
         drop(nonzero_indices);
 
+        // Flatten the private selectors in final bucket order, including each
+        // dummy. One batch reuses level transforms across consecutive zeros;
+        // fresh randomness and the original ciphertext order are preserved.
+        let mut selectors = Zeroizing::new(Vec::with_capacity(entry_count + bucket_count));
+        for (bucket, &selected_index) in selected_input_indices.iter().enumerate() {
+            let start = map.bucket_offsets()[bucket];
+            let end = map.bucket_offsets()[bucket + 1];
+            selectors.extend(
+                map.input_indices()[start..end]
+                    .iter()
+                    .chain(std::iter::once(&BucketMap::UNASSIGNED))
+                    .map(|&index| {
+                        if index == selected_index {
+                            T::ONE
+                        } else {
+                            T::ZERO
+                        }
+                    }),
+            );
+        }
+        drop(selected_input_indices);
         let output_key = FourierGlweSecretKey::from_coeff_secret_key(
             client_key.glwe_secret_key(),
             &mut self.fft,
@@ -227,37 +248,17 @@ where
         let gadget = parameters.blind_rotation_ggsw();
         self.gadget.resize(size);
         let mut data = vec![T::ZERO; data_len];
-        // A single transformed GGSW is reused; the full BSK is only stored in
-        // coefficient form, without a second Fourier-sized key allocation.
         let mut transformed = FourierGgsw::<Vec<Complex64>>::zero(size.fourier_ggsw_len());
-        for (bucket, &selected_index) in selected_input_indices.iter().enumerate() {
-            let start = map.bucket_offsets()[bucket];
-            let end = map.bucket_offsets()[bucket + 1];
-            let output =
-                &mut data[(start + bucket) * size.ggsw_len()..(end + bucket + 1) * size.ggsw_len()];
-            // The last entry is the dummy: it selects identity precisely when
-            // the bucket has no assigned nonzero input.
-            for (&index, ciphertext) in map.input_indices()[start..end]
-                .iter()
-                .chain(std::iter::once(&BucketMap::UNASSIGNED))
-                .zip(output.chunks_exact_mut(size.ggsw_len()))
-            {
-                let constant = Zeroizing::new([if index == selected_index {
-                    T::ONE
-                } else {
-                    T::ZERO
-                }]);
-                output_key.encrypt_ggsw_constant_batch_to(
-                    constant.as_ref(),
-                    transformed.as_mut(),
-                    gadget,
-                    &mut self.fft,
-                    rng,
-                    &mut self.gadget,
-                );
-                transformed.write_torus_form(&mut Ggsw::new(ciphertext), &mut self.fft);
-            }
-        }
+        output_key.encrypt_ggsw_constant_batch_coeff_to(
+            &selectors,
+            &mut data,
+            gadget,
+            &mut self.fft,
+            rng,
+            &mut self.gadget,
+            transformed.as_mut(),
+        );
+        drop(selectors);
 
         Ok(SparseGlweBootstrappingKey {
             data,

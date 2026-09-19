@@ -38,6 +38,10 @@ harness = false
 name = "circuit_bootstrap"
 harness = false
 
+[[bench]]
+name = "sparse_pbs"
+harness = false
+
 [features]
 default = []
 simd = [

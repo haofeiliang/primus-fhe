@@ -62,7 +62,11 @@ NTT 域私钥运算无需 context。Fourier 运算使用 `FourierGlweEncryptCont
 
 已有分解基时，使用 `GlevParameters::try_with_basis(&glwe_params, basis)` 直接转移其所有权，复用预计算，并检查模数和 gadget 布局。`try_with_glwe_params` 则根据基的对数和 level 数构造分解基；两个入口均返回 `GlevParameterError`。
 
-`encrypt_ggsw_constant_batch_to` 将环常数切片加密为连续的 GGSW，仅做一次批量检查，不分配临时缓冲区。NTT 接收规范剩余类，输出长度为 `input.len() * params.ggsw_len()`；Fourier 接收原生环值，输出包含 `input.len() * params.fourier_ggsw_len()` 个复数。Fourier 保留逐 level 原生环缩放后再 FFT 的数值路径。空批次仍检查共享资源，但不消耗随机数。
+`encrypt_ggsw_constant_batch_to` 将环常数切片加密为连续的 GGSW，仅做一次批量检查，不分配临时缓冲区。NTT 接收规范剩余类，直接填充各层常数，输出长度为 `input.len() * params.ggsw_len()`；Fourier 接收原生环值，输出包含 `input.len() * params.fourier_ggsw_len()` 个复数。Fourier 保留逐 level 原生环缩放后再 FFT 的数值路径；批内相邻相同常数复用这些变换，因此准备耗时依赖输入序列。空批次仍检查共享资源，但不消耗随机数。
+
+`NttGlweSecretKey::encrypt_ggsw_constant_batch_coeff_to` 直接输出系数域 GGSW，密文和 RNG 消费与 NTT 加密后逆变换完全一致，同时省去每个采样 body 的正向 NTT。Gadget context 只需多项式长度匹配，不使用其 level 数量。输出长度为 `input.len() * params.ggsw_len()`。
+
+`FourierGlweSecretKey::encrypt_ggsw_constant_batch_coeff_to` 通过相同加密后逆 FFT，输出系数域 GGSW。它额外接收长度为 `params.fourier_ggsw_len()` 的 scratch 切片，只复用一份变换域 GGSW，保持原 Fourier 路径的舍入与 RNG 消费。
 
 NTT 的 `encrypt_truncated_zeros`、`phase_truncated` 和 `decrypt_truncated` 操作系数域密文，其 mask 完整，body 最多包含 `N` 个系数。Phase 提取和解密只返回保留的系数，内部工作区仍保存完整多项式。
 

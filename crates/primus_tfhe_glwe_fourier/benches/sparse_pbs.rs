@@ -1,54 +1,52 @@
 //! Complete classic/sparse PBS with the same fixed-weight client secret.
-//! Experimental cost profile: n/h/N = 728/32/1024, c=3, buckets=2h.
+//! Experimental Native u32 cost profile: n/h/N = 728/32/1024, c=3, buckets=2h.
 //! PBS includes key switching and extraction, reusing keys, LUTs, four encrypted
-//! inputs, evaluator and outputs. Keygen includes BSK + KSK; client generation,
-//! the NTT table and returned key destruction are excluded. Both orders use the
-//! same key-generation algorithm.
+//! inputs, evaluator and outputs. Keygen includes BSK + KSK and excludes the client
+//! and FFT table as well as key destruction. Both orders generate the same key layout.
 //!
-//! cargo bench -p primus_tfhe_glwe_ntt --bench sparse_pbs
+//! cargo bench -p primus_tfhe_glwe_fourier --bench sparse_pbs
+//! cargo +nightly bench -p primus_tfhe_glwe_fourier --bench sparse_pbs --features simd
 
 use std::hint::black_box;
 
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_encoding::RoundedCodec;
+use primus_fft::{FftTable, RustFftTable, TfheFftTable};
 use primus_glwe::{GlweParameters, SecretKeyDistr};
 use primus_lwe::{LweCiphertext, LweParameters};
-use primus_modulus::BarrettModulus;
-use primus_ntt::{NttTable, U32NttTable};
-use primus_tfhe_glwe_ntt::{ClientKey, KeyGenerator, PbsOrder, TfheContext, TfheParameters};
+use primus_modulus::NativeModulus;
+use primus_tfhe_glwe_fourier::{ClientKey, KeyGenerator, PbsOrder, TfheContext, TfheParameters};
 use rand::{SeedableRng, rngs::StdRng};
 
-const Q: u32 = 132_120_577;
 const N: usize = 1024;
 const DIMENSION: usize = 728;
 const WEIGHT: usize = 32;
 
-fn context(order: PbsOrder) -> TfheContext<u32, U32NttTable> {
-    let modulus = BarrettModulus::new(Q);
+fn context<Table: FftTable>(order: PbsOrder) -> TfheContext<u32, Table> {
+    let modulus = NativeModulus::new();
     let lwe = LweParameters::new(
         DIMENSION,
         8,
         modulus,
         SecretKeyDistr::fixed_hamming_weight_binary(DIMENSION, WEIGHT),
-        3.2 * f64::from(Q) / 16384.0,
+        3.2 * 4294967296.0 / 16384.0,
     );
     let glwe = GlweParameters::new(1, N, 8, modulus, SecretKeyDistr::SparseTernary, 6.4);
     let parameters = TfheParameters::try_new(
         lwe,
         glwe,
-        ApproxSignedBasis::new(Some(Q), 7, Some(3)),
-        ApproxSignedBasis::new(Some(Q), 2, Some(13)),
+        ApproxSignedBasis::new(None, 8, Some(3)),
+        ApproxSignedBasis::new(None, 2, Some(13)),
         order,
     )
     .unwrap();
-    let ntt = U32NttTable::new(N.trailing_zeros(), modulus).unwrap();
-    TfheContext::try_new(parameters, ntt).unwrap()
+    TfheContext::try_from_parameters(parameters).unwrap()
 }
 
-fn bench_sparse(c: &mut Criterion) {
+fn bench_backend<Table: FftTable>(c: &mut Criterion, backend: &str) {
     for order in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
-        let context = context(order);
+        let context = context::<Table>(order);
         let mut rng = StdRng::seed_from_u64(0x5035_4252 + DIMENSION as u64);
         let mut generator = KeyGenerator::new(&context);
         let client = ClientKey::generate(context.parameters(), &mut rng);
@@ -63,7 +61,7 @@ fn bench_sparse(c: &mut Criterion) {
         let inputs: Vec<_> = (0..4)
             .map(|m| encryptor.encrypt_padded(m, &mut rng).unwrap())
             .collect();
-        let codec = RoundedCodec::new(8, BarrettModulus::new(Q));
+        let codec = RoundedCodec::new(8, NativeModulus::new());
         let single = context
             .parameters()
             .compile_lookup_table_fn(&codec, |m| (3 * m as u32 + 1) % 8)
@@ -74,8 +72,10 @@ fn bench_sparse(c: &mut Criterion) {
             .unwrap();
         let dimension = context.parameters().external_lwe_dimension();
         let mut outputs = vec![LweCiphertext::zero(dimension); 3];
-        let mut group =
-            c.benchmark_group(format!("sparse_pbs/n{DIMENSION}/h{WEIGHT}/N{N}/{order:?}"));
+
+        let mut group = c.benchmark_group(format!(
+            "sparse_pbs/{backend}/n{DIMENSION}/h{WEIGHT}/N{N}/{order:?}"
+        ));
         group.sample_size(30);
         for (name, key) in [("classic", &classic), ("sparse", &sparse)] {
             let mut evaluator = context.evaluator(key).unwrap();
@@ -121,12 +121,14 @@ fn bench_sparse(c: &mut Criterion) {
             }
         }
         group.finish();
+
         if order == PbsOrder::BootstrapKeyswitch {
-            let mut group = c.benchmark_group(format!("sparse_keygen/n{DIMENSION}/h{WEIGHT}/N{N}"));
+            let mut group = c.benchmark_group(format!(
+                "sparse_keygen/{backend}/n{DIMENSION}/h{WEIGHT}/N{N}"
+            ));
             group.sample_size(10);
             for sparse in [false, true] {
-                let name = if sparse { "sparse" } else { "classic" };
-                group.bench_function(name, |b| {
+                group.bench_function(if sparse { "sparse" } else { "classic" }, |b| {
                     b.iter_batched(
                         || (),
                         |()| {
@@ -153,5 +155,11 @@ fn bench_sparse(c: &mut Criterion) {
         }
     }
 }
+
+fn bench_sparse(c: &mut Criterion) {
+    bench_backend::<RustFftTable>(c, "rustfft");
+    bench_backend::<TfheFftTable>(c, "tfhe_fft");
+}
+
 criterion_group!(benches, bench_sparse);
 criterion_main!(benches);

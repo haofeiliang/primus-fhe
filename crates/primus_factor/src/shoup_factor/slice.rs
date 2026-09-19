@@ -2,7 +2,6 @@ use primus_integer::FheUint;
 
 use crate::{FactorSliceOps, LazyFactorSliceOps, ShoupFactor};
 
-#[cfg(not(feature = "simd"))]
 use crate::common::slice;
 
 #[cfg(not(feature = "simd"))]
@@ -70,9 +69,15 @@ impl<T: FheUint> LazyFactorSliceOps<T> for ShoupFactor<T> {
 impl<T: FheUint> FactorSliceOps<T> for ShoupFactor<T> {
     #[inline]
     fn factor_mul_slice_assign(self, values: &mut [T], modulus: T) {
-        simd::factor_mul_slice_assign::<T, ShoupFactor<T>, SimdShoupFactor<T>>(
-            self, values, modulus,
-        );
+        // For 64-bit in-place products, let LLVM choose the loop shape instead
+        // of imposing fixed SIMD chunks. The word-width choice folds at compile time.
+        if T::BITS == 64 {
+            slice::factor_mul_slice_assign(self, values, modulus);
+        } else {
+            simd::factor_mul_slice_assign::<T, ShoupFactor<T>, SimdShoupFactor<T>>(
+                self, values, modulus,
+            );
+        }
     }
 
     #[inline]

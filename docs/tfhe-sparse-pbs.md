@@ -263,7 +263,153 @@ Fourier BR 的额外存储为 `n` 个公开指数、一份系数聚合 GGSW、�
 | [完整 PBS](../crates/primus_tfhe_glwe_fourier/tests/sparse_pbs.rs) | u64，`n=16,h=4,N=256,k=1,c=3,b=8,t_in=15,t_out=16`，BR/KS basis `8×6`，噪声参数 `0.7`，accumulator 为 UniformTernary；两种 FFT/order，共用客户端对照经典链，消息 `0,3,7` 加 `±q/1024` 受控输入偏移；普通/三输出 LUT、step 1→4→1、相位/解码及首调用零分配 |
 | 绑定与 CBS 边界 | 拒绝不同重量/basis 的 sparse server key，两个 CBS 构造入口均返回 `UnsupportedSparseBootstrapping` |
 
-相位误差必须小于对应输出解码半径：u32 为 `2^28`，u64 为 `2^59`。这些固定小型 fixture 保护表示、布局和组合契约，不证明生产安全/失败率；尚未为 Fourier sparse 的 Boolean/bivariate/odd-full 等组合做独立验收，也没有性能收益结论。默认/SIMD 验证入口为 `just tfhe` / `just tfhe-simd`，下一步为 B4.3。
+相位误差必须小于对应输出解码半径：u32 为 `2^28`，u64 为 `2^59`。这些固定小型 fixture 保护表示、布局和组合契约，不证明生产安全/失败率；尚未为 Fourier sparse 的 Boolean/bivariate/odd-full 等组合做独立验收，性能与资源结果见下节 B4.3。默认/SIMD 验证入口为 `just tfhe` / `just tfhe-simd`。
+
+## B4.3 Fourier 成本与保留方案
+
+**保留逐条目系数聚合参考实现。** `n=728,h=32` 的普通/三输出 PBS 测得在线收益，但增大到 `h=128,b=256` 后所测单输出负载更慢。16 KiB 分块聚合未显示一致收益，未接入生产代码。此结论只适用于下述成本配置，不是固定重量秘密的安全参数或失败率认证；CBS/ternary 等扩展仍需独立验收。
+
+### 参数与完整链
+
+2026-09-19，生产源码 `5102a4b`；新增持久[基准](../crates/primus_tfhe_glwe_fourier/benches/sparse_pbs.rs)。Native u32，`n/h/N=728/32/1024,k=1,c=3,b=64,t=8`；small-LWE 为 fixed-weight binary，σ=`3.2*2^32/16384`；accumulator 为 SparseTernary，σ=6.4；BR basis `8×3`，KS `2×13`。经典/稀疏共用客户端、输入和 LUT，分别生成 server key。固定 seed=`0x50354252+728`，依次生成客户端、经典 key、稀疏 key，再加密消息 `0..4`。
+
+单输出 `f(m)=(3m+1)%8`，三输出 `f_i(m)=(m+2i)%8`、padded count=4。每次迭代处理四个输入之一，包含 BR、KS、提取，复用所有输出和 scratch。计时前解密检查全部被测输入/输出。两种 order 的外部维数分别为 728/1024，不跨 order 声称等价安全性。
+
+Ryzen 9 9955HX3D、固定逻辑 CPU 2，boost/SMT 开启，未隔离机器负载；该核共享 96 MiB L3。默认 rustc 1.98.0，SIMD 为 nightly 1.100.0（2026-08-26），Criterion 0.8.2。各轮串行运行；30 samples、0.2 s warmup、1 s measurement、1000 resamples（不足时 Criterion 自动延长）；keygen 为 10 samples。默认完整链另复测一轮。
+
+首轮均值如下，单位 ms，每格为 **经典 / 稀疏**；全部均值与 95% CI、复测及原型结果见 [CSV](benchmarks/tfhe-b4.3.csv)。BK=BR→KS，KB=KS→BR。
+
+| feature / FFT | order | 单输出 | 三输出 ManyLUT |
+| --- | --- | --- | --- |
+| 默认 / RustFFT | BK | 6.229 / 4.345 | 6.120 / 4.319 |
+| 默认 / RustFFT | KB | 6.095 / 4.353 | 6.010 / 5.035 |
+| 默认 / TfheFFT | BK | 5.162 / 4.199 | 5.169 / 4.162 |
+| 默认 / TfheFFT | KB | 5.461 / 4.319 | 5.367 / 4.253 |
+| SIMD / RustFFT | BK | 6.093 / 4.616 | 6.068 / 4.565 |
+| SIMD / RustFFT | KB | 6.070 / 4.639 | 6.234 / 4.611 |
+| SIMD / TfheFFT | BK | 5.552 / 4.558 | 5.480 / 4.522 |
+| SIMD / TfheFFT | KB | 5.309 / 4.565 | 5.218 / 4.228 |
+
+首轮均值下降约 14%–30%；默认复测下降约 4%–35%。其中复测 TfheFFT/KB/ManyLUT 为 5.282 / 5.079 ms，置信区间重叠，不能宣称这项存在稳定收益。两轮均支持保留低重量参考方案，但收益幅度依赖负载和运行环境；也不以不同工具链的差异宣称 SIMD 加速。
+
+仅把重量改为 `h=128`、桶数随之改为 256，其他配置和 seed 不变，临时测 BK 单输出：默认 RustFFT 为 6.171 / 7.358 ms、TfheFFT 为 5.285 / 6.530 ms；SIMD 分别为 6.525 / 7.790 ms、5.483 / 6.908 ms。稀疏约慢 19%–26%，因此不应仅凭“桶数少于 n”选择算法。该配置也通过原基准的输入/输出解密检查，没有筛选新 seed。
+
+### 阶段与资源
+
+临时阶段诊断使用同一 h=32 配置、BK 的消息 1 和普通 LUT。每次迭代执行一个输入的全部 64 桶：聚合包含 dummy 拷贝和所有 selector 旋转；FFT 使用预计算的真实聚合 GGSW；外积使用预计算的 Fourier GGSW 及真实前一桶 GLWE，包含分解、正变换、乘加和逆变换。拆分重放与生产 raw BR 的输出逐系数完全一致。准备、存储中间结果及分配均不计时。
+
+| feature / FFT | 系数聚合（ms） | 聚合 GGSW→FFT（ms） | 64 次外积（ms） |
+| --- | --- | --- | --- |
+| 默认 / RustFFT | 3.107 | 0.380 | 0.479 |
+| 默认 / TfheFFT | 3.120 | 0.255 | 0.406 |
+| SIMD / RustFFT | 3.638 | 0.378 | 0.475 |
+| SIMD / TfheFFT | 3.646 | 0.260 | 0.404 |
+
+这些是独立阶段测量，缓存状态不同，不能相加当作完整 PBS 时间。聚合明显占主导：每次 BR 至少读取 105.375 MiB 的系数 BSK，已超过该核的 L3 容量；这是带宽/缓存受限的证据，但未用硬件计数器确定具体瓶颈。外积从约 n 次减到 b 次后，收益不再按 n/b 缩放。增大 b 还会增加完整 GGSW 的 FFT 与外积次数。
+
+尝试将聚合工作集限制为 16 KiB 完整多项式块，其他计算不变，先逐桶核对整数结果。默认两种 FFT 的相同聚合工作负载分别慢约 5%、快约 4%；SIMD 分别快约 4%、慢约 9%。没有一致收益，不做完整链推广，保留清晰参考循环；后续若更换 N、字宽或存储布局，可重新测量。
+
+下表为 h=32、BK、两种 FFT/default/SIMD 一致的资源结果。BSK payload 按切片长度计算；其余为线程 allocator 在构造期间申请减释放的常驻字节，不含栈、allocator 元数据或进程 RSS。server key 测量前预热 generator，排除其工作区扩容。
+
+| 资源 | 经典 | 稀疏 |
+| --- | ---: | ---: |
+| BSK ciphertext payload | 71,565,312 B（68.250 MiB） | 110,493,696 B（105.375 MiB） |
+| server key 常驻堆（含 KSK、元数据/映射） | 71,778,496 B | 110,724,872 B |
+| raw BR scratch，不含 FFT engine/调用方输出 | 37,888 B | 191,168 B |
+| 完整 evaluator 常驻堆，含 FFT/KS/BR 缓冲 | 103,268 B | 256,548 B |
+| 首次普通/ManyLUT 在线分配次数 | 0 | 0 |
+
+这里 `G=(k+1)^2*ell*N=12288`。经典 BSK 保存 `n*(G/2)` 个 Complex64，稀疏保存 `(c*n+b)*G` 个 u32，另有 `(c*n+b+1)` 个 usize 的 CSR 映射（17,992 B）。所以 payload 约增 54%，并非直接按 GGSW 份数增三倍；u64 的字节比例不同，不能套用此结论。稀疏 scratch 比经典多一份系数 GGSW、一份 Fourier GGSW 和 n 个指数，共 153,280 B。
+
+BSK+KSK 生成也更贵：默认 RustFFT 为 52.873 / 183.057 ms，TfheFFT 为 52.374 / 178.435 ms。计时复用 generator，排除客户端、FFT table 与返回 key 的析构。在线收益适合重复使用同一 key 的低重量负载；一次性 key、大桶数或更小缓存机器需要重新核算。
+
+### 复现与维护边界
+
+```sh
+taskset -c 2 cargo bench -p primus_tfhe_glwe_fourier --bench sparse_pbs -- \
+  --warm-up-time 0.2 --measurement-time 1 --nresamples 1000
+taskset -c 2 cargo +nightly bench -p primus_tfhe_glwe_fourier --bench sparse_pbs --features simd -- \
+  --warm-up-time 0.2 --measurement-time 1 --nresamples 1000
+```
+
+h=128 的复现只需临时改变该基准的 `WEIGHT`，并用过滤器 `sparse_pbs/.*/BootstrapKeyswitch/.*/single`；不把它增加为持久矩阵。阶段诊断通过公开 `bucket`/`as_slice`、`Ggsw::write_fourier_form` 和外积接口重放上述流程；资源统计复用 `primus_test_allocations::measure`。CSV 的 `initial` 为首轮，`repeat` 为默认完整链复测，`tiling` 为默认分块对照；SIMD 分块在阶段首轮一并测量。
+
+只保留一个完整链基准及此测量记录，临时分块、阶段和高重量诊断已删除；不新增普通 CI 统计测试。`just tfhe` / `just tfhe-simd` 均通过；Cargo 仍提示既有的跨包同名 `circuit_bootstrap` 示例输出路径冲突，本步未改动这些示例。上表为 `5102a4b` 参考实现的历史测量，后续底层优化见下节；下一步为 B5.1，不自动开放其他 sparse 组合。
+
+### Native 加减切片与常数准备优化
+
+B4.3 后续检查把 nightly/feature 的影响分开。不开 `simd` 时，编译器已为 Native wrapping 加减生成 AVX-512；开启后原手写分块使 `Polynomial::add_mul_monomial_assign` 未内联，在此负载中每次 BR 调用 `c*n*G/N=26208` 次独立函数，并重复处理动态长度/尾部。现在 Native `ReduceAddSlice` / `ReduceSubSlice` 的五个方法在两种 feature 下共用普通 wrapping 循环，恢复旋转累加内联；删除重复 SIMD 实现，不改多项式 API 或 TFHE 聚合顺序。其他 SIMD 算术保持原实现。
+
+Fourier 常数 GGSW 批次只在相邻常数改变时重新准备层变换。复用限于一次调用，因此无需长期 cache、table/basis 失效标记或额外 context 成员；准备耗时依赖输入序列。缩放、FFT、每份独立采样及密文写入顺序保持原路径。
+
+新增底层 `FourierGlweSecretKey::encrypt_ggsw_constant_batch_coeff_to`：共享一次边界检查，复用调用方提供的一份 Fourier GGSW，逐份逆变换写入最终系数存储。sparse keygen 将 selector/dummy 按最终桶顺序组成 `Zeroizing<Vec<T>>` 后调用该入口。h=32 的 u32 配置仅增加 8,992 B 临时 selector 数组，生成后擦除；BSK/evaluator 常驻存储不变。没有接入会改变浮点计算顺序的直接系数加密。
+
+两项改变分别测量，避免把 Native 修改归入常数缓存收益。固定 CPU 2、nightly 1.100.0、`simd`、与上节相同 n=728 配置；两轮顺序为 before→after、after→before，均 0.5 s warmup、1000 resamples。Native 对照测 BK 单输出完整 PBS，30 samples、2 s measurement；keygen 对照在 Native 修改之后进行，10 samples、3 s measurement。均值/95% CI 见[追加 CSV](benchmarks/tfhe-b4.3-kernels.csv)，下表为 ms、每格 before→after。
+
+| 修改 / FFT | 第一轮 | 第二轮 |
+| --- | --- | --- |
+| Native / RustFFT sparse PBS | 4.851→4.479 | 4.549→4.547 |
+| Native / TfheFFT sparse PBS | 4.416→4.208 | 4.565→4.621 |
+| 常数准备 / RustFFT sparse keygen | 189.177→183.553 | 186.872→185.379 |
+| 常数准备 / TfheFFT sparse keygen | 186.283→181.123 | 186.449→179.984 |
+
+Native 首轮下降约 5%–8%，反向复测为持平/慢约 1%，不能宣称完整 PBS 在各次运行中稳定加速；保留它的依据是恢复内联、去除重复分块处理及 96 行重复实现，并保留自动向量化。Sparse keygen 两轮均下降，约 0.8%–3.5%；经典 keygen 没有稳定收益，相关数据一并保留。生成 2248 份 GGSW 的采样、加密和逆变换仍占主体，不以“一次 keygen 必须快于一次 PBS”为目标，也不外推到其他参数/CPU。
+
+既有 `constant_gadget` 差分测试补充相邻重复值、切换值及系数批次：u32/u64、两种 FFT 的输出和后续 RNG 状态与逐份普通多项式加密相同，覆盖空批次、非零工作区复用和新输出/scratch 拒绝边界。新增一个 Native 加减切片测试，以 u128 模运算核对偏移切片、回绕和向量尾部。TFHE 既有相位/零分配测试继续使用；没有新增持久 benchmark。`just tfhe` / `just tfhe-simd`、modulus/poly/lattice/GLWE 默认与 SIMD 的 check/Clippy/test、GLWE/modulus 严格 rustdoc 均通过。
+
+## NTT 后续优化
+
+2026-09-19，分别验证常数准备、Barrett 加减切片和直接系数域 GGSW，前一阶段作为后一阶段的基线。算法与接口变化：
+
+- **常数准备**：原来每份常数 GGSW 先对 `(c,0,...)` 做完整 NTT，再逐系数乘各层 scalar。现在利用 `NTT(c)=(c,c,...)`，每层只做一次模乘并填充已有层缓冲，再复用普通 GGSW 的加密循环；不引入秘密值缓存或新 trait。适用于经典、ternary 和 sparse 的常数控制。
+- **Barrett 加减切片**：五个方法在默认/SIMD 下共用 `compact::slice` 循环，保持规范剩余类语义，让编译器按实际切片长度向量化。原 SIMD 与默认版本的旋转累加均已内联，因此不是 Fourier 的失去内联问题。隔离替换这些切片后完整 sparse PBS 测得收益，保留此替换；未将瓶颈归因于某一条指令，也未改 NTT butterfly、模乘或其他 SIMD 内核。`U32NttTable` 原本就按 CPU 能力选 AVX-512/AVX2，不依赖 `simd` feature 才启用向量化。
+- **系数域 GGSW**：新增 `NttGlweSecretKey::encrypt_ggsw_constant_batch_coeff_to`，复用系数域 GLWE 私有加密内核。噪声留在系数域，逐个采样 NTT mask、累加秘密乘积并逆变换，最后添加常数 gadget 对角项。相同 RNG 下与 NTT GGSW 后逆变换逐字一致；每个 GLWE 省一次正向 NTT，对角项也只改一个系数。sparse keygen 按桶直接写最终存储；只复用原 context 的 N 系数 scratch，不增加类型、分配或常驻 key/evaluator 空间。普通 NTT 输出接口保留。
+
+### 测量口径与结果
+
+Ryzen 9 9955HX3D、固定逻辑 CPU 2、boost/SMT 开启、CPU 未隔离。所有版本均用 nightly 1.100.0（2026-08-26）及仓库构建配置，避免把工具链差异算作 SIMD 差异。参数取当前 NTT `sparse_pbs`：u32、`q=132120577,n=728,h=32,N=1024,k=1,t=8,c=3,b=64`，BR 基数 `2^7`、三层，KS 基数 `2^2`、13 层；seed `0x50354252+728`，输入/LUT 同 P3.5 当前基准。
+
+每阶段两轮 before→after、after→before，0.5 s warmup、2 s measurement、1000 resamples；keygen 10 samples，PBS 30 samples，Criterion 按样本数需要延长采集。BK 单输出补测用 3 s measurement。keygen 改用 `iter_batched(PerIteration)`，排除返回 key 析构，两个版本使用同一修正后的 harness；旧 NTT keygen 记录包含析构，不能直接与本表作优化比例比较。CSV 的均值/95% CI 与全部异常轮次见 [tfhe-ntt-kernels.csv](benchmarks/tfhe-ntt-kernels.csv)。
+
+常数准备阶段，经典 keygen 在默认配置下降 1.8%–2.0%、SIMD 下降 2.4%–3.3%；sparse 变化为 −1.8%～+0.7%，没有稳定整体收益。保留它是因为消除了不必要的 NTT 和向量模乘，且保持精确输出和采样顺序。
+
+Barrett 切片阶段仅在 SIMD 配置作实现对照，默认实现未变。以下为完整 sparse PBS，单位 ms，每格为 before→after：
+
+| order / 输出 | 第一轮 | 第二轮 |
+| --- | --- | --- |
+| BK 单输出，补测 | 4.608→4.437 | 4.772→4.448 |
+| BK 三输出 | 4.555→4.431 | 4.594→4.373 |
+| KB 单输出 | 4.659→4.194 | 4.873→4.507 |
+| KB 三输出 | 4.641→4.193 | 4.590→4.410 |
+
+初测 BK 经典单输出基线异常升到 14.396 ms，三输出也到 7.323 ms，不据此声称大幅加速；初测 sparse BK 单输出还出现 5.430 ms，保留原数据并补测该负载。补测中 sparse 下降 3.7%/6.8%，经典为 −0.5%/+0.4%。其他表内 sparse 下降约 2.7%–10.0%；这些结果只支持本机本配置的选择，不保证消除所有参数下的 SIMD 退化。
+
+本节性能对照使用 u32。[u64 补测](simd-u64.md)另外记录完整 PBS、keygen、modulus / Shoup
+的结果与负向信号；不能直接推广本节的收益或宣称所有 u64 路径无退化。
+
+最后单独比较直接系数域 GGSW 与“已优化常数准备的 NTT GGSW 后逆变换”：
+
+| sparse keygen | 第一轮 ms | 第二轮 ms |
+| --- | --- | --- |
+| 默认 | 163.138→160.559 | 163.756→160.369 |
+| SIMD | 164.783→156.813 | 164.867→157.792 |
+
+默认下降 1.6%–2.1%、SIMD 下降 4.3%–4.8%。经典 keygen 不使用这个新入口，但默认控制项增加 1.4%–1.7%，SIMD 为 −1.0%～−0.1%；保留这个小幅退化信号，不声称所有负载都受益。各阶段比例不能相加，也未把“keygen 快于一次 PBS”作为目标。
+
+### 验证与复现
+
+扩展既有 `constant_gadget` 测试，覆盖 u32/u64、`UintNttTable` 与专用 u32/u64 表，比较普通多项式 GGSW、常数批次及系数批次的密文和后续 RNG 状态；包含空批次、dirty scratch 复用、系数输出与 level 数无关、错误长度和错误 scratch 在写入/采样前拒绝。Native 与 Barrett 加减切片合用一个 u128 oracle 测试，覆盖小模数、模数上界、偏移、回绕、空切片和向量尾部，没有增加统计测试或新的持久基准。
+
+`just tfhe` / `just tfhe-simd` 及受影响 modulus/poly/NTT/factor/decompose/RNS/Barrett derive/lattice/GLWE 的默认与 SIMD check/Clippy/test、GLWE/modulus 严格 rustdoc 均通过；沿用完整 PBS 的相位、解码及零分配检查。非 x86 性能未测。
+
+现有基准复现命令：
+
+```sh
+taskset -c 2 cargo +nightly bench -p primus_tfhe_glwe_ntt --bench sparse_pbs --features simd -- \
+  'sparse_keygen|sparse_pbs' --warm-up-time 0.5 --measurement-time 2 --nresamples 1000
+```
+
+去掉 `--features simd` 得到同工具链默认配置。对照常数准备时保留旧的“常数完整 NTT→层缩放”；对照 Barrett 时只恢复五个加减切片到 `compact::simd`；对照系数输出时恢复按桶 NTT 加密后逐 GGSW 原地逆变换，其他阶段保持相同。每次迭代仍执行一个完整工作负载；保存两版可执行文件并交换顺序测量。
 
 ## P3.3 参考盲旋转实现与验证
 

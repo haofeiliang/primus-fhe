@@ -13,7 +13,8 @@
 | `primus_tfhe / lookup_table` | raw LUT 构造，包含分配与析构 |
 | 四后端 `/ pbs` | 完整 PBS、3/4 输出交错 ManyLUT 与独立 PBS；GLWE 另含 Boolean AND/MUX、两种 order 和 BR/KS 分项，Fourier 覆盖两种 FFT；系数提取基准归 `primus_lattice` |
 | GLWE 两后端 `/ ternary_pbs` | `n=728,N=1024`、BR→KS 的 binary / 融合 ternary / 双 CMUX 完整 PBS，另测 BSK+KSK；[方法与结果](../tfhe-ternary.md#t3完整-glwe-接入与验收已完成) |
-| `primus_tfhe_glwe_ntt / sparse_pbs` | 同一 fixed-weight 客户端下的经典/稀疏完整 PBS、两种 order、普通/三输出交错及 server key 生成；当前 `n/h/N=728/32/1024`，每次处理四个输入之一；[专项](../tfhe-sparse-pbs.md#p35-完整-pbs-接入与验收)区分历史 n=512 数据 |
+| `primus_tfhe_glwe_ntt / sparse_pbs` | 同一 fixed-weight 客户端下的经典/稀疏完整 PBS、两种 order、普通/三输出交错及 server key 生成；当前 `n/h/N=728/32/1024`，每次处理四个输入之一；[专项](../tfhe-sparse-pbs.md#p35-完整-pbs-接入与验收)区分历史 n=512 数据；[NTT 后续优化](../tfhe-sparse-pbs.md#ntt-后续优化)记录常数、Barrett 切片与系数 GGSW 对照 |
+| `primus_tfhe_glwe_fourier / sparse_pbs` | 同一 fixed-weight 客户端下的经典/稀疏完整 PBS、两种 FFT/order、普通/三输出及 server key 生成；`n/h/N=728/32/1024`；[成本与适用范围](../tfhe-sparse-pbs.md#b43-fourier-成本与保留方案)，[计时 CSV](tfhe-b4.3.csv)，[Native/常数准备优化](../tfhe-sparse-pbs.md#native-加减切片与常数准备优化) |
 | `primus_tfhe_glwe_ntt / mvb` | 相同 Scaled 阈值输出的重复 PBS / 交错 / MVB，3/17 输出、两种 order、经典/稀疏；构造/预处理另测；[GLWE MVB](../tfhe-mvb.md#8-p43-测量与应用选择) |
 | `primus_tfhe_ntru_ntt / mvb` | 五项等价在线负载，包含初始化、BR、乘法、KS 和提取；[NTRU MVB](../tfhe-mvb-ntru.md) |
 | `primus_tfhe_glwe_ntt / circuit_bootstrap` | 两种 order、2/3 输出层数的完整 CBS |
@@ -39,7 +40,10 @@ NTRU CBS 的 [NTT](../../crates/primus_tfhe_ntru_ntt/benches/circuit_bootstrap.r
 
 ## 历史测量环境
 
-共同边界：Ryzen 9 9955HX3D、x86_64 Linux，仓库构建配置；CPU 未隔离，boost/SMT 开启，计时串行。默认 rustc 1.98.0、Criterion 0.8.2；SIMD 若列出则为 nightly 1.100.0（2026-08-26）。耗时 CSV 为均值及 95% 置信区间（ns），不能当作 Criterion 原始样本或跨后端等安全参数比较。
+[u64 SIMD 补测](../simd-u64.md)记录加减改动前后、其他 modulus / Shoup 内核的
+默认/SIMD 对照及 u64 完整 sparse PBS / keygen；[CSV](simd-u64.csv)保留负向结果和隔离复测。
+
+共同边界：Ryzen 9 9955HX3D、x86_64 Linux，仓库构建配置；CPU 未隔离，boost/SMT 开启，计时串行。默认 rustc 1.98.0、Criterion 0.8.2；SIMD 若列出则为 nightly 1.100.0（2026-08-26）。耗时 CSV 为均值及 95% 置信区间，单位见列名，不能当作 Criterion 原始样本或跨后端等安全参数比较。
 
 ## P1.1 初始基线
 

@@ -29,7 +29,8 @@ impl<T: FheUint> ReduceNegSlice<T> for NativeModulus<T> {
     }
 }
 
-#[cfg(not(feature = "simd"))]
+// Keep native add/sub as wrapping loops in both feature configurations. LLVM
+// can inline and vectorize rotated slices without fixed-lane chunk/tail handling.
 impl<T: FheUint> ReduceAddSlice<T> for NativeModulus<T> {
     #[inline]
     fn reduce_add_slice_assign(self, a: &mut [T], b: &[T]) {
@@ -50,7 +51,6 @@ impl<T: FheUint> ReduceAddSlice<T> for NativeModulus<T> {
     }
 }
 
-#[cfg(not(feature = "simd"))]
 impl<T: FheUint> ReduceSubSlice<T> for NativeModulus<T> {
     #[inline]
     fn reduce_sub_slice_assign(self, a: &mut [T], b: &[T]) {

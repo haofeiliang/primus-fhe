@@ -4,27 +4,55 @@ use primus_glwe::{
     FourierGadgetEncryptContext, FourierGgswCiphertext, FourierGlweSecretKey, GlevParameters,
     GlweParameters, NttGadgetEncryptContext, NttGlweSecretKey, SecretKeyDistr,
 };
-use primus_lattice::ggsw::NttGgsw;
+use primus_integer::FheUint;
+use primus_lattice::{
+    GadgetSize, GlweSize,
+    ggsw::{Ggsw, NttGgsw},
+};
 use primus_modulus::{BarrettModulus, NativeModulus};
-use primus_ntt::{NttTable, UintNttTable};
+use primus_ntt::{NttTable, U32NttTable, U64NttTable, UintNttTable};
 use primus_poly::PolynomialOwned;
 use rand::{Rng, SeedableRng, rngs::StdRng};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 #[test]
 fn ntt_constant_ggsw_batch_matches_individual_encryptions() {
+    check_ntt_batch::<u32, UintNttTable<u32>>();
+    check_ntt_batch::<u64, UintNttTable<u64>>();
+    check_ntt_batch::<u32, U32NttTable>();
+    check_ntt_batch::<u64, U64NttTable>();
+}
+
+fn check_ntt_batch<T: FheUint, Table: NttTable<ValueT = T>>() {
     let n = 16usize;
-    let modulus = BarrettModulus::new(257u32);
-    let glwe = GlweParameters::new(2, n, 16, modulus, SecretKeyDistr::UniformBinary, 0.7);
+    let modulus = BarrettModulus::new(T::try_from(257usize).unwrap());
+    let glwe = GlweParameters::new(
+        2,
+        n,
+        T::try_from(16usize).unwrap(),
+        modulus,
+        SecretKeyDistr::UniformBinary,
+        0.7,
+    );
     let params = GlevParameters::with_glwe_params(&glwe, 4, None);
-    let table = UintNttTable::new(n.trailing_zeros(), modulus).unwrap();
+    let table = Table::new(n.trailing_zeros(), modulus).unwrap();
     let mut rng = StdRng::seed_from_u64(42);
     let (_, key) = NttGlweSecretKey::generate_pair(&glwe, &table, &mut rng);
     let mut context = NttGadgetEncryptContext::new(params.size());
     let mut single_context = NttGadgetEncryptContext::new(params.size());
+    // Coefficient output only needs the polynomial scratch, independent of levels.
+    let mut coefficient_context =
+        NttGadgetEncryptContext::new(GadgetSize::new(params.glwe_size(), 1));
     // Include empty input, binary BSK inputs and general canonical constants.
-    for constants in [&[][..], &[0, 1, 256, 17][..]] {
-        let mut batch = vec![7; constants.len() * params.ggsw_len()];
+    let constants = [
+        T::ZERO,
+        T::ONE,
+        modulus.value() - T::ONE,
+        T::try_from(17usize).unwrap(),
+    ];
+    let sentinel = T::try_from(7usize).unwrap();
+    for constants in [&constants[..], &constants[..1], &[][..]] {
+        let mut batch = vec![sentinel; constants.len() * params.ggsw_len()];
         let mut singles = batch.clone();
         let mut rng = StdRng::seed_from_u64(43);
         let mut single_rng = StdRng::seed_from_u64(43);
@@ -52,27 +80,65 @@ fn ntt_constant_ggsw_batch_matches_individual_encryptions() {
             );
         }
         assert_eq!(batch, singles);
-        assert_eq!(rng.next_u64(), single_rng.next_u64());
+        let next_random = single_rng.next_u64();
+        assert_eq!(rng.next_u64(), next_random);
+
+        let mut coefficients = vec![sentinel; batch.len()];
+        let mut coefficient_rng = StdRng::seed_from_u64(43);
+        key.encrypt_ggsw_constant_batch_coeff_to(
+            constants,
+            &mut coefficients,
+            &params,
+            &table,
+            &mut coefficient_rng,
+            &mut coefficient_context,
+        );
+        for block in singles.chunks_exact_mut(params.ggsw_len()) {
+            let _ = NttGgsw::new(block).into_coeff_form(&table);
+        }
+        assert_eq!(coefficients, singles);
+        assert_eq!(coefficient_rng.next_u64(), next_random);
     }
-    // An invalid total length must fail before writing or consuming randomness.
-    for len in [params.ggsw_len(), 2 * params.ggsw_len() + 1] {
-        let mut output = vec![7; len];
+    // Layout errors must fail before writing or consuming randomness.
+    for (len, coefficient_output, scratch_length) in [
+        (params.ggsw_len(), false, n),
+        (2 * params.ggsw_len() + 1, false, n),
+        (params.ggsw_len(), true, n),
+        (2 * params.ggsw_len() + 1, true, n),
+        (2 * params.ggsw_len(), true, 2 * n),
+    ] {
+        let mut context = NttGadgetEncryptContext::new(GadgetSize::new(
+            GlweSize::new(2, scratch_length),
+            params.size().decompose_length(),
+        ));
+        let mut output = vec![sentinel; len];
         let mut rng = StdRng::seed_from_u64(43);
         let mut expected_rng = StdRng::seed_from_u64(43);
         assert!(
             catch_unwind(AssertUnwindSafe(|| {
-                key.encrypt_ggsw_constant_batch_to(
-                    &[0, 1],
-                    &mut output,
-                    &params,
-                    &table,
-                    &mut rng,
-                    &mut context,
-                );
+                if coefficient_output {
+                    key.encrypt_ggsw_constant_batch_coeff_to(
+                        &constants[..2],
+                        &mut output,
+                        &params,
+                        &table,
+                        &mut rng,
+                        &mut context,
+                    );
+                } else {
+                    key.encrypt_ggsw_constant_batch_to(
+                        &constants[..2],
+                        &mut output,
+                        &params,
+                        &table,
+                        &mut rng,
+                        &mut context,
+                    );
+                }
             }))
             .is_err()
         );
-        assert_eq!(output, vec![7; len]);
+        assert_eq!(output, vec![sentinel; len]);
         assert_eq!(rng.next_u64(), expected_rng.next_u64());
     }
 }
@@ -102,9 +168,14 @@ fn check_fourier_batch<T: TorusFftValue, Table: FftTable>() {
     let (_, key) = FourierGlweSecretKey::generate_pair(&glwe, &mut fft, &mut rng);
     let mut context = FourierGadgetEncryptContext::new(params.size());
     let sentinel = Complex64::new(7.0, 9.0);
+    // Repeated constants reuse prepared levels; transitions must refresh them.
     let constants = [
         T::ZERO,
+        T::ZERO,
         T::ONE,
+        T::ONE,
+        T::ZERO,
+        T::MAX,
         T::MAX,
         T::MAX / T::try_from(3usize).unwrap(),
     ];
@@ -149,7 +220,33 @@ fn check_fourier_batch<T: TorusFftValue, Table: FftTable>() {
             &mut context,
         );
         assert_eq!(actual, expected);
-        assert_eq!(actual_rng.next_u64(), reference_rng.next_u64());
+        let next_random = reference_rng.next_u64();
+        assert_eq!(actual_rng.next_u64(), next_random);
+
+        let mut coefficients = vec![T::MAX; input.len() * params.ggsw_len()];
+        let mut coefficient_rng = StdRng::seed_from_u64(43);
+        let mut scratch = vec![sentinel; params.fourier_ggsw_len()];
+        key.encrypt_ggsw_constant_batch_coeff_to(
+            input,
+            &mut coefficients,
+            &params,
+            &mut fft,
+            &mut coefficient_rng,
+            &mut context,
+            &mut scratch,
+        );
+        let mut expected_coefficients = vec![T::ZERO; params.ggsw_len()];
+        for (fourier, coefficients) in expected
+            .chunks_exact(params.fourier_ggsw_len())
+            .zip(coefficients.chunks_exact(params.ggsw_len()))
+        {
+            FourierGgswCiphertext::new(fourier).write_torus_form(
+                &mut Ggsw::new(expected_coefficients.as_mut_slice()),
+                &mut fft,
+            );
+            assert_eq!(coefficients, expected_coefficients);
+        }
+        assert_eq!(coefficient_rng.next_u64(), next_random);
     }
     let wrong_levels = GlevParameters::with_glwe_params(&glwe, 3, Some(2));
     for (input, len, size) in [
@@ -178,6 +275,46 @@ fn check_fourier_batch<T: TorusFftValue, Table: FftTable>() {
             .is_err()
         );
         assert!(output.iter().all(|&value| value == sentinel));
+        assert_eq!(rng.next_u64(), expected_rng.next_u64());
+    }
+    for (len, scratch_len, size) in [
+        (
+            params.ggsw_len() + 1,
+            params.fourier_ggsw_len(),
+            params.size(),
+        ),
+        (
+            params.ggsw_len(),
+            params.fourier_ggsw_len() - 1,
+            params.size(),
+        ),
+        (
+            params.ggsw_len(),
+            params.fourier_ggsw_len(),
+            wrong_levels.size(),
+        ),
+    ] {
+        let mut output = vec![T::MAX; len];
+        let mut scratch = vec![sentinel; scratch_len];
+        let mut context = FourierGadgetEncryptContext::new(size);
+        let mut rng = StdRng::seed_from_u64(44);
+        let mut expected_rng = StdRng::seed_from_u64(44);
+        assert!(
+            catch_unwind(AssertUnwindSafe(|| {
+                key.encrypt_ggsw_constant_batch_coeff_to(
+                    &constants[..1],
+                    &mut output,
+                    &params,
+                    &mut fft,
+                    &mut rng,
+                    &mut context,
+                    &mut scratch,
+                );
+            }))
+            .is_err()
+        );
+        assert!(output.iter().all(|&value| value == T::MAX));
+        assert!(scratch.iter().all(|&value| value == sentinel));
         assert_eq!(rng.next_u64(), expected_rng.next_u64());
     }
 }

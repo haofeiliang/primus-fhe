@@ -143,27 +143,8 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         B: DataMut<Elem = T>,
     {
         context.encoded.as_mut().copy_from_slice(input.as_ref());
-        self.encrypt_ggsw_encoded_kernel_to(output, params, ntt, rng, context);
-    }
-
-    /// Encrypts the coefficient polynomial in `context.encoded`, overwriting its
-    /// contents. The caller has checked the key, table, output and all workspace.
-    pub(super) fn encrypt_ggsw_encoded_kernel_to<M, Table, R, B>(
-        &self,
-        output: &mut NttGgswCiphertext<B>,
-        params: &GlevParameters<T, M>,
-        ntt: &Table,
-        rng: &mut R,
-        context: &mut NttGadgetEncryptContext<T>,
-    ) where
-        M: FieldContext<T>,
-        Table: NttTable<ValueT = T>,
-        R: rand::Rng + rand::CryptoRng,
-        B: DataMut<Elem = T>,
-    {
         let poly_length = self.poly_length();
         let modulus = params.cipher_modulus();
-        let glwe_len = params.glwe_len();
 
         // NTT(g_l * m) = g_l * NTT(m) modulo q. Reuse the GLev encoding
         // buffer for this transform and cache each scaled level across rows.
@@ -176,6 +157,27 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         {
             transformed_input.mul_scalar_to(scalar, &mut NttPolynomial::new(transformed), modulus);
         }
+
+        self.encrypt_ggsw_from_levels_to(output, params, ntt, rng, context);
+    }
+
+    /// Encrypts the prepared NTT levels after the caller validates all layouts.
+    pub(super) fn encrypt_ggsw_from_levels_to<M, Table, R, B>(
+        &self,
+        output: &mut NttGgswCiphertext<B>,
+        params: &GlevParameters<T, M>,
+        ntt: &Table,
+        rng: &mut R,
+        context: &NttGadgetEncryptContext<T>,
+    ) where
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+        R: rand::Rng + rand::CryptoRng,
+        B: DataMut<Elem = T>,
+    {
+        let poly_length = self.poly_length();
+        let modulus = params.cipher_modulus();
+        let glwe_len = params.glwe_len();
 
         // Stream [row][level][component] storage, reusing the cached levels.
         // Add each diagonal only after zero encryption has accumulated the

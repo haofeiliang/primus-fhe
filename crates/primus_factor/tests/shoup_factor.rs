@@ -98,51 +98,63 @@ fn per_lane_simd_factors_match_scalar_multiplication() {
 }
 
 #[test]
-fn slice_mul_against_barrett() {
-    let modulus = BarrettModulus::<ValueT>::new(MODULUS);
-    let distr = Uniform::new(0, MODULUS).unwrap();
-    let mut rng = rand::rng();
+fn slice_mul_against_wide_product() {
+    fn check<T: FheUint + TryFrom<u64> + Into<u128>>(q: u64) {
+        let convert = |value| T::try_from(value).ok().unwrap();
+        let modulus = convert(q);
+        let mut state = 0x1234_5678_9abc_def0u64;
+        for len in [0, 1, 7, 8, 15, 16, 17, 31, 32, 33, 64, 65, 1024, 1025] {
+            let input: Vec<T> = (0..len)
+                .map(|i| {
+                    state ^= state << 13;
+                    state ^= state >> 7;
+                    state ^= state << 17;
+                    convert(match i % 4 {
+                        0 => 0,
+                        1 => q - 1,
+                        _ => state % q,
+                    })
+                })
+                .collect();
+            for factor_value in [0, 1, 17, q - 1] {
+                let factor = ShoupFactor::new(convert(factor_value), modulus);
+                let expected: Vec<T> = input
+                    .iter()
+                    .map(|&value| {
+                        convert((u128::from(factor_value) * value.into() % u128::from(q)) as u64)
+                    })
+                    .collect();
+                // Offset the in-place slice and guard both ends, including empty input.
+                let mut assign = vec![T::MAX; len + 2];
+                assign[1..len + 1].copy_from_slice(&input);
+                factor.factor_mul_slice_assign(&mut assign[1..len + 1], modulus);
+                assert_eq!(&assign[1..len + 1], expected);
+                assert_eq!(assign[0], T::MAX);
+                assert_eq!(assign[len + 1], T::MAX);
 
-    for &len in &[0usize, 1, 2, 3, 7, 8, 15, 16, 17, 31, 32, 33, 64, 65] {
-        let factor_value = distr.sample(&mut rng);
-        let factor = ShoupFactor::new(factor_value, MODULUS);
-        let input: Vec<ValueT> = (0..len).map(|_| distr.sample(&mut rng)).collect();
+                let mut output = vec![T::ZERO; len];
+                factor.factor_mul_slice_to(&input, &mut output, modulus);
+                assert_eq!(output, expected);
 
-        let expected: Vec<ValueT> = input
-            .iter()
-            .map(|&value| modulus.reduce_mul(factor_value, value))
-            .collect();
-
-        let mut assign = input.clone();
-        factor.factor_mul_slice_assign(&mut assign, MODULUS);
-        assert_eq!(assign, expected, "factor_mul_slice_assign len={len}");
-
-        let mut output = vec![0; len];
-        factor.factor_mul_slice_to(&input, &mut output, MODULUS);
-        assert_eq!(output, expected, "factor_mul_slice_to len={len}");
-
-        let mut lazy_assign = input.clone();
-        factor.lazy_factor_mul_slice_assign(&mut lazy_assign, MODULUS);
-        for value in &lazy_assign {
-            assert!(*value < MODULUS * 2, "lazy assign result >= 2M");
+                let mut lazy_assign = input.clone();
+                factor.lazy_factor_mul_slice_assign(&mut lazy_assign, modulus);
+                factor.lazy_factor_mul_slice_to(&input, &mut output, modulus);
+                for values in [&lazy_assign, &output] {
+                    for (&actual, &expected) in values.iter().zip(&expected) {
+                        let actual: u128 = actual.into();
+                        assert!(actual < 2 * u128::from(q));
+                        assert_eq!(actual % u128::from(q), expected.into());
+                    }
+                }
+            }
         }
-        for value in &mut lazy_assign {
-            *value = modulus.reduce_once(*value);
-        }
-        assert_eq!(
-            lazy_assign, expected,
-            "lazy_factor_mul_slice_assign len={len}"
-        );
+    }
 
-        let mut lazy_output = vec![0; len];
-        factor.lazy_factor_mul_slice_to(&input, &mut lazy_output, MODULUS);
-        for value in &lazy_output {
-            assert!(*value < MODULUS * 2, "lazy to result >= 2M");
-        }
-        for value in &mut lazy_output {
-            *value = modulus.reduce_once(*value);
-        }
-        assert_eq!(lazy_output, expected, "lazy_factor_mul_slice_to len={len}");
+    for q in [536_813_569, (1 << 31) - 1] {
+        check::<u32>(q);
+    }
+    for q in [1_125_899_906_826_241, (1 << 63) - 1] {
+        check::<u64>(q);
     }
 }
 

@@ -7,8 +7,9 @@ use zeroize::{Zeroize, ZeroizeOnDrop};
 
 /// Reusable workspace for NTT GLev/GGSW generation.
 ///
-/// GLev requires only a matching polynomial length. GGSW also requires the
-/// configured decomposition level count; use [`Self::resize`] to change it.
+/// GLev and coefficient-output constant GGSW batches require only a matching
+/// polynomial length. NTT-output GGSW also requires the configured decomposition
+/// level count; use [`Self::resize`] to change it.
 pub struct NttGadgetEncryptContext<T: FheUint> {
     pub(super) encoded: PolynomialOwned<T>,
     pub(super) level_transforms: Vec<T>,

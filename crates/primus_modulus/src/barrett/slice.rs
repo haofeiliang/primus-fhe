@@ -1,7 +1,36 @@
 use primus_integer::FheUint;
-use primus_reduce::ReduceDotProductSigned;
+use primus_reduce::{ReduceAddSlice, ReduceDotProductSigned, ReduceSubSlice};
 
 use super::BarrettModulus;
+use crate::common::compact::slice;
+
+// Let LLVM vectorize the actual add/sub ranges, including the split slices
+// used by monomial accumulation, without fixed-lane chunk/tail handling.
+impl<T: FheUint> ReduceAddSlice<T> for BarrettModulus<T> {
+    #[inline]
+    fn reduce_add_slice_assign(self, a: &mut [T], b: &[T]) {
+        slice::reduce_add_slice_assign(self.value, a, b);
+    }
+    #[inline]
+    fn reduce_add_slice_to(self, a: &[T], b: &[T], output: &mut [T]) {
+        slice::reduce_add_slice_to(self.value, a, b, output);
+    }
+}
+
+impl<T: FheUint> ReduceSubSlice<T> for BarrettModulus<T> {
+    #[inline]
+    fn reduce_sub_slice_assign(self, a: &mut [T], b: &[T]) {
+        slice::reduce_sub_slice_assign(self.value, a, b);
+    }
+    #[inline]
+    fn reduce_sub_slice_to(self, a: &[T], b: &[T], output: &mut [T]) {
+        slice::reduce_sub_slice_to(self.value, a, b, output);
+    }
+    #[inline]
+    fn reduce_sub_slice_rev_assign(self, a: &[T], b: &mut [T]) {
+        slice::reduce_sub_slice_rev_assign(self.value, a, b);
+    }
+}
 
 #[cfg(not(feature = "simd"))]
 mod basic {
@@ -28,30 +57,6 @@ mod basic {
         #[inline]
         fn reduce_neg_slice_to(self, input: &[T], output: &mut [T]) {
             slice::reduce_neg_slice_to(self.value, input, output);
-        }
-    }
-    impl<T: FheUint> ReduceAddSlice<T> for BarrettModulus<T> {
-        #[inline]
-        fn reduce_add_slice_assign(self, a: &mut [T], b: &[T]) {
-            slice::reduce_add_slice_assign(self.value, a, b);
-        }
-        #[inline]
-        fn reduce_add_slice_to(self, a: &[T], b: &[T], output: &mut [T]) {
-            slice::reduce_add_slice_to(self.value, a, b, output);
-        }
-    }
-    impl<T: FheUint> ReduceSubSlice<T> for BarrettModulus<T> {
-        #[inline]
-        fn reduce_sub_slice_assign(self, a: &mut [T], b: &[T]) {
-            slice::reduce_sub_slice_assign(self.value, a, b);
-        }
-        #[inline]
-        fn reduce_sub_slice_to(self, a: &[T], b: &[T], output: &mut [T]) {
-            slice::reduce_sub_slice_to(self.value, a, b, output);
-        }
-        #[inline]
-        fn reduce_sub_slice_rev_assign(self, a: &[T], b: &mut [T]) {
-            slice::reduce_sub_slice_rev_assign(self.value, a, b);
         }
     }
     impl<T: FheUint> ReduceDoubleSlice<T> for BarrettModulus<T> {
@@ -120,30 +125,6 @@ mod basic {
         #[inline]
         fn reduce_neg_slice_to(self, input: &[T], output: &mut [T]) {
             simd::reduce_neg_slice_to(self.value, input, output);
-        }
-    }
-    impl<T: FheUint> ReduceAddSlice<T> for BarrettModulus<T> {
-        #[inline]
-        fn reduce_add_slice_assign(self, a: &mut [T], b: &[T]) {
-            simd::reduce_add_slice_assign(self.value, a, b);
-        }
-        #[inline]
-        fn reduce_add_slice_to(self, a: &[T], b: &[T], output: &mut [T]) {
-            simd::reduce_add_slice_to(self.value, a, b, output);
-        }
-    }
-    impl<T: FheUint> ReduceSubSlice<T> for BarrettModulus<T> {
-        #[inline]
-        fn reduce_sub_slice_assign(self, a: &mut [T], b: &[T]) {
-            simd::reduce_sub_slice_assign(self.value, a, b);
-        }
-        #[inline]
-        fn reduce_sub_slice_to(self, a: &[T], b: &[T], output: &mut [T]) {
-            simd::reduce_sub_slice_to(self.value, a, b, output);
-        }
-        #[inline]
-        fn reduce_sub_slice_rev_assign(self, a: &[T], b: &mut [T]) {
-            simd::reduce_sub_slice_rev_assign(self.value, a, b);
         }
     }
     impl<T: FheUint> ReduceDoubleSlice<T> for BarrettModulus<T> {

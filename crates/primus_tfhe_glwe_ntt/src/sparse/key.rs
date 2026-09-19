@@ -3,10 +3,7 @@ use std::alloc::Layout;
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_glwe::{NttGlweSecretKey, SecretKeyDistr};
 use primus_integer::FheUint;
-use primus_lattice::{
-    GadgetSize,
-    ggsw::{GgswIter, NttGgsw},
-};
+use primus_lattice::{GadgetSize, ggsw::GgswIter};
 use primus_modulus::BarrettModulus;
 use primus_ntt::MonomialNttTable;
 use primus_reduce::PrepareModulusSwitch;
@@ -248,9 +245,7 @@ where
             });
             let output =
                 &mut data[(start + bucket) * size.ggsw_len()..(end + bucket + 1) * size.ggsw_len()];
-            // Encrypt directly into the final allocation, then transform each
-            // completed GGSW in place; no second full BSK is retained.
-            output_key.encrypt_ggsw_constant_batch_to(
+            output_key.encrypt_ggsw_constant_batch_coeff_to(
                 &constants,
                 output,
                 gadget,
@@ -258,9 +253,6 @@ where
                 rng,
                 &mut self.gadget,
             );
-            for ciphertext in output.chunks_exact_mut(size.ggsw_len()) {
-                let _ = NttGgsw::new(ciphertext).into_coeff_form(ntt);
-            }
         }
 
         Ok(SparseGlweBootstrappingKey {

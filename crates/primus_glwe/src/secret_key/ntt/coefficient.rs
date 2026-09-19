@@ -1,7 +1,7 @@
 //! Coefficient-domain GLWE operations using an already transformed secret.
 
 use super::NttGlweSecretKey;
-use crate::{GlweCiphertext, GlweParameters, PlaintextEmbedding};
+use crate::{GlweCiphertext, GlweParameters, GlweParametersInner, PlaintextEmbedding};
 use primus_data::{Data, DataMut};
 use primus_integer::FheUint;
 use primus_ntt::NttTable;
@@ -51,13 +51,35 @@ impl<T: FheUint> NttGlweSecretKey<T> {
             modulus,
             ntt_table,
         );
+        self.encrypt_coeff_kernel_to(output, params.inner(), ntt_table, rng, scratch, |body| {
+            params.plaintext_codec().add_encode_slice_assign(
+                body,
+                input.as_ref(),
+                PlaintextEmbedding::Unsigned,
+            );
+        });
+    }
+
+    /// Encrypts after layout/table/scratch validation. Message and noise stay in
+    /// coefficient form; the closure adds a message to the sampled body noise.
+    pub(super) fn encrypt_coeff_kernel_to<M, Table, R, B>(
+        &self,
+        output: &mut GlweCiphertext<B>,
+        params: &GlweParametersInner<T, M>,
+        ntt_table: &Table,
+        rng: &mut R,
+        scratch: &mut [T],
+        add_message: impl FnOnce(&mut [T]),
+    ) where
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+        R: rand::Rng + rand::CryptoRng,
+        B: DataMut<Elem = T>,
+    {
+        let modulus = params.cipher_modulus();
         let (masks, mut body) = output.a_b_mut(self.poly_length());
         primus_distr::sample_gaussian_values_to(body.as_mut(), params.noise_distribution(), rng);
-        params.plaintext_codec().add_encode_slice_assign(
-            body.as_mut(),
-            input.as_ref(),
-            PlaintextEmbedding::Unsigned,
-        );
+        add_message(body.as_mut());
 
         // Preserve the ordinary path's RNG order: noise, then each NTT mask.
         // Accumulate products in NTT form; message and noise stay in coefficient body.
