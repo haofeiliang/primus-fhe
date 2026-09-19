@@ -122,13 +122,41 @@ fn encrypted_selections_cover_the_support_once_with_dummy_per_bucket() {
 fn sparse_key_rejects_invalid_parameters_and_actual_secret_before_sampling() {
     let distribution = SecretKeyDistr::fixed_hamming_weight_binary(16, 4);
     let context = context(distribution);
-    let mut generator = KeyGenerator::new(&context);
     let client = ClientKey::generate(context.parameters(), &mut StdRng::seed_from_u64(42));
-    let mut check = |client: &ClientKey<u32>, copies, buckets, expected| {
+    let mut generator = KeyGenerator::new(&context);
+    let wrong_order = ClientKey::new(
+        client.small_lwe_secret_key().clone(),
+        client.glwe_secret_key().clone(),
+        PbsOrder::BootstrapKeyswitch,
+    );
+    let mut rng = StdRng::seed_from_u64(43);
+    let expected = generator
+        .try_generate_server_key(&wrong_order, None, &mut rng)
+        .err()
+        .unwrap();
+    assert!(matches!(
+        expected,
+        primus_tfhe_glwe::KeyGenerationError::ClientKey(_)
+    ));
+    assert_eq!(
+        generator
+            .try_generate_sparse_bootstrapping_key(&wrong_order, 3, 8, &mut rng)
+            .err(),
+        Some(expected.clone())
+    );
+    assert_eq!(
+        generator
+            .try_generate_sparse_server_key(&wrong_order, 3, 8, None, &mut rng)
+            .err(),
+        Some(expected)
+    );
+    assert_eq!(rng.next_u64(), StdRng::seed_from_u64(43).next_u64());
+
+    let mut check = |client: &ClientKey<u32>, copies, buckets, expected: Error| {
         let mut rng = StdRng::seed_from_u64(43);
         let result =
             generator.try_generate_sparse_bootstrapping_key(client, copies, buckets, &mut rng);
-        assert_eq!(result.err(), Some(expected));
+        assert_eq!(result.err(), Some(expected.into()));
         assert_eq!(rng.next_u64(), StdRng::seed_from_u64(43).next_u64());
     };
     for (copies, buckets) in [(0, 8), (9, 8), (3, 3)] {
@@ -175,7 +203,7 @@ fn sparse_key_rejects_invalid_parameters_and_actual_secret_before_sampling() {
         let mut rng = StdRng::seed_from_u64(45);
         let mut expected_rng = StdRng::seed_from_u64(45);
         let result = generator.try_generate_sparse_bootstrapping_key(&client, 3, 32, &mut rng);
-        assert_eq!(result.err(), Some(expected));
+        assert_eq!(result.err(), Some(expected.into()));
         assert_eq!(rng.next_u64(), expected_rng.next_u64());
     }
 }

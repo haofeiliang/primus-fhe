@@ -70,7 +70,7 @@ where
     pub fn accumulator_client(
         &self,
         client_key: &ClientKey<T>,
-    ) -> Result<crate::AccumulatorClient<'_, T, Table>, crate::KeyGenerationError> {
+    ) -> Result<crate::AccumulatorClient<'_, T, Table>, TfheClientError> {
         crate::AccumulatorClient::try_new(self, client_key)
     }
 

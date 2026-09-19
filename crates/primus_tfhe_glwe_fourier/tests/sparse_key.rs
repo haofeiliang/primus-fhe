@@ -127,6 +127,34 @@ fn sparse_key_errors_do_not_consume_randomness() {
         client.pbs_order(),
     );
     let mut generator = KeyGenerator::new(&context);
+    let wrong_order = ClientKey::new(
+        client.small_lwe_secret_key().clone(),
+        client.glwe_secret_key().clone(),
+        PbsOrder::BootstrapKeyswitch,
+    );
+    let mut rng = StdRng::seed_from_u64(43);
+    let expected = generator
+        .try_generate_server_key(&wrong_order, None, &mut rng)
+        .err()
+        .unwrap();
+    assert!(matches!(
+        expected,
+        primus_tfhe_glwe::KeyGenerationError::ClientKey(_)
+    ));
+    assert_eq!(
+        generator
+            .try_generate_sparse_bootstrapping_key(&wrong_order, 3, 8, &mut rng)
+            .err(),
+        Some(expected.clone())
+    );
+    assert_eq!(
+        generator
+            .try_generate_sparse_server_key(&wrong_order, 3, 8, None, &mut rng)
+            .err(),
+        Some(expected)
+    );
+    assert_eq!(rng.next_u64(), StdRng::seed_from_u64(43).next_u64());
+
     for (client, copies, buckets, error) in [
         (
             &client,
@@ -140,7 +168,7 @@ fn sparse_key_errors_do_not_consume_randomness() {
         let mut rng = StdRng::seed_from_u64(43);
         let result =
             generator.try_generate_sparse_bootstrapping_key(client, copies, buckets, &mut rng);
-        assert_eq!(result.err(), Some(error));
+        assert_eq!(result.err(), Some(error.into()));
         assert_eq!(rng.next_u64(), StdRng::seed_from_u64(43).next_u64());
     }
 }

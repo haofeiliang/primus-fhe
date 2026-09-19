@@ -308,13 +308,7 @@ fn sparse_generation_boundaries_and_unsupported_combinations() {
         .try_generate_sparse_server_key(&client, 3, 8, &mut rng)
         .unwrap();
     assert_eq!(
-        CircuitBootstrapEvaluator::try_from_parts(
-            &context,
-            &server,
-            circuit.parameters(),
-            &circuit
-        )
-        .err(),
+        CircuitBootstrapEvaluator::try_from_parts(&context, &server, &circuit).err(),
         Some(TfheEvaluationError::UnsupportedSparseBootstrapping)
     );
 }

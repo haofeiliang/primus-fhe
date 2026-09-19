@@ -10,7 +10,7 @@
 
 | crate / target | 工作负载与详细记录 |
 | --- | --- |
-| `primus_tfhe / lookup_table` | raw LUT 构造，包含分配与析构 |
+| `primus_tfhe / lookup_table` | raw LUT 构造，包含分配与析构；[R1 共享构造对照与成本限制](../tfhe-refactor-costs.md) |
 | 四后端 `/ pbs` | 完整 PBS、3/4 输出交错 ManyLUT 与独立 PBS；GLWE 另含 Boolean AND/MUX、两种 order 和 BR/KS 分项，Fourier 覆盖两种 FFT；系数提取基准归 `primus_lattice` |
 | NTRU 两后端 `/ pbs` | 另含 n=800 的 u32/u64、binary/ternary 完整 PBS 与 server keygen，报告密钥/evaluator 堆字节及完整输出相位；[B7.4 成本与边界](../tfhe-ntru-ternary.md#7-b74完整链与已有上层组合) |
 | 两族 Fourier `/ mvb` | Native u32/u64、3/17 个同 Scaled 阈值，重复/交错/MVB；GLWE 两种 order、经典/稀疏；[B5.4 成本与误差](../tfhe-mvb-fourier-costs.md) |

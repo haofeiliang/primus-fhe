@@ -76,14 +76,13 @@ pub use boolean::{
 ///
 /// Accepts the client secret key or an external LWE public key.
 pub type Encryptor<'a, T, Key = ClientKey<T>> =
-    primus_tfhe_glwe::Encryptor<'a, T, NativeModulus<T>, NativeModulus<T>, Key>;
+    primus_tfhe_glwe::Encryptor<'a, T, NativeModulus<T>, Key>;
 
 /// Client-key decryptor for the native-torus Fourier backend.
-pub type Decryptor<'a, T> = primus_tfhe_glwe::Decryptor<'a, T, NativeModulus<T>, NativeModulus<T>>;
+pub type Decryptor<'a, T> = primus_tfhe_glwe::Decryptor<'a, T, NativeModulus<T>>;
 
 /// GLWE-TFHE parameters for the native-torus Fourier backend.
-pub type TfheParameters<T> =
-    primus_tfhe_glwe::TfheParameters<T, NativeModulus<T>, NativeModulus<T>>;
+pub type TfheParameters<T> = primus_tfhe_glwe::TfheParameters<T, NativeModulus<T>>;
 
 /// Named mathematical choices for this backend; moduli are derived from the LWE parameters.
 pub type TfheConfig<T> = primus_tfhe_glwe::TfheConfig<T, NativeModulus<T>>;

@@ -113,7 +113,7 @@ evaluator.apply_lookup_table_to(&input, &lut, &mut output);
 
 RustFFT/TfheFFT 均支持两种 PBS order、普通 LUT 和 ManyLUT。
 要求 `0 < h < n`、`copy_count >= 1`、`bucket_count >= max(copy_count, h)`。
-server 生成返回 `KeyGenerationError`，其 `SparseBootstrapping` 包装
+server 和独立 sparse BSK 生成均返回 `KeyGenerationError`，其 `SparseBootstrapping` 包装
 `SparseBootstrappingKeyError`，后者的 `BucketMap` 分支保留映射错误；
 固定同一秘密，最多尝试八份公开映射，私有匹配在生成结束后擦除。
 

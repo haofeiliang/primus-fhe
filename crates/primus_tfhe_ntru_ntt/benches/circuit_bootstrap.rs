@@ -57,7 +57,7 @@ fn circuit_bootstrap(c: &mut Criterion) {
                     .unwrap()
             });
             let (mut evaluator, workspace_memory) = allocations::measure(|| {
-                CircuitBootstrapEvaluator::try_from_parts(&context, &server, &cbs, &key).unwrap()
+                CircuitBootstrapEvaluator::try_from_parts(&context, &server, &key).unwrap()
             });
             let mut output = NttNgswCiphertext::<Vec<u64>>::zero(cbs.output_nlev_len());
             let name = format!(

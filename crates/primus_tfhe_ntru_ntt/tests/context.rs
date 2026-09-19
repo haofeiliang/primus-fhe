@@ -112,7 +112,9 @@ fn rejects_server_keys_with_same_layout_but_different_bases_or_modulus() {
 #[test]
 fn construction_errors_preserve_transform_sources() {
     use primus_ntru::{NtruError, NtruSecretKey};
-    use primus_tfhe_ntru_ntt::{ClientKey, KeyGenerationError, KeyGenerator, TfheContextError};
+    use primus_tfhe_ntru_ntt::{
+        ClientKey, KeyGenerationError, KeyGenerator, TfheClientError, TfheContextError,
+    };
 
     let error = TfheContext::<_, U32NttTable>::try_from_parameters(parameters(19, 2, 2))
         .err()
@@ -128,6 +130,10 @@ fn construction_errors_preserve_transform_sources() {
         NtruSecretKey::new(vec![0; POLY_LENGTH], SecretKeyDistr::UniformBinary),
         NtruSecretKey::new(vec![0; POLY_LENGTH], SecretKeyDistr::SparseTernary),
         LWE_DIMENSION,
+    );
+    assert_eq!(
+        context.accumulator_client(&client).err(),
+        Some(TfheClientError::Ntru(NtruError::NonInvertibleSecretKey))
     );
     let error = KeyGenerator::new(&context)
         .try_generate_server_key(&client, None, &mut StdRng::seed_from_u64(42))

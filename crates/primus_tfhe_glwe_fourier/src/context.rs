@@ -127,7 +127,7 @@ where
         key: &'a Key,
     ) -> Result<Encryptor<'a, T, Key>, TfheClientError>
     where
-        Key: EncryptionKey<T, primus_modulus::NativeModulus<T>, primus_modulus::NativeModulus<T>>,
+        Key: EncryptionKey<T, primus_modulus::NativeModulus<T>>,
     {
         Encryptor::try_new(&self.parameters, key)
     }
@@ -204,7 +204,7 @@ where
         key: &'a Key,
     ) -> Result<BooleanEncryptor<'a, T, Key>, BooleanError>
     where
-        Key: EncryptionKey<T, primus_modulus::NativeModulus<T>, primus_modulus::NativeModulus<T>>,
+        Key: EncryptionKey<T, primus_modulus::NativeModulus<T>>,
     {
         BooleanEncryptor::try_new(&self.parameters, key)
     }

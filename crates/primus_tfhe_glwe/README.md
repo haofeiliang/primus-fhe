@@ -14,6 +14,8 @@ The shared layer and both backends use the same role names: `Encryptor`, `Decryp
 
 ## Parameters and external key domain
 
+`TfheParameters<T, M>` and clients share one ciphertext modulus type `M`; backend aliases fix their modulus implementation.
+
 Prefer `TfheParameters::try_from_config(TfheConfig { .. })`: specify `t/q` once in
 `small_lwe`, then name the accumulator dimension, length, secret distribution and
 noise, the blind-rotation/key-switch `DecompositionConfig { log_basis, level_count }`,
@@ -95,9 +97,11 @@ Raw inputs must use the Boolean encoding and the matching external key; these
 properties cannot be verified from an LWE ciphertext.
 
 CBS is an optional facility in both backends, with separate output basis,
-trace/scheme-switch parameters and keys. Both PBS orders and classic binary/ternary
-small secrets are supported. CBS outputs remain under the accumulator secret and
-use gadget scales; sparse CBS is not supported.
+trace/scheme-switch parameters and keys. Both PBS orders support classic binary/ternary
+and sparse binary keys. CBS outputs remain under the accumulator secret and use gadget scales.
+The family defines `CircuitBootstrapParameters<T, M>`; backends provide concrete modulus aliases.
+Output bases with the same level count can reuse the scheme-switch key; numerical and transform
+requirements belong to the corresponding backend contracts.
 
 ## Examples
 

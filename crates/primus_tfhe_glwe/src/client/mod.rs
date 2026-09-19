@@ -12,32 +12,30 @@ use crate::{
 
 /// Encrypts raw TFHE messages into LWE ciphertexts with a particular encryption key.
 ///
-/// The LWE and GLWE modulus context types are part of the type, but FFT/NTT
+/// The shared ciphertext modulus type is part of the type, but FFT/NTT
 /// tables are not: client-side LWE encryption does not use a transform
 /// backend.
 ///
 /// Public-key usage follows [`EncryptionKey`]'s noise and key-identity contracts.
-pub struct Encryptor<'a, T, LM, GM, Key = ClientKey<T>>
+pub struct Encryptor<'a, T, M, Key = ClientKey<T>>
 where
     T: FheUint,
-    LM: RingContext<T>,
-    GM: RingContext<T>,
+    M: RingContext<T>,
 {
-    parameters: &'a TfheParameters<T, LM, GM>,
+    parameters: &'a TfheParameters<T, M>,
     key: &'a Key,
 }
 
-impl<'a, T, LM, GM, Key> Encryptor<'a, T, LM, GM, Key>
+impl<'a, T, M, Key> Encryptor<'a, T, M, Key>
 where
     T: FheUint,
-    LM: RingContext<T>,
-    GM: RingContext<T>,
-    Key: EncryptionKey<T, LM, GM>,
+    M: RingContext<T>,
+    Key: EncryptionKey<T, M>,
 {
     /// Creates an encryptor after checking secret-key parameters or public-key
     /// dimension and modulus. Public-key identity is a caller contract.
     pub fn try_new(
-        parameters: &'a TfheParameters<T, LM, GM>,
+        parameters: &'a TfheParameters<T, M>,
         key: &'a Key,
     ) -> Result<Self, TfheClientError> {
         EncryptionKey::check_compatible(key, parameters)?;
@@ -206,25 +204,23 @@ where
 }
 
 /// Decrypts raw TFHE ciphertexts with the client key.
-pub struct Decryptor<'a, T, LM, GM>
+pub struct Decryptor<'a, T, M>
 where
     T: FheUint,
-    LM: RingContext<T>,
-    GM: RingContext<T>,
+    M: RingContext<T>,
 {
-    parameters: &'a TfheParameters<T, LM, GM>,
+    parameters: &'a TfheParameters<T, M>,
     key: &'a ClientKey<T>,
 }
 
-impl<'a, T, LM, GM> Decryptor<'a, T, LM, GM>
+impl<'a, T, M> Decryptor<'a, T, M>
 where
     T: FheUint,
-    LM: RingContext<T>,
-    GM: RingContext<T>,
+    M: RingContext<T>,
 {
     /// Creates a decryptor after checking key compatibility.
     pub fn try_new(
-        parameters: &'a TfheParameters<T, LM, GM>,
+        parameters: &'a TfheParameters<T, M>,
         key: &'a ClientKey<T>,
     ) -> Result<Self, TfheClientError> {
         key.check_compatible(parameters)?;

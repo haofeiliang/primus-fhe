@@ -5,11 +5,13 @@
 //! - `factorized`: a common polynomial and fixed-scale difference factors for MVB.
 //! - `bivariate`: bounded input packing followed by a single-output lookup.
 //! - `compile`: input geometry, validation and polynomial filling.
+//! - `rounded`: shared plaintext-output constructors using rounded codecs.
 
 mod bivariate;
 mod compile;
 mod factorized;
 mod interleaved;
+mod rounded;
 mod single;
 
 use primus_integer::FheUint;

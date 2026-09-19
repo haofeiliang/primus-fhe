@@ -4,23 +4,14 @@
 
 ## 当前任务
 
-- **B8.1–B8.3 NTRU NTT/Fourier 桶聚合普通/ManyLUT 已完成，B1–B8 无待执行步骤**：[采样、相位、API 与成本](docs/tfhe-ntru-sparse.md)。B8.2 已提交为 `3b96bf9`；本轮 B8.3 未提交。两后端固定客户端后只重采 map，共用原有 `ServerKey`/evaluator 及初始化/BR/返回 KS 的外积工作区；sparse CBS（含独立材料）和 MVB 均拒绝。Fourier 显式 h=33，偶数重量在 RNG 消费前拒绝，保留稳定性筛选；两 FFT、u32/u64 的独立相位/整数外积参考、所有桶、KS、零分配通过。n=728 的 u32 在线快约 65%–71%；u64 RustFFT 快约 8%–16%，TfheFFT 无稳定收益。keygen 约为经典的 3.47–3.67 倍，key 为 u32 约 1.54 倍、u64 约 3.09 倍。默认/SIMD TFHE 检查、严格 rustdoc、workspace all-targets 和双 FFT release 示例通过；临时大参数诊断已清理。采样条件分布、安全及完整失败率仍未认证；后续算法由用户选择，不自动启动。
-- **B7.1–B7.4 NTRU 经典 ternary 已完成，B7.4 提交为 `c25ba42`**：[秘密采样、融合单步与完整链](docs/tfhe-ntru-ternary.md)。两后端支持 binary/ternary，成对 NGSW 控制使用一次融合外积并复用 scratch；普通/ManyLUT、公钥、Boolean、CBS、MVB 代表组合及首调用零分配通过。n=800 的 u32/u64 完整成本见专项：ternary PBS 比 binary 慢约 27%–71%，server keygen 约两倍；原 u32 binary 前后约 −2.0%～+1.7%。Native 固定偶数重量拒绝，条件分布和完整失败率未认证。
-- **B6.1–B6.3 GLWE sparse CBS 已完成**：[NTT 参数与接入](docs/tfhe-sparse-cbs.md)、[Fourier 独立误差与接入](docs/tfhe-cbs.md#7-b63-fourier-sparse-cbs)。两后端复用普通 evaluator 的 classic/sparse BR 及所选 scratch，共用 trace/scheme switch；稀疏 server-key 工厂均接受可选 CBS 配置并返回 `KeyGenerationError`。Fourier 两 FFT/order/seed 的 u64 输出 `(8,3)` 通过聚合 FFT、逐级 Native halving、逐层相位、非恒定 CMUX 与零分配验收；`(9,3)` 未纳入通过配置，默认/SIMD 数值差异分别记录。原型与临时 trace 访问器已清理，现有测试及 CBS bench 承担正式回归。默认/SIMD TFHE 检查、严格 rustdoc、两种 release 示例和基准通过；本组 Fourier 稀疏链多数场景慢 7%–24%，server key 约大 3.09 倍，保持显式选择。
-- **B5.1–B5.4 已完成，B5.4 提交为 `18a1288`**：两族 Native 偶尺度 Fourier MVB 的[表示与独立误差](docs/tfhe-mvb-fourier.md)、[应用/组合/成本](docs/tfhe-mvb-fourier-costs.md)已验收。GLWE 支持经典 binary/ternary 和 sparse binary、两种 order；NTRU 经典 ternary 已在 B7.4 接入。3/17 阈值的默认/SIMD 等编码对照、误差、资源与示例已记录；不从功能样本推断任意因子/参数精度或自动选择算法。
-- **B4 及后续内核优化已提交为 `1f6bab2`**：Fourier sparse 完整基准、常数准备与 NTT 系数 GGSW 优化见[稀疏 PBS](docs/tfhe-sparse-pbs.md)。Native/Barrett 加减保留普通循环，Shoup u64 原地乘法改用普通循环；[u64 测量与取舍](docs/simd-u64.md)保留微基准退化和完整消费者无稳定收益的边界，Native 后续原型已撤回。历史验证与具体性能前提见专项，不自动重开优化。
-- **B3 已完成**：NTRU NTT MVB 的算法、布局和成本见[NTRU 测量](docs/tfhe-mvb-ntru.md)；GLWE NTT sparse×Boolean/bivariate/odd-full 已完成两种 order 的受控误差、门链、相位/解码与首调用零分配验收，见[分步计划](docs/tfhe-backend-plan.md)。
-- **B2.1–B2.2 已完成**：Boolean 门算法、LUT 和 LWE 工作区由 `primus_tfhe` 共享，四后端提供 Boolean 工厂，保留独立加解密器及私钥/公钥加密。客户端错误归 family `BooleanError`，求值器构造归共享 `TfheEvaluationError`。共同真值表、混合门链、错误边界和 NTRU 首调用零分配通过；NTRU 覆盖 NTT 与两种 FFT，默认/SIMD 检查和测试通过。见[公共用法](crates/primus_tfhe/README.zh_CN.md#boolean-门)。
-- **GLWE NTT 系数域加解密已接入**：[算法、性能与误差](docs/glwe-coefficient-client.md)。在 `NttGlweSecretKey` 增加三个固有方法，NTT `AccumulatorClient` 改用 N 系数、析构时擦除的 scratch；高层接口不变，保持精确等价和在线零分配。u64 Fourier 原型真实相位噪声 RMS 增加约 6%–13%，按用户决定暂不接入；不重开全底层整理。
-- **B1.1–B1.7 已完成**：[分步计划](docs/tfhe-backend-plan.md)、[高层接口与成本验收](docs/tfhe-api-costs.md)。四后端使用具名配置、自动建表、带可选 CBS 的 `ServerKey`、绑定消费与 accumulator 客户端；GLWE NTT 的 CBS 参数现在也绑定输入明文模数。默认/SIMD、严格 rustdoc、底层回归及九个 release 示例通过；四后端完整消费首调用零分配，复用 scratch 省去独立 CMUX 缓冲。对 `66ae701` 的当前时间/资源对照已记录；NTRU NTT 微型 fixture 对资源放置敏感，不声称所有负载等时。稀疏 CBS 后续已在 B6 接入，正式尾界未认证；逐系数 RevHomTrace 保留，共享 automorphism 优化暂缓。
-- 旧 S0–S9 及 LUT/PBS 的 **P1–P4 已完成**；[完成索引](docs/tfhe-plan.md)只用于恢复，不重开旧步骤。基础 crate 的既有整理也不自动重启。
-- **T1–T3 已完成**：[经典 GLWE ternary PBS](docs/tfhe-ternary.md#6-实施顺序与完成条件)已接入 NTT/Fourier 两后端，含两种 order、普通/交错 LUT、公钥客户端与 NTT CBS/MVB。small-LWE 分布选择 ternary；binary 路径保留。
-- GLWE 公共层与两个后端统一使用 `Encryptor`、`Decryptor`、`ClientKey`、`EncryptionKey`、`PbsOrder` 和 `TfheParameters`；底层保留数学/表示前缀。参数以 `accumulator_glwe`、`blind_rotation_ggsw` 和 `external_lwe_dimension` 区分角色。`ClientKey::generate` 负责系数域密钥生成；客户端统一编码后由 `EncryptionKey` 加密。Boolean 客户端以 `try_new` 构造，保留私钥/公钥加密并直接使用 `LweCiphertext`；普通 LUT 从 `context.parameters()` 编译，MVB 由对应后端 context 准备。入口见 [GLWE README](crates/primus_tfhe_glwe/README.zh_CN.md)。
-- NTRU 公共层与两个后端采用相同高层名称；参数以 `blind_rotation`、`accumulator_ntru`、`ntru_key_switching` 区分角色，普通 LUT 由参数编译。客户端统一编码，密钥错误共享；可逆性/稳定性拒绝采样仍属于后端，生成入口使用 `try_`。入口见 [NTRU README](crates/primus_tfhe_ntru/README.zh_CN.md)。
-- 采用融合式 `ACC += (GGSW(s⁺)-X^-α GGSW(s⁻)) ⊠ ((X^α-1)ACC)`。每坐标两份控制、一次外积；负指数取自同一量化结果。两后端保留完整组合 GGSW 工作区，NTT 要求 `MonomialNttTable`。低层 BR context 从 BSK 构造，控制迭代器显式区分 binary 与 ternary 对。
-- n=728 完整 PBS 的默认/SIMD 成本、密钥和 scratch 见专项文档；不将等算术成本解释为等安全或等失败率。下一算法由用户按[候选清单](docs/tfhe-next.md)选择，不自动启动。
+- **TFHE R1 已完成，下一步 R2**：[R1–R4 四步计划](docs/tfhe-refactor-plan.md)。已收敛 GLWE 泛型/CBS 参数、NTRU CBS 参数绑定、错误归属和 LUT 共享构造；默认/SIMD 各 87 项测试、workspace all-targets 与严格 rustdoc 通过。本轮修改尚未暂存或提交，编号不隐含提交或启动下一步。
+- 计划基于七个 `primus_tfhe*` crate 的只读审查，源码基线为 `cba9c01`。目标是类型与错误归属、资源所有权、重复计算、模块组织和学习路径；保留算法与表示差异，试验性优化无收益时撤回并记录结论。基线验证范围见计划末节，不能替代实施后的验证。
+- **B1–B8 已完成，B8.3 已提交为 `cba9c01`**：[后端补齐计划](docs/tfhe-backend-plan.md)。旧 S0–S9、[P1–P4](docs/tfhe-plan.md)、[T1–T3](docs/tfhe-ternary.md)均不自动重启；只按本次目标读取完成记录。
+- 新算法由用户按[候选清单](docs/tfhe-next.md)选择。本轮不扩展未验收组合，不重开底层全库整理；局部原语变更须有明确的资源或维护收益。
 
 ## 有效边界与未决项
+
+- R1 保留共享 LUT 构造及薄入口/输出编码 helper 的内联。Native `N=1024,t=255,k=4` 三轮中位数构造耗时增加约 4.4%（0.06 μs）；其余测量与限制见[成本记录](docs/tfhe-refactor-costs.md)。不声称零回退或在线 PBS 加速。
 
 - GLWE/NTRU 两族均已支持经典 ternary；桶聚合 ternary 另行设计。Automorphism BR 暂缓；NTRU packing 按用户决定排除。
 - 已实现能力以 [TFHE README](crates/primus_tfhe/README.zh_CN.md)为准。GLWE 两后端均已接入稀疏 CBS；MVB 采用 Rounded 前半区输入和 unsigned Scaled 输出；GLWE/NTRU NTT 使用奇数 q，GLWE Fourier 支持 u32/u64 Native 偶尺度及经典/稀疏密钥。NTRU Fourier 支持相同 Native 偶尺度与字宽、经典 binary/ternary BR，以及奇数重量 binary 桶聚合普通/ManyLUT；两 NTRU 后端均拒绝 sparse CBS/MVB。Scaled 数值标志不可直接送入 Boolean 门或沿用原输入编码。
@@ -32,7 +23,9 @@
 
 | 目标 | 入口 |
 | --- | --- |
+| 当前类型、错误、工作区与使用方式整理 | [R1–R4 计划](docs/tfhe-refactor-plan.md)，下一步 R2 |
 | LUT、编码、量化、秘密域与后处理 | [TFHE 设计总览](docs/tfhe.md) |
+| 已有后端能力、组合与测量 | [B1–B8 完成入口](docs/tfhe-backend-plan.md)、[测量索引](docs/benchmarks/tfhe.md) |
 | 下一算法与启动条件 | [候选清单](docs/tfhe-next.md)、[ternary 设计](docs/tfhe-ternary.md) |
 | 非 TFHE 的既有选择与待核实问题 | [实现决定参考](.agents/references/implementation-decisions.md)，只读相关章节 |
 | 验证 | [justfile](justfile)：`just tfhe` 覆盖七包默认 check/Clippy/test/doc 与 xtask；`just tfhe-simd` 覆盖七包 nightly SIMD。原 `just simd` 不覆盖全部 TFHE |

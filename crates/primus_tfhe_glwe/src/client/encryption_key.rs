@@ -21,17 +21,13 @@ mod sealed {
 /// correctness requirements and the PBS/ManyLUT input noise budget.
 /// Message checks and encoding belong to [`Encryptor`](super::Encryptor); these methods operate
 /// on encoded ciphertext residues.
-pub trait EncryptionKey<T, LM, GM>: sealed::Sealed
+pub trait EncryptionKey<T, M>: sealed::Sealed
 where
     T: FheUint,
-    LM: RingContext<T>,
-    GM: RingContext<T>,
+    M: RingContext<T>,
 {
     /// Checks the structural compatibility needed by the encryptor constructor.
-    fn check_compatible(
-        &self,
-        parameters: &TfheParameters<T, LM, GM>,
-    ) -> Result<(), TfheClientError>;
+    fn check_compatible(&self, parameters: &TfheParameters<T, M>) -> Result<(), TfheClientError>;
 
     /// Encrypts an encoded residue using the configured external noise sampler.
     ///
@@ -44,7 +40,7 @@ where
     fn encrypt_encoded<R>(
         &self,
         plaintext: T,
-        parameters: &TfheParameters<T, LM, GM>,
+        parameters: &TfheParameters<T, M>,
         rng: &mut R,
     ) -> LweCiphertext<T>
     where
@@ -65,29 +61,25 @@ where
         &self,
         plaintext: T,
         output: &mut LweCiphertext<T>,
-        parameters: &TfheParameters<T, LM, GM>,
+        parameters: &TfheParameters<T, M>,
         rng: &mut R,
     ) where
         R: rand::Rng + rand::CryptoRng;
 }
 
-impl<T, LM, GM> EncryptionKey<T, LM, GM> for ClientKey<T>
+impl<T, M> EncryptionKey<T, M> for ClientKey<T>
 where
     T: FheUint,
-    LM: RingContext<T>,
-    GM: RingContext<T>,
+    M: RingContext<T>,
 {
-    fn check_compatible(
-        &self,
-        parameters: &TfheParameters<T, LM, GM>,
-    ) -> Result<(), TfheClientError> {
+    fn check_compatible(&self, parameters: &TfheParameters<T, M>) -> Result<(), TfheClientError> {
         Ok(self.check_compatible(parameters)?)
     }
 
     fn encrypt_encoded<R>(
         &self,
         plaintext: T,
-        parameters: &TfheParameters<T, LM, GM>,
+        parameters: &TfheParameters<T, M>,
         rng: &mut R,
     ) -> LweCiphertext<T>
     where
@@ -121,7 +113,7 @@ where
         &self,
         plaintext: T,
         output: &mut LweCiphertext<T>,
-        parameters: &TfheParameters<T, LM, GM>,
+        parameters: &TfheParameters<T, M>,
         rng: &mut R,
     ) where
         R: rand::Rng + rand::CryptoRng,
@@ -153,16 +145,12 @@ where
     }
 }
 
-impl<T, LM, GM> EncryptionKey<T, LM, GM> for LwePublicKey<T>
+impl<T, M> EncryptionKey<T, M> for LwePublicKey<T>
 where
     T: FheUint,
-    LM: RingContext<T>,
-    GM: RingContext<T>,
+    M: RingContext<T>,
 {
-    fn check_compatible(
-        &self,
-        parameters: &TfheParameters<T, LM, GM>,
-    ) -> Result<(), TfheClientError> {
+    fn check_compatible(&self, parameters: &TfheParameters<T, M>) -> Result<(), TfheClientError> {
         if self.dimension() != parameters.external_lwe_dimension() {
             return Err(TfheClientError::PublicKeyDimensionMismatch {
                 expected: parameters.external_lwe_dimension(),
@@ -178,7 +166,7 @@ where
     fn encrypt_encoded<R>(
         &self,
         plaintext: T,
-        parameters: &TfheParameters<T, LM, GM>,
+        parameters: &TfheParameters<T, M>,
         rng: &mut R,
     ) -> LweCiphertext<T>
     where
@@ -196,7 +184,7 @@ where
         &self,
         plaintext: T,
         output: &mut LweCiphertext<T>,
-        parameters: &TfheParameters<T, LM, GM>,
+        parameters: &TfheParameters<T, M>,
         rng: &mut R,
     ) where
         R: rand::Rng + rand::CryptoRng,

@@ -32,6 +32,10 @@ where
     Table: MonomialNttTable<ValueT = T>,
 {
     /// Creates reusable evaluation state after checking the server key once.
+    ///
+    /// # Correctness
+    /// The server key must use the NTT representation of `context.table()`.
+    /// Layout and basis checks do not establish transform or secret identity.
     pub fn try_new(
         context: &'a TfheContext<T, Table>,
         server_key: &'a ServerKey<T>,

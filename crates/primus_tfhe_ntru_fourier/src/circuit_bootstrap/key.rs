@@ -33,14 +33,6 @@ impl<T: TorusFftValue> CircuitBootstrapKey<T> {
     pub fn scheme_switch_key(&self) -> &FourierNtruSchemeSwitchKey<T> {
         &self.scheme_switch
     }
-
-    pub(crate) fn is_compatible(&self, parameters: &CircuitBootstrapParameters<T>) -> bool {
-        self.trace.poly_length() == parameters.trace().poly_length()
-            && self.trace.basis() == parameters.trace().basis()
-            && self.scheme_switch.poly_length() == parameters.poly_length()
-            && self.scheme_switch.key_basis() == parameters.scheme_switch().basis()
-            && self.scheme_switch.output_basis() == parameters.output_basis()
-    }
 }
 
 impl<T, Table> KeyGenerator<'_, T, Table>

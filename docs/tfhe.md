@@ -4,10 +4,11 @@
 
 | 阅读目标 | 文档 |
 | --- | --- |
+| 当前结构与使用方式整理 | [R1–R4 四步计划](tfhe-refactor-plan.md) |
 | 已完成的 P1–P4 | [实施索引](tfhe-plan.md) |
 | 固定重量二元桶聚合 | [稀疏 PBS：推导、布局、测量](tfhe-sparse-pbs.md) |
 | 同一输入、多函数输出 | [固定尺度分解式 MVB](tfhe-mvb.md) |
-| 下一阶段 | [候选算法](tfhe-next.md)、[ternary 与 T1–T3](tfhe-ternary.md) |
+| 后续算法候选与既有 ternary | [候选算法](tfhe-next.md)、[ternary 与 T1–T3](tfhe-ternary.md) |
 | 当前基准入口与历史测量 | [测量索引](benchmarks/tfhe.md) |
 
 ## 职责与执行边界
@@ -29,7 +30,9 @@ CBS 在密钥生成时通过 `Some(CircuitBootstrapConfig)` 可选启用，附�
 公共 LUT/evaluator 错误由 `primus_tfhe` 定义；两族的 `error` 模块集中维护参数、客户端及
 密钥生成错误，NTT/Fourier 后端重导出。变换表错误留在后端 context。纯索引匹配使用 `primus_tfhe::sparse::BucketMapError`；
 GLWE 的 `SparseBootstrappingKeyError::BucketMap(#[from] BucketMapError)` 保留底层映射错误，
-外层只定义客户端、实际秘密及 GGSW 存储错误，两后端重导出。
+稀疏错误只描述实际秘密、分布及 GGSW 存储；客户端不兼容直接进入 `KeyGenerationError::ClientKey`。
+完整与独立 sparse BSK 生成均返回 family `KeyGenerationError`，两后端重导出。
+NTRU accumulator 客户端构造使用 `TfheClientError`，其 `Ntru` 分支保留秘密转换失败。
 不增加跨全部操作的总错误；只有无歧义转换使用 `#[from]`。BR/KS、trace/SS 在调用点
 显式 `map_err` 标明用途，并以 `#[source]` 保留原因。表错误不保证 `Clone`/`Eq`，context 错误不额外承诺它们。
 公开错误入口见 [README](../crates/primus_tfhe/README.zh_CN.md#错误边界)。

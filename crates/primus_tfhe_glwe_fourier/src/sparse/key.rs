@@ -12,7 +12,7 @@ use primus_reduce::PrepareModulusSwitch;
 use primus_tfhe::{rotation::RotationQuantizer, sparse::BucketMap};
 use zeroize::Zeroizing;
 
-use crate::{ClientKey, KeyGenerator, SparseBootstrappingKeyError};
+use crate::{ClientKey, KeyGenerationError, KeyGenerator, SparseBootstrappingKeyError};
 
 /// Coefficient-domain GGSW selections for sparse blind rotation in the Fourier backend.
 ///
@@ -169,7 +169,7 @@ where
         copy_count: usize,
         bucket_count: usize,
         rng: &mut R,
-    ) -> Result<SparseGlweBootstrappingKey<T>, SparseBootstrappingKeyError>
+    ) -> Result<SparseGlweBootstrappingKey<T>, KeyGenerationError>
     where
         R: rand::Rng + rand::CryptoRng,
     {
@@ -179,11 +179,11 @@ where
         client_key.check_compatible(parameters)?;
         let input = client_key.small_lwe_secret_key();
         let SecretKeyDistr::FixedHammingWeightBinary { hamming_weight } = input.distr() else {
-            return Err(Error::UnsupportedSecretDistribution);
+            return Err(Error::UnsupportedSecretDistribution.into());
         };
         let input_dimension = input.dimension();
         if hamming_weight == 0 || hamming_weight >= input_dimension {
-            return Err(Error::InvalidHammingWeight);
+            return Err(Error::InvalidHammingWeight.into());
         }
         let entry_count = input_dimension
             .checked_mul(copy_count)
@@ -201,15 +201,15 @@ where
         for (index, &coefficient) in input.as_ref().iter().enumerate() {
             if coefficient == T::ONE {
                 if nonzero_indices.len() == hamming_weight {
-                    return Err(Error::InvalidSecretCoefficients);
+                    return Err(Error::InvalidSecretCoefficients.into());
                 }
                 nonzero_indices.push(index);
             } else if coefficient != T::ZERO {
-                return Err(Error::InvalidSecretCoefficients);
+                return Err(Error::InvalidSecretCoefficients.into());
             }
         }
         if nonzero_indices.len() != hamming_weight {
-            return Err(Error::InvalidSecretCoefficients);
+            return Err(Error::InvalidSecretCoefficients.into());
         }
         let (map, selected_input_indices) = BucketMap::try_generate(
             input_dimension,
@@ -217,7 +217,8 @@ where
             bucket_count,
             &nonzero_indices,
             rng,
-        )?;
+        )
+        .map_err(Error::from)?;
         drop(nonzero_indices);
 
         // Flatten the private selectors in final bucket order, including each

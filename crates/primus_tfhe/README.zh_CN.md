@@ -45,9 +45,11 @@ NTRU [NTT](../primus_tfhe_ntru_ntt/README.zh_CN.md#实验性稀疏-pbs) 和
 | TFHE / CBS 参数准备 | Family `TfheParameterError` / `CircuitBootstrapParameterError` |
 | Client key 兼容性 / 客户端操作 | Family `TfheKeyError` / `TfheClientError` |
 | Boolean 客户端构造、加密和解密 | Family `BooleanError`；`Client` 分支保留底层客户端错误 |
-| 常规、稀疏 server 或独立 CBS 密钥生成 | Family `KeyGenerationError`；NTRU 采样/变换直接进入 `Ntru` 分支；稀疏失败进入 `SparseBootstrapping` |
-| GLWE 原始稀疏 BSK 生成 | Family `SparseBootstrappingKeyError`；`BucketMap` 分支保留底层映射错误 |
+| 常规/稀疏 server、稀疏 BSK 或独立 CBS 密钥生成 | Family `KeyGenerationError`；NTRU 采样/变换直接进入 `Ntru` 分支；稀疏失败进入 `SparseBootstrapping` |
+| NTRU accumulator 客户端构造 | Family `TfheClientError`；`Ntru` 分支保留秘密转换失败 |
 | 自动建表或显式绑定表 | 后端 `TfheContextError`；`TransformTable` 保留底层 FFT/NTT 错误 |
+
+`KeyGenerationError::ClientKey` 直接报告客户端不兼容；稀疏失败的 `BucketMap` 分支保留映射原因。
 
 ## Boolean 门
 
@@ -133,6 +135,10 @@ server key 持有对应参数和材料，各 evaluator 只持有自身工作区�
 例如 `k=3` 时三个输出占用四个槽：编译器将第四槽置零，不调用 callback；求值端只返回三个密文。
 所有输出共享一次盲旋转（BR）和密钥切换，再分别提取。
 输出越多，旋转分辨率与输入噪声余量越低。这是一个输入求多个函数，不是独立密文批处理。
+
+直接使用共享层时，`LookupTable` / `InterleavedLookupTable` 的 `try_from_fn`、`try_from_slice`
+接收输入 codec、累加器模数和输出 codec，负责 unsigned Rounded 编码与检查。
+奇数全域使用 `LookupTable::try_from_odd_full_domain_fn` / `_slice`；family 编译入口复用这些方法。
 
 Raw 构造器 `LookupTable::try_new` / `InterleavedLookupTable::try_new` 显式接收
 编程前缀长度 `D` 和已编码输出。`input_ciphertext_modulus` 描述输入量化模数，

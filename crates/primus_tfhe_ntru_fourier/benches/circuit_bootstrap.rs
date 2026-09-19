@@ -54,7 +54,7 @@ fn backend<Table: FftTable>(c: &mut Criterion, backend: &str) {
                     .unwrap()
             });
             let (mut evaluator, workspace_memory) = allocations::measure(|| {
-                CircuitBootstrapEvaluator::try_from_parts(&context, &server, &cbs, &key).unwrap()
+                CircuitBootstrapEvaluator::try_from_parts(&context, &server, &key).unwrap()
             });
             let mut output =
                 FourierNgswCiphertext::<Vec<Complex64>>::zero(cbs.output_fourier_nlev_len());

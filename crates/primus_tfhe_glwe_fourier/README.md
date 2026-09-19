@@ -129,7 +129,7 @@ evaluator.apply_lookup_table_to(&input, &lut, &mut output);
 
 Both PBS orders, ordinary LUTs and ManyLUT work with RustFFT and TfheFFT. Require
 `0 < h < n`, `copy_count >= 1` and `bucket_count >= max(copy_count, h)`.
-Server generation returns `KeyGenerationError`; `SparseBootstrapping` wraps
+Server and standalone sparse BSK generation return `KeyGenerationError`; `SparseBootstrapping` wraps
 `SparseBootstrappingKeyError`, whose `BucketMap` variant preserves mapping failures. Matching retries at most eight public maps with the same secret.
 The private matching is erased after generation.
 

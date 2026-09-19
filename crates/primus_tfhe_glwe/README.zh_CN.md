@@ -13,6 +13,8 @@ GLWE 表示 PBS 累加器所属的方案家族。
 
 ## 参数与外部密钥域
 
+`TfheParameters<T, M>` 和客户端使用同一个密文模数类型 `M`；两后端的类型别名固定各自的模数实现。
+
 推荐使用 `TfheParameters::try_from_config(TfheConfig { .. })`：只在 `small_lwe`
 中指定一次 `t/q`，具名字段选择 accumulator 的维数、长度、秘密分布和噪声，以及
 blind rotation、key switching 的 `DecompositionConfig { log_basis, level_count }`
@@ -81,8 +83,9 @@ Boolean 运算直接使用 `LweCiphertext<T>`，采用模 4 下 unsigned rounded
 Raw 输入必须采用 Boolean 编码及匹配的外部秘密，这些性质无法从 LWE 密文本身验证。
 
 CBS 是两个后端的可选能力，提供独立的 output basis、trace/scheme-switch 参数及密钥，
-支持两种 PBS order 和经典 binary/ternary small secret。CBS 输出留在 accumulator
-secret 下，使用 gadget 尺度；稀疏 CBS 尚不支持。
+两种 PBS order 均支持经典 binary/ternary 和 sparse binary。CBS 输出留在 accumulator
+secret 下，使用 gadget 尺度。`CircuitBootstrapParameters<T, M>` 由公共层定义，后端提供具体模数别名；
+同层数的不同输出 basis 可复用 scheme-switch key。噪声与变换要求见对应后端契约。
 
 ## 示例
 

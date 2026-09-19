@@ -7,8 +7,7 @@ use primus_modulus::BarrettModulus;
 use primus_tfhe_glwe::PbsOrder;
 
 /// GLWE-TFHE parameters for the explicit-modulus NTT backend.
-pub type TfheParameters<T> =
-    primus_tfhe_glwe::TfheParameters<T, BarrettModulus<T>, BarrettModulus<T>>;
+pub type TfheParameters<T> = primus_tfhe_glwe::TfheParameters<T, BarrettModulus<T>>;
 
 /// Returns the temporary Boolean parameter set used by tests and benchmarks.
 ///

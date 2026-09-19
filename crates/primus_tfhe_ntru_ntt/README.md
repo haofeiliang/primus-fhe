@@ -9,7 +9,7 @@ workloads, not security parameter recommendations.
 See the [shared capability and encoding guide](../primus_tfhe/README.md) and
 [NTRU family/key domains](../primus_tfhe_ntru/README.md). Both NTRU backends support
 PBS, ManyLUT, Boolean gates and CBS.
-The NTT backend additionally supports fixed-scale factorized MVB.
+Both backends also support fixed-scale factorized MVB, with their respective modulus and scale requirements.
 See the [shared Boolean contracts](../primus_tfhe/README.md#boolean-gates).
 
 Custom NTT tables must implement `MonomialNttTable`; built-in `UintNttTable` supports it.
@@ -165,7 +165,8 @@ Only the selected evaluator allocates its workspace. Key generation returns `Key
 NTRU sampling/conversion failures use its `Ntru` variant; `ClientKey` reports compatibility failures.
 
 For advanced composition, `try_generate_circuit_bootstrap_key` owns its prepared parameters,
-and `CircuitBootstrapEvaluator::try_from_parts` accepts explicit parameters and material.
+and `CircuitBootstrapEvaluator::try_from_parts(context, server, circuit_key)` uses the parameters
+and complete output basis owned by the circuit key.
 The caller must pair secrets and use the generating transform representation; layout checks
 cannot verify identity. Bound parameters are available via
 `server.circuit_bootstrap_key().unwrap().parameters()`.
@@ -188,7 +189,8 @@ input, control, selected output and server scratch, then decrypts to check the r
 
 Use `evaluator.allocate_output()` to allocate the raw CBS control, then
 `evaluator.cmux_to(control, lhs, rhs, output)` or `external_product_to(control, input, output)`.
-`context.accumulator_client(&client)` binds ring encryption/decryption and conversion scratch.
+`context.accumulator_client(&client)` binds ring encryption/decryption and conversion scratch;
+construction failures return `TfheClientError`.
 See the [shared consumption contracts](../primus_tfhe/README.md#cbs-output-and-consumption)
 and [complete example](examples/ntru_ntt_circuit_bootstrap.rs).
 

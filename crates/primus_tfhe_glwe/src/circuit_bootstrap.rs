@@ -1,13 +1,13 @@
-//! Parameters for the patched NTT circuit-bootstrapping workflow.
+//! Backend-independent parameters for GLWE circuit bootstrapping.
 
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_glwe::{GadgetSize, GgswParameters, GlevParameters};
 use primus_integer::FheUint;
-use primus_modulus::BarrettModulus;
+use primus_reduce::RingContext;
 
 use crate::{CircuitBootstrapConfig, CircuitBootstrapParameterError, TfheParameters};
 
-/// Independent parameters for patched NTT circuit bootstrapping.
+/// Independent parameters for GLWE circuit bootstrapping.
 ///
 /// The output basis controls GGSW gadget scalars; its layout comes from the TFHE
 /// accumulator. The input plaintext modulus is bound when checking LUT capacity.
@@ -15,20 +15,20 @@ use crate::{CircuitBootstrapConfig, CircuitBootstrapParameterError, TfheParamete
 /// The scheme-switch key binds the output layout, so another
 /// output basis with the same level count can reuse it.
 ///
-/// Construction checks representation and ManyLUT capacity. Callers must select
+/// Construction checks modulus, layout and ManyLUT capacity. Callers must select
 /// these parameters using a CBS noise and security analysis. Matching parameters
-/// do not establish secret or NTT representation identity; see
-/// [`crate::CircuitBootstrapEvaluator::try_new`].
+/// do not establish secret or transform identity; execution backends specify
+/// their representation and numerical requirements.
 #[derive(Clone)]
-pub struct CircuitBootstrapParameters<T: FheUint> {
+pub struct CircuitBootstrapParameters<T: FheUint, M: RingContext<T>> {
     output_basis: ApproxSignedBasis<T>,
     output_size: GadgetSize,
-    trace: GlevParameters<T, BarrettModulus<T>>,
-    scheme_switch: GgswParameters<T, BarrettModulus<T>>,
+    trace: GlevParameters<T, M>,
+    scheme_switch: GgswParameters<T, M>,
     input_plaintext_modulus: T,
 }
 
-impl<T: FheUint> CircuitBootstrapParameters<T> {
+impl<T: FheUint, M: RingContext<T>> CircuitBootstrapParameters<T, M> {
     /// Derives all CBS ring domains from TFHE, keeping bases and noise independent.
     ///
     /// Returns basis/layout errors or insufficient interleaved LUT capacity.
@@ -39,7 +39,7 @@ impl<T: FheUint> CircuitBootstrapParameters<T> {
     ///
     /// Inherits [`primus_glwe::GlweParameters::new`]'s noise sampler requirements.
     pub fn try_from_config(
-        tfhe: &TfheParameters<T>,
+        tfhe: &TfheParameters<T, M>,
         config: CircuitBootstrapConfig,
     ) -> Result<Self, CircuitBootstrapParameterError> {
         let accumulator = tfhe.accumulator_glwe();
@@ -74,10 +74,10 @@ impl<T: FheUint> CircuitBootstrapParameters<T> {
     /// Returns an error if bases or key layouts use another accumulator domain,
     /// the output layout overflows, or the padded output count exceeds LUT capacity.
     pub fn try_new(
-        tfhe: &TfheParameters<T>,
+        tfhe: &TfheParameters<T, M>,
         output_basis: ApproxSignedBasis<T>,
-        trace: GlevParameters<T, BarrettModulus<T>>,
-        scheme_switch: GgswParameters<T, BarrettModulus<T>>,
+        trace: GlevParameters<T, M>,
+        scheme_switch: GgswParameters<T, M>,
     ) -> Result<Self, CircuitBootstrapParameterError> {
         if output_basis.modulus() != tfhe.accumulator_glwe().cipher_modulus_value() {
             return Err(CircuitBootstrapParameterError::OutputBasisModulusMismatch);
@@ -87,7 +87,7 @@ impl<T: FheUint> CircuitBootstrapParameters<T> {
             if parameters.glwe_size() != glwe.size() {
                 return Err(CircuitBootstrapParameterError::GlweLayoutMismatch { role });
             }
-            if parameters.cipher_modulus().value() != glwe.cipher_modulus().value() {
+            if parameters.cipher_modulus().explicit_value() != glwe.cipher_modulus_value() {
                 return Err(CircuitBootstrapParameterError::CipherModulusMismatch { role });
             }
         }
@@ -126,14 +126,16 @@ impl<T: FheUint> CircuitBootstrapParameters<T> {
     }
 
     /// Returns the trace key's encryption parameters.
+    #[must_use]
     #[inline]
-    pub fn trace(&self) -> &GlevParameters<T, BarrettModulus<T>> {
+    pub fn trace(&self) -> &GlevParameters<T, M> {
         &self.trace
     }
 
     /// Returns the gadget parameters of the scheme-switching key.
+    #[must_use]
     #[inline]
-    pub fn scheme_switch(&self) -> &GgswParameters<T, BarrettModulus<T>> {
+    pub fn scheme_switch(&self) -> &GgswParameters<T, M> {
         &self.scheme_switch
     }
 
@@ -144,7 +146,10 @@ impl<T: FheUint> CircuitBootstrapParameters<T> {
         self.output_basis.decompose_length().next_power_of_two()
     }
 
-    pub(crate) fn is_compatible(&self, tfhe: &TfheParameters<T>) -> bool {
+    /// Checks the accumulator layout, ciphertext modulus and input plaintext domain.
+    /// This does not check noise, secret identity or transform representation.
+    #[must_use]
+    pub fn is_compatible(&self, tfhe: &TfheParameters<T, M>) -> bool {
         let glwe = tfhe.accumulator_glwe();
         self.output_size.glwe_size() == glwe.size()
             && self.output_basis.modulus() == glwe.cipher_modulus_value()

@@ -2,8 +2,14 @@
 
 mod evaluator;
 mod key;
-mod parameters;
 
 pub use evaluator::CircuitBootstrapEvaluator;
 pub use key::CircuitBootstrapKey;
-pub use parameters::CircuitBootstrapParameters;
+
+/// GLWE circuit-bootstrap parameters with the native torus modulus.
+///
+/// Native reverse trace halves integers at each stage. Its rounding, trace key
+/// switching, scheme-switch decomposition and FFT precision contribute to the
+/// CBS error budget; see [`CircuitBootstrapEvaluator::try_new`].
+pub type CircuitBootstrapParameters<T> =
+    primus_tfhe_glwe::CircuitBootstrapParameters<T, primus_modulus::NativeModulus<T>>;

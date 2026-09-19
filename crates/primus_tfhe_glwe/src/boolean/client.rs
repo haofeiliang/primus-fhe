@@ -6,26 +6,24 @@ use primus_reduce::RingContext;
 /// Encrypts Boolean values under the standard 0/1 encoding modulo 4.
 /// Accepts a client secret key or LWE public key; public-key noise and identity
 /// requirements follow [`EncryptionKey`].
-pub struct BooleanEncryptor<'a, T, LM, GM, Key = ClientKey<T>>
+pub struct BooleanEncryptor<'a, T, M, Key = ClientKey<T>>
 where
     T: FheUint,
-    LM: RingContext<T>,
-    GM: RingContext<T>,
+    M: RingContext<T>,
 {
-    inner: Encryptor<'a, T, LM, GM, Key>,
+    inner: Encryptor<'a, T, M, Key>,
 }
 
-impl<'a, T, LM, GM, Key> BooleanEncryptor<'a, T, LM, GM, Key>
+impl<'a, T, M, Key> BooleanEncryptor<'a, T, M, Key>
 where
     T: FheUint,
-    LM: RingContext<T>,
-    GM: RingContext<T>,
-    Key: EncryptionKey<T, LM, GM>,
+    M: RingContext<T>,
+    Key: EncryptionKey<T, M>,
 {
     /// Creates a Boolean encryptor and validates the required plaintext
     /// modulus.
     pub fn try_new(
-        parameters: &'a TfheParameters<T, LM, GM>,
+        parameters: &'a TfheParameters<T, M>,
         key: &'a Key,
     ) -> Result<Self, BooleanError> {
         validate_boolean_parameters(parameters)?;
@@ -60,25 +58,23 @@ where
 }
 
 /// Decrypts ciphertexts using the standard 0/1 Boolean encoding.
-pub struct BooleanDecryptor<'a, T, LM, GM>
+pub struct BooleanDecryptor<'a, T, M>
 where
     T: FheUint,
-    LM: RingContext<T>,
-    GM: RingContext<T>,
+    M: RingContext<T>,
 {
-    inner: Decryptor<'a, T, LM, GM>,
+    inner: Decryptor<'a, T, M>,
 }
 
-impl<'a, T, LM, GM> BooleanDecryptor<'a, T, LM, GM>
+impl<'a, T, M> BooleanDecryptor<'a, T, M>
 where
     T: FheUint,
-    LM: RingContext<T>,
-    GM: RingContext<T>,
+    M: RingContext<T>,
 {
     /// Creates a Boolean decryptor and validates the required plaintext
     /// modulus.
     pub fn try_new(
-        parameters: &'a TfheParameters<T, LM, GM>,
+        parameters: &'a TfheParameters<T, M>,
         key: &'a ClientKey<T>,
     ) -> Result<Self, BooleanError> {
         validate_boolean_parameters(parameters)?;

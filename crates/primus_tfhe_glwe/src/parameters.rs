@@ -48,7 +48,7 @@ pub struct TfheConfig<T: FheUint, M: RingContext<T>> {
     pub pbs_order: PbsOrder,
 }
 
-impl<T: FheUint, M: RingContext<T>> TfheParameters<T, M, M> {
+impl<T: FheUint, M: RingContext<T>> TfheParameters<T, M> {
     /// Derives accumulator and gadget parameters from named independent choices.
     ///
     /// Returns the compatibility and basis errors of [`Self::try_new`].
@@ -90,24 +90,22 @@ impl<T: FheUint, M: RingContext<T>> TfheParameters<T, M, M> {
 /// backend-specific context binds it to an FFT/NTT table and validates the
 /// table separately.
 #[derive(Clone)]
-pub struct TfheParameters<T, LM, GM>
+pub struct TfheParameters<T, M>
 where
     T: FheUint,
-    LM: RingContext<T>,
-    GM: RingContext<T>,
+    M: RingContext<T>,
 {
-    small_lwe: LweParameters<T, LM>,
-    accumulator_glwe: GlweParameters<T, GM>,
-    blind_rotation_ggsw: GgswParameters<T, GM>,
-    glwe_key_switching: GlweKeySwitchingParameters<T, GM>,
+    small_lwe: LweParameters<T, M>,
+    accumulator_glwe: GlweParameters<T, M>,
+    blind_rotation_ggsw: GgswParameters<T, M>,
+    glwe_key_switching: GlweKeySwitchingParameters<T, M>,
     pbs_order: PbsOrder,
 }
 
-impl<T, LM, GM> TfheParameters<T, LM, GM>
+impl<T, M> TfheParameters<T, M>
 where
     T: FheUint,
-    LM: RingContext<T>,
-    GM: RingContext<T>,
+    M: RingContext<T>,
 {
     /// Derives bootstrapping parameters and the padded GLWE key-switching layout
     /// from one accumulator description.
@@ -122,8 +120,8 @@ where
     /// dimensions or decomposition bases, a rotation domain `2N` not representable
     /// by `T`, or a derived gadget layout overflow.
     pub fn try_new(
-        small_lwe: LweParameters<T, LM>,
-        accumulator_glwe: GlweParameters<T, GM>,
+        small_lwe: LweParameters<T, M>,
+        accumulator_glwe: GlweParameters<T, M>,
         blind_rotation_basis: ApproxSignedBasis<T>,
         key_switching_basis: ApproxSignedBasis<T>,
         pbs_order: PbsOrder,
@@ -170,9 +168,9 @@ where
     fn derive_glwe_key_switching(
         small_lwe_dimension: usize,
         small_lwe_distr: SecretKeyDistr,
-        accumulator_glwe: &GlweParameters<T, GM>,
+        accumulator_glwe: &GlweParameters<T, M>,
         basis: ApproxSignedBasis<T>,
-    ) -> Result<GlweKeySwitchingParameters<T, GM>, TfheParameterError> {
+    ) -> Result<GlweKeySwitchingParameters<T, M>, TfheParameterError> {
         let output_dimension = small_lwe_dimension.div_ceil(accumulator_glwe.poly_length());
         let output_glwe = GlweParameters::new(
             output_dimension,
@@ -193,28 +191,28 @@ where
     /// Returns the small-LWE parameters used by the bootstrapping key.
     #[must_use]
     #[inline]
-    pub fn small_lwe(&self) -> &LweParameters<T, LM> {
+    pub fn small_lwe(&self) -> &LweParameters<T, M> {
         &self.small_lwe
     }
 
     /// Returns the GGSW encryption and decomposition parameters for blind-rotation controls.
     #[must_use]
     #[inline]
-    pub fn blind_rotation_ggsw(&self) -> &GgswParameters<T, GM> {
+    pub fn blind_rotation_ggsw(&self) -> &GgswParameters<T, M> {
         &self.blind_rotation_ggsw
     }
 
     /// Returns the GLWE accumulator parameters.
     #[must_use]
     #[inline]
-    pub fn accumulator_glwe(&self) -> &GlweParameters<T, GM> {
+    pub fn accumulator_glwe(&self) -> &GlweParameters<T, M> {
         &self.accumulator_glwe
     }
 
     /// Returns the GLWE key-switching parameters shared by both PBS orders.
     #[must_use]
     #[inline]
-    pub fn glwe_key_switching(&self) -> &GlweKeySwitchingParameters<T, GM> {
+    pub fn glwe_key_switching(&self) -> &GlweKeySwitchingParameters<T, M> {
         &self.glwe_key_switching
     }
 
@@ -248,7 +246,7 @@ where
     /// GLWE codec does not determine the PBS input encoding.
     #[must_use]
     #[inline]
-    pub fn input_plaintext_codec(&self) -> &RoundedCodec<T, LM> {
+    pub fn input_plaintext_codec(&self) -> &RoundedCodec<T, M> {
         self.small_lwe.plaintext_codec()
     }
 }

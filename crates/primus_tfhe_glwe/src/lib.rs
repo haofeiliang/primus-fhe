@@ -28,6 +28,7 @@
 
 #![deny(missing_docs)]
 
+mod circuit_bootstrap;
 mod client;
 mod error;
 mod key;
@@ -43,6 +44,7 @@ use primus_glwe::{
 use primus_lwe::{LweParameters, LweSecretKey};
 
 pub use boolean::{BooleanDecryptor, BooleanEncryptor};
+pub use circuit_bootstrap::CircuitBootstrapParameters;
 pub use client::{Decryptor, EncryptionKey, Encryptor};
 pub use error::{
     BooleanError, CircuitBootstrapParameterError, KeyGenerationError, SparseBootstrappingKeyError,

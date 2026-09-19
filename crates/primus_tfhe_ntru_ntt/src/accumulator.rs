@@ -1,6 +1,6 @@
 //! Client-side coefficient-ring encryption and decryption under the accumulator secret.
 
-use crate::{ClientKey, KeyGenerationError, TfheContext};
+use crate::{ClientKey, TfheClientError, TfheContext};
 use primus_data::{Data, DataMut};
 use primus_integer::FheUint;
 use primus_ntru::{NtruCiphertext, NttNtruCiphertext, NttNtruSecretKey};
@@ -38,7 +38,7 @@ where
     pub fn try_new(
         context: &'a TfheContext<T, Table>,
         client_key: &ClientKey<T>,
-    ) -> Result<Self, KeyGenerationError> {
+    ) -> Result<Self, TfheClientError> {
         client_key.check_compatible(context.parameters())?;
         let parameters = context.parameters().accumulator_ntru();
         let secret = NttNtruSecretKey::try_from_coeff_secret_key(

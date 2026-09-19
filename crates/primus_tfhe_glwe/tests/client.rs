@@ -151,12 +151,12 @@ enum Encoding {
 }
 
 fn check_reused_output<M, Key>(
-    parameters: &TfheParameters<u32, M, M>,
+    parameters: &TfheParameters<u32, M>,
     client: &ClientKey<u32>,
     key: &Key,
 ) where
     M: RingContext<u32>,
-    Key: EncryptionKey<u32, M, M>,
+    Key: EncryptionKey<u32, M>,
 {
     let encryptor = Encryptor::try_new(parameters, key).unwrap();
     let decryptor = Decryptor::try_new(parameters, client).unwrap();

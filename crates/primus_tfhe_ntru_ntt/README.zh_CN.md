@@ -8,7 +8,7 @@ API 和参数仍处于实验阶段；示例和基准是功能工作负载，不�
 完整能力与编码约定见[公共指南](../primus_tfhe/README.zh_CN.md)，参数和秘密域见
 [NTRU family](../primus_tfhe_ntru/README.zh_CN.md)。两路 NTRU 后端均支持 PBS、ManyLUT 和 CBS，
 Boolean 门使用共享求值器，契约见[公共指南](../primus_tfhe/README.zh_CN.md#boolean-门)。
-NTT 后端另支持固定尺度分解式 MVB。
+两路后端也均支持固定尺度分解式 MVB，适用模数和尺度条件见各自章节。
 
 自定义 NTT 表须实现 `MonomialNttTable`；内置 `UintNttTable` 已支持。
 
@@ -142,8 +142,9 @@ cargo run -p primus_tfhe_ntru_ntt --release --example ntru_ntt_mvb_thresholds
 `MissingCircuitBootstrapKey`，稀疏 key 则明确拒绝。各 evaluator 只分配自身需要的工作区。生成错误为
 `KeyGenerationError`，NTRU 采样/变换失败通过 `Ntru` 分支返回，`ClientKey` 仅表示兼容性错误。
 
-高级组合仍可使用接收已准备参数所有权的 `try_generate_circuit_bootstrap_key`，以及显式传入
-参数和材料的 `CircuitBootstrapEvaluator::try_from_parts`。调用方负责配套私钥与生成时的
+高级组合仍可使用接收已准备参数所有权的 `try_generate_circuit_bootstrap_key`，以及
+`CircuitBootstrapEvaluator::try_from_parts(context, server, circuit_key)`，参数直接取自 circuit key，
+包括生成时绑定的完整输出 basis。调用方负责配套私钥与生成时的
 变换表示；布局检查不能证明身份。绑定的参数可通过
 `server.circuit_bootstrap_key().unwrap().parameters()` 访问。
 
@@ -163,7 +164,7 @@ cargo run -p primus_tfhe_ntru_ntt --example ntru_ntt_circuit_bootstrap
 
 使用 `evaluator.allocate_output()` 分配原有 CBS 控制密文，随后调用
 `evaluator.cmux_to(control, lhs, rhs, output)` 或 `external_product_to(control, input, output)`。
-`context.accumulator_client(&client)` 绑定环加解密与转换工作区。
+`context.accumulator_client(&client)` 绑定环加解密与转换工作区，构造失败返回 `TfheClientError`。
 详见[公共消费契约](../primus_tfhe/README.zh_CN.md#cbs-输出与消费)及[完整示例](examples/ntru_ntt_circuit_bootstrap.rs)。
 
 错误归属与转换规则见[公共 TFHE 错误边界](../primus_tfhe/README.zh_CN.md#错误边界)。

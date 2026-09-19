@@ -201,9 +201,6 @@ pub enum KeyGenerationError {
 /// Failure to construct an experimental sparse bootstrapping key.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum SparseBootstrappingKeyError {
-    /// The client secrets do not match the context's parameters.
-    #[error(transparent)]
-    ClientKey(#[from] TfheKeyError),
     /// Sparse generation requires a fixed-weight binary small-LWE distribution.
     #[error("sparse bootstrapping requires a fixed-weight binary small-LWE secret")]
     UnsupportedSecretDistribution,

@@ -51,9 +51,11 @@ type returned by the operation you call.
 | TFHE / CBS parameter preparation | Family `TfheParameterError` / `CircuitBootstrapParameterError` |
 | Client-key compatibility / client operations | Family `TfheKeyError` / `TfheClientError` |
 | Boolean client construction, encryption and decryption | Family `BooleanError`; `Client` retains underlying client failures |
-| Ordinary, sparse server, or standalone CBS key generation | Family `KeyGenerationError`; NTRU sampling/conversion enters `Ntru` directly; sparse failures enter `SparseBootstrapping` |
-| Raw sparse GLWE BSK generation | Family `SparseBootstrappingKeyError`; `BucketMap` retains underlying mapping failures |
+| Ordinary/sparse server, sparse BSK, or standalone CBS key generation | Family `KeyGenerationError`; NTRU sampling/conversion enters `Ntru` directly; sparse failures enter `SparseBootstrapping` |
+| NTRU accumulator client construction | Family `TfheClientError`; `Ntru` retains secret-conversion failures |
 | Automatic table creation or explicit table binding | Backend `TfheContextError`; `TransformTable` retains the underlying FFT/NTT error |
+
+`KeyGenerationError::ClientKey` reports client incompatibility directly; sparse errors retain mapping causes through `BucketMap`.
 
 ## Boolean gates
 
@@ -156,6 +158,11 @@ All outputs share one blind rotation (BR) and key switch,
 then use separate extraction. More outputs reduce rotation resolution and the
 available input-noise margin. This is one input evaluated by multiple functions,
 not batching independent ciphertexts.
+
+For direct shared-layer use, `LookupTable` / `InterleavedLookupTable` provide `try_from_fn` and
+`try_from_slice`, taking the input codec, accumulator modulus and output codec for unsigned Rounded
+encoding and validation. Odd full domains use `LookupTable::try_from_odd_full_domain_fn` / `_slice`;
+family compilation methods use these shared constructors.
 
 Raw constructors `LookupTable::try_new` / `InterleavedLookupTable::try_new` accept
 an explicit prefix length `D` and encoded outputs. `input_ciphertext_modulus`

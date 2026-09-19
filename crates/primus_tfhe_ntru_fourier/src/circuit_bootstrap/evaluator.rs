@@ -8,7 +8,7 @@ use primus_reduce::ReduceMul;
 use primus_tfhe::{InterleavedLookupTable, LookupTableError, LweCiphertext};
 
 use crate::{
-    CircuitBootstrapKey, CircuitBootstrapParameters, ServerKey, TfheContext, TfheEvaluationError,
+    CircuitBootstrapKey, ServerKey, TfheContext, TfheEvaluationError,
     blind_rotation::{BlindRotationWorkspace, blind_rotate_lookup_table_to},
 };
 
@@ -21,7 +21,6 @@ where
 {
     context: &'a TfheContext<T, Table>,
     server_key: &'a ServerKey<T>,
-    parameters: &'a CircuitBootstrapParameters<T>,
     circuit_key: &'a CircuitBootstrapKey<T>,
     lookup_table: InterleavedLookupTable<T>,
     blind_rotation: BlindRotationWorkspace<T>,
@@ -52,10 +51,11 @@ where
         let key = server_key
             .circuit_bootstrap_key()
             .ok_or(TfheEvaluationError::MissingCircuitBootstrapKey)?;
-        Self::try_from_parts(context, server_key, key.parameters(), key)
+        Self::try_from_parts(context, server_key, key)
     }
 
     /// Binds resources and compiles gadget-scaled identity outputs once.
+    /// Uses the circuit key's complete output basis and key parameters.
     /// Rejects sparse server keys.
     ///
     /// # Correctness
@@ -64,21 +64,18 @@ where
     pub fn try_from_parts(
         context: &'a TfheContext<T, Table>,
         server_key: &'a ServerKey<T>,
-        parameters: &'a CircuitBootstrapParameters<T>,
         circuit_key: &'a CircuitBootstrapKey<T>,
     ) -> Result<Self, TfheEvaluationError> {
         if server_key.sparse_bootstrapping_key().is_some() {
             return Err(TfheEvaluationError::UnsupportedSparseBootstrapping);
         }
+        let parameters = circuit_key.parameters();
         let tfhe = context.parameters();
         if !server_key.is_compatible(tfhe) {
             return Err(TfheEvaluationError::IncompatibleServerKey);
         }
         if !parameters.is_compatible(tfhe) {
             return Err(TfheEvaluationError::IncompatibleCircuitBootstrapParameters);
-        }
-        if !circuit_key.is_compatible(parameters) {
-            return Err(TfheEvaluationError::IncompatibleCircuitBootstrapKey);
         }
         let n = tfhe.poly_length();
         let modulus = tfhe.accumulator_ntru().cipher_modulus();
@@ -101,7 +98,6 @@ where
         Ok(Self {
             context,
             server_key,
-            parameters,
             circuit_key,
             lookup_table,
             blind_rotation: BlindRotationWorkspace::new(tfhe, server_key),
@@ -115,7 +111,7 @@ where
     /// Allocate once and reuse it with [`Self::circuit_bootstrap_to`].
     #[must_use]
     pub fn allocate_output(&self) -> FourierNgswCiphertext<Vec<Complex64>> {
-        FourierNgswCiphertext::zero(self.parameters.output_fourier_nlev_len())
+        FourierNgswCiphertext::zero(self.circuit_key.parameters().output_fourier_nlev_len())
     }
 
     /// Selects `lhs` for an encrypted zero and `rhs` for an encrypted one.
@@ -151,7 +147,7 @@ where
                 output.as_ref().len()
             ),
             (
-                self.parameters.output_fourier_nlev_len(),
+                self.circuit_key.parameters().output_fourier_nlev_len(),
                 ring_len,
                 ring_len,
                 ring_len
@@ -162,7 +158,7 @@ where
             lhs,
             rhs,
             output,
-            self.parameters.output_basis(),
+            self.circuit_key.parameters().output_basis(),
             &mut self.fft,
             self.blind_rotation.rotation.external_product(),
         );
@@ -196,7 +192,7 @@ where
                 output.as_ref().len()
             ),
             (
-                self.parameters.output_fourier_nlev_len(),
+                self.circuit_key.parameters().output_fourier_nlev_len(),
                 ring_len,
                 ring_len
             ),
@@ -205,7 +201,7 @@ where
         control.external_product_to(
             input,
             output,
-            self.parameters.output_basis(),
+            self.circuit_key.parameters().output_basis(),
             &mut self.fft,
             self.blind_rotation.rotation.external_product(),
         );
@@ -231,7 +227,7 @@ where
     /// noise margin for the coarser ManyLUT windows are required. Trace and
     /// scheme-switch errors must fit the independent CBS budget, including f/f²
     /// amplification, native halving and FFT rounding; see
-    /// [`CircuitBootstrapParameters`]. CMUX use requires m=0/1.
+    /// [`crate::CircuitBootstrapParameters`]. CMUX use requires m=0/1.
     /// The output uses gadget scales, not ordinary plaintext or Boolean encoding.
     ///
     /// # Panics
@@ -250,7 +246,7 @@ where
         );
         assert_eq!(
             output.as_ref().len(),
-            self.parameters.output_fourier_nlev_len(),
+            self.circuit_key.parameters().output_fourier_nlev_len(),
             "circuit-bootstrap NGSW output length mismatch"
         );
         blind_rotate_lookup_table_to(
@@ -266,7 +262,10 @@ where
         // Reverse-trace projection is valid here; prefix expansion is not.
         self.circuit_key.trace_key().project_prefix_coefficients_to(
             &self.blind_rotation.current,
-            self.parameters.output_basis().decompose_length(),
+            self.circuit_key
+                .parameters()
+                .output_basis()
+                .decompose_length(),
             self.projected.as_mut(),
             &mut self.fft,
             &mut self.trace,

@@ -25,10 +25,9 @@ impl<T: FheUint> ClientKey<T> {
     /// Inherits [`LweSecretKey::generate`] and [`GlweSecretKey::generate`]'s
     /// sampling requirements, including fixed weights fitting their key lengths.
     #[must_use]
-    pub fn generate<LM, GM, R>(parameters: &TfheParameters<T, LM, GM>, rng: &mut R) -> Self
+    pub fn generate<M, R>(parameters: &TfheParameters<T, M>, rng: &mut R) -> Self
     where
-        LM: RingContext<T>,
-        GM: RingContext<T>,
+        M: RingContext<T>,
         R: rand::Rng + rand::CryptoRng,
     {
         let glwe = parameters.accumulator_glwe();
@@ -88,14 +87,13 @@ impl<T: FheUint> ClientKey<T> {
     /// # Panics
     ///
     /// Panics if the public-key storage length overflows `usize`.
-    pub fn try_generate_public_key<LM, GM, R>(
+    pub fn try_generate_public_key<M, R>(
         &self,
-        parameters: &TfheParameters<T, LM, GM>,
+        parameters: &TfheParameters<T, M>,
         rng: &mut R,
     ) -> Result<crate::LwePublicKey<T>, TfheKeyError>
     where
-        LM: RingContext<T>,
-        GM: RingContext<T>,
+        M: RingContext<T>,
         R: rand::Rng + rand::CryptoRng,
     {
         self.check_compatible(parameters)?;
@@ -146,13 +144,12 @@ impl<T: FheUint> ClientKey<T> {
     /// Panics if the small secret is not binary/ternary, or a coefficient lies
     /// outside its declared support under the supplied modulus.
     #[must_use]
-    pub fn padded_small_glwe_secret_key<LM, GM>(
+    pub fn padded_small_glwe_secret_key<M>(
         &self,
-        parameters: &TfheParameters<T, LM, GM>,
+        parameters: &TfheParameters<T, M>,
     ) -> GlweSecretKey<T>
     where
-        LM: RingContext<T>,
-        GM: RingContext<T>,
+        M: RingContext<T>,
     {
         let lwe_secret_key = &self.small_lwe_secret_key;
         let lwe_dimension = lwe_secret_key.dimension();
@@ -199,13 +196,9 @@ impl<T: FheUint> ClientKey<T> {
 
     /// Checks that this key has the shape and distributions required by a
     /// parameter set.
-    pub fn check_compatible<LM, GM>(
-        &self,
-        parameters: &TfheParameters<T, LM, GM>,
-    ) -> Result<(), TfheKeyError>
+    pub fn check_compatible<M>(&self, parameters: &TfheParameters<T, M>) -> Result<(), TfheKeyError>
     where
-        LM: RingContext<T>,
-        GM: RingContext<T>,
+        M: RingContext<T>,
     {
         if self.pbs_order != parameters.pbs_order() {
             return Err(TfheKeyError::PbsOrderMismatch {

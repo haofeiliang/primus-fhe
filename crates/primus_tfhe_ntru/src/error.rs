@@ -80,6 +80,9 @@ pub enum TfheClientError {
     /// The client key does not match the parameter set.
     #[error(transparent)]
     IncompatibleKey(#[from] TfheKeyError),
+    /// Preparing the accumulator secret representation failed.
+    #[error("NTRU accumulator secret conversion failed: {0}")]
+    Ntru(#[from] primus_ntru::NtruError),
     /// The message is outside `[0, t)`.
     #[error("message is outside the plaintext domain")]
     MessageOutOfRange,

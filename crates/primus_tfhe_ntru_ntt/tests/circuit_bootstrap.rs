@@ -9,7 +9,7 @@ use primus_poly::Polynomial;
 use primus_test_allocations as allocations;
 use primus_tfhe_ntru_ntt::{
     CircuitBootstrapConfig, CircuitBootstrapEvaluator, CircuitBootstrapParameters,
-    DecompositionConfig, TfheContext, TfheEvaluationError, TfheParameters,
+    DecompositionConfig, TfheContext, TfheParameters,
 };
 use rand::{RngExt, SeedableRng, rngs::StdRng};
 
@@ -96,7 +96,8 @@ fn circuit_bootstrap(distr: SecretKeyDistr) {
         output
     });
 
-    let mut evaluator = context.circuit_bootstrap_evaluator(&server).unwrap();
+    let mut evaluator =
+        CircuitBootstrapEvaluator::try_from_parts(&context, &server, circuit_key).unwrap();
     let mut control = evaluator.allocate_output();
     let mut selected = accumulator_client.allocate_ciphertext();
     let mut product = accumulator_client.allocate_ciphertext();
@@ -191,36 +192,6 @@ fn circuit_bootstrap(distr: SecretKeyDistr) {
         .is_err()
     );
     assert!(control.as_ref().iter().all(|&value| value == 7));
-    for role in 0..3 {
-        let output_basis = if role == 0 {
-            ApproxSignedBasis::new(Some(Q), 9, Some(levels))
-        } else {
-            parameters.output_basis().clone()
-        };
-        let mut parts = [
-            parameters.trace().clone(),
-            parameters.scheme_switch().clone(),
-        ];
-        if role > 0 {
-            parts[role - 1] = NlevParameters::with_ntru_params(
-                &accumulator,
-                9,
-                Some(parts[role - 1].decompose_length()),
-            );
-        }
-        let [trace, scheme_switch] = parts;
-        let foreign = CircuitBootstrapParameters::try_new(
-            context.parameters(),
-            output_basis,
-            trace,
-            scheme_switch,
-        )
-        .unwrap();
-        assert!(matches!(
-            CircuitBootstrapEvaluator::try_from_parts(&context, &server, &foreign, circuit_key),
-            Err(TfheEvaluationError::IncompatibleCircuitBootstrapKey)
-        ));
-    }
 }
 
 #[test]

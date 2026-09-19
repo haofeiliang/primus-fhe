@@ -75,11 +75,10 @@ pub use boolean::{
 ///
 /// Accepts the client secret key or an external LWE public key.
 pub type Encryptor<'a, T, Key = ClientKey<T>> =
-    primus_tfhe_glwe::Encryptor<'a, T, BarrettModulus<T>, BarrettModulus<T>, Key>;
+    primus_tfhe_glwe::Encryptor<'a, T, BarrettModulus<T>, Key>;
 
 /// Client-key decryptor for the explicit-modulus NTT backend.
-pub type Decryptor<'a, T> =
-    primus_tfhe_glwe::Decryptor<'a, T, BarrettModulus<T>, BarrettModulus<T>>;
+pub type Decryptor<'a, T> = primus_tfhe_glwe::Decryptor<'a, T, BarrettModulus<T>>;
 
 /// Named mathematical choices for this backend; moduli are derived from the LWE parameters.
 pub type TfheConfig<T> = primus_tfhe_glwe::TfheConfig<T, BarrettModulus<T>>;

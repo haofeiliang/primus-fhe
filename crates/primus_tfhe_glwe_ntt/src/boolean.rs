@@ -9,11 +9,10 @@ pub use primus_tfhe::BooleanGate;
 
 /// Boolean encryptor for the explicit-modulus NTT backend.
 pub type BooleanEncryptor<'a, T, Key = crate::ClientKey<T>> =
-    primus_tfhe_glwe::BooleanEncryptor<'a, T, BarrettModulus<T>, BarrettModulus<T>, Key>;
+    primus_tfhe_glwe::BooleanEncryptor<'a, T, BarrettModulus<T>, Key>;
 
 /// Boolean decryptor for the explicit-modulus NTT backend.
-pub type BooleanDecryptor<'a, T> =
-    primus_tfhe_glwe::BooleanDecryptor<'a, T, BarrettModulus<T>, BarrettModulus<T>>;
+pub type BooleanDecryptor<'a, T> = primus_tfhe_glwe::BooleanDecryptor<'a, T, BarrettModulus<T>>;
 
 /// Boolean gate evaluator backed by NTT programmable bootstrapping.
 ///
