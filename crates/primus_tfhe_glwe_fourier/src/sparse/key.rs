@@ -1,21 +1,19 @@
 use std::alloc::Layout;
 
 use primus_decompose::primitive::ApproxSignedBasis;
-use primus_glwe::{NttGlweSecretKey, SecretKeyDistr};
-use primus_integer::FheUint;
+use primus_fft::{Complex64, FftTable, TorusFftValue};
+use primus_glwe::{FourierGlweSecretKey, SecretKeyDistr};
 use primus_lattice::{
     GadgetSize,
-    ggsw::{GgswIter, NttGgsw},
+    ggsw::{FourierGgsw, Ggsw, GgswIter},
 };
-use primus_modulus::BarrettModulus;
-use primus_ntt::MonomialNttTable;
-use primus_reduce::PrepareModulusSwitch;
-use primus_tfhe::{rotation::RotationQuantizer, sparse::BucketMap};
+use primus_modulus::NativeModulus;
+use primus_tfhe::sparse::BucketMap;
 use zeroize::Zeroizing;
 
 use crate::{ClientKey, KeyGenerator, SparseBootstrappingKeyError};
 
-/// Coefficient-domain GGSW selections for sparse blind rotation in the NTT backend.
+/// Coefficient-domain GGSW selections for sparse blind rotation in the Fourier backend.
 ///
 /// Each input index appears in `copy_count` distinct public buckets. Encrypted
 /// selections cover each nonzero small-LWE coefficient exactly once and select
@@ -23,27 +21,25 @@ use crate::{ClientKey, KeyGenerator, SparseBootstrappingKeyError};
 /// encrypted dummy: one for an unoccupied bucket, zero otherwise.
 ///
 /// Generation retains only the public mapping and ciphertexts, never the support
-/// or matching. Input and accumulator use the context's explicit modulus.
-/// [`Self::ntt_blind_rotate_lookup_table_to`] provides raw sparse blind rotation.
-/// [`KeyGenerator::try_generate_sparse_server_key`] pairs it with a GLWE KSK
-/// for ordinary and interleaved evaluation in [`crate::Evaluator`].
+/// or matching. Input and accumulator use the native modulus `2^T::BITS`.
+/// Ciphertexts are generated in Fourier form and converted to torus coefficients;
+/// this conversion can incur rounding error. They are ready for coefficient-domain
+/// bucket aggregation, but this key does not yet have a sparse PBS evaluator.
 ///
 /// Successful mapping conditions the joint distribution of the public map and
 /// secret. Fixed-weight security and complete PBS noise bounds need independent
 /// assessment; eight retries do not establish a security level.
-pub struct SparseGlweBootstrappingKey<T: FheUint> {
+pub struct SparseGlweBootstrappingKey<T: TorusFftValue> {
     data: Vec<T>,
     map: BucketMap,
     input_dimension: usize,
     hamming_weight: usize,
     copy_count: usize,
-    modulus: BarrettModulus<T>,
-    input_quantizer: RotationQuantizer<<BarrettModulus<T> as PrepareModulusSwitch>::Prepared>,
     size: GadgetSize,
     basis: ApproxSignedBasis<T>,
 }
 
-impl<T: FheUint> SparseGlweBootstrappingKey<T> {
+impl<T: TorusFftValue> SparseGlweBootstrappingKey<T> {
     /// Returns the dimension of the actual blind-rotation input secret.
     #[must_use]
     pub fn input_dimension(&self) -> usize {
@@ -68,22 +64,16 @@ impl<T: FheUint> SparseGlweBootstrappingKey<T> {
         self.map.bucket_count()
     }
 
-    /// Returns the input modulus, also used for the accumulator coefficients.
+    /// Returns the native input modulus, also used by the accumulator.
     #[must_use]
-    pub fn input_modulus(&self) -> BarrettModulus<T> {
-        self.modulus
+    pub fn input_modulus(&self) -> NativeModulus<T> {
+        NativeModulus::new()
     }
 
-    pub(super) fn input_quantizer(
-        &self,
-    ) -> RotationQuantizer<<BarrettModulus<T> as PrepareModulusSwitch>::Prepared> {
-        self.input_quantizer
-    }
-
-    /// Returns the explicit accumulator modulus.
+    /// Returns `None` for the native accumulator modulus `2^T::BITS`.
     #[must_use]
     pub fn cipher_modulus(&self) -> Option<T> {
-        Some(self.modulus.value())
+        None
     }
 
     /// Returns the GGSW layout shared by all selections and dummies.
@@ -138,8 +128,8 @@ impl<T: FheUint> SparseGlweBootstrappingKey<T> {
 
 impl<T, Table> KeyGenerator<'_, T, Table>
 where
-    T: FheUint,
-    Table: MonomialNttTable<ValueT = T>,
+    T: TorusFftValue,
+    Table: FftTable,
 {
     /// Generates a sparse BSK from this client's fixed-weight small-LWE secret.
     ///
@@ -194,6 +184,8 @@ where
             .and_then(|count| count.checked_mul(size.ggsw_len()))
             .ok_or(Error::StorageSizeOverflow)?;
         Layout::array::<T>(data_len).map_err(|_| Error::StorageSizeOverflow)?;
+        Layout::array::<Complex64>(size.fourier_ggsw_len())
+            .map_err(|_| Error::StorageSizeOverflow)?;
 
         let mut nonzero_indices = Zeroizing::new(Vec::with_capacity(hamming_weight));
         for (index, &coefficient) in input.as_ref().iter().enumerate() {
@@ -218,48 +210,42 @@ where
         )?;
         drop(nonzero_indices);
 
-        let ntt = self.context.table();
-        let output_key = NttGlweSecretKey::from_coeff_secret_key(client_key.glwe_secret_key(), ntt);
+        let output_key = FourierGlweSecretKey::from_coeff_secret_key(
+            client_key.glwe_secret_key(),
+            &mut self.fft,
+        );
         let gadget = parameters.blind_rotation_ggsw();
         self.gadget.resize(size);
         let mut data = vec![T::ZERO; data_len];
-        let max_bucket_len = map
-            .bucket_offsets()
-            .windows(2)
-            .map(|pair| pair[1] - pair[0] + 1)
-            .max()
-            .unwrap();
-        let mut constants = Zeroizing::new(Vec::with_capacity(max_bucket_len));
+        // A single transformed GGSW is reused; the full BSK is only stored in
+        // coefficient form, without a second Fourier-sized key allocation.
+        let mut transformed = FourierGgsw::<Vec<Complex64>>::zero(size.fourier_ggsw_len());
         for (bucket, &selected_index) in selected_input_indices.iter().enumerate() {
             let start = map.bucket_offsets()[bucket];
             let end = map.bucket_offsets()[bucket + 1];
-            constants.clear();
-            constants.extend(map.input_indices()[start..end].iter().map(|&index| {
-                if index == selected_index {
+            let output =
+                &mut data[(start + bucket) * size.ggsw_len()..(end + bucket + 1) * size.ggsw_len()];
+            // The last entry is the dummy: it selects identity precisely when
+            // the bucket has no assigned nonzero input.
+            for (&index, ciphertext) in map.input_indices()[start..end]
+                .iter()
+                .chain(std::iter::once(&BucketMap::UNASSIGNED))
+                .zip(output.chunks_exact_mut(size.ggsw_len()))
+            {
+                let constant = Zeroizing::new([if index == selected_index {
                     T::ONE
                 } else {
                     T::ZERO
-                }
-            }));
-            constants.push(if selected_index == BucketMap::UNASSIGNED {
-                T::ONE
-            } else {
-                T::ZERO
-            });
-            let output =
-                &mut data[(start + bucket) * size.ggsw_len()..(end + bucket + 1) * size.ggsw_len()];
-            // Encrypt directly into the final allocation, then transform each
-            // completed GGSW in place; no second full BSK is retained.
-            output_key.encrypt_ggsw_constant_batch_to(
-                &constants,
-                output,
-                gadget,
-                ntt,
-                rng,
-                &mut self.gadget,
-            );
-            for ciphertext in output.chunks_exact_mut(size.ggsw_len()) {
-                let _ = NttGgsw::new(ciphertext).into_coeff_form(ntt);
+                }]);
+                output_key.encrypt_ggsw_constant_batch_to(
+                    constant.as_ref(),
+                    transformed.as_mut(),
+                    gadget,
+                    &mut self.fft,
+                    rng,
+                    &mut self.gadget,
+                );
+                transformed.write_torus_form(&mut Ggsw::new(ciphertext), &mut self.fft);
             }
         }
 
@@ -269,12 +255,6 @@ where
             input_dimension,
             hamming_weight,
             copy_count,
-            modulus: parameters.small_lwe().cipher_modulus(),
-            input_quantizer: RotationQuantizer::new(
-                parameters.small_lwe().cipher_modulus(),
-                2 * size.glwe_size().poly_length(),
-                1,
-            ),
             size,
             basis: gadget.basis().clone(),
         })

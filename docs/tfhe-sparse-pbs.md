@@ -1,6 +1,6 @@
-# 稀疏私钥 PBS：P3 实现契约
+# 稀疏私钥 PBS：实现契约
 
-本文保存已实现的 **GLWE NTT、固定重量二元 BR 秘密、系数域桶聚合**契约，以及表示/参数取舍的测量依据。参数用于开发与比较，尚无生产安全等级或完整 PBS 失败概率保证。
+本文保存已实现的 **GLWE NTT、固定重量二元 BR 秘密、系数域桶聚合**契约，以及表示/参数取舍的测量依据。Fourier 已补齐系数域密钥材料，完整 BR/PBS 尚未接入，见 [B4.1](#b41-fourier-密钥材料与共享匹配)。参数用于开发与比较，尚无生产安全等级或完整 PBS 失败概率保证。
 
 来源是 [2026-1730.pdf](../temp/2026-1730.pdf)：Aayush Jain、Huijia Lin、Zeyu Liu、Sagnik Saha，*New Techniques for Fast and Shallow FHE Bootstrapping and Beyond*。本文使用 PDF 一基页码，依据 §3.4、§4、§7.1，重点为 p.17–19 的公式/伪码和 p.43 参数表。文件 SHA-256：`0ba34c2052e2fc717e17271ac04058096075bfd21e8922b7009c9328119eef12`。下文的匹配上界与 Primus 噪声递推是本项目推导，不是论文给出的具体安全结论。
 
@@ -189,11 +189,11 @@ Primus 当前两种链都保持同一个密文模数，没有论文中 `Q -> Q' 
 
 ## 密钥布局、所有权和存储
 
-P3.2 的 `SparseGlweBootstrappingKey<T>` 放在 `primus_tfhe_glwe_ntt`；长期保存的是**系数域** GGSW，不以 `NttGgsw` 名称包装未变换的数据。`sparse/` 中分离私有 PBC、key 和后续 BR 实现，不创建通用 PBC/backend trait。P3.5 已让 server/evaluator 在调用入口选择经典或稀疏执行，LUT 构造器不承担策略选择。
+两后端各自定义 `SparseGlweBootstrappingKey<T>`，长期保存的是**系数域** GGSW，不以变换域类型包装未变换的数据。`primus_tfhe::sparse` 共享纯索引 `BucketMap` 与私有 `Matching`，具体 key/BR 留在后端；不创建通用 PBC/backend trait。P3.5 已让 server/evaluator 在调用入口选择经典或稀疏执行，LUT 构造器不承担策略选择。
 
 | 数据 | 保存/建立位置 |
 | --- | --- |
-| `n,h,c,b`、输入/输出共享的模数、GGSW size/basis、普通量化器 | 具体 BSK；与实际秘密及现有参数绑定，量化器在 keygen 准备 |
+| `n,h,c,b`、输入/输出共享的模数、GGSW size/basis；NTT 另存普通量化器 | 具体 BSK；与实际秘密及现有参数绑定，NTT 量化器在 keygen 准备 |
 | `bucket_offsets[b+1]`、`input_indices[cn]` | 具体 BSK；公开展开映射，evaluator 直接借用 |
 | `[bucket][entry...,dummy][row][level][component][coefficient]` | 单个系数数组；每桶 dummy 位于该桶条目之后 |
 | 支持集、匹配 owner/前驱、明文选择位 | keygen 私有临时数据；不放入 server key |
@@ -214,8 +214,8 @@ P3.2 的 `SparseGlweBootstrappingKey<T>` 放在 `primus_tfhe_glwe_ntt`；长期�
 ## P3.2 实现入口
 
 - [KeyGenerator 与稀疏 key](../crates/primus_tfhe_glwe_ntt/src/sparse/key.rs)：`try_generate_sparse_bootstrapping_key(&client, copy_count, bucket_count, rng)` 复用已验证的 context，返回独立 BSK。复用 context 的显式模数，不另建参数包装；完整 server key 入口见 P3.5。
-- [私有 PBC](../crates/primus_tfhe_glwe_ntt/src/sparse/pbc.rs)：逐索引无放回采样、完整增广路匹配、固定秘密最多八次尝试；CSR 只在匹配成功后生成，桶内索引递增。
-- `bucket(j)` 返回公开索引切片和 GGSW 迭代器；密文比索引多一项，最后为 dummy。所有权在 BSK，读取不依赖 client/keygen，公开 API 不返回匹配或占用位。
+- [共享索引映射与私有匹配](../crates/primus_tfhe/src/sparse.rs)：逐索引无放回采样、完整增广路匹配、固定秘密最多八次尝试；CSR 只在匹配成功后生成，桶内索引递增。
+- `bucket(j)` 返回公开索引切片和 GGSW 迭代器；密文比索引多一项，最后为 dummy。所有权在 BSK，读取不依赖 client/keygen，BSK 的读取 API 不返回匹配或占用位。
 - 入口先校验上下文兼容性、固定重量分布、实际二元系数/重量、桶参数及存储长度，再消费随机数。匹配成功后按桶批量加密，直接在最终分配中原地 inverse NTT。支持集、匹配工作区、选择位用 `Zeroizing`，NTT 秘密和 gadget context 沿用已有擦除契约。
 - 保留四项聚焦测试：216 个小图与暴力匹配对照；强制第二/第八次成功及八次耗尽；[公开入口与加密语义](../crates/primus_tfhe_glwe_ntt/tests/sparse_key.rs)覆盖实际支持集恰好一次、每桶选择/dummy 总和为 1、公开空桶及非法输入在采样前拒绝。测试只在客户端侧恢复合成测试密钥的选择位，不给 server 增加明文辅助数据。
 
@@ -234,6 +234,18 @@ P3.2 的 `SparseGlweBootstrappingKey<T>` 放在 `primus_tfhe_glwe_ntt`；长期�
 | `(2048,128)` | 279–300 ns → 208–228 ns | 21.81–22.16 µs → 19.64–19.71 µs |
 
 保留桶路径表示：上述场景两轮均未观察到退化，`n=512,h=32` 的匹配耗时下降约 24%–29%。另外检查 `n=128,h=32,c=3,b=32` 的高冲突随机图、`h=32,c=2,b=64` 的长增广路径和 `h=32,c=3,b=64` 的无匹配图，耗时也均下降。四组共 512 张随机图及两张构造图的成功状态和最终分配与基线一致；原有 216 图穷举 oracle 改用不连续的原始输入索引，测试数不变。仅拆分函数的原型出现退化信号，已撤回；本次未测完整 keygen/PBS，临时程序未加入常驻 benchmark 或 CI。
+
+## B4.1 Fourier 密钥材料与共享匹配
+
+[共享 `BucketMap`](../crates/primus_tfhe/src/sparse.rs) 的 `try_generate` 接收严格递增的非零输入索引，检查索引、桶数及映射存储边界后采样。返回公开 CSR 映射和用 `Zeroizing` 包装的私有分配；未占用桶使用 `BucketMap::UNASSIGNED`，调用方在加密后丢弃私有分配。`Matching` 仍为私有实现，抽取没有改变候选采样、增广路径选择或八次尝试的随机数消费顺序。
+
+[Fourier keygen](../crates/primus_tfhe_glwe_fourier/src/sparse/key.rs) 沿用 `try_generate_sparse_bootstrapping_key`，逐份独立加密 selector/dummy。复用现有 Fourier 常数 GGSW 加密，将每份结果 inverse FFT 写入最终 Native 系数数组；临时只保存一份 Fourier GGSW。这里的 FFT→整数转换会引入舍入误差，B4.2 必须把它计入桶聚合与外积误差，不能套用 NTT 精确变换的结论。
+
+纯映射错误定义在共享层；GLWE family 的 `SparseBootstrappingKeyError::BucketMap(#[from] BucketMapError)` 直接保留桶参数、非零索引、映射存储和匹配失败信息。外层负责客户端、分布、重量、实际系数及 GGSW 存储错误，并由两后端重导出；不再复制底层分支或把非法索引转换为私钥系数错误。GGSW 存储检查留在后端，映射缓冲区检查由共享入口承担。所有返回的校验错误均在消耗随机数前发生。
+
+[Fourier 聚焦测试](../crates/primus_tfhe_glwe_fourier/tests/sparse_key.rs) 使用 `u64,n=16,h=4,N=128,k=1,t=8`、`log_basis=8,ell=6` 和噪声参数 `0.7`，分别运行 RustFFT/TfheFFT；`(c,b)=(3,8)` 验证多副本，`(1,17)` 保证存在公开空桶。对加密 GLWE 做外积并解密，核对每个支持索引恰好一次、每桶 selector/dummy 总和为 1、首尾多项式系数及错误前 RNG 不变。原 216 图匹配 oracle、受控重试和 NTT 密钥/完整 PBS 回归继续保留。
+
+本步没有性能结论：Fourier 仅提供密钥材料，BR、两种 order 的完整 PBS 和在线工作区留到 B4.2；收益测量留到 B4.3。条件映射分布、安全和完整尾界仍未闭合。
 
 ## P3.3 参考盲旋转实现与验证
 

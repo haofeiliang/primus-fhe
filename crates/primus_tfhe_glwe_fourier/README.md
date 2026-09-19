@@ -65,6 +65,19 @@ configuration. Both PBS orders, ordinary/interleaved LUTs and public-key inputs 
 Ternary keys require more key and workspace storage than binary keys; see the
 [ternary design and costs](../../docs/tfhe-ternary.md).
 
+## Experimental sparse key material
+
+For a `FixedHammingWeightBinary` small-LWE secret, use
+`KeyGenerator::try_generate_sparse_bootstrapping_key(&client, copy_count, bucket_count, rng)`.
+It returns `SparseGlweBootstrappingKey<T>` with native coefficient GGSWs;
+`bucket(j)` borrows public input indices and one selector per index, followed by a dummy.
+Errors use `SparseBootstrappingKeyError`. The private matching is erased after generation.
+
+This currently exposes key material only; `ServerKey` and `Evaluator` still use classic PBS.
+Sparse BR, full sparse PBS and sparse CBS are not available in this backend.
+Mapping success does not certify fixed-weight security or noise bounds; see the
+[sparse construction and limitations](../../docs/tfhe-sparse-pbs.md).
+
 ## Circuit bootstrapping
 
 Classic CBS supports binary/ternary small secrets, both PBS orders and both FFT

@@ -2,11 +2,11 @@
 
 依据：[后端覆盖分析](tfhe-backend-coverage.md)，初始源码基线 `7f1ef55`。本计划把已有算法的后端补齐与必要的高层接口整理拆成可独立验收的步骤；不重开已完成的 P1–P4、T1–T3，也不扩入 FDFB 等[新算法选型](tfhe-next.md)。
 
-B1–B3 已完成，下一步 B4.1。B1.4–B1.7 整理四后端高层接口，分析与性能对照基线为 `66ae701`；B2–B8 保留原编号。当前任务与下一步记录在 [HANDOFF](../HANDOFF.md)，算法依据仍由覆盖分析和各专项文档维护。
+B1–B3 和 B4.1 已完成，下一步 B4.2。B1.4–B1.7 整理四后端高层接口，分析与性能对照基线为 `66ae701`；B2–B8 保留原编号。当前任务与下一步记录在 [HANDOFF](../HANDOFF.md)，算法依据仍由覆盖分析和各专项文档维护。
 
 ## 执行方式
 
-- 接下来推荐按 **`执行 B4.1` → `执行 B4.2` → …** 推进。`B1` 表示整个阶段；明确要求“执行 B1”时，完成其所有满足前置条件的剩余子步骤。
+- 接下来推荐按 **`执行 B4.2` → `执行 B4.3` → …** 推进。`B1` 表示整个阶段；明确要求“执行 B1”时，完成其所有满足前置条件的剩余子步骤。
 - 每步先核对 Git 状态、HANDOFF、本步及依赖结论；保留用户修改和暂存状态。编号不隐含暂存、提交或启动后续步骤。
 - **工程接入**：现成代数与原语支持实现，仍需正常验证。**原型验证**：先回答未决问题，结论可以是通过、缩小范围或暂缓。
 - “依赖原型通过”不同于“原型步骤已结束”。原型不成立时保留结论及最小反例，删除无长期价值的实验代码，暂缓依赖分支；其他独立阶段仍可执行。
@@ -19,7 +19,7 @@ B1–B3 已完成，下一步 B4.1。B1.4–B1.7 整理四后端高层接口，�
 | B1 | GLWE Fourier 经典 CBS、四后端高层接口整理 | B1.1–B1.7 | 全部完成；[接口成本验收](tfhe-api-costs.md) |
 | B2 | NTRU 两后端 Boolean | B2.1–B2.2 | 已完成共享算法、绑定、完整门语义和串联验收 |
 | B3 | NTRU NTT MVB、既有 sparse 组合验收 | B3.1–B3.3 | 全部完成；[MVB 测量](tfhe-mvb-ntru.md)、[sparse 组合](tfhe-sparse-pbs.md#b33-已有上层组合验收) |
-| B4 | GLWE Fourier 二元稀疏 PBS | B4.1–B4.3 | 参考实现与收益验证；不含 sparse CBS/ternary |
+| B4 | GLWE Fourier 二元稀疏 PBS | B4.1–B4.3 | B4.1 密钥材料已完成；BR/PBS 与收益待验证，不含 sparse CBS/ternary |
 | B5 | Native 偶尺度 MVB | B5.1–B5.4 | 原型通过后接入两族 Fourier；NTRU 接入还依赖 B3.1 |
 | B6 | sparse CBS | B6.1–B6.3 | NTT 先验证；Fourier 还依赖 B1、B4 的对应能力 |
 | B7 | NTRU 经典 ternary | B7.1–B7.4 | 先明确采样与控制原语，再接完整链；不依赖 sparse 算法 |
@@ -113,13 +113,13 @@ Fourier 因原型噪声增加，按用户决定暂不接入。不阻塞 B2.1。
 
 ## B4：GLWE Fourier 固定重量二元稀疏 PBS
 
-入口：[NTT sparse](../crates/primus_tfhe_glwe_ntt/src/sparse/mod.rs)、[BucketMap/Matching](../crates/primus_tfhe_glwe_ntt/src/sparse/pbc.rs)、[稀疏专项](tfhe-sparse-pbs.md)。
+入口：[NTT sparse](../crates/primus_tfhe_glwe_ntt/src/sparse/mod.rs)、[BucketMap/Matching](../crates/primus_tfhe/src/sparse.rs)、[稀疏专项](tfhe-sparse-pbs.md)。
 
-### B4.1：纯匹配组件与 Fourier sparse key
+### B4.1：纯匹配组件与 Fourier sparse key（已完成）
 
-- **范围**：为第二个实际后端提取不依赖 NTT 的索引映射/匹配部分，保留可读的算法注释；迁移 NTT 调用方，同时实现 Fourier 后端使用的系数 selector GGSW 与 dummy 密钥材料。
-- **约束**：不在此步改变匹配算法、采样/重试分布或聚合优化策略。BSK 表示和后端错误仍明确区分。
-- **验收**：保留现有匹配不变量测试；解密少量 selector/dummy 核对每桶至多一个有效选择、未占用桶恒等控制。原 NTT 路径通过相应回归检查。
+- **实现**：纯索引映射/私有匹配移入 `primus_tfhe::sparse`，保留算法注释、采样顺序及八次重试；NTT 调用方已迁移。Fourier 提供系数域 selector/dummy 密钥，复用一份 Fourier GGSW 临时缓冲，具体表示与加密留在后端。
+- **边界**：映射入口负责索引/桶参数及映射分配检查；GLWE family 统一稀疏密钥错误，两后端重导出。此步只生成 Fourier 密钥材料，不开放完整 sparse PBS/CBS 或改变聚合策略。
+- **验收**：原匹配穷举/重试测试保留；新增共享公开边界和两种 FFT 的 selector/dummy 测试，NTT 回归通过。`just tfhe` / `just tfhe-simd` 通过；参数与局限见[稀疏专项](tfhe-sparse-pbs.md#b41-fourier-密钥材料与共享匹配)。
 
 ### B4.2：参考 BR 与完整 PBS
 

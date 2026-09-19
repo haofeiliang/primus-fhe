@@ -13,6 +13,8 @@ primus_encoding = { path = "../primus_encoding" }
 primus_lwe = { path = "../primus_lwe" }
 
 thiserror = { workspace = true }
+rand = { workspace = true }
+zeroize = { workspace = true }
 
 [dev-dependencies]
 primus_test_allocations = { path = "../../test-support/allocations" }

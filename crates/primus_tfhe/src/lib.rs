@@ -12,6 +12,7 @@ mod lookup_table;
 mod parameters;
 
 pub mod rotation;
+pub mod sparse;
 
 pub use boolean::{BOOLEAN_PLAINTEXT_BITS, BooleanEvaluator, BooleanGate};
 pub use bootstrap::{ProgrammableBootstrap, ProgrammableBootstrapInterleaved};

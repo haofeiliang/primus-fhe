@@ -4,7 +4,8 @@
 
 ## 当前任务
 
-- **B3 已完成**：NTRU NTT MVB 共享 `NLev[1]` 初始化与 BR，各输出乘因子后独立 KS/提取，额外一个 NTT 多项式；公共 LUT 与两 NTT 后端使用连续因子缓冲。[NTRU 测量](docs/tfhe-mvb-ntru.md)记录接口、误差/相关性与成本，保留五项在线基准和一个应用示例。B3.3 的[两个聚焦测试](crates/primus_tfhe_glwe_ntt/tests/sparse_pbs.rs)补齐 GLWE NTT sparse×Boolean/bivariate/odd-full：两种 order、受控输入误差、门链、相位/解码及首调用零分配通过，无生产 API/内核变更或新增 benchmark。当前 `just tfhe`、`just tfhe-simd` 通过。下一步 **B4.1：纯匹配组件提取与 Fourier sparse key**，由用户启动；见[分步计划](docs/tfhe-backend-plan.md)。
+- **B4.1 已完成**：纯 `BucketMap`/私有 `Matching` 已提取到 `primus_tfhe::sparse`，保持算法、采样和八次重试；NTT 已迁移。Fourier 增加系数域 selector/dummy 密钥生成，复用单份 Fourier GGSW，两个 FFT 的选择语义测试通过；family 统一稀疏密钥错误，`BucketMap(#[from] BucketMapError)` 保留底层分类。当前 GLWE family/两后端 all-targets check、Clippy 及两后端稀疏密钥测试通过。详见[稀疏专项](docs/tfhe-sparse-pbs.md#b41-fourier-密钥材料与共享匹配)。本步不提供 Fourier sparse BR/PBS，下一步 **B4.2** 需接系数桶聚合、完整链并验证误差与零分配；不自动启动或提交。
+- **B3 已完成**：NTRU NTT MVB 的算法、布局和成本见[NTRU 测量](docs/tfhe-mvb-ntru.md)；GLWE NTT sparse×Boolean/bivariate/odd-full 已完成两种 order 的受控误差、门链、相位/解码与首调用零分配验收，见[分步计划](docs/tfhe-backend-plan.md)。
 - **B2.1–B2.2 已完成**：Boolean 门算法、LUT 和 LWE 工作区由 `primus_tfhe` 共享，四后端提供 Boolean 工厂，保留独立加解密器及私钥/公钥加密。客户端错误归 family `BooleanError`，求值器构造归共享 `TfheEvaluationError`。共同真值表、混合门链、错误边界和 NTRU 首调用零分配通过；NTRU 覆盖 NTT 与两种 FFT，默认/SIMD 检查和测试通过。见[公共用法](crates/primus_tfhe/README.zh_CN.md#boolean-门)。
 - **GLWE NTT 系数域加解密已接入**：[算法、性能与误差](docs/glwe-coefficient-client.md)。在 `NttGlweSecretKey` 增加三个固有方法，NTT `AccumulatorClient` 改用 N 系数、析构时擦除的 scratch；高层接口不变，保持精确等价和在线零分配。u64 Fourier 原型真实相位噪声 RMS 增加约 6%–13%，按用户决定暂不接入；不重开全底层整理。
 - **B1.1–B1.7 已完成**：[分步计划](docs/tfhe-backend-plan.md)、[高层接口与成本验收](docs/tfhe-api-costs.md)。四后端使用具名配置、自动建表、带可选 CBS 的 `ServerKey`、绑定消费与 accumulator 客户端；GLWE NTT 的 CBS 参数现在也绑定输入明文模数。默认/SIMD、严格 rustdoc、底层回归及九个 release 示例通过；四后端完整消费首调用零分配，复用 scratch 省去独立 CMUX 缓冲。对 `66ae701` 的当前时间/资源对照已记录；NTRU NTT 微型 fixture 对资源放置敏感，不声称所有负载等时。稀疏 CBS 仍拒绝，正式尾界未认证；逐系数 RevHomTrace 保留，共享 automorphism 优化暂缓。

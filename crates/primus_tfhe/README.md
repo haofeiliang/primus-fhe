@@ -30,7 +30,8 @@ NTT MVB also supports both. NTRU BR secrets remain binary.
 
 GLWE NTT also supports [experimental sparse PBS](../primus_tfhe_glwe_ntt/README.md#experimental-sparse-pbs)
 for fixed-weight binary small secrets: both orders and ordinary/interleaved/factorized LUTs.
-Sparse CBS is not supported.
+Sparse CBS is not supported. GLWE Fourier exposes [sparse key material only](../primus_tfhe_glwe_fourier/README.md#experimental-sparse-key-material);
+its sparse evaluation path is not implemented.
 
 ## Error boundaries
 
@@ -44,6 +45,7 @@ type returned by the operation you call.
 | Client-key compatibility / client operations | Family `TfheKeyError` / `TfheClientError` |
 | Boolean client construction, encryption and decryption | Family `BooleanError`; `Client` retains underlying client failures |
 | Ordinary or standalone CBS key generation | Family `KeyGenerationError`; NTRU sampling/conversion enters `Ntru` directly |
+| Sparse GLWE key generation | Family `SparseBootstrappingKeyError`; `BucketMap` retains underlying mapping failures |
 | Automatic table creation or explicit table binding | Backend `TfheContextError`; `TransformTable` retains the underlying FFT/NTT error |
 
 ## Boolean gates

@@ -5,6 +5,7 @@ use primus_lwe::{LweParameters, LweSecretKey};
 use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, U32NttTable};
 use primus_poly::PolynomialOwned;
+use primus_tfhe::sparse::BucketMapError;
 use primus_tfhe_glwe_ntt::{
     ClientKey, KeyGenerator, PbsOrder, SparseBootstrappingKeyError as Error, TfheContext,
     TfheParameters,
@@ -131,7 +132,12 @@ fn sparse_key_rejects_invalid_parameters_and_actual_secret_before_sampling() {
         assert_eq!(rng.next_u64(), StdRng::seed_from_u64(43).next_u64());
     };
     for (copies, buckets) in [(0, 8), (9, 8), (3, 3)] {
-        check(&client, copies, buckets, Error::InvalidBucketParameters);
+        check(
+            &client,
+            copies,
+            buckets,
+            Error::BucketMap(BucketMapError::InvalidBucketParameters),
+        );
     }
     for (copies, buckets) in [(usize::MAX, usize::MAX), (3, usize::MAX)] {
         check(&client, copies, buckets, Error::StorageSizeOverflow);

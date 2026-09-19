@@ -55,6 +55,18 @@ FFT engine 和 evaluator 从同一个 context 创建。
 普通/交错 LUT 和公钥输入均支持。Ternary 比 binary 需要更多密钥与工作区存储，
 见[设计与成本](../../docs/tfhe-ternary.md)。
 
+## 实验性稀疏密钥材料
+
+small-LWE 秘密采用 `FixedHammingWeightBinary` 时，可调用
+`KeyGenerator::try_generate_sparse_bootstrapping_key(&client, copy_count, bucket_count, rng)`。
+返回的 `SparseGlweBootstrappingKey<T>` 保存 Native 系数域 GGSW；
+`bucket(j)` 借用公开输入索引及对应 selector，最后一项为 dummy。
+生成错误使用 `SparseBootstrappingKeyError`，私有匹配在生成结束后擦除。
+
+目前只提供密钥材料，`ServerKey` 和 `Evaluator` 仍执行经典 PBS；
+本后端尚无 sparse BR、完整稀疏 PBS 或 sparse CBS。
+匹配成功不代表固定重量安全性或噪声界已认证，见[稀疏构造与限制](../../docs/tfhe-sparse-pbs.md)。
+
 ## Circuit bootstrapping
 
 经典 CBS 支持 binary/ternary small 秘密、两种 PBS order 和两种 FFT，输出为 accumulator

@@ -31,12 +31,14 @@ mod context;
 mod error;
 mod evaluator;
 mod key;
+mod sparse;
 
 pub mod boolean;
 
 pub use error::{
-    CircuitBootstrapParameterError, KeyGenerationError, LookupTableError, TfheClientError,
-    TfheContextError, TfheEvaluationError, TfheKeyError, TfheParameterError,
+    CircuitBootstrapParameterError, KeyGenerationError, LookupTableError,
+    SparseBootstrappingKeyError, TfheClientError, TfheContextError, TfheEvaluationError,
+    TfheKeyError, TfheParameterError,
 };
 
 pub use accumulator::AccumulatorClient;
@@ -53,6 +55,7 @@ pub use primus_tfhe::{
     LookupTable, LweCiphertext, LweSecretKeyRef,
 };
 pub use primus_tfhe_glwe::{ClientKey, EncryptionKey, PbsOrder};
+pub use sparse::SparseGlweBootstrappingKey;
 
 pub use boolean::{
     BooleanDecryptor, BooleanEncryptor, BooleanError, BooleanEvaluator, BooleanGate,

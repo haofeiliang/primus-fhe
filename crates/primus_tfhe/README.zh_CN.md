@@ -27,7 +27,8 @@ GLWE 两后端的经典 PBS 和 CBS 支持 binary/ternary small secret；NTT 的
 NTRU 的 BR 秘密仍限于 binary。
 
 GLWE NTT 另支持固定重量二元 small 秘密的[实验性稀疏 PBS](../primus_tfhe_glwe_ntt/README.zh_CN.md#实验性稀疏-pbs)：
-两种 order、普通/交错/分解式 LUT；稀疏 CBS 尚不支持。
+两种 order、普通/交错/分解式 LUT；稀疏 CBS 尚不支持。GLWE Fourier 目前只提供
+[稀疏密钥材料](../primus_tfhe_glwe_fourier/README.zh_CN.md#实验性稀疏密钥材料)，尚无稀疏求值路径。
 
 ## 错误边界
 
@@ -40,6 +41,7 @@ GLWE NTT 另支持固定重量二元 small 秘密的[实验性稀疏 PBS](../pri
 | Client key 兼容性 / 客户端操作 | Family `TfheKeyError` / `TfheClientError` |
 | Boolean 客户端构造、加密和解密 | Family `BooleanError`；`Client` 分支保留底层客户端错误 |
 | 常规或独立 CBS 密钥生成 | Family `KeyGenerationError`；NTRU 采样/变换直接进入 `Ntru` 分支 |
+| GLWE 稀疏密钥生成 | Family `SparseBootstrappingKeyError`；`BucketMap` 分支保留底层映射错误 |
 | 自动建表或显式绑定表 | 后端 `TfheContextError`；`TransformTable` 保留底层 FFT/NTT 错误 |
 
 ## Boolean 门

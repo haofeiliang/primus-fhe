@@ -194,3 +194,26 @@ pub enum KeyGenerationError {
     #[error("circuit-bootstrap parameters do not match this TFHE context")]
     IncompatibleCircuitBootstrapParameters,
 }
+
+/// Failure to construct an experimental sparse bootstrapping key.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum SparseBootstrappingKeyError {
+    /// The client secrets do not match the context's parameters.
+    #[error(transparent)]
+    ClientKey(#[from] TfheKeyError),
+    /// Sparse generation requires a fixed-weight binary small-LWE distribution.
+    #[error("sparse bootstrapping requires a fixed-weight binary small-LWE secret")]
+    UnsupportedSecretDistribution,
+    /// The public weight must be positive and strictly less than the input dimension.
+    #[error("sparse Hamming weight must satisfy 0 < h < n")]
+    InvalidHammingWeight,
+    /// Public bucket-map validation or private matching failed.
+    #[error(transparent)]
+    BucketMap(#[from] primus_tfhe::sparse::BucketMapError),
+    /// Actual secret coefficients are not binary or do not have the declared weight.
+    #[error("small-LWE coefficients do not match the declared binary Hamming weight")]
+    InvalidSecretCoefficients,
+    /// GGSW ciphertext storage lengths exceed addressable allocation sizes.
+    #[error("sparse GGSW storage size overflow")]
+    StorageSizeOverflow,
+}

@@ -45,8 +45,8 @@ use primus_lwe::{LweParameters, LweSecretKey};
 pub use boolean::{BooleanDecryptor, BooleanEncryptor};
 pub use client::{Decryptor, EncryptionKey, Encryptor};
 pub use error::{
-    BooleanError, CircuitBootstrapParameterError, KeyGenerationError, TfheClientError,
-    TfheKeyError, TfheParameterError,
+    BooleanError, CircuitBootstrapParameterError, KeyGenerationError, SparseBootstrappingKeyError,
+    TfheClientError, TfheKeyError, TfheParameterError,
 };
 pub use key::ClientKey;
 pub use parameters::{PbsOrder, TfheConfig, TfheParameters};

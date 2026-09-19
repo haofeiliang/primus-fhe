@@ -1,25 +1,70 @@
+//! Public bucket maps and private matching for fixed-weight sparse PBS.
+//!
+//! This module only assigns input indices to buckets; ciphertext layout, secret
+//! distribution validation and encryption belong to the consuming backend.
+
+use std::alloc::Layout;
+
 use rand::distr::{Distribution, Uniform};
 use zeroize::Zeroizing;
 
-use crate::SparseBootstrappingKeyError;
+/// Failure to sample and match a sparse bucket map.
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+pub enum BucketMapError {
+    /// At least one copy and enough buckets for copies and nonzero inputs are required.
+    #[error("mapping requires copy_count >= 1 and bucket_count >= max(copy_count, nonzero_count)")]
+    InvalidBucketParameters,
+    /// Nonzero input indices must be strictly increasing and below the input dimension.
+    #[error("nonzero indices must be strictly increasing and less than input_dimension")]
+    InvalidNonzeroIndices,
+    /// Mapping buffers exceed addressable allocation sizes.
+    #[error("bucket-map storage size overflow")]
+    StorageSizeOverflow,
+    /// None of eight independently sampled maps admitted a complete matching.
+    #[error("sparse support matching failed after eight attempts")]
+    MatchingFailed,
+}
 
 /// No assignment or no visited predecessor. Valid indices fit checked allocations.
-pub(super) const EMPTY: usize = usize::MAX;
+const EMPTY: usize = usize::MAX;
 const MAX_ATTEMPTS: usize = 8;
 
 /// Public mapping from buckets to input coefficient indices.
 ///
 /// Each input index occurs in `copy_count` distinct buckets, including indices
 /// whose secret coefficient is zero. No private matching information is retained.
-pub(super) struct BucketMap {
+pub struct BucketMap {
     /// Bucket `j` occupies `input_indices[bucket_offsets[j]..bucket_offsets[j+1]]`.
     /// There are `bucket_count + 1` offsets; the last is `input_indices.len()`.
-    pub(super) bucket_offsets: Vec<usize>,
+    bucket_offsets: Vec<usize>,
     /// Original input coefficient indices, increasing within each bucket.
-    pub(super) input_indices: Vec<usize>,
+    input_indices: Vec<usize>,
 }
 
 impl BucketMap {
+    /// Sentinel in the private assignment for a bucket with no selected input.
+    pub const UNASSIGNED: usize = EMPTY;
+
+    /// Returns the number of public buckets, including empty ones.
+    #[must_use]
+    pub fn bucket_count(&self) -> usize {
+        self.bucket_offsets.len() - 1
+    }
+
+    /// Returns offsets delimiting each bucket in [`Self::input_indices`].
+    /// Bucket `j` occupies `offsets[j]..offsets[j + 1]`; the final offset equals
+    /// the number of entries. Empty buckets have equal consecutive offsets.
+    #[must_use]
+    pub fn bucket_offsets(&self) -> &[usize] {
+        &self.bucket_offsets
+    }
+
+    /// Returns the original input indices, increasing within each bucket.
+    #[must_use]
+    pub fn input_indices(&self) -> &[usize] {
+        &self.input_indices
+    }
+
     /// Samples a public bucket map and privately assigns every nonzero coefficient.
     ///
     /// `nonzero_indices` contains the increasing indices `i` where the binary
@@ -28,24 +73,49 @@ impl BucketMap {
     /// buckets uniformly. Only the map is resampled on matching failure.
     ///
     /// Returns the public map and a private array indexed by bucket: each entry
-    /// is the selected original input index, or `EMPTY` for an unoccupied bucket.
+    /// is the selected original input index, or [`Self::UNASSIGNED`] for an
+    /// unoccupied bucket. This array contains secret information and is erased
+    /// on drop; do not retain it in a public key.
     /// Returns an error after eight failed maps; the input secret is unchanged.
     ///
-    /// # Correctness
+    /// Success conditions the public map on the supplied secret indices. This
+    /// local key-generation procedure is not constant-time; successful matching
+    /// and the retry bound do not certify security or a PBS failure probability.
     ///
-    /// Key generation has checked dimensions, allocation lengths and the actual
-    /// binary secret: `copy_count >= 1`, `bucket_count >= max(copy_count, h)`,
-    /// and the `h` distinct nonzero indices are all below `input_dimension`.
-    pub(super) fn generate<R>(
+    /// # Errors
+    ///
+    /// Rejects invalid copy/bucket counts, unordered, duplicate or out-of-range
+    /// nonzero indices, and storage overflow before sampling. Eight failed maps
+    /// return [`BucketMapError::MatchingFailed`] without a partial assignment.
+    pub fn try_generate<R>(
         input_dimension: usize,
         copy_count: usize,
         bucket_count: usize,
         nonzero_indices: &[usize],
         rng: &mut R,
-    ) -> Result<(Self, Zeroizing<Vec<usize>>), SparseBootstrappingKeyError>
+    ) -> Result<(Self, Zeroizing<Vec<usize>>), BucketMapError>
     where
         R: rand::Rng + rand::CryptoRng,
     {
+        if copy_count == 0 || bucket_count < copy_count.max(nonzero_indices.len()) {
+            return Err(BucketMapError::InvalidBucketParameters);
+        }
+        if nonzero_indices
+            .last()
+            .is_some_and(|&index| index >= input_dimension)
+            || nonzero_indices.windows(2).any(|pair| pair[0] >= pair[1])
+        {
+            return Err(BucketMapError::InvalidNonzeroIndices);
+        }
+        let entry_count = input_dimension
+            .checked_mul(copy_count)
+            .ok_or(BucketMapError::StorageSizeOverflow)?;
+        let offsets_len = bucket_count
+            .checked_add(1)
+            .ok_or(BucketMapError::StorageSizeOverflow)?;
+        Layout::array::<usize>(entry_count).map_err(|_| BucketMapError::StorageSizeOverflow)?;
+        Layout::array::<usize>(offsets_len).map_err(|_| BucketMapError::StorageSizeOverflow)?;
+
         let bucket_distribution = Uniform::new(0, bucket_count).expect("validated bucket count");
         Self::generate_with(
             input_dimension,
@@ -76,14 +146,14 @@ impl BucketMap {
     /// each row has `copy_count` distinct bucket IDs in `0..bucket_count`.
     /// Production sampling must be independent across inputs and attempts; the
     /// callback also lets tests supply graphs with known matching failures.
-    /// Other input requirements and the returned private array match [`Self::generate`].
+    /// Other input requirements and the returned private array match [`Self::try_generate`].
     fn generate_with(
         input_dimension: usize,
         copy_count: usize,
         bucket_count: usize,
         nonzero_indices: &[usize],
         mut sample: impl FnMut(&mut [usize]),
-    ) -> Result<(Self, Zeroizing<Vec<usize>>), SparseBootstrappingKeyError> {
+    ) -> Result<(Self, Zeroizing<Vec<usize>>), BucketMapError> {
         let mut candidate_buckets = vec![0; input_dimension * copy_count];
         let mut matching = Matching::new(nonzero_indices.len(), bucket_count);
         for _ in 0..MAX_ATTEMPTS {
@@ -93,7 +163,7 @@ impl BucketMap {
                 return Ok((map, matching.selected_input_indices));
             }
         }
-        Err(SparseBootstrappingKeyError::MatchingFailed)
+        Err(BucketMapError::MatchingFailed)
     }
 
     /// Transposes input-major candidate buckets into the public bucket map.
@@ -103,7 +173,7 @@ impl BucketMap {
     /// without sorting and never reads the secret or private matching.
     ///
     /// `candidate_buckets` contains complete rows of `copy_count` distinct valid
-    /// bucket IDs. Counts and allocation lengths satisfy [`Self::generate`]'s
+    /// bucket IDs. Counts and allocation lengths satisfy [`Self::try_generate`]'s
     /// checked bounds, so prefix sums fit and retain every input copy exactly once.
     fn from_input_buckets(
         candidate_buckets: &[usize],
@@ -164,7 +234,7 @@ impl Matching {
     /// Resets the matching and assigns every nonzero input to a distinct bucket.
     ///
     /// Candidate rows are indexed by original input coefficient; only rows named
-    /// by `nonzero_indices` participate. Inputs satisfy [`BucketMap::generate`]'s
+    /// by `nonzero_indices` participate. Inputs satisfy [`BucketMap::try_generate`]'s
     /// bounds and match this workspace's dimensions. On failure, the partial
     /// matching cannot generate a key; the next call resets it before retrying.
     fn assign(
@@ -348,10 +418,7 @@ mod tests {
                 assert_eq!(&selected_input_indices[6..], &[EMPTY, EMPTY]);
                 assert_eq!(&map.bucket_offsets[6..], &[48, 48, 48]);
             } else {
-                assert!(matches!(
-                    result,
-                    Err(SparseBootstrappingKeyError::MatchingFailed)
-                ));
+                assert!(matches!(result, Err(BucketMapError::MatchingFailed)));
             }
         }
     }

@@ -15,7 +15,7 @@
 1. **GLWE Fourier 经典 CBS**：B1.1–B1.3 已完成完整链、误差/成本测量与使用示例，见 [CBS 专项](tfhe-cbs.md)。
 2. **NTRU 两后端 Boolean 适配**：B2 已完成共享门算法、客户端/工厂，以及完整门真值表和串联验收。
 3. **NTRU NTT 分解式 MVB**：B3.1–B3.2 已完成完整链、误差/相关性和成本验收，见 [NTRU MVB 测量](tfhe-mvb-ntru.md)。
-4. **GLWE Fourier 固定重量二元稀疏 PBS**：桶聚合代数可迁移，先实现系数域聚合的参考路径；收益须独立测量。
+4. **GLWE Fourier 固定重量二元稀疏 PBS**：B4.1 已完成共享映射和系数域密钥；B4.2 接桶聚合与完整求值，收益仍须独立测量。
 
 优先做原型的组合是 **Native 偶尺度 MVB、稀疏 CBS、NTRU ternary 与 NTRU 桶聚合**。其中有的代数已成立，但尚未建立完整的表示、采样或误差契约。不要把“尚未验证”写成“数学上不适配”，也不要把“有底层原语”写成“已有完整功能”。
 
@@ -34,7 +34,7 @@
 | 经典 binary BR | 支持 | 支持 | 支持 | 支持 |
 | 经典 ternary BR | 支持 | 支持 | 未接入 | 未接入 |
 | 固定重量 binary 使用经典 BR | 支持 | 支持 | 需生成可逆客户端秘密 | 还受奇数重量/逆元稳定性限制 |
-| 固定重量 binary 桶聚合 BR | 支持 | 未接入 | 未接入 | 未接入 |
+| 固定重量 binary 桶聚合 BR | 支持 | 仅密钥材料，BR 待接入 | 未接入 | 未接入 |
 | Boolean 门、NOT、MUX | 支持 | 支持 | 支持 | 支持 |
 | CBS | 经典 binary/ternary → GGSW | 经典 binary/ternary → Fourier GGSW | binary → NGSW | binary → NGSW |
 | 固定尺度差分 MVB | 支持，含经典/稀疏 | 未接入 | 支持，经典 binary | 未接入 |
@@ -140,7 +140,7 @@ Native 系数域旋转并累加 selector GGSW 与 dummy
 
 这条路径将聚合保持为精确的 native 整数运算，便于对照 NTT 实现。初版不直接改为频域逐项旋转累加，避免同时引入新的浮点累积和布局问题。
 
-[BucketMap/Matching](../crates/primus_tfhe_glwe_ntt/src/sparse/pbc.rs) 当前在 NTT 私有模块中，并未共享。第二个消费者出现时，可提取纯索引映射、匹配及其必要错误信息；密钥布局、聚合表示和外积执行仍留在各后端。
+**B4.1 已完成**：[BucketMap/Matching](../crates/primus_tfhe/src/sparse.rs) 已移入共享层，保持采样次序、完整增广路匹配和八次重试不变。NTT 已迁移，Fourier 提供系数域 selector/dummy [密钥生成](../crates/primus_tfhe_glwe_fourier/src/sparse/key.rs)，两种 FFT 的加密选择语义已验证。BSK 表示与加密仍属于具体后端；完整稀疏 BR/PBS 尚待 B4.2。
 
 首批范围为 fixed-weight binary、普通/ManyLUT、两种 order、两种 FFT。代数接入有依据，但聚合变换、密钥带宽和浮点误差会影响实际价值，必须测完整 PBS 后再决定优化路径。稀疏采样分布与安全边界继续遵循[稀疏专项](tfhe-sparse-pbs.md)，不能因换后端自动视为闭合。
 

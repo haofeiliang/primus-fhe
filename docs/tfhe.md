@@ -27,7 +27,9 @@ CBS 在密钥生成时通过 `Some(CircuitBootstrapConfig)` 可选启用，附�
 ### 错误组织
 
 公共 LUT/evaluator 错误由 `primus_tfhe` 定义；两族的 `error` 模块集中维护参数、客户端及
-密钥生成错误，NTT/Fourier 后端重导出。变换表错误留在后端 context，稀疏匹配保留专用错误。
+密钥生成错误，NTT/Fourier 后端重导出。变换表错误留在后端 context。纯索引匹配使用 `primus_tfhe::sparse::BucketMapError`；
+GLWE 的 `SparseBootstrappingKeyError::BucketMap(#[from] BucketMapError)` 保留底层映射错误，
+外层只定义客户端、实际秘密及 GGSW 存储错误，两后端重导出。
 不增加跨全部操作的总错误；只有无歧义转换使用 `#[from]`。BR/KS、trace/SS 在调用点
 显式 `map_err` 标明用途，并以 `#[source]` 保留原因。表错误不保证 `Clone`/`Eq`，context 错误不额外承诺它们。
 公开错误入口见 [README](../crates/primus_tfhe/README.zh_CN.md#错误边界)。
