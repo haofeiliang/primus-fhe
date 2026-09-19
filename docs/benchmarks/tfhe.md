@@ -55,6 +55,10 @@ NTRU CBS 的 [NTT](../../crates/primus_tfhe_ntru_ntt/benches/circuit_bootstrap.r
 非恒定 CMUX、桶内加密零/dummy 噪声及资源；[计时](tfhe-b6.1.csv)、
 [逐层相位](tfhe-b6.1-noise.csv)、[桶噪声](tfhe-b6.1-buckets.csv)。临时原型已清理，未增加 CI 统计或持久基准。
 
+[B8.1 NTRU NTT 桶聚合](../tfhe-ntru-sparse.md#4-验证与参数诊断)记录 u32/u64、
+n=728 的初始化与独立单桶相位/预算，默认/SIMD 数值相同。未测完整 PBS 或性能，
+临时大参数诊断已清理；只保留小环的聚焦回归，不新增基准 target。
+
 共同边界：Ryzen 9 9955HX3D、x86_64 Linux，仓库构建配置；CPU 未隔离，boost/SMT 开启，计时串行。默认 rustc 1.98.0、Criterion 0.8.2；SIMD 若列出则为 nightly 1.100.0（2026-08-26）。耗时 CSV 为均值及 95% 置信区间，单位见列名，不能当作 Criterion 原始样本或跨后端等安全参数比较。
 
 ## P1.1 初始基线
