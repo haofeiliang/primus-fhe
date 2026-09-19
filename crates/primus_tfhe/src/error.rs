@@ -12,9 +12,6 @@ pub enum TfheEvaluationError {
     /// The server key was generated without CBS material.
     #[error("server key has no circuit-bootstrap material")]
     MissingCircuitBootstrapKey,
-    /// The selected evaluator does not support sparse bootstrapping.
-    #[error("sparse bootstrapping is not supported by this evaluator")]
-    UnsupportedSparseBootstrapping,
     /// CBS parameters belong to another accumulator or input domain.
     #[error("circuit-bootstrap parameters do not match the TFHE context")]
     IncompatibleCircuitBootstrapParameters,

@@ -107,7 +107,7 @@ fn phase(ciphertext: &[u64], secret: &[i64]) -> Vec<u64> {
     phase
 }
 
-fn circuit_bootstrap<Table: FftTable>(order: PbsOrder, distribution: SecretKeyDistr) {
+fn circuit_bootstrap<Table: FftTable>(order: PbsOrder, distribution: SecretKeyDistr, sparse: bool) {
     let context = TfheContext::<_, Table>::try_from_parameters(
         parameters_with_order_and_distribution(DIMENSION, POLY_LENGTH, 4, order, distribution),
     )
@@ -115,15 +115,18 @@ fn circuit_bootstrap<Table: FftTable>(order: PbsOrder, distribution: SecretKeyDi
     let mut rng = StdRng::seed_from_u64(0x4342_534b_4559 ^ order as u64);
     let client = ClientKey::generate(context.parameters(), &mut rng);
     let mut generator = KeyGenerator::new(&context);
-    let server = generator
-        .try_generate_server_key(&client, Some(circuit_config()), &mut rng)
-        .unwrap();
+    let server = if sparse {
+        generator.try_generate_sparse_server_key(&client, 3, 4, Some(circuit_config()), &mut rng)
+    } else {
+        generator.try_generate_server_key(&client, Some(circuit_config()), &mut rng)
+    }
+    .unwrap();
     let key = server.circuit_bootstrap_key().unwrap();
     let parameters = key.parameters();
     // GLWE scheme switching binds the output layout, not its exact gadget basis.
     let alternate = CircuitBootstrapParameters::try_new(
         context.parameters(),
-        ApproxSignedBasis::new(None, 9, Some(3)),
+        ApproxSignedBasis::new(None, if sparse { 8 } else { 9 }, Some(3)),
         parameters.trace().clone(),
         parameters.scheme_switch().clone(),
     )
@@ -239,7 +242,7 @@ fn circuit_bootstrap<Table: FftTable>(order: PbsOrder, distribution: SecretKeyDi
                     let error = actual.wrapping_sub(expected);
                     assert!(
                         error.min(error.wrapping_neg()) < tolerance,
-                        "order={order:?}, distribution={distribution:?}, bit={bit}, row={row}, scale={scalar}, coefficient={index}"
+                        "order={order:?}, distribution={distribution:?}, sparse={sparse}, bit={bit}, row={row}, scale={scalar}, coefficient={index}"
                     );
                 }
             }
@@ -262,8 +265,13 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
             SecretKeyDistr::fixed_hamming_weight_binary(4, 2),
             SecretKeyDistr::fixed_composition_ternary(4, 1, 1),
         ] {
-            circuit_bootstrap::<RustFftTable>(order, distribution);
-            circuit_bootstrap::<TfheFftTable>(order, distribution);
+            for sparse in [false, true] {
+                if sparse && !distribution.is_binary() {
+                    continue;
+                }
+                circuit_bootstrap::<RustFftTable>(order, distribution, sparse);
+                circuit_bootstrap::<TfheFftTable>(order, distribution, sparse);
+            }
         }
     }
 }
@@ -285,7 +293,7 @@ fn evaluator_rejects_resource_mismatches_and_checks_shapes_before_writes() {
         .unwrap();
     // CBS leaves a different gadget layout; the next PBS generation must resize it.
     let server = generator
-        .try_generate_server_key(&client, None, &mut rng)
+        .try_generate_sparse_server_key(&client, 3, 4, None, &mut rng)
         .unwrap();
     // Keep level counts equal for basis mismatches, so layout checks cannot mask them.
     for (output, trace, scheme_switch) in [
@@ -479,6 +487,19 @@ fn incompatible_parameters_and_client_keys_are_rejected_before_sampling() {
     let mut untouched_rng = StdRng::seed_from_u64(43);
     assert!(matches!(
         context.try_generate_keys(Some(invalid), &mut rng),
+        Err(KeyGenerationError::CircuitBootstrapParameters(_))
+    ));
+    assert_eq!(rng.random::<u64>(), untouched_rng.random::<u64>());
+    let mut rng = StdRng::seed_from_u64(44);
+    let mut untouched_rng = StdRng::seed_from_u64(44);
+    assert!(matches!(
+        KeyGenerator::new(&context).try_generate_sparse_server_key(
+            &client,
+            3,
+            4,
+            Some(invalid),
+            &mut rng
+        ),
         Err(KeyGenerationError::CircuitBootstrapParameters(_))
     ));
     assert_eq!(rng.random::<u64>(), untouched_rng.random::<u64>());

@@ -9,11 +9,11 @@ use primus_reduce::ReduceMul;
 use primus_tfhe::{InterleavedLookupTable, LookupTableError};
 
 use crate::{
-    BootstrappingKey, CircuitBootstrapKey, CircuitBootstrapParameters, Evaluator, ServerKey,
-    TfheContext, TfheEvaluationError,
+    CircuitBootstrapKey, CircuitBootstrapParameters, Evaluator, ServerKey, TfheContext,
+    TfheEvaluationError,
 };
 
-/// Classic binary/ternary CBS producing Fourier GGSW under the accumulator secret.
+/// Classic binary/ternary or sparse binary CBS producing Fourier GGSW controls.
 ///
 /// Both PBS orders share the same BR, reverse-trace projection and scheme-switch
 /// stages; KeyswitchBootstrap adds an input key switch. After construction,
@@ -39,7 +39,7 @@ where
     Table: FftTable,
 {
     /// Binds the CBS parameters and material carried by one server key.
-    /// Rejects sparse server keys, or keys without CBS material.
+    /// Returns an error if CBS was not requested during key generation.
     ///
     /// # Correctness
     /// Inherits [`Self::try_from_parts`]'s secret and transform requirements.
@@ -49,9 +49,6 @@ where
         context: &'a TfheContext<T, Table>,
         server_key: &'a ServerKey<T>,
     ) -> Result<Self, TfheEvaluationError> {
-        if matches!(server_key.bootstrapping_key(), BootstrappingKey::Sparse(_)) {
-            return Err(TfheEvaluationError::UnsupportedSparseBootstrapping);
-        }
         let key = server_key
             .circuit_bootstrap_key()
             .ok_or(TfheEvaluationError::MissingCircuitBootstrapKey)?;
@@ -59,8 +56,8 @@ where
     }
 
     /// Checks resource layouts/bases, compiles the gadget-scaled identity LUT
-    /// and allocates reusable workspace. Sparse server keys are rejected until
-    /// their CBS noise and gadget scales are validated.
+    /// and allocates workspace for the selected classic or sparse BR. These checks
+    /// do not establish a noise margin for the selected output gadget scales.
     ///
     /// # Correctness
     ///
@@ -75,9 +72,6 @@ where
         parameters: &'a CircuitBootstrapParameters<T>,
         circuit_key: &'a CircuitBootstrapKey<T>,
     ) -> Result<Self, TfheEvaluationError> {
-        if matches!(server_key.bootstrapping_key(), BootstrappingKey::Sparse(_)) {
-            return Err(TfheEvaluationError::UnsupportedSparseBootstrapping);
-        }
         let tfhe = context.parameters();
         if !parameters.is_compatible(tfhe) {
             return Err(TfheEvaluationError::IncompatibleCircuitBootstrapParameters);
@@ -240,7 +234,9 @@ where
     /// is the TFHE plaintext modulus. Noise must fit the coarser interleaved-LUT
     /// rotation intervals. Trace and scheme-switch errors, including native
     /// halving and FFT rounding, must fit the independent CBS error budget;
-    /// see [`CircuitBootstrapParameters`]. CMUX consumption requires message
+    /// see [`CircuitBootstrapParameters`]. Sparse keys also require aggregation
+    /// noise from every bucket, including zero selections and dummies, and the
+    /// aggregate FFT error to fit that budget. CMUX consumption requires message
     /// 0 or 1. The output uses gadget scales rather than ordinary LWE encoding.
     ///
     /// # Panics

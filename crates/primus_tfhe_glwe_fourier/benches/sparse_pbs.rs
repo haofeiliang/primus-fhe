@@ -54,7 +54,7 @@ fn bench_backend<Table: FftTable>(c: &mut Criterion, backend: &str) {
             .try_generate_server_key(&client, None, &mut rng)
             .unwrap();
         let sparse = generator
-            .try_generate_sparse_server_key(&client, 3, 2 * WEIGHT, &mut rng)
+            .try_generate_sparse_server_key(&client, 3, 2 * WEIGHT, None, &mut rng)
             .unwrap();
         let encryptor = context.encryptor(&client).unwrap();
         let decryptor = context.decryptor(&client).unwrap();
@@ -138,6 +138,7 @@ fn bench_backend<Table: FftTable>(c: &mut Criterion, backend: &str) {
                                         black_box(&client),
                                         3,
                                         2 * WEIGHT,
+                                        None,
                                         &mut rng,
                                     )
                                     .unwrap()

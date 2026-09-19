@@ -7,8 +7,7 @@ use primus_modulus::NativeModulus;
 use primus_test_allocations as allocations;
 use primus_tfhe::{ProgrammableBootstrap, ProgrammableBootstrapInterleaved};
 use primus_tfhe_glwe_fourier::{
-    CircuitBootstrapConfig, CircuitBootstrapEvaluator, CircuitBootstrapParameters, ClientKey,
-    DecompositionConfig, KeyGenerator, PbsOrder, TfheContext, TfheEvaluationError, TfheParameters,
+    ClientKey, KeyGenerator, PbsOrder, TfheContext, TfheEvaluationError, TfheParameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -47,7 +46,7 @@ fn check_pbs<Table: FftTable>() {
         let mut rng = StdRng::seed_from_u64(0x4234_3250);
         let client = ClientKey::generate(context.parameters(), &mut rng);
         let sparse_key = generator
-            .try_generate_sparse_server_key(&client, 3, 8, &mut rng)
+            .try_generate_sparse_server_key(&client, 3, 8, None, &mut rng)
             .unwrap();
         let classic_key = generator
             .try_generate_server_key(&client, None, &mut rng)
@@ -139,14 +138,14 @@ fn sparse_pbs_preserves_external_secret_and_interleaved_outputs_in_both_orders()
 }
 
 #[test]
-fn sparse_keys_bind_parameters_and_cannot_enter_circuit_bootstrapping() {
+fn sparse_keys_bind_parameters_and_require_cbs_material() {
     let order = PbsOrder::BootstrapKeyswitch;
     let context = context::<RustFftTable>(order, 4, 8);
     let mut rng = StdRng::seed_from_u64(0x4234_3243);
     let client = ClientKey::generate(context.parameters(), &mut rng);
     let mut generator = KeyGenerator::new(&context);
     let server = generator
-        .try_generate_sparse_server_key(&client, 3, 8, &mut rng)
+        .try_generate_sparse_server_key(&client, 3, 8, None, &mut rng)
         .unwrap();
     for incompatible in [
         self::context::<RustFftTable>(order, 5, 8),
@@ -159,33 +158,6 @@ fn sparse_keys_bind_parameters_and_cannot_enter_circuit_bootstrapping() {
     }
     assert!(matches!(
         context.circuit_bootstrap_evaluator(&server),
-        Err(TfheEvaluationError::UnsupportedSparseBootstrapping)
-    ));
-    // Supplying otherwise compatible standalone CBS material must not bypass
-    // the sparse CBS restriction through the advanced construction entry.
-    let decomposition = DecompositionConfig {
-        log_basis: 8,
-        level_count: Some(6),
-    };
-    let parameters = CircuitBootstrapParameters::try_from_config(
-        context.parameters(),
-        CircuitBootstrapConfig {
-            output: DecompositionConfig {
-                log_basis: 8,
-                level_count: Some(3),
-            },
-            trace: decomposition,
-            trace_noise_standard_deviation: 0.7,
-            scheme_switch: decomposition,
-            scheme_switch_noise_standard_deviation: 0.7,
-        },
-    )
-    .unwrap();
-    let key = generator
-        .try_generate_circuit_bootstrap_key(&client, parameters, &mut rng)
-        .unwrap();
-    assert!(matches!(
-        CircuitBootstrapEvaluator::try_from_parts(&context, &server, key.parameters(), &key),
-        Err(TfheEvaluationError::UnsupportedSparseBootstrapping)
+        Err(TfheEvaluationError::MissingCircuitBootstrapKey)
     ));
 }

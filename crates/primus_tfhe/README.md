@@ -32,8 +32,8 @@ Both GLWE backends support experimental sparse PBS for fixed-weight binary small
 secrets, with both orders and ordinary/interleaved/factorized LUTs.
 [NTT](../primus_tfhe_glwe_ntt/README.md#experimental-sparse-pbs) and
 [Fourier](../primus_tfhe_glwe_fourier/README.md#experimental-sparse-pbs) retain their
-respective exact-transform and native coefficient-aggregation paths. NTT also supports sparse CBS;
-Fourier sparse CBS and sparse ternary remain unsupported.
+respective exact-transform and native coefficient-aggregation paths. Both support sparse CBS;
+sparse ternary remains unsupported.
 
 ## Error boundaries
 
@@ -46,8 +46,8 @@ type returned by the operation you call.
 | TFHE / CBS parameter preparation | Family `TfheParameterError` / `CircuitBootstrapParameterError` |
 | Client-key compatibility / client operations | Family `TfheKeyError` / `TfheClientError` |
 | Boolean client construction, encryption and decryption | Family `BooleanError`; `Client` retains underlying client failures |
-| Ordinary, NTT sparse server, or standalone CBS key generation | Family `KeyGenerationError`; NTRU sampling/conversion enters `Ntru` directly; NTT sparse failures enter `SparseBootstrapping` |
-| Raw sparse GLWE BSK / Fourier sparse server generation | Family `SparseBootstrappingKeyError`; `BucketMap` retains underlying mapping failures |
+| Ordinary, sparse server, or standalone CBS key generation | Family `KeyGenerationError`; NTRU sampling/conversion enters `Ntru` directly; GLWE sparse failures enter `SparseBootstrapping` |
+| Raw sparse GLWE BSK generation | Family `SparseBootstrappingKeyError`; `BucketMap` retains underlying mapping failures |
 | Automatic table creation or explicit table binding | Backend `TfheContextError`; `TransformTable` retains the underlying FFT/NTT error |
 
 ## Boolean gates

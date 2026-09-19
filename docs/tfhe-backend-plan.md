@@ -2,11 +2,11 @@
 
 依据：[后端覆盖分析](tfhe-backend-coverage.md)，初始源码基线 `7f1ef55`。本计划把已有算法的后端补齐与必要的高层接口整理拆成可独立验收的步骤；不重开已完成的 P1–P4、T1–T3，也不扩入 FDFB 等[新算法选型](tfhe-next.md)。
 
-B1–B5、B6.1–B6.2 已完成，NTT sparse CBS 已正式接入，下一步 B6.3。B1.4–B1.7 整理四后端高层接口，分析与性能对照基线为 `66ae701`；B2–B8 保留原编号。当前任务与下一步记录在 [HANDOFF](../HANDOFF.md)，算法依据仍由覆盖分析和各专项文档维护。
+B1–B6 已完成，GLWE 两后端 sparse CBS 已正式接入，下一步 B7.1。B1.4–B1.7 整理四后端高层接口，分析与性能对照基线为 `66ae701`；B2–B8 保留原编号。当前任务与下一步记录在 [HANDOFF](../HANDOFF.md)，算法依据仍由覆盖分析和各专项文档维护。
 
 ## 执行方式
 
-- 接下来推荐按 **`执行 B6.3` → 后续满足前置条件的步骤** 推进。`B1` 表示整个阶段；明确要求“执行 B1”时，完成其所有满足前置条件的剩余子步骤。
+- 接下来推荐按 **`执行 B7.1` → 后续满足前置条件的步骤** 推进。`B1` 表示整个阶段；明确要求“执行 B1”时，完成其所有满足前置条件的剩余子步骤。
 - 每步先核对 Git 状态、HANDOFF、本步及依赖结论；保留用户修改和暂存状态。编号不隐含暂存、提交或启动后续步骤。
 - **工程接入**：现成代数与原语支持实现，仍需正常验证。**原型验证**：先回答未决问题，结论可以是通过、缩小范围或暂缓。
 - “依赖原型通过”不同于“原型步骤已结束”。原型不成立时保留结论及最小反例，删除无长期价值的实验代码，暂缓依赖分支；其他独立阶段仍可执行。
@@ -21,7 +21,7 @@ B1–B5、B6.1–B6.2 已完成，NTT sparse CBS 已正式接入，下一步 B6.
 | B3 | NTRU NTT MVB、既有 sparse 组合验收 | B3.1–B3.3 | 全部完成；[MVB 测量](tfhe-mvb-ntru.md)、[sparse 组合](tfhe-sparse-pbs.md#b33-已有上层组合验收) |
 | B4 | GLWE Fourier 二元稀疏 PBS | B4.1–B4.3 | 已完成密钥、完整 PBS 与成本验收；保留参考实现，不含 sparse CBS/ternary |
 | B5 | Native 偶尺度 MVB | B5.1–B5.4 | 全部完成；[表示与误差](tfhe-mvb-fourier.md)、[组合与成本](tfhe-mvb-fourier-costs.md) |
-| B6 | sparse CBS | B6.1–B6.3 | B6.1–B6.2 NTT 已接入；Fourier 仍须 B6.3 独立验证 |
+| B6 | sparse CBS | B6.1–B6.3 | 已完成 NTT/Fourier 独立误差验证与正式接入 |
 | B7 | NTRU 经典 ternary | B7.1–B7.4 | 先明确采样与控制原语，再接完整链；不依赖 sparse 算法 |
 | B8 | NTRU 二元桶聚合 PBS | B8.1–B8.3 | 独立方案原型；复用 B4.1 的纯匹配组件，不依赖 B7 |
 
@@ -38,7 +38,7 @@ B1–B5、B6.1–B6.2 已完成，NTT sparse CBS 已正式接入，下一步 B6.
 | B1.3：误差、成本与示例 | [CBS 专项](tfhe-cbs.md)、[示例](../crates/primus_tfhe_glwe_fourier/examples/circuit_bootstrap.rs)、[基准](../crates/primus_tfhe_glwe_fourier/benches/circuit_bootstrap.rs) |
 
 保留 Native 逐级整数除二与逐系数 RevHomTrace；共享正向展开树优化暂缓。经典 CBS 已支持，
-生产误差尾界未认证，sparse CBS 仍由 B6 独立验证；不因 BR 输出类型相同而自动开放。
+生产误差尾界未认证；sparse CBS 的独立验证与接入见 B6。
 
 ### B1.4–B1.7 的共同设计边界
 
@@ -148,11 +148,11 @@ Fourier 因原型噪声增加，按用户决定暂不接入。不阻塞 B2.1。
 - **结果**：CBS 复用普通 evaluator 的 classic/sparse BR 绑定及所选 scratch，后处理共用；稀疏 server key 可携带 CBS 配置/材料，生成错误由 `KeyGenerationError` 包装底层来源。
 - **验收**：现有测试覆盖两种 order、逐行/层相位、非恒定 CMUX、复用/零分配与错误边界；现有 CBS 基准替换为 n=728 的经典/稀疏对照，未新增 benchmark 入口。参数、资源和验证见[正式接入记录](tfhe-sparse-cbs.md#6-b62-正式接入)。
 
-### B6.3：Fourier 组合验证与有条件接入
+### B6.3：Fourier 组合验证与接入（已完成）
 
-- **前置**：B1.2、B4.2 已完成且对应阶段未被暂缓，B6.2。
-- **范围**：先重复 Fourier 自己的 sparse CBS 原型，额外计入聚合 FFT 与逐级 native halving；NTT 通过不能代替该验证。
-- **验收/分支**：两种 FFT 和最小 gadget scale 验证通过后，在本步接入公开 evaluator；否则保留经典 CBS，记录 sparse CBS 暂缓。避免未经验证就用统一 enum 自动开放此组合。
+- **结果**：两种 FFT、两种 order、两 seed 的 u64 原型通过；独立整数相位核对聚合 FFT、逐级 Native halving/trace KS、每个 gadget 行/层及非恒定 CMUX。输出 `(8,3)` 有余量，`(9,3)` 未纳入通过配置。
+- **接入**：稀疏 server key 支持可选 CBS，复用普通 evaluator 的 BR 与原 CBS 后处理，错误与 NTT 对齐；删除无消费者的 sparse 拒绝错误。保持现有测试入口，完整基准由十项调整为八项经典/稀疏对照。
+- **边界**：[Fourier sparse CBS 记录](tfhe-cbs.md#7-b63-fourier-sparse-cbs)保存默认/SIMD 的误差差异、参数范围、时间与资源；不继承 NTT 噪声结论或认证完整尾界。
 
 ## B7：NTRU 经典 ternary
 

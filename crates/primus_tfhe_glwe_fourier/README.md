@@ -122,15 +122,15 @@ server key, then use the ordinary evaluator and LUT APIs:
 
 ```rust,ignore
 let server = KeyGenerator::new(&context)
-    .try_generate_sparse_server_key(&client, copy_count, bucket_count, &mut rng)?;
+    .try_generate_sparse_server_key(&client, copy_count, bucket_count, None, &mut rng)?;
 let mut evaluator = context.evaluator(&server)?;
 evaluator.apply_lookup_table_to(&input, &lut, &mut output);
 ```
 
 Both PBS orders, ordinary LUTs and ManyLUT work with RustFFT and TfheFFT. Require
 `0 < h < n`, `copy_count >= 1` and `bucket_count >= max(copy_count, h)`.
-Generation returns `SparseBootstrappingKeyError`; its `BucketMap` variant preserves
-mapping failures. Matching retries at most eight public maps with the same secret.
+Server generation returns `KeyGenerationError`; `SparseBootstrapping` wraps
+`SparseBootstrappingKeyError`, whose `BucketMap` variant preserves mapping failures. Matching retries at most eight public maps with the same secret.
 The private matching is erased after generation.
 
 The sparse BSK stores `(copy_count*n + bucket_count)` coefficient GGSWs. Every
@@ -138,8 +138,7 @@ bucket contributes an external product, including unoccupied buckets and encrypt
 zero entries. Key storage, aggregation noise and transform costs must be budgeted;
 speedups depend on the workload. Fixed-weight security and complete noise bounds
 remain experimental; see the [construction and limitations](../../docs/tfhe-sparse-pbs.md).
-Sparse ternary and sparse CBS are not supported; CBS construction returns
-`UnsupportedSparseBootstrapping` for sparse server keys.
+Sparse ternary is not supported. Optional sparse CBS material is described below.
 
 `ServerKey::bootstrapping_key()` and `into_parts()` expose `BootstrappingKey::{Classic, Sparse}`;
 the evaluator binds and dispatches the selected workspace automatically. Raw composition
@@ -151,9 +150,8 @@ followed by one dummy.
 
 ## Circuit bootstrapping
 
-Classic CBS supports binary/ternary small secrets, both PBS orders and both FFT
-engines. It produces Fourier GGSW under the accumulator secret. Sparse CBS is
-not supported.
+CBS supports classic binary/ternary and fixed-weight binary sparse keys, both
+PBS orders and both FFT engines. It produces Fourier GGSW under the accumulator secret.
 
 Choose a `CircuitBootstrapConfig` naming output/trace/scheme-switch decompositions and independent
 trace/SS noise. The native modulus, ring layout and secret distribution come from the
@@ -169,7 +167,9 @@ its ordinary PBS material from the same secrets and transform table. Use
 `None` for PBS only: no CBS key material or CBS workspace is allocated.
 Both `context.evaluator(&server)` and `context.circuit_bootstrap_evaluator(&server)`
 use that server key; the latter returns `MissingCircuitBootstrapKey` when CBS is absent.
-Only the selected evaluator allocates its workspace. Key generation returns `KeyGenerationError`.
+Only the selected evaluator allocates its workspace. For sparse CBS use
+`generator.try_generate_sparse_server_key(&client, copies, buckets, Some(config), &mut rng)`.
+Both server-key factories return `KeyGenerationError`.
 
 For advanced composition, `try_generate_circuit_bootstrap_key` owns its prepared parameters,
 and `CircuitBootstrapEvaluator::try_from_parts` accepts explicit parameters and material.
@@ -187,10 +187,14 @@ accumulator secret with gadget scales; it does not pass through the ordinary PBS
 
 Native reverse trace retains the low-level per-stage integer halving. Its rounding,
 trace key switching, scheme-switch decomposition and FFT precision require a CBS
-error budget; these parameter checks do not validate noise or security.
+error budget; these parameter checks do not validate noise or security. Sparse CBS
+also includes every bucket's zero selectors/dummies and aggregate FFT error. Budget
+against the smallest output gadget scale; CMUX decoding alone does not establish
+that margin. See the [validated parameter scope](../../docs/tfhe-cbs.md#7-b63-fourier-sparse-cbs).
 
 Run the [CBS→CMUX example](examples/circuit_bootstrap.rs) to select between two
-encrypted GLWE messages using an LWE bit, with reusable outputs in both orders:
+encrypted GLWE messages using an LWE bit, with reusable outputs in both orders.
+Pass `--sparse` to select sparse keys:
 
 ```sh
 cargo run --release -p primus_tfhe_glwe_fourier --example circuit_bootstrap

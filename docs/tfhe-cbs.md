@@ -1,6 +1,6 @@
 # GLWE Fourier CBS：误差、成本与使用
 
-B1.1–B1.3 已完成。公开工作流见 [English README](../crates/primus_tfhe_glwe_fourier/README.md#circuit-bootstrapping) / [中文 README](../crates/primus_tfhe_glwe_fourier/README.zh_CN.md#circuit-bootstrapping)。本文记录当前 Native 实现与 B1.3 的固定参数测量，不提供生产安全或失败概率参数。
+B1.1–B1.3 经典 CBS 和 [B6.3 稀疏 CBS](#7-b63-fourier-sparse-cbs)已完成。公开工作流见 [English README](../crates/primus_tfhe_glwe_fourier/README.md#circuit-bootstrapping) / [中文 README](../crates/primus_tfhe_glwe_fourier/README.zh_CN.md#circuit-bootstrapping)。第 1–2 节说明 Native 契约，第 3–6 节保留 B1.3 的历史测量，第 7 节记录当前稀疏接入与 profile。不提供生产安全或失败概率参数。
 
 ## 1. 执行链与示例
 
@@ -52,7 +52,7 @@ NTT 的模逆元路径有另一套误差行为，不继承本文测量。
 
 ### 测量方法
 
-基线实现为 `a8efb77`，参数与 RNG seed 固定在[共享 profile](../crates/primus_tfhe_glwe_fourier/examples/support/circuit_bootstrap.rs)。
+B1.3 基线实现为 `a8efb77`，当时的参数与 RNG seed 见第 3 节；[共享 profile](../crates/primus_tfhe_glwe_fourier/examples/support/circuit_bootstrap.rs)现已切换到第 7 节的 fixed-weight 配置。
 每种 FFT/order 生成一组配套密钥，再加密八个输入 `0,1,0,1,…`。独立诊断逐系数执行
 wrapping 整数负循环卷积计算 `b−a*s`，不调用 FFT 解密作为相位 oracle：
 
@@ -171,6 +171,135 @@ B1.6 的 CMUX/外积复用 scheme-switch 缓冲，不再单独准备消费 scrat
 本步不增加普通测试数量；新增一个应用示例和十项 Criterion 工作负载，重型诊断不进入 CI。
 默认/SIMD 阶段验证使用 `just tfhe` / `just tfhe-simd`，另运行底层 GLWE/NTRU 测试；严格 rustdoc 与示例单独验证。
 
-尚无生产安全或尾概率认证；稀疏 CBS、其他字宽/参数的噪声余量、非 x86 性能不由本轮结果覆盖。
+B1.3 未覆盖稀疏 CBS，后续独立验收见第 7 节。尚无生产安全或尾概率认证，其他字宽/参数的余量和非 x86 性能不由这些结果覆盖。
 NTT sparse CBS 的独立原型与接入边界见 [B6.1](tfhe-sparse-cbs.md)，不替代 Fourier 的组合验证。
 下一步骤按[后端补齐计划](tfhe-backend-plan.md)由用户指定。
+
+## 7. B6.3 Fourier sparse CBS
+
+**独立原型通过后正式接入。** u64 Native，RustFFT/TfheFFT、BK/KB 均支持固定重量 binary
+稀疏 server key。CBS 使用普通 evaluator 已有的 sparse BR 绑定，共用原 trace、scheme-switch
+和消费 scratch；没有新建公共类型或改变数值 kernel。`try_generate_sparse_server_key`
+增加 `Option<CircuitBootstrapConfig>`，返回 `KeyGenerationError`，通过 `SparseBootstrapping`
+保留底层错误；`None` 保持普通 PBS 用法，未携带 CBS 材料时返回 `MissingCircuitBootstrapKey`。
+无消费者的 `UnsupportedSparseBootstrapping` 已删除。
+
+### 参数与独立诊断
+
+原型基线 `7c72e16`。沿用第 3 节的 u64/Native、N=1024、t=4、accumulator UniformTernary、
+BR/KS `(8,6)`、trace `(8,7)`、scheme switch `(10,5)` 及所有噪声参数，唯一秘密分布变化是
+small-LWE `n=728,h=32` 固定重量 binary，稀疏映射 `c=3,b=64`。输出对照 `(8,3)` / `(9,3)`。
+这不是与 UniformBinary 等安全性的声明，也不覆盖 u32、其他 h/basis 或更多输出层。
+
+每个 `(FFT,order,seed)` 重置 RNG，seeds 为 `0x42363301/0x42363302`，依次生成 client、
+经典普通 server、稀疏普通 server、共用独立 CBS key、四个输入 `1,0,1,0`、两个加密候选
+`i mod 4` / `(i+1) mod 4`。两种输出 basis 复用相同密钥；输出先 `(8,3)` 后 `(9,3)`。
+普通 KS 密钥各自采样；共享的 trace/scheme-switch 材料使用同一 accumulator 秘密与 FFT 表。
+
+公开 sparse CBS 检查在原型阶段保持拒绝；完整链由已有 raw BR、投影及 scheme-switch 原语
+串联。经典原型与公开 evaluator 的 Fourier 输出逐元素相同。全部相位以独立 wrapping 整数
+负循环卷积 `b−a*s` 计算；观察 Fourier GGSW 时先逆 FFT，统计包含该观察过程的舍入。
+
+- **BR 与旋转**：按实际量化指数和真实 small 秘密旋转 LUT，核对三个输出槽的 `bit*g_l`；
+  对比完整 N 系数的相位误差。KB 使用实际前置 KS 的输出。
+- **聚合 FFT**：首个输入上重建全部 64 桶的系数聚合，包括所有加密零与 dummy；逐多项式
+  做 Fourier 往返，统计全 GGSW 系数差，以及最高 body 层的独立相位差。
+  这是聚合转换误差，未将原有 selector 加密/转换误差从完整 BR 误差中扣除。
+- **逐级 Native halving**：首个输入的三个投影分别重放 `3,5,…,N+1` 的十级 trace，
+  使用真实 trace automorphism keys；最终每层密文与公开投影逐元素相同。
+  每级验证下式的精确相等，并独立比较 automorphism/KS 输出与 `Auto(phase(H))`。
+- **输出与消费**：检查每个 GGSW 行/层的全部系数、非恒定 CMUX 解码及相位；完整
+  CBS→CMUX 首次和复用调用均零分配。输入 1→0 必须覆盖旧控制。
+
+对 `H=floor(C/2)`、逐系数余数 `R=C mod 2`，Native 环内有
+
+```text
+2*phase(H) - phase(C) = -phase(R) = -R_b + Σ R_ai*s_i  (mod 2^64)
+```
+
+观测该奇偶修正项最大绝对值为 3；这不是一般上界，也不说明相位可以直接除二。
+模 `2^64` 上从 `2*phase(H)` 不能唯一恢复 `phase(H)`。将理想 LUT 相位逐级无符号除二并做
+相同 automorphism 时，中间相位差可出现约 `q/2` 的代表元分支；它不能当成独立的小噪声项。
+完整逐密文系数重放和最终常数投影检查保留了这些分支。独立 trace KS/FFT 的每级最大误差
+为 1,820,276,224；聚合 FFT 全系数最大差为 10,752，代表 body 层相位最大差为 228,564。
+这些量不能与累计阶段 RMS 相减或简单相加作为完整误差界。
+
+[统计 CSV](benchmarks/tfhe-b6.3-noise.csv)保留默认/SIMD 两组。`br`、`projected`、`ggsw`、
+`cmux` 按两 seed × 四输入合并；后者同密钥相关，count 不是独立失败概率样本数。
+`halve_defect`、`trace_ks_fft`、`trace_phase_vs_ideal_halving` 只取首输入、输出 `(8,3)`，
+合并两 seed × 三个输出层，`level=0..9` 表示 trace 步数，`row=all`；最后一种是上述相位模型
+偏差，不能解释为纯数值噪声。聚合 FFT 项合并两 seed 的全部桶，phase 项只取最高 body 层。
+其余 `row/level` 是 GGSW 行/gadget 层；所有均值/RMS 使用居中整数距离，最大值未去均值。
+
+默认使用 rustc 1.98.0，SIMD 使用 nightly 1.100.0，版本同 B6.2。RustFFT 的统计相同，
+TfheFFT/KB 存在数值差异，两组均满足下面的验收阈值；不将差异单独归因于某个 SIMD 内核。
+临时程序与 trace 访问器已删除；复现应按上述生成次序和逐级公式恢复诊断，常驻 profile
+与基准只保留正式入口、首 seed 和输出 `(8,3)`。
+
+### 最小 gadget 尺度
+
+沿用经典 Fourier 诊断阈值：每行/层 `<g_l/4`，CMUX `<q/64` 并全部正确解码。
+跨 FFT/order/seed/default/SIMD 的最低 gadget 层最大误差如下，阈值仅针对这些固定样本：
+
+| 输出 logB / L | 最小尺度 | 经典最大误差 | 稀疏最大误差 | 结果 |
+| --- | ---: | ---: | ---: | --- |
+| 8 / 3 | 1,099,511,627,776 | 86,657,728,512 | 109,628,620,800 | 通过 |
+| 9 / 3 | 137,438,953,472 | 86,753,148,928 | 93,910,466,560 | 最小层未通过 |
+
+保留 `(8,3)`，尺度为 `2^40,2^48,2^56`。稀疏最低层最差约为尺度的 9.97%，
+该配置稀疏 CMUX 最大相位误差为 647,338,813,009,184，约占模 4 解码半径的 0.0281%。
+`(9,3)` 的 CMUX 也全部解码正确，但最小层没有所需余量，因此未纳入通过配置。
+公开参数构造不硬编码样本阈值，完整噪声尾界和稀疏映射条件分布的安全性仍需独立评估。
+
+### 正式回归与成本
+
+现有 CBS 测试入口数量保持不变，补充两种 FFT/order 的稀疏链、bundled/独立绑定、独立整数
+相位、非恒定 CMUX/外积、首调用零分配及参数/形状/采样前错误检查。
+原 sparse PBS 中的 CBS 拒绝测试改为缺少材料检查，完整绑定边界由 CBS 测试承担。
+现有 CBS 示例通过 `--sparse` 选择算法，两种模式均保持同一求值工作流。
+
+现有 CBS benchmark 从十项调整为八项完整调用：两种 FFT × 两种 order × 经典/稀疏；
+历史阶段数据保留在第 4 节，不再重复计时共同后处理。当前 profile 取本节首 seed、
+`n/h/N=728/32/1024` 和输出 `(8,3)`，复用同 client 与 CBS key。计时前检查每行/层、CMUX、
+首调用/复用零分配并报告构造资源；这些大参数检查不加入普通 CI 测试。
+
+2026-09-19，AMD Ryzen 9 9955HX3D、CPU 2、仓库 `target-cpu=native`；默认 rustc 1.98.0、
+SIMD nightly 1.100.0，版本同原型；Criterion 0.8.2、20 samples、1 s warm-up、2 s measurement、
+10,000 resamples、Flat sampling。串行测量，计时期间不编译；CPU 未隔离/锁频，powersave、
+boost/SMT 开启。均值及 95% CI（ms）：
+
+| FFT / order / key | 默认 | SIMD |
+| --- | ---: | ---: |
+| RustFFT / BK / classic | 16.843 [16.761, 16.933] | 17.129 [17.022, 17.245] |
+| RustFFT / BK / sparse | 16.449 [16.402, 16.495] | 18.617 [18.431, 18.812] |
+| RustFFT / KB / classic | 16.073 [16.049, 16.101] | 16.807 [16.722, 16.885] |
+| RustFFT / KB / sparse | 18.204 [18.161, 18.249] | 18.039 [17.748, 18.452] |
+| TfheFFT / BK / classic | 14.710 [14.659, 14.765] | 15.233 [15.162, 15.323] |
+| TfheFFT / BK / sparse | 18.188 [18.145, 18.234] | 18.389 [18.195, 18.653] |
+| TfheFFT / KB / classic | 15.441 [15.076, 15.833] | 15.243 [15.223, 15.265] |
+| TfheFFT / KB / sparse | 18.673 [18.536, 18.814] | 18.173 [18.153, 18.192] |
+
+**本参数组没有稳定的稀疏加速。** 默认 RustFFT/BK 约快 2%，其余七组稀疏调用慢约 7%–24%。
+稀疏 BR 虽只做 64 次桶外积，但每次读取/聚合 2,248 份系数 GGSW 并执行 64 次聚合 FFT；
+经典 BR 为最多 728 次已有 Fourier 控制外积。接入保留显式算法选择，未做自动替换或新的内核
+优化，也没有用这轮非交替计时定位具体性能瓶颈。样本位于
+`target/criterion/fourier_cbs*/{classic,sparse}/b6_3_{default,simd}/`；常用命令在基准头部，
+复现本表使用上述 Criterion 参数与同名 baseline。
+
+两 FFT/order/default/SIMD 的构造后净请求字节一致：
+
+| 对象 | 经典 | 稀疏 |
+| --- | ---: | ---: |
+| 普通 server key | 143,229,216 B | 442,091,368 B |
+| 独立 CBS key | 1,479,560 B | 1,479,560 B |
+| CBS evaluator（含 LUT/FFT engine） | 304,840 B | 703,880 B |
+| 调用方 Fourier GGSW 输出 | 98,304 B | 98,304 B |
+
+普通 server 构造时 KeyGenerator 的初始 scratch 在计数窗口外，CBS key 的临时 generator 在
+窗口内构造并释放；表内扣除临时释放，包含 Vec capacity，排除栈、共享 context/client、allocator
+元数据及未释放在窗口外的生成 scratch。它不是 RSS/峰值。稀疏 server 约为经典的 3.09 倍；
+workspace 多 399,040 B，用于系数/Fourier 聚合与指数等已有 sparse BR 缓冲。
+
+验证通过：`just tfhe`、`just tfhe-simd`、改动包的严格 rustdoc、经典与 `--sparse` 两种 release
+示例，以及默认/SIMD 的八项基准和 setup 检查。本地 Markdown 链接/新增锚点检查通过。
+底层数值实现最终无改动；没有保留临时统计测试或 trace 访问器。

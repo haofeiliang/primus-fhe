@@ -73,7 +73,7 @@ fn check_complete<T: TorusFftValue, Table: FftTable>(order: PbsOrder, ternary: b
     );
     let sparse = (!ternary).then(|| {
         KeyGenerator::new(&context)
-            .try_generate_sparse_server_key(&client, 3, 8, &mut rng)
+            .try_generate_sparse_server_key(&client, 3, 8, None, &mut rng)
             .unwrap()
     });
     // Reuse the same client/program for classic and sparse binary controls.

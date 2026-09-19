@@ -16,12 +16,13 @@
 //!
 //! Select optional CBS material with [`CircuitBootstrapConfig`] during paired key generation.
 //! [`TfheContext::circuit_bootstrap_evaluator`] binds its parameters and keys from
-//! [`ServerKey`] for classic binary/ternary CBS producing Fourier GGSW under the
-//! accumulator secret, with either PBS order.
+//! [`ServerKey`] for classic binary/ternary or sparse binary CBS producing Fourier
+//! GGSW under the accumulator secret, with either PBS order.
 //!
 //! For fixed-weight binary small secrets, [`KeyGenerator::try_generate_sparse_server_key`]
-//! selects coefficient-aggregation sparse PBS through the same [`Evaluator`].
-//! Ordinary and interleaved LUTs support both orders; sparse CBS remains unsupported.
+//! selects coefficient-aggregation sparse PBS and optional CBS material. Both
+//! evaluators reuse the selected BR workspace.
+//! Ordinary/interleaved LUTs and CBS support both orders.
 //!
 //! [`TfheContext::compile_factorized_lookup_table_fn`] prepares Native even-scale
 //! MVB with unsigned Scaled outputs. [`FactorizedEvaluator`] shares one classic

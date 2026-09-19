@@ -2,7 +2,7 @@
 
 **B6.1 原型通过，B6.2 已正式接入。** NTT CBS 复用 classic/sparse BR 绑定及公共后处理；
 稀疏服务器密钥支持可选 CBS 材料，见[正式接口与验收](#6-b62-正式接入)。
-Fourier 仍拒绝 sparse CBS，其聚合变换与 Native halving 须由 B6.3 独立验证。
+Fourier 已在 [B6.3](tfhe-cbs.md#7-b63-fourier-sparse-cbs)完成自己的聚合变换与 Native halving 验证并接入。
 
 下文第 1–5 节记录 B6.1 在基线 `18a1288` 上的原型。原型当时未改变公开拒绝边界，
 没有增加生产 API、密钥类型或数值内核；历史数据不代替后续版本的测量。
@@ -230,5 +230,4 @@ CMUX、检查和资源构造不计时。大参数统计不进入普通 CI 测试
 排除 context、密钥、栈和 allocator 元数据；它不是 RSS。构造器没有增加在线分配。
 
 `just tfhe`、`just tfhe-simd`、改动三包的严格 rustdoc、经典/`--sparse` 两种 release 示例
-以及上述两套基准均通过。修改后的 Markdown 本地链接检查通过。Fourier sparse CBS
-仍由 B6.3 单独验证；本步未改变其公开拒绝边界。
+以及上述两套基准均通过。修改后的 Markdown 本地链接检查通过。B6.2 当时未改变 Fourier 的公开拒绝边界；后续接入见 [B6.3](tfhe-cbs.md#7-b63-fourier-sparse-cbs)。

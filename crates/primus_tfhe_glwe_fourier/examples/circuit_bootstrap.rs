@@ -1,20 +1,33 @@
 //! Use an encrypted LWE bit to select between two encrypted GLWE messages.
 //! Fixed cost/demo parameters, not production parameters.
+//! Pass `--sparse` to use bucketed fixed-weight binary blind rotation.
 
 #[path = "support/circuit_bootstrap.rs"]
 mod profile;
 
 use primus_fft::TfheFftTable;
-use primus_tfhe_glwe_fourier::PbsOrder;
+use primus_tfhe_glwe_fourier::{ClientKey, KeyGenerator, PbsOrder};
 use rand::{SeedableRng, rngs::StdRng};
 
 fn main() {
     for order in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
         let context = profile::context::<TfheFftTable>(order);
         let mut rng = StdRng::seed_from_u64(profile::SEED);
-        let (client, server) = context
-            .try_generate_keys(Some(profile::circuit_bootstrap()), &mut rng)
-            .unwrap();
+        let client = ClientKey::generate(context.parameters(), &mut rng);
+        let mut generator = KeyGenerator::new(&context);
+        let config = Some(profile::circuit_bootstrap());
+        let server = if std::env::args().any(|arg| arg == "--sparse") {
+            generator.try_generate_sparse_server_key(
+                &client,
+                3,
+                2 * profile::WEIGHT,
+                config,
+                &mut rng,
+            )
+        } else {
+            generator.try_generate_server_key(&client, config, &mut rng)
+        }
+        .unwrap();
 
         // Candidate ring ciphertexts use the CBS output's accumulator secret.
         let mut accumulator = context.accumulator_client(&client).unwrap();

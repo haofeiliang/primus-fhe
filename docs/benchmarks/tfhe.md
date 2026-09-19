@@ -19,7 +19,7 @@
 | `primus_tfhe_glwe_ntt / mvb` | 相同 Scaled 阈值输出的重复 PBS / 交错 / MVB，3/17 输出、两种 order、经典/稀疏；构造/预处理另测；[GLWE MVB](../tfhe-mvb.md#8-p43-测量与应用选择) |
 | `primus_tfhe_ntru_ntt / mvb` | 五项等价在线负载，包含初始化、BR、乘法、KS 和提取；[NTRU MVB](../tfhe-mvb-ntru.md) |
 | `primus_tfhe_glwe_ntt / circuit_bootstrap` | 两种 order、经典/稀疏完整 CBS；n/h/N=728/32/1024、输出 `(8,3)`；setup 检查逐行/层、CMUX 与零分配，见[稀疏 CBS](../tfhe-sparse-cbs.md#6-b62-正式接入) |
-| `primus_tfhe_glwe_fourier / circuit_bootstrap` | 两种 order/FFT 的完整 CBS，并按 FFT 测 BR、三层投影和 scheme switch；[CBS 测量](../tfhe-cbs.md) |
+| `primus_tfhe_glwe_fourier / circuit_bootstrap` | 两种 order/FFT、经典/稀疏的八项完整 CBS；n/h/N=728/32/1024；setup 检查逐层相位、CMUX 和资源，见 [B6.3](../tfhe-cbs.md#7-b63-fourier-sparse-cbs) |
 | NTRU 两后端 `/ circuit_bootstrap` | 完整 CBS，另报告新增 CBS key/evaluator 的常驻请求字节，参数和口径见下文 |
 
 例如：

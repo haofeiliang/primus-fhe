@@ -15,7 +15,7 @@
 | BSK | 每个副本独立加密选择位，每桶额外独立加密一个 dummy；按桶保存系数域 GGSW |
 | 在线执行 | 输入旋转量计算一次；逐桶系数旋转/相加，将聚合 GGSW 转 NTT/Fourier，再做一次 external product |
 | 共享层 | 复用 LUT、`RotationQuantizer`、GGSW、分解和外积；不向 `primus_tfhe::lookup_table` 加稀疏参数或策略 trait |
-| 已接入组合 | 两后端普通/交错 LUT、两种 GLWE order、MVB（[NTT](tfhe-mvb.md)、[Fourier](tfhe-mvb-fourier-costs.md)）。[NTT sparse CBS](tfhe-sparse-cbs.md) 已接入；Fourier sparse CBS、稀疏三元及 NTRU 未支持 |
+| 已接入组合 | 两后端普通/交错 LUT、两种 GLWE order、MVB（[NTT](tfhe-mvb.md)、[Fourier](tfhe-mvb-fourier-costs.md)）。Sparse CBS 已接入 [NTT](tfhe-sparse-cbs.md) / [Fourier](tfhe-cbs.md#7-b63-fourier-sparse-cbs)；稀疏三元及 NTRU 未支持 |
 
 参数中的 `h` 只约束**进入 BR 的 small-LWE 秘密**。KS→BR 顺序的外部秘密仍是 accumulator 的 `kN` 维系数展开；不能把它改标成固定重量二元分布。以下用 `k` 表示 GLWE 维数，`b` 表示桶数，`s` 表示交错 LUT 的 `padded_output_count`，避免与输出函数个数混用。
 
@@ -251,7 +251,7 @@ Primus 当前两种链都保持同一个密文模数，没有论文中 `Q -> Q' 
 
 [实现](../crates/primus_tfhe_glwe_fourier/src/sparse/blind_rotation.rs)批量量化输入 mask，body 使用同一 `RotationQuantizer`；普通量化器在 keygen 准备，ManyLUT 根据 padded output count 准备步长。每桶从 dummy 拷贝开始，逐条目执行 Native 单项式旋转/相加，再把整份聚合 GGSW 转为 Fourier 并执行一次外积。系数域 GLWE 在调用方输出与 scratch 之间交替，奇数桶最后拷回输出；公开空桶也保留 dummy 外积。
 
-Fourier `ServerKey` 通过 `BootstrappingKey::{Classic,Sparse}` 持有具体表示，`try_generate_sparse_server_key` 生成相同秘密域的配套 KSK。高层 evaluator 在 BR 入口分派一次，保留原 BK 的后置 KS/compact extraction 和 KB 的前置 KS/full extraction。只分配所选工作区；raw BR 无 KS/提取。CBS 的 `try_new` 和 `try_from_parts` 均拒绝稀疏 key，不能靠提供独立 CBS 材料绕过限制。
+Fourier `ServerKey` 通过 `BootstrappingKey::{Classic,Sparse}` 持有具体表示，`try_generate_sparse_server_key` 生成相同秘密域的配套 KSK。高层 evaluator 在 BR 入口分派一次，保留原 BK 的后置 KS/compact extraction 和 KB 的前置 KS/full extraction。只分配所选工作区；raw BR 无 KS/提取。B4.2 当时拒绝 sparse CBS；后续 [B6.3](tfhe-cbs.md#7-b63-fourier-sparse-cbs) 已完成独立误差验证并开放两种 CBS 绑定入口。
 
 Fourier BR 的额外存储为 `n` 个公开指数、一份系数聚合 GGSW、一份 Fourier 聚合 GGSW、一份 GLWE 与底层外积工作区；变换引擎由 evaluator 复用。聚合前复制 dummy、外积覆盖下一个 accumulator，重复调用不需要调用方清零。本步采用清晰的逐条目遍历，没有移植 NTT 的缓存分块，也没有逐项频域累积；具体成本由 B4.3 比较。
 
@@ -261,7 +261,7 @@ Fourier BR 的额外存储为 `n` 个公开指数、一份系数聚合 GGSW、�
 | --- | --- |
 | [原始 BR](../crates/primus_tfhe_glwe_fourier/tests/sparse_blind_rotation.rs) | u32，`n=16,h=4,N=16,t=8`，basis `8×3`，噪声参数 `0.7`；`(k,c,b)=(1,3,8),(2,1,17)`。两种 FFT，独立整数模切/负循环旋转/GLWE 相位 oracle 对照经典 BR；普通全部旋转、step=4、舍入半点、模回绕、奇偶桶、空桶、k=2、首调用零分配及 raw 拒绝前输出不变 |
 | [完整 PBS](../crates/primus_tfhe_glwe_fourier/tests/sparse_pbs.rs) | u64，`n=16,h=4,N=256,k=1,c=3,b=8,t_in=15,t_out=16`，BR/KS basis `8×6`，噪声参数 `0.7`，accumulator 为 UniformTernary；两种 FFT/order，共用客户端对照经典链，消息 `0,3,7` 加 `±q/1024` 受控输入偏移；普通/三输出 LUT、step 1→4→1、相位/解码及首调用零分配 |
-| 绑定与 CBS 边界 | 拒绝不同重量/basis 的 sparse server key，两个 CBS 构造入口均返回 `UnsupportedSparseBootstrapping` |
+| 绑定与 CBS 边界 | 拒绝不同重量/basis 的 sparse server key，未附 CBS 材料时返回 `MissingCircuitBootstrapKey`；完整 CBS 绑定检查见 B6.3 |
 
 相位误差必须小于对应输出解码半径：u32 为 `2^28`，u64 为 `2^59`。这些固定小型 fixture 保护表示、布局和组合契约，不证明生产安全/失败率；尚未为 Fourier sparse 的 Boolean/bivariate/odd-full 等组合做独立验收，性能与资源结果见下节 B4.3。默认/SIMD 验证入口为 `just tfhe` / `just tfhe-simd`。
 
@@ -514,7 +514,7 @@ P3.5 的[完整 PBS 测试](../crates/primus_tfhe_glwe_ntt/tests/sparse_pbs.rs)�
 解码/相位余量、步长切换复用、零分配及写入前拒绝。为覆盖截断误差，该测试 BR basis 为
 `log_basis=7, levels=3`，其余采用小参数。P3.5 当时拒绝 sparse CBS；
 [后续 B6.1/B6.2](tfhe-sparse-cbs.md)已完成 NTT gadget 尺度验收与正式绑定。
-Fourier sparse CBS、稀疏三元和 NTRU 仍未支持。
+Fourier sparse CBS 后续在 [B6.3](tfhe-cbs.md#7-b63-fourier-sparse-cbs)接入；稀疏三元和 NTRU 仍未支持。
 
 ### 完整性能与内存
 

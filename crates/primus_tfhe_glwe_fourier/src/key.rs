@@ -8,8 +8,8 @@ use primus_tfhe_glwe::ClientKey;
 
 use crate::{
     CircuitBootstrapConfig, CircuitBootstrapKey, CircuitBootstrapParameters,
-    FourierGlweBootstrappingKey, KeyGenerationError, SparseBootstrappingKeyError,
-    SparseGlweBootstrappingKey, TfheContext, TfheParameters,
+    FourierGlweBootstrappingKey, KeyGenerationError, SparseGlweBootstrappingKey, TfheContext,
+    TfheParameters,
 };
 
 /// Blind-rotation key selected when generating a server key.
@@ -163,7 +163,7 @@ where
         ))
     }
 
-    /// Generates a complete sparse PBS server key for an existing client.
+    /// Generates a sparse server key with optional CBS material for an existing client.
     ///
     /// Uses the client's fixed-weight binary small-LWE secret in both PBS orders.
     /// The GLWE key-switching key has the same domains as in classic PBS. Sparse
@@ -171,26 +171,36 @@ where
     /// allocation; a failure returns no partial server key.
     ///
     /// # Errors
-    /// Inherits [`Self::try_generate_sparse_bootstrapping_key`]'s errors.
+    /// Invalid CBS configuration is rejected before sampling. Otherwise inherits
+    /// [`Self::try_generate_sparse_bootstrapping_key`]'s errors.
     ///
     /// # Correctness
     /// Inherits that method's secret and security requirements. The caller must
     /// budget sparse aggregation noise and, for interleaved LUTs, coarser rotations.
+    /// Enabling CBS also inherits [`Self::try_generate_circuit_bootstrap_key`]'s
+    /// requirements; aggregate FFT, native halving and trace/scheme-switch errors
+    /// must fit the smallest output gadget scale.
     pub fn try_generate_sparse_server_key<R>(
         &mut self,
         client_key: &ClientKey<T>,
         copy_count: usize,
         bucket_count: usize,
+        circuit_bootstrap: Option<CircuitBootstrapConfig>,
         rng: &mut R,
-    ) -> Result<ServerKey<T>, SparseBootstrappingKeyError>
+    ) -> Result<ServerKey<T>, KeyGenerationError>
     where
         R: rand::Rng + rand::CryptoRng,
     {
+        let circuit_parameters = self.prepare_circuit_bootstrap(circuit_bootstrap)?;
         let bootstrapping_key =
             self.try_generate_sparse_bootstrapping_key(client_key, copy_count, bucket_count, rng)?;
+        let circuit_bootstrap = circuit_parameters
+            .map(|parameters| self.try_generate_circuit_bootstrap_key(client_key, parameters, rng))
+            .transpose()?
+            .map(Box::new);
         let glwe_key_switching_key = self.generate_glwe_key_switching_key(client_key, rng);
         Ok(ServerKey {
-            circuit_bootstrap: None,
+            circuit_bootstrap,
             bootstrapping_key: BootstrappingKey::Sparse(bootstrapping_key),
             glwe_key_switching_key,
         })

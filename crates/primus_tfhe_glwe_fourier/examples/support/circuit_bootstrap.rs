@@ -11,7 +11,8 @@ use primus_tfhe_glwe_fourier::{
 
 pub const N: usize = 1024;
 pub const DIMENSION: usize = 728;
-pub const SEED: u64 = 0x4231_3300;
+pub const WEIGHT: usize = 32;
+pub const SEED: u64 = 0x4236_3301;
 
 pub fn context<Table: FftTable>(order: PbsOrder) -> TfheContext<u64, Table> {
     let modulus = NativeModulus::new();
@@ -20,7 +21,7 @@ pub fn context<Table: FftTable>(order: PbsOrder) -> TfheContext<u64, Table> {
             DIMENSION,
             4,
             modulus,
-            SecretKeyDistr::UniformBinary,
+            SecretKeyDistr::fixed_hamming_weight_binary(DIMENSION, WEIGHT),
             3.2 * 2f64.powi(64) / 16384.0,
         ),
         accumulator_dimension: 1,

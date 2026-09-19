@@ -106,21 +106,21 @@ small-LWE 秘密采用 `FixedHammingWeightBinary` 时，显式生成稀疏 serve
 
 ```rust,ignore
 let server = KeyGenerator::new(&context)
-    .try_generate_sparse_server_key(&client, copy_count, bucket_count, &mut rng)?;
+    .try_generate_sparse_server_key(&client, copy_count, bucket_count, None, &mut rng)?;
 let mut evaluator = context.evaluator(&server)?;
 evaluator.apply_lookup_table_to(&input, &lut, &mut output);
 ```
 
 RustFFT/TfheFFT 均支持两种 PBS order、普通 LUT 和 ManyLUT。
 要求 `0 < h < n`、`copy_count >= 1`、`bucket_count >= max(copy_count, h)`。
-生成返回 `SparseBootstrappingKeyError`，其 `BucketMap` 分支保留映射错误；
+server 生成返回 `KeyGenerationError`，其 `SparseBootstrapping` 包装
+`SparseBootstrappingKeyError`，后者的 `BucketMap` 分支保留映射错误；
 固定同一秘密，最多尝试八份公开映射，私有匹配在生成结束后擦除。
 
 稀疏 BSK 保存 `(copy_count*n + bucket_count)` 份系数域 GGSW。每桶均执行一次外积，
 未占用桶及加密零条目也会贡献噪声；需要考虑密钥存储、聚合噪声与变换成本，
 实际加速取决于负载。固定重量安全性及完整噪声界仍属实验范围，见[构造与限制](../../docs/tfhe-sparse-pbs.md)。
-不支持 sparse ternary 和 sparse CBS；CBS 构造遇到稀疏 server key 时返回
-`UnsupportedSparseBootstrapping`。
+不支持 sparse ternary。可选的 sparse CBS 材料见下节。
 
 `ServerKey::bootstrapping_key()` 和 `into_parts()` 返回 `BootstrappingKey::{Classic, Sparse}`，
 evaluator 自动绑定并分派所选工作区。底层组合可使用 `try_generate_sparse_bootstrapping_key`、
@@ -130,8 +130,8 @@ evaluator 自动绑定并分派所选工作区。底层组合可使用 `try_gene
 
 ## Circuit bootstrapping
 
-经典 CBS 支持 binary/ternary small 秘密、两种 PBS order 和两种 FFT，输出为 accumulator
-私钥下的 Fourier GGSW。稀疏 CBS 尚不支持。
+CBS 支持经典 binary/ternary 和固定重量 binary 稀疏密钥、两种 PBS order 和两种 FFT，
+输出为 accumulator 私钥下的 Fourier GGSW。
 
 通过 `CircuitBootstrapConfig` 指定 output/trace/scheme-switch 分解及独立的 trace/SS 噪声。
 Native 模数、环布局与秘密分布从 accumulator 派生，构造器检查补齐后的 gadget
@@ -144,7 +144,9 @@ Scheme-switch key 绑定输出布局；层数相同的其他输出 basis
 与普通 PBS 材料从同一组私钥和变换表生成。仅需 PBS 时使用 `None`，
 不分配 CBS 密钥材料或工作区。`context.evaluator(&server)` 与
 `context.circuit_bootstrap_evaluator(&server)` 共用这份 server key；未启用 CBS 时后者返回
-`MissingCircuitBootstrapKey`。各 evaluator 只分配自身需要的工作区。生成错误为 `KeyGenerationError`。
+`MissingCircuitBootstrapKey`。各 evaluator 只分配自身需要的工作区。稀疏 CBS 使用
+`generator.try_generate_sparse_server_key(&client, copies, buckets, Some(config), &mut rng)`。
+两种 server-key 工厂均返回 `KeyGenerationError`。
 
 高级组合仍可使用接收已准备参数所有权的 `try_generate_circuit_bootstrap_key`，以及显式传入
 参数和材料的 `CircuitBootstrapEvaluator::try_from_parts`。调用方负责配套私钥与生成时的
@@ -159,10 +161,12 @@ Scheme-switch key 绑定输出布局；层数相同的其他输出 basis
 尺度，不经过普通 PBS 的输出 KS。
 
 Native reverse trace 沿用底层逐级整数除二；其舍入、trace key switching、scheme-switch
-分解与 FFT 精度均需计入 CBS 误差预算。参数检查不验证噪声或安全性。
+分解与 FFT 精度均需计入 CBS 误差预算。参数检查不验证噪声或安全性。稀疏 CBS 还须计入
+每个桶的加密零/dummy 与聚合 FFT 误差，并针对最小输出 gadget 尺度留出余量；CMUX 解码
+成功本身不能证明该余量。见[已验证参数范围](../../docs/tfhe-cbs.md#7-b63-fourier-sparse-cbs)。
 
 [CBS→CMUX 示例](examples/circuit_bootstrap.rs) 用 LWE bit 选择两条加密 GLWE 消息之一，
-展示两种 order 与输出复用：
+展示两种 order 与输出复用；传入 `--sparse` 可选择稀疏密钥：
 
 ```sh
 cargo run --release -p primus_tfhe_glwe_fourier --example circuit_bootstrap
