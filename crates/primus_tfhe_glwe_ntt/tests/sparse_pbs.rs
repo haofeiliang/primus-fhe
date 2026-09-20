@@ -85,11 +85,11 @@ fn sparse_pbs_preserves_external_secret_and_interleaved_outputs_in_both_orders()
         let functions = |m: usize, i: usize| (m + 2 * i) as u32;
         let single = context
             .parameters()
-            .compile_lookup_table_fn(&codec, function)
+            .compile_lookup_table_with_codec_fn(&codec, function)
             .unwrap();
         let many = context
             .parameters()
-            .compile_interleaved_lookup_table_fn(&codec, 3, functions)
+            .compile_interleaved_lookup_table_with_codec_fn(&codec, 3, functions)
             .unwrap();
         assert_eq!(many.padded_output_count(), 4);
         let mut outputs = vec![LweCiphertext::zero(dimension); 3];
@@ -243,7 +243,7 @@ fn sparse_bivariate_and_odd_full_domain_respect_input_margins_in_both_orders() {
         let full_value = |m: usize| ((m * m + 3) % 8) as u32;
         let full = context
             .parameters()
-            .compile_odd_full_domain_lookup_table_fn(&output_codec, full_value)
+            .compile_odd_full_domain_lookup_table_with_codec_fn(&output_codec, full_value)
             .unwrap();
         let dimension = context.parameters().external_lwe_dimension();
         let mut packed = LweCiphertext::zero(dimension);

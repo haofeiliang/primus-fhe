@@ -7,19 +7,34 @@ for the GLWE and NTRU families. Boolean evaluators own gate LUTs and LWE workspa
 client keys, transform tables and ring evaluation workspace remain in their owning layers.
 Start with a backend example below for an end-to-end workflow.
 
+## Choosing an operation
+
+Choose the function and encoding first, then the GLWE/NTRU family, NTT/Fourier
+representation and secret distribution. “Ordinary key” below means the server's PBS/KS
+material. All `_to` operations reuse caller outputs and evaluator workspace.
+
+| Task | Input domain and encoding | Output | Evaluation material | Execution and reuse |
+| --- | --- | --- | --- | --- |
+| Unary function | Unsigned Rounded front half `0..ceil(t/2)` | One Rounded LWE at the chosen output codec | Ordinary key | `LookupTable` + `Evaluator` |
+| Odd full domain | Unsigned Rounded `0..t`, odd `t>=3` | One Rounded LWE | Ordinary key | Same LUT/evaluator, narrower input margin |
+| Interleaved outputs (ManyLUT) | One front-half input; `ceil(t/2)<=N/next_power_of_two(k)` | k Rounded LWEs sharing the output codec | Ordinary key | `InterleavedLookupTable`, ordinary evaluator |
+| Factorized MVB | Rounded front-half prefix | k unsigned Scaled LWEs | Ordinary key | Prepared program + `FactorizedEvaluator`; one BR, per-output products |
+| Bounded two-input function | Same secret/codec, `x<B,y<R`, `B*R<=ceil(t/2)` | One Rounded LWE | Ordinary key | `BivariateLookupTable` and one reusable packed LWE |
+| Boolean gates | Rounded 0/1 with `t=4` | Same Boolean LWE encoding, ready for chaining | Ordinary key | `BooleanEvaluator` owns gate LUTs and temporary ciphertexts |
+| CBS → CMUX | Rounded front half; a CMUX control requires input 0/1 | Accumulator-secret GGSW/NGSW gadget control, then a selected ring ciphertext | Ordinary key + trace/SS | `CircuitBootstrapEvaluator`; separate `AccumulatorClient` for ring clients |
+
+ManyLUT and MVB evaluate **several functions of one input**, not independent inputs.
+MVB keeps step-one resolution but its factors amplify noise; interleaving trades
+rotation resolution for output count. Scaled numeric flags, Boolean LWEs and CBS
+gadget controls are not interchangeable. Start with a backend basic example;
+the sections below and rustdoc give each operation's domain and noise contracts.
+
 ## Crate map and capabilities
 
 | Family | NTT backend | Fourier backend |
 | --- | --- | --- |
 | [GLWE parameters and clients](../primus_tfhe_glwe/README.md) | [GLWE NTT](../primus_tfhe_glwe_ntt/README.md) | [GLWE Fourier](../primus_tfhe_glwe_fourier/README.md) |
 | [NTRU parameters and clients](../primus_tfhe_ntru/README.md) | [NTRU NTT](../primus_tfhe_ntru_ntt/README.md) | [NTRU Fourier](../primus_tfhe_ntru_fourier/README.md) |
-
-| Backend | Ciphertext modulus | PBS / ManyLUT | Factorized MVB | Boolean gates | CBS |
-| --- | --- | --- | --- | --- | --- |
-| GLWE NTT | Explicit field | Yes | Yes | Yes | Yes |
-| GLWE Fourier | Native torus | Yes | Even scale, u32/u64 | Yes | Yes |
-| NTRU NTT | Explicit field | Yes | Yes | Yes | Yes |
-| NTRU Fourier | Native torus | Yes | Even scale, u32/u64 | Yes | Yes |
 
 All four backends support secret-key and LWE public-key clients. Fourier backends
 support RustFFT and TfheFFT. Parameters and APIs are experimental; example and
@@ -39,6 +54,21 @@ NTRU [NTT](../primus_tfhe_ntru_ntt/README.md#experimental-sparse-pbs) and
 [Fourier](../primus_tfhe_ntru_fourier/README.md#experimental-sparse-pbs) sparse PBS
 support ordinary/interleaved LUTs for fixed-weight binary clients. Fourier requires
 odd weight and a stable inverse. Both reject sparse CBS/MVB.
+
+## Client and server roles
+
+The client generates paired keys, keeps `ClientKey` and encryption/decryption helpers,
+and gives `ServerKey` to the server. The server needs only public context, evaluation
+keys, LUTs/programs and input ciphertexts; it returns encrypted results to the client.
+Examples show these stages in one process, with parameter construction kept separate.
+Input and output encodings are public agreements between the two sides.
+
+Ordinary buffer allocation needs no secret: all four backends provide
+`context.allocate_lwe_ciphertext()` for the external LWE mask/body and
+`context.allocate_accumulator_ciphertext()` for coefficient-domain GLWE/NTRU storage.
+Both allocate zeros without encrypting. CBS controls also depend on output decomposition
+and transform representation, so use `cbs.allocate_output()`. Each side prepares and reuses
+its own workspace and result buffers.
 
 ## Error boundaries
 
@@ -71,8 +101,8 @@ let decryptor = context.boolean_decryptor(&client)?;
 let mut gates = context.boolean_evaluator(&server)?;
 let lhs = encryptor.encrypt(true, &mut rng)?;
 let rhs = encryptor.encrypt(false, &mut rng)?;
-let mut output = LweCiphertext::zero(context.parameters().external_lwe_dimension());
-let mut next = LweCiphertext::zero(output.dimension());
+let mut output = context.allocate_lwe_ciphertext();
+let mut next = context.allocate_lwe_ciphertext();
 gates.evaluate_binary_to(BooleanGate::Nand, &lhs, &rhs, &mut output);
 assert!(decryptor.decrypt(&output)?);
 gates.mux_to(&output, &rhs, &lhs, &mut next);
@@ -97,16 +127,21 @@ and preserve LUT output scales. It returns `TfheEvaluationError`, including
 All four backends bind CBS output layout and consumption to the same evaluator:
 
 ```rust,ignore
-let mut cbs = context.circuit_bootstrap_evaluator(&server)?;
-let mut accumulator = context.accumulator_client(&client)?;
-let choices = [accumulator.encrypt(&lhs, &mut rng), accumulator.encrypt(&rhs, &mut rng)];
-let mut control = cbs.allocate_output();
-let mut selected = accumulator.allocate_ciphertext();
-let mut decoded = vec![0; lhs.len()];
+// Client: encrypt the two candidate messages.
+let mut ring_client = context.accumulator_client(&client_key)?;
+let lhs = ring_client.encrypt(&lhs_message, &mut rng);
+let rhs = ring_client.encrypt(&rhs_message, &mut rng);
+let mut decoded = vec![0; lhs_message.len()];
 
+// Server: receive the encrypted input bit and candidates, then return selected.
+let mut cbs = context.circuit_bootstrap_evaluator(&server_key)?;
+let mut control = cbs.allocate_output();
+let mut selected = context.allocate_accumulator_ciphertext();
 cbs.circuit_bootstrap_to(&input_bit, &mut control);
-cbs.cmux_to(&control, &choices[0], &choices[1], &mut selected);
-accumulator.decrypt_to(&selected, &mut decoded);
+cbs.cmux_to(&control, &lhs, &rhs, &mut selected);
+
+// Client: decrypt the response.
+ring_client.decrypt_to(&selected, &mut decoded);
 ```
 
 `allocate_output` returns the backend's raw GGSW/NGSW, and ring ciphertexts remain
@@ -122,16 +157,37 @@ buffers, borrowing its context. It encrypts/decrypts N unsigned coefficients usi
 the accumulator codec; this ring domain is separate from external LWE clients.
 Invalid shapes panic before writes or RNG
 consumption; invalid plaintext values may consume randomness. NTRU preparation
-returns `KeyGenerationError` for key validation or secret conversion failures;
+returns `TfheClientError` for key validation or secret conversion failures;
 GLWE preparation returns `TfheKeyError`.
 
 Construct once and reuse `_to` calls and output buffers for allocation-free evaluation.
+
+## Reusing evaluators
+
+A context owns immutable parameters/tables; the server key owns evaluation material;
+an evaluator owns mutable workspace. Keep compiled LUTs/programs and use `_to`
+with preallocated output ciphertexts.
+
+When alternating PBS and MVB/CBS, consume an existing evaluator to retain one PBS workspace:
+
+- GLWE MVB: `FactorizedEvaluator::from_bootstrapper(pbs)`; NTRU MVB uses fallible `try_from_bootstrapper`.
+- CBS: `CircuitBootstrapEvaluator::try_from_bootstrapper(pbs)` gets CBS material from the bound server key.
+- `bootstrapper_mut()` borrows PBS operations. Import `ProgrammableBootstrap` / `ProgrammableBootstrapInterleaved` to call their `_to` methods; the borrow cannot replace the bound evaluator.
+- `into_bootstrapper()` releases dedicated buffers and recovers ordinary workspace. Recovery allocates nothing when MVB/CBS was constructed from an ordinary evaluator.
+
+For one capability alone, use `context.factorized_evaluator` or `context.circuit_bootstrap_evaluator`.
+Standalone GLWE BR→KS CBS has no return-KS workspace: its PBS borrow is `None`, and recovery
+explicitly allocates that workspace. Consume ordinary PBS instead when frequently alternating.
+Other GLWE CBS constructors return `Some`; NTRU CBS/MVB provide a direct borrow but reject sparse keys.
+Construction may allocate; online evaluation and borrowing never allocate implicitly.
+Boolean accepts PBS ownership through `try_new` and recovers it through `into_bootstrapper`.
 
 ## LUTs and resource lifetime
 
 Backends accept named `TfheConfig` choices and derive shared ring parameters;
 `TfheContext::try_from_parameters` creates the selected transform table.
-This crate supplies `DecompositionConfig` (radix and retained levels) and
+This crate re-exports `DecompositionConfig` (radix and retained levels) from
+[`primus_decompose`](../primus_decompose/README.md), and defines
 `CircuitBootstrapConfig` (independent output/trace/scheme-switch choices).
 Backends bind these choices to their own modulus, layout and representation.
 `Option<CircuitBootstrapConfig>` selects optional CBS during paired key generation; the server key
@@ -140,8 +196,8 @@ owns its parameters and material, while each evaluator owns only its own workspa
 1. A family parameter set describes the external LWE and accumulator ring.
 2. A backend context binds those parameters to an NTT/FFT table and generates
    paired client/server keys.
-3. Compile `LookupTable` or `InterleavedLookupTable` through the family parameters or
-   context. Create an evaluator once; its scratch is reused by online `_to` calls.
+3. Compile `LookupTable` or `InterleavedLookupTable` through the family parameters.
+   Create an evaluator once; its scratch is reused by online `_to` calls.
 4. Allocate caller outputs once, then encrypt and evaluate into the same storage.
 
 The front-half unary function or slice compiler programs `0..ceil(t_in/2)` with outputs in `0..t_out`,
@@ -203,14 +259,25 @@ responsible for keeping the input within the table's programmed prefix.
 
 ### Choosing the output encoding
 
-Ordinary and interleaved parameter LUT compilation methods take `&RoundedCodec<T, M>` as their first
-argument. Input parameters determine the rotation centers and, together with the
-chosen compilation mode, the input domain. The output codec determines `t_out`,
-validates values in `0..t_out` and encodes them with unsigned embedding.
-All columns of an interleaved LUT use that codec. Its ciphertext modulus must
-match the accumulator, or compilation returns `OutputModulusMismatch`.
-The current complete PBS chains also require `q_in = q_acc = q_out`;
-choosing a different plaintext modulus does not change the ciphertext modulus.
+Ordinary, interleaved and odd full-domain parameter compilers have two forms:
+
+| Output encoding | Function / slice entry points | Decoding |
+| --- | --- | --- |
+| Default: `input_plaintext_codec()` | `compile_lookup_table_fn(function)` / `compile_lookup_table_slice(values)` | `decryptor.decrypt(output)` |
+| Explicit output codec | `compile_lookup_table_with_codec_fn(codec, function)` / `compile_lookup_table_with_codec_slice(codec, values)` | Decode `decrypt_phase(output)` with that codec |
+
+Interleaved and odd full-domain compilers follow the same naming rule. Default
+compilation borrows the prepared parameter codec; it does not construct another codec.
+The function's output range can be smaller than the plaintext modulus: `x % 4` can
+still use `t=16` encoding. Basic examples use this default workflow.
+
+Explicit variants take `&RoundedCodec<T, M>` first. Input parameters still determine
+rotation centers and the input domain; the output codec sets `t_out`, validates
+`0..t_out` values and encodes them unsigned. Interleaved columns share one codec.
+Only that LUT's output encoding changes; parameters/context remain unchanged.
+The codec's ciphertext modulus must match the accumulator or compilation returns
+`OutputModulusMismatch`. Complete PBS chains require `q_in = q_acc = q_out`.
+MVB continues to require an explicit unsigned `ScaledCodec`.
 
 For an NTRU context with `t_in=16`, compute `x % 4` at output modulus `t_out=4`:
 
@@ -218,7 +285,7 @@ For an NTRU context with `t_in=16`, compute `x % 4` at output modulus `t_out=4`:
 use primus_encoding::RoundedCodec;
 
 let output_codec = RoundedCodec::new(4u32, context.parameters().external_lwe().cipher_modulus());
-let lut = context.parameters().compile_lookup_table_fn(&output_codec, |x| (x % 4) as u32).unwrap();
+let lut = context.parameters().compile_lookup_table_with_codec_fn(&output_codec, |x| (x % 4) as u32).unwrap();
 let input = encryptor.encrypt_padded(7u32, &mut rng).unwrap();
 let output = evaluator.apply_lookup_table(&input, &lut);
 let message = output_codec.decode_value(decryptor.decrypt_phase(&output).unwrap());
@@ -226,8 +293,8 @@ assert_eq!(message, 3);
 ```
 
 For GLWE use `context.parameters().accumulator_glwe().cipher_modulus()` to construct the
-output codec. To keep the parameter encoding, pass `input_plaintext_codec()` in either family; ordinary `decrypt` then applies.
-The basic backend examples show independent output encoding without extra keys.
+output codec. Independent output encoding requires no additional evaluation keys;
+keep that codec to decode the resulting ciphertext.
 
 `decrypt_phase` returns a canonical noisy residue under the external LWE secret;
 the caller retains the output codec for decoding. LUT compatibility metadata
@@ -239,14 +306,16 @@ outputs use the raw constructors and retain their own decoding contracts.
 
 ## Odd full-domain PBS
 
-Use `compile_odd_full_domain_lookup_table_fn(&output_codec, function)` or its
-`_slice` form to program **all of `0..t_in`**, with odd `t_in >= 3` and `t_in <= N`.
+Use `compile_odd_full_domain_lookup_table_fn(function)` or its `_slice` form;
+choose the `*_with_codec_*` variant for a different output encoding. These methods
+program **all of `0..t_in`**, with odd `t_in >= 3` and `t_in <= N`.
 Slices contain exactly `t_in` outputs in input order. Encrypt with ordinary
-`encrypt`, then use the existing `apply_lookup_table_to` and output codec to decode.
+`encrypt`, then use the existing `apply_lookup_table_to`. Decode with `decrypt`
+for the default encoding, or with the explicit output codec.
 For example, in a context configured with `t_in=15` and an output codec for `t_out=8`:
 
 ```rust,ignore
-let lut = context.parameters().compile_odd_full_domain_lookup_table_fn(
+let lut = context.parameters().compile_odd_full_domain_lookup_table_with_codec_fn(
     &output_codec, |x| ((x * x + 3) % 8) as u32,
 ).unwrap();
 let input = encryptor.encrypt(14u32, &mut rng).unwrap();
@@ -255,13 +324,9 @@ let message = output_codec.decode_value(decryptor.decrypt_phase(&output).unwrap(
 assert_eq!(message, 7);
 ```
 
-The raw constructor is `LookupTable::try_new_odd_full_domain`. It computes the
-actual centers `c[m] = R(E(m), q_in, 2N)`, folding each center in `N..2N` back by
-`N` and storing the negated output. Negacyclic extraction restores its sign.
-Folded-center order is `0, (t+1)/2, 1, (t+3)/2, ...`; each callback runs once in
-that order. Nearest-center intervals retain upward midpoint ties; the terminal
-center at `N` carries `-f(0)` and handles wraparound. Colliding folded centers
-return `RotationCenterCollision`, even when `t_in <= N`.
+Raw encoded outputs use `LookupTable::try_new_odd_full_domain`. The compiler folds
+negacyclic rotation centers and restores output signs; colliding folded centers return
+`RotationCenterCollision`. Callback order and interval details are specified in rustdoc.
 
 Typical spacing is `N/t_in`, so the noise margin is about half that of front-half
 compilation. Capacity and collision checks establish LUT geometry, not a PBS
@@ -306,27 +371,21 @@ canonical coefficients and messages inside the stated bounds. These semantic
 conditions cannot be checked from raw ciphertexts. GLWE uses its order-dependent
 external dimension and `input_plaintext_codec()`; no extra key material is needed.
 
-Rounding matters even before encryption noise. For `E(m)=round(m*q/t_in)`,
-packing produces `E(x+B*y) + e_x + B*e_y + rho` modulo `q`, where
-`rho = E(x)+B*E(y)-E(x+B*y)`. If `t_in` divides `q`, `rho=0`; otherwise a conservative
-bound is `|rho| <= (B+2)/2` ciphertext units. Include this discrepancy and the
-amplified input errors in the PBS input-noise budget, together with any pre-BR
-key-switch error and per-coefficient modulus-switch rounding. The capacity bound
-prevents plaintext-index wrap; it does not establish a noise margin. This is a
-bounded single-output workflow, not arbitrary-precision integer arithmetic or
-LWE-to-ring packing. See the runnable [NTRU NTT example](../primus_tfhe_ntru_ntt/examples/ntru_ntt_basic.rs).
+Packing amplifies the second input's noise by B and can add an encoding-rounding
+discrepancy when `t_in` does not divide q. Budget both before PBS; the capacity check
+alone does not prove sufficient noise margin. See `BivariateLookupTable` rustdoc for
+the bound and the [design](../../docs/tfhe.md) for derivation. This is a bounded
+single-output workflow, not general integer arithmetic or LWE-to-ring packing.
 
 ## Fixed-scale factorized MVB
 
 `FactorizedLookupTable::try_new(D, N, output_count, input_codec, output_codec, function)`
 compiles a nonempty front-half prefix using Rounded input and unsigned Scaled output.
 The coefficient modulus may be explicit and odd, or Native with an even Scaled
-output scale. Explicit even moduli are unsupported. For each unscaled integer LUT
-`p_i`, it stores `W_i=(1-X)*p_i` and a common `V=A*sum(X^j)`, where A is
-`delta*inv2 mod q` for odd q and integer `delta/2` for Native, satisfying
-`V*W_i=delta*p_i` in the negacyclic ring. The callback receives `(input, output_index)`
-once per pair, with **output index outermost**. Factors remain canonical modulo q,
-not modulo the plaintext modulus; signed lifts determine their noise amplification.
+output scale. Explicit even moduli are unsupported. The callback receives
+`(input, output_index)` once per pair, with **output index outermost**. Signed
+integer factor norms determine noise amplification; the algebra is documented on
+`FactorizedLookupTable` and in the [MVB design](../../docs/tfhe-mvb.md).
 
 All outputs share one BR at step one and then apply separate public polynomial
 products. Positive output count is unpadded and does not reduce input capacity;

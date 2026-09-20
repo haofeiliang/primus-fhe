@@ -73,7 +73,7 @@ fn bench_pbs(c: &mut Criterion) {
             .collect();
         let lut = context
             .parameters()
-            .compile_lookup_table_slice(context.parameters().input_plaintext_codec(), &[1, 0])
+            .compile_lookup_table_slice(&[1, 0])
             .unwrap();
         let mut output = LweCiphertext::zero(DIMENSION);
         let mut evaluator = context.evaluator(&server).unwrap();

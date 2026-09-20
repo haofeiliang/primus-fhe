@@ -1,12 +1,13 @@
 use primus_encoding::ScaledCodec;
 use primus_integer::FheUint;
+use primus_ntru::NtruCiphertext;
 use primus_ntt::MonomialNttTable;
 use primus_reduce::RingContext;
 
 use crate::{
     BooleanDecryptor, BooleanEncryptor, BooleanError, BooleanEvaluator, CircuitBootstrapConfig,
     ClientKey, Decryptor, EncryptionKey, Encryptor, Evaluator, FactorizedEvaluator,
-    FactorizedLookupTable, KeyGenerationError, KeyGenerator, LookupTableError,
+    FactorizedLookupTable, KeyGenerationError, KeyGenerator, LookupTableError, LweCiphertext,
     NttFactorizedLookupTable, ServerKey, TfheClientError, TfheContextError, TfheEvaluationError,
     TfheParameters,
 };
@@ -69,6 +70,20 @@ where
     #[inline]
     pub fn table(&self) -> &Table {
         &self.table
+    }
+
+    /// Allocates zero storage for an external LWE ciphertext (mask and body).
+    /// Uses the dimension selected by the parameters; no key or encryption is involved.
+    #[must_use]
+    pub fn allocate_lwe_ciphertext(&self) -> LweCiphertext<T> {
+        LweCiphertext::zero(self.parameters.external_lwe_dimension())
+    }
+
+    /// Allocates a zeroed coefficient-domain NTRU with the accumulator layout.
+    /// Requires only public parameters; this does not encrypt a message.
+    #[must_use]
+    pub fn allocate_accumulator_ciphertext(&self) -> NtruCiphertext<Vec<T>> {
+        NtruCiphertext::zero(self.parameters.accumulator_ntru().poly_length())
     }
 
     /// Prepares private-key encryption/decryption in the accumulator ring domain.

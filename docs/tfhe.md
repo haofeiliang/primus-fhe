@@ -186,7 +186,7 @@ PBS 参数、LUT 与 `RotationQuantizer` 现统一要求 `2N` 能由 `T` 表示�
 
 ## P2.1 输入与输出编码分离
 
-普通 family/context 的 LUT 编译显式接收输出 `RoundedCodec`，输入参数决定域与中心，输出 codec 决定 `t_out` 和尺度；其密文模数必须等于 accumulator。当前完整 PBS 链仍要求输入、accumulator、输出的密文模数相同，支持不同的是明文模数/尺度。
+两族参数的普通、交错和奇数全域 LUT 编译默认使用 `input_plaintext_codec()` 编码输出，`*_with_codec_fn/slice` 变体显式接收输出 `RoundedCodec`。输入参数决定域与中心，输出 codec 决定 `t_out` 和尺度；其密文模数必须等于 accumulator。该选择只影响本次 LUT，不修改 parameters/context。当前完整 PBS 链仍要求输入、accumulator、输出的密文模数相同，支持不同的是明文模数/尺度。
 
 client 的 `decrypt_phase` 返回规范带噪 residue，由保留的输出 codec 解码；`decrypt` 沿用参数 codec。串联时下一 PBS 的输入编码须匹配，raw 密文无法自动推断尺度。Boolean/CBS 与自定义逐列编码仍用 raw 构造。[公开工作流](../crates/primus_tfhe/README.zh_CN.md#选择输出编码)。
 
@@ -198,7 +198,7 @@ client 的 `decrypt_phase` 返回规范带噪 residue，由保留的输出 codec
 
 ## P2.3 奇数明文模数全域
 
-`LookupTable::try_new_odd_full_domain` 及两族参数上的 `compile_odd_full_domain_lookup_table_fn/slice`（通过 `context.parameters()` 调用） 编译整个 `0..t`，返回原有单输出类型。输入用普通 unsigned 加密，输出独立 codec；交错与双输入仍用前半区。[公开前提](../crates/primus_tfhe/README.zh_CN.md#奇数全域-pbs)。
+`LookupTable::try_new_odd_full_domain` 及两族参数上的 `compile_odd_full_domain_lookup_table_fn/slice`（通过 `context.parameters()` 调用）编译整个 `0..t`，返回原有单输出类型。输入用普通 unsigned 加密，输出默认沿用输入 codec，独立输出编码使用 `*_with_codec_*`；交错与双输入仍用前半区。[公开前提](../crates/primus_tfhe/README.zh_CN.md#奇数全域-pbs)。
 
 ### 符号与排序依据
 

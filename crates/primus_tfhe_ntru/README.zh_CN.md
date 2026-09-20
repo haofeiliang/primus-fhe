@@ -22,7 +22,8 @@ key-switch 噪声。客户端 NTRU 域自动复用外部秘密分布与公共环
 构造时同时准备普通 PBS 量化，并要求旋转域 `2N` 能由 `T` 表示。
 
 普通 PBS 使用固定链：`f_acc` 下 BR → NTRU 密钥切换到 `f_client` → compact LWE extraction。
-没有 order 选项。外部输出按 `external_lwe_dimension()` 分配；使用配套的 context/client/server key。
+没有 order 选项。后端 `context.allocate_lwe_ciphertext()` 按 `external_lwe_dimension()` 分配外部输出；
+使用配套的 context/client/server key。
 
 客户端秘密通过后端 `KeyGenerator::try_generate_client_key` 生成：NTT 拒绝采样检查
 可逆性，Fourier 还检查逆元稳定性。生成配套密钥时优先使用 `context.try_generate_keys(circuit_bootstrap, rng)`
@@ -59,12 +60,14 @@ Context 提供 `encryptor`、`decryptor`；直接构造使用 `Encryptor::try_ne
 `*_to(message, output, rng)`。两类密钥都可复用输出存储，消息或维数错误先于采样和写入。
 参数编译的前半区 LUT 使用 padded unsigned 输入；centered 模消息有独立的编码契约。
 
-ManyLUT 编译同一个输入的多个函数。后端示例计算 `x % 4`、`x / 4` 和 `x % 2`，
+ManyLUT 编译同一个输入的多个函数。后端 sparse 示例计算 `x % 4`、`x / 4` 和 `x % 2`，
 不代表已经实现完整的加密整数类型或算术系统。
 
-通过 `context.parameters().compile_*` 编译普通/交错 LUT。第一个参数为显式输出 `RoundedCodec`。沿用输入尺度时传入
-`parameters.input_plaintext_codec()`；也可用另一明文模数与相同密文模数构造 codec，
-再用 `output_codec.decode_value(decryptor.decrypt_phase(&output)?)` 解码输出。
+通过 `context.parameters().compile_*` 编译普通/交错 LUT，默认使用
+`parameters.input_plaintext_codec()` 编码输出，直接用 `decrypt` 解码。
+`*_with_codec_fn` / `*_with_codec_slice` 变体以显式输出 `RoundedCodec` 为第一个参数，
+支持另一明文模数与相同密文模数，再用
+`output_codec.decode_value(decryptor.decrypt_phase(&output)?)` 解码输出。
 范围检查、raw 输出与后续 PBS 契约见[选择输出编码](../primus_tfhe/README.zh_CN.md#选择输出编码)。
 
 奇数全域使用 `compile_odd_full_domain_lookup_table_fn` / `_slice`，输入改用普通

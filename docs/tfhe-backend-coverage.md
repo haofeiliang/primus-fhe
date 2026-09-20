@@ -125,7 +125,7 @@ B2.1 已将 [BooleanEvaluator](../crates/primus_tfhe/src/boolean.rs) 移入 `pri
 → 每输出乘 W_i → 每输出 NTRU KS → compact LWE extraction
 ```
 
-NTRU 的[预处理产物和独立 MVB evaluator](../crates/primus_tfhe_ntru_ntt/src/evaluator/factorized.rs)复用现有 BR/KS 工作区，只增加一个 NTT 多项式保存共享旋转结果。采用乘后逐输出 KS，使 KS 误差不再被 `W_i` 放大；共享一次 KS 是后续独立的成本/误差取舍。
+NTRU 的[预处理产物和独立 MVB evaluator](../crates/primus_tfhe_ntru_ntt/src/factorized.rs)复用现有 BR/KS 工作区，只增加一个 NTT 多项式保存共享旋转结果。采用乘后逐输出 KS，使 KS 误差不再被 `W_i` 放大；共享一次 KS 是后续独立的成本/误差取舍。
 
 [验收](../crates/primus_tfhe_ntru_ntt/tests/factorized_pbs.rs)覆盖与单输出 Scaled LUT 的对照、1/3/17 输出、超出交错容量、奇数尺度初始化、context/维数错误及零分配复用。[B3.2](tfhe-mvb-ntru.md)已完成 n=728 负载的默认/SIMD 计时、资源及分阶段误差诊断：因子放大初始化/BR 误差，各输出再加入 KS 误差；测得相关输出，不能套用独立噪声假设或 GLWE 数值。
 
@@ -155,10 +155,10 @@ Native 系数域旋转并累加 selector GGSW 与 dummy
 | sparse × Boolean/双输入/奇数全域 × 两种 order | [sparse_pbs.rs](../crates/primus_tfhe_glwe_ntt/tests/sparse_pbs.rs)：门链、受控输入误差、相位/解码与零分配，见 §5.2 |
 | ternary × MVB × 两种 order | 同一 MVB 测试文件中的独立 ternary fixture |
 | ternary / sparse binary × CBS × 两种 order | [circuit_bootstrap.rs](../crates/primus_tfhe_glwe_ntt/tests/circuit_bootstrap.rs)：逐行/层相位及 CMUX |
-| ternary × 双输入/奇数全域 × 两种 order | [many_lut.rs](../crates/primus_tfhe_glwe_ntt/tests/many_lut.rs) |
+| ternary × 双输入/奇数全域 × 两种 order | [pbs.rs](../crates/primus_tfhe_glwe_ntt/tests/pbs.rs) |
 | ternary × 公钥输入 × Boolean XOR × 两种 order | [context.rs](../crates/primus_tfhe_glwe_ntt/tests/context.rs)；完整门真值表另有 binary fixture |
 
-GLWE Fourier 的 [many_lut.rs](../crates/primus_tfhe_glwe_fourier/tests/many_lut.rs) 已覆盖 ternary、两种 order、两种 FFT、交错/双输入/奇数全域。因此这些不属于该后端待补的算法。
+GLWE Fourier 的 [pbs.rs](../crates/primus_tfhe_glwe_fourier/tests/pbs.rs) 已覆盖 ternary、两种 order、两种 FFT、交错/双输入/奇数全域。因此这些不属于该后端待补的算法。
 
 ### 5.2 已有 sparse 上层组合验收（B3.3 已完成）
 

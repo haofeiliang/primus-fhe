@@ -54,10 +54,7 @@ fn backend<T: TorusFftValue, Table: FftTable>(
     let input = encryptor.encrypt_padded(T::ONE, &mut rng).unwrap();
     let lut = context
         .parameters()
-        .compile_lookup_table_slice(
-            context.parameters().input_plaintext_codec(),
-            &[T::ONE, T::ZERO],
-        )
+        .compile_lookup_table_slice(&[T::ONE, T::ZERO])
         .unwrap();
     let mut output = input.clone();
     let (mut evaluator, scratch) = measure(|| context.evaluator(&server_key).unwrap());
@@ -110,20 +107,13 @@ fn backend<T: TorusFftValue, Table: FftTable>(
         let value = |input: usize, output| T::as_from((input + output) % 4);
         let many = context
             .parameters()
-            .compile_interleaved_lookup_table_fn(
-                context.parameters().input_plaintext_codec(),
-                count,
-                value,
-            )
+            .compile_interleaved_lookup_table_fn(count, value)
             .unwrap();
         let singles: Vec<_> = (0..count)
             .map(|output| {
                 context
                     .parameters()
-                    .compile_lookup_table_fn(
-                        context.parameters().input_plaintext_codec(),
-                        |input| value(input, output),
-                    )
+                    .compile_lookup_table_fn(|input| value(input, output))
                     .unwrap()
             })
             .collect();

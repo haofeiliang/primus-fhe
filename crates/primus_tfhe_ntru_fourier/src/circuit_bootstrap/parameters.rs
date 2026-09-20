@@ -41,7 +41,9 @@ impl<T: TorusFftValue> CircuitBootstrapParameters<T> {
         config: CircuitBootstrapConfig,
     ) -> Result<Self, CircuitBootstrapParameterError> {
         let accumulator = tfhe.accumulator_ntru();
-        let output_basis = config.output.try_build(accumulator.cipher_modulus())?;
+        let output_basis = config
+            .output
+            .try_build(accumulator.cipher_modulus_value())?;
         let key_parameters = |role, decomposition: crate::DecompositionConfig, noise| {
             let ring = primus_ntru::NtruParameters::new(
                 accumulator.poly_length(),

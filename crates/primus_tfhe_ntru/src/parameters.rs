@@ -1,9 +1,9 @@
+use primus_decompose::DecompositionConfig;
 use primus_encoding::RoundedCodec;
 use primus_integer::FheUint;
 use primus_lwe::LweParameters;
 use primus_ntru::{NlevParameters, NtruParameters, SecretKeyDistr};
 use primus_reduce::RingContext;
-use primus_tfhe::DecompositionConfig;
 use primus_tfhe::rotation::RotationQuantizer;
 
 use crate::TfheParameterError;

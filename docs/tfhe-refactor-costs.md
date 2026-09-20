@@ -1,8 +1,8 @@
 # TFHE R1–R4 整理成本
 
 本文件只记录已测的结构调整，实施范围见 [R1–R4 计划](tfhe-refactor-plan.md)。
-数据保存于 [R1 CSV](benchmarks/tfhe-r1.csv) 和 [R2 CSV](benchmarks/tfhe-r2.csv)，
-不能据此推断未测参数、后端或平台的性能。
+数值对照保存于 [R1 CSV](benchmarks/tfhe-r1.csv) 和 [R2 CSV](benchmarks/tfhe-r2.csv)，
+R3 测试资产的数量与耗时直接记录在本文末节；不能据此推断未测参数、后端或平台的性能。
 
 ## R1：LUT 共享构造
 
@@ -206,3 +206,35 @@ release 示例通过；下层 lattice/GLWE/NTRU 默认/SIMD 各 89 项及严格 
 撤回 NTT keygen 后补跑该后端默认/SIMD 测试和 all-targets Clippy。
 TFHE 测试数未增加，下层仅新增一项 unwind 恢复测试；现有数值/分配测试承担交替执行的覆盖。
 未测非 x86、生产安全参数、任意 N/basis 或全部算法组合；不以这些结果证明噪声尾界或恒时性。
+
+## R3：测试资产整理
+
+2026-09-20，直接基线 `ba85493`，对照 R3 工作区。环境为同一台 Ryzen 9 9955HX3D、
+x86_64 Linux，默认 rustc 1.98.0，SIMD nightly 1.100.0（2026-08-26），cargo-nextest 0.9.143。
+沿用仓库 `target-cpu=native`，未绑定 CPU、未关闭 boost/SMT；计时期间没有另开编译或测试任务。
+
+两版分别连续运行三次以下命令；SIMD 将 `cargo nextest` 替换为 `cargo +nightly nextest`，
+并加 `--features simd`。数据取 nextest 的 Summary 时间，仅包含测试执行，不包含编译或文档构建。
+
+```sh
+cargo nextest run --offline --test-threads 2 \
+  -p primus_tfhe -p primus_tfhe_glwe -p primus_tfhe_glwe_ntt -p primus_tfhe_glwe_fourier \
+  -p primus_tfhe_ntru -p primus_tfhe_ntru_ntt -p primus_tfhe_ntru_fourier
+```
+
+| 配置 | 测试数：旧→新 | 基线三次 / s | R3 三次 / s | 中位数：旧→新 / s |
+| --- | ---: | --- | --- | --- |
+| 默认 | 87→86 | 5.184 / 5.095 / 5.112 | 5.180 / 5.102 / 5.094 | 5.112→5.102 |
+| SIMD | 87→86 | 5.096 / 5.040 / 5.038 | 5.055 / 5.033 / 5.042 | 5.040→5.042 |
+
+两份后端 CBS 参数错误矩阵合并为家族测试，非法 CBS 配置在密钥生成消耗 RNG 前拒绝的检查
+保留在后端。GLWE `many_lut` 测试更名为 `pbs`，数值函数体不变；其余独立相位、selector/dummy、
+非恒定 CMUX、不同表示与首调用零分配覆盖不变。测试整理减少维护重复，本机运行时间基本持平。
+这里没有采用 GitHub CI 的 CPU、构建缓存或 flags，也未测在线算法时间，不声称 CI 或 PBS 加速。
+上述计时在后续默认 codec 入口补充前完成；接口迁移后的测试数量仍为 86 项，未重新计时。
+
+七包共 19 个持久 benchmark target，未增删独立负载。GLWE NTT 的历史 n=512 PBS 参数
+由公共 `boolean_parameters()` 移入 `benches/support/mod.rs`，参数值、基准名称和计时工作不变，
+不将这个成本 fixture 当作安全参数推荐。模块迁移只调整路径、导入和必要的 crate 内可见性。
+GLWE CBS 示例更名为 `ntt_circuit_bootstrap` / `fourier_circuit_bootstrap`，消除联合构建的
+输出冲突；仅更名，不影响上面的 nextest 负载或统计，两个新入口另行执行 release 验证。

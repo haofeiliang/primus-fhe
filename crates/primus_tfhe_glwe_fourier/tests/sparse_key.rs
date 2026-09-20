@@ -46,7 +46,7 @@ fn check_selectors<Table: FftTable>() {
     let mut fft = context.new_fft_engine();
     let mut external_product = FourierGlweExternalProductContext::new(size);
     let mut control = FourierGgsw::<Vec<Complex64>>::zero(size.fourier_ggsw_len());
-    let mut product = accumulator_client.allocate_ciphertext();
+    let mut product = context.allocate_accumulator_ciphertext();
     let mut decoded = vec![0; N];
 
     // The second map must have at least one bucket with no public entries.

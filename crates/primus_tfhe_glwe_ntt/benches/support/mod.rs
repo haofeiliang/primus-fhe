@@ -1,4 +1,4 @@
-//! Parameter types and built-in parameter sets for the NTT backend.
+//! Historical PBS/Boolean cost fixture (n=512), not a security parameter recommendation.
 
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_glwe::{GlweParameters, SecretKeyDistr};
@@ -6,17 +6,9 @@ use primus_lwe::LweParameters;
 use primus_modulus::BarrettModulus;
 use primus_tfhe_glwe::PbsOrder;
 
-/// GLWE-TFHE parameters for the explicit-modulus NTT backend.
-pub type TfheParameters<T> = primus_tfhe_glwe::TfheParameters<T, BarrettModulus<T>>;
+use primus_tfhe_glwe_ntt::TfheParameters;
 
-/// Returns the temporary Boolean parameter set used by tests and benchmarks.
-///
-/// # Warning
-///
-/// These parameters have not been validated for a target security level or
-/// failure probability. They are intended only for development, testing, and
-/// benchmarking, and must not be used in production.
-pub fn boolean_parameters() -> TfheParameters<u32> {
+pub fn parameters_with_order(order: PbsOrder) -> TfheParameters<u32> {
     const LWE_DIMENSION: usize = 512;
     const GLWE_DIMENSION: usize = 1;
     const POLY_LENGTH: usize = 1024;
@@ -45,7 +37,7 @@ pub fn boolean_parameters() -> TfheParameters<u32> {
         glwe,
         bootstrapping,
         ApproxSignedBasis::new(Some(CIPHERTEXT_MODULUS), 2, Some(13)),
-        PbsOrder::BootstrapKeyswitch,
+        order,
     )
     .unwrap()
 }

@@ -14,6 +14,7 @@ single-value and batched digit extraction, for gadget products and key switching
 
 | Type | Role |
 | --- | --- |
+| `DecompositionConfig` | Radix and retained-level choices before binding a modulus; `try_build` prepares a primitive basis |
 | `primitive::ApproxSignedBasis<T>` | Single-limb inputs with an explicit modulus or the implicit native modulus `2^T::BITS` |
 | `big_integer::BigUintApproxSignedBasis<T>` | Fixed-width, multi-limb inputs with an explicit integer modulus |
 | `OnceSignedDecomposer`, `OnceBigUintSignedDecomposer` | Extract one retained level; obtained from the corresponding basis's `decomposer_iter()` |
@@ -62,6 +63,12 @@ For example, with `B = 256`, output `255` means `-1`, not positive `255`.
 
 Both bases require `2 <= log_basis < T::BITS` and a modulus at least `B`.
 `new` panics on invalid parameters; `try_new` returns `ApproxSignedBasisError`.
+
+`DecompositionConfig { log_basis, level_count }` keeps these choices independent of
+the modulus. `config.try_build::<u32>(None)` prepares a native basis, while
+`config.try_build(Some(q))` uses an explicit modulus. `level_count` has the same
+meaning as `reverse_length` below. Validation and errors come from
+`primitive::ApproxSignedBasis::try_new`; the config itself has no precomputed storage.
 
 The decomposition width `m` differs between representations:
 

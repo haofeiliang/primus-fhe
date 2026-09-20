@@ -66,9 +66,7 @@ fn circuit_bootstrap<Table: FftTable>(distr: SecretKeyDistr) {
     // The same CBS-enabled server key also supports ordinary PBS.
     let identity = context
         .parameters()
-        .compile_lookup_table_fn(context.parameters().input_plaintext_codec(), |message| {
-            message as u64
-        })
+        .compile_lookup_table_fn(|message| message as u64)
         .unwrap();
     let input = encryptor.encrypt_padded(1u64, &mut rng).unwrap();
     let mut output = context
@@ -86,7 +84,7 @@ fn circuit_bootstrap<Table: FftTable>(distr: SecretKeyDistr) {
 
     let mut accumulator_client = context.accumulator_client(&client).unwrap();
     let choices = [1u64, 3].map(|message| {
-        let mut output = accumulator_client.allocate_ciphertext();
+        let mut output = context.allocate_accumulator_ciphertext();
         let (_, allocation) = allocations::measure(|| {
             accumulator_client.encrypt_to(&[message; N], &mut output, &mut rng)
         });
@@ -101,8 +99,8 @@ fn circuit_bootstrap<Table: FftTable>(distr: SecretKeyDistr) {
         CircuitBootstrapEvaluator::try_from_bootstrapper(context.evaluator(&server).unwrap())
             .unwrap();
     let mut control = evaluator.allocate_output();
-    let mut selected = accumulator_client.allocate_ciphertext();
-    let mut product = accumulator_client.allocate_ciphertext();
+    let mut selected = context.allocate_accumulator_ciphertext();
+    let mut product = context.allocate_accumulator_ciphertext();
     let mut decoded = vec![0; N];
     let mut decoded_product = vec![0; N];
     // A zero result must overwrite the previous nonzero control.

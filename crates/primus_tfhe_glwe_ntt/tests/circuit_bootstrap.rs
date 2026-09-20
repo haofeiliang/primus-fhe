@@ -11,7 +11,7 @@ use primus_tfhe_glwe_ntt::{
     CircuitBootstrapConfig, CircuitBootstrapEvaluator, CircuitBootstrapParameters,
     DecompositionConfig, KeyGenerator, PbsOrder, TfheContext, TfheEvaluationError, TfheParameters,
 };
-use rand::{Rng, SeedableRng, rngs::StdRng};
+use rand::{SeedableRng, rngs::StdRng};
 
 #[global_allocator]
 static ALLOCATOR: allocations::CountingAllocator = allocations::CountingAllocator;
@@ -128,7 +128,7 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
                 .collect::<Vec<_>>()
         });
         let choices = messages.each_ref().map(|message| {
-            let mut output = accumulator_client.allocate_ciphertext();
+            let mut output = context.allocate_accumulator_ciphertext();
             let (_, allocation) = allocations::measure(|| {
                 accumulator_client.encrypt_to(message, &mut output, &mut rng)
             });
@@ -143,9 +143,7 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
         // The same CBS-enabled server key also supports ordinary PBS.
         let identity = context
             .parameters()
-            .compile_lookup_table_fn(context.parameters().input_plaintext_codec(), |message| {
-                message as u64
-            })
+            .compile_lookup_table_fn(|message| message as u64)
             .unwrap();
         let input = encryptor.encrypt_padded(1u64, &mut rng).unwrap();
         let mut output = context
@@ -246,8 +244,8 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
             levels.next_power_of_two()
         );
         let mut control = evaluator.allocate_output();
-        let mut selected = accumulator_client.allocate_ciphertext();
-        let mut product = accumulator_client.allocate_ciphertext();
+        let mut selected = context.allocate_accumulator_ciphertext();
+        let mut product = context.allocate_accumulator_ciphertext();
         let mut decoded = vec![0; POLY_LENGTH];
         let mut decoded_product = vec![0; POLY_LENGTH];
         // A zero result must overwrite the previous nonzero control.
@@ -330,138 +328,5 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
             recovery.count, 0,
             "converted CBS retains ordinary workspace"
         );
-    }
-}
-
-#[test]
-fn circuit_parameters_check_capacity_layout_and_basis_domain() {
-    use primus_tfhe_glwe_ntt::CircuitBootstrapParameterError as Error;
-    let tfhe = parameters(
-        PbsOrder::BootstrapKeyswitch,
-        POLY_LENGTH as u64,
-        SecretKeyDistr::fixed_hamming_weight_binary(4, 2),
-    );
-    let config = CircuitBootstrapConfig {
-        output: DecompositionConfig {
-            log_basis: 8,
-            level_count: Some(2),
-        },
-        trace: DecompositionConfig {
-            log_basis: 9,
-            level_count: Some(3),
-        },
-        trace_noise_standard_deviation: 1.25,
-        scheme_switch: DecompositionConfig {
-            log_basis: 10,
-            level_count: Some(4),
-        },
-        scheme_switch_noise_standard_deviation: 2.5,
-    };
-    let context = TfheContext::<_, U64NttTable>::try_from_parameters(tfhe.clone()).unwrap();
-    let mut rng = StdRng::seed_from_u64(0x4236_0200);
-    let client = primus_tfhe_glwe_ntt::ClientKey::generate(&tfhe, &mut rng);
-    let mut invalid = config;
-    invalid.output.level_count = Some(0);
-    let mut rng = StdRng::seed_from_u64(0x4236_0201);
-    let error = KeyGenerator::new(&context)
-        .try_generate_sparse_server_key(&client, 3, 4, Some(invalid), &mut rng)
-        .err()
-        .unwrap();
-    assert!(matches!(
-        error,
-        primus_tfhe_glwe_ntt::KeyGenerationError::CircuitBootstrapParameters(
-            Error::InvalidOutputBasis(_)
-        )
-    ));
-    assert_eq!(
-        rng.next_u64(),
-        StdRng::seed_from_u64(0x4236_0201).next_u64()
-    );
-    let configured = CircuitBootstrapParameters::try_from_config(&tfhe, config).unwrap();
-    assert_eq!(
-        configured.output_size().glwe_size(),
-        tfhe.accumulator_glwe().size()
-    );
-    assert_eq!(configured.trace().basis().log_basis(), 9);
-    assert_eq!(configured.trace().basis().decompose_length(), 3);
-    assert_eq!(configured.trace().noise_standard_deviation(), 1.25);
-    assert_eq!(configured.scheme_switch().basis().log_basis(), 10);
-    assert_eq!(configured.scheme_switch().basis().decompose_length(), 4);
-    assert_eq!(configured.scheme_switch().noise_standard_deviation(), 2.5);
-    for role in ["output", "trace", "scheme-switch"] {
-        let mut invalid = config;
-        match role {
-            "output" => invalid.output.level_count = Some(0),
-            "trace" => invalid.trace.level_count = Some(0),
-            _ => invalid.scheme_switch.level_count = Some(0),
-        }
-        let error = CircuitBootstrapParameters::try_from_config(&tfhe, invalid)
-            .err()
-            .unwrap();
-        match role {
-            "output" => assert!(matches!(error, Error::InvalidOutputBasis(_))),
-            _ => assert!(
-                matches!(error, Error::GadgetParameters { role: actual, .. } if actual == role)
-            ),
-        }
-    }
-    let trace = tfhe.blind_rotation_ggsw();
-    let output = |levels| ApproxSignedBasis::new(Some(MODULUS), 8, Some(levels));
-    let valid = CircuitBootstrapParameters::try_new(&tfhe, output(2), trace.clone(), trace.clone())
-        .unwrap();
-    assert_eq!(
-        valid.output_size().glwe_size(),
-        tfhe.accumulator_glwe().size()
-    );
-    assert!(matches!(
-        CircuitBootstrapParameters::try_new(&tfhe, output(3), trace.clone(), trace.clone()),
-        Err(Error::OutputDecompositionTooLarge)
-    ));
-    for modulus in [None, Some(132_120_577)] {
-        assert!(matches!(
-            CircuitBootstrapParameters::try_new(
-                &tfhe,
-                ApproxSignedBasis::new(modulus, 8, Some(2)),
-                trace.clone(),
-                trace.clone(),
-            ),
-            Err(Error::OutputBasisModulusMismatch)
-        ));
-    }
-    for (dimension, poly_length, modulus, expected) in [
-        (
-            2,
-            POLY_LENGTH,
-            MODULUS,
-            Error::GlweLayoutMismatch { role: "trace" },
-        ),
-        (
-            1,
-            POLY_LENGTH * 2,
-            MODULUS,
-            Error::GlweLayoutMismatch { role: "trace" },
-        ),
-        (
-            1,
-            POLY_LENGTH,
-            132_120_577,
-            Error::CipherModulusMismatch { role: "trace" },
-        ),
-    ] {
-        let foreign = GlweParameters::new(
-            dimension,
-            poly_length,
-            4,
-            BarrettModulus::new(modulus),
-            SecretKeyDistr::UniformBinary,
-            0.7,
-        );
-        let result = CircuitBootstrapParameters::try_new(
-            &tfhe,
-            output(2),
-            GgswParameters::with_glwe_params(&foreign, 8, Some(2)),
-            trace.clone(),
-        );
-        assert_eq!(result.err(), Some(expected));
     }
 }

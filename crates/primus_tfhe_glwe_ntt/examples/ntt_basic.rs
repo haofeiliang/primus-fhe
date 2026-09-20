@@ -1,22 +1,60 @@
-//! GLWE/NTT PBS and Boolean evaluation with both execution orders.
+//! Ordinary GLWE/NTT PBS with reusable input, output and evaluator.
 //!
 //! Small functional parameters for demonstration, not production use.
 
-use primus_encoding::RoundedCodec;
 use primus_glwe::SecretKeyDistr;
 use primus_lwe::LweParameters;
 use primus_modulus::BarrettModulus;
 use primus_ntt::U32NttTable;
 use primus_tfhe_glwe_ntt::{
-    BooleanGate, DecompositionConfig, LweCiphertext, PbsOrder, TfheConfig, TfheContext,
-    TfheParameters,
+    DecompositionConfig, PbsOrder, TfheConfig, TfheContext, TfheParameters,
 };
 
 const LWE_DIMENSION: usize = 4;
 const GLWE_DIMENSION: usize = 1;
 const POLY_LENGTH: usize = 256;
-const PLAINTEXT_MODULUS: u32 = 4;
+const PLAINTEXT_MODULUS: u32 = 16;
 const CIPHERTEXT_MODULUS: u32 = 132_120_577;
+
+fn main() {
+    for order in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
+        run(order);
+    }
+}
+
+fn run(order: PbsOrder) {
+    let context = TfheContext::<_, U32NttTable>::try_from_parameters(parameters(order)).unwrap();
+    // Client setup: keep client_key local and give server_key to the server.
+    let mut rng = rand::rng();
+    let (client_key, server_key) = context.try_generate_keys(None, &mut rng).unwrap();
+    let encryptor = context.encryptor(&client_key).unwrap();
+    let decryptor = context.decryptor(&client_key).unwrap();
+    let mut input = context.allocate_lwe_ciphertext();
+
+    // Server setup: public parameters, evaluation key, LUT and reusable output.
+    // Input t=16 programs 0..8; outputs keep the same encoding.
+    let lut = context
+        .parameters()
+        .compile_lookup_table_fn(|x| (x % 4) as u32)
+        .unwrap();
+    let mut evaluator = context.evaluator(&server_key).unwrap();
+    let mut output = context.allocate_lwe_ciphertext();
+
+    for message in [7u32, 2] {
+        // Client sends the encrypted input.
+        encryptor
+            .encrypt_padded_to(message, &mut input, &mut rng)
+            .unwrap();
+
+        // Server evaluates and returns the encrypted output.
+        evaluator.apply_lookup_table_to(&input, &lut, &mut output);
+
+        // Client decrypts the response.
+        let result = decryptor.decrypt(&output).unwrap();
+        assert_eq!(result, message % 4);
+    }
+    println!("{order:?}: ordinary PBS with reused storage succeeded");
+}
 
 fn parameters(order: PbsOrder) -> TfheParameters<u32> {
     let modulus = BarrettModulus::new(CIPHERTEXT_MODULUS);
@@ -45,91 +83,4 @@ fn parameters(order: PbsOrder) -> TfheParameters<u32> {
         pbs_order: order,
     })
     .unwrap()
-}
-
-fn run(order: PbsOrder) {
-    let context = TfheContext::<_, U32NttTable>::try_from_parameters(parameters(order)).unwrap();
-
-    // The client key decrypts; the server key only evaluates homomorphically.
-    let mut rng = rand::rng();
-    let (client_key, server_key) = context.try_generate_keys(None, &mut rng).unwrap();
-
-    // Publish this LWE key to encrypt inputs; keep the client key for decryption.
-    // These demonstration parameters have no public-key security/noise assessment.
-    let public_key = client_key
-        .try_generate_public_key(context.parameters(), &mut rng)
-        .unwrap();
-    let encryptor = context.encryptor(&public_key).unwrap();
-    let decryptor = context.decryptor(&client_key).unwrap();
-    let toggle = context
-        .parameters()
-        .compile_lookup_table_slice(context.parameters().input_plaintext_codec(), &[1u32, 0])
-        .unwrap();
-    let mut input = encryptor.encrypt_padded(0u32, &mut rng).unwrap();
-    // External inputs and outputs use n or kN according to the selected order.
-    let dimension = match order {
-        PbsOrder::BootstrapKeyswitch => LWE_DIMENSION,
-        PbsOrder::KeyswitchBootstrap => GLWE_DIMENSION * POLY_LENGTH,
-    };
-    assert_eq!(input.dimension(), dimension);
-    let mut evaluator = context.evaluator(&server_key).unwrap();
-    let mut output = LweCiphertext::zero(context.parameters().external_lwe_dimension());
-    evaluator.apply_lookup_table_to(&input, &toggle, &mut output);
-    assert_eq!(decryptor.decrypt(&output).unwrap(), 1);
-
-    // Two functions share one PBS; input uses t=4, output uses t=8.
-    let output_codec =
-        RoundedCodec::new(8, context.parameters().accumulator_glwe().cipher_modulus());
-    let paired = context
-        .parameters()
-        .compile_interleaved_lookup_table_fn(&output_codec, 2, |input, output| {
-            if output == 0 {
-                (input + 4) as u32
-            } else {
-                (7 - input) as u32
-            }
-        })
-        .unwrap();
-    // Reuse the client ciphertext for the next input.
-    encryptor
-        .encrypt_padded_to(1u32, &mut input, &mut rng)
-        .unwrap();
-    let mut outputs = vec![output; paired.output_count()];
-    evaluator.apply_interleaved_lookup_table_to(&input, &paired, &mut outputs);
-    assert_eq!(
-        output_codec.decode_value(decryptor.decrypt_phase(&outputs[0]).unwrap()),
-        5
-    );
-    assert_eq!(
-        output_codec.decode_value(decryptor.decrypt_phase(&outputs[1]).unwrap()),
-        6
-    );
-
-    // The Boolean API is identical to the Fourier backend.
-    let boolean_encryptor = context.boolean_encryptor(&public_key).unwrap();
-    let boolean_decryptor = context.boolean_decryptor(&client_key).unwrap();
-    let lhs = boolean_encryptor.encrypt(true, &mut rng).unwrap();
-    let mut rhs = LweCiphertext::zero(dimension);
-    boolean_encryptor
-        .encrypt_to(false, &mut rhs, &mut rng)
-        .unwrap();
-    let mut boolean_evaluator = context.boolean_evaluator(&server_key).unwrap();
-
-    let mut output = rhs.clone();
-    for (gate, expected) in [(BooleanGate::And, false), (BooleanGate::Xor, true)] {
-        boolean_evaluator.evaluate_binary_to(gate, &lhs, &rhs, &mut output);
-        assert_eq!(boolean_decryptor.decrypt(&output).unwrap(), expected);
-    }
-    boolean_evaluator.not_to(&lhs, &mut output);
-    assert!(!boolean_decryptor.decrypt(&output).unwrap());
-    boolean_evaluator.mux_to(&lhs, &lhs, &rhs, &mut output);
-    assert!(boolean_decryptor.decrypt(&output).unwrap());
-
-    println!("{order:?}: external LWE dimension {dimension}; PBS and Boolean succeeded");
-}
-
-fn main() {
-    for order in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
-        run(order);
-    }
 }

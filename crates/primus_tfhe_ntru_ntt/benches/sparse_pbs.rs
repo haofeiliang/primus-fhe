@@ -63,11 +63,11 @@ fn backend<T: FheUint, Table: MonomialNttTable<ValueT = T>>(c: &mut Criterion, q
     let value = |m: usize, i: usize| T::as_from((m + 2 * i) % 8);
     let single = context
         .parameters()
-        .compile_lookup_table_fn(&codec, |m| value(m, 0))
+        .compile_lookup_table_with_codec_fn(&codec, |m| value(m, 0))
         .unwrap();
     let many = context
         .parameters()
-        .compile_interleaved_lookup_table_fn(&codec, 3, value)
+        .compile_interleaved_lookup_table_with_codec_fn(&codec, 3, value)
         .unwrap();
     for sparse in [false, true] {
         let label = format!(

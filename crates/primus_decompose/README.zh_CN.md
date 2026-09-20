@@ -14,6 +14,7 @@ key switching。
 
 | 类型 | 职责 |
 | --- | --- |
+| `DecompositionConfig` | 尚未绑定模数的基数和保留层数；`try_build` 准备 primitive basis |
 | `primitive::ApproxSignedBasis<T>` | 单 limb 输入，使用显式模数或隐式 native 模数 `2^T::BITS` |
 | `big_integer::BigUintApproxSignedBasis<T>` | 定宽、多 limb 输入，使用显式整数模数 |
 | `OnceSignedDecomposer`、`OnceBigUintSignedDecomposer` | 提取一个保留层，由对应 basis 的 `decomposer_iter()` 返回 |
@@ -58,6 +59,11 @@ canonical 输入替代初始化：代表元调整属于正确性前提。
 
 两种 basis 都要求 `2 <= log_basis < T::BITS`，且模数不小于 `B`。
 参数无效时，`new` 会 panic，`try_new` 返回 `ApproxSignedBasisError`。
+
+`DecompositionConfig { log_basis, level_count }` 将分解选择与模数分开。
+`config.try_build::<u32>(None)` 准备 native basis，`config.try_build(Some(q))` 使用显式模数。
+`level_count` 与下文的 `reverse_length` 含义相同。校验和错误由
+`primitive::ApproxSignedBasis::try_new` 提供；config 本身不持有预计算存储。
 
 不同表示的分解位宽 `m` 定义如下：
 

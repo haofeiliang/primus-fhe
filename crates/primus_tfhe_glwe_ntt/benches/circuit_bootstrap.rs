@@ -103,7 +103,7 @@ fn circuit_bootstrap(c: &mut Criterion) {
         let secret =
             NttGlweSecretKey::from_coeff_secret_key(client.glwe_secret_key(), context.table());
         let mut phase = Polynomial::new(vec![0u64; N]);
-        let mut selected = accumulator.allocate_ciphertext();
+        let mut selected = context.allocate_accumulator_ciphertext();
         let mut decoded = vec![0; N];
         let mut group = c.benchmark_group(format!(
             "glwe_ntt/cbs/u64/n{DIMENSION}/h{WEIGHT}/N{N}/{order:?}/output_logb8_l3"

@@ -3,25 +3,14 @@
 use std::alloc::Layout;
 
 use num_traits::{ConstOne, ConstZero};
-use primus_decompose::primitive::ApproxSignedBasis;
 use primus_integer::FheUint;
-use primus_lattice::{
-    ngsw::{Ngsw, NgswIter},
-    ntru::Ntru,
-};
-use primus_modulus::BarrettModulus;
-use primus_ntru::{
-    NttNtruExternalProductContext, NttNtruKeySwitchingKey, NttNtruSecretKey, SecretKeyDistr,
-};
+use primus_lattice::ngsw::NgswIter;
+use primus_ntru::{NttNtruKeySwitchingKey, NttNtruSecretKey, SecretKeyDistr};
 use primus_ntt::MonomialNttTable;
-use primus_poly::Polynomial;
 use primus_tfhe::sparse::BucketMap;
 use zeroize::Zeroizing;
 
-use crate::{
-    ClientKey, KeyGenerationError, KeyGenerator, ServerKey, SparseBootstrappingKeyError,
-    TfheParameters,
-};
+use crate::{ClientKey, KeyGenerationError, KeyGenerator, ServerKey, SparseBootstrappingKeyError};
 
 /// Coefficient NGSW selectors and public buckets for a fixed-weight binary client.
 ///
@@ -84,7 +73,7 @@ impl<T: FheUint> SparseNtruBootstrappingKey<T> {
         (indices, NgswIter::new(data, self.ngsw_len))
     }
 
-    fn bucket_data(&self, bucket: usize) -> (&[usize], &[T]) {
+    pub(super) fn bucket_data(&self, bucket: usize) -> (&[usize], &[T]) {
         assert!(
             bucket < self.bucket_count(),
             "sparse bucket index out of bounds"
@@ -238,65 +227,5 @@ where
             controls,
             key_switching_key,
         ))
-    }
-}
-
-pub(crate) struct SparseWorkspace<T: FheUint> {
-    pub(crate) exponents: Vec<usize>,
-    aggregate: Vec<T>,
-    pub(crate) external_product: NttNtruExternalProductContext<T>,
-}
-
-impl<T: FheUint> SparseWorkspace<T> {
-    pub(crate) fn new(parameters: &TfheParameters<T>) -> Self {
-        Self {
-            exponents: vec![0; parameters.external_lwe_dimension()],
-            aggregate: vec![T::ZERO; parameters.blind_rotation().nlev_len()],
-            external_product: NttNtruExternalProductContext::new(parameters.poly_length()),
-        }
-    }
-}
-
-/// The evaluator established key/workspace/table compatibility and quantized every mask.
-/// Every bucket is processed, including empty ones and zero exponents; its encrypted
-/// dummy and zero selections still contribute noise. Final output stays in `current`.
-pub(crate) fn rotate_buckets<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
-    key: &SparseNtruBootstrappingKey<T>,
-    workspace: &mut SparseWorkspace<T>,
-    current: &mut Ntru<Vec<T>>,
-    scratch: &mut Ntru<Vec<T>>,
-    basis: &ApproxSignedBasis<T>,
-    modulus: BarrettModulus<T>,
-    ntt: &Table,
-) {
-    let n = ntt.poly_length();
-    for bucket in 0..key.bucket_count() {
-        let (indices, data) = key.bucket_data(bucket);
-        let (selections, dummy) = data.split_at(indices.len() * key.ngsw_len);
-        workspace.aggregate.copy_from_slice(dummy);
-        for (&i, selection) in indices.iter().zip(selections.chunks_exact(key.ngsw_len)) {
-            for (acc, row) in workspace
-                .aggregate
-                .chunks_exact_mut(n)
-                .zip(selection.chunks_exact(n))
-            {
-                Polynomial(acc).add_mul_monomial_assign(
-                    &Polynomial(row),
-                    workspace.exponents[i],
-                    modulus,
-                );
-            }
-        }
-        Ngsw::new(workspace.aggregate.as_mut_slice())
-            .into_ntt_form(ntt)
-            .external_product_to(
-                current,
-                scratch,
-                basis,
-                modulus,
-                ntt,
-                &mut workspace.external_product,
-            );
-        core::mem::swap(current, scratch);
     }
 }

@@ -152,6 +152,33 @@ fn sparse_key_rejects_invalid_parameters_and_actual_secret_before_sampling() {
     );
     assert_eq!(rng.next_u64(), StdRng::seed_from_u64(43).next_u64());
 
+    let invalid_cbs = primus_tfhe_glwe_ntt::CircuitBootstrapConfig {
+        output: primus_tfhe_glwe_ntt::DecompositionConfig {
+            log_basis: 8,
+            level_count: Some(0),
+        },
+        trace: primus_tfhe_glwe_ntt::DecompositionConfig {
+            log_basis: 8,
+            level_count: None,
+        },
+        trace_noise_standard_deviation: 0.7,
+        scheme_switch: primus_tfhe_glwe_ntt::DecompositionConfig {
+            log_basis: 8,
+            level_count: None,
+        },
+        scheme_switch_noise_standard_deviation: 0.7,
+    };
+    let mut rng = StdRng::seed_from_u64(43);
+    assert!(matches!(
+        generator.try_generate_sparse_server_key(&client, 3, 8, Some(invalid_cbs), &mut rng),
+        Err(
+            primus_tfhe_glwe_ntt::KeyGenerationError::CircuitBootstrapParameters(
+                primus_tfhe_glwe_ntt::CircuitBootstrapParameterError::InvalidOutputBasis(_)
+            )
+        )
+    ));
+    assert_eq!(rng.next_u64(), StdRng::seed_from_u64(43).next_u64());
+
     let mut check = |client: &ClientKey<u32>, copies, buckets, expected: Error| {
         let mut rng = StdRng::seed_from_u64(43);
         let result =

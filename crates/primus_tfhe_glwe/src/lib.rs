@@ -4,6 +4,14 @@
 //! [`ClientKey::generate`] creates coefficient-domain client secrets without
 //! transform tables. Backend contexts generate paired client/server keys.
 //!
+//! # Role in the backend workflow
+//!
+//! [`TfheConfig`] names mathematical choices; [`TfheParameters`] validates them and
+//! compiles Rounded LUTs. [`ClientKey`], [`Encryptor`] and [`Decryptor`] bind client
+//! secrets and encoding. Choose the NTT/Fourier backend for transform tables,
+//! server material and evaluators. [`KeyGenerationError`] and [`TfheClientError`]
+//! separate key generation from client operations.
+//!
 //! # Public-key clients
 //!
 //! [`ClientKey::try_generate_public_key`] returns an [`LwePublicKey`] under

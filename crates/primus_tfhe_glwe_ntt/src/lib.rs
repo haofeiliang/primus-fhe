@@ -1,46 +1,53 @@
 //! NTT backend for GLWE-based TFHE.
 //!
-//! [`Evaluator::apply_interleaved_lookup_table_to`] evaluates interleaved outputs with
-//! one blind rotation and ring key switch, reusing its existing workspace.
-//! Compile through [`TfheContext::parameters`] using
-//! [`TfheParameters::compile_interleaved_lookup_table_fn`] or the input-major slice variant. The next power of two of the output count determines the
-//! rotation step; [`InterleavedLookupTable`] describes the layout and noise tradeoff.
-//! Public PBS checks LUT encoding/moduli/length and all output dimensions before
-//! writing. Raw input key, encoding and noise remain caller requirements.
+//! # Start here
 //!
-//! [`TfheContext::compile_factorized_lookup_table_fn`] prepares fixed-scale MVB
-//! for [`FactorizedEvaluator`]: one BR at step one, followed by per-output
-//! polynomial products and extraction/KS. [`NttFactorizedLookupTable`] borrows
-//! the preparing context; outputs use the supplied [`primus_encoding::ScaledCodec`].
+//! 1. Check mathematical choices with [`TfheParameters::try_from_config`].
+//! 2. Create a [`TfheContext`] and paired [`ClientKey`]/[`ServerKey`] with
+//!    [`TfheContext::try_generate_keys`]; `None` selects ordinary PBS material.
+//! 3. Bind [`Encryptor`], [`Decryptor`] and [`Evaluator`] from that context.
+//! 4. Compile through [`TfheParameters::compile_lookup_table_fn`], then reuse
+//!    [`Evaluator::apply_lookup_table_to`] with caller-owned LWE output storage.
+//!    Outputs use the parameter codec and [`Decryptor::decrypt`] by default.
+//!    Use [`TfheParameters::compile_lookup_table_with_codec_fn`] for a different output
+//!    encoding, then decode [`Decryptor::decrypt_phase`] with that codec.
 //!
-//! [`KeyGenerator::try_generate_sparse_bootstrapping_key`] builds an experimental
-//! [`SparseGlweBootstrappingKey`] with public buckets and encrypted selections.
-//! Its raw LUT blind rotation reuses [`SparseGlweBlindRotationContext`].
-//! [`KeyGenerator::try_generate_sparse_server_key`] integrates this path with
-//! [`Evaluator`] for ordinary and interleaved PBS in both orders. An optional
-//! [`CircuitBootstrapConfig`] adds material for [`CircuitBootstrapEvaluator`];
-//! classic and sparse CBS share trace projection and scheme switching.
+//! # Other operations
 //!
-//! Use [`TfheContext::boolean_encryptor`], [`TfheContext::boolean_decryptor`] and
-//! [`TfheContext::boolean_evaluator`] to bind Boolean operations to the same
-//! context (`t = 4`). Create the evaluator once, then reuse output storage with
-//! [`BooleanEvaluator::evaluate_binary_to`], [`BooleanEvaluator::not_to`] and
-//! [`BooleanEvaluator::mux_to`].
+//! - [`InterleavedLookupTable`]: several functions of one input using ordinary PBS workspace.
+//! - [`factorized`]: a prepared MVB program and [`FactorizedEvaluator`], with Scaled outputs.
+//! - [`boolean`]: Boolean clients and gates with plaintext modulus four.
+//! - [`circuit_bootstrap`]: optional trace/scheme-switch material and
+//!   [`CircuitBootstrapEvaluator`], producing accumulator-secret gadget controls for CMUX.
+//! - [`sparse`]: fixed-weight binary bucket material; select it explicitly at key generation.
+//!
+//! [`FactorizedEvaluator::bootstrapper_mut`] and [`CircuitBootstrapEvaluator::bootstrapper_mut`]
+//! borrow ordinary PBS operations; `into_bootstrapper` recovers the underlying evaluator.
+//! The specialized constructors document their allocation and recovery contracts.
+//!
+//! # Composition and representation
+//!
+//! [`key`] contains evaluation material and component generation. Common workflow types
+//! are re-exported at this root; lower-level material is documented in its own module.
+//! [`bootstrapping_key`] and [`blind_rotation`] expose raw ring-control operations.
+//! Both PBS orders and classic binary/ternary or sparse binary keys are supported.
+//! Keys and values must use this context's NTT root and ordering convention.
+//! Raw ciphertexts do not record secret identity, encoding or noise margins.
 
 #![deny(missing_docs)]
 
 use primus_modulus::BarrettModulus;
 
 mod accumulator;
-mod blind_rotation;
-mod bootstrapping_key;
-mod circuit_bootstrap;
+pub mod blind_rotation;
+pub mod bootstrapping_key;
+pub mod circuit_bootstrap;
 mod context;
 mod error;
 mod evaluator;
-mod key;
-mod parameters;
-mod sparse;
+pub mod factorized;
+pub mod key;
+pub mod sparse;
 
 pub mod boolean;
 
@@ -51,20 +58,29 @@ pub use error::{
 };
 
 pub use accumulator::AccumulatorClient;
+#[doc(no_inline)]
 pub use blind_rotation::NttGlweBlindRotationContext;
+#[doc(no_inline)]
 pub use bootstrapping_key::NttGlweBootstrappingKey;
-pub use circuit_bootstrap::{
-    CircuitBootstrapEvaluator, CircuitBootstrapKey, CircuitBootstrapParameters,
-};
+#[doc(no_inline)]
+pub use circuit_bootstrap::CircuitBootstrapKey;
+#[doc(inline)]
+pub use circuit_bootstrap::{CircuitBootstrapEvaluator, CircuitBootstrapParameters};
 pub use context::TfheContext;
-pub use evaluator::{Evaluator, FactorizedEvaluator, NttFactorizedLookupTable};
-pub use key::{BootstrappingKey, KeyGenerator, ServerKey};
-pub use parameters::{TfheParameters, boolean_parameters};
+#[doc(inline)]
+pub use evaluator::Evaluator;
+#[doc(inline)]
+pub use factorized::{FactorizedEvaluator, NttFactorizedLookupTable};
+#[doc(no_inline)]
+pub use key::BootstrappingKey;
+#[doc(inline)]
+pub use key::{KeyGenerator, ServerKey};
 pub use primus_tfhe::{
     BivariateLookupTable, CircuitBootstrapConfig, DecompositionConfig, FactorizedLookupTable,
     InterleavedLookupTable, LookupTable, LweCiphertext, LweSecretKeyRef,
 };
 pub use primus_tfhe_glwe::{ClientKey, EncryptionKey, PbsOrder};
+#[doc(no_inline)]
 pub use sparse::{SparseGlweBlindRotationContext, SparseGlweBootstrappingKey};
 
 pub use boolean::{
@@ -82,3 +98,6 @@ pub type Decryptor<'a, T> = primus_tfhe_glwe::Decryptor<'a, T, BarrettModulus<T>
 
 /// Named mathematical choices for this backend; moduli are derived from the LWE parameters.
 pub type TfheConfig<T> = primus_tfhe_glwe::TfheConfig<T, BarrettModulus<T>>;
+
+/// GLWE-TFHE parameters for the explicit-modulus NTT backend.
+pub type TfheParameters<T> = primus_tfhe_glwe::TfheParameters<T, BarrettModulus<T>>;

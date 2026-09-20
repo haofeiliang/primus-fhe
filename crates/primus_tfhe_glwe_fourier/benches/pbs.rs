@@ -70,7 +70,7 @@ fn bench_order<Table: FftTable>(c: &mut Criterion, order: PbsOrder, backend: &st
     let input = encryptor.encrypt_padded(1u32, &mut rng).unwrap();
     let lookup_table = context
         .parameters()
-        .compile_lookup_table_slice(context.parameters().input_plaintext_codec(), &[1u32, 0])
+        .compile_lookup_table_slice(&[1u32, 0])
         .unwrap();
     let mut evaluator = context.evaluator(&server_key).unwrap();
     let mut output = input.clone();
@@ -188,20 +188,13 @@ fn bench_order<Table: FftTable>(c: &mut Criterion, order: PbsOrder, backend: &st
         let value = |input: usize, output| ((input + output) % 4) as u32;
         let many = context
             .parameters()
-            .compile_interleaved_lookup_table_fn(
-                context.parameters().input_plaintext_codec(),
-                count,
-                value,
-            )
+            .compile_interleaved_lookup_table_fn(count, value)
             .unwrap();
         let singles: Vec<_> = (0..count)
             .map(|output| {
                 context
                     .parameters()
-                    .compile_lookup_table_fn(
-                        context.parameters().input_plaintext_codec(),
-                        |input| value(input, output),
-                    )
+                    .compile_lookup_table_fn(|input| value(input, output))
                     .unwrap()
             })
             .collect();

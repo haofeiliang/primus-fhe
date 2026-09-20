@@ -43,7 +43,9 @@ impl<T: FheUint, M: RingContext<T>> CircuitBootstrapParameters<T, M> {
         config: CircuitBootstrapConfig,
     ) -> Result<Self, CircuitBootstrapParameterError> {
         let accumulator = tfhe.accumulator_glwe();
-        let output_basis = config.output.try_build(accumulator.cipher_modulus())?;
+        let output_basis = config
+            .output
+            .try_build(accumulator.cipher_modulus_value())?;
         let key_parameters = |role, decomposition: crate::DecompositionConfig, noise| {
             let ring = primus_glwe::GlweParameters::new(
                 accumulator.dimension(),

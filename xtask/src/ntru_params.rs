@@ -193,9 +193,7 @@ fn run_ntt(config: &Config) -> Result<(), String> {
     let server_key_time = server_started.elapsed();
 
     let lookup_table = make_lookup_table(config, |function| {
-        context
-            .parameters()
-            .compile_lookup_table_fn(context.parameters().input_plaintext_codec(), function)
+        context.parameters().compile_lookup_table_fn(function)
     })?;
     let encryptor = context
         .encryptor(&client_key)
@@ -294,9 +292,7 @@ fn run_fourier(config: &Config) -> Result<(), String> {
         &mut context.new_fft_engine(),
     );
     let lookup_table = make_lookup_table(config, |function| {
-        context
-            .parameters()
-            .compile_lookup_table_fn(context.parameters().input_plaintext_codec(), function)
+        context.parameters().compile_lookup_table_fn(function)
     })?;
     let encryptor = context
         .encryptor(&client_key)

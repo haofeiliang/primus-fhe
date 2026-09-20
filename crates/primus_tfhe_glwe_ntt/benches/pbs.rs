@@ -1,6 +1,6 @@
 //! PBS stages and complete evaluations with precomputed keys and reusable scratch.
 //! Outputs and scratch are reused; setup is not timed.
-//! Uses `boolean_parameters()` with a fixed seed; these are regression workloads.
+//! Uses the historical n=512 fixture with a fixed seed; these are regression workloads.
 //!
 //! cargo bench -p primus_tfhe_glwe_ntt --bench pbs
 
@@ -12,21 +12,11 @@ use primus_lwe::LweCiphertext;
 use primus_ntt::{NttTable, U32NttTable};
 use primus_tfhe_glwe_ntt::{
     BooleanGate, BootstrappingKey, NttGlweBlindRotationContext, PbsOrder, TfheContext,
-    TfheParameters, boolean_parameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
 
-fn parameters_with_order(order: PbsOrder) -> TfheParameters<u32> {
-    let parameters = boolean_parameters();
-    TfheParameters::try_new(
-        parameters.small_lwe().clone(),
-        parameters.accumulator_glwe().clone(),
-        parameters.blind_rotation_ggsw().basis().clone(),
-        parameters.glwe_key_switching().output().basis().clone(),
-        order,
-    )
-    .unwrap()
-}
+mod support;
+use support::parameters_with_order;
 
 fn order_name(order: PbsOrder) -> &'static str {
     match order {
@@ -51,7 +41,7 @@ fn bench_order(c: &mut Criterion, order: PbsOrder) {
     let input = encryptor.encrypt_padded(1u32, &mut rng).unwrap();
     let lookup_table = context
         .parameters()
-        .compile_lookup_table_slice(context.parameters().input_plaintext_codec(), &[1u32, 0])
+        .compile_lookup_table_slice(&[1u32, 0])
         .unwrap();
     let mut evaluator = context.evaluator(&server_key).unwrap();
     let mut output = input.clone();
@@ -172,20 +162,13 @@ fn bench_order(c: &mut Criterion, order: PbsOrder) {
         let value = |input: usize, output| ((input + output) % 4) as u32;
         let many = context
             .parameters()
-            .compile_interleaved_lookup_table_fn(
-                context.parameters().input_plaintext_codec(),
-                count,
-                value,
-            )
+            .compile_interleaved_lookup_table_fn(count, value)
             .unwrap();
         let singles: Vec<_> = (0..count)
             .map(|output| {
                 context
                     .parameters()
-                    .compile_lookup_table_fn(
-                        context.parameters().input_plaintext_codec(),
-                        |input| value(input, output),
-                    )
+                    .compile_lookup_table_fn(|input| value(input, output))
                     .unwrap()
             })
             .collect();

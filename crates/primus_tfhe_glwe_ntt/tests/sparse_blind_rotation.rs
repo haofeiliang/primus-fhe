@@ -174,7 +174,7 @@ fn sparse_rotation_matches_direct_phase_and_classic_with_reused_scratch() {
             let function = |m: usize| (3 * m as u32 + 1) % T;
             let lut = context
                 .parameters()
-                .compile_lookup_table_fn(&codec, function)
+                .compile_lookup_table_with_codec_fn(&codec, function)
                 .unwrap();
             for message in 0..T / 2 {
                 let input = client.small_lwe_secret_key().encrypt(

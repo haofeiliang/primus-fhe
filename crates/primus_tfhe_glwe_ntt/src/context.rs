@@ -1,4 +1,5 @@
 use primus_encoding::ScaledCodec;
+use primus_glwe::GlweCiphertext;
 use primus_integer::FheUint;
 use primus_ntt::MonomialNttTable;
 use primus_reduce::RingContext;
@@ -8,7 +9,7 @@ use primus_tfhe_glwe::{ClientKey, EncryptionKey};
 use crate::{
     BooleanDecryptor, BooleanEncryptor, BooleanError, BooleanEvaluator, CircuitBootstrapConfig,
     CircuitBootstrapEvaluator, CircuitBootstrapKey, CircuitBootstrapParameters, Decryptor,
-    Encryptor, Evaluator, FactorizedEvaluator, KeyGenerationError, KeyGenerator,
+    Encryptor, Evaluator, FactorizedEvaluator, KeyGenerationError, KeyGenerator, LweCiphertext,
     NttFactorizedLookupTable, ServerKey, TfheEvaluationError, TfheParameters,
     error::{LookupTableError, TfheClientError, TfheContextError},
 };
@@ -72,6 +73,20 @@ where
     #[inline]
     pub fn table(&self) -> &Table {
         &self.table
+    }
+
+    /// Allocates zero storage for an external LWE ciphertext (mask and body).
+    /// Uses the dimension selected by the parameters; no key or encryption is involved.
+    #[must_use]
+    pub fn allocate_lwe_ciphertext(&self) -> LweCiphertext<T> {
+        LweCiphertext::zero(self.parameters.external_lwe_dimension())
+    }
+
+    /// Allocates a zeroed coefficient-domain GLWE with the accumulator layout.
+    /// Requires only public parameters; this does not encrypt a message.
+    #[must_use]
+    pub fn allocate_accumulator_ciphertext(&self) -> GlweCiphertext<Vec<T>> {
+        GlweCiphertext::zero(self.parameters.accumulator_glwe().glwe_len())
     }
 
     /// Prepares private-key encryption/decryption in the accumulator ring domain.

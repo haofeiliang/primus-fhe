@@ -152,7 +152,7 @@ u32/u64 用 `U32NttTable/U64NttTable`。仅检查第一个占用桶、第一个�
 
 ## 5. 正式 API 与接入边界
 
-- [`KeyGenerator::try_generate_sparse_server_key`](../crates/primus_tfhe_ntru_ntt/src/sparse.rs)
+- [`KeyGenerator::try_generate_sparse_server_key`](../crates/primus_tfhe_ntru_ntt/src/sparse/key.rs)
   和 context 转发入口接受已有客户端及 `copy_count/bucket_count`。构造先检查分布、
   `0<h<n<=N`、实际系数/重量、零 padding、表/模数和存储尺寸，再转换两份可逆秘密；
   这些拒绝不消耗 RNG。匹配失败只重采 map，错误保留在 family `KeyGenerationError` 中。
@@ -277,7 +277,7 @@ CBS（包括独立材料入口）和 MVB 仍明确拒绝。未添加额外高层
 奇数重量使模二条件恒成立，但不能忽略数值筛选或公开映射的条件化，也不能直接沿用
 GLWE 安全估计。固定客户端之后，匹配失败仍只重采 map，最多八次。
 
-[实现](../crates/primus_tfhe_ntru_fourier/src/sparse.rs)保存
+[实现](../crates/primus_tfhe_ntru_fourier/src/sparse/key.rs)保存
 `[bucket][entry...,dummy][level][Native coefficient]`。逐 selector/dummy 使用已有
 Fourier NGSW 加密并恢复到系数域，独立采样；临时存储仅一份 Fourier NGSW。
 在线先精确 wrapping 旋转相加，再变换完成的 aggregate，一桶一次外积；空桶、零指数、

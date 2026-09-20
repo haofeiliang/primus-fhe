@@ -2,55 +2,67 @@
 
 [English](README.md) | 简体中文
 
-基于 NTRU 的 TFHE Fourier 后端。使用原生 wrapping 模数。所有变换域密钥、值与 evaluator 必须使用同一 FFT table
-实例；仅长度相同不能证明 table 身份一致。
-API 和参数仍处于实验阶段；示例和基准是功能工作负载，不是安全参数建议。
+基于原生环面的 NTRU TFHE 后端。
+先读[任务与编码选择](../primus_tfhe/README.zh_CN.md#选择同态操作)，再读
+[NTRU 参数与密钥域](../primus_tfhe_ntru/README.zh_CN.md)。示例使用功能参数，不是经认证的安全或失败概率参数。
 
-完整能力与编码约定见[公共指南](../primus_tfhe/README.zh_CN.md)，参数和秘密域见
-[NTRU family](../primus_tfhe_ntru/README.zh_CN.md)。两路 NTRU 后端均支持 PBS、ManyLUT、分解式 MVB 和 CBS，
-Boolean 门使用共享求值器，契约见[公共指南](../primus_tfhe/README.zh_CN.md#boolean-门)。
+## 快速开始
+
+```sh
+cargo run -p primus_tfhe_ntru_fourier --release --example ntru_fourier_basic
+```
+
+[basic 示例](examples/ntru_fourier_basic.rs)展示参数 → context → 配对密钥 → 客户端 → 单个 LUT →
+复用 evaluator 和密文缓冲。它计算 `x % 4`，输入和输出均采用 `t=16` 编码，直接用 `decrypt` 解码。
+`compile_lookup_table_fn(function)` 默认使用参数 codec；需要不同输出明文模数时，使用
+`compile_lookup_table_with_codec_fn(&output_codec, function)`，见[选择输出编码](../primus_tfhe/README.zh_CN.md#选择输出编码)。
+公钥加密沿用同一客户端 API，见[家族说明](../primus_tfhe_ntru/README.zh_CN.md#客户端与-lut)。
+
+示例区分客户端加密、服务端求值与客户端解密，见[双方职责与缓冲分配](../primus_tfhe/README.zh_CN.md#客户端与服务端边界)。
+
+## 参数与表示
+
+`TfheParameters::try_from_config(TfheConfig { .. })` 检查数学配置；
+`TfheContext::<_, RustFftTable>::try_from_parameters(parameters)` 准备变换表。
+已有表用 `TfheContext::try_new(parameters, table)` 绑定。
+`TfheConfig`、`TfheParameters`、`Encryptor` 和 `Decryptor` 将家族 API 特化为 `NativeModulus`。
+
+`RustFftTable` 和 `TfheFftTable` 均支持 u32/u64。变换域密钥、数据和 evaluator
+必须使用同一个 FFT 表实例，长度相同不能证明表示一致。
+
+PBS 顺序固定：在 `f_acc` 下加密初始化和 BR，然后返回 KS，再在 `f_client` 下紧凑提取。
+Binary/ternary 客户端秘密须通过可逆性筛选，Fourier 还检查逆的数值稳定性。
 
 ## 复用 evaluator
 
-已有普通 `Evaluator` 时，用 `FactorizedEvaluator::try_from_bootstrapper` 或
-`CircuitBootstrapEvaluator::try_from_bootstrapper` 转入 MVB/CBS，仅分配新增能力的缓冲区。
-通过 `bootstrapper_mut()` 可交替执行普通单输出/交错 PBS；先导入
-`primus_tfhe::{ProgrammableBootstrap, ProgrammableBootstrapInterleaved}`。
-这个借用只开放 PBS 操作，不能替换内部 evaluator。`into_bootstrapper()` 回收普通工作区，
-释放额外缓冲区；从普通 evaluator 转入再回收不分配。
+普通/交错调用共用 `Evaluator`，`_to` 写入已有输出。
+PBS/MVB/CBS 交替使用方式集中在[共享所有权说明](../primus_tfhe/README.zh_CN.md#复用-evaluator)。
 
-NTRU CBS 与普通 PBS 共用初始化、BR 和返回 KS 工作区；MVB/CBS 仍拒绝 sparse server key。
+使用 `FactorizedEvaluator::try_from_bootstrapper` 或
+`CircuitBootstrapEvaluator::try_from_bootstrapper`，两者均拒绝 sparse 密钥。
+普通 PBS 借用始终可用，`into_bootstrapper()` 无分配。
 
-## 普通 PBS 与 ManyLUT
+## 固定尺度分解式 MVB
 
-先用 `TfheParameters::try_from_config(TfheConfig { .. })` 声明数学参数，再调用
-`TfheContext::<_, RustFftTable>::try_from_parameters(parameters)` 自动创建匹配的变换表。
-表类型仍由调用方选择，建表失败通过 `TfheContextError::TransformTable` 保留底层 FFT 错误；
-已有表可用 `try_new(parameters, table)` 显式注入。
+`context.compile_factorized_lookup_table_fn(&scaled_codec, input_domain_len, output_count, function)`
+返回绑定该 context 实例的 `FourierFactorizedLookupTable`。
+构造并复用 `FactorizedEvaluator`，或消费已有普通 evaluator。
+输出用保留的 unsigned Scaled codec 解码，不能直接当作 Boolean 门输入。
 
-`TfheContext` 绑定参数和变换 table。通过 `context.try_generate_keys(circuit_bootstrap, rng)` 生成配套密钥，
-建立 encryptor、evaluator、decryptor，再通过 `context.parameters()` 编译普通/交错 LUT。[message/carry 示例](examples/ntru_fourier_basic.rs)
-展示多个输出共享一次 BR 和一次环密钥切换。普通 PBS 返回 client secret 下的 LWE；
-BR 后的 NTRU 密钥切换将 f_acc 转为 f_client。
+实际尺度 `round(2^BITS/t_out)` 必须为偶数，`t_out=10` 对 u32/u64 均可用。
+奇数尺度返回 `LookupTableError::OddFactorizationScale`。因子按有符号整数变换，不作环面缩放；
+须预算因子放大和 FFT 误差。
 
-```sh
-cargo run -p primus_tfhe_ntru_fourier --example ntru_fourier_basic
-```
+经典 binary/ternary 共用加密初始化和 BR，随后对每个因子乘积 KS。
+因子同时放大初始化与 BR 噪声，返回 KS 噪声在乘积后加入。
 
-示例从一个输入计算 message、carry 和 parity（`x % 4`、`x / 4`、`x % 2`），
-三个输出占用四个交错槽，不代表完整的加密整数系统。
-
-LUT 编译的第一个参数为输出 `RoundedCodec`。示例采用 `t_in=16 → t_out=4`，
-通过 `decrypt_phase` 与该 codec 解码；输入几何仍遵循参数编码。
-
-输入域、输出 codec、奇数全域 PBS 和 ManyLUT 噪声余量见
-[共享编码指南](../primus_tfhe/README.zh_CN.md#选择输出编码)与
-[NTRU 客户端/LUT 契约](../primus_tfhe_ntru/README.zh_CN.md#客户端与-lut)。
+运行[17 阈值示例](examples/ntru_fourier_mvb_thresholds.rs)，命令使用 `--example ntru_fourier_mvb_thresholds`。
+它展示交错容量之外的多输出；算法选择及编码限制见[共享 MVB 契约](../primus_tfhe/README.zh_CN.md#固定尺度分解式-mvb)。
 
 ## 实验性稀疏 PBS
 
-`external_lwe` 使用 `SecretKeyDistr::fixed_hamming_weight_binary(n, h)`，要求
-**奇数** `h` 且 `0<h<n`。先固定一份通过筛选的客户端，再选择桶聚合：
+为 external-LWE 选择固定重量 binary 分布，并显式调用稀疏生成器；
+仅选择低重量分布仍使用经典 BR。要求 `0<h<n`、`copy_count>=1`、`bucket_count>=max(copy_count,h)`。
 
 ```rust,ignore
 let mut generator = KeyGenerator::new(&context);
@@ -59,128 +71,38 @@ let server = generator.try_generate_sparse_server_key(&client, 3, 2 * h, &mut rn
 let mut evaluator = context.evaluator(&server)?;
 ```
 
-`TfheContext` 也提供固定客户端入口。普通/交错 LUT 复用原有 `ServerKey`、evaluator
-和输出缓冲；`server.sparse_bootstrapping_key()` 可访问系数控制和公开映射。
-CBS 和分解式 MVB 对稀疏 key 返回 `UnsupportedSparseBootstrapping`，
-包括通过独立 CBS 材料绑定的入口。
+普通/交错 PBS 复用原 evaluator。CBS/MVB 拒绝 sparse 密钥，包括另传 CBS 材料的构造方式。
+`server.sparse_bootstrapping_key()` 提供选择密文。
 
-偶数重量在 Native 环内不可逆，采样前返回
-`KeyGenerationError::Ntru(NonInvertibleSecretKey)`；奇数重量仍需通过 Fourier
-逆元稳定性筛选。映射最多重试八次，保持客户端不变；映射与稀疏参数错误使用
-`KeyGenerationError::SparseBootstrapping`。筛选影响秘密/映射分布，
-不构成安全性或失败概率认证。
+Native 要求 **h 为奇数**，且 Fourier 逆稳定；系数恢复和聚合 FFT 另引入数值误差。
 
-支持 u32/u64 和 RustFFT/TfheFFT。Fourier 材料必须使用同一个 FFT table 实例。
-selector 从 Fourier 恢复到 Native 系数后保存，系数聚合精确；恢复、各桶 FFT、
-初始化、外积和返回 KS 都需计入数值/噪声预算。
+固定客户端后最多重试八张公开映射，不重新采样客户端秘密。
+每个桶的加密零与 dummy 都贡献噪声；匹配成功不代表安全或完整失败概率得到认证。
+见[稀疏构造与成本](../../docs/tfhe-ntru-sparse.md)和[message/carry 示例](examples/ntru_fourier_sparse.rs)。
 
-运行同时使用两种 FFT 的[稀疏 message/carry 示例](examples/ntru_fourier_sparse.rs)：
+## 可选电路自举
 
-```sh
-cargo run -p primus_tfhe_ntru_fourier --release --example ntru_fourier_sparse
-```
+`context.try_generate_keys(Some(cbs_config), &mut rng)` 生成配对材料，
+`ServerKey` 持有附加参数及 trace/scheme-switch 密钥。
+调用 `context.circuit_bootstrap_evaluator(&server)` 或消费普通 evaluator。
+经典密钥若使用 `None` 生成，CBS 绑定返回 `MissingCircuitBootstrapKey`。
+使用 `allocate_output`、`circuit_bootstrap_to` 和 `cmux_to`；
+[CBS → CMUX 示例](examples/ntru_fourier_circuit_bootstrap.rs)展示完整消费链。
 
-## 固定尺度分解式 MVB
+输出为 `f_acc` 下的 `FourierNgswCiphertext`。Circuit key 绑定完整输出 basis；
+`try_from_parts(context, server, circuit_key)` 从该密钥取得参数。
+须对最小输出 gadget 尺度预算 Native trace halving 和 FFT 误差。
 
-通过 `context.compile_factorized_lookup_table_fn(&codec, input_domain_len,
-output_count, function)` 编译，输出显式提供 unsigned `ScaledCodec`，输入选择非空前半域前缀。
-实际 Native 尺度必须为偶数，奇尺度返回 `LookupTableError::OddFactorizationScale`。
-支持 u32/u64 和 RustFFT/TfheFFT；明文模数不必为二次幂，`t_out=10` 在两种字宽下均可用。
+独立生成组件时须配对秘密并使用同一变换表示，形状检查不能证明身份。
+输入/输出与消费要求见[共享 CBS 契约](../primus_tfhe/README.zh_CN.md#cbs-输出与消费)及
+[家族 CBS 说明](../primus_tfhe_ntru/README.zh_CN.md#cbs-与示例)。
 
-```rust,ignore
-use primus_encoding::ScaledCodec;
+## 底层组合
 
-let codec = ScaledCodec::new(10u32, NativeModulus::new());
-let lut = context.compile_factorized_lookup_table_fn(
-    &codec, 8, 3, |m, i| u32::from(m > i),
-)?; // 假定 t_in >= 15，且有足够的噪声余量。
-let mut evaluator = context.factorized_evaluator(&server_key)?;
-let mut outputs = vec![LweCiphertext::zero(context.parameters().external_lwe_dimension()); 3];
-evaluator.apply_lookup_table_to(&input, &lut, &mut outputs);
-let value = codec.decode_value(decryptor.decrypt_phase(&outputs[0])?);
-```
-
-`FourierFactorizedLookupTable` 一次准备整数 Fourier 因子并借用一个 context；即使参数相同，
-另一个实例也会被拒绝。显式准备入口为 `FourierFactorizedLookupTable::new(context, coefficient_lut)`。
-程序存储 N 个 torus 系数和 `output_count*N/2` 个复数，不保留因子的系数副本。
-
-全部输出共享 `NLev[1]` 加密初始化和一次 binary 或 ternary BR，再对每个因子乘积从 `f_acc`
-切换到 `f_client`，提取为通常的外部 LWE 维数。无需附加密钥。Evaluator 额外持有
-两个 Fourier 多项式（N 个复数），空间不随输出数增长；`_to` 在写入前检查全部维数，在线零分配。
-
-因子会放大**初始化和 BR 噪声**；FFT 乘法引入 `f_acc * delta_c` 相位误差，之后还有
-每个输出的 KS 误差。构造成功不代表噪声预算成立；须用提供的 Scaled codec 解码，
-接入下一次 Rounded 输入 PBS 时计入中心差异。详见[共享编码契约](../primus_tfhe/README.zh_CN.md#固定尺度分解式-mvb)
-及 [NTRU 精度验收](../../docs/tfhe-mvb-fourier.md#b53ntru-接入与独立误差验收)。
-[基本示例](examples/ntru_fourier_basic.rs) 复用公钥输入，分别用显式输出 codec 执行 ManyLUT 与 MVB。
-
-[17 阈值示例](examples/ntru_fourier_mvb_thresholds.rs) 将 `0..64` 的分数转为交错容量之外的
-数值标志。其 Scaled `t_out=2` 输出不能直接当作 Boolean 门密文或另一明文模数的输入。
-重复 PBS、交错与 MVB 的选择，包括密钥/工作区和噪声取舍，见[成本测量](../../docs/tfhe-mvb-fourier-costs.md)。
-
-```sh
-cargo run -p primus_tfhe_ntru_fourier --example ntru_fourier_mvb_thresholds
-```
-
-## 公钥客户端
-
-`client_key.try_generate_public_key(context.parameters(), &mut rng)` 生成外部
-binary/ternary 前缀秘密下的 `LwePublicKey`；将其传入 `context.encryptor(&public_key)`
-即可使用 `encrypt`、`encrypt_padded`、`encrypt_centered`。
-三种加密均提供 `_to(message, output, rng)`，公钥和私钥客户端都可无分配地复用
-密文存储。消息或维数错误不会改变输出及 RNG。
-
-公钥噪声、存储和密钥身份要求集中于
-[NTRU 客户端契约](../primus_tfhe_ntru/README.zh_CN.md#客户端与-lut)。
-
-## Boolean 门
-
-将 `external_lwe` 明文模数设为 4，通过 `context.try_generate_keys(None, rng)` 生成普通 PBS
-密钥，再从 context 绑定 `boolean_encryptor`（私钥/公钥）、`boolean_decryptor` 和
-`boolean_evaluator`。`evaluate_binary_to`、`not_to`、`mux_to` 复用原始 LWE 输出，无需附加求值密钥。
-示例和编码契约见[公共指南](../primus_tfhe/README.zh_CN.md#boolean-门)。
-
-## 可选 circuit bootstrapping
-
-通过 `CircuitBootstrapConfig` 独立选择 output/trace/scheme-switch 分解和 trace/SS 噪声；
-长度、模数与 accumulator 秘密分布自动派生。`CircuitBootstrapParameters::try_new` 仍可绑定已有 basis/NLev 参数。
-
-通过 `context.try_generate_keys(Some(config), &mut rng)`
-生成配套 client/server key。`ServerKey` 持有 CBS 参数及 trace/scheme-switch key，
-与普通 PBS 材料从同一组私钥和变换表生成。仅需 PBS 时使用 `None`，
-不分配 CBS 密钥材料或工作区。`context.evaluator(&server)` 与
-`context.circuit_bootstrap_evaluator(&server)` 共用这份 server key；未启用 CBS 时后者返回
-`MissingCircuitBootstrapKey`（经典 key），稀疏 key 则明确拒绝。各 evaluator 只分配自身需要的工作区。生成错误为
-`KeyGenerationError`，NTRU 采样/变换失败通过 `Ntru` 分支返回，`ClientKey` 仅表示兼容性错误。
-
-高级组合仍可使用接收已准备参数所有权的 `try_generate_circuit_bootstrap_key`，以及
-`CircuitBootstrapEvaluator::try_from_parts(context, server, circuit_key)`，参数直接取自 circuit key，
-包括生成时绑定的完整输出 basis。调用方负责配套私钥与生成时的
-变换表示；布局检查不能证明身份。绑定的参数可通过
-`server.circuit_bootstrap_key().unwrap().parameters()` 访问。
-
-Fourier CBS 输出 `FourierNgswCiphertext`，需预算原生系数除二和 FFT 误差，并始终使用
-同一 FFT table 实例。
-Gadget 尺度、accumulator 密钥身份及独立噪声/安全预算见
-[共享 CBS 契约](../primus_tfhe_ntru/README.zh_CN.md#cbs-与示例)。
-
-运行 [CBS → CMUX 示例](examples/ntru_fourier_circuit_bootstrap.rs)：
-
-```sh
-cargo run -p primus_tfhe_ntru_fourier --example ntru_fourier_circuit_bootstrap
-```
-
-示例创建配套的普通/CBS key，在 `f_acc` 下加密两个 NTRU 候选密文，再将外部 LWE bit
-重复转换为 gadget 尺度的 NGSW 控制。CMUX 在输入 0 时选第一个候选，输入 1 时选第二个。
-输入、control、选择结果和服务端 scratch 均复用，最后通过解密检查结果。
-
-使用 `evaluator.allocate_output()` 分配原有 CBS 控制密文，随后调用
-`evaluator.cmux_to(control, lhs, rhs, output)` 或 `external_product_to(control, input, output)`。
-`context.accumulator_client(&client)` 绑定环加解密与转换工作区，构造失败返回 `TfheClientError`。
-详见[公共消费契约](../primus_tfhe/README.zh_CN.md#cbs-输出与消费)及[完整示例](examples/ntru_fourier_circuit_bootstrap.rs)。
-
-错误归属与转换规则见[公共 TFHE 错误边界](../primus_tfhe/README.zh_CN.md#错误边界)。
+Rustdoc 按职责组织 `key`（服务端材料）、`circuit_bootstrap`（CBS）、
+`factorized`（MVB 程序和执行）与 `sparse`（桶材料）；常用工作流类型仍从 crate 根导入。
 
 ## 进一步阅读
 
-[实现设计与开发验证](../../docs/tfhe.md) · [基准与测量](../../docs/benchmarks/tfhe.md)
+[Boolean 门](../primus_tfhe/README.zh_CN.md#boolean-门) · [错误边界](../primus_tfhe/README.zh_CN.md#错误边界) ·
+[实现与开发验证](../../docs/tfhe.md) · [基准测量](../../docs/benchmarks/tfhe.md)

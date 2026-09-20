@@ -207,9 +207,9 @@ BK 逐输出 KS，KB 先切换输入再做共享 BR。空间不随输出数增�
 - 独立边界：单输出、跨 context、输入/输出长度、每项编译元数据、不同输出模数、
   奇尺度边界。最后一项输出维数错误也须在任何输出写入前失败，随后仍可复用工作区。
 
-B5.2 当时两测试默认合计约 0.65 秒，未新增统计测试或持久 benchmark。原有
-[基本示例](../crates/primus_tfhe_glwe_fourier/examples/fourier_basic.rs)补充偶尺度 MVB，
-复用两种 order 的 ternary 密钥、公钥输入及输出缓冲；不复制参数构造。
+B5.2 当时两测试默认合计约 0.65 秒，未新增统计测试或持久 benchmark。
+当前 MVB 用法集中在[阈值示例](../crates/primus_tfhe_glwe_fourier/examples/fourier_mvb_thresholds.rs)
+和后端 README；basic 示例只展示普通 PBS。
 
 验证：`just tfhe` / `just tfhe-simd`，共享编译与后端聚焦测试，严格 rustdoc，
 默认/SIMD release 基本示例。参数只用于功能验证，仍须自行预算因子放大与

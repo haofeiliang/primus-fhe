@@ -63,7 +63,7 @@ fn bench_backend<Table: FftTable>(c: &mut Criterion, backend: &str) {
         let choices = messages
             .each_ref()
             .map(|message| accumulator.encrypt(message, &mut rng));
-        let mut selected = accumulator.allocate_ciphertext();
+        let mut selected = context.allocate_accumulator_ciphertext();
         let mut decoded = vec![0; profile::N];
         let glwe = context.parameters().accumulator_glwe();
         let mut fft = context.new_fft_engine();

@@ -7,9 +7,9 @@ use primus_modulus::NativeModulus;
 use primus_test_allocations as allocations;
 use primus_tfhe::ProgrammableBootstrap as _;
 use primus_tfhe_glwe_fourier::{
-    CircuitBootstrapConfig, CircuitBootstrapEvaluator, CircuitBootstrapParameterError,
-    CircuitBootstrapParameters, ClientKey, DecompositionConfig, KeyGenerationError, KeyGenerator,
-    PbsOrder, TfheContext, TfheEvaluationError, TfheParameters,
+    CircuitBootstrapConfig, CircuitBootstrapEvaluator, CircuitBootstrapParameters, ClientKey,
+    DecompositionConfig, KeyGenerationError, KeyGenerator, PbsOrder, TfheContext,
+    TfheEvaluationError, TfheParameters,
 };
 use rand::{RngExt, SeedableRng, rngs::StdRng};
 
@@ -159,7 +159,7 @@ fn circuit_bootstrap<Table: FftTable>(order: PbsOrder, distribution: SecretKeyDi
     });
     let mut accumulator_client = context.accumulator_client(&client).unwrap();
     let choices = messages.each_ref().map(|message| {
-        let mut output = accumulator_client.allocate_ciphertext();
+        let mut output = context.allocate_accumulator_ciphertext();
         let (_, allocation) =
             allocations::measure(|| accumulator_client.encrypt_to(message, &mut output, &mut rng));
         assert_eq!(
@@ -173,9 +173,7 @@ fn circuit_bootstrap<Table: FftTable>(order: PbsOrder, distribution: SecretKeyDi
     // The same CBS-enabled server key also supports ordinary PBS.
     let identity = context
         .parameters()
-        .compile_lookup_table_fn(context.parameters().input_plaintext_codec(), |message| {
-            message as u64
-        })
+        .compile_lookup_table_fn(|message| message as u64)
         .unwrap();
     let input = encryptor.encrypt_padded(1u64, &mut rng).unwrap();
     let mut output = context
@@ -193,8 +191,8 @@ fn circuit_bootstrap<Table: FftTable>(order: PbsOrder, distribution: SecretKeyDi
 
     let mut control = evaluator.allocate_output();
     let mut coefficients = Ggsw::new(vec![0u64; parameters.output_size().ggsw_len()]);
-    let mut selected = accumulator_client.allocate_ciphertext();
-    let mut product = accumulator_client.allocate_ciphertext();
+    let mut selected = context.allocate_accumulator_ciphertext();
+    let mut product = context.allocate_accumulator_ciphertext();
     let mut decoded = vec![0; POLY_LENGTH];
     let mut decoded_product = vec![0; POLY_LENGTH];
     // Raw ciphertext containers carry no layout; the bound entry must reject
@@ -393,94 +391,6 @@ fn evaluator_rejects_resource_mismatches_and_checks_shapes_before_writes() {
             .is_err()
         );
         assert!(output.as_ref().iter().all(|&value| value == marker));
-    }
-}
-
-#[test]
-fn circuit_parameters_check_native_basis_layout_and_padded_capacity() {
-    use CircuitBootstrapParameterError as Error;
-    let tfhe = parameters(DIMENSION, POLY_LENGTH, POLY_LENGTH as u64);
-    let config = CircuitBootstrapConfig {
-        output: DecompositionConfig {
-            log_basis: 8,
-            level_count: Some(2),
-        },
-        trace: DecompositionConfig {
-            log_basis: 9,
-            level_count: Some(3),
-        },
-        trace_noise_standard_deviation: 1.25,
-        scheme_switch: DecompositionConfig {
-            log_basis: 10,
-            level_count: Some(4),
-        },
-        scheme_switch_noise_standard_deviation: 2.5,
-    };
-    let configured = CircuitBootstrapParameters::try_from_config(&tfhe, config).unwrap();
-    assert_eq!(
-        configured.output_size().glwe_size(),
-        tfhe.accumulator_glwe().size()
-    );
-    assert_eq!(configured.trace().basis().log_basis(), 9);
-    assert_eq!(configured.trace().basis().decompose_length(), 3);
-    assert_eq!(configured.trace().noise_standard_deviation(), 1.25);
-    assert_eq!(configured.scheme_switch().basis().log_basis(), 10);
-    assert_eq!(configured.scheme_switch().basis().decompose_length(), 4);
-    assert_eq!(configured.scheme_switch().noise_standard_deviation(), 2.5);
-    for role in ["output", "trace", "scheme-switch"] {
-        let mut invalid = config;
-        match role {
-            "output" => invalid.output.level_count = Some(0),
-            "trace" => invalid.trace.level_count = Some(0),
-            _ => invalid.scheme_switch.level_count = Some(0),
-        }
-        let error = CircuitBootstrapParameters::try_from_config(&tfhe, invalid)
-            .err()
-            .unwrap();
-        match role {
-            "output" => assert!(matches!(error, Error::InvalidOutputBasis(_))),
-            _ => assert!(
-                matches!(error, Error::GadgetParameters { role: actual, .. } if actual == role)
-            ),
-        }
-    }
-    let trace = tfhe.blind_rotation_ggsw();
-    let make =
-        |basis| CircuitBootstrapParameters::try_new(&tfhe, basis, trace.clone(), trace.clone());
-    assert!(make(ApproxSignedBasis::new(None, 8, Some(2))).is_ok());
-    assert_eq!(
-        make(ApproxSignedBasis::new(None, 8, Some(3))).err(),
-        Some(Error::OutputDecompositionTooLarge)
-    );
-    assert_eq!(
-        make(ApproxSignedBasis::new(Some(1 << 63), 8, Some(2))).err(),
-        Some(Error::OutputBasisModulusMismatch)
-    );
-    for (dimension, poly_length) in [(DIMENSION + 1, POLY_LENGTH), (DIMENSION, POLY_LENGTH * 2)] {
-        let foreign = parameters(dimension, poly_length, 4);
-        for (role, trace, scheme_switch) in [
-            (
-                "trace",
-                foreign.blind_rotation_ggsw().clone(),
-                trace.clone(),
-            ),
-            (
-                "scheme-switch",
-                trace.clone(),
-                foreign.blind_rotation_ggsw().clone(),
-            ),
-        ] {
-            assert_eq!(
-                CircuitBootstrapParameters::try_new(
-                    &tfhe,
-                    ApproxSignedBasis::new(None, 8, Some(2)),
-                    trace,
-                    scheme_switch
-                )
-                .err(),
-                Some(Error::GlweLayoutMismatch { role })
-            );
-        }
     }
 }
 

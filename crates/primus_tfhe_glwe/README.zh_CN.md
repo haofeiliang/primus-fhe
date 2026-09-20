@@ -33,7 +33,7 @@ Ternary LWE 密钥按 `0/1/q-1` 保存；构造补零 GLWE 密钥时将 `q-1` �
 | `BootstrapKeyswitch` | BR → 环密钥切换 → compact extraction | Small LWE / `n` |
 | `KeyswitchBootstrap` | Inverse extraction → 环密钥切换 → compact extraction → BR → full extraction | GLWE 系数向量 / `kN` |
 
-两种 order 均返回各自的外部秘密域。用 `external_lwe_dimension()` 分配输出，
+两种 order 均返回各自的外部秘密域。后端 `context.allocate_lwe_ciphertext()` 根据 `external_lwe_dimension()` 分配输出，
 用 `client_key.external_lwe_secret_key()` 借用对应秘密。
 `accumulator_glwe()` 描述累加器域，`blind_rotation_ggsw()` 描述其中的 GGSW 控制项，
 `glwe_key_switching()` 描述环密钥切换。
@@ -58,9 +58,10 @@ Basis/布局兼容不能证明实际秘密一致。
 前半区 LUT 输入使用 `encrypt_padded`。普通 LUT 通过
 `context.parameters().compile_lookup_table_fn(...)` 及对应的 slice、交错或奇数全域方法编译。
 
-LUT 编译的第一个参数为显式输出 `RoundedCodec`。沿用输入尺度时传入
-`parameters.input_plaintext_codec()`；也可用另一明文模数与相同密文模数构造 codec，
-再用 `output_codec.decode_value(decryptor.decrypt_phase(&output)?)` 解码输出。
+LUT 编译默认使用 `parameters.input_plaintext_codec()` 编码输出，直接用 `decrypt` 解码。
+`*_with_codec_fn` / `*_with_codec_slice` 变体以显式输出 `RoundedCodec` 为第一个参数，
+支持另一明文模数与相同密文模数，再用
+`output_codec.decode_value(decryptor.decrypt_phase(&output)?)` 解码输出。
 范围检查、raw 输出与后续 PBS 契约见[选择输出编码](../primus_tfhe/README.zh_CN.md#选择输出编码)。
 
 奇数全域使用 `compile_odd_full_domain_lookup_table_fn` / `_slice`，输入改用普通
@@ -89,8 +90,10 @@ secret 下，使用 gadget 尺度。`CircuitBootstrapParameters<T, M>` 由公共
 
 ## 示例
 
-后端 basic 示例展示两种 order、公钥输入、LUT 和复用输出的 Boolean 运算。
-所有示例 fixture，包括 NTT 的 `boolean_parameters()`，均用于开发，不是生产参数建议。
+后端 basic 示例展示两种 order、默认编码和普通 PBS 缓冲复用。
+独立输出编码见共享指南。
+MVB/CBS 使用专门示例，Boolean 用法见[共享指南](../primus_tfhe/README.zh_CN.md#boolean-门)。
+所有示例 fixture 均用于开发，不是生产参数建议。
 
 ## 进一步阅读
 

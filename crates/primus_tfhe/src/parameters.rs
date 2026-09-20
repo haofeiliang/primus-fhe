@@ -1,29 +1,6 @@
-//! Mathematical choices whose modulus and layout are supplied by a backend.
+//! Independent mathematical choices for circuit bootstrapping.
 
-use primus_decompose::{ApproxSignedBasisError, primitive::ApproxSignedBasis};
-use primus_integer::FheUint;
-use primus_reduce::RingContext;
-
-/// Signed gadget decomposition before binding it to a ciphertext modulus.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct DecompositionConfig {
-    /// Base-2 logarithm of the radix; must lie in `2..T::BITS`.
-    pub log_basis: u32,
-    /// Retained high levels, or `None` for the full decomposition.
-    /// A specified count must be nonzero and no larger than the full count.
-    pub level_count: Option<usize>,
-}
-
-impl DecompositionConfig {
-    /// Prepares the basis in `modulus`, checking [`ApproxSignedBasis::try_new`]'s
-    /// radix and retained-level constraints.
-    pub fn try_build<T: FheUint>(
-        self,
-        modulus: impl RingContext<T>,
-    ) -> Result<ApproxSignedBasis<T>, ApproxSignedBasisError> {
-        ApproxSignedBasis::try_new(modulus.explicit_value(), self.log_basis, self.level_count)
-    }
-}
+use primus_decompose::DecompositionConfig;
 
 /// Independent choices for circuit-bootstrap output, trace and scheme switching.
 ///

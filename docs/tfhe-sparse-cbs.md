@@ -229,5 +229,5 @@ CMUX、检查和资源构造不计时。大参数统计不进入普通 CI 测试
 调用方输出 98,304 B，与 B6.1 的 BR L=5 原型一致。计数包含 LUT 与所选工作区，
 排除 context、密钥、栈和 allocator 元数据；它不是 RSS。构造器没有增加在线分配。
 
-`just tfhe`、`just tfhe-simd`、改动三包的严格 rustdoc、经典/`--sparse` 两种 release 示例
-以及上述两套基准均通过。修改后的 Markdown 本地链接检查通过。B6.2 当时未改变 Fourier 的公开拒绝边界；后续接入见 [B6.3](tfhe-cbs.md#7-b63-fourier-sparse-cbs)。
+B6.2 当时的 `just tfhe`、`just tfhe-simd`、改动三包的严格 rustdoc、经典/`--sparse` 两种 release 示例
+以及上述两套基准均通过。当前 CBS 示例专注经典用法，稀疏生成见[后端说明](../crates/primus_tfhe_glwe_ntt/README.zh_CN.md#电路自举)。修改后的 Markdown 本地链接检查通过。B6.2 当时未改变 Fourier 的公开拒绝边界；后续接入见 [B6.3](tfhe-cbs.md#7-b63-fourier-sparse-cbs)。

@@ -228,3 +228,124 @@ fn ternary_parameters_and_padded_keys_preserve_signed_coefficients() {
     check_ternary_padding(primus_modulus::BarrettModulus::new(257));
     check_ternary_padding(primus_modulus::PowOf2Modulus::new(256));
 }
+
+fn check_circuit_parameters<M: primus_reduce::RingContext<u64>>(modulus: M, foreign_modulus: M) {
+    use primus_glwe::GgswParameters;
+    use primus_tfhe_glwe::{
+        CircuitBootstrapConfig, CircuitBootstrapParameterError as Error, CircuitBootstrapParameters,
+    };
+
+    let glwe = GlweParameters::new(1, 32, 32, modulus, SecretKeyDistr::UniformBinary, 0.7);
+    let basis = ApproxSignedBasis::new(modulus.explicit_value(), 8, None);
+    let tfhe = TfheParameters::try_new(
+        LweParameters::new(4, 32, modulus, SecretKeyDistr::UniformBinary, 0.7),
+        glwe.clone(),
+        basis.clone(),
+        basis,
+        PbsOrder::BootstrapKeyswitch,
+    )
+    .unwrap();
+    let config = CircuitBootstrapConfig {
+        output: DecompositionConfig {
+            log_basis: 8,
+            level_count: Some(2),
+        },
+        trace: DecompositionConfig {
+            log_basis: 9,
+            level_count: Some(3),
+        },
+        trace_noise_standard_deviation: 1.25,
+        scheme_switch: DecompositionConfig {
+            log_basis: 10,
+            level_count: Some(4),
+        },
+        scheme_switch_noise_standard_deviation: 2.5,
+    };
+    let configured = CircuitBootstrapParameters::try_from_config(&tfhe, config).unwrap();
+    assert_eq!(configured.output_size().glwe_size(), glwe.size());
+    assert_eq!(configured.trace().basis().log_basis(), 9);
+    assert_eq!(configured.trace().basis().decompose_length(), 3);
+    assert_eq!(configured.trace().noise_standard_deviation(), 1.25);
+    assert_eq!(configured.scheme_switch().basis().log_basis(), 10);
+    assert_eq!(configured.scheme_switch().basis().decompose_length(), 4);
+    assert_eq!(configured.scheme_switch().noise_standard_deviation(), 2.5);
+    for role in ["output", "trace", "scheme-switch"] {
+        let mut invalid = config;
+        match role {
+            "output" => invalid.output.level_count = Some(0),
+            "trace" => invalid.trace.level_count = Some(0),
+            _ => invalid.scheme_switch.level_count = Some(0),
+        }
+        let error = CircuitBootstrapParameters::try_from_config(&tfhe, invalid)
+            .err()
+            .unwrap();
+        match role {
+            "output" => assert!(matches!(error, Error::InvalidOutputBasis(_))),
+            _ => assert!(
+                matches!(error, Error::GadgetParameters { role: actual, .. } if actual == role)
+            ),
+        }
+    }
+    let trace = tfhe.blind_rotation_ggsw();
+    let output = |levels| ApproxSignedBasis::new(modulus.explicit_value(), 8, Some(levels));
+    assert!(
+        CircuitBootstrapParameters::try_new(&tfhe, output(2), trace.clone(), trace.clone()).is_ok()
+    );
+    assert_eq!(
+        CircuitBootstrapParameters::try_new(&tfhe, output(3), trace.clone(), trace.clone()).err(),
+        Some(Error::OutputDecompositionTooLarge),
+    );
+    // Distinguish a different explicit modulus from Native/explicit representation mismatch.
+    for other in [
+        Some(132_120_577),
+        if modulus.explicit_value().is_some() {
+            None
+        } else {
+            Some(1 << 63)
+        },
+    ] {
+        assert_eq!(
+            CircuitBootstrapParameters::try_new(
+                &tfhe,
+                ApproxSignedBasis::new(other, 8, Some(2)),
+                trace.clone(),
+                trace.clone()
+            )
+            .err(),
+            Some(Error::OutputBasisModulusMismatch),
+        );
+    }
+    for (dimension, n, q) in [(2, 32, modulus), (1, 64, modulus), (1, 32, foreign_modulus)] {
+        if dimension == 1 && n == 32 && q == modulus {
+            continue;
+        }
+        let foreign = GgswParameters::with_glwe_params(
+            &GlweParameters::new(dimension, n, 32, q, SecretKeyDistr::UniformBinary, 0.7),
+            8,
+            Some(2),
+        );
+        for (role, trace, scheme_switch) in [
+            ("trace", foreign.clone(), trace.clone()),
+            ("scheme-switch", trace.clone(), foreign.clone()),
+        ] {
+            let expected = if dimension != 1 || n != 32 {
+                Error::GlweLayoutMismatch { role }
+            } else {
+                Error::CipherModulusMismatch { role }
+            };
+            assert_eq!(
+                CircuitBootstrapParameters::try_new(&tfhe, output(2), trace, scheme_switch).err(),
+                Some(expected)
+            );
+        }
+    }
+}
+
+#[test]
+fn circuit_parameters_bind_bases_layout_noise_and_capacity() {
+    check_circuit_parameters(NativeModulus::new(), NativeModulus::new());
+    check_circuit_parameters(
+        primus_modulus::BarrettModulus::new(1_125_899_906_826_241),
+        primus_modulus::BarrettModulus::new(562_949_953_392_641),
+    );
+}

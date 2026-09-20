@@ -1,3 +1,5 @@
+//! Server evaluation material and paired or component key generation.
+
 use num_traits::{ConstOne, ConstZero};
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{Complex64, FftEngine, FftTable, TorusFftValue};

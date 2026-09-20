@@ -10,8 +10,10 @@
 
 #![deny(missing_docs)]
 
+mod config;
 mod error;
 
+pub use config::DecompositionConfig;
 pub use error::ApproxSignedBasisError;
 
 /// Smallest supported base-2 logarithm of a decomposition basis.

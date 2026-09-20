@@ -1,28 +1,39 @@
 //! Native-torus Fourier backend for NTRU-based TFHE.
 //!
-//! [`Evaluator::apply_interleaved_lookup_table_to`] evaluates interleaved outputs with
-//! one blind rotation and ring key switch, reusing its existing workspace.
-//! Compile through [`TfheParameters::compile_interleaved_lookup_table_fn`] or its
-//! input-major slice variant. The next power of two of the output count determines the
-//! rotation step; [`InterleavedLookupTable`] describes the layout and noise tradeoff.
-//! Public PBS checks LUT encoding/moduli/length and all output dimensions before
-//! writing. Raw input key, encoding and noise remain caller requirements.
+//! # Start here
 //!
-//! [`KeyGenerator::try_generate_sparse_server_key`] prepares coefficient NGSW
-//! buckets for a fixed odd-weight binary client. Ordinary and interleaved PBS
-//! reuse [`Evaluator`]; sparse CBS and factorized MVB are rejected. Coefficient
-//! recovery, aggregate FFTs and external products require a numerical error budget.
-
-//! [`CircuitBootstrapEvaluator`] optionally keeps the BR accumulator under f_acc,
-//! projects gadget-scaled outputs and converts NLev to NGSW. Select its additional
-//! keys and independent noise parameters with [`CircuitBootstrapConfig`] during key
-//! generation, then bind the evaluator from the resulting [`ServerKey`].
-
-//! [`TfheContext::compile_factorized_lookup_table_fn`] prepares Native even-scale
-//! MVB with unsigned Scaled outputs. [`FactorizedEvaluator`] shares NLev
-//! initialization and binary/ternary BR, then multiplies integer Fourier factors before
-//! each output key switch. Supports u32/u64; initialization, BR and FFT errors
-//! require an independent NTRU noise budget.
+//! 1. Check mathematical choices with [`TfheParameters::try_from_config`].
+//! 2. Create a [`TfheContext`] and paired [`ClientKey`]/[`ServerKey`] with
+//!    [`TfheContext::try_generate_keys`]; `None` selects ordinary PBS material.
+//! 3. Bind [`Encryptor`], [`Decryptor`] and [`Evaluator`] from that context.
+//! 4. Compile through [`TfheParameters::compile_lookup_table_fn`], then reuse
+//!    [`Evaluator::apply_lookup_table_to`] with caller-owned LWE output storage.
+//!    Outputs use the parameter codec and [`Decryptor::decrypt`] by default.
+//!    Use [`TfheParameters::compile_lookup_table_with_codec_fn`] for a different output
+//!    encoding, then decode [`Decryptor::decrypt_phase`] with that codec.
+//!
+//! # Other operations
+//!
+//! - [`InterleavedLookupTable`]: several functions of one input using ordinary PBS workspace.
+//! - [`factorized`]: a prepared MVB program and [`FactorizedEvaluator`], with Scaled outputs.
+//! - [`boolean`]: Boolean clients and gates with plaintext modulus four.
+//! - [`circuit_bootstrap`]: optional trace/scheme-switch material and
+//!   [`CircuitBootstrapEvaluator`], producing accumulator-secret gadget controls for CMUX.
+//! - [`sparse`]: fixed-weight binary bucket material; select it explicitly at key generation.
+//!
+//! [`FactorizedEvaluator::bootstrapper_mut`] and [`CircuitBootstrapEvaluator::bootstrapper_mut`]
+//! borrow ordinary PBS operations; `into_bootstrapper` recovers the underlying evaluator.
+//! The specialized constructors document their allocation and recovery contracts.
+//!
+//! # Composition and representation
+//!
+//! [`key`] contains evaluation material and component generation. Common workflow types
+//! are re-exported at this root; lower-level material is documented in its own module.
+//! Classic binary/ternary keys support PBS/MVB/CBS; sparse keys support ordinary/interleaved PBS.
+//! Client secrets must pass the backend's invertibility screening.
+//! Keys and values must use the same FFT table instance; equal lengths do not prove identity.
+//! Native MVB requires an even Scaled output scale and an FFT error budget.
+//! Raw ciphertexts do not record secret identity, encoding or noise margins.
 
 #![deny(missing_docs)]
 
@@ -31,12 +42,13 @@ use primus_modulus::NativeModulus;
 mod accumulator;
 mod blind_rotation;
 pub mod boolean;
-mod circuit_bootstrap;
+pub mod circuit_bootstrap;
 mod context;
 mod error;
 mod evaluator;
-mod key;
-mod sparse;
+pub mod factorized;
+pub mod key;
+pub mod sparse;
 
 pub use accumulator::AccumulatorClient;
 pub use boolean::{
@@ -48,8 +60,13 @@ pub use error::{
     SparseBootstrappingKeyError, TfheClientError, TfheContextError, TfheEvaluationError,
     TfheKeyError, TfheParameterError,
 };
-pub use evaluator::{Evaluator, FactorizedEvaluator, FourierFactorizedLookupTable};
+#[doc(inline)]
+pub use evaluator::Evaluator;
+#[doc(inline)]
+pub use factorized::{FactorizedEvaluator, FourierFactorizedLookupTable};
+#[doc(inline)]
 pub use key::{KeyGenerator, ServerKey};
+#[doc(no_inline)]
 pub use sparse::SparseNtruBootstrappingKey;
 
 pub use primus_tfhe::{
@@ -58,9 +75,10 @@ pub use primus_tfhe::{
 };
 pub use primus_tfhe_ntru::{ClientKey, EncryptionKey, LwePublicKey};
 
-pub use circuit_bootstrap::{
-    CircuitBootstrapEvaluator, CircuitBootstrapKey, CircuitBootstrapParameters,
-};
+#[doc(no_inline)]
+pub use circuit_bootstrap::CircuitBootstrapKey;
+#[doc(inline)]
+pub use circuit_bootstrap::{CircuitBootstrapEvaluator, CircuitBootstrapParameters};
 
 /// Secret-key or LWE public-key encryptor for the Fourier NTRU backend.
 pub type Encryptor<'a, T, Key = ClientKey<T>> =

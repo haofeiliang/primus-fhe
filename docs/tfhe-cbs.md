@@ -1,6 +1,6 @@
 # GLWE Fourier CBS：误差、成本与使用
 
-B1.1–B1.3 经典 CBS 和 [B6.3 稀疏 CBS](#7-b63-fourier-sparse-cbs)已完成。公开工作流见 [English README](../crates/primus_tfhe_glwe_fourier/README.md#circuit-bootstrapping) / [中文 README](../crates/primus_tfhe_glwe_fourier/README.zh_CN.md#circuit-bootstrapping)。第 1–2 节说明 Native 契约，第 3–6 节保留 B1.3 的历史测量，第 7 节记录当前稀疏接入与 profile。不提供生产安全或失败概率参数。
+B1.1–B1.3 经典 CBS 和 [B6.3 稀疏 CBS](#7-b63-fourier-sparse-cbs)已完成。公开工作流见 [English README](../crates/primus_tfhe_glwe_fourier/README.md#circuit-bootstrapping) / [中文 README](../crates/primus_tfhe_glwe_fourier/README.zh_CN.md#电路自举)。第 1–2 节说明 Native 契约，第 3–6 节保留 B1.3 的历史测量，第 7 节记录当前稀疏接入与 profile。不提供生产安全或失败概率参数。
 
 ## 1. 执行链与示例
 
@@ -15,14 +15,14 @@ BK（`BootstrapKeyswitch`）的 CBS 输入维数为 n，KB（`KeyswitchBootstrap
 `context.circuit_bootstrap_evaluator(&server)` 绑定参数和附加密钥。高级 `try_from_parts`
 组合仍须由调用方保证同一 client 和同一 FFT table 实例。
 
-[可运行示例](../crates/primus_tfhe_glwe_fourier/examples/circuit_bootstrap.rs) 将 LWE bit 转为 GGSW 控制，
-选择两条非恒定 GLWE 消息之一；覆盖两种 order、复用工作区与 `1→0` 控制。
+[可运行示例](../crates/primus_tfhe_glwe_fourier/examples/fourier_circuit_bootstrap.rs) 将 LWE bit 转为 GGSW 控制，
+选择全部系数为 1 或 3 的 GLWE 消息；展示两种 order、复用缓冲与 `1→0` 控制。
 `evaluator.allocate_output()` 分配控制，`evaluator.cmux_to(...)` 复用绑定的 basis/FFT/scratch；
 `context.accumulator_client(&client)` 准备环私钥表示并加解密系数域候选，示例无需手工变换秘密。
 CMUX 之后的 GLWE 仍属于 accumulator 私钥，不能直接交给外部 small-LWE decryptor。
 
 ```sh
-cargo run --release -p primus_tfhe_glwe_fourier --example circuit_bootstrap
+cargo run --release -p primus_tfhe_glwe_fourier --example fourier_circuit_bootstrap
 ```
 
 三层 GGSW 使用四列交错 LUT。ManyLUT 的消息尾部通常非零，不能直接替换为要求零尾的 partial expansion。
@@ -256,7 +256,7 @@ TfheFFT/KB 存在数值差异，两组均满足下面的验收阈值；不将差
 现有 CBS 测试入口数量保持不变，补充两种 FFT/order 的稀疏链、bundled/独立绑定、独立整数
 相位、非恒定 CMUX/外积、首调用零分配及参数/形状/采样前错误检查。
 原 sparse PBS 中的 CBS 拒绝测试改为缺少材料检查，完整绑定边界由 CBS 测试承担。
-现有 CBS 示例通过 `--sparse` 选择算法，两种模式均保持同一求值工作流。
+当前 Fourier CBS 示例专注经典密钥；[稀疏 CBS 用法](../crates/primus_tfhe_glwe_fourier/README.zh_CN.md#电路自举)复用相同求值流程。
 
 现有 CBS benchmark 从十项调整为八项完整调用：两种 FFT × 两种 order × 经典/稀疏；
 历史阶段数据保留在第 4 节，不再重复计时共同后处理。当前 profile 取本节首 seed、
@@ -300,6 +300,6 @@ boost/SMT 开启。均值及 95% CI（ms）：
 元数据及未释放在窗口外的生成 scratch。它不是 RSS/峰值。稀疏 server 约为经典的 3.09 倍；
 workspace 多 399,040 B，用于系数/Fourier 聚合与指数等已有 sparse BR 缓冲。
 
-验证通过：`just tfhe`、`just tfhe-simd`、改动包的严格 rustdoc、经典与 `--sparse` 两种 release
+B6.3 当时验证通过：`just tfhe`、`just tfhe-simd`、改动包的严格 rustdoc、当时支持经典与 `--sparse` 两种模式的 release
 示例，以及默认/SIMD 的八项基准和 setup 检查。本地 Markdown 链接/新增锚点检查通过。
 底层数值实现最终无改动；没有保留临时统计测试或 trace 访问器。

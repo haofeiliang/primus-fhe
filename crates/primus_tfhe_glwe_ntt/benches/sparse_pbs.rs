@@ -66,11 +66,13 @@ fn bench_sparse(c: &mut Criterion) {
         let codec = RoundedCodec::new(8, BarrettModulus::new(Q));
         let single = context
             .parameters()
-            .compile_lookup_table_fn(&codec, |m| (3 * m as u32 + 1) % 8)
+            .compile_lookup_table_with_codec_fn(&codec, |m| (3 * m as u32 + 1) % 8)
             .unwrap();
         let many = context
             .parameters()
-            .compile_interleaved_lookup_table_fn(&codec, 3, |m, i| ((m + 2 * i) % 8) as u32)
+            .compile_interleaved_lookup_table_with_codec_fn(&codec, 3, |m, i| {
+                ((m + 2 * i) % 8) as u32
+            })
             .unwrap();
         let dimension = context.parameters().external_lwe_dimension();
         let mut outputs = vec![LweCiphertext::zero(dimension); 3];

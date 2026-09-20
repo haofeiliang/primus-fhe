@@ -84,7 +84,7 @@ where
     let output_codec = RoundedCodec::new(8, context.parameters().external_lwe().cipher_modulus());
     let single = context
         .parameters()
-        .compile_lookup_table_fn(&output_codec, |input| value(input, 0))
+        .compile_lookup_table_with_codec_fn(&output_codec, |input| value(input, 0))
         .unwrap();
     let mut output = LweCiphertext::zero(context.parameters().external_lwe_dimension());
     // Noise-free LWE inputs force zero, odd and even numbers of CMUX steps.
@@ -128,7 +128,7 @@ where
             .collect();
         let lut = context
             .parameters()
-            .compile_interleaved_lookup_table_slice(&output_codec, output_count, &flat)
+            .compile_interleaved_lookup_table_with_codec_slice(&output_codec, output_count, &flat)
             .unwrap();
         let mut outputs =
             vec![LweCiphertext::zero(context.parameters().external_lwe_dimension()); output_count];
@@ -177,7 +177,7 @@ where
     let input = encryptor.encrypt_padded(3u32, &mut rng).unwrap();
     let good = context
         .parameters()
-        .compile_interleaved_lookup_table_fn(&output_codec, 3, value)
+        .compile_interleaved_lookup_table_with_codec_fn(&output_codec, 3, value)
         .unwrap();
     let mut outputs = vec![input.clone(); 3];
     // Isolate each piece of LUT metadata, including equal-length wrong-domain tables.
@@ -349,7 +349,7 @@ where
     let values: Vec<_> = (0..15).map(|m| ((m * m + 3) % 8) as u32).collect();
     let full = context
         .parameters()
-        .compile_odd_full_domain_lookup_table_slice(&output_codec, &values)
+        .compile_odd_full_domain_lookup_table_with_codec_slice(&output_codec, &values)
         .unwrap();
     for (message, &expected) in values.iter().enumerate() {
         let input = encryptor.encrypt(message as u32, &mut rng).unwrap();

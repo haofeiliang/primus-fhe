@@ -265,7 +265,7 @@ for each W_i_ntt:
 
 ### NTRU NTT 的初始化与后处理
 
-[实现](../crates/primus_tfhe_ntru_ntt/src/evaluator/factorized.rs)复用普通 evaluator 的
+[实现](../crates/primus_tfhe_ntru_ntt/src/factorized.rs)复用普通 evaluator 的
 `NLev[1] 初始化 V → BR`，将结果变换到独立 NTT 缓冲；逐输出乘已准备的 `W_i` 后，
 在原 BR 缓冲中逆变换、执行 `f_acc → f_client` 的 NTRU KS，再提取 compact LWE。
 全部输出使用原外部 LWE 秘密和维数。普通 PBS 工作区不变，MVB 只多 `N` 个 `T`，

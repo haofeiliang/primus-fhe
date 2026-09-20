@@ -37,8 +37,8 @@ same workflow. Gaussian small secrets are unsupported.
 | `BootstrapKeyswitch` | BR → ring key switch → compact extraction | Small LWE / `n` |
 | `KeyswitchBootstrap` | Inverse extraction → ring key switch → compact extraction → BR → full extraction | GLWE coefficient vector / `kN` |
 
-Both orders return to their external secret. Use `external_lwe_dimension()` to
-allocate outputs and `client_key.external_lwe_secret_key()` to borrow that secret.
+Both orders return to their external secret. Backend `context.allocate_lwe_ciphertext()`
+uses `external_lwe_dimension()` to allocate outputs; `client_key.external_lwe_secret_key()` borrows that secret.
 `accumulator_glwe()` describes the accumulator domain; `blind_rotation_ggsw()`
 describes its GGSW controls, and `glwe_key_switching()` describes the ring key switch.
 Basis/layout compatibility does not prove actual secret identity.
@@ -65,10 +65,11 @@ errors leave output and RNG unchanged. For front-half LUT input, use `encrypt_pa
 Compile ordinary LUTs through `context.parameters().compile_lookup_table_fn(...)`
 and the corresponding slice, interleaved or odd full-domain methods.
 
-LUT compilation takes an explicit output `RoundedCodec` first. Reuse
-`parameters.input_plaintext_codec()` for the input scale, or construct a
-codec with another plaintext modulus and the same ciphertext modulus. Decode
-that output with `output_codec.decode_value(decryptor.decrypt_phase(&output)?)`.
+LUT compilation defaults to `parameters.input_plaintext_codec()` for outputs;
+ordinary `decrypt` decodes the result. The `*_with_codec_fn` / `*_with_codec_slice`
+variants take an explicit output `RoundedCodec` first, allowing another plaintext
+modulus with the same ciphertext modulus. Decode that output with
+`output_codec.decode_value(decryptor.decrypt_phase(&output)?)`.
 See [choosing the output encoding](../primus_tfhe/README.md#choosing-the-output-encoding)
 for range checks, raw output and subsequent PBS contracts.
 
@@ -105,9 +106,10 @@ requirements belong to the corresponding backend contracts.
 
 ## Examples
 
-Follow the backend basic examples to see both orders, public-key input, LUTs and
-Boolean operations with reused output. All example fixtures, including NTT's
-`boolean_parameters()`, are for development, not production recommendations.
+Backend basic examples show both PBS orders, default encoding and reusable ordinary PBS storage.
+Independent output encoding is explained in the shared guide. MVB and CBS have dedicated examples; Boolean usage is in the
+[shared guide](../primus_tfhe/README.md#boolean-gates).
+All fixtures are for development, not production recommendations.
 
 ## Further reading
 

@@ -1,7 +1,3 @@
-mod factorized;
-
-pub use factorized::{FactorizedEvaluator, NttFactorizedLookupTable};
-
 use primus_integer::FheUint;
 use primus_ntt::MonomialNttTable;
 use primus_poly::Polynomial;
@@ -202,7 +198,7 @@ where
     /// `blind_rotation.current`. The caller checked input/LUT compatibility;
     /// `rotation_step` is the LUT's padded output count. No client key switch occurs.
     #[inline]
-    fn blind_rotate(
+    pub(crate) fn blind_rotate(
         &mut self,
         input: &LweCiphertext<T>,
         lookup_table: &Polynomial<Vec<T>>,
@@ -224,7 +220,7 @@ where
     /// `blind_rotation.scratch`, ready for compact LWE extraction. CBS consumes
     /// `blind_rotation.current` directly and does not perform this key switch.
     #[inline]
-    fn key_switch_accumulator(&mut self) {
+    pub(crate) fn key_switch_accumulator(&mut self) {
         let parameters = self.context.parameters();
         self.server_key.key_switching_key().key_switch_to(
             &self.blind_rotation.current,

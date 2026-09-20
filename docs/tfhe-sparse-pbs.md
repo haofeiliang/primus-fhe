@@ -163,7 +163,7 @@ Primus 当前两种链都保持同一个密文模数，没有论文中 `Q -> Q' 
 以下为 P3.1–P3.5 首轮测量使用的历史参数。当前常驻 `sparse_pbs` 基准已将成本组
 `n` 提高到 728，`h=32`、`N=1024` 和其余参数保持不变；下文成本组的历史耗时、内存及误差数字仍对应 `n=512`。
 
-两个参数组都是**未经安全认证的实验参数**，使用 `u32`、`BarrettModulus`、`q_in=q_acc=132120577`、GLWE 维数 `k=1`、`t_in=t_out=8`、unsigned rounded codec，首轮测前半区。该已有 NTT 素数满足 `2N | q-1`；不修改现有 `boolean_parameters()` 默认值。
+两个参数组都是**未经安全认证的实验参数**，使用 `u32`、`BarrettModulus`、`q_in=q_acc=132120577`、GLWE 维数 `k=1`、`t_in=t_out=8`、unsigned rounded codec，首轮测前半区。该已有 NTT 素数满足 `2N | q-1`；保留现有 PBS 基准的 n=512 fixture（现位于 `primus_tfhe_glwe_ntt/benches/support/`）。
 
 | 参数 | 小型回归 | 成本比较 |
 | --- | --- | --- |

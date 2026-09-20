@@ -37,13 +37,14 @@ fn padded_inputs_and_lut_output_codecs_use_independent_domains() {
         let encryptor = Encryptor::try_new(&parameters, &key).unwrap();
         let decryptor = Decryptor::try_new(&parameters, &key).unwrap();
         let domain_len = t.div_ceil(2);
-        assert!(
+        let default = parameters
+            .compile_lookup_table_slice(&vec![t - 1; domain_len as usize])
+            .unwrap();
+        assert_eq!(
             parameters
-                .compile_lookup_table_slice(
-                    parameters.input_plaintext_codec(),
-                    &vec![0; domain_len as usize]
-                )
-                .is_ok()
+                .input_plaintext_codec()
+                .decode_value(default.polynomial().as_ref()[0]),
+            t - 1,
         );
         let input = encryptor.encrypt_padded(domain_len - 1, &mut rng).unwrap();
         assert_eq!(decryptor.decrypt(&input).unwrap(), domain_len - 1);
@@ -54,10 +55,10 @@ fn padded_inputs_and_lut_output_codecs_use_independent_domains() {
         let output_codec = RoundedCodec::new(8, NativeModulus::new());
         let values: Vec<_> = (0..domain_len).map(|m| 7 - m).collect();
         let single = parameters
-            .compile_lookup_table_slice(&output_codec, &values)
+            .compile_lookup_table_with_codec_slice(&output_codec, &values)
             .unwrap();
         let many = parameters
-            .compile_interleaved_lookup_table_fn(&output_codec, 1, |m, _| values[m])
+            .compile_interleaved_lookup_table_with_codec_fn(&output_codec, 1, |m, _| values[m])
             .unwrap();
         assert_eq!(single.input_domain_len(), domain_len as usize);
         assert_eq!(single.polynomial(), many.polynomial());
@@ -65,7 +66,7 @@ fn padded_inputs_and_lut_output_codecs_use_independent_domains() {
         if t % 2 == 1 {
             let values: Vec<_> = (0..t).collect();
             let full = parameters
-                .compile_odd_full_domain_lookup_table_slice(&output_codec, &values)
+                .compile_odd_full_domain_lookup_table_with_codec_slice(&output_codec, &values)
                 .unwrap();
             assert_eq!(full.input_domain_len(), t as usize);
         }

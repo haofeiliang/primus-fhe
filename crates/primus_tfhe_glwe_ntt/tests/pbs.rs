@@ -1,14 +1,14 @@
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_encoding::RoundedCodec;
-use primus_fft::{FftTable, RustFftTable, TfheFftTable};
 use primus_glwe::{GlweParameters, SecretKeyDistr};
 use primus_lwe::{LweCiphertext, LweParameters};
-use primus_modulus::{BarrettModulus, NativeModulus};
+use primus_modulus::BarrettModulus;
+use primus_ntt::{NttTable, U32NttTable};
 use primus_test_allocations as allocations;
 use primus_tfhe::{
     BivariateLookupTable, InterleavedLookupTable, LookupTable, ProgrammableBootstrapInterleaved,
 };
-use primus_tfhe_glwe_fourier::{PbsOrder, TfheContext, TfheParameters};
+use primus_tfhe_glwe_ntt::{PbsOrder, TfheContext, TfheParameters};
 use rand::{SeedableRng, rngs::StdRng};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
@@ -16,9 +16,10 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 static ALLOCATOR: allocations::CountingAllocator = allocations::CountingAllocator;
 
 const N: usize = 256;
+const Q: u32 = 132_120_577;
 
 fn parameters(order: PbsOrder) -> TfheParameters<u32> {
-    let modulus = NativeModulus::new();
+    let modulus = BarrettModulus::new(Q);
     let lwe = LweParameters::new(
         8,
         15,
@@ -28,7 +29,14 @@ fn parameters(order: PbsOrder) -> TfheParameters<u32> {
     );
     let glwe = GlweParameters::new(1, N, 15, modulus, SecretKeyDistr::UniformBinary, 0.7);
     let bsk = ApproxSignedBasis::new(glwe.cipher_modulus_value(), 8, None);
-    TfheParameters::try_new(lwe, glwe, bsk, ApproxSignedBasis::new(None, 8, None), order).unwrap()
+    TfheParameters::try_new(
+        lwe,
+        glwe,
+        bsk,
+        ApproxSignedBasis::new(Some(Q), 8, None),
+        order,
+    )
+    .unwrap()
 }
 
 fn value(input: usize, output: usize) -> u32 {
@@ -42,7 +50,7 @@ fn value(input: usize, output: usize) -> u32 {
 
 fn check_context<TABLE>(context: TfheContext<u32, TABLE>)
 where
-    TABLE: FftTable,
+    TABLE: primus_ntt::MonomialNttTable<ValueT = u32>,
 {
     let mut rng = StdRng::seed_from_u64(0x4d41_4e59_5042_5301);
     let (client_key, server_key) = context.try_generate_keys(None, &mut rng).unwrap();
@@ -58,7 +66,7 @@ where
             .collect();
         let lut = context
             .parameters()
-            .compile_interleaved_lookup_table_slice(&output_codec, output_count, &flat)
+            .compile_interleaved_lookup_table_with_codec_slice(&output_codec, output_count, &flat)
             .unwrap();
         let mut outputs =
             vec![LweCiphertext::zero(context.parameters().external_lwe_dimension()); output_count];
@@ -88,7 +96,7 @@ where
             if output_count == 1 && message == 3 {
                 let single = context
                     .parameters()
-                    .compile_lookup_table_fn(&output_codec, |input| value(input, 0))
+                    .compile_lookup_table_with_codec_fn(&output_codec, |input| value(input, 0))
                     .unwrap();
                 let mut output = outputs[0].clone();
                 let (_, allocation) = allocations::measure(|| {
@@ -104,24 +112,29 @@ where
     let input = encryptor.encrypt_padded(3u32, &mut rng).unwrap();
     let good = context
         .parameters()
-        .compile_interleaved_lookup_table_fn(&output_codec, 3, value)
+        .compile_interleaved_lookup_table_with_codec_fn(&output_codec, 3, value)
         .unwrap();
     let mut outputs = vec![input.clone(); 3];
     // Isolate each piece of LUT metadata, including equal-length wrong-domain tables.
     let mut mismatched_tables = Vec::new();
     for (n, t) in [(N / 2, 15), (N, 8)] {
         mismatched_tables.push((
-            LookupTable::try_new(2, n, t, NativeModulus::new(), NativeModulus::new(), |_| {
-                Ok(0)
-            })
+            LookupTable::try_new(
+                2,
+                n,
+                t,
+                BarrettModulus::new(Q),
+                BarrettModulus::new(Q),
+                |_| Ok(0),
+            )
             .unwrap(),
             InterleavedLookupTable::try_new(
                 2,
                 n,
                 3,
                 t,
-                NativeModulus::new(),
-                NativeModulus::new(),
+                BarrettModulus::new(Q),
+                BarrettModulus::new(Q),
                 |_, _| Ok(0),
             )
             .unwrap(),
@@ -132,8 +145,8 @@ where
             2,
             N,
             15,
-            BarrettModulus::new(132_120_577),
-            NativeModulus::new(),
+            primus_modulus::NativeModulus::new(),
+            BarrettModulus::new(Q),
             |_| Ok(0),
         )
         .unwrap(),
@@ -142,8 +155,8 @@ where
             N,
             3,
             15,
-            BarrettModulus::new(132_120_577),
-            NativeModulus::new(),
+            primus_modulus::NativeModulus::new(),
+            BarrettModulus::new(Q),
             |_, _| Ok(0),
         )
         .unwrap(),
@@ -153,8 +166,8 @@ where
             2,
             N,
             15,
-            NativeModulus::new(),
-            BarrettModulus::new(132_120_577),
+            BarrettModulus::new(Q),
+            BarrettModulus::new(104_857_601),
             |_| Ok(0),
         )
         .unwrap(),
@@ -163,8 +176,8 @@ where
             N,
             3,
             15,
-            NativeModulus::new(),
-            BarrettModulus::new(132_120_577),
+            BarrettModulus::new(Q),
+            BarrettModulus::new(104_857_601),
             |_, _| Ok(0),
         )
         .unwrap(),
@@ -188,7 +201,7 @@ where
     }
     let single = context
         .parameters()
-        .compile_lookup_table_fn(&output_codec, |x| x as u32)
+        .compile_lookup_table_with_codec_fn(&output_codec, |x| x as u32)
         .unwrap();
     let wrong = LweCiphertext::zero(input.dimension() - 1);
     for bad_input in [false, true] {
@@ -275,7 +288,7 @@ where
     let values: Vec<_> = (0..15).map(|m| ((m * m + 3) % 8) as u32).collect();
     let full = context
         .parameters()
-        .compile_odd_full_domain_lookup_table_slice(&output_codec, &values)
+        .compile_odd_full_domain_lookup_table_with_codec_slice(&output_codec, &values)
         .unwrap();
     for (message, &expected) in values.iter().enumerate() {
         let input = encryptor.encrypt(message as u32, &mut rng).unwrap();
@@ -290,21 +303,9 @@ where
     }
 }
 #[test]
-fn many_pbs_preserves_outputs_and_validates_domains() {
+fn pbs_preserves_outputs_and_validates_domains() {
     for order in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
-        check_context(
-            TfheContext::try_new(
-                parameters(order),
-                RustFftTable::new(N.trailing_zeros()).unwrap(),
-            )
-            .unwrap(),
-        );
-        check_context(
-            TfheContext::try_new(
-                parameters(order),
-                TfheFftTable::new(N.trailing_zeros()).unwrap(),
-            )
-            .unwrap(),
-        );
+        let table = U32NttTable::new(N.trailing_zeros(), BarrettModulus::new(Q)).unwrap();
+        check_context(TfheContext::try_new(parameters(order), table).unwrap());
     }
 }

@@ -14,9 +14,6 @@ use crate::{
     error::TfheEvaluationError,
 };
 
-mod factorized;
-pub use factorized::{FactorizedEvaluator, NttFactorizedLookupTable};
-
 /// Reusable NTT workspace for programmable bootstrapping.
 pub struct Evaluator<'a, T, Table>
 where
@@ -30,7 +27,7 @@ where
     // Only standalone BootstrapKeyswitch CBS omits this workspace.
     key_switching: Option<KeySwitchingWorkspace<T>>,
     // After BR: coefficient GLWE under the accumulator secret, in either order.
-    main_glwe: GlweCiphertext<Vec<T>>,
+    pub(crate) main_glwe: GlweCiphertext<Vec<T>>,
 }
 
 struct KeySwitchingWorkspace<T: FheUint> {
@@ -411,7 +408,7 @@ where
     /// Ordinary/interleaved PBS calls this only for BootstrapKeyswitch; the
     /// accumulator remains available for consumers needing its original secret.
     #[inline]
-    fn keyswitch_accumulator(&mut self) -> &GlweCiphertext<Vec<T>> {
+    pub(crate) fn keyswitch_accumulator(&mut self) -> &GlweCiphertext<Vec<T>> {
         let ks = self
             .key_switching
             .as_mut()

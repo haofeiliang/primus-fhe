@@ -13,9 +13,6 @@ use crate::{
     error::TfheEvaluationError,
 };
 
-mod factorized;
-pub use factorized::{FactorizedEvaluator, FourierFactorizedLookupTable};
-
 /// Reusable Fourier workspace for programmable bootstrapping.
 pub struct Evaluator<'a, T, Table>
 where
@@ -24,12 +21,12 @@ where
 {
     pub(crate) context: &'a TfheContext<T, Table>,
     pub(crate) server_key: &'a ServerKey<T>,
-    fft: FftEngine<'a, Table>,
+    pub(crate) fft: FftEngine<'a, Table>,
     blind_rotation: BlindRotation<'a, T>,
     // Only standalone BootstrapKeyswitch CBS omits this workspace.
     key_switching: Option<KeySwitchingWorkspace<T>>,
     // After BR: coefficient GLWE under the accumulator secret, in either order.
-    main_glwe: GlweCiphertext<Vec<T>>,
+    pub(crate) main_glwe: GlweCiphertext<Vec<T>>,
 }
 
 struct KeySwitchingWorkspace<T: TorusFftValue> {
@@ -424,7 +421,7 @@ where
     /// Ordinary/interleaved PBS calls this only for BootstrapKeyswitch; the
     /// accumulator remains available for consumers needing its original secret.
     #[inline]
-    fn keyswitch_accumulator(&mut self) -> &GlweCiphertext<Vec<T>> {
+    pub(crate) fn keyswitch_accumulator(&mut self) -> &GlweCiphertext<Vec<T>> {
         let ks = self
             .key_switching
             .as_mut()

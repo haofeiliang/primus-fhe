@@ -1,10 +1,12 @@
+//! Prepared factorized MVB programs and their reusable evaluator.
+
 use primus_integer::FheUint;
 use primus_lattice::ntru::NttNtru;
 use primus_ntt::MonomialNttTable;
 use primus_poly::{NttPolynomialIter, PolynomialIterMut, PolynomialOwned};
 use primus_tfhe::{FactorizedLookupTable, LweCiphertext};
 
-use super::Evaluator;
+use crate::Evaluator;
 use crate::{ServerKey, TfheContext, TfheEvaluationError};
 
 /// A factorized MVB program prepared for one borrowed NTT context.

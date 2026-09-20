@@ -1,11 +1,10 @@
 //! Parameters for GLWE-based TFHE.
 
 use crate::TfheParameterError;
-use primus_decompose::primitive::ApproxSignedBasis;
+use primus_decompose::{DecompositionConfig, primitive::ApproxSignedBasis};
 use primus_encoding::RoundedCodec;
 use primus_integer::FheUint;
 use primus_reduce::RingContext;
-use primus_tfhe::DecompositionConfig;
 
 use crate::{
     GgswParameters, GlevParameters, GlweKeySwitchingParameters, GlweParameters, LweParameters,
@@ -68,11 +67,11 @@ impl<T: FheUint, M: RingContext<T>> TfheParameters<T, M> {
         );
         let blind_rotation = config
             .blind_rotation
-            .try_build(modulus)
+            .try_build(modulus.explicit_value())
             .map_err(|error| TfheParameterError::BootstrappingParameters(error.into()))?;
         let key_switching = config
             .key_switching
-            .try_build(modulus)
+            .try_build(modulus.explicit_value())
             .map_err(|error| TfheParameterError::KeySwitchingParameters(error.into()))?;
         Self::try_new(
             config.small_lwe,

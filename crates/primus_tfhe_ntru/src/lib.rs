@@ -1,5 +1,13 @@
 //! Backend-independent client API and parameters for NTRU-based TFHE.
 //!
+//! # Role in the backend workflow
+//!
+//! [`TfheConfig`] names mathematical choices; [`TfheParameters`] validates them and
+//! compiles Rounded LUTs. [`ClientKey`], [`Encryptor`] and [`Decryptor`] bind client
+//! secrets and encoding. Choose the NTT/Fourier backend for transform tables,
+//! server material and evaluators. [`KeyGenerationError`] and [`TfheClientError`]
+//! separate key generation from client operations.
+//!
 //! # Public-key clients
 //!
 //! [`ClientKey::try_generate_public_key`] returns an [`LwePublicKey`] under

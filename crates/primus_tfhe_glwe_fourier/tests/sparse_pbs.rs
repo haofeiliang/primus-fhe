@@ -71,11 +71,11 @@ fn check_pbs<Table: FftTable>() {
         let functions = |m: usize, i: usize| (m + 2 * i) as u64;
         let single = context
             .parameters()
-            .compile_lookup_table_fn(&codec, function)
+            .compile_lookup_table_with_codec_fn(&codec, function)
             .unwrap();
         let many = context
             .parameters()
-            .compile_interleaved_lookup_table_fn(&codec, 3, functions)
+            .compile_interleaved_lookup_table_with_codec_fn(&codec, 3, functions)
             .unwrap();
         assert_eq!(many.padded_output_count(), 4);
         let mut outputs = vec![LweCiphertext::zero(dimension); 3];

@@ -37,14 +37,14 @@ B1–B8 之后的类型、错误、工作区与使用方式整理见 [R1–R4 �
 | --- | --- |
 | B1.1：参数与附加密钥 | [CBS 模块](../crates/primus_tfhe_glwe_fourier/src/circuit_bootstrap/mod.rs)，独立 output/trace/scheme-switch basis 与配套密钥 |
 | B1.2：完整 evaluator | [实现](../crates/primus_tfhe_glwe_fourier/src/circuit_bootstrap/evaluator.rs)、[测试](../crates/primus_tfhe_glwe_fourier/tests/circuit_bootstrap.rs)，两种 order/FFT、binary/ternary、逐层相位、CMUX 与零分配 |
-| B1.3：误差、成本与示例 | [CBS 专项](tfhe-cbs.md)、[示例](../crates/primus_tfhe_glwe_fourier/examples/circuit_bootstrap.rs)、[基准](../crates/primus_tfhe_glwe_fourier/benches/circuit_bootstrap.rs) |
+| B1.3：误差、成本与示例 | [CBS 专项](tfhe-cbs.md)、[示例](../crates/primus_tfhe_glwe_fourier/examples/fourier_circuit_bootstrap.rs)、[基准](../crates/primus_tfhe_glwe_fourier/benches/circuit_bootstrap.rs) |
 
 保留 Native 逐级整数除二与逐系数 RevHomTrace；共享正向展开树优化暂缓。经典 CBS 已支持，
 生产误差尾界未认证；sparse CBS 的独立验证与接入见 B6。
 
 ### B1.4–B1.7 的共同设计边界
 
-基线 `66ae701` 的 [CBS 示例](../crates/primus_tfhe_glwe_fourier/examples/circuit_bootstrap.rs)需要分别构造参数、变换表、普通与 CBS 密钥；得到 GGSW 后，还要为加密、CMUX 和解密手工准备 basis、秘密变换与 scratch。`circuit_bootstrap_to(input, output)` 本身已经简洁，主要整理构造过程和输出消费过程。
+基线 `66ae701` 的 [CBS 示例](../crates/primus_tfhe_glwe_fourier/examples/fourier_circuit_bootstrap.rs)需要分别构造参数、变换表、普通与 CBS 密钥；得到 GGSW 后，还要为加密、CMUX 和解密手工准备 basis、秘密变换与 scratch。`circuit_bootstrap_to(input, output)` 本身已经简洁，主要整理构造过程和输出消费过程。
 
 - **覆盖四后端及其公共层**：统一同一角色的高层名称和工作流，保留 GLWE/NTRU 秘密域、NTRU 初始化与拒绝采样、NTT/Fourier 表示和归一化差异；不增加万能后端 trait、能力泛型框架或算法注册表。
 - **构造时绑定，在线复用**：参数、密钥材料、basis、变换表和工作区在所属构造边界校验并绑定。在线调用主要提供输入、LUT/控制密文与输出；不重复变换秘密、编译 LUT、分配或 clone 大对象。
@@ -91,11 +91,11 @@ Fourier 因原型噪声增加，按用户决定暂不接入。不阻塞 B2.1。
 
 ## B3：NTRU NTT MVB 与既有组合验收
 
-入口：[公共 factorized LUT](../crates/primus_tfhe/src/lookup_table/factorized.rs)、[GLWE NTT MVB 参照](../crates/primus_tfhe_glwe_ntt/src/evaluator/factorized.rs)、[NTRU NTT evaluator](../crates/primus_tfhe_ntru_ntt/src/evaluator.rs)。
+入口：[公共 factorized LUT](../crates/primus_tfhe/src/lookup_table/factorized.rs)、[GLWE NTT MVB 参照](../crates/primus_tfhe_glwe_ntt/src/factorized.rs)、[NTRU NTT evaluator](../crates/primus_tfhe_ntru_ntt/src/evaluator.rs)。
 
 ### B3.1：NTRU NTT MVB 完整链（已完成）
 
-- [预处理产物与独立 evaluator](../crates/primus_tfhe_ntru_ntt/src/evaluator/factorized.rs)借用 context，接通 `NLev[1] 初始化 V → BR → 各 W_i 乘法 → 逐输出 NTRU KS → compact extraction`；工厂与 GLWE NTT 同名，使用普通服务端密钥。
+- [预处理产物与独立 evaluator](../crates/primus_tfhe_ntru_ntt/src/factorized.rs)借用 context，接通 `NLev[1] 初始化 V → BR → 各 W_i 乘法 → 逐输出 NTRU KS → compact extraction`；工厂与 GLWE NTT 同名，使用普通服务端密钥。
 - 保持奇数 `q`、Rounded 前半区输入、统一 unsigned Scaled 输出；额外一个 NTT 多项式保存共享旋转结果，各输出复用 BR/KS 缓冲。公共 LUT 与两后端的因子共用连续存储，原地变换、通过既有多项式迭代器借用；普通 evaluator 的工作区不变。
 - [聚焦测试](../crates/primus_tfhe_ntru_ntt/tests/factorized_pbs.rs)覆盖相同 Scaled 编码的单输出 PBS 对照、1/3/17 输出、超出交错容量、奇数尺度初始化、context/形状/模数拒绝、覆盖写入及首次调用零分配。`just tfhe`、`just tfhe-simd` 与严格 rustdoc 通过。
 - [双语用法](../crates/primus_tfhe_ntru_ntt/README.zh_CN.md#固定尺度分解式-mvb)与 [NTRU 误差来源](tfhe-mvb.md#ntru-ntt-的初始化与后处理)已同步；耗时、误差统计和应用示例见 B3.2。

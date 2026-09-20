@@ -57,13 +57,6 @@ where
         })
     }
 
-    /// Allocates a zeroed coefficient ciphertext with the bound accumulator layout.
-    #[must_use]
-    pub fn allocate_ciphertext(&self) -> NtruCiphertext<Vec<T>> {
-        let parameters = self.context.parameters().accumulator_ntru();
-        NtruCiphertext::zero(parameters.poly_length())
-    }
-
     /// Encrypts an unsigned polynomial into a newly allocated coefficient ciphertext.
     /// Inherits [`Self::encrypt_to`]'s message and panic contracts.
     #[must_use]
@@ -72,7 +65,7 @@ where
         message: &[T],
         rng: &mut R,
     ) -> NtruCiphertext<Vec<T>> {
-        let mut output = self.allocate_ciphertext();
+        let mut output = self.context.allocate_accumulator_ciphertext();
         self.encrypt_to(message, &mut output, rng);
         output
     }

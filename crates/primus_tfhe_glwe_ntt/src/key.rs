@@ -1,3 +1,5 @@
+//! Server evaluation material and paired or component key generation.
+
 use primus_glwe::{
     NttGadgetEncryptContext, NttGlweKeySwitchingKey, NttGlweSecretKey, SecretKeyDistr,
 };

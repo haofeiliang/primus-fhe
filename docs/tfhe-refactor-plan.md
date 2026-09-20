@@ -3,7 +3,7 @@
 源码基线：`cba9c01`（2026-09-20）。依据是 B1–B8 完成后对七个 `primus_tfhe*` crate 的源码审查。
 本轮整理现有能力的类型、错误、资源所有权、重复实现和学习入口；数学契约见 [TFHE 设计](tfhe.md)，已有能力与实验条件见 [B1–B8 完成入口](tfhe-backend-plan.md)。
 
-**当前状态：R2 已完成，下一步 R3；R1/R2 的实测成本限制保留。** 全部工作合并为四个大步骤，替代原来的细分编号。每步内部清单用于实施和验收，无需分别发起。
+**当前状态：R3 已完成，直接基线 `ba85493`；下一步 R4。R1/R2 的实测成本限制保留。** 全部工作合并为四个大步骤，替代原来的细分编号。每步内部清单用于实施和验收，无需分别发起。
 
 ## 执行原则：每步交付完整结果
 
@@ -61,7 +61,7 @@
 | --- | --- | --- |
 | R1 | 公共类型、参数、错误与 LUT 接口收敛 | 已完成，构造成本见下文 |
 | R2 | evaluator 所有权、工作区与重复计算一起整理 | 已完成，NTT keygen 试验已撤回 |
-| R3 | 模块、使用指南、示例、测试与基准整体收尾 | 待执行 |
+| R3 | 模块、使用指南、示例、测试与基准整体收尾 | 已完成 |
 | R4 | 全链验收与交接收尾 | 待执行 |
 
 按 R1 → R2 → R3 → R4 执行。下面的清单属于各自步骤，不单独排期。
@@ -112,7 +112,7 @@ TfheEvaluationError            → LookupTableError
 
 **目标**：在同一次设计中解决资源重复、模式配对和调用方式，避免先添加转换层再返工底层。
 
-**入口**：四后端 `src/{context,key,blind_rotation,evaluator}.rs`、`src/evaluator/factorized.rs`、`src/circuit_bootstrap/`；GLWE `src/sparse/`、NTRU `src/sparse.rs`；共享 Boolean 的 bootstrapper 访问/回收接口。
+**入口**：四后端 `src/{context,key,blind_rotation,evaluator,factorized}.rs`、`src/circuit_bootstrap/`、`src/sparse/`；共享 Boolean 的 bootstrapper 访问/回收接口。
 
 ### 一起设计和实施
 
@@ -156,13 +156,25 @@ TfheEvaluationError            → LookupTableError
 
 ### 实施与验收清单
 
-- [ ] **按职责组织模块**：对齐密钥与生成、BR、普通求值、MVB 程序/执行、CBS 的组织。重点处理 NTRU sparse.rs 的密钥/执行混杂及 factorized 程序不易定位的问题；不按行数拆成小文件，不把内部 helper 升为公共 API。
-- [ ] **公共入口可理解**：根入口突出 config/parameters、client/key、context、LUT 和 evaluator；低层材料通过明确模块及 rustdoc 分组查找。GLWE NTT `boolean_parameters()` 移至现有 PBS bench 支持代码，保持历史 n=512 负载，不当作安全参数推荐。
-- [ ] **一份任务选择表**：共享 README 说明单函数、odd-full、交错多输出、MVB、有界双输入、Boolean、CBS/CMUX 的输入域/编码、输出类型/编码、额外密钥和资源复用方式。binary/ternary/sparse 与数值后端作为独立选择；后端 README 只补自己的限制，避免重复能力矩阵。
-- [ ] **精简推荐示例**：basic 仅展示参数→context→keys→客户端→LUT→普通 PBS→复用；进阶使用现有 CBS/MVB 示例和 README。说明输入 t=16、输出 t=4 等场景的独立解码，不能互换 Scaled 标志、Boolean 密文和 CBS 控制。
-- [ ] **资产按契约去重**：参数错误矩阵集中，独立数值分支、相位、selector/dummy、非恒定 CMUX 和首调用零分配保留。整理 many_lut 等测试名与实际内容不符的问题；复用现有 test-support，普通测试不加入大型统计或计时阈值。
-- [ ] **基准保留独立用途**：保留 PBS/CBS/MVB/ternary/sparse 的不同工作负载，仅删重复或临时试验；不为转发函数另建 bench。记录测试整理前后数量和本机耗时，不据此承诺 GitHub CI 降幅。
-- [ ] 双语章节/链接同步；推导和成本留在专项文档。修改过的 release 示例与必要 FFT 配置通过，严格 rustdoc 及 workspace all-targets 通过；无过渡导出和遗留临时资产。
+- [x] **按职责组织模块**：对齐密钥与生成、BR、普通求值、MVB 程序/执行、CBS 的组织。重点处理 NTRU sparse.rs 的密钥/执行混杂及 factorized 程序不易定位的问题；不按行数拆成小文件，不把内部 helper 升为公共 API。
+- [x] **公共入口可理解**：根入口突出 config/parameters、client/key、context、LUT 和 evaluator；低层材料通过明确模块及 rustdoc 分组查找。GLWE NTT `boolean_parameters()` 移至现有 PBS bench 支持代码，保持历史 n=512 负载，不当作安全参数推荐。
+- [x] **一份任务选择表**：共享 README 说明单函数、odd-full、交错多输出、MVB、有界双输入、Boolean、CBS/CMUX 的输入域/编码、输出类型/编码、额外密钥和资源复用方式。binary/ternary/sparse 与数值后端作为独立选择；后端 README 只补自己的限制，避免重复能力矩阵。
+- [x] **精简推荐示例**：basic 仅展示参数→context→keys→客户端→LUT→普通 PBS→复用；进阶使用现有 CBS/MVB 示例和 README。说明输入 t=16、输出 t=4 等场景的独立解码，不能互换 Scaled 标志、Boolean 密文和 CBS 控制。
+- [x] **资产按契约去重**：参数错误矩阵集中，独立数值分支、相位、selector/dummy、非恒定 CMUX 和首调用零分配保留。整理 many_lut 等测试名与实际内容不符的问题；复用现有 test-support，普通测试不加入大型统计或计时阈值。
+- [x] **基准保留独立用途**：保留 PBS/CBS/MVB/ternary/sparse 的不同工作负载，仅删重复或临时试验；不为转发函数另建 bench。记录测试整理前后数量和本机耗时，不据此承诺 GitHub CI 降幅。
+- [x] 双语章节/链接同步；推导和成本留在专项文档。修改过的 release 示例与必要 FFT 配置通过，严格 rustdoc 及 workspace all-targets 通过；无过渡导出和遗留临时资产。
+
+### 验收结果（2026-09-20）
+
+- 四后端 MVB 程序和 evaluator 统一位于 `src/factorized.rs`；NTRU sparse 拆为密钥生成与桶旋转两个职责。原有数值函数体、RNG 次序与工作区布局未变，没有新增公共类型或内部 helper API。
+- Rustdoc 根入口说明推荐流程，`key`、`factorized`、`circuit_bootstrap`、`sparse` 按职责导航，GLWE 另保留原始 BR 模块；常用类型继续从 crate 根导入。移除公共 `boolean_parameters()`，历史 n=512 配置仅在 GLWE NTT PBS bench 内保留，19 个 TFHE benchmark target 及独立工作负载不变。
+- [共享任务选择表](../crates/primus_tfhe/README.zh_CN.md#选择同态操作)与[资源复用说明](../crates/primus_tfhe/README.zh_CN.md#复用-evaluator)集中公共用法，四后端双语 README 保留各自参数、表示与限制。四个 basic 示例使用默认编码计算 `x % 4` 并复用缓冲，独立输出编码留在共享指南；进阶操作使用现有 CBS/MVB 示例。
+- 两族普通、交错和奇数全域 LUT 的 `*_fn/slice` 默认借用 `input_plaintext_codec()`；`*_with_codec_fn/slice` 保留显式输出 codec。所有调用方已迁移，无新增类型、codec 重建或在线分配；MVB 继续显式使用 `ScaledCodec`。默认解码与不同输出明文模数复用现有测试覆盖，测试和 benchmark target 数量不增加。补充后重跑默认/SIMD 各 86 项、严格 Clippy/rustdoc、workspace all-targets 和四个 basic release 示例，均通过。
+- `DecompositionConfig` 归入 `primus_decompose`，TFHE 各层继续重新导出同一类型；`try_build` 接收 `Option<T>`，由调用方提取模数值，分解库不新增 `RingContext` 依赖。`CircuitBootstrapConfig` 仍由共享 TFHE 层定义，参数校验和错误归属保持原有边界。迁移后分解库默认/SIMD 各 8 项、TFHE 各 86 项、严格 Clippy/rustdoc 和 workspace all-targets 通过。
+- GLWE CBS 示例分别更名为 `ntt_circuit_bootstrap` / `fourier_circuit_bootstrap`，消除联合构建时的输出文件冲突；均使用经典配对密钥，稀疏 CBS 生成见双语 README。参数及 benchmark 工作负载保持不变。
+- 四后端普通缓冲由 `context.allocate_lwe_ciphertext()` / `allocate_accumulator_ciphertext()` 创建，移除 `AccumulatorClient::allocate_ciphertext()`；CBS 控制继续由 evaluator 分配，未增加公共类型。14 个示例按客户端准备、服务端求值、客户端解码分组，独立参数函数保留原配置；移除 MVB 示例中的预期失败检查并复用解码缓冲。相关测试、基准与双语文档已迁移。该补充经四后端默认/SIMD 各 52 项测试、严格 Clippy、各 14 个 release 示例、严格公开/私有 rustdoc 与 workspace all-targets 验证；未新增测试或 benchmark。
+- 两个重复的后端 CBS 参数测试合并至 GLWE 家族，密钥生成前拒绝非法 CBS 配置的 RNG 检查仍在后端；`many_lut.rs` 更名为覆盖普通/交错/双输入/全域的 `pbs.rs`。默认/SIMD 测试各 87→86 项，独立数值与零分配契约保留。
+- `just tfhe`、`just tfhe-simd`、workspace all-targets、七包严格公开/私有 rustdoc、四个 basic 和两个更名后的 CBS release 示例通过；已有测试覆盖两种 FFT。示例更名后补跑默认/SIMD 联合构建，输出冲突警告消失。双语章节及相关文档链接已核对。本机三轮测试耗时基本持平，方法与结果见[测试资产成本](tfhe-refactor-costs.md#r3测试资产整理)，不推断 GitHub CI 或在线性能。
 
 ## R4：全链验收与交接
 

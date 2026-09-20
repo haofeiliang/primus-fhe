@@ -43,10 +43,13 @@ NTRU CBS 的 [NTT](../../crates/primus_tfhe_ntru_ntt/benches/circuit_bootstrap.r
 内存统计计入构造结束时仍持有的请求堆字节，排除 allocator 元数据、借用的 table、普通 server key
 和调用方输出；keygen 与统计都在计时外。功能及零分配测试入口见[开发验证](../tfhe.md#验证入口)。
 
-## R1–R2 结构整理
+## R1–R3 结构整理
 
 [成本与复现](../tfhe-refactor-costs.md)集中记录 LUT 构造、evaluator 资源复用和完整 keygen/在线对照，
 包括已撤回的 NTT keygen 原型及保留的时间成本限制；[R1 数据](tfhe-r1.csv)、[R2 数据](tfhe-r2.csv)。
+R3 保留全部 19 个 TFHE benchmark target；GLWE NTT PBS 的历史 n=512 参数移至
+`benches/support/mod.rs`，工作负载不变。[测试整理成本](../tfhe-refactor-costs.md#r3测试资产整理)
+记录默认/SIMD 各 87→86 项及本机耗时，不作为在线性能或 GitHub CI 加速证据。
 
 ## 历史测量环境
 

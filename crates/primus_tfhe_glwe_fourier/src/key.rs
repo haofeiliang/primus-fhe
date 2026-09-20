@@ -1,3 +1,5 @@
+//! Server evaluation material and paired or component key generation.
+
 use primus_fft::{FftEngine, FftTable, TorusFftValue};
 use primus_glwe::{
     FourierGadgetEncryptContext, FourierGlweKeySwitchingKey, FourierGlweSecretKey, SecretKeyDistr,
