@@ -1,3 +1,4 @@
+use primus_tfhe::ProgrammableBootstrap as _;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use primus_decompose::primitive::ApproxSignedBasis;
@@ -78,7 +79,9 @@ fn check_complete<T: TorusFftValue, Table: FftTable>(order: PbsOrder, ternary: b
     });
     // Reuse the same client/program for classic and sparse binary controls.
     for server in std::iter::once(&server).chain(sparse.as_ref()) {
-        let mut evaluator = context.factorized_evaluator(server).unwrap();
+        let mut evaluator = primus_tfhe_glwe_fourier::FactorizedEvaluator::from_bootstrapper(
+            context.evaluator(server).unwrap(),
+        );
         let encryptor = context.encryptor(&client).unwrap();
         let decryptor = context.decryptor(&client).unwrap();
         let dimension = context.parameters().external_lwe_dimension();
@@ -91,7 +94,6 @@ fn check_complete<T: TorusFftValue, Table: FftTable>(order: PbsOrder, ternary: b
             }
         );
         let mut outputs = vec![LweCiphertext::zero(dimension); 3];
-        let mut ordinary = context.evaluator(server).unwrap();
         let singles: Vec<_> = (0..3)
             .map(|i| {
                 LookupTable::try_new(DOMAIN, N, T::as_from(15usize), modulus, modulus, |m| {
@@ -122,13 +124,20 @@ fn check_complete<T: TorusFftValue, Table: FftTable>(order: PbsOrder, ternary: b
                     .into_signed_f64()
                     .abs();
                 assert!(error * T::TORUS_SCALE < 0.01);
-                ordinary.apply_lookup_table_to(&input, &singles[i], &mut reference);
+                evaluator.bootstrapper_mut().apply_lookup_table_to(
+                    &input,
+                    &singles[i],
+                    &mut reference,
+                );
                 assert_eq!(
                     codec.decode_value(decryptor.decrypt_phase(&reference).unwrap()),
                     expected
                 );
             }
         }
+
+        let (_, recovered) = allocations::measure(|| evaluator.into_bootstrapper());
+        assert_eq!(recovered.count, 0, "recovery must retain PBS allocations");
     }
 }
 

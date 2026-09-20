@@ -318,6 +318,84 @@ impl<T: FheUint> NttNtruTraceKey<T> {
         self.project_indices_to(input, 0..count, output, modulus, ntt, context);
     }
 
+    /// Projects `0..count` with caller-owned coefficient and external-product scratch.
+    /// Reuses exactly `2*N` coefficients: an automorphism result and a permutation buffer.
+    /// All scratch is overwritten before use; neither a reset nor a transform-input buffer is needed.
+    /// This supports serial BR/trace/key-switch pipelines sharing one decomposition workspace.
+    ///
+    /// # Correctness
+    /// Inherits [`Self::project_prefix_coefficients_to`]'s key, representation and noise requirements.
+    ///
+    /// # Panics
+    /// Checks count, input/output, exact scratch length and backend resources before output writes.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "explicit coefficient and decomposition scratch"
+    )]
+    pub fn project_prefix_coefficients_with_scratch_to<M, Table, A>(
+        &self,
+        input: &NtruCiphertext<A>,
+        count: usize,
+        output: &mut [T],
+        modulus: M,
+        ntt: &Table,
+        scratch: &mut [T],
+        external_product: &mut crate::NttNtruExternalProductContext<T>,
+    ) where
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+        A: Data<Elem = T>,
+    {
+        let n = self.poly_length();
+        assert!(count <= n, "projection prefix exceeds polynomial length");
+        assert_eq!(input.as_ref().len(), n, "trace input length mismatch");
+        assert_eq!(
+            output.len(),
+            count.checked_mul(n).expect("trace output length overflow"),
+            "trace output length mismatch"
+        );
+        assert_eq!(
+            scratch.len(),
+            2 * n,
+            "trace coefficient scratch length mismatch"
+        );
+        self.automorphism_keys[0].assert_external_product_compatible(
+            modulus,
+            ntt,
+            external_product,
+        );
+        let (automorphism_output, coefficients) = scratch.split_at_mut(n);
+        let exponents = PowOf2Modulus::new(2 * n);
+        for (index, output) in output.chunks_exact_mut(n).enumerate() {
+            input.mul_monomial_to(
+                exponents.reduce_neg(index),
+                &mut NtruCiphertext::new(&mut *output),
+                modulus,
+            );
+            kernels::trace_assign::<_, _, _, _, true>(
+                output,
+                self.automorphism_count(),
+                automorphism_output,
+                modulus,
+                |values| {
+                    for value in values {
+                        *value = (*value >> 1u32) + (*value & T::ONE) * self.inverse_two;
+                    }
+                },
+                |index, input, output| {
+                    self.automorphism_keys[index].apply_with_scratch_kernel_to(
+                        &NtruCiphertext::new(input),
+                        &mut NtruCiphertext::new(output),
+                        modulus,
+                        ntt,
+                        coefficients,
+                        external_product,
+                    )
+                },
+            );
+        }
+    }
+
     // Public callers validate the index range. Check the remaining layouts
     // once, then use the same arithmetic for a slice iterator or a prefix range.
     fn project_indices_to<M, Table, A>(

@@ -1,3 +1,5 @@
+use primus_tfhe::ProgrammableBootstrap as _;
+use primus_tfhe::ProgrammableBootstrapInterleaved as _;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use primus_decompose::primitive::ApproxSignedBasis;
@@ -83,7 +85,9 @@ fn factorized_pbs_reuses_workspace_and_preserves_both_external_secrets() {
         };
 
         for key in [&classic, &sparse] {
-            let mut evaluator = context.factorized_evaluator(key).unwrap();
+            let mut evaluator = primus_tfhe_glwe_ntt::FactorizedEvaluator::from_bootstrapper(
+                context.evaluator(key).unwrap(),
+            );
             for count in [1, 3, 17] {
                 let (lut, allocation) = allocations::measure(|| {
                     context
@@ -113,7 +117,6 @@ fn factorized_pbs_reuses_workspace_and_preserves_both_external_secrets() {
                     if count == 3 && message == 3 {
                         assert_eq!(outputs, evaluator.apply_lookup_table(&input, &lut));
                         // Same functions AND Scaled centers in both existing baselines.
-                        let mut ordinary = context.evaluator(key).unwrap();
                         let interleaved =
                             InterleavedLookupTable::try_new(
                                 DOMAIN,
@@ -128,11 +131,9 @@ fn factorized_pbs_reuses_workspace_and_preserves_both_external_secrets() {
                                 },
                             )
                             .unwrap();
-                        ordinary.apply_interleaved_lookup_table_to(
-                            &input,
-                            &interleaved,
-                            &mut outputs,
-                        );
+                        evaluator
+                            .bootstrapper_mut()
+                            .apply_interleaved_lookup_table_to(&input, &interleaved, &mut outputs);
                         check(&outputs, message);
                         for (i, output) in outputs.iter_mut().enumerate() {
                             let single =
@@ -141,12 +142,17 @@ fn factorized_pbs_reuses_workspace_and_preserves_both_external_secrets() {
                                         .encode_value(value(m, i), PlaintextEmbedding::Unsigned))
                                 })
                                 .unwrap();
-                            ordinary.apply_lookup_table_to(&input, &single, output);
+                            evaluator
+                                .bootstrapper_mut()
+                                .apply_lookup_table_to(&input, &single, output);
                         }
                         check(&outputs, message);
                     }
                 }
             }
+
+            let (_, recovered) = allocations::measure(|| evaluator.into_bootstrapper());
+            assert_eq!(recovered.count, 0, "recovery must retain PBS allocations");
         }
         // 17 outputs require 32 interleaved slots: N/32=4 < D=8. MVB above works.
         assert!(matches!(

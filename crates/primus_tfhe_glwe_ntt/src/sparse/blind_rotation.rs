@@ -190,6 +190,14 @@ pub struct SparseGlweBlindRotationContext<T: FheUint> {
 }
 
 impl<T: FheUint> SparseGlweBlindRotationContext<T> {
+    pub(crate) fn with_external_product<R>(
+        &mut self,
+        size: primus_lattice::GadgetSize,
+        operation: impl FnOnce(&mut NttGlweExternalProductContext<T>) -> R,
+    ) -> R {
+        self.external_product.with_rebound(size, operation)
+    }
+
     /// Allocates scratch for the key's input dimension and gadget layout.
     /// It can be reused with other sparse keys of the same dimensions and layout.
     #[must_use]

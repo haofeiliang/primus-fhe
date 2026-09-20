@@ -1,7 +1,6 @@
 use num_traits::{ConstOne, ConstZero};
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_integer::FheUint;
-use primus_lattice::ngsw::NttNgsw;
 use primus_lattice::nlev::NttNlev;
 use primus_ntru::SecretKeyDistr;
 use primus_ntru::{NttNtruGadgetEncryptContext, NttNtruKeySwitchingKey, NttNtruSecretKey};
@@ -39,7 +38,7 @@ impl<T: FheUint> ServerKey<T> {
         }
     }
 
-    fn classic_controls(&self) -> &[T] {
+    pub(crate) fn classic_controls(&self) -> &[T] {
         match &self.controls {
             Controls::Classic(data) => data,
             Controls::Sparse(_) => panic!("classic control iterator requires a classic key"),
@@ -89,28 +88,6 @@ impl<T: FheUint> ServerKey<T> {
     #[inline]
     pub(crate) fn key_switching_key(&self) -> &NttNtruKeySwitchingKey<T> {
         &self.key_switching_key
-    }
-
-    /// Iterates over the contiguous NGSW controls without allocation.
-    pub(crate) fn iter_binary_controls(&self) -> impl ExactSizeIterator<Item = NttNgsw<&[T]>> {
-        debug_assert!(self.input_distribution.is_binary());
-        self.classic_controls()
-            .chunks_exact(self.initializer.as_ref().len())
-            .map(NttNgsw::new)
-    }
-
-    /// Borrows adjacent positive/negative controls for each ternary coordinate.
-    pub(crate) fn iter_ternary_controls(
-        &self,
-    ) -> impl ExactSizeIterator<Item = (NttNgsw<&[T]>, NttNgsw<&[T]>)> {
-        debug_assert!(self.input_distribution.is_ternary());
-        let len = self.initializer.as_ref().len();
-        self.classic_controls()
-            .chunks_exact(2 * len)
-            .map(move |pair| {
-                let (positive, negative) = pair.split_at(len);
-                (NttNgsw::new(positive), NttNgsw::new(negative))
-            })
     }
 
     /// Checks the generated ring and decomposition parameters before evaluation.

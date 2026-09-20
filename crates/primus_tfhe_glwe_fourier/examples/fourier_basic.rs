@@ -8,8 +8,8 @@ use primus_glwe::SecretKeyDistr;
 use primus_lwe::LweParameters;
 use primus_modulus::NativeModulus;
 use primus_tfhe_glwe_fourier::{
-    BooleanGate, DecompositionConfig, LweCiphertext, PbsOrder, TfheConfig, TfheContext,
-    TfheParameters,
+    BooleanGate, DecompositionConfig, FactorizedEvaluator, LweCiphertext, PbsOrder, TfheConfig,
+    TfheContext, TfheParameters,
 };
 
 const LWE_DIMENSION: usize = 4;
@@ -115,7 +115,7 @@ fn run(order: PbsOrder) {
             }
         })
         .unwrap();
-    let mut mvb = context.factorized_evaluator(&server_key).unwrap();
+    let mut mvb = FactorizedEvaluator::from_bootstrapper(evaluator);
     mvb.apply_lookup_table_to(&input, &factored, &mut outputs);
     for (output, expected) in outputs.iter().zip([5, 8]) {
         assert_eq!(
@@ -123,6 +123,10 @@ fn run(order: PbsOrder) {
             expected
         );
     }
+
+    let mut evaluator = mvb.into_bootstrapper();
+    evaluator.apply_lookup_table_to(&input, &toggle, &mut outputs[0]);
+    assert_eq!(decryptor.decrypt(&outputs[0]).unwrap(), 0);
 
     // Boolean adapters manage the internal LUT scale and restore external 0/1.
     let boolean_encryptor = context.boolean_encryptor(&public_key).unwrap();

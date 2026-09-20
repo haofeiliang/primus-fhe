@@ -115,12 +115,39 @@ where
         context: &'a TfheContext<T, Table>,
         server_key: &'a ServerKey<T>,
     ) -> Result<Self, TfheEvaluationError> {
-        Ok(Self {
-            evaluator: Evaluator::try_new(context, server_key)?,
+        Ok(Self::from_bootstrapper(Evaluator::try_new(
+            context, server_key,
+        )?))
+    }
+
+    /// Consumes ordinary PBS workspace and allocates only the additional MVB buffers.
+    /// The underlying key, context and existing allocations are preserved.
+    #[must_use]
+    pub fn from_bootstrapper(evaluator: Evaluator<'a, T, Table>) -> Self {
+        let context = evaluator.context;
+        Self {
+            evaluator,
             shared_rotation: NttGlweCiphertext::zero(
                 context.parameters().accumulator_glwe().glwe_len(),
             ),
-        })
+        }
+    }
+
+    /// Borrows ordinary single-output and interleaved PBS operations without allocation.
+    /// The opaque borrow prevents replacing the bound evaluator and invalidating MVB scratch.
+    #[must_use]
+    pub fn bootstrapper_mut(
+        &mut self,
+    ) -> impl primus_tfhe::ProgrammableBootstrap<T>
+    + primus_tfhe::ProgrammableBootstrapInterleaved<T>
+    + use<'_, 'a, T, Table> {
+        &mut self.evaluator
+    }
+
+    /// Releases the extra MVB buffers and recovers the original PBS workspace without allocation.
+    #[must_use]
+    pub fn into_bootstrapper(self) -> Evaluator<'a, T, Table> {
+        self.evaluator
     }
 
     /// Evaluates the program, allocating one LWE per output.
@@ -204,8 +231,8 @@ where
             product.into_coeff_form(table);
             match parameters.pbs_order() {
                 PbsOrder::BootstrapKeyswitch => {
-                    evaluator.keyswitch_accumulator();
-                    evaluator.switched.extract_compact_lwe_to(
+                    let switched = evaluator.keyswitch_accumulator();
+                    switched.extract_compact_lwe_to(
                         output,
                         glwe.poly_length(),
                         glwe.cipher_modulus(),

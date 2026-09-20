@@ -4,6 +4,7 @@ use primus_modulus::BarrettModulus;
 use primus_ntru::SecretKeyDistr;
 use primus_ntt::U32NttTable;
 use primus_test_allocations as allocations;
+use primus_tfhe::ProgrammableBootstrap as _;
 use primus_tfhe_ntru_ntt::{
     DecompositionConfig, FactorizedLookupTable, InterleavedLookupTable, LookupTable,
     LookupTableError, LweCiphertext, NttFactorizedLookupTable, TfheConfig, TfheContext,
@@ -55,7 +56,10 @@ fn check_complete(distr: SecretKeyDistr) {
     let (client, server) = context.try_generate_keys(None, &mut rng).unwrap();
     let encryptor = context.encryptor(&client).unwrap();
     let decryptor = context.decryptor(&client).unwrap();
-    let mut evaluator = context.factorized_evaluator(&server).unwrap();
+    let mut evaluator = primus_tfhe_ntru_ntt::FactorizedEvaluator::try_from_bootstrapper(
+        context.evaluator(&server).unwrap(),
+    )
+    .unwrap();
     let dimension = context.parameters().external_lwe_dimension();
     // The reference uses the same Scaled centers, not Rounded outputs.
     let singles: [_; 3] = std::array::from_fn(|i| {
@@ -64,7 +68,6 @@ fn check_complete(distr: SecretKeyDistr) {
         })
         .unwrap()
     });
-    let mut ordinary = context.evaluator(&server).unwrap();
     let mut reference = LweCiphertext::zero(dimension);
     let check = |outputs: &[LweCiphertext<u32>], message: usize| {
         for (i, output) in outputs.iter().enumerate() {
@@ -105,7 +108,11 @@ fn check_complete(distr: SecretKeyDistr) {
             check(&outputs, message);
             if count == 3 {
                 for (single, output) in singles.iter().zip(&outputs) {
-                    ordinary.apply_lookup_table_to(&input, single, &mut reference);
+                    evaluator.bootstrapper_mut().apply_lookup_table_to(
+                        &input,
+                        single,
+                        &mut reference,
+                    );
                     assert_eq!(
                         codec.decode_value(decryptor.decrypt_phase(&reference).unwrap()),
                         codec.decode_value(decryptor.decrypt_phase(output).unwrap())
@@ -194,6 +201,9 @@ fn check_complete(distr: SecretKeyDistr) {
         ),
         Err(LookupTableError::OutputModulusMismatch)
     ));
+
+    let (_, recovered) = allocations::measure(|| evaluator.into_bootstrapper());
+    assert_eq!(recovered.count, 0, "recovery must retain PBS allocations");
 }
 
 #[test]

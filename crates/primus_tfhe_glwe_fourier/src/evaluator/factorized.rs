@@ -110,13 +110,42 @@ impl<'a, T: TorusFftValue, Table: FftTable> FactorizedEvaluator<'a, T, Table> {
         context: &'a TfheContext<T, Table>,
         server_key: &'a ServerKey<T>,
     ) -> Result<Self, TfheEvaluationError> {
-        let evaluator = Evaluator::try_new(context, server_key)?;
-        let glwe = context.parameters().accumulator_glwe();
-        Ok(Self {
+        Ok(Self::from_bootstrapper(Evaluator::try_new(
+            context, server_key,
+        )?))
+    }
+
+    /// Consumes ordinary PBS workspace and allocates only the additional MVB buffers.
+    /// The underlying key, context and existing allocations are preserved.
+    #[must_use]
+    pub fn from_bootstrapper(evaluator: Evaluator<'a, T, Table>) -> Self {
+        let context = evaluator.context;
+        Self {
             evaluator,
-            shared_rotation: FourierGlwe::zero(glwe.glwe_len() / 2),
-            product: FourierPolynomial::zero(glwe.poly_length() / 2),
-        })
+            shared_rotation: FourierGlwe::zero(
+                context.parameters().accumulator_glwe().glwe_len() / 2,
+            ),
+            product: FourierPolynomial::zero(
+                context.parameters().accumulator_glwe().poly_length() / 2,
+            ),
+        }
+    }
+
+    /// Borrows ordinary single-output and interleaved PBS operations without allocation.
+    /// The opaque borrow prevents replacing the bound evaluator and invalidating MVB scratch.
+    #[must_use]
+    pub fn bootstrapper_mut(
+        &mut self,
+    ) -> impl primus_tfhe::ProgrammableBootstrap<T>
+    + primus_tfhe::ProgrammableBootstrapInterleaved<T>
+    + use<'_, 'a, T, Table> {
+        &mut self.evaluator
+    }
+
+    /// Releases the extra MVB buffers and recovers the original PBS workspace without allocation.
+    #[must_use]
+    pub fn into_bootstrapper(self) -> Evaluator<'a, T, Table> {
+        self.evaluator
     }
 
     /// Evaluates the program, allocating one LWE ciphertext per output.
@@ -200,10 +229,8 @@ impl<'a, T: TorusFftValue, Table: FftTable> FactorizedEvaluator<'a, T, Table> {
             }
             match parameters.pbs_order() {
                 PbsOrder::BootstrapKeyswitch => {
-                    evaluator.keyswitch_accumulator();
-                    evaluator
-                        .switched
-                        .extract_compact_lwe_to(output, n, glwe.cipher_modulus());
+                    let switched = evaluator.keyswitch_accumulator();
+                    switched.extract_compact_lwe_to(output, n, glwe.cipher_modulus());
                 }
                 PbsOrder::KeyswitchBootstrap => {
                     evaluator

@@ -176,14 +176,40 @@ impl<T: FheUint> NttNtruAutomorphismKey<T> {
         A: Data<Elem = T>,
         B: DataMut<Elem = T>,
     {
-        self.coeff_permutation
-            .apply_to(input.as_ref(), context.coefficients.as_mut(), modulus);
-        self.key_switching.key_switch_kernel_to(
-            &context.coefficients,
+        self.apply_with_scratch_kernel_to(
+            input,
             output,
             modulus,
             ntt,
+            context.coefficients.as_mut(),
             &mut context.external_product,
+        );
+    }
+
+    /// Coefficient-only kernel for serial scratch reuse. The caller validates N coefficients
+    /// in input, output and permutation scratch, plus matching key/table/product resources.
+    pub(crate) fn apply_with_scratch_kernel_to<M, Table, A, B>(
+        &self,
+        input: &NtruCiphertext<A>,
+        output: &mut NtruCiphertext<B>,
+        modulus: M,
+        ntt: &Table,
+        coefficients: &mut [T],
+        external_product: &mut NttNtruExternalProductContext<T>,
+    ) where
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
+    {
+        self.coeff_permutation
+            .apply_to(input.as_ref(), coefficients, modulus);
+        self.key_switching.key_switch_kernel_to(
+            &NtruCiphertext::new(&*coefficients),
+            output,
+            modulus,
+            ntt,
+            external_product,
         );
     }
 
@@ -238,6 +264,18 @@ impl<T: FheUint> NttNtruAutomorphismKey<T> {
             self.poly_length(),
             "automorphism output length mismatch"
         );
+    }
+
+    pub(crate) fn assert_external_product_compatible<M, Table>(
+        &self,
+        modulus: M,
+        ntt: &Table,
+        context: &NttNtruExternalProductContext<T>,
+    ) where
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+    {
+        self.key_switching.assert_compatible(modulus, ntt, context);
     }
 
     /// Checks the resources shared by all automorphism keys in one trace key.

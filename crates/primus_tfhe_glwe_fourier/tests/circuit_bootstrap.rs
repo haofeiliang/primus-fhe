@@ -5,6 +5,7 @@ use primus_lattice::ggsw::{FourierGgsw, Ggsw};
 use primus_lwe::{LweCiphertext, LweParameters};
 use primus_modulus::NativeModulus;
 use primus_test_allocations as allocations;
+use primus_tfhe::ProgrammableBootstrap as _;
 use primus_tfhe_glwe_fourier::{
     CircuitBootstrapConfig, CircuitBootstrapEvaluator, CircuitBootstrapParameterError,
     CircuitBootstrapParameters, ClientKey, DecompositionConfig, KeyGenerationError, KeyGenerator,
@@ -132,10 +133,16 @@ fn circuit_bootstrap<Table: FftTable>(order: PbsOrder, distribution: SecretKeyDi
     )
     .unwrap();
     let (parameters, mut evaluator) = match order {
-        PbsOrder::BootstrapKeyswitch => (
-            parameters,
-            context.circuit_bootstrap_evaluator(&server).unwrap(),
-        ),
+        PbsOrder::BootstrapKeyswitch => (parameters, {
+            let mut standalone = context.circuit_bootstrap_evaluator(&server).unwrap();
+            assert!(standalone.bootstrapper_mut().is_none());
+            let (pbs, allocation) = allocations::measure(|| standalone.into_bootstrapper());
+            assert!(
+                allocation.count > 0,
+                "standalone BK recovery explicitly creates return-KS scratch"
+            );
+            CircuitBootstrapEvaluator::try_from_bootstrapper(pbs).unwrap()
+        }),
         PbsOrder::KeyswitchBootstrap => (
             &alternate,
             CircuitBootstrapEvaluator::try_from_parts(&context, &server, &alternate, key).unwrap(),
@@ -171,7 +178,7 @@ fn circuit_bootstrap<Table: FftTable>(order: PbsOrder, distribution: SecretKeyDi
         })
         .unwrap();
     let input = encryptor.encrypt_padded(1u64, &mut rng).unwrap();
-    let output = context
+    let mut output = context
         .evaluator(&server)
         .unwrap()
         .apply_lookup_table(&input, &identity);
@@ -210,9 +217,22 @@ fn circuit_bootstrap<Table: FftTable>(order: PbsOrder, distribution: SecretKeyDi
             evaluator.circuit_bootstrap_to(&input, &mut control);
             evaluator.cmux_to(&control, &choices[0], &choices[1], &mut selected);
             evaluator.external_product_to(&control, &choices[1], &mut product);
+            evaluator.bootstrapper_mut().unwrap().apply_lookup_table_to(
+                &input,
+                &identity,
+                &mut output,
+            );
             accumulator_client.decrypt_to(&selected, &mut decoded);
             accumulator_client.decrypt_to(&product, &mut decoded_product);
         });
+        assert_eq!(
+            context
+                .decryptor(&client)
+                .unwrap()
+                .decrypt(&output)
+                .unwrap(),
+            bit
+        );
         assert_eq!(
             allocation.count, 0,
             "CBS must reuse workspace from the first call"
@@ -256,6 +276,12 @@ fn circuit_bootstrap<Table: FftTable>(order: PbsOrder, distribution: SecretKeyDi
                 .collect::<Vec<_>>()
         );
     }
+
+    let (_, recovery) = allocations::measure(|| evaluator.into_bootstrapper());
+    assert_eq!(
+        recovery.count, 0,
+        "converted CBS retains ordinary workspace"
+    );
 }
 
 #[test]

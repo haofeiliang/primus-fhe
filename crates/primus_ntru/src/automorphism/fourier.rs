@@ -175,16 +175,36 @@ impl<T: TorusFftValue> FourierNtruAutomorphismKey<T> {
         A: Data<Elem = T>,
         B: DataMut<Elem = T>,
     {
-        self.coeff_permutation.apply_to(
-            input.as_ref(),
-            context.coefficients.as_mut(),
-            NativeModulus::new(),
-        );
-        self.key_switching.key_switch_kernel_to(
-            &context.coefficients,
+        self.apply_with_scratch_kernel_to(
+            input,
             output,
             fft,
+            context.coefficients.as_mut(),
             &mut context.external_product,
+        );
+    }
+
+    /// Coefficient-only kernel for serial scratch reuse. The caller validates N coefficients
+    /// in input, output and permutation scratch, plus matching key/table/product resources.
+    pub(crate) fn apply_with_scratch_kernel_to<Table, A, B>(
+        &self,
+        input: &NtruCiphertext<A>,
+        output: &mut NtruCiphertext<B>,
+        fft: &mut FftEngine<'_, Table>,
+        coefficients: &mut [T],
+        external_product: &mut FourierNtruExternalProductContext<T>,
+    ) where
+        Table: FftTable,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
+    {
+        self.coeff_permutation
+            .apply_to(input.as_ref(), coefficients, NativeModulus::new());
+        self.key_switching.key_switch_kernel_to(
+            &NtruCiphertext::new(&*coefficients),
+            output,
+            fft,
+            external_product,
         );
     }
 
@@ -238,6 +258,16 @@ impl<T: TorusFftValue> FourierNtruAutomorphismKey<T> {
     fn assert_lengths(&self, input: usize, output: usize, expected: usize) {
         assert_eq!(input, expected, "automorphism input length mismatch");
         assert_eq!(output, expected, "automorphism output length mismatch");
+    }
+
+    pub(crate) fn assert_external_product_compatible<Table>(
+        &self,
+        fft: &FftEngine<'_, Table>,
+        context: &FourierNtruExternalProductContext<T>,
+    ) where
+        Table: FftTable,
+    {
+        self.key_switching.assert_compatible(fft, context);
     }
 
     /// Checks the resources shared by all automorphism keys in one trace key.

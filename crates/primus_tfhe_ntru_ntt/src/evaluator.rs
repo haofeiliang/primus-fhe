@@ -21,9 +21,9 @@ where
     T: FheUint,
     Table: MonomialNttTable<ValueT = T>,
 {
-    context: &'a TfheContext<T, Table>,
-    server_key: &'a ServerKey<T>,
-    blind_rotation: BlindRotationWorkspace<T>,
+    pub(crate) context: &'a TfheContext<T, Table>,
+    pub(crate) server_key: &'a ServerKey<T>,
+    pub(crate) blind_rotation: BlindRotationWorkspace<'a, T>,
 }
 
 impl<'a, T, Table> Evaluator<'a, T, Table>

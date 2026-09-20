@@ -192,12 +192,19 @@ where
         R: rand::Rng + rand::CryptoRng,
     {
         let circuit_parameters = self.prepare_circuit_bootstrap(circuit_bootstrap)?;
+        let prepared = self.prepare_sparse_map(client_key, copy_count, bucket_count, rng)?;
+        let main = FourierGlweSecretKey::from_coeff_secret_key(
+            client_key.glwe_secret_key(),
+            &mut self.fft,
+        );
         let bootstrapping_key =
-            self.try_generate_sparse_bootstrapping_key(client_key, copy_count, bucket_count, rng)?;
-        let circuit_bootstrap = circuit_parameters
-            .map(|parameters| self.try_generate_circuit_bootstrap_key(client_key, parameters, rng))
-            .transpose()?
-            .map(Box::new);
+            self.generate_sparse_bootstrapping_key_with_main(prepared, &main, rng);
+        let circuit_bootstrap = circuit_parameters.map(|parameters| {
+            Box::new(
+                self.generate_circuit_bootstrap_key_with_main(client_key, &main, parameters, rng),
+            )
+        });
+        drop(main);
         let glwe_key_switching_key = self.generate_glwe_key_switching_key(client_key, rng);
         Ok(ServerKey {
             circuit_bootstrap,

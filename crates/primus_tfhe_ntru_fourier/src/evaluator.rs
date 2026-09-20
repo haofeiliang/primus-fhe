@@ -20,10 +20,10 @@ where
     T: TorusFftValue,
     Table: FftTable,
 {
-    context: &'a TfheContext<T, Table>,
-    server_key: &'a ServerKey<T>,
-    fft: FftEngine<'a, Table>,
-    blind_rotation: BlindRotationWorkspace<T>,
+    pub(crate) context: &'a TfheContext<T, Table>,
+    pub(crate) server_key: &'a ServerKey<T>,
+    pub(crate) fft: FftEngine<'a, Table>,
+    pub(crate) blind_rotation: BlindRotationWorkspace<'a, T>,
 }
 
 impl<'a, T, Table> Evaluator<'a, T, Table>

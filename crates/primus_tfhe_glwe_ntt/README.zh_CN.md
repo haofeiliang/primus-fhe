@@ -9,6 +9,19 @@
 `Encryptor`、`Decryptor`、`TfheConfig` 和 `TfheParameters` 是公共类型固定为 `BarrettModulus` 的别名；
 `ClientKey`、`EncryptionKey` 和 `PbsOrder` 直接重导出。
 
+## 复用 evaluator
+
+已有普通 `Evaluator` 时，用 `FactorizedEvaluator::from_bootstrapper` 或
+`CircuitBootstrapEvaluator::try_from_bootstrapper` 转入 MVB/CBS，仅分配新增能力的缓冲区。
+通过 `bootstrapper_mut()` 可交替执行普通单输出/交错 PBS；先导入
+`primus_tfhe::{ProgrammableBootstrap, ProgrammableBootstrapInterleaved}`。
+这个借用只开放 PBS 操作，不能替换内部 evaluator。`into_bootstrapper()` 回收普通工作区，
+释放额外缓冲区；从普通 evaluator 转入再回收不分配。
+
+独立构造 BR→KS CBS 会省去返回 KS 的工作区，因此 `bootstrapper_mut()` 返回 `None`；
+此时 `into_bootstrapper()` 会显式补充分配。KS→BR CBS 保留前置 KS。需要频繁交替 PBS/CBS
+时，从普通 evaluator 转入，取得的 PBS 借用为 `Some`，在线操作不重新构造工作区。
+
 ## 运行完整示例
 
 ```sh

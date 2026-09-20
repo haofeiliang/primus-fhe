@@ -7,51 +7,68 @@ use primus_tfhe::rotation::RotationQuantizer;
 use crate::{ServerKey, TfheParameters};
 
 /// Coefficient buffers and external-product scratch reused by one evaluator.
-pub(crate) struct BlindRotationWorkspace<T: FheUint> {
+pub(crate) struct BlindRotationWorkspace<'a, T: FheUint> {
     /// Coefficient-domain result under the accumulator secret after BR.
     pub(crate) current: Ntru<Vec<T>>,
     /// BR temporary storage, then coefficient output under the client secret after KS.
     pub(crate) scratch: Ntru<Vec<T>>,
-    pub(crate) rotation: RotationContext<T>,
+    pub(crate) rotation: RotationContext<'a, T>,
 }
 
-impl<T: FheUint> BlindRotationWorkspace<T> {
+impl<'a, T: FheUint> BlindRotationWorkspace<'a, T> {
     /// Allocates all NTT blind-rotation storage once.
-    pub(crate) fn new(parameters: &TfheParameters<T>, server_key: &ServerKey<T>) -> Self {
+    pub(crate) fn new(parameters: &TfheParameters<T>, server_key: &'a ServerKey<T>) -> Self {
         let poly_length = parameters.poly_length();
         Self {
             current: Ntru::zero(poly_length),
             scratch: Ntru::zero(poly_length),
-            rotation: if server_key.sparse_bootstrapping_key().is_some() {
-                RotationContext::Sparse(crate::sparse::SparseWorkspace::new(parameters))
+            rotation: if let Some(key) = server_key.sparse_bootstrapping_key() {
+                RotationContext::Sparse {
+                    key,
+                    scratch: crate::sparse::SparseWorkspace::new(parameters),
+                }
             } else if parameters.external_lwe().secret_key_distr().is_binary() {
-                RotationContext::Binary(primus_ntru::NttNtruExternalProductContext::new(
-                    poly_length,
-                ))
+                RotationContext::Binary {
+                    controls: server_key.classic_controls(),
+                    scratch: primus_ntru::NttNtruExternalProductContext::new(poly_length),
+                }
             } else {
-                RotationContext::Ternary(primus_ntru::NttNtruTernaryCmuxContext::new(
-                    poly_length,
-                    parameters.blind_rotation().decompose_length(),
-                ))
+                RotationContext::Ternary {
+                    controls: server_key.classic_controls(),
+                    scratch: primus_ntru::NttNtruTernaryCmuxContext::new(
+                        poly_length,
+                        parameters.blind_rotation().decompose_length(),
+                    ),
+                }
             },
         }
     }
 }
 
-pub(crate) enum RotationContext<T: FheUint> {
-    Sparse(crate::sparse::SparseWorkspace<T>),
-    Binary(primus_ntru::NttNtruExternalProductContext<T>),
-    Ternary(primus_ntru::NttNtruTernaryCmuxContext<T>),
+// A validated control layout and its scratch travel together for the evaluator's lifetime.
+pub(crate) enum RotationContext<'a, T: FheUint> {
+    Sparse {
+        key: &'a crate::SparseNtruBootstrappingKey<T>,
+        scratch: crate::sparse::SparseWorkspace<T>,
+    },
+    Binary {
+        controls: &'a [T],
+        scratch: primus_ntru::NttNtruExternalProductContext<T>,
+    },
+    Ternary {
+        controls: &'a [T],
+        scratch: primus_ntru::NttNtruTernaryCmuxContext<T>,
+    },
 }
 
-impl<T: FheUint> RotationContext<T> {
+impl<T: FheUint> RotationContext<'_, T> {
     pub(crate) fn external_product(
         &mut self,
     ) -> &mut primus_ntru::NttNtruExternalProductContext<T> {
         match self {
-            Self::Sparse(context) => &mut context.external_product,
-            Self::Binary(context) => context,
-            Self::Ternary(context) => context.external_product_context(),
+            Self::Sparse { scratch, .. } => &mut scratch.external_product,
+            Self::Binary { scratch, .. } => scratch,
+            Self::Ternary { scratch, .. } => scratch.external_product_context(),
         }
     }
 }
@@ -67,7 +84,7 @@ pub(crate) fn blind_rotate_lookup_table_to<T, Table, A>(
     input: &Lwe<A>,
     lookup_table: &PolynomialOwned<T>,
     rotation_step: usize,
-    workspace: &mut BlindRotationWorkspace<T>,
+    workspace: &mut BlindRotationWorkspace<'_, T>,
     parameters: &TfheParameters<T>,
     ntt: &Table,
 ) where
@@ -103,14 +120,13 @@ pub(crate) fn blind_rotate_lookup_table_to<T, Table, A>(
 
     let basis = server_key.blind_rotation_basis();
     let modulus = parameters.accumulator_ntru().cipher_modulus();
+    let control_len = server_key.initializer().as_ref().len();
     // One public layout dispatch per BR; the coordinate loop stays specialized.
     match &mut workspace.rotation {
-        RotationContext::Sparse(scratch) => {
+        RotationContext::Sparse { key, scratch } => {
             quantizer.exponent_slice_to(input.a(), &mut scratch.exponents);
             crate::sparse::rotate_buckets(
-                server_key
-                    .sparse_bootstrapping_key()
-                    .expect("sparse workspace requires a sparse key"),
+                key,
                 scratch,
                 &mut workspace.current,
                 &mut workspace.scratch,
@@ -119,9 +135,14 @@ pub(crate) fn blind_rotate_lookup_table_to<T, Table, A>(
                 ntt,
             );
         }
-        RotationContext::Binary(product) => rotate_controls(
+        RotationContext::Binary {
+            controls,
+            scratch: product,
+        } => rotate_controls(
             input.a(),
-            server_key.iter_binary_controls(),
+            controls
+                .chunks_exact(control_len)
+                .map(primus_lattice::ngsw::NttNgsw::new),
             &mut workspace.current,
             &mut workspace.scratch,
             exponent_of,
@@ -129,9 +150,18 @@ pub(crate) fn blind_rotate_lookup_table_to<T, Table, A>(
                 control.cmux_monomial_to(input, exponent, output, basis, modulus, ntt, product)
             },
         ),
-        RotationContext::Ternary(product) => rotate_controls(
+        RotationContext::Ternary {
+            controls,
+            scratch: product,
+        } => rotate_controls(
             input.a(),
-            server_key.iter_ternary_controls(),
+            controls.chunks_exact(2 * control_len).map(|pair| {
+                let (positive, negative) = pair.split_at(control_len);
+                (
+                    primus_lattice::ngsw::NttNgsw::new(positive),
+                    primus_lattice::ngsw::NttNgsw::new(negative),
+                )
+            }),
             &mut workspace.current,
             &mut workspace.scratch,
             exponent_of,

@@ -7,6 +7,7 @@ use primus_ntru::{
 };
 use primus_poly::Polynomial;
 use primus_test_allocations as allocations;
+use primus_tfhe::ProgrammableBootstrap as _;
 use primus_tfhe_ntru_fourier::{
     CircuitBootstrapConfig, CircuitBootstrapEvaluator, CircuitBootstrapParameters,
     DecompositionConfig, TfheContext, TfheParameters,
@@ -70,7 +71,7 @@ fn circuit_bootstrap<Table: FftTable>(distr: SecretKeyDistr) {
         })
         .unwrap();
     let input = encryptor.encrypt_padded(1u64, &mut rng).unwrap();
-    let output = context
+    let mut output = context
         .evaluator(&server)
         .unwrap()
         .apply_lookup_table(&input, &identity);
@@ -97,7 +98,8 @@ fn circuit_bootstrap<Table: FftTable>(distr: SecretKeyDistr) {
     });
 
     let mut evaluator =
-        CircuitBootstrapEvaluator::try_from_parts(&context, &server, circuit_key).unwrap();
+        CircuitBootstrapEvaluator::try_from_bootstrapper(context.evaluator(&server).unwrap())
+            .unwrap();
     let mut control = evaluator.allocate_output();
     let mut selected = accumulator_client.allocate_ciphertext();
     let mut product = accumulator_client.allocate_ciphertext();
@@ -110,9 +112,20 @@ fn circuit_bootstrap<Table: FftTable>(distr: SecretKeyDistr) {
             evaluator.circuit_bootstrap_to(&input, &mut control);
             evaluator.cmux_to(&control, &choices[0], &choices[1], &mut selected);
             evaluator.external_product_to(&control, &choices[1], &mut product);
+            evaluator
+                .bootstrapper_mut()
+                .apply_lookup_table_to(&input, &identity, &mut output);
             accumulator_client.decrypt_to(&selected, &mut decoded);
             accumulator_client.decrypt_to(&product, &mut decoded_product);
         });
+        assert_eq!(
+            context
+                .decryptor(&client)
+                .unwrap()
+                .decrypt(&output)
+                .unwrap(),
+            bit
+        );
         assert_eq!(
             allocation.count, 0,
             "CBS must reuse scratch from its first call"
@@ -170,6 +183,12 @@ fn circuit_bootstrap<Table: FftTable>(distr: SecretKeyDistr) {
             .as_ref()
             .iter()
             .all(|&value| value == Complex64::new(7.0, 0.0))
+    );
+
+    let (_, recovery) = allocations::measure(|| evaluator.into_bootstrapper());
+    assert_eq!(
+        recovery.count, 0,
+        "converted CBS retains ordinary workspace"
     );
 }
 

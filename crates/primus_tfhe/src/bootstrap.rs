@@ -68,3 +68,29 @@ pub trait ProgrammableBootstrapInterleaved<T: FheUint> {
         outputs: &mut [LweCiphertext<T>],
     );
 }
+
+impl<T: FheUint, B: ProgrammableBootstrap<T> + ?Sized> ProgrammableBootstrap<T> for &mut B {
+    #[inline]
+    fn apply_lookup_table_to(
+        &mut self,
+        input: &LweCiphertext<T>,
+        lookup_table: &LookupTable<T>,
+        output: &mut LweCiphertext<T>,
+    ) {
+        B::apply_lookup_table_to(self, input, lookup_table, output);
+    }
+}
+
+impl<T: FheUint, B: ProgrammableBootstrapInterleaved<T> + ?Sized>
+    ProgrammableBootstrapInterleaved<T> for &mut B
+{
+    #[inline]
+    fn apply_interleaved_lookup_table_to(
+        &mut self,
+        input: &LweCiphertext<T>,
+        lookup_table: &InterleavedLookupTable<T>,
+        outputs: &mut [LweCiphertext<T>],
+    ) {
+        B::apply_interleaved_lookup_table_to(self, input, lookup_table, outputs);
+    }
+}

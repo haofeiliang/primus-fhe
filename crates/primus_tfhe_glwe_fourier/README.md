@@ -9,6 +9,21 @@ and [GLWE parameter/key domains](../primus_tfhe_glwe/README.md).
 `Encryptor`, `Decryptor`, `TfheConfig` and `TfheParameters` specialize the shared types to
 `NativeModulus`; `ClientKey`, `EncryptionKey` and `PbsOrder` are re-exported directly.
 
+## Reusing evaluators
+
+Move an existing `Evaluator` into `FactorizedEvaluator::from_bootstrapper` or
+`CircuitBootstrapEvaluator::try_from_bootstrapper` to allocate only the additional MVB/CBS buffers.
+Use `bootstrapper_mut()` to alternate ordinary single-output/interleaved PBS; import
+`primus_tfhe::{ProgrammableBootstrap, ProgrammableBootstrapInterleaved}` for those operations.
+This borrow exposes PBS operations without allowing replacement of the bound evaluator.
+`into_bootstrapper()` releases the extra buffers and recovers ordinary workspace; recovery
+allocates nothing when the specialized evaluator was constructed from an ordinary one.
+
+Standalone BR→KS CBS omits return-KS workspace, so `bootstrapper_mut()` returns `None`;
+`into_bootstrapper()` explicitly allocates the missing workspace in this case. KS→BR CBS retains
+input KS. For frequent PBS/CBS alternation, consume an ordinary evaluator: the PBS borrow is
+`Some`, and online calls never reconstruct workspace.
+
 ## Run the complete example
 
 ```sh

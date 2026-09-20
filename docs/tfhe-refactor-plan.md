@@ -3,7 +3,7 @@
 源码基线：`cba9c01`（2026-09-20）。依据是 B1–B8 完成后对七个 `primus_tfhe*` crate 的源码审查。
 本轮整理现有能力的类型、错误、资源所有权、重复实现和学习入口；数学契约见 [TFHE 设计](tfhe.md)，已有能力与实验条件见 [B1–B8 完成入口](tfhe-backend-plan.md)。
 
-**当前状态：R1 已完成，下一步 R2；构造性能限制见下方验收结果。** 全部工作合并为四个大步骤，替代原来的细分编号。每步内部清单用于实施和验收，无需分别发起。
+**当前状态：R2 已完成，下一步 R3；R1/R2 的实测成本限制保留。** 全部工作合并为四个大步骤，替代原来的细分编号。每步内部清单用于实施和验收，无需分别发起。
 
 ## 执行原则：每步交付完整结果
 
@@ -60,7 +60,7 @@
 | 步骤 | 完整交付 | 状态 |
 | --- | --- | --- |
 | R1 | 公共类型、参数、错误与 LUT 接口收敛 | 已完成，构造成本见下文 |
-| R2 | evaluator 所有权、工作区与重复计算一起整理 | 待执行 |
+| R2 | evaluator 所有权、工作区与重复计算一起整理 | 已完成，NTT keygen 试验已撤回 |
 | R3 | 模块、使用指南、示例、测试与基准整体收尾 | 待执行 |
 | R4 | 全链验收与交接收尾 | 待执行 |
 
@@ -116,28 +116,37 @@ TfheEvaluationError            → LookupTableError
 
 ### 一起设计和实施
 
-- [ ] **evaluator 复用**：为 MVB/CBS 提供适合实际所有权的消费式构造、回收及受控普通操作入口，复用已有 Boolean 机制。使用固有方法，不引入每算法一对 owning/borrowed 类型或 Deref。新增能力允许构造时显式分配，日常交替执行不重新构造、不隐藏分配。
-- [ ] **GLWE 按用途持有资源**：BR→KS 的 CBS 仅需 BR，独立构造时省去无用 KS context、switched GLWE 和 small-LWE；普通 BR→KS 仍保留返回 KS。KS→BR 前置 KS 不得省略。从已有普通 evaluator 转入时保留可回收资源，不丢弃后再分配；两种构造契约一起确定，不用零长度对象充当未使用工作区。
-- [ ] **NTRU 材料与 scratch 配对**：构造时用一个私有枚举绑定 binary/ternary/sparse 控制及对应工作区，去掉依赖同步约定的重复分派和 sparse expect。分派在坐标循环外，保留经典零指数跳过、缓冲交换及 sparse 全桶语义。
-- [ ] **GLWE sparse + CBS 密钥生成**：共用一次 accumulator 秘密变换，采用私有检查/映射准备和生成 helper；独立生成器保留完整检查。不开公开 prepared-secret 类型，不把秘密缓存进长期 Context。
-- [ ] **GLWE 普通/交错 BR 共用流程**：内部合并量化、初始化、清零和控制调度，普通路径使用 step=1 和已准备量化器；保留零指数、模数相同及 step=1 快速路径，公开入口各自承担必要检查。
+- [x] **evaluator 复用**：为 MVB/CBS 提供适合实际所有权的消费式构造、回收及受控普通操作入口，复用已有 Boolean 机制。使用固有方法，不引入每算法一对 owning/borrowed 类型或 Deref。新增能力允许构造时显式分配，日常交替执行不重新构造、不隐藏分配。
+- [x] **GLWE 按用途持有资源**：BR→KS 的 CBS 仅需 BR，独立构造时省去无用 KS context、switched GLWE 和 small-LWE；普通 BR→KS 仍保留返回 KS。KS→BR 前置 KS 不得省略。从已有普通 evaluator 转入时保留可回收资源，不丢弃后再分配；两种构造契约一起确定，不用零长度对象充当未使用工作区。
+- [x] **NTRU 材料与 scratch 配对**：构造时用一个私有枚举绑定 binary/ternary/sparse 控制及对应工作区，去掉依赖同步约定的重复分派和 sparse expect。分派在坐标循环外，保留经典零指数跳过、缓冲交换及 sparse 全桶语义。
+- [x] **GLWE sparse + CBS 密钥生成**：两后端均评估一次 accumulator 秘密变换与私有检查/映射准备 helper；Fourier 保留，NTT 完整生成时间重复退化，按验收规则撤回该项。独立生成器保留完整检查，不开公开 prepared-secret 类型，不把秘密缓存进长期 Context。
+- [x] **GLWE 普通/交错 BR 共用流程**：内部合并量化、初始化、清零和控制调度，普通路径使用 step=1 和已准备量化器；保留零指数、模数相同及 step=1 快速路径，公开入口各自承担必要检查。
 
 ### 在本步内决定是否保留的试验
 
 仅对生命周期清楚、预期能减少实际资源的候选做原型。需要复杂模式状态、扩大公共类型层或有确认时间退化时撤回，记录结论即可，不继续派生阶段。
 
-- [ ] **GLWE 串行外积 scratch**：核对 BR 与 scheme-switch/CMUX 能否共用 [GLWE 外积 context](../crates/primus_lattice/src/context/glwe_external_product.rs)。`rebind` 只能调整允许变化的布局；ternary 合成控制仍绑定 BR basis，返回 BR 前必须恢复布局，不能暴露绕过恢复约束的可变 getter。
-- [ ] **NTRU CBS scratch**：核对 BR 与 trace/automorphism 的外积空间能否共用；Fourier trace 使用系数输入时，评估省去仅供 Fourier 输入使用的 permuted 缓冲。保留既有初始化/BR/返回 KS 复用，NTT/Fourier 各自处理，不改变投影算法。
+- [x] **GLWE 串行外积 scratch**：核对 BR 与 scheme-switch/CMUX 能否共用 [GLWE 外积 context](../crates/primus_lattice/src/context/glwe_external_product.rs)。`rebind` 只能调整允许变化的布局；ternary 合成控制仍绑定 BR basis，返回 BR 前必须恢复布局，不能暴露绕过恢复约束的可变 getter。
+- [x] **NTRU CBS scratch**：核对 BR 与 trace/automorphism 的外积空间能否共用；Fourier trace 使用系数输入时，评估省去仅供 Fourier 输入使用的 permuted 缓冲。保留既有初始化/BR/返回 KS 复用，NTT/Fourier 各自处理，不改变投影算法。
 
 下层仅按上述真实借用需要增加局部 helper 或显式 scratch 接口；在实现前确认具体布局和长度，避免为了统一字段重构整个下层库。
 
 **验收清单**：
 
-- [ ] PBS→MVB→PBS、支持的 CBS/CMUX→普通 BR/PBS 交替执行、不同 BR/输出/SS basis 通过；首调用及重复在线调用零分配。
-- [ ] binary/ternary/sparse 普通与 ManyLUT、受影响 CBS/MVB 回归通过；保留独立相位/整数参考、非恒定 CMUX、两 FFT 和相关 u32/u64 覆盖。
-- [ ] keygen 的检查/RNG/重试/秘密擦除语义保留；实际生成材料能完成 PBS/CBS。秘密变换优化只评价 keygen，不声称加速在线 PBS。
-- [ ] 对照构造分配、持有字节、完整 keygen 和完整在线调用的默认/SIMD 时间；确认退化无法消除则撤回对应优化。
-- [ ] 推荐调用链没有增加需要用户同步的模式、basis 或工作区状态；试验均有保留/撤回结论，没有临时公开 API。
+- [x] PBS→MVB→PBS、支持的 CBS/CMUX→普通 BR/PBS 交替执行、不同 BR/输出/SS basis 通过；首调用及重复在线调用零分配。
+- [x] binary/ternary/sparse 普通与 ManyLUT、受影响 CBS/MVB 回归通过；保留独立相位/整数参考、非恒定 CMUX、两 FFT 和相关 u32/u64 覆盖。
+- [x] keygen 的检查/RNG/重试/秘密擦除语义保留；实际生成材料能完成 PBS/CBS。秘密变换优化只评价 keygen，不声称加速在线 PBS。
+- [x] 对照构造分配、持有字节、完整 keygen 和完整在线调用的默认/SIMD 时间；确认退化无法消除则撤回对应优化。
+- [x] 推荐调用链没有增加需要用户同步的模式、basis 或工作区状态；试验均有保留/撤回结论，没有临时公开 API。
+
+### 验收结果（2026-09-20）
+
+- 四后端 MVB/CBS 均支持消费普通 evaluator、借用 PBS trait 操作和回收。GLWE 独立 BR→KS CBS 省略 KS 工作区，普通借用返回 `None`；显式转回普通 evaluator 时补分配。从普通 evaluator 转入的对象保留原资源，在线交替与回收零分配。
+- 保留 GLWE 串行外积与两种 NTRU trace scratch 共享。`u64,N=1024` 的独立 GLWE CBS 在 BR→KS 下减少 89,800 B、KS→BR 下减少 33,792 B；NTRU NTT/Fourier 减少 25/33 KiB。没有新增公共 evaluator 包装类型或调用方模式状态。
+- NTT sparse+CBS keygen 的共享秘密原型在两轮完整 SIMD 测量增加约 2.8%～2.9%；只恢复原生成代码后成本回到基线，因此撤回。Fourier 保留复用，不将减少一次变换等同于普遍加速。
+- NTRU NTT SIMD CBS 仍有约 2%～3% 的整体构建间回退。两轮恢复独立 trace 工作区的隔离对照没有改善，故保留共享工作区的确定内存收益；剩余时间差原因未定位。此处是已测成本限制，不是零回退验收。
+- `just tfhe`、`just tfhe-simd` 默认/SIMD 各 87 项测试、workspace all-targets 和严格 rustdoc 通过；下层 lattice/GLWE/NTRU 默认/SIMD 各 89 项及严格 Clippy/rustdoc 通过。撤回 NTT keygen 后补跑该后端默认/SIMD 测试与 Clippy；两个修改过的 release 示例通过。
+- TFHE 测试数量未增加；在既有测试中补交替执行、dirty scratch、回收及零分配覆盖。下层只增加一项 unwind 恢复布局测试；无新增持久 benchmark target。完整方法、隔离对照、数据及未测边界见[成本记录](tfhe-refactor-costs.md#r2evaluator-所有权与工作区)。
 
 ## R3：代码组织与使用方式收尾
 

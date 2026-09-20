@@ -226,3 +226,36 @@ fn ngsw_ternary_rotation_matches_negacyclic_oracle() {
         }
     }
 }
+
+#[test]
+fn serial_external_product_restores_ternary_layout_on_unwind() {
+    use primus_lattice::context::FourierGlweTernaryCmuxContext;
+    use std::panic::{AssertUnwindSafe, catch_unwind};
+
+    let original = GadgetSize::new(GlweSize::new(1, N), 3);
+    let temporary = GadgetSize::new(GlweSize::new(1, N), 2);
+    let mut ntt = NttGlweTernaryCmuxContext::<u32>::new(original);
+    let mut fourier = FourierGlweTernaryCmuxContext::<u64>::new(original);
+    assert!(
+        catch_unwind(AssertUnwindSafe(|| ntt.with_external_product(
+            temporary,
+            |scratch| {
+                assert_eq!(scratch.size(), temporary);
+                panic!("interrupted consumer");
+            }
+        )))
+        .is_err()
+    );
+    assert!(
+        catch_unwind(AssertUnwindSafe(|| fourier.with_external_product(
+            temporary,
+            |scratch| {
+                assert_eq!(scratch.size(), temporary);
+                panic!("interrupted consumer");
+            }
+        )))
+        .is_err()
+    );
+    assert_eq!(ntt.size(), original);
+    assert_eq!(fourier.size(), original);
+}

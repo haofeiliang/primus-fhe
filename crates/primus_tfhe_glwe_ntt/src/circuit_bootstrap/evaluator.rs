@@ -4,7 +4,6 @@
 use primus_data::{Data, DataMut};
 use primus_glwe::{GlevCiphertext, GlweCiphertext, NttGlweTraceContext};
 use primus_integer::FheUint;
-use primus_lattice::context::NttGlweExternalProductContext;
 use primus_lattice::ggsw::NttGgsw;
 use primus_lwe::LweCiphertext;
 use primus_ntt::MonomialNttTable;
@@ -34,7 +33,6 @@ where
     circuit_key: &'a CircuitBootstrapKey<T>,
     lookup_table: InterleavedLookupTable<T>,
     trace: NttGlweTraceContext<T>,
-    external_product: NttGlweExternalProductContext<T>,
     traced: GlevCiphertext<Vec<T>>,
 }
 
@@ -81,6 +79,54 @@ where
         parameters: &'a CircuitBootstrapParameters<T>,
         circuit_key: &'a CircuitBootstrapKey<T>,
     ) -> Result<Self, TfheEvaluationError> {
+        Self::from_bootstrapper_and_parts(
+            Evaluator::try_for_circuit_bootstrap(context, server_key)?,
+            parameters,
+            circuit_key,
+        )
+    }
+
+    /// Consumes complete PBS workspace and preserves it for ordinary operations and recovery.
+    /// Allocates only the additional CBS buffers; requires bundled CBS key material.
+    pub fn try_from_bootstrapper(
+        pbs: Evaluator<'a, T, Table>,
+    ) -> Result<Self, TfheEvaluationError> {
+        let key = pbs
+            .server_key
+            .circuit_bootstrap_key()
+            .ok_or(TfheEvaluationError::MissingCircuitBootstrapKey)?;
+        Self::from_bootstrapper_and_parts(pbs, key.parameters(), key)
+    }
+
+    /// Borrows ordinary PBS without allocation, while preventing replacement of the bound evaluator.
+    /// Returns `None` only for standalone BootstrapKeyswitch CBS, which omits return-KS storage.
+    /// Use [`Self::try_from_bootstrapper`] when alternating ordinary PBS and CBS.
+    #[must_use]
+    pub fn bootstrapper_mut(
+        &mut self,
+    ) -> Option<
+        impl primus_tfhe::ProgrammableBootstrap<T>
+        + primus_tfhe::ProgrammableBootstrapInterleaved<T>
+        + use<'_, 'a, T, Table>,
+    > {
+        self.pbs.has_key_switching().then_some(&mut self.pbs)
+    }
+
+    /// Recovers ordinary PBS workspace and releases CBS-only buffers.
+    /// Reuses all allocations when constructed from an ordinary bootstrapper or with KS→BR order.
+    /// Standalone BR→KS CBS explicitly allocates its missing return-KS workspace here.
+    #[must_use]
+    pub fn into_bootstrapper(mut self) -> Evaluator<'a, T, Table> {
+        self.pbs.complete_workspace();
+        self.pbs
+    }
+
+    fn from_bootstrapper_and_parts(
+        pbs: Evaluator<'a, T, Table>,
+        parameters: &'a CircuitBootstrapParameters<T>,
+        circuit_key: &'a CircuitBootstrapKey<T>,
+    ) -> Result<Self, TfheEvaluationError> {
+        let context = pbs.context;
         let tfhe = context.parameters();
         if !parameters.is_compatible(tfhe) {
             return Err(TfheEvaluationError::IncompatibleCircuitBootstrapParameters);
@@ -89,7 +135,6 @@ where
             return Err(TfheEvaluationError::IncompatibleCircuitBootstrapKey);
         }
 
-        let pbs = Evaluator::try_new(context, server_key)?;
         let glwe = tfhe.accumulator_glwe();
         let modulus = glwe.cipher_modulus();
         let poly_length = glwe.poly_length();
@@ -120,7 +165,6 @@ where
             circuit_key,
             lookup_table,
             trace: NttGlweTraceContext::new(glwe_size),
-            external_product: NttGlweExternalProductContext::new(parameters.scheme_switch().size()),
             traced: GlevCiphertext::zero(parameters.output_size().glev_len()),
         })
     }
@@ -172,19 +216,21 @@ where
             ),
             "CMUX ciphertext layout mismatch"
         );
-        self.external_product.rebind(self.parameters.output_size());
-        control.cmux_to(
-            lhs,
-            rhs,
-            output,
-            self.parameters.output_basis(),
-            self.context
-                .parameters()
-                .accumulator_glwe()
-                .cipher_modulus(),
-            self.context.table(),
-            &mut self.external_product,
-        );
+        self.pbs
+            .with_external_product(self.parameters.output_size(), |scratch| {
+                control.cmux_to(
+                    lhs,
+                    rhs,
+                    output,
+                    self.parameters.output_basis(),
+                    self.context
+                        .parameters()
+                        .accumulator_glwe()
+                        .cipher_modulus(),
+                    self.context.table(),
+                    scratch,
+                );
+            });
     }
 
     /// Multiplies a coefficient-domain accumulator ciphertext by a gadget control.
@@ -217,18 +263,20 @@ where
             (self.parameters.output_size().ggsw_len(), ring_len, ring_len),
             "external-product ciphertext layout mismatch"
         );
-        self.external_product.rebind(self.parameters.output_size());
-        control.external_product_to(
-            input,
-            output,
-            self.parameters.output_basis(),
-            self.context
-                .parameters()
-                .accumulator_glwe()
-                .cipher_modulus(),
-            self.context.table(),
-            &mut self.external_product,
-        );
+        self.pbs
+            .with_external_product(self.parameters.output_size(), |scratch| {
+                control.external_product_to(
+                    input,
+                    output,
+                    self.parameters.output_basis(),
+                    self.context
+                        .parameters()
+                        .accumulator_glwe()
+                        .cipher_modulus(),
+                    self.context.table(),
+                    scratch,
+                );
+            });
     }
 
     /// Circuit-bootstraps into a newly allocated NTT GGSW ciphertext.
@@ -307,17 +355,18 @@ where
             &mut self.trace,
         );
         // CMUX can bind the same buffers to a different output decomposition.
-        self.external_product
-            .rebind(self.parameters.scheme_switch().size());
-        self.circuit_key.scheme_switch_key().apply_to(
-            &self.traced,
-            output,
-            self.context
-                .parameters()
-                .accumulator_glwe()
-                .cipher_modulus(),
-            self.context.table(),
-            &mut self.external_product,
-        );
+        self.pbs
+            .with_external_product(self.parameters.scheme_switch().size(), |scratch| {
+                self.circuit_key.scheme_switch_key().apply_to(
+                    &self.traced,
+                    output,
+                    self.context
+                        .parameters()
+                        .accumulator_glwe()
+                        .cipher_modulus(),
+                    self.context.table(),
+                    scratch,
+                );
+            });
     }
 }

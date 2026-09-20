@@ -214,6 +214,14 @@ pub struct SparseGlweBlindRotationContext<T: TorusFftValue> {
 }
 
 impl<T: TorusFftValue> SparseGlweBlindRotationContext<T> {
+    pub(crate) fn with_external_product<R>(
+        &mut self,
+        size: primus_lattice::GadgetSize,
+        operation: impl FnOnce(&mut FourierGlweExternalProductContext<T>) -> R,
+    ) -> R {
+        self.external_product.with_rebound(size, operation)
+    }
+
     /// Allocates scratch for this key's input dimension and gadget layout.
     /// Reusable with other sparse keys of the same dimensions and layout.
     #[must_use]

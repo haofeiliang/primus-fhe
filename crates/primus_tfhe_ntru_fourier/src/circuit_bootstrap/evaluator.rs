@@ -1,15 +1,15 @@
 //! One blind rotation followed by reverse-trace projection and scheme switching.
 
 use primus_data::{Data, DataMut};
-use primus_fft::{Complex64, FftEngine, FftTable, TorusFftValue};
+use primus_fft::{Complex64, FftTable, TorusFftValue};
 use primus_ntru::NtruCiphertext;
-use primus_ntru::{FourierNgswCiphertext, FourierNtruTraceContext, NlevCiphertext};
+use primus_ntru::{FourierNgswCiphertext, NlevCiphertext};
 use primus_reduce::ReduceMul;
 use primus_tfhe::{InterleavedLookupTable, LookupTableError, LweCiphertext};
 
 use crate::{
-    CircuitBootstrapKey, ServerKey, TfheContext, TfheEvaluationError,
-    blind_rotation::{BlindRotationWorkspace, blind_rotate_lookup_table_to},
+    CircuitBootstrapKey, Evaluator, ServerKey, TfheContext, TfheEvaluationError,
+    blind_rotation::blind_rotate_lookup_table_to,
 };
 
 /// Allocation-free online NTRU circuit bootstrapping with optional evaluation keys.
@@ -19,13 +19,10 @@ where
     T: TorusFftValue,
     Table: FftTable,
 {
-    context: &'a TfheContext<T, Table>,
-    server_key: &'a ServerKey<T>,
+    pbs: Evaluator<'a, T, Table>,
     circuit_key: &'a CircuitBootstrapKey<T>,
     lookup_table: InterleavedLookupTable<T>,
-    blind_rotation: BlindRotationWorkspace<T>,
-    trace: FourierNtruTraceContext<T>,
-    fft: FftEngine<'a, Table>,
+    trace_scratch: Vec<T>,
     projected: NlevCiphertext<Vec<T>>,
 }
 
@@ -69,11 +66,47 @@ where
         if server_key.sparse_bootstrapping_key().is_some() {
             return Err(TfheEvaluationError::UnsupportedSparseBootstrapping);
         }
+        Self::from_bootstrapper_and_key(Evaluator::try_new(context, server_key)?, circuit_key)
+    }
+
+    /// Consumes ordinary PBS workspace and allocates only the additional CBS buffers.
+    /// Rejects sparse keys or absent CBS material.
+    pub fn try_from_bootstrapper(
+        pbs: Evaluator<'a, T, Table>,
+    ) -> Result<Self, TfheEvaluationError> {
+        if pbs.server_key.sparse_bootstrapping_key().is_some() {
+            return Err(TfheEvaluationError::UnsupportedSparseBootstrapping);
+        }
+        let key = pbs
+            .server_key
+            .circuit_bootstrap_key()
+            .ok_or(TfheEvaluationError::MissingCircuitBootstrapKey)?;
+        Self::from_bootstrapper_and_key(pbs, key)
+    }
+
+    /// Borrows ordinary PBS operations without allocation or changing the bound resources.
+    #[must_use]
+    pub fn bootstrapper_mut(
+        &mut self,
+    ) -> impl primus_tfhe::ProgrammableBootstrap<T>
+    + primus_tfhe::ProgrammableBootstrapInterleaved<T>
+    + use<'_, 'a, T, Table> {
+        &mut self.pbs
+    }
+
+    /// Releases CBS buffers and recovers ordinary PBS workspace without allocation.
+    #[must_use]
+    pub fn into_bootstrapper(self) -> Evaluator<'a, T, Table> {
+        self.pbs
+    }
+
+    fn from_bootstrapper_and_key(
+        pbs: Evaluator<'a, T, Table>,
+        circuit_key: &'a CircuitBootstrapKey<T>,
+    ) -> Result<Self, TfheEvaluationError> {
+        let context = pbs.context;
         let parameters = circuit_key.parameters();
         let tfhe = context.parameters();
-        if !server_key.is_compatible(tfhe) {
-            return Err(TfheEvaluationError::IncompatibleServerKey);
-        }
         if !parameters.is_compatible(tfhe) {
             return Err(TfheEvaluationError::IncompatibleCircuitBootstrapParameters);
         }
@@ -96,13 +129,10 @@ where
             },
         )?;
         Ok(Self {
-            context,
-            server_key,
+            pbs,
             circuit_key,
             lookup_table,
-            blind_rotation: BlindRotationWorkspace::new(tfhe, server_key),
-            trace: FourierNtruTraceContext::new(n),
-            fft: context.new_fft_engine(),
+            trace_scratch: vec![T::ZERO; 2 * n],
             projected: NlevCiphertext::zero(parameters.output_nlev_len()),
         })
     }
@@ -138,7 +168,7 @@ where
         C: Data<Elem = T>,
         D: DataMut<Elem = T>,
     {
-        let ring_len = self.context.parameters().poly_length();
+        let ring_len = self.pbs.context.parameters().poly_length();
         assert_eq!(
             (
                 control.as_ref().len(),
@@ -159,8 +189,8 @@ where
             rhs,
             output,
             self.circuit_key.parameters().output_basis(),
-            &mut self.fft,
-            self.blind_rotation.rotation.external_product(),
+            &mut self.pbs.fft,
+            self.pbs.blind_rotation.rotation.external_product(),
         );
     }
 
@@ -184,7 +214,7 @@ where
         B: Data<Elem = T>,
         C: DataMut<Elem = T>,
     {
-        let ring_len = self.context.parameters().poly_length();
+        let ring_len = self.pbs.context.parameters().poly_length();
         assert_eq!(
             (
                 control.as_ref().len(),
@@ -202,8 +232,8 @@ where
             input,
             output,
             self.circuit_key.parameters().output_basis(),
-            &mut self.fft,
-            self.blind_rotation.rotation.external_product(),
+            &mut self.pbs.fft,
+            self.pbs.blind_rotation.rotation.external_product(),
         );
     }
 
@@ -238,7 +268,7 @@ where
         input: &LweCiphertext<T>,
         output: &mut FourierNgswCiphertext<S>,
     ) {
-        let tfhe = self.context.parameters();
+        let tfhe = self.pbs.context.parameters();
         assert_eq!(
             input.dimension(),
             tfhe.external_lwe_dimension(),
@@ -250,31 +280,34 @@ where
             "circuit-bootstrap NGSW output length mismatch"
         );
         blind_rotate_lookup_table_to(
-            self.server_key,
+            self.pbs.server_key,
             input,
             self.lookup_table.polynomial(),
             self.lookup_table.padded_output_count(),
-            &mut self.blind_rotation,
+            &mut self.pbs.blind_rotation,
             tfhe,
-            &mut self.fft,
+            &mut self.pbs.fft,
         );
         // A general ManyLUT accumulator does not have a zero message tail.
         // Reverse-trace projection is valid here; prefix expansion is not.
-        self.circuit_key.trace_key().project_prefix_coefficients_to(
-            &self.blind_rotation.current,
-            self.circuit_key
-                .parameters()
-                .output_basis()
-                .decompose_length(),
-            self.projected.as_mut(),
-            &mut self.fft,
-            &mut self.trace,
-        );
+        self.circuit_key
+            .trace_key()
+            .project_prefix_coefficients_with_scratch_to(
+                &self.pbs.blind_rotation.current,
+                self.circuit_key
+                    .parameters()
+                    .output_basis()
+                    .decompose_length(),
+                self.projected.as_mut(),
+                &mut self.pbs.fft,
+                &mut self.trace_scratch,
+                self.pbs.blind_rotation.rotation.external_product(),
+            );
         self.circuit_key.scheme_switch_key().apply_to(
             &self.projected,
             output,
-            &mut self.fft,
-            self.blind_rotation.rotation.external_product(),
+            &mut self.pbs.fft,
+            self.pbs.blind_rotation.rotation.external_product(),
         );
     }
 }

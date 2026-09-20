@@ -43,6 +43,11 @@ NTRU CBS 的 [NTT](../../crates/primus_tfhe_ntru_ntt/benches/circuit_bootstrap.r
 内存统计计入构造结束时仍持有的请求堆字节，排除 allocator 元数据、借用的 table、普通 server key
 和调用方输出；keygen 与统计都在计时外。功能及零分配测试入口见[开发验证](../tfhe.md#验证入口)。
 
+## R1–R2 结构整理
+
+[成本与复现](../tfhe-refactor-costs.md)集中记录 LUT 构造、evaluator 资源复用和完整 keygen/在线对照，
+包括已撤回的 NTT keygen 原型及保留的时间成本限制；[R1 数据](tfhe-r1.csv)、[R2 数据](tfhe-r2.csv)。
+
 ## 历史测量环境
 
 [Native 偶尺度 MVB 原型](../tfhe-mvb-fourier.md)记录 B5.1 的两种 FFT、u32/u64

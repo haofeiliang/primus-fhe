@@ -114,13 +114,39 @@ where
         context: &'a TfheContext<T, Table>,
         server_key: &'a ServerKey<T>,
     ) -> Result<Self, TfheEvaluationError> {
-        if server_key.sparse_bootstrapping_key().is_some() {
+        Self::try_from_bootstrapper(Evaluator::try_new(context, server_key)?)
+    }
+
+    /// Consumes ordinary PBS workspace and allocates only the additional MVB buffers.
+    /// The underlying key, context and existing allocations are preserved.
+    pub fn try_from_bootstrapper(
+        evaluator: Evaluator<'a, T, Table>,
+    ) -> Result<Self, TfheEvaluationError> {
+        if evaluator.server_key.sparse_bootstrapping_key().is_some() {
             return Err(TfheEvaluationError::UnsupportedSparseBootstrapping);
         }
+        let context = evaluator.context;
         Ok(Self {
-            evaluator: Evaluator::try_new(context, server_key)?,
+            evaluator,
             shared_rotation: NttNtru::zero(context.parameters().poly_length()),
         })
+    }
+
+    /// Borrows ordinary single-output and interleaved PBS operations without allocation.
+    /// The opaque borrow prevents replacing the bound evaluator and invalidating MVB scratch.
+    #[must_use]
+    pub fn bootstrapper_mut(
+        &mut self,
+    ) -> impl primus_tfhe::ProgrammableBootstrap<T>
+    + primus_tfhe::ProgrammableBootstrapInterleaved<T>
+    + use<'_, 'a, T, Table> {
+        &mut self.evaluator
+    }
+
+    /// Releases the extra MVB buffers and recovers the original PBS workspace without allocation.
+    #[must_use]
+    pub fn into_bootstrapper(self) -> Evaluator<'a, T, Table> {
+        self.evaluator
     }
 
     /// Evaluates the program, allocating one LWE per output.

@@ -68,6 +68,7 @@ enum Operation<'a> {
     Reverse(usize),
     Project(&'a [usize]),
     ProjectPrefix(usize),
+    ProjectPrefixShared(usize),
     Expand(usize),
 }
 
@@ -116,6 +117,8 @@ fn check_operations(
         output.resize(count * N, 7);
         run(Operation::ProjectPrefix(count), &mut output);
         assert_eq!(output, reference);
+        run(Operation::ProjectPrefixShared(count), &mut output);
+        assert_eq!(output, reference);
     }
     for log_count in 0..=N.trailing_zeros() {
         let count = 1 << log_count;
@@ -144,6 +147,8 @@ fn check_operations(
         (Operation::Expand(4), 3 * N),
         (Operation::Project(&[0, N]), 2 * N),
         (Operation::Project(&[0, 1]), N),
+        (Operation::ProjectPrefixShared(N + 1), (N + 1) * N),
+        (Operation::ProjectPrefixShared(3), 3 * N - 1),
         (Operation::ProjectPrefix(N + 1), (N + 1) * N),
         (Operation::ProjectPrefix(0), N),
         (Operation::ProjectPrefix(3), 3 * N - 1),
@@ -172,6 +177,8 @@ fn ntt_trace_projection_and_expansion_match_ring_phases() {
         &mut NttNtruGadgetEncryptContext::new(N),
     );
     let mut context = NttNtruTraceContext::new(N);
+    let mut coefficients = vec![0; 2 * N];
+    let mut external_product = primus_ntru::NttNtruExternalProductContext::new(N);
     let m = message(Q.into());
     let mut transformed = NttNtruCiphertext::<Vec<u64>>::zero(N);
     key.encrypt_encoded_to(
@@ -221,6 +228,16 @@ fn ntt_trace_projection_and_expansion_match_ring_phases() {
                 &table,
                 &mut context,
             ),
+            Operation::ProjectPrefixShared(count) => trace
+                .project_prefix_coefficients_with_scratch_to(
+                    &input,
+                    count,
+                    output,
+                    modulus,
+                    &table,
+                    &mut coefficients,
+                    &mut external_product,
+                ),
             Operation::ProjectPrefix(count) => trace.project_prefix_coefficients_to(
                 &input,
                 count,
@@ -284,6 +301,8 @@ fn fourier_trace<Table: FftTable>() {
         &mut FourierNtruGadgetEncryptContext::new(N),
     );
     let mut context = FourierNtruTraceContext::new(N);
+    let mut coefficients = vec![0; 2 * N];
+    let mut external_product = primus_ntru::FourierNtruExternalProductContext::new(N);
     let m = message(q);
     let mut transformed = FourierNtruCiphertext::<Vec<Complex64>>::zero(N / 2);
     let mut encrypt = FourierNtruEncryptContext::new(N);
@@ -320,6 +339,15 @@ fn fourier_trace<Table: FftTable>() {
             Operation::Project(indices) => {
                 trace.project_coefficients_to(&input, indices, output, &mut fft, &mut context)
             }
+            Operation::ProjectPrefixShared(count) => trace
+                .project_prefix_coefficients_with_scratch_to(
+                    &input,
+                    count,
+                    output,
+                    &mut fft,
+                    &mut coefficients,
+                    &mut external_product,
+                ),
             Operation::ProjectPrefix(count) => {
                 trace.project_prefix_coefficients_to(&input, count, output, &mut fft, &mut context)
             }

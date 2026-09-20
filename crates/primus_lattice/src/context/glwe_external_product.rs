@@ -78,6 +78,35 @@ impl<T: TorusFftValue> FourierGlweExternalProductContext<T> {
         }
     }
 
+    /// Temporarily uses another decomposition depth for a serial operation.
+    /// Restores the original layout on return or unwind; no allocation occurs
+    /// unless the operation itself replaces or resizes the workspace.
+    ///
+    /// # Panics
+    /// Panics before invoking the operation if the GLWE layout changes.
+    pub fn with_rebound<R>(
+        &mut self,
+        size: GadgetSize,
+        operation: impl FnOnce(&mut Self) -> R,
+    ) -> R {
+        let original = self.size();
+        self.rebind(size);
+        struct Restore<'a, T: TorusFftValue> {
+            context: &'a mut FourierGlweExternalProductContext<T>,
+            size: GadgetSize,
+        }
+        impl<T: TorusFftValue> Drop for Restore<'_, T> {
+            fn drop(&mut self) {
+                self.context.resize(self.size);
+            }
+        }
+        let restore = Restore {
+            context: self,
+            size: original,
+        };
+        operation(&mut *restore.context)
+    }
+
     /// Rebinds the context to another decomposition layout without reallocating.
     ///
     /// # Panics
@@ -216,6 +245,35 @@ impl<T: FheUint> NttGlweExternalProductContext<T> {
             decomposed_ntt: vec![T::ZERO; poly_length],
             ntt_accumulator: NttGlwe::zero(glwe_size.glwe_len()),
         }
+    }
+
+    /// Temporarily uses another decomposition depth for a serial operation.
+    /// Restores the original layout on return or unwind; no allocation occurs
+    /// unless the operation itself replaces or resizes the workspace.
+    ///
+    /// # Panics
+    /// Panics before invoking the operation if the GLWE layout changes.
+    pub fn with_rebound<R>(
+        &mut self,
+        size: GadgetSize,
+        operation: impl FnOnce(&mut Self) -> R,
+    ) -> R {
+        let original = self.size();
+        self.rebind(size);
+        struct Restore<'a, T: FheUint> {
+            context: &'a mut NttGlweExternalProductContext<T>,
+            size: GadgetSize,
+        }
+        impl<T: FheUint> Drop for Restore<'_, T> {
+            fn drop(&mut self) {
+                self.context.resize(self.size);
+            }
+        }
+        let restore = Restore {
+            context: self,
+            size: original,
+        };
+        operation(&mut *restore.context)
     }
 
     /// Rebinds the context to another decomposition layout without reallocating.

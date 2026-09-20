@@ -136,6 +136,16 @@ impl<T: TorusFftValue> SparseGlweBootstrappingKey<T> {
     }
 }
 
+// All fallible checks and map-only retries finish before transforming the accumulator secret.
+pub(crate) struct PreparedSparseMap {
+    map: BucketMap,
+    selected_input_indices: Zeroizing<Vec<usize>>,
+    input_dimension: usize,
+    hamming_weight: usize,
+    copy_count: usize,
+    data_len: usize,
+}
+
 impl<T, Table> KeyGenerator<'_, T, Table>
 where
     T: TorusFftValue,
@@ -173,6 +183,21 @@ where
     where
         R: rand::Rng + rand::CryptoRng,
     {
+        let prepared = self.prepare_sparse_map(client_key, copy_count, bucket_count, rng)?;
+        let output_key = FourierGlweSecretKey::from_coeff_secret_key(
+            client_key.glwe_secret_key(),
+            &mut self.fft,
+        );
+        Ok(self.generate_sparse_bootstrapping_key_with_main(prepared, &output_key, rng))
+    }
+
+    pub(crate) fn prepare_sparse_map<R: rand::Rng + rand::CryptoRng>(
+        &self,
+        client_key: &ClientKey<T>,
+        copy_count: usize,
+        bucket_count: usize,
+        rng: &mut R,
+    ) -> Result<PreparedSparseMap, KeyGenerationError> {
         use SparseBootstrappingKeyError as Error;
 
         let parameters = self.context.parameters();
@@ -220,11 +245,40 @@ where
         )
         .map_err(Error::from)?;
         drop(nonzero_indices);
+        Ok(PreparedSparseMap {
+            map,
+            selected_input_indices,
+            input_dimension,
+            hamming_weight,
+            copy_count,
+            data_len,
+        })
+    }
+
+    /// Consumes the checked map and reuses the secret transform shared with optional CBS generation.
+    pub(crate) fn generate_sparse_bootstrapping_key_with_main<R: rand::Rng + rand::CryptoRng>(
+        &mut self,
+        prepared: PreparedSparseMap,
+        output_key: &FourierGlweSecretKey,
+        rng: &mut R,
+    ) -> SparseGlweBootstrappingKey<T> {
+        let PreparedSparseMap {
+            map,
+            selected_input_indices,
+            input_dimension,
+            hamming_weight,
+            copy_count,
+            data_len,
+        } = prepared;
+        let parameters = self.context.parameters();
+        let size = parameters.blind_rotation_ggsw().size();
 
         // Flatten the private selectors in final bucket order, including each
         // dummy. One batch reuses level transforms across consecutive zeros;
         // fresh randomness and the original ciphertext order are preserved.
-        let mut selectors = Zeroizing::new(Vec::with_capacity(entry_count + bucket_count));
+        let mut selectors = Zeroizing::new(Vec::with_capacity(
+            map.input_indices().len() + selected_input_indices.len(),
+        ));
         for (bucket, &selected_index) in selected_input_indices.iter().enumerate() {
             let start = map.bucket_offsets()[bucket];
             let end = map.bucket_offsets()[bucket + 1];
@@ -242,10 +296,6 @@ where
             );
         }
         drop(selected_input_indices);
-        let output_key = FourierGlweSecretKey::from_coeff_secret_key(
-            client_key.glwe_secret_key(),
-            &mut self.fft,
-        );
         let gadget = parameters.blind_rotation_ggsw();
         self.gadget.resize(size);
         let mut data = vec![T::ZERO; data_len];
@@ -261,7 +311,7 @@ where
         );
         drop(selectors);
 
-        Ok(SparseGlweBootstrappingKey {
+        SparseGlweBootstrappingKey {
             data,
             map,
             input_dimension,
@@ -274,6 +324,6 @@ where
             ),
             size,
             basis: gadget.basis().clone(),
-        })
+        }
     }
 }

@@ -1,7 +1,6 @@
 use num_traits::{ConstOne, ConstZero};
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{Complex64, FftEngine, FftTable, TorusFftValue};
-use primus_lattice::ngsw::FourierNgsw;
 use primus_lattice::nlev::FourierNlev;
 use primus_ntru::SecretKeyDistr;
 use primus_ntru::{
@@ -40,7 +39,7 @@ impl<T: TorusFftValue> ServerKey<T> {
         }
     }
 
-    fn classic_controls(&self) -> &[Complex64] {
+    pub(crate) fn classic_controls(&self) -> &[Complex64] {
         match &self.controls {
             Controls::Classic(data) => data,
             Controls::Sparse(_) => panic!("classic control iterator requires a classic key"),
@@ -90,30 +89,6 @@ impl<T: TorusFftValue> ServerKey<T> {
     #[inline]
     pub(crate) fn key_switching_key(&self) -> &FourierNtruKeySwitchingKey<T> {
         &self.key_switching_key
-    }
-
-    /// Iterates over contiguous Fourier NGSW controls without allocation.
-    pub(crate) fn iter_binary_controls(
-        &self,
-    ) -> impl ExactSizeIterator<Item = FourierNgsw<&[Complex64]>> {
-        debug_assert!(self.input_distribution.is_binary());
-        self.classic_controls()
-            .chunks_exact(self.initializer.as_ref().len())
-            .map(FourierNgsw::new)
-    }
-
-    /// Borrows adjacent positive/negative controls for each ternary coordinate.
-    pub(crate) fn iter_ternary_controls(
-        &self,
-    ) -> impl ExactSizeIterator<Item = (FourierNgsw<&[Complex64]>, FourierNgsw<&[Complex64]>)> {
-        debug_assert!(self.input_distribution.is_ternary());
-        let len = self.initializer.as_ref().len();
-        self.classic_controls()
-            .chunks_exact(2 * len)
-            .map(move |pair| {
-                let (positive, negative) = pair.split_at(len);
-                (FourierNgsw::new(positive), FourierNgsw::new(negative))
-            })
     }
 
     /// Checks the generated ring and decomposition parameters before evaluation.

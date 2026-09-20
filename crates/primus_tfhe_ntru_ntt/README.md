@@ -14,6 +14,18 @@ See the [shared Boolean contracts](../primus_tfhe/README.md#boolean-gates).
 
 Custom NTT tables must implement `MonomialNttTable`; built-in `UintNttTable` supports it.
 
+## Reusing evaluators
+
+Move an existing `Evaluator` into `FactorizedEvaluator::try_from_bootstrapper` or
+`CircuitBootstrapEvaluator::try_from_bootstrapper` to allocate only the additional MVB/CBS buffers.
+Use `bootstrapper_mut()` to alternate ordinary single-output/interleaved PBS; import
+`primus_tfhe::{ProgrammableBootstrap, ProgrammableBootstrapInterleaved}` for those operations.
+This borrow exposes PBS operations without allowing replacement of the bound evaluator.
+`into_bootstrapper()` releases the extra buffers and recovers ordinary workspace; recovery
+allocates nothing when the specialized evaluator was constructed from an ordinary one.
+
+NTRU CBS shares initialization, BR and return-KS workspace with ordinary PBS. MVB/CBS still reject sparse server keys.
+
 ## Ordinary PBS and ManyLUT
 
 Declare mathematical choices with `TfheParameters::try_from_config(TfheConfig { .. })`,

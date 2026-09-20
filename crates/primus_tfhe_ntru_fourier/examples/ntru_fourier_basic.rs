@@ -7,7 +7,10 @@ use primus_fft::RustFftTable;
 use primus_lwe::{LweCiphertext, LweParameters};
 use primus_modulus::NativeModulus;
 use primus_ntru::SecretKeyDistr;
-use primus_tfhe_ntru_fourier::{DecompositionConfig, TfheConfig, TfheContext, TfheParameters};
+use primus_tfhe::ProgrammableBootstrapInterleaved as _;
+use primus_tfhe_ntru_fourier::{
+    DecompositionConfig, FactorizedEvaluator, TfheConfig, TfheContext, TfheParameters,
+};
 
 fn main() {
     const N: usize = 256;
@@ -65,15 +68,17 @@ fn main() {
     let factorized = context
         .compile_factorized_lookup_table_fn(&scaled, 8, 3, value)
         .unwrap();
-    let mut mvb = context.factorized_evaluator(&server_key).unwrap();
+    let mut mvb =
+        FactorizedEvaluator::try_from_bootstrapper(context.evaluator(&server_key).unwrap())
+            .unwrap();
     let mut input = LweCiphertext::zero(LWE_DIMENSION);
-    let mut evaluator = context.evaluator(&server_key).unwrap();
     let mut outputs = vec![input.clone(); lut.output_count()];
     for message in [7u32, 2] {
         encryptor
             .encrypt_padded_to(message, &mut input, &mut rng)
             .unwrap();
-        evaluator.apply_interleaved_lookup_table_to(&input, &lut, &mut outputs);
+        mvb.bootstrapper_mut()
+            .apply_interleaved_lookup_table_to(&input, &lut, &mut outputs);
         assert_eq!(
             output_codec.decode_value(decryptor.decrypt_phase(&outputs[0]).unwrap()),
             message % 4

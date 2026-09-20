@@ -101,29 +101,14 @@ where
         B: Data<Elem = T>,
         C: DataMut<Elem = T>,
     {
-        let poly_length = self.size().glwe_size().poly_length();
-        let two_n = poly_length * 2;
-        debug_assert_eq!(
-            (
-                input.dimension(),
-                lookup_table.as_ref().len(),
-                output.as_ref().len(),
-            ),
-            (self.input_dimension(), poly_length, self.size().glwe_len()),
-            "blind-rotation input, lookup table or output layout mismatch"
+        self.fourier_blind_rotate_interleaved_lookup_table_kernel_to(
+            input,
+            lookup_table,
+            1,
+            output,
+            fft,
+            context,
         );
-
-        let quantizer = self.input_quantizer();
-        let exponent_of = |value| quantizer.exponent(value);
-        let initial_exponent = exponent_of(input.b()).wrapping_neg() & (two_n - 1);
-        let (mask, body) = output.a_b_mut_slices(poly_length);
-        mask.fill(T::ZERO);
-        lookup_table.mul_monomial_to(
-            initial_exponent,
-            &mut Polynomial(body),
-            NativeModulus::new(),
-        );
-        self.blind_rotate_initialized(input, output, fft, context, exponent_of);
     }
 
     /// Blind-rotates an interleaved PBSManyLUT accumulator.
@@ -416,6 +401,17 @@ impl<T: TorusFftValue> FourierGlweBlindRotationContext<T> {
             } else {
                 CmuxContext::Ternary(FourierGlweTernaryCmuxContext::new(size))
             },
+        }
+    }
+
+    pub(crate) fn with_external_product<R>(
+        &mut self,
+        size: GadgetSize,
+        operation: impl FnOnce(&mut FourierGlweExternalProductContext<T>) -> R,
+    ) -> R {
+        match &mut self.cmux {
+            CmuxContext::Binary(context) => context.with_rebound(size, operation),
+            CmuxContext::Ternary(context) => context.with_external_product(size, operation),
         }
     }
 

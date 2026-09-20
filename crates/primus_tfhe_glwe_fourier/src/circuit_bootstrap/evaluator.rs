@@ -2,7 +2,6 @@ use primus_data::{Data, DataMut};
 use primus_fft::{Complex64, FftTable, TorusFftValue};
 use primus_glwe::GlweCiphertext;
 use primus_glwe::{FourierGlweTraceContext, GlevCiphertext};
-use primus_lattice::context::FourierGlweExternalProductContext;
 use primus_lattice::ggsw::FourierGgsw;
 use primus_lwe::LweCiphertext;
 use primus_reduce::ReduceMul;
@@ -29,7 +28,6 @@ where
     input_dimension: usize,
     lookup_table: InterleavedLookupTable<T>,
     trace: FourierGlweTraceContext<T>,
-    external_product: FourierGlweExternalProductContext<T>,
     projected: GlevCiphertext<Vec<T>>,
 }
 
@@ -72,6 +70,54 @@ where
         parameters: &'a CircuitBootstrapParameters<T>,
         circuit_key: &'a CircuitBootstrapKey<T>,
     ) -> Result<Self, TfheEvaluationError> {
+        Self::from_bootstrapper_and_parts(
+            Evaluator::try_for_circuit_bootstrap(context, server_key)?,
+            parameters,
+            circuit_key,
+        )
+    }
+
+    /// Consumes complete PBS workspace and preserves it for ordinary operations and recovery.
+    /// Allocates only the additional CBS buffers; requires bundled CBS key material.
+    pub fn try_from_bootstrapper(
+        pbs: Evaluator<'a, T, Table>,
+    ) -> Result<Self, TfheEvaluationError> {
+        let key = pbs
+            .server_key
+            .circuit_bootstrap_key()
+            .ok_or(TfheEvaluationError::MissingCircuitBootstrapKey)?;
+        Self::from_bootstrapper_and_parts(pbs, key.parameters(), key)
+    }
+
+    /// Borrows ordinary PBS without allocation, while preventing replacement of the bound evaluator.
+    /// Returns `None` only for standalone BootstrapKeyswitch CBS, which omits return-KS storage.
+    /// Use [`Self::try_from_bootstrapper`] when alternating ordinary PBS and CBS.
+    #[must_use]
+    pub fn bootstrapper_mut(
+        &mut self,
+    ) -> Option<
+        impl primus_tfhe::ProgrammableBootstrap<T>
+        + primus_tfhe::ProgrammableBootstrapInterleaved<T>
+        + use<'_, 'a, T, Table>,
+    > {
+        self.pbs.has_key_switching().then_some(&mut self.pbs)
+    }
+
+    /// Recovers ordinary PBS workspace and releases CBS-only buffers.
+    /// Reuses all allocations when constructed from an ordinary bootstrapper or with KS→BR order.
+    /// Standalone BR→KS CBS explicitly allocates its missing return-KS workspace here.
+    #[must_use]
+    pub fn into_bootstrapper(mut self) -> Evaluator<'a, T, Table> {
+        self.pbs.complete_workspace();
+        self.pbs
+    }
+
+    fn from_bootstrapper_and_parts(
+        pbs: Evaluator<'a, T, Table>,
+        parameters: &'a CircuitBootstrapParameters<T>,
+        circuit_key: &'a CircuitBootstrapKey<T>,
+    ) -> Result<Self, TfheEvaluationError> {
+        let context = pbs.context;
         let tfhe = context.parameters();
         if !parameters.is_compatible(tfhe) {
             return Err(TfheEvaluationError::IncompatibleCircuitBootstrapParameters);
@@ -79,7 +125,6 @@ where
         if !circuit_key.is_compatible(parameters) {
             return Err(TfheEvaluationError::IncompatibleCircuitBootstrapKey);
         }
-        let pbs = Evaluator::try_new(context, server_key)?;
         let glwe = tfhe.accumulator_glwe();
         let modulus = glwe.cipher_modulus();
         let domain_len =
@@ -105,9 +150,6 @@ where
             input_dimension: tfhe.external_lwe_dimension(),
             lookup_table,
             trace: FourierGlweTraceContext::new(glwe.size()),
-            external_product: FourierGlweExternalProductContext::new(
-                parameters.scheme_switch().size(),
-            ),
             projected: GlevCiphertext::zero(parameters.output_size().glev_len()),
         })
     }
@@ -159,15 +201,17 @@ where
             ),
             "CMUX ciphertext layout mismatch"
         );
-        self.external_product.rebind(self.parameters.output_size());
-        control.cmux_to(
-            lhs,
-            rhs,
-            output,
-            self.parameters.output_basis(),
-            self.pbs.fft_mut(),
-            &mut self.external_product,
-        );
+        self.pbs
+            .with_external_product(self.parameters.output_size(), |scratch, fft| {
+                control.cmux_to(
+                    lhs,
+                    rhs,
+                    output,
+                    self.parameters.output_basis(),
+                    fft,
+                    scratch,
+                );
+            });
     }
 
     /// Multiplies a coefficient-domain accumulator ciphertext by a gadget control.
@@ -204,14 +248,16 @@ where
             ),
             "external-product ciphertext layout mismatch"
         );
-        self.external_product.rebind(self.parameters.output_size());
-        control.external_product_to(
-            input,
-            output,
-            self.parameters.output_basis(),
-            self.pbs.fft_mut(),
-            &mut self.external_product,
-        );
+        self.pbs
+            .with_external_product(self.parameters.output_size(), |scratch, fft| {
+                control.external_product_to(
+                    input,
+                    output,
+                    self.parameters.output_basis(),
+                    fft,
+                    scratch,
+                );
+            });
     }
 
     /// Allocates a Fourier GGSW output. Inherits [`Self::circuit_bootstrap_to`]'s
@@ -274,13 +320,14 @@ where
             &mut self.trace,
         );
         // CMUX can bind the same buffers to a different output decomposition.
-        self.external_product
-            .rebind(self.parameters.scheme_switch().size());
-        self.circuit_key.scheme_switch_key().apply_to(
-            &self.projected,
-            output,
-            fft,
-            &mut self.external_product,
-        );
+        self.pbs
+            .with_external_product(self.parameters.scheme_switch().size(), |scratch, fft| {
+                self.circuit_key.scheme_switch_key().apply_to(
+                    &self.projected,
+                    output,
+                    fft,
+                    scratch,
+                );
+            });
     }
 }

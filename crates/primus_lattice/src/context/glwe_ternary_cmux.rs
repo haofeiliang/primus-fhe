@@ -31,6 +31,20 @@ impl<T: TorusFftValue> FourierGlweTernaryCmuxContext<T> {
         }
     }
 
+    /// Reuses external-product buffers between ternary rotations at another
+    /// decomposition depth, restoring the control layout even on unwind.
+    /// The combined-control allocation retains its original BR basis.
+    ///
+    /// # Panics
+    /// Panics before the operation if `size` changes the GLWE layout.
+    pub fn with_external_product<R>(
+        &mut self,
+        size: GadgetSize,
+        operation: impl FnOnce(&mut FourierGlweExternalProductContext<T>) -> R,
+    ) -> R {
+        self.external_product.with_rebound(size, operation)
+    }
+
     /// Returns the layout used by both controls and the combined-control scratch.
     #[must_use]
     pub fn size(&self) -> GadgetSize {
@@ -59,6 +73,20 @@ impl<T: FheUint> NttGlweTernaryCmuxContext<T> {
             control_factor_ntt: vec![T::ZERO; size.glwe_size().poly_length()],
             external_product: NttGlweExternalProductContext::new(size),
         }
+    }
+
+    /// Reuses external-product buffers between ternary rotations at another
+    /// decomposition depth, restoring the control layout even on unwind.
+    /// The combined-control allocation retains its original BR basis.
+    ///
+    /// # Panics
+    /// Panics before the operation if `size` changes the GLWE layout.
+    pub fn with_external_product<R>(
+        &mut self,
+        size: GadgetSize,
+        operation: impl FnOnce(&mut NttGlweExternalProductContext<T>) -> R,
+    ) -> R {
+        self.external_product.with_rebound(size, operation)
     }
 
     /// Returns the layout used by both controls and the combined-control scratch.

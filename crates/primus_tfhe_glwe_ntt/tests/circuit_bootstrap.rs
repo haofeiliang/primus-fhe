@@ -6,6 +6,7 @@ use primus_modulus::BarrettModulus;
 use primus_ntt::U64NttTable;
 use primus_poly::Polynomial;
 use primus_test_allocations as allocations;
+use primus_tfhe::ProgrammableBootstrap as _;
 use primus_tfhe_glwe_ntt::{
     CircuitBootstrapConfig, CircuitBootstrapEvaluator, CircuitBootstrapParameters,
     DecompositionConfig, KeyGenerator, PbsOrder, TfheContext, TfheEvaluationError, TfheParameters,
@@ -147,7 +148,7 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
             })
             .unwrap();
         let input = encryptor.encrypt_padded(1u64, &mut rng).unwrap();
-        let output = context
+        let mut output = context
             .evaluator(server_key)
             .unwrap()
             .apply_lookup_table(&input, &identity);
@@ -219,10 +220,16 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
         )
         .unwrap();
         let (circuit_parameters, mut evaluator) = match order {
-            PbsOrder::BootstrapKeyswitch => (
-                circuit_parameters,
-                context.circuit_bootstrap_evaluator(server_key).unwrap(),
-            ),
+            PbsOrder::BootstrapKeyswitch => (circuit_parameters, {
+                let mut standalone = context.circuit_bootstrap_evaluator(server_key).unwrap();
+                assert!(standalone.bootstrapper_mut().is_none());
+                let (pbs, allocation) = allocations::measure(|| standalone.into_bootstrapper());
+                assert!(
+                    allocation.count > 0,
+                    "standalone BK recovery explicitly creates return-KS scratch"
+                );
+                CircuitBootstrapEvaluator::try_from_bootstrapper(pbs).unwrap()
+            }),
             PbsOrder::KeyswitchBootstrap => (
                 &alternate,
                 CircuitBootstrapEvaluator::try_from_parts(
@@ -266,9 +273,22 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
                 evaluator.circuit_bootstrap_to(&input, &mut control);
                 evaluator.cmux_to(&control, &choices[0], &choices[1], &mut selected);
                 evaluator.external_product_to(&control, &choices[1], &mut product);
+                evaluator.bootstrapper_mut().unwrap().apply_lookup_table_to(
+                    &input,
+                    &identity,
+                    &mut output,
+                );
                 accumulator_client.decrypt_to(&selected, &mut decoded);
                 accumulator_client.decrypt_to(&product, &mut decoded_product);
             });
+            assert_eq!(
+                context
+                    .decryptor(&client_key)
+                    .unwrap()
+                    .decrypt(&output)
+                    .unwrap(),
+                bit
+            );
             assert_eq!(allocation.count, 0, "CBS must reuse its workspace");
             let output_size = circuit_parameters.output_size();
             let mut phase = Polynomial::new(vec![0u64; POLY_LENGTH]);
@@ -304,6 +324,12 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
                 messages[1].iter().map(|m| m * bit).collect::<Vec<_>>()
             );
         }
+
+        let (_, recovery) = allocations::measure(|| evaluator.into_bootstrapper());
+        assert_eq!(
+            recovery.count, 0,
+            "converted CBS retains ordinary workspace"
+        );
     }
 }
 

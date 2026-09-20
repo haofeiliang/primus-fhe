@@ -4,14 +4,14 @@
 
 ## 当前任务
 
-- **TFHE R1 已完成，下一步 R2**：[R1–R4 四步计划](docs/tfhe-refactor-plan.md)。已收敛 GLWE 泛型/CBS 参数、NTRU CBS 参数绑定、错误归属和 LUT 共享构造；默认/SIMD 各 87 项测试、workspace all-targets 与严格 rustdoc 通过。本轮修改尚未暂存或提交，编号不隐含提交或启动下一步。
+- **TFHE R2 已完成，尚未暂存/提交；R1 已提交为 `618768d`**：[R1–R4 四步计划](docs/tfhe-refactor-plan.md)。四后端 evaluator 消费/借用/回收、GLWE 按用途分配、两族串行 scratch 复用、NTRU 控制材料配对及 BR 共用流程已完成。Fourier 保留 sparse+CBS 秘密变换复用，NTT 同类原型因完整 keygen 回退已撤回。下一步为 R3，等待用户发起，不自动启动。
 - 计划基于七个 `primus_tfhe*` crate 的只读审查，源码基线为 `cba9c01`。目标是类型与错误归属、资源所有权、重复计算、模块组织和学习路径；保留算法与表示差异，试验性优化无收益时撤回并记录结论。基线验证范围见计划末节，不能替代实施后的验证。
 - **B1–B8 已完成，B8.3 已提交为 `cba9c01`**：[后端补齐计划](docs/tfhe-backend-plan.md)。旧 S0–S9、[P1–P4](docs/tfhe-plan.md)、[T1–T3](docs/tfhe-ternary.md)均不自动重启；只按本次目标读取完成记录。
 - 新算法由用户按[候选清单](docs/tfhe-next.md)选择。本轮不扩展未验收组合，不重开底层全库整理；局部原语变更须有明确的资源或维护收益。
 
 ## 有效边界与未决项
 
-- R1 保留共享 LUT 构造及薄入口/输出编码 helper 的内联。Native `N=1024,t=255,k=4` 三轮中位数构造耗时增加约 4.4%（0.06 μs）；其余测量与限制见[成本记录](docs/tfhe-refactor-costs.md)。不声称零回退或在线 PBS 加速。
+- R1 的 Native `N=1024,t=255,k=4` 构造成本增加约 4.4%（0.06 μs）；R2 的 NTRU NTT SIMD CBS 仍有约 2%～3% 整体构建间回退，恢复独立 trace scratch 未改善，故保留共享的 25 KiB 内存收益。NTT keygen 原型已撤回。方法、隔离对照及边界只在[成本记录](docs/tfhe-refactor-costs.md)维护，不声称零回退或普遍加速。
 
 - GLWE/NTRU 两族均已支持经典 ternary；桶聚合 ternary 另行设计。Automorphism BR 暂缓；NTRU packing 按用户决定排除。
 - 已实现能力以 [TFHE README](crates/primus_tfhe/README.zh_CN.md)为准。GLWE 两后端均已接入稀疏 CBS；MVB 采用 Rounded 前半区输入和 unsigned Scaled 输出；GLWE/NTRU NTT 使用奇数 q，GLWE Fourier 支持 u32/u64 Native 偶尺度及经典/稀疏密钥。NTRU Fourier 支持相同 Native 偶尺度与字宽、经典 binary/ternary BR，以及奇数重量 binary 桶聚合普通/ManyLUT；两 NTRU 后端均拒绝 sparse CBS/MVB。Scaled 数值标志不可直接送入 Boolean 门或沿用原输入编码。
@@ -23,7 +23,7 @@
 
 | 目标 | 入口 |
 | --- | --- |
-| 当前类型、错误、工作区与使用方式整理 | [R1–R4 计划](docs/tfhe-refactor-plan.md)，下一步 R2 |
+| 当前类型、错误、工作区与使用方式整理 | [R1–R4 计划](docs/tfhe-refactor-plan.md)，下一步 R3 |
 | LUT、编码、量化、秘密域与后处理 | [TFHE 设计总览](docs/tfhe.md) |
 | 已有后端能力、组合与测量 | [B1–B8 完成入口](docs/tfhe-backend-plan.md)、[测量索引](docs/benchmarks/tfhe.md) |
 | 下一算法与启动条件 | [候选清单](docs/tfhe-next.md)、[ternary 设计](docs/tfhe-ternary.md) |

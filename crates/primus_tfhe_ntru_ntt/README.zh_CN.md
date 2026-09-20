@@ -12,6 +12,17 @@ Boolean 门使用共享求值器，契约见[公共指南](../primus_tfhe/README
 
 自定义 NTT 表须实现 `MonomialNttTable`；内置 `UintNttTable` 已支持。
 
+## 复用 evaluator
+
+已有普通 `Evaluator` 时，用 `FactorizedEvaluator::try_from_bootstrapper` 或
+`CircuitBootstrapEvaluator::try_from_bootstrapper` 转入 MVB/CBS，仅分配新增能力的缓冲区。
+通过 `bootstrapper_mut()` 可交替执行普通单输出/交错 PBS；先导入
+`primus_tfhe::{ProgrammableBootstrap, ProgrammableBootstrapInterleaved}`。
+这个借用只开放 PBS 操作，不能替换内部 evaluator。`into_bootstrapper()` 回收普通工作区，
+释放额外缓冲区；从普通 evaluator 转入再回收不分配。
+
+NTRU CBS 与普通 PBS 共用初始化、BR 和返回 KS 工作区；MVB/CBS 仍拒绝 sparse server key。
+
 ## 普通 PBS 与 ManyLUT
 
 先用 `TfheParameters::try_from_config(TfheConfig { .. })` 声明数学参数，再调用
