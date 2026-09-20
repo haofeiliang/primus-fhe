@@ -1,6 +1,6 @@
 # TFHE R1–R4 整理成本
 
-本文件只记录已测的结构调整，实施范围见 [R1–R4 计划](tfhe-refactor-plan.md)。
+本文件只记录已测的结构调整，最终决定与验收见 [R1–R4 整理结果](tfhe-refactor-plan.md)。
 数值对照保存于 [R1 CSV](benchmarks/tfhe-r1.csv) 和 [R2 CSV](benchmarks/tfhe-r2.csv)，
 R3 测试资产的数量与耗时直接记录在本文末节；不能据此推断未测参数、后端或平台的性能。
 
@@ -237,4 +237,5 @@ cargo nextest run --offline --test-threads 2 \
 由公共 `boolean_parameters()` 移入 `benches/support/mod.rs`，参数值、基准名称和计时工作不变，
 不将这个成本 fixture 当作安全参数推荐。模块迁移只调整路径、导入和必要的 crate 内可见性。
 GLWE CBS 示例更名为 `ntt_circuit_bootstrap` / `fourier_circuit_bootstrap`，消除联合构建的
-输出冲突；仅更名，不影响上面的 nextest 负载或统计，两个新入口另行执行 release 验证。
+输出冲突；本节计时阶段仅更名，两个新入口另行执行 release 验证。后续编码接口与客户端/服务端
+示例整理不计入这组历史耗时；最终验证见[整理结果](tfhe-refactor-plan.md#r4-复核与实际验证)。

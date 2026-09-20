@@ -221,6 +221,17 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
             PbsOrder::BootstrapKeyswitch => (circuit_parameters, {
                 let mut standalone = context.circuit_bootstrap_evaluator(server_key).unwrap();
                 assert!(standalone.bootstrapper_mut().is_none());
+                // Exercise the missing-KS form before recovery fills that workspace.
+                let mut control = standalone.allocate_output();
+                let mut selected = context.allocate_accumulator_ciphertext();
+                let mut decoded = vec![0; POLY_LENGTH];
+                let (_, online) = allocations::measure(|| {
+                    standalone.circuit_bootstrap_to(&input, &mut control);
+                    standalone.cmux_to(&control, &choices[0], &choices[1], &mut selected);
+                });
+                assert_eq!(online.count, 0, "standalone BK CBS/CMUX must not allocate");
+                accumulator_client.decrypt_to(&selected, &mut decoded);
+                assert_eq!(decoded, messages[1]);
                 let (pbs, allocation) = allocations::measure(|| standalone.into_bootstrapper());
                 assert!(
                     allocation.count > 0,

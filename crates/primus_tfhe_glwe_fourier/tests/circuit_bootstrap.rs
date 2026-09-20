@@ -132,24 +132,6 @@ fn circuit_bootstrap<Table: FftTable>(order: PbsOrder, distribution: SecretKeyDi
         parameters.scheme_switch().clone(),
     )
     .unwrap();
-    let (parameters, mut evaluator) = match order {
-        PbsOrder::BootstrapKeyswitch => (parameters, {
-            let mut standalone = context.circuit_bootstrap_evaluator(&server).unwrap();
-            assert!(standalone.bootstrapper_mut().is_none());
-            let (pbs, allocation) = allocations::measure(|| standalone.into_bootstrapper());
-            assert!(
-                allocation.count > 0,
-                "standalone BK recovery explicitly creates return-KS scratch"
-            );
-            CircuitBootstrapEvaluator::try_from_bootstrapper(pbs).unwrap()
-        }),
-        PbsOrder::KeyswitchBootstrap => (
-            &alternate,
-            CircuitBootstrapEvaluator::try_from_parts(&context, &server, &alternate, key).unwrap(),
-        ),
-    };
-    assert_eq!(parameters.lookup_table_padded_output_count(), 4);
-
     let mut fft = context.new_fft_engine();
     let glwe = context.parameters().accumulator_glwe();
     let messages = [1u64, 3].map(|offset| {
@@ -188,6 +170,35 @@ fn circuit_bootstrap<Table: FftTable>(order: PbsOrder, distribution: SecretKeyDi
             .unwrap(),
         1
     );
+
+    let (parameters, mut evaluator) = match order {
+        PbsOrder::BootstrapKeyswitch => (parameters, {
+            let mut standalone = context.circuit_bootstrap_evaluator(&server).unwrap();
+            assert!(standalone.bootstrapper_mut().is_none());
+            // Exercise the missing-KS form before recovery fills that workspace.
+            let mut control = standalone.allocate_output();
+            let mut selected = context.allocate_accumulator_ciphertext();
+            let mut decoded = vec![0; POLY_LENGTH];
+            let (_, online) = allocations::measure(|| {
+                standalone.circuit_bootstrap_to(&input, &mut control);
+                standalone.cmux_to(&control, &choices[0], &choices[1], &mut selected);
+            });
+            assert_eq!(online.count, 0, "standalone BK CBS/CMUX must not allocate");
+            accumulator_client.decrypt_to(&selected, &mut decoded);
+            assert_eq!(decoded, messages[1]);
+            let (pbs, allocation) = allocations::measure(|| standalone.into_bootstrapper());
+            assert!(
+                allocation.count > 0,
+                "standalone BK recovery explicitly creates return-KS scratch"
+            );
+            CircuitBootstrapEvaluator::try_from_bootstrapper(pbs).unwrap()
+        }),
+        PbsOrder::KeyswitchBootstrap => (
+            &alternate,
+            CircuitBootstrapEvaluator::try_from_parts(&context, &server, &alternate, key).unwrap(),
+        ),
+    };
+    assert_eq!(parameters.lookup_table_padded_output_count(), 4);
 
     let mut control = evaluator.allocate_output();
     let mut coefficients = Ggsw::new(vec![0u64; parameters.output_size().ggsw_len()]);

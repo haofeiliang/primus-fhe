@@ -4,7 +4,7 @@
 
 B1–B8 已完成；NTRU NTT/Fourier 桶聚合普通/ManyLUT 均已实验性接入，sparse CBS/MVB 保持拒绝。B1.4–B1.7 整理四后端高层接口，分析与性能对照基线为 `66ae701`；B2–B8 保留原编号。当前任务与下一步记录在 [HANDOFF](../HANDOFF.md)，算法依据仍由覆盖分析和各专项文档维护。
 
-B1–B8 之后的类型、错误、工作区与使用方式整理见 [R1–R4 计划](tfhe-refactor-plan.md)，不重启本计划的已完成步骤。
+B1–B8 之后的类型、错误、工作区与使用方式整理亦已完成，见 [R1–R4 整理结果](tfhe-refactor-plan.md)；不重启已完成步骤。
 
 ## 执行方式
 

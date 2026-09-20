@@ -4,7 +4,7 @@
 
 | 阅读目标 | 文档 |
 | --- | --- |
-| 当前结构与使用方式整理 | [R1–R4 四步计划](tfhe-refactor-plan.md) |
+| 结构与使用方式整理（已完成） | [R1–R4 整理结果](tfhe-refactor-plan.md) |
 | 已完成的 P1–P4 | [实施索引](tfhe-plan.md) |
 | 固定重量二元桶聚合 | [稀疏 PBS：推导、布局、测量](tfhe-sparse-pbs.md) |
 | 同一输入、多函数输出 | [固定尺度分解式 MVB](tfhe-mvb.md) |
