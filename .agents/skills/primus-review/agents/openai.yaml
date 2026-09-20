@@ -1,3 +1,0 @@
-interface:
-  display_name: "Primus Review"
-  short_description: "Review Primus Rust files, modules, and crates"

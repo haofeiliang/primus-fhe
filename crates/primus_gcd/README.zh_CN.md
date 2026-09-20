@@ -5,8 +5,7 @@
 `primus_gcd` 为 Rust 原生无符号整数类型提供无分配的 GCD、扩展 GCD 和模逆运算。
 
 > [!WARNING]
-> 本 crate 属于实验性的 [Primus FHE](../../README.zh_CN.md) workspace。 其 API 尚不稳定，可能随时发生不兼容修改。
-> 实现没有声明为常量时间，不应假定其能够抵抗侧信道攻击。
+> 本 crate 属于实验性的 [Primus FHE](../../README.zh_CN.md) workspace。 其 API 尚不稳定，可能随时发生不兼容修改。 实现没有声明为常量时间，不应假定其能够抵抗侧信道攻击。
 
 ## 支持的运算
 

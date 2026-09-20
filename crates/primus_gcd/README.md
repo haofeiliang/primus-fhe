@@ -5,8 +5,7 @@ English | [简体中文](README.zh_CN.md)
 `primus_gcd` provides allocation-free GCD, extended-GCD, and modular-inverse operations for Rust's primitive unsigned integer types.
 
 > [!WARNING]
-> This crate is part of the experimental [Primus FHE](../../README.md) workspace. Its API is unstable and may change incompatibly at any time.
-> The implementation is not documented as constant-time and must not be assumed to provide side-channel resistance.
+> This crate is part of the experimental [Primus FHE](../../README.md) workspace. Its API is unstable and may change incompatibly at any time. The implementation is not documented as constant-time and must not be assumed to provide side-channel resistance.
 
 ## Supported operations
 
@@ -36,16 +35,14 @@ assert_eq!((inverse as u128 * 17) % 29, 1);
 
 - `xgcd(x, y)` requires `x >= y`.
 - `gcdinv(x, modulus)` requires `x < modulus`.
-- `gcdinv_pow_of_2(value, mask)` requires a nonzero mask of the form
-  `2^k - 1`; only odd values are invertible.
+- `gcdinv_pow_of_2(value, mask)` requires a nonzero mask of the form `2^k - 1`; only odd values are invertible.
 - By convention, this crate defines `gcd(0, 0) = 0`.
 
 See the public API documentation for complete panic and result contracts.
 
 ## Implementation notes
 
-The implementation uses fixed-width arithmetic without heap allocation.
-Ordinary GCD uses Stein's binary algorithm, the general extended-GCD routines are based on FLINT's unsigned-integer algorithms, and power-of-two inversion uses Newton/Hensel lifting.
+The implementation uses fixed-width arithmetic without heap allocation. Ordinary GCD uses Stein's binary algorithm, the general extended-GCD routines are based on FLINT's unsigned-integer algorithms, and power-of-two inversion uses Newton/Hensel lifting.
 
 References:
 

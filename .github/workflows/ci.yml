@@ -32,7 +32,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           prefix-key: v1-rust
-      - run: cargo clippy --workspace -- -D warnings
+      - run: cargo clippy --workspace --all-targets -- -D warnings
 
   test-stable:
     name: test (stable)
@@ -49,6 +49,7 @@ jobs:
         with:
           prefix-key: v1-rust
       - run: cargo nextest run --workspace
+      - run: cargo test --workspace --doc
 
   nightly:
     name: clippy + test + doc (nightly, all features)
@@ -66,8 +67,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           prefix-key: v1-rust
-      - run: cargo +nightly clippy --workspace --all-features -- -D warnings
+      - run: cargo +nightly clippy --workspace --all-targets --all-features -- -D warnings
       - run: cargo +nightly nextest run --workspace --all-features
+      - run: cargo +nightly test --workspace --all-features --doc
       - run: cargo +nightly doc --workspace --all-features --no-deps --document-private-items
         env:
           RUSTDOCFLAGS: "-D warnings"

@@ -4,7 +4,7 @@
 
 `primus_lattice` 为 [Primus FHE](../../README.md) 提供密文存储、表示转换和底层格运算，由 GLWE/NTRU × Fourier/NTT 四条 TFHE 路径以及 RNS GLWE 实现共同使用。
 
-本 crate 持续开发中，不承诺稳定 API。密钥生成、加密参数、编码策略、噪声管理和完整同态计算由 [`primus_glwe`](../primus_glwe)、[`primus_ntru`](../primus_ntru)、[`primus_glwe_rns`](../primus_glwe_rns) 等更高层负责。
+本 crate 属于实验性的 [Primus FHE](../../README.zh_CN.md) workspace，不承诺稳定 API。密钥生成、加密参数、编码策略、噪声管理和完整同态计算由 [`primus_glwe`](../primus_glwe)、[`primus_ntru`](../primus_ntru)、[`primus_glwe_rns`](../primus_glwe_rns) 等更高层负责。
 
 ## 密文类型
 
@@ -27,11 +27,7 @@
 
 NLev 与 NGSW 的存储形状相同，但语义不同：`beta` 的 NLev 各层相位为 `v_i*beta`，而 `beta` 的 NGSW 各层相位为 `v_i*f*beta`。它们适用的 gadget product 不同，因此保留为独立类型。
 
-NLev/NGSW 的单多项式外积可以写出系数，也可以通过 `external_product_ntt_to` /
-`external_product_fourier_to` 保留 NTT/Fourier 结果，直接在输出缓冲区累加。NTT 系数
-输出也复用目标缓冲区，最后原地逆变换；Fourier 系数输出仍用独立复数工作区转回 torus，
-Fourier 输出则省去这一步转换和舍入。`NGSW.external_product_nlev_to` 要求输入与输出 NLev 层数相同，
-但它们独立于控制密文的分解基；输出保留输入的 gadget 尺度。
+NLev/NGSW 的单多项式外积可以写出系数，也可以通过 `external_product_ntt_to` / `external_product_fourier_to` 保留 NTT/Fourier 结果，直接在输出缓冲区累加。NTT 系数 输出也复用目标缓冲区，最后原地逆变换；Fourier 系数输出仍用独立复数工作区转回 torus， Fourier 输出则省去这一步转换和舍入。`NGSW.external_product_nlev_to` 要求输入与输出 NLev 层数相同， 但它们独立于控制密文的分解基；输出保留输入的 gadget 尺度。
 
 ## 存储与布局
 
@@ -64,14 +60,9 @@ Fourier 输出则省去这一步转换和舍入。`NGSW.external_product_nlev_to
 
 `*_assign` 原地修改接收者，`*_to` 写入独立输出，`add_*_assign` 累加到已初始化的存储。消费式算术和转换可以复用可变存储，而返回新抽取样本的分配式接口会分配结果；不能仅凭没有后缀就认定方法不分配，应以方法契约为准。
 
-单模数 NTT 密文提供 `mul_monomial_assign`、`mul_monomial_to`、`add_mul_monomial_assign`，
-以及计算 `self - rhs * X^exponent` 的 `sub_mul_monomial_to`。操作数之后依次传入 modulus、
-单项式 NTT 表和长度为 `N` 的 scratch 切片。各操作只生成一次单项式变换并覆盖 scratch，
-供密文的所有多项式共用，不分配内存或转换回系数域。
+单模数 NTT 密文提供 `mul_monomial_assign`、`mul_monomial_to`、`add_mul_monomial_assign`， 以及计算 `self - rhs * X^exponent` 的 `sub_mul_monomial_to`。操作数之后依次传入 modulus、 单项式 NTT 表和长度为 `N` 的 scratch 切片。各操作只生成一次单项式变换并覆盖 scratch， 供密文的所有多项式共用，不分配内存或转换回系数域。
 
-`FourierGgsw` 与 `FourierNgsw` 的 `sub_mul_monomial_to` 使用 FFT engine、`N` 个 torus 整数和 `N/2` 个复数的
-scratch 执行相同减法。它用密文对应的同一个表实例，以整数尺度变换单项式，保持密文的
-torus 缩放和频率排列。
+`FourierGgsw` 与 `FourierNgsw` 的 `sub_mul_monomial_to` 使用 FFT engine、`N` 个 torus 整数和 `N/2` 个复数的 scratch 执行相同减法。它用密文对应的同一个表实例，以整数尺度变换单项式，保持密文的 torus 缩放和频率排列。
 
 完整 GLWE 抽取把全部掩码多项式展平为 LWE 掩码。紧凑抽取要求省略的秘密密钥后缀为零。`MultiMsgLwe` 只能表示单个 RLWE 掩码，从截断 GLWE 转换时要求 `k == 1`。逆抽取嵌入常数项 LWE 样本，并把未使用的存储填零；它不会恢复原 GLWE 明文的全部系数。
 
@@ -93,14 +84,7 @@ Context 提供可复用 scratch，不是已经验证的 basis/table/modulus doma
 
 覆盖式外积会初始化累加器，其他 scratch 也会先写后读，因此合法调用之间不需要手动 reset。累加接口保留原输出，要求输出已初始化。CMUX 的选择语义还要求控制密文加密比特；`cmux_k_to` 要求至多一个控制比特为一。噪声增长和可解密性仍由更高层负责。
 
-`positive.cmux_ternary_monomial_to(&negative, ...)` 以互斥的加密比特
-`s⁺, s⁻` 旋转得到 `X^(exponent * (s⁺-s⁻))` 倍的输入。两份控制使用相同的密钥、
-basis，以及 NTT 表或同一个 FFT 表实例。Fourier 控制使用 native-torus 缩放与对应的 native
-basis。指数已经量化到 `0..2N`；零指数精确复制输入。在线运算复用 context，
-不分配内存。这是 lattice 单步原语；完整 GLWE TFHE ternary 密钥生成与求值见
-[ternary 设计](../../docs/tfhe-ternary.md)。
-NGSW 形式支持 NTT 和 Fourier；完整 NTRU 接入见
-[NTRU ternary 设计](../../docs/tfhe-ntru-ternary.md)。
+`positive.cmux_ternary_monomial_to(&negative, ...)` 以互斥的加密比特 `s⁺, s⁻` 旋转得到 `X^(exponent * (s⁺-s⁻))` 倍的输入。两份控制使用相同的密钥、 basis，以及 NTT 表或同一个 FFT 表实例。Fourier 控制使用 native-torus 缩放与对应的 native basis。指数已经量化到 `0..2N`；零指数精确复制输入。在线运算复用 context， 不分配内存。这是 lattice 单步原语；完整 GLWE TFHE ternary 密钥生成与求值见 [家族接口](../primus_tfhe_glwe/README.zh_CN.md)。 NGSW 形式支持 NTT 和 Fourier；完整 NTRU 接入见 [家族接口](../primus_tfhe_ntru/README.zh_CN.md)。
 
 ## 示例
 

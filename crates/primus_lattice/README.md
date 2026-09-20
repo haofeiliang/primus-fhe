@@ -4,7 +4,7 @@ English | [简体中文](README.zh_CN.md)
 
 `primus_lattice` provides ciphertext storage, representation conversions, and low-level lattice operations for [Primus FHE](../../README.md). It is shared by the GLWE/NTRU × Fourier/NTT TFHE paths and by RNS GLWE implementations.
 
-The crate is under active development and does not promise a stable API. Key generation, encryption parameters, encoding policy, noise management, and complete homomorphic evaluation belong to higher layers such as [`primus_glwe`](../primus_glwe), [`primus_ntru`](../primus_ntru), and [`primus_glwe_rns`](../primus_glwe_rns).
+This crate is part of the experimental [Primus FHE](../../README.md) workspace and does not promise a stable API. Key generation, encryption parameters, encoding policy, noise management, and complete homomorphic evaluation belong to higher layers such as [`primus_glwe`](../primus_glwe), [`primus_ntru`](../primus_ntru), and [`primus_glwe_rns`](../primus_glwe_rns).
 
 ## Ciphertext families
 
@@ -27,14 +27,7 @@ Types are exported through their modules, for example `glwe::Glwe`, `ggsw::NttGg
 
 NLev and NGSW share a storage shape but have different semantics: an NLev of `beta` contains phases `v_i*beta`; an NGSW of `beta` contains phases `v_i*f*beta`. Their valid gadget products differ, so the types are intentionally distinct.
 
-NLev/NGSW scalar external products can write coefficients or keep the result
-in NTT/Fourier form with `external_product_ntt_to` / `external_product_fourier_to`.
-Transform outputs accumulate directly into the destination. NTT coefficient
-outputs also reuse the destination, then inverse-transform in place. Fourier
-coefficient outputs retain separate complex scratch for torus conversion;
-Fourier outputs skip that conversion and its rounding. For
-`NGSW.external_product_nlev_to`, input/output NLev levels match each other but
-are independent of the control's decomposition basis; their gadget scales are preserved.
+NLev/NGSW scalar external products can write coefficients or keep the result in NTT/Fourier form with `external_product_ntt_to` / `external_product_fourier_to`. Transform outputs accumulate directly into the destination. NTT coefficient outputs also reuse the destination, then inverse-transform in place. Fourier coefficient outputs retain separate complex scratch for torus conversion; Fourier outputs skip that conversion and its rounding. For `NGSW.external_product_nlev_to`, input/output NLev levels match each other but are independent of the control's decomposition basis; their gadget scales are preserved.
 
 ## Storage and layout
 
@@ -67,16 +60,9 @@ Availability depends on the type and representation; this is a family overview, 
 
 `*_assign` mutates its receiver; `*_to` writes a separate output. `add_*_assign` accumulates into initialized storage. Consuming arithmetic and conversions can reuse mutable storage, while allocation-returning extraction methods allocate their result; consult the method contract rather than assuming an unsuffixed method is allocation-free.
 
-Single-modulus NTT ciphertexts provide `mul_monomial_assign`, `mul_monomial_to`,
-and `add_mul_monomial_assign`, plus `sub_mul_monomial_to` for `self - rhs * X^exponent`.
-Pass the modulus, monomial NTT table, and a length-`N` scratch slice after the operands.
-The operations overwrite scratch with one monomial transform shared by all ciphertext
-polynomials, without allocation or conversion to coefficients.
+Single-modulus NTT ciphertexts provide `mul_monomial_assign`, `mul_monomial_to`, and `add_mul_monomial_assign`, plus `sub_mul_monomial_to` for `self - rhs * X^exponent`. Pass the modulus, monomial NTT table, and a length-`N` scratch slice after the operands. The operations overwrite scratch with one monomial transform shared by all ciphertext polynomials, without allocation or conversion to coefficients.
 
-`FourierGgsw` and `FourierNgsw` provide `sub_mul_monomial_to` using an FFT
-engine and scratch slices of `N` torus words and `N/2` complex values. It
-transforms the monomial at integer scale using the ciphertexts' exact table
-instance, preserving their torus scale and evaluation order.
+`FourierGgsw` and `FourierNgsw` provide `sub_mul_monomial_to` using an FFT engine and scratch slices of `N` torus words and `N/2` complex values. It transforms the monomial at integer scale using the ciphertexts' exact table instance, preserving their torus scale and evaluation order.
 
 Full GLWE extraction flattens all mask polynomials into an LWE mask. Compact extraction requires the omitted secret-key suffix to be zero. Packed `MultiMsgLwe` represents one RLWE mask; conversion from truncated GLWE requires `k == 1`. Inverse extraction embeds the constant-term LWE sample and zero-fills unused storage; it does not reconstruct all coefficients of the original GLWE plaintext.
 
@@ -98,15 +84,7 @@ Contexts provide reusable scratch, not a validated basis/table/modulus domain. G
 
 Overwriting external products initialize their accumulator, and other scratch is written before use: no manual reset is needed between valid calls. Accumulating APIs preserve the existing output and require it to be initialized. CMUX selection additionally requires bit controls; `cmux_k_to` requires at most one active control. Noise growth and decryptability remain higher-layer obligations.
 
-`positive.cmux_ternary_monomial_to(&negative, ...)` uses mutually exclusive
-encrypted bits `s⁺, s⁻` to rotate by `X^(exponent * (s⁺-s⁻))`. Both controls use
-the same key, basis, and NTT table or exact FFT table instance. Fourier controls
-use native-torus scale and a matching native basis. The exponent is already
-quantized into `0..2N`; zero copies the input exactly. Evaluation reuses its
-context without allocation. This is a lattice primitive; complete GLWE TFHE ternary key generation
-and evaluation are described in the [ternary design](../../docs/tfhe-ternary.md).
-The NGSW form supports NTT and Fourier; complete NTRU integration is described in the
-[NTRU ternary design](../../docs/tfhe-ntru-ternary.md).
+`positive.cmux_ternary_monomial_to(&negative, ...)` uses mutually exclusive encrypted bits `s⁺, s⁻` to rotate by `X^(exponent * (s⁺-s⁻))`. Both controls use the same key, basis, and NTT table or exact FFT table instance. Fourier controls use native-torus scale and a matching native basis. The exponent is already quantized into `0..2N`; zero copies the input exactly. Evaluation reuses its context without allocation. This is a lattice primitive; complete GLWE TFHE ternary key generation and evaluation are described in the [family API](../primus_tfhe_glwe/README.md). The NGSW form supports NTT and Fourier; complete NTRU integration is described in the [family API](../primus_tfhe_ntru/README.md).
 
 ## Example
 

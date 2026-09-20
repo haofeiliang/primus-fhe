@@ -2,6 +2,9 @@
 
 [English](README.md) | [简体中文](README.zh_CN.md)
 
+> [!WARNING]
+> 本 crate 属于实验性的 [Primus FHE](../../README.zh_CN.md) workspace。其 API 和数值契约尚不稳定，可能随时发生不兼容修改。
+
 单模数 GLWE 密钥和运算，分别提供 NTT 与原生环面 Fourier 表示。下文 `k` 为 GLWE 维数，`N` 为多项式长度。
 
 ## 密钥与表示
@@ -48,11 +51,7 @@ fourier_sk.phase_to(input, output, fft, context)
 
 NTT 域私钥运算无需 context。Fourier 运算使用 `FourierGlweEncryptContext<T>` / `FourierGlweDecryptContext`；NTT 公钥加密使用 `NttGlwePublicEncryptContext<T>`。这些 context 按 `N` 构造，并在相同长度下复用。Context 保存工作区而非参数，析构时擦除私密中间值。
 
-对于系数域密文，`NttGlweSecretKey` 提供 `encrypt_coeff_to`、`phase_coeff_to`
-和 `decrypt_coeff_to`，最后一个参数是长度为 N 的 scratch 切片。
-它们复用所有缓冲，省去 body 的正 NTT。加密接收无符号明文；相同 RNG 状态下，
-结果与 `encrypt_to` 后逆 NTT 精确一致。Scratch 无需初始化，加密后保留依赖私钥的乘积，
-应由 `zeroize::Zeroizing<Vec<T>>` 等负责擦除的类型持有。
+对于系数域密文，`NttGlweSecretKey` 提供 `encrypt_coeff_to`、`phase_coeff_to` 和 `decrypt_coeff_to`，最后一个参数是长度为 N 的 scratch 切片。 它们复用所有缓冲，省去 body 的正 NTT。加密接收无符号明文；相同 RNG 状态下， 结果与 `encrypt_to` 后逆 NTT 精确一致。Scratch 无需初始化，加密后保留依赖私钥的乘积， 应由 `zeroize::Zeroizing<Vec<T>>` 等负责擦除的类型持有。
 
 `_to` 路径复用输出和工作区。布局和变换长度检查失败会在写输出前报错；长度相同并不代表变换表示兼容。无效明文值可能在部分写入或消耗随机数后触发 panic。已编码的 NTT 输入必须是 `[0, q)` 中的规范剩余类，该范围由调用方保证。
 

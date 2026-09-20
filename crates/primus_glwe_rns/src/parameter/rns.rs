@@ -433,7 +433,6 @@ where
     /// Levels follow [`BigUintApproxSignedBasis::decomposer_iter`] from low
     /// to high. Each chunk contains one residue per modulus, in the order of
     /// [`Self::cipher_moduli`]. The weights are computed once at construction.
-    #[must_use]
     #[inline]
     pub fn scalar_residue_iter(
         &self,

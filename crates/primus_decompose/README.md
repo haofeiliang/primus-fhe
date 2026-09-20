@@ -2,13 +2,10 @@
 
 English | [简体中文](README.zh_CN.md)
 
-`primus_decompose` provides approximate signed radix decomposition for
-[Primus FHE](../../README.md). It separates reusable basis precomputation from
-single-value and batched digit extraction, for gadget products and key switching.
+`primus_decompose` provides approximate signed radix decomposition for [Primus FHE](../../README.md). It separates reusable basis precomputation from single-value and batched digit extraction, for gadget products and key switching.
 
 > [!WARNING]
-> This crate is part of the experimental Primus FHE workspace. Its API,
-> representations, and numerical contracts may change incompatibly.
+> This crate is part of the experimental Primus FHE workspace. Its API, representations, and numerical contracts may change incompatibly.
 
 ## Core types
 
@@ -20,15 +17,11 @@ single-value and batched digit extraction, for gadget products and key switching
 | `OnceSignedDecomposer`, `OnceBigUintSignedDecomposer` | Extract one retained level; obtained from the corresponding basis's `decomposer_iter()` |
 | `ApproxSignedBasisError` | Invalid construction parameters, returned by `try_new` |
 
-`T: FheUint` is the unsigned coefficient type for the primitive basis and the
-limb type for the BigUint basis. `BigUint` comes from
-[`primus_integer`](../primus_integer/README.md), not a dynamically sized integer
-library. Construct a basis once and reuse its weights and extraction windows.
+`T: FheUint` is the unsigned coefficient type for the primitive basis and the limb type for the BigUint basis. `BigUint` comes from [`primus_integer`](../primus_integer/README.md), not a dynamically sized integer library. Construct a basis once and reuse its weights and extraction windows.
 
 ## Mathematical contract
 
-For `B = 2^log_basis`, `L = decompose_length()` and `d = drop_bits()`, decomposition
-produces signed digits with weights:
+For `B = 2^log_basis`, `L = decompose_length()` and `d = drop_bits()`, decomposition produces signed digits with weights:
 
 ```text
 -B/2 <= digit_i < B/2
@@ -36,17 +29,9 @@ weight_i = 2^d * B^i                  (0 <= i < L)
 reconstructed = sum(digit_i * weight_i) mod modulus
 ```
 
-Both `decomposer_iter()` and `scalar_iter()` visit levels from the lowest
-retained level to the highest. The circular distance between the input and its
-reconstruction is at most `approximate_error_bound()`: zero when `d == 0`,
-otherwise `2^(d - 1)`.
+Both `decomposer_iter()` and `scalar_iter()` visit levels from the lowest retained level to the highest. The circular distance between the input and its reconstruction is at most `approximate_error_bound()`: zero when `d == 0`, otherwise `2^(d - 1)`.
 
-Initialization selects the internal representative and initial rounding carry.
-Discarded bits are rounded to nearest, with half-way cases rounded up in that
-representative. In particular, native inputs recompose to
-`round_half_up(input / 2^d) * 2^d` modulo `2^T::BITS`. For other moduli, do not
-replace initialization with rounding the canonical input: the representative
-adjustment is part of correctness.
+Initialization selects the internal representative and initial rounding carry. Discarded bits are rounded to nearest, with half-way cases rounded up in that representative. In particular, native inputs recompose to `round_half_up(input / 2^d) * 2^d` modulo `2^T::BITS`. For other moduli, do not replace initialization with rounding the canonical input: the representative adjustment is part of correctness.
 
 The output encoding depends on the operation:
 
@@ -56,19 +41,13 @@ The output encoding depends on the operation:
 | BigUint `decompose*` | A full-width canonical residue modulo `Q`; negative `z` becomes `Q + z` |
 | BigUint `unsigned_decompose*` | One limb in `[0, B)` encoding `z mod B`; decode `u >= B/2` as `u - B` |
 
-Despite its name, `unsigned_decompose*` still represents a **signed** digit.
-For example, with `B = 256`, output `255` means `-1`, not positive `255`.
+Despite its name, `unsigned_decompose*` still represents a **signed** digit. For example, with `B = 256`, output `255` means `-1`, not positive `255`.
 
 ## Construction and retained levels
 
-Both bases require `2 <= log_basis < T::BITS` and a modulus at least `B`.
-`new` panics on invalid parameters; `try_new` returns `ApproxSignedBasisError`.
+Both bases require `2 <= log_basis < T::BITS` and a modulus at least `B`. `new` panics on invalid parameters; `try_new` returns `ApproxSignedBasisError`.
 
-`DecompositionConfig { log_basis, level_count }` keeps these choices independent of
-the modulus. `config.try_build::<u32>(None)` prepares a native basis, while
-`config.try_build(Some(q))` uses an explicit modulus. `level_count` has the same
-meaning as `reverse_length` below. Validation and errors come from
-`primitive::ApproxSignedBasis::try_new`; the config itself has no precomputed storage.
+`DecompositionConfig { log_basis, level_count }` keeps these choices independent of the modulus. `config.try_build::<u32>(None)` prepares a native basis, while `config.try_build(Some(q))` uses an explicit modulus. `level_count` has the same meaning as `reverse_length` below. Validation and errors come from `primitive::ApproxSignedBasis::try_new`; the config itself has no precomputed storage.
 
 The decomposition width `m` differs between representations:
 
@@ -79,20 +58,13 @@ The decomposition width `m` differs between representations:
 | Primitive, other explicit `q` | `bit_width(q)` |
 | BigUint, any explicit `Q` | `bit_width(Q)`, **including powers of two** |
 
-The full level count is `floor(m / log_basis)`. The constructor argument named
-`reverse_length` is an optional **retained level count**, not an iteration
-direction: `Some(L)` requires `1 <= L <= full_length`, while `None` uses all
-full levels. In both cases, `drop_bits = m - L * log_basis`, so even `None` can
-discard low bits when `m` is not divisible by `log_basis`.
+The full level count is `floor(m / log_basis)`. The constructor argument named `reverse_length` is an optional **retained level count**, not an iteration direction: `Some(L)` requires `1 <= L <= full_length`, while `None` uses all full levels. In both cases, `drop_bits = m - L * log_basis`, so even `None` can discard low bits when `m` is not divisible by `log_basis`.
 
-A BigUint modulus must have a nonempty little-endian limb slice with a nonzero
-most-significant limb. The basis owns a copy. Inputs use exactly that same limb
-count, including leading zero limbs when the input value is small.
+A BigUint modulus must have a nonempty little-endian limb slice with a nonzero most-significant limb. The basis owns a copy. Inputs use exactly that same limb count, including leading zero limbs when the input value is small.
 
 ## Primitive workflow
 
-Initialize a batch once, then pass the same adjusted values and advancing carry
-buffer through every level. Consume each level before overwriting its output:
+Initialize a batch once, then pass the same adjusted values and advancing carry buffer through every level. Consume each level before overwriting its output:
 
 ```rust
 use primus_decompose::primitive::ApproxSignedBasis;
@@ -117,8 +89,7 @@ assert_eq!(basis.drop_bits(), 1);
 assert_eq!(reconstructed, [42, 0]); // Circular errors modulo 97: 0 and 1.
 ```
 
-Power-of-two inputs need no adjusted-value buffer. Use `init_carry_slice` and
-pass the original input to each operator; this is the native Fourier path:
+Power-of-two inputs need no adjusted-value buffer. Use `init_carry_slice` and pass the original input to each operator; this is the native Fourier path:
 
 ```rust
 use primus_decompose::primitive::ApproxSignedBasis;
@@ -140,22 +111,17 @@ for (decomposer, weight) in basis.decomposer_iter().zip(basis.scalar_iter()) {
 assert_eq!(reconstructed, [0x1234_5600, 0]);
 ```
 
-`init_carry_slice` also accepts explicit power-of-two moduli, but panics for
-non-power-of-two moduli. Scalar processing uses `init_value_carry` followed by
-`decompose` or `decompose_to`, forwarding the carry in the same way.
+`init_carry_slice` also accepts explicit power-of-two moduli, but panics for non-power-of-two moduli. Scalar processing uses `init_value_carry` followed by `decompose` or `decompose_to`, forwarding the carry in the same way.
 
 ## BigUint workflow and layout
 
-For `N` values and `W = big_uint_value_len()` limbs per value, full-width buffers
-contain `N * W` limbs in **value-major**, little-endian order:
+For `N` values and `W = big_uint_value_len()` limbs per value, full-width buffers contain `N * W` limbs in **value-major**, little-endian order:
 
 ```text
 [value_0_low, ..., value_0_high, value_1_low, ..., value_1_high, ...]
 ```
 
-Carry buffers contain `N` booleans. Full-width digit outputs contain `N * W`
-limbs; compact `unsigned_decompose_slice_to` outputs contain only `N` limbs.
-BigUint initialization is required even when `Q` is a power of two.
+Carry buffers contain `N` booleans. Full-width digit outputs contain `N * W` limbs; compact `unsigned_decompose_slice_to` outputs contain only `N` limbs. BigUint initialization is required even when `Q` is a power of two.
 
 ```rust
 use primus_decompose::big_integer::BigUintApproxSignedBasis;
@@ -187,37 +153,20 @@ for (decomposer, weight) in basis.decomposer_iter().zip(basis.scalar_iter()) {
 assert_eq!(reconstructed, [42, -2]); // -2 represents Q - 2 modulo Q.
 ```
 
-This crate does not depend on `primus_rns`. RNS/CRT conversion belongs to
-[`primus_rns`](../primus_rns/README.md); its residue batches are modulus-major,
-not the value-major layout above. `CrtGlevParameters` in `primus_glwe_rns`
-precomputes reconstruction weights modulo each RNS modulus and exposes them
-through `scalar_residue_iter()`. They are separate from this basis's full-width
-integer weights.
+This crate does not depend on `primus_rns`. RNS/CRT conversion belongs to [`primus_rns`](../primus_rns/README.md); its residue batches are modulus-major, not the value-major layout above. `CrtGlevParameters` in `primus_glwe_rns` precomputes reconstruction weights modulo each RNS modulus and exposes them through `scalar_residue_iter()`. They are separate from this basis's full-width integer weights.
 
 ## Caller contracts and allocation
 
-- Original inputs must be canonical: `[0, q)` or `[0, Q)`. Every bit pattern is
-  valid for the primitive native modulus. These methods do not reduce inputs.
-- Adjusted inputs are internal bit representations, not necessarily canonical
-  residues. Keep them unchanged throughout decomposition; do not reduce them.
-- Apply every operator in ascending level order, without skipping levels or
-  resetting carry. A zero digit can still produce a carry. Start each new input
-  batch with initialization, not with the previous batch's final carries.
-- Primitive value, output and carry slices must have equal lengths. BigUint
-  buffers must follow the exact shapes above. Shape checks in these repeated
-  paths are debug diagnostics, not release-mode input validation.
-- Slice methods overwrite outputs and update carries; they do not accumulate
-  digits. `init_value_carry_slice_assign` also overwrites the original values.
-- Constructors allocate precomputation storage. Slice and caller-output methods
-  do not allocate internally. BigUint `init_value_carry`, `decompose`, and
-  `approximate_error_bound` return newly allocated vectors or big integers;
-  prefer reusable buffers and the `_to`/slice methods in repeated paths.
+- Original inputs must be canonical: `[0, q)` or `[0, Q)`. Every bit pattern is valid for the primitive native modulus. These methods do not reduce inputs.
+- Adjusted inputs are internal bit representations, not necessarily canonical residues. Keep them unchanged throughout decomposition; do not reduce them.
+- Apply every operator in ascending level order, without skipping levels or resetting carry. A zero digit can still produce a carry. Start each new input batch with initialization, not with the previous batch's final carries.
+- Primitive value, output and carry slices must have equal lengths. BigUint buffers must follow the exact shapes above. Shape checks in these repeated paths are debug diagnostics, not release-mode input validation.
+- Slice methods overwrite outputs and update carries; they do not accumulate digits. `init_value_carry_slice_assign` also overwrites the original values.
+- Constructors allocate precomputation storage. Slice and caller-output methods do not allocate internally. BigUint `init_value_carry`, `decompose`, and `approximate_error_bound` return newly allocated vectors or big integers; prefer reusable buffers and the `_to`/slice methods in repeated paths.
 
 ## Features and validation
 
-The default feature set is empty. The optional `simd` feature forwards to
-`primus_integer/simd` and requires nightly Rust. It does not select a separate
-decomposition backend; the loops can also benefit from compiler auto-vectorization.
+The default feature set is empty. The optional `simd` feature forwards to `primus_integer/simd` and requires nightly Rust. It does not select a separate decomposition backend; the loops can also benefit from compiler auto-vectorization.
 
 ```text
 cargo test -p primus_decompose
@@ -225,15 +174,8 @@ cargo bench -p primus_decompose --bench decompose
 cargo +nightly test -p primus_decompose --features simd
 ```
 
-The benchmarks separate basis construction from online decomposition. Primitive
-cases cover scalar and no-copy/adjusted batch paths. BigUint cases focus on compact
-batch output with fixed strides and the general fallback, plus one matched
-full-width output case. Each batch processes 4096 coefficients, including
-initialization and every retained level. Workspace builds already use
-`target-cpu=native` via
-[`.cargo/config.toml`](../../.cargo/config.toml).
+The benchmarks separate basis construction from online decomposition. Primitive cases cover scalar and no-copy/adjusted batch paths. BigUint cases focus on compact batch output with fixed strides and the general fallback, plus one matched full-width output case. Each batch processes 4096 coefficients, including initialization and every retained level. Workspace builds already use `target-cpu=native` via [`.cargo/config.toml`](../../.cargo/config.toml).
 
 ## License
 
-Licensed under either the [Apache License, Version 2.0](../../LICENSE-APACHE-2.0)
-or the [MIT License](../../LICENSE-MIT), at your option.
+Licensed under either the [Apache License, Version 2.0](../../LICENSE-APACHE-2.0) or the [MIT License](../../LICENSE-MIT), at your option.

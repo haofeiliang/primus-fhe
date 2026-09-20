@@ -57,22 +57,11 @@ This crate defines interfaces, not validation boundaries. Each public method doc
 
 ## Signed coefficients
 
-`EncodeSigned<T>` converts bounded signed coefficients to canonical residues,
-without plaintext scaling or general modular reduction. It is implemented for
-the concrete modulus types in `primus_modulus` and exported from both the crate
-root and `prelude`. It does not require `Reduce` or `ReduceNeg`. Custom modulus
-types implement `encode_signed`; the default slice method checks equal lengths
-once and statically calls that scalar implementation.
+`EncodeSigned<T>` converts bounded signed coefficients to canonical residues, without plaintext scaling or general modular reduction. It is implemented for the concrete modulus types in `primus_modulus` and exported from both the crate root and `prelude`. It does not require `Reduce` or `ReduceNeg`. Custom modulus types implement `encode_signed`; the default slice method checks equal lengths once and statically calls that scalar implementation.
 
-`ReduceDotProductSigned<T>` computes the dot product of canonical residues and
-bounded signed coefficients, returning a canonical residue without an encoded
-copy. It checks equal slice lengths; empty inputs return zero. Its signed input
-bounds match `EncodeSigned`. Native, PowOf2, Barrett and derived Barrett moduli
-implement this trait, including backend-specific SIMD dispatch.
+`ReduceDotProductSigned<T>` computes the dot product of canonical residues and bounded signed coefficients, returning a canonical residue without an encoded copy. It checks equal slice lengths; empty inputs return zero. Its signed input bounds match `EncodeSigned`. Native, PowOf2, Barrett and derived Barrett moduli implement this trait, including backend-specific SIMD dispatch.
 
-`RingContext<T>` includes both signed operation traits; `FieldContext<T>` inherits
-them through `RingContext<T>`. Both contexts require `T: FheUint`. Code needing
-only one operation can use its individual trait without the full context.
+`RingContext<T>` includes both signed operation traits; `FieldContext<T>` inherits them through `RingContext<T>`. Both contexts require `T: FheUint`. Code needing only one operation can use its individual trait without the full context.
 
 ```rust
 use primus_modulus::{NativeModulus, UintModulus};
@@ -85,18 +74,9 @@ UintModulus::new(97).encode_signed_slice_to(&[-1, 0, 1], &mut output);
 assert_eq!(output, [96, 0, 1]);
 ```
 
-For an explicit modulus `q`, every coefficient must satisfy
-`value.unsigned_abs() < q`. This is a correctness precondition, not a release
-validation pass. Every signed value is representable under the native modulus.
-Both methods handle the signed minimum without signed negation. See
-[`primus_modulus`](../primus_modulus/README.md#arithmetic-contracts) for the
-concrete encoding strategies.
+For an explicit modulus `q`, every coefficient must satisfy `value.unsigned_abs() < q`. This is a correctness precondition, not a release validation pass. Every signed value is representable under the native modulus. Both methods handle the signed minimum without signed negation. See [`primus_modulus`](../primus_modulus/README.md#arithmetic-contracts) for the concrete encoding strategies.
 
-LWE, GLWE and NTRU use this bounded conversion. NTRU parameters validate the
-sampler's support against their modulus; callers importing keys or converting
-them to a different modulus must ensure the coefficients fit that target.
-When an already validated raw modulus is all that is available, `UintModulus(q)`
-provides the operation without building a reduction context.
+LWE, GLWE and NTRU use this bounded conversion. NTRU parameters validate the sampler's support against their modulus; callers importing keys or converting them to a different modulus must ensure the coefficients fit that target. When an already validated raw modulus is all that is available, `UintModulus(q)` provides the operation without building a reduction context.
 
 ## Value-side mirror
 
@@ -104,21 +84,11 @@ provides the operation without building a reduction context.
 
 ## Prepared modulus switching
 
-`source.prepare_switch_to(target)` prepares a fixed modulus pair through
-`PrepareModulusSwitch`. Its associated `PreparedModulusSwitch` converts canonical
-source residues with `switch(value)`, returning `round(value*target/source) mod target`
-with ties upward. Native moduli are valid on either side. This is integer ratio
-rounding, independent of modular division.
+`source.prepare_switch_to(target)` prepares a fixed modulus pair through `PrepareModulusSwitch`. Its associated `PreparedModulusSwitch` converts canonical source residues with `switch(value)`, returning `round(value*target/source) mod target` with ties upward. Native moduli are valid on either side. This is integer ratio rounding, independent of modular division.
 
-`RingContext` includes `PrepareModulusSwitch`; `FieldContext` inherits it.
-The preparation trait also works independently, so codecs need only preparation
-and modular addition. `PreparedModulusSwitch` describes the returned conversion,
-not the source ring context. Custom ring contexts must implement preparation.
+`RingContext` includes `PrepareModulusSwitch`; `FieldContext` inherits it. The preparation trait also works independently, so codecs need only preparation and modular addition. `PreparedModulusSwitch` describes the returned conversion, not the source ring context. Custom ring contexts must implement preparation.
 
-`switch_map` carries a payload beside each coefficient, allowing fused sign handling,
-output conversion and accumulation without a temporary buffer. Concrete implementations
-can select their arithmetic kernel before the iterator; the default uses `switch`.
-The iterator and callback may have partial effects if they panic.
+`switch_map` carries a payload beside each coefficient, allowing fused sign handling, output conversion and accumulation without a temporary buffer. Concrete implementations can select their arithmetic kernel before the iterator; the default uses `switch`. The iterator and callback may have partial effects if they panic.
 
 ## License
 

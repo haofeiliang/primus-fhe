@@ -2,6 +2,9 @@
 
 [English](README.md) | [简体中文](README.zh_CN.md)
 
+> [!WARNING]
+> This crate is part of the experimental [Primus FHE](../../README.md) workspace. Its API and numerical contracts are unstable and may change incompatibly at any time.
+
 Single-modulus GLWE keys and operations, with separate NTT and native-torus Fourier representations. Here `k` is the GLWE dimension and `N` the polynomial length.
 
 ## Keys and representation
@@ -48,12 +51,7 @@ fourier_sk.phase_to(input, output, fft, context)
 
 NTT-domain secret-key operations need no context. Fourier operations use `FourierGlweEncryptContext<T>` / `FourierGlweDecryptContext`; NTT public encryption uses `NttGlwePublicEncryptContext<T>`. Construct these with `N` and reuse them at that length. Contexts hold scratch, not parameters, and erase secret intermediates on drop.
 
-For coefficient ciphertexts, `NttGlweSecretKey` provides `encrypt_coeff_to`, `phase_coeff_to`
-and `decrypt_coeff_to`. They take an additional N-element scratch slice as the last argument,
-reuse all buffers, and save the body's forward NTT. Encryption accepts unsigned plaintexts
-and matches `encrypt_to` followed by inverse NTT exactly for the same RNG state.
-Scratch needs no initialization and retains secret-dependent products after encryption;
-use an erasing owner such as `zeroize::Zeroizing<Vec<T>>`.
+For coefficient ciphertexts, `NttGlweSecretKey` provides `encrypt_coeff_to`, `phase_coeff_to` and `decrypt_coeff_to`. They take an additional N-element scratch slice as the last argument, reuse all buffers, and save the body's forward NTT. Encryption accepts unsigned plaintexts and matches `encrypt_to` followed by inverse NTT exactly for the same RNG state. Scratch needs no initialization and retains secret-dependent products after encryption; use an erasing owner such as `zeroize::Zeroizing<Vec<T>>`.
 
 `_to` paths reuse output and scratch. Checked layout and transform-length mismatches fail before output writes; matching lengths do not establish transform representation compatibility. Invalid plaintext values may panic after partial writes or randomness consumption. Encoded NTT inputs must be canonical residues in `[0, q)`; callers guarantee this range.
 

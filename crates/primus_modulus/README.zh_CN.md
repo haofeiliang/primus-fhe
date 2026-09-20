@@ -65,17 +65,9 @@ assert_eq!(output, [11, 6, 50]);
 
 ## 预备模切
 
-五种模数及派生 Barrett 均实现 `PrepareModulusSwitch`，也可以直接使用
-`ModulusSwitch::new(source, target)` 准备模数对。两种入口都根据固定比例选择
-可复用内核：二进制缩放、精确乘除、余数分解或窄/宽整数算术。
-契约见 [`primus_reduce`](../primus_reduce/README.zh_CN.md#预备模切)。
-批量转换在循环前选择内核。紧凑范围内的源模数在没有适用的二进制或扩张捷径时，
-使用倒数估商和一次精确修正；准备阶段根据分子上界选择单字或双字计算。
-Barrett 及派生 Barrett 的 `prepare_switch_to` 复用已有倒数；直接构造及其他源
-类型仅在需要时计算倒数。调用方继续使用相同的执行接口。
+五种模数及派生 Barrett 均实现 `PrepareModulusSwitch`，也可以直接使用 `ModulusSwitch::new(source, target)` 准备模数对。两种入口都根据固定比例选择 可复用内核：二进制缩放、精确乘除、余数分解或窄/宽整数算术。 契约见 [`primus_reduce`](../primus_reduce/README.zh_CN.md#预备模切)。 批量转换在循环前选择内核。紧凑范围内的源模数在没有适用的二进制或扩张捷径时， 使用倒数估商和一次精确修正；准备阶段根据分子上界选择单字或双字计算。 Barrett 及派生 Barrett 的 `prepare_switch_to` 复用已有倒数；直接构造及其他源 类型仅在需要时计算倒数。调用方继续使用相同的执行接口。
 
-`modulus_switch` 基准测量缓存转换器的标量调用和批量吞吐；`primus_encoding`
-的 codec 基准及 TFHE PBS 基准覆盖实际调用方。
+`modulus_switch` 基准测量缓存转换器的标量调用和批量吞吐；`primus_encoding` 的 codec 基准及 TFHE PBS 基准覆盖实际调用方。
 
 ```rust
 use primus_modulus::{BarrettModulus, NativeModulus};

@@ -65,10 +65,7 @@ assert_eq!(lhs.as_slice(), &[84, 13, 21, 4]);
 
 重复算术路径中的许多形状检查只是 `debug_assert*!` 诊断。release 调用方必须维持文档契约；iterator 的 `zip` 和 `chunks_exact` 不能替代边界验证。
 
-`CoeffAutomorphismPermutation` 缓存模 `X^N + 1` 的系数代换 `X -> X^d`。为
-2 次幂 `N >= 2` 和 `[1, 2N)` 内的奇数 `d` 构造后，使用 `apply_to` 处理规范
-residue。`apply_signed_to` 用于所需取负均可表示的小有符号系数。置换本身不执行
-密码学 key switching；对应的 NTT 置换位于 `primus_ntt`。
+`CoeffAutomorphismPermutation` 缓存模 `X^N + 1` 的系数代换 `X -> X^d`。为 2 次幂 `N >= 2` 和 `[1, 2N)` 内的奇数 `d` 构造后，使用 `apply_to` 处理规范 residue。`apply_signed_to` 用于所需取负均可表示的小有符号系数。置换本身不执行 密码学 key switching；对应的 NTT 置换位于 `primus_ntt`。
 
 ## 随机采样
 

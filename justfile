@@ -38,9 +38,9 @@ test:
 test-simd:
   cargo +nightly nextest run {{simd-packages}} --all-targets --features {{simd-features}}
 
-# Seven TFHE crates, test support, doctests and the xtask consumer.
+# Seven TFHE crates, test support and doctests.
 tfhe: fmt-check
-  cargo check {{tfhe-packages}} -p xtask --all-targets
+  cargo check {{tfhe-packages}} --all-targets
   cargo clippy {{tfhe-packages}} --all-targets -- -D warnings
   cargo test {{tfhe-packages}}
   cargo doc {{tfhe-packages}} --no-deps

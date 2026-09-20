@@ -1,9 +1,8 @@
 # Lattice test coverage
 
-Tests here protect raw ciphertext layouts and low-level operation contracts.
-They use deterministic inputs and check coefficient order, signs, normalization,
-output overwrite, accumulation, and storage/workspace reuse. Encryption noise,
-key generation, and decryptability belong to the higher-level scheme crates.
+Part of the experimental [Primus FHE](../../../README.md) workspace; APIs and numerical contracts may change incompatibly.
+
+Tests here protect raw ciphertext layouts and low-level operation contracts. They use deterministic inputs and check coefficient order, signs, normalization, output overwrite, accumulation, and storage/workspace reuse. Encryption noise, key generation, and decryptability belong to the higher-level scheme crates.
 
 | File | Contract |
 | --- | --- |
@@ -17,21 +16,11 @@ key generation, and decryptability belong to the higher-level scheme crates.
 | `external_product.rs` | Gadget product oracles, coefficient/borrowed transform outputs, independent NLev/control levels, dirty-output clearing and workspace reuse |
 | `ternary_cmux.rs` | GGSW NTT/Fourier and NGSW NTT ternary rotation against an independent negacyclic oracle, all small-ring exponents, decomposition/rounding error and scratch reuse |
 
-Keep one focused oracle or differential test per independent contract. Local
-macros exercise the ciphertext type matrix without copying test bodies; these
-invocations also detect missing generated APIs. Keep native, explicit-modulus,
-Fourier, and RNS cases distinct when their numerical contracts differ.
+Keep one focused oracle or differential test per independent contract. Local macros exercise the ciphertext type matrix without copying test bodies; these invocations also detect missing generated APIs. Keep native, explicit-modulus, Fourier, and RNS cases distinct when their numerical contracts differ.
 
-Do not add tests for raw constructors, standard slice forwarding, or every
-malformed buffer. Most raw-layout preconditions are deliberately unchecked here.
-Panic tests cover documented owning boundaries, and must also pass in release.
-A plain transform roundtrip is unnecessary when a retained nonzero convolution
-already checks the same conversion path and its scale.
+Do not add tests for raw constructors, standard slice forwarding, or every malformed buffer. Most raw-layout preconditions are deliberately unchecked here. Panic tests cover documented owning boundaries, and must also pass in release. A plain transform roundtrip is unnecessary when a retained nonzero convolution already checks the same conversion path and its scale.
 
-CMUX selection and encrypted GLWE/RNS gadget products also have end-to-end
-coverage in `primus_glwe/tests/cmux.rs`, `primus_glwe/tests/gadget_generation.rs`,
-`primus_ntru/tests/{gadget_generation,ternary_cmux}.rs`, and `primus_glwe_rns/tests/{glev,ext_prod}.rs`.
-Do not duplicate their encryption fixtures in this crate.
+CMUX selection and encrypted GLWE/RNS gadget products also have end-to-end coverage in `primus_glwe/tests/cmux.rs`, `primus_glwe/tests/gadget_generation.rs`, `primus_ntru/tests/{gadget_generation,ternary_cmux}.rs`, and `primus_glwe_rns/tests/{glev,ext_prod}.rs`. Do not duplicate their encryption fixtures in this crate.
 
 Run from the workspace root:
 

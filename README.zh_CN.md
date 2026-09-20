@@ -5,8 +5,7 @@
 Primus FHE 是一个实验性的 Rust workspace，用于探索全同态加密实现及其所需的算术基础设施。
 
 > [!WARNING]
-> Primus FHE 目前处于早期实验阶段。其 API、数据表示、算法和 crate 边界均不稳定，
-> 可能随时发生破坏性修改，且不提供弃用过渡期。本项目不声明已达到生产可用状态或已通过安全审查。
+> Primus FHE 目前处于早期实验阶段。其 API、数据表示、算法和 crate 边界均不稳定， 可能随时发生破坏性修改，且不提供弃用过渡期。本项目不声明已达到生产可用状态或已通过安全审查。
 
 ## 概览
 
@@ -20,8 +19,7 @@ workspace 目前包括：
 
 - [`primus_data`](crates/primus_data/README.zh_CN.md)：连续存储 trait；
 - [`primus_gcd`](crates/primus_gcd/README.zh_CN.md)：定宽整数的 GCD 和模逆运算；
-- [`primus_integer`](crates/primus_integer/README.zh_CN.md)：整数 trait、定宽多 limb
-  运算和可选的 SIMD 抽象。
+- [`primus_integer`](crates/primus_integer/README.zh_CN.md)：整数 trait、定宽多 limb 运算和可选的 SIMD 抽象。
 
 ## 构建与测试
 
@@ -32,15 +30,16 @@ cargo check --workspace --all-targets
 cargo test --workspace
 ```
 
-portable SIMD 支持目前需要 nightly Rust。仓库的 `justfile` 提供完整的 SIMD 检查、
-lint 和测试流程：
+portable SIMD 支持需要 nightly Rust。`justfile` 分别提供算术和 TFHE 的 检查、lint 和测试流程：
 
 ```text
 just simd
+just tfhe-simd
 ```
 
-仓库已配置 `target-cpu=native`，因此本地构建的产物可能使用旧款或其他 CPU
-不支持的指令。
+[CI 工作流](.github/workflows/ci.yml)检查 workspace 的所有 targets，执行 stable 默认配置 和 nightly 全 features 的测试、doctest，并构建严格 rustdoc。
+
+仓库已配置 `target-cpu=native`，因此本地构建的产物可能使用旧款或其他 CPU 不支持的指令。
 
 ## 许可证
 
