@@ -78,10 +78,6 @@ For an explicit modulus `q`, every coefficient must satisfy `value.unsigned_abs(
 
 LWE, GLWE and NTRU use this bounded conversion. NTRU parameters validate the sampler's support against their modulus; callers importing keys or converting them to a different modulus must ensure the coefficients fit that target. When an already validated raw modulus is all that is available, `UintModulus(q)` provides the operation without building a reduction context.
 
-## Value-side mirror
-
-[`primus_modulo`](../primus_modulo/README.md) provides an optional value-receiver mirror such as `a.add_modulo(b, modulus)`. The modulus-side traits in this crate remain the primary implementation and workspace integration boundary.
-
 ## Prepared modulus switching
 
 `source.prepare_switch_to(target)` prepares a fixed modulus pair through `PrepareModulusSwitch`. Its associated `PreparedModulusSwitch` converts canonical source residues with `switch(value)`, returning `round(value*target/source) mod target` with ties upward. Native moduli are valid on either side. This is integer ratio rounding, independent of modular division.

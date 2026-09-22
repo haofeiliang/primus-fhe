@@ -42,7 +42,7 @@ cargo run -p primus_tfhe_ntru_fourier --release --example ntru_fourier_basic
 | 层次 | Crate 与职责 |
 | --- | --- |
 | 存储与整数 | [primus_data](crates/primus_data/README.zh_CN.md)：连续存储；[primus_integer](crates/primus_integer/README.zh_CN.md)：整数 trait 与多 limb 算术；[primus_gcd](crates/primus_gcd/README.zh_CN.md)：GCD 与模逆 |
-| 模算术 | [primus_reduce](crates/primus_reduce/README.zh_CN.md)：模数侧 trait；[primus_modulo](crates/primus_modulo/README.zh_CN.md)：数值侧镜像；[primus_modulus](crates/primus_modulus/README.zh_CN.md)：模数实现；[primus_factor](crates/primus_factor/README.zh_CN.md)：乘法预计算；[primus_barrett_derive](crates/primus_barrett_derive/README.zh_CN.md)：常量 Barrett 模数 |
+| 模算术 | [primus_reduce](crates/primus_reduce/README.zh_CN.md)：模数侧 trait；[primus_modulus](crates/primus_modulus/README.zh_CN.md)：模数实现；[primus_factor](crates/primus_factor/README.zh_CN.md)：乘法预计算；[primus_barrett_derive](crates/primus_barrett_derive/README.zh_CN.md)：常量 Barrett 模数 |
 | 多项式与变换 | [primus_poly](crates/primus_poly/README.zh_CN.md)：多项式表示与算术；[primus_ntt](crates/primus_ntt/README.zh_CN.md)：精确变换；[primus_fft](crates/primus_fft/README.zh_CN.md)：Fourier 表与可复用 scratch |
 | 分解与 RNS | [primus_decompose](crates/primus_decompose/README.zh_CN.md)：有符号 gadget 分解；[primus_rns](crates/primus_rns/README.zh_CN.md)：剩余类基、转换与 hybrid RNS |
 | 采样与编码 | [primus_distr](crates/primus_distr/README.zh_CN.md)：私钥/噪声分布；[primus_encoding](crates/primus_encoding/README.zh_CN.md)：Rounded、Scaled 和 BFV RNS 系数编码 |

@@ -78,10 +78,6 @@ assert_eq!(output, [96, 0, 1]);
 
 LWE、GLWE 和 NTRU 均使用此有界转换。NTRU 参数会验证采样支持不超过模数允许的幅度； 调用方导入私钥或转换到另一模数时，必须保证系数符合目标模数的范围。 只有已验证的原始模数值时，可使用 `UintModulus(q)`，无需构建约简预计算。
 
-## Value-side 镜像
-
-[`primus_modulo`](../primus_modulo/README.zh_CN.md) 提供可选的 value-receiver 镜像，例如 `a.add_modulo(b, modulus)`。本 crate 的 modulus-side trait 仍是主要实现边界和 workspace 集成边界。
-
 ## 预备模切
 
 `source.prepare_switch_to(target)` 通过 `PrepareModulusSwitch` 准备固定模数对。 其关联的 `PreparedModulusSwitch` 用 `switch(value)` 转换规范源剩余类，返回 `round(value*target/source) mod target`，中点向上舍入。两端都支持 Native 模数。 这是整数比例舍入，与模除法独立。
