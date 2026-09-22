@@ -76,6 +76,11 @@ impl<T: FheUint> DcrtGlwePublicKey<T> {
     }
 
     /// Encrypts one CRT plaintext polynomial into a newly allocated ciphertext.
+    ///
+    /// Like [`DcrtGlweSecretKey::encrypt_inplace`], this accepts unscaled
+    /// plaintext lifts reduced into each `[0, q_i)` in coefficient-domain CRT
+    /// layout and applies `floor(Q/t)` scaling. Passing the already-scaled output
+    /// of [`crate::BfvRnsCodec::encode_coeffs_to`] would apply the scale twice.
     pub fn encrypt<R, M, Table, A>(
         &self,
         message: &CrtPolynomial<A>,
@@ -122,7 +127,12 @@ impl<T: FheUint> DcrtGlwePublicKey<T> {
                 );
 
                 if i == dimension {
-                    CrtPolynomial(&mut *ai.0).add_assign(message, poly_length, moduli);
+                    CrtPolynomial(&mut *ai.0).add_mul_factor_assign(
+                        message,
+                        params.delta_factor_mod_q().as_ref(),
+                        poly_length,
+                        params.cipher_moduli_value(),
+                    );
                 }
                 table.transform_slice(ai.0);
                 ai.add_mul_assign(&v_dcrt_poly, &pk_ai, poly_length, moduli);

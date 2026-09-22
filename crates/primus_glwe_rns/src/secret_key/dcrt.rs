@@ -17,6 +17,7 @@ use crate::{
 use super::{GlweSecretKey, encode_secret_polynomial_to};
 
 /// A GLWE secret key represented in NTT form for every ordered RNS modulus.
+/// Key storage is securely erased on drop.
 #[derive(Clone)]
 pub struct DcrtGlweSecretKey<T: FheUint> {
     pub(crate) key: Vec<T>,
@@ -32,6 +33,12 @@ impl<T: FheUint> Zeroize for DcrtGlweSecretKey<T> {
 }
 
 impl<T: FheUint> ZeroizeOnDrop for DcrtGlweSecretKey<T> {}
+
+impl<T: FheUint> Drop for DcrtGlweSecretKey<T> {
+    fn drop(&mut self) {
+        self.zeroize();
+    }
+}
 
 impl<T: FheUint> DcrtGlweSecretKey<T> {
     pub(crate) fn key(&self) -> &[T] {
