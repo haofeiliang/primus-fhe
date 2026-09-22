@@ -466,31 +466,6 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
         b.sub_rev_assign(msg_mod_q, poly_length, moduli);
     }
 
-    /// Performs `- ∑ a*s`.
-    pub fn phase_a_inplace<M, A, B>(
-        &self,
-        ciphertext: &DcrtGlweCiphertext<A>,
-        msg_mod_q: &mut DcrtPolynomial<B>,
-        params: &CrtGlweParameters<T, M>,
-    ) where
-        M: FieldContext<T>,
-        A: Data<Elem = T>,
-        B: DataMut<Elem = T>,
-    {
-        let poly_length = params.poly_length();
-        let moduli = params.cipher_moduli();
-
-        let (a, _b) = ciphertext.a_b(params.rns_poly_len());
-
-        msg_mod_q.set_zero();
-
-        self.iter_dcrt_poly().zip(a).for_each(|(si, ai)| {
-            msg_mod_q.add_mul_assign(&ai, &si, poly_length, moduli);
-        });
-
-        msg_mod_q.neg_assign(poly_length, moduli);
-    }
-
     /// Decrypts a DCRT GLWE ciphertext into a newly allocated plaintext polynomial.
     pub fn decrypt<M, Table, A>(
         &self,
