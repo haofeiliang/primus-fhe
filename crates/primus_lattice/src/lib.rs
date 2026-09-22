@@ -73,9 +73,3 @@ pub mod ngsw;
 pub mod nlev;
 /// NTRU ciphertexts.
 pub mod ntru;
-/// RGSW matrix ciphertexts (ring variant).
-pub mod rgsw;
-/// RLev gadget-decomposed ciphertexts (ring variant).
-pub mod rlev;
-/// Ring-LWE (RLWE) ciphertexts.
-pub mod rlwe;

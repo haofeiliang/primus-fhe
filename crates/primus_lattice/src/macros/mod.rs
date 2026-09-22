@@ -8,7 +8,7 @@
 //! Capability groups remain explicit.
 //!
 //! - [`common`]: constructors, byte I/O, zero initialization
-//! - [`iter`], [`rlwe`]: ciphertext iterators and RLWE polynomial views
+//! - [`iter`]: ciphertext iterators
 //! - [`monomial`]: coefficient-domain monomial products
 //! - [`fourier_monomial`]: Fourier monomial subtraction with integer-scale factors
 //! - [`ntt_monomial`]: NTT-domain monomial products with reusable scratch
@@ -21,8 +21,6 @@
 mod common;
 #[macro_use]
 mod iter;
-#[macro_use]
-mod rlwe;
 #[macro_use]
 mod ops;
 #[macro_use]

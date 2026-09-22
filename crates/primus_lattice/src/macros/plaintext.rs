@@ -14,7 +14,7 @@ macro_rules! impl_plaintext_single_modulus {
             /// `plaintext` must contain one complete nonempty polynomial in this
             /// ciphertext's representation, modulus domain and plaintext scale.
             /// Storage must contain complete mask polynomials followed by one body.
-            /// RLWE requires exactly two polynomials. No encoding, rounding, random
+            /// No encoding, rounding, random
             /// sampling or allocation is performed. The caller maintains the layout.
             /// Input residues must be canonical; output residues remain canonical.
             ///
@@ -43,7 +43,7 @@ macro_rules! impl_plaintext_single_modulus {
             /// `plaintext` must contain one complete nonempty polynomial in this
             /// ciphertext's representation, modulus domain and plaintext scale.
             /// Storage must contain complete mask polynomials followed by one body.
-            /// RLWE requires exactly two polynomials. No encoding, rounding, random
+            /// No encoding, rounding, random
             /// sampling or allocation is performed. The caller maintains the layout.
             /// Input residues must be canonical; output residues remain canonical.
             ///
@@ -72,7 +72,7 @@ macro_rules! impl_plaintext_single_modulus {
             /// `plaintext` must contain one complete nonempty polynomial in this
             /// ciphertext's representation, modulus domain and plaintext scale.
             /// Storage must contain complete mask polynomials followed by one body.
-            /// RLWE requires exactly two polynomials. No encoding, rounding, random
+            /// No encoding, rounding, random
             /// sampling or allocation is performed. The caller maintains the layout.
             /// Input residues must be canonical; output residues remain canonical.
             ///
@@ -109,7 +109,7 @@ macro_rules! impl_plaintext_multiple_modulus {
             /// `plaintext` must contain one complete nonempty polynomial in this
             /// ciphertext's representation, modulus domain and plaintext scale.
             /// Storage must contain complete mask polynomials followed by one body.
-            /// RLWE requires exactly two polynomials. No encoding, rounding, random
+            /// No encoding, rounding, random
             /// sampling or allocation is performed. The caller maintains the layout.
             /// Input residues must be canonical; output residues remain canonical.
             /// RNS polynomials contain one block per modulus in the same basis order.
@@ -147,7 +147,7 @@ macro_rules! impl_plaintext_multiple_modulus {
             /// `plaintext` must contain one complete nonempty polynomial in this
             /// ciphertext's representation, modulus domain and plaintext scale.
             /// Storage must contain complete mask polynomials followed by one body.
-            /// RLWE requires exactly two polynomials. No encoding, rounding, random
+            /// No encoding, rounding, random
             /// sampling or allocation is performed. The caller maintains the layout.
             /// Input residues must be canonical; output residues remain canonical.
             /// RNS polynomials contain one block per modulus in the same basis order.
@@ -185,7 +185,7 @@ macro_rules! impl_plaintext_multiple_modulus {
             /// `plaintext` must contain one complete nonempty polynomial in this
             /// ciphertext's representation, modulus domain and plaintext scale.
             /// Storage must contain complete mask polynomials followed by one body.
-            /// RLWE requires exactly two polynomials. No encoding, rounding, random
+            /// No encoding, rounding, random
             /// sampling or allocation is performed. The caller maintains the layout.
             /// Input residues must be canonical; output residues remain canonical.
             /// RNS polynomials contain one block per modulus in the same basis order.

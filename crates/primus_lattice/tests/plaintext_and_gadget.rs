@@ -3,8 +3,6 @@ use primus_lattice::{
     ggsw::{Ggsw, NttGgsw},
     glwe::{Glwe, NttGlwe},
     lwe::Lwe,
-    rgsw::{NttRgsw, Rgsw},
-    rlwe::{NttRlwe, Rlwe},
 };
 use primus_modulus::BarrettModulus;
 use primus_poly::{NttPolynomial, Polynomial};
@@ -41,9 +39,7 @@ fn encoded_plaintext_operations_preserve_masks_and_trivial_overwrites_them() {
         }};
     }
     check!(Glwe, Polynomial, 3);
-    check!(Rlwe, Polynomial, 2);
     check!(NttGlwe, NttPolynomial, 3);
-    check!(NttRlwe, NttPolynomial, 2);
     let mut lwe = Lwe::new(vec![11u32, 13, 190]);
     lwe.add_plaintext_assign(7, modulus);
     assert_eq!(lwe.as_ref(), &[11, 13, 4]);
@@ -109,8 +105,6 @@ fn gadget_injection_changes_only_the_selected_diagonal_level() {
     }
     check!(Ggsw, Polynomial, 3);
     check!(NttGgsw, NttPolynomial, 3);
-    check!(Rgsw, Polynomial, 2);
-    check!(NttRgsw, NttPolynomial, 2);
 }
 
 #[cfg(feature = "rns")]
@@ -119,8 +113,6 @@ fn rns_plaintext_and_gadget_operations_preserve_the_basis_layout() {
     use primus_lattice::{
         ggsw::{CrtGgsw, DcrtGgsw},
         glwe::{CrtGlwe, DcrtGlwe},
-        rgsw::{CrtRgsw, DcrtRgsw},
-        rlwe::{CrtRlwe, DcrtRlwe},
     };
     use primus_poly::{CrtPolynomial, DcrtPolynomial};
     const N: usize = 32;
@@ -154,8 +146,6 @@ fn rns_plaintext_and_gadget_operations_preserve_the_basis_layout() {
     }
     body!(CrtGlwe, CrtPolynomial, 3);
     body!(DcrtGlwe, DcrtPolynomial, 3);
-    body!(CrtRlwe, CrtPolynomial, 2);
-    body!(DcrtRlwe, DcrtPolynomial, 2);
     macro_rules! gadget {
         ($cipher:ident, $poly:ident, $rows:expr) => {{
             let data: Vec<_> = (0..$rows * LEVELS * $rows * p)
@@ -181,8 +171,6 @@ fn rns_plaintext_and_gadget_operations_preserve_the_basis_layout() {
     }
     gadget!(CrtGgsw, CrtPolynomial, 3);
     gadget!(DcrtGgsw, DcrtPolynomial, 3);
-    gadget!(CrtRgsw, CrtPolynomial, 2);
-    gadget!(DcrtRgsw, DcrtPolynomial, 2);
 }
 
 #[test]

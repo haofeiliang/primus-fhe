@@ -15,13 +15,14 @@
 | `Lwe` | 标量掩码，后接一个 body 标量 | 系数 |
 | `MultiMsgLwe` | 按常数项抽取顺序排列的长度为 `N` 的掩码，后接保留的 body 系数 | 打包的 RLWE 样本 |
 | `Glwe` | `k` 个掩码多项式，后接一个 body 多项式 | 系数、NTT、Fourier、CRT/DCRT |
-| `Rlwe` | 一个掩码多项式，后接一个 body 多项式 | 系数、NTT、CRT/DCRT |
-| `Glev` / `Rlev` | 按分解顺序排列的 `L` 个 GLWE/RLWE 密文 | 系数、NTT、CRT/DCRT；GLev 另有 Fourier |
-| `Ggsw` / `Rgsw` | `k+1` 行 GLev / 两行 RLev | 系数、NTT、CRT/DCRT；GGSW 另有 Fourier |
+| `Glev` | 按分解顺序排列的 `L` 个 GLWE 密文 | 系数、NTT、Fourier、CRT/DCRT |
+| `Ggsw` | `k+1` 行 GLev | 系数、NTT、Fourier、CRT/DCRT |
 | `Ntru` | 单个多项式 `h`，在秘密多项式 `f` 下的相位为 `f*h` | 系数、NTT、Fourier |
 | `Nlev` / `Ngsw` | 按分解顺序排列的 `L` 个 NTRU 多项式 | 系数、NTT、Fourier |
 | `TruncatedGlwe` | 完整掩码多项式，后接 body 的一个前缀 | 系数 |
 | `BigUintGlwe` | GLWE 多项式，每个系数用固定宽度的小端 limb 序列表示 | 多 limb 系数 |
+
+RLWE、RLev 和 RGSW 分别使用 `Glwe`、`Glev` 和 `Ggsw`，并配合 `GlweSize::new(1, N)`；NTT 和 CRT/DCRT 表示同样使用维度为 1 的布局。
 
 类型通过对应模块导出，例如 `glwe::Glwe`、`ggsw::NttGgsw`、`ngsw::FourierNgsw`。前缀表示数据形式。`Torus*` 是系数类型在 native torus 场景下的别名，不会强制模数，也不执行编码。
 

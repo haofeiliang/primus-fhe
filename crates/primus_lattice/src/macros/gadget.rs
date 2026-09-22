@@ -1,7 +1,7 @@
 //! Injection of already weighted messages into a gadget diagonal.
 
 macro_rules! impl_gadget_diagonal_single_modulus {
-    ($cipher:ident, $poly:ident $(, $dimension:literal)?) => {
+    ($cipher:ident, $poly:ident) => {
         impl<S, T> $cipher<S>
         where
             S: primus_data::DataMut<Elem = T>,
@@ -10,7 +10,7 @@ macro_rules! impl_gadget_diagonal_single_modulus {
             /// Adds an already gadget-weighted plaintext to the diagonal of one level.
             ///
             /// Storage is `[row][level][component][polynomial entry]`. The number
-            /// of components equals the number of rows (two for RGSW). `level` is
+            /// of components equals the number of rows. `level` is
             /// a zero-based storage index; the caller maps it to its gadget weight.
             /// Every diagonal polynomial at this level receives `plaintext`, while
             /// other levels and off-diagonal components remain unchanged.
@@ -23,8 +23,7 @@ macro_rules! impl_gadget_diagonal_single_modulus {
             /// no temporary storage. Adding all levels implements addition of `m*G`
             /// under the caller's gadget convention.
             /// `size` must describe the complete ciphertext and plaintext layouts;
-            /// `level` must be less than its decomposition length. RGSW requires
-            /// a GLWE dimension of one. The caller is responsible for matching
+            /// `level` must be less than its decomposition length. The caller must match
             /// the actual buffers to `size` before invoking this operation.
             /// Input residues must be canonical; results remain canonical.
             #[inline]
@@ -43,11 +42,6 @@ macro_rules! impl_gadget_diagonal_single_modulus {
                     level < size.decompose_length(),
                     "gadget level is out of range"
                 );
-                $(
-                    debug_assert_eq!(
-                        glwe_size.dimension(), $dimension, "RGSW requires GLWE dimension one"
-                    );
-                )?
                 for diagonal in crate::gadget::diagonal_level_mut(
                     self.as_mut(),
                     glwe_size.poly_length(),
@@ -64,7 +58,7 @@ macro_rules! impl_gadget_diagonal_single_modulus {
 
 #[cfg(feature = "rns")]
 macro_rules! impl_gadget_diagonal_multiple_modulus {
-    ($cipher:ident, $poly:ident $(, $dimension:literal)?) => {
+    ($cipher:ident, $poly:ident) => {
         impl<S, T> $cipher<S>
         where
             S: primus_data::DataMut<Elem = T>,
@@ -73,7 +67,7 @@ macro_rules! impl_gadget_diagonal_multiple_modulus {
             /// Adds an already gadget-weighted plaintext to the diagonal of one level.
             ///
             /// Storage is `[row][level][component][polynomial entry]`. The number
-            /// of components equals the number of rows (two for RGSW). `level` is
+            /// of components equals the number of rows. `level` is
             /// a zero-based storage index; the caller maps it to its gadget weight.
             /// Every diagonal polynomial at this level receives `plaintext`, while
             /// other levels and off-diagonal components remain unchanged.
@@ -86,8 +80,7 @@ macro_rules! impl_gadget_diagonal_multiple_modulus {
             /// no temporary storage. Adding all levels implements addition of `m*G`
             /// under the caller's gadget convention.
             /// `size` must describe the complete ciphertext and plaintext layouts;
-            /// `level` must be less than its decomposition length. RGSW requires
-            /// a GLWE dimension of one. The caller is responsible for matching
+            /// `level` must be less than its decomposition length. The caller must match
             /// the actual buffers to `size` before invoking this operation.
             /// Input residues must be canonical; results remain canonical.
             /// Each polynomial contains one block per modulus, of length
@@ -110,11 +103,6 @@ macro_rules! impl_gadget_diagonal_multiple_modulus {
                     level < size.decompose_length(),
                     "gadget level is out of range"
                 );
-                $(
-                    debug_assert_eq!(
-                        glwe_size.dimension(), $dimension, "RGSW requires GLWE dimension one"
-                    );
-                )?
                 for diagonal in crate::gadget::diagonal_level_mut(
                     self.as_mut(),
                     glwe_size.rns_poly_len(),

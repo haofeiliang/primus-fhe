@@ -1,4 +1,4 @@
-//! Shared row-major GGSW/RGSW diagonal traversal.
+//! Shared row-major GGSW diagonal traversal.
 
 /// Visits the diagonal polynomial of one decomposition level in every row.
 ///
@@ -7,8 +7,8 @@
 /// operation only diagnoses this condition with a debug assertion.
 /// `poly_len`, `glwe_len` and `glev_len` count stored elements in the current
 /// representation: one polynomial, one GLWE ciphertext and one complete GLev row,
-/// respectively. For RGSW, GLWE has dimension one, so these are RLWE and RLev lengths.
-/// `ggsw_data` contains the entire GGSW (or RGSW), laid out as
+/// respectively.
+/// `ggsw_data` contains the entire GGSW, laid out as
 /// `[row][level][component][polynomial entry]`, with as many components as rows.
 /// No dimensions are inferred from the backing slice.
 #[inline]

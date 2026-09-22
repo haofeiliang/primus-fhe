@@ -6,17 +6,19 @@ Tests here protect raw ciphertext layouts and low-level operation contracts. The
 
 | File | Contract |
 | --- | --- |
-| `layout.rs` | Checked size boundaries, gadget level preservation across representations, RNS workspace compatibility |
-| `arithmetic.rs` | Borrowed/owned single-modulus arithmetic, scalar/factor products and fused accumulation |
-| `rns_arithmetic.rs` | Component/modulus order and per-modulus scalar/factor arithmetic (`rns`) |
-| `fourier.rs` | Complex arithmetic, polynomial scaling, and GGSW/NGSW monomial subtraction against a coefficient oracle with both FFT backends |
-| `polynomial_products.rs` | Negacyclic monomial signs and NTT/DCRT polynomial overwrite/accumulation |
-| `extraction.rs` | GLWE/RLWE/NTRU sample order and phase signs, compact padding, packed extraction and allocation reuse |
+| `layout.rs` | Checked size boundaries and RNS workspace layout/limb-width compatibility |
+| `arithmetic.rs` | Shared flat arithmetic through borrowed LWE storage, consuming allocation reuse, scalar/factor overwrite and accumulation |
+| `rns_arithmetic.rs` | CRT add/sub/neg and DCRT scalar/factor arithmetic across GGSW rows, levels, components and moduli (`rns`) |
+| `fourier.rs` | Borrowed complex arithmetic; GGSW polynomial scaling and monomial subtraction against coefficient oracles with both FFT backends |
+| `polynomial_products.rs` | Single-polynomial NTRU and multi-polynomial GGSW monomial oracles, including NTT product overwrite/accumulation; CRT monomials and DCRT products (`rns`) |
+| `extraction.rs` | GLWE/NTRU sample order and phase signs, compact padding, packed extraction and allocation reuse |
 | `plaintext_and_gadget.rs` | Body-only plaintext updates, trivial ciphertext clearing, selected gadget diagonals |
 | `external_product.rs` | Gadget product oracles, coefficient/borrowed transform outputs, independent NLev/control levels, dirty-output clearing and workspace reuse |
-| `ternary_cmux.rs` | GGSW NTT/Fourier and NGSW NTT ternary rotation against an independent negacyclic oracle, all small-ring exponents, decomposition/rounding error and scratch reuse |
+| `ternary_cmux.rs` | GGSW NTT/Fourier and NGSW NTT ternary rotation against an independent negacyclic oracle, all small-ring exponents, decomposition/rounding error, scratch reuse and layout restoration on unwind |
 
-Keep one focused oracle or differential test per independent contract. Local macros exercise the ciphertext type matrix without copying test bodies; these invocations also detect missing generated APIs. Keep native, explicit-modulus, Fourier, and RNS cases distinct when their numerical contracts differ.
+Shared flat-operation macros are checked through one representative wrapper, using borrowed storage and a length that exercises SIMD tails. GGSW fixtures cover multi-row, multi-level polynomial traversal; NTRU monomial tests retain its separate single-polynomial implementation. Do not repeat the same operation over every wrapper solely to instantiate generated methods. Native, explicit-modulus, Fourier, and RNS cases remain separate where their numerical contracts differ.
+
+Nonzero gadget products validate NLev/NGSW conversion, level order and normalization. The same fixtures then run zero products through reused outputs and scratch, checking exact zero in transformed storage as well as coefficient results. This covers representation boundaries without separate iterator-count or transform-roundtrip tests.
 
 Do not add tests for raw constructors, standard slice forwarding, or every malformed buffer. Most raw-layout preconditions are deliberately unchecked here. Panic tests cover documented owning boundaries, and must also pass in release. A plain transform roundtrip is unnecessary when a retained nonzero convolution already checks the same conversion path and its scale.
 

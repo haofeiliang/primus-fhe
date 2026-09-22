@@ -15,13 +15,14 @@ Let `N` be the polynomial length, `k` the GLWE mask dimension, `L` the gadget le
 | `Lwe` | Scalar mask followed by one body scalar | Coefficients |
 | `MultiMsgLwe` | One length-`N` mask in constant-term extraction order, followed by retained body coefficients | Packed RLWE samples |
 | `Glwe` | `k` mask polynomials followed by one body polynomial | Coefficient, NTT, Fourier, CRT/DCRT |
-| `Rlwe` | One mask polynomial followed by one body polynomial | Coefficient, NTT, CRT/DCRT |
-| `Glev` / `Rlev` | `L` GLWE/RLWE ciphertexts in decomposition order | Coefficient, NTT, CRT/DCRT; Fourier for GLev |
-| `Ggsw` / `Rgsw` | `k+1` GLev rows / two RLev rows | Coefficient, NTT, CRT/DCRT; Fourier for GGSW |
+| `Glev` | `L` GLWE ciphertexts in decomposition order | Coefficient, NTT, Fourier, CRT/DCRT |
+| `Ggsw` | `k+1` GLev rows | Coefficient, NTT, Fourier, CRT/DCRT |
 | `Ntru` | One polynomial `h`, with phase `f*h` under secret `f` | Coefficient, NTT, Fourier |
 | `Nlev` / `Ngsw` | `L` NTRU polynomials in decomposition order | Coefficient, NTT, Fourier |
 | `TruncatedGlwe` | Full mask polynomials followed by a prefix of the body | Coefficients |
 | `BigUintGlwe` | GLWE polynomials with fixed-width little-endian limbs per coefficient | Multi-limb coefficients |
+
+RLWE, RLev and RGSW use `Glwe`, `Glev` and `Ggsw` with `GlweSize::new(1, N)`; their NTT and CRT/DCRT representations follow the same dimension-one layout.
 
 Types are exported through their modules, for example `glwe::Glwe`, `ggsw::NttGgsw`, and `ngsw::FourierNgsw`. Prefixes identify the representation. `Torus*` aliases name native-torus uses of coefficient wrappers; they do not enforce a modulus or perform encoding.
 

@@ -69,7 +69,6 @@ fn ntt_ntru_gadget_products_match_negacyclic_product() {
         0, 1, 8, 63, 64, 127, 128, 192, 255, 256, 17, 33, 65, 129, 193, 241,
     ]);
     let mut beta = Polynomial::<Vec<u32>>::zero(N);
-    beta.as_mut()[3] = 7;
 
     let make_nlev = |message: &Polynomial<Vec<u32>>, basis: &ApproxSignedBasis<u32>| {
         let mut nlev = Nlev::<Vec<u32>>::zero(basis.decompose_length() * N);
@@ -79,121 +78,91 @@ fn ntt_ntru_gadget_products_match_negacyclic_product() {
         nlev
     };
 
-    let coeff_nlev = make_nlev(&beta, &basis);
-    let coeff_ngsw = Ngsw::new(coeff_nlev.as_ref().to_vec());
-    let mut ntt_nlev = coeff_nlev.into_ntt_form(&ntt);
-    let mut ntt_ngsw = coeff_ngsw.into_ntt_form(&ntt);
-
-    let mut expected = Polynomial::<Vec<u32>>::zero(N);
-    alpha.naive_mul_to(&beta, &mut expected, modulus);
-
     let mut context = NttNtruExternalProductContext::new(N);
-
     let mut nlev_product = Ntru::new(vec![u32::MAX; N]);
-    ntt_nlev.external_product_to(
-        &alpha,
-        &mut nlev_product,
-        &basis,
-        modulus,
-        &ntt,
-        &mut context,
-    );
-    assert_eq!(nlev_product.as_ref(), expected.as_ref());
-
     let input_ntru = Ntru::<Vec<u32>>::from_ref(&alpha);
     let mut ngsw_product = Ntru::new(vec![u32::MAX; N]);
-    ntt_ngsw.external_product_to(
-        &input_ntru,
-        &mut ngsw_product,
-        &basis,
-        modulus,
-        &ntt,
-        &mut context,
-    );
-    assert_eq!(ngsw_product.as_ref(), expected.as_ref());
-
-    // Nonzero borrowed destinations exercise output-backed accumulators.
     let mut storage = [u32::MAX; N + 2];
     let mut transformed = NttNtru::new(&mut storage[1..=N]);
-    ntt_nlev.external_product_ntt_to(
-        &alpha,
-        &mut transformed,
-        &basis,
-        modulus,
-        &ntt,
-        &mut context,
-    );
-    transformed.write_coeff_form(&mut nlev_product, &ntt);
-    assert_eq!(nlev_product.as_ref(), expected.as_ref());
-    ntt_ngsw.external_product_ntt_to(
-        &input_ntru,
-        &mut transformed,
-        &basis,
-        modulus,
-        &ntt,
-        &mut context,
-    );
-    transformed.write_coeff_form(&mut ngsw_product, &ntt);
-    assert_eq!(ngsw_product.as_ref(), expected.as_ref());
 
-    // The control basis decomposes each row's coefficients; it does not
-    // determine how many rows the input NLev contains or their gadget scales.
-    for log_basis in [2, 6] {
-        let output_basis = ApproxSignedBasis::new(Some(Q), log_basis, None);
-        assert_ne!(output_basis.decompose_length(), basis.decompose_length());
-        let input_nlev = make_nlev(&alpha, &output_basis);
-        let expected_nlev = make_nlev(&expected, &output_basis);
-        let mut output_nlev = Nlev::new(vec![u32::MAX; input_nlev.as_ref().len()]);
-        ntt_ngsw.external_product_nlev_to(
-            &input_nlev,
-            &mut output_nlev,
+    // Nonzero then zero products must overwrite prior outputs and context state.
+    for amplitude in [7, 0] {
+        beta.as_mut()[3] = amplitude;
+        let coeff_nlev = make_nlev(&beta, &basis);
+        let coeff_ngsw = Ngsw::new(coeff_nlev.as_ref().to_vec());
+        let ntt_nlev = coeff_nlev.into_ntt_form(&ntt);
+        let ntt_ngsw = coeff_ngsw.into_ntt_form(&ntt);
+
+        let mut expected = Polynomial::<Vec<u32>>::zero(N);
+        alpha.naive_mul_to(&beta, &mut expected, modulus);
+
+        ntt_nlev.external_product_to(
+            &alpha,
+            &mut nlev_product,
             &basis,
             modulus,
             &ntt,
             &mut context,
         );
-        assert_eq!(output_nlev.as_ref(), expected_nlev.as_ref());
-    }
+        assert_eq!(nlev_product.as_ref(), expected.as_ref());
 
-    // Reuse both the context and output after a nonzero product.
-    ntt_nlev.set_zero();
-    ntt_ngsw.set_zero();
-    ntt_nlev.external_product_ntt_to(
-        &alpha,
-        &mut transformed,
-        &basis,
-        modulus,
-        &ntt,
-        &mut context,
-    );
-    assert!(transformed.as_ref().iter().all(|&x| x == 0));
-    ntt_nlev.external_product_to(
-        &alpha,
-        &mut nlev_product,
-        &basis,
-        modulus,
-        &ntt,
-        &mut context,
-    );
-    assert!(nlev_product.as_ref().iter().all(|&x| x == 0));
-    ntt_ngsw.external_product_ntt_to(
-        &input_ntru,
-        &mut transformed,
-        &basis,
-        modulus,
-        &ntt,
-        &mut context,
-    );
-    assert!(transformed.as_ref().iter().all(|&x| x == 0));
-    ntt_ngsw.external_product_to(
-        &input_ntru,
-        &mut ngsw_product,
-        &basis,
-        modulus,
-        &ntt,
-        &mut context,
-    );
-    assert!(ngsw_product.as_ref().iter().all(|&x| x == 0));
+        ntt_ngsw.external_product_to(
+            &input_ntru,
+            &mut ngsw_product,
+            &basis,
+            modulus,
+            &ntt,
+            &mut context,
+        );
+        assert_eq!(ngsw_product.as_ref(), expected.as_ref());
+
+        // Nonzero borrowed destinations exercise output-backed accumulators.
+        ntt_nlev.external_product_ntt_to(
+            &alpha,
+            &mut transformed,
+            &basis,
+            modulus,
+            &ntt,
+            &mut context,
+        );
+        if amplitude == 0 {
+            assert!(transformed.as_ref().iter().all(|&x| x == 0));
+        }
+        transformed.write_coeff_form(&mut nlev_product, &ntt);
+        assert_eq!(nlev_product.as_ref(), expected.as_ref());
+        ntt_ngsw.external_product_ntt_to(
+            &input_ntru,
+            &mut transformed,
+            &basis,
+            modulus,
+            &ntt,
+            &mut context,
+        );
+        if amplitude == 0 {
+            assert!(transformed.as_ref().iter().all(|&x| x == 0));
+        }
+        transformed.write_coeff_form(&mut ngsw_product, &ntt);
+        assert_eq!(ngsw_product.as_ref(), expected.as_ref());
+
+        // The control basis decomposes each row's coefficients; it does not
+        // determine how many rows the input NLev contains or their gadget scales.
+        for log_basis in [2, 6] {
+            let output_basis = ApproxSignedBasis::new(Some(Q), log_basis, None);
+            assert_ne!(output_basis.decompose_length(), basis.decompose_length());
+            let input_nlev = make_nlev(&alpha, &output_basis);
+            let expected_nlev = make_nlev(&expected, &output_basis);
+            let mut output_nlev = Nlev::new(vec![u32::MAX; input_nlev.as_ref().len()]);
+            ntt_ngsw.external_product_nlev_to(
+                &input_nlev,
+                &mut output_nlev,
+                &basis,
+                modulus,
+                &ntt,
+                &mut context,
+            );
+            assert_eq!(output_nlev.as_ref(), expected_nlev.as_ref());
+        }
+    }
     assert_eq!([storage[0], storage[N + 1]], [u32::MAX; 2]);
 }
 
@@ -225,7 +194,6 @@ fn fourier_ntru_gadget_products<Table: FftTable>() {
         0x2718_2818,
     ]);
     let mut beta = Polynomial::<Vec<u32>>::zero(N);
-    beta.as_mut()[5] = 1;
 
     let make_nlev = |message: &Polynomial<Vec<u32>>, basis: &ApproxSignedBasis<u32>| {
         let mut nlev = Nlev::<Vec<u32>>::zero(basis.decompose_length() * N);
@@ -235,112 +203,99 @@ fn fourier_ntru_gadget_products<Table: FftTable>() {
         nlev
     };
 
-    let coeff_nlev = make_nlev(&beta, &basis);
-    let coeff_ngsw = Ngsw::new(coeff_nlev.as_ref().to_vec());
-
-    let fourier_length = basis.decompose_length() * fft.fourier_length();
-    let mut fourier_nlev = FourierNlevOwned::zero(fourier_length);
-    coeff_nlev.write_fourier_form(&mut fourier_nlev, &mut engine);
-    let mut fourier_ngsw = FourierNgswOwned::zero(basis.decompose_length() * fft.fourier_length());
-    coeff_ngsw.write_fourier_form(&mut fourier_ngsw, &mut engine);
-
-    let mut expected = Polynomial::<Vec<u32>>::zero(N);
-    alpha.naive_mul_to(&beta, &mut expected, modulus);
-
     let mut context = FourierNtruExternalProductContext::new(N);
-
     let mut nlev_product = Ntru::new(vec![u32::MAX; N]);
-    fourier_nlev.external_product_to(&alpha, &mut nlev_product, &basis, &mut engine, &mut context);
-    assert_eq!(nlev_product.as_ref(), expected.as_ref());
-
     let input_ntru = Ntru::<Vec<u32>>::from_ref(&alpha);
     let mut ngsw_product = Ntru::new(vec![u32::MAX; N]);
-    fourier_ngsw.external_product_to(
-        &input_ntru,
-        &mut ngsw_product,
-        &basis,
-        &mut engine,
-        &mut context,
-    );
-    assert_eq!(ngsw_product.as_ref(), expected.as_ref());
-
     let guard = Complex64::new(17.0, -23.0);
     let mut storage = [guard; N / 2 + 2];
     let mut transformed = FourierNtru::new(&mut storage[1..=N / 2]);
-    fourier_nlev.external_product_fourier_to(
-        &alpha,
-        &mut transformed,
-        &basis,
-        &mut engine,
-        &mut context,
-    );
-    transformed.write_torus_form(&mut nlev_product, &mut engine);
-    assert_eq!(nlev_product.as_ref(), expected.as_ref());
-    fourier_ngsw.external_product_fourier_to(
-        &input_ntru,
-        &mut transformed,
-        &basis,
-        &mut engine,
-        &mut context,
-    );
-    transformed.write_torus_form(&mut ngsw_product, &mut engine);
-    assert_eq!(ngsw_product.as_ref(), expected.as_ref());
 
-    for log_basis in [4, 12] {
-        let output_basis = ApproxSignedBasis::new(None, log_basis, None);
-        assert_ne!(output_basis.decompose_length(), basis.decompose_length());
-        let input_nlev = make_nlev(&alpha, &output_basis);
-        let expected_nlev = make_nlev(&expected, &output_basis);
-        let mut output_nlev = Nlev::new(vec![u32::MAX; input_nlev.as_ref().len()]);
-        fourier_ngsw.external_product_nlev_to(
-            &input_nlev,
-            &mut output_nlev,
+    // Nonzero then zero products must overwrite prior outputs and context state.
+    for amplitude in [1, 0] {
+        beta.as_mut()[5] = amplitude;
+        let coeff_nlev = make_nlev(&beta, &basis);
+        let coeff_ngsw = Ngsw::new(coeff_nlev.as_ref().to_vec());
+
+        let fourier_length = basis.decompose_length() * fft.fourier_length();
+        let mut fourier_nlev = FourierNlevOwned::zero(fourier_length);
+        coeff_nlev.write_fourier_form(&mut fourier_nlev, &mut engine);
+        let mut fourier_ngsw =
+            FourierNgswOwned::zero(basis.decompose_length() * fft.fourier_length());
+        coeff_ngsw.write_fourier_form(&mut fourier_ngsw, &mut engine);
+
+        let mut expected = Polynomial::<Vec<u32>>::zero(N);
+        alpha.naive_mul_to(&beta, &mut expected, modulus);
+
+        fourier_nlev.external_product_to(
+            &alpha,
+            &mut nlev_product,
             &basis,
             &mut engine,
             &mut context,
         );
-        assert_eq!(output_nlev.as_ref(), expected_nlev.as_ref());
-    }
+        assert_eq!(nlev_product.as_ref(), expected.as_ref());
 
-    // Reuse both the context and output after a nonzero product.
-    fourier_nlev.set_zero();
-    fourier_ngsw.set_zero();
-    fourier_nlev.external_product_fourier_to(
-        &alpha,
-        &mut transformed,
-        &basis,
-        &mut engine,
-        &mut context,
-    );
-    assert!(
-        transformed
-            .as_ref()
-            .iter()
-            .all(|&x| x == Complex64::default())
-    );
-    fourier_nlev.external_product_to(&alpha, &mut nlev_product, &basis, &mut engine, &mut context);
-    assert!(nlev_product.as_ref().iter().all(|&x| x == 0));
-    fourier_ngsw.external_product_fourier_to(
-        &input_ntru,
-        &mut transformed,
-        &basis,
-        &mut engine,
-        &mut context,
-    );
-    assert!(
-        transformed
-            .as_ref()
-            .iter()
-            .all(|&x| x == Complex64::default())
-    );
-    fourier_ngsw.external_product_to(
-        &input_ntru,
-        &mut ngsw_product,
-        &basis,
-        &mut engine,
-        &mut context,
-    );
-    assert!(ngsw_product.as_ref().iter().all(|&x| x == 0));
+        fourier_ngsw.external_product_to(
+            &input_ntru,
+            &mut ngsw_product,
+            &basis,
+            &mut engine,
+            &mut context,
+        );
+        assert_eq!(ngsw_product.as_ref(), expected.as_ref());
+
+        fourier_nlev.external_product_fourier_to(
+            &alpha,
+            &mut transformed,
+            &basis,
+            &mut engine,
+            &mut context,
+        );
+        if amplitude == 0 {
+            assert!(
+                transformed
+                    .as_ref()
+                    .iter()
+                    .all(|&x| x == Complex64::default())
+            );
+        }
+        transformed.write_torus_form(&mut nlev_product, &mut engine);
+        assert_eq!(nlev_product.as_ref(), expected.as_ref());
+        fourier_ngsw.external_product_fourier_to(
+            &input_ntru,
+            &mut transformed,
+            &basis,
+            &mut engine,
+            &mut context,
+        );
+        if amplitude == 0 {
+            assert!(
+                transformed
+                    .as_ref()
+                    .iter()
+                    .all(|&x| x == Complex64::default())
+            );
+        }
+        transformed.write_torus_form(&mut ngsw_product, &mut engine);
+        assert_eq!(ngsw_product.as_ref(), expected.as_ref());
+
+        for log_basis in [4, 12] {
+            let output_basis = ApproxSignedBasis::new(None, log_basis, None);
+            assert_ne!(output_basis.decompose_length(), basis.decompose_length());
+            let input_nlev = make_nlev(&alpha, &output_basis);
+            let expected_nlev = make_nlev(&expected, &output_basis);
+            let mut output_nlev = Nlev::new(vec![u32::MAX; input_nlev.as_ref().len()]);
+            fourier_ngsw.external_product_nlev_to(
+                &input_nlev,
+                &mut output_nlev,
+                &basis,
+                &mut engine,
+                &mut context,
+            );
+            assert_eq!(output_nlev.as_ref(), expected_nlev.as_ref());
+        }
+    }
     assert_eq!([storage[0], storage[N / 2 + 1]], [guard; 2]);
 }
 
