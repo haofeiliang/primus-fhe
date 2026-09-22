@@ -160,15 +160,22 @@ fn sparse_key_errors_do_not_consume_randomness() {
             &client,
             0,
             8,
-            Error::BucketMap(BucketMapError::InvalidBucketParameters),
+            Error::BucketMap(BucketMapError::InvalidBucketParameters).into(),
         ),
-        (&client, 3, usize::MAX, Error::StorageSizeOverflow),
-        (&malformed, 3, 8, Error::InvalidSecretCoefficients),
+        (&client, 3, usize::MAX, Error::StorageSizeOverflow.into()),
+        (
+            &malformed,
+            3,
+            8,
+            primus_tfhe_glwe::KeyGenerationError::ClientKey(
+                primus_tfhe_glwe::TfheKeyError::InvalidLweSecretKeyCoefficient,
+            ),
+        ),
     ] {
         let mut rng = StdRng::seed_from_u64(43);
         let result =
             generator.try_generate_sparse_bootstrapping_key(client, copies, buckets, &mut rng);
-        assert_eq!(result.err(), Some(error.into()));
+        assert_eq!(result.err(), Some(error));
         assert_eq!(rng.next_u64(), StdRng::seed_from_u64(43).next_u64());
     }
 }

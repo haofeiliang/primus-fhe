@@ -191,6 +191,45 @@ fn boolean_clients_reject_other_plaintext_moduli() {
     }
 }
 
+#[test]
+fn binding_checks_small_secret_coefficients_without_restricting_gaussian_accumulator() {
+    fn check<M: RingContext<u32>>(modulus: M) {
+        let gaussian = SecretKeyDistr::gaussian(1.0);
+        for distr in [
+            SecretKeyDistr::UniformBinary,
+            SecretKeyDistr::UniformTernary,
+        ] {
+            let parameters = TfheParameters::try_new(
+                LweParameters::new(4, 4, modulus, distr, 0.7),
+                GlweParameters::new(1, 8, 4, modulus, gaussian, 0.7),
+                ApproxSignedBasis::new(modulus.explicit_value(), 8, None),
+                ApproxSignedBasis::new(modulus.explicit_value(), 8, None),
+                PbsOrder::BootstrapKeyswitch,
+            )
+            .unwrap();
+            let minus_one = modulus.minus_one();
+            for coefficient in [0, 1, minus_one, 2, minus_one - 1] {
+                let client = ClientKey::new(
+                    LweSecretKey::new(vec![0, 1, 0, coefficient], distr),
+                    GlweSecretKey::new(vec![2; 8], GlweSize::new(1, 8), gaussian),
+                    PbsOrder::BootstrapKeyswitch,
+                );
+                let expected =
+                    if coefficient <= 1 || (distr.is_ternary() && coefficient == minus_one) {
+                        None
+                    } else {
+                        Some(TfheClientError::IncompatibleKey(
+                            TfheKeyError::InvalidLweSecretKeyCoefficient,
+                        ))
+                    };
+                assert_eq!(parameters.encryptor(&client).err(), expected);
+            }
+        }
+    }
+    check(NativeModulus::new());
+    check(BarrettModulus::new(132_120_577));
+}
+
 #[derive(Clone, Copy)]
 enum Encoding {
     Unsigned,

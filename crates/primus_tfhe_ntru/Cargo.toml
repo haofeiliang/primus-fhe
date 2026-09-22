@@ -7,6 +7,7 @@ edition = "2024"
 primus_decompose = { path = "../primus_decompose" }
 primus_encoding = { path = "../primus_encoding" }
 primus_integer = { path = "../primus_integer" }
+primus_modulus = { path = "../primus_modulus" }
 primus_lwe = { path = "../primus_lwe" }
 primus_ntru = { path = "../primus_ntru" }
 primus_reduce = { path = "../primus_reduce" }
@@ -18,7 +19,6 @@ thiserror = { workspace = true }
 
 [dev-dependencies]
 primus_test_allocations = { path = "../../test-support/allocations" }
-primus_modulus = { path = "../primus_modulus" }
 
 [features]
 default = []

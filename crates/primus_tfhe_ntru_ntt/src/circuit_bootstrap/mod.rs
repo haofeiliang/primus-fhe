@@ -2,8 +2,9 @@
 
 mod evaluator;
 mod key;
-mod parameters;
 
 pub use evaluator::CircuitBootstrapEvaluator;
 pub use key::CircuitBootstrapKey;
-pub use parameters::CircuitBootstrapParameters;
+/// Shared CBS parameters specialized to this backend's modulus domain.
+pub type CircuitBootstrapParameters<T> =
+    primus_tfhe_ntru::CircuitBootstrapParameters<T, primus_modulus::BarrettModulus<T>>;

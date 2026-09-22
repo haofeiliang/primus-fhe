@@ -5,6 +5,9 @@ use thiserror::Error;
 /// Errors that may occur.
 #[derive(Error, Debug)]
 pub enum NttError<T> {
+    /// NTT tables require at least two polynomial coefficients.
+    #[error("NTT polynomial length must be at least two (log_n >= 1)")]
+    PolynomialLengthTooSmall,
     /// Error that occurs when the given modulus has no primitive root with the given degree.
     #[error("There is no primitive root with the degree {degree:?} and the modulus {modulus:?}!")]
     NoPrimitiveRoot {

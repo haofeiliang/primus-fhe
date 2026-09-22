@@ -151,6 +151,12 @@ where
     /// The transformed secrets are discarded; use [`Self::try_generate`] when
     /// generating a paired server key so those representations can be reused.
     /// Returns a key-generation error when the bounded search is exhausted.
+    ///
+    /// # Panics
+    ///
+    /// Inherits [`FourierNtruSecretKey::generate_padded_pair`] and
+    /// [`FourierNtruSecretKey::generate_pair`]'s sampling requirements. Fixed weights
+    /// must fit the active client prefix or accumulator polynomial length.
     pub fn try_generate_client_key<R>(
         &mut self,
         rng: &mut R,
@@ -327,6 +333,12 @@ where
     /// Enabling CBS inherits [`Self::try_generate_circuit_bootstrap_key`]'s
     /// mathematical and security requirements.
     /// Returns a key-generation error when the bounded rejection search is exhausted.
+    ///
+    /// # Panics
+    ///
+    /// Inherits [`FourierNtruSecretKey::generate_padded_pair`] and
+    /// [`FourierNtruSecretKey::generate_pair`]'s sampling requirements. Fixed weights
+    /// must fit the active client prefix or accumulator polynomial length.
     pub fn try_generate<R>(
         &mut self,
         circuit_bootstrap: Option<CircuitBootstrapConfig>,

@@ -24,6 +24,8 @@
 
 两种 order 均返回各自的外部秘密域。后端 `context.allocate_lwe_ciphertext()` 根据 `external_lwe_dimension()` 分配输出， 用 `client_key.external_lwe_secret_key()` 借用对应秘密。 `accumulator_glwe()` 描述累加器域，`blind_rotation_ggsw()` 描述其中的 GGSW 控制项， `glwe_key_switching()` 描述环密钥切换。 Basis/布局兼容不能证明实际秘密一致。
 
+`ClientKey::new` 导入系数秘密。参数绑定检查 small-LWE 的 binary/ternary 系数范围，无效值返回 `TfheKeyError::InvalidLweSecretKeyCoefficient`。Accumulator 仍支持 Gaussian 秘密，其幅值要求继续由后端契约规定。
+
 ## 客户端与 LUT
 
 `Encryptor`、`Decryptor`、`BooleanEncryptor` 和 `BooleanDecryptor` 从 [`primus_tfhe`](../primus_tfhe/README.zh_CN.md#客户端与服务端边界) 重导出。家族构造入口验证客户端密钥，选择外部 LWE 秘密和噪声；公共客户端负责编码、范围检查及输出复用，借用 LWE 密钥视图，不再持有家族参数或客户端密钥类型。

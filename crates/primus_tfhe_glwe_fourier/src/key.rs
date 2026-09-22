@@ -286,6 +286,13 @@ where
     /// Generates a fresh compatible pair with the selected evaluation capabilities.
     /// Enabling CBS inherits [`Self::try_generate_circuit_bootstrap_key`]'s
     /// mathematical and security requirements.
+    ///
+    /// # Panics
+    ///
+    /// Inherits [`ClientKey::generate`]'s sampling requirements: fixed weights
+    /// must fit the actual small-LWE dimension or accumulator secret length.
+    /// CBS configuration also inherits [`CircuitBootstrapParameters::try_from_config`]'s
+    /// noise sampler requirements.
     pub fn try_generate<R>(
         &mut self,
         circuit_bootstrap: Option<CircuitBootstrapConfig>,

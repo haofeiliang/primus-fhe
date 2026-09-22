@@ -70,6 +70,10 @@ pub enum TfheKeyError {
     #[error("LWE secret-key distribution mismatch")]
     LweSecretKeyDistributionMismatch,
 
+    /// A small-LWE coefficient lies outside the declared binary/ternary domain.
+    #[error("small-LWE secret coefficient is outside its declared binary or ternary support")]
+    InvalidLweSecretKeyCoefficient,
+
     /// The GLWE secret key has the wrong dimension.
     #[error("GLWE secret-key dimension mismatch: expected {expected}, got {actual}")]
     GlweDimensionMismatch {

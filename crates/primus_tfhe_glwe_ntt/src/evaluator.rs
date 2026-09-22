@@ -99,6 +99,13 @@ where
     Table: MonomialNttTable<ValueT = T>,
 {
     /// Creates an evaluator after checking the server-key layout.
+    ///
+    /// # Correctness
+    ///
+    /// The server key must use the NTT representation of `context.table()`:
+    /// primitive root, ordering and normalization must agree. Layout and modulus
+    /// checks do not establish transform or secret identity; see
+    /// [`primus_ntt::NttTable::new`].
     pub fn try_new(
         context: &'a TfheContext<T, Table>,
         server_key: &'a ServerKey<T>,

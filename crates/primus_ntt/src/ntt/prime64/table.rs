@@ -348,6 +348,9 @@ impl NttTable for U64NttTable {
     where
         M: FieldContext<Self::ValueT>,
     {
+        if log_n == 0 {
+            return Err(NttError::PolynomialLengthTooSmall);
+        }
         let root = <u64 as PrimitiveRoot>::try_minimal_primitive_root(log_n + 1, modulus)?;
         let q = modulus.value();
 

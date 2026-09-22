@@ -49,7 +49,7 @@ For plaintext modulus 4, contexts provide `boolean_encryptor(&client)`, `boolean
 
 Both backends provide optional CBS parameters, keys and evaluators. CBS branches after BR, projects coefficients and applies trace/scheme switching under `f_acc`; it skips ordinary PBS's return key switch and extraction. Input uses unsigned rounded LWE encoding, including for bits. Its NGSW output uses gadget scales and can control CMUX for `0/1` inputs. CMUX candidates must also use `f_acc`. LWE-to-ring packing is not provided by this TFHE layer.
 
-CBS parameters select independent output, trace and scheme-switch bases. The internal ManyLUT pads its output groups; the projected NLev and output NGSW retain the requested level count. The scheme-switch key binds the complete output basis.
+`CircuitBootstrapParameters<T, M>` owns shared CBS layout and capacity validation; the NTT/Fourier backends expose aliases for their modulus domains. Explicit moduli retain modular-trace checks, while Fourier output lengths are available only for the native domain. CBS parameters select independent output, trace and scheme-switch bases. The internal ManyLUT pads its output groups; the projected NLev and output NGSW retain the requested level count. The scheme-switch key binds the complete output basis.
 
 Ordinary and CBS keys must share the accumulator secret and transform table. Scheme switching multiplies input error by f and decomposition error by f²; its `NGSW_f[f]` material requires a justified key-dependent-message/circular-security assumption; see the [NTRU contracts](../primus_ntru/README.md). NTT uses modular trace normalization; Fourier adds native halving and FFT errors.
 

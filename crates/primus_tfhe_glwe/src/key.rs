@@ -194,8 +194,11 @@ impl<T: FheUint> ClientKey<T> {
         self.pbs_order
     }
 
-    /// Checks that this key has the shape and distributions required by a
-    /// parameter set.
+    /// Checks key shapes, distribution labels and the small-LWE coefficient domain.
+    ///
+    /// Imported small-LWE coefficients must be `0/1`, or also `q-1` for ternary
+    /// distributions. This does not validate fixed weights or the accumulator's
+    /// coefficient magnitudes; transform backends retain their range contracts.
     pub fn check_compatible<M>(&self, parameters: &TfheParameters<T, M>) -> Result<(), TfheKeyError>
     where
         M: RingContext<T>,
@@ -229,6 +232,19 @@ impl<T: FheUint> ClientKey<T> {
         }
         if self.glwe_secret_key.distr() != parameters.accumulator_glwe().secret_key_distr() {
             return Err(TfheKeyError::GlweSecretKeyDistributionMismatch);
+        }
+        let ternary = self.small_lwe_secret_key.distr().is_ternary();
+        let minus_one = parameters.small_lwe().cipher_modulus().minus_one();
+        // Inspect the complete secret instead of stopping at the first bad coefficient.
+        let invalid =
+            self.small_lwe_secret_key
+                .as_ref()
+                .iter()
+                .fold(false, |invalid, &coefficient| {
+                    invalid | ((coefficient > T::ONE) & !(ternary & (coefficient == minus_one)))
+                });
+        if invalid {
+            return Err(TfheKeyError::InvalidLweSecretKeyCoefficient);
         }
         Ok(())
     }

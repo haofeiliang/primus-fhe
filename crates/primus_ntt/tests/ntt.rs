@@ -4,9 +4,30 @@ use num_traits::{ConstOne, ConstZero};
 use primus_integer::FheUint;
 use primus_modulus::BarrettModulus;
 use primus_ntt::{MonomialNttTable, NttTable, U32NttTable, U64NttTable, UintNttTable};
+use primus_reduce::FieldContext;
 
 const N: usize = 256;
 const LOG_N: u32 = N.trailing_zeros();
+
+#[test]
+fn constructors_reject_one_coefficient_but_support_two() {
+    fn check<Table: NttTable>(modulus: impl FieldContext<Table::ValueT>) {
+        assert!(matches!(
+            Table::new(0, modulus),
+            Err(primus_ntt::NttError::PolynomialLengthTooSmall)
+        ));
+        let table = Table::new(1, modulus).unwrap();
+        let input = [Table::ValueT::ZERO, Table::ValueT::ONE];
+        let mut actual = input;
+        table.transform_slice(&mut actual);
+        table.inverse_transform_slice(&mut actual);
+        assert_eq!(actual, input);
+    }
+    check::<U32NttTable>(BarrettModulus::new(17u32));
+    check::<UintNttTable<u32>>(BarrettModulus::new(17u32));
+    check::<U64NttTable>(BarrettModulus::new(17u64));
+    check::<UintNttTable<u64>>(BarrettModulus::new(17u64));
+}
 
 fn deterministic_u32_input(n: usize, modulus: u32) -> Vec<u32> {
     (0..n)

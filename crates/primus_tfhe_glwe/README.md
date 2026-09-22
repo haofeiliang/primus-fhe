@@ -24,6 +24,8 @@ Prefer `TfheParameters::try_from_config(TfheConfig { .. })`: specify `t/q` once 
 
 Both orders return to their external secret. Backend `context.allocate_lwe_ciphertext()` uses `external_lwe_dimension()` to allocate outputs; `client_key.external_lwe_secret_key()` borrows that secret. `accumulator_glwe()` describes the accumulator domain; `blind_rotation_ggsw()` describes its GGSW controls, and `glwe_key_switching()` describes the ring key switch. Basis/layout compatibility does not prove actual secret identity.
 
+`ClientKey::new` imports coefficient secrets. Parameter binding checks the small-LWE binary/ternary coefficient domain and returns `TfheKeyError::InvalidLweSecretKeyCoefficient` on invalid values. Gaussian accumulator secrets remain supported; backend magnitude requirements still apply.
+
 ## Clients and LUTs
 
 `Encryptor`, `Decryptor`, `BooleanEncryptor` and `BooleanDecryptor` are re-exported from [`primus_tfhe`](../primus_tfhe/README.md#client-and-server-roles). Family constructors validate the client key and select the external LWE secret and noise; the shared clients own encoding, range checks and output reuse. They borrow LWE key views rather than family parameters or client keys.

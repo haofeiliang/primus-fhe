@@ -128,6 +128,9 @@ impl<T: FheUint> NttTable for UintNttTable<T> {
     where
         M: FieldContext<Self::ValueT>,
     {
+        if log_n == 0 {
+            return Err(NttError::PolynomialLengthTooSmall);
+        }
         let modulus_value = modulus.value();
         let max_bits = T::BITS - crate::NTT_LAZY_REDUCTION_HEADROOM_BITS;
         if modulus_value >= T::ONE << max_bits {

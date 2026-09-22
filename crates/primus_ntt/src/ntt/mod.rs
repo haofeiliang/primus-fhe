@@ -21,12 +21,29 @@ pub use primitive::UintNttTable;
 /// Every input or output slice must contain exactly [`Self::poly_length`]
 /// coefficients. Implementations must enforce this contract in release builds
 /// before mutating the slice or entering an unchecked transform kernel.
-/// [`Self::poly_length`] must be a non-zero power of two.
+/// [`Self::poly_length`] must be a power of two of at least two.
 pub trait NttTable: Sized + Send + Sync {
     /// The value type.
     type ValueT: PrimitiveRoot;
 
     /// Creates a new [`NttTable`].
+    ///
+    /// Built-in tables reject `log_n == 0` with
+    /// [`NttError::PolynomialLengthTooSmall`]. Other construction errors report
+    /// unsupported modulus ranges, degrees or failure to find a primitive root.
+    ///
+    /// # Correctness
+    ///
+    /// The modulus must be prime and admit a primitive `2N`-th root, where
+    /// `N = 2^log_n`. [`FieldContext`] supplies arithmetic but does not establish
+    /// primality; root search does not validate it either. Transform values from
+    /// different tables are interchangeable only when their roots, ordering and
+    /// normalization agree, not merely their lengths and moduli.
+    ///
+    /// # Panics
+    ///
+    /// Built-in constructors inherit [`PrimitiveRoot::try_primitive_root`]'s
+    /// degree limits; `log_n + 1` and `2^log_n` must also fit `u32` and `usize`.
     fn new<M>(log_n: u32, modulus: M) -> Result<Self, NttError<Self::ValueT>>
     where
         M: FieldContext<Self::ValueT>;

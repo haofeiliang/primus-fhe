@@ -1,9 +1,10 @@
-//! Independently selected gadget bases for NTRU circuit bootstrapping.
+//! Shared parameter validation for NTRU circuit bootstrapping.
 
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_integer::FheUint;
-use primus_modulus::BarrettModulus;
+use primus_modulus::NativeModulus;
 use primus_ntru::NlevParameters;
+use primus_reduce::RingContext;
 
 use crate::{CircuitBootstrapConfig, CircuitBootstrapParameterError, TfheParameters};
 
@@ -16,16 +17,16 @@ use crate::{CircuitBootstrapConfig, CircuitBootstrapParameterError, TfheParamete
 /// key encrypts secret-dependent messages and multiplies errors by f and f²;
 /// ordinary PBS parameters are not automatically valid CBS parameters.
 #[derive(Clone)]
-pub struct CircuitBootstrapParameters<T: FheUint> {
+pub struct CircuitBootstrapParameters<T: FheUint, M: RingContext<T>> {
     output_basis: ApproxSignedBasis<T>,
     poly_length: usize,
     output_nlev_len: usize,
-    trace: NlevParameters<T, BarrettModulus<T>>,
-    scheme_switch: NlevParameters<T, BarrettModulus<T>>,
+    trace: NlevParameters<T, M>,
+    scheme_switch: NlevParameters<T, M>,
     input_plain_modulus: T,
 }
 
-impl<T: FheUint> CircuitBootstrapParameters<T> {
+impl<T: FheUint, M: RingContext<T>> CircuitBootstrapParameters<T, M> {
     /// Derives all CBS ring domains from TFHE, keeping bases and noise independent.
     ///
     /// Returns basis/layout errors or insufficient interleaved LUT capacity.
@@ -36,7 +37,7 @@ impl<T: FheUint> CircuitBootstrapParameters<T> {
     ///
     /// Inherits [`primus_ntru::NtruParameters::new`]'s noise sampler requirements.
     pub fn try_from_config(
-        tfhe: &TfheParameters<T>,
+        tfhe: &TfheParameters<T, M>,
         config: CircuitBootstrapConfig,
     ) -> Result<Self, CircuitBootstrapParameterError> {
         let accumulator = tfhe.accumulator_ntru();
@@ -70,10 +71,10 @@ impl<T: FheUint> CircuitBootstrapParameters<T> {
     /// Checks the accumulator ring, modulus and capacity for the input domain.
     /// The output layout is derived from the TFHE accumulator and `output_basis`.
     pub fn try_new(
-        tfhe: &TfheParameters<T>,
+        tfhe: &TfheParameters<T, M>,
         output_basis: ApproxSignedBasis<T>,
-        trace: NlevParameters<T, BarrettModulus<T>>,
-        scheme_switch: NlevParameters<T, BarrettModulus<T>>,
+        trace: NlevParameters<T, M>,
+        scheme_switch: NlevParameters<T, M>,
     ) -> Result<Self, CircuitBootstrapParameterError> {
         if output_basis.modulus() != tfhe.accumulator_ntru().cipher_modulus_value() {
             return Err(CircuitBootstrapParameterError::OutputBasisModulusMismatch);
@@ -88,8 +89,11 @@ impl<T: FheUint> CircuitBootstrapParameters<T> {
                 return Err(CircuitBootstrapParameterError::CipherModulusMismatch { role });
             }
         }
-        let q = trace.ntru().cipher_modulus().value();
-        if q & T::ONE != T::ONE || q >= T::ONE << (T::BITS - 1) {
+        // Explicit-modulus trace uses modular halving. Native trace instead
+        // uses coefficient halving with a distinct rounding-error contract.
+        if let Some(q) = trace.ntru().cipher_modulus_value()
+            && (q & T::ONE != T::ONE || q >= T::ONE << (T::BITS - 1))
+        {
             return Err(CircuitBootstrapParameterError::UnsupportedTraceModulus);
         }
         let lookup_table_padded_output_count = output_basis.decompose_length().next_power_of_two();
@@ -135,13 +139,13 @@ impl<T: FheUint> CircuitBootstrapParameters<T> {
 
     /// Returns the reverse-trace key's encryption parameters.
     #[must_use]
-    pub fn trace(&self) -> &NlevParameters<T, BarrettModulus<T>> {
+    pub fn trace(&self) -> &NlevParameters<T, M> {
         &self.trace
     }
 
     /// Returns the scheme-switch key's encryption parameters.
     #[must_use]
-    pub fn scheme_switch(&self) -> &NlevParameters<T, BarrettModulus<T>> {
+    pub fn scheme_switch(&self) -> &NlevParameters<T, M> {
         &self.scheme_switch
     }
 
@@ -151,9 +155,21 @@ impl<T: FheUint> CircuitBootstrapParameters<T> {
         self.output_basis.decompose_length().next_power_of_two()
     }
 
-    pub(crate) fn is_compatible(&self, tfhe: &TfheParameters<T>) -> bool {
+    /// Checks the accumulator ring, modulus and input plaintext domain.
+    /// This does not establish noise margins or secret/transform identity.
+    #[must_use]
+    pub fn is_compatible(&self, tfhe: &TfheParameters<T, M>) -> bool {
         self.input_plain_modulus == tfhe.plain_modulus_value()
             && self.poly_length == tfhe.poly_length()
             && self.output_basis.modulus() == tfhe.accumulator_ntru().cipher_modulus_value()
+    }
+}
+
+impl<T: FheUint> CircuitBootstrapParameters<T, NativeModulus<T>> {
+    /// Returns the number of complex values in the output Fourier NLev/NGSW.
+    #[must_use]
+    #[inline]
+    pub fn output_fourier_nlev_len(&self) -> usize {
+        self.output_nlev_len / 2
     }
 }

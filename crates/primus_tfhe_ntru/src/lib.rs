@@ -30,12 +30,14 @@
 
 #![deny(missing_docs)]
 
+mod circuit_bootstrap;
 mod client;
 mod error;
 mod key;
 mod lookup_table;
 mod parameters;
 
+pub use circuit_bootstrap::CircuitBootstrapParameters;
 pub use error::{
     CircuitBootstrapParameterError, KeyGenerationError, SparseBootstrappingKeyError,
     TfheClientError, TfheKeyError, TfheParameterError,

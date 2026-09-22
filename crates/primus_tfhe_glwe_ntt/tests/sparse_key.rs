@@ -179,11 +179,14 @@ fn sparse_key_rejects_invalid_parameters_and_actual_secret_before_sampling() {
     ));
     assert_eq!(rng.next_u64(), StdRng::seed_from_u64(43).next_u64());
 
-    let mut check = |client: &ClientKey<u32>, copies, buckets, expected: Error| {
+    let mut check = |client: &ClientKey<u32>,
+                     copies,
+                     buckets,
+                     expected: primus_tfhe_glwe::KeyGenerationError| {
         let mut rng = StdRng::seed_from_u64(43);
         let result =
             generator.try_generate_sparse_bootstrapping_key(client, copies, buckets, &mut rng);
-        assert_eq!(result.err(), Some(expected.into()));
+        assert_eq!(result.err(), Some(expected));
         assert_eq!(rng.next_u64(), StdRng::seed_from_u64(43).next_u64());
     };
     for (copies, buckets) in [(0, 8), (9, 8), (3, 3)] {
@@ -191,19 +194,26 @@ fn sparse_key_rejects_invalid_parameters_and_actual_secret_before_sampling() {
             &client,
             copies,
             buckets,
-            Error::BucketMap(BucketMapError::InvalidBucketParameters),
+            Error::BucketMap(BucketMapError::InvalidBucketParameters).into(),
         );
     }
     for (copies, buckets) in [(usize::MAX, usize::MAX), (3, usize::MAX)] {
-        check(&client, copies, buckets, Error::StorageSizeOverflow);
+        check(&client, copies, buckets, Error::StorageSizeOverflow.into());
     }
-    for data in [vec![0; 16], vec![1; 16], vec![2; 16]] {
+    for coefficient in [0, 1, 2] {
+        let expected = if coefficient == 2 {
+            primus_tfhe_glwe::KeyGenerationError::ClientKey(
+                primus_tfhe_glwe::TfheKeyError::InvalidLweSecretKeyCoefficient,
+            )
+        } else {
+            Error::InvalidSecretCoefficients.into()
+        };
         let malformed = ClientKey::new(
-            LweSecretKey::new(data, distribution),
+            LweSecretKey::new(vec![coefficient; 16], distribution),
             client.glwe_secret_key().clone(),
             client.pbs_order(),
         );
-        check(&malformed, 3, 8, Error::InvalidSecretCoefficients);
+        check(&malformed, 3, 8, expected);
     }
     for (distribution, expected) in [
         (

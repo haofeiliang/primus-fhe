@@ -49,7 +49,7 @@ ManyLUT 编译同一个输入的多个函数。后端 sparse 示例计算 `x % 4
 
 两后端均提供可选的 CBS 参数、密钥和 evaluator。CBS 从 BR 后分支，在 `f_acc` 下执行 系数投影、trace/scheme switching，跳过普通 PBS 的返回密钥切换与提取。 包括 bit 在内，输入使用 unsigned rounded LWE 编码。输出 NGSW 使用 gadget 尺度；输入为 `0/1` 时可控制 CMUX，其候选密文也必须使用 `f_acc`。 本 TFHE 层不提供 LWE 到环密文的 packing。
 
-CBS 参数独立选择 output、trace 和 scheme-switch basis。内部 ManyLUT 仅在输出组中 补零，投影 NLev 和输出 NGSW 保留请求的层数；scheme-switch key 绑定完整 output basis。
+`CircuitBootstrapParameters<T, M>` 统一维护 CBS 布局与容量校验，NTT/Fourier 后端提供对应模数域的类型别名。显式模数保留模 trace 检查，Fourier 输出长度方法仅用于 native 域。CBS 参数独立选择 output、trace 和 scheme-switch basis。内部 ManyLUT 仅在输出组中 补零，投影 NLev 和输出 NGSW 保留请求的层数；scheme-switch key 绑定完整 output basis。
 
 普通与 CBS 密钥必须共享 accumulator secret 和变换 table。Scheme switching 将输入 误差乘 f、分解误差乘 f²；`NGSW_f[f]` 材料需要独立论证 key-dependent-message/ circular-security 假设，见 [NTRU 契约](../primus_ntru/README.zh_CN.md)。 NTT 使用模逆元归一化；Fourier 还引入原生整数除二和 FFT 误差。
 

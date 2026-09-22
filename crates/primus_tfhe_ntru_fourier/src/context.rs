@@ -93,6 +93,11 @@ where
     /// Generates a fresh client/server pair; `None` selects PBS only and
     /// `Some(config)` also generates the configured CBS material.
     /// Inherits [`KeyGenerator::try_generate`]'s rejection-sampling errors and CBS requirements.
+    ///
+    /// # Panics
+    ///
+    /// Inherits [`KeyGenerator::try_generate`]'s sampling requirements, including
+    /// fixed weights fitting the actual sampled secret lengths.
     pub fn try_generate_keys<R>(
         &self,
         circuit_bootstrap: Option<CircuitBootstrapConfig>,
