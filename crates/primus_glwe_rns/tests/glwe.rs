@@ -1,6 +1,6 @@
 use primus_glwe_rns::{
-    CrtGlweParameters, DcrtGlweCiphertext, DcrtGlweDecryptContext, DcrtGlweSecretKey,
-    GlweSecretKey, SecretKeyDistr,
+    CrtGlweParameters, DcrtGlweCiphertext, DcrtGlweDecryptContext, DcrtGlwePublicKey,
+    DcrtGlweSecretKey, GlweSecretKey, SecretKeyDistr,
 };
 use primus_lattice::glwe::DcrtGlwe;
 use primus_modulus::BarrettModulus;
@@ -127,6 +127,72 @@ fn test_dcrt_glwe_secret_key_enc_dec_crt_modulus() {
     for secret_key_distr in SECRET_KEY_TYPES {
         for plain_modulus in PLAIN_MODULI {
             assert_dcrt_glwe_secret_key_enc_dec(secret_key_distr, plain_modulus);
+        }
+    }
+}
+
+#[test]
+fn public_encrypt_accepts_unscaled_crt_plaintexts() {
+    let mut rng = StdRng::seed_from_u64(0x4352_5450_5542);
+    let moduli = CIPHER_MODULI.map(BarrettModulus::new);
+    // Representative cases cover one/multiple RNS limbs and even/odd t without
+    // repeating the codec's full parameter matrix through public encryption.
+    for (count, t) in [(1, 256), (2, 257)] {
+        let moduli = &moduli[..count];
+        let table = UintDcrtTable::new(POLY_LENGTH.trailing_zeros(), moduli).unwrap();
+        let params = CrtGlweParameters::new(
+            DIMENSION,
+            POLY_LENGTH,
+            BarrettModulus::new(t),
+            BarrettModulus::new(GAMMA_MODULUS),
+            moduli,
+            SecretKeyDistr::SparseTernary,
+            NOISE_STANDARD_DEVIATION,
+        );
+        let secret =
+            GlweSecretKey::generate(params.glwe_size(), params.secret_key_sampler(), &mut rng);
+        let secret = DcrtGlweSecretKey::from_coeff_secret_key(&secret, &table);
+        let public = DcrtGlwePublicKey::new(&secret, &params, &table, &mut rng);
+        let mut context = DcrtGlweDecryptContext::new(params.size());
+        let message = Polynomial(
+            (0..POLY_LENGTH)
+                .map(|i| [0, 1, t / 2, t / 2 + 1, t - 1][i % 5])
+                .collect::<Vec<_>>(),
+        );
+        let lifted = decompose_message(&message, &params);
+        let ciphertext = public.encrypt(&lifted, &params, &table, &mut rng);
+        assert_eq!(
+            secret.decrypt(&ciphertext, &params, &table, &mut context),
+            message
+        );
+
+        // Explicit erasure must leave the reusable workspace usable.
+        zeroize::Zeroize::zeroize(&mut context);
+        assert_eq!(
+            secret.decrypt(&ciphertext, &params, &table, &mut context),
+            message
+        );
+
+        // Length validation is independent of t and the decoding path.
+        if count == 2 {
+            for len in [
+                0,
+                params.rns_poly_len() - 1,
+                params.rns_poly_len() + 1,
+                params.rns_poly_len() + POLY_LENGTH,
+            ] {
+                let invalid = CrtPolynomial(vec![0; len]);
+                let mut rng = StdRng::seed_from_u64(17);
+                let mut expected_rng = StdRng::seed_from_u64(17);
+                let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    public.encrypt(&invalid, &params, &table, &mut rng)
+                }));
+                assert!(result.is_err(), "accepted CRT plaintext length {len}");
+                assert_eq!(
+                    rand::Rng::next_u64(&mut rng),
+                    rand::Rng::next_u64(&mut expected_rng)
+                );
+            }
         }
     }
 }

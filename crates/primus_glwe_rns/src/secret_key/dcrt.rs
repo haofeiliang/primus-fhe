@@ -526,11 +526,28 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
 
 /// Reusable workspace for DCRT GLWE decryption.
 ///
-/// Decryption overwrites both internal buffers.
+/// Decryption overwrites both internal buffers. Their contents are securely
+/// erased on drop; explicit [`Zeroize::zeroize`] also preserves the allocations
+/// and layout so the workspace can be reused.
 pub struct DcrtGlweDecryptContext<T: FheUint> {
     size: RnsGlweSize,
     msg_mod_q: DcrtPolynomial<Vec<T>>,
     fast_convert_buffer: Vec<T>,
+}
+
+impl<T: FheUint> Zeroize for DcrtGlweDecryptContext<T> {
+    fn zeroize(&mut self) {
+        self.msg_mod_q.as_mut().iter_mut().zeroize();
+        self.fast_convert_buffer.iter_mut().zeroize();
+    }
+}
+
+impl<T: FheUint> ZeroizeOnDrop for DcrtGlweDecryptContext<T> {}
+
+impl<T: FheUint> Drop for DcrtGlweDecryptContext<T> {
+    fn drop(&mut self) {
+        self.zeroize();
+    }
 }
 
 struct DcrtGlweDecryptContextRefMut<'a, T: FheUint> {
@@ -571,5 +588,30 @@ impl<T: FheUint> DcrtGlweDecryptContext<T> {
     #[inline]
     pub fn size(&self) -> RnsGlweSize {
         self.size
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use primus_lattice::GlweSize;
+
+    #[test]
+    fn decrypt_context_erases_both_buffers_without_changing_layout() {
+        for count in [1, 2] {
+            let size = RnsGlweSize::new(GlweSize::new(1, 8), count);
+            let mut context = DcrtGlweDecryptContext::<u64>::new(size);
+            context.msg_mod_q.as_mut().fill(0xfeed);
+            context.fast_convert_buffer.fill(0xbeef);
+            let phase_ptr = context.msg_mod_q.as_ref().as_ptr();
+            let conversion_ptr = context.fast_convert_buffer.as_ptr();
+            let conversion_len = context.fast_convert_buffer.len();
+            context.zeroize();
+            assert_eq!(context.size(), size);
+            assert_eq!(context.msg_mod_q.as_ref(), vec![0; size.rns_poly_len()]);
+            assert_eq!(context.fast_convert_buffer, vec![0; conversion_len]);
+            assert_eq!(context.msg_mod_q.as_ref().as_ptr(), phase_ptr);
+            assert_eq!(context.fast_convert_buffer.as_ptr(), conversion_ptr);
+        }
     }
 }

@@ -12,6 +12,12 @@ use crate::{CrtGlweParameters, DcrtGlweSecretKey, GlweSecretKey, HybridRnsKeySwi
 
 impl<T: FheUint> HybridRnsGlweKeySwitchingKey<T> {
     /// Generates a hybrid-RNS key-switching key in the NTT domain over `QP`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the polynomial lengths or Q modulus count are incompatible,
+    /// if key sizes overflow, or if the input noise magnitude bound is not
+    /// strictly less than every QP modulus.
     pub fn generate<R, M, QpTable>(
         input_secret_key: &GlweSecretKey<T>,
         input_parameters: &CrtGlweParameters<T, M>,
@@ -38,6 +44,14 @@ impl<T: FheUint> HybridRnsGlweKeySwitchingKey<T> {
         assert_eq!(qp_table.poly_length(), poly_length);
 
         let qp_moduli = hybrid_rns.qp_base().moduli();
+        let noise_distribution = input_parameters.noise_distribution();
+        assert!(
+            qp_moduli.iter().all(|modulus| {
+                let q: u128 = modulus.value().as_into();
+                u128::from(noise_distribution.maximum_magnitude()) < q
+            }),
+            "noise magnitude bound must be less than every QP modulus"
+        );
         let p_mod_q = hybrid_rns.p_mod_q();
         let partition_count = hybrid_rns.partition_count();
         let qp_moduli_values: Vec<T> = qp_moduli.iter().map(|modulus| modulus.value()).collect();
@@ -49,7 +63,6 @@ impl<T: FheUint> HybridRnsGlweKeySwitchingKey<T> {
         let output_secret_key_qp =
             DcrtGlweSecretKey::from_coeff_secret_key(output_secret_key, qp_table);
         let output_secret_key_qp = output_secret_key_qp.key();
-        let noise_distribution = input_parameters.noise_distribution();
 
         let output_size = RnsGlweSize::new(output_secret_key.glwe_size(), q_moduli_count);
         let qp_size = RnsGlweSize::new(output_secret_key.glwe_size(), hybrid_rns.qp_moduli_count());

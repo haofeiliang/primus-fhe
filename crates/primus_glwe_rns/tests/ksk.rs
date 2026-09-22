@@ -10,6 +10,42 @@ use primus_ntt::UintDcrtTable;
 use primus_poly::Polynomial;
 use rand::{SeedableRng, rngs::StdRng};
 
+#[test]
+fn hybrid_noise_support_must_fit_auxiliary_moduli() {
+    let q = [97u64].map(BarrettModulus::new);
+    let p = [17u64].map(BarrettModulus::new);
+    let qp = [q[0], p[0]];
+    let table = UintDcrtTable::new(3, &qp).unwrap();
+    let hybrid = primus_rns::HybridRNS::new(&q, &p, 1).unwrap();
+    let domain = HybridRnsKeySwitchDomain::try_new(&hybrid, &table).unwrap();
+    let mut rng = StdRng::seed_from_u64(0x5150);
+    for (sigma, valid) in [(1.375, true), (1.4375, false), (1.5, false)] {
+        let params = CrtGlweParameters::new(
+            1,
+            8,
+            BarrettModulus::new(3),
+            BarrettModulus::new(101),
+            &q,
+            SecretKeyDistr::UniformBinary,
+            sigma,
+        );
+        let secret =
+            GlweSecretKey::generate(params.glwe_size(), params.secret_key_sampler(), &mut rng);
+        let mut rng = StdRng::seed_from_u64(17);
+        let mut expected_rng = StdRng::seed_from_u64(17);
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            HybridRnsGlweKeySwitchingKey::generate(&secret, &params, &secret, &domain, &mut rng)
+        }));
+        assert_eq!(result.is_ok(), valid);
+        if !valid {
+            assert_eq!(
+                rand::Rng::next_u64(&mut rng),
+                rand::Rng::next_u64(&mut expected_rng)
+            );
+        }
+    }
+}
+
 /// Test RNS-based GLWE key switching end-to-end:
 /// encrypt under sk_1 → key-switch → decrypt under sk_2 → assert same plaintext.
 #[test]

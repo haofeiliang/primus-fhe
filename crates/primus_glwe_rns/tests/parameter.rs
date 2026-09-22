@@ -5,6 +5,32 @@ use primus_glwe_rns::{
 use primus_modulus::BarrettModulus;
 
 #[test]
+fn noise_support_must_fit_every_rns_modulus() {
+    let moduli = [97u64, 17].map(BarrettModulus::new);
+    // Bounds 16, 17, 18 exercise strict comparison against the second modulus.
+    for (sigma, magnitude, valid) in [(1.375, 16, true), (1.4375, 17, false), (1.5, 18, false)] {
+        assert_eq!(
+            primus_distr::SignedDiscreteGaussian::<i64>::new(sigma)
+                .unwrap()
+                .maximum_magnitude(),
+            magnitude
+        );
+        let result = std::panic::catch_unwind(|| {
+            CrtGlweParameters::new(
+                1,
+                8,
+                BarrettModulus::new(3),
+                BarrettModulus::new(101),
+                &moduli,
+                SecretKeyDistr::UniformBinary,
+                sigma,
+            )
+        });
+        assert_eq!(result.is_ok(), valid);
+    }
+}
+
+#[test]
 fn secret_support_must_fit_every_rns_modulus() {
     let moduli = [97u64, 17].map(BarrettModulus::new);
     for (sigma, valid) in [(1.0, true), (1.5, false)] {

@@ -158,6 +158,30 @@ fn u64_transform_matches_generic_reference_across_modulus_ranges() {
 }
 
 #[test]
+fn u64_transform_matches_generic_at_recursive_sizes() {
+    // Exercise three modulus ranges with the runtime-selected backend. For
+    // AVX-512, 2048 is the base case; 4096 and 8192 recurse. IFMA-capable hosts
+    // select IFMA for both smaller moduli and DQ-64 for the largest one.
+    for q in [
+        1_073_692_673u64,
+        1_125_899_906_826_241,
+        1_152_921_504_606_830_593,
+    ] {
+        let modulus = BarrettModulus::new(q);
+        for n in [2048usize, 4096, 8192] {
+            let table = U64NttTable::new(n.trailing_zeros(), modulus).unwrap();
+            let reference = UintNttTable::<u64>::new(n.trailing_zeros(), modulus).unwrap();
+            let mut input = deterministic_u64_input(n, q);
+            // Include near-modulus values to stress the reduction paths too.
+            for (i, value) in input.iter_mut().enumerate().step_by(3) {
+                *value = q - 1 - i as u64;
+            }
+            assert_transform_matches_reference(&table, &reference, &input);
+        }
+    }
+}
+
+#[test]
 fn u64_lazy_transforms_match_generic_reference_across_modulus_ranges() {
     for q in [536813569u64, 562949953392641, 1152921504606830593] {
         let modulus = BarrettModulus::new(q);

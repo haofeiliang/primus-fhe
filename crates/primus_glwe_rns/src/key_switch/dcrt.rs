@@ -10,6 +10,7 @@ use primus_lattice::{
 use primus_ntt::NttTable;
 use primus_poly::{CrtPolynomial, DcrtPolynomial};
 use primus_reduce::FieldContext;
+use zeroize::Zeroizing;
 
 use crate::secret_key::encode_secret_polynomial_to_rns;
 use crate::{
@@ -48,8 +49,8 @@ impl<T: FheUint> DcrtGlweKeySwitchingKey<T> {
         let mut key = vec![T::ZERO; input_params.dimension() * dcrt_glev_len];
 
         let key_iter = DcrtGlevIterMut::new(key.as_mut_slice(), dcrt_glev_len);
-        let mut secret_mod_q: CrtPolynomial<Vec<T>> =
-            CrtPolynomial::zero(input_params.rns_poly_len());
+        let mut secret_buffer = Zeroizing::new(vec![T::ZERO; input_params.rns_poly_len()]);
+        let mut secret_mod_q = CrtPolynomial(secret_buffer.as_mut_slice());
 
         input_sk
             .iter()

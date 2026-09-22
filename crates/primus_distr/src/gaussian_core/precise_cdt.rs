@@ -99,3 +99,56 @@ pub(crate) fn compare_u256(left: &[u64; 4], right: &[u64; 4]) -> std::cmp::Order
     }
     std::cmp::Ordering::Equal
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn recurrence_matches_direct_exponentials_at_higher_precision() {
+        // Independently evaluate each mass at 768 bits instead of using the
+        // production recurrence at 512 bits. Compare every rounded 256-bit
+        // integer, including tails that round to the saturated endpoint.
+        for (sigma, tail) in [(0.7, 0.5), (1.0, 3.0), (3.2, 12.0), (1.0, 24.0)] {
+            let parameters = GaussianParameters::new(sigma, tail).unwrap();
+            let (_, actual) = build_precise_cdt(parameters);
+            let sigma = BigFloat::try_from(sigma)
+                .unwrap()
+                .with_precision(768)
+                .value();
+            let masses: Vec<_> = (0..=parameters.maximum_magnitude())
+                .map(|m| {
+                    if m == 0 {
+                        BigFloat::from(1u32).with_precision(768).value() / 2u32
+                    } else {
+                        let m = BigFloat::from(m).with_precision(768).value();
+                        (-(m.sqr() / (sigma.sqr() * 2u32))).exp()
+                    }
+                })
+                .collect();
+            let total: BigFloat = masses.iter().cloned().sum();
+            let scale = IBig::ONE << 256usize;
+            let maximum = &scale - 1u32;
+            let mut cumulative = BigFloat::from(0u32).with_precision(768).value();
+            assert_eq!(actual.len(), masses.len() + 1);
+            assert_eq!(actual[0], [0; 4]);
+            assert_eq!(*actual.last().unwrap(), [u64::MAX; 4]);
+            assert!(
+                actual
+                    .windows(2)
+                    .all(|pair| compare_u256(&pair[0], &pair[1]).is_le())
+            );
+            for (m, mass) in masses.into_iter().enumerate() {
+                cumulative += mass;
+                let expected = ((&cumulative / &total) * &scale)
+                    .to_int()
+                    .value()
+                    .min(maximum.clone());
+                let threshold = actual[m + 1].iter().rev().fold(IBig::ZERO, |value, &word| {
+                    (value << 64usize) + IBig::from(word)
+                });
+                assert_eq!(threshold, expected, "threshold mismatch at magnitude {m}");
+            }
+        }
+    }
+}

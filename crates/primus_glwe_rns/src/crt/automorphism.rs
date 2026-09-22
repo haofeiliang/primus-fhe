@@ -12,6 +12,7 @@ use primus_ntt::NttTable;
 use primus_poly::CrtPolynomial;
 use primus_reduce::FieldContext;
 use primus_reduce::ReduceMul;
+use zeroize::Zeroizing;
 
 use crate::secret_key::encode_secret_polynomial_to_rns;
 use crate::{
@@ -158,8 +159,9 @@ where
     assert_eq!(sk.glwe_size(), params.size().rns_glwe_size().glwe_size());
 
     let mut key = vec![T::ZERO; params.dimension() * dcrt_glev_len];
-    let mut auto_si: CrtPolynomial<Vec<T>> = CrtPolynomial::zero(rns_poly_len);
-    let mut auto_signed = vec![T::SignedInteger::ZERO; poly_length];
+    let mut auto_buffer = Zeroizing::new(vec![T::ZERO; rns_poly_len]);
+    let mut auto_si = CrtPolynomial(auto_buffer.as_mut_slice());
+    let mut auto_signed = Zeroizing::new(vec![T::SignedInteger::ZERO; poly_length]);
 
     let key_iter = DcrtGlevIterMut::new(key.as_mut_slice(), dcrt_glev_len);
 

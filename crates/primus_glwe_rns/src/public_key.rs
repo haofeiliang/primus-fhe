@@ -81,6 +81,11 @@ impl<T: FheUint> DcrtGlwePublicKey<T> {
     /// plaintext lifts reduced into each `[0, q_i)` in coefficient-domain CRT
     /// layout and applies `floor(Q/t)` scaling. Passing the already-scaled output
     /// of [`crate::BfvRnsCodec::encode_coeffs_to`] would apply the scale twice.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `message` does not contain exactly `params.rns_poly_len()`
+    /// coefficients. This is checked before consuming randomness.
     pub fn encrypt<R, M, Table, A>(
         &self,
         message: &CrtPolynomial<A>,
@@ -98,6 +103,11 @@ impl<T: FheUint> DcrtGlwePublicKey<T> {
         let poly_length = params.poly_length();
         let rns_poly_len = params.rns_poly_len();
         let dcrt_glwe_len = params.rns_glwe_len();
+        assert_eq!(
+            message.as_ref().len(),
+            rns_poly_len,
+            "CRT plaintext length must match the RNS polynomial layout"
+        );
 
         let moduli = params.cipher_moduli();
 

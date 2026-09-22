@@ -28,6 +28,7 @@ use primus_modulus::PowOf2Modulus;
 use primus_ntt::{NttTable, ReverseLsbs};
 use primus_poly::DcrtPolynomial;
 use primus_reduce::{FieldContext, ReduceMul};
+use zeroize::Zeroizing;
 
 use crate::{CrtGlweAutoContext, DcrtGadgetDomain, DcrtGlweCiphertext, DcrtGlweSecretKey};
 
@@ -172,7 +173,8 @@ where
     let dcrt_glev_len = params.rns_glev_len();
 
     let mut key = vec![T::ZERO; params.dimension() * dcrt_glev_len];
-    let mut auto_si: DcrtPolynomial<Vec<T>> = DcrtPolynomial::zero(rns_poly_len);
+    let mut auto_buffer = Zeroizing::new(vec![T::ZERO; rns_poly_len]);
+    let mut auto_si = DcrtPolynomial(auto_buffer.as_mut_slice());
 
     let key_iter = DcrtGlevIterMut::new(key.as_mut_slice(), dcrt_glev_len);
 

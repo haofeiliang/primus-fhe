@@ -43,6 +43,12 @@ where
     /// Creates a new [`CrtGlweParameters<T, M>`].
     /// Secret-key sampling must satisfy [`SecretKeySampler::new`]'s validity
     /// rules and its support must fit below every ciphertext modulus.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the RNS base, codec, GLWE layout, or sampling parameters are
+    /// invalid, or if the secret-key or noise magnitude bound is not strictly
+    /// less than every ciphertext modulus.
     pub fn new(
         dimension: usize,
         poly_length: usize,
@@ -77,6 +83,13 @@ where
             .collect();
 
         let noise_distribution = SignedDiscreteGaussian::new(noise_standard_deviation).unwrap();
+        assert!(
+            cipher_moduli_value.iter().all(|&q| {
+                let q: u128 = q.as_into();
+                u128::from(noise_distribution.maximum_magnitude()) < q
+            }),
+            "noise magnitude bound must be less than every ciphertext modulus"
+        );
 
         let size = RnsGlweSize::new(GlweSize::new(dimension, poly_length), cipher_moduli.len());
 
