@@ -76,8 +76,8 @@ pub use key::BootstrappingKey;
 #[doc(inline)]
 pub use key::{KeyGenerator, ServerKey};
 pub use primus_tfhe::{
-    BivariateLookupTable, CircuitBootstrapConfig, DecompositionConfig, FactorizedLookupTable,
-    InterleavedLookupTable, LookupTable, LweCiphertext, LweSecretKeyRef,
+    BivariateLookupTable, CircuitBootstrapConfig, ClientError, DecompositionConfig,
+    FactorizedLookupTable, InterleavedLookupTable, LookupTable, LweCiphertext, LweSecretKeyRef,
 };
 pub use primus_tfhe_glwe::{ClientKey, EncryptionKey, PbsOrder};
 #[doc(no_inline)]
@@ -89,8 +89,8 @@ pub use boolean::{
 
 /// Encryptor role for the explicit-modulus NTT backend.
 ///
-/// Accepts the client secret key or an external LWE public key.
-pub type Encryptor<'a, T, Key = ClientKey<T>> =
+/// Borrows an external LWE secret or public key selected by the context.
+pub type Encryptor<'a, T, Key = LweSecretKeyRef<'a, T>> =
     primus_tfhe_glwe::Encryptor<'a, T, BarrettModulus<T>, Key>;
 
 /// Client-key decryptor for the explicit-modulus NTT backend.

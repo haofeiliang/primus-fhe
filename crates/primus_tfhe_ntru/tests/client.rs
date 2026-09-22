@@ -4,8 +4,8 @@ use primus_ntru::{NlevParameters, NtruParameters, NtruSecretKey, SecretKeyDistr}
 use primus_reduce::RingContext;
 use primus_test_allocations as allocations;
 use primus_tfhe_ntru::{
-    BooleanDecryptor, BooleanEncryptor, BooleanError, ClientKey, Decryptor, EncryptionKey,
-    Encryptor, TfheClientError, TfheKeyError, TfheParameters,
+    BooleanDecryptor, BooleanEncryptor, BooleanError, ClientError, ClientKey, EncryptionKey,
+    Encryptor, TfheKeyError, TfheParameters,
 };
 use rand::{Rng, SeedableRng, rngs::StdRng};
 
@@ -40,8 +40,50 @@ fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
     let mut rng = StdRng::seed_from_u64(0x4e54_5255_504b);
     let public = client.try_generate_public_key(&params, &mut rng).unwrap();
     assert_eq!(public.dimension(), 4); // Active prefix, not the full ring length.
-    check_reused_output(&params, &client, &public);
-    check_reused_output(&params, &client, &client);
+    // The external prefix uses its own LWE noise, not the accumulator's noise.
+    let lwe = params.external_lwe();
+    let encoded = params
+        .input_plaintext_codec()
+        .encode_value(1, primus_encoding::PlaintextEmbedding::Unsigned);
+    let seed = rng.next_u64();
+    let mut rng = StdRng::seed_from_u64(seed);
+    let mut reference_rng = StdRng::seed_from_u64(seed);
+    let expected = client.external_lwe_secret_key().encrypt_encoded(
+        encoded,
+        modulus,
+        lwe.cipher_modulus_uniform_distr(),
+        lwe.noise_distribution(),
+        &mut reference_rng,
+    );
+    assert_eq!(
+        params
+            .encryptor(&client)
+            .unwrap()
+            .encrypt(1, &mut rng)
+            .unwrap(),
+        expected
+    );
+    assert_eq!(rng.next_u64(), reference_rng.next_u64());
+    let seed = rng.next_u64();
+    let mut rng = StdRng::seed_from_u64(seed);
+    let mut reference_rng = StdRng::seed_from_u64(seed);
+    let expected = public.encrypt_encoded(
+        encoded,
+        modulus,
+        lwe.noise_distribution(),
+        &mut reference_rng,
+    );
+    assert_eq!(
+        params
+            .public_encryptor(&public)
+            .unwrap()
+            .encrypt(1, &mut rng)
+            .unwrap(),
+        expected
+    );
+    assert_eq!(rng.next_u64(), reference_rng.next_u64());
+    check_reused_output(&params, &client, params.public_encryptor(&public).unwrap());
+    check_reused_output(&params, &client, params.encryptor(&client).unwrap());
     check_boolean_errors(&params, &client);
 
     let foreign_params = LweParameters::new(
@@ -54,15 +96,15 @@ fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
     let foreign_secret = LweSecretKey::generate(&foreign_params, &mut rng);
     let foreign = LwePublicKey::generate(foreign_secret.as_view(), &foreign_params, &mut rng);
     assert_eq!(
-        Encryptor::try_new(&params, &foreign).err(),
-        Some(TfheClientError::PublicKeyModulusMismatch)
+        params.public_encryptor(&foreign).err(),
+        Some(ClientError::PublicKeyModulusMismatch)
     );
     let full_params = LweParameters::new(8, 4, modulus, SecretKeyDistr::UniformBinary, 0.7);
     let full_secret = LweSecretKey::generate(&full_params, &mut rng);
     let full = LwePublicKey::generate(full_secret.as_view(), &full_params, &mut rng);
     assert_eq!(
-        Encryptor::try_new(&params, &full).err(),
-        Some(TfheClientError::PublicKeyDimensionMismatch {
+        params.public_encryptor(&full).err(),
+        Some(ClientError::KeyDimensionMismatch {
             expected: 4,
             actual: 8
         })
@@ -88,18 +130,18 @@ fn check_boolean_errors<M: RingContext<u32>>(
 ) {
     if parameters.plain_modulus_value() != 4 {
         assert_eq!(
-            BooleanEncryptor::try_new(parameters, client).err(),
+            BooleanEncryptor::try_new(parameters.encryptor(client).unwrap()).err(),
             Some(BooleanError::PlaintextModulusMustBeFour)
         );
         assert_eq!(
-            BooleanDecryptor::try_new(parameters, client).err(),
+            BooleanDecryptor::try_new(parameters.decryptor(client).unwrap()).err(),
             Some(BooleanError::PlaintextModulusMustBeFour)
         );
         return;
     }
-    let encryptor = BooleanEncryptor::try_new(parameters, client).unwrap();
-    let decryptor = BooleanDecryptor::try_new(parameters, client).unwrap();
-    let raw_encryptor = Encryptor::try_new(parameters, client).unwrap();
+    let encryptor = BooleanEncryptor::try_new(parameters.encryptor(client).unwrap()).unwrap();
+    let decryptor = BooleanDecryptor::try_new(parameters.decryptor(client).unwrap()).unwrap();
+    let raw_encryptor = parameters.encryptor(client).unwrap();
     let mut rng = StdRng::seed_from_u64(0xB202);
     for message in [2, 3] {
         let invalid = raw_encryptor.encrypt(message, &mut rng).unwrap();
@@ -114,7 +156,7 @@ fn check_boolean_errors<M: RingContext<u32>>(
     let seed = rng.next_u64();
     let mut rng = StdRng::seed_from_u64(seed);
     let mut expected_rng = StdRng::seed_from_u64(seed);
-    let error = BooleanError::Client(TfheClientError::CiphertextDimensionMismatch {
+    let error = BooleanError::Client(ClientError::CiphertextDimensionMismatch {
         expected: dimension,
         actual: dimension - 1,
     });
@@ -145,13 +187,12 @@ enum Encoding {
 fn check_reused_output<M, Key>(
     parameters: &TfheParameters<u32, M>,
     client: &ClientKey<u32>,
-    key: &Key,
+    encryptor: Encryptor<'_, u32, M, Key>,
 ) where
     M: RingContext<u32>,
     Key: EncryptionKey<u32, M>,
 {
-    let encryptor = Encryptor::try_new(parameters, key).unwrap();
-    let decryptor = Decryptor::try_new(parameters, client).unwrap();
+    let decryptor = parameters.decryptor(client).unwrap();
     let dimension = parameters.external_lwe_dimension();
     let t = parameters.plain_modulus_value();
     let mut rng = StdRng::seed_from_u64(0x434c_4945_4e54);
@@ -176,7 +217,16 @@ fn check_reused_output<M, Key>(
         // Compare identical randomness across the small domain, including the
         // centered sign boundary, then overwrite the last ciphertext with zero.
         for message in (0..limit).chain([0]) {
-            let expected = encrypt(message, &mut expected_rng).unwrap();
+            let (expected, allocation) =
+                allocations::measure(|| encrypt(message, &mut expected_rng).unwrap());
+            assert_eq!(
+                allocation.count, 1,
+                "only the ciphertext should be allocated"
+            );
+            assert_eq!(
+                allocation.allocated_bytes,
+                (dimension + 1) * size_of::<u32>()
+            );
             let (result, allocation) =
                 allocations::measure(|| encrypt_to(message, &mut output, &mut rng));
             result.unwrap();
@@ -186,8 +236,8 @@ fn check_reused_output<M, Key>(
             assert_eq!(decryptor.decrypt(&output).unwrap(), message);
         }
         let padded_error = matches!(encoding, Encoding::Padded)
-            .then_some((limit, TfheClientError::MessageOutsidePaddedDomain));
-        for (message, error) in [(t, TfheClientError::MessageOutOfRange)]
+            .then_some((limit, ClientError::MessageOutsidePaddedDomain));
+        for (message, error) in [(t, ClientError::MessageOutOfRange)]
             .into_iter()
             .chain(padded_error)
         {
@@ -202,7 +252,7 @@ fn check_reused_output<M, Key>(
             let before = wrong.clone();
             assert_eq!(
                 encrypt_to(0, &mut wrong, &mut rng),
-                Err(TfheClientError::CiphertextDimensionMismatch {
+                Err(ClientError::CiphertextDimensionMismatch {
                     expected: dimension,
                     actual
                 })

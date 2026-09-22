@@ -1,36 +1,21 @@
-use crate::{
-    BooleanError, ClientKey, Decryptor, EncryptionKey, Encryptor, LweCiphertext, TfheParameters,
-};
+use super::{BooleanError, Decryptor, EncryptionKey, Encryptor};
 use primus_integer::FheUint;
+use primus_lwe::{LweCiphertext, LweSecretKeyRef};
 use primus_reduce::RingContext;
 
 /// Encrypts Boolean values under the standard 0/1 encoding modulo 4.
-/// Accepts a client secret key or LWE public key; public-key noise and identity
+/// Wraps an LWE secret-key or public-key encryptor; public-key noise and identity
 /// requirements follow [`EncryptionKey`].
-pub struct BooleanEncryptor<'a, T, M, Key = ClientKey<T>>
-where
-    T: FheUint,
-    M: RingContext<T>,
-{
+pub struct BooleanEncryptor<'a, T: FheUint, M: RingContext<T>, Key = LweSecretKeyRef<'a, T>> {
     inner: Encryptor<'a, T, M, Key>,
 }
 
-impl<'a, T, M, Key> BooleanEncryptor<'a, T, M, Key>
-where
-    T: FheUint,
-    M: RingContext<T>,
-    Key: EncryptionKey<T, M>,
-{
+impl<'a, T: FheUint, M: RingContext<T>, Key: EncryptionKey<T, M>> BooleanEncryptor<'a, T, M, Key> {
     /// Creates a Boolean encryptor and validates the required plaintext
     /// modulus.
-    pub fn try_new(
-        parameters: &'a TfheParameters<T, M>,
-        key: &'a Key,
-    ) -> Result<Self, BooleanError> {
-        validate_boolean_parameters(parameters)?;
-        Ok(Self {
-            inner: Encryptor::try_new(parameters, key)?,
-        })
+    pub fn try_new(inner: Encryptor<'a, T, M, Key>) -> Result<Self, BooleanError> {
+        validate_boolean_modulus(inner.parameters.codec.plaintext_modulus())?;
+        Ok(Self { inner })
     }
 
     /// Encrypts one Boolean value.
@@ -59,29 +44,16 @@ where
 }
 
 /// Decrypts ciphertexts using the standard 0/1 Boolean encoding.
-pub struct BooleanDecryptor<'a, T, M>
-where
-    T: FheUint,
-    M: RingContext<T>,
-{
+pub struct BooleanDecryptor<'a, T: FheUint, M: RingContext<T>> {
     inner: Decryptor<'a, T, M>,
 }
 
-impl<'a, T, M> BooleanDecryptor<'a, T, M>
-where
-    T: FheUint,
-    M: RingContext<T>,
-{
+impl<'a, T: FheUint, M: RingContext<T>> BooleanDecryptor<'a, T, M> {
     /// Creates a Boolean decryptor and validates the required plaintext
     /// modulus.
-    pub fn try_new(
-        parameters: &'a TfheParameters<T, M>,
-        key: &'a ClientKey<T>,
-    ) -> Result<Self, BooleanError> {
-        validate_boolean_parameters(parameters)?;
-        Ok(Self {
-            inner: Decryptor::try_new(parameters, key)?,
-        })
+    pub fn try_new(inner: Decryptor<'a, T, M>) -> Result<Self, BooleanError> {
+        validate_boolean_modulus(inner.codec.plaintext_modulus())?;
+        Ok(Self { inner })
     }
 
     /// Decrypts one Boolean ciphertext.
@@ -101,10 +73,8 @@ where
     }
 }
 
-fn validate_boolean_parameters<T: FheUint, M: RingContext<T>>(
-    parameters: &TfheParameters<T, M>,
-) -> Result<(), BooleanError> {
-    if parameters.plain_modulus_value() == T::ONE << primus_tfhe::BOOLEAN_PLAINTEXT_BITS {
+fn validate_boolean_modulus<T: FheUint>(modulus: T) -> Result<(), BooleanError> {
+    if modulus == T::ONE << crate::BOOLEAN_PLAINTEXT_BITS {
         Ok(())
     } else {
         Err(BooleanError::PlaintextModulusMustBeFour)

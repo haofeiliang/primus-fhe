@@ -2,7 +2,7 @@ use primus_encoding::ScaledCodec;
 use primus_fft::{FftEngine, FftTable, TorusFftValue};
 use primus_glwe::GlweCiphertext;
 use primus_reduce::RingContext;
-use primus_tfhe_glwe::{ClientKey, EncryptionKey};
+use primus_tfhe_glwe::{ClientError, ClientKey, LwePublicKey};
 
 use crate::{
     BooleanDecryptor, BooleanEncryptor, BooleanError, BooleanEvaluator, CircuitBootstrapConfig,
@@ -135,24 +135,29 @@ where
         CircuitBootstrapEvaluator::try_new(self, server_key)
     }
 
-    /// Creates a secret-key or public-key encryptor after checking compatibility.
-    /// Public-key contracts follow [`EncryptionKey`].
-    pub fn encryptor<'a, Key>(
+    /// Creates an encryptor after checking the family client key.
+    pub fn encryptor<'a>(
         &'a self,
-        key: &'a Key,
-    ) -> Result<Encryptor<'a, T, Key>, TfheClientError>
-    where
-        Key: EncryptionKey<T, primus_modulus::NativeModulus<T>>,
-    {
-        Encryptor::try_new(&self.parameters, key)
+        client_key: &'a ClientKey<T>,
+    ) -> Result<Encryptor<'a, T>, TfheClientError> {
+        self.parameters.encryptor(client_key)
     }
 
-    /// Creates a decryptor after checking the client key once.
+    /// Checks an external LWE public key and creates its encryptor.
+    /// Key identity and noise requirements follow [`primus_tfhe::EncryptionKey`].
+    pub fn public_encryptor<'a>(
+        &'a self,
+        public_key: &'a LwePublicKey<T>,
+    ) -> Result<Encryptor<'a, T, &'a LwePublicKey<T>>, ClientError> {
+        self.parameters.public_encryptor(public_key)
+    }
+
+    /// Creates a decryptor after checking the family client key.
     pub fn decryptor<'a>(
         &'a self,
         client_key: &'a ClientKey<T>,
     ) -> Result<Decryptor<'a, T>, TfheClientError> {
-        Decryptor::try_new(&self.parameters, client_key)
+        self.parameters.decryptor(client_key)
     }
 
     /// Creates a programmable-bootstrap evaluator with reusable FFT workspace.
@@ -212,24 +217,29 @@ where
         Ok(FourierFactorizedLookupTable::new(self, lookup_table))
     }
 
-    /// Creates a Boolean encryptor for a secret or public key, requiring `t = 4`.
-    /// Public-key contracts follow [`EncryptionKey`].
-    pub fn boolean_encryptor<'a, Key>(
+    /// Creates a secret-key Boolean encryptor, requiring `t = 4`.
+    pub fn boolean_encryptor<'a>(
         &'a self,
-        key: &'a Key,
-    ) -> Result<BooleanEncryptor<'a, T, Key>, BooleanError>
-    where
-        Key: EncryptionKey<T, primus_modulus::NativeModulus<T>>,
-    {
-        BooleanEncryptor::try_new(&self.parameters, key)
+        client_key: &'a ClientKey<T>,
+    ) -> Result<BooleanEncryptor<'a, T>, TfheClientError> {
+        Ok(BooleanEncryptor::try_new(self.encryptor(client_key)?)?)
     }
 
-    /// Creates a Boolean decryptor after checking `t = 4` and the client key.
+    /// Creates a public-key Boolean encryptor, requiring `t = 4`.
+    /// Inherits [`Self::public_encryptor`]'s key identity and noise requirements.
+    pub fn boolean_public_encryptor<'a>(
+        &'a self,
+        public_key: &'a LwePublicKey<T>,
+    ) -> Result<BooleanEncryptor<'a, T, &'a LwePublicKey<T>>, BooleanError> {
+        BooleanEncryptor::try_new(self.public_encryptor(public_key)?)
+    }
+
+    /// Creates a Boolean decryptor after checking the client key and `t = 4`.
     pub fn boolean_decryptor<'a>(
         &'a self,
         client_key: &'a ClientKey<T>,
-    ) -> Result<BooleanDecryptor<'a, T>, BooleanError> {
-        BooleanDecryptor::try_new(&self.parameters, client_key)
+    ) -> Result<BooleanDecryptor<'a, T>, TfheClientError> {
+        Ok(BooleanDecryptor::try_new(self.decryptor(client_key)?)?)
     }
 
     /// Creates a Boolean evaluator with this context's PBS, gate LUTs and workspace.

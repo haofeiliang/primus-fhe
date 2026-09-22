@@ -8,7 +8,7 @@ pub use crate::error::BooleanError;
 pub use primus_tfhe::BooleanGate;
 
 /// Boolean encryptor for the explicit-modulus NTT backend.
-pub type BooleanEncryptor<'a, T, Key = crate::ClientKey<T>> =
+pub type BooleanEncryptor<'a, T, Key = crate::LweSecretKeyRef<'a, T>> =
     primus_tfhe_ntru::BooleanEncryptor<'a, T, BarrettModulus<T>, Key>;
 
 /// Boolean decryptor for the explicit-modulus NTT backend.

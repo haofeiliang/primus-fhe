@@ -5,7 +5,7 @@ English | [简体中文](README.zh_CN.md)
 > [!WARNING]
 > This crate is part of the experimental [Primus FHE](../../README.md) workspace. Its API and numerical contracts are unstable and may change incompatibly at any time.
 
-Shared LUT compilation, encoding metadata, PBS traits and Boolean gate evaluation for the GLWE and NTRU families. Boolean evaluators own gate LUTs and LWE workspace; client keys, transform tables and ring evaluation workspace remain in their owning layers. Start with a backend example below for an end-to-end workflow.
+Shared external LWE clients, LUT compilation, encoding metadata, PBS traits and Boolean gate evaluation for the GLWE and NTRU families. Boolean evaluators own gate LUTs and LWE workspace; client keys, transform tables and ring evaluation workspace remain in their owning layers. Start with a backend example below for an end-to-end workflow.
 
 ## Choosing an operation
 
@@ -40,6 +40,8 @@ NTRU [NTT](../primus_tfhe_ntru_ntt/README.md#experimental-sparse-pbs) and [Fouri
 
 ## Client and server roles
 
+`Encryptor`, `Decryptor` and their Boolean wrappers share encoding, range checks and allocation-free `*_to` operations. `LweClientParameters` is a concrete borrowed view of the external dimension, rounded codec and prepared samplers. Family constructors validate their keys and select the active LWE secret and noise once. The shared layer accepts `LweSecretKeyRef` or `&LwePublicKey`; its only client trait, `EncryptionKey<T, M>`, selects the encryption kernel without family parameter or error types. Raw operations return `ClientError`; Boolean operations return `BooleanError`.
+
 The client generates paired keys, keeps `ClientKey` and encryption/decryption helpers, and gives `ServerKey` to the server. The server needs only public context, evaluation keys, LUTs/programs and input ciphertexts; it returns encrypted results to the client. Examples show these stages in one process, with parameter construction kept separate. Input and output encodings are public agreements between the two sides.
 
 Ordinary buffer allocation needs no secret: all four backends provide `context.allocate_lwe_ciphertext()` for the external LWE mask/body and `context.allocate_accumulator_ciphertext()` for coefficient-domain GLWE/NTRU storage. Both allocate zeros without encrypting. CBS controls also depend on output decomposition and transform representation, so use `cbs.allocate_output()`. Each side prepares and reuses its own workspace and result buffers.
@@ -52,8 +54,9 @@ Errors are named by operation and re-exported at crate roots. Handle the error t
 | --- | --- |
 | LUT compilation / ordinary, Boolean or CBS evaluator binding | Shared `LookupTableError` / `TfheEvaluationError` |
 | TFHE / CBS parameter preparation | Family `TfheParameterError` / `CircuitBootstrapParameterError` |
-| Client-key compatibility / client operations | Family `TfheKeyError` / `TfheClientError` |
-| Boolean client construction, encryption and decryption | Family `BooleanError`; `Client` retains underlying client failures |
+| Family client construction | Family `TfheClientError`; `IncompatibleKey` retains `TfheKeyError` |
+| Shared LWE construction and operations | `ClientError` |
+| Shared Boolean construction and operations | `BooleanError`; `Client` wraps `ClientError`. Family secret-key factories wrap construction failures in `TfheClientError` |
 | Ordinary/sparse server, sparse BSK, or standalone CBS key generation | Family `KeyGenerationError`; NTRU sampling/conversion enters `Ntru` directly; sparse failures enter `SparseBootstrapping` |
 | NTRU accumulator client construction | Family `TfheClientError`; `Ntru` retains secret-conversion failures |
 | Automatic table creation or explicit table binding | Backend `TfheContextError`; `TransformTable` retains the underlying FFT/NTT error |
@@ -62,7 +65,7 @@ Errors are named by operation and re-exported at crate roots. Handle the error t
 
 ## Boolean gates
 
-For parameters with `t=4`, all four contexts provide `boolean_encryptor(key)`, `boolean_decryptor(client)` and `boolean_evaluator(server)`. The encryptor accepts private or LWE public keys; the decryptor requires the client secret. They use raw `LweCiphertext<T>` with unsigned rounded 0/1 encoding and reject non-Boolean decoded values. Boolean evaluation uses ordinary PBS keys, without CBS material.
+For parameters with `t=4`, all four contexts provide `boolean_encryptor(client)`, `boolean_public_encryptor(public)`, `boolean_decryptor(client)` and `boolean_evaluator(server)`. They use raw `LweCiphertext<T>` with unsigned rounded 0/1 encoding and reject non-Boolean decoded values. Direct Boolean construction wraps a prepared client with `BooleanEncryptor::try_new(encryptor)` or `BooleanDecryptor::try_new(decryptor)`. Boolean evaluation uses ordinary PBS keys, without CBS material.
 
 ```rust,ignore
 let encryptor = context.boolean_encryptor(&client)?;

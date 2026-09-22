@@ -1,9 +1,7 @@
 use primus_lwe::LweParameters;
 use primus_modulus::NativeModulus;
 use primus_ntru::{NlevParameters, NtruParameters, NtruSecretKey, SecretKeyDistr};
-use primus_tfhe_ntru::{
-    ClientKey, Decryptor, Encryptor, TfheClientError, TfheKeyError, TfheParameters,
-};
+use primus_tfhe_ntru::{ClientKey, TfheClientError, TfheKeyError, TfheParameters};
 
 const N: usize = 8;
 const LWE_DIMENSION: usize = 4;
@@ -41,8 +39,8 @@ fn imported_client_coefficients_must_match_the_control_domain_and_padding() {
         let parameters = parameters(distr);
         let binary = imported_key([1, 0, 1, 1, 0, 0, 0, 0], distr);
         assert_eq!(binary.check_compatible(&parameters), Ok(()));
-        assert!(Encryptor::try_new(&parameters, &binary).is_ok());
-        assert!(Decryptor::try_new(&parameters, &binary).is_ok());
+        assert!(parameters.encryptor(&binary).is_ok());
+        assert!(parameters.decryptor(&binary).is_ok());
 
         // f = 2 + X is invertible over the native ring (f(1) is odd), but its
         // distribution label cannot make it a valid blind-rotation control.
@@ -63,11 +61,11 @@ fn imported_client_coefficients_must_match_the_control_domain_and_padding() {
             let key = imported_key(coefficients, distr);
             assert_eq!(key.check_compatible(&parameters), Err(expected.clone()));
             assert_eq!(
-                Encryptor::try_new(&parameters, &key).err(),
+                parameters.encryptor(&key).err(),
                 Some(TfheClientError::IncompatibleKey(expected.clone()))
             );
             assert_eq!(
-                Decryptor::try_new(&parameters, &key).err(),
+                parameters.decryptor(&key).err(),
                 Some(TfheClientError::IncompatibleKey(expected))
             );
         }

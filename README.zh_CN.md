@@ -48,7 +48,7 @@ cargo run -p primus_tfhe_ntru_fourier --release --example ntru_fourier_basic
 | 采样与编码 | [primus_distr](crates/primus_distr/README.zh_CN.md)：私钥/噪声分布；[primus_encoding](crates/primus_encoding/README.zh_CN.md)：Rounded、Scaled 和 BFV RNS 系数编码 |
 | 密文表示 | [primus_lattice](crates/primus_lattice/README.zh_CN.md)：存储、算术、提取、gadget 乘法、CMUX 和可复用工作区 |
 | 加密与求值 | [primus_lwe](crates/primus_lwe/README.zh_CN.md)、[primus_glwe](crates/primus_glwe/README.zh_CN.md)、[primus_ntru](crates/primus_ntru/README.zh_CN.md)：密钥与方案原语；[primus_glwe_rns](crates/primus_glwe_rns/src/lib.rs)：CRT/DCRT GLWE 和 hybrid-RNS 密钥切换 |
-| TFHE | [primus_tfhe](crates/primus_tfhe/README.zh_CN.md)：共享 LUT、PBS trait 和 Boolean 求值；上方两个家族 crate 与四个后端负责绑定参数、密钥和执行过程 |
+| TFHE | [primus_tfhe](crates/primus_tfhe/README.zh_CN.md)：共享外部 LWE 客户端、LUT、PBS trait 和 Boolean 求值；上方两个家族 crate 与四个后端负责绑定参数、密钥和执行过程 |
 
 RNS 与编码组件提供基础能力，目前没有完整的 BFV、BGV 或 CKKS 应用后端。`test-support/` 保存开发阶段共享的测试 fixture 和分配计数工具。数学契约由 rustdoc 说明；跨层 TFHE 实现依据及保留的性能取舍见[实现说明](crates/primus_tfhe/IMPLEMENTATION.md)。
 

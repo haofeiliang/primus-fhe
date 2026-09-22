@@ -2,7 +2,7 @@ use primus_encoding::RoundedCodec;
 use primus_lwe::LweParameters;
 use primus_modulus::NativeModulus;
 use primus_ntru::{NlevParameters, NtruParameters, NtruSecretKey, SecretKeyDistr};
-use primus_tfhe_ntru::{ClientKey, Decryptor, Encryptor, TfheClientError, TfheParameters};
+use primus_tfhe_ntru::{ClientError, ClientKey, TfheParameters};
 
 const N: usize = 8;
 const LWE_DIMENSION: usize = 4;
@@ -43,8 +43,8 @@ fn padded_inputs_and_lut_output_codecs_use_independent_domains() {
     let key = imported_key([1, 0, 1, 1, 0, 0, 0, 0]);
     for t in [3u32, 4, 5] {
         let parameters = parameters_with_plaintext(t);
-        let encryptor = Encryptor::try_new(&parameters, &key).unwrap();
-        let decryptor = Decryptor::try_new(&parameters, &key).unwrap();
+        let encryptor = parameters.encryptor(&key).unwrap();
+        let decryptor = parameters.decryptor(&key).unwrap();
         let domain_len = t.div_ceil(2);
         let default = parameters
             .compile_lookup_table_slice(&vec![t - 1; domain_len as usize])
@@ -59,7 +59,7 @@ fn padded_inputs_and_lut_output_codecs_use_independent_domains() {
         assert_eq!(decryptor.decrypt(&input).unwrap(), domain_len - 1);
         assert_eq!(
             encryptor.encrypt_padded(domain_len, &mut rng).unwrap_err(),
-            TfheClientError::MessageOutsidePaddedDomain
+            ClientError::MessageOutsidePaddedDomain
         );
         let output_codec = RoundedCodec::new(8, NativeModulus::new());
         let values: Vec<_> = (0..domain_len).map(|m| 7 - m).collect();

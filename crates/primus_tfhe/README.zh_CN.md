@@ -5,7 +5,7 @@
 > [!WARNING]
 > 本 crate 属于实验性的 [Primus FHE](../../README.zh_CN.md) workspace。其 API 和数值契约尚不稳定，可能随时发生不兼容修改。
 
-公共 LUT 编译、编码元数据、PBS trait 及 Boolean 门求值层，供 GLWE 和 NTRU 两族复用。 Boolean evaluator 持有门 LUT 与 LWE 工作区；客户端密钥、变换 table 和环求值工作区仍由各自层管理。 完整使用流程从下面的后端示例开始。
+公共外部 LWE 客户端、LUT 编译、编码元数据、PBS trait 及 Boolean 门求值层，供 GLWE 和 NTRU 两族复用。 Boolean evaluator 持有门 LUT 与 LWE 工作区；客户端密钥、变换 table 和环求值工作区仍由各自层管理。 完整使用流程从下面的后端示例开始。
 
 ## 选择同态操作
 
@@ -40,6 +40,8 @@ NTRU [NTT](../primus_tfhe_ntru_ntt/README.zh_CN.md#实验性稀疏-pbs) 和 [Fou
 
 ## 客户端与服务端边界
 
+`Encryptor`、`Decryptor` 及其 Boolean 包装共享编码、范围检查和无分配的 `*_to` 操作。`LweClientParameters` 是具体的借用视图，保存外部维数、Rounded codec 和已准备的采样器。家族构造入口先验证密钥，再一次性选定有效 LWE 秘密和噪声。公共层接收 `LweSecretKeyRef` 或 `&LwePublicKey`；唯一的客户端 trait `EncryptionKey<T, M>` 只分派加密实现，不关联家族参数或错误类型。普通操作返回 `ClientError`，Boolean 操作返回 `BooleanError`。
+
 客户端生成配套密钥，保留 `ClientKey` 和加解密器，将 `ServerKey` 提供给服务端。 服务端只需公开 context、求值密钥、LUT/程序和输入密文；计算后将密文结果返回客户端。 示例在同一进程展示这些阶段，参数构造单独放置。输入和输出编码是双方约定的公开信息。
 
 普通缓冲分配不依赖私钥：四个后端的 `context.allocate_lwe_ciphertext()` 按外部 LWE 维度分配 mask/body；`context.allocate_accumulator_ciphertext()` 按累加器布局分配系数域 GLWE/NTRU。两者只分配零存储，不执行加密。CBS 控制的布局还依赖输出分解和变换表示， 因此使用 `cbs.allocate_output()`。工作区和结果缓冲在各自一端创建一次并复用。
@@ -52,8 +54,9 @@ NTRU [NTT](../primus_tfhe_ntru_ntt/README.zh_CN.md#实验性稀疏-pbs) 和 [Fou
 | --- | --- |
 | LUT 编译 / 普通、Boolean 或 CBS evaluator 绑定 | 公共 `LookupTableError` / `TfheEvaluationError` |
 | TFHE / CBS 参数准备 | Family `TfheParameterError` / `CircuitBootstrapParameterError` |
-| Client key 兼容性 / 客户端操作 | Family `TfheKeyError` / `TfheClientError` |
-| Boolean 客户端构造、加密和解密 | Family `BooleanError`；`Client` 分支保留底层客户端错误 |
+| 家族客户端构造 | Family `TfheClientError`；`IncompatibleKey` 保留 `TfheKeyError` |
+| 公共 LWE 客户端构造与操作 | `ClientError` |
+| 公共 Boolean 构造与操作 | `BooleanError`；`Client` 包装 `ClientError`。家族私钥工厂将构造失败包装为 `TfheClientError` |
 | 常规/稀疏 server、稀疏 BSK 或独立 CBS 密钥生成 | Family `KeyGenerationError`；NTRU 采样/变换直接进入 `Ntru` 分支；稀疏失败进入 `SparseBootstrapping` |
 | NTRU accumulator 客户端构造 | Family `TfheClientError`；`Ntru` 分支保留秘密转换失败 |
 | 自动建表或显式绑定表 | 后端 `TfheContextError`；`TransformTable` 保留底层 FFT/NTT 错误 |
@@ -62,7 +65,7 @@ NTRU [NTT](../primus_tfhe_ntru_ntt/README.zh_CN.md#实验性稀疏-pbs) 和 [Fou
 
 ## Boolean 门
 
-参数采用 `t=4` 时，四后端 context 均提供 `boolean_encryptor(key)`、 `boolean_decryptor(client)` 和 `boolean_evaluator(server)`。加密器接受私钥或 LWE 公钥， 解密器需要 client secret；直接使用 unsigned rounded `0/1` 编码的 `LweCiphertext<T>`， 解密拒绝非 Boolean 值。门求值使用普通 PBS 密钥，无需 CBS 材料。
+参数采用 `t=4` 时，四后端 context 均提供 `boolean_encryptor(client)`、`boolean_public_encryptor(public)`、`boolean_decryptor(client)` 和 `boolean_evaluator(server)`。客户端使用 unsigned rounded `0/1` 编码的 `LweCiphertext<T>`，解密拒绝非 Boolean 值。直接构造时，将已有客户端传给 `BooleanEncryptor::try_new(encryptor)` 或 `BooleanDecryptor::try_new(decryptor)`。门求值使用普通 PBS 密钥，无需 CBS 材料。
 
 ```rust,ignore
 let encryptor = context.boolean_encryptor(&client)?;

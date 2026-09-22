@@ -70,8 +70,8 @@ pub use key::{KeyGenerator, ServerKey};
 pub use sparse::SparseNtruBootstrappingKey;
 
 pub use primus_tfhe::{
-    BivariateLookupTable, CircuitBootstrapConfig, DecompositionConfig, FactorizedLookupTable,
-    InterleavedLookupTable, LookupTable, LweCiphertext, LweSecretKeyRef,
+    BivariateLookupTable, CircuitBootstrapConfig, ClientError, DecompositionConfig,
+    FactorizedLookupTable, InterleavedLookupTable, LookupTable, LweCiphertext, LweSecretKeyRef,
 };
 pub use primus_tfhe_ntru::{ClientKey, EncryptionKey, LwePublicKey};
 
@@ -81,7 +81,7 @@ pub use circuit_bootstrap::CircuitBootstrapKey;
 pub use circuit_bootstrap::{CircuitBootstrapEvaluator, CircuitBootstrapParameters};
 
 /// Secret-key or LWE public-key encryptor for the Fourier NTRU backend.
-pub type Encryptor<'a, T, Key = ClientKey<T>> =
+pub type Encryptor<'a, T, Key = LweSecretKeyRef<'a, T>> =
     primus_tfhe_ntru::Encryptor<'a, T, NativeModulus<T>, Key>;
 
 /// Client-key decryptor for the Fourier NTRU backend.

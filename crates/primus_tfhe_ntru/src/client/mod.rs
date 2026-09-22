@@ -1,248 +1,50 @@
-mod encryption_key;
-
-pub use encryption_key::EncryptionKey;
-
-use primus_encoding::PlaintextEmbedding;
 use primus_integer::FheUint;
-use primus_lwe::LweCiphertext;
+use primus_lwe::LwePublicKey;
 use primus_reduce::RingContext;
+use primus_tfhe::{ClientError, Decryptor, Encryptor, LweClientParameters};
 
 use crate::{ClientKey, TfheClientError, TfheParameters};
 
-/// Encrypts external LWE messages with a client secret key or [`primus_lwe::LwePublicKey`].
-///
-/// Public-key usage follows [`EncryptionKey`]'s noise and key-identity contracts.
-pub struct Encryptor<'a, T, M, Key = ClientKey<T>>
-where
-    T: FheUint,
-    M: RingContext<T>,
-{
-    parameters: &'a TfheParameters<T, M>,
-    key: &'a Key,
-}
-
-impl<'a, T, M, Key> Encryptor<'a, T, M, Key>
-where
-    T: FheUint,
-    M: RingContext<T>,
-    Key: EncryptionKey<T, M>,
-{
-    /// Creates an encryptor after checking secret-key parameters or public-key
-    /// dimension and modulus. Public-key identity is a caller contract.
-    pub fn try_new(
-        parameters: &'a TfheParameters<T, M>,
-        key: &'a Key,
-    ) -> Result<Self, TfheClientError> {
-        EncryptionKey::check_compatible(key, parameters)?;
-        Ok(Self { parameters, key })
-    }
-
-    /// Encrypts an unsigned message in `[0, t)`.
-    pub fn encrypt<R>(&self, message: T, rng: &mut R) -> Result<LweCiphertext<T>, TfheClientError>
-    where
-        R: rand::Rng + rand::CryptoRng,
-    {
-        self.check_message(message)?;
-        Ok(self.encrypt_with_embedding(message, rng, PlaintextEmbedding::Unsigned))
-    }
-
-    /// Encrypts an unsigned message in the programmable front half `[0, ceil(t / 2))`.
-    pub fn encrypt_padded<R>(
-        &self,
-        message: T,
-        rng: &mut R,
-    ) -> Result<LweCiphertext<T>, TfheClientError>
-    where
-        R: rand::Rng + rand::CryptoRng,
-    {
-        self.check_padded_message(message)?;
-        Ok(self.encrypt_with_embedding(message, rng, PlaintextEmbedding::Unsigned))
-    }
-
-    /// Encrypts a centered modular message in `[0, t)`.
-    pub fn encrypt_centered<R>(
-        &self,
-        message: T,
-        rng: &mut R,
-    ) -> Result<LweCiphertext<T>, TfheClientError>
-    where
-        R: rand::Rng + rand::CryptoRng,
-    {
-        self.check_message(message)?;
-        Ok(self.encrypt_with_embedding(message, rng, PlaintextEmbedding::Centered))
-    }
-
-    /// Encrypts an unsigned message in `[0, t)` into existing storage.
-    ///
-    /// Overwrites all coefficients without allocating. Message range and output
-    /// dimension errors leave both output and RNG unchanged.
-    ///
-    /// # Correctness
-    ///
-    /// `output` must contain a body, as required by [`LweCiphertext`].
-    ///
-    /// # Panics
-    ///
-    /// A panicking RNG can leave partial output; see
-    /// [`primus_lwe::LweSecretKeyRef::encrypt_encoded_to`] and [`primus_lwe::LwePublicKey::encrypt_encoded_to`].
-    pub fn encrypt_to<R>(
-        &self,
-        message: T,
-        output: &mut LweCiphertext<T>,
-        rng: &mut R,
-    ) -> Result<(), TfheClientError>
-    where
-        R: rand::Rng + rand::CryptoRng,
-    {
-        self.check_message(message)?;
-        self.encrypt_with_embedding_to(message, output, rng, PlaintextEmbedding::Unsigned)
-    }
-
-    /// Encrypts a padded message in `[0, ceil(t / 2))` into existing storage.
-    ///
-    /// Shares [`Self::encrypt_to`]'s storage, error and RNG-panic contracts.
-    pub fn encrypt_padded_to<R>(
-        &self,
-        message: T,
-        output: &mut LweCiphertext<T>,
-        rng: &mut R,
-    ) -> Result<(), TfheClientError>
-    where
-        R: rand::Rng + rand::CryptoRng,
-    {
-        self.check_padded_message(message)?;
-        self.encrypt_with_embedding_to(message, output, rng, PlaintextEmbedding::Unsigned)
-    }
-
-    /// Encrypts a centered modular message in `[0, t)` into existing storage.
-    ///
-    /// Shares [`Self::encrypt_to`]'s storage, error and RNG-panic contracts.
-    pub fn encrypt_centered_to<R>(
-        &self,
-        message: T,
-        output: &mut LweCiphertext<T>,
-        rng: &mut R,
-    ) -> Result<(), TfheClientError>
-    where
-        R: rand::Rng + rand::CryptoRng,
-    {
-        self.check_message(message)?;
-        self.encrypt_with_embedding_to(message, output, rng, PlaintextEmbedding::Centered)
-    }
-
-    fn encrypt_with_embedding<R>(
-        &self,
-        message: T,
-        rng: &mut R,
-        embedding: PlaintextEmbedding,
-    ) -> LweCiphertext<T>
-    where
-        R: rand::Rng + rand::CryptoRng,
-    {
-        let plaintext = self
-            .parameters
-            .input_plaintext_codec()
-            .encode_value(message, embedding);
-        self.key.encrypt_encoded(plaintext, self.parameters, rng)
-    }
-
-    fn encrypt_with_embedding_to<R>(
-        &self,
-        message: T,
-        output: &mut LweCiphertext<T>,
-        rng: &mut R,
-        embedding: PlaintextEmbedding,
-    ) -> Result<(), TfheClientError>
-    where
-        R: rand::Rng + rand::CryptoRng,
-    {
-        let expected = self.parameters.external_lwe_dimension();
-        let actual = output.dimension();
-        if actual != expected {
-            return Err(TfheClientError::CiphertextDimensionMismatch { expected, actual });
-        }
-        let plaintext = self
-            .parameters
-            .input_plaintext_codec()
-            .encode_value(message, embedding);
-        self.key
-            .encrypt_encoded_to(plaintext, output, self.parameters, rng);
-        Ok(())
-    }
-
-    #[inline]
-    fn check_padded_message(&self, message: T) -> Result<(), TfheClientError> {
-        let modulus = self.parameters.plain_modulus_value();
-        if message >= modulus - (modulus >> 1u32) {
-            return Err(if message >= modulus {
-                TfheClientError::MessageOutOfRange
-            } else {
-                TfheClientError::MessageOutsidePaddedDomain
-            });
-        }
-        Ok(())
-    }
-
-    #[inline]
-    fn check_message(&self, message: T) -> Result<(), TfheClientError> {
-        if message >= self.parameters.plain_modulus_value() {
-            return Err(TfheClientError::MessageOutOfRange);
-        }
-        Ok(())
-    }
-}
-
-/// Decrypts external LWE ciphertexts under the client NTRU coefficients.
-pub struct Decryptor<'a, T, M>
-where
-    T: FheUint,
-    M: RingContext<T>,
-{
-    parameters: &'a TfheParameters<T, M>,
-    key: &'a ClientKey<T>,
-}
-
-impl<'a, T, M> Decryptor<'a, T, M>
-where
-    T: FheUint,
-    M: RingContext<T>,
-{
-    /// Creates a decryptor after checking client-key compatibility.
-    pub fn try_new(
-        parameters: &'a TfheParameters<T, M>,
+impl<T: FheUint, M: RingContext<T>> TfheParameters<T, M> {
+    /// Validates the family key and borrows its active external LWE secret.
+    pub fn encryptor<'a>(
+        &'a self,
         key: &'a ClientKey<T>,
-    ) -> Result<Self, TfheClientError> {
-        key.check_compatible(parameters)?;
-        Ok(Self { parameters, key })
+    ) -> Result<Encryptor<'a, T, M>, TfheClientError> {
+        key.check_compatible(self)?;
+        Ok(Encryptor::try_new(
+            self.client_parameters(),
+            key.external_lwe_secret_key(),
+        )?)
     }
 
-    /// Decrypts using the parameter codec to a canonical message in `[0, t)`.
-    /// For a different LUT output codec, decode [`Self::decrypt_phase`] instead.
-    pub fn decrypt(&self, ciphertext: &LweCiphertext<T>) -> Result<T, TfheClientError> {
-        let phase = self.decrypt_phase(ciphertext)?;
-        Ok(self.parameters.input_plaintext_codec().decode_value(phase))
+    /// Checks the external LWE public-key dimension and modulus.
+    /// Key identity and noise requirements follow [`primus_tfhe::EncryptionKey`].
+    pub fn public_encryptor<'a>(
+        &'a self,
+        key: &'a LwePublicKey<T>,
+    ) -> Result<Encryptor<'a, T, M, &'a LwePublicKey<T>>, ClientError> {
+        Encryptor::try_new(self.client_parameters(), key)
     }
 
-    /// Returns the noisy LWE phase as a canonical residue in `[0, q)`.
-    ///
-    /// Uses the external client secret and ciphertext modulus, without message
-    /// decoding. For ordinary PBS output, pass the phase to the LUT's output codec.
-    ///
-    /// # Correctness
-    ///
-    /// The ciphertext must use this client's external secret and modulus, with
-    /// canonical coefficients in `[0, q)`. Only its dimension is checked;
-    /// the ciphertext does not carry encoding metadata.
-    pub fn decrypt_phase(&self, ciphertext: &LweCiphertext<T>) -> Result<T, TfheClientError> {
-        let expected = self.parameters.external_lwe_dimension();
-        let actual = ciphertext.dimension();
-        if actual != expected {
-            return Err(TfheClientError::CiphertextDimensionMismatch { expected, actual });
+    /// Validates the family key and borrows its active secret and input codec.
+    pub fn decryptor<'a>(
+        &'a self,
+        key: &'a ClientKey<T>,
+    ) -> Result<Decryptor<'a, T, M>, TfheClientError> {
+        key.check_compatible(self)?;
+        Ok(Decryptor::new(
+            self.input_plaintext_codec(),
+            key.external_lwe_secret_key(),
+        ))
+    }
+
+    fn client_parameters(&self) -> LweClientParameters<'_, T, M> {
+        LweClientParameters {
+            dimension: self.external_lwe_dimension(),
+            codec: self.input_plaintext_codec(),
+            uniform: self.external_lwe().cipher_modulus_uniform_distr(),
+            noise: self.external_lwe().noise_distribution(),
         }
-        let phase = self
-            .key
-            .external_lwe_secret_key()
-            .decrypt_phase(ciphertext, self.parameters.external_lwe().cipher_modulus());
-        Ok(phase)
     }
 }

@@ -36,7 +36,7 @@ fn check_context(distr: SecretKeyDistr) {
         .try_generate_public_key(context.parameters(), &mut rng)
         .unwrap();
     let encryptor = context.boolean_encryptor(&client).unwrap();
-    let public_encryptor = context.boolean_encryptor(&public).unwrap();
+    let public_encryptor = context.boolean_public_encryptor(&public).unwrap();
     let decryptor = context.boolean_decryptor(&client).unwrap();
     let mut evaluator = context.boolean_evaluator(&server).unwrap();
     let inputs = [

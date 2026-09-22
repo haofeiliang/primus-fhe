@@ -23,9 +23,11 @@ Bucket aggregation in [NTT](../primus_tfhe_ntru_ntt/README.md#experimental-spars
 
 ## Clients and LUTs
 
-Client encryption takes `T`, and decryption returns `Result<T, TfheClientError>` with a canonical residue in `[0,t)`; applications handle message type conversions.
+`Encryptor`, `Decryptor`, `BooleanEncryptor` and `BooleanDecryptor` are re-exported from [`primus_tfhe`](../primus_tfhe/README.md#client-and-server-roles). Family constructors validate the client key and select the external LWE secret and noise; the shared clients own encoding, range checks and output reuse. They borrow LWE key views rather than family parameters or client keys.
 
-Contexts expose `encryptor` and `decryptor`; direct construction uses `Encryptor::try_new` and `Decryptor::try_new`. Encryption accepts the client key or `LwePublicKey` from `client_key.try_generate_public_key(parameters, rng)`. This is an external LWE public key under the active prefix, not an NTRU ring public key. Decryption requires the client key. Generation and fresh encryption use the `external_lwe` noise sampler, but the combined error is `e^T r + e2 - e1^T s`. The public key stores `n * (n + 1)` coefficients for the active prefix. Dimension/modulus checks do not prove key identity; use paired client/server keys and budget the combined noise for PBS/ManyLUT. See [LWE public-key noise and identity requirements](../primus_lwe/README.md#public-key-encryption).
+Client encryption takes `T`, and decryption returns `Result<T, ClientError>` with a canonical residue in `[0,t)`; applications handle message type conversions.
+
+Both parameters and contexts expose `encryptor(&client)`, `public_encryptor(&public)` and `decryptor(&client)`. Family secret-key construction returns `TfheClientError`; public-key construction and raw operations return shared `ClientError`. Generate the `LwePublicKey` with `client_key.try_generate_public_key(parameters, rng)`. This is an external LWE public key under the active prefix, not an NTRU ring public key. Decryption requires the client key. Generation and fresh encryption use the `external_lwe` noise sampler, but the combined error is `e^T r + e2 - e1^T s`. The public key stores `n * (n + 1)` coefficients for the active prefix. Dimension/modulus checks do not prove key identity; use paired client/server keys and budget the combined noise for PBS/ManyLUT. See [LWE public-key noise and identity requirements](../primus_lwe/README.md#public-key-encryption).
 
 `encrypt`, `encrypt_padded` and `encrypt_centered` each provide `*_to(message, output, rng)`. Both key types reuse output storage and reject message or dimension errors before sampling/writing. Front-half LUTs compiled by the parameters use padded unsigned input; centered modular messages have a separate encoding contract.
 
@@ -41,7 +43,7 @@ For factorized MVB, compile through `context.compile_factorized_lookup_table_fn`
 
 ## Boolean clients and gates
 
-With plaintext modulus 4, use backend `boolean_encryptor(key)`, `boolean_decryptor(client)` and `boolean_evaluator(server)` factories. The independent `BooleanEncryptor` / `BooleanDecryptor` bind NTRU family keys and parameters; encryption accepts a private or LWE public key. They return the family `BooleanError`, whose `Client` variant retains underlying `TfheClientError`. Evaluator construction returns `TfheEvaluationError`. Gate preprocessing, signed LUTs and output correction use the same `primus_tfhe::BooleanEvaluator` as GLWE. See [usage and encoding contracts](../primus_tfhe/README.md#boolean-gates).
+For plaintext modulus 4, contexts provide `boolean_encryptor(&client)`, `boolean_public_encryptor(&public)`, `boolean_decryptor(&client)` and `boolean_evaluator(&server)`. Direct Boolean constructors take prepared raw clients: `BooleanEncryptor::try_new(encryptor)` and `BooleanDecryptor::try_new(decryptor)`. Encryption accepts `bool`; decryption rejects decoded values other than 0/1. Operations return shared `BooleanError`, whose `Client` variant wraps `ClientError`; family secret-key factories return `TfheClientError` for construction failures. Evaluator construction returns `TfheEvaluationError`. Gate preprocessing, signed LUTs and output correction are shared in `primus_tfhe::BooleanEvaluator`. See [usage and encoding contracts](../primus_tfhe/README.md#boolean-gates).
 
 ## CBS and examples
 

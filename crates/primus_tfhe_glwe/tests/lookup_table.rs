@@ -6,9 +6,7 @@ fn padded_inputs_and_lut_output_codecs_use_independent_domains() {
     use primus_decompose::primitive::ApproxSignedBasis;
     use primus_glwe::{GlweParameters, GlweSecretKey, GlweSize, SecretKeyDistr};
     use primus_lwe::{LweParameters, LweSecretKey};
-    use primus_tfhe_glwe::{
-        ClientKey, Decryptor, Encryptor, PbsOrder, TfheClientError, TfheParameters,
-    };
+    use primus_tfhe_glwe::{ClientError, ClientKey, PbsOrder, TfheParameters};
     use rand::{SeedableRng, rngs::StdRng};
 
     let mut rng = StdRng::seed_from_u64(0x5041_4444_4544);
@@ -34,8 +32,8 @@ fn padded_inputs_and_lut_output_codecs_use_independent_domains() {
             ),
             PbsOrder::BootstrapKeyswitch,
         );
-        let encryptor = Encryptor::try_new(&parameters, &key).unwrap();
-        let decryptor = Decryptor::try_new(&parameters, &key).unwrap();
+        let encryptor = parameters.encryptor(&key).unwrap();
+        let decryptor = parameters.decryptor(&key).unwrap();
         let domain_len = t.div_ceil(2);
         let default = parameters
             .compile_lookup_table_slice(&vec![t - 1; domain_len as usize])
@@ -50,7 +48,7 @@ fn padded_inputs_and_lut_output_codecs_use_independent_domains() {
         assert_eq!(decryptor.decrypt(&input).unwrap(), domain_len - 1);
         assert_eq!(
             encryptor.encrypt_padded(domain_len, &mut rng).unwrap_err(),
-            TfheClientError::MessageOutsidePaddedDomain
+            ClientError::MessageOutsidePaddedDomain
         );
         let output_codec = RoundedCodec::new(8, NativeModulus::new());
         let values: Vec<_> = (0..domain_len).map(|m| 7 - m).collect();

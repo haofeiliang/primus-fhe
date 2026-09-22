@@ -93,56 +93,18 @@ pub enum TfheKeyError {
     GlweSecretKeyDistributionMismatch,
 }
 
-/// An error produced by the raw TFHE client API.
+/// A failure to construct a family client.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum TfheClientError {
-    /// The public key has the wrong external LWE dimension.
-    #[error("public-key LWE dimension mismatch: expected {expected}, got {actual}")]
-    PublicKeyDimensionMismatch {
-        /// Required external LWE dimension.
-        expected: usize,
-        /// Supplied public-key dimension.
-        actual: usize,
-    },
-    /// The public key uses a different ciphertext modulus.
-    #[error("public-key ciphertext modulus mismatch")]
-    PublicKeyModulusMismatch,
     /// The client key does not match the parameter set.
     #[error(transparent)]
     IncompatibleKey(#[from] TfheKeyError),
-
-    /// The input message is outside the plaintext domain `[0, t)`.
-    #[error("message is outside the plaintext domain")]
-    MessageOutOfRange,
-
-    /// The input message sets the padding half of the plaintext domain.
-    #[error("message is outside the padded plaintext domain")]
-    MessageOutsidePaddedDomain,
-
-    /// A ciphertext belongs to a different LWE dimension.
-    #[error("LWE ciphertext dimension mismatch: expected {expected}, got {actual}")]
-    CiphertextDimensionMismatch {
-        /// Required LWE dimension.
-        expected: usize,
-        /// Actual LWE dimension.
-        actual: usize,
-    },
-}
-
-/// An error produced by Boolean client construction, encryption or decryption.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum BooleanError {
-    /// Gate bootstrapping uses the 0/1 encoding modulo 4.
-    #[error("Boolean TFHE requires plaintext modulus 4")]
-    PlaintextModulusMustBeFour,
-
-    /// A decrypted value is neither 0 nor 1 under plaintext modulus 4.
-    #[error("decrypted value is not a valid Boolean plaintext")]
-    InvalidPlaintext,
-
-    /// Raw client-side encryption or decryption failed.
+    /// The selected LWE key does not match its external domain.
     #[error(transparent)]
-    Client(#[from] TfheClientError),
+    Client(#[from] primus_tfhe::ClientError),
+    /// The Boolean client requires plaintext modulus four.
+    #[error(transparent)]
+    Boolean(#[from] primus_tfhe::BooleanError),
 }
 
 /// An invalid circuit-bootstrapping parameter set.

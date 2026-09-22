@@ -13,7 +13,7 @@
 cargo run -p primus_tfhe_ntru_ntt --release --example ntru_ntt_basic
 ```
 
-[basic 示例](examples/ntru_ntt_basic.rs)展示参数 → context → 配对密钥 → 客户端 → 单个 LUT → 复用 evaluator 和密文缓冲。它计算 `x % 4`，输入和输出均采用 `t=16` 编码，直接用 `decrypt` 解码。 `compile_lookup_table_fn(function)` 默认使用参数 codec；需要不同输出明文模数时，使用 `compile_lookup_table_with_codec_fn(&output_codec, function)`，见[选择输出编码](../primus_tfhe/README.zh_CN.md#选择输出编码)。 公钥加密沿用同一客户端 API，见[家族说明](../primus_tfhe_ntru/README.zh_CN.md#客户端与-lut)。
+[basic 示例](examples/ntru_ntt_basic.rs)展示参数 → context → 配对密钥 → 客户端 → 单个 LUT → 复用 evaluator 和密文缓冲。它计算 `x % 4`，输入和输出均采用 `t=16` 编码，直接用 `decrypt` 解码。 `compile_lookup_table_fn(function)` 默认使用参数 codec；需要不同输出明文模数时，使用 `compile_lookup_table_with_codec_fn(&output_codec, function)`，见[选择输出编码](../primus_tfhe/README.zh_CN.md#选择输出编码)。 公钥加密通过 `context.public_encryptor(&public)` 创建客户端，见[家族说明](../primus_tfhe_ntru/README.zh_CN.md#客户端与-lut)。
 
 示例区分客户端加密、服务端求值与客户端解密，见[双方职责与缓冲分配](../primus_tfhe/README.zh_CN.md#客户端与服务端边界)。
 

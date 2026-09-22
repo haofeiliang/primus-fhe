@@ -6,13 +6,14 @@
 //! compiles Rounded LUTs. [`ClientKey`], [`Encryptor`] and [`Decryptor`] bind client
 //! secrets and encoding. Choose the NTT/Fourier backend for transform tables,
 //! server material and evaluators. [`KeyGenerationError`] and [`TfheClientError`]
-//! separate key generation from client operations.
+//! report key generation and family client construction; operations return
+//! shared [`ClientError`] or [`BooleanError`].
 //!
 //! # Public-key clients
 //!
 //! [`ClientKey::try_generate_public_key`] returns an [`LwePublicKey`] under
 //! the active binary or ternary prefix of the client secret. Pass it to
-//! [`Encryptor::try_new`] or a backend context's `encryptor`; keep the paired
+//! [`TfheParameters::public_encryptor`] or a backend context's `public_encryptor`; keep the paired
 //! client key for decryption.
 //!
 //! Public-key identity and combined-noise requirements are documented on
@@ -29,17 +30,14 @@
 
 #![deny(missing_docs)]
 
-mod boolean;
 mod client;
 mod error;
 mod key;
 mod lookup_table;
 mod parameters;
 
-pub use boolean::{BooleanDecryptor, BooleanEncryptor};
-pub use client::{Decryptor, EncryptionKey, Encryptor};
 pub use error::{
-    BooleanError, CircuitBootstrapParameterError, KeyGenerationError, SparseBootstrappingKeyError,
+    CircuitBootstrapParameterError, KeyGenerationError, SparseBootstrappingKeyError,
     TfheClientError, TfheKeyError, TfheParameterError,
 };
 pub use key::ClientKey;
@@ -47,10 +45,11 @@ pub use parameters::{TfheConfig, TfheParameters};
 
 pub use primus_ntru::{NlevParameters, NtruParameters, NtruSecretKey};
 pub use primus_tfhe::{
-    BOOLEAN_PLAINTEXT_BITS, BivariateLookupTable, BooleanEvaluator, BooleanGate,
-    CircuitBootstrapConfig, DecompositionConfig, InterleavedLookupTable, LookupTable,
-    LookupTableError, LweCiphertext, LweSecretKeyRef, ProgrammableBootstrap,
-    ProgrammableBootstrapInterleaved, TfheEvaluationError,
+    BOOLEAN_PLAINTEXT_BITS, BivariateLookupTable, BooleanDecryptor, BooleanEncryptor, BooleanError,
+    BooleanEvaluator, BooleanGate, CircuitBootstrapConfig, ClientError, DecompositionConfig,
+    Decryptor, EncryptionKey, Encryptor, InterleavedLookupTable, LookupTable, LookupTableError,
+    LweCiphertext, LweSecretKeyRef, ProgrammableBootstrap, ProgrammableBootstrapInterleaved,
+    TfheEvaluationError,
 };
 
 /// LWE public key used by the public-key client encryptor.

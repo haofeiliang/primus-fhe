@@ -75,7 +75,7 @@ where
     let public = client_key
         .try_generate_public_key(context.parameters(), &mut rng)
         .unwrap();
-    let public_encryptor = context.encryptor(&public).unwrap();
+    let public_encryptor = context.public_encryptor(&public).unwrap();
     let encryptor = context.encryptor(&client_key).unwrap();
     let decryptor = context.decryptor(&client_key).unwrap();
     let mut evaluator = context.evaluator(&server_key).unwrap();

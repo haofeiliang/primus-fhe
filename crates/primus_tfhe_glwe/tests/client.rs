@@ -1,11 +1,11 @@
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_glwe::{GlweParameters, GlweSecretKey, GlweSize, SecretKeyDistr};
-use primus_lwe::{LweCiphertext, LweParameters, LwePublicKey, LweSecretKey};
+use primus_lwe::{LweCiphertext, LweParameters, LwePublicKey, LweSecretKey, LweSecretKeyRef};
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_reduce::RingContext;
 use primus_test_allocations as allocations;
 use primus_tfhe_glwe::{
-    BooleanDecryptor, BooleanEncryptor, BooleanError, ClientKey, Decryptor, EncryptionKey,
+    BooleanDecryptor, BooleanEncryptor, BooleanError, ClientError, ClientKey, EncryptionKey,
     Encryptor, PbsOrder, TfheClientError, TfheKeyError, TfheParameters,
 };
 use rand::{Rng, SeedableRng, rngs::StdRng};
@@ -59,8 +59,50 @@ fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
                 16
             }
         );
-        check_reused_output(&params, &client, &public);
-        check_reused_output(&params, &client, &client);
+        // Independent raw-LWE calls pin the key and noise selected by each PBS order.
+        let (secret, uniform, noise) = match order {
+            PbsOrder::BootstrapKeyswitch => (
+                client.small_lwe_secret_key().as_view(),
+                params.small_lwe().cipher_modulus_uniform_distr(),
+                params.small_lwe().noise_distribution(),
+            ),
+            PbsOrder::KeyswitchBootstrap => (
+                LweSecretKeyRef::Signed(client.glwe_secret_key().as_slice()),
+                params.accumulator_glwe().cipher_modulus_uniform_distr(),
+                params.accumulator_glwe().noise_distribution(),
+            ),
+        };
+        let encoded = params
+            .input_plaintext_codec()
+            .encode_value(1, primus_encoding::PlaintextEmbedding::Unsigned);
+        let seed = rng.next_u64();
+        let mut rng = StdRng::seed_from_u64(seed);
+        let mut reference_rng = StdRng::seed_from_u64(seed);
+        let expected = secret.encrypt_encoded(encoded, modulus, uniform, noise, &mut reference_rng);
+        assert_eq!(
+            params
+                .encryptor(&client)
+                .unwrap()
+                .encrypt(1, &mut rng)
+                .unwrap(),
+            expected
+        );
+        assert_eq!(rng.next_u64(), reference_rng.next_u64());
+        let seed = rng.next_u64();
+        let mut rng = StdRng::seed_from_u64(seed);
+        let mut reference_rng = StdRng::seed_from_u64(seed);
+        let expected = public.encrypt_encoded(encoded, modulus, noise, &mut reference_rng);
+        assert_eq!(
+            params
+                .public_encryptor(&public)
+                .unwrap()
+                .encrypt(1, &mut rng)
+                .unwrap(),
+            expected
+        );
+        assert_eq!(rng.next_u64(), reference_rng.next_u64());
+        check_reused_output(&params, &client, params.public_encryptor(&public).unwrap());
+        check_reused_output(&params, &client, params.encryptor(&client).unwrap());
 
         // Public-key binding must reject same-word-size foreign moduli, not just dimensions.
         let foreign_params = LweParameters::new(
@@ -73,15 +115,15 @@ fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
         let foreign_secret = LweSecretKey::generate(&foreign_params, &mut rng);
         let foreign = LwePublicKey::generate(foreign_secret.as_view(), &foreign_params, &mut rng);
         assert_eq!(
-            Encryptor::try_new(&params, &foreign).err(),
-            Some(TfheClientError::PublicKeyModulusMismatch)
+            params.public_encryptor(&foreign).err(),
+            Some(ClientError::PublicKeyModulusMismatch)
         );
         let short_params = LweParameters::new(3, 4, modulus, SecretKeyDistr::UniformBinary, 0.7);
         let short_secret = LweSecretKey::generate(&short_params, &mut rng);
         let short = LwePublicKey::generate(short_secret.as_view(), &short_params, &mut rng);
         assert_eq!(
-            Encryptor::try_new(&params, &short).err(),
-            Some(TfheClientError::PublicKeyDimensionMismatch {
+            params.public_encryptor(&short).err(),
+            Some(ClientError::KeyDimensionMismatch {
                 expected: public.dimension(),
                 actual: 3,
             })
@@ -93,6 +135,12 @@ fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
         };
         let (small_key, ring_key, _) = client.into_parts();
         let wrong_client = ClientKey::new(small_key, ring_key, wrong_order);
+        let error = TfheClientError::IncompatibleKey(TfheKeyError::PbsOrderMismatch {
+            expected: order,
+            actual: wrong_order,
+        });
+        assert_eq!(params.encryptor(&wrong_client).err(), Some(error.clone()));
+        assert_eq!(params.decryptor(&wrong_client).err(), Some(error));
         let seed = rng.next_u64();
         let mut rng = StdRng::seed_from_u64(seed);
         let mut expected_rng = StdRng::seed_from_u64(seed);
@@ -133,11 +181,11 @@ fn boolean_clients_reject_other_plaintext_moduli() {
         let client = ClientKey::generate(&parameters, &mut rng);
         client.check_compatible(&parameters).unwrap();
         assert_eq!(
-            BooleanEncryptor::try_new(&parameters, &client).err(),
+            BooleanEncryptor::try_new(parameters.encryptor(&client).unwrap()).err(),
             Some(BooleanError::PlaintextModulusMustBeFour),
         );
         assert_eq!(
-            BooleanDecryptor::try_new(&parameters, &client).err(),
+            BooleanDecryptor::try_new(parameters.decryptor(&client).unwrap()).err(),
             Some(BooleanError::PlaintextModulusMustBeFour),
         );
     }
@@ -153,13 +201,12 @@ enum Encoding {
 fn check_reused_output<M, Key>(
     parameters: &TfheParameters<u32, M>,
     client: &ClientKey<u32>,
-    key: &Key,
+    encryptor: Encryptor<'_, u32, M, Key>,
 ) where
     M: RingContext<u32>,
     Key: EncryptionKey<u32, M>,
 {
-    let encryptor = Encryptor::try_new(parameters, key).unwrap();
-    let decryptor = Decryptor::try_new(parameters, client).unwrap();
+    let decryptor = parameters.decryptor(client).unwrap();
     let dimension = parameters.external_lwe_dimension();
     let t = parameters.plain_modulus_value();
     let mut rng = StdRng::seed_from_u64(0x434c_4945_4e54);
@@ -184,7 +231,16 @@ fn check_reused_output<M, Key>(
         // Compare identical randomness across the small domain, including the
         // centered sign boundary, then overwrite the last ciphertext with zero.
         for message in (0..limit).chain([0]) {
-            let expected = encrypt(message, &mut expected_rng).unwrap();
+            let (expected, allocation) =
+                allocations::measure(|| encrypt(message, &mut expected_rng).unwrap());
+            assert_eq!(
+                allocation.count, 1,
+                "only the ciphertext should be allocated"
+            );
+            assert_eq!(
+                allocation.allocated_bytes,
+                (dimension + 1) * size_of::<u32>()
+            );
             let (result, allocation) =
                 allocations::measure(|| encrypt_to(message, &mut output, &mut rng));
             result.unwrap();
@@ -194,8 +250,8 @@ fn check_reused_output<M, Key>(
             assert_eq!(decryptor.decrypt(&output).unwrap(), message);
         }
         let padded_error = matches!(encoding, Encoding::Padded)
-            .then_some((limit, TfheClientError::MessageOutsidePaddedDomain));
-        for (message, error) in [(t, TfheClientError::MessageOutOfRange)]
+            .then_some((limit, ClientError::MessageOutsidePaddedDomain));
+        for (message, error) in [(t, ClientError::MessageOutOfRange)]
             .into_iter()
             .chain(padded_error)
         {
@@ -210,7 +266,7 @@ fn check_reused_output<M, Key>(
             let before = wrong.clone();
             assert_eq!(
                 encrypt_to(0, &mut wrong, &mut rng),
-                Err(TfheClientError::CiphertextDimensionMismatch {
+                Err(ClientError::CiphertextDimensionMismatch {
                     expected: dimension,
                     actual
                 })

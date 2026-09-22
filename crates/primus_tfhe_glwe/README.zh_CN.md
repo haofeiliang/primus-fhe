@@ -26,7 +26,9 @@
 
 ## 客户端与 LUT
 
-`ClientKey::generate(&parameters, &mut rng)` 生成客户端秘密，无需变换表。 同时生成配套客户端/服务端密钥时使用 `context.try_generate_keys(circuit_bootstrap, rng)`，后端会在生成服务端密钥时 复用变换后的秘密。Context 也提供 `encryptor` / `decryptor` 工厂。 通用 client 加密接受 `T`，解密返回 `Result<T, TfheClientError>`，消息是 `[0,t)` 内的 规范剩余类，消息类型转换由应用处理。Boolean 加密接受 `bool`，解密返回 `Result<bool, BooleanError>`，并验证 Boolean 值。 直接使用 family 时，构造入口为 `Encryptor::try_new` 与 `Decryptor::try_new`。 加密接受 `ClientKey`，也接受通过 `client_key.try_generate_public_key(parameters, rng)` 生成的 `LwePublicKey`；解密需要 client key。 公钥遵循选定的外部秘密域，包括 signed `kN` 秘密。 噪声与秘密来源要求见 [LWE 公钥契约](../primus_lwe/README.zh_CN.md#公钥加密)。
+`Encryptor`、`Decryptor`、`BooleanEncryptor` 和 `BooleanDecryptor` 从 [`primus_tfhe`](../primus_tfhe/README.zh_CN.md#客户端与服务端边界) 重导出。家族构造入口验证客户端密钥，选择外部 LWE 秘密和噪声；公共客户端负责编码、范围检查及输出复用，借用 LWE 密钥视图，不再持有家族参数或客户端密钥类型。
+
+`ClientKey::generate(&parameters, &mut rng)` 生成客户端秘密，无需变换表。配套客户端/服务端密钥使用 `context.try_generate_keys(circuit_bootstrap, rng)`，复用生成服务端密钥所需的变换秘密。参数和 context 都提供 `encryptor(&client)`、`public_encryptor(&public)`、`decryptor(&client)`。家族私钥客户端构造返回 `TfheClientError`，公钥构造和普通操作返回公共 `ClientError`。加密接受 `T`，解密返回 `[0,t)` 内的规范剩余类。通过 `client.try_generate_public_key(parameters, rng)` 生成公钥，它遵循选定的外部秘密域，包括 signed `kN` 秘密。噪声与秘密来源要求见 [LWE 公钥契约](../primus_lwe/README.zh_CN.md#公钥加密)。
 
 `encrypt`、`encrypt_padded` 和 `encrypt_centered` 均提供 `*_to(message, output, rng)`，可复用输出存储；消息或维数错误不改变输出和 RNG。 前半区 LUT 输入使用 `encrypt_padded`。普通 LUT 通过 `context.parameters().compile_lookup_table_fn(...)` 及对应的 slice、交错或奇数全域方法编译。
 
@@ -38,7 +40,7 @@ LUT 编译默认使用 `parameters.input_plaintext_codec()` 编码输出，直�
 
 ## Boolean 与 CBS
 
-Boolean 运算直接使用 `LweCiphertext<T>`，采用模 4 下 unsigned rounded `0/1` 编码。 `BooleanEncryptor` 接受私钥或公钥，提供 `encrypt` / `encrypt_to`； `BooleanDecryptor` 使用客户端私钥，拒绝解码为 `0/1` 以外值的密文。 两种客户端均以 `try_new(parameters, key)` 构造，要求明文模数为 4。 后端 `boolean_encryptor`、`boolean_decryptor`、`boolean_evaluator` 工厂绑定同一参数。 通过 `evaluate_binary_to`、`not_to`、`mux_to` 复用输出；共享 evaluator 负责仿射预处理、 内部 LUT 尺度与修正。求值器构造返回 `TfheEvaluationError`，`BooleanError` 用于客户端操作。 详见[公共 Boolean 契约](../primus_tfhe/README.zh_CN.md#boolean-门)。 Raw 输入必须采用 Boolean 编码及匹配的外部秘密，这些性质无法从 LWE 密文本身验证。
+明文模数采用 4 时，context 提供 `boolean_encryptor(&client)`、`boolean_public_encryptor(&public)`、`boolean_decryptor(&client)` 和 `boolean_evaluator(&server)`。直接构造使用已有普通客户端：`BooleanEncryptor::try_new(encryptor)` 和 `BooleanDecryptor::try_new(decryptor)`。加密接受 `bool`，解密拒绝 `0/1` 以外的值。操作返回公共 `BooleanError`，其 `Client` 分支包装 `ClientError`；家族私钥工厂用 `TfheClientError` 报告构造失败。求值器构造返回 `TfheEvaluationError`。门预处理、正负 LUT 和输出修正在 `primus_tfhe::BooleanEvaluator` 中共享。用法和编码约定见[公共 Boolean 契约](../primus_tfhe/README.zh_CN.md#boolean-门)。
 
 CBS 是两个后端的可选能力，提供独立的 output basis、trace/scheme-switch 参数及密钥， 两种 PBS order 均支持经典 binary/ternary 和 sparse binary。CBS 输出留在 accumulator secret 下，使用 gadget 尺度。`CircuitBootstrapParameters<T, M>` 由公共层定义，后端提供具体模数别名； 同层数的不同输出 basis 可复用 scheme-switch key。噪声与变换要求见对应后端契约。
 

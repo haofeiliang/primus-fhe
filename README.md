@@ -48,7 +48,7 @@ Each backend README also links its CBS → CMUX, MVB threshold, and sparse PBS e
 | Sampling and encoding | [primus_distr](crates/primus_distr/README.md): secret/noise distributions; [primus_encoding](crates/primus_encoding/README.md): Rounded, Scaled, and BFV RNS coefficient codecs |
 | Ciphertext representations | [primus_lattice](crates/primus_lattice/README.md): storage, arithmetic, extraction, gadget products, CMUX, and reusable workspaces |
 | Encryption and evaluation | [primus_lwe](crates/primus_lwe/README.md), [primus_glwe](crates/primus_glwe/README.md), [primus_ntru](crates/primus_ntru/README.md): keys and scheme primitives; [primus_glwe_rns](crates/primus_glwe_rns/src/lib.rs): CRT/DCRT GLWE and hybrid-RNS key switching |
-| TFHE | [primus_tfhe](crates/primus_tfhe/README.md): shared LUTs, PBS traits, and Boolean evaluation; the two family crates and four backends above bind parameters, keys, and execution |
+| TFHE | [primus_tfhe](crates/primus_tfhe/README.md): shared external LWE clients, LUTs, PBS traits, and Boolean evaluation; the two family crates and four backends above bind parameters, keys, and execution |
 
 The RNS and encoding components provide building blocks rather than complete BFV, BGV, or CKKS application backends. `test-support/` contains development-only shared test fixtures and allocation counters. Mathematical contracts live in rustdoc; cross-layer TFHE rationale and retained performance tradeoffs are in the [implementation notes](crates/primus_tfhe/IMPLEMENTATION.md).
 

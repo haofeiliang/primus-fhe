@@ -116,7 +116,7 @@ fn split_keys_support_both_pbs_orders() {
             .try_generate_public_key(context.parameters(), &mut rng)
             .unwrap();
         let secret_encryptor = context.encryptor(&client).unwrap();
-        let public_encryptor = context.encryptor(&public).unwrap();
+        let public_encryptor = context.public_encryptor(&public).unwrap();
         let decryptor = context.decryptor(&client).unwrap();
         let mut evaluator = context.evaluator(&server).unwrap();
         for message in 0..2u32 {
@@ -128,7 +128,7 @@ fn split_keys_support_both_pbs_orders() {
                 assert_eq!(decryptor.decrypt(&output).unwrap(), 1 - message);
             }
         }
-        let boolean_encryptor = context.boolean_encryptor(&public).unwrap();
+        let boolean_encryptor = context.boolean_public_encryptor(&public).unwrap();
         let boolean_decryptor = context.boolean_decryptor(&client).unwrap();
         let mut boolean_evaluator = context.boolean_evaluator(&server).unwrap();
         let lhs = boolean_encryptor.encrypt(true, &mut rng).unwrap();
