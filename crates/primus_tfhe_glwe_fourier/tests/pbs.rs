@@ -1,6 +1,6 @@
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_encoding::RoundedCodec;
-use primus_fft::{FftTable, RustFftTable, TfheFftTable};
+use primus_fft::{FftTable, RustFftTable, TfheFftTable, TorusFftValue};
 use primus_glwe::{GlweParameters, SecretKeyDistr};
 use primus_lwe::{LweCiphertext, LweParameters};
 use primus_modulus::{BarrettModulus, NativeModulus};
@@ -17,30 +17,37 @@ static ALLOCATOR: allocations::CountingAllocator = allocations::CountingAllocato
 
 const N: usize = 256;
 
-fn parameters(order: PbsOrder) -> TfheParameters<u32> {
+fn parameters<T: TorusFftValue>(order: PbsOrder) -> TfheParameters<T> {
     let modulus = NativeModulus::new();
     let lwe = LweParameters::new(
         8,
-        15,
+        T::as_from(15u32),
         modulus,
         SecretKeyDistr::fixed_composition_ternary(8, 2, 2),
         0.7,
     );
-    let glwe = GlweParameters::new(1, N, 15, modulus, SecretKeyDistr::UniformBinary, 0.7);
+    let glwe = GlweParameters::new(
+        1,
+        N,
+        T::as_from(15u32),
+        modulus,
+        SecretKeyDistr::UniformBinary,
+        0.7,
+    );
     let bsk = ApproxSignedBasis::new(glwe.cipher_modulus_value(), 8, None);
     TfheParameters::try_new(lwe, glwe, bsk, ApproxSignedBasis::new(None, 8, None), order).unwrap()
 }
 
-fn value(input: usize, output: usize) -> u32 {
+fn value<T: TorusFftValue>(input: usize, output: usize) -> T {
     match output {
-        0 => (input % 4) as u32,
-        1 => (input / 4) as u32,
-        2 => input as u32,
-        _ => (7 - input) as u32,
+        0 => T::as_from(input % 4),
+        1 => T::as_from(input / 4),
+        2 => T::as_from(input),
+        _ => T::as_from(7 - input),
     }
 }
 
-fn check_context<TABLE>(context: TfheContext<u32, TABLE>)
+fn check_context<T: TorusFftValue, TABLE>(context: TfheContext<T, TABLE>)
 where
     TABLE: FftTable,
 {
@@ -50,7 +57,10 @@ where
     let decryptor = context.decryptor(&client_key).unwrap();
     let mut evaluator = context.evaluator(&server_key).unwrap();
     // Input centers use t_in=15; output values use the independent t_out=8 scale.
-    let output_codec = RoundedCodec::new(8, context.parameters().small_lwe().cipher_modulus());
+    let output_codec = RoundedCodec::new(
+        T::as_from(8u32),
+        context.parameters().small_lwe().cipher_modulus(),
+    );
     // Shared tests cover geometry; keep output counts 1, 3 (padded to 4), and 4 here.
     for output_count in [1, 3, 4] {
         let flat: Vec<_> = (0..8)
@@ -63,7 +73,9 @@ where
         let mut outputs =
             vec![LweCiphertext::zero(context.parameters().external_lwe_dimension()); output_count];
         for message in [0, 3, 4, 7] {
-            let input = encryptor.encrypt_padded(message as u32, &mut rng).unwrap();
+            let input = encryptor
+                .encrypt_padded(T::as_from(message), &mut rng)
+                .unwrap();
             let (_, allocation) = allocations::measure(|| {
                 ProgrammableBootstrapInterleaved::apply_interleaved_lookup_table_to(
                     &mut evaluator,
@@ -101,7 +113,9 @@ where
         }
     }
 
-    let input = encryptor.encrypt_padded(3u32, &mut rng).unwrap();
+    let input = encryptor
+        .encrypt_padded(T::as_from(3u32), &mut rng)
+        .unwrap();
     let good = context
         .parameters()
         .compile_interleaved_lookup_table_with_codec_fn(&output_codec, 3, value)
@@ -111,18 +125,23 @@ where
     let mut mismatched_tables = Vec::new();
     for (n, t) in [(N / 2, 15), (N, 8)] {
         mismatched_tables.push((
-            LookupTable::try_new(2, n, t, NativeModulus::new(), NativeModulus::new(), |_| {
-                Ok(0)
-            })
+            LookupTable::try_new(
+                2,
+                n,
+                T::as_from(t),
+                NativeModulus::new(),
+                NativeModulus::new(),
+                |_| Ok(T::ZERO),
+            )
             .unwrap(),
             InterleavedLookupTable::try_new(
                 2,
                 n,
                 3,
-                t,
+                T::as_from(t),
                 NativeModulus::new(),
                 NativeModulus::new(),
-                |_, _| Ok(0),
+                |_, _| Ok(T::ZERO),
             )
             .unwrap(),
         ));
@@ -131,20 +150,20 @@ where
         LookupTable::try_new(
             2,
             N,
-            15,
-            BarrettModulus::new(132_120_577),
+            T::as_from(15u32),
+            BarrettModulus::new(T::as_from(132_120_577u32)),
             NativeModulus::new(),
-            |_| Ok(0),
+            |_| Ok(T::ZERO),
         )
         .unwrap(),
         InterleavedLookupTable::try_new(
             2,
             N,
             3,
-            15,
-            BarrettModulus::new(132_120_577),
+            T::as_from(15u32),
+            BarrettModulus::new(T::as_from(132_120_577u32)),
             NativeModulus::new(),
-            |_, _| Ok(0),
+            |_, _| Ok(T::ZERO),
         )
         .unwrap(),
     ));
@@ -152,20 +171,20 @@ where
         LookupTable::try_new(
             2,
             N,
-            15,
+            T::as_from(15u32),
             NativeModulus::new(),
-            BarrettModulus::new(132_120_577),
-            |_| Ok(0),
+            BarrettModulus::new(T::as_from(132_120_577u32)),
+            |_| Ok(T::ZERO),
         )
         .unwrap(),
         InterleavedLookupTable::try_new(
             2,
             N,
             3,
-            15,
+            T::as_from(15u32),
             NativeModulus::new(),
-            BarrettModulus::new(132_120_577),
-            |_, _| Ok(0),
+            BarrettModulus::new(T::as_from(132_120_577u32)),
+            |_, _| Ok(T::ZERO),
         )
         .unwrap(),
     ));
@@ -188,7 +207,7 @@ where
     }
     let single = context
         .parameters()
-        .compile_lookup_table_with_codec_fn(&output_codec, |x| x as u32)
+        .compile_lookup_table_with_codec_fn(&output_codec, |x| T::as_from(x))
         .unwrap();
     let wrong = LweCiphertext::zero(input.dimension() - 1);
     for bad_input in [false, true] {
@@ -233,15 +252,15 @@ where
     evaluator.apply_interleaved_lookup_table_to(&input, &good, &mut outputs);
     assert_eq!(
         output_codec.decode_value(decryptor.decrypt_phase(&outputs[0]).unwrap()),
-        3
+        T::as_from(3u32)
     );
     assert_eq!(
         output_codec.decode_value(decryptor.decrypt_phase(&outputs[1]).unwrap()),
-        0
+        T::as_from(0u32)
     );
     assert_eq!(
         output_codec.decode_value(decryptor.decrypt_phase(&outputs[2]).unwrap()),
-        3
+        T::as_from(3u32)
     );
 
     // A non-power-of-two base and short domain share the same keys and PBS scratch.
@@ -251,12 +270,12 @@ where
         N,
         context.parameters().input_plaintext_codec(),
         &output_codec,
-        |x, y| (x * x + y) as u32,
+        |x, y| T::as_from(x * x + y),
     )
     .unwrap();
     let mut packed = input.clone();
     let mut result = input;
-    for (x, y) in [(2u32, 1u32), (1, 0)] {
+    for (x, y) in [(T::as_from(2u32), T::ONE), (T::ONE, T::ZERO)] {
         let lhs = encryptor.encrypt_padded(x, &mut rng).unwrap();
         let rhs = encryptor.encrypt_padded(y, &mut rng).unwrap();
         let (_, allocation) = allocations::measure(|| {
@@ -272,13 +291,13 @@ where
 
     // Reuse this odd-modulus fixture for the full domain, including the upper
     // half. Keep a distinct output scale and a function with f(0) != 0.
-    let values: Vec<_> = (0..15).map(|m| ((m * m + 3) % 8) as u32).collect();
+    let values: Vec<_> = (0..15).map(|m| T::as_from((m * m + 3) % 8)).collect();
     let full = context
         .parameters()
         .compile_odd_full_domain_lookup_table_with_codec_slice(&output_codec, &values)
         .unwrap();
     for (message, &expected) in values.iter().enumerate() {
-        let input = encryptor.encrypt(message as u32, &mut rng).unwrap();
+        let input = encryptor.encrypt(T::as_from(message), &mut rng).unwrap();
         let (_, allocation) = allocations::measure(|| {
             evaluator.apply_lookup_table_to(&input, &full, &mut result);
         });
@@ -289,19 +308,40 @@ where
         );
     }
 }
+
 #[test]
-fn pbs_preserves_outputs_and_validates_domains() {
-    for order in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
+fn pbs_u32_preserves_outputs_and_validates_domains() {
+    for case in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
         check_context(
             TfheContext::try_new(
-                parameters(order),
+                parameters::<u32>(case),
                 RustFftTable::new(N.trailing_zeros()).unwrap(),
             )
             .unwrap(),
         );
         check_context(
             TfheContext::try_new(
-                parameters(order),
+                parameters::<u32>(case),
+                TfheFftTable::new(N.trailing_zeros()).unwrap(),
+            )
+            .unwrap(),
+        );
+    }
+}
+
+#[test]
+fn pbs_u64_preserves_outputs_and_validates_domains() {
+    for case in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
+        check_context(
+            TfheContext::try_new(
+                parameters::<u64>(case),
+                RustFftTable::new(N.trailing_zeros()).unwrap(),
+            )
+            .unwrap(),
+        );
+        check_context(
+            TfheContext::try_new(
+                parameters::<u64>(case),
                 TfheFftTable::new(N.trailing_zeros()).unwrap(),
             )
             .unwrap(),

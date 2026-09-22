@@ -1,8 +1,9 @@
 use primus_encoding::{PlaintextEmbedding, RoundedCodec};
+use primus_integer::FheUint;
 use primus_lwe::{LweCiphertext, LweParameters};
 use primus_modulus::BarrettModulus;
 use primus_ntru::{NlevParameters, NtruParameters, SecretKeyDistr};
-use primus_ntt::{MonomialNttTable, NttTable, U32NttTable};
+use primus_ntt::{MonomialNttTable, NttTable, U32NttTable, U64NttTable};
 use primus_reduce::{ReduceAdd, ReduceSub};
 use primus_test_allocations as allocations;
 use primus_tfhe::{
@@ -16,13 +17,18 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 static ALLOCATOR: allocations::CountingAllocator = allocations::CountingAllocator;
 
 const N: usize = 256;
-const Q: u32 = 132_120_577;
 
-fn parameters(distr: SecretKeyDistr) -> TfheParameters<u32> {
-    let modulus = BarrettModulus::new(Q);
-    let lwe = LweParameters::new(4, 15, modulus, distr, 0.7);
-    let acc = NtruParameters::new(N, 15, modulus, SecretKeyDistr::SparseTernary, 0.7);
-    let client = NtruParameters::new(N, 15, modulus, distr, 0.7);
+fn parameters<T: FheUint>(q: T, distr: SecretKeyDistr) -> TfheParameters<T> {
+    let modulus = BarrettModulus::new(q);
+    let lwe = LweParameters::new(4, T::as_from(15u32), modulus, distr, 0.7);
+    let acc = NtruParameters::new(
+        N,
+        T::as_from(15u32),
+        modulus,
+        SecretKeyDistr::SparseTernary,
+        0.7,
+    );
+    let client = NtruParameters::new(N, T::as_from(15u32), modulus, distr, 0.7);
     TfheParameters::try_new(
         lwe,
         NlevParameters::with_ntru_params(&acc, 8, None),
@@ -31,19 +37,24 @@ fn parameters(distr: SecretKeyDistr) -> TfheParameters<u32> {
     .unwrap()
 }
 
-fn value(input: usize, output: usize) -> u32 {
+fn value<T: FheUint>(input: usize, output: usize) -> T {
     match output {
-        0 => (input % 4) as u32,
-        1 => (input / 4) as u32,
-        2 => input as u32,
-        _ => (7 - input) as u32,
+        0 => T::as_from(input % 4),
+        1 => T::as_from(input / 4),
+        2 => T::as_from(input),
+        _ => T::as_from(7 - input),
     }
 }
 
-fn check_context<TABLE>(context: TfheContext<u32, TABLE>)
+fn check_context<T: FheUint, TABLE>(context: TfheContext<T, TABLE>)
 where
-    TABLE: MonomialNttTable<ValueT = u32>,
+    TABLE: MonomialNttTable<ValueT = T>,
 {
+    let q = context
+        .parameters()
+        .external_lwe()
+        .cipher_modulus_value()
+        .unwrap();
     let mut rng = StdRng::seed_from_u64(0x4d41_4e59_5042_5301);
     let (client_key, server_key) = context.try_generate_keys(None, &mut rng).unwrap();
     assert_eq!(
@@ -53,17 +64,21 @@ where
     assert!(
         client_key.client_ntru_secret_key().as_slice()[4..]
             .iter()
-            .all(|&v| v == 0)
+            .all(|&v| v == T::ZERO.cast_to_signed())
     );
     let other_distribution = if server_key.input_distribution().is_binary() {
         SecretKeyDistr::UniformTernary
     } else {
         let prefix = client_key.external_lwe_secret_coefficients();
-        assert!(prefix.contains(&-1) && prefix.contains(&0) && prefix.contains(&1));
+        assert!(
+            prefix.contains(&-T::ONE.cast_to_signed())
+                && prefix.contains(&T::ZERO.cast_to_signed())
+                && prefix.contains(&T::ONE.cast_to_signed())
+        );
         SecretKeyDistr::UniformBinary
     };
     let incompatible =
-        TfheContext::<_, TABLE>::try_from_parameters(parameters(other_distribution)).unwrap();
+        TfheContext::<_, TABLE>::try_from_parameters(parameters(q, other_distribution)).unwrap();
     assert_eq!(
         incompatible.evaluator(&server_key).err(),
         Some(primus_tfhe::TfheEvaluationError::IncompatibleServerKey)
@@ -81,7 +96,10 @@ where
     let decryptor = context.decryptor(&client_key).unwrap();
     let mut evaluator = context.evaluator(&server_key).unwrap();
     // Input centers use t_in=15; output values use the independent t_out=8 scale.
-    let output_codec = RoundedCodec::new(8, context.parameters().external_lwe().cipher_modulus());
+    let output_codec = RoundedCodec::new(
+        T::as_from(8u32),
+        context.parameters().external_lwe().cipher_modulus(),
+    );
     let single = context
         .parameters()
         .compile_lookup_table_with_codec_fn(&output_codec, |input| value(input, 0))
@@ -92,19 +110,19 @@ where
     let modulus = context.parameters().external_lwe().cipher_modulus();
     for active_count in [0, 1, 2, 3, 1, 0] {
         let mut input = LweCiphertext::zero(context.parameters().external_lwe_dimension());
-        input.a_mut()[..active_count].fill(Q / 4);
+        input.a_mut()[..active_count].fill(q / T::as_from(4u32));
         let mut body = context
             .parameters()
             .input_plaintext_codec()
-            .encode_value(3, PlaintextEmbedding::Unsigned);
+            .encode_value(T::as_from(3u32), PlaintextEmbedding::Unsigned);
         for (&mask, &secret) in input
             .a()
             .iter()
             .zip(client_key.external_lwe_secret_coefficients())
         {
-            if secret == 1 {
+            if secret == T::ONE.cast_to_signed() {
                 body = modulus.reduce_add(body, mask);
-            } else if secret == -1 {
+            } else if secret == -T::ONE.cast_to_signed() {
                 body = modulus.reduce_sub(body, mask);
             }
         }
@@ -118,7 +136,7 @@ where
         );
         assert_eq!(
             output_codec.decode_value(decryptor.decrypt_phase(&output).unwrap()),
-            3
+            T::as_from(3u32)
         );
     }
     // Shared tests cover geometry; keep output counts 1, 3 (padded to 4), and 4 here.
@@ -133,7 +151,9 @@ where
         let mut outputs =
             vec![LweCiphertext::zero(context.parameters().external_lwe_dimension()); output_count];
         for message in [0, 3, 4, 7] {
-            let input = encryptor.encrypt_padded(message as u32, &mut rng).unwrap();
+            let input = encryptor
+                .encrypt_padded(T::as_from(message), &mut rng)
+                .unwrap();
             let (_, allocation) = allocations::measure(|| {
                 ProgrammableBootstrapInterleaved::apply_interleaved_lookup_table_to(
                     &mut evaluator,
@@ -163,7 +183,7 @@ where
                 assert_eq!(outputs[0], output);
                 assert_eq!(outputs[0], evaluator.apply_lookup_table(&input, &single));
                 let public_input = public_encryptor
-                    .encrypt_padded(message as u32, &mut rng)
+                    .encrypt_padded(T::as_from(message), &mut rng)
                     .unwrap();
                 evaluator.apply_lookup_table_to(&public_input, &single, &mut output);
                 assert_eq!(
@@ -174,7 +194,9 @@ where
         }
     }
 
-    let input = encryptor.encrypt_padded(3u32, &mut rng).unwrap();
+    let input = encryptor
+        .encrypt_padded(T::as_from(3u32), &mut rng)
+        .unwrap();
     let good = context
         .parameters()
         .compile_interleaved_lookup_table_with_codec_fn(&output_codec, 3, value)
@@ -187,20 +209,20 @@ where
             LookupTable::try_new(
                 2,
                 n,
-                t,
-                BarrettModulus::new(Q),
-                BarrettModulus::new(Q),
-                |_| Ok(0),
+                T::as_from(t),
+                BarrettModulus::new(q),
+                BarrettModulus::new(q),
+                |_| Ok(T::ZERO),
             )
             .unwrap(),
             InterleavedLookupTable::try_new(
                 2,
                 n,
                 3,
-                t,
-                BarrettModulus::new(Q),
-                BarrettModulus::new(Q),
-                |_, _| Ok(0),
+                T::as_from(t),
+                BarrettModulus::new(q),
+                BarrettModulus::new(q),
+                |_, _| Ok(T::ZERO),
             )
             .unwrap(),
         ));
@@ -209,20 +231,20 @@ where
         LookupTable::try_new(
             2,
             N,
-            15,
+            T::as_from(15u32),
             primus_modulus::NativeModulus::new(),
-            BarrettModulus::new(Q),
-            |_| Ok(0),
+            BarrettModulus::new(q),
+            |_| Ok(T::ZERO),
         )
         .unwrap(),
         InterleavedLookupTable::try_new(
             2,
             N,
             3,
-            15,
+            T::as_from(15u32),
             primus_modulus::NativeModulus::new(),
-            BarrettModulus::new(Q),
-            |_, _| Ok(0),
+            BarrettModulus::new(q),
+            |_, _| Ok(T::ZERO),
         )
         .unwrap(),
     ));
@@ -230,20 +252,20 @@ where
         LookupTable::try_new(
             2,
             N,
-            15,
-            BarrettModulus::new(Q),
-            BarrettModulus::new(104_857_601),
-            |_| Ok(0),
+            T::as_from(15u32),
+            BarrettModulus::new(q),
+            BarrettModulus::new(T::as_from(104_857_601u32)),
+            |_| Ok(T::ZERO),
         )
         .unwrap(),
         InterleavedLookupTable::try_new(
             2,
             N,
             3,
-            15,
-            BarrettModulus::new(Q),
-            BarrettModulus::new(104_857_601),
-            |_, _| Ok(0),
+            T::as_from(15u32),
+            BarrettModulus::new(q),
+            BarrettModulus::new(T::as_from(104_857_601u32)),
+            |_, _| Ok(T::ZERO),
         )
         .unwrap(),
     ));
@@ -307,15 +329,15 @@ where
     evaluator.apply_interleaved_lookup_table_to(&input, &good, &mut outputs);
     assert_eq!(
         output_codec.decode_value(decryptor.decrypt_phase(&outputs[0]).unwrap()),
-        3
+        T::as_from(3u32)
     );
     assert_eq!(
         output_codec.decode_value(decryptor.decrypt_phase(&outputs[1]).unwrap()),
-        0
+        T::as_from(0u32)
     );
     assert_eq!(
         output_codec.decode_value(decryptor.decrypt_phase(&outputs[2]).unwrap()),
-        3
+        T::as_from(3u32)
     );
 
     // A non-power-of-two base and short domain share the same keys and PBS scratch.
@@ -325,12 +347,12 @@ where
         N,
         context.parameters().input_plaintext_codec(),
         &output_codec,
-        |x, y| (x * x + y) as u32,
+        |x, y| T::as_from(x * x + y),
     )
     .unwrap();
     let mut packed = input.clone();
     let mut result = input;
-    for (x, y) in [(2u32, 1u32), (1, 0)] {
+    for (x, y) in [(T::as_from(2u32), T::ONE), (T::ONE, T::ZERO)] {
         let lhs = encryptor.encrypt_padded(x, &mut rng).unwrap();
         let rhs = encryptor.encrypt_padded(y, &mut rng).unwrap();
         let (_, allocation) = allocations::measure(|| {
@@ -346,13 +368,13 @@ where
 
     // Reuse this odd-modulus fixture for the full domain, including the upper
     // half. Keep a distinct output scale and a function with f(0) != 0.
-    let values: Vec<_> = (0..15).map(|m| ((m * m + 3) % 8) as u32).collect();
+    let values: Vec<_> = (0..15).map(|m| T::as_from((m * m + 3) % 8)).collect();
     let full = context
         .parameters()
         .compile_odd_full_domain_lookup_table_with_codec_slice(&output_codec, &values)
         .unwrap();
     for (message, &expected) in values.iter().enumerate() {
-        let input = encryptor.encrypt(message as u32, &mut rng).unwrap();
+        let input = encryptor.encrypt(T::as_from(message), &mut rng).unwrap();
         let (_, allocation) = allocations::measure(|| {
             evaluator.apply_lookup_table_to(&input, &full, &mut result);
         });
@@ -363,13 +385,27 @@ where
         );
     }
 }
+
 #[test]
-fn pbs_preserves_outputs_and_validates_domains() {
-    for distr in [
+fn pbs_u32_preserves_outputs_and_validates_domains() {
+    let q = 132_120_577u32;
+    for case in [
         SecretKeyDistr::UniformBinary,
         SecretKeyDistr::fixed_composition_ternary(4, 1, 2),
     ] {
-        let table = U32NttTable::new(N.trailing_zeros(), BarrettModulus::new(Q)).unwrap();
-        check_context(TfheContext::try_new(parameters(distr), table).unwrap());
+        let table = U32NttTable::new(N.trailing_zeros(), BarrettModulus::new(q)).unwrap();
+        check_context(TfheContext::try_new(parameters(q, case), table).unwrap());
+    }
+}
+
+#[test]
+fn pbs_u64_preserves_outputs_and_validates_domains() {
+    let q = 1_125_899_906_826_241u64;
+    for case in [
+        SecretKeyDistr::UniformBinary,
+        SecretKeyDistr::fixed_composition_ternary(4, 1, 2),
+    ] {
+        let table = U64NttTable::new(N.trailing_zeros(), BarrettModulus::new(q)).unwrap();
+        check_context(TfheContext::try_new(parameters(q, case), table).unwrap());
     }
 }

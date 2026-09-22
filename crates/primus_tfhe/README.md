@@ -247,4 +247,4 @@ Raw LUT compilation accepts independent typed input and coefficient moduli. `rot
 
 ## Further reading
 
-[Implementation notes](IMPLEMENTATION.md) · [Benchmarks and performance decisions](IMPLEMENTATION.md#performance-decisions-and-reproducibility)
+[Implementation notes](IMPLEMENTATION.md) · [Common PBS benchmark parameters](BENCHMARKS.md) · [Performance decisions](IMPLEMENTATION.md#performance-decisions-and-reproducibility)

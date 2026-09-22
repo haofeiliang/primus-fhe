@@ -247,4 +247,4 @@ raw LUT 编译接收独立的输入模数类型和系数模数类型。 `rotatio
 
 ## 进一步阅读
 
-[实现说明](IMPLEMENTATION.md) · [基准入口与性能取舍](IMPLEMENTATION.md#performance-decisions-and-reproducibility)
+[实现说明](IMPLEMENTATION.md) · [常用 PBS 基准参数](BENCHMARKS.md) · [性能取舍](IMPLEMENTATION.md#performance-decisions-and-reproducibility)

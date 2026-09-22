@@ -1,6 +1,6 @@
 //! Complete PBS: `NLev[1]` initialization, blind rotation, key switching and extraction.
 //! PBS outputs/scratch and key-generator workspace are reused; input encryption is not timed.
-//! u32/q=132_120_577 and u64/q=1_125_899_906_826_241; fixed seed, N = 1024, LWE dimension 800.
+//! u32/q=132_120_577 and u64/q=1_125_899_906_826_241; fixed-seed Boolean and 2+2 bit workloads.
 //! Binary/ternary PBS and server-key generation (drop outside timing).
 //! Regression workload, not a matched-security backend comparison.
 //!
@@ -8,6 +8,7 @@
 //! cargo bench -p primus_tfhe_ntru_ntt --bench pbs
 
 use primus_test_allocations::{CountingAllocator, measure};
+use primus_tfhe_test_support::benchmark::{NTT_Q32, NTT_Q64, PBS_WORKLOADS, PbsWorkload};
 use std::hint::black_box;
 
 use rand::{SeedableRng, rngs::StdRng};
@@ -18,7 +19,7 @@ use primus_lwe::LweParameters;
 use primus_modulus::BarrettModulus;
 use primus_ntru::{NlevParameters, NtruParameters, SecretKeyDistr};
 use primus_ntt::{MonomialNttTable, U32NttTable, U64NttTable};
-use primus_tfhe_ntru_ntt::{TfheContext, TfheParameters};
+use primus_tfhe_ntru_ntt::{BooleanGate, TfheContext, TfheParameters};
 
 #[global_allocator]
 static ALLOCATOR: CountingAllocator = CountingAllocator;
@@ -28,35 +29,52 @@ fn backend<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
     q: T,
     label: &str,
     distr: SecretKeyDistr,
+    workload: PbsWorkload,
 ) {
-    const N: usize = 1024;
-    const LWE_DIMENSION: usize = 800;
+    let n = workload.poly_length;
+    let label = format!(
+        "{label}/{}/n{n}/small_lwe{}",
+        workload.name, workload.lwe_dimension
+    );
     let modulus = BarrettModulus::new(q);
-    let external_lwe = LweParameters::new(LWE_DIMENSION, T::as_from(4usize), modulus, distr, 0.7);
+    let external_lwe = LweParameters::new(
+        workload.lwe_dimension,
+        T::as_from(workload.plaintext_modulus),
+        modulus,
+        distr,
+        0.7,
+    );
     let accumulator = NtruParameters::new(
-        N,
-        T::as_from(4usize),
+        n,
+        T::as_from(workload.plaintext_modulus),
         modulus,
         SecretKeyDistr::SparseTernary,
         0.7,
     );
-    let client = NtruParameters::new(N, T::as_from(4usize), modulus, distr, 0.7);
+    let client = NtruParameters::new(
+        n,
+        T::as_from(workload.plaintext_modulus),
+        modulus,
+        distr,
+        0.7,
+    );
     let parameters = TfheParameters::try_new(
         external_lwe,
         NlevParameters::with_ntru_params(&accumulator, 9, None),
         NlevParameters::with_ntru_params(&client, 9, None),
     )
     .unwrap();
-    let table = Table::new(N.trailing_zeros(), modulus).unwrap();
+    let table = Table::new(n.trailing_zeros(), modulus).unwrap();
     let context = TfheContext::try_new(parameters, table).unwrap();
     let mut rng = StdRng::seed_from_u64(42);
     let ((client_key, server_key), keys) =
         measure(|| context.try_generate_keys(None, &mut rng).unwrap());
     let encryptor = context.encryptor(&client_key).unwrap();
+    let input_domain = workload.plaintext_modulus as usize / 2;
     let input = encryptor.encrypt_padded(T::ONE, &mut rng).unwrap();
     let lut = context
         .parameters()
-        .compile_lookup_table_slice(&[T::ONE, T::ZERO])
+        .compile_lookup_table_fn(|x| T::as_from((x + input_domain - 1) % (input_domain)))
         .unwrap();
     let mut output = input.clone();
     let (mut evaluator, scratch) = measure(|| context.evaluator(&server_key).unwrap());
@@ -71,14 +89,25 @@ fn backend<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
     let q_value: f64 = q.as_into();
     let error = magnitude / q_value;
     assert!(
-        error < 0.125,
-        "fixed fixture exceeds the t=4 decoding margin"
+        error < 0.5 / f64::from(workload.plaintext_modulus),
+        "fixed fixture exceeds the decoding margin"
     );
     eprintln!(
         "{label}: client+server heap={} B, evaluator heap={} B, phase error/q={error:.6e}",
         keys.allocated_bytes - keys.released_bytes,
         scratch.allocated_bytes - scratch.released_bytes
     );
+    let decryptor = context.decryptor(&client_key).unwrap();
+    for message in 0..input_domain {
+        let probe = encryptor
+            .encrypt_padded(T::as_from(message), &mut rng)
+            .unwrap();
+        evaluator.apply_lookup_table_to(&probe, &lut, &mut output);
+        assert_eq!(
+            decryptor.decrypt(&output).unwrap(),
+            T::as_from((message + input_domain - 1) % (input_domain))
+        );
+    }
     let mut key_generator = primus_tfhe_ntru_ntt::KeyGenerator::new(&context);
     c.bench_function(&format!("{label}/server_keygen"), |b| {
         b.iter_batched(
@@ -101,14 +130,48 @@ fn backend<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
             );
         });
     });
+    if workload.plaintext_modulus == 4 {
+        let boolean_encryptor = context.boolean_encryptor(&client_key).unwrap();
+        let lhs = boolean_encryptor.encrypt(true, &mut rng).unwrap();
+        let rhs = boolean_encryptor.encrypt(false, &mut rng).unwrap();
+        let mut result = lhs.clone();
+        let mut boolean_evaluator = context.boolean_evaluator(&server_key).unwrap();
+        let boolean_decryptor = context.boolean_decryptor(&client_key).unwrap();
+        boolean_evaluator.evaluate_binary_to(BooleanGate::And, &lhs, &rhs, &mut result);
+        assert!(!boolean_decryptor.decrypt(&result).unwrap());
+        boolean_evaluator.mux_to(&lhs, &lhs, &rhs, &mut result);
+        assert!(boolean_decryptor.decrypt(&result).unwrap());
+
+        c.bench_function(&format!("{label}/boolean_and"), |b| {
+            b.iter(|| {
+                boolean_evaluator.evaluate_binary_to(
+                    BooleanGate::And,
+                    black_box(&lhs),
+                    black_box(&rhs),
+                    black_box(&mut result),
+                )
+            });
+        });
+        c.bench_function(&format!("{label}/boolean_mux"), |b| {
+            b.iter(|| {
+                boolean_evaluator.mux_to(
+                    black_box(&lhs),
+                    black_box(&lhs),
+                    black_box(&rhs),
+                    black_box(&mut result),
+                )
+            });
+        });
+    }
     // Each iteration produces the same 3/4 function outputs. Compare shared
     // BR/KS against separate PBS calls; k=3 also exercises a padded fourth slot.
-    // All tables, keys and outputs are reused.
-    if T::BITS != 32 || distr.is_ternary() {
+    // All tables, keys and outputs are reused. Four interleaved lanes need
+    // a separate noise/geometry budget at t=32, so keep this on Boolean.
+    if distr.is_ternary() || workload.plaintext_modulus != 4 {
         return;
     }
     for count in [3, 4] {
-        let value = |input: usize, output| T::as_from((input + output) % 4);
+        let value = |input: usize, output| T::as_from((input + output) % input_domain);
         let many = context
             .parameters()
             .compile_interleaved_lookup_table_fn(count, value)
@@ -122,6 +185,19 @@ fn backend<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
             })
             .collect();
         let mut outputs = vec![input.clone(); count];
+        for message in 0..input_domain {
+            let probe = encryptor
+                .encrypt_padded(T::as_from(message), &mut rng)
+                .unwrap();
+            evaluator.apply_interleaved_lookup_table_to(&probe, &many, &mut outputs);
+            for (index, (single, output)) in singles.iter().zip(&mut outputs).enumerate() {
+                let expected = value(message, index);
+                assert_eq!(decryptor.decrypt(output).unwrap(), expected);
+                evaluator.apply_lookup_table_to(&probe, single, output);
+                assert_eq!(decryptor.decrypt(output).unwrap(), expected);
+            }
+        }
+
         for shared in [false, true] {
             let kind = if shared { "many" } else { "separate" };
             c.bench_function(
@@ -152,17 +228,26 @@ fn backend<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
 }
 
 fn pbs(c: &mut Criterion) {
-    for (suffix, distr) in [
-        ("", SecretKeyDistr::UniformBinary),
-        ("/ternary", SecretKeyDistr::UniformTernary),
-    ] {
-        backend::<_, U32NttTable>(c, 132_120_577u32, &format!("ntru_ntt{suffix}"), distr);
-        backend::<_, U64NttTable>(
-            c,
-            1_125_899_906_826_241u64,
-            &format!("ntru_ntt/u64{suffix}"),
-            distr,
-        );
+    for workload in PBS_WORKLOADS {
+        for (suffix, distr) in [
+            ("binary", SecretKeyDistr::UniformBinary),
+            ("ternary", SecretKeyDistr::UniformTernary),
+        ] {
+            backend::<u32, U32NttTable>(
+                c,
+                NTT_Q32,
+                &format!("ntru_ntt/u32/{suffix}"),
+                distr,
+                workload,
+            );
+            backend::<u64, U64NttTable>(
+                c,
+                NTT_Q64,
+                &format!("ntru_ntt/u64/{suffix}"),
+                distr,
+                workload,
+            );
+        }
     }
 }
 
