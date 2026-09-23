@@ -27,3 +27,7 @@ criterion = { workspace = true }
 [[bench]]
 name = "butterfly"
 harness = false
+
+[[bench]]
+name = "fourier"
+harness = false

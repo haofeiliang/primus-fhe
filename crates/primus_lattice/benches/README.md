@@ -18,15 +18,15 @@ NGSW and NLev use the same scalar gadget kernel. The NGSW product case measures 
 
 ## Parameters and interpretation
 
-`support/mod.rs` defines the shared `(log N, L)` cases: `(10, 3)` as a baseline, `(11, 3)` for polynomial-length scaling, and `(10, 2)` for decomposition-length scaling. All use `log B = 8`. GLWE adds `(10, 3, k = 2)` to its baseline `k = 1`. This varies one layout parameter at a time, rather than a Cartesian product. The NTT modulus supports at most three decomposition levels at this radix. These are arithmetic workloads, not recommended cryptographic parameters.
+The four product targets cover `N=1024/2048` and `u32/u64`, matching the decomposition choices in [common PBS workloads](../../primus_tfhe/BENCHMARKS.md). GLWE uses k=1: NTT `(log B,L)=(5,5)/(23,1)` and Fourier `(8,3)/(23,1)`. NTRU uses log B=9 and full levels: NTT 3/5 and Fourier 3/7. GLWE retains one k=2 case for layout scaling. These are arithmetic workloads, not recommended cryptographic parameters.
 
-Fourier uses native-torus `u64`; NTT uses `u32`, `q = 132120577`. Both FFT backends receive the same deterministic coefficient data transformed into their own evaluation orders. Comparisons between them are meaningful for this fixed workload. Comparisons across GLWE/NTRU or Fourier/NTT explain implementation costs, not equal-security PBS performance. Choosing a TFHE architecture requires scheme-level measurements with matched security and correctness targets.
+NTT uses `U32NttTable`/`U64NttTable` and q=132120577/1125899906826241; Fourier uses the native torus with both FFT backends. Each FFT backend receives the same deterministic coefficients in its own evaluation order. Comparisons across families or moduli describe implementation costs, not equal-security PBS performance. All four targets use 20 samples, 1 s warm-up and 5 s measurement time.
 
 Extraction uses the corresponding native `u64` and explicit-modulus `u32` arithmetic. It measures partial and full active dimensions through the compact API, zero/nonzero GLWE indices, and non-aligned inverse-extraction padding. Inputs remain full-sized; a compact key is assumed to have a zero suffix. The output is coefficient-domain, so FFT and NTT tables are unnecessary.
 
 ## Timing contract
 
-One Criterion iteration is one complete public operation. Data generation, tables, gadget transforms, and allocations occur outside timing. Required accumulator clearing and output conversion remain inside the operation. Throughput counts logical output elements, including the LWE body for sample extraction. It is not an operation count or an equal-byte comparison.
+One Criterion iteration is one complete public operation. Data generation, tables, gadget transforms, and allocations occur outside timing. Required accumulator initialization and output conversion remain inside the operation. Throughput counts logical output elements, including the LWE body for sample extraction. It is not an operation count or an equal-byte comparison.
 
 Product fixtures are dense arithmetic data, not sampled bit encryptions. They meet numerical range and representation requirements; the benchmark measures algebraic evaluation rather than selection correctness or noise. Fixed input, key, and scratch reuse produces a warm-working-set baseline. Full blind rotation must separately measure sequential access to distinct bootstrapping-key gadgets; these microbenchmarks cannot predict key bandwidth or cold-cache PBS latency.
 
@@ -57,7 +57,7 @@ cargo bench -p primus_lattice --bench extraction
 cargo bench -p primus_lattice --features rns --bench rns_glev
 cargo bench -p primus_lattice --features rns --bench rns_ggsw
 # Select one parameter group or operation using Criterion's regex filter.
-cargo bench -p primus_lattice --bench glwe_ntt -- 'n1024/k1/logb8/l3'
+cargo bench -p primus_lattice --bench glwe_ntt -- 'n1024/k1/logb5/l5'
 # Exercise every fixture once without collecting timing statistics.
 cargo bench -p primus_lattice --bench glwe_fourier --bench glwe_ntt --bench ntru_fourier --bench ntru_ntt --bench extraction -- --test
 # Dependency SIMD configuration; replace the target to select another path.

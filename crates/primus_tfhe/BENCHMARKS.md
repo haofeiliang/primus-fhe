@@ -106,6 +106,10 @@ cargo bench -p primus_tfhe_glwe_ntt --bench pbs -- --test
 cargo bench -p primus_tfhe_glwe_ntt --bench pbs -- 'shortint_2_2/u64/.*/complete_pbs_reused_output'
 ```
 
+All four targets default to 20 samples, 1 s warm-up and 5 s measurement time.
+Setup reports retained client+server and evaluator heap bytes; these exclude
+table allocations and do not represent peak key-generation memory.
+
 Criterion filters select measurements; fixture setup still runs. Keys use seed
 42. Setup checks every padded input against the LUT oracle, including Boolean
 separate/interleaved outputs, and checks AND/MUX before timing. This is a deterministic
@@ -120,5 +124,5 @@ in the backend bench sources. The new names and GLWE geometry/noise differ from
 the historical n=512 fixtures, so establish a new baseline. Specialized CBS,
 sparse, ternary-GLWE and MVB benches retain their own fixtures.
 
-Pending optimization candidates, measurement evidence and validation steps are
+Measured optimization results, retained/rejected candidates and reproduction steps are
 recorded in [TFHE performance optimization](../../docs/tfhe-performance-optimization.md).

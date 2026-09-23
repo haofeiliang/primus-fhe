@@ -5,6 +5,7 @@ use primus_reduce::ReduceOnce;
 
 use crate::integer::{DivRemScalar, UnsignedInteger};
 
+mod native;
 mod ops;
 mod slice;
 

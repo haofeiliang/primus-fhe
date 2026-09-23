@@ -1,42 +1,46 @@
 use std::hint::black_box;
 
-mod support;
-
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use primus_decompose::primitive::ApproxSignedBasis;
+use primus_integer::FheUint;
 use primus_lattice::{
     context::NttNtruExternalProductContext,
     ngsw::Ngsw,
     ntru::{Ntru, NttNtru},
 };
 use primus_modulus::BarrettModulus;
-use primus_ntt::{NttTable, UintNttTable};
-use support::{LOG_B, PRODUCT_CASES};
+use primus_ntt::{NttTable, U32NttTable, U64NttTable};
 
-fn ntt(c: &mut Criterion, log_n: u32, levels: usize) {
-    const Q: u32 = 132_120_577;
-    let modulus = BarrettModulus::new(Q);
-    let table = UintNttTable::new(log_n, modulus).unwrap();
+fn ntt<T: FheUint, Table: NttTable<ValueT = T>>(
+    c: &mut Criterion,
+    q: T,
+    log_b: u32,
+    log_n: u32,
+    levels: usize,
+) {
+    let modulus = BarrettModulus::new(q);
+    let table = Table::new(log_n, modulus).unwrap();
     let exponent = table.poly_length() / 3;
-    let basis = ApproxSignedBasis::new(Some(Q), LOG_B, Some(levels));
+    let basis = ApproxSignedBasis::new(Some(q), log_b, Some(levels));
     let poly_length = table.poly_length();
     let input = Ntru::new(
         (0..poly_length)
-            .map(|i| ((i as u64 * 0x9e37_79b9 + 1) % u64::from(Q)) as u32)
+            .map(|i| T::as_from(i as u64 * 0x9e37_79b9 + 1) % q)
             .collect::<Vec<_>>(),
     );
     let key = Ngsw::new(
         (0..levels * poly_length)
-            .map(|i| ((i as u64 * 65_537 + 7) % u64::from(Q)) as u32)
+            .map(|i| T::as_from(i as u64 * 65_537 + 7) % q)
             .collect::<Vec<_>>(),
     )
     .into_ntt_form(&table);
-    let mut output = Ntru::new(vec![0u32; poly_length]);
-    let mut ntt_output = NttNtru::<Vec<u32>>::zero(poly_length);
+    let mut output = Ntru::new(vec![T::ZERO; poly_length]);
+    let mut ntt_output = NttNtru::<Vec<T>>::zero(poly_length);
     let mut context = NttNtruExternalProductContext::new(poly_length);
 
     let mut group = c.benchmark_group(format!(
-        "ntru/ntt/u32/q{Q}/n{}/logb{LOG_B}/l{levels}",
+        "ntru/ntt/u{}/q{q}/n{}/logb{log_b}/l{levels}",
+        T::BITS,
         table.poly_length()
     ));
     group.throughput(Throughput::Elements(poly_length as u64));
@@ -80,11 +84,12 @@ fn ntt(c: &mut Criterion, log_n: u32, levels: usize) {
     group.finish();
 }
 
+// Match the common PBS decomposition and specialized transform tables.
 fn benchmarks(c: &mut Criterion) {
-    for &(log_n, levels) in PRODUCT_CASES {
-        ntt(c, log_n, levels);
+    for log_n in [10, 11] {
+        ntt::<u32, U32NttTable>(c, 132_120_577, 9, log_n, 3);
+        ntt::<u64, U64NttTable>(c, 1_125_899_906_826_241, 9, log_n, 5);
     }
 }
-
-criterion_group!(benches, benchmarks);
+criterion_group! { name = benches; config = Criterion::default().sample_size(20).warm_up_time(std::time::Duration::from_secs(1)).measurement_time(std::time::Duration::from_secs(5)); targets = benchmarks }
 criterion_main!(benches);

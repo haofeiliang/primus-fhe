@@ -4,8 +4,11 @@
 //!
 //! cargo bench -p primus_tfhe_glwe_ntt --bench pbs
 
+use primus_test_allocations::{CountingAllocator, measure};
 use primus_tfhe_test_support::benchmark::{NTT_Q32, NTT_Q64, PBS_WORKLOADS, PbsWorkload};
 use std::hint::black_box;
+#[global_allocator]
+static ALLOCATOR: CountingAllocator = CountingAllocator;
 
 use criterion::{Criterion, criterion_group, criterion_main};
 use primus_glwe::{GlweCiphertext, NttGlweKeySwitchingContext};
@@ -39,7 +42,8 @@ fn bench_order<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
     let table = Table::new(poly_length.trailing_zeros(), modulus).unwrap();
     let context = TfheContext::try_new(parameters, table).unwrap();
     let mut rng = StdRng::seed_from_u64(42);
-    let (client_key, server_key) = context.try_generate_keys(None, &mut rng).unwrap();
+    let ((client_key, server_key), keys) =
+        measure(|| context.try_generate_keys(None, &mut rng).unwrap());
     let BootstrappingKey::Classic(bootstrapping_key) = server_key.bootstrapping_key() else {
         panic!("classic benchmark requires a classic server key");
     };
@@ -51,7 +55,15 @@ fn bench_order<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
         .parameters()
         .compile_lookup_table_fn(|x| T::as_from((x + input_domain - 1) % (input_domain)))
         .unwrap();
-    let mut evaluator = context.evaluator(&server_key).unwrap();
+    let (mut evaluator, scratch) = measure(|| context.evaluator(&server_key).unwrap());
+    eprintln!(
+        "GLWE/{}/u{}/{:?}: client+server heap={} B, evaluator heap={} B",
+        workload.name,
+        T::BITS,
+        order,
+        keys.allocated_bytes - keys.released_bytes,
+        scratch.allocated_bytes - scratch.released_bytes
+    );
     let mut output = input.clone();
     let decryptor = context.decryptor(&client_key).unwrap();
     for message in 0..input_domain {
@@ -105,7 +117,7 @@ fn bench_order<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
         order_name(order),
         parameters.small_lwe().dimension(),
     ));
-    group.sample_size(10);
+    group.sample_size(20);
 
     group.bench_function("glwe_key_switching", |b| {
         b.iter(|| {
@@ -263,5 +275,5 @@ fn bench_pbs(c: &mut Criterion) {
     }
 }
 
-criterion_group!(benches, bench_pbs);
+criterion_group! { name = benches; config = Criterion::default().sample_size(20).warm_up_time(std::time::Duration::from_secs(1)).measurement_time(std::time::Duration::from_secs(5)); targets = bench_pbs }
 criterion_main!(benches);

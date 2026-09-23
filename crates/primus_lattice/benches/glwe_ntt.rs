@@ -1,9 +1,8 @@
 use std::hint::black_box;
 
-mod support;
-
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use primus_decompose::primitive::ApproxSignedBasis;
+use primus_integer::FheUint;
 use primus_lattice::{
     GadgetSize, GlweSize,
     context::{NttGlweExternalProductContext, NttGlweTernaryCmuxContext},
@@ -11,42 +10,48 @@ use primus_lattice::{
     glwe::{Glwe, NttGlwe},
 };
 use primus_modulus::BarrettModulus;
-use primus_ntt::{NttTable, UintNttTable};
-use support::{LOG_B, PRODUCT_CASES};
+use primus_ntt::{MonomialNttTable, U32NttTable, U64NttTable};
 
-fn ntt(c: &mut Criterion, log_n: u32, levels: usize, dimension: usize) {
-    const Q: u32 = 132_120_577;
-    let modulus = BarrettModulus::new(Q);
-    let table = UintNttTable::new(log_n, modulus).unwrap();
+fn ntt<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
+    c: &mut Criterion,
+    q: T,
+    log_b: u32,
+    log_n: u32,
+    levels: usize,
+    dimension: usize,
+) {
+    let modulus = BarrettModulus::new(q);
+    let table = Table::new(log_n, modulus).unwrap();
     let exponent = table.poly_length() / 3;
-    let basis = ApproxSignedBasis::new(Some(Q), LOG_B, Some(levels));
+    let basis = ApproxSignedBasis::new(Some(q), log_b, Some(levels));
     let size = GadgetSize::new(GlweSize::new(dimension, table.poly_length()), levels);
     let glwe_len = size.glwe_size().glwe_len();
     let input = Glwe::new(
         (0..glwe_len)
-            .map(|i| ((i as u64 * 0x9e37_79b9 + 1) % u64::from(Q)) as u32)
+            .map(|i| T::as_from(i as u64 * 0x9e37_79b9 + 1) % q)
             .collect::<Vec<_>>(),
     );
     let key = Ggsw::new(
         (0..size.ggsw_len())
-            .map(|i| ((i as u64 * 65_537 + 7) % u64::from(Q)) as u32)
+            .map(|i| T::as_from(i as u64 * 65_537 + 7) % q)
             .collect::<Vec<_>>(),
     )
     .into_ntt_form(&table);
-    let mut output = Glwe::new(vec![0u32; glwe_len]);
-    let mut ntt_output = NttGlwe::new(vec![0u32; glwe_len]);
+    let mut output = Glwe::new(vec![T::ZERO; glwe_len]);
+    let mut ntt_output = NttGlwe::new(vec![T::ZERO; glwe_len]);
     let mut context = NttGlweExternalProductContext::new(size);
     let negative_key = Ggsw::new(
         (0..size.ggsw_len())
-            .map(|i| ((i as u64 * 1_000_003 + 13) % u64::from(Q)) as u32)
+            .map(|i| T::as_from(i as u64 * 1_000_003 + 13) % q)
             .collect::<Vec<_>>(),
     )
     .into_ntt_form(&table);
-    let mut intermediate = Glwe::new(vec![0u32; glwe_len]);
+    let mut intermediate = Glwe::new(vec![T::ZERO; glwe_len]);
     let mut ternary_context = NttGlweTernaryCmuxContext::new(size);
 
     let mut group = c.benchmark_group(format!(
-        "glwe/ntt/u32/q{Q}/n{}/k{dimension}/logb{LOG_B}/l{levels}",
+        "glwe/ntt/u{}/q{q}/n{}/k{dimension}/logb{log_b}/l{levels}",
+        T::BITS,
         table.poly_length()
     ));
     group.throughput(Throughput::Elements(glwe_len as u64));
@@ -129,12 +134,13 @@ fn ntt(c: &mut Criterion, log_n: u32, levels: usize, dimension: usize) {
     group.finish();
 }
 
+// Match the common PBS decomposition and specialized transform tables.
 fn benchmarks(c: &mut Criterion) {
-    for &(log_n, levels) in PRODUCT_CASES {
-        ntt(c, log_n, levels, 1);
+    for log_n in [10, 11] {
+        ntt::<u32, U32NttTable>(c, 132_120_577, 5, log_n, 5, 1);
+        ntt::<u64, U64NttTable>(c, 1_125_899_906_826_241, 23, log_n, 1, 1);
     }
-    ntt(c, 10, 3, 2);
+    ntt::<u32, U32NttTable>(c, 132_120_577, 8, 10, 3, 2);
 }
-
-criterion_group!(benches, benchmarks);
+criterion_group! { name = benches; config = Criterion::default().sample_size(20).warm_up_time(std::time::Duration::from_secs(1)).measurement_time(std::time::Duration::from_secs(5)); targets = benchmarks }
 criterion_main!(benches);

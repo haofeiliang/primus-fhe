@@ -149,7 +149,45 @@ fn bench_barrett_u64(c: &mut Criterion) {
     group.finish();
 }
 
+// Canonical pointwise accumulation used by both GLWE and NTRU PBS.
+fn pbs_multiply_add<T: primus_integer::FheUint + Into<u64>>(c: &mut Criterion, q: T) {
+    for len in [1024, 2048] {
+        let input = inputs(q, len);
+        let modulus = BarrettModulus::new(q);
+        let mut acc = vec![T::ZERO; len];
+        let mut group = c.benchmark_group(format!("barrett/pbs_mac/u{}/q{q}/n{len}", T::BITS));
+        group
+            .sample_size(20)
+            .warm_up_time(std::time::Duration::from_secs(1))
+            .measurement_time(std::time::Duration::from_secs(5));
+        group.throughput(Throughput::Elements(len as u64));
+        group.bench_function("dispatched", |b| {
+            b.iter(|| {
+                modulus.reduce_add_mul_slice_assign(
+                    black_box(&mut acc),
+                    black_box(&input.lhs),
+                    black_box(&input.rhs),
+                )
+            })
+        });
+        group.bench_function("scalar", |b| {
+            b.iter(|| {
+                for ((acc, &lhs), &rhs) in black_box(&mut acc)
+                    .iter_mut()
+                    .zip(black_box(&input.lhs))
+                    .zip(black_box(&input.rhs))
+                {
+                    *acc = modulus.reduce_mul_add(lhs, rhs, *acc);
+                }
+            })
+        });
+        group.finish();
+    }
+}
+
 fn bench_barrett_slice(c: &mut Criterion) {
+    pbs_multiply_add(c, 132_120_577u32);
+    pbs_multiply_add(c, 1_125_899_906_826_241u64);
     bench_barrett_u32(c);
     bench_barrett_u64(c);
 

@@ -52,3 +52,57 @@ fn rustfft_shared_table_runs_with_independent_scratch() {
 fn tfhe_fft_shared_table_runs_with_independent_scratch() {
     concurrent_roundtrip::<TfheFftTable>();
 }
+
+#[test]
+fn u64_torus_conversion_preserves_round_saturate_and_wrap() {
+    use primus_fft::TorusFftValue;
+    let check = |x: f64| {
+        let expected = ((x * u64::TORUS_SCALE_INVERSE).round() as i128) as u64;
+        assert_eq!(
+            u64::from_torus_f64(x),
+            expected,
+            "input bits: {:016x}",
+            x.to_bits()
+        );
+    };
+    for value in [
+        0.0,
+        -0.0,
+        f64::INFINITY,
+        f64::NEG_INFINITY,
+        f64::NAN,
+        f64::MAX,
+        f64::MIN,
+    ] {
+        check(value);
+    }
+    // Half-integers in coefficient units, torus periods and saturation edges.
+    for value in [
+        0.5 * u64::TORUS_SCALE,
+        1.5 * u64::TORUS_SCALE,
+        0.5,
+        1.0,
+        2.0,
+        2.0f64.powi(63),
+    ] {
+        for bits in [value.to_bits() - 1, value.to_bits(), value.to_bits() + 1] {
+            check(f64::from_bits(bits));
+            check(-f64::from_bits(bits));
+        }
+    }
+    // Every floating exponent with representative mantissas and both signs.
+    for exponent in 0..=0x7ffu64 {
+        for fraction in [0, 1, (1u64 << 51) - 1, 1u64 << 51, (1u64 << 52) - 1] {
+            for sign in [0, 1u64 << 63] {
+                check(f64::from_bits(sign | (exponent << 52) | fraction));
+            }
+        }
+    }
+    let mut bits = 42u64;
+    for _ in 0..100_000 {
+        bits ^= bits << 13;
+        bits ^= bits >> 7;
+        bits ^= bits << 17;
+        check(f64::from_bits(bits));
+    }
+}
