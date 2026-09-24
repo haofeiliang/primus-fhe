@@ -5,6 +5,7 @@ use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use primus_factor::{FactorSliceOps, ShoupFactor};
 use primus_integer::FheUint;
 use std::hint::black_box;
+use std::time::Duration;
 
 fn slices<T: FheUint + TryFrom<u64>>(
     c: &mut Criterion,
@@ -89,5 +90,12 @@ fn benchmarks(c: &mut Criterion) {
         Q64,
     );
 }
-criterion_group!(benches, benchmarks);
+criterion_group! {
+    name = benches;
+    config = Criterion::default()
+        .sample_size(20)
+        .warm_up_time(Duration::from_secs(1))
+        .measurement_time(Duration::from_secs(5));
+    targets = benchmarks
+}
 criterion_main!(benches);

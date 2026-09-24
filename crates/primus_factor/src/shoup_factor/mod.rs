@@ -2,6 +2,7 @@ use primus_integer::{DivWide, UnsignedInteger};
 
 use crate::{FactorBase, FactorMul, LazyFactorMul};
 
+mod native;
 mod slice;
 
 #[cfg(feature = "simd")]

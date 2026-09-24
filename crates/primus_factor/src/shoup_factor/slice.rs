@@ -4,6 +4,8 @@ use crate::{FactorSliceOps, LazyFactorSliceOps, ShoupFactor};
 
 use crate::common::slice;
 
+use super::native;
+
 #[cfg(not(feature = "simd"))]
 impl<T: FheUint> LazyFactorSliceOps<T> for ShoupFactor<T> {
     #[inline]
@@ -21,16 +23,25 @@ impl<T: FheUint> LazyFactorSliceOps<T> for ShoupFactor<T> {
 impl<T: FheUint> FactorSliceOps<T> for ShoupFactor<T> {
     #[inline]
     fn factor_mul_slice_assign(self, values: &mut [T], modulus: T) {
+        if native::try_mul_assign(self, values, modulus) {
+            return;
+        }
         slice::factor_mul_slice_assign(self, values, modulus);
     }
 
     #[inline]
     fn factor_mul_slice_to(self, input: &[T], output: &mut [T], modulus: T) {
+        if native::try_mul_to(self, input, output, modulus) {
+            return;
+        }
         slice::factor_mul_slice_to(self, input, output, modulus);
     }
 
     #[inline]
     fn add_factor_mul_slice_assign(self, acc: &mut [T], rhs: &[T], modulus: T) {
+        if native::try_add_mul_assign(self, acc, rhs, modulus) {
+            return;
+        }
         slice::add_factor_mul_slice_assign(self, acc, rhs, modulus);
     }
 
@@ -69,6 +80,9 @@ impl<T: FheUint> LazyFactorSliceOps<T> for ShoupFactor<T> {
 impl<T: FheUint> FactorSliceOps<T> for ShoupFactor<T> {
     #[inline]
     fn factor_mul_slice_assign(self, values: &mut [T], modulus: T) {
+        if native::try_mul_assign(self, values, modulus) {
+            return;
+        }
         // For 64-bit in-place products, let LLVM choose the loop shape instead
         // of imposing fixed SIMD chunks. The word-width choice folds at compile time.
         if T::BITS == 64 {
@@ -82,6 +96,9 @@ impl<T: FheUint> FactorSliceOps<T> for ShoupFactor<T> {
 
     #[inline]
     fn factor_mul_slice_to(self, input: &[T], output: &mut [T], modulus: T) {
+        if native::try_mul_to(self, input, output, modulus) {
+            return;
+        }
         simd::factor_mul_slice_to::<T, ShoupFactor<T>, SimdShoupFactor<T>>(
             self, input, output, modulus,
         );
@@ -89,6 +106,9 @@ impl<T: FheUint> FactorSliceOps<T> for ShoupFactor<T> {
 
     #[inline]
     fn add_factor_mul_slice_assign(self, acc: &mut [T], rhs: &[T], modulus: T) {
+        if native::try_add_mul_assign(self, acc, rhs, modulus) {
+            return;
+        }
         simd::add_factor_mul_slice_assign::<T, ShoupFactor<T>, SimdShoupFactor<T>>(
             self, acc, rhs, modulus,
         );

@@ -109,14 +109,18 @@ fn slice_mul_against_wide_product() {
                     state ^= state << 13;
                     state ^= state >> 7;
                     state ^= state << 17;
-                    convert(match i % 4 {
+                    // Shoup's scalar formula also accepts full-word operands;
+                    // exercise that range in both the vector body and tail.
+                    convert(match i % 6 {
                         0 => 0,
                         1 => q - 1,
-                        _ => state % q,
+                        2 => T::MAX.into() as u64,
+                        3 => q,
+                        _ => state & (T::MAX.into() as u64),
                     })
                 })
                 .collect();
-            for factor_value in [0, 1, 17, q - 1] {
+            for factor_value in [0, 1, 17 % q, q / 2, q - 1] {
                 let factor = ShoupFactor::new(convert(factor_value), modulus);
                 let expected: Vec<T> = input
                     .iter()
@@ -132,14 +136,16 @@ fn slice_mul_against_wide_product() {
                 assert_eq!(assign[0], T::MAX);
                 assert_eq!(assign[len + 1], T::MAX);
 
-                let mut output = vec![T::ZERO; len];
-                factor.factor_mul_slice_to(&input, &mut output, modulus);
-                assert_eq!(output, expected);
+                let mut output = vec![T::MAX; len + 2];
+                factor.factor_mul_slice_to(&input, &mut output[1..len + 1], modulus);
+                assert_eq!(&output[1..len + 1], expected);
+                assert_eq!(output[0], T::MAX);
+                assert_eq!(output[len + 1], T::MAX);
 
                 let mut lazy_assign = input.clone();
                 factor.lazy_factor_mul_slice_assign(&mut lazy_assign, modulus);
-                factor.lazy_factor_mul_slice_to(&input, &mut output, modulus);
-                for values in [&lazy_assign, &output] {
+                factor.lazy_factor_mul_slice_to(&input, &mut output[1..len + 1], modulus);
+                for values in [lazy_assign.as_slice(), &output[1..len + 1]] {
                     for (&actual, &expected) in values.iter().zip(&expected) {
                         let actual: u128 = actual.into();
                         assert!(actual < 2 * u128::from(q));
@@ -150,63 +156,80 @@ fn slice_mul_against_wide_product() {
         }
     }
 
-    for q in [536_813_569, (1 << 31) - 1] {
+    check::<u16>(32749);
+    for q in [3, 132_120_577, 536_813_569, (1 << 31) - 1] {
         check::<u32>(q);
     }
-    for q in [1_125_899_906_826_241, (1 << 63) - 1] {
+    for q in [3, (1 << 32) - 5, 1_125_899_906_826_241, (1 << 63) - 1] {
         check::<u64>(q);
     }
 }
 
 #[test]
-fn fused_slice_ops_against_barrett() {
-    let modulus = BarrettModulus::<ValueT>::new(MODULUS);
-    let distr = Uniform::new(0, MODULUS).unwrap();
-    let mut rng = rand::rng();
+fn fused_slice_ops_against_wide_product() {
+    fn check<T: FheUint + TryFrom<u64> + Into<u128>>(q: u64) {
+        let convert = |value| T::try_from(value).ok().unwrap();
+        let modulus = convert(q);
+        let wide_q = u128::from(q);
+        let mut state = 0xa076_1d64_78bd_642fu64;
+        for len in [0, 1, 7, 8, 15, 16, 17, 31, 32, 33, 64, 65, 1024, 1025] {
+            let rhs: Vec<T> = (0..len)
+                .map(|i| {
+                    state ^= state << 13;
+                    state ^= state >> 7;
+                    state ^= state << 17;
+                    convert(match i % 4 {
+                        0 => 0,
+                        1 => q - 1,
+                        2 => T::MAX.into() as u64,
+                        _ => state & (T::MAX.into() as u64),
+                    })
+                })
+                .collect();
+            let acc: Vec<T> = (0..len)
+                .map(|i| convert([0, q - 1, q / 2][i % 3]))
+                .collect();
+            for factor_value in [0, 1, 17 % q, q / 2, q - 1] {
+                let factor = ShoupFactor::new(convert(factor_value), modulus);
+                let products: Vec<u128> = rhs
+                    .iter()
+                    .map(|&value| u128::from(factor_value) * value.into() % wide_q)
+                    .collect();
+                let expected_add: Vec<T> = acc
+                    .iter()
+                    .zip(&products)
+                    .map(|(&acc, &product)| convert(((acc.into() + product) % wide_q) as u64))
+                    .collect();
+                // Offset the output and guard both ends across dispatch and tail boundaries.
+                let mut add_assign = vec![T::MAX; len + 2];
+                add_assign[1..len + 1].copy_from_slice(&acc);
+                factor.add_factor_mul_slice_assign(&mut add_assign[1..len + 1], &rhs, modulus);
+                assert_eq!(&add_assign[1..len + 1], expected_add);
+                assert_eq!(add_assign[0], T::MAX);
+                assert_eq!(add_assign[len + 1], T::MAX);
 
-    for &len in &[0usize, 1, 3, 7, 8, 15, 16, 17, 31, 33, 64, 65] {
-        let factor_value = distr.sample(&mut rng);
-        let factor = ShoupFactor::new(factor_value, MODULUS);
-        let rhs: Vec<ValueT> = (0..len).map(|_| distr.sample(&mut rng)).collect();
-        let acc: Vec<ValueT> = (0..len).map(|_| distr.sample(&mut rng)).collect();
-        let addend: Vec<ValueT> = (0..len).map(|_| distr.sample(&mut rng)).collect();
+                let expected_sub: Vec<T> = acc
+                    .iter()
+                    .zip(&products)
+                    .map(|(&acc, &product)| {
+                        convert(((acc.into() + wide_q - product) % wide_q) as u64)
+                    })
+                    .collect();
+                let mut sub_assign = acc.clone();
+                factor.sub_factor_mul_slice_assign(&mut sub_assign, &rhs, modulus);
+                assert_eq!(sub_assign, expected_sub);
 
-        let products: Vec<ValueT> = rhs
-            .iter()
-            .map(|&value| modulus.reduce_mul(factor_value, value))
-            .collect();
-
-        let expected_add: Vec<ValueT> = acc
-            .iter()
-            .zip(&products)
-            .map(|(&acc, &product)| modulus.reduce_add(acc, product))
-            .collect();
-        let mut add_assign = acc.clone();
-        factor.add_factor_mul_slice_assign(&mut add_assign, &rhs, MODULUS);
-        assert_eq!(
-            add_assign, expected_add,
-            "add_factor_mul_slice_assign len={len}"
-        );
-
-        let expected_sub: Vec<ValueT> = acc
-            .iter()
-            .zip(&products)
-            .map(|(&acc, &product)| modulus.reduce_sub(acc, product))
-            .collect();
-        let mut sub_assign = acc.clone();
-        factor.sub_factor_mul_slice_assign(&mut sub_assign, &rhs, MODULUS);
-        assert_eq!(
-            sub_assign, expected_sub,
-            "sub_factor_mul_slice_assign len={len}"
-        );
-
-        let expected_to: Vec<ValueT> = products
-            .iter()
-            .zip(&addend)
-            .map(|(&product, &addend)| modulus.reduce_add(product, addend))
-            .collect();
-        let mut output = vec![0; len];
-        factor.factor_mul_add_slice_to(&rhs, &addend, &mut output, MODULUS);
-        assert_eq!(output, expected_to, "factor_mul_add_slice_to len={len}");
+                let mut output = vec![T::MAX; len];
+                factor.factor_mul_add_slice_to(&rhs, &acc, &mut output, modulus);
+                assert_eq!(output, expected_add);
+            }
+        }
+    }
+    check::<u16>(32749);
+    for q in [3, 132_120_577, (1 << 31) - 1] {
+        check::<u32>(q);
+    }
+    for q in [3, (1 << 32) - 5, 1_125_899_906_826_241, (1 << 63) - 1] {
+        check::<u64>(q);
     }
 }

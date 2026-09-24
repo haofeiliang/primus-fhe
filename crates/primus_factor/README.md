@@ -58,7 +58,9 @@ Some low-level contracts are diagnosed only by `debug_assert*!`. Release callers
 
 ## SIMD feature
 
-The optional `simd` feature enables nightly portable-SIMD support. Scalar `ShoupFactor` slice operations then dispatch through SIMD internally and handle any remaining elements with the scalar path. `SimdShoupFactor` and `SimdFactorMul` are available for code that needs to broadcast one factor or pack one factor per lane explicitly.
+Stable builds accelerate sufficiently long `u64` Shoup slices on x86-64 CPUs with AVX-512F and AVX-512DQ. This covers `factor_mul_slice_assign`, `factor_mul_slice_to`, and `add_factor_mul_slice_assign`, using the existing factor representation and scalar tails without allocation. Other types, short slices, and unsupported CPUs retain their existing implementation.
+
+The optional `simd` feature enables nightly portable-SIMD support. It shares the native kernels above and retains the existing fallback paths. `SimdShoupFactor` and `SimdFactorMul` are available for code that needs to broadcast one factor or pack one factor per lane explicitly.
 
 ```text
 cargo +nightly test -p primus_factor --features simd

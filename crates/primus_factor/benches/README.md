@@ -12,4 +12,8 @@ cargo bench -p primus_factor --bench shoup_factor -- --test
 cargo +nightly bench -p primus_factor --bench shoup_factor --features simd
 ```
 
+Criterion uses 20 samples, a 1-second warm-up and a 5-second measurement. Build both variants before measuring, pin them to the same CPU and alternate baseline/candidate runs. Stable and nightly builds must be compared separately. The three accelerated u64 operations share a native kernel path when AVX-512F/DQ are available; u32 and multiply-subtract provide unchanged controls.
+
+The [Shoup evaluation](../../../docs/shoup-simd-evaluation.md) records code generation, numerical validation, paired measurements and the RNS/trace caller results.
+
 The prior u64-only fixture used a different modulus, factor and case names. Collect a new baseline. Use the same host/toolchain/features as the modulus benchmarks; default builds may also be auto-vectorized. Lazy multiplication and single-value factor operations are outside this canonical-slice baseline.

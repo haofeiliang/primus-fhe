@@ -77,9 +77,8 @@ pub trait LazyFactorSliceOps<T> {
 
 /// Slice-level canonical multiplication by a precomputed factor.
 ///
-/// Implementations may use SIMD internally when the `simd` feature is enabled.
-/// Callers keep the normal scalar slice layout, and the remainder is handled by
-/// the scalar path.
+/// Implementations may use native CPU-specific SIMD, or portable SIMD when the
+/// `simd` feature is enabled. Callers keep the normal scalar slice layout.
 ///
 /// The factor must have been precomputed for the `modulus` supplied to each
 /// call. Input and accumulator slice elements are expected to be canonical.

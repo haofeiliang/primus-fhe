@@ -58,7 +58,9 @@ Factor 有意不保存模数。调用方必须在后续每次运算中传入构�
 
 ## SIMD feature
 
-可选的 `simd` feature 启用 nightly portable-SIMD 支持。启用后，标量 `ShoupFactor` 的切片运算会在内部调度 SIMD，并用标量路径处理剩余元素。需要显式广播单个 factor 或为每个 lane 打包不同 factor 时，可以使用 `SimdShoupFactor` 和 `SimdFactorMul`。
+稳定版在支持 AVX-512F 和 AVX-512DQ 的 x86-64 CPU 上加速足够长的 `u64` Shoup 切片。覆盖 `factor_mul_slice_assign`、`factor_mul_slice_to` 和 `add_factor_mul_slice_assign`，沿用现有 factor 表示和标量尾部，不引入分配。其他类型、短切片及不支持这些指令的平台保留原实现。
+
+可选的 `simd` feature 启用 nightly portable-SIMD 支持，与稳定版共用上述原生内核，并保留已有回退路径。需要显式广播单个 factor 或为每个 lane 打包不同 factor 时，可以使用 `SimdShoupFactor` 和 `SimdFactorMul`。
 
 ```text
 cargo +nightly test -p primus_factor --features simd
