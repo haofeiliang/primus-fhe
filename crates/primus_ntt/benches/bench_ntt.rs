@@ -9,40 +9,28 @@
 use core::fmt::Display;
 use std::{hint::black_box, time::Duration};
 
-use criterion::{
-    BatchSize, BenchmarkGroup, BenchmarkId, Criterion, Throughput, measurement::WallTime,
-};
+use criterion::{BatchSize, BenchmarkGroup, BenchmarkId, Criterion, measurement::WallTime};
 use primus_integer::FheUint;
 use primus_modulus::BarrettModulus;
 use primus_ntt::{MonomialNttTable, NttTable, U32NttTable, U64NttTable, UintNttTable};
 use primus_reduce::FieldContext;
 use rand::distr::{Distribution, Uniform};
 
-// Transform cases cover scalar/SIMD cutovers, the AVX-512 breadth-first leaf
-// boundary, and representative cache-working-set sizes. On machines without a
-// given instruction set, the same cases measure the selected fallback.
-const U32_TRANSFORM_CASES: &[(u32, usize)] = &[
-    (268_369_921, 16),
-    (268_369_921, 32),
-    (268_369_921, 1024),
-    (268_369_921, 4096),
-];
+// Transform cases focus on representative workload and cache-working-set sizes.
+// On machines without a given instruction set, the same cases measure the
+// selected fallback.
+const U32_TRANSFORM_CASES: &[(u32, usize)] = &[(268_369_921, 1024), (268_369_921, 4096)];
 const U64_TRANSFORM_CASES: &[(u64, usize)] = &[
-    // Below 2^30: scalar-32 for n < 16; IFMA or DQ-32 when available.
-    (1_073_692_673, 8),
-    (1_073_692_673, 16),
+    // Below 2^30: IFMA or DQ-32 when available.
     (1_073_692_673, 1024),
     (1_073_692_673, 2048),
     (1_073_692_673, 4096),
-    // Below 2^50: scalar-64 for n < 16; IFMA when available.
-    (1_125_899_906_826_241, 8),
-    (1_125_899_906_826_241, 16),
+    // Below 2^50: IFMA when available.
     (1_125_899_906_826_241, 1024),
     (1_125_899_906_826_241, 2048),
     (1_125_899_906_826_241, 4096),
     (1_125_899_906_826_241, 8192),
     // Above the IFMA limit: AVX-512 DQ-64 when available.
-    (1_152_921_504_606_830_593, 16),
     (1_152_921_504_606_830_593, 1024),
     (1_152_921_504_606_830_593, 2048),
     (1_152_921_504_606_830_593, 4096),
@@ -264,7 +252,6 @@ fn bench_ntt_case<Value, Specialized, Generic>(
     let case = format!("{value_type}/q={modulus}/n={n}");
 
     let mut ntt_group = criterion.benchmark_group(format!("ntt/{case}"));
-    ntt_group.throughput(Throughput::Elements(n as u64));
     bench_ntt_table(&mut ntt_group, "specialized", specialized, input_pool);
     bench_ntt_table(&mut ntt_group, "generic", generic, input_pool);
     ntt_group.finish();
@@ -290,7 +277,6 @@ fn bench_auxiliary_case<Value, Specialized, Generic>(
     let case = format!("{value_type}/q={modulus}/n={n}");
 
     let mut lazy_group = criterion.benchmark_group(format!("lazy_ntt/{case}"));
-    lazy_group.throughput(Throughput::Elements(n as u64));
     bench_lazy_ntt_table(&mut lazy_group, "specialized", specialized, input_pool);
     bench_lazy_ntt_table(&mut lazy_group, "generic", generic, input_pool);
     lazy_group.finish();
@@ -300,7 +286,6 @@ fn bench_auxiliary_case<Value, Specialized, Generic>(
     let mut generic_output = vec![Value::ZERO; n];
 
     let mut monomial_group = criterion.benchmark_group(format!("monomial/{case}"));
-    monomial_group.throughput(Throughput::Elements(n as u64));
     bench_monomial_table(
         &mut monomial_group,
         "specialized",
@@ -320,9 +305,6 @@ fn bench_auxiliary_case<Value, Specialized, Generic>(
     monomial_group.finish();
 
     let mut expansion_group = criterion.benchmark_group(format!("expansion/{case}"));
-    expansion_group.throughput(Throughput::Elements(
-        n as u64 * u64::from(n.trailing_zeros()),
-    ));
     bench_expansion_table(
         &mut expansion_group,
         "specialized",

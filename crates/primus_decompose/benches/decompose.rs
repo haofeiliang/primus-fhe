@@ -1,13 +1,16 @@
 // cargo bench -p primus_decompose --bench decompose
+// cargo +nightly bench -p primus_decompose --bench decompose --features simd
 //
 // BigUint setup measures integer decomposition precomputation only. RNS
 // reconstruction weights belong to primus_glwe_rns parameter construction.
-// Online cases include initialization and every retained level. Use one batch
-// size per kernel profile; end-to-end scaling belongs to the scheme benchmarks.
+// The generic online cases include initialization and every retained level.
+// PBS cases use the real external-product shapes and separate initialization,
+// all retained levels, and their combined cost. They do not measure a full PBS.
 
 use std::hint::black_box;
+use std::time::Duration;
 
-use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
+use criterion::{BatchSize, BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use primus_decompose::{big_integer::BigUintApproxSignedBasis, primitive::ApproxSignedBasis};
 use primus_integer::{BigUint, FheUint, multiply_many_values};
 
@@ -82,6 +85,132 @@ fn bench_primitive_online(c: &mut Criterion) {
     // Representative NTT key-switching and external-product decompositions.
     primitive_online(c, "u32/q27", Some(132_120_577u32), 2, Some(13));
     primitive_online(c, "u32/q27", Some(132_120_577u32), 7, Some(3));
+}
+
+fn bench_pbs_decomposition(c: &mut Criterion) {
+    // Keep these external-product parameters aligned with primus_tfhe/BENCHMARKS.md.
+    // N=1024 is Boolean; N=2048 is the 2 message + 2 carry bit workload.
+    for n in [1024, 2048] {
+        pbs_decomposition(c, "glwe_ntt/u32", Some(132_120_577u32), 5, Some(5), n);
+        pbs_decomposition(c, "glwe_ntt/u64", Some(MODULI[0]), 23, Some(1), n);
+        pbs_decomposition(c, "ntru_ntt/u32", Some(132_120_577u32), 9, None, n);
+        pbs_decomposition(c, "ntru_ntt/u64", Some(MODULI[0]), 9, None, n);
+        pbs_decomposition(c, "glwe_fourier/u32", None::<u32>, 8, Some(3), n);
+        pbs_decomposition(c, "glwe_fourier/u64", None::<u64>, 23, Some(1), n);
+        pbs_decomposition(c, "ntru_fourier/u32", None::<u32>, 9, None, n);
+        pbs_decomposition(c, "ntru_fourier/u64", None::<u64>, 9, None, n);
+    }
+}
+
+fn pbs_decomposition<T: FheUint>(
+    c: &mut Criterion,
+    label: &str,
+    modulus: Option<T>,
+    log_basis: u32,
+    retained: Option<usize>,
+    n: usize,
+) {
+    let basis = ApproxSignedBasis::new(modulus, log_basis, retained);
+    // Fixed-seed xorshift covers the word range without a regular arithmetic stride.
+    let mut state = 0x1234_5678_9abc_def0u64;
+    let values: Vec<T> = (0..n)
+        .map(|_| {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            let value = T::as_from(state);
+            modulus.map_or(value, |q| value % q)
+        })
+        .collect();
+    let mut adjusted = vec![T::ZERO; n];
+    let mut carries = vec![false; n];
+    let mut digits = vec![T::ZERO; n];
+    let initialize = |adjusted: &mut [T], carries: &mut [bool]| {
+        let basis = black_box(&basis);
+        let values = black_box(&values);
+        if modulus.is_some() {
+            basis.init_value_carry_slice_to(values, adjusted, carries);
+        } else {
+            basis.init_carry_slice(values, carries);
+        }
+    };
+    initialize(&mut adjusted, &mut carries);
+    let initialized_carries = carries.clone();
+    let input = if modulus.is_some() {
+        &adjusted
+    } else {
+        &values
+    };
+    let (scalar_values, mut scalar_carries): (Vec<_>, Vec<_>) = values
+        .iter()
+        .map(|&value| basis.init_value_carry(value))
+        .unzip();
+    assert_eq!(input, &scalar_values);
+    assert_eq!(carries, scalar_carries);
+    for decomposer in basis.decomposer_iter() {
+        decomposer.decompose_slice_to(input, &mut digits, &mut carries);
+        for ((&value, &digit), (carry, &batch_carry)) in scalar_values
+            .iter()
+            .zip(&digits)
+            .zip(scalar_carries.iter_mut().zip(&carries))
+        {
+            let (expected_digit, expected_carry) = decomposer.decompose(value, *carry);
+            assert_eq!((digit, batch_carry), (expected_digit, expected_carry));
+            *carry = expected_carry;
+        }
+    }
+
+    let mut group = c.benchmark_group(format!(
+        "decompose/pbs/{label}/logB={log_basis}/L={}/drop={}/N={n}",
+        basis.decompose_length(),
+        basis.drop_bits(),
+    ));
+    group.throughput(Throughput::Elements(n as u64));
+    group.bench_function("levels", |b| {
+        // Restore the initial carry outside timing. Each timed invocation traverses
+        // every level exactly once; carrying state across iterations would be invalid.
+        b.iter_batched_ref(
+            || initialized_carries.clone(),
+            |carries| {
+                for decomposer in black_box(&basis).decomposer_iter() {
+                    decomposer.decompose_slice_to(
+                        black_box(input),
+                        black_box(&mut digits),
+                        black_box(carries),
+                    );
+                    black_box(&digits);
+                }
+                black_box(carries);
+            },
+            BatchSize::PerIteration,
+        );
+    });
+    group.bench_function("init", |b| {
+        b.iter(|| {
+            initialize(black_box(&mut adjusted), black_box(&mut carries));
+            black_box((&adjusted, &carries));
+        });
+    });
+    group.bench_function("full", |b| {
+        b.iter(|| {
+            initialize(black_box(&mut adjusted), black_box(&mut carries));
+            let input = if modulus.is_some() {
+                &adjusted
+            } else {
+                &values
+            };
+            for decomposer in black_box(&basis).decomposer_iter() {
+                decomposer.decompose_slice_to(
+                    black_box(input),
+                    black_box(&mut digits),
+                    black_box(&mut carries),
+                );
+                black_box(&digits);
+            }
+            black_box(&carries);
+        });
+    });
+    group.finish();
 }
 
 fn primitive_online<T: FheUint>(
@@ -258,11 +387,13 @@ fn bench_big_online(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(
-    benches,
-    bench_primitive_setup,
-    bench_primitive_online,
-    bench_big_setup,
-    bench_big_online,
-);
+criterion_group! {
+    name = benches;
+    config = Criterion::default()
+        .sample_size(20)
+        .warm_up_time(Duration::from_secs(1))
+        .measurement_time(Duration::from_secs(5));
+    targets = bench_primitive_setup, bench_primitive_online, bench_pbs_decomposition,
+        bench_big_setup, bench_big_online
+}
 criterion_main!(benches);
