@@ -98,6 +98,9 @@ fn wrapping_and_scaled_decomposition_follow_the_centered_rule() {
     const ODD_MODULUS_VALUES: &[Value] = &[0, 1, 3, 4, 6];
     let cases: [(Value, &[Value]); 2] = [(2, BINARY_VALUES), (7, ODD_MODULUS_VALUES)];
     for (small_modulus, values) in cases {
+        // Cross the native dispatch threshold and include a SIMD tail.
+        let values: Vec<_> = values.iter().copied().cycle().take(65).collect();
+        let values = values.as_slice();
         let centered = |value: Value, modulus: Value| {
             if small_modulus == 2 || value < small_modulus.div_ceil(2) {
                 value
@@ -116,8 +119,17 @@ fn wrapping_and_scaled_decomposition_follow_the_centered_rule() {
             &factors,
         );
 
+        let mut unsigned_acc = vec![11; decomposed.len()];
+        for _ in 0..2 {
+            base.add_decompose_small_values_scaled_assign(values, &mut unsigned_acc, &factors);
+        }
         for (modulus_index, modulus) in base.moduli().iter().enumerate() {
             for (value_index, &value) in values.iter().enumerate() {
+                let unsigned_product = modulus.reduce_mul(factor_values[modulus_index], value);
+                assert_eq!(
+                    unsigned_acc[modulus_index * values.len() + value_index],
+                    modulus.reduce_add(11, modulus.reduce_add(unsigned_product, unsigned_product))
+                );
                 let expected = centered(value, modulus.value());
                 assert_eq!(
                     decomposed[modulus_index * values.len() + value_index],

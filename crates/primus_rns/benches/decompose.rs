@@ -1,5 +1,6 @@
 use primus_rns::{BaseConverter, RNSBase, ResidueFactors};
 use std::hint::black_box;
+use std::time::Duration;
 
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use primus_factor::ShoupFactor;
@@ -190,5 +191,12 @@ fn bench_base_conversion(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_base_slice_operations, bench_base_conversion);
+criterion_group! {
+    name = benches;
+    config = Criterion::default()
+        .sample_size(20)
+        .warm_up_time(Duration::from_secs(1))
+        .measurement_time(Duration::from_secs(5));
+    targets = bench_base_slice_operations, bench_base_conversion
+}
 criterion_main!(benches);

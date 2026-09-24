@@ -72,7 +72,6 @@ fn slices<T: FheUint + TryFrom<u64>>(
 
 fn benchmarks(c: &mut Criterion) {
     const Q32: u32 = 132_120_577;
-    const Q64: u64 = 1_125_899_906_826_241;
     // Same nontrivial multiplier as modulus scalar benchmarks; construction is
     // excluded so timings represent amortized use of a precomputed factor.
     slices(
@@ -82,13 +81,11 @@ fn benchmarks(c: &mut Criterion) {
         ShoupFactor::new(17, Q32),
         u64::from(Q32),
     );
-    slices(
-        c,
-        "u64/q1125899906826241",
-        Q64,
-        ShoupFactor::new(17, Q64),
-        Q64,
-    );
+    // Cover both the usual NTT modulus and the upper end of Shoup's range.
+    // Factor arithmetic does not require a prime modulus.
+    for q in [1_125_899_906_826_241, (1 << 63) - 1] {
+        slices(c, &format!("u64/q{q}"), q, ShoupFactor::new(17, q), q);
+    }
 }
 criterion_group! {
     name = benches;
