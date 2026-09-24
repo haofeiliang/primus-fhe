@@ -52,6 +52,8 @@ Checked constructors validate their documented range. `CompactModulus(value)` an
 
 Both features are disabled by default. The `simd` feature requires a nightly Rust toolchain.
 
+`BarrettModulus::reduce_add_mul_slice_assign` can also select native x86_64 acceleration in stable builds: AVX-512F for `u32`, and AVX-512F + AVX-512DQ for `u64`. These kernels take precedence for eligible slices whether or not `simd` is enabled; other cases retain the scalar or portable-SIMD fallback.
+
 ## Arithmetic contracts
 
 The operation traits, input ranges, output ranges, and slice-length requirements come from `primus_reduce`.

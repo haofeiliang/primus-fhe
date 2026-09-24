@@ -12,9 +12,9 @@
 //! # Safety
 //!
 //! The table dispatcher calls the unsafe transform entry points only after
-//! checking [`crate::constants::HAS_AVX512F`]. Helpers inherit that target
-//! feature; their local unsafe blocks are limited to unchecked slicing and
-//! vector loads.
+//! checking `is_x86_feature_detected!("avx512f")` at table construction.
+//! Helpers inherit that target feature; their local unsafe blocks are limited to
+//! unchecked slicing and vector loads.
 
 mod arithmetic;
 mod butterfly;

@@ -52,6 +52,8 @@ assert_eq!(output, [11, 6, 50]);
 
 两个 feature 默认都不启用。`simd` feature 需要 nightly Rust 工具链。
 
+`BarrettModulus::reduce_add_mul_slice_assign` 在稳定版构建中也可以选择 x86_64 原生加速：`u32` 要求 AVX-512F，`u64` 要求 AVX-512F + AVX-512DQ。无论是否启用 `simd`，符合条件的切片均优先使用这些内核；其他情况保留标量或 portable-SIMD 回退。
+
 ## 算术契约
 
 运算 trait、输入范围、输出范围和切片长度要求均来自 `primus_reduce`。

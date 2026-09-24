@@ -5,8 +5,6 @@ use primus_gcd::Xgcd;
 use primus_poly::{NttPolynomial, Polynomial};
 use primus_reduce::FieldContext;
 
-#[cfg(target_arch = "x86_64")]
-use crate::constants::{HAS_AVX2, HAS_AVX512DQ, HAS_AVX512IFMA};
 use crate::{
     NttError,
     ntt::{MonomialNttTable, NttTable, assert_ntt_length},
@@ -368,7 +366,13 @@ impl NttTable for U64NttTable {
         let low_q = q < (1u64 << 30);
 
         #[cfg(target_arch = "x86_64")]
-        let backend = select_u64_backend(n, q, *HAS_AVX512IFMA, *HAS_AVX512DQ, *HAS_AVX2);
+        let backend = select_u64_backend(
+            n,
+            q,
+            is_x86_feature_detected!("avx512ifma"),
+            is_x86_feature_detected!("avx512dq"),
+            is_x86_feature_detected!("avx2"),
+        );
 
         #[cfg(target_arch = "x86_64")]
         let use_roots_precon32 = matches!(backend, U64Backend::Scalar32);

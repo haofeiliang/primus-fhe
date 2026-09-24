@@ -26,7 +26,7 @@ impl U64NttTable {
     /// # Safety
     ///
     /// The caller MUST ensure AVX2 is available at runtime
-    /// (e.g. via [`crate::constants::HAS_AVX2`]).
+    /// (e.g. via `is_x86_feature_detected!("avx2")`).
     ///
     /// # Preconditions (caller MUST uphold; not checked)
     ///
@@ -147,7 +147,7 @@ impl U64NttTable {
     /// # Safety
     ///
     /// The caller MUST ensure AVX2 is available at runtime
-    /// (e.g. via [`crate::constants::HAS_AVX2`]).
+    /// (e.g. via `is_x86_feature_detected!("avx2")`).
     ///
     /// # Preconditions (caller MUST uphold; not checked)
     ///

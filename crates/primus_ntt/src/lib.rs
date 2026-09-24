@@ -7,7 +7,6 @@
 mod automorphism;
 mod error;
 
-pub(crate) mod constants;
 mod dcrt;
 mod ntt;
 mod reverse;

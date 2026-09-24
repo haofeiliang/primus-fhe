@@ -29,7 +29,7 @@ impl U32NttTable {
     /// # Safety
     ///
     /// The caller MUST ensure AVX-512F is available at runtime
-    /// (e.g. via [`crate::constants::HAS_AVX512F`]).
+    /// (e.g. via `is_x86_feature_detected!("avx512f")`).
     ///
     /// # Preconditions (caller MUST uphold; not checked)
     ///
@@ -161,7 +161,7 @@ impl U32NttTable {
     /// # Safety
     ///
     /// The caller MUST ensure AVX-512F is available at runtime
-    /// (e.g. via [`crate::constants::HAS_AVX512F`]).
+    /// (e.g. via `is_x86_feature_detected!("avx512f")`).
     ///
     /// # Preconditions (caller MUST uphold; not checked)
     ///
