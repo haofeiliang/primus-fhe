@@ -14,12 +14,21 @@ use primus_integer::FheUint;
 use primus_modulus::BarrettModulus;
 use primus_ntt::{MonomialNttTable, NttTable, U32NttTable, U64NttTable, UintNttTable};
 use primus_reduce::FieldContext;
-use rand::distr::{Distribution, Uniform};
+use rand::{
+    SeedableRng,
+    distr::{Distribution, Uniform},
+    rngs::StdRng,
+};
 
 // Transform cases focus on representative workload and cache-working-set sizes.
 // On machines without a given instruction set, the same cases measure the
 // selected fallback.
-const U32_TRANSFORM_CASES: &[(u32, usize)] = &[(268_369_921, 1024), (268_369_921, 4096)];
+const U32_TRANSFORM_CASES: &[(u32, usize)] = &[
+    (132_120_577, 1024),
+    (132_120_577, 2048),
+    (268_369_921, 1024),
+    (268_369_921, 4096),
+];
 const U64_TRANSFORM_CASES: &[(u64, usize)] = &[
     // Below 2^30: IFMA or DQ-32 when available.
     (1_073_692_673, 1024),
@@ -58,15 +67,15 @@ struct BenchCase<Value> {
 fn quick_criterion() -> Criterion {
     Criterion::default()
         .sample_size(20)
-        .warm_up_time(Duration::from_millis(500))
-        .measurement_time(Duration::from_secs(2))
+        .warm_up_time(Duration::from_secs(1))
+        .measurement_time(Duration::from_secs(5))
 }
 
 fn generate_input_pool<Value>(
     distribution: &impl Distribution<Value>,
     n: usize,
 ) -> Vec<Vec<Value>> {
-    let mut rng = rand::rng();
+    let mut rng = StdRng::seed_from_u64(42);
     (0..INPUT_POOL_SIZE)
         .map(|_| distribution.sample_iter(&mut rng).take(n).collect())
         .collect()

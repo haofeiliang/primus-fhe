@@ -123,43 +123,73 @@ where
     }
 }
 
+// Include the SIMD threshold, actual PBS sizes, and a prime close to 2^30.
+const U32_MODULI: [u32; 3] = [132_120_577, 268_369_921, 1_073_692_673];
+const U32_LENGTHS: [usize; 6] = [16, 32, 64, 1024, 2048, 4096];
+
 #[test]
 fn u32_transform_matches_generic_reference() {
-    let q = 268369921u32;
-    let modulus = BarrettModulus::new(q);
-
-    for n in [32, N] {
-        let log_n = n.trailing_zeros();
-        let table = U32NttTable::new(log_n, modulus).unwrap();
-        let reference = UintNttTable::<u32>::new(log_n, modulus).unwrap();
-
-        assert_transform_matches_reference(&table, &reference, &deterministic_u32_input(n, q));
+    for q in U32_MODULI {
+        let modulus = BarrettModulus::new(q);
+        for n in U32_LENGTHS {
+            let table = U32NttTable::new(n.trailing_zeros(), modulus).unwrap();
+            let reference = UintNttTable::<u32>::new(n.trailing_zeros(), modulus).unwrap();
+            let mut input = deterministic_u32_input(n, q);
+            for (i, value) in input.iter_mut().enumerate().step_by(3) {
+                *value = q - 1 - i as u32;
+            }
+            let mut guarded = vec![u32::MAX; n + 2];
+            guarded[1..n + 1].copy_from_slice(&input);
+            let actual = &mut guarded[1..n + 1];
+            let mut expected = input.clone();
+            table.transform_slice(actual);
+            reference.transform_slice(&mut expected);
+            assert_eq!(actual, expected, "forward mismatch for q={q}, n={n}");
+            table.inverse_transform_slice(actual);
+            assert_eq!(actual, input, "roundtrip mismatch for q={q}, n={n}");
+            assert_eq!((guarded[0], guarded[n + 1]), (u32::MAX, u32::MAX));
+        }
     }
 }
 
 #[test]
 fn u32_lazy_transforms_match_generic_reference() {
-    let q = 268369921u32;
-    let modulus = BarrettModulus::new(q);
-    let table = U32NttTable::new(LOG_N, modulus).unwrap();
-    let reference = UintNttTable::<u32>::new(LOG_N, modulus).unwrap();
-
-    let mut actual = vec![4 * q - 1; N];
-    let mut expected = vec![q - 1; N];
-    table.lazy_transform_slice(&mut actual);
-    reference.transform_slice(&mut expected);
-    assert!(actual.iter().all(|&value| value < 4 * q));
-    for (actual, expected) in actual.into_iter().zip(expected) {
-        assert_eq!(actual % q, expected, "lazy forward mismatch");
-    }
-
-    let mut actual = vec![2 * q - 1; N];
-    let mut expected = vec![q - 1; N];
-    table.lazy_inverse_transform_slice(&mut actual);
-    reference.inverse_transform_slice(&mut expected);
-    assert!(actual.iter().all(|&value| value < 2 * q));
-    for (actual, expected) in actual.into_iter().zip(expected) {
-        assert_eq!(actual % q, expected, "lazy inverse mismatch");
+    for q in U32_MODULI {
+        let modulus = BarrettModulus::new(q);
+        for n in U32_LENGTHS {
+            let table = U32NttTable::new(n.trailing_zeros(), modulus).unwrap();
+            let reference = UintNttTable::<u32>::new(n.trailing_zeros(), modulus).unwrap();
+            for inverse in [false, true] {
+                let bound = if inverse { 2 * q } else { 4 * q };
+                let mut guarded = vec![u32::MAX; n + 2];
+                let actual = &mut guarded[1..n + 1];
+                for (i, value) in actual.iter_mut().enumerate() {
+                    *value = match i % 4 {
+                        0 => bound - 1 - i as u32,
+                        1 => q,
+                        2 => 0,
+                        _ => (17 * i as u32 + 7) % bound,
+                    };
+                }
+                let mut expected: Vec<_> = actual.iter().map(|&v| v % q).collect();
+                if inverse {
+                    table.lazy_inverse_transform_slice(actual);
+                    reference.inverse_transform_slice(&mut expected);
+                } else {
+                    table.lazy_transform_slice(actual);
+                    reference.transform_slice(&mut expected);
+                }
+                assert!(actual.iter().all(|&value| value < bound));
+                for (&actual, expected) in actual.iter().zip(expected) {
+                    assert_eq!(
+                        actual % q,
+                        expected,
+                        "lazy mismatch for q={q}, n={n}, inverse={inverse}"
+                    );
+                }
+                assert_eq!((guarded[0], guarded[n + 1]), (u32::MAX, u32::MAX));
+            }
+        }
     }
 }
 

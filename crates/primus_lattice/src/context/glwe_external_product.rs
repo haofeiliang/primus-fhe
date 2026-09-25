@@ -184,6 +184,7 @@ impl<T: TorusFftValue> FourierGlweExternalProductContext<T> {
 }
 
 /// Pre-allocated scratch buffers for an NTT external product.
+/// Owned coefficient and NTT buffers use cache-line alignment.
 ///
 /// # Correctness
 ///
@@ -199,13 +200,13 @@ impl<T: TorusFftValue> FourierGlweExternalProductContext<T> {
 pub struct NttGlweExternalProductContext<T: FheUint> {
     size: GadgetSize,
     /// Adjusted coefficients used by decomposition (length = `poly_length`).
-    pub(crate) adjusted_poly: Vec<T>,
+    pub(crate) adjusted_poly: AVec<T>,
     /// Carry bits, one per coefficient (length = `poly_length`).
     pub(crate) carries: Vec<bool>,
     /// One decomposed polynomial, transformed in place to NTT form.
-    pub(crate) decomposed_ntt: Vec<T>,
+    pub(crate) decomposed_ntt: AVec<T>,
     /// Accumulator in NTT form.
-    pub(crate) ntt_accumulator: NttGlwe<Vec<T>>,
+    pub(crate) ntt_accumulator: NttGlwe<AVec<T>>,
 }
 
 /// Mutable view of the buffers used by an NTT external product.
@@ -242,10 +243,10 @@ impl<T: FheUint> NttGlweExternalProductContext<T> {
 
         Self {
             size,
-            adjusted_poly: vec![T::ZERO; poly_length],
+            adjusted_poly: avec![T::ZERO; poly_length],
             carries: vec![false; poly_length],
-            decomposed_ntt: vec![T::ZERO; poly_length],
-            ntt_accumulator: NttGlwe::zero(glwe_size.glwe_len()),
+            decomposed_ntt: avec![T::ZERO; poly_length],
+            ntt_accumulator: NttGlwe(avec![T::ZERO; glwe_size.glwe_len()]),
         }
     }
 

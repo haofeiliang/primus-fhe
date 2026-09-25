@@ -114,6 +114,7 @@ impl<T: TorusFftValue> FourierNtruExternalProductContext<T> {
 }
 
 /// Pre-allocated scratch buffers for exact NTT NTRU gadget products.
+/// Owned coefficient and NTT buffers use cache-line alignment.
 ///
 /// Shared by NLev key switching and NGSW external products, including CMUX.
 ///
@@ -131,13 +132,13 @@ impl<T: TorusFftValue> FourierNtruExternalProductContext<T> {
 pub struct NttNtruExternalProductContext<T: FheUint> {
     poly_length: usize,
     /// Modulus-adjusted coefficients reused as decomposition input.
-    adjusted_poly: Vec<T>,
+    adjusted_poly: AVec<T>,
     /// Carry bits reused while decomposing `adjusted_poly`.
     carries: Vec<bool>,
     /// Digits for one decomposition level, transformed in place to NTT form.
-    decomposed_ntt: Vec<T>,
+    decomposed_ntt: AVec<T>,
     /// Transform-domain sum of the current external products.
-    ntt_accumulator: NttNtru<Vec<T>>,
+    ntt_accumulator: NttNtru<AVec<T>>,
 }
 
 /// Mutable view selecting either the context-owned or caller-provided NTT accumulator.
@@ -172,10 +173,10 @@ impl<T: FheUint> NttNtruExternalProductContext<T> {
         debug_assert!(poly_length >= 2 && poly_length.is_power_of_two());
         Self {
             poly_length,
-            adjusted_poly: vec![T::ZERO; poly_length],
+            adjusted_poly: avec![T::ZERO; poly_length],
             carries: vec![false; poly_length],
-            decomposed_ntt: vec![T::ZERO; poly_length],
-            ntt_accumulator: NttNtru::zero(poly_length),
+            decomposed_ntt: avec![T::ZERO; poly_length],
+            ntt_accumulator: NttNtru(avec![T::ZERO; poly_length]),
         }
     }
 
