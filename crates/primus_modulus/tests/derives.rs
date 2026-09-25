@@ -38,15 +38,31 @@ fn derived_multiply_add_matches_wide_remainders() {
                 let rhs: Vec<$ty> = (0..len).map(|i| sample(i + 1)).collect();
                 let mut expected: Vec<$ty> = (0..len).map(|i| sample(i + 2)).collect();
                 let mut guarded = vec![<$ty>::MAX; len + 2];
+                let mut output = vec![<$ty>::MAX; len + 2];
                 guarded[1..len + 1].copy_from_slice(&expected);
                 for _ in 0..3 {
                     for ((c, &a), &b) in expected.iter_mut().zip(&lhs).zip(&rhs) {
                         *c = ((*c as u128 + a as u128 * b as u128) % ($q as u128)) as $ty;
                     }
+                    FixedModulus.reduce_mul_add_slice_to(
+                        &lhs,
+                        &rhs,
+                        &guarded[1..len + 1],
+                        &mut output[1..len + 1],
+                    );
                     FixedModulus.reduce_add_mul_slice_assign(&mut guarded[1..len + 1], &lhs, &rhs);
                     assert_eq!(&guarded[1..len + 1], expected, "q={}, len={len}", $q as u64);
+                    assert_eq!(
+                        &output[1..len + 1],
+                        expected,
+                        "to: q={}, len={len}",
+                        $q as u64
+                    );
                     assert_eq!(guarded[0], <$ty>::MAX);
                     assert_eq!(guarded[len + 1], <$ty>::MAX);
+                    assert_eq!(output[0], <$ty>::MAX);
+                    assert_eq!(output[len + 1], <$ty>::MAX);
+                    output[1..len + 1].fill(<$ty>::MAX);
                 }
             }
         }};

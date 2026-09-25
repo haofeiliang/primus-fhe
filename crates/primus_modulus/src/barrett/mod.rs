@@ -185,6 +185,27 @@ impl<T: FheUint> BarrettModulus<T> {
     pub fn __try_derived_add_mul_slice_assign(self, acc: &mut [T], a: &[T], b: &[T]) -> bool {
         native::try_add_mul::<T, true>(self, acc, a, b)
     }
+
+    /// Internal support for `Barrett` derive's constant-modulus fallback.
+    /// Returns `false` without modifying `output` when no native kernel is selected.
+    ///
+    /// # Panics
+    /// May panic if the slice lengths differ.
+    ///
+    /// # Correctness
+    /// Inherits the canonical-input requirements of
+    /// [`ReduceMulAddSlice::reduce_mul_add_slice_to`](primus_reduce::ReduceMulAddSlice::reduce_mul_add_slice_to).
+    #[doc(hidden)]
+    #[inline]
+    pub fn __try_derived_mul_add_slice_to(
+        self,
+        a: &[T],
+        b: &[T],
+        c: &[T],
+        output: &mut [T],
+    ) -> bool {
+        native::try_mul_add_to::<T, true>(self, a, b, c, output)
+    }
 }
 
 impl<T: FheUint> primus_reduce::Modulus for BarrettModulus<T> {

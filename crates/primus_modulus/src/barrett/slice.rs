@@ -273,6 +273,9 @@ mod mul {
 
         #[inline]
         fn reduce_mul_add_slice_to(self, a: &[T], b: &[T], c: &[T], output: &mut [T]) {
+            if super::super::native::try_mul_add_to::<T, false>(self, a, b, c, output) {
+                return;
+            }
             slice::reduce_mul_add_slice_to(self, a, b, c, output);
         }
 
@@ -422,6 +425,9 @@ mod mul {
 
         #[inline]
         fn reduce_mul_add_slice_to(self, a: &[T], b: &[T], c: &[T], output: &mut [T]) {
+            if super::super::native::try_mul_add_to::<T, false>(self, a, b, c, output) {
+                return;
+            }
             simd::reduce_mul_add_slice_to::<T, BarrettModulus<T>, SimdBarrettModulus<T>>(
                 self, a, b, c, output,
             );

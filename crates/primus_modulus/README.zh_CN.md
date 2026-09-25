@@ -52,7 +52,7 @@ assert_eq!(output, [11, 6, 50]);
 
 两个 feature 默认都不启用。`simd` feature 需要 nightly Rust 工具链。
 
-`BarrettModulus::reduce_add_mul_slice_assign` 在稳定版构建中也可以选择 x86_64 原生加速：`u32` 要求 AVX-512F，`u64` 要求 AVX-512F + AVX-512DQ。对于小于 `2^50` 的 `u64` 模数，该路径还会在支持 AVX-512IFMA 时选择整数 IFMA 内核。无论是否启用 `simd`，长度至少为 32 的切片均优先使用这些内核；其他情况保留标量或 portable-SIMD 回退。输入和输出仍为规范剩余类，不增加预计算存储或 scratch。
+`BarrettModulus::reduce_add_mul_slice_assign` 和 `reduce_mul_add_slice_to` 在稳定版构建中也可以选择 x86_64 原生加速：`u32` 要求 AVX-512F，`u64` 要求 AVX-512F + AVX-512DQ。对于小于 `2^50` 的 `u64` 模数，该路径还会在支持 AVX-512IFMA 时选择整数 IFMA 内核。无论是否启用 `simd`，长度至少为 32 的切片均优先使用这些内核；其他情况保留标量或 portable-SIMD 回退。输入和输出仍为规范剩余类，不增加预计算存储或 scratch。
 
 派生 Barrett context 同样使用原生乘加内核，但 2 的幂模数、`u16` 和大于或等于 `2^50` 的 `u64` 模数保留常量模数回退。派生 `u64` 的原生分派要求 IFMA，否则保留原有回退，避免将编译器特化的常量运算替换成更慢的运行时模数内核。见[派生宏说明](../primus_barrett_derive/README.zh_CN.md#simd)。
 

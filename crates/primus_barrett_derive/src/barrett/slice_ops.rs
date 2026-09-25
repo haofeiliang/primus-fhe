@@ -128,6 +128,11 @@ pub(crate) fn slice_ops(name: &Ident, modulus: &TokenStream, ty: &syn::Path) -> 
                 c: &[#ty],
                 output: &mut [#ty],
             ) {
+                if ::primus_modulus::BarrettModulus::<#ty>::from_parts(Self::value(), Self::ratio())
+                    .__try_derived_mul_add_slice_to(a, b, c, output)
+                {
+                    return;
+                }
                 use ::primus_modulus::common::compact::slice;
                 slice::reduce_mul_add_slice_to(self, a, b, c, output);
             }
@@ -329,6 +334,11 @@ pub(crate) fn slice_ops(name: &Ident, modulus: &TokenStream, ty: &syn::Path) -> 
                 c: &[#ty],
                 output: &mut [#ty],
             ) {
+                if ::primus_modulus::BarrettModulus::<#ty>::from_parts(Self::value(), Self::ratio())
+                    .__try_derived_mul_add_slice_to(a, b, c, output)
+                {
+                    return;
+                }
                 use ::primus_modulus::common::compact::simd;
                 use ::primus_modulus::SimdBarrettModulus;
                 simd::reduce_mul_add_slice_to::<#ty, Self, SimdBarrettModulus<#ty>>(

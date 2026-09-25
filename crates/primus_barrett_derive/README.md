@@ -58,7 +58,7 @@ Do not derive those standard traits separately on the same struct, because the g
 
 ## SIMD
 
-Generated `reduce_add_mul_slice_assign` operations share the native x86_64 kernels in `primus_modulus`, including in stable builds. For slices of at least 32 elements and non-power-of-two moduli, `u32` uses AVX-512F when available; `u64` uses IFMA only for `q < 2^50` on CPUs with AVX-512F/DQ/IFMA. Type and constant-modulus eligibility checks fold away in optimized builds. The generated context remains zero-sized, with no extra precomputed storage or scratch.
+Generated `reduce_add_mul_slice_assign` and `reduce_mul_add_slice_to` operations share the native x86_64 kernels in `primus_modulus`, including in stable builds. For slices of at least 32 elements and non-power-of-two moduli, `u32` uses AVX-512F when available; `u64` uses IFMA only for `q < 2^50` on CPUs with AVX-512F/DQ/IFMA. Type and constant-modulus eligibility checks fold away in optimized builds. The generated context remains zero-sized, with no extra precomputed storage or scratch.
 
 Other cases retain the original constant-modulus fallback. The crate's `simd` feature selects portable-SIMD fallbacks and SIMD implementations for the other slice operations. It is normally enabled transitively by using the `derive` and `simd` features of `primus_modulus`; that path requires a nightly Rust toolchain. Power-of-two moduli and `u64` moduli at or above `2^50` keep these fallbacks so that constant-modulus compiler optimizations remain available.
 

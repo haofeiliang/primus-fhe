@@ -159,6 +159,15 @@ fn pbs_multiply_add<T: primus_integer::FheUint + Into<u64>>(
         let input = inputs(q, len);
         let modulus = BarrettModulus::new(q);
         let mut acc = vec![T::ZERO; len];
+        let addend = support::values(&mut support::seeded_rng(42), len, T::ZERO, q);
+        let mut output = vec![T::MAX; len];
+        modulus.reduce_mul_add_slice_to(&input.lhs, &input.rhs, &addend, &mut output);
+        for (((&a, &b), &c), &actual) in input.lhs.iter().zip(&input.rhs).zip(&addend).zip(&output)
+        {
+            let expected = (u128::from(a.into()) * u128::from(b.into()) + u128::from(c.into()))
+                % u128::from(q.into());
+            assert_eq!(u128::from(actual.into()), expected);
+        }
         let mut group = c.benchmark_group(format!("barrett/pbs_mac/u{}/q{q}/n{len}", T::BITS));
         group
             .sample_size(20)
@@ -182,6 +191,16 @@ fn pbs_multiply_add<T: primus_integer::FheUint + Into<u64>>(
                 {
                     *acc = modulus.reduce_mul_add(lhs, rhs, *acc);
                 }
+            })
+        });
+        group.bench_function("to", |b| {
+            b.iter(|| {
+                modulus.reduce_mul_add_slice_to(
+                    black_box(&input.lhs),
+                    black_box(&input.rhs),
+                    black_box(&addend),
+                    black_box(&mut output),
+                )
             })
         });
         group.finish();

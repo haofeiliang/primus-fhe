@@ -32,6 +32,20 @@ macro_rules! modulus_case {
                 >(Modulus, acc, lhs, rhs);
             }
 
+            #[inline]
+            fn fallback_to(lhs: &[$ty], rhs: &[$ty], addend: &[$ty], output: &mut [$ty]) {
+                #[cfg(not(feature = "simd"))]
+                primus_modulus::common::compact::slice::reduce_mul_add_slice_to(
+                    Modulus, lhs, rhs, addend, output,
+                );
+                #[cfg(feature = "simd")]
+                primus_modulus::common::compact::simd::reduce_mul_add_slice_to::<
+                    $ty,
+                    Modulus,
+                    primus_modulus::SimdBarrettModulus<$ty>,
+                >(Modulus, lhs, rhs, addend, output);
+            }
+
             pub(super) fn bench(c: &mut Criterion, lengths: &[usize]) {
                 for &len in lengths {
                     let mut rng = StdRng::seed_from_u64(42);
@@ -40,6 +54,8 @@ macro_rules! modulus_case {
                     let rhs: Vec<_> = distribution.sample_iter(&mut rng).take(len).collect();
                     let mut derived = lhs.clone();
                     let mut original = derived.clone();
+                    let addend = derived.clone();
+                    let mut output = vec![<$ty>::MAX; len];
                     let expected: Vec<_> = derived
                         .iter()
                         .zip(&lhs)
@@ -53,6 +69,10 @@ macro_rules! modulus_case {
                     fallback(&mut original, &lhs, &rhs);
                     assert_eq!(derived, expected);
                     assert_eq!(original, expected);
+                    Modulus.reduce_mul_add_slice_to(&lhs, &rhs, &addend, &mut output);
+                    assert_eq!(output, expected);
+                    fallback_to(&lhs, &rhs, &addend, &mut output);
+                    assert_eq!(output, expected);
 
                     let mut group = c.benchmark_group(format!(
                         "barrett/derived_mac/{}/n{len}",
@@ -70,6 +90,26 @@ macro_rules! modulus_case {
                     group.bench_function("constant_fallback", |b| {
                         b.iter(|| {
                             fallback(black_box(&mut original), black_box(&lhs), black_box(&rhs))
+                        })
+                    });
+                    group.bench_function("to", |b| {
+                        b.iter(|| {
+                            Modulus.reduce_mul_add_slice_to(
+                                black_box(&lhs),
+                                black_box(&rhs),
+                                black_box(&addend),
+                                black_box(&mut output),
+                            )
+                        })
+                    });
+                    group.bench_function("to_constant_fallback", |b| {
+                        b.iter(|| {
+                            fallback_to(
+                                black_box(&lhs),
+                                black_box(&rhs),
+                                black_box(&addend),
+                                black_box(&mut output),
+                            )
                         })
                     });
                     group.finish();
