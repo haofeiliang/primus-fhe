@@ -12,6 +12,56 @@ struct Modulus;
 #[modulus(ty = u32, value = 132120577)]
 struct _ModulusCheck;
 
+#[test]
+fn derived_multiply_add_matches_wide_remainders() {
+    use primus_reduce::ReduceMulAddSlice;
+
+    macro_rules! check {
+        ($ty:ty, $q:literal) => {{
+            #[derive(Barrett)]
+            #[modulus(ty = $ty, value = $q)]
+            struct FixedModulus;
+
+            for len in [0, 1, 7, 17, 31, 32, 33, 65, 1025] {
+                let mut state = 42u64;
+                let mut sample = |i| {
+                    state ^= state << 13;
+                    state ^= state >> 7;
+                    state ^= state << 17;
+                    match i % 5 {
+                        0 => 0,
+                        1 => $q - 1,
+                        _ => (state % ($q as u64)) as $ty,
+                    }
+                };
+                let lhs: Vec<$ty> = (0..len).map(&mut sample).collect();
+                let rhs: Vec<$ty> = (0..len).map(|i| sample(i + 1)).collect();
+                let mut expected: Vec<$ty> = (0..len).map(|i| sample(i + 2)).collect();
+                let mut guarded = vec![<$ty>::MAX; len + 2];
+                guarded[1..len + 1].copy_from_slice(&expected);
+                for _ in 0..3 {
+                    for ((c, &a), &b) in expected.iter_mut().zip(&lhs).zip(&rhs) {
+                        *c = ((*c as u128 + a as u128 * b as u128) % ($q as u128)) as $ty;
+                    }
+                    FixedModulus.reduce_add_mul_slice_assign(&mut guarded[1..len + 1], &lhs, &rhs);
+                    assert_eq!(&guarded[1..len + 1], expected, "q={}, len={len}", $q as u64);
+                    assert_eq!(guarded[0], <$ty>::MAX);
+                    assert_eq!(guarded[len + 1], <$ty>::MAX);
+                }
+            }
+        }};
+    }
+
+    check!(u16, 12289);
+    check!(u32, 132120577);
+    check!(u32, 536870912);
+    check!(u64, 1125899906826241);
+    check!(u64, 281474976710656);
+    check!(u64, 1125899906842624);
+    check!(u64, 1125899906842625);
+    check!(u64, 4611686018427387903);
+}
+
 #[cfg(all(test, feature = "derive"))]
 mod u32tests {
     use primus_reduce::FieldContext;

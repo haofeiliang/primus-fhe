@@ -1,12 +1,12 @@
 //! Integer SIMD for canonical Barrett multiply-add slices.
 //!
-//! Kernels use the same two-limb reciprocal as the scalar implementation.
+//! Kernels use or derive their reciprocal from the scalar two-limb reciprocal.
 //! There is no key-dependent precomputation or change to residue representation.
 use super::BarrettModulus;
 use primus_integer::FheUint;
 
 #[inline]
-pub(super) fn try_add_mul<T: FheUint>(
+pub(super) fn try_add_mul<T: FheUint, const FIXED_MODULUS: bool>(
     modulus: BarrettModulus<T>,
     acc: &mut [T],
     lhs: &[T],
@@ -15,15 +15,11 @@ pub(super) fn try_add_mul<T: FheUint>(
     #[cfg(target_arch = "x86_64")]
     {
         use std::any::TypeId;
-        if acc.len() < 32 {
-            return false;
-        }
-        // Release checks protect all vector loads, even for malformed callers.
-        assert_eq!(acc.len(), lhs.len(), "multiply-add length mismatch");
-        assert_eq!(acc.len(), rhs.len(), "multiply-add length mismatch");
-        macro_rules! dispatch {
-            ($t:ty, $kernel:ident, $available:expr) => {
-                if TypeId::of::<T>() == TypeId::of::<$t>() && $available {
+        // This bridge only proves the concrete type and preserves slice borrows.
+        // Each typed entry owns its eligibility, length and CPU checks.
+        macro_rules! dispatch_type {
+            ($t:ty, $entry:ident) => {
+                if TypeId::of::<T>() == TypeId::of::<$t>() {
                     // SAFETY: TypeId proves the exact primitive type, including
                     // size/alignment. Borrowing preserves length and disjointness.
                     let (acc, lhs, rhs) = unsafe {
@@ -39,20 +35,12 @@ pub(super) fn try_add_mul<T: FheUint>(
                     let q: $t = modulus.value().as_into();
                     let ratio = modulus.ratio().map(|x| x.as_into());
                     let modulus = BarrettModulus::<$t>::from_parts(q, ratio);
-                    // SAFETY: CPU features checked; slices have equal lengths.
-                    unsafe {
-                        avx512::$kernel(modulus, acc, lhs, rhs);
-                    }
-                    return true;
+                    return avx512::$entry::<FIXED_MODULUS>(modulus, acc, lhs, rhs);
                 }
             };
         }
-        dispatch!(u32, add_mul_u32, is_x86_feature_detected!("avx512f"));
-        dispatch!(
-            u64,
-            add_mul_u64,
-            is_x86_feature_detected!("avx512f") && is_x86_feature_detected!("avx512dq")
-        );
+        dispatch_type!(u32, try_add_mul_u32);
+        dispatch_type!(u64, try_add_mul_u64);
     }
     #[cfg(not(target_arch = "x86_64"))]
     let _ = (modulus, acc, lhs, rhs);
@@ -65,6 +53,130 @@ mod avx512 {
     use super::BarrettModulus;
     use primus_reduce::ReduceMulAdd;
     use std::arch::x86_64::*;
+
+    const MIN_NATIVE_LEN: usize = 32;
+    pub(super) const IFMA_MODULUS_LIMIT: u64 = 1 << 50;
+
+    #[inline]
+    pub(super) fn try_add_mul_u32<const FIXED_MODULUS: bool>(
+        modulus: BarrettModulus<u32>,
+        acc: &mut [u32],
+        lhs: &[u32],
+        rhs: &[u32],
+    ) -> bool {
+        // Fixed-modulus eligibility precedes length checks so an ineligible
+        // derive folds directly to its original constant-modulus fallback.
+        if FIXED_MODULUS && modulus.value().is_power_of_two() {
+            return false;
+        }
+        if acc.len() < MIN_NATIVE_LEN {
+            return false;
+        }
+        assert_eq!(acc.len(), lhs.len(), "multiply-add length mismatch");
+        assert_eq!(acc.len(), rhs.len(), "multiply-add length mismatch");
+        if !is_x86_feature_detected!("avx512f") {
+            return false;
+        }
+        // SAFETY: AVX-512F is available and the slices have equal lengths.
+        unsafe { add_mul_u32(modulus, acc, lhs, rhs) };
+        true
+    }
+
+    #[inline]
+    pub(super) fn try_add_mul_u64<const FIXED_MODULUS: bool>(
+        modulus: BarrettModulus<u64>,
+        acc: &mut [u64],
+        lhs: &[u64],
+        rhs: &[u64],
+    ) -> bool {
+        let q = modulus.value();
+        // Preserve constant arithmetic for powers of two and large moduli;
+        // this check must fold away before introducing length/ISA dispatch.
+        if FIXED_MODULUS && (q.is_power_of_two() || q >= IFMA_MODULUS_LIMIT) {
+            return false;
+        }
+        if acc.len() < MIN_NATIVE_LEN {
+            return false;
+        }
+        assert_eq!(acc.len(), lhs.len(), "multiply-add length mismatch");
+        assert_eq!(acc.len(), rhs.len(), "multiply-add length mismatch");
+        if !is_x86_feature_detected!("avx512f") || !is_x86_feature_detected!("avx512dq") {
+            return false;
+        }
+        if q < IFMA_MODULUS_LIMIT && is_x86_feature_detected!("avx512ifma") {
+            // SAFETY: F/DQ/IFMA, the modulus bound and equal lengths are checked.
+            unsafe { add_mul_u64_ifma(modulus, acc, lhs, rhs) };
+        } else if FIXED_MODULUS {
+            // Without IFMA, derives retain their scalar/portable constant loop.
+            return false;
+        } else {
+            // SAFETY: AVX-512F/DQ and equal slice lengths are checked above.
+            unsafe { add_mul_u64_dq(modulus, acc, lhs, rhs) };
+        }
+        true
+    }
+
+    // Truncated Barrett with radix 2^52, inspired by HEXL's variable-operand
+    // IFMA multiplication. For k=bit_width(q), s=k-2 and U=a*b, use
+    // mu=floor(2^(k+50)/q), t=floor(U/2^s), h=floor(t*mu/2^52).
+    // Both t and mu fit in 52 bits. The error before rounding h down is
+    // < 2^s/q + t/2^52 < 1/2 + 1, so 0 <= U-h*q < 3q.
+    // Adding canonical acc gives a value below 4q < 2^52; subtracting 2q
+    // and then q conditionally yields the canonical result. This keeps the
+    // addend out of the wide product and needs no carry between 52-bit limbs.
+    #[target_feature(enable = "avx512f,avx512dq,avx512ifma")]
+    pub(super) unsafe fn add_mul_u64_ifma(
+        modulus: BarrettModulus<u64>,
+        acc: &mut [u64],
+        lhs: &[u64],
+        rhs: &[u64],
+    ) {
+        debug_assert_eq!(acc.len(), lhs.len());
+        debug_assert_eq!(acc.len(), rhs.len());
+        debug_assert!(modulus.value() < IFMA_MODULUS_LIMIT);
+        let q = modulus.value();
+        let k = u64::BITS - q.leading_zeros();
+        let [low, high] = modulus.ratio();
+        // floor(floor(2^128/q) / 2^(78-k)) == floor(2^(k+50)/q).
+        // The batch setup only shifts the existing reciprocal; no division.
+        let reciprocal = (((u128::from(high) << 64) | u128::from(low)) >> (78 - k)) as u64;
+        let mu = _mm512_set1_epi64(reciprocal as i64);
+        let vq = _mm512_set1_epi64(q as i64);
+        let twice_q = _mm512_set1_epi64((2 * q) as i64);
+        let neg_q = _mm512_set1_epi64(-(q as i64));
+        let low_mask = _mm512_set1_epi64((1 << 52) - 1);
+        let right_shift = _mm512_set1_epi64(i64::from(k - 2));
+        let left_shift = _mm512_set1_epi64(i64::from(54 - k));
+        let zero = _mm512_setzero_si512();
+        let end = acc.len() / 8 * 8;
+        for i in (0..end).step_by(8) {
+            // SAFETY: the dispatch boundary checked equal lengths, and each
+            // vector lies wholly in its slice. No alignment beyond u64 is used.
+            unsafe {
+                let a = _mm512_loadu_si512(lhs.as_ptr().add(i).cast());
+                let b = _mm512_loadu_si512(rhs.as_ptr().add(i).cast());
+                let c = _mm512_loadu_si512(acc.as_ptr().add(i).cast());
+                let lo = _mm512_madd52lo_epu64(zero, a, b);
+                let hi = _mm512_madd52hi_epu64(zero, a, b);
+                let truncated = _mm512_or_si512(
+                    _mm512_srlv_epi64(lo, right_shift),
+                    _mm512_sllv_epi64(hi, left_shift),
+                );
+                let quotient = _mm512_madd52hi_epu64(zero, truncated, mu);
+                let residue =
+                    _mm512_and_si512(_mm512_madd52lo_epu64(lo, quotient, neg_q), low_mask);
+                let value = normalize(normalize(_mm512_add_epi64(residue, c), twice_q), vq);
+                _mm512_storeu_si512(acc.as_mut_ptr().add(i).cast(), value);
+            }
+        }
+        if end != acc.len() {
+            // Reuse the DQ kernel for at most seven elements. Inlining the
+            // scalar u128 expression here can make LLVM emit a masked vector
+            // tail with lane extraction and a large stack frame for this kernel.
+            // SAFETY: DQ is enabled above; the remaining slices are equal in length.
+            unsafe { add_mul_u64_dq(modulus, &mut acc[end..], &lhs[end..], &rhs[end..]) };
+        }
+    }
 
     #[inline(always)]
     fn mul_low32(a: u64, b: u64) -> u64 {
@@ -103,7 +215,7 @@ mod avx512 {
     // Expressing the wide products with u128 can introduce scalar multiplies
     // and lane extraction in the vector loop.
     #[target_feature(enable = "avx512f,avx512dq")]
-    pub(super) unsafe fn add_mul_u64(
+    pub(super) unsafe fn add_mul_u64_dq(
         modulus: BarrettModulus<u64>,
         acc: &mut [u64],
         lhs: &[u64],
@@ -203,12 +315,12 @@ mod tests {
     #[test]
     fn native_barrett_kernels_match_wide_remainders() {
         macro_rules! check {
-            ($t:ty, $kernel:ident, $available:expr, $qs:expr) => {
+            ($t:ty, $qs:expr, [$(($kernel:ident, $available:expr, $valid:expr)),* $(,)?]) => {
                 for q in $qs {
                     let modulus = BarrettModulus::<$t>::new(q);
                     type Kernel = unsafe fn(BarrettModulus<$t>, &mut [$t], &[$t], &[$t]);
                     let mut kernels: Vec<Kernel> = vec![BarrettModulus::<$t>::reduce_add_mul_slice_assign];
-                    if $available { kernels.push(avx512::$kernel); }
+                    $(if $available && ($valid)(q) { kernels.push(avx512::$kernel); })*
                     for len in [0, 1, 3, 4, 7, 8, 15, 16, 31, 32, 33, 63, 64, 65, 1025, 4099] {
                         let mut state = 42u64;
                         let mut sample = || {
@@ -248,23 +360,30 @@ mod tests {
         }
         check!(
             u32,
-            add_mul_u32,
-            is_x86_feature_detected!("avx512f"),
-            [2, 3, 97, 132_120_577, (1 << 30) - 1]
+            [2, 3, 97, 132_120_577, (1 << 30) - 1],
+            [(add_mul_u32, is_x86_feature_detected!("avx512f"), |_| true)]
         );
         check!(
             u64,
-            add_mul_u64,
-            is_x86_feature_detected!("avx512f") && is_x86_feature_detected!("avx512dq"),
+            (2..=50)
+                .flat_map(|bits| {
+                    let power = 1u64 << bits;
+                    [power - 1, power, power + 1]
+                })
+                .chain([2, 97, 1_125_899_906_826_241, (1 << 62) - 1]),
             [
-                2,
-                3,
-                97,
-                (1 << 32) - 1,
-                (1 << 32) + 15,
-                1_125_899_906_826_241,
-                (1 << 50) + 27,
-                (1 << 62) - 1
+                (
+                    add_mul_u64_dq,
+                    is_x86_feature_detected!("avx512f") && is_x86_feature_detected!("avx512dq"),
+                    |_| true
+                ),
+                (
+                    add_mul_u64_ifma,
+                    is_x86_feature_detected!("avx512f")
+                        && is_x86_feature_detected!("avx512dq")
+                        && is_x86_feature_detected!("avx512ifma"),
+                    |q| q < avx512::IFMA_MODULUS_LIMIT
+                ),
             ]
         );
     }

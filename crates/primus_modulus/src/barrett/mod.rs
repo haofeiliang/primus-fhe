@@ -170,6 +170,23 @@ impl<T: UnsignedInteger> Display for BarrettModulus<T> {
     }
 }
 
+impl<T: FheUint> BarrettModulus<T> {
+    /// Internal support for `Barrett` derive's constant-modulus fallback.
+    /// Returns `false` without modifying `acc` when no native kernel is selected.
+    ///
+    /// # Panics
+    /// May panic if the slice lengths differ.
+    ///
+    /// # Correctness
+    /// Inherits the canonical-input requirements of
+    /// [`ReduceMulAddSlice::reduce_add_mul_slice_assign`](primus_reduce::ReduceMulAddSlice::reduce_add_mul_slice_assign).
+    #[doc(hidden)]
+    #[inline]
+    pub fn __try_derived_add_mul_slice_assign(self, acc: &mut [T], a: &[T], b: &[T]) -> bool {
+        native::try_add_mul::<T, true>(self, acc, a, b)
+    }
+}
+
 impl<T: FheUint> primus_reduce::Modulus for BarrettModulus<T> {
     type ValueT = T;
 

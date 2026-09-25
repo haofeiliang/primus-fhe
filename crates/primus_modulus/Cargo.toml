@@ -36,6 +36,11 @@ harness = false
 name = "barrett_slice"
 harness = false
 
+[[bench]]
+name = "derived_mac"
+harness = false
+required-features = ["derive"]
+
 [features]
 default = []
 derive = ["dep:primus_barrett_derive"]

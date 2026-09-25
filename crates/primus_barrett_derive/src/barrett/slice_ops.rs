@@ -102,6 +102,11 @@ pub(crate) fn slice_ops(name: &Ident, modulus: &TokenStream, ty: &syn::Path) -> 
         impl ::primus_modulus::reduce::ReduceMulAddSlice<#ty> for #name {
             #[inline]
             fn reduce_add_mul_slice_assign(self, acc: &mut [#ty], a: &[#ty], b: &[#ty]) {
+                if ::primus_modulus::BarrettModulus::<#ty>::from_parts(Self::value(), Self::ratio())
+                    .__try_derived_add_mul_slice_assign(acc, a, b)
+                {
+                    return;
+                }
                 use ::primus_modulus::common::compact::slice;
                 slice::reduce_add_mul_slice_assign(self, acc, a, b);
             }
@@ -284,6 +289,11 @@ pub(crate) fn slice_ops(name: &Ident, modulus: &TokenStream, ty: &syn::Path) -> 
         impl ::primus_modulus::reduce::ReduceMulAddSlice<#ty> for #name {
             #[inline]
             fn reduce_add_mul_slice_assign(self, acc: &mut [#ty], a: &[#ty], b: &[#ty]) {
+                if ::primus_modulus::BarrettModulus::<#ty>::from_parts(Self::value(), Self::ratio())
+                    .__try_derived_add_mul_slice_assign(acc, a, b)
+                {
+                    return;
+                }
                 use ::primus_modulus::common::compact::simd;
                 use ::primus_modulus::SimdBarrettModulus;
                 simd::reduce_add_mul_slice_assign::<#ty, Self, SimdBarrettModulus<#ty>>(

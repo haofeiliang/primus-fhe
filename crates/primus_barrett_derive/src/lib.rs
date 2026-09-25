@@ -25,9 +25,12 @@ struct BarrettModulusInput {
 /// The macro generates associated `value()` and `ratio()` functions together
 /// with the scalar, slice, lazy-reduction, inverse, and dot-product traits used
 /// by `primus_modulus`. It also implements `Copy`, `Clone`, `PartialEq`, `Eq`,
-/// `Debug`, and `Hash`; do not derive those traits separately. When the SIMD
-/// feature is enabled, the generated slice operations use the corresponding
-/// SIMD kernels.
+/// `Debug`, and `Hash`; do not derive those traits separately. Canonical slice
+/// multiply-add selects shared native kernels on supported x86_64 CPUs, even
+/// without the `simd` feature: non-power-of-two `u32`, or non-power-of-two `u64`
+/// below `2^50` with IFMA support, for slices of at least 32 elements. Other cases
+/// retain constant-modulus fallbacks. The `simd` feature enables portable-SIMD
+/// fallbacks and SIMD implementations for the other slice operations.
 ///
 /// # Example
 ///

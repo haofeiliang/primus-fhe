@@ -150,8 +150,12 @@ fn bench_barrett_u64(c: &mut Criterion) {
 }
 
 // Canonical pointwise accumulation used by both GLWE and NTRU PBS.
-fn pbs_multiply_add<T: primus_integer::FheUint + Into<u64>>(c: &mut Criterion, q: T) {
-    for len in [1024, 2048] {
+fn pbs_multiply_add<T: primus_integer::FheUint + Into<u64>>(
+    c: &mut Criterion,
+    q: T,
+    lengths: &[usize],
+) {
+    for &len in lengths {
         let input = inputs(q, len);
         let modulus = BarrettModulus::new(q);
         let mut acc = vec![T::ZERO; len];
@@ -160,7 +164,6 @@ fn pbs_multiply_add<T: primus_integer::FheUint + Into<u64>>(c: &mut Criterion, q
             .sample_size(20)
             .warm_up_time(std::time::Duration::from_secs(1))
             .measurement_time(std::time::Duration::from_secs(5));
-        group.throughput(Throughput::Elements(len as u64));
         group.bench_function("dispatched", |b| {
             b.iter(|| {
                 modulus.reduce_add_mul_slice_assign(
@@ -186,8 +189,11 @@ fn pbs_multiply_add<T: primus_integer::FheUint + Into<u64>>(c: &mut Criterion, q
 }
 
 fn bench_barrett_slice(c: &mut Criterion) {
-    pbs_multiply_add(c, 132_120_577u32);
-    pbs_multiply_add(c, 1_125_899_906_826_241u64);
+    pbs_multiply_add(c, 132_120_577u32, &[1024, 2048]);
+    pbs_multiply_add(c, 1_125_899_906_826_241u64, &[32, 33, 1024, 1025, 2048]);
+    // Check the IFMA cutoff and the unchanged full-width Barrett fallback.
+    pbs_multiply_add(c, 1u64 << 50, &[1024]);
+    pbs_multiply_add(c, (1u64 << 62) - 1, &[1024]);
     bench_barrett_u32(c);
     bench_barrett_u64(c);
 

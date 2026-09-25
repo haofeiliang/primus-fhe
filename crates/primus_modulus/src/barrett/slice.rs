@@ -255,7 +255,7 @@ mod mul {
     impl<T: FheUint> ReduceMulAddSlice<T> for BarrettModulus<T> {
         #[inline]
         fn reduce_add_mul_slice_assign(self, acc: &mut [T], a: &[T], b: &[T]) {
-            if super::super::native::try_add_mul(self, acc, a, b) {
+            if super::super::native::try_add_mul::<T, false>(self, acc, a, b) {
                 return;
             }
             slice::reduce_add_mul_slice_assign(self, acc, a, b);
@@ -398,7 +398,7 @@ mod mul {
     impl<T: FheUint> ReduceMulAddSlice<T> for BarrettModulus<T> {
         #[inline]
         fn reduce_add_mul_slice_assign(self, acc: &mut [T], a: &[T], b: &[T]) {
-            if super::super::native::try_add_mul(self, acc, a, b) {
+            if super::super::native::try_add_mul::<T, false>(self, acc, a, b) {
                 return;
             }
             simd::reduce_add_mul_slice_assign::<T, BarrettModulus<T>, SimdBarrettModulus<T>>(

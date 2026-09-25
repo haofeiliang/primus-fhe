@@ -58,7 +58,9 @@ pub struct CiphertextModulus;
 
 ## SIMD
 
-本 crate 的 `simd` feature 会为生成代码选择 SIMD 切片实现。通常应通过同时启用 `primus_modulus` 的 `derive` 和 `simd` feature 间接启用；该路径需要 nightly Rust 工具链。
+生成的 `reduce_add_mul_slice_assign` 与 `primus_modulus` 共用 x86_64 原生内核，稳定版构建同样适用。对于至少 32 项的切片和非 2 的幂模数，`u32` 在支持时使用 AVX-512F；`u64` 仅在 `q < 2^50` 且 CPU 支持 AVX-512F/DQ/IFMA 时使用 IFMA。类型与常量模数资格检查会在优化构建中消除。生成的 context 仍为零大小，不增加预计算存储或 scratch。
+
+其他情况保留原有常量模数回退。本 crate 的 `simd` feature 为回退路径选择 portable-SIMD，并为其他切片操作选择 SIMD 实现。通常应通过同时启用 `primus_modulus` 的 `derive` 和 `simd` feature 间接启用；该路径需要 nightly Rust 工具链。2 的幂模数和大于或等于 `2^50` 的 `u64` 模数继续使用这些回退，以保留编译器针对常量模数的优化。
 
 标量和 SIMD 展开遵循与 `BarrettModulus` 相同的调用方契约。特别是，底层内核的切片维度仍是调用方必须维持的不变量，惰性结果位于 `[0, 2 * modulus)`，逆元运算仍要求输入可逆。编译期模数并不意味着该模数为素数。
 
