@@ -1,5 +1,6 @@
 use std::{f64::consts::PI, time::Duration};
 
+use aligned_vec::{ABox, AVec, CACHELINE_ALIGN, avec};
 use dyn_stack::{PodBuffer, PodStack};
 use num_complex::Complex64;
 use tfhe_fft::unordered::{Method, Plan};
@@ -8,29 +9,31 @@ use zeroize::{Zeroize, ZeroizeOnDrop};
 use crate::{FftError, FftTable, TorusFftValue};
 
 /// Negacyclic FFT wrapper backed by the unordered tfhe-fft plan.
+/// Owned twist and scratch buffers use cache-line alignment. Caller-owned
+/// slices only need their element type's normal alignment.
 pub struct TfheFftTable {
     n: usize,
     h: usize,
     plan: Plan,
-    twist: Vec<Complex64>,
-    inverse_twist_scaled: Vec<Complex64>,
+    twist: ABox<[Complex64]>,
+    inverse_twist_scaled: ABox<[Complex64]>,
 }
 
 /// Reusable workspace for [`TfheFftTable`].
-/// Contents, including spare capacity and backend work memory, are securely
+/// Contents, including backend work memory, are securely
 /// erased on drop. Explicit zeroization preserves lengths and allocations.
 pub struct TfheFftScratch {
-    values: Vec<Complex64>,
+    values: ABox<[Complex64]>,
     memory: PodBuffer,
 }
 
 impl Zeroize for TfheFftScratch {
     fn zeroize(&mut self) {
-        for value in &mut self.values {
+        // The boxed slice has no spare capacity beyond its initialized values.
+        for value in self.values.iter_mut() {
             value.re.zeroize();
             value.im.zeroize();
         }
-        self.values.spare_capacity_mut().zeroize();
         // PodBuffer exposes the full initialized allocation, including any
         // alignment padding used by the dynamic stack. Keep its length intact.
         self.memory[..].zeroize();
@@ -56,8 +59,11 @@ impl TfheFftTable {
         assert_eq!(input.len(), self.n);
         assert_eq!(output.len(), self.h);
         let (first, second) = input.split_at(self.h);
-        for (((output, &re), &im), &twist) in
-            output.iter_mut().zip(first).zip(second).zip(&self.twist)
+        for (((output, &re), &im), &twist) in output
+            .iter_mut()
+            .zip(first)
+            .zip(second)
+            .zip(self.twist.iter())
         {
             *output = Complex64::new(convert(re), convert(im)) * twist;
         }
@@ -78,12 +84,16 @@ impl FftTable for TfheFftTable {
         let n = 1usize << log_n;
         let h = n / 2;
         let plan = Plan::new(h, Method::Measure(Duration::from_millis(10)));
-        let twist = (0..h)
-            .map(|j| Complex64::cis(PI * j as f64 / n as f64))
-            .collect();
-        let inverse_twist_scaled = (0..h)
-            .map(|j| Complex64::cis(-PI * j as f64 / n as f64) / h as f64)
-            .collect();
+        let twist = AVec::from_iter(
+            CACHELINE_ALIGN,
+            (0..h).map(|j| Complex64::cis(PI * j as f64 / n as f64)),
+        )
+        .into_boxed_slice();
+        let inverse_twist_scaled = AVec::from_iter(
+            CACHELINE_ALIGN,
+            (0..h).map(|j| Complex64::cis(-PI * j as f64 / n as f64) / h as f64),
+        )
+        .into_boxed_slice();
         Ok(Self {
             n,
             h,
@@ -120,7 +130,7 @@ impl FftTable for TfheFftTable {
 
     fn new_scratch(&self) -> Self::Scratch {
         TfheFftScratch {
-            values: vec![Complex64::default(); self.h],
+            values: avec![Complex64::default(); self.h].into_boxed_slice(),
             memory: PodBuffer::try_new(self.plan.fft_scratch())
                 .expect("failed to allocate FFT scratch"),
         }
@@ -164,7 +174,7 @@ impl FftTable for TfheFftTable {
         let (first, second) = output.split_at_mut(self.h);
         for ((&value, &inverse_twist), (first, second)) in values
             .iter()
-            .zip(&self.inverse_twist_scaled)
+            .zip(self.inverse_twist_scaled.iter())
             .zip(first.iter_mut().zip(second))
         {
             let value = value * inverse_twist;

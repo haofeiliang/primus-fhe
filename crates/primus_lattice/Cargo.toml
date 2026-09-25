@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-primus_data = { path = "../primus_data" }
+primus_data = { path = "../primus_data", features = ["aligned-vec"] }
 primus_integer = { path = "../primus_integer" }
 primus_reduce = { path = "../primus_reduce" }
 primus_modulus = { path = "../primus_modulus" }
@@ -15,6 +15,7 @@ primus_rns = { path = "../primus_rns", optional = true }
 primus_decompose = { path = "../primus_decompose" }
 primus_fft = { path = "../primus_fft" }
 
+aligned-vec = "0.6.4"
 serde = { workspace = true }
 bytemuck = { workspace = true }
 pastey = { workspace = true }

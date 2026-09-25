@@ -1,3 +1,4 @@
+use aligned_vec::{AVec, avec};
 use primus_data::DataMut;
 use primus_fft::{Complex64, TorusFftValue};
 use primus_integer::FheUint;
@@ -8,6 +9,7 @@ use crate::{
 };
 
 /// Pre-allocated scratch buffers for a native-torus Fourier external product.
+/// Owned Fourier buffers use cache-line alignment for repeated FFT and product passes.
 ///
 /// # Correctness
 ///
@@ -27,9 +29,9 @@ pub struct FourierGlweExternalProductContext<T: TorusFftValue> {
     /// Decomposed (signed) digits for one polynomial (length = `poly_length`).
     pub(crate) decomposed_poly: Vec<T>,
     /// FFT of the decomposed polynomial (length = `fourier_length`).
-    pub(crate) decomposed_fourier: Vec<Complex64>,
+    pub(crate) decomposed_fourier: AVec<Complex64>,
     /// Accumulator in Fourier domain.
-    pub(crate) fourier_accumulator: FourierGlwe<Vec<Complex64>>,
+    pub(crate) fourier_accumulator: FourierGlwe<AVec<Complex64>>,
 }
 
 /// Mutable view of the buffers used by a Fourier external product.
@@ -70,8 +72,8 @@ impl<T: TorusFftValue> FourierGlweExternalProductContext<T> {
             size,
             carries: vec![false; poly_length],
             decomposed_poly: vec![T::ZERO; poly_length],
-            decomposed_fourier: vec![Complex64::default(); fourier_length],
-            fourier_accumulator: FourierGlwe(vec![
+            decomposed_fourier: avec![Complex64::default(); fourier_length],
+            fourier_accumulator: FourierGlwe(avec![
                 Complex64::default();
                 glwe_size.fourier_glwe_len()
             ]),

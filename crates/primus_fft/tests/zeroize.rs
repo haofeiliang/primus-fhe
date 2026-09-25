@@ -68,23 +68,25 @@ unsafe impl GlobalAlloc for ObservingAllocator {
 #[global_allocator]
 static ALLOCATOR: ObservingAllocator = ObservingAllocator;
 
-fn check_backend<Table: FftTable>()
+fn check_backend<Table: FftTable>(log_n: u32)
 where
     Table::Scratch: Zeroize,
 {
-    let table = Table::new(10).unwrap();
+    let table = Table::new(log_n).unwrap();
     ALLOCATIONS.store(0, Ordering::SeqCst);
     RELEASED.store(0, Ordering::SeqCst);
     ERASED.store(true, Ordering::SeqCst);
     RECORDING.set(true);
     let mut scratch = table.new_scratch();
     RECORDING.set(false);
-    assert_eq!(ALLOCATIONS.load(Ordering::SeqCst), 2);
+    // Small RustFFT plans need no extra backend work buffer.
+    let allocation_count = ALLOCATIONS.load(Ordering::SeqCst);
+    assert!((1..=POINTERS.len()).contains(&allocation_count));
 
-    // Seed both buffers, including backend work bytes a particular FFT plan
+    // Seed all buffers, including backend work bytes a particular FFT plan
     // might not touch. All byte patterns are valid Complex64/f64 and u8 values.
-    for (pointer, size) in POINTERS.iter().zip(&SIZES) {
-        // SAFETY: these are the exclusive scratch's two live allocations, with
+    for (pointer, size) in POINTERS.iter().zip(&SIZES).take(allocation_count) {
+        // SAFETY: these are the exclusive scratch's live allocations, with
         // no outstanding references into them. The recorded lengths are exact.
         unsafe {
             ptr::write_bytes(
@@ -95,7 +97,7 @@ where
         }
     }
     scratch.zeroize();
-    for (pointer, size) in POINTERS.iter().zip(&SIZES) {
+    for (pointer, size) in POINTERS.iter().zip(&SIZES).take(allocation_count) {
         // SAFETY: initialized, still-live scratch storage with no mutation.
         let bytes = unsafe {
             std::slice::from_raw_parts(pointer.load(Ordering::SeqCst), size.load(Ordering::SeqCst))
@@ -117,7 +119,7 @@ where
     }
     // Inverse FFT has just repopulated scratch with nonzero phase data.
     drop(fft);
-    assert_eq!(RELEASED.load(Ordering::SeqCst), 2);
+    assert_eq!(RELEASED.load(Ordering::SeqCst), allocation_count);
     assert!(
         ERASED.load(Ordering::SeqCst),
         "scratch was released without erasure"
@@ -127,6 +129,9 @@ where
 // Keep the shared allocation observations in one serial test.
 #[test]
 fn scratch_is_erased_and_reusable() {
-    check_backend::<RustFftTable>();
-    check_backend::<TfheFftTable>();
+    // Include buffers smaller than their requested alignment and a PBS size.
+    for log_n in [2, 5, 10] {
+        check_backend::<RustFftTable>(log_n);
+        check_backend::<TfheFftTable>(log_n);
+    }
 }

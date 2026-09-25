@@ -1,5 +1,6 @@
 use std::{f64::consts::PI, sync::Arc};
 
+use aligned_vec::{ABox, AVec, CACHELINE_ALIGN, avec};
 use num_complex::Complex64;
 use rustfft::{Fft, FftPlanner};
 use zeroize::{Zeroize, ZeroizeOnDrop};
@@ -7,23 +8,23 @@ use zeroize::{Zeroize, ZeroizeOnDrop};
 use crate::{FftError, FftTable, TorusFftValue};
 
 /// Reusable workspace for [`RustFftTable`].
-/// Contents, including spare capacity, are securely erased on drop.
+/// The full, fixed-length buffers are securely erased on drop.
 /// Explicit zeroization preserves lengths and allocations for reuse.
 pub struct RustFftScratch {
-    values: Vec<Complex64>,
-    fft: Vec<Complex64>,
+    values: ABox<[Complex64]>,
+    fft: ABox<[Complex64]>,
 }
 
 impl Zeroize for RustFftScratch {
     fn zeroize(&mut self) {
         for buffer in [&mut self.values, &mut self.fft] {
             // Complex64 has no Zeroize implementation. Erase both components
-            // without clearing the Vec: the plan still needs its original length.
+            // while preserving the lengths required by the plan. The boxed
+            // slices have no spare capacity outside these initialized elements.
             for value in buffer.iter_mut() {
                 value.re.zeroize();
                 value.im.zeroize();
             }
-            buffer.spare_capacity_mut().zeroize();
         }
     }
 }
@@ -37,13 +38,15 @@ impl Drop for RustFftScratch {
 }
 
 /// Negacyclic FFT wrapper backed by RustFFT.
+/// Owned twist and scratch buffers use cache-line alignment. Caller-owned
+/// slices only need their element type's normal alignment.
 pub struct RustFftTable {
     n: usize,
     h: usize,
     forward: Arc<dyn Fft<f64>>,
     inverse: Arc<dyn Fft<f64>>,
-    twist: Vec<Complex64>,
-    inverse_twist_scaled: Vec<Complex64>,
+    twist: ABox<[Complex64]>,
+    inverse_twist_scaled: ABox<[Complex64]>,
 }
 
 impl RustFftTable {
@@ -57,8 +60,11 @@ impl RustFftTable {
         assert_eq!(input.len(), self.n);
         assert_eq!(output.len(), self.h);
         let (first, second) = input.split_at(self.h);
-        for (((output, &re), &im), &twist) in
-            output.iter_mut().zip(first).zip(second).zip(&self.twist)
+        for (((output, &re), &im), &twist) in output
+            .iter_mut()
+            .zip(first)
+            .zip(second)
+            .zip(self.twist.iter())
         {
             *output = Complex64::new(convert(re), convert(im)) * twist;
         }
@@ -81,12 +87,16 @@ impl FftTable for RustFftTable {
         let mut planner = FftPlanner::new();
         let forward = planner.plan_fft_forward(h);
         let inverse = planner.plan_fft_inverse(h);
-        let twist = (0..h)
-            .map(|j| Complex64::cis(PI * j as f64 / n as f64))
-            .collect();
-        let inverse_twist_scaled = (0..h)
-            .map(|j| Complex64::cis(-PI * j as f64 / n as f64) / h as f64)
-            .collect();
+        let twist = AVec::from_iter(
+            CACHELINE_ALIGN,
+            (0..h).map(|j| Complex64::cis(PI * j as f64 / n as f64)),
+        )
+        .into_boxed_slice();
+        let inverse_twist_scaled = AVec::from_iter(
+            CACHELINE_ALIGN,
+            (0..h).map(|j| Complex64::cis(-PI * j as f64 / n as f64) / h as f64),
+        )
+        .into_boxed_slice();
         Ok(Self {
             n,
             h,
@@ -114,8 +124,8 @@ impl FftTable for RustFftTable {
             .get_inplace_scratch_len()
             .max(self.inverse.get_inplace_scratch_len());
         RustFftScratch {
-            values: vec![Complex64::default(); self.h],
-            fft: vec![Complex64::default(); scratch_len],
+            values: avec![Complex64::default(); self.h].into_boxed_slice(),
+            fft: avec![Complex64::default(); scratch_len].into_boxed_slice(),
         }
     }
 
@@ -160,7 +170,7 @@ impl FftTable for RustFftTable {
         let (first, second) = output.split_at_mut(self.h);
         for ((&value, &inverse_twist), (first, second)) in values
             .iter()
-            .zip(&self.inverse_twist_scaled)
+            .zip(self.inverse_twist_scaled.iter())
             .zip(first.iter_mut().zip(second))
         {
             let value = value * inverse_twist;

@@ -1,5 +1,6 @@
 //! Single-modulus GLWE key switching in the Fourier domain.
 
+use aligned_vec::{AVec, avec};
 use primus_data::{Data, DataMut};
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{Complex64, FftEngine, FftTable, TorusFftValue};
@@ -293,11 +294,12 @@ impl<T: TorusFftValue> FourierGlweKeySwitchingKey<T> {
 }
 
 /// Reusable Fourier workspace for GLWE key switching and LWE packing key switching.
+/// Owned Fourier buffers use cache-line alignment for repeated FFT and product passes.
 pub struct FourierGlweKeySwitchingContext<T: TorusFftValue> {
     pub(crate) carries: Vec<bool>,
     pub(crate) decomposed_poly: Vec<T>,
-    pub(crate) decomposed_fourier: Vec<Complex64>,
-    pub(crate) accumulator: FourierGlwe<Vec<Complex64>>,
+    pub(crate) decomposed_fourier: AVec<Complex64>,
+    pub(crate) accumulator: FourierGlwe<AVec<Complex64>>,
 }
 
 impl<T: TorusFftValue> FourierGlweKeySwitchingContext<T> {
@@ -307,8 +309,11 @@ impl<T: TorusFftValue> FourierGlweKeySwitchingContext<T> {
         Self {
             carries: vec![false; poly_length],
             decomposed_poly: vec![T::ZERO; poly_length],
-            decomposed_fourier: vec![Complex64::default(); glwe_size.fourier_poly_len()],
-            accumulator: FourierGlwe::zero(glwe_size.fourier_glwe_len()),
+            decomposed_fourier: avec![Complex64::default(); glwe_size.fourier_poly_len()],
+            accumulator: FourierGlwe(avec![
+                Complex64::default();
+                glwe_size.fourier_glwe_len()
+            ]),
         }
     }
 }

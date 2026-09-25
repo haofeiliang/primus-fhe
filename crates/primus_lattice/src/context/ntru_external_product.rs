@@ -1,3 +1,4 @@
+use aligned_vec::{AVec, avec};
 use primus_data::DataMut;
 use primus_fft::{Complex64, TorusFftValue};
 use primus_integer::FheUint;
@@ -5,6 +6,7 @@ use primus_integer::FheUint;
 use crate::ntru::{FourierNtru, NttNtru};
 
 /// Pre-allocated scratch buffers for native-torus Fourier NTRU gadget products.
+/// Owned Fourier buffers use cache-line alignment for repeated FFT and product passes.
 ///
 /// Shared by NLev key switching and NGSW external products, including CMUX.
 ///
@@ -27,9 +29,9 @@ pub struct FourierNtruExternalProductContext<T: TorusFftValue> {
     /// Coefficient-domain digits produced for one decomposition level.
     decomposed_poly: Vec<T>,
     /// Fourier transform of `decomposed_poly`.
-    decomposed_fourier: Vec<Complex64>,
+    decomposed_fourier: AVec<Complex64>,
     /// Transform-domain sum of the current external products.
-    fourier_accumulator: FourierNtru<Vec<Complex64>>,
+    fourier_accumulator: FourierNtru<AVec<Complex64>>,
 }
 
 /// Mutable view selecting either the context-owned or caller-provided Fourier accumulator.
@@ -67,8 +69,8 @@ impl<T: TorusFftValue> FourierNtruExternalProductContext<T> {
             poly_length,
             carries: vec![false; poly_length],
             decomposed_poly: vec![T::ZERO; poly_length],
-            decomposed_fourier: vec![Complex64::default(); fourier_length],
-            fourier_accumulator: FourierNtru::zero(fourier_length),
+            decomposed_fourier: avec![Complex64::default(); fourier_length],
+            fourier_accumulator: FourierNtru(avec![Complex64::default(); fourier_length]),
         }
     }
 

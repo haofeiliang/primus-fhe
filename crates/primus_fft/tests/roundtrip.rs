@@ -1,16 +1,22 @@
+use aligned_vec::{AVec, CACHELINE_ALIGN, avec};
 use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable, TfheFftTable};
 
 fn roundtrip<Table: FftTable>() {
-    let fft = Table::new(5).unwrap();
-    let mut engine = FftEngine::new(&fft);
-    let input: Vec<u32> = (0..fft.poly_length())
-        .map(|i| (i as i32 - 13) as u32)
-        .collect();
-    let mut fourier = vec![Complex64::default(); fft.fourier_length()];
-    let mut output = vec![0u32; fft.poly_length()];
-    engine.forward_as_torus(&input, &mut fourier);
-    engine.backward_as_torus(&fourier, &mut output);
-    assert_eq!(output, input);
+    for log_n in [2, 5, 10] {
+        let fft = Table::new(log_n).unwrap();
+        let mut engine = FftEngine::new(&fft);
+        // Offset aligned allocations: public slices need only element alignment,
+        // even though the table and its own workspace use cache-line alignment.
+        let input = AVec::<u32>::from_iter(
+            CACHELINE_ALIGN,
+            (0..=fft.poly_length()).map(|i| (i as i32 - 13) as u32),
+        );
+        let mut fourier = avec![Complex64::default(); fft.fourier_length() + 1];
+        let mut output = avec![0u32; fft.poly_length() + 1];
+        engine.forward_as_torus(&input[1..], &mut fourier[1..]);
+        engine.backward_as_torus(&fourier[1..], &mut output[1..]);
+        assert_eq!(output[1..], input[1..]);
+    }
 }
 
 fn concurrent_roundtrip<Table: FftTable>() {
