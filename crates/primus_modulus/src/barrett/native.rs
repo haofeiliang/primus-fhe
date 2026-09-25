@@ -274,20 +274,24 @@ mod avx512 {
         )
     }
 
+    // Omitting the low-low partial product underestimates mulhi by at most one.
+    // The middle sum fits u64: (2^32-1)^2 + (2^32-1) < 2^64.
     #[inline(always)]
-    fn widening_mul_hw(a: u64, b: u64) -> u64 {
-        let p00 = mul_low32(a, b);
+    fn mul_hi_approx(a: u64, b: u64) -> u64 {
         let p01 = mul_low32(a, b >> 32);
         let p10 = mul_low32(a >> 32, b);
         let p11 = mul_low32(a >> 32, b >> 32);
-        let middle = (p00 >> 32) + (p01 & 0xffff_ffff) + (p10 & 0xffff_ffff);
-        p11 + (p01 >> 32) + (p10 >> 32) + (middle >> 32)
+        p11 + (p01 >> 32) + (((p01 & 0xffff_ffff) + p10) >> 32)
     }
 
-    // Keep the arithmetic in the loop's target-feature context: the 32-bit
-    // products vectorize to vpmuludq, while the low u64 products use DQ.
-    // Expressing the wide products with u128 can introduce scalar multiplies
-    // and lane extraction in the vector loop.
+    // Truncated Barrett, including the addend in U=a*b+c<q^2. For
+    // k=bit_width(q)<=62, s=k-2, t=floor(U/2^s), mu=floor(2^(k+62)/q),
+    // both t and mu fit u64. Before rounding the quotient, the error is
+    // < 2^s/q + t/2^64 < 1.5. Approximate mulhi loses at most one more,
+    // hence 0 <= U-qhat*q < 3.5q < 4q < 2^64. Subtract 2q then q.
+    // Adding c only after estimation could exceed this four-modulus bound.
+    // Keep 32-bit partial products in the target-feature loop so LLVM can
+    // vectorize them without scalar u128 multiplication or lane extraction.
     #[target_feature(enable = "avx512f,avx512dq")]
     pub(super) unsafe fn add_mul_u64_dq<const OVERWRITE: bool>(
         modulus: BarrettModulus<u64>,
@@ -299,10 +303,12 @@ mod avx512 {
         debug_assert_eq!(acc.len(), lhs.len());
         debug_assert_eq!(acc.len(), rhs.len());
         let q = modulus.value();
-        let [r0, r1] = modulus.ratio();
+        let k = u64::BITS - q.leading_zeros();
+        let [low, high] = modulus.ratio();
+        // Shift floor(2^128/q); batch setup needs no division.
+        let reciprocal = (((u128::from(high) << 64) | u128::from(low)) >> (66 - k)) as u64;
         let len = acc.len().min(lhs.len()).min(rhs.len());
-        // Include the separate addend in the bound so its indexed load does
-        // not force LLVM to leave the final full vector in the scalar tail.
+        // Include the separate addend so LLVM can vectorize the final full block.
         let len = if OVERWRITE {
             len.min(addend.unwrap().len())
         } else {
@@ -315,16 +321,11 @@ mod avx512 {
                 acc[i]
             };
             let (lo, hi) = carrying_mul(lhs[i], rhs[i], addend);
-            // Match lazy_reduce_wide, including the carry between the two
-            // middle products. Only the low word of the quotient is needed.
-            let ah = widening_mul_hw(lo, r0);
-            let (bl, bh) = carrying_mul(lo, r1, ah);
-            let (cl, ch) = carrying_mul(hi, r0, 0);
-            let carry = u64::from(bl.wrapping_add(cl) < bl);
-            let quotient = hi
-                .wrapping_mul(r1)
-                .wrapping_add(bh.wrapping_add(ch).wrapping_add(carry));
+            // When k=2, the left shift count wraps to zero; hi is zero as well.
+            let truncated = (lo >> (k - 2)) | hi.wrapping_shl(66 - k);
+            let quotient = mul_hi_approx(truncated, reciprocal);
             let value = lo.wrapping_sub(quotient.wrapping_mul(q));
+            let value = value.min(value.wrapping_sub(2 * q));
             acc[i] = value.min(value.wrapping_sub(q));
         }
     }
@@ -521,12 +522,18 @@ mod tests {
         );
         check!(
             u64,
-            (2..=50)
+            (2..=61)
                 .flat_map(|bits| {
                     let power = 1u64 << bits;
                     [power - 1, power, power + 1]
                 })
-                .chain([2, 97, 1_125_899_906_826_241, (1 << 62) - 1]),
+                .chain([
+                    2,
+                    97,
+                    1_125_899_906_826_241,
+                    1_152_921_504_606_830_593,
+                    (1 << 62) - 1,
+                ]),
             [
                 (
                     add_mul_u64_dq,

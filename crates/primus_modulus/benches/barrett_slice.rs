@@ -210,9 +210,10 @@ fn pbs_multiply_add<T: primus_integer::FheUint + Into<u64>>(
 fn bench_barrett_slice(c: &mut Criterion) {
     pbs_multiply_add(c, 132_120_577u32, &[1024, 2048]);
     pbs_multiply_add(c, 1_125_899_906_826_241u64, &[32, 33, 1024, 1025, 2048]);
-    // Check the IFMA cutoff and the unchanged full-width Barrett fallback.
+    // Cover the IFMA cutoff, a large NTT prime, and the Barrett upper bound.
     pbs_multiply_add(c, 1u64 << 50, &[1024]);
-    pbs_multiply_add(c, (1u64 << 62) - 1, &[1024]);
+    pbs_multiply_add(c, 1_152_921_504_606_830_593u64, &[1024, 2048]);
+    pbs_multiply_add(c, (1u64 << 62) - 1, &[1024, 2048]);
     bench_barrett_u32(c);
     bench_barrett_u64(c);
 
