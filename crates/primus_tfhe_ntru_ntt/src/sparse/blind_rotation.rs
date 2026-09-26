@@ -41,19 +41,19 @@ pub(crate) fn rotate_buckets<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
     let n = ntt.poly_length();
     for bucket in 0..key.bucket_count() {
         let (indices, data) = key.bucket_data(bucket);
-        let (selections, dummy) = data.split_at(indices.len() * key.ngsw_len);
+        let (selections, dummy) = data.split_at(data.len() - key.ngsw_len);
+
         workspace.aggregate.copy_from_slice(dummy);
+
         for (&i, selection) in indices.iter().zip(selections.chunks_exact(key.ngsw_len)) {
+            let exponent = workspace.exponents[i];
+
             for (acc, row) in workspace
                 .aggregate
                 .chunks_exact_mut(n)
                 .zip(selection.chunks_exact(n))
             {
-                Polynomial(acc).add_mul_monomial_assign(
-                    &Polynomial(row),
-                    workspace.exponents[i],
-                    modulus,
-                );
+                Polynomial(acc).add_mul_monomial_assign(&Polynomial(row), exponent, modulus);
             }
         }
         Ngsw::new(workspace.aggregate.as_mut_slice())

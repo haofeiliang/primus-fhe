@@ -1,10 +1,15 @@
+use primus_data::{Data, RawData};
 use primus_integer::FheUint;
-use primus_lattice::{lwe::Lwe, ntru::Ntru};
+use primus_lattice::{lwe::Lwe, ngsw::NttNgsw, ntru::Ntru};
+use primus_ntru::{NttNtruExternalProductContext, NttNtruTernaryCmuxContext};
 use primus_ntt::MonomialNttTable;
 use primus_poly::{Polynomial, PolynomialOwned};
 use primus_tfhe::rotation::RotationQuantizer;
 
-use crate::{ServerKey, TfheParameters};
+use crate::{
+    ServerKey, SparseNtruBootstrappingKey, TfheParameters,
+    sparse::{SparseWorkspace, rotate_buckets},
+};
 
 /// Coefficient buffers and external-product scratch reused by one evaluator.
 pub(crate) struct BlindRotationWorkspace<'a, T: FheUint> {
@@ -25,17 +30,17 @@ impl<'a, T: FheUint> BlindRotationWorkspace<'a, T> {
             rotation: if let Some(key) = server_key.sparse_bootstrapping_key() {
                 RotationContext::Sparse {
                     key,
-                    scratch: crate::sparse::SparseWorkspace::new(parameters),
+                    scratch: SparseWorkspace::new(parameters),
                 }
             } else if parameters.external_lwe().secret_key_distr().is_binary() {
                 RotationContext::Binary {
                     controls: server_key.classic_controls(),
-                    scratch: primus_ntru::NttNtruExternalProductContext::new(poly_length),
+                    scratch: NttNtruExternalProductContext::new(poly_length),
                 }
             } else {
                 RotationContext::Ternary {
                     controls: server_key.classic_controls(),
-                    scratch: primus_ntru::NttNtruTernaryCmuxContext::new(
+                    scratch: NttNtruTernaryCmuxContext::new(
                         poly_length,
                         parameters.blind_rotation().decompose_length(),
                     ),
@@ -48,23 +53,21 @@ impl<'a, T: FheUint> BlindRotationWorkspace<'a, T> {
 // A validated control layout and its scratch travel together for the evaluator's lifetime.
 pub(crate) enum RotationContext<'a, T: FheUint> {
     Sparse {
-        key: &'a crate::SparseNtruBootstrappingKey<T>,
-        scratch: crate::sparse::SparseWorkspace<T>,
+        key: &'a SparseNtruBootstrappingKey<T>,
+        scratch: SparseWorkspace<T>,
     },
     Binary {
         controls: &'a [T],
-        scratch: primus_ntru::NttNtruExternalProductContext<T>,
+        scratch: NttNtruExternalProductContext<T>,
     },
     Ternary {
         controls: &'a [T],
-        scratch: primus_ntru::NttNtruTernaryCmuxContext<T>,
+        scratch: NttNtruTernaryCmuxContext<T>,
     },
 }
 
 impl<T: FheUint> RotationContext<'_, T> {
-    pub(crate) fn external_product(
-        &mut self,
-    ) -> &mut primus_ntru::NttNtruExternalProductContext<T> {
+    pub(crate) fn external_product(&mut self) -> &mut NttNtruExternalProductContext<T> {
         match self {
             Self::Sparse { scratch, .. } => &mut scratch.external_product,
             Self::Binary { scratch, .. } => scratch,
@@ -90,11 +93,14 @@ pub(crate) fn blind_rotate_lookup_table_to<T, Table, A>(
 ) where
     T: FheUint,
     Table: MonomialNttTable<ValueT = T>,
-    A: primus_data::RawData<Elem = T> + primus_data::Data,
+    A: RawData<Elem = T> + Data,
 {
     let poly_length = parameters.poly_length();
     let two_n = poly_length * 2;
+
     let input_modulus = parameters.external_lwe().cipher_modulus();
+    let modulus = parameters.accumulator_ntru().cipher_modulus();
+
     let quantizer = if rotation_step == 1 {
         parameters.rotation_quantizer()
     } else {
@@ -102,30 +108,32 @@ pub(crate) fn blind_rotate_lookup_table_to<T, Table, A>(
     };
     let exponent_of = |value| quantizer.exponent(value);
     let initial_exponent = exponent_of(input.b()).wrapping_neg() & (two_n - 1);
+
     lookup_table.mul_monomial_to(
         initial_exponent,
         &mut Polynomial(workspace.scratch.as_mut()),
-        parameters.accumulator_ntru().cipher_modulus(),
+        modulus,
     );
+
     // Evaluator binding checked the initializer's shape/basis; this workspace
     // was constructed at the same ring length. NLev[1] encrypts the rotated LUT.
     server_key.initializer().external_product_to(
         &Polynomial(workspace.scratch.as_ref()),
         &mut workspace.current,
         server_key.blind_rotation_basis(),
-        parameters.accumulator_ntru().cipher_modulus(),
+        modulus,
         ntt,
         workspace.rotation.external_product(),
     );
 
     let basis = server_key.blind_rotation_basis();
-    let modulus = parameters.accumulator_ntru().cipher_modulus();
     let control_len = server_key.initializer().as_ref().len();
+
     // One public layout dispatch per BR; the coordinate loop stays specialized.
     match &mut workspace.rotation {
         RotationContext::Sparse { key, scratch } => {
             quantizer.exponent_slice_to(input.a(), &mut scratch.exponents);
-            crate::sparse::rotate_buckets(
+            rotate_buckets(
                 key,
                 scratch,
                 &mut workspace.current,
@@ -140,9 +148,7 @@ pub(crate) fn blind_rotate_lookup_table_to<T, Table, A>(
             scratch: product,
         } => rotate_controls(
             input.a(),
-            controls
-                .chunks_exact(control_len)
-                .map(primus_lattice::ngsw::NttNgsw::new),
+            controls.chunks_exact(control_len).map(NttNgsw::new),
             &mut workspace.current,
             &mut workspace.scratch,
             exponent_of,
@@ -157,10 +163,7 @@ pub(crate) fn blind_rotate_lookup_table_to<T, Table, A>(
             input.a(),
             controls.chunks_exact(2 * control_len).map(|pair| {
                 let (positive, negative) = pair.split_at(control_len);
-                (
-                    primus_lattice::ngsw::NttNgsw::new(positive),
-                    primus_lattice::ngsw::NttNgsw::new(negative),
-                )
+                (NttNgsw::new(positive), NttNgsw::new(negative))
             }),
             &mut workspace.current,
             &mut workspace.scratch,

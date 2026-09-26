@@ -1,7 +1,7 @@
 //! NLev and NGSW encryption.
 
 use super::{NttNtruGadgetEncryptContext, NttNtruSecretKey};
-use crate::{NlevParameters, NttNgswCiphertext, NttNlevCiphertext};
+use crate::{NlevParameters, NttNgswCiphertext, NttNlevCiphertext, NttNtruCiphertext};
 use primus_data::{Data, DataMut};
 use primus_integer::{FheUint, SignedInteger};
 use primus_ntt::NttTable;
@@ -200,7 +200,7 @@ impl<T: FheUint> NttNtruSecretKey<T> {
                 .scalar_iter()
                 .zip(block.chunks_exact_mut(self.poly_length()))
             {
-                let mut level = crate::NttNtruCiphertext::new(level);
+                let mut level = NttNtruCiphertext::new(level);
                 self.encrypt_zeros_to_unchecked(&mut level, params.ntru(), ntt, rng);
                 let diagonal = modulus.reduce_mul(constant, scalar);
                 for coefficient in level.as_mut() {

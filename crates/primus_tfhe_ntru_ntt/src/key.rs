@@ -11,7 +11,7 @@ use zeroize::Zeroizing;
 
 use crate::{
     CircuitBootstrapConfig, CircuitBootstrapKey, CircuitBootstrapParameters, ClientKey,
-    KeyGenerationError, TfheContext, TfheParameters,
+    KeyGenerationError, SparseNtruBootstrappingKey, TfheContext, TfheParameters,
 };
 
 /// Exact NTT evaluation keys for NTRU TFHE.
@@ -27,13 +27,13 @@ pub struct ServerKey<T: FheUint> {
 
 enum Controls<T: FheUint> {
     Classic(Vec<T>),
-    Sparse(crate::SparseNtruBootstrappingKey<T>),
+    Sparse(SparseNtruBootstrappingKey<T>),
 }
 
 impl<T: FheUint> ServerKey<T> {
     /// Returns coefficient-domain bucket selections when this is a sparse server key.
     #[must_use]
-    pub fn sparse_bootstrapping_key(&self) -> Option<&crate::SparseNtruBootstrappingKey<T>> {
+    pub fn sparse_bootstrapping_key(&self) -> Option<&SparseNtruBootstrappingKey<T>> {
         match &self.controls {
             Controls::Classic(_) => None,
             Controls::Sparse(key) => Some(key),
@@ -50,7 +50,7 @@ impl<T: FheUint> ServerKey<T> {
     pub(crate) fn from_sparse(
         parameters: &TfheParameters<T>,
         initializer: NttNlev<Vec<T>>,
-        controls: crate::SparseNtruBootstrappingKey<T>,
+        controls: SparseNtruBootstrappingKey<T>,
         key_switching_key: NttNtruKeySwitchingKey<T>,
     ) -> Self {
         Self {

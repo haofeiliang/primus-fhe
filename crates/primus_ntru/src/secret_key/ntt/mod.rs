@@ -6,7 +6,7 @@ use primus_poly::NttPolynomialOwned;
 use primus_reduce::FieldContext;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
-use crate::{NtruError, NtruParameters, SecretKeyDistr};
+use crate::{NtruError, NtruParameters, SecretKeyDistr, parameter::KEY_GENERATION_ATTEMPTS};
 
 use super::NtruSecretKey;
 
@@ -218,7 +218,7 @@ impl<T: FheUint> NttNtruSecretKey<T> {
             NtruSecretKey::allocate(params.poly_length(), params.secret_key_distr());
         let mut transformed = Self::allocate(params.poly_length(), params.secret_key_distr());
         let sampler = params.secret_key_sampler();
-        for _ in 0..crate::parameter::KEY_GENERATION_ATTEMPTS {
+        for _ in 0..KEY_GENERATION_ATTEMPTS {
             sampler.sample_signed_to(&mut coefficient_key.key[..active_length], rng);
             match transformed.try_update_from_coeff_secret_key(
                 &coefficient_key,
