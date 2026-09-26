@@ -2,8 +2,8 @@ use primus_data::{Data, DataMut};
 use primus_factor::FactorSliceOps;
 use primus_integer::FheUint;
 use primus_reduce::{
-    ReduceAddSlice, ReduceMul, ReduceMulAdd, ReduceMulAddSlice, ReduceMulSlice, ReduceNegSlice,
-    ReduceSubAssign, ReduceSubSlice, RingContext,
+    ReduceAdd, ReduceAddSlice, ReduceMul, ReduceMulAdd, ReduceMulAddSlice, ReduceMulSlice,
+    ReduceNegSlice, ReduceSub, ReduceSubAssign, ReduceSubSlice, RingContext,
 };
 
 use super::Polynomial;
@@ -44,6 +44,48 @@ where
             modulus.reduce_sub_slice_assign(wrapped, tail);
             modulus.reduce_add_slice_assign(rest, head);
         }
+    }
+
+    /// Accumulates `self += first * X^first_exponent + second * X^second_exponent` modulo `X^N + 1`.
+    ///
+    /// Each coefficient is reduced after the first contribution and again after
+    /// the second, preserving canonical output. Both contributions share one
+    /// output traversal; no temporary polynomial or scratch allocation is needed.
+    ///
+    /// # Correctness
+    ///
+    /// All three polynomials must have the same nonzero power-of-two length `N`,
+    /// and both exponents must be in `[0, 2N)`. Inputs and the initialized
+    /// accumulator must be canonical for `modulus`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the polynomial length is zero. Debug builds also check lengths
+    /// and exponent ranges. Violating these conditions can panic after partial
+    /// writes in release builds.
+    #[inline]
+    pub fn add_mul_monomial_pair_assign<M, A, B>(
+        &mut self,
+        first: &Polynomial<A>,
+        first_exponent: usize,
+        second: &Polynomial<B>,
+        second_exponent: usize,
+        modulus: M,
+    ) where
+        M: Copy + ReduceAdd<T, Output = T> + ReduceSub<T, Output = T>,
+        A: Data<Elem = T>,
+        B: Data<Elem = T>,
+    {
+        let n = self.poly_length();
+        crate::add_mul_monomial_pair_assign(
+            self.as_mut(),
+            first.as_ref(),
+            first_exponent,
+            second.as_ref(),
+            second_exponent,
+            n,
+            modulus,
+        );
     }
 
     /// Performs `self * scalar` according to `modulus`.

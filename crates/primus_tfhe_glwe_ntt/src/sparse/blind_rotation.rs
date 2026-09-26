@@ -134,17 +134,54 @@ impl<T: FheUint> SparseGlweBootstrappingKey<T> {
             for (tile_index, tile) in aggregate.chunks_mut(tile_length).enumerate() {
                 let start = tile_index * tile_length;
                 let end = start + tile.len();
-                for (&input_index, selection) in
-                    indices.iter().zip(selections.chunks_exact(size.ggsw_len()))
-                {
-                    let exponent = input_exponents[input_index];
+                // Pairing only improved the measured u64 NTT path. Retain the
+                // single-input vector loop for the other word widths.
+                if T::BITS != 64 {
+                    for (&input_index, selection) in
+                        indices.iter().zip(selections.chunks_exact(size.ggsw_len()))
+                    {
+                        let exponent = input_exponents[input_index];
+                        for (acc, source) in tile
+                            .chunks_exact_mut(poly_length)
+                            .zip(selection[start..end].chunks_exact(poly_length))
+                        {
+                            Polynomial(acc).add_mul_monomial_assign(
+                                &Polynomial(source),
+                                exponent,
+                                modulus,
+                            );
+                        }
+                    }
+                    continue;
+                }
+                let ggsw_len = size.ggsw_len();
+                // Fuse two rotations so each accumulator coefficient is loaded and
+                // stored once per pair; each modular contribution remains canonical.
+                let (index_pairs, index_tail) = indices.as_chunks::<2>();
+                let mut selection_pairs = selections.chunks_exact(2 * ggsw_len);
+                for (indices, pair) in index_pairs.iter().zip(selection_pairs.by_ref()) {
+                    let (a, b) = pair.split_at(ggsw_len);
+                    // A tile contains complete polynomials but need not be a
+                    // complete GGSW, so use the shared coefficient-batch kernel.
+                    primus_poly::add_mul_monomial_pair_assign(
+                        tile,
+                        &a[start..end],
+                        input_exponents[indices[0]],
+                        &b[start..end],
+                        input_exponents[indices[1]],
+                        poly_length,
+                        modulus,
+                    );
+                }
+                if let Some(&index) = index_tail.first() {
+                    let selection = selection_pairs.remainder();
                     for (acc, source) in tile
                         .chunks_exact_mut(poly_length)
                         .zip(selection[start..end].chunks_exact(poly_length))
                     {
                         Polynomial(acc).add_mul_monomial_assign(
                             &Polynomial(source),
-                            exponent,
+                            input_exponents[index],
                             modulus,
                         );
                     }

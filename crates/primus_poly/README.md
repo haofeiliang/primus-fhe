@@ -65,11 +65,21 @@ The wrappers deliberately do not store polynomial length, modulus values, transf
 
 Many shape checks in repeated arithmetic paths are `debug_assert*!` diagnostics. Release callers must uphold the documented contracts; iterator `zip` and `chunks_exact` operations are not substitutes for boundary validation.
 
+`Polynomial::add_mul_monomial_pair_assign` accumulates two rotated inputs in one output traversal without allocation. `add_mul_monomial_pair_assign` also accepts a flat batch of complete polynomials, computing rotation offsets once and dispatching each interval outside the polynomial loop for 64-bit words. Each contribution is reduced in order; both APIs require equally sized power-of-two polynomials, canonical residues, and exponents in `[0, 2N)`.
+
 `CoeffAutomorphismPermutation` caches the coefficient substitution `X -> X^d` modulo `X^N + 1`. Construct it for a power-of-two `N >= 2` and odd `d` in `[1, 2N)`, then reuse `apply_to` on canonical residues. `apply_signed_to` is for small signed coefficients whose required negations are representable. The map does not perform cryptographic key switching. Its NTT counterpart lives in `primus_ntt`.
 
 ## Random sampling
 
 Direct NTT and DCRT sampling is uniform. To sample a non-uniform coefficient distribution, construct a coefficient-domain `Polynomial` or `CrtPolynomial` and then transform it. CRT uniform-binary, sparse-ternary, and Gaussian sampling draw one logical coefficient and encode that same value under every component modulus. The sparse ternary distribution has `P(0) = 1/2` and `P(1) = P(-1) = 1/4`. Random APIs require an RNG implementing both `rand::Rng` and `rand::CryptoRng`.
+
+## Monomial arithmetic benchmark
+
+[monomial.rs](benches/monomial.rs) compares two single-term accumulations with one paired accumulation for `acc += first * X^r + second * X^s` modulo `X^N + 1`. All cases use `N=1024/2048`, batches of `1/8` polynomials and the same exponents. The u32/u64 Barrett cases share `q=132120577`; native cases wrap at their respective word widths. Inputs are seeded, buffers are reused, and timing excludes allocation and initialization. Equal coefficient counts do not imply equal byte counts across word widths. These are arithmetic measurements, not PBS/CBS timings.
+
+```text
+cargo bench -p primus_poly --bench monomial
+```
 
 ## SIMD feature
 

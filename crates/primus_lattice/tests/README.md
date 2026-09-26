@@ -10,7 +10,7 @@ Tests here protect raw ciphertext layouts and low-level operation contracts. The
 | `arithmetic.rs` | Shared flat arithmetic through borrowed LWE storage, consuming allocation reuse, scalar/factor overwrite and accumulation |
 | `rns_arithmetic.rs` | CRT add/sub/neg and DCRT scalar/factor arithmetic across GGSW rows, levels, components and moduli (`rns`) |
 | `fourier.rs` | Borrowed complex arithmetic; GGSW polynomial scaling and monomial subtraction against coefficient oracles with both FFT backends |
-| `polynomial_products.rs` | Single-polynomial NTRU and multi-polynomial GGSW monomial oracles, including NTT product overwrite/accumulation; CRT monomials and DCRT products (`rns`) |
+| `polynomial_products.rs` | Single-polynomial NTRU and multi-polynomial GGSW monomial oracles, including paired coefficient accumulation and NTT product overwrite/accumulation; CRT monomials and DCRT products (`rns`) |
 | `extraction.rs` | GLWE/NTRU sample order and phase signs, compact padding, packed extraction and allocation reuse |
 | `plaintext_and_gadget.rs` | Body-only plaintext updates, trivial ciphertext clearing, selected gadget diagonals |
 | `external_product.rs` | Gadget product oracles, coefficient/borrowed transform outputs, independent NLev/control levels, dirty-output clearing and workspace reuse |

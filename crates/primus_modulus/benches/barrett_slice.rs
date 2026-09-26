@@ -207,7 +207,43 @@ fn pbs_multiply_add<T: primus_integer::FheUint + Into<u64>>(
     }
 }
 
+// Pointwise products used after the shared blind rotation in factorized MVB.
+fn pointwise_multiply<T: primus_integer::FheUint + Into<u64>>(c: &mut Criterion, q: T) {
+    for len in [1024, 2048] {
+        let input = inputs(q, len);
+        let modulus = BarrettModulus::new(q);
+        let mut output = vec![T::MAX; len];
+        modulus.reduce_mul_slice_to(&input.lhs, &input.rhs, &mut output);
+        for ((&a, &b), &actual) in input.lhs.iter().zip(&input.rhs).zip(&output) {
+            assert_eq!(
+                u128::from(actual.into()),
+                u128::from(a.into()) * u128::from(b.into()) % u128::from(q.into())
+            );
+        }
+        let mut group =
+            c.benchmark_group(format!("barrett/pointwise_mul/u{}/q{q}/n{len}", T::BITS));
+        group
+            .sample_size(20)
+            .warm_up_time(std::time::Duration::from_secs(1))
+            .measurement_time(std::time::Duration::from_secs(5));
+        group.bench_function("to", |b| {
+            b.iter(|| {
+                modulus.reduce_mul_slice_to(
+                    black_box(&input.lhs),
+                    black_box(&input.rhs),
+                    black_box(&mut output),
+                );
+            })
+        });
+        group.finish();
+    }
+}
+
 fn bench_barrett_slice(c: &mut Criterion) {
+    pointwise_multiply(c, 132_120_577u32);
+    pointwise_multiply(c, 1_125_899_906_826_241u64);
+    pointwise_multiply(c, 1_152_921_504_606_830_593u64);
+
     pbs_multiply_add(c, 132_120_577u32, &[1024, 2048]);
     pbs_multiply_add(c, 1_125_899_906_826_241u64, &[32, 33, 1024, 1025, 2048]);
     // Cover the IFMA cutoff, a large NTT prime, and the Barrett upper bound.

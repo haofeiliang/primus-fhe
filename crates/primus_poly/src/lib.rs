@@ -27,11 +27,13 @@ mod big_uint_poly;
 mod crt;
 mod dcrt;
 mod fourier;
+mod monomial;
 mod ntt;
 mod poly;
 
 pub use array::{Array, ArrayBase, ArrayMut, ArrayRef};
 pub use automorphism::CoeffAutomorphismPermutation;
+pub use monomial::add_mul_monomial_pair_assign;
 
 pub use big_uint_poly::{BigUintPolynomial, BigUintPolynomialIter, BigUintPolynomialIterMut};
 

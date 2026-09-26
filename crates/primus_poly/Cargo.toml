@@ -31,3 +31,7 @@ harness = false
 [[bench]]
 name = "fourier"
 harness = false
+
+[[bench]]
+name = "monomial"
+harness = false

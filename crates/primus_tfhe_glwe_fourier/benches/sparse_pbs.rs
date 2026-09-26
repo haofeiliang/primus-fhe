@@ -78,7 +78,8 @@ fn bench_backend<Table: FftTable>(c: &mut Criterion, backend: &str) {
         let mut group = c.benchmark_group(format!(
             "sparse_pbs/{backend}/n{DIMENSION}/h{WEIGHT}/N{N}/{order:?}"
         ));
-        group.sample_size(30);
+        group.sample_size(20);
+        group.sampling_mode(criterion::SamplingMode::Flat);
         for (name, key) in [("classic", &classic), ("sparse", &sparse)] {
             let mut evaluator = context.evaluator(key).unwrap();
             // Verify the exact inputs and output scales timed below.

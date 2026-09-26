@@ -160,16 +160,34 @@ impl<T: TorusFftValue> SparseGlweBootstrappingKey<T> {
             // A bucket always has one dummy, including publicly empty buckets.
             // Start from it so no aggregation state survives the previous bucket.
             aggregate.as_mut().copy_from_slice(dummy);
-            for (&input_index, selection) in
-                indices.iter().zip(selections.chunks_exact(size.ggsw_len()))
-            {
-                let exponent = input_exponents[input_index];
+            let ggsw_len = size.ggsw_len();
+            // Fuse two rotations so each accumulator coefficient is loaded and
+            // stored once per pair; each modular contribution remains canonical.
+            let (index_pairs, index_tail) = indices.as_chunks::<2>();
+            let mut selection_pairs = selections.chunks_exact(2 * ggsw_len);
+            for (indices, pair) in index_pairs.iter().zip(selection_pairs.by_ref()) {
+                let (a, b) = pair.split_at(ggsw_len);
+                aggregate.add_mul_monomial_pair_assign(
+                    &Ggsw::new(a),
+                    input_exponents[indices[0]],
+                    &Ggsw::new(b),
+                    input_exponents[indices[1]],
+                    poly_length,
+                    modulus,
+                );
+            }
+            if let Some(&index) = index_tail.first() {
+                let selection = selection_pairs.remainder();
                 for (acc, source) in aggregate
                     .as_mut()
                     .chunks_exact_mut(poly_length)
                     .zip(selection.chunks_exact(poly_length))
                 {
-                    Polynomial(acc).add_mul_monomial_assign(&Polynomial(source), exponent, modulus);
+                    Polynomial(acc).add_mul_monomial_assign(
+                        &Polynomial(source),
+                        input_exponents[index],
+                        modulus,
+                    );
                 }
             }
             // Transform only the completed aggregate. Native wrapping above is

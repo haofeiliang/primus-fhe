@@ -80,6 +80,37 @@ fn coefficient_and_ntt_monomials_match_negacyclic_oracle() {
     check!(Ggsw, NttGgsw, 3 * 2 * 3, N);
 }
 
+#[test]
+fn coefficient_monomial_pairs_preserve_gadget_layout() {
+    const N: usize = 8;
+    const Q: u32 = 193;
+    // Three rows, two levels and three mask/body polynomials per level.
+    let len = N * 3 * 2 * 3;
+    let first: Vec<_> = (0..len).map(|i| (i as u32 * 31 + 7) % Q).collect();
+    let second: Vec<_> = (0..len).map(|i| (i as u32 * 17 + 11) % Q).collect();
+    let mut output = Ggsw::new(vec![Q - 1; len]);
+    for ra in 0..2 * N {
+        for rb in 0..2 * N {
+            let oracle = expected(
+                &expected(output.as_ref(), &first, ra, N, &[Q]),
+                &second,
+                rb,
+                N,
+                &[Q],
+            );
+            output.add_mul_monomial_pair_assign(
+                &Ggsw::new(first.as_slice()),
+                ra,
+                &Ggsw::new(second.as_slice()),
+                rb,
+                N,
+                BarrettModulus::new(Q),
+            );
+            assert_eq!(output.as_ref(), oracle, "ra={ra}, rb={rb}");
+        }
+    }
+}
+
 #[cfg(feature = "rns")]
 #[test]
 fn crt_monomial_accumulation_preserves_modulus_and_gadget_order() {

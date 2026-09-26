@@ -78,7 +78,8 @@ fn bench_sparse(c: &mut Criterion) {
         let mut outputs = vec![LweCiphertext::zero(dimension); 3];
         let mut group =
             c.benchmark_group(format!("sparse_pbs/n{DIMENSION}/h{WEIGHT}/N{N}/{order:?}"));
-        group.sample_size(30);
+        group.sample_size(20);
+        group.sampling_mode(criterion::SamplingMode::Flat);
         for (name, key) in [("classic", &classic), ("sparse", &sparse)] {
             let mut evaluator = context.evaluator(key).unwrap();
             // Verify the exact inputs and output scales timed below.

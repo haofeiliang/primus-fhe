@@ -61,6 +61,8 @@ NLev/NGSW 的单多项式外积可以写出系数，也可以通过 `external_pr
 
 `*_assign` 原地修改接收者，`*_to` 写入独立输出，`add_*_assign` 累加到已初始化的存储。消费式算术和转换可以复用可变存储，而返回新抽取样本的分配式接口会分配结果；不能仅凭没有后缀就认定方法不分配，应以方法契约为准。
 
+系数域 `Glwe`、`Glev`、`Ggsw`、`Nlev` 和 `Ngsw` 共享 `add_mul_monomial_pair_assign`，计算 `self += first * X^ra + second * X^rb`。依次传入两组输入和指数、多项式长度、模数。要求布局匹配，输入和已初始化累加器均为规范余数；每个贡献按顺序约简。批量内核为所有分量只计算一次旋转偏移，为 64 位整数将每个分段的符号分派移到多项式循环外，不分配内存。
+
 单模数 NTT 密文提供 `mul_monomial_assign`、`mul_monomial_to`、`add_mul_monomial_assign`， 以及计算 `self - rhs * X^exponent` 的 `sub_mul_monomial_to`。操作数之后依次传入 modulus、 单项式 NTT 表和长度为 `N` 的 scratch 切片。各操作只生成一次单项式变换并覆盖 scratch， 供密文的所有多项式共用，不分配内存或转换回系数域。
 
 `FourierGgsw` 与 `FourierNgsw` 的 `sub_mul_monomial_to` 使用 FFT engine、`N` 个 torus 整数和 `N/2` 个复数的 scratch 执行相同减法。它用密文对应的同一个表实例，以整数尺度变换单项式，保持密文的 torus 缩放和频率排列。

@@ -129,6 +129,55 @@ macro_rules! impl_monomial_single_modulus {
                 }
             }
         }
+        impl<S, T> $cipher<S>
+        where
+            S: primus_data::DataMut<Elem = T>,
+            T: primus_integer::FheUint,
+        {
+            /// Accumulates two monomial products on every coefficient polynomial.
+            ///
+            /// Computes `self += first * X^first_exponent + second * X^second_exponent`,
+            /// reducing each contribution in order. Rotation offsets are shared by
+            /// all components; no temporary storage is allocated.
+            ///
+            /// # Correctness
+            ///
+            /// Inputs and the initialized accumulator must have equal lengths,
+            /// matching coefficient layouts, gadget bases, level/row order and
+            /// compatible key semantics. The polynomial length, exponents and
+            /// canonical values must satisfy [`primus_poly::add_mul_monomial_pair_assign`].
+            ///
+            /// # Panics
+            ///
+            /// Inherits the shape/range diagnostics and possible partial writes
+            /// of [`primus_poly::add_mul_monomial_pair_assign`].
+            #[inline]
+            pub fn add_mul_monomial_pair_assign<M, A, B>(
+                &mut self,
+                first: &$cipher<A>,
+                first_exponent: usize,
+                second: &$cipher<B>,
+                second_exponent: usize,
+                poly_length: usize,
+                modulus: M,
+            ) where
+                M: Copy
+                    + primus_reduce::ReduceAdd<T, Output = T>
+                    + primus_reduce::ReduceSub<T, Output = T>,
+                A: primus_data::Data<Elem = T>,
+                B: primus_data::Data<Elem = T>,
+            {
+                primus_poly::add_mul_monomial_pair_assign(
+                    self.as_mut(),
+                    first.as_ref(),
+                    first_exponent,
+                    second.as_ref(),
+                    second_exponent,
+                    poly_length,
+                    modulus,
+                );
+            }
+        }
     };
 }
 

@@ -61,6 +61,8 @@ Availability depends on the type and representation; this is a family overview, 
 
 `*_assign` mutates its receiver; `*_to` writes a separate output. `add_*_assign` accumulates into initialized storage. Consuming arithmetic and conversions can reuse mutable storage, while allocation-returning extraction methods allocate their result; consult the method contract rather than assuming an unsuffixed method is allocation-free.
 
+Coefficient-domain `Glwe`, `Glev`, `Ggsw`, `Nlev` and `Ngsw` share `add_mul_monomial_pair_assign` for `self += first * X^ra + second * X^rb`. Pass both input/exponent pairs, the polynomial length and modulus. Matching layouts and canonical initialized storage are required; each contribution is reduced in order. The batch kernel computes rotation offsets once for all components and dispatches each interval outside the polynomial loop for 64-bit words, without allocation.
+
 Single-modulus NTT ciphertexts provide `mul_monomial_assign`, `mul_monomial_to`, and `add_mul_monomial_assign`, plus `sub_mul_monomial_to` for `self - rhs * X^exponent`. Pass the modulus, monomial NTT table, and a length-`N` scratch slice after the operands. The operations overwrite scratch with one monomial transform shared by all ciphertext polynomials, without allocation or conversion to coefficients.
 
 `FourierGgsw` and `FourierNgsw` provide `sub_mul_monomial_to` using an FFT engine and scratch slices of `N` torus words and `N/2` complex values. It transforms the monomial at integer scale using the ciphertexts' exact table instance, preserving their torus scale and evaluation order.

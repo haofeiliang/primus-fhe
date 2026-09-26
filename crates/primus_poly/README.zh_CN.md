@@ -65,11 +65,21 @@ assert_eq!(lhs.as_slice(), &[84, 13, 21, 4]);
 
 重复算术路径中的许多形状检查只是 `debug_assert*!` 诊断。release 调用方必须维持文档契约；iterator 的 `zip` 和 `chunks_exact` 不能替代边界验证。
 
+`Polynomial::add_mul_monomial_pair_assign` 在一次输出遍历中累加两个旋转输入，不分配临时空间。自由函数 `add_mul_monomial_pair_assign` 还可处理包含完整多项式的连续批量存储，每批只计算一次旋转偏移，64 位整数的每个分段符号分派位于多项式循环外。两个贡献按顺序分别约简；两种接口都要求多项式长度为相同的 2 次幂、输入与累加器为规范余数，指数在 `[0, 2N)` 内。
+
 `CoeffAutomorphismPermutation` 缓存模 `X^N + 1` 的系数代换 `X -> X^d`。为 2 次幂 `N >= 2` 和 `[1, 2N)` 内的奇数 `d` 构造后，使用 `apply_to` 处理规范 residue。`apply_signed_to` 用于所需取负均可表示的小有符号系数。置换本身不执行 密码学 key switching；对应的 NTT 置换位于 `primus_ntt`。
 
 ## 随机采样
 
 直接在 NTT 和 DCRT 表示中进行的采样仅支持 uniform 分布。若要采样非 uniform 的系数分布，应先构造系数域的 `Polynomial` 或 `CrtPolynomial`，再执行变换。CRT uniform-binary、sparse-ternary 和 Gaussian 采样会生成一个逻辑系数，并在每个分量模数下编码同一个值；其中 sparse ternary 分布满足 `P(0) = 1/2`、`P(1) = P(-1) = 1/4`。随机 API 要求 RNG 同时实现 `rand::Rng` 和 `rand::CryptoRng`。
+
+## 单项式算术基准
+
+[monomial.rs](benches/monomial.rs) 对比 `acc += first * X^r + second * X^s` 在模 `X^N + 1` 下的两次单项累加与一次配对累加。所有配置统一使用 `N=1024/2048`、每批 `1/8` 个多项式和相同指数。u32/u64 Barrett 组共用 `q=132120577`，native 组按各自字宽 wrapping。输入使用固定 seed，缓冲区复用，分配和初始化不计时。不同字宽的系数数量相同，但字节数不同。这些结果衡量算术操作，不代表 PBS/CBS 耗时。
+
+```text
+cargo bench -p primus_poly --bench monomial
+```
 
 ## SIMD feature
 
