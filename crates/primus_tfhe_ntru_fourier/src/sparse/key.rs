@@ -4,24 +4,29 @@ use std::alloc::Layout;
 
 use num_traits::{ConstOne, ConstZero};
 use primus_fft::{Complex64, FftTable, TorusFftValue};
-use primus_lattice::ngsw::{FourierNgsw, Ngsw, NgswIter};
+use primus_lattice::{
+    ngsw::NgswIter,
+    nlev::{FourierNlev, Nlev, NlevIter},
+};
 use primus_ntru::{FourierNtruKeySwitchingKey, FourierNtruSecretKey, SecretKeyDistr};
 use primus_tfhe::sparse::BucketMap;
 use zeroize::Zeroizing;
 
 use crate::{ClientKey, KeyGenerationError, KeyGenerator, ServerKey, SparseBootstrappingKeyError};
 
-/// Coefficient NGSW selectors and public buckets for a fixed-weight binary client.
+/// Coefficient selectors and public buckets for a fixed-weight binary client.
+/// Bucket zero uses NLEV bits for public-LUT lifting; later buckets use NGSW bits.
 ///
 /// Each nonzero input is privately assigned to exactly one of its public copies.
 /// Each bucket has an independently encrypted dummy, one when unoccupied and zero
 /// otherwise. Only ciphertexts and the public map remain after generation.
-/// The parent [`ServerKey`] carries the common NLev initializer, basis and return KSK.
+/// The parent [`ServerKey`] carries the common basis and return KSK.
+/// Sparse evaluation needs no separate NLEV initializer.
 ///
 /// Successful generation conditions both the client secret on NTRU invertibility
 /// and Fourier inverse stability, and the public map on matching. These conditions
 /// require independent security assessment; this representation does not certify a failure rate.
-/// Each Fourier NGSW is recovered to Native coefficients before storage. This
+/// Each Fourier control is recovered to native coefficients before storage. This
 /// conversion, the aggregate FFT and external products incur numerical error.
 pub struct SparseNtruBootstrappingKey<T: TorusFftValue> {
     data: Vec<T>,
@@ -29,7 +34,7 @@ pub struct SparseNtruBootstrappingKey<T: TorusFftValue> {
     input_dimension: usize,
     hamming_weight: usize,
     copy_count: usize,
-    pub(crate) ngsw_len: usize,
+    pub(crate) control_len: usize,
 }
 
 impl<T: TorusFftValue> SparseNtruBootstrappingKey<T> {
@@ -58,20 +63,33 @@ impl<T: TorusFftValue> SparseNtruBootstrappingKey<T> {
     }
 
     /// Returns `[bucket][entry...,dummy][level][coefficient]` storage.
+    /// Bucket zero contains NLEV controls; later buckets contain NGSW controls.
     #[must_use]
     pub fn as_slice(&self) -> &[T] {
         &self.data
     }
 
-    /// Borrows increasing input indices and their coefficient NGSWs, with a dummy last.
+    /// Borrows bucket zero's increasing input indices and coefficient NLEV controls.
+    /// The last control is the dummy; a publicly empty bucket contains only the dummy.
+    #[must_use]
+    pub fn first_bucket(&self) -> (&[usize], NlevIter<'_, T>) {
+        let (indices, data) = self.bucket_data(0);
+        (indices, NlevIter::new(data, self.control_len))
+    }
+
+    /// Borrows a later bucket's increasing input indices and coefficient NGSWs, with a dummy last.
     /// An empty bucket still contains its dummy. No plaintext assignment is exposed.
     ///
     /// # Panics
-    /// Panics if `bucket >= self.bucket_count()`.
+    /// Panics if `bucket == 0` or `bucket >= self.bucket_count()`.
     #[must_use]
-    pub fn bucket(&self, bucket: usize) -> (&[usize], NgswIter<'_, T>) {
+    pub fn ngsw_bucket(&self, bucket: usize) -> (&[usize], NgswIter<'_, T>) {
+        assert!(
+            bucket > 0,
+            "bucket zero contains NLEV controls; use first_bucket"
+        );
         let (indices, data) = self.bucket_data(bucket);
-        (indices, NgswIter::new(data, self.ngsw_len))
+        (indices, NgswIter::new(data, self.control_len))
     }
 
     pub(super) fn bucket_data(&self, bucket: usize) -> (&[usize], &[T]) {
@@ -83,7 +101,7 @@ impl<T: TorusFftValue> SparseNtruBootstrappingKey<T> {
         let end = self.map.bucket_offsets()[bucket + 1];
         (
             &self.map.input_indices()[start..end],
-            &self.data[(start + bucket) * self.ngsw_len..(end + bucket + 1) * self.ngsw_len],
+            &self.data[(start + bucket) * self.control_len..(end + bucket + 1) * self.control_len],
         )
     }
 }
@@ -110,7 +128,7 @@ where
     ///
     /// # Correctness
     /// Fourier material must use this context's FFT table instance.
-    /// Budget NLev initialization, all bucket errors, input quantization and return
+    /// Budget fused first-bucket lifting, later bucket errors, input quantization and return
     /// key-switch noise, including coarser ManyLUT rotations. Matching is not
     /// constant-time; see [`SparseNtruBootstrappingKey`]'s distribution requirements.
     pub fn try_generate_sparse_server_key<R>(
@@ -138,13 +156,13 @@ where
         if hamming_weight.is_multiple_of(2) {
             return Err(primus_ntru::NtruError::NonInvertibleSecretKey.into());
         }
-        let ngsw_len = parameters.blind_rotation().nlev_len();
+        let control_len = parameters.blind_rotation().nlev_len();
         let fourier_len = parameters.blind_rotation().fourier_nlev_len();
         Layout::array::<Complex64>(fourier_len).map_err(|_| Error::StorageSizeOverflow)?;
         let data_len = dimension
             .checked_mul(copy_count)
             .and_then(|n| n.checked_add(bucket_count))
-            .and_then(|n| n.checked_mul(ngsw_len))
+            .and_then(|n| n.checked_mul(control_len))
             .ok_or(Error::StorageSizeOverflow)?;
         Layout::array::<T>(data_len).map_err(|_| Error::StorageSizeOverflow)?;
         let nonzero_indices = Zeroizing::new(
@@ -172,31 +190,47 @@ where
         drop(nonzero_indices);
         let mut data = vec![T::ZERO; data_len];
         // Recover one independently encrypted control at a time. Keep only one
-        // Fourier NGSW temporary rather than a second transformed bootstrapping key.
-        let mut transformed = FourierNgsw::<Vec<Complex64>>::zero(fourier_len);
+        // Fourier control temporary rather than a second transformed bootstrapping key.
+        let mut transformed = FourierNlev::<Vec<Complex64>>::zero(fourier_len);
         for (bucket, &chosen) in selected.iter().enumerate() {
             let start = map.bucket_offsets()[bucket];
             let end = map.bucket_offsets()[bucket + 1];
-            let output = &mut data[(start + bucket) * ngsw_len..(end + bucket + 1) * ngsw_len];
+            let output =
+                &mut data[(start + bucket) * control_len..(end + bucket + 1) * control_len];
             for (&index, coefficients) in map.input_indices()[start..end]
                 .iter()
                 .chain(std::iter::once(&BucketMap::UNASSIGNED))
-                .zip(output.chunks_exact_mut(ngsw_len))
+                .zip(output.chunks_exact_mut(control_len))
             {
                 let bit = if index == chosen {
                     T::SignedInteger::ONE
                 } else {
                     T::SignedInteger::ZERO
                 };
-                accumulator_fourier.encrypt_ngsw_signed_constant_batch_to(
-                    &[bit],
-                    transformed.as_mut(),
-                    parameters.blind_rotation(),
-                    &mut self.fft,
-                    rng,
-                    &mut self.gadget,
-                );
-                transformed.write_torus_form(&mut Ngsw::new(coefficients), &mut self.fft);
+                if bucket == 0 {
+                    accumulator_fourier.encrypt_nlev_constant_to(
+                        if bit == T::SignedInteger::ONE {
+                            T::ONE
+                        } else {
+                            T::ZERO
+                        },
+                        &mut transformed,
+                        parameters.blind_rotation(),
+                        &mut self.fft,
+                        rng,
+                        &mut self.gadget,
+                    );
+                } else {
+                    accumulator_fourier.encrypt_ngsw_signed_constant_batch_to(
+                        &[bit],
+                        transformed.as_mut(),
+                        parameters.blind_rotation(),
+                        &mut self.fft,
+                        rng,
+                        &mut self.gadget,
+                    );
+                }
+                transformed.write_torus_form(&mut Nlev::new(coefficients), &mut self.fft);
             }
         }
         drop(selected);
@@ -206,9 +240,8 @@ where
             input_dimension: dimension,
             hamming_weight,
             copy_count,
-            ngsw_len,
+            control_len,
         };
-        let initializer = self.generate_initializer(&accumulator_fourier, rng);
         let key_switching_key = FourierNtruKeySwitchingKey::generate(
             client_key.accumulator_ntru_secret_key(),
             &client_fourier,
@@ -219,7 +252,6 @@ where
         );
         Ok(ServerKey::from_sparse(
             parameters,
-            initializer,
             controls,
             key_switching_key,
         ))

@@ -15,12 +15,12 @@ use crate::{
 };
 
 /// Exact NTT evaluation keys for NTRU TFHE.
-/// The initializer and controls share the stored blind-rotation basis.
+/// The classic initializer and controls share the stored blind-rotation basis.
 /// Classic coordinate zero holds NLEV bit controls for fused lifting; later
 /// coordinates hold NGSW controls (positive/negative pairs for ternary).
+/// Sparse keys instead lift with their first bucket and carry no initializer.
 pub struct ServerKey<T: FheUint> {
     circuit_bootstrap: Option<Box<CircuitBootstrapKey<T>>>,
-    initializer: NttNlev<Vec<T>>,
     blind_rotation_basis: ApproxSignedBasis<T>,
     controls: Controls<T>,
     input_distribution: SecretKeyDistr,
@@ -29,7 +29,10 @@ pub struct ServerKey<T: FheUint> {
 
 enum Controls<T: FheUint> {
     // First coordinate: NLEV bit(s); remaining coordinates: NGSW bit(s).
-    Classic(Vec<T>),
+    Classic {
+        initializer: NttNlev<Vec<T>>,
+        data: Vec<T>,
+    },
     Sparse(SparseNtruBootstrappingKey<T>),
 }
 
@@ -38,7 +41,7 @@ impl<T: FheUint> ServerKey<T> {
     #[must_use]
     pub fn sparse_bootstrapping_key(&self) -> Option<&SparseNtruBootstrappingKey<T>> {
         match &self.controls {
-            Controls::Classic(_) => None,
+            Controls::Classic { .. } => None,
             Controls::Sparse(key) => Some(key),
         }
     }
@@ -46,8 +49,8 @@ impl<T: FheUint> ServerKey<T> {
     /// Borrows first-coordinate NLEV bits and the remaining NGSW bits.
     pub(crate) fn classic_controls(&self) -> (&[T], &[T]) {
         match &self.controls {
-            Controls::Classic(data) => {
-                let first_len = self.initializer.as_ref().len()
+            Controls::Classic { initializer, data } => {
+                let first_len = initializer.as_ref().len()
                     * if self.input_distribution.is_binary() {
                         1
                     } else {
@@ -61,13 +64,11 @@ impl<T: FheUint> ServerKey<T> {
 
     pub(crate) fn from_sparse(
         parameters: &TfheParameters<T>,
-        initializer: NttNlev<Vec<T>>,
         controls: SparseNtruBootstrappingKey<T>,
         key_switching_key: NttNtruKeySwitchingKey<T>,
     ) -> Self {
         Self {
             circuit_bootstrap: None,
-            initializer,
             blind_rotation_basis: parameters.blind_rotation().basis().clone(),
             controls: Controls::Sparse(controls),
             input_distribution: parameters.external_lwe().secret_key_distr(),
@@ -87,10 +88,13 @@ impl<T: FheUint> ServerKey<T> {
         self.circuit_bootstrap.as_deref()
     }
 
-    /// Returns the NLev encryption of one used to initialize the accumulator.
+    /// Returns the classic NLEV encryption of one; panics for sparse keys.
     #[inline]
     pub(crate) fn initializer(&self) -> &NttNlev<Vec<T>> {
-        &self.initializer
+        match &self.controls {
+            Controls::Classic { initializer, .. } => initializer,
+            Controls::Sparse(_) => panic!("classic initializer requires a classic key"),
+        }
     }
 
     /// Returns the common initializer/control decomposition basis.
@@ -107,24 +111,24 @@ impl<T: FheUint> ServerKey<T> {
     /// Checks the generated ring and decomposition parameters before evaluation.
     pub(crate) fn is_compatible(&self, parameters: &TfheParameters<T>) -> bool {
         self.input_distribution == parameters.external_lwe().secret_key_distr()
-            && self.initializer.as_ref().len() == parameters.blind_rotation().nlev_len()
             && &self.blind_rotation_basis == parameters.blind_rotation().basis()
             && self.key_switching_key.poly_length() == parameters.poly_length()
             && self.key_switching_key.basis() == parameters.ntru_key_switching().basis()
             && match &self.controls {
-                Controls::Classic(data) => {
-                    data.len()
-                        == parameters.external_lwe_dimension()
-                            * if self.input_distribution.is_binary() {
-                                1
-                            } else {
-                                2
-                            }
-                            * self.initializer.as_ref().len()
+                Controls::Classic { initializer, data } => {
+                    initializer.as_ref().len() == parameters.blind_rotation().nlev_len()
+                        && data.len()
+                            == parameters.external_lwe_dimension()
+                                * if self.input_distribution.is_binary() {
+                                    1
+                                } else {
+                                    2
+                                }
+                                * initializer.as_ref().len()
                 }
                 Controls::Sparse(key) => {
                     key.input_dimension() == parameters.external_lwe_dimension()
-                        && key.ngsw_len == self.initializer.as_ref().len()
+                        && key.control_len == parameters.blind_rotation().nlev_len()
                 }
             }
     }
@@ -266,16 +270,18 @@ where
         });
         ServerKey {
             circuit_bootstrap,
-            initializer,
             blind_rotation_basis: parameters.blind_rotation().basis().clone(),
-            controls: Controls::Classic(controls),
+            controls: Controls::Classic {
+                initializer,
+                data: controls,
+            },
             input_distribution: parameters.external_lwe().secret_key_distr(),
             key_switching_key,
         }
     }
 
     /// Generates `NLEV_f_acc[1]` directly for accumulator initialization.
-    pub(crate) fn generate_initializer<R>(
+    fn generate_initializer<R>(
         &mut self,
         accumulator_ntt: &NttNtruSecretKey<T>,
         rng: &mut R,

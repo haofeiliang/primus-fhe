@@ -25,7 +25,7 @@ NTT tables must implement `MonomialNttTable`; built-in tables support it. Contex
 
 There is one PBS order: encrypted initialization and BR under `f_acc`, then return KS and compact extraction under `f_client`. Binary/ternary client secrets must pass invertibility screening; Fourier additionally screens inverse stability.
 
-Classic binary/ternary BR fuses the first CMux with public-LUT lifting: coordinate zero uses NLEV bit controls, later coordinates use NGSW. It decomposes the rotated LUT once against `I + (R-1)B+ + (R^-1-1)B-`, omitting `B-` for binary. A zero first exponent still lifts with `I=NLEV[1]`. Ordinary PBS, ManyLUT, MVB and CBS share this path; sparse PBS currently retains separate initialization. The BR basis must resolve the programmed LUT scale, including the smallest CBS output gadget weight; parameter shape checks do not certify this numerical budget.
+Classic binary/ternary BR fuses the first CMux with public-LUT lifting: coordinate zero uses NLEV bit controls, later coordinates use NGSW. It decomposes the rotated LUT once against `I + (R-1)B+ + (R^-1-1)B-`, omitting `B-` for binary. A zero first exponent still lifts with `I=NLEV[1]`. Ordinary PBS, ManyLUT, MVB and CBS share this path. The BR basis must resolve the programmed LUT scale, including the smallest CBS output gadget weight; parameter shape checks do not certify this numerical budget.
 
 ## Reusing evaluators
 
@@ -55,6 +55,8 @@ let mut evaluator = context.evaluator(&server)?;
 ```
 
 Ordinary/interleaved PBS use the same evaluator. CBS/MVB reject sparse keys, including CBS binding with standalone material. `server.sparse_bootstrapping_key()` exposes selectors.
+
+Bucket zero stores NLEV selectors and a NLEV dummy. Their monomial-weighted sum lifts the public rotated LUT directly; later buckets aggregate NGSW controls. Empty or unoccupied first buckets and zero exponents still process the dummy and encrypted zeros. There is no separate sparse initializer. `first_bucket()` exposes the first NLEV controls; `ngsw_bucket(j)` accepts only `j >= 1` and exposes NGSW controls. Both include the dummy last. Online evaluation reuses the aggregate and external-product buffers without allocation.
 
 Matching retries at most eight public maps with the fixed client; it never resamples the client. Every bucket, including encrypted zeros and dummies, contributes noise. Successful matching does not certify security or a complete failure bound. See [sparse rotation invariants](../primus_tfhe/IMPLEMENTATION.md#ternary-and-sparse-rotation) and the [message/carry example](examples/ntru_ntt_sparse.rs).
 

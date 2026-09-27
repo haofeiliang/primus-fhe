@@ -116,18 +116,10 @@ pub(crate) fn blind_rotate_lookup_table_to<T, Table, A>(
         NativeModulus::new(),
     );
     let basis = server_key.blind_rotation_basis();
-    let control_len = server_key.initializer().as_ref().len();
+    let control_len = parameters.blind_rotation().fourier_nlev_len();
     // One public layout dispatch per BR; the coordinate loop stays specialized.
     match &mut workspace.rotation {
         RotationContext::Sparse { key, scratch } => {
-            server_key.initializer().external_product_to(
-                &Polynomial(workspace.scratch.as_ref()),
-                &mut workspace.current,
-                server_key.blind_rotation_basis(),
-                fft,
-                &mut scratch.external_product,
-            );
-
             quantizer.exponent_slice_to(input.a(), &mut scratch.exponents);
             crate::sparse::rotate_buckets(
                 key,

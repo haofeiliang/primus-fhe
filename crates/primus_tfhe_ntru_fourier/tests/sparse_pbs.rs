@@ -1,4 +1,4 @@
-use num_traits::ConstOne;
+use num_traits::{ConstOne, ConstZero};
 use primus_encoding::{PlaintextEmbedding, RoundedCodec};
 use primus_fft::{FftTable, RustFftTable, TfheFftTable, TorusFftValue};
 use primus_integer::AsInto;
@@ -59,11 +59,27 @@ fn phase<T: TorusFftValue>(
     .rem_euclid(q)
 }
 
-fn check_complete<T: TorusFftValue, Table: FftTable>() {
-    let context = context::<T, Table>(SecretKeyDistr::fixed_hamming_weight_binary(DIM, 5));
+fn check_complete<T: TorusFftValue, Table: FftTable>(weight: usize) {
+    let context = context::<T, Table>(SecretKeyDistr::fixed_hamming_weight_binary(DIM, weight));
     let mut rng = StdRng::seed_from_u64(0xB803);
     let mut generator = KeyGenerator::new(&context);
-    let (client, classic_key) = generator.try_generate(None, &mut rng).unwrap();
+    let mut client = generator.try_generate_client_key(&mut rng).unwrap();
+    if weight == 1 {
+        // A known monomial client fixes support independently of backend/keygen RNG.
+        let mut coefficients = vec![T::SignedInteger::ZERO; N];
+        coefficients[0] = T::SignedInteger::ONE;
+        client = primus_tfhe_ntru_fourier::ClientKey::new(
+            primus_ntru::NtruSecretKey::new(
+                coefficients,
+                context.parameters().external_lwe().secret_key_distr(),
+            ),
+            client.accumulator_ntru_secret_key().clone(),
+            DIM,
+        );
+    }
+    let classic_key = generator
+        .try_generate_server_key(&client, None, &mut rng)
+        .unwrap();
     let mut classic = context.evaluator(&classic_key).unwrap();
     let modulus = context.parameters().external_lwe().cipher_modulus();
     let q_wide: i128 = 1i128 << T::BITS;
@@ -82,9 +98,21 @@ fn check_complete<T: TorusFftValue, Table: FftTable>() {
     let mut outputs = vec![output.clone(); 3];
 
     // Odd/even bucket counts exercise ownership swaps; b>n guarantees public empty buckets.
-    for (copies, buckets) in [(3, 10), (1, DIM + 1)] {
+    let cases: &[(usize, usize, u64)] = if weight == 1 {
+        // Seeds 1/0/37 give an empty, nonempty-unoccupied, and occupied first bucket.
+        &[
+            (1, 1, 0),
+            (1, DIM + 1, 1),
+            (1, DIM + 1, 0),
+            (1, DIM + 1, 37),
+        ]
+    } else {
+        &[(3, 10, 0xB804), (1, DIM + 1, 0xB805)]
+    };
+    for &(copies, buckets, seed) in cases {
+        let mut key_rng = StdRng::seed_from_u64(seed);
         let server = generator
-            .try_generate_sparse_server_key(&client, copies, buckets, &mut rng)
+            .try_generate_sparse_server_key(&client, copies, buckets, &mut key_rng)
             .unwrap();
         assert_eq!(
             context.factorized_evaluator(&server).err(),
@@ -93,6 +121,20 @@ fn check_complete<T: TorusFftValue, Table: FftTable>() {
         assert_eq!(
             context.circuit_bootstrap_evaluator(&server).err(),
             Some(TfheEvaluationError::UnsupportedSparseBootstrapping)
+        );
+        let key = server.sparse_bootstrapping_key().unwrap();
+        if weight == 1 {
+            let (indices, controls) = key.first_bucket();
+            assert_eq!(controls.count(), indices.len() + 1);
+            assert_eq!(indices.is_empty(), buckets > 1 && seed == 1);
+            assert_eq!(indices.contains(&0), buckets == 1 || seed == 37);
+        }
+        assert!(
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| key.ngsw_bucket(0))).is_err()
+        );
+        assert!(
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| key.ngsw_bucket(buckets)))
+                .is_err()
         );
         let mut sparse = context.evaluator(&server).unwrap();
         for (message, zero_mask) in [(0, true), (3, false), (7, false), (1, true)] {
@@ -166,10 +208,12 @@ fn check_complete<T: TorusFftValue, Table: FftTable>() {
 
 #[test]
 fn sparse_pbs_matches_classic_outputs_and_independent_rotation_without_allocations() {
-    check_complete::<u32, RustFftTable>();
-    check_complete::<u32, TfheFftTable>();
-    check_complete::<u64, RustFftTable>();
-    check_complete::<u64, TfheFftTable>();
+    for weight in [1, 5] {
+        check_complete::<u32, RustFftTable>(weight);
+        check_complete::<u32, TfheFftTable>(weight);
+        check_complete::<u64, RustFftTable>(weight);
+        check_complete::<u64, TfheFftTable>(weight);
+    }
 }
 
 #[test]

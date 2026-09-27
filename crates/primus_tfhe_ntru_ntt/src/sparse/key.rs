@@ -4,7 +4,10 @@ use std::alloc::Layout;
 
 use num_traits::{ConstOne, ConstZero};
 use primus_integer::FheUint;
-use primus_lattice::ngsw::NgswIter;
+use primus_lattice::{
+    ngsw::NgswIter,
+    nlev::{NlevIter, NttNlev},
+};
 use primus_ntru::{NttNtruKeySwitchingKey, NttNtruSecretKey, SecretKeyDistr};
 use primus_ntt::MonomialNttTable;
 use primus_tfhe::sparse::BucketMap;
@@ -12,12 +15,14 @@ use zeroize::Zeroizing;
 
 use crate::{ClientKey, KeyGenerationError, KeyGenerator, ServerKey, SparseBootstrappingKeyError};
 
-/// Coefficient NGSW selectors and public buckets for a fixed-weight binary client.
+/// Coefficient selectors and public buckets for a fixed-weight binary client.
+/// Bucket zero uses NLEV bits for public-LUT lifting; later buckets use NGSW bits.
 ///
 /// Each nonzero input is privately assigned to exactly one of its public copies.
 /// Each bucket has an independently encrypted dummy, one when unoccupied and zero
 /// otherwise. Only ciphertexts and the public map remain after generation.
-/// The parent [`ServerKey`] carries the common NLev initializer, basis and return KSK.
+/// The parent [`ServerKey`] carries the common basis and return KSK.
+/// Sparse evaluation needs no separate NLEV initializer.
 ///
 /// Successful generation conditions both the client secret on NTRU invertibility
 /// and the public map on matching. These conditions require independent security
@@ -28,7 +33,7 @@ pub struct SparseNtruBootstrappingKey<T: FheUint> {
     input_dimension: usize,
     hamming_weight: usize,
     copy_count: usize,
-    pub(crate) ngsw_len: usize,
+    pub(crate) control_len: usize,
 }
 
 impl<T: FheUint> SparseNtruBootstrappingKey<T> {
@@ -57,20 +62,33 @@ impl<T: FheUint> SparseNtruBootstrappingKey<T> {
     }
 
     /// Returns `[bucket][entry...,dummy][level][coefficient]` storage.
+    /// Bucket zero contains NLEV controls; later buckets contain NGSW controls.
     #[must_use]
     pub fn as_slice(&self) -> &[T] {
         &self.data
     }
 
-    /// Borrows increasing input indices and their coefficient NGSWs, with a dummy last.
+    /// Borrows bucket zero's increasing input indices and coefficient NLEV controls.
+    /// The last control is the dummy; a publicly empty bucket contains only the dummy.
+    #[must_use]
+    pub fn first_bucket(&self) -> (&[usize], NlevIter<'_, T>) {
+        let (indices, data) = self.bucket_data(0);
+        (indices, NlevIter::new(data, self.control_len))
+    }
+
+    /// Borrows a later bucket's increasing input indices and coefficient NGSWs, with a dummy last.
     /// An empty bucket still contains its dummy. No plaintext assignment is exposed.
     ///
     /// # Panics
-    /// Panics if `bucket >= self.bucket_count()`.
+    /// Panics if `bucket == 0` or `bucket >= self.bucket_count()`.
     #[must_use]
-    pub fn bucket(&self, bucket: usize) -> (&[usize], NgswIter<'_, T>) {
+    pub fn ngsw_bucket(&self, bucket: usize) -> (&[usize], NgswIter<'_, T>) {
+        assert!(
+            bucket > 0,
+            "bucket zero contains NLEV controls; use first_bucket"
+        );
         let (indices, data) = self.bucket_data(bucket);
-        (indices, NgswIter::new(data, self.ngsw_len))
+        (indices, NgswIter::new(data, self.control_len))
     }
 
     pub(super) fn bucket_data(&self, bucket: usize) -> (&[usize], &[T]) {
@@ -82,7 +100,7 @@ impl<T: FheUint> SparseNtruBootstrappingKey<T> {
         let end = self.map.bucket_offsets()[bucket + 1];
         (
             &self.map.input_indices()[start..end],
-            &self.data[(start + bucket) * self.ngsw_len..(end + bucket + 1) * self.ngsw_len],
+            &self.data[(start + bucket) * self.control_len..(end + bucket + 1) * self.control_len],
         )
     }
 }
@@ -108,7 +126,7 @@ where
     /// # Correctness
     /// Imported accumulator coefficients inherit
     /// [`NttNtruSecretKey::try_from_coeff_secret_key`]'s magnitude requirement.
-    /// Budget NLev initialization, all bucket errors, input quantization and return
+    /// Budget fused first-bucket lifting, later bucket errors, input quantization and return
     /// key-switch noise, including coarser ManyLUT rotations. Matching is not
     /// constant-time; see [`SparseNtruBootstrappingKey`]'s distribution requirements.
     pub fn try_generate_sparse_server_key<R>(
@@ -133,11 +151,11 @@ where
         if hamming_weight == 0 || hamming_weight >= dimension {
             return Err(Error::InvalidHammingWeight.into());
         }
-        let ngsw_len = parameters.blind_rotation().nlev_len();
+        let control_len = parameters.blind_rotation().nlev_len();
         let data_len = dimension
             .checked_mul(copy_count)
             .and_then(|n| n.checked_add(bucket_count))
-            .and_then(|n| n.checked_mul(ngsw_len))
+            .and_then(|n| n.checked_mul(control_len))
             .ok_or(Error::StorageSizeOverflow)?;
         Layout::array::<T>(data_len).map_err(|_| Error::StorageSizeOverflow)?;
         let nonzero_indices = Zeroizing::new(
@@ -192,14 +210,32 @@ where
             } else {
                 T::SignedInteger::ZERO
             });
-            let output = &mut data[(start + bucket) * ngsw_len..(end + bucket + 1) * ngsw_len];
-            accumulator_ntt.encrypt_ngsw_signed_constant_batch_to(
-                &constants,
-                output,
-                parameters.blind_rotation(),
-                ntt,
-                rng,
-            );
+            let output =
+                &mut data[(start + bucket) * control_len..(end + bucket + 1) * control_len];
+            if bucket == 0 {
+                for (&bit, row) in constants.iter().zip(output.chunks_exact_mut(control_len)) {
+                    accumulator_ntt.encrypt_nlev_constant_to(
+                        if bit == T::SignedInteger::ONE {
+                            T::ONE
+                        } else {
+                            T::ZERO
+                        },
+                        &mut NttNlev::new(row),
+                        parameters.blind_rotation(),
+                        ntt,
+                        rng,
+                        &mut self.gadget,
+                    );
+                }
+            } else {
+                accumulator_ntt.encrypt_ngsw_signed_constant_batch_to(
+                    &constants,
+                    output,
+                    parameters.blind_rotation(),
+                    ntt,
+                    rng,
+                );
+            }
             for polynomial in output.chunks_exact_mut(parameters.poly_length()) {
                 ntt.inverse_transform_slice(polynomial);
             }
@@ -210,9 +246,8 @@ where
             input_dimension: dimension,
             hamming_weight,
             copy_count,
-            ngsw_len,
+            control_len,
         };
-        let initializer = self.generate_initializer(&accumulator_ntt, rng);
         let key_switching_key = NttNtruKeySwitchingKey::generate(
             client_key.accumulator_ntru_secret_key(),
             &client_ntt,
@@ -223,7 +258,6 @@ where
         );
         Ok(ServerKey::from_sparse(
             parameters,
-            initializer,
             controls,
             key_switching_key,
         ))

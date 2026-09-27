@@ -5,8 +5,9 @@ use primus_integer::{AsInto, FheUint};
 use primus_lwe::LweParameters;
 use primus_modulus::BarrettModulus;
 use primus_ntru::{
-    NgswCiphertext, NlevParameters, NtruCiphertext, NtruParameters, NttNlevCiphertext,
-    NttNtruExternalProductContext, NttNtruGadgetEncryptContext, NttNtruSecretKey, SecretKeyDistr,
+    NgswCiphertext, NlevCiphertext, NlevParameters, NtruCiphertext, NtruParameters,
+    NttNlevCiphertext, NttNtruExternalProductContext, NttNtruGadgetEncryptContext,
+    NttNtruSecretKey, SecretKeyDistr,
 };
 use primus_ntt::{MonomialNttTable, U32NttTable, U64NttTable};
 use primus_poly::Polynomial;
@@ -62,7 +63,7 @@ fn max_error(actual: &[i128], expected: &[i128], q: i128) -> i128 {
         .unwrap()
 }
 
-fn check_bucket<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T) {
+fn check_bucket<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T, level_count: Option<usize>) {
     const N: usize = 32;
     const DIM: usize = 16;
     const WEIGHT: usize = 4;
@@ -101,7 +102,7 @@ fn check_bucket<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T) {
         SecretKeyDistr::SparseTernary,
         0.7,
     );
-    let gadget = NlevParameters::with_ntru_params(&params, 8, None);
+    let gadget = NlevParameters::with_ntru_params(&params, 8, level_count);
     let context = TfheContext::try_new(
         TfheParameters::try_new(
             LweParameters::new(
@@ -192,12 +193,24 @@ fn check_bucket<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T) {
             .iter()
             .map(|&f| (f * top).rem_euclid(q_wide))
             .collect();
+        let mut first_one = vec![0; N];
+        first_one[0] = top;
+        let first_count = key.first_bucket().0.len() + 1;
         let bits: Vec<_> = row_phases
             .chunks_exact(scalars.len())
-            .map(|rows| {
+            .enumerate()
+            .map(|(index, rows)| {
                 let row = rows.last().unwrap();
                 let e0 = max_error(row, &zero, q_wide);
-                let e1 = max_error(row, &one, q_wide);
+                let e1 = max_error(
+                    row,
+                    if index < first_count {
+                        &first_one
+                    } else {
+                        &one
+                    },
+                    q_wide,
+                );
                 assert!(e0.min(e1) < q_wide / 1000);
                 usize::from(e1 < e0)
             })
@@ -208,7 +221,15 @@ fn check_bucket<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T) {
         let mut selected_counts = [0; DIM];
         let mut copy_counts = [0; DIM];
         for bucket in 0..key.bucket_count() {
-            let (indices, _) = key.bucket(bucket);
+            let indices = if bucket == 0 {
+                let (indices, controls) = key.first_bucket();
+                assert_eq!(controls.count(), indices.len() + 1);
+                indices
+            } else {
+                let (indices, controls) = key.ngsw_bucket(bucket);
+                assert_eq!(controls.count(), indices.len() + 1);
+                indices
+            };
             public_empty += usize::from(indices.is_empty());
             let first = start + bucket;
             let dummy = first + indices.len();
@@ -248,20 +269,40 @@ fn check_bucket<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T) {
                             );
                         }
                     }
-                    NgswCiphertext::new(aggregate.as_mut_slice())
-                        .into_ntt_form(ntt)
-                        .external_product_to(
-                            &input,
-                            &mut product,
-                            basis,
-                            modulus,
-                            ntt,
-                            &mut scratch,
-                        );
+                    if bucket == 0 {
+                        NlevCiphertext::new(aggregate.as_mut_slice())
+                            .into_ntt_form(ntt)
+                            .external_product_to(
+                                &encoded,
+                                &mut product,
+                                basis,
+                                modulus,
+                                ntt,
+                                &mut scratch,
+                            );
+                    } else {
+                        NgswCiphertext::new(aggregate.as_mut_slice())
+                            .into_ntt_form(ntt)
+                            .external_product_to(
+                                &input,
+                                &mut product,
+                                basis,
+                                modulus,
+                                ntt,
+                                &mut scratch,
+                            );
+                    }
                 });
                 assert_eq!(allocations.count, 0);
                 // Exact row-phase linearity proves all encrypted-zero/dummy noise was included.
                 let mut bucket_error_sum = 0;
+                let mut unit = vec![0; N];
+                unit[0] = 1;
+                let message = if bucket == 0 {
+                    &unit
+                } else {
+                    &secret_coefficients
+                };
                 for (level, (&scalar, row)) in scalars
                     .iter()
                     .zip(aggregate.as_chunks::<N>().0.iter())
@@ -281,24 +322,36 @@ fn check_bucket<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T) {
                     let mut coefficients = row.to_vec();
                     ntt.inverse_transform_slice(&mut coefficients);
                     assert_eq!(phase(&coefficients, secret.as_slice(), q_wide), expected);
-                    let target: Vec<_> = rotate(&secret_coefficients, exponent, q_wide)
+                    let target: Vec<_> = rotate(message, exponent, q_wide)
                         .iter()
                         .map(|&v| (v * scalar).rem_euclid(q_wide))
                         .collect();
                     bucket_error_sum += max_error(&expected, &target, q_wide);
                 }
-                let bucket_bound =
-                    secret_norm * residual + N as i128 * digit_bound * bucket_error_sum;
+                let bucket_bound = (if bucket == 0 { 1 } else { secret_norm }) * residual
+                    + N as i128 * digit_bound * bucket_error_sum;
                 // Nonvacuous, fixture-specific bounds; not a Gaussian cutoff or failure rate.
-                assert!(init_bound + bucket_bound < q_wide / 32);
+                let preceding_error = if bucket == 0 { 0 } else { init_bound };
+                assert!(preceding_error + bucket_bound < q_wide / 32);
                 let actual = phase(product.as_ref(), secret.as_slice(), q_wide);
                 assert!(
-                    max_error(&actual, &rotate(&input_phase, exponent, q_wide), q_wide)
-                        <= bucket_bound
+                    max_error(
+                        &actual,
+                        &rotate(
+                            if bucket == 0 {
+                                &rotated_lut
+                            } else {
+                                &input_phase
+                            },
+                            exponent,
+                            q_wide
+                        ),
+                        q_wide
+                    ) <= bucket_bound
                 );
                 assert!(
                     max_error(&actual, &rotate(&rotated_lut, exponent, q_wide), q_wide)
-                        <= init_bound + bucket_bound
+                        <= preceding_error + bucket_bound
                 );
             }
         }
@@ -313,7 +366,9 @@ fn check_bucket<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T) {
 }
 
 #[test]
-fn sparse_ngsw_bucket_preserves_rotation_and_budgets_encrypted_initialization() {
-    check_bucket::<u32, U32NttTable>(132_120_577);
-    check_bucket::<u64, U64NttTable>(1_125_899_906_826_241);
+fn sparse_first_nlev_and_later_ngsw_buckets_preserve_rotation_and_error_budgets() {
+    for level_count in [None, Some(2)] {
+        check_bucket::<u32, U32NttTable>(132_120_577, level_count);
+        check_bucket::<u64, U64NttTable>(1_125_899_906_826_241, level_count);
+    }
 }

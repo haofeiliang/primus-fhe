@@ -80,7 +80,7 @@ fn exact_external<T: TorusFftValue>(
     output
 }
 
-fn check<T: TorusFftValue, Table: FftTable>() {
+fn check<T: TorusFftValue, Table: FftTable>(level_count: Option<usize>) {
     let table = Table::new(N.trailing_zeros()).unwrap();
     let mut fft = FftEngine::new(&table);
     let modulus = NativeModulus::<T>::new();
@@ -98,7 +98,7 @@ fn check<T: TorusFftValue, Table: FftTable>() {
         SecretKeyDistr::SparseTernary,
         0.7,
     );
-    let gadget = NlevParameters::with_ntru_params(&params, 8, None);
+    let gadget = NlevParameters::with_ntru_params(&params, 8, level_count);
     let basis = gadget.basis();
     let mut rng = StdRng::seed_from_u64(0xB803);
     let (client, _) =
@@ -152,7 +152,9 @@ fn check<T: TorusFftValue, Table: FftTable>() {
     );
     let mut initializer_coeff = NlevCiphertext::<Vec<T>>::zero(gadget.nlev_len());
     initializer.write_torus_form(&mut initializer_coeff, &mut fft);
-    let lut: Vec<_> = (0..N).map(|i| T::as_from(i % 8) << (T::BITS - 4)).collect();
+    let lut: Vec<_> = (0..N)
+        .map(|i| (T::as_from(i % 8) << (T::BITS - 4)).wrapping_add(T::as_from(17 * i + 1)))
+        .collect();
     let mut current = NtruCiphertext::<Vec<T>>::zero(N);
     let mut scratch = NtruCiphertext::<Vec<T>>::zero(N);
     let mut ep = FourierNtruExternalProductContext::new(N);
@@ -197,8 +199,22 @@ fn check<T: TorusFftValue, Table: FftTable>() {
         let sparse = server.sparse_bootstrapping_key().unwrap();
         let mut selected_counts = [0; DIM];
         for j in 0..sparse.bucket_count() {
-            let (indices, controls) = sparse.bucket(j);
-            let data: Vec<_> = controls.flat_map(|row| row.0.iter().copied()).collect();
+            let (indices, data): (_, Vec<_>) = if j == 0 {
+                let (indices, controls) = sparse.first_bucket();
+                (
+                    indices,
+                    controls.flat_map(|row| row.0.iter().copied()).collect(),
+                )
+            } else {
+                let (indices, controls) = sparse.ngsw_bucket(j);
+                (
+                    indices,
+                    controls.flat_map(|row| row.0.iter().copied()).collect(),
+                )
+            };
+            let mut unit = vec![T::ZERO; N];
+            unit[0] = T::ONE;
+            let message = if j == 0 { &unit } else { &native_secret };
             let rows: Vec<_> = data
                 .as_chunks::<N>()
                 .0
@@ -207,7 +223,7 @@ fn check<T: TorusFftValue, Table: FftTable>() {
                 .collect();
             // Decode a control only for this independent secret-side test.
             let top = basis.scalar_iter().last().unwrap();
-            let target: Vec<_> = native_secret.iter().map(|&v| v.wrapping_mul(top)).collect();
+            let target: Vec<_> = message.iter().map(|&v| v.wrapping_mul(top)).collect();
             let zero = vec![T::ZERO; N];
             let bits: Vec<_> = rows
                 .chunks_exact(gadget.decompose_length())
@@ -241,7 +257,11 @@ fn check<T: TorusFftValue, Table: FftTable>() {
                 let mut aggregate = NgswCiphertext::<Vec<T>>::zero(gadget.nlev_len());
                 let mut transformed =
                     FourierNgswCiphertext::<Vec<Complex64>>::zero(gadget.fourier_nlev_len());
-                let before = product(current.as_ref(), &native_secret);
+                let before = if j == 0 {
+                    lut.clone()
+                } else {
+                    product(current.as_ref(), &native_secret)
+                };
                 let (_, allocation) = measure(|| {
                     let (controls, dummy) =
                         data.as_slice().split_at(indices.len() * gadget.nlev_len());
@@ -264,16 +284,26 @@ fn check<T: TorusFftValue, Table: FftTable>() {
                         }
                     }
                     aggregate.write_fourier_form(&mut transformed, &mut fft);
-                    transformed.external_product_to(
-                        &current,
-                        &mut scratch,
-                        basis,
-                        &mut fft,
-                        &mut ep,
-                    );
+                    if j == 0 {
+                        FourierNlevCiphertext::new(transformed.as_ref()).external_product_to(
+                            &Polynomial(lut.as_slice()),
+                            &mut scratch,
+                            basis,
+                            &mut fft,
+                            &mut ep,
+                        );
+                    } else {
+                        transformed.external_product_to(
+                            &current,
+                            &mut scratch,
+                            basis,
+                            &mut fft,
+                            &mut ep,
+                        );
+                    }
                 });
                 assert_eq!(allocation.count, 0);
-                let expected_control = rotate(&native_secret, exponent);
+                let expected_control = rotate(message, exponent);
                 let mut row_error_sum = 0;
                 let mut recovered = NgswCiphertext::<Vec<T>>::zero(gadget.nlev_len());
                 transformed.write_torus_form(&mut recovered, &mut fft);
@@ -304,13 +334,17 @@ fn check<T: TorusFftValue, Table: FftTable>() {
                         .collect();
                     row_error_sum += error(&phase, &target);
                 }
-                let exact = exact_external(current.as_ref(), aggregate.as_ref(), basis);
+                let exact = exact_external(
+                    if j == 0 { &lut } else { current.as_ref() },
+                    aggregate.as_ref(),
+                    basis,
+                );
                 let numerical = error(scratch.as_ref(), &exact);
                 let added = error(
                     &product(scratch.as_ref(), &native_secret),
                     &rotate(&before, exponent),
                 );
-                let budget = norm * residual
+                let budget = (if j == 0 { 1 } else { norm }) * residual
                     + N as u128 * (digit_bound / 2) * row_error_sum
                     + norm * numerical;
                 assert!(budget < q / 32);
@@ -328,8 +362,10 @@ fn check<T: TorusFftValue, Table: FftTable>() {
 
 #[test]
 fn sparse_bucket_fourier_phase_and_numerical_budgets() {
-    check::<u32, RustFftTable>();
-    check::<u32, TfheFftTable>();
-    check::<u64, RustFftTable>();
-    check::<u64, TfheFftTable>();
+    for level_count in [None, Some(2)] {
+        check::<u32, RustFftTable>(level_count);
+        check::<u32, TfheFftTable>(level_count);
+        check::<u64, RustFftTable>(level_count);
+        check::<u64, TfheFftTable>(level_count);
+    }
 }
