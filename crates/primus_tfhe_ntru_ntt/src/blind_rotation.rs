@@ -1,7 +1,7 @@
 use primus_data::{Data, RawData};
 use primus_integer::FheUint;
 use primus_lattice::{lwe::Lwe, ngsw::NttNgsw, ntru::Ntru};
-use primus_ntru::{NttNtruExternalProductContext, NttNtruTernaryCmuxContext};
+use primus_ntru::{NttNtruCmuxContext, NttNtruExternalProductContext};
 use primus_ntt::MonomialNttTable;
 use primus_poly::{Polynomial, PolynomialOwned};
 use primus_tfhe::rotation::RotationQuantizer;
@@ -34,13 +34,18 @@ impl<'a, T: FheUint> BlindRotationWorkspace<'a, T> {
                 }
             } else if parameters.external_lwe().secret_key_distr().is_binary() {
                 RotationContext::Binary {
-                    controls: server_key.classic_controls(),
-                    scratch: NttNtruExternalProductContext::new(poly_length),
+                    first: server_key.classic_controls().0,
+                    controls: server_key.classic_controls().1,
+                    scratch: NttNtruCmuxContext::new(
+                        poly_length,
+                        parameters.blind_rotation().decompose_length(),
+                    ),
                 }
             } else {
                 RotationContext::Ternary {
-                    controls: server_key.classic_controls(),
-                    scratch: NttNtruTernaryCmuxContext::new(
+                    first: server_key.classic_controls().0,
+                    controls: server_key.classic_controls().1,
+                    scratch: NttNtruCmuxContext::new(
                         poly_length,
                         parameters.blind_rotation().decompose_length(),
                     ),
@@ -57,12 +62,14 @@ pub(crate) enum RotationContext<'a, T: FheUint> {
         scratch: SparseWorkspace<T>,
     },
     Binary {
+        first: &'a [T],
         controls: &'a [T],
-        scratch: NttNtruExternalProductContext<T>,
+        scratch: NttNtruCmuxContext<T>,
     },
     Ternary {
+        first: &'a [T],
         controls: &'a [T],
-        scratch: NttNtruTernaryCmuxContext<T>,
+        scratch: NttNtruCmuxContext<T>,
     },
 }
 
@@ -70,7 +77,7 @@ impl<T: FheUint> RotationContext<'_, T> {
     pub(crate) fn external_product(&mut self) -> &mut NttNtruExternalProductContext<T> {
         match self {
             Self::Sparse { scratch, .. } => &mut scratch.external_product,
-            Self::Binary { scratch, .. } => scratch,
+            Self::Binary { scratch, .. } => scratch.external_product_context(),
             Self::Ternary { scratch, .. } => scratch.external_product_context(),
         }
     }
@@ -115,23 +122,21 @@ pub(crate) fn blind_rotate_lookup_table_to<T, Table, A>(
         modulus,
     );
 
-    // Evaluator binding checked the initializer's shape/basis; this workspace
-    // was constructed at the same ring length. NLev[1] encrypts the rotated LUT.
-    server_key.initializer().external_product_to(
-        &Polynomial(workspace.scratch.as_ref()),
-        &mut workspace.current,
-        server_key.blind_rotation_basis(),
-        modulus,
-        ntt,
-        workspace.rotation.external_product(),
-    );
-
     let basis = server_key.blind_rotation_basis();
     let control_len = server_key.initializer().as_ref().len();
 
     // One public layout dispatch per BR; the coordinate loop stays specialized.
     match &mut workspace.rotation {
         RotationContext::Sparse { key, scratch } => {
+            server_key.initializer().external_product_to(
+                &Polynomial(workspace.scratch.as_ref()),
+                &mut workspace.current,
+                server_key.blind_rotation_basis(),
+                modulus,
+                ntt,
+                &mut scratch.external_product,
+            );
+
             quantizer.exponent_slice_to(input.a(), &mut scratch.exponents);
             rotate_buckets(
                 key,
@@ -144,36 +149,76 @@ pub(crate) fn blind_rotate_lookup_table_to<T, Table, A>(
             );
         }
         RotationContext::Binary {
+            first,
             controls,
             scratch: product,
-        } => rotate_controls(
-            input.a(),
-            controls.chunks_exact(control_len).map(NttNgsw::new),
-            &mut workspace.current,
-            &mut workspace.scratch,
-            exponent_of,
-            |control, exponent, input, output| {
-                control.cmux_monomial_to(input, exponent, output, basis, modulus, ntt, product)
-            },
-        ),
+        } => {
+            let positive = primus_lattice::nlev::NttNlev::new(*first);
+            server_key.initializer().lift_monomial_to(
+                &positive,
+                None,
+                &Polynomial(workspace.scratch.as_ref()),
+                exponent_of(input.a()[0]),
+                &mut workspace.current,
+                basis,
+                modulus,
+                ntt,
+                product,
+            );
+            rotate_controls(
+                &input.a()[1..],
+                controls.chunks_exact(control_len).map(NttNgsw::new),
+                &mut workspace.current,
+                &mut workspace.scratch,
+                exponent_of,
+                |control, exponent, input, output| {
+                    control.cmux_monomial_to(
+                        input,
+                        exponent,
+                        output,
+                        basis,
+                        modulus,
+                        ntt,
+                        product.external_product_context(),
+                    )
+                },
+            );
+        }
         RotationContext::Ternary {
+            first,
             controls,
             scratch: product,
-        } => rotate_controls(
-            input.a(),
-            controls.chunks_exact(2 * control_len).map(|pair| {
-                let (positive, negative) = pair.split_at(control_len);
-                (NttNgsw::new(positive), NttNgsw::new(negative))
-            }),
-            &mut workspace.current,
-            &mut workspace.scratch,
-            exponent_of,
-            |(positive, negative), exponent, input, output| {
-                positive.cmux_ternary_monomial_to(
-                    &negative, input, exponent, output, basis, modulus, ntt, product,
-                )
-            },
-        ),
+        } => {
+            let (positive, negative) = first.split_at(control_len);
+            let positive = primus_lattice::nlev::NttNlev::new(positive);
+            let negative = primus_lattice::nlev::NttNlev::new(negative);
+            server_key.initializer().lift_monomial_to(
+                &positive,
+                Some(&negative),
+                &Polynomial(workspace.scratch.as_ref()),
+                exponent_of(input.a()[0]),
+                &mut workspace.current,
+                basis,
+                modulus,
+                ntt,
+                product,
+            );
+            rotate_controls(
+                &input.a()[1..],
+                controls.chunks_exact(2 * control_len).map(|pair| {
+                    let (positive, negative) = pair.split_at(control_len);
+                    (NttNgsw::new(positive), NttNgsw::new(negative))
+                }),
+                &mut workspace.current,
+                &mut workspace.scratch,
+                exponent_of,
+                |(positive, negative), exponent, input, output| {
+                    positive.cmux_ternary_monomial_to(
+                        &negative, input, exponent, output, basis, modulus, ntt, product,
+                    )
+                },
+            );
+        }
     }
 }
 

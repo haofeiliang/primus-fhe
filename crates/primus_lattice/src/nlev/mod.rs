@@ -1,6 +1,7 @@
 mod coeff;
 mod external_product;
 mod fourier;
+mod lift;
 mod ntt;
 
 pub use coeff::{Nlev, NlevIter, NlevIterMut};

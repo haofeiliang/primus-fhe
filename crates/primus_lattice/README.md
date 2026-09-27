@@ -80,7 +80,7 @@ Checks belong at the highest layer that owns these parameters. This crate delibe
 | `FourierGlweExternalProductContext` / `NttGlweExternalProductContext` | GLWE layout and decomposition level count through `GadgetSize` |
 | `NttGlweTernaryCmuxContext` / `FourierGlweTernaryCmuxContext` | Fixed `GadgetSize`; combined GGSW, transformed monomial, and external-product scratch |
 | `FourierNtruExternalProductContext` / `NttNtruExternalProductContext` | Polynomial length for scalar NTRU gadget products |
-| `NttNtruTernaryCmuxContext` / `FourierNtruTernaryCmuxContext` | Fixed polynomial length and level count; combined NGSW and reusable external-product scratch |
+| `NttNtruCmuxContext` / `FourierNtruCmuxContext` | Fixed polynomial length and level count; combined NLEV/NGSW and reusable external-product scratch for first lifting and ternary CMUX |
 | `DcrtGlevMulContext` | RNS gadget layout and BigUint limb-width requirements |
 
 Contexts provide reusable scratch, not a validated basis/table/modulus domain. GLWE external-product contexts support `rebind` for unchanged GLWE shape and `resize` when buffer sizes change. DCRT compatibility includes the RNS product's limb width. Owning callers must establish compatibility before entering the kernels.

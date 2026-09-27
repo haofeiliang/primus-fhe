@@ -25,6 +25,8 @@ NTT tables must implement `MonomialNttTable`; built-in tables support it. Contex
 
 There is one PBS order: encrypted initialization and BR under `f_acc`, then return KS and compact extraction under `f_client`. Binary/ternary client secrets must pass invertibility screening; Fourier additionally screens inverse stability.
 
+Classic binary/ternary BR fuses the first CMux with public-LUT lifting: coordinate zero uses NLEV bit controls, later coordinates use NGSW. It decomposes the rotated LUT once against `I + (R-1)B+ + (R^-1-1)B-`, omitting `B-` for binary. A zero first exponent still lifts with `I=NLEV[1]`. Ordinary PBS, ManyLUT, MVB and CBS share this path; sparse PBS currently retains separate initialization. The BR basis must resolve the programmed LUT scale, including the smallest CBS output gadget weight; parameter shape checks do not certify this numerical budget.
+
 ## Reusing evaluators
 
 Ordinary/interleaved calls reuse `Evaluator`; use `_to` with existing outputs. For PBS/MVB/CBS alternation, follow the [shared ownership workflow](../primus_tfhe/README.md#reusing-evaluators).

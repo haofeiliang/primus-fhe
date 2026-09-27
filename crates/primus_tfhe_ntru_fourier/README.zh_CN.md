@@ -25,6 +25,8 @@ cargo run -p primus_tfhe_ntru_fourier --release --example ntru_fourier_basic
 
 PBS 顺序固定：在 `f_acc` 下加密初始化和 BR，然后返回 KS，再在 `f_client` 下紧凑提取。 Binary/ternary 客户端秘密须通过可逆性筛选，Fourier 还检查逆的数值稳定性。
 
+Classic binary/ternary BR 将首次 CMux 与公开 LUT 提升融合：第零坐标使用 NLEV 比特控制，后续坐标使用 NGSW。旋转后的 LUT 只分解一次，与 `I + (R-1)B+ + (R^-1-1)B-` 做外积；binary 省略 `B-`。首指数为零仍通过 `I=NLEV[1]` 提升。普通 PBS、ManyLUT、MVB 和 CBS 共用此路径，稀疏 PBS 目前仍单独初始化。BR basis 必须能分辨 LUT 的有效尺度，包括 CBS 输出的最小 gadget 权重；参数形状检查不认证该数值预算。
+
 ## 复用 evaluator
 
 普通/交错调用共用 `Evaluator`，`_to` 写入已有输出。 PBS/MVB/CBS 交替使用方式集中在[共享所有权说明](../primus_tfhe/README.zh_CN.md#复用-evaluator)。

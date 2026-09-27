@@ -17,9 +17,9 @@ static ALLOCATOR: allocations::CountingAllocator = allocations::CountingAllocato
 
 const N: usize = 256;
 
-fn parameters<T: TorusFftValue>(distr: SecretKeyDistr) -> TfheParameters<T> {
+fn parameters<T: TorusFftValue>(distr: SecretKeyDistr, dimension: usize) -> TfheParameters<T> {
     let modulus = NativeModulus::new();
-    let lwe = LweParameters::new(4, T::as_from(15u32), modulus, distr, 0.7);
+    let lwe = LweParameters::new(dimension, T::as_from(15u32), modulus, distr, 0.7);
     let acc = NtruParameters::new(
         N,
         T::as_from(15u32),
@@ -72,7 +72,7 @@ where
         SecretKeyDistr::UniformBinary
     };
     let incompatible =
-        TfheContext::<_, TABLE>::try_from_parameters(parameters(other_distribution)).unwrap();
+        TfheContext::<_, TABLE>::try_from_parameters(parameters(other_distribution, 4)).unwrap();
     assert_eq!(
         incompatible.evaluator(&server_key).err(),
         Some(primus_tfhe::TfheEvaluationError::IncompatibleServerKey)
@@ -99,12 +99,18 @@ where
         .compile_lookup_table_with_codec_fn(&output_codec, |input| value(input, 0))
         .unwrap();
     let mut output = LweCiphertext::zero(context.parameters().external_lwe_dimension());
-    // Noise-free LWE inputs force zero, odd and even numbers of CMUX steps.
+    // Noise-free masks exercise first fusion, leading zero and remaining CMUX parity.
     // Reuse the same evaluator across all paths to check the final buffer role.
     let modulus = context.parameters().external_lwe().cipher_modulus();
-    for active_count in [0, 1, 2, 3, 1, 0] {
+    for active in [
+        0b0000, 0b0001, 0b0011, 0b0111, 0b0010, 0b0110, 0b1000, 0b0001, 0b0000,
+    ] {
         let mut input = LweCiphertext::zero(context.parameters().external_lwe_dimension());
-        input.a_mut()[..active_count].fill(T::ONE << (T::BITS - 2));
+        for (i, mask) in input.a_mut().iter_mut().enumerate() {
+            if active & (1 << i) != 0 {
+                *mask = T::ONE << (T::BITS - 2);
+            }
+        }
         let mut body = context
             .parameters()
             .input_plaintext_codec()
@@ -388,14 +394,14 @@ fn pbs_u32_preserves_outputs_and_validates_domains() {
     ] {
         check_context(
             TfheContext::try_new(
-                parameters::<u32>(case),
+                parameters::<u32>(case, 4),
                 RustFftTable::new(N.trailing_zeros()).unwrap(),
             )
             .unwrap(),
         );
         check_context(
             TfheContext::try_new(
-                parameters::<u32>(case),
+                parameters::<u32>(case, 4),
                 TfheFftTable::new(N.trailing_zeros()).unwrap(),
             )
             .unwrap(),
@@ -411,17 +417,109 @@ fn pbs_u64_preserves_outputs_and_validates_domains() {
     ] {
         check_context(
             TfheContext::try_new(
-                parameters::<u64>(case),
+                parameters::<u64>(case, 4),
                 RustFftTable::new(N.trailing_zeros()).unwrap(),
             )
             .unwrap(),
         );
         check_context(
             TfheContext::try_new(
-                parameters::<u64>(case),
+                parameters::<u64>(case, 4),
                 TfheFftTable::new(N.trailing_zeros()).unwrap(),
             )
             .unwrap(),
         );
+    }
+}
+
+// Imported secrets fix the first selector independently of keygen randomness.
+fn check_first_controls<T: TorusFftValue, Table: FftTable>(context: TfheContext<T, Table>) {
+    let parameters = context.parameters();
+    let dimension = parameters.external_lwe_dimension();
+    let distr = parameters.external_lwe().secret_key_distr();
+    let mut rng = StdRng::seed_from_u64(0x4649_5253_545f_4252);
+    let mut generator = primus_tfhe_ntru_fourier::KeyGenerator::new(&context);
+    let generated = generator.try_generate_client_key(&mut rng).unwrap();
+    for first in [
+        T::ZERO.cast_to_signed(),
+        T::ONE.cast_to_signed(),
+        -T::ONE.cast_to_signed(),
+    ] {
+        // A zero dimension-one secret is not an invertible padded NTRU key.
+        if (dimension == 1 && first == T::ZERO.cast_to_signed())
+            || (distr.is_binary() && first == -T::ONE.cast_to_signed())
+        {
+            continue;
+        }
+        let mut coefficients = vec![T::ZERO.cast_to_signed(); N];
+        coefficients[0] = first;
+        if dimension > 1 {
+            coefficients[1] = T::ONE.cast_to_signed();
+            if first != T::ZERO.cast_to_signed() {
+                coefficients[2] = T::ONE.cast_to_signed();
+            }
+        }
+        let client = primus_tfhe_ntru_fourier::ClientKey::new(
+            primus_ntru::NtruSecretKey::new(coefficients, distr),
+            generated.accumulator_ntru_secret_key().clone(),
+            dimension,
+        );
+        let server = generator
+            .try_generate_server_key(&client, None, &mut rng)
+            .unwrap();
+        let mut evaluator = context.evaluator(&server).unwrap();
+        let decryptor = context.decryptor(&client).unwrap();
+        let lut = parameters
+            .compile_lookup_table_fn(|m| T::as_from((m + 1) % 8))
+            .unwrap();
+        let modulus = parameters.external_lwe().cipher_modulus();
+        let mut input = LweCiphertext::zero(dimension);
+        let mut output = input.clone();
+        for active in [0b0001, 0b0010, 0b0011, 0b0110, 0b0111, 0b0000, 0b0001] {
+            let mut body = parameters
+                .input_plaintext_codec()
+                .encode_value(T::as_from(2u32), PlaintextEmbedding::Unsigned);
+            for (i, (mask, &secret)) in input
+                .a_mut()
+                .iter_mut()
+                .zip(client.external_lwe_secret_coefficients())
+                .enumerate()
+            {
+                *mask = if active & (1 << i) != 0 {
+                    T::ONE << (T::BITS - 2)
+                } else {
+                    T::ZERO
+                };
+                if secret == T::ONE.cast_to_signed() {
+                    body = modulus.reduce_add(body, *mask);
+                } else if secret == -T::ONE.cast_to_signed() {
+                    body = modulus.reduce_sub(body, *mask);
+                }
+            }
+            *input.b_mut() = body;
+            let (_, allocation) =
+                allocations::measure(|| evaluator.apply_lookup_table_to(&input, &lut, &mut output));
+            assert_eq!(allocation.count, 0);
+            assert_eq!(decryptor.decrypt(&output).unwrap(), T::as_from(3u32));
+        }
+    }
+}
+
+#[test]
+fn first_controls_cover_secret_values_and_single_coordinate_keys() {
+    for dimension in [1, 4] {
+        for distr in [
+            SecretKeyDistr::UniformBinary,
+            SecretKeyDistr::UniformTernary,
+        ] {
+            check_first_controls(
+                TfheContext::<u32, RustFftTable>::try_from_parameters(parameters(distr, dimension))
+                    .unwrap(),
+            );
+            check_first_controls(
+                TfheContext::<u32, TfheFftTable>::try_from_parameters(parameters(distr, dimension))
+                    .unwrap(),
+            );
+        }
     }
 }

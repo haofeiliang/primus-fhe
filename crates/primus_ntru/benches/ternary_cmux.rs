@@ -10,10 +10,10 @@ use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable, TfheFftTable, Tor
 use primus_integer::{FheUint, SignedInteger};
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntru::{
-    FourierNgswCiphertext, FourierNtruEncryptContext, FourierNtruExternalProductContext,
-    FourierNtruGadgetEncryptContext, FourierNtruSecretKey, FourierNtruTernaryCmuxContext,
-    NlevParameters, NtruCiphertext, NtruParameters, NttNgswCiphertext,
-    NttNtruExternalProductContext, NttNtruSecretKey, NttNtruTernaryCmuxContext, SecretKeyDistr,
+    FourierNgswCiphertext, FourierNtruCmuxContext, FourierNtruEncryptContext,
+    FourierNtruExternalProductContext, FourierNtruGadgetEncryptContext, FourierNtruSecretKey,
+    NlevParameters, NtruCiphertext, NtruParameters, NttNgswCiphertext, NttNtruCmuxContext,
+    NttNtruExternalProductContext, NttNtruSecretKey, SecretKeyDistr,
 };
 use primus_ntt::{NttTable, PrimitiveRoot, UintNttTable};
 use primus_poly::Polynomial;
@@ -59,7 +59,7 @@ fn ntt<T: FheUint + PrimitiveRoot>(c: &mut Criterion, q: T, levels: usize) {
     let negative = NttNgswCiphertext::new(negative);
     let exponent = N / 3;
     let mut output = NtruCiphertext::<Vec<T>>::zero(N);
-    let (mut fused, fused_allocations) = measure(|| NttNtruTernaryCmuxContext::<T>::new(N, levels));
+    let (mut fused, fused_allocations) = measure(|| NttNtruCmuxContext::<T>::new(N, levels));
     let ((mut binary, mut intermediate), binary_allocations) = measure(|| {
         (
             NttNtruExternalProductContext::<T>::new(N),
@@ -178,8 +178,7 @@ fn fourier<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str, 
     let negative = FourierNgswCiphertext::new(negative);
     let exponent = N / 3;
     let mut output = NtruCiphertext::<Vec<T>>::zero(N);
-    let (mut fused, fused_allocations) =
-        measure(|| FourierNtruTernaryCmuxContext::<T>::new(N, levels));
+    let (mut fused, fused_allocations) = measure(|| FourierNtruCmuxContext::<T>::new(N, levels));
     let ((mut binary, mut intermediate), binary_allocations) = measure(|| {
         (
             FourierNtruExternalProductContext::<T>::new(N),

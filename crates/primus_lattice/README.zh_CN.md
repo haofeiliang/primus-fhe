@@ -80,7 +80,7 @@ NLev/NGSW 的单多项式外积可以写出系数，也可以通过 `external_pr
 | `FourierGlweExternalProductContext` / `NttGlweExternalProductContext` | 通过 `GadgetSize` 绑定 GLWE 布局和分解层数 |
 | `NttGlweTernaryCmuxContext` / `FourierGlweTernaryCmuxContext` | 固定的 `GadgetSize`；组合 GGSW、单项式变换和外积工作区 |
 | `FourierNtruExternalProductContext` / `NttNtruExternalProductContext` | 标量 NTRU gadget product 的多项式长度 |
-| `NttNtruTernaryCmuxContext` / `FourierNtruTernaryCmuxContext` | 固定多项式长度和层数；组合 NGSW 与可复用的外积 scratch |
+| `NttNtruCmuxContext` / `FourierNtruCmuxContext` | 固定多项式长度和层数；首次提升及三元 CMUX 共用的 NLEV/NGSW 组合缓冲和外积 scratch |
 | `DcrtGlevMulContext` | RNS gadget 布局和 BigUint limb 宽度要求 |
 
 Context 提供可复用 scratch，不是已经验证的 basis/table/modulus domain。GLWE 外积 context 支持在 GLWE 形状不变时 `rebind`，以及缓冲区大小变化时 `resize`。DCRT 的兼容性还包括 RNS 模数乘积的 limb 宽度。拥有参数的调用方必须先建立兼容性，再进入内核。

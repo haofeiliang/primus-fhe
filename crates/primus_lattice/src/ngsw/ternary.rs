@@ -7,7 +7,7 @@ use primus_ntt::MonomialNttTable;
 use primus_reduce::FieldContext;
 
 use crate::{
-    context::{FourierNtruTernaryCmuxContext, NttNtruTernaryCmuxContext},
+    context::{FourierNtruCmuxContext, NttNtruCmuxContext},
     ntru::{
         Ntru,
         gadget_product::{accumulate_fourier_gadget_product, accumulate_ntt_gadget_product},
@@ -61,7 +61,7 @@ where
         basis: &ApproxSignedBasis<T>,
         modulus: M,
         ntt: &Table,
-        context: &mut NttNtruTernaryCmuxContext<T>,
+        context: &mut NttNtruCmuxContext<T>,
     ) where
         M: FieldContext<T>,
         Table: MonomialNttTable<ValueT = T>,
@@ -70,7 +70,7 @@ where
         C: DataMut<Elem = T>,
     {
         let poly_length = context.poly_length();
-        let control_length = context.combined_control.as_ref().len();
+        let control_length = context.combined_control.len();
         debug_assert!(exponent < 2 * poly_length);
         debug_assert_eq!(basis.decompose_length(), context.decompose_length());
         debug_assert_eq!(self.as_ref().len(), control_length);
@@ -89,7 +89,7 @@ where
         self.sub_mul_monomial_to(
             negative,
             inverse_exponent,
-            &mut context.combined_control,
+            &mut NttNgsw(context.combined_control.as_mut_slice()),
             modulus,
             ntt,
             product.decomposed_ntt,
@@ -156,7 +156,7 @@ where
         output: &mut Ntru<C>,
         basis: &ApproxSignedBasis<T>,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierNtruTernaryCmuxContext<T>,
+        context: &mut FourierNtruCmuxContext<T>,
     ) where
         T: TorusFftValue,
         Table: FftTable,
@@ -165,7 +165,7 @@ where
         C: DataMut<Elem = T>,
     {
         let poly_length = context.poly_length();
-        let control_length = context.combined_control.as_ref().len();
+        let control_length = context.combined_control.len();
         debug_assert!(exponent < 2 * poly_length);
         debug_assert_eq!(basis.decompose_length(), context.decompose_length());
         debug_assert_eq!(self.as_ref().len(), control_length);
@@ -184,7 +184,7 @@ where
         self.sub_mul_monomial_to(
             negative,
             inverse_exponent,
-            &mut context.combined_control,
+            &mut FourierNgsw(context.combined_control.as_mut_slice()),
             fft,
             product.decomposed_poly,
             product.decomposed_fourier,

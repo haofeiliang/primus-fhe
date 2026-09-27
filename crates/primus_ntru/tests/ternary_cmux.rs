@@ -3,10 +3,10 @@ use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable, TfheFftTable, Tor
 use primus_integer::SignedInteger;
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntru::{
-    FourierNgswCiphertext, FourierNtruEncryptContext, FourierNtruExternalProductContext,
-    FourierNtruGadgetEncryptContext, FourierNtruSecretKey, FourierNtruTernaryCmuxContext,
+    FourierNgswCiphertext, FourierNtruCmuxContext, FourierNtruEncryptContext,
+    FourierNtruExternalProductContext, FourierNtruGadgetEncryptContext, FourierNtruSecretKey,
     NgswCiphertext, NlevParameters, NtruCiphertext, NtruParameters, NttNgswCiphertext,
-    NttNtruExternalProductContext, NttNtruSecretKey, NttNtruTernaryCmuxContext, SecretKeyDistr,
+    NttNtruCmuxContext, NttNtruExternalProductContext, NttNtruSecretKey, SecretKeyDistr,
 };
 use primus_ntt::{NttTable, UintNttTable};
 use primus_poly::Polynomial;
@@ -72,7 +72,7 @@ fn encrypted_ternary_step_matches_phase_oracle_and_two_binary_cmuxes_without_all
     let input_phase = phase(input.as_ref(), coeff.as_slice());
     let secret_norm: u64 = coeff.as_slice().iter().map(|v| v.unsigned_abs()).sum();
     let mut controls = vec![0; 2 * gadget.nlev_len()];
-    let mut fused = NttNtruTernaryCmuxContext::new(N, gadget.decompose_length());
+    let mut fused = NttNtruCmuxContext::new(N, gadget.decompose_length());
     let mut binary = NttNtruExternalProductContext::new(N);
     let mut output = NtruCiphertext::new(vec![Q - 1; N]);
     let mut intermediate = NtruCiphertext::<Vec<u64>>::zero(N);
@@ -225,7 +225,7 @@ fn check_fourier_step<T: TorusFftValue, Table: FftTable>() {
     .unwrap();
     let mut controls = vec![Complex64::default(); 2 * gadget.fourier_nlev_len()];
     let mut encrypt_context = FourierNtruGadgetEncryptContext::new(N);
-    let mut fused = FourierNtruTernaryCmuxContext::new(N, gadget.decompose_length());
+    let mut fused = FourierNtruCmuxContext::new(N, gadget.decompose_length());
     let mut binary = FourierNtruExternalProductContext::new(N);
     let mut output = NtruCiphertext::new(vec![T::MAX; N]);
     let mut intermediate = NtruCiphertext::<Vec<T>>::zero(N);

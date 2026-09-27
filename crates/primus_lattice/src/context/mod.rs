@@ -2,8 +2,8 @@
 mod dcrt_glev_mul;
 mod glwe_external_product;
 mod glwe_ternary_cmux;
+mod ntru_cmux;
 mod ntru_external_product;
-mod ntru_ternary_cmux;
 
 #[cfg(feature = "rns")]
 pub use dcrt_glev_mul::DcrtGlevMulContext;
@@ -20,4 +20,4 @@ pub(crate) use ntru_external_product::{
     FourierNtruExternalProductContextRefMut, NttNtruExternalProductContextRefMut,
 };
 
-pub use ntru_ternary_cmux::{FourierNtruTernaryCmuxContext, NttNtruTernaryCmuxContext};
+pub use ntru_cmux::{FourierNtruCmuxContext, NttNtruCmuxContext};

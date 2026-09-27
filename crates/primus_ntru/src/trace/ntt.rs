@@ -203,10 +203,13 @@ impl<T: FheUint> NttNtruTraceKey<T> {
     /// # Correctness
     /// Inherits [`Self::apply_to`]'s key and representation requirements.
     /// Halving multiplies canonical residues by `2^-1 mod q`; it is not rounded
-    /// integer division and does not inherit native-torus noise bounds. Errors
-    /// from input and automorphism keys undergo the remaining modular maps;
-    /// residual key-switch error can occupy non-target coefficients. The caller
-    /// must bound this error for the chosen secret, basis and message scale.
+    /// integer division and does not inherit native-torus noise bounds. After
+    /// completing the reverse steps, input phase is projected to the retained
+    /// positions. Error introduced at degree `2^k+1` is projected to positions
+    /// divisible by `N/2^k`, so late key-switch error can occupy non-target
+    /// coefficients. These remaining maps are coefficient projections, not
+    /// independent real divisions by two. The caller must bound each key-switch
+    /// error for the chosen secret, basis and message scale.
     ///
     /// # Panics
     /// Inherits [`Self::apply_partial_to`]'s prewrite checks.

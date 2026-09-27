@@ -17,6 +17,8 @@ use crate::{
 
 /// Fourier evaluation keys for NTRU TFHE.
 /// The initializer and controls share the stored blind-rotation basis.
+/// Classic coordinate zero holds NLEV bit controls for fused lifting; later
+/// coordinates hold NGSW controls (positive/negative pairs for ternary).
 pub struct ServerKey<T: TorusFftValue> {
     circuit_bootstrap: Option<Box<CircuitBootstrapKey<T>>>,
     initializer: FourierNlev<Vec<Complex64>>,
@@ -27,6 +29,7 @@ pub struct ServerKey<T: TorusFftValue> {
 }
 
 enum Controls<T: TorusFftValue> {
+    // First coordinate: NLEV bit(s); remaining coordinates: NGSW bit(s).
     Classic(Vec<Complex64>),
     Sparse(crate::SparseNtruBootstrappingKey<T>),
 }
@@ -41,9 +44,18 @@ impl<T: TorusFftValue> ServerKey<T> {
         }
     }
 
-    pub(crate) fn classic_controls(&self) -> &[Complex64] {
+    /// Borrows first-coordinate NLEV bits and the remaining NGSW bits.
+    pub(crate) fn classic_controls(&self) -> (&[Complex64], &[Complex64]) {
         match &self.controls {
-            Controls::Classic(data) => data,
+            Controls::Classic(data) => {
+                let first_len = self.initializer.as_ref().len()
+                    * if self.input_distribution.is_binary() {
+                        1
+                    } else {
+                        2
+                    };
+                data.split_at(first_len)
+            }
             Controls::Sparse(_) => panic!("classic control iterator requires a classic key"),
         }
     }
@@ -276,7 +288,7 @@ where
         initializer
     }
 
-    /// Encrypts binary coefficients or adjacent ternary selector pairs as Fourier NGSWs.
+    /// Encrypts the first binary bit or ternary pair as NLEV; later bits as NGSW.
     fn generate_controls<R>(
         &mut self,
         client_key: &ClientKey<T>,
@@ -297,7 +309,7 @@ where
             let count = coefficients
                 .len()
                 .checked_mul(2)
-                .expect("NGSW control count overflow");
+                .expect("blind-rotation control count overflow");
             selectors.resize(count, T::SignedInteger::ZERO);
             for (&coefficient, pair) in coefficients.iter().zip(selectors.as_chunks_mut::<2>().0) {
                 pair[0] = if coefficient == T::SignedInteger::ONE {
@@ -316,11 +328,34 @@ where
         let total_len = plaintexts
             .len()
             .checked_mul(nlev_len)
-            .expect("NGSW control batch length overflow");
+            .expect("blind-rotation control batch length overflow");
         let mut controls = vec![Complex64::default(); total_len];
+        let first_count = if parameters.external_lwe().secret_key_distr().is_binary() {
+            1
+        } else {
+            2
+        };
+        let (first, remaining) = controls.split_at_mut(first_count * nlev_len);
+        for (&bit, output) in plaintexts[..first_count]
+            .iter()
+            .zip(first.chunks_exact_mut(nlev_len))
+        {
+            accumulator_fourier.encrypt_nlev_constant_to(
+                if bit == T::SignedInteger::ONE {
+                    T::ONE
+                } else {
+                    T::ZERO
+                },
+                &mut FourierNlev::new(output),
+                parameters.blind_rotation(),
+                &mut self.fft,
+                rng,
+                &mut self.gadget,
+            );
+        }
         accumulator_fourier.encrypt_ngsw_signed_constant_batch_to(
-            plaintexts,
-            &mut controls,
+            &plaintexts[first_count..],
+            remaining,
             parameters.blind_rotation(),
             &mut self.fft,
             rng,

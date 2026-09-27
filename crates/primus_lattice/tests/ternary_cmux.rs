@@ -173,7 +173,7 @@ fn ternary_rotation_matches_negacyclic_oracle_with_bounded_decomposition_error()
 
 #[test]
 fn ngsw_ternary_rotation_matches_negacyclic_oracle() {
-    use primus_lattice::{context::NttNtruTernaryCmuxContext, ngsw::Ngsw, ntru::Ntru};
+    use primus_lattice::{context::NttNtruCmuxContext, ngsw::Ngsw, ntru::Ntru};
     let modulus = BarrettModulus::new(Q);
     let ntt = UintNttTable::new(N.trailing_zeros(), modulus).unwrap();
     let input = Ntru::new(
@@ -190,7 +190,7 @@ fn ngsw_ternary_rotation_matches_negacyclic_oracle() {
         }
         let one = one.into_ntt_form(&ntt);
         let zero = Ngsw::new(vec![0u32; N * levels]).into_ntt_form(&ntt);
-        let mut context = NttNtruTernaryCmuxContext::new(N, levels);
+        let mut context = NttNtruCmuxContext::new(N, levels);
         let mut output = Ntru::new(vec![Q - 1; N]);
         for secret in [1, -1, 0] {
             let positive = if secret == 1 { &one } else { &zero };

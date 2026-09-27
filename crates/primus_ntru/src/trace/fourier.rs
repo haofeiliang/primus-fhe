@@ -178,6 +178,12 @@ impl<T: TorusFftValue> FourierNtruTraceKey<T> {
     /// norm, together with subsequent trace maps, FFT and key-switch errors.
     /// Non-target coefficients can retain residual noise. GLWE noise bounds
     /// cannot be reused without accounting for this multiplication by f.
+    /// More precisely, let `Pi_r` retain positions divisible by `N/r`. At
+    /// degree `2^k+1`, let `p_k` be the current ciphertext's coefficient parity
+    /// and `e_k` the automorphism phase error after halving. The final phase is
+    /// `Pi_r(input_phase) - sum_k Pi_(2^(k-1))(f*p_k) + sum_k Pi_(2^k)(e_k)`
+    /// modulo the native modulus. Half-modulus lift terms cancel; the parity
+    /// terms need not be independent or unbiased.
     ///
     /// # Panics
     /// Inherits [`Self::apply_partial_to`]'s prewrite checks.

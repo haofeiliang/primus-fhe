@@ -12,7 +12,8 @@ use crate::{CircuitBootstrapConfig, CircuitBootstrapParameterError, TfheParamete
 ///
 /// The TFHE context supplies BR parameters. Trace, scheme-switch and output
 /// bases are independent. The scheme-switch key binds the complete output basis.
-/// Construction checks layouts and ManyLUT capacity, not noise, failure
+/// The BR basis must resolve the smallest programmed output gadget scale.
+/// Construction checks domains, layouts and ManyLUT capacity, not noise, failure
 /// probability or security. In particular the scheme-switch
 /// key encrypts secret-dependent messages and multiplies errors by f and f²;
 /// ordinary PBS parameters are not automatically valid CBS parameters.

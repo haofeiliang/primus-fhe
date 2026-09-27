@@ -49,7 +49,9 @@ cargo run -p primus_ntru --example automorphism
 | `NttNtruAutomorphismKey::apply_to`、`FourierNtruAutomorphismKey::apply_to` | 系数 NTRU 自同构后写出同一私钥下的系数 NTRU |
 | `apply_ntt_to`、`apply_fourier_to` | 变换域 NTRU 自同构后保留对应变换表示和原私钥 |
 
-Ternary 旋转一次构造 `NttNtruTernaryCmuxContext::new(N, levels)` 或 `FourierNtruTernaryCmuxContext::new(N, levels)`，随后复用工作区，传入互斥的正负 NGSW 比特控制。Fourier 使用 Native basis，两份控制必须使用 engine 对应的同一个 FFT 表实例 和 torus 缩放。指数已量化到 `0..2N`，负指数由内部派生。 NTRU TFHE 后端使用此原语执行经典 ternary blind rotation。
+`NttNlev::lift_monomial_to` / `FourierNlev::lift_monomial_to` 将公开多项式提升与首次 binary/ternary 旋转融合。传入 NLEV[1]、正向 NLEV 比特及可选的负向 NLEV 比特；只分解公开多项式，指数为零仍执行提升。`NttNtruCmuxContext` / `FourierNtruCmuxContext` 与后续三元 CMUX 共用一块组合控制缓冲，替代原 `*NtruTernaryCmuxContext` 类型。
+
+Ternary 旋转一次构造 `NttNtruCmuxContext::new(N, levels)` 或 `FourierNtruCmuxContext::new(N, levels)`，随后复用工作区，传入互斥的正负 NGSW 比特控制。Fourier 使用 Native basis，两份控制必须使用 engine 对应的同一个 FFT 表实例 和 torus 缩放。指数已量化到 `0..2N`，负指数由内部派生。 NTRU TFHE 后端使用此原语执行经典 ternary blind rotation。
 
 解密返回系数域多项式，使用密文系数类型 `T`；输出类型转换由应用按需处理。
 
@@ -64,6 +66,8 @@ Sample extraction、NLev/NGSW 外积与 CMUX 位于 [`primus_lattice`](../primus
 ## Trace、投影与展开
 
 `NttNtruTraceKey` 和 `FourierNtruTraceKey` 绑定 `log2(N)` 个 automorphism key。 所有入口的输入、输出均为原秘密下的系数密文，环长度保持 N。普通 partial trace 保留 r 个系数，目标为 `(N/r) * sum_j M[j*N/r] X^(j*N/r)`；reverse trace 保留原消息尺度。NTT 使用模 q 下的 2 的幂逆元归一化；Fourier 在每个逆序步骤前 对无符号系数代表元做向下取整的整数除法，其 phase 舍入误差再乘 f。 两条数值路径的误差分布不同，不能相互替换。
+
+逆序步骤访问 `2r+1, 4r+1, ..., N+1` 次自同构。后续步骤将新引入的自同构误差投影到等间距系数位置；较晚引入的误差可能保留在目标位置以外。Native 减半另外贡献投影后的 `f * parity` 项，其半模数提升项则会消去。这里的 floor 是除二最近舍入的向下取平规则，不承诺舍入无偏。两条独立相位公式见[推导与小环验证](../../docs/ntru-pbs-cbs-mathematical-contracts.md#4-revhomtrace-的投影恒等式)。
 
 `project_coefficient(s)_to` 将指定系数移到常数位后做 reverse trace，支持重复及 乱序索引。`project_prefix_coefficients_to(input, count, ...)` 接受 `0..=N` 内 任意 count，为 `0..count` 执行相同的反向 trace，无需索引数组或明文零尾； count 为 1 时仍执行完整反向 trace。 `expand_coefficients_to` 使用展开树，按自然顺序展开整个消息。 `expand_partial_coefficients_to(input, count, ...)` 要求 count 为不大于 N 的 2 的幂，且目标消息仅在前 count 个位置非零；使用 count-1 次 automorphism， 直接复用输出存储展开树。一般输入会得到残余类多项式，不能承诺常数消息。 密文或噪声不要求零尾，输出非目标位置仍可能含噪声。
 

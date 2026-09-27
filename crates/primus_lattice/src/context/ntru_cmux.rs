@@ -1,22 +1,20 @@
 use primus_fft::{Complex64, TorusFftValue};
 use primus_integer::FheUint;
 
-use crate::ngsw::{FourierNgsw, NttNgsw};
-
 use super::{FourierNtruExternalProductContext, NttNtruExternalProductContext};
 
-/// Fixed-layout scratch for [`NttNgsw::cmux_ternary_monomial_to`].
+/// Shared scratch for [`NttNlev::lift_monomial_to`](crate::nlev::NttNlev::lift_monomial_to) and [`NttNgsw::cmux_ternary_monomial_to`](crate::ngsw::NttNgsw::cmux_ternary_monomial_to).
 ///
-/// Holds one combined NGSW and an external-product context whose digit buffer
+/// Holds one combined NLEV or NGSW and an external-product context whose digit buffer
 /// first holds the monomial NTT factor. The output NTRU supplies the coefficient
 /// difference buffer. This binds lengths, not a modulus, basis or transform table.
-pub struct NttNtruTernaryCmuxContext<T: FheUint> {
-    pub(crate) combined_control: NttNgsw<Vec<T>>,
+pub struct NttNtruCmuxContext<T: FheUint> {
+    pub(crate) combined_control: Vec<T>,
     pub(crate) external_product: NttNtruExternalProductContext<T>,
 }
 
-impl<T: FheUint> NttNtruTernaryCmuxContext<T> {
-    /// Allocates all buffers for `decompose_length` NGSW levels of length `N`.
+impl<T: FheUint> NttNtruCmuxContext<T> {
+    /// Allocates all buffers for `decompose_length` gadget levels of length `N`.
     ///
     /// # Panics
     /// Panics unless `poly_length` is a power of two of at least two and
@@ -27,12 +25,15 @@ impl<T: FheUint> NttNtruTernaryCmuxContext<T> {
             poly_length >= 2 && poly_length.is_power_of_two(),
             "NTRU polynomial length must be a power of two of at least two"
         );
-        assert!(decompose_length > 0, "NGSW must contain at least one level");
+        assert!(
+            decompose_length > 0,
+            "gadget must contain at least one level"
+        );
         let control_length = poly_length
             .checked_mul(decompose_length)
-            .expect("NGSW ciphertext length must fit in usize");
+            .expect("gadget ciphertext length must fit in usize");
         Self {
-            combined_control: NttNgsw::zero(control_length),
+            combined_control: vec![T::ZERO; control_length],
             external_product: NttNtruExternalProductContext::new(poly_length),
         }
     }
@@ -45,7 +46,7 @@ impl<T: FheUint> NttNtruTernaryCmuxContext<T> {
 
     /// Borrows the existing external-product scratch for initialization or key switching.
     ///
-    /// Its length must stay unchanged. The next ternary CMUX overwrites its contents,
+    /// Its length must stay unchanged. The next lift or ternary CMUX overwrites its contents,
     /// so alternating these operations requires neither extra storage nor a reset.
     #[must_use]
     pub fn external_product_context(&mut self) -> &mut NttNtruExternalProductContext<T> {
@@ -55,23 +56,23 @@ impl<T: FheUint> NttNtruTernaryCmuxContext<T> {
     /// Returns the level count bound to the combined-control scratch.
     #[must_use]
     pub fn decompose_length(&self) -> usize {
-        self.combined_control.as_ref().len() / self.poly_length()
+        self.combined_control.len() / self.poly_length()
     }
 }
 
-/// Fixed-layout scratch for [`FourierNgsw::cmux_ternary_monomial_to`].
+/// Shared scratch for [`FourierNlev::lift_monomial_to`](crate::nlev::FourierNlev::lift_monomial_to) and [`FourierNgsw::cmux_ternary_monomial_to`](crate::ngsw::FourierNgsw::cmux_ternary_monomial_to).
 ///
-/// Holds one combined Fourier NGSW and an external-product context. Its
+/// Holds one combined Fourier NLEV or NGSW and an external-product context. Its
 /// coefficient and Fourier digit buffers first hold the integer monomial and
 /// its transform; decomposition overwrites both afterwards. The output NTRU
 /// supplies the coefficient difference buffer. This does not bind an FFT table.
-pub struct FourierNtruTernaryCmuxContext<T: TorusFftValue> {
-    pub(crate) combined_control: FourierNgsw<Vec<Complex64>>,
+pub struct FourierNtruCmuxContext<T: TorusFftValue> {
+    pub(crate) combined_control: Vec<Complex64>,
     pub(crate) external_product: FourierNtruExternalProductContext<T>,
 }
 
-impl<T: TorusFftValue> FourierNtruTernaryCmuxContext<T> {
-    /// Allocates all buffers for `decompose_length` Fourier NGSW levels.
+impl<T: TorusFftValue> FourierNtruCmuxContext<T> {
+    /// Allocates all buffers for `decompose_length` Fourier gadget levels.
     ///
     /// # Panics
     /// Panics unless `poly_length` is a power of two of at least two and
@@ -83,12 +84,15 @@ impl<T: TorusFftValue> FourierNtruTernaryCmuxContext<T> {
             poly_length >= 2 && poly_length.is_power_of_two(),
             "NTRU polynomial length must be a power of two of at least two"
         );
-        assert!(decompose_length > 0, "NGSW must contain at least one level");
+        assert!(
+            decompose_length > 0,
+            "gadget must contain at least one level"
+        );
         let control_length = (poly_length / 2)
             .checked_mul(decompose_length)
-            .expect("Fourier NGSW ciphertext length must fit in usize");
+            .expect("Fourier gadget ciphertext length must fit in usize");
         Self {
-            combined_control: FourierNgsw::zero(control_length),
+            combined_control: vec![Complex64::default(); control_length],
             external_product: FourierNtruExternalProductContext::new(poly_length),
         }
     }
@@ -101,7 +105,7 @@ impl<T: TorusFftValue> FourierNtruTernaryCmuxContext<T> {
 
     /// Borrows the existing external-product scratch for initialization or key switching.
     ///
-    /// Its length must stay unchanged. The next ternary CMUX overwrites its contents,
+    /// Its length must stay unchanged. The next lift or ternary CMUX overwrites its contents,
     /// so alternating these operations requires neither extra storage nor a reset.
     #[must_use]
     pub fn external_product_context(&mut self) -> &mut FourierNtruExternalProductContext<T> {
@@ -111,6 +115,6 @@ impl<T: TorusFftValue> FourierNtruTernaryCmuxContext<T> {
     /// Returns the level count bound to the combined-control scratch.
     #[must_use]
     pub fn decompose_length(&self) -> usize {
-        self.combined_control.as_ref().len() / (self.poly_length() / 2)
+        self.combined_control.len() / (self.poly_length() / 2)
     }
 }
