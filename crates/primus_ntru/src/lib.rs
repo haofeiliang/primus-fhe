@@ -30,6 +30,11 @@
 //! must establish the same bound; conversion does not perform general reduction.
 //! The native Fourier representation accepts every signed coefficient.
 
+//! [`NtruLweKeySwitchingKey`] converts coefficient NTRU at Q to an independent
+//! LWE secret at q, reusing exact modulus rounding, sample extraction and LWE
+//! key switching. [`NtruLweKeySwitchingContext`] owns one reusable LWE buffer.
+//! Source and target use the same coefficient type; no FFT/NTT table is needed.
+//!
 //! Same-secret automorphism, trace/reverse trace, coefficient projection and
 //! expansion use separate NTT/Fourier keys and reusable coefficient workspaces.
 //! [`NttNtruSchemeSwitchKey`] / [`FourierNtruSchemeSwitchKey`] convert coefficient
@@ -57,7 +62,10 @@ pub use ciphertext::{
     NlevCiphertext, NtruCiphertext, NttNgswCiphertext, NttNlevCiphertext, NttNtruCiphertext,
 };
 pub use error::NtruError;
-pub use key_switch::{FourierNtruKeySwitchingKey, NttNtruKeySwitchingKey};
+pub use key_switch::{
+    FourierNtruKeySwitchingKey, NtruLweKeySwitchingContext, NtruLweKeySwitchingKey,
+    NttNtruKeySwitchingKey,
+};
 pub use parameter::{NlevParameterError, NlevParameters, NtruParameters};
 pub use primus_distr::SecretKeyDistr;
 pub use primus_lattice::context::{

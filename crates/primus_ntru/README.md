@@ -63,6 +63,16 @@ Fourier values, evaluation keys and maps are bound to the exact FFT table instan
 
 Sample extraction, NLev/NGSW external products and CMUX live in [`primus_lattice`](../primus_lattice/README.md). PBS, ManyLUT and optional CBS live in [`primus_tfhe_ntru_ntt`](../primus_tfhe_ntru_ntt) and [`primus_tfhe_ntru_fourier`](../primus_tfhe_ntru_fourier); their message/carry examples demonstrate sharing a blind rotation across multiple outputs.
 
+## Independent LWE return
+
+`NtruLweKeySwitchingKey::generate(f, Q, s, lwe_parameters, basis, rng)` prepares conversion from the signed NTRU secret f to an independently generated `primus_lwe::LweSecretKey` s. The parameters and basis use target modulus q; s may have a different dimension and need not extend to an invertible NTRU secret. Each signed coefficient of f must have magnitude below an explicit q; generation checks this before sampling.
+
+Create `NtruLweKeySwitchingContext::new(N)` once, then call `key_switch_to` for the constant term or `key_switch_at_to(input, index, output, q, context)` for another coefficient. Inputs are coefficient-domain NTRU ciphertexts; recover NTT/Fourier outputs to coefficients first. Every call overwrites the output and a single N+1-element intermediate LWE buffer without allocating. Length, index and target-modulus checks precede output and scratch writes.
+
+The operation rounds each coefficient as `c' = round(q*c/Q) mod q` (nearest, ties upward), extracts `b=0`, `a[i]=-c'[index-i]` for `i<=index` and `a[i]=c'[N+index-i]` otherwise, then key-switches at q. Extraction uses the signed coefficient vector of f with LWE phase `b-<a,f>=(f*c')[index]`. Rounding must precede extraction negation: negating first can change half-tie results. Modulus switching and extraction are fused into one scratch write, reusing `primus_modulus::ModulusSwitch` and `primus_lwe::LweKeySwitchingKey`.
+
+Both moduli may be native or explicit, including equal moduli. The implementation and tests cover u32→u32 and u64→u64, including full-width native sources, explicit near-word-limit sources and rounded endpoint wrap. There is no cross-width narrowing: a smaller q with u64 input still produces u64 coefficients. Inputs must be canonical at Q. Budget f-weighted coefficient rounding, secret-weighted decomposition error and LWE key noise, plus previous NTRU/FFT error; scaling an encoded message from Q to q is not generally identical to freshly encoding it at q. The higher-level NTRU TFHE client/return path has not yet migrated to this primitive.
+
 ## Trace, projection and expansion
 
 `NttNtruTraceKey` and `FourierNtruTraceKey` bind `log2(N)` automorphism keys. All endpoints use coefficient ciphertexts under the original secret; the ring length stays N. Ordinary partial trace with r retained coefficients targets `(N/r) * sum_j M[j*N/r] X^(j*N/r)`. Reverse trace preserves that message scale. NTT normalizes with inverse powers of two modulo q. Fourier instead divides unsigned coefficient representatives, rounding down before each reverse step; the resulting phase rounding error is multiplied by f. These numerical paths have different error distributions and are not interchangeable.

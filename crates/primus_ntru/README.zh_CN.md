@@ -63,6 +63,16 @@ Fourier 值、求值密钥及置换映射绑定到生成时的确切 FFT table �
 
 Sample extraction、NLev/NGSW 外积与 CMUX 位于 [`primus_lattice`](../primus_lattice/README.zh_CN.md)。PBS、ManyLUT 和可选 CBS 位于 [`primus_tfhe_ntru_ntt`](../primus_tfhe_ntru_ntt) 和 [`primus_tfhe_ntru_fourier`](../primus_tfhe_ntru_fourier)，其 message/carry 示例展示多个输出共用一次盲旋转。
 
+## 独立 LWE 返回
+
+`NtruLweKeySwitchingKey::generate(f, Q, s, lwe_parameters, basis, rng)` 从有符号 NTRU 秘密 f 生成返回原语，目标 s 是独立生成的 `primus_lwe::LweSecretKey`。参数和 basis 使用目标模数 q；s 的维数可以不同，也无需补零成为可逆 NTRU 秘密。f 的每个有符号系数的幅值必须小于显式 q，生成时在采样前检查。
+
+一次创建 `NtruLweKeySwitchingContext::new(N)`，随后使用 `key_switch_to` 返回常数项，或使用 `key_switch_at_to(input, index, output, q, context)` 返回其他系数。输入必须是系数域 NTRU 密文，NTT/Fourier 输出需要先恢复为系数。每次调用覆盖输出和唯一一份 N+1 元素的中间 LWE 缓冲，无额外分配。长度、索引和目标模数检查先于输出及 scratch 写入。
+
+运算先逐系数执行 `c' = round(q*c/Q) mod q`（最近舍入，半格向上），再提取 `b=0`、`i<=index` 时 `a[i]=-c'[index-i]`、否则 `a[i]=c'[N+index-i]`，最后在 q 下进行 LWE key switch。提取秘密为 f 的有符号系数向量，LWE 相位 `b-<a,f>=(f*c')[index]`。舍入必须先于提取取负，否则恰好半格时可能得到不同结果。模数转换和提取融合为一次 scratch 写入，复用 `primus_modulus::ModulusSwitch` 与 `primus_lwe::LweKeySwitchingKey`。
+
+两端模数均可为 native 或显式模数，也可以相等。实现与测试覆盖 u32→u32、u64→u64，包括完整位宽 native 源、接近整数位宽上限的显式源和舍入进位回零。不进行跨位宽窄化：u64 输入即使转换到较小 q，输出系数仍为 u64。输入须为 Q 下的规范剩余。误差预算须包含 f 加权的系数舍入、秘密加权的分解误差、LWE 密钥噪声和已有 NTRU/FFT 误差；Q 下的编码缩放到 q 一般不等于直接在 q 下编码。高层 NTRU TFHE 客户端与返回路径尚未迁移到此原语。
+
 ## Trace、投影与展开
 
 `NttNtruTraceKey` 和 `FourierNtruTraceKey` 绑定 `log2(N)` 个 automorphism key。 所有入口的输入、输出均为原秘密下的系数密文，环长度保持 N。普通 partial trace 保留 r 个系数，目标为 `(N/r) * sum_j M[j*N/r] X^(j*N/r)`；reverse trace 保留原消息尺度。NTT 使用模 q 下的 2 的幂逆元归一化；Fourier 在每个逆序步骤前 对无符号系数代表元做向下取整的整数除法，其 phase 舍入误差再乘 f。 两条数值路径的误差分布不同，不能相互替换。
