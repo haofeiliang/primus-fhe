@@ -123,6 +123,21 @@ fn check_complete<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T, weight:
             context.circuit_bootstrap_evaluator(&server).err(),
             Some(TfheEvaluationError::UnsupportedSparseBootstrapping)
         );
+        assert_eq!(
+            primus_tfhe_ntru_ntt::OneHotCircuitBootstrapEvaluator::try_new(&context, &server).err(),
+            Some(primus_tfhe_ntru_ntt::OneHotBootstrapError::Evaluation(
+                TfheEvaluationError::UnsupportedSparseBootstrapping
+            ))
+        );
+        assert_eq!(
+            primus_tfhe_ntru_ntt::OneHotCircuitBootstrapEvaluator::try_from_bootstrapper(
+                context.evaluator(&server).unwrap()
+            )
+            .err(),
+            Some(primus_tfhe_ntru_ntt::OneHotBootstrapError::Evaluation(
+                TfheEvaluationError::UnsupportedSparseBootstrapping
+            ))
+        );
         let key = server.sparse_bootstrapping_key().unwrap();
         if weight == 1 {
             let (indices, controls) = key.first_bucket();

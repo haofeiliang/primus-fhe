@@ -77,7 +77,10 @@ pub use primus_tfhe_ntru::{ClientKey, EncryptionKey, LwePublicKey};
 #[doc(no_inline)]
 pub use circuit_bootstrap::CircuitBootstrapKey;
 #[doc(inline)]
-pub use circuit_bootstrap::{CircuitBootstrapEvaluator, CircuitBootstrapParameters};
+pub use circuit_bootstrap::{
+    CircuitBootstrapEvaluator, CircuitBootstrapParameters, OneHotBootstrapError,
+    OneHotCircuitBootstrapEvaluator, OneHotLookupTable,
+};
 
 /// Secret-key or LWE public-key encryptor for the exact NTT NTRU backend.
 pub type Encryptor<'a, T, Key = LweSecretKeyRef<'a, T>, LM = BarrettModulus<T>> =

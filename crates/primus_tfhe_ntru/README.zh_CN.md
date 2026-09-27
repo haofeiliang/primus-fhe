@@ -55,6 +55,14 @@ ManyLUT 编译同一个输入的多个函数。后端 sparse 示例计算 `x % 4
 
 后端 README 链接到可运行的 PBS 和 CBS → CMUX 示例。Fixture 不构成生产噪声余量或 安全性论证。
 
+## One-hot CBS
+
+`OneHotLookupTable::try_new(tfhe, cbs)` 编译两后端共用的 packed one-hot 多项式；`OneHotBootstrapError` 区分编码、容量、存储溢出和求值资源错误。首版要求 plaintext modulus `t=2*M`、`M=2^tau`、`tau>=1`。输入 chunk 使用 `encrypt_padded` 的无符号 Rounded 编码 `round(q*m/(2*M))`，`0<=m<M`；q 与环 Q 可以不同。
+
+令 gadget 层数为 L，`W=next_power_of_two(L)`、`S=N/M`、`A=N/(2*M*W)`。要求 `2*M*W<=N`，padding 层为零，BR 的量化步长仅为 W，不是 M*W。测试多项式是 `sum_{j=1-A}^{A} sum_l g_l X^(l-j*W)`。若实际逐坐标量化后的相位满足 `u_bar=S*m+W*e mod 2N`、`-A<=e<A`，负向 BR 后用 `X^(r*S-l)` 移位再做完整 reverse trace，即得到第 r 个 selector、第 l 层的 `g_l*delta_r(m)`。窗口左闭右开，相邻消息的中点归较大的消息。e 包含输入噪声、编码舍入和量化误差；参数形状检查不证明这个保护区成立。
+
+两后端的 `OneHotCircuitBootstrapEvaluator` 生成全部 M 个 selectors，包括实体化的 r=0；NLEV 为系数表示，NGSW 为各后端变换表示。支持分别生成或共享一次 BR 同时生成两者。完整投影不要求 BR 消息零尾，不依赖额外的部分 trace 工作区接口。后续 scheme switch 保留普通 CBS 的 f/f² 误差预算，Fourier 还须计入 native 减半及 FFT 误差。本功能不改变普通 CBS，也不包含多多项式高精度查表。
+
 ## 进一步阅读
 
 [实现说明](../primus_tfhe/IMPLEMENTATION.md) · [基准入口与性能取舍](../primus_tfhe/IMPLEMENTATION.md#performance-decisions-and-reproducibility)

@@ -55,6 +55,14 @@ Ordinary and CBS keys must share the accumulator secret and transform table. Sch
 
 Backend READMEs link runnable PBS and CBS → CMUX examples. Fixtures do not establish production noise margins or security.
 
+## One-hot CBS
+
+`OneHotLookupTable::try_new(tfhe, cbs)` compiles the packed polynomial shared by both backends. `OneHotBootstrapError` distinguishes encoding, capacity, storage-overflow and evaluation-resource errors. The first version requires plaintext modulus `t=2*M`, `M=2^tau`, `tau>=1`. Encrypt chunks with the unsigned Rounded encoding of `encrypt_padded`: `round(q*m/(2*M))`, `0<=m<M`. External q and ring Q may differ.
+
+For L gadget levels, let `W=next_power_of_two(L)`, `S=N/M`, and `A=N/(2*M*W)`. Capacity requires `2*M*W<=N`; padding levels are zero. The BR quantization step is W, not M*W. The test polynomial is `sum_{j=1-A}^{A} sum_l g_l X^(l-j*W)`. If the actual per-coordinate quantized phase satisfies `u_bar=S*m+W*e mod 2N`, `-A<=e<A`, then shifting the negative-BR output by `X^(r*S-l)` and applying full reverse trace extracts `g_l*delta_r(m)`. This left-closed, right-open window assigns a midpoint between adjacent messages to the higher message. The error e includes encryption noise, encoding rounding and quantization; parameter shape checks do not prove the guard condition.
+
+The backends' `OneHotCircuitBootstrapEvaluator` produces all M selectors, explicitly including r=0. NLEV outputs use coefficient representation; NGSW outputs use the backend's transform representation. Request either representation or both from one shared BR. Full projection works with nonzero message tails and needs no additional partial-trace workspace API. Scheme switching retains ordinary CBS's f/f² noise budget; Fourier also needs native-halving and FFT error budgets. This extension leaves ordinary CBS unchanged and does not implement multi-polynomial high-precision lookup.
+
 ## Further reading
 
 [Implementation notes](../primus_tfhe/IMPLEMENTATION.md) · [Benchmarks and performance decisions](../primus_tfhe/IMPLEMENTATION.md#performance-decisions-and-reproducibility)

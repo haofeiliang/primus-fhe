@@ -35,6 +35,7 @@ mod client;
 mod error;
 mod key;
 mod lookup_table;
+mod one_hot;
 mod parameters;
 
 pub use circuit_bootstrap::CircuitBootstrapParameters;
@@ -43,6 +44,7 @@ pub use error::{
     TfheClientError, TfheKeyError, TfheParameterError,
 };
 pub use key::ClientKey;
+pub use one_hot::{OneHotBootstrapError, OneHotLookupTable};
 pub use parameters::{TfheConfig, TfheParameters};
 
 pub use primus_ntru::{NlevParameters, NtruParameters, NtruSecretKey};

@@ -70,6 +70,14 @@ let mut evaluator = context.evaluator(&server)?;
 
 独立生成组件时须配对秘密并使用同一变换表示，形状检查不能证明身份。 输入/输出与消费要求见[共享 CBS 契约](../primus_tfhe/README.zh_CN.md#cbs-输出与消费)及 [家族 CBS 说明](../primus_tfhe_ntru/README.zh_CN.md#cbs-与示例)。
 
+## One-hot CBS
+
+`OneHotCircuitBootstrapEvaluator::try_new(&context, &server)` 绑定现有 CBS 密钥，为一个 chunk 生成含默认 r=0 的完整 selectors。也可通过 `try_from_bootstrapper` 复用 PBS 工作区，通过 `bootstrapper_mut()` 借用普通 PBS，最后用 `into_bootstrapper()` 取回工作区。首版支持 classic binary/ternary，拒绝 sparse 和缺少 CBS 材料的密钥；普通 CBS 接口保持不变。
+
+先调用 `allocate_nlev_output()` / `allocate_ngsw_output()`，再重复使用 `one_hot_nlev_to`、`one_hot_ngsw_to` 或 `one_hot_to(input, nlev, ngsw)`。三者每次均只执行一次 BR；只需要一种表示时不会生成另一种完整输出批次。NLEV 是 Q 下的系数表示，每行 N 个整数；NGSW 是Fourier 表示，每行 N/2 个 Complex64。扁平布局为 `[selector][level][行元素]`，不含 padding；level 顺序来自 `evaluator.parameters().output_basis().scalar_iter()`。输出会完整覆盖，在线零额外分配。
+
+NLEV 用于公开多项式选择时，先用 `NlevCiphertext::write_fourier_form` 写入预分配的变换缓冲，再做外积；NGSW 可直接包装成 `FourierNgswCiphertext`，配合相同 basis 消费密文候选。完整调用和消费见 [one_hot 测试](tests/one_hot.rs)，编码、容量与噪声保护区见[共用 one-hot 契约](../primus_tfhe_ntru/README.zh_CN.md#one-hot-cbs)。
+
 ## 底层组合
 
 Rustdoc 按职责组织 `key`（服务端材料）、`circuit_bootstrap`（CBS）、 `factorized`（MVB 程序和执行）与 `sparse`（桶材料）；常用工作流类型仍从 crate 根导入。

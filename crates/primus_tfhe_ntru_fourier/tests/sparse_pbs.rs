@@ -119,6 +119,22 @@ fn check_complete<T: TorusFftValue, Table: FftTable>(weight: usize) {
             context.circuit_bootstrap_evaluator(&server).err(),
             Some(TfheEvaluationError::UnsupportedSparseBootstrapping)
         );
+        assert_eq!(
+            primus_tfhe_ntru_fourier::OneHotCircuitBootstrapEvaluator::try_new(&context, &server)
+                .err(),
+            Some(primus_tfhe_ntru_fourier::OneHotBootstrapError::Evaluation(
+                TfheEvaluationError::UnsupportedSparseBootstrapping
+            ))
+        );
+        assert_eq!(
+            primus_tfhe_ntru_fourier::OneHotCircuitBootstrapEvaluator::try_from_bootstrapper(
+                context.evaluator(&server).unwrap()
+            )
+            .err(),
+            Some(primus_tfhe_ntru_fourier::OneHotBootstrapError::Evaluation(
+                TfheEvaluationError::UnsupportedSparseBootstrapping
+            ))
+        );
         let key = server.sparse_bootstrapping_key().unwrap();
         if weight == 1 {
             let (indices, controls) = key.first_bucket();

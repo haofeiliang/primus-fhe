@@ -57,6 +57,12 @@ fn rejects_server_keys_with_same_layout_but_different_bases_or_modulus() {
     let (_, server_key) = context.try_generate_keys(None, &mut rng).unwrap();
     assert!(server_key.circuit_bootstrap_key().is_none());
     assert!(matches!(
+        primus_tfhe_ntru_ntt::OneHotCircuitBootstrapEvaluator::try_new(&context, &server_key),
+        Err(primus_tfhe_ntru_ntt::OneHotBootstrapError::Evaluation(
+            primus_tfhe_ntru_ntt::TfheEvaluationError::MissingCircuitBootstrapKey
+        ))
+    ));
+    assert!(matches!(
         context.circuit_bootstrap_evaluator(&server_key),
         Err(primus_tfhe_ntru_ntt::TfheEvaluationError::MissingCircuitBootstrapKey)
     ));

@@ -70,6 +70,14 @@ The output is `FourierNgswCiphertext` under `f_acc`. The circuit key binds the c
 
 Standalone component generation must use paired secrets and the same transform representation; shape checks cannot prove identity. See [CBS input/output and consumption](../primus_tfhe/README.md#cbs-output-and-consumption) and the [family CBS contract](../primus_tfhe_ntru/README.md#cbs-and-examples).
 
+## One-hot CBS
+
+`OneHotCircuitBootstrapEvaluator::try_new(&context, &server)` binds existing CBS keys and produces every selector for one chunk, including the default r=0. Use `try_from_bootstrapper` to reuse PBS workspace, `bootstrapper_mut()` to borrow ordinary PBS, and `into_bootstrapper()` to recover it. Classic binary/ternary keys are supported; sparse keys and missing CBS material are rejected. Ordinary CBS interfaces are unchanged.
+
+Allocate with `allocate_nlev_output()` / `allocate_ngsw_output()`, then reuse `one_hot_nlev_to`, `one_hot_ngsw_to`, or `one_hot_to(input, nlev, ngsw)`. Each call performs one BR; requesting one representation does not generate a complete batch of the other. NLEV uses coefficient representation at Q with N integers per row; NGSW uses Fourier representation with N/2 Complex64 values per row. Flat layout is `[selector][level][row element]`, without padding; levels follow `evaluator.parameters().output_basis().scalar_iter()`. Outputs are overwritten completely, with no online allocation.
+
+For selection among public polynomials, use `NlevCiphertext::write_fourier_form` into preallocated transformed storage before the NLEV external product. NGSW slices can directly be wrapped as `FourierNgswCiphertext` to consume encrypted candidates with the same basis. See the [one_hot integration test](tests/one_hot.rs) for both consumers and the [shared one-hot contract](../primus_tfhe_ntru/README.md#one-hot-cbs) for encoding, capacity and the noise guard.
+
 ## Lower-level composition
 
 Rustdoc groups server material in `key`, CBS in `circuit_bootstrap`, MVB programs/execution in `factorized`, and bucket material in `sparse`. Common workflow types remain root imports.
