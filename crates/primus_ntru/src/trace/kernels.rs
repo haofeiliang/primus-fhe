@@ -11,7 +11,7 @@ pub(super) fn check_count(n: usize, count: usize) -> usize {
         count.is_power_of_two() && count <= n,
         "coefficient count must be a power-of-two divisor of N"
     );
-    (n / count).trailing_zeros() as usize
+    (n.trailing_zeros() - count.trailing_zeros()) as usize
 }
 
 /// Keys are indexed by descending degree N+1,N/2+1,...,3. The caller has
