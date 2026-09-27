@@ -13,31 +13,38 @@ use crate::{
 };
 
 /// Validated binding between native NTRU TFHE parameters and one Fourier table.
-pub struct TfheContext<T, Table>
+pub struct TfheContext<T, Table, LM = primus_modulus::NativeModulus<T>>
 where
     T: TorusFftValue,
     Table: FftTable,
+    LM: primus_reduce::RingContext<T>,
 {
-    parameters: TfheParameters<T>,
+    parameters: TfheParameters<T, LM>,
     table: Table,
 }
 
-impl<T, Table> TfheContext<T, Table>
+impl<T, Table, LM> TfheContext<T, Table, LM>
 where
     T: TorusFftValue,
     Table: FftTable,
+    LM: primus_reduce::RingContext<T>,
 {
     /// Builds the selected FFT table using the accumulator polynomial length.
     ///
     /// Preserves table-construction failures in [`TfheContextError`]. Use [`Self::try_new`] to inject
     /// an existing table instead; all transformed keys must use the bound table.
-    pub fn try_from_parameters(parameters: TfheParameters<T>) -> Result<Self, TfheContextError> {
+    pub fn try_from_parameters(
+        parameters: TfheParameters<T, LM>,
+    ) -> Result<Self, TfheContextError> {
         let table = Table::new(parameters.accumulator_ntru().poly_length().trailing_zeros())?;
         Ok(Self { parameters, table })
     }
 
     /// Binds parameters to a Fourier table with the same ring length.
-    pub fn try_new(parameters: TfheParameters<T>, table: Table) -> Result<Self, TfheContextError> {
+    pub fn try_new(
+        parameters: TfheParameters<T, LM>,
+        table: Table,
+    ) -> Result<Self, TfheContextError> {
         let expected = parameters.poly_length();
         let actual = table.poly_length();
         if actual != expected {
@@ -49,7 +56,7 @@ where
     /// Returns the validated mathematical parameters.
     #[must_use]
     #[inline]
-    pub fn parameters(&self) -> &TfheParameters<T> {
+    pub fn parameters(&self) -> &TfheParameters<T, LM> {
         &self.parameters
     }
 
@@ -86,7 +93,7 @@ where
     pub fn accumulator_client(
         &self,
         client_key: &ClientKey<T>,
-    ) -> Result<crate::AccumulatorClient<'_, T, Table>, TfheClientError> {
+    ) -> Result<crate::AccumulatorClient<'_, T, Table, LM>, TfheClientError> {
         crate::AccumulatorClient::try_new(self, client_key)
     }
 
@@ -131,7 +138,7 @@ where
     pub fn encryptor<'a>(
         &'a self,
         client_key: &'a ClientKey<T>,
-    ) -> Result<Encryptor<'a, T>, TfheClientError> {
+    ) -> Result<Encryptor<'a, T, crate::LweSecretKeyRef<'a, T>, LM>, TfheClientError> {
         self.parameters.encryptor(client_key)
     }
 
@@ -140,7 +147,7 @@ where
     pub fn public_encryptor<'a>(
         &'a self,
         public_key: &'a LwePublicKey<T>,
-    ) -> Result<Encryptor<'a, T, &'a LwePublicKey<T>>, ClientError> {
+    ) -> Result<Encryptor<'a, T, &'a LwePublicKey<T>, LM>, ClientError> {
         self.parameters.public_encryptor(public_key)
     }
 
@@ -148,7 +155,7 @@ where
     pub fn decryptor<'a>(
         &'a self,
         client_key: &'a ClientKey<T>,
-    ) -> Result<Decryptor<'a, T>, TfheClientError> {
+    ) -> Result<Decryptor<'a, T, LM>, TfheClientError> {
         self.parameters.decryptor(client_key)
     }
 
@@ -158,7 +165,7 @@ where
     pub fn evaluator<'a>(
         &'a self,
         server_key: &'a ServerKey<T>,
-    ) -> Result<Evaluator<'a, T, Table>, TfheEvaluationError> {
+    ) -> Result<Evaluator<'a, T, Table, LM>, TfheEvaluationError> {
         Evaluator::try_new(self, server_key)
     }
 
@@ -167,7 +174,7 @@ where
     pub fn factorized_evaluator<'a>(
         &'a self,
         server_key: &'a ServerKey<T>,
-    ) -> Result<FactorizedEvaluator<'a, T, Table>, TfheEvaluationError> {
+    ) -> Result<FactorizedEvaluator<'a, T, Table, LM>, TfheEvaluationError> {
         FactorizedEvaluator::try_new(self, server_key)
     }
 
@@ -188,7 +195,7 @@ where
         input_domain_len: usize,
         output_count: usize,
         function: F,
-    ) -> Result<FourierFactorizedLookupTable<'_, T, Table>, LookupTableError>
+    ) -> Result<FourierFactorizedLookupTable<'_, T, Table, LM>, LookupTableError>
     where
         OM: RingContext<T>,
         F: Fn(usize, usize) -> T,
@@ -213,7 +220,7 @@ where
     pub fn boolean_encryptor<'a>(
         &'a self,
         client_key: &'a ClientKey<T>,
-    ) -> Result<BooleanEncryptor<'a, T>, TfheClientError> {
+    ) -> Result<BooleanEncryptor<'a, T, crate::LweSecretKeyRef<'a, T>, LM>, TfheClientError> {
         Ok(BooleanEncryptor::try_new(self.encryptor(client_key)?)?)
     }
 
@@ -222,7 +229,7 @@ where
     pub fn boolean_public_encryptor<'a>(
         &'a self,
         public_key: &'a LwePublicKey<T>,
-    ) -> Result<BooleanEncryptor<'a, T, &'a LwePublicKey<T>>, BooleanError> {
+    ) -> Result<BooleanEncryptor<'a, T, &'a LwePublicKey<T>, LM>, BooleanError> {
         BooleanEncryptor::try_new(self.public_encryptor(public_key)?)
     }
 
@@ -230,7 +237,7 @@ where
     pub fn boolean_decryptor<'a>(
         &'a self,
         client_key: &'a ClientKey<T>,
-    ) -> Result<BooleanDecryptor<'a, T>, TfheClientError> {
+    ) -> Result<BooleanDecryptor<'a, T, LM>, TfheClientError> {
         Ok(BooleanDecryptor::try_new(self.decryptor(client_key)?)?)
     }
 
@@ -241,7 +248,7 @@ where
     pub fn boolean_evaluator<'a>(
         &'a self,
         server_key: &'a ServerKey<T>,
-    ) -> Result<BooleanEvaluator<'a, T, Table>, TfheEvaluationError> {
+    ) -> Result<BooleanEvaluator<'a, T, Table, LM>, TfheEvaluationError> {
         BooleanEvaluator::try_new(
             self.parameters.external_lwe_dimension(),
             self.parameters.accumulator_ntru().poly_length(),
@@ -270,14 +277,15 @@ where
     pub fn circuit_bootstrap_evaluator<'a>(
         &'a self,
         server_key: &'a ServerKey<T>,
-    ) -> Result<crate::CircuitBootstrapEvaluator<'a, T, Table>, crate::TfheEvaluationError> {
+    ) -> Result<crate::CircuitBootstrapEvaluator<'a, T, Table, LM>, crate::TfheEvaluationError>
+    {
         crate::CircuitBootstrapEvaluator::try_new(self, server_key)
     }
 
     /// Decomposes this context into parameters and its Fourier table.
     #[must_use]
     #[inline]
-    pub fn into_parts(self) -> (TfheParameters<T>, Table) {
+    pub fn into_parts(self) -> (TfheParameters<T, LM>, Table) {
         (self.parameters, self.table)
     }
 }

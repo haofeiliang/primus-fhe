@@ -14,6 +14,7 @@ static ALLOCATOR: allocations::CountingAllocator = allocations::CountingAllocato
 
 fn check_context<Table: FftTable>(distr: SecretKeyDistr) {
     let parameters = TfheParameters::<u32>::try_from_config(TfheConfig {
+        accumulator_modulus: NativeModulus::new(),
         external_lwe: LweParameters::new(4, 4, NativeModulus::new(), distr, 0.7),
         poly_length: 256,
         accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,

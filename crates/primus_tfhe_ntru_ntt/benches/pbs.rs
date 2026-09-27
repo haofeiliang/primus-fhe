@@ -51,17 +51,15 @@ fn backend<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
         SecretKeyDistr::SparseTernary,
         0.7,
     );
-    let client = NtruParameters::new(
-        n,
-        T::as_from(workload.plaintext_modulus),
-        modulus,
-        distr,
-        0.7,
-    );
+
     let parameters = TfheParameters::try_new(
         external_lwe,
         NlevParameters::with_ntru_params(&accumulator, 9, None),
-        NlevParameters::with_ntru_params(&client, 9, None),
+        primus_tfhe_ntru::DecompositionConfig {
+            log_basis: 9,
+            level_count: None,
+        },
+        0.7,
     )
     .unwrap();
     let table = Table::new(n.trailing_zeros(), modulus).unwrap();

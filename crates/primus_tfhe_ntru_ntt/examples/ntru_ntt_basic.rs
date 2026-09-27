@@ -18,7 +18,7 @@ fn main() {
     let mut input = context.allocate_lwe_ciphertext();
 
     // Server setup: public parameters, evaluation key, LUT and reusable output.
-    // Input t=16 programs 0..8; outputs keep the same encoding.
+    // Input t=16 programs 0..8; the LUT is at Q and the returned LWE is at q=2^20.
     let lut = context
         .parameters()
         .compile_lookup_table_fn(|x| (x % 4) as u32)
@@ -50,11 +50,12 @@ fn parameters() -> TfheParameters<u32> {
     let external_lwe = LweParameters::new(
         LWE_DIMENSION,
         16,
-        modulus,
+        BarrettModulus::new(1 << 20),
         SecretKeyDistr::UniformTernary,
         0.7,
     );
     TfheParameters::try_from_config(TfheConfig {
+        accumulator_modulus: modulus,
         external_lwe,
         poly_length: N,
         accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,

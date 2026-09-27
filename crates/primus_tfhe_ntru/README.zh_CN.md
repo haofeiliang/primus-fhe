@@ -9,17 +9,17 @@
 
 ## 参数与密钥域
 
-推荐使用 `TfheParameters::try_from_config(TfheConfig { .. })`：`external_lwe` 提供 外部维数、秘密分布、`t/q` 与客户端加密噪声；具名字段选择公共环长度、accumulator 分布与噪声、两种 `DecompositionConfig { log_basis, level_count }` 和独立的 key-switch 噪声。客户端 NTRU 域自动复用外部秘密分布与公共环参数，无需重复构造。 `level_count: None` 保留完整分解。已持有 NLev 参数时也可使用下述直接入口。
+`TfheParameters<T, M, LM = M>` 分离 accumulator 环模数 `Q` 和外部 LWE 模数 `q`，二者共用整数类型 `T`。`TfheConfig` 的 `accumulator_modulus` 指定 `Q`；`external_lwe` 指定 `q`、维数、binary/ternary 分布、明文模数与加密噪声。`blind_rotation` 分解在 `Q` 下，`key_switching` 分解和独立的 key-switch 噪声在 `q` 下。`level_count: None` 保留完整分解。
 
-`TfheParameters::try_new(external_lwe, blind_rotation, ntru_key_switching)` 将外部 LWE 绑定到 `f_client` 的 binary 或 ternary 前缀，该 NTRU 秘密的其余系数为零。 `blind_rotation` 描述 `f_acc` 下的 accumulator，`ntru_key_switching` 描述返回 `f_client` 的切换。 环长度、明文模数与密文模数必须匹配，且 `1 <= external_lwe.dimension() <= N`。 构造时同时准备普通 PBS 量化，并要求旋转域 `2N` 能由 `T` 表示。
+直接构造入口是 `TfheParameters::try_new(external_lwe, blind_rotation, key_switching, key_switching_noise_standard_deviation)`。两个域须共用明文模数 `t`，`2N` 必须能由 `T` 表示；外部维数不再受 `n <= N` 限制。
 
-普通 PBS 使用固定链：`f_acc` 下 BR → NTRU 密钥切换到 `f_client` → compact LWE extraction。 没有 order 选项。后端 `context.allocate_lwe_ciphertext()` 按 `external_lwe_dimension()` 分配外部输出； 使用配套的 context/client/server key。
+`ClientKey` 保存独立 `LweSecretKey<T>` 秘密 `s` 和 `NtruSecretKey<T>` 秘密 `f`。外部秘密不再补零或执行 NTRU 可逆性筛选；只有 `f` 检查可逆性，Fourier 另检查逆的稳定性。`ClientKey::new(s, f)` 导入二者，`external_lwe_secret_key()` 返回在 `q` 下编码的 LWE 秘密；原来的 client NTRU/prefix API 已删除。配套生成使用 `context.try_generate_keys(circuit_bootstrap, rng)`。
 
-客户端秘密通过后端 `KeyGenerator::try_generate_client_key` 生成：NTT 拒绝采样检查 可逆性，Fourier 还检查逆元稳定性。生成配套密钥时优先使用 `context.try_generate_keys(circuit_bootstrap, rng)` 或 `KeyGenerator::try_generate`，复用变换后的秘密。共享 `TfheKeyError` 表达结构不兼容， `KeyGenerationError::Ntru` 保留底层 NTRU 生成/转换失败。`ClientKey::new` 导入系数秘密， 参数绑定检查声明的 binary/ternary 系数范围与零填充，可逆性由后端转换检查。
+普通 PBS 固定顺序：`f,Q` 下盲旋转 → 逐系数 `Q→q` 最近舍入 → 提取相位系数 → 在 `q` 下 LWE key switch 到 `s`。返回路径复用 `primus_ntru::NtruLweKeySwitchingKey`，在线无额外分配。ManyLUT 共享一次盲旋转，每个输出分别执行 LWE key switch；`context.allocate_lwe_ciphertext()` 按外部维数分配。
 
-经典 PBS/ManyLUT、Boolean、CBS 和 MVB 均支持 binary/ternary 客户端秘密。 在 `external_lwe` 中选择 `SecretKeyDistr` 即可，密钥与 evaluator 的构造流程相同。 Ternary 每坐标保存正负两份 NGSW，融合单步使用一次外积；`SparseTernary` 表示秘密分布， 不启用桶聚合。Native 下固定非零总重量必须为奇数，且仍需通过 Fourier 逆元筛选； 生成结果服从后端接受条件下的分布，不能直接沿用未筛选 ternary 的安全估计。
+Classic PBS/ManyLUT、Boolean、CBS、MVB 支持 binary/ternary 外部秘密。首次融合使用 NLEV，后续坐标使用 NGSW；ternary 保存正负控制对。`SparseTernary` 仅描述分布，不自动选择桶聚合。外部秘密不受环秘密的条件采样限制。
 
-[NTT](../primus_tfhe_ntru_ntt/README.zh_CN.md#实验性稀疏-pbs) 和 [Fourier](../primus_tfhe_ntru_fourier/README.zh_CN.md#实验性稀疏-pbs) 桶聚合由固定重量二元客户端 的专用 server-key 入口显式选择；Fourier 还要求奇数重量及稳定逆元。两者支持普通/ManyLUT PBS，拒绝 sparse CBS/MVB。 可逆客户端固定后才采样公开映射；匹配失败不会重采客户端。
+[NTT](../primus_tfhe_ntru_ntt/README.zh_CN.md#实验性稀疏-pbs) 和 [Fourier](../primus_tfhe_ntru_fourier/README.zh_CN.md#实验性稀疏-pbs) 的桶聚合须显式选择固定重量 binary 外部秘密，支持奇数和偶数重量。它支持普通/ManyLUT PBS，拒绝 sparse CBS/MVB。公开映射在固定外部秘密后采样，匹配失败不会重采样该秘密。
 
 ## 客户端与 LUT
 
@@ -27,13 +27,13 @@
 
 Client 加密接受 `T`，解密返回 `Result<T, ClientError>`，消息是 `[0,t)` 内的 规范剩余类，消息类型转换由应用按需处理。
 
-参数和 context 都提供 `encryptor(&client)`、`public_encryptor(&public)`、`decryptor(&client)`。家族私钥客户端构造返回 `TfheClientError`，公钥构造和普通操作返回公共 `ClientError`。通过 `client_key.try_generate_public_key(parameters, rng)` 生成 `LwePublicKey`。 这是有效前缀秘密下的外部 LWE 公钥，不是 NTRU 环公钥。解密需要 client key。 公钥生成和新鲜加密误差均使用 `external_lwe` 噪声采样器，但总误差为 `e^T r + e2 - e1^T s`。公钥存储 active prefix 对应的 `n * (n + 1)` 个系数。 维数/模数检查不能证明密钥身份；使用配套密钥，并为 PBS/ManyLUT 预算组合噪声。 噪声和秘密来源要求见 [LWE 公钥契约](../primus_lwe/README.zh_CN.md#公钥加密)。
+参数和 context 都提供 `encryptor(&client)`、`public_encryptor(&public)`、`decryptor(&client)`。家族私钥客户端构造返回 `TfheClientError`，公钥构造和普通操作返回公共 `ClientError`。通过 `client_key.try_generate_public_key(parameters, rng)` 生成 `LwePublicKey`。 这是独立外部秘密下的外部 LWE 公钥，不是 NTRU 环公钥。解密需要 client key。 公钥生成和新鲜加密误差均使用 `external_lwe` 噪声采样器，但总误差为 `e^T r + e2 - e1^T s`。公钥存储 外部维数对应的 `n * (n + 1)` 个系数。 维数/模数检查不能证明密钥身份；使用配套密钥，并为 PBS/ManyLUT 预算组合噪声。 噪声和秘密来源要求见 [LWE 公钥契约](../primus_lwe/README.zh_CN.md#公钥加密)。
 
 `encrypt`、`encrypt_padded` 和 `encrypt_centered` 均提供 `*_to(message, output, rng)`。两类密钥都可复用输出存储，消息或维数错误先于采样和写入。 参数编译的前半区 LUT 使用 padded unsigned 输入；centered 模消息有独立的编码契约。
 
 ManyLUT 编译同一个输入的多个函数。后端 sparse 示例计算 `x % 4`、`x / 4` 和 `x % 2`， 不代表已经实现完整的加密整数类型或算术系统。
 
-通过 `context.parameters().compile_*` 编译普通/交错 LUT，默认使用 `parameters.input_plaintext_codec()` 编码输出，直接用 `decrypt` 解码。 `*_with_codec_fn` / `*_with_codec_slice` 变体以显式输出 `RoundedCodec` 为第一个参数， 支持另一明文模数与相同密文模数，再用 `output_codec.decode_value(decryptor.decrypt_phase(&output)?)` 解码输出。 范围检查、raw 输出与后续 PBS 契约见[选择输出编码](../primus_tfhe/README.zh_CN.md#选择输出编码)。
+通过 `context.parameters().compile_*` 编译普通/交错 LUT。默认输出在 `Q` 下按参数的明文模数编码，返回 `q` 后用普通 `decrypt` 解码。`*_with_codec_fn` / `_slice` 接受 `Q` 下的输出 `RoundedCodec`；若输出明文模数不同，返回后用相同明文模数、外部密文模数 `q` 的 codec 解码 `decrypt_phase`。原始 LUT 值按 `q/Q` 缩放，不会重新编码；舍入和返回 key switch 的误差须纳入预算。
 
 奇数全域使用 `compile_odd_full_domain_lookup_table_fn` / `_slice`，输入改用普通 `encrypt`；输出 codec 与既有 PBS 求值入口相同。容量、折叠中心和噪声条件见 [奇数全域 PBS](../primus_tfhe/README.zh_CN.md#奇数全域-pbs)。
 

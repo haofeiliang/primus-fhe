@@ -27,11 +27,15 @@ fn parameters<T: TorusFftValue>(distr: SecretKeyDistr, dimension: usize) -> Tfhe
         SecretKeyDistr::SparseTernary,
         0.7,
     );
-    let client = NtruParameters::new(N, T::as_from(15u32), modulus, distr, 0.7);
+
     TfheParameters::try_new(
         lwe,
         NlevParameters::with_ntru_params(&acc, 8, None),
-        NlevParameters::with_ntru_params(&client, 8, None),
+        primus_tfhe_ntru::DecompositionConfig {
+            log_basis: 8,
+            level_count: None,
+        },
+        0.7,
     )
     .unwrap()
 }
@@ -55,20 +59,10 @@ where
         server_key.input_distribution(),
         context.parameters().external_lwe().secret_key_distr()
     );
-    assert!(
-        client_key.client_ntru_secret_key().as_slice()[4..]
-            .iter()
-            .all(|&v| v == T::ZERO.cast_to_signed())
-    );
+    assert_eq!(client_key.external_lwe_dimension(), 4);
     let other_distribution = if server_key.input_distribution().is_binary() {
         SecretKeyDistr::UniformTernary
     } else {
-        let prefix = client_key.external_lwe_secret_coefficients();
-        assert!(
-            prefix.contains(&-T::ONE.cast_to_signed())
-                && prefix.contains(&T::ZERO.cast_to_signed())
-                && prefix.contains(&T::ONE.cast_to_signed())
-        );
         SecretKeyDistr::UniformBinary
     };
     let incompatible =
@@ -118,11 +112,16 @@ where
         for (&mask, &secret) in input
             .a()
             .iter()
-            .zip(client_key.external_lwe_secret_coefficients())
+            .zip(client_key.external_lwe_secret_key().as_ref())
         {
-            if secret == T::ONE.cast_to_signed() {
+            if secret == T::ONE {
                 body = modulus.reduce_add(body, mask);
-            } else if secret == -T::ONE.cast_to_signed() {
+            } else if secret
+                == context
+                    .parameters()
+                    .external_lwe()
+                    .cipher_modulus_minus_one()
+            {
                 body = modulus.reduce_sub(body, mask);
             }
         }
@@ -445,13 +444,10 @@ fn check_first_controls<T: TorusFftValue, Table: FftTable>(context: TfheContext<
         T::ONE.cast_to_signed(),
         -T::ONE.cast_to_signed(),
     ] {
-        // A zero dimension-one secret is not an invertible padded NTRU key.
-        if (dimension == 1 && first == T::ZERO.cast_to_signed())
-            || (distr.is_binary() && first == -T::ONE.cast_to_signed())
-        {
+        if distr.is_binary() && first == -T::ONE.cast_to_signed() {
             continue;
         }
-        let mut coefficients = vec![T::ZERO.cast_to_signed(); N];
+        let mut coefficients = vec![T::ZERO.cast_to_signed(); dimension];
         coefficients[0] = first;
         if dimension > 1 {
             coefficients[1] = T::ONE.cast_to_signed();
@@ -460,9 +456,14 @@ fn check_first_controls<T: TorusFftValue, Table: FftTable>(context: TfheContext<
             }
         }
         let client = primus_tfhe_ntru_fourier::ClientKey::new(
-            primus_ntru::NtruSecretKey::new(coefficients, distr),
+            primus_lwe::LweSecretKey::new(
+                (coefficients)[..dimension]
+                    .iter()
+                    .map(|&s| primus_integer::SignedInteger::cast_to_unsigned(s))
+                    .collect(),
+                distr,
+            ),
             generated.accumulator_ntru_secret_key().clone(),
-            dimension,
         );
         let server = generator
             .try_generate_server_key(&client, None, &mut rng)
@@ -482,7 +483,7 @@ fn check_first_controls<T: TorusFftValue, Table: FftTable>(context: TfheContext<
             for (i, (mask, &secret)) in input
                 .a_mut()
                 .iter_mut()
-                .zip(client.external_lwe_secret_coefficients())
+                .zip(client.external_lwe_secret_key().as_ref())
                 .enumerate()
             {
                 *mask = if active & (1 << i) != 0 {
@@ -490,9 +491,14 @@ fn check_first_controls<T: TorusFftValue, Table: FftTable>(context: TfheContext<
                 } else {
                     T::ZERO
                 };
-                if secret == T::ONE.cast_to_signed() {
+                if secret == T::ONE {
                     body = modulus.reduce_add(body, *mask);
-                } else if secret == -T::ONE.cast_to_signed() {
+                } else if secret
+                    == context
+                        .parameters()
+                        .external_lwe()
+                        .cipher_modulus_minus_one()
+                {
                     body = modulus.reduce_sub(body, *mask);
                 }
             }

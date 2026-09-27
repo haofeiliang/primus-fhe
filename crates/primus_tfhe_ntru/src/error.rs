@@ -9,35 +9,18 @@ pub enum TfheParameterError {
     /// Invalid NLev/NGSW decomposition or layout for blind rotation.
     #[error("invalid NTRU bootstrapping parameters: {0}")]
     BootstrappingParameters(#[source] NlevParameterError),
-    /// Invalid NLev decomposition or layout for the NTRU key switch.
-    #[error("invalid NTRU key-switching parameters: {0}")]
-    KeySwitchingParameters(#[source] NlevParameterError),
+    /// Invalid decomposition at external q for the LWE return key.
+    #[error("invalid LWE return key-switching parameters: {0}")]
+    KeySwitchingParameters(#[source] ApproxSignedBasisError),
     /// The rotation domain `2N` cannot be represented by the input coefficient type.
     #[error("rotation domain must fit the input coefficient type")]
     RotationDomainTooLarge,
-    /// The external LWE and client NTRU distributions must be binary or ternary.
+    /// The external LWE distribution must be binary or ternary.
     #[error("NTRU TFHE requires a binary or ternary client secret-key distribution")]
     UnsupportedClientSecretKeyDistribution,
-    /// The external LWE and padded NTRU views describe different distributions.
-    #[error("the external LWE and client NTRU secret-key distributions must match")]
-    ClientSecretKeyDistributionMismatch,
-    /// The external LWE key cannot fit in one zero-padded NTRU polynomial.
-    #[error("external LWE dimension {lwe_dimension} must belong to 1..={poly_length}")]
-    InvalidLweDimension {
-        /// Configured external LWE dimension.
-        lwe_dimension: usize,
-        /// Configured NTRU polynomial length.
-        poly_length: usize,
-    },
-    /// The accumulator and key-switching rings have different lengths.
-    #[error("NTRU polynomial lengths do not match")]
-    PolynomialLengthMismatch,
     /// The LWE and NTRU plaintext spaces differ.
     #[error("LWE and NTRU plaintext moduli do not match")]
     PlainModulusMismatch,
-    /// The LWE and NTRU ciphertext rings differ.
-    #[error("LWE and NTRU ciphertext moduli do not match")]
-    CipherModulusMismatch,
 }
 
 /// An incompatibility between NTRU client keys and TFHE parameters.
@@ -46,18 +29,18 @@ pub enum TfheKeyError {
     /// At least one NTRU secret has the wrong polynomial length.
     #[error("NTRU client-key polynomial length mismatch")]
     PolynomialLengthMismatch,
-    /// The client NTRU secret was sampled from a different distribution.
+    /// The external LWE secret has a different distribution label.
     #[error("NTRU client secret-key distribution mismatch")]
     ClientSecretKeyDistributionMismatch,
-    /// An active coefficient is outside the declared binary or ternary domain.
+    /// An external LWE coefficient is outside the declared binary or ternary domain.
     #[error("NTRU TFHE client coefficients do not match their binary or ternary domain")]
     InvalidClientSecretKeyCoefficient,
-    /// The active client-key prefix has the wrong LWE dimension.
+    /// The external secret has the wrong LWE dimension.
     #[error("NTRU client key has the wrong external LWE dimension")]
     ExternalLweDimensionMismatch,
-    /// At least one coefficient after the active LWE prefix is nonzero.
-    #[error("NTRU client key has a nonzero coefficient in its padded suffix")]
-    ClientSecretKeyPaddingMismatch,
+    /// A signed accumulator coefficient cannot be represented by the return key at q.
+    #[error("accumulator secret magnitude must be less than the external LWE modulus")]
+    AccumulatorSecretOutsideLweModulus,
     /// The accumulator key distribution differs from its parameter set.
     #[error("NTRU accumulator secret-key distribution mismatch")]
     AccumulatorSecretKeyDistributionMismatch,

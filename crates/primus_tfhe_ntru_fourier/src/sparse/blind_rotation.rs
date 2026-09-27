@@ -20,7 +20,9 @@ pub(crate) struct SparseWorkspace<T: TorusFftValue> {
 }
 
 impl<T: TorusFftValue> SparseWorkspace<T> {
-    pub(crate) fn new(parameters: &TfheParameters<T>) -> Self {
+    pub(crate) fn new<LM: primus_reduce::RingContext<T>>(
+        parameters: &TfheParameters<T, LM>,
+    ) -> Self {
         Self {
             exponents: vec![0; parameters.external_lwe_dimension()],
             aggregate: vec![T::ZERO; parameters.blind_rotation().nlev_len()],

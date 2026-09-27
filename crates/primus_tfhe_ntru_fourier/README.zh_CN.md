@@ -13,17 +13,17 @@
 cargo run -p primus_tfhe_ntru_fourier --release --example ntru_fourier_basic
 ```
 
-[basic 示例](examples/ntru_fourier_basic.rs)展示参数 → context → 配对密钥 → 客户端 → 单个 LUT → 复用 evaluator 和密文缓冲。它计算 `x % 4`，输入和输出均采用 `t=16` 编码，直接用 `decrypt` 解码。 `compile_lookup_table_fn(function)` 默认使用参数 codec；需要不同输出明文模数时，使用 `compile_lookup_table_with_codec_fn(&output_codec, function)`，见[选择输出编码](../primus_tfhe/README.zh_CN.md#选择输出编码)。 公钥加密通过 `context.public_encryptor(&public)` 创建客户端，见[家族说明](../primus_tfhe_ntru/README.zh_CN.md#客户端与-lut)。
+[basic 示例](examples/ntru_fourier_basic.rs)展示参数 → context → 配对密钥 → 客户端 → 单个 LUT → 复用 evaluator 和密文缓冲。它计算 `x % 4`，输入和输出均采用 `t=16` 编码，直接用 `decrypt` 解码。 `compile_lookup_table_fn(function)` 默认使用参数 codec；需要不同输出明文模数时，使用 `compile_lookup_table_with_codec_fn(&output_codec, function)`，见[选择输出编码](../primus_tfhe/README.zh_CN.md#选择输出编码)。 公钥加密通过 `context.public_encryptor(&public)` 创建客户端，见[家族说明](../primus_tfhe_ntru/README.zh_CN.md#客户端与-lut)。 示例的外部 `q=2^20` 与环 `Q` 不同，LUT 编译在 `Q` 下，返回 LWE 在 `q` 下。
 
 示例区分客户端加密、服务端求值与客户端解密，见[双方职责与缓冲分配](../primus_tfhe/README.zh_CN.md#客户端与服务端边界)。
 
 ## 参数与表示
 
-`TfheParameters::try_from_config(TfheConfig { .. })` 检查数学配置； `TfheContext::<_, RustFftTable>::try_from_parameters(parameters)` 准备变换表。 已有表用 `TfheContext::try_new(parameters, table)` 绑定。 `TfheConfig`、`TfheParameters`、`Encryptor` 和 `Decryptor` 将家族 API 特化为 `NativeModulus`。
+`TfheParameters::try_from_config(TfheConfig { .. })` 检查数学配置； `TfheContext::<_, RustFftTable>::try_from_parameters(parameters)` 准备变换表。 已有表用 `TfheContext::try_new(parameters, table)` 绑定。 `TfheConfig`、`TfheParameters`、`Encryptor` 和 `Decryptor` 将家族 API 特化为 `NativeModulus`。 `TfheParameters<T, LM>` / `TfheContext<T, Table, LM>` 的 `LM` 指定独立外部模数类型（默认沿用后端模数类型）；`accumulator_modulus` 指定环 `Q`。
 
 `RustFftTable` 和 `TfheFftTable` 均支持 u32/u64。变换域密钥、数据和 evaluator 必须使用同一个 FFT 表实例，长度相同不能证明表示一致。
 
-PBS 顺序固定：在 `f_acc` 下加密初始化和 BR，然后返回 KS，再在 `f_client` 下紧凑提取。 Binary/ternary 客户端秘密须通过可逆性筛选，Fourier 还检查逆的数值稳定性。
+PBS 在 `f,Q` 下首次融合和盲旋转，再逐系数 `Q→q`、提取相位系数并执行 LWE key switch，返回独立外部秘密 `s`。只有环秘密 `f` 做可逆性筛选，Fourier 还检查其逆的稳定性。ManyLUT 共享盲旋转，每个输出分别执行 LWE key switch。外部 binary/ternary 秘密无需补零、可逆性筛选或奇数重量。
 
 Classic binary/ternary BR 将首次 CMux 与公开 LUT 提升融合：第零坐标使用 NLEV 比特控制，后续坐标使用 NGSW。旋转后的 LUT 只分解一次，与 `I + (R-1)B+ + (R^-1-1)B-` 做外积；binary 省略 `B-`。首指数为零仍通过 `I=NLEV[1]` 提升。普通 PBS、ManyLUT、MVB 和 CBS 共用此路径。BR basis 必须能分辨 LUT 的有效尺度，包括 CBS 输出的最小 gadget 权重；参数形状检查不认证该数值预算。
 
@@ -35,7 +35,7 @@ Classic binary/ternary BR 将首次 CMux 与公开 LUT 提升融合：第零坐�
 
 ## 固定尺度分解式 MVB
 
-`context.compile_factorized_lookup_table_fn(&scaled_codec, input_domain_len, output_count, function)` 返回绑定该 context 实例的 `FourierFactorizedLookupTable`。 构造并复用 `FactorizedEvaluator`，或消费已有普通 evaluator。 输出用保留的 unsigned Scaled codec 解码，不能直接当作 Boolean 门输入。
+`context.compile_factorized_lookup_table_fn(&scaled_codec, input_domain_len, output_count, function)` 返回绑定该 context 实例的 `FourierFactorizedLookupTable`。 构造并复用 `FactorizedEvaluator`，或消费已有普通 evaluator。 输出用保留的 unsigned Scaled codec 解码，不能直接当作 Boolean 门输入。 `ScaledCodec` 的编译模数为 `Q`；返回输出使用缩放后的尺度 `(q/Q)*round(Q/t_out)`，用 `q` 下相同明文模数的 Scaled codec 解码，并预算其与 `round(q/t_out)` 的差及返回噪声。
 
 实际尺度 `round(2^BITS/t_out)` 必须为偶数，`t_out=10` 对 u32/u64 均可用。 奇数尺度返回 `LookupTableError::OddFactorizationScale`。因子按有符号整数变换，不作环面缩放； 须预算因子放大和 FFT 误差。
 
@@ -58,7 +58,7 @@ let mut evaluator = context.evaluator(&server)?;
 
 首桶存储 NLEV selectors 和 NLEV dummy，按单项式加权聚合后直接提升旋转后的公开 LUT；后续桶聚合 NGSW 控制。首桶公开为空、未占用或指数为零时，仍处理 dummy 和加密零，不再单独生成稀疏初始化器。`first_bucket()` 返回首桶 NLEV 控制；`ngsw_bucket(j)` 仅接受 `j >= 1`，返回 NGSW 控制；两者均将 dummy 放在末尾。在线计算复用聚合与外积缓冲，不额外分配。
 
-Native 要求 **h 为奇数**，且 Fourier 逆稳定；系数恢复和聚合 FFT 另引入数值误差。
+外部秘密允许偶数重量。只有环秘密需要可逆且 Fourier 逆稳定；系数恢复和聚合 FFT 另引入数值误差。
 
 固定客户端后最多重试八张公开映射，不重新采样客户端秘密。 每个桶的加密零与 dummy 都贡献噪声；匹配成功不代表安全或完整失败概率得到认证。 见[稀疏旋转不变量](../primus_tfhe/IMPLEMENTATION.md#ternary-and-sparse-rotation)和[message/carry 示例](examples/ntru_fourier_sparse.rs)。
 

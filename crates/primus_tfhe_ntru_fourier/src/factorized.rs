@@ -15,15 +15,22 @@ use crate::{ServerKey, TfheContext, TfheEvaluationError};
 /// transforms of signed integers, without torus scaling. Their coefficient
 /// storage is discarded after preparation. Context identity protects the FFT
 /// layout and ordering, which polynomial length alone cannot establish.
-pub struct FourierFactorizedLookupTable<'a, T: TorusFftValue, Table: FftTable> {
-    context: &'a TfheContext<T, Table>,
+pub struct FourierFactorizedLookupTable<
+    'a,
+    T: TorusFftValue,
+    Table: FftTable,
+    LM: primus_reduce::RingContext<T> = NativeModulus<T>,
+> {
+    context: &'a TfheContext<T, Table, LM>,
     common_polynomial: PolynomialOwned<T>,
     factors: Vec<Complex64>,
     input_domain_len: usize,
     output_plaintext_modulus: T,
 }
 
-impl<'a, T: TorusFftValue, Table: FftTable> FourierFactorizedLookupTable<'a, T, Table> {
+impl<'a, T: TorusFftValue, Table: FftTable, LM: primus_reduce::RingContext<T>>
+    FourierFactorizedLookupTable<'a, T, Table, LM>
+{
     /// Consumes a compatible Native coefficient program and transforms its factors.
     ///
     /// Uses the signed lifts of the factor residues. Floating-point conversion,
@@ -35,7 +42,10 @@ impl<'a, T: TorusFftValue, Table: FftTable> FourierFactorizedLookupTable<'a, T, 
     /// Panics before transforming unless T is u32/u64 and the program's ring
     /// length, input encoding and coefficient modulus match this context.
     #[must_use]
-    pub fn new(context: &'a TfheContext<T, Table>, lookup_table: FactorizedLookupTable<T>) -> Self {
+    pub fn new(
+        context: &'a TfheContext<T, Table, LM>,
+        lookup_table: FactorizedLookupTable<T>,
+    ) -> Self {
         assert!(
             matches!(T::BITS, 32 | 64),
             "Fourier MVB requires u32 or u64 coefficients"
@@ -92,24 +102,31 @@ impl<'a, T: TorusFftValue, Table: FftTable> FourierFactorizedLookupTable<'a, T, 
 /// Reusable workspace for Native even-scale NTRU MVB.
 ///
 /// Initializes V with `NLev[1]`, shares one blind rotation at step one, then
-/// multiplies each factor before switching to the client secret and extracting
-/// compact LWE. Extra workspace consists of two Fourier NTRU polynomials
+/// multiplies each factor before converting Q to q and switching to the external
+/// LWE secret. Extra workspace consists of two Fourier NTRU polynomials
 /// (N complex values), independent of output count. Coefficient products and
 /// key switching reuse the ordinary evaluator's buffers and key material.
-pub struct FactorizedEvaluator<'a, T: TorusFftValue, Table: FftTable> {
-    evaluator: Evaluator<'a, T, Table>,
+pub struct FactorizedEvaluator<
+    'a,
+    T: TorusFftValue,
+    Table: FftTable,
+    LM: primus_reduce::RingContext<T> = NativeModulus<T>,
+> {
+    evaluator: Evaluator<'a, T, Table, LM>,
     shared_rotation: FourierNtru<Vec<Complex64>>,
     product: FourierNtru<Vec<Complex64>>,
 }
 
-impl<'a, T: TorusFftValue, Table: FftTable> FactorizedEvaluator<'a, T, Table> {
+impl<'a, T: TorusFftValue, Table: FftTable, LM: primus_reduce::RingContext<T>>
+    FactorizedEvaluator<'a, T, Table, LM>
+{
     /// Creates workspace after checking the server key.
     /// Rejects sparse keys; sparse MVB needs a separate numerical/noise validation.
     ///
     /// # Correctness
     /// Inherits [`Evaluator::try_new`]'s Fourier table requirements.
     pub fn try_new(
-        context: &'a TfheContext<T, Table>,
+        context: &'a TfheContext<T, Table, LM>,
         server_key: &'a ServerKey<T>,
     ) -> Result<Self, TfheEvaluationError> {
         Self::try_from_bootstrapper(Evaluator::try_new(context, server_key)?)
@@ -118,7 +135,7 @@ impl<'a, T: TorusFftValue, Table: FftTable> FactorizedEvaluator<'a, T, Table> {
     /// Consumes ordinary PBS workspace and allocates only the additional MVB buffers.
     /// The underlying key, context and existing allocations are preserved.
     pub fn try_from_bootstrapper(
-        evaluator: Evaluator<'a, T, Table>,
+        evaluator: Evaluator<'a, T, Table, LM>,
     ) -> Result<Self, TfheEvaluationError> {
         if evaluator.server_key.sparse_bootstrapping_key().is_some() {
             return Err(TfheEvaluationError::UnsupportedSparseBootstrapping);
@@ -138,13 +155,13 @@ impl<'a, T: TorusFftValue, Table: FftTable> FactorizedEvaluator<'a, T, Table> {
         &mut self,
     ) -> impl primus_tfhe::ProgrammableBootstrap<T>
     + primus_tfhe::ProgrammableBootstrapInterleaved<T>
-    + use<'_, 'a, T, Table> {
+    + use<'_, 'a, T, Table, LM> {
         &mut self.evaluator
     }
 
     /// Releases the extra MVB buffers and recovers the original PBS workspace without allocation.
     #[must_use]
-    pub fn into_bootstrapper(self) -> Evaluator<'a, T, Table> {
+    pub fn into_bootstrapper(self) -> Evaluator<'a, T, Table, LM> {
         self.evaluator
     }
 
@@ -154,7 +171,7 @@ impl<'a, T: TorusFftValue, Table: FftTable> FactorizedEvaluator<'a, T, Table> {
     pub fn apply_lookup_table(
         &mut self,
         input: &LweCiphertext<T>,
-        lookup_table: &FourierFactorizedLookupTable<'_, T, Table>,
+        lookup_table: &FourierFactorizedLookupTable<'_, T, Table, LM>,
     ) -> Vec<LweCiphertext<T>> {
         let dimension = self.evaluator.context.parameters().external_lwe_dimension();
         let mut outputs = vec![LweCiphertext::zero(dimension); lookup_table.output_count()];
@@ -171,11 +188,13 @@ impl<'a, T: TorusFftValue, Table: FftTable> FactorizedEvaluator<'a, T, Table> {
     /// noise and coefficient-wise quantization must keep the rotation in that
     /// message's LUT interval. Each integer factor W amplifies both NLev
     /// initialization and BR noise. Public FFT multiplication adds phase error
-    /// `f_acc * delta_c`; each product then incurs client NTRU key-switch error.
-    /// Budget these together: the Scaled recovery condition for result y is
-    /// `abs((t*delta-q)*y + t*e) < q/2`, q=2^BITS. No noise bound is checked.
-    /// Decode output phases with the unsigned Scaled codec used to compile the
-    /// program, which may differ from the parameter input codec.
+    /// `f_acc * delta_c`; each product then incurs modulus conversion and LWE key-switch errors.
+    /// Before returning, the Scaled recovery condition is
+    /// `abs((t*delta-Q)*y + t*e) < Q/2`, Q=2^BITS. Return conversion rescales
+    /// delta by q/Q and adds rounding and key-switch errors. Decode using a
+    /// Scaled codec at external q with the same plaintext modulus; also budget
+    /// the difference between the rescaled delta and round(q/t). No noise bound
+    /// is checked.
     ///
     /// # Panics
     ///
@@ -185,7 +204,7 @@ impl<'a, T: TorusFftValue, Table: FftTable> FactorizedEvaluator<'a, T, Table> {
     pub fn apply_lookup_table_to(
         &mut self,
         input: &LweCiphertext<T>,
-        lookup_table: &FourierFactorizedLookupTable<'_, T, Table>,
+        lookup_table: &FourierFactorizedLookupTable<'_, T, Table, LM>,
         outputs: &mut [LweCiphertext<T>],
     ) {
         let evaluator = &mut self.evaluator;
@@ -216,16 +235,12 @@ impl<'a, T: TorusFftValue, Table: FftTable> FactorizedEvaluator<'a, T, Table> {
             FourierPolynomialIter::new(&lookup_table.factors, n / 2).zip(outputs)
         {
             // Preserve the shared rotation; restore each product to coefficient
-            // form in current before the ordinary NTRU key switch consumes it.
+            // form in current before the ordinary LWE return path consumes it.
             self.shared_rotation
                 .mul_fourier_polynomial_to(&factor, &mut self.product);
             self.product
                 .write_torus_form(&mut evaluator.blind_rotation.current, &mut evaluator.fft);
-            evaluator.key_switch_accumulator();
-            evaluator
-                .blind_rotation
-                .scratch
-                .extract_compact_lwe_to(output, NativeModulus::new());
+            evaluator.return_accumulator_at_to(0, output);
         }
     }
 }

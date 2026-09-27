@@ -12,7 +12,7 @@
 //! # Public-key clients
 //!
 //! [`ClientKey::try_generate_public_key`] returns an [`LwePublicKey`] under
-//! the active binary or ternary prefix of the client secret. Pass it to
+//! the independent binary or ternary external secret. Pass it to
 //! [`TfheParameters::public_encryptor`] or a backend context's `public_encryptor`; keep the paired
 //! client key for decryption.
 //!

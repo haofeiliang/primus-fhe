@@ -35,10 +35,11 @@ impl<T: TorusFftValue> CircuitBootstrapKey<T> {
     }
 }
 
-impl<T, Table> KeyGenerator<'_, T, Table>
+impl<T, Table, LM> KeyGenerator<'_, T, Table, LM>
 where
     T: TorusFftValue,
     Table: FftTable,
+    LM: primus_reduce::RingContext<T>,
 {
     /// Generates the optional trace and scheme-switch keys for a compatible client.
     ///

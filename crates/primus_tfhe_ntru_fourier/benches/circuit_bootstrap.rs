@@ -44,13 +44,7 @@ fn backend<T: TorusFftValue, Table: FftTable>(
         SecretKeyDistr::SparseTernary,
         0.7,
     );
-    let client_params = NtruParameters::new(
-        N,
-        T::as_from(4u32),
-        modulus,
-        SecretKeyDistr::UniformBinary,
-        0.7,
-    );
+
     let parameters = TfheParameters::try_new(
         LweParameters::new(
             DIMENSION,
@@ -60,7 +54,11 @@ fn backend<T: TorusFftValue, Table: FftTable>(
             0.7,
         ),
         NlevParameters::with_ntru_params(&acc, log_basis, None),
-        NlevParameters::with_ntru_params(&client_params, log_basis, None),
+        primus_tfhe_ntru::DecompositionConfig {
+            log_basis,
+            level_count: None,
+        },
+        0.7,
     )
     .unwrap();
     let cbs = CircuitBootstrapParameters::try_new(

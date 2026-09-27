@@ -16,12 +16,13 @@ use primus_poly::Polynomial;
 /// Ciphertexts use coefficient representation and the accumulator secret, which
 /// differs from the external LWE domain used by [`crate::Encryptor`].
 /// Construction prepares all buffers; `encrypt_to` and `decrypt_to` do not allocate.
-pub struct AccumulatorClient<'a, T, Table>
+pub struct AccumulatorClient<'a, T, Table, LM = primus_modulus::NativeModulus<T>>
 where
     T: TorusFftValue,
     Table: FftTable,
+    LM: primus_reduce::RingContext<T>,
 {
-    context: &'a TfheContext<T, Table>,
+    context: &'a TfheContext<T, Table, LM>,
     secret: FourierNtruSecretKey,
     transformed: FourierNtruCiphertext<Vec<Complex64>>,
     fft: FftEngine<'a, Table>,
@@ -29,15 +30,16 @@ where
     decrypt: FourierNtruDecryptContext,
 }
 
-impl<'a, T, Table> AccumulatorClient<'a, T, Table>
+impl<'a, T, Table, LM> AccumulatorClient<'a, T, Table, LM>
 where
     T: TorusFftValue,
     Table: FftTable,
+    LM: primus_reduce::RingContext<T>,
 {
     /// Validates the client key and prepares its accumulator representation once.
     /// Returns NTRU conversion failures, including a noninvertible secret.
     pub fn try_new(
-        context: &'a TfheContext<T, Table>,
+        context: &'a TfheContext<T, Table, LM>,
         client_key: &ClientKey<T>,
     ) -> Result<Self, TfheClientError> {
         client_key.check_compatible(context.parameters())?;

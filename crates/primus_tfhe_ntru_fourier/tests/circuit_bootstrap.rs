@@ -21,16 +21,26 @@ const N: usize = 256;
 
 fn circuit_bootstrap<Table: FftTable>(distr: SecretKeyDistr) {
     let modulus = NativeModulus::<u64>::new();
-    let lwe = LweParameters::new(16, 4, modulus, distr, 0.7);
+    let lwe = LweParameters::new(
+        16,
+        4,
+        primus_modulus::BarrettModulus::new(1u64 << 24),
+        distr,
+        0.7,
+    );
     let accumulator = NtruParameters::new(N, 4, modulus, SecretKeyDistr::SparseTernary, 0.7);
-    let client = NtruParameters::new(N, 4, modulus, distr, 0.7);
+
     let tfhe = TfheParameters::try_new(
         lwe,
         NlevParameters::with_ntru_params(&accumulator, 10, None),
-        NlevParameters::with_ntru_params(&client, 10, None),
+        primus_tfhe_ntru::DecompositionConfig {
+            log_basis: 10,
+            level_count: None,
+        },
+        0.7,
     )
     .unwrap();
-    let context = TfheContext::<_, Table>::try_from_parameters(tfhe).unwrap();
+    let context = TfheContext::<_, Table, _>::try_from_parameters(tfhe).unwrap();
     let mut rng = StdRng::seed_from_u64(0x004e_5454_5f43_4253);
     // Three gadget levels exercise multiple scales and an internal padding slot.
     let levels = 3;
@@ -206,11 +216,15 @@ fn circuit_parameters_check_capacity_ring_and_basis_domain() {
     use primus_tfhe_ntru_fourier::CircuitBootstrapParameterError as Error;
     let modulus = NativeModulus::<u64>::new();
     let acc = NtruParameters::new(N, N as u64, modulus, SecretKeyDistr::SparseTernary, 0.7);
-    let client = NtruParameters::new(N, N as u64, modulus, SecretKeyDistr::UniformBinary, 0.7);
+
     let tfhe = TfheParameters::try_new(
         LweParameters::new(16, N as u64, modulus, SecretKeyDistr::UniformBinary, 0.7),
         NlevParameters::with_ntru_params(&acc, 10, None),
-        NlevParameters::with_ntru_params(&client, 10, None),
+        primus_tfhe_ntru::DecompositionConfig {
+            log_basis: 10,
+            level_count: None,
+        },
+        0.7,
     )
     .unwrap();
     let config = CircuitBootstrapConfig {

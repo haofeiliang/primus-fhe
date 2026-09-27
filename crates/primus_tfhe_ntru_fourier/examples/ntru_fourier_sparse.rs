@@ -22,7 +22,7 @@ fn run<Table: FftTable>() {
     // Public agreement: outputs use t=8 while the input uses t=16.
     let output_codec = RoundedCodec::new(8, context.parameters().external_lwe().cipher_modulus());
 
-    // Client setup: map retries keep the same invertible client secret.
+    // Client setup: map retries keep the same external LWE secret.
     let mut rng = StdRng::seed_from_u64(0xB803);
     let mut generator = KeyGenerator::new(&context);
     let client_key = generator.try_generate_client_key(&mut rng).unwrap();
@@ -62,6 +62,7 @@ fn parameters() -> TfheParameters<u32> {
         level_count: None,
     };
     TfheParameters::try_from_config(TfheConfig {
+        accumulator_modulus: modulus,
         external_lwe: LweParameters::new(
             DIMENSION,
             16,

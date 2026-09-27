@@ -4,12 +4,12 @@
 
 use primus_fft::RustFftTable;
 use primus_lwe::LweParameters;
-use primus_modulus::NativeModulus;
+use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntru::SecretKeyDistr;
 use primus_tfhe_ntru_fourier::{DecompositionConfig, TfheConfig, TfheContext, TfheParameters};
 
 fn main() {
-    let context = TfheContext::<_, RustFftTable>::try_from_parameters(parameters()).unwrap();
+    let context = TfheContext::<_, RustFftTable, _>::try_from_parameters(parameters()).unwrap();
     // Client setup: keep client_key local and give server_key to the server.
     let mut rng = rand::rng();
     let (client_key, server_key) = context.try_generate_keys(None, &mut rng).unwrap();
@@ -18,7 +18,7 @@ fn main() {
     let mut input = context.allocate_lwe_ciphertext();
 
     // Server setup: public parameters, evaluation key, LUT and reusable output.
-    // Input t=16 programs 0..8; outputs keep the same encoding.
+    // Input t=16 programs 0..8; the LUT is at Q and the returned LWE is at q=2^20.
     let lut = context
         .parameters()
         .compile_lookup_table_fn(|x| (x % 4) as u32)
@@ -42,18 +42,19 @@ fn main() {
     println!("NTRU/Fourier: ordinary PBS with reused storage succeeded");
 }
 
-fn parameters() -> TfheParameters<u32> {
+fn parameters() -> TfheParameters<u32, BarrettModulus<u32>> {
     const N: usize = 256;
     const LWE_DIMENSION: usize = 8;
     let modulus = NativeModulus::new();
     let external_lwe = LweParameters::new(
         LWE_DIMENSION,
         16,
-        modulus,
+        BarrettModulus::new(1 << 20),
         SecretKeyDistr::UniformTernary,
         0.7,
     );
     TfheParameters::try_from_config(TfheConfig {
+        accumulator_modulus: modulus,
         external_lwe,
         poly_length: N,
         accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,
@@ -64,7 +65,7 @@ fn parameters() -> TfheParameters<u32> {
         },
         key_switching: DecompositionConfig {
             log_basis: 8,
-            level_count: Some(4),
+            level_count: None,
         },
         key_switching_noise_standard_deviation: 0.7,
     })

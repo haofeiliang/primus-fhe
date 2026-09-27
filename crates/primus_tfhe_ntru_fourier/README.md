@@ -13,17 +13,17 @@ NTRU-based TFHE with the native torus. Start with the [task and encoding guide](
 cargo run -p primus_tfhe_ntru_fourier --release --example ntru_fourier_basic
 ```
 
-The [basic example](examples/ntru_fourier_basic.rs) shows parameters → context → paired keys → clients → one compiled LUT → reused evaluator and ciphertext buffers. It computes `x % 4`, keeping `t=16` encoding for both input and output, and decodes with `decrypt`. `compile_lookup_table_fn(function)` defaults to the parameter codec. For a different output plaintext modulus, use `compile_lookup_table_with_codec_fn(&output_codec, function)`; see [choosing the output encoding](../primus_tfhe/README.md#choosing-the-output-encoding). Public-key encryption starts with `context.public_encryptor(&public)`; see the [family guide](../primus_tfhe_ntru/README.md#clients-and-luts).
+The [basic example](examples/ntru_fourier_basic.rs) shows parameters → context → paired keys → clients → one compiled LUT → reused evaluator and ciphertext buffers. It computes `x % 4`, keeping `t=16` encoding for both input and output, and decodes with `decrypt`. `compile_lookup_table_fn(function)` defaults to the parameter codec. For a different output plaintext modulus, use `compile_lookup_table_with_codec_fn(&output_codec, function)`; see [choosing the output encoding](../primus_tfhe/README.md#choosing-the-output-encoding). Public-key encryption starts with `context.public_encryptor(&public)`; see the [family guide](../primus_tfhe_ntru/README.md#clients-and-luts). The example uses external `q=2^20`, distinct from ring `Q`: LUT compilation is at `Q` and the returned LWE is at `q`.
 
 Examples separate client encryption, server evaluation and client decryption; see [client/server roles and buffer allocation](../primus_tfhe/README.md#client-and-server-roles).
 
 ## Parameters and representation
 
-`TfheParameters::try_from_config(TfheConfig { .. })` checks mathematical choices; `TfheContext::<_, RustFftTable>::try_from_parameters(parameters)` prepares the transform table. Use `TfheContext::try_new(parameters, table)` to bind an existing table. `TfheConfig`, `TfheParameters`, `Encryptor` and `Decryptor` specialize the family API to `NativeModulus`.
+`TfheParameters::try_from_config(TfheConfig { .. })` checks mathematical choices; `TfheContext::<_, RustFftTable>::try_from_parameters(parameters)` prepares the transform table. Use `TfheContext::try_new(parameters, table)` to bind an existing table. `TfheConfig`, `TfheParameters`, `Encryptor` and `Decryptor` specialize the family API to `NativeModulus`. `LM` in `TfheParameters<T, LM>` / `TfheContext<T, Table, LM>` selects the independent external modulus type, defaulting to the backend modulus type. `accumulator_modulus` supplies ring `Q`.
 
 Both `RustFftTable` and `TfheFftTable` support u32/u64. Keys, values and evaluators must use the same FFT table instance; equal length does not prove representation identity.
 
-There is one PBS order: encrypted initialization and BR under `f_acc`, then return KS and compact extraction under `f_client`. Binary/ternary client secrets must pass invertibility screening; Fourier additionally screens inverse stability.
+PBS performs fused lifting and blind rotation under `f,Q`, then coefficient-wise `Q→q`, phase extraction and LWE key switching to independent external secret `s`. Only ring secret `f` is screened for invertibility and, for Fourier, inverse stability. ManyLUT shares blind rotation with one LWE key switch per output. External binary/ternary secrets need no padding, invertibility screening or odd-weight restriction.
 
 Classic binary/ternary BR fuses the first CMux with public-LUT lifting: coordinate zero uses NLEV bit controls, later coordinates use NGSW. It decomposes the rotated LUT once against `I + (R-1)B+ + (R^-1-1)B-`, omitting `B-` for binary. A zero first exponent still lifts with `I=NLEV[1]`. Ordinary PBS, ManyLUT, MVB and CBS share this path. The BR basis must resolve the programmed LUT scale, including the smallest CBS output gadget weight; parameter shape checks do not certify this numerical budget.
 
@@ -35,7 +35,7 @@ Use `FactorizedEvaluator::try_from_bootstrapper` or `CircuitBootstrapEvaluator::
 
 ## Fixed-scale factorized MVB
 
-`context.compile_factorized_lookup_table_fn(&scaled_codec, input_domain_len, output_count, function)` returns `FourierFactorizedLookupTable`, bound to that context instance. Bind a `FactorizedEvaluator` once, or consume an existing ordinary evaluator. Keep the unsigned Scaled codec for decoding; the result is not automatically a Boolean gate input.
+`context.compile_factorized_lookup_table_fn(&scaled_codec, input_domain_len, output_count, function)` returns `FourierFactorizedLookupTable`, bound to that context instance. Bind a `FactorizedEvaluator` once, or consume an existing ordinary evaluator. Keep the unsigned Scaled codec for decoding; the result is not automatically a Boolean gate input. Compile with a `ScaledCodec` at `Q`; the returned scale is `(q/Q)*round(Q/t_out)`. Decode with a Scaled codec at `q` and the same plaintext modulus, budgeting its difference from `round(q/t_out)` and return noise.
 
 The actual scale `round(2^BITS/t_out)` must be even (`t_out=10` works for u32/u64). Odd scales return `LookupTableError::OddFactorizationScale`. Factors are transformed as signed integers without torus scaling; budget their amplification and FFT error.
 
@@ -58,7 +58,7 @@ Ordinary/interleaved PBS use the same evaluator. CBS/MVB reject sparse keys, inc
 
 Bucket zero stores NLEV selectors and a NLEV dummy. Their monomial-weighted sum lifts the public rotated LUT directly; later buckets aggregate NGSW controls. Empty or unoccupied first buckets and zero exponents still process the dummy and encrypted zeros. There is no separate sparse initializer. `first_bucket()` exposes the first NLEV controls; `ngsw_bucket(j)` accepts only `j >= 1` and exposes NGSW controls. Both include the dummy last. Online evaluation reuses the aggregate and external-product buffers without allocation.
 
-Native requires **odd h** and a stable Fourier inverse. Coefficient recovery and aggregate FFTs add numerical error.
+Even external weight is supported. Only the ring secret requires invertibility and a stable Fourier inverse; coefficient recovery and aggregate FFTs add numerical error.
 
 Matching retries at most eight public maps with the fixed client; it never resamples the client. Every bucket, including encrypted zeros and dummies, contributes noise. Successful matching does not certify security or a complete failure bound. See [sparse rotation invariants](../primus_tfhe/IMPLEMENTATION.md#ternary-and-sparse-rotation) and the [message/carry example](examples/ntru_fourier_sparse.rs).
 

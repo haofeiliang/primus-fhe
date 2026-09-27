@@ -60,6 +60,7 @@ fn parameters() -> TfheParameters<u32> {
     const DIMENSION: usize = 728;
     let modulus = NativeModulus::new();
     TfheParameters::try_from_config(TfheConfig {
+        accumulator_modulus: modulus,
         external_lwe: LweParameters::new(
             DIMENSION,
             128,

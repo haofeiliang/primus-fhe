@@ -22,6 +22,7 @@ const DOMAIN: usize = 8;
 
 fn context<T: TorusFftValue, Table: FftTable>(distr: SecretKeyDistr) -> TfheContext<T, Table> {
     let parameters = TfheParameters::try_from_config(TfheConfig {
+        accumulator_modulus: NativeModulus::new(),
         external_lwe: LweParameters::new(
             DIM,
             T::as_from(15usize),

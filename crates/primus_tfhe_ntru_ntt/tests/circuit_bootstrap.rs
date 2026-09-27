@@ -22,13 +22,23 @@ const Q: u64 = 1_125_899_906_826_241;
 
 fn circuit_bootstrap(distr: SecretKeyDistr) {
     let modulus = BarrettModulus::new(Q);
-    let lwe = LweParameters::new(16, 4, modulus, distr, 0.7);
+    let lwe = LweParameters::new(
+        16,
+        4,
+        primus_modulus::BarrettModulus::new(1u64 << 24),
+        distr,
+        0.7,
+    );
     let accumulator = NtruParameters::new(N, 4, modulus, SecretKeyDistr::SparseTernary, 0.7);
-    let client = NtruParameters::new(N, 4, modulus, distr, 0.7);
+
     let tfhe = TfheParameters::try_new(
         lwe,
         NlevParameters::with_ntru_params(&accumulator, 10, None),
-        NlevParameters::with_ntru_params(&client, 10, None),
+        primus_tfhe_ntru::DecompositionConfig {
+            log_basis: 10,
+            level_count: None,
+        },
+        0.7,
     )
     .unwrap();
     let context = TfheContext::<_, U64NttTable>::try_from_parameters(tfhe).unwrap();
@@ -227,11 +237,15 @@ fn circuit_parameters_check_capacity_ring_and_basis_domain() {
     let modulus = BarrettModulus::new(Q);
     let make = |plain| {
         let acc = NtruParameters::new(N, plain, modulus, SecretKeyDistr::SparseTernary, 0.7);
-        let client = NtruParameters::new(N, plain, modulus, SecretKeyDistr::UniformBinary, 0.7);
+
         TfheParameters::try_new(
             LweParameters::new(16, plain, modulus, SecretKeyDistr::UniformBinary, 0.7),
             NlevParameters::with_ntru_params(&acc, 10, None),
-            NlevParameters::with_ntru_params(&client, 10, None),
+            primus_tfhe_ntru::DecompositionConfig {
+                log_basis: 10,
+                level_count: None,
+            },
+            0.7,
         )
         .unwrap()
     };

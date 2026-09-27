@@ -37,8 +37,8 @@ impl<T: FheUint, M: RingContext<T>> CircuitBootstrapParameters<T, M> {
     /// # Panics
     ///
     /// Inherits [`primus_ntru::NtruParameters::new`]'s noise sampler requirements.
-    pub fn try_from_config(
-        tfhe: &TfheParameters<T, M>,
+    pub fn try_from_config<LM: RingContext<T>>(
+        tfhe: &TfheParameters<T, M, LM>,
         config: CircuitBootstrapConfig,
     ) -> Result<Self, CircuitBootstrapParameterError> {
         let accumulator = tfhe.accumulator_ntru();
@@ -71,8 +71,8 @@ impl<T: FheUint, M: RingContext<T>> CircuitBootstrapParameters<T, M> {
 
     /// Checks the accumulator ring, modulus and capacity for the input domain.
     /// The output layout is derived from the TFHE accumulator and `output_basis`.
-    pub fn try_new(
-        tfhe: &TfheParameters<T, M>,
+    pub fn try_new<LM: RingContext<T>>(
+        tfhe: &TfheParameters<T, M, LM>,
         output_basis: ApproxSignedBasis<T>,
         trace: NlevParameters<T, M>,
         scheme_switch: NlevParameters<T, M>,
@@ -159,7 +159,7 @@ impl<T: FheUint, M: RingContext<T>> CircuitBootstrapParameters<T, M> {
     /// Checks the accumulator ring, modulus and input plaintext domain.
     /// This does not establish noise margins or secret/transform identity.
     #[must_use]
-    pub fn is_compatible(&self, tfhe: &TfheParameters<T, M>) -> bool {
+    pub fn is_compatible<LM: RingContext<T>>(&self, tfhe: &TfheParameters<T, M, LM>) -> bool {
         self.input_plain_modulus == tfhe.plain_modulus_value()
             && self.poly_length == tfhe.poly_length()
             && self.output_basis.modulus() == tfhe.accumulator_ntru().cipher_modulus_value()

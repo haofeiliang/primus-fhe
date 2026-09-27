@@ -1,6 +1,5 @@
-use num_traits::{ConstOne, ConstZero};
 use primus_encoding::{PlaintextEmbedding, RoundedCodec};
-use primus_integer::{AsInto, FheUint};
+use primus_integer::FheUint;
 use primus_lwe::{LweCiphertext, LweParameters};
 use primus_modulus::BarrettModulus;
 use primus_ntru::{NlevParameters, NtruParameters, SecretKeyDistr};
@@ -22,7 +21,7 @@ fn context<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
 ) -> TfheContext<T, Table> {
     let modulus = BarrettModulus::new(q);
     let lwe = LweParameters::new(DIM, T::as_from(16usize), modulus, distr, 0.7);
-    let client = NtruParameters::new(N, T::as_from(16usize), modulus, distr, 0.7);
+
     let acc = NtruParameters::new(
         N,
         T::as_from(16usize),
@@ -34,15 +33,19 @@ fn context<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
         TfheParameters::try_new(
             lwe,
             NlevParameters::with_ntru_params(&acc, 8, None),
-            NlevParameters::with_ntru_params(&client, 8, None),
+            primus_tfhe_ntru::DecompositionConfig {
+                log_basis: 8,
+                level_count: None,
+            },
+            0.7,
         )
         .unwrap(),
     )
     .unwrap()
 }
 
-// Independent LWE phase under the original signed prefix; no backend decryption.
-fn phase<T: FheUint>(cipher: &LweCiphertext<T>, secret: &[T::SignedInteger], q: i128) -> i128 {
+// Independent LWE phase under the binary external secret; no backend decryption.
+fn phase<T: FheUint>(cipher: &LweCiphertext<T>, secret: &[T], q: i128) -> i128 {
     let body: i128 = cipher.b().as_into();
     (body
         - cipher
@@ -65,15 +68,14 @@ fn check_complete<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T, weight:
     let mut client = generator.try_generate_client_key(&mut rng).unwrap();
     if weight == 1 {
         // A known monomial client fixes support independently of backend/keygen RNG.
-        let mut coefficients = vec![T::SignedInteger::ZERO; N];
-        coefficients[0] = T::SignedInteger::ONE;
-        client = primus_tfhe_ntru_ntt::ClientKey::new(
-            primus_ntru::NtruSecretKey::new(
+        let mut coefficients = vec![T::ZERO; DIM];
+        coefficients[0] = T::ONE;
+        client = primus_tfhe_ntru::ClientKey::new(
+            primus_lwe::LweSecretKey::new(
                 coefficients,
                 context.parameters().external_lwe().secret_key_distr(),
             ),
             client.accumulator_ntru_secret_key().clone(),
-            DIM,
         );
     }
     let classic_key = generator
@@ -157,7 +159,7 @@ fn check_complete<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T, weight:
                 assert_eq!(
                     codec.decode_value(T::as_from(phase(
                         cipher,
-                        client.external_lwe_secret_coefficients(),
+                        client.external_lwe_secret_key().as_ref(),
                         q_wide
                     ))),
                     value(message, 0)
@@ -169,13 +171,14 @@ fn check_complete<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T, weight:
             // Derive the complete public rotation from quantized mask/body and original secret.
             let quantizer = RotationQuantizer::new(modulus, 2 * N, many.padded_output_count());
             let exponent = client
-                .external_lwe_secret_coefficients()
+                .external_lwe_secret_key()
+                .as_ref()
                 .iter()
                 .zip(input.a())
                 .fold(
                     (2 * N - quantizer.exponent(input.b())) % (2 * N),
                     |e, (&s, &a)| {
-                        if s == T::SignedInteger::ONE {
+                        if s == T::ONE {
                             (e + quantizer.exponent(a)) % (2 * N)
                         } else {
                             e
@@ -186,7 +189,7 @@ fn check_complete<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T, weight:
                 let source = (i + 2 * N - exponent) % (2 * N);
                 let target: i128 = many.polynomial().as_ref()[source % N].as_into();
                 let target = if source < N { target } else { -target }.rem_euclid(q_wide);
-                let actual = phase(cipher, client.external_lwe_secret_coefficients(), q_wide);
+                let actual = phase(cipher, client.external_lwe_secret_key().as_ref(), q_wide);
                 let difference = (actual - target).rem_euclid(q_wide);
                 assert!(difference.min(q_wide - difference) < q_wide / 64);
                 assert_eq!(codec.decode_value(T::as_from(actual)), value(message, i));
@@ -248,13 +251,12 @@ fn sparse_generation_boundaries_and_unsupported_combinations() {
     ] {
         let context = context::<u32, U32NttTable>(132_120_577, distr);
         let mut secret = vec![0; N];
-        secret[..weight].fill(i32::ONE);
+        secret[..weight].fill(1u32);
         let mut acc = vec![0; N];
         acc[0] = 1;
         let client = ClientKey::new(
-            NtruSecretKey::new(secret, distr),
+            primus_lwe::LweSecretKey::new(secret[..DIM].to_vec(), distr),
             NtruSecretKey::new(acc, SecretKeyDistr::SparseTernary),
-            DIM,
         );
         rng = StdRng::seed_from_u64(0xBAD);
         let mut untouched = StdRng::seed_from_u64(0xBAD);
@@ -296,9 +298,8 @@ fn sparse_generation_boundaries_and_unsupported_combinations() {
         assert_eq!(rng.next_u64(), untouched.next_u64());
     }
     let noninvertible = ClientKey::new(
-        client.client_ntru_secret_key().clone(),
+        client.external_lwe_secret_key().clone(),
         NtruSecretKey::new(vec![0; N], SecretKeyDistr::SparseTernary),
-        DIM,
     );
     rng = StdRng::seed_from_u64(0xBAD);
     let mut untouched = StdRng::seed_from_u64(0xBAD);

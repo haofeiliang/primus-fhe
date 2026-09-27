@@ -1,6 +1,5 @@
 //! Sparse key selection semantics and independent NLev/bucket error budgets.
 
-use num_traits::{ConstOne, ConstZero};
 use primus_integer::{AsInto, FheUint};
 use primus_lwe::LweParameters;
 use primus_modulus::BarrettModulus;
@@ -70,30 +69,24 @@ fn check_bucket<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T, level_cou
     let q_wide: i128 = q.as_into();
     let modulus = BarrettModulus::new(q);
     let ntt = Table::new(N.trailing_zeros(), modulus).unwrap();
-    let client_params = NtruParameters::new(
-        N,
+    let client_params = LweParameters::new(
+        DIM,
         T::as_from(16usize),
         modulus,
         SecretKeyDistr::fixed_hamming_weight_binary(DIM, WEIGHT),
         0.7,
     );
     let mut rng = StdRng::seed_from_u64(0xB801);
-    // An even weight is valid for this odd-q NTT ring. Rejection never edits a bit.
-    let (client, _) =
-        NttNtruSecretKey::generate_padded_pair(&client_params, DIM, &ntt, &mut rng).unwrap();
+    let client = primus_lwe::LweSecretKey::generate(&client_params, &mut rng);
     let nonzero_indices = Zeroizing::new(
-        client.as_slice()[..DIM]
+        client
+            .as_ref()
             .iter()
             .enumerate()
-            .filter_map(|(i, &bit)| (bit == T::SignedInteger::ONE).then_some(i))
+            .filter_map(|(i, &bit)| (bit == T::ONE).then_some(i))
             .collect::<Vec<_>>(),
     );
     assert_eq!(nonzero_indices.len(), WEIGHT);
-    assert!(
-        client.as_slice()[DIM..]
-            .iter()
-            .all(|&v| v == T::SignedInteger::ZERO)
-    );
 
     let params = NtruParameters::new(
         N,
@@ -113,7 +106,11 @@ fn check_bucket<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T, level_cou
                 0.7,
             ),
             gadget.clone(),
-            NlevParameters::with_ntru_params(&client_params, 8, None),
+            primus_tfhe_ntru::DecompositionConfig {
+                log_basis: 8,
+                level_count: None,
+            },
+            client_params.noise_distribution().standard_deviation(),
         )
         .unwrap(),
         ntt,
@@ -172,7 +169,7 @@ fn check_bucket<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T, level_cou
 
     // c=1,b>n guarantees publicly empty buckets as well as occupied/nonempty ones.
     for (copies, buckets) in [(3, 8), (1, DIM + 1)] {
-        let imported = ClientKey::new(client.clone(), secret.clone(), DIM);
+        let imported = ClientKey::new(client.clone(), secret.clone());
         let server = KeyGenerator::new(&context)
             .try_generate_sparse_server_key(&imported, copies, buckets, &mut rng)
             .unwrap();

@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+primus_lwe = { path = "../primus_lwe" }
 primus_encoding = { path = "../primus_encoding" }
 primus_decompose = { path = "../primus_decompose" }
 primus_data = { path = "../primus_data" }
@@ -26,7 +27,6 @@ thiserror = { workspace = true }
 primus_test_allocations = { path = "../../test-support/allocations" }
 primus_tfhe_test_support = { path = "../../test-support/tfhe" }
 criterion = { workspace = true }
-primus_lwe = { path = "../primus_lwe" }
 
 [[bench]]
 name = "pbs"

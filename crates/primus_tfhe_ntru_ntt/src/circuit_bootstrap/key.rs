@@ -36,10 +36,11 @@ impl<T: FheUint> CircuitBootstrapKey<T> {
     }
 }
 
-impl<T, Table> KeyGenerator<'_, T, Table>
+impl<T, Table, LM> KeyGenerator<'_, T, Table, LM>
 where
     T: FheUint,
     Table: MonomialNttTable<ValueT = T>,
+    LM: primus_reduce::RingContext<T>,
 {
     /// Generates the optional trace and scheme-switch keys for a compatible client.
     ///

@@ -29,18 +29,27 @@ fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
             0.7,
         ),
         NlevParameters::with_ntru_params(&ring, 8, None),
-        NlevParameters::with_ntru_params(&ring, 8, None),
+        primus_tfhe_ntru::DecompositionConfig {
+            log_basis: 8,
+            level_count: None,
+        },
+        ring.noise_distribution().standard_deviation(),
     )
     .unwrap();
     let client = ClientKey::new(
-        NtruSecretKey::new(vec![1, 0, 1, 1, 0, 0, 0, 0], SecretKeyDistr::UniformBinary),
+        primus_lwe::LweSecretKey::new(
+            (vec![1, 0, 1, 1, 0, 0, 0, 0])[..4]
+                .iter()
+                .map(|&s| primus_integer::SignedInteger::cast_to_unsigned(s))
+                .collect(),
+            SecretKeyDistr::UniformBinary,
+        ),
         NtruSecretKey::new(vec![1, 0, 0, 0, 0, 0, 0, 0], SecretKeyDistr::UniformBinary),
-        4,
     );
     let mut rng = StdRng::seed_from_u64(0x4e54_5255_504b);
     let public = client.try_generate_public_key(&params, &mut rng).unwrap();
-    assert_eq!(public.dimension(), 4); // Active prefix, not the full ring length.
-    // The external prefix uses its own LWE noise, not the accumulator's noise.
+    assert_eq!(public.dimension(), 4); // Independent external LWE dimension.
+    // External LWE encryption uses its own noise sampler.
     let lwe = params.external_lwe();
     let encoded = params
         .input_plaintext_codec()
@@ -48,7 +57,7 @@ fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
     let seed = rng.next_u64();
     let mut rng = StdRng::seed_from_u64(seed);
     let mut reference_rng = StdRng::seed_from_u64(seed);
-    let expected = client.external_lwe_secret_key().encrypt_encoded(
+    let expected = client.external_lwe_secret_key().as_view().encrypt_encoded(
         encoded,
         modulus,
         lwe.cipher_modulus_uniform_distr(),
@@ -110,9 +119,14 @@ fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
         })
     );
     let bad_client = ClientKey::new(
-        NtruSecretKey::new(vec![1, -1, 1, 1, 0, 0, 0, 0], SecretKeyDistr::UniformBinary),
+        primus_lwe::LweSecretKey::new(
+            (vec![1, -1, 1, 1, 0, 0, 0, 0])[..4]
+                .iter()
+                .map(|&s| primus_integer::SignedInteger::cast_to_unsigned(s))
+                .collect(),
+            SecretKeyDistr::UniformBinary,
+        ),
         NtruSecretKey::new(vec![1, 0, 0, 0, 0, 0, 0, 0], SecretKeyDistr::UniformBinary),
-        4,
     );
     let seed = rng.next_u64();
     let mut rng = StdRng::seed_from_u64(seed);

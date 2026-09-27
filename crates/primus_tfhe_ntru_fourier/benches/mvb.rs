@@ -1,6 +1,6 @@
 //! Equivalent Scaled threshold outputs from repeated PBS, interleaved ManyLUT
 //! (when it fits), and MVB. One iteration evaluates one input into all outputs,
-//! including NLev initialization, BR, NTRU KS and compact extraction.
+//! including NLev initialization, BR, Q-to-q conversion, extraction and LWE KS.
 //! Keys, LUTs, inputs, outputs and evaluator workspace are prepared outside timing.
 //! Native u32/u64, n=728, N=1024, binary h=33. Functional cost parameters;
 //! NTRU invertibility rejection conditions the secret.
@@ -27,6 +27,7 @@ const DIMENSION: usize = 728;
 
 fn context<T: TorusFftValue, Table: FftTable>(domain: usize) -> TfheContext<T, Table> {
     let parameters = TfheParameters::try_from_config(TfheConfig {
+        accumulator_modulus: NativeModulus::new(),
         external_lwe: LweParameters::new(
             DIMENSION,
             T::as_from(2 * domain),

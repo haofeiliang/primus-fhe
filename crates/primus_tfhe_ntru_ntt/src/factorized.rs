@@ -15,22 +15,24 @@ use crate::{ServerKey, TfheContext, TfheEvaluationError};
 /// is transformed once in place, one polynomial at a time. No coefficient-domain
 /// duplicate is retained. Context identity protects the NTT root/order
 /// convention, which cannot be inferred from the modulus and length alone.
-pub struct NttFactorizedLookupTable<'a, T, Table>
+pub struct NttFactorizedLookupTable<'a, T, Table, LM = primus_modulus::BarrettModulus<T>>
 where
     T: FheUint,
     Table: MonomialNttTable<ValueT = T>,
+    LM: primus_reduce::RingContext<T>,
 {
-    context: &'a TfheContext<T, Table>,
+    context: &'a TfheContext<T, Table, LM>,
     common_polynomial: PolynomialOwned<T>,
     factors: Vec<T>,
     input_domain_len: usize,
     output_plaintext_modulus: T,
 }
 
-impl<'a, T, Table> NttFactorizedLookupTable<'a, T, Table>
+impl<'a, T, Table, LM> NttFactorizedLookupTable<'a, T, Table, LM>
 where
     T: FheUint,
     Table: MonomialNttTable<ValueT = T>,
+    LM: primus_reduce::RingContext<T>,
 {
     /// Consumes a coefficient program and prepares its factors with `context`.
     ///
@@ -39,7 +41,10 @@ where
     /// Panics if the program's polynomial length or input/coefficient encoding
     /// does not match the context, before performing any transforms.
     #[must_use]
-    pub fn new(context: &'a TfheContext<T, Table>, lookup_table: FactorizedLookupTable<T>) -> Self {
+    pub fn new(
+        context: &'a TfheContext<T, Table, LM>,
+        lookup_table: FactorizedLookupTable<T>,
+    ) -> Self {
         let parameters = context.parameters();
         assert!(
             lookup_table.is_compatible(
@@ -88,22 +93,24 @@ where
 ///
 /// Initializes V with `NLev[1]`, shares one blind rotation at step one, then
 /// multiplies each public factor before switching from the accumulator secret
-/// to the client secret and extracting compact LWE. Only one extra NTT polynomial
+/// Q to q and switching to the external LWE secret. Only one extra NTT polynomial
 /// is allocated beyond the ordinary evaluator's workspace, regardless of the
 /// output count. Outputs use the same external secret and dimension as [`Evaluator`].
-pub struct FactorizedEvaluator<'a, T, Table>
+pub struct FactorizedEvaluator<'a, T, Table, LM = primus_modulus::BarrettModulus<T>>
 where
     T: FheUint,
     Table: MonomialNttTable<ValueT = T>,
+    LM: primus_reduce::RingContext<T>,
 {
-    evaluator: Evaluator<'a, T, Table>,
+    evaluator: Evaluator<'a, T, Table, LM>,
     shared_rotation: NttNtru<Vec<T>>,
 }
 
-impl<'a, T, Table> FactorizedEvaluator<'a, T, Table>
+impl<'a, T, Table, LM> FactorizedEvaluator<'a, T, Table, LM>
 where
     T: FheUint,
     Table: MonomialNttTable<ValueT = T>,
+    LM: primus_reduce::RingContext<T>,
 {
     /// Creates the workspace after validating the server key's parameters.
     /// Rejects sparse keys; sparse MVB requires a separate noise validation.
@@ -113,7 +120,7 @@ where
     /// The server key must use this context's NTT representation and the paired
     /// client secrets. Layout checks do not establish transform or secret identity.
     pub fn try_new(
-        context: &'a TfheContext<T, Table>,
+        context: &'a TfheContext<T, Table, LM>,
         server_key: &'a ServerKey<T>,
     ) -> Result<Self, TfheEvaluationError> {
         Self::try_from_bootstrapper(Evaluator::try_new(context, server_key)?)
@@ -122,7 +129,7 @@ where
     /// Consumes ordinary PBS workspace and allocates only the additional MVB buffers.
     /// The underlying key, context and existing allocations are preserved.
     pub fn try_from_bootstrapper(
-        evaluator: Evaluator<'a, T, Table>,
+        evaluator: Evaluator<'a, T, Table, LM>,
     ) -> Result<Self, TfheEvaluationError> {
         if evaluator.server_key.sparse_bootstrapping_key().is_some() {
             return Err(TfheEvaluationError::UnsupportedSparseBootstrapping);
@@ -141,13 +148,13 @@ where
         &mut self,
     ) -> impl primus_tfhe::ProgrammableBootstrap<T>
     + primus_tfhe::ProgrammableBootstrapInterleaved<T>
-    + use<'_, 'a, T, Table> {
+    + use<'_, 'a, T, Table, LM> {
         &mut self.evaluator
     }
 
     /// Releases the extra MVB buffers and recovers the original PBS workspace without allocation.
     #[must_use]
-    pub fn into_bootstrapper(self) -> Evaluator<'a, T, Table> {
+    pub fn into_bootstrapper(self) -> Evaluator<'a, T, Table, LM> {
         self.evaluator
     }
 
@@ -159,7 +166,7 @@ where
     pub fn apply_lookup_table(
         &mut self,
         input: &LweCiphertext<T>,
-        lookup_table: &NttFactorizedLookupTable<'_, T, Table>,
+        lookup_table: &NttFactorizedLookupTable<'_, T, Table, LM>,
     ) -> Vec<LweCiphertext<T>> {
         let dimension = self.evaluator.context.parameters().external_lwe_dimension();
         let mut outputs = (0..lookup_table.output_count())
@@ -178,9 +185,10 @@ where
     /// in `0..lookup_table.input_domain_len()`. Input noise and coefficient-wise
     /// quantization error must stay within that message's LUT interval. Each
     /// difference factor amplifies the shared initialization and BR noise;
-    /// a separate NTRU key-switch error follows each product. These conditions are not
-    /// checked. Decode each output phase with the unsigned Scaled codec used at
-    /// compilation, not necessarily the parameter codec. See
+    /// modulus conversion and LWE key-switch errors follow each product. These conditions are not
+    /// checked. The output scale is q/Q times the compilation scale. Decode using a Scaled
+    /// codec at q with the same plaintext modulus, budgeting the difference
+    /// between that rescaled scale and round(q/t_out). See
     /// [`FactorizedLookupTable`] for the factorization and noise bound.
     ///
     /// # Panics
@@ -191,7 +199,7 @@ where
     pub fn apply_lookup_table_to(
         &mut self,
         input: &LweCiphertext<T>,
-        lookup_table: &NttFactorizedLookupTable<'_, T, Table>,
+        lookup_table: &NttFactorizedLookupTable<'_, T, Table, LM>,
         outputs: &mut [LweCiphertext<T>],
     ) {
         let evaluator = &mut self.evaluator;
@@ -227,11 +235,7 @@ where
             self.shared_rotation
                 .mul_ntt_polynomial_to(&factor, &mut product, modulus);
             product.into_coeff_form(table);
-            evaluator.key_switch_accumulator();
-            evaluator
-                .blind_rotation
-                .scratch
-                .extract_compact_lwe_to(output, modulus);
+            evaluator.return_accumulator_at_to(0, output);
         }
     }
 }

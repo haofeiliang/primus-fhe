@@ -13,17 +13,17 @@ NTRU-based TFHE with an explicit field modulus. Start with the [task and encodin
 cargo run -p primus_tfhe_ntru_ntt --release --example ntru_ntt_basic
 ```
 
-The [basic example](examples/ntru_ntt_basic.rs) shows parameters → context → paired keys → clients → one compiled LUT → reused evaluator and ciphertext buffers. It computes `x % 4`, keeping `t=16` encoding for both input and output, and decodes with `decrypt`. `compile_lookup_table_fn(function)` defaults to the parameter codec. For a different output plaintext modulus, use `compile_lookup_table_with_codec_fn(&output_codec, function)`; see [choosing the output encoding](../primus_tfhe/README.md#choosing-the-output-encoding). Public-key encryption starts with `context.public_encryptor(&public)`; see the [family guide](../primus_tfhe_ntru/README.md#clients-and-luts).
+The [basic example](examples/ntru_ntt_basic.rs) shows parameters → context → paired keys → clients → one compiled LUT → reused evaluator and ciphertext buffers. It computes `x % 4`, keeping `t=16` encoding for both input and output, and decodes with `decrypt`. `compile_lookup_table_fn(function)` defaults to the parameter codec. For a different output plaintext modulus, use `compile_lookup_table_with_codec_fn(&output_codec, function)`; see [choosing the output encoding](../primus_tfhe/README.md#choosing-the-output-encoding). Public-key encryption starts with `context.public_encryptor(&public)`; see the [family guide](../primus_tfhe_ntru/README.md#clients-and-luts). The example uses external `q=2^20`, distinct from ring `Q`: LUT compilation is at `Q` and the returned LWE is at `q`.
 
 Examples separate client encryption, server evaluation and client decryption; see [client/server roles and buffer allocation](../primus_tfhe/README.md#client-and-server-roles).
 
 ## Parameters and representation
 
-`TfheParameters::try_from_config(TfheConfig { .. })` checks mathematical choices; `TfheContext::<_, U32NttTable>::try_from_parameters(parameters)` prepares the transform table. Use `TfheContext::try_new(parameters, table)` to bind an existing table. `TfheConfig`, `TfheParameters`, `Encryptor` and `Decryptor` specialize the family API to `BarrettModulus`.
+`TfheParameters::try_from_config(TfheConfig { .. })` checks mathematical choices; `TfheContext::<_, U32NttTable>::try_from_parameters(parameters)` prepares the transform table. Use `TfheContext::try_new(parameters, table)` to bind an existing table. `TfheConfig`, `TfheParameters`, `Encryptor` and `Decryptor` specialize the family API to `BarrettModulus`. `LM` in `TfheParameters<T, LM>` / `TfheContext<T, Table, LM>` selects the independent external modulus type, defaulting to the backend modulus type. `accumulator_modulus` supplies ring `Q`.
 
 NTT tables must implement `MonomialNttTable`; built-in tables support it. Context construction checks length and modulus. All transformed keys/values must follow the supplied table's representation.
 
-There is one PBS order: encrypted initialization and BR under `f_acc`, then return KS and compact extraction under `f_client`. Binary/ternary client secrets must pass invertibility screening; Fourier additionally screens inverse stability.
+PBS performs fused lifting and blind rotation under `f,Q`, then coefficient-wise `Q→q`, phase extraction and LWE key switching to independent external secret `s`. Only ring secret `f` is screened for invertibility and, for Fourier, inverse stability. ManyLUT shares blind rotation with one LWE key switch per output. External binary/ternary secrets need no padding, invertibility screening or odd-weight restriction.
 
 Classic binary/ternary BR fuses the first CMux with public-LUT lifting: coordinate zero uses NLEV bit controls, later coordinates use NGSW. It decomposes the rotated LUT once against `I + (R-1)B+ + (R^-1-1)B-`, omitting `B-` for binary. A zero first exponent still lifts with `I=NLEV[1]`. Ordinary PBS, ManyLUT, MVB and CBS share this path. The BR basis must resolve the programmed LUT scale, including the smallest CBS output gadget weight; parameter shape checks do not certify this numerical budget.
 
@@ -35,7 +35,7 @@ Use `FactorizedEvaluator::try_from_bootstrapper` or `CircuitBootstrapEvaluator::
 
 ## Fixed-scale factorized MVB
 
-`context.compile_factorized_lookup_table_fn(&scaled_codec, input_domain_len, output_count, function)` returns `NttFactorizedLookupTable`, bound to that context instance. Bind a `FactorizedEvaluator` once, or consume an existing ordinary evaluator. Keep the unsigned Scaled codec for decoding; the result is not automatically a Boolean gate input.
+`context.compile_factorized_lookup_table_fn(&scaled_codec, input_domain_len, output_count, function)` returns `NttFactorizedLookupTable`, bound to that context instance. Bind a `FactorizedEvaluator` once, or consume an existing ordinary evaluator. Keep the unsigned Scaled codec for decoding; the result is not automatically a Boolean gate input. Compile with a `ScaledCodec` at `Q`; the returned scale is `(q/Q)*round(Q/t_out)`. Decode with a Scaled codec at `q` and the same plaintext modulus, budgeting its difference from `round(q/t_out)` and return noise.
 
 The coefficient modulus must be odd. Factors stay in NTT form after preparation.
 
@@ -64,7 +64,7 @@ Matching retries at most eight public maps with the fixed client; it never resam
 
 Generate paired material with `context.try_generate_keys(Some(cbs_config), &mut rng)`; `ServerKey` owns the additional parameters and trace/scheme-switch keys. Create `context.circuit_bootstrap_evaluator(&server)` or consume ordinary workspace as above. With a classic key generated using `None`, binding CBS returns `MissingCircuitBootstrapKey`. Use `allocate_output`, `circuit_bootstrap_to` and `cmux_to`; the [CBS → CMUX example](examples/ntru_ntt_circuit_bootstrap.rs) shows their complete consumption chain.
 
-The output is `NttNgswCiphertext` under `f_acc`. The circuit key binds the complete output basis; `try_from_parts(context, server, circuit_key)` obtains parameters from that key. NTT trace normalization requires odd q below `2^(T::BITS-1)`.
+The output is `NttNgswCiphertext` under `f_acc`. The circuit key binds the complete output basis; `try_from_parts(context, server, circuit_key)` obtains parameters from that key. NTT trace normalization requires odd Q below `2^(T::BITS-1)`.
 
 Standalone component generation must use paired secrets and the same transform representation; shape checks cannot prove identity. See [CBS input/output and consumption](../primus_tfhe/README.md#cbs-output-and-consumption) and the [family CBS contract](../primus_tfhe_ntru/README.md#cbs-and-examples).
 

@@ -30,7 +30,7 @@
 //! [`key`] contains evaluation material and component generation. Common workflow types
 //! are re-exported at this root; lower-level material is documented in its own module.
 //! Classic binary/ternary keys support PBS/MVB/CBS; sparse keys support ordinary/interleaved PBS.
-//! Client secrets must pass the backend's invertibility screening.
+//! Only accumulator secrets undergo NTRU invertibility screening; external LWE secrets are independent.
 //! Keys and values must use this context's NTT root and ordering convention.
 //! Raw ciphertexts do not record secret identity, encoding or noise margins.
 
@@ -80,14 +80,16 @@ pub use circuit_bootstrap::CircuitBootstrapKey;
 pub use circuit_bootstrap::{CircuitBootstrapEvaluator, CircuitBootstrapParameters};
 
 /// Secret-key or LWE public-key encryptor for the exact NTT NTRU backend.
-pub type Encryptor<'a, T, Key = LweSecretKeyRef<'a, T>> =
-    primus_tfhe_ntru::Encryptor<'a, T, BarrettModulus<T>, Key>;
+pub type Encryptor<'a, T, Key = LweSecretKeyRef<'a, T>, LM = BarrettModulus<T>> =
+    primus_tfhe_ntru::Encryptor<'a, T, LM, Key>;
 
 /// Client-key decryptor for the exact NTT NTRU backend.
-pub type Decryptor<'a, T> = primus_tfhe_ntru::Decryptor<'a, T, BarrettModulus<T>>;
+pub type Decryptor<'a, T, LM = BarrettModulus<T>> = primus_tfhe_ntru::Decryptor<'a, T, LM>;
 
 /// NTRU-TFHE parameters for the explicit-modulus NTT backend.
-pub type TfheParameters<T> = primus_tfhe_ntru::TfheParameters<T, BarrettModulus<T>>;
+pub type TfheParameters<T, LM = BarrettModulus<T>> =
+    primus_tfhe_ntru::TfheParameters<T, BarrettModulus<T>, LM>;
 
-/// Named mathematical choices for this backend; moduli are derived from the LWE parameters.
-pub type TfheConfig<T> = primus_tfhe_ntru::TfheConfig<T, BarrettModulus<T>>;
+/// Named mathematical choices with independent accumulator Q and external LWE q.
+pub type TfheConfig<T, LM = BarrettModulus<T>> =
+    primus_tfhe_ntru::TfheConfig<T, BarrettModulus<T>, LM>;

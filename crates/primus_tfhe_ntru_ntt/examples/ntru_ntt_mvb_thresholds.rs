@@ -61,6 +61,7 @@ fn parameters() -> TfheParameters<u32> {
     const DIMENSION: usize = 728;
     let modulus = BarrettModulus::new(Q);
     TfheParameters::try_from_config(TfheConfig {
+        accumulator_modulus: modulus,
         external_lwe: LweParameters::new(
             DIMENSION,
             128,

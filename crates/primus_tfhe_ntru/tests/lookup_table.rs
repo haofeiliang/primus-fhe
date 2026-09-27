@@ -9,7 +9,7 @@ const LWE_DIMENSION: usize = 4;
 
 fn parameters_with_plaintext(t: u32) -> TfheParameters<u32, NativeModulus<u32>> {
     let modulus = NativeModulus::new();
-    let client = NtruParameters::new(N, t, modulus, SecretKeyDistr::UniformBinary, 0.7);
+
     let accumulator = NtruParameters::new(N, t, modulus, SecretKeyDistr::gaussian(3.2), 0.7);
     TfheParameters::try_new(
         LweParameters::new(
@@ -20,7 +20,11 @@ fn parameters_with_plaintext(t: u32) -> TfheParameters<u32, NativeModulus<u32>> 
             0.7,
         ),
         NlevParameters::with_ntru_params(&accumulator, 8, None),
-        NlevParameters::with_ntru_params(&client, 8, None),
+        primus_tfhe_ntru::DecompositionConfig {
+            log_basis: 8,
+            level_count: None,
+        },
+        0.7,
     )
     .unwrap()
 }
@@ -30,9 +34,14 @@ fn imported_key(client: [i32; N]) -> ClientKey<u32> {
     let accumulator =
         NtruSecretKey::new(vec![2, 1, 0, 0, 0, 0, 0, 0], SecretKeyDistr::gaussian(3.2));
     ClientKey::new(
-        NtruSecretKey::new(client.to_vec(), SecretKeyDistr::UniformBinary),
+        primus_lwe::LweSecretKey::new(
+            (client.to_vec())[..LWE_DIMENSION]
+                .iter()
+                .map(|&s| primus_integer::SignedInteger::cast_to_unsigned(s))
+                .collect(),
+            SecretKeyDistr::UniformBinary,
+        ),
         accumulator,
-        LWE_DIMENSION,
     )
 }
 

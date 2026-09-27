@@ -25,17 +25,15 @@ fn parameters(bootstrapping_log_basis: u32, key_switching_log_basis: u32) -> Tfh
         SecretKeyDistr::SparseTernary,
         0.7,
     );
-    let client = NtruParameters::new(
-        POLY_LENGTH,
-        PLAIN_MODULUS,
-        modulus,
-        SecretKeyDistr::UniformBinary,
-        0.7,
-    );
+
     TfheParameters::try_new(
         external_lwe,
         NlevParameters::with_ntru_params(&accumulator, bootstrapping_log_basis, Some(4)),
-        NlevParameters::with_ntru_params(&client, key_switching_log_basis, Some(4)),
+        primus_tfhe_ntru::DecompositionConfig {
+            log_basis: key_switching_log_basis,
+            level_count: Some(4),
+        },
+        0.7,
     )
     .unwrap()
 }
@@ -56,18 +54,17 @@ fn rejects_server_keys_with_same_layout_but_different_bases() {
     // Changing either basis preserves all four levels and their storage size.
     for (bootstrapping_log_basis, key_switching_log_basis) in [(7, 8), (8, 7)] {
         let candidate = parameters(bootstrapping_log_basis, key_switching_log_basis);
-        for (candidate, original) in [
-            (
-                candidate.blind_rotation(),
-                context.parameters().blind_rotation(),
-            ),
-            (
-                candidate.ntru_key_switching(),
-                context.parameters().ntru_key_switching(),
-            ),
-        ] {
-            assert_eq!(candidate.fourier_nlev_len(), original.fourier_nlev_len());
-        }
+        assert_eq!(
+            candidate.blind_rotation().nlev_len(),
+            context.parameters().blind_rotation().nlev_len()
+        );
+        assert_eq!(
+            candidate.key_switching_basis().decompose_length(),
+            context
+                .parameters()
+                .key_switching_basis()
+                .decompose_length()
+        );
         let table = RustFftTable::new(POLY_LENGTH.trailing_zeros()).unwrap();
         let incompatible = TfheContext::try_new(candidate, table).unwrap();
         assert_eq!(

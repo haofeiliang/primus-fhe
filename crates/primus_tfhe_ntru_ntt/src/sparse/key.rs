@@ -8,7 +8,7 @@ use primus_lattice::{
     ngsw::NgswIter,
     nlev::{NlevIter, NttNlev},
 };
-use primus_ntru::{NttNtruKeySwitchingKey, NttNtruSecretKey, SecretKeyDistr};
+use primus_ntru::{NtruLweKeySwitchingKey, NttNtruSecretKey, SecretKeyDistr};
 use primus_ntt::MonomialNttTable;
 use primus_tfhe::sparse::BucketMap;
 use zeroize::Zeroizing;
@@ -24,9 +24,10 @@ use crate::{ClientKey, KeyGenerationError, KeyGenerator, ServerKey, SparseBootst
 /// The parent [`ServerKey`] carries the common basis and return KSK.
 /// Sparse evaluation needs no separate NLEV initializer.
 ///
-/// Successful generation conditions both the client secret on NTRU invertibility
-/// and the public map on matching. These conditions require independent security
-/// assessment; this experimental representation does not certify a failure rate.
+/// The external secret is sampled without NTRU rejection; only the accumulator
+/// secret undergoes invertibility (and Fourier stability) screening. The public
+/// map is conditioned on successful matching to the fixed external secret.
+/// These conditions need independent security analysis; no failure rate is certified.
 pub struct SparseNtruBootstrappingKey<T: FheUint> {
     data: Vec<T>,
     map: BucketMap,
@@ -37,7 +38,7 @@ pub struct SparseNtruBootstrappingKey<T: FheUint> {
 }
 
 impl<T: FheUint> SparseNtruBootstrappingKey<T> {
-    /// Returns the active client prefix length.
+    /// Returns the external LWE dimension.
     #[must_use]
     pub fn input_dimension(&self) -> usize {
         self.input_dimension
@@ -105,10 +106,11 @@ impl<T: FheUint> SparseNtruBootstrappingKey<T> {
     }
 }
 
-impl<T, Table> KeyGenerator<'_, T, Table>
+impl<T, Table, LM> KeyGenerator<'_, T, Table, LM>
 where
     T: FheUint,
     Table: MonomialNttTable<ValueT = T>,
+    LM: primus_reduce::RingContext<T>,
 {
     /// Generates sparse PBS material for an existing, fixed-weight binary client.
     ///
@@ -120,7 +122,7 @@ where
     /// # Errors
     /// Rejects incompatible keys, a non-fixed-binary distribution, `h` outside
     /// `0<h<n`, actual weight mismatch, invalid buckets, storage overflow or
-    /// noninvertible secrets before consuming randomness. Matching failure consumes
+    /// noninvertible accumulator secrets before consuming randomness. Matching failure consumes
     /// only map randomness and returns no partial key. It never resamples the client.
     ///
     /// # Correctness
@@ -160,10 +162,11 @@ where
         Layout::array::<T>(data_len).map_err(|_| Error::StorageSizeOverflow)?;
         let nonzero_indices = Zeroizing::new(
             client_key
-                .external_lwe_secret_coefficients()
+                .external_lwe_secret_key()
+                .as_ref()
                 .iter()
                 .enumerate()
-                .filter_map(|(i, &bit)| (bit == T::SignedInteger::ONE).then_some(i))
+                .filter_map(|(i, &bit)| (bit == T::ONE).then_some(i))
                 .collect::<Vec<_>>(),
         );
         if nonzero_indices.len() != hamming_weight {
@@ -171,11 +174,6 @@ where
         }
         let ntt = self.context.table();
         let modulus = parameters.accumulator_ntru().cipher_modulus();
-        let client_ntt = NttNtruSecretKey::try_from_coeff_secret_key(
-            client_key.client_ntru_secret_key(),
-            modulus,
-            ntt,
-        )?;
         let accumulator_ntt = NttNtruSecretKey::try_from_coeff_secret_key(
             client_key.accumulator_ntru_secret_key(),
             modulus,
@@ -248,13 +246,13 @@ where
             copy_count,
             control_len,
         };
-        let key_switching_key = NttNtruKeySwitchingKey::generate(
+        let key_switching_key = NtruLweKeySwitchingKey::generate(
             client_key.accumulator_ntru_secret_key(),
-            &client_ntt,
-            parameters.ntru_key_switching(),
-            ntt,
+            parameters.accumulator_ntru().cipher_modulus(),
+            client_key.external_lwe_secret_key(),
+            parameters.key_switching_lwe(),
+            parameters.key_switching_basis().clone(),
             rng,
-            &mut self.gadget,
         );
         Ok(ServerKey::from_sparse(
             parameters,

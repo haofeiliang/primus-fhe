@@ -11,14 +11,17 @@ use crate::{ServerKey, TfheParameters};
 pub(crate) struct BlindRotationWorkspace<'a, T: TorusFftValue> {
     /// Coefficient-domain result under the accumulator secret after BR.
     pub(crate) current: Ntru<Vec<T>>,
-    /// BR temporary storage, then coefficient output under the client secret after KS.
+    /// BR temporary storage in the accumulator domain.
     pub(crate) scratch: Ntru<Vec<T>>,
     pub(crate) rotation: RotationContext<'a, T>,
 }
 
 impl<'a, T: TorusFftValue> BlindRotationWorkspace<'a, T> {
     /// Allocates all blind-rotation storage once.
-    pub(crate) fn new(parameters: &TfheParameters<T>, server_key: &'a ServerKey<T>) -> Self {
+    pub(crate) fn new<LM: primus_reduce::RingContext<T>>(
+        parameters: &TfheParameters<T, LM>,
+        server_key: &'a ServerKey<T>,
+    ) -> Self {
         let poly_length = parameters.poly_length();
         Self {
             current: Ntru::zero(poly_length),
@@ -87,13 +90,13 @@ impl<T: TorusFftValue> RotationContext<'_, T> {
 /// under `f_acc`, reusing `workspace.scratch` as temporary storage. The caller
 /// established input/LUT compatibility; `rotation_step` is the LUT's padded
 /// output count (one for ordinary PBS).
-pub(crate) fn blind_rotate_lookup_table_to<T, Table, A>(
+pub(crate) fn blind_rotate_lookup_table_to<T, Table, A, LM: primus_reduce::RingContext<T>>(
     server_key: &ServerKey<T>,
     input: &Lwe<A>,
     lookup_table: &PolynomialOwned<T>,
     rotation_step: usize,
     workspace: &mut BlindRotationWorkspace<'_, T>,
-    parameters: &TfheParameters<T>,
+    parameters: &TfheParameters<T, LM>,
     fft: &mut FftEngine<'_, Table>,
 ) where
     T: TorusFftValue,

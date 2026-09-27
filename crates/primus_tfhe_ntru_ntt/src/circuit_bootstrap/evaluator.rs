@@ -14,23 +14,25 @@ use crate::{
 };
 
 /// Allocation-free online NTRU circuit bootstrapping with optional evaluation keys.
-/// Output is NGSW under f_acc, unlike ordinary PBS's LWE output under f_client.
-pub struct CircuitBootstrapEvaluator<'a, T, Table>
+/// Output is NGSW under f_acc, unlike ordinary PBS's LWE output under independent s at q.
+pub struct CircuitBootstrapEvaluator<'a, T, Table, LM = primus_modulus::BarrettModulus<T>>
 where
     T: FheUint,
     Table: MonomialNttTable<ValueT = T>,
+    LM: primus_reduce::RingContext<T>,
 {
-    pbs: Evaluator<'a, T, Table>,
+    pbs: Evaluator<'a, T, Table, LM>,
     circuit_key: &'a CircuitBootstrapKey<T>,
     lookup_table: InterleavedLookupTable<T>,
     trace_scratch: Vec<T>,
     projected: NlevCiphertext<Vec<T>>,
 }
 
-impl<'a, T, Table> CircuitBootstrapEvaluator<'a, T, Table>
+impl<'a, T, Table, LM> CircuitBootstrapEvaluator<'a, T, Table, LM>
 where
     T: FheUint,
     Table: MonomialNttTable<ValueT = T>,
+    LM: primus_reduce::RingContext<T>,
 {
     /// Binds the CBS parameters and material carried by one server key.
     /// Rejects sparse keys or absent CBS material.
@@ -40,7 +42,7 @@ where
     /// Bundled generation pairs secrets; layout checks do not establish identity
     /// for externally assembled material or another transform representation.
     pub fn try_new(
-        context: &'a TfheContext<T, Table>,
+        context: &'a TfheContext<T, Table, LM>,
         server_key: &'a ServerKey<T>,
     ) -> Result<Self, TfheEvaluationError> {
         if server_key.sparse_bootstrapping_key().is_some() {
@@ -60,7 +62,7 @@ where
     /// The server and circuit keys were generated from the same accumulator
     /// secret and NTT representation. Layout/basis checks do not prove identity.
     pub fn try_from_parts(
-        context: &'a TfheContext<T, Table>,
+        context: &'a TfheContext<T, Table, LM>,
         server_key: &'a ServerKey<T>,
         circuit_key: &'a CircuitBootstrapKey<T>,
     ) -> Result<Self, TfheEvaluationError> {
@@ -73,7 +75,7 @@ where
     /// Consumes ordinary PBS workspace and allocates only the additional CBS buffers.
     /// Rejects sparse keys or absent CBS material.
     pub fn try_from_bootstrapper(
-        pbs: Evaluator<'a, T, Table>,
+        pbs: Evaluator<'a, T, Table, LM>,
     ) -> Result<Self, TfheEvaluationError> {
         if pbs.server_key.sparse_bootstrapping_key().is_some() {
             return Err(TfheEvaluationError::UnsupportedSparseBootstrapping);
@@ -91,18 +93,18 @@ where
         &mut self,
     ) -> impl primus_tfhe::ProgrammableBootstrap<T>
     + primus_tfhe::ProgrammableBootstrapInterleaved<T>
-    + use<'_, 'a, T, Table> {
+    + use<'_, 'a, T, Table, LM> {
         &mut self.pbs
     }
 
     /// Releases CBS buffers and recovers ordinary PBS workspace without allocation.
     #[must_use]
-    pub fn into_bootstrapper(self) -> Evaluator<'a, T, Table> {
+    pub fn into_bootstrapper(self) -> Evaluator<'a, T, Table, LM> {
         self.pbs
     }
 
     fn from_bootstrapper_and_key(
-        pbs: Evaluator<'a, T, Table>,
+        pbs: Evaluator<'a, T, Table, LM>,
         circuit_key: &'a CircuitBootstrapKey<T>,
     ) -> Result<Self, TfheEvaluationError> {
         let context = pbs.context;

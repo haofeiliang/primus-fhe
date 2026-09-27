@@ -22,6 +22,7 @@ const DOMAIN: usize = 8;
 
 fn context(distr: SecretKeyDistr) -> TfheContext<u32, U32NttTable> {
     let parameters = TfheParameters::try_from_config(TfheConfig {
+        accumulator_modulus: BarrettModulus::new(Q),
         external_lwe: LweParameters::new(3, 15, BarrettModulus::new(Q), distr, 0.7),
         poly_length: N,
         accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,

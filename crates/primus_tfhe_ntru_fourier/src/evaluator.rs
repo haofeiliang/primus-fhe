@@ -1,5 +1,4 @@
 use primus_fft::{FftEngine, FftTable, TorusFftValue};
-use primus_modulus::NativeModulus;
 use primus_poly::Polynomial;
 use primus_tfhe::{
     InterleavedLookupTable, LookupTable, LweCiphertext, ProgrammableBootstrap,
@@ -12,21 +11,24 @@ use crate::{
 };
 
 /// Allocation-free online evaluator for Fourier NTRU programmable bootstrapping.
-pub struct Evaluator<'a, T, Table>
+pub struct Evaluator<'a, T, Table, LM = primus_modulus::NativeModulus<T>>
 where
     T: TorusFftValue,
     Table: FftTable,
+    LM: primus_reduce::RingContext<T>,
 {
-    pub(crate) context: &'a TfheContext<T, Table>,
+    pub(crate) context: &'a TfheContext<T, Table, LM>,
     pub(crate) server_key: &'a ServerKey<T>,
     pub(crate) fft: FftEngine<'a, Table>,
     pub(crate) blind_rotation: BlindRotationWorkspace<'a, T>,
+    return_context: primus_ntru::NtruLweKeySwitchingContext<T>,
 }
 
-impl<'a, T, Table> Evaluator<'a, T, Table>
+impl<'a, T, Table, LM> Evaluator<'a, T, Table, LM>
 where
     T: TorusFftValue,
     Table: FftTable,
+    LM: primus_reduce::RingContext<T>,
 {
     /// Creates reusable evaluation state after checking the server key once.
     ///
@@ -35,13 +37,16 @@ where
     /// The server key must have been generated with this context's FFT table
     /// instance. Parameter compatibility does not establish Fourier table identity.
     pub fn try_new(
-        context: &'a TfheContext<T, Table>,
+        context: &'a TfheContext<T, Table, LM>,
         server_key: &'a ServerKey<T>,
     ) -> Result<Self, TfheEvaluationError> {
         if !server_key.is_compatible(context.parameters()) {
             return Err(TfheEvaluationError::IncompatibleServerKey);
         }
         Ok(Self {
+            return_context: primus_ntru::NtruLweKeySwitchingContext::new(
+                context.parameters().poly_length(),
+            ),
             context,
             server_key,
             fft: context.new_fft_engine(),
@@ -106,15 +111,12 @@ where
         );
 
         self.blind_rotate(input, lookup_table.polynomial(), 1);
-        self.key_switch_accumulator();
-        self.blind_rotation
-            .scratch
-            .extract_compact_lwe_to(output, NativeModulus::new());
+        self.return_accumulator_at_to(0, output);
     }
 
     /// Applies all interleaved lookup tables and allocates one ciphertext per output.
     ///
-    /// Shares one blind rotation and one ring key switch.
+    /// Shares one blind rotation; each output uses an LWE key switch at q.
     ///
     /// Inherits [`ProgrammableBootstrapInterleaved::apply_interleaved_lookup_table_to`]'s input encoding,
     /// key, noise and output-scale requirements.
@@ -138,7 +140,7 @@ where
 
     /// Applies all interleaved tables into reusable output allocations.
     ///
-    /// Shares one blind rotation and one ring key switch.
+    /// Shares one blind rotation; each output uses an LWE key switch at q.
     ///
     /// Inherits [`ProgrammableBootstrapInterleaved::apply_interleaved_lookup_table_to`]'s input encoding,
     /// key, noise and output-scale requirements.
@@ -186,13 +188,8 @@ where
             lookup_table.polynomial(),
             lookup_table.padded_output_count(),
         );
-        self.key_switch_accumulator();
         for (index, output) in outputs.iter_mut().enumerate() {
-            self.blind_rotation.scratch.extract_compact_lwe_at_to(
-                index,
-                output,
-                NativeModulus::new(),
-            );
+            self.return_accumulator_at_to(index, output);
         }
     }
 
@@ -218,24 +215,24 @@ where
         );
     }
 
-    /// Switches the BR accumulator to the client ring secret in coefficient-domain
-    /// `blind_rotation.scratch`, ready for compact LWE extraction. CBS consumes
-    /// `blind_rotation.current` directly and does not perform this key switch.
-    #[inline]
-    pub(crate) fn key_switch_accumulator(&mut self) {
-        self.server_key.key_switching_key().key_switch_to(
+    /// Rescales Q to q, extracts one coefficient and switches f to external LWE s.
+    /// CBS consumes `current` directly and bypasses this return path.
+    pub(crate) fn return_accumulator_at_to(&mut self, index: usize, output: &mut LweCiphertext<T>) {
+        self.server_key.key_switching_key().key_switch_at_to(
             &self.blind_rotation.current,
-            &mut self.blind_rotation.scratch,
-            &mut self.fft,
-            self.blind_rotation.rotation.external_product(),
+            index,
+            output,
+            self.context.parameters().external_lwe().cipher_modulus(),
+            &mut self.return_context,
         );
     }
 }
 
-impl<T, Table> ProgrammableBootstrap<T> for Evaluator<'_, T, Table>
+impl<T, Table, LM> ProgrammableBootstrap<T> for Evaluator<'_, T, Table, LM>
 where
     T: TorusFftValue,
     Table: FftTable,
+    LM: primus_reduce::RingContext<T>,
 {
     #[inline]
     fn apply_lookup_table_to(
@@ -248,10 +245,11 @@ where
     }
 }
 
-impl<T, Table> ProgrammableBootstrapInterleaved<T> for Evaluator<'_, T, Table>
+impl<T, Table, LM> ProgrammableBootstrapInterleaved<T> for Evaluator<'_, T, Table, LM>
 where
     T: TorusFftValue,
     Table: FftTable,
+    LM: primus_reduce::RingContext<T>,
 {
     #[inline]
     fn apply_interleaved_lookup_table_to(

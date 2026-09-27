@@ -8,7 +8,7 @@ use primus_lattice::{
     ngsw::NgswIter,
     nlev::{FourierNlev, Nlev, NlevIter},
 };
-use primus_ntru::{FourierNtruKeySwitchingKey, FourierNtruSecretKey, SecretKeyDistr};
+use primus_ntru::{FourierNtruSecretKey, NtruLweKeySwitchingKey, SecretKeyDistr};
 use primus_tfhe::sparse::BucketMap;
 use zeroize::Zeroizing;
 
@@ -23,9 +23,10 @@ use crate::{ClientKey, KeyGenerationError, KeyGenerator, ServerKey, SparseBootst
 /// The parent [`ServerKey`] carries the common basis and return KSK.
 /// Sparse evaluation needs no separate NLEV initializer.
 ///
-/// Successful generation conditions both the client secret on NTRU invertibility
-/// and Fourier inverse stability, and the public map on matching. These conditions
-/// require independent security assessment; this representation does not certify a failure rate.
+/// The external secret is sampled without NTRU rejection; only the accumulator
+/// secret undergoes invertibility (and Fourier stability) screening. The public
+/// map is conditioned on successful matching to the fixed external secret.
+/// These conditions need independent security analysis; no failure rate is certified.
 /// Each Fourier control is recovered to native coefficients before storage. This
 /// conversion, the aggregate FFT and external products incur numerical error.
 pub struct SparseNtruBootstrappingKey<T: TorusFftValue> {
@@ -38,7 +39,7 @@ pub struct SparseNtruBootstrappingKey<T: TorusFftValue> {
 }
 
 impl<T: TorusFftValue> SparseNtruBootstrappingKey<T> {
-    /// Returns the active client prefix length.
+    /// Returns the external LWE dimension.
     #[must_use]
     pub fn input_dimension(&self) -> usize {
         self.input_dimension
@@ -106,12 +107,13 @@ impl<T: TorusFftValue> SparseNtruBootstrappingKey<T> {
     }
 }
 
-impl<T, Table> KeyGenerator<'_, T, Table>
+impl<T, Table, LM> KeyGenerator<'_, T, Table, LM>
 where
     T: TorusFftValue,
     Table: FftTable,
+    LM: primus_reduce::RingContext<T>,
 {
-    /// Generates sparse PBS material for an existing, fixed odd-weight binary client.
+    /// Generates sparse PBS material for an existing, fixed-weight binary client.
     ///
     /// Keeps the client secret fixed; only the public map retries, at most eight
     /// times. Encrypts each selector and dummy independently after matching succeeds.
@@ -121,8 +123,8 @@ where
     ///
     /// # Errors
     /// Rejects incompatible keys, a non-fixed-binary distribution, `h` outside
-    /// `0<h<n`, actual weight mismatch, invalid buckets, storage overflow, even
-    /// declared weight, noninvertible secrets or unstable Fourier inverses before
+    /// `0<h<n`, actual weight mismatch, invalid buckets, storage overflow,
+    /// noninvertible accumulator secrets or unstable Fourier inverses before
     /// consuming randomness. Matching failure consumes only map randomness and
     /// returns no partial key. It never resamples the client.
     ///
@@ -153,9 +155,6 @@ where
         if hamming_weight == 0 || hamming_weight >= dimension {
             return Err(Error::InvalidHammingWeight.into());
         }
-        if hamming_weight.is_multiple_of(2) {
-            return Err(primus_ntru::NtruError::NonInvertibleSecretKey.into());
-        }
         let control_len = parameters.blind_rotation().nlev_len();
         let fourier_len = parameters.blind_rotation().fourier_nlev_len();
         Layout::array::<Complex64>(fourier_len).map_err(|_| Error::StorageSizeOverflow)?;
@@ -167,19 +166,16 @@ where
         Layout::array::<T>(data_len).map_err(|_| Error::StorageSizeOverflow)?;
         let nonzero_indices = Zeroizing::new(
             client_key
-                .external_lwe_secret_coefficients()
+                .external_lwe_secret_key()
+                .as_ref()
                 .iter()
                 .enumerate()
-                .filter_map(|(i, &bit)| (bit == T::SignedInteger::ONE).then_some(i))
+                .filter_map(|(i, &bit)| (bit == T::ONE).then_some(i))
                 .collect::<Vec<_>>(),
         );
         if nonzero_indices.len() != hamming_weight {
             return Err(Error::InvalidSecretWeight.into());
         }
-        let client_fourier = FourierNtruSecretKey::try_from_coeff_secret_key(
-            client_key.client_ntru_secret_key(),
-            &mut self.fft,
-        )?;
         let accumulator_fourier = FourierNtruSecretKey::try_from_coeff_secret_key(
             client_key.accumulator_ntru_secret_key(),
             &mut self.fft,
@@ -242,13 +238,13 @@ where
             copy_count,
             control_len,
         };
-        let key_switching_key = FourierNtruKeySwitchingKey::generate(
+        let key_switching_key = NtruLweKeySwitchingKey::generate(
             client_key.accumulator_ntru_secret_key(),
-            &client_fourier,
-            parameters.ntru_key_switching(),
-            &mut self.fft,
+            parameters.accumulator_ntru().cipher_modulus(),
+            client_key.external_lwe_secret_key(),
+            parameters.key_switching_lwe(),
+            parameters.key_switching_basis().clone(),
             rng,
-            &mut self.gadget,
         );
         Ok(ServerKey::from_sparse(
             parameters,

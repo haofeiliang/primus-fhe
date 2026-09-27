@@ -1,5 +1,5 @@
-//! Same fixed invertible client: classic vs bucket-aggregated complete PBS.
-//! Includes initialization, all buckets, return KS and compact extraction. Reuses
+//! Same fixed external LWE secret: classic vs bucket-aggregated complete PBS.
+//! Includes initialization, all buckets, Q-to-q conversion, extraction and LWE KS. Reuses
 //! online outputs/scratch and keygen workspace; key drops are outside timing.
 //! Setup checks all eight padded messages and reports retained heap/phase error.
 //! Regression parameters, not a matched-security or certified-failure comparison.
@@ -35,6 +35,7 @@ fn backend<T: FheUint, Table: MonomialNttTable<ValueT = T>>(c: &mut Criterion, q
         level_count: None,
     };
     let parameters = TfheParameters::try_from_config(TfheConfig {
+        accumulator_modulus: modulus,
         external_lwe: LweParameters::new(
             DIMENSION,
             T::as_from(16usize),

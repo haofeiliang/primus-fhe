@@ -14,20 +14,22 @@ use primus_poly::Polynomial;
 /// Ciphertexts use coefficient representation and the accumulator secret, which
 /// differs from the external LWE domain used by [`crate::Encryptor`].
 /// Construction prepares all buffers; `encrypt_to` and `decrypt_to` do not allocate.
-pub struct AccumulatorClient<'a, T, Table>
+pub struct AccumulatorClient<'a, T, Table, LM = primus_modulus::BarrettModulus<T>>
 where
     T: FheUint,
     Table: MonomialNttTable<ValueT = T>,
+    LM: primus_reduce::RingContext<T>,
 {
-    context: &'a TfheContext<T, Table>,
+    context: &'a TfheContext<T, Table, LM>,
     secret: NttNtruSecretKey<T>,
     transformed: NttNtruCiphertext<Vec<T>>,
 }
 
-impl<'a, T, Table> AccumulatorClient<'a, T, Table>
+impl<'a, T, Table, LM> AccumulatorClient<'a, T, Table, LM>
 where
     T: FheUint,
     Table: MonomialNttTable<ValueT = T>,
+    LM: primus_reduce::RingContext<T>,
 {
     /// Validates the client key and prepares its accumulator representation once.
     /// Returns NTRU conversion failures, including a noninvertible secret.
@@ -36,7 +38,7 @@ where
     /// Imported accumulator coefficients must have unsigned magnitude below q;
     /// see [`NttNtruSecretKey::try_from_coeff_secret_key`]. Layout checks do not establish this bound.
     pub fn try_new(
-        context: &'a TfheContext<T, Table>,
+        context: &'a TfheContext<T, Table, LM>,
         client_key: &ClientKey<T>,
     ) -> Result<Self, TfheClientError> {
         client_key.check_compatible(context.parameters())?;

@@ -1,4 +1,4 @@
-use primus_decompose::DecompositionConfig;
+use primus_decompose::{DecompositionConfig, primitive::ApproxSignedBasis};
 use primus_encoding::RoundedCodec;
 use primus_integer::FheUint;
 use primus_lwe::LweParameters;
@@ -7,19 +7,13 @@ use primus_reduce::RingContext;
 use primus_tfhe::rotation::RotationQuantizer;
 
 use crate::TfheParameterError;
-use crate::TfheParameterError::{
-    CipherModulusMismatch, ClientSecretKeyDistributionMismatch, InvalidLweDimension,
-    PlainModulusMismatch, PolynomialLengthMismatch, UnsupportedClientSecretKeyDistribution,
-};
-
-/// NTRU-TFHE choices with one shared ring length and modulus domain.
-///
-/// The accumulator and padded client NTRU parameters inherit `t` and `q` from
-/// `external_lwe`; the client NTRU secret inherits its distribution as well.
+/// NTRU-TFHE choices with independent accumulator Q and external LWE q domains.
 #[derive(Clone)]
-pub struct TfheConfig<T: FheUint, M: RingContext<T>> {
-    /// External secret prefix, dimension, moduli and fresh LWE encryption noise.
-    pub external_lwe: LweParameters<T, M>,
+pub struct TfheConfig<T: FheUint, M: RingContext<T>, LM: RingContext<T> = M> {
+    /// External LWE dimension, moduli, secret distribution and fresh encryption noise.
+    pub external_lwe: LweParameters<T, LM>,
+    /// Accumulator ciphertext modulus Q, independent of external q.
+    pub accumulator_modulus: M,
     /// Common NTRU polynomial length `N`.
     pub poly_length: usize,
     /// Coefficient distribution of the accumulator secret.
@@ -28,57 +22,47 @@ pub struct TfheConfig<T: FheUint, M: RingContext<T>> {
     pub accumulator_noise_standard_deviation: f64,
     /// NLev initializer and NGSW control decomposition.
     pub blind_rotation: DecompositionConfig,
-    /// Decomposition for the post-bootstrap NTRU key switch.
+    /// Decomposition at q for the post-bootstrap LWE key switch.
     pub key_switching: DecompositionConfig,
-    /// Standard deviation for encryption under the padded client NTRU secret.
+    /// Standard deviation for return-key LWE encryption under the external secret.
     pub key_switching_noise_standard_deviation: f64,
 }
 
 /// Mathematical parameters for NTRU-based TFHE.
 ///
-/// The blind-rotation parameters describe ciphertexts under the accumulator
-/// key. The key-switching parameters describe NLev ciphertexts under the
-/// client key and therefore the target of the post-bootstrap NTRU key switch.
+/// Blind rotation operates under ring secret f at Q; the return key encrypts
+/// its coefficients under independent LWE secret s at q.
 #[derive(Clone)]
-pub struct TfheParameters<T, M>
+pub struct TfheParameters<T, M, LM = M>
 where
     T: FheUint,
     M: RingContext<T>,
+    LM: RingContext<T>,
 {
-    external_lwe: LweParameters<T, M>,
+    external_lwe: LweParameters<T, LM>,
     blind_rotation: NlevParameters<T, M>,
-    ntru_key_switching: NlevParameters<T, M>,
-    rotation_quantizer: RotationQuantizer<M::Prepared>,
+    key_switching_lwe: LweParameters<T, LM>,
+    key_switching_basis: ApproxSignedBasis<T>,
+    rotation_quantizer: RotationQuantizer<LM::Prepared>,
 }
 
-impl<T, M> TfheParameters<T, M>
+impl<T, M, LM> TfheParameters<T, M, LM>
 where
     T: FheUint,
     M: RingContext<T>,
+    LM: RingContext<T>,
 {
-    /// Derives both NTRU domains and their gadget parameters from named choices.
-    ///
-    /// Returns the compatibility errors of [`Self::try_new`] or an invalid
-    /// gadget decomposition error, with its blind-rotation/key-switch role.
+    /// Derives the accumulator and external LWE return domains from named choices.
     ///
     /// # Panics
-    ///
-    /// Inherits [`NtruParameters::new`]'s layout, sampler and codec requirements.
-    pub fn try_from_config(config: TfheConfig<T, M>) -> Result<Self, TfheParameterError> {
-        let modulus = config.external_lwe.cipher_modulus();
+    /// Inherits [`NtruParameters::new`] and [`LweParameters::new`]'s sampler and codec requirements.
+    pub fn try_from_config(config: TfheConfig<T, M, LM>) -> Result<Self, TfheParameterError> {
         let accumulator = NtruParameters::new(
             config.poly_length,
             config.external_lwe.plain_modulus_value(),
-            modulus,
+            config.accumulator_modulus,
             config.accumulator_secret_key_distr,
             config.accumulator_noise_standard_deviation,
-        );
-        let client = NtruParameters::new(
-            config.poly_length,
-            config.external_lwe.plain_modulus_value(),
-            modulus,
-            config.external_lwe.secret_key_distr(),
-            config.key_switching_noise_standard_deviation,
         );
         let blind_rotation = NlevParameters::try_with_ntru_params(
             &accumulator,
@@ -86,86 +70,72 @@ where
             config.blind_rotation.level_count,
         )
         .map_err(TfheParameterError::BootstrappingParameters)?;
-        let key_switching = NlevParameters::try_with_ntru_params(
-            &client,
-            config.key_switching.log_basis,
-            config.key_switching.level_count,
+        Self::try_new(
+            config.external_lwe,
+            blind_rotation,
+            config.key_switching,
+            config.key_switching_noise_standard_deviation,
         )
-        .map_err(TfheParameterError::KeySwitchingParameters)?;
-        Self::try_new(config.external_lwe, blind_rotation, key_switching)
     }
 
-    /// Creates one NTRU TFHE parameter set.
+    /// Binds independent external LWE and accumulator domains with a return decomposition at q.
+    /// External secrets must be binary or ternary; their dimension need not fit in N.
+    /// Both domains must share plaintext modulus t, and 2N must fit in T.
     ///
-    /// # Errors
-    ///
-    /// Returns an error unless the external LWE key is the binary or ternary coefficient
-    /// prefix of an NTRU key, fits in `N`, and all three parameter domains
-    /// agree on `N`, `t`, and `q` where applicable. The rotation domain `2N`
-    /// must be representable by `T`.
+    /// # Panics
+    /// Inherits [`LweParameters::new`]'s noise-sampler requirements.
     pub fn try_new(
-        external_lwe: LweParameters<T, M>,
+        external_lwe: LweParameters<T, LM>,
         blind_rotation: NlevParameters<T, M>,
-        ntru_key_switching: NlevParameters<T, M>,
+        key_switching: DecompositionConfig,
+        key_switching_noise_standard_deviation: f64,
     ) -> Result<Self, TfheParameterError> {
-        let external_distr = external_lwe.secret_key_distr();
-        let client_ntru_distr = ntru_key_switching.ntru().secret_key_distr();
-        if !(external_distr.is_binary() || external_distr.is_ternary())
-            || !(client_ntru_distr.is_binary() || client_ntru_distr.is_ternary())
-        {
-            return Err(UnsupportedClientSecretKeyDistribution);
+        let distr = external_lwe.secret_key_distr();
+        if !(distr.is_binary() || distr.is_ternary()) {
+            return Err(TfheParameterError::UnsupportedClientSecretKeyDistribution);
         }
-        if external_distr != client_ntru_distr {
-            return Err(ClientSecretKeyDistributionMismatch);
+        if external_lwe.plain_modulus_value() != blind_rotation.ntru().plain_modulus() {
+            return Err(TfheParameterError::PlainModulusMismatch);
         }
-
-        let accumulator_ntru = blind_rotation.ntru();
-        let client_ntru = ntru_key_switching.ntru();
-        let poly_length = accumulator_ntru.poly_length();
-        if !(1..=poly_length).contains(&external_lwe.dimension()) {
-            return Err(InvalidLweDimension {
-                lwe_dimension: external_lwe.dimension(),
-                poly_length,
-            });
-        }
-        if client_ntru.poly_length() != poly_length {
-            return Err(PolynomialLengthMismatch);
-        }
-        if external_lwe.plain_modulus_value() != accumulator_ntru.plain_modulus()
-            || client_ntru.plain_modulus() != accumulator_ntru.plain_modulus()
-        {
-            return Err(PlainModulusMismatch);
-        }
-        if external_lwe.cipher_modulus_value() != accumulator_ntru.cipher_modulus_value()
-            || client_ntru.cipher_modulus_value() != accumulator_ntru.cipher_modulus_value()
-        {
-            return Err(CipherModulusMismatch);
-        }
-
-        if T::try_from(poly_length * 2).is_err() {
-            return Err(TfheParameterError::RotationDomainTooLarge);
-        }
-        let rotation_quantizer =
-            RotationQuantizer::new(external_lwe.cipher_modulus(), poly_length * 2, 1);
+        let two_n = blind_rotation
+            .poly_length()
+            .checked_mul(2)
+            .filter(|&n| T::try_from(n).is_ok())
+            .ok_or(TfheParameterError::RotationDomainTooLarge)?;
+        let key_switching_basis = ApproxSignedBasis::try_new(
+            external_lwe.cipher_modulus_value(),
+            key_switching.log_basis,
+            key_switching.level_count,
+        )
+        .map_err(TfheParameterError::KeySwitchingParameters)?;
+        let key_switching_lwe = LweParameters::new(
+            external_lwe.dimension(),
+            external_lwe.plain_modulus_value(),
+            external_lwe.cipher_modulus(),
+            distr,
+            key_switching_noise_standard_deviation,
+        );
+        let rotation_quantizer = RotationQuantizer::new(external_lwe.cipher_modulus(), two_n, 1);
         Ok(Self {
-            rotation_quantizer,
             external_lwe,
             blind_rotation,
-            ntru_key_switching,
+            key_switching_lwe,
+            key_switching_basis,
+            rotation_quantizer,
         })
     }
 
     /// Returns the ordinary-PBS quantizer prepared with these parameters.
     #[doc(hidden)]
     #[must_use]
-    pub fn rotation_quantizer(&self) -> RotationQuantizer<M::Prepared> {
+    pub fn rotation_quantizer(&self) -> RotationQuantizer<LM::Prepared> {
         self.rotation_quantizer
     }
 
     /// Returns the externally visible LWE parameters.
     #[must_use]
     #[inline]
-    pub fn external_lwe(&self) -> &LweParameters<T, M> {
+    pub fn external_lwe(&self) -> &LweParameters<T, LM> {
         &self.external_lwe
     }
 
@@ -193,15 +163,20 @@ where
     /// Returns the input LWE codec used by client encryption and LUT compilation.
     #[must_use]
     #[inline]
-    pub fn input_plaintext_codec(&self) -> &RoundedCodec<T, M> {
+    pub fn input_plaintext_codec(&self) -> &RoundedCodec<T, LM> {
         self.external_lwe.plaintext_codec()
     }
 
-    /// Returns the post-bootstrap NTRU key-switching parameters.
+    /// Returns the target-q LWE encryption parameters used for return key rows.
     #[must_use]
-    #[inline]
-    pub fn ntru_key_switching(&self) -> &NlevParameters<T, M> {
-        &self.ntru_key_switching
+    pub fn key_switching_lwe(&self) -> &LweParameters<T, LM> {
+        &self.key_switching_lwe
+    }
+
+    /// Returns the return-key decomposition at external modulus q.
+    #[must_use]
+    pub fn key_switching_basis(&self) -> &ApproxSignedBasis<T> {
+        &self.key_switching_basis
     }
 
     /// Returns the common NTRU polynomial length.

@@ -5,15 +5,16 @@ use primus_tfhe::{InterleavedLookupTable, LookupTable, LookupTableError};
 
 use crate::TfheParameters;
 
-impl<T, M> TfheParameters<T, M>
+impl<T, M, LM> TfheParameters<T, M, LM>
 where
     T: FheUint,
     M: RingContext<T>,
+    LM: RingContext<T>,
 {
-    /// Compiles a unary function over the front half using the parameter codec for outputs.
+    /// Compiles a unary function over the front half using the parameter plaintext modulus for outputs.
     ///
     /// Outputs belong to `0..t_in` and can be decoded with the client's `decrypt`.
-    /// Uses [`Self::input_plaintext_codec`]; see [`Self::compile_lookup_table_with_codec_fn`]
+    /// Encodes the LUT at accumulator Q and returns at external q; see [`Self::compile_lookup_table_with_codec_fn`]
     /// for input-domain and layout requirements or a different output encoding.
     #[inline]
     pub fn compile_lookup_table_fn<F>(
@@ -23,7 +24,13 @@ where
     where
         F: Fn(usize) -> T,
     {
-        self.compile_lookup_table_with_codec_fn(self.input_plaintext_codec(), function)
+        self.compile_lookup_table_with_codec_fn(
+            &RoundedCodec::new(
+                self.plain_modulus_value(),
+                self.accumulator_ntru().cipher_modulus(),
+            ),
+            function,
+        )
     }
 
     /// Compiles a unary function over the independently programmable front
@@ -32,9 +39,10 @@ where
     /// Outputs use unsigned rounded encoding and must belong to
     /// `0..output_codec.plaintext_modulus()`.
     /// The codec's ciphertext modulus must equal the accumulator modulus; its plaintext
-    /// modulus is independent of `t_in`. Ordinary PBS preserves this output encoding
-    /// under the external LWE secret. Decode with this codec and the client's
-    /// `decrypt_phase`, or use `decrypt` when it matches the parameter codec.
+    /// modulus is independent of `t_in`. The return path rescales Q to q.
+    /// Decode with a rounded codec having the
+    /// same plaintext modulus and external ciphertext modulus q; use `decrypt`
+    /// when the output plaintext modulus equals the parameter plaintext modulus.
     #[inline]
     pub fn compile_lookup_table_with_codec_fn<OM, F>(
         &self,
@@ -54,14 +62,20 @@ where
         )
     }
 
-    /// Slice form of [`Self::compile_lookup_table_fn`] using the parameter codec for outputs.
+    /// Slice form of [`Self::compile_lookup_table_fn`] using the parameter plaintext modulus for outputs.
     /// See [`Self::compile_lookup_table_with_codec_slice`] for the required slice layout.
     #[inline]
     pub fn compile_lookup_table_slice(
         &self,
         outputs: &[T],
     ) -> Result<LookupTable<T>, LookupTableError> {
-        self.compile_lookup_table_with_codec_slice(self.input_plaintext_codec(), outputs)
+        self.compile_lookup_table_with_codec_slice(
+            &RoundedCodec::new(
+                self.plain_modulus_value(),
+                self.accumulator_ntru().cipher_modulus(),
+            ),
+            outputs,
+        )
     }
 
     /// Slice form of [`Self::compile_lookup_table_with_codec_fn`] with the same output-codec contract.
@@ -84,10 +98,10 @@ where
         )
     }
 
-    /// Compiles a unary function over the odd full domain using the parameter codec for outputs.
+    /// Compiles a unary function over the odd full domain using the parameter plaintext modulus for outputs.
     ///
     /// Outputs belong to `0..t_in` and can be decoded with the client's `decrypt`.
-    /// Uses [`Self::input_plaintext_codec`]; see [`Self::compile_odd_full_domain_lookup_table_with_codec_fn`]
+    /// Encodes the LUT at accumulator Q and returns at external q; see [`Self::compile_odd_full_domain_lookup_table_with_codec_fn`]
     /// for input-domain and layout requirements or a different output encoding.
     #[inline]
     pub fn compile_odd_full_domain_lookup_table_fn<F>(
@@ -98,7 +112,10 @@ where
         F: Fn(usize) -> T,
     {
         self.compile_odd_full_domain_lookup_table_with_codec_fn(
-            self.input_plaintext_codec(),
+            &RoundedCodec::new(
+                self.plain_modulus_value(),
+                self.accumulator_ntru().cipher_modulus(),
+            ),
             function,
         )
     }
@@ -128,7 +145,7 @@ where
         )
     }
 
-    /// Slice form of [`Self::compile_odd_full_domain_lookup_table_fn`] using the parameter codec for outputs.
+    /// Slice form of [`Self::compile_odd_full_domain_lookup_table_fn`] using the parameter plaintext modulus for outputs.
     /// See [`Self::compile_odd_full_domain_lookup_table_with_codec_slice`] for the required slice layout.
     #[inline]
     pub fn compile_odd_full_domain_lookup_table_slice(
@@ -136,7 +153,10 @@ where
         outputs: &[T],
     ) -> Result<LookupTable<T>, LookupTableError> {
         self.compile_odd_full_domain_lookup_table_with_codec_slice(
-            self.input_plaintext_codec(),
+            &RoundedCodec::new(
+                self.plain_modulus_value(),
+                self.accumulator_ntru().cipher_modulus(),
+            ),
             outputs,
         )
     }
@@ -161,10 +181,10 @@ where
         )
     }
 
-    /// Compiles several front-half functions using the parameter codec for outputs.
+    /// Compiles several front-half functions using the parameter plaintext modulus for outputs.
     ///
     /// Outputs belong to `0..t_in` and can be decoded with the client's `decrypt`.
-    /// Uses [`Self::input_plaintext_codec`]; see [`Self::compile_interleaved_lookup_table_with_codec_fn`]
+    /// Encodes the LUT at accumulator Q and returns at external q; see [`Self::compile_interleaved_lookup_table_with_codec_fn`]
     /// for input-domain and layout requirements or a different output encoding.
     #[inline]
     pub fn compile_interleaved_lookup_table_fn<F>(
@@ -176,7 +196,10 @@ where
         F: Fn(usize, usize) -> T,
     {
         self.compile_interleaved_lookup_table_with_codec_fn(
-            self.input_plaintext_codec(),
+            &RoundedCodec::new(
+                self.plain_modulus_value(),
+                self.accumulator_ntru().cipher_modulus(),
+            ),
             output_count,
             function,
         )
@@ -211,7 +234,7 @@ where
         )
     }
 
-    /// Slice form of [`Self::compile_interleaved_lookup_table_fn`] using the parameter codec for outputs.
+    /// Slice form of [`Self::compile_interleaved_lookup_table_fn`] using the parameter plaintext modulus for outputs.
     /// See [`Self::compile_interleaved_lookup_table_with_codec_slice`] for the required slice layout.
     #[inline]
     pub fn compile_interleaved_lookup_table_slice(
@@ -220,7 +243,10 @@ where
         outputs: &[T],
     ) -> Result<InterleavedLookupTable<T>, LookupTableError> {
         self.compile_interleaved_lookup_table_with_codec_slice(
-            self.input_plaintext_codec(),
+            &RoundedCodec::new(
+                self.plain_modulus_value(),
+                self.accumulator_ntru().cipher_modulus(),
+            ),
             output_count,
             outputs,
         )

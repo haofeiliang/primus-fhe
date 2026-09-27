@@ -31,17 +31,15 @@ fn parameters(
         SecretKeyDistr::SparseTernary,
         0.7,
     );
-    let client = NtruParameters::new(
-        POLY_LENGTH,
-        PLAIN_MODULUS,
-        modulus,
-        SecretKeyDistr::UniformBinary,
-        0.7,
-    );
+
     TfheParameters::try_new(
         external_lwe,
         NlevParameters::with_ntru_params(&accumulator, bootstrapping_log_basis, None),
-        NlevParameters::with_ntru_params(&client, key_switching_log_basis, None),
+        primus_tfhe_ntru::DecompositionConfig {
+            log_basis: key_switching_log_basis,
+            level_count: None,
+        },
+        0.7,
     )
     .unwrap()
 }
@@ -76,18 +74,17 @@ fn rejects_server_keys_with_same_layout_but_different_bases_or_modulus() {
             bootstrapping_log_basis,
             key_switching_log_basis,
         );
-        for (candidate, original) in [
-            (
-                candidate.blind_rotation(),
-                context.parameters().blind_rotation(),
-            ),
-            (
-                candidate.ntru_key_switching(),
-                context.parameters().ntru_key_switching(),
-            ),
-        ] {
-            assert_eq!(candidate.nlev_len(), original.nlev_len());
-        }
+        assert_eq!(
+            candidate.blind_rotation().nlev_len(),
+            context.parameters().blind_rotation().nlev_len()
+        );
+        assert_eq!(
+            candidate.key_switching_basis().decompose_length(),
+            context
+                .parameters()
+                .key_switching_basis()
+                .decompose_length()
+        );
         let table = U32NttTable::new(
             POLY_LENGTH.trailing_zeros(),
             candidate.accumulator_ntru().cipher_modulus(),
@@ -127,9 +124,23 @@ fn construction_errors_preserve_transform_sources() {
             .unwrap();
     // Compatible shape/distributions do not imply an invertible secret.
     let client = ClientKey::new(
-        NtruSecretKey::new(vec![0; POLY_LENGTH], SecretKeyDistr::UniformBinary),
+        primus_lwe::LweSecretKey::new(
+            (vec![0; POLY_LENGTH])[..LWE_DIMENSION]
+                .iter()
+                .map(|&s| {
+                    if s < Default::default() {
+                        context
+                            .parameters()
+                            .external_lwe()
+                            .cipher_modulus_minus_one()
+                    } else {
+                        primus_integer::SignedInteger::cast_to_unsigned(s)
+                    }
+                })
+                .collect(),
+            SecretKeyDistr::UniformBinary,
+        ),
         NtruSecretKey::new(vec![0; POLY_LENGTH], SecretKeyDistr::SparseTernary),
-        LWE_DIMENSION,
     );
     assert_eq!(
         context.accumulator_client(&client).err(),

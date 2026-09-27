@@ -30,7 +30,7 @@
 //! [`key`] contains evaluation material and component generation. Common workflow types
 //! are re-exported at this root; lower-level material is documented in its own module.
 //! Classic binary/ternary keys support PBS/MVB/CBS; sparse keys support ordinary/interleaved PBS.
-//! Client secrets must pass the backend's invertibility screening.
+//! Only accumulator secrets undergo NTRU invertibility screening; external LWE secrets are independent.
 //! Keys and values must use the same FFT table instance; equal lengths do not prove identity.
 //! Native MVB requires an even Scaled output scale and an FFT error budget.
 //! Raw ciphertexts do not record secret identity, encoding or noise margins.
@@ -81,14 +81,16 @@ pub use circuit_bootstrap::CircuitBootstrapKey;
 pub use circuit_bootstrap::{CircuitBootstrapEvaluator, CircuitBootstrapParameters};
 
 /// Secret-key or LWE public-key encryptor for the Fourier NTRU backend.
-pub type Encryptor<'a, T, Key = LweSecretKeyRef<'a, T>> =
-    primus_tfhe_ntru::Encryptor<'a, T, NativeModulus<T>, Key>;
+pub type Encryptor<'a, T, Key = LweSecretKeyRef<'a, T>, LM = NativeModulus<T>> =
+    primus_tfhe_ntru::Encryptor<'a, T, LM, Key>;
 
 /// Client-key decryptor for the Fourier NTRU backend.
-pub type Decryptor<'a, T> = primus_tfhe_ntru::Decryptor<'a, T, NativeModulus<T>>;
+pub type Decryptor<'a, T, LM = NativeModulus<T>> = primus_tfhe_ntru::Decryptor<'a, T, LM>;
 
 /// NTRU-TFHE parameters for the native-torus Fourier backend.
-pub type TfheParameters<T> = primus_tfhe_ntru::TfheParameters<T, NativeModulus<T>>;
+pub type TfheParameters<T, LM = NativeModulus<T>> =
+    primus_tfhe_ntru::TfheParameters<T, NativeModulus<T>, LM>;
 
-/// Named mathematical choices for this backend; moduli are derived from the LWE parameters.
-pub type TfheConfig<T> = primus_tfhe_ntru::TfheConfig<T, NativeModulus<T>>;
+/// Named mathematical choices with independent accumulator Q and external LWE q.
+pub type TfheConfig<T, LM = NativeModulus<T>> =
+    primus_tfhe_ntru::TfheConfig<T, NativeModulus<T>, LM>;

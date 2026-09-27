@@ -1,6 +1,6 @@
 //! Independent coefficient phases and FFT error in NTRU bucket aggregation.
 
-use num_traits::{ConstOne, ConstZero};
+use num_traits::ConstZero;
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable, TfheFftTable, TorusFftValue};
 use primus_integer::SignedInteger;
@@ -84,8 +84,8 @@ fn check<T: TorusFftValue, Table: FftTable>(level_count: Option<usize>) {
     let table = Table::new(N.trailing_zeros()).unwrap();
     let mut fft = FftEngine::new(&table);
     let modulus = NativeModulus::<T>::new();
-    let client_params = NtruParameters::new(
-        N,
+    let client_params = LweParameters::new(
+        DIM,
         T::as_from(16usize),
         modulus,
         SecretKeyDistr::fixed_hamming_weight_binary(DIM, WEIGHT),
@@ -101,13 +101,12 @@ fn check<T: TorusFftValue, Table: FftTable>(level_count: Option<usize>) {
     let gadget = NlevParameters::with_ntru_params(&params, 8, level_count);
     let basis = gadget.basis();
     let mut rng = StdRng::seed_from_u64(0xB803);
-    let (client, _) =
-        FourierNtruSecretKey::generate_padded_pair(&client_params, DIM, &mut fft, &mut rng)
-            .unwrap();
-    let support: Vec<_> = client.as_slice()[..DIM]
+    let client = primus_lwe::LweSecretKey::generate(&client_params, &mut rng);
+    let support: Vec<_> = client
+        .as_ref()
         .iter()
         .enumerate()
-        .filter_map(|(i, &v)| (v == T::SignedInteger::ONE).then_some(i))
+        .filter_map(|(i, &v)| (v == T::ONE).then_some(i))
         .collect();
     assert_eq!(support.len(), WEIGHT);
     let (secret, key) = FourierNtruSecretKey::generate_pair(&params, &mut fft, &mut rng).unwrap();
@@ -122,14 +121,18 @@ fn check<T: TorusFftValue, Table: FftTable>(level_count: Option<usize>) {
                 0.7,
             ),
             gadget.clone(),
-            NlevParameters::with_ntru_params(&client_params, 8, None),
+            primus_tfhe_ntru::DecompositionConfig {
+                log_basis: 8,
+                level_count: None,
+            },
+            client_params.noise_distribution().standard_deviation(),
         )
         .unwrap(),
         table,
     )
     .unwrap();
     let mut fft = context.new_fft_engine();
-    let imported = ClientKey::new(client, secret.clone(), DIM);
+    let imported = ClientKey::new(client.clone(), secret.clone());
     let native_secret: Vec<T> = secret
         .as_slice()
         .iter()

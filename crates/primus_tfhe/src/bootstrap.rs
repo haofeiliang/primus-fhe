@@ -26,8 +26,10 @@ pub trait ProgrammableBootstrap<T: FheUint> {
     /// of the rotation ring is always the negacyclic extension.
     /// Boolean gates deliberately use that extension and a different output scale.
     /// Input noise and modulus-switch rounding must stay within the selected LUT
-    /// interval. Outputs retain the scale chosen at compilation, including raw
-    /// Boolean or gadget scales; they are not automatically re-encoded.
+    /// interval. Outputs retain the normalized scale chosen at compilation: a backend returning
+    /// from accumulator modulus Q to external modulus q rescales raw values by q/Q,
+    /// with rounding and return-key noise. Decode using the corresponding external
+    /// codec. Raw Boolean or gadget values are not automatically re-encoded.
     ///
     /// # Panics
     ///

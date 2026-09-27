@@ -59,6 +59,7 @@ fn parameters() -> TfheParameters<u64> {
     let modulus = BarrettModulus::new(Q);
     let lwe = LweParameters::new(16, 4, modulus, SecretKeyDistr::UniformBinary, 0.7);
     TfheParameters::try_from_config(TfheConfig {
+        accumulator_modulus: modulus,
         external_lwe: lwe,
         poly_length: N,
         accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,
