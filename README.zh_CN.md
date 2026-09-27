@@ -22,6 +22,8 @@ Primus FHE 是一个实验性的 Rust 全同态加密 workspace，提供算术�
 | [GLWE 参数与客户端](crates/primus_tfhe_glwe/README.zh_CN.md) | [primus_tfhe_glwe_ntt](crates/primus_tfhe_glwe_ntt/README.zh_CN.md) | [primus_tfhe_glwe_fourier](crates/primus_tfhe_glwe_fourier/README.zh_CN.md) |
 | [NTRU 参数与客户端](crates/primus_tfhe_ntru/README.zh_CN.md) | [primus_tfhe_ntru_ntt](crates/primus_tfhe_ntru_ntt/README.zh_CN.md) | [primus_tfhe_ntru_fourier](crates/primus_tfhe_ntru_fourier/README.zh_CN.md) |
 
+对独立加密的 chunks 和跨多个多项式的表，使用 [NTRU 高精度查表](crates/primus_tfhe_ntru_lut/README.zh_CN.md)。
+
 四后端均支持 LWE 私钥/公钥客户端、经典 binary/ternary 私钥、可编程自举（PBS）、交错 ManyLUT、有界双输入 LUT、奇数明文模数全域单输出 LUT、Boolean 门、可供 CMUX 使用的电路自举（CBS），以及固定尺度分解式多值自举（MVB）。ManyLUT 和 MVB 对同一个加密输入计算多个函数。Fourier 支持 RustFFT 和 TfheFFT，并保留各自的精度要求。
 
 固定重量二元稀疏 PBS 属于实验性能力。GLWE 两后端支持 sparse PBS、CBS 和 MVB；NTRU 两后端支持 sparse 普通/交错 PBS，但拒绝 sparse CBS/MVB。NTRU 要求私钥在环内可逆；其 Fourier 后端还检查数值稳定性，固定重量二元私钥必须具有奇数重量。编码和组合边界见[共享能力指南](crates/primus_tfhe/README.zh_CN.md#crate-分工与能力)。
@@ -73,7 +75,7 @@ cargo +nightly test --workspace --all-features
 
 | 命令 | 覆盖范围 |
 | --- | --- |
-| `just tfhe` | 七个 TFHE crate 与测试辅助：默认检查、Clippy、测试/doctest 和文档 |
+| `just tfhe` | 八个 TFHE crate 与测试辅助：默认检查、Clippy、测试/doctest 和文档 |
 | `just tfhe-simd` | 相同包的 nightly SIMD 检查、Clippy 和测试/doctest |
 | `just simd` | 指定算术 crate 的 nightly SIMD 检查、Clippy 和 nextest |
 

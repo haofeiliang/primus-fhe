@@ -3,7 +3,7 @@ set windows-shell := ["powershell.exe", "-NoLogo", "-Command"]
 simd-packages := "-p primus_integer -p primus_modulus -p primus_barrett_derive -p primus_factor -p primus_rns -p primus_decompose"
 simd-features := "primus_integer/simd,primus_modulus/simd,primus_barrett_derive/simd,primus_factor/simd,primus_rns/simd,primus_decompose/simd"
 
-tfhe-packages := "-p primus_tfhe -p primus_tfhe_glwe -p primus_tfhe_glwe_ntt -p primus_tfhe_glwe_fourier -p primus_tfhe_ntru -p primus_tfhe_ntru_ntt -p primus_tfhe_ntru_fourier -p primus_tfhe_test_support -p primus_test_allocations"
+tfhe-packages := "-p primus_tfhe -p primus_tfhe_glwe -p primus_tfhe_glwe_ntt -p primus_tfhe_glwe_fourier -p primus_tfhe_ntru -p primus_tfhe_ntru_ntt -p primus_tfhe_ntru_fourier -p primus_tfhe_ntru_lut -p primus_tfhe_test_support -p primus_test_allocations"
 
 default: fmt check lint test
 
@@ -38,7 +38,7 @@ test:
 test-simd:
   cargo +nightly nextest run {{simd-packages}} --all-targets --features {{simd-features}}
 
-# Seven TFHE crates, test support and doctests.
+# Eight TFHE crates, test support and doctests.
 tfhe: fmt-check
   cargo check {{tfhe-packages}} --all-targets
   cargo clippy {{tfhe-packages}} --all-targets -- -D warnings

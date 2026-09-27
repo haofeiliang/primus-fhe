@@ -13,9 +13,10 @@ use crate::{
 /// One-hot extension of CBS for classic binary/ternary LWE secrets.
 ///
 /// Input uses unsigned Rounded encoding with t=2*M, M=2^tau, tau>=1.
-/// All M selectors are materialized, including r=0. NLEV outputs are coefficient
-/// polynomials under accumulator secret f at Q; NGSW outputs use this backend's
-/// transform representation. Layout is `[selector][level][polynomial element]`,
+/// Full-output methods materialize all M selectors, including r=0;
+/// [`Self::one_hot_nonzero_ngsw_to`] omits r=0 before projection and scheme switching.
+/// NLEV outputs are coefficient polynomials under accumulator secret f at Q;
+/// NGSW outputs use this backend's transform representation. Layout is `[selector][level][polynomial element]`,
 /// in natural selector order and output-basis scalar order, with no padding.
 /// Each call performs one BR and L full constant projections per selector.
 /// Online calls overwrite outputs, reuse BR external-product scratch, and allocate nothing.
@@ -107,6 +108,16 @@ where
         vec![Complex64::default(); self.lookup_table.output_nlev_len() / 2]
     }
 
+    /// Allocates (M-1)*L*N/2 complex values for selectors r=1..M-1.
+    /// Reuse with [`Self::one_hot_nonzero_ngsw_to`].
+    #[must_use]
+    pub fn allocate_nonzero_ngsw_output(&self) -> Vec<Complex64> {
+        vec![
+            Complex64::default();
+            self.lookup_table.output_nlev_len() / 2 - self.parameters().output_fourier_nlev_len()
+        ]
+    }
+
     /// Borrows ordinary PBS operations without allocation or changing the bound resources.
     #[must_use]
     pub fn bootstrapper_mut(
@@ -126,13 +137,28 @@ where
     /// Writes coefficient NLEV selectors only, without scheme switching.
     /// Inherits [`Self::one_hot_to`]'s input, layout, noise and prewrite checks.
     pub fn one_hot_nlev_to(&mut self, input: &LweCiphertext<T>, output: &mut [T]) {
-        self.evaluate(input, Some(output), None);
+        self.evaluate(input, 0, Some(output), None);
     }
 
     /// Writes transformed NGSW selectors only; retains no full NLEV output batch.
     /// Inherits [`Self::one_hot_to`]'s input, layout, noise and prewrite checks.
     pub fn one_hot_ngsw_to(&mut self, input: &LweCiphertext<T>, output: &mut [Complex64]) {
-        self.evaluate(input, None, Some(output));
+        self.evaluate(input, 0, None, Some(output));
+    }
+
+    /// Writes only the transformed NGSW selectors for branches r=1..M-1.
+    /// Output is packed as `[r-1][level][row element]`, with exactly (M-1)*L*N/2 complex values.
+    /// For input m=0, all output target bits are zero. No r=0 projection or scheme
+    /// switch is performed; the shared blind rotation and input guard are unchanged.
+    /// Output is fully overwritten without allocation or prior clearing.
+    ///
+    /// # Correctness
+    /// Inherits [`Self::one_hot_to`]'s input, representation and noise requirements.
+    ///
+    /// # Panics
+    /// Rejects input dimension and exact output length before BR or output writes.
+    pub fn one_hot_nonzero_ngsw_to(&mut self, input: &LweCiphertext<T>, output: &mut [Complex64]) {
+        self.evaluate(input, 1, None, Some(output));
     }
 
     /// Writes both selector representations from the same BR and coefficient projections.
@@ -159,12 +185,16 @@ where
         nlev_output: &mut [T],
         ngsw_output: &mut [Complex64],
     ) {
-        self.evaluate(input, Some(nlev_output), Some(ngsw_output));
+        self.evaluate(input, 0, Some(nlev_output), Some(ngsw_output));
     }
 
+    /// Evaluates either the complete selector set (first_selector=0) or its
+    /// nonzero branches (first_selector=1). Output slots start at zero in both
+    /// modes; extraction rotations always use the actual branch index r.
     fn evaluate(
         &mut self,
         input: &LweCiphertext<T>,
+        first_selector: usize,
         mut nlev_output: Option<&mut [T]>,
         mut ngsw_output: Option<&mut [Complex64]>,
     ) {
@@ -175,20 +205,25 @@ where
             tfhe.external_lwe_dimension(),
             "one-hot input dimension mismatch"
         );
+
+        let nlev_len = parameters.output_nlev_len();
+        let ngsw_len = nlev_len / 2;
+        let selector_count = self.lookup_table.selector_count() - first_selector;
         if let Some(output) = &nlev_output {
             assert_eq!(
                 output.len(),
-                self.lookup_table.output_nlev_len(),
+                selector_count * nlev_len,
                 "one-hot NLEV output length mismatch"
             );
         }
         if let Some(output) = &ngsw_output {
             assert_eq!(
                 output.len(),
-                self.lookup_table.output_nlev_len() / 2,
+                selector_count * ngsw_len,
                 "one-hot NGSW output length mismatch"
             );
         }
+
         blind_rotate_lookup_table_to(
             self.pbs.server_key,
             input,
@@ -198,9 +233,12 @@ where
             tfhe,
             &mut self.pbs.fft,
         );
-        let nlev_len = parameters.output_nlev_len();
-        let ngsw_len = nlev_len / 2;
-        for selector in 0..self.lookup_table.selector_count() {
+
+        // Each requested selector is extracted independently from the same BR.
+        // Skipping branch zero therefore skips its projection and conversion too.
+        for (output_index, selector) in
+            (first_selector..self.lookup_table.selector_count()).enumerate()
+        {
             // Negative BR places selector r at -r*S+l, including its negacyclic
             // sign. Rotate by +r*S first; prefix projection then shifts by -l.
             // General BR tails are nonzero: prefix expansion is not valid here.
@@ -210,7 +248,7 @@ where
                 tfhe.accumulator_ntru().cipher_modulus(),
             );
             let projected = match nlev_output.as_deref_mut() {
-                Some(output) => &mut output[selector * nlev_len..(selector + 1) * nlev_len],
+                Some(output) => &mut output[output_index * nlev_len..(output_index + 1) * nlev_len],
                 None => self.projected.as_mut(),
             };
             self.circuit_key
@@ -227,7 +265,7 @@ where
                 self.circuit_key.scheme_switch_key().apply_to(
                     &NlevCiphertext::new(&*projected),
                     &mut FourierNgswCiphertext::new(
-                        &mut output[selector * ngsw_len..(selector + 1) * ngsw_len],
+                        &mut output[output_index * ngsw_len..(output_index + 1) * ngsw_len],
                     ),
                     &mut self.pbs.fft,
                     self.pbs.blind_rotation.rotation.external_product(),

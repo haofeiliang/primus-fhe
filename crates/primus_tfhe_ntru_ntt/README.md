@@ -70,11 +70,17 @@ Standalone component generation must use paired secrets and the same transform r
 
 ## One-hot CBS
 
-`OneHotCircuitBootstrapEvaluator::try_new(&context, &server)` binds existing CBS keys and produces every selector for one chunk, including the default r=0. Use `try_from_bootstrapper` to reuse PBS workspace, `bootstrapper_mut()` to borrow ordinary PBS, and `into_bootstrapper()` to recover it. Classic binary/ternary keys are supported; sparse keys and missing CBS material are rejected. Ordinary CBS interfaces are unchanged.
+`OneHotCircuitBootstrapEvaluator::try_new(&context, &server)` binds existing CBS keys for one chunk. Full-output methods include the default selector r=0. Use `try_from_bootstrapper` to reuse PBS workspace, `bootstrapper_mut()` to borrow ordinary PBS, and `into_bootstrapper()` to recover it. Classic binary/ternary keys are supported; sparse keys and missing CBS material are rejected. Ordinary CBS interfaces are unchanged.
 
 Allocate with `allocate_nlev_output()` / `allocate_ngsw_output()`, then reuse `one_hot_nlev_to`, `one_hot_ngsw_to`, or `one_hot_to(input, nlev, ngsw)`. Each call performs one BR; requesting one representation does not generate a complete batch of the other. NLEV uses coefficient representation at Q with N integers per row; NGSW uses NTT representation with N integers per row. Flat layout is `[selector][level][row element]`, without padding; levels follow `evaluator.parameters().output_basis().scalar_iter()`. Outputs are overwritten completely, with no online allocation.
 
+If the consumer needs only nonzero branches, allocate with `allocate_nonzero_ngsw_output()` and call `one_hot_nonzero_ngsw_to(input, output)`. This writes M-1 NGSWs in `[r-1][level][row element]` order for r=1..M-1, skipping the projection and scheme switch for r=0. For input m=0, all target bits are zero. The shared BR, input guard and noise requirements remain unchanged; the public first LUT layer still uses all M NLEV selectors.
+
 For selection among public polynomials, use `NlevCiphertext::write_ntt_form` into preallocated transformed storage before the NLEV external product. NGSW slices can directly be wrapped as `NttNgswCiphertext` to consume encrypted candidates with the same basis. See the [one_hot integration test](tests/one_hot.rs) for both consumers and the [shared one-hot contract](../primus_tfhe_ntru/README.md#one-hot-cbs) for encoding, capacity and the noise guard.
+
+## High-precision lookup
+
+[primus_tfhe_ntru_lut](../primus_tfhe_ntru_lut/README.md) composes one-hot CBS with table selection, aggregated negative rotations and the independent LWE return. It supports uniform input/output chunk widths and independently chosen counts. For lower-level composition, `ServerKey::initializer()` exposes the classic NLEV[1] under the context's BR basis; `key_switching_key()` exposes the Q→q, f→s return key.
 
 ## Lower-level composition
 

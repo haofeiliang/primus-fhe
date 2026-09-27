@@ -72,11 +72,17 @@ let mut evaluator = context.evaluator(&server)?;
 
 ## One-hot CBS
 
-`OneHotCircuitBootstrapEvaluator::try_new(&context, &server)` 绑定现有 CBS 密钥，为一个 chunk 生成含默认 r=0 的完整 selectors。也可通过 `try_from_bootstrapper` 复用 PBS 工作区，通过 `bootstrapper_mut()` 借用普通 PBS，最后用 `into_bootstrapper()` 取回工作区。首版支持 classic binary/ternary，拒绝 sparse 和缺少 CBS 材料的密钥；普通 CBS 接口保持不变。
+`OneHotCircuitBootstrapEvaluator::try_new(&context, &server)` 为一个 chunk 绑定现有 CBS 密钥；完整输出接口包含默认 selector r=0。也可通过 `try_from_bootstrapper` 复用 PBS 工作区，通过 `bootstrapper_mut()` 借用普通 PBS，最后用 `into_bootstrapper()` 取回工作区。首版支持 classic binary/ternary，拒绝 sparse 和缺少 CBS 材料的密钥；普通 CBS 接口保持不变。
 
-先调用 `allocate_nlev_output()` / `allocate_ngsw_output()`，再重复使用 `one_hot_nlev_to`、`one_hot_ngsw_to` 或 `one_hot_to(input, nlev, ngsw)`。三者每次均只执行一次 BR；只需要一种表示时不会生成另一种完整输出批次。NLEV 是 Q 下的系数表示，每行 N 个整数；NGSW 是Fourier 表示，每行 N/2 个 Complex64。扁平布局为 `[selector][level][行元素]`，不含 padding；level 顺序来自 `evaluator.parameters().output_basis().scalar_iter()`。输出会完整覆盖，在线零额外分配。
+先调用 `allocate_nlev_output()` / `allocate_ngsw_output()`，再重复使用 `one_hot_nlev_to`、`one_hot_ngsw_to` 或 `one_hot_to(input, nlev, ngsw)`。三者每次均只执行一次 BR；只需要一种表示时不会生成另一种完整输出批次。NLEV 是 Q 下的系数表示，每行 N 个整数；NGSW 是 Fourier 表示，每行 N/2 个 Complex64。扁平布局为 `[selector][level][行元素]`，不含 padding；level 顺序来自 `evaluator.parameters().output_basis().scalar_iter()`。输出会完整覆盖，在线零额外分配。
+
+消费方只需要非零分支时，用 `allocate_nonzero_ngsw_output()` 分配，再调用 `one_hot_nonzero_ngsw_to(input, output)`。它仅生成 r=1..M-1 的 M-1 个 NGSW，按 `[r-1][level][行元素]` 紧凑排列，跳过 r=0 的投影和 scheme switch。输入 m=0 时，全部目标 bit 均为零。共享 BR、输入保护区和噪声要求不变；公开 LUT 首层仍使用全部 M 个 NLEV selectors。
 
 NLEV 用于公开多项式选择时，先用 `NlevCiphertext::write_fourier_form` 写入预分配的变换缓冲，再做外积；NGSW 可直接包装成 `FourierNgswCiphertext`，配合相同 basis 消费密文候选。完整调用和消费见 [one_hot 测试](tests/one_hot.rs)，编码、容量与噪声保护区见[共用 one-hot 契约](../primus_tfhe_ntru/README.zh_CN.md#one-hot-cbs)。
+
+## 高精度查表
+
+[primus_tfhe_ntru_lut](../primus_tfhe_ntru_lut/README.zh_CN.md) 组合 one-hot CBS、表选择、聚合负向旋转和独立 LWE 返回，支持统一输入/输出 chunk 位宽及独立数量。底层组合可通过 `ServerKey::initializer()` 取得 context 的 BR basis 下的 classic NLEV[1]，通过 `key_switching_key()` 取得 Q→q、f→s 返回密钥。
 
 ## 底层组合
 

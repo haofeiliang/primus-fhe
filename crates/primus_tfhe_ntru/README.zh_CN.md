@@ -61,7 +61,9 @@ ManyLUT 编译同一个输入的多个函数。后端 sparse 示例计算 `x % 4
 
 令 gadget 层数为 L，`W=next_power_of_two(L)`、`S=N/M`、`A=N/(2*M*W)`。要求 `2*M*W<=N`，padding 层为零，BR 的量化步长仅为 W，不是 M*W。测试多项式是 `sum_{j=1-A}^{A} sum_l g_l X^(l-j*W)`。若实际逐坐标量化后的相位满足 `u_bar=S*m+W*e mod 2N`、`-A<=e<A`，负向 BR 后用 `X^(r*S-l)` 移位再做完整 reverse trace，即得到第 r 个 selector、第 l 层的 `g_l*delta_r(m)`。窗口左闭右开，相邻消息的中点归较大的消息。e 包含输入噪声、编码舍入和量化误差；参数形状检查不证明这个保护区成立。
 
-两后端的 `OneHotCircuitBootstrapEvaluator` 生成全部 M 个 selectors，包括实体化的 r=0；NLEV 为系数表示，NGSW 为各后端变换表示。支持分别生成或共享一次 BR 同时生成两者。完整投影不要求 BR 消息零尾，不依赖额外的部分 trace 工作区接口。后续 scheme switch 保留普通 CBS 的 f/f² 误差预算，Fourier 还须计入 native 减半及 FFT 误差。本功能不改变普通 CBS，也不包含多多项式高精度查表。
+两后端的 `OneHotCircuitBootstrapEvaluator` 完整输出接口生成全部 M 个 selectors，包括实体化的 r=0；NLEV 为系数表示，NGSW 为各后端变换表示。支持分别生成或共享一次 BR 同时生成两者。`one_hot_nonzero_ngsw_to` 则仅输出 r=1..M-1，按 `[r-1][level][行元素]` 紧凑排列，跳过 r=0 的投影和 scheme switch；m=0 时所有目标 bit 为零。完整投影不要求 BR 消息零尾，不依赖额外的部分 trace 工作区接口。后续 scheme switch 保留普通 CBS 的 f/f² 误差预算，Fourier 还须计入 native 减半及 FFT 误差。本功能不改变普通 CBS，也不包含多多项式高精度查表。
+
+多 chunk 求值由独立的 [primus_tfhe_ntru_lut](../primus_tfhe_ntru_lut/README.zh_CN.md) crate 提供，消费这些 selectors 和共用返回密钥。
 
 ## 进一步阅读
 

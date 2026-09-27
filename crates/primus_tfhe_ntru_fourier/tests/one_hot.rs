@@ -93,6 +93,9 @@ fn selectors<Table: FftTable>(distr: SecretKeyDistr) {
     let mut ngsw = evaluator.allocate_ngsw_output();
     let mut nlev_only = nlev.clone();
     let mut ngsw_only = ngsw.clone();
+    let mut nonzero_ngsw = evaluator.allocate_nonzero_ngsw_output();
+    let selector_len = L * (N / 2);
+    assert_eq!(nonzero_ngsw.len(), (M - 1) * selector_len);
     let mut coefficients = NtruCiphertext::<Vec<u64>>::zero(N);
     let mut selected = NtruCiphertext::<Vec<u64>>::zero(N);
     let mut ep = FourierNtruExternalProductContext::new(N);
@@ -122,10 +125,14 @@ fn selectors<Table: FftTable>(distr: SecretKeyDistr) {
                 .apply_lookup_table_to(&input, &identity, &mut lwe_output);
             evaluator.one_hot_nlev_to(&input, &mut nlev_only);
             evaluator.one_hot_ngsw_to(&input, &mut ngsw_only);
+            evaluator.one_hot_nonzero_ngsw_to(&input, &mut nonzero_ngsw);
         });
         assert_eq!(allocation.count, 0);
         assert_eq!(nlev, nlev_only);
         assert_eq!(ngsw, ngsw_only);
+        // Compact slot r - 1 must preserve the full-mode selector r, including
+        // the all-zero target bits for message 0 and repeated workspace reuse.
+        assert_eq!(nonzero_ngsw, ngsw[selector_len..]);
         assert_eq!(
             context
                 .decryptor(&client)
@@ -221,6 +228,23 @@ fn selectors<Table: FftTable>(distr: SecretKeyDistr) {
             .is_err()
         );
         assert!(nlev.iter().all(|&v| v == 7));
+        assert!(ngsw.iter().all(|&v| v == Complex64::new(7.0, 0.0)));
+    }
+    // Compact mode validates its own exact shape before writing. A full batch
+    // is oversized here; accepting it would silently change the slot mapping.
+    for (input, output_len) in [
+        (&invalid, nonzero_ngsw.len()),
+        (&input, nonzero_ngsw.len() - 1),
+        (&input, ngsw.len()),
+        (&input, 0),
+    ] {
+        ngsw.fill(Complex64::new(7.0, 0.0));
+        assert!(
+            catch_unwind(AssertUnwindSafe(|| {
+                evaluator.one_hot_nonzero_ngsw_to(input, &mut ngsw[..output_len]);
+            }))
+            .is_err()
+        );
         assert!(ngsw.iter().all(|&v| v == Complex64::new(7.0, 0.0)));
     }
     // Recovery and rebinding preserve the PBS/ordinary-CBS workflow.

@@ -87,9 +87,14 @@ impl<T: TorusFftValue> ServerKey<T> {
         self.circuit_bootstrap.as_deref()
     }
 
-    /// Returns the classic Fourier NLEV encryption of one; panics for sparse keys.
+    /// Returns the classic Fourier NLEV encryption of one, using the context's BR basis.
+    /// This can lift public polynomials into the accumulator's NTRU domain.
+    ///
+    /// # Panics
+    /// Panics for sparse keys, which have no standalone initializer.
+    #[must_use]
     #[inline]
-    pub(crate) fn initializer(&self) -> &FourierNlev<Vec<Complex64>> {
+    pub fn initializer(&self) -> &FourierNlev<Vec<Complex64>> {
         match &self.controls {
             Controls::Classic { initializer, .. } => initializer,
             Controls::Sparse(_) => panic!("classic initializer requires a classic key"),
@@ -102,8 +107,10 @@ impl<T: TorusFftValue> ServerKey<T> {
     }
 
     /// Returns the post-bootstrap `f -> s` key-switching key.
+    /// It rescales accumulator Q to external q before switching the secret.
+    #[must_use]
     #[inline]
-    pub(crate) fn key_switching_key(&self) -> &NtruLweKeySwitchingKey<T> {
+    pub fn key_switching_key(&self) -> &NtruLweKeySwitchingKey<T> {
         &self.key_switching_key
     }
 

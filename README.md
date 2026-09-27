@@ -22,6 +22,8 @@ Examples separate client key generation/encryption, server evaluation, and clien
 | [GLWE parameters and clients](crates/primus_tfhe_glwe/README.md) | [primus_tfhe_glwe_ntt](crates/primus_tfhe_glwe_ntt/README.md) | [primus_tfhe_glwe_fourier](crates/primus_tfhe_glwe_fourier/README.md) |
 | [NTRU parameters and clients](crates/primus_tfhe_ntru/README.md) | [primus_tfhe_ntru_ntt](crates/primus_tfhe_ntru_ntt/README.md) | [primus_tfhe_ntru_fourier](crates/primus_tfhe_ntru_fourier/README.md) |
 
+For independently encrypted chunks and tables spanning multiple polynomials, use [NTRU high-precision lookup](crates/primus_tfhe_ntru_lut/README.md).
+
 All four backends support LWE private/public-key clients, classic binary/ternary secrets, programmable bootstrapping (PBS), interleaved ManyLUT, bounded bivariate LUTs, odd-plaintext-modulus full-domain unary LUTs, Boolean gates, circuit bootstrapping (CBS) with CMUX consumption, and fixed-scale factorized multi-value bootstrapping (MVB). ManyLUT and MVB compute several functions of one encrypted input. Fourier supports both RustFFT and TfheFFT, with backend-specific precision requirements.
 
 Sparse fixed-weight binary PBS is experimental. Both GLWE backends support sparse PBS, CBS, and MVB; both NTRU backends support sparse ordinary/interleaved PBS but reject sparse CBS/MVB. NTRU requires an invertible secret; its Fourier backend also checks numerical stability and requires odd weight for fixed-weight binary secrets. See the [shared capability guide](crates/primus_tfhe/README.md#crate-map-and-capabilities) for encoding and composition boundaries.
@@ -73,7 +75,7 @@ The [justfile](justfile) offers focused workflows:
 
 | Command | Coverage |
 | --- | --- |
-| `just tfhe` | Seven TFHE crates and test support: default checks, Clippy, tests/doctests, and docs |
+| `just tfhe` | Eight TFHE crates and test support: default checks, Clippy, tests/doctests, and docs |
 | `just tfhe-simd` | The same packages with nightly SIMD: checks, Clippy, and tests/doctests |
 | `just simd` | Selected arithmetic crates with nightly SIMD: checks, Clippy, and nextest |
 
