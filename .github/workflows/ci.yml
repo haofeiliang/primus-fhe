@@ -50,7 +50,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           prefix-key: v2-rust
-      - run: cargo nextest run --workspace
+      - run: cargo nextest run --workspace --lib --tests
       - run: cargo test --workspace --doc
 
   nightly:
@@ -70,7 +70,7 @@ jobs:
         with:
           prefix-key: v2-rust
       - run: cargo +nightly clippy --workspace --all-targets --all-features -- -D warnings
-      - run: cargo +nightly nextest run --workspace --all-features
+      - run: cargo +nightly nextest run --workspace --lib --tests --all-features
       - run: cargo +nightly test --workspace --all-features --doc
       - run: cargo +nightly doc --workspace --all-features --no-deps --document-private-items
         env:

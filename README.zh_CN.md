@@ -75,11 +75,15 @@ cargo +nightly test --workspace --all-features
 
 | 命令 | 覆盖范围 |
 | --- | --- |
+| `just test` / `just test-doc` | 全 workspace 单元/集成测试 / doctests |
+| `just bench-smoke <package> <target>` | 单个 Criterion target 的 setup 和断言，不采样延迟 |
 | `just tfhe` | 八个 TFHE crate 与测试辅助：默认检查、Clippy、测试/doctest 和文档 |
 | `just tfhe-simd` | 相同包的 nightly SIMD 检查、Clippy 和测试/doctest |
 | `just simd` | 指定算术 crate 的 nightly SIMD 检查、Clippy 和 nextest |
 
 `just` 为可选工具；调用 nextest 的流程还需安装 `cargo-nextest`。[CI 工作流](.github/workflows/ci.yml)定义全 workspace 验证：格式检查、stable 默认配置与 nightly 全 features 的 all-target Clippy、测试和 doctest，以及包含私有项的严格 nightly rustdoc。本地 `just ci` 组合默认 workspace 与局部 SIMD 流程，并不等同于 CI 的全 features 矩阵。
+
+测试与基准的选择、可选 feature 覆盖及契约归属见[测试指南](guides/development/testing.md)。
 
 仓库配置了 `target-cpu=native`，本地产物可能使用其他 CPU 不支持的指令；CI 会清除该设置。基准命令及负载参数随各 crate 的 benchmark 保存；性能测量应与编译、测试分开执行。
 

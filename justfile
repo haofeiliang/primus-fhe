@@ -7,7 +7,7 @@ tfhe-packages := "-p primus_tfhe -p primus_tfhe_glwe -p primus_tfhe_glwe_ntt -p 
 
 default: fmt check lint test
 
-ci: fmt-check check lint test simd tfhe-simd
+ci: fmt-check check lint test test-doc simd tfhe-simd
 
 simd: check-simd lint-simd test-simd
 
@@ -32,11 +32,24 @@ lint:
 lint-simd:
   cargo +nightly clippy {{simd-packages}} --all-targets --features {{simd-features}} -- -D warnings
 
+# Run unit/integration tests; Criterion targets belong to bench-smoke.
 test:
-  cargo nextest run --workspace --all-targets
+  cargo nextest run --workspace --lib --tests
 
 test-simd:
-  cargo +nightly nextest run {{simd-packages}} --all-targets --features {{simd-features}}
+  cargo +nightly nextest run {{simd-packages}} --lib --tests --features {{simd-features}}
+
+# Nextest does not execute rustdoc examples.
+test-doc:
+  cargo test --workspace --doc
+
+# Run one Criterion target once, including setup and assertions, without sampling.
+bench-smoke package target *cargo-args:
+  cargo bench -p {{package}} --bench {{target}} {{cargo-args}} -- --test
+
+# The same target with nightly SIMD; extra arguments are Cargo feature options.
+bench-smoke-simd package target *cargo-args:
+  cargo +nightly bench -p {{package}} --bench {{target}} --features simd {{cargo-args}} -- --test
 
 # Eight TFHE crates, test support, doctests and complete NTRU lookup examples.
 tfhe: fmt-check

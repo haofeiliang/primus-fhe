@@ -75,11 +75,15 @@ The [justfile](justfile) offers focused workflows:
 
 | Command | Coverage |
 | --- | --- |
+| `just test` / `just test-doc` | Workspace unit/integration tests / doctests |
+| `just bench-smoke <package> <target>` | One Criterion target's setup and assertions, without latency sampling |
 | `just tfhe` | Eight TFHE crates and test support: default checks, Clippy, tests/doctests, and docs |
 | `just tfhe-simd` | The same packages with nightly SIMD: checks, Clippy, and tests/doctests |
 | `just simd` | Selected arithmetic crates with nightly SIMD: checks, Clippy, and nextest |
 
 `just` is optional; workflows that invoke nextest also require `cargo-nextest`. The [CI workflow](.github/workflows/ci.yml) is the full workspace validation reference: formatting, stable/default and nightly/all-feature all-target Clippy, tests and doctests, and strict nightly rustdoc including private items. Local `just ci` combines the workspace default and focused SIMD workflows; it is not identical to CI's all-feature matrix.
+
+Test and benchmark selection, optional feature coverage and contract ownership are described in the [testing guide](guides/development/testing.md).
 
 The repository configures `target-cpu=native`, so local artifacts may use instructions unavailable on other CPUs. CI clears that setting. Benchmark commands and workload parameters are documented with each crate's benchmarks; measure performance separately from compilation and tests.
 
