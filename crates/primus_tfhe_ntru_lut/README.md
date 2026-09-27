@@ -31,7 +31,14 @@ let mut output = evaluator.allocate_output();
 evaluator.evaluate_to(&encrypted_chunks, &mut output);
 ```
 
-Use `FourierLookupTableEvaluator` with a Fourier context for the same workflow. Runnable end-to-end coverage is in [evaluation.rs](tests/evaluation.rs).
+Complete runnable workflows are in [ntt_lookup.rs](examples/ntt_lookup.rs) and [fourier_lookup.rs](examples/fourier_lookup.rs). They generate independent LWE/NTRU secrets, encrypt six two-bit chunks, compile a table spanning 16 polynomials, reuse the evaluator and decode four output chunks. The Fourier example runs both RustFFT and TFHE-FFT. Parameters are functional fixtures; the examples evaluate `(x*x + 3*x + x/17 + 7) mod 256` on zero, mixed digits and the domain endpoint.
+
+```sh
+cargo run -p primus_tfhe_ntru_lut --example ntt_lookup
+cargo run -p primus_tfhe_ntru_lut --example fourier_lookup
+```
+
+[evaluation.rs](tests/evaluation.rs) additionally exhausts small domains and checks storage reuse and rejection boundaries.
 
 ## Encoding and table partition
 
@@ -67,7 +74,7 @@ The data LUT stores each function value once per input and output chunk. Repeate
 
 Every input chunk undergoes CBS once per call. Only the public first layer generates all M NLEV selectors. Rotation controls and later encrypted layers request r=1..M-1 through `one_hot_nonzero_ngsw_to`, skipping r=0 projection and scheme switching; compact slot r-1 represents branch r. First-layer NLEV selectors, later table-layer NGSW selectors and aggregated rotation controls are reused across outputs. Only one output's candidate tree is stored. All buffers are allocated during construction; `evaluate_to` overwrites its outputs without allocation. Chunk counts and all LWE dimensions are checked before any output or scratch writes. Binding rejects incompatible N/t/q/Q and server resources. Secret identity remains a caller contract; transformed keys must use the bound context's representation, including the exact Fourier table instance.
 
-One NLEV/NGSW selector occupies L*N ring values in NTT form or L*N/2 complex values in Fourier form; the public layer's complete one-hot batch contains M such selectors, while each subsequent encrypted layer and the reusable rotation scratch hold M-1. A rotation control has the size of one selector, while its M-1 public factors each occupy one transformed polynomial without gadget levels. Polynomial and ciphertext iterators traverse these mathematical objects; slice chunks remain for batches containing multiple objects. Both evaluators separate constant preparation, rotation-control aggregation, public-table selection and each subsequent encrypted selection layer. See the [stage and buffer layout](../../docs/ntru-pbs-cbs-mathematical-contracts.md#22-evaluator-的阶段与缓冲布局) for the full resource formulas and in-place compaction contract.
+One NLEV/NGSW selector occupies L*N ring values in NTT form or L*N/2 complex values in Fourier form; the public layer's complete one-hot batch contains M such selectors, while each subsequent encrypted layer and the reusable rotation scratch hold M-1. A rotation control has the size of one selector, while its M-1 public factors each occupy one transformed polynomial without gadget levels. Polynomial and ciphertext iterators traverse these mathematical objects; slice chunks remain for batches containing multiple objects. Both evaluators separate constant preparation, rotation-control aggregation, public-table selection and each subsequent encrypted selection layer. See the [stage and buffer layout](IMPLEMENTATION.md#stage-and-buffer-layout) for the full resource formulas and in-place compaction contract.
 
 Each selected, rotated polynomial returns through the existing NTRU-to-LWE key: coefficient-wise Q→q, phase extraction, then key switching to the external secret. The output approximates the q-domain chunk encoding; double-rounding and return errors require a decoding budget.
 
@@ -82,3 +89,13 @@ cargo test -p primus_tfhe_ntru_lut
 just tfhe
 just tfhe-simd
 ```
+
+## Benchmarks
+
+The [pipeline benchmark](benches/pipeline.rs) measures the actual evaluator stages and complete lookup with setup, allocation and decryption outside timing. It reports retained key/workspace heap, output storage, online allocation counts and known-result phase error. Stage measurements use prepared selectors or controls; complete lookup includes their generation. Default and SIMD profiles use the same workload.
+
+```sh
+cargo bench -p primus_tfhe_ntru_lut --bench pipeline
+```
+
+Parameters, stage boundaries, reproducible commands and validation scope are recorded in the [implementation and benchmark guide](IMPLEMENTATION.md#benchmark-fixture). These timings and a few phase samples do not establish security or failure probabilities.

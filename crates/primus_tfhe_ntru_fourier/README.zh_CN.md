@@ -84,6 +84,8 @@ NLEV 用于公开多项式选择时，先用 `NlevCiphertext::write_fourier_form
 
 [primus_tfhe_ntru_lut](../primus_tfhe_ntru_lut/README.zh_CN.md) 组合 one-hot CBS、表选择、聚合负向旋转和独立 LWE 返回，支持统一输入/输出 chunk 位宽及独立数量。底层组合可通过 `ServerKey::initializer()` 取得 context 的 BR basis 下的 classic NLEV[1]，通过 `key_switching_key()` 取得 Q→q、f→s 返回密钥。
 
+完整 chunk 加密与查表工作流见 [fourier_lookup.rs](../primus_tfhe_ntru_lut/examples/fourier_lookup.rs)。
+
 ## 底层组合
 
 Rustdoc 按职责组织 `key`（服务端材料）、`circuit_bootstrap`（CBS）、 `factorized`（MVB 程序和执行）与 `sparse`（桶材料）；常用工作流类型仍从 crate 根导入。

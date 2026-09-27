@@ -48,6 +48,8 @@ The following are historical observations on Ryzen 9 9955HX3D, x86_64 Linux, wit
 
 Common Boolean and 2+2 bit PBS parameters, their TFHE-rs reference and run commands are in [BENCHMARKS.md](BENCHMARKS.md). Other fixtures live with [shared LUT benchmarks](benches/lookup_table.rs) and the four backend bench directories: [GLWE NTT](../primus_tfhe_glwe_ntt/benches), [GLWE Fourier](../primus_tfhe_glwe_fourier/benches), [NTRU NTT](../primus_tfhe_ntru_ntt/benches), [NTRU Fourier](../primus_tfhe_ntru_fourier/benches). Use the same parameters, CPU affinity, toolchain and features for each comparison; keep setup outside online timing and do not compile concurrently with measurements. Historical n=512 fixtures are not current common PBS or n=728 sparse results or security recommendations.
 
+NTRU high-precision lookup storage, measurement boundaries and reproducible commands are in the [pipeline guide](../primus_tfhe_ntru_lut/IMPLEMENTATION.md). Its small-noise fixture and its NTT/native moduli do not define equal-security backends.
+
 Full derivations, rejected prototypes and raw measurements are preserved at commit 7940e33. For example, `git show 7940e33:docs/tfhe-refactor-costs.md` recovers the method and `git show 7940e33:docs/benchmarks/tfhe-r2.csv` recovers its data. Other archived sources include tfhe-mvb.md, tfhe-sparse-pbs.md, tfhe-ntru-sparse.md, simd-u64.md and glwe-coefficient-client.md under that commit's docs tree. The old implementation-decisions reference under its .agents tree includes unverified non-TFHE follow-ups; they are historical leads, not validated defects or current API contracts.
 
 ## Validation

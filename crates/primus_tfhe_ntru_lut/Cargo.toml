@@ -20,9 +20,14 @@ primus_tfhe_ntru_fourier = { path = "../primus_tfhe_ntru_fourier" }
 thiserror = { workspace = true }
 
 [dev-dependencies]
+criterion = { workspace = true }
 primus_lwe = { path = "../primus_lwe" }
 primus_test_allocations = { path = "../../test-support/allocations" }
 rand = { workspace = true }
+
+[[bench]]
+name = "pipeline"
+harness = false
 
 [features]
 default = []

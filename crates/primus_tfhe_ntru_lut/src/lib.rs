@@ -4,6 +4,9 @@
 //! [`NttLookupTableEvaluator`] or [`FourierLookupTableEvaluator`] to a CBS-enabled
 //! context and server key. Reuse its workspace with caller-owned LWE outputs.
 //! Input chunks are already encrypted; this crate does not split a single LWE.
+//! The runnable `ntt_lookup` and `fourier_lookup` examples demonstrate key
+//! generation, chunk encryption, table compilation, workspace reuse and decoding.
+//! The Fourier example exercises both supported FFT table implementations.
 //!
 //! The common chunk radix is M=t/2, where t is the TFHE plaintext modulus.
 //! Coefficients encode output chunks at ring Q, using unsigned Rounded encoding.

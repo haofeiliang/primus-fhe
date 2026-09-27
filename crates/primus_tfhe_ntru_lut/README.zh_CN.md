@@ -31,7 +31,14 @@ let mut output = evaluator.allocate_output();
 evaluator.evaluate_to(&encrypted_chunks, &mut output);
 ```
 
-Fourier context 使用 `FourierLookupTableEvaluator`，工作流相同。可运行的端到端覆盖见 [evaluation.rs](tests/evaluation.rs)。
+完整可运行工作流见 [ntt_lookup.rs](examples/ntt_lookup.rs) 和 [fourier_lookup.rs](examples/fourier_lookup.rs)：生成独立 LWE/NTRU 秘密、加密六个两位 chunks、编译跨 16 个多项式的表、复用 evaluator，再解码四个输出 chunks。Fourier 示例同时运行 RustFFT 和 TFHE-FFT。参数仅作功能示例；计算 `(x*x + 3*x + x/17 + 7) mod 256`，覆盖零、混合 digits 和值域末端。
+
+```sh
+cargo run -p primus_tfhe_ntru_lut --example ntt_lookup
+cargo run -p primus_tfhe_ntru_lut --example fourier_lookup
+```
+
+[evaluation.rs](tests/evaluation.rs) 另行穷举小域，检查工作区复用和拒绝边界。
 
 ## 编码与表分区
 
@@ -67,7 +74,7 @@ Fourier context 使用 `FourierLookupTableEvaluator`，工作流相同。可运�
 
 每次调用对每个输入 chunk 仅执行一次 CBS。只有公开首层生成全部 M 个 NLEV selectors；旋转控制和后续密文层通过 `one_hot_nonzero_ngsw_to` 仅请求 r=1..M-1，跳过 r=0 的投影和 scheme switch，紧凑输出的第 r-1 块对应分支 r。首层 NLEV selectors、后续表层 NGSW selectors 和聚合旋转控制跨输出复用，仅保存一个输出的候选树。所有缓冲在构造时分配，`evaluate_to` 覆盖输出且不分配。输入/输出 chunk 数及所有 LWE 维数在任何输出或 scratch 写入前检查；绑定时拒绝不兼容的 N/t/q/Q 和服务端资源。秘密身份仍由调用方保证，变换密钥必须使用绑定 context 的表示，Fourier 还要求同一 FFT 表实例。
 
-一个 NLEV/NGSW selector 在 NTT 表示中占 L*N 个环元素，在 Fourier 表示中占 L*N/2 个复数；公开首层的完整 one-hot 批次包含 M 个这样的 selectors，后续每个密文层及复用的旋转 scratch 则各含 M-1 个。聚合后的旋转控制与单个 selector 等长，而对应的 M-1 个公开因子各占一个变换多项式，不含 gadget 层。多项式和密文使用对应的语义迭代器；包含多个对象的批次继续用切片 chunks。两个 evaluator 都将常量预计算、旋转控制聚合、公开表选择和后续每一层密文选择分开实现。完整资源公式与原地压缩契约见[阶段与缓冲布局](../../docs/ntru-pbs-cbs-mathematical-contracts.md#22-evaluator-的阶段与缓冲布局)。
+一个 NLEV/NGSW selector 在 NTT 表示中占 L*N 个环元素，在 Fourier 表示中占 L*N/2 个复数；公开首层的完整 one-hot 批次包含 M 个这样的 selectors，后续每个密文层及复用的旋转 scratch 则各含 M-1 个。聚合后的旋转控制与单个 selector 等长，而对应的 M-1 个公开因子各占一个变换多项式，不含 gadget 层。多项式和密文使用对应的语义迭代器；包含多个对象的批次继续用切片 chunks。两个 evaluator 都将常量预计算、旋转控制聚合、公开表选择和后续每一层密文选择分开实现。完整资源公式与原地压缩契约见[阶段与缓冲布局](IMPLEMENTATION.md#stage-and-buffer-layout)。
 
 选表并旋转后，使用现有 NTRU→LWE key 逐系数 Q→q、提取相位系数，再切换到外部秘密。输出近似 q 域 chunk 编码；二次舍入差和返回误差需要计入解码预算。
 
@@ -82,3 +89,13 @@ cargo test -p primus_tfhe_ntru_lut
 just tfhe
 just tfhe-simd
 ```
+
+## 基准
+
+[流水线基准](benches/pipeline.rs) 测量真实 evaluator 的各阶段及完整查表，setup、分配和解密不计入延迟；报告密钥/工作区保留堆内存、输出存储、在线分配次数及相对已知结果的相位误差。阶段测量使用预先生成的 selectors 或控制；完整查表包含它们的生成。默认与 SIMD 使用相同工作负载。
+
+```sh
+cargo bench -p primus_tfhe_ntru_lut --bench pipeline
+```
+
+参数、阶段边界、复现命令与验证范围见[实现与基准指南](IMPLEMENTATION.md#benchmark-fixture)。延迟和少量相位样本不构成安全性或失败概率结论。

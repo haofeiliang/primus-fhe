@@ -38,11 +38,13 @@ test:
 test-simd:
   cargo +nightly nextest run {{simd-packages}} --all-targets --features {{simd-features}}
 
-# Eight TFHE crates, test support and doctests.
+# Eight TFHE crates, test support, doctests and complete NTRU lookup examples.
 tfhe: fmt-check
   cargo check {{tfhe-packages}} --all-targets
   cargo clippy {{tfhe-packages}} --all-targets -- -D warnings
   cargo test {{tfhe-packages}}
+  cargo run -p primus_tfhe_ntru_lut --example ntt_lookup
+  cargo run -p primus_tfhe_ntru_lut --example fourier_lookup
   cargo doc {{tfhe-packages}} --no-deps
 
 # Explicit selection enables SIMD in every TFHE crate.
@@ -50,3 +52,5 @@ tfhe-simd:
   cargo +nightly check {{tfhe-packages}} --all-targets --features simd
   cargo +nightly clippy {{tfhe-packages}} --all-targets --features simd -- -D warnings
   cargo +nightly test {{tfhe-packages}} --features simd
+  cargo +nightly run -p primus_tfhe_ntru_lut --example ntt_lookup --features simd
+  cargo +nightly run -p primus_tfhe_ntru_lut --example fourier_lookup --features simd
