@@ -11,7 +11,7 @@ Primus FHE is an experimental Rust workspace for fully homomorphic encryption. I
 
 - **Evaluate encrypted functions:** read the [TFHE operation and encoding guide](crates/primus_tfhe/README.md), then run a backend example below.
 - **Use encryption and evaluation primitives:** start with [LWE](crates/primus_lwe/README.md), [GLWE](crates/primus_glwe/README.md), or [NTRU](crates/primus_ntru/README.md). These crates provide keys and operations beneath the TFHE workflows.
-- **Build arithmetic or scheme components:** use the workspace map below and the corresponding crate's README and rustdoc.
+- **Build arithmetic or scheme components:** start with the [library usage guide](guides/development/README.md), then use the workspace map below and the corresponding crate's README and rustdoc.
 
 Examples separate client key generation/encryption, server evaluation, and client decryption. They demonstrate reusable contexts, evaluators, and output buffers. Ordinary LUT compilation defaults to the input plaintext codec; explicit codec variants support a different output plaintext modulus.
 

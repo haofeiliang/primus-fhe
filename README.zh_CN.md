@@ -11,7 +11,7 @@ Primus FHE 是一个实验性的 Rust 全同态加密 workspace，提供算术�
 
 - **计算加密函数：**先阅读 [TFHE 操作与编码指南](crates/primus_tfhe/README.zh_CN.md)，再运行下方的后端示例。
 - **使用加密与求值原语：**从 [LWE](crates/primus_lwe/README.zh_CN.md)、[GLWE](crates/primus_glwe/README.zh_CN.md) 或 [NTRU](crates/primus_ntru/README.zh_CN.md) 开始。这些 crate 提供 TFHE 工作流依赖的密钥和底层操作。
-- **开发算术或方案组件：**按下方 workspace 导航阅读对应 crate 的 README 和 rustdoc。
+- **开发算术或方案组件：**先看[库使用导航](guides/development/README.zh_CN.md)，再按下方 workspace 导航阅读对应 crate 的 README 和 rustdoc。
 
 示例区分客户端密钥生成与加密、服务端求值、客户端解密，展示 context、evaluator 和输出缓冲区的复用。普通 LUT 编译默认沿用输入的明文 codec；显式 codec 变体支持不同的输出明文模数。
 
