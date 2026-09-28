@@ -50,7 +50,7 @@ mod signed_discrete_gaussian;
 
 pub mod stats;
 
-pub use error::DistrErr;
+pub use error::{GaussianError, SecretKeySamplerError};
 
 /// Smallest standard deviation supported by the discrete Gaussian samplers.
 ///

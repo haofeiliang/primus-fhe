@@ -1,7 +1,7 @@
 use primus_integer::{BigUint, FheUint};
 use primus_reduce::FieldContext;
 
-use crate::{BaseConverter, RNSBase, RNSError};
+use crate::{BaseConverter, RNSBase, RnsError};
 
 use super::{HybridRNS, HybridRNSPartition, HybridRNSPartitioning};
 
@@ -18,15 +18,15 @@ where
     ///
     /// # Errors
     ///
-    /// Returns [`RNSError::InvalidDecompositionCount`] for `dnum == 0`,
-    /// [`RNSError::IncompatibleDecompositionCount`] when fixed-size partitions
+    /// Returns [`RnsError::InvalidDecompositionCount`] for `dnum == 0`,
+    /// [`RnsError::IncompatibleDecompositionCount`] when fixed-size partitions
     /// cannot produce exactly `dnum` digits, and propagates invalid `Q`, `P`,
     /// or combined-basis errors from [`RNSBase`].
     pub fn new(
         q_moduli: &[M],
         p_moduli: &[M],
         decomposition_count: usize,
-    ) -> Result<Self, RNSError> {
+    ) -> Result<Self, RnsError> {
         let partitioning = HybridRNSPartitioning::new(q_moduli.len(), decomposition_count)?;
         Self::from_partitioning(q_moduli, p_moduli, partitioning)
     }
@@ -40,16 +40,16 @@ where
     ///
     /// # Errors
     ///
-    /// Returns [`RNSError::ActiveBaseTooLarge`] when `Q` exceeds the full-basis
+    /// Returns [`RnsError::ActiveBaseTooLarge`] when `Q` exceeds the full-basis
     /// count in `partitioning`, and propagates invalid `Q`, `P`, or
     /// combined-basis errors from [`RNSBase`].
     pub fn from_partitioning(
         q_moduli: &[M],
         p_moduli: &[M],
         partitioning: HybridRNSPartitioning,
-    ) -> Result<Self, RNSError> {
+    ) -> Result<Self, RnsError> {
         if q_moduli.len() > partitioning.full_q_moduli_count() {
-            return Err(RNSError::ActiveBaseTooLarge {
+            return Err(RnsError::ActiveBaseTooLarge {
                 actual: q_moduli.len(),
                 maximum: partitioning.full_q_moduli_count(),
             });

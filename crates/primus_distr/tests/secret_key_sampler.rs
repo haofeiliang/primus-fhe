@@ -70,6 +70,33 @@ fn representations_preserve_distribution_and_logical_weights() {
 }
 
 #[test]
+fn encoded_modulus_validation_preserves_the_support_boundary() {
+    fn check<T: FheUint>() {
+        for (distr, expected_bound) in [
+            (SecretKeyDistr::UniformBinary, 1u128),
+            (SecretKeyDistr::SparseTernary, 1),
+            (SecretKeyDistr::gaussian(1.0), 12),
+        ] {
+            let sampler = SecretKeySampler::<T>::new(distr);
+            let bound = sampler.maximum_magnitude();
+            let actual_bound: u128 = bound.as_into();
+            assert_eq!(actual_bound, expected_bound);
+            assert_eq!(sampler.validate_modulus(bound), Ok(()));
+            assert_eq!(sampler.validate_modulus(T::MAX), Ok(()));
+            assert_eq!(
+                sampler.validate_modulus(bound - T::ONE),
+                Err(primus_distr::SecretKeySamplerError::ModulusTooSmall {
+                    maximum_magnitude: expected_bound,
+                    modulus_minus_one: expected_bound - 1,
+                })
+            );
+        }
+    }
+    check::<u32>();
+    check::<u64>();
+}
+
+#[test]
 fn invalid_weight_is_rejected_before_sampling_or_writing() {
     use std::panic::{AssertUnwindSafe, catch_unwind};
     for distr in [
@@ -83,6 +110,10 @@ fn invalid_weight_is_rejected_before_sampling_or_writing() {
     ] {
         let sampler = SecretKeySampler::<u32>::new(distr);
         let mut output = [19; 6];
+        assert_eq!(
+            sampler.validate_length(output.len()),
+            Err(primus_distr::SecretKeySamplerError::InvalidWeight { length: 6 })
+        );
         let mut rng = StdRng::seed_from_u64(202);
         let mut expected = StdRng::seed_from_u64(202);
         assert!(
@@ -106,9 +137,25 @@ fn sampler_rejects_invalid_probabilities_in_raw_variants() {
             negative_one_probability: -0.5,
             one_probability: 0.5,
         },
+        SecretKeyDistr::Ternary {
+            negative_one_probability: 0.6,
+            one_probability: 0.5,
+        },
+        SecretKeyDistr::Ternary {
+            negative_one_probability: 0.0,
+            one_probability: f64::INFINITY,
+        },
     ] {
+        assert!(matches!(
+            SecretKeySampler::<u32>::try_new(distr),
+            Err(primus_distr::SecretKeySamplerError::InvalidProbabilities)
+        ));
         assert!(std::panic::catch_unwind(|| SecretKeySampler::<u32>::new(distr)).is_err());
     }
+    assert!(matches!(
+        SecretKeySampler::<u32>::try_new(SecretKeyDistr::gaussian(f64::NAN)),
+        Err(primus_distr::SecretKeySamplerError::Gaussian(_))
+    ));
 }
 
 #[test]

@@ -2,7 +2,7 @@ use primus_integer::{FheInt, FheUint, SignedInteger};
 use rand::distr::Distribution;
 
 use crate::{
-    DistrErr,
+    GaussianError,
     gaussian_core::{GaussianParameters, ZigguratMagnitudeSampler, encode_modular, encode_signed},
 };
 
@@ -20,12 +20,12 @@ impl<T: FheInt + SignedInteger> SignedDiscreteZiggurat<T> {
     ///
     /// Returns an error when the parameters are invalid, `T` cannot represent
     /// the signed support, or Ziggurat setup cannot represent the distribution.
-    pub fn new(std_dev: f64, tail_cut: f64) -> Result<Self, DistrErr> {
+    pub fn new(std_dev: f64, tail_cut: f64) -> Result<Self, GaussianError> {
         let parameters = GaussianParameters::new(std_dev, tail_cut)?;
         Self::from_parameters(parameters)
     }
 
-    pub(crate) fn from_parameters(parameters: GaussianParameters) -> Result<Self, DistrErr> {
+    pub(crate) fn from_parameters(parameters: GaussianParameters) -> Result<Self, GaussianError> {
         let parameters = parameters.validate_signed_output::<T>()?;
         Ok(Self {
             core: ZigguratMagnitudeSampler::new(parameters)?,

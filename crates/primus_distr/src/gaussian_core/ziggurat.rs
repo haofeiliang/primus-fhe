@@ -7,7 +7,7 @@ use rand::{
 };
 
 use super::GaussianParameters;
-use crate::DistrErr;
+use crate::GaussianError;
 
 const U32_RANGE_END_AS_F64: f64 = 4_294_967_296.0;
 
@@ -34,7 +34,7 @@ pub(crate) struct ZigguratMagnitudeSampler<T: FheInt> {
 }
 
 impl<T: FheInt> ZigguratMagnitudeSampler<T> {
-    pub(crate) fn new(parameters: GaussianParameters) -> Result<Self, DistrErr> {
+    pub(crate) fn new(parameters: GaussianParameters) -> Result<Self, GaussianError> {
         let standard_deviation = parameters.standard_deviation();
         let maximum_magnitude = parameters.maximum_magnitude() as f64;
         let negative_twice_variance = standard_deviation * standard_deviation * -2.0;
@@ -128,7 +128,7 @@ impl<T: FheInt> ZigguratMagnitudeSampler<T> {
             if !found {
                 rectangle_count *= 2;
                 if rectangle_count > 512 {
-                    return Err(DistrErr::ZigguratConstructionFailed {
+                    return Err(GaussianError::ZigguratConstructionFailed {
                         standard_deviation,
                         tail_cut: parameters.tail_cut(),
                     });

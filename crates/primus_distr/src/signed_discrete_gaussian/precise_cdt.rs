@@ -4,7 +4,7 @@ use primus_integer::{AsInto, SignedInteger};
 use rand::{RngExt, distr::Distribution};
 
 use crate::{
-    DistrErr,
+    GaussianError,
     gaussian_core::{
         GaussianParameters, PRECISE_CDT_MAX_MAGNITUDE, build_precise_cdt, compare_u256,
     },
@@ -24,12 +24,12 @@ impl<T: SignedInteger> SignedPreciseCDTSampler<T> {
     ///
     /// Returns an error when the parameters are invalid, the support exceeds
     /// the high-precision CDT limit, or `T` cannot represent it.
-    pub fn new(std_dev: f64, tail_cut: f64) -> Result<Self, DistrErr> {
+    pub fn new(std_dev: f64, tail_cut: f64) -> Result<Self, GaussianError> {
         let parameters = GaussianParameters::new(std_dev, tail_cut)?;
         Self::from_parameters(parameters)
     }
 
-    pub(crate) fn from_parameters(parameters: GaussianParameters) -> Result<Self, DistrErr> {
+    pub(crate) fn from_parameters(parameters: GaussianParameters) -> Result<Self, GaussianError> {
         let parameters = parameters
             .validate_cdt_size(PRECISE_CDT_MAX_MAGNITUDE)?
             .validate_signed_output::<T>()?;

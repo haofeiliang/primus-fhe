@@ -337,6 +337,16 @@ fn parameters_require_secret_support_below_explicit_modulus() {
     for (sigma, maximum_magnitude) in [(3.0, 36u32), (30.0, 360)] {
         let distribution = SecretKeyDistr::gaussian(sigma);
         for q in [maximum_magnitude - 1, maximum_magnitude] {
+            assert_eq!(
+                NtruParameters::try_new(POLY_LENGTH, 2, BarrettModulus::new(q), distribution, 0.7)
+                    .err(),
+                Some(primus_ntru::NtruParameterError::SecretKey(
+                    primus_distr::SecretKeySamplerError::ModulusTooSmall {
+                        maximum_magnitude: u128::from(maximum_magnitude),
+                        modulus_minus_one: u128::from(q - 1),
+                    },
+                ))
+            );
             assert!(
                 std::panic::catch_unwind(|| NtruParameters::new(
                     POLY_LENGTH,
@@ -348,21 +358,73 @@ fn parameters_require_secret_support_below_explicit_modulus() {
                 .is_err()
             );
         }
-        NtruParameters::new(
-            POLY_LENGTH,
-            2,
-            BarrettModulus::new(maximum_magnitude + 1),
-            distribution,
-            0.7,
+        assert!(
+            NtruParameters::try_new(
+                POLY_LENGTH,
+                2,
+                BarrettModulus::new(maximum_magnitude + 1),
+                distribution,
+                0.7,
+            )
+            .is_ok()
         );
-        NtruParameters::new(
-            POLY_LENGTH,
-            2,
-            NativeModulus::<u32>::new(),
-            distribution,
-            0.7,
+        assert!(
+            NtruParameters::try_new(
+                POLY_LENGTH,
+                2,
+                NativeModulus::<u32>::new(),
+                distribution,
+                0.7,
+            )
+            .is_ok()
         );
     }
+}
+
+#[test]
+fn fallible_parameters_check_ring_codec_and_samplers() {
+    use primus_ntru::NtruParameterError as Error;
+    let make = |n, t, distr, noise| {
+        NtruParameters::try_new(n, t, NativeModulus::<u32>::new(), distr, noise)
+    };
+    for n in [0, 3, usize::MAX] {
+        assert_eq!(
+            make(n, 4, SecretKeyDistr::UniformBinary, 0.7).err(),
+            Some(Error::InvalidPolynomialLength)
+        );
+    }
+    assert!(matches!(
+        make(8, 1, SecretKeyDistr::UniformBinary, 0.7),
+        Err(Error::Encoding(_))
+    ));
+    assert!(matches!(
+        make(8, 4, SecretKeyDistr::UniformBinary, f64::INFINITY),
+        Err(Error::Noise(_))
+    ));
+    assert!(matches!(
+        make(
+            8,
+            4,
+            SecretKeyDistr::FixedCompositionTernary {
+                negative_one_weight: 4,
+                one_weight: 5
+            },
+            0.7
+        ),
+        Err(Error::SecretKey(_))
+    ));
+    assert!(matches!(
+        NtruParameters::try_new(
+            8,
+            12,
+            BarrettModulus::new(17u32),
+            SecretKeyDistr::UniformBinary,
+            0.7
+        ),
+        Err(Error::Encoding(
+            primus_encoding::CodecError::InsufficientScaleRecovery
+        ))
+    ));
 }
 
 #[test]

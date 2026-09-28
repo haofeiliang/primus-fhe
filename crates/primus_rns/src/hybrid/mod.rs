@@ -33,7 +33,7 @@ mod mod_up;
 use primus_integer::FheUint;
 use primus_reduce::FieldContext;
 
-use crate::{BaseConverter, RNSBase, RNSError};
+use crate::{BaseConverter, RNSBase, RnsError};
 
 /// A partitioning rule shared by compatible hybrid-RNS levels.
 ///
@@ -59,20 +59,20 @@ impl HybridRNSPartitioning {
     ///
     /// # Errors
     ///
-    /// Returns [`RNSError::EmptyBase`] when `full_q_moduli_count` is zero.
-    /// Returns [`RNSError::InvalidDecompositionCount`] when
+    /// Returns [`RnsError::EmptyBase`] when `full_q_moduli_count` is zero.
+    /// Returns [`RnsError::InvalidDecompositionCount`] when
     /// `decomposition_count` is zero, or
-    /// [`RNSError::IncompatibleDecompositionCount`] when the fixed partition
+    /// [`RnsError::IncompatibleDecompositionCount`] when the fixed partition
     /// size cannot produce exactly the requested number of digits.
-    pub fn new(full_q_moduli_count: usize, decomposition_count: usize) -> Result<Self, RNSError> {
+    pub fn new(full_q_moduli_count: usize, decomposition_count: usize) -> Result<Self, RnsError> {
         let full_q_moduli_count =
-            NonZeroUsize::new(full_q_moduli_count).ok_or(RNSError::EmptyBase)?;
+            NonZeroUsize::new(full_q_moduli_count).ok_or(RnsError::EmptyBase)?;
         let decomposition_count =
-            NonZeroUsize::new(decomposition_count).ok_or(RNSError::InvalidDecompositionCount)?;
+            NonZeroUsize::new(decomposition_count).ok_or(RnsError::InvalidDecompositionCount)?;
         let partition_moduli_count = full_q_moduli_count.div_ceil(decomposition_count);
         let actual_partition_count = full_q_moduli_count.div_ceil(partition_moduli_count);
         if actual_partition_count != decomposition_count {
-            return Err(RNSError::IncompatibleDecompositionCount {
+            return Err(RnsError::IncompatibleDecompositionCount {
                 q_moduli_count: full_q_moduli_count.get(),
                 decomposition_count: decomposition_count.get(),
             });

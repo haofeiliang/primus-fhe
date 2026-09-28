@@ -9,6 +9,8 @@
 
 ## 密钥与表示
 
+`GlweParameters::try_new` 对布局、固定尺度编码和采样错误返回 `GlweParameterError`，包括固定重量超过完整 kN 密钥长度。`GlweParametersInner::try_new` 不持有布局，只检查模数/采样。对应 `new` 构造器在非法参数下 panic；变换可用性及噪声/安全预算仍需另外验证。 `GlweParameterError::SecretKey` 以 `SecretKeySamplerError` 保留采样配置、重量或模数适配的具体原因；`Noise` 保留 `GaussianError`。
+
 | 类型 | 存储与职责 |
 | --- | --- |
 | `GlweSecretKey<T>` | 有符号系数多项式；采样，以及密钥转换、生成的输入 |

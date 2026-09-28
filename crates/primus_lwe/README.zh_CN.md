@@ -87,6 +87,8 @@ fn main() {
 
 ## 参数与编码
 
+配置输入使用 `LweParameters::try_new`，维数、编码、秘密支持集/重量和噪声采样错误返回 `LweParameterError`。固定重量不得超过 n。`new` 是主动 panic 的便捷形式；明文模数从保存的 codec 派生。 `LweParameterError::SecretKey` 以 `SecretKeySamplerError` 保留采样配置、重量或模数适配的具体原因；`Noise` 保留 `GaussianError`。
+
 `LweParameters::new(n, t, modulus, secret_distribution, noise_standard_deviation)` 要求 `n != 0`、`n + 1` 可表示，并满足 codec 和采样器的有效性条件，包括 `t >= 2`、`q > t`。`NativeModulus<T>` 表示 `q = 2^T::BITS`； `cipher_modulus_value()` 对 Native 模数返回 `None`，对显式模数返回 `Some(q)`。 噪声标准差以密文系数为单位。
 
 消息接口接受类型 `T`、位于 `[0,t)` 内的规范剩余类，批量及 packed 加密接受 `&[T]`。 `encrypt` 使用 unsigned embedding；`encrypt_with_embedding` 通过 `primus_encoding` 中的 `PlaintextEmbedding::Unsigned` 或 `PlaintextEmbedding::Centered` 选择编码。Centered embedding 仍接受无符号剩余类， 其中 `t - 1` 表示 `-1`。两种编码都使用 `decrypt` 解密，结果使用密文系数类型 `T`， 位于 `[0,t)`。批量和 packed 解密同样返回 `Vec<T>` 或写入 `[T]`；应用在加密前、 解密后按需转换整数类型或有明确语义的消息类型。

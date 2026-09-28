@@ -3,7 +3,7 @@ use super::{
     helpers::{check_message, lift_centered_from_raw, validate_moduli},
     integer_scale::IntegerScale,
 };
-use crate::PlaintextEmbedding;
+use crate::{CodecError, PlaintextEmbedding};
 use primus_integer::FheUint;
 use primus_modulus::UintModulus;
 use primus_reduce::{Modulus, PrepareModulusSwitch, PreparedModulusSwitch, ReduceAdd};
@@ -41,21 +41,29 @@ where
     /// `abs(t*round(q/t)-q)*(t-1) < q/2`.
     #[must_use]
     pub fn new(plaintext_modulus: T, ciphertext_modulus: M) -> Self {
-        validate_moduli(plaintext_modulus, ciphertext_modulus);
+        Self::try_new(plaintext_modulus, ciphertext_modulus)
+            .unwrap_or_else(|error| panic!("{error}"))
+    }
+
+    /// Prepares fixed-scale encoding after checking the domain and the
+    /// noiseless recovery bound documented on [`Self::new`].
+    /// This does not establish a noise or security budget.
+    pub fn try_new(plaintext_modulus: T, ciphertext_modulus: M) -> Result<Self, CodecError> {
+        validate_moduli(plaintext_modulus, ciphertext_modulus)?;
+        validate_scale_recovery(plaintext_modulus, ciphertext_modulus)?;
         let plaintext_modulus_context = UintModulus(plaintext_modulus);
         // Preparing from UintModulus validates both moduli before calling M's implementation.
         let delta = plaintext_modulus_context
             .prepare_switch_to(ciphertext_modulus)
             .switch(T::ONE);
         let decoding_switch = ciphertext_modulus.prepare_switch_to(plaintext_modulus_context);
-        validate_scale_recovery(plaintext_modulus, ciphertext_modulus);
         let scale = IntegerScale::new(delta);
-        Self {
+        Ok(Self {
             plaintext_modulus,
             decoding_switch,
             scale,
             ciphertext_modulus,
-        }
+        })
     }
 
     /// Returns the plaintext modulus.
@@ -227,7 +235,10 @@ where
 /// It also gives `(t-1)*delta < q`, as required by `IntegerScale`: this is immediate
 /// for `epsilon <= 0`; otherwise `epsilon*(t-1) < q = t*delta-epsilon` implies
 /// `epsilon < delta`, hence `(t-1)*delta = q+epsilon-delta < q`.
-fn validate_scale_recovery<T, M>(plaintext_modulus: T, ciphertext_modulus: M)
+fn validate_scale_recovery<T, M>(
+    plaintext_modulus: T,
+    ciphertext_modulus: M,
+) -> Result<(), CodecError>
 where
     T: FheUint,
     M: Modulus<ValueT = T>,
@@ -249,8 +260,8 @@ where
             Some(q) => max_error <= (q - T::ONE) / T::TWO,
             None => max_error < (T::ONE << (T::BITS - 1)),
         };
-    assert!(
-        within_rounding_radius,
-        "ciphertext modulus too small for fixed rounded scaling"
-    );
+    if !within_rounding_radius {
+        return Err(CodecError::InsufficientScaleRecovery);
+    }
+    Ok(())
 }

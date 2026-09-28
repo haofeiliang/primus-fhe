@@ -8,7 +8,7 @@ pub use primus_tfhe_ntru::{
 #[derive(Debug, thiserror::Error)]
 pub enum TfheContextError {
     /// The selected transform table could not be constructed.
-    #[error("failed to construct transform table: {0}")]
+    #[error("failed to construct transform table")]
     TransformTable(#[from] primus_fft::FftError),
     /// The Fourier table uses another polynomial length.
     #[error("Fourier polynomial length mismatch: expected {expected}, got {actual}")]

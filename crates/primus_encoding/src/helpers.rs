@@ -1,6 +1,8 @@
 use primus_integer::FheUint;
 use primus_reduce::Modulus;
 
+use crate::CodecError;
+
 #[inline]
 pub(super) fn centered_negative_start<T: FheUint>(plaintext_modulus: T) -> T {
     (plaintext_modulus >> 1u32) + (plaintext_modulus & T::ONE)
@@ -34,17 +36,23 @@ pub(super) fn check_message<T: FheUint>(message: T, plaintext_modulus: T) {
     );
 }
 
-/// Checks the encoding-specific `q > t` constraint. Conversion preparation
-/// validates the individual moduli.
-pub(super) fn validate_moduli<T, M>(plaintext_modulus: T, ciphertext_modulus: M)
+/// Validates the encoding domain before preparing either modulus conversion.
+pub(super) fn validate_moduli<T, M>(
+    plaintext_modulus: T,
+    ciphertext_modulus: M,
+) -> Result<(), CodecError>
 where
     T: FheUint,
     M: Modulus<ValueT = T>,
 {
-    assert!(
-        ciphertext_modulus
-            .explicit_value()
-            .is_none_or(|q| q > plaintext_modulus),
-        "ciphertext modulus must exceed plaintext modulus"
-    );
+    if plaintext_modulus < T::TWO {
+        return Err(CodecError::InvalidPlaintextModulus);
+    }
+    if ciphertext_modulus
+        .explicit_value()
+        .is_some_and(|q| q <= plaintext_modulus)
+    {
+        return Err(CodecError::CiphertextModulusTooSmall);
+    }
+    Ok(())
 }

@@ -10,7 +10,7 @@ pub use primus_tfhe_ntru::{
 #[derive(Debug, thiserror::Error)]
 pub enum TfheContextError<T: FheUint> {
     /// The selected transform table could not be constructed.
-    #[error("failed to construct transform table: {0}")]
+    #[error("failed to construct transform table")]
     TransformTable(#[from] primus_ntt::NttError<T>),
     /// The NTT table uses another polynomial length.
     #[error("NTT polynomial length mismatch: expected {expected}, got {actual}")]

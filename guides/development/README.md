@@ -116,6 +116,8 @@ Constructing a different wrapper or iterator does not perform a transform. Fouri
 
 ## Compose an encrypted workflow
 
+The [TFHE parameter and boundary guide](tfhe-parameters-and-boundaries.md) maps q/Q, secret domains, PBS/CBS/MVB/one-hot/lookup paths and construction error ownership.
+
 Choose the lowest layer that owns the operation. [LWE](../../crates/primus_lwe/README.md), [GLWE](../../crates/primus_glwe/README.md), [NTRU](../../crates/primus_ntru/README.md) and [RNS GLWE](../../crates/primus_glwe_rns/src/lib.rs) provide encryption, keys and evaluation primitives. [Shared TFHE](../../crates/primus_tfhe/README.md) provides LWE clients, encodings, LUT geometry and common evaluation interfaces; the [GLWE](../../crates/primus_tfhe_glwe/README.md) and [NTRU](../../crates/primus_tfhe_ntru/README.md) families define their own parameter and key contracts.
 
 Follow a backend example in order: parameters → validated context/table → client/server keys → public LUT → evaluator and output allocation → repeated `*_to` evaluation → client decryption. The four concrete starting points are [GLWE NTT](../../crates/primus_tfhe_glwe_ntt/examples/ntt_basic.rs), [GLWE Fourier](../../crates/primus_tfhe_glwe_fourier/examples/fourier_basic.rs), [NTRU NTT](../../crates/primus_tfhe_ntru_ntt/examples/ntru_ntt_basic.rs) and [NTRU Fourier](../../crates/primus_tfhe_ntru_fourier/examples/ntru_fourier_basic.rs). Parameters are functional fixtures; choose and validate them for the intended operation.
@@ -123,6 +125,12 @@ Follow a backend example in order: parameters → validated context/table → cl
 NTRU separates the external LWE secret/modulus/dimension from the accumulator's NTRU secret/modulus/length. GLWE's PBS order has its own input/output domain contract. Matching buffer dimensions alone does not make keys interchangeable. Keep the backend's parameter checks and caller-maintained secret/table identity requirements visible.
 
 For high-precision functions over encrypted chunks, use [primus_tfhe_ntru_lut](../../crates/primus_tfhe_ntru_lut/README.md). One-hot CBS belongs to the NTRU backends; table partitioning, selection and rotation belong to the lookup crate. Its evaluator borrows context, server key and compiled LUT and owns reusable buffers. Allocate outputs once and reuse `evaluate_to`; do not reconstruct keys or tables inside the online loop.
+
+## Preserve error roles and causes
+
+Define error types around public operations and their contracts. Retain distinct causes that help callers diagnose or handle a failure; split or merge types only when real consumers benefit. Share identical lower-level checks while preserving each scheme's geometry and representation requirements.
+
+Context-bearing wrappers describe their own role in `Display` and expose the underlying cause through `std::error::Error::source()`. Error reporters should follow that chain; formatting the source in every wrapper duplicates messages. Transparent wrappers delegate both methods. Use `From` only when the source has one destination role; otherwise map it explicitly. For parameter construction, `SecretKeySamplerError` covers secret preparation, weights and modulus fit, while `GaussianError` is shared by Gaussian implementations. Trait derives follow the stored data; floating-point causes do not implement `Eq`.
 
 ## Distinguish environment from workspace
 

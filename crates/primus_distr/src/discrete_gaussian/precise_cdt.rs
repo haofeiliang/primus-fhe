@@ -2,7 +2,7 @@ use primus_integer::{AsInto, FheUint};
 use rand::{RngExt, distr::Distribution};
 
 use crate::{
-    DistrErr,
+    GaussianError,
     gaussian_core::{
         GaussianParameters, PRECISE_CDT_MAX_MAGNITUDE, build_precise_cdt, compare_u256,
     },
@@ -22,7 +22,7 @@ impl<T: FheUint> PreciseCDTSampler<T> {
     ///
     /// Returns an error when the parameters are invalid, the support exceeds
     /// the high-precision CDT limit, or the modulus cannot encode it.
-    pub fn new(std_dev: f64, tail_cut: f64, modulus_minus_one: T) -> Result<Self, DistrErr> {
+    pub fn new(std_dev: f64, tail_cut: f64, modulus_minus_one: T) -> Result<Self, GaussianError> {
         let parameters = GaussianParameters::new(std_dev, tail_cut)?;
         Self::from_parameters(parameters, modulus_minus_one)
     }
@@ -30,7 +30,7 @@ impl<T: FheUint> PreciseCDTSampler<T> {
     pub(crate) fn from_parameters(
         parameters: GaussianParameters,
         modulus_minus_one: T,
-    ) -> Result<Self, DistrErr> {
+    ) -> Result<Self, GaussianError> {
         let parameters = parameters
             .validate_cdt_size(PRECISE_CDT_MAX_MAGNITUDE)?
             .validate_modular_output(modulus_minus_one)?;

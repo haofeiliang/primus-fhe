@@ -47,21 +47,28 @@ impl<T: FheUint> SecretKeySampler<T> {
     /// Fixed weights are checked against the complete output length when sampling.
     #[must_use]
     pub fn new(distr: SecretKeyDistr) -> Self {
+        Self::try_new(distr).expect("invalid secret-key sampler")
+    }
+
+    /// Prepares probabilities and Gaussian tables, returning their validation
+    /// errors. Fixed weights are checked separately by [`Self::validate_length`]
+    /// or when sampling into the actual output.
+    pub fn try_new(distr: SecretKeyDistr) -> Result<Self, crate::SecretKeySamplerError> {
         let method = match distr {
             SecretKeyDistr::UniformBinary => SamplingMethod::UniformBinary,
             SecretKeyDistr::Binary { one_probability } => SamplingMethod::Binary(
                 Bernoulli::new(one_probability)
-                    .expect("binary one probability must be finite and in [0, 1]"),
+                    .map_err(|_| crate::SecretKeySamplerError::InvalidProbabilities)?,
             ),
             SecretKeyDistr::SparseTernary => SamplingMethod::SparseTernary,
             SecretKeyDistr::UniformTernary => SamplingMethod::UniformTernary,
             SecretKeyDistr::Ternary {
                 negative_one_probability,
                 one_probability,
-            } => SamplingMethod::Ternary(TernarySampler::new(
+            } => SamplingMethod::Ternary(TernarySampler::try_new(
                 negative_one_probability,
                 one_probability,
-            )),
+            )?),
             SecretKeyDistr::FixedHammingWeightBinary { hamming_weight } => {
                 SamplingMethod::FixedHammingWeightBinary { hamming_weight }
             }
@@ -75,12 +82,48 @@ impl<T: FheUint> SecretKeySampler<T> {
                 negative_one_weight,
                 one_weight,
             },
-            SecretKeyDistr::Gaussian { standard_deviation } => SamplingMethod::Gaussian(
-                SignedDiscreteGaussian::new(standard_deviation)
-                    .expect("invalid secret-key Gaussian distribution"),
-            ),
+            SecretKeyDistr::Gaussian { standard_deviation } => {
+                SamplingMethod::Gaussian(SignedDiscreteGaussian::new(standard_deviation)?)
+            }
         };
-        Self { distr, method }
+        Ok(Self { distr, method })
+    }
+
+    /// Checks fixed weights against a complete logical key before key generation.
+    /// Returns an error if the weight sum overflows or exceeds `length`.
+    /// Sampling still checks the actual output, which may have a different length.
+    pub fn validate_length(&self, length: usize) -> Result<(), crate::SecretKeySamplerError> {
+        let weight = match self.distr {
+            SecretKeyDistr::FixedHammingWeightBinary { hamming_weight }
+            | SecretKeyDistr::FixedHammingWeightTernary { hamming_weight } => Some(hamming_weight),
+            SecretKeyDistr::FixedCompositionTernary {
+                negative_one_weight,
+                one_weight,
+            } => negative_one_weight.checked_add(one_weight),
+            _ => Some(0),
+        };
+        if weight.is_none_or(|weight| weight > length) {
+            return Err(crate::SecretKeySamplerError::InvalidWeight { length });
+        }
+        Ok(())
+    }
+
+    /// Checks the output-domain precondition of [`Self::sample_encoded_to`].
+    /// Call once when preparing parameters, and once per modulus for RNS output.
+    /// `T::MAX` denotes the native modulus; no modulus is stored by the sampler.
+    /// Returns an error if the inclusive support bound exceeds `modulus_minus_one`.
+    pub fn validate_modulus(
+        &self,
+        modulus_minus_one: T,
+    ) -> Result<(), crate::SecretKeySamplerError> {
+        let maximum_magnitude = self.maximum_magnitude();
+        if maximum_magnitude > modulus_minus_one {
+            return Err(crate::SecretKeySamplerError::ModulusTooSmall {
+                maximum_magnitude: maximum_magnitude.as_into(),
+                modulus_minus_one: modulus_minus_one.as_into(),
+            });
+        }
+        Ok(())
     }
 
     /// Returns the configured coefficient distribution.
@@ -91,8 +134,8 @@ impl<T: FheUint> SecretKeySampler<T> {
     }
 
     /// Returns an inclusive unsigned bound on every sample's magnitude.
-    /// Parameters must check this bound against their modulus before encoded
-    /// sampling. Gaussian uses its truncated support; binary/ternary return one.
+    /// Use [`Self::validate_modulus`] before encoded sampling. Gaussian uses its
+    /// truncated support; binary/ternary return one.
     #[must_use]
     #[inline]
     pub fn maximum_magnitude(&self) -> T {
@@ -151,7 +194,8 @@ impl<T: FheUint> SecretKeySampler<T> {
     /// # Correctness
     ///
     /// `modulus_minus_one >= self.maximum_magnitude()` must hold. `T::MAX`
-    /// denotes the native modulus. Check this once when preparing parameters.
+    /// denotes the native modulus. Establish this with [`Self::validate_modulus`]
+    /// once when preparing parameters.
     ///
     /// # Panics
     ///
@@ -178,7 +222,8 @@ impl<T: FheUint> SecretKeySampler<T> {
     /// # Correctness
     ///
     /// `modulus_minus_one >= self.maximum_magnitude()` must hold. `T::MAX`
-    /// denotes the native modulus. Check this once when preparing parameters.
+    /// denotes the native modulus. Establish this with [`Self::validate_modulus`]
+    /// once when preparing parameters.
     ///
     /// # Panics
     ///

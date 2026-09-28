@@ -58,6 +58,8 @@ Batched big integers use the opposite grouping: each value occupies one contiguo
 
 ## RNS bases
 
+Base construction/extension and hybrid partitioning return `RnsError`. Non-coprime moduli are reported as `NonCoprimeModuli`; partition errors retain the requested and supported counts.
+
 `RNSBase::new` clones a non-empty slice of pairwise-coprime moduli; `from_owned_moduli` avoids that clone. The base precomputes `Q`, every punctured product `Q / q_i`, and `(Q / q_i)^-1 mod q_i`.
 
 The main operation families are:

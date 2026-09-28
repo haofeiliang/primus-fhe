@@ -9,6 +9,8 @@ Backend-independent NTRU-TFHE parameters and LWE clients. Transform-domain serve
 
 ## Parameters and key domains
 
+`TfheParameters::try_from_config` returns accumulator construction failures as `TfheParameterError::AccumulatorParameters` and return-key encryption failures as `KeySwitchingEncryption`. CBS configuration reports trace or scheme-switch encryption failures with their role through `CircuitBootstrapParameterError::EncryptionParameters`. Use `LweParameters::try_new` for external-LWE configuration input. These error types and `KeyGenerationError` implement `PartialEq`, not `Eq`, because sampler errors can contain floating-point values. Contextual errors display their own role; follow `std::error::Error::source()` for the underlying cause.
+
 `TfheParameters<T, M, LM = M>` separates accumulator modulus `Q` from external LWE modulus `q`, sharing integer type `T`. In `TfheConfig`, `accumulator_modulus` supplies `Q`; `external_lwe` supplies `q`, dimension, binary/ternary distribution, plaintext modulus and fresh encryption noise. `blind_rotation` decomposes at `Q`; `key_switching` and its independent noise apply at `q`. `level_count: None` retains full decomposition.
 
 The direct constructor is `TfheParameters::try_new(external_lwe, blind_rotation, key_switching, key_switching_noise_standard_deviation)`. Both domains share plaintext modulus `t`, and `2N` must fit in `T`. The external dimension no longer needs to satisfy `n <= N`.

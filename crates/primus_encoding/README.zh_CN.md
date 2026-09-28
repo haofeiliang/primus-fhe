@@ -9,6 +9,8 @@ Primus FHE 的明文系数编码与解码。
 
 ## API
 
+`RoundedCodec::try_new` 和 `ScaledCodec::try_new` 对非法数值域或不满足固定尺度恢复界返回 `CodecError`；`new` 形式在相同错误下 panic。构造检查不建立噪声预算。
+
 | 编码器 | 编码规则 | 当前用途 |
 | --- | --- | --- |
 | `RoundedCodec<T,M>` | `round(lift(m)*q/t) mod q` | LWE 和 TFHE 查找表 |

@@ -176,7 +176,7 @@ impl<T: FheUint> NttTable for UintNttTable<T> {
             .collect::<Vec<_>>();
 
         let n_cast =
-            T::try_from(n).map_err(|_| NttError::DegreeConversionErr { degree: n, modulus })?;
+            T::try_from(n).map_err(|_| NttError::DegreeNotRepresentable { degree: n, modulus })?;
 
         if n_cast >= modulus {
             return Err(NttError::DegreeTooLarge { degree: n, modulus });

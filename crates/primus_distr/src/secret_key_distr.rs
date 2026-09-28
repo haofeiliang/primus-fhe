@@ -188,10 +188,21 @@ fn validate_probability(probability: f64) {
 
 #[inline]
 pub(crate) fn validate_ternary_probabilities(negative: f64, positive: f64) {
-    validate_probability(negative);
-    validate_probability(positive);
-    assert!(
-        negative <= 1.0 - positive,
-        "the probabilities of -1 and 1 must sum to at most one"
-    );
+    check_ternary_probabilities(negative, positive).unwrap_or_else(|error| panic!("{error}"));
+}
+
+/// Checks the distribution before integer thresholds are prepared.
+pub(crate) fn check_ternary_probabilities(
+    negative: f64,
+    positive: f64,
+) -> Result<(), crate::SecretKeySamplerError> {
+    if !negative.is_finite()
+        || !positive.is_finite()
+        || !(0.0..=1.0).contains(&negative)
+        || !(0.0..=1.0).contains(&positive)
+        || negative > 1.0 - positive
+    {
+        return Err(crate::SecretKeySamplerError::InvalidProbabilities);
+    }
+    Ok(())
 }

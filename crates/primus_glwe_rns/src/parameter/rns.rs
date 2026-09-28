@@ -60,7 +60,8 @@ where
     ) -> Self {
         let cipher_moduli_value: Vec<T> = cipher_moduli.iter().map(|qi| qi.value()).collect();
 
-        let cipher_moduli_minus_one = cipher_moduli_value.iter().map(|&qi| qi - T::ONE).collect();
+        let cipher_moduli_minus_one: Vec<T> =
+            cipher_moduli_value.iter().map(|&qi| qi - T::ONE).collect();
         let base_q = RNSBase::new(cipher_moduli).unwrap();
         let cipher_modulus = base_q.moduli_product();
         let cipher_modulus_minus_one = {
@@ -94,12 +95,13 @@ where
         let size = RnsGlweSize::new(GlweSize::new(dimension, poly_length), cipher_moduli.len());
 
         let secret_key_sampler = SecretKeySampler::new(secret_key_distr);
-        assert!(
-            cipher_moduli_value
-                .iter()
-                .all(|&q| secret_key_sampler.maximum_magnitude() < q),
-            "secret-key magnitude bound must be less than every ciphertext modulus"
-        );
+        for (index, &modulus_minus_one) in cipher_moduli_minus_one.iter().enumerate() {
+            secret_key_sampler
+                .validate_modulus(modulus_minus_one)
+                .unwrap_or_else(|error| {
+                    panic!("invalid secret-key sampling at RNS modulus {index}: {error}")
+                });
+        }
 
         Self {
             size,

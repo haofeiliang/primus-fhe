@@ -9,6 +9,8 @@
 
 ## 参数与密钥域
 
+`TfheParameters::try_from_config` 通过 `TfheParameterError::AccumulatorParameters` 返回累加环构造错误，返回链路的 LWE 密钥加密参数错误归于 `KeySwitchingEncryption`；CBS 配置通过 `CircuitBootstrapParameterError::EncryptionParameters` 保留 trace 或 scheme-switch 的角色及加密参数错误。外部 LWE 配置输入使用 `LweParameters::try_new`。这些错误类型及 `KeyGenerationError` 因包含浮点采样错误，只实现 `PartialEq`，不再实现 `Eq`。带上下文的错误只显示当前角色，通过 `std::error::Error::source()` 获取底层原因。
+
 `TfheParameters<T, M, LM = M>` 分离 accumulator 环模数 `Q` 和外部 LWE 模数 `q`，二者共用整数类型 `T`。`TfheConfig` 的 `accumulator_modulus` 指定 `Q`；`external_lwe` 指定 `q`、维数、binary/ternary 分布、明文模数与加密噪声。`blind_rotation` 分解在 `Q` 下，`key_switching` 分解和独立的 key-switch 噪声在 `q` 下。`level_count: None` 保留完整分解。
 
 直接构造入口是 `TfheParameters::try_new(external_lwe, blind_rotation, key_switching, key_switching_noise_standard_deviation)`。两个域须共用明文模数 `t`，`2N` 必须能由 `T` 表示；外部维数不再受 `n <= N` 限制。

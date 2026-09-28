@@ -116,6 +116,8 @@ assert_eq!(level_count, 9); // (k+1) 行 * L 层
 
 ## 组合密文工作流
 
+[TFHE 参数与边界指南](tfhe-parameters-and-boundaries.md) 说明 q/Q、秘密域、PBS/CBS/MVB/one-hot/查表链路及构造错误归属。
+
 从拥有该运算的最低层开始。[LWE](../../crates/primus_lwe/README.zh_CN.md)、[GLWE](../../crates/primus_glwe/README.zh_CN.md)、[NTRU](../../crates/primus_ntru/README.zh_CN.md) 和 [RNS GLWE](../../crates/primus_glwe_rns/src/lib.rs) 提供加密、密钥及求值原语。[共享 TFHE](../../crates/primus_tfhe/README.zh_CN.md) 提供 LWE 客户端、编码、LUT 几何和公共求值接口；[GLWE](../../crates/primus_tfhe_glwe/README.zh_CN.md) 与 [NTRU](../../crates/primus_tfhe_ntru/README.zh_CN.md) 家族分别定义自身参数和密钥契约。
 
 按后端示例顺序阅读：参数 → 验证后的 context/table → client/server key → 公开 LUT → evaluator 和输出分配 → 重复 `*_to` 求值 → 客户端解密。四个具体入口是 [GLWE NTT](../../crates/primus_tfhe_glwe_ntt/examples/ntt_basic.rs)、[GLWE Fourier](../../crates/primus_tfhe_glwe_fourier/examples/fourier_basic.rs)、[NTRU NTT](../../crates/primus_tfhe_ntru_ntt/examples/ntru_ntt_basic.rs) 和 [NTRU Fourier](../../crates/primus_tfhe_ntru_fourier/examples/ntru_fourier_basic.rs)。其中参数是功能 fixture，须按目标操作选择并验证。
@@ -123,6 +125,12 @@ assert_eq!(level_count, 9); // (k+1) 行 * L 层
 NTRU 将外部 LWE 的秘密/模数/维数与累加 NTRU 环的秘密/模数/长度分开；GLWE 的 PBS order 有自身输入输出域契约。缓冲区尺寸相同不代表密钥可以互换。保留后端参数检查，并明确调用方仍需保证的秘密和表身份。
 
 对加密 chunk 计算高精度函数，使用 [primus_tfhe_ntru_lut](../../crates/primus_tfhe_ntru_lut/README.zh_CN.md)。One-hot CBS 位于 NTRU 后端，表分区、选择和旋转位于查表库。其 evaluator 借用 context、server key 和编译后的 LUT，拥有可复用缓冲。输出只分配一次并复用 `evaluate_to`，在线循环内不重新构造密钥或表。
+
+## 保留错误角色与原因
+
+按公开操作及其契约定义错误类型，保留有助于调用方定位或处理的具体失败原因；有真实消费者收益时才拆分或合并。共享相同的底层检查，同时保留各方案的几何与表示要求。
+
+带上下文的包装由 `Display` 描述自身角色，通过 `std::error::Error::source()` 暴露底层原因。报告器应遍历该链；在每层显示中再次拼接 source 会造成重复。透明包装委托这两个方法。来源只有唯一目标角色时使用 `From`，否则显式映射。参数构造中，`SecretKeySamplerError` 表达秘密准备、重量和模数适配错误，`GaussianError` 由各 Gaussian 实现共用。Trait 派生遵循字段的数据语义，含浮点原因的错误不实现 `Eq`。
 
 ## 区分运行环境与工作区
 

@@ -34,9 +34,7 @@ impl<T: FheUint, M: RingContext<T>> CircuitBootstrapParameters<T, M> {
     /// The direct [`Self::try_new`] constructor also accepts prepared bases and
     /// independently constructed key parameters.
     ///
-    /// # Panics
-    ///
-    /// Inherits [`primus_ntru::NtruParameters::new`]'s noise sampler requirements.
+    /// Invalid key noise/sampler parameters are returned with their key role.
     pub fn try_from_config<LM: RingContext<T>>(
         tfhe: &TfheParameters<T, M, LM>,
         config: CircuitBootstrapConfig,
@@ -46,13 +44,16 @@ impl<T: FheUint, M: RingContext<T>> CircuitBootstrapParameters<T, M> {
             .output
             .try_build(accumulator.cipher_modulus_value())?;
         let key_parameters = |role, decomposition: crate::DecompositionConfig, noise| {
-            let ring = primus_ntru::NtruParameters::new(
+            let ring = primus_ntru::NtruParameters::try_new(
                 accumulator.poly_length(),
                 accumulator.plain_modulus(),
                 accumulator.cipher_modulus(),
                 accumulator.secret_key_distr(),
                 noise,
-            );
+            )
+            .map_err(|source| {
+                CircuitBootstrapParameterError::EncryptionParameters { role, source }
+            })?;
             NlevParameters::try_with_ntru_params(
                 &ring,
                 decomposition.log_basis,

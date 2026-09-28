@@ -40,15 +40,22 @@ where
     #[must_use]
     #[inline]
     pub fn new(plaintext_modulus: T, ciphertext_modulus: M) -> Self {
-        helpers::validate_moduli(plaintext_modulus, ciphertext_modulus);
+        Self::try_new(plaintext_modulus, ciphertext_modulus)
+            .unwrap_or_else(|error| panic!("{error}"))
+    }
+
+    /// Prepares encoding/decoding after checking `t >= 2` and `q > t`.
+    /// Returns the invalid domain as a [`crate::CodecError`].
+    pub fn try_new(plaintext_modulus: T, ciphertext_modulus: M) -> Result<Self, crate::CodecError> {
+        helpers::validate_moduli(plaintext_modulus, ciphertext_modulus)?;
         let plaintext_modulus_context = UintModulus(plaintext_modulus);
-        Self {
+        Ok(Self {
             plaintext_modulus,
             centered_negative_start: helpers::centered_negative_start(plaintext_modulus),
             encoding_switch: plaintext_modulus_context.prepare_switch_to(ciphertext_modulus),
             decoding_switch: ciphertext_modulus.prepare_switch_to(plaintext_modulus_context),
             ciphertext_modulus,
-        }
+        })
     }
 
     /// Returns the plaintext modulus `t` used by this codec.

@@ -18,13 +18,13 @@ pub struct TfheConfig<T: FheUint, M: RingContext<T>, LM: RingContext<T> = M> {
     pub poly_length: usize,
     /// Coefficient distribution of the accumulator secret.
     pub accumulator_secret_key_distr: SecretKeyDistr,
-    /// Standard deviation for accumulator and blind-rotation-key encryption.
+    /// Coefficient-unit standard deviation at Q for accumulator and BR-key encryption.
     pub accumulator_noise_standard_deviation: f64,
     /// NLev initializer and NGSW control decomposition.
     pub blind_rotation: DecompositionConfig,
     /// Decomposition at q for the post-bootstrap LWE key switch.
     pub key_switching: DecompositionConfig,
-    /// Standard deviation for return-key LWE encryption under the external secret.
+    /// Coefficient-unit standard deviation at q for return-key LWE encryption.
     pub key_switching_noise_standard_deviation: f64,
 }
 
@@ -54,16 +54,17 @@ where
 {
     /// Derives the accumulator and external LWE return domains from named choices.
     ///
-    /// # Panics
-    /// Inherits [`NtruParameters::new`] and [`LweParameters::new`]'s sampler and codec requirements.
+    /// Returns accumulator/return-key construction and compatibility errors.
+    /// This does not validate a noise/security budget or NTRU invertibility.
     pub fn try_from_config(config: TfheConfig<T, M, LM>) -> Result<Self, TfheParameterError> {
-        let accumulator = NtruParameters::new(
+        let accumulator = NtruParameters::try_new(
             config.poly_length,
             config.external_lwe.plain_modulus_value(),
             config.accumulator_modulus,
             config.accumulator_secret_key_distr,
             config.accumulator_noise_standard_deviation,
-        );
+        )
+        .map_err(TfheParameterError::AccumulatorParameters)?;
         let blind_rotation = NlevParameters::try_with_ntru_params(
             &accumulator,
             config.blind_rotation.log_basis,
@@ -82,8 +83,7 @@ where
     /// External secrets must be binary or ternary; their dimension need not fit in N.
     /// Both domains must share plaintext modulus t, and 2N must fit in T.
     ///
-    /// # Panics
-    /// Inherits [`LweParameters::new`]'s noise-sampler requirements.
+    /// Returns domain, decomposition or return-key noise-sampler errors.
     pub fn try_new(
         external_lwe: LweParameters<T, LM>,
         blind_rotation: NlevParameters<T, M>,
@@ -102,19 +102,17 @@ where
             .checked_mul(2)
             .filter(|&n| T::try_from(n).is_ok())
             .ok_or(TfheParameterError::RotationDomainTooLarge)?;
-        let key_switching_basis = ApproxSignedBasis::try_new(
-            external_lwe.cipher_modulus_value(),
-            key_switching.log_basis,
-            key_switching.level_count,
-        )
-        .map_err(TfheParameterError::KeySwitchingParameters)?;
-        let key_switching_lwe = LweParameters::new(
+        let key_switching_basis = key_switching
+            .try_build(external_lwe.cipher_modulus_value())
+            .map_err(TfheParameterError::KeySwitchingParameters)?;
+        let key_switching_lwe = LweParameters::try_new(
             external_lwe.dimension(),
             external_lwe.plain_modulus_value(),
             external_lwe.cipher_modulus(),
             distr,
             key_switching_noise_standard_deviation,
-        );
+        )
+        .map_err(TfheParameterError::KeySwitchingEncryption)?;
         let rotation_quantizer = RotationQuantizer::new(external_lwe.cipher_modulus(), two_n, 1);
         Ok(Self {
             external_lwe,

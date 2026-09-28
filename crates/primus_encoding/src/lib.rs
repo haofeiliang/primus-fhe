@@ -19,6 +19,20 @@ mod scaled;
 pub use rounded::RoundedCodec;
 pub use scaled::ScaledCodec;
 
+/// Invalid plaintext/ciphertext domain or fixed-scale recovery bound.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, thiserror::Error)]
+pub enum CodecError {
+    /// A plaintext domain needs at least two residues.
+    #[error("plaintext modulus must be at least two")]
+    InvalidPlaintextModulus,
+    /// The ciphertext modulus must be larger than the plaintext modulus.
+    #[error("ciphertext modulus must exceed plaintext modulus")]
+    CiphertextModulusTooSmall,
+    /// Fixed rounded scaling cannot guarantee noiseless recovery for both lifts.
+    #[error("ciphertext modulus too small for fixed rounded scaling")]
+    InsufficientScaleRecovery,
+}
+
 #[cfg(feature = "rns")]
 mod bfv_rns;
 #[cfg(feature = "rns")]

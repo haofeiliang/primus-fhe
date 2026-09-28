@@ -2,7 +2,7 @@ use primus_integer::{FheInt, FheUint, SignedInteger};
 use rand::distr::Distribution;
 
 use crate::{
-    DistrErr,
+    GaussianError,
     gaussian_core::{CDT_MAX_MAGNITUDE, DEFAULT_TAIL_CUT, GaussianParameters},
 };
 
@@ -43,7 +43,7 @@ impl<T: FheInt + SignedInteger> SignedDiscreteGaussian<T> {
     /// Returns an error when `std_dev` is invalid or the truncated support
     /// cannot be represented by `T`.
     #[inline]
-    pub fn new(std_dev: f64) -> Result<SignedDiscreteGaussian<T>, DistrErr> {
+    pub fn new(std_dev: f64) -> Result<SignedDiscreteGaussian<T>, GaussianError> {
         let parameters = GaussianParameters::new(std_dev, DEFAULT_TAIL_CUT)?;
         if parameters.maximum_magnitude() <= CDT_MAX_MAGNITUDE {
             SignedCDTSampler::from_parameters(parameters).map(SignedDiscreteGaussian::Cdt)

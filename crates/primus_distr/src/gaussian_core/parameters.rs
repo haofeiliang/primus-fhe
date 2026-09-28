@@ -1,6 +1,6 @@
 use primus_integer::{Integer, SignedInteger};
 
-use crate::{DistrErr, MIN_STANDARD_DEVIATION};
+use crate::{GaussianError, MIN_STANDARD_DEVIATION};
 
 /// Default number of standard deviations retained by facade samplers.
 pub(crate) const DEFAULT_TAIL_CUT: f64 = 12.0;
@@ -38,28 +38,28 @@ impl GaussianParameters {
     /// Validates the common floating-point parameter domain and derives the
     /// inclusive maximum sample magnitude.
     ///
-    /// Returns [`DistrErr::InvalidStandardDeviation`] or
-    /// [`DistrErr::InvalidTailCut`] when a floating-point recurrence would be
-    /// undefined, and [`DistrErr::MaximumMagnitudeTooLarge`] when the truncated
+    /// Returns [`GaussianError::InvalidStandardDeviation`] or
+    /// [`GaussianError::InvalidTailCut`] when a floating-point recurrence would be
+    /// undefined, and [`GaussianError::MaximumMagnitudeTooLarge`] when the truncated
     /// support cannot be represented as a `u64` magnitude.
-    pub(crate) fn new(standard_deviation: f64, tail_cut: f64) -> Result<Self, DistrErr> {
+    pub(crate) fn new(standard_deviation: f64, tail_cut: f64) -> Result<Self, GaussianError> {
         let variance = standard_deviation * standard_deviation;
         if !standard_deviation.is_finite()
             || standard_deviation < MIN_STANDARD_DEVIATION
             || !variance.is_finite()
             || !(2.0 * variance).is_finite()
         {
-            return Err(DistrErr::InvalidStandardDeviation {
+            return Err(GaussianError::InvalidStandardDeviation {
                 value: standard_deviation,
             });
         }
         if !tail_cut.is_finite() || tail_cut <= 0.0 {
-            return Err(DistrErr::InvalidTailCut { value: tail_cut });
+            return Err(GaussianError::InvalidTailCut { value: tail_cut });
         }
 
         let maximum_magnitude = (standard_deviation * tail_cut).floor();
         if !maximum_magnitude.is_finite() || maximum_magnitude >= U64_RANGE_END_AS_F64 {
-            return Err(DistrErr::MaximumMagnitudeTooLarge {
+            return Err(GaussianError::MaximumMagnitudeTooLarge {
                 standard_deviation,
                 tail_cut,
             });
@@ -99,10 +99,10 @@ impl GaussianParameters {
     ///
     /// Returning `Self` allows this proof to be chained with output-domain
     /// validation before allocating the table.
-    pub(crate) fn validate_cdt_size(self, maximum: u64) -> Result<Self, DistrErr> {
+    pub(crate) fn validate_cdt_size(self, maximum: u64) -> Result<Self, GaussianError> {
         let maximum_magnitude = self.maximum_magnitude();
         if maximum_magnitude > maximum {
-            return Err(DistrErr::CdtTableTooLarge {
+            return Err(GaussianError::CdtTableTooLarge {
                 maximum_magnitude,
                 supported_maximum: maximum,
             });
@@ -119,11 +119,11 @@ impl GaussianParameters {
     pub(crate) fn validate_modular_output<T: Integer>(
         self,
         modulus_minus_one: T,
-    ) -> Result<Self, DistrErr> {
+    ) -> Result<Self, GaussianError> {
         let modulus_minus_one: u128 = modulus_minus_one.as_into();
         let maximum_magnitude = self.maximum_magnitude();
         if u128::from(maximum_magnitude) > modulus_minus_one {
-            return Err(DistrErr::ModulusTooSmall {
+            return Err(GaussianError::ModulusTooSmall {
                 maximum_magnitude,
                 modulus_minus_one,
             });
@@ -136,11 +136,11 @@ impl GaussianParameters {
     ///
     /// Bounding the magnitude by `T::MAX` ensures that conversion and
     /// subsequent negation cannot overflow.
-    pub(crate) fn validate_signed_output<T: SignedInteger>(self) -> Result<Self, DistrErr> {
+    pub(crate) fn validate_signed_output<T: SignedInteger>(self) -> Result<Self, GaussianError> {
         let output_maximum: u128 = T::MAX.as_into();
         let maximum_magnitude = self.maximum_magnitude();
         if u128::from(maximum_magnitude) > output_maximum {
-            return Err(DistrErr::OutputTypeTooNarrow {
+            return Err(GaussianError::OutputTypeTooNarrow {
                 maximum_magnitude,
                 output_maximum,
             });
@@ -152,7 +152,7 @@ impl GaussianParameters {
 #[cfg(test)]
 mod tests {
     use super::{CDT_MAX_MAGNITUDE, GaussianParameters};
-    use crate::{DistrErr, MIN_STANDARD_DEVIATION};
+    use crate::{GaussianError, MIN_STANDARD_DEVIATION};
 
     #[test]
     fn rejects_invalid_parameters_and_unencodable_support() {
@@ -167,25 +167,25 @@ mod tests {
         ] {
             assert!(matches!(
                 GaussianParameters::new(standard_deviation, 12.0),
-                Err(DistrErr::InvalidStandardDeviation { .. })
+                Err(GaussianError::InvalidStandardDeviation { .. })
             ));
         }
         assert!(GaussianParameters::new(MIN_STANDARD_DEVIATION, 12.0).is_ok());
         for tail_cut in [0.0, -1.0, f64::NAN, f64::INFINITY] {
             assert!(matches!(
                 GaussianParameters::new(3.19, tail_cut),
-                Err(DistrErr::InvalidTailCut { .. })
+                Err(GaussianError::InvalidTailCut { .. })
             ));
         }
         assert!(matches!(
             GaussianParameters::new(1.0e10, 1.0e10),
-            Err(DistrErr::MaximumMagnitudeTooLarge { .. })
+            Err(GaussianError::MaximumMagnitudeTooLarge { .. })
         ));
 
         let parameters = GaussianParameters::new(3.19, 12.0).unwrap();
         assert!(matches!(
             parameters.validate_modular_output(37_u16),
-            Err(DistrErr::ModulusTooSmall { .. })
+            Err(GaussianError::ModulusTooSmall { .. })
         ));
         assert!(parameters.validate_modular_output(38_u16).is_ok());
         assert!(parameters.validate_signed_output::<i16>().is_ok());
@@ -193,11 +193,11 @@ mod tests {
         let large_parameters = GaussianParameters::new(30.0, 12.0).unwrap();
         assert!(matches!(
             large_parameters.validate_cdt_size(CDT_MAX_MAGNITUDE),
-            Err(DistrErr::CdtTableTooLarge { .. })
+            Err(GaussianError::CdtTableTooLarge { .. })
         ));
         assert!(matches!(
             large_parameters.validate_signed_output::<i8>(),
-            Err(DistrErr::OutputTypeTooNarrow { .. })
+            Err(GaussianError::OutputTypeTooNarrow { .. })
         ));
     }
 }

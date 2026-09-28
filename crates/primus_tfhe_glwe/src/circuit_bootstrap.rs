@@ -35,9 +35,7 @@ impl<T: FheUint, M: RingContext<T>> CircuitBootstrapParameters<T, M> {
     /// The direct [`Self::try_new`] constructor also accepts prepared bases and
     /// independently constructed key parameters.
     ///
-    /// # Panics
-    ///
-    /// Inherits [`primus_glwe::GlweParameters::new`]'s noise sampler requirements.
+    /// Invalid key noise/sampler parameters are returned with their key role.
     pub fn try_from_config(
         tfhe: &TfheParameters<T, M>,
         config: CircuitBootstrapConfig,
@@ -47,14 +45,17 @@ impl<T: FheUint, M: RingContext<T>> CircuitBootstrapParameters<T, M> {
             .output
             .try_build(accumulator.cipher_modulus_value())?;
         let key_parameters = |role, decomposition: crate::DecompositionConfig, noise| {
-            let ring = primus_glwe::GlweParameters::new(
+            let ring = primus_glwe::GlweParameters::try_new(
                 accumulator.dimension(),
                 accumulator.poly_length(),
                 accumulator.plain_modulus_value(),
                 accumulator.cipher_modulus(),
                 accumulator.secret_key_distr(),
                 noise,
-            );
+            )
+            .map_err(|source| {
+                CircuitBootstrapParameterError::EncryptionParameters { role, source }
+            })?;
             GlevParameters::try_with_glwe_params(
                 &ring,
                 decomposition.log_basis,

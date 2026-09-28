@@ -22,6 +22,8 @@
 
 ## 私钥分布参数
 
+`SecretKeySampler::try_new` 对非法概率或 Gaussian 构造返回 `SecretKeySamplerError`。Gaussian 构造器共用 `GaussianError`，秘密采样器通过 `SecretKeySamplerError::Gaussian` 保留它。`validate_length(length)` 检查固定重量，`validate_modulus(modulus_minus_one)` 检查输出模数是否适配支持范围，两者均不采样。`new` 保留主动 panic 的便捷形式；LWE/GLWE/NTRU 参数构造器在密钥生成前完成这两项检查。
+
 `SecretKeyDistr` 描述 binary、ternary、固定权重和 Gaussian 私钥系数分布；它是参数 枚举，不是 sampler。构造函数检查概率与完整逻辑密钥的权重。 Gaussian 参数由所选 Gaussian sampler 的构造器检查。 每种密码方案自行决定支持哪些分布变体。
 
 自定义概率使用 `SecretKeyDistr::binary(one_probability)` 或 `SecretKeyDistr::ternary(negative_one_probability, one_probability)` 构造； 构造时检查各概率有限且位于 `[0, 1]`，三元概率之和不超过一。 `SecretKeyDistr::gaussian(standard_deviation)` 构造带命名字段的 `Gaussian { standard_deviation }`，参数校验仍由 Gaussian sampler 完成。 无参数变体直接使用枚举值。完整私钥采样器在构造时也检查概率，以覆盖直接构造枚举变体的情况。

@@ -32,7 +32,7 @@ mod base;
 mod converter;
 pub mod hybrid;
 
-pub use error::RNSError;
+pub use error::RnsError;
 
 pub use base::RNSBase;
 pub use converter::{BaseConverter, ExactConversionContext};

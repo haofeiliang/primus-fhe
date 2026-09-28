@@ -58,6 +58,8 @@ assert_eq!(base.decompose(value.view()).as_ref(), [2, 4, 6]);
 
 ## RNS 基
 
+基构造、扩展及 hybrid 分区返回 `RnsError`。模数不互素时返回 `NonCoprimeModuli`，分区错误保留请求数量与支持范围。
+
 `RNSBase::new` 从非空、模数两两互素的 slice 克隆构造基； `from_owned_moduli` 可以避免这次克隆。RNS 基会预计算 `Q`、每个穿孔积 `Q / q_i` 以及 `(Q / q_i)^-1 mod q_i`。
 
 主要操作族包括：

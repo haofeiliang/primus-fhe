@@ -290,16 +290,42 @@ fn rejects_invalid_messages_before_batch_writes() {
 
 #[test]
 fn rejects_invalid_modulus_pairs() {
+    use primus_encoding::CodecError;
     use std::panic::catch_unwind;
 
     for t in [0u64, 1] {
+        assert_eq!(
+            RoundedCodec::try_new(t, NativeModulus::new()).err(),
+            Some(CodecError::InvalidPlaintextModulus)
+        );
+        assert_eq!(
+            ScaledCodec::try_new(t, NativeModulus::new()).err(),
+            Some(CodecError::InvalidPlaintextModulus)
+        );
         assert!(catch_unwind(|| RoundedCodec::new(t, NativeModulus::new())).is_err());
         assert!(catch_unwind(|| ScaledCodec::new(t, NativeModulus::new())).is_err());
     }
     for (t, q) in [(0u64, 17), (1, 17), (2, 2), (3, 2)] {
+        let expected = if t < 2 {
+            CodecError::InvalidPlaintextModulus
+        } else {
+            CodecError::CiphertextModulusTooSmall
+        };
+        assert_eq!(
+            RoundedCodec::try_new(t, UintModulus::new(q)).err(),
+            Some(expected)
+        );
+        assert_eq!(
+            ScaledCodec::try_new(t, UintModulus::new(q)).err(),
+            Some(expected)
+        );
         assert!(catch_unwind(|| RoundedCodec::new(t, UintModulus::new(q))).is_err());
         assert!(catch_unwind(|| ScaledCodec::new(t, UintModulus::new(q))).is_err());
     }
     // This pair meets q > t but violates fixed-scale recovery.
+    assert_eq!(
+        ScaledCodec::try_new(12u64, UintModulus::new(17)).err(),
+        Some(CodecError::InsufficientScaleRecovery)
+    );
     assert!(catch_unwind(|| ScaledCodec::new(12u64, UintModulus::new(17))).is_err());
 }

@@ -2,7 +2,7 @@ use primus_factor::{FactorMul, ShoupFactor};
 use primus_integer::{BigUint, FheUint};
 use primus_reduce::FieldContext;
 
-use crate::RNSError;
+use crate::RnsError;
 
 use super::RNSBase;
 
@@ -22,15 +22,15 @@ where
     ///
     /// # Errors
     ///
-    /// Returns [`RNSError::CoPrimeError`] when the new modulus is not coprime
+    /// Returns [`RnsError::NonCoprimeModuli`] when the new modulus is not coprime
     /// with at least one existing modulus.
-    pub fn extend(&self, p: M) -> Result<Self, RNSError> {
+    pub fn extend(&self, p: M) -> Result<Self, RnsError> {
         let p_val = p.value();
 
         // Check coprimality between p and every q_i.
         for qi in self.moduli_values() {
             if !p_val.is_coprime(qi) {
-                return Err(RNSError::CoPrimeError);
+                return Err(RnsError::NonCoprimeModuli);
             }
         }
 
@@ -120,16 +120,16 @@ where
     ///
     /// # Errors
     ///
-    /// Returns [`RNSError::CoPrimeError`] when any modulus in `p_base` is not
+    /// Returns [`RnsError::NonCoprimeModuli`] when any modulus in `p_base` is not
     /// coprime with at least one modulus in `self`.
     #[inline]
-    pub fn extend_with(&self, p_base: &Self) -> Result<Self, RNSError> {
+    pub fn extend_with(&self, p_base: &Self) -> Result<Self, RnsError> {
         let p_moduli_values: Vec<T> = p_base.moduli_values().collect();
 
         for qi in self.moduli_values() {
             for &pi in &p_moduli_values {
                 if !pi.is_coprime(qi) {
-                    return Err(RNSError::CoPrimeError);
+                    return Err(RnsError::NonCoprimeModuli);
                 }
             }
         }

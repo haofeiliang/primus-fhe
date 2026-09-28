@@ -5,6 +5,23 @@ use rand::distr::Uniform;
 
 use crate::{RoundedCodec, SecretKeyDistr};
 
+/// Invalid LWE layout, encoding or sampling parameters.
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
+pub enum LweParameterError {
+    /// The dimension is zero or its mask/body length overflows.
+    #[error("LWE dimension must be nonzero and dimension + 1 must fit usize")]
+    InvalidDimension,
+    /// Invalid message/ciphertext moduli.
+    #[error(transparent)]
+    Encoding(#[from] primus_encoding::CodecError),
+    /// Invalid secret sampling configuration, weight or output modulus.
+    #[error(transparent)]
+    SecretKey(#[from] primus_distr::SecretKeySamplerError),
+    /// Invalid coefficient-domain Gaussian noise.
+    #[error("invalid LWE noise distribution")]
+    Noise(#[from] primus_distr::GaussianError),
+}
+
 /// Parameters and precomputed samplers for LWE with a nonzero vector dimension.
 /// The ciphertext length `dimension + 1` always fits in `usize`.
 #[derive(Clone)]
@@ -15,8 +32,6 @@ where
 {
     /// Nonzero **LWE** vector dimension, refers to **n** in the paper.
     dimension: usize,
-    /// **LWE** message modulus, refers to **t** in the paper.
-    plain_modulus_value: T,
     /// **LWE** cipher modulus, refers to **q** in the paper.
     cipher_modulus: M,
     /// **LWE** cipher modulus minus one, refers to **q-1** in the paper.
@@ -37,12 +52,9 @@ where
     ///
     /// # Panics
     ///
-    /// Panics if `dimension` is zero or `dimension + 1` overflows `usize`,
-    /// secret-key sampling violates [`SecretKeySampler::new`]'s validity rules,
-    /// its support does not fit below the ciphertext modulus, the noise sampler
-    /// violates [`DiscreteGaussian::new`]'s validity rules,
-    /// or the plaintext/ciphertext moduli fail the rules of
-    /// [`RoundedCodec::new`](primus_encoding::RoundedCodec::new).
+    /// Panics on the layout, encoding or sampler errors of [`Self::try_new`],
+    /// including fixed secret weights exceeding the dimension.
+    #[must_use]
     #[inline]
     pub fn new(
         dimension: usize,
@@ -51,31 +63,48 @@ where
         secret_key_distr: SecretKeyDistr,
         noise_standard_deviation: f64,
     ) -> Self {
-        assert!(dimension != 0, "LWE dimension must be non-zero");
-        dimension.checked_add(1).expect("LWE length overflow");
+        Self::try_new(
+            dimension,
+            plain_modulus_value,
+            cipher_modulus,
+            secret_key_distr,
+            noise_standard_deviation,
+        )
+        .expect("invalid LWE parameters")
+    }
+
+    /// Checks the dimension, encoding, secret support/weight and noise sampler.
+    /// Noise standard deviation is measured in ciphertext coefficient units.
+    /// Successful construction does not establish security or a decryption margin.
+    pub fn try_new(
+        dimension: usize,
+        plain_modulus_value: T,
+        cipher_modulus: M,
+        secret_key_distr: SecretKeyDistr,
+        noise_standard_deviation: f64,
+    ) -> Result<Self, LweParameterError> {
+        if dimension == 0 || dimension.checked_add(1).is_none() {
+            return Err(LweParameterError::InvalidDimension);
+        }
+        let plaintext_codec = RoundedCodec::try_new(plain_modulus_value, cipher_modulus)?;
         let cipher_modulus_minus_one = cipher_modulus.minus_one();
 
         let noise_distribution =
-            DiscreteGaussian::new(noise_standard_deviation, cipher_modulus_minus_one).unwrap();
-        let secret_key_sampler = SecretKeySampler::new(secret_key_distr);
-        assert!(
-            secret_key_sampler.maximum_magnitude() <= cipher_modulus_minus_one,
-            "secret-key magnitude bound must be less than the ciphertext modulus"
-        );
+            DiscreteGaussian::new(noise_standard_deviation, cipher_modulus_minus_one)?;
+        let secret_key_sampler = SecretKeySampler::try_new(secret_key_distr)?;
+        secret_key_sampler.validate_length(dimension)?;
+        secret_key_sampler.validate_modulus(cipher_modulus_minus_one)?;
 
         let cipher_modulus_uniform_distr = cipher_modulus.uniform_distribution();
-        let plaintext_codec = RoundedCodec::new(plain_modulus_value, cipher_modulus);
-
-        Self {
+        Ok(Self {
             dimension,
-            plain_modulus_value,
             cipher_modulus,
             cipher_modulus_minus_one,
             cipher_modulus_uniform_distr,
             plaintext_codec,
             secret_key_sampler,
             noise_distribution,
-        }
+        })
     }
 
     /// Returns the dimension of this [`LweParameters<T, M>`].
@@ -87,7 +116,7 @@ where
     /// Returns the plain modulus value of this [`LweParameters<T, M>`].
     #[inline]
     pub fn plain_modulus_value(&self) -> T {
-        self.plain_modulus_value
+        self.plaintext_codec.plaintext_modulus()
     }
 
     /// Returns the cipher modulus of this [`LweParameters<T, M>`].

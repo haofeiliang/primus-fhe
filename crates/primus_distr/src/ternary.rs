@@ -39,12 +39,19 @@ pub(crate) enum TernarySampler {
 
 impl TernarySampler {
     pub(crate) fn new(negative: f64, positive: f64) -> Self {
-        crate::secret_key_distr::validate_ternary_probabilities(negative, positive);
+        Self::try_new(negative, positive).unwrap_or_else(|error| panic!("{error}"))
+    }
+
+    pub(crate) fn try_new(
+        negative: f64,
+        positive: f64,
+    ) -> Result<Self, crate::SecretKeySamplerError> {
+        crate::secret_key_distr::check_ternary_probabilities(negative, positive)?;
         const FULL: u128 = 1u128 << 64;
         let negative_end = (negative * FULL as f64) as u128;
         let positive_weight = (positive * FULL as f64) as u128;
         let nonzero_end = (negative_end + positive_weight).min(FULL);
-        if negative_end == FULL {
+        Ok(if negative_end == FULL {
             Self::Constant(-1)
         } else if nonzero_end == 0 {
             Self::Constant(0)
@@ -59,7 +66,7 @@ impl TernarySampler {
                 negative_end: negative_end as u64,
                 nonzero_end: nonzero_end as u64,
             }
-        }
+        })
     }
 
     pub(crate) fn sample_to<T: FheInt, R: Rng + rand::CryptoRng>(

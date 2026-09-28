@@ -62,6 +62,8 @@ The consuming `transform_inplace` and `inverse_transform_inplace` methods use th
 
 ## Construction constraints
 
+`NttError` distinguishes geometry, modulus headroom and missing roots. `DegreeNotRepresentable` reports a degree that cannot fit the table coefficient type.
+
 - The supported contract uses `log_n >= 1`, so `N >= 2`. `N = 1` is rejected with `NttError::PolynomialLengthTooSmall`.
 - The modulus must be prime and admit a primitive `2N`-th root of unity, requiring `2N` to divide `q - 1`. Primality is a caller precondition, not a runtime check.
 - `U32NttTable` and `UintNttTable<u32>` require `q < 2^30`; `U64NttTable` and `UintNttTable<u64>` require `q < 2^62`. The two spare high bits make every lazy value below `4q` representable.

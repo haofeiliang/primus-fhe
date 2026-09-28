@@ -62,6 +62,8 @@ Lazy 值表示模 `q` 的剩余类，但其更宽的整数范围属于调用契�
 
 ## 构造约束
 
+`NttError` 区分几何、模数余量和单位根错误；`DegreeNotRepresentable` 表示所需 degree 无法由 table 的系数类型表示。
+
 - 支持的契约要求 `log_n >= 1`，即 `N >= 2`；`N = 1` 会返回 `NttError::PolynomialLengthTooSmall`。
 - 模数必须是素数且存在本原 `2N` 次单位根，即要求 `2N` 整除 `q - 1`。素性是调用方前提，不进行运行时检查。
 - `U32NttTable` 和 `UintNttTable<u32>` 要求 `q < 2^30`；`U64NttTable` 和 `UintNttTable<u64>` 要求 `q < 2^62`。预留的两个高位保证所有小于 `4q` 的 lazy 值均可表示。

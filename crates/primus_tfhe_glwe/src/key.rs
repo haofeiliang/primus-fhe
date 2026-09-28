@@ -20,10 +20,7 @@ pub struct ClientKey<T: FheUint> {
 impl<T: FheUint> ClientKey<T> {
     /// Generates both coefficient-domain client secrets without transform tables.
     ///
-    /// # Panics
-    ///
-    /// Inherits [`LweSecretKey::generate`] and [`GlweSecretKey::generate`]'s
-    /// sampling requirements, including fixed weights fitting their key lengths.
+    /// Distribution and fixed-weight validity is established by parameter construction.
     #[must_use]
     pub fn generate<M, R>(parameters: &TfheParameters<T, M>, rng: &mut R) -> Self
     where

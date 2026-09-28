@@ -9,7 +9,7 @@ use primus_factor::ShoupFactor;
 use primus_integer::{BigUint, FheUint, multiply_many_values};
 use primus_reduce::FieldContext;
 
-use crate::RNSError;
+use crate::RnsError;
 
 /// A pairwise-coprime RNS basis with CRT precomputations.
 ///
@@ -70,10 +70,10 @@ where
     ///
     /// # Errors
     ///
-    /// Returns [`RNSError::EmptyBase`] when `moduli` is empty.
-    /// Returns [`RNSError::CoPrimeError`] when any two moduli are not coprime.
+    /// Returns [`RnsError::EmptyBase`] when `moduli` is empty.
+    /// Returns [`RnsError::NonCoprimeModuli`] when any two moduli are not coprime.
     #[inline]
-    pub fn new(moduli: &[M]) -> Result<Self, RNSError> {
+    pub fn new(moduli: &[M]) -> Result<Self, RnsError> {
         Self::from_owned_moduli(moduli.to_vec())
     }
 
@@ -81,9 +81,9 @@ where
     ///
     /// See [`new`](Self::new) for error conditions.
     #[inline]
-    pub fn from_owned_moduli(moduli: Vec<M>) -> Result<Self, RNSError> {
+    pub fn from_owned_moduli(moduli: Vec<M>) -> Result<Self, RnsError> {
         if moduli.is_empty() {
-            return Err(RNSError::EmptyBase);
+            return Err(RnsError::EmptyBase);
         }
 
         if moduli.len() == 1 {
@@ -107,7 +107,7 @@ where
             .array_combinations()
             .any(|[&a, &b]| !a.is_coprime(b))
         {
-            return Err(RNSError::CoPrimeError);
+            return Err(RnsError::NonCoprimeModuli);
         }
 
         let moduli_product = multiply_many_values(&moduli_values);

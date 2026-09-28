@@ -18,6 +18,48 @@ use rand::{Rng, SeedableRng, rngs::StdRng};
 const N: usize = 16;
 
 #[test]
+fn fallible_parameters_check_layout_codec_and_samplers() {
+    use primus_glwe::GlweParameterError as Error;
+    let make = |k, n, t, distr, noise| {
+        GlweParameters::try_new(k, n, t, NativeModulus::<u32>::new(), distr, noise)
+    };
+    for (k, n) in [(0, 8), (1, 3), (usize::MAX, 8)] {
+        assert!(matches!(
+            make(k, n, 4, SecretKeyDistr::UniformBinary, 0.7),
+            Err(Error::Layout(_))
+        ));
+    }
+    assert!(matches!(
+        make(1, 8, 1, SecretKeyDistr::UniformBinary, 0.7),
+        Err(Error::Encoding(_))
+    ));
+    assert!(matches!(
+        make(1, 8, 4, SecretKeyDistr::UniformBinary, f64::NAN),
+        Err(Error::Noise(_))
+    ));
+    // A fixed weight applies to the complete kN key, not to each polynomial.
+    let distr = SecretKeyDistr::FixedHammingWeightBinary { hamming_weight: 9 };
+    assert!(make(2, 8, 4, distr, 0.7).is_ok());
+    assert!(matches!(
+        make(1, 8, 4, distr, 0.7),
+        Err(Error::SecretKey(_))
+    ));
+    assert!(matches!(
+        GlweParameters::try_new(
+            1,
+            8,
+            12,
+            BarrettModulus::new(17u32),
+            SecretKeyDistr::UniformBinary,
+            0.7
+        ),
+        Err(Error::Encoding(
+            primus_encoding::CodecError::InsufficientScaleRecovery
+        ))
+    ));
+}
+
+#[test]
 fn secret_generation_rejects_incompatible_tables_before_sampling() {
     let modulus = BarrettModulus::new(257u32);
     let params = GlweParameters::new(1, N, 16, modulus, SecretKeyDistr::UniformBinary, 0.7);

@@ -11,6 +11,8 @@
 
 ## 参数与外部密钥域
 
+`TfheParameters::try_from_config` 通过 `TfheParameterError::AccumulatorParameters` 返回累加环的布局/编码/采样错误；CBS 配置通过 `CircuitBootstrapParameterError::EncryptionParameters` 保留 trace 或 scheme-switch 的角色及加密参数错误。Small LWE 也来自配置输入时使用 `LweParameters::try_new`。这些错误类型及 `KeyGenerationError` 因包含浮点采样错误，只实现 `PartialEq`，不再实现 `Eq`。带上下文的错误只显示当前角色，通过 `std::error::Error::source()` 获取底层原因。
+
 `TfheParameters<T, M>` 和客户端使用同一个密文模数类型 `M`；两后端的类型别名固定各自的模数实现。
 
 推荐使用 `TfheParameters::try_from_config(TfheConfig { .. })`：只在 `small_lwe` 中指定一次 `t/q`，具名字段选择 accumulator 的维数、长度、秘密分布和噪声，以及 blind rotation、key switching 的 `DecompositionConfig { log_basis, level_count }` 和 PBS order。`level_count: None` 保留完整分解；各 basis 自动绑定同一模数。 GLWE evaluation key 沿用 accumulator 噪声。已持有环参数或预计算 basis 时，使用下述直接入口。

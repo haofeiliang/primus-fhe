@@ -18,6 +18,8 @@ NLev 与 NGSW 存储的行数相同，但数学角色不同。`NLev[1]` 可通�
 
 ## 私钥与推荐流程
 
+`NtruParameters::try_new` 对环长度、固定尺度编码、秘密支持集/重量和噪声采样错误返回 `NtruParameterError`，固定重量不得超过 N；`new` 在相同错误下 panic。这些检查不证明采样秘密可逆、变换可用或噪声/安全预算成立。 `NtruParameterError::SecretKey` 以 `SecretKeySamplerError` 保留采样配置、重量或模数适配的具体原因；`Noise` 保留 `GaussianError`。
+
 使用 `NttNtruSecretKey::generate_pair` 或 `FourierNtruSecretKey::generate_pair` 同时保留有符号系数私钥和变换表示。系数私钥用于生成求值密钥；变换私钥及其缓存 逆元用于加密和相位提取。
 
 NTT 生成拒绝含零点值的私钥。Fourier 生成检查原生环可逆性（系数和为奇数）和 复数逆元的稳定性。这两组条件不同。有界拒绝采样可能失败，重试次数及逆元例程 不承诺常数时间。
@@ -77,7 +79,7 @@ Sample extraction、NLev/NGSW 外积与 CMUX 位于 [`primus_lattice`](../primus
 
 `NttNtruTraceKey` 和 `FourierNtruTraceKey` 绑定 `log2(N)` 个 automorphism key。 所有入口的输入、输出均为原秘密下的系数密文，环长度保持 N。普通 partial trace 保留 r 个系数，目标为 `(N/r) * sum_j M[j*N/r] X^(j*N/r)`；reverse trace 保留原消息尺度。NTT 使用模 q 下的 2 的幂逆元归一化；Fourier 在每个逆序步骤前 对无符号系数代表元做向下取整的整数除法，其 phase 舍入误差再乘 f。 两条数值路径的误差分布不同，不能相互替换。
 
-逆序步骤访问 `2r+1, 4r+1, ..., N+1` 次自同构。后续步骤将新引入的自同构误差投影到等间距系数位置；较晚引入的误差可能保留在目标位置以外。Native 减半另外贡献投影后的 `f * parity` 项，其半模数提升项则会消去。这里的 floor 是除二最近舍入的向下取平规则，不承诺舍入无偏。两条独立相位公式见[推导与小环验证](../../docs/ntru-pbs-cbs-mathematical-contracts.md#4-revhomtrace-的投影恒等式)。
+逆序步骤访问 `2r+1, 4r+1, ..., N+1` 次自同构。后续步骤将新引入的自同构误差投影到等间距系数位置；较晚引入的误差可能保留在目标位置以外。Native 减半另外贡献投影后的 `f * parity` 项，其半模数提升项则会消去。这里的 floor 是除二最近舍入的向下取平规则，不承诺舍入无偏。
 
 `project_coefficient(s)_to` 将指定系数移到常数位后做 reverse trace，支持重复及 乱序索引。`project_prefix_coefficients_to(input, count, ...)` 接受 `0..=N` 内 任意 count，为 `0..count` 执行相同的反向 trace，无需索引数组或明文零尾； count 为 1 时仍执行完整反向 trace。 `expand_coefficients_to` 使用展开树，按自然顺序展开整个消息。 `expand_partial_coefficients_to(input, count, ...)` 要求 count 为不大于 N 的 2 的幂，且目标消息仅在前 count 个位置非零；使用 count-1 次 automorphism， 直接复用输出存储展开树。一般输入会得到残余类多项式，不能承诺常数消息。 密文或噪声不要求零尾，输出非目标位置仍可能含噪声。
 

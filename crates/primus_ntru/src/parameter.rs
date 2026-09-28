@@ -13,6 +13,23 @@ use crate::SecretKeyDistr;
 /// invertible transform-domain NTRU key.
 pub(crate) const KEY_GENERATION_ATTEMPTS: usize = 1 << 10;
 
+/// Invalid NTRU layout, encoding or sampling parameters.
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
+pub enum NtruParameterError {
+    /// The ring length is outside the supported power-of-two range.
+    #[error("NTRU polynomial length must be a supported power of two")]
+    InvalidPolynomialLength,
+    /// Invalid message/ciphertext domain or fixed-scale recovery bound.
+    #[error(transparent)]
+    Encoding(#[from] primus_encoding::CodecError),
+    /// Invalid secret sampling configuration, weight or output modulus.
+    #[error(transparent)]
+    SecretKey(#[from] primus_distr::SecretKeySamplerError),
+    /// Invalid coefficient-domain Gaussian noise.
+    #[error("invalid NTRU noise distribution")]
+    Noise(#[from] primus_distr::GaussianError),
+}
+
 /// Parameters for scalar secret-key NTRU encryption.
 ///
 /// The ciphertext modulus may be an explicit NTT-friendly field or the native
@@ -44,10 +61,11 @@ where
     /// # Panics
     ///
     /// Panics if the polynomial length, plaintext modulus, ciphertext modulus,
-    /// or Gaussian parameters are invalid, including failure of
+    /// fixed secret weight, probabilities or Gaussian parameters are invalid, including failure of
     /// [`ScaledCodec::new`]'s fixed-scale recovery bound, or if the secret-key
     /// sampler's maximum magnitude is not strictly less than an explicit
     /// ciphertext modulus.
+    #[must_use]
     pub fn new(
         poly_length: usize,
         plain_modulus: T,
@@ -55,29 +73,48 @@ where
         secret_key_distr: SecretKeyDistr,
         noise_standard_deviation: f64,
     ) -> Self {
-        assert!(
-            (MIN_POLY_LENGTH..=MAX_POLY_LENGTH).contains(&poly_length)
-                && poly_length.is_power_of_two(),
-            "NTRU polynomial length must be a supported power of two"
-        );
+        Self::try_new(
+            poly_length,
+            plain_modulus,
+            cipher_modulus,
+            secret_key_distr,
+            noise_standard_deviation,
+        )
+        .expect("invalid NTRU parameters")
+    }
 
-        let plaintext_codec = ScaledCodec::new(plain_modulus, cipher_modulus);
+    /// Checks ring length, fixed-scale encoding, secret support/weight and noise.
+    /// Noise standard deviation is in coefficient units at the ciphertext modulus.
+    /// Invertibility of a sampled secret and transform availability are checked
+    /// by key/table construction, not by this parameter type.
+    pub fn try_new(
+        poly_length: usize,
+        plain_modulus: T,
+        cipher_modulus: M,
+        secret_key_distr: SecretKeyDistr,
+        noise_standard_deviation: f64,
+    ) -> Result<Self, NtruParameterError> {
+        if !(MIN_POLY_LENGTH..=MAX_POLY_LENGTH).contains(&poly_length)
+            || !poly_length.is_power_of_two()
+        {
+            return Err(NtruParameterError::InvalidPolynomialLength);
+        }
+
+        let plaintext_codec = ScaledCodec::try_new(plain_modulus, cipher_modulus)?;
         let modulus_minus_one = cipher_modulus.minus_one();
-        let noise_distribution = DiscreteGaussian::new(noise_standard_deviation, modulus_minus_one)
-            .expect("invalid Gaussian NTRU noise distribution");
-        let secret_key_sampler = SecretKeySampler::new(secret_key_distr);
-        assert!(
-            secret_key_sampler.maximum_magnitude() <= modulus_minus_one,
-            "NTRU secret-key magnitude bound must be less than the ciphertext modulus"
-        );
+        let noise_distribution =
+            DiscreteGaussian::new(noise_standard_deviation, modulus_minus_one)?;
+        let secret_key_sampler = SecretKeySampler::try_new(secret_key_distr)?;
+        secret_key_sampler.validate_length(poly_length)?;
+        secret_key_sampler.validate_modulus(modulus_minus_one)?;
 
-        Self {
+        Ok(Self {
             poly_length,
             cipher_modulus,
             secret_key_sampler,
             noise_distribution,
             plaintext_codec,
-        }
+        })
     }
 
     /// Returns the polynomial length `N`.

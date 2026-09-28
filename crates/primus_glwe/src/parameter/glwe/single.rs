@@ -9,6 +9,23 @@ use rand::distr::Uniform;
 
 use crate::{ScaledCodec, SecretKeyDistr};
 
+/// Invalid GLWE layout, encoding or sampling parameters.
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
+pub enum GlweParameterError {
+    /// Invalid ring dimensions or a flattened-length overflow.
+    #[error(transparent)]
+    Layout(#[from] GlweSizeError),
+    /// Invalid message/ciphertext domain or fixed-scale recovery bound.
+    #[error(transparent)]
+    Encoding(#[from] primus_encoding::CodecError),
+    /// Invalid secret sampling configuration, weight or output modulus.
+    #[error(transparent)]
+    SecretKey(#[from] primus_distr::SecretKeySamplerError),
+    /// Invalid coefficient-domain Gaussian noise.
+    #[error("invalid GLWE noise distribution")]
+    Noise(#[from] primus_distr::GaussianError),
+}
+
 /// GLWE encryption parameters shared by ordinary and gadget ciphertexts.
 ///
 /// Ciphertext sizes and plaintext encoding intentionally live in their
@@ -55,30 +72,40 @@ where
     /// or the noise sampler violates [`DiscreteGaussian::new`]'s.
     /// Fixed secret-key weights are checked against the complete key length
     /// when sampling.
+    #[must_use]
     pub fn new(
         cipher_modulus: M,
         secret_key_distr: SecretKeyDistr,
         noise_standard_deviation: f64,
     ) -> Self {
+        Self::try_new(cipher_modulus, secret_key_distr, noise_standard_deviation)
+            .expect("invalid GLWE parameters")
+    }
+
+    /// Prepares coefficient-unit noise and secret sampling, checking support
+    /// against the ciphertext modulus. Fixed weights require the outer layout
+    /// or an actual sampling length; this type has neither.
+    pub fn try_new(
+        cipher_modulus: M,
+        secret_key_distr: SecretKeyDistr,
+        noise_standard_deviation: f64,
+    ) -> Result<Self, GlweParameterError> {
         let cipher_modulus_minus_one = cipher_modulus.minus_one();
 
         let noise_distribution =
-            DiscreteGaussian::new(noise_standard_deviation, cipher_modulus_minus_one).unwrap();
+            DiscreteGaussian::new(noise_standard_deviation, cipher_modulus_minus_one)?;
 
         let cipher_modulus_uniform_distr = cipher_modulus.uniform_distribution();
-        let secret_key_sampler = SecretKeySampler::new(secret_key_distr);
-        assert!(
-            secret_key_sampler.maximum_magnitude() <= cipher_modulus_minus_one,
-            "secret-key magnitude bound must be less than the ciphertext modulus"
-        );
+        let secret_key_sampler = SecretKeySampler::try_new(secret_key_distr)?;
+        secret_key_sampler.validate_modulus(cipher_modulus_minus_one)?;
 
-        Self {
+        Ok(Self {
             cipher_modulus,
             cipher_modulus_minus_one,
             cipher_modulus_uniform_distr,
             secret_key_sampler,
             noise_distribution,
-        }
+        })
     }
 
     /// Returns the cipher modulus.
@@ -159,9 +186,10 @@ where
 {
     /// Creates a new [`GlweParameters<T, M>`].
     ///
-    /// Plaintext parameters must satisfy [`ScaledCodec::new`]'s fixed-scale
-    /// recovery bound; invalid parameters panic.
-    /// Samplers must satisfy [`GlweParametersInner::new`]'s validity rules.
+    /// # Panics
+    /// Panics on the layout, encoding or sampler errors of [`Self::try_new`],
+    /// including fixed secret weights exceeding the complete `kN` key length.
+    #[must_use]
     pub fn new(
         dimension: usize,
         poly_length: usize,
@@ -170,17 +198,45 @@ where
         secret_key_distr: SecretKeyDistr,
         noise_standard_deviation: f64,
     ) -> Self {
-        let size = GlweSize::new(dimension, poly_length);
-        let plaintext_codec = ScaledCodec::new(plain_modulus_value, cipher_modulus);
+        Self::try_new(
+            dimension,
+            poly_length,
+            plain_modulus_value,
+            cipher_modulus,
+            secret_key_distr,
+            noise_standard_deviation,
+        )
+        .expect("invalid GLWE parameters")
+    }
 
-        let inner =
-            GlweParametersInner::new(cipher_modulus, secret_key_distr, noise_standard_deviation);
+    /// Checks dimensions, fixed-scale encoding, secret support/weight and noise.
+    /// Noise standard deviation is in coefficient units at the ciphertext modulus.
+    /// This validates construction, not transform availability or a noise/security budget.
+    pub fn try_new(
+        dimension: usize,
+        poly_length: usize,
+        plain_modulus_value: T,
+        cipher_modulus: M,
+        secret_key_distr: SecretKeyDistr,
+        noise_standard_deviation: f64,
+    ) -> Result<Self, GlweParameterError> {
+        let size = GlweSize::try_new(dimension, poly_length)?;
+        let plaintext_codec = ScaledCodec::try_new(plain_modulus_value, cipher_modulus)?;
 
-        Self {
+        let inner = GlweParametersInner::try_new(
+            cipher_modulus,
+            secret_key_distr,
+            noise_standard_deviation,
+        )?;
+        inner
+            .secret_key_sampler()
+            .validate_length(size.mask_len())?;
+
+        Ok(Self {
             size,
             inner,
             plaintext_codec,
-        }
+        })
     }
 
     /// Returns the parameters shared by GLWE and its gadget ciphertexts.

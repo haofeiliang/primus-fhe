@@ -2,7 +2,7 @@ use primus_integer::FheUint;
 use rand::distr::Distribution;
 
 use crate::{
-    DistrErr,
+    GaussianError,
     gaussian_core::{GaussianParameters, ZigguratMagnitudeSampler, encode_modular},
 };
 
@@ -18,7 +18,7 @@ impl<T: FheUint> DiscreteZiggurat<T> {
     ///
     /// Returns an error when the parameters are invalid, the modulus cannot
     /// encode the support, or Ziggurat setup cannot represent the distribution.
-    pub fn new(std_dev: f64, tail_cut: f64, modulus_minus_one: T) -> Result<Self, DistrErr> {
+    pub fn new(std_dev: f64, tail_cut: f64, modulus_minus_one: T) -> Result<Self, GaussianError> {
         let parameters = GaussianParameters::new(std_dev, tail_cut)?;
         Self::from_parameters(parameters, modulus_minus_one)
     }
@@ -26,7 +26,7 @@ impl<T: FheUint> DiscreteZiggurat<T> {
     pub(crate) fn from_parameters(
         parameters: GaussianParameters,
         modulus_minus_one: T,
-    ) -> Result<Self, DistrErr> {
+    ) -> Result<Self, GaussianError> {
         let parameters = parameters.validate_modular_output(modulus_minus_one)?;
         Ok(Self {
             core: ZigguratMagnitudeSampler::new(parameters)?,

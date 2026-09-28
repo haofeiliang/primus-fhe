@@ -12,7 +12,7 @@ pub use precise_cdt::PreciseCDTSampler;
 pub use ziggurat::DiscreteZiggurat;
 
 use crate::{
-    DistrErr,
+    GaussianError,
     gaussian_core::{CDT_MAX_MAGNITUDE, DEFAULT_TAIL_CUT, GaussianParameters},
 };
 
@@ -50,7 +50,7 @@ impl<T: FheUint> DiscreteGaussian<T> {
     /// used by the floating-point kernels, or when the truncated support does
     /// not fit below the supplied modulus.
     #[inline]
-    pub fn new(std_dev: f64, modulus_minus_one: T) -> Result<DiscreteGaussian<T>, DistrErr> {
+    pub fn new(std_dev: f64, modulus_minus_one: T) -> Result<DiscreteGaussian<T>, GaussianError> {
         let parameters = GaussianParameters::new(std_dev, DEFAULT_TAIL_CUT)?;
         if parameters.maximum_magnitude() <= CDT_MAX_MAGNITUDE {
             CDTSampler::from_parameters(parameters, modulus_minus_one).map(DiscreteGaussian::Cdt)

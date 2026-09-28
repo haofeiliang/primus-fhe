@@ -2,7 +2,7 @@ use primus_integer::{AsInto, FheUint};
 use rand::distr::Distribution;
 
 use crate::{
-    DistrErr,
+    GaussianError,
     gaussian_core::{CDT_MAX_MAGNITUDE, GaussianParameters, build_cdt},
     utils::cdt_index_by,
 };
@@ -20,7 +20,7 @@ impl<T: FheUint> CDTSampler<T> {
     ///
     /// Returns an error when the parameters are invalid, the support exceeds
     /// the portable CDT limit, or the modulus cannot encode every magnitude.
-    pub fn new(std_dev: f64, tail_cut: f64, modulus_minus_one: T) -> Result<Self, DistrErr> {
+    pub fn new(std_dev: f64, tail_cut: f64, modulus_minus_one: T) -> Result<Self, GaussianError> {
         let parameters = GaussianParameters::new(std_dev, tail_cut)?;
         Self::from_parameters(parameters, modulus_minus_one)
     }
@@ -28,7 +28,7 @@ impl<T: FheUint> CDTSampler<T> {
     pub(crate) fn from_parameters(
         parameters: GaussianParameters,
         modulus_minus_one: T,
-    ) -> Result<Self, DistrErr> {
+    ) -> Result<Self, GaussianError> {
         let parameters = parameters
             .validate_cdt_size(CDT_MAX_MAGNITUDE)?
             .validate_modular_output(modulus_minus_one)?;

@@ -29,7 +29,8 @@ pub enum PbsOrder {
 /// as in [`TfheParameters::try_new`].
 #[derive(Clone)]
 pub struct TfheConfig<T: FheUint, M: RingContext<T>> {
-    /// Input secret, dimension, moduli and fresh LWE encryption noise.
+    /// Small BR-control secret, dimension, shared moduli and its fresh LWE noise.
+    /// This is the external domain only for [`PbsOrder::BootstrapKeyswitch`].
     pub small_lwe: LweParameters<T, M>,
     /// Number of secret polynomials in the accumulator.
     pub accumulator_dimension: usize,
@@ -37,7 +38,8 @@ pub struct TfheConfig<T: FheUint, M: RingContext<T>> {
     pub poly_length: usize,
     /// Coefficient distribution of the accumulator secret.
     pub accumulator_secret_key_distr: SecretKeyDistr,
-    /// Standard deviation for accumulator and evaluation-key encryption.
+    /// Coefficient-unit standard deviation for accumulator, BR and return-KS encryption.
+    /// Also used by external encryption for [`PbsOrder::KeyswitchBootstrap`].
     pub accumulator_noise_standard_deviation: f64,
     /// GGSW decomposition for blind rotation.
     pub blind_rotation: DecompositionConfig,
@@ -50,21 +52,19 @@ pub struct TfheConfig<T: FheUint, M: RingContext<T>> {
 impl<T: FheUint, M: RingContext<T>> TfheParameters<T, M> {
     /// Derives accumulator and gadget parameters from named independent choices.
     ///
-    /// Returns the compatibility and basis errors of [`Self::try_new`].
-    ///
-    /// # Panics
-    ///
-    /// Inherits [`GlweParameters::new`]'s layout, sampler and codec requirements.
+    /// Returns accumulator construction errors and the compatibility/basis
+    /// errors of [`Self::try_new`]. This does not validate a noise/security budget.
     pub fn try_from_config(config: TfheConfig<T, M>) -> Result<Self, TfheParameterError> {
         let modulus = config.small_lwe.cipher_modulus();
-        let accumulator = GlweParameters::new(
+        let accumulator = GlweParameters::try_new(
             config.accumulator_dimension,
             config.poly_length,
             config.small_lwe.plain_modulus_value(),
             modulus,
             config.accumulator_secret_key_distr,
             config.accumulator_noise_standard_deviation,
-        );
+        )
+        .map_err(TfheParameterError::AccumulatorParameters)?;
         let blind_rotation = config
             .blind_rotation
             .try_build(modulus.explicit_value())
@@ -164,6 +164,9 @@ where
         })
     }
 
+    /// Pads the already validated small secret to whole ring components.
+    /// Since n <= kN, the derived layout fits within the accumulator; its
+    /// encoding/noise are inherited, while the KS basis remains independent.
     fn derive_glwe_key_switching(
         small_lwe_dimension: usize,
         small_lwe_distr: SecretKeyDistr,

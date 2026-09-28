@@ -9,6 +9,8 @@ Plaintext coefficient encoding and decoding for Primus FHE.
 
 ## APIs
 
+`RoundedCodec::try_new` and `ScaledCodec::try_new` return `CodecError` for invalid domains or a failed fixed-scale recovery bound. Their `new` forms panic on the same errors. Construction checks do not establish a noise budget.
+
 | Codec | Encoding | Current use |
 | --- | --- | --- |
 | `RoundedCodec<T,M>` | `round(lift(m)*q/t) mod q` | LWE and TFHE lookup tables |

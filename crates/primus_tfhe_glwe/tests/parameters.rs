@@ -349,3 +349,101 @@ fn circuit_parameters_bind_bases_layout_noise_and_capacity() {
         primus_modulus::BarrettModulus::new(562_949_953_392_641),
     );
 }
+
+#[test]
+fn configs_return_accumulator_and_cbs_construction_errors() {
+    use primus_glwe::GlweParameterError;
+    use primus_tfhe_glwe::{
+        CircuitBootstrapConfig, CircuitBootstrapParameterError, CircuitBootstrapParameters,
+        TfheParameterError,
+    };
+    let basis = DecompositionConfig {
+        log_basis: 4,
+        level_count: Some(2),
+    };
+    let config = TfheConfig {
+        small_lwe: LweParameters::new(
+            4,
+            4u32,
+            NativeModulus::new(),
+            SecretKeyDistr::UniformBinary,
+            0.7,
+        ),
+        accumulator_dimension: 1,
+        poly_length: 8,
+        accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,
+        accumulator_noise_standard_deviation: 0.7,
+        blind_rotation: basis,
+        key_switching: basis,
+        pbs_order: PbsOrder::BootstrapKeyswitch,
+    };
+    let tfhe = TfheParameters::try_from_config(config.clone()).unwrap();
+    let mut invalid = config.clone();
+    invalid.poly_length = 3;
+    assert!(matches!(
+        TfheParameters::try_from_config(invalid),
+        Err(TfheParameterError::AccumulatorParameters(
+            GlweParameterError::Layout(_)
+        ))
+    ));
+    let mut invalid = config.clone();
+    invalid.accumulator_noise_standard_deviation = f64::NAN;
+    assert!(matches!(
+        TfheParameters::try_from_config(invalid),
+        Err(TfheParameterError::AccumulatorParameters(
+            GlweParameterError::Noise(_)
+        ))
+    ));
+    let mut invalid = config;
+    invalid.accumulator_secret_key_distr = SecretKeyDistr::Ternary {
+        negative_one_probability: 0.8,
+        one_probability: 0.8,
+    };
+    assert!(matches!(
+        TfheParameters::try_from_config(invalid),
+        Err(TfheParameterError::AccumulatorParameters(
+            GlweParameterError::SecretKey(_)
+        ))
+    ));
+
+    let cbs = CircuitBootstrapConfig {
+        output: basis,
+        trace: basis,
+        trace_noise_standard_deviation: 0.7,
+        scheme_switch: basis,
+        scheme_switch_noise_standard_deviation: 0.7,
+    };
+    assert!(CircuitBootstrapParameters::try_from_config(&tfhe, cbs).is_ok());
+    for role in ["trace", "scheme-switch"] {
+        let mut invalid = cbs;
+        if role == "trace" {
+            invalid.trace_noise_standard_deviation = 0.0;
+        } else {
+            invalid.scheme_switch_noise_standard_deviation = f64::INFINITY;
+        }
+        let error = CircuitBootstrapParameters::try_from_config(&tfhe, invalid)
+            .err()
+            .unwrap();
+        assert!(matches!(
+            &error,
+            CircuitBootstrapParameterError::EncryptionParameters { role: actual, source: GlweParameterError::Noise(_) } if *actual == role
+        ));
+        // Follow a real constructor failure through the public key-generation
+        // wrapper. Each frame keeps its role and prints only its own context.
+        use std::error::Error;
+        let error = primus_tfhe_glwe::KeyGenerationError::from(error);
+        assert_eq!(
+            error.to_string(),
+            format!("invalid circuit-bootstrap {role} encryption parameters")
+        );
+        let parameters = error.source().unwrap();
+        assert!(parameters.is::<GlweParameterError>());
+        assert_eq!(parameters.to_string(), "invalid GLWE noise distribution");
+        let sampler = parameters.source().unwrap();
+        assert!(matches!(
+            sampler.downcast_ref::<primus_distr::GaussianError>(),
+            Some(primus_distr::GaussianError::InvalidStandardDeviation { .. })
+        ));
+        assert!(sampler.source().is_none());
+    }
+}

@@ -2,7 +2,7 @@ use primus_factor::ShoupFactor;
 use primus_integer::BigUint;
 use primus_modulus::BarrettModulus;
 use primus_reduce::prelude::*;
-use primus_rns::{RNSBase, RNSError, ResidueFactors, Residues};
+use primus_rns::{RNSBase, ResidueFactors, Residues, RnsError};
 
 type Value = u64;
 type Modulus = BarrettModulus<Value>;
@@ -15,12 +15,12 @@ fn base(moduli: &[Value]) -> Base {
 
 #[test]
 fn construction_rejects_invalid_bases() {
-    assert!(matches!(Base::new(&[]), Err(RNSError::EmptyBase)));
+    assert!(matches!(Base::new(&[]), Err(RnsError::EmptyBase)));
 
     let non_coprime = [21, 35].map(Modulus::new);
     assert!(matches!(
         Base::new(&non_coprime),
-        Err(RNSError::CoPrimeError)
+        Err(RnsError::NonCoprimeModuli)
     ));
 }
 

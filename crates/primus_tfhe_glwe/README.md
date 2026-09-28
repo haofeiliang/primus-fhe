@@ -11,6 +11,8 @@ The shared layer and both backends use the same role names: `Encryptor`, `Decryp
 
 ## Parameters and external key domain
 
+`TfheParameters::try_from_config` propagates accumulator layout/encoding/sampler failures as `TfheParameterError::AccumulatorParameters`. CBS configuration reports trace or scheme-switch encryption failures with their role through `CircuitBootstrapParameterError::EncryptionParameters`. Use `LweParameters::try_new` when the small-LWE choices also come from configuration. These error types and `KeyGenerationError` implement `PartialEq`, not `Eq`, because sampler errors can contain floating-point values. Contextual errors display their own role; follow `std::error::Error::source()` for the underlying cause.
+
 `TfheParameters<T, M>` and clients share one ciphertext modulus type `M`; backend aliases fix their modulus implementation.
 
 Prefer `TfheParameters::try_from_config(TfheConfig { .. })`: specify `t/q` once in `small_lwe`, then name the accumulator dimension, length, secret distribution and noise, the blind-rotation/key-switch `DecompositionConfig { log_basis, level_count }`, and PBS order. `level_count: None` retains the full decomposition; bases inherit the shared modulus. GLWE evaluation keys inherit accumulator noise. Use the direct constructor below when supplying existing ring parameters or prepared bases.

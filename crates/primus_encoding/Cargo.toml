@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+thiserror.workspace = true
 primus_data = { path = "../primus_data", optional = true }
 primus_poly = { path = "../primus_poly", optional = true }
 primus_rns = { path = "../primus_rns", optional = true }

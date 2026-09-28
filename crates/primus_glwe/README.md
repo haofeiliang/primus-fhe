@@ -9,6 +9,8 @@ Single-modulus GLWE keys and operations, with separate NTT and native-torus Four
 
 ## Keys and representation
 
+`GlweParameters::try_new` returns `GlweParameterError` for layout, fixed-scale encoding and sampler errors, including fixed weights exceeding the complete kN secret length. `GlweParametersInner::try_new` checks only modulus/samplers because it has no layout. The corresponding `new` constructors panic on invalid parameters; transform availability and noise/security budgets remain separate. `GlweParameterError::SecretKey` preserves the sampling/weight/modulus cause as `SecretKeySamplerError`; `Noise` preserves `GaussianError`.
+
 | Type | Storage and role |
 | --- | --- |
 | `GlweSecretKey<T>` | Signed coefficient polynomials; sampling and input to key conversion/generation |

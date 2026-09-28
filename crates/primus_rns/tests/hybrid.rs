@@ -1,7 +1,7 @@
 use core::range::Range;
 
 use primus_modulus::BarrettModulus;
-use primus_rns::{HybridRNS, HybridRNSPartitioning, RNSError};
+use primus_rns::{HybridRNS, HybridRNSPartitioning, RnsError};
 
 type ValueT = u64;
 type ModulusT = BarrettModulus<ValueT>;
@@ -45,7 +45,7 @@ fn construction_uses_fixed_partitioning_and_precomputes_p() {
 
     assert!(matches!(
         HybridRNSPartitioning::new(5, 4),
-        Err(RNSError::IncompatibleDecompositionCount {
+        Err(RnsError::IncompatibleDecompositionCount {
             q_moduli_count: 5,
             decomposition_count: 4,
         }),
@@ -56,7 +56,7 @@ fn construction_uses_fixed_partitioning_and_precomputes_p() {
             &p_moduli,
             HybridRNSPartitioning::new(4, 2).unwrap(),
         ),
-        Err(RNSError::ActiveBaseTooLarge {
+        Err(RnsError::ActiveBaseTooLarge {
             actual: 5,
             maximum: 4,
         }),

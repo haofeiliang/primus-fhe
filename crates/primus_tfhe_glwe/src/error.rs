@@ -5,8 +5,11 @@ use primus_decompose::ApproxSignedBasisError;
 use primus_glwe::GlevParameterError;
 
 /// An invalid combination of GLWE-based TFHE parameters.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum TfheParameterError {
+    /// The configured accumulator layout, encoding or samplers are invalid.
+    #[error("invalid accumulator parameters")]
+    AccumulatorParameters(#[source] primus_glwe::GlweParameterError),
     /// Classic blind rotation supports binary and ternary input LWE secrets.
     #[error("TFHE bootstrapping requires a binary or ternary input LWE secret key")]
     UnsupportedInputLweSecretKey,
@@ -20,7 +23,7 @@ pub enum TfheParameterError {
     PlainModulusMismatch,
 
     /// The bootstrapping basis or gadget layout is incompatible with the accumulator.
-    #[error("invalid GLWE bootstrapping parameters: {0}")]
+    #[error("invalid GLWE bootstrapping parameters")]
     BootstrappingParameters(#[source] GlevParameterError),
 
     /// The small LWE key does not fit in the main GLWE key capacity and
@@ -41,7 +44,7 @@ pub enum TfheParameterError {
     CipherModulusMismatch,
 
     /// The GLWE key-switching basis or output gadget layout is incompatible.
-    #[error("invalid GLWE key-switching parameters: {0}")]
+    #[error("invalid GLWE key-switching parameters")]
     KeySwitchingParameters(#[source] GlevParameterError),
 }
 
@@ -112,13 +115,22 @@ pub enum TfheClientError {
 }
 
 /// An invalid circuit-bootstrapping parameter set.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum CircuitBootstrapParameterError {
+    /// Trace or scheme-switch encryption parameters are invalid.
+    #[error("invalid circuit-bootstrap {role} encryption parameters")]
+    EncryptionParameters {
+        /// Key role: trace or scheme-switch.
+        role: &'static str,
+        /// Invalid ring encoding or sampler configuration.
+        #[source]
+        source: primus_glwe::GlweParameterError,
+    },
     /// The configured output radix or retained-level count is invalid.
-    #[error("invalid circuit-bootstrap output basis: {0}")]
+    #[error("invalid circuit-bootstrap output basis")]
     InvalidOutputBasis(#[from] ApproxSignedBasisError),
     /// A configured key decomposition or derived gadget layout is invalid.
-    #[error("invalid circuit-bootstrap {role} parameters: {source}")]
+    #[error("invalid circuit-bootstrap {role} parameters")]
     GadgetParameters {
         /// Key role: trace or scheme-switch.
         role: &'static str,
@@ -148,7 +160,7 @@ pub enum CircuitBootstrapParameterError {
 }
 
 /// Failure to generate ordinary or circuit-bootstrap keys for this TFHE family.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum KeyGenerationError {
     /// The supplied client secrets do not match the TFHE parameters.
     #[error(transparent)]

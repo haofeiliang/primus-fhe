@@ -22,6 +22,8 @@ The scalar sampler types above implement `rand::distr::Distribution`. Batch help
 
 ## Secret-key distribution parameters
 
+`SecretKeySampler::try_new` returns `SecretKeySamplerError` for invalid probabilities or Gaussian preparation. Gaussian constructors share `GaussianError`; a secret sampler preserves it as `SecretKeySamplerError::Gaussian`. `validate_length(length)` checks fixed weights, and `validate_modulus(modulus_minus_one)` checks whether the output modulus can encode the support. These checks do not sample. `new` retains the panicking convenience form; LWE/GLWE/NTRU parameter constructors perform both checks before key generation.
+
 `SecretKeyDistr` describes binary, ternary, fixed-weight, and Gaussian secret coefficient distributions; it is a parameter enum, not a sampler. Its constructors check probabilities and weights for the complete logical key. Gaussian parameters are checked by the selected Gaussian sampler constructor. Each cryptosystem determines which variants it supports.
 
 Use `SecretKeyDistr::binary(one_probability)` or `SecretKeyDistr::ternary(negative_one_probability, one_probability)` for custom probabilities; construction checks that each is finite and in `[0, 1]` and that ternary probabilities sum to at most one. `SecretKeyDistr::gaussian(standard_deviation)` constructs `Gaussian { standard_deviation }`, with validation deferred to the Gaussian sampler. Parameterless variants are used directly. Whole-key sampler construction also checks probabilities when variants are constructed directly.

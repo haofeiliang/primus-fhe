@@ -30,7 +30,7 @@ pub use key_switch::{
 pub use packing_key_switch::{FourierLwePackingKeySwitchingKey, NttLwePackingKeySwitchingKey};
 pub use parameter::{
     GadgetSize, GgswParameters, GlevParameterError, GlevParameters, GlweKeySwitchingParameters,
-    GlweParameters, GlweParametersInner, GlweSize, GlweSizeError,
+    GlweParameterError, GlweParameters, GlweParametersInner, GlweSize, GlweSizeError,
 };
 pub use primus_distr::SecretKeyDistr;
 pub use public_key::{NttGlwePublicEncryptContext, NttGlwePublicKey};

@@ -4,13 +4,19 @@ use primus_decompose::ApproxSignedBasisError;
 use primus_ntru::NlevParameterError;
 
 /// An invalid combination of NTRU-based TFHE parameters.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum TfheParameterError {
+    /// Return-key encryption at external q has invalid sampling parameters.
+    #[error("invalid return-key encryption parameters")]
+    KeySwitchingEncryption(#[source] primus_lwe::LweParameterError),
+    /// The configured accumulator layout, encoding or samplers are invalid.
+    #[error("invalid accumulator parameters")]
+    AccumulatorParameters(#[source] primus_ntru::NtruParameterError),
     /// Invalid NLev/NGSW decomposition or layout for blind rotation.
-    #[error("invalid NTRU bootstrapping parameters: {0}")]
+    #[error("invalid NTRU bootstrapping parameters")]
     BootstrappingParameters(#[source] NlevParameterError),
     /// Invalid decomposition at external q for the LWE return key.
-    #[error("invalid LWE return key-switching parameters: {0}")]
+    #[error("invalid LWE return key-switching parameters")]
     KeySwitchingParameters(#[source] ApproxSignedBasisError),
     /// The rotation domain `2N` cannot be represented by the input coefficient type.
     #[error("rotation domain must fit the input coefficient type")]
@@ -59,18 +65,27 @@ pub enum TfheClientError {
     #[error(transparent)]
     Boolean(#[from] primus_tfhe::BooleanError),
     /// Preparing the accumulator secret representation failed.
-    #[error("NTRU accumulator secret conversion failed: {0}")]
+    #[error("NTRU accumulator secret conversion failed")]
     Ntru(#[from] primus_ntru::NtruError),
 }
 
 /// An incompatible circuit-bootstrap parameter set.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum CircuitBootstrapParameterError {
+    /// Trace or scheme-switch encryption parameters are invalid.
+    #[error("invalid circuit-bootstrap {role} encryption parameters")]
+    EncryptionParameters {
+        /// Key role: trace or scheme-switch.
+        role: &'static str,
+        /// Invalid ring encoding or sampler configuration.
+        #[source]
+        source: primus_ntru::NtruParameterError,
+    },
     /// The configured output radix or retained-level count is invalid.
-    #[error("invalid circuit-bootstrap output basis: {0}")]
+    #[error("invalid circuit-bootstrap output basis")]
     InvalidOutputBasis(#[from] ApproxSignedBasisError),
     /// A configured key decomposition or derived gadget layout is invalid.
-    #[error("invalid circuit-bootstrap {role} parameters: {source}")]
+    #[error("invalid circuit-bootstrap {role} parameters")]
     GadgetParameters {
         /// Key role: trace or scheme-switch.
         role: &'static str,
@@ -102,7 +117,7 @@ pub enum CircuitBootstrapParameterError {
 }
 
 /// Failure to generate classic, sparse or circuit-bootstrap keys for this TFHE family.
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum KeyGenerationError {
     /// Sparse blind-rotation key generation failed.
     #[error(transparent)]
@@ -117,7 +132,7 @@ pub enum KeyGenerationError {
     #[error("circuit-bootstrap parameters do not match this TFHE context")]
     IncompatibleCircuitBootstrapParameters,
     /// NTRU rejection sampling or transform conversion failed.
-    #[error("NTRU key generation or conversion failed: {0}")]
+    #[error("NTRU key generation or conversion failed")]
     Ntru(#[from] primus_ntru::NtruError),
 }
 
