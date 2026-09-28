@@ -5,16 +5,16 @@ use primus_decompose::primitive::ApproxSignedBasis;
 use primus_integer::FheUint;
 use primus_lattice::{
     GadgetSize,
-    context::NttGlweExternalProductContext,
     ggsw::{NttGgsw, NttGgswIter},
     glev::Glev,
+    workspace::NttGlweExternalProductWorkspace,
 };
 use primus_ntt::NttTable;
 use primus_poly::Polynomial;
 use primus_reduce::FieldContext;
 use zeroize::Zeroizing;
 
-use crate::{GlevParameters, GlweSecretKey, NttGadgetEncryptContext, NttGlweSecretKey};
+use crate::{GlevParameters, GlweSecretKey, NttGlweGadgetEncryptWorkspace, NttGlweSecretKey};
 
 /// NTT GGSW encryptions of the negated GLWE secret polynomials.
 ///
@@ -51,7 +51,7 @@ impl<T: FheUint> NttGlweSchemeSwitchKey<T> {
         key_parameters: &GlevParameters<T, M>,
         ntt: &Table,
         rng: &mut R,
-        context: &mut NttGadgetEncryptContext<T>,
+        workspace: &mut NttGlweGadgetEncryptWorkspace<T>,
     ) -> Self
     where
         M: FieldContext<T>,
@@ -59,7 +59,7 @@ impl<T: FheUint> NttGlweSchemeSwitchKey<T> {
         R: rand::Rng + rand::CryptoRng,
     {
         ntt_secret_key.assert_gadget_compatible(key_parameters, ntt);
-        context.assert_ggsw_compatible(key_parameters.size());
+        workspace.assert_ggsw_compatible(key_parameters.size());
         let key_size = key_parameters.size();
         assert_eq!(secret_key.glwe_size(), key_size.glwe_size());
         assert_eq!(output_size.glwe_size(), key_size.glwe_size());
@@ -81,7 +81,7 @@ impl<T: FheUint> NttGlweSchemeSwitchKey<T> {
                 key_parameters,
                 ntt,
                 rng,
-                context,
+                workspace,
             );
         }
 
@@ -116,8 +116,8 @@ impl<T: FheUint> NttGlweSchemeSwitchKey<T> {
     /// Uses the stored layout and key decomposition basis. The output preserves
     /// the input GLev's gadget scaling; the key basis only decomposes products.
     ///
-    /// Bind `context` to [`Self::key_size`]. It can be reused by other external
-    /// products through [`NttGlweExternalProductContext::rebind`]; restore the
+    /// Bind `workspace` to [`Self::key_size`]. It can be reused by other external
+    /// products through [`NttGlweExternalProductWorkspace::rebind`]; restore the
     /// key layout before calling this method.
     ///
     /// # Correctness
@@ -136,7 +136,7 @@ impl<T: FheUint> NttGlweSchemeSwitchKey<T> {
         output: &mut NttGgsw<B>,
         modulus: M,
         ntt: &Table,
-        context: &mut NttGlweExternalProductContext<T>,
+        workspace: &mut NttGlweExternalProductWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
@@ -169,7 +169,7 @@ impl<T: FheUint> NttGlweSchemeSwitchKey<T> {
             "NTT ciphertext modulus mismatch"
         );
         assert_eq!(
-            context.size(),
+            workspace.size(),
             self.key_size,
             "scheme-switch workspace layout mismatch"
         );
@@ -194,7 +194,7 @@ impl<T: FheUint> NttGlweSchemeSwitchKey<T> {
                     key_basis,
                     modulus,
                     ntt,
-                    context,
+                    workspace,
                 );
             }
         }

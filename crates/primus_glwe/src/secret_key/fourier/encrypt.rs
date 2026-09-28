@@ -1,6 +1,6 @@
 //! Native-torus Fourier GLWE encryption.
 
-use super::{FourierGlweEncryptContext, FourierGlweSecretKey};
+use super::{FourierGlweEncryptWorkspace, FourierGlweSecretKey};
 use crate::{FourierGlweCiphertext, GlweParameters, GlweParametersInner, PlaintextEmbedding};
 use primus_data::{Data, DataMut};
 use primus_fft::{Complex64, FftEngine, FftTable, TorusFftValue};
@@ -20,7 +20,7 @@ impl FourierGlweSecretKey {
         params: &GlweParameters<T, NativeModulus<T>>,
         fft: &mut FftEngine<'_, Table>,
         rng: &mut R,
-        context: &mut FourierGlweEncryptContext<T>,
+        workspace: &mut FourierGlweEncryptWorkspace<T>,
     ) -> FourierGlweCiphertext<Vec<Complex64>>
     where
         T: TorusFftValue,
@@ -29,7 +29,7 @@ impl FourierGlweSecretKey {
         A: Data<Elem = T>,
     {
         let mut output = FourierGlweCiphertext::zero(self.size.fourier_glwe_len());
-        self.encrypt_to(input, &mut output, params, fft, rng, context);
+        self.encrypt_to(input, &mut output, params, fft, rng, workspace);
         output
     }
 
@@ -50,7 +50,7 @@ impl FourierGlweSecretKey {
         params: &GlweParameters<T, NativeModulus<T>>,
         fft: &mut FftEngine<'_, Table>,
         rng: &mut R,
-        context: &mut FourierGlweEncryptContext<T>,
+        workspace: &mut FourierGlweEncryptWorkspace<T>,
     ) where
         Table: FftTable,
         R: rand::Rng + rand::CryptoRng,
@@ -58,13 +58,13 @@ impl FourierGlweSecretKey {
         B: DataMut<Elem = Complex64>,
         T: TorusFftValue,
     {
-        self.assert_encrypt_compatible(output, params, fft, context);
+        self.assert_encrypt_compatible(output, params, fft, workspace);
         assert_eq!(
             input.as_ref().len(),
             self.poly_length(),
             "GLWE message length mismatch"
         );
-        self.encrypt_kernel_to(output, params.inner(), fft, rng, context, |body| {
+        self.encrypt_kernel_to(output, params.inner(), fft, rng, workspace, |body| {
             params.plaintext_codec().add_encode_slice_assign(
                 body,
                 input.as_ref(),
@@ -86,7 +86,7 @@ impl FourierGlweSecretKey {
         params: &GlweParameters<T, NativeModulus<T>>,
         fft: &mut FftEngine<'_, Table>,
         rng: &mut R,
-        context: &mut FourierGlweEncryptContext<T>,
+        workspace: &mut FourierGlweEncryptWorkspace<T>,
     ) where
         Table: FftTable,
         R: rand::Rng + rand::CryptoRng,
@@ -94,13 +94,13 @@ impl FourierGlweSecretKey {
         B: DataMut<Elem = Complex64>,
         T: TorusFftValue,
     {
-        self.assert_encrypt_compatible(output, params, fft, context);
+        self.assert_encrypt_compatible(output, params, fft, workspace);
         assert_eq!(
             input.as_ref().len(),
             self.poly_length(),
             "GLWE message length mismatch"
         );
-        self.encrypt_kernel_to(output, params.inner(), fft, rng, context, |body| {
+        self.encrypt_kernel_to(output, params.inner(), fft, rng, workspace, |body| {
             params.plaintext_codec().add_encode_slice_assign(
                 body,
                 input.as_ref(),
@@ -123,7 +123,7 @@ impl FourierGlweSecretKey {
         params: &GlweParameters<T, NativeModulus<T>>,
         fft: &mut FftEngine<'_, Table>,
         rng: &mut R,
-        context: &mut FourierGlweEncryptContext<T>,
+        workspace: &mut FourierGlweEncryptWorkspace<T>,
     ) where
         Table: FftTable,
         R: rand::Rng + rand::CryptoRng,
@@ -131,13 +131,13 @@ impl FourierGlweSecretKey {
         B: DataMut<Elem = Complex64>,
         T: TorusFftValue,
     {
-        self.assert_encrypt_compatible(output, params, fft, context);
+        self.assert_encrypt_compatible(output, params, fft, workspace);
         assert_eq!(
             input.as_ref().len(),
             self.poly_length(),
             "GLWE message length mismatch"
         );
-        self.encrypt_encoded_kernel_to(input, output, params.inner(), fft, rng, context);
+        self.encrypt_encoded_kernel_to(input, output, params.inner(), fft, rng, workspace);
     }
 
     /// Encrypts zero into a native-torus Fourier-domain GLWE ciphertext.
@@ -152,7 +152,7 @@ impl FourierGlweSecretKey {
         params: &GlweParameters<T, NativeModulus<T>>,
         fft: &mut FftEngine<'_, Table>,
         rng: &mut R,
-        context: &mut FourierGlweEncryptContext<T>,
+        workspace: &mut FourierGlweEncryptWorkspace<T>,
     ) -> FourierGlweCiphertext<Vec<Complex64>>
     where
         Table: FftTable,
@@ -160,7 +160,7 @@ impl FourierGlweSecretKey {
         T: TorusFftValue,
     {
         let mut output = FourierGlweCiphertext::zero(self.size.fourier_glwe_len());
-        self.encrypt_zeros_to(&mut output, params, fft, rng, context);
+        self.encrypt_zeros_to(&mut output, params, fft, rng, workspace);
         output
     }
 
@@ -176,15 +176,15 @@ impl FourierGlweSecretKey {
         params: &GlweParameters<T, NativeModulus<T>>,
         fft: &mut FftEngine<'_, Table>,
         rng: &mut R,
-        context: &mut FourierGlweEncryptContext<T>,
+        workspace: &mut FourierGlweEncryptWorkspace<T>,
     ) where
         Table: FftTable,
         R: rand::Rng + rand::CryptoRng,
         B: DataMut<Elem = Complex64>,
         T: TorusFftValue,
     {
-        self.assert_encrypt_compatible(output, params, fft, context);
-        self.encrypt_zeros_kernel_to(output, params.inner(), fft, rng, context);
+        self.assert_encrypt_compatible(output, params, fft, workspace);
+        self.encrypt_zeros_kernel_to(output, params.inner(), fft, rng, workspace);
     }
 
     /// Encrypts an encoded coefficient polynomial without repeating boundary checks.
@@ -201,7 +201,7 @@ impl FourierGlweSecretKey {
         params: &GlweParametersInner<T, NativeModulus<T>>,
         fft: &mut FftEngine<'_, Table>,
         rng: &mut R,
-        context: &mut FourierGlweEncryptContext<T>,
+        workspace: &mut FourierGlweEncryptWorkspace<T>,
     ) where
         Table: FftTable,
         R: rand::Rng + rand::CryptoRng,
@@ -209,7 +209,7 @@ impl FourierGlweSecretKey {
         B: DataMut<Elem = Complex64>,
         T: TorusFftValue,
     {
-        self.encrypt_kernel_to(output, params, fft, rng, context, |body| {
+        self.encrypt_kernel_to(output, params, fft, rng, workspace, |body| {
             Polynomial::new(body).add_assign(input, NativeModulus::new());
         });
     }
@@ -225,14 +225,14 @@ impl FourierGlweSecretKey {
         params: &GlweParametersInner<T, NativeModulus<T>>,
         fft: &mut FftEngine<'_, Table>,
         rng: &mut R,
-        context: &mut FourierGlweEncryptContext<T>,
+        workspace: &mut FourierGlweEncryptWorkspace<T>,
     ) where
         Table: FftTable,
         R: rand::Rng + rand::CryptoRng,
         B: DataMut<Elem = Complex64>,
         T: TorusFftValue,
     {
-        self.encrypt_kernel_to(output, params, fft, rng, context, |_| {});
+        self.encrypt_kernel_to(output, params, fft, rng, workspace, |_| {});
     }
 
     /// Validates layout and transform compatibility before sampling or writing output.
@@ -242,7 +242,7 @@ impl FourierGlweSecretKey {
         output: &FourierGlweCiphertext<B>,
         params: &GlweParameters<T, NativeModulus<T>>,
         fft: &FftEngine<'_, Table>,
-        context: &FourierGlweEncryptContext<T>,
+        workspace: &FourierGlweEncryptWorkspace<T>,
     ) where
         Table: FftTable,
         B: Data<Elem = Complex64>,
@@ -259,7 +259,7 @@ impl FourierGlweSecretKey {
             self.size.fourier_glwe_len(),
             "Fourier GLWE output layout mismatch"
         );
-        context.assert_poly_length(self.poly_length());
+        workspace.assert_poly_length(self.poly_length());
     }
 
     /// Encrypts with validated layouts and matching parameter/transform domains.
@@ -272,7 +272,7 @@ impl FourierGlweSecretKey {
         params: &GlweParametersInner<T, NativeModulus<T>>,
         fft: &mut FftEngine<'_, Table>,
         rng: &mut R,
-        context: &mut FourierGlweEncryptContext<T>,
+        workspace: &mut FourierGlweEncryptWorkspace<T>,
         add_message: impl FnOnce(&mut [T]),
     ) where
         Table: FftTable,
@@ -287,7 +287,7 @@ impl FourierGlweSecretKey {
         let fourier_length = fft.fourier_length();
         let (mask, mut body) = output.a_b_mut(fourier_length);
 
-        let coeff = context.coeff.as_mut();
+        let coeff = workspace.coeff.as_mut();
         debug_assert_eq!(coeff.len(), poly_length);
         primus_distr::sample_gaussian_values_to(coeff, params.noise_distribution(), rng);
         add_message(coeff);

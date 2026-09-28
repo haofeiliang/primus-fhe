@@ -2,7 +2,9 @@
 
 use primus_data::{Data, DataMut};
 use primus_integer::FheUint;
-use primus_lattice::{context::NttGlweExternalProductContext, ggsw::Ggsw, glwe::Glwe, lwe::Lwe};
+use primus_lattice::{
+    ggsw::Ggsw, glwe::Glwe, lwe::Lwe, workspace::NttGlweExternalProductWorkspace,
+};
 use primus_ntt::NttTable;
 use primus_poly::Polynomial;
 use primus_tfhe::rotation::RotationQuantizer;
@@ -36,7 +38,7 @@ impl<T: FheUint> SparseGlweBootstrappingKey<T> {
         lookup_table: &Polynomial<B>,
         output: &mut Glwe<C>,
         ntt: &Table,
-        context: &mut SparseGlweBlindRotationContext<T>,
+        context: &mut SparseGlweBlindRotationWorkspace<T>,
     ) where
         Table: NttTable<ValueT = T>,
         A: Data<Elem = T>,
@@ -94,7 +96,7 @@ impl<T: FheUint> SparseGlweBootstrappingKey<T> {
         rotation_step: usize,
         output: &mut Glwe<C>,
         ntt: &Table,
-        context: &mut SparseGlweBlindRotationContext<T>,
+        context: &mut SparseGlweBlindRotationWorkspace<T>,
     ) where
         Table: NttTable<ValueT = T>,
         A: Data<Elem = T>,
@@ -104,7 +106,7 @@ impl<T: FheUint> SparseGlweBootstrappingKey<T> {
         let size = self.size();
         let poly_length = size.glwe_size().poly_length();
         let modulus = self.input_modulus();
-        let SparseGlweBlindRotationContext {
+        let SparseGlweBlindRotationWorkspace {
             input_exponents,
             aggregate,
             scratch,
@@ -219,18 +221,18 @@ impl<T: FheUint> SparseGlweBootstrappingKey<T> {
 ///
 /// Stores input exponents, one aggregate transformed in place, a GLWE buffer and
 /// external-product scratch. It contains no secret support or matching data.
-pub struct SparseGlweBlindRotationContext<T: FheUint> {
+pub struct SparseGlweBlindRotationWorkspace<T: FheUint> {
     input_exponents: Vec<usize>,
     aggregate: Vec<T>,
     scratch: Glwe<Vec<T>>,
-    external_product: NttGlweExternalProductContext<T>,
+    external_product: NttGlweExternalProductWorkspace<T>,
 }
 
-impl<T: FheUint> SparseGlweBlindRotationContext<T> {
+impl<T: FheUint> SparseGlweBlindRotationWorkspace<T> {
     pub(crate) fn with_external_product<R>(
         &mut self,
         size: primus_lattice::GadgetSize,
-        operation: impl FnOnce(&mut NttGlweExternalProductContext<T>) -> R,
+        operation: impl FnOnce(&mut NttGlweExternalProductWorkspace<T>) -> R,
     ) -> R {
         self.external_product.with_rebound(size, operation)
     }
@@ -244,7 +246,7 @@ impl<T: FheUint> SparseGlweBlindRotationContext<T> {
             input_exponents: vec![0; key.input_dimension()],
             aggregate: vec![T::ZERO; size.ggsw_len()],
             scratch: Glwe::zero(size.glwe_len()),
-            external_product: NttGlweExternalProductContext::new(size),
+            external_product: NttGlweExternalProductWorkspace::new(size),
         }
     }
 }

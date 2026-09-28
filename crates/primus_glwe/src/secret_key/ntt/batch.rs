@@ -1,6 +1,6 @@
 //! Batch encryption of constant polynomials with an NTT secret key.
 
-use super::{NttGadgetEncryptContext, NttGlweSecretKey};
+use super::{NttGlweGadgetEncryptWorkspace, NttGlweSecretKey};
 use crate::{GlevParameters, NttGgswCiphertext};
 use primus_integer::FheUint;
 use primus_lattice::ggsw::Ggsw;
@@ -15,7 +15,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
     ///
     /// `output` uses `[input][row][level][component][coefficient]` storage and
     /// must contain exactly `input.len() * params.ggsw_len()` values. Reuses
-    /// `context` without allocating and checks shared resources once per batch.
+    /// `workspace` without allocating and checks shared resources once per batch.
     /// Empty input with empty output is accepted after resource validation and
     /// consumes no randomness.
     ///
@@ -36,14 +36,14 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         params: &GlevParameters<T, M>,
         ntt: &Table,
         rng: &mut R,
-        context: &mut NttGadgetEncryptContext<T>,
+        workspace: &mut NttGlweGadgetEncryptWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
         R: rand::Rng + rand::CryptoRng,
     {
         self.assert_gadget_compatible(params, ntt);
-        context.assert_ggsw_compatible(params.size());
+        workspace.assert_ggsw_compatible(params.size());
         let ggsw_len = params.ggsw_len();
         let output_len = input
             .len()
@@ -60,7 +60,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
             // A constant evaluates to itself at every NTT root. Scale once per
             // level and broadcast, avoiding a full NTT and N modular products.
             for (scalar, transformed) in params.basis().scalar_iter().zip(
-                context
+                workspace
                     .level_transforms
                     .chunks_exact_mut(self.poly_length()),
             ) {
@@ -71,7 +71,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
                 params,
                 ntt,
                 rng,
-                context,
+                workspace,
             );
         }
     }
@@ -83,7 +83,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
     /// transforming the sampled body noise forward. Output layout is
     /// `[input][row][level][component][coefficient]`, with exactly
     /// `input.len() * params.ggsw_len()` values. Reuses the polynomial buffer in
-    /// `context` without allocating; its level count need not match. Empty input
+    /// `workspace` without allocating; its level count need not match. Empty input
     /// and output still validate resources but consume no randomness.
     ///
     /// # Correctness
@@ -103,14 +103,14 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         params: &GlevParameters<T, M>,
         ntt: &Table,
         rng: &mut R,
-        context: &mut NttGadgetEncryptContext<T>,
+        workspace: &mut NttGlweGadgetEncryptWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
         R: rand::Rng + rand::CryptoRng,
     {
         self.assert_gadget_compatible(params, ntt);
-        context.assert_glev_compatible(params.size());
+        workspace.assert_glev_compatible(params.size());
         let ggsw_len = params.ggsw_len();
         let expected = input
             .len()
@@ -139,7 +139,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
                         params.inner(),
                         ntt,
                         rng,
-                        context.encoded.as_mut(),
+                        workspace.encoded.as_mut(),
                         |_| {},
                     );
                     // Add the gadget diagonal after accumulating the original

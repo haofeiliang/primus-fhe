@@ -4,7 +4,7 @@ use primus_encoding::PlaintextEmbedding;
 use primus_fft::{FftEngine, FftTable, RustFftTable, TfheFftTable};
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntru::{
-    FourierNtruDecryptContext, FourierNtruEncryptContext, FourierNtruSecretKey, NtruError,
+    FourierNtruDecryptWorkspace, FourierNtruEncryptWorkspace, FourierNtruSecretKey, NtruError,
     NtruParameters, NtruSecretKey, NttNtruSecretKey, SecretKeyDistr,
 };
 use primus_ntt::{NttTable, UintNttTable};
@@ -115,8 +115,8 @@ fn assert_fourier_prefix<Table: FftTable>(table: &Table) {
     let mut fft = FftEngine::new(table);
     let mut rng = StdRng::seed_from_u64(0xB701);
     let message = Polynomial::new((0..N as u64).map(|i| i % 16).collect::<Vec<_>>());
-    let mut encrypt = FourierNtruEncryptContext::new(N);
-    let mut decrypt = FourierNtruDecryptContext::new(N);
+    let mut encrypt = FourierNtruEncryptWorkspace::new(N);
+    let mut decrypt = FourierNtruDecryptWorkspace::new(N);
     for distribution in DISTRIBUTIONS {
         let params = NtruParameters::new(N, 16, NativeModulus::new(), distribution, 0.7);
         let (coeff, key) =

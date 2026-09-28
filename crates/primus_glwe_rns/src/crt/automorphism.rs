@@ -4,8 +4,8 @@ use primus_data::{Data, DataMut};
 use primus_integer::{FheUint, WrappingNeg};
 use primus_lattice::{
     RnsGadgetSize,
-    context::DcrtGlevMulContext,
     glev::{DcrtGlevIter, DcrtGlevIterMut},
+    workspace::DcrtGlevMulWorkspace,
 };
 use primus_modulus::PowOf2Modulus;
 use primus_ntt::NttTable;
@@ -26,12 +26,12 @@ use crate::{
 /// Construct this workspace from the domain used by the operations. Reuse with
 /// another domain requires the same gadget layout and RNS big-integer limb
 /// width; the caller must maintain this compatibility. No rebinding is performed.
-pub struct CrtGlweAutoContext<T: FheUint> {
+pub struct CrtGlweAutomorphismWorkspace<T: FheUint> {
     auto_crt_poly: CrtPolynomial<Vec<T>>,
-    glev_context: DcrtGlevMulContext<T>,
+    glev_workspace: DcrtGlevMulWorkspace<T>,
 }
 
-impl<T: FheUint> CrtGlweAutoContext<T> {
+impl<T: FheUint> CrtGlweAutomorphismWorkspace<T> {
     /// Creates reusable workspace from one complete RNS gadget parameter set.
     pub fn new<M, Table>(domain: &DcrtGadgetDomain<'_, T, M, Table>) -> Self
     where
@@ -50,16 +50,16 @@ impl<T: FheUint> CrtGlweAutoContext<T> {
         let crt_poly_len = glwe_size.rns_poly_len();
 
         let auto_crt_poly = CrtPolynomial::zero(crt_poly_len);
-        let glev_context = DcrtGlevMulContext::new(size, parameters.base_q());
+        let glev_workspace = DcrtGlevMulWorkspace::new(size, parameters.base_q());
 
         Self {
             auto_crt_poly,
-            glev_context,
+            glev_workspace,
         }
     }
 
-    pub(crate) fn as_mut(&mut self) -> (&mut CrtPolynomial<Vec<T>>, &mut DcrtGlevMulContext<T>) {
-        (&mut self.auto_crt_poly, &mut self.glev_context)
+    pub(crate) fn as_mut(&mut self) -> (&mut CrtPolynomial<Vec<T>>, &mut DcrtGlevMulWorkspace<T>) {
+        (&mut self.auto_crt_poly, &mut self.glev_workspace)
     }
 }
 
@@ -229,13 +229,13 @@ impl<T: FheUint> CrtGlweAutoKey<T> {
     /// Applies this automorphism key to a CRT coefficient-domain ciphertext.
     ///
     /// `result` may not alias `ciphertext`; both must match the domain's RNS
-    /// GLWE layout. The reusable context is overwritten.
+    /// GLWE layout. The reusable workspace is overwritten.
     pub fn automorphism_to<M, Table, A, B>(
         &self,
         ciphertext: &CrtGlweCiphertext<A>,
         result: &mut CrtGlweCiphertext<B>,
         domain: &DcrtGadgetDomain<'_, T, M, Table>,
-        context: &mut CrtGlweAutoContext<T>,
+        workspace: &mut CrtGlweAutomorphismWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
@@ -247,7 +247,7 @@ impl<T: FheUint> CrtGlweAutoKey<T> {
         assert_eq!(ciphertext.as_ref().len(), rns_glwe_len);
         assert_eq!(result.as_ref().len(), rns_glwe_len);
 
-        self.automorphism_kernel(ciphertext, result, domain, context);
+        self.automorphism_kernel(ciphertext, result, domain, workspace);
     }
 
     /// Internal kernel used by composed operations.
@@ -258,7 +258,7 @@ impl<T: FheUint> CrtGlweAutoKey<T> {
         ciphertext: &CrtGlweCiphertext<A>,
         result: &mut CrtGlweCiphertext<B>,
         domain: &DcrtGadgetDomain<'_, T, M, Table>,
-        context: &mut CrtGlweAutoContext<T>,
+        workspace: &mut CrtGlweAutomorphismWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
@@ -274,7 +274,7 @@ impl<T: FheUint> CrtGlweAutoKey<T> {
 
         let auto_helper = &self.auto_helper;
 
-        let (auto_crt_poly, glev_context) = context.as_mut();
+        let (auto_crt_poly, glev_workspace) = workspace.as_mut();
 
         result.set_zero();
         let mut temp = DcrtGlweCiphertext::new(result.as_mut());
@@ -292,7 +292,7 @@ impl<T: FheUint> CrtGlweAutoKey<T> {
                     params.basis(),
                     table,
                     rns_base,
-                    glev_context,
+                    glev_workspace,
                 );
             });
 

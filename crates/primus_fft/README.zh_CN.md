@@ -49,11 +49,11 @@ assert_eq!(output, input);
 
 应在拥有 Fourier 表示的 context 中构造一个固定 table，并始终复用它。Fourier 值和 scratch 内存都绑定到这个确切的 table 实例。即使后端和多项式长度相同， 也不能混用不同 table 创建的值或 scratch：后端顺序、plan 和 workspace 兼容性 都是 table 的私有属性，API 不提供跨 table 的兼容保证。
 
-Table 不可变并实现 `Send + Sync`，因此可以在线程间共享。每个并发 worker 必须创建自己的 `FftEngine`，或者通过 `new_scratch` 获得独立 scratch；不同变换 调用之间不能共享可变 workspace。
+Table 不可变并实现 `Send + Sync`，因此可以在线程间共享。每个并发 worker 必须创建自己的 `FftEngine`，或者通过 `new_workspace` 获得独立 scratch；不同变换 调用之间不能共享可变 workspace。
 
 内置 table 的 twist factor 和变换工作区使用 cache line 对齐存储。调用方的输入和输出仍接受普通 slice，包括子切片，无需额外对齐。
 
-内置 scratch 类型在析构时抗优化擦除完整缓冲区。处理秘密数据后，可以调用 `fft.zeroize_scratch()` 擦除工作区并保留其可复用性；普通变换不会在每次调用时 自动擦除 scratch。调用方持有的输入和输出有独立生命周期；这里的堆缓冲区保证 不覆盖寄存器或编译器生成的栈副本。自定义后端自行定义 scratch 擦除行为。
+内置 scratch 类型在析构时抗优化擦除完整缓冲区。处理秘密数据后，可以调用 `fft.zeroize_workspace()` 擦除工作区并保留其可复用性；普通变换不会在每次调用时 自动擦除 scratch。调用方持有的输入和输出有独立生命周期；这里的堆缓冲区保证 不覆盖寄存器或编译器生成的栈副本。自定义后端自行定义 scratch 擦除行为。
 
 输入和输出长度必须精确匹配：
 

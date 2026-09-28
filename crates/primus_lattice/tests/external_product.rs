@@ -2,15 +2,15 @@ use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable, TfheFftTable};
 use primus_lattice::{
     GadgetSize, GlweSize,
-    context::{
-        FourierGlweExternalProductContext, FourierNtruExternalProductContext,
-        NttNtruExternalProductContext,
-    },
     ggsw::{FourierGgswOwned, Ggsw},
     glwe::Glwe,
     ngsw::{FourierNgswOwned, Ngsw},
     nlev::{FourierNlevOwned, Nlev},
     ntru::{FourierNtru, Ntru, NttNtru},
+    workspace::{
+        FourierGlweExternalProductWorkspace, FourierNtruExternalProductWorkspace,
+        NttNtruExternalProductWorkspace,
+    },
 };
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntt::{NttTable, UintNttTable};
@@ -38,14 +38,14 @@ fn fourier_ggsw_workspace_reuse<Table: FftTable>() {
         .collect();
     let input = Glwe::new(values.clone());
     let mut output = Glwe::new(vec![u32::MAX; values.len()]);
-    let mut context = FourierGlweExternalProductContext::new(GadgetSize::new(
+    let mut workspace = FourierGlweExternalProductWorkspace::new(GadgetSize::new(
         GlweSize::new(components - 1, n),
         levels,
     ));
-    key.external_product_to(&input, &mut output, &basis, &mut engine, &mut context);
+    key.external_product_to(&input, &mut output, &basis, &mut engine, &mut workspace);
     assert_eq!(output.as_ref(), values);
     key.set_zero();
-    key.external_product_to(&input, &mut output, &basis, &mut engine, &mut context);
+    key.external_product_to(&input, &mut output, &basis, &mut engine, &mut workspace);
     assert!(output.as_ref().iter().all(|&x| x == 0));
 }
 
@@ -78,14 +78,14 @@ fn ntt_ntru_gadget_products_match_negacyclic_product() {
         nlev
     };
 
-    let mut context = NttNtruExternalProductContext::new(N);
+    let mut workspace = NttNtruExternalProductWorkspace::new(N);
     let mut nlev_product = Ntru::new(vec![u32::MAX; N]);
     let input_ntru = Ntru::<Vec<u32>>::from_ref(&alpha);
     let mut ngsw_product = Ntru::new(vec![u32::MAX; N]);
     let mut storage = [u32::MAX; N + 2];
     let mut transformed = NttNtru::new(&mut storage[1..=N]);
 
-    // Nonzero then zero products must overwrite prior outputs and context state.
+    // Nonzero then zero products must overwrite prior outputs and workspace state.
     for amplitude in [7, 0] {
         beta.as_mut()[3] = amplitude;
         let coeff_nlev = make_nlev(&beta, &basis);
@@ -102,7 +102,7 @@ fn ntt_ntru_gadget_products_match_negacyclic_product() {
             &basis,
             modulus,
             &ntt,
-            &mut context,
+            &mut workspace,
         );
         assert_eq!(nlev_product.as_ref(), expected.as_ref());
 
@@ -112,7 +112,7 @@ fn ntt_ntru_gadget_products_match_negacyclic_product() {
             &basis,
             modulus,
             &ntt,
-            &mut context,
+            &mut workspace,
         );
         assert_eq!(ngsw_product.as_ref(), expected.as_ref());
 
@@ -123,7 +123,7 @@ fn ntt_ntru_gadget_products_match_negacyclic_product() {
             &basis,
             modulus,
             &ntt,
-            &mut context,
+            &mut workspace,
         );
         if amplitude == 0 {
             assert!(transformed.as_ref().iter().all(|&x| x == 0));
@@ -136,7 +136,7 @@ fn ntt_ntru_gadget_products_match_negacyclic_product() {
             &basis,
             modulus,
             &ntt,
-            &mut context,
+            &mut workspace,
         );
         if amplitude == 0 {
             assert!(transformed.as_ref().iter().all(|&x| x == 0));
@@ -158,7 +158,7 @@ fn ntt_ntru_gadget_products_match_negacyclic_product() {
                 &basis,
                 modulus,
                 &ntt,
-                &mut context,
+                &mut workspace,
             );
             assert_eq!(output_nlev.as_ref(), expected_nlev.as_ref());
         }
@@ -203,7 +203,7 @@ fn fourier_ntru_gadget_products<Table: FftTable>() {
         nlev
     };
 
-    let mut context = FourierNtruExternalProductContext::new(N);
+    let mut workspace = FourierNtruExternalProductWorkspace::new(N);
     let mut nlev_product = Ntru::new(vec![u32::MAX; N]);
     let input_ntru = Ntru::<Vec<u32>>::from_ref(&alpha);
     let mut ngsw_product = Ntru::new(vec![u32::MAX; N]);
@@ -211,7 +211,7 @@ fn fourier_ntru_gadget_products<Table: FftTable>() {
     let mut storage = [guard; N / 2 + 2];
     let mut transformed = FourierNtru::new(&mut storage[1..=N / 2]);
 
-    // Nonzero then zero products must overwrite prior outputs and context state.
+    // Nonzero then zero products must overwrite prior outputs and workspace state.
     for amplitude in [1, 0] {
         beta.as_mut()[5] = amplitude;
         let coeff_nlev = make_nlev(&beta, &basis);
@@ -232,7 +232,7 @@ fn fourier_ntru_gadget_products<Table: FftTable>() {
             &mut nlev_product,
             &basis,
             &mut engine,
-            &mut context,
+            &mut workspace,
         );
         assert_eq!(nlev_product.as_ref(), expected.as_ref());
 
@@ -241,7 +241,7 @@ fn fourier_ntru_gadget_products<Table: FftTable>() {
             &mut ngsw_product,
             &basis,
             &mut engine,
-            &mut context,
+            &mut workspace,
         );
         assert_eq!(ngsw_product.as_ref(), expected.as_ref());
 
@@ -250,7 +250,7 @@ fn fourier_ntru_gadget_products<Table: FftTable>() {
             &mut transformed,
             &basis,
             &mut engine,
-            &mut context,
+            &mut workspace,
         );
         if amplitude == 0 {
             assert!(
@@ -267,7 +267,7 @@ fn fourier_ntru_gadget_products<Table: FftTable>() {
             &mut transformed,
             &basis,
             &mut engine,
-            &mut context,
+            &mut workspace,
         );
         if amplitude == 0 {
             assert!(
@@ -291,7 +291,7 @@ fn fourier_ntru_gadget_products<Table: FftTable>() {
                 &mut output_nlev,
                 &basis,
                 &mut engine,
-                &mut context,
+                &mut workspace,
             );
             assert_eq!(output_nlev.as_ref(), expected_nlev.as_ref());
         }

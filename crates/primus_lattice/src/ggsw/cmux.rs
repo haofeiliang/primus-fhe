@@ -11,8 +11,8 @@ use primus_ntt::NttTable;
 use primus_reduce::FieldContext;
 
 use crate::{
-    context::{FourierGlweExternalProductContext, NttGlweExternalProductContext},
     glwe::{Glwe, TorusGlwe},
+    workspace::{FourierGlweExternalProductWorkspace, NttGlweExternalProductWorkspace},
 };
 
 use super::{FourierGgsw, NttGgsw};
@@ -29,11 +29,11 @@ where
     ///
     /// # Correctness
     ///
-    /// The control ciphertext, basis, transform table, and context must satisfy
+    /// The control ciphertext, basis, transform table, and workspace must satisfy
     /// [`Self::external_product_to`]. Every coefficient-domain input and output
-    /// has exactly `context.size().glwe_size().glwe_len()` elements, with compatible keys,
+    /// has exactly `workspace.size().glwe_size().glwe_len()` elements, with compatible keys,
     /// moduli, and encodings. Values must be canonical residues. The output
-    /// is overwritten; no prior output initialization or context reset is needed.
+    /// is overwritten; no prior output initialization or workspace reset is needed.
     /// `self` must encrypt a bit; this is not checked.
     pub fn cmux_to<T, Table, B, C, D>(
         &self,
@@ -42,7 +42,7 @@ where
         output: &mut TorusGlwe<D>,
         basis: &ApproxSignedBasis<T>,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierGlweExternalProductContext<T>,
+        workspace: &mut FourierGlweExternalProductWorkspace<T>,
     ) where
         T: TorusFftValue,
         Table: FftTable,
@@ -50,15 +50,15 @@ where
         C: Data<Elem = T>,
         D: DataMut<Elem = T>,
     {
-        let glwe_len = context.size().glwe_size().glwe_len();
+        let glwe_len = workspace.size().glwe_size().glwe_len();
         debug_assert_eq!(ct0.as_ref().len(), glwe_len);
         debug_assert_eq!(ct1.as_ref().len(), glwe_len);
         debug_assert_eq!(output.as_ref().len(), glwe_len);
 
         ct1.sub_to(ct0, output, NativeModulus::new());
-        context.fourier_accumulator.set_zero();
-        self.accumulate_external_product(output, basis, fft, &mut context.as_mut());
-        context.fourier_accumulator.write_torus_form(output, fft);
+        workspace.fourier_accumulator.set_zero();
+        self.accumulate_external_product(output, basis, fft, &mut workspace.as_mut());
+        workspace.fourier_accumulator.write_torus_form(output, fft);
         output.add_assign(ct0, NativeModulus::new());
     }
 
@@ -75,11 +75,11 @@ where
     /// # Correctness
     ///
     /// Each control and every coefficient-domain input/output must satisfy
-    /// [`Self::cmux_to`], using the same basis, table, and context layout.
+    /// [`Self::cmux_to`], using the same basis, table, and workspace layout.
     /// Controls and candidates have equal counts and matching order. Each
     /// control encrypts a bit, with at most one bit equal to one; bit values
     /// and exclusivity are not checked. Empty lists copy `default` exactly.
-    /// Output is overwritten and context scratch needs no manual reset.
+    /// Output is overwritten and workspace scratch needs no manual reset.
     ///
     /// # Panics
     ///
@@ -92,7 +92,7 @@ where
         output: &mut TorusGlwe<D>,
         basis: &ApproxSignedBasis<T>,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierGlweExternalProductContext<T>,
+        workspace: &mut FourierGlweExternalProductWorkspace<T>,
     ) where
         T: TorusFftValue,
         Table: FftTable,
@@ -109,7 +109,7 @@ where
             candidates.len(),
             "CMUX requires one control per candidate"
         );
-        let glwe_len = context.size().glwe_size().glwe_len();
+        let glwe_len = workspace.size().glwe_size().glwe_len();
         debug_assert_eq!(default.as_ref().len(), glwe_len);
         debug_assert_eq!(output.as_ref().len(), glwe_len);
         debug_assert!(
@@ -123,13 +123,13 @@ where
             return;
         }
 
-        context.fourier_accumulator.set_zero();
+        workspace.fourier_accumulator.set_zero();
         for (control, candidate) in controls.zip(candidates) {
             candidate.sub_to(default, output, NativeModulus::new());
             let control: &Self = control.borrow();
-            control.accumulate_external_product(output, basis, fft, &mut context.as_mut());
+            control.accumulate_external_product(output, basis, fft, &mut workspace.as_mut());
         }
-        context.fourier_accumulator.write_torus_form(output, fft);
+        workspace.fourier_accumulator.write_torus_form(output, fft);
         output.add_assign(default, NativeModulus::new());
     }
 
@@ -141,9 +141,9 @@ where
     ///
     /// # Correctness
     ///
-    /// The control, input, output, basis, table, and context must satisfy
+    /// The control, input, output, basis, table, and workspace must satisfy
     /// [`Self::cmux_to`]. Require `exponent < 2 * N`, where `N` is the
-    /// context polynomial length. Bit zero selects `input`; bit one selects
+    /// workspace polynomial length. Bit zero selects `input`; bit one selects
     /// `input * X^exponent`. Output is overwritten; no reset is required.
     pub fn cmux_monomial_to<T, Table, B, C>(
         &self,
@@ -152,19 +152,19 @@ where
         output: &mut TorusGlwe<C>,
         basis: &ApproxSignedBasis<T>,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierGlweExternalProductContext<T>,
+        workspace: &mut FourierGlweExternalProductWorkspace<T>,
     ) where
         T: TorusFftValue,
         Table: FftTable,
         B: Data<Elem = T>,
         C: DataMut<Elem = T>,
     {
-        let poly_length = context.size().glwe_size().poly_length();
+        let poly_length = workspace.size().glwe_size().poly_length();
 
         input.mul_monomial_sub_one_to(exponent, output, poly_length, NativeModulus::new());
-        context.fourier_accumulator.set_zero();
-        self.accumulate_external_product(output, basis, fft, &mut context.as_mut());
-        context.fourier_accumulator.write_torus_form(output, fft);
+        workspace.fourier_accumulator.set_zero();
+        self.accumulate_external_product(output, basis, fft, &mut workspace.as_mut());
+        workspace.fourier_accumulator.write_torus_form(output, fft);
         output.add_assign(input, NativeModulus::new());
     }
 }
@@ -182,11 +182,11 @@ where
     ///
     /// # Correctness
     ///
-    /// The control ciphertext, basis, transform table, and context must satisfy
+    /// The control ciphertext, basis, transform table, and workspace must satisfy
     /// [`Self::external_product_to`]. Every coefficient-domain input and output
-    /// has exactly `context.size().glwe_size().glwe_len()` elements, with compatible keys,
+    /// has exactly `workspace.size().glwe_size().glwe_len()` elements, with compatible keys,
     /// moduli, and encodings. Values must be canonical residues. The output
-    /// is overwritten; no prior output initialization or context reset is needed.
+    /// is overwritten; no prior output initialization or workspace reset is needed.
     /// `self` must encrypt a bit; this is not checked.
     #[expect(
         clippy::too_many_arguments,
@@ -200,7 +200,7 @@ where
         basis: &ApproxSignedBasis<T>,
         modulus: M,
         ntt: &Table,
-        context: &mut NttGlweExternalProductContext<T>,
+        workspace: &mut NttGlweExternalProductWorkspace<T>,
     ) where
         T: FheUint,
         M: FieldContext<T>,
@@ -210,16 +210,16 @@ where
         C: Data<Elem = T>,
         D: DataMut<Elem = T>,
     {
-        let glwe_len = context.size().glwe_size().glwe_len();
+        let glwe_len = workspace.size().glwe_size().glwe_len();
         debug_assert_eq!(ct0.as_ref().len(), glwe_len);
         debug_assert_eq!(ct1.as_ref().len(), glwe_len);
         debug_assert_eq!(output.as_ref().len(), glwe_len);
 
         ct1.sub_to(ct0, output, modulus);
-        let mut context = context.as_mut();
-        context.ntt_accumulator.set_zero();
-        self.accumulate_external_product(output, basis, modulus, ntt, &mut context);
-        context.ntt_accumulator.write_coeff_form(output, ntt);
+        let mut workspace = workspace.as_mut();
+        workspace.ntt_accumulator.set_zero();
+        self.accumulate_external_product(output, basis, modulus, ntt, &mut workspace);
+        workspace.ntt_accumulator.write_coeff_form(output, ntt);
         output.add_assign(ct0, modulus);
     }
 
@@ -236,11 +236,11 @@ where
     /// # Correctness
     ///
     /// Each control and every coefficient-domain input/output must satisfy
-    /// [`Self::cmux_to`], using the same basis, table, and context layout.
+    /// [`Self::cmux_to`], using the same basis, table, and workspace layout.
     /// Controls and candidates have equal counts and matching order. Each
     /// control encrypts a bit, with at most one bit equal to one; bit values
     /// and exclusivity are not checked. Empty lists copy `default` exactly.
-    /// Output is overwritten and context scratch needs no manual reset.
+    /// Output is overwritten and workspace scratch needs no manual reset.
     ///
     /// # Panics
     ///
@@ -258,7 +258,7 @@ where
         basis: &ApproxSignedBasis<T>,
         modulus: M,
         ntt: &Table,
-        context: &mut NttGlweExternalProductContext<T>,
+        workspace: &mut NttGlweExternalProductWorkspace<T>,
     ) where
         T: FheUint,
         M: FieldContext<T>,
@@ -277,7 +277,7 @@ where
             candidates.len(),
             "CMUX requires one control per candidate"
         );
-        let glwe_len = context.size().glwe_size().glwe_len();
+        let glwe_len = workspace.size().glwe_size().glwe_len();
         debug_assert_eq!(default.as_ref().len(), glwe_len);
         debug_assert_eq!(output.as_ref().len(), glwe_len);
         debug_assert!(
@@ -291,14 +291,14 @@ where
             return;
         }
 
-        let mut context = context.as_mut();
-        context.ntt_accumulator.set_zero();
+        let mut workspace = workspace.as_mut();
+        workspace.ntt_accumulator.set_zero();
         for (control, candidate) in controls.zip(candidates) {
             candidate.sub_to(default, output, modulus);
             let control: &Self = control.borrow();
-            control.accumulate_external_product(output, basis, modulus, ntt, &mut context);
+            control.accumulate_external_product(output, basis, modulus, ntt, &mut workspace);
         }
-        context.ntt_accumulator.write_coeff_form(output, ntt);
+        workspace.ntt_accumulator.write_coeff_form(output, ntt);
         output.add_assign(default, modulus);
     }
 
@@ -310,9 +310,9 @@ where
     ///
     /// # Correctness
     ///
-    /// The control, input, output, basis, table, and context must satisfy
+    /// The control, input, output, basis, table, and workspace must satisfy
     /// [`Self::cmux_to`]. Require `exponent < 2 * N`, where `N` is the
-    /// context polynomial length. Bit zero selects `input`; bit one selects
+    /// workspace polynomial length. Bit zero selects `input`; bit one selects
     /// `input * X^exponent`. Output is overwritten; no reset is required.
     #[expect(
         clippy::too_many_arguments,
@@ -326,7 +326,7 @@ where
         basis: &ApproxSignedBasis<T>,
         modulus: M,
         ntt: &Table,
-        context: &mut NttGlweExternalProductContext<T>,
+        workspace: &mut NttGlweExternalProductWorkspace<T>,
     ) where
         T: FheUint,
         M: FieldContext<T>,
@@ -335,13 +335,13 @@ where
         B: Data<Elem = T>,
         C: DataMut<Elem = T>,
     {
-        let poly_length = context.size().glwe_size().poly_length();
+        let poly_length = workspace.size().glwe_size().poly_length();
 
         input.mul_monomial_sub_one_to(exponent, output, poly_length, modulus);
-        let mut context = context.as_mut();
-        context.ntt_accumulator.set_zero();
-        self.accumulate_external_product(output, basis, modulus, ntt, &mut context);
-        context.ntt_accumulator.write_coeff_form(output, ntt);
+        let mut workspace = workspace.as_mut();
+        workspace.ntt_accumulator.set_zero();
+        self.accumulate_external_product(output, basis, modulus, ntt, &mut workspace);
+        workspace.ntt_accumulator.write_coeff_form(output, ntt);
         output.add_assign(input, modulus);
     }
 }

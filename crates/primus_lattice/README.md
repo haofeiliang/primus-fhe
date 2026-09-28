@@ -77,17 +77,17 @@ Checks belong at the highest layer that owns these parameters. This crate delibe
 
 | Workspace | What it binds |
 | --- | --- |
-| `FourierGlweExternalProductContext` / `NttGlweExternalProductContext` | GLWE layout and decomposition level count through `GadgetSize` |
-| `NttGlweTernaryCmuxContext` / `FourierGlweTernaryCmuxContext` | Fixed `GadgetSize`; combined GGSW, transformed monomial, and external-product scratch |
-| `FourierNtruExternalProductContext` / `NttNtruExternalProductContext` | Polynomial length for scalar NTRU gadget products |
-| `NttNtruCmuxContext` / `FourierNtruCmuxContext` | Fixed polynomial length and level count; combined NLEV/NGSW and reusable external-product scratch for first lifting and ternary CMUX |
-| `DcrtGlevMulContext` | RNS gadget layout and BigUint limb-width requirements |
+| `FourierGlweExternalProductWorkspace` / `NttGlweExternalProductWorkspace` | GLWE layout and decomposition level count through `GadgetSize` |
+| `NttGlweTernaryCmuxWorkspace` / `FourierGlweTernaryCmuxWorkspace` | Fixed `GadgetSize`; combined GGSW, transformed monomial, and external-product scratch |
+| `FourierNtruExternalProductWorkspace` / `NttNtruExternalProductWorkspace` | Polynomial length for scalar NTRU gadget products |
+| `NttNtruCmuxWorkspace` / `FourierNtruCmuxWorkspace` | Fixed polynomial length and level count; combined NLEV/NGSW and reusable external-product scratch for first lifting and ternary CMUX |
+| `DcrtGlevMulWorkspace` | RNS gadget layout and BigUint limb-width requirements |
 
-Contexts provide reusable scratch, not a validated basis/table/modulus domain. GLWE external-product contexts support `rebind` for unchanged GLWE shape and `resize` when buffer sizes change. DCRT compatibility includes the RNS product's limb width. Owning callers must establish compatibility before entering the kernels.
+Workspaces provide reusable scratch, not a validated basis/table/modulus domain. GLWE external-product workspaces support `rebind` for unchanged GLWE shape and `resize` when buffer sizes change. DCRT compatibility includes the RNS product's limb width. Owning callers must establish compatibility before entering the kernels.
 
 Overwriting external products initialize their accumulator, and other scratch is written before use: no manual reset is needed between valid calls. Accumulating APIs preserve the existing output and require it to be initialized. CMUX selection additionally requires bit controls; `cmux_k_to` requires at most one active control. Noise growth and decryptability remain higher-layer obligations.
 
-`positive.cmux_ternary_monomial_to(&negative, ...)` uses mutually exclusive encrypted bits `s⁺, s⁻` to rotate by `X^(exponent * (s⁺-s⁻))`. Both controls use the same key, basis, and NTT table or exact FFT table instance. Fourier controls use native-torus scale and a matching native basis. The exponent is already quantized into `0..2N`; zero copies the input exactly. Evaluation reuses its context without allocation. This is a lattice primitive; complete GLWE TFHE ternary key generation and evaluation are described in the [family API](../primus_tfhe_glwe/README.md). The NGSW form supports NTT and Fourier; complete NTRU integration is described in the [family API](../primus_tfhe_ntru/README.md).
+`positive.cmux_ternary_monomial_to(&negative, ...)` uses mutually exclusive encrypted bits `s⁺, s⁻` to rotate by `X^(exponent * (s⁺-s⁻))`. Both controls use the same key, basis, and NTT table or exact FFT table instance. Fourier controls use native-torus scale and a matching native basis. The exponent is already quantized into `0..2N`; zero copies the input exactly. Evaluation reuses its workspace without allocation. This is a lattice primitive; complete GLWE TFHE ternary key generation and evaluation are described in the [family API](../primus_tfhe_glwe/README.md). The NGSW form supports NTT and Fourier; complete NTRU integration is described in the [family API](../primus_tfhe_ntru/README.md).
 
 ## Example
 

@@ -6,14 +6,14 @@ use primus_decompose::primitive::ApproxSignedBasis;
 use primus_integer::FheUint;
 use primus_lattice::{nlev::Nlev, ntru::Ntru};
 use primus_modulus::BarrettModulus;
-use primus_ntru::NttNtruExternalProductContext;
+use primus_ntru::NttNtruExternalProductWorkspace;
 use primus_ntt::MonomialNttTable;
 use primus_poly::Polynomial;
 
 pub(crate) struct SparseWorkspace<T: FheUint> {
     pub(crate) exponents: Vec<usize>,
     aggregate: Vec<T>,
-    pub(crate) external_product: NttNtruExternalProductContext<T>,
+    pub(crate) external_product: NttNtruExternalProductWorkspace<T>,
 }
 
 impl<T: FheUint> SparseWorkspace<T> {
@@ -23,7 +23,7 @@ impl<T: FheUint> SparseWorkspace<T> {
         Self {
             exponents: vec![0; parameters.external_lwe_dimension()],
             aggregate: vec![T::ZERO; parameters.blind_rotation().nlev_len()],
-            external_product: NttNtruExternalProductContext::new(parameters.poly_length()),
+            external_product: NttNtruExternalProductWorkspace::new(parameters.poly_length()),
         }
     }
 }

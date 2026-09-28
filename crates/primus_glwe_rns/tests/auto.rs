@@ -1,7 +1,7 @@
 use primus_glwe_rns::{
-    CrtGlevParameters, CrtGlweAutoContext, CrtGlweAutoKey, CrtGlweParameters, DcrtGadgetDomain,
-    DcrtGlweAutoKey, DcrtGlweCiphertext, DcrtGlweDecryptContext, DcrtGlweSecretKey, GlweSecretKey,
-    SecretKeyDistr,
+    CrtGlevParameters, CrtGlweAutoKey, CrtGlweAutomorphismWorkspace, CrtGlweParameters,
+    DcrtGadgetDomain, DcrtGlweAutoKey, DcrtGlweCiphertext, DcrtGlweDecryptWorkspace,
+    DcrtGlweSecretKey, GlweSecretKey, SecretKeyDistr,
 };
 use primus_lattice::glwe::{CrtGlwe, DcrtGlwe};
 use primus_modulus::BarrettModulus;
@@ -87,22 +87,22 @@ fn test_crt_glwe_auto() {
     let input1: Polynomial<Vec<ValueT>> = Polynomial::random(poly_length, mod_t, &mut rng);
     let mut c1: DcrtGlwe<Vec<ValueT>> = DcrtGlweCiphertext::zero(rns_glwe_len);
     let mut c2: CrtGlwe<Vec<ValueT>> = CrtGlwe::zero(rns_glwe_len);
-    let mut auto_context = CrtGlweAutoContext::new(&domain);
-    let mut decrypt_context = DcrtGlweDecryptContext::new(glwe_params.size());
+    let mut auto_workspace = CrtGlweAutomorphismWorkspace::new(&domain);
+    let mut decrypt_workspace = DcrtGlweDecryptWorkspace::new(glwe_params.size());
 
     dcrt_sk.encrypt_plaintext_inplace(&input1, &mut c1, &glwe_params, &table, &mut rng);
 
     // Sanity: decrypt original
-    let m_dec = dcrt_sk.decrypt(&c1, &glwe_params, &table, &mut decrypt_context);
+    let m_dec = dcrt_sk.decrypt(&c1, &glwe_params, &table, &mut decrypt_workspace);
     assert_eq!(m_dec, input1);
 
     let c1 = c1.into_coeff_form(&table);
 
-    auto_key.automorphism_to(&c1, &mut c2, &domain, &mut auto_context);
+    auto_key.automorphism_to(&c1, &mut c2, &domain, &mut auto_workspace);
 
     let c2 = c2.into_ntt_form(&table);
 
-    let auto_msg_2 = dcrt_sk.decrypt(&c2, &glwe_params, &table, &mut decrypt_context);
+    let auto_msg_2 = dcrt_sk.decrypt(&c2, &glwe_params, &table, &mut decrypt_workspace);
 
     let expected = coefficient_automorphism(input1.as_ref(), auto_degree, mod_t);
     assert_eq!(auto_msg_2.as_ref(), expected);
@@ -162,17 +162,17 @@ fn test_dcrt_glwe_auto() {
     let input1: Polynomial<Vec<ValueT>> = Polynomial::random(poly_length, mod_t, &mut rng);
     let mut c1: DcrtGlweCiphertext<Vec<ValueT>> = DcrtGlweCiphertext::zero(rns_glwe_len);
     let mut c2: DcrtGlweCiphertext<Vec<ValueT>> = DcrtGlweCiphertext::zero(rns_glwe_len);
-    let mut auto_context = CrtGlweAutoContext::new(&domain);
-    let mut decrypt_context = DcrtGlweDecryptContext::new(glwe_params.size());
+    let mut auto_workspace = CrtGlweAutomorphismWorkspace::new(&domain);
+    let mut decrypt_workspace = DcrtGlweDecryptWorkspace::new(glwe_params.size());
 
     dcrt_sk.encrypt_plaintext_inplace(&input1, &mut c1, &glwe_params, &table, &mut rng);
 
-    let m_dec = dcrt_sk.decrypt(&c1, &glwe_params, &table, &mut decrypt_context);
+    let m_dec = dcrt_sk.decrypt(&c1, &glwe_params, &table, &mut decrypt_workspace);
     assert_eq!(m_dec, input1);
 
-    auto_key.automorphism_to(&c1, &mut c2, &domain, &mut auto_context);
+    auto_key.automorphism_to(&c1, &mut c2, &domain, &mut auto_workspace);
 
-    let auto_msg_2 = dcrt_sk.decrypt(&c2, &glwe_params, &table, &mut decrypt_context);
+    let auto_msg_2 = dcrt_sk.decrypt(&c2, &glwe_params, &table, &mut decrypt_workspace);
 
     let expected = coefficient_automorphism(input1.as_ref(), auto_degree, mod_t);
     assert_eq!(auto_msg_2.as_ref(), expected);

@@ -2,5 +2,5 @@
 
 mod fourier;
 mod ntt;
-pub use fourier::{FourierGlweAutomorphismContext, FourierGlweAutomorphismKey};
-pub use ntt::{NttGlweAutomorphismContext, NttGlweAutomorphismKey};
+pub use fourier::{FourierGlweAutomorphismKey, FourierGlweAutomorphismWorkspace};
+pub use ntt::{NttGlweAutomorphismKey, NttGlweAutomorphismWorkspace};

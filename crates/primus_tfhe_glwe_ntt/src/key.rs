@@ -1,7 +1,7 @@
 //! Server evaluation material and paired or component key generation.
 
 use primus_glwe::{
-    NttGadgetEncryptContext, NttGlweKeySwitchingKey, NttGlweSecretKey, SecretKeyDistr,
+    NttGlweGadgetEncryptWorkspace, NttGlweKeySwitchingKey, NttGlweSecretKey, SecretKeyDistr,
 };
 use primus_integer::FheUint;
 use primus_lwe::LweSecretKey;
@@ -133,7 +133,7 @@ where
     Table: MonomialNttTable<ValueT = T>,
 {
     pub(crate) context: &'a TfheContext<T, Table>,
-    pub(crate) gadget: NttGadgetEncryptContext<T>,
+    pub(crate) gadget: NttGlweGadgetEncryptWorkspace<T>,
 }
 
 impl<'a, T, Table> KeyGenerator<'a, T, Table>
@@ -146,7 +146,7 @@ where
         let parameters = context.parameters().blind_rotation_ggsw();
         Self {
             context,
-            gadget: NttGadgetEncryptContext::new(parameters.size()),
+            gadget: NttGlweGadgetEncryptWorkspace::new(parameters.size()),
         }
     }
 

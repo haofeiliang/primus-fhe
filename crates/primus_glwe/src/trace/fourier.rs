@@ -1,7 +1,8 @@
 //! Trace keys for coefficient-domain native-torus ciphertexts.
 use crate::{
-    FourierGadgetEncryptContext, FourierGlweAutomorphismContext, FourierGlweAutomorphismKey,
-    FourierGlweSecretKey, GlevParameters, GlweSecretKey, GlweSize,
+    FourierGlweAutomorphismKey, FourierGlweAutomorphismWorkspace,
+    FourierGlweGadgetEncryptWorkspace, FourierGlweSecretKey, GlevParameters, GlweSecretKey,
+    GlweSize,
 };
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{FftEngine, FftTable, TorusFftValue};
@@ -9,17 +10,17 @@ use primus_lattice::glwe::Glwe;
 use primus_modulus::NativeModulus;
 
 /// Reusable workspace for Fourier-key trace and coefficient projection.
-pub struct FourierGlweTraceContext<T: TorusFftValue> {
+pub struct FourierGlweTraceWorkspace<T: TorusFftValue> {
     pub(super) automorphism_output: Glwe<Vec<T>>,
-    pub(super) automorphism: FourierGlweAutomorphismContext<T>,
+    pub(super) automorphism: FourierGlweAutomorphismWorkspace<T>,
 }
-impl<T: TorusFftValue> FourierGlweTraceContext<T> {
+impl<T: TorusFftValue> FourierGlweTraceWorkspace<T> {
     /// Allocates workspace for one immutable GLWE layout.
     #[must_use]
     pub fn new(size: GlweSize) -> Self {
         Self {
             automorphism_output: Glwe::zero(size.glwe_len()),
-            automorphism: FourierGlweAutomorphismContext::new(size),
+            automorphism: FourierGlweAutomorphismWorkspace::new(size),
         }
     }
 }
@@ -40,7 +41,7 @@ impl<T: TorusFftValue> FourierGlweTraceKey<T> {
         params: &GlevParameters<T, NativeModulus<T>>,
         fft: &mut FftEngine<'_, Table>,
         rng: &mut R,
-        context: &mut FourierGadgetEncryptContext<T>,
+        workspace: &mut FourierGlweGadgetEncryptWorkspace<T>,
     ) -> Self {
         let glwe_size = secret.glwe_size();
         let automorphism_keys = (1..=glwe_size.poly_length().trailing_zeros())
@@ -53,7 +54,7 @@ impl<T: TorusFftValue> FourierGlweTraceKey<T> {
                     params,
                     fft,
                     rng,
-                    context,
+                    workspace,
                 )
             })
             .collect();

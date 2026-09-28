@@ -1,6 +1,6 @@
 use primus_fft::{FftEngine, FftTable, RustFftTable};
 use primus_glwe::{
-    FourierGadgetEncryptContext, FourierGlweDecryptContext, FourierGlweEncryptContext,
+    FourierGlweDecryptWorkspace, FourierGlweEncryptWorkspace, FourierGlweGadgetEncryptWorkspace,
     FourierGlweSecretKey, GlevParameters, GlweParameters, SecretKeyDistr,
 };
 use primus_lattice::{
@@ -10,7 +10,7 @@ use primus_lattice::{
 use primus_lwe::{LweParameters, LweSecretKey};
 use primus_modulus::{NativeModulus, PowOf2Modulus};
 use primus_poly::Polynomial;
-use primus_tfhe_glwe_fourier::{FourierGlweBlindRotationContext, FourierGlweBootstrappingKey};
+use primus_tfhe_glwe_fourier::{FourierGlweBlindRotationWorkspace, FourierGlweBootstrappingKey};
 use rand::{SeedableRng, rngs::StdRng};
 
 const LWE_DIMENSION: usize = 4;
@@ -70,7 +70,7 @@ fn functional_bootstrapping_key_blind_rotates() {
     );
     let (_, output_secret_key) =
         FourierGlweSecretKey::generate_pair(&glwe_params, &mut fft, &mut rng);
-    let mut gadget_context = FourierGadgetEncryptContext::new(ggsw_params.size());
+    let mut gadget_workspace = FourierGlweGadgetEncryptWorkspace::new(ggsw_params.size());
     let key = FourierGlweBootstrappingKey::generate_fourier(
         &input_secret_key,
         &lwe_params,
@@ -78,7 +78,7 @@ fn functional_bootstrapping_key_blind_rotates() {
         &ggsw_params,
         &mut fft,
         &mut rng,
-        &mut gadget_context,
+        &mut gadget_workspace,
     );
 
     assert!(key.iter_binary_controls().is_none());
@@ -100,39 +100,39 @@ fn functional_bootstrapping_key_blind_rotates() {
 
     let message = accumulator_message();
     let mut accumulator_fourier = FourierGlweOwned::zero(ggsw_params.fourier_glwe_len());
-    let mut encrypt_context = FourierGlweEncryptContext::new(POLY_LENGTH);
+    let mut encrypt_workspace = FourierGlweEncryptWorkspace::new(POLY_LENGTH);
     output_secret_key.encrypt_to(
         &Polynomial::new(message.as_slice()),
         &mut accumulator_fourier,
         &glwe_params,
         &mut fft,
         &mut rng,
-        &mut encrypt_context,
+        &mut encrypt_workspace,
     );
     let mut accumulator: TorusGlwe<Vec<u32>> = TorusGlwe::zero(ggsw_params.glwe_len());
     accumulator_fourier.write_torus_form(&mut accumulator, &mut fft);
 
     let mut output: TorusGlwe<Vec<u32>> = TorusGlwe::zero(ggsw_params.glwe_len());
-    let mut blind_rotation_context = FourierGlweBlindRotationContext::new(&key);
+    let mut blind_rotation_workspace = FourierGlweBlindRotationWorkspace::new(&key);
     key.fourier_blind_rotate_to(
         &input,
         &accumulator,
         &mut output,
         &mut fft,
-        &mut blind_rotation_context,
+        &mut blind_rotation_workspace,
     );
 
     let expected_exponent = (TWO_N + 3 - 7 + 11 - switched_b) & (TWO_N - 1);
     let mut output_fourier = FourierGlweOwned::zero(ggsw_params.fourier_glwe_len());
     output.write_fourier_form(&mut output_fourier, &mut fft);
-    let mut decrypt_context = FourierGlweDecryptContext::new(POLY_LENGTH);
+    let mut decrypt_workspace = FourierGlweDecryptWorkspace::new(POLY_LENGTH);
     assert_eq!(
         output_secret_key
             .decrypt(
                 &output_fourier,
                 &glwe_params,
                 &mut fft,
-                &mut decrypt_context,
+                &mut decrypt_workspace,
             )
             .as_ref(),
         rotate_plaintext(&message, expected_exponent)
@@ -144,7 +144,7 @@ fn functional_bootstrapping_key_blind_rotates() {
         &accumulator,
         &mut output,
         &mut fft,
-        &mut blind_rotation_context,
+        &mut blind_rotation_workspace,
     );
     output.write_fourier_form(&mut output_fourier, &mut fft);
     assert_eq!(
@@ -153,7 +153,7 @@ fn functional_bootstrapping_key_blind_rotates() {
                 &output_fourier,
                 &glwe_params,
                 &mut fft,
-                &mut decrypt_context,
+                &mut decrypt_workspace,
             )
             .as_ref(),
         rotate_plaintext(&message, expected_exponent)

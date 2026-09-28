@@ -28,7 +28,7 @@ NTT generation rejects keys with a zero evaluation. Fourier generation checks na
 
 General NTRU supports nonbinary secrets. The NTRU TFHE layer separately validates the binary, zero-padded control-secret requirement for blind rotation.
 
-Secret keys and private encryption/generation/decryption workspaces erase owned buffers on drop. Explicit workspace zeroization preserves reusable storage; explicit secret-key zeroization destroys the key. The built-in FFT backends also erase scratch on drop, and `FftEngine::zeroize_scratch()` supports a phase boundary for long-lived engines. Caller-owned plaintext and phase outputs retain their own lifetimes.
+Secret keys and private encryption/generation/decryption workspaces erase owned buffers on drop. Explicit workspace zeroization preserves reusable storage; explicit secret-key zeroization destroys the key. The built-in FFT backends also erase scratch on drop, and `FftEngine::zeroize_workspace()` supports a phase boundary for long-lived engines. Caller-owned plaintext and phase outputs retain their own lifetimes.
 
 The [automorphism example](examples/automorphism.rs) shows paired key generation, evaluation-key setup and reusable NTT evaluation under the original secret:
 
@@ -51,13 +51,13 @@ cargo run -p primus_ntru --example automorphism
 | `NttNtruAutomorphismKey::apply_to`, `FourierNtruAutomorphismKey::apply_to` | Coefficient NTRU to coefficient NTRU under the same secret |
 | `apply_ntt_to`, `apply_fourier_to` | Transformed NTRU to the corresponding transformed output under the same secret |
 
-`NttNlev::lift_monomial_to` / `FourierNlev::lift_monomial_to` fuse public-polynomial lifting with the first binary/ternary rotation. Supply NLEV[1], a positive NLEV bit and an optional negative NLEV bit; only the public polynomial is decomposed, and a zero exponent still performs the lift. Their `NttNtruCmuxContext` / `FourierNtruCmuxContext` shares one combined-control buffer with subsequent ternary CMUXes. These names replace the former `*NtruTernaryCmuxContext` types.
+`NttNlev::lift_monomial_to` / `FourierNlev::lift_monomial_to` fuse public-polynomial lifting with the first binary/ternary rotation. Supply NLEV[1], a positive NLEV bit and an optional negative NLEV bit; only the public polynomial is decomposed, and a zero exponent still performs the lift. Their `NttNtruCmuxWorkspace` / `FourierNtruCmuxWorkspace` shares one combined-control buffer with subsequent ternary CMUXes. These names replace the former `*NtruTernaryCmuxContext` types.
 
-For ternary rotation, allocate `NttNtruCmuxContext::new(N, levels)` or `FourierNtruCmuxContext::new(N, levels)` once, and reuse it with mutually exclusive positive/negative NGSW controls. Fourier uses a native basis and both controls must use the engine's exact FFT table instance and torus scale. The exponent is already quantized into `0..2N`; its negative is derived internally. The NTRU TFHE backends use this primitive for classic ternary blind rotation.
+For ternary rotation, allocate `NttNtruCmuxWorkspace::new(N, levels)` or `FourierNtruCmuxWorkspace::new(N, levels)` once, and reuse it with mutually exclusive positive/negative NGSW controls. Fourier uses a native basis and both controls must use the engine's exact FFT table instance and torus scale. The exponent is already quantized into `0..2N`; its negative is derived internally. The NTRU TFHE backends use this primitive for classic ternary blind rotation.
 
 Decryption returns coefficient polynomials with the ciphertext coefficient type `T`; applications handle any output type conversion.
 
-Evaluation keys own their decomposition basis. Reusable evaluation contexts contain only work buffers. Owning public operations validate all supplied sizes, moduli and transform/workspace lengths before output writes; the corresponding low-level lattice kernels rely on those contracts. Actual secret-key identity, canonical input residues and sufficient noise budgets remain caller obligations.
+Evaluation keys own their decomposition basis. Reusable evaluation workspaces contain only work buffers. Owning public operations validate all supplied sizes, moduli and transform/workspace lengths before output writes; the corresponding low-level lattice kernels rely on those contracts. Actual secret-key identity, canonical input residues and sufficient noise budgets remain caller obligations.
 
 Automorphism uses odd `d` in `[1, 2N)`. It stores `NLev_f[f(X^d)]` to switch the permuted secret back to `f`. No inverse of `f(X^d)` is generated. Signed secrets are encoded before modular permutation. Transformed inputs still need coefficient recovery for decomposition; transformed outputs avoid the final inverse transform. NLev rows can each use scalar automorphism, but applying it row-wise to NGSW does **not** preserve the NGSW message/key relation.
 
@@ -69,7 +69,7 @@ Sample extraction, NLev/NGSW external products and CMUX live in [`primus_lattice
 
 `NtruLweKeySwitchingKey::generate(f, Q, s, lwe_parameters, basis, rng)` prepares conversion from the signed NTRU secret f to an independently generated `primus_lwe::LweSecretKey` s. The parameters and basis use target modulus q; s may have a different dimension and need not extend to an invertible NTRU secret. Each signed coefficient of f must have magnitude below an explicit q; generation checks this before sampling.
 
-Create `NtruLweKeySwitchingContext::new(N)` once, then call `key_switch_to` for the constant term or `key_switch_at_to(input, index, output, q, context)` for another coefficient. Inputs are coefficient-domain NTRU ciphertexts; recover NTT/Fourier outputs to coefficients first. Every call overwrites the output and a single N+1-element intermediate LWE buffer without allocating. Length, index and target-modulus checks precede output and scratch writes.
+Create `NtruLweKeySwitchingWorkspace::new(N)` once, then call `key_switch_to` for the constant term or `key_switch_at_to(input, index, output, q, workspace)` for another coefficient. Inputs are coefficient-domain NTRU ciphertexts; recover NTT/Fourier outputs to coefficients first. Every call overwrites the output and a single N+1-element intermediate LWE buffer without allocating. Length, index and target-modulus checks precede output and scratch writes.
 
 The operation rounds each coefficient as `c' = round(q*c/Q) mod q` (nearest, ties upward), extracts `b=0`, `a[i]=-c'[index-i]` for `i<=index` and `a[i]=c'[N+index-i]` otherwise, then key-switches at q. Extraction uses the signed coefficient vector of f with LWE phase `b-<a,f>=(f*c')[index]`. Rounding must precede extraction negation: negating first can change half-tie results. Modulus switching and extraction are fused into one scratch write, reusing `primus_modulus::ModulusSwitch` and `primus_lwe::LweKeySwitchingKey`.
 
@@ -85,7 +85,7 @@ Reverse steps visit degrees `2r+1, 4r+1, ..., N+1`. The remaining steps project 
 
 ## Same-secret scheme switching
 
-`NttNtruSchemeSwitchKey` / `FourierNtruSchemeSwitchKey` convert coefficient `NLev_f[m]` to transformed `NGSW_f[m]`. Their `key_basis` decomposes each input polynomial; their independent `output_basis` specifies the input/output scalars and level count. Reuse the existing external-product context. Inputs must already use that output basis; matching lengths alone cannot establish it.
+`NttNtruSchemeSwitchKey` / `FourierNtruSchemeSwitchKey` convert coefficient `NLev_f[m]` to transformed `NGSW_f[m]`. Their `key_basis` decomposes each input polynomial; their independent `output_basis` specifies the input/output scalars and level count. Reuse the existing external-product workspace. Inputs must already use that output basis; matching lengths alone cannot establish it.
 
 The stored evaluation key is `NGSW_f[f]`. It is generated by encrypting f, without explicitly forming a signed polynomial square. Input errors are multiplied by f, decomposition errors by f², and evaluation-key/FFT errors also contribute. Publishing this secret-dependent key needs a justified key-dependent-message/circular-security assumption and suitable parameters. The algebra and functional tests provide neither a security proof nor a CBS parameter recommendation. The output can control CMUX when m is a bit.
 

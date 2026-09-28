@@ -1,4 +1,4 @@
-use primus_glwe::{GlweCiphertext, NttGlweKeySwitchingContext};
+use primus_glwe::{GlweCiphertext, NttGlweKeySwitchingWorkspace};
 use primus_integer::FheUint;
 use primus_lwe::LweCiphertext;
 use primus_ntt::MonomialNttTable;
@@ -9,8 +9,8 @@ use primus_tfhe::{
 use primus_tfhe_glwe::PbsOrder;
 
 use crate::{
-    BootstrappingKey, NttGlweBlindRotationContext, NttGlweBootstrappingKey, ServerKey,
-    SparseGlweBlindRotationContext, SparseGlweBootstrappingKey, TfheContext,
+    BootstrappingKey, NttGlweBlindRotationWorkspace, NttGlweBootstrappingKey, ServerKey,
+    SparseGlweBlindRotationWorkspace, SparseGlweBootstrappingKey, TfheContext,
     error::TfheEvaluationError,
 };
 
@@ -31,7 +31,7 @@ where
 }
 
 struct KeySwitchingWorkspace<T: FheUint> {
-    context: NttGlweKeySwitchingContext<T>,
+    context: NttGlweKeySwitchingWorkspace<T>,
     switched: GlweCiphertext<Vec<T>>,
     small_lwe: LweCiphertext<T>,
 }
@@ -39,7 +39,7 @@ struct KeySwitchingWorkspace<T: FheUint> {
 impl<T: FheUint> KeySwitchingWorkspace<T> {
     fn new(parameters: &crate::TfheParameters<T>) -> Self {
         Self {
-            context: NttGlweKeySwitchingContext::new(
+            context: NttGlweKeySwitchingWorkspace::new(
                 parameters.glwe_key_switching().output().glwe_size(),
             ),
             switched: GlweCiphertext::zero(parameters.glwe_key_switching().output().glwe_len()),
@@ -53,11 +53,11 @@ impl<T: FheUint> KeySwitchingWorkspace<T> {
 enum BlindRotation<'a, T: FheUint> {
     Classic {
         key: &'a NttGlweBootstrappingKey<T, primus_modulus::BarrettModulus<T>>,
-        scratch: NttGlweBlindRotationContext<T>,
+        scratch: NttGlweBlindRotationWorkspace<T>,
     },
     Sparse {
         key: &'a SparseGlweBootstrappingKey<T>,
-        scratch: SparseGlweBlindRotationContext<T>,
+        scratch: SparseGlweBlindRotationWorkspace<T>,
     },
 }
 
@@ -150,11 +150,11 @@ where
             blind_rotation: match server_key.bootstrapping_key() {
                 BootstrappingKey::Classic(key) => BlindRotation::Classic {
                     key,
-                    scratch: NttGlweBlindRotationContext::new(key),
+                    scratch: NttGlweBlindRotationWorkspace::new(key),
                 },
                 BootstrappingKey::Sparse(key) => BlindRotation::Sparse {
                     key,
-                    scratch: SparseGlweBlindRotationContext::new(key),
+                    scratch: SparseGlweBlindRotationWorkspace::new(key),
                 },
             },
             key_switching: with_key_switching.then(|| KeySwitchingWorkspace::new(parameters)),
@@ -165,7 +165,7 @@ where
     pub(crate) fn with_external_product<R>(
         &mut self,
         size: primus_lattice::GadgetSize,
-        operation: impl FnOnce(&mut primus_lattice::context::NttGlweExternalProductContext<T>) -> R,
+        operation: impl FnOnce(&mut primus_lattice::workspace::NttGlweExternalProductWorkspace<T>) -> R,
     ) -> R {
         match &mut self.blind_rotation {
             BlindRotation::Classic { scratch, .. } => {

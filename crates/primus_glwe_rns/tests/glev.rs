@@ -1,8 +1,8 @@
 use primus_glwe_rns::{
-    CrtGlevParameters, CrtGlweParameters, DcrtGadgetDomain, DcrtGlweDecryptContext,
+    CrtGlevParameters, CrtGlweParameters, DcrtGadgetDomain, DcrtGlweDecryptWorkspace,
     DcrtGlweSecretKey, GlweSecretKey, SecretKeyDistr,
 };
-use primus_lattice::{context::DcrtGlevMulContext, glev::DcrtGlev, glwe::DcrtGlwe};
+use primus_lattice::{glev::DcrtGlev, glwe::DcrtGlwe, workspace::DcrtGlevMulWorkspace};
 use primus_modulus::BarrettModulus;
 use primus_ntt::UintDcrtTable;
 use primus_poly::{BigUintPolynomial, CrtPolynomial, Polynomial};
@@ -62,8 +62,8 @@ fn test_rns_glev() {
     let domain = DcrtGadgetDomain::try_new(&glev_params, &table).unwrap();
     let rns_glev_len = glev_params.rns_glev_len();
 
-    let mut decrypt_context = DcrtGlweDecryptContext::new(glwe_params.size());
-    let mut glev_context = DcrtGlevMulContext::new(glev_params.size(), glev_params.base_q());
+    let mut decrypt_workspace = DcrtGlweDecryptWorkspace::new(glwe_params.size());
+    let mut glev_workspace = DcrtGlevMulWorkspace::new(glev_params.size(), glev_params.base_q());
 
     let mut dcrt_glev: DcrtGlev<Vec<ValueT>> = DcrtGlev::zero(rns_glev_len);
 
@@ -99,7 +99,7 @@ fn test_rns_glev() {
         &msg2,
         &mut msg2_big_uint_poly,
         poly_length,
-        glev_context.compose_buffer_mut(),
+        glev_workspace.compose_buffer_mut(),
     );
 
     let mut c1: DcrtGlwe<Vec<ValueT>> = DcrtGlwe::zero(rns_glwe_len);
@@ -110,15 +110,15 @@ fn test_rns_glev() {
         glev_params.basis(),
         &table,
         base_q,
-        &mut glev_context,
+        &mut glev_workspace,
     );
 
-    let m_dec = dcrt_sk.decrypt(&c1, &glwe_params, &table, &mut decrypt_context);
+    let m_dec = dcrt_sk.decrypt(&c1, &glwe_params, &table, &mut decrypt_workspace);
 
     assert_eq!(m_dec, desired);
 
     // Reuse the dirty workspace. A zero product must overwrite scratch data
-    // without changing the accumulator or requiring a separate context reset.
+    // without changing the accumulator or requiring a separate workspace reset.
     let previous = c1.clone();
     msg2_big_uint_poly.as_mut_slice().fill(0);
     c1.add_dcrt_glev_mul_big_uint_polynomial_assign(
@@ -127,7 +127,7 @@ fn test_rns_glev() {
         glev_params.basis(),
         &table,
         base_q,
-        &mut glev_context,
+        &mut glev_workspace,
     );
     assert_eq!(c1.as_ref(), previous.as_ref());
 }

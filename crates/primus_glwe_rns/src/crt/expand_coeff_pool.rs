@@ -5,20 +5,20 @@ use primus_lattice::glwe::CrtGlwe;
 use primus_ntt::NttTable;
 use primus_reduce::FieldContext;
 
-use crate::{CrtGlweAutoContext, CrtGlweTraceContext, DcrtGadgetDomain};
+use crate::{CrtGlweAutomorphismWorkspace, CrtGlweTraceWorkspace, DcrtGadgetDomain};
 
 /// Reusable workspace for serial CRT coefficient expansion.
-pub type CrtGlweExpandCoeffContext<T> = CrtGlweTraceContext<T>;
+pub type CrtGlweExpandCoeffWorkspace<T> = CrtGlweTraceWorkspace<T>;
 
 /// Preallocated, thread-safe workspace pool for parallel coefficient expansion.
 ///
-/// Contexts are returned to the pool after each worker finishes. Parallel
+/// Workspaces are returned to the pool after each worker finishes. Parallel
 /// expansion performs no pool allocation. All workspaces are constructed from
 /// one domain. Callers must use a domain with the same gadget layout and RNS
 /// big-integer limb width when running expansion; acquiring a workspace does
 /// not rebind or validate it.
 pub struct CrtGlweExpandCoeffSyncPool<T: FheUint> {
-    contexts: Mutex<Vec<CrtGlweExpandCoeffContext<T>>>,
+    workspaces: Mutex<Vec<CrtGlweExpandCoeffWorkspace<T>>>,
 }
 
 impl<T: FheUint> CrtGlweExpandCoeffSyncPool<T> {
@@ -31,7 +31,7 @@ impl<T: FheUint> CrtGlweExpandCoeffSyncPool<T> {
         Self::with_capacity(rayon::current_num_threads(), domain)
     }
 
-    /// Creates a pool containing exactly `capacity` preallocated contexts.
+    /// Creates a pool containing exactly `capacity` preallocated workspaces.
     ///
     /// `capacity` must cover the number of workers that can run concurrently.
     /// Prefer [`Self::new`] unless a custom Rayon pool has a known smaller size.
@@ -44,49 +44,51 @@ impl<T: FheUint> CrtGlweExpandCoeffSyncPool<T> {
         Table: NttTable<ValueT = T>,
     {
         let parameters = domain.parameters();
-        let contexts = (0..capacity)
-            .map(|_| CrtGlweExpandCoeffContext::from_parameters(parameters))
+        let workspaces = (0..capacity)
+            .map(|_| CrtGlweExpandCoeffWorkspace::from_parameters(parameters))
             .collect();
         Self {
-            contexts: Mutex::new(contexts),
+            workspaces: Mutex::new(workspaces),
         }
     }
 
-    fn acquire(&self) -> CrtGlweExpandCoeffContext<T> {
-        self.contexts
+    fn acquire(&self) -> CrtGlweExpandCoeffWorkspace<T> {
+        self.workspaces
             .lock()
             .unwrap()
             .pop()
-            .expect("CRT expansion context pool capacity is smaller than its parallel demand")
+            .expect("CRT expansion workspace pool capacity is smaller than its parallel demand")
     }
 
-    fn release(&self, context: CrtGlweExpandCoeffContext<T>) {
-        self.contexts.lock().unwrap().push(context);
+    fn release(&self, workspace: CrtGlweExpandCoeffWorkspace<T>) {
+        self.workspaces.lock().unwrap().push(workspace);
     }
 
     pub(super) fn acquire_guard(&self) -> CrtPoolGuard<'_, T> {
         CrtPoolGuard {
-            context: Some(self.acquire()),
+            workspace: Some(self.acquire()),
             pool: self,
         }
     }
 }
 
 pub(super) struct CrtPoolGuard<'a, T: FheUint> {
-    context: Option<CrtGlweExpandCoeffContext<T>>,
+    workspace: Option<CrtGlweExpandCoeffWorkspace<T>>,
     pool: &'a CrtGlweExpandCoeffSyncPool<T>,
 }
 
 impl<T: FheUint> CrtPoolGuard<'_, T> {
-    pub(super) fn as_mut(&mut self) -> (&mut CrtGlwe<Vec<T>>, &mut CrtGlweAutoContext<T>) {
-        self.context.as_mut().unwrap().as_mut()
+    pub(super) fn as_mut(
+        &mut self,
+    ) -> (&mut CrtGlwe<Vec<T>>, &mut CrtGlweAutomorphismWorkspace<T>) {
+        self.workspace.as_mut().unwrap().as_mut()
     }
 }
 
 impl<T: FheUint> Drop for CrtPoolGuard<'_, T> {
     fn drop(&mut self) {
-        if let Some(context) = self.context.take() {
-            self.pool.release(context);
+        if let Some(workspace) = self.workspace.take() {
+            self.pool.release(workspace);
         }
     }
 }

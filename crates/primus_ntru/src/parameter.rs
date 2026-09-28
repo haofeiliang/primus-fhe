@@ -123,7 +123,7 @@ where
         self.poly_length
     }
 
-    /// Returns the ciphertext modulus context.
+    /// Returns the ciphertext modulus workspace.
     #[inline]
     pub fn cipher_modulus(&self) -> M {
         self.cipher_modulus

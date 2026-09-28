@@ -9,14 +9,14 @@ use primus_lattice::{
     ntru::Ntru,
 };
 use primus_modulus::NativeModulus;
-use primus_ntru::FourierNtruExternalProductContext;
+use primus_ntru::FourierNtruExternalProductWorkspace;
 use primus_poly::Polynomial;
 
 pub(crate) struct SparseWorkspace<T: TorusFftValue> {
     pub(crate) exponents: Vec<usize>,
     aggregate: Vec<T>,
     transformed: Vec<Complex64>,
-    pub(crate) external_product: FourierNtruExternalProductContext<T>,
+    pub(crate) external_product: FourierNtruExternalProductWorkspace<T>,
 }
 
 impl<T: TorusFftValue> SparseWorkspace<T> {
@@ -27,7 +27,7 @@ impl<T: TorusFftValue> SparseWorkspace<T> {
             exponents: vec![0; parameters.external_lwe_dimension()],
             aggregate: vec![T::ZERO; parameters.blind_rotation().nlev_len()],
             transformed: vec![Complex64::ZERO; parameters.blind_rotation().fourier_nlev_len()],
-            external_product: FourierNtruExternalProductContext::new(parameters.poly_length()),
+            external_product: FourierNtruExternalProductWorkspace::new(parameters.poly_length()),
         }
     }
 }

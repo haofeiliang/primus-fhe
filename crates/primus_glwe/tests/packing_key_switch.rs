@@ -1,8 +1,8 @@
 use primus_fft::{FftEngine, FftTable, RustFftTable, TfheFftTable};
 use primus_glwe::{
-    FourierGadgetEncryptContext, FourierGlweKeySwitchingContext, FourierGlweSecretKey,
+    FourierGlweGadgetEncryptWorkspace, FourierGlweKeySwitchingWorkspace, FourierGlweSecretKey,
     FourierLwePackingKeySwitchingKey, GlevParameters, GlweParameters, GlweSecretKey, GlweSize,
-    NttGadgetEncryptContext, NttGlweKeySwitchingContext, NttGlweSecretKey,
+    NttGlweGadgetEncryptWorkspace, NttGlweKeySwitchingWorkspace, NttGlweSecretKey,
     NttLwePackingKeySwitchingKey, SecretKeyDistr,
 };
 use primus_lattice::{glwe::Glwe, lwe::Lwe};
@@ -91,19 +91,19 @@ fn ntt_packing(log_basis: u32, levels: usize) {
         &glev,
         &ntt,
         &mut rng,
-        &mut NttGadgetEncryptContext::new(glev.size()),
+        &mut NttGlweGadgetEncryptWorkspace::new(glev.size()),
     );
     let batch = inputs(
         u128::from(Q),
         glev.basis().scalar_iter().last().unwrap(),
         &mut rng,
     );
-    let mut context = NttGlweKeySwitchingContext::new(params.size());
+    let mut workspace = NttGlweKeySwitchingWorkspace::new(params.size());
     check_packing(u128::from(Q), &batch, |input, output| {
         if input.len() == INPUT_SECRET.len() + 1 {
-            key.key_switch_to(&Lwe::new(input), output, modulus, &ntt, &mut context);
+            key.key_switch_to(&Lwe::new(input), output, modulus, &ntt, &mut workspace);
         } else {
-            key.pack_lwes_to(input, output, modulus, &ntt, &mut context);
+            key.pack_lwes_to(input, output, modulus, &ntt, &mut workspace);
         }
     });
     let wrong_modulus = BarrettModulus::new(132_120_577u64);
@@ -117,10 +117,10 @@ fn ntt_packing(log_basis: u32, levels: usize) {
         (modulus, &ntt, GlweSize::new(K, 2 * N)),
     ] {
         let mut output = Glwe::new(vec![7; params.glwe_len()]);
-        let mut context = NttGlweKeySwitchingContext::new(size);
+        let mut workspace = NttGlweKeySwitchingWorkspace::new(size);
         assert!(
             std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                key.pack_lwes_to(&batch, &mut output, modulus, table, &mut context);
+                key.pack_lwes_to(&batch, &mut output, modulus, table, &mut workspace);
             }))
             .is_err()
         );
@@ -158,19 +158,19 @@ fn fourier_packing<Table: FftTable>(log_basis: u32, levels: usize) {
         &glev,
         &mut fft,
         &mut rng,
-        &mut FourierGadgetEncryptContext::new(glev.size()),
+        &mut FourierGlweGadgetEncryptWorkspace::new(glev.size()),
     );
     let batch = inputs(
         1u128 << 64,
         glev.basis().scalar_iter().last().unwrap(),
         &mut rng,
     );
-    let mut context = FourierGlweKeySwitchingContext::new(params.size());
+    let mut workspace = FourierGlweKeySwitchingWorkspace::new(params.size());
     check_packing(1u128 << 64, &batch, |input, output| {
         if input.len() == INPUT_SECRET.len() + 1 {
-            key.key_switch_to(&Lwe::new(input), output, &mut fft, &mut context);
+            key.key_switch_to(&Lwe::new(input), output, &mut fft, &mut workspace);
         } else {
-            key.pack_lwes_to(input, output, &mut fft, &mut context);
+            key.pack_lwes_to(input, output, &mut fft, &mut workspace);
         }
     });
     let wrong_table = Table::new((2 * N).trailing_zeros()).unwrap();
@@ -180,10 +180,10 @@ fn fourier_packing<Table: FftTable>(log_basis: u32, levels: usize) {
         (&mut fft, GlweSize::new(K + 1, N)),
     ] {
         let mut output = Glwe::new(vec![7; params.glwe_len()]);
-        let mut context = FourierGlweKeySwitchingContext::new(size);
+        let mut workspace = FourierGlweKeySwitchingWorkspace::new(size);
         assert!(
             std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                key.pack_lwes_to(&batch, &mut output, fft, &mut context);
+                key.pack_lwes_to(&batch, &mut output, fft, &mut workspace);
             }))
             .is_err()
         );

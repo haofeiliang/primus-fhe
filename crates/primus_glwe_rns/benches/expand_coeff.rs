@@ -3,9 +3,9 @@ use std::hint::black_box;
 
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use primus_glwe_rns::{
-    CrtGlevParameters, CrtGlweExpandCoeffContext, CrtGlweExpandCoeffKey,
-    CrtGlweExpandCoeffSyncPool, CrtGlweParameters, DcrtGadgetDomain, DcrtGlweCiphertext,
-    DcrtGlweExpandCoeffContext, DcrtGlweExpandCoeffKey, DcrtGlweExpandCoeffSyncPool,
+    CrtGlevParameters, CrtGlweExpandCoeffKey, CrtGlweExpandCoeffSyncPool,
+    CrtGlweExpandCoeffWorkspace, CrtGlweParameters, DcrtGadgetDomain, DcrtGlweCiphertext,
+    DcrtGlweExpandCoeffKey, DcrtGlweExpandCoeffSyncPool, DcrtGlweExpandCoeffWorkspace,
     DcrtGlweSecretKey, GlweSecretKey, SecretKeyDistr,
 };
 use primus_lattice::glwe::{CrtGlwe, DcrtGlwe};
@@ -85,8 +85,8 @@ fn bench_expand_coeff(c: &mut Criterion) {
         let mut dcrt_result: Vec<DcrtGlweCiphertext<Vec<V>>> =
             vec![DcrtGlweCiphertext::zero(rns_glwe_len); poly_length];
 
-        let mut crt_ctx = CrtGlweExpandCoeffContext::new(&domain);
-        let mut dcrt_ctx = DcrtGlweExpandCoeffContext::new(&domain);
+        let mut crt_ctx = CrtGlweExpandCoeffWorkspace::new(&domain);
+        let mut dcrt_ctx = DcrtGlweExpandCoeffWorkspace::new(&domain);
 
         let crt_pool = CrtGlweExpandCoeffSyncPool::with_capacity(current_num_threads, &domain);
         let dcrt_pool = DcrtGlweExpandCoeffSyncPool::with_capacity(current_num_threads, &domain);

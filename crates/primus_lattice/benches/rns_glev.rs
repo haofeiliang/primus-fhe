@@ -6,8 +6,8 @@ mod support;
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use primus_decompose::big_integer::BigUintApproxSignedBasis;
 use primus_lattice::{
-    GlweSize, RnsGadgetSize, RnsGlweSize, context::DcrtGlevMulContext, glev::CrtGlev,
-    glwe::DcrtGlwe,
+    GlweSize, RnsGadgetSize, RnsGlweSize, glev::CrtGlev, glwe::DcrtGlwe,
+    workspace::DcrtGlevMulWorkspace,
 };
 use primus_modulus::BarrettModulus;
 use primus_ntt::U64DcrtTable;
@@ -29,11 +29,11 @@ fn benchmarks(c: &mut Criterion) {
             .into_ntt_form(&table);
         let input = CrtPolynomial::new(support::coefficients(n * count, n, qs, 29));
         let mut big_input = BigUintPolynomial::new(vec![0; n * base.big_uint_value_len()]);
-        let mut context = DcrtGlevMulContext::new(size, &base);
-        base.compose_polynomial_to(&input, &mut big_input, n, context.compose_buffer_mut());
+        let mut workspace = DcrtGlevMulWorkspace::new(size, &base);
+        base.compose_polynomial_to(&input, &mut big_input, n, workspace.compose_buffer_mut());
         let mut output = DcrtGlwe::new(vec![0; glwe_len]);
         // Both entry paths must compute the same product. Check outside timing.
-        key.mul_crt_polynomial_to(&input, &mut output, &basis, &table, &base, &mut context);
+        key.mul_crt_polynomial_to(&input, &mut output, &basis, &table, &base, &mut workspace);
         let expected = output.clone();
         key.mul_big_uint_polynomial_to(
             &big_input,
@@ -41,7 +41,7 @@ fn benchmarks(c: &mut Criterion) {
             &basis,
             &table,
             &base,
-            &mut context,
+            &mut workspace,
         );
         assert_eq!(output.as_ref(), expected.as_ref());
 
@@ -57,7 +57,7 @@ fn benchmarks(c: &mut Criterion) {
                     black_box(&basis),
                     black_box(&table),
                     black_box(&base),
-                    black_box(&mut context),
+                    black_box(&mut workspace),
                 )
             })
         });
@@ -69,7 +69,7 @@ fn benchmarks(c: &mut Criterion) {
                     black_box(&basis),
                     black_box(&table),
                     black_box(&base),
-                    black_box(&mut context),
+                    black_box(&mut workspace),
                 )
             })
         });
@@ -83,7 +83,7 @@ fn benchmarks(c: &mut Criterion) {
                     black_box(&basis),
                     black_box(&table),
                     black_box(&base),
-                    black_box(&mut context),
+                    black_box(&mut workspace),
                 )
             })
         });

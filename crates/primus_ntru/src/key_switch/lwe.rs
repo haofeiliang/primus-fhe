@@ -117,13 +117,13 @@ impl<T: FheUint> NtruLweKeySwitchingKey<T> {
         input: &NtruCiphertext<A>,
         output: &mut Lwe<B>,
         modulus: M,
-        context: &mut NtruLweKeySwitchingContext<T>,
+        workspace: &mut NtruLweKeySwitchingWorkspace<T>,
     ) where
         M: RingContext<T>,
         A: Data<Elem = T>,
         B: DataMut<Elem = T>,
     {
-        self.key_switch_at_to(input, 0, output, modulus, context);
+        self.key_switch_at_to(input, 0, output, modulus, workspace);
     }
 
     /// Switches coefficient `index` of the NTRU phase into an LWE at q.
@@ -145,7 +145,7 @@ impl<T: FheUint> NtruLweKeySwitchingKey<T> {
     /// This operation does not decode or re-encode plaintexts.
     ///
     /// # Panics
-    /// Panics before modifying output or scratch if input/output/context lengths,
+    /// Panics before modifying output or scratch if input/output/workspace lengths,
     /// index, or the target modulus do not match this key.
     pub fn key_switch_at_to<M, A, B>(
         &self,
@@ -153,7 +153,7 @@ impl<T: FheUint> NtruLweKeySwitchingKey<T> {
         index: usize,
         output: &mut Lwe<B>,
         modulus: M,
-        context: &mut NtruLweKeySwitchingContext<T>,
+        workspace: &mut NtruLweKeySwitchingWorkspace<T>,
     ) where
         M: RingContext<T>,
         A: Data<Elem = T>,
@@ -168,7 +168,7 @@ impl<T: FheUint> NtruLweKeySwitchingKey<T> {
             "target LWE ciphertext length mismatch"
         );
         assert_eq!(
-            context.poly_length(),
+            workspace.poly_length(),
             n,
             "NTRU to LWE workspace length mismatch"
         );
@@ -179,7 +179,7 @@ impl<T: FheUint> NtruLweKeySwitchingKey<T> {
         );
 
         let coefficients = input.as_ref();
-        let (mask, body) = context.extracted.a_b_mut();
+        let (mask, body) = workspace.extracted.a_b_mut();
         *body = T::ZERO;
         let (negative, wrapped) = mask.split_at_mut(index + 1);
         // Switch unsigned coefficients before applying the extraction sign.
@@ -192,7 +192,7 @@ impl<T: FheUint> NtruLweKeySwitchingKey<T> {
             |value, out| *out = value,
         );
         self.key_switch
-            .key_switch_to(&context.extracted, output, modulus);
+            .key_switch_to(&workspace.extracted, output, modulus);
     }
 }
 
@@ -200,11 +200,11 @@ impl<T: FheUint> NtruLweKeySwitchingKey<T> {
 ///
 /// Owns one `N+1`-element intermediate LWE at q. It contains only ciphertext
 /// coefficients and no secret-key data. Each evaluation overwrites all entries.
-pub struct NtruLweKeySwitchingContext<T: FheUint> {
-    extracted: Lwe<Vec<T>>,
+pub struct NtruLweKeySwitchingWorkspace<T: FheUint> {
+    extracted: Lwe<Box<[T]>>,
 }
 
-impl<T: FheUint> NtruLweKeySwitchingContext<T> {
+impl<T: FheUint> NtruLweKeySwitchingWorkspace<T> {
     /// Allocates workspace for an input NTRU polynomial of length N.
     ///
     /// # Panics

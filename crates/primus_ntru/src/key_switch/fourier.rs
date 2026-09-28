@@ -1,7 +1,7 @@
 //! Native-torus Fourier key switching.
 
 use crate::{
-    FourierNtruExternalProductContext, FourierNtruGadgetEncryptContext, FourierNtruSecretKey,
+    FourierNtruExternalProductWorkspace, FourierNtruGadgetEncryptWorkspace, FourierNtruSecretKey,
     NlevParameters, NtruCiphertext, NtruSecretKey,
 };
 use primus_data::{Data, DataMut};
@@ -45,7 +45,7 @@ impl<T: TorusFftValue> FourierNtruKeySwitchingKey<T> {
         parameters: &NlevParameters<T, NativeModulus<T>>,
         fft: &mut FftEngine<'_, Table>,
         rng: &mut R,
-        context: &mut FourierNtruGadgetEncryptContext<T>,
+        workspace: &mut FourierNtruGadgetEncryptWorkspace<T>,
     ) -> Self
     where
         Table: FftTable,
@@ -67,7 +67,7 @@ impl<T: TorusFftValue> FourierNtruKeySwitchingKey<T> {
             parameters,
             fft,
             rng,
-            context,
+            workspace,
         )
     }
 
@@ -79,7 +79,7 @@ impl<T: TorusFftValue> FourierNtruKeySwitchingKey<T> {
         parameters: &NlevParameters<T, NativeModulus<T>>,
         fft: &mut FftEngine<'_, Table>,
         rng: &mut R,
-        context: &mut FourierNtruGadgetEncryptContext<T>,
+        workspace: &mut FourierNtruGadgetEncryptWorkspace<T>,
     ) -> Self
     where
         Table: FftTable,
@@ -92,7 +92,7 @@ impl<T: TorusFftValue> FourierNtruKeySwitchingKey<T> {
             parameters,
             fft,
             rng,
-            context,
+            workspace,
         );
         Self {
             data,
@@ -140,7 +140,7 @@ impl<T: TorusFftValue> FourierNtruKeySwitchingKey<T> {
         input: &NtruCiphertext<A>,
         output: &mut NtruCiphertext<B>,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierNtruExternalProductContext<T>,
+        workspace: &mut FourierNtruExternalProductWorkspace<T>,
     ) where
         Table: FftTable,
         A: Data<Elem = T>,
@@ -156,18 +156,18 @@ impl<T: TorusFftValue> FourierNtruKeySwitchingKey<T> {
             self.poly_length,
             "key-switch output length mismatch"
         );
-        self.assert_compatible(fft, context);
-        self.key_switch_kernel_to(input, output, fft, context);
+        self.assert_compatible(fft, workspace);
+        self.key_switch_kernel_to(input, output, fft, workspace);
     }
 
     /// Validates resources shared by standalone and automorphism key switching.
     pub(crate) fn assert_compatible<Table: FftTable>(
         &self,
         fft: &FftEngine<'_, Table>,
-        context: &FourierNtruExternalProductContext<T>,
+        workspace: &FourierNtruExternalProductWorkspace<T>,
     ) {
         assert_eq!(
-            context.poly_length(),
+            workspace.poly_length(),
             self.poly_length,
             "key-switch workspace length mismatch"
         );
@@ -184,7 +184,7 @@ impl<T: TorusFftValue> FourierNtruKeySwitchingKey<T> {
         input: &NtruCiphertext<A>,
         output: &mut NtruCiphertext<B>,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierNtruExternalProductContext<T>,
+        workspace: &mut FourierNtruExternalProductWorkspace<T>,
     ) where
         Table: FftTable,
         A: Data<Elem = T>,
@@ -195,7 +195,7 @@ impl<T: TorusFftValue> FourierNtruKeySwitchingKey<T> {
             output,
             &self.basis,
             fft,
-            context,
+            workspace,
         );
     }
 
@@ -206,14 +206,14 @@ impl<T: TorusFftValue> FourierNtruKeySwitchingKey<T> {
         &self,
         input: &NtruCiphertext<A>,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierNtruExternalProductContext<T>,
+        workspace: &mut FourierNtruExternalProductWorkspace<T>,
     ) -> NtruCiphertext<Vec<T>>
     where
         Table: FftTable,
         A: Data<Elem = T>,
     {
         let mut output = NtruCiphertext::zero(self.poly_length);
-        self.key_switch_to(input, &mut output, fft, context);
+        self.key_switch_to(input, &mut output, fft, workspace);
         output
     }
 }

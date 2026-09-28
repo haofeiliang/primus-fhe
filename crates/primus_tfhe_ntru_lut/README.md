@@ -78,6 +78,8 @@ One NLEV/NGSW selector occupies L*N ring values in NTT form or L*N/2 complex val
 
 Each selected, rotated polynomial returns through the existing NTRU-to-LWE key: coefficient-wise Q→q, phase extraction, then key switching to the external secret. The output approximates the q-domain chunk encoding; double-rounding and return errors require a decoding budget.
 
+Table selection and rotation reuse the one-hot evaluator's external-product workspace; Fourier also reuses its FFT engine. These serial stages need no separate transform or decomposition buffers. Scratch contents are overwritten before reuse, and each evaluator still owns independent mutable workspace.
+
 ## Numerical limits and validation
 
 Inputs inherit the [one-hot guard](../primus_tfhe_ntru/README.md#one-hot-cbs), including encryption, encoding and per-coordinate quantization errors. CBS and each selection/rotation external product introduce additional error; Fourier also uses native trace halving and FFT rounding. Public lifting must resolve the LUT scale. Shape checks and successful functional tests do not certify security, production parameters or failure probability.

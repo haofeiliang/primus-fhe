@@ -77,17 +77,17 @@ NLev/NGSW 的单多项式外积可以写出系数，也可以通过 `external_pr
 
 | 工作区 | 绑定的内容 |
 | --- | --- |
-| `FourierGlweExternalProductContext` / `NttGlweExternalProductContext` | 通过 `GadgetSize` 绑定 GLWE 布局和分解层数 |
-| `NttGlweTernaryCmuxContext` / `FourierGlweTernaryCmuxContext` | 固定的 `GadgetSize`；组合 GGSW、单项式变换和外积工作区 |
-| `FourierNtruExternalProductContext` / `NttNtruExternalProductContext` | 标量 NTRU gadget product 的多项式长度 |
-| `NttNtruCmuxContext` / `FourierNtruCmuxContext` | 固定多项式长度和层数；首次提升及三元 CMUX 共用的 NLEV/NGSW 组合缓冲和外积 scratch |
-| `DcrtGlevMulContext` | RNS gadget 布局和 BigUint limb 宽度要求 |
+| `FourierGlweExternalProductWorkspace` / `NttGlweExternalProductWorkspace` | 通过 `GadgetSize` 绑定 GLWE 布局和分解层数 |
+| `NttGlweTernaryCmuxWorkspace` / `FourierGlweTernaryCmuxWorkspace` | 固定的 `GadgetSize`；组合 GGSW、单项式变换和外积工作区 |
+| `FourierNtruExternalProductWorkspace` / `NttNtruExternalProductWorkspace` | 标量 NTRU gadget product 的多项式长度 |
+| `NttNtruCmuxWorkspace` / `FourierNtruCmuxWorkspace` | 固定多项式长度和层数；首次提升及三元 CMUX 共用的 NLEV/NGSW 组合缓冲和外积 scratch |
+| `DcrtGlevMulWorkspace` | RNS gadget 布局和 BigUint limb 宽度要求 |
 
-Context 提供可复用 scratch，不是已经验证的 basis/table/modulus domain。GLWE 外积 context 支持在 GLWE 形状不变时 `rebind`，以及缓冲区大小变化时 `resize`。DCRT 的兼容性还包括 RNS 模数乘积的 limb 宽度。拥有参数的调用方必须先建立兼容性，再进入内核。
+Workspace 提供可复用 scratch，不是已经验证的 basis/table/modulus domain。GLWE 外积 workspace 支持在 GLWE 形状不变时 `rebind`，以及缓冲区大小变化时 `resize`。DCRT 的兼容性还包括 RNS 模数乘积的 limb 宽度。拥有参数的调用方必须先建立兼容性，再进入内核。
 
 覆盖式外积会初始化累加器，其他 scratch 也会先写后读，因此合法调用之间不需要手动 reset。累加接口保留原输出，要求输出已初始化。CMUX 的选择语义还要求控制密文加密比特；`cmux_k_to` 要求至多一个控制比特为一。噪声增长和可解密性仍由更高层负责。
 
-`positive.cmux_ternary_monomial_to(&negative, ...)` 以互斥的加密比特 `s⁺, s⁻` 旋转得到 `X^(exponent * (s⁺-s⁻))` 倍的输入。两份控制使用相同的密钥、 basis，以及 NTT 表或同一个 FFT 表实例。Fourier 控制使用 native-torus 缩放与对应的 native basis。指数已经量化到 `0..2N`；零指数精确复制输入。在线运算复用 context， 不分配内存。这是 lattice 单步原语；完整 GLWE TFHE ternary 密钥生成与求值见 [家族接口](../primus_tfhe_glwe/README.zh_CN.md)。 NGSW 形式支持 NTT 和 Fourier；完整 NTRU 接入见 [家族接口](../primus_tfhe_ntru/README.zh_CN.md)。
+`positive.cmux_ternary_monomial_to(&negative, ...)` 以互斥的加密比特 `s⁺, s⁻` 旋转得到 `X^(exponent * (s⁺-s⁻))` 倍的输入。两份控制使用相同的密钥、 basis，以及 NTT 表或同一个 FFT 表实例。Fourier 控制使用 native-torus 缩放与对应的 native basis。指数已经量化到 `0..2N`；零指数精确复制输入。在线运算复用 workspace， 不分配内存。这是 lattice 单步原语；完整 GLWE TFHE ternary 密钥生成与求值见 [家族接口](../primus_tfhe_glwe/README.zh_CN.md)。 NGSW 形式支持 NTT 和 Fourier；完整 NTRU 接入见 [家族接口](../primus_tfhe_ntru/README.zh_CN.md)。
 
 ## 示例
 

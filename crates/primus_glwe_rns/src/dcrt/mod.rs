@@ -8,6 +8,6 @@ mod trace;
 
 pub use automorphism::DcrtGlweAutoKey;
 pub use expand_coeff::DcrtGlweExpandCoeffKey;
-pub use expand_coeff_pool::{DcrtGlweExpandCoeffContext, DcrtGlweExpandCoeffSyncPool};
-pub use rev_trace::{DcrtGlweRevTraceContext, DcrtGlweRevTraceKey};
-pub use trace::{DcrtGlweTraceContext, DcrtGlweTraceKey};
+pub use expand_coeff_pool::{DcrtGlweExpandCoeffSyncPool, DcrtGlweExpandCoeffWorkspace};
+pub use rev_trace::{DcrtGlweRevTraceKey, DcrtGlweRevTraceWorkspace};
+pub use trace::{DcrtGlweTraceKey, DcrtGlweTraceWorkspace};

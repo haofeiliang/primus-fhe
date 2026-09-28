@@ -3,5 +3,5 @@
 mod fourier;
 mod ntt;
 
-pub use fourier::{FourierGlweKeySwitchingContext, FourierGlweKeySwitchingKey};
-pub use ntt::{NttGlweKeySwitchingContext, NttGlweKeySwitchingKey};
+pub use fourier::{FourierGlweKeySwitchingKey, FourierGlweKeySwitchingWorkspace};
+pub use ntt::{NttGlweKeySwitchingKey, NttGlweKeySwitchingWorkspace};

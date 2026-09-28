@@ -6,8 +6,8 @@ mod measurements {
     use criterion::{BatchSize, Criterion};
     use primus_encoding::{PlaintextEmbedding, RoundedCodec};
     use primus_ntru::{
-        NttNlevCiphertext, NttNtruCmuxContext, NttNtruGadgetEncryptContext, NttNtruSecretKey,
-        NttNtruTraceContext,
+        NttNlevCiphertext, NttNtruCmuxWorkspace, NttNtruGadgetEncryptWorkspace, NttNtruSecretKey,
+        NttNtruTraceWorkspace,
     };
     use primus_ntt::U64NttTable;
     use primus_test_allocations::measure;
@@ -127,7 +127,7 @@ mod measurements {
                 black_box(&rotated),
                 &mut output[0],
                 context.parameters().external_lwe().cipher_modulus(),
-                &mut evaluator.return_context,
+                &mut evaluator.return_workspace,
             );
             black_box(output[0].as_ref());
         });
@@ -190,10 +190,10 @@ mod measurements {
             br,
             context.table(),
             &mut rng,
-            &mut NttNtruGadgetEncryptContext::new(N),
+            &mut NttNtruGadgetEncryptWorkspace::new(N),
         );
         let (mut lift, memory) =
-            measure(|| NttNtruCmuxContext::<u64>::new(N, br.decompose_length()));
+            measure(|| NttNtruCmuxWorkspace::<u64>::new(N, br.decompose_length()));
         heap(&format!("{name}/first_lift_workspace"), memory);
         let codec = RoundedCodec::new(8, modulus);
         let messages: Vec<_> = (0..N).map(|i| ((1 + i + i / (N / 4)) % 4) as u64).collect();
@@ -237,7 +237,7 @@ mod measurements {
 
         let trace = server.circuit_bootstrap_key().unwrap().trace_key();
         let trace_input = ring_client.encrypt(&messages, &mut rng);
-        let (mut trace_context, memory) = measure(|| NttNtruTraceContext::new(N));
+        let (mut trace_workspace, memory) = measure(|| NttNtruTraceWorkspace::new(N));
         heap(&format!("{name}/trace_workspace"), memory);
         for retained in [1, 4] {
             trace.apply_reverse_partial_to(
@@ -246,7 +246,7 @@ mod measurements {
                 &mut ring_output,
                 modulus,
                 context.table(),
-                &mut trace_context,
+                &mut trace_workspace,
             );
             ring_client.decrypt_to(&ring_output, &mut decoded);
             for (i, &v) in decoded.iter().enumerate() {
@@ -269,7 +269,7 @@ mod measurements {
                         &mut ring_output,
                         modulus,
                         context.table(),
-                        &mut trace_context,
+                        &mut trace_workspace,
                     );
                     black_box(ring_output.as_ref());
                 },

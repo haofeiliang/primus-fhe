@@ -3,10 +3,10 @@
 use primus_data::{Data, DataMut};
 use primus_fft::{Complex64, FftEngine, FftTable, TorusFftValue};
 use primus_lattice::{
-    context::FourierGlweExternalProductContext,
     ggsw::{FourierGgsw, Ggsw},
     glwe::TorusGlwe,
     lwe::Lwe,
+    workspace::FourierGlweExternalProductWorkspace,
 };
 use primus_poly::Polynomial;
 use primus_tfhe::rotation::RotationQuantizer;
@@ -40,7 +40,7 @@ impl<T: TorusFftValue> SparseGlweBootstrappingKey<T> {
         lookup_table: &Polynomial<B>,
         output: &mut TorusGlwe<C>,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut SparseGlweBlindRotationContext<T>,
+        context: &mut SparseGlweBlindRotationWorkspace<T>,
     ) where
         Table: FftTable,
         A: Data<Elem = T>,
@@ -71,7 +71,7 @@ impl<T: TorusFftValue> SparseGlweBootstrappingKey<T> {
         rotation_step: usize,
         output: &mut TorusGlwe<C>,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut SparseGlweBlindRotationContext<T>,
+        context: &mut SparseGlweBlindRotationWorkspace<T>,
     ) where
         Table: FftTable,
         A: Data<Elem = T>,
@@ -125,7 +125,7 @@ impl<T: TorusFftValue> SparseGlweBootstrappingKey<T> {
         rotation_step: usize,
         output: &mut TorusGlwe<C>,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut SparseGlweBlindRotationContext<T>,
+        context: &mut SparseGlweBlindRotationWorkspace<T>,
     ) where
         Table: FftTable,
         A: Data<Elem = T>,
@@ -135,7 +135,7 @@ impl<T: TorusFftValue> SparseGlweBootstrappingKey<T> {
         let size = self.size();
         let poly_length = size.glwe_size().poly_length();
         let modulus = self.input_modulus();
-        let SparseGlweBlindRotationContext {
+        let SparseGlweBlindRotationWorkspace {
             input_exponents,
             aggregate,
             transformed,
@@ -223,19 +223,19 @@ impl<T: TorusFftValue> SparseGlweBootstrappingKey<T> {
 /// Stores public input exponents, coefficient and Fourier aggregate buffers,
 /// one coefficient GLWE buffer and external-product scratch. It contains no
 /// plaintext secret support or matching, and allocates only during construction.
-pub struct SparseGlweBlindRotationContext<T: TorusFftValue> {
+pub struct SparseGlweBlindRotationWorkspace<T: TorusFftValue> {
     input_exponents: Vec<usize>,
     aggregate: Ggsw<Vec<T>>,
     transformed: FourierGgsw<Vec<Complex64>>,
     scratch: TorusGlwe<Vec<T>>,
-    external_product: FourierGlweExternalProductContext<T>,
+    external_product: FourierGlweExternalProductWorkspace<T>,
 }
 
-impl<T: TorusFftValue> SparseGlweBlindRotationContext<T> {
+impl<T: TorusFftValue> SparseGlweBlindRotationWorkspace<T> {
     pub(crate) fn with_external_product<R>(
         &mut self,
         size: primus_lattice::GadgetSize,
-        operation: impl FnOnce(&mut FourierGlweExternalProductContext<T>) -> R,
+        operation: impl FnOnce(&mut FourierGlweExternalProductWorkspace<T>) -> R,
     ) -> R {
         self.external_product.with_rebound(size, operation)
     }
@@ -250,7 +250,7 @@ impl<T: TorusFftValue> SparseGlweBlindRotationContext<T> {
             aggregate: Ggsw::zero(size.ggsw_len()),
             transformed: FourierGgsw::zero(size.fourier_ggsw_len()),
             scratch: TorusGlwe::zero(size.glwe_len()),
-            external_product: FourierGlweExternalProductContext::new(size),
+            external_product: FourierGlweExternalProductWorkspace::new(size),
         }
     }
 }

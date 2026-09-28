@@ -10,12 +10,12 @@ use zeroize::{Zeroize, ZeroizeOnDrop};
 /// GLev and coefficient-output constant GGSW batches require only a matching
 /// polynomial length. NTT-output GGSW also requires the configured decomposition
 /// level count; use [`Self::resize`] to change it.
-pub struct NttGadgetEncryptContext<T: FheUint> {
+pub struct NttGlweGadgetEncryptWorkspace<T: FheUint> {
     pub(super) encoded: PolynomialOwned<T>,
     pub(super) level_transforms: Vec<T>,
 }
 
-impl<T: FheUint> NttGadgetEncryptContext<T> {
+impl<T: FheUint> NttGlweGadgetEncryptWorkspace<T> {
     /// Creates reusable workspace for a checked gadget layout.
     #[must_use]
     pub fn new(size: GadgetSize) -> Self {
@@ -53,16 +53,16 @@ impl<T: FheUint> NttGadgetEncryptContext<T> {
     }
 }
 
-impl<T: FheUint> Zeroize for NttGadgetEncryptContext<T> {
+impl<T: FheUint> Zeroize for NttGlweGadgetEncryptWorkspace<T> {
     fn zeroize(&mut self) {
         self.encoded.0.zeroize();
         self.level_transforms.zeroize();
     }
 }
 
-impl<T: FheUint> ZeroizeOnDrop for NttGadgetEncryptContext<T> {}
+impl<T: FheUint> ZeroizeOnDrop for NttGlweGadgetEncryptWorkspace<T> {}
 
-impl<T: FheUint> Drop for NttGadgetEncryptContext<T> {
+impl<T: FheUint> Drop for NttGlweGadgetEncryptWorkspace<T> {
     fn drop(&mut self) {
         self.zeroize();
     }

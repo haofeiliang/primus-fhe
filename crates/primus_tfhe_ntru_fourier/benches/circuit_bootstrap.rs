@@ -13,7 +13,8 @@ use primus_integer::AsInto;
 use primus_lwe::LweParameters;
 use primus_modulus::NativeModulus;
 use primus_ntru::{
-    FourierNtruDecryptContext, FourierNtruSecretKey, NlevParameters, NtruParameters, SecretKeyDistr,
+    FourierNtruDecryptWorkspace, FourierNtruSecretKey, NlevParameters, NtruParameters,
+    SecretKeyDistr,
 };
 use primus_poly::Polynomial;
 use primus_test_allocations as allocations;
@@ -121,7 +122,7 @@ fn backend<T: TorusFftValue, Table: FftTable>(
         &mut fft,
     )
     .unwrap();
-    let mut decrypt = FourierNtruDecryptContext::new(N);
+    let mut decrypt = FourierNtruDecryptWorkspace::new(N);
     // Check both bit values, every gadget scale and a nonconstant CMUX before timing.
     for (&bit, input) in bits.iter().zip(&inputs) {
         let (_, online) = allocations::measure(|| {

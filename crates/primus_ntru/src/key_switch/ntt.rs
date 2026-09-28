@@ -1,8 +1,8 @@
 //! Exact NTT key switching.
 
 use crate::{
-    NlevParameters, NtruCiphertext, NtruSecretKey, NttNtruExternalProductContext,
-    NttNtruGadgetEncryptContext, NttNtruSecretKey,
+    NlevParameters, NtruCiphertext, NtruSecretKey, NttNtruExternalProductWorkspace,
+    NttNtruGadgetEncryptWorkspace, NttNtruSecretKey,
 };
 use primus_data::{Data, DataMut};
 use primus_decompose::primitive::ApproxSignedBasis;
@@ -48,7 +48,7 @@ impl<T: FheUint> NttNtruKeySwitchingKey<T> {
         parameters: &NlevParameters<T, M>,
         ntt: &Table,
         rng: &mut R,
-        context: &mut NttNtruGadgetEncryptContext<T>,
+        workspace: &mut NttNtruGadgetEncryptWorkspace<T>,
     ) -> Self
     where
         M: FieldContext<T>,
@@ -73,7 +73,7 @@ impl<T: FheUint> NttNtruKeySwitchingKey<T> {
             parameters,
             ntt,
             rng,
-            context,
+            workspace,
         )
     }
 
@@ -85,7 +85,7 @@ impl<T: FheUint> NttNtruKeySwitchingKey<T> {
         parameters: &NlevParameters<T, M>,
         ntt: &Table,
         rng: &mut R,
-        context: &mut NttNtruGadgetEncryptContext<T>,
+        workspace: &mut NttNtruGadgetEncryptWorkspace<T>,
     ) -> Self
     where
         M: FieldContext<T>,
@@ -99,7 +99,7 @@ impl<T: FheUint> NttNtruKeySwitchingKey<T> {
             parameters,
             ntt,
             rng,
-            context,
+            workspace,
         );
         Self {
             data,
@@ -150,7 +150,7 @@ impl<T: FheUint> NttNtruKeySwitchingKey<T> {
         output: &mut NtruCiphertext<B>,
         modulus: M,
         ntt: &Table,
-        context: &mut NttNtruExternalProductContext<T>,
+        workspace: &mut NttNtruExternalProductWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
@@ -167,8 +167,8 @@ impl<T: FheUint> NttNtruKeySwitchingKey<T> {
             self.poly_length,
             "key-switch output length mismatch"
         );
-        self.assert_compatible(modulus, ntt, context);
-        self.key_switch_kernel_to(input, output, modulus, ntt, context);
+        self.assert_compatible(modulus, ntt, workspace);
+        self.key_switch_kernel_to(input, output, modulus, ntt, workspace);
     }
 
     /// Validates resources shared by standalone and automorphism key switching.
@@ -176,13 +176,13 @@ impl<T: FheUint> NttNtruKeySwitchingKey<T> {
         &self,
         modulus: M,
         ntt: &Table,
-        context: &NttNtruExternalProductContext<T>,
+        workspace: &NttNtruExternalProductWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
     {
         assert_eq!(
-            context.poly_length(),
+            workspace.poly_length(),
             self.poly_length,
             "key-switch workspace length mismatch"
         );
@@ -210,7 +210,7 @@ impl<T: FheUint> NttNtruKeySwitchingKey<T> {
         output: &mut NtruCiphertext<B>,
         modulus: M,
         ntt: &Table,
-        context: &mut NttNtruExternalProductContext<T>,
+        workspace: &mut NttNtruExternalProductWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
@@ -223,7 +223,7 @@ impl<T: FheUint> NttNtruKeySwitchingKey<T> {
             &self.basis,
             modulus,
             ntt,
-            context,
+            workspace,
         );
     }
 
@@ -235,7 +235,7 @@ impl<T: FheUint> NttNtruKeySwitchingKey<T> {
         input: &NtruCiphertext<A>,
         modulus: M,
         ntt: &Table,
-        context: &mut NttNtruExternalProductContext<T>,
+        workspace: &mut NttNtruExternalProductWorkspace<T>,
     ) -> NtruCiphertext<Vec<T>>
     where
         M: FieldContext<T>,
@@ -243,7 +243,7 @@ impl<T: FheUint> NttNtruKeySwitchingKey<T> {
         A: Data<Elem = T>,
     {
         let mut output = NtruCiphertext::zero(self.poly_length);
-        self.key_switch_to(input, &mut output, modulus, ntt, context);
+        self.key_switch_to(input, &mut output, modulus, ntt, workspace);
         output
     }
 }

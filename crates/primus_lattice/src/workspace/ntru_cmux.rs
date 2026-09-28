@@ -1,19 +1,19 @@
 use primus_fft::{Complex64, TorusFftValue};
 use primus_integer::FheUint;
 
-use super::{FourierNtruExternalProductContext, NttNtruExternalProductContext};
+use super::{FourierNtruExternalProductWorkspace, NttNtruExternalProductWorkspace};
 
 /// Shared scratch for [`NttNlev::lift_monomial_to`](crate::nlev::NttNlev::lift_monomial_to) and [`NttNgsw::cmux_ternary_monomial_to`](crate::ngsw::NttNgsw::cmux_ternary_monomial_to).
 ///
-/// Holds one combined NLEV or NGSW and an external-product context whose digit buffer
+/// Holds one combined NLEV or NGSW and an external-product workspace whose digit buffer
 /// first holds the monomial NTT factor. The output NTRU supplies the coefficient
 /// difference buffer. This binds lengths, not a modulus, basis or transform table.
-pub struct NttNtruCmuxContext<T: FheUint> {
-    pub(crate) combined_control: Vec<T>,
-    pub(crate) external_product: NttNtruExternalProductContext<T>,
+pub struct NttNtruCmuxWorkspace<T: FheUint> {
+    pub(crate) combined_control: Box<[T]>,
+    pub(crate) external_product: NttNtruExternalProductWorkspace<T>,
 }
 
-impl<T: FheUint> NttNtruCmuxContext<T> {
+impl<T: FheUint> NttNtruCmuxWorkspace<T> {
     /// Allocates all buffers for `decompose_length` gadget levels of length `N`.
     ///
     /// # Panics
@@ -33,8 +33,8 @@ impl<T: FheUint> NttNtruCmuxContext<T> {
             .checked_mul(decompose_length)
             .expect("gadget ciphertext length must fit in usize");
         Self {
-            combined_control: vec![T::ZERO; control_length],
-            external_product: NttNtruExternalProductContext::new(poly_length),
+            combined_control: vec![T::ZERO; control_length].into_boxed_slice(),
+            external_product: NttNtruExternalProductWorkspace::new(poly_length),
         }
     }
 
@@ -49,7 +49,7 @@ impl<T: FheUint> NttNtruCmuxContext<T> {
     /// Its length must stay unchanged. The next lift or ternary CMUX overwrites its contents,
     /// so alternating these operations requires neither extra storage nor a reset.
     #[must_use]
-    pub fn external_product_context(&mut self) -> &mut NttNtruExternalProductContext<T> {
+    pub fn external_product_workspace(&mut self) -> &mut NttNtruExternalProductWorkspace<T> {
         &mut self.external_product
     }
 
@@ -62,16 +62,16 @@ impl<T: FheUint> NttNtruCmuxContext<T> {
 
 /// Shared scratch for [`FourierNlev::lift_monomial_to`](crate::nlev::FourierNlev::lift_monomial_to) and [`FourierNgsw::cmux_ternary_monomial_to`](crate::ngsw::FourierNgsw::cmux_ternary_monomial_to).
 ///
-/// Holds one combined Fourier NLEV or NGSW and an external-product context. Its
+/// Holds one combined Fourier NLEV or NGSW and an external-product workspace. Its
 /// coefficient and Fourier digit buffers first hold the integer monomial and
 /// its transform; decomposition overwrites both afterwards. The output NTRU
 /// supplies the coefficient difference buffer. This does not bind an FFT table.
-pub struct FourierNtruCmuxContext<T: TorusFftValue> {
-    pub(crate) combined_control: Vec<Complex64>,
-    pub(crate) external_product: FourierNtruExternalProductContext<T>,
+pub struct FourierNtruCmuxWorkspace<T: TorusFftValue> {
+    pub(crate) combined_control: Box<[Complex64]>,
+    pub(crate) external_product: FourierNtruExternalProductWorkspace<T>,
 }
 
-impl<T: TorusFftValue> FourierNtruCmuxContext<T> {
+impl<T: TorusFftValue> FourierNtruCmuxWorkspace<T> {
     /// Allocates all buffers for `decompose_length` Fourier gadget levels.
     ///
     /// # Panics
@@ -92,8 +92,8 @@ impl<T: TorusFftValue> FourierNtruCmuxContext<T> {
             .checked_mul(decompose_length)
             .expect("Fourier gadget ciphertext length must fit in usize");
         Self {
-            combined_control: vec![Complex64::default(); control_length],
-            external_product: FourierNtruExternalProductContext::new(poly_length),
+            combined_control: vec![Complex64::default(); control_length].into_boxed_slice(),
+            external_product: FourierNtruExternalProductWorkspace::new(poly_length),
         }
     }
 
@@ -108,7 +108,7 @@ impl<T: TorusFftValue> FourierNtruCmuxContext<T> {
     /// Its length must stay unchanged. The next lift or ternary CMUX overwrites its contents,
     /// so alternating these operations requires neither extra storage nor a reset.
     #[must_use]
-    pub fn external_product_context(&mut self) -> &mut FourierNtruExternalProductContext<T> {
+    pub fn external_product_workspace(&mut self) -> &mut FourierNtruExternalProductWorkspace<T> {
         &mut self.external_product
     }
 

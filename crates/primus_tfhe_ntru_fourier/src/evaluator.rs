@@ -21,7 +21,7 @@ where
     pub(crate) server_key: &'a ServerKey<T>,
     pub(crate) fft: FftEngine<'a, Table>,
     pub(crate) blind_rotation: BlindRotationWorkspace<'a, T>,
-    return_context: primus_ntru::NtruLweKeySwitchingContext<T>,
+    return_workspace: primus_ntru::NtruLweKeySwitchingWorkspace<T>,
 }
 
 impl<'a, T, Table, LM> Evaluator<'a, T, Table, LM>
@@ -44,7 +44,7 @@ where
             return Err(TfheEvaluationError::IncompatibleServerKey);
         }
         Ok(Self {
-            return_context: primus_ntru::NtruLweKeySwitchingContext::new(
+            return_workspace: primus_ntru::NtruLweKeySwitchingWorkspace::new(
                 context.parameters().poly_length(),
             ),
             context,
@@ -223,7 +223,7 @@ where
             index,
             output,
             self.context.parameters().external_lwe().cipher_modulus(),
-            &mut self.return_context,
+            &mut self.return_workspace,
         );
     }
 }

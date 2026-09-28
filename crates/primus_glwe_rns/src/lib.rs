@@ -16,17 +16,18 @@ pub type CrtGlweCiphertext<T> = primus_lattice::glwe::CrtGlwe<T>;
 pub type DcrtGlweCiphertext<T> = primus_lattice::glwe::DcrtGlwe<T>;
 
 pub use crt::{
-    CrtGlweAutoContext, CrtGlweAutoKey, CrtGlweExpandCoeffContext, CrtGlweExpandCoeffKey,
-    CrtGlweExpandCoeffSyncPool, CrtGlweTraceContext, CrtGlweTraceKey,
+    CrtGlweAutoKey, CrtGlweAutomorphismWorkspace, CrtGlweExpandCoeffKey,
+    CrtGlweExpandCoeffSyncPool, CrtGlweExpandCoeffWorkspace, CrtGlweTraceKey,
+    CrtGlweTraceWorkspace,
 };
 pub use dcrt::{
-    DcrtGlweAutoKey, DcrtGlweExpandCoeffContext, DcrtGlweExpandCoeffKey,
-    DcrtGlweExpandCoeffSyncPool, DcrtGlweRevTraceContext, DcrtGlweRevTraceKey,
-    DcrtGlweTraceContext, DcrtGlweTraceKey,
+    DcrtGlweAutoKey, DcrtGlweExpandCoeffKey, DcrtGlweExpandCoeffSyncPool,
+    DcrtGlweExpandCoeffWorkspace, DcrtGlweRevTraceKey, DcrtGlweRevTraceWorkspace, DcrtGlweTraceKey,
+    DcrtGlweTraceWorkspace,
 };
 pub use key_switch::{
-    DcrtGlweKeySwitchingContext, DcrtGlweKeySwitchingKey, HybridRnsGlweKeySwitchingContext,
-    HybridRnsGlweKeySwitchingKey,
+    DcrtGlweKeySwitchingKey, DcrtGlweKeySwitchingWorkspace, HybridRnsGlweKeySwitchingKey,
+    HybridRnsGlweKeySwitchingWorkspace,
 };
 pub use parameter::{
     CrtGgswParameters, CrtGlevParameters, CrtGlevParametersError, CrtGlweParameters,
@@ -36,4 +37,4 @@ pub use primus_encoding::BfvRnsCodec;
 pub use primus_glwe::{GlweSecretKey, SecretKeyDistr};
 pub use primus_lattice::{RnsGadgetSize, RnsGlweSize};
 pub use public_key::DcrtGlwePublicKey;
-pub use secret_key::{DcrtGlweDecryptContext, DcrtGlweSecretKey};
+pub use secret_key::{DcrtGlweDecryptWorkspace, DcrtGlweSecretKey};

@@ -7,16 +7,16 @@ use primus_modulus::PowOf2Modulus;
 use primus_ntt::NttTable;
 use primus_reduce::{FieldContext, ReduceNeg};
 
-use super::{NttGlweTraceContext, NttGlweTraceKey, kernels};
+use super::{NttGlweTraceKey, NttGlweTraceWorkspace, kernels};
 
 /// Reusable storage for packing a fixed number of related-key LWEs.
 /// Holds `count` coefficient GLWEs and one trace workspace; evaluation allocates nothing.
-pub struct NttGlwePackingContext<T: FheUint> {
+pub struct NttGlwePackingWorkspace<T: FheUint> {
     tree: Vec<T>,
-    trace: NttGlweTraceContext<T>,
+    trace: NttGlweTraceWorkspace<T>,
 }
 
-impl<T: FheUint> NttGlwePackingContext<T> {
+impl<T: FheUint> NttGlwePackingWorkspace<T> {
     /// Allocates workspace for `count` inputs of dimension `k*N`.
     ///
     /// # Panics
@@ -31,7 +31,7 @@ impl<T: FheUint> NttGlwePackingContext<T> {
                     .checked_mul(count)
                     .expect("packing workspace length overflow")
             ],
-            trace: NttGlweTraceContext::new(size),
+            trace: NttGlweTraceWorkspace::new(size),
         }
     }
 }
@@ -53,7 +53,7 @@ impl<T: FheUint> NttGlweTraceKey<T> {
         output: &mut Glwe<B>,
         modulus: M,
         ntt: &Table,
-        context: &mut NttGlweTraceContext<T>,
+        workspace: &mut NttGlweTraceWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
@@ -62,9 +62,9 @@ impl<T: FheUint> NttGlweTraceKey<T> {
     {
         let levels =
             kernels::check_degree(self.glwe_size.poly_length(), retained_coefficient_count);
-        self.check_io(input.as_ref(), output.as_ref(), modulus, ntt, context);
+        self.check_io(input.as_ref(), output.as_ref(), modulus, ntt, workspace);
         output.as_mut().copy_from_slice(input.as_ref());
-        self.trace_kernel_assign::<_, _, false>(output.as_mut(), levels, modulus, ntt, context);
+        self.trace_kernel_assign::<_, _, false>(output.as_mut(), levels, modulus, ntt, workspace);
     }
 
     /// Applies full reverse trace, targeting the constant polynomial `M[0]`.
@@ -75,14 +75,14 @@ impl<T: FheUint> NttGlweTraceKey<T> {
         output: &mut Glwe<B>,
         modulus: M,
         ntt: &Table,
-        context: &mut NttGlweTraceContext<T>,
+        workspace: &mut NttGlweTraceWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
         A: Data<Elem = T>,
         B: DataMut<Elem = T>,
     {
-        self.apply_reverse_partial_to(input, 1, output, modulus, ntt, context);
+        self.apply_reverse_partial_to(input, 1, output, modulus, ntt, workspace);
     }
 
     /// Applies normalized reverse trace, retaining `retained_coefficient_count`
@@ -106,7 +106,7 @@ impl<T: FheUint> NttGlweTraceKey<T> {
         output: &mut Glwe<B>,
         modulus: M,
         ntt: &Table,
-        context: &mut NttGlweTraceContext<T>,
+        workspace: &mut NttGlweTraceWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
@@ -115,9 +115,9 @@ impl<T: FheUint> NttGlweTraceKey<T> {
     {
         let levels =
             kernels::check_degree(self.glwe_size.poly_length(), retained_coefficient_count);
-        self.check_io(input.as_ref(), output.as_ref(), modulus, ntt, context);
+        self.check_io(input.as_ref(), output.as_ref(), modulus, ntt, workspace);
         output.as_mut().copy_from_slice(input.as_ref());
-        self.trace_kernel_assign::<_, _, true>(output.as_mut(), levels, modulus, ntt, context);
+        self.trace_kernel_assign::<_, _, true>(output.as_mut(), levels, modulus, ntt, workspace);
     }
 
     /// Converts one related-key LWE into a GLWE targeting the constant message.
@@ -136,7 +136,7 @@ impl<T: FheUint> NttGlweTraceKey<T> {
         output: &mut Glwe<B>,
         modulus: M,
         ntt: &Table,
-        context: &mut NttGlweTraceContext<T>,
+        workspace: &mut NttGlweTraceWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
@@ -148,7 +148,7 @@ impl<T: FheUint> NttGlweTraceKey<T> {
             self.glwe_size.mask_len() + 1,
             "packing LWE dimension mismatch"
         );
-        self.check_output(output.as_ref(), modulus, ntt, context);
+        self.check_output(output.as_ref(), modulus, ntt, workspace);
 
         input.inverse_extract_glwe_to(output, self.glwe_size.poly_length(), modulus);
         self.trace_kernel_assign::<_, _, true>(
@@ -156,7 +156,7 @@ impl<T: FheUint> NttGlweTraceKey<T> {
             self.automorphism_count(),
             modulus,
             ntt,
-            context,
+            workspace,
         );
     }
 
@@ -173,7 +173,7 @@ impl<T: FheUint> NttGlweTraceKey<T> {
         output: &mut Glwe<B>,
         modulus: M,
         ntt: &Table,
-        context: &mut NttGlwePackingContext<T>,
+        workspace: &mut NttGlwePackingWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
@@ -186,20 +186,20 @@ impl<T: FheUint> NttGlweTraceKey<T> {
 
         kernels::check_degree(self.glwe_size.poly_length(), count);
         assert_eq!(
-            context.tree.len(),
+            workspace.tree.len(),
             count * self.glwe_size.glwe_len(),
             "packing workspace count mismatch"
         );
-        self.check_output(output.as_ref(), modulus, ntt, &context.trace);
+        self.check_output(output.as_ref(), modulus, ntt, &workspace.trace);
 
-        let NttGlweTraceContext {
+        let NttGlweTraceWorkspace {
             automorphism_output,
             automorphism,
-        } = &mut context.trace;
+        } = &mut workspace.trace;
         kernels::pack_to(
             input,
             output.as_mut(),
-            &mut context.tree,
+            &mut workspace.tree,
             automorphism_output.as_mut(),
             self.glwe_size,
             modulus,
@@ -226,14 +226,14 @@ impl<T: FheUint> NttGlweTraceKey<T> {
         output: &mut Glwe<B>,
         modulus: M,
         ntt: &Table,
-        context: &mut NttGlweTraceContext<T>,
+        workspace: &mut NttGlweTraceWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
         A: Data<Elem = T>,
         B: DataMut<Elem = T>,
     {
-        self.project_coefficients_to(input, &[index], output.as_mut(), modulus, ntt, context);
+        self.project_coefficients_to(input, &[index], output.as_mut(), modulus, ntt, workspace);
     }
 
     /// Projects selected coefficients into consecutive GLWE blocks in `indices`
@@ -248,7 +248,7 @@ impl<T: FheUint> NttGlweTraceKey<T> {
         output: &mut [T],
         modulus: M,
         ntt: &Table,
-        context: &mut NttGlweTraceContext<T>,
+        workspace: &mut NttGlweTraceWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
@@ -266,7 +266,7 @@ impl<T: FheUint> NttGlweTraceKey<T> {
             output,
             modulus,
             ntt,
-            context,
+            workspace,
         );
     }
 
@@ -287,7 +287,7 @@ impl<T: FheUint> NttGlweTraceKey<T> {
         output: &mut [T],
         modulus: M,
         ntt: &Table,
-        context: &mut NttGlweTraceContext<T>,
+        workspace: &mut NttGlweTraceWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
@@ -297,7 +297,7 @@ impl<T: FheUint> NttGlweTraceKey<T> {
             count <= self.glwe_size.poly_length(),
             "projection prefix exceeds polynomial length"
         );
-        self.project_indices_to(input, 0..count, output, modulus, ntt, context);
+        self.project_indices_to(input, 0..count, output, modulus, ntt, workspace);
     }
 
     // Public callers validate the index range. Check the remaining layouts
@@ -309,7 +309,7 @@ impl<T: FheUint> NttGlweTraceKey<T> {
         output: &mut [T],
         modulus: M,
         ntt: &Table,
-        context: &mut NttGlweTraceContext<T>,
+        workspace: &mut NttGlweTraceWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
@@ -330,7 +330,7 @@ impl<T: FheUint> NttGlweTraceKey<T> {
                 .expect("projection output length overflow"),
             "projection output length mismatch"
         );
-        self.assert_compatible(modulus, ntt, context);
+        self.assert_compatible(modulus, ntt, workspace);
 
         let exponent_modulus = PowOf2Modulus::new(2 * poly_length);
         for (index, output) in indices.zip(output.chunks_exact_mut(glwe_len)) {
@@ -345,7 +345,7 @@ impl<T: FheUint> NttGlweTraceKey<T> {
                 self.automorphism_count(),
                 modulus,
                 ntt,
-                context,
+                workspace,
             );
         }
     }
@@ -360,7 +360,7 @@ impl<T: FheUint> NttGlweTraceKey<T> {
         output: &mut [T],
         modulus: M,
         ntt: &Table,
-        context: &mut NttGlweTraceContext<T>,
+        workspace: &mut NttGlweTraceWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
@@ -372,7 +372,7 @@ impl<T: FheUint> NttGlweTraceKey<T> {
             output,
             modulus,
             ntt,
-            context,
+            workspace,
         );
     }
 
@@ -403,7 +403,7 @@ impl<T: FheUint> NttGlweTraceKey<T> {
         output: &mut [T],
         modulus: M,
         ntt: &Table,
-        context: &mut NttGlweTraceContext<T>,
+        workspace: &mut NttGlweTraceWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
@@ -423,7 +423,7 @@ impl<T: FheUint> NttGlweTraceKey<T> {
                 .expect("expansion output length overflow"),
             "expansion output length mismatch"
         );
-        self.assert_compatible(modulus, ntt, context);
+        self.assert_compatible(modulus, ntt, workspace);
 
         if count == 1 {
             output.copy_from_slice(input.as_ref());
@@ -431,10 +431,10 @@ impl<T: FheUint> NttGlweTraceKey<T> {
         }
 
         let log_count = count.trailing_zeros();
-        let NttGlweTraceContext {
+        let NttGlweTraceWorkspace {
             automorphism_output,
             automorphism,
-        } = context;
+        } = workspace;
         kernels::expand_to(
             input.as_ref(),
             output,
@@ -463,14 +463,14 @@ impl<T: FheUint> NttGlweTraceKey<T> {
         output: &[T],
         modulus: M,
         ntt: &Table,
-        context: &NttGlweTraceContext<T>,
+        workspace: &NttGlweTraceWorkspace<T>,
     ) {
         assert_eq!(
             input.len(),
             self.glwe_size.glwe_len(),
             "trace input layout mismatch"
         );
-        self.check_output(output, modulus, ntt, context);
+        self.check_output(output, modulus, ntt, workspace);
     }
 
     fn check_output<M: FieldContext<T>, Table: NttTable<ValueT = T>>(
@@ -478,14 +478,14 @@ impl<T: FheUint> NttGlweTraceKey<T> {
         output: &[T],
         modulus: M,
         ntt: &Table,
-        context: &NttGlweTraceContext<T>,
+        workspace: &NttGlweTraceWorkspace<T>,
     ) {
         assert_eq!(
             output.len(),
             self.glwe_size.glwe_len(),
             "trace output layout mismatch"
         );
-        self.assert_compatible(modulus, ntt, context);
+        self.assert_compatible(modulus, ntt, workspace);
     }
 
     /// Checks shared backend and immutable workspace layout once per public call.
@@ -493,9 +493,9 @@ impl<T: FheUint> NttGlweTraceKey<T> {
         &self,
         modulus: M,
         ntt: &Table,
-        context: &NttGlweTraceContext<T>,
+        workspace: &NttGlweTraceWorkspace<T>,
     ) {
-        self.automorphism_keys[0].assert_compatible(modulus, ntt, &context.automorphism);
+        self.automorphism_keys[0].assert_compatible(modulus, ntt, &workspace.automorphism);
     }
 
     /// Multiplies canonical residues by inv2 mod q without a full modular product:
@@ -513,12 +513,12 @@ impl<T: FheUint> NttGlweTraceKey<T> {
         levels: usize,
         modulus: M,
         ntt: &Table,
-        context: &mut NttGlweTraceContext<T>,
+        workspace: &mut NttGlweTraceWorkspace<T>,
     ) {
-        let NttGlweTraceContext {
+        let NttGlweTraceWorkspace {
             automorphism_output,
             automorphism,
-        } = context;
+        } = workspace;
         kernels::trace_assign::<_, _, _, _, REVERSE>(
             output,
             levels,

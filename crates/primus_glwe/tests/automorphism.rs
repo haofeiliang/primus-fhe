@@ -1,9 +1,9 @@
 use primus_fft::{FftEngine, FftTable, RustFftTable};
 use primus_glwe::{
-    FourierGadgetEncryptContext, FourierGlweAutomorphismContext, FourierGlweAutomorphismKey,
-    FourierGlweSecretKey, GlevParameters, GlweParameters, GlweSecretKey, GlweSize,
-    NttGadgetEncryptContext, NttGlweAutomorphismContext, NttGlweAutomorphismKey, NttGlweSecretKey,
-    SecretKeyDistr,
+    FourierGlweAutomorphismKey, FourierGlweAutomorphismWorkspace,
+    FourierGlweGadgetEncryptWorkspace, FourierGlweSecretKey, GlevParameters, GlweParameters,
+    GlweSecretKey, GlweSize, NttGlweAutomorphismKey, NttGlweAutomorphismWorkspace,
+    NttGlweGadgetEncryptWorkspace, NttGlweSecretKey, SecretKeyDistr,
 };
 use primus_lattice::glwe::{Glwe, NttGlwe};
 use primus_modulus::{BarrettModulus, NativeModulus};
@@ -48,7 +48,7 @@ fn ntt_and_coefficient_inputs_reuse_the_automorphism_key() {
     let mut rng = StdRng::seed_from_u64(0x0043_4253_5052_494d);
     let (coefficient_secret, secret) =
         NttGlweSecretKey::generate_pair(&glwe_parameters, &ntt, &mut rng);
-    let mut gadget = NttGadgetEncryptContext::new(glev_parameters.size());
+    let mut gadget = NttGlweGadgetEncryptWorkspace::new(glev_parameters.size());
 
     let automorphism_key = NttGlweAutomorphismKey::generate(
         3,
@@ -72,13 +72,13 @@ fn ntt_and_coefficient_inputs_reuse_the_automorphism_key() {
     );
     let coefficient_encrypted = encrypted.clone().into_coeff_form(&ntt);
     let mut automated: Glwe<Vec<u64>> = Glwe::zero(glwe_parameters.glwe_len());
-    let mut automorphism_context = NttGlweAutomorphismContext::new(glwe_parameters.size());
+    let mut automorphism_workspace = NttGlweAutomorphismWorkspace::new(glwe_parameters.size());
     automorphism_key.apply_to(
         &coefficient_encrypted,
         &mut automated,
         modulus,
         &ntt,
-        &mut automorphism_context,
+        &mut automorphism_workspace,
     );
     let automated = automated.into_ntt_form(&ntt);
     let expected_automorphism = automorphism_plaintext(&message, 3);
@@ -93,7 +93,7 @@ fn ntt_and_coefficient_inputs_reuse_the_automorphism_key() {
         &mut automated_ntt,
         modulus,
         &ntt,
-        &mut automorphism_context,
+        &mut automorphism_workspace,
     );
     assert_eq!(automated_ntt.as_ref(), automated.as_ref());
 
@@ -102,7 +102,7 @@ fn ntt_and_coefficient_inputs_reuse_the_automorphism_key() {
         GlweSize::new(5, POLY_LENGTH / 2),
         GlweSize::new(3, POLY_LENGTH),
     ] {
-        let mut context = NttGlweAutomorphismContext::new(size);
+        let mut workspace = NttGlweAutomorphismWorkspace::new(size);
         let mut output = Glwe::new(vec![7; glwe_parameters.glwe_len()]);
         assert!(
             std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -111,7 +111,7 @@ fn ntt_and_coefficient_inputs_reuse_the_automorphism_key() {
                     &mut output,
                     modulus,
                     &ntt,
-                    &mut context,
+                    &mut workspace,
                 );
             }))
             .is_err()
@@ -139,8 +139,8 @@ fn fourier_automorphism_input<Table: FftTable>() {
     let coeff = GlweSecretKey::<u64>::new(s.clone(), size, SecretKeyDistr::UniformTernary);
     let sk = FourierGlweSecretKey::from_coeff_secret_key(&coeff, &mut fft);
     let mut rng = StdRng::seed_from_u64(0x4646544155544f);
-    let mut gadget = FourierGadgetEncryptContext::new(glev.size());
-    let mut context = FourierGlweAutomorphismContext::new(size);
+    let mut gadget = FourierGlweGadgetEncryptWorkspace::new(glev.size());
+    let mut workspace = FourierGlweAutomorphismWorkspace::new(size);
     let q = 1u128 << 64;
     let m = message(q);
     let input = encrypt(&m, &s, q, &mut rng);
@@ -167,13 +167,18 @@ fn fourier_automorphism_input<Table: FftTable>() {
                 value.wrapping_neg()
             };
         }
-        key.apply_to(&input, &mut output, &mut fft, &mut context);
+        key.apply_to(&input, &mut output, &mut fft, &mut workspace);
         assert_phase(output.as_ref(), &expected, &s, q);
-        key.apply_fourier_to(&fourier_input, &mut fourier_output, &mut fft, &mut context);
+        key.apply_fourier_to(
+            &fourier_input,
+            &mut fourier_output,
+            &mut fft,
+            &mut workspace,
+        );
         fourier_output.write_torus_form(&mut output, &mut fft);
         assert_phase(output.as_ref(), &expected, &s, q);
         // A different N with the same total storage must fail before output writes.
-        let mut wrong_context = FourierGlweAutomorphismContext::new(GlweSize::new(5, N / 2));
+        let mut wrong_workspace = FourierGlweAutomorphismWorkspace::new(GlweSize::new(5, N / 2));
         fourier_output.as_mut().fill(Complex64::new(7.0, 0.0));
         assert!(
             std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -181,7 +186,7 @@ fn fourier_automorphism_input<Table: FftTable>() {
                     &fourier_input,
                     &mut fourier_output,
                     &mut fft,
-                    &mut wrong_context,
+                    &mut wrong_workspace,
                 );
             }))
             .is_err()

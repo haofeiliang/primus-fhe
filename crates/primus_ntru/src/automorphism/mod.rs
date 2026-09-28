@@ -3,5 +3,5 @@
 mod fourier;
 mod ntt;
 
-pub use fourier::{FourierNtruAutomorphismContext, FourierNtruAutomorphismKey};
-pub use ntt::{NttNtruAutomorphismContext, NttNtruAutomorphismKey};
+pub use fourier::{FourierNtruAutomorphismKey, FourierNtruAutomorphismWorkspace};
+pub use ntt::{NttNtruAutomorphismKey, NttNtruAutomorphismWorkspace};

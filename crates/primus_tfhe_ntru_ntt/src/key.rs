@@ -5,7 +5,7 @@ use primus_decompose::primitive::ApproxSignedBasis;
 use primus_integer::FheUint;
 use primus_lattice::nlev::NttNlev;
 use primus_ntru::SecretKeyDistr;
-use primus_ntru::{NtruLweKeySwitchingKey, NttNtruGadgetEncryptContext, NttNtruSecretKey};
+use primus_ntru::{NtruLweKeySwitchingKey, NttNtruGadgetEncryptWorkspace, NttNtruSecretKey};
 use primus_ntt::MonomialNttTable;
 use zeroize::Zeroizing;
 
@@ -155,7 +155,7 @@ where
     LM: primus_reduce::RingContext<T>,
 {
     pub(crate) context: &'a TfheContext<T, Table, LM>,
-    pub(crate) gadget: NttNtruGadgetEncryptContext<T>,
+    pub(crate) gadget: NttNtruGadgetEncryptWorkspace<T>,
 }
 
 impl<'a, T, Table, LM> KeyGenerator<'a, T, Table, LM>
@@ -168,7 +168,7 @@ where
     #[must_use]
     pub fn new(context: &'a TfheContext<T, Table, LM>) -> Self {
         Self {
-            gadget: NttNtruGadgetEncryptContext::new(context.parameters().poly_length()),
+            gadget: NttNtruGadgetEncryptWorkspace::new(context.parameters().poly_length()),
             context,
         }
     }

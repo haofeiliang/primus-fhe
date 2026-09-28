@@ -10,7 +10,7 @@ use crate::{
     CrtGlweAutoKey, CrtGlweCiphertext, DcrtGadgetDomain, DcrtGlweSecretKey, GlweSecretKey,
 };
 
-use super::{CrtGlweExpandCoeffContext, CrtGlweExpandCoeffSyncPool};
+use super::{CrtGlweExpandCoeffSyncPool, CrtGlweExpandCoeffWorkspace};
 
 #[derive(Clone)]
 /// Automorphism keys used to expand CRT GLWE coefficients into ciphertexts.
@@ -73,7 +73,7 @@ impl<T: FheUint> CrtGlweExpandCoeffKey<T> {
         ciphertext: &CrtGlweCiphertext<A>,
         result: &mut [CrtGlweCiphertext<B>],
         domain: &DcrtGadgetDomain<'_, T, M, Table>,
-        context: &mut CrtGlweExpandCoeffContext<T>,
+        workspace: &mut CrtGlweExpandCoeffWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
@@ -81,7 +81,7 @@ impl<T: FheUint> CrtGlweExpandCoeffKey<T> {
         B: DataMut<Elem = T>,
     {
         assert_eq!(result.len(), domain.parameters().poly_length());
-        self.expand_partial_coefficients_inplace(ciphertext, result, domain, context)
+        self.expand_partial_coefficients_inplace(ciphertext, result, domain, workspace)
     }
 
     /// Coefficient Expansion Algorithm.
@@ -92,7 +92,7 @@ impl<T: FheUint> CrtGlweExpandCoeffKey<T> {
         ciphertext: &CrtGlweCiphertext<A>,
         result: &mut [CrtGlweCiphertext<B>],
         domain: &DcrtGadgetDomain<'_, T, M, Table>,
-        context: &mut CrtGlweExpandCoeffContext<T>,
+        workspace: &mut CrtGlweExpandCoeffWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
@@ -116,14 +116,14 @@ impl<T: FheUint> CrtGlweExpandCoeffKey<T> {
             params.cipher_moduli_value(),
         );
 
-        let (crt_glwe, auto_context) = context.as_mut();
+        let (crt_glwe, auto_workspace) = workspace.as_mut();
         for (i, auto_key) in self.auto_keys.iter().enumerate().take(log_d) {
             let level_len = 1 << i;
             let (x, y) = result[..level_len * 2].split_at_mut(level_len);
             let monomial_degree = poly_length * 2 - level_len;
 
             x.iter_mut().zip(y).for_each(|(a_0, b_0)| {
-                auto_key.automorphism_kernel(a_0, crt_glwe, domain, auto_context);
+                auto_key.automorphism_kernel(a_0, crt_glwe, domain, auto_workspace);
                 a_0.sub_to(crt_glwe, b_0, poly_length, rns_poly_len, moduli);
                 b_0.mul_monomial_assign(monomial_degree, poly_length, rns_poly_len, moduli);
                 a_0.add_assign(crt_glwe, poly_length, rns_poly_len, moduli);
@@ -140,7 +140,7 @@ impl<T: FheUint> CrtGlweExpandCoeffKey<T> {
         ciphertext: &CrtGlweCiphertext<A>,
         result: &mut [CrtGlweCiphertext<B>],
         domain: &DcrtGadgetDomain<'_, T, M, Table>,
-        context_pool: &CrtGlweExpandCoeffSyncPool<T>,
+        workspace_pool: &CrtGlweExpandCoeffSyncPool<T>,
     ) where
         M: FieldContext<T> + Sync,
         A: Data<Elem = T> + Sync,
@@ -148,7 +148,12 @@ impl<T: FheUint> CrtGlweExpandCoeffKey<T> {
         Table: NttTable<ValueT = T>,
     {
         assert_eq!(result.len(), domain.parameters().poly_length());
-        self.expand_partial_coefficients_inplace_parallel(ciphertext, result, domain, context_pool)
+        self.expand_partial_coefficients_inplace_parallel(
+            ciphertext,
+            result,
+            domain,
+            workspace_pool,
+        )
     }
 
     /// Parallel Coefficient Expansion Algorithm.
@@ -159,7 +164,7 @@ impl<T: FheUint> CrtGlweExpandCoeffKey<T> {
         ciphertext: &CrtGlweCiphertext<A>,
         result: &mut [CrtGlweCiphertext<B>],
         domain: &DcrtGadgetDomain<'_, T, M, Table>,
-        context_pool: &CrtGlweExpandCoeffSyncPool<T>,
+        workspace_pool: &CrtGlweExpandCoeffSyncPool<T>,
     ) where
         M: FieldContext<T> + Sync,
         A: Data<Elem = T> + Sync,
@@ -189,10 +194,10 @@ impl<T: FheUint> CrtGlweExpandCoeffKey<T> {
             let monomial_degree = poly_length * 2 - level_len;
 
             x.par_iter_mut().zip(y.par_iter_mut()).for_each_init(
-                || context_pool.acquire_guard(),
+                || workspace_pool.acquire_guard(),
                 |guard, (a_0, b_0)| {
-                    let (crt_glwe, auto_context) = guard.as_mut();
-                    auto_key.automorphism_kernel(a_0, crt_glwe, domain, auto_context);
+                    let (crt_glwe, auto_workspace) = guard.as_mut();
+                    auto_key.automorphism_kernel(a_0, crt_glwe, domain, auto_workspace);
                     a_0.sub_to(crt_glwe, b_0, poly_length, rns_poly_len, moduli);
                     b_0.mul_monomial_assign(monomial_degree, poly_length, rns_poly_len, moduli);
                     a_0.add_assign(crt_glwe, poly_length, rns_poly_len, moduli);

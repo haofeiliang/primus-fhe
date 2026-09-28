@@ -9,17 +9,17 @@ use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable, TfheFftTable};
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntru::{
-    FourierNgswCiphertext, FourierNlevCiphertext, FourierNtruSchemeSwitchKey,
-    FourierNtruTraceContext, FourierNtruTraceKey, NlevCiphertext, NttNgswCiphertext,
-    NttNlevCiphertext, NttNtruSchemeSwitchKey, NttNtruTraceContext, NttNtruTraceKey,
+    FourierNgswCiphertext, FourierNlevCiphertext, FourierNtruSchemeSwitchKey, FourierNtruTraceKey,
+    FourierNtruTraceWorkspace, NlevCiphertext, NttNgswCiphertext, NttNlevCiphertext,
+    NttNtruSchemeSwitchKey, NttNtruTraceKey, NttNtruTraceWorkspace,
 };
 use primus_ntru::{
-    FourierNtruAutomorphismContext, FourierNtruAutomorphismKey, FourierNtruCiphertext,
-    FourierNtruEncryptContext, FourierNtruExternalProductContext, FourierNtruGadgetEncryptContext,
-    FourierNtruKeySwitchingKey, FourierNtruSecretKey, NlevParameters, NtruCiphertext,
-    NtruParameters, NttNtruAutomorphismContext, NttNtruAutomorphismKey, NttNtruCiphertext,
-    NttNtruExternalProductContext, NttNtruGadgetEncryptContext, NttNtruKeySwitchingKey,
-    NttNtruSecretKey, SecretKeyDistr,
+    FourierNtruAutomorphismKey, FourierNtruAutomorphismWorkspace, FourierNtruCiphertext,
+    FourierNtruEncryptWorkspace, FourierNtruExternalProductWorkspace,
+    FourierNtruGadgetEncryptWorkspace, FourierNtruKeySwitchingKey, FourierNtruSecretKey,
+    NlevParameters, NtruCiphertext, NtruParameters, NttNtruAutomorphismKey,
+    NttNtruAutomorphismWorkspace, NttNtruCiphertext, NttNtruExternalProductWorkspace,
+    NttNtruGadgetEncryptWorkspace, NttNtruKeySwitchingKey, NttNtruSecretKey, SecretKeyDistr,
 };
 use primus_ntt::{NttTable, UintNttTable};
 use primus_poly::Polynomial;
@@ -41,9 +41,9 @@ fn ntt(c: &mut Criterion, n: usize) {
     transformed.write_coeff_form(&mut input, &table);
     let mut output = NtruCiphertext::<Vec<u64>>::zero(n);
     let mut ntt_output = NttNtruCiphertext::<Vec<u64>>::zero(n);
-    let mut generation = NttNtruGadgetEncryptContext::new(n);
-    let mut switching = NttNtruExternalProductContext::new(n);
-    let mut auto_context = NttNtruAutomorphismContext::new(n);
+    let mut generation = NttNtruGadgetEncryptWorkspace::new(n);
+    let mut switching = NttNtruExternalProductWorkspace::new(n);
+    let mut auto_workspace = NttNtruAutomorphismWorkspace::new(n);
     for log_basis in [3, 10] {
         let parameters = NlevParameters::with_ntru_params(&parameters, log_basis, None);
         let ksk = NttNtruKeySwitchingKey::generate(
@@ -71,7 +71,7 @@ fn ntt(c: &mut Criterion, n: usize) {
             &mut rng,
             &mut generation,
         );
-        let mut trace_context = NttNtruTraceContext::new(n);
+        let mut trace_workspace = NttNtruTraceWorkspace::new(n);
         let mut expanded = vec![0u64; 8 * n];
         let output_parameters = NlevParameters::with_ntru_params(parameters.ntru(), 8, Some(3));
         let ss = NttNtruSchemeSwitchKey::generate(
@@ -121,7 +121,7 @@ fn ntt(c: &mut Criterion, n: usize) {
                     &mut output,
                     modulus,
                     &table,
-                    &mut auto_context,
+                    &mut auto_workspace,
                 );
                 black_box(output.as_ref());
             })
@@ -133,7 +133,7 @@ fn ntt(c: &mut Criterion, n: usize) {
                     &mut ntt_output,
                     modulus,
                     &table,
-                    &mut auto_context,
+                    &mut auto_workspace,
                 );
                 black_box(ntt_output.as_ref());
             })
@@ -145,7 +145,7 @@ fn ntt(c: &mut Criterion, n: usize) {
                     &mut output,
                     modulus,
                     &table,
-                    &mut trace_context,
+                    &mut trace_workspace,
                 );
                 black_box(output.as_ref());
             })
@@ -157,7 +157,7 @@ fn ntt(c: &mut Criterion, n: usize) {
                     &mut output,
                     modulus,
                     &table,
-                    &mut trace_context,
+                    &mut trace_workspace,
                 );
                 black_box(output.as_ref());
             })
@@ -170,7 +170,7 @@ fn ntt(c: &mut Criterion, n: usize) {
                     &mut expanded[..3 * n],
                     modulus,
                     &table,
-                    &mut trace_context,
+                    &mut trace_workspace,
                 );
                 black_box(&expanded[..3 * n]);
             })
@@ -183,7 +183,7 @@ fn ntt(c: &mut Criterion, n: usize) {
                     &mut expanded,
                     modulus,
                     &table,
-                    &mut trace_context,
+                    &mut trace_workspace,
                 );
                 black_box(&expanded);
             })
@@ -227,15 +227,15 @@ fn fourier<Table: FftTable>(c: &mut Criterion, n: usize, backend: &str) {
         &parameters,
         &mut fft,
         &mut rng,
-        &mut FourierNtruEncryptContext::new(n),
+        &mut FourierNtruEncryptWorkspace::new(n),
     );
     let mut input = NtruCiphertext::<Vec<u64>>::zero(n);
     transformed.write_torus_form(&mut input, &mut fft);
     let mut output = NtruCiphertext::<Vec<u64>>::zero(n);
     let mut fourier_output = FourierNtruCiphertext::<Vec<Complex64>>::zero(n / 2);
-    let mut generation = FourierNtruGadgetEncryptContext::new(n);
-    let mut switching = FourierNtruExternalProductContext::new(n);
-    let mut auto_context = FourierNtruAutomorphismContext::new(n);
+    let mut generation = FourierNtruGadgetEncryptWorkspace::new(n);
+    let mut switching = FourierNtruExternalProductWorkspace::new(n);
+    let mut auto_workspace = FourierNtruAutomorphismWorkspace::new(n);
     for log_basis in [3, 10] {
         let parameters = NlevParameters::with_ntru_params(&parameters, log_basis, None);
         let ksk = FourierNtruKeySwitchingKey::generate(
@@ -263,7 +263,7 @@ fn fourier<Table: FftTable>(c: &mut Criterion, n: usize, backend: &str) {
             &mut rng,
             &mut generation,
         );
-        let mut trace_context = FourierNtruTraceContext::new(n);
+        let mut trace_workspace = FourierNtruTraceWorkspace::new(n);
         let mut expanded = vec![0u64; 8 * n];
         let output_parameters = NlevParameters::with_ntru_params(parameters.ntru(), 8, Some(3));
         let ss = FourierNtruSchemeSwitchKey::generate(
@@ -304,7 +304,12 @@ fn fourier<Table: FftTable>(c: &mut Criterion, n: usize, backend: &str) {
         });
         group.bench_function("automorphism_coeff", |b| {
             b.iter(|| {
-                auto.apply_to(black_box(&input), &mut output, &mut fft, &mut auto_context);
+                auto.apply_to(
+                    black_box(&input),
+                    &mut output,
+                    &mut fft,
+                    &mut auto_workspace,
+                );
                 black_box(output.as_ref());
             })
         });
@@ -314,14 +319,19 @@ fn fourier<Table: FftTable>(c: &mut Criterion, n: usize, backend: &str) {
                     black_box(&transformed),
                     &mut fourier_output,
                     &mut fft,
-                    &mut auto_context,
+                    &mut auto_workspace,
                 );
                 black_box(fourier_output.as_ref());
             })
         });
         group.bench_function("trace", |b| {
             b.iter(|| {
-                trace.apply_to(black_box(&input), &mut output, &mut fft, &mut trace_context);
+                trace.apply_to(
+                    black_box(&input),
+                    &mut output,
+                    &mut fft,
+                    &mut trace_workspace,
+                );
                 black_box(output.as_ref());
             })
         });
@@ -331,7 +341,7 @@ fn fourier<Table: FftTable>(c: &mut Criterion, n: usize, backend: &str) {
                     black_box(&input),
                     &mut output,
                     &mut fft,
-                    &mut trace_context,
+                    &mut trace_workspace,
                 );
                 black_box(output.as_ref());
             })
@@ -343,7 +353,7 @@ fn fourier<Table: FftTable>(c: &mut Criterion, n: usize, backend: &str) {
                     &[0, 3, 7],
                     &mut expanded[..3 * n],
                     &mut fft,
-                    &mut trace_context,
+                    &mut trace_workspace,
                 );
                 black_box(&expanded[..3 * n]);
             })
@@ -355,7 +365,7 @@ fn fourier<Table: FftTable>(c: &mut Criterion, n: usize, backend: &str) {
                     8,
                     &mut expanded,
                     &mut fft,
-                    &mut trace_context,
+                    &mut trace_workspace,
                 );
                 black_box(&expanded);
             })

@@ -35,7 +35,7 @@ Lengths below count array elements, not bytes or ciphertexts. Transformed storag
 | `rotation_factors_len` | d*(M-1)*R | Public monomial differences, without gadget levels |
 | `candidates_len` | (P/M)*N if h>0; otherwise 0 | First-layer results and subsequent in-place compaction |
 
-`public_table_selectors` holds one complete batch only when h>0. Fourier additionally retains its coefficient form in `public_selector_coefficients`. `nonzero_selectors` holds one reusable scratch batch only when d>0. These counts exclude the embedded one-hot evaluator, external-product and return workspaces, current/product/difference ciphertexts and Fourier gadget constants; they are not a total heap estimate.
+`public_table_selectors` holds one complete batch only when h>0. Fourier additionally retains its coefficient form in `public_selector_coefficients`. `nonzero_selectors` holds one reusable scratch batch only when d>0. These counts exclude the embedded one-hot evaluator (including shared external-product and FFT workspaces), the return workspace, current/product/difference ciphertexts and Fourier gadget constants; they are not a total heap estimate.
 
 The public first layer computes `sum_k T_k odot NLEV[delta_k]`, including k=0. Later encrypted layers compute `c_0 + sum_{k>0}(c_k-c_0) otimes NGSW[delta_k]`. With no table layer, the server's BR-basis `NLEV[1]` lifts the single public polynomial.
 
@@ -44,6 +44,8 @@ Each low chunk i produces `C_i=G+sum_{k>0}(X^(-k*M^i)-1)*NGSW[delta_k]`, targeti
 Each encrypted layer consumes consecutive groups of M candidates. Group g starts at coefficient g*M*N; its result is written at g*N only after the whole group has been read. Writes therefore stay within consumed storage, leaving unread groups intact. The active candidate count is divided by M after each layer. Explicit group indices express this in-place dependency; polynomial and ciphertext iterators traverse the individual mathematical objects within each group.
 
 For h>0, each call projects M+(c-1)*(M-1) selectors, and each output uses P+P/M-1 table-selection external products. For h=0, each call projects c*(M-1) selectors and each output uses one public lift. Both cases add d rotation products and one return operation per output. These are operation counts, not runtime or noise estimates. CBS, approximate decomposition, selector errors, Fourier rounding and the return path still require a decoding budget.
+
+Table products borrow one-hot CBS's external-product workspace; Fourier transforms also borrow its FFT engine. These stages execute serially and overwrite scratch before reuse. Storage choices and the measured memory/latency tradeoff are recorded in [workspaces and storage](../../guides/development/workspaces-and-storage.md).
 
 ## Benchmark fixture
 

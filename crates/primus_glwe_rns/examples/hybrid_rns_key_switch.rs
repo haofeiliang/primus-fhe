@@ -1,8 +1,8 @@
 //! Hybrid-RNS GLWE key switching from one secret key to another.
 
 use primus_glwe_rns::{
-    CrtGlweParameters, DcrtGlweCiphertext, DcrtGlweDecryptContext, DcrtGlweSecretKey,
-    GlweSecretKey, HybridRnsGlweKeySwitchingContext, HybridRnsGlweKeySwitchingKey,
+    CrtGlweParameters, DcrtGlweCiphertext, DcrtGlweDecryptWorkspace, DcrtGlweSecretKey,
+    GlweSecretKey, HybridRnsGlweKeySwitchingKey, HybridRnsGlweKeySwitchingWorkspace,
     HybridRnsKeySwitchDomain, SecretKeyDistr,
 };
 use primus_lattice::glwe::DcrtGlwe;
@@ -70,12 +70,12 @@ fn main() {
         &mut rng,
     );
 
-    // The context owns all reusable workspace needed by online key switching.
-    let mut key_switch_context = HybridRnsGlweKeySwitchingContext::new(&switching_key, &domain);
-    switching_key.key_switch_to(&input, &mut output, &domain, &mut key_switch_context);
+    // The workspace owns all reusable workspace needed by online key switching.
+    let mut key_switch_workspace = HybridRnsGlweKeySwitchingWorkspace::new(&switching_key, &domain);
+    switching_key.key_switch_to(&input, &mut output, &domain, &mut key_switch_workspace);
 
-    let mut decrypt_context = DcrtGlweDecryptContext::new(glwe_parameters.size());
+    let mut decrypt_workspace = DcrtGlweDecryptWorkspace::new(glwe_parameters.size());
     let decrypted =
-        output_dcrt_key.decrypt(&output, &glwe_parameters, &q_table, &mut decrypt_context);
+        output_dcrt_key.decrypt(&output, &glwe_parameters, &q_table, &mut decrypt_workspace);
     assert_eq!(decrypted, plaintext);
 }

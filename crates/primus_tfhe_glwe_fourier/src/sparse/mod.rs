@@ -3,5 +3,5 @@
 mod blind_rotation;
 mod key;
 
-pub use blind_rotation::SparseGlweBlindRotationContext;
+pub use blind_rotation::SparseGlweBlindRotationWorkspace;
 pub use key::SparseGlweBootstrappingKey;

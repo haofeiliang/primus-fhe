@@ -1,7 +1,7 @@
 //! Shared NLev and NGSW decomposition, transform, and accumulation kernels.
 
-use crate::context::{
-    FourierNtruExternalProductContextRefMut, NttNtruExternalProductContextRefMut,
+use crate::workspace::{
+    FourierNtruExternalProductWorkspaceRefMut, NttNtruExternalProductWorkspaceRefMut,
 };
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{Complex64, FftEngine, FftTable, TorusFftValue};
@@ -15,10 +15,10 @@ use primus_reduce::FieldContext;
 ///
 /// # Correctness
 ///
-/// Input contains `N = context.poly_length()` canonical coefficients. The
+/// Input contains `N = workspace.poly_length()` canonical coefficients. The
 /// gadget has `basis.decompose_length()` complete levels in decomposition
 /// order, each of length `N / 2` in the FFT table's normalized torus
-/// representation. The basis uses the native modulus, and FFT/context
+/// representation. The basis uses the native modulus, and FFT/workspace
 /// polynomial lengths and packing agree. The selected accumulator has `N / 2`
 /// complex values and is disjoint from the input and decomposition scratch.
 /// These conditions are caller obligations, with selected debug diagnostics.
@@ -27,12 +27,12 @@ pub(crate) fn accumulate_fourier_gadget_product<T, Table>(
     input: &[T],
     basis: &ApproxSignedBasis<T>,
     fft: &mut FftEngine<'_, Table>,
-    context: &mut FourierNtruExternalProductContextRefMut<'_, T>,
+    workspace: &mut FourierNtruExternalProductWorkspaceRefMut<'_, T>,
 ) where
     T: TorusFftValue,
     Table: FftTable,
 {
-    let poly_length = context.poly_length();
+    let poly_length = workspace.poly_length();
     let fourier_length = fft.fourier_length();
 
     debug_assert_eq!(fft.poly_length(), poly_length);
@@ -41,16 +41,16 @@ pub(crate) fn accumulate_fourier_gadget_product<T, Table>(
     debug_assert_eq!(input.len(), poly_length);
     debug_assert_eq!(gadget.len(), basis.decompose_length() * fourier_length);
 
-    basis.init_carry_slice(input, context.carries);
+    basis.init_carry_slice(input, workspace.carries);
 
     for (decomposer, key_level) in basis
         .decomposer_iter()
         .zip(gadget.chunks_exact(fourier_length))
     {
-        decomposer.decompose_slice_to(input, context.decomposed_poly, context.carries);
-        fft.forward_as_integer(context.decomposed_poly, context.decomposed_fourier);
-        FourierPolynomial(context.fourier_accumulator.as_mut()).add_mul_assign(
-            &FourierPolynomial(&*context.decomposed_fourier),
+        decomposer.decompose_slice_to(input, workspace.decomposed_poly, workspace.carries);
+        fft.forward_as_integer(workspace.decomposed_poly, workspace.decomposed_fourier);
+        FourierPolynomial(workspace.fourier_accumulator.as_mut()).add_mul_assign(
+            &FourierPolynomial(&*workspace.decomposed_fourier),
             &FourierPolynomial(key_level),
         );
     }
@@ -61,7 +61,7 @@ pub(crate) fn accumulate_fourier_gadget_product<T, Table>(
 ///
 /// # Correctness
 ///
-/// Input contains `N = context.poly_length()` canonical coefficients. The
+/// Input contains `N = workspace.poly_length()` canonical coefficients. The
 /// gadget has `basis.decompose_length()` complete levels in decomposition
 /// order, each of length `N` in the NTT table's evaluation order.
 /// Gadget values are canonical. Basis, table, and arithmetic modulus agree,
@@ -74,13 +74,13 @@ pub(crate) fn accumulate_ntt_gadget_product<T, M, Table>(
     basis: &ApproxSignedBasis<T>,
     modulus: M,
     ntt: &Table,
-    context: &mut NttNtruExternalProductContextRefMut<'_, T>,
+    workspace: &mut NttNtruExternalProductWorkspaceRefMut<'_, T>,
 ) where
     T: FheUint,
     M: FieldContext<T>,
     Table: NttTable<ValueT = T>,
 {
-    let poly_length = context.poly_length();
+    let poly_length = workspace.poly_length();
 
     debug_assert_eq!(ntt.poly_length(), poly_length);
     debug_assert_eq!(ntt.modulus(), modulus.value());
@@ -88,21 +88,21 @@ pub(crate) fn accumulate_ntt_gadget_product<T, M, Table>(
     debug_assert_eq!(input.len(), poly_length);
     debug_assert_eq!(gadget.len(), basis.decompose_length() * poly_length);
 
-    basis.init_value_carry_slice_to(input, context.adjusted_poly, context.carries);
+    basis.init_value_carry_slice_to(input, workspace.adjusted_poly, workspace.carries);
 
     for (decomposer, key_level) in basis
         .decomposer_iter()
         .zip(gadget.chunks_exact(poly_length))
     {
         decomposer.decompose_slice_to(
-            context.adjusted_poly,
-            context.decomposed_ntt,
-            context.carries,
+            workspace.adjusted_poly,
+            workspace.decomposed_ntt,
+            workspace.carries,
         );
-        ntt.transform_slice(context.decomposed_ntt);
-        NttPolynomial(context.ntt_accumulator.as_mut()).add_mul_assign(
+        ntt.transform_slice(workspace.decomposed_ntt);
+        NttPolynomial(workspace.ntt_accumulator.as_mut()).add_mul_assign(
             &NttPolynomial(key_level),
-            &NttPolynomial(&*context.decomposed_ntt),
+            &NttPolynomial(&*workspace.decomposed_ntt),
             modulus,
         );
     }

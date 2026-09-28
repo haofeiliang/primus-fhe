@@ -7,11 +7,11 @@ use primus_ntt::MonomialNttTable;
 use primus_reduce::FieldContext;
 
 use crate::{
-    context::{FourierNtruCmuxContext, NttNtruCmuxContext},
     ntru::{
         Ntru,
         gadget_product::{accumulate_fourier_gadget_product, accumulate_ntt_gadget_product},
     },
+    workspace::{FourierNtruCmuxWorkspace, NttNtruCmuxWorkspace},
 };
 
 use super::{FourierNgsw, NttNgsw};
@@ -33,8 +33,8 @@ where
     /// # Correctness
     ///
     /// Both controls, input, output, basis, modulus and table must satisfy
-    /// [`Self::external_product_to`] with `context.poly_length()`; each control
-    /// has `context.decompose_length()` levels matching `basis`.
+    /// [`Self::external_product_to`] with `workspace.poly_length()`; each control
+    /// has `workspace.decompose_length()` levels matching `basis`.
     /// Control bits must be mutually exclusive (unchecked), under the input's
     /// NTRU key. Independent control encryptions are required for the usual
     /// noise estimate.
@@ -46,7 +46,7 @@ where
     ///
     /// # Panics
     /// Zero-exponent copying panics if input and output lengths differ.
-    /// For nonzero exponents, a table/context polynomial-length mismatch panics
+    /// For nonzero exponents, a table/workspace polynomial-length mismatch panics
     /// when preparing the monomial factor, before output writes.
     #[expect(
         clippy::too_many_arguments,
@@ -61,7 +61,7 @@ where
         basis: &ApproxSignedBasis<T>,
         modulus: M,
         ntt: &Table,
-        context: &mut NttNtruCmuxContext<T>,
+        workspace: &mut NttNtruCmuxWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: MonomialNttTable<ValueT = T>,
@@ -69,10 +69,10 @@ where
         B: Data<Elem = T>,
         C: DataMut<Elem = T>,
     {
-        let poly_length = context.poly_length();
-        let control_length = context.combined_control.len();
+        let poly_length = workspace.poly_length();
+        let control_length = workspace.combined_control.len();
         debug_assert!(exponent < 2 * poly_length);
-        debug_assert_eq!(basis.decompose_length(), context.decompose_length());
+        debug_assert_eq!(basis.decompose_length(), workspace.decompose_length());
         debug_assert_eq!(self.as_ref().len(), control_length);
         debug_assert_eq!(negative.as_ref().len(), control_length);
         debug_assert_eq!(input.as_ref().len(), poly_length);
@@ -85,11 +85,11 @@ where
         let inverse_exponent = 2 * poly_length - exponent;
         // Control combination and decomposition run sequentially, so the
         // monomial factor can reuse the external-product digit buffer.
-        let mut product = context.external_product.as_mut();
+        let mut product = workspace.external_product.as_mut();
         self.sub_mul_monomial_to(
             negative,
             inverse_exponent,
-            &mut NttNgsw(context.combined_control.as_mut_slice()),
+            &mut NttNgsw(workspace.combined_control.as_mut_slice()),
             modulus,
             ntt,
             product.decomposed_ntt,
@@ -100,7 +100,7 @@ where
         input.mul_monomial_sub_one_to(exponent, output, modulus);
         product.ntt_accumulator.set_zero();
         accumulate_ntt_gadget_product(
-            context.combined_control.as_ref(),
+            workspace.combined_control.as_ref(),
             output.as_ref(),
             basis,
             modulus,
@@ -129,8 +129,8 @@ where
     /// # Correctness
     ///
     /// Both controls, input, output, basis and engine must satisfy
-    /// [`Self::external_product_to`] with `context.poly_length()`; each control
-    /// has `context.decompose_length()` levels matching the native basis.
+    /// [`Self::external_product_to`] with `workspace.poly_length()`; each control
+    /// has `workspace.decompose_length()` levels matching the native basis.
     /// Control bits must be mutually exclusive (unchecked), under the input's
     /// NTRU key. Independent control encryptions are required for the usual
     /// noise estimate. Controls use this exact FFT table instance and torus scale.
@@ -156,7 +156,7 @@ where
         output: &mut Ntru<C>,
         basis: &ApproxSignedBasis<T>,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierNtruCmuxContext<T>,
+        workspace: &mut FourierNtruCmuxWorkspace<T>,
     ) where
         T: TorusFftValue,
         Table: FftTable,
@@ -164,10 +164,10 @@ where
         B: Data<Elem = T>,
         C: DataMut<Elem = T>,
     {
-        let poly_length = context.poly_length();
-        let control_length = context.combined_control.len();
+        let poly_length = workspace.poly_length();
+        let control_length = workspace.combined_control.len();
         debug_assert!(exponent < 2 * poly_length);
-        debug_assert_eq!(basis.decompose_length(), context.decompose_length());
+        debug_assert_eq!(basis.decompose_length(), workspace.decompose_length());
         debug_assert_eq!(self.as_ref().len(), control_length);
         debug_assert_eq!(negative.as_ref().len(), control_length);
         debug_assert_eq!(input.as_ref().len(), poly_length);
@@ -180,11 +180,11 @@ where
         let inverse_exponent = 2 * poly_length - exponent;
         // Monomial preparation and decomposition are sequential, so both
         // coefficient and Fourier digit buffers can serve the control factor.
-        let mut product = context.external_product.as_mut();
+        let mut product = workspace.external_product.as_mut();
         self.sub_mul_monomial_to(
             negative,
             inverse_exponent,
-            &mut FourierNgsw(context.combined_control.as_mut_slice()),
+            &mut FourierNgsw(workspace.combined_control.as_mut_slice()),
             fft,
             product.decomposed_poly,
             product.decomposed_fourier,
@@ -192,7 +192,7 @@ where
         input.mul_monomial_sub_one_to(exponent, output, NativeModulus::new());
         product.fourier_accumulator.set_zero();
         accumulate_fourier_gadget_product(
-            context.combined_control.as_ref(),
+            workspace.combined_control.as_ref(),
             output.as_ref(),
             basis,
             fft,

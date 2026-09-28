@@ -13,7 +13,7 @@ use primus_poly::{NttPolynomial, Polynomial};
 use primus_reduce::FieldContext;
 use zeroize::Zeroizing;
 
-use crate::{GlevParameters, GlweSecretKey, NttGadgetEncryptContext, NttGlweSecretKey};
+use crate::{GlevParameters, GlweSecretKey, NttGlweGadgetEncryptWorkspace, NttGlweSecretKey};
 
 /// An NTT-domain GLWE key-switching key.
 ///
@@ -47,7 +47,7 @@ impl<T: FheUint> NttGlweKeySwitchingKey<T> {
         params: &GlevParameters<T, M>,
         ntt: &Table,
         rng: &mut R,
-        context: &mut NttGadgetEncryptContext<T>,
+        workspace: &mut NttGlweGadgetEncryptWorkspace<T>,
     ) -> Self
     where
         M: FieldContext<T>,
@@ -55,7 +55,7 @@ impl<T: FheUint> NttGlweKeySwitchingKey<T> {
         R: rand::Rng + rand::CryptoRng,
     {
         output_secret_key.assert_gadget_compatible(params, ntt);
-        context.assert_glev_compatible(params.size());
+        workspace.assert_glev_compatible(params.size());
         assert_eq!(
             input_secret_key.poly_length(),
             params.poly_length(),
@@ -68,7 +68,7 @@ impl<T: FheUint> NttGlweKeySwitchingKey<T> {
             params,
             ntt,
             rng,
-            context,
+            workspace,
         )
     }
 
@@ -80,7 +80,7 @@ impl<T: FheUint> NttGlweKeySwitchingKey<T> {
         params: &GlevParameters<T, M>,
         ntt: &Table,
         rng: &mut R,
-        context: &mut NttGadgetEncryptContext<T>,
+        workspace: &mut NttGlweGadgetEncryptWorkspace<T>,
     ) -> Self
     where
         M: FieldContext<T>,
@@ -104,7 +104,7 @@ impl<T: FheUint> NttGlweKeySwitchingKey<T> {
                 params,
                 ntt,
                 rng,
-                context,
+                workspace,
             );
         }
 
@@ -170,7 +170,7 @@ impl<T: FheUint> NttGlweKeySwitchingKey<T> {
         input: &Glwe<A>,
         modulus: M,
         ntt: &Table,
-        context: &mut NttGlweKeySwitchingContext<T>,
+        workspace: &mut NttGlweKeySwitchingWorkspace<T>,
     ) -> Glwe<Vec<T>>
     where
         M: FieldContext<T>,
@@ -178,7 +178,7 @@ impl<T: FheUint> NttGlweKeySwitchingKey<T> {
         A: Data<Elem = T>,
     {
         let mut output = Glwe::zero(self.output_size.glwe_len());
-        self.key_switch_to(input, &mut output, modulus, ntt, context);
+        self.key_switch_to(input, &mut output, modulus, ntt, workspace);
         output
     }
 
@@ -201,7 +201,7 @@ impl<T: FheUint> NttGlweKeySwitchingKey<T> {
         output: &mut Glwe<B>,
         modulus: M,
         ntt: &Table,
-        context: &mut NttGlweKeySwitchingContext<T>,
+        workspace: &mut NttGlweKeySwitchingWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
@@ -210,9 +210,9 @@ impl<T: FheUint> NttGlweKeySwitchingKey<T> {
     {
         assert_eq!(input.as_ref().len(), self.input_size.glwe_len());
         assert_eq!(output.as_ref().len(), self.output_size.glwe_len());
-        self.assert_compatible(modulus, ntt, context);
+        self.assert_compatible(modulus, ntt, workspace);
 
-        self.key_switch_kernel_to(input, output, modulus, ntt, context);
+        self.key_switch_kernel_to(input, output, modulus, ntt, workspace);
     }
 
     /// Key-switches a validated coefficient-domain GLWE ciphertext.
@@ -225,7 +225,7 @@ impl<T: FheUint> NttGlweKeySwitchingKey<T> {
         output: &mut Glwe<B>,
         modulus: M,
         ntt: &Table,
-        context: &mut NttGlweKeySwitchingContext<T>,
+        workspace: &mut NttGlweKeySwitchingWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
@@ -238,9 +238,9 @@ impl<T: FheUint> NttGlweKeySwitchingKey<T> {
         let poly_length = self.input_size.poly_length();
         let (input_mask, input_body) = input.a_b_slices(poly_length);
 
-        let mut context = context.as_mut();
-        self.mask_product_to_accumulator(input_mask, modulus, ntt, &mut context);
-        context.accumulator.write_coeff_form(output, ntt);
+        let mut workspace = workspace.as_mut();
+        self.mask_product_to_accumulator(input_mask, modulus, ntt, &mut workspace);
+        workspace.accumulator.write_coeff_form(output, ntt);
         output.neg_assign(modulus);
         let (_, output_body) = output.a_b_mut_slices(poly_length);
         modulus.reduce_add_slice_assign(output_body, input_body);
@@ -259,7 +259,7 @@ impl<T: FheUint> NttGlweKeySwitchingKey<T> {
         output: &mut NttGlwe<B>,
         modulus: M,
         ntt: &Table,
-        context: &mut NttGlweKeySwitchingContext<T>,
+        workspace: &mut NttGlweKeySwitchingWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
@@ -271,10 +271,10 @@ impl<T: FheUint> NttGlweKeySwitchingKey<T> {
         debug_assert_eq!(output.as_ref().len(), self.output_size.glwe_len());
 
         let poly_length = self.input_size.poly_length();
-        let mut context = context.as_mut_with_accumulator(output);
-        self.mask_product_to_accumulator(input_mask, modulus, ntt, &mut context);
-        context.accumulator.neg_assign(modulus);
-        let (_, output_body) = context.accumulator.a_b_mut_slices(poly_length);
+        let mut workspace = workspace.as_mut_with_accumulator(output);
+        self.mask_product_to_accumulator(input_mask, modulus, ntt, &mut workspace);
+        workspace.accumulator.neg_assign(modulus);
+        let (_, output_body) = workspace.accumulator.a_b_mut_slices(poly_length);
         modulus.reduce_add_slice_assign(output_body, input_body.as_ref());
     }
 
@@ -283,7 +283,7 @@ impl<T: FheUint> NttGlweKeySwitchingKey<T> {
         &self,
         modulus: M,
         ntt: &Table,
-        context: &NttGlweKeySwitchingContext<T>,
+        workspace: &NttGlweKeySwitchingWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
@@ -304,12 +304,12 @@ impl<T: FheUint> NttGlweKeySwitchingKey<T> {
             "NTT ciphertext modulus mismatch"
         );
         assert_eq!(
-            context.accumulator.as_ref().len(),
+            workspace.accumulator.as_ref().len(),
             self.output_size.glwe_len(),
             "key-switch workspace layout mismatch"
         );
         assert_eq!(
-            context.adjusted_poly.len(),
+            workspace.adjusted_poly.len(),
             self.input_size.poly_length(),
             "key-switch workspace polynomial length mismatch"
         );
@@ -324,7 +324,7 @@ impl<T: FheUint> NttGlweKeySwitchingKey<T> {
         input_mask: &[T],
         modulus: M,
         ntt: &Table,
-        context: &mut NttGlweKeySwitchingContextRefMut<'_, T>,
+        workspace: &mut NttGlweKeySwitchingWorkspaceRefMut<'_, T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
@@ -333,21 +333,21 @@ impl<T: FheUint> NttGlweKeySwitchingKey<T> {
         let poly_length = self.input_size.poly_length();
         let glwe_len = self.output_size.glwe_len();
 
-        context.accumulator.set_zero();
+        workspace.accumulator.set_zero();
         for (mask_poly, entry) in input_mask.chunks_exact(poly_length).zip(self.iter()) {
-            basis.init_value_carry_slice_to(mask_poly, context.adjusted_poly, context.carries);
+            basis.init_value_carry_slice_to(mask_poly, workspace.adjusted_poly, workspace.carries);
 
             for (decomposer, key_glwe) in basis.decomposer_iter().zip(entry.iter_ntt_glwe(glwe_len))
             {
                 decomposer.decompose_slice_to(
-                    context.adjusted_poly,
-                    context.decomposed_ntt,
-                    context.carries,
+                    workspace.adjusted_poly,
+                    workspace.decomposed_ntt,
+                    workspace.carries,
                 );
-                ntt.transform_slice(context.decomposed_ntt);
-                context.accumulator.add_mul_ntt_polynomial_assign(
+                ntt.transform_slice(workspace.decomposed_ntt);
+                workspace.accumulator.add_mul_ntt_polynomial_assign(
                     &key_glwe,
-                    &NttPolynomial::new(&*context.decomposed_ntt),
+                    &NttPolynomial::new(&*workspace.decomposed_ntt),
                     modulus,
                 );
             }
@@ -356,7 +356,7 @@ impl<T: FheUint> NttGlweKeySwitchingKey<T> {
 }
 
 /// Reusable NTT workspace for GLWE key switching and LWE packing key switching.
-pub struct NttGlweKeySwitchingContext<T: FheUint> {
+pub struct NttGlweKeySwitchingWorkspace<T: FheUint> {
     pub(crate) adjusted_poly: Vec<T>,
     pub(crate) carries: Vec<bool>,
     pub(crate) decomposed_ntt: Vec<T>,
@@ -364,14 +364,14 @@ pub struct NttGlweKeySwitchingContext<T: FheUint> {
 }
 
 /// Mutable view of key-switch scratch with a replaceable NTT accumulator.
-struct NttGlweKeySwitchingContextRefMut<'a, T: FheUint> {
+struct NttGlweKeySwitchingWorkspaceRefMut<'a, T: FheUint> {
     adjusted_poly: &'a mut [T],
     carries: &'a mut [bool],
     decomposed_ntt: &'a mut [T],
     accumulator: NttGlwe<&'a mut [T]>,
 }
 
-impl<T: FheUint> NttGlweKeySwitchingContext<T> {
+impl<T: FheUint> NttGlweKeySwitchingWorkspace<T> {
     /// Creates a workspace for the output GLWE layout.
     pub fn new(glwe_size: GlweSize) -> Self {
         let poly_length = glwe_size.poly_length();
@@ -384,8 +384,8 @@ impl<T: FheUint> NttGlweKeySwitchingContext<T> {
     }
 
     #[inline]
-    fn as_mut(&mut self) -> NttGlweKeySwitchingContextRefMut<'_, T> {
-        NttGlweKeySwitchingContextRefMut {
+    fn as_mut(&mut self) -> NttGlweKeySwitchingWorkspaceRefMut<'_, T> {
+        NttGlweKeySwitchingWorkspaceRefMut {
             adjusted_poly: &mut self.adjusted_poly,
             carries: &mut self.carries,
             decomposed_ntt: &mut self.decomposed_ntt,
@@ -397,11 +397,11 @@ impl<T: FheUint> NttGlweKeySwitchingContext<T> {
     fn as_mut_with_accumulator<'a, S>(
         &'a mut self,
         accumulator: &'a mut NttGlwe<S>,
-    ) -> NttGlweKeySwitchingContextRefMut<'a, T>
+    ) -> NttGlweKeySwitchingWorkspaceRefMut<'a, T>
     where
         S: DataMut<Elem = T>,
     {
-        NttGlweKeySwitchingContextRefMut {
+        NttGlweKeySwitchingWorkspaceRefMut {
             adjusted_poly: &mut self.adjusted_poly,
             carries: &mut self.carries,
             decomposed_ntt: &mut self.decomposed_ntt,

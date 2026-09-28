@@ -4,8 +4,8 @@ use primus_ntt::NttTable;
 use primus_reduce::FieldContext;
 
 use crate::{
-    CrtGlevParameters, CrtGlweAutoContext, CrtGlweAutoKey, CrtGlweCiphertext, DcrtGadgetDomain,
-    DcrtGlweSecretKey, GlweSecretKey,
+    CrtGlevParameters, CrtGlweAutoKey, CrtGlweAutomorphismWorkspace, CrtGlweCiphertext,
+    DcrtGadgetDomain, DcrtGlweSecretKey, GlweSecretKey,
 };
 
 /// Reusable workspace for CRT trace and coefficient-expansion operations.
@@ -14,12 +14,12 @@ use crate::{
 /// Construct this workspace from the domain used by the operations. Reuse with
 /// another domain requires the same gadget layout and RNS big-integer limb
 /// width; the caller must maintain this compatibility. No rebinding is performed.
-pub struct CrtGlweTraceContext<T: FheUint> {
+pub struct CrtGlweTraceWorkspace<T: FheUint> {
     crt_glwe: CrtGlweCiphertext<Vec<T>>,
-    auto_context: CrtGlweAutoContext<T>,
+    auto_workspace: CrtGlweAutomorphismWorkspace<T>,
 }
 
-impl<T: FheUint> CrtGlweTraceContext<T> {
+impl<T: FheUint> CrtGlweTraceWorkspace<T> {
     /// Creates reusable workspace from one complete RNS gadget parameter set.
     pub fn new<M, Table>(domain: &DcrtGadgetDomain<'_, T, M, Table>) -> Self
     where
@@ -34,10 +34,10 @@ impl<T: FheUint> CrtGlweTraceContext<T> {
         M: FieldContext<T>,
     {
         let crt_glwe = CrtGlweCiphertext::zero(parameters.rns_glwe_len());
-        let auto_context = CrtGlweAutoContext::from_parameters(parameters);
+        let auto_workspace = CrtGlweAutomorphismWorkspace::from_parameters(parameters);
         Self {
             crt_glwe,
-            auto_context,
+            auto_workspace,
         }
     }
 
@@ -45,9 +45,9 @@ impl<T: FheUint> CrtGlweTraceContext<T> {
         &mut self,
     ) -> (
         &mut primus_lattice::glwe::CrtGlwe<Vec<T>>,
-        &mut CrtGlweAutoContext<T>,
+        &mut CrtGlweAutomorphismWorkspace<T>,
     ) {
-        (&mut self.crt_glwe, &mut self.auto_context)
+        (&mut self.crt_glwe, &mut self.auto_workspace)
     }
 }
 
@@ -81,14 +81,14 @@ impl<T: FheUint> CrtGlweTraceKey<T> {
 
     /// Applies the trace and writes the resulting CRT ciphertext to `result`.
     ///
-    /// The input, output, domain, and context must share the same RNS GLWE
-    /// layout. The context is reusable and overwritten by the operation.
+    /// The input, output, domain, and workspace must share the same RNS GLWE
+    /// layout. The workspace is reusable and overwritten by the operation.
     pub fn trace_inplace<M, Table, A, B>(
         &self,
         ciphertext: &CrtGlweCiphertext<A>,
         result: &mut CrtGlweCiphertext<B>,
         domain: &DcrtGadgetDomain<'_, T, M, Table>,
-        context: &mut CrtGlweTraceContext<T>,
+        workspace: &mut CrtGlweTraceWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
@@ -100,12 +100,12 @@ impl<T: FheUint> CrtGlweTraceKey<T> {
         let crt_poly_length = params.rns_poly_len();
         let moduli = params.cipher_moduli();
 
-        let (crt_glwe, auto_context) = context.as_mut();
+        let (crt_glwe, auto_workspace) = workspace.as_mut();
 
         result.as_mut().copy_from_slice(ciphertext.as_ref());
 
         for auto_key in self.auto_keys.iter() {
-            auto_key.automorphism_kernel(result, crt_glwe, domain, auto_context);
+            auto_key.automorphism_kernel(result, crt_glwe, domain, auto_workspace);
             result.add_assign(crt_glwe, poly_length, crt_poly_length, moduli);
         }
     }

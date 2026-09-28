@@ -30,7 +30,9 @@ use primus_poly::DcrtPolynomial;
 use primus_reduce::{FieldContext, ReduceMul};
 use zeroize::Zeroizing;
 
-use crate::{CrtGlweAutoContext, DcrtGadgetDomain, DcrtGlweCiphertext, DcrtGlweSecretKey};
+use crate::{
+    CrtGlweAutomorphismWorkspace, DcrtGadgetDomain, DcrtGlweCiphertext, DcrtGlweSecretKey,
+};
 
 // ---------------------------------------------------------------------------
 // NTT-domain permutation generation
@@ -265,14 +267,14 @@ impl<T: FheUint> DcrtGlweAutoKey<T> {
         ciphertext: &DcrtGlweCiphertext<A>,
         result: &mut DcrtGlweCiphertext<B>,
         domain: &DcrtGadgetDomain<'_, T, M, Table>,
-        context: &mut CrtGlweAutoContext<T>,
+        workspace: &mut CrtGlweAutomorphismWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
         A: Data<Elem = T>,
         B: DataMut<Elem = T>,
     {
-        self.automorphism_kernel(ciphertext, result, domain, context);
+        self.automorphism_kernel(ciphertext, result, domain, workspace);
     }
 
     /// Internal kernel used by composed operations.
@@ -283,7 +285,7 @@ impl<T: FheUint> DcrtGlweAutoKey<T> {
         ciphertext: &DcrtGlweCiphertext<A>,
         result: &mut DcrtGlweCiphertext<B>,
         domain: &DcrtGadgetDomain<'_, T, M, Table>,
-        context: &mut CrtGlweAutoContext<T>,
+        workspace: &mut CrtGlweAutomorphismWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
@@ -297,7 +299,7 @@ impl<T: FheUint> DcrtGlweAutoKey<T> {
         let rns_poly_len = params.rns_poly_len();
         let moduli = params.cipher_moduli();
 
-        let (auto_dcrt_poly, glev_context) = context.as_mut();
+        let (auto_dcrt_poly, glev_workspace) = workspace.as_mut();
 
         result.set_zero();
 
@@ -320,7 +322,7 @@ impl<T: FheUint> DcrtGlweAutoKey<T> {
                     params.basis(),
                     table,
                     rns_base,
-                    glev_context,
+                    glev_workspace,
                 );
             });
 

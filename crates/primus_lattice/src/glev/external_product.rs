@@ -10,8 +10,8 @@ use primus_rns::RNSBase;
 
 use super::DcrtGlev;
 use crate::{
-    context::{DcrtGlevMulContext, DcrtGlevMulContextRefMut},
     glwe::DcrtGlwe,
+    workspace::{DcrtGlevMulWorkspace, DcrtGlevMulWorkspaceRefMut},
 };
 
 impl<S, T> DcrtGlev<S>
@@ -25,14 +25,14 @@ where
     ///
     /// `basis` must match the ordered `rns_base`, and its radix must be
     /// smaller than every RNS modulus for the fast centered digit lift.
-    /// `context` must support the GLev layout and the current RNS limb
+    /// `workspace` must support the GLev layout and the current RNS limb
     /// width; the table must match its polynomial length and ordered RNS base.
     /// The output is overwritten; scratch does not require a manual reset.
     ///
-    /// Let `size = context.size()`, `N = table.poly_length()`,
+    /// Let `size = workspace.size()`, `N = table.poly_length()`,
     /// `m = rns_base.moduli_count()`, and `w = rns_base.big_uint_value_len()`.
     /// The bound size must match `N`, `m`, the GLWE dimension, and
-    /// `basis.decompose_length()`; `context.is_compatible(size, rns_base)`
+    /// `basis.decompose_length()`; `workspace.is_compatible(size, rns_base)`
     /// must hold. The table uses the base's modulus order and the gadget
     /// uses its evaluation order and `basis.decomposer_iter()` level order.
     /// CRT/DCRT values must be canonical residues.
@@ -43,7 +43,7 @@ where
     /// # Panics
     ///
     /// The RNS recomposition boundary panics if the CRT polynomial length
-    /// is not `N * m` or the context's BigUint/scratch lengths do not match
+    /// is not `N * m` or the workspace's BigUint/scratch lengths do not match
     /// `N * w` and `m`. Other compatibility requirements are not fully checked.
     pub fn mul_crt_polynomial_to<M, Table, A, B>(
         &self,
@@ -52,7 +52,7 @@ where
         basis: &BigUintApproxSignedBasis<T>,
         table: &DcrtTable<Table>,
         rns_base: &RNSBase<T, M>,
-        context: &mut DcrtGlevMulContext<T>,
+        workspace: &mut DcrtGlevMulWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
@@ -61,7 +61,7 @@ where
     {
         output.set_zero();
         output.add_dcrt_glev_mul_crt_polynomial_assign(
-            self, crt_poly, basis, table, rns_base, context,
+            self, crt_poly, basis, table, rns_base, workspace,
         );
     }
 
@@ -71,14 +71,14 @@ where
     ///
     /// `basis` must match the ordered `rns_base`, and its radix must be
     /// smaller than every RNS modulus for the fast centered digit lift.
-    /// `context` must support the GLev layout and the current RNS limb
+    /// `workspace` must support the GLev layout and the current RNS limb
     /// width; the table must match its polynomial length and ordered RNS base.
     /// The output is overwritten; scratch does not require a manual reset.
     ///
-    /// Let `size = context.size()`, `N = table.poly_length()`,
+    /// Let `size = workspace.size()`, `N = table.poly_length()`,
     /// `m = rns_base.moduli_count()`, and `w = rns_base.big_uint_value_len()`.
     /// The bound size must match `N`, `m`, the GLWE dimension, and
-    /// `basis.decompose_length()`; `context.is_compatible(size, rns_base)`
+    /// `basis.decompose_length()`; `workspace.is_compatible(size, rns_base)`
     /// must hold. The table uses the base's modulus order and the gadget
     /// uses its evaluation order and `basis.decomposer_iter()` level order.
     /// CRT/DCRT values must be canonical residues.
@@ -94,7 +94,7 @@ where
         basis: &BigUintApproxSignedBasis<T>,
         table: &DcrtTable<Table>,
         rns_base: &RNSBase<T, M>,
-        context: &mut DcrtGlevMulContext<T>,
+        workspace: &mut DcrtGlevMulWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
@@ -108,7 +108,7 @@ where
             basis,
             table,
             rns_base,
-            context,
+            workspace,
         );
     }
 }
@@ -138,7 +138,7 @@ where
         basis: &BigUintApproxSignedBasis<T>,
         table: &DcrtTable<Table>,
         rns_base: &RNSBase<T, M>,
-        context: &mut DcrtGlevMulContext<T>,
+        workspace: &mut DcrtGlevMulWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
@@ -148,9 +148,9 @@ where
         let poly_length = table.poly_length();
         let dcrt_glwe_len = self.0.len();
 
-        let size = context.size();
+        let size = workspace.size();
         debug_assert!(
-            context.is_compatible(size, rns_base),
+            workspace.is_compatible(size, rns_base),
             "incompatible DCRT workspace"
         );
         debug_assert_eq!(size.rns_glwe_size().poly_length(), poly_length);
@@ -161,7 +161,7 @@ where
             dcrt_glev.as_ref().len(),
             dcrt_glwe_len * basis.decompose_length()
         );
-        let scratch = context.as_mut();
+        let scratch = workspace.as_mut();
 
         rns_base.compose_big_uint_values_to(
             crt_poly.as_ref(),
@@ -190,7 +190,7 @@ where
         basis: &BigUintApproxSignedBasis<T>,
         table: &DcrtTable<Table>,
         rns_base: &RNSBase<T, M>,
-        context: &mut DcrtGlevMulContext<T>,
+        workspace: &mut DcrtGlevMulWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
@@ -205,9 +205,9 @@ where
 
         let dcrt_glwe_len = self.0.len();
 
-        let size = context.size();
+        let size = workspace.size();
         debug_assert!(
-            context.is_compatible(size, rns_base),
+            workspace.is_compatible(size, rns_base),
             "incompatible DCRT workspace"
         );
         debug_assert_eq!(size.rns_glwe_size().poly_length(), poly_length);
@@ -218,7 +218,7 @@ where
             dcrt_glev.as_ref().len(),
             dcrt_glwe_len * basis.decompose_length()
         );
-        let scratch = context.as_mut();
+        let scratch = workspace.as_mut();
 
         basis.init_value_carry_slice_to(
             big_uint_poly.as_slice(),
@@ -241,7 +241,7 @@ where
         basis: &BigUintApproxSignedBasis<T>,
         table: &DcrtTable<Table>,
         rns_base: &RNSBase<T, M>,
-        scratch: DcrtGlevMulContextRefMut<'_, T>,
+        scratch: DcrtGlevMulWorkspaceRefMut<'_, T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
@@ -251,7 +251,7 @@ where
         let dcrt_glwe_len = self.as_ref().len();
         let basis_value = basis.basis_value();
         let moduli = rns_base.moduli();
-        let DcrtGlevMulContextRefMut {
+        let DcrtGlevMulWorkspaceRefMut {
             adjust_big_uint_values,
             decomposed_unsigned_values,
             carries,

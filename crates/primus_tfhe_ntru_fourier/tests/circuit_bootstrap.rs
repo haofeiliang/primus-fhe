@@ -71,7 +71,7 @@ fn circuit_bootstrap<Table: FftTable>(distr: SecretKeyDistr) {
         &mut fft,
     )
     .unwrap();
-    let mut decrypt = primus_ntru::FourierNtruDecryptContext::new(N);
+    let mut decrypt = primus_ntru::FourierNtruDecryptWorkspace::new(N);
     let encryptor = context.encryptor(&client).unwrap();
     // The same CBS-enabled server key also supports ordinary PBS.
     let identity = context

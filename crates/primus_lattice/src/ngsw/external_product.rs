@@ -8,10 +8,10 @@ use primus_ntt::NttTable;
 use primus_reduce::FieldContext;
 
 use crate::{
-    context::{FourierNtruExternalProductContext, NttNtruExternalProductContext},
     nlev::Nlev,
     ntru::gadget_product::{accumulate_fourier_gadget_product, accumulate_ntt_gadget_product},
     ntru::{FourierNtru, Ntru, NttNtru},
+    workspace::{FourierNtruExternalProductWorkspace, NttNtruExternalProductWorkspace},
 };
 
 use super::{FourierNgsw, NttNgsw};
@@ -28,7 +28,7 @@ where
     ///
     /// # Correctness
     ///
-    /// Let `N = context.poly_length()` and `L = basis.decompose_length()`.
+    /// Let `N = workspace.poly_length()` and `L = basis.decompose_length()`.
     /// The input and output each contain exactly `N` coefficients.
     /// `self` contains exactly `L * N / 2` complex values, grouped
     /// by level in `basis.decomposer_iter()` order. The basis must be the
@@ -37,7 +37,7 @@ where
     /// `basis` must use the implicit native modulus (`basis.modulus() == None`).
     /// The FFT engine must have polynomial length `N` and Fourier length
     /// `N / 2`; gadget values must use its packing and normalized torus scale.
-    /// Output is overwritten and context scratch is initialized as needed;
+    /// Output is overwritten and workspace scratch is initialized as needed;
     /// no manual reset is required. Context dimensions do not validate the
     /// basis, key, table, or actual ciphertext buffers.
     pub fn external_product_to<T, Table, A, C>(
@@ -46,18 +46,24 @@ where
         output: &mut Ntru<C>,
         basis: &ApproxSignedBasis<T>,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierNtruExternalProductContext<T>,
+        workspace: &mut FourierNtruExternalProductWorkspace<T>,
     ) where
         T: TorusFftValue,
         Table: FftTable,
         A: Data<Elem = T>,
         C: DataMut<Elem = T>,
     {
-        debug_assert_eq!(output.as_ref().len(), context.poly_length());
-        let mut context = context.as_mut();
-        context.fourier_accumulator.set_zero();
-        accumulate_fourier_gadget_product(self.as_ref(), input.as_ref(), basis, fft, &mut context);
-        context.fourier_accumulator.write_torus_form(output, fft);
+        debug_assert_eq!(output.as_ref().len(), workspace.poly_length());
+        let mut workspace = workspace.as_mut();
+        workspace.fourier_accumulator.set_zero();
+        accumulate_fourier_gadget_product(
+            self.as_ref(),
+            input.as_ref(),
+            basis,
+            fft,
+            &mut workspace,
+        );
+        workspace.fourier_accumulator.write_torus_form(output, fft);
     }
 
     /// Computes the external product directly in this key's Fourier representation.
@@ -70,14 +76,14 @@ where
     /// transform or torus rounding; subsequent Fourier operations use the same table.
     ///
     /// # Panics
-    /// Panics if the output length is not `context.poly_length() / 2`.
+    /// Panics if the output length is not `workspace.poly_length() / 2`.
     pub fn external_product_fourier_to<T, Table, A, C>(
         &self,
         input: &Ntru<A>,
         output: &mut FourierNtru<C>,
         basis: &ApproxSignedBasis<T>,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierNtruExternalProductContext<T>,
+        workspace: &mut FourierNtruExternalProductWorkspace<T>,
     ) where
         T: TorusFftValue,
         Table: FftTable,
@@ -86,12 +92,18 @@ where
     {
         assert_eq!(
             output.as_ref().len(),
-            context.poly_length() / 2,
+            workspace.poly_length() / 2,
             "external-product output length mismatch"
         );
-        let mut context = context.as_mut_with_accumulator(output);
-        context.fourier_accumulator.set_zero();
-        accumulate_fourier_gadget_product(self.as_ref(), input.as_ref(), basis, fft, &mut context);
+        let mut workspace = workspace.as_mut_with_accumulator(output);
+        workspace.fourier_accumulator.set_zero();
+        accumulate_fourier_gadget_product(
+            self.as_ref(),
+            input.as_ref(),
+            basis,
+            fft,
+            &mut workspace,
+        );
     }
 
     /// Applies this NGSW external product to every NTRU level in `input`.
@@ -101,43 +113,43 @@ where
     ///
     /// # Correctness
     ///
-    /// The gadget, basis, table, and context must satisfy
+    /// The gadget, basis, table, and workspace must satisfy
     /// [`Self::external_product_to`]. Input and output have the same number of
-    /// complete `context.poly_length()`-coefficient levels in matching NLev
+    /// complete `workspace.poly_length()`-coefficient levels in matching NLev
     /// order under compatible keys. Their level count and gadget scalars are
     /// independent of the control's `basis`, and are preserved by this operation.
-    /// Each output level is overwritten; context scratch needs no manual reset.
+    /// Each output level is overwritten; workspace scratch needs no manual reset.
     pub fn external_product_nlev_to<T, Table, A, C>(
         &self,
         input: &Nlev<A>,
         output: &mut Nlev<C>,
         basis: &ApproxSignedBasis<T>,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierNtruExternalProductContext<T>,
+        workspace: &mut FourierNtruExternalProductWorkspace<T>,
     ) where
         T: TorusFftValue,
         Table: FftTable,
         A: Data<Elem = T>,
         C: DataMut<Elem = T>,
     {
-        let poly_length = context.poly_length();
+        let poly_length = workspace.poly_length();
         debug_assert_eq!(input.as_ref().len() % poly_length, 0);
         debug_assert_eq!(output.as_ref().len(), input.as_ref().len());
 
-        let mut context = context.as_mut();
+        let mut workspace = workspace.as_mut();
         for (input_level, mut output_level) in input
             .iter_ntru(poly_length)
             .zip(output.iter_ntru_mut(poly_length))
         {
-            context.fourier_accumulator.set_zero();
+            workspace.fourier_accumulator.set_zero();
             accumulate_fourier_gadget_product(
                 self.as_ref(),
                 input_level.as_ref(),
                 basis,
                 fft,
-                &mut context,
+                &mut workspace,
             );
-            context
+            workspace
                 .fourier_accumulator
                 .write_torus_form(&mut output_level, fft);
         }
@@ -157,7 +169,7 @@ where
     ///
     /// # Correctness
     ///
-    /// Let `N = context.poly_length()` and `L = basis.decompose_length()`.
+    /// Let `N = workspace.poly_length()` and `L = basis.decompose_length()`.
     /// The input and output each contain exactly `N` coefficients.
     /// `self` contains exactly `L * N` evaluations, grouped
     /// by level in `basis.decomposer_iter()` order. The basis must be the
@@ -166,12 +178,12 @@ where
     /// `basis`, `modulus`, and the NTT table must use the same modulus.
     /// The NTT polynomial length must be `N`, and gadget evaluations must
     /// use that table's order. Input and gadget values must be canonical residues.
-    /// Output is overwritten and context scratch is initialized as needed;
+    /// Output is overwritten and workspace scratch is initialized as needed;
     /// no manual reset is required. Context dimensions do not validate the
     /// basis, key, table, or actual ciphertext buffers.
     ///
     /// # Panics
-    /// Panics before output writes if its length is not `context.poly_length()`.
+    /// Panics before output writes if its length is not `workspace.poly_length()`.
     pub fn external_product_to<T, M, Table, A, C>(
         &self,
         input: &Ntru<A>,
@@ -179,7 +191,7 @@ where
         basis: &ApproxSignedBasis<T>,
         modulus: M,
         ntt: &Table,
-        context: &mut NttNtruExternalProductContext<T>,
+        workspace: &mut NttNtruExternalProductWorkspace<T>,
     ) where
         T: FheUint,
         M: FieldContext<T>,
@@ -192,21 +204,21 @@ where
         // destination, then invert in place to avoid copying an entire polynomial.
         assert_eq!(
             output.as_ref().len(),
-            context.poly_length(),
+            workspace.poly_length(),
             "external-product output length mismatch"
         );
         let mut transformed = NttNtru(output.as_mut());
-        let mut context = context.as_mut_with_accumulator(&mut transformed);
-        context.ntt_accumulator.set_zero();
+        let mut workspace = workspace.as_mut_with_accumulator(&mut transformed);
+        workspace.ntt_accumulator.set_zero();
         accumulate_ntt_gadget_product(
             self.as_ref(),
             input.as_ref(),
             basis,
             modulus,
             ntt,
-            &mut context,
+            &mut workspace,
         );
-        ntt.inverse_transform_slice(context.ntt_accumulator.as_mut());
+        ntt.inverse_transform_slice(workspace.ntt_accumulator.as_mut());
     }
 
     /// Computes the external product directly in this key's NTT representation.
@@ -216,10 +228,10 @@ where
     /// Inherits [`Self::external_product_to`]'s input, key, basis, table and
     /// workspace contracts. Output contains exactly `N` canonical evaluations
     /// in the table's order. It is used directly as the accumulator, without a copy
-    /// from the context or an inverse transform.
+    /// from the workspace or an inverse transform.
     ///
     /// # Panics
-    /// Panics if the output length is not `context.poly_length()`.
+    /// Panics if the output length is not `workspace.poly_length()`.
     pub fn external_product_ntt_to<T, M, Table, A, C>(
         &self,
         input: &Ntru<A>,
@@ -227,7 +239,7 @@ where
         basis: &ApproxSignedBasis<T>,
         modulus: M,
         ntt: &Table,
-        context: &mut NttNtruExternalProductContext<T>,
+        workspace: &mut NttNtruExternalProductWorkspace<T>,
     ) where
         T: FheUint,
         M: FieldContext<T>,
@@ -238,18 +250,18 @@ where
     {
         assert_eq!(
             output.as_ref().len(),
-            context.poly_length(),
+            workspace.poly_length(),
             "external-product output length mismatch"
         );
-        let mut context = context.as_mut_with_accumulator(output);
-        context.ntt_accumulator.set_zero();
+        let mut workspace = workspace.as_mut_with_accumulator(output);
+        workspace.ntt_accumulator.set_zero();
         accumulate_ntt_gadget_product(
             self.as_ref(),
             input.as_ref(),
             basis,
             modulus,
             ntt,
-            &mut context,
+            &mut workspace,
         );
     }
 
@@ -260,12 +272,12 @@ where
     ///
     /// # Correctness
     ///
-    /// The gadget, basis, table, and context must satisfy
+    /// The gadget, basis, table, and workspace must satisfy
     /// [`Self::external_product_to`]. Input and output have the same number of
-    /// complete `context.poly_length()`-coefficient levels in matching NLev
+    /// complete `workspace.poly_length()`-coefficient levels in matching NLev
     /// order under compatible keys. Their level count and gadget scalars are
     /// independent of the control's `basis`, and are preserved by this operation.
-    /// Each output level is overwritten; context scratch needs no manual reset.
+    /// Each output level is overwritten; workspace scratch needs no manual reset.
     pub fn external_product_nlev_to<T, M, Table, A, C>(
         &self,
         input: &Nlev<A>,
@@ -273,7 +285,7 @@ where
         basis: &ApproxSignedBasis<T>,
         modulus: M,
         ntt: &Table,
-        context: &mut NttNtruExternalProductContext<T>,
+        workspace: &mut NttNtruExternalProductWorkspace<T>,
     ) where
         T: FheUint,
         M: FieldContext<T>,
@@ -282,7 +294,7 @@ where
         C: DataMut<Elem = T>,
         S: Data<Elem = T>,
     {
-        let poly_length = context.poly_length();
+        let poly_length = workspace.poly_length();
         debug_assert_eq!(input.as_ref().len() % poly_length, 0);
         debug_assert_eq!(output.as_ref().len(), input.as_ref().len());
 
@@ -291,17 +303,17 @@ where
             .zip(output.iter_ntru_mut(poly_length))
         {
             let mut transformed = NttNtru(output_level.as_mut());
-            let mut context = context.as_mut_with_accumulator(&mut transformed);
-            context.ntt_accumulator.set_zero();
+            let mut workspace = workspace.as_mut_with_accumulator(&mut transformed);
+            workspace.ntt_accumulator.set_zero();
             accumulate_ntt_gadget_product(
                 self.as_ref(),
                 input_level.as_ref(),
                 basis,
                 modulus,
                 ntt,
-                &mut context,
+                &mut workspace,
             );
-            ntt.inverse_transform_slice(context.ntt_accumulator.as_mut());
+            ntt.inverse_transform_slice(workspace.ntt_accumulator.as_mut());
         }
     }
 }

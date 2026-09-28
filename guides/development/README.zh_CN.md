@@ -134,12 +134,12 @@ NTRU 将外部 LWE 的秘密/模数/维数与累加 NTRU 环的秘密/模数/长
 
 ## 区分运行环境与工作区
 
-命名规则按职责区分。现有 API 尚未全部采用该规则；下表列出当前名称，帮助定位实现，不增加兼容别名。
+命名按职责区分：成组复用缓冲使用 `Workspace`，绑定运行环境的类型保留 `Context`。
 
 | 职责 | 命名规则 | 当前入口 |
 | --- | --- | --- |
-| 保存一组复用临时缓冲和形状不变量 | `*Workspace` | [Ntt/FourierNtruExternalProductContext](../../crates/primus_lattice/src/context/ntru_external_product.rs)、[NtruLweKeySwitchingContext](../../crates/primus_ntru/src/key_switch/lwe.rs) 当前仍使用 Context 名称 |
-| FFT 后端拥有的临时缓冲 | 同样使用 `*Workspace` | [FftTable::Scratch / new_scratch 和 FftEngine](../../crates/primus_fft/src/table.rs) 当前仍使用 Scratch 词干 |
+| 保存一组复用临时缓冲和形状不变量 | `*Workspace` | [Ntt/FourierNtruExternalProductWorkspace](../../crates/primus_lattice/src/workspace/ntru_external_product.rs)、[NtruLweKeySwitchingWorkspace](../../crates/primus_ntru/src/key_switch/lwe.rs) |
+| FFT 后端拥有的临时缓冲 | 同样使用 `*Workspace` | [FftTable::Workspace / new_workspace 和 FftEngine](../../crates/primus_fft/src/table.rs) |
 | 绑定已验证参数、模数和变换环境 | `*Context` | [TfheContext](../../crates/primus_tfhe_ntru_ntt/src/context.rs)；算术 `RingContext` / `FieldContext` 仍为能力 trait |
 | 绑定密钥/表和可变工作区并提供执行流程 | `*Evaluator` / `*Engine` | TFHE evaluator、`FftEngine`；混合状态按实际职责判断 |
 | 借用的一段临时切片或区域 | 局部变量 `scratch` / `buffer` | 无需另加 wrapper；第三方 `PodBuffer` / `PodStack` 保留原名 |
@@ -161,6 +161,8 @@ NTRU 将外部 LWE 的秘密/模数/维数与累加 NTRU 环的秘密/模数/长
 启用 `primus_data/aligned-vec` 后，[AVec 和 ABox 实现 RawData/Data/DataMut](../../crates/primus_data/src/impls.rs)，**未实现 DataOwned**。该 trait 还要求从迭代器构造及消费，aligned 分配则有自己的对齐选择。应显式分配容器，用 `new` 包装，再使用支持 `DataMut` 的运算；不能假定 `Polynomial::zero` 等受 `DataOwned` 约束的构造器接受 aligned 目标。
 
 整块分配对齐不保证子块对齐，需检查实际步长，尤其是长度为 n+1 的 LWE 行。对齐 `Vec<Key>` 不会对齐各密钥内部的系数。修改存储前检查实际 kernel，测量受影响负载、构造/转换成本和内存，同时保留秘密擦除与所有权契约；对齐本身不能证明提速。
+
+具体存储选择、串行复用及实测内存/耗时取舍见[工作区与存储说明](workspaces-and-storage.md)。
 
 ## 验证对应契约
 

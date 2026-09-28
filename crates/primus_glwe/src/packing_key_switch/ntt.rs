@@ -11,7 +11,7 @@ use primus_reduce::FieldContext;
 use zeroize::Zeroizing;
 
 use crate::{
-    GlevParameters, NttGadgetEncryptContext, NttGlweKeySwitchingContext, NttGlweSecretKey,
+    GlevParameters, NttGlweGadgetEncryptWorkspace, NttGlweKeySwitchingWorkspace, NttGlweSecretKey,
 };
 
 /// NTT GLev encryptions of an independent input LWE secret's scalar coefficients.
@@ -46,7 +46,7 @@ impl<T: FheUint> NttLwePackingKeySwitchingKey<T> {
         params: &GlevParameters<T, M>,
         ntt: &Table,
         rng: &mut R,
-        context: &mut NttGadgetEncryptContext<T>,
+        workspace: &mut NttGlweGadgetEncryptWorkspace<T>,
     ) -> Self
     where
         M: FieldContext<T>,
@@ -59,7 +59,7 @@ impl<T: FheUint> NttLwePackingKeySwitchingKey<T> {
             .checked_add(1)
             .expect("input LWE length overflow");
         output_secret_key.assert_gadget_compatible(params, ntt);
-        context.assert_glev_compatible(params.size());
+        workspace.assert_glev_compatible(params.size());
         let length = input_dimension
             .checked_mul(params.glev_len())
             .expect("packing key length overflow");
@@ -74,7 +74,7 @@ impl<T: FheUint> NttLwePackingKeySwitchingKey<T> {
                 params,
                 ntt,
                 rng,
-                context,
+                workspace,
             );
         });
         Self {
@@ -123,7 +123,7 @@ impl<T: FheUint> NttLwePackingKeySwitchingKey<T> {
         output: &mut Glwe<B>,
         modulus: M,
         ntt: &Table,
-        context: &mut NttGlweKeySwitchingContext<T>,
+        workspace: &mut NttGlweKeySwitchingWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
@@ -135,7 +135,7 @@ impl<T: FheUint> NttLwePackingKeySwitchingKey<T> {
             self.input_dimension + 1,
             "packing input LWE dimension mismatch"
         );
-        self.pack_lwes_to(input.as_ref(), output, modulus, ntt, context);
+        self.pack_lwes_to(input.as_ref(), output, modulus, ntt, workspace);
     }
 
     /// Packs `p` LWEs into a coefficient-domain GLWE targeting `sum_i m_i X^i`.
@@ -143,7 +143,7 @@ impl<T: FheUint> NttLwePackingKeySwitchingKey<T> {
     /// Input is a flat slice of complete `[mask, body]` LWEs. Any `p` in
     /// `1..=N` is accepted. The target message tail `p..N` is zero; the noisy
     /// phase need not be zero there. All output coefficients are overwritten.
-    /// Uses an output-layout GLWE key-switch context without allocating.
+    /// Uses an output-layout GLWE key-switch workspace without allocating.
     ///
     /// # Correctness
     ///
@@ -163,7 +163,7 @@ impl<T: FheUint> NttLwePackingKeySwitchingKey<T> {
         output: &mut Glwe<B>,
         modulus: M,
         ntt: &Table,
-        context: &mut NttGlweKeySwitchingContext<T>,
+        workspace: &mut NttGlweKeySwitchingWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
@@ -193,12 +193,12 @@ impl<T: FheUint> NttLwePackingKeySwitchingKey<T> {
             "packing NTT polynomial length mismatch"
         );
         assert_eq!(
-            context.adjusted_poly.len(),
+            workspace.adjusted_poly.len(),
             poly_length,
             "packing workspace polynomial length mismatch"
         );
         assert_eq!(
-            context.accumulator.as_ref().len(),
+            workspace.accumulator.as_ref().len(),
             size.glwe_len(),
             "packing workspace GLWE layout mismatch"
         );
@@ -206,16 +206,16 @@ impl<T: FheUint> NttLwePackingKeySwitchingKey<T> {
         // For D[j,l](X) = sum_i digit_l(a[i,j]) X^i, compute
         // (0, sum_i b_i X^i) - sum_{j,l} D[j,l](X) * K[j,l].
         let lwe_len = self.input_dimension + 1;
-        context.accumulator.set_zero();
+        workspace.accumulator.set_zero();
         if count == 1 {
             // Frequent small digits avoid costly modular products. On Ryzen 9955HX3D,
             // large-key benchmarks (d=512..2048, N=1024..8192) support this cutoff
             // in default and SIMD builds; larger tested bases had no consistent gain.
             // Select once so the general kernel has no per-digit special cases.
             if self.basis.log_basis() <= 6 {
-                self.accumulate_single::<true, _>(input, modulus, context);
+                self.accumulate_single::<true, _>(input, modulus, workspace);
             } else {
-                self.accumulate_single::<false, _>(input, modulus, context);
+                self.accumulate_single::<false, _>(input, modulus, workspace);
             }
         } else {
             for (j, entry) in self
@@ -223,9 +223,9 @@ impl<T: FheUint> NttLwePackingKeySwitchingKey<T> {
                 .chunks_exact(self.output_size.glev_len())
                 .enumerate()
             {
-                for ((adjusted, carry), lwe) in context.adjusted_poly[..count]
+                for ((adjusted, carry), lwe) in workspace.adjusted_poly[..count]
                     .iter_mut()
-                    .zip(&mut context.carries[..count])
+                    .zip(&mut workspace.carries[..count])
                     .zip(input.chunks_exact(lwe_len))
                 {
                     (*adjusted, *carry) = self.basis.init_value_carry(lwe[j]);
@@ -236,22 +236,22 @@ impl<T: FheUint> NttLwePackingKeySwitchingKey<T> {
                     .zip(NttGlev::new(entry).iter_ntt_glwe(size.glwe_len()))
                 {
                     decomposer.decompose_slice_to(
-                        &context.adjusted_poly[..count],
-                        &mut context.decomposed_ntt[..count],
-                        &mut context.carries[..count],
+                        &workspace.adjusted_poly[..count],
+                        &mut workspace.decomposed_ntt[..count],
+                        &mut workspace.carries[..count],
                     );
                     // Transform overwrites the whole polynomial; reset the unused tail at every level.
-                    context.decomposed_ntt[count..].fill(T::ZERO);
-                    ntt.transform_slice(&mut context.decomposed_ntt);
-                    context.accumulator.add_mul_ntt_polynomial_assign(
+                    workspace.decomposed_ntt[count..].fill(T::ZERO);
+                    ntt.transform_slice(&mut workspace.decomposed_ntt);
+                    workspace.accumulator.add_mul_ntt_polynomial_assign(
                         &key_glwe,
-                        &NttPolynomial::new(context.decomposed_ntt.as_slice()),
+                        &NttPolynomial::new(workspace.decomposed_ntt.as_slice()),
                         modulus,
                     );
                 }
             }
         }
-        context.accumulator.write_coeff_form(output, ntt);
+        workspace.accumulator.write_coeff_form(output, ntt);
         output.neg_assign(modulus);
         let (_, body) = output.a_b_mut_slices(poly_length);
         for (output, lwe) in body[..count].iter_mut().zip(input.chunks_exact(lwe_len)) {
@@ -264,7 +264,7 @@ impl<T: FheUint> NttLwePackingKeySwitchingKey<T> {
         &self,
         input: &[T],
         modulus: M,
-        context: &mut NttGlweKeySwitchingContext<T>,
+        workspace: &mut NttGlweKeySwitchingWorkspace<T>,
     ) {
         let glwe_len = self.output_size.glwe_len();
         let minus_one = modulus.reduce_neg(T::ONE);
@@ -281,7 +281,7 @@ impl<T: FheUint> NttLwePackingKeySwitchingKey<T> {
             {
                 let (digit, next_carry) = decomposer.decompose(adjusted, carry);
                 carry = next_carry;
-                let acc = context.accumulator.as_mut();
+                let acc = workspace.accumulator.as_mut();
                 // Branch once per GLWE block, leaving the slice kernels vectorizable.
                 // For ±2 the measured savings outweigh the extra add/sub pass;
                 // zero also avoids reading the key block entirely.

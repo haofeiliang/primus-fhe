@@ -1,10 +1,10 @@
 use primus_fft::{FftEngine, FftTable, RustFftTable};
 use primus_glwe::{
-    FourierGadgetEncryptContext, FourierGlweDecryptContext, FourierGlweEncryptContext,
-    FourierGlweKeySwitchingContext, FourierGlweKeySwitchingKey, FourierGlweSecretKey,
+    FourierGlweDecryptWorkspace, FourierGlweEncryptWorkspace, FourierGlweGadgetEncryptWorkspace,
+    FourierGlweKeySwitchingKey, FourierGlweKeySwitchingWorkspace, FourierGlweSecretKey,
     GlevParameters, GlweKeySwitchingParameters, GlweParameters, GlweSecretKey,
-    NttGadgetEncryptContext, NttGlweKeySwitchingContext, NttGlweKeySwitchingKey, NttGlweSecretKey,
-    SecretKeyDistr,
+    NttGlweGadgetEncryptWorkspace, NttGlweKeySwitchingKey, NttGlweKeySwitchingWorkspace,
+    NttGlweSecretKey, SecretKeyDistr,
 };
 use primus_lattice::glwe::{FourierGlweOwned, Glwe, NttGlwe};
 use primus_modulus::{BarrettModulus, NativeModulus};
@@ -73,18 +73,19 @@ fn ntt_glwe_key_switches_for_equal_and_smaller_output_dimensions() {
         let output_key = NttGlweSecretKey::from_coeff_secret_key(&output_coeff_key, &ntt);
         let glev = GlevParameters::with_glwe_params(&output_params, 8, None);
         let parameters = GlweKeySwitchingParameters::new(INPUT_DIMENSION, glev);
-        let mut encrypt_context = NttGadgetEncryptContext::new(parameters.output().size());
+        let mut encrypt_workspace = NttGlweGadgetEncryptWorkspace::new(parameters.output().size());
         let key = NttGlweKeySwitchingKey::generate(
             &input_coeff_key,
             &output_key,
             parameters.output(),
             &ntt,
             &mut rng,
-            &mut encrypt_context,
+            &mut encrypt_workspace,
         );
 
-        let mut context = NttGlweKeySwitchingContext::new(parameters.output().size().glwe_size());
-        let switched = key.key_switch(&input, modulus, &ntt, &mut context);
+        let mut workspace =
+            NttGlweKeySwitchingWorkspace::new(parameters.output().size().glwe_size());
+        let switched = key.key_switch(&input, modulus, &ntt, &mut workspace);
         let switched_ntt = switched.into_ntt_form(&ntt);
         assert_eq!(
             output_key
@@ -113,14 +114,14 @@ fn fourier_glwe_key_switches_for_equal_and_smaller_output_dimensions() {
     let message_values = plaintext();
     let message = Polynomial::new(message_values.clone());
     let mut encrypted = FourierGlweOwned::zero(input_params.fourier_glwe_len());
-    let mut glwe_encrypt_context = FourierGlweEncryptContext::new(POLY_LENGTH);
+    let mut glwe_encrypt_workspace = FourierGlweEncryptWorkspace::new(POLY_LENGTH);
     input_key.encrypt_to(
         &message,
         &mut encrypted,
         &input_params,
         &mut fft,
         &mut rng,
-        &mut glwe_encrypt_context,
+        &mut glwe_encrypt_workspace,
     );
     let mut input: Glwe<Vec<u32>> = Glwe::zero(input_params.glwe_len());
     encrypted.write_torus_form(&mut input, &mut fft);
@@ -151,28 +152,29 @@ fn fourier_glwe_key_switches_for_equal_and_smaller_output_dimensions() {
         let output_key = FourierGlweSecretKey::from_coeff_secret_key(&output_coeff_key, &mut fft);
         let glev = GlevParameters::with_glwe_params(&output_params, 8, None);
         let parameters = GlweKeySwitchingParameters::new(INPUT_DIMENSION, glev);
-        let mut encrypt_context = FourierGadgetEncryptContext::new(parameters.output().size());
+        let mut encrypt_workspace =
+            FourierGlweGadgetEncryptWorkspace::new(parameters.output().size());
         let key = FourierGlweKeySwitchingKey::generate(
             &input_coeff_key,
             &output_key,
             parameters.output(),
             &mut fft,
             &mut rng,
-            &mut encrypt_context,
+            &mut encrypt_workspace,
         );
 
-        let mut context = FourierGlweKeySwitchingContext::new(parameters.output().glwe_size());
-        let switched = key.key_switch(&input, &mut fft, &mut context);
+        let mut workspace = FourierGlweKeySwitchingWorkspace::new(parameters.output().glwe_size());
+        let switched = key.key_switch(&input, &mut fft, &mut workspace);
         let mut switched_fourier = FourierGlweOwned::zero(output_params.fourier_glwe_len());
         switched.write_fourier_form(&mut switched_fourier, &mut fft);
-        let mut decrypt_context = FourierGlweDecryptContext::new(POLY_LENGTH);
+        let mut decrypt_workspace = FourierGlweDecryptWorkspace::new(POLY_LENGTH);
         assert_eq!(
             output_key
                 .decrypt(
                     &switched_fourier,
                     &output_params,
                     &mut fft,
-                    &mut decrypt_context,
+                    &mut decrypt_workspace,
                 )
                 .as_ref(),
             message_values

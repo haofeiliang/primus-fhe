@@ -2,7 +2,7 @@
 
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{Complex64, FftEngine, FftTable, TorusFftValue};
-use primus_glwe::{FourierGadgetEncryptContext, FourierGlweSecretKey, GlevParameters};
+use primus_glwe::{FourierGlweGadgetEncryptWorkspace, FourierGlweSecretKey, GlevParameters};
 use primus_lattice::{
     GadgetSize,
     ggsw::{FourierGgsw, FourierGgswIter},
@@ -98,7 +98,7 @@ impl<T: TorusFftValue, LM: PrepareModulusSwitch<ValueT = T>> FourierGlweBootstra
         parameters: &GlevParameters<T, NativeModulus<T>>,
         fft: &mut FftEngine<'_, Table>,
         rng: &mut R,
-        context: &mut FourierGadgetEncryptContext<T>,
+        context: &mut FourierGlweGadgetEncryptWorkspace<T>,
     ) -> Self
     where
         LM: RingContext<T>,

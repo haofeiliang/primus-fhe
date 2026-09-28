@@ -5,13 +5,13 @@ use crate::{FftError, TorusFftValue};
 
 /// Negacyclic FFT wrapper for polynomials modulo `X^N + 1`.
 ///
-/// Fourier ordering and scratch layout are properties of a specific table.
+/// Fourier ordering and workspace layout are properties of a specific table.
 /// Fourier values produced by one table must be consumed by that same table
 /// instance; independently constructed tables are not interchangeable, even
 /// when they use the same backend and polynomial length.
 pub trait FftTable: Send + Sync {
     /// Backend-specific reusable transform workspace bound to one table.
-    type Scratch;
+    type Workspace;
 
     /// Creates a table for `N = 2^log_n` coefficients.
     ///
@@ -40,12 +40,12 @@ pub trait FftTable: Send + Sync {
     fn automorphism_map(&self, degree: usize) -> Vec<(usize, bool)>;
 
     /// Allocates a workspace compatible with this table instance.
-    fn new_scratch(&self) -> Self::Scratch;
+    fn new_workspace(&self) -> Self::Workspace;
     /// Transforms torus coefficients, scaled by `2^-BITS`, to this table's
     /// Fourier form and completely overwrites `output`.
     ///
     /// `input` must contain [`Self::poly_length`] coefficients, `output` must
-    /// contain [`Self::fourier_length`] complex values, and `scratch` must have
+    /// contain [`Self::fourier_length`] complex values, and `workspace` must have
     /// been allocated by this table instance.
     ///
     /// # Panics
@@ -56,13 +56,13 @@ pub trait FftTable: Send + Sync {
         &self,
         input: &[T],
         output: &mut [Complex64],
-        scratch: &mut Self::Scratch,
+        workspace: &mut Self::Workspace,
     );
     /// Transforms signed integer bit patterns without torus scaling to this
     /// table's Fourier form and completely overwrites `output`.
     ///
     /// `input` must contain [`Self::poly_length`] coefficients, `output` must
-    /// contain [`Self::fourier_length`] complex values, and `scratch` must have
+    /// contain [`Self::fourier_length`] complex values, and `workspace` must have
     /// been allocated by this table instance.
     ///
     /// # Panics
@@ -73,13 +73,13 @@ pub trait FftTable: Send + Sync {
         &self,
         input: &[T],
         output: &mut [Complex64],
-        scratch: &mut Self::Scratch,
+        workspace: &mut Self::Workspace,
     );
     /// Transforms ordinary integer-valued floating point coefficients to this
     /// table's Fourier form and completely overwrites `output`.
     ///
     /// `input` must contain [`Self::poly_length`] coefficients, `output` must
-    /// contain [`Self::fourier_length`] complex values, and `scratch` must have
+    /// contain [`Self::fourier_length`] complex values, and `workspace` must have
     /// been allocated by this table instance.
     ///
     /// # Panics
@@ -90,14 +90,14 @@ pub trait FftTable: Send + Sync {
         &self,
         input: &[f64],
         output: &mut [Complex64],
-        scratch: &mut Self::Scratch,
+        workspace: &mut Self::Workspace,
     );
     /// Converts this table's Fourier form back to torus coefficients and
     /// completely overwrites `output`.
     ///
     /// `input` must contain [`Self::fourier_length`] complex values produced
     /// for this table instance, `output` must contain [`Self::poly_length`]
-    /// coefficients, and `scratch` must have been allocated by this table.
+    /// coefficients, and `workspace` must have been allocated by this table.
     ///
     /// # Panics
     ///
@@ -107,23 +107,23 @@ pub trait FftTable: Send + Sync {
         &self,
         input: &[Complex64],
         output: &mut [T],
-        scratch: &mut Self::Scratch,
+        workspace: &mut Self::Workspace,
     );
 }
 
-/// An immutable FFT table bound to one reusable scratch allocation.
+/// An immutable FFT table bound to one reusable workspace allocation.
 ///
 /// Multiple engines may share the same table across threads without locking
 /// transform calls. Fourier values remain bound to that shared table and must
 /// not be passed to an engine using another table instance.
 pub struct FftEngine<'a, Table: FftTable + ?Sized> {
     table: &'a Table,
-    scratch: Table::Scratch,
+    workspace: Table::Workspace,
 }
 
 impl<Table: FftTable + ?Sized> FftEngine<'_, Table>
 where
-    Table::Scratch: Zeroize,
+    Table::Workspace: Zeroize,
 {
     /// Securely erases the backend workspace after a sequence of transforms.
     ///
@@ -131,11 +131,11 @@ where
     /// remains reusable. They also erase their workspace on drop. A custom
     /// backend determines its own `Zeroize` and drop behavior.
     ///
-    /// Transform calls do not erase scratch automatically: callers processing
+    /// Transform calls do not erase workspace automatically: callers processing
     /// secrets can use this at a lifecycle boundary without adding writes to
     /// every transform. It does not erase caller-owned inputs or outputs.
-    pub fn zeroize_scratch(&mut self) {
-        self.scratch.zeroize();
+    pub fn zeroize_workspace(&mut self) {
+        self.workspace.zeroize();
     }
 }
 
@@ -145,7 +145,7 @@ impl<'a, Table: FftTable + ?Sized> FftEngine<'a, Table> {
     pub fn new(table: &'a Table) -> Self {
         Self {
             table,
-            scratch: table.new_scratch(),
+            workspace: table.new_workspace(),
         }
     }
 
@@ -154,8 +154,8 @@ impl<'a, Table: FftTable + ?Sized> FftEngine<'a, Table> {
     /// Passing a workspace from another table instance is unsupported and may
     /// cause later transform calls to panic.
     #[inline]
-    pub fn from_scratch(table: &'a Table, scratch: Table::Scratch) -> Self {
-        Self { table, scratch }
+    pub fn from_workspace(table: &'a Table, workspace: Table::Workspace) -> Self {
+        Self { table, workspace }
     }
 
     /// Returns the shared immutable table.
@@ -188,7 +188,7 @@ impl<'a, Table: FftTable + ?Sized> FftEngine<'a, Table> {
     #[inline]
     pub fn forward_as_torus<T: TorusFftValue>(&mut self, input: &[T], output: &mut [Complex64]) {
         self.table
-            .forward_as_torus(input, output, &mut self.scratch);
+            .forward_as_torus(input, output, &mut self.workspace);
     }
 
     /// Transforms signed integer bit patterns without torus scaling.
@@ -203,7 +203,7 @@ impl<'a, Table: FftTable + ?Sized> FftEngine<'a, Table> {
     #[inline]
     pub fn forward_as_integer<T: TorusFftValue>(&mut self, input: &[T], output: &mut [Complex64]) {
         self.table
-            .forward_as_integer(input, output, &mut self.scratch);
+            .forward_as_integer(input, output, &mut self.workspace);
     }
 
     /// Transforms ordinary integer-valued floating point coefficients.
@@ -218,7 +218,7 @@ impl<'a, Table: FftTable + ?Sized> FftEngine<'a, Table> {
     #[inline]
     pub fn forward_integer_f64(&mut self, input: &[f64], output: &mut [Complex64]) {
         self.table
-            .forward_integer_f64(input, output, &mut self.scratch);
+            .forward_integer_f64(input, output, &mut self.workspace);
     }
 
     /// Converts this engine's Fourier form back to torus coefficients.
@@ -233,12 +233,12 @@ impl<'a, Table: FftTable + ?Sized> FftEngine<'a, Table> {
     #[inline]
     pub fn backward_as_torus<T: TorusFftValue>(&mut self, input: &[Complex64], output: &mut [T]) {
         self.table
-            .backward_as_torus(input, output, &mut self.scratch);
+            .backward_as_torus(input, output, &mut self.workspace);
     }
 
     /// Splits the engine into its table reference and reusable workspace.
     #[inline]
-    pub fn into_parts(self) -> (&'a Table, Table::Scratch) {
-        (self.table, self.scratch)
+    pub fn into_parts(self) -> (&'a Table, Table::Workspace) {
+        (self.table, self.workspace)
     }
 }

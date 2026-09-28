@@ -10,25 +10,25 @@ use primus_poly::{CoeffAutomorphismPermutation, NttPolynomial};
 use primus_reduce::FieldContext;
 
 use crate::{
-    GlevParameters, GlweSecretKey, NttGadgetEncryptContext, NttGlweKeySwitchingContext,
-    NttGlweKeySwitchingKey, NttGlweSecretKey,
+    GlevParameters, GlweSecretKey, NttGlweGadgetEncryptWorkspace, NttGlweKeySwitchingKey,
+    NttGlweKeySwitchingWorkspace, NttGlweSecretKey,
 };
 
 /// Reusable workspace for coefficient- and NTT-domain GLWE automorphisms.
-pub struct NttGlweAutomorphismContext<T: FheUint> {
-    // All buffers share one immutable GLWE layout, checked via the nested context.
+pub struct NttGlweAutomorphismWorkspace<T: FheUint> {
+    // All buffers share one immutable GLWE layout, checked via the nested workspace.
     transformed: Glwe<Vec<T>>,
     permuted_ntt: Vec<T>,
-    key_switching: NttGlweKeySwitchingContext<T>,
+    key_switching: NttGlweKeySwitchingWorkspace<T>,
 }
 
-impl<T: FheUint> NttGlweAutomorphismContext<T> {
+impl<T: FheUint> NttGlweAutomorphismWorkspace<T> {
     /// Creates workspace for one GLWE layout.
     pub fn new(size: primus_lattice::GlweSize) -> Self {
         Self {
             transformed: Glwe::zero(size.glwe_len()),
             permuted_ntt: vec![T::ZERO; size.poly_length()],
-            key_switching: NttGlweKeySwitchingContext::new(size),
+            key_switching: NttGlweKeySwitchingWorkspace::new(size),
         }
     }
 }
@@ -64,7 +64,7 @@ impl<T: FheUint> NttGlweAutomorphismKey<T> {
         params: &GlevParameters<T, M>,
         ntt: &Table,
         rng: &mut R,
-        context: &mut NttGadgetEncryptContext<T>,
+        workspace: &mut NttGlweGadgetEncryptWorkspace<T>,
     ) -> Self
     where
         M: FieldContext<T>,
@@ -72,7 +72,7 @@ impl<T: FheUint> NttGlweAutomorphismKey<T> {
         R: rand::Rng + rand::CryptoRng,
     {
         ntt_secret_key.assert_gadget_compatible(params, ntt);
-        context.assert_glev_compatible(params.size());
+        workspace.assert_glev_compatible(params.size());
         assert_eq!(
             secret_key.glwe_size(),
             params.glwe_size(),
@@ -85,7 +85,7 @@ impl<T: FheUint> NttGlweAutomorphismKey<T> {
             params,
             ntt,
             rng,
-            context,
+            workspace,
         )
     }
 
@@ -98,7 +98,7 @@ impl<T: FheUint> NttGlweAutomorphismKey<T> {
         params: &GlevParameters<T, M>,
         ntt: &Table,
         rng: &mut R,
-        context: &mut NttGadgetEncryptContext<T>,
+        workspace: &mut NttGlweGadgetEncryptWorkspace<T>,
     ) -> Self
     where
         M: FieldContext<T>,
@@ -127,7 +127,7 @@ impl<T: FheUint> NttGlweAutomorphismKey<T> {
             params,
             ntt,
             rng,
-            context,
+            workspace,
         );
 
         Self {
@@ -170,7 +170,7 @@ impl<T: FheUint> NttGlweAutomorphismKey<T> {
         output: &mut Glwe<B>,
         modulus: M,
         ntt: &Table,
-        context: &mut NttGlweAutomorphismContext<T>,
+        workspace: &mut NttGlweAutomorphismWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
@@ -187,9 +187,9 @@ impl<T: FheUint> NttGlweAutomorphismKey<T> {
             self.key_switching.output_size().glwe_len(),
             "automorphism output layout mismatch"
         );
-        self.assert_compatible(modulus, ntt, context);
+        self.assert_compatible(modulus, ntt, workspace);
 
-        self.apply_kernel_to(input, output, modulus, ntt, context);
+        self.apply_kernel_to(input, output, modulus, ntt, workspace);
     }
 
     /// Applies the automorphism after the caller has validated the modulus, NTT table,
@@ -200,7 +200,7 @@ impl<T: FheUint> NttGlweAutomorphismKey<T> {
         output: &mut Glwe<B>,
         modulus: M,
         ntt: &Table,
-        context: &mut NttGlweAutomorphismContext<T>,
+        workspace: &mut NttGlweAutomorphismWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
@@ -217,25 +217,25 @@ impl<T: FheUint> NttGlweAutomorphismKey<T> {
             self.key_switching.output_size().glwe_len()
         );
         debug_assert_eq!(
-            context.transformed.as_ref().len(),
+            workspace.transformed.as_ref().len(),
             self.key_switching.input_size().glwe_len()
         );
 
         for (input_poly, output_poly) in input
             .as_ref()
             .chunks_exact(poly_length)
-            .zip(context.transformed.as_mut().chunks_exact_mut(poly_length))
+            .zip(workspace.transformed.as_mut().chunks_exact_mut(poly_length))
         {
             self.coeff_permutation
                 .apply_to(input_poly, output_poly, modulus);
         }
 
         self.key_switching.key_switch_kernel_to(
-            &context.transformed,
+            &workspace.transformed,
             output,
             modulus,
             ntt,
-            &mut context.key_switching,
+            &mut workspace.key_switching,
         );
     }
 
@@ -253,7 +253,7 @@ impl<T: FheUint> NttGlweAutomorphismKey<T> {
         output: &mut NttGlwe<B>,
         modulus: M,
         ntt: &Table,
-        context: &mut NttGlweAutomorphismContext<T>,
+        workspace: &mut NttGlweAutomorphismWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
@@ -270,9 +270,9 @@ impl<T: FheUint> NttGlweAutomorphismKey<T> {
             self.key_switching.output_size().glwe_len(),
             "NTT automorphism output layout mismatch"
         );
-        self.assert_compatible(modulus, ntt, context);
+        self.assert_compatible(modulus, ntt, workspace);
 
-        self.apply_ntt_kernel_to(input, output, modulus, ntt, context);
+        self.apply_ntt_kernel_to(input, output, modulus, ntt, workspace);
     }
 
     /// Applies the NTT automorphism after the caller has validated the modulus, NTT table,
@@ -283,7 +283,7 @@ impl<T: FheUint> NttGlweAutomorphismKey<T> {
         output: &mut NttGlwe<B>,
         modulus: M,
         ntt: &Table,
-        context: &mut NttGlweAutomorphismContext<T>,
+        workspace: &mut NttGlweAutomorphismWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
@@ -299,14 +299,14 @@ impl<T: FheUint> NttGlweAutomorphismKey<T> {
             output.as_ref().len(),
             self.key_switching.output_size().glwe_len()
         );
-        debug_assert_eq!(context.permuted_ntt.len(), poly_length);
+        debug_assert_eq!(workspace.permuted_ntt.len(), poly_length);
 
         let (input_mask, input_body) = input.a_b_slices(poly_length);
-        let NttGlweAutomorphismContext {
+        let NttGlweAutomorphismWorkspace {
             transformed,
             permuted_ntt,
             key_switching,
-        } = context;
+        } = workspace;
 
         let (transformed_mask, _) = transformed.a_b_mut_slices(poly_length);
         for (input_poly, output_poly) in input_mask
@@ -335,12 +335,12 @@ impl<T: FheUint> NttGlweAutomorphismKey<T> {
         &self,
         modulus: M,
         ntt: &Table,
-        context: &NttGlweAutomorphismContext<T>,
+        workspace: &NttGlweAutomorphismWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
     {
         self.key_switching
-            .assert_compatible(modulus, ntt, &context.key_switching);
+            .assert_compatible(modulus, ntt, &workspace.key_switching);
     }
 }

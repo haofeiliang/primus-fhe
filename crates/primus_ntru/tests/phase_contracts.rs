@@ -5,10 +5,10 @@ use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{FftEngine, FftTable, RustFftTable, TfheFftTable};
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntru::{
-    FourierNtruGadgetEncryptContext, FourierNtruSecretKey, FourierNtruTraceContext,
-    FourierNtruTraceKey, NlevCiphertext, NlevParameters, NtruCiphertext, NtruParameters,
-    NtruSecretKey, NttNtruExternalProductContext, NttNtruGadgetEncryptContext, NttNtruSecretKey,
-    NttNtruTraceContext, NttNtruTraceKey, SecretKeyDistr,
+    FourierNtruGadgetEncryptWorkspace, FourierNtruSecretKey, FourierNtruTraceKey,
+    FourierNtruTraceWorkspace, NlevCiphertext, NlevParameters, NtruCiphertext, NtruParameters,
+    NtruSecretKey, NttNtruExternalProductWorkspace, NttNtruGadgetEncryptWorkspace,
+    NttNtruSecretKey, NttNtruTraceKey, NttNtruTraceWorkspace, SecretKeyDistr,
 };
 use primus_ntt::{NttTable, UintNttTable};
 use primus_poly::Polynomial;
@@ -166,7 +166,7 @@ fn fused_public_initialization_has_the_predicted_decomposition_residual() {
     for levels in [2, 3] {
         let basis = ApproxSignedBasis::new(Some(257u32), 3, Some(levels));
         let weights: Vec<_> = basis.scalar_iter().map(i128::from).collect();
-        let mut context = primus_ntru::NttNtruCmuxContext::new(N, levels);
+        let mut workspace = primus_ntru::NttNtruCmuxWorkspace::new(N, levels);
         let mut output = NtruCiphertext::<Vec<u32>>::zero(N);
         for input in [
             [0, 1, 3, 4, 7, 8, 219, 256],
@@ -254,7 +254,7 @@ fn fused_public_initialization_has_the_predicted_decomposition_residual() {
                             &basis,
                             modulus,
                             &ntt,
-                            &mut NttNtruExternalProductContext::new(N),
+                            &mut NttNtruExternalProductWorkspace::new(N),
                         );
                         polynomial(output.as_ref())
                     };
@@ -272,7 +272,7 @@ fn fused_public_initialization_has_the_predicted_decomposition_residual() {
                             &basis,
                             modulus,
                             &ntt,
-                            &mut context,
+                            &mut workspace,
                         )
                     });
                     assert_eq!(allocation.count, 0);
@@ -317,12 +317,12 @@ fn check_native_lift<Table: FftTable>() {
         SecretKeyDistr::SparseTernary,
         0.7,
     );
-    let mut encryption = FourierNtruGadgetEncryptContext::new(N);
+    let mut encryption = FourierNtruGadgetEncryptWorkspace::new(N);
     let mut output = NtruCiphertext::<Vec<u32>>::zero(N);
     for levels in [3, 4] {
         let gadget = NlevParameters::with_ntru_params(&params, 8, Some(levels));
         let basis = gadget.basis();
-        let mut context = primus_ntru::FourierNtruCmuxContext::new(N, levels);
+        let mut workspace = primus_ntru::FourierNtruCmuxWorkspace::new(N, levels);
         let mut initializer =
             primus_lattice::nlev::FourierNlev::<Vec<_>>::zero(gadget.fourier_nlev_len());
         let mut positive = initializer.clone();
@@ -394,7 +394,7 @@ fn check_native_lift<Table: FftTable>() {
                             &mut output,
                             basis,
                             &mut fft,
-                            &mut context,
+                            &mut workspace,
                         )
                     });
                     assert_eq!(allocation.count, 0);
@@ -546,9 +546,9 @@ fn ntt_reverse_trace_matches_exact_same_secret_oracle() {
         &gadget,
         &table,
         &mut ZeroRng,
-        &mut NttNtruGadgetEncryptContext::new(N),
+        &mut NttNtruGadgetEncryptWorkspace::new(N),
     );
-    let mut context = NttNtruTraceContext::new(N);
+    let mut workspace = NttNtruTraceWorkspace::new(N);
     for input in trace_inputs(ring) {
         for retained in [1, 2, 4, N] {
             let expected = modular_trace(ring, input, retained);
@@ -562,7 +562,7 @@ fn ntt_reverse_trace_matches_exact_same_secret_oracle() {
                 &mut output,
                 modulus,
                 &table,
-                &mut context,
+                &mut workspace,
             );
             assert_eq!(polynomial(output.as_ref()), expected);
         }
@@ -592,9 +592,9 @@ fn check_native_trace<Table: FftTable>() {
         &gadget,
         &mut fft,
         &mut ZeroRng,
-        &mut FourierNtruGadgetEncryptContext::new(N),
+        &mut FourierNtruGadgetEncryptWorkspace::new(N),
     );
-    let mut context = FourierNtruTraceContext::new(N);
+    let mut workspace = FourierNtruTraceWorkspace::new(N);
     // Exhaust parity patterns at three ranges, plus explicit boundary cases.
     let parity_inputs = [0, ring.0 / 2 - 2, ring.0 - 2]
         .into_iter()
@@ -611,7 +611,7 @@ fn check_native_trace<Table: FftTable>() {
                 retained,
                 &mut output,
                 &mut fft,
-                &mut context,
+                &mut workspace,
             );
             // Exact agreement with rational inverse + torus rounding for this
             // small fixture, not equality to a noiseless modular inverse.

@@ -10,7 +10,7 @@ use crate::{
     CrtGlevParameters, DcrtGadgetDomain, DcrtGlweAutoKey, DcrtGlweCiphertext, DcrtGlweSecretKey,
 };
 
-use super::{DcrtGlweExpandCoeffContext, DcrtGlweExpandCoeffSyncPool};
+use super::{DcrtGlweExpandCoeffSyncPool, DcrtGlweExpandCoeffWorkspace};
 
 #[derive(Clone)]
 /// Automorphism keys used to expand DCRT GLWE coefficients into ciphertexts.
@@ -119,7 +119,7 @@ impl<T: FheUint> DcrtGlweExpandCoeffKey<T> {
         ciphertext: &DcrtGlweCiphertext<A>,
         result: &mut [DcrtGlweCiphertext<B>],
         domain: &DcrtGadgetDomain<'_, T, M, Table>,
-        context: &mut DcrtGlweExpandCoeffContext<T>,
+        workspace: &mut DcrtGlweExpandCoeffWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
@@ -127,7 +127,7 @@ impl<T: FheUint> DcrtGlweExpandCoeffKey<T> {
         B: DataMut<Elem = T>,
     {
         assert_eq!(result.len(), domain.parameters().poly_length());
-        self.expand_partial_coefficients_inplace(ciphertext, result, domain, context)
+        self.expand_partial_coefficients_inplace(ciphertext, result, domain, workspace)
     }
 
     /// Coefficient Expansion Algorithm.
@@ -138,7 +138,7 @@ impl<T: FheUint> DcrtGlweExpandCoeffKey<T> {
         ciphertext: &DcrtGlweCiphertext<A>,
         result: &mut [DcrtGlweCiphertext<B>],
         domain: &DcrtGadgetDomain<'_, T, M, Table>,
-        context: &mut DcrtGlweExpandCoeffContext<T>,
+        workspace: &mut DcrtGlweExpandCoeffWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
@@ -161,7 +161,7 @@ impl<T: FheUint> DcrtGlweExpandCoeffKey<T> {
             moduli_value,
         );
 
-        let (dcrt_glwe, auto_context) = context.as_mut();
+        let (dcrt_glwe, auto_workspace) = workspace.as_mut();
         for (i, (auto_key, factors)) in self
             .auto_keys
             .iter()
@@ -173,7 +173,7 @@ impl<T: FheUint> DcrtGlweExpandCoeffKey<T> {
             let (x, y) = result[..level_len * 2].split_at_mut(level_len);
 
             x.iter_mut().zip(y).for_each(|(a_0, b_0)| {
-                auto_key.automorphism_kernel(a_0, dcrt_glwe, domain, auto_context);
+                auto_key.automorphism_kernel(a_0, dcrt_glwe, domain, auto_workspace);
                 a_0.butterfly_mul_factor_to(dcrt_glwe, factors, b_0, poly_length, moduli_value);
             });
         }
@@ -188,7 +188,7 @@ impl<T: FheUint> DcrtGlweExpandCoeffKey<T> {
         ciphertext: &DcrtGlweCiphertext<A>,
         result: &mut [DcrtGlweCiphertext<B>],
         domain: &DcrtGadgetDomain<'_, T, M, Table>,
-        context_pool: &DcrtGlweExpandCoeffSyncPool<T>,
+        workspace_pool: &DcrtGlweExpandCoeffSyncPool<T>,
     ) where
         M: FieldContext<T> + Sync,
         A: Data<Elem = T> + Sync,
@@ -196,7 +196,12 @@ impl<T: FheUint> DcrtGlweExpandCoeffKey<T> {
         Table: NttTable<ValueT = T>,
     {
         assert_eq!(result.len(), domain.parameters().poly_length());
-        self.expand_partial_coefficients_inplace_parallel(ciphertext, result, domain, context_pool)
+        self.expand_partial_coefficients_inplace_parallel(
+            ciphertext,
+            result,
+            domain,
+            workspace_pool,
+        )
     }
 
     /// Parallel Coefficient Expansion Algorithm.
@@ -207,7 +212,7 @@ impl<T: FheUint> DcrtGlweExpandCoeffKey<T> {
         ciphertext: &DcrtGlweCiphertext<A>,
         result: &mut [DcrtGlweCiphertext<B>],
         domain: &DcrtGadgetDomain<'_, T, M, Table>,
-        context_pool: &DcrtGlweExpandCoeffSyncPool<T>,
+        workspace_pool: &DcrtGlweExpandCoeffSyncPool<T>,
     ) where
         M: FieldContext<T> + Sync,
         A: Data<Elem = T> + Sync,
@@ -241,10 +246,10 @@ impl<T: FheUint> DcrtGlweExpandCoeffKey<T> {
             let (x, y) = result[..level_len * 2].split_at_mut(level_len);
 
             x.par_iter_mut().zip(y.par_iter_mut()).for_each_init(
-                || context_pool.acquire_guard(),
+                || workspace_pool.acquire_guard(),
                 |guard, (a_0, b_0)| {
-                    let (dcrt_glwe, auto_context) = guard.as_mut();
-                    auto_key.automorphism_kernel(a_0, dcrt_glwe, domain, auto_context);
+                    let (dcrt_glwe, auto_workspace) = guard.as_mut();
+                    auto_key.automorphism_kernel(a_0, dcrt_glwe, domain, auto_workspace);
                     a_0.butterfly_mul_factor_to(dcrt_glwe, factors, b_0, poly_length, moduli_value);
                 },
             );

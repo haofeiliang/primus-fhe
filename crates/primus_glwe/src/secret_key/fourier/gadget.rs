@@ -1,6 +1,6 @@
 //! Fourier GLev and GGSW generation.
 
-use super::{FourierGadgetEncryptContext, FourierGlweSecretKey};
+use super::{FourierGlweGadgetEncryptWorkspace, FourierGlweSecretKey};
 use crate::{FourierGgswCiphertext, FourierGlevCiphertext, GlevParameters};
 use primus_data::{Data, DataMut};
 use primus_fft::{Complex64, FftEngine, FftTable, TorusFftValue};
@@ -28,7 +28,7 @@ impl FourierGlweSecretKey {
         params: &GlevParameters<T, NativeModulus<T>>,
         fft: &mut FftEngine<'_, Table>,
         rng: &mut R,
-        context: &mut FourierGadgetEncryptContext<T>,
+        workspace: &mut FourierGlweGadgetEncryptWorkspace<T>,
     ) where
         T: TorusFftValue,
         Table: FftTable,
@@ -47,8 +47,8 @@ impl FourierGlweSecretKey {
             params.fourier_glev_len(),
             "Fourier GLev output layout mismatch"
         );
-        context.assert_glev_compatible(params.size());
-        self.encrypt_glev_kernel_to(input, output, params, fft, rng, context);
+        workspace.assert_glev_compatible(params.size());
+        self.encrypt_glev_kernel_to(input, output, params, fft, rng, workspace);
     }
 
     /// Encrypts after the caller validates key, input/output, FFT and workspace.
@@ -59,7 +59,7 @@ impl FourierGlweSecretKey {
         params: &GlevParameters<T, NativeModulus<T>>,
         fft: &mut FftEngine<'_, Table>,
         rng: &mut R,
-        context: &mut FourierGadgetEncryptContext<T>,
+        workspace: &mut FourierGlweGadgetEncryptWorkspace<T>,
     ) where
         T: TorusFftValue,
         Table: FftTable,
@@ -75,14 +75,14 @@ impl FourierGlweSecretKey {
             .scalar_iter()
             .zip(output.iter_glwe_mut(fourier_glwe_len))
         {
-            input.mul_scalar_to(scalar, &mut context.encoded, modulus);
+            input.mul_scalar_to(scalar, &mut workspace.encoded, modulus);
             self.encrypt_encoded_kernel_to(
-                &context.encoded,
+                &workspace.encoded,
                 &mut glwe,
                 params.inner(),
                 fft,
                 rng,
-                &mut context.glwe,
+                &mut workspace.glwe,
             );
         }
     }
@@ -106,7 +106,7 @@ impl FourierGlweSecretKey {
         params: &GlevParameters<T, NativeModulus<T>>,
         fft: &mut FftEngine<'_, Table>,
         rng: &mut R,
-        context: &mut FourierGadgetEncryptContext<T>,
+        workspace: &mut FourierGlweGadgetEncryptWorkspace<T>,
     ) where
         T: TorusFftValue,
         Table: FftTable,
@@ -125,8 +125,8 @@ impl FourierGlweSecretKey {
             params.fourier_ggsw_len(),
             "Fourier GGSW output layout mismatch"
         );
-        context.assert_ggsw_compatible(params.size());
-        self.encrypt_ggsw_kernel_to(input, output, params, fft, rng, context);
+        workspace.assert_ggsw_compatible(params.size());
+        self.encrypt_ggsw_kernel_to(input, output, params, fft, rng, workspace);
     }
 
     /// Encrypts after the caller validates key, input/output, FFT and workspace.
@@ -137,7 +137,7 @@ impl FourierGlweSecretKey {
         params: &GlevParameters<T, NativeModulus<T>>,
         fft: &mut FftEngine<'_, Table>,
         rng: &mut R,
-        context: &mut FourierGadgetEncryptContext<T>,
+        workspace: &mut FourierGlweGadgetEncryptWorkspace<T>,
     ) where
         T: TorusFftValue,
         Table: FftTable,
@@ -152,16 +152,16 @@ impl FourierGlweSecretKey {
         for (scalar, transformed) in params
             .basis()
             .scalar_iter()
-            .zip(context.level_transforms.chunks_exact_mut(fourier_length))
+            .zip(workspace.level_transforms.chunks_exact_mut(fourier_length))
         {
-            input.mul_scalar_to(scalar, &mut context.encoded, modulus);
-            fft.forward_as_torus(context.encoded.as_ref(), transformed);
+            input.mul_scalar_to(scalar, &mut workspace.encoded, modulus);
+            fft.forward_as_torus(workspace.encoded.as_ref(), transformed);
         }
 
-        self.encrypt_ggsw_from_levels_to(output, params, fft, rng, context);
+        self.encrypt_ggsw_from_levels_to(output, params, fft, rng, workspace);
     }
 
-    /// Encrypts using the complete, prepared level transforms in `context`.
+    /// Encrypts using the complete, prepared level transforms in `workspace`.
     /// The caller establishes matching key, output, table and workspace layouts.
     pub(super) fn encrypt_ggsw_from_levels_to<T, Table, R, B>(
         &self,
@@ -169,7 +169,7 @@ impl FourierGlweSecretKey {
         params: &GlevParameters<T, NativeModulus<T>>,
         fft: &mut FftEngine<'_, Table>,
         rng: &mut R,
-        context: &mut FourierGadgetEncryptContext<T>,
+        workspace: &mut FourierGlweGadgetEncryptWorkspace<T>,
     ) where
         T: TorusFftValue,
         Table: FftTable,
@@ -186,14 +186,14 @@ impl FourierGlweSecretKey {
             let diagonal_start = row * fourier_length;
             for (mut glwe, transformed) in glev
                 .iter_glwe_mut(fourier_glwe_len)
-                .zip(context.level_transforms.chunks_exact(fourier_length))
+                .zip(workspace.level_transforms.chunks_exact(fourier_length))
             {
                 self.encrypt_zeros_kernel_to(
                     &mut glwe,
                     params.inner(),
                     fft,
                     rng,
-                    &mut context.glwe,
+                    &mut workspace.glwe,
                 );
                 FourierPolynomial::new(
                     &mut glwe.as_mut()[diagonal_start..diagonal_start + fourier_length],

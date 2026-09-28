@@ -1,6 +1,6 @@
 //! Fourier GLWE phase extraction and decoding.
 
-use super::{FourierGlweDecryptContext, FourierGlweSecretKey};
+use super::{FourierGlweDecryptWorkspace, FourierGlweSecretKey};
 use crate::{FourierGlweCiphertext, GlweParameters};
 use primus_data::{Data, DataMut};
 use primus_fft::{Complex64, FftEngine, FftTable, TorusFftValue};
@@ -25,7 +25,7 @@ impl FourierGlweSecretKey {
         input: &FourierGlweCiphertext<A>,
         output: &mut Polynomial<B>,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierGlweDecryptContext,
+        workspace: &mut FourierGlweDecryptWorkspace,
     ) where
         Table: FftTable,
         A: Data<Elem = Complex64>,
@@ -52,11 +52,11 @@ impl FourierGlweSecretKey {
         let (mut mask, body) = input.a_b(fourier_length);
 
         assert_eq!(
-            context.phase.fourier_length(),
+            workspace.phase.fourier_length(),
             fourier_length,
             "Fourier phase workspace length mismatch"
         );
-        let phase = &mut context.phase;
+        let phase = &mut workspace.phase;
 
         let mut secret = self.iter();
         let si = secret.next().expect("GLWE dimension must be non-zero");
@@ -86,7 +86,7 @@ impl FourierGlweSecretKey {
         input: &FourierGlweCiphertext<A>,
         params: &GlweParameters<T, NativeModulus<T>>,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierGlweDecryptContext,
+        workspace: &mut FourierGlweDecryptWorkspace,
     ) -> PolynomialOwned<T>
     where
         Table: FftTable,
@@ -94,7 +94,7 @@ impl FourierGlweSecretKey {
         T: TorusFftValue,
     {
         let mut output = PolynomialOwned::zero(self.size.poly_length());
-        self.decrypt_to(input, &mut output, params, fft, context);
+        self.decrypt_to(input, &mut output, params, fft, workspace);
         output
     }
 
@@ -111,7 +111,7 @@ impl FourierGlweSecretKey {
         output: &mut Polynomial<B>,
         params: &GlweParameters<T, NativeModulus<T>>,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierGlweDecryptContext,
+        workspace: &mut FourierGlweDecryptWorkspace,
     ) where
         Table: FftTable,
         A: Data<Elem = Complex64>,
@@ -119,7 +119,7 @@ impl FourierGlweSecretKey {
         T: TorusFftValue,
     {
         assert_eq!(self.size, params.size(), "GLWE parameter layout mismatch");
-        self.phase_to(input, output, fft, context);
+        self.phase_to(input, output, fft, workspace);
         params
             .plaintext_codec()
             .decode_slice_assign(output.as_mut());

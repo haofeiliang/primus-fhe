@@ -3,10 +3,11 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable, TfheFftTable};
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntru::{
-    FourierNtruCiphertext, FourierNtruEncryptContext, FourierNtruGadgetEncryptContext,
-    FourierNtruSecretKey, FourierNtruTraceContext, FourierNtruTraceKey, NlevParameters,
-    NtruCiphertext, NtruParameters, NtruSecretKey, NttNtruCiphertext, NttNtruGadgetEncryptContext,
-    NttNtruSecretKey, NttNtruTraceContext, NttNtruTraceKey, SecretKeyDistr,
+    FourierNtruCiphertext, FourierNtruEncryptWorkspace, FourierNtruGadgetEncryptWorkspace,
+    FourierNtruSecretKey, FourierNtruTraceKey, FourierNtruTraceWorkspace, NlevParameters,
+    NtruCiphertext, NtruParameters, NtruSecretKey, NttNtruCiphertext,
+    NttNtruGadgetEncryptWorkspace, NttNtruSecretKey, NttNtruTraceKey, NttNtruTraceWorkspace,
+    SecretKeyDistr,
 };
 use primus_ntt::{NttTable, U64NttTable};
 use primus_poly::Polynomial;
@@ -174,11 +175,11 @@ fn ntt_trace_projection_and_expansion_match_ring_phases() {
         &gadget,
         &table,
         &mut rng,
-        &mut NttNtruGadgetEncryptContext::new(N),
+        &mut NttNtruGadgetEncryptWorkspace::new(N),
     );
-    let mut context = NttNtruTraceContext::new(N);
+    let mut workspace = NttNtruTraceWorkspace::new(N);
     let mut coefficients = vec![0; 2 * N];
-    let mut external_product = primus_ntru::NttNtruExternalProductContext::new(N);
+    let mut external_product = primus_ntru::NttNtruExternalProductWorkspace::new(N);
     let m = message(Q.into());
     let mut transformed = NttNtruCiphertext::<Vec<u64>>::zero(N);
     key.encrypt_encoded_to(
@@ -202,7 +203,7 @@ fn ntt_trace_projection_and_expansion_match_ring_phases() {
                 &mut NtruCiphertext::new(output),
                 modulus,
                 &table,
-                &mut context,
+                &mut workspace,
             ),
             Operation::Reverse(r) => trace.apply_reverse_partial_to(
                 &input,
@@ -210,7 +211,7 @@ fn ntt_trace_projection_and_expansion_match_ring_phases() {
                 &mut NtruCiphertext::new(output),
                 modulus,
                 &table,
-                &mut context,
+                &mut workspace,
             ),
             Operation::Project(indices) => trace.project_coefficients_to(
                 &input,
@@ -218,7 +219,7 @@ fn ntt_trace_projection_and_expansion_match_ring_phases() {
                 output,
                 modulus,
                 &table,
-                &mut context,
+                &mut workspace,
             ),
             Operation::Expand(count) => trace.expand_partial_coefficients_to(
                 &input,
@@ -226,7 +227,7 @@ fn ntt_trace_projection_and_expansion_match_ring_phases() {
                 output,
                 modulus,
                 &table,
-                &mut context,
+                &mut workspace,
             ),
             Operation::ProjectPrefixShared(count) => trace
                 .project_prefix_coefficients_with_scratch_to(
@@ -244,7 +245,7 @@ fn ntt_trace_projection_and_expansion_match_ring_phases() {
                 output,
                 modulus,
                 &table,
-                &mut context,
+                &mut workspace,
             ),
         },
     );
@@ -267,7 +268,7 @@ fn ntt_trace_projection_and_expansion_match_ring_phases() {
             &mut expanded,
             modulus,
             &table,
-            &mut context,
+            &mut workspace,
         );
         for (cipher, &value) in expanded.as_chunks::<N>().0.iter().zip(&m[..count]) {
             let mut expected = vec![0; N];
@@ -298,14 +299,14 @@ fn fourier_trace<Table: FftTable>() {
         &gadget,
         &mut fft,
         &mut rng,
-        &mut FourierNtruGadgetEncryptContext::new(N),
+        &mut FourierNtruGadgetEncryptWorkspace::new(N),
     );
-    let mut context = FourierNtruTraceContext::new(N);
+    let mut workspace = FourierNtruTraceWorkspace::new(N);
     let mut coefficients = vec![0; 2 * N];
-    let mut external_product = primus_ntru::FourierNtruExternalProductContext::new(N);
+    let mut external_product = primus_ntru::FourierNtruExternalProductWorkspace::new(N);
     let m = message(q);
     let mut transformed = FourierNtruCiphertext::<Vec<Complex64>>::zero(N / 2);
-    let mut encrypt = FourierNtruEncryptContext::new(N);
+    let mut encrypt = FourierNtruEncryptWorkspace::new(N);
     key.encrypt_encoded_to(
         &Polynomial(m.as_slice()),
         &mut transformed,
@@ -327,17 +328,17 @@ fn fourier_trace<Table: FftTable>() {
                 r,
                 &mut NtruCiphertext::new(output),
                 &mut fft,
-                &mut context,
+                &mut workspace,
             ),
             Operation::Reverse(r) => trace.apply_reverse_partial_to(
                 &input,
                 r,
                 &mut NtruCiphertext::new(output),
                 &mut fft,
-                &mut context,
+                &mut workspace,
             ),
             Operation::Project(indices) => {
-                trace.project_coefficients_to(&input, indices, output, &mut fft, &mut context)
+                trace.project_coefficients_to(&input, indices, output, &mut fft, &mut workspace)
             }
             Operation::ProjectPrefixShared(count) => trace
                 .project_prefix_coefficients_with_scratch_to(
@@ -348,12 +349,20 @@ fn fourier_trace<Table: FftTable>() {
                     &mut coefficients,
                     &mut external_product,
                 ),
-            Operation::ProjectPrefix(count) => {
-                trace.project_prefix_coefficients_to(&input, count, output, &mut fft, &mut context)
-            }
-            Operation::Expand(count) => {
-                trace.expand_partial_coefficients_to(&input, count, output, &mut fft, &mut context)
-            }
+            Operation::ProjectPrefix(count) => trace.project_prefix_coefficients_to(
+                &input,
+                count,
+                output,
+                &mut fft,
+                &mut workspace,
+            ),
+            Operation::Expand(count) => trace.expand_partial_coefficients_to(
+                &input,
+                count,
+                output,
+                &mut fft,
+                &mut workspace,
+            ),
         },
     );
     for log_count in 0..=N.trailing_zeros() {
@@ -370,7 +379,13 @@ fn fourier_trace<Table: FftTable>() {
         );
         transformed.write_torus_form(&mut input, &mut fft);
         let mut expanded = vec![7; count * N];
-        trace.expand_partial_coefficients_to(&input, count, &mut expanded, &mut fft, &mut context);
+        trace.expand_partial_coefficients_to(
+            &input,
+            count,
+            &mut expanded,
+            &mut fft,
+            &mut workspace,
+        );
         for (cipher, &value) in expanded.as_chunks::<N>().0.iter().zip(&m[..count]) {
             let mut expected = vec![0; N];
             expected[0] = value;
@@ -417,14 +432,14 @@ fn reverse_trace_preserves_the_distinct_modular_and_native_halving_paths() {
         &params,
         &table,
         &mut ZeroRng,
-        &mut NttNtruGadgetEncryptContext::new(N),
+        &mut NttNtruGadgetEncryptWorkspace::new(N),
     );
     let input = NtruCiphertext::new(vec![1u32, 2, 256, 255]);
     let mut output = NtruCiphertext::new(vec![7; N]);
-    let mut context = NttNtruTraceContext::new(N);
-    trace.apply_reverse_partial_to(&input, 2, &mut output, modulus, &table, &mut context);
+    let mut workspace = NttNtruTraceWorkspace::new(N);
+    trace.apply_reverse_partial_to(&input, 2, &mut output, modulus, &table, &mut workspace);
     assert_eq!(output.as_ref(), &[1, 0, 256, 0]);
-    let mut wrong = NttNtruTraceContext::new(2 * N);
+    let mut wrong = NttNtruTraceWorkspace::new(2 * N);
     output.as_mut().fill(7);
     assert!(
         catch_unwind(AssertUnwindSafe(|| {
@@ -451,14 +466,14 @@ fn reverse_trace_preserves_the_distinct_modular_and_native_halving_paths() {
         &params,
         &mut fft,
         &mut ZeroRng,
-        &mut FourierNtruGadgetEncryptContext::new(N),
+        &mut FourierNtruGadgetEncryptWorkspace::new(N),
     );
     let input = NtruCiphertext::new(vec![1u32, 0, u32::MAX, 0]);
-    let mut context = FourierNtruTraceContext::new(N);
-    trace.apply_reverse_partial_to(&input, 2, &mut output, &mut fft, &mut context);
+    let mut workspace = FourierNtruTraceWorkspace::new(N);
+    trace.apply_reverse_partial_to(&input, 2, &mut output, &mut fft, &mut workspace);
     // floor(1/2) and floor((2^32-1)/2), then the even projection doubles them.
     assert_eq!(output.as_ref(), &[0, 0, u32::MAX - 1, 0]);
-    let mut wrong = FourierNtruTraceContext::new(2 * N);
+    let mut wrong = FourierNtruTraceWorkspace::new(2 * N);
     output.as_mut().fill(7);
     assert!(
         catch_unwind(AssertUnwindSafe(|| {

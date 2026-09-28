@@ -5,7 +5,9 @@ use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{Complex64, FftEngine, FftTable, TorusFftValue};
 use primus_lattice::nlev::FourierNlev;
 use primus_ntru::SecretKeyDistr;
-use primus_ntru::{FourierNtruGadgetEncryptContext, FourierNtruSecretKey, NtruLweKeySwitchingKey};
+use primus_ntru::{
+    FourierNtruGadgetEncryptWorkspace, FourierNtruSecretKey, NtruLweKeySwitchingKey,
+};
 use zeroize::Zeroizing;
 
 use crate::{
@@ -155,7 +157,7 @@ where
 {
     pub(crate) context: &'a TfheContext<T, Table, LM>,
     pub(crate) fft: FftEngine<'a, Table>,
-    pub(crate) gadget: FourierNtruGadgetEncryptContext<T>,
+    pub(crate) gadget: FourierNtruGadgetEncryptWorkspace<T>,
 }
 
 impl<'a, T, Table, LM> KeyGenerator<'a, T, Table, LM>
@@ -169,7 +171,7 @@ where
     pub fn new(context: &'a TfheContext<T, Table, LM>) -> Self {
         Self {
             fft: context.new_fft_engine(),
-            gadget: FourierNtruGadgetEncryptContext::new(context.parameters().poly_length()),
+            gadget: FourierNtruGadgetEncryptWorkspace::new(context.parameters().poly_length()),
             context,
         }
     }

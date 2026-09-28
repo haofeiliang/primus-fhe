@@ -22,7 +22,7 @@
 //!   scale must agree; floating-point transforms and gadget decomposition can
 //!   introduce approximation error. Noise bounds and decryptability belong to
 //!   the higher-level cryptographic API.
-//! - Output storage and reusable contexts must have the exact shapes required by
+//! - Output storage and reusable workspaces must have the exact shapes required by
 //!   each operation. An overwriting operation initializes its output; an
 //!   accumulating operation requires a valid initialized accumulator.
 //!
@@ -57,8 +57,6 @@ pub use size::{
     RnsGlweSize,
 };
 
-/// Context types and scratch buffers.
-pub mod context;
 /// GGSW matrix ciphertexts.
 pub mod ggsw;
 /// GLev gadget-decomposed ciphertexts.
@@ -73,3 +71,5 @@ pub mod ngsw;
 pub mod nlev;
 /// NTRU ciphertexts.
 pub mod ntru;
+/// Reusable workspaces and borrowed scratch views.
+pub mod workspace;

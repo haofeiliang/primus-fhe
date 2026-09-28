@@ -5,9 +5,9 @@ use primus_decompose::primitive::ApproxSignedBasis;
 use primus_integer::FheUint;
 use primus_lattice::{
     GadgetSize, GlweSize,
-    context::{NttGlweExternalProductContext, NttGlweTernaryCmuxContext},
     ggsw::Ggsw,
     glwe::{Glwe, NttGlwe},
+    workspace::{NttGlweExternalProductWorkspace, NttGlweTernaryCmuxWorkspace},
 };
 use primus_modulus::BarrettModulus;
 use primus_ntt::{MonomialNttTable, U32NttTable, U64NttTable};
@@ -39,7 +39,7 @@ fn ntt<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
     .into_ntt_form(&table);
     let mut output = Glwe::new(vec![T::ZERO; glwe_len]);
     let mut ntt_output = NttGlwe::new(vec![T::ZERO; glwe_len]);
-    let mut context = NttGlweExternalProductContext::new(size);
+    let mut workspace = NttGlweExternalProductWorkspace::new(size);
     let negative_key = Ggsw::new(
         (0..size.ggsw_len())
             .map(|i| T::as_from(i as u64 * 1_000_003 + 13) % q)
@@ -47,7 +47,7 @@ fn ntt<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
     )
     .into_ntt_form(&table);
     let mut intermediate = Glwe::new(vec![T::ZERO; glwe_len]);
-    let mut ternary_context = NttGlweTernaryCmuxContext::new(size);
+    let mut ternary_workspace = NttGlweTernaryCmuxWorkspace::new(size);
 
     let mut group = c.benchmark_group(format!(
         "glwe/ntt/u{}/q{q}/n{}/k{dimension}/logb{log_b}/l{levels}",
@@ -63,7 +63,7 @@ fn ntt<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
                 black_box(&basis),
                 black_box(modulus),
                 black_box(&table),
-                black_box(&mut context),
+                black_box(&mut workspace),
             )
         });
     });
@@ -75,7 +75,7 @@ fn ntt<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
                 black_box(&basis),
                 black_box(modulus),
                 black_box(&table),
-                black_box(&mut context),
+                black_box(&mut workspace),
             )
         });
     });
@@ -88,7 +88,7 @@ fn ntt<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
                 black_box(&basis),
                 black_box(modulus),
                 black_box(&table),
-                black_box(&mut context),
+                black_box(&mut workspace),
             )
         });
     });
@@ -104,7 +104,7 @@ fn ntt<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
                 black_box(&basis),
                 black_box(modulus),
                 black_box(&table),
-                black_box(&mut context),
+                black_box(&mut workspace),
             );
             black_box(&negative_key).cmux_monomial_to(
                 black_box(&intermediate),
@@ -113,7 +113,7 @@ fn ntt<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
                 black_box(&basis),
                 black_box(modulus),
                 black_box(&table),
-                black_box(&mut context),
+                black_box(&mut workspace),
             );
         });
     });
@@ -127,7 +127,7 @@ fn ntt<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
                 black_box(&basis),
                 black_box(modulus),
                 black_box(&table),
-                black_box(&mut ternary_context),
+                black_box(&mut ternary_workspace),
             )
         });
     });

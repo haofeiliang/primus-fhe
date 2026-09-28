@@ -5,7 +5,7 @@ mod generation;
 pub(super) mod mod_down;
 mod switching;
 
-pub use switching::HybridRnsGlweKeySwitchingContext;
+pub use switching::HybridRnsGlweKeySwitchingWorkspace;
 
 /// A GLWE key-switching key using partitioned hybrid-RNS gadget decomposition.
 pub struct HybridRnsGlweKeySwitchingKey<T: FheUint> {

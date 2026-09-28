@@ -2,7 +2,7 @@ use primus_lwe::LweParameters;
 use primus_modulus::BarrettModulus;
 use primus_ntru::{
     NlevParameters, NtruCiphertext, NtruParameters, NttNgswCiphertext,
-    NttNtruExternalProductContext, SecretKeyDistr,
+    NttNtruExternalProductWorkspace, SecretKeyDistr,
 };
 use primus_ntt::U64NttTable;
 use primus_test_allocations as allocations;
@@ -98,7 +98,7 @@ fn selectors(distr: SecretKeyDistr) {
     assert_eq!(nonzero_ngsw.len(), (M - 1) * selector_len);
     let mut coefficients = NtruCiphertext::<Vec<u64>>::zero(N);
     let mut selected = NtruCiphertext::<Vec<u64>>::zero(N);
-    let mut ep = NttNtruExternalProductContext::new(N);
+    let mut ep = NttNtruExternalProductWorkspace::new(N);
 
     let encryptor = context.encryptor(&client).unwrap();
     let identity = context

@@ -5,9 +5,9 @@ use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{FftEngine, FftTable, RustFftTable, TfheFftTable, TorusFftValue};
 use primus_lattice::{
     GadgetSize, GlweSize,
-    context::{FourierGlweExternalProductContext, FourierGlweTernaryCmuxContext},
     ggsw::{FourierGgswOwned, Ggsw},
     glwe::Glwe,
+    workspace::{FourierGlweExternalProductWorkspace, FourierGlweTernaryCmuxWorkspace},
 };
 
 fn fourier<T: TorusFftValue>(
@@ -50,7 +50,7 @@ fn fourier<T: TorusFftValue>(
     let mut key = FourierGgswOwned::zero(size.fourier_ggsw_len());
     coeff_key.write_fourier_form(&mut key, &mut fft);
     let mut output = Glwe::new(vec![T::ZERO; glwe_len]);
-    let mut context = FourierGlweExternalProductContext::new(size);
+    let mut workspace = FourierGlweExternalProductWorkspace::new(size);
     let negative_coeff_key = Ggsw::new(
         (0..size.ggsw_len())
             .map(|i| {
@@ -65,7 +65,7 @@ fn fourier<T: TorusFftValue>(
     let mut negative_key = FourierGgswOwned::zero(size.fourier_ggsw_len());
     negative_coeff_key.write_fourier_form(&mut negative_key, &mut fft);
     let mut intermediate = Glwe::new(vec![T::ZERO; glwe_len]);
-    let mut ternary_context = FourierGlweTernaryCmuxContext::new(size);
+    let mut ternary_workspace = FourierGlweTernaryCmuxWorkspace::new(size);
 
     let mut group = c.benchmark_group(format!(
         "glwe/fourier/{backend}/u{}/native/n{}/k{dimension}/logb{log_b}/l{levels}",
@@ -80,7 +80,7 @@ fn fourier<T: TorusFftValue>(
                 black_box(&mut output),
                 black_box(&basis),
                 black_box(&mut fft),
-                black_box(&mut context),
+                black_box(&mut workspace),
             )
         });
     });
@@ -92,7 +92,7 @@ fn fourier<T: TorusFftValue>(
                 black_box(&mut output),
                 black_box(&basis),
                 black_box(&mut fft),
-                black_box(&mut context),
+                black_box(&mut workspace),
             )
         });
     });
@@ -106,7 +106,7 @@ fn fourier<T: TorusFftValue>(
                 black_box(&mut intermediate),
                 black_box(&basis),
                 black_box(&mut fft),
-                black_box(&mut context),
+                black_box(&mut workspace),
             );
             black_box(&negative_key).cmux_monomial_to(
                 black_box(&intermediate),
@@ -114,7 +114,7 @@ fn fourier<T: TorusFftValue>(
                 black_box(&mut output),
                 black_box(&basis),
                 black_box(&mut fft),
-                black_box(&mut context),
+                black_box(&mut workspace),
             );
         })
     });
@@ -127,7 +127,7 @@ fn fourier<T: TorusFftValue>(
                 black_box(&mut output),
                 black_box(&basis),
                 black_box(&mut fft),
-                black_box(&mut ternary_context),
+                black_box(&mut ternary_workspace),
             );
         })
     });

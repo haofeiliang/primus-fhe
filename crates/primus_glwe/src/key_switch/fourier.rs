@@ -1,6 +1,6 @@
 //! Single-modulus GLWE key switching in the Fourier domain.
 
-use aligned_vec::{AVec, avec};
+use aligned_vec::{ABox, avec};
 use primus_data::{Data, DataMut};
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{Complex64, FftEngine, FftTable, TorusFftValue};
@@ -15,7 +15,9 @@ use primus_poly::{FourierPolynomial, Polynomial};
 use primus_reduce::ReduceAddSlice;
 use zeroize::Zeroizing;
 
-use crate::{FourierGadgetEncryptContext, FourierGlweSecretKey, GlevParameters, GlweSecretKey};
+use crate::{
+    FourierGlweGadgetEncryptWorkspace, FourierGlweSecretKey, GlevParameters, GlweSecretKey,
+};
 
 /// A Fourier-domain GLWE key-switching key for the native torus modulus.
 #[derive(Clone)]
@@ -43,7 +45,7 @@ impl<T: TorusFftValue> FourierGlweKeySwitchingKey<T> {
         parameters: &GlevParameters<T, NativeModulus<T>>,
         fft: &mut FftEngine<'_, Table>,
         rng: &mut R,
-        context: &mut FourierGadgetEncryptContext<T>,
+        workspace: &mut FourierGlweGadgetEncryptWorkspace<T>,
     ) -> Self
     where
         Table: FftTable,
@@ -78,7 +80,7 @@ impl<T: TorusFftValue> FourierGlweKeySwitchingKey<T> {
                 output,
                 fft,
                 rng,
-                context,
+                workspace,
             );
         }
 
@@ -146,7 +148,7 @@ impl<T: TorusFftValue> FourierGlweKeySwitchingKey<T> {
         input: &Glwe<A>,
         output: &mut Glwe<B>,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierGlweKeySwitchingContext<T>,
+        workspace: &mut FourierGlweKeySwitchingWorkspace<T>,
     ) where
         Table: FftTable,
         A: Data<Elem = T>,
@@ -155,15 +157,15 @@ impl<T: TorusFftValue> FourierGlweKeySwitchingKey<T> {
         assert_eq!(input.as_ref().len(), self.input_size.glwe_len());
         assert_eq!(output.as_ref().len(), self.output_size.glwe_len());
 
-        self.assert_compatible(fft, context);
-        self.key_switch_kernel_to(input, output, fft, context);
+        self.assert_compatible(fft, workspace);
+        self.key_switch_kernel_to(input, output, fft, workspace);
     }
 
     /// Validates the transform and private workspace before composite evaluation.
     pub(crate) fn assert_compatible<Table: FftTable>(
         &self,
         fft: &FftEngine<'_, Table>,
-        context: &FourierGlweKeySwitchingContext<T>,
+        workspace: &FourierGlweKeySwitchingWorkspace<T>,
     ) {
         let poly_length = self.input_size.poly_length();
         assert_eq!(
@@ -172,12 +174,12 @@ impl<T: TorusFftValue> FourierGlweKeySwitchingKey<T> {
             "FFT polynomial length mismatch"
         );
         assert_eq!(
-            context.accumulator.as_ref().len(),
+            workspace.accumulator.as_ref().len(),
             self.output_size.glwe_size().fourier_glwe_len(),
             "key-switch workspace layout mismatch"
         );
         assert_eq!(
-            context.decomposed_poly.len(),
+            workspace.decomposed_poly.len(),
             poly_length,
             "key-switch workspace polynomial length mismatch"
         );
@@ -189,7 +191,7 @@ impl<T: TorusFftValue> FourierGlweKeySwitchingKey<T> {
         input: &Glwe<A>,
         output: &mut Glwe<B>,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierGlweKeySwitchingContext<T>,
+        workspace: &mut FourierGlweKeySwitchingWorkspace<T>,
     ) where
         Table: FftTable,
         A: Data<Elem = T>,
@@ -197,9 +199,9 @@ impl<T: TorusFftValue> FourierGlweKeySwitchingKey<T> {
     {
         let poly_length = self.poly_length();
         let (input_mask, input_body) = input.a_b_slices(poly_length);
-        self.accumulate_mask_kernel(input_mask, fft, context);
+        self.accumulate_mask_kernel(input_mask, fft, workspace);
 
-        context.accumulator.write_torus_form(output, fft);
+        workspace.accumulator.write_torus_form(output, fft);
         let modulus = NativeModulus::new();
         output.neg_assign(modulus);
         let (_, output_body) = output.a_b_mut_slices(poly_length);
@@ -215,14 +217,14 @@ impl<T: TorusFftValue> FourierGlweKeySwitchingKey<T> {
         input_body: &FourierPolynomial<A>,
         output: &mut FourierGlwe<B>,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierGlweKeySwitchingContext<T>,
+        workspace: &mut FourierGlweKeySwitchingWorkspace<T>,
     ) where
         Table: FftTable,
         A: Data<Elem = Complex64>,
         B: DataMut<Elem = Complex64>,
     {
-        self.accumulate_mask_kernel(input_mask, fft, context);
-        let (acc_mask, acc_body) = context.accumulator.a_b_slices(fft.fourier_length());
+        self.accumulate_mask_kernel(input_mask, fft, workspace);
+        let (acc_mask, acc_body) = workspace.accumulator.a_b_slices(fft.fourier_length());
         let (output_mask, output_body) = output.a_b_mut_slices(fft.fourier_length());
         for (output, &acc) in output_mask.iter_mut().zip(acc_mask) {
             *output = -acc;
@@ -241,17 +243,17 @@ impl<T: TorusFftValue> FourierGlweKeySwitchingKey<T> {
         &self,
         input_mask: &[T],
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierGlweKeySwitchingContext<T>,
+        workspace: &mut FourierGlweKeySwitchingWorkspace<T>,
     ) {
         let poly_length = self.poly_length();
         let basis = &self.basis;
         let fourier_glwe_len = self.output_size.glwe_size().fourier_glwe_len();
-        context.accumulator.set_zero();
+        workspace.accumulator.set_zero();
         for (mask_poly, entry) in input_mask
             .chunks_exact(poly_length)
             .zip(self.data.chunks_exact(self.output_size.fourier_glev_len()))
         {
-            basis.init_carry_slice(mask_poly, &mut context.carries);
+            basis.init_carry_slice(mask_poly, &mut workspace.carries);
             let entry = FourierGlev::new(entry);
             for (decomposer, key_glwe) in basis
                 .decomposer_iter()
@@ -259,13 +261,16 @@ impl<T: TorusFftValue> FourierGlweKeySwitchingKey<T> {
             {
                 decomposer.decompose_slice_to(
                     mask_poly,
-                    &mut context.decomposed_poly,
-                    &mut context.carries,
+                    &mut workspace.decomposed_poly,
+                    &mut workspace.carries,
                 );
-                fft.forward_as_integer(&context.decomposed_poly, &mut context.decomposed_fourier);
-                context.accumulator.add_mul_fourier_polynomial_assign(
+                fft.forward_as_integer(
+                    &workspace.decomposed_poly,
+                    &mut workspace.decomposed_fourier,
+                );
+                workspace.accumulator.add_mul_fourier_polynomial_assign(
                     &key_glwe,
-                    &FourierPolynomial::new(context.decomposed_fourier.as_slice()),
+                    &FourierPolynomial::new(workspace.decomposed_fourier.as_slice()),
                 );
             }
         }
@@ -281,39 +286,43 @@ impl<T: TorusFftValue> FourierGlweKeySwitchingKey<T> {
         &self,
         input: &Glwe<A>,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierGlweKeySwitchingContext<T>,
+        workspace: &mut FourierGlweKeySwitchingWorkspace<T>,
     ) -> Glwe<Vec<T>>
     where
         Table: FftTable,
         A: Data<Elem = T>,
     {
         let mut output = Glwe::zero(self.output_size.glwe_len());
-        self.key_switch_to(input, &mut output, fft, context);
+        self.key_switch_to(input, &mut output, fft, workspace);
         output
     }
 }
 
 /// Reusable Fourier workspace for GLWE key switching and LWE packing key switching.
 /// Owned Fourier buffers use cache-line alignment for repeated FFT and product passes.
-pub struct FourierGlweKeySwitchingContext<T: TorusFftValue> {
-    pub(crate) carries: Vec<bool>,
-    pub(crate) decomposed_poly: Vec<T>,
-    pub(crate) decomposed_fourier: AVec<Complex64>,
-    pub(crate) accumulator: FourierGlwe<AVec<Complex64>>,
+pub struct FourierGlweKeySwitchingWorkspace<T: TorusFftValue> {
+    pub(crate) carries: Box<[bool]>,
+    pub(crate) decomposed_poly: Box<[T]>,
+    pub(crate) decomposed_fourier: ABox<[Complex64]>,
+    pub(crate) accumulator: FourierGlwe<ABox<[Complex64]>>,
 }
 
-impl<T: TorusFftValue> FourierGlweKeySwitchingContext<T> {
+impl<T: TorusFftValue> FourierGlweKeySwitchingWorkspace<T> {
     /// Creates a workspace for the output GLWE layout.
     pub fn new(glwe_size: GlweSize) -> Self {
         let poly_length = glwe_size.poly_length();
         Self {
-            carries: vec![false; poly_length],
-            decomposed_poly: vec![T::ZERO; poly_length],
-            decomposed_fourier: avec![Complex64::default(); glwe_size.fourier_poly_len()],
-            accumulator: FourierGlwe(avec![
-                Complex64::default();
-                glwe_size.fourier_glwe_len()
-            ]),
+            carries: vec![false; poly_length].into_boxed_slice(),
+            decomposed_poly: vec![T::ZERO; poly_length].into_boxed_slice(),
+            decomposed_fourier: avec![Complex64::default(); glwe_size.fourier_poly_len()]
+                .into_boxed_slice(),
+            accumulator: FourierGlwe(
+                avec![
+                    Complex64::default();
+                    glwe_size.fourier_glwe_len()
+                ]
+                .into_boxed_slice(),
+            ),
         }
     }
 }

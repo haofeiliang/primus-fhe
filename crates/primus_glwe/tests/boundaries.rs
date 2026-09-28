@@ -3,12 +3,12 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable};
 use primus_glwe::{
-    FourierGadgetEncryptContext, FourierGgswCiphertext, FourierGlevCiphertext,
-    FourierGlweCiphertext, FourierGlweEncryptContext, FourierGlweSecretKey, GadgetSize,
-    GlevParameters, GlweCiphertext, GlweParameters, GlweSecretKey, NttGadgetEncryptContext,
-    NttGgswCiphertext, NttGlevCiphertext, NttGlweCiphertext, NttGlweKeySwitchingContext,
-    NttGlweKeySwitchingKey, NttGlwePublicEncryptContext, NttGlwePublicKey, NttGlweSecretKey,
-    SecretKeyDistr,
+    FourierGgswCiphertext, FourierGlevCiphertext, FourierGlweCiphertext,
+    FourierGlweEncryptWorkspace, FourierGlweGadgetEncryptWorkspace, FourierGlweSecretKey,
+    GadgetSize, GlevParameters, GlweCiphertext, GlweParameters, GlweSecretKey, NttGgswCiphertext,
+    NttGlevCiphertext, NttGlweCiphertext, NttGlweGadgetEncryptWorkspace, NttGlweKeySwitchingKey,
+    NttGlweKeySwitchingWorkspace, NttGlwePublicEncryptWorkspace, NttGlwePublicKey,
+    NttGlweSecretKey, SecretKeyDistr,
 };
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntt::{NttTable, UintNttTable};
@@ -130,7 +130,7 @@ fn fourier_encryption_rejects_incomplete_and_excess_masks_before_writes() {
     let mut fft = FftEngine::new(&table);
     let mut rng = StdRng::seed_from_u64(42);
     let (_, key) = FourierGlweSecretKey::generate_pair(&params, &mut fft, &mut rng);
-    let mut context = FourierGlweEncryptContext::new(N);
+    let mut workspace = FourierGlweEncryptWorkspace::new(N);
     let message = Polynomial::new(vec![3u32; N]);
     let sentinel = Complex64::new(7.0, 9.0);
 
@@ -146,7 +146,7 @@ fn fourier_encryption_rejects_incomplete_and_excess_masks_before_writes() {
                     &params,
                     &mut fft,
                     &mut rng,
-                    &mut context,
+                    &mut workspace,
                 );
             }))
             .is_err()
@@ -167,9 +167,9 @@ fn ntt_operations_reject_incompatible_domains_and_workspace_before_writes() {
     let (_, key) = NttGlweSecretKey::generate_pair(&params, &table, &mut rng);
     let public_key = NttGlwePublicKey::generate(&key, &params, &table, &mut rng);
     let message = Polynomial::new(vec![3u32; N]);
-    let mut context = NttGlwePublicEncryptContext::new(N);
+    let mut workspace = NttGlwePublicEncryptWorkspace::new(N);
 
-    let mut gadget_context = NttGadgetEncryptContext::new(gadget.size());
+    let mut gadget_workspace = NttGlweGadgetEncryptWorkspace::new(gadget.size());
     for wrong_ntt in [&wrong_table, &wrong_length_table] {
         for ggsw in [false, true] {
             let len = if ggsw {
@@ -189,7 +189,7 @@ fn ntt_operations_reject_incompatible_domains_and_workspace_before_writes() {
                             &gadget,
                             wrong_ntt,
                             &mut rng,
-                            &mut gadget_context,
+                            &mut gadget_workspace,
                         );
                     } else {
                         key.encrypt_glev_to(
@@ -198,7 +198,7 @@ fn ntt_operations_reject_incompatible_domains_and_workspace_before_writes() {
                             &gadget,
                             wrong_ntt,
                             &mut rng,
-                            &mut gadget_context,
+                            &mut gadget_workspace,
                         );
                     }
                 }))
@@ -215,10 +215,10 @@ fn ntt_operations_reject_incompatible_domains_and_workspace_before_writes() {
         &gadget,
         &table,
         &mut rng,
-        &mut gadget_context,
+        &mut gadget_workspace,
     );
     let input = GlweCiphertext::new(vec![0u32; params.glwe_len()]);
-    let mut switching_context = NttGlweKeySwitchingContext::new(params.size());
+    let mut switching_workspace = NttGlweKeySwitchingWorkspace::new(params.size());
     // Also reject a mutually compatible modulus/table pair belonging to a different key.
     for (modulus, ntt) in [
         (modulus, &wrong_table),
@@ -233,7 +233,7 @@ fn ntt_operations_reject_incompatible_domains_and_workspace_before_writes() {
                     &mut output,
                     modulus,
                     ntt,
-                    &mut switching_context,
+                    &mut switching_workspace,
                 );
             }))
             .is_err()
@@ -252,7 +252,7 @@ fn ntt_operations_reject_incompatible_domains_and_workspace_before_writes() {
                         &params,
                         &wrong_table,
                         &mut rng,
-                        &mut context,
+                        &mut workspace,
                     );
                 } else {
                     key.encrypt_to(&message, &mut output, &params, &wrong_table, &mut rng);
@@ -263,7 +263,7 @@ fn ntt_operations_reject_incompatible_domains_and_workspace_before_writes() {
         assert_eq!(output.as_ref(), vec![7u32; params.glwe_len()]);
     }
     for length in [N / 2, N * 2] {
-        let mut wrong_context = NttGlwePublicEncryptContext::new(length);
+        let mut wrong_workspace = NttGlwePublicEncryptWorkspace::new(length);
         let mut output = NttGlweCiphertext::new(vec![7u32; params.glwe_len()]);
         let mut rng = StdRng::seed_from_u64(43);
         let mut expected_rng = StdRng::seed_from_u64(43);
@@ -275,7 +275,7 @@ fn ntt_operations_reject_incompatible_domains_and_workspace_before_writes() {
                     &params,
                     &table,
                     &mut rng,
-                    &mut wrong_context,
+                    &mut wrong_workspace,
                 );
             }))
             .is_err()
@@ -360,8 +360,8 @@ fn only_ggsw_requires_matching_workspace_levels_in_both_domains() {
 
     for levels in [1, 4] {
         let size = GadgetSize::new(ntt_params.size(), levels);
-        let mut ntt_context = NttGadgetEncryptContext::new(size);
-        let mut fourier_context = FourierGadgetEncryptContext::new(size);
+        let mut ntt_workspace = NttGlweGadgetEncryptWorkspace::new(size);
+        let mut fourier_workspace = FourierGlweGadgetEncryptWorkspace::new(size);
         let mut ntt_glev = NttGlevCiphertext::<Vec<u32>>::zero(ntt_gadget.glev_len());
         let mut fourier_glev =
             FourierGlevCiphertext::<Vec<Complex64>>::zero(fourier_gadget.fourier_glev_len());
@@ -371,7 +371,7 @@ fn only_ggsw_requires_matching_workspace_levels_in_both_domains() {
             &ntt_gadget,
             &ntt,
             &mut rng,
-            &mut ntt_context,
+            &mut ntt_workspace,
         );
         fourier_key.encrypt_glev_to(
             &message,
@@ -379,7 +379,7 @@ fn only_ggsw_requires_matching_workspace_levels_in_both_domains() {
             &fourier_gadget,
             &mut fft,
             &mut rng,
-            &mut fourier_context,
+            &mut fourier_workspace,
         );
         let mut ntt_output = NttGgswCiphertext::new(vec![7u32; ntt_gadget.ggsw_len()]);
         let sentinel = Complex64::new(7.0, 9.0);
@@ -393,7 +393,7 @@ fn only_ggsw_requires_matching_workspace_levels_in_both_domains() {
                     &ntt_gadget,
                     &ntt,
                     &mut rng,
-                    &mut ntt_context,
+                    &mut ntt_workspace,
                 );
             }))
             .is_err()
@@ -407,7 +407,7 @@ fn only_ggsw_requires_matching_workspace_levels_in_both_domains() {
                     &fourier_gadget,
                     &mut fft,
                     &mut rng,
-                    &mut fourier_context,
+                    &mut fourier_workspace,
                 );
             }))
             .is_err()

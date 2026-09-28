@@ -10,17 +10,17 @@
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use primus_fft::{FftEngine, FftTable, RustFftTable};
 use primus_glwe::{
-    FourierGadgetEncryptContext, FourierGlweKeySwitchingContext, FourierGlweSchemeSwitchKey,
-    FourierGlweSecretKey, FourierLwePackingKeySwitchingKey, GlevParameters, GlweParameters,
-    NttGadgetEncryptContext, NttGlweKeySwitchingContext, NttGlweSchemeSwitchKey, NttGlweSecretKey,
-    NttLwePackingKeySwitchingKey, SecretKeyDistr,
+    FourierGlweGadgetEncryptWorkspace, FourierGlweKeySwitchingWorkspace,
+    FourierGlweSchemeSwitchKey, FourierGlweSecretKey, FourierLwePackingKeySwitchingKey,
+    GlevParameters, GlweParameters, NttGlweGadgetEncryptWorkspace, NttGlweKeySwitchingWorkspace,
+    NttGlweSchemeSwitchKey, NttGlweSecretKey, NttLwePackingKeySwitchingKey, SecretKeyDistr,
 };
 use primus_lattice::{
-    context::{FourierGlweExternalProductContext, NttGlweExternalProductContext},
     ggsw::{FourierGgsw, NttGgsw},
     glev::{FourierGlev, Glev, NttGlev},
     glwe::Glwe,
     lwe::Lwe,
+    workspace::{FourierGlweExternalProductWorkspace, NttGlweExternalProductWorkspace},
 };
 use primus_lwe::LweSecretKeyRef;
 use primus_modulus::{BarrettModulus, NativeModulus};
@@ -41,7 +41,7 @@ fn ntt_conversion(c: &mut Criterion) {
         let size = params.size();
         let (coeff, sk) = NttGlweSecretKey::generate_pair(&params, &table, &mut rng);
         let glev = GlevParameters::with_glwe_params(&params, 10, Some(3));
-        let mut gadget = NttGadgetEncryptContext::new(glev.size());
+        let mut gadget = NttGlweGadgetEncryptWorkspace::new(glev.size());
         let source = params
             .secret_key_sampler()
             .sample_signed(INPUT_DIMENSION, &mut rng);
@@ -54,7 +54,7 @@ fn ntt_conversion(c: &mut Criterion) {
             &mut rng,
             &mut gadget,
         );
-        let mut context = NttGlweKeySwitchingContext::new(size);
+        let mut workspace = NttGlweKeySwitchingWorkspace::new(size);
         let mut output = Glwe::new(vec![0; size.glwe_len()]);
         let mut batch = vec![0; n * (INPUT_DIMENSION + 1)];
         for (i, block) in batch
@@ -78,7 +78,13 @@ fn ntt_conversion(c: &mut Criterion) {
             group.throughput(Throughput::Elements(count as u64));
             group.bench_function(format!("packing_key_switch/b10_l3/{count}"), |b| {
                 b.iter(|| {
-                    key.pack_lwes_to(black_box(input), &mut output, modulus, &table, &mut context);
+                    key.pack_lwes_to(
+                        black_box(input),
+                        &mut output,
+                        modulus,
+                        &table,
+                        &mut workspace,
+                    );
                     black_box(output.as_ref());
                 })
             });
@@ -99,7 +105,13 @@ fn ntt_conversion(c: &mut Criterion) {
         group.throughput(Throughput::Elements(1));
         group.bench_function("packing_key_switch/b3_l10/1", |b| {
             b.iter(|| {
-                key.pack_lwes_to(black_box(input), &mut output, modulus, &table, &mut context);
+                key.pack_lwes_to(
+                    black_box(input),
+                    &mut output,
+                    modulus,
+                    &table,
+                    &mut workspace,
+                );
                 black_box(output.as_ref());
             })
         });
@@ -114,7 +126,7 @@ fn ntt_conversion(c: &mut Criterion) {
             &mut rng,
             &mut gadget,
         );
-        let mut context = NttGlweExternalProductContext::new(glev.size());
+        let mut workspace = NttGlweExternalProductWorkspace::new(glev.size());
         let mut message = Polynomial::new(vec![0; n]);
         message.as_mut()[0] = 1;
         let mut input = NttGlev::<Vec<_>>::zero(glev.glev_len());
@@ -129,7 +141,7 @@ fn ntt_conversion(c: &mut Criterion) {
                     &mut output,
                     modulus,
                     &table,
-                    &mut context,
+                    &mut workspace,
                 );
                 black_box(output.as_ref());
             })
@@ -148,7 +160,7 @@ fn fourier_conversion(c: &mut Criterion) {
         let size = params.size();
         let (coeff, sk) = FourierGlweSecretKey::generate_pair(&params, &mut fft, &mut rng);
         let glev = GlevParameters::with_glwe_params(&params, 10, Some(3));
-        let mut gadget = FourierGadgetEncryptContext::new(glev.size());
+        let mut gadget = FourierGlweGadgetEncryptWorkspace::new(glev.size());
         let source = params
             .secret_key_sampler()
             .sample_signed(INPUT_DIMENSION, &mut rng);
@@ -161,7 +173,7 @@ fn fourier_conversion(c: &mut Criterion) {
             &mut rng,
             &mut gadget,
         );
-        let mut context = FourierGlweKeySwitchingContext::new(size);
+        let mut workspace = FourierGlweKeySwitchingWorkspace::new(size);
         let mut output = Glwe::new(vec![0; size.glwe_len()]);
         let mut batch = vec![0; n * (INPUT_DIMENSION + 1)];
         for (i, block) in batch
@@ -185,7 +197,7 @@ fn fourier_conversion(c: &mut Criterion) {
             group.throughput(Throughput::Elements(count as u64));
             group.bench_function(format!("packing_key_switch/b10_l3/{count}"), |b| {
                 b.iter(|| {
-                    key.pack_lwes_to(black_box(input), &mut output, &mut fft, &mut context);
+                    key.pack_lwes_to(black_box(input), &mut output, &mut fft, &mut workspace);
                     black_box(output.as_ref());
                 })
             });
@@ -205,7 +217,7 @@ fn fourier_conversion(c: &mut Criterion) {
         group.throughput(Throughput::Elements(1));
         group.bench_function("packing_key_switch/b3_l10/1", |b| {
             b.iter(|| {
-                key.pack_lwes_to(black_box(input), &mut output, &mut fft, &mut context);
+                key.pack_lwes_to(black_box(input), &mut output, &mut fft, &mut workspace);
                 black_box(output.as_ref());
             })
         });
@@ -220,7 +232,7 @@ fn fourier_conversion(c: &mut Criterion) {
             &mut rng,
             &mut gadget,
         );
-        let mut context = FourierGlweExternalProductContext::new(glev.size());
+        let mut workspace = FourierGlweExternalProductWorkspace::new(glev.size());
         let mut message = Polynomial::new(vec![0; n]);
         message.as_mut()[0] = 1;
         let mut input = FourierGlev::<Vec<_>>::zero(glev.fourier_glev_len());
@@ -232,7 +244,7 @@ fn fourier_conversion(c: &mut Criterion) {
         group.throughput(Throughput::Elements(1));
         group.bench_function("scheme_switch", |b| {
             b.iter(|| {
-                key.apply_to(black_box(&input), &mut output, &mut fft, &mut context);
+                key.apply_to(black_box(&input), &mut output, &mut fft, &mut workspace);
                 black_box(output.as_ref());
             })
         });

@@ -1,6 +1,6 @@
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_glwe::{GlweCiphertext, GlweParameters, NttGlweSecretKey, SecretKeyDistr};
-use primus_lattice::{context::NttGlweExternalProductContext, ggsw::NttGgsw, glwe::NttGlwe};
+use primus_lattice::{ggsw::NttGgsw, glwe::NttGlwe, workspace::NttGlweExternalProductWorkspace};
 use primus_lwe::{LweParameters, LweSecretKey};
 use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, U32NttTable};
@@ -49,7 +49,7 @@ fn encrypted_selections_cover_the_support_once_with_dummy_per_bucket() {
         .encrypt(&message, glwe, ntt, &mut rng)
         .into_coeff_form(ntt);
     let size = context.parameters().blind_rotation_ggsw().size();
-    let mut external_product = NttGlweExternalProductContext::new(size);
+    let mut external_product = NttGlweExternalProductWorkspace::new(size);
     let mut control = NttGgsw::<Vec<u32>>::zero(size.ggsw_len());
     let mut product = GlweCiphertext::<Vec<u32>>::zero(size.glwe_len());
     let mut product_ntt = NttGlwe::<Vec<u32>>::zero(size.glwe_len());

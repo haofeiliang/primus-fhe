@@ -1,8 +1,8 @@
 use primus_glwe_rns::{
     CrtGlevParameters, CrtGlweParameters, DcrtGadgetDomain, DcrtGlweCiphertext,
-    DcrtGlweDecryptContext, DcrtGlweKeySwitchingContext, DcrtGlweKeySwitchingKey,
-    DcrtGlweSecretKey, GlweSecretKey, HybridRnsGlweKeySwitchingContext,
-    HybridRnsGlweKeySwitchingKey, HybridRnsKeySwitchDomain, SecretKeyDistr,
+    DcrtGlweDecryptWorkspace, DcrtGlweKeySwitchingKey, DcrtGlweKeySwitchingWorkspace,
+    DcrtGlweSecretKey, GlweSecretKey, HybridRnsGlweKeySwitchingKey,
+    HybridRnsGlweKeySwitchingWorkspace, HybridRnsKeySwitchDomain, SecretKeyDistr,
 };
 use primus_lattice::glwe::DcrtGlwe;
 use primus_modulus::BarrettModulus;
@@ -104,21 +104,21 @@ fn test_rns_glwe_ksk() {
     let input: Polynomial<Vec<ValueT>> = Polynomial::random(poly_length, mod_t, &mut rng);
     let mut c1: DcrtGlwe<Vec<ValueT>> = DcrtGlweCiphertext::zero(rns_glwe_len);
     let mut c2: DcrtGlwe<Vec<ValueT>> = DcrtGlweCiphertext::zero(rns_glwe_len);
-    let mut ksk_context = DcrtGlweKeySwitchingContext::new(&domain, glwe_params.size());
-    let mut decrypt_context = DcrtGlweDecryptContext::new(glwe_params.size());
+    let mut ksk_workspace = DcrtGlweKeySwitchingWorkspace::new(&domain, glwe_params.size());
+    let mut decrypt_workspace = DcrtGlweDecryptWorkspace::new(glwe_params.size());
 
     dcrt_sk_1.encrypt_plaintext_inplace(&input, &mut c1, &glwe_params, &table, &mut rng);
 
     // Sanity: decrypt back under sk_1
-    let m_dec = dcrt_sk_1.decrypt(&c1, &glwe_params, &table, &mut decrypt_context);
+    let m_dec = dcrt_sk_1.decrypt(&c1, &glwe_params, &table, &mut decrypt_workspace);
     assert_eq!(m_dec, input);
 
     // Requires conversion to coefficient domain first.
     let c1 = c1.into_coeff_form(&table);
 
-    key_switching_key.key_switch_to(&c1, &mut c2, &domain, &mut ksk_context);
+    key_switching_key.key_switch_to(&c1, &mut c2, &domain, &mut ksk_workspace);
 
-    let output = dcrt_sk_2.decrypt(&c2, &glwe_params, &table, &mut decrypt_context);
+    let output = dcrt_sk_2.decrypt(&c2, &glwe_params, &table, &mut decrypt_workspace);
 
     assert_eq!(input.as_ref(), output.as_ref());
 }
@@ -195,20 +195,20 @@ fn test_rns_glwe_ksk_hybrid() {
     let mut c1: DcrtGlwe<Vec<ValueT>> = DcrtGlweCiphertext::zero(rns_glwe_len);
     let mut c2: DcrtGlwe<Vec<ValueT>> = DcrtGlweCiphertext::zero(rns_glwe_len);
 
-    let mut decrypt_context = DcrtGlweDecryptContext::new(glwe_params.size());
+    let mut decrypt_workspace = DcrtGlweDecryptWorkspace::new(glwe_params.size());
 
     dcrt_sk_1.encrypt_plaintext_inplace(&input, &mut c1, &glwe_params, &q_table, &mut rng);
 
     // Sanity: decrypt back under sk_1
-    let m_dec = dcrt_sk_1.decrypt(&c1, &glwe_params, &q_table, &mut decrypt_context);
+    let m_dec = dcrt_sk_1.decrypt(&c1, &glwe_params, &q_table, &mut decrypt_workspace);
     assert_eq!(m_dec, input);
 
-    let mut hybrid_context =
-        HybridRnsGlweKeySwitchingContext::new(&key_switching_key, &hybrid_domain);
+    let mut hybrid_workspace =
+        HybridRnsGlweKeySwitchingWorkspace::new(&key_switching_key, &hybrid_domain);
 
-    key_switching_key.key_switch_to(&c1, &mut c2, &hybrid_domain, &mut hybrid_context);
+    key_switching_key.key_switch_to(&c1, &mut c2, &hybrid_domain, &mut hybrid_workspace);
 
-    let output = dcrt_sk_2.decrypt(&c2, &glwe_params, &q_table, &mut decrypt_context);
+    let output = dcrt_sk_2.decrypt(&c2, &glwe_params, &q_table, &mut decrypt_workspace);
 
     assert_eq!(
         input.as_ref(),

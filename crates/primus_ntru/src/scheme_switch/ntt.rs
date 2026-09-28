@@ -10,7 +10,7 @@ use zeroize::Zeroizing;
 
 use crate::{
     NlevCiphertext, NlevParameters, NtruSecretKey, NttNgswCiphertext,
-    NttNtruExternalProductContext, NttNtruGadgetEncryptContext, NttNtruSecretKey,
+    NttNtruExternalProductWorkspace, NttNtruGadgetEncryptWorkspace, NttNtruSecretKey,
 };
 
 /// Converts `NLev_f[m]` to `NGSW_f[m]`, preserving the input gadget scalars.
@@ -53,7 +53,7 @@ impl<T: FheUint> NttNtruSchemeSwitchKey<T> {
         key_parameters: &NlevParameters<T, M>,
         ntt: &Table,
         rng: &mut R,
-        context: &mut NttNtruGadgetEncryptContext<T>,
+        workspace: &mut NttNtruGadgetEncryptWorkspace<T>,
     ) -> Self
     where
         M: FieldContext<T>,
@@ -89,7 +89,7 @@ impl<T: FheUint> NttNtruSchemeSwitchKey<T> {
             key_parameters,
             ntt,
             rng,
-            context,
+            workspace,
         );
         Self {
             data,
@@ -143,7 +143,7 @@ impl<T: FheUint> NttNtruSchemeSwitchKey<T> {
         output: &mut NttNgswCiphertext<B>,
         modulus: M,
         ntt: &Table,
-        context: &mut NttNtruExternalProductContext<T>,
+        workspace: &mut NttNtruExternalProductWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
@@ -161,7 +161,7 @@ impl<T: FheUint> NttNtruSchemeSwitchKey<T> {
             "scheme-switch output length mismatch"
         );
         assert_eq!(
-            context.poly_length(),
+            workspace.poly_length(),
             self.poly_length,
             "scheme-switch workspace length mismatch"
         );
@@ -190,7 +190,7 @@ impl<T: FheUint> NttNtruSchemeSwitchKey<T> {
                 &self.key_basis,
                 modulus,
                 ntt,
-                context,
+                workspace,
             );
         }
     }

@@ -89,8 +89,22 @@ where
 
     /// Returns the shared CBS bases and accumulator layouts.
     #[must_use]
-    pub fn parameters(&self) -> &CircuitBootstrapParameters<T> {
+    pub fn parameters(&self) -> &'a CircuitBootstrapParameters<T> {
         self.circuit_key.parameters()
+    }
+
+    /// Borrows the external-product workspace already used by one-hot CBS.
+    /// Serial table products can reuse it between calls without allocation or reset.
+    /// Every one-hot call overwrites its scratch before reading it.
+    ///
+    /// # Correctness
+    /// Retain the workspace's polynomial length. It does not establish a product's
+    /// key, modulus, basis or transform compatibility.
+    #[must_use]
+    pub fn external_product_workspace(
+        &mut self,
+    ) -> &mut primus_ntru::NttNtruExternalProductWorkspace<T> {
+        self.pbs.blind_rotation.rotation.external_product()
     }
 
     /// Allocates M*L*N coefficients for all NLEV selectors. Reuse with [`Self::one_hot_nlev_to`].

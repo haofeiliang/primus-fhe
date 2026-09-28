@@ -1,12 +1,12 @@
 use primus_glwe::{
-    GlevParameters, GlweParameters, GlweSecretKey, NttGadgetEncryptContext, NttGlweSchemeSwitchKey,
-    NttGlweSecretKey, SecretKeyDistr,
+    GlevParameters, GlweParameters, GlweSecretKey, NttGlweGadgetEncryptWorkspace,
+    NttGlweSchemeSwitchKey, NttGlweSecretKey, SecretKeyDistr,
 };
 use primus_lattice::{
-    context::NttGlweExternalProductContext,
     ggsw::NttGgsw,
     glev::NttGlev,
     glwe::{Glwe, NttGlwe},
+    workspace::NttGlweExternalProductWorkspace,
 };
 use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, U64NttTable};
@@ -37,7 +37,7 @@ fn ntt_scheme_switch_produces_an_external_product_control() {
     let mut rng = StdRng::seed_from_u64(0x0043_4253_5052_494d);
     let (coefficient_secret, secret) =
         NttGlweSecretKey::generate_pair(&glwe_parameters, &ntt, &mut rng);
-    let mut gadget = NttGadgetEncryptContext::new(scheme_parameters.size());
+    let mut gadget = NttGlweGadgetEncryptWorkspace::new(scheme_parameters.size());
 
     let scheme_key = NttGlweSchemeSwitchKey::generate(
         &coefficient_secret,
@@ -62,13 +62,13 @@ fn ntt_scheme_switch_produces_an_external_product_control() {
     );
     let input_glev = input_glev.into_coeff_form(&ntt);
     let mut control: NttGgsw<Vec<u64>> = NttGgsw::zero(output_parameters.ggsw_len());
-    let mut scheme_context = NttGlweExternalProductContext::new(scheme_parameters.size());
+    let mut scheme_workspace = NttGlweExternalProductWorkspace::new(scheme_parameters.size());
     scheme_key.apply_to(
         &input_glev,
         &mut control,
         modulus,
         &ntt,
-        &mut scheme_context,
+        &mut scheme_workspace,
     );
 
     let selected_message = vec![5; POLY_LENGTH];
@@ -82,7 +82,7 @@ fn ntt_scheme_switch_produces_an_external_product_control() {
     );
     let selected = selected.into_coeff_form(&ntt);
     let mut product: Glwe<Vec<u64>> = Glwe::zero(glwe_parameters.glwe_len());
-    let mut external_product = NttGlweExternalProductContext::new(output_parameters.size());
+    let mut external_product = NttGlweExternalProductWorkspace::new(output_parameters.size());
     control.external_product_to(
         &selected,
         &mut product,
@@ -114,7 +114,7 @@ fn ntt_scheme_switch_produces_an_external_product_control() {
                     &mut output,
                     modulus,
                     table,
-                    &mut scheme_context,
+                    &mut scheme_workspace,
                 );
             }))
             .is_err()
@@ -127,12 +127,13 @@ fn fourier_scheme_switch<Table: primus_fft::FftTable>() {
     use common::{K, N, assert_phase, encrypt, message, secret};
     use primus_fft::FftEngine;
     use primus_glwe::{
-        FourierGadgetEncryptContext, FourierGlweSchemeSwitchKey, FourierGlweSecretKey, GlweSize,
+        FourierGlweGadgetEncryptWorkspace, FourierGlweSchemeSwitchKey, FourierGlweSecretKey,
+        GlweSize,
     };
     use primus_lattice::{
-        context::FourierGlweExternalProductContext,
         ggsw::{FourierGgsw, Ggsw},
         glev::Glev,
+        workspace::FourierGlweExternalProductWorkspace,
     };
     use primus_modulus::NativeModulus;
 
@@ -159,7 +160,7 @@ fn fourier_scheme_switch<Table: primus_fft::FftTable>() {
         &key_params,
         &mut fft,
         &mut rng,
-        &mut FourierGadgetEncryptContext::new(key_params.size()),
+        &mut FourierGlweGadgetEncryptWorkspace::new(key_params.size()),
     );
     // Build GLev(X^(N-1)) with an independent coefficient-domain encryption oracle.
     let mut input = Glev::new(vec![0; output_params.glev_len()]);
@@ -173,8 +174,8 @@ fn fourier_scheme_switch<Table: primus_fft::FftTable>() {
         block.copy_from_slice(encrypt(&m, &secret(), 1u128 << 64, &mut rng).as_ref());
     }
     let mut output = FourierGgsw::<Vec<_>>::zero(output_params.fourier_ggsw_len());
-    let mut context = FourierGlweExternalProductContext::new(key_params.size());
-    key.apply_to(&input, &mut output, &mut fft, &mut context);
+    let mut workspace = FourierGlweExternalProductWorkspace::new(key_params.size());
+    key.apply_to(&input, &mut output, &mut fft, &mut workspace);
 
     // Check every row and level, including the directly transformed body row.
     let mut coefficient_output = Ggsw::new(vec![0u64; output_params.ggsw_len()]);
@@ -210,7 +211,7 @@ fn fourier_scheme_switch<Table: primus_fft::FftTable>() {
         &mut product,
         output_params.basis(),
         &mut fft,
-        &mut FourierGlweExternalProductContext::new(output_params.size()),
+        &mut FourierGlweExternalProductWorkspace::new(output_params.size()),
     );
     let mut expected = vec![0; N];
     expected[N - 1] = m[0];
@@ -263,7 +264,7 @@ fn fourier_scheme_switch<Table: primus_fft::FftTable>() {
                     &Glev::new(&input.as_ref()[..input_len]),
                     &mut output,
                     engine,
-                    &mut FourierGlweExternalProductContext::new(size),
+                    &mut FourierGlweExternalProductWorkspace::new(size),
                 );
             }))
             .is_err()

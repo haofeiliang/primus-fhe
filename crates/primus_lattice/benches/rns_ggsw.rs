@@ -7,9 +7,9 @@ use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use primus_decompose::big_integer::BigUintApproxSignedBasis;
 use primus_lattice::{
     GlweSize, RnsGadgetSize, RnsGlweSize,
-    context::DcrtGlevMulContext,
     ggsw::CrtGgsw,
     glwe::{CrtGlwe, DcrtGlwe},
+    workspace::DcrtGlevMulWorkspace,
 };
 use primus_modulus::BarrettModulus;
 use primus_ntt::U64DcrtTable;
@@ -30,7 +30,7 @@ fn benchmarks(c: &mut Criterion) {
             .into_ntt_form(&table);
         let input = CrtGlwe::new(support::coefficients(glwe_len, n, qs, 29));
         let mut output = DcrtGlwe::new(vec![0; glwe_len]);
-        let mut context = DcrtGlevMulContext::new(size, &base);
+        let mut workspace = DcrtGlevMulWorkspace::new(size, &base);
         let mut group = c.benchmark_group(format!(
             "rns/ggsw/u64/n{n}/k{dimension}/m{count}/logb{log_b}/l{levels}"
         ));
@@ -43,7 +43,7 @@ fn benchmarks(c: &mut Criterion) {
                     black_box(&basis),
                     black_box(&table),
                     black_box(&base),
-                    black_box(&mut context),
+                    black_box(&mut workspace),
                 )
             })
         });

@@ -12,11 +12,13 @@ static ALLOCATOR: CountingAllocator = CountingAllocator;
 use criterion::{Criterion, criterion_group, criterion_main};
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{FftTable, RustFftTable, TfheFftTable, TorusFftValue};
-use primus_glwe::{FourierGlweKeySwitchingContext, GlweCiphertext, GlweParameters, SecretKeyDistr};
+use primus_glwe::{
+    FourierGlweKeySwitchingWorkspace, GlweCiphertext, GlweParameters, SecretKeyDistr,
+};
 use primus_lwe::{LweCiphertext, LweParameters};
 use primus_modulus::NativeModulus;
 use primus_tfhe_glwe_fourier::{
-    BooleanGate, BootstrappingKey, FourierGlweBlindRotationContext, PbsOrder, TfheContext,
+    BooleanGate, BootstrappingKey, FourierGlweBlindRotationWorkspace, PbsOrder, TfheContext,
     TfheParameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
@@ -108,10 +110,10 @@ fn bench_order<T: TorusFftValue, Table: FftTable>(
 
     let modulus = parameters.accumulator_glwe().cipher_modulus();
     let mut fft = context.new_fft_engine();
-    let mut blind_rotation = FourierGlweBlindRotationContext::new(bootstrapping_key);
+    let mut blind_rotation = FourierGlweBlindRotationWorkspace::new(bootstrapping_key);
     let key_switching_parameters = parameters.glwe_key_switching().output();
     let mut key_switching =
-        FourierGlweKeySwitchingContext::new(key_switching_parameters.glwe_size());
+        FourierGlweKeySwitchingWorkspace::new(key_switching_parameters.glwe_size());
     let mut main_glwe: GlweCiphertext<Vec<T>> =
         GlweCiphertext::zero(parameters.accumulator_glwe().glwe_len());
     let mut switched: GlweCiphertext<Vec<T>> =

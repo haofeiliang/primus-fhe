@@ -12,12 +12,12 @@ use crate::{GlweParameters, SecretKeyDistr};
 use super::GlweSecretKey;
 
 mod batch;
-mod context;
 mod decrypt;
 mod encrypt;
 mod gadget;
-pub use context::{
-    FourierGadgetEncryptContext, FourierGlweDecryptContext, FourierGlweEncryptContext,
+mod workspace;
+pub use workspace::{
+    FourierGlweDecryptWorkspace, FourierGlweEncryptWorkspace, FourierGlweGadgetEncryptWorkspace,
 };
 
 /// A native-torus GLWE secret key represented in the Fourier domain.

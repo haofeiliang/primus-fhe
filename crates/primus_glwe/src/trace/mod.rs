@@ -5,7 +5,7 @@ mod kernels;
 mod ntt;
 mod ntt_operations;
 
-pub use fourier::{FourierGlweTraceContext, FourierGlweTraceKey};
-pub use fourier_operations::FourierGlwePackingContext;
-pub use ntt::{NttGlweTraceContext, NttGlweTraceKey};
-pub use ntt_operations::NttGlwePackingContext;
+pub use fourier::{FourierGlweTraceKey, FourierGlweTraceWorkspace};
+pub use fourier_operations::FourierGlwePackingWorkspace;
+pub use ntt::{NttGlweTraceKey, NttGlweTraceWorkspace};
+pub use ntt_operations::NttGlwePackingWorkspace;

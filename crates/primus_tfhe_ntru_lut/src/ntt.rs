@@ -5,9 +5,7 @@ use primus_lattice::{
     ntru::{NtruIter, NtruIterMut},
 };
 use primus_modulus::BarrettModulus;
-use primus_ntru::{
-    NtruCiphertext, NtruLweKeySwitchingContext, NttNgswCiphertext, NttNtruExternalProductContext,
-};
+use primus_ntru::{NtruCiphertext, NtruLweKeySwitchingWorkspace, NttNgswCiphertext};
 use primus_ntt::MonomialNttTable;
 use primus_poly::{
     NttPolynomialIter, NttPolynomialIterMut, Polynomial, PolynomialIter, PolynomialIterMut,
@@ -26,6 +24,7 @@ use crate::{HighPrecisionLookupTable, LookupTableError, lookup_table::allocation
 /// chunks retain only r=1..M-1 NGSWs. Coefficient chunks retain aggregated
 /// rotation controls.
 /// Public monomial factors and all online workspaces are allocated at binding.
+/// Table products reuse one-hot CBS's external-product workspace between calls.
 pub struct NttLookupTableEvaluator<'a, T, Table, LM = BarrettModulus<T>>
 where
     T: FheUint,
@@ -37,22 +36,21 @@ where
     lookup_table: &'a HighPrecisionLookupTable<T>,
     one_hot: OneHotCircuitBootstrapEvaluator<'a, T, Table, LM>,
     // [branch][level][NTT value]: M NLEVs for the first public table layer.
-    public_table_selectors: Vec<T>,
+    public_table_selectors: Box<[T]>,
     // [encrypted layer][r-1][level][NTT value]: M-1 NGSWs per later layer.
-    encrypted_table_selectors: Vec<T>,
+    encrypted_table_selectors: Box<[T]>,
     // [low chunk][level][NTT value]: one NGSW[X^(-m_i*M^i)] per low chunk.
-    rotation_controls: Vec<T>,
+    rotation_controls: Box<[T]>,
     // One chunk's M-1 NGSW selectors for r=1..M-1, reused for each rotation control.
-    nonzero_selectors: Vec<T>,
+    nonzero_selectors: Box<[T]>,
     // [low chunk i][nonzero digit k][NTT value] of X^(-k*M^i)-1.
-    rotation_factors: Vec<T>,
+    rotation_factors: Box<[T]>,
     // [candidate][coefficient], holding at most P/M encrypted polynomials.
-    candidates: Vec<T>,
-    current: NtruCiphertext<Vec<T>>,
-    product: NtruCiphertext<Vec<T>>,
-    difference: NtruCiphertext<Vec<T>>,
-    external_product: NttNtruExternalProductContext<T>,
-    return_context: NtruLweKeySwitchingContext<T>,
+    candidates: Box<[T]>,
+    current: NtruCiphertext<Box<[T]>>,
+    product: NtruCiphertext<Box<[T]>>,
+    difference: NtruCiphertext<Box<[T]>>,
+    return_workspace: NtruLweKeySwitchingWorkspace<T>,
 }
 
 impl<'a, T, Table, LM> NttLookupTableEvaluator<'a, T, Table, LM>
@@ -104,9 +102,11 @@ where
                 } else {
                     0
                 }
-            ],
-            encrypted_table_selectors: vec![T::ZERO; encrypted_table_selectors_len],
-            rotation_controls: vec![T::ZERO; rotation_controls_len],
+            ]
+            .into_boxed_slice(),
+            encrypted_table_selectors: vec![T::ZERO; encrypted_table_selectors_len]
+                .into_boxed_slice(),
+            rotation_controls: vec![T::ZERO; rotation_controls_len].into_boxed_slice(),
             nonzero_selectors: vec![
                 T::ZERO;
                 if coefficient_chunk_count > 0 {
@@ -114,14 +114,14 @@ where
                 } else {
                     0
                 }
-            ],
-            rotation_factors: vec![T::ZERO; rotation_factors_len],
-            candidates: vec![T::ZERO; candidates_len],
+            ]
+            .into_boxed_slice(),
+            rotation_factors: vec![T::ZERO; rotation_factors_len].into_boxed_slice(),
+            candidates: vec![T::ZERO; candidates_len].into_boxed_slice(),
             current: NtruCiphertext::zero(n),
             product: NtruCiphertext::zero(n),
             difference: NtruCiphertext::zero(n),
-            external_product: NttNtruExternalProductContext::new(n),
-            return_context: NtruLweKeySwitchingContext::new(n),
+            return_workspace: NtruLweKeySwitchingWorkspace::new(n),
         };
         evaluator.prepare_rotation_constants();
         Ok(evaluator)
@@ -194,7 +194,7 @@ where
                 &self.current,
                 output,
                 self.context.parameters().external_lwe().cipher_modulus(),
-                &mut self.return_context,
+                &mut self.return_workspace,
             );
         }
     }
@@ -294,7 +294,7 @@ where
                 basis,
                 modulus,
                 self.context.table(),
-                &mut self.external_product,
+                self.one_hot.external_product_workspace(),
             );
             // Keep the new accumulator in `current` for both odd and even
             // rotation counts, without copying its N coefficients.
@@ -332,7 +332,7 @@ where
                 self.context.parameters().blind_rotation().basis(),
                 modulus,
                 self.context.table(),
-                &mut self.external_product,
+                self.one_hot.external_product_workspace(),
             );
             return;
         }
@@ -379,7 +379,7 @@ where
                     basis,
                     modulus,
                     self.context.table(),
-                    &mut self.external_product,
+                    self.one_hot.external_product_workspace(),
                 );
 
                 // Initialize from the first product so reused candidate slots
@@ -439,7 +439,7 @@ where
                     basis,
                     modulus,
                     self.context.table(),
-                    &mut self.external_product,
+                    self.one_hot.external_product_workspace(),
                 );
                 self.current.add_assign(&self.product, modulus);
             }

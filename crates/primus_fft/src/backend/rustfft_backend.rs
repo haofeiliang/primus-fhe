@@ -10,12 +10,12 @@ use crate::{FftError, FftTable, TorusFftValue};
 /// Reusable workspace for [`RustFftTable`].
 /// The full, fixed-length buffers are securely erased on drop.
 /// Explicit zeroization preserves lengths and allocations for reuse.
-pub struct RustFftScratch {
+pub struct RustFftWorkspace {
     values: ABox<[Complex64]>,
     fft: ABox<[Complex64]>,
 }
 
-impl Zeroize for RustFftScratch {
+impl Zeroize for RustFftWorkspace {
     fn zeroize(&mut self) {
         for buffer in [&mut self.values, &mut self.fft] {
             // Complex64 has no Zeroize implementation. Erase both components
@@ -29,16 +29,16 @@ impl Zeroize for RustFftScratch {
     }
 }
 
-impl ZeroizeOnDrop for RustFftScratch {}
+impl ZeroizeOnDrop for RustFftWorkspace {}
 
-impl Drop for RustFftScratch {
+impl Drop for RustFftWorkspace {
     fn drop(&mut self) {
         self.zeroize();
     }
 }
 
 /// Negacyclic FFT wrapper backed by RustFFT.
-/// Owned twist and scratch buffers use cache-line alignment. Caller-owned
+/// Owned twist and workspace buffers use cache-line alignment. Caller-owned
 /// slices only need their element type's normal alignment.
 pub struct RustFftTable {
     n: usize,
@@ -55,7 +55,7 @@ impl RustFftTable {
         input: &[T],
         output: &mut [Complex64],
         convert: impl Fn(T) -> f64,
-        scratch: &mut RustFftScratch,
+        workspace: &mut RustFftWorkspace,
     ) {
         assert_eq!(input.len(), self.n);
         assert_eq!(output.len(), self.h);
@@ -68,12 +68,13 @@ impl RustFftTable {
         {
             *output = Complex64::new(convert(re), convert(im)) * twist;
         }
-        self.forward.process_with_scratch(output, &mut scratch.fft);
+        self.forward
+            .process_with_scratch(output, &mut workspace.fft);
     }
 }
 
 impl FftTable for RustFftTable {
-    type Scratch = RustFftScratch;
+    type Workspace = RustFftWorkspace;
 
     fn new(log_n: u32) -> Result<Self, FftError> {
         if !(2..usize::BITS).contains(&log_n) {
@@ -118,12 +119,12 @@ impl FftTable for RustFftTable {
         crate::automorphism::automorphism_map(self.n, degree, core::convert::identity)
     }
 
-    fn new_scratch(&self) -> Self::Scratch {
+    fn new_workspace(&self) -> Self::Workspace {
         let scratch_len = self
             .forward
             .get_inplace_scratch_len()
             .max(self.inverse.get_inplace_scratch_len());
-        RustFftScratch {
+        RustFftWorkspace {
             values: avec![Complex64::default(); self.h].into_boxed_slice(),
             fft: avec![Complex64::default(); scratch_len].into_boxed_slice(),
         }
@@ -133,38 +134,38 @@ impl FftTable for RustFftTable {
         &self,
         input: &[T],
         output: &mut [Complex64],
-        scratch: &mut Self::Scratch,
+        workspace: &mut Self::Workspace,
     ) {
-        self.forward_with(input, output, TorusFftValue::into_torus_f64, scratch);
+        self.forward_with(input, output, TorusFftValue::into_torus_f64, workspace);
     }
 
     fn forward_as_integer<T: TorusFftValue>(
         &self,
         input: &[T],
         output: &mut [Complex64],
-        scratch: &mut Self::Scratch,
+        workspace: &mut Self::Workspace,
     ) {
-        self.forward_with(input, output, TorusFftValue::into_signed_f64, scratch);
+        self.forward_with(input, output, TorusFftValue::into_signed_f64, workspace);
     }
 
     fn forward_integer_f64(
         &self,
         input: &[f64],
         output: &mut [Complex64],
-        scratch: &mut Self::Scratch,
+        workspace: &mut Self::Workspace,
     ) {
-        self.forward_with(input, output, core::convert::identity, scratch);
+        self.forward_with(input, output, core::convert::identity, workspace);
     }
 
     fn backward_as_torus<T: TorusFftValue>(
         &self,
         input: &[Complex64],
         output: &mut [T],
-        scratch: &mut Self::Scratch,
+        workspace: &mut Self::Workspace,
     ) {
         assert_eq!(input.len(), self.h);
         assert_eq!(output.len(), self.n);
-        let RustFftScratch { values, fft } = scratch;
+        let RustFftWorkspace { values, fft } = workspace;
         values.copy_from_slice(input);
         self.inverse.process_with_scratch(values, fft);
         let (first, second) = output.split_at_mut(self.h);

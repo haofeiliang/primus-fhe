@@ -11,7 +11,7 @@ use primus_reduce::ReduceAddAssign;
 use zeroize::Zeroizing;
 
 use crate::{
-    FourierGadgetEncryptContext, FourierGlweKeySwitchingContext, FourierGlweSecretKey,
+    FourierGlweGadgetEncryptWorkspace, FourierGlweKeySwitchingWorkspace, FourierGlweSecretKey,
     GlevParameters,
 };
 
@@ -46,7 +46,7 @@ impl<T: TorusFftValue> FourierLwePackingKeySwitchingKey<T> {
         params: &GlevParameters<T, NativeModulus<T>>,
         fft: &mut FftEngine<'_, Table>,
         rng: &mut R,
-        context: &mut FourierGadgetEncryptContext<T>,
+        workspace: &mut FourierGlweGadgetEncryptWorkspace<T>,
     ) -> Self
     where
         Table: FftTable,
@@ -58,7 +58,7 @@ impl<T: TorusFftValue> FourierLwePackingKeySwitchingKey<T> {
             .checked_add(1)
             .expect("input LWE length overflow");
         output_secret_key.assert_gadget_compatible(params, fft);
-        context.assert_glev_compatible(params.size());
+        workspace.assert_glev_compatible(params.size());
         let length = input_dimension
             .checked_mul(params.fourier_glev_len())
             .expect("packing key length overflow");
@@ -73,7 +73,7 @@ impl<T: TorusFftValue> FourierLwePackingKeySwitchingKey<T> {
                 params,
                 fft,
                 rng,
-                context,
+                workspace,
             );
         });
         Self {
@@ -121,7 +121,7 @@ impl<T: TorusFftValue> FourierLwePackingKeySwitchingKey<T> {
         input: &Lwe<A>,
         output: &mut Glwe<B>,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierGlweKeySwitchingContext<T>,
+        workspace: &mut FourierGlweKeySwitchingWorkspace<T>,
     ) where
         Table: FftTable,
         A: Data<Elem = T>,
@@ -132,7 +132,7 @@ impl<T: TorusFftValue> FourierLwePackingKeySwitchingKey<T> {
             self.input_dimension + 1,
             "packing input LWE dimension mismatch"
         );
-        self.pack_lwes_to(input.as_ref(), output, fft, context);
+        self.pack_lwes_to(input.as_ref(), output, fft, workspace);
     }
 
     /// Packs `p` LWEs into a coefficient-domain GLWE targeting `sum_i m_i X^i`.
@@ -140,7 +140,7 @@ impl<T: TorusFftValue> FourierLwePackingKeySwitchingKey<T> {
     /// Input is a flat slice of complete `[mask, body]` LWEs. Any `p` in
     /// `1..=N` is accepted. The target message tail `p..N` is zero; the noisy
     /// phase need not be zero there. All output coefficients are overwritten.
-    /// Uses an output-layout GLWE key-switch context without allocating.
+    /// Uses an output-layout GLWE key-switch workspace without allocating.
     ///
     /// # Correctness
     ///
@@ -159,7 +159,7 @@ impl<T: TorusFftValue> FourierLwePackingKeySwitchingKey<T> {
         input: &[T],
         output: &mut Glwe<B>,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierGlweKeySwitchingContext<T>,
+        workspace: &mut FourierGlweKeySwitchingWorkspace<T>,
     ) where
         Table: FftTable,
         B: DataMut<Elem = T>,
@@ -178,12 +178,12 @@ impl<T: TorusFftValue> FourierLwePackingKeySwitchingKey<T> {
             "packing FFT polynomial length mismatch"
         );
         assert_eq!(
-            context.decomposed_poly.len(),
+            workspace.decomposed_poly.len(),
             poly_length,
             "packing workspace polynomial length mismatch"
         );
         assert_eq!(
-            context.accumulator.as_ref().len(),
+            workspace.accumulator.as_ref().len(),
             size.fourier_glwe_len(),
             "packing workspace GLWE layout mismatch"
         );
@@ -191,17 +191,17 @@ impl<T: TorusFftValue> FourierLwePackingKeySwitchingKey<T> {
         // For D[j,l](X) = sum_i digit_l(a[i,j]) X^i, compute
         // (0, sum_i b_i X^i) - sum_{j,l} D[j,l](X) * K[j,l].
         let lwe_len = self.input_dimension + 1;
-        context.accumulator.set_zero();
-        context.decomposed_poly[count..].fill(T::ZERO);
+        workspace.accumulator.set_zero();
+        workspace.decomposed_poly[count..].fill(T::ZERO);
         if count == 1 {
-            self.accumulate_single(input, context);
+            self.accumulate_single(input, workspace);
         } else {
             for (j, entry) in self
                 .data
                 .chunks_exact(self.output_size.fourier_glev_len())
                 .enumerate()
             {
-                for (carry, lwe) in context.carries[..count]
+                for (carry, lwe) in workspace.carries[..count]
                     .iter_mut()
                     .zip(input.chunks_exact(lwe_len))
                 {
@@ -213,25 +213,25 @@ impl<T: TorusFftValue> FourierLwePackingKeySwitchingKey<T> {
                     .zip(FourierGlev::new(entry).iter_glwe(size.fourier_glwe_len()))
                 {
                     // Native decomposition uses the original mask at every level; only carry changes.
-                    for ((digit, carry), lwe) in context.decomposed_poly[..count]
+                    for ((digit, carry), lwe) in workspace.decomposed_poly[..count]
                         .iter_mut()
-                        .zip(&mut context.carries[..count])
+                        .zip(&mut workspace.carries[..count])
                         .zip(input.chunks_exact(lwe_len))
                     {
                         (*digit, *carry) = decomposer.decompose(lwe[j], *carry);
                     }
                     fft.forward_as_integer(
-                        &context.decomposed_poly,
-                        &mut context.decomposed_fourier,
+                        &workspace.decomposed_poly,
+                        &mut workspace.decomposed_fourier,
                     );
-                    context.accumulator.add_mul_fourier_polynomial_assign(
+                    workspace.accumulator.add_mul_fourier_polynomial_assign(
                         &key_glwe,
-                        &FourierPolynomial::new(context.decomposed_fourier.as_slice()),
+                        &FourierPolynomial::new(workspace.decomposed_fourier.as_slice()),
                     );
                 }
             }
         }
-        context.accumulator.write_torus_form(output, fft);
+        workspace.accumulator.write_torus_form(output, fft);
         let modulus = NativeModulus::new();
         output.neg_assign(modulus);
         let (_, body) = output.a_b_mut_slices(poly_length);
@@ -241,7 +241,7 @@ impl<T: TorusFftValue> FourierLwePackingKeySwitchingKey<T> {
     }
 
     /// Accumulates one validated LWE mask using scalar digits, without digit transforms.
-    fn accumulate_single(&self, input: &[T], context: &mut FourierGlweKeySwitchingContext<T>) {
+    fn accumulate_single(&self, input: &[T], workspace: &mut FourierGlweKeySwitchingWorkspace<T>) {
         let glwe_len = self.output_size.glwe_size().fourier_glwe_len();
         for (&coefficient, entry) in input[..self.input_dimension]
             .iter()
@@ -262,7 +262,7 @@ impl<T: TorusFftValue> FourierLwePackingKeySwitchingKey<T> {
                     continue;
                 }
                 let scalar = digit.into_signed_f64();
-                for (output, &key) in context.accumulator.as_mut().iter_mut().zip(key_glwe) {
+                for (output, &key) in workspace.accumulator.as_mut().iter_mut().zip(key_glwe) {
                     *output += key * scalar;
                 }
             }

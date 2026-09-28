@@ -9,11 +9,11 @@ use zeroize::{Zeroize, ZeroizeOnDrop};
 /// Reusable coefficient buffer for Fourier NTRU encryption.
 /// Sensitive coefficients are securely erased on drop.
 /// Explicit zeroization preserves buffer lengths so the workspace can be reused.
-pub struct FourierNtruEncryptContext<T: FheUint> {
+pub struct FourierNtruEncryptWorkspace<T: FheUint> {
     pub(super) coeff: PolynomialOwned<T>,
 }
 
-impl<T: FheUint> FourierNtruEncryptContext<T> {
+impl<T: FheUint> FourierNtruEncryptWorkspace<T> {
     /// Creates an encryption workspace for polynomials of length `poly_length`.
     pub fn new(poly_length: usize) -> Self {
         assert!(
@@ -26,16 +26,16 @@ impl<T: FheUint> FourierNtruEncryptContext<T> {
     }
 }
 
-impl<T: FheUint> Zeroize for FourierNtruEncryptContext<T> {
+impl<T: FheUint> Zeroize for FourierNtruEncryptWorkspace<T> {
     fn zeroize(&mut self) {
         self.coeff.as_mut().iter_mut().zeroize();
         self.coeff.0.spare_capacity_mut().zeroize();
     }
 }
 
-impl<T: FheUint> ZeroizeOnDrop for FourierNtruEncryptContext<T> {}
+impl<T: FheUint> ZeroizeOnDrop for FourierNtruEncryptWorkspace<T> {}
 
-impl<T: FheUint> Drop for FourierNtruEncryptContext<T> {
+impl<T: FheUint> Drop for FourierNtruEncryptWorkspace<T> {
     fn drop(&mut self) {
         self.zeroize();
     }
@@ -44,11 +44,11 @@ impl<T: FheUint> Drop for FourierNtruEncryptContext<T> {
 /// Reusable Fourier buffer for NTRU phase computation and decryption.
 /// Sensitive phase values are securely erased on drop.
 /// Explicit zeroization preserves buffer lengths so the workspace can be reused.
-pub struct FourierNtruDecryptContext {
+pub struct FourierNtruDecryptWorkspace {
     pub(super) phase: FourierPolynomialOwned,
 }
 
-impl FourierNtruDecryptContext {
+impl FourierNtruDecryptWorkspace {
     /// Creates a decryption workspace for polynomials of length `poly_length`.
     pub fn new(poly_length: usize) -> Self {
         assert!(
@@ -61,7 +61,7 @@ impl FourierNtruDecryptContext {
     }
 }
 
-impl Zeroize for FourierNtruDecryptContext {
+impl Zeroize for FourierNtruDecryptWorkspace {
     fn zeroize(&mut self) {
         for value in self.phase.as_mut() {
             value.re.zeroize();
@@ -71,9 +71,9 @@ impl Zeroize for FourierNtruDecryptContext {
     }
 }
 
-impl ZeroizeOnDrop for FourierNtruDecryptContext {}
+impl ZeroizeOnDrop for FourierNtruDecryptWorkspace {}
 
-impl Drop for FourierNtruDecryptContext {
+impl Drop for FourierNtruDecryptWorkspace {
     fn drop(&mut self) {
         self.zeroize();
     }
@@ -82,20 +82,20 @@ impl Drop for FourierNtruDecryptContext {
 /// Reusable buffers for Fourier NLev/NGSW generation.
 /// Sensitive message coefficients and transforms are securely erased on drop.
 /// Explicit zeroization preserves buffer lengths so the workspace can be reused.
-pub struct FourierNtruGadgetEncryptContext<T: FheUint> {
+pub struct FourierNtruGadgetEncryptWorkspace<T: FheUint> {
     pub(super) encoded: PolynomialOwned<T>,
     pub(super) transformed: Vec<Complex64>,
-    pub(super) ntru: FourierNtruEncryptContext<T>,
+    pub(super) ntru: FourierNtruEncryptWorkspace<T>,
 }
 
-impl<T: FheUint> FourierNtruGadgetEncryptContext<T> {
+impl<T: FheUint> FourierNtruGadgetEncryptWorkspace<T> {
     /// Creates a generation workspace for polynomials of length `poly_length`.
     pub fn new(poly_length: usize) -> Self {
         debug_assert!(poly_length >= 2 && poly_length.is_power_of_two());
         Self {
             encoded: PolynomialOwned::zero(poly_length),
             transformed: vec![Complex64::default(); poly_length / 2],
-            ntru: FourierNtruEncryptContext::new(poly_length),
+            ntru: FourierNtruEncryptWorkspace::new(poly_length),
         }
     }
 
@@ -112,16 +112,16 @@ impl<T: FheUint> FourierNtruGadgetEncryptContext<T> {
     }
 }
 
-impl<T: FheUint> Zeroize for FourierNtruGadgetEncryptContext<T> {
+impl<T: FheUint> Zeroize for FourierNtruGadgetEncryptWorkspace<T> {
     fn zeroize(&mut self) {
         self.zeroize_message_buffers();
         self.ntru.zeroize();
     }
 }
 
-impl<T: FheUint> ZeroizeOnDrop for FourierNtruGadgetEncryptContext<T> {}
+impl<T: FheUint> ZeroizeOnDrop for FourierNtruGadgetEncryptWorkspace<T> {}
 
-impl<T: FheUint> Drop for FourierNtruGadgetEncryptContext<T> {
+impl<T: FheUint> Drop for FourierNtruGadgetEncryptWorkspace<T> {
     fn drop(&mut self) {
         self.zeroize_message_buffers();
     }

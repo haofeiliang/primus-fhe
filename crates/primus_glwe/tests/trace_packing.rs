@@ -1,9 +1,9 @@
 use primus_fft::{FftEngine, FftTable, RustFftTable};
 use primus_glwe::{
-    FourierGadgetEncryptContext, FourierGlwePackingContext, FourierGlweSecretKey,
-    FourierGlweTraceContext, FourierGlweTraceKey, GlevParameters, GlweParameters, GlweSecretKey,
-    GlweSize, NttGadgetEncryptContext, NttGlwePackingContext, NttGlweSecretKey,
-    NttGlweTraceContext, NttGlweTraceKey, SecretKeyDistr,
+    FourierGlweGadgetEncryptWorkspace, FourierGlwePackingWorkspace, FourierGlweSecretKey,
+    FourierGlweTraceKey, FourierGlweTraceWorkspace, GlevParameters, GlweParameters, GlweSecretKey,
+    GlweSize, NttGlweGadgetEncryptWorkspace, NttGlwePackingWorkspace, NttGlweSecretKey,
+    NttGlweTraceKey, NttGlweTraceWorkspace, SecretKeyDistr,
 };
 use primus_lattice::{glwe::Glwe, lwe::Lwe};
 use primus_modulus::{BarrettModulus, NativeModulus};
@@ -131,21 +131,21 @@ fn ntt_trace_projection_and_packing() {
     let coeff = GlweSecretKey::new(s.clone(), size, SecretKeyDistr::UniformTernary);
     let sk = NttGlweSecretKey::from_coeff_secret_key(&coeff, &ntt);
     let mut rng = StdRng::seed_from_u64(0x5452414345);
-    let mut gadget = NttGadgetEncryptContext::new(glev.size());
+    let mut gadget = NttGlweGadgetEncryptWorkspace::new(glev.size());
     let key = NttGlweTraceKey::generate(&coeff, &sk, &glev, &ntt, &mut rng, &mut gadget);
-    let mut context = NttGlweTraceContext::new(size);
+    let mut workspace = NttGlweTraceWorkspace::new(size);
     let m = message(Q.into());
     let input = encrypt(&m, &s, Q.into(), &mut rng);
     let mut output = Glwe::<Vec<u64>>::zero(size.glwe_len());
     for r in [1, 4, N] {
-        key.apply_reverse_partial_to(&input, r, &mut output, modulus, &ntt, &mut context);
+        key.apply_reverse_partial_to(&input, r, &mut output, modulus, &ntt, &mut workspace);
         let expected: Vec<_> = m
             .iter()
             .enumerate()
             .map(|(i, &m)| if i % (N / r) == 0 { m } else { 0 })
             .collect();
         assert_phase(output.as_ref(), &expected, &s, Q.into());
-        key.apply_partial_to(&input, r, &mut output, modulus, &ntt, &mut context);
+        key.apply_partial_to(&input, r, &mut output, modulus, &ntt, &mut workspace);
         let scaled: Vec<_> = expected
             .iter()
             .map(|&v| (u128::from(v) * (N / r) as u128 % u128::from(Q)) as u64)
@@ -169,7 +169,7 @@ fn ntt_trace_projection_and_packing() {
     body[N / 2] = Q / 2;
     body[3 * N / 4] = Q - 2;
     for r in [1, 4, N] {
-        key.apply_reverse_partial_to(&trivial, r, &mut output, modulus, &ntt, &mut context);
+        key.apply_reverse_partial_to(&trivial, r, &mut output, modulus, &ntt, &mut workspace);
         let expected: Vec<_> = trivial
             .a_b_slices(N)
             .1
@@ -181,7 +181,14 @@ fn ntt_trace_projection_and_packing() {
     }
     let indices = [N - 1, 0, 7, 7];
     let mut selected = vec![0; indices.len() * size.glwe_len()];
-    key.project_coefficients_to(&input, &indices, &mut selected, modulus, &ntt, &mut context);
+    key.project_coefficients_to(
+        &input,
+        &indices,
+        &mut selected,
+        modulus,
+        &ntt,
+        &mut workspace,
+    );
     for (c, &i) in selected.chunks_exact(size.glwe_len()).zip(&indices) {
         let mut expected = vec![0; N];
         expected[0] = m[i];
@@ -194,19 +201,19 @@ fn ntt_trace_projection_and_packing() {
         &mut projected,
         modulus,
         &ntt,
-        &mut context,
+        &mut workspace,
     );
     check_prefix_projection(&projected, |count, output| {
-        key.project_prefix_coefficients_to(&input, count, output, modulus, &ntt, &mut context);
+        key.project_prefix_coefficients_to(&input, count, output, modulus, &ntt, &mut workspace);
     });
     let mut expanded = vec![0; N * size.glwe_len()];
-    key.expand_coefficients_to(&input, &mut expanded, modulus, &ntt, &mut context);
+    key.expand_coefficients_to(&input, &mut expanded, modulus, &ntt, &mut workspace);
     check_partial_expansion(&input, &expanded, &s, Q.into(), |input, count, output| {
-        key.expand_partial_coefficients_to(input, count, output, modulus, &ntt, &mut context);
+        key.expand_partial_coefficients_to(input, count, output, modulus, &ntt, &mut workspace);
     });
     for count in [1, 4, N] {
         let batch = lwe_batch(count, &s, Q.into(), &mut rng);
-        let mut packing = NttGlwePackingContext::new(size, count);
+        let mut packing = NttGlwePackingWorkspace::new(size, count);
         key.pack_lwes_to(&batch, &mut output, modulus, &ntt, &mut packing);
         let mut expected = vec![0; N];
         for i in 0..count {
@@ -220,7 +227,7 @@ fn ntt_trace_projection_and_packing() {
                 &mut single,
                 modulus,
                 &ntt,
-                &mut context,
+                &mut workspace,
             );
             assert_eq!(output.as_ref(), single.as_ref());
         }
@@ -235,22 +242,22 @@ fn ntt_trace_projection_and_packing() {
                     &mut output,
                     modulus,
                     &ntt,
-                    &mut context,
+                    &mut workspace,
                 );
             }))
             .is_err()
         );
         assert!(output.as_ref().iter().all(|&v| v == 7));
     }
-    let mut wrong_context = NttGlweTraceContext::new(GlweSize::new(5, N / 2));
+    let mut wrong_workspace = NttGlweTraceWorkspace::new(GlweSize::new(5, N / 2));
     assert!(
         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            key.apply_reverse_to(&input, &mut output, modulus, &ntt, &mut wrong_context);
+            key.apply_reverse_to(&input, &mut output, modulus, &ntt, &mut wrong_workspace);
         }))
         .is_err()
     );
     assert!(output.as_ref().iter().all(|&v| v == 7));
-    let mut packing = NttGlwePackingContext::new(size, 1);
+    let mut packing = NttGlwePackingWorkspace::new(size, 1);
     for len in [0, K * N, 3 * (K * N + 1), 2 * (K * N + 1)] {
         assert!(
             std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -269,7 +276,7 @@ fn ntt_trace_projection_and_packing() {
                 &mut selected,
                 modulus,
                 &ntt,
-                &mut context,
+                &mut workspace,
             );
         }))
         .is_err()
@@ -295,21 +302,21 @@ fn fourier_trace_projection_and_packing_backend<Table: FftTable>() {
     let coeff = GlweSecretKey::<u64>::new(s.clone(), size, SecretKeyDistr::UniformTernary);
     let sk = FourierGlweSecretKey::from_coeff_secret_key(&coeff, &mut fft);
     let mut rng = StdRng::seed_from_u64(0x5452414345);
-    let mut gadget = FourierGadgetEncryptContext::new(glev.size());
+    let mut gadget = FourierGlweGadgetEncryptWorkspace::new(glev.size());
     let key = FourierGlweTraceKey::generate(&coeff, &sk, &glev, &mut fft, &mut rng, &mut gadget);
-    let mut context = FourierGlweTraceContext::new(size);
+    let mut workspace = FourierGlweTraceWorkspace::new(size);
     let m = message(q);
     let input = encrypt(&m, &s, q, &mut rng);
     let mut output = Glwe::<Vec<u64>>::zero(size.glwe_len());
     for r in [1, 4, N] {
-        key.apply_reverse_partial_to(&input, r, &mut output, &mut fft, &mut context);
+        key.apply_reverse_partial_to(&input, r, &mut output, &mut fft, &mut workspace);
         let expected: Vec<_> = m
             .iter()
             .enumerate()
             .map(|(i, &m)| if i % (N / r) == 0 { m } else { 0 })
             .collect();
         assert_phase(output.as_ref(), &expected, &s, q);
-        key.apply_partial_to(&input, r, &mut output, &mut fft, &mut context);
+        key.apply_partial_to(&input, r, &mut output, &mut fft, &mut workspace);
         let scaled: Vec<_> = expected
             .iter()
             .map(|&v| v.wrapping_mul((N / r) as u64))
@@ -321,13 +328,13 @@ fn fourier_trace_projection_and_packing_backend<Table: FftTable>() {
     let mut trivial = Glwe::new(vec![0; size.glwe_len()]);
     trivial.as_mut()[K * N] = 1;
     trivial.as_mut()[K * N + 2] = u64::MAX;
-    key.apply_reverse_partial_to(&trivial, N / 2, &mut output, &mut fft, &mut context);
+    key.apply_reverse_partial_to(&trivial, N / 2, &mut output, &mut fft, &mut workspace);
     let mut expected = vec![0; N];
     expected[2] = u64::MAX - 1;
     assert_eq!(phase(output.as_ref(), &s, q), expected);
     let indices = [N - 1, 0, 7, 7];
     let mut selected = vec![0; indices.len() * size.glwe_len()];
-    key.project_coefficients_to(&input, &indices, &mut selected, &mut fft, &mut context);
+    key.project_coefficients_to(&input, &indices, &mut selected, &mut fft, &mut workspace);
     for (c, &i) in selected.chunks_exact(size.glwe_len()).zip(&indices) {
         let mut expected = vec![0; N];
         expected[0] = m[i];
@@ -339,19 +346,19 @@ fn fourier_trace_projection_and_packing_backend<Table: FftTable>() {
         &(0..N).collect::<Vec<_>>(),
         &mut projected,
         &mut fft,
-        &mut context,
+        &mut workspace,
     );
     check_prefix_projection(&projected, |count, output| {
-        key.project_prefix_coefficients_to(&input, count, output, &mut fft, &mut context);
+        key.project_prefix_coefficients_to(&input, count, output, &mut fft, &mut workspace);
     });
     let mut expanded = vec![0; N * size.glwe_len()];
-    key.expand_coefficients_to(&input, &mut expanded, &mut fft, &mut context);
+    key.expand_coefficients_to(&input, &mut expanded, &mut fft, &mut workspace);
     check_partial_expansion(&input, &expanded, &s, q, |input, count, output| {
-        key.expand_partial_coefficients_to(input, count, output, &mut fft, &mut context);
+        key.expand_partial_coefficients_to(input, count, output, &mut fft, &mut workspace);
     });
     for count in [1, 4, N] {
         let batch = lwe_batch(count, &s, q, &mut rng);
-        let mut packing = FourierGlwePackingContext::new(size, count);
+        let mut packing = FourierGlwePackingWorkspace::new(size, count);
         key.pack_lwes_to(&batch, &mut output, &mut fft, &mut packing);
         let mut expected = vec![0; N];
         for i in 0..count {
@@ -364,7 +371,7 @@ fn fourier_trace_projection_and_packing_backend<Table: FftTable>() {
                 &Lwe::new(batch.as_slice()),
                 &mut single,
                 &mut fft,
-                &mut context,
+                &mut workspace,
             );
             assert_eq!(output.as_ref(), single.as_ref());
         }
@@ -373,21 +380,27 @@ fn fourier_trace_projection_and_packing_backend<Table: FftTable>() {
         output.as_mut().fill(7);
         assert!(
             std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                key.apply_reverse_partial_to(&input, invalid, &mut output, &mut fft, &mut context);
+                key.apply_reverse_partial_to(
+                    &input,
+                    invalid,
+                    &mut output,
+                    &mut fft,
+                    &mut workspace,
+                );
             }))
             .is_err()
         );
         assert!(output.as_ref().iter().all(|&v| v == 7));
     }
-    let mut wrong_context = FourierGlweTraceContext::new(GlweSize::new(5, N / 2));
+    let mut wrong_workspace = FourierGlweTraceWorkspace::new(GlweSize::new(5, N / 2));
     assert!(
         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            key.apply_reverse_to(&input, &mut output, &mut fft, &mut wrong_context);
+            key.apply_reverse_to(&input, &mut output, &mut fft, &mut wrong_workspace);
         }))
         .is_err()
     );
     assert!(output.as_ref().iter().all(|&v| v == 7));
-    let mut packing = FourierGlwePackingContext::new(size, 1);
+    let mut packing = FourierGlwePackingWorkspace::new(size, 1);
     for len in [0, K * N, 3 * (K * N + 1), 2 * (K * N + 1)] {
         assert!(
             std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
@@ -400,7 +413,7 @@ fn fourier_trace_projection_and_packing_backend<Table: FftTable>() {
     let mut selected = vec![7; 2 * size.glwe_len()];
     assert!(
         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            key.project_coefficients_to(&input, &[0, N], &mut selected, &mut fft, &mut context);
+            key.project_coefficients_to(&input, &[0, N], &mut selected, &mut fft, &mut workspace);
         }))
         .is_err()
     );

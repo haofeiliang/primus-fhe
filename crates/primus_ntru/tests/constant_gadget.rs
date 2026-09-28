@@ -1,9 +1,9 @@
 use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable, TfheFftTable};
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntru::{
-    FourierNgswCiphertext, FourierNlevCiphertext, FourierNtruGadgetEncryptContext,
+    FourierNgswCiphertext, FourierNlevCiphertext, FourierNtruGadgetEncryptWorkspace,
     FourierNtruSecretKey, NlevParameters, NtruParameters, NttNgswCiphertext, NttNlevCiphertext,
-    NttNtruGadgetEncryptContext, NttNtruSecretKey, SecretKeyDistr,
+    NttNtruGadgetEncryptWorkspace, NttNtruSecretKey, SecretKeyDistr,
 };
 use primus_ntt::{NttTable, UintNttTable};
 use primus_poly::Polynomial;
@@ -27,7 +27,7 @@ fn constant_nlev_matches_polynomial_encryption() {
     let gadget = NlevParameters::with_ntru_params(&params, 9, None);
     let mut rng = StdRng::seed_from_u64(75);
     let key = NttNtruSecretKey::generate(&params, &ntt, &mut rng).unwrap();
-    let mut context = NttNtruGadgetEncryptContext::new(POLY_LENGTH);
+    let mut workspace = NttNtruGadgetEncryptWorkspace::new(POLY_LENGTH);
     let mut expected = NttNlevCiphertext::<Vec<u32>>::zero(gadget.nlev_len());
     let mut actual = expected.clone();
     for constant in [0, 1, EXPLICIT_MODULUS - 1] {
@@ -41,18 +41,25 @@ fn constant_nlev_matches_polynomial_encryption() {
             &gadget,
             &ntt,
             &mut reference_rng,
-            &mut context,
+            &mut workspace,
         );
         // Old polynomial data must not survive in the constant's zero tail.
         message.as_mut().fill(1);
-        key.encrypt_nlev_to(&message, &mut actual, &gadget, &ntt, &mut rng, &mut context);
+        key.encrypt_nlev_to(
+            &message,
+            &mut actual,
+            &gadget,
+            &ntt,
+            &mut rng,
+            &mut workspace,
+        );
         key.encrypt_nlev_constant_to(
             constant,
             &mut actual,
             &gadget,
             &ntt,
             &mut actual_rng,
-            &mut context,
+            &mut workspace,
         );
         assert_eq!(actual.as_ref(), expected.as_ref());
         assert_eq!(actual_rng.next_u64(), reference_rng.next_u64());
@@ -67,7 +74,7 @@ fn constant_nlev_matches_polynomial_encryption() {
             &gadget,
             &ntt,
             &mut rng,
-            &mut context
+            &mut workspace
         )))
         .is_err()
     );
@@ -90,7 +97,7 @@ fn check_fourier_constant_nlev<Table: FftTable>() {
     let gadget = NlevParameters::with_ntru_params(&params, 8, None);
     let mut rng = StdRng::seed_from_u64(75);
     let key = FourierNtruSecretKey::generate(&params, &mut fft, &mut rng).unwrap();
-    let mut context = FourierNtruGadgetEncryptContext::new(POLY_LENGTH);
+    let mut workspace = FourierNtruGadgetEncryptWorkspace::new(POLY_LENGTH);
     let mut expected = FourierNlevCiphertext::<Vec<Complex64>>::zero(gadget.fourier_nlev_len());
     let mut actual = expected.clone();
     for constant in [0, 1, u32::MAX] {
@@ -104,7 +111,7 @@ fn check_fourier_constant_nlev<Table: FftTable>() {
             &gadget,
             &mut fft,
             &mut reference_rng,
-            &mut context,
+            &mut workspace,
         );
         // Old polynomial data must not survive in the constant's zero tail.
         message.as_mut().fill(1);
@@ -114,7 +121,7 @@ fn check_fourier_constant_nlev<Table: FftTable>() {
             &gadget,
             &mut fft,
             &mut rng,
-            &mut context,
+            &mut workspace,
         );
         key.encrypt_nlev_constant_to(
             constant,
@@ -122,7 +129,7 @@ fn check_fourier_constant_nlev<Table: FftTable>() {
             &gadget,
             &mut fft,
             &mut actual_rng,
-            &mut context,
+            &mut workspace,
         );
         assert_eq!(actual.as_ref(), expected.as_ref());
         assert_eq!(actual_rng.next_u64(), reference_rng.next_u64());
@@ -143,7 +150,7 @@ fn signed_ngsw_batches_match_polynomial_encryption() {
     let gadget = NlevParameters::with_ntru_params(&params, 9, None);
     let mut rng = StdRng::seed_from_u64(79);
     let key = NttNtruSecretKey::generate(&params, &ntt, &mut rng).unwrap();
-    let mut context = NttNtruGadgetEncryptContext::new(POLY_LENGTH);
+    let mut workspace = NttNtruGadgetEncryptWorkspace::new(POLY_LENGTH);
     for input in [&[][..], &[1][..], &[0, 1, -1, 2][..]] {
         let mut expected = vec![0; input.len() * gadget.nlev_len()];
         let mut actual = vec![17; expected.len()];
@@ -165,7 +172,7 @@ fn signed_ngsw_batches_match_polynomial_encryption() {
                 &gadget,
                 &ntt,
                 &mut reference_rng,
-                &mut context,
+                &mut workspace,
             );
         }
         key.encrypt_ngsw_signed_constant_batch_to(
@@ -217,7 +224,7 @@ fn check_fourier_ngsw_batch<Table: FftTable>() {
     let gadget = NlevParameters::with_ntru_params(&params, 8, None);
     let mut rng = StdRng::seed_from_u64(79);
     let key = FourierNtruSecretKey::generate(&params, &mut fft, &mut rng).unwrap();
-    let mut context = FourierNtruGadgetEncryptContext::new(POLY_LENGTH);
+    let mut workspace = FourierNtruGadgetEncryptWorkspace::new(POLY_LENGTH);
     for input in [&[][..], &[1][..], &[0, 1, -1, 2][..]] {
         let mut expected = vec![Complex64::default(); input.len() * gadget.fourier_nlev_len()];
         let mut actual = vec![Complex64::new(17.0, 17.0); expected.len()];
@@ -235,7 +242,7 @@ fn check_fourier_ngsw_batch<Table: FftTable>() {
                 &gadget,
                 &mut fft,
                 &mut reference_rng,
-                &mut context,
+                &mut workspace,
             );
         }
         if let Some(block) = actual.chunks_exact_mut(gadget.fourier_nlev_len()).next() {
@@ -245,7 +252,7 @@ fn check_fourier_ngsw_batch<Table: FftTable>() {
                 &gadget,
                 &mut fft,
                 &mut rng,
-                &mut context,
+                &mut workspace,
             );
         }
         key.encrypt_ngsw_signed_constant_batch_to(
@@ -254,7 +261,7 @@ fn check_fourier_ngsw_batch<Table: FftTable>() {
             &gadget,
             &mut fft,
             &mut actual_rng,
-            &mut context,
+            &mut workspace,
         );
         assert_eq!(actual, expected);
         assert_eq!(actual_rng.next_u64(), reference_rng.next_u64());
@@ -266,7 +273,7 @@ fn check_fourier_ngsw_batch<Table: FftTable>() {
         (&[1][..], gadget.fourier_nlev_len() + 1, POLY_LENGTH),
     ] {
         let mut output = vec![Complex64::new(17.0, 17.0); length];
-        let mut context = FourierNtruGadgetEncryptContext::new(workspace_length);
+        let mut workspace = FourierNtruGadgetEncryptWorkspace::new(workspace_length);
         let mut rng = StdRng::seed_from_u64(89);
         let mut expected_rng = StdRng::seed_from_u64(89);
         assert!(
@@ -277,7 +284,7 @@ fn check_fourier_ngsw_batch<Table: FftTable>() {
                     &gadget,
                     &mut fft,
                     &mut rng,
-                    &mut context
+                    &mut workspace
                 )))
             .is_err()
         );

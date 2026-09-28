@@ -1,4 +1,4 @@
-use aligned_vec::{AVec, avec};
+use aligned_vec::{ABox, avec};
 use primus_data::DataMut;
 use primus_fft::{Complex64, TorusFftValue};
 use primus_integer::FheUint;
@@ -15,28 +15,28 @@ use crate::ntru::{FourierNtru, NttNtru};
 /// Scratch lengths are fixed by `poly_length`; decomposition levels are not
 /// bound, so the workspace can be reused across different decomposition lengths.
 /// Callers must supply compatible input and gadget layouts and matching transform
-/// lengths. The basis and transform table are not stored in this context.
+/// lengths. The basis and transform table are not stored in this workspace.
 ///
 /// Overwriting products initialize the accumulator; internal accumulating
 /// products require an initialized accumulator. Other scratch is written before
 /// use, and no manual reset is needed between operations.
 /// Fourier data must use a compatible FFT layout, and the basis must use the
 /// implicit native-torus modulus.
-pub struct FourierNtruExternalProductContext<T: TorusFftValue> {
+pub struct FourierNtruExternalProductWorkspace<T: TorusFftValue> {
     poly_length: usize,
     /// Carry bits reused while decomposing one coefficient polynomial.
-    carries: Vec<bool>,
+    carries: Box<[bool]>,
     /// Coefficient-domain digits produced for one decomposition level.
-    decomposed_poly: Vec<T>,
+    decomposed_poly: Box<[T]>,
     /// Fourier transform of `decomposed_poly`.
-    decomposed_fourier: AVec<Complex64>,
+    decomposed_fourier: ABox<[Complex64]>,
     /// Transform-domain sum of the current external products.
-    fourier_accumulator: FourierNtru<AVec<Complex64>>,
+    fourier_accumulator: FourierNtru<ABox<[Complex64]>>,
 }
 
-/// Mutable view selecting either the context-owned or caller-provided Fourier accumulator.
-/// Decomposition scratch remains borrowed from the owning context.
-pub(crate) struct FourierNtruExternalProductContextRefMut<'a, T: TorusFftValue> {
+/// Mutable view selecting either the workspace-owned or caller-provided Fourier accumulator.
+/// Decomposition scratch remains borrowed from the owning workspace.
+pub(crate) struct FourierNtruExternalProductWorkspaceRefMut<'a, T: TorusFftValue> {
     poly_length: usize,
     pub(crate) carries: &'a mut [bool],
     pub(crate) decomposed_poly: &'a mut [T],
@@ -44,7 +44,7 @@ pub(crate) struct FourierNtruExternalProductContextRefMut<'a, T: TorusFftValue> 
     pub(crate) fourier_accumulator: FourierNtru<&'a mut [Complex64]>,
 }
 
-impl<T: TorusFftValue> FourierNtruExternalProductContextRefMut<'_, T> {
+impl<T: TorusFftValue> FourierNtruExternalProductWorkspaceRefMut<'_, T> {
     #[must_use]
     #[inline]
     pub(crate) fn poly_length(&self) -> usize {
@@ -52,7 +52,7 @@ impl<T: TorusFftValue> FourierNtruExternalProductContextRefMut<'_, T> {
     }
 }
 
-impl<T: TorusFftValue> FourierNtruExternalProductContext<T> {
+impl<T: TorusFftValue> FourierNtruExternalProductWorkspace<T> {
     /// Creates reusable buffers for NTRU polynomials of length `poly_length`.
     ///
     /// # Correctness
@@ -67,24 +67,26 @@ impl<T: TorusFftValue> FourierNtruExternalProductContext<T> {
         let fourier_length = poly_length / 2;
         Self {
             poly_length,
-            carries: vec![false; poly_length],
-            decomposed_poly: vec![T::ZERO; poly_length],
-            decomposed_fourier: avec![Complex64::default(); fourier_length],
-            fourier_accumulator: FourierNtru(avec![Complex64::default(); fourier_length]),
+            carries: vec![false; poly_length].into_boxed_slice(),
+            decomposed_poly: vec![T::ZERO; poly_length].into_boxed_slice(),
+            decomposed_fourier: avec![Complex64::default(); fourier_length].into_boxed_slice(),
+            fourier_accumulator: FourierNtru(
+                avec![Complex64::default(); fourier_length].into_boxed_slice(),
+            ),
         }
     }
 
-    /// Returns the coefficient polynomial length bound to this context.
+    /// Returns the coefficient polynomial length bound to this workspace.
     #[must_use]
     #[inline]
     pub fn poly_length(&self) -> usize {
         self.poly_length
     }
 
-    /// Borrows decomposition scratch and the context-owned accumulator.
+    /// Borrows decomposition scratch and the workspace-owned accumulator.
     #[inline]
-    pub(crate) fn as_mut(&mut self) -> FourierNtruExternalProductContextRefMut<'_, T> {
-        FourierNtruExternalProductContextRefMut {
+    pub(crate) fn as_mut(&mut self) -> FourierNtruExternalProductWorkspaceRefMut<'_, T> {
+        FourierNtruExternalProductWorkspaceRefMut {
             poly_length: self.poly_length,
             carries: &mut self.carries,
             decomposed_poly: &mut self.decomposed_poly,
@@ -99,11 +101,11 @@ impl<T: TorusFftValue> FourierNtruExternalProductContext<T> {
     pub(crate) fn as_mut_with_accumulator<'a, S>(
         &'a mut self,
         accumulator: &'a mut FourierNtru<S>,
-    ) -> FourierNtruExternalProductContextRefMut<'a, T>
+    ) -> FourierNtruExternalProductWorkspaceRefMut<'a, T>
     where
         S: DataMut<Elem = Complex64>,
     {
-        FourierNtruExternalProductContextRefMut {
+        FourierNtruExternalProductWorkspaceRefMut {
             poly_length: self.poly_length,
             carries: &mut self.carries,
             decomposed_poly: &mut self.decomposed_poly,
@@ -123,27 +125,27 @@ impl<T: TorusFftValue> FourierNtruExternalProductContext<T> {
 /// Scratch lengths are fixed by `poly_length`; decomposition levels are not
 /// bound, so the workspace can be reused across different decomposition lengths.
 /// Callers must supply compatible input and gadget layouts and matching transform
-/// lengths. The basis and transform table are not stored in this context.
+/// lengths. The basis and transform table are not stored in this workspace.
 ///
 /// Overwriting products initialize the accumulator; internal accumulating
 /// products require an initialized accumulator. Other scratch is written before
 /// use, and no manual reset is needed between operations.
 /// The basis, NTT table, and modular arithmetic must use the same modulus.
-pub struct NttNtruExternalProductContext<T: FheUint> {
+pub struct NttNtruExternalProductWorkspace<T: FheUint> {
     poly_length: usize,
     /// Modulus-adjusted coefficients reused as decomposition input.
-    adjusted_poly: AVec<T>,
+    adjusted_poly: ABox<[T]>,
     /// Carry bits reused while decomposing `adjusted_poly`.
-    carries: Vec<bool>,
+    carries: Box<[bool]>,
     /// Digits for one decomposition level, transformed in place to NTT form.
-    decomposed_ntt: AVec<T>,
+    decomposed_ntt: ABox<[T]>,
     /// Transform-domain sum of the current external products.
-    ntt_accumulator: NttNtru<AVec<T>>,
+    ntt_accumulator: NttNtru<ABox<[T]>>,
 }
 
-/// Mutable view selecting either the context-owned or caller-provided NTT accumulator.
-/// Decomposition scratch remains borrowed from the owning context.
-pub(crate) struct NttNtruExternalProductContextRefMut<'a, T: FheUint> {
+/// Mutable view selecting either the workspace-owned or caller-provided NTT accumulator.
+/// Decomposition scratch remains borrowed from the owning workspace.
+pub(crate) struct NttNtruExternalProductWorkspaceRefMut<'a, T: FheUint> {
     poly_length: usize,
     pub(crate) adjusted_poly: &'a mut [T],
     pub(crate) carries: &'a mut [bool],
@@ -151,7 +153,7 @@ pub(crate) struct NttNtruExternalProductContextRefMut<'a, T: FheUint> {
     pub(crate) ntt_accumulator: NttNtru<&'a mut [T]>,
 }
 
-impl<T: FheUint> NttNtruExternalProductContextRefMut<'_, T> {
+impl<T: FheUint> NttNtruExternalProductWorkspaceRefMut<'_, T> {
     #[must_use]
     #[inline]
     pub(crate) fn poly_length(&self) -> usize {
@@ -159,7 +161,7 @@ impl<T: FheUint> NttNtruExternalProductContextRefMut<'_, T> {
     }
 }
 
-impl<T: FheUint> NttNtruExternalProductContext<T> {
+impl<T: FheUint> NttNtruExternalProductWorkspace<T> {
     /// Creates reusable buffers for NTRU polynomials of length `poly_length`.
     ///
     /// # Correctness
@@ -173,24 +175,24 @@ impl<T: FheUint> NttNtruExternalProductContext<T> {
         debug_assert!(poly_length >= 2 && poly_length.is_power_of_two());
         Self {
             poly_length,
-            adjusted_poly: avec![T::ZERO; poly_length],
-            carries: vec![false; poly_length],
-            decomposed_ntt: avec![T::ZERO; poly_length],
-            ntt_accumulator: NttNtru(avec![T::ZERO; poly_length]),
+            adjusted_poly: avec![T::ZERO; poly_length].into_boxed_slice(),
+            carries: vec![false; poly_length].into_boxed_slice(),
+            decomposed_ntt: avec![T::ZERO; poly_length].into_boxed_slice(),
+            ntt_accumulator: NttNtru(avec![T::ZERO; poly_length].into_boxed_slice()),
         }
     }
 
-    /// Returns the coefficient polynomial length bound to this context.
+    /// Returns the coefficient polynomial length bound to this workspace.
     #[must_use]
     #[inline]
     pub fn poly_length(&self) -> usize {
         self.poly_length
     }
 
-    /// Borrows decomposition scratch and the context-owned accumulator.
+    /// Borrows decomposition scratch and the workspace-owned accumulator.
     #[inline]
-    pub(crate) fn as_mut(&mut self) -> NttNtruExternalProductContextRefMut<'_, T> {
-        NttNtruExternalProductContextRefMut {
+    pub(crate) fn as_mut(&mut self) -> NttNtruExternalProductWorkspaceRefMut<'_, T> {
+        NttNtruExternalProductWorkspaceRefMut {
             poly_length: self.poly_length,
             adjusted_poly: &mut self.adjusted_poly,
             carries: &mut self.carries,
@@ -205,11 +207,11 @@ impl<T: FheUint> NttNtruExternalProductContext<T> {
     pub(crate) fn as_mut_with_accumulator<'a, S>(
         &'a mut self,
         accumulator: &'a mut NttNtru<S>,
-    ) -> NttNtruExternalProductContextRefMut<'a, T>
+    ) -> NttNtruExternalProductWorkspaceRefMut<'a, T>
     where
         S: DataMut<Elem = T>,
     {
-        NttNtruExternalProductContextRefMut {
+        NttNtruExternalProductWorkspaceRefMut {
             poly_length: self.poly_length,
             adjusted_poly: &mut self.adjusted_poly,
             carries: &mut self.carries,

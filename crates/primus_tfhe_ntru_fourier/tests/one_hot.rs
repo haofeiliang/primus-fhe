@@ -2,7 +2,7 @@ use primus_fft::{Complex64, FftTable, RustFftTable, TfheFftTable};
 use primus_lwe::LweParameters;
 use primus_modulus::BarrettModulus;
 use primus_ntru::{
-    FourierNgswCiphertext, FourierNtruExternalProductContext, NlevParameters, NtruCiphertext,
+    FourierNgswCiphertext, FourierNtruExternalProductWorkspace, NlevParameters, NtruCiphertext,
     NtruParameters, SecretKeyDistr,
 };
 use primus_test_allocations as allocations;
@@ -98,7 +98,7 @@ fn selectors<Table: FftTable>(distr: SecretKeyDistr) {
     assert_eq!(nonzero_ngsw.len(), (M - 1) * selector_len);
     let mut coefficients = NtruCiphertext::<Vec<u64>>::zero(N);
     let mut selected = NtruCiphertext::<Vec<u64>>::zero(N);
-    let mut ep = FourierNtruExternalProductContext::new(N);
+    let mut ep = FourierNtruExternalProductWorkspace::new(N);
     let mut fft = context.new_fft_engine();
     let encryptor = context.encryptor(&client).unwrap();
     let identity = context

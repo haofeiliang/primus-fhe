@@ -1,6 +1,6 @@
 //! NTT GLev and GGSW generation.
 
-use super::{NttGadgetEncryptContext, NttGlweSecretKey};
+use super::{NttGlweGadgetEncryptWorkspace, NttGlweSecretKey};
 use crate::{GlevParameters, NttGgswCiphertext, NttGlevCiphertext};
 use primus_data::{Data, DataMut};
 use primus_integer::FheUint;
@@ -30,7 +30,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         params: &GlevParameters<T, M>,
         ntt: &Table,
         rng: &mut R,
-        context: &mut NttGadgetEncryptContext<T>,
+        workspace: &mut NttGlweGadgetEncryptWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
@@ -39,7 +39,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         B: DataMut<Elem = T>,
     {
         self.assert_gadget_compatible(params, ntt);
-        context.assert_glev_compatible(params.size());
+        workspace.assert_glev_compatible(params.size());
         assert_eq!(
             input.as_ref().len(),
             self.poly_length(),
@@ -51,7 +51,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
             "NTT GLev output layout mismatch"
         );
 
-        self.encrypt_glev_kernel_to(input, output, params, ntt, rng, context);
+        self.encrypt_glev_kernel_to(input, output, params, ntt, rng, workspace);
     }
 
     /// Encrypts a GLev after the caller validates key, input/output, table and workspace.
@@ -62,7 +62,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         params: &GlevParameters<T, M>,
         ntt: &Table,
         rng: &mut R,
-        context: &mut NttGadgetEncryptContext<T>,
+        workspace: &mut NttGlweGadgetEncryptWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
@@ -76,8 +76,8 @@ impl<T: FheUint> NttGlweSecretKey<T> {
             .scalar_iter()
             .zip(output.iter_ntt_glwe_mut(params.glwe_len()))
         {
-            input.mul_scalar_to(scalar, &mut context.encoded, modulus);
-            self.encrypt_encoded_kernel_to(&context.encoded, &mut glwe, params.inner(), ntt, rng);
+            input.mul_scalar_to(scalar, &mut workspace.encoded, modulus);
+            self.encrypt_encoded_kernel_to(&workspace.encoded, &mut glwe, params.inner(), ntt, rng);
         }
     }
 
@@ -102,7 +102,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         params: &GlevParameters<T, M>,
         ntt: &Table,
         rng: &mut R,
-        context: &mut NttGadgetEncryptContext<T>,
+        workspace: &mut NttGlweGadgetEncryptWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
@@ -111,7 +111,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         B: DataMut<Elem = T>,
     {
         self.assert_gadget_compatible(params, ntt);
-        context.assert_ggsw_compatible(params.size());
+        workspace.assert_ggsw_compatible(params.size());
         assert_eq!(
             input.as_ref().len(),
             self.poly_length(),
@@ -123,7 +123,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
             "NTT GGSW output layout mismatch"
         );
 
-        self.encrypt_ggsw_kernel_to(input, output, params, ntt, rng, context);
+        self.encrypt_ggsw_kernel_to(input, output, params, ntt, rng, workspace);
     }
 
     /// Encrypts a GGSW after the caller validates key, input/output, table and workspace.
@@ -134,7 +134,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         params: &GlevParameters<T, M>,
         ntt: &Table,
         rng: &mut R,
-        context: &mut NttGadgetEncryptContext<T>,
+        workspace: &mut NttGlweGadgetEncryptWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
@@ -142,23 +142,23 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         A: Data<Elem = T>,
         B: DataMut<Elem = T>,
     {
-        context.encoded.as_mut().copy_from_slice(input.as_ref());
+        workspace.encoded.as_mut().copy_from_slice(input.as_ref());
         let poly_length = self.poly_length();
         let modulus = params.cipher_modulus();
 
         // NTT(g_l * m) = g_l * NTT(m) modulo q. Reuse the GLev encoding
         // buffer for this transform and cache each scaled level across rows.
-        ntt.transform_slice(context.encoded.as_mut());
-        let transformed_input = NttPolynomial::new(context.encoded.as_ref());
+        ntt.transform_slice(workspace.encoded.as_mut());
+        let transformed_input = NttPolynomial::new(workspace.encoded.as_ref());
         for (scalar, transformed) in params
             .basis()
             .scalar_iter()
-            .zip(context.level_transforms.chunks_exact_mut(poly_length))
+            .zip(workspace.level_transforms.chunks_exact_mut(poly_length))
         {
             transformed_input.mul_scalar_to(scalar, &mut NttPolynomial::new(transformed), modulus);
         }
 
-        self.encrypt_ggsw_from_levels_to(output, params, ntt, rng, context);
+        self.encrypt_ggsw_from_levels_to(output, params, ntt, rng, workspace);
     }
 
     /// Encrypts the prepared NTT levels after the caller validates all layouts.
@@ -168,7 +168,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         params: &GlevParameters<T, M>,
         ntt: &Table,
         rng: &mut R,
-        context: &NttGadgetEncryptContext<T>,
+        workspace: &NttGlweGadgetEncryptWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
@@ -186,7 +186,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
             let diagonal_start = row * poly_length;
             for (mut glwe, transformed) in glev
                 .iter_ntt_glwe_mut(glwe_len)
-                .zip(context.level_transforms.chunks_exact(poly_length))
+                .zip(workspace.level_transforms.chunks_exact(poly_length))
             {
                 self.encrypt_zeros_kernel_to(&mut glwe, params.inner(), ntt, rng);
                 NttPolynomial::new(

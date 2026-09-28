@@ -12,8 +12,10 @@ use std::hint::black_box;
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{FftTable, RustFftTable, TfheFftTable};
-use primus_glwe::{FourierGlweKeySwitchingContext, GlweCiphertext, GlweParameters, SecretKeyDistr};
-use primus_lattice::context::FourierGlweExternalProductContext;
+use primus_glwe::{
+    FourierGlweKeySwitchingWorkspace, GlweCiphertext, GlweParameters, SecretKeyDistr,
+};
+use primus_lattice::workspace::FourierGlweExternalProductWorkspace;
 use primus_lwe::{LweCiphertext, LweParameters};
 use primus_modulus::NativeModulus;
 use primus_poly::Polynomial;
@@ -104,8 +106,8 @@ fn bench_backend<Table: FftTable>(c: &mut Criterion, backend: &str) {
             let mut main: GlweCiphertext<Vec<u32>> = GlweCiphertext::zero(2 * N);
             let mut temporary: GlweCiphertext<Vec<u32>> = GlweCiphertext::zero(2 * N);
             let mut switched: GlweCiphertext<Vec<u32>> = GlweCiphertext::zero(2 * N);
-            let mut external_product = FourierGlweExternalProductContext::new(bsk.size());
-            let mut key_switching = FourierGlweKeySwitchingContext::new(bsk.size().glwe_size());
+            let mut external_product = FourierGlweExternalProductWorkspace::new(bsk.size());
+            let mut key_switching = FourierGlweKeySwitchingWorkspace::new(bsk.size().glwe_size());
             let mut fft = context.new_fft_engine();
             let mut two_cmux = |input: &LweCiphertext<u32>, output: &mut LweCiphertext<u32>| {
                 let initial = quantizer.exponent(input.b()).wrapping_neg() & (2 * N - 1);

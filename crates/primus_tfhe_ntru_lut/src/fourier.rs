@@ -1,14 +1,11 @@
-use primus_fft::{Complex64, FftEngine, FftTable, TorusFftValue};
+use primus_fft::{Complex64, FftTable, TorusFftValue};
 use primus_lattice::{
     ngsw::{FourierNgswIter, FourierNgswIterMut},
     nlev::{FourierNlevIter, FourierNlevIterMut, NlevIter},
     ntru::{NtruIter, NtruIterMut},
 };
 use primus_modulus::NativeModulus;
-use primus_ntru::{
-    FourierNgswCiphertext, FourierNtruExternalProductContext, NtruCiphertext,
-    NtruLweKeySwitchingContext,
-};
+use primus_ntru::{FourierNgswCiphertext, NtruCiphertext, NtruLweKeySwitchingWorkspace};
 use primus_poly::{FourierPolynomialIter, FourierPolynomialIterMut, Polynomial, PolynomialIter};
 use primus_reduce::RingContext;
 use primus_tfhe::LweCiphertext;
@@ -23,6 +20,8 @@ use crate::{HighPrecisionLookupTable, LookupTableError, lookup_table::allocation
 /// chunks retain only r=1..M-1 NGSWs. Coefficient chunks retain aggregated
 /// rotation controls.
 /// Public monomial factors and all online workspaces are allocated at binding.
+/// Table products reuse one-hot CBS's external-product workspace between calls.
+/// Fourier transforms also reuse its engine and the same table instance.
 pub struct FourierLookupTableEvaluator<'a, T, Table, LM = primus_modulus::NativeModulus<T>>
 where
     T: TorusFftValue,
@@ -34,27 +33,25 @@ where
     lookup_table: &'a HighPrecisionLookupTable<T>,
     one_hot: OneHotCircuitBootstrapEvaluator<'a, T, Table, LM>,
     // [branch][level][Fourier value]: M NLEVs for the first public table layer.
-    public_table_selectors: Vec<Complex64>,
+    public_table_selectors: Box<[Complex64]>,
     // The same first-layer NLEVs before their Fourier transform.
-    public_selector_coefficients: Vec<T>,
+    public_selector_coefficients: Box<[T]>,
     // [encrypted layer][r-1][level][Fourier value]: M-1 NGSWs per later layer.
-    encrypted_table_selectors: Vec<Complex64>,
+    encrypted_table_selectors: Box<[Complex64]>,
     // [low chunk][level][Fourier value]: one NGSW[X^(-m_i*M^i)] per low chunk.
-    rotation_controls: Vec<Complex64>,
+    rotation_controls: Box<[Complex64]>,
     // One chunk's M-1 NGSW selectors for r=1..M-1, reused for each rotation control.
-    nonzero_selectors: Vec<Complex64>,
+    nonzero_selectors: Box<[Complex64]>,
     // [low chunk i][nonzero digit k][Fourier value] of X^(-k*M^i)-1 at integer scale.
-    rotation_factors: Vec<Complex64>,
+    rotation_factors: Box<[Complex64]>,
     // Trivial NGSW[1] at torus scale, with one constant g_l polynomial per row.
-    gadget_one: Vec<Complex64>,
-    fft: FftEngine<'a, Table>,
+    gadget_one: Box<[Complex64]>,
     // [candidate][coefficient], holding at most P/M encrypted polynomials.
-    candidates: Vec<T>,
-    current: NtruCiphertext<Vec<T>>,
-    product: NtruCiphertext<Vec<T>>,
-    difference: NtruCiphertext<Vec<T>>,
-    external_product: FourierNtruExternalProductContext<T>,
-    return_context: NtruLweKeySwitchingContext<T>,
+    candidates: Box<[T]>,
+    current: NtruCiphertext<Box<[T]>>,
+    product: NtruCiphertext<Box<[T]>>,
+    difference: NtruCiphertext<Box<[T]>>,
+    return_workspace: NtruLweKeySwitchingWorkspace<T>,
 }
 
 impl<'a, T, Table, LM> FourierLookupTableEvaluator<'a, T, Table, LM>
@@ -109,7 +106,8 @@ where
                 } else {
                     0
                 }
-            ],
+            ]
+            .into_boxed_slice(),
             public_selector_coefficients: vec![
                 T::ZERO;
                 if table_chunk_count > 0 {
@@ -117,9 +115,11 @@ where
                 } else {
                     0
                 }
-            ],
-            encrypted_table_selectors: vec![Complex64::default(); encrypted_table_selectors_len],
-            rotation_controls: vec![Complex64::default(); rotation_controls_len],
+            ]
+            .into_boxed_slice(),
+            encrypted_table_selectors: vec![Complex64::default(); encrypted_table_selectors_len]
+                .into_boxed_slice(),
+            rotation_controls: vec![Complex64::default(); rotation_controls_len].into_boxed_slice(),
             nonzero_selectors: vec![
                 Complex64::default();
                 if coefficient_chunk_count > 0 {
@@ -127,8 +127,9 @@ where
                 } else {
                     0
                 }
-            ],
-            rotation_factors: vec![Complex64::default(); rotation_factors_len],
+            ]
+            .into_boxed_slice(),
+            rotation_factors: vec![Complex64::default(); rotation_factors_len].into_boxed_slice(),
             gadget_one: vec![
                 Complex64::default();
                 if coefficient_chunk_count > 0 {
@@ -136,14 +137,13 @@ where
                 } else {
                     0
                 }
-            ],
-            fft: context.new_fft_engine(),
-            candidates: vec![T::ZERO; candidates_len],
+            ]
+            .into_boxed_slice(),
+            candidates: vec![T::ZERO; candidates_len].into_boxed_slice(),
             current: NtruCiphertext::zero(n),
             product: NtruCiphertext::zero(n),
             difference: NtruCiphertext::zero(n),
-            external_product: FourierNtruExternalProductContext::new(n),
-            return_context: NtruLweKeySwitchingContext::new(n),
+            return_workspace: NtruLweKeySwitchingWorkspace::new(n),
         };
         evaluator.prepare_rotation_constants();
         Ok(evaluator)
@@ -172,20 +172,25 @@ where
                 coefficients.fill(T::ZERO);
                 coefficients[0] = T::MAX;
                 coefficients[n - exponent] = T::MAX;
-                self.fft
+                self.one_hot
+                    .external_product_workspaces()
+                    .0
                     .forward_as_integer(&coefficients, factor.as_mut_slice());
             }
         }
         // Discard the sparse -1 coefficients of the last factor before building G.
         // Each gadget row is a constant g_l polynomial encoded at torus scale.
         coefficients.fill(T::ZERO);
-        let mut gadget_one = FourierNgswCiphertext::new(self.gadget_one.as_mut_slice());
+        let mut gadget_one = FourierNgswCiphertext::new(self.gadget_one.as_mut());
         for (mut row, scalar) in gadget_one
             .iter_ntru_mut(row_len)
             .zip(self.one_hot.parameters().output_basis().scalar_iter())
         {
             coefficients[0] = scalar;
-            self.fft.forward_as_torus(&coefficients, row.as_mut());
+            self.one_hot
+                .external_product_workspaces()
+                .0
+                .forward_as_torus(&coefficients, row.as_mut());
         }
     }
 
@@ -224,7 +229,7 @@ where
                 &self.current,
                 output,
                 self.context.parameters().external_lwe().cipher_modulus(),
-                &mut self.return_context,
+                &mut self.return_workspace,
             );
         }
     }
@@ -293,7 +298,10 @@ where
             &mut self.public_table_selectors,
             selector_len,
         )) {
-            coefficients.write_fourier_form(&mut transformed, &mut self.fft);
+            coefficients.write_fourier_form(
+                &mut transformed,
+                self.one_hot.external_product_workspaces().0,
+            );
         }
         for (input, selectors) in remaining.iter().zip(
             self.encrypted_table_selectors
@@ -312,12 +320,13 @@ where
             &self.rotation_controls,
             self.one_hot.parameters().output_fourier_nlev_len(),
         ) {
+            let (fft, external_product) = self.one_hot.external_product_workspaces();
             control.external_product_to(
                 &self.current,
                 &mut self.product,
                 basis,
-                &mut self.fft,
-                &mut self.external_product,
+                fft,
+                external_product,
             );
             // Keep the new accumulator in `current` for both odd and even
             // rotation counts, without copying its N coefficients.
@@ -342,12 +351,13 @@ where
             debug_assert_eq!(polynomials.len(), n);
             // A public coefficient array is not an NTRU encryption under f.
             // Even without a selection tree, lift it using the initializer's BR basis.
+            let (fft, external_product) = self.one_hot.external_product_workspaces();
             self.server_key.initializer().external_product_to(
                 &Polynomial::new(polynomials),
                 &mut self.current,
                 self.context.parameters().blind_rotation().basis(),
-                &mut self.fft,
-                &mut self.external_product,
+                fft,
+                external_product,
             );
             return;
         }
@@ -385,12 +395,13 @@ where
                 ))
                 .enumerate()
             {
+                let (fft, external_product) = self.one_hot.external_product_workspaces();
                 selector.external_product_to(
                     &polynomial,
                     &mut self.product,
                     basis,
-                    &mut self.fft,
-                    &mut self.external_product,
+                    fft,
+                    external_product,
                 );
                 // Initialize from the first product so reused candidate slots
                 // need no clearing and cannot retain a previous output's sum.
@@ -435,12 +446,13 @@ where
                 NtruIter::new(alternatives, n).zip(FourierNgswIter::new(selectors, selector_len))
             {
                 candidate.sub_to(&default, &mut self.difference, modulus);
+                let (fft, external_product) = self.one_hot.external_product_workspaces();
                 selector.external_product_to(
                     &self.difference,
                     &mut self.product,
                     basis,
-                    &mut self.fft,
-                    &mut self.external_product,
+                    fft,
+                    external_product,
                 );
                 self.current.add_assign(&self.product, modulus);
             }

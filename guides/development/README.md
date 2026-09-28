@@ -134,12 +134,12 @@ Context-bearing wrappers describe their own role in `Display` and expose the und
 
 ## Distinguish environment from workspace
 
-The naming rule follows responsibility. Existing APIs have not all adopted it; the current names below locate the implementation without introducing compatibility aliases.
+Names follow responsibility; reusable buffer groups use `Workspace`, while bound execution environments retain `Context`.
 
 | Responsibility | Naming rule | Current entry point |
 | --- | --- | --- |
-| A group of reusable temporary buffers with shape invariants | `*Workspace` | [Ntt/FourierNtruExternalProductContext](../../crates/primus_lattice/src/context/ntru_external_product.rs), [NtruLweKeySwitchingContext](../../crates/primus_ntru/src/key_switch/lwe.rs) currently retain `Context` names |
-| Owned FFT temporary buffers | `*Workspace` as well | [FftTable::Scratch / new_scratch and FftEngine](../../crates/primus_fft/src/table.rs) use the current `Scratch` vocabulary |
+| A group of reusable temporary buffers with shape invariants | `*Workspace` | [Ntt/FourierNtruExternalProductWorkspace](../../crates/primus_lattice/src/workspace/ntru_external_product.rs), [NtruLweKeySwitchingWorkspace](../../crates/primus_ntru/src/key_switch/lwe.rs) |
+| Owned FFT temporary buffers | `*Workspace` as well | [FftTable::Workspace / new_workspace and FftEngine](../../crates/primus_fft/src/table.rs) |
 | Validated parameters, modulus and transform environment | `*Context` | [TfheContext](../../crates/primus_tfhe_ntru_ntt/src/context.rs); arithmetic `RingContext` / `FieldContext` remain capability traits |
 | Bound execution with keys/tables and mutable workspace | `*Evaluator` / `*Engine` | TFHE evaluators and `FftEngine`; classify mixed state by its actual responsibility |
 | One borrowed temporary slice or region | Local `scratch` / `buffer` | No extra wrapper required; third-party `PodBuffer` / `PodStack` retain their names |
@@ -161,6 +161,8 @@ Reuse, fixed length and extra alignment are separate decisions. Apply this matri
 With `primus_data/aligned-vec`, [AVec and ABox implement RawData/Data/DataMut](../../crates/primus_data/src/impls.rs), **not DataOwned**. That trait also requires iterator construction/consumption, and aligned allocation has its own alignment choice. Allocate the container explicitly, wrap it with `new`, and use `DataMut` operations where supported; do not assume a `DataOwned` constructor such as `Polynomial::zero` accepts an aligned destination.
 
 An aligned allocation does not guarantee aligned sub-blocks: check the actual stride, especially LWE rows of n+1 values. Aligning `Vec<Key>` does not align each key's internal coefficients. Before changing storage, inspect the consuming kernel and measure the affected workload, construction/conversion costs and memory use; preserve secret erasure and ownership contracts. Alignment alone is not evidence of a speedup.
+
+Concrete storage choices, serial reuse and measured memory/latency tradeoffs are recorded in [workspaces and storage](workspaces-and-storage.md).
 
 ## Validate the relevant contract
 

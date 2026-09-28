@@ -6,7 +6,7 @@ mod ntt;
 
 pub use coeff::NtruSecretKey;
 pub use fourier::{
-    FourierNtruDecryptContext, FourierNtruEncryptContext, FourierNtruGadgetEncryptContext,
+    FourierNtruDecryptWorkspace, FourierNtruEncryptWorkspace, FourierNtruGadgetEncryptWorkspace,
     FourierNtruSecretKey,
 };
-pub use ntt::{NttNtruGadgetEncryptContext, NttNtruSecretKey};
+pub use ntt::{NttNtruGadgetEncryptWorkspace, NttNtruSecretKey};

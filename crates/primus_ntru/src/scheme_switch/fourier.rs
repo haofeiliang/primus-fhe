@@ -9,7 +9,7 @@ use primus_reduce::EncodeSigned;
 use zeroize::Zeroizing;
 
 use crate::{
-    FourierNgswCiphertext, FourierNtruExternalProductContext, FourierNtruGadgetEncryptContext,
+    FourierNgswCiphertext, FourierNtruExternalProductWorkspace, FourierNtruGadgetEncryptWorkspace,
     FourierNtruSecretKey, NlevCiphertext, NlevParameters, NtruSecretKey,
 };
 
@@ -52,7 +52,7 @@ impl<T: TorusFftValue> FourierNtruSchemeSwitchKey<T> {
         key_parameters: &NlevParameters<T, NativeModulus<T>>,
         fft: &mut FftEngine<'_, Table>,
         rng: &mut R,
-        context: &mut FourierNtruGadgetEncryptContext<T>,
+        workspace: &mut FourierNtruGadgetEncryptWorkspace<T>,
     ) -> Self
     where
         Table: FftTable,
@@ -83,7 +83,7 @@ impl<T: TorusFftValue> FourierNtruSchemeSwitchKey<T> {
             key_parameters,
             fft,
             rng,
-            context,
+            workspace,
         );
         Self {
             data,
@@ -137,7 +137,7 @@ impl<T: TorusFftValue> FourierNtruSchemeSwitchKey<T> {
         input: &NlevCiphertext<A>,
         output: &mut FourierNgswCiphertext<B>,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierNtruExternalProductContext<T>,
+        workspace: &mut FourierNtruExternalProductWorkspace<T>,
     ) where
         Table: FftTable,
         A: Data<Elem = T>,
@@ -154,7 +154,7 @@ impl<T: TorusFftValue> FourierNtruSchemeSwitchKey<T> {
             "scheme-switch output length mismatch"
         );
         assert_eq!(
-            context.poly_length(),
+            workspace.poly_length(),
             self.poly_length,
             "scheme-switch workspace length mismatch"
         );
@@ -172,7 +172,7 @@ impl<T: TorusFftValue> FourierNtruSchemeSwitchKey<T> {
                 &mut output,
                 &self.key_basis,
                 fft,
-                context,
+                workspace,
             );
         }
     }

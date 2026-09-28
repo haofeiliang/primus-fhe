@@ -6,15 +6,17 @@ use primus_fft::{Complex64, FftEngine, FftTable, TorusFftValue};
 use primus_integer::SignedInteger;
 use primus_lattice::{
     GadgetSize,
-    context::FourierGlweExternalProductContext,
     ggsw::{FourierGgsw, FourierGgswIter},
     glev::Glev,
+    workspace::FourierGlweExternalProductWorkspace,
 };
 use primus_modulus::NativeModulus;
 use primus_poly::Polynomial;
 use zeroize::Zeroizing;
 
-use crate::{FourierGadgetEncryptContext, FourierGlweSecretKey, GlevParameters, GlweSecretKey};
+use crate::{
+    FourierGlweGadgetEncryptWorkspace, FourierGlweSecretKey, GlevParameters, GlweSecretKey,
+};
 
 /// Fourier GGSW encryptions of the negated GLWE secret polynomials.
 ///
@@ -47,14 +49,14 @@ impl<T: TorusFftValue> FourierGlweSchemeSwitchKey<T> {
         key_parameters: &GlevParameters<T, NativeModulus<T>>,
         fft: &mut FftEngine<'_, Table>,
         rng: &mut R,
-        context: &mut FourierGadgetEncryptContext<T>,
+        workspace: &mut FourierGlweGadgetEncryptWorkspace<T>,
     ) -> Self
     where
         Table: FftTable,
         R: rand::Rng + rand::CryptoRng,
     {
         fourier_secret_key.assert_gadget_compatible(key_parameters, fft);
-        context.assert_ggsw_compatible(key_parameters.size());
+        workspace.assert_ggsw_compatible(key_parameters.size());
         let key_size = key_parameters.size();
         assert_eq!(
             secret_key.glwe_size(),
@@ -86,7 +88,7 @@ impl<T: TorusFftValue> FourierGlweSchemeSwitchKey<T> {
                 key_parameters,
                 fft,
                 rng,
-                context,
+                workspace,
             );
         }
         Self {
@@ -120,8 +122,8 @@ impl<T: TorusFftValue> FourierGlweSchemeSwitchKey<T> {
     /// Preserves the input's gadget scaling; the key basis only decomposes
     /// external products. Overwrites output without allocating or inverse FFTs.
     ///
-    /// Bind `context` to [`Self::key_size`]. It can be reused by other external
-    /// products through [`FourierGlweExternalProductContext::rebind`]; restore the
+    /// Bind `workspace` to [`Self::key_size`]. It can be reused by other external
+    /// products through [`FourierGlweExternalProductWorkspace::rebind`]; restore the
     /// key layout before calling this method.
     ///
     /// # Correctness
@@ -139,7 +141,7 @@ impl<T: TorusFftValue> FourierGlweSchemeSwitchKey<T> {
         input: &Glev<A>,
         output: &mut FourierGgsw<B>,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierGlweExternalProductContext<T>,
+        workspace: &mut FourierGlweExternalProductWorkspace<T>,
     ) where
         Table: FftTable,
         A: Data<Elem = T>,
@@ -161,7 +163,7 @@ impl<T: TorusFftValue> FourierGlweSchemeSwitchKey<T> {
             "scheme-switch FFT polynomial length mismatch"
         );
         assert_eq!(
-            context.size(),
+            workspace.size(),
             self.key_size,
             "scheme-switch workspace layout mismatch"
         );
@@ -175,7 +177,13 @@ impl<T: TorusFftValue> FourierGlweSchemeSwitchKey<T> {
                 .iter_glwe(size.glwe_len())
                 .zip(row.iter_glwe_mut(size.fourier_glwe_len()))
             {
-                key.external_product_fourier_to(&input, &mut output, &self.key_basis, fft, context);
+                key.external_product_fourier_to(
+                    &input,
+                    &mut output,
+                    &self.key_basis,
+                    fft,
+                    workspace,
+                );
             }
         }
         let mut body = rows

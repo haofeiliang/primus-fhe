@@ -7,11 +7,11 @@ use primus_poly::{FourierPolynomialOwned, PolynomialOwned};
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 /// Reusable coefficient-domain workspace for Fourier GLWE encryption.
-pub struct FourierGlweEncryptContext<T: FheUint> {
+pub struct FourierGlweEncryptWorkspace<T: FheUint> {
     pub(super) coeff: PolynomialOwned<T>,
 }
 
-impl<T: FheUint> FourierGlweEncryptContext<T> {
+impl<T: FheUint> FourierGlweEncryptWorkspace<T> {
     /// Creates an encryption workspace for coefficient polynomials of length `poly_length`.
     ///
     /// # Panics
@@ -50,27 +50,27 @@ impl<T: FheUint> FourierGlweEncryptContext<T> {
     }
 }
 
-impl<T: FheUint> Zeroize for FourierGlweEncryptContext<T> {
+impl<T: FheUint> Zeroize for FourierGlweEncryptWorkspace<T> {
     #[inline]
     fn zeroize(&mut self) {
         self.coeff.0.zeroize();
     }
 }
 
-impl<T: FheUint> ZeroizeOnDrop for FourierGlweEncryptContext<T> {}
+impl<T: FheUint> ZeroizeOnDrop for FourierGlweEncryptWorkspace<T> {}
 
-impl<T: FheUint> Drop for FourierGlweEncryptContext<T> {
+impl<T: FheUint> Drop for FourierGlweEncryptWorkspace<T> {
     fn drop(&mut self) {
         self.zeroize();
     }
 }
 
 /// Reusable Fourier-domain workspace for Fourier GLWE decryption.
-pub struct FourierGlweDecryptContext {
+pub struct FourierGlweDecryptWorkspace {
     pub(super) phase: FourierPolynomialOwned,
 }
 
-impl FourierGlweDecryptContext {
+impl FourierGlweDecryptWorkspace {
     /// Creates a decryption workspace for coefficient polynomials of length `poly_length`.
     ///
     /// # Panics
@@ -90,7 +90,7 @@ impl FourierGlweDecryptContext {
     }
 }
 
-impl Zeroize for FourierGlweDecryptContext {
+impl Zeroize for FourierGlweDecryptWorkspace {
     #[inline]
     fn zeroize(&mut self) {
         for value in self.phase.as_mut() {
@@ -100,9 +100,9 @@ impl Zeroize for FourierGlweDecryptContext {
     }
 }
 
-impl ZeroizeOnDrop for FourierGlweDecryptContext {}
+impl ZeroizeOnDrop for FourierGlweDecryptWorkspace {}
 
-impl Drop for FourierGlweDecryptContext {
+impl Drop for FourierGlweDecryptWorkspace {
     fn drop(&mut self) {
         self.zeroize();
     }
@@ -112,13 +112,13 @@ impl Drop for FourierGlweDecryptContext {
 ///
 /// GLev requires only a matching polynomial length. GGSW also requires the
 /// configured decomposition level count; use [`Self::resize`] to change it.
-pub struct FourierGadgetEncryptContext<T: FheUint> {
+pub struct FourierGlweGadgetEncryptWorkspace<T: FheUint> {
     pub(super) encoded: PolynomialOwned<T>,
     pub(super) level_transforms: Vec<Complex64>,
-    pub(super) glwe: FourierGlweEncryptContext<T>,
+    pub(super) glwe: FourierGlweEncryptWorkspace<T>,
 }
 
-impl<T: FheUint> FourierGadgetEncryptContext<T> {
+impl<T: FheUint> FourierGlweGadgetEncryptWorkspace<T> {
     /// Creates reusable workspace for a checked gadget layout.
     #[must_use]
     pub fn new(size: GadgetSize) -> Self {
@@ -131,7 +131,7 @@ impl<T: FheUint> FourierGadgetEncryptContext<T> {
                 Complex64::default();
                 decompose_length * glwe_size.fourier_poly_len()
             ],
-            glwe: FourierGlweEncryptContext::new(poly_length),
+            glwe: FourierGlweEncryptWorkspace::new(poly_length),
         }
     }
 
@@ -168,7 +168,7 @@ impl<T: FheUint> FourierGadgetEncryptContext<T> {
     }
 }
 
-impl<T: FheUint> Zeroize for FourierGadgetEncryptContext<T> {
+impl<T: FheUint> Zeroize for FourierGlweGadgetEncryptWorkspace<T> {
     fn zeroize(&mut self) {
         self.encoded.as_mut().iter_mut().zeroize();
         for value in &mut self.level_transforms {
@@ -179,9 +179,9 @@ impl<T: FheUint> Zeroize for FourierGadgetEncryptContext<T> {
     }
 }
 
-impl<T: FheUint> ZeroizeOnDrop for FourierGadgetEncryptContext<T> {}
+impl<T: FheUint> ZeroizeOnDrop for FourierGlweGadgetEncryptWorkspace<T> {}
 
-impl<T: FheUint> Drop for FourierGadgetEncryptContext<T> {
+impl<T: FheUint> Drop for FourierGlweGadgetEncryptWorkspace<T> {
     fn drop(&mut self) {
         self.zeroize();
     }

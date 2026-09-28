@@ -1,13 +1,13 @@
 use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable, TfheFftTable};
 use primus_glwe::{
-    FourierGadgetEncryptContext, FourierGlweDecryptContext, FourierGlweEncryptContext,
-    FourierGlweSecretKey, GlevParameters, GlweParameters, NttGadgetEncryptContext,
+    FourierGlweDecryptWorkspace, FourierGlweEncryptWorkspace, FourierGlweGadgetEncryptWorkspace,
+    FourierGlweSecretKey, GlevParameters, GlweParameters, NttGlweGadgetEncryptWorkspace,
     NttGlweSecretKey, SecretKeyDistr,
 };
 use primus_lattice::{
-    context::{FourierGlweExternalProductContext, NttGlweExternalProductContext},
     ggsw::{FourierGgsw, NttGgsw, NttGgswIter},
     glwe::{FourierGlweOwned, Glwe, NttGlwe, TorusGlwe},
+    workspace::{FourierGlweExternalProductWorkspace, NttGlweExternalProductWorkspace},
 };
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntt::{NttTable, UintNttTable};
@@ -41,10 +41,10 @@ fn fourier_cmux_selects_requested_glwe() {
     );
     let params = GlevParameters::with_glwe_params(&glwe_params, 8, None);
     let (_, secret_key) = FourierGlweSecretKey::generate_pair(&glwe_params, &mut fft, &mut rng);
-    let mut encrypt_context = FourierGlweEncryptContext::new(POLY_LENGTH);
-    let mut decrypt_context = FourierGlweDecryptContext::new(POLY_LENGTH);
-    let mut gadget_context = FourierGadgetEncryptContext::new(params.size());
-    let mut cmux_context = FourierGlweExternalProductContext::new(params.size());
+    let mut encrypt_workspace = FourierGlweEncryptWorkspace::new(POLY_LENGTH);
+    let mut decrypt_workspace = FourierGlweDecryptWorkspace::new(POLY_LENGTH);
+    let mut gadget_workspace = FourierGlweGadgetEncryptWorkspace::new(params.size());
+    let mut cmux_workspace = FourierGlweExternalProductWorkspace::new(params.size());
 
     let messages = [plaintext(1), plaintext(7), plaintext(12)];
     let mut ciphertexts: [TorusGlwe<Vec<u32>>; 3] =
@@ -57,7 +57,7 @@ fn fourier_cmux_selects_requested_glwe() {
             &glwe_params,
             &mut fft,
             &mut rng,
-            &mut encrypt_context,
+            &mut encrypt_workspace,
         );
         fourier.write_torus_form(ciphertext, &mut fft);
     }
@@ -65,7 +65,7 @@ fn fourier_cmux_selects_requested_glwe() {
     let mut output: TorusGlwe<Vec<u32>> = TorusGlwe::zero(params.glwe_len());
     let ggsw_len = params.fourier_ggsw_len();
     let mut controls = vec![Complex64::default(); 2 * ggsw_len];
-    // Exercise both CMUX kernels and every valid selector, reusing output/context.
+    // Exercise both CMUX kernels and every valid selector, reusing output/workspace.
     for (control_count, selected) in [(1, 0), (1, 1), (2, 0), (2, 1), (2, 2)] {
         let selectors = [u32::from(selected == 1), u32::from(selected == 2)];
         secret_key.encrypt_ggsw_constant_batch_to(
@@ -74,7 +74,7 @@ fn fourier_cmux_selects_requested_glwe() {
             &params,
             &mut fft,
             &mut rng,
-            &mut gadget_context,
+            &mut gadget_workspace,
         );
 
         if control_count == 1 {
@@ -84,7 +84,7 @@ fn fourier_cmux_selects_requested_glwe() {
                 &mut output,
                 params.basis(),
                 &mut fft,
-                &mut cmux_context,
+                &mut cmux_workspace,
             );
         } else {
             FourierGgsw::cmux_k_to(
@@ -94,7 +94,7 @@ fn fourier_cmux_selects_requested_glwe() {
                 &mut output,
                 params.basis(),
                 &mut fft,
-                &mut cmux_context,
+                &mut cmux_workspace,
             );
         }
 
@@ -106,7 +106,7 @@ fn fourier_cmux_selects_requested_glwe() {
                     &output_fourier,
                     &glwe_params,
                     &mut fft,
-                    &mut decrypt_context,
+                    &mut decrypt_workspace,
                 )
                 .as_ref(),
             messages[selected].as_slice()
@@ -131,8 +131,8 @@ fn ntt_cmux_selects_requested_glwe() {
     );
     let params = GlevParameters::with_glwe_params(&glwe_params, 8, None);
     let (_, secret_key) = NttGlweSecretKey::generate_pair(&glwe_params, &ntt, &mut rng);
-    let mut gadget_context = NttGadgetEncryptContext::new(params.size());
-    let mut cmux_context = NttGlweExternalProductContext::new(params.size());
+    let mut gadget_workspace = NttGlweGadgetEncryptWorkspace::new(params.size());
+    let mut cmux_workspace = NttGlweExternalProductWorkspace::new(params.size());
 
     let messages = [plaintext(2), plaintext(7), plaintext(11)];
     let mut ciphertexts: [Glwe<Vec<u32>>; 3] =
@@ -160,7 +160,7 @@ fn ntt_cmux_selects_requested_glwe() {
             &params,
             &ntt,
             &mut rng,
-            &mut gadget_context,
+            &mut gadget_workspace,
         );
 
         if control_count == 1 {
@@ -171,7 +171,7 @@ fn ntt_cmux_selects_requested_glwe() {
                 params.basis(),
                 modulus,
                 &ntt,
-                &mut cmux_context,
+                &mut cmux_workspace,
             );
         } else {
             NttGgsw::cmux_k_to(
@@ -182,7 +182,7 @@ fn ntt_cmux_selects_requested_glwe() {
                 params.basis(),
                 modulus,
                 &ntt,
-                &mut cmux_context,
+                &mut cmux_workspace,
             );
         }
 
@@ -199,7 +199,7 @@ fn ntt_cmux_selects_requested_glwe() {
 fn ntt_ternary_cmux_rotates_phase_with_encrypted_controls() {
     use common::{K, N, encrypt, message, phase, secret};
     use primus_glwe::GlweSecretKey;
-    use primus_lattice::context::NttGlweTernaryCmuxContext;
+    use primus_lattice::workspace::NttGlweTernaryCmuxWorkspace;
 
     const Q: u64 = 132_120_577;
     let modulus = BarrettModulus::new(Q);
@@ -213,8 +213,8 @@ fn ntt_ternary_cmux_rotates_phase_with_encrypted_controls() {
     let input = encrypt(&message(u128::from(Q)), &secret, u128::from(Q), &mut rng);
     let input_phase = phase(input.as_ref(), &secret, u128::from(Q));
     let mut controls = vec![0; 2 * params.ggsw_len()];
-    let mut encrypt_context = NttGadgetEncryptContext::new(params.size());
-    let mut context = NttGlweTernaryCmuxContext::new(params.size());
+    let mut encrypt_workspace = NttGlweGadgetEncryptWorkspace::new(params.size());
+    let mut workspace = NttGlweTernaryCmuxWorkspace::new(params.size());
     let mut output = Glwe::new(vec![Q - 1; params.glwe_len()]);
 
     for selector in [1isize, -1, 0] {
@@ -224,7 +224,7 @@ fn ntt_ternary_cmux_rotates_phase_with_encrypted_controls() {
             &params,
             &ntt,
             &mut rng,
-            &mut encrypt_context,
+            &mut encrypt_workspace,
         );
         let (positive, negative) = controls.split_at(params.ggsw_len());
         for exponent in (1..2 * N).chain([0]) {
@@ -236,7 +236,7 @@ fn ntt_ternary_cmux_rotates_phase_with_encrypted_controls() {
                 params.basis(),
                 modulus,
                 &ntt,
-                &mut context,
+                &mut workspace,
             );
             assert_rotated_phase(
                 &input_phase,
@@ -270,7 +270,7 @@ fn assert_rotated_phase(input: &[u64], output: &[u64], secret: &[i64], q: u128, 
 fn check_fourier_ternary_cmux<Table: FftTable>() {
     use common::{K, N, encrypt, message, phase, secret};
     use primus_glwe::GlweSecretKey;
-    use primus_lattice::context::FourierGlweTernaryCmuxContext;
+    use primus_lattice::workspace::FourierGlweTernaryCmuxWorkspace;
 
     const Q: u128 = 1 << 64;
     let table = Table::new(N.trailing_zeros()).unwrap();
@@ -291,8 +291,8 @@ fn check_fourier_ternary_cmux<Table: FftTable>() {
     let input = encrypt(&message(Q), &secret, Q, &mut rng);
     let input_phase = phase(input.as_ref(), &secret, Q);
     let mut controls = vec![Complex64::default(); 2 * params.fourier_ggsw_len()];
-    let mut encrypt_context = FourierGadgetEncryptContext::new(params.size());
-    let mut context = FourierGlweTernaryCmuxContext::new(params.size());
+    let mut encrypt_workspace = FourierGlweGadgetEncryptWorkspace::new(params.size());
+    let mut workspace = FourierGlweTernaryCmuxWorkspace::new(params.size());
     let mut output = Glwe::new(vec![u64::MAX; params.glwe_len()]);
     for selector in [1isize, -1, 0] {
         key.encrypt_ggsw_constant_batch_to(
@@ -301,7 +301,7 @@ fn check_fourier_ternary_cmux<Table: FftTable>() {
             &params,
             &mut fft,
             &mut rng,
-            &mut encrypt_context,
+            &mut encrypt_workspace,
         );
         let (positive, negative) = controls.split_at(params.fourier_ggsw_len());
         for exponent in (1..2 * N).chain([0]) {
@@ -312,7 +312,7 @@ fn check_fourier_ternary_cmux<Table: FftTable>() {
                 &mut output,
                 params.basis(),
                 &mut fft,
-                &mut context,
+                &mut workspace,
             );
             assert_rotated_phase(
                 &input_phase,

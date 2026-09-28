@@ -1,8 +1,8 @@
 use primus_glwe_rns::{
-    CrtGlevParameters, CrtGlweParameters, DcrtGlweCiphertext, DcrtGlweDecryptContext,
+    CrtGlevParameters, CrtGlweParameters, DcrtGlweCiphertext, DcrtGlweDecryptWorkspace,
     DcrtGlwePublicKey, DcrtGlweSecretKey, GlweSecretKey, SecretKeyDistr,
 };
-use primus_lattice::{context::DcrtGlevMulContext, glwe::DcrtGlwe};
+use primus_lattice::{glwe::DcrtGlwe, workspace::DcrtGlevMulWorkspace};
 use primus_modulus::BarrettModulus;
 use primus_ntt::UintDcrtTable;
 use primus_poly::Polynomial;
@@ -68,8 +68,9 @@ fn test_external_product() {
         let mut c1: DcrtGlwe<Vec<ValueT>> = DcrtGlweCiphertext::zero(rns_glwe_len);
         let mut c2: DcrtGlwe<Vec<ValueT>> = DcrtGlweCiphertext::zero(rns_glwe_len);
 
-        let mut glev_context = DcrtGlevMulContext::new(glev_params.size(), glev_params.base_q());
-        let mut decrypt_context = DcrtGlweDecryptContext::new(glwe_params.size());
+        let mut glev_workspace =
+            DcrtGlevMulWorkspace::new(glev_params.size(), glev_params.base_q());
+        let mut decrypt_workspace = DcrtGlweDecryptWorkspace::new(glwe_params.size());
 
         dcrt_sk.encrypt_plaintext_inplace(&input, &mut c1, &glwe_params, &table, &mut rng);
 
@@ -82,14 +83,14 @@ fn test_external_product() {
             glev_params.basis(),
             &table,
             base_q,
-            &mut glev_context,
+            &mut glev_workspace,
         );
 
         let mut input_rt = input.clone();
         input_rt.as_mut_slice().rotate_right(degree);
         mod_t.reduce_neg_slice_assign(&mut input_rt.as_mut_slice()[..degree]);
 
-        let output = dcrt_sk.decrypt(&c2, &glwe_params, &table, &mut decrypt_context);
+        let output = dcrt_sk.decrypt(&c2, &glwe_params, &table, &mut decrypt_workspace);
 
         assert_eq!(input_rt.as_ref(), output.as_ref());
     }

@@ -9,7 +9,7 @@ use zeroize::{Zeroize, ZeroizeOnDrop};
 use crate::{FftError, FftTable, TorusFftValue};
 
 /// Negacyclic FFT wrapper backed by the unordered tfhe-fft plan.
-/// Owned twist and scratch buffers use cache-line alignment. Caller-owned
+/// Owned twist and workspace buffers use cache-line alignment. Caller-owned
 /// slices only need their element type's normal alignment.
 pub struct TfheFftTable {
     n: usize,
@@ -22,12 +22,12 @@ pub struct TfheFftTable {
 /// Reusable workspace for [`TfheFftTable`].
 /// Contents, including backend work memory, are securely
 /// erased on drop. Explicit zeroization preserves lengths and allocations.
-pub struct TfheFftScratch {
+pub struct TfheFftWorkspace {
     values: ABox<[Complex64]>,
     memory: PodBuffer,
 }
 
-impl Zeroize for TfheFftScratch {
+impl Zeroize for TfheFftWorkspace {
     fn zeroize(&mut self) {
         // The boxed slice has no spare capacity beyond its initialized values.
         for value in self.values.iter_mut() {
@@ -40,9 +40,9 @@ impl Zeroize for TfheFftScratch {
     }
 }
 
-impl ZeroizeOnDrop for TfheFftScratch {}
+impl ZeroizeOnDrop for TfheFftWorkspace {}
 
-impl Drop for TfheFftScratch {
+impl Drop for TfheFftWorkspace {
     fn drop(&mut self) {
         self.zeroize();
     }
@@ -54,7 +54,7 @@ impl TfheFftTable {
         input: &[T],
         output: &mut [Complex64],
         convert: impl Fn(T) -> f64,
-        scratch: &mut TfheFftScratch,
+        workspace: &mut TfheFftWorkspace,
     ) {
         assert_eq!(input.len(), self.n);
         assert_eq!(output.len(), self.h);
@@ -67,12 +67,12 @@ impl TfheFftTable {
         {
             *output = Complex64::new(convert(re), convert(im)) * twist;
         }
-        self.plan.fwd(output, PodStack::new(&mut scratch.memory));
+        self.plan.fwd(output, PodStack::new(&mut workspace.memory));
     }
 }
 
 impl FftTable for TfheFftTable {
-    type Scratch = TfheFftScratch;
+    type Workspace = TfheFftWorkspace;
 
     fn new(log_n: u32) -> Result<Self, FftError> {
         if !(2..usize::BITS).contains(&log_n) {
@@ -128,11 +128,11 @@ impl FftTable for TfheFftTable {
         })
     }
 
-    fn new_scratch(&self) -> Self::Scratch {
-        TfheFftScratch {
+    fn new_workspace(&self) -> Self::Workspace {
+        TfheFftWorkspace {
             values: avec![Complex64::default(); self.h].into_boxed_slice(),
             memory: PodBuffer::try_new(self.plan.fft_scratch())
-                .expect("failed to allocate FFT scratch"),
+                .expect("failed to allocate FFT workspace"),
         }
     }
 
@@ -140,36 +140,36 @@ impl FftTable for TfheFftTable {
         &self,
         input: &[T],
         output: &mut [Complex64],
-        scratch: &mut Self::Scratch,
+        workspace: &mut Self::Workspace,
     ) {
-        self.forward_with(input, output, TorusFftValue::into_torus_f64, scratch);
+        self.forward_with(input, output, TorusFftValue::into_torus_f64, workspace);
     }
     fn forward_as_integer<T: TorusFftValue>(
         &self,
         input: &[T],
         output: &mut [Complex64],
-        scratch: &mut Self::Scratch,
+        workspace: &mut Self::Workspace,
     ) {
-        self.forward_with(input, output, TorusFftValue::into_signed_f64, scratch);
+        self.forward_with(input, output, TorusFftValue::into_signed_f64, workspace);
     }
     fn forward_integer_f64(
         &self,
         input: &[f64],
         output: &mut [Complex64],
-        scratch: &mut Self::Scratch,
+        workspace: &mut Self::Workspace,
     ) {
-        self.forward_with(input, output, core::convert::identity, scratch);
+        self.forward_with(input, output, core::convert::identity, workspace);
     }
     fn backward_as_torus<T: TorusFftValue>(
         &self,
         input: &[Complex64],
         output: &mut [T],
-        scratch: &mut Self::Scratch,
+        workspace: &mut Self::Workspace,
     ) {
         assert_eq!(input.len(), self.h);
         assert_eq!(output.len(), self.n);
-        scratch.values.copy_from_slice(input);
-        let TfheFftScratch { values, memory } = scratch;
+        workspace.values.copy_from_slice(input);
+        let TfheFftWorkspace { values, memory } = workspace;
         self.plan.inv(values, PodStack::new(memory));
         let (first, second) = output.split_at_mut(self.h);
         for ((&value, &inverse_twist), (first, second)) in values

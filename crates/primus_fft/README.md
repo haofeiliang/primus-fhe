@@ -49,11 +49,11 @@ A negacyclic convolution uses `forward_as_torus` for a torus polynomial, `forwar
 
 Construct one table in the context that owns a Fourier representation and reuse it. Fourier values and scratch memory are bound to that exact table instance. Do not mix values or scratch from independently constructed tables, even when the backend and polynomial length are the same: backend ordering, planning, and workspace compatibility are private properties of the table and are not part of a cross-table compatibility guarantee.
 
-Tables are immutable and implement `Send + Sync`, so a table may be shared across threads. Each concurrent worker must create its own `FftEngine` (or its own scratch through `new_scratch`); mutable workspace is never shared between transform calls.
+Tables are immutable and implement `Send + Sync`, so a table may be shared across threads. Each concurrent worker must create its own `FftEngine` (or its own scratch through `new_workspace`); mutable workspace is never shared between transform calls.
 
 The built-in tables use cache-line-aligned storage for their twist factors and transform workspace. Caller-owned inputs and outputs still accept ordinary slices, including subslices; no additional alignment is required.
 
-The built-in scratch types securely erase their full buffers on drop. After processing secret data, `fft.zeroize_scratch()` erases the workspace while keeping it reusable. Ordinary transforms do not erase scratch on every call. Caller-owned inputs and outputs have their own lifetimes; this heap-buffer guarantee does not cover registers or compiler-created stack copies. Custom backends define their own scratch erasure behavior.
+The built-in scratch types securely erase their full buffers on drop. After processing secret data, `fft.zeroize_workspace()` erases the workspace while keeping it reusable. Ordinary transforms do not erase scratch on every call. Caller-owned inputs and outputs have their own lifetimes; this heap-buffer guarantee does not cover registers or compiler-created stack copies. Custom backends define their own scratch erasure behavior.
 
 Input and output lengths are exact:
 

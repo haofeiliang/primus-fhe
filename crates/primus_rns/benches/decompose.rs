@@ -176,14 +176,14 @@ fn bench_base_conversion(c: &mut Criterion) {
     });
 
     let mut exact_output = vec![0; POLY_LENGTH];
-    let mut exact_context = exact_converter.exact_conversion_context(POLY_LENGTH);
+    let mut exact_workspace = exact_converter.exact_conversion_workspace(POLY_LENGTH);
     group.bench_function("exact_convert_array/3mod_to_1mod", |b| {
         b.iter(|| {
             exact_converter.exact_convert_array(
                 black_box(&input),
                 black_box(&mut exact_output),
                 POLY_LENGTH,
-                black_box(&mut exact_context),
+                black_box(&mut exact_workspace),
             );
         });
     });

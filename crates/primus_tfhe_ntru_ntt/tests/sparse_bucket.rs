@@ -5,7 +5,7 @@ use primus_lwe::LweParameters;
 use primus_modulus::BarrettModulus;
 use primus_ntru::{
     NgswCiphertext, NlevCiphertext, NlevParameters, NtruCiphertext, NtruParameters,
-    NttNlevCiphertext, NttNtruExternalProductContext, NttNtruGadgetEncryptContext,
+    NttNlevCiphertext, NttNtruExternalProductWorkspace, NttNtruGadgetEncryptWorkspace,
     NttNtruSecretKey, SecretKeyDistr,
 };
 use primus_ntt::{MonomialNttTable, U32NttTable, U64NttTable};
@@ -134,7 +134,7 @@ fn check_bucket<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T, level_cou
         &gadget,
         ntt,
         &mut rng,
-        &mut NttNtruGadgetEncryptContext::new(N),
+        &mut NttNtruGadgetEncryptWorkspace::new(N),
     );
     let mut init_error_sum = 0;
     for (level, &scalar) in initializer.as_ref().as_chunks::<N>().0.iter().zip(&scalars) {
@@ -158,7 +158,7 @@ fn check_bucket<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T, level_cou
     );
     let mut input = NtruCiphertext::<Vec<T>>::zero(N);
     let mut product = NtruCiphertext::<Vec<T>>::zero(N);
-    let mut scratch = NttNtruExternalProductContext::new(N);
+    let mut scratch = NttNtruExternalProductWorkspace::new(N);
     let (_, allocations) = measure(|| {
         initializer.external_product_to(&encoded, &mut input, basis, modulus, ntt, &mut scratch);
     });

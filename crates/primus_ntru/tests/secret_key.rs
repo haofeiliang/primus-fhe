@@ -4,7 +4,7 @@ use primus_integer::FheUint;
 use primus_lattice::ntru::FourierNtruOwned;
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntru::{
-    FourierNtruDecryptContext, FourierNtruEncryptContext, FourierNtruSecretKey, NtruError,
+    FourierNtruDecryptWorkspace, FourierNtruEncryptWorkspace, FourierNtruSecretKey, NtruError,
     NtruParameters, NtruSecretKey, NttNtruSecretKey, SecretKeyDistr,
 };
 use primus_ntt::{NttTable, PrimitiveRoot, UintNttTable};
@@ -170,15 +170,21 @@ where
     );
     let mut rng = StdRng::seed_from_u64(42);
     let secret_key = FourierNtruSecretKey::generate(&params, &mut fft, &mut rng).unwrap();
-    let mut encrypt_context = FourierNtruEncryptContext::new(POLY_LENGTH);
-    let mut decrypt_context = FourierNtruDecryptContext::new(POLY_LENGTH);
+    let mut encrypt_workspace = FourierNtruEncryptWorkspace::new(POLY_LENGTH);
+    let mut decrypt_workspace = FourierNtruDecryptWorkspace::new(POLY_LENGTH);
     let messages = messages::<T>();
     let message = Polynomial::new(messages.clone());
 
-    let cipher = secret_key.encrypt(&message, &params, &mut fft, &mut rng, &mut encrypt_context);
+    let cipher = secret_key.encrypt(
+        &message,
+        &params,
+        &mut fft,
+        &mut rng,
+        &mut encrypt_workspace,
+    );
     assert_eq!(
         secret_key
-            .decrypt(&cipher, &params, &mut fft, &mut decrypt_context,)
+            .decrypt(&cipher, &params, &mut fft, &mut decrypt_workspace,)
             .as_ref(),
         messages
     );
@@ -190,11 +196,11 @@ where
         &params,
         &mut fft,
         &mut rng,
-        &mut encrypt_context,
+        &mut encrypt_workspace,
     );
     assert_eq!(
         secret_key
-            .decrypt(&centered_cipher, &params, &mut fft, &mut decrypt_context,)
+            .decrypt(&centered_cipher, &params, &mut fft, &mut decrypt_workspace,)
             .as_ref(),
         messages
     );
@@ -212,11 +218,11 @@ where
         &params,
         &mut fft,
         &mut rng,
-        &mut encrypt_context,
+        &mut encrypt_workspace,
     );
     assert_eq!(
         secret_key
-            .decrypt(&encoded_cipher, &params, &mut fft, &mut decrypt_context,)
+            .decrypt(&encoded_cipher, &params, &mut fft, &mut decrypt_workspace,)
             .as_ref(),
         messages
     );
@@ -227,11 +233,11 @@ where
         &params,
         &mut fft,
         &mut rng,
-        &mut encrypt_context,
+        &mut encrypt_workspace,
     );
     assert_eq!(
         secret_key
-            .decrypt(&zero_cipher, &params, &mut fft, &mut decrypt_context,)
+            .decrypt(&zero_cipher, &params, &mut fft, &mut decrypt_workspace,)
             .as_ref(),
         vec![T::ZERO; POLY_LENGTH]
     );
@@ -240,7 +246,7 @@ where
     sum.add_assign(&cipher);
     assert_eq!(
         secret_key
-            .decrypt(&sum, &params, &mut fft, &mut decrypt_context)
+            .decrypt(&sum, &params, &mut fft, &mut decrypt_workspace)
             .as_ref(),
         doubled_messages(&messages)
     );
@@ -249,7 +255,7 @@ where
     scalar_product.mul_scalar_assign(2.0);
     assert_eq!(
         secret_key
-            .decrypt(&scalar_product, &params, &mut fft, &mut decrypt_context,)
+            .decrypt(&scalar_product, &params, &mut fft, &mut decrypt_workspace,)
             .as_ref(),
         doubled_messages(&messages)
     );
@@ -258,12 +264,22 @@ where
     monomial[1] = T::ONE;
     let mut monomial_fourier = FourierPolynomialOwned::zero(fft.fourier_length());
     fft.forward_as_integer(&monomial, monomial_fourier.as_mut());
-    let mut polynomial_product =
-        secret_key.encrypt(&message, &params, &mut fft, &mut rng, &mut encrypt_context);
+    let mut polynomial_product = secret_key.encrypt(
+        &message,
+        &params,
+        &mut fft,
+        &mut rng,
+        &mut encrypt_workspace,
+    );
     polynomial_product.mul_fourier_polynomial_assign(&monomial_fourier);
     assert_eq!(
         secret_key
-            .decrypt(&polynomial_product, &params, &mut fft, &mut decrypt_context,)
+            .decrypt(
+                &polynomial_product,
+                &params,
+                &mut fft,
+                &mut decrypt_workspace,
+            )
             .as_ref(),
         monomial_shifted_messages(&messages)
     );
@@ -486,8 +502,8 @@ fn ordinary_operations_validate_before_sampling_or_writing() {
         0.7,
     );
     let key = FourierNtruSecretKey::generate(&params, &mut fft, &mut rng).unwrap();
-    let mut encrypt = FourierNtruEncryptContext::new(POLY_LENGTH);
-    let mut decrypt = FourierNtruDecryptContext::new(POLY_LENGTH);
+    let mut encrypt = FourierNtruEncryptWorkspace::new(POLY_LENGTH);
+    let mut decrypt = FourierNtruDecryptWorkspace::new(POLY_LENGTH);
     let mut input = key.encrypt_zeros(&params, &mut fft, &mut rng, &mut encrypt);
     assert!(
         catch_unwind(AssertUnwindSafe(|| key.decrypt_to(
@@ -501,7 +517,7 @@ fn ordinary_operations_validate_before_sampling_or_writing() {
     );
     assert!(output.iter().all(|&value| value == 7));
     let before = input.as_ref().to_vec();
-    let mut short_encrypt = FourierNtruEncryptContext::new(POLY_LENGTH / 2);
+    let mut short_encrypt = FourierNtruEncryptWorkspace::new(POLY_LENGTH / 2);
     let mut rng = StdRng::seed_from_u64(91);
     let mut expected_rng = StdRng::seed_from_u64(91);
     assert!(

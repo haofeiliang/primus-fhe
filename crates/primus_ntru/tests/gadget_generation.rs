@@ -2,10 +2,11 @@ use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable};
 use primus_lattice::ntru::{FourierNtruOwned, Ntru, NttNtru};
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntru::{
-    FourierNgswCiphertext, FourierNlevCiphertext, FourierNtruDecryptContext,
-    FourierNtruEncryptContext, FourierNtruExternalProductContext, FourierNtruGadgetEncryptContext,
-    FourierNtruSecretKey, NlevParameters, NtruParameters, NttNgswCiphertext, NttNlevCiphertext,
-    NttNtruExternalProductContext, NttNtruGadgetEncryptContext, NttNtruSecretKey, SecretKeyDistr,
+    FourierNgswCiphertext, FourierNlevCiphertext, FourierNtruDecryptWorkspace,
+    FourierNtruEncryptWorkspace, FourierNtruExternalProductWorkspace,
+    FourierNtruGadgetEncryptWorkspace, FourierNtruSecretKey, NlevParameters, NtruParameters,
+    NttNgswCiphertext, NttNlevCiphertext, NttNtruExternalProductWorkspace,
+    NttNtruGadgetEncryptWorkspace, NttNtruSecretKey, SecretKeyDistr,
 };
 use primus_ntt::{NttTable, UintNttTable};
 use primus_poly::{Polynomial, PolynomialOwned};
@@ -56,12 +57,12 @@ fn decrypt_fourier_output(
     cipher: &Ntru<Vec<u32>>,
     params: &NtruParameters<u32, NativeModulus<u32>>,
     fft: &mut FftEngine<'_, RustFftTable>,
-    context: &mut FourierNtruDecryptContext,
+    workspace: &mut FourierNtruDecryptWorkspace,
 ) -> Vec<u32> {
     let mut transformed = FourierNtruOwned::zero(fft.fourier_length());
     cipher.write_fourier_form(&mut transformed, fft);
     secret_key
-        .decrypt(&transformed, params, fft, context)
+        .decrypt(&transformed, params, fft, workspace)
         .as_ref()
         .to_vec()
 }
@@ -81,7 +82,7 @@ fn ntt_nlev_generation_and_ngsw_cmux() {
     let basis = gadget_params.basis();
     let mut rng = StdRng::seed_from_u64(42);
     let secret_key = NttNtruSecretKey::generate(&params, &ntt, &mut rng).unwrap();
-    let mut gadget_context = NttNtruGadgetEncryptContext::new(POLY_LENGTH);
+    let mut gadget_workspace = NttNtruGadgetEncryptWorkspace::new(POLY_LENGTH);
 
     let mut nlev: NttNlevCiphertext<Vec<u32>> = NttNlevCiphertext::zero(gadget_params.nlev_len());
     secret_key.encrypt_nlev_constant_to(
@@ -90,7 +91,7 @@ fn ntt_nlev_generation_and_ngsw_cmux() {
         &gadget_params,
         &ntt,
         &mut rng,
-        &mut gadget_context,
+        &mut gadget_workspace,
     );
 
     for (scalar, level) in basis.scalar_iter().zip(nlev.iter_ntt_ntru(POLY_LENGTH)) {
@@ -129,7 +130,7 @@ fn ntt_nlev_generation_and_ngsw_cmux() {
         })
         .collect();
     let mut output: Ntru<Vec<u32>> = Ntru::zero(POLY_LENGTH);
-    let mut external_product_context = NttNtruExternalProductContext::new(POLY_LENGTH);
+    let mut external_product_workspace = NttNtruExternalProductWorkspace::new(POLY_LENGTH);
 
     control.cmux_to(
         &candidates[0],
@@ -138,7 +139,7 @@ fn ntt_nlev_generation_and_ngsw_cmux() {
         basis,
         modulus,
         &ntt,
-        &mut external_product_context,
+        &mut external_product_workspace,
     );
     assert_eq!(
         decrypt_ntt_output(&secret_key, &output, &params, &ntt),
@@ -152,7 +153,7 @@ fn ntt_nlev_generation_and_ngsw_cmux() {
         basis,
         modulus,
         &ntt,
-        &mut external_product_context,
+        &mut external_product_workspace,
     );
     assert_eq!(
         decrypt_ntt_output(&secret_key, &output, &params, &ntt),
@@ -180,7 +181,7 @@ fn ntt_nlev_generation_and_ngsw_cmux() {
             basis,
             modulus,
             &ntt,
-            &mut external_product_context,
+            &mut external_product_workspace,
         );
         assert_eq!(
             decrypt_ntt_output(&secret_key, &output, &params, &ntt),
@@ -204,8 +205,8 @@ fn fourier_nlev_generation_and_ngsw_cmux() {
     let basis = gadget_params.basis();
     let mut rng = StdRng::seed_from_u64(42);
     let secret_key = FourierNtruSecretKey::generate(&params, &mut fft, &mut rng).unwrap();
-    let mut gadget_context = FourierNtruGadgetEncryptContext::new(POLY_LENGTH);
-    let mut decrypt_context = FourierNtruDecryptContext::new(POLY_LENGTH);
+    let mut gadget_workspace = FourierNtruGadgetEncryptWorkspace::new(POLY_LENGTH);
+    let mut decrypt_workspace = FourierNtruDecryptWorkspace::new(POLY_LENGTH);
 
     let mut nlev: FourierNlevCiphertext<Vec<Complex64>> =
         FourierNlevCiphertext::zero(gadget_params.fourier_nlev_len());
@@ -215,7 +216,7 @@ fn fourier_nlev_generation_and_ngsw_cmux() {
         &gadget_params,
         &mut fft,
         &mut rng,
-        &mut gadget_context,
+        &mut gadget_workspace,
     );
 
     for (scalar, level) in basis
@@ -223,7 +224,7 @@ fn fourier_nlev_generation_and_ngsw_cmux() {
         .zip(nlev.iter_ntru(fft.fourier_length()))
     {
         let mut phase = PolynomialOwned::zero(POLY_LENGTH);
-        secret_key.phase_to(&level, &mut phase, &mut fft, &mut decrypt_context);
+        secret_key.phase_to(&level, &mut phase, &mut fft, &mut decrypt_workspace);
         assert!(native_distance(phase.as_ref()[0], scalar) <= 8);
         assert!(
             phase.as_ref()[1..]
@@ -240,11 +241,11 @@ fn fourier_nlev_generation_and_ngsw_cmux() {
         &gadget_params,
         &mut fft,
         &mut rng,
-        &mut gadget_context,
+        &mut gadget_workspace,
     );
 
     let messages = [plaintext(0), plaintext(2), plaintext(5)];
-    let mut encrypt_context = FourierNtruEncryptContext::new(POLY_LENGTH);
+    let mut encrypt_workspace = FourierNtruEncryptWorkspace::new(POLY_LENGTH);
     let mut candidates = Vec::with_capacity(messages.len());
     for message in &messages {
         let input_fourier = secret_key.encrypt(
@@ -252,14 +253,14 @@ fn fourier_nlev_generation_and_ngsw_cmux() {
             &params,
             &mut fft,
             &mut rng,
-            &mut encrypt_context,
+            &mut encrypt_workspace,
         );
         let mut input: Ntru<Vec<u32>> = Ntru::zero(POLY_LENGTH);
         input_fourier.write_torus_form(&mut input, &mut fft);
         candidates.push(input);
     }
     let mut output: Ntru<Vec<u32>> = Ntru::zero(POLY_LENGTH);
-    let mut external_product_context = FourierNtruExternalProductContext::new(POLY_LENGTH);
+    let mut external_product_workspace = FourierNtruExternalProductWorkspace::new(POLY_LENGTH);
 
     control.cmux_to(
         &candidates[0],
@@ -267,7 +268,7 @@ fn fourier_nlev_generation_and_ngsw_cmux() {
         &mut output,
         basis,
         &mut fft,
-        &mut external_product_context,
+        &mut external_product_workspace,
     );
     assert_eq!(
         decrypt_fourier_output(
@@ -275,7 +276,7 @@ fn fourier_nlev_generation_and_ngsw_cmux() {
             &output,
             &params,
             &mut fft,
-            &mut decrypt_context,
+            &mut decrypt_workspace,
         ),
         messages[1]
     );
@@ -286,7 +287,7 @@ fn fourier_nlev_generation_and_ngsw_cmux() {
         &mut output,
         basis,
         &mut fft,
-        &mut external_product_context,
+        &mut external_product_workspace,
     );
     assert_eq!(
         decrypt_fourier_output(
@@ -294,7 +295,7 @@ fn fourier_nlev_generation_and_ngsw_cmux() {
             &output,
             &params,
             &mut fft,
-            &mut decrypt_context,
+            &mut decrypt_workspace,
         ),
         shifted_plaintext(&messages[0])
     );
@@ -308,7 +309,7 @@ fn fourier_nlev_generation_and_ngsw_cmux() {
             &gadget_params,
             &mut fft,
             &mut rng,
-            &mut gadget_context,
+            &mut gadget_workspace,
         );
 
         FourierNgswCiphertext::cmux_k_to(
@@ -320,7 +321,7 @@ fn fourier_nlev_generation_and_ngsw_cmux() {
             &mut output,
             basis,
             &mut fft,
-            &mut external_product_context,
+            &mut external_product_workspace,
         );
         assert_eq!(
             decrypt_fourier_output(
@@ -328,7 +329,7 @@ fn fourier_nlev_generation_and_ngsw_cmux() {
                 &output,
                 &params,
                 &mut fft,
-                &mut decrypt_context,
+                &mut decrypt_workspace,
             ),
             *expected
         );

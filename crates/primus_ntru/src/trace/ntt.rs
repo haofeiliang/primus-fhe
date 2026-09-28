@@ -10,24 +10,24 @@ use primus_reduce::{FieldContext, ReduceNeg};
 
 use super::kernels;
 use crate::{
-    NlevParameters, NtruCiphertext, NtruSecretKey, NttNtruAutomorphismContext,
-    NttNtruAutomorphismKey, NttNtruGadgetEncryptContext, NttNtruSecretKey,
+    NlevParameters, NtruCiphertext, NtruSecretKey, NttNtruAutomorphismKey,
+    NttNtruAutomorphismWorkspace, NttNtruGadgetEncryptWorkspace, NttNtruSecretKey,
 };
 
 /// Reusable coefficient buffers for NTT-key trace, projection and expansion.
-pub struct NttNtruTraceContext<T: FheUint> {
+pub struct NttNtruTraceWorkspace<T: FheUint> {
     automorphism_output: NtruCiphertext<Vec<T>>,
-    automorphism: NttNtruAutomorphismContext<T>,
+    automorphism: NttNtruAutomorphismWorkspace<T>,
 }
 
-impl<T: FheUint> NttNtruTraceContext<T> {
+impl<T: FheUint> NttNtruTraceWorkspace<T> {
     /// Allocates workspace for one polynomial length.
     ///
     /// # Panics
-    /// Inherits [`NttNtruAutomorphismContext::new`]'s supported-length check.
+    /// Inherits [`NttNtruAutomorphismWorkspace::new`]'s supported-length check.
     #[must_use]
     pub fn new(poly_length: usize) -> Self {
-        let automorphism = NttNtruAutomorphismContext::new(poly_length);
+        let automorphism = NttNtruAutomorphismWorkspace::new(poly_length);
         Self {
             automorphism_output: NtruCiphertext::zero(poly_length),
             automorphism,
@@ -63,7 +63,7 @@ impl<T: FheUint> NttNtruTraceKey<T> {
         parameters: &NlevParameters<T, M>,
         ntt: &Table,
         rng: &mut R,
-        context: &mut NttNtruGadgetEncryptContext<T>,
+        workspace: &mut NttNtruGadgetEncryptWorkspace<T>,
     ) -> Self
     where
         M: FieldContext<T>,
@@ -86,7 +86,7 @@ impl<T: FheUint> NttNtruTraceKey<T> {
                     parameters,
                     ntt,
                     rng,
-                    context,
+                    workspace,
                 )
             })
             .collect();
@@ -138,14 +138,14 @@ impl<T: FheUint> NttNtruTraceKey<T> {
         output: &mut NtruCiphertext<B>,
         modulus: M,
         ntt: &Table,
-        context: &mut NttNtruTraceContext<T>,
+        workspace: &mut NttNtruTraceWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
         A: Data<Elem = T>,
         B: DataMut<Elem = T>,
     {
-        self.apply_partial_to(input, 1, output, modulus, ntt, context);
+        self.apply_partial_to(input, 1, output, modulus, ntt, workspace);
     }
 
     /// Retains `r=retained_coefficient_count` equally spaced message positions.
@@ -165,7 +165,7 @@ impl<T: FheUint> NttNtruTraceKey<T> {
         output: &mut NtruCiphertext<B>,
         modulus: M,
         ntt: &Table,
-        context: &mut NttNtruTraceContext<T>,
+        workspace: &mut NttNtruTraceWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
@@ -173,9 +173,9 @@ impl<T: FheUint> NttNtruTraceKey<T> {
         B: DataMut<Elem = T>,
     {
         let levels = kernels::check_count(self.poly_length(), retained_coefficient_count);
-        self.check_io(input.as_ref(), output.as_ref(), modulus, ntt, context);
+        self.check_io(input.as_ref(), output.as_ref(), modulus, ntt, workspace);
         output.as_mut().copy_from_slice(input.as_ref());
-        self.trace_kernel_assign::<_, _, false>(output.as_mut(), levels, modulus, ntt, context);
+        self.trace_kernel_assign::<_, _, false>(output.as_mut(), levels, modulus, ntt, workspace);
     }
 
     /// Applies full normalized reverse trace, targeting the constant message `M[0]`.
@@ -186,14 +186,14 @@ impl<T: FheUint> NttNtruTraceKey<T> {
         output: &mut NtruCiphertext<B>,
         modulus: M,
         ntt: &Table,
-        context: &mut NttNtruTraceContext<T>,
+        workspace: &mut NttNtruTraceWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
         A: Data<Elem = T>,
         B: DataMut<Elem = T>,
     {
-        self.apply_reverse_partial_to(input, 1, output, modulus, ntt, context);
+        self.apply_reverse_partial_to(input, 1, output, modulus, ntt, workspace);
     }
 
     /// Applies normalized reverse trace to `r=retained_coefficient_count` positions.
@@ -220,7 +220,7 @@ impl<T: FheUint> NttNtruTraceKey<T> {
         output: &mut NtruCiphertext<B>,
         modulus: M,
         ntt: &Table,
-        context: &mut NttNtruTraceContext<T>,
+        workspace: &mut NttNtruTraceWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
@@ -228,9 +228,9 @@ impl<T: FheUint> NttNtruTraceKey<T> {
         B: DataMut<Elem = T>,
     {
         let levels = kernels::check_count(self.poly_length(), retained_coefficient_count);
-        self.check_io(input.as_ref(), output.as_ref(), modulus, ntt, context);
+        self.check_io(input.as_ref(), output.as_ref(), modulus, ntt, workspace);
         output.as_mut().copy_from_slice(input.as_ref());
-        self.trace_kernel_assign::<_, _, true>(output.as_mut(), levels, modulus, ntt, context);
+        self.trace_kernel_assign::<_, _, true>(output.as_mut(), levels, modulus, ntt, workspace);
     }
 
     /// Projects one coefficient to the constant position using a monomial shift
@@ -243,14 +243,14 @@ impl<T: FheUint> NttNtruTraceKey<T> {
         output: &mut NtruCiphertext<B>,
         modulus: M,
         ntt: &Table,
-        context: &mut NttNtruTraceContext<T>,
+        workspace: &mut NttNtruTraceWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
         A: Data<Elem = T>,
         B: DataMut<Elem = T>,
     {
-        self.project_coefficients_to(input, &[index], output.as_mut(), modulus, ntt, context);
+        self.project_coefficients_to(input, &[index], output.as_mut(), modulus, ntt, workspace);
     }
 
     /// Projects selected coefficients into consecutive NTRU blocks in `indices`
@@ -271,7 +271,7 @@ impl<T: FheUint> NttNtruTraceKey<T> {
         output: &mut [T],
         modulus: M,
         ntt: &Table,
-        context: &mut NttNtruTraceContext<T>,
+        workspace: &mut NttNtruTraceWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
@@ -287,7 +287,7 @@ impl<T: FheUint> NttNtruTraceKey<T> {
             output,
             modulus,
             ntt,
-            context,
+            workspace,
         );
     }
 
@@ -308,7 +308,7 @@ impl<T: FheUint> NttNtruTraceKey<T> {
         output: &mut [T],
         modulus: M,
         ntt: &Table,
-        context: &mut NttNtruTraceContext<T>,
+        workspace: &mut NttNtruTraceWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
@@ -318,7 +318,7 @@ impl<T: FheUint> NttNtruTraceKey<T> {
             count <= self.poly_length(),
             "projection prefix exceeds polynomial length"
         );
-        self.project_indices_to(input, 0..count, output, modulus, ntt, context);
+        self.project_indices_to(input, 0..count, output, modulus, ntt, workspace);
     }
 
     /// Projects `0..count` with caller-owned coefficient and external-product scratch.
@@ -343,7 +343,7 @@ impl<T: FheUint> NttNtruTraceKey<T> {
         modulus: M,
         ntt: &Table,
         scratch: &mut [T],
-        external_product: &mut crate::NttNtruExternalProductContext<T>,
+        external_product: &mut crate::NttNtruExternalProductWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
@@ -408,13 +408,20 @@ impl<T: FheUint> NttNtruTraceKey<T> {
         output: &mut [T],
         modulus: M,
         ntt: &Table,
-        context: &mut NttNtruTraceContext<T>,
+        workspace: &mut NttNtruTraceWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
         A: Data<Elem = T>,
     {
-        self.check_batch(input.as_ref(), indices.len(), output, modulus, ntt, context);
+        self.check_batch(
+            input.as_ref(),
+            indices.len(),
+            output,
+            modulus,
+            ntt,
+            workspace,
+        );
         let n = self.poly_length();
         let exponents = PowOf2Modulus::new(2 * n);
         for (index, output) in indices.zip(output.chunks_exact_mut(n)) {
@@ -428,7 +435,7 @@ impl<T: FheUint> NttNtruTraceKey<T> {
                 self.automorphism_count(),
                 modulus,
                 ntt,
-                context,
+                workspace,
             );
         }
     }
@@ -442,7 +449,7 @@ impl<T: FheUint> NttNtruTraceKey<T> {
         output: &mut [T],
         modulus: M,
         ntt: &Table,
-        context: &mut NttNtruTraceContext<T>,
+        workspace: &mut NttNtruTraceWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
@@ -454,7 +461,7 @@ impl<T: FheUint> NttNtruTraceKey<T> {
             output,
             modulus,
             ntt,
-            context,
+            workspace,
         );
     }
 
@@ -481,23 +488,23 @@ impl<T: FheUint> NttNtruTraceKey<T> {
         output: &mut [T],
         modulus: M,
         ntt: &Table,
-        context: &mut NttNtruTraceContext<T>,
+        workspace: &mut NttNtruTraceWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
         A: Data<Elem = T>,
     {
         kernels::check_count(self.poly_length(), count);
-        self.check_batch(input.as_ref(), count, output, modulus, ntt, context);
+        self.check_batch(input.as_ref(), count, output, modulus, ntt, workspace);
         if count == 1 {
             output.copy_from_slice(input.as_ref());
             return;
         }
         let factor = self.inverse_expansion_lengths[count.trailing_zeros() as usize];
-        let NttNtruTraceContext {
+        let NttNtruTraceWorkspace {
             automorphism_output,
             automorphism,
-        } = context;
+        } = workspace;
         kernels::expand_to(
             input.as_ref(),
             output,
@@ -522,9 +529,9 @@ impl<T: FheUint> NttNtruTraceKey<T> {
         output: &[T],
         modulus: M,
         ntt: &Table,
-        context: &NttNtruTraceContext<T>,
+        workspace: &NttNtruTraceWorkspace<T>,
     ) {
-        self.check_batch(input, 1, output, modulus, ntt, context);
+        self.check_batch(input, 1, output, modulus, ntt, workspace);
     }
 
     fn check_batch<M: FieldContext<T>, Table: NttTable<ValueT = T>>(
@@ -534,7 +541,7 @@ impl<T: FheUint> NttNtruTraceKey<T> {
         output: &[T],
         modulus: M,
         ntt: &Table,
-        context: &NttNtruTraceContext<T>,
+        workspace: &NttNtruTraceWorkspace<T>,
     ) {
         assert_eq!(
             input.len(),
@@ -548,7 +555,7 @@ impl<T: FheUint> NttNtruTraceKey<T> {
                 .expect("trace output length overflow"),
             "trace output length mismatch"
         );
-        self.automorphism_keys[0].assert_compatible(modulus, ntt, &context.automorphism);
+        self.automorphism_keys[0].assert_compatible(modulus, ntt, &workspace.automorphism);
     }
 
     /// Requires checked operands/resources; all keys share one immutable domain.
@@ -558,12 +565,12 @@ impl<T: FheUint> NttNtruTraceKey<T> {
         levels: usize,
         modulus: M,
         ntt: &Table,
-        context: &mut NttNtruTraceContext<T>,
+        workspace: &mut NttNtruTraceWorkspace<T>,
     ) {
-        let NttNtruTraceContext {
+        let NttNtruTraceWorkspace {
             automorphism_output,
             automorphism,
-        } = context;
+        } = workspace;
         kernels::trace_assign::<_, _, _, _, REVERSE>(
             output,
             levels,

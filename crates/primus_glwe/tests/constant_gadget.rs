@@ -1,8 +1,8 @@
 //! Constant batches preserve polynomial encryption and RNG consumption exactly.
 use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable, TfheFftTable, TorusFftValue};
 use primus_glwe::{
-    FourierGadgetEncryptContext, FourierGgswCiphertext, FourierGlweSecretKey, GlevParameters,
-    GlweParameters, NttGadgetEncryptContext, NttGlweSecretKey, SecretKeyDistr,
+    FourierGgswCiphertext, FourierGlweGadgetEncryptWorkspace, FourierGlweSecretKey, GlevParameters,
+    GlweParameters, NttGlweGadgetEncryptWorkspace, NttGlweSecretKey, SecretKeyDistr,
 };
 use primus_integer::FheUint;
 use primus_lattice::{
@@ -38,11 +38,11 @@ fn check_ntt_batch<T: FheUint, Table: NttTable<ValueT = T>>() {
     let table = Table::new(n.trailing_zeros(), modulus).unwrap();
     let mut rng = StdRng::seed_from_u64(42);
     let (_, key) = NttGlweSecretKey::generate_pair(&glwe, &table, &mut rng);
-    let mut context = NttGadgetEncryptContext::new(params.size());
-    let mut single_context = NttGadgetEncryptContext::new(params.size());
+    let mut workspace = NttGlweGadgetEncryptWorkspace::new(params.size());
+    let mut single_workspace = NttGlweGadgetEncryptWorkspace::new(params.size());
     // Coefficient output only needs the polynomial scratch, independent of levels.
-    let mut coefficient_context =
-        NttGadgetEncryptContext::new(GadgetSize::new(params.glwe_size(), 1));
+    let mut coefficient_workspace =
+        NttGlweGadgetEncryptWorkspace::new(GadgetSize::new(params.glwe_size(), 1));
     // Include empty input, binary BSK inputs and general canonical constants.
     let constants = [
         T::ZERO,
@@ -62,7 +62,7 @@ fn check_ntt_batch<T: FheUint, Table: NttTable<ValueT = T>>() {
             &params,
             &table,
             &mut rng,
-            &mut context,
+            &mut workspace,
         );
         let mut message = PolynomialOwned::zero(n);
         for (&constant, chunk) in constants
@@ -76,7 +76,7 @@ fn check_ntt_batch<T: FheUint, Table: NttTable<ValueT = T>>() {
                 &params,
                 &table,
                 &mut single_rng,
-                &mut single_context,
+                &mut single_workspace,
             );
         }
         assert_eq!(batch, singles);
@@ -91,7 +91,7 @@ fn check_ntt_batch<T: FheUint, Table: NttTable<ValueT = T>>() {
             &params,
             &table,
             &mut coefficient_rng,
-            &mut coefficient_context,
+            &mut coefficient_workspace,
         );
         for block in singles.chunks_exact_mut(params.ggsw_len()) {
             let _ = NttGgsw::new(block).into_coeff_form(&table);
@@ -107,7 +107,7 @@ fn check_ntt_batch<T: FheUint, Table: NttTable<ValueT = T>>() {
         (2 * params.ggsw_len() + 1, true, n),
         (2 * params.ggsw_len(), true, 2 * n),
     ] {
-        let mut context = NttGadgetEncryptContext::new(GadgetSize::new(
+        let mut workspace = NttGlweGadgetEncryptWorkspace::new(GadgetSize::new(
             GlweSize::new(2, scratch_length),
             params.size().decompose_length(),
         ));
@@ -123,7 +123,7 @@ fn check_ntt_batch<T: FheUint, Table: NttTable<ValueT = T>>() {
                         &params,
                         &table,
                         &mut rng,
-                        &mut context,
+                        &mut workspace,
                     );
                 } else {
                     key.encrypt_ggsw_constant_batch_to(
@@ -132,7 +132,7 @@ fn check_ntt_batch<T: FheUint, Table: NttTable<ValueT = T>>() {
                         &params,
                         &table,
                         &mut rng,
-                        &mut context,
+                        &mut workspace,
                     );
                 }
             }))
@@ -166,7 +166,7 @@ fn check_fourier_batch<T: TorusFftValue, Table: FftTable>() {
     let mut fft = FftEngine::new(&table);
     let mut rng = StdRng::seed_from_u64(42);
     let (_, key) = FourierGlweSecretKey::generate_pair(&glwe, &mut fft, &mut rng);
-    let mut context = FourierGadgetEncryptContext::new(params.size());
+    let mut workspace = FourierGlweGadgetEncryptWorkspace::new(params.size());
     let sentinel = Complex64::new(7.0, 9.0);
     // Repeated constants reuse prepared levels; transitions must refresh them.
     let constants = [
@@ -196,7 +196,7 @@ fn check_fourier_batch<T: TorusFftValue, Table: FftTable>() {
                 &params,
                 &mut fft,
                 &mut reference_rng,
-                &mut context,
+                &mut workspace,
             );
         }
         // A preceding nonconstant encryption leaves a nonzero workspace tail.
@@ -208,7 +208,7 @@ fn check_fourier_batch<T: TorusFftValue, Table: FftTable>() {
                 &params,
                 &mut fft,
                 &mut rng,
-                &mut context,
+                &mut workspace,
             );
         }
         key.encrypt_ggsw_constant_batch_to(
@@ -217,7 +217,7 @@ fn check_fourier_batch<T: TorusFftValue, Table: FftTable>() {
             &params,
             &mut fft,
             &mut actual_rng,
-            &mut context,
+            &mut workspace,
         );
         assert_eq!(actual, expected);
         let next_random = reference_rng.next_u64();
@@ -232,7 +232,7 @@ fn check_fourier_batch<T: TorusFftValue, Table: FftTable>() {
             &params,
             &mut fft,
             &mut coefficient_rng,
-            &mut context,
+            &mut workspace,
             &mut scratch,
         );
         let mut expected_coefficients = vec![T::ZERO; params.ggsw_len()];
@@ -258,7 +258,7 @@ fn check_fourier_batch<T: TorusFftValue, Table: FftTable>() {
         (&[][..], 0, wrong_levels.size()),
     ] {
         let mut output = vec![sentinel; len];
-        let mut context = FourierGadgetEncryptContext::new(size);
+        let mut workspace = FourierGlweGadgetEncryptWorkspace::new(size);
         let mut rng = StdRng::seed_from_u64(44);
         let mut expected_rng = StdRng::seed_from_u64(44);
         assert!(
@@ -269,7 +269,7 @@ fn check_fourier_batch<T: TorusFftValue, Table: FftTable>() {
                     &params,
                     &mut fft,
                     &mut rng,
-                    &mut context,
+                    &mut workspace,
                 );
             }))
             .is_err()
@@ -296,7 +296,7 @@ fn check_fourier_batch<T: TorusFftValue, Table: FftTable>() {
     ] {
         let mut output = vec![T::MAX; len];
         let mut scratch = vec![sentinel; scratch_len];
-        let mut context = FourierGadgetEncryptContext::new(size);
+        let mut workspace = FourierGlweGadgetEncryptWorkspace::new(size);
         let mut rng = StdRng::seed_from_u64(44);
         let mut expected_rng = StdRng::seed_from_u64(44);
         assert!(
@@ -307,7 +307,7 @@ fn check_fourier_batch<T: TorusFftValue, Table: FftTable>() {
                     &params,
                     &mut fft,
                     &mut rng,
-                    &mut context,
+                    &mut workspace,
                     &mut scratch,
                 );
             }))

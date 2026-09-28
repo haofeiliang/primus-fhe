@@ -7,11 +7,11 @@ use zeroize::{Zeroize, ZeroizeOnDrop};
 /// Reusable coefficient buffer for NTT NLev/NGSW generation.
 /// Sensitive message coefficients are securely erased on drop.
 /// Explicit zeroization preserves buffer lengths so the workspace can be reused.
-pub struct NttNtruGadgetEncryptContext<T: FheUint> {
+pub struct NttNtruGadgetEncryptWorkspace<T: FheUint> {
     pub(super) encoded: PolynomialOwned<T>,
 }
 
-impl<T: FheUint> NttNtruGadgetEncryptContext<T> {
+impl<T: FheUint> NttNtruGadgetEncryptWorkspace<T> {
     /// Creates a generation workspace for polynomials of length `poly_length`.
     pub fn new(poly_length: usize) -> Self {
         debug_assert!(poly_length >= 2 && poly_length.is_power_of_two());
@@ -21,7 +21,7 @@ impl<T: FheUint> NttNtruGadgetEncryptContext<T> {
     }
 }
 
-impl<T: FheUint> Zeroize for NttNtruGadgetEncryptContext<T> {
+impl<T: FheUint> Zeroize for NttNtruGadgetEncryptWorkspace<T> {
     fn zeroize(&mut self) {
         // Vec::zeroize clears the length; explicit workspace erasure must keep it.
         self.encoded.as_mut().iter_mut().zeroize();
@@ -29,9 +29,9 @@ impl<T: FheUint> Zeroize for NttNtruGadgetEncryptContext<T> {
     }
 }
 
-impl<T: FheUint> ZeroizeOnDrop for NttNtruGadgetEncryptContext<T> {}
+impl<T: FheUint> ZeroizeOnDrop for NttNtruGadgetEncryptWorkspace<T> {}
 
-impl<T: FheUint> Drop for NttNtruGadgetEncryptContext<T> {
+impl<T: FheUint> Drop for NttNtruGadgetEncryptWorkspace<T> {
     fn drop(&mut self) {
         self.zeroize();
     }

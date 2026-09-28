@@ -1,5 +1,5 @@
 use primus_fft::{FftEngine, FftTable, TorusFftValue};
-use primus_glwe::{FourierGlweKeySwitchingContext, GlweCiphertext};
+use primus_glwe::{FourierGlweKeySwitchingWorkspace, GlweCiphertext};
 use primus_lwe::LweCiphertext;
 use primus_poly::Polynomial;
 use primus_tfhe::{
@@ -8,8 +8,8 @@ use primus_tfhe::{
 use primus_tfhe_glwe::PbsOrder;
 
 use crate::{
-    BootstrappingKey, FourierGlweBlindRotationContext, FourierGlweBootstrappingKey, ServerKey,
-    SparseGlweBlindRotationContext, SparseGlweBootstrappingKey, TfheContext,
+    BootstrappingKey, FourierGlweBlindRotationWorkspace, FourierGlweBootstrappingKey, ServerKey,
+    SparseGlweBlindRotationWorkspace, SparseGlweBootstrappingKey, TfheContext,
     error::TfheEvaluationError,
 };
 
@@ -30,7 +30,7 @@ where
 }
 
 struct KeySwitchingWorkspace<T: TorusFftValue> {
-    context: FourierGlweKeySwitchingContext<T>,
+    context: FourierGlweKeySwitchingWorkspace<T>,
     switched: GlweCiphertext<Vec<T>>,
     small_lwe: LweCiphertext<T>,
 }
@@ -38,7 +38,7 @@ struct KeySwitchingWorkspace<T: TorusFftValue> {
 impl<T: TorusFftValue> KeySwitchingWorkspace<T> {
     fn new(parameters: &crate::TfheParameters<T>) -> Self {
         Self {
-            context: FourierGlweKeySwitchingContext::new(
+            context: FourierGlweKeySwitchingWorkspace::new(
                 parameters.glwe_key_switching().output().glwe_size(),
             ),
             switched: GlweCiphertext::zero(parameters.glwe_key_switching().output().glwe_len()),
@@ -52,11 +52,11 @@ impl<T: TorusFftValue> KeySwitchingWorkspace<T> {
 enum BlindRotation<'a, T: TorusFftValue> {
     Classic {
         key: &'a FourierGlweBootstrappingKey<T, primus_modulus::NativeModulus<T>>,
-        scratch: FourierGlweBlindRotationContext<T>,
+        scratch: FourierGlweBlindRotationWorkspace<T>,
     },
     Sparse {
         key: &'a SparseGlweBootstrappingKey<T>,
-        scratch: SparseGlweBlindRotationContext<T>,
+        scratch: SparseGlweBlindRotationWorkspace<T>,
     },
 }
 
@@ -148,11 +148,11 @@ where
             blind_rotation: match server_key.bootstrapping_key() {
                 BootstrappingKey::Classic(key) => BlindRotation::Classic {
                     key,
-                    scratch: FourierGlweBlindRotationContext::new(key),
+                    scratch: FourierGlweBlindRotationWorkspace::new(key),
                 },
                 BootstrappingKey::Sparse(key) => BlindRotation::Sparse {
                     key,
-                    scratch: SparseGlweBlindRotationContext::new(key),
+                    scratch: SparseGlweBlindRotationWorkspace::new(key),
                 },
             },
             key_switching: with_key_switching.then(|| KeySwitchingWorkspace::new(parameters)),
@@ -164,13 +164,13 @@ where
         &mut self,
         size: primus_lattice::GadgetSize,
         operation: impl FnOnce(
-            &mut primus_lattice::context::FourierGlweExternalProductContext<T>,
+            &mut primus_lattice::workspace::FourierGlweExternalProductWorkspace<T>,
             &mut FftEngine<'a, Table>,
         ) -> R,
     ) -> R {
         let fft = &mut self.fft;
         let operation =
-            |scratch: &mut primus_lattice::context::FourierGlweExternalProductContext<T>| {
+            |scratch: &mut primus_lattice::workspace::FourierGlweExternalProductWorkspace<T>| {
                 operation(scratch, fft)
             };
         match &mut self.blind_rotation {

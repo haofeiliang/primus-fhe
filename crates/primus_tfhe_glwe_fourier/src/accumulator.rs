@@ -4,7 +4,7 @@ use crate::{ClientKey, TfheContext, TfheKeyError};
 use primus_data::{Data, DataMut};
 use primus_fft::{Complex64, FftEngine, FftTable, TorusFftValue};
 use primus_glwe::{
-    FourierGlweCiphertext, FourierGlweDecryptContext, FourierGlweEncryptContext,
+    FourierGlweCiphertext, FourierGlweDecryptWorkspace, FourierGlweEncryptWorkspace,
     FourierGlweSecretKey, GlweCiphertext,
 };
 use primus_poly::Polynomial;
@@ -25,8 +25,8 @@ where
     secret: FourierGlweSecretKey,
     transformed: FourierGlweCiphertext<Vec<Complex64>>,
     fft: FftEngine<'a, Table>,
-    encrypt: FourierGlweEncryptContext<T>,
-    decrypt: FourierGlweDecryptContext,
+    encrypt: FourierGlweEncryptWorkspace<T>,
+    decrypt: FourierGlweDecryptWorkspace,
 }
 
 impl<'a, T, Table> AccumulatorClient<'a, T, Table>
@@ -49,8 +49,8 @@ where
             secret,
             transformed: FourierGlweCiphertext::zero(parameters.size().fourier_glwe_len()),
             fft,
-            encrypt: FourierGlweEncryptContext::new(parameters.poly_length()),
-            decrypt: FourierGlweDecryptContext::new(parameters.poly_length()),
+            encrypt: FourierGlweEncryptWorkspace::new(parameters.poly_length()),
+            decrypt: FourierGlweDecryptWorkspace::new(parameters.poly_length()),
         })
     }
 

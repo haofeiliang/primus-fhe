@@ -3,11 +3,12 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable, TfheFftTable};
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntru::{
-    FourierNgswCiphertext, FourierNlevCiphertext, FourierNtruEncryptContext,
-    FourierNtruExternalProductContext, FourierNtruGadgetEncryptContext, FourierNtruSchemeSwitchKey,
-    FourierNtruSecretKey, NlevCiphertext, NlevParameters, NtruCiphertext, NtruParameters,
-    NtruSecretKey, NttNgswCiphertext, NttNlevCiphertext, NttNtruExternalProductContext,
-    NttNtruGadgetEncryptContext, NttNtruSchemeSwitchKey, NttNtruSecretKey, SecretKeyDistr,
+    FourierNgswCiphertext, FourierNlevCiphertext, FourierNtruEncryptWorkspace,
+    FourierNtruExternalProductWorkspace, FourierNtruGadgetEncryptWorkspace,
+    FourierNtruSchemeSwitchKey, FourierNtruSecretKey, NlevCiphertext, NlevParameters,
+    NtruCiphertext, NtruParameters, NtruSecretKey, NttNgswCiphertext, NttNlevCiphertext,
+    NttNtruExternalProductWorkspace, NttNtruGadgetEncryptWorkspace, NttNtruSchemeSwitchKey,
+    NttNtruSecretKey, SecretKeyDistr,
 };
 use primus_ntt::{NttTable, U64NttTable};
 use primus_poly::Polynomial;
@@ -74,8 +75,8 @@ fn ntt_scheme_switch_has_independent_bases_and_produces_cmux_controls() {
     let secret = secret();
     let key = NttNtruSecretKey::try_from_coeff_secret_key(&secret, modulus, &table).unwrap();
     let mut rng = StdRng::seed_from_u64(117);
-    let mut generation = NttNtruGadgetEncryptContext::new(N);
-    let mut scratch = NttNtruExternalProductContext::new(N);
+    let mut generation = NttNtruGadgetEncryptWorkspace::new(N);
+    let mut scratch = NttNtruExternalProductWorkspace::new(N);
     let messages = messages(Q.into());
     let operands = messages.each_ref().map(|message| {
         let mut transformed = primus_ntru::NttNtruCiphertext::<Vec<u64>>::zero(N);
@@ -153,7 +154,7 @@ fn ntt_scheme_switch_has_independent_bases_and_produces_cmux_controls() {
                 );
             }
             output.as_mut().fill(7);
-            let mut wrong = NttNtruExternalProductContext::new(2 * N);
+            let mut wrong = NttNtruExternalProductWorkspace::new(2 * N);
             assert!(
                 catch_unwind(AssertUnwindSafe(|| ss.apply_to(
                     &input,
@@ -215,9 +216,9 @@ fn fourier<Table: FftTable>() {
     let secret = secret();
     let key = FourierNtruSecretKey::try_from_coeff_secret_key(&secret, &mut fft).unwrap();
     let mut rng = StdRng::seed_from_u64(119);
-    let mut generation = FourierNtruGadgetEncryptContext::new(N);
-    let mut encrypt = FourierNtruEncryptContext::new(N);
-    let mut scratch = FourierNtruExternalProductContext::new(N);
+    let mut generation = FourierNtruGadgetEncryptWorkspace::new(N);
+    let mut encrypt = FourierNtruEncryptWorkspace::new(N);
+    let mut scratch = FourierNtruExternalProductWorkspace::new(N);
     let messages = messages(q);
     let operands = messages.each_ref().map(|message| {
         let mut transformed = primus_ntru::FourierNtruCiphertext::<Vec<Complex64>>::zero(N / 2);
@@ -289,7 +290,7 @@ fn fourier<Table: FftTable>() {
                 assert_phase(row.as_ref(), messages[bit as usize].as_ref(), q, q / 2048);
             }
             output.as_mut().fill(Complex64::new(7.0, 0.0));
-            let mut wrong = FourierNtruExternalProductContext::new(2 * N);
+            let mut wrong = FourierNtruExternalProductWorkspace::new(2 * N);
             assert!(
                 catch_unwind(AssertUnwindSafe(|| ss.apply_to(
                     &input,

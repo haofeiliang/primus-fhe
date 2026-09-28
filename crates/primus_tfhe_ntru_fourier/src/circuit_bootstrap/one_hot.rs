@@ -92,8 +92,28 @@ where
 
     /// Returns the shared CBS bases and accumulator layouts.
     #[must_use]
-    pub fn parameters(&self) -> &CircuitBootstrapParameters<T> {
+    pub fn parameters(&self) -> &'a CircuitBootstrapParameters<T> {
         self.circuit_key.parameters()
+    }
+
+    /// Borrows the FFT engine and external-product workspace already used by one-hot CBS.
+    /// Serial table products can reuse them between calls without allocation or reset.
+    /// Every one-hot call overwrites its scratch before reading it.
+    ///
+    /// # Correctness
+    /// Retain the engine's table identity and both workspaces' polynomial lengths.
+    /// These buffers do not establish a product's key, basis or scale compatibility.
+    #[must_use]
+    pub fn external_product_workspaces(
+        &mut self,
+    ) -> (
+        &mut primus_fft::FftEngine<'a, Table>,
+        &mut primus_ntru::FourierNtruExternalProductWorkspace<T>,
+    ) {
+        (
+            &mut self.pbs.fft,
+            self.pbs.blind_rotation.rotation.external_product(),
+        )
     }
 
     /// Allocates M*L*N coefficients for all NLEV selectors. Reuse with [`Self::one_hot_nlev_to`].

@@ -1,5 +1,5 @@
 //! Coefficient-domain trace, projection and related-key packing evaluation.
-use super::{FourierGlweTraceContext, FourierGlweTraceKey, kernels};
+use super::{FourierGlweTraceKey, FourierGlweTraceWorkspace, kernels};
 use primus_data::{Data, DataMut};
 use primus_fft::{FftEngine, FftTable, TorusFftValue};
 use primus_integer::DivRem;
@@ -9,12 +9,12 @@ use primus_reduce::ReduceNeg;
 
 /// Reusable storage for packing a fixed number of related-key LWEs.
 /// Holds `count` coefficient GLWEs and one trace workspace; evaluation allocates nothing.
-pub struct FourierGlwePackingContext<T: TorusFftValue> {
+pub struct FourierGlwePackingWorkspace<T: TorusFftValue> {
     tree: Vec<T>,
-    trace: FourierGlweTraceContext<T>,
+    trace: FourierGlweTraceWorkspace<T>,
 }
 
-impl<T: TorusFftValue> FourierGlwePackingContext<T> {
+impl<T: TorusFftValue> FourierGlwePackingWorkspace<T> {
     /// Allocates workspace for `count` inputs of dimension `k*N`.
     ///
     /// # Panics
@@ -29,7 +29,7 @@ impl<T: TorusFftValue> FourierGlwePackingContext<T> {
                     .checked_mul(count)
                     .expect("packing workspace length overflow")
             ],
-            trace: FourierGlweTraceContext::new(size),
+            trace: FourierGlweTraceWorkspace::new(size),
         }
     }
 }
@@ -49,13 +49,13 @@ impl<T: TorusFftValue> FourierGlweTraceKey<T> {
         input: &Glwe<A>,
         output: &mut Glwe<B>,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierGlweTraceContext<T>,
+        workspace: &mut FourierGlweTraceWorkspace<T>,
     ) where
         Table: FftTable,
         A: Data<Elem = T>,
         B: DataMut<Elem = T>,
     {
-        self.apply_partial_to(input, 1, output, fft, context);
+        self.apply_partial_to(input, 1, output, fft, workspace);
     }
 
     /// Applies ordinary partial trace, retaining `retained_coefficient_count`
@@ -73,7 +73,7 @@ impl<T: TorusFftValue> FourierGlweTraceKey<T> {
         retained_coefficient_count: usize,
         output: &mut Glwe<B>,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierGlweTraceContext<T>,
+        workspace: &mut FourierGlweTraceWorkspace<T>,
     ) where
         Table: FftTable,
         A: Data<Elem = T>,
@@ -81,9 +81,9 @@ impl<T: TorusFftValue> FourierGlweTraceKey<T> {
     {
         let levels =
             kernels::check_degree(self.glwe_size.poly_length(), retained_coefficient_count);
-        self.check_io(input.as_ref(), output.as_ref(), fft, context);
+        self.check_io(input.as_ref(), output.as_ref(), fft, workspace);
         output.as_mut().copy_from_slice(input.as_ref());
-        self.trace_kernel_assign::<_, false>(output.as_mut(), levels, fft, context);
+        self.trace_kernel_assign::<_, false>(output.as_mut(), levels, fft, workspace);
     }
 
     /// Applies full reverse trace, targeting the constant polynomial `M[0]`.
@@ -93,13 +93,13 @@ impl<T: TorusFftValue> FourierGlweTraceKey<T> {
         input: &Glwe<A>,
         output: &mut Glwe<B>,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierGlweTraceContext<T>,
+        workspace: &mut FourierGlweTraceWorkspace<T>,
     ) where
         Table: FftTable,
         A: Data<Elem = T>,
         B: DataMut<Elem = T>,
     {
-        self.apply_reverse_partial_to(input, 1, output, fft, context);
+        self.apply_reverse_partial_to(input, 1, output, fft, workspace);
     }
 
     /// Applies normalized reverse trace, retaining `retained_coefficient_count`
@@ -121,7 +121,7 @@ impl<T: TorusFftValue> FourierGlweTraceKey<T> {
         retained_coefficient_count: usize,
         output: &mut Glwe<B>,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierGlweTraceContext<T>,
+        workspace: &mut FourierGlweTraceWorkspace<T>,
     ) where
         Table: FftTable,
         A: Data<Elem = T>,
@@ -129,9 +129,9 @@ impl<T: TorusFftValue> FourierGlweTraceKey<T> {
     {
         let levels =
             kernels::check_degree(self.glwe_size.poly_length(), retained_coefficient_count);
-        self.check_io(input.as_ref(), output.as_ref(), fft, context);
+        self.check_io(input.as_ref(), output.as_ref(), fft, workspace);
         output.as_mut().copy_from_slice(input.as_ref());
-        self.trace_kernel_assign::<_, true>(output.as_mut(), levels, fft, context);
+        self.trace_kernel_assign::<_, true>(output.as_mut(), levels, fft, workspace);
     }
 
     /// Converts one related-key LWE into a GLWE targeting the constant message.
@@ -149,7 +149,7 @@ impl<T: TorusFftValue> FourierGlweTraceKey<T> {
         input: &Lwe<A>,
         output: &mut Glwe<B>,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierGlweTraceContext<T>,
+        workspace: &mut FourierGlweTraceWorkspace<T>,
     ) where
         Table: FftTable,
         A: Data<Elem = T>,
@@ -160,14 +160,14 @@ impl<T: TorusFftValue> FourierGlweTraceKey<T> {
             self.glwe_size.mask_len() + 1,
             "packing LWE dimension mismatch"
         );
-        self.check_output(output.as_ref(), fft, context);
+        self.check_output(output.as_ref(), fft, workspace);
         let modulus = NativeModulus::new();
         input.inverse_extract_glwe_to(output, self.glwe_size.poly_length(), modulus);
         self.trace_kernel_assign::<_, true>(
             output.as_mut(),
             self.automorphism_count(),
             fft,
-            context,
+            workspace,
         );
     }
 
@@ -183,7 +183,7 @@ impl<T: TorusFftValue> FourierGlweTraceKey<T> {
         input: &[T],
         output: &mut Glwe<B>,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierGlwePackingContext<T>,
+        workspace: &mut FourierGlwePackingWorkspace<T>,
     ) where
         Table: FftTable,
         B: DataMut<Elem = T>,
@@ -194,20 +194,20 @@ impl<T: TorusFftValue> FourierGlweTraceKey<T> {
 
         kernels::check_degree(self.glwe_size.poly_length(), count);
         assert_eq!(
-            context.tree.len(),
+            workspace.tree.len(),
             count * self.glwe_size.glwe_len(),
             "packing workspace count mismatch"
         );
-        self.check_output(output.as_ref(), fft, &context.trace);
+        self.check_output(output.as_ref(), fft, &workspace.trace);
         let modulus = NativeModulus::new();
-        let FourierGlweTraceContext {
+        let FourierGlweTraceWorkspace {
             automorphism_output,
             automorphism,
-        } = &mut context.trace;
+        } = &mut workspace.trace;
         kernels::pack_to(
             input,
             output.as_mut(),
-            &mut context.tree,
+            &mut workspace.tree,
             automorphism_output.as_mut(),
             self.glwe_size,
             modulus,
@@ -236,13 +236,13 @@ impl<T: TorusFftValue> FourierGlweTraceKey<T> {
         index: usize,
         output: &mut Glwe<B>,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierGlweTraceContext<T>,
+        workspace: &mut FourierGlweTraceWorkspace<T>,
     ) where
         Table: FftTable,
         A: Data<Elem = T>,
         B: DataMut<Elem = T>,
     {
-        self.project_coefficients_to(input, &[index], output.as_mut(), fft, context);
+        self.project_coefficients_to(input, &[index], output.as_mut(), fft, workspace);
     }
 
     /// Projects selected coefficients into consecutive GLWE blocks in `indices`
@@ -256,7 +256,7 @@ impl<T: TorusFftValue> FourierGlweTraceKey<T> {
         indices: &[usize],
         output: &mut [T],
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierGlweTraceContext<T>,
+        workspace: &mut FourierGlweTraceWorkspace<T>,
     ) where
         Table: FftTable,
         A: Data<Elem = T>,
@@ -267,7 +267,7 @@ impl<T: TorusFftValue> FourierGlweTraceKey<T> {
                 .all(|&index| index < self.glwe_size.poly_length()),
             "projection index outside polynomial"
         );
-        self.project_indices_to(input, indices.iter().copied(), output, fft, context);
+        self.project_indices_to(input, indices.iter().copied(), output, fft, workspace);
     }
 
     /// Projects coefficients `0..count` into consecutive constant-message GLWEs.
@@ -286,7 +286,7 @@ impl<T: TorusFftValue> FourierGlweTraceKey<T> {
         count: usize,
         output: &mut [T],
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierGlweTraceContext<T>,
+        workspace: &mut FourierGlweTraceWorkspace<T>,
     ) where
         Table: FftTable,
         A: Data<Elem = T>,
@@ -295,7 +295,7 @@ impl<T: TorusFftValue> FourierGlweTraceKey<T> {
             count <= self.glwe_size.poly_length(),
             "projection prefix exceeds polynomial length"
         );
-        self.project_indices_to(input, 0..count, output, fft, context);
+        self.project_indices_to(input, 0..count, output, fft, workspace);
     }
 
     // Public callers validate the index range. Check the remaining layouts
@@ -306,7 +306,7 @@ impl<T: TorusFftValue> FourierGlweTraceKey<T> {
         indices: impl ExactSizeIterator<Item = usize>,
         output: &mut [T],
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierGlweTraceContext<T>,
+        workspace: &mut FourierGlweTraceWorkspace<T>,
     ) where
         Table: FftTable,
         A: Data<Elem = T>,
@@ -326,7 +326,7 @@ impl<T: TorusFftValue> FourierGlweTraceKey<T> {
                 .expect("projection output length overflow"),
             "projection output length mismatch"
         );
-        self.assert_compatible(fft, context);
+        self.assert_compatible(fft, workspace);
         let modulus = NativeModulus::new();
         let exponent_modulus = PowOf2Modulus::new(2 * poly_length);
         for (index, output) in indices.zip(output.chunks_exact_mut(glwe_len)) {
@@ -336,7 +336,7 @@ impl<T: TorusFftValue> FourierGlweTraceKey<T> {
                 poly_length,
                 modulus,
             );
-            self.trace_kernel_assign::<_, true>(output, self.automorphism_count(), fft, context);
+            self.trace_kernel_assign::<_, true>(output, self.automorphism_count(), fft, workspace);
         }
     }
 
@@ -349,7 +349,7 @@ impl<T: TorusFftValue> FourierGlweTraceKey<T> {
         input: &Glwe<A>,
         output: &mut [T],
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierGlweTraceContext<T>,
+        workspace: &mut FourierGlweTraceWorkspace<T>,
     ) where
         Table: FftTable,
         A: Data<Elem = T>,
@@ -359,7 +359,7 @@ impl<T: TorusFftValue> FourierGlweTraceKey<T> {
             self.glwe_size.poly_length(),
             output,
             fft,
-            context,
+            workspace,
         );
     }
 
@@ -389,7 +389,7 @@ impl<T: TorusFftValue> FourierGlweTraceKey<T> {
         count: usize,
         output: &mut [T],
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierGlweTraceContext<T>,
+        workspace: &mut FourierGlweTraceWorkspace<T>,
     ) where
         Table: FftTable,
         A: Data<Elem = T>,
@@ -408,7 +408,7 @@ impl<T: TorusFftValue> FourierGlweTraceKey<T> {
                 .expect("expansion output length overflow"),
             "expansion output length mismatch"
         );
-        self.assert_compatible(fft, context);
+        self.assert_compatible(fft, workspace);
         if count == 1 {
             output.copy_from_slice(input.as_ref());
             return;
@@ -416,10 +416,10 @@ impl<T: TorusFftValue> FourierGlweTraceKey<T> {
 
         let log_count = count.trailing_zeros();
         let modulus = NativeModulus::new();
-        let FourierGlweTraceContext {
+        let FourierGlweTraceWorkspace {
             automorphism_output,
             automorphism,
-        } = context;
+        } = workspace;
         kernels::expand_to(
             input.as_ref(),
             output,
@@ -447,7 +447,7 @@ impl<T: TorusFftValue> FourierGlweTraceKey<T> {
         input: &[T],
         output: &[T],
         fft: &mut FftEngine<'_, Table>,
-        context: &FourierGlweTraceContext<T>,
+        workspace: &FourierGlweTraceWorkspace<T>,
     ) where
         Table: FftTable,
     {
@@ -456,14 +456,14 @@ impl<T: TorusFftValue> FourierGlweTraceKey<T> {
             self.glwe_size.glwe_len(),
             "trace input layout mismatch"
         );
-        self.check_output(output, fft, context);
+        self.check_output(output, fft, workspace);
     }
 
     fn check_output<Table>(
         &self,
         output: &[T],
         fft: &mut FftEngine<'_, Table>,
-        context: &FourierGlweTraceContext<T>,
+        workspace: &FourierGlweTraceWorkspace<T>,
     ) where
         Table: FftTable,
     {
@@ -472,18 +472,18 @@ impl<T: TorusFftValue> FourierGlweTraceKey<T> {
             self.glwe_size.glwe_len(),
             "trace output layout mismatch"
         );
-        self.assert_compatible(fft, context);
+        self.assert_compatible(fft, workspace);
     }
 
     /// Checks shared backend and immutable workspace layout once per public call.
     fn assert_compatible<Table>(
         &self,
         fft: &FftEngine<'_, Table>,
-        context: &FourierGlweTraceContext<T>,
+        workspace: &FourierGlweTraceWorkspace<T>,
     ) where
         Table: FftTable,
     {
-        self.automorphism_keys[0].assert_compatible(fft, &context.automorphism);
+        self.automorphism_keys[0].assert_compatible(fft, &workspace.automorphism);
     }
 
     /// Requires validated ciphertext, key and workspace layouts.
@@ -492,15 +492,15 @@ impl<T: TorusFftValue> FourierGlweTraceKey<T> {
         output: &mut [T],
         levels: usize,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierGlweTraceContext<T>,
+        workspace: &mut FourierGlweTraceWorkspace<T>,
     ) where
         Table: FftTable,
     {
         let modulus = NativeModulus::new();
-        let FourierGlweTraceContext {
+        let FourierGlweTraceWorkspace {
             automorphism_output,
             automorphism,
-        } = context;
+        } = workspace;
         kernels::trace_assign::<_, _, _, _, REVERSE>(
             output,
             levels,

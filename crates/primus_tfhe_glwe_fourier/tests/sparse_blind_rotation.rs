@@ -8,8 +8,8 @@ use primus_modulus::NativeModulus;
 use primus_poly::Polynomial;
 use primus_test_allocations as allocations;
 use primus_tfhe_glwe_fourier::{
-    BootstrappingKey, ClientKey, FourierGlweBlindRotationContext, KeyGenerator, PbsOrder,
-    SparseGlweBlindRotationContext, TfheContext, TfheParameters,
+    BootstrappingKey, ClientKey, FourierGlweBlindRotationWorkspace, KeyGenerator, PbsOrder,
+    SparseGlweBlindRotationWorkspace, TfheContext, TfheParameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -111,8 +111,8 @@ fn check_raw<Table: FftTable>() {
         let BootstrappingKey::Classic(classic) = server.bootstrapping_key() else {
             panic!("expected classic key")
         };
-        let mut sparse_scratch = SparseGlweBlindRotationContext::new(&sparse);
-        let mut classic_scratch = FourierGlweBlindRotationContext::new(classic);
+        let mut sparse_scratch = SparseGlweBlindRotationWorkspace::new(&sparse);
+        let mut classic_scratch = FourierGlweBlindRotationWorkspace::new(classic);
         let mut fft = context.new_fft_engine();
         let mut sparse_output = TorusGlwe::<Vec<u32>>::zero(sparse.size().glwe_len());
         let mut classic_output = sparse_output.clone();

@@ -11,12 +11,12 @@ use std::hint::black_box;
 static ALLOCATOR: CountingAllocator = CountingAllocator;
 
 use criterion::{Criterion, criterion_group, criterion_main};
-use primus_glwe::{GlweCiphertext, NttGlweKeySwitchingContext};
+use primus_glwe::{GlweCiphertext, NttGlweKeySwitchingWorkspace};
 use primus_integer::FheUint;
 use primus_lwe::LweCiphertext;
 use primus_ntt::{MonomialNttTable, U32NttTable, U64NttTable};
 use primus_tfhe_glwe_ntt::{
-    BooleanGate, BootstrappingKey, NttGlweBlindRotationContext, PbsOrder, TfheContext,
+    BooleanGate, BootstrappingKey, NttGlweBlindRotationWorkspace, PbsOrder, TfheContext,
 };
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -77,8 +77,8 @@ fn bench_order<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
         );
     }
 
-    let mut blind_rotation = NttGlweBlindRotationContext::new(bootstrapping_key);
-    let mut key_switching = NttGlweKeySwitchingContext::new(
+    let mut blind_rotation = NttGlweBlindRotationWorkspace::new(bootstrapping_key);
+    let mut key_switching = NttGlweKeySwitchingWorkspace::new(
         parameters.glwe_key_switching().output().size().glwe_size(),
     );
     let mut main_glwe: GlweCiphertext<Vec<T>> =

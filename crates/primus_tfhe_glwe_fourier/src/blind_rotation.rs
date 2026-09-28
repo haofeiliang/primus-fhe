@@ -4,9 +4,9 @@ use primus_data::{Data, DataMut};
 use primus_fft::{FftEngine, FftTable, TorusFftValue};
 use primus_lattice::{
     GadgetSize,
-    context::{FourierGlweExternalProductContext, FourierGlweTernaryCmuxContext},
     glwe::TorusGlwe,
     lwe::Lwe,
+    workspace::{FourierGlweExternalProductWorkspace, FourierGlweTernaryCmuxWorkspace},
 };
 use primus_modulus::NativeModulus;
 use primus_poly::Polynomial;
@@ -40,7 +40,7 @@ where
         accumulator: &TorusGlwe<B>,
         output: &mut TorusGlwe<C>,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierGlweBlindRotationContext<T>,
+        context: &mut FourierGlweBlindRotationWorkspace<T>,
     ) where
         Table: FftTable,
         A: Data<Elem = T>,
@@ -65,7 +65,7 @@ where
         lookup_table: &Polynomial<B>,
         output: &mut TorusGlwe<C>,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierGlweBlindRotationContext<T>,
+        context: &mut FourierGlweBlindRotationWorkspace<T>,
     ) where
         Table: FftTable,
         A: Data<Elem = T>,
@@ -94,7 +94,7 @@ where
         lookup_table: &Polynomial<B>,
         output: &mut TorusGlwe<C>,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierGlweBlindRotationContext<T>,
+        context: &mut FourierGlweBlindRotationWorkspace<T>,
     ) where
         Table: FftTable,
         A: Data<Elem = T>,
@@ -127,7 +127,7 @@ where
         rotation_step: usize,
         output: &mut TorusGlwe<C>,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierGlweBlindRotationContext<T>,
+        context: &mut FourierGlweBlindRotationWorkspace<T>,
     ) where
         Table: FftTable,
         A: Data<Elem = T>,
@@ -168,7 +168,7 @@ where
         rotation_step: usize,
         output: &mut TorusGlwe<C>,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierGlweBlindRotationContext<T>,
+        context: &mut FourierGlweBlindRotationWorkspace<T>,
     ) where
         Table: FftTable,
         A: Data<Elem = T>,
@@ -224,7 +224,7 @@ where
         accumulator: &TorusGlwe<B>,
         output: &mut TorusGlwe<C>,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierGlweBlindRotationContext<T>,
+        context: &mut FourierGlweBlindRotationWorkspace<T>,
     ) where
         Table: FftTable,
         A: Data<Elem = T>,
@@ -247,7 +247,7 @@ where
         accumulator: &TorusGlwe<B>,
         output: &mut TorusGlwe<C>,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierGlweBlindRotationContext<T>,
+        context: &mut FourierGlweBlindRotationWorkspace<T>,
         exponent_of: F,
     ) where
         Table: FftTable,
@@ -282,7 +282,7 @@ where
     fn assert_compatible<Table: FftTable>(
         &self,
         fft: &FftEngine<'_, Table>,
-        context: &FourierGlweBlindRotationContext<T>,
+        context: &FourierGlweBlindRotationWorkspace<T>,
     ) {
         assert_eq!(
             fft.poly_length(),
@@ -295,7 +295,7 @@ where
             "blind-rotation workspace gadget layout mismatch"
         );
         assert_eq!(
-            matches!(context.cmux, CmuxContext::Binary(_)),
+            matches!(context.cmux, CmuxWorkspace::Binary(_)),
             self.input_distribution().is_binary(),
             "blind-rotation workspace control layout mismatch"
         );
@@ -312,7 +312,7 @@ where
         input: &Lwe<A>,
         output: &mut TorusGlwe<C>,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierGlweBlindRotationContext<T>,
+        context: &mut FourierGlweBlindRotationWorkspace<T>,
         exponent_of: F,
     ) where
         Table: FftTable,
@@ -320,11 +320,11 @@ where
         C: DataMut<Elem = T>,
         F: Fn(T) -> usize,
     {
-        let FourierGlweBlindRotationContext { scratch, cmux } = context;
+        let FourierGlweBlindRotationWorkspace { scratch, cmux } = context;
         // Dispatch once per blind rotation; the coordinate loop has no secret-
         // distribution branch, and both paths share initialization and swapping.
         match cmux {
-            CmuxContext::Binary(product) => {
+            CmuxWorkspace::Binary(product) => {
                 let controls = self
                     .iter_binary_controls()
                     .expect("binary workspace requires a binary key");
@@ -346,7 +346,7 @@ where
                     },
                 );
             }
-            CmuxContext::Ternary(product) => {
+            CmuxWorkspace::Ternary(product) => {
                 let controls = self
                     .iter_ternary_controls()
                     .expect("ternary workspace requires a ternary key");
@@ -377,17 +377,17 @@ where
 ///
 /// Construction selects only the binary or ternary scratch required by the key.
 /// Resizing retains that control layout; construct a new workspace to change it.
-pub struct FourierGlweBlindRotationContext<T: TorusFftValue> {
+pub struct FourierGlweBlindRotationWorkspace<T: TorusFftValue> {
     scratch: TorusGlwe<Vec<T>>,
-    cmux: CmuxContext<T>,
+    cmux: CmuxWorkspace<T>,
 }
 
-enum CmuxContext<T: TorusFftValue> {
-    Binary(FourierGlweExternalProductContext<T>),
-    Ternary(FourierGlweTernaryCmuxContext<T>),
+enum CmuxWorkspace<T: TorusFftValue> {
+    Binary(FourierGlweExternalProductWorkspace<T>),
+    Ternary(FourierGlweTernaryCmuxWorkspace<T>),
 }
 
-impl<T: TorusFftValue> FourierGlweBlindRotationContext<T> {
+impl<T: TorusFftValue> FourierGlweBlindRotationWorkspace<T> {
     /// Allocates scratch matching the key's gadget and control layouts.
     #[must_use]
     pub fn new<LM: PrepareModulusSwitch<ValueT = T>>(
@@ -397,9 +397,9 @@ impl<T: TorusFftValue> FourierGlweBlindRotationContext<T> {
         Self {
             scratch: TorusGlwe::zero(size.glwe_len()),
             cmux: if key.input_distribution().is_binary() {
-                CmuxContext::Binary(FourierGlweExternalProductContext::new(size))
+                CmuxWorkspace::Binary(FourierGlweExternalProductWorkspace::new(size))
             } else {
-                CmuxContext::Ternary(FourierGlweTernaryCmuxContext::new(size))
+                CmuxWorkspace::Ternary(FourierGlweTernaryCmuxWorkspace::new(size))
             },
         }
     }
@@ -407,18 +407,18 @@ impl<T: TorusFftValue> FourierGlweBlindRotationContext<T> {
     pub(crate) fn with_external_product<R>(
         &mut self,
         size: GadgetSize,
-        operation: impl FnOnce(&mut FourierGlweExternalProductContext<T>) -> R,
+        operation: impl FnOnce(&mut FourierGlweExternalProductWorkspace<T>) -> R,
     ) -> R {
         match &mut self.cmux {
-            CmuxContext::Binary(context) => context.with_rebound(size, operation),
-            CmuxContext::Ternary(context) => context.with_external_product(size, operation),
+            CmuxWorkspace::Binary(context) => context.with_rebound(size, operation),
+            CmuxWorkspace::Ternary(context) => context.with_external_product(size, operation),
         }
     }
 
     fn size(&self) -> GadgetSize {
         match &self.cmux {
-            CmuxContext::Binary(context) => context.size(),
-            CmuxContext::Ternary(context) => context.size(),
+            CmuxWorkspace::Binary(context) => context.size(),
+            CmuxWorkspace::Ternary(context) => context.size(),
         }
     }
 
@@ -429,8 +429,10 @@ impl<T: TorusFftValue> FourierGlweBlindRotationContext<T> {
             return;
         }
         match &mut self.cmux {
-            CmuxContext::Binary(context) => context.resize(size),
-            CmuxContext::Ternary(context) => *context = FourierGlweTernaryCmuxContext::new(size),
+            CmuxWorkspace::Binary(context) => context.resize(size),
+            CmuxWorkspace::Ternary(context) => {
+                *context = FourierGlweTernaryCmuxWorkspace::new(size)
+            }
         }
         self.scratch.0.resize(size.glwe_len(), T::ZERO);
     }

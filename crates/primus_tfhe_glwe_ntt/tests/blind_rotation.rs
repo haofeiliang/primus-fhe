@@ -1,5 +1,5 @@
 use primus_glwe::{
-    GlevParameters, GlweParameters, GlweSecretKey, NttGadgetEncryptContext, NttGlweSecretKey,
+    GlevParameters, GlweParameters, GlweSecretKey, NttGlweGadgetEncryptWorkspace, NttGlweSecretKey,
     SecretKeyDistr,
 };
 use primus_lattice::{
@@ -10,7 +10,7 @@ use primus_lwe::{LweParameters, LweSecretKey};
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntt::{NttTable, UintNttTable};
 use primus_poly::Polynomial;
-use primus_tfhe_glwe_ntt::{NttGlweBlindRotationContext, NttGlweBootstrappingKey};
+use primus_tfhe_glwe_ntt::{NttGlweBlindRotationWorkspace, NttGlweBootstrappingKey};
 use rand::{SeedableRng, rngs::StdRng};
 
 const LWE_DIMENSION: usize = 4;
@@ -74,7 +74,7 @@ fn functional_bootstrapping_key_blind_rotates() {
         &mut rng,
     );
     let output_secret_key = NttGlweSecretKey::from_coeff_secret_key(&coeff_output_secret_key, &ntt);
-    let mut gadget_context = NttGadgetEncryptContext::new(ggsw_params.size());
+    let mut gadget_workspace = NttGlweGadgetEncryptWorkspace::new(ggsw_params.size());
     let key = NttGlweBootstrappingKey::generate_ntt(
         &input_secret_key,
         &lwe_params,
@@ -82,7 +82,7 @@ fn functional_bootstrapping_key_blind_rotates() {
         &ggsw_params,
         &ntt,
         &mut rng,
-        &mut gadget_context,
+        &mut gadget_workspace,
     );
 
     assert!(key.iter_binary_controls().is_none());
@@ -115,14 +115,14 @@ fn functional_bootstrapping_key_blind_rotates() {
     let accumulator = accumulator_ntt.into_coeff_form(&ntt);
 
     let mut output: Glwe<Vec<u32>> = Glwe::zero(ggsw_params.glwe_len());
-    let mut blind_rotation_context = NttGlweBlindRotationContext::new(&key);
+    let mut blind_rotation_workspace = NttGlweBlindRotationWorkspace::new(&key);
     key.ntt_blind_rotate_to(
         &input,
         &accumulator,
         &mut output,
         modulus,
         &ntt,
-        &mut blind_rotation_context,
+        &mut blind_rotation_workspace,
     );
 
     let expected_exponent = (TWO_N + 3 - 7 + 11 - switched_b) & (TWO_N - 1);
@@ -142,7 +142,7 @@ fn functional_bootstrapping_key_blind_rotates() {
         &mut direct_output,
         modulus,
         &ntt,
-        &mut blind_rotation_context,
+        &mut blind_rotation_workspace,
     );
     let direct_output_ntt = direct_output.into_ntt_form(&ntt);
     assert_eq!(
@@ -169,7 +169,7 @@ fn functional_bootstrapping_key_blind_rotates() {
             primus_glwe::GadgetSize::new(glwe_params.size(), ggsw_params.decompose_length() + 1),
         ),
     ] {
-        blind_rotation_context.resize(size);
+        blind_rotation_workspace.resize(size);
         for path in 0..4 {
             let mut output = Glwe::new(vec![7u32; ggsw_params.glwe_len()]);
             assert!(
@@ -181,7 +181,7 @@ fn functional_bootstrapping_key_blind_rotates() {
                             &mut output,
                             modulus,
                             table,
-                            &mut blind_rotation_context,
+                            &mut blind_rotation_workspace,
                         ),
                         1 => key.ntt_blind_rotate_exponents_to(
                             &exponent_input,
@@ -189,7 +189,7 @@ fn functional_bootstrapping_key_blind_rotates() {
                             &mut output,
                             modulus,
                             table,
-                            &mut blind_rotation_context,
+                            &mut blind_rotation_workspace,
                         ),
                         2 => key.ntt_blind_rotate_lookup_table_to(
                             &input,
@@ -197,7 +197,7 @@ fn functional_bootstrapping_key_blind_rotates() {
                             &mut output,
                             modulus,
                             table,
-                            &mut blind_rotation_context,
+                            &mut blind_rotation_workspace,
                         ),
                         _ => key.ntt_blind_rotate_interleaved_lookup_table_to(
                             &input,
@@ -206,7 +206,7 @@ fn functional_bootstrapping_key_blind_rotates() {
                             &mut output,
                             modulus,
                             table,
-                            &mut blind_rotation_context,
+                            &mut blind_rotation_workspace,
                         ),
                     }
                 }))
@@ -217,7 +217,7 @@ fn functional_bootstrapping_key_blind_rotates() {
     }
     // Per-call layout checks belong to each public raw LUT API, even when
     // the transform and workspace already match the key.
-    blind_rotation_context.resize(ggsw_params.size());
+    blind_rotation_workspace.resize(ggsw_params.size());
     let input_len = LWE_DIMENSION + 1;
     let glwe_len = ggsw_params.glwe_len();
     for (input_len, lookup_len, output_len, rotation_step) in [
@@ -245,7 +245,7 @@ fn functional_bootstrapping_key_blind_rotates() {
                         &mut output,
                         modulus,
                         &ntt,
-                        &mut blind_rotation_context,
+                        &mut blind_rotation_workspace,
                     );
                 } else {
                     key.ntt_blind_rotate_lookup_table_to(
@@ -254,7 +254,7 @@ fn functional_bootstrapping_key_blind_rotates() {
                         &mut output,
                         modulus,
                         &ntt,
-                        &mut blind_rotation_context,
+                        &mut blind_rotation_workspace,
                     );
                 }
             }))

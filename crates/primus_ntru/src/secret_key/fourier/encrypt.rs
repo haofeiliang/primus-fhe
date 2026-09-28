@@ -1,6 +1,6 @@
 //! Ordinary encryption.
 
-use super::{FourierNtruEncryptContext, FourierNtruSecretKey};
+use super::{FourierNtruEncryptWorkspace, FourierNtruSecretKey};
 use crate::{FourierNtruCiphertext, NtruParameters};
 use primus_data::{Data, DataMut};
 use primus_encoding::PlaintextEmbedding;
@@ -18,7 +18,7 @@ impl FourierNtruSecretKey {
         params: &NtruParameters<T, NativeModulus<T>>,
         fft: &mut FftEngine<'_, Table>,
         rng: &mut R,
-        context: &mut FourierNtruEncryptContext<T>,
+        workspace: &mut FourierNtruEncryptWorkspace<T>,
     ) -> FourierNtruCiphertext<Vec<Complex64>>
     where
         T: TorusFftValue,
@@ -27,7 +27,7 @@ impl FourierNtruSecretKey {
         A: Data<Elem = T>,
     {
         let mut result = FourierNtruCiphertext::zero(fft.fourier_length());
-        self.encrypt_to(message, &mut result, params, fft, rng, context);
+        self.encrypt_to(message, &mut result, params, fft, rng, workspace);
         result
     }
 
@@ -52,7 +52,7 @@ impl FourierNtruSecretKey {
         params: &NtruParameters<T, NativeModulus<T>>,
         fft: &mut FftEngine<'_, Table>,
         rng: &mut R,
-        context: &mut FourierNtruEncryptContext<T>,
+        workspace: &mut FourierNtruEncryptWorkspace<T>,
     ) where
         T: TorusFftValue,
         Table: FftTable,
@@ -69,7 +69,7 @@ impl FourierNtruSecretKey {
             params,
             fft,
             rng,
-            context,
+            workspace,
         );
     }
 
@@ -82,7 +82,7 @@ impl FourierNtruSecretKey {
         params: &NtruParameters<T, NativeModulus<T>>,
         fft: &mut FftEngine<'_, Table>,
         rng: &mut R,
-        context: &mut FourierNtruEncryptContext<T>,
+        workspace: &mut FourierNtruEncryptWorkspace<T>,
     ) where
         T: TorusFftValue,
         Table: FftTable,
@@ -99,7 +99,7 @@ impl FourierNtruSecretKey {
             params,
             fft,
             rng,
-            context,
+            workspace,
         );
     }
 
@@ -112,7 +112,7 @@ impl FourierNtruSecretKey {
         params: &NtruParameters<T, NativeModulus<T>>,
         fft: &mut FftEngine<'_, Table>,
         rng: &mut R,
-        context: &mut FourierNtruEncryptContext<T>,
+        workspace: &mut FourierNtruEncryptWorkspace<T>,
     ) where
         T: TorusFftValue,
         Table: FftTable,
@@ -123,8 +123,8 @@ impl FourierNtruSecretKey {
         self.assert_domain(params, fft);
         assert_eq!(encoded.as_ref().len(), self.poly_length());
         assert_eq!(result.as_ref().len(), fft.fourier_length());
-        assert_eq!(context.coeff.as_ref().len(), self.poly_length());
-        self.encrypt_encoded_to_unchecked(encoded, result, params, fft, rng, context);
+        assert_eq!(workspace.coeff.as_ref().len(), self.poly_length());
+        self.encrypt_encoded_to_unchecked(encoded, result, params, fft, rng, workspace);
     }
 
     /// Encrypts zero into a freshly allocated Fourier ciphertext.
@@ -134,7 +134,7 @@ impl FourierNtruSecretKey {
         params: &NtruParameters<T, NativeModulus<T>>,
         fft: &mut FftEngine<'_, Table>,
         rng: &mut R,
-        context: &mut FourierNtruEncryptContext<T>,
+        workspace: &mut FourierNtruEncryptWorkspace<T>,
     ) -> FourierNtruCiphertext<Vec<Complex64>>
     where
         T: TorusFftValue,
@@ -142,7 +142,7 @@ impl FourierNtruSecretKey {
         R: rand::Rng + rand::CryptoRng,
     {
         let mut result = FourierNtruCiphertext::zero(fft.fourier_length());
-        self.encrypt_zeros_to(&mut result, params, fft, rng, context);
+        self.encrypt_zeros_to(&mut result, params, fft, rng, workspace);
         result
     }
 
@@ -153,7 +153,7 @@ impl FourierNtruSecretKey {
         params: &NtruParameters<T, NativeModulus<T>>,
         fft: &mut FftEngine<'_, Table>,
         rng: &mut R,
-        context: &mut FourierNtruEncryptContext<T>,
+        workspace: &mut FourierNtruEncryptWorkspace<T>,
     ) where
         T: TorusFftValue,
         Table: FftTable,
@@ -162,12 +162,12 @@ impl FourierNtruSecretKey {
     {
         self.assert_domain(params, fft);
         assert_eq!(result.as_ref().len(), fft.fourier_length());
-        assert_eq!(context.coeff.as_ref().len(), self.poly_length());
+        assert_eq!(workspace.coeff.as_ref().len(), self.poly_length());
         if let Some(values) = message.as_slice() {
             assert_eq!(values.len(), self.poly_length());
         }
 
-        self.encrypt_to_with_message_unchecked(message, result, params, fft, rng, context);
+        self.encrypt_to_with_message_unchecked(message, result, params, fft, rng, workspace);
     }
 
     pub(super) fn encrypt_encoded_to_unchecked<T, Table, R, A, B>(
@@ -177,7 +177,7 @@ impl FourierNtruSecretKey {
         params: &NtruParameters<T, NativeModulus<T>>,
         fft: &mut FftEngine<'_, Table>,
         rng: &mut R,
-        context: &mut FourierNtruEncryptContext<T>,
+        workspace: &mut FourierNtruEncryptWorkspace<T>,
     ) where
         T: TorusFftValue,
         Table: FftTable,
@@ -193,7 +193,7 @@ impl FourierNtruSecretKey {
             params,
             fft,
             rng,
-            context,
+            workspace,
         );
     }
 
@@ -213,7 +213,7 @@ impl FourierNtruSecretKey {
         params: &NtruParameters<T, NativeModulus<T>>,
         fft: &mut FftEngine<'_, Table>,
         rng: &mut R,
-        context: &mut FourierNtruEncryptContext<T>,
+        workspace: &mut FourierNtruEncryptWorkspace<T>,
     ) where
         T: TorusFftValue,
         Table: FftTable,
@@ -226,7 +226,7 @@ impl FourierNtruSecretKey {
             params,
             fft,
             rng,
-            context,
+            workspace,
         );
     }
 
@@ -236,7 +236,7 @@ impl FourierNtruSecretKey {
         params: &NtruParameters<T, NativeModulus<T>>,
         fft: &mut FftEngine<'_, Table>,
         rng: &mut R,
-        context: &mut FourierNtruEncryptContext<T>,
+        workspace: &mut FourierNtruEncryptWorkspace<T>,
     ) where
         T: TorusFftValue,
         Table: FftTable,
@@ -250,7 +250,7 @@ impl FourierNtruSecretKey {
             params,
             fft,
             rng,
-            context,
+            workspace,
         );
     }
 
@@ -261,14 +261,14 @@ impl FourierNtruSecretKey {
         params: &NtruParameters<T, NativeModulus<T>>,
         fft: &mut FftEngine<'_, Table>,
         rng: &mut R,
-        context: &mut FourierNtruEncryptContext<T>,
+        workspace: &mut FourierNtruEncryptWorkspace<T>,
     ) where
         T: TorusFftValue,
         Table: FftTable,
         R: rand::Rng + rand::CryptoRng,
         B: DataMut<Elem = Complex64>,
     {
-        let coefficients = context.coeff.as_mut();
+        let coefficients = workspace.coeff.as_mut();
         primus_distr::sample_gaussian_values_to(coefficients, params.noise_distribution(), rng);
         match message {
             FourierEncryptionMessage::Zero => {}

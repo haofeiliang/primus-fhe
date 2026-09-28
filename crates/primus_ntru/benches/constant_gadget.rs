@@ -8,8 +8,8 @@ use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable};
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntru::{
-    FourierNlevCiphertext, FourierNtruGadgetEncryptContext, FourierNtruSecretKey, NlevParameters,
-    NtruParameters, NttNlevCiphertext, NttNtruGadgetEncryptContext, NttNtruSecretKey,
+    FourierNlevCiphertext, FourierNtruGadgetEncryptWorkspace, FourierNtruSecretKey, NlevParameters,
+    NtruParameters, NttNlevCiphertext, NttNtruGadgetEncryptWorkspace, NttNtruSecretKey,
     SecretKeyDistr,
 };
 use primus_ntt::{NttTable, UintNttTable};
@@ -25,7 +25,7 @@ fn ntt(c: &mut Criterion) {
         let params = NtruParameters::new(n, 16, modulus, SecretKeyDistr::SparseTernary, 3.2);
         let table = UintNttTable::new(n.trailing_zeros(), modulus).unwrap();
         let (_, key) = NttNtruSecretKey::generate_pair(&params, &table, &mut rng).unwrap();
-        let mut context = NttNtruGadgetEncryptContext::new(n);
+        let mut workspace = NttNtruGadgetEncryptWorkspace::new(n);
         for log_basis in [3, 10] {
             let gadget = NlevParameters::with_ntru_params(&params, log_basis, None);
             let mut nlev = NttNlevCiphertext::<Vec<u64>>::zero(gadget.nlev_len());
@@ -40,7 +40,7 @@ fn ntt(c: &mut Criterion) {
                         &gadget,
                         &table,
                         &mut rng,
-                        &mut context,
+                        &mut workspace,
                     );
                     black_box(nlev.as_ref());
                 })
@@ -76,7 +76,7 @@ fn fourier(c: &mut Criterion) {
         let table = RustFftTable::new(n.trailing_zeros()).unwrap();
         let mut fft = FftEngine::new(&table);
         let (_, key) = FourierNtruSecretKey::generate_pair(&params, &mut fft, &mut rng).unwrap();
-        let mut context = FourierNtruGadgetEncryptContext::new(n);
+        let mut workspace = FourierNtruGadgetEncryptWorkspace::new(n);
         for log_basis in [3, 10] {
             let gadget = NlevParameters::with_ntru_params(&params, log_basis, None);
             let mut nlev = FourierNlevCiphertext::<Vec<Complex64>>::zero(gadget.fourier_nlev_len());
@@ -91,7 +91,7 @@ fn fourier(c: &mut Criterion) {
                         &gadget,
                         &mut fft,
                         &mut rng,
-                        &mut context,
+                        &mut workspace,
                     );
                     black_box(nlev.as_ref());
                 })
@@ -105,7 +105,7 @@ fn fourier(c: &mut Criterion) {
                         &gadget,
                         &mut fft,
                         &mut rng,
-                        &mut context,
+                        &mut workspace,
                     );
                     black_box(&batch);
                 })

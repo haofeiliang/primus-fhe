@@ -59,7 +59,7 @@ pub use error::{
 
 pub use accumulator::AccumulatorClient;
 #[doc(no_inline)]
-pub use blind_rotation::NttGlweBlindRotationContext;
+pub use blind_rotation::NttGlweBlindRotationWorkspace;
 #[doc(no_inline)]
 pub use bootstrapping_key::NttGlweBootstrappingKey;
 #[doc(no_inline)]
@@ -81,7 +81,7 @@ pub use primus_tfhe::{
 };
 pub use primus_tfhe_glwe::{ClientKey, EncryptionKey, PbsOrder};
 #[doc(no_inline)]
-pub use sparse::{SparseGlweBlindRotationContext, SparseGlweBootstrappingKey};
+pub use sparse::{SparseGlweBlindRotationWorkspace, SparseGlweBootstrappingKey};
 
 pub use boolean::{
     BooleanDecryptor, BooleanEncryptor, BooleanError, BooleanEvaluator, BooleanGate,

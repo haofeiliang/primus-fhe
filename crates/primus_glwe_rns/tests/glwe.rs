@@ -1,5 +1,5 @@
 use primus_glwe_rns::{
-    CrtGlweParameters, DcrtGlweCiphertext, DcrtGlweDecryptContext, DcrtGlwePublicKey,
+    CrtGlweParameters, DcrtGlweCiphertext, DcrtGlweDecryptWorkspace, DcrtGlwePublicKey,
     DcrtGlweSecretKey, GlweSecretKey, SecretKeyDistr,
 };
 use primus_lattice::glwe::DcrtGlwe;
@@ -78,7 +78,7 @@ fn assert_dcrt_glwe_secret_key_enc_dec(secret_key_distr: SecretKeyDistr, plain_m
         &mut rng,
     );
     let secret_key = DcrtGlweSecretKey::from_coeff_secret_key(&secret_key, &table);
-    let mut decrypt_context = DcrtGlweDecryptContext::new(params.size());
+    let mut decrypt_workspace = DcrtGlweDecryptWorkspace::new(params.size());
 
     let message = message_polynomial(plain_modulus, &mut rng);
 
@@ -86,7 +86,7 @@ fn assert_dcrt_glwe_secret_key_enc_dec(secret_key_distr: SecretKeyDistr, plain_m
 
     secret_key.encrypt_plaintext_inplace(&message, &mut ciphertext, &params, &table, &mut rng);
 
-    let decrypted = secret_key.decrypt(&ciphertext, &params, &table, &mut decrypt_context);
+    let decrypted = secret_key.decrypt(&ciphertext, &params, &table, &mut decrypt_workspace);
     assert_eq!(decrypted.as_ref(), message.as_ref());
 
     let mut ciphertext: DcrtGlwe<Vec<ValueT>> = DcrtGlweCiphertext::zero(params.rns_glwe_len());
@@ -98,7 +98,7 @@ fn assert_dcrt_glwe_secret_key_enc_dec(secret_key_distr: SecretKeyDistr, plain_m
         &mut rng,
     );
 
-    let decrypted = secret_key.decrypt(&ciphertext, &params, &table, &mut decrypt_context);
+    let decrypted = secret_key.decrypt(&ciphertext, &params, &table, &mut decrypt_workspace);
     assert_eq!(decrypted.as_ref(), message.as_ref());
 
     // Tests the CrtPolynomial-based API directly.
@@ -112,13 +112,13 @@ fn assert_dcrt_glwe_secret_key_enc_dec(secret_key_distr: SecretKeyDistr, plain_m
         &mut rng,
     );
 
-    let decrypted = secret_key.decrypt(&ciphertext, &params, &table, &mut decrypt_context);
+    let decrypted = secret_key.decrypt(&ciphertext, &params, &table, &mut decrypt_workspace);
     assert_eq!(decrypted.as_ref(), message.as_ref());
 
     let mut ciphertext: DcrtGlwe<Vec<ValueT>> = DcrtGlweCiphertext::zero(params.rns_glwe_len());
     secret_key.encrypt_zeros_inplace(&mut ciphertext, &params, &table, &mut rng);
 
-    let decrypted = secret_key.decrypt(&ciphertext, &params, &table, &mut decrypt_context);
+    let decrypted = secret_key.decrypt(&ciphertext, &params, &table, &mut decrypt_workspace);
     assert_eq!(decrypted.as_ref(), vec![0; POLY_LENGTH]);
 }
 
@@ -153,7 +153,7 @@ fn public_encrypt_accepts_unscaled_crt_plaintexts() {
             GlweSecretKey::generate(params.glwe_size(), params.secret_key_sampler(), &mut rng);
         let secret = DcrtGlweSecretKey::from_coeff_secret_key(&secret, &table);
         let public = DcrtGlwePublicKey::new(&secret, &params, &table, &mut rng);
-        let mut context = DcrtGlweDecryptContext::new(params.size());
+        let mut workspace = DcrtGlweDecryptWorkspace::new(params.size());
         let message = Polynomial(
             (0..POLY_LENGTH)
                 .map(|i| [0, 1, t / 2, t / 2 + 1, t - 1][i % 5])
@@ -162,14 +162,14 @@ fn public_encrypt_accepts_unscaled_crt_plaintexts() {
         let lifted = decompose_message(&message, &params);
         let ciphertext = public.encrypt(&lifted, &params, &table, &mut rng);
         assert_eq!(
-            secret.decrypt(&ciphertext, &params, &table, &mut context),
+            secret.decrypt(&ciphertext, &params, &table, &mut workspace),
             message
         );
 
         // Explicit erasure must leave the reusable workspace usable.
-        zeroize::Zeroize::zeroize(&mut context);
+        zeroize::Zeroize::zeroize(&mut workspace);
         assert_eq!(
-            secret.decrypt(&ciphertext, &params, &table, &mut context),
+            secret.decrypt(&ciphertext, &params, &table, &mut workspace),
             message
         );
 
@@ -231,7 +231,7 @@ fn test_dcrt_glwe_secret_key_ciphertext_ops_crt_modulus() {
         &mut rng,
     );
     let secret_key = DcrtGlweSecretKey::from_coeff_secret_key(&secret_key, &table);
-    let mut decrypt_context = DcrtGlweDecryptContext::new(params.size());
+    let mut decrypt_workspace = DcrtGlweDecryptWorkspace::new(params.size());
 
     // m₂ is binary for CRT multiplication.
     let m0 = message_polynomial(plain_modulus, &mut rng);
@@ -247,7 +247,7 @@ fn test_dcrt_glwe_secret_key_ciphertext_ops_crt_modulus() {
     let mut c2: DcrtGlwe<Vec<ValueT>> = DcrtGlweCiphertext::zero(rns_glwe_len);
 
     secret_key.encrypt_plaintext_inplace(&m0, &mut c0, &params, &table, &mut rng);
-    let mut decrypted = secret_key.decrypt(&c0, &params, &table, &mut decrypt_context);
+    let mut decrypted = secret_key.decrypt(&c0, &params, &table, &mut decrypt_workspace);
     assert_eq!(decrypted.as_ref(), m0.as_ref());
 
     secret_key.encrypt_plaintext_inplace(&m1, &mut c1, &params, &table, &mut rng);
@@ -255,13 +255,13 @@ fn test_dcrt_glwe_secret_key_ciphertext_ops_crt_modulus() {
     c1.add_assign(&c0, POLY_LENGTH, rns_poly_len, &moduli);
     m1.add_assign(&m0, mod_t);
 
-    secret_key.decrypt_inplace(&c1, &mut decrypted, &params, &table, &mut decrypt_context);
+    secret_key.decrypt_inplace(&c1, &mut decrypted, &params, &table, &mut decrypt_workspace);
     assert_eq!(m1, decrypted);
 
     c1.sub_assign(&c0, POLY_LENGTH, rns_poly_len, &moduli);
     m1.sub_assign(&m0, mod_t);
 
-    secret_key.decrypt_inplace(&c1, &mut decrypted, &params, &table, &mut decrypt_context);
+    secret_key.decrypt_inplace(&c1, &mut decrypted, &params, &table, &mut decrypt_workspace);
     assert_eq!(m1, decrypted);
 
     let msg2 = table.transform_inplace(msg2);
@@ -270,12 +270,12 @@ fn test_dcrt_glwe_secret_key_ciphertext_ops_crt_modulus() {
     c1.mul_dcrt_polynomial_to(&msg2, &mut c2, POLY_LENGTH, &moduli);
     m1.naive_mul_to(&m2, &mut expected_product, mod_t);
 
-    secret_key.decrypt_inplace(&c2, &mut decrypted, &params, &table, &mut decrypt_context);
+    secret_key.decrypt_inplace(&c2, &mut decrypted, &params, &table, &mut decrypt_workspace);
     assert_eq!(expected_product, decrypted);
 
     c1.neg_assign(POLY_LENGTH, rns_poly_len, &moduli);
     m1.neg_assign(mod_t);
 
-    secret_key.decrypt_inplace(&c1, &mut decrypted, &params, &table, &mut decrypt_context);
+    secret_key.decrypt_inplace(&c1, &mut decrypted, &params, &table, &mut decrypt_workspace);
     assert_eq!(m1, decrypted);
 }

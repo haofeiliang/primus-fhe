@@ -1,7 +1,7 @@
 use primus_data::{Data, DataMut};
 use primus_fft::{Complex64, FftTable, TorusFftValue};
 use primus_glwe::GlweCiphertext;
-use primus_glwe::{FourierGlweTraceContext, GlevCiphertext};
+use primus_glwe::{FourierGlweTraceWorkspace, GlevCiphertext};
 use primus_lattice::ggsw::FourierGgsw;
 use primus_lwe::LweCiphertext;
 use primus_reduce::ReduceMul;
@@ -27,7 +27,7 @@ where
     circuit_key: &'a CircuitBootstrapKey<T>,
     input_dimension: usize,
     lookup_table: InterleavedLookupTable<T>,
-    trace: FourierGlweTraceContext<T>,
+    trace: FourierGlweTraceWorkspace<T>,
     projected: GlevCiphertext<Vec<T>>,
 }
 
@@ -149,7 +149,7 @@ where
             circuit_key,
             input_dimension: tfhe.external_lwe_dimension(),
             lookup_table,
-            trace: FourierGlweTraceContext::new(glwe.size()),
+            trace: FourierGlweTraceWorkspace::new(glwe.size()),
             projected: GlevCiphertext::zero(parameters.output_size().glev_len()),
         })
     }

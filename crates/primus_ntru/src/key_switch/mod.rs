@@ -5,5 +5,5 @@ mod lwe;
 mod ntt;
 
 pub use fourier::FourierNtruKeySwitchingKey;
-pub use lwe::{NtruLweKeySwitchingContext, NtruLweKeySwitchingKey};
+pub use lwe::{NtruLweKeySwitchingKey, NtruLweKeySwitchingWorkspace};
 pub use ntt::NttNtruKeySwitchingKey;

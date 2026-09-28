@@ -14,12 +14,12 @@ use super::GlweSecretKey;
 
 mod batch;
 mod coefficient;
-mod context;
 mod decrypt;
 mod encrypt;
 mod gadget;
 mod truncated;
-pub use context::NttGadgetEncryptContext;
+mod workspace;
+pub use workspace::NttGlweGadgetEncryptWorkspace;
 
 /// A single-modulus GLWE secret key in NTT form.
 /// Key storage is securely erased on drop.

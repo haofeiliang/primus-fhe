@@ -10,12 +10,12 @@ use crate::{NtruError, NtruParameters, SecretKeyDistr, parameter::KEY_GENERATION
 
 use super::NtruSecretKey;
 
-mod context;
 mod decrypt;
 mod encrypt;
 mod gadget;
+mod workspace;
 
-pub use context::NttNtruGadgetEncryptContext;
+pub use workspace::NttNtruGadgetEncryptWorkspace;
 
 /// An NTRU secret key represented by `NTT(f)` and its exact pointwise inverse.
 /// Both polynomials are securely erased on drop, including failed conversions.

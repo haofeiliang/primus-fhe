@@ -472,7 +472,7 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
         ciphertext: &DcrtGlweCiphertext<A>,
         params: &CrtGlweParameters<T, M>,
         table: &DcrtTable<Table>,
-        context: &mut DcrtGlweDecryptContext<T>,
+        workspace: &mut DcrtGlweDecryptWorkspace<T>,
     ) -> PolynomialOwned<T>
     where
         M: FieldContext<T>,
@@ -480,13 +480,13 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
         A: Data<Elem = T>,
     {
         let mut msg = PolynomialOwned::zero(params.poly_length());
-        self.decrypt_inplace(ciphertext, &mut msg, params, table, context);
+        self.decrypt_inplace(ciphertext, &mut msg, params, table, workspace);
         msg
     }
 
     /// Decrypts a DCRT GLWE ciphertext into `msg` using reusable workspace.
     ///
-    /// The ciphertext, output, parameters, table, and context must share the
+    /// The ciphertext, output, parameters, table, and workspace must share the
     /// same polynomial length and ordered RNS basis.
     pub fn decrypt_inplace<M, Table, A, B>(
         &self,
@@ -494,19 +494,19 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
         msg: &mut Polynomial<B>,
         params: &CrtGlweParameters<T, M>,
         table: &DcrtTable<Table>,
-        context: &mut DcrtGlweDecryptContext<T>,
+        workspace: &mut DcrtGlweDecryptWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
         A: Data<Elem = T>,
         B: DataMut<Elem = T>,
     {
-        assert_eq!(context.size(), params.size());
+        assert_eq!(workspace.size(), params.size());
 
-        let DcrtGlweDecryptContextRefMut {
+        let DcrtGlweDecryptWorkspaceRefMut {
             msg_mod_q,
             fast_convert_buffer,
-        } = context.as_mut();
+        } = workspace.as_mut();
 
         self.phase_inplace(ciphertext, msg_mod_q, params);
 
@@ -521,7 +521,7 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
 }
 
 // ---------------------------------------------------------------------------
-// Decryption context
+// Decryption workspace
 // ---------------------------------------------------------------------------
 
 /// Reusable workspace for DCRT GLWE decryption.
@@ -529,34 +529,34 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
 /// Decryption overwrites both internal buffers. Their contents are securely
 /// erased on drop; explicit [`Zeroize::zeroize`] also preserves the allocations
 /// and layout so the workspace can be reused.
-pub struct DcrtGlweDecryptContext<T: FheUint> {
+pub struct DcrtGlweDecryptWorkspace<T: FheUint> {
     size: RnsGlweSize,
     msg_mod_q: DcrtPolynomial<Vec<T>>,
     fast_convert_buffer: Vec<T>,
 }
 
-impl<T: FheUint> Zeroize for DcrtGlweDecryptContext<T> {
+impl<T: FheUint> Zeroize for DcrtGlweDecryptWorkspace<T> {
     fn zeroize(&mut self) {
         self.msg_mod_q.as_mut().iter_mut().zeroize();
         self.fast_convert_buffer.iter_mut().zeroize();
     }
 }
 
-impl<T: FheUint> ZeroizeOnDrop for DcrtGlweDecryptContext<T> {}
+impl<T: FheUint> ZeroizeOnDrop for DcrtGlweDecryptWorkspace<T> {}
 
-impl<T: FheUint> Drop for DcrtGlweDecryptContext<T> {
+impl<T: FheUint> Drop for DcrtGlweDecryptWorkspace<T> {
     fn drop(&mut self) {
         self.zeroize();
     }
 }
 
-struct DcrtGlweDecryptContextRefMut<'a, T: FheUint> {
+struct DcrtGlweDecryptWorkspaceRefMut<'a, T: FheUint> {
     msg_mod_q: &'a mut DcrtPolynomial<Vec<T>>,
     fast_convert_buffer: &'a mut [T],
 }
 
-impl<T: FheUint> DcrtGlweDecryptContext<T> {
-    /// Creates a new [`DcrtGlweDecryptContext<T>`].
+impl<T: FheUint> DcrtGlweDecryptWorkspace<T> {
+    /// Creates a new [`DcrtGlweDecryptWorkspace<T>`].
     #[inline]
     pub fn new(size: RnsGlweSize) -> Self {
         let msg_mod_q: DcrtPolynomial<Vec<T>> = DcrtPolynomial::zero(size.rns_poly_len());
@@ -576,8 +576,8 @@ impl<T: FheUint> DcrtGlweDecryptContext<T> {
     }
 
     #[inline]
-    fn as_mut(&mut self) -> DcrtGlweDecryptContextRefMut<'_, T> {
-        DcrtGlweDecryptContextRefMut {
+    fn as_mut(&mut self) -> DcrtGlweDecryptWorkspaceRefMut<'_, T> {
+        DcrtGlweDecryptWorkspaceRefMut {
             msg_mod_q: &mut self.msg_mod_q,
             fast_convert_buffer: &mut self.fast_convert_buffer,
         }
@@ -597,21 +597,21 @@ mod tests {
     use primus_lattice::GlweSize;
 
     #[test]
-    fn decrypt_context_erases_both_buffers_without_changing_layout() {
+    fn decrypt_workspace_erases_both_buffers_without_changing_layout() {
         for count in [1, 2] {
             let size = RnsGlweSize::new(GlweSize::new(1, 8), count);
-            let mut context = DcrtGlweDecryptContext::<u64>::new(size);
-            context.msg_mod_q.as_mut().fill(0xfeed);
-            context.fast_convert_buffer.fill(0xbeef);
-            let phase_ptr = context.msg_mod_q.as_ref().as_ptr();
-            let conversion_ptr = context.fast_convert_buffer.as_ptr();
-            let conversion_len = context.fast_convert_buffer.len();
-            context.zeroize();
-            assert_eq!(context.size(), size);
-            assert_eq!(context.msg_mod_q.as_ref(), vec![0; size.rns_poly_len()]);
-            assert_eq!(context.fast_convert_buffer, vec![0; conversion_len]);
-            assert_eq!(context.msg_mod_q.as_ref().as_ptr(), phase_ptr);
-            assert_eq!(context.fast_convert_buffer.as_ptr(), conversion_ptr);
+            let mut workspace = DcrtGlweDecryptWorkspace::<u64>::new(size);
+            workspace.msg_mod_q.as_mut().fill(0xfeed);
+            workspace.fast_convert_buffer.fill(0xbeef);
+            let phase_ptr = workspace.msg_mod_q.as_ref().as_ptr();
+            let conversion_ptr = workspace.fast_convert_buffer.as_ptr();
+            let conversion_len = workspace.fast_convert_buffer.len();
+            workspace.zeroize();
+            assert_eq!(workspace.size(), size);
+            assert_eq!(workspace.msg_mod_q.as_ref(), vec![0; size.rns_poly_len()]);
+            assert_eq!(workspace.fast_convert_buffer, vec![0; conversion_len]);
+            assert_eq!(workspace.msg_mod_q.as_ref().as_ptr(), phase_ptr);
+            assert_eq!(workspace.fast_convert_buffer.as_ptr(), conversion_ptr);
         }
     }
 }

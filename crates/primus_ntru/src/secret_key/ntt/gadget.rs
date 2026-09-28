@@ -1,6 +1,6 @@
 //! NLev and NGSW encryption.
 
-use super::{NttNtruGadgetEncryptContext, NttNtruSecretKey};
+use super::{NttNtruGadgetEncryptWorkspace, NttNtruSecretKey};
 use crate::{NlevParameters, NttNgswCiphertext, NttNlevCiphertext, NttNtruCiphertext};
 use primus_data::{Data, DataMut};
 use primus_integer::{FheUint, SignedInteger};
@@ -17,7 +17,7 @@ impl<T: FheUint> NttNtruSecretKey<T> {
         params: &NlevParameters<T, M>,
         ntt: &Table,
         rng: &mut R,
-        context: &mut NttNtruGadgetEncryptContext<T>,
+        workspace: &mut NttNtruGadgetEncryptWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
@@ -25,7 +25,7 @@ impl<T: FheUint> NttNtruSecretKey<T> {
         A: Data<Elem = T>,
         B: DataMut<Elem = T>,
     {
-        self.assert_gadget_domain(params, ntt, context);
+        self.assert_gadget_domain(params, ntt, workspace);
         assert_eq!(
             message.as_ref().len(),
             self.poly_length(),
@@ -45,8 +45,14 @@ impl<T: FheUint> NttNtruSecretKey<T> {
             .scalar_iter()
             .zip(result.iter_ntt_ntru_mut(poly_length))
         {
-            message.mul_scalar_to(scalar, &mut context.encoded, modulus);
-            self.encrypt_encoded_to_unchecked(&context.encoded, &mut level, ntru_params, ntt, rng);
+            message.mul_scalar_to(scalar, &mut workspace.encoded, modulus);
+            self.encrypt_encoded_to_unchecked(
+                &workspace.encoded,
+                &mut level,
+                ntru_params,
+                ntt,
+                rng,
+            );
         }
     }
 
@@ -70,14 +76,14 @@ impl<T: FheUint> NttNtruSecretKey<T> {
         params: &NlevParameters<T, M>,
         ntt: &Table,
         rng: &mut R,
-        context: &mut NttNtruGadgetEncryptContext<T>,
+        workspace: &mut NttNtruGadgetEncryptWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
         R: rand::Rng + rand::CryptoRng,
         B: DataMut<Elem = T>,
     {
-        self.assert_gadget_domain(params, ntt, context);
+        self.assert_gadget_domain(params, ntt, workspace);
         assert_eq!(
             output.as_ref().len(),
             params.nlev_len(),
@@ -88,15 +94,15 @@ impl<T: FheUint> NttNtruSecretKey<T> {
             input < modulus.value(),
             "NLev constant must be a canonical residue"
         );
-        context.encoded.as_mut().fill(T::ZERO);
+        workspace.encoded.as_mut().fill(T::ZERO);
         for (scalar, mut level) in params
             .basis()
             .scalar_iter()
             .zip(output.iter_ntt_ntru_mut(self.poly_length()))
         {
-            context.encoded.as_mut()[0] = modulus.reduce_mul(input, scalar);
+            workspace.encoded.as_mut()[0] = modulus.reduce_mul(input, scalar);
             self.encrypt_encoded_to_unchecked(
-                &context.encoded,
+                &workspace.encoded,
                 &mut level,
                 params.ntru(),
                 ntt,
@@ -113,7 +119,7 @@ impl<T: FheUint> NttNtruSecretKey<T> {
         params: &NlevParameters<T, M>,
         ntt: &Table,
         rng: &mut R,
-        context: &mut NttNtruGadgetEncryptContext<T>,
+        workspace: &mut NttNtruGadgetEncryptWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
@@ -121,7 +127,7 @@ impl<T: FheUint> NttNtruSecretKey<T> {
         A: Data<Elem = T>,
         B: DataMut<Elem = T>,
     {
-        self.assert_gadget_domain(params, ntt, context);
+        self.assert_gadget_domain(params, ntt, workspace);
         assert_eq!(
             message.as_ref().len(),
             self.poly_length(),
@@ -141,11 +147,11 @@ impl<T: FheUint> NttNtruSecretKey<T> {
             .scalar_iter()
             .zip(result.iter_ntt_ntru_mut(poly_length))
         {
-            message.mul_scalar_to(scalar, &mut context.encoded, modulus);
-            ntt.transform_slice(context.encoded.as_mut());
+            message.mul_scalar_to(scalar, &mut workspace.encoded, modulus);
+            ntt.transform_slice(workspace.encoded.as_mut());
             self.encrypt_zeros_to_unchecked(&mut level, ntru_params, ntt, rng);
             NttPolynomial(level.as_mut())
-                .add_assign(&NttPolynomial(context.encoded.as_ref()), modulus);
+                .add_assign(&NttPolynomial(workspace.encoded.as_ref()), modulus);
         }
     }
 
@@ -214,12 +220,12 @@ impl<T: FheUint> NttNtruSecretKey<T> {
         &self,
         params: &NlevParameters<T, M>,
         ntt: &Table,
-        context: &NttNtruGadgetEncryptContext<T>,
+        workspace: &NttNtruGadgetEncryptWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
     {
         self.assert_domain(params.ntru(), ntt);
-        assert_eq!(context.encoded.as_ref().len(), self.poly_length());
+        assert_eq!(workspace.encoded.as_ref().len(), self.poly_length());
     }
 }

@@ -1,7 +1,7 @@
 use primus_glwe_rns::{
-    CrtGlevParameters, CrtGlweParameters, CrtGlweTraceContext, CrtGlweTraceKey, DcrtGadgetDomain,
-    DcrtGlweCiphertext, DcrtGlweDecryptContext, DcrtGlweRevTraceContext, DcrtGlweRevTraceKey,
-    DcrtGlweSecretKey, DcrtGlweTraceContext, DcrtGlweTraceKey, GlweSecretKey, SecretKeyDistr,
+    CrtGlevParameters, CrtGlweParameters, CrtGlweTraceKey, CrtGlweTraceWorkspace, DcrtGadgetDomain,
+    DcrtGlweCiphertext, DcrtGlweDecryptWorkspace, DcrtGlweRevTraceKey, DcrtGlweRevTraceWorkspace,
+    DcrtGlweSecretKey, DcrtGlweTraceKey, DcrtGlweTraceWorkspace, GlweSecretKey, SecretKeyDistr,
 };
 use primus_lattice::glwe::CrtGlwe;
 use primus_modulus::BarrettModulus;
@@ -67,21 +67,21 @@ fn test_crt_glwe_trace() {
     let input1: Polynomial<Vec<ValueT>> = Polynomial::random(poly_length, mod_t, &mut rng);
     let mut c1: DcrtGlweCiphertext<Vec<ValueT>> = DcrtGlweCiphertext::zero(rns_glwe_len);
     let mut c2: CrtGlwe<Vec<ValueT>> = CrtGlwe::zero(rns_glwe_len);
-    let mut trace_context = CrtGlweTraceContext::new(&domain);
-    let mut decrypt_context = DcrtGlweDecryptContext::new(glwe_params.size());
+    let mut trace_workspace = CrtGlweTraceWorkspace::new(&domain);
+    let mut decrypt_workspace = DcrtGlweDecryptWorkspace::new(glwe_params.size());
 
     dcrt_sk.encrypt_plaintext_inplace(&input1, &mut c1, &glwe_params, &table, &mut rng);
 
-    let m_dec = dcrt_sk.decrypt(&c1, &glwe_params, &table, &mut decrypt_context);
+    let m_dec = dcrt_sk.decrypt(&c1, &glwe_params, &table, &mut decrypt_workspace);
     assert_eq!(m_dec, input1);
 
     let mut c1 = c1.into_coeff_form(&table);
 
-    trace_key.trace_inplace(&c1, &mut c2, &domain, &mut trace_context);
+    trace_key.trace_inplace(&c1, &mut c2, &domain, &mut trace_workspace);
 
     let c2 = c2.into_ntt_form(&table);
 
-    let trace_msg = dcrt_sk.decrypt(&c2, &glwe_params, &table, &mut decrypt_context);
+    let trace_msg = dcrt_sk.decrypt(&c2, &glwe_params, &table, &mut decrypt_workspace);
 
     // trace_msg[0] = N · input1[0]  (mod t)
     assert_eq!(
@@ -107,11 +107,11 @@ fn test_crt_glwe_trace() {
 
     let mut c2: CrtGlwe<Vec<ValueT>> = CrtGlwe::new(c2.0);
 
-    trace_key.trace_inplace(&c1, &mut c2, &domain, &mut trace_context);
+    trace_key.trace_inplace(&c1, &mut c2, &domain, &mut trace_workspace);
 
     let c2 = c2.into_ntt_form(&table);
 
-    let trace_msg = dcrt_sk.decrypt(&c2, &glwe_params, &table, &mut decrypt_context);
+    let trace_msg = dcrt_sk.decrypt(&c2, &glwe_params, &table, &mut decrypt_workspace);
 
     assert_eq!(input1[0], trace_msg[0]);
     assert!(trace_msg[1..].iter().all(|&v| v == 0));
@@ -169,17 +169,17 @@ fn test_dcrt_glwe_trace() {
     let input1: Polynomial<Vec<ValueT>> = Polynomial::random(poly_length, mod_t, &mut rng);
     let mut c1: DcrtGlweCiphertext<Vec<ValueT>> = DcrtGlweCiphertext::zero(rns_glwe_len);
     let mut c2: DcrtGlweCiphertext<Vec<ValueT>> = DcrtGlweCiphertext::zero(rns_glwe_len);
-    let mut trace_context = DcrtGlweTraceContext::new(&domain);
-    let mut decrypt_context = DcrtGlweDecryptContext::new(glwe_params.size());
+    let mut trace_workspace = DcrtGlweTraceWorkspace::new(&domain);
+    let mut decrypt_workspace = DcrtGlweDecryptWorkspace::new(glwe_params.size());
 
     dcrt_sk.encrypt_plaintext_inplace(&input1, &mut c1, &glwe_params, &table, &mut rng);
 
-    let m_dec = dcrt_sk.decrypt(&c1, &glwe_params, &table, &mut decrypt_context);
+    let m_dec = dcrt_sk.decrypt(&c1, &glwe_params, &table, &mut decrypt_workspace);
     assert_eq!(m_dec, input1);
 
-    trace_key.trace_inplace(&c1, &mut c2, &domain, &mut trace_context);
+    trace_key.trace_inplace(&c1, &mut c2, &domain, &mut trace_workspace);
 
-    let trace_msg = dcrt_sk.decrypt(&c2, &glwe_params, &table, &mut decrypt_context);
+    let trace_msg = dcrt_sk.decrypt(&c2, &glwe_params, &table, &mut decrypt_workspace);
 
     assert_eq!(
         mod_t.reduce_mul(input1[0], poly_length as ValueT),
@@ -201,9 +201,9 @@ fn test_dcrt_glwe_trace() {
         &moduli,
     );
 
-    trace_key.trace_inplace(&c1, &mut c2, &domain, &mut trace_context);
+    trace_key.trace_inplace(&c1, &mut c2, &domain, &mut trace_workspace);
 
-    let trace_msg = dcrt_sk.decrypt(&c2, &glwe_params, &table, &mut decrypt_context);
+    let trace_msg = dcrt_sk.decrypt(&c2, &glwe_params, &table, &mut decrypt_workspace);
 
     assert_eq!(input1[0], trace_msg[0]);
     assert!(trace_msg[1..].iter().all(|&v| v == 0));
@@ -260,17 +260,17 @@ fn test_dcrt_glwe_rev_trace() {
     let input1: Polynomial<Vec<ValueT>> = Polynomial::random(poly_length, mod_t, &mut rng);
     let mut c1: DcrtGlweCiphertext<Vec<ValueT>> = DcrtGlweCiphertext::zero(rns_glwe_len);
     let mut c2: DcrtGlweCiphertext<Vec<ValueT>> = DcrtGlweCiphertext::zero(rns_glwe_len);
-    let mut trace_context = DcrtGlweRevTraceContext::new(&domain);
-    let mut decrypt_context = DcrtGlweDecryptContext::new(glwe_params.size());
+    let mut trace_workspace = DcrtGlweRevTraceWorkspace::new(&domain);
+    let mut decrypt_workspace = DcrtGlweDecryptWorkspace::new(glwe_params.size());
 
     dcrt_sk.encrypt_plaintext_inplace(&input1, &mut c1, &glwe_params, &table, &mut rng);
 
-    let m_dec = dcrt_sk.decrypt(&c1, &glwe_params, &table, &mut decrypt_context);
+    let m_dec = dcrt_sk.decrypt(&c1, &glwe_params, &table, &mut decrypt_workspace);
     assert_eq!(m_dec, input1);
 
-    rev_trace_key.trace_inplace(&c1, &mut c2, &domain, &mut trace_context);
+    rev_trace_key.trace_inplace(&c1, &mut c2, &domain, &mut trace_workspace);
 
-    let trace_msg = dcrt_sk.decrypt(&c2, &glwe_params, &table, &mut decrypt_context);
+    let trace_msg = dcrt_sk.decrypt(&c2, &glwe_params, &table, &mut decrypt_workspace);
 
     assert_eq!(input1[0], trace_msg[0]);
     assert!(trace_msg[1..].iter().all(|&v| v == 0));

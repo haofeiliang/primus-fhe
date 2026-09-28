@@ -4,11 +4,11 @@ use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable, TfheFftTable};
 use primus_modulus::BarrettModulus;
 use primus_modulus::NativeModulus;
 use primus_ntru::{
-    FourierNtruAutomorphismContext, FourierNtruAutomorphismKey, FourierNtruCiphertext,
-    FourierNtruDecryptContext, FourierNtruEncryptContext, FourierNtruGadgetEncryptContext,
-    FourierNtruSecretKey, NlevParameters, NtruCiphertext, NtruParameters,
-    NttNtruAutomorphismContext, NttNtruAutomorphismKey, NttNtruCiphertext,
-    NttNtruGadgetEncryptContext, NttNtruSecretKey, SecretKeyDistr,
+    FourierNtruAutomorphismKey, FourierNtruAutomorphismWorkspace, FourierNtruCiphertext,
+    FourierNtruDecryptWorkspace, FourierNtruEncryptWorkspace, FourierNtruGadgetEncryptWorkspace,
+    FourierNtruSecretKey, NlevParameters, NtruCiphertext, NtruParameters, NttNtruAutomorphismKey,
+    NttNtruAutomorphismWorkspace, NttNtruCiphertext, NttNtruGadgetEncryptWorkspace,
+    NttNtruSecretKey, SecretKeyDistr,
 };
 use primus_ntt::{NttTable, UintNttTable};
 use primus_poly::Polynomial;
@@ -51,13 +51,13 @@ fn fourier_automorphism<Table: FftTable>() {
         &parameters,
         &mut fft,
         &mut rng,
-        &mut FourierNtruEncryptContext::new(N),
+        &mut FourierNtruEncryptWorkspace::new(N),
     );
     let mut coefficients = NtruCiphertext::<Vec<u32>>::zero(N);
     input.write_torus_form(&mut coefficients, &mut fft);
-    let mut generation = FourierNtruGadgetEncryptContext::new(N);
-    let mut context = FourierNtruAutomorphismContext::new(N);
-    let mut decrypt = FourierNtruDecryptContext::new(N);
+    let mut generation = FourierNtruGadgetEncryptWorkspace::new(N);
+    let mut workspace = FourierNtruAutomorphismWorkspace::new(N);
+    let mut decrypt = FourierNtruDecryptWorkspace::new(N);
     let mut output = NtruCiphertext::new(vec![7u32; N]);
     let mut transformed_output = FourierNtruCiphertext::<Vec<Complex64>>::zero(N / 2);
     let mut transformed_coeff_output = FourierNtruCiphertext::<Vec<Complex64>>::zero(N / 2);
@@ -76,8 +76,8 @@ fn fourier_automorphism<Table: FftTable>() {
             assert_eq!(auto.degree(), degree);
             assert_eq!(auto.poly_length(), N);
             assert_eq!(auto.basis(), gadget.basis());
-            auto.apply_to(&coefficients, &mut output, &mut fft, &mut context);
-            auto.apply_fourier_to(&input, &mut transformed_output, &mut fft, &mut context);
+            auto.apply_to(&coefficients, &mut output, &mut fft, &mut workspace);
+            auto.apply_fourier_to(&input, &mut transformed_output, &mut fft, &mut workspace);
             output.write_fourier_form(&mut transformed_coeff_output, &mut fft);
             // Different representative/rounding paths need not be bit-identical.
             // Both must decrypt the independently substituted target message.
@@ -116,7 +116,7 @@ fn fourier_automorphism_rejects_incompatible_resources_before_writes() {
     let mut rng = StdRng::seed_from_u64(0x6175_746f_4642_4e44);
     let (secret, key) =
         FourierNtruSecretKey::generate_pair(&parameters, &mut fft, &mut rng).unwrap();
-    let mut generation = FourierNtruGadgetEncryptContext::new(N);
+    let mut generation = FourierNtruGadgetEncryptWorkspace::new(N);
     let auto = FourierNtruAutomorphismKey::generate(
         3,
         &secret,
@@ -135,10 +135,10 @@ fn fourier_automorphism_rejects_incompatible_resources_before_writes() {
         let mut fft = FftEngine::new(table);
         let input = NtruCiphertext::<Vec<u32>>::zero(input_len);
         let mut output = NtruCiphertext::new(vec![7; output_len]);
-        let mut context = FourierNtruAutomorphismContext::new(scratch_len);
+        let mut workspace = FourierNtruAutomorphismWorkspace::new(scratch_len);
         assert!(
             catch_unwind(AssertUnwindSafe(|| {
-                auto.apply_to(&input, &mut output, &mut fft, &mut context);
+                auto.apply_to(&input, &mut output, &mut fft, &mut workspace);
             }))
             .is_err()
         );
@@ -147,7 +147,7 @@ fn fourier_automorphism_rejects_incompatible_resources_before_writes() {
         let mut output = FourierNtruCiphertext::new(vec![Complex64::new(7.0, 0.0); output_len / 2]);
         assert!(
             catch_unwind(AssertUnwindSafe(|| {
-                auto.apply_fourier_to(&input, &mut output, &mut fft, &mut context);
+                auto.apply_fourier_to(&input, &mut output, &mut fft, &mut workspace);
             }))
             .is_err()
         );
@@ -202,8 +202,8 @@ fn ntt_automorphism_preserves_the_original_nonbinary_secret() {
     );
     let mut coefficients = NtruCiphertext::<Vec<u32>>::zero(N);
     input.write_coeff_form(&mut coefficients, &table);
-    let mut generation = NttNtruGadgetEncryptContext::new(N);
-    let mut context = NttNtruAutomorphismContext::new(N);
+    let mut generation = NttNtruGadgetEncryptWorkspace::new(N);
+    let mut workspace = NttNtruAutomorphismWorkspace::new(N);
     let mut output = NtruCiphertext::new(vec![7u32; N]);
     let mut transformed_output = NttNtruCiphertext::<Vec<u32>>::zero(N);
     let mut transformed_coeff_output = NttNtruCiphertext::<Vec<u32>>::zero(N);
@@ -222,13 +222,13 @@ fn ntt_automorphism_preserves_the_original_nonbinary_secret() {
             assert_eq!(auto.degree(), degree);
             assert_eq!(auto.poly_length(), N);
             assert_eq!(auto.basis(), gadget.basis());
-            auto.apply_to(&coefficients, &mut output, modulus, &table, &mut context);
+            auto.apply_to(&coefficients, &mut output, modulus, &table, &mut workspace);
             auto.apply_ntt_to(
                 &input,
                 &mut transformed_output,
                 modulus,
                 &table,
-                &mut context,
+                &mut workspace,
             );
             output.write_ntt_form(&mut transformed_coeff_output, &table);
             assert_eq!(
@@ -256,7 +256,7 @@ fn ntt_automorphism_rejects_incompatible_resources_before_writes() {
     let gadget = NlevParameters::with_ntru_params(&parameters, 3, None);
     let mut rng = StdRng::seed_from_u64(0x6175_746f_626f_756e);
     let (secret, key) = NttNtruSecretKey::generate_pair(&parameters, &table, &mut rng).unwrap();
-    let mut generation = NttNtruGadgetEncryptContext::new(N);
+    let mut generation = NttNtruGadgetEncryptWorkspace::new(N);
     let auto = NttNtruAutomorphismKey::generate(
         3,
         &secret,
@@ -276,10 +276,10 @@ fn ntt_automorphism_rejects_incompatible_resources_before_writes() {
     ] {
         let input = NtruCiphertext::<Vec<u32>>::zero(input_len);
         let mut output = NtruCiphertext::new(vec![7; output_len]);
-        let mut context = NttNtruAutomorphismContext::new(scratch_len);
+        let mut workspace = NttNtruAutomorphismWorkspace::new(scratch_len);
         assert!(
             catch_unwind(AssertUnwindSafe(|| {
-                auto.apply_to(&input, &mut output, modulus, table, &mut context);
+                auto.apply_to(&input, &mut output, modulus, table, &mut workspace);
             }))
             .is_err()
         );
@@ -288,7 +288,7 @@ fn ntt_automorphism_rejects_incompatible_resources_before_writes() {
         let mut output = NttNtruCiphertext::new(output.as_mut());
         assert!(
             catch_unwind(AssertUnwindSafe(|| {
-                auto.apply_ntt_to(&input, &mut output, modulus, table, &mut context);
+                auto.apply_ntt_to(&input, &mut output, modulus, table, &mut workspace);
             }))
             .is_err()
         );

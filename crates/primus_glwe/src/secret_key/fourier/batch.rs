@@ -1,6 +1,6 @@
 //! Batch encryption of constant polynomials into Fourier GGSWs.
 
-use super::{FourierGadgetEncryptContext, FourierGlweSecretKey};
+use super::{FourierGlweGadgetEncryptWorkspace, FourierGlweSecretKey};
 use crate::{FourierGgswCiphertext, GlevParameters};
 use primus_fft::{Complex64, FftEngine, FftTable, TorusFftValue};
 use primus_lattice::ggsw::Ggsw;
@@ -33,14 +33,14 @@ impl FourierGlweSecretKey {
         params: &GlevParameters<T, NativeModulus<T>>,
         fft: &mut FftEngine<'_, Table>,
         rng: &mut R,
-        context: &mut FourierGadgetEncryptContext<T>,
+        workspace: &mut FourierGlweGadgetEncryptWorkspace<T>,
     ) where
         T: TorusFftValue,
         Table: FftTable,
         R: rand::Rng + rand::CryptoRng,
     {
         self.assert_gadget_compatible(params, fft);
-        context.assert_ggsw_compatible(params.size());
+        workspace.assert_ggsw_compatible(params.size());
         let ggsw_len = params.fourier_ggsw_len();
         let expected = input
             .len()
@@ -52,11 +52,11 @@ impl FourierGlweSecretKey {
             "Fourier GGSW batch output layout mismatch"
         );
 
-        context.encoded.as_mut().fill(T::ZERO);
+        workspace.encoded.as_mut().fill(T::ZERO);
         let mut previous = None;
         for (&constant, block) in input.iter().zip(output.chunks_exact_mut(ggsw_len)) {
             if previous != Some(constant) {
-                prepare_constant_levels(constant, params, fft, context);
+                prepare_constant_levels(constant, params, fft, workspace);
                 previous = Some(constant);
             }
             self.encrypt_ggsw_from_levels_to(
@@ -64,7 +64,7 @@ impl FourierGlweSecretKey {
                 params,
                 fft,
                 rng,
-                context,
+                workspace,
             );
         }
     }
@@ -98,7 +98,7 @@ impl FourierGlweSecretKey {
         params: &GlevParameters<T, NativeModulus<T>>,
         fft: &mut FftEngine<'_, Table>,
         rng: &mut R,
-        context: &mut FourierGadgetEncryptContext<T>,
+        workspace: &mut FourierGlweGadgetEncryptWorkspace<T>,
         fourier_scratch: &mut [Complex64],
     ) where
         T: TorusFftValue,
@@ -106,7 +106,7 @@ impl FourierGlweSecretKey {
         R: rand::Rng + rand::CryptoRng,
     {
         self.assert_gadget_compatible(params, fft);
-        context.assert_ggsw_compatible(params.size());
+        workspace.assert_ggsw_compatible(params.size());
         let ggsw_len = params.ggsw_len();
         let expected = input
             .len()
@@ -124,14 +124,14 @@ impl FourierGlweSecretKey {
         );
 
         let mut transformed = FourierGgswCiphertext::new(fourier_scratch);
-        context.encoded.as_mut().fill(T::ZERO);
+        workspace.encoded.as_mut().fill(T::ZERO);
         let mut previous = None;
         for (&constant, block) in input.iter().zip(output.chunks_exact_mut(ggsw_len)) {
             if previous != Some(constant) {
-                prepare_constant_levels(constant, params, fft, context);
+                prepare_constant_levels(constant, params, fft, workspace);
                 previous = Some(constant);
             }
-            self.encrypt_ggsw_from_levels_to(&mut transformed, params, fft, rng, context);
+            self.encrypt_ggsw_from_levels_to(&mut transformed, params, fft, rng, workspace);
             transformed.write_torus_form(&mut Ggsw::new(block), fft);
         }
     }
@@ -145,14 +145,14 @@ fn prepare_constant_levels<T: TorusFftValue, Table: FftTable>(
     constant: T,
     params: &GlevParameters<T, NativeModulus<T>>,
     fft: &mut FftEngine<'_, Table>,
-    context: &mut FourierGadgetEncryptContext<T>,
+    workspace: &mut FourierGlweGadgetEncryptWorkspace<T>,
 ) {
     for (scalar, transformed) in params.basis().scalar_iter().zip(
-        context
+        workspace
             .level_transforms
             .chunks_exact_mut(fft.fourier_length()),
     ) {
-        context.encoded.as_mut()[0] = constant.wrapping_mul(scalar);
-        fft.forward_as_torus(context.encoded.as_ref(), transformed);
+        workspace.encoded.as_mut()[0] = constant.wrapping_mul(scalar);
+        fft.forward_as_torus(workspace.encoded.as_ref(), transformed);
     }
 }

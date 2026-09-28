@@ -4,8 +4,8 @@ use primus_data::{Data, DataMut};
 use primus_integer::FheUint;
 use primus_lattice::{
     RnsGadgetSize, RnsGlweSize,
-    context::DcrtGlevMulContext,
     glev::{DcrtGlevIter, DcrtGlevIterMut},
+    workspace::DcrtGlevMulWorkspace,
 };
 use primus_ntt::NttTable;
 use primus_poly::{CrtPolynomial, DcrtPolynomial};
@@ -96,14 +96,14 @@ impl<T: FheUint> DcrtGlweKeySwitchingKey<T> {
     ///
     /// # Panics
     ///
-    /// Panics if the input, output, or reusable context has a layout that is
+    /// Panics if the input, output, or reusable workspace has a layout that is
     /// incompatible with this key.
     pub fn key_switch_to<M, Table, A, B>(
         &self,
         input: &CrtGlweCiphertext<A>,
         output: &mut DcrtGlweCiphertext<B>,
         domain: &DcrtGadgetDomain<'_, T, M, Table>,
-        context: &mut DcrtGlweKeySwitchingContext<T>,
+        workspace: &mut DcrtGlweKeySwitchingWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
@@ -116,8 +116,8 @@ impl<T: FheUint> DcrtGlweKeySwitchingKey<T> {
             self.output_size.rns_glwe_size().rns_glwe_len()
         );
         assert!(
-            context.input_size == self.input_size && context.output_size == self.output_size,
-            "DCRT key-switching key and context use incompatible layouts"
+            workspace.input_size == self.input_size && workspace.output_size == self.output_size,
+            "DCRT key-switching key and workspace use incompatible layouts"
         );
 
         let parameters = domain.parameters();
@@ -126,11 +126,11 @@ impl<T: FheUint> DcrtGlweKeySwitchingKey<T> {
         let basis = parameters.basis();
         let poly_length = self.input_size.poly_length();
         let rns_poly_len = self.input_size.rns_poly_len();
-        let DcrtGlweKeySwitchingContext {
+        let DcrtGlweKeySwitchingWorkspace {
             transformed_polynomial,
-            glev_context,
+            glev_workspace,
             ..
-        } = context;
+        } = workspace;
 
         let (input_mask, input_body) = input.a_b(rns_poly_len);
 
@@ -146,7 +146,7 @@ impl<T: FheUint> DcrtGlweKeySwitchingKey<T> {
                     basis,
                     table,
                     rns_base,
-                    glev_context,
+                    glev_workspace,
                 );
             });
 
@@ -169,14 +169,14 @@ impl<T: FheUint> DcrtGlweKeySwitchingKey<T> {
 /// Construct this workspace from the domain used by the operations. Reuse with
 /// another domain requires the same gadget layout and RNS big-integer limb
 /// width; the caller must maintain this compatibility. No rebinding is performed.
-pub struct DcrtGlweKeySwitchingContext<T: FheUint> {
+pub struct DcrtGlweKeySwitchingWorkspace<T: FheUint> {
     input_size: RnsGlweSize,
     output_size: RnsGadgetSize,
     transformed_polynomial: CrtPolynomial<Vec<T>>,
-    glev_context: DcrtGlevMulContext<T>,
+    glev_workspace: DcrtGlevMulWorkspace<T>,
 }
 
-impl<T: FheUint> DcrtGlweKeySwitchingContext<T> {
+impl<T: FheUint> DcrtGlweKeySwitchingWorkspace<T> {
     /// Allocates workspace for a DCRT key-switching Domain.
     pub fn new<M, Table>(
         domain: &DcrtGadgetDomain<'_, T, M, Table>,
@@ -194,7 +194,7 @@ impl<T: FheUint> DcrtGlweKeySwitchingContext<T> {
             input_size,
             output_size,
             transformed_polynomial: CrtPolynomial::zero(input_size.rns_poly_len()),
-            glev_context: DcrtGlevMulContext::new(output_size, domain.rns_base()),
+            glev_workspace: DcrtGlevMulWorkspace::new(output_size, domain.rns_base()),
         }
     }
 }

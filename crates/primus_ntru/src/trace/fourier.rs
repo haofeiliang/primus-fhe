@@ -8,24 +8,25 @@ use primus_reduce::ReduceNeg;
 
 use super::kernels;
 use crate::{
-    FourierNtruAutomorphismContext, FourierNtruAutomorphismKey, FourierNtruGadgetEncryptContext,
-    FourierNtruSecretKey, NlevParameters, NtruCiphertext, NtruSecretKey,
+    FourierNtruAutomorphismKey, FourierNtruAutomorphismWorkspace,
+    FourierNtruGadgetEncryptWorkspace, FourierNtruSecretKey, NlevParameters, NtruCiphertext,
+    NtruSecretKey,
 };
 
 /// Reusable coefficient buffers for Fourier-key trace, projection and expansion.
-pub struct FourierNtruTraceContext<T: TorusFftValue> {
+pub struct FourierNtruTraceWorkspace<T: TorusFftValue> {
     automorphism_output: NtruCiphertext<Vec<T>>,
-    automorphism: FourierNtruAutomorphismContext<T>,
+    automorphism: FourierNtruAutomorphismWorkspace<T>,
 }
 
-impl<T: TorusFftValue> FourierNtruTraceContext<T> {
+impl<T: TorusFftValue> FourierNtruTraceWorkspace<T> {
     /// Allocates workspace for one polynomial length.
     ///
     /// # Panics
-    /// Inherits [`FourierNtruAutomorphismContext::new`]'s supported-length check.
+    /// Inherits [`FourierNtruAutomorphismWorkspace::new`]'s supported-length check.
     #[must_use]
     pub fn new(poly_length: usize) -> Self {
-        let automorphism = FourierNtruAutomorphismContext::new(poly_length);
+        let automorphism = FourierNtruAutomorphismWorkspace::new(poly_length);
         Self {
             automorphism_output: NtruCiphertext::zero(poly_length),
             automorphism,
@@ -57,7 +58,7 @@ impl<T: TorusFftValue> FourierNtruTraceKey<T> {
         parameters: &NlevParameters<T, NativeModulus<T>>,
         fft: &mut FftEngine<'_, Table>,
         rng: &mut R,
-        context: &mut FourierNtruGadgetEncryptContext<T>,
+        workspace: &mut FourierNtruGadgetEncryptWorkspace<T>,
     ) -> Self
     where
         Table: FftTable,
@@ -73,7 +74,7 @@ impl<T: TorusFftValue> FourierNtruTraceKey<T> {
                     parameters,
                     fft,
                     rng,
-                    context,
+                    workspace,
                 )
             })
             .collect();
@@ -112,13 +113,13 @@ impl<T: TorusFftValue> FourierNtruTraceKey<T> {
         input: &NtruCiphertext<A>,
         output: &mut NtruCiphertext<B>,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierNtruTraceContext<T>,
+        workspace: &mut FourierNtruTraceWorkspace<T>,
     ) where
         Table: FftTable,
         A: Data<Elem = T>,
         B: DataMut<Elem = T>,
     {
-        self.apply_partial_to(input, 1, output, fft, context);
+        self.apply_partial_to(input, 1, output, fft, workspace);
     }
 
     /// Retains `r=retained_coefficient_count` equally spaced message positions.
@@ -137,16 +138,16 @@ impl<T: TorusFftValue> FourierNtruTraceKey<T> {
         retained_coefficient_count: usize,
         output: &mut NtruCiphertext<B>,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierNtruTraceContext<T>,
+        workspace: &mut FourierNtruTraceWorkspace<T>,
     ) where
         Table: FftTable,
         A: Data<Elem = T>,
         B: DataMut<Elem = T>,
     {
         let levels = kernels::check_count(self.poly_length(), retained_coefficient_count);
-        self.check_batch(input.as_ref(), 1, output.as_ref(), fft, context);
+        self.check_batch(input.as_ref(), 1, output.as_ref(), fft, workspace);
         output.as_mut().copy_from_slice(input.as_ref());
-        self.trace_kernel_assign::<_, false>(output.as_mut(), levels, fft, context);
+        self.trace_kernel_assign::<_, false>(output.as_mut(), levels, fft, workspace);
     }
 
     /// Applies full normalized reverse trace, targeting the constant message `M[0]`.
@@ -156,13 +157,13 @@ impl<T: TorusFftValue> FourierNtruTraceKey<T> {
         input: &NtruCiphertext<A>,
         output: &mut NtruCiphertext<B>,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierNtruTraceContext<T>,
+        workspace: &mut FourierNtruTraceWorkspace<T>,
     ) where
         Table: FftTable,
         A: Data<Elem = T>,
         B: DataMut<Elem = T>,
     {
-        self.apply_reverse_partial_to(input, 1, output, fft, context);
+        self.apply_reverse_partial_to(input, 1, output, fft, workspace);
     }
 
     /// Applies normalized reverse trace to `r=retained_coefficient_count` positions.
@@ -193,16 +194,16 @@ impl<T: TorusFftValue> FourierNtruTraceKey<T> {
         retained_coefficient_count: usize,
         output: &mut NtruCiphertext<B>,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierNtruTraceContext<T>,
+        workspace: &mut FourierNtruTraceWorkspace<T>,
     ) where
         Table: FftTable,
         A: Data<Elem = T>,
         B: DataMut<Elem = T>,
     {
         let levels = kernels::check_count(self.poly_length(), retained_coefficient_count);
-        self.check_batch(input.as_ref(), 1, output.as_ref(), fft, context);
+        self.check_batch(input.as_ref(), 1, output.as_ref(), fft, workspace);
         output.as_mut().copy_from_slice(input.as_ref());
-        self.trace_kernel_assign::<_, true>(output.as_mut(), levels, fft, context);
+        self.trace_kernel_assign::<_, true>(output.as_mut(), levels, fft, workspace);
     }
 
     /// Projects one coefficient to the constant position using a monomial shift
@@ -214,13 +215,13 @@ impl<T: TorusFftValue> FourierNtruTraceKey<T> {
         index: usize,
         output: &mut NtruCiphertext<B>,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierNtruTraceContext<T>,
+        workspace: &mut FourierNtruTraceWorkspace<T>,
     ) where
         Table: FftTable,
         A: Data<Elem = T>,
         B: DataMut<Elem = T>,
     {
-        self.project_coefficients_to(input, &[index], output.as_mut(), fft, context);
+        self.project_coefficients_to(input, &[index], output.as_mut(), fft, workspace);
     }
 
     /// Projects selected coefficients into consecutive NTRU blocks in `indices`
@@ -240,7 +241,7 @@ impl<T: TorusFftValue> FourierNtruTraceKey<T> {
         indices: &[usize],
         output: &mut [T],
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierNtruTraceContext<T>,
+        workspace: &mut FourierNtruTraceWorkspace<T>,
     ) where
         Table: FftTable,
         A: Data<Elem = T>,
@@ -249,7 +250,7 @@ impl<T: TorusFftValue> FourierNtruTraceKey<T> {
             indices.iter().all(|&index| index < self.poly_length()),
             "projection index outside polynomial"
         );
-        self.project_indices_to(input, indices.iter().copied(), output, fft, context);
+        self.project_indices_to(input, indices.iter().copied(), output, fft, workspace);
     }
 
     /// Projects coefficients `0..count` into consecutive constant-message NTRUs.
@@ -268,7 +269,7 @@ impl<T: TorusFftValue> FourierNtruTraceKey<T> {
         count: usize,
         output: &mut [T],
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierNtruTraceContext<T>,
+        workspace: &mut FourierNtruTraceWorkspace<T>,
     ) where
         Table: FftTable,
         A: Data<Elem = T>,
@@ -277,7 +278,7 @@ impl<T: TorusFftValue> FourierNtruTraceKey<T> {
             count <= self.poly_length(),
             "projection prefix exceeds polynomial length"
         );
-        self.project_indices_to(input, 0..count, output, fft, context);
+        self.project_indices_to(input, 0..count, output, fft, workspace);
     }
 
     /// Projects `0..count` with caller-owned coefficient and external-product scratch.
@@ -297,7 +298,7 @@ impl<T: TorusFftValue> FourierNtruTraceKey<T> {
         output: &mut [T],
         fft: &mut FftEngine<'_, Table>,
         scratch: &mut [T],
-        external_product: &mut crate::FourierNtruExternalProductContext<T>,
+        external_product: &mut crate::FourierNtruExternalProductWorkspace<T>,
     ) where
         Table: FftTable,
         A: Data<Elem = T>,
@@ -355,12 +356,12 @@ impl<T: TorusFftValue> FourierNtruTraceKey<T> {
         indices: impl ExactSizeIterator<Item = usize>,
         output: &mut [T],
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierNtruTraceContext<T>,
+        workspace: &mut FourierNtruTraceWorkspace<T>,
     ) where
         Table: FftTable,
         A: Data<Elem = T>,
     {
-        self.check_batch(input.as_ref(), indices.len(), output, fft, context);
+        self.check_batch(input.as_ref(), indices.len(), output, fft, workspace);
         let n = self.poly_length();
         let modulus = NativeModulus::new();
         let exponents = PowOf2Modulus::new(2 * n);
@@ -370,7 +371,7 @@ impl<T: TorusFftValue> FourierNtruTraceKey<T> {
                 &mut NtruCiphertext::new(&mut *output),
                 modulus,
             );
-            self.trace_kernel_assign::<_, true>(output, self.automorphism_count(), fft, context);
+            self.trace_kernel_assign::<_, true>(output, self.automorphism_count(), fft, workspace);
         }
     }
 
@@ -382,12 +383,12 @@ impl<T: TorusFftValue> FourierNtruTraceKey<T> {
         input: &NtruCiphertext<A>,
         output: &mut [T],
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierNtruTraceContext<T>,
+        workspace: &mut FourierNtruTraceWorkspace<T>,
     ) where
         Table: FftTable,
         A: Data<Elem = T>,
     {
-        self.expand_partial_coefficients_to(input, self.poly_length(), output, fft, context);
+        self.expand_partial_coefficients_to(input, self.poly_length(), output, fft, workspace);
     }
 
     /// Expands a message supported on its first `count` coefficients to `count`
@@ -413,22 +414,22 @@ impl<T: TorusFftValue> FourierNtruTraceKey<T> {
         count: usize,
         output: &mut [T],
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierNtruTraceContext<T>,
+        workspace: &mut FourierNtruTraceWorkspace<T>,
     ) where
         Table: FftTable,
         A: Data<Elem = T>,
     {
         kernels::check_count(self.poly_length(), count);
-        self.check_batch(input.as_ref(), count, output, fft, context);
+        self.check_batch(input.as_ref(), count, output, fft, workspace);
         if count == 1 {
             output.copy_from_slice(input.as_ref());
             return;
         }
         let log_count = count.trailing_zeros();
-        let FourierNtruTraceContext {
+        let FourierNtruTraceWorkspace {
             automorphism_output,
             automorphism,
-        } = context;
+        } = workspace;
         kernels::expand_to(
             input.as_ref(),
             output,
@@ -456,7 +457,7 @@ impl<T: TorusFftValue> FourierNtruTraceKey<T> {
         count: usize,
         output: &[T],
         fft: &FftEngine<'_, Table>,
-        context: &FourierNtruTraceContext<T>,
+        workspace: &FourierNtruTraceWorkspace<T>,
     ) {
         assert_eq!(
             input.len(),
@@ -470,7 +471,7 @@ impl<T: TorusFftValue> FourierNtruTraceKey<T> {
                 .expect("trace output length overflow"),
             "trace output length mismatch"
         );
-        self.automorphism_keys[0].assert_compatible(fft, &context.automorphism);
+        self.automorphism_keys[0].assert_compatible(fft, &workspace.automorphism);
     }
 
     /// Requires checked operands/resources; all keys share one immutable domain.
@@ -479,12 +480,12 @@ impl<T: TorusFftValue> FourierNtruTraceKey<T> {
         output: &mut [T],
         levels: usize,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierNtruTraceContext<T>,
+        workspace: &mut FourierNtruTraceWorkspace<T>,
     ) {
-        let FourierNtruTraceContext {
+        let FourierNtruTraceWorkspace {
             automorphism_output,
             automorphism,
-        } = context;
+        } = workspace;
         kernels::trace_assign::<_, _, _, _, REVERSE>(
             output,
             levels,

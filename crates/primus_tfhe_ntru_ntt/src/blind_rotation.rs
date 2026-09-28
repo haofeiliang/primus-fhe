@@ -1,7 +1,7 @@
 use primus_data::{Data, RawData};
 use primus_integer::FheUint;
 use primus_lattice::{lwe::Lwe, ngsw::NttNgsw, ntru::Ntru};
-use primus_ntru::{NttNtruCmuxContext, NttNtruExternalProductContext};
+use primus_ntru::{NttNtruCmuxWorkspace, NttNtruExternalProductWorkspace};
 use primus_ntt::MonomialNttTable;
 use primus_poly::{Polynomial, PolynomialOwned};
 use primus_tfhe::rotation::RotationQuantizer;
@@ -17,7 +17,7 @@ pub(crate) struct BlindRotationWorkspace<'a, T: FheUint> {
     pub(crate) current: Ntru<Vec<T>>,
     /// BR temporary storage in the accumulator domain.
     pub(crate) scratch: Ntru<Vec<T>>,
-    pub(crate) rotation: RotationContext<'a, T>,
+    pub(crate) rotation: RotationState<'a, T>,
 }
 
 impl<'a, T: FheUint> BlindRotationWorkspace<'a, T> {
@@ -31,24 +31,24 @@ impl<'a, T: FheUint> BlindRotationWorkspace<'a, T> {
             current: Ntru::zero(poly_length),
             scratch: Ntru::zero(poly_length),
             rotation: if let Some(key) = server_key.sparse_bootstrapping_key() {
-                RotationContext::Sparse {
+                RotationState::Sparse {
                     key,
                     scratch: SparseWorkspace::new(parameters),
                 }
             } else if parameters.external_lwe().secret_key_distr().is_binary() {
-                RotationContext::Binary {
+                RotationState::Binary {
                     first: server_key.classic_controls().0,
                     controls: server_key.classic_controls().1,
-                    scratch: NttNtruCmuxContext::new(
+                    scratch: NttNtruCmuxWorkspace::new(
                         poly_length,
                         parameters.blind_rotation().decompose_length(),
                     ),
                 }
             } else {
-                RotationContext::Ternary {
+                RotationState::Ternary {
                     first: server_key.classic_controls().0,
                     controls: server_key.classic_controls().1,
-                    scratch: NttNtruCmuxContext::new(
+                    scratch: NttNtruCmuxWorkspace::new(
                         poly_length,
                         parameters.blind_rotation().decompose_length(),
                     ),
@@ -59,7 +59,7 @@ impl<'a, T: FheUint> BlindRotationWorkspace<'a, T> {
 }
 
 // A validated control layout and its scratch travel together for the evaluator's lifetime.
-pub(crate) enum RotationContext<'a, T: FheUint> {
+pub(crate) enum RotationState<'a, T: FheUint> {
     Sparse {
         key: &'a SparseNtruBootstrappingKey<T>,
         scratch: SparseWorkspace<T>,
@@ -67,21 +67,21 @@ pub(crate) enum RotationContext<'a, T: FheUint> {
     Binary {
         first: &'a [T],
         controls: &'a [T],
-        scratch: NttNtruCmuxContext<T>,
+        scratch: NttNtruCmuxWorkspace<T>,
     },
     Ternary {
         first: &'a [T],
         controls: &'a [T],
-        scratch: NttNtruCmuxContext<T>,
+        scratch: NttNtruCmuxWorkspace<T>,
     },
 }
 
-impl<T: FheUint> RotationContext<'_, T> {
-    pub(crate) fn external_product(&mut self) -> &mut NttNtruExternalProductContext<T> {
+impl<T: FheUint> RotationState<'_, T> {
+    pub(crate) fn external_product(&mut self) -> &mut NttNtruExternalProductWorkspace<T> {
         match self {
             Self::Sparse { scratch, .. } => &mut scratch.external_product,
-            Self::Binary { scratch, .. } => scratch.external_product_context(),
-            Self::Ternary { scratch, .. } => scratch.external_product_context(),
+            Self::Binary { scratch, .. } => scratch.external_product_workspace(),
+            Self::Ternary { scratch, .. } => scratch.external_product_workspace(),
         }
     }
 }
@@ -130,7 +130,7 @@ pub(crate) fn blind_rotate_lookup_table_to<T, Table, A, LM: primus_reduce::RingC
 
     // One public layout dispatch per BR; the coordinate loop stays specialized.
     match &mut workspace.rotation {
-        RotationContext::Sparse { key, scratch } => {
+        RotationState::Sparse { key, scratch } => {
             quantizer.exponent_slice_to(input.a(), &mut scratch.exponents);
             rotate_buckets(
                 key,
@@ -142,7 +142,7 @@ pub(crate) fn blind_rotate_lookup_table_to<T, Table, A, LM: primus_reduce::RingC
                 ntt,
             );
         }
-        RotationContext::Binary {
+        RotationState::Binary {
             first,
             controls,
             scratch: product,
@@ -173,12 +173,12 @@ pub(crate) fn blind_rotate_lookup_table_to<T, Table, A, LM: primus_reduce::RingC
                         basis,
                         modulus,
                         ntt,
-                        product.external_product_context(),
+                        product.external_product_workspace(),
                     )
                 },
             );
         }
-        RotationContext::Ternary {
+        RotationState::Ternary {
             first,
             controls,
             scratch: product,

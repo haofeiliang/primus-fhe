@@ -7,7 +7,7 @@ use primus_integer::{AsInto, FheUint};
 use primus_lwe::{LweCiphertext, LweParameters, LweSecretKey};
 use primus_modulus::{BarrettModulus, NativeModulus, PowOf2Modulus, UintModulus};
 use primus_ntru::{
-    NtruCiphertext, NtruLweKeySwitchingContext, NtruLweKeySwitchingKey, NtruSecretKey,
+    NtruCiphertext, NtruLweKeySwitchingKey, NtruLweKeySwitchingWorkspace, NtruSecretKey,
     SecretKeyDistr,
 };
 use primus_reduce::{Modulus, RingContext};
@@ -74,7 +74,7 @@ fn check<T: FheUint, Q: Modulus<ValueT = T>, M: RingContext<T>>(source: Q, targe
     );
     let parameters =
         LweParameters::new(S.len(), T::TWO, target, SecretKeyDistr::UniformTernary, 0.7);
-    let mut context = NtruLweKeySwitchingContext::new(F.len());
+    let mut workspace = NtruLweKeySwitchingWorkspace::new(F.len());
     let mut output = LweCiphertext::<T>::new(vec![T::ONE; S.len() + 1]);
     for level_count in [None, Some(2)] {
         let basis = ApproxSignedBasis::new(target.explicit_value(), 4, level_count);
@@ -173,9 +173,9 @@ fn check<T: FheUint, Q: Modulus<ValueT = T>, M: RingContext<T>>(source: Q, targe
                 }
                 let (_, allocations) = measure(|| {
                     if index == 0 {
-                        key.key_switch_to(&input, &mut output, target, &mut context);
+                        key.key_switch_to(&input, &mut output, target, &mut workspace);
                     } else {
-                        key.key_switch_at_to(&input, index, &mut output, target, &mut context);
+                        key.key_switch_at_to(&input, index, &mut output, target, &mut workspace);
                     }
                 });
                 assert_eq!(allocations.count, 0);
@@ -251,7 +251,7 @@ fn validation_precedes_output_writes_and_key_sampling() {
         let input = NtruCiphertext::new(vec![9u32; input_len]);
         let mut output = LweCiphertext::new(vec![17u32; output_len]);
         let before = output.as_ref().to_vec();
-        let mut context = NtruLweKeySwitchingContext::new(scratch_len);
+        let mut workspace = NtruLweKeySwitchingWorkspace::new(scratch_len);
         assert!(
             catch_unwind(AssertUnwindSafe(|| {
                 key.key_switch_at_to(
@@ -259,7 +259,7 @@ fn validation_precedes_output_writes_and_key_sampling() {
                     index,
                     &mut output,
                     BarrettModulus::new(q),
-                    &mut context,
+                    &mut workspace,
                 );
             }))
             .is_err()
@@ -293,8 +293,8 @@ fn validation_precedes_output_writes_and_key_sampling() {
         );
         assert_eq!(rng.next_u64(), untouched.next_u64());
     }
-    assert!(catch_unwind(|| NtruLweKeySwitchingContext::<u32>::new(0)).is_err());
-    assert!(catch_unwind(|| NtruLweKeySwitchingContext::<u32>::new(usize::MAX)).is_err());
+    assert!(catch_unwind(|| NtruLweKeySwitchingWorkspace::<u32>::new(0)).is_err());
+    assert!(catch_unwind(|| NtruLweKeySwitchingWorkspace::<u32>::new(usize::MAX)).is_err());
 }
 
 fn check_encrypted_return<T: FheUint, Q: Modulus<ValueT = T>>(
@@ -320,11 +320,11 @@ fn check_encrypted_return<T: FheUint, Q: Modulus<ValueT = T>>(
         ApproxSignedBasis::new(target.explicit_value(), 4, None),
         &mut rng,
     );
-    let mut context = NtruLweKeySwitchingContext::new(secret.poly_length());
+    let mut workspace = NtruLweKeySwitchingWorkspace::new(secret.poly_length());
     let mut output = LweCiphertext::zero(params.dimension());
     for index in [0, 31, 3, 16, 0] {
         let (_, allocations) =
-            measure(|| key.key_switch_at_to(input, index, &mut output, target, &mut context));
+            measure(|| key.key_switch_at_to(input, index, &mut output, target, &mut workspace));
         assert_eq!(allocations.count, 0);
         assert_eq!(
             output_secret.decrypt(&output, &params),
@@ -360,7 +360,7 @@ fn check_ntt_encryption<T: FheUint, Table: primus_ntt::MonomialNttTable<ValueT =
 
 fn check_fourier_encryption<T: primus_fft::TorusFftValue, Table: primus_fft::FftTable>() {
     use primus_fft::FftEngine;
-    use primus_ntru::{FourierNtruEncryptContext, FourierNtruSecretKey, NtruParameters};
+    use primus_ntru::{FourierNtruEncryptWorkspace, FourierNtruSecretKey, NtruParameters};
     use primus_poly::Polynomial;
     let table = Table::new(5).unwrap();
     let mut fft = FftEngine::new(&table);
@@ -387,7 +387,7 @@ fn check_fourier_encryption<T: primus_fft::TorusFftValue, Table: primus_fft::Fft
             &params,
             &mut fft,
             &mut rng,
-            &mut FourierNtruEncryptContext::new(32),
+            &mut FourierNtruEncryptWorkspace::new(32),
         )
         .write_torus_form(&mut input, &mut fft);
     check_encrypted_return(&input, &secret, modulus);

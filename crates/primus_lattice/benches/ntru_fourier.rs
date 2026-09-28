@@ -4,9 +4,9 @@ use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{FftEngine, FftTable, RustFftTable, TfheFftTable, TorusFftValue};
 use primus_lattice::{
-    context::FourierNtruExternalProductContext,
     ngsw::{FourierNgswOwned, Ngsw},
     ntru::{FourierNtruOwned, Ntru},
+    workspace::FourierNtruExternalProductWorkspace,
 };
 
 fn fourier<T: TorusFftValue>(
@@ -48,7 +48,7 @@ fn fourier<T: TorusFftValue>(
     coeff_key.write_fourier_form(&mut key, &mut fft);
     let mut output = Ntru::new(vec![T::ZERO; poly_length]);
     let mut fourier_output = FourierNtruOwned::zero(poly_length / 2);
-    let mut context = FourierNtruExternalProductContext::new(poly_length);
+    let mut workspace = FourierNtruExternalProductWorkspace::new(poly_length);
 
     let mut group = c.benchmark_group(format!(
         "ntru/fourier/{backend}/u{}/native/n{}/logb{log_b}/l{levels}",
@@ -63,7 +63,7 @@ fn fourier<T: TorusFftValue>(
                 black_box(&mut output),
                 black_box(&basis),
                 black_box(&mut fft),
-                black_box(&mut context),
+                black_box(&mut workspace),
             )
         });
     });
@@ -74,7 +74,7 @@ fn fourier<T: TorusFftValue>(
                 black_box(&mut fourier_output),
                 black_box(&basis),
                 black_box(&mut fft),
-                black_box(&mut context),
+                black_box(&mut workspace),
             )
         });
     });
@@ -86,7 +86,7 @@ fn fourier<T: TorusFftValue>(
                 black_box(&mut output),
                 black_box(&basis),
                 black_box(&mut fft),
-                black_box(&mut context),
+                black_box(&mut workspace),
             )
         });
     });

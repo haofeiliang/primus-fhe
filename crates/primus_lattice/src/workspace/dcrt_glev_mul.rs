@@ -9,22 +9,22 @@ use crate::RnsGadgetSize;
 /// # Correctness
 ///
 /// Each operation initializes the buffers it uses; no reset is needed between
-/// calls. A context may be reused with another parameter set when all required
-/// workspace lengths match, as checked by [`Self::is_compatible`]. The context
+/// calls. A workspace may be reused with another parameter set when all required
+/// workspace lengths match, as checked by [`Self::is_compatible`]. The workspace
 /// stores the gadget size but does not bind the ordered RNS base, decomposition
 /// basis, or DCRT table. Callers must ensure their mathematical compatibility.
 /// Accumulating operations preserve the output and require it to be initialized.
-pub struct DcrtGlevMulContext<T: FheUint> {
+pub struct DcrtGlevMulWorkspace<T: FheUint> {
     size: RnsGadgetSize,
-    adjust_big_uint_values: Vec<T>,
-    decomposed_unsigned_values: Vec<T>,
-    carries: Vec<bool>,
-    multi_residues: Vec<T>,
-    compose_buffer: Vec<T>,
+    adjust_big_uint_values: Box<[T]>,
+    decomposed_unsigned_values: Box<[T]>,
+    carries: Box<[bool]>,
+    multi_residues: Box<[T]>,
+    compose_buffer: Box<[T]>,
 }
 
-/// A mutable reference view of [`DcrtGlevMulContext`] fields, used to borrow all buffers simultaneously.
-pub(crate) struct DcrtGlevMulContextRefMut<'a, T: FheUint> {
+/// A mutable reference view of [`DcrtGlevMulWorkspace`] fields, used to borrow all buffers simultaneously.
+pub(crate) struct DcrtGlevMulWorkspaceRefMut<'a, T: FheUint> {
     /// Buffer for big integer values adjusted during decomposition.
     pub(crate) adjust_big_uint_values: &'a mut [T],
     /// Buffer for unsigned decomposed values.
@@ -37,7 +37,7 @@ pub(crate) struct DcrtGlevMulContextRefMut<'a, T: FheUint> {
     pub(crate) compose_buffer: &'a mut [T],
 }
 
-impl<T: FheUint> DcrtGlevMulContext<T> {
+impl<T: FheUint> DcrtGlevMulWorkspace<T> {
     /// Creates reusable workspace for a checked RNS gadget layout and basis.
     ///
     /// # Panics
@@ -58,11 +58,11 @@ impl<T: FheUint> DcrtGlevMulContext<T> {
 
         Self {
             size,
-            adjust_big_uint_values: vec![T::ZERO; big_uint_poly_len],
-            decomposed_unsigned_values: vec![T::ZERO; poly_length],
-            carries: vec![false; poly_length],
-            multi_residues: vec![T::ZERO; rns_glwe_size.rns_poly_len()],
-            compose_buffer: vec![T::ZERO; rns_base.moduli_count()],
+            adjust_big_uint_values: vec![T::ZERO; big_uint_poly_len].into_boxed_slice(),
+            decomposed_unsigned_values: vec![T::ZERO; poly_length].into_boxed_slice(),
+            carries: vec![false; poly_length].into_boxed_slice(),
+            multi_residues: vec![T::ZERO; rns_glwe_size.rns_poly_len()].into_boxed_slice(),
+            compose_buffer: vec![T::ZERO; rns_base.moduli_count()].into_boxed_slice(),
         }
     }
 
@@ -93,10 +93,10 @@ impl<T: FheUint> DcrtGlevMulContext<T> {
         self.size
     }
 
-    /// Returns a [`DcrtGlevMulContextRefMut`] that borrows all internal buffers mutably.
+    /// Returns a [`DcrtGlevMulWorkspaceRefMut`] that borrows all internal buffers mutably.
     #[inline]
-    pub(crate) fn as_mut<'a>(&'a mut self) -> DcrtGlevMulContextRefMut<'a, T> {
-        DcrtGlevMulContextRefMut {
+    pub(crate) fn as_mut<'a>(&'a mut self) -> DcrtGlevMulWorkspaceRefMut<'a, T> {
+        DcrtGlevMulWorkspaceRefMut {
             adjust_big_uint_values: &mut self.adjust_big_uint_values,
             decomposed_unsigned_values: &mut self.decomposed_unsigned_values,
             carries: &mut self.carries,

@@ -1,14 +1,14 @@
 use primus_fft::{FftEngine, FftTable, RustFftTable};
 use primus_glwe::{
-    FourierGadgetEncryptContext, FourierGlweDecryptContext, FourierGlweEncryptContext,
-    FourierGlweSecretKey, GlevParameters, GlweParameters, NttGadgetEncryptContext,
+    FourierGlweDecryptWorkspace, FourierGlweEncryptWorkspace, FourierGlweGadgetEncryptWorkspace,
+    FourierGlweSecretKey, GlevParameters, GlweParameters, NttGlweGadgetEncryptWorkspace,
     NttGlweSecretKey, SecretKeyDistr,
 };
 use primus_lattice::{
-    context::{FourierGlweExternalProductContext, NttGlweExternalProductContext},
     ggsw::{FourierGgswOwned, NttGgsw},
     glev::{FourierGlevOwned, NttGlev},
     glwe::{FourierGlweOwned, Glwe, NttGlwe, TorusGlwe},
+    workspace::{FourierGlweExternalProductWorkspace, NttGlweExternalProductWorkspace},
 };
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntt::{NttTable, UintNttTable};
@@ -66,8 +66,8 @@ fn fourier_gadget_phases_and_external_product() {
     let params = GlevParameters::with_glwe_params(&glwe_params, 8, None);
     let (coeff_secret_key, secret_key) =
         FourierGlweSecretKey::generate_pair(&glwe_params, &mut fft, &mut rng);
-    let mut gadget_context = FourierGadgetEncryptContext::new(params.size());
-    let mut decrypt_context = FourierGlweDecryptContext::new(POLY_LENGTH);
+    let mut gadget_workspace = FourierGlweGadgetEncryptWorkspace::new(params.size());
+    let mut decrypt_workspace = FourierGlweDecryptWorkspace::new(POLY_LENGTH);
 
     let mut raw_message = vec![0u32; POLY_LENGTH];
     raw_message[0] = 1;
@@ -79,7 +79,7 @@ fn fourier_gadget_phases_and_external_product() {
         &params,
         &mut fft,
         &mut rng,
-        &mut gadget_context,
+        &mut gadget_workspace,
     );
 
     for (scalar, glwe) in params
@@ -88,7 +88,7 @@ fn fourier_gadget_phases_and_external_product() {
         .zip(glev.iter_glwe(params.fourier_glwe_len()))
     {
         let mut phase = PolynomialOwned::zero(POLY_LENGTH);
-        secret_key.phase_to(&glwe, &mut phase, &mut fft, &mut decrypt_context);
+        secret_key.phase_to(&glwe, &mut phase, &mut fft, &mut decrypt_workspace);
         assert!(native_distance(phase.as_ref()[0], scalar) <= 8);
         assert!(
             phase.as_ref()[1..]
@@ -109,7 +109,7 @@ fn fourier_gadget_phases_and_external_product() {
         &params,
         &mut fft,
         &mut rng,
-        &mut gadget_context,
+        &mut gadget_workspace,
     );
     for (row, glev) in ggsw.iter_glev(params.fourier_glev_len()).enumerate() {
         for (scalar, glwe) in params
@@ -118,7 +118,7 @@ fn fourier_gadget_phases_and_external_product() {
             .zip(glev.iter_glwe(params.fourier_glwe_len()))
         {
             let mut phase = PolynomialOwned::zero(POLY_LENGTH);
-            secret_key.phase_to(&glwe, &mut phase, &mut fft, &mut decrypt_context);
+            secret_key.phase_to(&glwe, &mut phase, &mut fft, &mut decrypt_workspace);
             let expected = expected_ggsw_phase(
                 ring_message.as_ref(),
                 coeff_secret_key.iter().nth(row),
@@ -146,30 +146,30 @@ fn fourier_gadget_phases_and_external_product() {
         &params,
         &mut fft,
         &mut rng,
-        &mut gadget_context,
+        &mut gadget_workspace,
     );
 
     let mut input_fourier = FourierGlweOwned::zero(params.fourier_glwe_len());
-    let mut glwe_context = FourierGlweEncryptContext::new(POLY_LENGTH);
+    let mut glwe_workspace = FourierGlweEncryptWorkspace::new(POLY_LENGTH);
     secret_key.encrypt_to(
         &plaintext,
         &mut input_fourier,
         &glwe_params,
         &mut fft,
         &mut rng,
-        &mut glwe_context,
+        &mut glwe_workspace,
     );
     let mut input: TorusGlwe<Vec<u32>> = TorusGlwe::zero(params.glwe_len());
     input_fourier.write_torus_form(&mut input, &mut fft);
 
     let mut output: TorusGlwe<Vec<u32>> = TorusGlwe::zero(params.glwe_len());
-    let mut external_product_context = FourierGlweExternalProductContext::new(params.size());
+    let mut external_product_workspace = FourierGlweExternalProductWorkspace::new(params.size());
     ggsw.external_product_to(
         &input,
         &mut output,
         params.basis(),
         &mut fft,
-        &mut external_product_context,
+        &mut external_product_workspace,
     );
 
     let mut output_fourier = FourierGlweOwned::zero(params.fourier_glwe_len());
@@ -183,7 +183,7 @@ fn fourier_gadget_phases_and_external_product() {
                 &output_fourier,
                 &glwe_params,
                 &mut fft,
-                &mut decrypt_context,
+                &mut decrypt_workspace,
             )
             .as_ref(),
         expected
@@ -208,7 +208,7 @@ fn ntt_gadget_phases_and_external_product() {
     let params = GlevParameters::with_glwe_params(&glwe_params, 8, None);
     let (coeff_secret_key, secret_key) =
         NttGlweSecretKey::generate_pair(&glwe_params, &ntt, &mut rng);
-    let mut context = NttGadgetEncryptContext::new(params.size());
+    let mut workspace = NttGlweGadgetEncryptWorkspace::new(params.size());
 
     let mut raw_message = vec![0u32; POLY_LENGTH];
     raw_message[0] = 1;
@@ -220,7 +220,7 @@ fn ntt_gadget_phases_and_external_product() {
         &params,
         &ntt,
         &mut rng,
-        &mut context,
+        &mut workspace,
     );
 
     for (scalar, glwe) in params
@@ -250,7 +250,7 @@ fn ntt_gadget_phases_and_external_product() {
         &params,
         &ntt,
         &mut rng,
-        &mut context,
+        &mut workspace,
     );
 
     for (row, glev) in ggsw.iter_ntt_glev(params.glev_len()).enumerate() {
@@ -289,21 +289,21 @@ fn ntt_gadget_phases_and_external_product() {
         &params,
         &ntt,
         &mut rng,
-        &mut context,
+        &mut workspace,
     );
 
     let mut input_ntt: NttGlwe<Vec<u32>> = NttGlwe::zero(params.glwe_len());
     secret_key.encrypt_to(&plaintext, &mut input_ntt, &glwe_params, &ntt, &mut rng);
     let input = input_ntt.into_coeff_form(&ntt);
     let mut output: Glwe<Vec<u32>> = Glwe::zero(params.glwe_len());
-    let mut external_product_context = NttGlweExternalProductContext::new(params.size());
+    let mut external_product_workspace = NttGlweExternalProductWorkspace::new(params.size());
     ggsw.external_product_to(
         &input,
         &mut output,
         params.basis(),
         modulus,
         &ntt,
-        &mut external_product_context,
+        &mut external_product_workspace,
     );
     let output_ntt = output.into_ntt_form(&ntt);
     let mut expected = vec![0u32; POLY_LENGTH];

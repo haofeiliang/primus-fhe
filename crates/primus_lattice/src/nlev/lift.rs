@@ -9,8 +9,8 @@ use primus_poly::{NttPolynomial, Polynomial};
 use primus_reduce::FieldContext;
 
 use crate::{
-    context::{FourierNtruCmuxContext, NttNtruCmuxContext},
     ntru::Ntru,
+    workspace::{FourierNtruCmuxWorkspace, NttNtruCmuxWorkspace},
 };
 
 use super::{FourierNlev, NttNlev};
@@ -32,7 +32,7 @@ where
     /// # Correctness
     /// Inherits [`Self::external_product_to`]'s representation, modulus, table,
     /// basis, input and output contracts. All controls use that same key and
-    /// basis, with `context.decompose_length()` levels. Bits are mutually
+    /// basis, with `workspace.decompose_length()` levels. Bits are mutually
     /// exclusive; omit `negative` for a binary secret. `exponent` is in `0..2N`,
     /// already quantized; its inverse is derived modulo `2N`.
     /// If decomposition reconstructs `input - epsilon`, the ideal phase is
@@ -42,7 +42,7 @@ where
     ///
     /// # Panics
     /// Panics if output has the wrong polynomial length. For nonzero exponents,
-    /// panics if initializer/combined scratch lengths differ or if table/context
+    /// panics if initializer/combined scratch lengths differ or if table/workspace
     /// lengths differ during monomial preparation. Scratch may be partly written.
     #[expect(
         clippy::too_many_arguments,
@@ -58,7 +58,7 @@ where
         basis: &ApproxSignedBasis<T>,
         modulus: M,
         ntt: &Table,
-        context: &mut NttNtruCmuxContext<T>,
+        workspace: &mut NttNtruCmuxWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: MonomialNttTable<ValueT = T>,
@@ -66,9 +66,9 @@ where
         B: Data<Elem = T>,
         C: DataMut<Elem = T>,
     {
-        let poly_length = context.poly_length();
+        let poly_length = workspace.poly_length();
         debug_assert!(exponent < 2 * poly_length);
-        debug_assert_eq!(basis.decompose_length(), context.decompose_length());
+        debug_assert_eq!(basis.decompose_length(), workspace.decompose_length());
         debug_assert_eq!(positive.as_ref().len(), self.as_ref().len());
         if exponent == 0 {
             self.external_product_to(
@@ -77,15 +77,15 @@ where
                 basis,
                 modulus,
                 ntt,
-                &mut context.external_product,
+                &mut workspace.external_product,
             );
             return;
         }
 
-        let mut combined = NttNlev(context.combined_control.as_mut_slice());
+        let mut combined = NttNlev(workspace.combined_control.as_mut_slice());
         combined.as_mut().copy_from_slice(self.as_ref());
         // Sequential use lets monomial preparation borrow the digit buffer.
-        let factor = context.external_product.as_mut().decomposed_ntt;
+        let factor = workspace.external_product.as_mut().decomposed_ntt;
         ntt.transform_coeff_one_monomial(exponent, factor);
         for value in factor.iter_mut() {
             *value = modulus.reduce_sub(*value, T::ONE);
@@ -104,7 +104,7 @@ where
             basis,
             modulus,
             ntt,
-            &mut context.external_product,
+            &mut workspace.external_product,
         );
     }
 }
@@ -123,7 +123,7 @@ where
     /// # Correctness
     /// Inherits [`Self::external_product_to`]'s native basis, normalized torus
     /// scale, input/output layout and FFT contracts. All controls use the same
-    /// key, basis, exact FFT table instance and `context.decompose_length()`
+    /// key, basis, exact FFT table instance and `workspace.decompose_length()`
     /// levels. Bits are mutually exclusive; omit `negative` for binary.
     /// `exponent` is already quantized into `0..2N`.
     /// The ideal phase is the basis reconstruction of `input` times
@@ -148,7 +148,7 @@ where
         output: &mut Ntru<C>,
         basis: &ApproxSignedBasis<T>,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierNtruCmuxContext<T>,
+        workspace: &mut FourierNtruCmuxWorkspace<T>,
     ) where
         T: TorusFftValue,
         Table: FftTable,
@@ -156,18 +156,18 @@ where
         B: Data<Elem = T>,
         C: DataMut<Elem = T>,
     {
-        let poly_length = context.poly_length();
+        let poly_length = workspace.poly_length();
         debug_assert!(exponent < 2 * poly_length);
-        debug_assert_eq!(basis.decompose_length(), context.decompose_length());
+        debug_assert_eq!(basis.decompose_length(), workspace.decompose_length());
         debug_assert_eq!(positive.as_ref().len(), self.as_ref().len());
         if exponent == 0 {
-            self.external_product_to(input, output, basis, fft, &mut context.external_product);
+            self.external_product_to(input, output, basis, fft, &mut workspace.external_product);
             return;
         }
 
-        let mut combined = FourierNlev(context.combined_control.as_mut_slice());
+        let mut combined = FourierNlev(workspace.combined_control.as_mut_slice());
         combined.as_mut().copy_from_slice(self.as_ref());
-        let product = context.external_product.as_mut();
+        let product = workspace.external_product.as_mut();
         product.decomposed_poly.fill(T::ZERO);
         let (index, coefficient) = if exponent < poly_length {
             (exponent, T::ONE)
@@ -196,7 +196,7 @@ where
                 product.decomposed_fourier,
             );
         }
-        combined.external_product_to(input, output, basis, fft, &mut context.external_product);
+        combined.external_product_to(input, output, basis, fft, &mut workspace.external_product);
     }
 }
 

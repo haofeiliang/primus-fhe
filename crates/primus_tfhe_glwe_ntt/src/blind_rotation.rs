@@ -4,9 +4,9 @@ use primus_data::{Data, DataMut};
 use primus_integer::FheUint;
 use primus_lattice::{
     GadgetSize,
-    context::{NttGlweExternalProductContext, NttGlweTernaryCmuxContext},
     glwe::Glwe,
     lwe::Lwe,
+    workspace::{NttGlweExternalProductWorkspace, NttGlweTernaryCmuxWorkspace},
 };
 use primus_ntt::MonomialNttTable;
 use primus_poly::Polynomial;
@@ -38,7 +38,7 @@ impl<T: FheUint, LM: PrepareModulusSwitch<ValueT = T>> NttGlweBootstrappingKey<T
         output: &mut Glwe<C>,
         modulus: M,
         ntt: &Table,
-        context: &mut NttGlweBlindRotationContext<T>,
+        context: &mut NttGlweBlindRotationWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: MonomialNttTable<ValueT = T>,
@@ -65,7 +65,7 @@ impl<T: FheUint, LM: PrepareModulusSwitch<ValueT = T>> NttGlweBootstrappingKey<T
         output: &mut Glwe<C>,
         modulus: M,
         ntt: &Table,
-        context: &mut NttGlweBlindRotationContext<T>,
+        context: &mut NttGlweBlindRotationWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: MonomialNttTable<ValueT = T>,
@@ -103,7 +103,7 @@ impl<T: FheUint, LM: PrepareModulusSwitch<ValueT = T>> NttGlweBootstrappingKey<T
         output: &mut Glwe<C>,
         modulus: M,
         ntt: &Table,
-        context: &mut NttGlweBlindRotationContext<T>,
+        context: &mut NttGlweBlindRotationWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: MonomialNttTable<ValueT = T>,
@@ -143,7 +143,7 @@ impl<T: FheUint, LM: PrepareModulusSwitch<ValueT = T>> NttGlweBootstrappingKey<T
         output: &mut Glwe<C>,
         modulus: M,
         ntt: &Table,
-        context: &mut NttGlweBlindRotationContext<T>,
+        context: &mut NttGlweBlindRotationWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: MonomialNttTable<ValueT = T>,
@@ -191,7 +191,7 @@ impl<T: FheUint, LM: PrepareModulusSwitch<ValueT = T>> NttGlweBootstrappingKey<T
         output: &mut Glwe<C>,
         modulus: M,
         ntt: &Table,
-        context: &mut NttGlweBlindRotationContext<T>,
+        context: &mut NttGlweBlindRotationWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: MonomialNttTable<ValueT = T>,
@@ -244,7 +244,7 @@ impl<T: FheUint, LM: PrepareModulusSwitch<ValueT = T>> NttGlweBootstrappingKey<T
         output: &mut Glwe<C>,
         modulus: M,
         ntt: &Table,
-        context: &mut NttGlweBlindRotationContext<T>,
+        context: &mut NttGlweBlindRotationWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: MonomialNttTable<ValueT = T>,
@@ -273,7 +273,7 @@ impl<T: FheUint, LM: PrepareModulusSwitch<ValueT = T>> NttGlweBootstrappingKey<T
         output: &mut Glwe<C>,
         modulus: M,
         ntt: &Table,
-        context: &mut NttGlweBlindRotationContext<T>,
+        context: &mut NttGlweBlindRotationWorkspace<T>,
         exponent_of: F,
     ) where
         M: FieldContext<T>,
@@ -310,7 +310,7 @@ impl<T: FheUint, LM: PrepareModulusSwitch<ValueT = T>> NttGlweBootstrappingKey<T
         &self,
         modulus: M,
         ntt: &Table,
-        context: &NttGlweBlindRotationContext<T>,
+        context: &NttGlweBlindRotationWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: MonomialNttTable<ValueT = T>,
@@ -336,7 +336,7 @@ impl<T: FheUint, LM: PrepareModulusSwitch<ValueT = T>> NttGlweBootstrappingKey<T
             "blind-rotation workspace gadget layout mismatch"
         );
         assert_eq!(
-            matches!(context.cmux, CmuxContext::Binary(_)),
+            matches!(context.cmux, CmuxWorkspace::Binary(_)),
             self.input_distribution().is_binary(),
             "blind-rotation workspace control layout mismatch"
         );
@@ -354,7 +354,7 @@ impl<T: FheUint, LM: PrepareModulusSwitch<ValueT = T>> NttGlweBootstrappingKey<T
         output: &mut Glwe<C>,
         modulus: M,
         ntt: &Table,
-        context: &mut NttGlweBlindRotationContext<T>,
+        context: &mut NttGlweBlindRotationWorkspace<T>,
         exponent_of: F,
     ) where
         M: FieldContext<T>,
@@ -363,11 +363,11 @@ impl<T: FheUint, LM: PrepareModulusSwitch<ValueT = T>> NttGlweBootstrappingKey<T
         C: DataMut<Elem = T>,
         F: Fn(T) -> usize,
     {
-        let NttGlweBlindRotationContext { scratch, cmux } = context;
+        let NttGlweBlindRotationWorkspace { scratch, cmux } = context;
         // Dispatch once per blind rotation; the coordinate loop has no secret-
         // distribution branch, and both paths share initialization and swapping.
         match cmux {
-            CmuxContext::Binary(product) => {
+            CmuxWorkspace::Binary(product) => {
                 let controls = self
                     .iter_binary_controls()
                     .expect("binary workspace requires a binary key");
@@ -390,7 +390,7 @@ impl<T: FheUint, LM: PrepareModulusSwitch<ValueT = T>> NttGlweBootstrappingKey<T
                     },
                 );
             }
-            CmuxContext::Ternary(product) => {
+            CmuxWorkspace::Ternary(product) => {
                 let controls = self
                     .iter_ternary_controls()
                     .expect("ternary workspace requires a ternary key");
@@ -422,17 +422,17 @@ impl<T: FheUint, LM: PrepareModulusSwitch<ValueT = T>> NttGlweBootstrappingKey<T
 ///
 /// Construction selects only the binary or ternary scratch required by the key.
 /// Resizing retains that control layout; construct a new workspace to change it.
-pub struct NttGlweBlindRotationContext<T: FheUint> {
+pub struct NttGlweBlindRotationWorkspace<T: FheUint> {
     scratch: Glwe<Vec<T>>,
-    cmux: CmuxContext<T>,
+    cmux: CmuxWorkspace<T>,
 }
 
-enum CmuxContext<T: FheUint> {
-    Binary(NttGlweExternalProductContext<T>),
-    Ternary(NttGlweTernaryCmuxContext<T>),
+enum CmuxWorkspace<T: FheUint> {
+    Binary(NttGlweExternalProductWorkspace<T>),
+    Ternary(NttGlweTernaryCmuxWorkspace<T>),
 }
 
-impl<T: FheUint> NttGlweBlindRotationContext<T> {
+impl<T: FheUint> NttGlweBlindRotationWorkspace<T> {
     /// Allocates scratch matching the key's gadget and control layouts.
     #[must_use]
     pub fn new<LM: PrepareModulusSwitch<ValueT = T>>(key: &NttGlweBootstrappingKey<T, LM>) -> Self {
@@ -440,9 +440,9 @@ impl<T: FheUint> NttGlweBlindRotationContext<T> {
         Self {
             scratch: Glwe::zero(size.glwe_len()),
             cmux: if key.input_distribution().is_binary() {
-                CmuxContext::Binary(NttGlweExternalProductContext::new(size))
+                CmuxWorkspace::Binary(NttGlweExternalProductWorkspace::new(size))
             } else {
-                CmuxContext::Ternary(NttGlweTernaryCmuxContext::new(size))
+                CmuxWorkspace::Ternary(NttGlweTernaryCmuxWorkspace::new(size))
             },
         }
     }
@@ -450,18 +450,18 @@ impl<T: FheUint> NttGlweBlindRotationContext<T> {
     pub(crate) fn with_external_product<R>(
         &mut self,
         size: GadgetSize,
-        operation: impl FnOnce(&mut NttGlweExternalProductContext<T>) -> R,
+        operation: impl FnOnce(&mut NttGlweExternalProductWorkspace<T>) -> R,
     ) -> R {
         match &mut self.cmux {
-            CmuxContext::Binary(context) => context.with_rebound(size, operation),
-            CmuxContext::Ternary(context) => context.with_external_product(size, operation),
+            CmuxWorkspace::Binary(context) => context.with_rebound(size, operation),
+            CmuxWorkspace::Ternary(context) => context.with_external_product(size, operation),
         }
     }
 
     fn size(&self) -> GadgetSize {
         match &self.cmux {
-            CmuxContext::Binary(context) => context.size(),
-            CmuxContext::Ternary(context) => context.size(),
+            CmuxWorkspace::Binary(context) => context.size(),
+            CmuxWorkspace::Ternary(context) => context.size(),
         }
     }
 
@@ -472,8 +472,8 @@ impl<T: FheUint> NttGlweBlindRotationContext<T> {
             return;
         }
         match &mut self.cmux {
-            CmuxContext::Binary(context) => context.resize(size),
-            CmuxContext::Ternary(context) => *context = NttGlweTernaryCmuxContext::new(size),
+            CmuxWorkspace::Binary(context) => context.resize(size),
+            CmuxWorkspace::Ternary(context) => *context = NttGlweTernaryCmuxWorkspace::new(size),
         }
         self.scratch.0.resize(size.glwe_len(), T::ZERO);
     }

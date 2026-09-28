@@ -14,15 +14,15 @@ use crate::{
 /// # Correctness
 ///
 /// Construction and resizing maintain scratch lengths for the bound GLWE size.
-/// The bound [`GadgetSize`] also records the decomposition length. This context
+/// The bound [`GadgetSize`] also records the decomposition length. This workspace
 /// does not bind a basis or FFT table: callers must provide a native-torus basis
 /// with matching levels, matching ciphertext layouts, and Fourier data produced
 /// with a compatible FFT layout and polynomial length.
 ///
 /// Overwriting products initialize the accumulator; internal accumulating
 /// products require an initialized accumulator. Other scratch is written before
-/// use, so callers do not need to reset the context between operations.
-pub struct FourierGlweExternalProductContext<T: TorusFftValue> {
+/// use, so callers do not need to reset the workspace between operations.
+pub struct FourierGlweExternalProductWorkspace<T: TorusFftValue> {
     size: GadgetSize,
     /// Carry bits, one per coefficient (length = `poly_length`).
     pub(crate) carries: Vec<bool>,
@@ -36,9 +36,9 @@ pub struct FourierGlweExternalProductContext<T: TorusFftValue> {
 
 /// Mutable view of the buffers used by a Fourier external product.
 ///
-/// The accumulator may borrow either the context-owned buffer or a
+/// The accumulator may borrow either the workspace-owned buffer or a
 /// caller-provided Fourier GLWE output.
-pub(crate) struct FourierGlweExternalProductContextRefMut<'a, T: TorusFftValue> {
+pub(crate) struct FourierGlweExternalProductWorkspaceRefMut<'a, T: TorusFftValue> {
     size: GadgetSize,
     /// Carry bits used by decomposition.
     pub(crate) carries: &'a mut [bool],
@@ -49,7 +49,7 @@ pub(crate) struct FourierGlweExternalProductContextRefMut<'a, T: TorusFftValue> 
     pub(crate) fourier_accumulator: FourierGlwe<&'a mut [Complex64]>,
 }
 
-impl<T: TorusFftValue> FourierGlweExternalProductContextRefMut<'_, T> {
+impl<T: TorusFftValue> FourierGlweExternalProductWorkspaceRefMut<'_, T> {
     /// Returns the external-product layout bound to this view.
     #[must_use]
     #[inline]
@@ -58,8 +58,8 @@ impl<T: TorusFftValue> FourierGlweExternalProductContextRefMut<'_, T> {
     }
 }
 
-impl<T: TorusFftValue> FourierGlweExternalProductContext<T> {
-    /// Creates a new context with all buffers pre-allocated.
+impl<T: TorusFftValue> FourierGlweExternalProductWorkspace<T> {
+    /// Creates a new workspace with all buffers pre-allocated.
     ///
     /// The accumulator is sized for all mask polynomials and the body.
     #[must_use]
@@ -94,22 +94,22 @@ impl<T: TorusFftValue> FourierGlweExternalProductContext<T> {
         let original = self.size();
         self.rebind(size);
         struct Restore<'a, T: TorusFftValue> {
-            context: &'a mut FourierGlweExternalProductContext<T>,
+            workspace: &'a mut FourierGlweExternalProductWorkspace<T>,
             size: GadgetSize,
         }
         impl<T: TorusFftValue> Drop for Restore<'_, T> {
             fn drop(&mut self) {
-                self.context.resize(self.size);
+                self.workspace.resize(self.size);
             }
         }
         let restore = Restore {
-            context: self,
+            workspace: self,
             size: original,
         };
-        operation(&mut *restore.context)
+        operation(&mut *restore.workspace)
     }
 
-    /// Rebinds the context to another decomposition layout without reallocating.
+    /// Rebinds the workspace to another decomposition layout without reallocating.
     ///
     /// # Panics
     ///
@@ -118,12 +118,12 @@ impl<T: TorusFftValue> FourierGlweExternalProductContext<T> {
         assert_eq!(
             self.size.glwe_size(),
             size.glwe_size(),
-            "cannot rebind Fourier external-product context to a different GLWE layout"
+            "cannot rebind Fourier external-product workspace to a different GLWE layout"
         );
         self.size = size;
     }
 
-    /// Rebinds the context and resizes its scratch buffers when the GLWE layout changes.
+    /// Rebinds the workspace and resizes its scratch buffers when the GLWE layout changes.
     pub fn resize(&mut self, size: GadgetSize) {
         if self.size.glwe_size() == size.glwe_size() {
             self.size = size;
@@ -151,10 +151,10 @@ impl<T: TorusFftValue> FourierGlweExternalProductContext<T> {
         self.size
     }
 
-    /// Borrows all scratch buffers and the context-owned accumulator.
+    /// Borrows all scratch buffers and the workspace-owned accumulator.
     #[inline]
-    pub(crate) fn as_mut(&mut self) -> FourierGlweExternalProductContextRefMut<'_, T> {
-        FourierGlweExternalProductContextRefMut {
+    pub(crate) fn as_mut(&mut self) -> FourierGlweExternalProductWorkspaceRefMut<'_, T> {
+        FourierGlweExternalProductWorkspaceRefMut {
             size: self.size,
             carries: &mut self.carries,
             decomposed_poly: &mut self.decomposed_poly,
@@ -169,11 +169,11 @@ impl<T: TorusFftValue> FourierGlweExternalProductContext<T> {
     pub(crate) fn as_mut_with_accumulator<'a, S>(
         &'a mut self,
         accumulator: &'a mut FourierGlwe<S>,
-    ) -> FourierGlweExternalProductContextRefMut<'a, T>
+    ) -> FourierGlweExternalProductWorkspaceRefMut<'a, T>
     where
         S: DataMut<Elem = Complex64>,
     {
-        FourierGlweExternalProductContextRefMut {
+        FourierGlweExternalProductWorkspaceRefMut {
             size: self.size,
             carries: &mut self.carries,
             decomposed_poly: &mut self.decomposed_poly,
@@ -189,15 +189,15 @@ impl<T: TorusFftValue> FourierGlweExternalProductContext<T> {
 /// # Correctness
 ///
 /// Construction and resizing maintain scratch lengths for the bound GLWE size.
-/// The bound [`GadgetSize`] also records the decomposition length. This context
+/// The bound [`GadgetSize`] also records the decomposition length. This workspace
 /// does not bind a basis, NTT table, or modulus. Callers must provide matching
 /// polynomial lengths, decomposition levels, ciphertext layouts, and the same
 /// modulus for the basis, NTT table, and modular arithmetic.
 ///
 /// Overwriting products initialize the accumulator; internal accumulating
 /// products require an initialized accumulator. Other scratch is written before
-/// use, so callers do not need to reset the context between operations.
-pub struct NttGlweExternalProductContext<T: FheUint> {
+/// use, so callers do not need to reset the workspace between operations.
+pub struct NttGlweExternalProductWorkspace<T: FheUint> {
     size: GadgetSize,
     /// Adjusted coefficients used by decomposition (length = `poly_length`).
     pub(crate) adjusted_poly: AVec<T>,
@@ -211,9 +211,9 @@ pub struct NttGlweExternalProductContext<T: FheUint> {
 
 /// Mutable view of the buffers used by an NTT external product.
 ///
-/// The accumulator may borrow either the context-owned buffer or a
+/// The accumulator may borrow either the workspace-owned buffer or a
 /// caller-provided NTT GLWE output.
-pub(crate) struct NttGlweExternalProductContextRefMut<'a, T: FheUint> {
+pub(crate) struct NttGlweExternalProductWorkspaceRefMut<'a, T: FheUint> {
     size: GadgetSize,
     /// Adjusted coefficients used by decomposition.
     pub(crate) adjusted_poly: &'a mut [T],
@@ -225,7 +225,7 @@ pub(crate) struct NttGlweExternalProductContextRefMut<'a, T: FheUint> {
     pub(crate) ntt_accumulator: NttGlwe<&'a mut [T]>,
 }
 
-impl<T: FheUint> NttGlweExternalProductContextRefMut<'_, T> {
+impl<T: FheUint> NttGlweExternalProductWorkspaceRefMut<'_, T> {
     /// Returns the external-product layout bound to this view.
     #[must_use]
     #[inline]
@@ -234,8 +234,8 @@ impl<T: FheUint> NttGlweExternalProductContextRefMut<'_, T> {
     }
 }
 
-impl<T: FheUint> NttGlweExternalProductContext<T> {
-    /// Creates a context with all buffers pre-allocated.
+impl<T: FheUint> NttGlweExternalProductWorkspace<T> {
+    /// Creates a workspace with all buffers pre-allocated.
     #[must_use]
     pub fn new(size: GadgetSize) -> Self {
         let glwe_size = size.glwe_size();
@@ -264,22 +264,22 @@ impl<T: FheUint> NttGlweExternalProductContext<T> {
         let original = self.size();
         self.rebind(size);
         struct Restore<'a, T: FheUint> {
-            context: &'a mut NttGlweExternalProductContext<T>,
+            workspace: &'a mut NttGlweExternalProductWorkspace<T>,
             size: GadgetSize,
         }
         impl<T: FheUint> Drop for Restore<'_, T> {
             fn drop(&mut self) {
-                self.context.resize(self.size);
+                self.workspace.resize(self.size);
             }
         }
         let restore = Restore {
-            context: self,
+            workspace: self,
             size: original,
         };
-        operation(&mut *restore.context)
+        operation(&mut *restore.workspace)
     }
 
-    /// Rebinds the context to another decomposition layout without reallocating.
+    /// Rebinds the workspace to another decomposition layout without reallocating.
     ///
     /// # Panics
     ///
@@ -288,12 +288,12 @@ impl<T: FheUint> NttGlweExternalProductContext<T> {
         assert_eq!(
             self.size.glwe_size(),
             size.glwe_size(),
-            "cannot rebind NTT external-product context to a different GLWE layout"
+            "cannot rebind NTT external-product workspace to a different GLWE layout"
         );
         self.size = size;
     }
 
-    /// Rebinds the context and resizes its scratch buffers when the GLWE layout changes.
+    /// Rebinds the workspace and resizes its scratch buffers when the GLWE layout changes.
     pub fn resize(&mut self, size: GadgetSize) {
         if self.size.glwe_size() == size.glwe_size() {
             self.size = size;
@@ -317,10 +317,10 @@ impl<T: FheUint> NttGlweExternalProductContext<T> {
         self.size
     }
 
-    /// Borrows all scratch buffers and the context-owned accumulator.
+    /// Borrows all scratch buffers and the workspace-owned accumulator.
     #[inline]
-    pub(crate) fn as_mut(&mut self) -> NttGlweExternalProductContextRefMut<'_, T> {
-        NttGlweExternalProductContextRefMut {
+    pub(crate) fn as_mut(&mut self) -> NttGlweExternalProductWorkspaceRefMut<'_, T> {
+        NttGlweExternalProductWorkspaceRefMut {
             size: self.size,
             adjusted_poly: &mut self.adjusted_poly,
             carries: &mut self.carries,
@@ -335,11 +335,11 @@ impl<T: FheUint> NttGlweExternalProductContext<T> {
     pub(crate) fn as_mut_with_accumulator<'a, S>(
         &'a mut self,
         accumulator: &'a mut NttGlwe<S>,
-    ) -> NttGlweExternalProductContextRefMut<'a, T>
+    ) -> NttGlweExternalProductWorkspaceRefMut<'a, T>
     where
         S: DataMut<Elem = T>,
     {
-        NttGlweExternalProductContextRefMut {
+        NttGlweExternalProductWorkspaceRefMut {
             size: self.size,
             adjusted_poly: &mut self.adjusted_poly,
             carries: &mut self.carries,

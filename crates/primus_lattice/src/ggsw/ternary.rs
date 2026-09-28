@@ -7,8 +7,8 @@ use primus_ntt::MonomialNttTable;
 use primus_reduce::FieldContext;
 
 use crate::{
-    context::{FourierGlweTernaryCmuxContext, NttGlweTernaryCmuxContext},
     glwe::{Glwe, TorusGlwe},
+    workspace::{FourierGlweTernaryCmuxWorkspace, NttGlweTernaryCmuxWorkspace},
 };
 
 use super::{FourierGgsw, NttGgsw};
@@ -29,7 +29,7 @@ where
     /// # Correctness
     ///
     /// Both controls, input, output, basis, and engine must satisfy
-    /// [`Self::external_product_to`] with `context.size()`. Control bits must be
+    /// [`Self::external_product_to`] with `workspace.size()`. Control bits must be
     /// mutually exclusive (unchecked) and use the same key and native basis.
     /// The usual noise estimate requires independent encryptions. Both controls
     /// must use the engine's exact table instance, ordering, and normalized torus scale.
@@ -55,7 +55,7 @@ where
         output: &mut TorusGlwe<C>,
         basis: &ApproxSignedBasis<T>,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierGlweTernaryCmuxContext<T>,
+        workspace: &mut FourierGlweTernaryCmuxWorkspace<T>,
     ) where
         T: TorusFftValue,
         Table: FftTable,
@@ -63,7 +63,7 @@ where
         B: Data<Elem = T>,
         C: DataMut<Elem = T>,
     {
-        let size = context.size();
+        let size = workspace.size();
         let poly_length = size.glwe_size().poly_length();
         debug_assert!(exponent < 2 * poly_length);
         debug_assert_eq!(self.as_ref().len(), size.fourier_ggsw_len());
@@ -81,16 +81,16 @@ where
         self.sub_mul_monomial_to(
             negative,
             inverse_exponent,
-            &mut context.combined_control,
+            &mut workspace.combined_control,
             fft,
-            &mut context.external_product.decomposed_poly,
-            &mut context.control_factor_fourier,
+            &mut workspace.external_product.decomposed_poly,
+            &mut workspace.control_factor_fourier,
         );
 
         input.mul_monomial_sub_one_to(exponent, output, poly_length, NativeModulus::new());
-        let mut product = context.external_product.as_mut();
+        let mut product = workspace.external_product.as_mut();
         product.fourier_accumulator.set_zero();
-        context
+        workspace
             .combined_control
             .accumulate_external_product(output, basis, fft, &mut product);
         product.fourier_accumulator.write_torus_form(output, fft);
@@ -115,7 +115,7 @@ where
     /// # Correctness
     ///
     /// Both controls, input, output, basis, modulus, and table must satisfy
-    /// [`Self::external_product_to`] with `context.size()`. Control bits must be
+    /// [`Self::external_product_to`] with `workspace.size()`. Control bits must be
     /// mutually exclusive (unchecked) and use the same key and basis.
     /// Independent control encryption is required for the usual noise estimate.
     /// `exponent` is already quantized and must be in `0..2N`. Its negative is
@@ -141,7 +141,7 @@ where
         basis: &ApproxSignedBasis<T>,
         modulus: M,
         ntt: &Table,
-        context: &mut NttGlweTernaryCmuxContext<T>,
+        workspace: &mut NttGlweTernaryCmuxWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: MonomialNttTable<ValueT = T>,
@@ -149,7 +149,7 @@ where
         B: Data<Elem = T>,
         C: DataMut<Elem = T>,
     {
-        let size = context.size();
+        let size = workspace.size();
         let poly_length = size.glwe_size().poly_length();
         debug_assert!(exponent < 2 * poly_length);
         debug_assert_eq!(self.as_ref().len(), size.ggsw_len());
@@ -166,16 +166,16 @@ where
         self.sub_mul_monomial_to(
             negative,
             inverse_exponent,
-            &mut context.combined_control,
+            &mut workspace.combined_control,
             modulus,
             ntt,
-            &mut context.control_factor_ntt,
+            &mut workspace.control_factor_ntt,
         );
 
         input.mul_monomial_sub_one_to(exponent, output, poly_length, modulus);
-        let mut product = context.external_product.as_mut();
+        let mut product = workspace.external_product.as_mut();
         product.ntt_accumulator.set_zero();
-        context.combined_control.accumulate_external_product(
+        workspace.combined_control.accumulate_external_product(
             output,
             basis,
             modulus,

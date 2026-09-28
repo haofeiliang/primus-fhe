@@ -10,10 +10,10 @@ use std::{
 use primus_fft::{FftEngine, FftTable, RustFftTable};
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntru::{
-    FourierNgswCiphertext, FourierNtruCiphertext, FourierNtruDecryptContext,
-    FourierNtruEncryptContext, FourierNtruGadgetEncryptContext, FourierNtruSecretKey,
+    FourierNgswCiphertext, FourierNtruCiphertext, FourierNtruDecryptWorkspace,
+    FourierNtruEncryptWorkspace, FourierNtruGadgetEncryptWorkspace, FourierNtruSecretKey,
     NlevParameters, NtruError, NtruParameters, NtruSecretKey, NttNgswCiphertext,
-    NttNtruGadgetEncryptContext, NttNtruSecretKey, SecretKeyDistr,
+    NttNtruGadgetEncryptWorkspace, NttNtruSecretKey, SecretKeyDistr,
 };
 use primus_ntt::{NttTable, UintNttTable};
 use primus_poly::Polynomial;
@@ -166,62 +166,62 @@ fn secret_buffers_are_reused_and_erased() {
     // operation fills each workspace again before its destructor is observed.
     assert_erased(
         1,
-        || NttNtruGadgetEncryptContext::new(N),
-        |context| {
+        || NttNtruGadgetEncryptWorkspace::new(N),
+        |workspace| {
             for _ in 0..2 {
-                context.zeroize();
+                workspace.zeroize();
                 ntt_key.encrypt_ngsw_to(
                     &message,
                     &mut ntt_output,
                     &ntt_gadget,
                     &ntt,
                     &mut rng,
-                    context,
+                    workspace,
                 );
             }
         },
     );
     assert_erased(
         3,
-        || FourierNtruGadgetEncryptContext::new(N),
-        |context| {
+        || FourierNtruGadgetEncryptWorkspace::new(N),
+        |workspace| {
             for _ in 0..2 {
-                context.zeroize();
+                workspace.zeroize();
                 fourier_key.encrypt_ngsw_to(
                     &message,
                     &mut fourier_output,
                     &fourier_gadget,
                     &mut fft,
                     &mut rng,
-                    context,
+                    workspace,
                 );
             }
         },
     );
     assert_erased(
         1,
-        || FourierNtruEncryptContext::new(N),
-        |context| {
+        || FourierNtruEncryptWorkspace::new(N),
+        |workspace| {
             for _ in 0..2 {
-                context.zeroize();
+                workspace.zeroize();
                 fourier_key.encrypt_to(
                     &message,
                     &mut cipher,
                     &fourier_params,
                     &mut fft,
                     &mut rng,
-                    context,
+                    workspace,
                 );
             }
         },
     );
     assert_erased(
         1,
-        || FourierNtruDecryptContext::new(N),
-        |context| {
+        || FourierNtruDecryptWorkspace::new(N),
+        |workspace| {
             for _ in 0..2 {
-                context.zeroize();
-                fourier_key.phase_to(&cipher, &mut phase, &mut fft, context);
+                workspace.zeroize();
+                fourier_key.phase_to(&cipher, &mut phase, &mut fft, workspace);
             }
         },
     );
@@ -288,8 +288,8 @@ fn secret_buffers_are_reused_and_erased() {
                 let (coeff, key) = result.as_ref().unwrap();
                 assert_eq!(coeff.as_slice(), coefficient_key.as_slice());
                 let mut check_fft = FftEngine::new(&table);
-                let mut encrypt = FourierNtruEncryptContext::new(N);
-                let mut decrypt = FourierNtruDecryptContext::new(N);
+                let mut encrypt = FourierNtruEncryptWorkspace::new(N);
+                let mut decrypt = FourierNtruDecryptWorkspace::new(N);
                 let cipher = key.encrypt(
                     &message,
                     &fourier_params,
@@ -345,7 +345,7 @@ fn secret_buffers_are_reused_and_erased() {
 
     // Reject a destroyed Fourier key even in release mode: multiplying by an
     // empty inverse would otherwise leave the encoded message and noise exposed.
-    let mut context = FourierNtruEncryptContext::new(N);
+    let mut workspace = FourierNtruEncryptWorkspace::new(N);
     assert!(
         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             fourier_key.encrypt_to(
@@ -354,7 +354,7 @@ fn secret_buffers_are_reused_and_erased() {
                 &fourier_params,
                 &mut fft,
                 &mut rng,
-                &mut context,
+                &mut workspace,
             );
         }))
         .is_err()

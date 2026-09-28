@@ -1,6 +1,8 @@
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_encoding::{PlaintextEmbedding, RoundedCodec};
-use primus_glwe::{GlweParameters, NttGadgetEncryptContext, NttGlweSecretKey, SecretKeyDistr};
+use primus_glwe::{
+    GlweParameters, NttGlweGadgetEncryptWorkspace, NttGlweSecretKey, SecretKeyDistr,
+};
 use primus_lattice::{glwe::Glwe, lwe::Lwe};
 use primus_lwe::LweParameters;
 use primus_modulus::BarrettModulus;
@@ -8,8 +10,8 @@ use primus_ntt::{NttTable, U32NttTable};
 use primus_poly::Polynomial;
 use primus_test_allocations as allocations;
 use primus_tfhe_glwe_ntt::{
-    ClientKey, KeyGenerator, NttGlweBlindRotationContext, NttGlweBootstrappingKey, PbsOrder,
-    SparseGlweBlindRotationContext, TfheContext, TfheParameters,
+    ClientKey, KeyGenerator, NttGlweBlindRotationWorkspace, NttGlweBootstrappingKey, PbsOrder,
+    SparseGlweBlindRotationWorkspace, TfheContext, TfheParameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -96,10 +98,10 @@ fn sparse_rotation_matches_direct_phase_and_classic_with_reused_scratch() {
             parameters.blind_rotation_ggsw(),
             ntt,
             &mut rng,
-            &mut NttGadgetEncryptContext::new(size),
+            &mut NttGlweGadgetEncryptWorkspace::new(size),
         );
-        let mut sparse_scratch = SparseGlweBlindRotationContext::new(&sparse);
-        let mut classic_scratch = NttGlweBlindRotationContext::new(&classic);
+        let mut sparse_scratch = SparseGlweBlindRotationWorkspace::new(&sparse);
+        let mut classic_scratch = NttGlweBlindRotationWorkspace::new(&classic);
         let mut sparse_output = Glwe::<Vec<u32>>::zero(size.glwe_len());
         let mut classic_output = Glwe::<Vec<u32>>::zero(size.glwe_len());
         let codec = RoundedCodec::new(T, modulus);

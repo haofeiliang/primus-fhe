@@ -12,10 +12,11 @@
 use criterion::{Criterion, criterion_group, criterion_main};
 use primus_fft::{FftEngine, FftTable, RustFftTable};
 use primus_glwe::{
-    FourierGadgetEncryptContext, FourierGgswCiphertext, FourierGlevCiphertext,
-    FourierGlweDecryptContext, FourierGlweEncryptContext, FourierGlweSecretKey, GlevParameters,
-    GlweCiphertext, GlweParameters, NttGadgetEncryptContext, NttGgswCiphertext, NttGlevCiphertext,
-    NttGlwePublicEncryptContext, NttGlwePublicKey, NttGlweSecretKey, SecretKeyDistr,
+    FourierGgswCiphertext, FourierGlevCiphertext, FourierGlweDecryptWorkspace,
+    FourierGlweEncryptWorkspace, FourierGlweGadgetEncryptWorkspace, FourierGlweSecretKey,
+    GlevParameters, GlweCiphertext, GlweParameters, NttGgswCiphertext, NttGlevCiphertext,
+    NttGlweGadgetEncryptWorkspace, NttGlwePublicEncryptWorkspace, NttGlwePublicKey,
+    NttGlweSecretKey, SecretKeyDistr,
 };
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntt::{NttTable, UintNttTable};
@@ -45,13 +46,13 @@ fn ntt_encryption(c: &mut Criterion) {
         let ntt = UintNttTable::new(n.trailing_zeros(), modulus).unwrap();
         let (_, sk) = NttGlweSecretKey::generate_pair(&params, &ntt, &mut rng);
         let pk = NttGlwePublicKey::generate(&sk, &params, &ntt, &mut rng);
-        let mut public_context = NttGlwePublicEncryptContext::new(n);
+        let mut public_workspace = NttGlwePublicEncryptWorkspace::new(n);
         let mut ciphertext = sk.encrypt(&message, &params, &ntt, &mut rng);
         sk.decrypt_to(&ciphertext, &mut plaintext, &params, &ntt);
         assert_eq!(plaintext.as_ref(), message.as_ref());
         let decrypt_input = ciphertext.clone();
         let gadget = GlevParameters::with_glwe_params(&params, LOG_BASE, Some(LEVELS));
-        let mut gadget_context = NttGadgetEncryptContext::new(gadget.size());
+        let mut gadget_workspace = NttGlweGadgetEncryptWorkspace::new(gadget.size());
         let mut glev = NttGlevCiphertext::<Vec<u64>>::zero(gadget.glev_len());
         let mut ggsw = NttGgswCiphertext::<Vec<u64>>::zero(gadget.ggsw_len());
         let mut group = c.benchmark_group(format!("glwe/ntt/k{dimension}_n{n}"));
@@ -75,7 +76,7 @@ fn ntt_encryption(c: &mut Criterion) {
                     black_box(&params),
                     &ntt,
                     &mut rng,
-                    &mut public_context,
+                    &mut public_workspace,
                 );
                 black_box(ciphertext.as_ref());
             })
@@ -145,7 +146,7 @@ fn ntt_encryption(c: &mut Criterion) {
                         &gadget,
                         &ntt,
                         &mut rng,
-                        &mut gadget_context,
+                        &mut gadget_workspace,
                     );
                     black_box(glev.as_ref());
                 })
@@ -161,7 +162,7 @@ fn ntt_encryption(c: &mut Criterion) {
                         &gadget,
                         &ntt,
                         &mut rng,
-                        &mut gadget_context,
+                        &mut gadget_workspace,
                     );
                     black_box(ggsw.as_ref());
                 })
@@ -180,7 +181,7 @@ fn ntt_encryption(c: &mut Criterion) {
                     &gadget,
                     &ntt,
                     &mut rng,
-                    &mut gadget_context,
+                    &mut gadget_workspace,
                 );
                 black_box(&batch);
             })
@@ -205,21 +206,26 @@ fn fourier_encryption(c: &mut Criterion) {
         let table = RustFftTable::new(n.trailing_zeros()).unwrap();
         let mut fft = FftEngine::new(&table);
         let (_, sk) = FourierGlweSecretKey::generate_pair(&params, &mut fft, &mut rng);
-        let mut encrypt_context = FourierGlweEncryptContext::new(n);
-        let mut decrypt_context = FourierGlweDecryptContext::new(n);
-        let mut ciphertext =
-            sk.encrypt(&message, &params, &mut fft, &mut rng, &mut encrypt_context);
+        let mut encrypt_workspace = FourierGlweEncryptWorkspace::new(n);
+        let mut decrypt_workspace = FourierGlweDecryptWorkspace::new(n);
+        let mut ciphertext = sk.encrypt(
+            &message,
+            &params,
+            &mut fft,
+            &mut rng,
+            &mut encrypt_workspace,
+        );
         sk.decrypt_to(
             &ciphertext,
             &mut plaintext,
             &params,
             &mut fft,
-            &mut decrypt_context,
+            &mut decrypt_workspace,
         );
         assert_eq!(plaintext.as_ref(), message.as_ref());
         let decrypt_input = ciphertext.clone();
         let gadget = GlevParameters::with_glwe_params(&params, LOG_BASE, Some(LEVELS));
-        let mut gadget_context = FourierGadgetEncryptContext::new(gadget.size());
+        let mut gadget_workspace = FourierGlweGadgetEncryptWorkspace::new(gadget.size());
         let mut glev = FourierGlevCiphertext::<Vec<_>>::zero(gadget.fourier_glev_len());
         let mut ggsw = FourierGgswCiphertext::<Vec<_>>::zero(gadget.fourier_ggsw_len());
         let mut group = c.benchmark_group(format!("glwe/fourier/k{dimension}_n{n}"));
@@ -231,7 +237,7 @@ fn fourier_encryption(c: &mut Criterion) {
                     black_box(&params),
                     &mut fft,
                     &mut rng,
-                    &mut encrypt_context,
+                    &mut encrypt_workspace,
                 );
                 black_box(ciphertext.as_ref());
             })
@@ -243,7 +249,7 @@ fn fourier_encryption(c: &mut Criterion) {
                     &mut plaintext,
                     black_box(&params),
                     &mut fft,
-                    &mut decrypt_context,
+                    &mut decrypt_workspace,
                 );
                 black_box(plaintext.as_ref());
             })
@@ -258,7 +264,7 @@ fn fourier_encryption(c: &mut Criterion) {
                         &gadget,
                         &mut fft,
                         &mut rng,
-                        &mut gadget_context,
+                        &mut gadget_workspace,
                     );
                     black_box(glev.as_ref());
                 })
@@ -274,7 +280,7 @@ fn fourier_encryption(c: &mut Criterion) {
                         &gadget,
                         &mut fft,
                         &mut rng,
-                        &mut gadget_context,
+                        &mut gadget_workspace,
                     );
                     black_box(ggsw.as_ref());
                 })
@@ -294,7 +300,7 @@ fn fourier_encryption(c: &mut Criterion) {
                     &gadget,
                     &mut fft,
                     &mut rng,
-                    &mut gadget_context,
+                    &mut gadget_workspace,
                 );
                 black_box(&batch);
             })

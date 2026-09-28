@@ -1,7 +1,7 @@
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{Complex64, FftTable, RustFftTable, TfheFftTable};
 use primus_glwe::{GlweParameters, SecretKeyDistr};
-use primus_lattice::{context::FourierGlweExternalProductContext, ggsw::FourierGgsw};
+use primus_lattice::{ggsw::FourierGgsw, workspace::FourierGlweExternalProductWorkspace};
 use primus_lwe::{LweParameters, LweSecretKey};
 use primus_modulus::NativeModulus;
 use primus_tfhe::sparse::BucketMapError;
@@ -44,7 +44,7 @@ fn check_selectors<Table: FftTable>() {
     let input = accumulator_client.encrypt(&message, &mut rng);
     let size = context.parameters().blind_rotation_ggsw().size();
     let mut fft = context.new_fft_engine();
-    let mut external_product = FourierGlweExternalProductContext::new(size);
+    let mut external_product = FourierGlweExternalProductWorkspace::new(size);
     let mut control = FourierGgsw::<Vec<Complex64>>::zero(size.fourier_ggsw_len());
     let mut product = context.allocate_accumulator_ciphertext();
     let mut decoded = vec![0; N];

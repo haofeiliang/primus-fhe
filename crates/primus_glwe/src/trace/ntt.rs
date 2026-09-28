@@ -9,23 +9,23 @@ use primus_ntt::NttTable;
 use primus_reduce::FieldContext;
 
 use crate::{
-    GlevParameters, GlweSecretKey, NttGadgetEncryptContext, NttGlweAutomorphismContext,
-    NttGlweAutomorphismKey, NttGlweSecretKey,
+    GlevParameters, GlweSecretKey, NttGlweAutomorphismKey, NttGlweAutomorphismWorkspace,
+    NttGlweGadgetEncryptWorkspace, NttGlweSecretKey,
 };
 
 /// Reusable workspace for homomorphic GLWE trace evaluation.
-pub struct NttGlweTraceContext<T: FheUint> {
-    // All buffers share one immutable GLWE layout, checked via the nested context.
+pub struct NttGlweTraceWorkspace<T: FheUint> {
+    // All buffers share one immutable GLWE layout, checked via the nested workspace.
     pub(super) automorphism_output: Glwe<Vec<T>>,
-    pub(super) automorphism: NttGlweAutomorphismContext<T>,
+    pub(super) automorphism: NttGlweAutomorphismWorkspace<T>,
 }
 
-impl<T: FheUint> NttGlweTraceContext<T> {
+impl<T: FheUint> NttGlweTraceWorkspace<T> {
     /// Creates trace workspace for one GLWE layout.
     pub fn new(size: GlweSize) -> Self {
         Self {
             automorphism_output: Glwe::zero(size.glwe_len()),
-            automorphism: NttGlweAutomorphismContext::new(size),
+            automorphism: NttGlweAutomorphismWorkspace::new(size),
         }
     }
 }
@@ -56,7 +56,7 @@ impl<T: FheUint> NttGlweTraceKey<T> {
         params: &GlevParameters<T, M>,
         ntt: &Table,
         rng: &mut R,
-        context: &mut NttGadgetEncryptContext<T>,
+        workspace: &mut NttGlweGadgetEncryptWorkspace<T>,
     ) -> Self
     where
         M: FieldContext<T>,
@@ -64,7 +64,7 @@ impl<T: FheUint> NttGlweTraceKey<T> {
         R: rand::Rng + rand::CryptoRng,
     {
         ntt_secret_key.assert_gadget_compatible(params, ntt);
-        context.assert_glev_compatible(params.size());
+        workspace.assert_glev_compatible(params.size());
         let glwe_size = secret_key.glwe_size();
         assert_eq!(
             glwe_size,
@@ -88,7 +88,7 @@ impl<T: FheUint> NttGlweTraceKey<T> {
                     params,
                     ntt,
                     rng,
-                    context,
+                    workspace,
                 )
             })
             .collect();
@@ -139,14 +139,14 @@ impl<T: FheUint> NttGlweTraceKey<T> {
         output: &mut Glwe<B>,
         modulus: M,
         ntt: &Table,
-        context: &mut NttGlweTraceContext<T>,
+        workspace: &mut NttGlweTraceWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
         A: Data<Elem = T>,
         B: DataMut<Elem = T>,
     {
-        self.apply_partial_to(input, 1, output, modulus, ntt, context);
+        self.apply_partial_to(input, 1, output, modulus, ntt, workspace);
     }
 
     /// Returns the first key, which exists because supported GLWE polynomial

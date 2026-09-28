@@ -4,5 +4,5 @@ mod fourier;
 mod kernels;
 mod ntt;
 
-pub use fourier::{FourierNtruTraceContext, FourierNtruTraceKey};
-pub use ntt::{NttNtruTraceContext, NttNtruTraceKey};
+pub use fourier::{FourierNtruTraceKey, FourierNtruTraceWorkspace};
+pub use ntt::{NttNtruTraceKey, NttNtruTraceWorkspace};

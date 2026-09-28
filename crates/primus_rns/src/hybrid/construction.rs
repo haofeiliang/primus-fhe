@@ -36,7 +36,7 @@ where
     ///
     /// Active levels must be ordered prefixes of the full basis used to create
     /// `partitioning`. This constructor validates the modulus count; the
-    /// owning modulus-chain context is responsible for preserving the prefix.
+    /// owning modulus-chain workspace is responsible for preserving the prefix.
     ///
     /// # Errors
     ///

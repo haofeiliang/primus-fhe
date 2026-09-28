@@ -1,7 +1,8 @@
 //! Native-torus automorphisms using Fourier key switching.
 use crate::{
-    FourierGadgetEncryptContext, FourierGlweKeySwitchingContext, FourierGlweKeySwitchingKey,
-    FourierGlweSecretKey, GlevParameters, GlweSecretKey, GlweSize,
+    FourierGlweGadgetEncryptWorkspace, FourierGlweKeySwitchingKey,
+    FourierGlweKeySwitchingWorkspace, FourierGlweSecretKey, GlevParameters, GlweSecretKey,
+    GlweSize,
 };
 use num_traits::ConstZero;
 use primus_data::{Data, DataMut};
@@ -12,19 +13,19 @@ use primus_modulus::NativeModulus;
 use primus_poly::{CoeffAutomorphismPermutation, FourierPolynomial};
 
 /// Reusable workspace for coefficient- and Fourier-domain automorphisms.
-pub struct FourierGlweAutomorphismContext<T: TorusFftValue> {
+pub struct FourierGlweAutomorphismWorkspace<T: TorusFftValue> {
     transformed: Glwe<Vec<T>>,
     permuted_fourier: Vec<Complex64>,
-    key_switching: FourierGlweKeySwitchingContext<T>,
+    key_switching: FourierGlweKeySwitchingWorkspace<T>,
 }
-impl<T: TorusFftValue> FourierGlweAutomorphismContext<T> {
+impl<T: TorusFftValue> FourierGlweAutomorphismWorkspace<T> {
     /// Allocates buffers for one immutable GLWE layout.
     #[must_use]
     pub fn new(size: GlweSize) -> Self {
         Self {
             transformed: Glwe::zero(size.glwe_len()),
             permuted_fourier: vec![Complex64::default(); size.fourier_poly_len()],
-            key_switching: FourierGlweKeySwitchingContext::new(size),
+            key_switching: FourierGlweKeySwitchingWorkspace::new(size),
         }
     }
 }
@@ -56,7 +57,7 @@ impl<T: TorusFftValue> FourierGlweAutomorphismKey<T> {
         params: &GlevParameters<T, NativeModulus<T>>,
         fft: &mut FftEngine<'_, Table>,
         rng: &mut R,
-        context: &mut FourierGadgetEncryptContext<T>,
+        workspace: &mut FourierGlweGadgetEncryptWorkspace<T>,
     ) -> Self {
         let size = secret.glwe_size();
         assert_eq!(
@@ -84,7 +85,7 @@ impl<T: TorusFftValue> FourierGlweAutomorphismKey<T> {
             params,
             fft,
             rng,
-            context,
+            workspace,
         );
         Self {
             fourier_permutation: fft.table().automorphism_map(degree),
@@ -112,7 +113,7 @@ impl<T: TorusFftValue> FourierGlweAutomorphismKey<T> {
         input: &Glwe<A>,
         output: &mut Glwe<B>,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierGlweAutomorphismContext<T>,
+        workspace: &mut FourierGlweAutomorphismWorkspace<T>,
     ) {
         let len = self.key_switching.output_size().glwe_len();
         assert_eq!(
@@ -125,8 +126,8 @@ impl<T: TorusFftValue> FourierGlweAutomorphismKey<T> {
             len,
             "automorphism output layout mismatch"
         );
-        self.assert_compatible(fft, context);
-        self.apply_kernel_to(input, output, fft, context);
+        self.assert_compatible(fft, workspace);
+        self.apply_kernel_to(input, output, fft, workspace);
     }
     /// Applies the automorphism to a Fourier-domain torus GLWE, returning a
     /// Fourier GLWE under the original secret. Only masks are inverse-transformed
@@ -149,7 +150,7 @@ impl<T: TorusFftValue> FourierGlweAutomorphismKey<T> {
         input: &FourierGlwe<A>,
         output: &mut FourierGlwe<B>,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierGlweAutomorphismContext<T>,
+        workspace: &mut FourierGlweAutomorphismWorkspace<T>,
     ) {
         let len = self
             .key_switching
@@ -166,25 +167,25 @@ impl<T: TorusFftValue> FourierGlweAutomorphismKey<T> {
             len,
             "Fourier automorphism output layout mismatch"
         );
-        self.assert_compatible(fft, context);
+        self.assert_compatible(fft, workspace);
         let h = fft.fourier_length();
         let n = fft.poly_length();
         let (input_mask, input_body) = input.a_b_slices(h);
-        let (transformed_mask, _) = context.transformed.a_b_mut_slices(n);
+        let (transformed_mask, _) = workspace.transformed.a_b_mut_slices(n);
         for (input, coeff) in input_mask
             .chunks_exact(h)
             .zip(transformed_mask.chunks_exact_mut(n))
         {
-            self.permute_fourier_to(input, &mut context.permuted_fourier);
-            fft.backward_as_torus(&context.permuted_fourier, coeff);
+            self.permute_fourier_to(input, &mut workspace.permuted_fourier);
+            fft.backward_as_torus(&workspace.permuted_fourier, coeff);
         }
-        self.permute_fourier_to(input_body, &mut context.permuted_fourier);
+        self.permute_fourier_to(input_body, &mut workspace.permuted_fourier);
         self.key_switching.key_switch_fourier_kernel_to(
             transformed_mask,
-            &FourierPolynomial::new(context.permuted_fourier.as_slice()),
+            &FourierPolynomial::new(workspace.permuted_fourier.as_slice()),
             output,
             fft,
-            &mut context.key_switching,
+            &mut workspace.key_switching,
         );
     }
 
@@ -199,10 +200,10 @@ impl<T: TorusFftValue> FourierGlweAutomorphismKey<T> {
     pub(crate) fn assert_compatible<Table: FftTable>(
         &self,
         fft: &FftEngine<'_, Table>,
-        context: &FourierGlweAutomorphismContext<T>,
+        workspace: &FourierGlweAutomorphismWorkspace<T>,
     ) {
         self.key_switching
-            .assert_compatible(fft, &context.key_switching);
+            .assert_compatible(fft, &workspace.key_switching);
     }
     /// Applies after the owning boundary validates ciphertexts, FFT and workspace.
     pub(crate) fn apply_kernel_to<Table: FftTable, A: Data<Elem = T>, B: DataMut<Elem = T>>(
@@ -210,22 +211,22 @@ impl<T: TorusFftValue> FourierGlweAutomorphismKey<T> {
         input: &Glwe<A>,
         output: &mut Glwe<B>,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierGlweAutomorphismContext<T>,
+        workspace: &mut FourierGlweAutomorphismWorkspace<T>,
     ) {
         let n = self.key_switching.poly_length();
         for (input, output) in input
             .as_ref()
             .chunks_exact(n)
-            .zip(context.transformed.as_mut().chunks_exact_mut(n))
+            .zip(workspace.transformed.as_mut().chunks_exact_mut(n))
         {
             self.permutation
                 .apply_to(input, output, NativeModulus::new());
         }
         self.key_switching.key_switch_kernel_to(
-            &context.transformed,
+            &workspace.transformed,
             output,
             fft,
-            &mut context.key_switching,
+            &mut workspace.key_switching,
         );
     }
 }

@@ -1,6 +1,6 @@
 //! NLev and NGSW encryption.
 
-use super::{FourierNtruGadgetEncryptContext, FourierNtruSecretKey};
+use super::{FourierNtruGadgetEncryptWorkspace, FourierNtruSecretKey};
 use crate::{FourierNgswCiphertext, FourierNlevCiphertext, NlevParameters};
 use primus_data::{Data, DataMut};
 use primus_fft::{Complex64, FftEngine, FftTable, TorusFftValue};
@@ -17,7 +17,7 @@ impl FourierNtruSecretKey {
         params: &NlevParameters<T, NativeModulus<T>>,
         fft: &mut FftEngine<'_, Table>,
         rng: &mut R,
-        context: &mut FourierNtruGadgetEncryptContext<T>,
+        workspace: &mut FourierNtruGadgetEncryptWorkspace<T>,
     ) where
         T: TorusFftValue,
         Table: FftTable,
@@ -25,7 +25,7 @@ impl FourierNtruSecretKey {
         A: Data<Elem = T>,
         B: DataMut<Elem = Complex64>,
     {
-        self.assert_gadget_domain(params, fft, context);
+        self.assert_gadget_domain(params, fft, workspace);
         assert_eq!(
             message.as_ref().len(),
             self.poly_length(),
@@ -44,14 +44,14 @@ impl FourierNtruSecretKey {
             .scalar_iter()
             .zip(result.iter_ntru_mut(fft.fourier_length()))
         {
-            message.mul_scalar_to(scalar, &mut context.encoded, modulus);
+            message.mul_scalar_to(scalar, &mut workspace.encoded, modulus);
             self.encrypt_encoded_to_unchecked(
-                &context.encoded,
+                &workspace.encoded,
                 &mut level,
                 ntru_params,
                 fft,
                 rng,
-                &mut context.ntru,
+                &mut workspace.ntru,
             );
         }
     }
@@ -76,33 +76,33 @@ impl FourierNtruSecretKey {
         params: &NlevParameters<T, NativeModulus<T>>,
         fft: &mut FftEngine<'_, Table>,
         rng: &mut R,
-        context: &mut FourierNtruGadgetEncryptContext<T>,
+        workspace: &mut FourierNtruGadgetEncryptWorkspace<T>,
     ) where
         T: TorusFftValue,
         Table: FftTable,
         R: rand::Rng + rand::CryptoRng,
         B: DataMut<Elem = Complex64>,
     {
-        self.assert_gadget_domain(params, fft, context);
+        self.assert_gadget_domain(params, fft, workspace);
         assert_eq!(
             output.as_ref().len(),
             params.fourier_nlev_len(),
             "NLev output length mismatch"
         );
-        context.encoded.as_mut().fill(T::ZERO);
+        workspace.encoded.as_mut().fill(T::ZERO);
         for (scalar, mut level) in params
             .basis()
             .scalar_iter()
             .zip(output.iter_ntru_mut(fft.fourier_length()))
         {
-            context.encoded.as_mut()[0] = input.wrapping_mul(scalar);
+            workspace.encoded.as_mut()[0] = input.wrapping_mul(scalar);
             self.encrypt_encoded_to_unchecked(
-                &context.encoded,
+                &workspace.encoded,
                 &mut level,
                 params.ntru(),
                 fft,
                 rng,
-                &mut context.ntru,
+                &mut workspace.ntru,
             );
         }
     }
@@ -115,7 +115,7 @@ impl FourierNtruSecretKey {
         params: &NlevParameters<T, NativeModulus<T>>,
         fft: &mut FftEngine<'_, Table>,
         rng: &mut R,
-        context: &mut FourierNtruGadgetEncryptContext<T>,
+        workspace: &mut FourierNtruGadgetEncryptWorkspace<T>,
     ) where
         T: TorusFftValue,
         Table: FftTable,
@@ -123,7 +123,7 @@ impl FourierNtruSecretKey {
         A: Data<Elem = T>,
         B: DataMut<Elem = Complex64>,
     {
-        self.assert_gadget_domain(params, fft, context);
+        self.assert_gadget_domain(params, fft, workspace);
         assert_eq!(
             message.as_ref().len(),
             self.poly_length(),
@@ -142,11 +142,11 @@ impl FourierNtruSecretKey {
             .scalar_iter()
             .zip(result.iter_ntru_mut(fft.fourier_length()))
         {
-            message.mul_scalar_to(scalar, &mut context.encoded, modulus);
-            fft.forward_as_torus(context.encoded.as_ref(), &mut context.transformed);
-            self.encrypt_zeros_to_unchecked(&mut level, ntru_params, fft, rng, &mut context.ntru);
+            message.mul_scalar_to(scalar, &mut workspace.encoded, modulus);
+            fft.forward_as_torus(workspace.encoded.as_ref(), &mut workspace.transformed);
+            self.encrypt_zeros_to_unchecked(&mut level, ntru_params, fft, rng, &mut workspace.ntru);
             FourierPolynomial(level.as_mut())
-                .add_assign(&FourierPolynomial(context.transformed.as_slice()));
+                .add_assign(&FourierPolynomial(workspace.transformed.as_slice()));
         }
     }
 
@@ -174,13 +174,13 @@ impl FourierNtruSecretKey {
         params: &NlevParameters<T, NativeModulus<T>>,
         fft: &mut FftEngine<'_, Table>,
         rng: &mut R,
-        context: &mut FourierNtruGadgetEncryptContext<T>,
+        workspace: &mut FourierNtruGadgetEncryptWorkspace<T>,
     ) where
         T: TorusFftValue,
         Table: FftTable,
         R: rand::Rng + rand::CryptoRng,
     {
-        self.assert_gadget_domain(params, fft, context);
+        self.assert_gadget_domain(params, fft, workspace);
         let nlev_len = params.fourier_nlev_len();
         let expected = input
             .len()
@@ -191,7 +191,7 @@ impl FourierNtruSecretKey {
             expected,
             "Fourier NGSW batch output length mismatch"
         );
-        context.encoded.as_mut().fill(T::ZERO);
+        workspace.encoded.as_mut().fill(T::ZERO);
         for (&value, block) in input.iter().zip(output.chunks_exact_mut(nlev_len)) {
             let constant = value.cast_to_unsigned();
             for (scalar, level) in params
@@ -199,20 +199,20 @@ impl FourierNtruSecretKey {
                 .scalar_iter()
                 .zip(block.chunks_exact_mut(fft.fourier_length()))
             {
-                context.encoded.as_mut()[0] = constant.wrapping_mul(scalar);
+                workspace.encoded.as_mut()[0] = constant.wrapping_mul(scalar);
                 // Native-ring multiplication precedes torus lifting; preserve
                 // the same per-level FFT rounding as polynomial encryption.
-                fft.forward_as_torus(context.encoded.as_ref(), &mut context.transformed);
+                fft.forward_as_torus(workspace.encoded.as_ref(), &mut workspace.transformed);
                 let mut level = crate::FourierNtruCiphertext::new(level);
                 self.encrypt_zeros_to_unchecked(
                     &mut level,
                     params.ntru(),
                     fft,
                     rng,
-                    &mut context.ntru,
+                    &mut workspace.ntru,
                 );
                 FourierPolynomial(level.as_mut())
-                    .add_assign(&FourierPolynomial(context.transformed.as_slice()));
+                    .add_assign(&FourierPolynomial(workspace.transformed.as_slice()));
             }
         }
     }
@@ -221,13 +221,13 @@ impl FourierNtruSecretKey {
         &self,
         params: &NlevParameters<T, NativeModulus<T>>,
         fft: &FftEngine<'_, Table>,
-        context: &FourierNtruGadgetEncryptContext<T>,
+        workspace: &FourierNtruGadgetEncryptWorkspace<T>,
     ) where
         T: TorusFftValue,
         Table: FftTable,
     {
         self.assert_domain(params.ntru(), fft);
-        assert_eq!(context.encoded.as_ref().len(), self.poly_length());
-        assert_eq!(context.transformed.len(), fft.fourier_length());
+        assert_eq!(workspace.encoded.as_ref().len(), self.poly_length());
+        assert_eq!(workspace.transformed.len(), fft.fourier_length());
     }
 }

@@ -1,6 +1,6 @@
 //! NTT public-key encryption.
 
-use super::{NttGlwePublicEncryptContext, NttGlwePublicKey};
+use super::{NttGlwePublicEncryptWorkspace, NttGlwePublicKey};
 use crate::{GlweParameters, NttGlweCiphertext, PlaintextEmbedding};
 use primus_data::{Data, DataMut};
 use primus_integer::FheUint;
@@ -15,7 +15,7 @@ where
 {
     /// Encrypts an unsigned plaintext polynomial into `output` without allocating.
     ///
-    /// `context` holds one reusable ephemeral polynomial of `params.poly_length()`
+    /// `workspace` holds one reusable ephemeral polynomial of `params.poly_length()`
     /// coefficients. It may be reused across keys with the same polynomial length.
     ///
     /// # Panics
@@ -32,7 +32,7 @@ where
         params: &GlweParameters<T, M>,
         ntt: &Table,
         rng: &mut R,
-        context: &mut NttGlwePublicEncryptContext<T>,
+        workspace: &mut NttGlwePublicEncryptWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
@@ -45,7 +45,7 @@ where
             params.poly_length(),
             "GLWE message length mismatch"
         );
-        self.encrypt_kernel_to(output, params, ntt, rng, context, |body| {
+        self.encrypt_kernel_to(output, params, ntt, rng, workspace, |body| {
             params.plaintext_codec().add_encode_slice_assign(
                 body,
                 input.as_ref(),
@@ -66,7 +66,7 @@ where
         params: &GlweParameters<T, M>,
         ntt: &Table,
         rng: &mut R,
-        context: &mut NttGlwePublicEncryptContext<T>,
+        workspace: &mut NttGlwePublicEncryptWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
@@ -79,7 +79,7 @@ where
             params.poly_length(),
             "GLWE message length mismatch"
         );
-        self.encrypt_kernel_to(output, params, ntt, rng, context, |body| {
+        self.encrypt_kernel_to(output, params, ntt, rng, workspace, |body| {
             params.plaintext_codec().add_encode_slice_assign(
                 body,
                 input.as_ref(),
@@ -106,7 +106,7 @@ where
         params: &GlweParameters<T, M>,
         ntt: &Table,
         rng: &mut R,
-        context: &mut NttGlwePublicEncryptContext<T>,
+        workspace: &mut NttGlwePublicEncryptWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
@@ -119,7 +119,7 @@ where
             params.poly_length(),
             "GLWE message length mismatch"
         );
-        self.encrypt_kernel_to(output, params, ntt, rng, context, |body| {
+        self.encrypt_kernel_to(output, params, ntt, rng, workspace, |body| {
             Polynomial::new(body).add_assign(input, params.cipher_modulus());
         });
     }
@@ -136,7 +136,7 @@ where
         params: &GlweParameters<T, M>,
         ntt: &Table,
         rng: &mut R,
-        context: &mut NttGlwePublicEncryptContext<T>,
+        workspace: &mut NttGlwePublicEncryptWorkspace<T>,
     ) -> NttGlweCiphertext<Vec<T>>
     where
         M: FieldContext<T>,
@@ -145,7 +145,7 @@ where
         A: Data<Elem = T>,
     {
         let mut output = NttGlweCiphertext::zero(params.glwe_len());
-        self.encrypt_to(input, &mut output, params, ntt, rng, context);
+        self.encrypt_to(input, &mut output, params, ntt, rng, workspace);
         output
     }
 
@@ -161,14 +161,14 @@ where
         params: &GlweParameters<T, M>,
         ntt: &Table,
         rng: &mut R,
-        context: &mut NttGlwePublicEncryptContext<T>,
+        workspace: &mut NttGlwePublicEncryptWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
         R: rand::Rng + rand::CryptoRng,
         B: DataMut<Elem = T>,
     {
-        self.encrypt_kernel_to(output, params, ntt, rng, context, |_| {});
+        self.encrypt_kernel_to(output, params, ntt, rng, workspace, |_| {});
     }
 
     /// Encrypts zero into a newly allocated NTT-domain ciphertext.
@@ -183,7 +183,7 @@ where
         params: &GlweParameters<T, M>,
         ntt: &Table,
         rng: &mut R,
-        context: &mut NttGlwePublicEncryptContext<T>,
+        workspace: &mut NttGlwePublicEncryptWorkspace<T>,
     ) -> NttGlweCiphertext<Vec<T>>
     where
         M: FieldContext<T>,
@@ -191,7 +191,7 @@ where
         R: rand::Rng + rand::CryptoRng,
     {
         let mut output = NttGlweCiphertext::zero(params.glwe_len());
-        self.encrypt_zeros_to(&mut output, params, ntt, rng, context);
+        self.encrypt_zeros_to(&mut output, params, ntt, rng, workspace);
         output
     }
 
@@ -204,7 +204,7 @@ where
         params: &GlweParameters<T, M>,
         ntt: &Table,
         rng: &mut R,
-        context: &mut NttGlwePublicEncryptContext<T>,
+        workspace: &mut NttGlwePublicEncryptWorkspace<T>,
         add_message: impl FnOnce(&mut [T]),
     ) where
         M: FieldContext<T>,
@@ -230,7 +230,7 @@ where
             "NTT polynomial length mismatch"
         );
         assert_eq!(
-            context.ephemeral.len(),
+            workspace.ephemeral.len(),
             poly_length,
             "public encryption workspace length mismatch"
         );
@@ -241,7 +241,7 @@ where
         );
 
         let modulus = params.cipher_modulus();
-        let ephemeral = &mut context.ephemeral;
+        let ephemeral = &mut workspace.ephemeral;
         primus_distr::sample_sparse_ternary_values_to(
             ephemeral,
             params.cipher_modulus_minus_one(),

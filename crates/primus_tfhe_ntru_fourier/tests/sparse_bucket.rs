@@ -7,8 +7,8 @@ use primus_integer::SignedInteger;
 use primus_lwe::LweParameters;
 use primus_modulus::NativeModulus;
 use primus_ntru::{
-    FourierNgswCiphertext, FourierNlevCiphertext, FourierNtruExternalProductContext,
-    FourierNtruGadgetEncryptContext, FourierNtruSecretKey, NgswCiphertext, NlevCiphertext,
+    FourierNgswCiphertext, FourierNlevCiphertext, FourierNtruExternalProductWorkspace,
+    FourierNtruGadgetEncryptWorkspace, FourierNtruSecretKey, NgswCiphertext, NlevCiphertext,
     NlevParameters, NtruCiphertext, NtruParameters, SecretKeyDistr,
 };
 use primus_poly::Polynomial;
@@ -143,7 +143,7 @@ fn check<T: TorusFftValue, Table: FftTable>(level_count: Option<usize>) {
         .iter()
         .filter(|&&s| s != T::SignedInteger::ZERO)
         .count() as u128;
-    let mut encrypt = FourierNtruGadgetEncryptContext::new(N);
+    let mut encrypt = FourierNtruGadgetEncryptWorkspace::new(N);
     let mut initializer = FourierNlevCiphertext::<Vec<Complex64>>::zero(gadget.fourier_nlev_len());
     key.encrypt_nlev_constant_to(
         T::ONE,
@@ -160,7 +160,7 @@ fn check<T: TorusFftValue, Table: FftTable>(level_count: Option<usize>) {
         .collect();
     let mut current = NtruCiphertext::<Vec<T>>::zero(N);
     let mut scratch = NtruCiphertext::<Vec<T>>::zero(N);
-    let mut ep = FourierNtruExternalProductContext::new(N);
+    let mut ep = FourierNtruExternalProductWorkspace::new(N);
     let (_, allocation) = measure(|| {
         initializer.external_product_to(
             &Polynomial(lut.as_slice()),

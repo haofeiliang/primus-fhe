@@ -6,7 +6,7 @@ use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use primus_fft::{FftEngine, FftTable, RustFftTable, TfheFftTable};
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntru::{
-    FourierNtruDecryptContext, FourierNtruEncryptContext, FourierNtruSecretKey, NtruParameters,
+    FourierNtruDecryptWorkspace, FourierNtruEncryptWorkspace, FourierNtruSecretKey, NtruParameters,
     NttNtruSecretKey, SecretKeyDistr,
 };
 use primus_ntt::{NttTable, UintNttTable};
@@ -58,8 +58,8 @@ fn fourier<Table: FftTable>(c: &mut Criterion, n: usize, backend: &str) {
     let mut fft = FftEngine::new(&table);
     let mut rng = StdRng::seed_from_u64(42);
     let (_, key) = FourierNtruSecretKey::generate_pair(&parameters, &mut fft, &mut rng).unwrap();
-    let mut encrypt = FourierNtruEncryptContext::new(n);
-    let mut decrypt = FourierNtruDecryptContext::new(n);
+    let mut encrypt = FourierNtruEncryptWorkspace::new(n);
+    let mut decrypt = FourierNtruDecryptWorkspace::new(n);
     let message = Polynomial::new((0..n).map(|i| i as u64 % 16).collect::<Vec<_>>());
     let input = key.encrypt(&message, &parameters, &mut fft, &mut rng, &mut encrypt);
     let mut output = input.clone();

@@ -1,4 +1,4 @@
-//! Observe owned scratch allocations while live and immediately before release.
+//! Observe owned workspace allocations while live and immediately before release.
 use std::{
     alloc::{GlobalAlloc, Layout, System},
     cell::Cell,
@@ -53,7 +53,7 @@ unsafe impl GlobalAlloc for ObservingAllocator {
                 .is_ok()
             {
                 // SAFETY: the initialized allocation is still live until
-                // System.dealloc below; no other thread accesses this scratch.
+                // System.dealloc below; no other thread accesses this workspace.
                 let bytes = unsafe { std::slice::from_raw_parts(data, layout.size()) };
                 ERASED.fetch_and(bytes.iter().all(|&byte| byte == 0), Ordering::SeqCst);
                 RELEASED.fetch_add(1, Ordering::SeqCst);
@@ -70,14 +70,14 @@ static ALLOCATOR: ObservingAllocator = ObservingAllocator;
 
 fn check_backend<Table: FftTable>(log_n: u32)
 where
-    Table::Scratch: Zeroize,
+    Table::Workspace: Zeroize,
 {
     let table = Table::new(log_n).unwrap();
     ALLOCATIONS.store(0, Ordering::SeqCst);
     RELEASED.store(0, Ordering::SeqCst);
     ERASED.store(true, Ordering::SeqCst);
     RECORDING.set(true);
-    let mut scratch = table.new_scratch();
+    let mut workspace = table.new_workspace();
     RECORDING.set(false);
     // Small RustFFT plans need no extra backend work buffer.
     let allocation_count = ALLOCATIONS.load(Ordering::SeqCst);
@@ -86,7 +86,7 @@ where
     // Seed all buffers, including backend work bytes a particular FFT plan
     // might not touch. All byte patterns are valid Complex64/f64 and u8 values.
     for (pointer, size) in POINTERS.iter().zip(&SIZES).take(allocation_count) {
-        // SAFETY: these are the exclusive scratch's live allocations, with
+        // SAFETY: these are the exclusive workspace's live allocations, with
         // no outstanding references into them. The recorded lengths are exact.
         unsafe {
             ptr::write_bytes(
@@ -96,33 +96,33 @@ where
             );
         }
     }
-    scratch.zeroize();
+    workspace.zeroize();
     for (pointer, size) in POINTERS.iter().zip(&SIZES).take(allocation_count) {
-        // SAFETY: initialized, still-live scratch storage with no mutation.
+        // SAFETY: initialized, still-live workspace storage with no mutation.
         let bytes = unsafe {
             std::slice::from_raw_parts(pointer.load(Ordering::SeqCst), size.load(Ordering::SeqCst))
         };
         assert!(bytes.iter().all(|&byte| byte == 0));
     }
 
-    let mut fft = FftEngine::from_scratch(&table, scratch);
+    let mut fft = FftEngine::from_workspace(&table, workspace);
     let input: Vec<u32> = (0..table.poly_length())
         .map(|i| (i as u32).wrapping_mul(0x12345))
         .collect();
     let mut fourier = vec![Complex64::default(); table.fourier_length()];
     let mut output = vec![0u32; table.poly_length()];
     for _ in 0..2 {
-        fft.zeroize_scratch();
+        fft.zeroize_workspace();
         fft.forward_as_torus(&input, &mut fourier);
         fft.backward_as_torus(&fourier, &mut output);
         assert_eq!(input, output);
     }
-    // Inverse FFT has just repopulated scratch with nonzero phase data.
+    // Inverse FFT has just repopulated workspace with nonzero phase data.
     drop(fft);
     assert_eq!(RELEASED.load(Ordering::SeqCst), allocation_count);
     assert!(
         ERASED.load(Ordering::SeqCst),
-        "scratch was released without erasure"
+        "workspace was released without erasure"
     );
 }
 

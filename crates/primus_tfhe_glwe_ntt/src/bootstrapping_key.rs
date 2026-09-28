@@ -1,7 +1,7 @@
 //! NTT-domain bootstrapping-key storage and generation.
 
 use primus_decompose::primitive::ApproxSignedBasis;
-use primus_glwe::{GlevParameters, NttGadgetEncryptContext, NttGlweSecretKey};
+use primus_glwe::{GlevParameters, NttGlweGadgetEncryptWorkspace, NttGlweSecretKey};
 use primus_integer::FheUint;
 use primus_lattice::{
     GadgetSize,
@@ -97,7 +97,7 @@ impl<T: FheUint, LM: PrepareModulusSwitch<ValueT = T>> NttGlweBootstrappingKey<T
         parameters: &GlevParameters<T, M>,
         ntt: &Table,
         rng: &mut R,
-        context: &mut NttGadgetEncryptContext<T>,
+        context: &mut NttGlweGadgetEncryptWorkspace<T>,
     ) -> Self
     where
         LM: RingContext<T>,

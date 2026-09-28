@@ -7,7 +7,7 @@ use primus_integer::{FheUint, SignedInteger};
 
 use crate::GlweSecretKey;
 
-pub use dcrt::{DcrtGlweDecryptContext, DcrtGlweSecretKey};
+pub use dcrt::{DcrtGlweDecryptWorkspace, DcrtGlweSecretKey};
 
 #[inline]
 pub(crate) fn encode_secret_coefficient<T: FheUint>(

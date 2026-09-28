@@ -15,8 +15,8 @@ mod trace;
 use primus_encoding::{PlaintextEmbedding, ScaledCodec};
 
 pub use automorphism::{
-    FourierGlweAutomorphismContext, FourierGlweAutomorphismKey, NttGlweAutomorphismContext,
-    NttGlweAutomorphismKey,
+    FourierGlweAutomorphismKey, FourierGlweAutomorphismWorkspace, NttGlweAutomorphismKey,
+    NttGlweAutomorphismWorkspace,
 };
 pub use ciphertext::{
     FourierGgswCiphertext, FourierGlevCiphertext, FourierGlweCiphertext, GlevCiphertext,
@@ -24,8 +24,8 @@ pub use ciphertext::{
     TruncatedGlweCiphertext,
 };
 pub use key_switch::{
-    FourierGlweKeySwitchingContext, FourierGlweKeySwitchingKey, NttGlweKeySwitchingContext,
-    NttGlweKeySwitchingKey,
+    FourierGlweKeySwitchingKey, FourierGlweKeySwitchingWorkspace, NttGlweKeySwitchingKey,
+    NttGlweKeySwitchingWorkspace,
 };
 pub use packing_key_switch::{FourierLwePackingKeySwitchingKey, NttLwePackingKeySwitchingKey};
 pub use parameter::{
@@ -33,13 +33,13 @@ pub use parameter::{
     GlweParameterError, GlweParameters, GlweParametersInner, GlweSize, GlweSizeError,
 };
 pub use primus_distr::SecretKeyDistr;
-pub use public_key::{NttGlwePublicEncryptContext, NttGlwePublicKey};
+pub use public_key::{NttGlwePublicEncryptWorkspace, NttGlwePublicKey};
 pub use scheme_switch::{FourierGlweSchemeSwitchKey, NttGlweSchemeSwitchKey};
 pub use secret_key::{
-    FourierGadgetEncryptContext, FourierGlweDecryptContext, FourierGlweEncryptContext,
-    FourierGlweSecretKey, GlweSecretKey, NttGadgetEncryptContext, NttGlweSecretKey,
+    FourierGlweDecryptWorkspace, FourierGlweEncryptWorkspace, FourierGlweGadgetEncryptWorkspace,
+    FourierGlweSecretKey, GlweSecretKey, NttGlweGadgetEncryptWorkspace, NttGlweSecretKey,
 };
 pub use trace::{
-    FourierGlwePackingContext, FourierGlweTraceContext, FourierGlweTraceKey, NttGlwePackingContext,
-    NttGlweTraceContext, NttGlweTraceKey,
+    FourierGlwePackingWorkspace, FourierGlweTraceKey, FourierGlweTraceWorkspace,
+    NttGlwePackingWorkspace, NttGlweTraceKey, NttGlweTraceWorkspace,
 };

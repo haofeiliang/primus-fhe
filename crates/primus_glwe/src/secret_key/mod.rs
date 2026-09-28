@@ -6,7 +6,7 @@ mod ntt;
 
 pub use coeff::GlweSecretKey;
 pub use fourier::{
-    FourierGadgetEncryptContext, FourierGlweDecryptContext, FourierGlweEncryptContext,
+    FourierGlweDecryptWorkspace, FourierGlweEncryptWorkspace, FourierGlweGadgetEncryptWorkspace,
     FourierGlweSecretKey,
 };
-pub use ntt::{NttGadgetEncryptContext, NttGlweSecretKey};
+pub use ntt::{NttGlweGadgetEncryptWorkspace, NttGlweSecretKey};

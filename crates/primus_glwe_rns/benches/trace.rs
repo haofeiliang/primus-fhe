@@ -3,9 +3,9 @@ use std::hint::black_box;
 
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use primus_glwe_rns::{
-    CrtGlevParameters, CrtGlweParameters, CrtGlweTraceContext, CrtGlweTraceKey, DcrtGadgetDomain,
-    DcrtGlweCiphertext, DcrtGlweRevTraceContext, DcrtGlweRevTraceKey, DcrtGlweSecretKey,
-    DcrtGlweTraceContext, DcrtGlweTraceKey, GlweSecretKey, SecretKeyDistr,
+    CrtGlevParameters, CrtGlweParameters, CrtGlweTraceKey, CrtGlweTraceWorkspace, DcrtGadgetDomain,
+    DcrtGlweCiphertext, DcrtGlweRevTraceKey, DcrtGlweRevTraceWorkspace, DcrtGlweSecretKey,
+    DcrtGlweTraceKey, DcrtGlweTraceWorkspace, GlweSecretKey, SecretKeyDistr,
 };
 use primus_lattice::glwe::{CrtGlwe, DcrtGlwe};
 use primus_modulus::BarrettModulus;
@@ -81,9 +81,9 @@ fn bench_trace(c: &mut Criterion) {
         // Buffers
         let mut crt_result: CrtGlwe<Vec<V>> = CrtGlwe::zero(rns_glwe_len);
         let mut dcrt_result: DcrtGlweCiphertext<Vec<V>> = DcrtGlweCiphertext::zero(rns_glwe_len);
-        let mut crt_trace_ctx = CrtGlweTraceContext::new(&domain);
-        let mut dcrt_trace_ctx = DcrtGlweTraceContext::new(&domain);
-        let mut dcrt_rev_trace_ctx = DcrtGlweRevTraceContext::new(&domain);
+        let mut crt_trace_ctx = CrtGlweTraceWorkspace::new(&domain);
+        let mut dcrt_trace_ctx = DcrtGlweTraceWorkspace::new(&domain);
+        let mut dcrt_rev_trace_ctx = DcrtGlweRevTraceWorkspace::new(&domain);
 
         let n_label = format!("N={poly_length}");
 

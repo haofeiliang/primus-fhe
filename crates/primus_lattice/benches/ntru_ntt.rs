@@ -4,9 +4,9 @@ use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_integer::FheUint;
 use primus_lattice::{
-    context::NttNtruExternalProductContext,
     ngsw::Ngsw,
     ntru::{Ntru, NttNtru},
+    workspace::NttNtruExternalProductWorkspace,
 };
 use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, U32NttTable, U64NttTable};
@@ -36,7 +36,7 @@ fn ntt<T: FheUint, Table: NttTable<ValueT = T>>(
     .into_ntt_form(&table);
     let mut output = Ntru::new(vec![T::ZERO; poly_length]);
     let mut ntt_output = NttNtru::<Vec<T>>::zero(poly_length);
-    let mut context = NttNtruExternalProductContext::new(poly_length);
+    let mut workspace = NttNtruExternalProductWorkspace::new(poly_length);
 
     let mut group = c.benchmark_group(format!(
         "ntru/ntt/u{}/q{q}/n{}/logb{log_b}/l{levels}",
@@ -52,7 +52,7 @@ fn ntt<T: FheUint, Table: NttTable<ValueT = T>>(
                 black_box(&basis),
                 black_box(modulus),
                 black_box(&table),
-                black_box(&mut context),
+                black_box(&mut workspace),
             )
         });
     });
@@ -64,7 +64,7 @@ fn ntt<T: FheUint, Table: NttTable<ValueT = T>>(
                 black_box(&basis),
                 black_box(modulus),
                 black_box(&table),
-                black_box(&mut context),
+                black_box(&mut workspace),
             )
         });
     });
@@ -77,7 +77,7 @@ fn ntt<T: FheUint, Table: NttTable<ValueT = T>>(
                 black_box(&basis),
                 black_box(modulus),
                 black_box(&table),
-                black_box(&mut context),
+                black_box(&mut workspace),
             )
         });
     });

@@ -1,6 +1,6 @@
 //! Phase extraction and plaintext decoding.
 
-use super::{FourierNtruDecryptContext, FourierNtruSecretKey};
+use super::{FourierNtruDecryptWorkspace, FourierNtruSecretKey};
 use crate::{FourierNtruCiphertext, NtruParameters};
 use primus_data::{Data, DataMut};
 use primus_encoding::PlaintextEmbedding;
@@ -27,7 +27,7 @@ impl FourierNtruSecretKey {
         cipher: &FourierNtruCiphertext<A>,
         result: &mut Polynomial<B>,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierNtruDecryptContext,
+        workspace: &mut FourierNtruDecryptWorkspace,
     ) where
         T: TorusFftValue,
         Table: FftTable,
@@ -41,10 +41,10 @@ impl FourierNtruSecretKey {
         );
         assert_eq!(cipher.as_ref().len(), fft.fourier_length());
         assert_eq!(result.as_ref().len(), self.poly_length());
-        assert_eq!(context.phase.as_ref().len(), fft.fourier_length());
+        assert_eq!(workspace.phase.as_ref().len(), fft.fourier_length());
 
-        FourierPolynomial(cipher.as_ref()).mul_to(&self.key, &mut context.phase);
-        fft.backward_as_torus(context.phase.as_ref(), result.as_mut());
+        FourierPolynomial(cipher.as_ref()).mul_to(&self.key, &mut workspace.phase);
+        fft.backward_as_torus(workspace.phase.as_ref(), result.as_mut());
     }
 
     /// Decrypts to unsigned plaintext values in `[0, t)`.
@@ -54,7 +54,7 @@ impl FourierNtruSecretKey {
         cipher: &FourierNtruCiphertext<A>,
         params: &NtruParameters<T, NativeModulus<T>>,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierNtruDecryptContext,
+        workspace: &mut FourierNtruDecryptWorkspace,
     ) -> PolynomialOwned<T>
     where
         T: TorusFftValue,
@@ -62,7 +62,7 @@ impl FourierNtruSecretKey {
         A: Data<Elem = Complex64>,
     {
         let mut result = PolynomialOwned::zero(self.poly_length());
-        self.decrypt_to(cipher, &mut result, params, fft, context);
+        self.decrypt_to(cipher, &mut result, params, fft, workspace);
         result
     }
 
@@ -73,7 +73,7 @@ impl FourierNtruSecretKey {
         result: &mut Polynomial<B>,
         params: &NtruParameters<T, NativeModulus<T>>,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierNtruDecryptContext,
+        workspace: &mut FourierNtruDecryptWorkspace,
     ) where
         T: TorusFftValue,
         Table: FftTable,
@@ -85,7 +85,7 @@ impl FourierNtruSecretKey {
             self.poly_length(),
             "NTRU parameter length mismatch"
         );
-        self.phase_to(cipher, result, fft, context);
+        self.phase_to(cipher, result, fft, workspace);
         params
             .plaintext_codec()
             .decode_slice_assign(result.as_mut());
@@ -97,7 +97,7 @@ impl FourierNtruSecretKey {
         cipher: &FourierNtruCiphertext<A>,
         params: &NtruParameters<T, NativeModulus<T>>,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierNtruDecryptContext,
+        workspace: &mut FourierNtruDecryptWorkspace,
     ) -> (PolynomialOwned<T>, PolynomialOwned<T>)
     where
         T: TorusFftValue,
@@ -111,7 +111,7 @@ impl FourierNtruSecretKey {
             self.poly_length(),
             "NTRU parameter length mismatch"
         );
-        self.phase_to(cipher, &mut message, fft, context);
+        self.phase_to(cipher, &mut message, fft, workspace);
         let mut noise = PolynomialOwned::zero(self.poly_length());
 
         for (phase, noise) in message.iter_mut().zip(noise.iter_mut()) {

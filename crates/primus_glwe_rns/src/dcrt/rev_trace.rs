@@ -6,11 +6,12 @@ use primus_reduce::FieldContext;
 use primus_rns::ResidueFactors;
 
 use crate::{
-    DcrtGadgetDomain, DcrtGlweAutoKey, DcrtGlweCiphertext, DcrtGlweSecretKey, DcrtGlweTraceContext,
+    DcrtGadgetDomain, DcrtGlweAutoKey, DcrtGlweCiphertext, DcrtGlweSecretKey,
+    DcrtGlweTraceWorkspace,
 };
 
 /// Reusable workspace for a DCRT reverse trace.
-pub type DcrtGlweRevTraceContext<T> = DcrtGlweTraceContext<T>;
+pub type DcrtGlweRevTraceWorkspace<T> = DcrtGlweTraceWorkspace<T>;
 
 #[derive(Clone)]
 /// Automorphism keys for reverse tracing a DCRT GLWE ciphertext.
@@ -74,7 +75,7 @@ impl<T: FheUint> DcrtGlweRevTraceKey<T> {
         ciphertext: &DcrtGlweCiphertext<A>,
         result: &mut DcrtGlweCiphertext<B>,
         domain: &DcrtGadgetDomain<'_, T, M, Table>,
-        context: &mut DcrtGlweRevTraceContext<T>,
+        workspace: &mut DcrtGlweRevTraceWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
@@ -87,7 +88,7 @@ impl<T: FheUint> DcrtGlweRevTraceKey<T> {
         let moduli = params.cipher_moduli();
         let moduli_value = params.cipher_moduli_value();
 
-        let (dcrt_glwe, auto_context) = context.as_mut();
+        let (dcrt_glwe, auto_workspace) = workspace.as_mut();
 
         result.as_mut().copy_from_slice(ciphertext.as_ref());
 
@@ -101,7 +102,7 @@ impl<T: FheUint> DcrtGlweRevTraceKey<T> {
             );
 
             // Automorphism on the halved ciphertext
-            auto_key.automorphism_kernel(result, dcrt_glwe, domain, auto_context);
+            auto_key.automorphism_kernel(result, dcrt_glwe, domain, auto_workspace);
 
             // result = result + auto(result)  [both already halved]
             result.add_assign(dcrt_glwe, poly_length, rns_poly_len, moduli);

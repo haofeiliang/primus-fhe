@@ -7,23 +7,23 @@ use super::BaseConverter;
 
 /// Reusable scratch space for exact batched RNS base conversion.
 ///
-/// Create this through [`BaseConverter::exact_conversion_context`]. Reusing it
+/// Create this through [`BaseConverter::exact_conversion_workspace`]. Reusing it
 /// for conversions of the same polynomial length avoids allocations in
 /// [`BaseConverter::exact_convert_array`].
-pub struct ExactConversionContext<T: FheUint> {
-    adjusted_residues: Vec<T>,
-    correction_terms: Vec<f64>,
+pub struct ExactConversionWorkspace<T: FheUint> {
+    adjusted_residues: Box<[T]>,
+    correction_terms: Box<[f64]>,
 }
 
-impl<T: FheUint> ExactConversionContext<T> {
+impl<T: FheUint> ExactConversionWorkspace<T> {
     fn new(input_moduli_count: usize, poly_length: usize) -> Self {
         let adjusted_residues_len = input_moduli_count
             .checked_mul(poly_length)
-            .expect("exact conversion context length overflow");
+            .expect("exact conversion workspace length overflow");
 
         Self {
-            adjusted_residues: vec![T::ZERO; adjusted_residues_len],
-            correction_terms: vec![0.0; poly_length],
+            adjusted_residues: vec![T::ZERO; adjusted_residues_len].into_boxed_slice(),
+            correction_terms: vec![0.0; poly_length].into_boxed_slice(),
         }
     }
 }
@@ -31,7 +31,7 @@ impl<T: FheUint> ExactConversionContext<T> {
 impl<T: FheUint, M: FieldContext<T>> BaseConverter<T, M> {
     /// Allocates reusable scratch space for exact conversions of one length.
     ///
-    /// The returned context is sized for this converter's input-modulus count
+    /// The returned workspace is sized for this converter's input-modulus count
     /// and can be reused by [`exact_convert_array`](Self::exact_convert_array)
     /// when `poly_length` is unchanged. A single-modulus input needs no scratch.
     ///
@@ -39,11 +39,11 @@ impl<T: FheUint, M: FieldContext<T>> BaseConverter<T, M> {
     ///
     /// Panics if `input_moduli_count() * poly_length` overflows `usize`.
     #[must_use]
-    pub fn exact_conversion_context(&self, poly_length: usize) -> ExactConversionContext<T> {
+    pub fn exact_conversion_workspace(&self, poly_length: usize) -> ExactConversionWorkspace<T> {
         if self.uses_single_input_kernel() {
-            ExactConversionContext::new(0, 0)
+            ExactConversionWorkspace::new(0, 0)
         } else {
-            ExactConversionContext::new(self.input_moduli_count(), poly_length)
+            ExactConversionWorkspace::new(self.input_moduli_count(), poly_length)
         }
     }
 
@@ -61,10 +61,10 @@ impl<T: FheUint, M: FieldContext<T>> BaseConverter<T, M> {
     /// representative in `[-Q/2, Q/2)`, where `Q` is the input-base product.
     /// `crt_poly_out.len()` must equal `poly_length`; it receives that centered
     /// representative reduced modulo the single output modulus.
-    /// For a multi-modulus input, `context` must come from
-    /// [`exact_conversion_context`](Self::exact_conversion_context) on a
+    /// For a multi-modulus input, `workspace` must come from
+    /// [`exact_conversion_workspace`](Self::exact_conversion_workspace) on a
     /// converter with the same input-modulus count and the same `poly_length`.
-    /// A single-modulus input ignores `context`.
+    /// A single-modulus input ignores `workspace`.
     ///
     /// For a multi-modulus input, the correction is estimated with `f64`. The
     /// name "exact" follows SEAL terminology and distinguishes this corrected
@@ -88,7 +88,7 @@ impl<T: FheUint, M: FieldContext<T>> BaseConverter<T, M> {
         crt_poly_in: &[T],
         crt_poly_out: &mut [T],
         poly_length: usize,
-        context: &mut ExactConversionContext<T>,
+        workspace: &mut ExactConversionWorkspace<T>,
     ) {
         let input_moduli_count = self.input_moduli_count();
         let expected_input_len = input_moduli_count
@@ -124,18 +124,18 @@ impl<T: FheUint, M: FieldContext<T>> BaseConverter<T, M> {
         }
 
         assert_eq!(
-            context.adjusted_residues.len(),
+            workspace.adjusted_residues.len(),
             expected_input_len,
-            "exact conversion context has the wrong input shape"
+            "exact conversion workspace has the wrong input shape"
         );
         assert_eq!(
-            context.correction_terms.len(),
+            workspace.correction_terms.len(),
             poly_length,
-            "exact conversion context has the wrong polynomial length"
+            "exact conversion workspace has the wrong polynomial length"
         );
 
-        let adjusted_residues = &mut context.adjusted_residues;
-        let correction_terms = &mut context.correction_terms;
+        let adjusted_residues = &mut workspace.adjusted_residues;
+        let correction_terms = &mut workspace.correction_terms;
         correction_terms.fill(0.0);
 
         // Calculate a_i * (Q / q_i)^-1 mod q_i and accumulate

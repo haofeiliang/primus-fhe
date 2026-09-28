@@ -1,6 +1,6 @@
 use primus_encoding::PlaintextEmbedding;
 use primus_glwe::{
-    GlweParameters, NttGlweCiphertext, NttGlwePublicEncryptContext, NttGlwePublicKey,
+    GlweParameters, NttGlweCiphertext, NttGlwePublicEncryptWorkspace, NttGlwePublicKey,
     NttGlweSecretKey, SecretKeyDistr,
 };
 use primus_modulus::BarrettModulus;
@@ -34,21 +34,21 @@ fn public_key_encoding_modes_reuse_workspace() {
             .collect::<Vec<_>>(),
     );
 
-    let mut context = NttGlwePublicEncryptContext::new(POLY_LENGTH);
+    let mut workspace = NttGlwePublicEncryptWorkspace::new(POLY_LENGTH);
     // The same coins must yield the same ciphertext for explicit encoding and
     // the corresponding plaintext embedding, even after reusing the workspace.
     for embedding in [PlaintextEmbedding::Unsigned, PlaintextEmbedding::Centered] {
         let seed = rng.next_u64();
         let mut actual_rng = StdRng::seed_from_u64(seed);
         let mut expected_rng = StdRng::seed_from_u64(seed);
-        let mut fresh_context = NttGlwePublicEncryptContext::new(POLY_LENGTH);
+        let mut fresh_workspace = NttGlwePublicEncryptWorkspace::new(POLY_LENGTH);
         let expected = match embedding {
             PlaintextEmbedding::Unsigned => public_key.encrypt(
                 &message,
                 &params,
                 &table,
                 &mut expected_rng,
-                &mut fresh_context,
+                &mut fresh_workspace,
             ),
             PlaintextEmbedding::Centered => {
                 let mut output = NttGlweCiphertext::<Vec<u64>>::zero(params.glwe_len());
@@ -58,7 +58,7 @@ fn public_key_encoding_modes_reuse_workspace() {
                     &params,
                     &table,
                     &mut expected_rng,
-                    &mut fresh_context,
+                    &mut fresh_workspace,
                 );
                 output
             }
@@ -77,7 +77,7 @@ fn public_key_encoding_modes_reuse_workspace() {
             &params,
             &table,
             &mut actual_rng,
-            &mut context,
+            &mut workspace,
         );
         assert_eq!(ciphertext.as_ref(), expected.as_ref());
         assert_eq!(actual_rng.next_u64(), expected_rng.next_u64());
@@ -87,7 +87,7 @@ fn public_key_encoding_modes_reuse_workspace() {
         );
     }
 
-    let encrypted_zero = public_key.encrypt_zeros(&params, &table, &mut rng, &mut context);
+    let encrypted_zero = public_key.encrypt_zeros(&params, &table, &mut rng, &mut workspace);
     assert_eq!(
         secret_key
             .decrypt(&encrypted_zero, &params, &table)

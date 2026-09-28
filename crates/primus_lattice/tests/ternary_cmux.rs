@@ -1,7 +1,7 @@
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{FftEngine, FftTable, RustFftTable, TfheFftTable, TorusFftValue};
 use primus_lattice::{
-    GadgetSize, GlweSize, context::NttGlweTernaryCmuxContext, ggsw::Ggsw, glwe::Glwe,
+    GadgetSize, GlweSize, ggsw::Ggsw, glwe::Glwe, workspace::NttGlweTernaryCmuxWorkspace,
 };
 use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, UintNttTable};
@@ -31,7 +31,7 @@ fn rotate(input: &[u32], exponent: isize) -> Vec<u32> {
 }
 
 fn check_fourier_rotation<T: TorusFftValue, Table: FftTable>() {
-    use primus_lattice::{context::FourierGlweTernaryCmuxContext, ggsw::FourierGgswOwned};
+    use primus_lattice::{ggsw::FourierGgswOwned, workspace::FourierGlweTernaryCmuxWorkspace};
     let table = Table::new(N.trailing_zeros()).unwrap();
     let mut fft = FftEngine::new(&table);
     let glwe_size = GlweSize::new(2, N);
@@ -57,7 +57,7 @@ fn check_fourier_rotation<T: TorusFftValue, Table: FftTable>() {
         let mut one = FourierGgswOwned::zero(size.fourier_ggsw_len());
         diagonal.write_fourier_form(&mut one, &mut fft);
         let zero = FourierGgswOwned::zero(size.fourier_ggsw_len());
-        let mut context = FourierGlweTernaryCmuxContext::new(size);
+        let mut workspace = FourierGlweTernaryCmuxWorkspace::new(size);
         let mut output = Glwe::new(vec![T::MAX; glwe_size.glwe_len()]);
         // Numerical regression budget for this small ring: 2^-40 of the torus,
         // at least one integer unit, separate from the decomposition error.
@@ -73,7 +73,7 @@ fn check_fourier_rotation<T: TorusFftValue, Table: FftTable>() {
                     &mut output,
                     &basis,
                     &mut fft,
-                    &mut context,
+                    &mut workspace,
                 );
                 let mut expected = vec![T::ZERO; glwe_size.glwe_len()];
                 for (i, &value) in input.as_ref().iter().enumerate() {
@@ -135,7 +135,7 @@ fn ternary_rotation_matches_negacyclic_oracle_with_bounded_decomposition_error()
         }
         let one = one.into_ntt_form(&ntt);
         let zero = Ggsw::new(vec![0u32; size.ggsw_len()]).into_ntt_form(&ntt);
-        let mut context = NttGlweTernaryCmuxContext::new(size);
+        let mut workspace = NttGlweTernaryCmuxWorkspace::new(size);
         let mut output = Glwe::new(vec![Q - 1; glwe_size.glwe_len()]);
         // Reuse dirty output/scratch across signs and wrap back to exponent zero.
         for secret in [1, -1, 0] {
@@ -150,7 +150,7 @@ fn ternary_rotation_matches_negacyclic_oracle_with_bounded_decomposition_error()
                     &basis,
                     modulus,
                     &ntt,
-                    &mut context,
+                    &mut workspace,
                 );
                 let expected = rotate(input.as_ref(), exponent as isize * secret);
                 let bound = if secret == 0 || exponent == 0 {
@@ -173,7 +173,7 @@ fn ternary_rotation_matches_negacyclic_oracle_with_bounded_decomposition_error()
 
 #[test]
 fn ngsw_ternary_rotation_matches_negacyclic_oracle() {
-    use primus_lattice::{context::NttNtruCmuxContext, ngsw::Ngsw, ntru::Ntru};
+    use primus_lattice::{ngsw::Ngsw, ntru::Ntru, workspace::NttNtruCmuxWorkspace};
     let modulus = BarrettModulus::new(Q);
     let ntt = UintNttTable::new(N.trailing_zeros(), modulus).unwrap();
     let input = Ntru::new(
@@ -190,7 +190,7 @@ fn ngsw_ternary_rotation_matches_negacyclic_oracle() {
         }
         let one = one.into_ntt_form(&ntt);
         let zero = Ngsw::new(vec![0u32; N * levels]).into_ntt_form(&ntt);
-        let mut context = NttNtruCmuxContext::new(N, levels);
+        let mut workspace = NttNtruCmuxWorkspace::new(N, levels);
         let mut output = Ntru::new(vec![Q - 1; N]);
         for secret in [1, -1, 0] {
             let positive = if secret == 1 { &one } else { &zero };
@@ -206,7 +206,7 @@ fn ngsw_ternary_rotation_matches_negacyclic_oracle() {
                     &basis,
                     modulus,
                     &ntt,
-                    &mut context,
+                    &mut workspace,
                 );
                 let expected = rotate(input.as_ref(), exponent as isize * secret);
                 let bound = if secret == 0 || exponent == 0 {
@@ -229,13 +229,13 @@ fn ngsw_ternary_rotation_matches_negacyclic_oracle() {
 
 #[test]
 fn serial_external_product_restores_ternary_layout_on_unwind() {
-    use primus_lattice::context::FourierGlweTernaryCmuxContext;
+    use primus_lattice::workspace::FourierGlweTernaryCmuxWorkspace;
     use std::panic::{AssertUnwindSafe, catch_unwind};
 
     let original = GadgetSize::new(GlweSize::new(1, N), 3);
     let temporary = GadgetSize::new(GlweSize::new(1, N), 2);
-    let mut ntt = NttGlweTernaryCmuxContext::<u32>::new(original);
-    let mut fourier = FourierGlweTernaryCmuxContext::<u64>::new(original);
+    let mut ntt = NttGlweTernaryCmuxWorkspace::<u32>::new(original);
+    let mut fourier = FourierGlweTernaryCmuxWorkspace::<u64>::new(original);
     assert!(
         catch_unwind(AssertUnwindSafe(|| ntt.with_external_product(
             temporary,

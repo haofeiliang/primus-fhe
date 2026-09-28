@@ -15,7 +15,7 @@
 | `ResidueFactors<S>` | 一个值在有序 RNS 基下的预计算乘法因子 |
 | `RNSBase<T, M>` | 非空、模数两两互素的 RNS 基及其 CRT 预计算 |
 | `BaseConverter<T, M>` | 在两个 RNS 基之间执行 fast 或 corrected 转换的预计算 |
-| `ExactConversionContext<T>` | corrected 批量转换使用的可复用 workspace |
+| `ExactConversionWorkspace<T>` | corrected 批量转换使用的可复用 workspace |
 | `HybridRNSPartitioning` | 在 modulus chain 各层之间共享的固定 full-`Q` 分区规则 |
 | `HybridRNS<T, M>` | 一个 active Hybrid-RNS level 的基与预计算 |
 | `HybridRNSPartition<T, M>` | 一个连续 `Q` 分区及其 approximate ModUp converter |
@@ -80,7 +80,7 @@ assert_eq!(base.decompose(value.view()).as_ref(), [2, 4, 6]);
 - `fast_convert` 和 `fast_convert_array` 执行 SEAL 风格的 approximate CRT lift。输入基包含多个模数时，结果表示某个整数 `x + kQ`，通常不等于规范的 `x mod p_j`。只有外层算法会消去或允许这个 `Q` 倍数项时才能使用。单模数输入 使用精确的直接约简。
 - `exact_convert_array` 应用商修正，将输入解释为 `[-Q/2, Q/2)` 中的居中 代表元，并要求输出基恰好包含一个模数。名称“exact”沿用 SEAL 的术语；修正 使用 `f64`，因此靠近 `-Q/2`/`Q/2` 边界的值仍可能相差一个 `Q` 的倍数。
 
-通过 `exact_conversion_context` 创建 `ExactConversionContext`，并在同一个 converter 和多项式长度下复用。Fast conversion 使用由 `fast_convert_scratch_len` 或 `fast_convert_array_scratch_len` 确定大小的原始 scratch slice。
+通过 `exact_conversion_workspace` 创建 `ExactConversionWorkspace`，并在同一个 converter 和多项式长度下复用。Fast conversion 使用由 `fast_convert_scratch_len` 或 `fast_convert_array_scratch_len` 确定大小的原始 scratch slice。
 
 ## Hybrid RNS
 
@@ -92,7 +92,7 @@ alpha = ceil(full_q_moduli_count / dnum)
 
 固定分区大小必须恰好产生 `dnum` 个非空分区。例如五个 `Q` 模数和 `dnum = 3` 会产生 `[0..2, 2..4, 4..5]`；请求 `dnum = 4` 会被拒绝，因为相同 固定大小只能产生三个分区。
 
-在同一 modulus chain 的较短有序前缀 level 上，应使用 `HybridRNS::from_partitioning`，以保持与 key 兼容的固定分区边界。构造器只验证 active 模数数量；拥有 modulus chain 的 context 负责保证前缀关系。
+在同一 modulus chain 的较短有序前缀 level 上，应使用 `HybridRNS::from_partitioning`，以保持与 key 兼容的固定分区边界。构造器只验证 active 模数数量；拥有 modulus chain 的 workspace 负责保证前缀关系。
 
 每个分区都支持 approximate ModUp 到完整的 `Q || P` 基。Streaming 形式只 生成转换后的 complement limb，使上层 key switching 可以直接复用采用其他表示 的 partition limb。ModDown 将 `P` correction 转换到 `Q`，执行减法，再乘以 `P^-1 mod q_i`。
 
@@ -101,7 +101,7 @@ alpha = ceil(full_q_moduli_count / dnum)
 - 除非方法记录了更宽的范围，传给算术和基转换内核的 residue 必须是对应模数下 的规范剩余类。
 - 组合进同一个基的模数必须两两互素，包括 `Q || P`。
 - Slice 长度、modulus-major 顺序必须与所选基和多项式长度严格匹配。
-- Converter context 和 scratch buffer 应在热循环外创建并复用。调用方提供输出和 workspace 后，批量 API 不会在内部执行分配。
+- Converter workspace 和 scratch buffer 应在热循环外创建并复用。调用方提供输出和 workspace 后，批量 API 不会在内部执行分配。
 - 一些重复执行的底层路径只使用 `debug_assert*!` 诊断形状错误；release 调用方 必须在拥有契约的公开或 scheme 边界建立这些不变量。
 
 ## SIMD feature

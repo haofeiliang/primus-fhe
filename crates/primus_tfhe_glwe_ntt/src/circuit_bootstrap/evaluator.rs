@@ -2,7 +2,7 @@
 //! switching.
 
 use primus_data::{Data, DataMut};
-use primus_glwe::{GlevCiphertext, GlweCiphertext, NttGlweTraceContext};
+use primus_glwe::{GlevCiphertext, GlweCiphertext, NttGlweTraceWorkspace};
 use primus_integer::FheUint;
 use primus_lattice::ggsw::NttGgsw;
 use primus_lwe::LweCiphertext;
@@ -32,7 +32,7 @@ where
     parameters: &'a CircuitBootstrapParameters<T>,
     circuit_key: &'a CircuitBootstrapKey<T>,
     lookup_table: InterleavedLookupTable<T>,
-    trace: NttGlweTraceContext<T>,
+    trace: NttGlweTraceWorkspace<T>,
     traced: GlevCiphertext<Vec<T>>,
 }
 
@@ -164,7 +164,7 @@ where
             parameters,
             circuit_key,
             lookup_table,
-            trace: NttGlweTraceContext::new(glwe_size),
+            trace: NttGlweTraceWorkspace::new(glwe_size),
             traced: GlevCiphertext::zero(parameters.output_size().glev_len()),
         })
     }

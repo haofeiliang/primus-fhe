@@ -10,7 +10,7 @@ mod profile;
 
 use criterion::{Criterion, SamplingMode, criterion_group, criterion_main};
 use primus_fft::{FftTable, RustFftTable, TfheFftTable};
-use primus_glwe::{FourierGlweDecryptContext, FourierGlweSecretKey};
+use primus_glwe::{FourierGlweDecryptWorkspace, FourierGlweSecretKey};
 use primus_poly::Polynomial;
 use primus_test_allocations as allocations;
 use primus_tfhe_glwe_fourier::{
@@ -69,7 +69,7 @@ fn bench_backend<Table: FftTable>(c: &mut Criterion, backend: &str) {
         let mut fft = context.new_fft_engine();
         let secret =
             FourierGlweSecretKey::from_coeff_secret_key(client.glwe_secret_key(), &mut fft);
-        let mut decrypt = FourierGlweDecryptContext::new(profile::N);
+        let mut decrypt = FourierGlweDecryptWorkspace::new(profile::N);
         let mut phase = Polynomial::<Vec<u64>>::zero(profile::N);
         let tolerance = parameters.output_basis().scalar_iter().min().unwrap() / 4;
         eprintln!(

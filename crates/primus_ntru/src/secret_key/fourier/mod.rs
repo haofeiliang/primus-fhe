@@ -11,13 +11,13 @@ use crate::{NtruError, NtruParameters, SecretKeyDistr};
 
 use super::NtruSecretKey;
 
-mod context;
 mod decrypt;
 mod encrypt;
 mod gadget;
+mod workspace;
 
-pub use context::{
-    FourierNtruDecryptContext, FourierNtruEncryptContext, FourierNtruGadgetEncryptContext,
+pub use workspace::{
+    FourierNtruDecryptWorkspace, FourierNtruEncryptWorkspace, FourierNtruGadgetEncryptWorkspace,
 };
 
 // A tiny complex evaluation makes both fresh encryption and later external

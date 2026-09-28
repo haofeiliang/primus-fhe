@@ -5,7 +5,7 @@ use primus_lwe::{LweCiphertext, LweParameters};
 use primus_modulus::NativeModulus;
 use primus_poly::Polynomial;
 use primus_tfhe_glwe_fourier::{
-    BootstrappingKey, ClientKey, FourierGlweBlindRotationContext, KeyGenerator, PbsOrder,
+    BootstrappingKey, ClientKey, FourierGlweBlindRotationWorkspace, KeyGenerator, PbsOrder,
     TfheContext, TfheContextError, TfheEvaluationError, TfheParameters,
 };
 use std::error::Error;
@@ -195,7 +195,7 @@ fn public_blind_rotation_rejects_mismatches_before_output_writes() {
     let input = LweCiphertext::new(vec![0u32; input_len]);
     let accumulator = GlweCiphertext::<Vec<u32>>::zero(glwe_len);
     let mut fft = context.new_fft_engine();
-    let mut scratch = FourierGlweBlindRotationContext::new(key);
+    let mut scratch = FourierGlweBlindRotationWorkspace::new(key);
 
     // Both accumulator entry points share the same checked rotation wrapper.
     for (input_len, accumulator_len, output_len) in [
@@ -274,7 +274,7 @@ fn public_blind_rotation_rejects_mismatches_before_output_writes() {
 
     let wrong_table = RustFftTable::new((POLY_LENGTH * 2).trailing_zeros()).unwrap();
     let mut wrong_fft = primus_fft::FftEngine::new(&wrong_table);
-    let mut wrong_scratch = FourierGlweBlindRotationContext::new(key);
+    let mut wrong_scratch = FourierGlweBlindRotationWorkspace::new(key);
     wrong_scratch.resize(GadgetSize::new(
         size.glwe_size(),
         size.decompose_length() + 1,

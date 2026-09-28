@@ -11,18 +11,18 @@ use zeroize::Zeroizing;
 
 use crate::{
     NlevParameters, NtruCiphertext, NtruSecretKey, NttNtruCiphertext,
-    NttNtruExternalProductContext, NttNtruGadgetEncryptContext, NttNtruKeySwitchingKey,
+    NttNtruExternalProductWorkspace, NttNtruGadgetEncryptWorkspace, NttNtruKeySwitchingKey,
     NttNtruSecretKey,
 };
 
 /// Reusable permutation and decomposition buffers for NTT NTRU automorphisms.
 /// Both coefficient and NTT input paths use this workspace without allocation.
-pub struct NttNtruAutomorphismContext<T: FheUint> {
+pub struct NttNtruAutomorphismWorkspace<T: FheUint> {
     coefficients: NtruCiphertext<Vec<T>>,
-    external_product: NttNtruExternalProductContext<T>,
+    external_product: NttNtruExternalProductWorkspace<T>,
 }
 
-impl<T: FheUint> NttNtruAutomorphismContext<T> {
+impl<T: FheUint> NttNtruAutomorphismWorkspace<T> {
     /// Allocates workspace for a supported power-of-two NTRU polynomial length.
     ///
     /// # Panics
@@ -37,7 +37,7 @@ impl<T: FheUint> NttNtruAutomorphismContext<T> {
         );
         Self {
             coefficients: NtruCiphertext::zero(poly_length),
-            external_product: NttNtruExternalProductContext::new(poly_length),
+            external_product: NttNtruExternalProductWorkspace::new(poly_length),
         }
     }
 }
@@ -77,7 +77,7 @@ impl<T: FheUint> NttNtruAutomorphismKey<T> {
         parameters: &NlevParameters<T, M>,
         ntt: &Table,
         rng: &mut R,
-        context: &mut NttNtruGadgetEncryptContext<T>,
+        workspace: &mut NttNtruGadgetEncryptWorkspace<T>,
     ) -> Self
     where
         M: FieldContext<T>,
@@ -105,7 +105,7 @@ impl<T: FheUint> NttNtruAutomorphismKey<T> {
             parameters,
             ntt,
             rng,
-            context,
+            workspace,
         );
         Self {
             degree,
@@ -149,7 +149,7 @@ impl<T: FheUint> NttNtruAutomorphismKey<T> {
         output: &mut NtruCiphertext<B>,
         modulus: M,
         ntt: &Table,
-        context: &mut NttNtruAutomorphismContext<T>,
+        workspace: &mut NttNtruAutomorphismWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
@@ -158,8 +158,8 @@ impl<T: FheUint> NttNtruAutomorphismKey<T> {
     {
         self.assert_lengths(input.as_ref().len(), output.as_ref().len());
         self.key_switching
-            .assert_compatible(modulus, ntt, &context.external_product);
-        self.apply_kernel_to(input, output, modulus, ntt, context);
+            .assert_compatible(modulus, ntt, &workspace.external_product);
+        self.apply_kernel_to(input, output, modulus, ntt, workspace);
     }
 
     /// Requires validated operand lengths and matching key/table/workspace resources.
@@ -169,7 +169,7 @@ impl<T: FheUint> NttNtruAutomorphismKey<T> {
         output: &mut NtruCiphertext<B>,
         modulus: M,
         ntt: &Table,
-        context: &mut NttNtruAutomorphismContext<T>,
+        workspace: &mut NttNtruAutomorphismWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
@@ -181,8 +181,8 @@ impl<T: FheUint> NttNtruAutomorphismKey<T> {
             output,
             modulus,
             ntt,
-            context.coefficients.as_mut(),
-            &mut context.external_product,
+            workspace.coefficients.as_mut(),
+            &mut workspace.external_product,
         );
     }
 
@@ -195,7 +195,7 @@ impl<T: FheUint> NttNtruAutomorphismKey<T> {
         modulus: M,
         ntt: &Table,
         coefficients: &mut [T],
-        external_product: &mut NttNtruExternalProductContext<T>,
+        external_product: &mut NttNtruExternalProductWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
@@ -230,7 +230,7 @@ impl<T: FheUint> NttNtruAutomorphismKey<T> {
         output: &mut NttNtruCiphertext<B>,
         modulus: M,
         ntt: &Table,
-        context: &mut NttNtruAutomorphismContext<T>,
+        workspace: &mut NttNtruAutomorphismWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
@@ -239,17 +239,17 @@ impl<T: FheUint> NttNtruAutomorphismKey<T> {
     {
         self.assert_lengths(input.as_ref().len(), output.as_ref().len());
         self.key_switching
-            .assert_compatible(modulus, ntt, &context.external_product);
+            .assert_compatible(modulus, ntt, &workspace.external_product);
         self.ntt_permutation
-            .apply_to(input.as_ref(), context.coefficients.as_mut());
-        ntt.inverse_transform_slice(context.coefficients.as_mut());
+            .apply_to(input.as_ref(), workspace.coefficients.as_mut());
+        ntt.inverse_transform_slice(workspace.coefficients.as_mut());
         NttNlev::new(self.key_switching.as_slice()).external_product_ntt_to(
-            &Polynomial(context.coefficients.as_ref()),
+            &Polynomial(workspace.coefficients.as_ref()),
             output,
             self.basis(),
             modulus,
             ntt,
-            &mut context.external_product,
+            &mut workspace.external_product,
         );
     }
 
@@ -270,12 +270,13 @@ impl<T: FheUint> NttNtruAutomorphismKey<T> {
         &self,
         modulus: M,
         ntt: &Table,
-        context: &NttNtruExternalProductContext<T>,
+        workspace: &NttNtruExternalProductWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
     {
-        self.key_switching.assert_compatible(modulus, ntt, context);
+        self.key_switching
+            .assert_compatible(modulus, ntt, workspace);
     }
 
     /// Checks the resources shared by all automorphism keys in one trace key.
@@ -283,12 +284,12 @@ impl<T: FheUint> NttNtruAutomorphismKey<T> {
         &self,
         modulus: M,
         ntt: &Table,
-        context: &NttNtruAutomorphismContext<T>,
+        workspace: &NttNtruAutomorphismWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
     {
         self.key_switching
-            .assert_compatible(modulus, ntt, &context.external_product);
+            .assert_compatible(modulus, ntt, &workspace.external_product);
     }
 }

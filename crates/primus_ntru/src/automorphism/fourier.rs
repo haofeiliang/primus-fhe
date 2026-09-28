@@ -10,20 +10,20 @@ use primus_reduce::EncodeSigned;
 use zeroize::Zeroizing;
 
 use crate::{
-    FourierNtruCiphertext, FourierNtruExternalProductContext, FourierNtruGadgetEncryptContext,
+    FourierNtruCiphertext, FourierNtruExternalProductWorkspace, FourierNtruGadgetEncryptWorkspace,
     FourierNtruKeySwitchingKey, FourierNtruSecretKey, NlevParameters, NtruCiphertext,
     NtruSecretKey,
 };
 
 /// Reusable coefficient, Fourier-permutation and decomposition workspace.
 /// Both input representations use these buffers without allocation.
-pub struct FourierNtruAutomorphismContext<T: TorusFftValue> {
+pub struct FourierNtruAutomorphismWorkspace<T: TorusFftValue> {
     coefficients: NtruCiphertext<Vec<T>>,
     permuted: Vec<Complex64>,
-    external_product: FourierNtruExternalProductContext<T>,
+    external_product: FourierNtruExternalProductWorkspace<T>,
 }
 
-impl<T: TorusFftValue> FourierNtruAutomorphismContext<T> {
+impl<T: TorusFftValue> FourierNtruAutomorphismWorkspace<T> {
     /// Allocates workspace for a supported power-of-two NTRU polynomial length.
     ///
     /// # Panics
@@ -38,7 +38,7 @@ impl<T: TorusFftValue> FourierNtruAutomorphismContext<T> {
         Self {
             coefficients: NtruCiphertext::zero(poly_length),
             permuted: vec![Complex64::default(); poly_length / 2],
-            external_product: FourierNtruExternalProductContext::new(poly_length),
+            external_product: FourierNtruExternalProductWorkspace::new(poly_length),
         }
     }
 }
@@ -76,7 +76,7 @@ impl<T: TorusFftValue> FourierNtruAutomorphismKey<T> {
         parameters: &NlevParameters<T, NativeModulus<T>>,
         fft: &mut FftEngine<'_, Table>,
         rng: &mut R,
-        context: &mut FourierNtruGadgetEncryptContext<T>,
+        workspace: &mut FourierNtruGadgetEncryptWorkspace<T>,
     ) -> Self
     where
         Table: FftTable,
@@ -104,7 +104,7 @@ impl<T: TorusFftValue> FourierNtruAutomorphismKey<T> {
             parameters,
             fft,
             rng,
-            context,
+            workspace,
         );
         Self {
             degree,
@@ -147,7 +147,7 @@ impl<T: TorusFftValue> FourierNtruAutomorphismKey<T> {
         input: &NtruCiphertext<A>,
         output: &mut NtruCiphertext<B>,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierNtruAutomorphismContext<T>,
+        workspace: &mut FourierNtruAutomorphismWorkspace<T>,
     ) where
         Table: FftTable,
         A: Data<Elem = T>,
@@ -159,8 +159,8 @@ impl<T: TorusFftValue> FourierNtruAutomorphismKey<T> {
             self.poly_length(),
         );
         self.key_switching
-            .assert_compatible(fft, &context.external_product);
-        self.apply_kernel_to(input, output, fft, context);
+            .assert_compatible(fft, &workspace.external_product);
+        self.apply_kernel_to(input, output, fft, workspace);
     }
 
     /// Requires validated operand lengths and matching key/table/workspace resources.
@@ -169,7 +169,7 @@ impl<T: TorusFftValue> FourierNtruAutomorphismKey<T> {
         input: &NtruCiphertext<A>,
         output: &mut NtruCiphertext<B>,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierNtruAutomorphismContext<T>,
+        workspace: &mut FourierNtruAutomorphismWorkspace<T>,
     ) where
         Table: FftTable,
         A: Data<Elem = T>,
@@ -179,8 +179,8 @@ impl<T: TorusFftValue> FourierNtruAutomorphismKey<T> {
             input,
             output,
             fft,
-            context.coefficients.as_mut(),
-            &mut context.external_product,
+            workspace.coefficients.as_mut(),
+            &mut workspace.external_product,
         );
     }
 
@@ -192,7 +192,7 @@ impl<T: TorusFftValue> FourierNtruAutomorphismKey<T> {
         output: &mut NtruCiphertext<B>,
         fft: &mut FftEngine<'_, Table>,
         coefficients: &mut [T],
-        external_product: &mut FourierNtruExternalProductContext<T>,
+        external_product: &mut FourierNtruExternalProductWorkspace<T>,
     ) where
         Table: FftTable,
         A: Data<Elem = T>,
@@ -226,7 +226,7 @@ impl<T: TorusFftValue> FourierNtruAutomorphismKey<T> {
         input: &FourierNtruCiphertext<A>,
         output: &mut FourierNtruCiphertext<B>,
         fft: &mut FftEngine<'_, Table>,
-        context: &mut FourierNtruAutomorphismContext<T>,
+        workspace: &mut FourierNtruAutomorphismWorkspace<T>,
     ) where
         Table: FftTable,
         A: Data<Elem = Complex64>,
@@ -238,20 +238,20 @@ impl<T: TorusFftValue> FourierNtruAutomorphismKey<T> {
             self.poly_length() / 2,
         );
         self.key_switching
-            .assert_compatible(fft, &context.external_product);
+            .assert_compatible(fft, &workspace.external_product);
         for (output, &(source, conjugate)) in
-            context.permuted.iter_mut().zip(&self.fourier_permutation)
+            workspace.permuted.iter_mut().zip(&self.fourier_permutation)
         {
             let value = input.as_ref()[source];
             *output = if conjugate { value.conj() } else { value };
         }
-        fft.backward_as_torus(&context.permuted, context.coefficients.as_mut());
+        fft.backward_as_torus(&workspace.permuted, workspace.coefficients.as_mut());
         FourierNlev::new(self.key_switching.as_slice()).external_product_fourier_to(
-            &Polynomial(context.coefficients.as_ref()),
+            &Polynomial(workspace.coefficients.as_ref()),
             output,
             self.basis(),
             fft,
-            &mut context.external_product,
+            &mut workspace.external_product,
         );
     }
 
@@ -263,20 +263,20 @@ impl<T: TorusFftValue> FourierNtruAutomorphismKey<T> {
     pub(crate) fn assert_external_product_compatible<Table>(
         &self,
         fft: &FftEngine<'_, Table>,
-        context: &FourierNtruExternalProductContext<T>,
+        workspace: &FourierNtruExternalProductWorkspace<T>,
     ) where
         Table: FftTable,
     {
-        self.key_switching.assert_compatible(fft, context);
+        self.key_switching.assert_compatible(fft, workspace);
     }
 
     /// Checks the resources shared by all automorphism keys in one trace key.
     pub(crate) fn assert_compatible<Table: FftTable>(
         &self,
         fft: &FftEngine<'_, Table>,
-        context: &FourierNtruAutomorphismContext<T>,
+        workspace: &FourierNtruAutomorphismWorkspace<T>,
     ) {
         self.key_switching
-            .assert_compatible(fft, &context.external_product);
+            .assert_compatible(fft, &workspace.external_product);
     }
 }

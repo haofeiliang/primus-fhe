@@ -1,7 +1,7 @@
 use primus_encoding::PlaintextEmbedding;
 use primus_fft::{FftEngine, FftTable, RustFftTable, TorusFftValue};
 use primus_glwe::{
-    FourierGlweDecryptContext, FourierGlweEncryptContext, FourierGlweSecretKey, GlweParameters,
+    FourierGlweDecryptWorkspace, FourierGlweEncryptWorkspace, FourierGlweSecretKey, GlweParameters,
     SecretKeyDistr,
 };
 use primus_integer::FheUint;
@@ -41,14 +41,19 @@ where
             0.7,
         );
         let (_, secret_key) = FourierGlweSecretKey::generate_pair(&params, &mut fft, &mut rng);
-        let mut encrypt_context = FourierGlweEncryptContext::new(POLY_LENGTH);
-        let mut decrypt_context = FourierGlweDecryptContext::new(POLY_LENGTH);
+        let mut encrypt_workspace = FourierGlweEncryptWorkspace::new(POLY_LENGTH);
+        let mut decrypt_workspace = FourierGlweDecryptWorkspace::new(POLY_LENGTH);
 
-        let mut cipher =
-            secret_key.encrypt(&message, &params, &mut fft, &mut rng, &mut encrypt_context);
+        let mut cipher = secret_key.encrypt(
+            &message,
+            &params,
+            &mut fft,
+            &mut rng,
+            &mut encrypt_workspace,
+        );
         assert_eq!(
             secret_key
-                .decrypt(&cipher, &params, &mut fft, &mut decrypt_context)
+                .decrypt(&cipher, &params, &mut fft, &mut decrypt_workspace)
                 .as_ref(),
             messages
         );
@@ -59,11 +64,11 @@ where
             &params,
             &mut fft,
             &mut rng,
-            &mut encrypt_context,
+            &mut encrypt_workspace,
         );
         assert_eq!(
             secret_key
-                .decrypt(&cipher, &params, &mut fft, &mut decrypt_context)
+                .decrypt(&cipher, &params, &mut fft, &mut decrypt_workspace)
                 .as_ref(),
             messages
         );
@@ -73,11 +78,11 @@ where
             &params,
             &mut fft,
             &mut rng,
-            &mut encrypt_context,
+            &mut encrypt_workspace,
         );
         assert_eq!(
             secret_key
-                .decrypt(&cipher, &params, &mut fft, &mut decrypt_context)
+                .decrypt(&cipher, &params, &mut fft, &mut decrypt_workspace)
                 .as_ref(),
             vec![T::ZERO; POLY_LENGTH]
         );
@@ -94,11 +99,11 @@ where
             &params,
             &mut fft,
             &mut rng,
-            &mut encrypt_context,
+            &mut encrypt_workspace,
         );
         assert_eq!(
             secret_key
-                .decrypt(&cipher, &params, &mut fft, &mut decrypt_context)
+                .decrypt(&cipher, &params, &mut fft, &mut decrypt_workspace)
                 .as_ref(),
             messages
         );

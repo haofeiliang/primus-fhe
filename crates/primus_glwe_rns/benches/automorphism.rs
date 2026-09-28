@@ -3,8 +3,9 @@ use std::hint::black_box;
 
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use primus_glwe_rns::{
-    CrtGlevParameters, CrtGlweAutoContext, CrtGlweAutoKey, CrtGlweParameters, DcrtGadgetDomain,
-    DcrtGlweAutoKey, DcrtGlweCiphertext, DcrtGlweSecretKey, GlweSecretKey, SecretKeyDistr,
+    CrtGlevParameters, CrtGlweAutoKey, CrtGlweAutomorphismWorkspace, CrtGlweParameters,
+    DcrtGadgetDomain, DcrtGlweAutoKey, DcrtGlweCiphertext, DcrtGlweSecretKey, GlweSecretKey,
+    SecretKeyDistr,
 };
 use primus_lattice::glwe::{CrtGlwe, DcrtGlwe};
 use primus_modulus::BarrettModulus;
@@ -78,7 +79,7 @@ fn bench_automorphism(c: &mut Criterion) {
         // Buffers
         let mut crt_result: CrtGlwe<Vec<V>> = CrtGlwe::zero(rns_glwe_len);
         let mut dcrt_result: DcrtGlweCiphertext<Vec<V>> = DcrtGlweCiphertext::zero(rns_glwe_len);
-        let mut auto_context = CrtGlweAutoContext::new(&domain);
+        let mut auto_workspace = CrtGlweAutomorphismWorkspace::new(&domain);
 
         let n_label = format!("N={poly_length}");
 
@@ -88,7 +89,7 @@ fn bench_automorphism(c: &mut Criterion) {
                     black_box(&c_coeff),
                     black_box(&mut crt_result),
                     &domain,
-                    &mut auto_context,
+                    &mut auto_workspace,
                 );
             });
         });
@@ -99,7 +100,7 @@ fn bench_automorphism(c: &mut Criterion) {
                     black_box(&c_ntt),
                     black_box(&mut dcrt_result),
                     &domain,
-                    &mut auto_context,
+                    &mut auto_workspace,
                 );
             });
         });

@@ -28,7 +28,7 @@ NTT 生成拒绝含零点值的私钥。Fourier 生成检查原生环可逆性�
 
 一般 NTRU 支持非二元私钥；NTRU TFHE 层另行验证盲旋转所需的 二元、零填充控制私钥前提。
 
-私钥和私有加密、生成、解密工作区会在析构时擦除自身缓冲区。显式工作区清零保留 可复用存储；显式私钥清零会销毁私钥。内置 FFT 后端也在析构时擦除 scratch；长寿命 engine 可在处理阶段结束后调用 `FftEngine::zeroize_scratch()`。调用方持有的明文及 相位输出有各自的生命周期。
+私钥和私有加密、生成、解密工作区会在析构时擦除自身缓冲区。显式工作区清零保留 可复用存储；显式私钥清零会销毁私钥。内置 FFT 后端也在析构时擦除 scratch；长寿命 engine 可在处理阶段结束后调用 `FftEngine::zeroize_workspace()`。调用方持有的明文及 相位输出有各自的生命周期。
 
 [automorphism 示例](examples/automorphism.rs) 展示配对私钥生成、求值密钥构造， 以及复用工作区、在原私钥下完成 NTT 自同构：
 
@@ -51,13 +51,13 @@ cargo run -p primus_ntru --example automorphism
 | `NttNtruAutomorphismKey::apply_to`、`FourierNtruAutomorphismKey::apply_to` | 系数 NTRU 自同构后写出同一私钥下的系数 NTRU |
 | `apply_ntt_to`、`apply_fourier_to` | 变换域 NTRU 自同构后保留对应变换表示和原私钥 |
 
-`NttNlev::lift_monomial_to` / `FourierNlev::lift_monomial_to` 将公开多项式提升与首次 binary/ternary 旋转融合。传入 NLEV[1]、正向 NLEV 比特及可选的负向 NLEV 比特；只分解公开多项式，指数为零仍执行提升。`NttNtruCmuxContext` / `FourierNtruCmuxContext` 与后续三元 CMUX 共用一块组合控制缓冲，替代原 `*NtruTernaryCmuxContext` 类型。
+`NttNlev::lift_monomial_to` / `FourierNlev::lift_monomial_to` 将公开多项式提升与首次 binary/ternary 旋转融合。传入 NLEV[1]、正向 NLEV 比特及可选的负向 NLEV 比特；只分解公开多项式，指数为零仍执行提升。`NttNtruCmuxWorkspace` / `FourierNtruCmuxWorkspace` 与后续三元 CMUX 共用一块组合控制缓冲，替代原 `*NtruTernaryCmuxContext` 类型。
 
-Ternary 旋转一次构造 `NttNtruCmuxContext::new(N, levels)` 或 `FourierNtruCmuxContext::new(N, levels)`，随后复用工作区，传入互斥的正负 NGSW 比特控制。Fourier 使用 Native basis，两份控制必须使用 engine 对应的同一个 FFT 表实例 和 torus 缩放。指数已量化到 `0..2N`，负指数由内部派生。 NTRU TFHE 后端使用此原语执行经典 ternary blind rotation。
+Ternary 旋转一次构造 `NttNtruCmuxWorkspace::new(N, levels)` 或 `FourierNtruCmuxWorkspace::new(N, levels)`，随后复用工作区，传入互斥的正负 NGSW 比特控制。Fourier 使用 Native basis，两份控制必须使用 engine 对应的同一个 FFT 表实例 和 torus 缩放。指数已量化到 `0..2N`，负指数由内部派生。 NTRU TFHE 后端使用此原语执行经典 ternary blind rotation。
 
 解密返回系数域多项式，使用密文系数类型 `T`；输出类型转换由应用按需处理。
 
-求值密钥持有自己的分解基；可复用求值 context 只保存工作缓冲区。拥有契约的公开 操作在输出写入前检查传入尺寸、模数及变换和工作区长度；对应的低层 lattice 内核 依赖这些契约。实际私钥一致性、输入 residue 的规范性及足够的噪声预算仍由调用方保证。
+求值密钥持有自己的分解基；可复用求值 workspace 只保存工作缓冲区。拥有契约的公开 操作在输出写入前检查传入尺寸、模数及变换和工作区长度；对应的低层 lattice 内核 依赖这些契约。实际私钥一致性、输入 residue 的规范性及足够的噪声预算仍由调用方保证。
 
 自同构指数 `d` 是 `[1, 2N)` 内的奇数。求值密钥保存 `NLev_f[f(X^d)]`，把代换后 的秘密切换回 `f`，不生成 `f(X^d)` 的逆元。有符号秘密先编码，再在模数域置换。 变换输入仍需恢复系数以进行分解；变换输出省去最后的逆变换。NLev 可逐行使用 这一单多项式操作，但逐行作用于 NGSW **不能**保留 NGSW 的消息与私钥关系。
 
@@ -69,7 +69,7 @@ Sample extraction、NLev/NGSW 外积与 CMUX 位于 [`primus_lattice`](../primus
 
 `NtruLweKeySwitchingKey::generate(f, Q, s, lwe_parameters, basis, rng)` 从有符号 NTRU 秘密 f 生成返回原语，目标 s 是独立生成的 `primus_lwe::LweSecretKey`。参数和 basis 使用目标模数 q；s 的维数可以不同，也无需补零成为可逆 NTRU 秘密。f 的每个有符号系数的幅值必须小于显式 q，生成时在采样前检查。
 
-一次创建 `NtruLweKeySwitchingContext::new(N)`，随后使用 `key_switch_to` 返回常数项，或使用 `key_switch_at_to(input, index, output, q, context)` 返回其他系数。输入必须是系数域 NTRU 密文，NTT/Fourier 输出需要先恢复为系数。每次调用覆盖输出和唯一一份 N+1 元素的中间 LWE 缓冲，无额外分配。长度、索引和目标模数检查先于输出及 scratch 写入。
+一次创建 `NtruLweKeySwitchingWorkspace::new(N)`，随后使用 `key_switch_to` 返回常数项，或使用 `key_switch_at_to(input, index, output, q, workspace)` 返回其他系数。输入必须是系数域 NTRU 密文，NTT/Fourier 输出需要先恢复为系数。每次调用覆盖输出和唯一一份 N+1 元素的中间 LWE 缓冲，无额外分配。长度、索引和目标模数检查先于输出及 scratch 写入。
 
 运算先逐系数执行 `c' = round(q*c/Q) mod q`（最近舍入，半格向上），再提取 `b=0`、`i<=index` 时 `a[i]=-c'[index-i]`、否则 `a[i]=c'[N+index-i]`，最后在 q 下进行 LWE key switch。提取秘密为 f 的有符号系数向量，LWE 相位 `b-<a,f>=(f*c')[index]`。舍入必须先于提取取负，否则恰好半格时可能得到不同结果。模数转换和提取融合为一次 scratch 写入，复用 `primus_modulus::ModulusSwitch` 与 `primus_lwe::LweKeySwitchingKey`。
 
@@ -85,7 +85,7 @@ Sample extraction、NLev/NGSW 外积与 CMUX 位于 [`primus_lattice`](../primus
 
 ## 同一秘密下的 scheme switching
 
-`NttNtruSchemeSwitchKey` / `FourierNtruSchemeSwitchKey` 将系数形式的 `NLev_f[m]` 转换为变换形式的 `NGSW_f[m]`。`key_basis` 用于分解每个输入 密文多项式；独立的 `output_basis` 决定输入和输出的 gadget scalar 与层数。 工作区直接复用现有 external-product context。输入必须已使用该 output basis， 仅靠长度相同无法验证这一点。
+`NttNtruSchemeSwitchKey` / `FourierNtruSchemeSwitchKey` 将系数形式的 `NLev_f[m]` 转换为变换形式的 `NGSW_f[m]`。`key_basis` 用于分解每个输入 密文多项式；独立的 `output_basis` 决定输入和输出的 gadget scalar 与层数。 工作区直接复用现有 external-product workspace。输入必须已使用该 output basis， 仅靠长度相同无法验证这一点。
 
 求值密钥保存 `NGSW_f[f]`，通过加密 f 生成，无需显式计算有符号多项式平方。 输入误差乘 f，分解误差乘 f²，还须计入求值密钥与 FFT 误差。公开这种秘密相关 消息的密钥需要独立论证 key-dependent-message/circular-security 假设及参数； 代数推导和功能测试不构成安全性证明或 CBS 参数建议。消息 m 为 bit 时，输出可供 CMUX 使用。
 

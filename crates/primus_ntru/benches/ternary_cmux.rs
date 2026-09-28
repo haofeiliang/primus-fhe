@@ -10,10 +10,10 @@ use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable, TfheFftTable, Tor
 use primus_integer::{FheUint, SignedInteger};
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntru::{
-    FourierNgswCiphertext, FourierNtruCmuxContext, FourierNtruEncryptContext,
-    FourierNtruExternalProductContext, FourierNtruGadgetEncryptContext, FourierNtruSecretKey,
-    NlevParameters, NtruCiphertext, NtruParameters, NttNgswCiphertext, NttNtruCmuxContext,
-    NttNtruExternalProductContext, NttNtruSecretKey, SecretKeyDistr,
+    FourierNgswCiphertext, FourierNtruCmuxWorkspace, FourierNtruEncryptWorkspace,
+    FourierNtruExternalProductWorkspace, FourierNtruGadgetEncryptWorkspace, FourierNtruSecretKey,
+    NlevParameters, NtruCiphertext, NtruParameters, NttNgswCiphertext, NttNtruCmuxWorkspace,
+    NttNtruExternalProductWorkspace, NttNtruSecretKey, SecretKeyDistr,
 };
 use primus_ntt::{NttTable, PrimitiveRoot, UintNttTable};
 use primus_poly::Polynomial;
@@ -59,10 +59,10 @@ fn ntt<T: FheUint + PrimitiveRoot>(c: &mut Criterion, q: T, levels: usize) {
     let negative = NttNgswCiphertext::new(negative);
     let exponent = N / 3;
     let mut output = NtruCiphertext::<Vec<T>>::zero(N);
-    let (mut fused, fused_allocations) = measure(|| NttNtruCmuxContext::<T>::new(N, levels));
+    let (mut fused, fused_allocations) = measure(|| NttNtruCmuxWorkspace::<T>::new(N, levels));
     let ((mut binary, mut intermediate), binary_allocations) = measure(|| {
         (
-            NttNtruExternalProductContext::<T>::new(N),
+            NttNtruExternalProductWorkspace::<T>::new(N),
             NtruCiphertext::<Vec<T>>::zero(N),
         )
     });
@@ -161,7 +161,7 @@ fn fourier<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str, 
         &params,
         &mut fft,
         &mut rng,
-        &mut FourierNtruEncryptContext::new(N),
+        &mut FourierNtruEncryptWorkspace::new(N),
     )
     .write_torus_form(&mut input, &mut fft);
     let mut controls = vec![Complex64::default(); 2 * gadget.fourier_nlev_len()];
@@ -171,17 +171,17 @@ fn fourier<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str, 
         &gadget,
         &mut fft,
         &mut rng,
-        &mut FourierNtruGadgetEncryptContext::new(N),
+        &mut FourierNtruGadgetEncryptWorkspace::new(N),
     );
     let (positive, negative) = controls.split_at(gadget.fourier_nlev_len());
     let positive = FourierNgswCiphertext::new(positive);
     let negative = FourierNgswCiphertext::new(negative);
     let exponent = N / 3;
     let mut output = NtruCiphertext::<Vec<T>>::zero(N);
-    let (mut fused, fused_allocations) = measure(|| FourierNtruCmuxContext::<T>::new(N, levels));
+    let (mut fused, fused_allocations) = measure(|| FourierNtruCmuxWorkspace::<T>::new(N, levels));
     let ((mut binary, mut intermediate), binary_allocations) = measure(|| {
         (
-            FourierNtruExternalProductContext::<T>::new(N),
+            FourierNtruExternalProductWorkspace::<T>::new(N),
             NtruCiphertext::<Vec<T>>::zero(N),
         )
     });

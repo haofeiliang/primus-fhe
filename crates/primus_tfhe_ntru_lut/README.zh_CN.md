@@ -78,6 +78,8 @@ cargo run -p primus_tfhe_ntru_lut --example fourier_lookup
 
 选表并旋转后，使用现有 NTRU→LWE key 逐系数 Q→q、提取相位系数，再切换到外部秘密。输出近似 q 域 chunk 编码；二次舍入差和返回误差需要计入解码预算。
 
+表选择和旋转复用 one-hot evaluator 的外积工作区，Fourier 还复用其 FFT engine；这些串行阶段无需另存变换或分解缓冲。复用前覆盖 scratch 内容，每个 evaluator 仍独立拥有可变工作区。
+
 ## 数值限制与验证
 
 输入继承 [one-hot 保护区](../primus_tfhe_ntru/README.zh_CN.md#one-hot-cbs)，包括加密、编码和逐坐标量化误差。CBS 和每次选择/旋转外积会增加误差，Fourier 还包含 native trace 减半与 FFT 舍入。公开提升必须能分辨 LUT 尺度。形状检查和功能测试通过不构成安全性、生产参数或失败概率认证。

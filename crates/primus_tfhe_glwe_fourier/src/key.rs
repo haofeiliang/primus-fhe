@@ -2,7 +2,8 @@
 
 use primus_fft::{FftEngine, FftTable, TorusFftValue};
 use primus_glwe::{
-    FourierGadgetEncryptContext, FourierGlweKeySwitchingKey, FourierGlweSecretKey, SecretKeyDistr,
+    FourierGlweGadgetEncryptWorkspace, FourierGlweKeySwitchingKey, FourierGlweSecretKey,
+    SecretKeyDistr,
 };
 use primus_lwe::LweSecretKey;
 use primus_modulus::NativeModulus;
@@ -118,7 +119,7 @@ where
 {
     pub(crate) context: &'a TfheContext<T, Table>,
     pub(crate) fft: FftEngine<'a, Table>,
-    pub(crate) gadget: FourierGadgetEncryptContext<T>,
+    pub(crate) gadget: FourierGlweGadgetEncryptWorkspace<T>,
 }
 
 impl<'a, T, Table> KeyGenerator<'a, T, Table>
@@ -132,7 +133,7 @@ where
         Self {
             context,
             fft: context.new_fft_engine(),
-            gadget: FourierGadgetEncryptContext::new(blind_rotation_ggsw.size()),
+            gadget: FourierGlweGadgetEncryptWorkspace::new(blind_rotation_ggsw.size()),
         }
     }
 
