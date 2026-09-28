@@ -11,6 +11,7 @@ use rand::{
 const MODULUS: u32 = 16_777_216; // 2^24
 const SEED: u64 = 0x504f_5732_504f_5732;
 
+/// Both constructors require a nontrivial representable power of two.
 #[test]
 fn constructor_bounds() {
     let modulus = PowOf2Modulus::new(128u8);
@@ -29,6 +30,7 @@ fn constructor_bounds() {
     }
 }
 
+/// Compare masked scalar arithmetic and one-step reduction with an explicit modulus.
 #[test]
 fn scalar_ops_against_uint() {
     let p = PowOf2Modulus::<u32>::new(MODULUS);
@@ -54,6 +56,7 @@ fn scalar_ops_against_uint() {
     }
 }
 
+/// A widened product checks masking without sharing the implementation's wrapping arithmetic.
 #[test]
 fn mul_ops() {
     let p = PowOf2Modulus::<u32>::new(MODULUS);
@@ -73,33 +76,16 @@ fn mul_ops() {
     }
 }
 
+/// Mask-based negation agrees with explicit modular negation, including zero and a tail.
 #[test]
-fn slice_ops_against_uint() {
+fn negation_slices_against_uint() {
     let p = PowOf2Modulus::<u32>::new(MODULUS);
     let u = UintModulus(MODULUS);
-    let distr = Uniform::new(0, MODULUS).unwrap();
-    let mut rng = StdRng::seed_from_u64(SEED);
-
-    for &len in &[0usize, 1, 7, 8, 9, 15, 16, 17] {
-        let a: Vec<u32> = (0..len).map(|_| distr.sample(&mut rng)).collect();
-        let b: Vec<u32> = (0..len).map(|_| distr.sample(&mut rng)).collect();
-
-        let mut p_res = a.clone();
-        let mut u_res = a.clone();
-        p.reduce_add_slice_assign(&mut p_res, &b);
-        u.reduce_add_slice_assign(&mut u_res, &b);
-        assert_eq!(p_res, u_res, "add len={len}");
-
-        let mut p_res = a.clone();
-        let mut u_res = a.clone();
-        p.reduce_sub_slice_assign(&mut p_res, &b);
-        u.reduce_sub_slice_assign(&mut u_res, &b);
-        assert_eq!(p_res, u_res, "sub len={len}");
-
-        let mut p_res = a.clone();
-        let mut u_res = a.clone();
-        p.reduce_neg_slice_assign(&mut p_res);
-        u.reduce_neg_slice_assign(&mut u_res);
-        assert_eq!(p_res, u_res, "neg len={len}");
+    for len in [0, 1, 17] {
+        let mut actual: Vec<_> = (0..len).map(|i| [0, 1, MODULUS - 1][i % 3]).collect();
+        let mut expected = actual.clone();
+        p.reduce_neg_slice_assign(&mut actual);
+        u.reduce_neg_slice_assign(&mut expected);
+        assert_eq!(actual, expected, "len={len}");
     }
 }

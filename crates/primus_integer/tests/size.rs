@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use primus_integer::Size;
 
+/// Size counts payload bytes consistently for owners, arrays, and borrowed views.
 #[test]
 fn size_counts_each_supported_storage_backend() {
     let mut values = [1u32, 2, 3, 4];

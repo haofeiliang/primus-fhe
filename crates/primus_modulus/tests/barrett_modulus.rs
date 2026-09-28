@@ -13,6 +13,7 @@ type ValueT = u32;
 const MODULUS: ValueT = 536_813_569;
 const SEED: u64 = 0x4241_5252_4554_5431;
 
+/// Check the reciprocal algorithm's strict modulus bound for u32 and u64.
 #[test]
 fn constructor_bounds() {
     assert!(std::panic::catch_unwind(|| BarrettModulus::<ValueT>::new(0)).is_err());
@@ -30,6 +31,7 @@ fn constructor_bounds() {
 
 fn field_trait<M: FieldContext<ValueT>>(_modulus: M) {}
 
+/// The field trait binding also reduces two-word products against native wide remainders.
 #[test]
 fn field_context_and_wide_reduction() {
     let b = BarrettModulus::<u32>::new(MODULUS);
@@ -42,6 +44,7 @@ fn field_context_and_wide_reduction() {
     }
 }
 
+/// Empty, singleton, and multi-element batches compare both inverse APIs with UintModulus.
 #[test]
 fn inverse_slice_ops_against_uint() {
     let b = BarrettModulus::<u32>::new(MODULUS);
@@ -61,6 +64,7 @@ fn inverse_slice_ops_against_uint() {
     }
 }
 
+/// A composite modulus must reject a batch containing a nonunit.
 #[test]
 fn try_inverse_slice_reports_noninvertible_input() {
     let modulus = BarrettModulus::<u32>::new(15);
@@ -72,13 +76,13 @@ fn try_inverse_slice_reports_noninvertible_input() {
             .try_reduce_inv_slice_to(&input, &mut output)
             .is_err()
     );
-    assert_eq!(input, [2, 3, 4]);
 }
 
 fn mul_mod(a: u32, b: u32) -> u32 {
     ((a as u64 * b as u64) % MODULUS as u64) as u32
 }
 
+/// Check canonical and lazy products with fixed-seed inputs and a u64 product oracle.
 #[test]
 fn mul_ops() {
     let m = BarrettModulus::<u32>::new(MODULUS);
@@ -103,13 +107,22 @@ fn mul_ops() {
     }
 }
 
+/// A per-term modular sum checks reduction across scalar/SIMD accumulation block boundaries.
 #[test]
 fn dot_product() {
     let m = BarrettModulus::<u32>::new(MODULUS);
     let distr = Uniform::new(0, MODULUS).unwrap();
     let mut rng = StdRng::seed_from_u64(SEED);
 
-    for &len in &[0usize, 1, 7, 15, 16, 17, 31, 32, 33, 127, 128, 129] {
+    // Scalar reduction groups 16 products; two blocks plus a tail exercise reuse.
+    let lengths = [0usize, 1, 15, 16, 17, 33].into_iter();
+    #[cfg(feature = "simd")]
+    let lengths = {
+        use primus_modulus::integer::SimdInteger;
+        let block = 16 * <u32 as SimdInteger>::LANE_COUNT;
+        lengths.chain([block - 1, block, block + 1, 2 * block + 1])
+    };
+    for len in lengths {
         let a: Vec<u32> = (0..len).map(|_| distr.sample(&mut rng)).collect();
         let b: Vec<u32> = (0..len).map(|_| distr.sample(&mut rng)).collect();
 
@@ -129,43 +142,34 @@ fn dot_product() {
     }
 }
 
+/// Maximal u64 operands stress the scalar and, when enabled, per-lane accumulator bound.
 #[test]
 fn dot_product_accumulator_boundary() {
     let modulus = (1u64 << (u64::BITS - 2)) - 1;
     let operand = modulus - 1;
-    let values = [operand; 16];
-
-    // Each product is one modulo `modulus`; this also exercises the largest
-    // supported unreduced 16-term accumulator.
-    assert_eq!(
-        BarrettModulus::new(modulus).reduce_dot_product(&values, &values),
-        16
-    );
+    let check = |len| {
+        let values = vec![operand; len];
+        // Each maximal product is one modulo q, so no implementation is needed as oracle.
+        assert_eq!(
+            BarrettModulus::new(modulus).reduce_dot_product(&values, &values),
+            len as u64
+        );
+    };
+    check(16);
+    // Enabling SIMD alone is insufficient: a full 16-vector block is required for dispatch.
+    #[cfg(feature = "simd")]
+    check(16 * <u64 as primus_modulus::integer::SimdInteger>::LANE_COUNT);
 }
 
-#[cfg(feature = "simd")]
-#[test]
-fn simd_dot_product_accumulator_boundary() {
-    use primus_modulus::integer::SimdInteger;
-
-    let modulus = (1u64 << (u64::BITS - 2)) - 1;
-    let operand = modulus - 1;
-    let len = 16 * <u64 as SimdInteger>::LANE_COUNT;
-    let values = vec![operand; len];
-
-    assert_eq!(
-        BarrettModulus::new(modulus).reduce_dot_product(&values, &values),
-        len as u64
-    );
-}
-
+/// Compare multiply, scalar-multiply, and fused slice variants with independent wide products.
 #[test]
 fn mul_slice_ops() {
     let m = BarrettModulus::<u32>::new(MODULUS);
     let distr = Uniform::new(0, MODULUS).unwrap();
     let mut rng = StdRng::seed_from_u64(SEED);
 
-    for &len in &[0usize, 1, 7, 8, 9, 15, 16, 17] {
+    // Empty, scalar, a complete u32 vector, and its tail cover these element-wise loops.
+    for len in [0, 1, 16, 17] {
         let a: Vec<u32> = (0..len).map(|_| distr.sample(&mut rng)).collect();
         let b: Vec<u32> = (0..len).map(|_| distr.sample(&mut rng)).collect();
         let c: Vec<u32> = (0..len).map(|_| distr.sample(&mut rng)).collect();

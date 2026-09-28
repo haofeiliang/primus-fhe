@@ -7,6 +7,8 @@ use rand::{RngExt, SeedableRng, rngs::StdRng};
 fn value<T: TryFrom<u128>>(x: u128) -> T {
     T::try_from(x).ok().unwrap()
 }
+
+/// Exhaust tiny domains; larger domains retain endpoints and the central rounding neighborhood.
 fn points(end: u128) -> Vec<u128> {
     if end <= 256 {
         (0..end).collect()
@@ -14,6 +16,8 @@ fn points(end: u128) -> Vec<u128> {
         vec![0, 1, end / 2 - 1, end / 2, end / 2 + 1, end - 2, end - 1]
     }
 }
+
+/// Use an exact u128 rounding formula, including transition neighbors and fixed interior samples.
 fn check_pair<T, S, D>(source: S, target: D)
 where
     T: FheUint + Into<u128> + TryFrom<u128>,
@@ -53,77 +57,78 @@ where
     );
     assert_eq!(actual, expected);
 }
+
+/// Bind each source representation to representative target kinds, including native output.
+/// Numeric kernel selection is covered separately; wrapper pairs need no Cartesian grid.
 fn check_source<T, S>(source: S)
 where
     T: FheUint + Into<u128> + TryFrom<u128>,
     S: PrepareModulusSwitch<ValueT = T>,
 {
     check_pair(source, NativeModulus::<T>::new());
-    let native = 1u128 << T::BITS;
-    let root = 1u128 << (T::BITS / 2);
-    for q in [
-        2,
-        3,
-        7,
-        9,
-        18,
-        45,
-        97,
-        128,
-        131,
-        257,
-        root + 1,
-        native / 2 + 1,
-        native - 1,
-    ] {
-        check_pair(source, UintModulus::<T>::new(value(q)));
-        if q.is_power_of_two() {
-            check_pair(source, PowOf2Modulus::<T>::new(value(q)));
-        }
-        if q < native / 4 {
-            check_pair(source, CompactModulus::<T>::new(value(q)));
-            check_pair(source, BarrettModulus::<T>::new(value(q)));
-        }
-    }
+    check_pair(source, UintModulus::<T>::new(value(2)));
+    check_pair(
+        source,
+        UintModulus::<T>::new(value((1u128 << T::BITS) / 2 + 1)),
+    );
+    check_pair(source, PowOf2Modulus::<T>::new(value(128)));
+    check_pair(source, CompactModulus::<T>::new(value(131)));
+    check_pair(source, BarrettModulus::<T>::new(value(131)));
 }
+
+/// Ratios select distinct kernels; word widths retain overflow and native-modulus boundaries.
 #[test]
 fn fixed_pairs_match_integer_oracle() {
     fn cases<T: FheUint + Into<u128> + TryFrom<u128>>() {
-        check_source(NativeModulus::<T>::new());
         let native = 1u128 << T::BITS;
-        let root = 1u128 << (T::BITS / 2);
-        for q in [
-            2,
-            3,
-            7,
-            9,
-            18,
-            45,
-            97,
-            128,
-            131,
-            257,
-            root + 1,
-            native / 4 - 1,
-            native / 2,
-            native / 2 + 1,
-            native - 1,
+        let compact = native / 4 - 3;
+        for (q, r) in [
+            (97, 97), // Identity.
+            // Binary down/up shifts.
+            (128, 16),
+            (16, 128),
+            // Exact expansion: multiply / shift.
+            (9, 27),
+            (9, 36),
+            // Exact contraction: divide / shift.
+            (45, 9),
+            (36, 9),
+            // Expansion with a narrow remainder product.
+            (97, 257),
+            // Binary source, nonbinary target in both directions.
+            (128, 97),
+            (128, 257),
+            // Compact source: narrow and wide biased numerators.
+            (97, 9),
+            (compact, compact - 2),
+            // Noncompact source: one-word and two-word products.
+            (native / 4 + 1, 2),
+            (native - 1, native / 2 + 1),
         ] {
-            check_source(UintModulus::<T>::new(value(q)));
-            if q.is_power_of_two() {
-                check_source(PowOf2Modulus::<T>::new(value(q)));
-            }
-            if q < native / 4 {
-                check_source(CompactModulus::<T>::new(value(q)));
-                check_source(BarrettModulus::<T>::new(value(q)));
-            }
+            check_pair(
+                UintModulus::<T>::new(value(q)),
+                UintModulus::<T>::new(value(r)),
+            );
         }
+        let native_modulus = NativeModulus::<T>::new();
+        check_pair(native_modulus, native_modulus);
+        check_pair(native_modulus, PowOf2Modulus::<T>::new(value(128)));
+        check_pair(native_modulus, UintModulus::<T>::new(value(97)));
+        // Native targets distinguish exact widening, remainder decomposition,
+        // compact reciprocal division, and general two-word division.
+        for q in [128, 3, compact, native / 2 + 1] {
+            check_pair(UintModulus::<T>::new(value(q)), native_modulus);
+        }
+        check_source(PowOf2Modulus::<T>::new(value(128)));
+        check_source(CompactModulus::<T>::new(value(compact)));
+        check_source(BarrettModulus::<T>::new(value(compact)));
     }
     cases::<u16>();
     cases::<u32>();
     cases::<u64>();
 }
 
+/// Exhaust residues near reciprocal-division bounds to detect quotient-correction errors.
 #[test]
 fn compact_quotients_exhaust_small_word_residues() {
     // Near the compact limit, wide products and quotient corrections are common.
@@ -144,6 +149,8 @@ fn compact_quotients_exhaust_small_word_residues() {
         }
     }
 }
+
+/// Generated contexts must support both source preparation and target metadata.
 #[cfg(feature = "derive")]
 #[test]
 fn derived_modulus_supports_both_directions() {

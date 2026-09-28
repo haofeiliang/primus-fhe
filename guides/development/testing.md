@@ -94,6 +94,7 @@ Cargo 声明总计 67 个 bench targets、21 个 examples，其中 `primus_tfhe*
 ## Feature 与字宽范围
 
 - `simd` 需要 nightly。全 feature 验证覆盖提供该 feature 的各层；`just simd` 仅覆盖 justfile 指定的算术包。单次全 feature 通过不能替代默认分派路径的运行。
+- 调用通用 API 的测试同时用于默认/SIMD 配置，不为它另建同义的 `simd_*` 测试。只有直接使用 SIMD 专属类型或接口才条件编译整个测试；普通测试可局部条件编译 `LANE_COUNT` 等参数。启用 feature 不保证实际触达 SIMD：例如 Barrett 点积需要至少 `16 * LANE_COUNT` 个元素，选择输入时保留分派点两侧、完整块和尾部。单纯转发标准库切片分块的方法不单独测试。
 - `primus_modulus/derive` 启用 `derives` 集成测试和 `derived_mac` 基准；默认 workspace 不启用它。`primus_distr/high_precision` 增加高精度 CDT 覆盖。
 - `primus_lattice/rns`、`primus_encoding/rns` 及 `primus_data/aligned-vec` 在默认 workspace 中可由其他成员依赖启用。独立包运行不能假定这种 feature 合并；`rns_glev`、`rns_ggsw`、`bfv_rns` 等基准需要对应的 required-features。
 - 算术、模数、变换和基础同态层具有 u32/u64 及必要的较小字宽、多 limb 验证；每个运算的具体字宽从所属测试入口确认，不能从包内出现某个类型名推断全部路径均被覆盖。普通 PBS 有 u32/u64 路径；CBS/one-hot 的字宽覆盖不均，高精度 LUT 的密文求值当前只验证 u64。该限制仍需在参数和使用资产整理中处理。
@@ -124,6 +125,33 @@ Cargo 声明总计 67 个 bench targets、21 个 examples，其中 `primus_tfhe*
 - PBS/ManyLUT、MVB、CBS→CMux、one-hot 完整/紧凑 selectors：见各后端 `pbs.rs`、`factorized_pbs.rs`、`circuit_bootstrap.rs`，以及 NTRU [NTT one_hot.rs](../../crates/primus_tfhe_ntru_ntt/tests/one_hot.rs) / [Fourier one_hot.rs](../../crates/primus_tfhe_ntru_fourier/tests/one_hot.rs)。查表完整链路由上述 LUT tests 验证。
 
 普通测试不等价于基准的每一个大尺寸参数组。基准中的已知结果、相位余量和在线分配断言继续保护该 fixture；修改其参数、分解或 kernel 时运行对应 smoke。benchmark 参数预算、setup 重复及条目精简需要逐项处理，不能仅靠移出默认入口宣称已经优化。
+
+## 基础库的聚焦覆盖
+
+以下入口适用于 `data/integer/gcd/reduce/modulus/factor/barrett_derive/distr`。每项测试说明目标契约与 oracle；非平凡内部函数及测试辅助逻辑说明输入选择、数值前提或算法原因。机械转发无需复述实现。
+
+| 契约 | 维护入口与保留理由 |
+| --- | --- |
+| 存储绑定、整数和 GCD | [Data](../../crates/primus_data/tests/integration.rs) 在存储绑定测试中直接使用所有权构造器并验证读写，不重复验证标准库迭代器或 aligned-vec 自身对齐；[整数测试](../../crates/primus_integer/tests) 保留跨 limb 进借位、移位和独立整数 oracle；[GCD](../../crates/primus_gcd/tests/xgcd.rs) 保留小字宽穷举和宽字整数 oracle |
+| 各模数的切片加减 | [slice_add_sub.rs](../../crates/primus_modulus/tests/slice_add_sub.rs) 集中 u32/u64 的 Native、PowOf2、Compact、Barrett、Uint 覆盖，使用 u128 oracle、偏移切片和边界哨兵；各 modulus 文件保留不同的构造、标量、乘法、求逆及一元操作契约 |
+| 原生与派生 Barrett | [原生内核](../../crates/primus_modulus/src/barrett/native.rs) 直接比较可用的 AVX-512 实现，避免通常分派遮住另一个实现；[派生消费者](../../crates/primus_modulus/tests/derives.rs) 编译并验证生成代码。保留模数位宽、IFMA 上界、32 元素分派点、vector 尾部及累加器复用；无独立执行路径的千元素重复不进入普通测试 |
+| 模数切换 | [modulus_switch.rs](../../crates/primus_modulus/tests/modulus_switch.rs) 按比值、二次幂、窄/宽中间值及 native 输出选择案例，再验证各模数类型的接入。精确整数舍入 oracle 和小字宽 reciprocal 修正穷举保留，不展开类型与模数的完整笛卡尔积 |
+| 预计算乘法 | [MultiplyFactor](../../crates/primus_factor/tests/multiply_factor.rs) 用固定边界及固定 seed 验证 32/52/64 位商精度、最大合法模数和 lazy range；[ShoupFactor](../../crates/primus_factor/tests/shoup_factor.rs) 保留 reset、逐 lane 因子、全字宽乘数、融合操作及标量尾部，不再单独重复随机标量乘法 |
+| trait 与宏边界 | `primus_reduce` 经 modulus/factor 等真实消费者验证；derive 的成功展开由上述消费者负责，[解析/校验测试](../../crates/primus_barrett_derive/src/lib.rs) 直接验证结构形状、类型、字面量溢出及模数边界，无需为每个拒绝案例重启 rustc |
+| 采样和统计 | [采样测试](../../crates/primus_distr/tests) 保留支持集、固定重量、表示转换、精确阈值、RNG 消耗和错误前不写入；批次长度共享不变的 Gaussian 表。统计函数只使用小型确定性 [stats fixture](../../crates/primus_distr/tests/stats.rs)；大型经验分布诊断留在 [check_gaussian](../../crates/primus_distr/examples/check_gaussian.rs) / [compare_samplers](../../crates/primus_distr/examples/compare_samplers.rs)，不进入普通 CI |
+
+这八个包的默认验证需另加 `aligned-vec`、`derive`、`high_precision` 才覆盖全部 stable 可选路径；nightly 再用 `--all-features` 覆盖 SIMD。以下命令在 Bash 中运行：
+
+```bash
+packages=(-p primus_data -p primus_integer -p primus_gcd -p primus_reduce
+          -p primus_modulus -p primus_factor -p primus_barrett_derive -p primus_distr)
+cargo nextest run "${packages[@]}" --lib --tests
+cargo nextest run "${packages[@]}" --lib --tests \
+  --features primus_data/aligned-vec,primus_modulus/derive,primus_distr/high_precision
+cargo +nightly nextest run "${packages[@]}" --lib --tests --all-features
+```
+
+原生指令测试受 CPU feature 检测约束；本机可用内核的通过不代表其他架构已经执行。Doctest 和 all-targets 检查按上文单独运行。
 
 ## 成本记录方法
 

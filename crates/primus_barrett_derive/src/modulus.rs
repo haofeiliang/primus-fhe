@@ -8,6 +8,7 @@ pub(crate) enum Modulus {
 }
 
 impl Modulus {
+    /// Parse the supported bare word type and reject literals that overflow it.
     pub(crate) fn from_syn(value: &syn::LitInt, ty: &syn::Path) -> syn::Result<Self> {
         let ty = ty.get_ident().ok_or_else(|| {
             syn::Error::new_spanned(
@@ -35,6 +36,7 @@ impl Modulus {
         }
     }
 
+    /// Reserve two high bits for lazy Barrett residues and intermediate corrections.
     pub(crate) fn validate_range(&self, value: &syn::LitInt) -> syn::Result<()> {
         let is_too_small = match self {
             Modulus::U16(value) => *value <= 1,

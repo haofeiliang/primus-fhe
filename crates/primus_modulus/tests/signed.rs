@@ -2,6 +2,7 @@ use primus_integer::{AsFrom, AsInto, FheUint};
 use primus_modulus::{BarrettModulus, CompactModulus, NativeModulus, PowOf2Modulus, UintModulus};
 use primus_reduce::{EncodeSigned, Modulus, ReduceDotProductSigned};
 
+/// Widen signed products before modular reduction; mixed signs and maximal products stress accumulation.
 #[test]
 fn signed_dot_products_match_integer_remainders() {
     fn check<T: FheUint>(modulus: impl Modulus<ValueT = T> + ReduceDotProductSigned<T>) {
@@ -10,13 +11,13 @@ fn signed_dot_products_match_integer_remainders() {
             .map_or(1i128 << T::BITS, |q| q.as_into());
         let lo = (-(1i128 << (T::BITS - 1))).max(1 - q);
         let hi = ((1i128 << (T::BITS - 1)) - 1).min(q - 1);
-        let mut lengths = vec![0, 1, 15, 16, 17, 805];
+        // Two scalar accumulation blocks plus a tail cover reuse without an arbitrary LWE size.
+        let lengths = [0, 1, 15, 16, 17, 33].into_iter();
         #[cfg(feature = "simd")]
-        for boundary in [T::LANE_COUNT, 16 * T::LANE_COUNT, 32 * T::LANE_COUNT] {
-            lengths.extend([boundary - 1, boundary, boundary + 1]);
-        }
-        lengths.sort_unstable();
-        lengths.dedup();
+        let lengths = {
+            let block = 16 * T::LANE_COUNT;
+            lengths.chain([block - 1, block, block + 1, 2 * block + 1])
+        };
         for len in lengths {
             // The first case maximizes each encoded product, exercising the
             // two-limb accumulator at the largest supported Barrett modulus.
@@ -94,6 +95,7 @@ fn signed_dot_products_match_integer_remainders() {
     }
 }
 
+/// Compare canonical signed encoding with Euclidean remainders at word and modulus boundaries.
 #[test]
 fn bounded_signed_encoding_matches_integer_remainders() {
     fn check<T: FheUint>(modulus: impl EncodeSigned<T>) {
@@ -163,6 +165,7 @@ fn bounded_signed_encoding_matches_integer_remainders() {
     }
 }
 
+/// A public slice mismatch must be rejected before modifying its destination.
 #[test]
 fn signed_slice_length_is_checked_before_writing() {
     use std::panic::{AssertUnwindSafe, catch_unwind};

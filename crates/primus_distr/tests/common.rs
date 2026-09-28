@@ -30,6 +30,7 @@ impl TryRng for Words {
 }
 impl TryCryptoRng for Words {}
 
+/// Scripted words make packed-bit order and partial-block RNG consumption deterministic.
 #[test]
 fn sparse_ternary_preserves_bit_order_and_random_word_count() {
     // Low-to-high pairs from 0xe4e4_1b1b, followed by the low pair of 2.
@@ -44,6 +45,7 @@ fn sparse_ternary_preserves_bit_order_and_random_word_count() {
     }
 }
 
+/// Probe exact integer thresholds and ensure invalid public inputs fail before writes or RNG use.
 #[test]
 fn ternary_threshold_boundaries_and_public_validation() {
     let quarter = 1u64 << 62;
@@ -106,6 +108,7 @@ fn ternary_threshold_boundaries_and_public_validation() {
     }
 }
 
+/// Enumerate every accepted base-three block and exercise byte rejection with scripted RNG.
 #[test]
 fn uniform_ternary_blocks_cover_all_five_trit_patterns() {
     // Reject these first four bytes, then enumerate all 3^5 accepted bytes.
@@ -129,6 +132,7 @@ fn uniform_ternary_blocks_cover_all_five_trit_patterns() {
     );
 }
 
+/// Enumerate a tiny complete sample space; equal counts prove support without a statistical threshold.
 #[test]
 fn fixed_weight_ternary_has_uniform_support_and_independent_signs() {
     // For n=3,h=2, enumerate all 2*3 insertion choices and all four sign pairs.
@@ -159,6 +163,7 @@ fn fixed_weight_ternary_has_uniform_support_and_independent_signs() {
     assert!(counts.values().all(|&count| count == 2));
 }
 
+/// Residues across each CRT row must encode the same signed sample, including tile boundaries.
 #[test]
 fn crt_tiles_encode_one_shared_logical_sample() {
     // Include q=2, where the positive and negative residue are indistinguishable.

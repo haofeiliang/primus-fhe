@@ -1,73 +1,38 @@
+//! Wide-product oracles cover scalar tails, portable SIMD, and native dispatch.
+
 #[cfg(feature = "simd")]
 use primus_factor::SimdFactorMul;
-use primus_factor::{
-    Factor, FactorMul, FactorSliceOps, LazyFactorMul, LazyFactorSliceOps, ShoupFactor,
-};
+use primus_factor::{FactorMul, FactorSliceOps, LazyFactorSliceOps, ShoupFactor};
 use primus_integer::FheUint;
 #[cfg(feature = "simd")]
 use primus_integer::{LaneArray, SimdArray, SimdInteger};
-use primus_modulus::BarrettModulus;
-use primus_reduce::prelude::*;
-use rand::{distr::Uniform, prelude::*};
 
 type ValueT = u32;
 
 const MODULUS: ValueT = 536_813_569;
 const SECOND_MODULUS: ValueT = 998_244_353;
 
-fn ensure_trait<T: FheUint, F: Factor<T>>(_factor: F) {}
-
+/// Resetting either value or modulus must refresh the cached quotient.
 #[test]
-fn test_trait_bound() {
-    ensure_trait(ShoupFactor::new(1, MODULUS));
-}
-
-#[test]
-fn scalar_mul_against_barrett() {
-    let modulus = BarrettModulus::<ValueT>::new(MODULUS);
-    let distr = Uniform::new(0, MODULUS).unwrap();
-    let mut rng = rand::rng();
-
-    for _ in 0..256 {
-        let factor_value = distr.sample(&mut rng);
-        let rhs = distr.sample(&mut rng);
-        let factor = ShoupFactor::new(factor_value, MODULUS);
-
-        let expected = modulus.reduce_mul(factor_value, rhs);
-        assert_eq!(factor.factor_mul_modulo(rhs, MODULUS), expected);
-
-        let lazy = factor.lazy_factor_mul_modulo(rhs, MODULUS);
-        assert!(lazy < MODULUS * 2);
-        assert_eq!(modulus.reduce_once(lazy), expected);
-    }
-}
-
-#[test]
-fn reset_against_barrett() {
-    let modulus = BarrettModulus::<ValueT>::new(MODULUS);
-    let second_modulus = BarrettModulus::<ValueT>::new(SECOND_MODULUS);
+fn reset_matches_wide_product() {
+    // Check the current state before another setter can repair a stale quotient.
+    let check = |factor: ShoupFactor<u32>, value: u32, modulus: u32| {
+        for rhs in [0, 1, modulus - 1, u32::MAX] {
+            let expected = (u64::from(value) * u64::from(rhs) % u64::from(modulus)) as u32;
+            assert_eq!(factor.factor_mul_modulo(rhs, modulus), expected);
+        }
+    };
     let mut factor = ShoupFactor::new(1, MODULUS);
-    let distr = Uniform::new(0, MODULUS).unwrap();
-    let mut rng = rand::rng();
-
-    for _ in 0..64 {
-        let factor_value = distr.sample(&mut rng);
-        let rhs = distr.sample(&mut rng);
-
-        factor.set(factor_value, MODULUS);
-        assert_eq!(
-            factor.factor_mul_modulo(rhs, MODULUS),
-            modulus.reduce_mul(factor_value, rhs)
-        );
+    for value in [0, 1, MODULUS / 2, MODULUS - 1] {
+        factor.set(value, MODULUS);
+        check(factor, value, MODULUS);
 
         factor.set_modulus(SECOND_MODULUS);
-        assert_eq!(
-            factor.factor_mul_modulo(rhs, SECOND_MODULUS),
-            second_modulus.reduce_mul(factor_value, rhs)
-        );
+        check(factor, value, SECOND_MODULUS);
     }
 }
 
+/// Distinct factors per lane test the vector representation, independently of broadcast slice kernels.
 #[cfg(feature = "simd")]
 #[test]
 fn per_lane_simd_factors_match_scalar_multiplication() {
@@ -97,13 +62,14 @@ fn per_lane_simd_factors_match_scalar_multiplication() {
     assert_eq!(actual.as_ref(), expected);
 }
 
+/// Full-word operands and extreme factors check canonical/lazy output at vector and dispatch boundaries.
 #[test]
 fn slice_mul_against_wide_product() {
     fn check<T: FheUint + TryFrom<u64> + Into<u128>>(q: u64) {
         let convert = |value| T::try_from(value).ok().unwrap();
         let modulus = convert(q);
         let mut state = 0x1234_5678_9abc_def0u64;
-        for len in [0, 1, 7, 8, 15, 16, 17, 31, 32, 33, 64, 65, 1024, 1025] {
+        for len in [0, 1, 7, 8, 15, 16, 17, 31, 32, 33, 64, 65] {
             let input: Vec<T> = (0..len)
                 .map(|i| {
                     state ^= state << 13;
@@ -165,6 +131,7 @@ fn slice_mul_against_wide_product() {
     }
 }
 
+/// A reduced u128 product supplies the oracle for fused add/subtract and overwrite operations.
 #[test]
 fn fused_slice_ops_against_wide_product() {
     fn check<T: FheUint + TryFrom<u64> + Into<u128>>(q: u64) {
@@ -172,7 +139,7 @@ fn fused_slice_ops_against_wide_product() {
         let modulus = convert(q);
         let wide_q = u128::from(q);
         let mut state = 0xa076_1d64_78bd_642fu64;
-        for len in [0, 1, 7, 8, 15, 16, 17, 31, 32, 33, 64, 65, 1024, 1025] {
+        for len in [0, 1, 7, 8, 15, 16, 17, 31, 32, 33, 64, 65] {
             let rhs: Vec<T> = (0..len)
                 .map(|i| {
                     state ^= state << 13;

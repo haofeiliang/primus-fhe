@@ -42,6 +42,7 @@ impl TernarySampler {
         Self::try_new(negative, positive).unwrap_or_else(|error| panic!("{error}"))
     }
 
+    /// Classify endpoints outside the sampling loop; u128 can hold the exclusive bound 2^64.
     pub(crate) fn try_new(
         negative: f64,
         positive: f64,
@@ -69,6 +70,7 @@ impl TernarySampler {
         })
     }
 
+    /// Encode -1 with the supplied representative; constant distributions consume no RNG.
     pub(crate) fn sample_to<T: FheInt, R: Rng + rand::CryptoRng>(
         &self,
         output: &mut [T],

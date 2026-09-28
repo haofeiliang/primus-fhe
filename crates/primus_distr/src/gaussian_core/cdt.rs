@@ -8,12 +8,14 @@ pub(crate) fn build_cdt(parameters: GaussianParameters) -> (f64, Vec<u64>) {
     let two_variance = 2.0 * standard_deviation * standard_deviation;
 
     let mut log_pdf = vec![f64::NEG_INFINITY; length];
+    // A separate random sign doubles every nonzero magnitude, so zero needs half weight.
     log_pdf[0] = 0.5f64.ln();
     for (magnitude, log_probability) in log_pdf.iter_mut().enumerate().skip(1) {
         let magnitude = magnitude as f64;
         *log_probability = -(magnitude * magnitude) / two_variance;
     }
 
+    // Normalize in log space before summation to keep the retained mass numerically usable.
     let max_log_probability = log_pdf.iter().copied().fold(f64::NEG_INFINITY, f64::max);
     for log_probability in &mut log_pdf {
         *log_probability = (*log_probability - max_log_probability).exp();
@@ -34,6 +36,7 @@ pub(crate) fn build_cdt(parameters: GaussianParameters) -> (f64, Vec<u64>) {
         };
     }
 
+    // Force a terminal bound even if cumulative floating-point rounding falls below one.
     if let Some(last) = cdt.last_mut() {
         *last = u64::MAX;
     }

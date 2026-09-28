@@ -1,14 +1,16 @@
-//! Native and Barrett add/sub slices agree with wide modular arithmetic.
-use primus_modulus::{BarrettModulus, NativeModulus};
+//! Shared add/sub contracts for each modulus family, with an independent u128 oracle.
+use primus_modulus::{BarrettModulus, CompactModulus, NativeModulus, PowOf2Modulus, UintModulus};
 use primus_reduce::{ReduceAddSlice, ReduceSubSlice};
 
+/// Offset inputs/outputs and guard words cover alias-free slice variants and SIMD tails.
 #[test]
 fn add_sub_slices_cover_unaligned_ranges_and_vector_tails() {
     macro_rules! check {
         ($t:ty, $modulus:expr, $q:expr) => {{
             let modulus = $modulus;
             let q: u128 = $q;
-            for len in [0, 1, 7, 8, 15, 16, 17, 31, 1024, 1025] {
+            // One and two vector blocks with tails; no separate large-length dispatch.
+            for len in [0, 1, 7, 8, 15, 16, 17, 31, 32, 33] {
                 let lhs: Vec<_> = (0..len + 3)
                     .map(|i| {
                         if i % 2 == 0 {
@@ -51,12 +53,21 @@ fn add_sub_slices_cover_unaligned_ranges_and_vector_tails() {
             }
         }};
     }
-    check!(u32, NativeModulus::<u32>::new(), 1u128 << 32);
-    check!(u64, NativeModulus::<u64>::new(), 1u128 << 64);
-    for q in [2u32, 257, (1 << 30) - 1] {
-        check!(u32, BarrettModulus::new(q), q as u128);
+    macro_rules! check_word {
+        ($t:ty) => {{
+            check!($t, NativeModulus::<$t>::new(), 1u128 << <$t>::BITS);
+            // Small and largest legal compact moduli exercise both reduction outcomes.
+            for q in [2 as $t, 257, (1 << (<$t>::BITS - 2)) - 1] {
+                check!($t, BarrettModulus::new(q), q as u128);
+                check!($t, CompactModulus::new(q), q as u128);
+            }
+            for q in [2 as $t, 1 << (<$t>::BITS - 1)] {
+                check!($t, PowOf2Modulus::new(q), q as u128);
+            }
+            // Full-width moduli force wrapping carry/borrow rather than compact arithmetic.
+            check!($t, UintModulus(<$t>::MAX - 4), (<$t>::MAX - 4) as u128);
+        }};
     }
-    for q in [2u64, 257, (1 << 62) - 1] {
-        check!(u64, BarrettModulus::new(q), q as u128);
-    }
+    check_word!(u32);
+    check_word!(u64);
 }

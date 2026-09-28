@@ -10,6 +10,7 @@ fn seeded_rng(seed: u64) -> StdRng {
     StdRng::seed_from_u64(seed)
 }
 
+/// Use an independent arbitrary-precision implementation, with the zero convention adapted below.
 fn big_gcd<T>(x: T, y: T) -> UBig
 where
     UBig: From<T>,

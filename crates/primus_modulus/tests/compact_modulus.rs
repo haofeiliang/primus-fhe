@@ -7,6 +7,7 @@ use rand::{SeedableRng, distr::Uniform, prelude::*, rngs::StdRng};
 const MODULUS: u32 = 536_813_569;
 const SEED: u64 = 0x434f_4d50_4143_5431;
 
+/// Reject zero and the exclusive two-spare-bit limit.
 #[test]
 fn constructor_bounds() {
     assert!(std::panic::catch_unwind(|| CompactModulus::<u32>::new(0)).is_err());
@@ -15,6 +16,7 @@ fn constructor_bounds() {
     assert!(std::panic::catch_unwind(|| CompactModulus::new(limit)).is_err());
 }
 
+/// Fixed-seed canonical inputs compare compact scalar arithmetic with full-width reduction.
 #[test]
 fn scalar_ops_against_uint() {
     let cm = CompactModulus::new(MODULUS);
@@ -29,30 +31,5 @@ fn scalar_ops_against_uint() {
         assert_eq!(cm.reduce_add(a, b), u.reduce_add(a, b));
         assert_eq!(cm.reduce_double(a), u.reduce_double(a));
         assert_eq!(cm.reduce_sub(a, b), u.reduce_sub(a, b));
-    }
-}
-
-#[test]
-fn slice_ops_against_uint() {
-    let cm = CompactModulus::new(MODULUS);
-    let u = UintModulus(MODULUS);
-    let distr = Uniform::new(0, MODULUS).unwrap();
-    let mut rng = StdRng::seed_from_u64(SEED ^ 1);
-
-    for &len in &[0usize, 1, 7, 8, 9, 15, 16, 17] {
-        let a: Vec<u32> = (0..len).map(|_| distr.sample(&mut rng)).collect();
-        let b: Vec<u32> = (0..len).map(|_| distr.sample(&mut rng)).collect();
-
-        let mut cm_res = a.clone();
-        let mut u_res = a.clone();
-        cm.reduce_add_slice_assign(&mut cm_res, &b);
-        u.reduce_add_slice_assign(&mut u_res, &b);
-        assert_eq!(cm_res, u_res, "add len={len}");
-
-        let mut cm_res = a.clone();
-        let mut u_res = a.clone();
-        cm.reduce_sub_slice_assign(&mut cm_res, &b);
-        u.reduce_sub_slice_assign(&mut u_res, &b);
-        assert_eq!(cm_res, u_res, "sub len={len}");
     }
 }

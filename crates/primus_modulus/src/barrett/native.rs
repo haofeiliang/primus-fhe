@@ -417,6 +417,7 @@ mod tests {
     use super::*;
     use primus_reduce::ReduceMulAddSlice;
 
+    /// Native dispatch must validate all three sources before exposing a writable output.
     #[test]
     fn overwrite_dispatch_checks_each_input_length_before_writing() {
         macro_rules! check {
@@ -450,6 +451,7 @@ mod tests {
         );
     }
 
+    /// Direct calls compare every available kernel, including those bypassed by normal dispatch.
     #[test]
     fn native_barrett_kernels_match_wide_remainders() {
         macro_rules! check {
@@ -464,7 +466,10 @@ mod tests {
                     $(if $available && ($valid)(q) {
                         kernels.push((avx512::$kernel::<false>, avx512::$kernel::<true>));
                     })*
-                    for len in [0, 1, 3, 4, 7, 8, 15, 16, 31, 32, 33, 63, 64, 65, 1025, 4099] {
+                    // Cover empty/scalar, vector tails, and the 32-element dispatch boundary.
+                    // Larger lengths repeat the same kernels; modulus bit boundaries below
+                    // are retained because they change reciprocal shifts and corrections.
+                    for len in [0, 1, 3, 4, 7, 8, 15, 16, 31, 32, 33, 63, 64, 65] {
                         let mut state = 42u64;
                         let mut sample = || {
                             state ^= state << 13;
@@ -487,7 +492,8 @@ mod tests {
                             actual[1..len+1].copy_from_slice(&initial);
                             let mut output = vec![<$t>::MAX; len + 2];
                             let mut expected = initial.clone();
-                            for _ in 0..3 {
+                            // Reuse the accumulator once to check canonical output feeds the next call.
+                            for _ in 0..2 {
                                 for ((c, &a), &b) in expected.iter_mut().zip(&lhs).zip(&rhs) {
                                     *c = ((u128::from(a) * u128::from(b) + u128::from(*c)) % u128::from(q)) as $t;
                                 }

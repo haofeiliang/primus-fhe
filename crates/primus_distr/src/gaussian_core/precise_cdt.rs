@@ -90,6 +90,7 @@ pub(crate) fn build_precise_cdt(parameters: GaussianParameters) -> (f64, Vec<[u6
 }
 
 #[inline(always)]
+/// Compare little-endian limbs from most to least significant for the CDT search.
 pub(crate) fn compare_u256(left: &[u64; 4], right: &[u64; 4]) -> std::cmp::Ordering {
     for index in (0..4).rev() {
         match left[index].cmp(&right[index]) {
@@ -104,6 +105,7 @@ pub(crate) fn compare_u256(left: &[u64; 4], right: &[u64; 4]) -> std::cmp::Order
 mod tests {
     use super::*;
 
+    /// A higher-precision direct exponential oracle avoids the production mass recurrence.
     #[test]
     fn recurrence_matches_direct_exponentials_at_higher_precision() {
         // Independently evaluate each mass at 768 bits instead of using the

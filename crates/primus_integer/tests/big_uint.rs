@@ -20,6 +20,7 @@ fn split_u128(value: u128) -> Vec<u64> {
     vec![value as u64, (value >> u64::BITS) as u64]
 }
 
+/// Check limb order and representation-sensitive equality; a u128 product supplies the oracle.
 #[test]
 fn representation_and_product_contracts() {
     let factors = [134_215_681u32, 134_176_769, 132_120_577];
@@ -43,6 +44,7 @@ fn representation_and_product_contracts() {
     assert!(std::panic::catch_unwind(|| multiply_many_values::<u32>(&[])).is_err());
 }
 
+/// All-ones limbs force carry/borrow chains, including overflow beyond the final limb.
 #[test]
 fn scalar_operations_propagate_across_limbs() {
     for (input, expected, expected_carry) in [
@@ -99,6 +101,7 @@ fn scalar_operations_propagate_across_limbs() {
     );
 }
 
+/// A dense u128 value checks cross-limb shifts and slice arithmetic independently.
 #[test]
 fn fixed_width_shifts_addition_and_subtraction_match_u128() {
     let raw = 0x0123_4567_89ab_cdef_fedc_ba98_7654_3210u128;
@@ -133,6 +136,7 @@ fn fixed_width_shifts_addition_and_subtraction_match_u128() {
     assert_eq!(assigned.digits(), lhs_limbs);
 }
 
+/// Compute a canonical sum without overflowing u128; both inputs are below modulus.
 fn add_modulo(lhs: u128, rhs: u128, modulus: u128) -> u128 {
     if lhs >= modulus - rhs {
         lhs - (modulus - rhs)
@@ -141,6 +145,7 @@ fn add_modulo(lhs: u128, rhs: u128, modulus: u128) -> u128 {
     }
 }
 
+/// Use a modulus above 2^127 so addition must account for the discarded top carry.
 #[test]
 fn modular_operations_handle_fixed_width_overflow() {
     let modulus_raw = 0xc0ff_ee15_dead_beef_face_b00c_1337_4242u128;

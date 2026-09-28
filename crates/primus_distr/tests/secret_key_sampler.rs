@@ -2,6 +2,7 @@ use primus_distr::{DiscreteGaussian, SecretKeyDistr, SecretKeySampler};
 use primus_integer::FheUint;
 use rand::{Rng, SeedableRng, rngs::StdRng};
 
+/// Fixed seeds compare signed/modular samples; sparse, balanced, and dense weights select different samplers.
 #[test]
 fn representations_preserve_distribution_and_logical_weights() {
     for distr in [
@@ -31,10 +32,34 @@ fn representations_preserve_distribution_and_logical_weights() {
             _ => 1,
         };
         assert_eq!(sampler.maximum_magnitude(), expected_bound);
+        // The signed sample and its logical weights are independent of the encoding modulus.
+        let mut signed_rng = StdRng::seed_from_u64(201);
+        let input = sampler.sample_signed(67, &mut signed_rng);
+        let expected_next = signed_rng.next_u64();
+        match distr {
+            SecretKeyDistr::FixedHammingWeightBinary { hamming_weight } => {
+                assert_eq!(input.iter().filter(|&&v| v == 1).count(), hamming_weight);
+                assert!(input.iter().all(|&v| v == 0 || v == 1));
+            }
+            SecretKeyDistr::FixedCompositionTernary {
+                negative_one_weight,
+                one_weight,
+            } => {
+                assert_eq!(
+                    input.iter().filter(|&&v| v == -1).count(),
+                    negative_one_weight
+                );
+                assert_eq!(input.iter().filter(|&&v| v == 1).count(), one_weight);
+                assert!(input.iter().all(|&v| (-1..=1).contains(&v)));
+            }
+            SecretKeyDistr::FixedHammingWeightTernary { hamming_weight } => {
+                assert_eq!(input.iter().filter(|&&v| v != 0).count(), hamming_weight);
+                assert!(input.iter().all(|&v| (-1..=1).contains(&v)));
+            }
+            _ => {}
+        }
         for modulus in [1_009i64, 1i64 << 32] {
-            let mut signed_rng = StdRng::seed_from_u64(201);
             let mut encoded_rng = StdRng::seed_from_u64(201);
-            let input = sampler.sample_signed(67, &mut signed_rng);
             let mut output = [u32::MAX; 67];
             sampler.sample_encoded_to(&mut output, (modulus - 1) as u32, &mut encoded_rng);
             let expected: Vec<u32> = input
@@ -42,33 +67,12 @@ fn representations_preserve_distribution_and_logical_weights() {
                 .map(|&v| i64::from(v).rem_euclid(modulus) as u32)
                 .collect();
             assert_eq!(output.as_slice(), expected, "{distr:?}");
-            assert_eq!(signed_rng.next_u64(), encoded_rng.next_u64());
-            match distr {
-                SecretKeyDistr::FixedHammingWeightBinary { hamming_weight } => {
-                    assert_eq!(input.iter().filter(|&&v| v == 1).count(), hamming_weight);
-                    assert!(input.iter().all(|&v| v == 0 || v == 1));
-                }
-                SecretKeyDistr::FixedCompositionTernary {
-                    negative_one_weight,
-                    one_weight,
-                } => {
-                    assert_eq!(
-                        input.iter().filter(|&&v| v == -1).count(),
-                        negative_one_weight
-                    );
-                    assert_eq!(input.iter().filter(|&&v| v == 1).count(), one_weight);
-                    assert!(input.iter().all(|&v| (-1..=1).contains(&v)));
-                }
-                SecretKeyDistr::FixedHammingWeightTernary { hamming_weight } => {
-                    assert_eq!(input.iter().filter(|&&v| v != 0).count(), hamming_weight);
-                    assert!(input.iter().all(|&v| (-1..=1).contains(&v)));
-                }
-                _ => {}
-            }
+            assert_eq!(encoded_rng.next_u64(), expected_next);
         }
     }
 }
 
+/// The smallest encodable support and the native modulus are valid for both word widths.
 #[test]
 fn encoded_modulus_validation_preserves_the_support_boundary() {
     fn check<T: FheUint>() {
@@ -96,6 +100,7 @@ fn encoded_modulus_validation_preserves_the_support_boundary() {
     check::<u64>();
 }
 
+/// Validate length and overflowing compositions before consuming RNG or touching output.
 #[test]
 fn invalid_weight_is_rejected_before_sampling_or_writing() {
     use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -127,6 +132,7 @@ fn invalid_weight_is_rejected_before_sampling_or_writing() {
     }
 }
 
+/// Raw enum construction bypasses checked distribution constructors, so the sampler validates again.
 #[test]
 fn sampler_rejects_invalid_probabilities_in_raw_variants() {
     for distr in [
@@ -158,6 +164,7 @@ fn sampler_rejects_invalid_probabilities_in_raw_variants() {
     ));
 }
 
+/// Secret-key adapters preserve backend samples and RNG consumption for support-bound/native moduli.
 #[test]
 fn shared_gaussian_tables_match_modular_backends() {
     fn check<T: FheUint>() {
@@ -165,7 +172,8 @@ fn shared_gaussian_tables_match_modular_backends() {
             let sampler = SecretKeySampler::<T>::new(SecretKeyDistr::gaussian(sigma));
             for modulus_minus_one in [sampler.maximum_magnitude(), T::MAX] {
                 let oracle = DiscreteGaussian::new(sigma, modulus_minus_one).unwrap();
-                for length in [0, 67, 1024] {
+                // Gaussian batches use the same scalar loop at every length.
+                for length in [0, 1, 67] {
                     let mut expected_rng = StdRng::seed_from_u64(203);
                     let mut allocated_rng = StdRng::seed_from_u64(203);
                     let mut output_rng = StdRng::seed_from_u64(203);

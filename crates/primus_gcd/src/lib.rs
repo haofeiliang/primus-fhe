@@ -195,6 +195,7 @@ macro_rules! impl_extended_gcd {
                 x.wrapping_mul(TWO.wrapping_sub(a.wrapping_mul(x)))
             }
 
+            /// Lift the table inverse to the full word; the caller has established that a is odd.
             #[inline(always)]
             fn inverse_odd_mod_native(a: $SelfT) -> $SelfT {
                 // The table supplies eight correct bits; every lift doubles
@@ -206,6 +207,7 @@ macro_rules! impl_extended_gcd {
                 x
             }
 
+            /// Lift only as far as needed; a is odd and mask is a validated 2^k - 1.
             #[inline(always)]
             fn inverse_odd_mod_mask(a: $SelfT, mask: $SelfT) -> $SelfT {
                 // Stop as soon as the lifted precision covers the modulus

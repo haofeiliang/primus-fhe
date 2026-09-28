@@ -237,6 +237,7 @@ mod tests {
 
     use super::{DivRemScalar, DivWide};
 
+    /// Force the quotient estimate to clamp at the half-word radix.
     #[test]
     fn u128_div_wide_handles_clamped_quotient_estimate() {
         const B: u128 = 1 << 64;
@@ -249,6 +250,7 @@ mod tests {
         assert_eq!(u128::div_wide(0, hi, divisor), hi);
     }
 
+    /// Prefilled output detects partial writes in the u128 fast exits.
     #[test]
     fn u128_special_cases_clear_the_full_quotient() {
         for (dividend, divisor, expected_quotient) in
@@ -262,6 +264,7 @@ mod tests {
         }
     }
 
+    /// Reconstruct dividend = quotient * divisor + remainder using separate limb arithmetic.
     fn assert_division_identity(dividend: &[u128], divisor: u128) {
         let mut quotient = vec![u128::MAX; dividend.len()];
         let remainder = u128::div_rem_scalar(dividend, divisor, &mut quotient);
@@ -274,6 +277,7 @@ mod tests {
         assert!(remainder < divisor);
     }
 
+    /// Full and half-word divisors select both manual kernels, including trimmed high limbs.
     #[test]
     fn u128_half_word_and_knuth_paths_are_self_consistent() {
         let cases: &[(&[u128], u128)] = &[

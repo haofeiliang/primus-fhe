@@ -25,6 +25,7 @@ pub(crate) fn cdt_index_by<T>(
 mod tests {
     use super::cdt_index_by;
 
+    /// The maximum random word must not select a magnitude beyond the truncated support.
     #[test]
     fn terminal_sentinel_maps_to_last_supported_index() {
         let cdt = [0_u8, 2, 5, u8::MAX];

@@ -34,6 +34,8 @@ pub(crate) struct ZigguratMagnitudeSampler<T: FheInt> {
 }
 
 impl<T: FheInt> ZigguratMagnitudeSampler<T> {
+    /// Construct equal-area proposal layers for the validated, truncated Gaussian support.
+    /// Output adapters establish that the support fits T before calling this constructor.
     pub(crate) fn new(parameters: GaussianParameters) -> Result<Self, GaussianError> {
         let standard_deviation = parameters.standard_deviation();
         let maximum_magnitude = parameters.maximum_magnitude() as f64;
@@ -64,6 +66,8 @@ impl<T: FheInt> ZigguratMagnitudeSampler<T> {
             let mut area = initial_area;
             let mut found = false;
 
+            // Rebuild from the tail toward zero while bracketing the common layer area.
+            // A layer reaching above the PDF peak too early makes the proposal invalid.
             for iteration in 0..100 {
                 let mut previous_y = 0.0;
                 let mut previous_x = maximum_magnitude;
@@ -181,6 +185,8 @@ impl<T: FheInt> ZigguratMagnitudeSampler<T> {
                 })
                 .collect();
 
+            // Gaussian curvature changes at sigma. A layer wholly on one side
+            // can use a chord for early acceptance/rejection; crossing layers use the PDF.
             let mut strategies = Vec::with_capacity(rectangle_count + 1);
             strategies.push(FallRegion::Middle);
             for index in 1..=rectangle_count {
@@ -213,6 +219,7 @@ impl<T: FheInt> ZigguratMagnitudeSampler<T> {
         self.standard_deviation
     }
 
+    /// Return an independent sign flag (true means positive) and an accepted magnitude.
     // Sharing magnitude tables between output encodings must not introduce a
     // call per coefficient; sample_secret_key regresses when LLVM outlines it.
     #[inline(always)]
@@ -223,6 +230,7 @@ impl<T: FheInt> ZigguratMagnitudeSampler<T> {
             let magnitude = self.sample_x[rectangle].sample(rng);
             let magnitude_as_f64 = magnitude.as_into();
 
+            // The inner rectangle is entirely under the PDF; only its fringe needs rejection.
             if magnitude_as_f64 <= self.x[rectangle - 1] && magnitude > T::ZERO {
                 return (positive, magnitude);
             }
@@ -256,6 +264,7 @@ impl<T: FheInt> ZigguratMagnitudeSampler<T> {
         }
     }
 
+    /// Chord height relative to the layer base; a collapsed interval uses a negative sentinel instead of a chord.
     #[inline(always)]
     fn line(&self, index: usize, x: f64) -> f64 {
         if self.x[index] == self.x[index - 1] {
@@ -275,6 +284,7 @@ impl<T: FheInt> ZigguratMagnitudeSampler<T> {
 mod tests {
     use super::*;
 
+    /// This sigma produces a first layer above the peak; zero still needs exactly half mass.
     #[test]
     fn zero_acceptance_compensates_first_layer_height() {
         let parameters = GaussianParameters::new(53.065, 12.0).unwrap();

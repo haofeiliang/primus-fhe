@@ -33,6 +33,7 @@ fn wide_once_mod(v: ValueT) -> ValueT {
     if v >= MODULUS { v - MODULUS } else { v }
 }
 
+/// A near-word-limit modulus exercises wrapping arithmetic against widened scalar formulas.
 #[test]
 fn scalar_ops() {
     let m = UintModulus(MODULUS);
@@ -74,65 +75,32 @@ fn scalar_ops() {
     }
 }
 
+/// Retain one-step reduction and negation; shared add/sub coverage lives in slice_add_sub.rs.
 #[test]
-fn slice_ops() {
+fn unary_slices() {
     let m = UintModulus(MODULUS);
-    let distr = Uniform::new(0, MODULUS).unwrap();
-    let mut rng = StdRng::seed_from_u64(SEED ^ 1);
-
-    for &len in &[0usize, 1, 7, 8, 9, 15, 16, 17] {
-        let a: Vec<ValueT> = (0..len).map(|_| distr.sample(&mut rng)).collect();
-        let b: Vec<ValueT> = (0..len).map(|_| distr.sample(&mut rng)).collect();
-
-        let once_in: Vec<ValueT> = a
-            .iter()
-            .map(|&x| {
-                if rng.random_bool(0.5) {
-                    x
-                } else {
-                    rng.random_range(MODULUS..=ValueT::MAX)
-                }
-            })
+    // These loops have no large-length dispatch. Include zero for negation and
+    // q/MAX for one-step reduction instead of repeating random interior values.
+    for len in [0, 1, 16, 17] {
+        let input: Vec<_> = (0..len).map(|i| [0, 1, MODULUS - 1][i % 3]).collect();
+        let once_input: Vec<_> = (0..len)
+            .map(|i| [0, MODULUS - 1, MODULUS, ValueT::MAX][i % 4])
             .collect();
-        let expected_once: Vec<ValueT> = once_in.iter().copied().map(wide_once_mod).collect();
+        let expected_once: Vec<_> = once_input.iter().copied().map(wide_once_mod).collect();
 
-        let mut assign = once_in.clone();
+        let mut assign = once_input.clone();
         m.reduce_once_slice_assign(&mut assign);
         assert_eq!(assign, expected_once, "once_slice_assign len={len}");
-        let mut to = vec![0; len];
-        m.reduce_once_slice_to(&once_in, &mut to);
-        assert_eq!(to, expected_once, "once_slice_to len={len}");
+        let mut output = vec![ValueT::MAX; len];
+        m.reduce_once_slice_to(&once_input, &mut output);
+        assert_eq!(output, expected_once, "once_slice_to len={len}");
 
-        let expected_neg: Vec<ValueT> = a.iter().copied().map(wide_neg_mod).collect();
-        let mut assign = a.clone();
+        let expected_neg: Vec<_> = input.iter().copied().map(wide_neg_mod).collect();
+        let mut assign = input.clone();
         m.reduce_neg_slice_assign(&mut assign);
         assert_eq!(assign, expected_neg, "neg_slice_assign len={len}");
-        let mut to = vec![0; len];
-        m.reduce_neg_slice_to(&a, &mut to);
-        assert_eq!(to, expected_neg, "neg_slice_to len={len}");
-
-        let expected_add: Vec<ValueT> = std::iter::zip(&a, &b)
-            .map(|(&x, &y)| wide_add_mod(x, y))
-            .collect();
-        let mut assign = a.clone();
-        m.reduce_add_slice_assign(&mut assign, &b);
-        assert_eq!(assign, expected_add, "add_slice_assign len={len}");
-        let mut to = vec![0; len];
-        m.reduce_add_slice_to(&a, &b, &mut to);
-        assert_eq!(to, expected_add, "add_slice_to len={len}");
-
-        let expected_sub: Vec<ValueT> = std::iter::zip(&a, &b)
-            .map(|(&x, &y)| wide_sub_mod(x, y))
-            .collect();
-        let mut assign = a.clone();
-        m.reduce_sub_slice_assign(&mut assign, &b);
-        assert_eq!(assign, expected_sub, "sub_slice_assign len={len}");
-        let mut to = vec![0; len];
-        m.reduce_sub_slice_to(&a, &b, &mut to);
-        assert_eq!(to, expected_sub, "sub_slice_to len={len}");
-
-        let mut rev = b.clone();
-        m.reduce_sub_slice_rev_assign(&a, &mut rev);
-        assert_eq!(rev, expected_sub, "sub_slice_rev_assign len={len}");
+        output.fill(ValueT::MAX);
+        m.reduce_neg_slice_to(&input, &mut output);
+        assert_eq!(output, expected_neg, "neg_slice_to len={len}");
     }
 }

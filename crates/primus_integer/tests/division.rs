@@ -9,6 +9,7 @@ fn limbs_to_u128(limbs: &[u32]) -> u128 {
         })
 }
 
+/// Prefilled high limbs reveal partial writes in division-by-one and trimmed-input paths.
 #[test]
 fn u32_special_cases_clear_the_full_quotient() {
     for (dividend, divisor, expected_quotient, expected_remainder) in [
@@ -23,6 +24,7 @@ fn u32_special_cases_clear_the_full_quotient() {
     }
 }
 
+/// Half-word and full-word divisors use native u128 division as an independent oracle.
 #[test]
 fn u32_dense_and_trimmed_dividends_match_u128() {
     for (dividend, divisor) in [

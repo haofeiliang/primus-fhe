@@ -1,5 +1,6 @@
 use primus_distr::SecretKeyDistr;
 
+/// Reject nonfinite/out-of-range probabilities and ternary sums above one.
 #[test]
 fn probability_constructors_check_individual_values_and_sum() {
     use std::panic::catch_unwind;
@@ -18,6 +19,7 @@ fn probability_constructors_check_individual_values_and_sum() {
     assert!(catch_unwind(|| SecretKeyDistr::ternary(0.6, 0.5)).is_err());
 }
 
+/// Check empty/exact-bound keys and reject overfull or overflowing compositions.
 #[test]
 fn fixed_weight_constructors_check_complete_key_length() {
     use std::panic::catch_unwind;

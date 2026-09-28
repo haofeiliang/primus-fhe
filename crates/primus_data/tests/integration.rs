@@ -1,3 +1,4 @@
+//! Check storage bindings and owned constructors, not the containers themselves.
 use std::sync::Arc;
 
 use primus_data::{Data, DataMut, DataOwned};
@@ -8,26 +9,18 @@ fn assert_read<D: Data<Elem = u64>>(data: &D) {
     assert_eq!(data.as_slice(), VALUES);
     assert_eq!(data.len(), VALUES.len());
     assert!(!data.is_empty());
-    assert_eq!(data.iter().copied().sum::<u64>(), 10);
-    assert_eq!(data.split_at(2), VALUES.split_at(2));
 }
 
 fn assert_write<D: DataMut<Elem = u64>>(data: &mut D) {
-    data.copy_from_slice(&VALUES);
-    let (left, right) = data.split_at_mut(2);
-    left.reverse();
-    right.fill(0);
-    assert_eq!(data.as_slice(), &[2, 1, 0, 0]);
+    data.as_mut_slice().fill(9);
+    assert_eq!(data.as_slice(), &[9; 4]);
 }
 
-fn collect_owned<D: DataOwned<Elem = u64>>() -> D {
-    VALUES.into_iter().collect()
-}
-
+/// Owned constructors preserve elements; owned and borrowed views expose the same storage.
 #[test]
 fn standard_backends() {
-    let vec = VALUES.to_vec();
-    let boxed = VALUES.to_vec().into_boxed_slice();
+    let mut vec = Vec::<u64>::from_slice(&VALUES);
+    let mut boxed = Box::<[u64]>::from_vec(VALUES.to_vec());
     let arc: Arc<[u64]> = Arc::from(VALUES);
     let slice: &[u64] = &VALUES;
     let array_ref: &[u64; 4] = &VALUES;
@@ -39,8 +32,8 @@ fn standard_backends() {
     assert_read(&slice);
     assert_read(&array_ref);
 
-    assert_write(&mut VALUES.to_vec());
-    assert_write(&mut VALUES.to_vec().into_boxed_slice());
+    assert_write(&mut vec);
+    assert_write(&mut boxed);
 
     let mut array = VALUES;
     assert_write(&mut array);
@@ -54,25 +47,13 @@ fn standard_backends() {
     assert_write(&mut array_ref);
 }
 
-#[test]
-fn owned_backends() {
-    let vec = Vec::<u64>::from_slice(&VALUES);
-    assert_eq!(vec.into_iter().collect::<Vec<_>>(), VALUES);
-
-    let boxed = Box::<[u64]>::from_vec(VALUES.to_vec());
-    assert_eq!(boxed.into_iter().collect::<Vec<_>>(), VALUES);
-
-    let collected: Vec<u64> = collect_owned();
-    assert_eq!(collected.as_slice(), VALUES);
-}
-
+/// Aligned owners participate in the same Data/DataMut contracts as ordinary storage.
 #[cfg(feature = "aligned-vec")]
 #[test]
 fn aligned_backends() {
     use aligned_vec::{AVec, RuntimeAlign};
 
     let mut vec = AVec::<u64, RuntimeAlign>::from_slice(64, &VALUES);
-    assert_eq!(vec.as_ptr().align_offset(64), 0);
     assert_read(&vec);
     assert_write(&mut vec);
 

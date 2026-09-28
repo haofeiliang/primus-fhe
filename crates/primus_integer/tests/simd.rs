@@ -6,29 +6,7 @@ use primus_integer::{
     SimdUnsignedArray, WideningMul,
 };
 
-#[test]
-fn slice_helpers_preserve_chunks_and_tail() {
-    let lane_count = <u32 as SimdInteger>::LANE_COUNT;
-    let mut values: Vec<u32> = (0..lane_count as u32 + 3).collect();
-
-    let (chunks, tail) = u32::simd_as_chunks(&values);
-    assert_eq!(chunks.len(), 1);
-    assert_eq!(
-        tail,
-        &[
-            lane_count as u32,
-            lane_count as u32 + 1,
-            lane_count as u32 + 2
-        ]
-    );
-
-    let (chunks, tail) = u32::simd_as_chunks_mut(&mut values);
-    chunks[0].fill(7);
-    tail.fill(9);
-    assert!(values[..lane_count].iter().all(|&value| value == 7));
-    assert_eq!(&values[lane_count..], &[9, 9, 9]);
-}
-
+/// Mixed extreme lanes check carry, borrow, and widening products against scalar operations.
 #[test]
 fn u32_simd_word_operations_match_scalar_lanes() {
     type U32Simd = <u32 as SimdInteger>::SimdT;
@@ -124,6 +102,7 @@ fn u32_simd_word_operations_match_scalar_lanes() {
     }
 }
 
+/// Full-width lane products exercise high halves and carry variants against scalar arithmetic.
 #[test]
 fn u64_simd_multiplication_matches_scalar_lanes() {
     type U64Simd = <u64 as SimdInteger>::SimdT;

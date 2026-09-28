@@ -154,6 +154,7 @@ mod tests {
     use super::{CDT_MAX_MAGNITUDE, GaussianParameters};
     use crate::{GaussianError, MIN_STANDARD_DEVIATION};
 
+    /// Floating-point and output-domain limits fail during validation, before table allocation.
     #[test]
     fn rejects_invalid_parameters_and_unencodable_support() {
         for standard_deviation in [

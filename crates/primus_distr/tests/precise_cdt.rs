@@ -27,6 +27,7 @@ impl TryRng for FixedWords {
     }
 }
 
+/// External high-precision thresholds test both adapters at adjacent 256-bit words and sign boundaries.
 #[test]
 fn precise_adapters_follow_independent_thresholds_and_signs() {
     // sigma=1, tail=2: masses are [1/2, exp(-1/2), exp(-2)].

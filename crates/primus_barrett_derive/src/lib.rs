@@ -56,3 +56,57 @@ pub fn derive_barrett(input: TokenStream) -> TokenStream {
         .unwrap_or_else(|err| err.to_compile_error())
         .into()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Exercise the actual parsing/validation pipeline without invoking rustc for each bad input.
+    /// Successful expansions are compiled and checked in primus_modulus/tests/derives.rs.
+    #[test]
+    fn rejects_invalid_shape_type_and_modulus() {
+        let cases = [
+            (
+                "#[modulus(ty = u32, value = 97)] struct M(u32);",
+                "Expected no fields",
+            ),
+            (
+                "#[modulus(ty = i32, value = 97)] struct M;",
+                "type for modulus is invalid",
+            ),
+            (
+                "#[modulus(ty = core::primitive::u32, value = 97)] struct M;",
+                "type for modulus is invalid",
+            ),
+            ("#[modulus(ty = u16, value = 65536)] struct M;", "too large"),
+            (
+                "#[modulus(ty = u32, value = 0)] struct M;",
+                "greater than 1",
+            ),
+            (
+                "#[modulus(ty = u64, value = 1)] struct M;",
+                "greater than 1",
+            ),
+            (
+                "#[modulus(ty = u16, value = 16384)] struct M;",
+                "less than 2^(BITS - 2)",
+            ),
+            (
+                "#[modulus(ty = u32, value = 1073741824)] struct M;",
+                "less than 2^(BITS - 2)",
+            ),
+            (
+                "#[modulus(ty = u64, value = 4611686018427387904)] struct M;",
+                "less than 2^(BITS - 2)",
+            ),
+        ];
+        for (source, expected) in cases {
+            let input = syn::parse_str::<DeriveInput>(source).unwrap();
+            let error = match BarrettModulusInput::from_derive_input(&input) {
+                Err(error) => error.to_string(),
+                Ok(parsed) => barrett::derive(&parsed).unwrap_err().to_string(),
+            };
+            assert!(error.contains(expected), "{source}: {error}");
+        }
+    }
+}
