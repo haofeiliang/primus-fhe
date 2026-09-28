@@ -50,7 +50,7 @@ CBS 是两个后端的可选能力，提供独立的 output basis、trace/scheme
 
 ## 示例
 
-后端 basic 示例展示两种 order、默认编码和普通 PBS 缓冲复用。 独立输出编码见共享指南。 MVB/CBS 使用专门示例，Boolean 用法见[共享指南](../primus_tfhe/README.zh_CN.md#boolean-门)。 所有示例 fixture 均用于开发，不是生产参数建议。
+后端 basic 示例展示默认编码和普通 PBS 缓冲复用；通过 `ORDER` 常量选择 PBS 顺序。 独立输出编码见共享指南。 MVB/CBS 使用专门示例，Boolean 用法见[共享指南](../primus_tfhe/README.zh_CN.md#boolean-门)。 所有示例 fixture 均用于开发，不是生产参数建议。
 
 ## 进一步阅读
 

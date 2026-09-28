@@ -10,7 +10,7 @@
 
 `HighPrecisionLookupTable::try_new(parameters, config, function)` 编译公开表。回调接收 `(完整输入索引, 输出 chunk 索引)`，返回一个 digit。用 `NttLookupTableEvaluator::try_new(context, server_key, table)` 或 `FourierLookupTableEvaluator::try_new(context, server_key, table)` 绑定资源，调用一次 `allocate_output()`，随后重复调用 `evaluate_to(input_chunks, output_chunks)`。输出逐个使用 context 的普通 decryptor 解码。Evaluator 借用 context、服务端密钥和表，求值不需要客户端秘密。
 
-对于 `t=8`、`N>=64` 的 context，每个 chunk 为两位，三个输入 chunks 的完整值域可以放入一个多项式。以下片段计算 `3*x+7` 的低四位：
+对于 u32、`t=8`、`N=1024` 的 context，八个两位 chunks 表示一个 16 位输入。以下片段计算 `(x*x+3*x+7) mod 65536`，返回八个 chunks：
 
 ```rust,ignore
 use primus_tfhe_ntru_lut::{
@@ -20,22 +20,28 @@ use primus_tfhe_ntru_lut::{
 let table = HighPrecisionLookupTable::try_new(
     context.parameters(),
     LookupTableConfig {
-        input_chunk_count: 3,
-        output_chunk_count: 2,
-        coefficient_chunk_count: 3,
+        input_chunk_count: 8,
+        output_chunk_count: 8,
+        coefficient_chunk_count: 5,
     },
-    |x, output| (((3 * x + 7) >> (2 * output)) & 3) as u64,
+    |x, output| {
+        let x = x as u64; // 明文中间结果可能超出 u32。
+        let value = (x * x + 3 * x + 7) % 65536;
+        ((value >> (2 * output)) & 3) as u32
+    },
 )?;
 let mut evaluator = NttLookupTableEvaluator::try_new(&context, &server, &table)?;
 let mut output = evaluator.allocate_output();
 evaluator.evaluate_to(&encrypted_chunks, &mut output);
 ```
 
-完整可运行工作流见 [ntt_lookup.rs](examples/ntt_lookup.rs) 和 [fourier_lookup.rs](examples/fourier_lookup.rs)：生成独立 LWE/NTRU 秘密、加密六个两位 chunks、编译跨 16 个多项式的表、复用 evaluator，再解码四个输出 chunks。Fourier 示例同时运行 RustFFT 和 TFHE-FFT。参数仅作功能示例；计算 `(x*x + 3*x + x/17 + 7) mod 256`，覆盖零、混合 digits 和值域末端。
+完整可运行工作流见 [ntt_lookup.rs](examples/ntt_lookup.rs) 和 [fourier_lookup.rs](examples/fourier_lookup.rs)。它们使用 n=800/N=1024，以八个两位 chunks 加密 16 位输入，并返回八个 chunks 的 16 位结果。低五个输入 chunks 选择系数，高三个选择 64 个候选多项式之一；输出 chunk 数仍可独立设置。输入 `0b10_10_10_11_11_00_11_01` 返回 `0b10_00_01_01_10_01_01_11`，随后零输入返回 7，两次请求复用同一个 evaluator 和缓冲。
+
+两个示例默认使用 `type Word = u32`；改为 u64 时修改此别名，NTT 示例还需将 `U32NttTable as Table` 导入改为 `U64NttTable as Table`。Fourier 示例默认 RustFFT，改用 `TfheFftTable as Table` 可选择 TFHE-FFT；修改后执行同一运行命令。每个文件的本地 `parameters()` 与 `circuit_config()` 直接构造 `TfheConfig` / `CircuitBootstrapConfig`，展示尺寸、噪声、对应字宽的分解、prime/native 环模数和独立的 PowOf2 q=2^24，数值选择见[参数矩阵](../../guides/development/tfhe-parameters.md)。
 
 ```sh
-cargo run -p primus_tfhe_ntru_lut --example ntt_lookup
-cargo run -p primus_tfhe_ntru_lut --example fourier_lookup
+cargo run --release -p primus_tfhe_ntru_lut --example ntt_lookup
+cargo run --release -p primus_tfhe_ntru_lut --example fourier_lookup
 ```
 
 [evaluation.rs](tests/evaluation.rs) 另行穷举小域，检查工作区复用和拒绝边界。
@@ -84,7 +90,7 @@ cargo run -p primus_tfhe_ntru_lut --example fourier_lookup
 
 输入继承 [one-hot 保护区](../primus_tfhe_ntru/README.zh_CN.md#one-hot-cbs)，包括加密、编码和逐坐标量化误差。CBS 和每次选择/旋转外积会增加误差，Fourier 还包含 native trace 减半与 FFT 舍入。公开提升必须能分辨 LUT 尺度。形状检查和功能测试通过不构成安全性、生产参数或失败概率认证。
 
-[编译测试](tests/lookup_table.rs) 用整数 oracle 检查表分区、Rounded 编码、padding 和拒绝边界。[求值测试](tests/evaluation.rs) 完整穷举小域，包括 N=64 时的 128 个输入、所有默认分支、后续密文表层、无表层、满系数容量和不同输入/输出 chunk 数。覆盖 u64、Q≠q、基数 2/4、classic binary/ternary、NTT 与两种 FFT 后端，以及预写入拒绝和在线零分配。其他字宽和更大参数需要独立数值验证。
+[编译测试](tests/lookup_table.rs) 用整数 oracle 检查分区、Rounded 编码、padding 和拒绝边界。[求值测试](tests/evaluation.rs) 穷举极小值域，在较大值域选择 chunk/表边界。覆盖 u32/u64、Q≠q、radix 2/4、classic binary/ternary、NTT 和两个 FFT、全部默认分支、后续密文表层、无表层、满系数容量、不等输入输出 chunk 数、写入前拒绝和在线零分配。大尺寸功能参数使用独立的[验证入口](../../guides/development/tfhe-parameters.md#validation-and-observations)。
 
 ```sh
 cargo test -p primus_tfhe_ntru_lut

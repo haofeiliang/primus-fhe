@@ -2,7 +2,7 @@
 
 These profiles are reproducible functional and performance fixtures. They have no security or failure-probability assessment. Two fixed seeds establish observations, not a probabilistic guarantee. Shared geometry does not make NTT, Fourier, GLWE and NTRU equally secure or their costs directly comparable.
 
-The constructors live in [test-support parameters](../../test-support/tfhe/src/parameters/mod.rs), split into [GLWE](../../test-support/tfhe/src/parameters/glwe.rs) and [NTRU](../../test-support/tfhe/src/parameters/ntru.rs). They use the existing family parameter types; no backend abstraction or production preset registry is added. Ordinary integration tests keep small parameters. The [validation executable](../../test-support/tfhe/examples/validate_parameters.rs) is an explicitly invoked numerical diagnostic.
+Validation and benchmark constructors live in [test-support parameters](../../test-support/tfhe/src/parameters/mod.rs), split into [GLWE](../../test-support/tfhe/src/parameters/glwe.rs) and [NTRU](../../test-support/tfhe/src/parameters/ntru.rs). They use the existing family parameter types; no backend abstraction or production preset registry is added. Ordinary integration tests keep small parameters. The [validation executable](../../test-support/tfhe/examples/validate_parameters.rs) is an explicitly invoked numerical diagnostic.
 
 ## Moduli, geometry and secret domains
 
@@ -14,7 +14,7 @@ The constructors live in [test-support parameters](../../test-support/tfhe/src/p
 | Native32 / Native64 | `NativeModulus<u32/u64>`, implicit 2^32 / 2^64 | Fourier accumulator; also GLWE external modulus |
 | q24 | `PowOf2Modulus<u32/u64>`, 2^24 | Independent NTRU external LWE and return key |
 
-All three NTT primes satisfy Q mod 4096 = 1 and the existing NTT table constructors accept N=1024/2048. Each fits the Barrett bound Q<2^(BITS−2). `NativeModulus` never constructs an unrepresentable `1 << BITS`. Explicit powers of two use `PowOf2Modulus`; the two NTRU basic examples' q=2^20 have been corrected accordingly.
+All three NTT primes satisfy Q mod 4096 = 1 and the existing NTT table constructors accept N=1024/2048. Each fits the Barrett bound Q<2^(BITS−2). `NativeModulus` never constructs an unrepresentable `1 << BITS`. Explicit powers of two use `PowOf2Modulus`; all NTRU examples use independent external q=2^24.
 
 All geometries below run with u32 and u64. Fourier validation includes both RustFFT and TFHE-FFT. GLWE always has k=1 and validates both `BootstrapKeyswitch` and `KeyswitchBootstrap`. Here n is the small LWE dimension: in `KeyswitchBootstrap`, the external client domain has kN coefficients, not n. GLWE uses q=Q. NTRU has independent external LWE and ring secrets and returns Q→q24→LWE KS.
 
@@ -23,7 +23,7 @@ All geometries below run with u32 and u64. Fourier validation includes both Rust
 | GLWE dense Boolean PBS | 800 / 1024 | 4 | uniform binary | uniform binary |
 | GLWE dense 2+2 bit PBS | 866 / 2048 | 32 | uniform binary | uniform binary |
 | GLWE circuit / ternary PBS | 800 / 1024 | 4 | uniform binary or uniform ternary | uniform ternary |
-| GLWE fixed-weight / sparse | 728 / 1024 | 8 for PBS; 4 for CBS | fixed-weight binary, h=32 | sparse ternary |
+| GLWE fixed-weight / sparse | 728 / 1024 | 8 for single-output PBS; 16 for ManyLUT; 4 for CBS | fixed-weight binary, h=32 | sparse ternary |
 | GLWE MVB | 728 / 1024 | 128 | fixed-weight binary, h=32 | sparse ternary |
 | NTRU dense Boolean / 2+2 bit PBS | 800 / 1024; 866 / 2048 | 4; 32 | uniform binary or uniform ternary | sparse ternary |
 | NTRU fixed-weight / sparse / MVB | 728 / 1024 | 16 for PBS; 128 for MVB | fixed-weight binary, h=32 | sparse ternary |
@@ -87,7 +87,7 @@ BR, trace and scheme-switch use full-length base 2^2 for u32 and base 2^8 for u6
 | u64 Q50 | (8,6;2) | (8,3;26) | 2^26 |
 | u64 native | (8,8;0) | (8,3;40) | 2^40 |
 
-The lookup uses M=4, c=7 input chunks, d=5 coefficient chunks, o=3 output chunks. Thus M^d=N=1024 and the 14-bit input selects among 16 public polynomials per output. This exercises public lifting, a further encrypted CMux layer, five aggregate rotations, and Q→q24 return. Output width is independent of input width. The evaluator has no new algorithmic restrictions; these are the dimensions that were numerically validated.
+The standalone parameter diagnostic uses M=4, c=7 input chunks, d=5 coefficient chunks, o=3 output chunks. Thus M^d=N=1024 and the 14-bit input selects among 16 public polynomials per output. This exercises public lifting, a further encrypted CMux layer, five aggregate rotations, and Q→q24 return. Output width is independent of input width. The evaluator has no new algorithmic restrictions; these are the dimensions that were numerically validated.
 
 For one-hot, L=4 (u32) or 3 (u64), so W=4 and A=N/(2MW)=32. With R_W the existing coefficient quantizer, validation computes
 
@@ -140,7 +140,7 @@ These are maxima of finite observations under explicitly selected bounds. They d
 
 ## Existing asset inventory and migration
 
-This matrix covers all 20 declared TFHE benchmark targets and 16 top-level product examples. Parameter validation is complete independently of the later teaching-example rewrite and benchmark simplification. The inventory makes the remaining migration explicit; it does not imply that every old entry has already been rewritten.
+This matrix covers all 20 declared TFHE benchmark targets and 22 top-level product examples. The examples spell out these profiles locally with `TfheConfig` and `CircuitBootstrapConfig`. The benchmark table below distinguishes already migrated targets from destinations for the remaining benchmark cleanup.
 
 | Benchmark target | Current geometry/width | Validated destination |
 | --- | --- | --- |
@@ -165,23 +165,65 @@ This matrix covers all 20 declared TFHE benchmark targets and 16 top-level produ
 | [primus_tfhe_ntru_fourier/mvb](../../crates/primus_tfhe_ntru_fourier/benches/mvb.rs) | u32/u64, 728/h33/1024 | NTRU MVB, both widths |
 | [primus_tfhe_ntru_lut/pipeline](../../crates/primus_tfhe_ntru_lut/benches/pipeline.rs) | u64, 64/1024, c7/d5/o3 | NTRU lookup, 800/1024, both widths; retime after migration |
 
-| Product example | Current geometry/width | Validated destination |
-| --- | --- | --- |
-| [primus_tfhe_glwe_ntt/ntt_basic](../../crates/primus_tfhe_glwe_ntt/examples/ntt_basic.rs) | u32, 4/256, t16 | Dense PBS workflow, 866/2048/t32; smaller 800/1024/t4 for Boolean teaching |
-| [primus_tfhe_glwe_ntt/ntt_circuit_bootstrap](../../crates/primus_tfhe_glwe_ntt/examples/ntt_circuit_bootstrap.rs) | u64, 4/h2/256 | GLWE circuit, 800/1024; both widths |
-| [primus_tfhe_glwe_ntt/mvb_thresholds](../../crates/primus_tfhe_glwe_ntt/examples/mvb_thresholds.rs) | u32, 728/h32/1024 | GLWE MVB, both widths |
-| [primus_tfhe_glwe_fourier/fourier_basic](../../crates/primus_tfhe_glwe_fourier/examples/fourier_basic.rs) | u32, 4/256, t16 | Dense PBS workflow, 866/2048/t32; smaller 800/1024/t4 for Boolean teaching |
-| [primus_tfhe_glwe_fourier/fourier_circuit_bootstrap](../../crates/primus_tfhe_glwe_fourier/examples/fourier_circuit_bootstrap.rs) | u64, 728/h32/1024 | GLWE circuit, 800/1024; both widths |
-| [primus_tfhe_glwe_fourier/fourier_mvb_thresholds](../../crates/primus_tfhe_glwe_fourier/examples/fourier_mvb_thresholds.rs) | u32, 728/h32/1024 | GLWE MVB, both widths |
-| [primus_tfhe_ntru_ntt/ntru_ntt_basic](../../crates/primus_tfhe_ntru_ntt/examples/ntru_ntt_basic.rs) | u32, 8/256, t16, q20 | NTRU dense PBS, 866/2048/t32/q24; **PowOf2 type corrected now** |
-| [primus_tfhe_ntru_ntt/ntru_ntt_circuit_bootstrap](../../crates/primus_tfhe_ntru_ntt/examples/ntru_ntt_circuit_bootstrap.rs) | u64, 16/256 | NTRU circuit, 800/1024; both widths |
-| [primus_tfhe_ntru_ntt/ntru_ntt_mvb_thresholds](../../crates/primus_tfhe_ntru_ntt/examples/ntru_ntt_mvb_thresholds.rs) | u32, 728/h32/1024 | NTRU MVB, both widths |
-| [primus_tfhe_ntru_ntt/ntru_ntt_sparse](../../crates/primus_tfhe_ntru_ntt/examples/ntru_ntt_sparse.rs) | u32, 728/1024, h32 | NTRU fixed-weight PBS, h32, both widths |
-| [primus_tfhe_ntru_fourier/ntru_fourier_basic](../../crates/primus_tfhe_ntru_fourier/examples/ntru_fourier_basic.rs) | u32, 8/256, t16, q20 | NTRU dense PBS, 866/2048/t32/q24; **PowOf2 type corrected now** |
-| [primus_tfhe_ntru_fourier/ntru_fourier_circuit_bootstrap](../../crates/primus_tfhe_ntru_fourier/examples/ntru_fourier_circuit_bootstrap.rs) | u64, 16/256 | NTRU circuit, 800/1024; both widths |
-| [primus_tfhe_ntru_fourier/ntru_fourier_mvb_thresholds](../../crates/primus_tfhe_ntru_fourier/examples/ntru_fourier_mvb_thresholds.rs) | u32, 728/h33/1024 | NTRU MVB, both widths |
-| [primus_tfhe_ntru_fourier/ntru_fourier_sparse](../../crates/primus_tfhe_ntru_fourier/examples/ntru_fourier_sparse.rs) | u32, 728/1024, h33 | NTRU fixed-weight PBS, h32, both widths |
-| [primus_tfhe_ntru_lut/ntt_lookup](../../crates/primus_tfhe_ntru_lut/examples/ntt_lookup.rs) | u64, 16/256, c6/d4/o4 | NTRU lookup, 800/1024, both widths; select an independent output count |
-| [primus_tfhe_ntru_lut/fourier_lookup](../../crates/primus_tfhe_ntru_lut/examples/fourier_lookup.rs) | u64, 16/256, c6/d4/o4 | NTRU lookup, 800/1024, both widths; select an independent output count |
+## Teaching examples
 
-Only two GLWE PBS targets have been wired to the new shared constructors in this change; their numerical choices are unchanged. The basic NTRU examples received the modulus-type correction. The remaining parameter/block replacements, missing word-width dispatch and removal of obsolete example/benchmark helpers belong with their scheduled full asset cleanups. In particular, the old high-precision examples (n=16,N=256) and pipeline benchmark (n=64,N=1024) remain historical fixtures until that migration; their old memory/latency measurements must not be compared directly to the new n=800 workload.
+Each example has a concrete `Word = u32` and a concrete `Table` import. To run u64, change `Word` to u64 and, for NTT, import `U64NttTable as Table`. Fourier defaults to `RustFftTable`; change its import to `TfheFftTable as Table` for the other FFT implementation. Each file contains its own explicit `parameters()` function, with word-specific modulus, decomposition and coefficient-noise choices; CBS adds a local `circuit_config()`. GLWE's `ORDER` constant selects one order per run. These choices keep the main function readable without generic or CLI matrix dispatch.
+
+Examples do not import the test-support factories. Their local configuration functions make every numerical choice inspectable without leaving the file. Keys, codecs, encrypted inputs, evaluators, outputs and client/server handoffs remain in each example's main function. Each workload makes two requests with reused buffers. No example imports code from `benches/` or `tests/`; the old Fourier CBS support is now owned by [its sole benchmark consumer](../../crates/primus_tfhe_glwe_fourier/benches/support/circuit_bootstrap.rs).
+
+| Workflow | Geometry and encoding | Complete examples |
+| --- | --- | --- |
+| Basic PBS | n=866/N=2048/t32; `x % 4`, padded input 0..16 and default output codec | GLWE [NTT](../../crates/primus_tfhe_glwe_ntt/examples/ntt_basic.rs) / [Fourier](../../crates/primus_tfhe_glwe_fourier/examples/fourier_basic.rs); NTRU [NTT](../../crates/primus_tfhe_ntru_ntt/examples/ntru_ntt_basic.rs) / [Fourier](../../crates/primus_tfhe_ntru_fourier/examples/ntru_fourier_basic.rs) |
+| CBS → CMux | n=800/N=1024/t4; client encrypts the two ring candidates, server derives the gadget control | GLWE [NTT](../../crates/primus_tfhe_glwe_ntt/examples/ntt_circuit_bootstrap.rs) / [Fourier](../../crates/primus_tfhe_glwe_fourier/examples/fourier_circuit_bootstrap.rs); NTRU [NTT](../../crates/primus_tfhe_ntru_ntt/examples/ntru_ntt_circuit_bootstrap.rs) / [Fourier](../../crates/primus_tfhe_ntru_fourier/examples/ntru_fourier_circuit_bootstrap.rs) |
+| MVB thresholds | n=728/h32/N=1024/t128; 64 inputs, 17 outputs with Scaled t_out=2. NTRU compiles at Q and decodes at q24 with separate codecs | GLWE [NTT](../../crates/primus_tfhe_glwe_ntt/examples/mvb_thresholds.rs) / [Fourier](../../crates/primus_tfhe_glwe_fourier/examples/fourier_mvb_thresholds.rs); NTRU [NTT](../../crates/primus_tfhe_ntru_ntt/examples/ntru_ntt_mvb_thresholds.rs) / [Fourier](../../crates/primus_tfhe_ntru_fourier/examples/ntru_fourier_mvb_thresholds.rs) |
+| Sparse / classic ManyLUT | n=728/h32/N=1024/t16; three Rounded t_out=8 outputs. `SPARSE=true` selects three copies/64 buckets; false uses classic keys. NTRU has separate Q/q24 codecs | GLWE [NTT](../../crates/primus_tfhe_glwe_ntt/examples/ntt_sparse.rs) / [Fourier](../../crates/primus_tfhe_glwe_fourier/examples/fourier_sparse.rs); NTRU [NTT](../../crates/primus_tfhe_ntru_ntt/examples/ntru_ntt_sparse.rs) / [Fourier](../../crates/primus_tfhe_ntru_fourier/examples/ntru_fourier_sparse.rs) |
+| Sparse CBS → CMux | n=728/h32/N=1024/t4; explicit sparse key generation with CBS material | GLWE [NTT](../../crates/primus_tfhe_glwe_ntt/examples/ntt_sparse_circuit_bootstrap.rs) / [Fourier](../../crates/primus_tfhe_glwe_fourier/examples/fourier_sparse_circuit_bootstrap.rs) |
+| One-hot CBS → CMux | n=800/N=1024/t8; four NGSWs for delta_r=[m=r], select public r=2 using a semantic ciphertext iterator | NTRU [NTT](../../crates/primus_tfhe_ntru_ntt/examples/ntru_ntt_one_hot.rs) / [Fourier](../../crates/primus_tfhe_ntru_fourier/examples/ntru_fourier_one_hot.rs) |
+| High-precision lookup | n=800/N=1024/t8; c8/d5/o8, two-bit chunks, `(x*x+3*x+7) mod 65536`; 16-bit input/output, all coefficient slots filled and 64 polynomials per output | [NTT](../../crates/primus_tfhe_ntru_lut/examples/ntt_lookup.rs) / [Fourier](../../crates/primus_tfhe_ntru_lut/examples/fourier_lookup.rs) |
+
+All examples are arithmetic demonstrations, not assessed security presets. NTRU consistently uses independent LWE q24 and a separate ring Q; its ordinary return path and MVB scaled-output distinction are visible in the code. The explicit local configurations mirror the validated profiles above; their noise and decomposition choices remain specific to the workflow.
+
+All four backends have classic PBS, sparse/interleaved ManyLUT, ordinary CBS and factorized MVB entries. GLWE MVB examples can switch `SPARSE` to true; GLWE sparse CBS has a separate entry because its secret and parameter choices differ from dense CBS. NTRU sparse supports only ordinary/interleaved PBS; its CBS, one-hot and MVB require classic keys. One-hot and the full high-precision pipeline are NTRU extensions. ManyLUT and factorized MVB are distinct multi-output algorithms.
+
+Boolean gates, bivariate LUTs and odd full-domain LUTs are derived encoding/composition APIs, not additional blind-rotation algorithms. They retain their [user guide](../../crates/primus_tfhe/README.md#choosing-an-operation) and test coverage; this list does not claim a standalone example for every public wrapper or secret distribution. Classic binary/ternary validation remains in the numerical diagnostic above.
+
+### Choosing the lookup example width
+
+The two teaching examples use eight two-bit input chunks and eight output chunks (16 bits each), with d=5 and N=1024. Their polynomial function `(x*x+3*x+7) mod 65536` depends on high input chunks as well as low ones. The cleartext intermediate uses u64 to avoid overflowing u32. These examples are separate from the c7/d5/o3 parameter-diagnostic fixture above.
+
+With output count equal to input count, the complete data table costs `c * 4^c * sizeof(Word)` bytes. This is the public coefficient table only, excluding keys, evaluators and outputs:
+
+| Input/output chunks | Input/output bits | Table-selection chunks | Polynomials per output | Data LUT, u32 / u64 |
+| ---: | ---: | ---: | ---: | ---: |
+| 6 / 6 | 12 / 12 | 1 | 4 | 96 / 192 KiB |
+| **8 / 8** | **16 / 16** | **3** | **64** | **2 / 4 MiB** |
+| 10 / 10 | 20 / 20 | 5 | 1024 | 40 / 80 MiB |
+
+Eight chunks demonstrate a 16-bit lookup and multiple encrypted table-selection layers at a modest table size. Ten chunks work in the sampled trials but raise table storage by 20 times over eight; use them for an explicitly larger workload. Counts remain independent in the API. This is an example-size choice, not an algorithmic precision limit.
+
+The 6/8/10 comparison used NTT and RustFFT, u32/u64, seeds 42 and 4242, and inputs `4^c-1`, `floor(2*4^c/3)`, `floor(4^c/3)`, 1 and 0, with output reduced modulo `4^c`; all 120 evaluations decoded correctly. The selected eight-chunk profile was additionally checked with both FFT engines, both words, default and nightly SIMD: two seeds, inputs 0b10_10_10_11_11_00_11_01, 0, 1, 1023, 1024, 65535, 0, and each returned chunk's circular phase error below q24/32. These finite checks do not establish a failure probability.
+
+### Example smoke checklist
+
+Run from the repository root, using release for the representative dimensions:
+
+```bash
+for package in primus_tfhe_glwe_ntt primus_tfhe_glwe_fourier primus_tfhe_ntru_ntt primus_tfhe_ntru_fourier primus_tfhe_ntru_lut; do
+    for source in crates/"$package"/examples/*.rs; do
+        example=${source##*/}
+        cargo run --release -p "$package" --example "${example%.rs}" || exit
+    done
+done
+```
+
+When modifying workflows or profiles, exercise these concrete choices, restoring the documented defaults afterward:
+
+- All 22 examples with their u32/default table/order.
+- All 22 with u64 and its matching NTT table.
+- The ten GLWE examples with the other `ORDER`; the eleven Fourier examples with `TfheFftTable`. These checks may share runs for the five GLWE Fourier examples.
+- All four `*_sparse` ManyLUT examples with `SPARSE=false`, and both GLWE MVB examples with `SPARSE=true`, for both word widths.
+- Compile/lint all targets with default features and nightly SIMD. Run selected examples with `cargo +nightly run --release -p <package> --example <name> --features simd` when validating that configuration; do not put an extra backend/order loop in the teaching main function.
+
+The public examples retain distinct GLWE/NTRU parameter, key and return contracts and distinct NTT/Fourier table types. Within a crate there is one entry per task. Configuration is intentionally local to each file so that users can read and change it directly; there is no example support layer hiding parameters or the workflow.
+
+Benchmark migration remains separate: only the two GLWE PBS targets currently use the shared constructors. The old pipeline benchmark still uses n=64/N=1024 until its parameter migration; its historical memory/latency results must not be compared directly with these n=800 examples.

@@ -13,9 +13,22 @@
 cargo run -p primus_tfhe_ntru_ntt --release --example ntru_ntt_basic
 ```
 
-[basic 示例](examples/ntru_ntt_basic.rs)展示参数 → context → 配对密钥 → 客户端 → 单个 LUT → 复用 evaluator 和密文缓冲。它计算 `x % 4`，输入和输出均采用 `t=16` 编码，直接用 `decrypt` 解码。 `compile_lookup_table_fn(function)` 默认使用参数 codec；需要不同输出明文模数时，使用 `compile_lookup_table_with_codec_fn(&output_codec, function)`，见[选择输出编码](../primus_tfhe/README.zh_CN.md#选择输出编码)。 公钥加密通过 `context.public_encryptor(&public)` 创建客户端，见[家族说明](../primus_tfhe_ntru/README.zh_CN.md#客户端与-lut)。 示例的外部 `q=2^20` 与环 `Q` 不同，LUT 编译在 `Q` 下，返回 LWE 在 `q` 下。
+[basic 示例](examples/ntru_ntt_basic.rs)展示参数 → context → 配对密钥 → 客户端 → 单个 LUT → 复用 evaluator 和密文缓冲。它计算 `x % 4`，输入和输出均采用 `t=32` 编码，直接用 `decrypt` 解码。 `compile_lookup_table_fn(function)` 默认使用参数 codec；需要不同输出明文模数时，使用 `compile_lookup_table_with_codec_fn(&output_codec, function)`，见[选择输出编码](../primus_tfhe/README.zh_CN.md#选择输出编码)。 公钥加密通过 `context.public_encryptor(&public)` 创建客户端，见[家族说明](../primus_tfhe_ntru/README.zh_CN.md#客户端与-lut)。 示例的外部 `q=2^24` 与环 `Q` 不同，LUT 编译在 `Q` 下，返回 LWE 在 `q` 下。
+
+示例默认使用 u32；将 `type Word = u32` 改为 `u64`，并把 `Table` 导入从 `U32NttTable` 改为 `U64NttTable`，随后执行同一运行命令。每个文件内的 `parameters()` 直接构造 `TfheConfig`，集中列出尺寸、模数类型、秘密分布、噪声和 BR/KS 分解；CBS 示例还用 `circuit_config()` 明确输出、trace 和 scheme-switch 的分解。Basic PBS 使用 n=866/N=2048，CBS 使用 n=800/N=1024，MVB 和稀疏 PBS 使用 n=728/h=32/N=1024；数值选择见[参数矩阵](../../guides/development/tfhe-parameters.md)。每个示例只展示一个流程和复用同一组缓冲的两次请求。
 
 示例区分客户端加密、服务端求值与客户端解密，见[双方职责与缓冲分配](../primus_tfhe/README.zh_CN.md#客户端与服务端边界)。
+
+| 操作 | 完整示例 |
+| --- | --- |
+| Classic PBS | [basic](examples/ntru_ntt_basic.rs) |
+| Sparse PBS / 交错多输出 ManyLUT | [sparse](examples/ntru_ntt_sparse.rs)；`SPARSE=false` 切换 classic ManyLUT |
+| Classic CBS → CMux | [circuit_bootstrap](examples/ntru_ntt_circuit_bootstrap.rs) |
+| 分解式 MVB | [thresholds](examples/ntru_ntt_mvb_thresholds.rs) |
+| One-hot CBS → CMux | [one_hot](examples/ntru_ntt_one_hot.rs) |
+| 高精度查表 | [lookup](../primus_tfhe_ntru_lut/examples/ntt_lookup.rs) |
+
+ManyLUT 通过交错共享一次盲旋转；分解式 MVB 通过公共因子生成多输出，是不同的求值接口。 NTRU sparse 当前只支持普通/交错 PBS，不支持 CBS、one-hot 或分解式 MVB。
 
 ## 参数与表示
 
@@ -69,6 +82,8 @@ let mut evaluator = context.evaluator(&server)?;
 独立生成组件时须配对秘密并使用同一变换表示，形状检查不能证明身份。 输入/输出与消费要求见[共享 CBS 契约](../primus_tfhe/README.zh_CN.md#cbs-输出与消费)及 [家族 CBS 说明](../primus_tfhe_ntru/README.zh_CN.md#cbs-与示例)。
 
 ## One-hot CBS
+
+[One-hot 示例](examples/ntru_ntt_one_hot.rs)从两位输入生成四个 selector，用公开索引 `TARGET=2` 对应的 `delta_2` 控制 CMux；其他 `r` 修改 `TARGET` 即可。
 
 `OneHotCircuitBootstrapEvaluator::try_new(&context, &server)` 为一个 chunk 绑定现有 CBS 密钥；完整输出接口包含默认 selector r=0。也可通过 `try_from_bootstrapper` 复用 PBS 工作区，通过 `bootstrapper_mut()` 借用普通 PBS，最后用 `into_bootstrapper()` 取回工作区。首版支持 classic binary/ternary，拒绝 sparse 和缺少 CBS 材料的密钥；普通 CBS 接口保持不变。
 

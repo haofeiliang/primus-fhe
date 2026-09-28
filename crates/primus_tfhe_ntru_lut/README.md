@@ -10,7 +10,7 @@ Use a classic binary/ternary context from [NTT](../primus_tfhe_ntru_ntt/README.m
 
 `HighPrecisionLookupTable::try_new(parameters, config, function)` compiles the public table. The callback receives `(full_input_index, output_chunk_index)` and returns one digit. Bind `NttLookupTableEvaluator::try_new(context, server_key, table)` or `FourierLookupTableEvaluator::try_new(context, server_key, table)`, call `allocate_output()` once, then reuse `evaluate_to(input_chunks, output_chunks)`. Decode each result with the context's ordinary decryptor. The evaluator borrows its context, server key and table; no client secret is needed for evaluation.
 
-For a context with `t=8` and `N>=64`, chunks have two bits and the complete three-chunk input domain fits in one polynomial. This fragment computes the low four bits of `3*x+7`:
+For a u32 context with `t=8` and `N=1024`, eight two-bit chunks represent a 16-bit input. This fragment evaluates `(x*x+3*x+7) mod 65536` and returns eight chunks:
 
 ```rust,ignore
 use primus_tfhe_ntru_lut::{
@@ -20,22 +20,28 @@ use primus_tfhe_ntru_lut::{
 let table = HighPrecisionLookupTable::try_new(
     context.parameters(),
     LookupTableConfig {
-        input_chunk_count: 3,
-        output_chunk_count: 2,
-        coefficient_chunk_count: 3,
+        input_chunk_count: 8,
+        output_chunk_count: 8,
+        coefficient_chunk_count: 5,
     },
-    |x, output| (((3 * x + 7) >> (2 * output)) & 3) as u64,
+    |x, output| {
+        let x = x as u64; // The cleartext intermediate can exceed u32.
+        let value = (x * x + 3 * x + 7) % 65536;
+        ((value >> (2 * output)) & 3) as u32
+    },
 )?;
 let mut evaluator = NttLookupTableEvaluator::try_new(&context, &server, &table)?;
 let mut output = evaluator.allocate_output();
 evaluator.evaluate_to(&encrypted_chunks, &mut output);
 ```
 
-Complete runnable workflows are in [ntt_lookup.rs](examples/ntt_lookup.rs) and [fourier_lookup.rs](examples/fourier_lookup.rs). They generate independent LWE/NTRU secrets, encrypt six two-bit chunks, compile a table spanning 16 polynomials, reuse the evaluator and decode four output chunks. The Fourier example runs both RustFFT and TFHE-FFT. Parameters are functional fixtures; the examples evaluate `(x*x + 3*x + x/17 + 7) mod 256` on zero, mixed digits and the domain endpoint.
+Complete runnable workflows are in [ntt_lookup.rs](examples/ntt_lookup.rs) and [fourier_lookup.rs](examples/fourier_lookup.rs). They use n=800/N=1024 and eight two-bit chunks for both the 16-bit input and 16-bit result. Five low input chunks select coefficients; three high chunks select one of 64 candidate polynomials. The output chunk count remains independently configurable. Input `0b10_10_10_11_11_00_11_01` returns `0b10_00_01_01_10_01_01_11`, then zero returns 7, reusing the same evaluator and buffers.
+
+Both examples default to `type Word = u32`. For u64, change that alias; in the NTT example also replace the `U32NttTable as Table` import with `U64NttTable as Table`. The Fourier example selects RustFFT; use `TfheFftTable as Table` for TFHE-FFT. Rerun the same command after editing. Each file explicitly builds `TfheConfig` and `CircuitBootstrapConfig` in local `parameters()` and `circuit_config()` functions, showing dimensions, noise, word-specific bases, prime/native ring modulus and independent PowOf2 q=2^24; see the [arithmetic profiles](../../guides/development/tfhe-parameters.md).
 
 ```sh
-cargo run -p primus_tfhe_ntru_lut --example ntt_lookup
-cargo run -p primus_tfhe_ntru_lut --example fourier_lookup
+cargo run --release -p primus_tfhe_ntru_lut --example ntt_lookup
+cargo run --release -p primus_tfhe_ntru_lut --example fourier_lookup
 ```
 
 [evaluation.rs](tests/evaluation.rs) additionally exhausts small domains and checks storage reuse and rejection boundaries.
@@ -84,7 +90,7 @@ Table selection and rotation reuse the one-hot evaluator's external-product work
 
 Inputs inherit the [one-hot guard](../primus_tfhe_ntru/README.md#one-hot-cbs), including encryption, encoding and per-coordinate quantization errors. CBS and each selection/rotation external product introduce additional error; Fourier also uses native trace halving and FFT rounding. Public lifting must resolve the LUT scale. Shape checks and successful functional tests do not certify security, production parameters or failure probability.
 
-[Compilation tests](tests/lookup_table.rs) check partitioning and Rounded encoding with an integer oracle, padding and rejection boundaries. [Evaluation tests](tests/evaluation.rs) exhaust small domains, including 128 inputs with N=64, all default branches, later encrypted table layers, no table layer, full coefficient capacity and unequal input/output counts. They cover u64, Q≠q, radix 2/4, classic binary/ternary, NTT and both FFT backends, prewrite rejection and online zero allocation. Other word widths and larger parameters need separate numerical validation.
+[Compilation tests](tests/lookup_table.rs) check partitioning and Rounded encoding with an integer oracle, padding and rejection boundaries. [Evaluation tests](tests/evaluation.rs) enumerate tiny domains and select chunk/table boundaries in larger domains. They cover u32/u64, Q≠q, radix 2/4, classic binary/ternary, NTT and both FFT backends, all default branches, later encrypted table layers, no table layer, full coefficient capacity, unequal input/output counts, prewrite rejection and online zero allocation. Larger arithmetic profiles have a separate [validation entry](../../guides/development/tfhe-parameters.md#validation-and-observations).
 
 ```sh
 cargo test -p primus_tfhe_ntru_lut

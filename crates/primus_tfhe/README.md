@@ -167,7 +167,7 @@ Ordinary, interleaved and odd full-domain parameter compilers have two forms:
 | Default: `input_plaintext_codec()` | `compile_lookup_table_fn(function)` / `compile_lookup_table_slice(values)` | `decryptor.decrypt(output)` |
 | Explicit output codec | `compile_lookup_table_with_codec_fn(codec, function)` / `compile_lookup_table_with_codec_slice(codec, values)` | Decode `decrypt_phase(output)` with that codec |
 
-Interleaved and odd full-domain compilers follow the same naming rule. Default compilation borrows the prepared parameter codec; it does not construct another codec. The function's output range can be smaller than the plaintext modulus: `x % 4` can still use `t=16` encoding. Basic examples use this default workflow.
+Interleaved and odd full-domain compilers follow the same naming rule. Default compilation borrows the prepared parameter codec; it does not construct another codec. The function's output range can be smaller than the plaintext modulus: `x % 4` can still use `t=32` encoding. Basic examples use this default workflow.
 
 Explicit variants take `&RoundedCodec<T, M>` first. Input parameters still determine rotation centers and the input domain; the output codec sets `t_out`, validates `0..t_out` values and encodes them unsigned. Interleaved columns share one codec. Only that LUT's output encoding changes; parameters/context remain unchanged. The codec's ciphertext modulus must match the accumulator or compilation returns `OutputModulusMismatch`. Complete PBS chains require `q_in = q_acc = q_out`. MVB continues to require an explicit unsigned `ScaledCodec`.
 

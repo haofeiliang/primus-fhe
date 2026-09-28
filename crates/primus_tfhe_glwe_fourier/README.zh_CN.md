@@ -13,9 +13,21 @@
 cargo run -p primus_tfhe_glwe_fourier --release --example fourier_basic
 ```
 
-[basic 示例](examples/fourier_basic.rs)展示参数 → context → 配对密钥 → 客户端 → 单个 LUT → 复用 evaluator 和密文缓冲。它计算 `x % 4`，输入和输出均采用 `t=16` 编码，直接用 `decrypt` 解码。 `compile_lookup_table_fn(function)` 默认使用参数 codec；需要不同输出明文模数时，使用 `compile_lookup_table_with_codec_fn(&output_codec, function)`，见[选择输出编码](../primus_tfhe/README.zh_CN.md#选择输出编码)。 公钥加密通过 `context.public_encryptor(&public)` 创建客户端，见[家族说明](../primus_tfhe_glwe/README.zh_CN.md#客户端与-lut)。
+[basic 示例](examples/fourier_basic.rs)展示参数 → context → 配对密钥 → 客户端 → 单个 LUT → 复用 evaluator 和密文缓冲。它计算 `x % 4`，输入和输出均采用 `t=32` 编码，直接用 `decrypt` 解码。 `compile_lookup_table_fn(function)` 默认使用参数 codec；需要不同输出明文模数时，使用 `compile_lookup_table_with_codec_fn(&output_codec, function)`，见[选择输出编码](../primus_tfhe/README.zh_CN.md#选择输出编码)。 公钥加密通过 `context.public_encryptor(&public)` 创建客户端，见[家族说明](../primus_tfhe_glwe/README.zh_CN.md#客户端与-lut)。
+
+示例默认使用 u32；将 `type Word = u32` 改为 `u64`；需要 TFHE-FFT 时，将 `RustFftTable as Table` 导入改为 `TfheFftTable as Table`，随后执行同一运行命令。每个文件内的 `parameters()` 直接构造 `TfheConfig`，集中列出尺寸、模数类型、秘密分布、噪声和 BR/KS 分解；CBS 示例还用 `circuit_config()` 明确输出、trace 和 scheme-switch 的分解。Basic PBS 使用 n=866/N=2048，classic CBS 使用 n=800/N=1024，稀疏 PBS/CBS 和 MVB 使用 n=728/h=32/N=1024；数值选择见[参数矩阵](../../guides/development/tfhe-parameters.md)。每个示例只展示一个流程和复用同一组缓冲的两次请求。
 
 示例区分客户端加密、服务端求值与客户端解密，见[双方职责与缓冲分配](../primus_tfhe/README.zh_CN.md#客户端与服务端边界)。
+
+| 操作 | 完整示例 |
+| --- | --- |
+| Classic PBS | [basic](examples/fourier_basic.rs) |
+| Sparse PBS / 交错多输出 ManyLUT | [sparse](examples/fourier_sparse.rs)；`SPARSE=false` 切换 classic ManyLUT |
+| Classic CBS → CMux | [circuit_bootstrap](examples/fourier_circuit_bootstrap.rs) |
+| Sparse CBS → CMux | [sparse_circuit_bootstrap](examples/fourier_sparse_circuit_bootstrap.rs) |
+| 分解式 MVB | [thresholds](examples/fourier_mvb_thresholds.rs)；`SPARSE=true` 切换 sparse MVB |
+
+ManyLUT 通过交错共享一次盲旋转；分解式 MVB 通过公共因子生成多输出，是不同的求值接口。
 
 ## 参数与表示
 
@@ -23,7 +35,7 @@ cargo run -p primus_tfhe_glwe_fourier --release --example fourier_basic
 
 `RustFftTable` 和 `TfheFftTable` 均支持 u32/u64。变换域密钥、数据和 evaluator 必须使用同一个 FFT 表实例，长度相同不能证明表示一致。
 
-`PbsOrder::BootstrapKeyswitch` 的外部维数为 n，`KeyswitchBootstrap` 为 dN。 用 `context.allocate_lwe_ciphertext()` 按当前 order 分配。 Basic 示例在两种 order 下使用 ternary 输入秘密。
+`PbsOrder::BootstrapKeyswitch` 的外部维数为 n，`KeyswitchBootstrap` 为 dN。 用 `context.allocate_lwe_ciphertext()` 按当前 order 分配。 Basic 示例使用 binary 秘密和 `BootstrapKeyswitch`；修改 `ORDER` 常量即可选择 `KeyswitchBootstrap`。
 
 ## 复用 evaluator
 
@@ -60,7 +72,7 @@ let mut evaluator = context.evaluator(&server)?;
 
 `context.try_generate_keys(Some(cbs_config), &mut rng)` 生成配对材料， `ServerKey` 持有附加参数及 trace/scheme-switch 密钥。 调用 `context.circuit_bootstrap_evaluator(&server)` 或消费普通 evaluator。 经典密钥若使用 `None` 生成，CBS 绑定返回 `MissingCircuitBootstrapKey`。 使用 `allocate_output`、`circuit_bootstrap_to` 和 `cmux_to`； [CBS → CMUX 示例](examples/fourier_circuit_bootstrap.rs)展示完整消费链。
 
-示例使用经典密钥展示两种 order，复用 LWE 输入、GGSW 控制与 GLWE 选择结果缓冲。 稀疏 CBS 沿用[实验性稀疏 PBS](#实验性稀疏-pbs)中的显式密钥生成流程， 将 `None` 改为 `Some(cbs_config)`，再创建 `context.circuit_bootstrap_evaluator(&server)`。 CBS 与 CMUX 调用方式相同。
+[稀疏 CBS 示例](examples/fourier_sparse_circuit_bootstrap.rs)直接展示固定重量秘密、稀疏密钥生成与 CBS 参数。两种 PBS 顺序都支持；后面的 CBS 与 CMux 调用方式相同。
 
 输出为 accumulator 秘密下的 `FourierGgsw`。密钥绑定输出布局及 trace/scheme-switch basis； 高级 `try_from_parts` 可以传入层数相同的另一输出 basis。 须对最小输出 gadget 尺度预算 Native trace halving 和 FFT 误差。
 

@@ -1,98 +1,144 @@
-//! Independent LWE chunks -> public LUT -> reusable server evaluator -> LWE chunks.
-//! Small fixed-seed functional parameters, not a production security parameter set.
+//! Evaluate (x*x + 3*x + 7) mod 65536 on eight two-bit chunks: 16-bit input and output.
+//!
+//! Run: `cargo run --release -p primus_tfhe_ntru_lut --example ntt_lookup`
+//! For u64, change Word to u64 and U32NttTable to U64NttTable.
+//! Arithmetic profiles: guides/development/tfhe-parameters.md (not security presets).
 
 use primus_lwe::LweParameters;
 use primus_modulus::{BarrettModulus, PowOf2Modulus};
 use primus_ntru::SecretKeyDistr;
-use primus_ntt::U64NttTable;
-use primus_tfhe_ntru::{CircuitBootstrapConfig, DecompositionConfig, TfheConfig, TfheParameters};
+use primus_ntt::U32NttTable as Table;
 use primus_tfhe_ntru_lut::{HighPrecisionLookupTable, LookupTableConfig, NttLookupTableEvaluator};
-use primus_tfhe_ntru_ntt::TfheContext;
+use primus_tfhe_ntru_ntt::{
+    CircuitBootstrapConfig, DecompositionConfig, TfheConfig, TfheContext, TfheParameters,
+};
 use rand::{SeedableRng, rngs::StdRng};
 
-// Six base-4 inputs cover 4096 values, exceeding the 256-coefficient ring.
-// Four low chunks choose a coefficient; two high chunks choose among 16 tables.
+// The explicit parameters below select bases and moduli for this coefficient word.
+type Word = u32;
+const N: usize = 1024;
+
+// M=4: eight input chunks represent 16 bits. Five low chunks fill N=1024
+// coefficients; three high chunks select among 64 polynomials per output chunk.
 const CONFIG: LookupTableConfig = LookupTableConfig {
-    input_chunk_count: 6,
-    output_chunk_count: 4,
-    coefficient_chunk_count: 4,
+    input_chunk_count: 8,
+    output_chunk_count: 8,
+    coefficient_chunk_count: 5,
 };
 const CHUNK_BITS: usize = 2;
+const INPUT_BITS: usize = CHUNK_BITS * CONFIG.input_chunk_count;
+const OUTPUT_BITS: usize = CHUNK_BITS * CONFIG.output_chunk_count;
 
-// Return eight low bits, split into four output chunks independently of input count.
+// Return 16 bits and retain dependence on the high input chunks. Input and output
+// chunk counts are independent; this example chooses eight for both.
 fn function(x: usize) -> usize {
-    (x * x + 3 * x + x / 17 + 7) & 255
+    // The cleartext polynomial can exceed u32 even for a 16-bit input.
+    let x = x as u64;
+    ((x * x + 3 * x + 7) % (1u64 << OUTPUT_BITS)) as usize
 }
 
-fn main() {
-    let backend = "NTT";
+// Public parameters: n=800, N=1024, t=8; independent external LWE q=2^24.
+// Noise sigmas below are in coefficient units; these are arithmetic examples, not security presets.
+fn parameters() -> TfheParameters<Word, PowOf2Modulus<Word>> {
+    // NTT requires a prime admitting a 2N-th root, rather than a power-of-two modulus.
+    let ring_modulus = if Word::BITS == 32 {
+        998_244_353
+    } else {
+        1_125_899_906_826_241u64
+    } as Word;
+    let modulus = BarrettModulus::new(ring_modulus);
+    let lwe_modulus: Word = 1 << 24;
+
+    // None retains floor(modulus_bits / log_basis) levels; it need not cover every low bit.
     let full = DecompositionConfig {
-        log_basis: 8,
+        log_basis: if Word::BITS == 32 { 2 } else { 8 },
         level_count: None,
     };
-    let parameters = TfheParameters::try_from_config(TfheConfig {
+
+    TfheParameters::try_from_config(TfheConfig {
         external_lwe: LweParameters::new(
-            16,
-            8,
-            PowOf2Modulus::new(1u64 << 24),
+            800,
+            8, // Padded inputs occupy 0..4.
+            PowOf2Modulus::new(lwe_modulus),
             SecretKeyDistr::UniformBinary,
-            0.7,
+            lwe_modulus as f64 * 2.046151696979124e-6,
         ),
-        accumulator_modulus: BarrettModulus::new(1_125_899_906_826_241u64),
-        poly_length: 256,
+        accumulator_modulus: modulus, // Ring Q; distinct from the external LWE q.
+        poly_length: N,
         accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,
         accumulator_noise_standard_deviation: 0.7,
         blind_rotation: full,
-        key_switching: full,
-        key_switching_noise_standard_deviation: 0.7,
+        key_switching: DecompositionConfig {
+            log_basis: 3,
+            level_count: None,
+        },
+        key_switching_noise_standard_deviation: 3.2, // Return key switch in the q domain.
     })
-    .unwrap();
-    let context = TfheContext::<_, U64NttTable, _>::try_from_parameters(parameters).unwrap();
-    let mut rng = StdRng::seed_from_u64(0x0048_504c_5554);
-    // Client owns independent s (LWE at q) and f (NTRU at Q). Generate the server
-    // material from this same pair; only f undergoes ring invertibility screening.
-    let (client, server) = context
-        .try_generate_keys(
-            Some(CircuitBootstrapConfig {
-                output: DecompositionConfig {
-                    log_basis: 8,
-                    level_count: Some(3),
-                },
-                trace: full,
-                trace_noise_standard_deviation: 0.7,
-                scheme_switch: full,
-                scheme_switch_noise_standard_deviation: 0.7,
-            }),
-            &mut rng,
-        )
-        .unwrap();
-    let encryptor = context.encryptor(&client).unwrap();
-    let decryptor = context.decryptor(&client).unwrap();
+    .unwrap()
+}
 
-    // Public server setup: callback receives the complete input and requested
-    // output chunk. Evaluation borrows only context, server key and compiled LUT.
-    let table = HighPrecisionLookupTable::try_new(context.parameters(), CONFIG, |x, output| {
-        ((function(x) >> (CHUNK_BITS * output)) & 3) as u64
-    })
-    .unwrap();
-    let mut evaluator = NttLookupTableEvaluator::try_new(&context, &server, &table).unwrap();
+// CBS emits a gadget ciphertext; its output basis is separate from the two evaluation-key bases.
+fn circuit_config() -> CircuitBootstrapConfig {
+    let internal = DecompositionConfig {
+        log_basis: if Word::BITS == 32 { 2 } else { 8 },
+        level_count: None,
+    };
+    CircuitBootstrapConfig {
+        output: DecompositionConfig {
+            log_basis: if Word::BITS == 32 { 3 } else { 8 },
+            level_count: Some(if Word::BITS == 32 { 4 } else { 3 }),
+        },
+        trace: internal,
+        trace_noise_standard_deviation: 0.7,
+        scheme_switch: internal,
+        scheme_switch_noise_standard_deviation: 0.7,
+    }
+}
+
+fn main() {
+    println!("f(x) = (x*x + 3*x + 7) mod {}", 1u64 << OUTPUT_BITS);
+    println!("Input: {INPUT_BITS} bits; output: {OUTPUT_BITS} bits");
+
+    let parameters = parameters();
+    let context = TfheContext::<Word, Table, _>::try_from_parameters(parameters).unwrap();
+
+    // Client: generate independent LWE/NTRU secrets plus CBS-enabled server material.
+    let mut rng = StdRng::seed_from_u64(42);
+    let (client_key, server_key) = context
+        .try_generate_keys(Some(circuit_config()), &mut rng)
+        .unwrap();
+    let encryptor = context.encryptor(&client_key).unwrap();
+    let decryptor = context.decryptor(&client_key).unwrap();
     let mut input: Vec<_> = (0..CONFIG.input_chunk_count)
         .map(|_| context.allocate_lwe_ciphertext())
         .collect();
+
+    // Server: the public callback returns one output digit for a complete input x.
+    let table = HighPrecisionLookupTable::try_new(context.parameters(), CONFIG, |x, output| {
+        ((function(x) >> (CHUNK_BITS * output)) & 3) as Word
+    })
+    .unwrap();
+    let mut evaluator = NttLookupTableEvaluator::try_new(&context, &server_key, &table).unwrap();
     let mut output = evaluator.allocate_output();
-    for x in [0, 1, 0x123, 4095, 0] {
-        // Client decomposes before encryption; chunks are least-significant first.
+
+    // Eight two-bit chunks, written most-significant first.
+    for x in [0b10_10_10_11_11_00_11_01, 0] {
+        // Client -> server: split before encryption, least-significant chunk first.
         for (i, chunk) in input.iter_mut().enumerate() {
-            encryptor
-                .encrypt_padded_to(((x >> (CHUNK_BITS * i)) & 3) as u64, chunk, &mut rng)
-                .unwrap();
+            let digit = ((x >> (CHUNK_BITS * i)) & 3) as Word;
+            encryptor.encrypt_padded_to(digit, chunk, &mut rng).unwrap();
         }
-        // Same table, evaluation workspace and output buffers serve every request.
+
+        // Server -> client: select, rotate and return encrypted output chunks.
         evaluator.evaluate_to(&input, &mut output);
-        let result = output.iter().enumerate().fold(0usize, |value, (i, chunk)| {
-            value | ((decryptor.decrypt(chunk).unwrap() as usize) << (CHUNK_BITS * i))
-        });
+
+        // Client: decode and join chunks in the same least-significant-first order.
+        let mut result = 0usize;
+        for (i, chunk) in output.iter().enumerate() {
+            let digit = decryptor.decrypt(chunk).unwrap() as usize;
+            result |= digit << (CHUNK_BITS * i);
+        }
         assert_eq!(result, function(x));
-        println!("{backend}: f({x}) = {result}");
+        println!("f({x}) = {result}");
     }
 }

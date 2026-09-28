@@ -50,7 +50,7 @@ CBS is an optional facility in both backends, with separate output basis, trace/
 
 ## Examples
 
-Backend basic examples show both PBS orders, default encoding and reusable ordinary PBS storage. Independent output encoding is explained in the shared guide. MVB and CBS have dedicated examples; Boolean usage is in the [shared guide](../primus_tfhe/README.md#boolean-gates). All fixtures are for development, not production recommendations.
+Backend basic examples show default encoding and reusable ordinary PBS storage; select the PBS order with their `ORDER` constant. Independent output encoding is explained in the shared guide. MVB and CBS have dedicated examples; Boolean usage is in the [shared guide](../primus_tfhe/README.md#boolean-gates). All fixtures are for development, not production recommendations.
 
 ## Further reading
 

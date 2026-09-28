@@ -167,7 +167,7 @@ Raw 构造器 `LookupTable::try_new` / `InterleavedLookupTable::try_new` 显式�
 | 默认：`input_plaintext_codec()` | `compile_lookup_table_fn(function)` / `compile_lookup_table_slice(values)` | `decryptor.decrypt(output)` |
 | 显式指定输出 codec | `compile_lookup_table_with_codec_fn(codec, function)` / `compile_lookup_table_with_codec_slice(codec, values)` | 用该 codec 解码 `decrypt_phase(output)` |
 
-交错和奇数全域方法采用同一命名规则。默认入口借用参数中已准备的 codec，不重新构造。 函数输出范围可以小于明文模数，例如 `x % 4` 仍可采用 `t=16` 编码；basic 示例使用这个默认流程。
+交错和奇数全域方法采用同一命名规则。默认入口借用参数中已准备的 codec，不重新构造。 函数输出范围可以小于明文模数，例如 `x % 4` 仍可采用 `t=32` 编码；basic 示例使用这个默认流程。
 
 显式版本以 `&RoundedCodec<T, M>` 为第一个参数。输入参数仍决定旋转中心与输入域； 输出 codec 决定 `t_out`，检查输出位于 `0..t_out`，并按 unsigned embedding 编码。 交错 LUT 的各列共用这个 codec；它只改变本次 LUT 的输出编码，不修改 parameters/context。 其密文模数必须与 accumulator 一致，否则返回 `OutputModulusMismatch`。 完整 PBS 链仍要求 `q_in = q_acc = q_out`。MVB 继续显式使用 unsigned `ScaledCodec`。
 

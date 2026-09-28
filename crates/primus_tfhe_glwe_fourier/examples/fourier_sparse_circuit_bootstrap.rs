@@ -1,33 +1,29 @@
-//! Use an encrypted LWE bit to select between two encrypted ring messages via CBS and CMux.
+//! Use an encrypted LWE bit to select between two encrypted ring messages via sparse CBS and CMux.
 //!
-//! Run: `cargo run --release -p primus_tfhe_ntru_ntt --example ntru_ntt_circuit_bootstrap`
-//! For u64, change Word to u64 and U32NttTable to U64NttTable.
+//! Run: `cargo run --release -p primus_tfhe_glwe_fourier --example fourier_sparse_circuit_bootstrap`
+//! For u64, change Word to u64; for TFHE-FFT, use TfheFftTable as Table.
 //! Arithmetic profiles: guides/development/tfhe-parameters.md (not security presets).
 
+use primus_fft::RustFftTable as Table;
+use primus_glwe::SecretKeyDistr;
 use primus_lwe::LweParameters;
-use primus_modulus::{BarrettModulus, PowOf2Modulus};
-use primus_ntru::SecretKeyDistr;
-use primus_ntt::U32NttTable as Table;
-use primus_tfhe_ntru_ntt::{
-    CircuitBootstrapConfig, DecompositionConfig, TfheConfig, TfheContext, TfheParameters,
+use primus_modulus::NativeModulus;
+use primus_tfhe_glwe_fourier::{
+    CircuitBootstrapConfig, ClientKey, DecompositionConfig, KeyGenerator, PbsOrder, TfheConfig,
+    TfheContext, TfheParameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
 
 // The explicit parameters below select bases and moduli for this coefficient word.
 type Word = u32;
 const N: usize = 1024;
+const ORDER: PbsOrder = PbsOrder::BootstrapKeyswitch;
 
-// Public parameters: n=800, N=1024, t=4; independent external LWE q=2^24.
+// Public parameters: n=728, N=1024, t=4; LWE and GLWE share the ciphertext modulus.
 // Noise sigmas below are in coefficient units; these are arithmetic examples, not security presets.
-fn parameters() -> TfheParameters<Word, PowOf2Modulus<Word>> {
-    // NTT requires a prime admitting a 2N-th root, rather than a power-of-two modulus.
-    let ring_modulus = if Word::BITS == 32 {
-        998_244_353
-    } else {
-        1_125_899_906_826_241u64
-    } as Word;
-    let modulus = BarrettModulus::new(ring_modulus);
-    let lwe_modulus: Word = 1 << 24;
+fn parameters() -> TfheParameters<Word> {
+    let modulus = NativeModulus::<Word>::new();
+    let q = 2f64.powi(Word::BITS as i32);
 
     // None retains floor(modulus_bits / log_basis) levels; it need not cover every low bit.
     let full = DecompositionConfig {
@@ -36,23 +32,20 @@ fn parameters() -> TfheParameters<Word, PowOf2Modulus<Word>> {
     };
 
     TfheParameters::try_from_config(TfheConfig {
-        external_lwe: LweParameters::new(
-            800,
+        small_lwe: LweParameters::new(
+            728,
             4, // Padded inputs occupy 0..2.
-            PowOf2Modulus::new(lwe_modulus),
-            SecretKeyDistr::UniformBinary,
-            lwe_modulus as f64 * 2.046151696979124e-6,
+            modulus,
+            SecretKeyDistr::fixed_hamming_weight_binary(728, 32),
+            3.2 * q / 16384.0,
         ),
-        accumulator_modulus: modulus, // Ring Q; distinct from the external LWE q.
+        accumulator_dimension: 1,
         poly_length: N,
         accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,
-        accumulator_noise_standard_deviation: 0.7,
+        accumulator_noise_standard_deviation: 6.4,
         blind_rotation: full,
-        key_switching: DecompositionConfig {
-            log_basis: 3,
-            level_count: None,
-        },
-        key_switching_noise_standard_deviation: 3.2, // Return key switch in the q domain.
+        key_switching: full,
+        pbs_order: ORDER,
     })
     .unwrap()
 }
@@ -66,23 +59,26 @@ fn circuit_config() -> CircuitBootstrapConfig {
     CircuitBootstrapConfig {
         output: DecompositionConfig {
             log_basis: if Word::BITS == 32 { 3 } else { 8 },
-            level_count: Some(if Word::BITS == 32 { 4 } else { 3 }),
+            level_count: Some(if Word::BITS == 32 { 3 } else { 2 }),
         },
         trace: internal,
-        trace_noise_standard_deviation: 0.7,
+        trace_noise_standard_deviation: 6.4,
         scheme_switch: internal,
-        scheme_switch_noise_standard_deviation: 0.7,
+        scheme_switch_noise_standard_deviation: 6.4,
     }
 }
 
 fn main() {
     let parameters = parameters();
-    let context = TfheContext::<Word, Table, _>::try_from_parameters(parameters).unwrap();
+    let context = TfheContext::<Word, Table>::try_from_parameters(parameters).unwrap();
 
     // Client: generate CBS material with the paired keys; send server_key only.
     let mut rng = StdRng::seed_from_u64(42);
-    let (client_key, server_key) = context
-        .try_generate_keys(Some(circuit_config()), &mut rng)
+    let client_key = ClientKey::generate(context.parameters(), &mut rng);
+    let mut generator = KeyGenerator::new(&context);
+    // Sparse CBS uses three copies and 64 buckets for the fixed-weight LWE secret.
+    let server_key = generator
+        .try_generate_sparse_server_key(&client_key, 3, 64, Some(circuit_config()), &mut rng)
         .unwrap();
     let encryptor = context.encryptor(&client_key).unwrap();
     let mut ring_client = context.accumulator_client(&client_key).unwrap();

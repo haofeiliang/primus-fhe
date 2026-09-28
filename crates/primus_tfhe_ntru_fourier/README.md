@@ -13,9 +13,22 @@ NTRU-based TFHE with the native torus. Start with the [task and encoding guide](
 cargo run -p primus_tfhe_ntru_fourier --release --example ntru_fourier_basic
 ```
 
-The [basic example](examples/ntru_fourier_basic.rs) shows parameters → context → paired keys → clients → one compiled LUT → reused evaluator and ciphertext buffers. It computes `x % 4`, keeping `t=16` encoding for both input and output, and decodes with `decrypt`. `compile_lookup_table_fn(function)` defaults to the parameter codec. For a different output plaintext modulus, use `compile_lookup_table_with_codec_fn(&output_codec, function)`; see [choosing the output encoding](../primus_tfhe/README.md#choosing-the-output-encoding). Public-key encryption starts with `context.public_encryptor(&public)`; see the [family guide](../primus_tfhe_ntru/README.md#clients-and-luts). The example uses external `q=2^20`, distinct from ring `Q`: LUT compilation is at `Q` and the returned LWE is at `q`.
+The [basic example](examples/ntru_fourier_basic.rs) shows parameters → context → paired keys → clients → one compiled LUT → reused evaluator and ciphertext buffers. It computes `x % 4`, keeping `t=32` encoding for both input and output, and decodes with `decrypt`. `compile_lookup_table_fn(function)` defaults to the parameter codec. For a different output plaintext modulus, use `compile_lookup_table_with_codec_fn(&output_codec, function)`; see [choosing the output encoding](../primus_tfhe/README.md#choosing-the-output-encoding). Public-key encryption starts with `context.public_encryptor(&public)`; see the [family guide](../primus_tfhe_ntru/README.md#clients-and-luts). The example uses external `q=2^24`, distinct from ring `Q`: LUT compilation is at `Q` and the returned LWE is at `q`.
+
+Examples default to u32; change `type Word = u32` to `u64`; select TFHE-FFT by replacing the `RustFftTable as Table` import with `TfheFftTable as Table`. Rerun the same command after the edit. Each file defines its own `parameters()` using an explicit `TfheConfig`: dimensions, modulus types, secret distributions, noise and BR/KS decompositions are visible together. CBS examples also define `circuit_config()` for the output, trace and scheme-switch bases. Basic PBS uses n=866/N=2048; CBS uses n=800/N=1024; MVB and sparse PBS use n=728/h=32/N=1024. See the [arithmetic profiles](../../guides/development/tfhe-parameters.md) for the numerical choices. Each example shows one workflow and two requests using the same buffers.
 
 Examples separate client encryption, server evaluation and client decryption; see [client/server roles and buffer allocation](../primus_tfhe/README.md#client-and-server-roles).
+
+| Operation | Complete example |
+| --- | --- |
+| Classic PBS | [basic](examples/ntru_fourier_basic.rs) |
+| Sparse PBS / interleaved ManyLUT | [sparse](examples/ntru_fourier_sparse.rs); `SPARSE=false` selects classic ManyLUT |
+| Classic CBS → CMux | [circuit_bootstrap](examples/ntru_fourier_circuit_bootstrap.rs) |
+| Factorized MVB | [thresholds](examples/ntru_fourier_mvb_thresholds.rs) |
+| One-hot CBS → CMux | [one_hot](examples/ntru_fourier_one_hot.rs) |
+| High-precision lookup | [lookup](../primus_tfhe_ntru_lut/examples/fourier_lookup.rs) |
+
+ManyLUT interleaves outputs within one blind rotation; factorized MVB uses public factors and a different evaluation interface. NTRU sparse supports ordinary/interleaved PBS, but not CBS, one-hot or factorized MVB.
 
 ## Parameters and representation
 
@@ -71,6 +84,8 @@ The output is `FourierNgswCiphertext` under `f_acc`. The circuit key binds the c
 Standalone component generation must use paired secrets and the same transform representation; shape checks cannot prove identity. See [CBS input/output and consumption](../primus_tfhe/README.md#cbs-output-and-consumption) and the [family CBS contract](../primus_tfhe_ntru/README.md#cbs-and-examples).
 
 ## One-hot CBS
+
+The [one-hot example](examples/ntru_fourier_one_hot.rs) generates four selectors from a two-bit input and consumes `delta_2` in a CMux. Change the public `TARGET` index to select another r.
 
 `OneHotCircuitBootstrapEvaluator::try_new(&context, &server)` binds existing CBS keys for one chunk. Full-output methods include the default selector r=0. Use `try_from_bootstrapper` to reuse PBS workspace, `bootstrapper_mut()` to borrow ordinary PBS, and `into_bootstrapper()` to recover it. Classic binary/ternary keys are supported; sparse keys and missing CBS material are rejected. Ordinary CBS interfaces are unchanged.
 

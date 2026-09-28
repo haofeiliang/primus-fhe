@@ -5,7 +5,7 @@
 //! cargo bench -p primus_tfhe_glwe_fourier --bench circuit_bootstrap
 //! cargo +nightly bench -p primus_tfhe_glwe_fourier --bench circuit_bootstrap --features simd
 
-#[path = "../examples/support/circuit_bootstrap.rs"]
+#[path = "support/circuit_bootstrap.rs"]
 mod profile;
 
 use criterion::{Criterion, SamplingMode, criterion_group, criterion_main};

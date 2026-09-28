@@ -13,9 +13,21 @@ GLWE-based TFHE with an explicit field modulus. Start with the [task and encodin
 cargo run -p primus_tfhe_glwe_ntt --release --example ntt_basic
 ```
 
-The [basic example](examples/ntt_basic.rs) shows parameters → context → paired keys → clients → one compiled LUT → reused evaluator and ciphertext buffers. It computes `x % 4`, keeping `t=16` encoding for both input and output, and decodes with `decrypt`. `compile_lookup_table_fn(function)` defaults to the parameter codec. For a different output plaintext modulus, use `compile_lookup_table_with_codec_fn(&output_codec, function)`; see [choosing the output encoding](../primus_tfhe/README.md#choosing-the-output-encoding). Public-key encryption starts with `context.public_encryptor(&public)`; see the [family guide](../primus_tfhe_glwe/README.md#clients-and-luts).
+The [basic example](examples/ntt_basic.rs) shows parameters → context → paired keys → clients → one compiled LUT → reused evaluator and ciphertext buffers. It computes `x % 4`, keeping `t=32` encoding for both input and output, and decodes with `decrypt`. `compile_lookup_table_fn(function)` defaults to the parameter codec. For a different output plaintext modulus, use `compile_lookup_table_with_codec_fn(&output_codec, function)`; see [choosing the output encoding](../primus_tfhe/README.md#choosing-the-output-encoding). Public-key encryption starts with `context.public_encryptor(&public)`; see the [family guide](../primus_tfhe_glwe/README.md#clients-and-luts).
+
+Examples default to u32; change `type Word = u32` to `u64` and the `Table` import from `U32NttTable` to `U64NttTable`. Rerun the same command after the edit. Each file defines its own `parameters()` using an explicit `TfheConfig`: dimensions, modulus types, secret distributions, noise and BR/KS decompositions are visible together. CBS examples also define `circuit_config()` for the output, trace and scheme-switch bases. Basic PBS uses n=866/N=2048; classic CBS uses n=800/N=1024; sparse PBS/CBS and MVB use n=728/h=32/N=1024. See the [arithmetic profiles](../../guides/development/tfhe-parameters.md) for the numerical choices. Each example shows one workflow and two requests using the same buffers.
 
 Examples separate client encryption, server evaluation and client decryption; see [client/server roles and buffer allocation](../primus_tfhe/README.md#client-and-server-roles).
+
+| Operation | Complete example |
+| --- | --- |
+| Classic PBS | [basic](examples/ntt_basic.rs) |
+| Sparse PBS / interleaved ManyLUT | [sparse](examples/ntt_sparse.rs); `SPARSE=false` selects classic ManyLUT |
+| Classic CBS → CMux | [circuit_bootstrap](examples/ntt_circuit_bootstrap.rs) |
+| Sparse CBS → CMux | [sparse_circuit_bootstrap](examples/ntt_sparse_circuit_bootstrap.rs) |
+| Factorized MVB | [thresholds](examples/mvb_thresholds.rs); `SPARSE=true` selects sparse MVB |
+
+ManyLUT interleaves outputs within one blind rotation; factorized MVB uses public factors and a different evaluation interface.
 
 ## Parameters and representation
 
@@ -23,7 +35,7 @@ Examples separate client encryption, server evaluation and client decryption; se
 
 NTT tables must implement `MonomialNttTable`; built-in tables support it. Context construction checks length and modulus. All transformed keys/values must follow the supplied table's representation.
 
-Choose `PbsOrder::BootstrapKeyswitch` for external dimension n or `KeyswitchBootstrap` for dimension dN. Use `context.allocate_lwe_ciphertext()` to allocate the selected layout. The basic example runs both orders with ternary input secrets.
+Choose `PbsOrder::BootstrapKeyswitch` for external dimension n or `KeyswitchBootstrap` for dimension dN. Use `context.allocate_lwe_ciphertext()` to allocate the selected layout. The basic example selects binary secrets and `BootstrapKeyswitch`; change its `ORDER` constant to use `KeyswitchBootstrap`.
 
 ## Reusing evaluators
 
@@ -60,7 +72,7 @@ Matching retries at most eight public maps with the fixed client; it never resam
 
 Generate paired material with `context.try_generate_keys(Some(cbs_config), &mut rng)`; `ServerKey` owns the additional parameters and trace/scheme-switch keys. Create `context.circuit_bootstrap_evaluator(&server)` or consume ordinary workspace as above. With a classic key generated using `None`, binding CBS returns `MissingCircuitBootstrapKey`. Use `allocate_output`, `circuit_bootstrap_to` and `cmux_to`; the [CBS → CMUX example](examples/ntt_circuit_bootstrap.rs) shows their complete consumption chain.
 
-The example uses classic keys. For sparse CBS, follow [Experimental sparse PBS](#experimental-sparse-pbs), passing `Some(cbs_config)` instead of `None`, then create `context.circuit_bootstrap_evaluator(&server)`. The CBS and CMUX calls are the same; both orders support classic and sparse keys.
+The [sparse CBS example](examples/ntt_sparse_circuit_bootstrap.rs) shows the fixed-weight secret, sparse key generation and CBS configuration together. Both PBS orders work; subsequent CBS and CMux calls are identical.
 
 The output is `NttGgsw` under the accumulator secret. The key binds output layout and trace/scheme-switch bases; advanced `try_from_parts` can use another output basis with the same level count.
 

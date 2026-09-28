@@ -1,4 +1,4 @@
-//! Shared arithmetic profile for the CBS example and cost benchmark.
+//! Arithmetic profile for the CBS cost benchmark.
 //! These parameters have no production security or failure-rate assessment.
 
 use primus_fft::FftTable;
