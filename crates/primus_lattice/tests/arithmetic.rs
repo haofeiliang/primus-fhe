@@ -1,4 +1,4 @@
-//! Single-modulus arithmetic: borrowed outputs, allocation reuse, and fused products.
+//! Single-modulus arithmetic: borrowed outputs and fused product semantics.
 
 use primus_factor::ShoupFactor;
 use primus_lattice::lwe::Lwe;
@@ -24,28 +24,16 @@ fn borrowed_lwe_arithmetic_overwrites_output_across_modulus_boundary() {
 }
 
 #[test]
-fn consuming_negation_reuses_owned_and_borrowed_storage() {
-    let modulus = BarrettModulus::new(97u32);
-    let ciphertext = Lwe::new(vec![0, 96, 45]);
-    let original_pointer = ciphertext.as_ref().as_ptr();
-    let ciphertext = ciphertext.neg(modulus);
-    assert_eq!(ciphertext.as_ref().as_ptr(), original_pointer);
-    assert_eq!(ciphertext.as_ref(), &[0, 1, 52]);
-
-    let mut storage = [0, 96, 45];
-    let ciphertext = Lwe::new(storage.as_mut_slice()).neg(modulus);
-    assert_eq!(ciphertext.as_ref(), &[0, 1, 52]);
-    assert_eq!(storage, [0, 1, 52]);
-}
-
-#[test]
 fn scalar_and_factor_products_preserve_overwrite_and_accumulation_semantics() {
     const Q: u32 = 97;
     // Flat arithmetic is shared by the wrappers; an odd length also exercises SIMD tails.
     let values: Vec<u32> = (0..65).map(|i| i as u32 * 31 % Q).collect();
     let input = Lwe::new(values.as_slice());
-    let mut storage = vec![11; values.len()];
-    let mut output = Lwe::new(storage.as_mut_slice());
+    // Offset the output within aligned backing storage: kernels may not assume
+    // caller-provided slices share the alignment of workspace-owned buffers.
+    let mut storage = aligned_vec::avec![u32::MAX; values.len() + 2];
+    let mut output = Lwe::new(&mut storage[1..=values.len()]);
+    let acc: Vec<_> = (0..values.len()).map(|i| (i as u32 * 7 + 11) % Q).collect();
     for scalar in [0, 3, Q - 1] {
         let factor = ShoupFactor::new(scalar, Q);
         let expected: Vec<_> = values.iter().map(|x| x * scalar % Q).collect();
@@ -55,7 +43,6 @@ fn scalar_and_factor_products_preserve_overwrite_and_accumulation_semantics() {
         output.as_mut().copy_from_slice(&values);
         output.mul_factor_assign(factor, Q);
         assert_eq!(output.as_ref(), expected);
-        let acc: Vec<_> = (0..values.len()).map(|i| (i as u32 * 7 + 11) % Q).collect();
         output.as_mut().copy_from_slice(&acc);
         output.add_mul_factor_assign(&input, factor, Q);
         let sum: Vec<_> = acc
@@ -86,4 +73,5 @@ fn scalar_and_factor_products_preserve_overwrite_and_accumulation_semantics() {
         output.sub_mul_scalar_assign(&input, scalar, modulus);
         assert_eq!(output.as_ref(), difference);
     }
+    assert_eq!([storage[0], storage[values.len() + 1]], [u32::MAX; 2]);
 }

@@ -11,6 +11,7 @@ use primus_reduce::{ReduceDotProduct, ReduceSub};
 
 #[test]
 fn indexed_extraction_matches_negacyclic_rotation_and_compact_prefix() {
+    // Hand-written samples fix both mask-polynomial order and negacyclic signs.
     let glwe = Glwe(vec![
         1u32, 2, 3, 4, // first mask
         5, 6, 7, 8, // second mask
@@ -42,6 +43,7 @@ fn indexed_extraction_matches_negacyclic_rotation_and_compact_prefix() {
 
 #[test]
 fn inverse_extraction_is_the_exact_inverse_of_sample_extraction() {
+    // Full mask blocks use native wrapping; dirty body slots must be cleared.
     let lwe = Lwe(vec![1u32, 2, 3, 4, 5, 6, 7, 8, 9]);
     let mut glwe = Glwe(vec![u32::MAX; 12]);
 
@@ -59,6 +61,8 @@ fn inverse_extraction_is_the_exact_inverse_of_sample_extraction() {
 
 #[test]
 fn inverse_extraction_round_trips_with_an_explicit_modulus() {
+    // A partial final mask additionally requires zero padding. Explicit q
+    // has different negation semantics from the native case above.
     let modulus = BarrettModulus::new(257u32);
     let lwe = Lwe(vec![1u32, 2, 128, 256, 5, 17, 42]);
     let mut glwe = Glwe::new(vec![u32::MAX; 12]);
@@ -74,6 +78,8 @@ fn inverse_extraction_round_trips_with_an_explicit_modulus() {
 
 #[test]
 fn indexed_extraction_preserves_ntru_and_dimension_one_glwe_phases() {
+    // Integer convolution fixes phase signs independently: NTRU uses c*f,
+    // whereas GLWE uses b-a*s. A zero secret suffix permits compact extraction.
     const Q: u32 = 97;
     let modulus = BarrettModulus::new(Q);
     let ntru = Ntru::new(vec![13u32, 21, 34, 55, 8, 19, 27, 41]);
@@ -132,6 +138,7 @@ fn indexed_extraction_preserves_ntru_and_dimension_one_glwe_phases() {
 #[test]
 #[should_panic(expected = "packed multi-message LWE extraction requires GLWE dimension 1")]
 fn packed_extraction_rejects_multiple_glwe_masks() {
+    // Packed extraction owns its layout boundary and supports exactly one mask.
     let ciphertext = TruncatedGlwe::new(vec![1u32, 2, 3, 4, 5, 6, 7, 8, 10, 20]);
     let _ = ciphertext.into_multi_msg_lwe(2, GlweSize::new(2, 4), NativeModulus::new());
 }
@@ -146,6 +153,8 @@ fn packed_and_consuming_extraction_match_individual_samples() {
     let truncated = TruncatedGlwe(ciphertext.as_ref()[..6].to_vec());
     assert_eq!(truncated.clone().into_lwe(size, modulus), sample);
 
+    // Empty, one, truncated-body capacity and full-body capacity; consuming
+    // packing must reuse the original allocation for every supported count.
     for count in [0, 1, 2, 4] {
         let owned = TruncatedGlwe(ciphertext.as_ref().to_vec());
         let allocation = owned.as_ref().as_ptr();
@@ -174,6 +183,7 @@ fn packed_and_consuming_extraction_match_individual_samples() {
 
 #[test]
 fn packed_extraction_rejects_invalid_message_counts() {
+    // The public batch extractor rejects zero messages or more messages than mask entries.
     let packed = MultiMsgLwe(vec![1u32, 2, 3, 4]);
     for count in [0, 3] {
         assert!(

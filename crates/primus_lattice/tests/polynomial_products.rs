@@ -6,6 +6,7 @@ use primus_lattice::{
 };
 use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, UintNttTable};
+use primus_poly::PolynomialIterMut;
 
 // Independent coefficient oracle, including sign changes after one or two wraps.
 fn expected(acc: &[u32], rhs: &[u32], exponent: usize, n: usize, qs: &[u32]) -> Vec<u32> {
@@ -27,48 +28,76 @@ fn expected(acc: &[u32], rhs: &[u32], exponent: usize, n: usize, qs: &[u32]) -> 
 
 #[test]
 fn coefficient_and_ntt_monomials_match_negacyclic_oracle() {
+    // Retain a vector-sized polynomial; exponent cases cover sign and wrap
+    // boundaries without repeating every rotation of the same layout.
     const N: usize = 32;
     const Q: u32 = 193;
     let modulus = BarrettModulus::new(Q);
     let table = UintNttTable::<u32>::new(5, modulus).unwrap();
     macro_rules! check {
         ($coeff:ident, $ntt:ident, $components:expr $(, $length:expr)?) => {{
-            let rhs: Vec<_> = (0..N * $components).map(|i| (i as u32 * 31 + 7) % Q).collect();
-            let acc: Vec<_> = (0..rhs.len()).map(|i| (i as u32 * 13 + 11) % Q).collect();
+            let rhs: Vec<_> = (0..N * $components)
+                .map(|i| (i as u32 * 31 + 7) % Q)
+                .collect();
+            let acc: Vec<_> = (0..rhs.len())
+                .map(|i| (i as u32 * 13 + 11) % Q)
+                .collect();
             let input = $coeff::new(rhs.as_slice());
             let mut transformed_rhs = rhs.clone();
             let mut transformed_acc = acc.clone();
-            for p in transformed_rhs.chunks_exact_mut(N) { table.transform_slice(p); }
-            for p in transformed_acc.chunks_exact_mut(N) { table.transform_slice(p); }
+            for mut poly in PolynomialIterMut::new(&mut transformed_rhs, N) {
+                table.transform_slice(poly.as_mut());
+            }
+            for mut poly in PolynomialIterMut::new(&mut transformed_acc, N) {
+                table.transform_slice(poly.as_mut());
+            }
             let ntt_rhs = $ntt::new(transformed_rhs.as_slice());
             let ntt_acc = $ntt::new(transformed_acc.as_slice());
             let mut scratch = vec![Q - 1; N];
-            for exponent in 0..2 * N {
+            let mut storage = acc.clone();
+            let mut ntt_output = $ntt::new(transformed_acc.clone());
+            let zero = vec![0; rhs.len()];
+
+            // Zero follows nonzero factors, detecting stale monomial scratch.
+            for exponent in [1, N / 2, N - 1, N, N + 1, 3 * N / 2, 2 * N - 1, 0] {
                 let oracle = expected(&acc, &rhs, exponent, N, &[Q]);
-                let mut storage = acc.clone();
+                let product = expected(&zero, &rhs, exponent, N, &[Q]);
+                storage.copy_from_slice(&acc);
                 let mut output = $coeff::new(storage.as_mut_slice());
+
+                // Coefficient traversal has distinct in-place and output paths.
                 output.add_mul_monomial_assign(&input, exponent, $($length,)? modulus);
-                assert_eq!(output.as_ref(), oracle, "{} exponent {exponent}", stringify!($coeff));
-                let product = expected(&vec![0; rhs.len()], &rhs, exponent, N, &[Q]);
+                assert_eq!(output.as_ref(), oracle,
+                    "{} exponent={exponent}", stringify!($coeff));
                 input.mul_monomial_to(exponent, &mut output, $($length,)? modulus);
                 assert_eq!(output.as_ref(), product);
                 output.as_mut().copy_from_slice(&rhs);
                 output.mul_monomial_assign(exponent, $($length,)? modulus);
                 assert_eq!(output.as_ref(), product);
-                let mut ntt_output = $ntt::new(transformed_acc.clone());
-                ntt_output.add_mul_monomial_assign(&ntt_rhs, exponent, modulus, &table, &mut scratch);
+
+                // NTT shares a transformed monomial across all polynomials.
+                ntt_output.as_mut().copy_from_slice(&transformed_acc);
+                ntt_output.add_mul_monomial_assign(
+                    &ntt_rhs, exponent, modulus, &table, &mut scratch,
+                );
                 ntt_output.write_coeff_form(&mut output, &table);
-                assert_eq!(output.as_ref(), oracle, "{} exponent {exponent}", stringify!($ntt));
-                ntt_rhs.mul_monomial_to(exponent, &mut ntt_output, modulus, &table, &mut scratch);
+                assert_eq!(output.as_ref(), oracle,
+                    "{} exponent={exponent}", stringify!($ntt));
+                ntt_rhs.mul_monomial_to(
+                    exponent, &mut ntt_output, modulus, &table, &mut scratch,
+                );
                 ntt_output.write_coeff_form(&mut output, &table);
                 assert_eq!(output.as_ref(), product);
                 ntt_output.as_mut().copy_from_slice(&transformed_rhs);
                 ntt_output.mul_monomial_assign(exponent, modulus, &table, &mut scratch);
                 ntt_output.write_coeff_form(&mut output, &table);
                 assert_eq!(output.as_ref(), product);
-                ntt_acc.sub_mul_monomial_to(&ntt_rhs, exponent, &mut ntt_output, modulus, &table, &mut scratch);
+
+                // The subtraction path uses -X^e = X^(e+N) as its shared factor.
+                ntt_acc.sub_mul_monomial_to(
+                    &ntt_rhs, exponent, &mut ntt_output, modulus, &table, &mut scratch,
+                );
                 ntt_output.write_coeff_form(&mut output, &table);
-                // -X^e = X^(e+N), with the exponent reduced modulo 2N.
                 let difference = expected(&acc, &rhs, (exponent + N) % (2 * N), N, &[Q]);
                 assert_eq!(output.as_ref(), difference);
             }
@@ -80,42 +109,13 @@ fn coefficient_and_ntt_monomials_match_negacyclic_oracle() {
     check!(Ggsw, NttGgsw, 3 * 2 * 3, N);
 }
 
-#[test]
-fn coefficient_monomial_pairs_preserve_gadget_layout() {
-    const N: usize = 8;
-    const Q: u32 = 193;
-    // Three rows, two levels and three mask/body polynomials per level.
-    let len = N * 3 * 2 * 3;
-    let first: Vec<_> = (0..len).map(|i| (i as u32 * 31 + 7) % Q).collect();
-    let second: Vec<_> = (0..len).map(|i| (i as u32 * 17 + 11) % Q).collect();
-    let mut output = Ggsw::new(vec![Q - 1; len]);
-    for ra in 0..2 * N {
-        for rb in 0..2 * N {
-            let oracle = expected(
-                &expected(output.as_ref(), &first, ra, N, &[Q]),
-                &second,
-                rb,
-                N,
-                &[Q],
-            );
-            output.add_mul_monomial_pair_assign(
-                &Ggsw::new(first.as_slice()),
-                ra,
-                &Ggsw::new(second.as_slice()),
-                rb,
-                N,
-                BarrettModulus::new(Q),
-            );
-            assert_eq!(output.as_ref(), oracle, "ra={ra}, rb={rb}");
-        }
-    }
-}
-
 #[cfg(feature = "rns")]
 #[test]
 fn crt_monomial_accumulation_preserves_modulus_and_gadget_order() {
     use primus_lattice::ggsw::CrtGgsw;
-    const N: usize = 32;
+    // Four coefficients suffice to distinguish modulus/component order and
+    // exhaust sign/wrap boundaries; scalar/SIMD arithmetic belongs to modulus.
+    const N: usize = 4;
     let qs = [193u32, 257];
     let moduli = qs.map(BarrettModulus::new);
     let rns_poly_len = N * qs.len();
@@ -126,8 +126,9 @@ fn crt_monomial_accumulation_preserves_modulus_and_gadget_order() {
         .map(|i| (i as u32 * 13 + 11) % qs[i / N % 2])
         .collect();
     let input = CrtGgsw::new(rhs.as_slice());
+    let mut storage = acc.clone();
     for exponent in 0..2 * N {
-        let mut storage = acc.clone();
+        storage.copy_from_slice(&acc);
         let mut output = CrtGgsw::new(storage.as_mut_slice());
         output.add_mul_monomial_assign(&input, exponent, N, rns_poly_len, &moduli);
         assert_eq!(output.as_ref(), expected(&acc, &rhs, exponent, N, &qs));

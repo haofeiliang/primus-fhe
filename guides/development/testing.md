@@ -182,6 +182,30 @@ cargo +nightly nextest run -p primus_encoding --lib --tests --features simd
 
 同一 package/feature 选择也用于 `check --all-targets`、`clippy --all-targets -- -D warnings`。六包的 stable 可选功能是 encoding/rns；derive 与 high_precision 的归属和运行命令见前一节。Doctest 和严格 rustdoc 独立运行。
 
+## 密文表示与算术层的聚焦覆盖
+
+`primus_lattice` 的[测试索引](../../crates/primus_lattice/tests/README.md)区分原始密文布局、算术及资源契约。测试构造确定性数值，不在此层重复秘密采样和加解密 fixture。
+
+| 契约 | 维护入口与精简边界 |
+| --- | --- |
+| 布局与存储 | [layout.rs](../../crates/primus_lattice/tests/layout.rs) 检查 size 拒绝、ABox 消费后保留分配、偏移 slice 写回、串行工作区 rebind 拒绝/异常恢复及 RNS limb 宽度相容性；不测试 aligned-vec 本身或迭代器计数 |
+| 共享算术与 gadget 布局 | [arithmetic.rs](../../crates/primus_lattice/tests/arithmetic.rs) 以 65 元素和偏移哨兵覆盖向量/尾部；[RNS](../../crates/primus_lattice/tests/rns_arithmetic.rs) 保留两模数的不同因子与 row/level/component 顺序。[明文和对角注入](../../crates/primus_lattice/tests/plaintext_and_gadget.rs) 使用 N=4、独立扁平索引 oracle，每个共享宏保留一个包装类型，Fourier 的复数契约单独验证 |
+| 多项式乘法与旋转 | [polynomial_products.rs](../../crates/primus_lattice/tests/polynomial_products.rs) 保留 NTRU 单多项式和 GGSW 批次遍历，NTT 的 N=32 保留向量长度；八个指数覆盖符号/环绕和脏 scratch 后零指数。CRT 以 N=4 穷举八个指数；配对旋转的纯转发不重复 [poly 的独立穷举](../../crates/primus_poly/tests/monomial.rs)。[Fourier](../../crates/primus_lattice/tests/fourier.rs) 的 N=8 整数卷积 oracle 保留两个 FFT 后端 |
+| 外积与 CMux | [external_product.rs](../../crates/primus_lattice/tests/external_product.rs) 保留 NLev/NGSW 的层序、控制与输出不同层数、变换域/系数域输出、短输出拒绝前不写入及非零→零复用。[ternary_cmux.rs](../../crates/primus_lattice/tests/ternary_cmux.rs) 保留 ±1/0 控制、两种分解深度、NTT/Fourier 及 Fourier 的 u32/u64 和两个 FFT 后端，指数按边界选择 |
+| 提取 | [extraction.rs](../../crates/primus_lattice/tests/extraction.rs) 保留手算样本顺序、NTRU `c*f` 与 GLWE `b-a*s` 的整数卷积 oracle、完整/部分秘密、native/显式模数逆提取、padding 和 packed 拒绝；它们各自保护不同的符号或布局契约 |
+| 首次融合与在线分配 | 首次融合的秘密和分解残差由 [NTRU phase contracts](../../crates/primus_ntru/tests/phase_contracts.rs) 验证；在线计数由这些消费者及四后端 PBS/CBS/高精度 LUT 测试承担。本层保留资源复用断言，不对每个数学样本重复计数，也不把指针相等当作零临时分配证明 |
+
+默认、独立 RNS、nightly SIMD/RNS 及 release 拒绝契约分别验证：
+
+```sh
+cargo nextest run -p primus_lattice --lib --tests
+cargo nextest run -p primus_lattice --lib --tests --features rns
+cargo +nightly nextest run -p primus_lattice --lib --tests --all-features
+cargo nextest run -p primus_lattice --lib --tests --release --features rns
+```
+
+默认和扩展配置复用同一套测试；无需为普通测试单独标记 SIMD。按同一 feature 范围运行 all-targets 编译/Clippy，doctest 单独运行。改变实际算术或资源接口时，额外验证受影响的 GLWE/NTRU/RNS/TFHE 消费者；纯测试整理无需重新运行全 workspace 数值矩阵。
+
 ## 成本记录方法
 
 分别记录构建、枚举、运行和 smoke，不把一次带编译运行与另一轮缓存运行直接比较。可用 `/usr/bin/time` 记录 wall time 与进程 RSS，用 nextest 汇总观察执行阶段及慢用例；其进程 RSS 不是所有并行子进程的内存总峰值。缓存记录区分 `target/debug`、`target/release`、Criterion 数据和剩余磁盘空间。

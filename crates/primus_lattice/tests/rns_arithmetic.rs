@@ -1,3 +1,5 @@
+//! RNS block traversal with distinct residues and factors in each modulus.
+
 #![cfg(feature = "rns")]
 
 use primus_factor::ShoupFactor;
@@ -53,7 +55,9 @@ fn rns_arithmetic_preserves_component_and_modulus_order() {
 #[test]
 fn rns_scalar_and_factor_products_preserve_accumulators_and_modulus_order() {
     use primus_rns::{ResidueFactors, Residues};
-    const N: usize = 32;
+    // Four coefficients distinguish within-polynomial and modulus boundaries;
+    // SIMD lane/tail coverage is already owned by the arithmetic crates.
+    const N: usize = 4;
     let qs = [17u32, 97];
     let moduli = qs.map(BarrettModulus::new);
     let rns_poly_len = N * qs.len();

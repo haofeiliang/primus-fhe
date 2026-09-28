@@ -1,3 +1,5 @@
+//! Ternary selection signs, decomposition residuals and dirty-scratch reuse.
+
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{FftEngine, FftTable, RustFftTable, TfheFftTable, TorusFftValue};
 use primus_lattice::{
@@ -8,6 +10,9 @@ use primus_ntt::{NttTable, UintNttTable};
 
 const N: usize = 16;
 const Q: u32 = 132_120_577;
+// Zero is last so it must copy over the preceding nontrivial result. Both
+// half-ring signs, split boundaries and an interior rotation are represented.
+const EXPONENTS: [usize; 8] = [1, N / 2, N - 1, N, N + 1, 3 * N / 2, 2 * N - 1, 0];
 
 // Independent signed-index oracle, applied to every GLWE component.
 fn rotate(input: &[u32], exponent: isize) -> Vec<u32> {
@@ -30,6 +35,8 @@ fn rotate(input: &[u32], exponent: isize) -> Vec<u32> {
     output
 }
 
+// Diagonal controls avoid key noise, isolating decomposition and FFT rounding.
+// Keep both word widths and FFT backends: they have distinct torus conversions.
 fn check_fourier_rotation<T: TorusFftValue, Table: FftTable>() {
     use primus_lattice::{ggsw::FourierGgswOwned, workspace::FourierGlweTernaryCmuxWorkspace};
     let table = Table::new(N.trailing_zeros()).unwrap();
@@ -65,7 +72,7 @@ fn check_fourier_rotation<T: TorusFftValue, Table: FftTable>() {
         for secret in [1isize, -1, 0] {
             let positive = if secret == 1 { &one } else { &zero };
             let negative = if secret == -1 { &one } else { &zero };
-            for exponent in (1..2 * N).chain([0]) {
+            for exponent in EXPONENTS {
                 positive.cmux_ternary_monomial_to(
                     negative,
                     &input,
@@ -141,7 +148,7 @@ fn ternary_rotation_matches_negacyclic_oracle_with_bounded_decomposition_error()
         for secret in [1, -1, 0] {
             let positive = if secret == 1 { &one } else { &zero };
             let negative = if secret == -1 { &one } else { &zero };
-            for exponent in (1..2 * N).chain([0]) {
+            for exponent in EXPONENTS {
                 positive.cmux_ternary_monomial_to(
                     negative,
                     &input,
@@ -195,9 +202,9 @@ fn ngsw_ternary_rotation_matches_negacyclic_oracle() {
         for secret in [1, -1, 0] {
             let positive = if secret == 1 { &one } else { &zero };
             let negative = if secret == -1 { &one } else { &zero };
-            // Traverse all signs and wrap boundaries, then reuse dirty scratch
+            // Traverse sign and wrap boundaries, then reuse dirty scratch
             // for the public zero-exponent copy path.
-            for exponent in (1..2 * N).chain([0]) {
+            for exponent in EXPONENTS {
                 positive.cmux_ternary_monomial_to(
                     negative,
                     &input,
@@ -225,37 +232,4 @@ fn ngsw_ternary_rotation_matches_negacyclic_oracle() {
             }
         }
     }
-}
-
-#[test]
-fn serial_external_product_restores_ternary_layout_on_unwind() {
-    use primus_lattice::workspace::FourierGlweTernaryCmuxWorkspace;
-    use std::panic::{AssertUnwindSafe, catch_unwind};
-
-    let original = GadgetSize::new(GlweSize::new(1, N), 3);
-    let temporary = GadgetSize::new(GlweSize::new(1, N), 2);
-    let mut ntt = NttGlweTernaryCmuxWorkspace::<u32>::new(original);
-    let mut fourier = FourierGlweTernaryCmuxWorkspace::<u64>::new(original);
-    assert!(
-        catch_unwind(AssertUnwindSafe(|| ntt.with_external_product(
-            temporary,
-            |scratch| {
-                assert_eq!(scratch.size(), temporary);
-                panic!("interrupted consumer");
-            }
-        )))
-        .is_err()
-    );
-    assert!(
-        catch_unwind(AssertUnwindSafe(|| fourier.with_external_product(
-            temporary,
-            |scratch| {
-                assert_eq!(scratch.size(), temporary);
-                panic!("interrupted consumer");
-            }
-        )))
-        .is_err()
-    );
-    assert_eq!(ntt.size(), original);
-    assert_eq!(fourier.size(), original);
 }

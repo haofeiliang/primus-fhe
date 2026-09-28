@@ -1,3 +1,7 @@
+//! Gadget level order, coefficient/transform endpoints and scratch reuse.
+//! Nonzero products exercise the arithmetic; zero products must clear dirty
+//! outputs without retaining contributions from the preceding call.
+
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable, TfheFftTable};
 use primus_lattice::{
@@ -15,6 +19,7 @@ use primus_lattice::{
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntt::{NttTable, UintNttTable};
 use primus_poly::Polynomial;
+use std::panic::{AssertUnwindSafe, catch_unwind};
 
 // A diagonal gadget for one is an identity external product. Applying a zero
 // gadget afterwards must clear both a nonzero output and the reused accumulator.
@@ -80,7 +85,7 @@ fn ntt_ntru_gadget_products_match_negacyclic_product() {
 
     let mut workspace = NttNtruExternalProductWorkspace::new(N);
     let mut nlev_product = Ntru::new(vec![u32::MAX; N]);
-    let input_ntru = Ntru::<Vec<u32>>::from_ref(&alpha);
+    let input_ntru = Ntru::new(alpha.as_ref());
     let mut ngsw_product = Ntru::new(vec![u32::MAX; N]);
     let mut storage = [u32::MAX; N + 2];
     let mut transformed = NttNtru::new(&mut storage[1..=N]);
@@ -92,6 +97,26 @@ fn ntt_ntru_gadget_products_match_negacyclic_product() {
         let coeff_ngsw = Ngsw::new(coeff_nlev.as_ref().to_vec());
         let ntt_nlev = coeff_nlev.into_ntt_form(&ntt);
         let ntt_ngsw = coeff_ngsw.into_ntt_form(&ntt);
+
+        if amplitude != 0 {
+            // The public coefficient-output boundary rejects a short buffer
+            // before clearing it. The valid calls below reuse the same scratch.
+            let mut short = Ntru::new([u32::MAX; N - 1]);
+            assert!(
+                catch_unwind(AssertUnwindSafe(|| {
+                    ntt_ngsw.external_product_to(
+                        &input_ntru,
+                        &mut short,
+                        &basis,
+                        modulus,
+                        &ntt,
+                        &mut workspace,
+                    );
+                }))
+                .is_err()
+            );
+            assert_eq!(short.as_ref(), &[u32::MAX; N - 1]);
+        }
 
         let mut expected = Polynomial::<Vec<u32>>::zero(N);
         alpha.naive_mul_to(&beta, &mut expected, modulus);
@@ -166,6 +191,9 @@ fn ntt_ntru_gadget_products_match_negacyclic_product() {
     assert_eq!([storage[0], storage[N + 1]], [u32::MAX; 2]);
 }
 
+// Both FFT backends must preserve torus scale. Control levels and the output
+// NLev levels intentionally differ in both directions, preventing accidental
+// use of the control basis to traverse the output ciphertext.
 fn fourier_ntru_gadget_products<Table: FftTable>() {
     const LOG_N: u32 = 4;
     const N: usize = 1 << LOG_N;
@@ -205,7 +233,7 @@ fn fourier_ntru_gadget_products<Table: FftTable>() {
 
     let mut workspace = FourierNtruExternalProductWorkspace::new(N);
     let mut nlev_product = Ntru::new(vec![u32::MAX; N]);
-    let input_ntru = Ntru::<Vec<u32>>::from_ref(&alpha);
+    let input_ntru = Ntru::new(alpha.as_ref());
     let mut ngsw_product = Ntru::new(vec![u32::MAX; N]);
     let guard = Complex64::new(17.0, -23.0);
     let mut storage = [guard; N / 2 + 2];
@@ -223,6 +251,25 @@ fn fourier_ntru_gadget_products<Table: FftTable>() {
         let mut fourier_ngsw =
             FourierNgswOwned::zero(basis.decompose_length() * fft.fourier_length());
         coeff_ngsw.write_fourier_form(&mut fourier_ngsw, &mut engine);
+
+        if amplitude != 0 {
+            // This endpoint borrows the output as its accumulator; reject a
+            // short buffer before zeroing it or changing the reused workspace.
+            let mut short = FourierNtru::new([guard; N / 2 - 1]);
+            assert!(
+                catch_unwind(AssertUnwindSafe(|| {
+                    fourier_ngsw.external_product_fourier_to(
+                        &input_ntru,
+                        &mut short,
+                        &basis,
+                        &mut engine,
+                        &mut workspace,
+                    );
+                }))
+                .is_err()
+            );
+            assert_eq!(short.as_ref(), &[guard; N / 2 - 1]);
+        }
 
         let mut expected = Polynomial::<Vec<u32>>::zero(N);
         alpha.naive_mul_to(&beta, &mut expected, modulus);

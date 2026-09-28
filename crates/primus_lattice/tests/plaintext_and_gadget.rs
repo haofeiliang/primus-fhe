@@ -1,45 +1,33 @@
-use primus_lattice::{GadgetSize, GlweSize};
-use primus_lattice::{
-    ggsw::{Ggsw, NttGgsw},
-    glwe::{Glwe, NttGlwe},
-    lwe::Lwe,
-};
+//! Body-only updates and gadget diagonals, with independent flat-layout oracles.
+//! Coefficient/NTT wrappers share these macros, as do CRT/DCRT wrappers; one
+//! representative per macro suffices. Fourier has its own complex arithmetic.
+
+use primus_lattice::{GadgetSize, GlweSize, ggsw::Ggsw, glwe::Glwe, lwe::Lwe};
 use primus_modulus::BarrettModulus;
-use primus_poly::{NttPolynomial, Polynomial};
+use primus_poly::Polynomial;
 
 #[test]
 fn encoded_plaintext_operations_preserve_masks_and_trivial_overwrites_them() {
-    const N: usize = 32;
+    // These are layout checks, not transform tests: a four-coefficient body
+    // distinguishes mask/body boundaries without a vector-sized ring.
+    const N: usize = 4;
     const Q: u32 = 193;
     let modulus = BarrettModulus::new(Q);
-    let plaintext: Vec<u32> = (0..N).map(|i| (i * 11 % Q as usize) as u32).collect();
-    macro_rules! check {
-        ($cipher:ident, $poly:ident, $components:expr) => {{
-            let data: Vec<u32> = (0..N * $components)
-                .map(|i| (i * 7 % Q as usize) as u32)
-                .collect();
-            let mut cipher = $cipher::new(data.clone());
-            let plaintext = $poly::new(plaintext.as_slice());
-            let mask_len = data.len() - N;
-            cipher.add_plaintext_assign(&plaintext, modulus);
-            assert_eq!(&cipher.as_ref()[..mask_len], &data[..mask_len]);
-            assert_eq!(
-                &cipher.as_ref()[mask_len..],
-                data[mask_len..]
-                    .iter()
-                    .zip(plaintext.as_ref())
-                    .map(|(&a, &b)| (a + b) % Q)
-                    .collect::<Vec<_>>()
-            );
-            cipher.sub_plaintext_assign(&plaintext, modulus);
-            assert_eq!(cipher.as_ref(), data);
-            cipher.set_trivial(&plaintext);
-            assert!(cipher.as_ref()[..mask_len].iter().all(|&x| x == 0));
-            assert_eq!(&cipher.as_ref()[mask_len..], plaintext.as_ref());
-        }};
+    let plaintext = Polynomial::new([0, 1, 96, 192]);
+    let data: Vec<u32> = (0..N * 3).map(|i| (i * 37 % Q as usize) as u32).collect();
+    let mut cipher = Glwe::new(data.clone());
+    cipher.add_plaintext_assign(&plaintext, modulus);
+    assert_eq!(&cipher.as_ref()[..2 * N], &data[..2 * N]);
+    for (i, &value) in plaintext.as_ref().iter().enumerate() {
+        assert_eq!(cipher.as_ref()[2 * N + i], (data[2 * N + i] + value) % Q);
     }
-    check!(Glwe, Polynomial, 3);
-    check!(NttGlwe, NttPolynomial, 3);
+    cipher.sub_plaintext_assign(&plaintext, modulus);
+    assert_eq!(cipher.as_ref(), data);
+    cipher.set_trivial(&plaintext);
+    assert_eq!(&cipher.as_ref()[..2 * N], &[0; 2 * N]);
+    assert_eq!(&cipher.as_ref()[2 * N..], plaintext.as_ref());
+
+    // LWE uses a scalar body and has a separate implementation.
     let mut lwe = Lwe::new(vec![11u32, 13, 190]);
     lwe.add_plaintext_assign(7, modulus);
     assert_eq!(lwe.as_ref(), &[11, 13, 4]);
@@ -49,8 +37,8 @@ fn encoded_plaintext_operations_preserve_masks_and_trivial_overwrites_them() {
     assert_eq!(lwe.as_ref(), &[0, 0, 7]);
 }
 
-// Independent row/level/component oracle checks that only the requested
-// diagonal level changes, including modulus-block order for RNS storage.
+// Decode every flat index independently of the implementation's diagonal
+// iterator. Off-diagonal entries and unselected levels must remain unchanged.
 fn diagonal_oracle(
     data: &[u32],
     plaintext: &[u32],
@@ -60,117 +48,92 @@ fn diagonal_oracle(
     n: usize,
     qs: &[u32],
 ) -> Vec<u32> {
-    let mut result = data.to_vec();
     let p = plaintext.len();
-    for row in 0..rows {
-        for level in 0..levels {
-            for component in 0..rows {
-                if row == component && level == selected {
-                    for (i, &value) in plaintext.iter().enumerate() {
-                        let offset = ((row * levels + level) * rows + component) * p + i;
-                        result[offset] = (result[offset] + value) % qs[i / n];
-                    }
-                }
+    data.iter()
+        .enumerate()
+        .map(|(i, &value)| {
+            let row = i / (levels * rows * p);
+            let level = i / (rows * p) % levels;
+            let component = i / p % rows;
+            if row == component && level == selected {
+                (value + plaintext[i % p]) % qs[i % p / n]
+            } else {
+                value
             }
-        }
-    }
-    result
+        })
+        .collect()
 }
 
 #[test]
 fn gadget_injection_changes_only_the_selected_diagonal_level() {
-    const N: usize = 32;
+    const N: usize = 4;
     const LEVELS: usize = 3;
     let modulus = BarrettModulus::new(193u32);
-    let plaintext: Vec<_> = (0..N).map(|i| (i * 13 % 193) as u32).collect();
-    macro_rules! check {
-        ($cipher:ident, $poly:ident, $rows:expr) => {{
-            let data: Vec<_> = (0..$rows * LEVELS * $rows * N)
-                .map(|i| (i * 7 % 193) as u32)
-                .collect();
-            for selected in 0..LEVELS {
-                let mut cipher = $cipher::new(data.clone());
-                cipher.add_gadget_diagonal_assign(
-                    &$poly::new(plaintext.as_slice()),
-                    selected,
-                    GadgetSize::new(GlweSize::new($rows - 1, N), LEVELS),
-                    modulus,
-                );
-                assert_eq!(
-                    cipher.as_ref(),
-                    diagonal_oracle(&data, &plaintext, $rows, LEVELS, selected, N, &[193])
-                );
-            }
-        }};
+    let plaintext = Polynomial::new([0, 1, 96, 192]);
+    let size = GadgetSize::new(GlweSize::new(2, N), LEVELS);
+    let data: Vec<_> = (0..size.ggsw_len()).map(|i| (i * 7 % 193) as u32).collect();
+    let mut cipher = Ggsw::new(data.clone());
+    // First, interior and last levels expose wrong row/level strides.
+    for selected in 0..LEVELS {
+        cipher.as_mut().copy_from_slice(&data);
+        cipher.add_gadget_diagonal_assign(&plaintext, selected, size, modulus);
+        assert_eq!(
+            cipher.as_ref(),
+            diagonal_oracle(&data, plaintext.as_ref(), 3, LEVELS, selected, N, &[193]),
+            "level={selected}"
+        );
     }
-    check!(Ggsw, Polynomial, 3);
-    check!(NttGgsw, NttPolynomial, 3);
 }
 
 #[cfg(feature = "rns")]
 #[test]
 fn rns_plaintext_and_gadget_operations_preserve_the_basis_layout() {
-    use primus_lattice::{
-        ggsw::{CrtGgsw, DcrtGgsw},
-        glwe::{CrtGlwe, DcrtGlwe},
-    };
+    use primus_lattice::{RnsGadgetSize, RnsGlweSize, ggsw::DcrtGgsw, glwe::CrtGlwe};
     use primus_poly::{CrtPolynomial, DcrtPolynomial};
-    const N: usize = 32;
+
+    const N: usize = 4;
     const LEVELS: usize = 3;
     let qs = [193u32, 257];
     let moduli = qs.map(BarrettModulus::new);
     let p = N * qs.len();
-    let plaintext: Vec<u32> = (0..p).map(|i| (i * 13) as u32 % qs[i / N]).collect();
-    macro_rules! body {
-        ($cipher:ident, $poly:ident, $rows:expr) => {{
-            let data: Vec<_> = (0..p * $rows)
-                .map(|i| (i * 7) as u32 % qs[i / N % qs.len()])
-                .collect();
-            let mut cipher = $cipher::new(data.clone());
-            let poly = $poly::new(plaintext.as_slice());
-            cipher.add_plaintext_assign(&poly, N, &moduli);
-            let split = data.len() - p;
-            assert_eq!(&cipher.as_ref()[..split], &data[..split]);
-            for (i, &value) in plaintext.iter().enumerate() {
-                assert_eq!(
-                    cipher.as_ref()[split + i],
-                    (data[split + i] + value) % qs[i / N]
-                );
-            }
-            cipher.sub_plaintext_assign(&poly, N, &moduli);
-            assert_eq!(cipher.as_ref(), data);
-            cipher.set_trivial(&poly);
-            assert!(cipher.as_ref()[..split].iter().all(|&x| x == 0));
-            assert_eq!(&cipher.as_ref()[split..], plaintext);
-        }};
+    let plaintext: Vec<u32> = (0..p).map(|i| (i * 53) as u32 % qs[i / N]).collect();
+    let size = RnsGadgetSize::new(RnsGlweSize::new(GlweSize::new(2, N), qs.len()), LEVELS);
+
+    // CRT body and DCRT gadget each instantiate one shared RNS macro. Distinct
+    // residues expose swapping a modulus block with a ciphertext component.
+    let data: Vec<_> = (0..p * 3)
+        .map(|i| (i * 37) as u32 % qs[i / N % 2])
+        .collect();
+    let mut cipher = CrtGlwe::new(data.clone());
+    let poly = CrtPolynomial::new(plaintext.as_slice());
+    cipher.add_plaintext_assign(&poly, N, &moduli);
+    assert_eq!(&cipher.as_ref()[..2 * p], &data[..2 * p]);
+    for (i, &value) in plaintext.iter().enumerate() {
+        assert_eq!(
+            cipher.as_ref()[2 * p + i],
+            (data[2 * p + i] + value) % qs[i / N]
+        );
     }
-    body!(CrtGlwe, CrtPolynomial, 3);
-    body!(DcrtGlwe, DcrtPolynomial, 3);
-    macro_rules! gadget {
-        ($cipher:ident, $poly:ident, $rows:expr) => {{
-            let data: Vec<_> = (0..$rows * LEVELS * $rows * p)
-                .map(|i| (i * 7) as u32 % qs[i / N % qs.len()])
-                .collect();
-            for selected in 0..LEVELS {
-                let mut cipher = $cipher::new(data.clone());
-                cipher.add_gadget_diagonal_assign(
-                    &$poly::new(plaintext.as_slice()),
-                    selected,
-                    primus_lattice::RnsGadgetSize::new(
-                        primus_lattice::RnsGlweSize::new(GlweSize::new($rows - 1, N), qs.len()),
-                        LEVELS,
-                    ),
-                    &moduli,
-                );
-                assert_eq!(
-                    cipher.as_ref(),
-                    diagonal_oracle(&data, &plaintext, $rows, LEVELS, selected, N, &qs)
-                );
-            }
-        }};
+    cipher.sub_plaintext_assign(&poly, N, &moduli);
+    assert_eq!(cipher.as_ref(), data);
+    cipher.set_trivial(&poly);
+    assert!(cipher.as_ref()[..2 * p].iter().all(|&x| x == 0));
+    assert_eq!(&cipher.as_ref()[2 * p..], plaintext);
+
+    let data: Vec<_> = (0..size.rns_ggsw_len())
+        .map(|i| (i * 7) as u32 % qs[i / N % 2])
+        .collect();
+    let mut cipher = DcrtGgsw::new(data.clone());
+    let poly = DcrtPolynomial::new(plaintext.as_slice());
+    for selected in 0..LEVELS {
+        cipher.as_mut().copy_from_slice(&data);
+        cipher.add_gadget_diagonal_assign(&poly, selected, size, &moduli);
+        assert_eq!(
+            cipher.as_ref(),
+            diagonal_oracle(&data, &plaintext, 3, LEVELS, selected, N, &qs),
+            "level={selected}"
+        );
     }
-    gadget!(CrtGgsw, CrtPolynomial, 3);
-    gadget!(DcrtGgsw, DcrtPolynomial, 3);
 }
 
 #[test]
@@ -178,7 +141,9 @@ fn fourier_body_and_gadget_operations_preserve_complex_entries() {
     use primus_fft::Complex64;
     use primus_lattice::{ggsw::FourierGgsw, glwe::FourierGlwe};
     use primus_poly::FourierPolynomial;
-    const N: usize = 16;
+
+    // N counts complex entries here; the corresponding ring has 2*N coefficients.
+    const N: usize = 4;
     let plaintext: Vec<_> = (0..N)
         .map(|i| Complex64::new(i as f64, -(i as f64)))
         .collect();
@@ -201,6 +166,7 @@ fn fourier_body_and_gadget_operations_preserve_complex_entries() {
             .all(|&x| x == Complex64::default())
     );
     assert_eq!(&glwe.as_ref()[2 * N..], plaintext);
+
     let data: Vec<_> = (0..3 * 2 * 3 * N)
         .map(|i| Complex64::new((i * 3) as f64, 7.0))
         .collect();

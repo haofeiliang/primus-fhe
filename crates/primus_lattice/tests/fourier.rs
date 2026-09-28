@@ -40,7 +40,8 @@ fn fourier_arithmetic_overwrites_borrowed_storage_and_matches_in_place() {
 fn polynomial_products<Table: FftTable>() {
     use primus_lattice::ggsw::{FourierGgsw, Ggsw};
     use primus_poly::FourierPolynomial;
-    let table = Table::new(5).unwrap();
+    // N=8 already crosses the negacyclic boundary for this dense multiplier.
+    let table = Table::new(3).unwrap();
     let mut fft = FftEngine::new(&table);
     let n = fft.poly_length();
     let multiplier: Vec<u32> = (0..n).map(|i| (i % 5) as u32).collect();
@@ -72,11 +73,11 @@ fn polynomial_products<Table: FftTable>() {
     let mut recovered = Ggsw::new(vec![0; input.len()]);
     output.write_torus_form(&mut recovered, &mut fft);
     assert_eq!(recovered.as_ref(), expected);
-    output = fourier.clone();
+    output.as_mut().copy_from_slice(fourier.as_ref());
     output.mul_fourier_polynomial_assign(&poly);
     output.write_torus_form(&mut recovered, &mut fft);
     assert_eq!(recovered.as_ref(), expected);
-    output = fourier.clone();
+    output.as_mut().copy_from_slice(fourier.as_ref());
     output.add_mul_fourier_polynomial_assign(&fourier, &poly);
     output.write_torus_form(&mut recovered, &mut fft);
     for (x, &a) in expected.iter_mut().zip(&input) {
@@ -91,6 +92,8 @@ fn fourier_polynomial_products_preserve_torus_scale() {
     polynomial_products::<TfheFftTable>();
 }
 
+// The subtraction kernel absorbs a sign into the transformed monomial.
+// Verify that sign and Fourier normalization with a coefficient scatter oracle.
 fn sub_mul_monomial<Table: FftTable>() {
     use primus_lattice::{
         GadgetSize, GlweSize,
@@ -120,7 +123,7 @@ fn sub_mul_monomial<Table: FftTable>() {
     let mut fourier_scratch = vec![Complex64::default(); fft.fourier_length()];
     // Independent signed-index oracle across every row/level/component. Zero
     // comes last to check that it subtracts rhs after dirty scratch is reused.
-    for exponent in (1..2 * n).chain([0]) {
+    for exponent in [1, n / 2, n - 1, n, n + 1, 3 * n / 2, 2 * n - 1, 0] {
         lhs_fourier.sub_mul_monomial_to(
             &rhs_fourier,
             exponent,
