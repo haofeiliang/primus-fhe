@@ -1,3 +1,6 @@
+//! Context/table and decomposition binding, plus independently created
+//! client/server keys in both GLWE PBS orders.
+
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_glwe::{GlweParameters, SecretKeyDistr};
 use primus_lwe::LweParameters;
@@ -9,7 +12,7 @@ use primus_tfhe_glwe_ntt::{
 };
 use rand::{SeedableRng, rngs::StdRng};
 
-const POLY_LENGTH: usize = 256;
+const POLY_LENGTH: usize = 32;
 const MODULUS: u32 = 132_120_577;
 
 fn parameters(order: PbsOrder) -> TfheParameters<u32> {

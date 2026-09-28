@@ -1,3 +1,6 @@
+//! Classic/sparse differential PBS and ManyLUT on reused workspaces;
+//! bucket layouts and quantization margins are part of the fixture.
+
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_encoding::{PlaintextEmbedding, RoundedCodec};
 use primus_fft::{FftTable, RustFftTable, TfheFftTable};
@@ -14,7 +17,7 @@ use rand::{SeedableRng, rngs::StdRng};
 #[global_allocator]
 static ALLOCATOR: allocations::CountingAllocator = allocations::CountingAllocator;
 
-const N: usize = 256;
+const N: usize = 128;
 
 fn context<Table: FftTable>(
     order: PbsOrder,

@@ -1,3 +1,6 @@
+//! Gadget-scale phases and actual CMux/external-product consumption;
+//! parameter-constructor boundaries belong to the common family crate.
+
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{Complex64, FftTable, RustFftTable, TfheFftTable};
 use primus_glwe::{GlevParameters, GlweParameters, SecretKeyDistr};
@@ -16,7 +19,7 @@ use rand::{RngExt, SeedableRng, rngs::StdRng};
 #[global_allocator]
 static ALLOCATOR: allocations::CountingAllocator = allocations::CountingAllocator;
 
-const POLY_LENGTH: usize = 128;
+const POLY_LENGTH: usize = 64;
 const DIMENSION: usize = 2;
 
 fn parameters(dimension: usize, poly_length: usize, plaintext_modulus: u64) -> TfheParameters<u64> {
@@ -108,6 +111,7 @@ fn phase(ciphertext: &[u64], secret: &[i64]) -> Vec<u64> {
     phase
 }
 
+// Reuse one evaluator across controls, then consume its gadget ciphertexts.
 fn circuit_bootstrap<Table: FftTable>(order: PbsOrder, distribution: SecretKeyDistr, sparse: bool) {
     let context = TfheContext::<_, Table>::try_from_parameters(
         parameters_with_order_and_distribution(DIMENSION, POLY_LENGTH, 4, order, distribution),

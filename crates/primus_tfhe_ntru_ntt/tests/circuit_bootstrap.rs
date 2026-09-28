@@ -1,6 +1,8 @@
-use primus_decompose::primitive::ApproxSignedBasis;
+//! Gadget-scale phases and actual CMux/external-product consumption;
+//! parameter-constructor boundaries belong to the common family crate.
+
 use primus_lwe::LweParameters;
-use primus_modulus::BarrettModulus;
+use primus_modulus::{BarrettModulus, PowOf2Modulus};
 use primus_ntru::{
     NlevParameters, NtruParameters, NttNgswCiphertext, NttNtruSecretKey, SecretKeyDistr,
 };
@@ -9,26 +11,21 @@ use primus_poly::Polynomial;
 use primus_test_allocations as allocations;
 use primus_tfhe::ProgrammableBootstrap as _;
 use primus_tfhe_ntru_ntt::{
-    CircuitBootstrapConfig, CircuitBootstrapEvaluator, CircuitBootstrapParameters,
-    DecompositionConfig, TfheContext, TfheParameters,
+    CircuitBootstrapConfig, CircuitBootstrapEvaluator, DecompositionConfig, TfheContext,
+    TfheParameters,
 };
 use rand::{RngExt, SeedableRng, rngs::StdRng};
 
 #[global_allocator]
 static ALLOCATOR: allocations::CountingAllocator = allocations::CountingAllocator;
 
-const N: usize = 256;
+const N: usize = 64;
 const Q: u64 = 1_125_899_906_826_241;
 
+// Reuse one evaluator across controls, then consume its gadget ciphertexts.
 fn circuit_bootstrap(distr: SecretKeyDistr) {
     let modulus = BarrettModulus::new(Q);
-    let lwe = LweParameters::new(
-        16,
-        4,
-        primus_modulus::BarrettModulus::new(1u64 << 24),
-        distr,
-        0.7,
-    );
+    let lwe = LweParameters::new(16, 4, PowOf2Modulus::new(1u64 << 24), distr, 0.7);
     let accumulator = NtruParameters::new(N, 4, modulus, SecretKeyDistr::SparseTernary, 0.7);
 
     let tfhe = TfheParameters::try_new(
@@ -41,7 +38,7 @@ fn circuit_bootstrap(distr: SecretKeyDistr) {
         0.7,
     )
     .unwrap();
-    let context = TfheContext::<_, U64NttTable>::try_from_parameters(tfhe).unwrap();
+    let context = TfheContext::<_, U64NttTable, _>::try_from_parameters(tfhe).unwrap();
     let mut rng = StdRng::seed_from_u64(0x004e_5454_5f43_4253);
     // Three gadget levels exercise multiple scales and an internal padding slot.
     let levels = 3;
@@ -229,118 +226,4 @@ fn circuit_bootstrap_preserves_gadget_scales_and_controls_cmux() {
     ] {
         circuit_bootstrap(distr);
     }
-}
-
-#[test]
-fn circuit_parameters_check_capacity_ring_and_basis_domain() {
-    use primus_tfhe_ntru_ntt::CircuitBootstrapParameterError as Error;
-    let modulus = BarrettModulus::new(Q);
-    let make = |plain| {
-        let acc = NtruParameters::new(N, plain, modulus, SecretKeyDistr::SparseTernary, 0.7);
-
-        TfheParameters::try_new(
-            LweParameters::new(16, plain, modulus, SecretKeyDistr::UniformBinary, 0.7),
-            NlevParameters::with_ntru_params(&acc, 10, None),
-            primus_tfhe_ntru::DecompositionConfig {
-                log_basis: 10,
-                level_count: None,
-            },
-            0.7,
-        )
-        .unwrap()
-    };
-    let tfhe = make(N as u64); // Only two interleaved outputs fit this domain.
-    let config = CircuitBootstrapConfig {
-        output: DecompositionConfig {
-            log_basis: 8,
-            level_count: Some(2),
-        },
-        trace: DecompositionConfig {
-            log_basis: 9,
-            level_count: Some(3),
-        },
-        trace_noise_standard_deviation: 1.25,
-        scheme_switch: DecompositionConfig {
-            log_basis: 10,
-            level_count: Some(4),
-        },
-        scheme_switch_noise_standard_deviation: 2.5,
-    };
-    let configured = CircuitBootstrapParameters::try_from_config(&tfhe, config).unwrap();
-    assert_eq!(configured.poly_length(), tfhe.poly_length());
-    assert_eq!(configured.trace().basis().log_basis(), 9);
-    assert_eq!(configured.trace().basis().decompose_length(), 3);
-    assert_eq!(
-        configured
-            .trace()
-            .ntru()
-            .noise_distribution()
-            .standard_deviation(),
-        1.25
-    );
-    assert_eq!(configured.scheme_switch().basis().log_basis(), 10);
-    assert_eq!(configured.scheme_switch().basis().decompose_length(), 4);
-    assert_eq!(
-        configured
-            .scheme_switch()
-            .ntru()
-            .noise_distribution()
-            .standard_deviation(),
-        2.5
-    );
-    for role in ["output", "trace", "scheme-switch"] {
-        let mut invalid = config;
-        match role {
-            "output" => invalid.output.level_count = Some(0),
-            "trace" => invalid.trace.level_count = Some(0),
-            _ => invalid.scheme_switch.level_count = Some(0),
-        }
-        let error = CircuitBootstrapParameters::try_from_config(&tfhe, invalid)
-            .err()
-            .unwrap();
-        match role {
-            "output" => assert!(matches!(error, Error::InvalidOutputBasis(_))),
-            _ => assert!(
-                matches!(error, Error::GadgetParameters { role: actual, .. } if actual == role)
-            ),
-        }
-    }
-    let trace = tfhe.blind_rotation().clone();
-    let output = |levels| ApproxSignedBasis::new(Some(Q), 8, Some(levels));
-    assert!(
-        CircuitBootstrapParameters::try_new(&tfhe, output(2), trace.clone(), trace.clone()).is_ok()
-    );
-    assert!(matches!(
-        CircuitBootstrapParameters::try_new(&tfhe, output(3), trace.clone(), trace.clone()),
-        Err(Error::OutputDecompositionTooLarge)
-    ));
-    let foreign_ring = NtruParameters::new(N * 2, 4, modulus, SecretKeyDistr::SparseTernary, 0.7);
-    let foreign_modulus = NtruParameters::new(
-        N,
-        4,
-        BarrettModulus::new(132_120_577u64),
-        SecretKeyDistr::SparseTernary,
-        0.7,
-    );
-    for foreign in [&foreign_ring, &foreign_modulus] {
-        assert!(matches!(
-            CircuitBootstrapParameters::try_new(
-                &tfhe,
-                output(2),
-                NlevParameters::with_ntru_params(foreign, 8, Some(2)),
-                trace.clone()
-            ),
-            Err(Error::PolynomialLengthMismatch { role: "trace" }
-                | Error::CipherModulusMismatch { role: "trace" })
-        ));
-    }
-    assert!(matches!(
-        CircuitBootstrapParameters::try_new(
-            &tfhe,
-            ApproxSignedBasis::new(None, 8, Some(2)),
-            trace.clone(),
-            trace,
-        ),
-        Err(Error::OutputBasisModulusMismatch)
-    ));
 }

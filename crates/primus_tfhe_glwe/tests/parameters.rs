@@ -5,9 +5,9 @@ use primus_modulus::NativeModulus;
 use primus_tfhe_glwe::{DecompositionConfig, PbsOrder, TfheConfig, TfheParameters};
 use std::error::Error;
 
-const LWE_DIMENSION: usize = 630;
+const LWE_DIMENSION: usize = 8;
 const GLWE_DIMENSION: usize = 1;
-const POLY_LENGTH: usize = 1024;
+const POLY_LENGTH: usize = 32;
 const PLAIN_MODULUS: u32 = 4;
 
 type Components = (

@@ -1,3 +1,6 @@
+//! Direct and quantized rotations against an independent negacyclic oracle;
+//! raw LUT and workspace failures must precede accumulator writes.
+
 use primus_fft::{FftEngine, FftTable, RustFftTable};
 use primus_glwe::{
     FourierGlweDecryptWorkspace, FourierGlweEncryptWorkspace, FourierGlweGadgetEncryptWorkspace,
@@ -15,7 +18,7 @@ use rand::{SeedableRng, rngs::StdRng};
 
 const LWE_DIMENSION: usize = 4;
 const GLWE_DIMENSION: usize = 1;
-const POLY_LENGTH: usize = 256;
+const POLY_LENGTH: usize = 32;
 const PLAINTEXT_MODULUS: u32 = 16;
 const TWO_N: usize = 2 * POLY_LENGTH;
 
@@ -25,6 +28,7 @@ fn accumulator_message() -> Vec<u32> {
         .collect()
 }
 
+// Work in the plaintext ring: each wrap at N flips the coefficient sign.
 fn rotate_plaintext(input: &[u32], exponent: usize) -> Vec<u32> {
     let shift = exponent & (POLY_LENGTH - 1);
     let negate_rotation = exponent >= POLY_LENGTH;

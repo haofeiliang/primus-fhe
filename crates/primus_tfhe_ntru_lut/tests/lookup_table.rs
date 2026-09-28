@@ -1,5 +1,5 @@
 use primus_lwe::LweParameters;
-use primus_modulus::{BarrettModulus, NativeModulus};
+use primus_modulus::{BarrettModulus, NativeModulus, PowOf2Modulus};
 use primus_ntru::{NlevParameters, NtruParameters, SecretKeyDistr};
 use primus_reduce::RingContext;
 use primus_tfhe_ntru::{DecompositionConfig, TfheParameters};
@@ -8,13 +8,13 @@ use primus_tfhe_ntru_lut::{HighPrecisionLookupTable, LookupTableConfig, LookupTa
 fn parameters<M: RingContext<u64>>(
     modulus: M,
     t: u64,
-) -> TfheParameters<u64, M, BarrettModulus<u64>> {
+) -> TfheParameters<u64, M, PowOf2Modulus<u64>> {
     let ring = NtruParameters::new(64, t, modulus, SecretKeyDistr::SparseTernary, 0.7);
     TfheParameters::try_new(
         LweParameters::new(
             2,
             t,
-            BarrettModulus::new(1 << 24),
+            PowOf2Modulus::new(1 << 24),
             SecretKeyDistr::UniformBinary,
             0.7,
         ),

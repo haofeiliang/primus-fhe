@@ -1,5 +1,5 @@
 use primus_lwe::LweParameters;
-use primus_modulus::BarrettModulus;
+use primus_modulus::{BarrettModulus, PowOf2Modulus};
 use primus_ntru::{
     NlevParameters, NtruCiphertext, NtruParameters, NttNgswCiphertext,
     NttNtruExternalProductWorkspace, SecretKeyDistr,
@@ -16,7 +16,8 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 
 #[global_allocator]
 static ALLOCATOR: allocations::CountingAllocator = allocations::CountingAllocator;
-const N: usize = 256;
+// N=64 leaves guard slots around three interleaved gadget levels at t=8.
+const N: usize = 64;
 const Q: u128 = 1_125_899_906_826_241;
 const M: usize = 4;
 const L: usize = 3;
@@ -58,7 +59,7 @@ fn selectors(distr: SecretKeyDistr) {
     };
     let ring = NtruParameters::new(N, 2 * M as u64, modulus, SecretKeyDistr::SparseTernary, 0.7);
     let tfhe = TfheParameters::try_new(
-        LweParameters::new(4, 2 * M as u64, BarrettModulus::new(1u64 << 24), distr, 0.7),
+        LweParameters::new(4, 2 * M as u64, PowOf2Modulus::new(1u64 << 24), distr, 0.7),
         NlevParameters::with_ntru_params(&ring, 10, None),
         full,
         0.7,

@@ -296,7 +296,8 @@ fn rounded_output_boundaries_reject_before_encoding() {
 #[test]
 fn compilation_allocates_only_the_result() {
     fn check<M: RingContext<u32>>(modulus: M) {
-        const N: usize = 1024;
+        // N=128 still fits 16 interleaved outputs at t=16.
+        const N: usize = 128;
         let q = modulus.explicit_value();
         let (_, single) = allocations::measure(|| {
             compile_single(8, N, 16, q, modulus, |input| Ok(input as u32)).unwrap()

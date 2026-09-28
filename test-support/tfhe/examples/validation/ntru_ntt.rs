@@ -331,7 +331,14 @@ fn pbs<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
     let mut outputs = vec![context.allocate_lwe_ciphertext(); 3];
 
     // Revisit zero after both interior and endpoint messages using the same evaluator.
-    for m in [0, 1, domain / 2, domain - 1, 0] {
+    // For Boolean profiles the midpoint and final value both equal 1.
+    // Keep one nonzero evaluation followed by zero to check workspace reuse.
+    let messages: &[usize] = if domain == 2 {
+        &[0, 1, 0]
+    } else {
+        &[0, 1, domain / 2, domain - 1, 0]
+    };
+    for &m in messages {
         // Client -> server: encrypt the input; keep m private to the client.
         let input = encryptor.encrypt_padded(T::as_from(m), &mut rng).unwrap();
 

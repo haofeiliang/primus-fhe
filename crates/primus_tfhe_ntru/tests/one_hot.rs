@@ -1,5 +1,5 @@
 use primus_lwe::LweParameters;
-use primus_modulus::{BarrettModulus, NativeModulus};
+use primus_modulus::{BarrettModulus, NativeModulus, PowOf2Modulus};
 use primus_ntru::{NlevParameters, NtruParameters, SecretKeyDistr};
 use primus_reduce::RingContext;
 use primus_tfhe_ntru::{
@@ -12,7 +12,7 @@ fn parameters<M: RingContext<u64>>(
     t: u64,
     levels: usize,
 ) -> (
-    TfheParameters<u64, M, BarrettModulus<u64>>,
+    TfheParameters<u64, M, PowOf2Modulus<u64>>,
     CircuitBootstrapParameters<u64, M>,
 ) {
     let ring = NtruParameters::new(64, t, modulus, SecretKeyDistr::SparseTernary, 0.7);
@@ -24,7 +24,7 @@ fn parameters<M: RingContext<u64>>(
         LweParameters::new(
             4,
             t,
-            BarrettModulus::new(1 << 20),
+            PowOf2Modulus::new(1 << 20),
             SecretKeyDistr::UniformBinary,
             0.7,
         ),

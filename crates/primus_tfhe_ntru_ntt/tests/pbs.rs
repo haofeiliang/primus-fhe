@@ -16,7 +16,7 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 #[global_allocator]
 static ALLOCATOR: allocations::CountingAllocator = allocations::CountingAllocator;
 
-const N: usize = 256;
+const N: usize = 128;
 
 fn parameters<T: FheUint>(q: T, distr: SecretKeyDistr, dimension: usize) -> TfheParameters<T> {
     let modulus = BarrettModulus::new(q);
@@ -378,7 +378,10 @@ where
         .parameters()
         .compile_odd_full_domain_lookup_table_with_codec_slice(&output_codec, &values)
         .unwrap();
-    for (message, &expected) in values.iter().enumerate() {
+    // The shared LUT oracle covers all rotations. Encrypted evaluations keep
+    // both sides of the fold, the final message and zero after dirty reuse.
+    for message in [0, 1, 7, 8, 14, 0] {
+        let expected = values[message];
         let input = encryptor.encrypt(T::as_from(message), &mut rng).unwrap();
         let (_, allocation) = allocations::measure(|| {
             evaluator.apply_lookup_table_to(&input, &full, &mut result);

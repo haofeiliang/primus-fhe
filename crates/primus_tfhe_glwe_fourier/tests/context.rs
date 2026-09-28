@@ -1,3 +1,6 @@
+//! Context/table and decomposition binding, plus independently created
+//! client/server keys in both GLWE PBS orders.
+
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{FftTable, RustFftTable};
 use primus_glwe::{GadgetSize, GlweCiphertext, GlweParameters, SecretKeyDistr};
@@ -12,7 +15,7 @@ use std::error::Error;
 
 use rand::{SeedableRng, rngs::StdRng};
 
-const POLY_LENGTH: usize = 256;
+const POLY_LENGTH: usize = 32;
 
 fn parameters(order: PbsOrder) -> TfheParameters<u32> {
     parameters_with_bases(order, 8, 4, SecretKeyDistr::UniformBinary)

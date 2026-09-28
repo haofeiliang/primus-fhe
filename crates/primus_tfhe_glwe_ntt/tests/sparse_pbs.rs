@@ -1,3 +1,6 @@
+//! Classic/sparse differential PBS and ManyLUT on reused workspaces;
+//! bucket layouts and quantization margins are part of the fixture.
+
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_encoding::{PlaintextEmbedding, RoundedCodec};
 use primus_glwe::{GlweParameters, SecretKeyDistr};
@@ -16,7 +19,7 @@ use rand::{SeedableRng, rngs::StdRng};
 static ALLOCATOR: allocations::CountingAllocator = allocations::CountingAllocator;
 
 const Q: u32 = 132_120_577;
-const N: usize = 256;
+const N: usize = 128;
 
 fn context(
     order: PbsOrder,

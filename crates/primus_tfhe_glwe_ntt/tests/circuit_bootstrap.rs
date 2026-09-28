@@ -1,3 +1,6 @@
+//! Gadget-scale phases and actual CMux/external-product consumption;
+//! parameter-constructor boundaries belong to the common family crate.
+
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_glwe::{GgswParameters, GlweParameters, NttGlweSecretKey, SecretKeyDistr};
 use primus_lattice::ggsw::NttGgsw;
@@ -16,7 +19,7 @@ use rand::{SeedableRng, rngs::StdRng};
 #[global_allocator]
 static ALLOCATOR: allocations::CountingAllocator = allocations::CountingAllocator;
 
-const POLY_LENGTH: usize = 256;
+const POLY_LENGTH: usize = 64;
 const MODULUS: u64 = 1_125_899_906_826_241;
 
 fn parameters(

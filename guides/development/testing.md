@@ -237,6 +237,47 @@ cargo nextest run "${packages[@]}" --lib --tests --release
 
 Release 验证公开拒绝和擦除失效不依赖 debug assertions；doctest 按同样 package/feature 范围单独运行。本机 SIMD 通过只代表当前 CPU 上实际分派到的路径。这里不执行大参数统计、bench 或示例，也不替代 TFHE 消费者的端到端验证。
 
+## TFHE 流程与共享辅助代码的聚焦覆盖
+
+八个 `primus_tfhe*` crate 的普通测试区分公共几何、家族参数和后端密文消费。优先使用 N=32/64/128 的功能参数；GLWE 普通 PBS 和 NTRU sparse PBS 的 ManyLUT fixture 保留 N=256，因为按步长 4 量化时，非零 LWE mask 项的舍入误差会累加，需要足够宽的平台。不能只按 gadget 输出数量决定最小 N，也不能通过挑 seed 或放宽误差阈值缩小测试。
+
+| 契约 | 所属层与默认用例 |
+| --- | --- |
+| LUT 编译、padding、量化和奇数全域 | [公共 lookup_table.rs](../../crates/primus_tfhe/tests/lookup_table.rs) 用独立整数/负循环旋转 oracle 检查中心、guard、碰撞及奇数折叠边界，保留小域穷举；[factorized_lookup_table.rs](../../crates/primus_tfhe/tests/factorized_lookup_table.rs) 保留独立卷积和 odd delta。家族 LUT 测试只补输入/输出 codec 绑定 |
+| 参数、client 与秘密表示 | [GLWE](../../crates/primus_tfhe_glwe/tests/parameters.rs)、[NTRU](../../crates/primus_tfhe_ntru/tests/parameters.rs) 拥有配置、噪声及 CBS basis/ring/capacity 拒绝；NTRU 的 native/显式模数构造验证集中于此，不在两个后端复制。家族 `client.rs`/NTRU `key.rs` 保留 signed/encoded 秘密、public client、失败前不写入和非法消息检查 |
+| PBS、ManyLUT、双输入和奇数全域消费 | 四后端的 `tests/pbs.rs` 保留 u32/u64、实际输出编码、分配与形状拒绝；GLWE 保留两种 order，Fourier 保留两个 FFT 实现。奇数全域的加密输入取 0、1、折叠两侧、末值及复用后的零；逐位置几何由公共 oracle 穷举 |
+| Boolean、独立 client/server 与盲旋转 | 四后端 `boolean.rs`/`context.rs` 保留真实密钥消费；[共享 Boolean driver](../../test-support/tfhe/src/boolean.rs) 只复用真值表和连用电路。GLWE `blind_rotation.rs` 比较直接指数和量化输入；NTRU PBS 保留首项为零、后续非零和首次融合的相位回归 |
+| 稀疏与 MVB | GLWE 的 `sparse_key.rs`/`sparse_blind_rotation.rs`/`sparse_pbs.rs` 区分映射、密钥条目和实际求值；NTRU `sparse_bucket.rs`/`sparse_pbs.rs` 保留首桶、空桶、单桶和多桶差异。四后端 `factorized_pbs.rs` 保留超过 interleaved 容量的输出数，以及公开 LUT 与密钥/表绑定。公共 sparse 匹配与有限重试 oracle 留在其私有 kernel 测试 |
+| CBS 与 one-hot | 四后端 `circuit_bootstrap.rs` 检查 gadget 层次相位及 CMux/外积消费；[公共 one_hot.rs](../../crates/primus_tfhe_ntru/tests/one_hot.rs) 穷举 guard、padding 和反周期符号。两 NTRU 后端的 `one_hot.rs` 以 N=64 验证完整/紧凑批次等价、selector 0、三层尺度、实际消费及错误后复用 |
+| 高精度查表与独立返回秘密 | [编译 oracle](../../crates/primus_tfhe_ntru_lut/tests/lookup_table.rs) 完整检查表分区和系数；[evaluation.rs](../../crates/primus_tfhe_ntru_lut/tests/evaluation.rs) 保留 NTT/RustFFT/TFHE-FFT × u32/u64 × classic binary/ternary。小域完整求值，大域取各表边界、每个 chunk 的非零 digit、前导零及末值；保留 d=0、d=c、公密混合 CMux 层、满系数环和不同输入/输出 chunk 数。NTRU 后端 `lwe_return.rs` 验证 Q→q 与独立且无需可逆的 LWE 秘密 |
+| 分配与共享参数 | [CountingAllocator](../../test-support/allocations/src/lib.rs) 保持每线程计数，不把 worker 或进程内存算入；公共编译的正分配计数和后端在线零分配测试直接消费它，不新增标准库转发测试。[参数模块](../../test-support/tfhe/src/parameters/mod.rs) 服务代表性示例/基准，与普通测试的小参数分开 |
+
+显式二幂外部 LWE 模数使用 `PowOf2Modulus`；Fourier accumulator 仍使用 `NativeModulus`。u32 NTT 的高精度流程使用适合 CBS 的 prime 998244353，三层输出分解采用 log basis=4；u64 保留其独立模数与精度，不能直接缩窄常量。
+
+支持与拒绝各有用例：GLWE CBS 覆盖 classic binary/ternary 及 sparse、两种 order；NTRU 普通 PBS 支持 classic/sparse，CBS、MVB、one-hot/高精度流程只支持 classic binary/ternary，相应 sparse 绑定被拒绝。缺失 CBS 材料、错误输出形状、参数/表不匹配和无效容量继续由实际边界验证。
+
+默认与 nightly 全 feature 复用同一套测试，不给普通测试加 SIMD gate。可在 Bash 中按以下包范围验证；all-targets 只编译/lint，doctest 独立运行：
+
+```bash
+packages=(-p primus_tfhe -p primus_tfhe_glwe -p primus_tfhe_glwe_ntt -p primus_tfhe_glwe_fourier -p primus_tfhe_ntru -p primus_tfhe_ntru_ntt -p primus_tfhe_ntru_fourier -p primus_tfhe_ntru_lut -p primus_tfhe_test_support -p primus_test_allocations)
+cargo check "${packages[@]}" --all-targets
+cargo nextest run "${packages[@]}" --lib --tests
+cargo clippy "${packages[@]}" --all-targets -- -D warnings
+cargo +nightly check "${packages[@]}" --all-targets --all-features
+cargo +nightly nextest run "${packages[@]}" --lib --tests --all-features
+cargo +nightly clippy "${packages[@]}" --all-targets --all-features -- -D warnings
+cargo nextest run "${packages[@]}" --lib --tests --release
+cargo test "${packages[@]}" --doc
+cargo +nightly test "${packages[@]}" --doc --all-features
+```
+
+大参数扩展入口是 [validate_parameters](../../test-support/tfhe/examples/validate_parameters.rs)，不加入默认测试。它验证 [参数矩阵](tfhe-parameters.md) 的 n≈800、N=1024/2048，保留两个固定 seed、raw phase 误差预算和全部后端/字宽；支持在密钥生成前按名称筛选。Boolean PBS 的消息为 0→1→0，不重复其与 midpoint/末值相同的 1；CBS、one-hot、完整查表和阈值诊断仍保留各自的边界输入与复用。
+
+```sh
+cargo run --release -p primus_tfhe_test_support --example validate_parameters
+cargo run --release -p primus_tfhe_test_support --example validate_parameters -- ntru/ntt/u32
+```
+
 ## 成本记录方法
 
 分别记录构建、枚举、运行和 smoke，不把一次带编译运行与另一轮缓存运行直接比较。可用 `/usr/bin/time` 记录 wall time 与进程 RSS，用 nextest 汇总观察执行阶段及慢用例；其进程 RSS 不是所有并行子进程的内存总峰值。缓存记录区分 `target/debug`、`target/release`、Criterion 数据和剩余磁盘空间。

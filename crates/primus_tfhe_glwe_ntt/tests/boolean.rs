@@ -12,7 +12,7 @@ use primus_tfhe_test_support::boolean;
 use rand::{SeedableRng, rngs::StdRng};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
-const POLY_LENGTH: usize = 256;
+const POLY_LENGTH: usize = 32;
 const MODULUS: u32 = 132_120_577;
 
 /// Small parameters for client factories and both PBS orders.

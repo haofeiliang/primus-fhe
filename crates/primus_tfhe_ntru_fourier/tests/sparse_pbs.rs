@@ -1,3 +1,6 @@
+//! Classic/sparse differential PBS and ManyLUT on reused workspaces;
+//! bucket layouts and quantization margins are part of the fixture.
+
 use primus_encoding::{PlaintextEmbedding, RoundedCodec};
 use primus_fft::{FftTable, RustFftTable, TfheFftTable, TorusFftValue};
 use primus_lwe::{LweCiphertext, LweParameters};
@@ -11,6 +14,8 @@ use rand::{SeedableRng, rngs::StdRng};
 #[global_allocator]
 static ALLOCATOR: CountingAllocator = CountingAllocator;
 
+// Quantizing to multiples of 4 accumulates one rounding term per nonzero mask.
+// N=256 keeps the ManyLUT half-plateau wider than that error budget.
 const N: usize = 256;
 const DIM: usize = 16;
 

@@ -1,3 +1,6 @@
+//! Sparse key entries, dummy selectors and support mapping are checked
+//! independently of end-to-end PBS; invalid imports must precede sampling.
+
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{Complex64, FftTable, RustFftTable, TfheFftTable};
 use primus_glwe::{GlweParameters, SecretKeyDistr};
@@ -11,7 +14,7 @@ use primus_tfhe_glwe_fourier::{
 };
 use rand::{Rng, SeedableRng, rngs::StdRng};
 
-const N: usize = 128;
+const N: usize = 64;
 
 fn context<Table: FftTable>(distribution: SecretKeyDistr) -> TfheContext<u64, Table> {
     let modulus = NativeModulus::new();

@@ -1,3 +1,6 @@
+//! Sparse key entries, dummy selectors and support mapping are checked
+//! independently of end-to-end PBS; invalid imports must precede sampling.
+
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_glwe::{GlweCiphertext, GlweParameters, NttGlweSecretKey, SecretKeyDistr};
 use primus_lattice::{ggsw::NttGgsw, glwe::NttGlwe, workspace::NttGlweExternalProductWorkspace};
@@ -12,7 +15,7 @@ use primus_tfhe_glwe_ntt::{
 };
 use rand::{Rng, SeedableRng, rngs::StdRng};
 
-const N: usize = 256;
+const N: usize = 64;
 const Q: u32 = 132_120_577;
 
 fn context(distribution: SecretKeyDistr) -> TfheContext<u32, U32NttTable> {
