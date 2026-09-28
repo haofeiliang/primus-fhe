@@ -100,10 +100,10 @@ just tfhe-simd
 
 ## Benchmarks
 
-The [pipeline benchmark](benches/pipeline.rs) measures the actual evaluator stages and complete lookup with setup, allocation and decryption outside timing. It reports retained key/workspace heap, output storage, online allocation counts and known-result phase error. Stage measurements use prepared selectors or controls; complete lookup includes their generation. Default and SIMD profiles use the same workload.
+The [pipeline benchmark](benches/pipeline.rs) measures complete 16-bit lookup with eight input/output chunks at n800/N1024, for u32/u64 and all three transform engines. Setup and decryption are untimed; a separate compilation measurement includes LUT allocation and drop. The complete fixture reports retained key/workspace/output heap and checks zero online allocation. Default and SIMD use the same workload.
 
 ```sh
 cargo bench -p primus_tfhe_ntru_lut --bench pipeline
 ```
 
-Parameters, stage boundaries, reproducible commands and validation scope are recorded in the [implementation and benchmark guide](IMPLEMENTATION.md#benchmark-fixture). These timings and a few phase samples do not establish security or failure probabilities.
+Parameters, measurement boundaries, reproducible commands and validation scope are recorded in the [implementation and benchmark guide](IMPLEMENTATION.md#benchmark-fixture). These timings and a few functional samples do not establish security or failure probabilities.

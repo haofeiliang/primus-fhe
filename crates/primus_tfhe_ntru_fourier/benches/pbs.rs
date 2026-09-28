@@ -1,259 +1,134 @@
-//! Complete PBS: `NLev[1]` initialization, blind rotation, key switching and extraction.
-//! PBS outputs/scratch and key-generator workspace are reused; input encryption is not timed.
-//! u32/u64, the native torus with RustFFT/TfheFFT; fixed-seed Boolean and 2+2 bit workloads.
-//! Binary/ternary PBS and server-key generation (drop outside timing).
-//! Regression workload, not a matched-security backend comparison.
-//!
-//! SIMD: use cargo +nightly bench with --features simd.
-//! cargo bench -p primus_tfhe_ntru_fourier --bench pbs
+//! Dense binary/ternary PBS and server-key generation. One iteration is one operation.
+//! LUTs, encryption, output allocation and validation are excluded; keygen includes
+//! its allocations, with returned-key destruction outside the timer.
+//! Parameters: primus_tfhe_test_support::parameters (arithmetic cost profiles).
+//! Fixtures are initialized only for selected IDs, then reused across samples.
+//! Run: cargo bench -p primus_tfhe_ntru_fourier --bench pbs
 
-use primus_test_allocations::{CountingAllocator, measure};
-use primus_tfhe_test_support::benchmark::{PBS_WORKLOADS, PbsWorkload};
 use std::hint::black_box;
-
-use rand::{SeedableRng, rngs::StdRng};
 
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use primus_fft::{FftTable, RustFftTable, TfheFftTable, TorusFftValue};
-use primus_lwe::LweParameters;
 use primus_modulus::NativeModulus;
-use primus_ntru::{NlevParameters, NtruParameters, SecretKeyDistr};
-use primus_tfhe_ntru_fourier::{BooleanGate, TfheContext, TfheParameters};
+use primus_modulus::PowOf2Modulus;
+use primus_ntru::SecretKeyDistr;
+use primus_tfhe_ntru_fourier::{KeyGenerator, TfheContext};
+use primus_tfhe_test_support::{
+    benchmark::{PBS_WORKLOADS, PbsWorkload},
+    parameters::ntru,
+};
+use rand::{SeedableRng, rngs::StdRng};
 
-#[global_allocator]
-static ALLOCATOR: CountingAllocator = CountingAllocator;
-
+// The ternary profile has its own decomposition/noise budget. Its timing must
+// not be divided by the binary timing to claim a secret-distribution speedup.
 fn backend<T: TorusFftValue, Table: FftTable>(
     c: &mut Criterion,
-    label: &str,
-    distr: SecretKeyDistr,
+    backend: &str,
     workload: PbsWorkload,
+    ternary: bool,
 ) {
-    let n = workload.poly_length;
-    let label = format!(
-        "{label}/{}/n{n}/small_lwe{}",
-        workload.name, workload.lwe_dimension
-    );
-    let modulus = NativeModulus::new();
-    let external_lwe = LweParameters::new(
+    let secret = if ternary {
+        SecretKeyDistr::UniformTernary
+    } else {
+        SecretKeyDistr::UniformBinary
+    };
+    let kind = if ternary { "ternary" } else { "binary" };
+    let name = format!(
+        "ntru/{backend}/u{}/{kind}/{}/n{}_N{}",
+        T::BITS,
+        workload.name,
         workload.lwe_dimension,
-        T::as_from(workload.plaintext_modulus),
-        modulus,
-        distr,
-        0.7,
+        workload.poly_length
     );
-    let accumulator = NtruParameters::new(
-        n,
-        T::as_from(workload.plaintext_modulus),
-        modulus,
-        SecretKeyDistr::SparseTernary,
-        0.7,
-    );
+    let parameters = ntru::pbs(NativeModulus::<T>::new(), workload, secret);
+    // Cached owned state avoids both eager setup during --list and repeated key
+    // generation for each Criterion sample. Evaluators borrow this state locally.
+    let mut fixture = None;
+    let mut verified = false;
+    c.bench_function(&format!("{name}/complete"), |b| {
+        let (context, client, server, input, lut) = fixture.get_or_insert_with(|| {
+            let context =
+                TfheContext::<T, Table, PowOf2Modulus<T>>::try_from_parameters(parameters.clone())
+                    .unwrap();
+            let mut rng = StdRng::seed_from_u64(42);
+            let (client, server) = context.try_generate_keys(None, &mut rng).unwrap();
+            let input = context
+                .encryptor(&client)
+                .unwrap()
+                .encrypt_padded(T::ONE, &mut rng)
+                .unwrap();
+            let domain = workload.plaintext_modulus as usize / 2;
+            let lut = context
+                .parameters()
+                .compile_lookup_table_fn(|x| T::as_from((x + domain - 1) % domain))
+                .unwrap();
+            (context, client, server, input, lut)
+        });
+        let mut evaluator = context.evaluator(server).unwrap();
+        let mut output = context.allocate_lwe_ciphertext();
+        if !verified {
+            evaluator.apply_lookup_table_to(input, lut, &mut output);
+            assert_eq!(
+                context.decryptor(client).unwrap().decrypt(&output).unwrap(),
+                T::ZERO
+            );
+            verified = true;
+        }
+        b.iter(|| {
+            evaluator.apply_lookup_table_to(
+                black_box(input),
+                black_box(lut),
+                black_box(&mut output),
+            )
+        });
+    });
 
-    let parameters = TfheParameters::try_new(
-        external_lwe,
-        NlevParameters::with_ntru_params(&accumulator, 9, None),
-        primus_tfhe_ntru::DecompositionConfig {
-            log_basis: 9,
-            level_count: None,
-        },
-        0.7,
-    )
-    .unwrap();
-    let table = Table::new(n.trailing_zeros()).unwrap();
-    let context = TfheContext::try_new(parameters, table).unwrap();
-    let mut rng = StdRng::seed_from_u64(42);
-    let ((client_key, server_key), keys) =
-        measure(|| context.try_generate_keys(None, &mut rng).unwrap());
-    let encryptor = context.encryptor(&client_key).unwrap();
-    let input_domain = workload.plaintext_modulus as usize / 2;
-    let input = encryptor.encrypt_padded(T::ONE, &mut rng).unwrap();
-    let lut = context
-        .parameters()
-        .compile_lookup_table_fn(|x| T::as_from((x + input_domain - 1) % (input_domain)))
-        .unwrap();
-    let mut output = input.clone();
-    let (mut evaluator, scratch) = measure(|| context.evaluator(&server_key).unwrap());
-    let (_, online) = measure(|| evaluator.apply_lookup_table_to(&input, &lut, &mut output));
-    assert_eq!(online.count, 0);
-    let phase = context
-        .decryptor(&client_key)
-        .unwrap()
-        .decrypt_phase(&output)
-        .unwrap();
-    let error = phase.into_torus_f64().abs();
-    assert!(
-        error < 0.5 / f64::from(workload.plaintext_modulus),
-        "fixed fixture exceeds the decoding margin"
-    );
-    eprintln!(
-        "{label}: client+server heap={} B, evaluator heap={} B, phase error/q={error:.6e}",
-        keys.allocated_bytes - keys.released_bytes,
-        scratch.allocated_bytes - scratch.released_bytes
-    );
-    let decryptor = context.decryptor(&client_key).unwrap();
-    for message in 0..input_domain {
-        let probe = encryptor
-            .encrypt_padded(T::as_from(message), &mut rng)
-            .unwrap();
-        evaluator.apply_lookup_table_to(&probe, &lut, &mut output);
-        assert_eq!(
-            decryptor.decrypt(&output).unwrap(),
-            T::as_from((message + input_domain - 1) % (input_domain))
-        );
+    // Release the evaluation fixture before measuring generation of new keys.
+    drop(fixture);
+
+    // One keygen geometry per secret/word/backend is enough; changing the PBS
+    // order does not change the generation algorithm.
+    if workload.plaintext_modulus != 4 {
+        return;
     }
-    let mut key_generator = primus_tfhe_ntru_fourier::KeyGenerator::new(&context);
-    c.bench_function(&format!("{label}/server_keygen"), |b| {
+    let mut fixture = None;
+    c.bench_function(&format!("{name}/server_keygen"), |b| {
+        let (context, client) = fixture.get_or_insert_with(|| {
+            let context =
+                TfheContext::<T, Table, PowOf2Modulus<T>>::try_from_parameters(parameters.clone())
+                    .unwrap();
+            let mut rng = StdRng::seed_from_u64(42);
+            let client = KeyGenerator::new(&context)
+                .try_generate_client_key(&mut rng)
+                .unwrap();
+            (context, client)
+        });
+        let mut generator = KeyGenerator::new(context);
+        let mut rng = StdRng::seed_from_u64(4242);
         b.iter_batched(
             || (),
-            |_| {
-                key_generator
-                    .try_generate_server_key(&client_key, None, &mut rng)
+            |()| {
+                generator
+                    .try_generate_server_key(black_box(client), None, &mut rng)
                     .unwrap()
             },
             BatchSize::PerIteration,
         );
     });
-
-    c.bench_function(&format!("{label}/complete_pbs_reused_output"), |bencher| {
-        bencher.iter(|| {
-            evaluator.apply_lookup_table_to(
-                black_box(&input),
-                black_box(&lut),
-                black_box(&mut output),
-            );
-        });
-    });
-    if workload.plaintext_modulus == 4 {
-        let boolean_encryptor = context.boolean_encryptor(&client_key).unwrap();
-        let lhs = boolean_encryptor.encrypt(true, &mut rng).unwrap();
-        let rhs = boolean_encryptor.encrypt(false, &mut rng).unwrap();
-        let mut result = lhs.clone();
-        let mut boolean_evaluator = context.boolean_evaluator(&server_key).unwrap();
-        let boolean_decryptor = context.boolean_decryptor(&client_key).unwrap();
-        boolean_evaluator.evaluate_binary_to(BooleanGate::And, &lhs, &rhs, &mut result);
-        assert!(!boolean_decryptor.decrypt(&result).unwrap());
-        boolean_evaluator.mux_to(&lhs, &lhs, &rhs, &mut result);
-        assert!(boolean_decryptor.decrypt(&result).unwrap());
-
-        c.bench_function(&format!("{label}/boolean_and"), |b| {
-            b.iter(|| {
-                boolean_evaluator.evaluate_binary_to(
-                    BooleanGate::And,
-                    black_box(&lhs),
-                    black_box(&rhs),
-                    black_box(&mut result),
-                )
-            });
-        });
-        c.bench_function(&format!("{label}/boolean_mux"), |b| {
-            b.iter(|| {
-                boolean_evaluator.mux_to(
-                    black_box(&lhs),
-                    black_box(&lhs),
-                    black_box(&rhs),
-                    black_box(&mut result),
-                )
-            });
-        });
-    }
-    // Each iteration produces the same 3/4 function outputs. Compare shared
-    // BR/KS against separate PBS calls; k=3 also exercises a padded fourth slot.
-    // All tables, keys and outputs are reused. Four interleaved lanes need
-    // a separate noise/geometry budget at t=32, so keep this on Boolean.
-    if distr.is_ternary() || workload.plaintext_modulus != 4 {
-        return;
-    }
-    for count in [3, 4] {
-        let value = |input: usize, output| T::as_from((input + output) % input_domain);
-        let many = context
-            .parameters()
-            .compile_interleaved_lookup_table_fn(count, value)
-            .unwrap();
-        let singles: Vec<_> = (0..count)
-            .map(|output| {
-                context
-                    .parameters()
-                    .compile_lookup_table_fn(|input| value(input, output))
-                    .unwrap()
-            })
-            .collect();
-        let mut outputs = vec![input.clone(); count];
-        for message in 0..input_domain {
-            let probe = encryptor
-                .encrypt_padded(T::as_from(message), &mut rng)
-                .unwrap();
-            evaluator.apply_interleaved_lookup_table_to(&probe, &many, &mut outputs);
-            for (index, (single, output)) in singles.iter().zip(&mut outputs).enumerate() {
-                let expected = value(message, index);
-                assert_eq!(decryptor.decrypt(output).unwrap(), expected);
-                evaluator.apply_lookup_table_to(&probe, single, output);
-                assert_eq!(decryptor.decrypt(output).unwrap(), expected);
-            }
-        }
-
-        for shared in [false, true] {
-            let kind = if shared { "many" } else { "separate" };
-            c.bench_function(
-                &format!("{label}/complete_pbs_{kind}_{count}_reused_outputs"),
-                |b| {
-                    b.iter(|| {
-                        if shared {
-                            evaluator.apply_interleaved_lookup_table_to(
-                                black_box(&input),
-                                black_box(&many),
-                                black_box(&mut outputs),
-                            );
-                        } else {
-                            for (table, output) in singles.iter().zip(&mut outputs) {
-                                evaluator.apply_lookup_table_to(
-                                    black_box(&input),
-                                    black_box(table),
-                                    black_box(output),
-                                );
-                            }
-                        }
-                        black_box(&outputs);
-                    });
-                },
-            );
-        }
-    }
 }
 
-fn pbs(c: &mut Criterion) {
+fn bench_pbs(c: &mut Criterion) {
     for workload in PBS_WORKLOADS {
-        for (suffix, distr) in [
-            ("binary", SecretKeyDistr::UniformBinary),
-            ("ternary", SecretKeyDistr::UniformTernary),
-        ] {
-            backend::<u32, RustFftTable>(
-                c,
-                &format!("ntru_fourier/rustfft/u32/{suffix}"),
-                distr,
-                workload,
-            );
-            backend::<u32, TfheFftTable>(
-                c,
-                &format!("ntru_fourier/tfhe/u32/{suffix}"),
-                distr,
-                workload,
-            );
-            backend::<u64, RustFftTable>(
-                c,
-                &format!("ntru_fourier/rustfft/u64/{suffix}"),
-                distr,
-                workload,
-            );
-            backend::<u64, TfheFftTable>(
-                c,
-                &format!("ntru_fourier/tfhe/u64/{suffix}"),
-                distr,
-                workload,
-            );
-        }
+        backend::<u32, RustFftTable>(c, "rustfft", workload, false);
+        backend::<u64, RustFftTable>(c, "rustfft", workload, false);
+        backend::<u32, TfheFftTable>(c, "tfhe_fft", workload, false);
+        backend::<u64, TfheFftTable>(c, "tfhe_fft", workload, false);
     }
+    backend::<u32, RustFftTable>(c, "rustfft", PBS_WORKLOADS[0], true);
+    backend::<u64, RustFftTable>(c, "rustfft", PBS_WORKLOADS[0], true);
+    backend::<u32, TfheFftTable>(c, "tfhe_fft", PBS_WORKLOADS[0], true);
+    backend::<u64, TfheFftTable>(c, "tfhe_fft", PBS_WORKLOADS[0], true);
 }
 
-criterion_group! { name = benches; config = Criterion::default().sample_size(20).warm_up_time(std::time::Duration::from_secs(1)).measurement_time(std::time::Duration::from_secs(5)); targets = pbs }
+criterion_group!(benches, bench_pbs);
 criterion_main!(benches);

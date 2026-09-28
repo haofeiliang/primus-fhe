@@ -30,9 +30,6 @@ criterion = { workspace = true }
 name = "pbs"
 harness = false
 
-[[bench]]
-name = "ternary_pbs"
-harness = false
 
 [[bench]]
 name = "circuit_bootstrap"

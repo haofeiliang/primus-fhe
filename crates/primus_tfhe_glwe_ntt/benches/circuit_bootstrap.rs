@@ -1,174 +1,104 @@
-//! Complete classic/sparse CBS, including input KS for KeyswitchBootstrap.
-//! B6.1 u64 profile: n/h/N=728/32/1024, BR (10,5), output (8,3), c=3, 64 buckets.
-//! Functional/cost parameters, not a certified security or failure-probability set.
-//! Keys, four encrypted inputs and all workspace are prepared outside timing.
-//!
-//! cargo bench -p primus_tfhe_glwe_ntt --bench circuit_bootstrap
+//! One complete CBS into a reused gadget ciphertext. Keygen, encryption,
+//! allocation and the CMux correctness probe are outside timing; t=4.
+//! Parameters: primus_tfhe_test_support::parameters (arithmetic cost profiles).
+//! Fixtures are initialized only for selected IDs, then reused across samples.
+//! Run: cargo bench -p primus_tfhe_glwe_ntt --bench circuit_bootstrap
 
 use std::hint::black_box;
 
-use criterion::{Criterion, SamplingMode, criterion_group, criterion_main};
-use primus_glwe::{NttGlweSecretKey, SecretKeyDistr};
-use primus_lwe::LweParameters;
-use primus_modulus::BarrettModulus;
-use primus_ntt::U64NttTable;
-use primus_poly::Polynomial;
-use primus_test_allocations as allocations;
+use criterion::{Criterion, criterion_group, criterion_main};
+use primus_glwe::SecretKeyDistr;
+use primus_integer::FheUint;
+use primus_ntt::{MonomialNttTable, U32NttTable, U64NttTable};
 use primus_tfhe_glwe_ntt::{
-    CircuitBootstrapConfig, CircuitBootstrapEvaluator, CircuitBootstrapParameters, ClientKey,
-    DecompositionConfig, KeyGenerator, PbsOrder, TfheConfig, TfheContext, TfheParameters,
+    CircuitBootstrapEvaluator, ClientKey, KeyGenerator, PbsOrder, TfheContext,
 };
+use primus_tfhe_test_support::parameters::ntt_circuit_modulus;
+use primus_tfhe_test_support::parameters::{N, glwe};
 use rand::{SeedableRng, rngs::StdRng};
 
-#[global_allocator]
-static ALLOCATOR: allocations::CountingAllocator = allocations::CountingAllocator;
-
-const N: usize = 1024;
-const DIMENSION: usize = 728;
-const WEIGHT: usize = 32;
-const Q: u64 = 1_125_899_906_826_241;
-
-fn circuit_bootstrap(c: &mut Criterion) {
-    let modulus = BarrettModulus::new(Q);
-    for order in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
-        let parameters = TfheParameters::try_from_config(TfheConfig {
-            small_lwe: LweParameters::new(
-                DIMENSION,
-                4,
-                modulus,
-                SecretKeyDistr::fixed_hamming_weight_binary(DIMENSION, WEIGHT),
-                3.2 * Q as f64 / 16384.0,
-            ),
-            accumulator_dimension: 1,
-            poly_length: N,
-            accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,
-            accumulator_noise_standard_deviation: 0.7,
-            blind_rotation: DecompositionConfig {
-                log_basis: 10,
-                level_count: None,
-            },
-            key_switching: DecompositionConfig {
-                log_basis: 10,
-                level_count: Some(4),
-            },
-            pbs_order: order,
-        })
-        .unwrap();
-        let context = TfheContext::<_, U64NttTable>::try_from_parameters(parameters).unwrap();
-        let mut rng = StdRng::seed_from_u64(0x4236_3101);
-        let client = ClientKey::generate(context.parameters(), &mut rng);
-        let mut generator = KeyGenerator::new(&context);
-        let classic = generator
-            .try_generate_server_key(&client, None, &mut rng)
-            .unwrap();
-        let sparse = generator
-            .try_generate_sparse_server_key(&client, 3, 2 * WEIGHT, None, &mut rng)
-            .unwrap();
-        // Share CBS material so that only the BR key and each order's KSK differ.
-        let parameters = CircuitBootstrapParameters::try_from_config(
-            context.parameters(),
-            CircuitBootstrapConfig {
-                output: DecompositionConfig {
-                    log_basis: 8,
-                    level_count: Some(3),
-                },
-                trace: DecompositionConfig {
-                    log_basis: 10,
-                    level_count: None,
-                },
-                trace_noise_standard_deviation: 0.7,
-                scheme_switch: DecompositionConfig {
-                    log_basis: 10,
-                    level_count: None,
-                },
-                scheme_switch_noise_standard_deviation: 0.7,
-            },
+// CBS consumes a bit and emits a gadget control, not an LWE result. Verify
+// that representation by selecting an encrypted ring message before timing.
+fn ordinary<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
+    c: &mut Criterion,
+    backend: &str,
+    order: PbsOrder,
+    sparse: bool,
+) {
+    let kind = if sparse { "sparse" } else { "classic" };
+    let dimension = if sparse { 728 } else { 800 };
+    let parameters = if sparse {
+        glwe::diagnostic(ntt_circuit_modulus::<T>(), order, 4)
+    } else {
+        glwe::circuit(
+            ntt_circuit_modulus::<T>(),
+            order,
+            SecretKeyDistr::UniformBinary,
         )
-        .unwrap();
-        let key = generator
-            .try_generate_circuit_bootstrap_key(&client, parameters.clone(), &mut rng)
-            .unwrap();
-        let encryptor = context.encryptor(&client).unwrap();
-        let bits = [1u64, 0, 1, 0];
-        let inputs = bits.map(|bit| encryptor.encrypt_padded(bit, &mut rng).unwrap());
-        let mut accumulator = context.accumulator_client(&client).unwrap();
-        let messages = [0, 1].map(|offset| {
-            (0..N)
-                .map(|i| ((i + offset) % 4) as u64)
-                .collect::<Vec<_>>()
-        });
-        let choices = messages
-            .each_ref()
-            .map(|message| accumulator.encrypt(message, &mut rng));
-        let secret =
-            NttGlweSecretKey::from_coeff_secret_key(client.glwe_secret_key(), context.table());
-        let mut phase = Polynomial::new(vec![0u64; N]);
-        let mut selected = context.allocate_accumulator_ciphertext();
-        let mut decoded = vec![0; N];
-        let mut group = c.benchmark_group(format!(
-            "glwe_ntt/cbs/u64/n{DIMENSION}/h{WEIGHT}/N{N}/{order:?}/output_logb8_l3"
-        ));
-        group.sampling_mode(SamplingMode::Flat);
-        for (name, server) in [("classic", &classic), ("sparse", &sparse)] {
-            let (mut evaluator, workspace) = allocations::measure(|| {
-                CircuitBootstrapEvaluator::try_from_parts(&context, server, &parameters, &key)
+    };
+    let name = format!(
+        "glwe/{backend}/u{}/cbs/{kind}/n{dimension}_N1024/{order:?}/complete",
+        T::BITS
+    );
+    let mut fixture = None;
+    let mut verified = false;
+    c.bench_function(&name, |b| {
+        let (context, client, server, input, lhs, rhs) = fixture.get_or_insert_with(|| {
+            let context = TfheContext::<T, Table>::try_from_parameters(parameters.clone()).unwrap();
+            let mut rng = StdRng::seed_from_u64(42);
+            let mut generator = KeyGenerator::new(&context);
+            let client = ClientKey::generate(context.parameters(), &mut rng);
+            let server = if sparse {
+                generator
+                    .try_generate_sparse_server_key(
+                        &client,
+                        3,
+                        64,
+                        Some(glwe::cbs::<T>()),
+                        &mut rng,
+                    )
                     .unwrap()
-            });
-            let mut output = evaluator.allocate_output();
-            // Check every gadget row/level and nonconstant CMUX before timing;
-            // this larger diagnostic stays outside the CI test suite.
-            for (&bit, input) in bits.iter().zip(&inputs) {
-                let (_, online) = allocations::measure(|| {
-                    evaluator.circuit_bootstrap_to(input, &mut output);
-                    evaluator.cmux_to(&output, &choices[0], &choices[1], &mut selected);
-                    accumulator.decrypt_to(&selected, &mut decoded);
-                });
-                assert_eq!(online.count, 0);
-                assert_eq!(decoded, messages[bit as usize]);
-                let size = parameters.output_size();
-                for (row, glev) in output.iter_ntt_glev(size.glev_len()).enumerate() {
-                    let row_secret = client.glwe_secret_key().iter().nth(row);
-                    for (scalar, level) in parameters
-                        .output_basis()
-                        .scalar_iter()
-                        .zip(glev.iter_ntt_glwe(size.glwe_size().glwe_len()))
-                    {
-                        secret.phase_to(&level, &mut phase, modulus, context.table());
-                        for (i, &actual) in phase.as_ref().iter().enumerate() {
-                            let coefficient =
-                                row_secret.map_or(i128::from(i == 0), |s| -i128::from(s[i]));
-                            let expected = (coefficient * i128::from(scalar) * i128::from(bit))
-                                .rem_euclid(i128::from(Q))
-                                as u64;
-                            let error = actual.abs_diff(expected);
-                            assert!(
-                                error.min(Q - error) < scalar / 8,
-                                "{order:?}/{name}, row {row}, scale {scalar}"
-                            );
-                        }
-                    }
-                }
-            }
-            eprintln!(
-                "{order:?}/{name}: evaluator resident requested bytes={}, output bytes={}",
-                workspace.allocated_bytes - workspace.released_bytes,
-                std::mem::size_of_val(output.as_ref())
-            );
-            let mut next_input = 0;
-            group.bench_function(name, |b| {
-                b.iter(|| {
-                    evaluator.circuit_bootstrap_to(
-                        black_box(&inputs[next_input]),
-                        black_box(&mut output),
-                    );
-                    next_input = (next_input + 1) % inputs.len();
-                    black_box(&output);
-                })
-            });
+            } else {
+                generator
+                    .try_generate_server_key(&client, Some(glwe::cbs::<T>()), &mut rng)
+                    .unwrap()
+            };
+            let input = context
+                .encryptor(&client)
+                .unwrap()
+                .encrypt_padded(T::ONE, &mut rng)
+                .unwrap();
+            let mut ring = context.accumulator_client(&client).unwrap();
+            let lhs = ring.encrypt(&[T::ZERO; N], &mut rng);
+            let rhs = ring.encrypt(&[T::ONE; N], &mut rng);
+            (context, client, server, input, lhs, rhs)
+        });
+        let mut evaluator = CircuitBootstrapEvaluator::try_new(context, server).unwrap();
+        let mut output = evaluator.allocate_output();
+        if !verified {
+            evaluator.circuit_bootstrap_to(input, &mut output);
+            let mut selected = context.allocate_accumulator_ciphertext();
+            evaluator.cmux_to(&output, lhs, rhs, &mut selected);
+            let mut decoded = vec![T::ZERO; N];
+            context
+                .accumulator_client(client)
+                .unwrap()
+                .decrypt_to(&selected, &mut decoded);
+            assert!(decoded.iter().all(|&value| value == T::ONE));
+            verified = true;
         }
-        group.finish();
+        b.iter(|| evaluator.circuit_bootstrap_to(black_box(input), black_box(&mut output)));
+    });
+}
+
+fn bench_cbs(c: &mut Criterion) {
+    for order in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
+        for sparse in [false, true] {
+            ordinary::<u32, U32NttTable>(c, "ntt", order, sparse);
+            ordinary::<u64, U64NttTable>(c, "ntt", order, sparse);
+        }
     }
 }
 
-criterion_group!(benches, circuit_bootstrap);
+criterion_group!(benches, bench_cbs);
 criterion_main!(benches);

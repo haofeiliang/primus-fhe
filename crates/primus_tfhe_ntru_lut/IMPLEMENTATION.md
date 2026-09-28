@@ -49,56 +49,56 @@ Table products borrow one-hot CBS's external-product workspace; Fourier transfor
 
 ## Benchmark fixture
 
-The [pipeline benchmark](benches/pipeline.rs) compiles the evaluator sources with `include!`/`#[path]` to access private stages. It does not add production API hooks or copy the selection algorithms. Parameters are defined in [support/mod.rs](benches/support/mod.rs); backend measurements are in [support/ntt.rs](benches/support/ntt.rs) and [support/fourier.rs](benches/support/fourier.rs).
+The [pipeline benchmark](benches/pipeline.rs) calls the public evaluators.
+[Support](benches/support/mod.rs) holds only the public layout, cleartext function,
+compilation timing and heap reporting; its NTT/Fourier modules keep concrete
+backend types. It neither includes production source files nor exposes scratch.
 
 | Parameter | Value |
 | --- | --- |
-| Word width / ring length / external LWE dimension | u64 / N=1024 / n=64 |
-| External q / plaintext t | `PowOf2Modulus(2^24)` / 8; M=4 |
-| Ring Q | NTT: `BarrettModulus(1125899906826241)`; Fourier: native 2^64 |
-| Secrets | Independent external UniformBinary and ring SparseTernary |
-| BR, trace, scheme-switch decomposition | log_basis=8, maximum level count |
-| Return KS / CBS output decomposition | log_basis=8, 3 levels |
-| Noise standard deviations | 0.7 in each role's coefficient-domain units |
-| Layout | c=7, d=5, o=3; K=1024, P=16, 16384 possible inputs |
-| Function | `(x*x + 3*x + x/17 + x/257 + 7) mod 64`, three base-4 output digits |
-| Seed / timed input | `0x0053_5445_5039` / x=0x1234 |
+| Words / N / external n | u32 and u64 / 1024 / 800 |
+| External q / plaintext t | PowOf2 2^24 / 8; M=4 |
+| Ring Q | NTT Q30=998244353 (u32), Q50=1125899906826241 (u64); Fourier Native32/64 |
+| Secrets | Independent UniformBinary external LWE and SparseTernary ring secret |
+| Bases / noise | Shared [NTRU circuit profile](../../guides/development/tfhe-parameters.md#ntru-pbs-cbs-and-lookup), including independent q-domain return KS |
+| Layout | c8/d5/o8: 65536 inputs, 64 polynomials per output, K=N=1024 |
+| Public function / input / seed | `(x*x+3*x+7) mod 65536` / 43981 / 42 |
 
-The maximum 8-bit decomposition has six levels and drops two low bits for the 50-bit NTT Q; native u64 has eight levels and drops none. The fixture measures functional workloads. Its small external dimension and noise do not define production security parameters or equal-security backends. Changing modulus implementations, dimensions or decompositions requires a new timing baseline.
+One `complete` iteration generates selectors for eight input chunks, selects,
+rotates and returns all eight output ciphertexts. Keys, public LUT compilation,
+encryption, validation and reusable workspace allocation are outside timing.
+Throughput counts eight output ciphertexts, not eight independent requests.
+The separate `compile_and_drop` IDs include allocation, filling and destruction
+of one public LUT; Fourier registers this once per word width because the two
+FFT engines do not affect coefficient compilation.
 
-## Measurement boundaries
+The selected complete fixture reports retained requested heap for combined
+client/server keys, the public LUT, evaluator workspace and caller outputs.
+Context/tables, allocator metadata, stack and peak transient generation storage
+are excluded. An untimed evaluation asserts zero online allocations and checks
+every decoded output digit; counting is disabled during latency sampling.
+These are finite functional observations, not a failure-probability estimate.
 
-Each Criterion iteration performs one named operation. Key generation, public LUT compilation, input encryption, validation, allocation probes and decryption occur outside timing.
-
-| Measurement | Timed work |
-| --- | --- |
-| `complete` | Selectors for seven chunks, then selection, rotation and return for all three outputs |
-| `table_selection/prepared_selectors` | One output: 16 public candidates, two selection layers, 19 external products |
-| `rotation_selection/prepared_controls` | Five aggregated controls on one selected ciphertext; includes two state swaps |
-| `return_Q_to_q_then_KS` | One already rotated ciphertext returned to external LWE |
-| `one_hot/full_ngsw`, `one_hot/nonzero_ngsw` | One input through BR, projection and scheme switch; four or three outputs respectively |
-| `ordinary_cbs` | One binary input through ordinary CBS |
-| `first_lift/binary` | Fused public lift for selector 1 and exponent N/3, excluding key generation and the rest of BR |
-| `reverse_trace/retained1`, `reverse_trace/retained4` | Full or partial normalized trace, retaining one or four coefficient positions |
-
-Rotation uses `iter_batched_ref` to clone the initial selected ciphertext outside timing; repeated samples do not accumulate rotations or noise. The two swaps needed to use the in-place evaluator are timed. Stage measurements reuse prepared states, and full NGSW one-hot differs from the public layer's NLEV output, so summing these timings does not predict complete lookup latency.
-
-The harness prints retained requested heap (`allocated_bytes-released_bytes`), online allocation counts and maximum q-domain phase error against known function outputs. Retained heap excludes temporary allocations, allocator metadata, stack and RSS; workspace measurements exclude the shared context and transform tables. A returned key's coefficient storage is part of the server key, and standalone stage workspaces overlap the complete evaluator's responsibilities, so these rows must not be summed blindly.
-
-Setup validates x=0, 0x1234 and 16383 (nine output phases per backend), compact selectors against full selectors, ordinary CBS through CMux, fused lifting through a known monomial rotation, and trace projection including discarded positions. Online operations assert zero allocation. These checks and a few fixed-seed phase observations are functional diagnostics, not failure-probability estimates or complete correctness coverage; ordinary [tests](tests) remain independent validation.
+Ordinary CBS and full/nonzero one-hot costs now belong to their NTRU backend's
+`circuit_bootstrap` benchmark. Private selection/rotation states, fused lift,
+and reverse trace are no longer duplicated in this target. Their mathematical
+contracts remain covered by library tests and lower-level primitive benchmarks.
 
 ## Reproducing measurements
 
 ```sh
-# Run setup and assertions once per benchmark target, without latency sampling.
+cargo bench -p primus_tfhe_ntru_lut --bench pipeline -- --list
 cargo bench -p primus_tfhe_ntru_lut --bench pipeline -- --test
-
-# Measure the default fixture.
-cargo bench -p primus_tfhe_ntru_lut --bench pipeline
-
-# Compare sequentially on the same available logical CPU and nightly toolchain.
-taskset -c 4 cargo +nightly bench -p primus_tfhe_ntru_lut --bench pipeline -- --save-baseline default
-taskset -c 4 cargo +nightly bench -p primus_tfhe_ntru_lut --bench pipeline --features simd -- --save-baseline simd
+taskset -c 0 cargo bench -p primus_tfhe_ntru_lut --bench pipeline -- \
+  '/complete$' --sample-size 20 --warm-up-time 0.5 --measurement-time 2 --noplot
+# SIMD configuration; use the same nightly compiler for both sides of a feature comparison.
+taskset -c 0 cargo +nightly bench -p primus_tfhe_ntru_lut --bench pipeline --features simd -- \
+  '/complete$' --sample-size 20 --warm-up-time 0.5 --measurement-time 2 --noplot
 ```
 
-The harness uses 20 samples, 300 ms warmup and a one-second target measurement time. Record CPU, affinity, toolchain, feature set, parameters and machine load with results. Keep compilation and other measurements out of the timed run. The default feature set does not imply that FFT dependencies avoid SIMD. Criterion results live under `target/criterion`; compare equivalent workloads and use confidence intervals rather than interpreting small single-run differences as stable improvements.
+Criterion defaults apply unless the command overrides them. `--list` performs
+no key generation; filters initialize only matching fixtures. Build before
+measurement, fix affinity and avoid concurrent benchmark/compiler work.
+Record exact IDs and compiler/features. The [current baseline](../../guides/development/tfhe-benchmarks.md)
+uses this workload; historical c7/d5/o3, n64, all-sigma0.7 results in Git have
+different table sizes and key work and are not latency comparison baselines.

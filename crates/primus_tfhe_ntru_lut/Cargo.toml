@@ -20,6 +20,7 @@ primus_tfhe_ntru_fourier = { path = "../primus_tfhe_ntru_fourier" }
 thiserror = { workspace = true }
 
 [dev-dependencies]
+primus_tfhe_test_support = { path = "../../test-support/tfhe" }
 criterion = { workspace = true }
 primus_lwe = { path = "../primus_lwe" }
 primus_test_allocations = { path = "../../test-support/allocations" }

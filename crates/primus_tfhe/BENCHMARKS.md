@@ -1,49 +1,57 @@
-# Common PBS benchmark workloads
+# TFHE benchmark workloads
 
-The four backend `pbs` benches share the geometry in
-[`benchmark.rs`](../../test-support/tfhe/src/benchmark.rs). They exercise both
-`u32` and `u64`; Fourier runs RustFFT and TfheFFT. These are reproducible
-performance fixtures, not production security parameters.
+The 18 targets below measure independent operations using the shared
+[parameter profiles](../../guides/development/tfhe-parameters.md).
+All retained workflows cover u32/u64; Fourier covers RustFFT and TFHE-FFT,
+and complete GLWE workflows cover both PBS orders. These are arithmetic cost
+fixtures, not assessed security parameters or equal-security comparisons.
 
-| Workload | Small LWE dimension `n` | Polynomial length `N` | GLWE dimension `k` | Plaintext modulus `t` | Padded input domain |
-| --- | ---: | ---: | ---: | ---: | --- |
-| `boolean` | 800 | 1024 | 1 | 4 | 0–1 |
-| `shortint_2_2` | 866 | 2048 | 1 | 32 | 0–15 |
+## Targets and measurement boundaries
 
-The Boolean geometry retains the previous NTRU workload and gives GLWE the same
-`n` and `N`. The second workload represents two message bits plus two carry bits
-and a padding bit. It measures a 16-entry LUT; it does not implement a shortint
-arithmetic API or carry tracking. Both measure complete PBS. Boolean also
-measures AND, MUX, and 3/4-output interleaved PBS against separate calls.
-GLWE measures BR and KS separately in both orders (`pbs_ks`, `ks_pbs`); NTRU
-also measures server-key generation and binary/ternary input keys. NTRU's
-multi-output comparison uses binary keys.
+| Target | Question answered / one iteration |
+| --- | --- |
+| `primus_tfhe/lookup_table` | Compile and drop one public LUT: ordinary t32/k1, padded interleaving t16/k3, or tight cells t255/k4; N1024, Native/PowOf2 q24/Barrett |
+| Four backends' `pbs` | One complete dense binary PBS at n800/N1024/t4 or n866/N2048/t32; ternary at n800/N1024/t4; one server-key generation per dense secret/word/backend |
+| GLWE `pbs` stage IDs | One BR or one GLWE key switch at binary n800/N1024; excludes extraction and prerequisite operations |
+| Four backends' `sparse_pbs` | One complete classic or bucket-sparse PBS, or one server-key generation, for the same n728/h32/N1024/t8 secret profile |
+| Four backends' `mvb` | Produce k Scaled threshold bits from one input: D8/k3 compares independent PBS, interleaved ManyLUT and factorized MVB; D64/k17 compares independent and factorized because interleaving does not fit |
+| Four backends' `circuit_bootstrap` | One ordinary CBS into a reused gadget ciphertext; GLWE also has sparse CBS, NTRU also compares full M4 and compact M-1 one-hot batches |
+| `primus_tfhe_ntru_lut/pipeline` | One public LUT compilation/drop or one complete c8/d5/o8 lookup (16 input/output bits) at n800/N1024 |
 
-The `shortint_2_2` profile measures single-output PBS. Four interleaved lanes
-coarsen rotation quantization by four; `n=866, N=2048, t=32` did not pass the
-full-input-domain check with that geometry. Multi-output shortint needs its own
-larger-polynomial/noise budget rather than reusing the single-output reference.
+MVB compares classic and sparse GLWE keys. NTRU sparse supports only ordinary
+and interleaved PBS, so it has just the D8/k3 independent/interleaved pair.
+Throughput for MVB and complete lookup counts **output ciphertexts**; latency
+still measures the whole batch. NTRU output phases are decoded at external q24,
+while their public coefficient tables are encoded at ring Q.
+
+Repeated ManyLUT cases now live in `mvb`, not in both PBS files. Boolean AND/MUX
+wrappers and the legacy two-CMux ternary implementation are no longer separate
+timings. Ternary PBS itself remains. The former `ternary_pbs` targets have been
+merged into `pbs`. One-hot belongs to the NTRU CBS target. The LUT pipeline uses
+the public evaluator, without compiling a second copy of production sources to
+access private stages. Primitive arithmetic remains in the lattice/scheme
+benchmarks; additional stage probes should have a concrete diagnostic purpose.
 
 ## Numerical parameters
 
-NTT uses `q32 = 132120577` and `q64 = 1125899906826241`; Fourier uses the native
-torus `q = 2^32` or `2^64`. The following choices apply to both workloads.
-Decomposition pairs are `(base_log, level_count)`.
+[Shared constructors](../../test-support/tfhe/src/parameters/mod.rs) separate
+numerical choices from timing code. The parameter guide records every modulus,
+noise unit, decomposition and secret distribution. Dense binary GLWE PBS
+retains the profiles below; ternary uses the separate circuit profile and must
+not be treated as a matched-parameter binary/ternary speed comparison.
 
-| Family / backend | Width | PBS decomposition | KS decomposition | Secret distribution |
-| --- | --- | --- | --- | --- |
-| GLWE NTT | u32 | (5, 5) | (2, 13) | Binary small LWE and GLWE |
-| GLWE Fourier | u32 | (8, 3) | (2, 13) | Binary small LWE and GLWE |
-| GLWE NTT / Fourier | u64 | (23, 1) | (3, 5) | Binary small LWE and GLWE |
-| NTRU NTT / Fourier | u32 / u64 | Base log 9, full decomposition | Base log 9, full decomposition | Binary or ternary client; sparse ternary accumulator |
+| Dense binary GLWE | BR (log basis, levels) | KS (log basis, levels) |
+| --- | --- | --- |
+| u32 NTT Q27 | (5,5) | (2,13) |
+| u32 Fourier Native32 | (8,3) | (2,13) |
+| u64 NTT Q50 / Fourier Native64 | (23,1) | (3,5) |
 
-GLWE uses coefficient standard deviations
-`sigma_lwe = q * 2.046151696979124e-6` and
-`sigma_glwe = max(6.4, q * 2.845267479601915e-15)`.
-The floor preserves nonzero coefficient noise in the smaller moduli. NTRU
-retains its existing coefficient standard deviation `0.7` throughout; it is
-an experimental workload with different noise/key-generation contracts.
-Equal geometry therefore does not imply equal security or noise budgets.
+NTRU uses independent `PowOf2Modulus(2^24)` external LWE and return keys.
+The ring uses Q27 for ordinary u32 NTT PBS, Q30 for circuit products, Q50 for
+u64 NTT, or Native32/64 for Fourier. Full internal decomposition uses log basis
+2 for u32 and 8 for u64; return KS uses (3,8) at q24. Ring sigma is 0.7,
+return-key sigma is 3.2, and external sigma follows the dense/fixed-weight
+profile. These replace the former q=Q/base9/sigma0.7-everywhere benchmark.
 
 The reference is pinned to
 [TFHE-rs 1.8.1, `V1_8_PARAM_MESSAGE_2_CARRY_2_KS_PBS_GAUSSIAN_2M128`](https://github.com/zama-ai/tfhe-rs/blob/tfhe-rs-1.8.1/tfhe/src/shortint/parameters/v1_8/classic/gaussian/p_fail_2_minus_128/ks_pbs.rs#L5-L7).
@@ -96,33 +104,49 @@ TFHE-rs timing, and distinguish a workload comparison from matching parameters.
 
 ## Running and comparing
 
-Run the same command for `primus_tfhe_glwe_ntt`, `primus_tfhe_glwe_fourier`,
-`primus_tfhe_ntru_ntt`, or `primus_tfhe_ntru_fourier`:
-
 ```sh
-# Compile and execute each benchmark once, including setup correctness checks.
+# Listing does not generate keys, encrypt inputs, or execute correctness probes.
+cargo bench -p primus_tfhe_glwe_ntt --bench pbs -- --list
+# Run each selected ID once, including its untimed known-result checks.
 cargo bench -p primus_tfhe_glwe_ntt --bench pbs -- --test
-# Time a workload; add /u64 or an operation name to the regex to narrow it.
-cargo bench -p primus_tfhe_glwe_ntt --bench pbs -- 'shortint_2_2/u64/.*/complete_pbs_reused_output'
+# Measure one complete workload; pin an available CPU for revision comparisons.
+taskset -c 0 cargo bench -p primus_tfhe_glwe_ntt --bench pbs -- \
+  'glwe/ntt/u64/binary/shortint_2_2/.*/BootstrapKeyswitch/complete$' \
+  --sample-size 20 --warm-up-time 0.5 --measurement-time 2 --noplot
 ```
 
-All four targets default to 20 samples, 1 s warm-up and 5 s measurement time.
-Setup reports retained client+server and evaluator heap bytes; these exclude
-table allocations and do not represent peak key-generation memory.
+Targets use Criterion's defaults unless overridden. Owned fixtures are created
+inside the selected benchmark callback and cached across samples. Evaluators
+borrow those fixtures locally. Encryption, table preparation, workspace/output
+allocation and correctness probes stay outside online timing. Key-generation
+IDs include generation allocations but use `iter_batched` so returned-key drop
+is untimed. Compilation IDs explicitly include LUT allocation, filling and drop.
 
-Criterion filters select measurements; fixture setup still runs. Keys use seed
-42. Setup checks every padded input against the LUT oracle, including Boolean
-separate/interleaved outputs, and checks AND/MUX before timing. This is a deterministic
-regression check, not a failure-rate estimate. Inputs, tables, output storage and
-scratch are prepared outside online timing. A complete-PBS iteration evaluates
-one LUT; a multi-output iteration produces exactly 3 or 4 outputs.
+There is no manual repetition to amplify timings. Independent multi-output PBS
+performs k calls because its real workload is k outputs. Dispatch between
+algorithms occurs outside `b.iter`; inputs are fixed encrypted messages and
+outputs/scratch are overwritten. Seed 42 establishes the client fixture; sparse
+keygen uses seed 4242. A known-result probe checks the measured operation, while
+exhaustive/phase-margin diagnostics remain in `validate_parameters` and tests.
 
-Use a fixed CPU affinity, toolchain, feature set and profile when comparing
-revisions. Build before collecting timing data and do not compile concurrently.
-The workspace already sets `target-cpu=native`. SIMD invocation is documented
-in the backend bench sources. The new names and GLWE geometry/noise differ from
-the historical n=512 fixtures, so establish a new baseline. Specialized CBS,
-sparse, ternary-GLWE and MVB benches retain their own fixtures.
+Only the complete high-precision target reports retained requested heap and
+asserts zero online allocations. Resource probes are untimed and allocation
+counting is disabled during samples; heap does not mean RSS or peak generation
+memory. See the [pipeline boundaries](../primus_tfhe_ntru_lut/IMPLEMENTATION.md#benchmark-fixture).
 
-Measured optimization results, retained/rejected candidates and reproduction steps are
-recorded in [TFHE performance optimization](../../docs/tfhe-performance-optimization.md).
+Build before timing and avoid concurrent compilation or benchmarks. Record CPU,
+affinity, compiler, features, profile and exact ID. The repository already uses
+`target-cpu=native`. Default FFT dependencies may still use SIMD internally;
+the workspace `simd` feature is a distinct configuration.
+
+For the SIMD benchmark configuration only:
+
+```sh
+taskset -c 0 cargo +nightly bench -p primus_tfhe_ntru_lut --bench pipeline --features simd -- \
+  '/complete$' --sample-size 20 --warm-up-time 0.5 --measurement-time 2 --noplot
+```
+
+The [current measurement record](../../guides/development/tfhe-benchmarks.md)
+records the baseline and storage experiment. Earlier n16/n64 lookup or
+q=Q/base9 NTRU results have different work and cannot be divided by these
+results to claim an implementation speedup or regression.

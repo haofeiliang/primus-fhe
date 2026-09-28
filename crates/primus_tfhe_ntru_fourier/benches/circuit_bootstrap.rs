@@ -1,184 +1,163 @@
-//! Complete u32/u64 CBS at n=728, N=1024: BR, reverse trace and scheme switching.
-//! Functional/cost profiles, not security parameter recommendations. Key generation,
-//! four encrypted inputs, correctness checks and allocation stay outside timing.
-//! u32 uses logb=3 for BR/trace/scheme switching and output (4,2);
-//! u64 retains logb=10 and output (8,2). Both use full decomposition internally.
-//!
-//! cargo bench -p primus_tfhe_ntru_fourier --bench circuit_bootstrap
+//! One complete CBS into a reused gadget ciphertext; NTRU also measures full
+//! and nonzero one-hot batches. Keygen, encryption, allocation and the CMux
+//! correctness probe are outside timing. Ordinary CBS uses t4; one-hot uses t8.
+//! Parameters: primus_tfhe_test_support::parameters (arithmetic cost profiles).
+//! Fixtures are initialized only for selected IDs, then reused across samples.
+//! Run: cargo bench -p primus_tfhe_ntru_fourier --bench circuit_bootstrap
 
-use criterion::{Criterion, SamplingMode, criterion_group, criterion_main};
-use primus_decompose::primitive::ApproxSignedBasis;
+use std::hint::black_box;
+
+use criterion::{Criterion, criterion_group, criterion_main};
 use primus_fft::{FftTable, RustFftTable, TfheFftTable, TorusFftValue};
-use primus_integer::AsInto;
-use primus_lwe::LweParameters;
+use primus_lattice::ngsw::FourierNgswIter;
 use primus_modulus::NativeModulus;
-use primus_ntru::{
-    FourierNtruDecryptWorkspace, FourierNtruSecretKey, NlevParameters, NtruParameters,
-    SecretKeyDistr,
-};
-use primus_poly::Polynomial;
-use primus_test_allocations as allocations;
+use primus_modulus::PowOf2Modulus;
+use primus_ntru::SecretKeyDistr;
 use primus_tfhe_ntru_fourier::{
-    CircuitBootstrapEvaluator, CircuitBootstrapParameters, TfheContext, TfheParameters,
+    CircuitBootstrapEvaluator, OneHotCircuitBootstrapEvaluator, TfheContext,
 };
+use primus_tfhe_test_support::parameters::{N, ntru};
 use rand::{SeedableRng, rngs::StdRng};
-use std::{hint::black_box, time::Duration};
 
-#[global_allocator]
-static ALLOCATOR: allocations::CountingAllocator = allocations::CountingAllocator;
-
-const N: usize = 1024;
-const DIMENSION: usize = 728;
-
-fn backend<T: TorusFftValue, Table: FftTable>(
-    c: &mut Criterion,
-    backend: &str,
-    log_basis: u32,
-    output_log_basis: u32,
-) {
-    let modulus = NativeModulus::<T>::new();
-    let q128 = 1i128 << T::BITS;
-    let acc = NtruParameters::new(
-        N,
-        T::as_from(4u32),
-        modulus,
-        SecretKeyDistr::SparseTernary,
-        0.7,
-    );
-
-    let parameters = TfheParameters::try_new(
-        LweParameters::new(
-            DIMENSION,
-            T::as_from(4u32),
-            modulus,
-            SecretKeyDistr::UniformBinary,
-            0.7,
-        ),
-        NlevParameters::with_ntru_params(&acc, log_basis, None),
-        primus_tfhe_ntru::DecompositionConfig {
-            log_basis,
-            level_count: None,
-        },
-        0.7,
-    )
-    .unwrap();
-    let cbs = CircuitBootstrapParameters::try_new(
-        &parameters,
-        ApproxSignedBasis::new(acc.cipher_modulus_value(), output_log_basis, Some(2)),
-        NlevParameters::with_ntru_params(&acc, log_basis, None),
-        NlevParameters::with_ntru_params(&acc, log_basis, None),
-    )
-    .unwrap();
-    let context =
-        TfheContext::try_new(parameters, Table::new(N.trailing_zeros()).unwrap()).unwrap();
-    let mut rng = StdRng::seed_from_u64(42);
-    let (client, server) = context.try_generate_keys(None, &mut rng).unwrap();
-    let bits = [0usize, 1, 0, 1];
-    let inputs = bits.map(|bit| {
-        context
-            .encryptor(&client)
-            .unwrap()
-            .encrypt_padded(T::as_from(bit), &mut rng)
-            .unwrap()
-    });
-    let (key, key_memory) = allocations::measure(|| {
-        context
-            .try_generate_circuit_bootstrap_key(&client, cbs.clone(), &mut rng)
-            .unwrap()
-    });
-    let (mut evaluator, workspace_memory) = allocations::measure(|| {
-        CircuitBootstrapEvaluator::try_from_parts(&context, &server, &key).unwrap()
-    });
-    let mut output = evaluator.allocate_output();
+// CBS consumes a bit and emits a gadget control, not an LWE result. Verify
+// that representation by selecting an encrypted ring message before timing.
+fn ordinary<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str) {
+    let kind = "classic";
+    let dimension = 800;
+    let parameters = ntru::circuit(NativeModulus::<T>::new(), 4, SecretKeyDistr::UniformBinary);
     let name = format!(
-        "ntru_fourier/{backend}/cbs/u{}/n{DIMENSION}/N{N}/logb{log_basis}/output_logb{output_log_basis}_l2",
+        "ntru/{backend}/u{}/cbs/{kind}/n{dimension}_N1024/complete",
         T::BITS
     );
-    // Net requested heap excludes allocator metadata, shared tables, ordinary
-    // server keys and caller output; temporary generation allocations cancel.
-    eprintln!(
-        "{name}: cbs_key_heap={} evaluator_heap={} output_bytes={}",
-        key_memory.allocated_bytes - key_memory.released_bytes,
-        workspace_memory.allocated_bytes - workspace_memory.released_bytes,
-        size_of_val(output.as_ref())
-    );
-    let messages = [0usize, 1].map(|offset| {
-        (0..N)
-            .map(|i| T::as_from((i + offset) % 4))
-            .collect::<Vec<_>>()
-    });
-    let mut accumulator = context.accumulator_client(&client).unwrap();
-    let choices = messages.each_ref().map(|message| {
-        let mut ciphertext = context.allocate_accumulator_ciphertext();
-        accumulator.encrypt_to(message, &mut ciphertext, &mut rng);
-        ciphertext
-    });
-    let mut selected = context.allocate_accumulator_ciphertext();
-    let mut decoded = vec![T::ZERO; N];
-    let mut phase = Polynomial::<Vec<T>>::zero(N);
-    let mut fft = context.new_fft_engine();
-    let secret = FourierNtruSecretKey::try_from_coeff_secret_key(
-        client.accumulator_ntru_secret_key(),
-        &mut fft,
-    )
-    .unwrap();
-    let mut decrypt = FourierNtruDecryptWorkspace::new(N);
-    // Check both bit values, every gadget scale and a nonconstant CMUX before timing.
-    for (&bit, input) in bits.iter().zip(&inputs) {
-        let (_, online) = allocations::measure(|| {
+    let mut fixture = None;
+    let mut verified = false;
+    c.bench_function(&name, |b| {
+        let (context, client, server, input, lhs, rhs) = fixture.get_or_insert_with(|| {
+            let context =
+                TfheContext::<T, Table, PowOf2Modulus<T>>::try_from_parameters(parameters.clone())
+                    .unwrap();
+            let mut rng = StdRng::seed_from_u64(42);
+            let (client, server) = context
+                .try_generate_keys(Some(ntru::cbs::<T>()), &mut rng)
+                .unwrap();
+            let input = context
+                .encryptor(&client)
+                .unwrap()
+                .encrypt_padded(T::ONE, &mut rng)
+                .unwrap();
+            let mut ring = context.accumulator_client(&client).unwrap();
+            let lhs = ring.encrypt(&[T::ZERO; N], &mut rng);
+            let rhs = ring.encrypt(&[T::ONE; N], &mut rng);
+            (context, client, server, input, lhs, rhs)
+        });
+        let mut evaluator = CircuitBootstrapEvaluator::try_new(context, server).unwrap();
+        let mut output = evaluator.allocate_output();
+        if !verified {
             evaluator.circuit_bootstrap_to(input, &mut output);
-            evaluator.cmux_to(&output, &choices[0], &choices[1], &mut selected);
-            accumulator.decrypt_to(&selected, &mut decoded);
-        });
-        assert_eq!(online.count, 0);
-        assert_eq!(decoded, messages[bit], "{name}: CMUX bit={bit}");
-        for (scalar, level) in cbs
-            .output_basis()
-            .scalar_iter()
-            .zip(output.iter_ntru(N / 2))
-        {
-            secret.phase_to(&level, &mut phase, &mut fft, &mut decrypt);
-            let scalar: i128 = scalar.as_into();
-            for (&actual, &f) in phase
-                .as_ref()
-                .iter()
-                .zip(client.accumulator_ntru_secret_key().as_slice())
-            {
-                let f: i128 = f.as_into();
-                let actual: i128 = actual.as_into();
-                let expected = (scalar * f * bit as i128).rem_euclid(q128);
-                let error = (actual - expected).rem_euclid(q128);
-                assert!(
-                    error.min(q128 - error) < scalar / 8,
-                    "{name}: gadget phase bit={bit}, scale={scalar}, error={}",
-                    error.min(q128 - error)
-                );
-            }
+            let mut selected = context.allocate_accumulator_ciphertext();
+            evaluator.cmux_to(&output, lhs, rhs, &mut selected);
+            let mut decoded = vec![T::ZERO; N];
+            context
+                .accumulator_client(client)
+                .unwrap()
+                .decrypt_to(&selected, &mut decoded);
+            assert!(decoded.iter().all(|&value| value == T::ONE));
+            verified = true;
         }
-    }
-    let mut group = c.benchmark_group(&name);
-    group.sampling_mode(SamplingMode::Flat);
-    let mut next_input = 0;
-    group.bench_function("complete", |b| {
-        b.iter(|| {
-            evaluator.circuit_bootstrap_to(black_box(&inputs[next_input]), black_box(&mut output));
-            next_input = (next_input + 1) % inputs.len();
-            black_box(output.as_ref());
-        });
+        b.iter(|| evaluator.circuit_bootstrap_to(black_box(input), black_box(&mut output)));
     });
-    group.finish();
 }
 
-fn circuit_bootstrap(c: &mut Criterion) {
-    backend::<u32, RustFftTable>(c, "rustfft", 3, 4);
-    backend::<u64, RustFftTable>(c, "rustfft", 10, 8);
-    backend::<u32, TfheFftTable>(c, "tfhe", 3, 4);
-    backend::<u64, TfheFftTable>(c, "tfhe", 10, 8);
+// The compact batch omits delta_0. Compare equal input geometry to isolate the
+// saved selector work; one iteration produces M or M-1 complete NGSW controls.
+fn one_hot<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str) {
+    let mut fixture = None;
+    for compact in [false, true] {
+        let kind = if compact { "nonzero" } else { "full" };
+        let mut verified = false;
+        let name = format!("ntru/{backend}/u{}/one_hot/n800_N1024/M4/{kind}", T::BITS);
+        c.bench_function(&name, |b| {
+            let (context, client, server, input, lhs, rhs) = fixture.get_or_insert_with(|| {
+                let parameters =
+                    ntru::circuit(NativeModulus::<T>::new(), 8, SecretKeyDistr::UniformBinary);
+                let context =
+                    TfheContext::<T, Table, PowOf2Modulus<T>>::try_from_parameters(parameters)
+                        .unwrap();
+                let mut rng = StdRng::seed_from_u64(42);
+                let (client, server) = context
+                    .try_generate_keys(Some(ntru::cbs::<T>()), &mut rng)
+                    .unwrap();
+                let input = context
+                    .encryptor(&client)
+                    .unwrap()
+                    .encrypt_padded(T::TWO, &mut rng)
+                    .unwrap();
+                let mut ring = context.accumulator_client(&client).unwrap();
+                let lhs = ring.encrypt(&[T::ZERO; N], &mut rng);
+                let rhs = ring.encrypt(&[T::ONE; N], &mut rng);
+                (context, client, server, input, lhs, rhs)
+            });
+            let mut evaluator = OneHotCircuitBootstrapEvaluator::try_new(context, server).unwrap();
+            let mut output = if compact {
+                evaluator.allocate_nonzero_ngsw_output()
+            } else {
+                evaluator.allocate_ngsw_output()
+            };
+            if !verified {
+                if compact {
+                    evaluator.one_hot_nonzero_ngsw_to(input, &mut output);
+                } else {
+                    evaluator.one_hot_ngsw_to(input, &mut output);
+                }
+                let parameters = evaluator.parameters();
+                let mut selected = context.allocate_accumulator_ciphertext();
+                let mut decoded = vec![T::ZERO; N];
+                let mut ring = context.accumulator_client(client).unwrap();
+                // Semantic ciphertext iteration keeps selector boundaries tied
+                // to the public CBS layout, including compact index r-1.
+                for (index, control) in
+                    FourierNgswIter::new(&output, parameters.output_fourier_nlev_len()).enumerate()
+                {
+                    let (fft, product) = evaluator.external_product_workspaces();
+                    control.cmux_to(
+                        lhs,
+                        rhs,
+                        &mut selected,
+                        parameters.output_basis(),
+                        fft,
+                        product,
+                    );
+                    ring.decrypt_to(&selected, &mut decoded);
+                    let expected = if index + usize::from(compact) == 2 {
+                        T::ONE
+                    } else {
+                        T::ZERO
+                    };
+                    assert!(decoded.iter().all(|&value| value == expected));
+                }
+                verified = true;
+            }
+            if compact {
+                b.iter(|| {
+                    evaluator.one_hot_nonzero_ngsw_to(black_box(input), black_box(&mut output))
+                });
+            } else {
+                b.iter(|| evaluator.one_hot_ngsw_to(black_box(input), black_box(&mut output)));
+            }
+        });
+    }
 }
-criterion_group! {
-    name = benches;
-    config = Criterion::default().sample_size(20)
-        .warm_up_time(Duration::from_secs(1)).measurement_time(Duration::from_secs(5));
-    targets = circuit_bootstrap
+
+fn bench_cbs(c: &mut Criterion) {
+    ordinary::<u32, RustFftTable>(c, "rustfft");
+    ordinary::<u64, RustFftTable>(c, "rustfft");
+    ordinary::<u32, TfheFftTable>(c, "tfhe_fft");
+    ordinary::<u64, TfheFftTable>(c, "tfhe_fft");
+    one_hot::<u32, RustFftTable>(c, "rustfft");
+    one_hot::<u64, RustFftTable>(c, "rustfft");
+    one_hot::<u32, TfheFftTable>(c, "tfhe_fft");
+    one_hot::<u64, TfheFftTable>(c, "tfhe_fft");
 }
+
+criterion_group!(benches, bench_cbs);
 criterion_main!(benches);

@@ -100,10 +100,10 @@ just tfhe-simd
 
 ## 基准
 
-[流水线基准](benches/pipeline.rs) 测量真实 evaluator 的各阶段及完整查表，setup、分配和解密不计入延迟；报告密钥/工作区保留堆内存、输出存储、在线分配次数及相对已知结果的相位误差。阶段测量使用预先生成的 selectors 或控制；完整查表包含它们的生成。默认与 SIMD 使用相同工作负载。
+[流水线基准](benches/pipeline.rs) 使用 n800/N1024、8 个输入和输出 chunk，测量 u32/u64、三种变换实现的完整 16 位查表。准备和解密不计时；单独的编译测量包含 LUT 分配和释放。完整查表报告密钥、工作区和输出的保留堆内存，并检查在线零分配。默认与 SIMD 使用相同工作负载。
 
 ```sh
 cargo bench -p primus_tfhe_ntru_lut --bench pipeline
 ```
 
-参数、阶段边界、复现命令与验证范围见[实现与基准指南](IMPLEMENTATION.md#benchmark-fixture)。延迟和少量相位样本不构成安全性或失败概率结论。
+参数、计时边界、复现命令与验证范围见[实现与基准指南](IMPLEMENTATION.md#benchmark-fixture)。延迟和少量功能样本不构成安全性或失败概率结论。

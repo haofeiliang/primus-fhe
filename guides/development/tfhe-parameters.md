@@ -138,38 +138,28 @@ Validated on 2026-09-28, AMD Ryzen 9 9955HX3D, x86_64 Linux, repository `target-
 
 These are maxima of finite observations under explicitly selected bounds. They do not establish worst-case noise, a target decryption-failure probability, or security. The changed GLWE PBS benchmark constructors also passed Criterion smoke; the corrected NTRU basic examples ran successfully. Existing default/all-feature numerical tests remained at 380/393, with no large profile added to ordinary CI execution. No latency or memory improvement is claimed by this parameter change.
 
-## Existing asset inventory and migration
+## Benchmark inventory
 
-This matrix covers all 20 declared TFHE benchmark targets and 22 top-level product examples. The examples spell out these profiles locally with `TfheConfig` and `CircuitBootstrapConfig`. The benchmark table below distinguishes already migrated targets from destinations for the remaining benchmark cleanup.
+All 18 declared benchmark targets now use the profiles above; the four backend
+families each have `pbs`, `sparse_pbs`, `mvb` and `circuit_bootstrap`, alongside
+public LUT compilation and the complete high-precision pipeline. Each retained
+workflow covers both words; Fourier covers both FFT engines and GLWE both orders.
+The [benchmark guide](../../crates/primus_tfhe/BENCHMARKS.md) maps targets to
+operations, geometry and timing boundaries. The [measurement record](tfhe-benchmarks.md)
+tracks the current baseline and the effect of removing eager fixture setup.
 
-| Benchmark target | Current geometry/width | Validated destination |
-| --- | --- | --- |
-| [primus_tfhe/lookup_table](../../crates/primus_tfhe/benches/lookup_table.rs) | u32, N1024, native/Q27 | Public compilation; add u64/q24 during benchmark cleanup |
-| [primus_tfhe_glwe_ntt/pbs](../../crates/primus_tfhe_glwe_ntt/benches/pbs.rs) | u32/u64, 800/1024 and 866/2048 | Dense GLWE PBS; **shared constructor wired** |
-| [primus_tfhe_glwe_ntt/ternary_pbs](../../crates/primus_tfhe_glwe_ntt/benches/ternary_pbs.rs) | u32, 728/1024, binary/ternary | Circuit/ternary profile, 800/1024, both widths |
-| [primus_tfhe_glwe_ntt/circuit_bootstrap](../../crates/primus_tfhe_glwe_ntt/benches/circuit_bootstrap.rs) | u64, 728/h32/1024, classic/sparse | GLWE circuit + fixed-weight CBS, both widths |
-| [primus_tfhe_glwe_ntt/sparse_pbs](../../crates/primus_tfhe_glwe_ntt/benches/sparse_pbs.rs) | u32, 728/h32/1024 | GLWE fixed-weight PBS, both widths |
-| [primus_tfhe_glwe_ntt/mvb](../../crates/primus_tfhe_glwe_ntt/benches/mvb.rs) | u32, 728/h32/1024 | GLWE MVB, both widths |
-| [primus_tfhe_glwe_fourier/pbs](../../crates/primus_tfhe_glwe_fourier/benches/pbs.rs) | u32/u64, 800/1024 and 866/2048 | Dense GLWE PBS; **shared constructor wired** |
-| [primus_tfhe_glwe_fourier/ternary_pbs](../../crates/primus_tfhe_glwe_fourier/benches/ternary_pbs.rs) | u32, 728/1024, binary/ternary | Circuit/ternary profile, 800/1024, both widths |
-| [primus_tfhe_glwe_fourier/circuit_bootstrap](../../crates/primus_tfhe_glwe_fourier/benches/circuit_bootstrap.rs) | u64, 728/h32/1024, classic/sparse | GLWE circuit + fixed-weight CBS, both widths |
-| [primus_tfhe_glwe_fourier/sparse_pbs](../../crates/primus_tfhe_glwe_fourier/benches/sparse_pbs.rs) | u32, 728/h32/1024 | GLWE fixed-weight PBS, both widths |
-| [primus_tfhe_glwe_fourier/mvb](../../crates/primus_tfhe_glwe_fourier/benches/mvb.rs) | u32/u64, 728/h32/1024 | GLWE MVB, both widths |
-| [primus_tfhe_ntru_ntt/pbs](../../crates/primus_tfhe_ntru_ntt/benches/pbs.rs) | u32/u64, 800/1024 and 866/2048 | NTRU dense PBS, independent q24 return |
-| [primus_tfhe_ntru_ntt/circuit_bootstrap](../../crates/primus_tfhe_ntru_ntt/benches/circuit_bootstrap.rs) | u32/u64, 728/1024 | NTRU circuit, 800/1024 |
-| [primus_tfhe_ntru_ntt/sparse_pbs](../../crates/primus_tfhe_ntru_ntt/benches/sparse_pbs.rs) | u32/u64, 728/1024, h32 | NTRU fixed-weight PBS, h32 |
-| [primus_tfhe_ntru_ntt/mvb](../../crates/primus_tfhe_ntru_ntt/benches/mvb.rs) | u32, 728/h32/1024 | NTRU MVB, both widths |
-| [primus_tfhe_ntru_fourier/pbs](../../crates/primus_tfhe_ntru_fourier/benches/pbs.rs) | u32/u64, 800/1024 and 866/2048 | NTRU dense PBS, independent q24 return |
-| [primus_tfhe_ntru_fourier/circuit_bootstrap](../../crates/primus_tfhe_ntru_fourier/benches/circuit_bootstrap.rs) | u32/u64, 728/1024 | NTRU circuit, 800/1024 |
-| [primus_tfhe_ntru_fourier/sparse_pbs](../../crates/primus_tfhe_ntru_fourier/benches/sparse_pbs.rs) | u32/u64, 728/1024, h33 | NTRU fixed-weight PBS, h32 |
-| [primus_tfhe_ntru_fourier/mvb](../../crates/primus_tfhe_ntru_fourier/benches/mvb.rs) | u32/u64, 728/h33/1024 | NTRU MVB, both widths |
-| [primus_tfhe_ntru_lut/pipeline](../../crates/primus_tfhe_ntru_lut/benches/pipeline.rs) | u64, 64/1024, c7/d5/o3 | NTRU lookup, 800/1024, both widths; retime after migration |
+The ternary targets were merged into dense PBS; duplicate ManyLUT comparisons
+now live in MVB, including sparse NTRU's supported independent/interleaved pair.
+Ordinary CBS and NTRU full/compact one-hot share the CBS target. The public LUT
+compiler covers Native, explicit PowOf2 q24, and Barrett primes for both words.
+The lookup benchmark now matches the c8/d5/o8 teaching workload at n800/N1024;
+the c7/d5/o3 parameter diagnostic remains a separate finite validation fixture.
 
 ## Teaching examples
 
 Each example has a concrete `Word = u32` and a concrete `Table` import. To run u64, change `Word` to u64 and, for NTT, import `U64NttTable as Table`. Fourier defaults to `RustFftTable`; change its import to `TfheFftTable as Table` for the other FFT implementation. Each file contains its own explicit `parameters()` function, with word-specific modulus, decomposition and coefficient-noise choices; CBS adds a local `circuit_config()`. GLWE's `ORDER` constant selects one order per run. These choices keep the main function readable without generic or CLI matrix dispatch.
 
-Examples do not import the test-support factories. Their local configuration functions make every numerical choice inspectable without leaving the file. Keys, codecs, encrypted inputs, evaluators, outputs and client/server handoffs remain in each example's main function. Each workload makes two requests with reused buffers. No example imports code from `benches/` or `tests/`; the old Fourier CBS support is now owned by [its sole benchmark consumer](../../crates/primus_tfhe_glwe_fourier/benches/support/circuit_bootstrap.rs).
+Examples do not import the test-support factories. Their local configuration functions make every numerical choice inspectable without leaving the file. Keys, codecs, encrypted inputs, evaluators, outputs and client/server handoffs remain in each example's main function. Each workload makes two requests with reused buffers. No example imports code from `benches/` or `tests/`.
 
 | Workflow | Geometry and encoding | Complete examples |
 | --- | --- | --- |
@@ -225,5 +215,3 @@ When modifying workflows or profiles, exercise these concrete choices, restoring
 - Compile/lint all targets with default features and nightly SIMD. Run selected examples with `cargo +nightly run --release -p <package> --example <name> --features simd` when validating that configuration; do not put an extra backend/order loop in the teaching main function.
 
 The public examples retain distinct GLWE/NTRU parameter, key and return contracts and distinct NTT/Fourier table types. Within a crate there is one entry per task. Configuration is intentionally local to each file so that users can read and change it directly; there is no example support layer hiding parameters or the workflow.
-
-Benchmark migration remains separate: only the two GLWE PBS targets currently use the shared constructors. The old pipeline benchmark still uses n=64/N=1024 until its parameter migration; its historical memory/latency results must not be compared directly with these n=800 examples.

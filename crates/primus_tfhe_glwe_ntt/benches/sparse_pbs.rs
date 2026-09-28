@@ -1,161 +1,137 @@
-//! Complete classic/sparse PBS with the same fixed-weight client secret.
-//! Experimental cost profile: n/h/N = 728/32/1024, c=3, buckets=2h.
-//! PBS includes key switching and extraction, reusing keys, LUTs, four encrypted
-//! inputs, evaluator and outputs. Keygen includes BSK + KSK; client generation,
-//! the NTT table and returned key destruction are excluded. Both orders use the
-//! same key-generation algorithm.
-//!
-//! cargo bench -p primus_tfhe_glwe_ntt --bench sparse_pbs
+//! Classic versus sparse PBS for the same fixed-weight secret: n728/h32/N1024.
+//! One iteration is a complete PBS or one server-key generation. PBS reuses
+//! buffers; encryption/setup/validation and returned-key drop are not timed.
+//! Parameters: primus_tfhe_test_support::parameters (arithmetic cost profiles).
+//! Fixtures are initialized only for selected IDs, then reused across samples.
+//! Run: cargo bench -p primus_tfhe_glwe_ntt --bench sparse_pbs
 
 use std::hint::black_box;
 
 use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
-use primus_decompose::primitive::ApproxSignedBasis;
-use primus_encoding::RoundedCodec;
-use primus_glwe::{GlweParameters, SecretKeyDistr};
-use primus_lwe::{LweCiphertext, LweParameters};
-use primus_modulus::BarrettModulus;
-use primus_ntt::{NttTable, U32NttTable};
-use primus_tfhe_glwe_ntt::{ClientKey, KeyGenerator, PbsOrder, TfheContext, TfheParameters};
+use primus_integer::FheUint;
+use primus_ntt::{MonomialNttTable, U32NttTable, U64NttTable};
+use primus_tfhe_glwe_ntt::{ClientKey, KeyGenerator, PbsOrder, TfheContext};
+use primus_tfhe_test_support::parameters::glwe;
+use primus_tfhe_test_support::parameters::ntt_modulus;
 use rand::{SeedableRng, rngs::StdRng};
 
-const Q: u32 = 132_120_577;
-const N: usize = 1024;
-const DIMENSION: usize = 728;
-const WEIGHT: usize = 32;
-
-fn context(order: PbsOrder) -> TfheContext<u32, U32NttTable> {
-    let modulus = BarrettModulus::new(Q);
-    let lwe = LweParameters::new(
-        DIMENSION,
-        8,
-        modulus,
-        SecretKeyDistr::fixed_hamming_weight_binary(DIMENSION, WEIGHT),
-        3.2 * f64::from(Q) / 16384.0,
+fn backend<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
+    c: &mut Criterion,
+    backend: &str,
+    order: PbsOrder,
+) {
+    let parameters = glwe::diagnostic(ntt_modulus::<T>(), order, 8);
+    let name = format!(
+        "glwe/{backend}/u{}/fixed_weight/n728_h32_N1024/{order:?}",
+        T::BITS
     );
-    let glwe = GlweParameters::new(1, N, 8, modulus, SecretKeyDistr::SparseTernary, 6.4);
-    let parameters = TfheParameters::try_new(
-        lwe,
-        glwe,
-        ApproxSignedBasis::new(Some(Q), 7, Some(3)),
-        ApproxSignedBasis::new(Some(Q), 2, Some(13)),
-        order,
-    )
-    .unwrap();
-    let ntt = U32NttTable::new(N.trailing_zeros(), modulus).unwrap();
-    TfheContext::try_new(parameters, ntt).unwrap()
+    // Hold one context/client pair, but build each server key only when selected.
+    let mut fixture = None;
+    for sparse in [false, true] {
+        let kind = if sparse { "sparse" } else { "classic" };
+        let mut server = None;
+        let mut verified = false;
+        c.bench_function(&format!("{name}/{kind}/complete"), |b| {
+            let (context, client) = fixture.get_or_insert_with(|| {
+                let context =
+                    TfheContext::<T, Table>::try_from_parameters(parameters.clone()).unwrap();
+                let mut rng = StdRng::seed_from_u64(42);
+                let client = ClientKey::generate(context.parameters(), &mut rng);
+                (context, client)
+            });
+            let server = server.get_or_insert_with(|| {
+                let mut generator = KeyGenerator::new(context);
+                let mut rng = StdRng::seed_from_u64(4242);
+                if sparse {
+                    generator
+                        .try_generate_sparse_server_key(client, 3, 64, None, &mut rng)
+                        .unwrap()
+                } else {
+                    generator
+                        .try_generate_server_key(client, None, &mut rng)
+                        .unwrap()
+                }
+            });
+            let mut rng = StdRng::seed_from_u64(43);
+            let input = context
+                .encryptor(client)
+                .unwrap()
+                .encrypt_padded(T::ONE, &mut rng)
+                .unwrap();
+            let lut = context
+                .parameters()
+                .compile_lookup_table_fn(|m| T::as_from((m + 1) % 4))
+                .unwrap();
+            let mut evaluator = context.evaluator(server).unwrap();
+            let mut output = context.allocate_lwe_ciphertext();
+            if !verified {
+                evaluator.apply_lookup_table_to(&input, &lut, &mut output);
+                assert_eq!(
+                    context.decryptor(client).unwrap().decrypt(&output).unwrap(),
+                    T::TWO
+                );
+                verified = true;
+            }
+            b.iter(|| {
+                evaluator.apply_lookup_table_to(
+                    black_box(&input),
+                    black_box(&lut),
+                    black_box(&mut output),
+                )
+            });
+        });
+        if order != PbsOrder::BootstrapKeyswitch {
+            continue;
+        }
+        // Generation reuses the client, but does not need the evaluation key.
+        drop(server);
+        c.bench_function(&format!("{name}/{kind}/server_keygen"), |b| {
+            let (context, client) = fixture.get_or_insert_with(|| {
+                let context =
+                    TfheContext::<T, Table>::try_from_parameters(parameters.clone()).unwrap();
+                let mut rng = StdRng::seed_from_u64(42);
+                let client = ClientKey::generate(context.parameters(), &mut rng);
+                (context, client)
+            });
+            let mut generator = KeyGenerator::new(context);
+            let mut rng = StdRng::seed_from_u64(4242);
+            if sparse {
+                b.iter_batched(
+                    || (),
+                    |()| {
+                        generator
+                            .try_generate_sparse_server_key(
+                                black_box(client),
+                                3,
+                                64,
+                                None,
+                                &mut rng,
+                            )
+                            .unwrap()
+                    },
+                    BatchSize::PerIteration,
+                );
+            } else {
+                b.iter_batched(
+                    || (),
+                    |()| {
+                        generator
+                            .try_generate_server_key(black_box(client), None, &mut rng)
+                            .unwrap()
+                    },
+                    BatchSize::PerIteration,
+                );
+            }
+        });
+    }
 }
 
 fn bench_sparse(c: &mut Criterion) {
     for order in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
-        let context = context(order);
-        let mut rng = StdRng::seed_from_u64(0x5035_4252 + DIMENSION as u64);
-        let mut generator = KeyGenerator::new(&context);
-        let client = ClientKey::generate(context.parameters(), &mut rng);
-        let classic = generator
-            .try_generate_server_key(&client, None, &mut rng)
-            .unwrap();
-        let sparse = generator
-            .try_generate_sparse_server_key(&client, 3, 2 * WEIGHT, None, &mut rng)
-            .unwrap();
-        let encryptor = context.encryptor(&client).unwrap();
-        let decryptor = context.decryptor(&client).unwrap();
-        let inputs: Vec<_> = (0..4)
-            .map(|m| encryptor.encrypt_padded(m, &mut rng).unwrap())
-            .collect();
-        let codec = RoundedCodec::new(8, BarrettModulus::new(Q));
-        let single = context
-            .parameters()
-            .compile_lookup_table_with_codec_fn(&codec, |m| (3 * m as u32 + 1) % 8)
-            .unwrap();
-        let many = context
-            .parameters()
-            .compile_interleaved_lookup_table_with_codec_fn(&codec, 3, |m, i| {
-                ((m + 2 * i) % 8) as u32
-            })
-            .unwrap();
-        let dimension = context.parameters().external_lwe_dimension();
-        let mut outputs = vec![LweCiphertext::zero(dimension); 3];
-        let mut group =
-            c.benchmark_group(format!("sparse_pbs/n{DIMENSION}/h{WEIGHT}/N{N}/{order:?}"));
-        group.sample_size(20);
-        group.sampling_mode(criterion::SamplingMode::Flat);
-        for (name, key) in [("classic", &classic), ("sparse", &sparse)] {
-            let mut evaluator = context.evaluator(key).unwrap();
-            // Verify the exact inputs and output scales timed below.
-            for (m, input) in inputs.iter().enumerate() {
-                evaluator.apply_lookup_table_to(input, &single, &mut outputs[0]);
-                assert_eq!(
-                    decryptor.decrypt(&outputs[0]).unwrap(),
-                    (3 * m as u32 + 1) % 8
-                );
-                evaluator.apply_interleaved_lookup_table_to(input, &many, &mut outputs);
-                for (i, output) in outputs.iter().enumerate() {
-                    assert_eq!(decryptor.decrypt(output).unwrap(), ((m + 2 * i) % 8) as u32);
-                }
-            }
-            for interleaved in [false, true] {
-                let layout = if interleaved {
-                    "interleaved3"
-                } else {
-                    "single"
-                };
-                let mut next_input = 0;
-                group.bench_function(format!("{name}/{layout}"), |b| {
-                    b.iter(|| {
-                        let input = black_box(&inputs[next_input]);
-                        next_input = (next_input + 1) % inputs.len();
-                        if interleaved {
-                            evaluator.apply_interleaved_lookup_table_to(
-                                input,
-                                black_box(&many),
-                                &mut outputs,
-                            );
-                        } else {
-                            evaluator.apply_lookup_table_to(
-                                input,
-                                black_box(&single),
-                                &mut outputs[0],
-                            );
-                        }
-                        black_box(&outputs);
-                    })
-                });
-            }
-        }
-        group.finish();
-        if order == PbsOrder::BootstrapKeyswitch {
-            let mut group = c.benchmark_group(format!("sparse_keygen/n{DIMENSION}/h{WEIGHT}/N{N}"));
-            group.sample_size(10);
-            for sparse in [false, true] {
-                let name = if sparse { "sparse" } else { "classic" };
-                group.bench_function(name, |b| {
-                    b.iter_batched(
-                        || (),
-                        |()| {
-                            if sparse {
-                                generator
-                                    .try_generate_sparse_server_key(
-                                        black_box(&client),
-                                        3,
-                                        2 * WEIGHT,
-                                        None,
-                                        &mut rng,
-                                    )
-                                    .unwrap()
-                            } else {
-                                generator
-                                    .try_generate_server_key(black_box(&client), None, &mut rng)
-                                    .unwrap()
-                            }
-                        },
-                        BatchSize::PerIteration,
-                    )
-                });
-            }
-            group.finish();
-        }
+        backend::<u32, U32NttTable>(c, "ntt", order);
+        backend::<u64, U64NttTable>(c, "ntt", order);
     }
 }
+
 criterion_group!(benches, bench_sparse);
 criterion_main!(benches);
