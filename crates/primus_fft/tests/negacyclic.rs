@@ -1,5 +1,6 @@
 use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable, TfheFftTable};
 
+// Independent O(N^2) convolution applies X^N = -1 with exact signed arithmetic.
 fn negacyclic_reference(torus: &[u32], integer: &[u32]) -> Vec<u32> {
     let n = torus.len();
     let mut result = vec![0i128; n];
@@ -18,6 +19,8 @@ fn negacyclic_reference(torus: &[u32], integer: &[u32]) -> Vec<u32> {
 }
 
 fn convolution<Table: FftTable>() {
+    // Torus * integer has exactly one torus scale and one inverse normalization;
+    // a round-trip cannot detect a normalization error in spectral products.
     let fft = Table::new(4).unwrap();
     let mut engine = FftEngine::new(&fft);
     let torus: Vec<u32> = (0..16).map(|i| (1000i32 - 31 * i) as u32).collect();

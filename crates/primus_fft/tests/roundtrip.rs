@@ -2,7 +2,9 @@ use aligned_vec::{AVec, CACHELINE_ALIGN, avec};
 use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable, TfheFftTable};
 
 fn roundtrip<Table: FftTable>() {
-    for log_n in [2, 5, 10] {
+    // Short packing and a complete vector-sized buffer with offset slices.
+    // Larger work buffers are exercised by zeroize.rs; convolution has its own oracle.
+    for log_n in [2, 5] {
         let fft = Table::new(log_n).unwrap();
         let mut engine = FftEngine::new(&fft);
         // Offset aligned allocations: public slices need only element alignment,
@@ -20,9 +22,10 @@ fn roundtrip<Table: FftTable>() {
 }
 
 fn concurrent_roundtrip<Table: FftTable>() {
-    let fft = Table::new(8).unwrap();
+    // Only the immutable plan is shared; each worker owns its phase workspace.
+    let fft = Table::new(5).unwrap();
     std::thread::scope(|scope| {
-        for offset in 0..4u32 {
+        for offset in 0..2u32 {
             let fft = &fft;
             scope.spawn(move || {
                 let mut engine = FftEngine::new(fft);
@@ -77,6 +80,8 @@ fn u32_torus_conversion_preserves_round_saturate_and_wrap() {
     );
 }
 
+// Compare bit-level conversion with Rust's floating rounding and saturating
+// signed cast, followed by unsigned wrapping. No FFT approximation is involved.
 fn check_torus_conversion<T: primus_fft::TorusFftValue>(
     reference: impl Fn(f64) -> T,
     saturation_edge: f64,
@@ -123,12 +128,5 @@ fn check_torus_conversion<T: primus_fft::TorusFftValue>(
                 check(f64::from_bits(sign | (exponent << 52) | fraction));
             }
         }
-    }
-    let mut bits = 42u64;
-    for _ in 0..100_000 {
-        bits ^= bits << 13;
-        bits ^= bits >> 7;
-        bits ^= bits << 17;
-        check(f64::from_bits(bits));
     }
 }

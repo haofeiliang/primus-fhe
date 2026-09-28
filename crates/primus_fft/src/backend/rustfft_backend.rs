@@ -50,6 +50,9 @@ pub struct RustFftTable {
 }
 
 impl RustFftTable {
+    // Pack a_j + i*a_{j+N/2}, then twist for negacyclic evaluation with an N/2
+    // complex FFT. Conversion selects signed integers or native torus scaling;
+    // the inverse twist contains the separate 1/(N/2) normalization.
     fn forward_with<T: Copy>(
         &self,
         input: &[T],

@@ -110,7 +110,7 @@ Cargo 声明总计 67 个 bench targets、21 个 examples，其中 `primus_tfhe*
 | `primus_reduce`、`primus_modulus`、`primus_factor`、`primus_barrett_derive` | 模数范围、约简、signed 编码、模切、预计算与派生实现 | 标量/切片输入与常量派生；[modulus/tests](../../crates/primus_modulus/tests)、[factor/tests](../../crates/primus_factor/tests)；trait 经消费者验证 |
 | `primus_distr` | 采样支持集、秘密分布、批次/RNG、高精度 CDT | 固定 RNG 和 sampler 构造；[tests](../../crates/primus_distr/tests)，统计型资产另行评估 |
 | `primus_poly`、`primus_ntt`、`primus_fft` | 负循环算术、单项式/自同构、变换顺序、Fourier packing/归一化、擦除 | 多项式 oracle、NTT 表和两个 FFT plan；[poly/tests](../../crates/primus_poly/tests)、[ntt/tests](../../crates/primus_ntt/tests)、[fft/tests](../../crates/primus_fft/tests) |
-| `primus_decompose`、`primus_rns`、`primus_encoding` | 舍入/分解残差、CRT/DCRT/limb、编码与 padding | basis、模数链和整数 oracle；[decompose/tests](../../crates/primus_decompose/tests)、[rns/tests](../../crates/primus_rns/tests)、[encoding/tests](../../crates/primus_encoding/tests) |
+| `primus_decompose`、`primus_rns`、`primus_encoding` | 舍入/分解残差、CRT/DCRT/limb、编码策略与舍入 | basis、模数链和整数 oracle；[decompose/tests](../../crates/primus_decompose/tests)、[rns/tests](../../crates/primus_rns/tests)、[encoding/tests](../../crates/primus_encoding/tests) |
 | `primus_lattice` | 布局、外积/CMux、提取符号、RNS 算术、分配和借用恢复 | 显式构造 gadget/多项式及小环 oracle；[tests](../../crates/primus_lattice/tests) |
 | `primus_lwe`、`primus_glwe`、`primus_ntru`、`primus_glwe_rns` | 密钥域、加解密、KS、trace/packing、scheme switch、擦除 | 秘密/求值密钥生成、相位 oracle、变换表；各包的 [LWE](../../crates/primus_lwe/tests)、[GLWE](../../crates/primus_glwe/tests)、[NTRU](../../crates/primus_ntru/tests)、[RNS GLWE](../../crates/primus_glwe_rns/tests) 测试 |
 | `primus_tfhe`、`primus_tfhe_glwe`、`primus_tfhe_ntru` | 共享 LUT 几何/编码、稀疏分桶、家族参数和客户端 | 公开 LUT/basis；客户端测试另生成秘密；[共享](../../crates/primus_tfhe/tests)、[GLWE 家族](../../crates/primus_tfhe_glwe/tests)、[NTRU 家族](../../crates/primus_tfhe_ntru/tests) |
@@ -152,6 +152,35 @@ cargo +nightly nextest run "${packages[@]}" --lib --tests --all-features
 ```
 
 原生指令测试受 CPU feature 检测约束；本机可用内核的通过不代表其他架构已经执行。Doctest 和 all-targets 检查按上文单独运行。
+
+## 多项式、变换、分解与编码的聚焦覆盖
+
+以下六包按数学契约和实际分派选择尺寸；普通 API 测试在默认和 SIMD 配置下复用，不按 feature 复制同义测试。模数类型按数值角色选择：native 使用 `NativeModulus`，显式二次幂使用 `PowOf2Modulus`，满足位宽限制的一般模数使用 Barrett，超出其范围使用 Uint。
+
+| 范围 | 保留的独立验证与尺寸理由 |
+| --- | --- |
+| 多项式 | [配对旋转](../../crates/primus_poly/tests/monomial.rs) 使用逐系数散射 oracle：短环穷举指数、长区间验证三个分量顺序，空批次单独调用一次；[Fourier 算术](../../crates/primus_poly/tests/fourier.rs) 使用手算复数结果，不重复测试消费自身后转发到 assign 的包装；[CRT 采样](../../crates/primus_poly/tests/crt_random.rs) 从同一组 signed 样本独立计算各 limb，并核对 RNG 消耗 |
+| NTT | [ntt.rs](../../crates/primus_ntt/tests/ntt.rs) 用 N=2/8、q=17 的直接多项式求值固定根选择、bit-reversed 排列和逆归一化；U32 保留 16/32/64 的 scalar/SIMD 分派、偏移切片和 lazy 范围；U64 保留三种模数位宽和 8/16/64，另以 2048/4096/8192 覆盖 AVX-512 基例及两层递归，不能统一缩成小环 |
+| 两个 FFT 后端 | [负循环卷积](../../crates/primus_fft/tests/negacyclic.rs) 用有符号整数 O(N²) oracle 验证 packing 和乘积归一化；短环验证 offset 切片与并发独立 workspace；[擦除](../../crates/primus_fft/tests/zeroize.rs) 保留短缓冲区和 N=1024 的后端工作存储；TFHE-FFT 私有测试强制不同 plan base size，避免依赖自动 planner 恰好选中某种谱排列 |
+| torus 转换 | [roundtrip.rs](../../crates/primus_fft/tests/roundtrip.rs) 对 u32/u64 使用浮点 round、饱和有符号转换和 unsigned wrapping 作为独立 oracle；保留所有浮点指数、代表性尾数和正负舍入/饱和边界，不再追加十万次随机比特扫描 |
+| 分解 | [primitive oracle](../../crates/primus_decompose/tests/primitive_approx_signed_basis_oracle.rs) 保留小模数穷举、native 半步舍入、digit 范围及层序；[多 limb 分解](../../crates/primus_decompose/tests/big_uint.rs) 保留跨 limb、drop/carry 边界、固定 stride 1/2/4 和 fallback 3 的批次差分，边界之外仅少量固定 seed 输入 |
+| RNS | [base.rs](../../crates/primus_rns/tests/base.rs) 从 u128 同时构造 modulus-major 和 value-major 预期值，覆盖跨 u64 limb 边界；[converter](../../crates/primus_rns/tests/converter.rs) 保留 fast 与 exact 不同 lift、scratch 复用；[hybrid](../../crates/primus_rns/tests/hybrid.rs) 保留裁剪基后的固定分区、mod-up 流式输出和多 P mod-down。65 元素的 scaled batch 保留 native 分派及尾部 |
+| 编码 | [plaintext_codec.rs](../../crates/primus_encoding/tests/plaintext_codec.rs) 按 q/t 策略选择案例，保留 u16/u32/u64、奇偶模数、窄/宽中间值、Rounded/Scaled 和 centered/unsigned 区别；仅小域穷举，大域取中心两侧和端点；[BFV RNS](../../crates/primus_encoding/tests/bfv_rns.rs) 单独验证 floor scale、噪声恢复及输出前检查。LUT 的 padding 属于 TFHE 消费者，不在此层重复验证 |
+
+六包独立运行命令如下；`primus_fft` 自身没有 `simd` feature，两个后端都会参与。`primus_ntt` 的 x86 intrinsic 分派由 CPU 决定，不要求 Cargo `simd`。本机通过只说明本机选中的 kernel；不能据此声称 AVX2、DQ32 或其他架构都执行过。
+
+```bash
+packages=(-p primus_poly -p primus_ntt -p primus_fft
+          -p primus_decompose -p primus_rns -p primus_encoding)
+cargo nextest run "${packages[@]}" --lib --tests
+cargo +nightly nextest run "${packages[@]}" --lib --tests --all-features
+
+# 防止其他 workspace 成员合并 feature 后掩盖独立包的问题。
+cargo nextest run -p primus_encoding --lib --tests --features rns
+cargo +nightly nextest run -p primus_encoding --lib --tests --features simd
+```
+
+同一 package/feature 选择也用于 `check --all-targets`、`clippy --all-targets -- -D warnings`。六包的 stable 可选功能是 encoding/rns；derive 与 high_precision 的归属和运行命令见前一节。Doctest 和严格 rustdoc 独立运行。
 
 ## 成本记录方法
 

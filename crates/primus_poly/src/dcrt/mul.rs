@@ -12,6 +12,8 @@ use primus_integer::SimdArray;
 
 use super::DcrtPolynomial;
 
+// Writes (a+s, (a-s)*w) modulo the current CRT limb's modulus. Preserve the
+// original a for the difference; the two outputs are not independent updates.
 fn slice_butterfly<T, F>(a: &mut [T], s: &[T], w: &[F], b: &mut [T], modulus: T)
 where
     T: FheUint,
@@ -29,6 +31,8 @@ where
     });
 }
 
+// Factors remain scalar-packed: convert each complete vector of factors once,
+// then delegate the tail to the same scalar butterfly used without SIMD.
 #[cfg(feature = "simd")]
 #[allow(clippy::chunks_exact_to_as_chunks)]
 fn simd_butterfly<T, F>(a: &mut [T], s: &[T], w: &[F], b: &mut [T], modulus: T)

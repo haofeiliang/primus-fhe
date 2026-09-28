@@ -49,36 +49,42 @@ fn scalar_crt_matches_known_representatives() {
 #[test]
 fn compose_and_decompose_preserve_the_modulus_major_layout() {
     let base = base(&[1_125_899_906_826_241, 1_125_899_906_629_633]);
-    let residues = [
-        [0, 0],
-        [1, 2],
-        [97, 131],
-        [base.moduli()[0].value() - 1, base.moduli()[1].value() - 2],
-    ];
-    let expected = [
-        residues[0][0],
-        residues[1][0],
-        residues[2][0],
-        residues[3][0],
-        residues[0][1],
-        residues[1][1],
-        residues[2][1],
-        residues[3][1],
-    ];
+    // Q spans two u64 limbs. Form both layouts directly in u128 so a
+    // matching compose/decompose bug cannot hide behind a round-trip.
+    let q = base
+        .moduli()
+        .iter()
+        .map(|m| u128::from(m.value()))
+        .product::<u128>();
+    let representatives = [0, 1, (1u128 << 64) - 1, 1u128 << 64, q - 1];
+    let expected: Vec<_> = base
+        .moduli()
+        .iter()
+        .flat_map(|modulus| {
+            representatives
+                .iter()
+                .map(move |value| (value % u128::from(modulus.value())) as u64)
+        })
+        .collect();
     let value_len = base.big_uint_value_len();
-    let mut values = vec![0; residues.len() * value_len];
-    for (index, value_residues) in residues.iter().enumerate() {
-        values[index * value_len..(index + 1) * value_len]
-            .copy_from_slice(base.compose(&Residues(value_residues)).digits());
-    }
+    assert_eq!(value_len, 2);
+    let values: Vec<_> = representatives
+        .iter()
+        .flat_map(|&value| [value as u64, (value >> 64) as u64])
+        .collect();
 
     let mut decomposed = vec![Value::MAX; expected.len()];
-    base.decompose_big_uint_values_to(&values, &mut decomposed, residues.len());
+    base.decompose_big_uint_values_to(&values, &mut decomposed, representatives.len());
     assert_eq!(decomposed, expected);
 
     let mut recomposed = vec![Value::MAX; values.len()];
     let mut scratch = vec![0; base.moduli_count()];
-    base.compose_big_uint_values_to(&expected, &mut recomposed, residues.len(), &mut scratch);
+    base.compose_big_uint_values_to(
+        &expected,
+        &mut recomposed,
+        representatives.len(),
+        &mut scratch,
+    );
     assert_eq!(recomposed, values);
 }
 
@@ -147,6 +153,8 @@ fn wrapping_and_scaled_decomposition_follow_the_centered_rule() {
 
 #[test]
 fn extending_a_base_matches_fresh_construction() {
+    // Extension must rebuild CRT precomputations when the product gains limbs.
+    // Singleton extension and whole-base extension take different paths.
     let assert_equivalent = |extended: &Base, direct: &Base, residues: &[Value]| {
         assert_eq!(extended.moduli_product(), direct.moduli_product());
         assert_eq!(

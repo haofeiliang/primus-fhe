@@ -18,6 +18,7 @@ fn make_hybrid(
 
 #[test]
 fn construction_uses_fixed_partitioning_and_precomputes_p() {
+    // Dropping active Q limbs must not repartition surviving key-switch digits.
     let q_moduli = [17, 41, 73, 89, 97].map(ModulusT::new);
     let p_moduli = [101, 103].map(ModulusT::new);
     let hybrid = HybridRNS::new(&q_moduli, &p_moduli, 3).unwrap();
@@ -74,6 +75,9 @@ fn mod_up_full_and_streaming_outputs_match() {
         11, 12, 13, 14, // q_1
         21, 22, 23, 24, // q_2
     ];
+    // For each partition, lift a_i with sum((a_i * (Q/q_i)^-1 mod q_i) * Q/q_i)
+    // without reducing modulo the partition product Q. For the first column
+    // in partition 0 this is 5*41 + 32*17 = 749; partition 1 lifts 21 directly.
     let expected_digits: [[ValueT; 20]; 2] = [
         [
             1, 2, 3, 4, // q_0: copied
@@ -137,6 +141,9 @@ fn mod_down_matches_expected_output_with_multiple_p_moduli() {
 
     let original = polynomial_qp.clone();
     let q_len = hybrid.q_moduli_count() * poly_length;
+    // Lift the P residues without reducing modulo P, then compute (x_Q-lift)/P.
+    // For column 0 the P lift is 3*97 + 81*89 = 7500. The P limbs themselves
+    // must remain untouched when writing (x_Q - lift_P) / P modulo Q.
     let expected_q = [
         0, 0, 0, 16, 0, // q_0
         38, 38, 38, 37, 38, // q_1

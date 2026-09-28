@@ -30,6 +30,9 @@ where
         value
     }
 
+    // CRT sum of (a_i * (Q/q_i)^-1 mod q_i) * (Q/q_i). Each term and the
+    // running sum are below Q, so one subtraction suffices after every add;
+    // a carry also requires subtraction when the stored limbs have wrapped.
     #[inline]
     fn compose_to_kernel<A>(&self, residues: &[T], value: &mut BigUint<A>)
     where

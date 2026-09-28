@@ -234,6 +234,9 @@ pub trait MonomialNttTable: NttTable {
     }
 }
 
+// The power of two dividing the degree groups equal evaluations in bit-reversed
+// order. Each group consists of a constant half followed by its negation.
+// The caller supplies valid root indices and an output divisible by the group size.
 #[inline]
 fn transform_monomial_from_root_indices<Table, IndexFn>(
     table: &Table,
@@ -294,6 +297,8 @@ fn transform_monomial_from_root_indices<Table, IndexFn>(
     }
 }
 
+// Odd degrees have groups of two. Fixed-size pairs avoid the general fill loops;
+// root-index validity and complete pairs are established by the caller.
 #[inline]
 fn transform_monomial_from_root_pairs<Table, IndexFn>(
     table: &Table,

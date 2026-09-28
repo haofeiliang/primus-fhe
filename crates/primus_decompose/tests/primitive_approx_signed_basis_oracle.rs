@@ -1,6 +1,8 @@
 use primus_decompose::{ApproxSignedBasisError, primitive::ApproxSignedBasis};
 use primus_integer::FheUint;
 
+// Recompose with wide arithmetic, independently of the digit extraction,
+// and check both centered digit bounds and low-to-high scalar ordering.
 fn assert_decomposition_contract<T>(
     basis: &ApproxSignedBasis<T>,
     value: T,
@@ -58,6 +60,8 @@ where
 
 #[test]
 fn exhaustive_explicit_moduli_match_contract() {
+    // Keep the full 8-bit domain: changing q, radix and retained levels changes
+    // the wrap threshold. This is the small independent oracle for wide tests.
     for q in 4u16..=255 {
         for log_basis in 2..u16::BITS {
             if (1u32 << log_basis) > u32::from(q) {
@@ -82,6 +86,8 @@ fn exhaustive_explicit_moduli_match_contract() {
 
 #[test]
 fn native_dropped_bits_use_round_half_up() {
+    // Exhaust u16 to cover carry propagation through every retained level,
+    // including rounding across the native modulus.
     let basis = ApproxSignedBasis::<u16>::new(None, 4, Some(3));
     let q = 1u128 << u16::BITS;
     let step = 1u128 << basis.drop_bits();
@@ -166,6 +172,8 @@ fn invalid_parameters_are_rejected() {
 
 #[test]
 fn batch_initialization_and_digits_match_scalar() {
+    // Plain, carry-only, adjustment-only and combined initialization modes;
+    // these kernels use scalar loops, so five boundary values suffice.
     for (modulus, log_basis, retained) in [
         (None, 4, None),
         (None, 4, Some(2)),

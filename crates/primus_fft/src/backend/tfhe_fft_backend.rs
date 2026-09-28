@@ -49,6 +49,9 @@ impl Drop for TfheFftWorkspace {
 }
 
 impl TfheFftTable {
+    // Pack a_j + i*a_{j+N/2} with the negacyclic twist. Conversion selects
+    // signed integers or native torus scaling; the plan determines spectrum
+    // order, and the inverse twist includes 1/(N/2) normalization.
     fn forward_with<T: Copy>(
         &self,
         input: &[T],

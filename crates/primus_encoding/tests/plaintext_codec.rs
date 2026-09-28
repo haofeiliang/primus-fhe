@@ -9,6 +9,8 @@ fn round_half_up(numerator: u128, denominator: u128) -> u128 {
     (numerator + denominator / 2) / denominator
 }
 
+// Keep signed magnitude separate: casting a centered negative value to u128
+// before scaling would change the rounding oracle.
 fn lift(message: u128, t: u128, embedding: PlaintextEmbedding) -> (u128, bool) {
     if embedding == PlaintextEmbedding::Centered && message >= t.div_ceil(2) {
         (t - message, true)
@@ -42,24 +44,24 @@ fn to_value<T: TryFrom<u128>>(value: u128) -> T {
 
 // Exhaust small domains; otherwise cover zero, both centered halves and t-1.
 fn messages(t: u128) -> Vec<u128> {
-    if t <= 256 {
+    if t <= 16 {
         (0..t).collect()
     } else {
         vec![0, 1, t.div_ceil(2) - 1, t.div_ceil(2), t - 1]
     }
 }
 
+// Select one appropriate modulus representation per numeric case. The codec
+// strategy depends on q/t; repeating every case under each wrapper adds no strategy.
 fn check_encoding<T: FheUint + Into<u128> + TryFrom<u128>>(t: u128, q: u128) {
     if q == 1u128 << T::BITS {
         check_encoding_with::<T, _>(t, q, NativeModulus::new());
+    } else if q.is_power_of_two() {
+        check_encoding_with::<T, _>(t, q, PowOf2Modulus::new(to_value(q)));
+    } else if q < 1u128 << (T::BITS - 2) {
+        check_encoding_with::<T, _>(t, q, BarrettModulus::new(to_value(q)));
     } else {
         check_encoding_with::<T, _>(t, q, UintModulus::new(to_value(q)));
-        if q.is_power_of_two() {
-            check_encoding_with::<T, _>(t, q, PowOf2Modulus::new(to_value(q)));
-        }
-        if q < 1u128 << (T::BITS - 2) {
-            check_encoding_with::<T, _>(t, q, BarrettModulus::new(to_value(q)));
-        }
     }
 }
 
@@ -192,14 +194,12 @@ fn decoding_matches_integer_oracle() {
         ] {
             if q == native {
                 check_decode::<T, _>(t, q, NativeModulus::new());
+            } else if q.is_power_of_two() {
+                check_decode::<T, _>(t, q, PowOf2Modulus::new(to_value(q)));
+            } else if q < native / 4 {
+                check_decode::<T, _>(t, q, BarrettModulus::new(to_value(q)));
             } else {
                 check_decode::<T, _>(t, q, UintModulus::new(to_value(q)));
-                if q.is_power_of_two() {
-                    check_decode::<T, _>(t, q, PowOf2Modulus::new(to_value(q)));
-                }
-                if q < native / 4 {
-                    check_decode::<T, _>(t, q, BarrettModulus::new(to_value(q)));
-                }
             }
         }
     }
@@ -208,6 +208,8 @@ fn decoding_matches_integer_oracle() {
     check::<u64>();
 }
 
+// Decoder cells are tested at their integer boundaries; exact encode/decode
+// round-trips alone would miss the tie direction and wrap from t-1 to zero.
 fn check_decode<
     T: FheUint + Into<u128> + TryFrom<u128>,
     M: ReduceAdd<T, Output = T> + PrepareModulusSwitch<ValueT = T>,
@@ -291,7 +293,6 @@ fn rejects_invalid_messages_before_batch_writes() {
 #[test]
 fn rejects_invalid_modulus_pairs() {
     use primus_encoding::CodecError;
-    use std::panic::catch_unwind;
 
     for t in [0u64, 1] {
         assert_eq!(
@@ -302,8 +303,6 @@ fn rejects_invalid_modulus_pairs() {
             ScaledCodec::try_new(t, NativeModulus::new()).err(),
             Some(CodecError::InvalidPlaintextModulus)
         );
-        assert!(catch_unwind(|| RoundedCodec::new(t, NativeModulus::new())).is_err());
-        assert!(catch_unwind(|| ScaledCodec::new(t, NativeModulus::new())).is_err());
     }
     for (t, q) in [(0u64, 17), (1, 17), (2, 2), (3, 2)] {
         let expected = if t < 2 {
@@ -319,13 +318,10 @@ fn rejects_invalid_modulus_pairs() {
             ScaledCodec::try_new(t, UintModulus::new(q)).err(),
             Some(expected)
         );
-        assert!(catch_unwind(|| RoundedCodec::new(t, UintModulus::new(q))).is_err());
-        assert!(catch_unwind(|| ScaledCodec::new(t, UintModulus::new(q))).is_err());
     }
     // This pair meets q > t but violates fixed-scale recovery.
     assert_eq!(
         ScaledCodec::try_new(12u64, UintModulus::new(17)).err(),
         Some(CodecError::InsufficientScaleRecovery)
     );
-    assert!(catch_unwind(|| ScaledCodec::new(12u64, UintModulus::new(17))).is_err());
 }

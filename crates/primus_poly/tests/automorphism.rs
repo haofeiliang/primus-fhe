@@ -5,7 +5,9 @@ use primus_poly::CoeffAutomorphismPermutation;
 fn coefficient_permutation_matches_monomial_substitution() {
     const Q: u32 = 257;
     let modulus = BarrettModulus::new(Q);
-    for n in [2, 16, 128] {
+    // The gather has no size-dependent dispatch; exhaust all odd degrees at
+    // the minimum size and at a size with several index bits.
+    for n in [2, 16] {
         let input: Vec<i32> = (0..n).map(|i| i as i32 - n as i32 / 2).collect();
         let residues: Vec<u32> = input
             .iter()

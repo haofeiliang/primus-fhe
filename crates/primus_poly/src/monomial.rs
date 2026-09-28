@@ -61,6 +61,8 @@ pub fn add_mul_monomial_pair_assign<T, M>(
     }
 }
 
+// Both shifts are reduced modulo N and their global signs are separate.
+// Splitting at the wrap points makes source indices contiguous within a segment.
 #[inline]
 fn add_pair_by_segments<T, M>(
     acc: &mut [T],
@@ -113,6 +115,8 @@ fn add_pair_by_segments<T, M>(
     }
 }
 
+// The u64 caller supplies the complete polynomial batch; other widths supply
+// one polynomial at a time. All three ranges describe the same interval length.
 #[inline]
 fn add_signed_segment<T, M, const A_NEG: bool, const B_NEG: bool>(
     acc: &mut [T],

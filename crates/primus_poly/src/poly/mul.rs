@@ -210,6 +210,9 @@ where
         self.monomial_to::<true, M, A>(exponent, output, modulus);
     }
 
+    // Split the rotation at its wrap point: crossing X^N changes the sign.
+    // For (X^exponent - 1), subtract the unrotated coefficient while writing
+    // each destination, so no intermediate rotated polynomial is needed.
     #[inline]
     fn monomial_to<const SUBTRACT_SELF: bool, M, A>(
         &self,

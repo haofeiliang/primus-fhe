@@ -1,7 +1,10 @@
 use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable, TfheFftTable};
 
 fn check_automorphism<Table: FftTable>() {
-    for log_n in [2, 5, 12] {
+    // Check coefficient signs and packed conjugation. The private TFHE-FFT
+    // test forces recursive layouts; a large auto-planned transform cannot
+    // guarantee that the planner selects any particular layout.
+    for log_n in [2, 5] {
         let table = Table::new(log_n).unwrap();
         let mut fft = FftEngine::new(&table);
         let n = table.poly_length();

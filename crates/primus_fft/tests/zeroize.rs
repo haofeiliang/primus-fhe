@@ -129,8 +129,8 @@ where
 // Keep the shared allocation observations in one serial test.
 #[test]
 fn scratch_is_erased_and_reusable() {
-    // Include buffers smaller than their requested alignment and a PBS size.
-    for log_n in [2, 5, 10] {
+    // Retain sub-alignment buffers and a plan with backend work storage.
+    for log_n in [2, 10] {
         check_backend::<RustFftTable>(log_n);
         check_backend::<TfheFftTable>(log_n);
     }

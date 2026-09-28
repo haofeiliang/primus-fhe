@@ -36,6 +36,8 @@ where
     inv_punctured_product_mod_modulus: Vec<ShoupFactor<T>>,
 }
 
+// Form Q/q_i without big-integer division. Constructors supply enough output
+// limbs for Q; only the live prefix grows as multiplication produces a carry.
 fn compute_punctured_product_to<T: FheUint>(
     moduli_values: &[T],
     excluded_index: usize,

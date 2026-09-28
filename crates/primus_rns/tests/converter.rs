@@ -13,6 +13,8 @@ fn base(moduli: &[Value]) -> Base {
 
 #[test]
 fn fast_array_conversion_matches_scalar_conversion() {
+    // Scalar conversion is the layout oracle; the singleton case below fixes
+    // the distinct unsigned (fast) and centered (exact) lift conventions.
     let input_base = base(&[17, 19, 23]);
     // Adjusted source residues can exceed both destination moduli.
     let output_base = base(&[5, 7]);
@@ -77,6 +79,7 @@ fn single_input_fast_and_exact_conversion_use_distinct_lifts() {
 
 #[test]
 fn exact_array_conversion_uses_centered_values_and_reuses_workspace() {
+    // 7428 = 17*19*23 - 1 represents -1, hence 36 modulo the destination 37.
     let input_moduli = [17, 19, 23];
     let input_base = base(&input_moduli);
     let output_base = base(&[37]);

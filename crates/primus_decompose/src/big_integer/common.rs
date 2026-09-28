@@ -252,6 +252,9 @@ impl<'a, T: FheUint> OnceBigUintSignedDecomposer<'a, T> {
         self.decompose_to_kernel(value, decomposed_value, carry);
     }
 
+    // temp is in [0,B]. A carry encodes the negative digit as Q-B+temp,
+    // except temp=B: its digit is zero but the carry must still propagate.
+    // The public caller has established exact input/output limb counts.
     #[inline]
     fn decompose_to_kernel(&self, value: &[T], decomposed_value: &mut [T], carry: &mut bool) {
         let temp = self.extract_with_carry(value, carry);

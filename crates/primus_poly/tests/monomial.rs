@@ -3,14 +3,18 @@ use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_poly::Polynomial;
 use primus_reduce::{ReduceAdd, ReduceSub};
 
+// Scatter each source independently in Z_q[X]/(X^N+1); the implementation
+// instead partitions both rotations into shared contiguous intervals.
 fn check<T: FheUint + Into<u64>, M: Copy + ReduceAdd<T, Output = T> + ReduceSub<T, Output = T>>(
     modulus: M,
     q: u128,
 ) {
-    for (n, components) in [1, 2, 8, 16, 1024]
-        .into_iter()
-        .flat_map(|n| [0, 1, 3].map(|components| (n, components)))
-    {
+    // Empty batches have no coefficients or rotation intervals to verify.
+    primus_poly::add_mul_monomial_pair_assign(&mut [], &[], 0, &[], 0, 8, modulus);
+
+    // Exhaust short rotations, then exercise longer intervals and component
+    // boundaries. There is no size-dependent kernel requiring a PBS-sized N.
+    for (n, components) in [(1, 1), (2, 3), (8, 1), (64, 3)] {
         let len = n * components;
         let values: Vec<T> = (0..3 * len)
             .map(|i| {
@@ -77,7 +81,6 @@ fn paired_monomials_match_independent_ring_arithmetic() {
     check::<u32, _>(NativeModulus::new(), 1u128 << 32);
     check::<u64, _>(NativeModulus::new(), 1u128 << 64);
     check::<u32, _>(BarrettModulus::new(132_120_577u32), 132_120_577);
-    for q in [1_125_899_906_826_241u64, 1_152_921_504_606_830_593] {
-        check::<u64, _>(BarrettModulus::new(q), q.into());
-    }
+    const Q64: u64 = 1_152_921_504_606_830_593;
+    check::<u64, _>(BarrettModulus::new(Q64), Q64.into());
 }

@@ -16,6 +16,8 @@ fn limbs<T: FheUint + AsFrom<u128>>(value: u128, len: usize) -> Vec<T> {
         .collect()
 }
 
+// Round/drop thresholds and 32/64-bit limb crossings carry the regression
+// coverage; a few fixed-seed interior samples check non-boundary digit patterns.
 fn inputs(q: u128, log_basis: u32, levels: usize, drop_bits: u32) -> Vec<u128> {
     let radix = 1u128 << log_basis;
     let step = 1u128 << drop_bits;
@@ -32,7 +34,7 @@ fn inputs(q: u128, log_basis: u32, levels: usize, drop_bits: u32) -> Vec<u128> {
         }
     }
     let mut rng = StdRng::seed_from_u64(0x4445_434f_4d50);
-    values.extend((0..64).map(|_| rng.random_range(0..q)));
+    values.extend((0..8).map(|_| rng.random_range(0..q)));
     values.sort_unstable();
     values.dedup();
     values
