@@ -1,3 +1,4 @@
+//! Encrypted GLev/GGSW rows and their external-product semantics.
 use primus_fft::{FftEngine, FftTable, RustFftTable};
 use primus_glwe::{
     FourierGlweDecryptWorkspace, FourierGlweEncryptWorkspace, FourierGlweGadgetEncryptWorkspace,
@@ -16,7 +17,8 @@ use primus_poly::{Polynomial, PolynomialOwned};
 use rand::{SeedableRng, rngs::StdRng};
 
 const DIMENSION: usize = 2;
-const POLY_LENGTH: usize = 256;
+// Functional ring size; keep the original word widths, moduli and decomposition.
+const POLY_LENGTH: usize = 32;
 
 // Independent integer oracle for g_l * m (body row) or -g_l * m * s_r
 // (mask row) in Z_q[X]/(X^N + 1). Test sizes and coefficients fit in i128.

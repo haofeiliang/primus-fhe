@@ -1,8 +1,10 @@
 use primus_decompose::ApproxSignedBasisError;
 use primus_glwe_rns::{
-    CrtGlevParameters, CrtGlevParametersError, CrtGlweParameters, SecretKeyDistr,
+    CrtGlevParameters, CrtGlevParametersError, CrtGlweParameters, DcrtGadgetDomain,
+    GadgetDomainError, SecretKeyDistr,
 };
 use primus_modulus::BarrettModulus;
+use primus_ntt::UintDcrtTable;
 
 #[test]
 fn noise_support_must_fit_every_rns_modulus() {
@@ -139,4 +141,27 @@ fn cached_weights_and_centered_digits_follow_rns_order() {
             }
         }
     }
+}
+
+// Equal limb counts and lengths do not imply equal ordered evaluation domains.
+#[test]
+fn domain_rejects_modulus_order_mismatch() {
+    let moduli_values = [1_125_899_906_826_241u64, 1_125_899_906_629_633];
+    let moduli = moduli_values.map(BarrettModulus::new);
+    let crt_glwe = CrtGlweParameters::new(
+        1,
+        32,
+        BarrettModulus::new(12_289),
+        BarrettModulus::new(2_199_023_190_017),
+        &moduli,
+        SecretKeyDistr::SparseTernary,
+        3.2,
+    );
+    let crt_gadget = CrtGlevParameters::with_glwe_params(&crt_glwe, 20, None);
+    let reversed = [moduli[1], moduli[0]];
+    let wrong_order_table = UintDcrtTable::new(5, &reversed).unwrap();
+    assert!(matches!(
+        DcrtGadgetDomain::try_new(&crt_gadget, &wrong_order_table),
+        Err(GadgetDomainError::ModulusOrderMismatch { index: 0, .. })
+    ));
 }

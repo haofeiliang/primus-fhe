@@ -1,3 +1,5 @@
+//! BFV encoding and public encryption with Q wider than a machine word.
+//! Small rings retain multiple GLWE masks and two full-width CRT limbs.
 use primus_glwe_rns::{
     CrtGlweParameters, DcrtGlweCiphertext, DcrtGlweDecryptWorkspace, DcrtGlwePublicKey,
     DcrtGlweSecretKey, GlweSecretKey, SecretKeyDistr,
@@ -13,17 +15,10 @@ use rand::{SeedableRng, rngs::StdRng};
 type ValueT = u64;
 
 const DIMENSION: usize = 2;
-const POLY_LENGTH: usize = 512;
+const POLY_LENGTH: usize = 32;
 const NOISE_STANDARD_DEVIATION: f64 = 3.2;
-const SECRET_KEY_GAUSSIAN_STANDARD_DEVIATION: f64 = 3.2;
-const PLAIN_MODULI: [ValueT; 3] = [256, 257, 12_289];
 const GAMMA_MODULUS: ValueT = 2_305_843_009_213_554_689;
 const CIPHER_MODULI: [ValueT; 2] = [1_125_899_906_826_241, 1_125_899_906_629_633];
-const SECRET_KEY_TYPES: [SecretKeyDistr; 3] = [
-    SecretKeyDistr::UniformBinary,
-    SecretKeyDistr::SparseTernary,
-    SecretKeyDistr::gaussian(SECRET_KEY_GAUSSIAN_STANDARD_DEVIATION),
-];
 
 // Draw distinct reproducible messages from the test RNG.
 fn message_polynomial(plain_modulus: ValueT, rng: &mut StdRng) -> Polynomial<Vec<ValueT>> {
@@ -89,7 +84,6 @@ fn assert_dcrt_glwe_secret_key_enc_dec(secret_key_distr: SecretKeyDistr, plain_m
     let decrypted = secret_key.decrypt(&ciphertext, &params, &table, &mut decrypt_workspace);
     assert_eq!(decrypted.as_ref(), message.as_ref());
 
-    let mut ciphertext: DcrtGlwe<Vec<ValueT>> = DcrtGlweCiphertext::zero(params.rns_glwe_len());
     secret_key.encrypt_centered_plaintext_inplace(
         &message,
         &mut ciphertext,
@@ -101,9 +95,8 @@ fn assert_dcrt_glwe_secret_key_enc_dec(secret_key_distr: SecretKeyDistr, plain_m
     let decrypted = secret_key.decrypt(&ciphertext, &params, &table, &mut decrypt_workspace);
     assert_eq!(decrypted.as_ref(), message.as_ref());
 
-    // Tests the CrtPolynomial-based API directly.
+    // Reuse the same ciphertext storage through centered, CRT and zero inputs.
     let decomposed_message = decompose_message(&message, &params);
-    let mut ciphertext: DcrtGlwe<Vec<ValueT>> = DcrtGlweCiphertext::zero(params.rns_glwe_len());
     secret_key.encrypt_inplace(
         &decomposed_message,
         &mut ciphertext,
@@ -115,7 +108,6 @@ fn assert_dcrt_glwe_secret_key_enc_dec(secret_key_distr: SecretKeyDistr, plain_m
     let decrypted = secret_key.decrypt(&ciphertext, &params, &table, &mut decrypt_workspace);
     assert_eq!(decrypted.as_ref(), message.as_ref());
 
-    let mut ciphertext: DcrtGlwe<Vec<ValueT>> = DcrtGlweCiphertext::zero(params.rns_glwe_len());
     secret_key.encrypt_zeros_inplace(&mut ciphertext, &params, &table, &mut rng);
 
     let decrypted = secret_key.decrypt(&ciphertext, &params, &table, &mut decrypt_workspace);
@@ -124,10 +116,16 @@ fn assert_dcrt_glwe_secret_key_enc_dec(secret_key_distr: SecretKeyDistr, plain_m
 
 #[test]
 fn test_dcrt_glwe_secret_key_enc_dec_crt_modulus() {
-    for secret_key_distr in SECRET_KEY_TYPES {
-        for plain_modulus in PLAIN_MODULI {
-            assert_dcrt_glwe_secret_key_enc_dec(secret_key_distr, plain_modulus);
-        }
+    // Pair representative samplers and plaintext moduli instead of repeating
+    // their Cartesian product. Codec arithmetic has its own boundary tests.
+    // RNS parameters use one modulus backend for t, gamma and the CRT limbs;
+    // use a non-power-of-two even t for Barrett, alongside odd moduli.
+    for (distribution, t) in [
+        (SecretKeyDistr::UniformBinary, 254),
+        (SecretKeyDistr::SparseTernary, 257),
+        (SecretKeyDistr::gaussian(3.2), 12_289),
+    ] {
+        assert_dcrt_glwe_secret_key_enc_dec(distribution, t);
     }
 }
 
@@ -137,7 +135,7 @@ fn public_encrypt_accepts_unscaled_crt_plaintexts() {
     let moduli = CIPHER_MODULI.map(BarrettModulus::new);
     // Representative cases cover one/multiple RNS limbs and even/odd t without
     // repeating the codec's full parameter matrix through public encryption.
-    for (count, t) in [(1, 256), (2, 257)] {
+    for (count, t) in [(1, 254), (2, 257)] {
         let moduli = &moduli[..count];
         let table = UintDcrtTable::new(POLY_LENGTH.trailing_zeros(), moduli).unwrap();
         let params = CrtGlweParameters::new(
@@ -197,15 +195,10 @@ fn public_encrypt_accepts_unscaled_crt_plaintexts() {
     }
 }
 
-/// Test homomorphic ciphertext operations: add, sub, mul-by-constant, negate.
-///
-/// Encrypts three plaintexts m₀, m₁, m₂, then verifies:
-///   - c₀ + c₁  decrypts to  m₀ + m₁
-///   - c₁ − c₀  decrypts to  m₁ − m₀
-///   - c₁ ⊡ msg₂  decrypts to  m₁ · m₂  (external product with CRT polynomial)
-///   - −c₁  decrypts to  −m₁
+/// Multiplication by an unscaled CRT polynomial must retain BFV delta scaling.
+/// Basic ciphertext add/sub/neg kernels are covered by primus_lattice.
 #[test]
-fn test_dcrt_glwe_secret_key_ciphertext_ops_crt_modulus() {
+fn dcrt_polynomial_product_preserves_bfv_scaling() {
     let plain_modulus = 12_289;
     let mod_t = BarrettModulus::new(plain_modulus);
     let mod_gamma = BarrettModulus::new(GAMMA_MODULUS);
@@ -223,7 +216,6 @@ fn test_dcrt_glwe_secret_key_ciphertext_ops_crt_modulus() {
         NOISE_STANDARD_DEVIATION,
     );
 
-    let rns_poly_len = params.rns_poly_len();
     let rns_glwe_len = params.rns_glwe_len();
     let secret_key = GlweSecretKey::generate(
         params.size().glwe_size(),
@@ -233,49 +225,17 @@ fn test_dcrt_glwe_secret_key_ciphertext_ops_crt_modulus() {
     let secret_key = DcrtGlweSecretKey::from_coeff_secret_key(&secret_key, &table);
     let mut decrypt_workspace = DcrtGlweDecryptWorkspace::new(params.size());
 
-    // m₂ is binary for CRT multiplication.
-    let m0 = message_polynomial(plain_modulus, &mut rng);
-    let mut m1 = message_polynomial(plain_modulus, &mut rng);
-    let m2 = Polynomial::random_uniform_binary(POLY_LENGTH, &mut rng);
+    let message = message_polynomial(plain_modulus, &mut rng);
+    let multiplier = Polynomial::random_uniform_binary(POLY_LENGTH, &mut rng);
+    let lifted_multiplier = table.transform_inplace(decompose_message(&multiplier, &params));
+    let mut input: DcrtGlwe<Vec<ValueT>> = DcrtGlweCiphertext::zero(rns_glwe_len);
+    let mut output: DcrtGlwe<Vec<ValueT>> = DcrtGlweCiphertext::zero(rns_glwe_len);
 
-    // msg₂ is kept in coefficient form for the multiplication step;
-    // it will be converted to NTT domain later.
-    let msg2 = decompose_message(&m2, &params);
+    secret_key.encrypt_plaintext_inplace(&message, &mut input, &params, &table, &mut rng);
+    input.mul_dcrt_polynomial_to(&lifted_multiplier, &mut output, POLY_LENGTH, &moduli);
 
-    let mut c0: DcrtGlwe<Vec<ValueT>> = DcrtGlweCiphertext::zero(rns_glwe_len);
-    let mut c1: DcrtGlwe<Vec<ValueT>> = DcrtGlweCiphertext::zero(rns_glwe_len);
-    let mut c2: DcrtGlwe<Vec<ValueT>> = DcrtGlweCiphertext::zero(rns_glwe_len);
-
-    secret_key.encrypt_plaintext_inplace(&m0, &mut c0, &params, &table, &mut rng);
-    let mut decrypted = secret_key.decrypt(&c0, &params, &table, &mut decrypt_workspace);
-    assert_eq!(decrypted.as_ref(), m0.as_ref());
-
-    secret_key.encrypt_plaintext_inplace(&m1, &mut c1, &params, &table, &mut rng);
-
-    c1.add_assign(&c0, POLY_LENGTH, rns_poly_len, &moduli);
-    m1.add_assign(&m0, mod_t);
-
-    secret_key.decrypt_inplace(&c1, &mut decrypted, &params, &table, &mut decrypt_workspace);
-    assert_eq!(m1, decrypted);
-
-    c1.sub_assign(&c0, POLY_LENGTH, rns_poly_len, &moduli);
-    m1.sub_assign(&m0, mod_t);
-
-    secret_key.decrypt_inplace(&c1, &mut decrypted, &params, &table, &mut decrypt_workspace);
-    assert_eq!(m1, decrypted);
-
-    let msg2 = table.transform_inplace(msg2);
-    let mut expected_product: Polynomial<Vec<ValueT>> = Polynomial::zero(POLY_LENGTH);
-
-    c1.mul_dcrt_polynomial_to(&msg2, &mut c2, POLY_LENGTH, &moduli);
-    m1.naive_mul_to(&m2, &mut expected_product, mod_t);
-
-    secret_key.decrypt_inplace(&c2, &mut decrypted, &params, &table, &mut decrypt_workspace);
-    assert_eq!(expected_product, decrypted);
-
-    c1.neg_assign(POLY_LENGTH, rns_poly_len, &moduli);
-    m1.neg_assign(mod_t);
-
-    secret_key.decrypt_inplace(&c1, &mut decrypted, &params, &table, &mut decrypt_workspace);
-    assert_eq!(m1, decrypted);
+    let mut expected: Polynomial<Vec<ValueT>> = Polynomial::zero(POLY_LENGTH);
+    message.naive_mul_to(&multiplier, &mut expected, mod_t);
+    let decrypted = secret_key.decrypt(&output, &params, &table, &mut decrypt_workspace);
+    assert_eq!(expected, decrypted);
 }

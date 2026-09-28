@@ -1,3 +1,4 @@
+//! Constant and signed gadget batches compared with polynomial encryption and RNG order.
 use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable, TfheFftTable};
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntru::{
@@ -10,7 +11,8 @@ use primus_poly::Polynomial;
 use rand::{Rng, SeedableRng, rngs::StdRng};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
-const POLY_LENGTH: usize = 256;
+// Functional ring size; keep the original word widths, moduli and decomposition.
+const POLY_LENGTH: usize = 32;
 const EXPLICIT_MODULUS: u32 = 132_120_577;
 
 #[test]

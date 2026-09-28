@@ -206,6 +206,37 @@ cargo nextest run -p primus_lattice --lib --tests --release --features rns
 
 默认和扩展配置复用同一套测试；无需为普通测试单独标记 SIMD。按同一 feature 范围运行 all-targets 编译/Clippy，doctest 单独运行。改变实际算术或资源接口时，额外验证受影响的 GLWE/NTRU/RNS/TFHE 消费者；纯测试整理无需重新运行全 workspace 数值矩阵。
 
+## 加密与求值原语的聚焦覆盖
+
+`primus_lwe`、`primus_glwe`、`primus_ntru`、`primus_glwe_rns` 验证秘密、编码和求值密钥共同决定的相位关系。普通功能测试使用小参数：LWE 的 65 维仍跨过向量块并留下尾部；环测试以 N=32 或更小的专用 fixture 为主。保留原有字宽、密文模数和分解精度，RNS 仍使用约 100/150 位的 Q，不把多 limb 算术缩成单字算术。
+
+| 契约 | 维护入口与精简边界 |
+| --- | --- |
+| LWE 加密与批次 | [raw.rs](../../crates/primus_lwe/tests/raw.rs)、[public_key.rs](../../crates/primus_lwe/tests/public_key.rs) 保留独立整数相位、噪声与 RNG 消耗 oracle，signed/encoded 秘密、公钥矩阵及两种 embedding 各有职责；[batch.rs](../../crates/primus_lwe/tests/batch.rs) 保留 tile=8 前后、空输入、偏移哨兵和部分写入边界；[packed.rs](../../crates/primus_lwe/tests/packed.rs) 保留空/部分/满载及全部提取位置。显式二幂模数使用 PowOf2Modulus |
+| LWE key switch | [key_switch.rs](../../crates/primus_lwe/tests/key_switch.rs) 保留不同秘密表示、批次与逐 key-entry 求和的差分，输出前及采样前拒绝独立验证；不以端到端解密成功替代密钥条目符号检查 |
+| GLWE 加密与 gadget | [NTT 秘密测试](../../crates/primus_glwe/tests/ntt_glwe_secret_key.rs) 保留系数域/NTT 域相同 RNG 下的密文与相位差分、精确噪声、截断解密；[Fourier](../../crates/primus_glwe/tests/fourier_glwe_secret_key.rs) 保留 native u32/u64 和工作区复用。固定重量大于 N 的秘密仍按完整 kN 采样。公钥、gadget、constant batch、CMux、改变维数的 KS、scheme switch 在各自文件验证 |
+| GLWE trace 与 packing | [trace_packing.rs](../../crates/primus_glwe/tests/trace_packing.rs)、[packing_key_switch.rs](../../crates/primus_glwe/tests/packing_key_switch.rs) 保留完整/部分投影、系数选择与独立 signed/encoded LWE 秘密；非二元秘密的 automorphism 用整数卷积恢复原秘密下的相位。资源拒绝见 [boundaries.rs](../../crates/primus_glwe/tests/boundaries.rs) |
+| NTRU 密钥与返回链 | [secret_key.rs](../../crates/primus_ntru/tests/secret_key.rs) 保留两种表示的编码入口和脏密文复用，NTT 噪声幅度按固定 seed 精确重放；[padded_secret_key.rs](../../crates/primus_ntru/tests/padded_secret_key.rs) 区分可逆性、奇偶限制与 Fourier 数值稳定性。[lwe_key_switch.rs](../../crates/primus_ntru/tests/lwe_key_switch.rs) 保留 Q→q 整数舍入、样本提取符号及独立、无需可逆的 LWE 输出秘密 |
+| NTRU 相位与归一化 | [phase_contracts.rs](../../crates/primus_ntru/tests/phase_contracts.rs) 的 N=8 小域验证首次融合的分解残差、密钥误差和 reverse trace；NTT 模逆与 Fourier/native 有理逆及舍入分别有 oracle。[trace.rs](../../crates/primus_ntru/tests/trace.rs) 保留完整/部分 trace、展开和公开拒绝。GLWE/NTRU 的 N=32 ternary CMux 只取符号、环绕、内部指数和脏 scratch 后零指数；旋转索引穷举由多项式层负责 |
+| RNS 加密与求值 | [glwe.rs](../../crates/primus_glwe_rns/tests/glwe.rs) 将 sampler×明文模数全组合收敛为代表性配对，复用四条编码入口的输出；保留未缩放 CRT 公钥输入和 BFV 明文乘法的缩放语义。参数当前共享一种 modulus 类型，Barrett fixture 使用非二幂的奇/偶 t。[expand.rs](../../crates/primus_glwe_rns/tests/expand.rs) 按 CRT/DCRT 分开，同一密钥比较串行/本地双线程的完整/部分展开，并解密核对每个输出；工作区及脏输出跨轮复用 |
+| RNS 分解与 KS | [glev.rs](../../crates/primus_glwe_rns/tests/glev.rs)、[ext_prod.rs](../../crates/primus_glwe_rns/tests/ext_prod.rs) 保留多字宽分解和公钥 GGSW 消费；[auto.rs](../../crates/primus_glwe_rns/tests/auto.rs) 固定非恒等 automorphism，[trace.rs](../../crates/primus_glwe_rns/tests/trace.rs) 保留 CRT/DCRT/reverse 的模逆归一化。[ksk.rs](../../crates/primus_glwe_rns/tests/ksk.rs) 区分 classic 与 hybrid，后者保留三个 Q limb、P 基及不等长分区；内部系数域参考差分和 mixed-domain mod-down 仍就地测试 |
+| 秘密擦除与资源 | [GLWE zeroize](../../crates/primus_glwe/tests/zeroize.rs)、[NTRU zeroize](../../crates/primus_ntru/tests/zeroize.rs) 观察释放前存储，保留失败构造、重试、变换后秘密/逆、显式擦除失效及工作区复用。RNS 私有工作区的双缓冲擦除留在内部测试；公共 domain 构造拒绝放 [parameter.rs](../../crates/primus_glwe_rns/tests/parameter.rs)。首次融合及在线分配计数继续由真实消费者验证 |
+
+不在本层重复底层 add/sub/neg/scalar kernels 的多份加解密往返。多项式算术 oracle、BFV 的缩放乘法、带噪声求值密钥的相位关系各自保留；省略某个操作之前的普通解密检查，不省略该操作结果的检查。测试不要求单独标记 SIMD，默认和全 feature 运行同一套契约：
+
+```bash
+packages=(-p primus_lwe -p primus_glwe -p primus_ntru -p primus_glwe_rns)
+cargo check "${packages[@]}" --all-targets
+cargo nextest run "${packages[@]}" --lib --tests
+cargo clippy "${packages[@]}" --all-targets -- -D warnings
+cargo +nightly check "${packages[@]}" --all-targets --all-features
+cargo +nightly nextest run "${packages[@]}" --lib --tests --all-features
+cargo +nightly clippy "${packages[@]}" --all-targets --all-features -- -D warnings
+cargo nextest run "${packages[@]}" --lib --tests --release
+```
+
+Release 验证公开拒绝和擦除失效不依赖 debug assertions；doctest 按同样 package/feature 范围单独运行。本机 SIMD 通过只代表当前 CPU 上实际分派到的路径。这里不执行大参数统计、bench 或示例，也不替代 TFHE 消费者的端到端验证。
+
 ## 成本记录方法
 
 分别记录构建、枚举、运行和 smoke，不把一次带编译运行与另一轮缓存运行直接比较。可用 `/usr/bin/time` 记录 wall time 与进程 RSS，用 nextest 汇总观察执行阶段及慢用例；其进程 RSS 不是所有并行子进程的内存总峰值。缓存记录区分 `target/debug`、`target/release`、Criterion 数据和剩余磁盘空间。

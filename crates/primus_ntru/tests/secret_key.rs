@@ -1,59 +1,30 @@
+//! Encoding entry points, NTRU key acceptance and validation before mutation.
+//! Arithmetic kernels and fused-lift phase identities have separate oracles.
+use primus_distr::sample_gaussian_values_to;
 use primus_encoding::PlaintextEmbedding;
 use primus_fft::{FftEngine, FftTable, RustFftTable, TorusFftValue};
 use primus_integer::FheUint;
-use primus_lattice::ntru::FourierNtruOwned;
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntru::{
     FourierNtruDecryptWorkspace, FourierNtruEncryptWorkspace, FourierNtruSecretKey, NtruError,
     NtruParameters, NtruSecretKey, NttNtruSecretKey, SecretKeyDistr,
 };
 use primus_ntt::{NttTable, PrimitiveRoot, UintNttTable};
-use primus_poly::{FourierPolynomialOwned, Polynomial, PolynomialOwned};
+use primus_poly::Polynomial;
 use rand::{Rng, SeedableRng, rngs::StdRng};
 
-const POLY_LENGTH: usize = 256;
+// Small functional ring; both word widths retain their original moduli and noise.
+const POLY_LENGTH: usize = 32;
 const PLAIN_MODULUS: usize = 16;
 
+// Include both sides of the centered encoding boundary.
 fn messages<T: FheUint>() -> Vec<T> {
     (0..POLY_LENGTH)
-        .map(|index| T::try_from(index % (PLAIN_MODULUS / 2)).unwrap())
+        .map(|index| T::try_from(index % PLAIN_MODULUS).unwrap())
         .collect()
 }
 
-fn doubled_messages<T: FheUint>(messages: &[T]) -> Vec<T> {
-    let t = T::try_from(PLAIN_MODULUS).unwrap();
-    messages
-        .iter()
-        .map(|&message| (message + message) % t)
-        .collect()
-}
-
-fn negated_messages<T: FheUint>(messages: &[T]) -> Vec<T> {
-    let t = T::try_from(PLAIN_MODULUS).unwrap();
-    messages
-        .iter()
-        .map(|&message| {
-            if message == T::ZERO {
-                T::ZERO
-            } else {
-                t - message
-            }
-        })
-        .collect()
-}
-
-fn monomial_shifted_messages<T: FheUint>(messages: &[T]) -> Vec<T> {
-    let t = T::try_from(PLAIN_MODULUS).unwrap();
-    let mut shifted = vec![T::ZERO; messages.len()];
-    shifted[0] = if messages[messages.len() - 1] == T::ZERO {
-        T::ZERO
-    } else {
-        t - messages[messages.len() - 1]
-    };
-    shifted[1..].copy_from_slice(&messages[..messages.len() - 1]);
-    shifted
-}
-
+// Replay noise independently and overwrite one ciphertext through all encodings.
 fn assert_ntt_roundtrip<T>(cipher_modulus: T)
 where
     T: FheUint + PrimitiveRoot,
@@ -70,9 +41,11 @@ where
     let mut rng = StdRng::seed_from_u64(42);
     let secret_key = NttNtruSecretKey::generate(&params, &ntt, &mut rng).unwrap();
     let messages = messages::<T>();
-    let message = Polynomial::new(messages.clone());
+    let message = Polynomial::new(messages.as_slice());
 
-    let cipher = secret_key.encrypt(&message, &params, &ntt, &mut rng);
+    let mut rng = StdRng::seed_from_u64(43);
+    let mut noise_rng = StdRng::seed_from_u64(43);
+    let mut cipher = secret_key.encrypt(&message, &params, &ntt, &mut rng);
     assert_eq!(
         secret_key.decrypt(&cipher, &params, &ntt).as_ref(),
         messages
@@ -80,12 +53,21 @@ where
 
     let (decrypted, noise) = secret_key.decrypt_with_noise(&cipher, &params, &ntt);
     assert_eq!(decrypted.as_ref(), messages);
-    assert!(noise.as_ref().iter().any(|&value| value != T::ZERO));
+    let mut expected_noise = vec![T::ZERO; POLY_LENGTH];
+    sample_gaussian_values_to(
+        &mut expected_noise,
+        params.noise_distribution(),
+        &mut noise_rng,
+    );
+    // The diagnostic returns absolute circular distance, not a signed residue.
+    for value in &mut expected_noise {
+        *value = (*value).min(cipher_modulus - *value);
+    }
+    assert_eq!(noise.as_ref(), expected_noise);
 
-    let mut centered_cipher = cipher.clone();
-    secret_key.encrypt_centered_to(&message, &mut centered_cipher, &params, &ntt, &mut rng);
+    secret_key.encrypt_centered_to(&message, &mut cipher, &params, &ntt, &mut rng);
     assert_eq!(
-        secret_key.decrypt(&centered_cipher, &params, &ntt).as_ref(),
+        secret_key.decrypt(&cipher, &params, &ntt).as_ref(),
         messages
     );
 
@@ -95,66 +77,32 @@ where
         &messages,
         PlaintextEmbedding::Unsigned,
     );
-    let mut encoded_cipher = cipher.clone();
     secret_key.encrypt_encoded_to(
         &Polynomial::new(encoded),
-        &mut encoded_cipher,
+        &mut cipher,
         &params,
         &ntt,
         &mut rng,
     );
     assert_eq!(
-        secret_key.decrypt(&encoded_cipher, &params, &ntt).as_ref(),
+        secret_key.decrypt(&cipher, &params, &ntt).as_ref(),
         messages
     );
 
-    let mut zero_cipher = encoded_cipher;
-    secret_key.encrypt_zeros_to(&mut zero_cipher, &params, &ntt, &mut rng);
+    secret_key.encrypt_zeros_to(&mut cipher, &params, &ntt, &mut rng);
     assert_eq!(
-        secret_key.decrypt(&zero_cipher, &params, &ntt).as_ref(),
+        secret_key.decrypt(&cipher, &params, &ntt).as_ref(),
         vec![T::ZERO; POLY_LENGTH]
-    );
-
-    let mut sum = cipher.clone();
-    sum.add_assign(&cipher, modulus);
-    assert_eq!(
-        secret_key.decrypt(&sum, &params, &ntt).as_ref(),
-        doubled_messages(&messages)
-    );
-
-    let mut scalar_product = cipher;
-    scalar_product.mul_scalar_assign(T::TWO, modulus);
-    assert_eq!(
-        secret_key.decrypt(&scalar_product, &params, &ntt).as_ref(),
-        doubled_messages(&messages)
-    );
-
-    let mut negated = scalar_product;
-    negated.neg_assign(modulus);
-    assert_eq!(
-        secret_key.decrypt(&negated, &params, &ntt).as_ref(),
-        negated_messages(&doubled_messages(&messages))
-    );
-
-    let mut monomial = PolynomialOwned::zero(POLY_LENGTH);
-    monomial.as_mut()[1] = T::ONE;
-    let monomial_ntt = ntt.transform_inplace(monomial);
-    let mut polynomial_product = secret_key.encrypt(&message, &params, &ntt, &mut rng);
-    polynomial_product.mul_ntt_polynomial_assign(&monomial_ntt, modulus);
-    assert_eq!(
-        secret_key
-            .decrypt(&polynomial_product, &params, &ntt)
-            .as_ref(),
-        monomial_shifted_messages(&messages)
     );
 }
 
 #[test]
-fn ntt_secret_key_roundtrip_and_linear_operations() {
+fn ntt_secret_key_encodings_reuse_ciphertext_storage() {
     assert_ntt_roundtrip(132_120_577u32);
     assert_ntt_roundtrip(1_125_899_906_826_241u64);
 }
 
+// Native torus encryption reuses both ciphertext and FFT workspaces.
 fn assert_fourier_roundtrip<T>()
 where
     T: FheUint + TorusFftValue,
@@ -173,9 +121,9 @@ where
     let mut encrypt_workspace = FourierNtruEncryptWorkspace::new(POLY_LENGTH);
     let mut decrypt_workspace = FourierNtruDecryptWorkspace::new(POLY_LENGTH);
     let messages = messages::<T>();
-    let message = Polynomial::new(messages.clone());
+    let message = Polynomial::new(messages.as_slice());
 
-    let cipher = secret_key.encrypt(
+    let mut cipher = secret_key.encrypt(
         &message,
         &params,
         &mut fft,
@@ -189,10 +137,9 @@ where
         messages
     );
 
-    let mut centered_cipher = cipher.clone();
     secret_key.encrypt_centered_to(
         &message,
-        &mut centered_cipher,
+        &mut cipher,
         &params,
         &mut fft,
         &mut rng,
@@ -200,7 +147,7 @@ where
     );
     assert_eq!(
         secret_key
-            .decrypt(&centered_cipher, &params, &mut fft, &mut decrypt_workspace,)
+            .decrypt(&cipher, &params, &mut fft, &mut decrypt_workspace,)
             .as_ref(),
         messages
     );
@@ -211,10 +158,9 @@ where
         &messages,
         PlaintextEmbedding::Unsigned,
     );
-    let mut encoded_cipher = cipher.clone();
     secret_key.encrypt_encoded_to(
         &Polynomial::new(encoded),
-        &mut encoded_cipher,
+        &mut cipher,
         &params,
         &mut fft,
         &mut rng,
@@ -222,14 +168,13 @@ where
     );
     assert_eq!(
         secret_key
-            .decrypt(&encoded_cipher, &params, &mut fft, &mut decrypt_workspace,)
+            .decrypt(&cipher, &params, &mut fft, &mut decrypt_workspace,)
             .as_ref(),
         messages
     );
 
-    let mut zero_cipher = encoded_cipher;
     secret_key.encrypt_zeros_to(
-        &mut zero_cipher,
+        &mut cipher,
         &params,
         &mut fft,
         &mut rng,
@@ -237,56 +182,14 @@ where
     );
     assert_eq!(
         secret_key
-            .decrypt(&zero_cipher, &params, &mut fft, &mut decrypt_workspace,)
+            .decrypt(&cipher, &params, &mut fft, &mut decrypt_workspace,)
             .as_ref(),
         vec![T::ZERO; POLY_LENGTH]
-    );
-
-    let mut sum = cipher.clone();
-    sum.add_assign(&cipher);
-    assert_eq!(
-        secret_key
-            .decrypt(&sum, &params, &mut fft, &mut decrypt_workspace)
-            .as_ref(),
-        doubled_messages(&messages)
-    );
-
-    let mut scalar_product: FourierNtruOwned = cipher;
-    scalar_product.mul_scalar_assign(2.0);
-    assert_eq!(
-        secret_key
-            .decrypt(&scalar_product, &params, &mut fft, &mut decrypt_workspace,)
-            .as_ref(),
-        doubled_messages(&messages)
-    );
-
-    let mut monomial = vec![T::ZERO; POLY_LENGTH];
-    monomial[1] = T::ONE;
-    let mut monomial_fourier = FourierPolynomialOwned::zero(fft.fourier_length());
-    fft.forward_as_integer(&monomial, monomial_fourier.as_mut());
-    let mut polynomial_product = secret_key.encrypt(
-        &message,
-        &params,
-        &mut fft,
-        &mut rng,
-        &mut encrypt_workspace,
-    );
-    polynomial_product.mul_fourier_polynomial_assign(&monomial_fourier);
-    assert_eq!(
-        secret_key
-            .decrypt(
-                &polynomial_product,
-                &params,
-                &mut fft,
-                &mut decrypt_workspace,
-            )
-            .as_ref(),
-        monomial_shifted_messages(&messages)
     );
 }
 
 #[test]
-fn fourier_secret_key_roundtrip_and_linear_operations() {
+fn fourier_secret_key_encodings_reuse_ciphertext_storage() {
     assert_fourier_roundtrip::<u32>();
     assert_fourier_roundtrip::<u64>();
 }

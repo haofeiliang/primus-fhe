@@ -1,3 +1,4 @@
+//! Public GGSW encryption and external product across two wide CRT limbs.
 use primus_glwe_rns::{
     CrtGlevParameters, CrtGlweParameters, DcrtGlweCiphertext, DcrtGlweDecryptWorkspace,
     DcrtGlwePublicKey, DcrtGlweSecretKey, GlweSecretKey, SecretKeyDistr,
@@ -19,8 +20,8 @@ use rand::{SeedableRng, rngs::StdRng};
 fn test_external_product() {
     type ValueT = u64;
 
-    let dimension = 8;
-    let poly_length: usize = 512;
+    let dimension = 2;
+    let poly_length: usize = 32;
     let log_n = poly_length.trailing_zeros();
 
     let t: ValueT = 12289;
@@ -59,23 +60,22 @@ fn test_external_product() {
 
     let pk = DcrtGlwePublicKey::new(&dcrt_sk, &glwe_params, &table, &mut rng);
 
+    let input: Polynomial<Vec<ValueT>> = Polynomial::random(poly_length, mod_t, &mut rng);
+    let mut c1: DcrtGlwe<Vec<ValueT>> = DcrtGlweCiphertext::zero(rns_glwe_len);
+    let mut c2: DcrtGlwe<Vec<ValueT>> = DcrtGlweCiphertext::zero(rns_glwe_len);
+
+    let mut glev_workspace = DcrtGlevMulWorkspace::new(glev_params.size(), glev_params.base_q());
+    let mut decrypt_workspace = DcrtGlweDecryptWorkspace::new(glwe_params.size());
+
+    dcrt_sk.encrypt_plaintext_inplace(&input, &mut c1, &glwe_params, &table, &mut rng);
+
+    // Requires coefficient-domain input.
+    let c1 = c1.into_coeff_form(&table);
+
     // Identity, one-position shift and sign-wrapping boundary.
     for degree in [0, 1, poly_length - 1] {
         let ggsw =
             pk.encrypt_monomial_ggsw(&Residues([1, 1]), degree, &glev_params, &table, &mut rng);
-
-        let input: Polynomial<Vec<ValueT>> = Polynomial::random(poly_length, mod_t, &mut rng);
-        let mut c1: DcrtGlwe<Vec<ValueT>> = DcrtGlweCiphertext::zero(rns_glwe_len);
-        let mut c2: DcrtGlwe<Vec<ValueT>> = DcrtGlweCiphertext::zero(rns_glwe_len);
-
-        let mut glev_workspace =
-            DcrtGlevMulWorkspace::new(glev_params.size(), glev_params.base_q());
-        let mut decrypt_workspace = DcrtGlweDecryptWorkspace::new(glwe_params.size());
-
-        dcrt_sk.encrypt_plaintext_inplace(&input, &mut c1, &glwe_params, &table, &mut rng);
-
-        // Requires coefficient-domain input.
-        let c1 = c1.into_coeff_form(&table);
 
         c1.mul_dcrt_ggsw_to(
             &ggsw,

@@ -1,3 +1,4 @@
+//! Native u32/u64 encodings and full k*N secret sampling with reused workspaces.
 use primus_encoding::PlaintextEmbedding;
 use primus_fft::{FftEngine, FftTable, RustFftTable, TorusFftValue};
 use primus_glwe::{
@@ -10,7 +11,8 @@ use primus_poly::Polynomial;
 use rand::{SeedableRng, rngs::StdRng};
 
 const DIMENSION: usize = 2;
-const POLY_LENGTH: usize = 256;
+// Functional ring size; keep the original word widths, moduli and decomposition.
+const POLY_LENGTH: usize = 32;
 const PLAIN_MODULUS: usize = 16;
 
 fn assert_roundtrip<T>()

@@ -1,3 +1,4 @@
+//! Small functional dimensions include vector blocks and incomplete tails.
 use primus_encoding::PlaintextEmbedding;
 use primus_integer::FheUint;
 use primus_lattice::lwe::LweIter;
@@ -175,8 +176,8 @@ fn batches_decrypt_across_moduli_embeddings_and_tail_sizes() {
     check_batches(BarrettModulus::new(132_120_577u32), 7);
     check_batches(BarrettModulus::new(1_125_899_906_826_241u64), 7);
     // A longer non-power-of-two mask exercises multiple vector blocks and a tail.
-    check_batches(NativeModulus::<u32>::new(), 805);
-    check_batches(BarrettModulus::new(132_120_577u32), 805);
+    check_batches(NativeModulus::<u32>::new(), 65);
+    check_batches(BarrettModulus::new(132_120_577u32), 65);
 }
 
 #[test]

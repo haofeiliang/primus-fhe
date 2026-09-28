@@ -21,7 +21,7 @@ fn test_rns_glev() {
     type ValueT = u64;
 
     let dimension = 3;
-    let poly_length: usize = 512;
+    let poly_length: usize = 32;
     let log_n = poly_length.trailing_zeros();
 
     let t: ValueT = 12289;

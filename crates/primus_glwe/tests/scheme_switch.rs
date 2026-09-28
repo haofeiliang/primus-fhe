@@ -1,3 +1,4 @@
+//! GLev-to-GGSW conversion checked through gadget phases and external products.
 use primus_glwe::{
     GlevParameters, GlweParameters, GlweSecretKey, NttGlweGadgetEncryptWorkspace,
     NttGlweSchemeSwitchKey, NttGlweSecretKey, SecretKeyDistr,
@@ -15,7 +16,8 @@ use rand::{SeedableRng, rngs::StdRng};
 
 mod common;
 
-const POLY_LENGTH: usize = 256;
+// Functional ring size; keep the original word widths, moduli and decomposition.
+const POLY_LENGTH: usize = 32;
 const DIMENSION: usize = 2;
 const PLAINTEXT_MODULUS: u64 = 16;
 const MODULUS: u64 = 1_125_899_906_826_241;

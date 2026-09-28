@@ -1,3 +1,4 @@
+//! Encrypted CMux controls checked against selected messages and signed phase rotations.
 use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable, TfheFftTable};
 use primus_glwe::{
     FourierGlweDecryptWorkspace, FourierGlweEncryptWorkspace, FourierGlweGadgetEncryptWorkspace,
@@ -17,7 +18,8 @@ use rand::{SeedableRng, rngs::StdRng};
 mod common;
 
 const DIMENSION: usize = 1;
-const POLY_LENGTH: usize = 256;
+// Functional ring size; keep the original word widths, moduli and decomposition.
+const POLY_LENGTH: usize = 32;
 const PLAINTEXT_MODULUS: u32 = 16;
 
 fn plaintext(offset: u32) -> Vec<u32> {
@@ -227,7 +229,9 @@ fn ntt_ternary_cmux_rotates_phase_with_encrypted_controls() {
             &mut encrypt_workspace,
         );
         let (positive, negative) = controls.split_at(params.ggsw_len());
-        for exponent in (1..2 * N).chain([0]) {
+        // Sign/wrap boundaries and an interior shift; zero follows dirty scratch.
+        // Exhaustive index arithmetic is covered by the polynomial rotation oracle.
+        for exponent in [1, N / 2 - 1, N / 2, N - 1, N, N + 1, 2 * N - 1, 0] {
             NttGgsw::new(positive).cmux_ternary_monomial_to(
                 &NttGgsw::new(negative),
                 &input,
@@ -304,7 +308,9 @@ fn check_fourier_ternary_cmux<Table: FftTable>() {
             &mut encrypt_workspace,
         );
         let (positive, negative) = controls.split_at(params.fourier_ggsw_len());
-        for exponent in (1..2 * N).chain([0]) {
+        // Sign/wrap boundaries and an interior shift; zero follows dirty scratch.
+        // Exhaustive index arithmetic is covered by the polynomial rotation oracle.
+        for exponent in [1, N / 2 - 1, N / 2, N - 1, N, N + 1, 2 * N - 1, 0] {
             FourierGgsw::new(positive).cmux_ternary_monomial_to(
                 &FourierGgsw::new(negative),
                 &input,

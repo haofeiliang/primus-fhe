@@ -118,7 +118,9 @@ fn encrypted_ternary_step_matches_phase_oracle_and_two_binary_cmuxes_without_all
         let (positive, negative) = controls.split_at(gadget.nlev_len());
         let positive = NttNgswCiphertext::new(positive);
         let negative = NttNgswCiphertext::new(negative);
-        for exponent in (1..2 * N).chain([0]) {
+        // Sign/wrap boundaries and an interior shift; zero follows dirty scratch.
+        // Exhaustive index arithmetic is covered by the polynomial rotation oracle.
+        for exponent in [1, N / 2 - 1, N / 2, N - 1, N, N + 1, 2 * N - 1, 0] {
             let (_, allocations) = measure(|| {
                 positive.cmux_ternary_monomial_to(
                     &negative,
@@ -288,7 +290,9 @@ fn check_fourier_step<T: TorusFftValue, Table: FftTable>() {
         let (positive, negative) = controls.split_at(gadget.fourier_nlev_len());
         let positive = FourierNgswCiphertext::new(positive);
         let negative = FourierNgswCiphertext::new(negative);
-        for exponent in (1..2 * N).chain([0]) {
+        // Sign/wrap boundaries and an interior shift; zero follows dirty scratch.
+        // Exhaustive index arithmetic is covered by the polynomial rotation oracle.
+        for exponent in [1, N / 2 - 1, N / 2, N - 1, N, N + 1, 2 * N - 1, 0] {
             let (_, allocations) = measure(|| {
                 positive.cmux_ternary_monomial_to(
                     &negative,

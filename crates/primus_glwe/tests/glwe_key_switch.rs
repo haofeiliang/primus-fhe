@@ -1,3 +1,4 @@
+//! Switch between independent keys, including a change in GLWE mask count.
 use primus_fft::{FftEngine, FftTable, RustFftTable};
 use primus_glwe::{
     FourierGlweDecryptWorkspace, FourierGlweEncryptWorkspace, FourierGlweGadgetEncryptWorkspace,
@@ -13,7 +14,8 @@ use primus_poly::Polynomial;
 use rand::{SeedableRng, rngs::StdRng};
 
 const INPUT_DIMENSION: usize = 2;
-const POLY_LENGTH: usize = 256;
+// Functional ring size; keep the original word widths, moduli and decomposition.
+const POLY_LENGTH: usize = 32;
 const PLAINTEXT_MODULUS: u32 = 16;
 
 fn plaintext() -> Vec<u32> {

@@ -1,3 +1,4 @@
+//! Public encryption for unsigned and centered messages using a shared workspace.
 use primus_encoding::PlaintextEmbedding;
 use primus_glwe::{
     GlweParameters, NttGlweCiphertext, NttGlwePublicEncryptWorkspace, NttGlwePublicKey,
@@ -9,7 +10,8 @@ use primus_poly::Polynomial;
 use rand::{Rng, SeedableRng, rngs::StdRng};
 
 const DIMENSION: usize = 2;
-const POLY_LENGTH: usize = 256;
+// Functional ring size; keep the original word widths, moduli and decomposition.
+const POLY_LENGTH: usize = 32;
 const PLAIN_MODULUS: u64 = 256;
 const CIPHER_MODULUS: u64 = 1_125_899_906_826_241;
 
@@ -28,9 +30,18 @@ fn public_key_encoding_modes_reuse_workspace() {
     let mut rng = StdRng::seed_from_u64(42);
     let (_, secret_key) = NttGlweSecretKey::generate_pair(&params, &table, &mut rng);
     let public_key = NttGlwePublicKey::generate(&secret_key, &params, &table, &mut rng);
+    // Keep the centered sign boundary and endpoints even when N is smaller than t.
     let message = Polynomial::new(
         (0..POLY_LENGTH)
-            .map(|index| index as u64 % PLAIN_MODULUS)
+            .map(|index| {
+                [
+                    0,
+                    1,
+                    PLAIN_MODULUS / 2 - 1,
+                    PLAIN_MODULUS / 2,
+                    PLAIN_MODULUS - 1,
+                ][index % 5]
+            })
             .collect::<Vec<_>>(),
     );
 

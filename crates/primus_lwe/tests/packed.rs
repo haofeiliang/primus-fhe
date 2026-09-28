@@ -1,3 +1,4 @@
+//! Small functional dimensions include vector blocks and incomplete tails.
 use primus_encoding::PlaintextEmbedding;
 use primus_integer::FheUint;
 use primus_lattice::lwe::MultiMsgLwe;
@@ -48,7 +49,7 @@ fn packed_samples_decrypt_independently() {
 
 fn check_packed_samples<T: FheUint, M: RingContext<T>>(modulus: M) {
     // Moving rotation splits exercise vector blocks and tails in both word widths.
-    let dimension = 513;
+    let dimension = 65;
     let params = LweParameters::new(
         dimension,
         T::as_from(4u32),

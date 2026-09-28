@@ -1,3 +1,4 @@
+//! Coefficient/NTT encryption equivalence, encoding paths and exact noise diagnostics.
 use primus_encoding::PlaintextEmbedding;
 use primus_glwe::{
     GlweCiphertext, GlweParameters, NttGlweCiphertext, NttGlweSecretKey, SecretKeyDistr,
@@ -11,7 +12,8 @@ use rand::{Rng, SeedableRng, rngs::StdRng};
 use zeroize::Zeroizing;
 
 const DIMENSION: usize = 2;
-const POLY_LENGTH: usize = 256;
+// Functional ring size; keep the original word widths, moduli and decomposition.
+const POLY_LENGTH: usize = 32;
 const PLAIN_MODULUS: usize = 16;
 
 fn assert_roundtrip<T>(cipher_modulus: T)
@@ -168,7 +170,7 @@ fn truncated_decryption_returns_only_retained_coefficients() {
     let table = UintNttTable::new(POLY_LENGTH.trailing_zeros(), modulus).unwrap();
     let mut rng = StdRng::seed_from_u64(42);
     let (_, secret_key) = NttGlweSecretKey::generate_pair(&params, &table, &mut rng);
-    for count in [0, 32, POLY_LENGTH] {
+    for count in [0, 3, POLY_LENGTH] {
         let mut ciphertext = secret_key.encrypt_truncated_zeros(count, &params, &table, &mut rng);
         let message: Vec<_> = (0..count)
             .map(|i| ((3 * i + 1) % PLAIN_MODULUS) as u64)

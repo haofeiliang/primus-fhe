@@ -1,3 +1,4 @@
+//! Small functional dimensions include vector blocks and incomplete tails.
 use primus_integer::{AsFrom, AsInto, FheUint};
 use primus_lattice::lwe::Lwe;
 use primus_lwe::{LweParameters, LweSecretKeyRef, SecretKeyDistr};
@@ -9,7 +10,7 @@ fn check_raw<T: FheUint, M: RingContext<T>>(modulus: M) {
     let q = modulus
         .explicit_value()
         .map_or(1i128 << T::BITS, |q| q.as_into());
-    for dimension in [0, 7, 805] {
+    for dimension in [0, 7, 65] {
         let signed: Vec<T::SignedInteger> = (0..dimension)
             .map(|i| T::SignedInteger::as_from((i % 7) as i32 - 3))
             .collect();

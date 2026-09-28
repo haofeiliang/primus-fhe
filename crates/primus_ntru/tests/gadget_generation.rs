@@ -1,3 +1,4 @@
+//! NLev/NGSW gadget encryption checked through row phases and encrypted selection.
 use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable};
 use primus_lattice::ntru::{FourierNtruOwned, Ntru, NttNtru};
 use primus_modulus::{BarrettModulus, NativeModulus};
@@ -12,7 +13,8 @@ use primus_ntt::{NttTable, UintNttTable};
 use primus_poly::{Polynomial, PolynomialOwned};
 use rand::{SeedableRng, rngs::StdRng};
 
-const POLY_LENGTH: usize = 256;
+// Functional ring size; keep the original word widths, moduli and decomposition.
+const POLY_LENGTH: usize = 32;
 const PLAINTEXT_MODULUS: u32 = 16;
 const EXPLICIT_MODULUS: u32 = 132_120_577;
 

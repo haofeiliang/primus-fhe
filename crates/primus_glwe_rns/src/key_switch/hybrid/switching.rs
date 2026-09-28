@@ -346,7 +346,8 @@ mod tests {
         type Value = u64;
 
         let dimension = 2;
-        let poly_length: usize = 512;
+        // Small ring; three Q limbs retain wide arithmetic and an uneven partition.
+        let poly_length: usize = 32;
         let log_n = poly_length.trailing_zeros();
         let plaintext_modulus = BarrettModulus::new(12289);
         let gamma = BarrettModulus::new(2305843009213554689);

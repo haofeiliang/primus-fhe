@@ -1,3 +1,4 @@
+//! Original-secret phases after automorphism, including nonbinary Fourier keys.
 use primus_fft::{FftEngine, FftTable, RustFftTable};
 use primus_glwe::{
     FourierGlweAutomorphismKey, FourierGlweAutomorphismWorkspace,
@@ -14,7 +15,8 @@ use rand::{SeedableRng, rngs::StdRng};
 mod common;
 use common::{K, N, assert_phase, encrypt, message, secret};
 
-const POLY_LENGTH: usize = 256;
+// Functional ring size; keep the original word widths, moduli and decomposition.
+const POLY_LENGTH: usize = 32;
 const DIMENSION: usize = 2;
 const PLAINTEXT_MODULUS: u64 = 16;
 const MODULUS: u64 = 1_125_899_906_826_241;

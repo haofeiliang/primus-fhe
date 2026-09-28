@@ -26,6 +26,7 @@ fn add_secret_product(values: &mut [u64], masks: &[u64], secret: &[i64], q: u128
     }
 }
 
+// Construct b = m + a*s with zero noise so evaluation-key error stays identifiable.
 pub(super) fn encrypt(
     message: &[u64],
     secret: &[i64],
@@ -42,6 +43,7 @@ pub(super) fn encrypt(
     Glwe::new(output)
 }
 
+// Recover b - a*s using the same coefficient-ring convention as the oracle.
 pub(super) fn phase(cipher: &[u64], secret: &[i64], q: u128) -> Vec<u64> {
     let (mask, body) = cipher.split_at(K * N);
     let mut output = body.to_vec();

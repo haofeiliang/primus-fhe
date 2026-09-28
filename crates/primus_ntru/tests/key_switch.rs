@@ -1,3 +1,4 @@
+//! Independent NTRU key switching and validation before output mutation.
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use primus_fft::{FftEngine, FftTable, RustFftTable, TfheFftTable};
@@ -13,7 +14,8 @@ use primus_ntt::{NttTable, UintNttTable};
 use primus_poly::Polynomial;
 use rand::{SeedableRng, rngs::StdRng};
 
-const POLY_LENGTH: usize = 256;
+// Functional ring size; keep the original word widths, moduli and decomposition.
+const POLY_LENGTH: usize = 32;
 const PLAIN_MODULUS: u32 = 16;
 const EXPLICIT_MODULUS: u32 = 132_120_577;
 

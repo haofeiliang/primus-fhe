@@ -1,3 +1,4 @@
+//! Small functional dimensions include vector blocks and incomplete tails.
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_encoding::PlaintextEmbedding;
 use primus_integer::FheUint;
@@ -18,7 +19,7 @@ fn check_equations<T: FheUint, M: RingContext<T>>(modulus: M) {
     for (dimension, distribution, noise_sigma) in [
         (1, SecretKeyDistr::UniformBinary, 3.2),
         (7, SecretKeyDistr::UniformTernary, 3.2),
-        (805, SecretKeyDistr::gaussian(2.0), 3.2),
+        (65, SecretKeyDistr::gaussian(2.0), 3.2),
         (7, SecretKeyDistr::UniformTernary, 30.0),
     ] {
         // These are arithmetic fixtures, not evaluated security parameters.

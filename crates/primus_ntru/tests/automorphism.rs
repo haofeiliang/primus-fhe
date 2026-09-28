@@ -1,3 +1,4 @@
+//! Automorphism under the original NTRU secret in NTT and Fourier representations.
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable, TfheFftTable};
@@ -14,7 +15,7 @@ use primus_ntt::{NttTable, UintNttTable};
 use primus_poly::Polynomial;
 use rand::{Rng, SeedableRng, rngs::StdRng};
 
-const N: usize = 256;
+const N: usize = 32;
 const Q: u32 = 132_120_577;
 const P: u32 = 16;
 

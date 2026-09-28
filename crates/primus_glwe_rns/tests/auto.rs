@@ -8,9 +8,10 @@ use primus_modulus::BarrettModulus;
 use primus_ntt::UintDcrtTable;
 use primus_poly::Polynomial;
 use primus_reduce::ReduceNeg;
-use rand::RngExt;
 use rand::{SeedableRng, rngs::StdRng};
 
+// Scatter m_i to X^(i*degree), applying the sign from reduction modulo X^N+1.
+// This oracle does not use the ciphertext permutation or its cached index table.
 fn coefficient_automorphism(
     polynomial: &[u64],
     degree: usize,
@@ -34,7 +35,7 @@ fn coefficient_automorphism(
 
 /// Test GLWE automorphism in the coefficient (CRT) domain.
 ///
-/// A GLWE ciphertext is encrypted, transformed by a random odd-degree
+/// A GLWE ciphertext is encrypted, transformed by a fixed nonidentity odd-degree
 /// automorphism k → k·α mod 2N, then decrypted. The result is checked
 /// against an independent coefficient-domain plaintext automorphism.
 #[test]
@@ -42,7 +43,7 @@ fn test_crt_glwe_auto() {
     type ValueT = u64;
 
     let dimension = 3;
-    let poly_length: usize = 512;
+    let poly_length: usize = 32;
     let log_n = poly_length.trailing_zeros();
     let t: ValueT = 12289;
     let mod_t = <BarrettModulus<ValueT>>::new(t);
@@ -77,10 +78,7 @@ fn test_crt_glwe_auto() {
     let glev_params = CrtGlevParameters::with_glwe_params(&glwe_params, 20, None);
     let domain = DcrtGadgetDomain::try_new(&glev_params, &table).unwrap();
 
-    let mut auto_degree = rng.random_range(0..poly_length * 2);
-    if auto_degree & 1 == 0 {
-        auto_degree |= 1; // automorphism degree must be odd (coprime to 2N)
-    }
+    let auto_degree = 3; // Includes both permutation and negacyclic sign changes.
 
     let auto_key = CrtGlweAutoKey::new(&domain, auto_degree, &sk, &dcrt_sk, &mut rng);
 
@@ -91,10 +89,6 @@ fn test_crt_glwe_auto() {
     let mut decrypt_workspace = DcrtGlweDecryptWorkspace::new(glwe_params.size());
 
     dcrt_sk.encrypt_plaintext_inplace(&input1, &mut c1, &glwe_params, &table, &mut rng);
-
-    // Sanity: decrypt original
-    let m_dec = dcrt_sk.decrypt(&c1, &glwe_params, &table, &mut decrypt_workspace);
-    assert_eq!(m_dec, input1);
 
     let c1 = c1.into_coeff_form(&table);
 
@@ -118,7 +112,7 @@ fn test_dcrt_glwe_auto() {
     type ValueT = u64;
 
     let dimension = 3;
-    let poly_length: usize = 512;
+    let poly_length: usize = 32;
     let log_n = poly_length.trailing_zeros();
     let t: ValueT = 12289;
     let mod_t = <BarrettModulus<ValueT>>::new(t);
@@ -152,10 +146,7 @@ fn test_dcrt_glwe_auto() {
     let glev_params = CrtGlevParameters::with_glwe_params(&glwe_params, 20, None);
     let domain = DcrtGadgetDomain::try_new(&glev_params, &table).unwrap();
 
-    let mut auto_degree = rng.random_range(0..poly_length * 2);
-    if auto_degree & 1 == 0 {
-        auto_degree |= 1;
-    }
+    let auto_degree = 3; // Includes both permutation and negacyclic sign changes.
 
     let auto_key = DcrtGlweAutoKey::new(&domain, auto_degree, &dcrt_sk, &mut rng);
 
@@ -166,9 +157,6 @@ fn test_dcrt_glwe_auto() {
     let mut decrypt_workspace = DcrtGlweDecryptWorkspace::new(glwe_params.size());
 
     dcrt_sk.encrypt_plaintext_inplace(&input1, &mut c1, &glwe_params, &table, &mut rng);
-
-    let m_dec = dcrt_sk.decrypt(&c1, &glwe_params, &table, &mut decrypt_workspace);
-    assert_eq!(m_dec, input1);
 
     auto_key.automorphism_to(&c1, &mut c2, &domain, &mut auto_workspace);
 

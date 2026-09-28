@@ -2,7 +2,7 @@ use primus_decompose::primitive::ApproxSignedBasis;
 use primus_lwe::{
     LweKeySwitchingKey, LweParameters, LweSecretKey, LweSecretKeyRef, SecretKeyDistr,
 };
-use primus_modulus::{BarrettModulus, NativeModulus};
+use primus_modulus::{BarrettModulus, NativeModulus, PowOf2Modulus};
 use primus_reduce::RingContext;
 use rand::{Rng, SeedableRng, rngs::StdRng};
 
@@ -168,7 +168,7 @@ fn batch_matches_scalar_key_entry_sum() {
     check_batch_sum(NativeModulus::<u32>::new());
     check_batch_sum(BarrettModulus::new(132_120_577u32));
     check_batch_sum(NativeModulus::<u64>::new());
-    check_batch_sum(BarrettModulus::new(1u64 << 40));
+    check_batch_sum(PowOf2Modulus::new(1u64 << 40));
 }
 
 fn check_batch_sum<T: primus_integer::FheUint, M: RingContext<T>>(modulus: M) {
