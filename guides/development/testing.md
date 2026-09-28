@@ -1,47 +1,54 @@
 # 测试、基准与契约归属
 
-本指南区分普通测试、编译检查、示例执行和性能测量，并提供后续精简测试的覆盖入口。包和 target 由 [workspace](../../Cargo.toml) 与 Cargo metadata 决定；运行时用例由 nextest 清单决定，不能用源码中的 `#[test]` 数量替代宏展开后的清单。
+本指南区分普通测试、编译检查、示例执行和性能测量，并记录各层独立契约的覆盖入口。包和 target 由 [workspace](../../Cargo.toml) 与 Cargo metadata 决定；运行时用例由 nextest 清单决定，不能用源码中的 `#[test]` 数量替代宏展开后的清单。
 
 存储、布局、语义迭代器和工作区的使用入口见[库使用导航](README.zh_CN.md)。
 
 ## 验证入口
 
-| 入口 | 范围与执行方式 |
-| --- | --- |
-| `just fmt-check` | 只检查格式 |
-| `just check` / `just lint` | 默认 features，全 workspace、all-targets；编译/检查 examples 和 benches，不执行它们 |
-| `just test` | 默认 features，全 workspace 的 library/proc-macro 单元测试及集成测试；显式 `--lib --tests` |
-| `just test-doc` | 全 workspace doctests；nextest 不执行 doctest |
-| `just test-simd` | justfile 列出的六个算术包及其 SIMD features，显式 `--lib --tests` |
-| `just tfhe` / `just tfhe-simd` | 八个 TFHE crate 和两组 test support；具体 check/lint/test/doc/example 范围见 [justfile](../../justfile) |
-| `just bench-smoke <package> <target> [Cargo options…]` | release/bench profile，单个 Criterion binary 启动一次，以 `--test` 执行 setup 和工作负载断言，不做统计采样 |
-| `just bench-smoke-simd <package> <target> [Cargo options…]` | 对提供 `simd` feature 的包使用 nightly，其余语义相同 |
+使用 Rust、Clippy、rustfmt、`cargo-nextest` 和 `just`；普通命令使用当前工具链，GitHub 的 stable job 由 workflow 选择 stable，SIMD 入口显式使用 nightly。仓库不提交 Cargo.lock，命令不使用 `--locked`，允许 Cargo 按需生成或更新本地锁文件。
 
-普通测试不使用 nextest `--all-targets`。`harness=false` 的 Criterion binary 也会被 nextest 枚举；注册前的密钥生成及整组验证可能在枚举时执行，并随着 nextest 逐条启动基准而反复执行。基准 smoke 保留这些 fixture 检查，但独立于普通测试运行。
+| 入口 | 范围 |
+| --- | --- |
+| `just` | 格式检查、当前工具链的 all-targets Clippy、普通测试 |
+| `just ci` | 上述默认验证、doctest 和必要的可选依赖编译检查；沿用当前工具链，CI 中为 stable |
+| `just ci-nightly` | nightly 全 features 的 all-targets Clippy、普通测试、doctest、严格/private rustdoc 和 SIMD-only 库编译检查 |
+| `just fmt-check` / `just fmt` | 检查格式 / 写入格式化结果 |
+| `just check [package]` / `just lint [package]` | 当前工具链的 all-targets 编译 / Clippy `-D warnings` |
+| `just test [package]` / `just test-doc [package]` | 当前工具链的普通测试 / doctest；nextest 不执行 doctest |
+| `just simd [package]` | nightly 全 features 的 Clippy 和普通测试 |
+| `just tfhe` / `just tfhe-simd` | 对 `primus_tfhe*` 执行 Clippy 和普通测试，分别使用当前工具链/default features 和 nightly/all features |
+| `just bench-smoke <package> <target> [Cargo options…]` | 显式选择一个 Criterion target，以 `--test` 执行工作负载及断言，不做统计采样 |
+
+可选 package 默认为整个 workspace，接受包名或加引号的 Cargo glob。普通测试始终显式使用 `--lib --tests`，避免 Criterion 进入 nextest 枚举/执行；all-targets 只编译和 lint 示例、基准。Clippy 已承担编译检查，组合入口不再重复全库 `cargo check`。
 
 ```sh
-# 只验证一个包的普通测试。
-cargo nextest run -p primus_tfhe_ntru_lut --lib --tests
-
-# 一个 benchmark target，一个进程；额外参数在 --test 之前传给 Cargo。
+just ci                                    # 当前工具链；GitHub 中为 stable
+just ci-nightly                            # 单独验证 nightly
+just test primus_tfhe_ntru_lut
+just simd 'primus_tfhe*'
 just bench-smoke primus_tfhe_ntru_lut pipeline
 just bench-smoke primus_lattice rns_glev --features rns
-just bench-smoke-simd primus_tfhe_ntru_lut pipeline
-
-# 真实性能采样使用 benchmark 自己记录的命令。
+# 示例与性能测量直接使用其 README/源码中的 Cargo 命令。
+cargo run --release -p primus_tfhe_ntru_lut --example ntt_lookup
 cargo bench -p primus_tfhe_ntru_lut --bench pipeline
 ```
 
-不要把 smoke 的耗时当作 kernel 延迟；它包含参数构造、密钥生成、验证和一次工作负载执行。性能测量的参数、CPU、工具链和 feature 必须保持可比，编译/初始化成本单独记录。过滤某个基准条目也不保证其注册前的 setup 会被跳过。
+Nightly 基准 smoke 的显式命令为 `cargo +nightly bench -p <package> --bench <target> --features simd -- --test`。所有 smoke 和示例执行都由维护者按改动选择，CI 不生成密钥运行大参数工作负载，也不自动执行全量性能采样。Smoke 耗时包含构造、密钥生成和断言，不能当作 kernel 延迟。
 
-[CI](../../.github/workflows/ci.yml) 的普通测试同样显式选择 `--lib --tests`，保留 stable 默认和 nightly 全 feature 两个范围；all-target Clippy、doctest 及严格 rustdoc 独立执行。全 feature 普通测试和 doctest 的本地命令为：
+### Profile、feature 隔离与 CI
 
-```sh
-cargo +nightly nextest run --workspace --lib --tests --all-features
-cargo +nightly test --workspace --all-features --doc
-```
+[开发 profile](../../Cargo.toml) 在 `[profile.dev]` 中设置 `opt-level=1`，test profile 自动继承，因此普通 `cargo build`、`cargo run` 和测试都使用基础优化。调试信息、debug assertions、overflow checks 和本地 incremental 保持默认开启。CI 单独用 `CARGO_INCREMENTAL=0` 禁用增量产物，不影响本地配置。Release/bench profile 保持原样；复查 release 拒绝路径仍需显式运行 `cargo nextest run … --release`。
 
-`just ci` 组合默认 workspace 与局部 SIMD/TFHE 验证，仍不等同于 GitHub 的全 feature 矩阵。它包含 `test-doc`，不运行 benchmark smoke；需要验证基准 fixture 时显式运行对应 target。Examples 的编译检查不等于运行，其中两个 NTRU 查表示例由 `tfhe` / `tfhe-simd` 执行，其余按示例文档选择运行。
+[GitHub CI](../../.github/workflows/ci.yml) 只有 stable、nightly 两个独立 job，分别调用 `just ci` 和 `just ci-nightly`；它们可以并行运行，各自使用对应工具链的缓存。严格文档只在 nightly 全 features 下构建一次，doctest 在两个配置都运行。使用 Cargo/nextest 按可用 CPU 自动选择的并发；空 `RUSTFLAGS` 覆盖本机 native 配置，缓存使用 rust-cache 默认策略。这里不承诺冷构建或特定 runner 的完成时限。
+
+Feature 边界只增加五条库编译命令，不再单独重复运行五组测试：
+
+- stable 分别以 `--lib --no-default-features` 检查 data、lattice、encoding，避免其他成员或 dev-dependencies 的 feature 合并掩盖可选依赖关闭时的问题。
+- stable 合并编译 modulus/derive 与 distr/high_precision；RNS、aligned-vec 的启用路径已由默认 workspace 的实际消费者编译并运行。
+- nightly 合并编译 modulus/lattice/encoding 的 SIMD-only 库，不启用 derive/RNS。该组合与全 features 分开，保留弱可选依赖关闭时的检查。
+
+小参数数值契约继续由默认/全 feature 普通测试负责。大参数诊断、示例配置切换和基准 fixture 验证按下面的维护入口显式执行。
 
 ## 测试参数与 CI 成本
 
@@ -79,29 +86,31 @@ cargo nextest list --binaries-metadata /tmp/primus-test-binaries.json \
 
 审查 JSON 时同时检查：`rust-suites` 的 `kind` 仅为 `lib`、`proc-macro`、`test`；`testcases` 没有 Criterion `::bench/` 名称；`test-count` 与实际执行结果一致。若将来增加需要运行的 binary/example 自测，须明确其测试归属并更新选择范围，不能因为 `--lib --tests` 已存在就静默漏掉。
 
-2026-09-27 的入口分离清单如下。用例数指命名测试函数，其中可能包含多个参数/消息；不表示独立数学边界的数量，也不设为必须维持的阈值。
+2026-09-28 的全库验收清单如下。用例数指命名测试函数，其中可能包含多个参数/消息，不表示独立数学边界的数量，也不设为必须维持的阈值。
 
-| 项目 | 默认 workspace | nightly 全 features |
+| 项目 | stable 默认 | nightly 全 features |
 | --- | ---: | ---: |
 | Library/proc-macro targets | 29 | 29 |
-| 可用的 integration targets | 135 | 136 |
-| 含实际用例的测试 binaries | 141 | 144 |
-| 普通测试用例 | 374 | 387 |
+| 可用的 integration targets | 138 | 139 |
+| 含实际用例的测试 binaries | 143 | 146 |
+| 普通测试用例 | 370 | 381 |
 | Criterion binaries/条目进入普通测试 | 0 | 0 |
 
-Cargo 声明总计 67 个 bench targets、21 个 examples，其中 `primus_tfhe*` 占 20 个 bench targets、16 个 examples；这些是文件/target 数，不能与普通测试用例相加。当前所有 bench/example 的 metadata 均为 `test=false`，源文件中没有独立测试函数；本次分离未删除或改写任何普通测试。原 CI 的隐式选择与新的显式选择分别得到完全相同的 164/165 个 binary ID 和可执行文件路径。
+整个 workspace 声明 65 个 bench targets、28 个 examples；其中 TFHE 产品 crate 有 18 个 bench targets、22 个 examples，最近全量验收在默认/SIMD 下各执行过 382 个 Criterion 工作负载和 22 个示例；这不是每次 CI 的负载。这些 target/工作负载数不能与普通测试用例相加。`test-support` 参数诊断属于剩余六个 examples 之一，始终按需显式执行。
+
+入口分离时（2026-09-27）普通测试为 374/387 项；当时有 67 个 bench targets、21 个 examples，TFHE 产品部分为 20/16。后续整理既删除重复 setup/循环，也迁移测试并补齐错误边界和字宽。保留/替代关系见以下各层索引；净用例数只作辅助记录，不把合并循环当作工作量下降。
 
 ## Feature 与字宽范围
 
-- `simd` 需要 nightly。全 feature 验证覆盖提供该 feature 的各层；`just simd` 仅覆盖 justfile 指定的算术包。单次全 feature 通过不能替代默认分派路径的运行。
+- `simd` 需要 nightly。全 feature 验证覆盖提供该 feature 的各层；`just simd` 默认对整个 workspace 执行 Clippy 与普通测试。单次全 feature 通过不能替代默认分派路径的运行。
 - 调用通用 API 的测试同时用于默认/SIMD 配置，不为它另建同义的 `simd_*` 测试。只有直接使用 SIMD 专属类型或接口才条件编译整个测试；普通测试可局部条件编译 `LANE_COUNT` 等参数。启用 feature 不保证实际触达 SIMD：例如 Barrett 点积需要至少 `16 * LANE_COUNT` 个元素，选择输入时保留分派点两侧、完整块和尾部。单纯转发标准库切片分块的方法不单独测试。
 - `primus_modulus/derive` 启用 `derives` 集成测试和 `derived_mac` 基准；默认 workspace 不启用它。`primus_distr/high_precision` 增加高精度 CDT 覆盖。
 - `primus_lattice/rns`、`primus_encoding/rns` 及 `primus_data/aligned-vec` 在默认 workspace 中可由其他成员依赖启用。独立包运行不能假定这种 feature 合并；`rns_glev`、`rns_ggsw`、`bfv_rns` 等基准需要对应的 required-features。
-- 算术、模数、变换和基础同态层具有 u32/u64 及必要的较小字宽、多 limb 验证；每个运算的具体字宽从所属测试入口确认，不能从包内出现某个类型名推断全部路径均被覆盖。普通 PBS 有 u32/u64 路径；CBS/one-hot 的字宽覆盖不均，高精度 LUT 的密文求值当前只验证 u64。该限制仍需在参数和使用资产整理中处理。
+- 算术、模数、变换和基础同态层具有 u32/u64 及必要的较小字宽、多 limb 验证；每个运算的具体字宽从所属测试入口确认，不能从包内出现某个类型名推断全部路径均被覆盖。普通 PBS 和高精度密文求值有 u32/u64 路径；CBS/one-hot 的专用相位测试侧重 u64，u32 的实际消费由高精度求值和双字宽基准 smoke 补充。FFT 底层谱运算 fixture 使用 u32，u64 转换 oracle 及上层 Fourier 密文消费另行保留，不将转换测试称作完整谱运算覆盖。
 
 ## 契约与主要 setup 归属
 
-以下是精简工作的导航，不是完成了每个测试的独立性复审。默认入口保留这些测试，后续合并/删除时须逐项给出替代覆盖或删除理由；缺少本地用例的 trait/辅助包可以由实际消费者承担验证。
+以下是各层契约归属的导航，具体删减与保留理由见后续各层小节。以后合并/删除时仍须给出替代覆盖或删除理由；缺少本地用例的 trait/辅助包由实际消费者承担验证。
 
 | 层及包 | 普通测试承担的契约 | 主要 setup 与检查入口 |
 | --- | --- | --- |
@@ -124,7 +133,7 @@ Cargo 声明总计 67 个 bench targets、21 个 examples，其中 `primus_tfhe*
 - 首次融合残差及 reverse trace：见 [phase_contracts.rs](../../crates/primus_ntru/tests/phase_contracts.rs) 和 [trace.rs](../../crates/primus_ntru/tests/trace.rs)，包含 NTT 模逆与 native 减半的不同 oracle。
 - PBS/ManyLUT、MVB、CBS→CMux、one-hot 完整/紧凑 selectors：见各后端 `pbs.rs`、`factorized_pbs.rs`、`circuit_bootstrap.rs`，以及 NTRU [NTT one_hot.rs](../../crates/primus_tfhe_ntru_ntt/tests/one_hot.rs) / [Fourier one_hot.rs](../../crates/primus_tfhe_ntru_fourier/tests/one_hot.rs)。查表完整链路由上述 LUT tests 验证。
 
-普通测试不等价于基准的每一个大尺寸参数组。基准中的已知结果、相位余量和在线分配断言继续保护该 fixture；修改其参数、分解或 kernel 时运行对应 smoke。benchmark 参数预算、setup 重复及条目精简需要逐项处理，不能仅靠移出默认入口宣称已经优化。
+普通测试不等价于基准的每一个大尺寸参数组。基准中的已知结果、相位余量和在线分配断言继续保护该 fixture；修改其参数、分解或 kernel 时运行对应 smoke。TFHE 的保留/合并、延后 setup 及实测范围见[基准职责](../../crates/primus_tfhe/BENCHMARKS.md)和[基准记录](tfhe-benchmarks.md)，不以移出普通测试代替基准本身的整理。
 
 ## 基础库的聚焦覆盖
 
@@ -250,25 +259,21 @@ Release 验证公开拒绝和擦除失效不依赖 debug assertions；doctest �
 | 稀疏与 MVB | GLWE 的 `sparse_key.rs`/`sparse_blind_rotation.rs`/`sparse_pbs.rs` 区分映射、密钥条目和实际求值；NTRU `sparse_bucket.rs`/`sparse_pbs.rs` 保留首桶、空桶、单桶和多桶差异。四后端 `factorized_pbs.rs` 保留超过 interleaved 容量的输出数，以及公开 LUT 与密钥/表绑定。公共 sparse 匹配与有限重试 oracle 留在其私有 kernel 测试 |
 | CBS 与 one-hot | 四后端 `circuit_bootstrap.rs` 检查 gadget 层次相位及 CMux/外积消费；[公共 one_hot.rs](../../crates/primus_tfhe_ntru/tests/one_hot.rs) 穷举 guard、padding 和反周期符号。两 NTRU 后端的 `one_hot.rs` 以 N=64 验证完整/紧凑批次等价、selector 0、三层尺度、实际消费及错误后复用 |
 | 高精度查表与独立返回秘密 | [编译 oracle](../../crates/primus_tfhe_ntru_lut/tests/lookup_table.rs) 完整检查表分区和系数；[evaluation.rs](../../crates/primus_tfhe_ntru_lut/tests/evaluation.rs) 保留 NTT/RustFFT/TFHE-FFT × u32/u64 × classic binary/ternary。小域完整求值，大域取各表边界、每个 chunk 的非零 digit、前导零及末值；保留 d=0、d=c、公密混合 CMux 层、满系数环和不同输入/输出 chunk 数。NTRU 后端 `lwe_return.rs` 验证 Q→q 与独立且无需可逆的 LWE 秘密 |
-| 分配与共享参数 | [CountingAllocator](../../test-support/allocations/src/lib.rs) 保持每线程计数，不把 worker 或进程内存算入；公共编译的正分配计数和后端在线零分配测试直接消费它，不新增标准库转发测试。[参数模块](../../test-support/tfhe/src/parameters/mod.rs) 服务代表性示例/基准，与普通测试的小参数分开 |
+| 分配与共享参数 | [CountingAllocator](../../test-support/allocations/src/lib.rs) 保持每线程计数，不把 worker 或进程内存算入；公共编译的正分配计数和后端在线零分配测试直接消费它，不新增标准库转发测试。[参数模块](../../test-support/tfhe/src/parameters/mod.rs) 服务代表性诊断/基准，与普通测试的小参数分开；产品示例就地构造参数以便阅读 |
 
 显式二幂外部 LWE 模数使用 `PowOf2Modulus`；Fourier accumulator 仍使用 `NativeModulus`。u32 NTT 的高精度流程使用适合 CBS 的 prime 998244353，三层输出分解采用 log basis=4；u64 保留其独立模数与精度，不能直接缩窄常量。
 
 支持与拒绝各有用例：GLWE CBS 覆盖 classic binary/ternary 及 sparse、两种 order；NTRU 普通 PBS 支持 classic/sparse，CBS、MVB、one-hot/高精度流程只支持 classic binary/ternary，相应 sparse 绑定被拒绝。缺失 CBS 材料、错误输出形状、参数/表不匹配和无效容量继续由实际边界验证。
 
-默认与 nightly 全 feature 复用同一套测试，不给普通测试加 SIMD gate。可在 Bash 中按以下包范围验证；all-targets 只编译/lint，doctest 独立运行：
+默认与 nightly 全 feature 复用同一套测试，不给普通测试加 SIMD gate。TFHE 快捷入口只组合 Clippy 和普通测试；示例和 benchmark smoke 独立运行：
 
-```bash
-packages=(-p primus_tfhe -p primus_tfhe_glwe -p primus_tfhe_glwe_ntt -p primus_tfhe_glwe_fourier -p primus_tfhe_ntru -p primus_tfhe_ntru_ntt -p primus_tfhe_ntru_fourier -p primus_tfhe_ntru_lut -p primus_tfhe_test_support -p primus_test_allocations)
-cargo check "${packages[@]}" --all-targets
-cargo nextest run "${packages[@]}" --lib --tests
-cargo clippy "${packages[@]}" --all-targets -- -D warnings
-cargo +nightly check "${packages[@]}" --all-targets --all-features
-cargo +nightly nextest run "${packages[@]}" --lib --tests --all-features
-cargo +nightly clippy "${packages[@]}" --all-targets --all-features -- -D warnings
-cargo nextest run "${packages[@]}" --lib --tests --release
-cargo test "${packages[@]}" --doc
-cargo +nightly test "${packages[@]}" --doc --all-features
+```sh
+just tfhe
+just tfhe-simd
+cargo run --release -p primus_tfhe_ntru_lut --example ntt_lookup
+just bench-smoke primus_tfhe_ntru_lut pipeline
+# 显式复查 release 的拒绝/输出保持契约。
+cargo nextest run -p 'primus_tfhe*' --lib --tests --release
 ```
 
 大参数扩展入口是 [validate_parameters](../../test-support/tfhe/examples/validate_parameters.rs)，不加入默认测试。它验证 [参数矩阵](tfhe-parameters.md) 的 n≈800、N=1024/2048，保留两个固定 seed、raw phase 误差预算和全部后端/字宽；支持在密钥生成前按名称筛选。Boolean PBS 的消息为 0→1→0，不重复其与 midpoint/末值相同的 1；CBS、one-hot、完整查表和阈值诊断仍保留各自的边界输入与复用。
@@ -282,13 +287,22 @@ cargo run --release -p primus_tfhe_test_support --example validate_parameters --
 
 分别记录构建、枚举、运行和 smoke，不把一次带编译运行与另一轮缓存运行直接比较。可用 `/usr/bin/time` 记录 wall time 与进程 RSS，用 nextest 汇总观察执行阶段及慢用例；其进程 RSS 不是所有并行子进程的内存总峰值。缓存记录区分 `target/debug`、`target/release`、Criterion 数据和剩余磁盘空间。
 
-2026-09-27 的本地普通测试基线使用 Ryzen 9 9955HX3D、仓库 `target-cpu=native`、nextest 0.9.143；stable 1.98.0 和 nightly 1.100.0。测试 profile 通过环境临时设为 `opt-level=1`，显式保留 debug assertions 与 overflow checks，`CARGO_INCREMENTAL=0`；未修改仓库/CI profile，以下数字不代表默认未优化 CI 的耗时。
+在同一台 Ryzen 9 9955HX3D（32 个逻辑 CPU）、相同 `target-cpu=native`、stable 1.98.0 / nightly 1.100.0、nextest 0.9.143 下复测。两次都使用 opt-level=1、debug assertions/overflow checks 开启、`CARGO_INCREMENTAL=0`、默认自动并发、不绑核。2026-09-27 的 profile 由环境设置，2026-09-28 初次验收时写入 Cargo.toml；随后只保留 opt-level=1，本地 incremental 恢复默认开启。下表保留的是禁用 incremental 时的历史测量，不能直接代表当前本地配置。运行前单独生成 binaries-only 清单；以下每个值都是单轮观察，不是统计基准。
 
-| 阶段 | stable 默认 | nightly 全 features |
-| --- | ---: | ---: |
-| 生成 binaries-only 清单（含构建） | 49.56 s | 49.14 s |
-| 复用二进制枚举 | 0.15 s | 0.15 s |
-| 缓存就绪的命令运行总耗时 | 1.67 s | 1.64 s |
-| nextest 汇总的测试执行阶段 | 1.347 s | 1.339 s |
+| 阶段 | 9/27 默认 | 9/28 默认 | 9/27 全 features | 9/28 全 features |
+| --- | ---: | ---: | ---: | ---: |
+| 生成 binaries-only 清单（含构建） | 49.56 s | 31.17 s | 49.14 s | 30.22 s |
+| 枚举已构建的二进制 | 0.15 s | 0.19 s | 0.15 s | 0.14 s |
+| 缓存就绪的普通测试命令 | 1.67 s | 2.24 s | 1.64 s | 2.20 s |
+| nextest 汇总的执行阶段 | 1.347 s | 1.908 s | 1.339 s | 1.902 s |
+| 构建命令 max RSS（KiB） | 1,316,140 | 946,332 | 1,388,092 | 922,140 |
+| 枚举命令 max RSS（KiB） | 53,652 | 53,176 | 48,192 | 46,980 |
+| 测试命令 max RSS（KiB） | 63,688 | 65,464 | 53,732 | 53,468 |
 
-本次没有重新执行旧的全 workspace Criterion 逐条枚举/运行，也没有删减普通测试；因此只确认负载分离后的当前成本，不据历史包含 benchmark 的 2076/2155 项推算测试提速比例。后续比较须使用相同 profile、工具链、features、线程数、缓存和机器条件，并保留独立契约清单。
+这不是冷构建对比：依赖和历史产物的缓存状态不同，构建时间/资源下降不能直接归因于精简。缓存测试执行并未整体变快；最长的 TFHE-FFT 高精度用例由约 1.12 s 变为 1.74 s，同期增加了 u32 完整求值覆盖，具体输入和 setup 也已变化。保留独立契约，不能为了回到旧数字删除字宽或放宽阈值。各层重复尺寸/setup 的减少与整个 workspace 的总时间分开解释；没有重跑旧的含 Criterion 普通入口来制造夸大对比。
+
+收缩 CI 前的同次本机全量验收中，原两个 full 命令分别 11.27 / 12.55 s；22 个示例分别 20.99 / 22.68 s，382 条 Criterion smoke 分别 136.97 / 137.44 s，均包含当次缓存状态下的 Cargo 检查/构建。两种配置普通测试全部通过，doctest 各 21 passed、2 个既有 ignored；smoke 通过不表示测过所有可切换的示例源码配置。该全量入口及批量脚本已删除，以上 smoke 成本不再计入每次 CI。
+
+收缩后的入口于同机重新验证：`just ci` / `just ci-nightly` 分别 39.27 / 39.45 s，包含恢复本地 incremental 后约 32.73 / 31.67 s 的测试重编译；普通测试分别 370/381 项通过，执行阶段约 1.90/1.92 s。它们不运行示例/基准，GitHub 分为两个 job。这些本机数据没有模拟 GitHub 的 CPU、缓存或编译 flags，不能直接与此前预编译后的 full 时间比较。
+
+维护时按上面的清单命令将 JSON 和 `/usr/bin/time` 结果存放在本地临时目录，记录实际工具版本、profile、CPU、并发、缓存和执行范围。普通测试用例数、基准数量和代码行数都是辅助指标，不能替代成本及覆盖内容。GitHub runner、其他架构和 CPU 分派路径必须以各自实际运行结果为准。

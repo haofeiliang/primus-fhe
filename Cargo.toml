@@ -3,11 +3,11 @@ members = ["crates/*", "test-support/*"]
 resolver = "3"
 
 [workspace.dependencies]
-dashu-float = "=0.6.0"
-dashu-int = "=0.6.0"
+dashu-float = "0.6.1"
+dashu-int = "0.6.1"
 num-complex = "0.4"
 num-traits = "0.2"
-rand = "0.10.2"
+rand = "0.10.3"
 rustfft = "6"
 serde = { version = "1.0", features = ["derive"] }
 zeroize = "1.9"
@@ -19,3 +19,6 @@ rayon = "1.12"
 
 criterion = "0.8"
 comfy-table = "8.0"
+
+[profile.dev]
+opt-level = 1

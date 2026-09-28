@@ -1,18 +1,20 @@
 set windows-shell := ["powershell.exe", "-NoLogo", "-Command"]
+export RUSTDOCFLAGS := "-D warnings"
 
-simd-packages := "-p primus_integer -p primus_modulus -p primus_barrett_derive -p primus_factor -p primus_rns -p primus_decompose"
-simd-features := "primus_integer/simd,primus_modulus/simd,primus_barrett_derive/simd,primus_factor/simd,primus_rns/simd,primus_decompose/simd"
+default: fmt-check lint test
 
-tfhe-packages := "-p primus_tfhe -p primus_tfhe_glwe -p primus_tfhe_glwe_ntt -p primus_tfhe_glwe_fourier -p primus_tfhe_ntru -p primus_tfhe_ntru_ntt -p primus_tfhe_ntru_fourier -p primus_tfhe_ntru_lut -p primus_tfhe_test_support -p primus_test_allocations"
+# CI selects stable; local commands use the active toolchain.
+ci: default test-doc
+  cargo check -p primus_data --lib --no-default-features
+  cargo check -p primus_lattice --lib --no-default-features
+  cargo check -p primus_encoding --lib --no-default-features
+  cargo check -p primus_modulus -p primus_distr --lib --features primus_modulus/derive,primus_distr/high_precision
 
-default: fmt check lint test
-
-ci: fmt-check check lint test test-doc simd tfhe-simd
-
-simd: check-simd lint-simd test-simd
-
-new-lib name:
-  cargo new crates/{{name}} --lib
+# Separate toolchain/job. Build strict rustdoc only once, with all features.
+ci-nightly: simd
+  cargo +nightly test --workspace --doc --all-features
+  cargo +nightly doc --workspace --no-deps --document-private-items --all-features
+  cargo +nightly check -p primus_modulus -p primus_lattice -p primus_encoding --lib --no-default-features --features primus_modulus/simd,primus_lattice/simd,primus_encoding/simd
 
 fmt:
   cargo fmt --all
@@ -20,50 +22,31 @@ fmt:
 fmt-check:
   cargo fmt --all -- --check
 
-check:
-  cargo check --workspace --all-targets
+check package="*":
+  cargo check -p '{{package}}' --all-targets
 
-check-simd:
-  cargo +nightly check {{simd-packages}} --all-targets --features {{simd-features}}
+lint package="*":
+  cargo clippy -p '{{package}}' --all-targets -- -D warnings
 
-lint:
-  cargo clippy --workspace --all-targets -- -D warnings
+# All-targets is for compilation; keep Criterion out of nextest.
+test package="*":
+  cargo nextest run -p '{{package}}' --lib --tests
 
-lint-simd:
-  cargo +nightly clippy {{simd-packages}} --all-targets --features {{simd-features}} -- -D warnings
+# Nextest does not execute doctests.
+test-doc package="*":
+  cargo test -p '{{package}}' --doc
 
-# Run unit/integration tests; Criterion targets belong to bench-smoke.
-test:
-  cargo nextest run --workspace --lib --tests
+simd package="*":
+  cargo +nightly clippy -p '{{package}}' --all-targets --all-features -- -D warnings
+  cargo +nightly nextest run -p '{{package}}' --lib --tests --all-features
 
-test-simd:
-  cargo +nightly nextest run {{simd-packages}} --lib --tests --features {{simd-features}}
+tfhe: (lint "primus_tfhe*") (test "primus_tfhe*")
 
-# Nextest does not execute rustdoc examples.
-test-doc:
-  cargo test --workspace --doc
+tfhe-simd: (simd "primus_tfhe*")
 
-# Run one Criterion target once, including setup and assertions, without sampling.
+# Explicit target, one Criterion process, no statistical sampling.
 bench-smoke package target *cargo-args:
-  cargo bench -p {{package}} --bench {{target}} {{cargo-args}} -- --test
+  cargo bench -p '{{package}}' --bench '{{target}}' {{cargo-args}} -- --test
 
-# The same target with nightly SIMD; extra arguments are Cargo feature options.
-bench-smoke-simd package target *cargo-args:
-  cargo +nightly bench -p {{package}} --bench {{target}} --features simd {{cargo-args}} -- --test
-
-# Eight TFHE crates, test support, doctests and complete NTRU lookup examples.
-tfhe: fmt-check
-  cargo check {{tfhe-packages}} --all-targets
-  cargo clippy {{tfhe-packages}} --all-targets -- -D warnings
-  cargo test {{tfhe-packages}}
-  cargo run -p primus_tfhe_ntru_lut --example ntt_lookup
-  cargo run -p primus_tfhe_ntru_lut --example fourier_lookup
-  cargo doc {{tfhe-packages}} --no-deps
-
-# Explicit selection enables SIMD in every TFHE crate.
-tfhe-simd:
-  cargo +nightly check {{tfhe-packages}} --all-targets --features simd
-  cargo +nightly clippy {{tfhe-packages}} --all-targets --features simd -- -D warnings
-  cargo +nightly test {{tfhe-packages}} --features simd
-  cargo +nightly run -p primus_tfhe_ntru_lut --example ntt_lookup --features simd
-  cargo +nightly run -p primus_tfhe_ntru_lut --example fourier_lookup --features simd
+new-lib name:
+  cargo new crates/{{name}} --lib
