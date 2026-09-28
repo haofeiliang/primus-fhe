@@ -6,7 +6,6 @@ use primus_integer::FheUint;
 use primus_lattice::{GadgetSize, ggsw::GgswIter};
 use primus_modulus::BarrettModulus;
 use primus_ntt::MonomialNttTable;
-use primus_reduce::PrepareModulusSwitch;
 use primus_tfhe::{rotation::RotationQuantizer, sparse::BucketMap};
 use zeroize::Zeroizing;
 
@@ -36,7 +35,7 @@ pub struct SparseGlweBootstrappingKey<T: FheUint> {
     hamming_weight: usize,
     copy_count: usize,
     modulus: BarrettModulus<T>,
-    input_quantizer: RotationQuantizer<<BarrettModulus<T> as PrepareModulusSwitch>::Prepared>,
+    input_quantizer: RotationQuantizer<T>,
     size: GadgetSize,
     basis: ApproxSignedBasis<T>,
 }
@@ -72,9 +71,7 @@ impl<T: FheUint> SparseGlweBootstrappingKey<T> {
         self.modulus
     }
 
-    pub(super) fn input_quantizer(
-        &self,
-    ) -> RotationQuantizer<<BarrettModulus<T> as PrepareModulusSwitch>::Prepared> {
+    pub(super) fn input_quantizer(&self) -> RotationQuantizer<T> {
         self.input_quantizer
     }
 

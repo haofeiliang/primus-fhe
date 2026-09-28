@@ -1,6 +1,6 @@
 use primus_encoding::{PlaintextEmbedding, RoundedCodec};
 use primus_integer::FheUint;
-use primus_reduce::{PrepareModulusSwitch, ReduceAdd, RingContext};
+use primus_reduce::{Modulus, ReduceAdd, RingContext};
 
 use super::LookupTable;
 use crate::{LookupTableError, LweCiphertext};
@@ -52,7 +52,7 @@ impl<T: FheUint, M: RingContext<T>> BivariateLookupTable<T, M> {
         function: F,
     ) -> Result<Self, LookupTableError>
     where
-        OM: PrepareModulusSwitch<ValueT = T> + ReduceAdd<T, Output = T>,
+        OM: Modulus<ValueT = T> + ReduceAdd<T, Output = T>,
         F: Fn(usize, usize) -> T,
     {
         let input_domain_len = lhs_domain_len

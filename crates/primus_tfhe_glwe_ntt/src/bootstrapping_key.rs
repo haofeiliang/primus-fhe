@@ -9,7 +9,7 @@ use primus_lattice::{
 };
 use primus_lwe::{LweParameters, LweSecretKey};
 use primus_ntt::NttTable;
-use primus_reduce::{FieldContext, PrepareModulusSwitch, RingContext};
+use primus_reduce::{FieldContext, Modulus, RingContext};
 use primus_tfhe::rotation::RotationQuantizer;
 use primus_tfhe_glwe::SecretKeyDistr;
 use zeroize::Zeroizing;
@@ -18,18 +18,18 @@ use zeroize::Zeroizing;
 /// or an adjacent `(positive, negative)` pair per ternary coefficient. Each pair
 /// independently encrypts `[s=1]` and `[s=-1]` under the same accumulator key.
 #[derive(Clone)]
-pub struct NttGlweBootstrappingKey<T: FheUint, LM: PrepareModulusSwitch<ValueT = T>> {
+pub struct NttGlweBootstrappingKey<T: FheUint, LM: Modulus<ValueT = T>> {
     data: Vec<T>,
     input_dimension: usize,
     input_distribution: SecretKeyDistr,
     input_modulus: LM,
-    input_quantizer: RotationQuantizer<LM::Prepared>,
+    input_quantizer: RotationQuantizer<T>,
     size: GadgetSize,
     cipher_modulus: T,
     basis: ApproxSignedBasis<T>,
 }
 
-impl<T: FheUint, LM: PrepareModulusSwitch<ValueT = T>> NttGlweBootstrappingKey<T, LM> {
+impl<T: FheUint, LM: Modulus<ValueT = T>> NttGlweBootstrappingKey<T, LM> {
     /// Returns the input LWE dimension.
     #[inline]
     pub fn input_dimension(&self) -> usize {
@@ -50,7 +50,7 @@ impl<T: FheUint, LM: PrepareModulusSwitch<ValueT = T>> NttGlweBootstrappingKey<T
     }
 
     #[inline]
-    pub(crate) fn input_quantizer(&self) -> RotationQuantizer<LM::Prepared> {
+    pub(crate) fn input_quantizer(&self) -> RotationQuantizer<T> {
         self.input_quantizer
     }
 

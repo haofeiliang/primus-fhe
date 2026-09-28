@@ -10,7 +10,7 @@ use primus_lattice::{
 };
 use primus_modulus::NativeModulus;
 use primus_poly::Polynomial;
-use primus_reduce::PrepareModulusSwitch;
+use primus_reduce::{Modulus, PrepareModulusSwitch};
 use primus_tfhe::rotation::RotationQuantizer;
 
 use crate::FourierGlweBootstrappingKey;
@@ -390,9 +390,7 @@ enum CmuxWorkspace<T: TorusFftValue> {
 impl<T: TorusFftValue> FourierGlweBlindRotationWorkspace<T> {
     /// Allocates scratch matching the key's gadget and control layouts.
     #[must_use]
-    pub fn new<LM: PrepareModulusSwitch<ValueT = T>>(
-        key: &FourierGlweBootstrappingKey<T, LM>,
-    ) -> Self {
+    pub fn new<LM: Modulus<ValueT = T>>(key: &FourierGlweBootstrappingKey<T, LM>) -> Self {
         let size = key.size();
         Self {
             scratch: TorusGlwe::zero(size.glwe_len()),

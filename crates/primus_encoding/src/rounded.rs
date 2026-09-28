@@ -3,8 +3,8 @@ use super::helpers;
 use super::helpers::{check_message, lift_centered_from_raw};
 use crate::PlaintextEmbedding;
 use primus_integer::FheUint;
-use primus_modulus::{ModulusSwitch, UintModulus};
-use primus_reduce::{PrepareModulusSwitch, PreparedModulusSwitch, ReduceAdd};
+use primus_modulus::UintModulus;
+use primus_reduce::{Modulus, ModulusSwitch, PrepareModulusSwitch, ReduceAdd};
 
 /// Per-message rounding: `round(lift(m) * q / t) mod q`, returned in `[0,q)`,
 /// with ties away from zero before modular reduction.
@@ -14,7 +14,7 @@ use primus_reduce::{PrepareModulusSwitch, PreparedModulusSwitch, ReduceAdd};
 /// This keeps modulus-shape checks and shift/mask computation out of hot
 /// coefficient loops while hiding strategy-specific precomputation.
 #[derive(Clone, Copy, Debug)]
-pub struct RoundedCodec<T: FheUint, M: PrepareModulusSwitch<ValueT = T>> {
+pub struct RoundedCodec<T: FheUint, M: Modulus<ValueT = T>> {
     plaintext_modulus: T,
     /// First canonical plaintext representative interpreted as negative: `ceil(t/2)`.
     centered_negative_start: T,
@@ -22,13 +22,13 @@ pub struct RoundedCodec<T: FheUint, M: PrepareModulusSwitch<ValueT = T>> {
     encoding_switch: ModulusSwitch<T>,
     ciphertext_modulus: M,
     /// Prepared `q -> t` conversion for canonical ciphertext residues.
-    decoding_switch: M::Prepared,
+    decoding_switch: ModulusSwitch<T>,
 }
 
 impl<T, M> RoundedCodec<T, M>
 where
     T: FheUint,
-    M: ReduceAdd<T, Output = T> + PrepareModulusSwitch<ValueT = T>,
+    M: ReduceAdd<T, Output = T> + Modulus<ValueT = T>,
 {
     /// Creates a codec for plaintext modulus `t` and ciphertext modulus `q`.
     ///
@@ -39,14 +39,20 @@ where
     /// Panics if `t <= 1` or an explicit `q` is not greater than `t`.
     #[must_use]
     #[inline]
-    pub fn new(plaintext_modulus: T, ciphertext_modulus: M) -> Self {
+    pub fn new(plaintext_modulus: T, ciphertext_modulus: M) -> Self
+    where
+        M: PrepareModulusSwitch,
+    {
         Self::try_new(plaintext_modulus, ciphertext_modulus)
             .unwrap_or_else(|error| panic!("{error}"))
     }
 
     /// Prepares encoding/decoding after checking `t >= 2` and `q > t`.
     /// Returns the invalid domain as a [`crate::CodecError`].
-    pub fn try_new(plaintext_modulus: T, ciphertext_modulus: M) -> Result<Self, crate::CodecError> {
+    pub fn try_new(plaintext_modulus: T, ciphertext_modulus: M) -> Result<Self, crate::CodecError>
+    where
+        M: PrepareModulusSwitch,
+    {
         helpers::validate_moduli(plaintext_modulus, ciphertext_modulus)?;
         let plaintext_modulus_context = UintModulus(plaintext_modulus);
         Ok(Self {
@@ -76,7 +82,7 @@ where
 impl<T, M> RoundedCodec<T, M>
 where
     T: FheUint,
-    M: ReduceAdd<T, Output = T> + PrepareModulusSwitch<ValueT = T>,
+    M: ReduceAdd<T, Output = T> + Modulus<ValueT = T>,
 {
     /// Decodes a ciphertext residue into a canonical plaintext residue in `[0,t)`.
     ///
@@ -117,7 +123,7 @@ where
 impl<T, M> RoundedCodec<T, M>
 where
     T: FheUint,
-    M: ReduceAdd<T, Output = T> + PrepareModulusSwitch<ValueT = T>,
+    M: ReduceAdd<T, Output = T> + Modulus<ValueT = T>,
 {
     /// Encodes a message in `[0,t)` into a canonical ciphertext residue in `[0,q)`.
     ///
@@ -168,7 +174,7 @@ where
 impl<T, M> RoundedCodec<T, M>
 where
     T: FheUint,
-    M: ReduceAdd<T, Output = T> + PrepareModulusSwitch<ValueT = T>,
+    M: ReduceAdd<T, Output = T> + Modulus<ValueT = T>,
 {
     /// Encodes `message` and adds it modulo `q` to `accumulator` without clearing it.
     ///
@@ -220,7 +226,7 @@ where
 impl<T, M> RoundedCodec<T, M>
 where
     T: FheUint,
-    M: PrepareModulusSwitch<ValueT = T> + ReduceAdd<T, Output = T>,
+    M: Modulus<ValueT = T> + ReduceAdd<T, Output = T>,
 {
     fn validate(&self, messages: &[T], output_len: usize) {
         assert_eq!(messages.len(), output_len, "encoding slice length mismatch");

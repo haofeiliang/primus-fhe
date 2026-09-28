@@ -1,6 +1,6 @@
 use primus_encoding::RoundedCodec;
 use primus_integer::FheUint;
-use primus_reduce::{PrepareModulusSwitch, ReduceAdd, RingContext};
+use primus_reduce::{Modulus, ReduceAdd, RingContext};
 use primus_tfhe::{InterleavedLookupTable, LookupTable, LookupTableError};
 
 use crate::TfheParameters;
@@ -50,7 +50,7 @@ where
         function: F,
     ) -> Result<LookupTable<T>, LookupTableError>
     where
-        OM: PrepareModulusSwitch<ValueT = T> + ReduceAdd<T, Output = T>,
+        OM: Modulus<ValueT = T> + ReduceAdd<T, Output = T>,
         F: Fn(usize) -> T,
     {
         LookupTable::try_from_fn(
@@ -87,7 +87,7 @@ where
         outputs: &[T],
     ) -> Result<LookupTable<T>, LookupTableError>
     where
-        OM: PrepareModulusSwitch<ValueT = T> + ReduceAdd<T, Output = T>,
+        OM: Modulus<ValueT = T> + ReduceAdd<T, Output = T>,
     {
         LookupTable::try_from_slice(
             self.accumulator_ntru().poly_length(),
@@ -133,7 +133,7 @@ where
         function: F,
     ) -> Result<LookupTable<T>, LookupTableError>
     where
-        OM: PrepareModulusSwitch<ValueT = T> + ReduceAdd<T, Output = T>,
+        OM: Modulus<ValueT = T> + ReduceAdd<T, Output = T>,
         F: Fn(usize) -> T,
     {
         LookupTable::try_from_odd_full_domain_fn(
@@ -170,7 +170,7 @@ where
         outputs: &[T],
     ) -> Result<LookupTable<T>, LookupTableError>
     where
-        OM: PrepareModulusSwitch<ValueT = T> + ReduceAdd<T, Output = T>,
+        OM: Modulus<ValueT = T> + ReduceAdd<T, Output = T>,
     {
         LookupTable::try_from_odd_full_domain_slice(
             self.accumulator_ntru().poly_length(),
@@ -221,7 +221,7 @@ where
         function: F,
     ) -> Result<InterleavedLookupTable<T>, LookupTableError>
     where
-        OM: PrepareModulusSwitch<ValueT = T> + ReduceAdd<T, Output = T>,
+        OM: Modulus<ValueT = T> + ReduceAdd<T, Output = T>,
         F: Fn(usize, usize) -> T,
     {
         InterleavedLookupTable::try_from_fn(
@@ -265,7 +265,7 @@ where
         outputs: &[T],
     ) -> Result<InterleavedLookupTable<T>, LookupTableError>
     where
-        OM: PrepareModulusSwitch<ValueT = T> + ReduceAdd<T, Output = T>,
+        OM: Modulus<ValueT = T> + ReduceAdd<T, Output = T>,
     {
         InterleavedLookupTable::try_from_slice(
             self.accumulator_ntru().poly_length(),

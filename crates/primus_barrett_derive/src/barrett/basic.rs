@@ -48,12 +48,12 @@ pub(crate) fn basic(
         }
 
         impl ::primus_modulus::reduce::PrepareModulusSwitch for #name {
-            type Prepared = ::primus_modulus::ModulusSwitch<#ty>;
             #[inline]
-            fn prepare_switch_to<M: ::primus_modulus::reduce::Modulus<ValueT = #ty>>(self, target: M) -> Self::Prepared {
-                ::primus_modulus::reduce::PrepareModulusSwitch::prepare_switch_to(
-                    ::primus_modulus::BarrettModulus::from_parts(#modulus, [#r0, #r1]),
+            fn prepare_switch_to<M: ::primus_modulus::reduce::Modulus<ValueT = #ty>>(self, target: M) -> ::primus_modulus::reduce::ModulusSwitch<#ty> {
+                ::primus_modulus::reduce::ModulusSwitch::with_source_reciprocal(
+                    #modulus,
                     target,
+                    [#r0, #r1],
                 )
             }
         }

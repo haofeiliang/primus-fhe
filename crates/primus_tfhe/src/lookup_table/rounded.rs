@@ -1,6 +1,6 @@
 use primus_encoding::{PlaintextEmbedding, RoundedCodec};
 use primus_integer::FheUint;
-use primus_reduce::{PrepareModulusSwitch, ReduceAdd, RingContext};
+use primus_reduce::{Modulus, PrepareModulusSwitch, ReduceAdd, RingContext};
 
 use super::{InterleavedLookupTable, LookupTable, front_half_domain_len};
 use crate::LookupTableError;
@@ -25,7 +25,7 @@ impl<T: FheUint> LookupTable<T> {
     where
         IM: PrepareModulusSwitch<ValueT = T> + ReduceAdd<T, Output = T>,
         M: RingContext<T>,
-        OM: PrepareModulusSwitch<ValueT = T> + ReduceAdd<T, Output = T>,
+        OM: Modulus<ValueT = T> + ReduceAdd<T, Output = T>,
         F: Fn(usize) -> T,
     {
         let domain_len = front_half_domain_len(input_codec.plaintext_modulus(), poly_length)?;
@@ -52,7 +52,7 @@ impl<T: FheUint> LookupTable<T> {
     where
         IM: PrepareModulusSwitch<ValueT = T> + ReduceAdd<T, Output = T>,
         M: RingContext<T>,
-        OM: PrepareModulusSwitch<ValueT = T> + ReduceAdd<T, Output = T>,
+        OM: Modulus<ValueT = T> + ReduceAdd<T, Output = T>,
     {
         let domain_len = front_half_domain_len(input_codec.plaintext_modulus(), poly_length)?;
         check_output_length(outputs.len(), domain_len)?;
@@ -80,7 +80,7 @@ impl<T: FheUint> LookupTable<T> {
     where
         IM: PrepareModulusSwitch<ValueT = T> + ReduceAdd<T, Output = T>,
         M: RingContext<T>,
-        OM: PrepareModulusSwitch<ValueT = T> + ReduceAdd<T, Output = T>,
+        OM: Modulus<ValueT = T> + ReduceAdd<T, Output = T>,
         F: Fn(usize) -> T,
     {
         check_output_modulus(coefficient_modulus, output_codec)?;
@@ -106,7 +106,7 @@ impl<T: FheUint> LookupTable<T> {
     where
         IM: PrepareModulusSwitch<ValueT = T> + ReduceAdd<T, Output = T>,
         M: RingContext<T>,
-        OM: PrepareModulusSwitch<ValueT = T> + ReduceAdd<T, Output = T>,
+        OM: Modulus<ValueT = T> + ReduceAdd<T, Output = T>,
     {
         let expected = input_codec
             .plaintext_modulus()
@@ -133,7 +133,7 @@ impl<T: FheUint> LookupTable<T> {
     where
         IM: PrepareModulusSwitch<ValueT = T> + ReduceAdd<T, Output = T>,
         M: RingContext<T>,
-        OM: PrepareModulusSwitch<ValueT = T> + ReduceAdd<T, Output = T>,
+        OM: Modulus<ValueT = T> + ReduceAdd<T, Output = T>,
         F: Fn(usize) -> T,
     {
         check_output_modulus(coefficient_modulus, output_codec)?;
@@ -168,7 +168,7 @@ impl<T: FheUint> InterleavedLookupTable<T> {
     where
         IM: PrepareModulusSwitch<ValueT = T> + ReduceAdd<T, Output = T>,
         M: RingContext<T>,
-        OM: PrepareModulusSwitch<ValueT = T> + ReduceAdd<T, Output = T>,
+        OM: Modulus<ValueT = T> + ReduceAdd<T, Output = T>,
         F: Fn(usize, usize) -> T,
     {
         let domain_len = front_half_domain_len(input_codec.plaintext_modulus(), poly_length)?;
@@ -198,7 +198,7 @@ impl<T: FheUint> InterleavedLookupTable<T> {
     where
         IM: PrepareModulusSwitch<ValueT = T> + ReduceAdd<T, Output = T>,
         M: RingContext<T>,
-        OM: PrepareModulusSwitch<ValueT = T> + ReduceAdd<T, Output = T>,
+        OM: Modulus<ValueT = T> + ReduceAdd<T, Output = T>,
     {
         let domain_len = front_half_domain_len(input_codec.plaintext_modulus(), poly_length)?;
         let expected = domain_len
@@ -228,7 +228,7 @@ impl<T: FheUint> InterleavedLookupTable<T> {
     where
         IM: PrepareModulusSwitch<ValueT = T> + ReduceAdd<T, Output = T>,
         M: RingContext<T>,
-        OM: PrepareModulusSwitch<ValueT = T> + ReduceAdd<T, Output = T>,
+        OM: Modulus<ValueT = T> + ReduceAdd<T, Output = T>,
         F: Fn(usize, usize) -> T,
     {
         check_output_modulus(coefficient_modulus, output_codec)?;
@@ -258,7 +258,7 @@ fn check_output_modulus<T, M, OM>(
 where
     T: FheUint,
     M: RingContext<T>,
-    OM: PrepareModulusSwitch<ValueT = T> + ReduceAdd<T, Output = T>,
+    OM: Modulus<ValueT = T> + ReduceAdd<T, Output = T>,
 {
     if codec.ciphertext_modulus().explicit_value() != modulus.explicit_value() {
         return Err(LookupTableError::OutputModulusMismatch);
@@ -274,7 +274,7 @@ fn encode_output<T, M>(
 ) -> Result<T, LookupTableError>
 where
     T: FheUint,
-    M: PrepareModulusSwitch<ValueT = T> + ReduceAdd<T, Output = T>,
+    M: Modulus<ValueT = T> + ReduceAdd<T, Output = T>,
 {
     if output >= codec.plaintext_modulus() {
         return Err(LookupTableError::OutputOutOfRange { input });

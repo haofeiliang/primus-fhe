@@ -14,17 +14,17 @@
 
 use primus_integer::FheUint;
 use primus_modulus::PowOf2Modulus;
-use primus_reduce::{PrepareModulusSwitch, PreparedModulusSwitch};
+use primus_reduce::{ModulusSwitch, PrepareModulusSwitch};
 
 /// Prepared coefficient quantization for ordinary and interleaved PBS.
 /// The input modulus and target width are fixed before processing coefficients.
 #[derive(Clone, Copy, Debug)]
-pub struct RotationQuantizer<S: PreparedModulusSwitch> {
-    switch: S,
+pub struct RotationQuantizer<T: FheUint> {
+    switch: ModulusSwitch<T>,
     rotation_step: usize,
 }
 
-impl<S: PreparedModulusSwitch> RotationQuantizer<S> {
+impl<T: FheUint> RotationQuantizer<T> {
     /// Prepares `rotation_step * R(value, q, two_n/rotation_step)`.
     /// Rounding in the smaller domain preserves interleaved LUT residue classes.
     /// Execution uses `two_n = 2N` and the LUT's padded output count `s` as the
@@ -35,10 +35,9 @@ impl<S: PreparedModulusSwitch> RotationQuantizer<S> {
     /// Panics unless `two_n >= 2` and `rotation_step` are powers of two,
     /// `rotation_step <= two_n/2`, and `two_n` is representable by `T`.
     #[must_use]
-    pub fn new<T, M>(modulus: M, two_n: usize, rotation_step: usize) -> Self
+    pub fn new<M>(modulus: M, two_n: usize, rotation_step: usize) -> Self
     where
-        T: FheUint,
-        M: PrepareModulusSwitch<ValueT = T, Prepared = S>,
+        M: PrepareModulusSwitch<ValueT = T>,
     {
         assert!(
             two_n >= 2 && two_n.is_power_of_two(),
@@ -64,7 +63,7 @@ impl<S: PreparedModulusSwitch> RotationQuantizer<S> {
     /// `value` must be canonical under the input modulus used at construction.
     #[must_use]
     #[inline]
-    pub fn exponent(&self, value: S::ValueT) -> usize {
+    pub fn exponent(&self, value: T) -> usize {
         let exponent: usize = self.switch.switch(value).try_into().unwrap();
         exponent * self.rotation_step
     }
@@ -79,7 +78,7 @@ impl<S: PreparedModulusSwitch> RotationQuantizer<S> {
     /// # Panics
     /// Panics if the slices differ in length, before writing any output.
     #[inline]
-    pub fn exponent_slice_to(&self, input: &[S::ValueT], output: &mut [usize]) {
+    pub fn exponent_slice_to(&self, input: &[T], output: &mut [usize]) {
         assert_eq!(
             input.len(),
             output.len(),

@@ -10,7 +10,7 @@ use primus_lattice::{
 };
 use primus_ntt::MonomialNttTable;
 use primus_poly::Polynomial;
-use primus_reduce::{FieldContext, PrepareModulusSwitch};
+use primus_reduce::{FieldContext, Modulus, PrepareModulusSwitch};
 use primus_tfhe::rotation::RotationQuantizer;
 
 use crate::NttGlweBootstrappingKey;
@@ -435,7 +435,7 @@ enum CmuxWorkspace<T: FheUint> {
 impl<T: FheUint> NttGlweBlindRotationWorkspace<T> {
     /// Allocates scratch matching the key's gadget and control layouts.
     #[must_use]
-    pub fn new<LM: PrepareModulusSwitch<ValueT = T>>(key: &NttGlweBootstrappingKey<T, LM>) -> Self {
+    pub fn new<LM: Modulus<ValueT = T>>(key: &NttGlweBootstrappingKey<T, LM>) -> Self {
         let size = key.size();
         Self {
             scratch: Glwe::zero(size.glwe_len()),

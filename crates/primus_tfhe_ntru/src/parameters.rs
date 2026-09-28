@@ -43,7 +43,7 @@ where
     blind_rotation: NlevParameters<T, M>,
     key_switching_lwe: LweParameters<T, LM>,
     key_switching_basis: ApproxSignedBasis<T>,
-    rotation_quantizer: RotationQuantizer<LM::Prepared>,
+    rotation_quantizer: RotationQuantizer<T>,
 }
 
 impl<T, M, LM> TfheParameters<T, M, LM>
@@ -126,7 +126,7 @@ where
     /// Returns the ordinary-PBS quantizer prepared with these parameters.
     #[doc(hidden)]
     #[must_use]
-    pub fn rotation_quantizer(&self) -> RotationQuantizer<LM::Prepared> {
+    pub fn rotation_quantizer(&self) -> RotationQuantizer<T> {
         self.rotation_quantizer
     }
 

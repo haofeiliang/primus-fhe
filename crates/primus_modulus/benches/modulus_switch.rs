@@ -3,8 +3,8 @@
 //! cargo bench -p primus_modulus --bench modulus_switch
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use primus_modulus::integer::FheUint;
-use primus_modulus::reduce::{PrepareModulusSwitch, PreparedModulusSwitch};
 use primus_modulus::{BarrettModulus, NativeModulus, PowOf2Modulus, UintModulus};
+use primus_reduce::PrepareModulusSwitch;
 use std::hint::black_box;
 
 fn pair<T, S, D>(c: &mut Criterion, name: &str, source: S, target: D)

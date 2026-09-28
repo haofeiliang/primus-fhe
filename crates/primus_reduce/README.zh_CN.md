@@ -16,7 +16,7 @@ modulus.reduce_add(a, b)
 modulus.reduce_mul_slice_to(a, b, output)
 ```
 
-各运算被拆分为细粒度 trait，使模数类型只实现自身真正支持的标量、切片、惰性约简、逆元或融合运算。具体模数类型和数值内核位于 [`primus_modulus`](../primus_modulus)。
+各运算被拆分为细粒度 trait，使模数类型只实现自身真正支持的标量、切片、惰性约简、逆元或融合运算。具体模数类型及其环算术内核位于 [`primus_modulus`](../primus_modulus)。本 crate 还提供不依赖具体模数类型的 `ModulusSwitch<T>` 执行器。
 
 主要 API 分组如下：
 
@@ -80,11 +80,13 @@ LWE、GLWE 和 NTRU 均使用此有界转换。NTRU 参数会验证采样支持�
 
 ## 预备模切
 
-`source.prepare_switch_to(target)` 通过 `PrepareModulusSwitch` 准备固定模数对。 其关联的 `PreparedModulusSwitch` 用 `switch(value)` 转换规范源剩余类，返回 `round(value*target/source) mod target`，中点向上舍入。两端都支持 Native 模数。 这是整数比例舍入，与模除法独立。
+本 crate 导出 `PrepareModulusSwitch` 和 `ModulusSwitch<T>`。`source.prepare_switch_to(target)` 返回具体执行器，使用固有方法 `switch` 和 `switch_map`，不需要执行 trait。`ModulusSwitch::new(source, target)` 也可接受任意两个 `Modulus` 实现。
 
-`RingContext` 包含 `PrepareModulusSwitch`，`FieldContext` 继承此能力。 准备 trait 也可独立使用，因此 codec 只需准备能力和模加法。 `PreparedModulusSwitch` 描述返回的转换对象，独立于源环上下文；自定义环上下文 需实现准备能力。
+规范源剩余类映射为 `round(value * target / source) mod target`，中点向上舍入，目标端点回绕到零。两端都支持 Native 模数，显式模数必须至少为二。这是整数比例舍入，与模除法独立。
 
-`switch_map` 为每个系数携带附属数据，可以融合符号处理、输出转换和累加， 无需临时缓冲区。具体实现可在迭代前选择算术内核；默认实现调用 `switch`。 迭代器或回调 panic 时，先前的回调效果不会回滚。
+`RingContext` 包含准备能力，`FieldContext` 自然继承；使用这两个约束的上层调用方无需再补准备约束。只需要部分能力的调用方仍可单独使用 `PrepareModulusSwitch`。具体模数的实现位于 [`primus_modulus`](../primus_modulus/README.zh_CN.md#预备模切)。Barrett 通过 `with_source_reciprocal` 传入已有两字倒数，其数学前提见 rustdoc。
+
+`switch_map` 在循环前选择算术内核，为每个系数携带附属数据，可融合符号处理、输出转换和累加，无需中间缓冲区。迭代器或回调 panic 时，先前的效果不会回滚。
 
 ## 许可证
 

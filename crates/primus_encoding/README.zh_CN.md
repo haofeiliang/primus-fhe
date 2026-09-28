@@ -17,7 +17,7 @@ Primus FHE 的明文系数编码与解码。
 | `ScaledCodec<T,M>` | `lift(m)*round(q/t) mod q` | 单模数 GLWE/NTRU |
 | `BfvRnsCodec<T,M>` | `lift(m)*floor(Q/t) mod Q` | RNS 系数缩放（`rns` feature） |
 
-公开类型直接从 crate 根部导出，实现模块保持私有。单模数构造器为 `new(plaintext_modulus, ciphertext_modulus)`，密文模数使用具体模数类型， 例如 `RoundedCodec::new(256u64, NativeModulus::new())` 表示 `q=2^64`， `RoundedCodec::new(7u64, BarrettModulus::new(131))` 使用显式模数。 所需能力为 `PrepareModulusSwitch` 和 `ReduceAdd`，无需完整 `RingContext`。 `RingContext` 已包含准备能力；codec 也支持 `UintModulus`、`CompactModulus`， 无需它们实现完整环运算。 `RoundedCodec` 在构造时准备固定的 `t → q`、`q → t` 转换；`ScaledCodec` 保留固定尺度乘法并复用预备解码转换。绝对值舍入和解码复用模切内核；批量路径将 符号、输出写回和累加与各自算术融合，无需中间缓冲区；标量包装保留各自的直接特化路径。 `t` 整除 `q` 时，两者都使用精确整数尺度 `q/t`；否则 `RoundedCodec` 对每个缩放消息舍入，`ScaledCodec` 使用统一的舍入整数尺度。
+公开类型直接从 crate 根部导出，实现模块保持私有。单模数构造器为 `new(plaintext_modulus, ciphertext_modulus)`，密文模数使用具体模数类型， 例如 `RoundedCodec::new(256u64, NativeModulus::new())` 表示 `q=2^64`， `RoundedCodec::new(7u64, BarrettModulus::new(131))` 使用显式模数。 构造器需要 `primus_reduce::PrepareModulusSwitch` 和 `ReduceAdd`，无需完整 `RingContext`。构造后的 codec 仅以 `Modulus` 和 `ReduceAdd` 约束执行，复用具体的 `ModulusSwitch<T>`。`RingContext` 已包含准备能力，使用它的调用方无需额外约束；codec 也支持 `UintModulus`、`CompactModulus`，无需它们实现完整环运算。 `RoundedCodec` 在构造时准备固定的 `t → q`、`q → t` 转换；`ScaledCodec` 保留固定尺度乘法并复用预备解码转换。绝对值舍入和解码复用模切内核；批量路径将 符号、输出写回和累加与各自算术融合，无需中间缓冲区；标量包装保留各自的直接特化路径。 `t` 整除 `q` 时，两者都使用精确整数尺度 `q/t`；否则 `RoundedCodec` 对每个缩放消息舍入，`ScaledCodec` 使用统一的舍入整数尺度。
 
 整数尺度为二次幂时使用移位，否则使用普通单字乘法。固定尺度构造器的恢复条件 保证 `(t-1)*delta < q`，因此绝对值编码无需模乘。中心取负和累加仍需要 密文模数运算。
 

@@ -16,7 +16,7 @@ modulus.reduce_add(a, b)
 modulus.reduce_mul_slice_to(a, b, output)
 ```
 
-Operations are split into fine-grained traits so a modulus type implements only the scalar, slice, lazy, inverse, or fused operations it actually supports. Concrete modulus types and kernels live in [`primus_modulus`](../primus_modulus).
+Operations are split into fine-grained traits so a modulus type implements only the scalar, slice, lazy, inverse, or fused operations it actually supports. Concrete modulus types and their ring-arithmetic kernels live in [`primus_modulus`](../primus_modulus). This crate also provides the modulus-independent `ModulusSwitch<T>` executor.
 
 The main API groups are:
 
@@ -80,11 +80,13 @@ LWE, GLWE and NTRU use this bounded conversion. NTRU parameters validate the sam
 
 ## Prepared modulus switching
 
-`source.prepare_switch_to(target)` prepares a fixed modulus pair through `PrepareModulusSwitch`. Its associated `PreparedModulusSwitch` converts canonical source residues with `switch(value)`, returning `round(value*target/source) mod target` with ties upward. Native moduli are valid on either side. This is integer ratio rounding, independent of modular division.
+`PrepareModulusSwitch` and `ModulusSwitch<T>` are exported from this crate. `source.prepare_switch_to(target)` returns the concrete executor, whose inherent `switch` and `switch_map` methods require no execution trait. `ModulusSwitch::new(source, target)` also accepts any pair of `Modulus` implementations.
 
-`RingContext` includes `PrepareModulusSwitch`; `FieldContext` inherits it. The preparation trait also works independently, so codecs need only preparation and modular addition. `PreparedModulusSwitch` describes the returned conversion, not the source ring context. Custom ring contexts must implement preparation.
+Canonical source residues map to `round(value * target / source) mod target`, with ties upward and endpoint wrapping to zero. Either modulus may be native; explicit moduli must be at least two. This is integer ratio rounding, independent of modular division.
 
-`switch_map` carries a payload beside each coefficient, allowing fused sign handling, output conversion and accumulation without a temporary buffer. Concrete implementations can select their arithmetic kernel before the iterator; the default uses `switch`. The iterator and callback may have partial effects if they panic.
+`RingContext` includes preparation, and `FieldContext` inherits it. Higher-level callers using these bounds need no extra preparation bound; callers needing fewer capabilities can use `PrepareModulusSwitch` alone. Concrete modulus implementations belong to [`primus_modulus`](../primus_modulus/README.md#prepared-modulus-switching). Barrett sources use `with_source_reciprocal` to supply their existing two-word reciprocal; its mathematical preconditions are documented in rustdoc.
+
+`switch_map` selects the arithmetic kernel before the loop and carries a payload beside each coefficient, allowing fused sign handling, output conversion and accumulation without an intermediate buffer. If the iterator or callback panics, earlier effects remain.
 
 ## License
 

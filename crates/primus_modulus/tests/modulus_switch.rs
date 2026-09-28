@@ -1,7 +1,7 @@
 //! Fixed-pair switching checked with independent u128 integer arithmetic.
 use primus_modulus::integer::FheUint;
-use primus_modulus::reduce::{Modulus, PrepareModulusSwitch, PreparedModulusSwitch};
 use primus_modulus::{BarrettModulus, CompactModulus, NativeModulus, PowOf2Modulus, UintModulus};
+use primus_reduce::{Modulus, ModulusSwitch, PrepareModulusSwitch};
 use rand::{RngExt, SeedableRng, rngs::StdRng};
 
 fn value<T: TryFrom<u128>>(x: u128) -> T {
@@ -27,7 +27,12 @@ where
     let native = 1u128 << T::BITS;
     let q = source.explicit_value().map(Into::into).unwrap_or(native);
     let r = target.explicit_value().map(Into::into).unwrap_or(native);
-    let conversion = source.prepare_switch_to(target);
+    // Exercise both construction routes: source-specific reciprocal reuse and
+    // generic construction must obey the same rounding and payload contract.
+    let conversions = [
+        source.prepare_switch_to(target),
+        ModulusSwitch::new(source, target),
+    ];
     let mut inputs = points(q);
     let mut rng = StdRng::seed_from_u64((q ^ r) as u64);
     inputs.extend((0..32).map(|_| rng.random_range(0..q)));
@@ -42,20 +47,26 @@ where
         .iter()
         .map(|&x| value(((x * r + q / 2) / q) % r))
         .collect();
-    for (&x, &expected) in inputs.iter().zip(&expected) {
-        assert_eq!(
-            conversion.switch(value(x)),
-            expected,
-            "source={q}, target={r}, value={x}"
+    for conversion in conversions {
+        for (&x, &expected) in inputs.iter().zip(&expected) {
+            assert_eq!(
+                conversion.switch(value(x)),
+                expected,
+                "source={q}, target={r}, value={x}"
+            );
+        }
+        // The batch path must preserve payloads while using the same rounding.
+        let mut actual = vec![T::ZERO; inputs.len()];
+        conversion.switch_map(
+            inputs
+                .iter()
+                .copied()
+                .enumerate()
+                .map(|(i, x)| (value(x), i)),
+            |x, i| actual[i] = x,
         );
+        assert_eq!(actual, expected);
     }
-    // The batch path must preserve payloads while using the same rounding.
-    let mut actual = vec![T::ZERO; inputs.len()];
-    conversion.switch_map(
-        inputs.into_iter().enumerate().map(|(i, x)| (value(x), i)),
-        |x, i| actual[i] = x,
-    );
-    assert_eq!(actual, expected);
 }
 
 /// Bind each source representation to representative target kinds, including native output.

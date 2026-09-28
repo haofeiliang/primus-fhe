@@ -5,8 +5,7 @@ use primus_decompose::primitive::ApproxSignedBasis;
 use primus_integer::{FheUint, SignedInteger};
 use primus_lattice::lwe::Lwe;
 use primus_lwe::{LweKeySwitchingKey, LweParameters, LweSecretKey, LweSecretKeyRef};
-use primus_modulus::ModulusSwitch;
-use primus_reduce::{Modulus, PreparedModulusSwitch, RingContext};
+use primus_reduce::{Modulus, ModulusSwitch, RingContext};
 
 use crate::{NtruCiphertext, NtruSecretKey};
 

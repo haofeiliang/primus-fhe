@@ -8,7 +8,6 @@ use primus_lattice::{
     ggsw::{FourierGgsw, GgswIter},
 };
 use primus_modulus::NativeModulus;
-use primus_reduce::PrepareModulusSwitch;
 use primus_tfhe::{rotation::RotationQuantizer, sparse::BucketMap};
 use zeroize::Zeroizing;
 
@@ -38,7 +37,7 @@ pub struct SparseGlweBootstrappingKey<T: TorusFftValue> {
     input_dimension: usize,
     hamming_weight: usize,
     copy_count: usize,
-    input_quantizer: RotationQuantizer<<NativeModulus<T> as PrepareModulusSwitch>::Prepared>,
+    input_quantizer: RotationQuantizer<T>,
     size: GadgetSize,
     basis: ApproxSignedBasis<T>,
 }
@@ -74,9 +73,7 @@ impl<T: TorusFftValue> SparseGlweBootstrappingKey<T> {
         NativeModulus::new()
     }
 
-    pub(super) fn input_quantizer(
-        &self,
-    ) -> RotationQuantizer<<NativeModulus<T> as PrepareModulusSwitch>::Prepared> {
+    pub(super) fn input_quantizer(&self) -> RotationQuantizer<T> {
         self.input_quantizer
     }
 

@@ -6,7 +6,7 @@ use super::{
 use crate::{CodecError, PlaintextEmbedding};
 use primus_integer::FheUint;
 use primus_modulus::UintModulus;
-use primus_reduce::{Modulus, PrepareModulusSwitch, PreparedModulusSwitch, ReduceAdd};
+use primus_reduce::{Modulus, ModulusSwitch, PrepareModulusSwitch, ReduceAdd};
 
 /// Fixed rounded scaling: `lift(m) * delta mod q`, returned in `[0,q)`, where
 /// `delta = round(q/t)` with ties upward.
@@ -17,9 +17,9 @@ use primus_reduce::{Modulus, PrepareModulusSwitch, PreparedModulusSwitch, Reduce
 /// recovery is guaranteed when `abs((t*delta-q)*m + t*e) < q/2`.
 /// Accumulators and decoding inputs must be canonical ciphertext residues.
 #[derive(Clone, Copy, Debug)]
-pub struct ScaledCodec<T: FheUint, M: PrepareModulusSwitch<ValueT = T>> {
+pub struct ScaledCodec<T: FheUint, M: Modulus<ValueT = T>> {
     plaintext_modulus: T,
-    decoding_switch: M::Prepared,
+    decoding_switch: ModulusSwitch<T>,
     scale: IntegerScale<T>,
     ciphertext_modulus: M,
 }
@@ -27,7 +27,7 @@ pub struct ScaledCodec<T: FheUint, M: PrepareModulusSwitch<ValueT = T>> {
 impl<T, M> ScaledCodec<T, M>
 where
     T: FheUint,
-    M: ReduceAdd<T, Output = T> + PrepareModulusSwitch<ValueT = T>,
+    M: ReduceAdd<T, Output = T> + Modulus<ValueT = T>,
 {
     /// Constructs a fixed-scale codec for plaintext modulus `t` and ciphertext
     /// modulus `q`; `NativeModulus<T>` denotes `q = 2^T::BITS`.
@@ -40,7 +40,10 @@ where
     /// Panics unless `t >= 2`, `q > t`, and
     /// `abs(t*round(q/t)-q)*(t-1) < q/2`.
     #[must_use]
-    pub fn new(plaintext_modulus: T, ciphertext_modulus: M) -> Self {
+    pub fn new(plaintext_modulus: T, ciphertext_modulus: M) -> Self
+    where
+        M: PrepareModulusSwitch,
+    {
         Self::try_new(plaintext_modulus, ciphertext_modulus)
             .unwrap_or_else(|error| panic!("{error}"))
     }
@@ -48,7 +51,10 @@ where
     /// Prepares fixed-scale encoding after checking the domain and the
     /// noiseless recovery bound documented on [`Self::new`].
     /// This does not establish a noise or security budget.
-    pub fn try_new(plaintext_modulus: T, ciphertext_modulus: M) -> Result<Self, CodecError> {
+    pub fn try_new(plaintext_modulus: T, ciphertext_modulus: M) -> Result<Self, CodecError>
+    where
+        M: PrepareModulusSwitch,
+    {
         validate_moduli(plaintext_modulus, ciphertext_modulus)?;
         validate_scale_recovery(plaintext_modulus, ciphertext_modulus)?;
         let plaintext_modulus_context = UintModulus(plaintext_modulus);

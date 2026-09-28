@@ -1,4 +1,4 @@
-//! Traits for modular reduction operations.
+//! Modular arithmetic traits and prepared modulus switching.
 //!
 //! This crate defines the algebraic interface between modulus types
 //! (implemented in `primus_modulus`) and values.  Each arithmetic
@@ -9,9 +9,9 @@
 //! The two marker supertraits [`RingContext`] and [`FieldContext`]
 //! aggregate the full ring / field operation sets respectively.
 //! [`RingContext`] also includes bounded signed encoding via [`EncodeSigned`],
-//! mixed signed dot products via [`ReduceDotProductSigned`], and fixed-pair
-//! modulus-switch preparation via [`PrepareModulusSwitch`]. Each modulus backend
-//! implements these capabilities; prepared conversions remain separate objects.
+//! mixed signed dot products via [`ReduceDotProductSigned`], and preparation
+//! via [`PrepareModulusSwitch`]. The concrete [`ModulusSwitch`] executes fixed
+//! source/target conversions without depending on a particular modulus type.
 //! These names describe supported operation sets rather than proving algebraic
 //! properties: in particular, [`FieldContext`] does not guarantee that the
 //! modulus is prime or that every nonzero residue is invertible.
@@ -19,7 +19,7 @@
 //! # Implementing [`RingContext`] / [`FieldContext`]
 //!
 //! Both are *marker* traits with blanket impls: implement every listed
-//! `Reduce*` trait, [`EncodeSigned`], and [`PrepareModulusSwitch`] for your modulus
+//! `Reduce*` trait, [`EncodeSigned`] and [`PrepareModulusSwitch`] for your modulus
 //! type to obtain [`RingContext`]. Implement [`ExplicitModulus`] and the additional
 //! `LazyReduce*` / field traits to obtain [`FieldContext`]. Callers remain
 //! responsible for validating any required primality or invertibility assumptions.
@@ -42,7 +42,7 @@ pub use common::{FieldContext, RingContext};
 pub use error::ReduceError;
 pub use lazy_ops::*;
 pub use lazy_slice_ops::*;
-pub use modulus_switch::{PrepareModulusSwitch, PreparedModulusSwitch};
+pub use modulus_switch::{ModulusSwitch, PrepareModulusSwitch};
 pub use ops::*;
 pub use signed::{EncodeSigned, ReduceDotProductSigned};
 pub use slice_ops::*;

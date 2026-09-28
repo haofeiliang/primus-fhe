@@ -8,8 +8,7 @@
 
 pub use crate::lazy_ops::*;
 pub use crate::lazy_slice_ops::*;
+pub use crate::modulus_switch::PrepareModulusSwitch;
 pub use crate::ops::*;
 pub use crate::signed::{EncodeSigned, ReduceDotProductSigned};
 pub use crate::slice_ops::*;
-
-pub use crate::modulus_switch::{PrepareModulusSwitch, PreparedModulusSwitch};

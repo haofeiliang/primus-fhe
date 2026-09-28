@@ -38,7 +38,6 @@ mod compact;
 
 mod modulus_switch;
 mod native;
-pub use modulus_switch::ModulusSwitch;
 mod power_of_two;
 mod uint;
 

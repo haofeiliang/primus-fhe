@@ -10,7 +10,7 @@ use super::{ExplicitModulus, Modulus};
 /// [`PrepareModulusSwitch`].
 ///
 /// Granted automatically (blanket impl) when the type implements every
-/// listed capability trait. The prepared conversion remains a separate object.
+/// listed capability trait. Prepared conversions are separate concrete objects.
 pub trait RingContext<T: FheUint>:
     Modulus<ValueT = T>
     + PrepareModulusSwitch
