@@ -20,6 +20,8 @@ Choose the function and encoding first, then the GLWE/NTRU family, NTT/Fourier r
 | Bounded two-input function | Same secret/codec, `x<B,y<R`, `B*R<=ceil(t/2)` | One Rounded LWE | Ordinary key | `BivariateLookupTable` and one reusable packed LWE |
 | Boolean gates | Rounded 0/1 with `t=4` | Same Boolean LWE encoding, ready for chaining | Ordinary key | `BooleanEvaluator` owns gate LUTs and temporary ciphertexts |
 | CBS → CMUX | Rounded front half; a CMUX control requires input 0/1 | Accumulator-secret GGSW/NGSW gadget control, then a selected ring ciphertext | Ordinary key + trace/SS | `CircuitBootstrapEvaluator`; separate `AccumulatorClient` for ring clients |
+| One-hot CBS | One padded chunk, t=2M | NLEV/NGSW selectors for δ_r(m) | Classic NTRU CBS material | [One-hot API](../primus_tfhe_ntru/README.md#one-hot-cbs) |
+| High-precision lookup | Separately encrypted chunks of uniform width | Independently chosen output chunk count | Classic NTRU CBS and return keys | [High-precision lookup](../primus_tfhe_ntru_lut/README.md) |
 
 ManyLUT and MVB evaluate **several functions of one input**, not independent inputs. MVB keeps step-one resolution but its factors amplify noise; interleaving trades rotation resolution for output count. Scaled numeric flags, Boolean LWEs and CBS gadget controls are not interchangeable. Start with a backend basic example; the sections below and rustdoc give each operation's domain and noise contracts.
 
@@ -30,13 +32,16 @@ ManyLUT and MVB evaluate **several functions of one input**, not independent inp
 | [GLWE parameters and clients](../primus_tfhe_glwe/README.md) | [GLWE NTT](../primus_tfhe_glwe_ntt/README.md) | [GLWE Fourier](../primus_tfhe_glwe_fourier/README.md) |
 | [NTRU parameters and clients](../primus_tfhe_ntru/README.md) | [NTRU NTT](../primus_tfhe_ntru_ntt/README.md) | [NTRU Fourier](../primus_tfhe_ntru_fourier/README.md) |
 
-All four backends support secret-key and LWE public-key clients. Fourier backends support RustFFT and TfheFFT. Example and benchmark fixtures are not production security or failure-probability recommendations.
+All four backends provide secret-key and LWE public-key clients. Fourier supports RustFFT and TFHE-FFT with Native ring moduli only. Example parameters are not production security or failure-probability recommendations.
 
-Classic GLWE and NTRU PBS, CBS and MVB support binary/ternary input secrets in both backends. NTRU client secrets must also pass the backend's invertibility screening.
+| Key mode | Ordinary / ManyLUT PBS | CBS | Factorized MVB | One-hot / high-precision lookup |
+| --- | --- | --- | --- | --- |
+| GLWE classic binary/ternary | Both PBS orders | Yes | Yes | Not provided |
+| GLWE sparse fixed-weight binary | Both PBS orders | Yes | Yes | Not provided |
+| NTRU classic binary/ternary | Yes | Yes | Yes | Yes |
+| NTRU sparse fixed-weight binary | Yes | No | No | No |
 
-Both GLWE backends support experimental sparse PBS for fixed-weight binary small secrets, with both orders and ordinary/interleaved/factorized LUTs. [NTT](../primus_tfhe_glwe_ntt/README.md#experimental-sparse-pbs) and [Fourier](../primus_tfhe_glwe_fourier/README.md#experimental-sparse-pbs) retain their respective exact-transform and native coefficient-aggregation paths. Both support sparse CBS; sparse ternary remains unsupported.
-
-NTRU [NTT](../primus_tfhe_ntru_ntt/README.md#experimental-sparse-pbs) and [Fourier](../primus_tfhe_ntru_fourier/README.md#experimental-sparse-pbs) sparse PBS support ordinary/interleaved LUTs for fixed-weight binary clients. Fourier requires odd weight and a stable inverse. Both reject sparse CBS/MVB.
+Sparse mode requires explicit key generation; sparse ternary is unsupported. NTRU's external LWE secret is independent of its ring secret. Only the ring secret undergoes invertibility and Fourier inverse-stability screening; external fixed weights may be even.
 
 ## Client and server roles
 
@@ -48,20 +53,7 @@ Ordinary buffer allocation needs no secret: all four backends provide `context.a
 
 ## Error boundaries
 
-Errors are named by operation and re-exported at crate roots. Handle the error type returned by the operation you call.
-
-| Operation | Error |
-| --- | --- |
-| LUT compilation / ordinary, Boolean or CBS evaluator binding | Shared `LookupTableError` / `TfheEvaluationError` |
-| TFHE / CBS parameter preparation | Family `TfheParameterError` / `CircuitBootstrapParameterError` |
-| Family client construction | Family `TfheClientError`; `IncompatibleKey` retains `TfheKeyError` |
-| Shared LWE construction and operations | `ClientError` |
-| Shared Boolean construction and operations | `BooleanError`; `Client` wraps `ClientError`. Family secret-key factories wrap construction failures in `TfheClientError` |
-| Ordinary/sparse server, sparse BSK, or standalone CBS key generation | Family `KeyGenerationError`; NTRU sampling/conversion enters `Ntru` directly; sparse failures enter `SparseBootstrapping` |
-| NTRU accumulator client construction | Family `TfheClientError`; `Ntru` retains secret-conversion failures |
-| Automatic table creation or explicit table binding | Backend `TfheContextError`; `TransformTable` retains the underlying FFT/NTT error |
-
-`KeyGenerationError::ClientKey` reports client incompatibility directly; sparse errors retain mapping causes through `BucketMap`.
+Prefer `try_*` configuration and binding constructors and handle the error returned by that operation. `LookupTableError` covers LUT compilation and `TfheEvaluationError` covers evaluator resource binding. Families/backends provide parameter, key-generation, client and transform-table errors. Ordinary client operations return `ClientError`; Boolean operations return `BooleanError`. Underlying causes remain accessible through `std::error::Error::source()`; consult the public API's rustdoc for individual cases.
 
 ## Boolean gates
 
@@ -83,8 +75,6 @@ assert!(!decryptor.decrypt(&output)?);
 ```
 
 `BooleanEvaluator` shares affine preprocessing, signed modulus-8 LUTs and the restoring output shift between families. Binary gates use one PBS; NOT uses none, and MUX uses two. Reuse `evaluate_binary_to`, `not_to` and `mux_to` with existing outputs. Outputs keep the external Boolean encoding and can feed subsequent gates directly. Client dimension errors return `BooleanError::Client`; gate dimension mismatches panic. Raw ciphertexts do not carry key identity or encoding metadata; those remain caller contracts.
-
-`BooleanEvaluator::try_new(dimension, poly_length, input_codec, coefficient_modulus, bootstrapper)` is the custom-backend boundary: the caller must bind those arguments to the backend and preserve LUT output scales. It returns `TfheEvaluationError`, including `InvalidBooleanEncoding` for input modulus other than 4 or explicit ciphertext moduli at most 8.
 
 ## CBS output and consumption
 
@@ -136,7 +126,7 @@ Backends accept named `TfheConfig` choices and derive shared ring parameters; `T
 3. Compile `LookupTable` or `InterleavedLookupTable` through the family parameters. Create an evaluator once; its scratch is reused by online `_to` calls.
 4. Allocate caller outputs once, then encrypt and evaluate into the same storage.
 
-The front-half unary function or slice compiler programs `0..ceil(t_in/2)` with outputs in `0..t_out`, as selected by the output codec. Its remaining inputs are not independently programmed. Odd full-domain compilation is a separate entry point described below. For an interleaved LUT (ManyLUT), the effective output count `k` is positive and the padded output count is `s = next_power_of_two(k)`, with `ceil(t/2) <= N/s`. The callback receives `(input, output_index)` once per effective pair, in input-major order; slices contain `D*k` values in the same order. With `k=3`, three outputs occupy four slots: the compiler zeros the fourth slot without calling the callback, and the evaluator returns exactly three ciphertexts. All outputs share one blind rotation (BR) and key switch, then use separate extraction. More outputs reduce rotation resolution and the available input-noise margin. This is one input evaluated by multiple functions, not batching independent ciphertexts.
+The front-half unary function or slice compiler programs `0..ceil(t_in/2)` with outputs in `0..t_out`, as selected by the output codec. Its remaining inputs are not independently programmed. Odd full-domain compilation is a separate entry point described below. For an interleaved LUT (ManyLUT), the effective output count `k` is positive and the padded output count is `s = next_power_of_two(k)`, with `ceil(t/2) <= N/s`. The callback receives `(input, output_index)` once per effective pair, in input-major order; slices contain `D*k` values in the same order. With `k=3`, three outputs occupy four slots: the compiler zeros the fourth slot without calling the callback, and the evaluator returns exactly three ciphertexts. All outputs share one blind rotation (BR). GLWE shares a ring key switch with separate extraction; NTRU returns and LWE-key-switches each output separately. More outputs reduce rotation resolution and the available input-noise margin. This is one input evaluated by multiple functions, not batching independent ciphertexts.
 
 For direct shared-layer use, `LookupTable` / `InterleavedLookupTable` provide `try_from_fn` and `try_from_slice`, taking the input codec, accumulator modulus and output codec for unsigned Rounded encoding and validation. Odd full domains use `LookupTable::try_from_odd_full_domain_fn` / `_slice`; family compilation methods use these shared constructors.
 
@@ -164,20 +154,21 @@ Ordinary, interleaved and odd full-domain parameter compilers have two forms:
 
 | Output encoding | Function / slice entry points | Decoding |
 | --- | --- | --- |
-| Default: `input_plaintext_codec()` | `compile_lookup_table_fn(function)` / `compile_lookup_table_slice(values)` | `decryptor.decrypt(output)` |
-| Explicit output codec | `compile_lookup_table_with_codec_fn(codec, function)` / `compile_lookup_table_with_codec_slice(codec, values)` | Decode `decrypt_phase(output)` with that codec |
+| Default: parameter plaintext modulus, encoded at the accumulator modulus | `compile_lookup_table_fn(function)` / `compile_lookup_table_slice(values)` | `decryptor.decrypt(output)` |
+| Explicit output codec | `compile_lookup_table_with_codec_fn(codec, function)` / `compile_lookup_table_with_codec_slice(codec, values)` | Decode `decrypt_phase(output)` with a codec at the return modulus |
 
-Interleaved and odd full-domain compilers follow the same naming rule. Default compilation borrows the prepared parameter codec; it does not construct another codec. The function's output range can be smaller than the plaintext modulus: `x % 4` can still use `t=32` encoding. Basic examples use this default workflow.
+Interleaved and odd full-domain compilers follow the same naming rule. Default compilation reuses the parameter codecs; NTRU compiles at Q and decodes after returning to q. The function's output range can be smaller than the plaintext modulus: `x % 4` can still use `t=32` encoding. Basic examples use this default workflow.
 
-Explicit variants take `&RoundedCodec<T, M>` first. Input parameters still determine rotation centers and the input domain; the output codec sets `t_out`, validates `0..t_out` values and encodes them unsigned. Interleaved columns share one codec. Only that LUT's output encoding changes; parameters/context remain unchanged. The codec's ciphertext modulus must match the accumulator or compilation returns `OutputModulusMismatch`. Complete PBS chains require `q_in = q_acc = q_out`. MVB continues to require an explicit unsigned `ScaledCodec`.
+Explicit variants take `&RoundedCodec<T, M>` first. Input parameters still determine rotation centers and the input domain; the output codec sets `t_out`, validates `0..t_out` values and encodes them unsigned. Interleaved columns share one codec. Only that LUT's output encoding changes; parameters/context remain unchanged. The codec's ciphertext modulus must match the accumulator or compilation returns `OutputModulusMismatch`. GLWE uses the same input, accumulator and return modulus. NTRU supports Q→q: decode with a codec at q and the same `t_out`, budgeting scaling-rounding and return errors. MVB continues to require an explicit unsigned `ScaledCodec`.
 
-For an NTRU context with `t_in=16`, compute `x % 4` at output modulus `t_out=4`:
+For an NTRU context with `t_in=16`, compute `x % 4` with `t_out=4`. This fragment reuses an existing context, clients and evaluator:
 
-```rust
+```rust,ignore
 use primus_encoding::RoundedCodec;
 
+let table_codec = RoundedCodec::new(4u32, context.parameters().accumulator_ntru().cipher_modulus());
 let output_codec = RoundedCodec::new(4u32, context.parameters().external_lwe().cipher_modulus());
-let lut = context.parameters().compile_lookup_table_with_codec_fn(&output_codec, |x| (x % 4) as u32).unwrap();
+let lut = context.parameters().compile_lookup_table_with_codec_fn(&table_codec, |x| (x % 4) as u32).unwrap();
 let input = encryptor.encrypt_padded(7u32, &mut rng).unwrap();
 let output = evaluator.apply_lookup_table(&input, &lut);
 let message = output_codec.decode_value(decryptor.decrypt_phase(&output).unwrap());
@@ -190,7 +181,7 @@ For GLWE use `context.parameters().accumulator_glwe().cipher_modulus()` to const
 
 ## Odd full-domain PBS
 
-Use `compile_odd_full_domain_lookup_table_fn(function)` or its `_slice` form; choose the `*_with_codec_*` variant for a different output encoding. These methods program **all of `0..t_in`**, with odd `t_in >= 3` and `t_in <= N`. Slices contain exactly `t_in` outputs in input order. Encrypt with ordinary `encrypt`, then use the existing `apply_lookup_table_to`. Decode with `decrypt` for the default encoding, or with the explicit output codec. For example, in a context configured with `t_in=15` and an output codec for `t_out=8`:
+Use `compile_odd_full_domain_lookup_table_fn(function)` or its `_slice` form; choose the `*_with_codec_*` variant for a different output encoding. These methods program **all of `0..t_in`**, with odd `t_in >= 3` and `t_in <= N`. Slices contain exactly `t_in` outputs in input order. Encrypt with ordinary `encrypt`, then use the existing `apply_lookup_table_to`. Decode with `decrypt` for the default encoding, or with the explicit output codec. For example, with a common input/accumulator modulus, `t_in=15` and an output codec for `t_out=8`:
 
 ```rust,ignore
 let lut = context.parameters().compile_odd_full_domain_lookup_table_with_codec_fn(
@@ -208,28 +199,13 @@ Typical spacing is `N/t_in`, so the noise margin is about half that of front-hal
 
 ## Bounded two-input PBS
 
-`BivariateLookupTable::try_new(B, R, N, input_codec, output_codec, function)` compiles `f(x,y)` for `0 <= x < B`, `0 <= y < R` using `z = x + B*y`. `B` and `R` must be positive and `D = B*R <= ceil(t_in/2)`; the ordinary LUT capacity and rotation-center checks also apply. Only the prefix `0..D` is compiled, with `x` varying fastest. `B` need not be a power of two. The output codec selects `t_out` independently but must use the same ciphertext modulus. The shared type works with all four backends and owns no keys or scratch.
-
-For an NTRU context with `t_in=16`, reuse the existing client and evaluator:
-
-```rust
-use primus_tfhe::BivariateLookupTable;
-
-let compare = BivariateLookupTable::try_new(
-    3, 2, context.parameters().poly_length(),
-    context.parameters().input_plaintext_codec(),
-    &output_codec, |x, y| u32::from(x > y),
-).unwrap();
-let lhs = encryptor.encrypt_padded(2u32, &mut rng).unwrap();
-let rhs = encryptor.encrypt_padded(1u32, &mut rng).unwrap();
-compare.pack_to(&lhs, &rhs, &mut packed);
-evaluator.apply_lookup_table_to(&packed, compare.lookup_table(), &mut output);
-assert_eq!(output_codec.decode_value(decryptor.decrypt_phase(&output).unwrap()), 1);
-```
+`BivariateLookupTable::try_new(B, R, N, input_codec, output_codec, function)` compiles `f(x,y)` for `0 <= x < B`, `0 <= y < R` using `z = x + B*y`. `B` and `R` must be positive and `D = B*R <= ceil(t_in/2)`; the ordinary LUT capacity and rotation-center checks also apply. Only the prefix `0..D` is compiled, with `x` varying fastest. `B` need not be a power of two. The output codec selects `t_out` independently but must use the same ciphertext modulus. The type owns no keys or scratch.
 
 Allocate `packed` and `output` once with the external LWE dimension. `pack_to` writes `lhs + B*rhs` in one modular multiply-add pass, without allocation; it rejects unequal lengths or missing bodies before writing. Inputs must share an actual secret, ciphertext modulus and the supplied unsigned input codec, with canonical coefficients and messages inside the stated bounds. These semantic conditions cannot be checked from raw ciphertexts. GLWE uses its order-dependent external dimension and `input_plaintext_codec()`; no extra key material is needed.
 
 Packing amplifies the second input's noise by B and can add an encoding-rounding discrepancy when `t_in` does not divide q. Budget both before PBS; the capacity check alone does not prove sufficient noise margin. See `BivariateLookupTable` rustdoc for the bound. This is a bounded single-output workflow, not general integer arithmetic or LWE-to-ring packing.
+
+The current constructor has one ciphertext modulus shared by both codecs. It supports GLWE and NTRU configurations with q=Q; NTRU bivariate lookup with q≠Q is unsupported. Ordinary NTRU LUT support for Q→q does not remove this restriction.
 
 ## Fixed-scale factorized MVB
 
@@ -240,10 +216,6 @@ All outputs share one BR at step one and then apply separate public polynomial p
 Both [GLWE NTT](../primus_tfhe_glwe_ntt/README.md#fixed-scale-factorized-mvb) and [NTRU NTT](../primus_tfhe_ntru_ntt/README.md#fixed-scale-factorized-mvb) support this program. GLWE NTT supports classic/sparse keys and both orders; NTRU NTT shares its encrypted initialization and BR, then key-switches each product. [GLWE Fourier](../primus_tfhe_glwe_fourier/README.md#fixed-scale-factorized-mvb) supports classic binary/ternary and sparse binary keys in both orders with u32/u64 and an even Native scale; it transforms factors as signed integers and also requires an FFT error budget. [NTRU Fourier](../primus_tfhe_ntru_fourier/README.md#fixed-scale-factorized-mvb) supports the same widths and Native scales with binary/ternary keys; its factors amplify both encrypted initialization and BR noise before per-output key switching. `t_out` need not be a power of two: check the actual scale. Each prepared program borrows one context and its separate evaluator reuses scratch. Odd full-domain MVB and CBS outputs remain outside this implementation. Algebra and noise conditions are detailed in the [MVB design](IMPLEMENTATION.md#factorized-mvb).
 
 The [GLWE](../primus_tfhe_glwe_ntt/examples/mvb_thresholds.rs) and [NTRU](../primus_tfhe_ntru_ntt/examples/ntru_ntt_mvb_thresholds.rs) threshold examples turn one encrypted score into 17 flags beyond interleaved capacity. Prefer ManyLUT when capacity and rotation margins suffice; consider MVB for more outputs with small integer factor norms, and measure complete costs on the actual backend and parameters.
-
-## Typed rotation quantization
-
-Raw LUT compilation accepts independent typed input and coefficient moduli. `rotation::RotationQuantizer::new(input_modulus, two_n, rotation_step)` prepares a fixed modulus-pair conversion; `exponent(value)` reuses it without allocation. The rotation domain `two_n = 2N` must be representable by the input coefficient type; the target `two_n/rotation_step` is an explicit power of two, even for Native input. Interleaved rotation rounds in `two_n/rotation_step` positions before multiplying by `rotation_step`, which equals the LUT padded output count. See the [rotation geometry](IMPLEMENTATION.md#rotation-geometry) for full geometry and preparation details.
 
 ## Further reading
 

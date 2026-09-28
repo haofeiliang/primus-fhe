@@ -2,7 +2,10 @@
 
 English | [简体中文](README.zh_CN.md)
 
-Single-modulus LWE key generation, secret-key and public-key encryption, and key switching for Primus FHE. Ciphertext storage and arithmetic come from [`primus_lattice`](../primus_lattice/README.md); message encoding uses [`RoundedCodec`](../primus_encoding/README.md). This crate is part of the experimental [Primus FHE](../../README.md) workspace and does not promise a stable API.
+> [!WARNING]
+> This crate is part of the experimental [Primus FHE](../../README.md) workspace. Its API and numerical contracts are unstable and may change incompatibly at any time.
+
+Single-modulus LWE key generation, secret-key and public-key encryption, and key switching for Primus FHE. Ciphertext storage and arithmetic come from [`primus_lattice`](../primus_lattice/README.md); message encoding uses [`RoundedCodec`](../primus_encoding/README.md).
 
 ## APIs
 

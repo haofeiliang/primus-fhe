@@ -15,7 +15,7 @@ cargo run -p primus_tfhe_glwe_fourier --release --example fourier_basic
 
 The [basic example](examples/fourier_basic.rs) shows parameters → context → paired keys → clients → one compiled LUT → reused evaluator and ciphertext buffers. It computes `x % 4`, keeping `t=32` encoding for both input and output, and decodes with `decrypt`. `compile_lookup_table_fn(function)` defaults to the parameter codec. For a different output plaintext modulus, use `compile_lookup_table_with_codec_fn(&output_codec, function)`; see [choosing the output encoding](../primus_tfhe/README.md#choosing-the-output-encoding). Public-key encryption starts with `context.public_encryptor(&public)`; see the [family guide](../primus_tfhe_glwe/README.md#clients-and-luts).
 
-Examples default to u32; change `type Word = u32` to `u64`; select TFHE-FFT by replacing the `RustFftTable as Table` import with `TfheFftTable as Table`. Rerun the same command after the edit. Each file defines its own `parameters()` using an explicit `TfheConfig`: dimensions, modulus types, secret distributions, noise and BR/KS decompositions are visible together. CBS examples also define `circuit_config()` for the output, trace and scheme-switch bases. Basic PBS uses n=866/N=2048; classic CBS uses n=800/N=1024; sparse PBS/CBS and MVB use n=728/h=32/N=1024. See the [arithmetic profiles](../../guides/development/tfhe-parameters.md) for the numerical choices. Each example shows one workflow and two requests using the same buffers.
+Examples default to u32; change `type Word = u32` to `u64`; select TFHE-FFT by replacing the `RustFftTable as Table` import with `TfheFftTable as Table`. Rerun the same command after the edit. Each file defines its own `parameters()` using an explicit `TfheConfig`: dimensions, modulus types, secret distributions, noise and BR/KS decompositions are visible together. CBS examples also define `circuit_config()` for the output, trace and scheme-switch bases. The [parameter and validation guide](../../guides/development/tfhe-parameters.md) records numerical choices; each example handles two requests with the same buffers.
 
 Examples separate client encryption, server evaluation and client decryption; see [client/server roles and buffer allocation](../primus_tfhe/README.md#client-and-server-roles).
 
@@ -31,6 +31,8 @@ ManyLUT interleaves outputs within one blind rotation; factorized MVB uses publi
 
 ## Parameters and representation
 
+The Fourier ring supports only `NativeModulus`; `PowOf2Modulus` rings are unsupported.
+
 `TfheParameters::try_from_config(TfheConfig { .. })` checks mathematical choices; `TfheContext::<_, RustFftTable>::try_from_parameters(parameters)` prepares the transform table. Use `TfheContext::try_new(parameters, table)` to bind an existing table. `TfheConfig`, `TfheParameters`, `Encryptor` and `Decryptor` specialize the family API to `NativeModulus`.
 
 Both `RustFftTable` and `TfheFftTable` support u32/u64. Keys, values and evaluators must use the same FFT table instance; equal length does not prove representation identity.
@@ -39,13 +41,11 @@ Choose `PbsOrder::BootstrapKeyswitch` for external dimension n or `KeyswitchBoot
 
 ## Reusing evaluators
 
-Ordinary/interleaved calls reuse `Evaluator`; use `_to` with existing outputs. For PBS/MVB/CBS alternation, follow the [shared ownership workflow](../primus_tfhe/README.md#reusing-evaluators).
-
-GLWE MVB consumes ordinary workspace with `FactorizedEvaluator::from_bootstrapper`. CBS uses `CircuitBootstrapEvaluator::try_from_bootstrapper` and requires bundled CBS material. Standalone BR→KS CBS omits return-KS buffers: `bootstrapper_mut()` returns `None`, and `into_bootstrapper()` explicitly allocates those missing buffers. KS→BR CBS and CBS converted from ordinary PBS retain them; their PBS borrow is `Some` and recovery allocates nothing.
+Ordinary/interleaved `Evaluator` `_to` calls reuse workspace and caller outputs. See the [resource reuse guide](../primus_tfhe/README.md#reusing-evaluators) for PBS/MVB/CBS ownership conversions and the return-buffer limitation of standalone GLWE CBS.
 
 ## Fixed-scale factorized MVB
 
-`context.compile_factorized_lookup_table_fn(&scaled_codec, input_domain_len, output_count, function)` returns `FourierFactorizedLookupTable`, bound to that context instance. Bind a `FactorizedEvaluator` once, or consume an existing ordinary evaluator. Keep the unsigned Scaled codec for decoding; the result is not automatically a Boolean gate input.
+Compile through `context.compile_factorized_lookup_table_fn` and bind a `FactorizedEvaluator`. The program borrows that context; outputs use unsigned Scaled encoding.
 
 The actual scale `round(2^BITS/t_out)` must be even (`t_out=10` works for u32/u64). Odd scales return `LookupTableError::OddFactorizationScale`. Factors are transformed as signed integers without torus scaling; budget their amplification and FFT error.
 
@@ -66,8 +66,6 @@ let mut evaluator = context.evaluator(&server)?;
 
 Both orders support ordinary/interleaved PBS, MVB and CBS. Pass `Some(cbs_config)` to include sparse CBS material. `ServerKey::bootstrapping_key()` exposes `BootstrappingKey::{Classic,Sparse}`.
 
-Matching retries at most eight public maps with the fixed client; it never resamples the client. Every bucket, including encrypted zeros and dummies, contributes noise. Successful matching does not certify security or a complete failure bound. See [sparse rotation invariants](../primus_tfhe/IMPLEMENTATION.md#ternary-and-sparse-rotation).
-
 ## Circuit bootstrapping
 
 Generate paired material with `context.try_generate_keys(Some(cbs_config), &mut rng)`; `ServerKey` owns the additional parameters and trace/scheme-switch keys. Create `context.circuit_bootstrap_evaluator(&server)` or consume ordinary workspace as above. With a classic key generated using `None`, binding CBS returns `MissingCircuitBootstrapKey`. Use `allocate_output`, `circuit_bootstrap_to` and `cmux_to`; the [CBS → CMUX example](examples/fourier_circuit_bootstrap.rs) shows their complete consumption chain.
@@ -84,4 +82,6 @@ Rustdoc groups server material in `key`, CBS in `circuit_bootstrap`, MVB program
 
 ## Further reading
 
-[Boolean gates](../primus_tfhe/README.md#boolean-gates) · [Error boundaries](../primus_tfhe/README.md#error-boundaries) · [Implementation notes](../primus_tfhe/IMPLEMENTATION.md) · [Benchmarks and performance decisions](../primus_tfhe/IMPLEMENTATION.md#performance-decisions-and-reproducibility)
+Default features are empty; optional `simd` enables nightly SIMD arithmetic in dependencies.
+
+[Boolean gates](../primus_tfhe/README.md#boolean-gates) · [Error boundaries](../primus_tfhe/README.md#error-boundaries) · [Implementation notes](../primus_tfhe/IMPLEMENTATION.md) · [Benchmark guide](../primus_tfhe/BENCHMARKS.md)

@@ -109,34 +109,6 @@ The batch input is a flat slice of complete LWEs. These keys write consecutive m
 
 `NttGlweSchemeSwitchKey<T>` and `FourierGlweSchemeSwitchKey<T>` convert a coefficient-domain GLev into a GGSW in the key's transform domain using `apply_to`. Both secret representations passed to `generate` must represent the same secret. Construct `primus_lattice::workspace::{NttGlweExternalProductWorkspace, FourierGlweExternalProductWorkspace}` with `key.key_size()`. These buffers can be shared with other external products: `rebind` changes decomposition levels without allocation when the GLWE layout is unchanged; restore `key.key_size()` before scheme switching. The output inherits the input GLev's gadget scaling; `key.key_basis()` only controls external-product decomposition and can differ from the output basis. Each mask row uses an encryption of the negated secret polynomial; the body row is transformed directly from the input. Fourier products accumulate directly into output without an inverse/forward FFT roundtrip.
 
-## Source and tests
+## Further reading
 
-[Secret keys](src/secret_key), [public keys](src/public_key), [key switching](src/key_switch), [automorphism](src/automorphism), [trace/packing](src/trace), [packing key switching](src/packing_key_switch) and [scheme switching](src/scheme_switch) contain the public contracts and implementation details.
-
-Tests are grouped by operation: ordinary key workflows, gadget phases and external products, constant-batch equivalence, CMUX, key switching, automorphism, scheme switching, and trace/expansion/packing. `tests/common` holds the small schoolbook phase oracle shared by evaluation tests. Boundary rejection and capacity zeroization have dedicated test binaries. Fourier constant batches, automorphism, trace, packing key switching and scheme-switching tests exercise both RustFFT and tfhe-fft.
-
-```sh
-cargo test -p primus_glwe
-cargo clippy -p primus_glwe --all-targets -- -D warnings
-cargo +nightly test -p primus_glwe --features simd
-```
-
-## Benchmarks
-
-```sh
-cargo bench -p primus_glwe --bench encryption
-cargo bench -p primus_glwe --bench primitives
-cargo bench -p primus_glwe --bench key_conversion
-# Check every case without collecting timing samples:
-cargo bench -p primus_glwe -- --test
-```
-
-All benches use `(k, N) = (1, 1024)` and `(2, 4096)`. Each iteration performs one operation with reusable output/scratch; key/table construction and allocation remain outside timing. Parameters and fixed seeds are recorded in the bench sources. These workloads track regressions rather than compare matched security; they are not security parameter recommendations.
-
-| Bench | Work measured |
-| --- | --- |
-| [encryption](benches/encryption.rs) | Secret/public encryption, secret decryption (including coefficient NTT paths), GLev/GGSW generation and batches of 8 constant GGSWs; includes sampling, coding and required transforms |
-| [primitives](benches/primitives.rs) | Ordinary/reverse trace; projection and partial expansion for 8 and `N/8` coefficients; full expansion; packing 1, 8 and `N` LWEs; direct Fourier automorphism on both FFT backends |
-| [key_conversion](benches/key_conversion.rs) | Independent-key packing of 1, 8 and `N` LWEs (input dimension 512; single-LWE cases cover bases `2^3` and `2^10`); NTT/Fourier GLev-to-GGSW scheme switching |
-
-Ordinary and reverse trace measure their respective API scales. Projection/partial expansion use the same encrypted zero-tail message and report output-message throughput. Codec variants are benchmarked in `primus_encoding`.
+Public contracts are documented in the [API sources](src). The [test and benchmark guide](benches/README.md) records coverage, workloads and reproduction commands; workspace validation entry points are in the [testing guide](../../guides/development/testing.md).

@@ -164,21 +164,11 @@ This crate does not depend on `primus_rns`. RNS/CRT conversion belongs to [`prim
 - Slice methods overwrite outputs and update carries; they do not accumulate digits. `init_value_carry_slice_assign` also overwrites the original values.
 - Constructors allocate precomputation storage. Slice and caller-output methods do not allocate internally. BigUint `init_value_carry`, `decompose`, and `approximate_error_bound` return newly allocated vectors or big integers; prefer reusable buffers and the `_to`/slice methods in repeated paths.
 
-## Features and validation
+## Features and further reading
 
 The default feature set is empty. The optional `simd` feature forwards to `primus_integer/simd` and requires nightly Rust. It does not select a separate decomposition backend; the loops can also benefit from compiler auto-vectorization.
 
-```text
-cargo test -p primus_decompose
-cargo bench -p primus_decompose --bench decompose
-cargo +nightly test -p primus_decompose --features simd
-```
-
-The benchmarks separate basis construction from online decomposition. Generic primitive and BigUint batches process 4096 coefficients, including initialization and every retained level. Primitive cases cover scalar and no-copy/adjusted batch paths. BigUint cases cover compact output with fixed strides and the general fallback, plus one matched full-width output case.
-
-The `decompose/pbs/` group uses the external-product decomposition parameters from [TFHE benchmarks](../primus_tfhe/BENCHMARKS.md): GLWE/NTRU × NTT/Fourier, u32/u64, and N=1024/2048. `init` measures initialization, `levels` measures every retained level with initial carries cloned outside timing, and `full` measures both together. Each iteration decomposes one polynomial, not an entire external product or PBS. Fixed inputs are checked against scalar initialization and each scalar digit/carry before timing. The separately timed stages are diagnostics; their sum is not a measurement of `full`.
-
-Criterion uses 20 samples, a 1-second warm-up and a 5-second measurement. SIMD benchmark commands are in the bench source. Workspace builds already use `target-cpu=native` via [`.cargo/config.toml`](../../.cargo/config.toml).
+Public contracts are documented in the [API sources](src). The [test and benchmark guide](benches/README.md) records coverage, workloads and reproduction commands; workspace validation entry points are in the [testing guide](../../guides/development/testing.md).
 
 ## License
 

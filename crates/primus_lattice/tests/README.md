@@ -1,6 +1,7 @@
 # Lattice test coverage
 
-Part of the experimental [Primus FHE](../../../README.md) workspace; APIs and numerical contracts may change incompatibly.
+> [!WARNING]
+> Part of the experimental [Primus FHE](../../../README.md) workspace; APIs and numerical contracts may change incompatibly.
 
 Tests here protect raw ciphertext layouts and low-level operation contracts. They use deterministic inputs and check coefficient order, signs, normalization, output overwrite, accumulation, and storage/workspace reuse. Encryption noise, key generation, and decryptability belong to the higher-level scheme crates.
 

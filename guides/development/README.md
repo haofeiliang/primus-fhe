@@ -2,6 +2,9 @@
 
 English | [简体中文](README.zh_CN.md)
 
+> [!WARNING]
+> [Primus FHE](../../README.md) is experimental; its APIs and numerical contracts are unstable and may change incompatibly at any time.
+
 Use this guide when composing or extending workspace libraries. It points to existing APIs and their boundaries; detailed contracts belong in rustdoc. Start with the [workspace map](../../README.md#workspace-map) for crate responsibilities and the [testing guide](testing.md) for validation commands.
 
 ## Choose the arithmetic domain

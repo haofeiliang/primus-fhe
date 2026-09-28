@@ -2,7 +2,10 @@
 
 English | [简体中文](README.zh_CN.md)
 
-Scalar secret-key NTRU encryption and evaluation over `Z_q[X]/(X^N + 1)`. NTT uses an explicit field modulus; Fourier uses the native wrapping modulus `2^T::BITS`. These representations retain separate numerical contracts. This is an experimental workspace crate, without stable APIs or recommended security parameters.
+> [!WARNING]
+> This crate is part of the experimental [Primus FHE](../../README.md) workspace. Its API and numerical contracts are unstable and may change incompatibly at any time. No recommended security parameters are provided.
+
+Scalar secret-key NTRU encryption and evaluation over `Z_q[X]/(X^N + 1)`. NTT uses an explicit field modulus; Fourier uses the native wrapping modulus `2^T::BITS`. These representations retain separate numerical contracts.
 
 ## Ciphertext semantics
 
@@ -26,7 +29,7 @@ NTT generation rejects keys with a zero evaluation. Fourier generation checks na
 
 `generate_padded_pair(params, active_length, ...)` samples only the active prefix and leaves the suffix zero; fixed weights apply to that prefix. It uses the same samplers as full-length generation, including ternary. Generation tries at most 1024 candidates. Native fixed binary/ternary distributions with even nonzero count return `NonInvertibleSecretKey` before sampling; otherwise an unsuccessful search returns `KeyGenerationExhausted`. A returned key follows the proposal distribution **conditioned on backend acceptance**; `distr()` records the proposal.
 
-General NTRU supports nonbinary secrets. The NTRU TFHE layer separately validates the binary, zero-padded control-secret requirement for blind rotation.
+General NTRU supports nonbinary ring secrets. The NTRU TFHE layer uses an independent external LWE secret for binary/ternary blind-rotation controls; it does not impose a zero-padded binary ring secret.
 
 Secret keys and private encryption/generation/decryption workspaces erase owned buffers on drop. Explicit workspace zeroization preserves reusable storage; explicit secret-key zeroization destroys the key. The built-in FFT backends also erase scratch on drop, and `FftEngine::zeroize_workspace()` supports a phase boundary for long-lived engines. Caller-owned plaintext and phase outputs retain their own lifetimes.
 
@@ -51,7 +54,7 @@ cargo run -p primus_ntru --example automorphism
 | `NttNtruAutomorphismKey::apply_to`, `FourierNtruAutomorphismKey::apply_to` | Coefficient NTRU to coefficient NTRU under the same secret |
 | `apply_ntt_to`, `apply_fourier_to` | Transformed NTRU to the corresponding transformed output under the same secret |
 
-`NttNlev::lift_monomial_to` / `FourierNlev::lift_monomial_to` fuse public-polynomial lifting with the first binary/ternary rotation. Supply NLEV[1], a positive NLEV bit and an optional negative NLEV bit; only the public polynomial is decomposed, and a zero exponent still performs the lift. Their `NttNtruCmuxWorkspace` / `FourierNtruCmuxWorkspace` shares one combined-control buffer with subsequent ternary CMUXes. These names replace the former `*NtruTernaryCmuxContext` types.
+`NttNlev::lift_monomial_to` / `FourierNlev::lift_monomial_to` fuse public-polynomial lifting with the first binary/ternary rotation. Supply NLEV[1], a positive NLEV bit and an optional negative NLEV bit; only the public polynomial is decomposed, and a zero exponent still performs the lift. Their `NttNtruCmuxWorkspace` / `FourierNtruCmuxWorkspace` shares one combined-control buffer with subsequent ternary CMUXes.
 
 For ternary rotation, allocate `NttNtruCmuxWorkspace::new(N, levels)` or `FourierNtruCmuxWorkspace::new(N, levels)` once, and reuse it with mutually exclusive positive/negative NGSW controls. Fourier uses a native basis and both controls must use the engine's exact FFT table instance and torus scale. The exponent is already quantized into `0..2N`; its negative is derived internally. The NTRU TFHE backends use this primitive for classic ternary blind rotation.
 
@@ -73,7 +76,7 @@ Create `NtruLweKeySwitchingWorkspace::new(N)` once, then call `key_switch_to` fo
 
 The operation rounds each coefficient as `c' = round(q*c/Q) mod q` (nearest, ties upward), extracts `b=0`, `a[i]=-c'[index-i]` for `i<=index` and `a[i]=c'[N+index-i]` otherwise, then key-switches at q. Extraction uses the signed coefficient vector of f with LWE phase `b-<a,f>=(f*c')[index]`. Rounding must precede extraction negation: negating first can change half-tie results. Modulus switching and extraction are fused into one scratch write, reusing `primus_reduce::ModulusSwitch` and `primus_lwe::LweKeySwitchingKey`.
 
-Both moduli may be native or explicit, including equal moduli. The implementation and tests cover u32→u32 and u64→u64, including full-width native sources, explicit near-word-limit sources and rounded endpoint wrap. There is no cross-width narrowing: a smaller q with u64 input still produces u64 coefficients. Inputs must be canonical at Q. Budget f-weighted coefficient rounding, secret-weighted decomposition error and LWE key noise, plus previous NTRU/FFT error; scaling an encoded message from Q to q is not generally identical to freshly encoding it at q. The higher-level NTRU TFHE client/return path has not yet migrated to this primitive.
+Both moduli may be native or explicit, including equal moduli. The implementation and tests cover u32→u32 and u64→u64, including full-width native sources, explicit near-word-limit sources and rounded endpoint wrap. There is no cross-width narrowing: a smaller q with u64 input still produces u64 coefficients. Inputs must be canonical at Q. Budget f-weighted coefficient rounding, secret-weighted decomposition error and LWE key noise, plus previous NTRU/FFT error; scaling an encoded message from Q to q is not generally identical to freshly encoding it at q. The NTRU TFHE backends use this primitive for their external LWE return path.
 
 ## Trace, projection and expansion
 
@@ -89,23 +92,9 @@ Reverse steps visit degrees `2r+1, 4r+1, ..., N+1`. The remaining steps project 
 
 The stored evaluation key is `NGSW_f[f]`. It is generated by encrypting f, without explicitly forming a signed polynomial square. Input errors are multiplied by f, decomposition errors by f², and evaluation-key/FFT errors also contribute. Publishing this secret-dependent key needs a justified key-dependent-message/circular-security assumption and suitable parameters. The algebra and functional tests provide neither a security proof nor a CBS parameter recommendation. The output can control CMUX when m is a bit.
 
-## Tests and benchmarks
+## Further reading
 
-```sh
-cargo test -p primus_ntru
-cargo clippy -p primus_ntru --all-targets -- -D warnings
-cargo +nightly test -p primus_ntru --features simd
-cargo bench -p primus_ntru --bench encryption
-cargo bench -p primus_ntru --bench primitives -- 'ntt/n4096/logb3'
-cargo bench -p primus_ntru --bench constant_gadget
-cargo bench -p primus_ntru --bench ternary_cmux
-```
-
-`encryption` measures ordinary encryption and undecoded phase extraction. `primitives` measures key switching, automorphism, trace/reverse trace, three coefficient projections, expansion of an eight-coefficient prefix and scheme switching (output B=2^8, L=3) at `N = 1024/4096/8192`, with `B = 2^3/2^10` and the maximum supported level count. Both use `u64`, sparse ternary secrets and sigma 3.2; NTT uses `q = 1_125_899_906_826_241`, and Fourier covers both FFT backends. `constant_gadget` retains constant NLev and eight-control NGSW generation. Setup, tables, key generation and allocations stay outside timed closures. Add `-- --test` for fixture smoke checks; those checks do not measure performance or establish decryptability.
-
-`ternary_cmux` compares one fused rotation against two binary CMUXes, with real encrypted controls, u32/u64 and reusable scratch at `N=1024`, for NTT and both FFT backends. Fourier setup reports phase error against independent coefficient convolution outside timing.
-
-NTT scalar products use the existing CPU dispatch and optional dependency SIMD support. No ISA choice is added to the public NTRU API. Compare timings only within matched workloads; these backends do not share equal-security parameters.
+Public contracts are documented in the [API sources](src). The [test and benchmark guide](benches/README.md) records coverage, workloads and reproduction commands; workspace validation entry points are in the [testing guide](../../guides/development/testing.md).
 
 ## License
 

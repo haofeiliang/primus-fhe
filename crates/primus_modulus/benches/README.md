@@ -1,6 +1,7 @@
 # Modulus benchmark coverage
 
-Part of the experimental [Primus FHE](../../../README.md) workspace; APIs and numerical contracts may change incompatibly.
+> [!WARNING]
+> Part of the experimental [Primus FHE](../../../README.md) workspace; APIs and numerical contracts may change incompatibly.
 
 - `scalar_moduli`: single-value arithmetic across modulus implementations.
 - `barrett_scalar`: canonical/lazy Barrett multiplication and reduction.

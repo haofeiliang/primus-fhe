@@ -2,6 +2,9 @@
 
 [English](README.md) | 简体中文
 
+> [!WARNING]
+> [Primus FHE](../../README.zh_CN.md) 是实验性项目；其 API 和数值契约尚不稳定，可能随时发生不兼容修改。
+
 本指南用于组合或扩展 workspace 中的库，说明已有接口及其边界；详细契约仍以 rustdoc 为准。各库职责见 [workspace 导航](../../README.zh_CN.md#workspace-导航)，验证命令见[测试指南](testing.md)。
 
 ## 选择算术域

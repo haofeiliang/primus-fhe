@@ -2,42 +2,35 @@
 
 [English](README.md) | 简体中文
 
-Primus FHE 是一个实验性的 Rust 全同态加密 workspace，提供算术和格密码基础组件、LWE/GLWE/NTRU 加密与求值原语，以及基于 GLWE 和 NTRU、分别使用 NTT 和 Fourier 表示的 TFHE 后端。
+Primus FHE 是实验性的 Rust 全同态加密 workspace，提供算术与格密文原语、LWE/GLWE/NTRU 加密，以及 GLWE/NTRU 的 NTT 和 Fourier TFHE 后端。
 
 > [!WARNING]
-> API、数据表示、算法和 crate 边界尚不稳定，可能随时发生不兼容修改，且不提供弃用过渡期。示例与基准参数用于功能验证，不是经过认证的安全参数或失败概率建议。本项目不声明已达到生产可用状态。
+> API、表示、算法和 crate 边界尚不稳定，可能直接发生不兼容修改。示例与基准参数用于功能演示，不构成安全性或失败概率推荐；项目尚未达到生产可用状态。
 
-## 使用入口
+## 从这里开始
 
-- **计算加密函数：**先阅读 [TFHE 操作与编码指南](crates/primus_tfhe/README.zh_CN.md)，再运行下方的后端示例。
-- **使用加密与求值原语：**从 [LWE](crates/primus_lwe/README.zh_CN.md)、[GLWE](crates/primus_glwe/README.zh_CN.md) 或 [NTRU](crates/primus_ntru/README.zh_CN.md) 开始。这些 crate 提供 TFHE 工作流依赖的密钥和底层操作。
-- **开发算术或方案组件：**先看[库使用导航](guides/development/README.zh_CN.md)，再按下方 workspace 导航阅读对应 crate 的 README 和 rustdoc。
+- **计算密文函数：** 从 [TFHE 操作与编码指南](crates/primus_tfhe/README.zh_CN.md) 选择 PBS、ManyLUT、MVB、CBS 或 Boolean 门，再选择下方后端。
+- **直接使用加密原语：** 阅读 [LWE](crates/primus_lwe/README.zh_CN.md)、[GLWE](crates/primus_glwe/README.zh_CN.md)、[NTRU](crates/primus_ntru/README.zh_CN.md) 或 [RNS GLWE](crates/primus_glwe_rns/README.zh_CN.md)。
+- **组合底层组件：** [库使用导航](guides/development/README.zh_CN.md) 介绍算术域、存储、迭代器、变换表示与工作区。
 
-示例区分客户端密钥生成与加密、服务端求值、客户端解密，展示 context、evaluator 和输出缓冲区的复用。普通 LUT 编译默认沿用输入的明文 codec；显式 codec 变体支持不同的输出明文模数。
+在仓库根目录运行一个完整的加密 → 查表 → 解密示例：
+
+```sh
+cargo run --release -p primus_tfhe_glwe_ntt --example ntt_basic
+```
+
+示例直接展示参数构造，区分 client 与 server，并复用求值器和输出缓冲。各后端 README 提供其他操作的完整示例。
 
 ## TFHE 后端
 
-| 家族 | NTT：显式有限域模数 | Fourier：原生字宽模数 |
+| 家族 | NTT：显式素数环模数 | Fourier：原生字长环模数 |
 | --- | --- | --- |
-| [GLWE 参数与客户端](crates/primus_tfhe_glwe/README.zh_CN.md) | [primus_tfhe_glwe_ntt](crates/primus_tfhe_glwe_ntt/README.zh_CN.md) | [primus_tfhe_glwe_fourier](crates/primus_tfhe_glwe_fourier/README.zh_CN.md) |
-| [NTRU 参数与客户端](crates/primus_tfhe_ntru/README.zh_CN.md) | [primus_tfhe_ntru_ntt](crates/primus_tfhe_ntru_ntt/README.zh_CN.md) | [primus_tfhe_ntru_fourier](crates/primus_tfhe_ntru_fourier/README.zh_CN.md) |
+| [GLWE 参数与客户端](crates/primus_tfhe_glwe/README.zh_CN.md) | [GLWE NTT](crates/primus_tfhe_glwe_ntt/README.zh_CN.md) | [GLWE Fourier](crates/primus_tfhe_glwe_fourier/README.zh_CN.md) |
+| [NTRU 参数与客户端](crates/primus_tfhe_ntru/README.zh_CN.md) | [NTRU NTT](crates/primus_tfhe_ntru_ntt/README.zh_CN.md) | [NTRU Fourier](crates/primus_tfhe_ntru_fourier/README.zh_CN.md) |
 
-对独立加密的 chunks 和跨多个多项式的表，使用 [NTRU 高精度查表](crates/primus_tfhe_ntru_lut/README.zh_CN.md)。
+GLWE 支持两种 PBS 顺序。NTRU 使用独立的外部 LWE 秘密与环秘密，支持环模数 Q 到外部模数 q 的返回；可逆性要求针对环秘密，外部 binary/ternary 秘密没有奇数重量要求。Fourier 环目前只支持 `NativeModulus`，支持 RustFFT 与 TFHE-FFT；NTRU 的外部 q 可独立选择。
 
-四后端均支持 LWE 私钥/公钥客户端、经典 binary/ternary 私钥、可编程自举（PBS）、交错 ManyLUT、有界双输入 LUT、奇数明文模数全域单输出 LUT、Boolean 门、可供 CMUX 使用的电路自举（CBS），以及固定尺度分解式多值自举（MVB）。ManyLUT 和 MVB 对同一个加密输入计算多个函数。Fourier 支持 RustFFT 和 TfheFFT，并保留各自的精度要求。
-
-固定重量二元稀疏 PBS 属于实验性能力。GLWE 两后端支持 sparse PBS、CBS 和 MVB；NTRU 两后端支持 sparse 普通/交错 PBS，但拒绝 sparse CBS/MVB。NTRU 要求私钥在环内可逆；其 Fourier 后端还检查数值稳定性，固定重量二元私钥必须具有奇数重量。编码和组合边界见[共享能力指南](crates/primus_tfhe/README.zh_CN.md#crate-分工与能力)。
-
-在仓库根目录运行基础端到端示例：
-
-```sh
-cargo run -p primus_tfhe_glwe_ntt --release --example ntt_basic
-cargo run -p primus_tfhe_glwe_fourier --release --example fourier_basic
-cargo run -p primus_tfhe_ntru_ntt --release --example ntru_ntt_basic
-cargo run -p primus_tfhe_ntru_fourier --release --example ntru_fourier_basic
-```
-
-各后端 README 还提供 CBS → CMUX、MVB 阈值和稀疏 PBS 示例。参数、输出编码和可组合的操作均需显式确定，接口不会从 raw 密文推断这些信息。
+Classic 与 sparse 的操作覆盖见[能力表](crates/primus_tfhe/README.zh_CN.md#crate-分工与能力)。对独立加密的多个 chunk 求高精度函数，使用 [NTRU 高精度查表](crates/primus_tfhe_ntru_lut/README.zh_CN.md)。编码和密钥域由调用方明确约定，raw 密文不携带这些信息。
 
 ## Workspace 导航
 
@@ -49,47 +42,20 @@ cargo run -p primus_tfhe_ntru_fourier --release --example ntru_fourier_basic
 | 分解与 RNS | [primus_decompose](crates/primus_decompose/README.zh_CN.md)：有符号 gadget 分解；[primus_rns](crates/primus_rns/README.zh_CN.md)：剩余类基、转换与 hybrid RNS |
 | 采样与编码 | [primus_distr](crates/primus_distr/README.zh_CN.md)：私钥/噪声分布；[primus_encoding](crates/primus_encoding/README.zh_CN.md)：Rounded、Scaled 和 BFV RNS 系数编码 |
 | 密文表示 | [primus_lattice](crates/primus_lattice/README.zh_CN.md)：存储、算术、提取、gadget 乘法、CMUX 和可复用工作区 |
-| 加密与求值 | [primus_lwe](crates/primus_lwe/README.zh_CN.md)、[primus_glwe](crates/primus_glwe/README.zh_CN.md)、[primus_ntru](crates/primus_ntru/README.zh_CN.md)：密钥与方案原语；[primus_glwe_rns](crates/primus_glwe_rns/src/lib.rs)：CRT/DCRT GLWE 和 hybrid-RNS 密钥切换 |
+| 加密与求值 | [primus_lwe](crates/primus_lwe/README.zh_CN.md)、[primus_glwe](crates/primus_glwe/README.zh_CN.md)、[primus_ntru](crates/primus_ntru/README.zh_CN.md)：密钥与方案原语；[primus_glwe_rns](crates/primus_glwe_rns/README.zh_CN.md)：CRT/DCRT GLWE 和 hybrid-RNS 密钥切换 |
 | TFHE | [primus_tfhe](crates/primus_tfhe/README.zh_CN.md)：共享外部 LWE 客户端、LUT、PBS trait 和 Boolean 求值；上方两个家族 crate 与四个后端负责绑定参数、密钥和执行过程 |
 
-RNS 与编码组件提供基础能力，目前没有完整的 BFV、BGV 或 CKKS 应用后端。`test-support/` 保存开发阶段共享的测试 fixture 和分配计数工具。数学契约由 rustdoc 说明；跨层 TFHE 实现依据及保留的性能取舍见[实现说明](crates/primus_tfhe/IMPLEMENTATION.md)。
+RNS 与编码组件是构建模块，目前没有完整的 BFV、BGV 或 CKKS 应用后端。
 
-## 构建与测试
+## 构建与进一步阅读
 
-默认 features 使用 stable Rust。在 workspace 根目录执行：
+默认 features 使用 stable Rust；可选 `simd` 需要 nightly。在仓库根目录运行 `cargo check --workspace --all-targets` 或 `cargo doc --workspace --no-deps`。仓库设置了 `target-cpu=native`，分发到其他 CPU 的二进制需要显式调整构建配置。
 
-```sh
-cargo check --workspace --all-targets
-cargo test --workspace
-cargo doc --workspace --no-deps
-```
-
-Portable SIMD 需要 nightly。以下命令检查并测试整个 workspace 的所有 features，包括 SIMD 和可选 RNS 路径：
-
-```sh
-cargo +nightly clippy --workspace --all-targets --all-features -- -D warnings
-cargo +nightly test --workspace --all-features
-```
-
-[justfile](justfile) 提供局部验证入口：
-
-| 命令 | 覆盖范围 |
-| --- | --- |
-| `just test` / `just test-doc` | 全 workspace 单元/集成测试 / doctests |
-| `just bench-smoke <package> <target>` | 单个 Criterion target 的 setup 和断言，不采样延迟 |
-| `just tfhe` | 八个 TFHE crate 与测试辅助：默认检查、Clippy、测试/doctest 和文档 |
-| `just tfhe-simd` | 相同包的 nightly SIMD 检查、Clippy 和测试/doctest |
-| `just simd` | 指定算术 crate 的 nightly SIMD 检查、Clippy 和 nextest |
-
-`just` 为可选工具；调用 nextest 的流程还需安装 `cargo-nextest`。[CI 工作流](.github/workflows/ci.yml)定义全 workspace 验证：格式检查、stable 默认配置与 nightly 全 features 的 all-target Clippy、测试和 doctest，以及包含私有项的严格 nightly rustdoc。本地 `just ci` 组合默认 workspace 与局部 SIMD 流程，并不等同于 CI 的全 features 矩阵。
-
-测试与基准的选择、可选 feature 覆盖及契约归属见[测试指南](guides/development/testing.md)。
-
-仓库配置了 `target-cpu=native`，本地产物可能使用其他 CPU 不支持的指令；CI 会清除该设置。基准命令及负载参数随各 crate 的 benchmark 保存；性能测量应与编译、测试分开执行。
+- [测试指南](guides/development/testing.md)：普通测试、doctest、feature 覆盖和独立的示例/基准 smoke。
+- [TFHE 实现说明](crates/primus_tfhe/IMPLEMENTATION.md)：旋转、首次提升、one-hot 与 MVB 的数学依据。
+- [TFHE 基准指南](crates/primus_tfhe/BENCHMARKS.md)：工作负载与测量入口。
+- [贡献规范](AGENTS.md)与 [justfile](justfile)：仓库开发约定和便捷命令。
 
 ## 许可证
 
-Primus FHE 可由你选择使用以下任一许可证：
-
-- [Apache License, Version 2.0](LICENSE-APACHE-2.0)
-- [MIT License](LICENSE-MIT)
+可选择 [Apache License 2.0](LICENSE-APACHE-2.0) 或 [MIT License](LICENSE-MIT)。

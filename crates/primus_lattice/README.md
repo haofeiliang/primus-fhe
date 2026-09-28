@@ -2,9 +2,12 @@
 
 English | [简体中文](README.zh_CN.md)
 
+> [!WARNING]
+> This crate is part of the experimental [Primus FHE](../../README.md) workspace. Its API and numerical contracts are unstable and may change incompatibly at any time.
+
 `primus_lattice` provides ciphertext storage, representation conversions, and low-level lattice operations for [Primus FHE](../../README.md). It is shared by the GLWE/NTRU × Fourier/NTT TFHE paths and by RNS GLWE implementations.
 
-This crate is part of the experimental [Primus FHE](../../README.md) workspace and does not promise a stable API. Key generation, encryption parameters, encoding policy, noise management, and complete homomorphic evaluation belong to higher layers such as [`primus_glwe`](../primus_glwe), [`primus_ntru`](../primus_ntru), and [`primus_glwe_rns`](../primus_glwe_rns).
+Key generation, encryption parameters, encoding policy, noise management, and complete homomorphic evaluation belong to higher layers such as [`primus_glwe`](../primus_glwe), [`primus_ntru`](../primus_ntru), and [`primus_glwe_rns`](../primus_glwe_rns).
 
 ## Ciphertext families
 

@@ -2,7 +2,10 @@
 
 English | [简体中文](README.zh_CN.md)
 
-High-precision lookup over already encrypted NTRU-TFHE chunks, using one-hot CBS, public and encrypted table selection, negative rotation and return to an independent LWE secret. This is part of the experimental [Primus FHE](../../README.md) workspace; API and numerical contracts may change.
+> [!WARNING]
+> This crate is part of the experimental [Primus FHE](../../README.md) workspace. Its API and numerical contracts are unstable and may change incompatibly at any time.
+
+High-precision lookup over already encrypted NTRU-TFHE chunks, using one-hot CBS, public and encrypted table selection, negative rotation and return to an independent LWE secret.
 
 ## Workflow
 
@@ -44,8 +47,6 @@ cargo run --release -p primus_tfhe_ntru_lut --example ntt_lookup
 cargo run --release -p primus_tfhe_ntru_lut --example fourier_lookup
 ```
 
-[evaluation.rs](tests/evaluation.rs) additionally exhausts small domains and checks storage reuse and rejection boundaries.
-
 ## Encoding and table partition
 
 The plaintext modulus must be `t=2*M`, with `M=2^tau>=2`. All input and output chunks share tau; their counts are independent and positive. Both ciphertext slices are least-significant first: `x=sum_i m_i*M^i`. Inputs are separate encrypted chunks; the API does not homomorphically split one high-precision LWE.
@@ -68,42 +69,28 @@ For example, `M=4, c=3, d=1, N=64` gives 64 inputs, 16 polynomials per output an
 
 ### Choosing the coefficient chunk count
 
-For fixed N, M and c, a useful starting point is `d=min(c, floor(log2(N)/tau))`: use the largest M^d that fits in N. Increasing d by one divides P and table storage by M, reduces CMux work and adds one rotation product per output. For `d<c`, each output uses `P+P/M-1` table-selection products and d rotation products; for `d=c`, it uses one public lift and d rotation products. All c inputs still undergo one-hot CBS once per call. The split remains explicit because these operation counts do not establish the best noise margin or measured runtime, and increasing N makes the ring operations more expensive.
+For fixed N, M and c, start with `d=min(c, floor(log2(N)/tau))`, making M^d as close to N as possible. Increasing d by one divides public table storage by M and adds one rotation product per output. The best choice still depends on measured time and noise margins; exact operation counts are in the [stage guide](IMPLEMENTATION.md#stage-and-buffer-layout).
 
 ## Evaluation and workspace
 
-The first table layer uses the full sum `sum_k T_k odot NLEV[delta_k]`, including k=0. Later layers use `c_0 + sum_{k>0}(c_k-c_0) otimes NGSW[delta_k]`. Candidates are compacted in place after each layer. When d=c, the lone public polynomial is still lifted using the server's `NLEV[1]` with its BR basis.
+Each call performs one-hot CBS once per input chunk. High chunks select the LUT polynomial; low chunks locate its coefficient. All outputs reuse these selectors and rotation controls and return sequentially as LWEs under the independent external secret. Selection, rotation and return formulas live in the [implementation notes](IMPLEMENTATION.md#stage-and-buffer-layout).
 
-For each coefficient chunk i, the evaluator prepares `C_i=G+sum_{k>0}(X^(-k*M^i)-1)*NGSW[delta_k]`. G is the gadget vector, a trivial NGSW encryption of one. Its target plaintext is `1+sum_{k>0}(X^(-k*M^i)-1)*delta_k(m_i)=X^(-m_i*M^i)`, including m_i=0. Negative rotations match the table's positive coefficient indices. Monomial factors are prepared once at construction; NTT factors use ring residues, Fourier factors use integer scale while G and ciphertexts use torus scale.
+The data LUT stores each function value once per input/output chunk. Repeated guards that tolerate input phase error belong to the preceding one-hot CBS test polynomial. Subsequent selection and rotation introduce additive ciphertext error, which still needs a decoding margin.
 
-The data LUT stores each function value once per input and output chunk. Repeated guard blocks belong to the earlier one-hot CBS test polynomial: they tolerate input phase error when generating the discrete selectors. Selection and rotation then introduce additive ciphertext error, rather than a noisy LUT index; that error still needs a decoding budget.
+The evaluator borrows its context, server key and table and allocates all buffers at construction. Reuse the result of `allocate_output()` with `evaluate_to` for allocation-free online evaluation. All chunk counts and LWE dimensions are checked before writes. Resources must match N/t/q/Q and actual key identity; Fourier also requires the exact FFT table instance. Each concurrent evaluator owns independent mutable workspace.
 
-Every input chunk undergoes CBS once per call. Only the public first layer generates all M NLEV selectors. Rotation controls and later encrypted layers request r=1..M-1 through `one_hot_nonzero_ngsw_to`, skipping r=0 projection and scheme switching; compact slot r-1 represents branch r. First-layer NLEV selectors, later table-layer NGSW selectors and aggregated rotation controls are reused across outputs. Only one output's candidate tree is stored. All buffers are allocated during construction; `evaluate_to` overwrites its outputs without allocation. Chunk counts and all LWE dimensions are checked before any output or scratch writes. Binding rejects incompatible N/t/q/Q and server resources. Secret identity remains a caller contract; transformed keys must use the bound context's representation, including the exact Fourier table instance.
+The return path performs coefficient-wise Q→q, phase extraction and LWE key switching. Outputs approximate the q-domain chunk encoding; budget double-rounding and return errors.
 
-One NLEV/NGSW selector occupies L*N ring values in NTT form or L*N/2 complex values in Fourier form; the public layer's complete one-hot batch contains M such selectors, while each subsequent encrypted layer and the reusable rotation scratch hold M-1. A rotation control has the size of one selector, while its M-1 public factors each occupy one transformed polynomial without gadget levels. Polynomial and ciphertext iterators traverse these mathematical objects; slice chunks remain for batches containing multiple objects. Both evaluators separate constant preparation, rotation-control aggregation, public-table selection and each subsequent encrypted selection layer. See the [stage and buffer layout](IMPLEMENTATION.md#stage-and-buffer-layout) for the full resource formulas and in-place compaction contract.
+## Numerical limits and further reading
 
-Each selected, rotated polynomial returns through the existing NTRU-to-LWE key: coefficient-wise Q→q, phase extraction, then key switching to the external secret. The output approximates the q-domain chunk encoding; double-rounding and return errors require a decoding budget.
+Inputs must satisfy the [one-hot guard](../primus_tfhe_ntru/README.md#one-hot-cbs), including encryption, encoding and per-coordinate quantization error. CBS and every selection/rotation external product add error; Fourier also includes native trace halving and FFT rounding. Public-lift decomposition must resolve the LUT scale. Shape checks and functional tests do not certify security, production parameters or failure probability.
 
-Table selection and rotation reuse the one-hot evaluator's external-product workspace; Fourier also reuses its FFT engine. These serial stages need no separate transform or decomposition buffers. Scratch contents are overwritten before reuse, and each evaluator still owns independent mutable workspace.
-
-## Numerical limits and validation
-
-Inputs inherit the [one-hot guard](../primus_tfhe_ntru/README.md#one-hot-cbs), including encryption, encoding and per-coordinate quantization errors. CBS and each selection/rotation external product introduce additional error; Fourier also uses native trace halving and FFT rounding. Public lifting must resolve the LUT scale. Shape checks and successful functional tests do not certify security, production parameters or failure probability.
-
-[Compilation tests](tests/lookup_table.rs) check partitioning and Rounded encoding with an integer oracle, padding and rejection boundaries. [Evaluation tests](tests/evaluation.rs) enumerate tiny domains and select chunk/table boundaries in larger domains. They cover u32/u64, Q≠q, radix 2/4, classic binary/ternary, NTT and both FFT backends, all default branches, later encrypted table layers, no table layer, full coefficient capacity, unequal input/output counts, prewrite rejection and online zero allocation. Larger arithmetic profiles have a separate [validation entry](../../guides/development/tfhe-parameters.md#validation-and-observations).
-
-```sh
-cargo test -p primus_tfhe_ntru_lut
-just tfhe
-just tfhe-simd
-```
+The [parameter guide](../../guides/development/tfhe-parameters.md) records example choices and validation scope, the [testing guide](../../guides/development/testing.md) maps independent contracts, and the [implementation notes](IMPLEMENTATION.md) describe the algorithm and internal buffers.
 
 ## Benchmarks
-
-The [pipeline benchmark](benches/pipeline.rs) measures complete 16-bit lookup with eight input/output chunks at n800/N1024, for u32/u64 and all three transform engines. Setup and decryption are untimed; a separate compilation measurement includes LUT allocation and drop. The complete fixture reports retained key/workspace/output heap and checks zero online allocation. Default and SIMD use the same workload.
 
 ```sh
 cargo bench -p primus_tfhe_ntru_lut --bench pipeline
 ```
 
-Parameters, measurement boundaries, reproducible commands and validation scope are recorded in the [implementation and benchmark guide](IMPLEMENTATION.md#benchmark-fixture). These timings and a few functional samples do not establish security or failure probabilities.
+See the [benchmark fixture](IMPLEMENTATION.md#benchmark-fixture) for workloads, timing boundaries and resource measurements.

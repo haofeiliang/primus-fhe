@@ -20,23 +20,28 @@
 | 有界双输入 | 同秘密/编码，`x<B,y<R` 且 `B*R<=ceil(t/2)` | 一个 Rounded LWE | 普通密钥 | `BivariateLookupTable`，另复用一个打包 LWE |
 | Boolean 门 | `t=4` 下的 Rounded 0/1 | 可直接串联的同编码 Boolean LWE | 普通密钥 | `BooleanEvaluator` 持有门 LUT 和临时密文 |
 | CBS → CMUX | Rounded 前半区；CMUX 控制输入为 0/1 | accumulator 秘密下的 GGSW/NGSW gadget 控制，再选择环密文 | 普通密钥 + trace/SS | `CircuitBootstrapEvaluator`；环客户端独立使用 `AccumulatorClient` |
+| One-hot CBS | 一个 padded chunk，t=2M | δ_r(m) 的 NLEV/NGSW selectors | Classic NTRU CBS 材料 | [One-hot 接口](../primus_tfhe_ntru/README.zh_CN.md#one-hot-cbs) |
+| 高精度查表 | 多个独立加密、统一位宽的 chunks | 可独立指定数量的输出 chunks | Classic NTRU CBS 与返回密钥 | [高精度查表](../primus_tfhe_ntru_lut/README.zh_CN.md) |
 
 ManyLUT 和 MVB 都计算**同一个输入的多个函数**，不批处理独立输入。 MVB 保留步长 1，但因子会放大噪声；交错 LUT 则用旋转分辨率换多输出。 Scaled 数值标志、Boolean LWE 和 CBS gadget 控制不能互换。 完整工作流从后端 basic 示例开始；各方法的域与噪声前提见下文及 rustdoc。
 
 ## Crate 分工与能力
 
-| Family | NTT 后端 | Fourier 后端 |
+| 家族 | NTT 后端 | Fourier 后端 |
 | --- | --- | --- |
 | [GLWE 参数与客户端](../primus_tfhe_glwe/README.zh_CN.md) | [GLWE NTT](../primus_tfhe_glwe_ntt/README.zh_CN.md) | [GLWE Fourier](../primus_tfhe_glwe_fourier/README.zh_CN.md) |
 | [NTRU 参数与客户端](../primus_tfhe_ntru/README.zh_CN.md) | [NTRU NTT](../primus_tfhe_ntru_ntt/README.zh_CN.md) | [NTRU Fourier](../primus_tfhe_ntru_fourier/README.zh_CN.md) |
 
-四后端均支持私钥和 LWE 公钥客户端。Fourier 后端支持 RustFFT 与 TfheFFT。 示例及 benchmark fixture 不是生产安全参数或失败概率建议。
+四个后端都有私钥和 LWE 公钥客户端；Fourier 支持 RustFFT 与 TFHE-FFT，环模数仅支持 Native。示例参数不构成生产安全性或失败概率推荐。
 
-GLWE 和 NTRU 两后端的经典 PBS、CBS、MVB 均支持 binary/ternary 输入秘密； NTRU 客户端秘密还需通过后端的可逆性筛选。
+| 密钥模式 | 普通 / ManyLUT PBS | CBS | Factorized MVB | One-hot / 高精度查表 |
+| --- | --- | --- | --- | --- |
+| GLWE classic binary/ternary | 两种 PBS 顺序 | 支持 | 支持 | 未提供 |
+| GLWE sparse fixed-weight binary | 两种 PBS 顺序 | 支持 | 支持 | 未提供 |
+| NTRU classic binary/ternary | 支持 | 支持 | 支持 | 支持 |
+| NTRU sparse fixed-weight binary | 支持 | 不支持 | 不支持 | 不支持 |
 
-GLWE 两后端均支持固定重量二元 small 秘密的实验性稀疏 PBS：两种 order、普通/交错/分解式 LUT。 [NTT](../primus_tfhe_glwe_ntt/README.zh_CN.md#实验性稀疏-pbs) 使用精确变换， [Fourier](../primus_tfhe_glwe_fourier/README.zh_CN.md#实验性稀疏-pbs) 使用 Native 系数域聚合。 两后端均支持 sparse CBS；sparse ternary 尚不支持。
-
-NTRU [NTT](../primus_tfhe_ntru_ntt/README.zh_CN.md#实验性稀疏-pbs) 和 [Fourier](../primus_tfhe_ntru_fourier/README.zh_CN.md#实验性稀疏-pbs) 稀疏 PBS 支持固定重量二元客户端的普通/交错 LUT；Fourier 要求奇数重量及稳定逆元。两者均拒绝 sparse CBS/MVB。
+Sparse 模式需显式选择生成入口，暂不支持 sparse ternary。NTRU 的外部 LWE 秘密独立于环秘密；只有环秘密需要可逆性筛选及 Fourier 逆稳定性检查，外部固定重量可以是偶数。
 
 ## 客户端与服务端边界
 
@@ -48,20 +53,7 @@ NTRU [NTT](../primus_tfhe_ntru_ntt/README.zh_CN.md#实验性稀疏-pbs) 和 [Fou
 
 ## 错误边界
 
-错误按操作职责命名，从 crate 根导出；按调用的操作处理相应错误类型。
-
-| 操作 | 错误 |
-| --- | --- |
-| LUT 编译 / 普通、Boolean 或 CBS evaluator 绑定 | 公共 `LookupTableError` / `TfheEvaluationError` |
-| TFHE / CBS 参数准备 | Family `TfheParameterError` / `CircuitBootstrapParameterError` |
-| 家族客户端构造 | Family `TfheClientError`；`IncompatibleKey` 保留 `TfheKeyError` |
-| 公共 LWE 客户端构造与操作 | `ClientError` |
-| 公共 Boolean 构造与操作 | `BooleanError`；`Client` 包装 `ClientError`。家族私钥工厂将构造失败包装为 `TfheClientError` |
-| 常规/稀疏 server、稀疏 BSK 或独立 CBS 密钥生成 | Family `KeyGenerationError`；NTRU 采样/变换直接进入 `Ntru` 分支；稀疏失败进入 `SparseBootstrapping` |
-| NTRU accumulator 客户端构造 | Family `TfheClientError`；`Ntru` 分支保留秘密转换失败 |
-| 自动建表或显式绑定表 | 后端 `TfheContextError`；`TransformTable` 保留底层 FFT/NTT 错误 |
-
-`KeyGenerationError::ClientKey` 直接报告客户端不兼容；稀疏失败的 `BucketMap` 分支保留映射原因。
+配置和绑定入口优先使用 `try_*`，处理该入口实际返回的错误类型。`LookupTableError` 负责 LUT 编译，`TfheEvaluationError` 负责求值资源绑定；家族/后端提供参数、密钥生成、客户端和变换表错误。普通客户端操作返回 `ClientError`，Boolean 操作返回 `BooleanError`。底层原因通过 `std::error::Error::source()` 保留，详见各公开 API 的 rustdoc。
 
 ## Boolean 门
 
@@ -83,8 +75,6 @@ assert!(!decryptor.decrypt(&output)?);
 ```
 
 `BooleanEvaluator` 在两族间共享仿射预处理、内部模 8 正负 LUT 和恢复输出编码的平移。 二元门使用一次 PBS，NOT 无需 PBS，MUX 使用两次。通过 `evaluate_binary_to`、`not_to`、 `mux_to` 和已有输出复用存储。 输出保持外部 Boolean 编码，可直接送入后续门。 客户端维数错误返回 `BooleanError::Client`，门求值维数错误则 panic。 原始密文不携带密钥身份或编码元数据，这些仍由调用方保证。
-
-`BooleanEvaluator::try_new(dimension, poly_length, input_codec, coefficient_modulus, bootstrapper)` 是自定义后端入口；调用方须保证参数绑定正确、后端保留 LUT 输出尺度。 构造返回 `TfheEvaluationError`：输入明文模数不是 4，或显式密文模数不大于 8 时返回 `InvalidBooleanEncoding`。
 
 ## CBS 输出与消费
 
@@ -136,7 +126,7 @@ Context 保存不可变参数和变换表，ServerKey 保存求值材料；Evalu
 3. 通过 family 参数编译 `LookupTable` / `InterleavedLookupTable`。 evaluator 创建一次，在线 `_to` 调用复用其 scratch。
 4. 调用方输出分配一次，后续加密与求值重复使用同一存储。
 
-前半区单函数或切片编译器为 `0..ceil(t_in/2)` 输入域编程，输出属于输出 codec 指定的 `0..t_out`。 其余输入不独立编程；奇数全域使用下文的独立入口。交错 LUT（ManyLUT）的有效输出数 `k` 为正， 补齐后的输出数为 `s = next_power_of_two(k)`，满足 `ceil(t/2) <= N/s`。callback 按输入优先 顺序接收 `(input, output_index)`，每个有效组合调用一次；切片包含相同顺序的 `D*k` 个值。 例如 `k=3` 时三个输出占用四个槽：编译器将第四槽置零，不调用 callback；求值端只返回三个密文。 所有输出共享一次盲旋转（BR）和密钥切换，再分别提取。 输出越多，旋转分辨率与输入噪声余量越低。这是一个输入求多个函数，不是独立密文批处理。
+前半区单函数或切片编译器为 `0..ceil(t_in/2)` 输入域编程，输出属于输出 codec 指定的 `0..t_out`。 其余输入不独立编程；奇数全域使用下文的独立入口。交错 LUT（ManyLUT）的有效输出数 `k` 为正， 补齐后的输出数为 `s = next_power_of_two(k)`，满足 `ceil(t/2) <= N/s`。callback 按输入优先 顺序接收 `(input, output_index)`，每个有效组合调用一次；切片包含相同顺序的 `D*k` 个值。 例如 `k=3` 时三个输出占用四个槽：编译器将第四槽置零，不调用 callback；求值端只返回三个密文。 所有输出共享一次盲旋转（BR）。GLWE 共享环 key switch 后分别提取；NTRU 每个输出分别返回并执行 LWE key switch。 输出越多，旋转分辨率与输入噪声余量越低。这是一个输入求多个函数，不是独立密文批处理。
 
 直接使用共享层时，`LookupTable` / `InterleavedLookupTable` 的 `try_from_fn`、`try_from_slice` 接收输入 codec、累加器模数和输出 codec，负责 unsigned Rounded 编码与检查。 奇数全域使用 `LookupTable::try_from_odd_full_domain_fn` / `_slice`；family 编译入口复用这些方法。
 
@@ -164,20 +154,21 @@ Raw 构造器 `LookupTable::try_new` / `InterleavedLookupTable::try_new` 显式�
 
 | 输出编码 | 函数 / 切片入口 | 解码 |
 | --- | --- | --- |
-| 默认：`input_plaintext_codec()` | `compile_lookup_table_fn(function)` / `compile_lookup_table_slice(values)` | `decryptor.decrypt(output)` |
-| 显式指定输出 codec | `compile_lookup_table_with_codec_fn(codec, function)` / `compile_lookup_table_with_codec_slice(codec, values)` | 用该 codec 解码 `decrypt_phase(output)` |
+| 默认：参数的明文模数，LUT 在 accumulator 模数下编码 | `compile_lookup_table_fn(function)` / `compile_lookup_table_slice(values)` | `decryptor.decrypt(output)` |
+| 显式指定输出 codec | `compile_lookup_table_with_codec_fn(codec, function)` / `compile_lookup_table_with_codec_slice(codec, values)` | 用返回模数下的 codec 解码 `decrypt_phase(output)` |
 
-交错和奇数全域方法采用同一命名规则。默认入口借用参数中已准备的 codec，不重新构造。 函数输出范围可以小于明文模数，例如 `x % 4` 仍可采用 `t=32` 编码；basic 示例使用这个默认流程。
+交错和奇数全域方法采用同一命名规则。默认入口复用参数中的 codec；NTRU 在 Q 下编译、返回 q 后解码。 函数输出范围可以小于明文模数，例如 `x % 4` 仍可采用 `t=32` 编码；basic 示例使用这个默认流程。
 
-显式版本以 `&RoundedCodec<T, M>` 为第一个参数。输入参数仍决定旋转中心与输入域； 输出 codec 决定 `t_out`，检查输出位于 `0..t_out`，并按 unsigned embedding 编码。 交错 LUT 的各列共用这个 codec；它只改变本次 LUT 的输出编码，不修改 parameters/context。 其密文模数必须与 accumulator 一致，否则返回 `OutputModulusMismatch`。 完整 PBS 链仍要求 `q_in = q_acc = q_out`。MVB 继续显式使用 unsigned `ScaledCodec`。
+显式版本以 `&RoundedCodec<T, M>` 为第一个参数。输入参数仍决定旋转中心与输入域； 输出 codec 决定 `t_out`，检查输出位于 `0..t_out`，并按 unsigned embedding 编码。 交错 LUT 的各列共用这个 codec；它只改变本次 LUT 的输出编码，不修改 parameters/context。 其密文模数必须与 accumulator 一致，否则返回 `OutputModulusMismatch`。 GLWE 输入、accumulator 和返回使用同一模数；NTRU 支持 Q→q，解码 codec 使用 q 和同一个 `t_out`，须预算缩放舍入及返回误差。MVB 继续显式使用 unsigned `ScaledCodec`。
 
-例如，在 `t_in=16` 的 NTRU context 中，用 `t_out=4` 编码 `x % 4`：
+例如，在 `t_in=16` 的 NTRU context 中，用 `t_out=4` 编码 `x % 4`。片段沿用已创建的 context、客户端和 evaluator：
 
-```rust
+```rust,ignore
 use primus_encoding::RoundedCodec;
 
+let table_codec = RoundedCodec::new(4u32, context.parameters().accumulator_ntru().cipher_modulus());
 let output_codec = RoundedCodec::new(4u32, context.parameters().external_lwe().cipher_modulus());
-let lut = context.parameters().compile_lookup_table_with_codec_fn(&output_codec, |x| (x % 4) as u32).unwrap();
+let lut = context.parameters().compile_lookup_table_with_codec_fn(&table_codec, |x| (x % 4) as u32).unwrap();
 let input = encryptor.encrypt_padded(7u32, &mut rng).unwrap();
 let output = evaluator.apply_lookup_table(&input, &lut);
 let message = output_codec.decode_value(decryptor.decrypt_phase(&output).unwrap());
@@ -190,7 +181,7 @@ GLWE 用 `context.parameters().accumulator_glwe().cipher_modulus()` 构造输出
 
 ## 奇数全域 PBS
 
-使用 `compile_odd_full_domain_lookup_table_fn(function)` 或其 `_slice` 形式； 需要不同输出编码时选择 `*_with_codec_*` 变体。这些方法编程整个 **`0..t_in`**。要求奇数 `t_in >= 3`、`t_in <= N`；切片按输入顺序包含 恰好 `t_in` 个输出。输入用普通 `encrypt`，随后复用 `apply_lookup_table_to`。 默认编码用 `decrypt` 解码；显式指定输出编码时使用对应 codec。 例如，context 配置 `t_in=15`，输出 codec 配置 `t_out=8`：
+使用 `compile_odd_full_domain_lookup_table_fn(function)` 或其 `_slice` 形式； 需要不同输出编码时选择 `*_with_codec_*` 变体。这些方法编程整个 **`0..t_in`**。要求奇数 `t_in >= 3`、`t_in <= N`；切片按输入顺序包含 恰好 `t_in` 个输出。输入用普通 `encrypt`，随后复用 `apply_lookup_table_to`。 默认编码用 `decrypt` 解码；显式指定输出编码时使用对应 codec。 例如，输入与 accumulator 共用密文模数、`t_in=15`，输出 codec 配置 `t_out=8`：
 
 ```rust,ignore
 let lut = context.parameters().compile_odd_full_domain_lookup_table_with_codec_fn(
@@ -208,28 +199,13 @@ assert_eq!(message, 7);
 
 ## 有界双输入 PBS
 
-`BivariateLookupTable::try_new(B, R, N, input_codec, output_codec, function)` 通过 `z = x + B*y` 编译 `0 <= x < B`、`0 <= y < R` 上的 `f(x,y)`。 `B`、`R` 必须为正，`D = B*R <= ceil(t_in/2)`，并满足普通 LUT 的容量和旋转中心检查。 只编译 `0..D` 前缀，回调按 `x` 优先变化的顺序求值；`B` 不必是二次幂。 输出 codec 独立选择 `t_out`，但必须使用相同密文模数。 这个共享类型适用于四个后端，不持有密钥或 scratch。
-
-例如，对 `t_in=16` 的 NTRU context 复用已有客户端和 evaluator：
-
-```rust
-use primus_tfhe::BivariateLookupTable;
-
-let compare = BivariateLookupTable::try_new(
-    3, 2, context.parameters().poly_length(),
-    context.parameters().input_plaintext_codec(),
-    &output_codec, |x, y| u32::from(x > y),
-).unwrap();
-let lhs = encryptor.encrypt_padded(2u32, &mut rng).unwrap();
-let rhs = encryptor.encrypt_padded(1u32, &mut rng).unwrap();
-compare.pack_to(&lhs, &rhs, &mut packed);
-evaluator.apply_lookup_table_to(&packed, compare.lookup_table(), &mut output);
-assert_eq!(output_codec.decode_value(decryptor.decrypt_phase(&output).unwrap()), 1);
-```
+`BivariateLookupTable::try_new(B, R, N, input_codec, output_codec, function)` 通过 `z = x + B*y` 编译 `0 <= x < B`、`0 <= y < R` 上的 `f(x,y)`。 `B`、`R` 必须为正，`D = B*R <= ceil(t_in/2)`，并满足普通 LUT 的容量和旋转中心检查。 只编译 `0..D` 前缀，回调按 `x` 优先变化的顺序求值；`B` 不必是二次幂。 输出 codec 独立选择 `t_out`，但必须使用相同密文模数。
 
 按外部 LWE 维数一次性分配 `packed` 和 `output`。 `pack_to` 用一遍模乘加写入 `lhs + B*rhs`，不分配内存；长度不同或缺少 body 时在写入前拒绝。 两输入必须具有相同的实际秘密、密文模数及传入的 unsigned 输入 codec，系数规范、明文不超出各自边界。 raw 密文无法验证这些语义条件。GLWE 使用其 order 对应的外部维数与 `input_plaintext_codec()`，无需增加密钥材料。
 
 打包将第二个输入的噪声放大 B 倍；`t_in` 不整除 q 时还可能产生编码舍入偏差。 PBS 前须同时预算两者，容量检查本身不保证足够噪声余量。 具体误差界见 `BivariateLookupTable` rustdoc。 这是有界单输出工作流，不是通用整数运算或 LWE 到环密文的 packing。
+
+当前构造器只有一个密文模数，输入与输出 codec 必须共用该模数。它适用于 GLWE，以及 q=Q 的 NTRU 配置；不支持 q≠Q 的 NTRU 双输入查表。普通 NTRU LUT 的 Q→q 支持并不解除此限制。
 
 ## 固定尺度分解式 MVB
 
@@ -240,10 +216,6 @@ assert_eq!(output_codec.decode_value(decryptor.decrypt_phase(&output).unwrap()),
 [GLWE NTT](../primus_tfhe_glwe_ntt/README.zh_CN.md#固定尺度分解式-mvb) 与 [NTRU NTT](../primus_tfhe_ntru_ntt/README.zh_CN.md#固定尺度分解式-mvb) 均支持此程序。 GLWE NTT 支持经典/稀疏密钥和两种 order；NTRU NTT 共享加密初始化和 BR，再逐输出 KS。 [GLWE Fourier](../primus_tfhe_glwe_fourier/README.zh_CN.md#固定尺度分解式-mvb) 支持 u32/u64、Native 偶尺度、经典 binary/ternary、sparse binary 和两种 order；因子按有符号整数变换， 还须预算 FFT 误差。[NTRU Fourier](../primus_tfhe_ntru_fourier/README.zh_CN.md#固定尺度分解式-mvb) 支持相同字宽和 Native 尺度，秘密为 binary/ternary；因子同时放大加密初始化和 BR 噪声，之后逐输出 KS。 `t_out` 不必为二次幂，检查的是实际尺度。 预处理产物借用一个 context，独立 evaluator 复用工作区。 本实现不含奇数全域 MVB 和 CBS 输出；代数与噪声条件见 [MVB 设计](IMPLEMENTATION.md#factorized-mvb)。
 
 [GLWE](../primus_tfhe_glwe_ntt/examples/mvb_thresholds.rs) 和 [NTRU](../primus_tfhe_ntru_ntt/examples/ntru_ntt_mvb_thresholds.rs) 阈值示例展示一个加密分数 生成交错容量之外的 17 个标志。交错容量和旋转余量足够时优先考虑 ManyLUT； 需要更多输出且差分因子范数较小时考虑 MVB，完整成本须按实际后端和参数测量。
-
-## 保留模数类型的旋转量化
-
-raw LUT 编译接收独立的输入模数类型和系数模数类型。 `rotation::RotationQuantizer::new(input_modulus, two_n, rotation_step)` 准备固定 模数对的转换，`exponent(value)` 无分配复用。旋转域 `two_n = 2N` 必须能由输入 系数类型表示；即使输入使用 Native 模数，目标 `two_n/rotation_step` 也为显式二次幂。 交错旋转先在 `two_n/rotation_step` 个位置内舍入，再乘与 LUT 补齐输出数相等的 `rotation_step`。完整几何及准备阶段的实现见[旋转几何](IMPLEMENTATION.md#rotation-geometry)。
 
 ## 进一步阅读
 

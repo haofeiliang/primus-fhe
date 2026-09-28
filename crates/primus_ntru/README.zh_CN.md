@@ -2,7 +2,10 @@
 
 [English](README.md) | 简体中文
 
-在 `Z_q[X]/(X^N + 1)` 上提供单多项式私钥 NTRU 加密与求值。NTT 使用显式域模数， Fourier 使用原生 wrapping 模数 `2^T::BITS`，两种表示保留独立数值契约。 本 crate 属于实验性 workspace，尚不提供稳定 API 或推荐安全参数。
+> [!WARNING]
+> 本 crate 属于实验性的 [Primus FHE](../../README.zh_CN.md) workspace。其 API 和数值契约尚不稳定，可能随时发生不兼容修改。 尚不提供推荐安全参数。
+
+在 `Z_q[X]/(X^N + 1)` 上提供单多项式私钥 NTRU 加密与求值。NTT 使用显式域模数， Fourier 使用原生 wrapping 模数 `2^T::BITS`，两种表示保留独立数值契约。
 
 ## 密文语义
 
@@ -26,7 +29,7 @@ NTT 生成拒绝含零点值的私钥。Fourier 生成检查原生环可逆性�
 
 `generate_padded_pair(params, active_length, ...)` 只采样有效前缀，尾部保持为零； 固定重量作用于该前缀。它与完整长度生成共用采样器，包括 ternary。最多尝试 1024 个 候选；Native 的固定 binary/ternary 分布若非零总数为偶数，在采样前返回 `NonInvertibleSecretKey`，其他未找到可用候选的情况返回 `KeyGenerationExhausted`。 返回私钥服从候选分布**在后端接受条件下的条件分布**；`distr()` 记录候选分布。
 
-一般 NTRU 支持非二元私钥；NTRU TFHE 层另行验证盲旋转所需的 二元、零填充控制私钥前提。
+一般 NTRU 支持非 binary 环秘密。NTRU TFHE 使用独立外部 LWE 秘密作为 binary/ternary 盲旋转控制，不要求环秘密为补零 binary。
 
 私钥和私有加密、生成、解密工作区会在析构时擦除自身缓冲区。显式工作区清零保留 可复用存储；显式私钥清零会销毁私钥。内置 FFT 后端也在析构时擦除 scratch；长寿命 engine 可在处理阶段结束后调用 `FftEngine::zeroize_workspace()`。调用方持有的明文及 相位输出有各自的生命周期。
 
@@ -51,7 +54,7 @@ cargo run -p primus_ntru --example automorphism
 | `NttNtruAutomorphismKey::apply_to`、`FourierNtruAutomorphismKey::apply_to` | 系数 NTRU 自同构后写出同一私钥下的系数 NTRU |
 | `apply_ntt_to`、`apply_fourier_to` | 变换域 NTRU 自同构后保留对应变换表示和原私钥 |
 
-`NttNlev::lift_monomial_to` / `FourierNlev::lift_monomial_to` 将公开多项式提升与首次 binary/ternary 旋转融合。传入 NLEV[1]、正向 NLEV 比特及可选的负向 NLEV 比特；只分解公开多项式，指数为零仍执行提升。`NttNtruCmuxWorkspace` / `FourierNtruCmuxWorkspace` 与后续三元 CMUX 共用一块组合控制缓冲，替代原 `*NtruTernaryCmuxContext` 类型。
+`NttNlev::lift_monomial_to` / `FourierNlev::lift_monomial_to` 将公开多项式提升与首次 binary/ternary 旋转融合。传入 NLEV[1]、正向 NLEV 比特及可选的负向 NLEV 比特；只分解公开多项式，指数为零仍执行提升。`NttNtruCmuxWorkspace` / `FourierNtruCmuxWorkspace` 与后续三元 CMUX 共用一块组合控制缓冲。
 
 Ternary 旋转一次构造 `NttNtruCmuxWorkspace::new(N, levels)` 或 `FourierNtruCmuxWorkspace::new(N, levels)`，随后复用工作区，传入互斥的正负 NGSW 比特控制。Fourier 使用 Native basis，两份控制必须使用 engine 对应的同一个 FFT 表实例 和 torus 缩放。指数已量化到 `0..2N`，负指数由内部派生。 NTRU TFHE 后端使用此原语执行经典 ternary blind rotation。
 
@@ -73,7 +76,7 @@ Sample extraction、NLev/NGSW 外积与 CMUX 位于 [`primus_lattice`](../primus
 
 运算先逐系数执行 `c' = round(q*c/Q) mod q`（最近舍入，半格向上），再提取 `b=0`、`i<=index` 时 `a[i]=-c'[index-i]`、否则 `a[i]=c'[N+index-i]`，最后在 q 下进行 LWE key switch。提取秘密为 f 的有符号系数向量，LWE 相位 `b-<a,f>=(f*c')[index]`。舍入必须先于提取取负，否则恰好半格时可能得到不同结果。模数转换和提取融合为一次 scratch 写入，复用 `primus_reduce::ModulusSwitch` 与 `primus_lwe::LweKeySwitchingKey`。
 
-两端模数均可为 native 或显式模数，也可以相等。实现与测试覆盖 u32→u32、u64→u64，包括完整位宽 native 源、接近整数位宽上限的显式源和舍入进位回零。不进行跨位宽窄化：u64 输入即使转换到较小 q，输出系数仍为 u64。输入须为 Q 下的规范剩余。误差预算须包含 f 加权的系数舍入、秘密加权的分解误差、LWE 密钥噪声和已有 NTRU/FFT 误差；Q 下的编码缩放到 q 一般不等于直接在 q 下编码。高层 NTRU TFHE 客户端与返回路径尚未迁移到此原语。
+两端模数均可为 native 或显式模数，也可以相等。实现与测试覆盖 u32→u32、u64→u64，包括完整位宽 native 源、接近整数位宽上限的显式源和舍入进位回零。不进行跨位宽窄化：u64 输入即使转换到较小 q，输出系数仍为 u64。输入须为 Q 下的规范剩余。误差预算须包含 f 加权的系数舍入、秘密加权的分解误差、LWE 密钥噪声和已有 NTRU/FFT 误差；Q 下的编码缩放到 q 一般不等于直接在 q 下编码。NTRU TFHE 后端已使用此原语返回外部 LWE。
 
 ## Trace、投影与展开
 
@@ -89,23 +92,9 @@ Sample extraction、NLev/NGSW 外积与 CMUX 位于 [`primus_lattice`](../primus
 
 求值密钥保存 `NGSW_f[f]`，通过加密 f 生成，无需显式计算有符号多项式平方。 输入误差乘 f，分解误差乘 f²，还须计入求值密钥与 FFT 误差。公开这种秘密相关 消息的密钥需要独立论证 key-dependent-message/circular-security 假设及参数； 代数推导和功能测试不构成安全性证明或 CBS 参数建议。消息 m 为 bit 时，输出可供 CMUX 使用。
 
-## 测试与基准
+## 进一步阅读
 
-```sh
-cargo test -p primus_ntru
-cargo clippy -p primus_ntru --all-targets -- -D warnings
-cargo +nightly test -p primus_ntru --features simd
-cargo bench -p primus_ntru --bench encryption
-cargo bench -p primus_ntru --bench primitives -- 'ntt/n4096/logb3'
-cargo bench -p primus_ntru --bench constant_gadget
-cargo bench -p primus_ntru --bench ternary_cmux
-```
-
-`encryption` 测量普通加密和未解码相位提取。`primitives` 测量 key switching、 自同构、trace/reverse trace、三个系数投影、八系数前缀展开及 scheme switching （输出 B=2^8、L=3），覆盖 `N = 1024/4096/8192`、`B = 2^3/2^10` 和分解基支持的最大层数。两者使用 `u64`、稀疏三元私钥及 sigma 3.2；NTT 使用 `q = 1_125_899_906_826_241`，Fourier 覆盖两个 FFT 后端。`constant_gadget` 保留常数 NLev 和八控制位 NGSW 生成基准。 设置、table、密钥生成及分配位于计时 closure 外。附加 `-- --test` 可执行 fixture 冒烟检查；该检查不测量性能，也不能证明可解密性。
-
-`ternary_cmux` 使用真实加密控制，在 `N=1024` 下比较融合旋转和两次 binary CMUX， 覆盖 NTT 与两种 FFT 的 u32/u64 并复用工作区；Fourier 在计时外用独立系数卷积报告相位误差。
-
-NTT 标量产品复用已有 CPU dispatch 与依赖的可选 SIMD 支持，NTRU 公开 API 不新增 ISA 选择参数。仅比较匹配工作负载的耗时；这些后端参数并不具有相同的安全强度。
+公开契约见 [rustdoc 对应源码](src)；[测试与基准指南](benches/README.zh_CN.md)保存覆盖范围、工作负载和复现命令。Workspace 验证入口见[测试指南](../../guides/development/testing.md)。
 
 ## 许可证
 

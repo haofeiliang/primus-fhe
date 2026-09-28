@@ -1,6 +1,7 @@
 # Lattice benchmarks for TFHE and RNS GLWE
 
-Part of the experimental [Primus FHE](../../../README.md) workspace; APIs and numerical contracts may change incompatibly.
+> [!WARNING]
+> Part of the experimental [Primus FHE](../../../README.md) workspace; APIs and numerical contracts may change incompatibly.
 
 Run each target independently to locate regressions without measuring every backend. These benchmarks isolate lattice operations; full blind rotation, key switching, and PBS must also be measured in their owning TFHE/scheme crates.
 

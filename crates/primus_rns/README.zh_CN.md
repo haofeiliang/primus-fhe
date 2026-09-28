@@ -92,7 +92,7 @@ alpha = ceil(full_q_moduli_count / dnum)
 
 固定分区大小必须恰好产生 `dnum` 个非空分区。例如五个 `Q` 模数和 `dnum = 3` 会产生 `[0..2, 2..4, 4..5]`；请求 `dnum = 4` 会被拒绝，因为相同 固定大小只能产生三个分区。
 
-在同一 modulus chain 的较短有序前缀 level 上，应使用 `HybridRNS::from_partitioning`，以保持与 key 兼容的固定分区边界。构造器只验证 active 模数数量；拥有 modulus chain 的 workspace 负责保证前缀关系。
+在同一 modulus chain 的较短有序前缀 level 上，应使用 `HybridRNS::from_partitioning`，以保持与 key 兼容的固定分区边界。构造器只验证 active 模数数量；modulus chain 的所有者负责保证前缀关系。
 
 每个分区都支持 approximate ModUp 到完整的 `Q || P` 基。Streaming 形式只 生成转换后的 complement limb，使上层 key switching 可以直接复用采用其他表示 的 partition limb。ModDown 将 `P` correction 转换到 `Q`，执行减法，再乘以 `P^-1 mod q_i`。
 

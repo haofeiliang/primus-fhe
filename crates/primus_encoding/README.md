@@ -17,15 +17,9 @@ Plaintext coefficient encoding and decoding for Primus FHE.
 | `ScaledCodec<T,M>` | `lift(m)*round(q/t) mod q` | Single-modulus GLWE/NTRU |
 | `BfvRnsCodec<T,M>` | `lift(m)*floor(Q/t) mod Q` | RNS coefficient scaling (`rns` feature) |
 
-Public types are available directly at the crate root; implementation modules are private. Single-modulus constructors use `new(plaintext_modulus, ciphertext_modulus)` with a typed ciphertext modulus, for example `RoundedCodec::new(256u64, NativeModulus::new())` for `q=2^64`, or `RoundedCodec::new(7u64, BarrettModulus::new(131))`. Constructors require `primus_reduce::PrepareModulusSwitch` and `ReduceAdd`; the full `RingContext` is unnecessary. Once constructed, codecs execute with `Modulus` and `ReduceAdd`, reusing concrete `ModulusSwitch<T>` values. `RingContext` includes preparation, so callers with that bound need no extra constraint. Codecs also support `UintModulus` and `CompactModulus` without requiring full ring arithmetic. `RoundedCodec` prepares fixed `t → q` and `q → t` conversions at construction. `ScaledCodec` keeps fixed-scale multiplication and shares the prepared decoder. Magnitude rounding and decoding reuse the modulus-switch kernels. Batch paths fuse signs, output writes and accumulation with their arithmetic without intermediate buffers; scalar wrappers retain their direct specialization paths. When `t` divides `q`, both encode with the exact integer scale `q/t`. Otherwise `RoundedCodec` rounds each scaled message, while `ScaledCodec` uses one rounded integer scale.
+Single-modulus constructors use `new(plaintext_modulus, ciphertext_modulus)`, for example `RoundedCodec::new(256u64, NativeModulus::new())` or `RoundedCodec::new(7u64, BarrettModulus::new(131))`. Construction requires `PrepareModulusSwitch` and `ReduceAdd`; `RingContext` already includes these capabilities, and `UintModulus` / `CompactModulus` also work. Construct once and reuse the codec. When t divides q, both encodings use exact scale q/t; otherwise Rounded rounds each message while Scaled uses one integer scale.
 
-Integer scales use shifts when the scale is a power of two, and ordinary one-word multiplication otherwise. The fixed-scale constructor's recovery bound guarantees `(t-1)*delta < q`, so magnitude encoding needs no modular product. Centered negation and accumulation still use the ciphertext modulus.
-
-For non-integral ratios, rounded encoding decomposes `q = a*t + r` and computes `m*a + floor((m*r + floor(t/2))/t)` on the message magnitude when the biased residual product fits one word. Otherwise it retains wide arithmetic.
-
-Decoding uses `round(c/delta) mod t` only when `t` divides `q`; a power-of-two rounded scale alone does not imply this identity. Other parameters use the native high-product or explicit narrow/wide ratio kernels. All batch arithmetic dispatch occurs outside coefficient loops.
-
-TFHE input encoding comes from its parameters; ordinary LUT compilation takes an explicit output `RoundedCodec`. Its `plaintext_modulus()` and `ciphertext_modulus()` expose the output plaintext and ciphertext moduli. The plaintext modulus may differ from the input, while the ciphertext modulus must match the accumulator. Clients can return a raw phase for decoding with that same output codec.
+The output `RoundedCodec` for ordinary TFHE LUTs uses the accumulator modulus and may choose a different plaintext modulus from the input. Decode with the same output plaintext modulus at the returned ciphertext modulus, especially for NTRU Q→q. See the [output encoding guide](../primus_tfhe/README.md#choosing-the-output-encoding).
 
 These are coefficient codecs. BFV/BGV integer slot packing, BGV's unscaled plaintext lifting, and CKKS canonical embedding are not implemented.
 
@@ -41,26 +35,12 @@ RNS encoding produces coefficient-domain `CrtPolynomial` data; callers perform N
 
 Single-modulus slice methods use `_to` for separate output and `_assign` for in-place updates. RNS uses `encode_coeffs_to`, `add_encode_coeffs_assign`, and `decode_coeffs_to`; polynomial length is inferred from the plaintext slice. Batch encoding validates message ranges and exact lengths before writing. Encoding inputs and decoding outputs use the coefficient type `T`, with canonical values in `[0,t)`. Scalar inputs are `T` and slices are `[T]`; applications handle integer or semantic type conversions at their boundaries.
 
-## Source layout
+## Further reading
 
-- `rounded.rs` and `scaled.rs`: the two single-modulus codecs and their APIs.
-- `integer_scale.rs`, `decode.rs`, and `helpers.rs`: shared private kernels and boundary helpers.
-- `bfv_rns/`: the BFV RNS codec; `mod.rs` owns parameters and construction, `encode.rs` implements encoding and accumulation, and `decode.rs` implements decoding and its workspace contract.
-
-Tests cover API consistency, independent arithmetic oracles, and BFV RNS contracts. `benches/plaintext_codec.rs` measures single-modulus arithmetic and scalar dispatch; `benches/bfv_rns.rs` measures RNS accumulation and decoding. Inputs span both centered halves and each ciphertext modulus. Codecs and reusable buffers are outside timing; destructive decode inputs are restored in fixed batches. Throughput counts plaintext coefficients, with the RNS limb count in case names.
+[Implementation notes](IMPLEMENTATION.md) record arithmetic kernels and benchmark boundaries. The [public API sources](src/lib.rs) document method contracts; the [testing guide](../../guides/development/testing.md) records validation scope.
 
 ## Features
 
 - Default: single-modulus codecs only.
 - `rns`: enables `primus_data`, `primus_poly`, and `primus_rns` dependencies.
 - `simd`: enables nightly SIMD arithmetic; does not enable `rns` by itself.
-
-## Validation
-
-```sh
-cargo test -p primus_encoding
-cargo test -p primus_encoding --features rns
-cargo +nightly test -p primus_encoding --features rns,simd
-cargo bench -p primus_encoding --bench plaintext_codec
-cargo bench -p primus_encoding --bench bfv_rns --features rns
-```

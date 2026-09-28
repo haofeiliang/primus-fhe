@@ -15,7 +15,7 @@ cargo run -p primus_tfhe_ntru_fourier --release --example ntru_fourier_basic
 
 [basic 示例](examples/ntru_fourier_basic.rs)展示参数 → context → 配对密钥 → 客户端 → 单个 LUT → 复用 evaluator 和密文缓冲。它计算 `x % 4`，输入和输出均采用 `t=32` 编码，直接用 `decrypt` 解码。 `compile_lookup_table_fn(function)` 默认使用参数 codec；需要不同输出明文模数时，使用 `compile_lookup_table_with_codec_fn(&output_codec, function)`，见[选择输出编码](../primus_tfhe/README.zh_CN.md#选择输出编码)。 公钥加密通过 `context.public_encryptor(&public)` 创建客户端，见[家族说明](../primus_tfhe_ntru/README.zh_CN.md#客户端与-lut)。 示例的外部 `q=2^24` 与环 `Q` 不同，LUT 编译在 `Q` 下，返回 LWE 在 `q` 下。
 
-示例默认使用 u32；将 `type Word = u32` 改为 `u64`；需要 TFHE-FFT 时，将 `RustFftTable as Table` 导入改为 `TfheFftTable as Table`，随后执行同一运行命令。每个文件内的 `parameters()` 直接构造 `TfheConfig`，集中列出尺寸、模数类型、秘密分布、噪声和 BR/KS 分解；CBS 示例还用 `circuit_config()` 明确输出、trace 和 scheme-switch 的分解。Basic PBS 使用 n=866/N=2048，CBS 使用 n=800/N=1024，MVB 和稀疏 PBS 使用 n=728/h=32/N=1024；数值选择见[参数矩阵](../../guides/development/tfhe-parameters.md)。每个示例只展示一个流程和复用同一组缓冲的两次请求。
+示例默认使用 u32；将 `type Word = u32` 改为 `u64`；需要 TFHE-FFT 时，将 `RustFftTable as Table` 导入改为 `TfheFftTable as Table`，随后执行同一运行命令。每个文件内的 `parameters()` 直接构造 `TfheConfig`，集中列出尺寸、模数类型、秘密分布、噪声和 BR/KS 分解；CBS 示例还用 `circuit_config()` 明确输出、trace 和 scheme-switch 的分解。[数值配置与验证](../../guides/development/tfhe-parameters.md)集中记录参数选择；每例复用同一组缓冲处理两次请求。
 
 示例区分客户端加密、服务端求值与客户端解密，见[双方职责与缓冲分配](../primus_tfhe/README.zh_CN.md#客户端与服务端边界)。
 
@@ -32,23 +32,19 @@ ManyLUT 通过交错共享一次盲旋转；分解式 MVB 通过公共因子生�
 
 ## 参数与表示
 
+Fourier 环只支持 `NativeModulus`；`PowOf2Modulus` 环不受支持。 NTRU 的外部 LWE 模数 q 可独立使用 `PowOf2Modulus`。
+
 `TfheParameters::try_from_config(TfheConfig { .. })` 检查数学配置； `TfheContext::<_, RustFftTable>::try_from_parameters(parameters)` 准备变换表。 已有表用 `TfheContext::try_new(parameters, table)` 绑定。 `TfheConfig`、`TfheParameters`、`Encryptor` 和 `Decryptor` 将家族 API 特化为 `NativeModulus`。 `TfheParameters<T, LM>` / `TfheContext<T, Table, LM>` 的 `LM` 指定独立外部模数类型（默认沿用后端模数类型）；`accumulator_modulus` 指定环 `Q`。
 
 `RustFftTable` 和 `TfheFftTable` 均支持 u32/u64。变换域密钥、数据和 evaluator 必须使用同一个 FFT 表实例，长度相同不能证明表示一致。
 
-PBS 在 `f,Q` 下首次融合和盲旋转，再逐系数 `Q→q`、提取相位系数并执行 LWE key switch，返回独立外部秘密 `s`。只有环秘密 `f` 做可逆性筛选，Fourier 还检查其逆的稳定性。ManyLUT 共享盲旋转，每个输出分别执行 LWE key switch。外部 binary/ternary 秘密无需补零、可逆性筛选或奇数重量。
-
-Classic binary/ternary BR 将首次 CMux 与公开 LUT 提升融合：第零坐标使用 NLEV 比特控制，后续坐标使用 NGSW。旋转后的 LUT 只分解一次，与 `I + (R-1)B+ + (R^-1-1)B-` 做外积；binary 省略 `B-`。首指数为零仍通过 `I=NLEV[1]` 提升。普通 PBS、ManyLUT、MVB 和 CBS 共用此路径。BR basis 必须能分辨 LUT 的有效尺度，包括 CBS 输出的最小 gadget 权重；参数形状检查不认证该数值预算。
-
 ## 复用 evaluator
 
-普通/交错调用共用 `Evaluator`，`_to` 写入已有输出。 PBS/MVB/CBS 交替使用方式集中在[共享所有权说明](../primus_tfhe/README.zh_CN.md#复用-evaluator)。
-
-使用 `FactorizedEvaluator::try_from_bootstrapper` 或 `CircuitBootstrapEvaluator::try_from_bootstrapper`，两者均拒绝 sparse 密钥。 普通 PBS 借用始终可用，`into_bootstrapper()` 无分配。
+`Evaluator` 的普通/交错 `_to` 调用复用工作区和已有输出。PBS、MVB 与 CBS 之间的所有权转换见[资源复用指南](../primus_tfhe/README.zh_CN.md#复用-evaluator)。
 
 ## 固定尺度分解式 MVB
 
-`context.compile_factorized_lookup_table_fn(&scaled_codec, input_domain_len, output_count, function)` 返回绑定该 context 实例的 `FourierFactorizedLookupTable`。 构造并复用 `FactorizedEvaluator`，或消费已有普通 evaluator。 输出用保留的 unsigned Scaled codec 解码，不能直接当作 Boolean 门输入。 `ScaledCodec` 的编译模数为 `Q`；返回输出使用缩放后的尺度 `(q/Q)*round(Q/t_out)`，用 `q` 下相同明文模数的 Scaled codec 解码，并预算其与 `round(q/t_out)` 的差及返回噪声。
+通过 `context.compile_factorized_lookup_table_fn` 编译并绑定 `FactorizedEvaluator`；程序借用该 context，输出使用 unsigned Scaled 编码。 编译 codec 使用 Q，返回解码 codec 使用 q 和同一个明文模数；须预算 `(q/Q)*round(Q/t_out)` 与 `round(q/t_out)` 的差及返回噪声。
 
 实际尺度 `round(2^BITS/t_out)` 必须为偶数，`t_out=10` 对 u32/u64 均可用。 奇数尺度返回 `LookupTableError::OddFactorizationScale`。因子按有符号整数变换，不作环面缩放； 须预算因子放大和 FFT 误差。
 
@@ -69,11 +65,7 @@ let mut evaluator = context.evaluator(&server)?;
 
 普通/交错 PBS 复用原 evaluator。CBS/MVB 拒绝 sparse 密钥，包括另传 CBS 材料的构造方式。 `server.sparse_bootstrapping_key()` 提供选择密文。
 
-首桶存储 NLEV selectors 和 NLEV dummy，按单项式加权聚合后直接提升旋转后的公开 LUT；后续桶聚合 NGSW 控制。首桶公开为空、未占用或指数为零时，仍处理 dummy 和加密零，不再单独生成稀疏初始化器。`first_bucket()` 返回首桶 NLEV 控制；`ngsw_bucket(j)` 仅接受 `j >= 1`，返回 NGSW 控制；两者均将 dummy 放在末尾。在线计算复用聚合与外积缓冲，不额外分配。
-
 外部秘密允许偶数重量。只有环秘密需要可逆且 Fourier 逆稳定；系数恢复和聚合 FFT 另引入数值误差。
-
-固定客户端后最多重试八张公开映射，不重新采样客户端秘密。 每个桶的加密零与 dummy 都贡献噪声；匹配成功不代表安全或完整失败概率得到认证。 见[稀疏旋转不变量](../primus_tfhe/IMPLEMENTATION.md#ternary-and-sparse-rotation)和[message/carry 示例](examples/ntru_fourier_sparse.rs)。
 
 ## 可选电路自举
 
@@ -85,15 +77,9 @@ let mut evaluator = context.evaluator(&server)?;
 
 ## One-hot CBS
 
-[One-hot 示例](examples/ntru_fourier_one_hot.rs)从两位输入生成四个 selector，用公开索引 `TARGET=2` 对应的 `delta_2` 控制 CMux；其他 `r` 修改 `TARGET` 即可。
+[One-hot 示例](examples/ntru_fourier_one_hot.rs)生成四个 selector，并用 `TARGET=2` 对应的 δ₂ 控制 CMux；修改 `TARGET` 选择其他分支。绑定 `OneHotCircuitBootstrapEvaluator::try_new(&context, &server)`，分配后复用 `_to` 调用。
 
-`OneHotCircuitBootstrapEvaluator::try_new(&context, &server)` 为一个 chunk 绑定现有 CBS 密钥；完整输出接口包含默认 selector r=0。也可通过 `try_from_bootstrapper` 复用 PBS 工作区，通过 `bootstrapper_mut()` 借用普通 PBS，最后用 `into_bootstrapper()` 取回工作区。首版支持 classic binary/ternary，拒绝 sparse 和缺少 CBS 材料的密钥；普通 CBS 接口保持不变。
-
-先调用 `allocate_nlev_output()` / `allocate_ngsw_output()`，再重复使用 `one_hot_nlev_to`、`one_hot_ngsw_to` 或 `one_hot_to(input, nlev, ngsw)`。三者每次均只执行一次 BR；只需要一种表示时不会生成另一种完整输出批次。NLEV 是 Q 下的系数表示，每行 N 个整数；NGSW 是 Fourier 表示，每行 N/2 个 Complex64。扁平布局为 `[selector][level][行元素]`，不含 padding；level 顺序来自 `evaluator.parameters().output_basis().scalar_iter()`。输出会完整覆盖，在线零额外分配。
-
-消费方只需要非零分支时，用 `allocate_nonzero_ngsw_output()` 分配，再调用 `one_hot_nonzero_ngsw_to(input, output)`。它仅生成 r=1..M-1 的 M-1 个 NGSW，按 `[r-1][level][行元素]` 紧凑排列，跳过 r=0 的投影和 scheme switch。输入 m=0 时，全部目标 bit 均为零。共享 BR、输入保护区和噪声要求不变；公开 LUT 首层仍使用全部 M 个 NLEV selectors。
-
-NLEV 用于公开多项式选择时，先用 `NlevCiphertext::write_fourier_form` 写入预分配的变换缓冲，再做外积；NGSW 可直接包装成 `FourierNgswCiphertext`，配合相同 basis 消费密文候选。完整调用和消费见 [one_hot 测试](tests/one_hot.rs)，编码、容量与噪声保护区见[共用 one-hot 契约](../primus_tfhe_ntru/README.zh_CN.md#one-hot-cbs)。
+完整/非零输出接口、布局与输入保护区见[家族 one-hot 契约](../primus_tfhe_ntru/README.zh_CN.md#one-hot-cbs)。NLEV 输出为 Q 下的系数，需要 `write_fourier_form` 转换才能做公开多项式外积；NGSW 已在 Fourier 表示。输入、密钥和候选必须满足本页的变换契约。
 
 ## 高精度查表
 
@@ -107,4 +93,6 @@ Rustdoc 按职责组织 `key`（服务端材料）、`circuit_bootstrap`（CBS�
 
 ## 进一步阅读
 
-[Boolean 门](../primus_tfhe/README.zh_CN.md#boolean-门) · [错误边界](../primus_tfhe/README.zh_CN.md#错误边界) · [实现说明](../primus_tfhe/IMPLEMENTATION.md) · [基准入口与性能取舍](../primus_tfhe/IMPLEMENTATION.md#performance-decisions-and-reproducibility)
+默认 features 为空；可选 `simd` 启用依赖中的 nightly SIMD 算术。
+
+[Boolean 门](../primus_tfhe/README.zh_CN.md#boolean-门) · [错误边界](../primus_tfhe/README.zh_CN.md#错误边界) · [实现说明](../primus_tfhe/IMPLEMENTATION.md) · [基准指南](../primus_tfhe/BENCHMARKS.md)

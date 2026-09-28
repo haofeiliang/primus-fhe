@@ -2,9 +2,12 @@
 
 [English](README.md) | 简体中文
 
+> [!WARNING]
+> 本 crate 属于实验性的 [Primus FHE](../../README.zh_CN.md) workspace。其 API 和数值契约尚不稳定，可能随时发生不兼容修改。
+
 `primus_lattice` 为 [Primus FHE](../../README.md) 提供密文存储、表示转换和底层格运算，由 GLWE/NTRU × Fourier/NTT 四条 TFHE 路径以及 RNS GLWE 实现共同使用。
 
-本 crate 属于实验性的 [Primus FHE](../../README.zh_CN.md) workspace，不承诺稳定 API。密钥生成、加密参数、编码策略、噪声管理和完整同态计算由 [`primus_glwe`](../primus_glwe)、[`primus_ntru`](../primus_ntru)、[`primus_glwe_rns`](../primus_glwe_rns) 等更高层负责。
+密钥生成、加密参数、编码策略、噪声管理和完整同态计算由 [`primus_glwe`](../primus_glwe)、[`primus_ntru`](../primus_ntru)、[`primus_glwe_rns`](../primus_glwe_rns) 等更高层负责。
 
 ## 密文类型
 

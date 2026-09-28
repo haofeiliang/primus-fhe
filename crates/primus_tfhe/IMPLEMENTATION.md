@@ -8,9 +8,11 @@ Let N be the negacyclic polynomial length, k the output count, s its next power 
 
 Compilation first encodes E(m)=round(m*q_in/t), then quantizes E(m) into 2M positions. Write R(x,q,L)=round(x*L/q) mod L. Both rounds use ties upward; merging them into round(2M*m/t) can change the centers. For example, N=16, s=1, t=3, q_in=5, m=1 gives center 13, rather than 11. Nearest-center intervals assign ties to the larger center. The front-half compiler terminates the programmed prefix D with the center min(R(E(D)),M) carrying -f(0). Capacity D<=M does not establish distinct centers or a sufficient noise margin.
 
-Online rotation quantizes every ciphertext coefficient as R_s(x)=s*R(x,q_in,2N/s). The exponent is -R_s(b)+sum_i R_s(a_i)*secret_i. It is not a single quantization of the LWE phase. Since s divides N, negacyclic wrapping preserves the output lane modulo s. The physical 2N must be representable by the coefficient type, including Native inputs. Raw compilation permits independent input and coefficient moduli; complete backends currently require equal ciphertext moduli. Output plaintext encoding can still differ.
+Online rotation quantizes every ciphertext coefficient as R_s(x)=s*R(x,q_in,2N/s). The exponent is -R_s(b)+sum_i R_s(a_i)*secret_i. It is not a single quantization of the LWE phase. Since s divides N, negacyclic wrapping preserves the output lane modulo s. The physical 2N must be representable by the coefficient type, including Native inputs. Raw compilation permits independent input and coefficient moduli. GLWE backends use one ciphertext modulus; NTRU backends support ring Q and independent external q, returning via coefficient-wise Q→q, phase extraction and LWE key switching. Output plaintext encoding can differ from the input. The separate BivariateLookupTable constructor currently requires a single common ciphertext modulus.
 
 For odd full domains t=2h+1, fold centers at N and negate upper-half outputs. The sorted input order is 0,h+1,1,h+2,...,h; the compiler rejects collisions of the actual rounded centers. Append center N with -f(0), with interval boundaries ceil((left+right)/2). Typical spacing N/t is half the front-half spacing; t<=N alone does not prove margin. See [front-half compilation](src/lookup_table/compile/front_half.rs) and [odd full-domain compilation](src/lookup_table/compile/odd_full_domain.rs).
+
+`rotation::RotationQuantizer::new(input_modulus, two_n, rotation_step)` prepares this fixed modulus-pair conversion; `exponent(value)` executes it without allocation. The target `two_n/rotation_step` is an explicit power of two even for Native inputs. Interleaved rotation quantizes into that smaller domain before multiplying by the padded output count.
 
 ## Ternary and sparse rotation
 
@@ -21,6 +23,20 @@ Sparse rotation uses a public map that independently assigns c distinct buckets 
 Matching retries only the public map, at most eight times with the same client secret. Successful publication conditions the map on that secret admitting a full matching. Repeated attempts reduce generation failure, not that secret/map correlation. Matching, rejection sampling and inverse preparation have no constant-time guarantee. NTRU samples an independent external LWE secret without ring rejection. Only the accumulator secret is conditioned on NTRU invertibility and, for Fourier, numerical stability. External fixed-weight binary secrets may have even weight. These conditioned distributions and evaluation-key KDM/circular-security assumptions need separate security analysis; functional tests do not certify parameters or tail bounds.
 
 GLWE initializes a trivial accumulator. Classic NTRU fuses public-polynomial lifting with coordinate zero: for P=T*X^(-b), form K=I+(X^a-1)B_plus+(X^(-a)-1)B_minus from NLEV controls and compute P odot K once (binary omits B_minus). Later coordinates remain NGSW. Zero a still lifts with I=NLEV[1]. Only P is decomposed; a small monomial difference is never approximately decomposed. With reconstruction P-epsilon, the first phase error is -epsilon*X^(a*s) plus the digit-weighted combined row noise. Sparse NTRU stores first-bucket selectors and dummy as NLEV, aggregates K_0=Dummy_0+sum_i X^a_i*Selector_(0,i), and lifts P directly via P odot K_0. Later buckets remain NGSW; there is no separate sparse initializer. The first phase error is -epsilon*H_0 plus digit-weighted aggregate row noise, where H_0 is the selected monomial (one for an unoccupied bucket). Even an empty first bucket must lift through its encrypted dummy. An NGSW row encrypts a gadget-scaled multiple of the accumulator secret and cannot perform this public-LUT lift. NTRU sparse CBS/MVB remain rejected at construction. See [shared mapping and matching](src/sparse.rs) and the [NTRU secret and CBS contracts](../primus_tfhe_ntru/README.md).
+
+## One-hot CBS
+
+For t=2M, M=2^tau, input chunk m uses unsigned Rounded encoding `round(q*m/(2M))`. Let L be the output gadget level count, W=next_power_of_two(L), S=N/M and A=N/(2MW), requiring 2MW<=N. Padding levels are zero; blind rotation quantizes at step W, not MW. With gadget weights g_l, compile
+
+```text
+T = sum_{j=1-A}^{A} sum_{l=0}^{L-1} g_l X^(l-jW).
+```
+
+If the actual coordinate-quantized phase is `u_bar=S*m+W*e mod 2N` with `-A<=e<A`, negative blind rotation followed by `X^(rS-l)` and full reverse trace targets `g_l*delta_r(m)`. The left-closed/right-open guard assigns a midpoint to the larger message. The error e includes encryption, encoding-rounding and per-coordinate quantization errors; it cannot be replaced with fresh LWE noise alone.
+
+NLEV selectors contain coefficient rows. Scheme switching produces NTT/Fourier NGSW with the same complete output basis. It adds the ordinary NTRU f/f² error contributions; Fourier also adds native halving and FFT errors. Full reverse trace works without a zero-tail message premise. Partial expansion cannot replace it merely because only a few output coefficients are requested.
+
+Full APIs materialize r=0..M-1. Consumers written as a default candidate plus nonzero-branch differences only need r=1..M-1, so the compact API skips r=0 projection and scheme switching. It does not remove the shared BR or enlarge its input guard. The first public high-precision LUT layer still needs all M NLEV selectors. See the [family API](../primus_tfhe_ntru/README.md#one-hot-cbs) and [lookup stage layout](../primus_tfhe_ntru_lut/IMPLEMENTATION.md#stage-and-buffer-layout).
 
 ## Factorized MVB
 
@@ -48,7 +64,7 @@ The following are historical observations on Ryzen 9 9955HX3D, x86_64 Linux, wit
 
 Common Boolean and 2+2 bit PBS parameters, their TFHE-rs reference and run commands are in [BENCHMARKS.md](BENCHMARKS.md). Other fixtures live with [shared LUT benchmarks](benches/lookup_table.rs) and the four backend bench directories: [GLWE NTT](../primus_tfhe_glwe_ntt/benches), [GLWE Fourier](../primus_tfhe_glwe_fourier/benches), [NTRU NTT](../primus_tfhe_ntru_ntt/benches), [NTRU Fourier](../primus_tfhe_ntru_fourier/benches). Use the same parameters, CPU affinity, toolchain and features for each comparison; keep setup outside online timing and do not compile concurrently with measurements. Historical n=512 fixtures are not current common PBS or n=728 sparse results or security recommendations.
 
-NTRU high-precision lookup storage, measurement boundaries and reproducible commands are in the [pipeline guide](../primus_tfhe_ntru_lut/IMPLEMENTATION.md). Its small-noise fixture and its NTT/native moduli do not define equal-security backends.
+NTRU high-precision lookup storage, measurement boundaries and reproducible commands are in the [pipeline guide](../primus_tfhe_ntru_lut/IMPLEMENTATION.md). Its current c8/d5/o8, n800/N1024 workload and NTT/native moduli do not define equal-security backends; the [measured baseline](../../guides/development/tfhe-benchmarks.md) records actual parameters and resources.
 
 Full derivations, rejected prototypes and raw measurements are preserved at commit 7940e33. For example, `git show 7940e33:docs/tfhe-refactor-costs.md` recovers the method and `git show 7940e33:docs/benchmarks/tfhe-r2.csv` recovers its data. Other archived sources include tfhe-mvb.md, tfhe-sparse-pbs.md, tfhe-ntru-sparse.md, simd-u64.md and glwe-coefficient-client.md under that commit's docs tree. The old implementation-decisions reference under its .agents tree includes unverified non-TFHE follow-ups; they are historical leads, not validated defects or current API contracts.
 

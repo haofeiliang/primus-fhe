@@ -2,7 +2,10 @@
 
 [English](README.md) | 简体中文
 
-Primus FHE 的单模数 LWE 密钥生成、私钥加密、公钥加密和密钥切换实现。 密文存储与算术来自 [`primus_lattice`](../primus_lattice/README.zh_CN.md)， 消息编码使用 [`RoundedCodec`](../primus_encoding/README.zh_CN.md)。 本 crate 属于实验性的 [Primus FHE](../../README.zh_CN.md) workspace，不承诺稳定 API。
+> [!WARNING]
+> 本 crate 属于实验性的 [Primus FHE](../../README.zh_CN.md) workspace。其 API 和数值契约尚不稳定，可能随时发生不兼容修改。
+
+Primus FHE 的单模数 LWE 密钥生成、私钥加密、公钥加密和密钥切换实现。 密文存储与算术来自 [`primus_lattice`](../primus_lattice/README.zh_CN.md)， 消息编码使用 [`RoundedCodec`](../primus_encoding/README.zh_CN.md)。
 
 ## API
 

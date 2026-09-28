@@ -1,6 +1,7 @@
 # Factor benchmark coverage
 
-Part of the experimental [Primus FHE](../../../README.md) workspace; APIs and numerical contracts may change incompatibly.
+> [!WARNING]
+> Part of the experimental [Primus FHE](../../../README.md) workspace; APIs and numerical contracts may change incompatibly.
 
 `shoup_factor` measures canonical precomputed Shoup multiplication for u32 and u64: output multiplication, in-place multiplication, multiply-add and multiply-subtract. It directly covers the `FactorSliceOps` kernels used by lattice scalar/factor ciphertext operations, including each RNS modulus block.
 
@@ -14,6 +15,6 @@ cargo +nightly bench -p primus_factor --bench shoup_factor --features simd
 
 Criterion uses 20 samples, a 1-second warm-up and a 5-second measurement. Build both variants before measuring, pin them to the same CPU and alternate baseline/candidate runs. Stable and nightly builds must be compared separately. The three accelerated u64 operations share a native kernel path when AVX-512F/DQ are available; u32 and multiply-subtract provide unchanged controls.
 
-The [Shoup evaluation](../../../docs/shoup-simd-evaluation.md) records code generation, numerical validation, paired measurements and the RNS/trace caller results.
+Independent numerical contracts and caller coverage are indexed in the [testing guide](../../../guides/development/testing.md#基础库的聚焦覆盖). Historical local timing reports are not required to run these benchmarks; record new comparisons with the conditions above.
 
 The prior u64-only fixture used a different modulus, factor and case names. Collect a new baseline. Use the same host/toolchain/features as the modulus benchmarks; default builds may also be auto-vectorized. Lazy multiplication and single-value factor operations are outside this canonical-slice baseline.

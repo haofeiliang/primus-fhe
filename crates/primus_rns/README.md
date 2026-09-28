@@ -20,7 +20,7 @@ English | [简体中文](README.zh_CN.md)
 | `HybridRNS<T, M>` | Bases and precomputations for one active hybrid-RNS level |
 | `HybridRNSPartition<T, M>` | One contiguous `Q` partition and its approximate ModUp converter |
 
-`T` is an unsigned FHE integer type. `M` is a `primus_reduce::FieldContext<T>`; [`BarrettModulus`](../primus_modulus/README.md) is the normal workspace for repeated polynomial operations.
+`T` is an unsigned FHE integer type. `M` is a `primus_reduce::FieldContext<T>`; [`BarrettModulus`](../primus_modulus/README.md) is the usual modulus implementation for repeated polynomial operations.
 
 ## Example
 
@@ -92,7 +92,7 @@ alpha = ceil(full_q_moduli_count / dnum)
 
 The fixed size must produce exactly `dnum` non-empty partitions. For example, five `Q` moduli with `dnum = 3` produce ranges `[0..2, 2..4, 4..5]`; requesting `dnum = 4` is rejected because the same fixed size would produce only three partitions.
 
-Use `HybridRNS::from_partitioning` at shorter, ordered-prefix levels of the same modulus chain so key-compatible partition boundaries remain fixed. The constructor validates the active modulus count; the owning modulus-chain workspace is responsible for preserving the prefix relationship.
+Use `HybridRNS::from_partitioning` at shorter, ordered-prefix levels of the same modulus chain so key-compatible partition boundaries remain fixed. The constructor validates the active modulus count; the owner of the modulus chain must preserve the prefix relationship.
 
 Each partition supports approximate ModUp into the complete `Q || P` basis. The streaming variant emits only converted complement limbs so higher-level key switching can reuse partition limbs in another representation. ModDown converts the `P` correction into `Q`, subtracts it, and multiplies by `P^-1 mod q_i`.
 
