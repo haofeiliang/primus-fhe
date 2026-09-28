@@ -5,7 +5,10 @@
 //! cargo bench -p primus_tfhe_glwe_ntt --bench pbs
 
 use primus_test_allocations::{CountingAllocator, measure};
-use primus_tfhe_test_support::benchmark::{NTT_Q32, NTT_Q64, PBS_WORKLOADS, PbsWorkload};
+use primus_tfhe_test_support::{
+    benchmark::{PBS_WORKLOADS, PbsWorkload},
+    parameters::glwe::ntt_pbs,
+};
 use std::hint::black_box;
 #[global_allocator]
 static ALLOCATOR: CountingAllocator = CountingAllocator;
@@ -20,9 +23,6 @@ use primus_tfhe_glwe_ntt::{
 };
 use rand::{SeedableRng, rngs::StdRng};
 
-mod support;
-use support::parameters_with_order;
-
 fn order_name(order: PbsOrder) -> &'static str {
     match order {
         PbsOrder::BootstrapKeyswitch => "pbs_ks",
@@ -33,10 +33,9 @@ fn order_name(order: PbsOrder) -> &'static str {
 fn bench_order<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
     c: &mut Criterion,
     order: PbsOrder,
-    q: T,
     workload: PbsWorkload,
 ) {
-    let parameters = parameters_with_order(order, q, workload);
+    let parameters = ntt_pbs::<T>(order, workload);
     let modulus = parameters.accumulator_glwe().cipher_modulus();
     let poly_length = parameters.accumulator_glwe().poly_length();
     let table = Table::new(poly_length.trailing_zeros(), modulus).unwrap();
@@ -269,8 +268,8 @@ fn bench_order<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
 fn bench_pbs(c: &mut Criterion) {
     for workload in PBS_WORKLOADS {
         for order in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
-            bench_order::<u32, U32NttTable>(c, order, NTT_Q32, workload);
-            bench_order::<u64, U64NttTable>(c, order, NTT_Q64, workload);
+            bench_order::<u32, U32NttTable>(c, order, workload);
+            bench_order::<u64, U64NttTable>(c, order, workload);
         }
     }
 }

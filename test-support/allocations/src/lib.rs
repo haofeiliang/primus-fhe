@@ -12,10 +12,16 @@ use std::{
 /// System allocator with opt-in, per-thread allocation measurement.
 pub struct CountingAllocator;
 
+/// Requested allocation traffic during one call to [`measure`].
+/// Reallocation contributes its new size to allocated bytes and its old size
+/// to released bytes. This is traffic, not peak or retained heap usage.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Allocations {
+    /// Successful allocations and reallocations; deallocations do not count.
     pub count: usize,
+    /// Sum of requested sizes for successful allocations and reallocations.
     pub allocated_bytes: usize,
+    /// Sum of sizes released by deallocations and successful reallocations.
     pub released_bytes: usize,
 }
 
@@ -24,6 +30,8 @@ thread_local! {
     static COUNTS: Cell<Allocations> = const { Cell::new(Allocations { count: 0, allocated_bytes: 0, released_bytes: 0 }) };
 }
 
+// Allocator callbacks may run during TLS teardown. Ignore an unavailable ACTIVE
+// flag, and keep bookkeeping allocation-free so it cannot recurse into itself.
 fn record(allocated: usize, released: usize, count: usize) {
     let _ = ACTIVE.try_with(|active| {
         if active.get() {
@@ -71,6 +79,18 @@ unsafe impl GlobalAlloc for CountingAllocator {
     }
 }
 
+/// Runs a closure while counting allocation traffic on the current thread.
+///
+/// Construct keys, inputs and reusable output/scratch before this call when
+/// checking an online operation. Values returned by the closure are dropped
+/// after measurement; allocations on worker threads are not counted. Install
+/// [`CountingAllocator`] as the binary's global allocator first.
+///
+/// Measurement is disabled again even if the closure unwinds; its panic is
+/// propagated.
+///
+/// # Panics
+/// Panics if called inside another measurement on the same thread.
 pub fn measure<R>(run: impl FnOnce() -> R) -> (R, Allocations) {
     struct Reset;
     impl Drop for Reset {

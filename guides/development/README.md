@@ -116,7 +116,7 @@ Constructing a different wrapper or iterator does not perform a transform. Fouri
 
 ## Compose an encrypted workflow
 
-The [TFHE parameter and boundary guide](tfhe-parameters-and-boundaries.md) maps q/Q, secret domains, PBS/CBS/MVB/one-hot/lookup paths and construction error ownership.
+The [TFHE parameter and boundary guide](tfhe-parameters-and-boundaries.md) maps q/Q, secret domains, PBS/CBS/MVB/one-hot/lookup paths and construction error ownership. The [parameter matrix](tfhe-parameters.md) records representative-size profiles by operation, word width and backend, with an opt-in numerical validator; ordinary tests keep small parameters.
 
 Choose the lowest layer that owns the operation. [LWE](../../crates/primus_lwe/README.md), [GLWE](../../crates/primus_glwe/README.md), [NTRU](../../crates/primus_ntru/README.md) and [RNS GLWE](../../crates/primus_glwe_rns/src/lib.rs) provide encryption, keys and evaluation primitives. [Shared TFHE](../../crates/primus_tfhe/README.md) provides LWE clients, encodings, LUT geometry and common evaluation interfaces; the [GLWE](../../crates/primus_tfhe_glwe/README.md) and [NTRU](../../crates/primus_tfhe_ntru/README.md) families define their own parameter and key contracts.
 

@@ -5,13 +5,17 @@
 /// Geometry and plaintext domain of one benchmark workload.
 #[derive(Clone, Copy)]
 pub struct PbsWorkload {
+    /// Stable label used in benchmark IDs and validation reports.
     pub name: &'static str,
+    /// Small LWE dimension for GLWE; independent external dimension for NTRU.
     pub lwe_dimension: usize,
+    /// Accumulator ring length N.
     pub poly_length: usize,
     /// Includes the padding bit: 4 for Boolean, 32 for 2 message + 2 carry bits.
     pub plaintext_modulus: u32,
 }
 
+/// Boolean and two-message-bit/two-carry-bit workloads at representative sizes.
 pub const PBS_WORKLOADS: [PbsWorkload; 2] = [
     PbsWorkload {
         name: "boolean",
@@ -27,12 +31,16 @@ pub const PBS_WORKLOADS: [PbsWorkload; 2] = [
     },
 ];
 
+/// Dense u32 PBS prime; circuit products use the wider profile in `parameters`.
 pub const NTT_Q32: u32 = 132_120_577;
+/// u64 NTT prime shared by dense PBS and circuit products.
 pub const NTT_Q64: u64 = 1_125_899_906_826_241;
 
 // Normalized torus standard deviations from TFHE-rs 1.8.1's
 // V1_8_PARAM_MESSAGE_2_CARRY_2_KS_PBS_GAUSSIAN_2M128, which aliases V1_4.
 // Select this explicit Gaussian set when comparing; the default shortint
 // alias uses TUniform noise and different LWE/KS parameters.
+/// Reference LWE sigma as a fraction of the ciphertext modulus, not coefficients.
 pub const LWE_STD_DEV: f64 = 2.046_151_696_979_124e-6;
+/// Reference GLWE sigma as a fraction of the ciphertext modulus, not coefficients.
 pub const GLWE_STD_DEV: f64 = 2.845_267_479_601_915e-15;

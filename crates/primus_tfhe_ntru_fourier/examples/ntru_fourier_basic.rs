@@ -4,7 +4,7 @@
 
 use primus_fft::RustFftTable;
 use primus_lwe::LweParameters;
-use primus_modulus::{BarrettModulus, NativeModulus};
+use primus_modulus::{NativeModulus, PowOf2Modulus};
 use primus_ntru::SecretKeyDistr;
 use primus_tfhe_ntru_fourier::{DecompositionConfig, TfheConfig, TfheContext, TfheParameters};
 
@@ -42,14 +42,14 @@ fn main() {
     println!("NTRU/Fourier: ordinary PBS with reused storage succeeded");
 }
 
-fn parameters() -> TfheParameters<u32, BarrettModulus<u32>> {
+fn parameters() -> TfheParameters<u32, PowOf2Modulus<u32>> {
     const N: usize = 256;
     const LWE_DIMENSION: usize = 8;
     let modulus = NativeModulus::new();
     let external_lwe = LweParameters::new(
         LWE_DIMENSION,
         16,
-        BarrettModulus::new(1 << 20),
+        PowOf2Modulus::new(1 << 20),
         SecretKeyDistr::UniformTernary,
         0.7,
     );

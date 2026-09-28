@@ -3,13 +3,13 @@
 //! These small parameters are for demonstration only, not for production.
 
 use primus_lwe::LweParameters;
-use primus_modulus::BarrettModulus;
+use primus_modulus::{BarrettModulus, PowOf2Modulus};
 use primus_ntru::SecretKeyDistr;
 use primus_ntt::U32NttTable;
 use primus_tfhe_ntru_ntt::{DecompositionConfig, TfheConfig, TfheContext, TfheParameters};
 
 fn main() {
-    let context = TfheContext::<_, U32NttTable>::try_from_parameters(parameters()).unwrap();
+    let context = TfheContext::<_, U32NttTable, _>::try_from_parameters(parameters()).unwrap();
     // Client setup: keep client_key local and give server_key to the server.
     let mut rng = rand::rng();
     let (client_key, server_key) = context.try_generate_keys(None, &mut rng).unwrap();
@@ -42,7 +42,7 @@ fn main() {
     println!("NTRU/NTT: ordinary PBS with reused storage succeeded");
 }
 
-fn parameters() -> TfheParameters<u32> {
+fn parameters() -> TfheParameters<u32, PowOf2Modulus<u32>> {
     const N: usize = 256;
     const LWE_DIMENSION: usize = 8;
     const Q: u32 = 132_120_577;
@@ -50,7 +50,7 @@ fn parameters() -> TfheParameters<u32> {
     let external_lwe = LweParameters::new(
         LWE_DIMENSION,
         16,
-        BarrettModulus::new(1 << 20),
+        PowOf2Modulus::new(1 << 20),
         SecretKeyDistr::UniformTernary,
         0.7,
     );

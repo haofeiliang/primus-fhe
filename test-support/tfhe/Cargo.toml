@@ -5,5 +5,34 @@ edition = "2024"
 publish = false
 
 [dependencies]
+primus_integer = { path = "../../crates/primus_integer" }
+primus_modulus = { path = "../../crates/primus_modulus" }
+primus_lwe = { path = "../../crates/primus_lwe" }
+primus_glwe = { path = "../../crates/primus_glwe" }
 primus_reduce = { path = "../../crates/primus_reduce" }
 primus_tfhe = { path = "../../crates/primus_tfhe" }
+primus_tfhe_glwe = { path = "../../crates/primus_tfhe_glwe" }
+primus_tfhe_ntru = { path = "../../crates/primus_tfhe_ntru" }
+
+[dev-dependencies]
+primus_encoding = { path = "../../crates/primus_encoding" }
+primus_fft = { path = "../../crates/primus_fft" }
+primus_ntt = { path = "../../crates/primus_ntt" }
+primus_poly = { path = "../../crates/primus_poly" }
+primus_ntru = { path = "../../crates/primus_ntru" }
+primus_tfhe_glwe_ntt = { path = "../../crates/primus_tfhe_glwe_ntt" }
+primus_tfhe_glwe_fourier = { path = "../../crates/primus_tfhe_glwe_fourier" }
+primus_tfhe_ntru_ntt = { path = "../../crates/primus_tfhe_ntru_ntt" }
+primus_tfhe_ntru_fourier = { path = "../../crates/primus_tfhe_ntru_fourier" }
+primus_tfhe_ntru_lut = { path = "../../crates/primus_tfhe_ntru_lut" }
+rand = { workspace = true }
+
+[features]
+default = []
+simd = [
+    "primus_tfhe_glwe_ntt/simd",
+    "primus_tfhe_glwe_fourier/simd",
+    "primus_tfhe_ntru_ntt/simd",
+    "primus_tfhe_ntru_fourier/simd",
+    "primus_tfhe_ntru_lut/simd",
+]

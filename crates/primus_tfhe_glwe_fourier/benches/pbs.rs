@@ -4,57 +4,22 @@
 //! cargo bench -p primus_tfhe_glwe_fourier --bench pbs
 
 use primus_test_allocations::{CountingAllocator, measure};
-use primus_tfhe_test_support::benchmark::{GLWE_STD_DEV, LWE_STD_DEV, PBS_WORKLOADS, PbsWorkload};
+use primus_tfhe_test_support::{
+    benchmark::{PBS_WORKLOADS, PbsWorkload},
+    parameters::glwe::fourier_pbs,
+};
 use std::hint::black_box;
 #[global_allocator]
 static ALLOCATOR: CountingAllocator = CountingAllocator;
 
 use criterion::{Criterion, criterion_group, criterion_main};
-use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{FftTable, RustFftTable, TfheFftTable, TorusFftValue};
-use primus_glwe::{
-    FourierGlweKeySwitchingWorkspace, GlweCiphertext, GlweParameters, SecretKeyDistr,
-};
-use primus_lwe::{LweCiphertext, LweParameters};
-use primus_modulus::NativeModulus;
+use primus_glwe::{FourierGlweKeySwitchingWorkspace, GlweCiphertext};
+use primus_lwe::LweCiphertext;
 use primus_tfhe_glwe_fourier::{
     BooleanGate, BootstrappingKey, FourierGlweBlindRotationWorkspace, PbsOrder, TfheContext,
-    TfheParameters,
 };
 use rand::{SeedableRng, rngs::StdRng};
-
-fn parameters<T: TorusFftValue>(order: PbsOrder, workload: PbsWorkload) -> TfheParameters<T> {
-    let q = 2.0f64.powi(T::BITS as i32);
-    let t = T::as_from(workload.plaintext_modulus);
-    let lwe = LweParameters::new(
-        workload.lwe_dimension,
-        t,
-        NativeModulus::new(),
-        SecretKeyDistr::UniformBinary,
-        q * LWE_STD_DEV,
-    );
-    let glwe = GlweParameters::new(
-        1,
-        workload.poly_length,
-        t,
-        NativeModulus::new(),
-        SecretKeyDistr::UniformBinary,
-        (q * GLWE_STD_DEV).max(6.4),
-    );
-    let (pbs_base, pbs_level, ks_base, ks_level) = if T::BITS == 64 {
-        (23, 1, 3, 5)
-    } else {
-        (8, 3, 2, 13)
-    };
-    TfheParameters::try_new(
-        lwe,
-        glwe,
-        ApproxSignedBasis::new(None, pbs_base, Some(pbs_level)),
-        ApproxSignedBasis::new(None, ks_base, Some(ks_level)),
-        order,
-    )
-    .unwrap()
-}
 
 fn order_name(order: PbsOrder) -> &'static str {
     match order {
@@ -71,7 +36,7 @@ fn bench_order<T: TorusFftValue, Table: FftTable>(
 ) {
     let poly_length = workload.poly_length;
     let table = Table::new(poly_length.trailing_zeros()).unwrap();
-    let context = TfheContext::try_new(parameters::<T>(order, workload), table).unwrap();
+    let context = TfheContext::try_new(fourier_pbs::<T>(order, workload), table).unwrap();
     let mut rng = StdRng::seed_from_u64(42);
     let ((client_key, server_key), keys) =
         measure(|| context.try_generate_keys(None, &mut rng).unwrap());

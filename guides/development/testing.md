@@ -45,6 +45,12 @@ cargo +nightly test --workspace --all-features --doc
 
 ## 测试参数与 CI 成本
 
+代表性大尺寸配置见 [TFHE 参数矩阵](tfhe-parameters.md)。使用 `cargo run --release -p primus_tfhe_test_support --example validate_parameters` 手动验证；加 `-- ntru/ntt/u32` 可在密钥生成前筛选后端和字宽。Nightly SIMD 使用 `cargo +nightly run --release -p primus_tfhe_test_support --example validate_parameters --features simd`。这是参数与误差余量诊断，不加入普通 nextest，也不是性能采样；配置构造器与各后端诊断分开维护。
+
+`test-support` 的职责入口见 [TFHE support](../../test-support/tfhe/src/lib.rs) 和[分配计数](../../test-support/allocations/src/lib.rs)。参数验证按家族/表示拆分，检查清单见 [validation 模块](../../test-support/tfhe/examples/validation/mod.rs)；入口只选择参数组和 seed。每组检查用简短注释说明目标契约、预期结果来源和输入选择理由，复杂部分解释模数/编码、gadget 相位和误差预算；示例文件说明用途及运行方式。后端的密钥生成、变换和相位提取保持显式，共享辅助函数集中真正相同的 oracle 或计量逻辑，避免引入统一后端框架。普通测试继续使用小参数；产品示例专注推荐用法，大参数诊断集中在这个独立入口。
+
+例如，Boolean 公共构造、输入维度及 NOT 输出维度由 [primus_tfhe/tests/boolean.rs](../../crates/primus_tfhe/tests/boolean.rs) 的独立测试验证，无需密钥或加密；四个后端的 Boolean 集成测试保留真实 PBS 输出维度拒绝、输出不变和拒绝后正常求值。`test-support` 只共享需要真实后端参与的真值表/门链断言，不因多个调用方就把公共层自己的测试搬进辅助库。
+
 普通测试优先选择能覆盖目标契约的最小合适参数，包括密文端到端测试。小 LWE 维数、小环和小消息域可以减少密钥生成、变换与穷举成本；不要求普通测试跟随示例/基准采用 n≈800、N=1024/2048。
 
 - 缩小几何和样本数时保留目标字宽、modulus 类型、分解/舍入边界及秘密分布。小尺寸不等于只能用小模数，u32/u64 的溢出和 lazy range 边界仍须独立覆盖。

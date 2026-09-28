@@ -1,19 +1,27 @@
-//! Common Boolean truth tables, gate chains and dimension checks.
+//! Common Boolean truth tables and gate chains for real backend evaluators.
+//! Constructor and Boolean-owned dimension checks live in primus_tfhe's tests;
+//! each backend checks its own PBS output boundary in its integration tests.
 
+use primus_integer::FheUint;
 use primus_reduce::RingContext;
 use primus_tfhe::{BooleanEvaluator, BooleanGate, LweCiphertext, ProgrammableBootstrap};
-use std::panic::{AssertUnwindSafe, catch_unwind};
 
-// All four backends use this oracle; key generation and client bindings stay local.
-pub fn check_truth_tables_and_chain<M, E>(
-    evaluator: &mut BooleanEvaluator<u32, M, E>,
-    inputs: &[LweCiphertext<u32>; 2],
-    output: &mut LweCiphertext<u32>,
-    current: &mut LweCiphertext<u32>,
-    decrypt: impl Fn(&LweCiphertext<u32>) -> bool,
+/// Checks all binary-gate, NOT and MUX truth tables against ordinary booleans,
+/// then feeds outputs through NAND -> NOT -> MUX -> XOR to check reusable encoding.
+///
+/// `inputs` encrypt `[false, true]` under the evaluator's key. `output` and
+/// `current` have the same dimension and are overwritten. Key generation and
+/// decryption stay with the backend-specific caller.
+pub fn check_truth_tables_and_chain<T, M, E>(
+    evaluator: &mut BooleanEvaluator<T, M, E>,
+    inputs: &[LweCiphertext<T>; 2],
+    output: &mut LweCiphertext<T>,
+    current: &mut LweCiphertext<T>,
+    decrypt: impl Fn(&LweCiphertext<T>) -> bool,
 ) where
-    M: RingContext<u32>,
-    E: ProgrammableBootstrap<u32>,
+    T: FheUint,
+    M: RingContext<T>,
+    E: ProgrammableBootstrap<T>,
 {
     for lhs in [false, true] {
         for rhs in [false, true] {
@@ -69,40 +77,4 @@ pub fn check_truth_tables_and_chain<M, E>(
     core::mem::swap(current, output);
     evaluator.evaluate_binary_to(BooleanGate::Xor, current, &inputs[1], output);
     assert!(!decrypt(output));
-}
-
-pub fn check_dimension_errors<M, E>(
-    evaluator: &mut BooleanEvaluator<u32, M, E>,
-    input: &LweCiphertext<u32>,
-) where
-    M: RingContext<u32>,
-    E: ProgrammableBootstrap<u32>,
-{
-    fn rejects_without_writing(
-        initial: &LweCiphertext<u32>,
-        operation: impl FnOnce(&mut LweCiphertext<u32>),
-    ) {
-        let mut output = initial.clone();
-        assert!(catch_unwind(AssertUnwindSafe(|| operation(&mut output))).is_err());
-        assert_eq!(&output, initial);
-    }
-
-    let wrong = LweCiphertext::new(vec![1; input.dimension()]);
-    // Binary preprocessing checks both inputs; the PBS backend checks output.
-    for (lhs, rhs, output) in [
-        (&wrong, input, input),
-        (input, &wrong, input),
-        (input, input, &wrong),
-    ] {
-        rejects_without_writing(output, |output| {
-            evaluator.evaluate_binary_to(BooleanGate::And, lhs, rhs, output);
-        });
-    }
-    // MUX has an additional else input; NOT bypasses the PBS boundary entirely.
-    rejects_without_writing(input, |output| {
-        evaluator.mux_to(input, input, &wrong, output);
-    });
-    for (input, output) in [(&wrong, input), (input, &wrong)] {
-        rejects_without_writing(output, |output| evaluator.not_to(input, output));
-    }
 }

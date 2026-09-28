@@ -1,3 +1,5 @@
+//! Backend Boolean integration: real PBS, encoding, rejection and evaluator reuse.
+
 use primus_lwe::LweParameters;
 use primus_modulus::BarrettModulus;
 use primus_ntru::SecretKeyDistr;
@@ -8,10 +10,12 @@ use primus_tfhe_ntru_ntt::{
 };
 use primus_tfhe_test_support::boolean;
 use rand::{SeedableRng, rngs::StdRng};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 
 #[global_allocator]
 static ALLOCATOR: allocations::CountingAllocator = allocations::CountingAllocator;
 
+/// Reuses one key setup for gate correctness, allocation checks and rejected-call recovery.
 fn check_context(distr: SecretKeyDistr) {
     let parameters = TfheParameters::<u32>::try_from_config(TfheConfig {
         accumulator_modulus: BarrettModulus::new(132_120_577),
@@ -57,7 +61,22 @@ fn check_context(distr: SecretKeyDistr) {
         );
     });
     assert_eq!(allocation.count, 0, "Boolean gates must reuse storage");
-    boolean::check_dimension_errors(&mut evaluator, &inputs[0]);
+    // Output dimensions are checked by the real PBS backend. Common Boolean
+    // input/NOT checks live in primus_tfhe/tests/boolean.rs and need no keys.
+    let sentinel = LweCiphertext::new(vec![1; inputs[0].dimension()]);
+    let mut wrong_output = sentinel.clone();
+    assert!(
+        catch_unwind(AssertUnwindSafe(|| {
+            evaluator.evaluate_binary_to(
+                BooleanGate::And,
+                &inputs[0],
+                &inputs[1],
+                &mut wrong_output,
+            );
+        }))
+        .is_err()
+    );
+    assert_eq!(wrong_output, sentinel);
 
     // Keep one public-key path and confirm reuse after rejected calls.
     for bit in [false, true, false] {
@@ -72,6 +91,7 @@ fn check_context(distr: SecretKeyDistr) {
     }
 }
 
+/// Checks binary/ternary client keys with the backend-specific ciphertext path.
 #[test]
 fn boolean_gates_preserve_truth_tables_chaining_and_storage() {
     for distr in [

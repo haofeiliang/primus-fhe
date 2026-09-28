@@ -116,7 +116,7 @@ assert_eq!(level_count, 9); // (k+1) 行 * L 层
 
 ## 组合密文工作流
 
-[TFHE 参数与边界指南](tfhe-parameters-and-boundaries.md) 说明 q/Q、秘密域、PBS/CBS/MVB/one-hot/查表链路及构造错误归属。
+[TFHE 参数与边界指南](tfhe-parameters-and-boundaries.md) 说明 q/Q、秘密域、PBS/CBS/MVB/one-hot/查表链路及构造错误归属。 [参数矩阵](tfhe-parameters.md) 列出按操作、字宽和后端验证的实际尺寸配置，以及独立的大参数验证入口；普通测试仍使用小参数。
 
 从拥有该运算的最低层开始。[LWE](../../crates/primus_lwe/README.zh_CN.md)、[GLWE](../../crates/primus_glwe/README.zh_CN.md)、[NTRU](../../crates/primus_ntru/README.zh_CN.md) 和 [RNS GLWE](../../crates/primus_glwe_rns/src/lib.rs) 提供加密、密钥及求值原语。[共享 TFHE](../../crates/primus_tfhe/README.zh_CN.md) 提供 LWE 客户端、编码、LUT 几何和公共求值接口；[GLWE](../../crates/primus_tfhe_glwe/README.zh_CN.md) 与 [NTRU](../../crates/primus_tfhe_ntru/README.zh_CN.md) 家族分别定义自身参数和密钥契约。
 
