@@ -16,7 +16,7 @@ fixtures, not assessed security parameters or equal-security comparisons.
 | Four backends' `sparse_pbs` | One complete classic or bucket-sparse PBS, or one server-key generation, for the same n728/h32/N1024/t8 secret profile |
 | Four backends' `mvb` | Produce k Scaled threshold bits from one input: D8/k3 compares independent PBS, interleaved ManyLUT and factorized MVB; D64/k17 compares independent and factorized because interleaving does not fit |
 | Four backends' `circuit_bootstrap` | One ordinary CBS into a reused gadget ciphertext; GLWE also has sparse CBS, NTRU also compares full M4 and compact M-1 one-hot batches |
-| `primus_tfhe_ntru_lut/pipeline` | One public LUT compilation/drop or one complete c8/d5/o8 lookup (16 input/output bits) at n800/N1024 |
+| `primus_tfhe_ntru_lut/pipeline` | `create_lut_and_drop`: create/drop one public high-precision LUT; `evaluate`: homomorphically evaluate all eight outputs at c8/d5/o8 (16 input/output bits), n800/N1024, excluding public LUT creation |
 
 MVB compares classic and sparse GLWE keys. NTRU sparse supports only ordinary
 and interleaved PBS, so it has just the D8/k3 independent/interleaved pair.
@@ -129,8 +129,8 @@ outputs/scratch are overwritten. Seed 42 establishes the client fixture; sparse
 keygen uses seed 4242. A known-result probe checks the measured operation, while
 exhaustive/phase-margin diagnostics remain in `validate_parameters` and tests.
 
-Only the complete high-precision target reports retained requested heap and
-asserts zero online allocations. Resource probes are untimed and allocation
+Only the high-precision `evaluate` IDs report retained requested heap and
+assert zero online allocations. Resource probes are untimed and allocation
 counting is disabled during samples; heap does not mean RSS or peak generation
 memory. See the [pipeline boundaries](../primus_tfhe_ntru_lut/IMPLEMENTATION.md#benchmark-fixture).
 
@@ -143,7 +143,7 @@ For the SIMD benchmark configuration only:
 
 ```sh
 taskset -c 0 cargo +nightly bench -p primus_tfhe_ntru_lut --bench pipeline --features simd -- \
-  '/complete$' --sample-size 20 --warm-up-time 0.5 --measurement-time 2 --noplot
+  '/evaluate$' --sample-size 20 --warm-up-time 0.5 --measurement-time 2 --noplot
 ```
 
 The [current measurement record](../../guides/development/tfhe-benchmarks.md)

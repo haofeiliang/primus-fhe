@@ -1,7 +1,7 @@
 // Ntt evaluation uses the public API and shared representative parameters.
 use std::hint::black_box;
 
-use super::{CONFIG, INPUT, compile, digit, heap};
+use super::{CONFIG, INPUT, benchmark_lut_creation, digit, heap};
 use criterion::{Criterion, SamplingMode, Throughput};
 use primus_integer::FheUint;
 use primus_modulus::PowOf2Modulus;
@@ -18,13 +18,13 @@ pub fn benchmark<T: FheUint, Table: MonomialNttTable<ValueT = T>>(c: &mut Criter
     let backend = "ntt";
     let parameters = ntru::circuit(ntt_circuit_modulus::<T>(), 8, SecretKeyDistr::UniformBinary);
     let name = format!("lookup/{backend}/u{}/n800_N1024/c8_d5_o8", T::BITS);
-    compile(c, &name, &parameters);
+    benchmark_lut_creation(c, &name, &parameters);
     let mut fixture = None;
     let mut reported = false;
     let mut group = c.benchmark_group(&name);
     group.sampling_mode(SamplingMode::Flat);
     group.throughput(Throughput::Elements(CONFIG.output_chunk_count as u64));
-    group.bench_function("complete", |b| {
+    group.bench_function("evaluate", |b| {
         let (context, client, server, table, input) = fixture.get_or_insert_with(|| {
             let context =
                 TfheContext::<T, Table, PowOf2Modulus<T>>::try_from_parameters(parameters.clone())

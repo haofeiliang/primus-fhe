@@ -75,12 +75,15 @@ Reproduce a selected ID with the source target named in the workload guide:
 
 ```sh
 taskset -c 0 cargo bench -p primus_tfhe_ntru_lut --bench pipeline -- \
-  '^lookup/ntt/u32/n800_N1024/c8_d5_o8/complete$' \
+  '^lookup/ntt/u32/n800_N1024/c8_d5_o8/evaluate$' \
   --sample-size 15 --warm-up-time 0.3 --measurement-time 1.2 --noplot \
   --save-baseline cleanup12
 ```
 
 Criterion saves estimates and confidence intervals under `target/criterion`.
+The pipeline IDs formerly named `complete` and `compile_and_drop` are now
+`evaluate` and `create_lut_and_drop`; timing boundaries are unchanged. Historical
+Criterion results remain under the old IDs.
 Record exact parameters and features when making a later comparison; do not
 reuse historical baseline names across different geometries.
 

@@ -90,7 +90,10 @@ The [parameter guide](../../guides/development/tfhe-parameters.md) records examp
 ## Benchmarks
 
 ```sh
-cargo bench -p primus_tfhe_ntru_lut --bench pipeline
+# Create and drop one public high-precision LUT.
+cargo bench -p primus_tfhe_ntru_lut --bench pipeline -- '/create_lut_and_drop$'
+# Homomorphically evaluate all output chunks using a prepared LUT and workspace.
+cargo bench -p primus_tfhe_ntru_lut --bench pipeline -- '/evaluate$'
 ```
 
-See the [benchmark fixture](IMPLEMENTATION.md#benchmark-fixture) for workloads, timing boundaries and resource measurements.
+Creation includes allocation, coefficient filling and destruction. Evaluation excludes key generation, public LUT creation, input encryption and workspace allocation. See the [benchmark fixture](IMPLEMENTATION.md#benchmark-fixture) for workloads and resource measurements.

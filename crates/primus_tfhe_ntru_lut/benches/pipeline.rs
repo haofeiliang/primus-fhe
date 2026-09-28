@@ -1,6 +1,7 @@
 //! Public high-precision lookup: 8 two-bit input/output chunks, d=5, n800/N1024.
-//! One complete lookup per iteration; keys, tables, encryption and reusable buffers
-//! are untimed. Separate compilation IDs include allocation/filling/drop of a LUT.
+//! `create_lut_and_drop` measures public LUT allocation, filling and destruction.
+//! `evaluate` measures one homomorphic lookup producing all output chunks;
+//! keys, public LUT creation, encryption and reusable buffers are untimed.
 //! No production-source copies or private-stage hooks are used.
 //! Run: cargo bench -p primus_tfhe_ntru_lut --bench pipeline
 

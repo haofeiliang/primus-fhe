@@ -90,7 +90,10 @@ Evaluator 借用 context、server key 和 table，并在构造时分配全部缓
 ## 基准
 
 ```sh
-cargo bench -p primus_tfhe_ntru_lut --bench pipeline
+# 创建并释放一个公开的高精度 LUT。
+cargo bench -p primus_tfhe_ntru_lut --bench pipeline -- '/create_lut_and_drop$'
+# 使用已准备的 LUT 和工作区，同态求值全部输出 chunk。
+cargo bench -p primus_tfhe_ntru_lut --bench pipeline -- '/evaluate$'
 ```
 
-工作负载、计时边界与资源统计见[基准说明](IMPLEMENTATION.md#benchmark-fixture)。
+创建计时包含分配、系数填充和释放；求值计时不包含密钥生成、公开 LUT 创建、输入加密和工作区分配。工作负载与资源统计见[基准说明](IMPLEMENTATION.md#benchmark-fixture)。

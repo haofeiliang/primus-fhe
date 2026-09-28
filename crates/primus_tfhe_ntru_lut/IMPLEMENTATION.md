@@ -51,7 +51,7 @@ Table products borrow one-hot CBS's external-product workspace; Fourier transfor
 
 The [pipeline benchmark](benches/pipeline.rs) calls the public evaluators.
 [Support](benches/support/mod.rs) holds only the public layout, cleartext function,
-compilation timing and heap reporting; its NTT/Fourier modules keep concrete
+creation timing and heap reporting; its NTT/Fourier modules keep concrete
 backend types. It neither includes production source files nor exposes scratch.
 
 | Parameter | Value |
@@ -64,15 +64,15 @@ backend types. It neither includes production source files nor exposes scratch.
 | Layout | c8/d5/o8: 65536 inputs, 64 polynomials per output, K=N=1024 |
 | Public function / input / seed | `(x*x+3*x+7) mod 65536` / 43981 / 42 |
 
-One `complete` iteration generates selectors for eight input chunks, selects,
+One `evaluate` iteration generates selectors for eight input chunks, selects,
 rotates and returns all eight output ciphertexts. Keys, public LUT compilation,
 encryption, validation and reusable workspace allocation are outside timing.
 Throughput counts eight output ciphertexts, not eight independent requests.
-The separate `compile_and_drop` IDs include allocation, filling and destruction
-of one public LUT; Fourier registers this once per word width because the two
-FFT engines do not affect coefficient compilation.
+The separate `create_lut_and_drop` IDs include allocation, filling and destruction
+of one public high-precision LUT; Fourier registers this once per word width
+because the two FFT engines do not affect coefficient compilation.
 
-The selected complete fixture reports retained requested heap for combined
+The selected evaluation fixture reports retained requested heap for combined
 client/server keys, the public LUT, evaluator workspace and caller outputs.
 Context/tables, allocator metadata, stack and peak transient generation storage
 are excluded. An untimed evaluation asserts zero online allocations and checks
@@ -90,10 +90,12 @@ contracts remain covered by library tests and lower-level primitive benchmarks.
 cargo bench -p primus_tfhe_ntru_lut --bench pipeline -- --list
 cargo bench -p primus_tfhe_ntru_lut --bench pipeline -- --test
 taskset -c 0 cargo bench -p primus_tfhe_ntru_lut --bench pipeline -- \
-  '/complete$' --sample-size 20 --warm-up-time 0.5 --measurement-time 2 --noplot
+  '/create_lut_and_drop$' --sample-size 20 --warm-up-time 0.5 --measurement-time 2 --noplot
+taskset -c 0 cargo bench -p primus_tfhe_ntru_lut --bench pipeline -- \
+  '/evaluate$' --sample-size 20 --warm-up-time 0.5 --measurement-time 2 --noplot
 # SIMD configuration; use the same nightly compiler for both sides of a feature comparison.
 taskset -c 0 cargo +nightly bench -p primus_tfhe_ntru_lut --bench pipeline --features simd -- \
-  '/complete$' --sample-size 20 --warm-up-time 0.5 --measurement-time 2 --noplot
+  '/evaluate$' --sample-size 20 --warm-up-time 0.5 --measurement-time 2 --noplot
 ```
 
 Criterion defaults apply unless the command overrides them. `--list` performs

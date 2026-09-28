@@ -1,4 +1,4 @@
-// Shared public LUT geometry, cleartext function and compilation measurement.
+// Shared public LUT geometry, cleartext function and creation measurement.
 // Backend modules keep their concrete transform/context/evaluator types.
 
 use std::hint::black_box;
@@ -35,14 +35,14 @@ pub fn heap(name: &str, allocation: Allocations) {
     );
 }
 
-// Compilation is independent of the transform engine; Native is registered
+// Public LUT creation is independent of the transform engine; Native is registered
 // only once per word width, even though evaluation covers both FFT engines.
-pub fn compile<T: FheUint, M: RingContext<T>, LM: RingContext<T>>(
+pub fn benchmark_lut_creation<T: FheUint, M: RingContext<T>, LM: RingContext<T>>(
     c: &mut Criterion,
     name: &str,
     parameters: &TfheParameters<T, M, LM>,
 ) {
-    c.bench_function(&format!("{name}/compile_and_drop"), |b| {
+    c.bench_function(&format!("{name}/create_lut_and_drop"), |b| {
         b.iter(|| {
             black_box(
                 HighPrecisionLookupTable::try_new(black_box(parameters), CONFIG, digit::<T>)

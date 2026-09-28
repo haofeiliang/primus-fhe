@@ -62,7 +62,7 @@ Memory reduction is established; latency is a tradeoff. RustFFT was about 2.3% s
 For future comparisons, use the pipeline target on an available fixed CPU and separate baseline names for each revision. The command below measures the current geometry; reproducing the historical numbers requires the old fixture from `e55ec2e` and its comparison revision:
 
 ```sh
-taskset -c 0 cargo +nightly bench -p primus_tfhe_ntru_lut --bench pipeline --features simd -- '/complete$' --sample-size 20 --warm-up-time 0.5 --measurement-time 2 --noplot --save-baseline workspace-current
+taskset -c 0 cargo +nightly bench -p primus_tfhe_ntru_lut --bench pipeline --features simd -- '/evaluate$' --sample-size 20 --warm-up-time 0.5 --measurement-time 2 --noplot --save-baseline workspace-current
 ```
 
 Construction heap and online allocation are measured by that harness; key-generation latency and Vec-to-aligned-key conversion latency were not claimed or optimized. The lattice comparisons can be repeated with `ntru_ntt` and `ntru_fourier`, filtering `n1024.*external_product_coeff`, and preparing a second key with `AVec::from_iter(CACHELINE_ALIGN, key.as_ref().iter().copied()).into_boxed_slice()` before timing. Borrow it through the same NGSW slice view as the ordinary key.
