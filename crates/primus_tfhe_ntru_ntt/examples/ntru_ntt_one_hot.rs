@@ -97,7 +97,7 @@ fn main() {
     let mut cbs = OneHotCircuitBootstrapEvaluator::try_new(&context, &server_key).unwrap();
     let mut selectors = cbs.allocate_ngsw_output();
     let cbs_parameters = cbs.parameters();
-    let selector_len = cbs_parameters.output_nlev_len(); // L*N NTT values per NGSW.
+    let selector_len = cbs.ngsw_selector_len(); // L*N NTT values per NGSW.
     let mut selected = context.allocate_accumulator_ciphertext();
 
     for message in [TARGET as Word, 0] {

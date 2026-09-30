@@ -96,6 +96,9 @@ fn selectors(distr: SecretKeyDistr) {
     let mut ngsw_only = ngsw.clone();
     let mut nonzero_ngsw = evaluator.allocate_nonzero_ngsw_output();
     let selector_len = L * N;
+    assert_eq!(evaluator.ngsw_selector_len(), selector_len);
+    assert_eq!(evaluator.ngsw_batch_len(), M * selector_len);
+    assert_eq!(ngsw.len(), evaluator.ngsw_batch_len());
     assert_eq!(nonzero_ngsw.len(), (M - 1) * selector_len);
     let mut coefficients = NtruCiphertext::<Vec<u64>>::zero(N);
     let mut selected = NtruCiphertext::<Vec<u64>>::zero(N);

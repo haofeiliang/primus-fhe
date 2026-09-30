@@ -107,6 +107,21 @@ where
         self.pbs.blind_rotation.rotation.external_product()
     }
 
+    /// Returns the storage length of one transformed NGSW selector: L*N NTT ring elements.
+    /// This is an element count, not a byte count or the length of the whole batch.
+    #[must_use]
+    pub fn ngsw_selector_len(&self) -> usize {
+        self.parameters().output_nlev_len()
+    }
+
+    /// Returns the complete transformed NGSW batch length: M*L*N NTT ring elements.
+    /// Includes every branch r=0..M-1 in selector-major order. The nonzero-only
+    /// batch omits exactly one [`Self::ngsw_selector_len`] block.
+    #[must_use]
+    pub fn ngsw_batch_len(&self) -> usize {
+        self.lookup_table.output_nlev_len()
+    }
+
     /// Allocates M*L*N coefficients for all NLEV selectors. Reuse with [`Self::one_hot_nlev_to`].
     #[must_use]
     pub fn allocate_nlev_output(&self) -> Vec<T> {
@@ -116,14 +131,14 @@ where
     /// Allocates all transformed NGSW selectors: M*L*N elements.
     #[must_use]
     pub fn allocate_ngsw_output(&self) -> Vec<T> {
-        vec![T::ZERO; self.lookup_table.output_nlev_len()]
+        vec![T::ZERO; self.ngsw_batch_len()]
     }
 
     /// Allocates (M-1)*L*N elements for selectors r=1..M-1.
     /// Reuse with [`Self::one_hot_nonzero_ngsw_to`].
     #[must_use]
     pub fn allocate_nonzero_ngsw_output(&self) -> Vec<T> {
-        vec![T::ZERO; self.lookup_table.output_nlev_len() - self.parameters().output_nlev_len()]
+        vec![T::ZERO; self.ngsw_batch_len() - self.ngsw_selector_len()]
     }
 
     /// Borrows ordinary PBS operations without allocation or changing the bound resources.
@@ -215,7 +230,7 @@ where
         );
 
         let nlev_len = parameters.output_nlev_len();
-        let ngsw_len = nlev_len;
+        let ngsw_len = self.ngsw_selector_len();
         let selector_count = self.lookup_table.selector_count() - first_selector;
         if let Some(output) = &nlev_output {
             assert_eq!(

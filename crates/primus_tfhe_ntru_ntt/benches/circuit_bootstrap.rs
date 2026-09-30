@@ -117,7 +117,7 @@ fn one_hot<T: FheUint, Table: MonomialNttTable<ValueT = T>>(c: &mut Criterion, b
                 // Semantic ciphertext iteration keeps selector boundaries tied
                 // to the public CBS layout, including compact index r-1.
                 for (index, control) in
-                    NttNgswIter::new(&output, parameters.output_nlev_len()).enumerate()
+                    NttNgswIter::new(&output, evaluator.ngsw_selector_len()).enumerate()
                 {
                     control.cmux_to(
                         lhs,

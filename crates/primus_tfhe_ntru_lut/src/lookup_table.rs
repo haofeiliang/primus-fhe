@@ -1,8 +1,10 @@
-use primus_encoding::{PlaintextEmbedding, RoundedCodec};
 use primus_integer::FheUint;
+use primus_poly::Polynomial;
 use primus_reduce::RingContext;
 use primus_tfhe::LweCiphertext;
 use primus_tfhe_ntru::{OneHotBootstrapError, TfheParameters};
+
+mod compile;
 
 /// Chunk counts and the split between table selection and coefficient selection.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -13,7 +15,7 @@ pub struct LookupTableConfig {
     pub output_chunk_count: usize,
     /// Number of low input chunks selecting a coefficient within a polynomial.
     /// May be zero or all input chunks; M raised to this count must fit in N.
-    /// For fixed N and M, increasing this count reduces table storage and CMux
+    /// For fixed N and M, increasing this count reduces worst-case table storage and CMux
     /// work, at the cost of one more rotation product per output chunk.
     pub coefficient_chunk_count: usize,
 }
@@ -52,18 +54,28 @@ pub enum LookupTableError {
     OneHot(#[from] OneHotBootstrapError),
 }
 
+/// Validated logical geometry, independent of polynomial sharing or selection pruning.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Layout {
+    /// Input/output chunk counts and the low-chunk/table-chunk partition.
     pub config: LookupTableConfig,
+    /// Number M of possible values per padded chunk: half the plaintext modulus.
     pub radix: usize,
+    /// Number tau of bits per chunk, with M=2^tau.
     pub chunk_bits: usize,
+    /// Ring degree N, including each polynomial's zero-padded tail.
     pub polynomial_length: usize,
+    /// Complete input domain size M^c, which must fit in usize.
     pub input_value_count: usize,
+    /// Number K=M^d of meaningful coefficients in each polynomial.
     pub entries_per_polynomial: usize,
+    /// Logical prefix count P=M^(c-d), before any storage sharing.
     pub polynomials_per_output: usize,
 }
 
 impl Layout {
+    /// Derives the chunk geometry and checks domain size and coefficient capacity.
+    /// Allocation sizes are checked separately during compilation; this allocates nothing.
     fn try_new<T: FheUint>(
         plaintext_modulus: T,
         polynomial_length: usize,
@@ -88,7 +100,7 @@ impl Layout {
             .checked_mul(config.input_chunk_count)
             .filter(|&bits| bits < usize::BITS as usize)
             .ok_or(LookupTableError::StorageSizeOverflow)?;
-        // The complete M^c-entry domain is materialized. Its size, not just
+        // The complete M^c-entry domain is enumerated. Its size, not just
         // its largest input value, must fit in usize.
         let input_value_count = 1usize << input_bit_count;
         // d <= c makes this shift safe after the input-bit-count check.
@@ -108,14 +120,19 @@ impl Layout {
         })
     }
 
+    /// Logical high-chunk count c-d, even if all outputs bypass table selection.
     pub fn table_chunk_count(self) -> usize {
         self.config.input_chunk_count - self.config.coefficient_chunk_count
     }
 
+    /// Number P/M of ciphertext candidates after the first public selection layer.
+    /// Returns zero when c=d; selection pruning does not change this logical count.
     pub fn candidate_count(self) -> usize {
         self.polynomials_per_output / self.radix
     }
 
+    /// Checks all chunk counts and LWE dimensions before evaluation writes any data.
+    /// Panics on a shape mismatch; key identity, encoding and noise are not checked here.
     pub fn check_io<T: FheUint>(
         self,
         input: &[LweCiphertext<T>],
@@ -143,7 +160,9 @@ impl Layout {
     }
 }
 
-pub(crate) fn allocation_len<T>(factors: &[usize]) -> Result<usize, LookupTableError> {
+/// Computes an element count, checking multiplication and the isize::MAX byte limit.
+/// Requires a nonzero-sized T. Does not allocate or check available memory.
+pub(crate) fn checked_allocation_len<T>(factors: &[usize]) -> Result<usize, LookupTableError> {
     factors
         .iter()
         .try_fold(1usize, |len, &factor| len.checked_mul(factor))
@@ -157,8 +176,9 @@ pub(crate) fn allocation_len<T>(factors: &[usize]) -> Result<usize, LookupTableE
 /// holds K=M^d table entries: z=x mod K selects a coefficient and p=x/K
 /// selects a polynomial. Polynomial p stores `E_Q(F(p*K+z,j))` at coefficient
 /// z for output chunk j. Each polynomial has N coefficients; its unused
-/// coefficients K..N are zero. Storage is
-/// `[output chunk][table prefix][coefficient]`; all exponents are nonnegative.
+/// coefficients K..N are zero. Identical polynomials share physical storage;
+/// logical `(output chunk, table prefix)` indices resolve through [`Self::polynomial`].
+/// All exponents are nonnegative.
 /// The evaluator selects polynomial p, rotates by X^(-z), then returns its
 /// constant coefficient at q under the external LWE secret.
 ///
@@ -167,10 +187,20 @@ pub(crate) fn allocation_len<T>(factors: &[usize]) -> Result<usize, LookupTableE
 /// the subsequent encrypted choices still carry additive ciphertext noise.
 pub struct HighPrecisionLookupTable<T: FheUint> {
     pub(crate) layout: Layout,
-    pub(crate) coefficients: Vec<T>,
+    coefficients: Box<[T]>,
+    outputs: Box<[OutputTable]>,
     plaintext_modulus: T,
     input_modulus: Option<T>,
     ring_modulus: Option<T>,
+}
+
+/// One output either ignores all high chunks or selects among their prefixes.
+/// Direct still needs a BR-basis lift and every low-chunk rotation.
+enum OutputTable {
+    /// One physical polynomial ID shared by every logical prefix of this output.
+    Direct(usize),
+    /// Exactly P physical IDs in ascending prefix order; some may still be equal.
+    Select(Box<[usize]>),
 }
 
 impl<T: FheUint> HighPrecisionLookupTable<T> {
@@ -189,7 +219,7 @@ impl<T: FheUint> HighPrecisionLookupTable<T> {
     pub fn try_new<M, LM, F>(
         parameters: &TfheParameters<T, M, LM>,
         config: LookupTableConfig,
-        mut function: F,
+        function: F,
     ) -> Result<Self, LookupTableError>
     where
         M: RingContext<T>,
@@ -201,51 +231,7 @@ impl<T: FheUint> HighPrecisionLookupTable<T> {
             parameters.poly_length(),
             config,
         )?;
-        let len = allocation_len::<T>(&[
-            config.output_chunk_count,
-            layout.polynomials_per_output,
-            layout.polynomial_length,
-        ])?;
-        let mut coefficients = vec![T::ZERO; len];
-        let codec = RoundedCodec::new(
-            parameters.plain_modulus_value(),
-            parameters.accumulator_ntru().cipher_modulus(),
-        );
-        let digit_limit = parameters.plain_modulus_value() >> 1u32;
-        for (output_chunk, polynomials) in coefficients
-            .chunks_exact_mut(layout.polynomials_per_output * layout.polynomial_length)
-            .enumerate()
-        {
-            for (table_prefix, polynomial) in polynomials
-                .chunks_exact_mut(layout.polynomial_length)
-                .enumerate()
-            {
-                // x = prefix*K + z: high chunks choose this polynomial, low
-                // chunks choose coefficient z. The remaining N-K slots stay zero.
-                let first_input_value = table_prefix * layout.entries_per_polynomial;
-                for (coefficient_index, coefficient) in polynomial[..layout.entries_per_polynomial]
-                    .iter_mut()
-                    .enumerate()
-                {
-                    let input_value = first_input_value + coefficient_index;
-                    let digit = function(input_value, output_chunk);
-                    if digit >= digit_limit {
-                        return Err(LookupTableError::OutputChunkOutOfRange {
-                            input: input_value,
-                            output: output_chunk,
-                        });
-                    }
-                    *coefficient = codec.encode_value(digit, PlaintextEmbedding::Unsigned);
-                }
-            }
-        }
-        Ok(Self {
-            layout,
-            coefficients,
-            plaintext_modulus: parameters.plain_modulus_value(),
-            input_modulus: parameters.external_lwe().cipher_modulus_value(),
-            ring_modulus: parameters.accumulator_ntru().cipher_modulus_value(),
-        })
+        Self::compile(parameters, layout, function)
     }
 
     /// Returns the input/output counts and coefficient/table split.
@@ -266,7 +252,7 @@ impl<T: FheUint> HighPrecisionLookupTable<T> {
         self.layout.input_value_count
     }
 
-    /// Returns the number of public polynomials per output chunk.
+    /// Returns the logical number of public polynomials per output chunk, before deduplication.
     #[must_use]
     pub fn polynomials_per_output(&self) -> usize {
         self.layout.polynomials_per_output
@@ -280,10 +266,70 @@ impl<T: FheUint> HighPrecisionLookupTable<T> {
         self.layout.entries_per_polynomial
     }
 
-    /// Returns the encoded Q-domain coefficients in `[output][prefix][coefficient]` order.
+    /// Returns the number of physically stored polynomials, shared across all outputs.
     #[must_use]
-    pub fn as_slice(&self) -> &[T] {
-        &self.coefficients
+    pub fn unique_polynomial_count(&self) -> usize {
+        self.coefficients.len() / self.layout.polynomial_length
+    }
+
+    /// Returns the encoded polynomial for one logical output chunk and high-chunk prefix.
+    ///
+    /// # Panics
+    /// Panics if either index exceeds its configured range.
+    #[must_use]
+    pub fn polynomial(&self, output_chunk: usize, table_prefix: usize) -> Polynomial<&[T]> {
+        assert!(
+            output_chunk < self.config().output_chunk_count,
+            "lookup output chunk out of range"
+        );
+        assert!(
+            table_prefix < self.polynomials_per_output(),
+            "lookup table prefix out of range"
+        );
+        let id = match &self.outputs[output_chunk] {
+            OutputTable::Direct(id) => *id,
+            OutputTable::Select(ids) => ids[table_prefix],
+        };
+        self.polynomial_by_id(id)
+    }
+
+    /// Borrows all N coefficients for a physical ID produced by the compiler.
+    /// Callers use retained pool IDs, not logical table-prefix indices.
+    fn polynomial_by_id(&self, id: usize) -> Polynomial<&[T]> {
+        let n = self.layout.polynomial_length;
+        Polynomial::new(&self.coefficients[id * n..(id + 1) * n])
+    }
+
+    /// Groups public operands by the lowest unresolved high chunk, in prefix order.
+    /// Each group has M polynomial views; direct outputs have no selection groups.
+    /// IDs and physical pool layout stay inside the table, with no copying or allocation.
+    pub(crate) fn polynomial_groups(
+        &self,
+        output: usize,
+    ) -> impl ExactSizeIterator<Item = impl ExactSizeIterator<Item = Polynomial<&[T]>>> {
+        let ids = match &self.outputs[output] {
+            OutputTable::Direct(_) => &[][..],
+            OutputTable::Select(ids) => ids.as_ref(),
+        };
+        ids.chunks_exact(self.layout.radix)
+            .map(|group| group.iter().map(|&id| self.polynomial_by_id(id)))
+    }
+
+    /// Equal prefixes bypass the entire selection tree, but still require lifting
+    /// and low-chunk rotations. This also covers the single-prefix case h=0.
+    pub(crate) fn direct_polynomial(&self, output: usize) -> Option<Polynomial<&[T]>> {
+        match self.outputs[output] {
+            OutputTable::Direct(id) => Some(self.polynomial_by_id(id)),
+            OutputTable::Select(_) => None,
+        }
+    }
+
+    /// Selectors are shared by all outputs: one unresolved output keeps all high
+    /// chunks active. No local subtree pruning is implied by deduplication.
+    pub(crate) fn needs_table_selection(&self) -> bool {
+        self.outputs
+            .iter()
+            .any(|output| matches!(output, OutputTable::Select(_)))
     }
 
     /// Checks N, t, q and Q; key identity and noise margins are not table properties.

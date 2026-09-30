@@ -58,26 +58,29 @@ Let `c=input_chunk_count`, `d=coefficient_chunk_count` and `o=output_chunk_count
 | `chunk_bits()` = tau | Common bit width of each input/output chunk |
 | `input_value_count()` = M^c | Number of possible complete input values |
 | `entries_per_polynomial()` = K = M^d | Number of LUT entries occupying coefficients in each polynomial |
-| `polynomials_per_output()` = P = M^(c-d) | Number of polynomials for each output chunk |
+| `polynomials_per_output()` = P = M^(c-d) | Logical polynomial count for each output chunk |
+| `unique_polynomial_count()` = U | Physically stored polynomials, shared across outputs |
 | N | Allocated coefficient count of every polynomial, including zero padding |
 
 Split an input as `x=p*K+z`. For output chunk j, polynomial p has coefficient `E_Q(F(x,j))` at z; coefficients `K..N` are zero. Here `E_Q(v)=round(Q*v/(2*M))`, with multiplication before rounding. `F(x,j)` returns chunk j of the desired function result, and must lie in `0..M`. Compilation enumerates every `(x,j)` once, in output-major order and then ascending x. Any finite mapping can be compiled within the domain/storage limits; integer, signed or fixed-point interpretation is determined by the caller's chunk encoding and callback.
 
 For example, `M=4, c=3, d=1, N=64` gives 64 inputs, 16 polynomials per output and 4 entries per polynomial. Polynomial 0 stores inputs 0..3, polynomial 1 stores inputs 4..7, and so on. Input 6 selects polynomial 1, coefficient 2. Each polynomial's remaining 60 coefficients are zero.
 
-`as_slice()` exposes immutable coefficient storage in `[output][prefix][coefficient]` order. The input value count itself must fit in `usize`, requiring `tau*c < usize::BITS`; this is an indexing limit of full enumeration, not a paper constraint. Storage is `o*P*N` scalars. Checked lengths prevent indexing and byte-size overflow, but do not guarantee enough physical memory for an exponential table.
+`polynomial(j,p)` returns the N coefficients for logical output j and prefix p. Identical encoded polynomials share storage across all outputs; `unique_polynomial_count()` reports their physical count. Storage uses U*N coefficients plus prefix metadata; outputs independent of the high chunks need only one polynomial reference. Physical pool order and indices are internal details.
+
+The input value count itself must fit in `usize`, requiring `tau*c < usize::BITS`; this is an indexing limit of full enumeration, not a paper constraint. Construction still checks worst-case `o*P*N` storage and index lengths before invoking the callback, but allocates the pool incrementally. These checks do not guarantee enough physical memory for an exponential table.
 
 ### Choosing the coefficient chunk count
 
-For fixed N, M and c, start with `d=min(c, floor(log2(N)/tau))`, making M^d as close to N as possible. Increasing d by one divides public table storage by M and adds one rotation product per output. The best choice still depends on measured time and noise margins; exact operation counts are in the [stage guide](IMPLEMENTATION.md#stage-and-buffer-layout).
+For fixed N, M and c, start with `d=min(c, floor(log2(N)/tau))`, making M^d as close to N as possible. Increasing d by one divides worst-case public table storage by M and adds one rotation product per output. The best choice still depends on measured time and noise margins; exact operation counts are in the [stage guide](IMPLEMENTATION.md#stage-and-buffer-layout).
 
 ## Evaluation and workspace
 
-Each call performs one-hot CBS once per input chunk. High chunks select the LUT polynomial; low chunks locate its coefficient. All outputs reuse these selectors and rotation controls and return LWEs under the independent external secret in output-chunk order. Selection, rotation and return formulas live in the [implementation notes](IMPLEMENTATION.md#stage-and-buffer-layout).
+Each call performs one-hot CBS for the low chunks and, if any output needs table selection, for all high chunks. If every prefix of an output refers to the same polynomial, that output uses the server initializer to lift it directly, followed by the usual low-chunk rotations. Only when all outputs qualify are high-chunk CBS and table-selection buffers omitted. Mixed outputs keep all required selectors. High chunks select the LUT polynomial; low chunks locate its coefficient. All outputs reuse these selectors and rotation controls and return LWEs under the independent external secret in output-chunk order. Selection, rotation and return formulas live in the [implementation notes](IMPLEMENTATION.md#stage-and-buffer-layout).
 
 Each selection group accumulates products in the transform domain before one inverse transform. Fourier rounding can therefore differ from evaluating and converting each product separately; the encoded function is unchanged, and results still require an adequate decoding margin.
 
-The data LUT stores each function value once per input/output chunk. Repeated guards that tolerate input phase error belong to the preceding one-hot CBS test polynomial. Subsequent selection and rotation introduce additive ciphertext error, which still needs a decoding margin.
+The data LUT encodes one function value per logical input/output chunk, with identical polynomials sharing storage. Repeated guards that tolerate input phase error belong to the preceding one-hot CBS test polynomial. Subsequent selection and rotation introduce additive ciphertext error, which still needs a decoding margin.
 
 The evaluator borrows its context, server key and table and allocates all buffers at construction. Reuse the result of `allocate_output()` with `evaluate_to` for allocation-free online evaluation. All chunk counts and LWE dimensions are checked before writes. Resources must match N/t/q/Q and actual key identity; Fourier also requires the exact FFT table instance. Each concurrent evaluator owns independent mutable workspace.
 

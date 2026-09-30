@@ -91,6 +91,7 @@ fn circuit_config() -> CircuitBootstrapConfig {
     }
 }
 
+// Demonstrates client setup and repeated server lookups with one reusable evaluator.
 fn main() {
     println!("f(x) = (x*x + 3*x + 7) mod {}", 1u64 << OUTPUT_BITS);
     println!("Input: {INPUT_BITS} bits; output: {OUTPUT_BITS} bits");

@@ -1,7 +1,7 @@
 // Fourier evaluation uses the public API and shared representative parameters.
 use std::hint::black_box;
 
-use super::{CONFIG, INPUT, Workload, benchmark_lut_creation, heap};
+use super::{CONFIG, INPUT, Workload, benchmark_lut_creation, check_repetition, heap};
 use criterion::{Criterion, SamplingMode, Throughput};
 use primus_fft::{FftTable, TorusFftValue};
 use primus_modulus::NativeModulus;
@@ -13,12 +13,15 @@ use primus_tfhe_ntru_lut::{FourierLookupTableEvaluator, HighPrecisionLookupTable
 use primus_tfhe_test_support::parameters::ntru;
 use rand::{SeedableRng, rngs::StdRng};
 
+// Registers structured and dense LUT workloads for this backend and word width.
 pub fn benchmark<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str) {
     for workload in [Workload::Polynomial, Workload::Dense] {
         benchmark_workload::<T, Table>(c, backend, workload);
     }
 }
 
+// Measures LUT construction and evaluation separately. Criterion filters defer costly
+// evaluation fixtures until needed; setup and validation remain outside timed iterations.
 fn benchmark_workload<T: TorusFftValue, Table: FftTable>(
     c: &mut Criterion,
     backend: &str,
@@ -57,6 +60,7 @@ fn benchmark_workload<T: TorusFftValue, Table: FftTable>(
                 .unwrap()
             });
             heap(&format!("{name}/public_lut"), storage);
+            check_repetition(&table, workload);
             let encryptor = context.encryptor(&client).unwrap();
             let input: Vec<_> = (0..CONFIG.input_chunk_count)
                 .map(|i| {

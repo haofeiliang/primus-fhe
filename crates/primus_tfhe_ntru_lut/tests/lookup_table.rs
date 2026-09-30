@@ -5,6 +5,7 @@ use primus_reduce::RingContext;
 use primus_tfhe_ntru::{DecompositionConfig, TfheParameters};
 use primus_tfhe_ntru_lut::{HighPrecisionLookupTable, LookupTableConfig, LookupTableError};
 
+// Builds a small geometry/encoding fixture without generating keys or ciphertexts.
 fn parameters<M: RingContext<u64>>(
     modulus: M,
     t: u64,
@@ -28,6 +29,8 @@ fn parameters<M: RingContext<u64>>(
     .unwrap()
 }
 
+// Verifies logical indexing, encoding and sharing against an integer oracle.
+// The u128 modulus also represents the native u64 modulus 2^64 exactly.
 fn geometry<M: RingContext<u64>>(modulus: M, q: u128) {
     let parameters = parameters(modulus, 8);
     for coefficient_chunk_count in 0..=3 {
@@ -59,9 +62,16 @@ fn geometry<M: RingContext<u64>>(modulus: M, q: u128) {
                 .flat_map(|o| (0..64).map(move |x| (x, o)))
                 .collect::<Vec<_>>()
         );
+        let mut unique = Vec::new();
         for output in 0..2 {
             for prefix in 0..lut.polynomials_per_output() {
-                let start = (output * lut.polynomials_per_output() + prefix) * 64;
+                let polynomial = lut.polynomial(output, prefix);
+                if !unique
+                    .iter()
+                    .any(|p: &Vec<u64>| p.as_slice() == polynomial.as_ref())
+                {
+                    unique.push(polynomial.as_ref().to_vec());
+                }
                 for index in 0..64 {
                     let expected = if index < lut.entries_per_polynomial() {
                         let x = prefix * lut.entries_per_polynomial() + index;
@@ -70,20 +80,27 @@ fn geometry<M: RingContext<u64>>(modulus: M, q: u128) {
                     } else {
                         0
                     };
-                    assert_eq!(lut.as_slice()[start + index], expected);
+                    assert_eq!(polynomial.as_ref()[index], expected);
                 }
             }
         }
+        assert_eq!(lut.unique_polynomial_count(), unique.len());
+        assert!(std::panic::catch_unwind(|| lut.polynomial(2, 0)).is_err());
+        assert!(
+            std::panic::catch_unwind(|| lut.polynomial(0, lut.polynomials_per_output())).is_err()
+        );
         assert!(lut.is_compatible(&parameters));
     }
 }
 
+// Exercises prime and native moduli across every coefficient/table partition.
 #[test]
 fn table_partition_and_chunk_encoding_match_integer_oracle() {
     geometry(BarrettModulus::new(65_537), 65_537);
     geometry(NativeModulus::new(), 1u128 << 64);
 }
 
+// Invalid geometry must fail before callbacks; invalid digits report their exact pair.
 #[test]
 fn compilation_rejects_invalid_domains_before_callbacks() {
     let parameters = parameters(BarrettModulus::new(65_537), 4);

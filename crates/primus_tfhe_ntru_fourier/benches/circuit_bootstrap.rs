@@ -116,7 +116,7 @@ fn one_hot<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str) 
                 // Semantic ciphertext iteration keeps selector boundaries tied
                 // to the public CBS layout, including compact index r-1.
                 for (index, control) in
-                    FourierNgswIter::new(&output, parameters.output_fourier_nlev_len()).enumerate()
+                    FourierNgswIter::new(&output, evaluator.ngsw_selector_len()).enumerate()
                 {
                     let (fft, product) = evaluator.external_product_workspaces();
                     control.cmux_to(

@@ -30,6 +30,7 @@ pub enum Workload {
 }
 
 impl Workload {
+    // Keeps the structured-workload ID unchanged and distinguishes the dense workload.
     pub fn suffix(self) -> &'static str {
         match self {
             Self::Polynomial => "",
@@ -53,6 +54,30 @@ impl Workload {
         };
         T::as_from((value >> (2 * output)) & 3)
     }
+}
+
+// Comparing full views also checks that deduplication preserves logical prefix
+// access. This is fixture validation only, outside construction/evaluation timing.
+pub fn check_repetition<T: FheUint>(table: &HighPrecisionLookupTable<T>, workload: Workload) {
+    let expected = match workload {
+        Workload::Polynomial => [1, 1, 1, 1, 1, 4, 16, 64],
+        Workload::Dense => [64; 8],
+    };
+    for (output, count) in expected.into_iter().enumerate() {
+        let mut unique = Vec::new();
+        for prefix in 0..table.polynomials_per_output() {
+            let polynomial = table.polynomial(output, prefix);
+            if !unique.contains(&polynomial) {
+                unique.push(polynomial);
+            }
+        }
+        assert_eq!(unique.len(), count);
+    }
+    eprintln!(
+        "unique_polynomials,{},{}",
+        workload.suffix(),
+        table.unique_polynomial_count()
+    );
 }
 
 // Report retained requested heap, not temporary allocation volume or RSS.

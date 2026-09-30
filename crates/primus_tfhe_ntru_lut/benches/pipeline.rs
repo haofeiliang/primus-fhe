@@ -16,6 +16,7 @@ static ALLOCATOR: primus_test_allocations::CountingAllocator =
 mod support;
 use support::{fourier, ntt};
 
+// Registers the supported transform backends at both u32 and u64 word widths.
 fn pipeline(c: &mut Criterion) {
     ntt::benchmark::<u32, primus_ntt::U32NttTable>(c);
     ntt::benchmark::<u64, primus_ntt::U64NttTable>(c);

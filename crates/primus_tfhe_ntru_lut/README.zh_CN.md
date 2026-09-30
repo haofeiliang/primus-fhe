@@ -58,26 +58,29 @@ cargo run --release -p primus_tfhe_ntru_lut --example fourier_lookup
 | `chunk_bits()` = tau | 每个输入/输出 chunk 的统一位宽 |
 | `input_value_count()` = M^c | 完整输入可能的取值总数 |
 | `entries_per_polynomial()` = K = M^d | 每个多项式中用于存放 LUT 表项的系数个数 |
-| `polynomials_per_output()` = P = M^(c-d) | 每个输出 chunk 对应的多项式数量 |
+| `polynomials_per_output()` = P = M^(c-d) | 每个输出 chunk 的逻辑多项式数量 |
+| `unique_polynomial_count()` = U | 跨输出共享的实际存储多项式数量 |
 | N | 每个多项式实际分配的系数个数，包括补零区域 |
 
 将输入拆成 `x=p*K+z`。对于输出 chunk j，第 p 个多项式的第 z 个系数存放 `E_Q(F(x,j))`，系数 `K..N` 补零。其中 `E_Q(v)=round(Q*v/(2*M))`，乘法在舍入之前。`F(x,j)` 返回目标函数结果的第 j 个 chunk，必须位于 `0..M`。编译按输出优先、再按 x 升序枚举，每对 `(x,j)` 恰好调用一次。在值域及存储限制内可以编译任意有限映射；整数、有符号数或定点数的解释由调用方的 chunk 编码和回调决定。
 
 例如 `M=4, c=3, d=1, N=64` 时，有 64 种输入，每个输出对应 16 个多项式，每个多项式放 4 个表项。多项式 0 存放输入 0..3，多项式 1 存放输入 4..7，以此类推。输入 6 选择多项式 1 的系数 2。每个多项式其余 60 个系数均为零。
 
-`as_slice()` 暴露 `[output][prefix][coefficient]` 顺序的只读系数。输入取值总数本身必须能用 `usize` 表示，即 `tau*c < usize::BITS`；这是完整枚举的索引限制，并非论文约束。表存储量为 `o*P*N` 个标量。长度检查拒绝索引和字节数溢出，但不保证指数级表一定有足够物理内存可分配。
+`polynomial(j,p)` 返回逻辑输出 j、前缀 p 对应的 N 个系数。相同编码多项式跨输出共享存储，`unique_polynomial_count()` 返回其实际数量。存储包含 U*N 个系数和前缀元数据；不依赖高位 chunks 的输出只需一个多项式引用。物理池顺序和索引属于内部实现。
+
+输入取值总数本身必须能用 `usize` 表示，即 `tau*c < usize::BITS`；这是完整枚举的索引限制，并非论文约束。调用回调前仍检查最坏情况 `o*P*N` 存储及索引长度，但多项式池按需增长。这些检查不保证指数级表一定有足够物理内存可分配。
 
 ### 选择系数 chunk 数
 
-固定 N、M、c 时，可从 `d=min(c, floor(log2(N)/tau))` 开始，让 M^d 尽量接近 N。d 每增加 1，公开表存储缩小 M 倍，每个输出多一次旋转乘积；最佳选择仍取决于实测时间与噪声余量。精确操作数见[阶段说明](IMPLEMENTATION.md#stage-and-buffer-layout)。
+固定 N、M、c 时，可从 `d=min(c, floor(log2(N)/tau))` 开始，让 M^d 尽量接近 N。d 每增加 1，公开表的最坏存储量缩小 M 倍，每个输出多一次旋转乘积；最佳选择仍取决于实测时间与噪声余量。精确操作数见[阶段说明](IMPLEMENTATION.md#stage-and-buffer-layout)。
 
 ## 求值与工作区
 
-每次调用对每个输入 chunk 执行一次 one-hot CBS；高 chunks 选择 LUT 多项式，低 chunks 在所选多项式内定位系数。所有输出复用这些 selectors 和旋转控制，按输出 chunk 顺序返回独立外部秘密下的 LWE。完整选择、旋转及返回公式见[实现说明](IMPLEMENTATION.md#stage-and-buffer-layout)。
+每次调用对低位 chunks 执行 one-hot CBS；只要有一个输出需要选表，仍为所有高位 chunks 生成 selectors。若某个输出的所有前缀都对应同一多项式，就通过服务端 initializer 直接提升，再执行原有的低位旋转。仅当所有输出都满足该条件时，才省去高位 CBS 和选表缓冲；混合输出保留所需的全部 selectors。高 chunks 选择 LUT 多项式，低 chunks 在所选多项式内定位系数。所有输出复用这些 selectors 和旋转控制，按输出 chunk 顺序返回独立外部秘密下的 LWE。完整选择、旋转及返回公式见[实现说明](IMPLEMENTATION.md#stage-and-buffer-layout)。
 
 每组选表在变换域累加所有乘积后只逆变换一次。Fourier 的舍入结果可能与逐个乘积分别转换后求和不同；编码函数保持不变，结果仍需留出足够的解码余量。
 
-数据 LUT 对每个输入/输出 chunk 只存一次函数值。容忍输入相位误差的重复保护区位于此前的 one-hot CBS 测试多项式；后续选择和旋转带来加性密文误差，仍需解码余量。
+数据 LUT 为每个逻辑输入/输出 chunk 编码一个函数值，相同多项式共享存储。容忍输入相位误差的重复保护区位于此前的 one-hot CBS 测试多项式；后续选择和旋转带来加性密文误差，仍需解码余量。
 
 Evaluator 借用 context、server key 和 table，并在构造时分配全部缓冲。复用 `allocate_output()` 的结果与 `evaluate_to`，在线无额外分配；所有 chunk 数量和 LWE 维数在写入前检查。资源必须匹配 N/t/q/Q，密钥须实际配套；Fourier 还要求相同 FFT table 实例。每个并发 evaluator 持有独立可变工作区。
 

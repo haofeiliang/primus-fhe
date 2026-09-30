@@ -72,27 +72,100 @@ fn cbs<T: FheUint>() -> CircuitBootstrapConfig {
     }
 }
 
-// Cover d=0, d=c, mixed layers, unequal chunk counts and a full coefficient ring.
-fn configs(radix: usize) -> Vec<LookupTableConfig> {
-    let counts = if radix == 2 {
-        // All table layers with a return-tile tail; no table layer; a larger domain,
-        // with both public and encrypted table layers and several rotations;
-        // finally fill every coefficient of the selected polynomial.
-        vec![(3, 9, 0), (3, 5, 3), (7, 3, 5), (7, 3, 6)]
+// These small cases isolate pruning without multiplying the full geometry matrix.
+#[derive(Clone, Copy, Debug)]
+enum Mapping {
+    Carries,
+    Constant,
+    Repeated,
+    Mixed,
+    Distinct,
+}
+
+impl Mapping {
+    // Cleartext digit oracle for each pruning case; Distinct uses the radix-two fixture.
+    fn digit(self, x: usize, output: usize, radix: usize) -> u64 {
+        match self {
+            Self::Carries => digit(x, output, radix),
+            Self::Constant => output as u64 % radix as u64,
+            // Both outputs ignore the high chunks; the first still needs rotation.
+            Self::Repeated => {
+                if output == 0 {
+                    (x % radix) as u64
+                } else {
+                    0
+                }
+            }
+            Self::Mixed => {
+                if output == 0 {
+                    (x % radix) as u64
+                } else {
+                    ((x / radix) % radix) as u64
+                }
+            }
+            // For M=2,d=1,c=3, the two coefficients spell the two-bit prefix.
+            Self::Distinct => ((x / 2) >> (x % 2) & 1) as u64,
+        }
+    }
+}
+
+// Combines partition boundaries with small radix-two cases for sharing and pruning.
+fn cases(radix: usize) -> Vec<(LookupTableConfig, Mapping)> {
+    // Preserve the established geometry order and RNG stream across backends.
+    let counts: &[(usize, usize, usize)] = if radix == 2 {
+        // d=0 with a return-tile tail; d=c; mixed layers; finally K=N.
+        &[(3, 9, 0), (3, 5, 3), (7, 3, 5), (7, 3, 6)]
     } else {
-        // Also exercise a single public layer producing exactly one output.
-        vec![(3, 2, 1), (2, 3, 2), (2, 1, 1)]
+        // Also include a single public layer producing exactly one output.
+        &[(3, 2, 1), (2, 3, 2), (2, 1, 1)]
     };
-    counts
-        .into_iter()
+    let mut cases: Vec<_> = counts
+        .iter()
         .map(
-            |(input_chunk_count, output_chunk_count, coefficient_chunk_count)| LookupTableConfig {
-                input_chunk_count,
-                output_chunk_count,
-                coefficient_chunk_count,
+            |&(input_chunk_count, output_chunk_count, coefficient_chunk_count)| {
+                (
+                    LookupTableConfig {
+                        input_chunk_count,
+                        output_chunk_count,
+                        coefficient_chunk_count,
+                    },
+                    Mapping::Carries,
+                )
             },
         )
-        .collect()
+        .collect();
+    if radix == 2 {
+        for (mapping, d, o) in [
+            (Mapping::Constant, 0, 2),
+            (Mapping::Repeated, 1, 2),
+            (Mapping::Mixed, 1, 2),
+            (Mapping::Distinct, 1, 1),
+        ] {
+            cases.push((
+                LookupTableConfig {
+                    input_chunk_count: 3,
+                    output_chunk_count: o,
+                    coefficient_chunk_count: d,
+                },
+                mapping,
+            ));
+        }
+    }
+    cases
+}
+
+// Check the circular phase error independently of the production decoder. This
+// fixture uses q=2^24 and t=2*M, so all expected encodings are exact integers.
+fn assert_phase<T: FheUint>(phase: T, expected: u64, radix: usize, case: &str) {
+    let q = 1u64 << 24;
+    let actual: u64 = phase.as_into();
+    let target = q / (2 * radix as u64) * expected;
+    let error = actual.abs_diff(target);
+    let error = error.min(q - error);
+    assert!(
+        error < q / (4 * radix as u64),
+        "{case}: phase error {error} exceeds decoding margin"
+    );
 }
 
 // Cross-chunk carries make a wrong table prefix observable in the output digits.
@@ -128,14 +201,16 @@ fn inputs(radix: usize, config: LookupTableConfig) -> Vec<usize> {
 // shares only input selection, integer expected digits and public shape checks.
 fn exercise<T: FheUint>(
     case: &str,
-    radix: usize,
-    config: LookupTableConfig,
+    table: &HighPrecisionLookupTable<T>,
+    mapping: Mapping,
     mut output: Vec<LweCiphertext<T>>,
     mut evaluate: impl FnMut(&[LweCiphertext<T>], &mut [LweCiphertext<T>]),
     mut encrypt: impl FnMut(T) -> LweCiphertext<T>,
-    decrypt: impl Fn(&LweCiphertext<T>) -> T,
+    decrypt_phase: impl Fn(&LweCiphertext<T>) -> T,
 ) {
-    let bits = radix.trailing_zeros() as usize;
+    let bits = table.chunk_bits();
+    let radix = 1 << bits;
+    let config = table.config();
     // Descending inputs require overwriting selectors, candidates and outputs.
     for x in inputs(radix, config) {
         let input: Vec<_> = (0..config.input_chunk_count)
@@ -147,10 +222,11 @@ fn exercise<T: FheUint>(
             "{case}, radix={radix}, config={config:?}"
         );
         for (i, result) in output.iter().enumerate() {
-            assert_eq!(
-                decrypt(result),
-                T::as_from(digit(x, i, radix)),
-                "{case}, x={x}, output={i}, radix={radix}, config={config:?}"
+            assert_phase(
+                decrypt_phase(result),
+                mapping.digit(x, i, radix),
+                radix,
+                &format!("{case}, {mapping:?}, x={x}, output={i}, config={config:?}"),
             );
         }
     }
@@ -186,10 +262,11 @@ fn exercise<T: FheUint>(
     assert_eq!(output, before);
     evaluate(&input, &mut output);
     for (i, result) in output.iter().enumerate() {
-        assert_eq!(
-            decrypt(result),
-            T::as_from(digit(0, i, radix)),
-            "{case}, recovery output={i}, radix={radix}, config={config:?}"
+        assert_phase(
+            decrypt_phase(result),
+            mapping.digit(0, i, radix),
+            radix,
+            case,
         );
     }
 }
@@ -211,10 +288,10 @@ fn ntt<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T) {
                 .unwrap();
             let encryptor = context.encryptor(&client).unwrap();
             let decryptor = context.decryptor(&client).unwrap();
-            for config in configs(radix) {
+            for (config, mapping) in cases(radix) {
                 let table =
                     HighPrecisionLookupTable::try_new(context.parameters(), config, |x, o| {
-                        T::as_from(digit(x, o, radix))
+                        T::as_from(mapping.digit(x, o, radix))
                     })
                     .unwrap();
                 let mut evaluator =
@@ -226,15 +303,15 @@ fn ntt<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T) {
                 );
                 exercise(
                     &case,
-                    radix,
-                    config,
+                    &table,
+                    mapping,
                     evaluator.allocate_output(),
                     |input, output| evaluator.evaluate_to(input, output),
                     |m| encryptor.encrypt_padded(m, &mut rng).unwrap(),
-                    |c| decryptor.decrypt(c).unwrap(),
+                    |c| decryptor.decrypt_phase(c).unwrap(),
                 );
             }
-            let config = configs(radix)[0];
+            let config = cases(radix)[0].0;
             let other = primus_tfhe_ntru_ntt::TfheContext::<_, Table, _>::try_from_parameters(
                 parameters(BarrettModulus::new(q), radix, distr, 3),
             )
@@ -278,10 +355,10 @@ fn fourier<T: TorusFftValue, Table: FftTable>() {
                 .unwrap();
             let encryptor = context.encryptor(&client).unwrap();
             let decryptor = context.decryptor(&client).unwrap();
-            for config in configs(radix) {
+            for (config, mapping) in cases(radix) {
                 let table =
                     HighPrecisionLookupTable::try_new(context.parameters(), config, |x, o| {
-                        T::as_from(digit(x, o, radix))
+                        T::as_from(mapping.digit(x, o, radix))
                     })
                     .unwrap();
                 let mut evaluator =
@@ -293,15 +370,15 @@ fn fourier<T: TorusFftValue, Table: FftTable>() {
                 );
                 exercise(
                     &case,
-                    radix,
-                    config,
+                    &table,
+                    mapping,
                     evaluator.allocate_output(),
                     |input, output| evaluator.evaluate_to(input, output),
                     |m| encryptor.encrypt_padded(m, &mut rng).unwrap(),
-                    |c| decryptor.decrypt(c).unwrap(),
+                    |c| decryptor.decrypt_phase(c).unwrap(),
                 );
             }
-            let config = configs(radix)[0];
+            let config = cases(radix)[0].0;
             let other = primus_tfhe_ntru_fourier::TfheContext::<_, Table, _>::try_from_parameters(
                 parameters(NativeModulus::new(), radix, distr, 3),
             )
@@ -332,18 +409,21 @@ fn fourier<T: TorusFftValue, Table: FftTable>() {
     }
 }
 
+// Checks the shared evaluation cases at both word widths with prime-modulus NTT.
 #[test]
 fn ntt_complete_chunk_lookup() {
     ntt::<u32, U32NttTable>(998_244_353);
     ntt::<u64, U64NttTable>(1_125_899_906_826_241);
 }
 
+// Checks the shared evaluation cases at both word widths with native-torus RustFFT.
 #[test]
 fn rustfft_complete_chunk_lookup() {
     fourier::<u32, RustFftTable>();
     fourier::<u64, RustFftTable>();
 }
 
+// Checks the same native-torus cases with the alternative TfheFft transform.
 #[test]
 fn tfhe_fft_complete_chunk_lookup() {
     fourier::<u32, TfheFftTable>();

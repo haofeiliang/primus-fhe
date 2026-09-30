@@ -1,7 +1,7 @@
 // Ntt evaluation uses the public API and shared representative parameters.
 use std::hint::black_box;
 
-use super::{CONFIG, INPUT, Workload, benchmark_lut_creation, heap};
+use super::{CONFIG, INPUT, Workload, benchmark_lut_creation, check_repetition, heap};
 use criterion::{Criterion, SamplingMode, Throughput};
 use primus_integer::FheUint;
 use primus_modulus::PowOf2Modulus;
@@ -14,12 +14,15 @@ use primus_tfhe_test_support::parameters::ntru;
 use primus_tfhe_test_support::parameters::ntt_circuit_modulus;
 use rand::{SeedableRng, rngs::StdRng};
 
+// Registers structured and dense LUT workloads for this backend and word width.
 pub fn benchmark<T: FheUint, Table: MonomialNttTable<ValueT = T>>(c: &mut Criterion) {
     for workload in [Workload::Polynomial, Workload::Dense] {
         benchmark_workload::<T, Table>(c, workload);
     }
 }
 
+// Measures LUT construction and evaluation separately. Criterion filters defer costly
+// evaluation fixtures until needed; setup and validation remain outside timed iterations.
 fn benchmark_workload<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
     c: &mut Criterion,
     workload: Workload,
@@ -56,6 +59,7 @@ fn benchmark_workload<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
                 .unwrap()
             });
             heap(&format!("{name}/public_lut"), storage);
+            check_repetition(&table, workload);
             let encryptor = context.encryptor(&client).unwrap();
             let input: Vec<_> = (0..CONFIG.input_chunk_count)
                 .map(|i| {

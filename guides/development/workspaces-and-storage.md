@@ -58,6 +58,15 @@ intermediate output copy. Samples retain their order and equal scalar returns.
 
 ## Serial reuse in high-precision lookup
 
+The public high-precision LUT owns a boxed pool of unique encoded polynomials,
+one descriptor per output: a single polynomial reference for direct lifting,
+or an owned prefix-index array for table selection.
+Construction hash buckets are temporary. Equal prefixes allow a BR-basis lift
+followed by the usual low-chunk rotations; when all outputs qualify, the evaluator
+omits table selectors and candidates as well as high-chunk CBS. Mixed tables
+keep those shared buffers. Embedded one-hot scratch is retained. See the
+[table layout](../../crates/primus_tfhe_ntru_lut/IMPLEMENTATION.md#public-table-storage).
+
 One-hot CBS already reuses PBS's external-product workspace for BR, trace and scheme switching. Table selection and encrypted rotation now borrow that same workspace between one-hot calls. The NTT entry point is `OneHotCircuitBootstrapEvaluator::external_product_workspace`; Fourier's `external_product_workspaces` returns the FFT engine and external-product buffers together. Borrowers retain polynomial lengths and the FFT table identity. Every subsequent one-hot call overwrites its scratch before reading it.
 
 The high-precision evaluator therefore owns no second external-product workspace or FFT engine. Each evaluator still has independent mutable state, and borrowing excludes concurrent mutation. Existing one-hot/PBS conversion and recovery retain their ownership contracts. The Fourier `OneHotCircuitBootstrapEvaluator::lwe_return_batch_workspace` also lends PBS's existing return buffers to the outer lookup stage. Each output is converted/extracted immediately, and table selection/rotation leave those LWE slots intact until batch key switching. Removing the outer Fourier scalar return buffer saves N+1 elements (4,100 bytes for u32 or 8,200 for u64 at N1024); no new batch scratch is allocated. The accessor exposes this workspace alone. NTT lookup retains its separate scalar return buffer: batching did not provide consistent gains across its measured word widths, whereas Fourier lookup and both factorized MVB backends benefited. The unchanged `pipeline` and `mvb` fixtures can be used to revisit this scheduling choice.
