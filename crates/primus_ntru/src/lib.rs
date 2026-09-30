@@ -33,8 +33,10 @@
 //! [`NtruLweKeySwitchingKey`] converts coefficient NTRU at Q to an independent
 //! LWE secret at q, reusing exact modulus rounding, sample extraction and LWE
 //! key switching. [`NtruLweKeySwitchingWorkspace`] owns one reusable LWE buffer.
-//! [`NtruLweKeySwitchingBatchWorkspace`] shares one conversion across multiple
-//! coefficient returns, with bounded scratch for batched LWE key switching.
+//! [`NtruLweKeySwitchingBatchWorkspace`] supports both shared-input returns
+//! (one conversion for multiple coefficients) and streamed returns (separate
+//! conversions, retaining extracted LWEs for batched key switching). See the
+//! [return-path overview](NtruLweKeySwitchingKey) and workspace slot contract.
 //! Source and target use the same coefficient type; no FFT/NTT table is needed.
 //!
 //! Same-secret automorphism, trace/reverse trace, coefficient projection and

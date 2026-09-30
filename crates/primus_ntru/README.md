@@ -72,11 +72,24 @@ Sample extraction, NLev/NGSW external products and CMUX live in [`primus_lattice
 
 `NtruLweKeySwitchingKey::generate(f, Q, s, lwe_parameters, basis, rng)` prepares conversion from the signed NTRU secret f to an independently generated `primus_lwe::LweSecretKey` s. The parameters and basis use target modulus q; s may have a different dimension and need not extend to an invertible NTRU secret. Each signed coefficient of f must have magnitude below an explicit q; generation checks this before sampling.
 
-Create `NtruLweKeySwitchingWorkspace::new(N)` once, then call `key_switch_to` for the constant term or `key_switch_at_to(input, index, output, q, workspace)` for another coefficient. Inputs are coefficient-domain NTRU ciphertexts; recover NTT/Fourier outputs to coefficients first. Every call overwrites the output and a single N+1-element intermediate LWE buffer without allocating. Length, index and target-modulus checks precede output and scratch writes.
+Inputs are coefficient-domain NTRU ciphertexts; recover NTT/Fourier outputs to coefficients first. Create the workspace once and reuse it. All return paths overwrite their outputs without online allocation and validate caller-supplied shapes and target modulus before writes.
 
-For several coefficients of the same input, use `key_switch_many_at_to(input, indices, outputs, q, workspace)` with `NtruLweKeySwitchingBatchWorkspace::new(N, output_dimension)`. Pass `0..outputs.len()` for a prefix or `indices.iter().copied()` for selected positions; order and repeated indices are preserved. The exact-size, clonable iterator allows validation of the complete batch before writes. Multiple outputs share one Q→q conversion, then reuse fixed tiles for LWE key switching. Empty batches do nothing; a singleton uses direct conversion/extraction. Results equal individual calls, including rounding ties, with no online allocation. The [return benchmark](benches/lwe_return.rs) compares both paths separately from blind rotation.
+| Requested results | Key methods | Workspace |
+| --- | --- | --- |
+| One coefficient | `key_switch_at_to`; `key_switch_to` for index zero | `NtruLweKeySwitchingWorkspace::new(N)` |
+| Several coefficients of one NTRU | `key_switch_many_at_to` | `NtruLweKeySwitchingBatchWorkspace::new(N, output_dimension)` |
+| Coefficients of successive NTRUs | `modulus_switch_extract_at_to`, then `key_switch_extracted_batch_to` | The same batch workspace type |
 
-For outputs produced from different NTRU polynomials, use `modulus_switch_extract_at_to(input.as_view(), index, workspace.extracted_mut(slot), q)` to fill one intermediate slot, then `key_switch_extracted_batch_to(outputs, q, workspace)` to return the filled prefix. A tile holds at most `workspace.batch_capacity()` samples. Each source is converted independently and can be overwritten immediately after extraction; only the extracted LWEs survive until the tile is switched. Refill every consumed slot before the next call; the workspace does not track sample initialization or key identity.
+The scalar path fuses conversion and extraction into one N+1-element intermediate LWE. For several coefficients of one input, pass `0..outputs.len()` or `indices.iter().copied()` to `key_switch_many_at_to`. It preserves order and repeated indices, validating the exact-size, clonable iterator before writes. Multiple outputs share one Q→q conversion and fixed tiles for LWE key switching; empty batches do nothing and a singleton uses the scalar path. Results equal individual calls, including rounding ties. The [return benchmark](benches/lwe_return.rs) compares both paths separately from blind rotation.
+
+For a stream of different source polynomials:
+
+1. Choose a tile with k outputs, where `k <= workspace.batch_capacity()`.
+2. Fill each slot `0..k` with `modulus_switch_extract_at_to(input.as_view(), index, workspace.extracted_slot_mut(slot), q)`. The slot number is the output position within the tile; `index` selects the source coefficient. Each source is converted independently and can be overwritten immediately after extraction.
+3. Call `key_switch_extracted_batch_to` with exactly those k outputs. It reads only the filled prefix, writes output i from slot i, and leaves the extracted samples intact. A final partial tile needs no clearing of later slots.
+4. Refill the consumed slots for the next tile. Finish a pending tile before using the workspace for shared-input returns, which may overwrite those slots.
+
+The workspace tracks neither filled-slot count nor sample key/modulus identity. Zero-initialized storage is not evidence that a slot was prepared for the current request.
 
 The operation rounds each coefficient as `c' = round(q*c/Q) mod q` (nearest, ties upward), extracts `b=0`, `a[i]=-c'[index-i]` for `i<=index` and `a[i]=c'[N+index-i]` otherwise, then key-switches at q. Extraction uses the signed coefficient vector of f with LWE phase `b-<a,f>=(f*c')[index]`. Rounding must precede extraction negation: negating first can change half-tie results. The single-output path fuses modulus switching and extraction into one scratch write, reusing `primus_reduce::ModulusSwitch` and `primus_lwe::LweKeySwitchingKey`.
 

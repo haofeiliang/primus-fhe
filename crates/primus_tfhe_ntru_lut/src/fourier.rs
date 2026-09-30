@@ -240,7 +240,7 @@ where
                 0,
                 self.one_hot
                     .lwe_return_batch_workspace()
-                    .extracted_mut(slot),
+                    .extracted_slot_mut(slot),
                 modulus,
             );
         }

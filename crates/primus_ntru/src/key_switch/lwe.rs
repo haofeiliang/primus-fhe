@@ -21,6 +21,17 @@ pub use batch::NtruLweKeySwitchingBatchWorkspace;
 /// No NTT/FFT table is needed; transformed ciphertexts must first be recovered to
 /// coefficients. Source and target share the integer type T (no word-width cast).
 /// Both moduli may be native or explicit, including Q = q.
+///
+/// Choose the return path by the source of the requested coefficients:
+///
+/// | Source | Operation | Workspace |
+/// | --- | --- | --- |
+/// | One coefficient | [`Self::key_switch_at_to`] (or [`Self::key_switch_to`] for index 0) | [`NtruLweKeySwitchingWorkspace`] |
+/// | Several coefficients of one NTRU | [`Self::key_switch_many_at_to`] | [`NtruLweKeySwitchingBatchWorkspace`] |
+/// | Coefficients of successive NTRUs | [`Self::modulus_switch_extract_at_to`], then [`Self::key_switch_extracted_batch_to`] | [`NtruLweKeySwitchingBatchWorkspace`] |
+///
+/// Only the shared-input path reuses Q→q conversion. Streamed returns convert
+/// each source separately and retain its extracted LWE until the tile is switched.
 #[derive(Clone)]
 pub struct NtruLweKeySwitchingKey<T: FheUint> {
     input_modulus: Option<T>,
@@ -188,46 +199,6 @@ impl<T: FheUint> NtruLweKeySwitchingKey<T> {
             modulus,
             workspace.extracted.as_mut_view(),
         );
-    }
-
-    /// Converts and extracts one coefficient into an intermediate LWE under f at q.
-    ///
-    /// This is the first stage of [`Self::key_switch_at_to`], without the LWE
-    /// key switch. It overwrites an N+1-element LWE, applying Q→q rounding before
-    /// extraction signs. The source NTRU can then be overwritten. To return a
-    /// stream of different polynomials, write successive workspace slots from
-    /// [`NtruLweKeySwitchingBatchWorkspace::extracted_mut`], then call
-    /// [`Self::key_switch_extracted_batch_to`] for the filled prefix.
-    ///
-    /// # Correctness
-    /// The source key, canonical coefficient and noise requirements of
-    /// [`Self::key_switch_at_to`] apply. The result still uses the signed NTRU
-    /// secret f, not the independent target LWE secret. No allocation is made.
-    ///
-    /// # Panics
-    /// Panics before writing if the source/extracted lengths, coefficient index
-    /// or target modulus do not match this key.
-    pub fn modulus_switch_extract_at_to<M: RingContext<T>>(
-        &self,
-        input: NtruCiphertext<&[T]>,
-        index: usize,
-        output: Lwe<&mut [T]>,
-        modulus: M,
-    ) {
-        let n = self.poly_length();
-        assert_eq!(input.as_ref().len(), n, "NTRU input length mismatch");
-        assert!(index < n, "NTRU extraction index is out of range");
-        assert_eq!(
-            output.as_ref().len(),
-            n + 1,
-            "extracted LWE length mismatch"
-        );
-        assert_eq!(
-            modulus.explicit_value(),
-            self.basis().modulus(),
-            "target LWE modulus mismatch"
-        );
-        self.modulus_switch_extract_coefficient(input, index, output, modulus);
     }
 
     /// The public boundary established dimensions/index/modulus. Fuse conversion

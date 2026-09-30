@@ -72,11 +72,24 @@ Sample extraction、NLev/NGSW 外积与 CMUX 位于 [`primus_lattice`](../primus
 
 `NtruLweKeySwitchingKey::generate(f, Q, s, lwe_parameters, basis, rng)` 从有符号 NTRU 秘密 f 生成返回原语，目标 s 是独立生成的 `primus_lwe::LweSecretKey`。参数和 basis 使用目标模数 q；s 的维数可以不同，也无需补零成为可逆 NTRU 秘密。f 的每个有符号系数的幅值必须小于显式 q，生成时在采样前检查。
 
-一次创建 `NtruLweKeySwitchingWorkspace::new(N)`，随后使用 `key_switch_to` 返回常数项，或使用 `key_switch_at_to(input, index, output, q, workspace)` 返回其他系数。输入必须是系数域 NTRU 密文，NTT/Fourier 输出需要先恢复为系数。每次调用覆盖输出和唯一一份 N+1 元素的中间 LWE 缓冲，无额外分配。长度、索引和目标模数检查先于输出及 scratch 写入。
+输入必须是系数域 NTRU 密文，NTT/Fourier 输出需要先恢复为系数。工作区一次创建后复用。所有返回路径均覆盖输出，在线不分配，并在写入前检查调用方提供的形状和目标模数。
 
-返回同一输入的多个系数时，使用 `key_switch_many_at_to(input, indices, outputs, q, workspace)`，配合 `NtruLweKeySwitchingBatchWorkspace::new(N, output_dimension)`。连续前缀传入 `0..outputs.len()`，指定位置传入 `indices.iter().copied()`；保留索引顺序及重复项。精确长度、可克隆的迭代器用于在写入前验证完整批次。多个输出共享一次 Q→q 转换，再用固定小块复用 LWE 批量 key switch。空批次不操作；单元素直接转换并提取。结果与逐项调用一致，包括舍入 ties，在线不分配。[返回阶段基准](benches/lwe_return.rs) 单独比较这两条路径，不包含盲旋转。
+| 返回内容 | 密钥方法 | 工作区 |
+| --- | --- | --- |
+| 一个系数 | `key_switch_at_to`；索引零可用 `key_switch_to` | `NtruLweKeySwitchingWorkspace::new(N)` |
+| 同一 NTRU 的多个系数 | `key_switch_many_at_to` | `NtruLweKeySwitchingBatchWorkspace::new(N, output_dimension)` |
+| 陆续生成的不同 NTRU 的系数 | `modulus_switch_extract_at_to`，随后 `key_switch_extracted_batch_to` | 同一种批量工作区 |
 
-不同输出来自不同 NTRU 多项式时，用 `modulus_switch_extract_at_to(input.as_view(), index, workspace.extracted_mut(slot), q)` 填充中间槽位，再用 `key_switch_extracted_batch_to(outputs, q, workspace)` 返回已填充的前缀。每块最多包含 `workspace.batch_capacity()` 个样本。每份输入独立转换，提取后即可覆盖源多项式；仅中间 LWE 保留到块返回。下次调用前须重新填充所有将被消费的槽位，工作区不跟踪样本初始化或密钥身份。
+单项路径将转换和提取融合到一份 N+1 元素的中间 LWE。返回同一输入的多个系数时，向 `key_switch_many_at_to` 传入 `0..outputs.len()` 或 `indices.iter().copied()`。接口保留索引顺序及重复项，并在写入前验证精确长度、可克隆的迭代器。多个输出共享一次 Q→q 转换和固定小块 LWE key switch；空批次不操作，单元素使用标量路径。结果与逐项调用一致，包括舍入 ties。[返回阶段基准](benches/lwe_return.rs) 单独比较这两条路径，不包含盲旋转。
+
+不同源多项式陆续生成时：
+
+1. 选取包含 k 个输出的小块，其中 `k <= workspace.batch_capacity()`。
+2. 用 `modulus_switch_extract_at_to(input.as_view(), index, workspace.extracted_slot_mut(slot), q)` 填充 `0..k` 的每个槽位。slot 是当前块内的输出位置，index 是源多项式的系数索引。每份输入独立转换，提取后即可覆盖源多项式。
+3. 将恰好 k 个输出传给 `key_switch_extracted_batch_to`。它只读取已填充的前缀，槽位 i 对应输出 i，提取样本保持不变。末块不足容量时无需清空后续槽位。
+4. 为下一块重新填充将被消费的槽位。若要改用同一工作区返回共享输入的多个系数，应先完成待返回的小块；共享输入路径可能覆盖这些槽位。
+
+工作区不跟踪已填充槽位数或样本的密钥/模数身份。存储初始化为零，不代表槽位已经为当前请求准备好。
 
 运算先逐系数执行 `c' = round(q*c/Q) mod q`（最近舍入，半格向上），再提取 `b=0`、`i<=index` 时 `a[i]=-c'[index-i]`、否则 `a[i]=c'[N+index-i]`，最后在 q 下进行 LWE key switch。提取秘密为 f 的有符号系数向量，LWE 相位 `b-<a,f>=(f*c')[index]`。舍入必须先于提取取负，否则恰好半格时可能得到不同结果。单输出路径把模数转换和提取融合为一次 scratch 写入，复用 `primus_reduce::ModulusSwitch` 与 `primus_lwe::LweKeySwitchingKey`。
 

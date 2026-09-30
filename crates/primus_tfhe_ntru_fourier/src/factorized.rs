@@ -280,7 +280,7 @@ impl<'a, T: TorusFftValue, Table: FftTable, LM: primus_reduce::RingContext<T>>
         key.modulus_switch_extract_at_to(
             evaluator.blind_rotation.current.as_view(),
             0,
-            evaluator.batch_return_workspace.extracted_mut(slot),
+            evaluator.batch_return_workspace.extracted_slot_mut(slot),
             parameters.external_lwe().cipher_modulus(),
         );
     }

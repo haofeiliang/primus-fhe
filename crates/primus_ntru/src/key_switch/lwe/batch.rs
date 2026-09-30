@@ -58,7 +58,7 @@ impl<T: FheUint> NtruLweKeySwitchingKey<T> {
                 indices.next().expect("NTRU extraction index missing"),
                 outputs[0].as_mut_view(),
                 modulus,
-                workspace.extracted_mut(0),
+                workspace.extracted_slot_mut(0),
             );
             return;
         }
@@ -77,13 +77,55 @@ impl<T: FheUint> NtruLweKeySwitchingKey<T> {
         }
     }
 
+    /// Converts and extracts one coefficient into an intermediate LWE under f at q.
+    ///
+    /// This is the first stage of [`Self::key_switch_at_to`], without the LWE
+    /// key switch. It overwrites an N+1-element LWE, applying Q→q rounding before
+    /// extraction signs. The source NTRU can then be overwritten. To return a
+    /// stream of different polynomials, write successive workspace slots from
+    /// [`NtruLweKeySwitchingBatchWorkspace::extracted_slot_mut`], then call
+    /// [`Self::key_switch_extracted_batch_to`] for the filled prefix.
+    ///
+    /// # Correctness
+    /// The source key, canonical coefficient and noise requirements of
+    /// [`Self::key_switch_at_to`] apply. The result still uses the signed NTRU
+    /// secret f, not the independent target LWE secret. No allocation is made.
+    ///
+    /// # Panics
+    /// Panics before writing if the source/extracted lengths, coefficient index
+    /// or target modulus do not match this key.
+    pub fn modulus_switch_extract_at_to<M: RingContext<T>>(
+        &self,
+        input: NtruCiphertext<&[T]>,
+        index: usize,
+        output: Lwe<&mut [T]>,
+        modulus: M,
+    ) {
+        let n = self.poly_length();
+        assert_eq!(input.as_ref().len(), n, "NTRU input length mismatch");
+        assert!(index < n, "NTRU extraction index is out of range");
+        assert_eq!(
+            output.as_ref().len(),
+            n + 1,
+            "extracted LWE length mismatch"
+        );
+        assert_eq!(
+            modulus.explicit_value(),
+            self.basis().modulus(),
+            "target LWE modulus mismatch"
+        );
+        self.modulus_switch_extract_coefficient(input, index, output, modulus);
+    }
+
     /// Key-switches the filled prefix of a reusable extracted-LWE tile.
     ///
     /// Reads the first `outputs.len()` samples prepared through
     /// [`Self::modulus_switch_extract_at_to`], preserving their order in outputs
-    /// and leaving their slots intact for the caller to reuse. Outputs and switched
-    /// scratch are overwritten without allocation. Empty batches do nothing; a
-    /// singleton writes directly to the caller's LWE without a tile copy.
+    /// and leaving all extracted slots intact. Exactly the prefix `0..outputs.len()`
+    /// is read; later slots are ignored, including on a partial final tile.
+    /// Outputs and switched scratch are overwritten without allocation. Empty
+    /// batches do nothing; a singleton writes directly to the caller's LWE without
+    /// a tile copy.
     ///
     /// # Correctness
     /// Every consumed sample must be an LWE under this key's signed f at q,
@@ -206,62 +248,29 @@ impl<T: FheUint> NtruLweKeySwitchingKey<T> {
 /// reuse the converted polynomial; streamed returns fill extracted slots directly.
 /// It holds ciphertext data only and need not be cleared between calls, but each
 /// consumed extracted slot must be filled for the current operation.
+///
+/// For a stream, fill slots `0..k` through [`Self::extracted_slot_mut`], then pass
+/// exactly k output ciphertexts to
+/// [`NtruLweKeySwitchingKey::key_switch_extracted_batch_to`]. Slot i produces
+/// output i, and k may be smaller than [`Self::batch_capacity`] for the last tile.
+/// Extraction owns no source borrow after the call, so its NTRU buffer can be reused.
+/// Finish the pending tile before using this workspace for
+/// [`NtruLweKeySwitchingKey::key_switch_many_at_to`], which may overwrite its slots.
+/// No filled-slot count or key/modulus identity is tracked; zero-initialized
+/// storage does not establish that a sample belongs to the current request.
 pub struct NtruLweKeySwitchingBatchWorkspace<T: FheUint> {
+    /// N coefficients at q, live across every tile of a shared-input return.
+    /// Streamed preparation does not use this buffer.
     converted: Box<[T]>,
+    /// Slot-major LWEs under f at q: each slot contains N mask values and a body.
     extracted: Box<[T]>,
+    /// Flat target-key output tile, copied into the caller's separate LWE objects.
+    /// Empty and singleton returns do not use this buffer.
     switched: Box<[T]>,
     output_dimension: usize,
 }
 
 impl<T: FheUint> NtruLweKeySwitchingBatchWorkspace<T> {
-    /// Fills one tile from the already rounded q-domain polynomial. The caller
-    /// validated the complete index sequence and tile size; retaining `converted`
-    /// across tiles avoids repeating Q→q. Extraction applies signs only afterward.
-    fn extract_converted_tile<M: RingContext<T>>(
-        &mut self,
-        indices: &mut impl Iterator<Item = usize>,
-        count: usize,
-        modulus: M,
-    ) {
-        let sample_len = self.poly_length() + 1;
-        let input = NtruCiphertext::new(&self.converted[..]);
-        for mut sample in LweIterMut::new(&mut self.extracted[..count * sample_len], sample_len) {
-            let index = indices.next().expect("NTRU extraction index missing");
-            input.extract_lwe_at_to(index, &mut sample, modulus);
-        }
-    }
-
-    /// Borrows matching prefixes of the intermediate and switched LWE tiles.
-    /// Public boundaries already checked count <= capacity and key dimensions.
-    fn lwe_tiles_mut(&mut self, count: usize) -> (&[T], &mut [T]) {
-        let extracted_len = count * (self.poly_length() + 1);
-        let switched_len = count * (self.output_dimension + 1);
-        (
-            &self.extracted[..extracted_len],
-            &mut self.switched[..switched_len],
-        )
-    }
-
-    /// Maximum number of intermediate LWEs retained for one return tile.
-    #[must_use]
-    pub const fn batch_capacity(&self) -> usize {
-        RETURN_BATCH_SIZE
-    }
-
-    /// Borrows one N+1-element intermediate LWE slot, without allocating.
-    /// Fill the whole sample at q before calling
-    /// [`NtruLweKeySwitchingKey::key_switch_extracted_batch_to`].
-    ///
-    /// # Panics
-    /// Panics if `slot` is outside [`Self::batch_capacity`].
-    #[must_use]
-    pub fn extracted_mut(&mut self, slot: usize) -> Lwe<&mut [T]> {
-        let len = self.poly_length() + 1;
-        LweIterMut::new(&mut self.extracted, len)
-            .nth(slot)
-            .expect("NTRU extracted LWE slot is out of range")
-    }
-
     /// Allocates the converted polynomial and fixed input/output LWE tiles.
     ///
     /// # Panics
@@ -296,5 +305,60 @@ impl<T: FheUint> NtruLweKeySwitchingBatchWorkspace<T> {
     #[must_use]
     pub fn output_dimension(&self) -> usize {
         self.output_dimension
+    }
+
+    /// Maximum number of intermediate LWEs retained for one return tile.
+    #[must_use]
+    pub const fn batch_capacity(&self) -> usize {
+        RETURN_BATCH_SIZE
+    }
+
+    /// Borrows one N+1-element intermediate LWE slot, without allocating or clearing.
+    /// `slot` is a position within the current tile, not an NTRU coefficient index.
+    /// Fill the whole sample through [`NtruLweKeySwitchingKey::modulus_switch_extract_at_to`]
+    /// before returning the filled prefix with
+    /// [`NtruLweKeySwitchingKey::key_switch_extracted_batch_to`].
+    /// Merely borrowing a slot does not mark it as initialized; other slots are untouched.
+    ///
+    /// # Panics
+    /// Panics if `slot` is outside [`Self::batch_capacity`].
+    #[must_use]
+    pub fn extracted_slot_mut(&mut self, slot: usize) -> Lwe<&mut [T]> {
+        assert!(
+            slot < self.batch_capacity(),
+            "NTRU extracted LWE slot is out of range"
+        );
+        let len = self.poly_length() + 1;
+        // Construction checked capacity * len; the slot check bounds both offsets.
+        let start = slot * len;
+        Lwe::new(&mut self.extracted[start..start + len])
+    }
+
+    /// Fills one tile from the already rounded q-domain polynomial. The caller
+    /// validated the complete index sequence and tile size; retaining `converted`
+    /// across tiles avoids repeating Q→q. Extraction applies signs only afterward.
+    fn extract_converted_tile<M: RingContext<T>>(
+        &mut self,
+        indices: &mut impl Iterator<Item = usize>,
+        count: usize,
+        modulus: M,
+    ) {
+        let sample_len = self.poly_length() + 1;
+        let input = NtruCiphertext::new(&self.converted[..]);
+        for mut sample in LweIterMut::new(&mut self.extracted[..count * sample_len], sample_len) {
+            let index = indices.next().expect("NTRU extraction index missing");
+            input.extract_lwe_at_to(index, &mut sample, modulus);
+        }
+    }
+
+    /// Borrows matching prefixes of the intermediate and switched LWE tiles.
+    /// Public boundaries already checked count <= capacity and key dimensions.
+    fn lwe_tiles_mut(&mut self, count: usize) -> (&[T], &mut [T]) {
+        let extracted_len = count * (self.poly_length() + 1);
+        let switched_len = count * (self.output_dimension + 1);
+        (
+            &self.extracted[..extracted_len],
+            &mut self.switched[..switched_len],
+        )
     }
 }

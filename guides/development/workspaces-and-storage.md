@@ -49,7 +49,7 @@ conversion, extraction, key switching and tile-copy costs together; the backend
 `mvb` benchmarks measure complete interleaved and factorized requests.
 
 Factorized MVB streams each different product through
-`modulus_switch_extract_at_to` into `extracted_mut(slot)`, then calls
+`modulus_switch_extract_at_to` into `extracted_slot_mut(slot)`, then calls
 `key_switch_extracted_batch_to` on the filled output prefix. Each polynomial
 gets its own Q→q conversion, but only extracted LWEs survive until a tile is
 returned. The existing batch workspace is reused, adding no retained heap.
