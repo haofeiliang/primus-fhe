@@ -3,7 +3,7 @@
 use primus_integer::FheUint;
 use primus_lattice::ntru::NttNtru;
 use primus_ntt::MonomialNttTable;
-use primus_poly::{NttPolynomialIter, PolynomialIterMut, PolynomialOwned};
+use primus_poly::{NttPolynomial, NttPolynomialIter, PolynomialIterMut, PolynomialOwned};
 use primus_tfhe::{FactorizedLookupTable, LweCiphertext};
 
 use crate::Evaluator;
@@ -92,10 +92,11 @@ where
 /// Reusable workspace for fixed-scale factorized MVB.
 ///
 /// Initializes V with `NLev[1]`, shares one blind rotation at step one, then
-/// multiplies each public factor before switching from the accumulator secret
-/// Q to q and switching to the external LWE secret. Only one extra NTT polynomial
-/// is allocated beyond the ordinary evaluator's workspace, regardless of the
-/// output count. Outputs use the same external secret and dimension as [`Evaluator`].
+/// multiplies each public factor. Each product is independently converted Q→q
+/// and extracted, then small LWE tiles share key switching to the external secret.
+/// Only one extra NTT polynomial is allocated beyond the ordinary evaluator's
+/// workspace, regardless of output count. Outputs use the same external secret
+/// and dimension as [`Evaluator`].
 pub struct FactorizedEvaluator<'a, T, Table, LM = primus_modulus::BarrettModulus<T>>
 where
     T: FheUint,
@@ -202,7 +203,36 @@ where
         lookup_table: &NttFactorizedLookupTable<'_, T, Table, LM>,
         outputs: &mut [LweCiphertext<T>],
     ) {
-        let evaluator = &mut self.evaluator;
+        self.check_io(input, lookup_table, outputs);
+        self.prepare_shared_rotation(input, &lookup_table.common_polynomial);
+
+        let parameters = self.evaluator.context.parameters();
+        let key = self.evaluator.server_key.key_switching_key();
+        let modulus = parameters.external_lwe().cipher_modulus();
+        let n = parameters.poly_length();
+        let batch_size = self.evaluator.batch_return_workspace.batch_capacity();
+        let mut factors = NttPolynomialIter::new(&lookup_table.factors, n);
+        for outputs in outputs.chunks_mut(batch_size) {
+            for (slot, factor) in factors.by_ref().take(outputs.len()).enumerate() {
+                self.prepare_factor_return(factor, slot);
+            }
+            key.key_switch_extracted_batch_to(
+                outputs,
+                modulus,
+                &mut self.evaluator.batch_return_workspace,
+            );
+        }
+    }
+
+    /// Validate context identity and every ciphertext before BR mutates scratch.
+    /// The prepared program fixes factor count and transform layout for this context.
+    fn check_io(
+        &self,
+        input: &LweCiphertext<T>,
+        lookup_table: &NttFactorizedLookupTable<'_, T, Table, LM>,
+        outputs: &[LweCiphertext<T>],
+    ) {
+        let evaluator = &self.evaluator;
         assert!(
             core::ptr::eq(evaluator.context, lookup_table.context),
             "MVB program was prepared by a different context"
@@ -219,23 +249,37 @@ where
             outputs.iter().all(|output| output.dimension() == dimension),
             "MVB output ciphertext dimension mismatch"
         );
+    }
 
-        let modulus = parameters.accumulator_ntru().cipher_modulus();
-        let table = evaluator.context.table();
-        evaluator.blind_rotate(input, &lookup_table.common_polynomial, 1);
+    /// Preserve the common blind rotation in transform form for all factors.
+    /// Individual products can then overwrite the coefficient accumulator.
+    fn prepare_shared_rotation(&mut self, input: &LweCiphertext<T>, common: &PolynomialOwned<T>) {
+        let evaluator = &mut self.evaluator;
+        evaluator.blind_rotate(input, common, 1);
         evaluator
             .blind_rotation
             .current
-            .write_ntt_form(&mut self.shared_rotation, table);
-        let factors = NttPolynomialIter::new(&lookup_table.factors, parameters.poly_length());
-        for (factor, output) in factors.zip(outputs) {
-            // Reuse current for the NTT product, then restore coefficient form
-            // before key switching. The shared BR result remains intact.
-            let mut product = NttNtru::new(evaluator.blind_rotation.current.as_mut());
-            self.shared_rotation
-                .mul_ntt_polynomial_to(&factor, &mut product, modulus);
-            product.into_coeff_form(table);
-            evaluator.return_accumulator_at_to(0, output);
-        }
+            .write_ntt_form(&mut self.shared_rotation, evaluator.context.table());
+    }
+
+    /// Multiply one factor and extract its independently rounded q-domain sample.
+    /// Only the LWE slot survives; the next factor may overwrite the product buffers.
+    fn prepare_factor_return(&mut self, factor: NttPolynomial<&[T]>, slot: usize) {
+        let evaluator = &mut self.evaluator;
+        let parameters = evaluator.context.parameters();
+        let mut product = NttNtru::new(evaluator.blind_rotation.current.as_mut());
+        self.shared_rotation.mul_ntt_polynomial_to(
+            &factor,
+            &mut product,
+            parameters.accumulator_ntru().cipher_modulus(),
+        );
+        product.into_coeff_form(evaluator.context.table());
+        let key = evaluator.server_key.key_switching_key();
+        key.modulus_switch_extract_at_to(
+            evaluator.blind_rotation.current.as_view(),
+            0,
+            evaluator.batch_return_workspace.extracted_mut(slot),
+            parameters.external_lwe().cipher_modulus(),
+        );
     }
 }

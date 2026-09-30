@@ -46,7 +46,7 @@ NTT 表需要实现 `MonomialNttTable`，内置表均支持。Context 检查长�
 
 系数模数必须为奇数；预处理后的因子保留 NTT 表示。
 
-经典 binary/ternary 共用加密初始化和 BR，随后对每个因子乘积 KS。 因子同时放大初始化与 BR 噪声，返回 KS 噪声在乘积后加入。
+经典 binary/ternary 共用加密初始化和 BR。每个因子乘积独立完成 Q→q 和提取，再复用 PBS 工作区分块批量执行 LWE KS。提取后即复用系数多项式缓冲，不同时保留所有乘积。 因子同时放大初始化与 BR 噪声，返回 KS 噪声在乘积后加入。
 
 运行[17 阈值示例](examples/ntru_ntt_mvb_thresholds.rs)，命令使用 `--example ntru_ntt_mvb_thresholds`。 它展示交错容量之外的多输出；算法选择及编码限制见[共享 MVB 契约](../primus_tfhe/README.zh_CN.md#固定尺度分解式-mvb)。
 

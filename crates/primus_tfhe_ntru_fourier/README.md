@@ -48,7 +48,7 @@ Compile through `context.compile_factorized_lookup_table_fn` and bind a `Factori
 
 The actual scale `round(2^BITS/t_out)` must be even (`t_out=10` works for u32/u64). Odd scales return `LookupTableError::OddFactorizationScale`. Factors are transformed as signed integers without torus scaling; budget their amplification and FFT error.
 
-Classic binary/ternary keys share encrypted initialization and BR, then key-switch each product. Factor norms amplify initialization and BR noise; return-KS noise is added afterward.
+Classic binary/ternary keys share encrypted initialization and BR. Each factor product is independently converted from Q to q and extracted; small tiles reuse the PBS workspace for batched LWE key switching. The coefficient polynomial is reused after each extraction, without retaining every product. Factor norms amplify initialization and BR noise; return-KS noise is added afterward.
 
 Run the [17-threshold example](examples/ntru_fourier_mvb_thresholds.rs) with `--example ntru_fourier_mvb_thresholds`. It demonstrates output counts beyond interleaved capacity. See the [shared MVB contract](../primus_tfhe/README.md#fixed-scale-factorized-mvb) for algorithm selection and encoding limits.
 

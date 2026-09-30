@@ -51,7 +51,7 @@ fn value(m: usize, i: usize) -> usize {
     match i {
         0 => 9 - m,
         1 => 9 * (m % 2),
-        _ => usize::from(m >= 3),
+        _ => usize::from(m >= i % DOMAIN),
     }
 }
 
@@ -62,8 +62,12 @@ fn check_complete<T: TorusFftValue, Table: FftTable>(distr: SecretKeyDistr) {
     let modulus = NativeModulus::new();
     // Nonbinary t_out=10 has an even actual delta for both u32 and u64.
     let codec = ScaledCodec::new(T::as_from(10usize), modulus);
+    // Two full return tiles and a singleton tail reuse one polynomial buffer.
+    let output_count = 17;
     let lut = context
-        .compile_factorized_lookup_table_fn(&codec, DOMAIN, 3, |m, i| T::as_from(value(m, i)))
+        .compile_factorized_lookup_table_fn(&codec, DOMAIN, output_count, |m, i| {
+            T::as_from(value(m, i))
+        })
         .unwrap();
     assert_eq!(
         (
@@ -71,7 +75,7 @@ fn check_complete<T: TorusFftValue, Table: FftTable>(distr: SecretKeyDistr) {
             lut.output_count(),
             lut.output_plaintext_modulus()
         ),
-        (DOMAIN, 3, T::as_from(10usize))
+        (DOMAIN, output_count, T::as_from(10usize))
     );
     let mut evaluator = primus_tfhe_ntru_fourier::FactorizedEvaluator::try_from_bootstrapper(
         context.evaluator(&server).unwrap(),
@@ -81,8 +85,8 @@ fn check_complete<T: TorusFftValue, Table: FftTable>(distr: SecretKeyDistr) {
     let decryptor = context.decryptor(&client).unwrap();
     let dimension = context.parameters().external_lwe_dimension();
     assert_eq!(dimension, DIM);
-    let mut outputs = vec![LweCiphertext::zero(dimension); 3];
-    let singles: Vec<_> = (0..3)
+    let mut outputs = vec![LweCiphertext::zero(dimension); output_count];
+    let singles: Vec<_> = (0..output_count)
         .map(|i| {
             LookupTable::try_new(DOMAIN, N, T::as_from(15usize), modulus, modulus, |m| {
                 Ok(codec.encode_value(T::as_from(value(m, i)), Unsigned))

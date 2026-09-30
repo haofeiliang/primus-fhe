@@ -90,6 +90,17 @@ where
         &self.lookup_table
     }
 
+    /// Borrows PBS's existing workspace for returning streamed NTRU outputs.
+    /// One-hot generation does not use these buffers. Complete each filled tile
+    /// before calling ordinary/interleaved PBS, which may overwrite its samples.
+    /// Dimensions match this evaluator's NTRU and external LWE parameters.
+    #[must_use]
+    pub fn lwe_return_batch_workspace(
+        &mut self,
+    ) -> &mut primus_ntru::NtruLweKeySwitchingBatchWorkspace<T> {
+        &mut self.pbs.batch_return_workspace
+    }
+
     /// Returns the shared CBS bases and accumulator layouts.
     #[must_use]
     pub fn parameters(&self) -> &'a CircuitBootstrapParameters<T> {

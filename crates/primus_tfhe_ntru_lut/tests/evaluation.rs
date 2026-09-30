@@ -75,10 +75,10 @@ fn cbs<T: FheUint>() -> CircuitBootstrapConfig {
 // Cover d=0, d=c, mixed layers, unequal chunk counts and a full coefficient ring.
 fn configs(radix: usize) -> Vec<LookupTableConfig> {
     let counts = if radix == 2 {
-        // All table layers; no table layer; a domain larger than the ring,
+        // All table layers with a return-tile tail; no table layer; a larger domain,
         // with both public and encrypted table layers and several rotations;
         // finally fill every coefficient of the selected polynomial.
-        vec![(3, 2, 0), (3, 5, 3), (7, 3, 5), (7, 3, 6)]
+        vec![(3, 9, 0), (3, 5, 3), (7, 3, 5), (7, 3, 6)]
     } else {
         // Also exercise a single public layer producing exactly one output.
         vec![(3, 2, 1), (2, 3, 2), (2, 1, 1)]

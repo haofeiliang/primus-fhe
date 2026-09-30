@@ -48,7 +48,7 @@ Fourier 环只支持 `NativeModulus`；`PowOf2Modulus` 环不受支持。 NTRU �
 
 实际尺度 `round(2^BITS/t_out)` 必须为偶数，`t_out=10` 对 u32/u64 均可用。 奇数尺度返回 `LookupTableError::OddFactorizationScale`。因子按有符号整数变换，不作环面缩放； 须预算因子放大和 FFT 误差。
 
-经典 binary/ternary 共用加密初始化和 BR，随后对每个因子乘积 KS。 因子同时放大初始化与 BR 噪声，返回 KS 噪声在乘积后加入。
+经典 binary/ternary 共用加密初始化和 BR。每个因子乘积独立完成 Q→q 和提取，再复用 PBS 工作区分块批量执行 LWE KS。提取后即复用系数多项式缓冲，不同时保留所有乘积。 因子同时放大初始化与 BR 噪声，返回 KS 噪声在乘积后加入。
 
 运行[17 阈值示例](examples/ntru_fourier_mvb_thresholds.rs)，命令使用 `--example ntru_fourier_mvb_thresholds`。 它展示交错容量之外的多输出；算法选择及编码限制见[共享 MVB 契约](../primus_tfhe/README.zh_CN.md#固定尺度分解式-mvb)。
 

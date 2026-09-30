@@ -20,8 +20,12 @@ evaluate_to
       h=0: lift the sole public polynomial
       h>0: select_public_table_groups, then select_encrypted_table_layer
     rotate_selected_table
-    key_switch_to: coefficient-wise Q -> q, extraction, external LWE switch
+    NTT: key_switch_to (independent Q -> q, extraction and LWE key switch)
+    Fourier: modulus_switch_extract_at_to (independent Q -> q, extraction into a tile slot)
+      key_switch_extracted_batch_to when eight slots or the last output are ready
 ```
+
+The Fourier evaluator groups selection, rotation and extraction for one tile in `prepare_output_returns`; `evaluate_to` validates the full request, prepares selectors, then prepares and key-switches each tile. The helper leaves completed LWE slots intact while reusing polynomial scratch for later outputs.
 
 Lengths below count array elements, not bytes or ciphertexts. Transformed storage uses T for NTT and Complex64 for Fourier; candidates always use coefficient-domain T values.
 
@@ -35,7 +39,7 @@ Lengths below count array elements, not bytes or ciphertexts. Transformed storag
 | `rotation_factors_len` | d*(M-1)*R | Public monomial differences, without gadget levels |
 | `candidates_len` | (P/M)*N if h>0; otherwise 0 | First-layer results and subsequent in-place compaction |
 
-`public_table_selectors` holds one complete batch only when h>0. Fourier additionally retains its coefficient form in `public_selector_coefficients`. `nonzero_selectors` holds one reusable scratch batch only when d>0. These counts exclude the embedded one-hot evaluator (including shared external-product and FFT workspaces), the return workspace, current/product ciphertexts and Fourier gadget constants; they are not a total heap estimate.
+`public_table_selectors` holds one complete batch only when h>0. Fourier additionally retains its coefficient form in `public_selector_coefficients`. `nonzero_selectors` holds one reusable scratch batch only when d>0. These counts exclude the embedded one-hot evaluator (including shared external-product, FFT and return workspaces), the NTT evaluator's separate scalar return buffer, current/product ciphertexts and Fourier gadget constants; they are not a total heap estimate.
 
 The public first layer computes `sum_k T_k odot NLEV[delta_k]`, including k=0. Later encrypted layers compute `c_0 + sum_{k>0}(c_k-c_0) otimes NGSW[delta_k]`. With no table layer, the server's BR-basis `NLEV[1]` lifts the single public polynomial.
 
@@ -49,7 +53,7 @@ For h>0, each call projects M+(c-1)*(M-1) selectors, and each output uses P+P/M-
 
 For h>0, selection performs `(P-1)/(M-1)` inverse transforms per output: 21 for M=4/P=64, versus 79 separately inverted products. NTT summation is exact; Fourier sums before torus conversion, so its rounding can differ from separately converted products. These are operation counts, not runtime or noise estimates. CBS, approximate decomposition, selector errors, Fourier rounding and the return path still require a decoding budget.
 
-Table products borrow one-hot CBS's external-product workspace; Fourier transforms also borrow its FFT engine. These stages execute serially and overwrite scratch before reuse. Storage choices and the measured memory/latency tradeoff are recorded in [workspaces and storage](../../guides/development/workspaces-and-storage.md).
+Table products borrow one-hot CBS's external-product workspace; Fourier transforms also borrow its FFT engine. These stages execute serially and overwrite scratch before reuse. NTT returns each completed polynomial through its scalar return buffer. Fourier immediately converts and extracts it into the embedded PBS return workspace. Selection and rotation leave the filled LWE slots intact; at most eight samples are retained before key switching, including a partial last tile. The outer Fourier evaluator needs no separate return buffer. A singleton tile writes directly to the caller output; larger tiles copy their switched LWEs from scratch into the separate output objects. This regrouping preserves each scalar return exactly, including Q→q rounding before extraction signs. Storage choices and the measured memory/latency tradeoff are recorded in [workspaces and storage](../../guides/development/workspaces-and-storage.md).
 
 ## Benchmark fixture
 
@@ -81,7 +85,8 @@ costs. Creation includes computing the selected public function.
 
 One `evaluate` iteration generates selectors for eight input chunks, selects,
 rotates and returns all eight output ciphertexts. Keys, public LUT compilation,
-encryption, validation and reusable workspace allocation are outside timing.
+encryption, correctness checks and reusable workspace allocation are outside timing.
+The shape checks inside `evaluate_to` remain timed.
 Throughput counts eight output ciphertexts, not eight independent requests.
 The separate `create_lut_and_drop` IDs include allocation, filling and destruction
 of one public high-precision LUT; Fourier registers this once per word width

@@ -123,6 +123,8 @@ fn check<T: FheUint, Q: Modulus<ValueT = T>, M: RingContext<T>>(source: Q, targe
             source_q - 2,
             source_q / 3,
         ];
+        let mut inputs = Vec::new();
+        let mut expected_inputs = Vec::new();
         for round in 0..4 {
             let raw: Vec<_> = (0..F.len())
                 .map(|i| {
@@ -214,6 +216,50 @@ fn check<T: FheUint, Q: Modulus<ValueT = T>, M: RingContext<T>>(source: Q, targe
                 for (output, index) in batch_outputs[..count].iter().zip(indices) {
                     assert_eq!(output, &individual_outputs[index]);
                 }
+            }
+            inputs.push(input);
+            expected_inputs.push(individual_outputs.clone());
+        }
+        // Different polynomials reuse one production buffer. Compare with the
+        // integer-checked outputs above, and overwrite the source before KS to
+        // ensure only each extracted q-domain LWE survives until the tile flush.
+        let mut current = NtruCiphertext::<Vec<T>>::zero(F.len());
+        let capacity = batch_workspace.batch_capacity();
+        for slot in 0..capacity {
+            batch_workspace.extracted_mut(slot).as_mut().fill(T::ONE);
+        }
+        for count in [17, 1, 0] {
+            let (_, allocations) = measure(|| {
+                for (tile, outputs) in batch_outputs[..count].chunks_mut(capacity).enumerate() {
+                    for slot in 0..outputs.len() {
+                        let i = tile * capacity + slot;
+                        current
+                            .as_mut()
+                            .copy_from_slice(inputs[i % inputs.len()].as_ref());
+                        key.modulus_switch_extract_at_to(
+                            current.as_view(),
+                            (3 * i + 1) % F.len(),
+                            batch_workspace.extracted_mut(slot),
+                            target,
+                        );
+                        current.as_mut().fill(T::ZERO);
+                    }
+                    key.key_switch_extracted_batch_to(outputs, target, &mut batch_workspace);
+                }
+                if count == 0 {
+                    key.key_switch_extracted_batch_to(
+                        &mut batch_outputs[..0],
+                        target,
+                        &mut batch_workspace,
+                    );
+                }
+            });
+            assert_eq!(allocations.count, 0);
+            for (i, output) in batch_outputs[..count].iter().enumerate() {
+                assert_eq!(
+                    output,
+                    &expected_inputs[i % inputs.len()][(3 * i + 1) % F.len()]
+                );
             }
         }
     }
@@ -322,6 +368,54 @@ fn validation_precedes_output_writes_and_key_sampling() {
         );
         assert_eq!(outputs, before);
     }
+    for (input_len, index, output_len, q) in [
+        (3, 0, 5, 65537),
+        (4, 4, 5, 65537),
+        (4, 0, 4, 65537),
+        (4, 0, 5, 65539),
+    ] {
+        let input = NtruCiphertext::new(vec![9u32; input_len]);
+        let mut extracted = LweCiphertext::new(vec![17u32; output_len]);
+        let before = extracted.clone();
+        assert!(
+            catch_unwind(AssertUnwindSafe(|| key.modulus_switch_extract_at_to(
+                input.as_view(),
+                index,
+                extracted.as_mut_view(),
+                BarrettModulus::new(q),
+            )))
+            .is_err()
+        );
+        assert_eq!(extracted, before);
+    }
+    for (count, last_len, scratch_n, scratch_dimension, q) in [
+        (9, 4, 4, 3, 65537),
+        (2, 3, 4, 3, 65537),
+        (2, 4, 3, 3, 65537),
+        (2, 4, 4, 2, 65537),
+        (2, 4, 4, 3, 65539),
+    ] {
+        let mut outputs = vec![LweCiphertext::new(vec![17u32; 4]); count];
+        *outputs.last_mut().unwrap() = LweCiphertext::new(vec![17; last_len]);
+        let before = outputs.clone();
+        let mut workspace = NtruLweKeySwitchingBatchWorkspace::new(scratch_n, scratch_dimension);
+        assert!(
+            catch_unwind(AssertUnwindSafe(|| key.key_switch_extracted_batch_to(
+                &mut outputs,
+                BarrettModulus::new(q),
+                &mut workspace,
+            )))
+            .is_err()
+        );
+        assert_eq!(outputs, before);
+    }
+    let mut workspace = NtruLweKeySwitchingBatchWorkspace::<u32>::new(4, 3);
+    assert!(
+        catch_unwind(AssertUnwindSafe(|| {
+            let _ = workspace.extracted_mut(workspace.batch_capacity());
+        }))
+        .is_err()
+    );
     for (f, dimension, basis_q, source_q) in [
         (65537, 3, 65537, 97),
         (-65537, 3, 65537, 97),

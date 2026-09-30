@@ -46,13 +46,21 @@ bytes for u64, excluding object/allocator overhead. Ownership conversions to
 CBS/MVB retain these buffers even when that operation does not use batch return.
 The [return benchmark](../../crates/primus_ntru/benches/lwe_return.rs) measures
 conversion, extraction, key switching and tile-copy costs together; the backend
-`mvb` benchmarks measure complete interleaved requests.
+`mvb` benchmarks measure complete interleaved and factorized requests.
+
+Factorized MVB streams each different product through
+`modulus_switch_extract_at_to` into `extracted_mut(slot)`, then calls
+`key_switch_extracted_batch_to` on the filled output prefix. Each polynomial
+gets its own Q→q conversion, but only extracted LWEs survive until a tile is
+returned. The existing batch workspace is reused, adding no retained heap.
+A singleton tile key-switches directly to the caller output, avoiding the
+intermediate output copy. Samples retain their order and equal scalar returns.
 
 ## Serial reuse in high-precision lookup
 
 One-hot CBS already reuses PBS's external-product workspace for BR, trace and scheme switching. Table selection and encrypted rotation now borrow that same workspace between one-hot calls. The NTT entry point is `OneHotCircuitBootstrapEvaluator::external_product_workspace`; Fourier's `external_product_workspaces` returns the FFT engine and external-product buffers together. Borrowers retain polynomial lengths and the FFT table identity. Every subsequent one-hot call overwrites its scratch before reading it.
 
-The high-precision evaluator therefore owns no second external-product workspace or FFT engine. Each evaluator still has independent mutable state, and borrowing excludes concurrent mutation. Existing one-hot/PBS conversion and recovery retain their ownership contracts. The separate return workspace belongs to the outer lookup output stage; no general mutable view into all PBS internals is exposed.
+The high-precision evaluator therefore owns no second external-product workspace or FFT engine. Each evaluator still has independent mutable state, and borrowing excludes concurrent mutation. Existing one-hot/PBS conversion and recovery retain their ownership contracts. The Fourier `OneHotCircuitBootstrapEvaluator::lwe_return_batch_workspace` also lends PBS's existing return buffers to the outer lookup stage. Each output is converted/extracted immediately, and table selection/rotation leave those LWE slots intact until batch key switching. Removing the outer Fourier scalar return buffer saves N+1 elements (4,100 bytes for u32 or 8,200 for u64 at N1024); no new batch scratch is allocated. The accessor exposes this workspace alone. NTT lookup retains its separate scalar return buffer: batching did not provide consistent gains across its measured word widths, whereas Fourier lookup and both factorized MVB backends benefited. The unchanged `pipeline` and `mvb` fixtures can be used to revisit this scheduling choice.
 
 Existing size/domain boundaries and semantic polynomial/ciphertext iterators describe batches. Table groups contain M polynomials; ciphertext iterators traverse one complete object at a time. Candidate compaction remains indexed because a group must be consumed before its result overwrites the prefix. No additional generic batch abstraction is needed.
 

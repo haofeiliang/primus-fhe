@@ -22,7 +22,7 @@ where
     pub(crate) fft: FftEngine<'a, Table>,
     pub(crate) blind_rotation: BlindRotationWorkspace<'a, T>,
     return_workspace: primus_ntru::NtruLweKeySwitchingWorkspace<T>,
-    batch_return_workspace: primus_ntru::NtruLweKeySwitchingBatchWorkspace<T>,
+    pub(crate) batch_return_workspace: primus_ntru::NtruLweKeySwitchingBatchWorkspace<T>,
 }
 
 impl<'a, T, Table, LM> Evaluator<'a, T, Table, LM>

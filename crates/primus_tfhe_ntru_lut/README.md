@@ -73,7 +73,7 @@ For fixed N, M and c, start with `d=min(c, floor(log2(N)/tau))`, making M^d as c
 
 ## Evaluation and workspace
 
-Each call performs one-hot CBS once per input chunk. High chunks select the LUT polynomial; low chunks locate its coefficient. All outputs reuse these selectors and rotation controls and return sequentially as LWEs under the independent external secret. Selection, rotation and return formulas live in the [implementation notes](IMPLEMENTATION.md#stage-and-buffer-layout).
+Each call performs one-hot CBS once per input chunk. High chunks select the LUT polynomial; low chunks locate its coefficient. All outputs reuse these selectors and rotation controls and return LWEs under the independent external secret in output-chunk order. Selection, rotation and return formulas live in the [implementation notes](IMPLEMENTATION.md#stage-and-buffer-layout).
 
 Each selection group accumulates products in the transform domain before one inverse transform. Fourier rounding can therefore differ from evaluating and converting each product separately; the encoded function is unchanged, and results still require an adequate decoding margin.
 
@@ -81,7 +81,7 @@ The data LUT stores each function value once per input/output chunk. Repeated gu
 
 The evaluator borrows its context, server key and table and allocates all buffers at construction. Reuse the result of `allocate_output()` with `evaluate_to` for allocation-free online evaluation. All chunk counts and LWE dimensions are checked before writes. Resources must match N/t/q/Q and actual key identity; Fourier also requires the exact FFT table instance. Each concurrent evaluator owns independent mutable workspace.
 
-The return path performs coefficient-wise Q→q, phase extraction and LWE key switching. Outputs approximate the q-domain chunk encoding; budget double-rounding and return errors.
+The return path performs coefficient-wise Q→q and phase extraction independently for each polynomial, then switches to the external LWE secret. NTT returns each output immediately. Fourier batches key switching through the embedded PBS return workspace, retaining only a small tile of intermediate LWEs; the polynomial buffer can be overwritten after each extraction. Outputs approximate the q-domain chunk encoding; budget double-rounding and return errors.
 
 ## Numerical limits and further reading
 

@@ -3,7 +3,7 @@
 use primus_fft::{Complex64, FftTable, TorusFftValue};
 use primus_lattice::ntru::FourierNtru;
 use primus_modulus::NativeModulus;
-use primus_poly::{FourierPolynomialIter, PolynomialIter, PolynomialOwned};
+use primus_poly::{FourierPolynomial, FourierPolynomialIter, PolynomialIter, PolynomialOwned};
 use primus_tfhe::{FactorizedLookupTable, LweCiphertext};
 
 use crate::Evaluator;
@@ -102,8 +102,9 @@ impl<'a, T: TorusFftValue, Table: FftTable, LM: primus_reduce::RingContext<T>>
 /// Reusable workspace for Native even-scale NTRU MVB.
 ///
 /// Initializes V with `NLev[1]`, shares one blind rotation at step one, then
-/// multiplies each factor before converting Q to q and switching to the external
-/// LWE secret. Extra workspace consists of two Fourier NTRU polynomials
+/// multiplies each factor. Each product is independently converted Q→q and
+/// extracted, then small LWE tiles share key switching to the external secret.
+/// Extra workspace consists of two Fourier NTRU polynomials
 /// (N complex values), independent of output count. Coefficient products and
 /// key switching reuse the ordinary evaluator's buffers and key material.
 pub struct FactorizedEvaluator<
@@ -207,7 +208,36 @@ impl<'a, T: TorusFftValue, Table: FftTable, LM: primus_reduce::RingContext<T>>
         lookup_table: &FourierFactorizedLookupTable<'_, T, Table, LM>,
         outputs: &mut [LweCiphertext<T>],
     ) {
-        let evaluator = &mut self.evaluator;
+        self.check_io(input, lookup_table, outputs);
+        self.prepare_shared_rotation(input, &lookup_table.common_polynomial);
+
+        let parameters = self.evaluator.context.parameters();
+        let key = self.evaluator.server_key.key_switching_key();
+        let modulus = parameters.external_lwe().cipher_modulus();
+        let n = parameters.poly_length();
+        let batch_size = self.evaluator.batch_return_workspace.batch_capacity();
+        let mut factors = FourierPolynomialIter::new(&lookup_table.factors, n / 2);
+        for outputs in outputs.chunks_mut(batch_size) {
+            for (slot, factor) in factors.by_ref().take(outputs.len()).enumerate() {
+                self.prepare_factor_return(factor, slot);
+            }
+            key.key_switch_extracted_batch_to(
+                outputs,
+                modulus,
+                &mut self.evaluator.batch_return_workspace,
+            );
+        }
+    }
+
+    /// Validate context identity and every ciphertext before BR mutates scratch.
+    /// The prepared program fixes factor count and transform layout for this context.
+    fn check_io(
+        &self,
+        input: &LweCiphertext<T>,
+        lookup_table: &FourierFactorizedLookupTable<'_, T, Table, LM>,
+        outputs: &[LweCiphertext<T>],
+    ) {
+        let evaluator = &self.evaluator;
         assert!(
             core::ptr::eq(evaluator.context, lookup_table.context),
             "MVB program was prepared by a different context"
@@ -224,23 +254,34 @@ impl<'a, T: TorusFftValue, Table: FftTable, LM: primus_reduce::RingContext<T>>
             outputs.iter().all(|out| out.dimension() == dimension),
             "MVB output ciphertext dimension mismatch"
         );
+    }
 
-        let n = parameters.poly_length();
-        evaluator.blind_rotate(input, &lookup_table.common_polynomial, 1);
+    /// Preserve the common blind rotation in transform form for all factors.
+    /// Individual products can then overwrite the coefficient accumulator.
+    fn prepare_shared_rotation(&mut self, input: &LweCiphertext<T>, common: &PolynomialOwned<T>) {
+        let evaluator = &mut self.evaluator;
+        evaluator.blind_rotate(input, common, 1);
         evaluator
             .blind_rotation
             .current
             .write_fourier_form(&mut self.shared_rotation, &mut evaluator.fft);
-        for (factor, output) in
-            FourierPolynomialIter::new(&lookup_table.factors, n / 2).zip(outputs)
-        {
-            // Preserve the shared rotation; restore each product to coefficient
-            // form in current before the ordinary LWE return path consumes it.
-            self.shared_rotation
-                .mul_fourier_polynomial_to(&factor, &mut self.product);
-            self.product
-                .write_torus_form(&mut evaluator.blind_rotation.current, &mut evaluator.fft);
-            evaluator.return_accumulator_at_to(0, output);
-        }
+    }
+
+    /// Multiply one factor and extract its independently rounded q-domain sample.
+    /// Only the LWE slot survives; the next factor may overwrite the product buffers.
+    fn prepare_factor_return(&mut self, factor: FourierPolynomial<&[Complex64]>, slot: usize) {
+        let evaluator = &mut self.evaluator;
+        let parameters = evaluator.context.parameters();
+        self.shared_rotation
+            .mul_fourier_polynomial_to(&factor, &mut self.product);
+        self.product
+            .write_torus_form(&mut evaluator.blind_rotation.current, &mut evaluator.fft);
+        let key = evaluator.server_key.key_switching_key();
+        key.modulus_switch_extract_at_to(
+            evaluator.blind_rotation.current.as_view(),
+            0,
+            evaluator.batch_return_workspace.extracted_mut(slot),
+            parameters.external_lwe().cipher_modulus(),
+        );
     }
 }

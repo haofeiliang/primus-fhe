@@ -4,7 +4,7 @@ use primus_lattice::{
     nlev::{FourierNlev, FourierNlevIter, FourierNlevIterMut, NlevIter},
     ntru::{NtruIter, NtruIterMut},
 };
-use primus_ntru::{FourierNgswCiphertext, NtruCiphertext, NtruLweKeySwitchingWorkspace};
+use primus_ntru::{FourierNgswCiphertext, NtruCiphertext};
 use primus_poly::{FourierPolynomialIter, FourierPolynomialIterMut, Polynomial, PolynomialIter};
 use primus_reduce::RingContext;
 use primus_tfhe::LweCiphertext;
@@ -20,6 +20,8 @@ use crate::{HighPrecisionLookupTable, LookupTableError, lookup_table::allocation
 /// rotation controls.
 /// Public monomial factors and all online workspaces are allocated at binding.
 /// Table products reuse one-hot CBS's external-product workspace between calls.
+/// Outputs are converted/extracted individually, then key-switched in bounded
+/// LWE tiles using its PBS return workspace; no batch of full polynomials is kept.
 /// Fourier transforms also reuse its engine and the same table instance.
 pub struct FourierLookupTableEvaluator<'a, T, Table, LM = primus_modulus::NativeModulus<T>>
 where
@@ -49,7 +51,6 @@ where
     candidates: Box<[T]>,
     current: NtruCiphertext<Box<[T]>>,
     product: NtruCiphertext<Box<[T]>>,
-    return_workspace: NtruLweKeySwitchingWorkspace<T>,
 }
 
 impl<'a, T, Table, LM> FourierLookupTableEvaluator<'a, T, Table, LM>
@@ -140,7 +141,6 @@ where
             candidates: vec![T::ZERO; candidates_len].into_boxed_slice(),
             current: NtruCiphertext::zero(n),
             product: NtruCiphertext::zero(n),
-            return_workspace: NtruLweKeySwitchingWorkspace::new(n),
         };
         evaluator.prepare_rotation_constants();
         Ok(evaluator)
@@ -219,14 +219,34 @@ where
             self.context.parameters().external_lwe_dimension(),
         );
         self.prepare_selectors(input);
-        for (index, output) in output.iter_mut().enumerate() {
-            self.select_table(index);
+        let key = self.server_key.key_switching_key();
+        let modulus = self.context.parameters().external_lwe().cipher_modulus();
+        let batch_size = self.one_hot.lwe_return_batch_workspace().batch_capacity();
+        for (tile_index, outputs) in output.chunks_mut(batch_size).enumerate() {
+            self.prepare_output_returns(tile_index * batch_size, outputs.len());
+            key.key_switch_extracted_batch_to(
+                outputs,
+                modulus,
+                self.one_hot.lwe_return_batch_workspace(),
+            );
+        }
+    }
+
+    /// Prepare one tile in output-chunk order. Selection and rotation reuse the
+    /// polynomial buffers but leave filled return slots intact until batch KS.
+    fn prepare_output_returns(&mut self, first_output: usize, count: usize) {
+        let key = self.server_key.key_switching_key();
+        let modulus = self.context.parameters().external_lwe().cipher_modulus();
+        for slot in 0..count {
+            self.select_table(first_output + slot);
             self.rotate_selected_table();
-            self.server_key.key_switching_key().key_switch_to(
-                &self.current,
-                output,
-                self.context.parameters().external_lwe().cipher_modulus(),
-                &mut self.return_workspace,
+            key.modulus_switch_extract_at_to(
+                self.current.as_view(),
+                0,
+                self.one_hot
+                    .lwe_return_batch_workspace()
+                    .extracted_mut(slot),
+                modulus,
             );
         }
     }

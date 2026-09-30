@@ -73,7 +73,7 @@ cargo run --release -p primus_tfhe_ntru_lut --example fourier_lookup
 
 ## 求值与工作区
 
-每次调用对每个输入 chunk 执行一次 one-hot CBS；高 chunks 选择 LUT 多项式，低 chunks 在所选多项式内定位系数。所有输出复用这些 selectors 和旋转控制，依次返回独立外部秘密下的 LWE。完整选择、旋转及返回公式见[实现说明](IMPLEMENTATION.md#stage-and-buffer-layout)。
+每次调用对每个输入 chunk 执行一次 one-hot CBS；高 chunks 选择 LUT 多项式，低 chunks 在所选多项式内定位系数。所有输出复用这些 selectors 和旋转控制，按输出 chunk 顺序返回独立外部秘密下的 LWE。完整选择、旋转及返回公式见[实现说明](IMPLEMENTATION.md#stage-and-buffer-layout)。
 
 每组选表在变换域累加所有乘积后只逆变换一次。Fourier 的舍入结果可能与逐个乘积分别转换后求和不同；编码函数保持不变，结果仍需留出足够的解码余量。
 
@@ -81,7 +81,7 @@ cargo run --release -p primus_tfhe_ntru_lut --example fourier_lookup
 
 Evaluator 借用 context、server key 和 table，并在构造时分配全部缓冲。复用 `allocate_output()` 的结果与 `evaluate_to`，在线无额外分配；所有 chunk 数量和 LWE 维数在写入前检查。资源必须匹配 N/t/q/Q，密钥须实际配套；Fourier 还要求相同 FFT table 实例。每个并发 evaluator 持有独立可变工作区。
 
-返回链路为逐系数 Q→q、相位提取、LWE key switch；输出近似 q 下的 chunk 编码，双重舍入与返回误差须纳入预算。
+返回链路对每个多项式独立执行逐系数 Q→q 和相位提取，再切换到外部 LWE 秘密。NTT 逐项返回；Fourier 复用内嵌 PBS 的返回工作区批量执行 key switch，只保留一小块中间 LWE，每次提取后即可覆盖多项式缓冲；输出近似 q 下的 chunk 编码，双重舍入与返回误差须纳入预算。
 
 ## 数值限制与进一步阅读
 
