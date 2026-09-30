@@ -15,7 +15,8 @@ Tests here protect raw ciphertext layouts and low-level operation contracts. The
 | `extraction.rs` | GLWE/NTRU sample order and phase signs, compact padding, packed extraction and allocation reuse |
 | `plaintext_and_gadget.rs` | Body-only plaintext updates, trivial ciphertext clearing, selected gadget diagonals; one representative per shared macro |
 | `external_product.rs` | Gadget product oracles, coefficient/borrowed transform outputs, independent NLev/control levels, dirty-output clearing, NTT coefficient/Fourier transform output-length rejection before writes and workspace reuse |
-| `external_product_sum.rs` | NTT/Fourier batch sums against independent polynomial oracles and separate products, u32/u64 and both FFT backends, empty-sum clearing, workspace reuse, paired-count and polynomial-length rejection |
+| `external_product_sum.rs` | NTT/Fourier batch sums against independent polynomial oracles and separate products, u32/u64 and both FFT backends, empty-sum clearing, fixed-buffer/pair-length rejection and recovery after partial accumulation |
+| `cmux_k.rs` | NGSW multi-way CMux count/default/output checks, validation of each pair before its difference, recovery after late failures and empty-batch copying; N=4 noiseless f=1 fixture |
 | `ternary_cmux.rs` | GGSW NTT/Fourier and NGSW NTT ternary rotation against an independent negacyclic oracle, sign/wrap boundary exponents, decomposition/rounding error and scratch reuse |
 
 Shared flat-operation macros are checked through one representative wrapper, using borrowed storage and a length that exercises SIMD tails. GGSW fixtures cover multi-row, multi-level polynomial traversal; NTRU monomial tests retain its separate single-polynomial implementation. Do not repeat the same operation over every wrapper solely to instantiate generated methods. Native, explicit-modulus, Fourier, and RNS cases remain separate where their numerical contracts differ. Layout-only fixtures use N=4; the flat scalar/factor test retains 65 coefficients for vector/tail traversal. Fourier CMUX retains u32/u64 and both FFT backends, including exact and truncated decomposition.
@@ -29,6 +30,10 @@ Nonzero gadget products validate NLev/NGSW conversion, level order and normaliza
 Do not add tests for raw constructors, standard slice forwarding, or every malformed buffer. Most raw-layout preconditions are deliberately unchecked here. Panic tests cover documented owning boundaries, and must also pass in release. A plain transform roundtrip is unnecessary when a retained nonzero convolution already checks the same conversion path and its scale.
 
 CMUX selection and encrypted GLWE/RNS gadget products also have end-to-end coverage in `primus_glwe/tests/cmux.rs`, `primus_glwe/tests/gadget_generation.rs`, `primus_ntru/tests/{gadget_generation,ternary_cmux}.rs`, and `primus_glwe_rns/tests/{glev,ext_prod}.rs`. Do not duplicate their encryption fixtures in this crate.
+
+NGSW k-CMux length/empty-batch checks live here; `primus_ntru` keeps the real-key
+selection and separate-product differential, including the noise from encrypted
+zero controls. Those numerical checks are independent of the raw shape tests.
 
 Run from the workspace root:
 

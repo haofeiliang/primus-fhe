@@ -1,4 +1,8 @@
 //! Shared NLev and NGSW decomposition, transform, and accumulation kernels.
+//!
+//! NLEV and NGSW have different encrypted phases but share this arithmetic and
+//! level layout. Wrappers choose the accumulator, clear it once per operation,
+//! and convert it after the last product. These kernels only add one product.
 
 use crate::workspace::{
     FourierNtruExternalProductWorkspaceRefMut, NttNtruExternalProductWorkspaceRefMut,
@@ -7,7 +11,7 @@ use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{Complex64, FftEngine, FftTable, TorusFftValue};
 use primus_integer::FheUint;
 use primus_ntt::NttTable;
-use primus_poly::{FourierPolynomial, NttPolynomial};
+use primus_poly::{FourierPolynomial, FourierPolynomialIter, NttPolynomial, NttPolynomialIter};
 use primus_reduce::FieldContext;
 
 /// Adds the gadget product of `gadget` and `input` to the existing Fourier accumulator.
@@ -41,17 +45,19 @@ pub(crate) fn accumulate_fourier_gadget_product<T, Table>(
     debug_assert_eq!(input.len(), poly_length);
     debug_assert_eq!(gadget.len(), basis.decompose_length() * fourier_length);
 
+    // Carries belong to this input's signed decomposition, not the accumulated
+    // sum. Reinitialize them for each product, then carry across its levels.
     basis.init_carry_slice(input, workspace.carries);
 
     for (decomposer, key_level) in basis
         .decomposer_iter()
-        .zip(gadget.chunks_exact(fourier_length))
+        .zip(FourierPolynomialIter::new(gadget, fourier_length))
     {
         decomposer.decompose_slice_to(input, workspace.decomposed_poly, workspace.carries);
         fft.forward_as_integer(workspace.decomposed_poly, workspace.decomposed_fourier);
         FourierPolynomial(workspace.fourier_accumulator.as_mut()).add_mul_assign(
             &FourierPolynomial(&*workspace.decomposed_fourier),
-            &FourierPolynomial(key_level),
+            &key_level,
         );
     }
 }
@@ -88,11 +94,13 @@ pub(crate) fn accumulate_ntt_gadget_product<T, M, Table>(
     debug_assert_eq!(input.len(), poly_length);
     debug_assert_eq!(gadget.len(), basis.decompose_length() * poly_length);
 
+    // Adjust this input and initialize its carries once. The transformed sum
+    // remains live while decomposition scratch is reused across inputs/levels.
     basis.init_value_carry_slice_to(input, workspace.adjusted_poly, workspace.carries);
 
     for (decomposer, key_level) in basis
         .decomposer_iter()
-        .zip(gadget.chunks_exact(poly_length))
+        .zip(NttPolynomialIter::new(gadget, poly_length))
     {
         decomposer.decompose_slice_to(
             workspace.adjusted_poly,
@@ -101,7 +109,7 @@ pub(crate) fn accumulate_ntt_gadget_product<T, M, Table>(
         );
         ntt.transform_slice(workspace.decomposed_ntt);
         NttPolynomial(workspace.ntt_accumulator.as_mut()).add_mul_assign(
-            &NttPolynomial(key_level),
+            &key_level,
             &NttPolynomial(&*workspace.decomposed_ntt),
             modulus,
         );

@@ -16,6 +16,7 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 
 const N: usize = 16;
 
+// Noiseless f=1 gadgets and the independent plaintext polynomial operands.
 struct SumFixture<T: FheUint> {
     gadgets: Vec<Nlev<Vec<T>>>,
     inputs: Vec<Polynomial<Vec<T>>>,
@@ -66,6 +67,8 @@ fn fixture<T: FheUint, M: RingContext<T>>(
     }
 }
 
+// Coefficient-domain convolution provides an oracle independent of decomposition
+// and transforms; the separate-product differential alone would share both.
 fn expected_sum<T: FheUint, M: RingContext<T>>(
     inputs: &[Polynomial<Vec<T>>],
     messages: &[Polynomial<Vec<T>>],
@@ -80,8 +83,8 @@ fn expected_sum<T: FheUint, M: RingContext<T>>(
     sum
 }
 
-// Counts are checked before writes, including either side being longer. Each
-// valid call reuses dirty output/scratch, ending with an empty sum that clears it.
+// Full decomposition gives an exact convolution oracle. Boundary failures run
+// first, so the following nonempty/empty sums also verify workspace recovery.
 fn ntt<T: FheUint, Table: NttTable<ValueT = T>>(q: T, table: Table) {
     let modulus = BarrettModulus::new(q);
     // Both primes have bit widths divisible by three: no bits are dropped,
@@ -101,7 +104,57 @@ fn ntt<T: FheUint, Table: NttTable<ValueT = T>>(q: T, table: Table) {
         .collect();
     let mut workspace = NttNtruExternalProductWorkspace::new(N);
     let mut output = Ntru::new(vec![T::MAX; N]);
+    // Counts and output length are checked before writes. The last two cases
+    // fail after a valid first product, exercising recovery from dirty scratch.
+    let gadget_views = [gadgets[0].as_view(), gadgets[1].as_view()];
+    let input_views = [inputs[0].as_view(), inputs[1].as_view()];
+    let short_input = [
+        input_views[0].as_view(),
+        Polynomial::new(&inputs[1].as_ref()[..N - 1]),
+    ];
+    let gadget_len = gadgets[1].as_ref().len();
+    let short_gadget = [
+        gadget_views[0].as_view(),
+        NttNlev::new(&gadgets[1].as_ref()[..gadget_len - 1]),
+    ];
+    for (gadgets, inputs, output_len, before_writes) in [
+        (&gadget_views[..], &input_views[..1], N, true),
+        (&gadget_views[..1], &input_views[..], N, true),
+        (&gadget_views[..], &input_views[..], N - 1, true),
+        (&gadget_views[..], &short_input[..], N, false),
+        (&short_gadget[..], &input_views[..], N, false),
+    ] {
+        output.as_mut().fill(T::ONE);
+        assert!(
+            catch_unwind(AssertUnwindSafe(|| {
+                NttNlev::external_product_sum_to(
+                    gadgets,
+                    inputs,
+                    Ntru::new(&mut output.as_mut()[..output_len]),
+                    &basis,
+                    modulus,
+                    &table,
+                    &mut workspace,
+                );
+            }))
+            .is_err()
+        );
+        if before_writes {
+            assert!(output.as_ref().iter().all(|&x| x == T::ONE));
+        }
+    }
+
+    // A valid call after late failures overwrites all stale transform state.
     for count in [3, 1, 0] {
+        NttNlev::external_product_sum_to(
+            &gadgets[..count],
+            &inputs[..count],
+            output.as_mut_view(),
+            &basis,
+            modulus,
+            &table,
+            &mut workspace,
+        );
         let mut separate = Ntru::<Vec<T>>::zero(N);
         let mut product = Ntru::<Vec<T>>::zero(N);
         for (gadget, input) in gadgets[..count].iter().zip(&inputs[..count]) {
@@ -115,50 +168,12 @@ fn ntt<T: FheUint, Table: NttTable<ValueT = T>>(q: T, table: Table) {
             );
             separate.add_assign(&product, modulus);
         }
-        NttNlev::external_product_sum_to(
-            &gadgets[..count],
-            &inputs[..count],
-            output.as_mut_view(),
-            &basis,
-            modulus,
-            &table,
-            &mut workspace,
-        );
         assert_eq!(output.as_ref(), separate.as_ref());
         assert_eq!(
             output.as_ref(),
             expected_sum(&inputs[..count], &messages[..count], modulus).as_ref()
         );
     }
-    for (gadgets, inputs) in [(&gadgets[..2], &inputs[..1]), (&gadgets[..1], &inputs[..2])] {
-        output.as_mut().fill(T::ONE);
-        assert!(
-            catch_unwind(AssertUnwindSafe(|| NttNlev::external_product_sum_to(
-                gadgets,
-                inputs,
-                output.as_mut_view(),
-                &basis,
-                modulus,
-                &table,
-                &mut workspace,
-            )))
-            .is_err()
-        );
-        assert!(output.as_ref().iter().all(|&x| x == T::ONE));
-    }
-    let short = [Polynomial::new(&inputs[0].as_ref()[..N - 1])];
-    assert!(
-        catch_unwind(AssertUnwindSafe(|| NttNlev::external_product_sum_to(
-            &gadgets[..1],
-            &short,
-            output.as_mut_view(),
-            &basis,
-            modulus,
-            &table,
-            &mut workspace,
-        )))
-        .is_err()
-    );
 }
 
 #[test]
@@ -200,13 +215,46 @@ fn fourier<T: TorusFftValue, Table: FftTable>() {
     let mut workspace = FourierNtruExternalProductWorkspace::new(N);
     let mut output = Ntru::new(vec![T::MAX; N]);
     let tolerance = T::ONE << T::BITS.saturating_sub(42);
+    // Counts and output length are checked before writes. The last two cases
+    // fail after a valid first product, exercising recovery from dirty scratch.
+    let gadget_views = [gadgets[0].as_view(), gadgets[1].as_view()];
+    let input_views = [inputs[0].as_view(), inputs[1].as_view()];
+    let short_input = [
+        input_views[0].as_view(),
+        Polynomial::new(&inputs[1].as_ref()[..N - 1]),
+    ];
+    let gadget_len = gadgets[1].as_ref().len();
+    let short_gadget = [
+        gadget_views[0].as_view(),
+        FourierNlev::new(&gadgets[1].as_ref()[..gadget_len - 1]),
+    ];
+    for (gadgets, inputs, output_len) in [
+        (&gadget_views[..], &input_views[..1], N),
+        (&gadget_views[..1], &input_views[..], N),
+        (&gadget_views[..], &input_views[..], N - 1),
+        (&gadget_views[..], &short_input[..], N),
+        (&short_gadget[..], &input_views[..], N),
+    ] {
+        output.as_mut().fill(T::ONE);
+        assert!(
+            catch_unwind(AssertUnwindSafe(|| {
+                FourierNlev::external_product_sum_to(
+                    gadgets,
+                    inputs,
+                    Ntru::new(&mut output.as_mut()[..output_len]),
+                    &basis,
+                    &mut fft,
+                    &mut workspace,
+                );
+            }))
+            .is_err()
+        );
+        // Fourier keeps its partial sum in scratch until final conversion.
+        assert!(output.as_ref().iter().all(|&x| x == T::ONE));
+    }
+
+    // A valid call after late failures overwrites all stale transform state.
     for count in [3, 1, 0] {
-        let mut separate = Ntru::<Vec<T>>::zero(N);
-        let mut product = Ntru::<Vec<T>>::zero(N);
-        for (gadget, input) in gadgets[..count].iter().zip(&inputs[..count]) {
-            gadget.external_product_to(input, &mut product, &basis, &mut fft, &mut workspace);
-            separate.add_assign(&product, modulus);
-        }
         FourierNlev::external_product_sum_to(
             &gadgets[..count],
             &inputs[..count],
@@ -215,6 +263,12 @@ fn fourier<T: TorusFftValue, Table: FftTable>() {
             &mut fft,
             &mut workspace,
         );
+        let mut separate = Ntru::<Vec<T>>::zero(N);
+        let mut product = Ntru::<Vec<T>>::zero(N);
+        for (gadget, input) in gadgets[..count].iter().zip(&inputs[..count]) {
+            gadget.external_product_to(input, &mut product, &basis, &mut fft, &mut workspace);
+            separate.add_assign(&product, modulus);
+        }
         let expected = expected_sum(&inputs[..count], &messages[..count], modulus);
         for ((&actual, &expected), &separate) in output
             .as_ref()
@@ -236,33 +290,6 @@ fn fourier<T: TorusFftValue, Table: FftTable>() {
             assert!(output.as_ref().iter().all(|&x| x == T::ZERO));
         }
     }
-    for (gadgets, inputs) in [(&gadgets[..2], &inputs[..1]), (&gadgets[..1], &inputs[..2])] {
-        output.as_mut().fill(T::ONE);
-        assert!(
-            catch_unwind(AssertUnwindSafe(|| FourierNlev::external_product_sum_to(
-                gadgets,
-                inputs,
-                output.as_mut_view(),
-                &basis,
-                &mut fft,
-                &mut workspace,
-            )))
-            .is_err()
-        );
-        assert!(output.as_ref().iter().all(|&x| x == T::ONE));
-    }
-    let short = [Polynomial::new(&inputs[0].as_ref()[..N - 1])];
-    assert!(
-        catch_unwind(AssertUnwindSafe(|| FourierNlev::external_product_sum_to(
-            &gadgets[..1],
-            &short,
-            output.as_mut_view(),
-            &basis,
-            &mut fft,
-            &mut workspace,
-        )))
-        .is_err()
-    );
 }
 
 #[test]

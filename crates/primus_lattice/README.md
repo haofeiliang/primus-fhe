@@ -35,6 +35,14 @@ NLev/NGSW scalar external products can write coefficients or keep the result in 
 
 NLev `external_product_sum_to` and NGSW `cmux_k_to` accept exact-size iterators of paired inputs. They sum products in the transform domain and inverse-transform once, without allocating a batch of wrapper objects. Empty NLev sums write zero; empty CMux copies its default. Fourier conversion rounds the total, so it need not match the bits from summing separately converted products.
 
+These batch operations check counts and fixed-buffer lengths before writes,
+then validate each pair's complete lengths as it is consumed. A later invalid
+pair may leave partial state: NTT sums use output for the transform accumulator,
+Fourier sums keep it in scratch, and k-CMux uses output for candidate differences.
+After a rejected call, discard the result; a valid call reuses the workspace
+without a reset. Key, basis, modulus and transform compatibility remain caller
+obligations as specified in rustdoc.
+
 ## Storage and layout
 
 Wrappers are generic over storage `S` using [`primus_data`](../primus_data/README.md). Operations require the appropriate read, mutable, or owned-storage capability. Borrowed wrappers operate directly on the caller's slices.

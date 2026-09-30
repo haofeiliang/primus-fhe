@@ -1,4 +1,5 @@
 mod cmux;
+mod cmux_k;
 mod coeff;
 mod external_product;
 mod fourier;

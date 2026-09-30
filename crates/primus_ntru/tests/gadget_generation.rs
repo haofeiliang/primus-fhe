@@ -15,7 +15,6 @@ use primus_ntru::{
 use primus_ntt::{NttTable, UintNttTable};
 use primus_poly::{Polynomial, PolynomialOwned};
 use rand::{SeedableRng, rngs::StdRng};
-use std::panic::{AssertUnwindSafe, catch_unwind};
 
 // Functional ring size; keep the original word widths, moduli and decomposition.
 const POLY_LENGTH: usize = 32;
@@ -213,33 +212,6 @@ fn ntt_nlev_generation_and_ngsw_cmux() {
             *expected
         );
     }
-    // Pair-count errors must not silently zip to a common prefix or write output.
-    let before = output.clone();
-    assert!(
-        catch_unwind(AssertUnwindSafe(|| NttNgswCiphertext::cmux_k_to(
-            NttNgswIter::new(&controls, gadget_params.nlev_len()),
-            candidates[0].as_view(),
-            &candidates[1..2],
-            output.as_mut_view(),
-            basis,
-            modulus,
-            &ntt,
-            &mut external_product_workspace,
-        )))
-        .is_err()
-    );
-    assert_eq!(output.as_ref(), before.as_ref());
-    NttNgswCiphertext::cmux_k_to(
-        NttNgswIter::new(&[], gadget_params.nlev_len()),
-        candidates[0].as_view(),
-        &candidates[0..0],
-        output.as_mut_view(),
-        basis,
-        modulus,
-        &ntt,
-        &mut external_product_workspace,
-    );
-    assert_eq!(output.as_ref(), candidates[0].as_ref());
 }
 
 #[test]
@@ -408,29 +380,4 @@ fn fourier_nlev_generation_and_ngsw_cmux() {
             *expected
         );
     }
-    // Pair-count errors must not silently zip to a common prefix or write output.
-    let before = output.clone();
-    assert!(
-        catch_unwind(AssertUnwindSafe(|| FourierNgswCiphertext::cmux_k_to(
-            FourierNgswIter::new(&controls, gadget_params.fourier_nlev_len()),
-            candidates[0].as_view(),
-            &candidates[1..2],
-            output.as_mut_view(),
-            basis,
-            &mut fft,
-            &mut external_product_workspace,
-        )))
-        .is_err()
-    );
-    assert_eq!(output.as_ref(), before.as_ref());
-    FourierNgswCiphertext::cmux_k_to(
-        FourierNgswIter::new(&[], gadget_params.fourier_nlev_len()),
-        candidates[0].as_view(),
-        &candidates[0..0],
-        output.as_mut_view(),
-        basis,
-        &mut fft,
-        &mut external_product_workspace,
-    );
-    assert_eq!(output.as_ref(), candidates[0].as_ref());
 }
