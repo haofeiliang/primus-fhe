@@ -4,7 +4,7 @@ use core::{
 };
 
 use num_traits::{ConstZero, Zero};
-use primus_data::{Data, DataMut, DataOwned};
+use primus_data::{Data, DataMut, DataOwned, RawData};
 use primus_integer::{ByteCount, FheUint, Size};
 
 use super::ArrayBase;
@@ -147,7 +147,7 @@ where
 
 impl<S, T> IntoIterator for ArrayBase<S>
 where
-    S: DataOwned<Elem = T>,
+    S: RawData<Elem = T> + IntoIterator<Item = T>,
     T: FheUint,
 {
     type Item = T;

@@ -43,6 +43,8 @@ assert_eq!(lhs.as_slice(), &[84, 13, 21, 4]);
 
 大多数多项式类型都对 backing store `S` 泛型化；`S` 实现 [`primus_data`](../primus_data/README.zh_CN.md) 提供的连续存储 trait。常用的系数、NTT、Fourier 和数组表示提供了 `Vec` owned 别名与 slice borrowed 别名。CRT、DCRT 和多 limb wrapper 同样可以通过泛型类型构造在 owned 或 borrowed 存储之上。
 
+`as_view()` 和 `as_mut_view()` 借用完整存储，保持多项式的表示类型。对应的 `From<&Wrapper<S>>` / `From<&mut Wrapper<S>>` 转换同样返回 slice wrapper，不复制元素。`into_inner()` 消耗 wrapper 并返回原存储，包括借用或对齐存储；它不分配，也不会将借用变为拥有型容器。
+
 操作名称说明结果写入位置：
 
 - `operation` 消耗一个支持修改的 wrapper，更新其存储后返回该 wrapper；

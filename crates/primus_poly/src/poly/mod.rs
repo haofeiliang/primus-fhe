@@ -27,6 +27,8 @@ where
 
 impl_iters!(Polynomial, poly);
 
+impl_views!(Polynomial);
+
 impl<S, T> Polynomial<S>
 where
     S: RawData<Elem = T>,
@@ -50,13 +52,6 @@ where
     #[inline]
     pub fn zero(poly_length: usize) -> Self {
         Self(S::from_vec(vec![T::ZERO; poly_length]))
-    }
-
-    /// Drop self, and return the vector.
-    #[must_use]
-    #[inline]
-    pub fn into_owned(self) -> S {
-        self.0
     }
 
     /// Constructs a new polynomial from a slice.

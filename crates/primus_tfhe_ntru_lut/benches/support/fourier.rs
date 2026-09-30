@@ -1,7 +1,7 @@
 // Fourier evaluation uses the public API and shared representative parameters.
 use std::hint::black_box;
 
-use super::{CONFIG, INPUT, benchmark_lut_creation, digit, heap};
+use super::{CONFIG, INPUT, Workload, benchmark_lut_creation, heap};
 use criterion::{Criterion, SamplingMode, Throughput};
 use primus_fft::{FftTable, TorusFftValue};
 use primus_modulus::NativeModulus;
@@ -14,10 +14,24 @@ use primus_tfhe_test_support::parameters::ntru;
 use rand::{SeedableRng, rngs::StdRng};
 
 pub fn benchmark<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str) {
+    for workload in [Workload::Polynomial, Workload::Dense] {
+        benchmark_workload::<T, Table>(c, backend, workload);
+    }
+}
+
+fn benchmark_workload<T: TorusFftValue, Table: FftTable>(
+    c: &mut Criterion,
+    backend: &str,
+    workload: Workload,
+) {
     let parameters = ntru::circuit(NativeModulus::<T>::new(), 8, SecretKeyDistr::UniformBinary);
-    let name = format!("lookup/{backend}/u{}/n800_N1024/c8_d5_o8", T::BITS);
+    let name = format!(
+        "lookup/{backend}/u{}/n800_N1024/c8_d5_o8{}",
+        T::BITS,
+        workload.suffix()
+    );
     if backend == "rustfft" {
-        benchmark_lut_creation(c, &name, &parameters);
+        benchmark_lut_creation(c, &name, &parameters, workload);
     }
     let mut fixture = None;
     let mut reported = false;
@@ -37,7 +51,10 @@ pub fn benchmark<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: 
             });
             heap(&format!("{name}/client_and_server_keys"), keys);
             let (table, storage) = measure(|| {
-                HighPrecisionLookupTable::try_new(context.parameters(), CONFIG, digit::<T>).unwrap()
+                HighPrecisionLookupTable::try_new(context.parameters(), CONFIG, |x, output| {
+                    workload.digit::<T>(x, output)
+                })
+                .unwrap()
             });
             heap(&format!("{name}/public_lut"), storage);
             let encryptor = context.encryptor(&client).unwrap();
@@ -63,7 +80,10 @@ pub fn benchmark<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: 
             eprintln!("online_allocations,{name},{}", online.count);
             let decryptor = context.decryptor(client).unwrap();
             for (i, chunk) in output.iter().enumerate() {
-                assert_eq!(decryptor.decrypt(chunk).unwrap(), digit::<T>(INPUT, i));
+                assert_eq!(
+                    decryptor.decrypt(chunk).unwrap(),
+                    workload.digit::<T>(INPUT, i)
+                );
             }
             reported = true;
         }

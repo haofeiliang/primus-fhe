@@ -1,10 +1,9 @@
 use primus_fft::{Complex64, FftTable, TorusFftValue};
 use primus_lattice::{
     ngsw::{FourierNgswIter, FourierNgswIterMut},
-    nlev::{FourierNlevIter, FourierNlevIterMut, NlevIter},
+    nlev::{FourierNlev, FourierNlevIter, FourierNlevIterMut, NlevIter},
     ntru::{NtruIter, NtruIterMut},
 };
-use primus_modulus::NativeModulus;
 use primus_ntru::{FourierNgswCiphertext, NtruCiphertext, NtruLweKeySwitchingWorkspace};
 use primus_poly::{FourierPolynomialIter, FourierPolynomialIterMut, Polynomial, PolynomialIter};
 use primus_reduce::RingContext;
@@ -50,7 +49,6 @@ where
     candidates: Box<[T]>,
     current: NtruCiphertext<Box<[T]>>,
     product: NtruCiphertext<Box<[T]>>,
-    difference: NtruCiphertext<Box<[T]>>,
     return_workspace: NtruLweKeySwitchingWorkspace<T>,
 }
 
@@ -142,7 +140,6 @@ where
             candidates: vec![T::ZERO; candidates_len].into_boxed_slice(),
             current: NtruCiphertext::zero(n),
             product: NtruCiphertext::zero(n),
-            difference: NtruCiphertext::zero(n),
             return_workspace: NtruLweKeySwitchingWorkspace::new(n),
         };
         evaluator.prepare_rotation_constants();
@@ -379,38 +376,25 @@ where
     fn select_public_table_groups(&mut self, polynomials: &[T]) {
         let layout = self.lookup_table.layout;
         let n = layout.polynomial_length;
-        let modulus = NativeModulus::<T>::new();
         let basis = self.one_hot.parameters().output_basis();
         let selector_len = self.one_hot.parameters().output_fourier_nlev_len();
         // Consecutive polynomials vary in the lowest unresolved table chunk;
         // each group fixes all higher chunks and shares this layer's selectors.
-        for (group, mut candidate) in polynomials
+        for (group, candidate) in polynomials
             .chunks_exact(layout.radix * n)
             .zip(NtruIterMut::new(&mut self.candidates, n))
         {
-            for (k, (polynomial, selector)) in PolynomialIter::new(group, n)
-                .zip(FourierNlevIter::new(
-                    &self.public_table_selectors,
-                    selector_len,
-                ))
-                .enumerate()
-            {
-                let (fft, external_product) = self.one_hot.external_product_workspaces();
-                selector.external_product_to(
-                    &polynomial,
-                    &mut self.product,
-                    basis,
-                    fft,
-                    external_product,
-                );
-                // Initialize from the first product so reused candidate slots
-                // need no clearing and cannot retain a previous output's sum.
-                if k == 0 {
-                    candidate.as_mut().copy_from_slice(self.product.as_ref());
-                } else {
-                    candidate.add_assign(&self.product, modulus);
-                }
-            }
+            let (fft, external_product) = self.one_hot.external_product_workspaces();
+            // Include delta_0 in the lift and clear the transform accumulator
+            // once per group; only the full sum is inverse-transformed.
+            FourierNlev::external_product_sum_to(
+                FourierNlevIter::new(&self.public_table_selectors, selector_len),
+                PolynomialIter::new(group, n),
+                candidate,
+                basis,
+                fft,
+                external_product,
+            );
         }
     }
 
@@ -426,7 +410,6 @@ where
     ) -> usize {
         let layout = self.lookup_table.layout;
         let n = layout.polynomial_length;
-        let modulus = NativeModulus::<T>::new();
         let basis = self.one_hot.parameters().output_basis();
         let selector_len = self.one_hot.parameters().output_fourier_nlev_len();
         let nonzero_one_hot_len = (layout.radix - 1) * selector_len;
@@ -439,23 +422,18 @@ where
             let group = &self.candidates[group_start..group_start + group_len];
             let (default, alternatives) = group.split_at(n);
             let default = NtruCiphertext::new(default);
-            // The default ciphertext supplies k=0 directly. Every difference
-            // must use this unchanged c_0, not the accumulating `current`.
-            self.current.as_mut().copy_from_slice(default.as_ref());
-            for (candidate, selector) in
-                NtruIter::new(alternatives, n).zip(FourierNgswIter::new(selectors, selector_len))
-            {
-                candidate.sub_to(&default, &mut self.difference, modulus);
-                let (fft, external_product) = self.one_hot.external_product_workspaces();
-                selector.external_product_to(
-                    &self.difference,
-                    &mut self.product,
-                    basis,
-                    fft,
-                    external_product,
-                );
-                self.current.add_assign(&self.product, modulus);
-            }
+            // CMux keeps c_0 unchanged, uses `current` for each difference,
+            // and sums the products in its workspace before one inverse transform.
+            let (fft, external_product) = self.one_hot.external_product_workspaces();
+            FourierNgswCiphertext::cmux_k_to(
+                FourierNgswIter::new(selectors, selector_len),
+                default,
+                NtruIter::new(alternatives, n),
+                self.current.as_mut_view(),
+                basis,
+                fft,
+                external_product,
+            );
             // Read the entire group before compacting its result. The destination
             // is within the consumed prefix, before every unread input group.
             self.candidates[output_index * n..(output_index + 1) * n]

@@ -123,12 +123,19 @@ fn consuming_negation_reuses_aligned_and_borrowed_storage() {
     // consuming a wrapper must keep its allocation, including for u64 torus data.
     let ciphertext = Lwe::new(aligned_vec::avec![0u64, u64::MAX, u64::MAX - 6].into_boxed_slice());
     let original_pointer = ciphertext.as_ref().as_ptr();
+    let view: Lwe<&[u64]> = (&ciphertext).into();
+    assert_eq!(view.as_ref().as_ptr(), original_pointer);
     let ciphertext = ciphertext.neg(NativeModulus::new());
     assert_eq!(ciphertext.as_ref().as_ptr(), original_pointer);
     assert_eq!(ciphertext.as_ref(), &[0, 1, 7]);
 
+    let storage = ciphertext.into_inner();
+    assert_eq!(storage.as_ptr(), original_pointer);
+
     let mut storage = [99u32, 0, 96, 45, 99];
-    let ciphertext = Lwe::new(&mut storage[1..4]).neg(BarrettModulus::new(97));
+    let mut ciphertext = Lwe::new(&mut storage[1..4]);
+    let view: Lwe<&mut [u32]> = (&mut ciphertext).into();
+    let ciphertext = view.neg(BarrettModulus::new(97));
     assert_eq!(ciphertext.as_ref(), &[0, 1, 52]);
     assert_eq!(storage, [99, 0, 1, 52, 99]);
 }

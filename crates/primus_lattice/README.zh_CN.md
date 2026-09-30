@@ -33,9 +33,15 @@ NLev 与 NGSW 的存储形状相同，但语义不同：`beta` 的 NLev 各层�
 
 NLev/NGSW 的单多项式外积可以写出系数，也可以通过 `external_product_ntt_to` / `external_product_fourier_to` 保留 NTT/Fourier 结果，直接在输出缓冲区累加。NTT 系数 输出也复用目标缓冲区，最后原地逆变换；Fourier 系数输出仍用独立复数工作区转回 torus， Fourier 输出则省去这一步转换和舍入。`NGSW.external_product_nlev_to` 要求输入与输出 NLev 层数相同， 但它们独立于控制密文的分解基；输出保留输入的 gadget 尺度。
 
+NLev 的 `external_product_sum_to` 和 NGSW 的 `cmux_k_to` 接受成对输入的精确长度迭代器，在变换域求和后只逆变换一次，无需分配包装对象数组。空 NLev 求和写零；空 CMux 复制默认分支。Fourier 对总和进行转换和舍入，因此不要求与逐项转回系数后相加的结果逐位相同。
+
 ## 存储与布局
 
 密文包装类型以存储 `S` 为泛型，通过 [`primus_data`](../primus_data/README.zh_CN.md) 访问数据。各运算要求相应的只读、可变或拥有存储能力。借用形式直接操作调用方的切片。
+
+`as_view()` / `as_mut_view()` 及对应的 `From` 转换借用完整存储，不复制元素或改变表示；`into_inner()` 返回原存储。整数、NTT 和 Fourier 密文迭代器均支持精确长度、耗尽后不再产出和双向遍历；不可变迭代器还可克隆。
+
+NLev 批量求和与 NGSW 多路 CMux 使用 `output.as_mut_view()` 作为输出，CMux 默认分支使用 `default.as_view()`。多项式/候选项通过 `Into` 接受借用 wrapper 或语义迭代器产出的视图；gadget/控制项通过 `Borrow<Self>` 接受同一种 wrapper 的对象或引用。连续批量存储无需构造 wrapper 数组。
 
 `LweIter` / `LweIterMut` 和 `MultiMsgLweIter` / `MultiMsgLweIterMut` 与其他密文迭代器一样借用完整分块。分块长度包含 body，`Lwe::lwe_len()` 返回该长度。不完整的尾部会被忽略，因此 batch 操作必须在迭代前检查完整缓冲区长度。`MultiMsgLweIter` 遍历打包容器，而不是从单个共享 mask 中抽取样本。
 

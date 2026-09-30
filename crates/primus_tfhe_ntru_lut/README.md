@@ -75,6 +75,8 @@ For fixed N, M and c, start with `d=min(c, floor(log2(N)/tau))`, making M^d as c
 
 Each call performs one-hot CBS once per input chunk. High chunks select the LUT polynomial; low chunks locate its coefficient. All outputs reuse these selectors and rotation controls and return sequentially as LWEs under the independent external secret. Selection, rotation and return formulas live in the [implementation notes](IMPLEMENTATION.md#stage-and-buffer-layout).
 
+Each selection group accumulates products in the transform domain before one inverse transform. Fourier rounding can therefore differ from evaluating and converting each product separately; the encoded function is unchanged, and results still require an adequate decoding margin.
+
 The data LUT stores each function value once per input/output chunk. Repeated guards that tolerate input phase error belong to the preceding one-hot CBS test polynomial. Subsequent selection and rotation introduce additive ciphertext error, which still needs a decoding margin.
 
 The evaluator borrows its context, server key and table and allocates all buffers at construction. Reuse the result of `allocate_output()` with `evaluate_to` for allocation-free online evaluation. All chunk counts and LWE dimensions are checked before writes. Resources must match N/t/q/Q and actual key identity; Fourier also requires the exact FFT table instance. Each concurrent evaluator owns independent mutable workspace.
@@ -97,3 +99,5 @@ cargo bench -p primus_tfhe_ntru_lut --bench pipeline -- '/evaluate$'
 ```
 
 Creation includes allocation, coefficient filling and destruction. Evaluation excludes key generation, public LUT creation, input encryption and workspace allocation. See the [benchmark fixture](IMPLEMENTATION.md#benchmark-fixture) for workloads and resource measurements.
+
+Original IDs use the polynomial example; IDs containing `/dense_seed42/` use a fixed dense mapping with the same parameters. Filter by `dense_seed42` to run only that workload, or by `c8_d5_o8/evaluate$` to evaluate only the polynomial example.

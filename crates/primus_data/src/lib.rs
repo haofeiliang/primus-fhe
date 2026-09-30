@@ -2,8 +2,8 @@
 //!
 //! The traits in this crate let algorithms work with contiguous storage
 //! without committing to a particular container. [`Data`] provides shared
-//! access, [`DataMut`] adds mutable access, and [`DataOwned`] adds construction
-//! and consumption.
+//! access, [`DataMut`] adds mutable access, and [`DataOwned`] adds owned
+//! construction. `FromIterator` and `IntoIterator` are independent capabilities.
 //!
 //! | Backend         | `RawData` | `Data` | `DataMut` | `DataOwned` |
 //! |-----------------|-----------|--------|-----------|-------------|
@@ -19,9 +19,10 @@
 //! | `ABox<[T], A>`¹ | ✓         | ✓      | ✓         | —           |
 //!
 //! ¹ Requires the `aligned-vec` feature. They do not implement [`DataOwned`]
-//! because the current trait requires `FromIterator` and a consuming iterator,
-//! which `aligned-vec` does not provide; runtime alignment also needs an
-//! explicit value during construction.
+//! because construction must choose an alignment explicitly. Allocate them first,
+//! then use the same `Data`/`DataMut` operations. References to any supported
+//! sized backend forward its read capabilities; mutable references also forward
+//! `DataMut` when the backend supports it.
 //!
 //! # Example
 //!

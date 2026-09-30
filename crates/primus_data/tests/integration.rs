@@ -26,14 +26,17 @@ fn standard_backends() {
     let array_ref: &[u64; 4] = &VALUES;
 
     assert_read(&vec);
+    assert_read(&&vec);
     assert_read(&boxed);
+    assert_read(&&boxed);
     assert_read(&arc);
+    assert_read(&&arc);
     assert_read(&VALUES);
     assert_read(&slice);
     assert_read(&array_ref);
 
-    assert_write(&mut vec);
-    assert_write(&mut boxed);
+    assert_write(&mut &mut vec);
+    assert_write(&mut &mut boxed);
 
     let mut array = VALUES;
     assert_write(&mut array);
@@ -55,9 +58,11 @@ fn aligned_backends() {
 
     let mut vec = AVec::<u64, RuntimeAlign>::from_slice(64, &VALUES);
     assert_read(&vec);
-    assert_write(&mut vec);
+    assert_read(&&vec);
+    assert_write(&mut &mut vec);
 
     let mut boxed = AVec::<u64, RuntimeAlign>::from_slice(64, &VALUES).into_boxed_slice();
     assert_read(&boxed);
-    assert_write(&mut boxed);
+    assert_read(&&boxed);
+    assert_write(&mut &mut boxed);
 }

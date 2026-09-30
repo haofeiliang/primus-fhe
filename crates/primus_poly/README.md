@@ -43,6 +43,8 @@ assert_eq!(lhs.as_slice(), &[84, 13, 21, 4]);
 
 Most polynomial types are generic over a backing store `S` implementing the contiguous-storage traits from [`primus_data`](../primus_data/README.md). Owned `Vec` aliases and borrowed slice aliases are available for the common coefficient, NTT, Fourier, and array forms. CRT, DCRT, and multi-limb wrappers can likewise be constructed over owned or borrowed storage through their generic types.
 
+`as_view()` and `as_mut_view()` borrow the complete storage while preserving the polynomial representation. Equivalent `From<&Wrapper<S>>` / `From<&mut Wrapper<S>>` conversions return slice-backed wrappers without copying. `into_inner()` consumes a wrapper and returns its original storage, including borrowed or aligned storage; it does not allocate or turn a borrow into an owner.
+
 Operation names describe where results are written:
 
 - `operation` consumes a mutable-capable wrapper, updates its storage, and returns the wrapper;

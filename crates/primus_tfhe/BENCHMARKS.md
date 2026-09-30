@@ -32,6 +32,11 @@ the public evaluator, without compiling a second copy of production sources to
 access private stages. Primitive arithmetic remains in the lattice/scheme
 benchmarks; additional stage probes should have a concrete diagnostic purpose.
 
+The lookup pipeline includes both the polynomial example and `dense_seed42`,
+a fixed dense mapping with the same geometry. Use these to distinguish
+subtable-reuse gains from general evaluation costs; their construction and
+evaluation remain separately timed.
+
 ## Numerical parameters
 
 [Shared constructors](../../test-support/tfhe/src/parameters/mod.rs) separate

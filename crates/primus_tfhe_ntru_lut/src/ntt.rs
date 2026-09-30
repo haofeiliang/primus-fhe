@@ -1,7 +1,7 @@
 use primus_integer::FheUint;
 use primus_lattice::{
     ngsw::{NttNgswIter, NttNgswIterMut},
-    nlev::NttNlevIter,
+    nlev::{NttNlev, NttNlevIter},
     ntru::{NtruIter, NtruIterMut},
 };
 use primus_modulus::BarrettModulus;
@@ -49,7 +49,6 @@ where
     candidates: Box<[T]>,
     current: NtruCiphertext<Box<[T]>>,
     product: NtruCiphertext<Box<[T]>>,
-    difference: NtruCiphertext<Box<[T]>>,
     return_workspace: NtruLweKeySwitchingWorkspace<T>,
 }
 
@@ -120,7 +119,6 @@ where
             candidates: vec![T::ZERO; candidates_len].into_boxed_slice(),
             current: NtruCiphertext::zero(n),
             product: NtruCiphertext::zero(n),
-            difference: NtruCiphertext::zero(n),
             return_workspace: NtruLweKeySwitchingWorkspace::new(n),
         };
         evaluator.prepare_rotation_constants();
@@ -365,31 +363,21 @@ where
 
         // Consecutive polynomials vary in the lowest unresolved table chunk;
         // each group fixes all higher chunks and shares this layer's selectors.
-        for (group, mut candidate) in polynomials
+        for (group, candidate) in polynomials
             .chunks_exact(layout.radix * n)
             .zip(NtruIterMut::new(&mut self.candidates, n))
         {
-            for (k, (polynomial, selector)) in PolynomialIter::new(group, n)
-                .zip(NttNlevIter::new(&self.public_table_selectors, selector_len))
-                .enumerate()
-            {
-                selector.external_product_to(
-                    &polynomial,
-                    &mut self.product,
-                    basis,
-                    modulus,
-                    self.context.table(),
-                    self.one_hot.external_product_workspace(),
-                );
-
-                // Initialize from the first product so reused candidate slots
-                // need no clearing and cannot retain a previous output's sum.
-                if k == 0 {
-                    candidate.as_mut().copy_from_slice(self.product.as_ref());
-                } else {
-                    candidate.add_assign(&self.product, modulus);
-                }
-            }
+            // Include delta_0 in the lift and clear the transform accumulator
+            // once per group; only the full sum is inverse-transformed.
+            NttNlev::external_product_sum_to(
+                NttNlevIter::new(&self.public_table_selectors, selector_len),
+                PolynomialIter::new(group, n),
+                candidate,
+                basis,
+                modulus,
+                self.context.table(),
+                self.one_hot.external_product_workspace(),
+            );
         }
     }
 
@@ -426,23 +414,18 @@ where
             let (default, alternatives) = group.split_at(n);
             let default = NtruCiphertext::new(default);
 
-            // The default ciphertext supplies k=0 directly. Every difference
-            // must use this unchanged c_0, not the accumulating `current`.
-            self.current.as_mut().copy_from_slice(default.as_ref());
-            for (candidate, selector) in
-                NtruIter::new(alternatives, n).zip(NttNgswIter::new(selectors, selector_len))
-            {
-                candidate.sub_to(&default, &mut self.difference, modulus);
-                selector.external_product_to(
-                    &self.difference,
-                    &mut self.product,
-                    basis,
-                    modulus,
-                    self.context.table(),
-                    self.one_hot.external_product_workspace(),
-                );
-                self.current.add_assign(&self.product, modulus);
-            }
+            // CMux keeps c_0 unchanged, uses `current` for each difference,
+            // and sums the products in its workspace before one inverse transform.
+            NttNgswCiphertext::cmux_k_to(
+                NttNgswIter::new(selectors, selector_len),
+                default,
+                NtruIter::new(alternatives, n),
+                self.current.as_mut_view(),
+                basis,
+                modulus,
+                self.context.table(),
+                self.one_hot.external_product_workspace(),
+            );
             // Read the entire group before compacting its result. The destination
             // is within the consumed prefix, before every unread input group.
             self.candidates[output_index * n..(output_index + 1) * n]

@@ -25,7 +25,7 @@
 
 [primus_data](../../crates/primus_data/src/traits.rs) 分开元素类型（`RawData`）、读取（`Data`）、修改（`DataMut`）和拥有型构造（`DataOwned`）。`Polynomial<S>` 和密文 wrapper 通过这些 trait 同时支持拥有型容器及借用切片。
 
-`Polynomial::new(storage.as_slice())` 创建只读借用，`Polynomial::new(storage.as_mut_slice())` 创建可变借用，不复制或变换元素；`Polynomial::new(storage)` 移动容器。消费一个可变 view 的算术方法仍可能修改调用方存储；需要明确体现原地修改时用 `*_assign`，写入可复用输出时用 `*_to`。
+`Polynomial::new(storage)` 移动容器。对于已有多项式或密文，使用 `as_view()` / `as_mut_view()` 借用其存储并保留表示类型，也可使用对应的 `From` 转换。`into_inner()` 不复制地返回原容器或借用。这些操作不执行变换或验证元素。消费一个可变 view 的算术方法仍可能修改调用方存储；需要明确体现原地修改时用 `*_assign`，写入可复用输出时用 `*_to`。
 
 Raw 多项式/密文构造器不建立模数、秘密身份、表示或完整布局。`Polynomial<S>` 不另存环长度：包装 `batch_count*N` 个元素，不会自动把单多项式运算变成批量运算。只有接口契约明确接受批次时才直接传入；否则先迭代出完整对象。
 
@@ -161,7 +161,7 @@ NTRU 将外部 LWE 的秘密/模数/维数与累加 NTRU 环的秘密/模数/长
 | 动态元数据、索引、短小控制数据或对象描述符 | 普通 `Vec`、数组或 Box |
 | 后端专属临时内存 | 保留后端分配、容量和借用契约 |
 
-启用 `primus_data/aligned-vec` 后，[AVec 和 ABox 实现 RawData/Data/DataMut](../../crates/primus_data/src/impls.rs)，**未实现 DataOwned**。该 trait 还要求从迭代器构造及消费，aligned 分配则有自己的对齐选择。应显式分配容器，用 `new` 包装，再使用支持 `DataMut` 的运算；不能假定 `Polynomial::zero` 等受 `DataOwned` 约束的构造器接受 aligned 目标。
+启用 `primus_data/aligned-vec` 后，[AVec 和 ABox 实现 RawData/Data/DataMut](../../crates/primus_data/src/impls.rs)，**未实现 DataOwned**。aligned 构造需要显式选择对齐，`DataOwned` 不提供该参数。从迭代器构造及消费是独立的 `FromIterator` / `IntoIterator` 能力。应显式分配容器，用 `new` 包装，再使用支持 `DataMut` 的运算；不能假定 `Polynomial::zero` 等受 `DataOwned` 约束的构造器接受 aligned 目标。
 
 整块分配对齐不保证子块对齐，需检查实际步长，尤其是长度为 n+1 的 LWE 行。对齐 `Vec<Key>` 不会对齐各密钥内部的系数。修改存储前检查实际 kernel，测量受影响负载、构造/转换成本和内存，同时保留秘密擦除与所有权契约；对齐本身不能证明提速。
 

@@ -17,7 +17,8 @@ fn fourier_arithmetic_overwrites_borrowed_storage_and_matches_in_place() {
     let rhs = FourierGlwe::new(rhs.as_slice());
     let mut storage = [Complex64::new(42.0, 42.0); 4];
     let mut output = FourierGlwe::new(storage.as_mut_slice());
-    input.add_to(&rhs, &mut output);
+    let view: FourierGlwe<&[Complex64]> = (&input).into();
+    view.add_to(&rhs.as_view(), &mut output.as_mut_view());
     assert_eq!(output.as_ref(), &lhs.map(|x| x + Complex64::new(2.0, -1.0)));
     output.sub_assign(&rhs);
     assert_eq!(output.as_ref(), &lhs);
@@ -33,6 +34,7 @@ fn fourier_arithmetic_overwrites_borrowed_storage_and_matches_in_place() {
     assert_eq!(output.as_ref(), &lhs.map(|x| x * -2.0));
     output.mul_scalar_assign(-0.5);
     assert_eq!(output.as_ref(), &lhs);
+    assert_eq!(output.into_inner().as_ptr(), storage.as_ptr());
 }
 
 // Verify the integer-multiplier/torus-ciphertext scaling contract against

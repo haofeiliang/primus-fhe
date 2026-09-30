@@ -41,7 +41,9 @@ fn pointwise_arithmetic_matches_complex_oracle() {
     assert_eq!(inplace.as_slice(), negative);
 
     let mut output = lhs.clone();
-    lhs.add_to(&rhs, &mut output);
+    // Mutable views write the owner's storage; shared views retain the representation.
+    let rhs_view: FourierPolynomial<&[Complex64]> = (&rhs).into();
+    lhs.as_view().add_to(&rhs_view, &mut output.as_mut_view());
     assert_eq!(output.as_slice(), sum);
     lhs.sub_to(&rhs, &mut output);
     assert_eq!(output.as_slice(), difference);

@@ -29,6 +29,8 @@ where
 
 impl_iters!(NttPolynomial, ntt_poly);
 
+impl_views!(NttPolynomial);
+
 impl<S, T> NttPolynomial<S>
 where
     S: RawData<Elem = T>,
@@ -52,13 +54,6 @@ where
     #[inline]
     pub fn zero(poly_length: usize) -> Self {
         Self(S::from_vec(vec![T::ZERO; poly_length]))
-    }
-
-    /// Drop self, and return the data.
-    #[must_use]
-    #[inline]
-    pub fn into_owned(self) -> S {
-        self.0
     }
 
     /// Constructs a new ntt polynomial from a slice.

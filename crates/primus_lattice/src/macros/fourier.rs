@@ -50,6 +50,21 @@ macro_rules! impl_fourier_iters {
                 fn size_hint(&self) -> (usize, Option<usize>) {
                     self.iter.size_hint()
                 }
+
+                #[inline]
+                fn count(self) -> usize {
+                    self.iter.len()
+                }
+
+                #[inline]
+                fn nth(&mut self, n: usize) -> Option<Self::Item> {
+                    self.iter.nth(n).map($cipher)
+                }
+
+                #[inline]
+                fn last(mut self) -> Option<Self::Item> {
+                    self.next_back()
+                }
             }
 
             impl<'a> core::iter::FusedIterator for [<$cipher Iter>]<'a> {}
@@ -58,6 +73,11 @@ macro_rules! impl_fourier_iters {
                 #[inline]
                 fn next_back(&mut self) -> Option<Self::Item> {
                     self.iter.next_back().map($cipher)
+                }
+
+                #[inline]
+                fn nth_back(&mut self, n: usize) -> Option<Self::Item> {
+                    self.iter.nth_back(n).map($cipher)
                 }
             }
         }
@@ -104,6 +124,21 @@ macro_rules! impl_fourier_iters {
                 fn size_hint(&self) -> (usize, Option<usize>) {
                     self.iter.size_hint()
                 }
+
+                #[inline]
+                fn count(self) -> usize {
+                    self.iter.len()
+                }
+
+                #[inline]
+                fn nth(&mut self, n: usize) -> Option<Self::Item> {
+                    self.iter.nth(n).map($cipher)
+                }
+
+                #[inline]
+                fn last(mut self) -> Option<Self::Item> {
+                    self.next_back()
+                }
             }
 
             impl<'a> core::iter::FusedIterator for [<$cipher IterMut>]<'a> {}
@@ -113,13 +148,18 @@ macro_rules! impl_fourier_iters {
                 fn next_back(&mut self) -> Option<Self::Item> {
                     self.iter.next_back().map($cipher)
                 }
+
+                #[inline]
+                fn nth_back(&mut self, n: usize) -> Option<Self::Item> {
+                    self.iter.nth_back(n).map($cipher)
+                }
             }
         }
     };
 }
 
-/// Generates `{Cipher}Owned` type alias and core methods (`new`, `zero`,
-/// `set_zero`, `as_ref`, `as_mut`, `byte_count`) for a Fourier ciphertext.
+/// Generates the owned alias, constructors, storage views/conversions and
+/// zeroing/size methods for a Fourier ciphertext.
 macro_rules! impl_fourier_core {
     ($cipher:ident) => {
         pastey::paste! {
@@ -144,6 +184,14 @@ macro_rules! impl_fourier_core {
             #[inline]
             pub fn new(data: S) -> Self {
                 Self(data)
+            }
+
+            /// Consumes the wrapper and returns its storage without copying.
+            /// Borrowed storage remains borrowed; this does not create an owned buffer.
+            #[must_use]
+            #[inline]
+            pub fn into_inner(self) -> S {
+                self.0
             }
         }
 
@@ -186,6 +234,52 @@ macro_rules! impl_fourier_core {
             #[inline]
             pub fn byte_count(&self) -> usize {
                 core::mem::size_of_val(self.0.as_slice())
+            }
+        }
+
+        impl<S> $cipher<S>
+        where
+            S: primus_data::Data<Elem = num_complex::Complex64>,
+        {
+            /// Borrows the complete storage as a shared view of the same representation.
+            /// No elements are copied or transformed, and no layout is validated.
+            #[must_use]
+            #[inline]
+            pub fn as_view(&self) -> $cipher<&[num_complex::Complex64]> {
+                $cipher(self.0.as_slice())
+            }
+        }
+
+        impl<'a, S> From<&'a $cipher<S>> for $cipher<&'a [num_complex::Complex64]>
+        where
+            S: primus_data::Data<Elem = num_complex::Complex64>,
+        {
+            #[inline]
+            fn from(value: &'a $cipher<S>) -> Self {
+                value.as_view()
+            }
+        }
+
+        impl<S> $cipher<S>
+        where
+            S: primus_data::DataMut<Elem = num_complex::Complex64>,
+        {
+            /// Borrows the complete storage as an exclusive view of the same representation.
+            /// No elements are copied or transformed, and no layout is validated.
+            #[must_use]
+            #[inline]
+            pub fn as_mut_view(&mut self) -> $cipher<&mut [num_complex::Complex64]> {
+                $cipher(self.0.as_mut_slice())
+            }
+        }
+
+        impl<'a, S> From<&'a mut $cipher<S>> for $cipher<&'a mut [num_complex::Complex64]>
+        where
+            S: primus_data::DataMut<Elem = num_complex::Complex64>,
+        {
+            #[inline]
+            fn from(value: &'a mut $cipher<S>) -> Self {
+                value.as_mut_view()
             }
         }
 

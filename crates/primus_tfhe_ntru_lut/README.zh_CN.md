@@ -75,6 +75,8 @@ cargo run --release -p primus_tfhe_ntru_lut --example fourier_lookup
 
 每次调用对每个输入 chunk 执行一次 one-hot CBS；高 chunks 选择 LUT 多项式，低 chunks 在所选多项式内定位系数。所有输出复用这些 selectors 和旋转控制，依次返回独立外部秘密下的 LWE。完整选择、旋转及返回公式见[实现说明](IMPLEMENTATION.md#stage-and-buffer-layout)。
 
+每组选表在变换域累加所有乘积后只逆变换一次。Fourier 的舍入结果可能与逐个乘积分别转换后求和不同；编码函数保持不变，结果仍需留出足够的解码余量。
+
 数据 LUT 对每个输入/输出 chunk 只存一次函数值。容忍输入相位误差的重复保护区位于此前的 one-hot CBS 测试多项式；后续选择和旋转带来加性密文误差，仍需解码余量。
 
 Evaluator 借用 context、server key 和 table，并在构造时分配全部缓冲。复用 `allocate_output()` 的结果与 `evaluate_to`，在线无额外分配；所有 chunk 数量和 LWE 维数在写入前检查。资源必须匹配 N/t/q/Q，密钥须实际配套；Fourier 还要求相同 FFT table 实例。每个并发 evaluator 持有独立可变工作区。
@@ -97,3 +99,5 @@ cargo bench -p primus_tfhe_ntru_lut --bench pipeline -- '/evaluate$'
 ```
 
 创建计时包含分配、系数填充和释放；求值计时不包含密钥生成、公开 LUT 创建、输入加密和工作区分配。工作负载与资源统计见[基准说明](IMPLEMENTATION.md#benchmark-fixture)。
+
+原有 ID 使用多项式示例；包含 `/dense_seed42/` 的 ID 使用相同参数下的固定稠密映射。用 `dense_seed42` 过滤可只运行该负载，用 `c8_d5_o8/evaluate$` 可只测多项式示例的同态求值。

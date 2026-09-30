@@ -1,4 +1,4 @@
-use primus_data::{DataMut, DataOwned};
+use primus_data::{DataMut, RawData};
 use primus_integer::FheUint;
 use primus_reduce::Modulus;
 use rand::distr::{Distribution, Uniform};
@@ -7,7 +7,7 @@ use super::NttPolynomial;
 
 impl<S, T> NttPolynomial<S>
 where
-    S: DataOwned<Elem = T>,
+    S: RawData<Elem = T> + FromIterator<T>,
     T: FheUint,
 {
     /// Generates an [`NttPolynomial`] whose point values are uniform modulo `modulus`.

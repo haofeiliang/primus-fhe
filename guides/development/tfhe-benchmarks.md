@@ -14,7 +14,7 @@ engines. Duplicate wrappers/ManyLUT measurements and the legacy two-CMux referen
 are removed; the real ternary algorithm remains. CBS owns NTRU one-hot timing.
 The lookup pipeline now uses public APIs instead of production-source includes.
 
-| Target | Previous IDs | Current IDs |
+| Target | Previous IDs | IDs after cleanup |
 | --- | ---: | ---: |
 | `primus_tfhe/lookup_table` | 12 | 18 |
 | `primus_tfhe_glwe_fourier/circuit_bootstrap` | 8 | 16 |
@@ -36,6 +36,12 @@ The lookup pipeline now uses public APIs instead of production-source includes.
 | `primus_tfhe_ntru_ntt/mvb` | 5 | 14 |
 | `primus_tfhe_ntru_ntt/pbs` | 32 | 10 |
 | `primus_tfhe_ntru_ntt/sparse_pbs` | 12 | 8 |
+
+This table and the full-suite smoke timings below describe the cleanup snapshot.
+The lookup pipeline subsequently added ten `dense_seed42` IDs, bringing that
+target to 20 IDs; the historical 382-case smoke does not cover those additions.
+Their mapping and timing boundaries are documented in the
+[lookup fixture](../../crates/primus_tfhe_ntru_lut/IMPLEMENTATION.md#benchmark-fixture).
 
 There are 20 → 18 targets and 463 → 382 IDs. The previous executables spent
 36.83 s collectively running `--list`, including unconditional key generation,

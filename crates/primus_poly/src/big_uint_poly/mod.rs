@@ -15,6 +15,8 @@ where
 
 impl_iters!(BigUintPolynomial, big_uint_poly);
 
+impl_views!(BigUintPolynomial);
+
 impl<S, T> BigUintPolynomial<S>
 where
     S: RawData<Elem = T>,
@@ -38,13 +40,6 @@ where
     #[inline]
     pub fn zero(big_uint_poly_len: usize) -> Self {
         Self(S::from_vec(vec![T::ZERO; big_uint_poly_len]))
-    }
-
-    /// Drop self, and return the vector.
-    #[must_use]
-    #[inline]
-    pub fn into_owned(self) -> S {
-        self.0
     }
 
     /// Constructs a new polynomial from a slice.

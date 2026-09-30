@@ -33,6 +33,8 @@ where
 
 impl_iters!(DcrtPolynomial, dcrt_poly);
 
+impl_views!(DcrtPolynomial);
+
 impl<S, T> DcrtPolynomial<S>
 where
     S: RawData<Elem = T>,
@@ -56,13 +58,6 @@ where
     #[inline]
     pub fn zero(dcrt_poly_length: usize) -> Self {
         Self(S::from_vec(vec![T::ZERO; dcrt_poly_length]))
-    }
-
-    /// Drop self, and return the underlying storage.
-    #[must_use]
-    #[inline]
-    pub fn into_owned(self) -> S {
-        self.0
     }
 }
 

@@ -27,6 +27,8 @@ where
     S: RawData,
     <S as RawData>::Elem: FheUint;
 
+impl_views!(ArrayBase);
+
 impl<S> ArrayBase<S>
 where
     S: RawData,
@@ -104,7 +106,7 @@ where
 
 impl<S, T> FromIterator<T> for ArrayBase<S>
 where
-    S: DataOwned<Elem = T>,
+    S: RawData<Elem = T> + FromIterator<T>,
     T: FheUint,
 {
     #[inline]

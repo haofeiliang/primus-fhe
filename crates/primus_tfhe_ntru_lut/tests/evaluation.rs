@@ -80,7 +80,8 @@ fn configs(radix: usize) -> Vec<LookupTableConfig> {
         // finally fill every coefficient of the selected polynomial.
         vec![(3, 2, 0), (3, 5, 3), (7, 3, 5), (7, 3, 6)]
     } else {
-        vec![(3, 2, 1), (2, 3, 2)]
+        // Also exercise a single public layer producing exactly one output.
+        vec![(3, 2, 1), (2, 3, 2), (2, 1, 1)]
     };
     counts
         .into_iter()

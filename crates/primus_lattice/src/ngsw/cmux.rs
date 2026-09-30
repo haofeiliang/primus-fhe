@@ -5,7 +5,7 @@
 
 use core::borrow::Borrow;
 
-use primus_data::{Data, DataMut, RawData};
+use primus_data::{Data, DataMut};
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{Complex64, FftEngine, FftTable, TorusFftValue};
 use primus_integer::FheUint;
@@ -92,55 +92,75 @@ where
     /// Controls and candidates have equal counts and matching order. Each
     /// control encrypts a bit, with at most one bit equal to one; bit values
     /// and exclusivity are not checked. Empty lists copy `default` exactly.
-    /// Output is overwritten and workspace scratch needs no manual reset.
+    /// Controls may be borrowed objects or semantic iterators over packed storage.
+    /// Candidate items convert to shared views via `Into`; use `as_view()` and
+    /// `as_mut_view()` for owned default and output ciphertexts.
+    /// Callers constructing chunk iterators must exclude incomplete trailing objects.
+    /// Output is overwritten and workspace scratch needs no manual reset. Products
+    /// are summed in the transform domain before a single inverse transform.
+    /// Fourier rounding can differ from summing separately converted products.
     ///
     /// # Panics
     ///
-    /// Panics if the reported control count differs from `candidates.len()`,
-    /// or if empty-list copying encounters unequal default/output lengths.
-    pub fn cmux_k_to<T, Table, B, C, D, I>(
+    /// Panics on unequal reported iterator counts or incorrect object lengths.
+    /// Counts and default/output lengths are checked before writes; individual
+    /// controls/candidates are checked as consumed, so a panic can leave partial output.
+    pub fn cmux_k_to<'a, T, Table, I, J>(
         controls: I,
-        default: &Ntru<B>,
-        candidates: &[Ntru<C>],
-        output: &mut Ntru<D>,
+        default: Ntru<&[T]>,
+        candidates: J,
+        mut output: Ntru<&mut [T]>,
         basis: &ApproxSignedBasis<T>,
         fft: &mut FftEngine<'_, Table>,
         workspace: &mut FourierNtruExternalProductWorkspace<T>,
     ) where
         T: TorusFftValue,
         Table: FftTable,
-        B: Data<Elem = T>,
-        C: Data<Elem = T>,
-        D: DataMut<Elem = T>,
-        I: IntoIterator,
-        I::IntoIter: ExactSizeIterator,
-        I::Item: Borrow<Self>,
+        I: IntoIterator<Item: Borrow<Self>, IntoIter: ExactSizeIterator>,
+        J: IntoIterator<Item: Into<Ntru<&'a [T]>>, IntoIter: ExactSizeIterator>,
     {
         let controls = controls.into_iter();
+        let candidates = candidates.into_iter();
         assert_eq!(
             controls.len(),
             candidates.len(),
             "CMUX requires one control per candidate"
         );
         let poly_length = workspace.poly_length();
-        debug_assert_eq!(default.as_ref().len(), poly_length);
-        debug_assert_eq!(output.as_ref().len(), poly_length);
-        debug_assert!(
-            candidates
-                .iter()
-                .all(|candidate| candidate.as_ref().len() == poly_length)
+        assert_eq!(
+            default.as_ref().len(),
+            poly_length,
+            "CMUX default length mismatch"
+        );
+        assert_eq!(
+            output.as_ref().len(),
+            poly_length,
+            "CMUX output length mismatch"
         );
 
-        if candidates.is_empty() {
+        if candidates.len() == 0 {
             output.as_mut().copy_from_slice(default.as_ref());
             return;
         }
 
         let mut workspace = workspace.as_mut();
         workspace.fourier_accumulator.set_zero();
+        // Keep default unchanged: each decomposed difference is relative to
+        // the same c_0. Clear once above and invert only after the entire sum.
         for (control, candidate) in controls.zip(candidates) {
-            candidate.sub_to(default, output, NativeModulus::new());
+            let candidate = candidate.into();
+            assert_eq!(
+                candidate.as_ref().len(),
+                poly_length,
+                "CMUX candidate length mismatch"
+            );
+            candidate.sub_to(&default, &mut output, NativeModulus::new());
             let control: &Self = control.borrow();
+            assert_eq!(
+                control.as_ref().len(),
+                basis.decompose_length() * (poly_length / 2),
+                "CMUX control length mismatch"
+            );
             accumulate_fourier_gadget_product(
                 control.as_ref(),
                 output.as_ref(),
@@ -149,8 +169,10 @@ where
                 &mut workspace,
             );
         }
-        workspace.fourier_accumulator.write_torus_form(output, fft);
-        output.add_assign(default, NativeModulus::new());
+        workspace
+            .fourier_accumulator
+            .write_torus_form(&mut output, fft);
+        output.add_assign(&default, NativeModulus::new());
     }
 
     /// Computes `output = input + self external_product (input * (X^exponent - 1))`.
@@ -193,10 +215,10 @@ where
     }
 }
 
-impl<S> NttNgsw<S>
+impl<S, T> NttNgsw<S>
 where
-    S: RawData,
-    S::Elem: FheUint,
+    S: Data<Elem = T>,
+    T: FheUint,
 {
     /// Computes `output = ct0 + self external_product (ct1 - ct0)`.
     ///
@@ -215,7 +237,7 @@ where
         clippy::too_many_arguments,
         reason = "Keep operands, decomposition basis, arithmetic, transform, and scratch explicit"
     )]
-    pub fn cmux_to<T, M, Table, B, C, D>(
+    pub fn cmux_to<M, Table, B, C, D>(
         &self,
         ct0: &Ntru<B>,
         ct1: &Ntru<C>,
@@ -225,10 +247,8 @@ where
         ntt: &Table,
         workspace: &mut NttNtruExternalProductWorkspace<T>,
     ) where
-        T: FheUint,
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        S: Data<Elem = T>,
         B: Data<Elem = T>,
         C: Data<Elem = T>,
         D: DataMut<Elem = T>,
@@ -270,62 +290,79 @@ where
     /// Controls and candidates have equal counts and matching order. Each
     /// control encrypts a bit, with at most one bit equal to one; bit values
     /// and exclusivity are not checked. Empty lists copy `default` exactly.
-    /// Output is overwritten and workspace scratch needs no manual reset.
+    /// Controls may be borrowed objects or semantic iterators over packed storage.
+    /// Candidate items convert to shared views via `Into`; use `as_view()` and
+    /// `as_mut_view()` for owned default and output ciphertexts.
+    /// Callers constructing chunk iterators must exclude incomplete trailing objects.
+    /// Output is overwritten and workspace scratch needs no manual reset. Products
+    /// are summed in the transform domain before a single inverse transform.
     ///
     /// # Panics
     ///
-    /// Panics if the reported control count differs from `candidates.len()`,
-    /// or if empty-list copying encounters unequal default/output lengths.
+    /// Panics on unequal reported iterator counts or incorrect object lengths.
+    /// Counts and default/output lengths are checked before writes; individual
+    /// controls/candidates are checked as consumed, so a panic can leave partial output.
     #[expect(
         clippy::too_many_arguments,
         reason = "Keep operands, decomposition basis, arithmetic, transform, and scratch explicit"
     )]
-    pub fn cmux_k_to<T, M, Table, B, C, D, I>(
+    pub fn cmux_k_to<'a, M, Table, I, J>(
         controls: I,
-        default: &Ntru<B>,
-        candidates: &[Ntru<C>],
-        output: &mut Ntru<D>,
+        default: Ntru<&[T]>,
+        candidates: J,
+        mut output: Ntru<&mut [T]>,
         basis: &ApproxSignedBasis<T>,
         modulus: M,
         ntt: &Table,
         workspace: &mut NttNtruExternalProductWorkspace<T>,
     ) where
-        T: FheUint,
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        S: Data<Elem = T>,
-        B: Data<Elem = T>,
-        C: Data<Elem = T>,
-        D: DataMut<Elem = T>,
-        I: IntoIterator,
-        I::IntoIter: ExactSizeIterator,
-        I::Item: Borrow<Self>,
+        I: IntoIterator<Item: Borrow<Self>, IntoIter: ExactSizeIterator>,
+        J: IntoIterator<Item: Into<Ntru<&'a [T]>>, IntoIter: ExactSizeIterator>,
     {
         let controls = controls.into_iter();
+        let candidates = candidates.into_iter();
         assert_eq!(
             controls.len(),
             candidates.len(),
             "CMUX requires one control per candidate"
         );
         let poly_length = workspace.poly_length();
-        debug_assert_eq!(default.as_ref().len(), poly_length);
-        debug_assert_eq!(output.as_ref().len(), poly_length);
-        debug_assert!(
-            candidates
-                .iter()
-                .all(|candidate| candidate.as_ref().len() == poly_length)
+        assert_eq!(
+            default.as_ref().len(),
+            poly_length,
+            "CMUX default length mismatch"
+        );
+        assert_eq!(
+            output.as_ref().len(),
+            poly_length,
+            "CMUX output length mismatch"
         );
 
-        if candidates.is_empty() {
+        if candidates.len() == 0 {
             output.as_mut().copy_from_slice(default.as_ref());
             return;
         }
 
         let mut workspace = workspace.as_mut();
         workspace.ntt_accumulator.set_zero();
+        // Keep default unchanged: each decomposed difference is relative to
+        // the same c_0. Clear once above and invert only after the entire sum.
         for (control, candidate) in controls.zip(candidates) {
-            candidate.sub_to(default, output, modulus);
+            let candidate = candidate.into();
+            assert_eq!(
+                candidate.as_ref().len(),
+                poly_length,
+                "CMUX candidate length mismatch"
+            );
+            candidate.sub_to(&default, &mut output, modulus);
             let control: &Self = control.borrow();
+            assert_eq!(
+                control.as_ref().len(),
+                basis.decompose_length() * poly_length,
+                "CMUX control length mismatch"
+            );
             accumulate_ntt_gadget_product(
                 control.as_ref(),
                 output.as_ref(),
@@ -335,8 +372,8 @@ where
                 &mut workspace,
             );
         }
-        workspace.ntt_accumulator.write_coeff_form(output, ntt);
-        output.add_assign(default, modulus);
+        workspace.ntt_accumulator.write_coeff_form(&mut output, ntt);
+        output.add_assign(&default, modulus);
     }
 
     /// Computes `output = input + self external_product (input * (X^exponent - 1))`.
@@ -354,7 +391,7 @@ where
         clippy::too_many_arguments,
         reason = "Keep operands, decomposition basis, arithmetic, transform, and scratch explicit"
     )]
-    pub fn cmux_monomial_to<T, M, Table, B, C>(
+    pub fn cmux_monomial_to<M, Table, B, C>(
         &self,
         input: &Ntru<B>,
         exponent: usize,
@@ -364,10 +401,8 @@ where
         ntt: &Table,
         workspace: &mut NttNtruExternalProductWorkspace<T>,
     ) where
-        T: FheUint,
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        S: Data<Elem = T>,
         B: Data<Elem = T>,
         C: DataMut<Elem = T>,
     {

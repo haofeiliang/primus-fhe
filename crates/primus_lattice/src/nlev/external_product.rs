@@ -1,6 +1,8 @@
 //! NLev external products using the shared scalar NTRU gadget kernels.
 
-use primus_data::{Data, DataMut, RawData};
+use core::borrow::Borrow;
+
+use primus_data::{Data, DataMut};
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{Complex64, FftEngine, FftTable, TorusFftValue};
 use primus_integer::FheUint;
@@ -66,6 +68,85 @@ where
         workspace.fourier_accumulator.write_torus_form(output, fft);
     }
 
+    /// Computes `output = sum_j polynomials[j] odot gadgets[j]`.
+    ///
+    /// Accumulates every product in the transform domain, then converts once to
+    /// coefficient form. Output is overwritten; an empty sum writes zero. The
+    /// workspace is reused without allocation or a caller-side reset. Fourier
+    /// rounding can differ from summing separately converted coefficient products.
+    ///
+    /// # Correctness
+    /// Each pair inherits [`Self::external_product_to`]'s representation, basis,
+    /// table and workspace contracts. Gadgets and polynomials have equal counts
+    /// and matching order; all use the same basis. Inputs may be borrowed objects
+    /// or semantic iterators over packed storage. Polynomial items convert to
+    /// shared views via `Into`; pass `output.as_mut_view()` for an owned output.
+    /// Callers constructing chunk iterators must exclude incomplete trailing objects.
+    ///
+    /// # Panics
+    /// Panics on unequal reported iterator counts or incorrect object lengths.
+    /// Counts and output length are checked before writes; individual pairs are
+    /// checked as consumed, so a panic may leave partial output or scratch.
+    pub fn external_product_sum_to<'a, T, Table, I, J>(
+        gadgets: I,
+        polynomials: J,
+        mut output: Ntru<&mut [T]>,
+        basis: &ApproxSignedBasis<T>,
+        fft: &mut FftEngine<'_, Table>,
+        workspace: &mut FourierNtruExternalProductWorkspace<T>,
+    ) where
+        T: TorusFftValue,
+        Table: FftTable,
+        I: IntoIterator<Item: Borrow<Self>, IntoIter: ExactSizeIterator>,
+        J: IntoIterator<Item: Into<Polynomial<&'a [T]>>, IntoIter: ExactSizeIterator>,
+    {
+        let gadgets = gadgets.into_iter();
+        let polynomials = polynomials.into_iter();
+        assert_eq!(
+            gadgets.len(),
+            polynomials.len(),
+            "external-product sum requires one gadget per polynomial"
+        );
+        let poly_length = workspace.poly_length();
+        assert_eq!(
+            output.as_ref().len(),
+            poly_length,
+            "external-product output length mismatch"
+        );
+        if gadgets.len() == 0 {
+            output.set_zero();
+            return;
+        }
+        // One clearing and one torus conversion for the entire sum; rounding
+        // can differ from summing separately converted coefficient products.
+        let mut workspace = workspace.as_mut();
+        workspace.fourier_accumulator.set_zero();
+        for (gadget, polynomial) in gadgets.zip(polynomials) {
+            let gadget: &Self = gadget.borrow();
+            let polynomial = polynomial.into();
+            assert_eq!(
+                polynomial.as_ref().len(),
+                poly_length,
+                "external-product polynomial length mismatch"
+            );
+            assert_eq!(
+                gadget.as_ref().len(),
+                basis.decompose_length() * (poly_length / 2),
+                "external-product gadget length mismatch"
+            );
+            accumulate_fourier_gadget_product(
+                gadget.as_ref(),
+                polynomial.as_ref(),
+                basis,
+                fft,
+                &mut workspace,
+            );
+        }
+        workspace
+            .fourier_accumulator
+            .write_torus_form(&mut output, fft);
+    }
+
     /// Computes the gadget product directly in this key's Fourier representation.
     ///
     /// # Correctness
@@ -107,10 +188,10 @@ where
     }
 }
 
-impl<S> NttNlev<S>
+impl<S, T> NttNlev<S>
 where
-    S: RawData,
-    S::Elem: FheUint,
+    S: Data<Elem = T>,
+    T: FheUint,
 {
     /// Computes the gadget external product `polynomial odot self`.
     ///
@@ -133,7 +214,7 @@ where
     ///
     /// # Panics
     /// Panics before output writes if its length is not `workspace.poly_length()`.
-    pub fn external_product_to<T, M, Table, A, C>(
+    pub fn external_product_to<M, Table, A, C>(
         &self,
         polynomial: &Polynomial<A>,
         output: &mut Ntru<C>,
@@ -142,12 +223,10 @@ where
         ntt: &Table,
         workspace: &mut NttNtruExternalProductWorkspace<T>,
     ) where
-        T: FheUint,
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
         A: Data<Elem = T>,
         C: DataMut<Elem = T>,
-        S: Data<Elem = T>,
     {
         // Coefficients and NTT evaluations share storage. Accumulate into the
         // destination, then invert in place to avoid copying an entire polynomial.
@@ -170,6 +249,84 @@ where
         ntt.inverse_transform_slice(workspace.ntt_accumulator.as_mut());
     }
 
+    /// Computes `output = sum_j polynomials[j] odot gadgets[j]`.
+    ///
+    /// Accumulates every product in the transform domain, then converts once to
+    /// coefficient form. Output is overwritten; an empty sum writes zero. The
+    /// workspace is reused without allocation or a caller-side reset.
+    ///
+    /// # Correctness
+    /// Each pair inherits [`Self::external_product_to`]'s representation, basis,
+    /// table and workspace contracts. Gadgets and polynomials have equal counts
+    /// and matching order; all use the same basis. Inputs may be borrowed objects
+    /// or semantic iterators over packed storage. Polynomial items convert to
+    /// shared views via `Into`; pass `output.as_mut_view()` for an owned output.
+    /// Callers constructing chunk iterators must exclude incomplete trailing objects.
+    ///
+    /// # Panics
+    /// Panics on unequal reported iterator counts or incorrect object lengths.
+    /// Counts and output length are checked before writes; individual pairs are
+    /// checked as consumed, so a panic may leave partial output or scratch.
+    pub fn external_product_sum_to<'a, M, Table, I, J>(
+        gadgets: I,
+        polynomials: J,
+        mut output: Ntru<&mut [T]>,
+        basis: &ApproxSignedBasis<T>,
+        modulus: M,
+        ntt: &Table,
+        workspace: &mut NttNtruExternalProductWorkspace<T>,
+    ) where
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+        I: IntoIterator<Item: Borrow<Self>, IntoIter: ExactSizeIterator>,
+        J: IntoIterator<Item: Into<Polynomial<&'a [T]>>, IntoIter: ExactSizeIterator>,
+    {
+        let gadgets = gadgets.into_iter();
+        let polynomials = polynomials.into_iter();
+        assert_eq!(
+            gadgets.len(),
+            polynomials.len(),
+            "external-product sum requires one gadget per polynomial"
+        );
+        let poly_length = workspace.poly_length();
+        assert_eq!(
+            output.as_ref().len(),
+            poly_length,
+            "external-product output length mismatch"
+        );
+        if gadgets.len() == 0 {
+            output.set_zero();
+            return;
+        }
+        // Share coefficient/NTT storage and invert in place after all terms.
+        let mut transformed = NttNtru(output.as_mut());
+        let mut workspace = workspace.as_mut_with_accumulator(&mut transformed);
+        workspace.ntt_accumulator.set_zero();
+        for (gadget, polynomial) in gadgets.zip(polynomials) {
+            let gadget: &Self = gadget.borrow();
+            let polynomial = polynomial.into();
+            assert_eq!(
+                polynomial.as_ref().len(),
+                poly_length,
+                "external-product polynomial length mismatch"
+            );
+            assert_eq!(
+                gadget.as_ref().len(),
+                basis.decompose_length() * poly_length,
+                "external-product gadget length mismatch"
+            );
+            accumulate_ntt_gadget_product(
+                gadget.as_ref(),
+                polynomial.as_ref(),
+                basis,
+                modulus,
+                ntt,
+                &mut workspace,
+            );
+        }
+        ntt.inverse_transform_slice(workspace.ntt_accumulator.as_mut());
+    }
+
     /// Computes the gadget product directly in this key's NTT representation.
     ///
     /// # Correctness
@@ -181,7 +338,7 @@ where
     ///
     /// # Panics
     /// Panics if the output length is not `workspace.poly_length()`.
-    pub fn external_product_ntt_to<T, M, Table, A, C>(
+    pub fn external_product_ntt_to<M, Table, A, C>(
         &self,
         polynomial: &Polynomial<A>,
         output: &mut NttNtru<C>,
@@ -190,12 +347,10 @@ where
         ntt: &Table,
         workspace: &mut NttNtruExternalProductWorkspace<T>,
     ) where
-        T: FheUint,
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
         A: Data<Elem = T>,
         C: DataMut<Elem = T>,
-        S: Data<Elem = T>,
     {
         assert_eq!(
             output.as_ref().len(),

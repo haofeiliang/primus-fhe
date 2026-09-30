@@ -33,7 +33,7 @@ impl<T> DataMut for &mut [T] {
     }
 }
 
-// Fixed-size arrays and their references.
+// Fixed-size arrays.
 
 impl<T, const N: usize> RawData for [T; N] {
     type Elem = T;
@@ -63,52 +63,55 @@ impl<T, const N: usize> DataMut for [T; N] {
     }
 }
 
-impl<T, const N: usize> RawData for &[T; N] {
-    type Elem = T;
+// References preserve the underlying storage capabilities. RawData is Sized,
+// so these impls do not overlap the explicit borrowed-slice impls above.
+
+impl<S: RawData> RawData for &S {
+    type Elem = S::Elem;
 }
 
-impl<T, const N: usize> Data for &[T; N] {
+impl<S: Data> Data for &S {
     #[inline(always)]
-    fn as_slice(&self) -> &[T] {
-        *self
+    fn as_slice(&self) -> &[Self::Elem] {
+        S::as_slice(self)
     }
 
     #[inline(always)]
     fn len(&self) -> usize {
-        N
+        S::len(self)
     }
 
     #[inline(always)]
     fn is_empty(&self) -> bool {
-        N == 0
+        S::is_empty(self)
     }
 }
 
-impl<T, const N: usize> RawData for &mut [T; N] {
-    type Elem = T;
+impl<S: RawData> RawData for &mut S {
+    type Elem = S::Elem;
 }
 
-impl<T, const N: usize> Data for &mut [T; N] {
+impl<S: Data> Data for &mut S {
     #[inline(always)]
-    fn as_slice(&self) -> &[T] {
-        *self
+    fn as_slice(&self) -> &[Self::Elem] {
+        S::as_slice(self)
     }
 
     #[inline(always)]
     fn len(&self) -> usize {
-        N
+        S::len(self)
     }
 
     #[inline(always)]
     fn is_empty(&self) -> bool {
-        N == 0
+        S::is_empty(self)
     }
 }
 
-impl<T, const N: usize> DataMut for &mut [T; N] {
+impl<S: DataMut> DataMut for &mut S {
     #[inline(always)]
-    fn as_mut_slice(&mut self) -> &mut [T] {
-        *self
+    fn as_mut_slice(&mut self) -> &mut [Self::Elem] {
+        S::as_mut_slice(self)
     }
 }
 

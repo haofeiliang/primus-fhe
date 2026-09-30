@@ -24,6 +24,8 @@ where
 
 impl_iters!(CrtPolynomial, crt_poly);
 
+impl_views!(CrtPolynomial);
+
 impl<S, T> CrtPolynomial<S>
 where
     S: RawData<Elem = T>,
@@ -47,13 +49,6 @@ where
     #[inline]
     pub fn zero(crt_poly_len: usize) -> Self {
         Self(S::from_vec(vec![T::ZERO; crt_poly_len]))
-    }
-
-    /// Drop self, and return the underlying storage.
-    #[must_use]
-    #[inline]
-    pub fn into_owned(self) -> S {
-        self.0
     }
 }
 

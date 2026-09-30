@@ -1,6 +1,6 @@
 //! Basic ciphertext constructors and byte conversion.
 //!
-//! These macros generate `new`, `AsRef`, `AsMut`, byte conversion traits,
+//! These macros generate constructors, storage views and conversions, byte I/O,
 //! and zero-initialization for every integer-domain ciphertext type.
 
 macro_rules! impl_common {
@@ -21,6 +21,64 @@ macro_rules! impl_common {
             #[inline(always)]
             pub fn new(data: S) -> Self {
                 Self(data)
+            }
+
+            /// Consumes the wrapper and returns its storage without copying.
+            /// Borrowed storage remains borrowed; this does not create an owned buffer.
+            #[must_use]
+            #[inline]
+            pub fn into_inner(self) -> S {
+                self.0
+            }
+        }
+
+        impl<S, T> $cipher<S>
+        where
+            S: Data<Elem = T>,
+            T: FheUint,
+        {
+            /// Borrows the complete storage as a shared view of the same representation.
+            /// No elements are copied or transformed, and no layout is validated.
+            #[must_use]
+            #[inline]
+            pub fn as_view(&self) -> $cipher<&[T]> {
+                $cipher(self.0.as_slice())
+            }
+        }
+
+        impl<'a, S, T> From<&'a $cipher<S>> for $cipher<&'a [T]>
+        where
+            S: Data<Elem = T>,
+            T: FheUint,
+        {
+            #[inline]
+            fn from(value: &'a $cipher<S>) -> Self {
+                value.as_view()
+            }
+        }
+
+        impl<S, T> $cipher<S>
+        where
+            S: DataMut<Elem = T>,
+            T: FheUint,
+        {
+            /// Borrows the complete storage as an exclusive view of the same representation.
+            /// No elements are copied or transformed, and no layout is validated.
+            #[must_use]
+            #[inline]
+            pub fn as_mut_view(&mut self) -> $cipher<&mut [T]> {
+                $cipher(self.0.as_mut_slice())
+            }
+        }
+
+        impl<'a, S, T> From<&'a mut $cipher<S>> for $cipher<&'a mut [T]>
+        where
+            S: DataMut<Elem = T>,
+            T: FheUint,
+        {
+            #[inline]
+            fn from(value: &'a mut $cipher<S>) -> Self {
+                value.as_mut_view()
             }
         }
 

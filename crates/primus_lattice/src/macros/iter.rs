@@ -8,6 +8,7 @@ macro_rules! impl_iters {
     ($cipher:ident) => {
         pastey::paste! {
             #[doc = "Immutable chunked iterator over [`" $cipher "`] ciphertexts."]
+            #[derive(Debug, Clone)]
             pub struct [<$cipher Iter>]<'a, T>
             where
                 T: FheUint,
@@ -44,21 +45,48 @@ macro_rules! impl_iters {
 
                 #[inline]
                 fn next(&mut self) -> Option<Self::Item> {
-                    self.iter.next().map(|slice| $cipher(slice))
+                    self.iter.next().map($cipher)
                 }
 
                 #[inline]
                 fn size_hint(&self) -> (usize, Option<usize>) {
                     self.iter.size_hint()
                 }
+
+                #[inline]
+                fn count(self) -> usize {
+                    self.iter.len()
+                }
+
+                #[inline]
+                fn nth(&mut self, n: usize) -> Option<Self::Item> {
+                    self.iter.nth(n).map($cipher)
+                }
+
+                #[inline]
+                fn last(mut self) -> Option<Self::Item> {
+                    self.next_back()
+                }
             }
 
             impl<'a, T: FheUint> core::iter::FusedIterator for [<$cipher Iter>]<'a, T> {}
             impl<'a, T: FheUint> core::iter::ExactSizeIterator for [<$cipher Iter>]<'a, T> {}
+            impl<'a, T: FheUint> core::iter::DoubleEndedIterator for [<$cipher Iter>]<'a, T> {
+                #[inline]
+                fn next_back(&mut self) -> Option<Self::Item> {
+                    self.iter.next_back().map($cipher)
+                }
+
+                #[inline]
+                fn nth_back(&mut self, n: usize) -> Option<Self::Item> {
+                    self.iter.nth_back(n).map($cipher)
+                }
+            }
         }
 
         pastey::paste! {
             #[doc = "Mutable chunked iterator over [`" $cipher "`] ciphertexts."]
+            #[derive(Debug)]
             pub struct [<$cipher IterMut>]<'a, T>
             where
                 T: FheUint,
@@ -95,17 +123,43 @@ macro_rules! impl_iters {
 
                 #[inline]
                 fn next(&mut self) -> Option<Self::Item> {
-                    self.iter.next().map(|slice| $cipher(slice))
+                    self.iter.next().map($cipher)
                 }
 
                 #[inline]
                 fn size_hint(&self) -> (usize, Option<usize>) {
                     self.iter.size_hint()
                 }
+
+                #[inline]
+                fn count(self) -> usize {
+                    self.iter.len()
+                }
+
+                #[inline]
+                fn nth(&mut self, n: usize) -> Option<Self::Item> {
+                    self.iter.nth(n).map($cipher)
+                }
+
+                #[inline]
+                fn last(mut self) -> Option<Self::Item> {
+                    self.next_back()
+                }
             }
 
             impl<'a, T: FheUint> core::iter::FusedIterator for [<$cipher IterMut>]<'a, T> {}
             impl<'a, T: FheUint> core::iter::ExactSizeIterator for [<$cipher IterMut>]<'a, T> {}
+            impl<'a, T: FheUint> core::iter::DoubleEndedIterator for [<$cipher IterMut>]<'a, T> {
+                #[inline]
+                fn next_back(&mut self) -> Option<Self::Item> {
+                    self.iter.next_back().map($cipher)
+                }
+
+                #[inline]
+                fn nth_back(&mut self, n: usize) -> Option<Self::Item> {
+                    self.iter.nth_back(n).map($cipher)
+                }
+            }
         }
     };
 }

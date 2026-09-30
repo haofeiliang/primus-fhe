@@ -35,15 +35,19 @@ Lengths below count array elements, not bytes or ciphertexts. Transformed storag
 | `rotation_factors_len` | d*(M-1)*R | Public monomial differences, without gadget levels |
 | `candidates_len` | (P/M)*N if h>0; otherwise 0 | First-layer results and subsequent in-place compaction |
 
-`public_table_selectors` holds one complete batch only when h>0. Fourier additionally retains its coefficient form in `public_selector_coefficients`. `nonzero_selectors` holds one reusable scratch batch only when d>0. These counts exclude the embedded one-hot evaluator (including shared external-product and FFT workspaces), the return workspace, current/product/difference ciphertexts and Fourier gadget constants; they are not a total heap estimate.
+`public_table_selectors` holds one complete batch only when h>0. Fourier additionally retains its coefficient form in `public_selector_coefficients`. `nonzero_selectors` holds one reusable scratch batch only when d>0. These counts exclude the embedded one-hot evaluator (including shared external-product and FFT workspaces), the return workspace, current/product ciphertexts and Fourier gadget constants; they are not a total heap estimate.
 
 The public first layer computes `sum_k T_k odot NLEV[delta_k]`, including k=0. Later encrypted layers compute `c_0 + sum_{k>0}(c_k-c_0) otimes NGSW[delta_k]`. With no table layer, the server's BR-basis `NLEV[1]` lifts the single public polynomial.
+
+Each group sums all products in the transform domain and inverse-transforms once. The public layer uses `NLEV.external_product_sum_to`; encrypted layers use `NGSW.cmux_k_to` with semantic candidate/control iterators. CMux uses `current` for each difference and the shared workspace for the sum, keeping `c_0` unchanged. A separate coefficient difference buffer is unnecessary; `product` remains the ping-pong buffer for rotations.
 
 Each low chunk i produces `C_i=G+sum_{k>0}(X^(-k*M^i)-1)*NGSW[delta_k]`, targeting `NGSW[X^(-m_i*M^i)]`. The factors are prepared at construction. Fourier factors use integer transforms, while G and ciphertexts use torus transforms. Only C_i is retained for that chunk; the next chunk overwrites the scratch selectors. All table selectors and rotation controls are reused across o outputs, with only one output's candidate tree live at a time.
 
 Each encrypted layer consumes consecutive groups of M candidates. Group g starts at coefficient g*M*N; its result is written at g*N only after the whole group has been read. Writes therefore stay within consumed storage, leaving unread groups intact. The active candidate count is divided by M after each layer. Explicit group indices express this in-place dependency; polynomial and ciphertext iterators traverse the individual mathematical objects within each group.
 
-For h>0, each call projects M+(c-1)*(M-1) selectors, and each output uses P+P/M-1 table-selection external products. For h=0, each call projects c*(M-1) selectors and each output uses one public lift. Both cases add d rotation products and one return operation per output. These are operation counts, not runtime or noise estimates. CBS, approximate decomposition, selector errors, Fourier rounding and the return path still require a decoding budget.
+For h>0, each call projects M+(c-1)*(M-1) selectors, and each output uses P+P/M-1 table-selection external products. For h=0, each call projects c*(M-1) selectors and each output uses one public lift. Both cases add d rotation products and one return operation per output.
+
+For h>0, selection performs `(P-1)/(M-1)` inverse transforms per output: 21 for M=4/P=64, versus 79 separately inverted products. NTT summation is exact; Fourier sums before torus conversion, so its rounding can differ from separately converted products. These are operation counts, not runtime or noise estimates. CBS, approximate decomposition, selector errors, Fourier rounding and the return path still require a decoding budget.
 
 Table products borrow one-hot CBS's external-product workspace; Fourier transforms also borrow its FFT engine. These stages execute serially and overwrite scratch before reuse. Storage choices and the measured memory/latency tradeoff are recorded in [workspaces and storage](../../guides/development/workspaces-and-storage.md).
 
@@ -63,6 +67,17 @@ backend types. It neither includes production source files nor exposes scratch.
 | Bases / noise | Shared [NTRU circuit profile](../../guides/development/tfhe-parameters.md#ntru-pbs-cbs-and-lookup), including independent q-domain return KS |
 | Layout | c8/d5/o8: 65536 inputs, 64 polynomials per output, K=N=1024 |
 | Public function / input / seed | `(x*x+3*x+7) mod 65536` / 43981 / 42 |
+
+IDs without a workload suffix retain this polynomial function. IDs containing
+`/dense_seed42/` use the low 16 bits of a fixed SplitMix64 output mixer applied
+to `x + 42 + 0x9e3779b97f4a7c15` with wrapping u64 arithmetic; the exact mapping
+is in `Workload::digit` in the benchmark support module. It is independent of
+the key-generation RNG and identical across word widths and backends. Both
+workloads retain the same geometry, keys, input and measurement boundaries.
+The polynomial's distinct public-polynomial counts per output are
+`1,1,1,1,1,4,16,64`; the dense mapping has 64 distinct polynomials in each output.
+This pair distinguishes gains from repeated subtables from general evaluation
+costs. Creation includes computing the selected public function.
 
 One `evaluate` iteration generates selectors for eight input chunks, selects,
 rotates and returns all eight output ciphertexts. Keys, public LUT compilation,

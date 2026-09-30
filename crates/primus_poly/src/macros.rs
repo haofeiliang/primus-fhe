@@ -145,3 +145,72 @@ macro_rules! impl_iters {
         }
     };
 }
+
+/// Storage views, conversions and unwrapping for integer polynomial representations.
+macro_rules! impl_views {
+    ($poly:ident) => {
+        impl<S, T> $poly<S>
+        where
+            S: RawData<Elem = T>,
+            T: FheUint,
+        {
+            /// Consumes the wrapper and returns its storage without copying.
+            /// Borrowed storage remains borrowed; this does not create an owned buffer.
+            #[must_use]
+            #[inline]
+            pub fn into_inner(self) -> S {
+                self.0
+            }
+        }
+
+        impl<S, T> $poly<S>
+        where
+            S: Data<Elem = T>,
+            T: FheUint,
+        {
+            /// Borrows the complete storage as a shared view of the same representation.
+            /// No elements are copied or transformed, and no layout is validated.
+            #[must_use]
+            #[inline]
+            pub fn as_view(&self) -> $poly<&[T]> {
+                $poly(self.0.as_slice())
+            }
+        }
+
+        impl<'a, S, T> From<&'a $poly<S>> for $poly<&'a [T]>
+        where
+            S: Data<Elem = T>,
+            T: FheUint,
+        {
+            #[inline]
+            fn from(value: &'a $poly<S>) -> Self {
+                value.as_view()
+            }
+        }
+
+        impl<S, T> $poly<S>
+        where
+            S: DataMut<Elem = T>,
+            T: FheUint,
+        {
+            /// Borrows the complete storage as an exclusive view of the same representation.
+            /// No elements are copied or transformed, and no layout is validated.
+            #[must_use]
+            #[inline]
+            pub fn as_mut_view(&mut self) -> $poly<&mut [T]> {
+                $poly(self.0.as_mut_slice())
+            }
+        }
+
+        impl<'a, S, T> From<&'a mut $poly<S>> for $poly<&'a mut [T]>
+        where
+            S: DataMut<Elem = T>,
+            T: FheUint,
+        {
+            #[inline]
+            fn from(value: &'a mut $poly<S>) -> Self {
+                value.as_mut_view()
+            }
+        }
+    };
+}

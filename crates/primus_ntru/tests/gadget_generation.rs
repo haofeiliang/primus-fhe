@@ -1,6 +1,9 @@
 //! NLev/NGSW gadget encryption checked through row phases and encrypted selection.
 use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable};
-use primus_lattice::ntru::{FourierNtruOwned, Ntru, NttNtru};
+use primus_lattice::{
+    ngsw::{FourierNgswIter, NttNgswIter},
+    ntru::{FourierNtruOwned, Ntru, NttNtru},
+};
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntru::{
     FourierNgswCiphertext, FourierNlevCiphertext, FourierNtruDecryptWorkspace,
@@ -12,6 +15,7 @@ use primus_ntru::{
 use primus_ntt::{NttTable, UintNttTable};
 use primus_poly::{Polynomial, PolynomialOwned};
 use rand::{SeedableRng, rngs::StdRng};
+use std::panic::{AssertUnwindSafe, catch_unwind};
 
 // Functional ring size; keep the original word widths, moduli and decomposition.
 const POLY_LENGTH: usize = 32;
@@ -173,23 +177,69 @@ fn ntt_nlev_generation_and_ngsw_cmux() {
             &mut rng,
         );
 
+        // Reference: separately invert each product, always subtracting the
+        // original default. Real encryptions of zero still contribute noise.
+        let mut reference = candidates[0].clone();
+        let mut difference = Ntru::<Vec<u32>>::zero(POLY_LENGTH);
+        let mut product = Ntru::<Vec<u32>>::zero(POLY_LENGTH);
+        for (selector, candidate) in
+            NttNgswIter::new(&controls, gadget_params.nlev_len()).zip(&candidates[1..])
+        {
+            candidate.sub_to(&candidates[0], &mut difference, modulus);
+            selector.external_product_to(
+                &difference,
+                &mut product,
+                basis,
+                modulus,
+                &ntt,
+                &mut external_product_workspace,
+            );
+            reference.add_assign(&product, modulus);
+        }
+
         NttNgswCiphertext::cmux_k_to(
-            controls
-                .chunks_exact(gadget_params.nlev_len())
-                .map(NttNgswCiphertext::new),
-            &candidates[0],
+            NttNgswIter::new(&controls, gadget_params.nlev_len()),
+            candidates[0].as_view(),
             &candidates[1..],
-            &mut output,
+            output.as_mut_view(),
             basis,
             modulus,
             &ntt,
             &mut external_product_workspace,
         );
+        assert_eq!(output.as_ref(), reference.as_ref());
         assert_eq!(
             decrypt_ntt_output(&secret_key, &output, &params, &ntt),
             *expected
         );
     }
+    // Pair-count errors must not silently zip to a common prefix or write output.
+    let before = output.clone();
+    assert!(
+        catch_unwind(AssertUnwindSafe(|| NttNgswCiphertext::cmux_k_to(
+            NttNgswIter::new(&controls, gadget_params.nlev_len()),
+            candidates[0].as_view(),
+            &candidates[1..2],
+            output.as_mut_view(),
+            basis,
+            modulus,
+            &ntt,
+            &mut external_product_workspace,
+        )))
+        .is_err()
+    );
+    assert_eq!(output.as_ref(), before.as_ref());
+    NttNgswCiphertext::cmux_k_to(
+        NttNgswIter::new(&[], gadget_params.nlev_len()),
+        candidates[0].as_view(),
+        &candidates[0..0],
+        output.as_mut_view(),
+        basis,
+        modulus,
+        &ntt,
+        &mut external_product_workspace,
+    );
+    assert_eq!(output.as_ref(), candidates[0].as_ref());
 }
 
 #[test]
@@ -314,17 +364,39 @@ fn fourier_nlev_generation_and_ngsw_cmux() {
             &mut gadget_workspace,
         );
 
+        // Reference: separately invert each product, always subtracting the
+        // original default. Real encryptions of zero still contribute noise.
+        let mut reference = candidates[0].clone();
+        let mut difference = Ntru::<Vec<u32>>::zero(POLY_LENGTH);
+        let mut product = Ntru::<Vec<u32>>::zero(POLY_LENGTH);
+        for (selector, candidate) in
+            FourierNgswIter::new(&controls, gadget_params.fourier_nlev_len()).zip(&candidates[1..])
+        {
+            candidate.sub_to(&candidates[0], &mut difference, NativeModulus::new());
+            selector.external_product_to(
+                &difference,
+                &mut product,
+                basis,
+                &mut fft,
+                &mut external_product_workspace,
+            );
+            reference.add_assign(&product, NativeModulus::new());
+        }
+
         FourierNgswCiphertext::cmux_k_to(
-            controls
-                .chunks_exact(gadget_params.fourier_nlev_len())
-                .map(FourierNgswCiphertext::new),
-            &candidates[0],
+            FourierNgswIter::new(&controls, gadget_params.fourier_nlev_len()),
+            candidates[0].as_view(),
             &candidates[1..],
-            &mut output,
+            output.as_mut_view(),
             basis,
             &mut fft,
             &mut external_product_workspace,
         );
+        // u32 ciphertext coefficients differ by at most a few rounding units; checks
+        // below independently verify selection rather than ciphertext equality.
+        for (&actual, &expected) in output.as_ref().iter().zip(reference.as_ref()) {
+            assert!(native_distance(actual, expected) <= 4);
+        }
         assert_eq!(
             decrypt_fourier_output(
                 &secret_key,
@@ -336,4 +408,29 @@ fn fourier_nlev_generation_and_ngsw_cmux() {
             *expected
         );
     }
+    // Pair-count errors must not silently zip to a common prefix or write output.
+    let before = output.clone();
+    assert!(
+        catch_unwind(AssertUnwindSafe(|| FourierNgswCiphertext::cmux_k_to(
+            FourierNgswIter::new(&controls, gadget_params.fourier_nlev_len()),
+            candidates[0].as_view(),
+            &candidates[1..2],
+            output.as_mut_view(),
+            basis,
+            &mut fft,
+            &mut external_product_workspace,
+        )))
+        .is_err()
+    );
+    assert_eq!(output.as_ref(), before.as_ref());
+    FourierNgswCiphertext::cmux_k_to(
+        FourierNgswIter::new(&[], gadget_params.fourier_nlev_len()),
+        candidates[0].as_view(),
+        &candidates[0..0],
+        output.as_mut_view(),
+        basis,
+        &mut fft,
+        &mut external_product_workspace,
+    );
+    assert_eq!(output.as_ref(), candidates[0].as_ref());
 }

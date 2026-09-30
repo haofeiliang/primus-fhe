@@ -25,7 +25,7 @@ Choose the modulus before choosing a transform or decomposition basis. The imple
 
 [primus_data](../../crates/primus_data/src/traits.rs) separates element type (`RawData`), read access (`Data`), mutation (`DataMut`) and owned construction (`DataOwned`). `Polynomial<S>` and ciphertext wrappers use these traits so the same operation can work with owned buffers or borrowed slices.
 
-`Polynomial::new(storage.as_slice())` borrows; `Polynomial::new(storage.as_mut_slice())` borrows mutably. These wrappers do not clone or transform the elements. `Polynomial::new(storage)` moves the container. A consuming arithmetic method on a mutable view can still modify the caller's storage; choose `*_assign` when that effect should be explicit, and `*_to` for reusable output storage.
+`Polynomial::new(storage)` moves the container. For an existing polynomial or ciphertext, `as_view()` / `as_mut_view()` borrow its storage while preserving its representation; the corresponding `From` conversions do the same. `into_inner()` returns the original container or borrow without copying. These operations do not transform or validate elements. A consuming arithmetic method on a mutable view can still modify the caller's storage; choose `*_assign` when that effect should be explicit, and `*_to` for reusable output storage.
 
 Raw polynomial/ciphertext constructors do not establish modulus, key identity, representation or full layout. `Polynomial<S>` does not carry an independent ring length: wrapping `batch_count*N` elements does not automatically turn single-polynomial operations into batch operations. Only pass such storage to an API whose contract explicitly accepts a batch; otherwise iterate over complete objects.
 
@@ -161,7 +161,7 @@ Reuse, fixed length and extra alignment are separate decisions. Apply this matri
 | Dynamic metadata, indices, small controls or object descriptors | Ordinary `Vec`, arrays or boxes |
 | Backend-specific temporary memory | Preserve the backend's allocation, capacity and borrowing contract |
 
-With `primus_data/aligned-vec`, [AVec and ABox implement RawData/Data/DataMut](../../crates/primus_data/src/impls.rs), **not DataOwned**. That trait also requires iterator construction/consumption, and aligned allocation has its own alignment choice. Allocate the container explicitly, wrap it with `new`, and use `DataMut` operations where supported; do not assume a `DataOwned` constructor such as `Polynomial::zero` accepts an aligned destination.
+With `primus_data/aligned-vec`, [AVec and ABox implement RawData/Data/DataMut](../../crates/primus_data/src/impls.rs), **not DataOwned**. Construction of aligned storage needs an explicit alignment choice; `DataOwned` does not provide one. Iterator construction/consumption are separate `FromIterator` / `IntoIterator` capabilities. Allocate the container explicitly, wrap it with `new`, and use `DataMut` operations where supported; do not assume a `DataOwned` constructor such as `Polynomial::zero` accepts an aligned destination.
 
 An aligned allocation does not guarantee aligned sub-blocks: check the actual stride, especially LWE rows of n+1 values. Aligning `Vec<Key>` does not align each key's internal coefficients. Before changing storage, inspect the consuming kernel and measure the affected workload, construction/conversion costs and memory use; preserve secret erasure and ownership contracts. Alignment alone is not evidence of a speedup.
 

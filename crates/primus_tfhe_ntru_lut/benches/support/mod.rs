@@ -20,11 +20,39 @@ pub const CONFIG: LookupTableConfig = LookupTableConfig {
 };
 pub const INPUT: usize = 0b10_10_10_11_11_00_11_01;
 
-// Match the teaching examples; widening before multiplication also works on
-// 32-bit hosts. Each callback returns a single radix-four output digit.
-pub fn digit<T: FheUint>(x: usize, output: usize) -> T {
-    let x = x as u64;
-    T::as_from(((x * x + 3 * x + 7) >> (2 * output)) & 3)
+/// Two public functions with identical geometry but different subtable reuse.
+#[derive(Clone, Copy)]
+pub enum Workload {
+    /// The teaching example has repeated low-output polynomials.
+    Polynomial,
+    /// A fixed seed defines a dense mapping independently of key-generation RNG.
+    Dense,
+}
+
+impl Workload {
+    pub fn suffix(self) -> &'static str {
+        match self {
+            Self::Polynomial => "",
+            Self::Dense => "/dense_seed42",
+        }
+    }
+
+    // Return one two-bit output chunk. Dense uses the SplitMix64 output mixer
+    // on x+seed+gamma, rather than stateful sampling in an output-major callback.
+    // This fixes the mapping across word widths, backends and callback order.
+    pub fn digit<T: FheUint>(self, x: usize, output: usize) -> T {
+        let x = x as u64;
+        let value = match self {
+            Self::Polynomial => x * x + 3 * x + 7,
+            Self::Dense => {
+                let mut z = x.wrapping_add(42).wrapping_add(0x9e37_79b9_7f4a_7c15);
+                z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+                z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+                z ^ (z >> 31)
+            }
+        };
+        T::as_from((value >> (2 * output)) & 3)
+    }
 }
 
 // Report retained requested heap, not temporary allocation volume or RSS.
@@ -41,12 +69,15 @@ pub fn benchmark_lut_creation<T: FheUint, M: RingContext<T>, LM: RingContext<T>>
     c: &mut Criterion,
     name: &str,
     parameters: &TfheParameters<T, M, LM>,
+    workload: Workload,
 ) {
     c.bench_function(&format!("{name}/create_lut_and_drop"), |b| {
         b.iter(|| {
             black_box(
-                HighPrecisionLookupTable::try_new(black_box(parameters), CONFIG, digit::<T>)
-                    .unwrap(),
+                HighPrecisionLookupTable::try_new(black_box(parameters), CONFIG, |x, output| {
+                    workload.digit::<T>(x, output)
+                })
+                .unwrap(),
             )
         });
     });

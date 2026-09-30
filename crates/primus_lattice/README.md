@@ -33,9 +33,15 @@ NLev and NGSW share a storage shape but have different semantics: an NLev of `be
 
 NLev/NGSW scalar external products can write coefficients or keep the result in NTT/Fourier form with `external_product_ntt_to` / `external_product_fourier_to`. Transform outputs accumulate directly into the destination. NTT coefficient outputs also reuse the destination, then inverse-transform in place. Fourier coefficient outputs retain separate complex scratch for torus conversion; Fourier outputs skip that conversion and its rounding. For `NGSW.external_product_nlev_to`, input/output NLev levels match each other but are independent of the control's decomposition basis; their gadget scales are preserved.
 
+NLev `external_product_sum_to` and NGSW `cmux_k_to` accept exact-size iterators of paired inputs. They sum products in the transform domain and inverse-transform once, without allocating a batch of wrapper objects. Empty NLev sums write zero; empty CMux copies its default. Fourier conversion rounds the total, so it need not match the bits from summing separately converted products.
+
 ## Storage and layout
 
 Wrappers are generic over storage `S` using [`primus_data`](../primus_data/README.md). Operations require the appropriate read, mutable, or owned-storage capability. Borrowed wrappers operate directly on the caller's slices.
+
+`as_view()` / `as_mut_view()` and the corresponding `From` conversions borrow the complete storage without copying or changing representation. `into_inner()` returns the original storage. Integer, NTT, and Fourier ciphertext iterators support exact-size, fused, bidirectional iteration; shared iterators can also be cloned.
+
+For NLev sums and NGSW multi-way CMux, pass `output.as_mut_view()` as output, and `default.as_view()` as the CMux default. Polynomial/candidate items accept borrowed wrappers through `Into` or views yielded by semantic iterators. Gadgets/controls use `Borrow<Self>` to accept objects or references to the same wrapper type. No wrapper array is required for packed storage.
 
 `LweIter` / `LweIterMut` and `MultiMsgLweIter` / `MultiMsgLweIterMut` borrow complete chunks, like other ciphertext iterators. Their chunk lengths include the body; `Lwe::lwe_len()` returns this length. An incomplete tail is omitted, so batch operations must validate the complete buffer length before iteration. `MultiMsgLweIter` traverses packed containers, not the samples extracted from one shared mask.
 

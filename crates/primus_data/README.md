@@ -14,7 +14,7 @@ The crate separates four storage capabilities:
 - `RawData` associates a backend with its element type;
 - `Data` provides immutable slice access;
 - `DataMut` adds mutable slice operations;
-- `DataOwned` adds construction and consuming iteration for owning backends.
+- `DataOwned` adds construction from a slice or a `Vec` for owning backends.
 
 This lets arithmetic and cryptographic kernels accept borrowed slices, arrays, or owned buffers through one explicit contiguous-storage contract.
 
@@ -30,7 +30,9 @@ This lets arithmetic and cryptographic kernels accept borrowed slices, arrays, o
 | `Arc<[T]>` | yes | no | no |
 | `AVec<T, A>` and `ABox<[T], A>` | yes | yes | no |
 
-The aligned backends require the optional `aligned-vec` feature.
+References to a supported backend forward its capabilities: `&S` supports reading, and `&mut S` supports mutation when `S` does. Iterator construction and consumption use separate `FromIterator` / `IntoIterator` bounds only where needed.
+
+The aligned backends require the optional `aligned-vec` feature. Their alignment is chosen explicitly during allocation; they do not implement `DataOwned`.
 
 ## Example
 

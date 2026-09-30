@@ -47,10 +47,22 @@ impl<'a> Iterator for FourierPolynomialIter<'a> {
     fn size_hint(&self) -> (usize, Option<usize>) {
         self.iter.size_hint()
     }
+    fn count(self) -> usize {
+        self.iter.len()
+    }
+    fn nth(&mut self, n: usize) -> Option<Self::Item> {
+        self.iter.nth(n).map(FourierPolynomial)
+    }
+    fn last(mut self) -> Option<Self::Item> {
+        self.next_back()
+    }
 }
 impl core::iter::DoubleEndedIterator for FourierPolynomialIter<'_> {
     fn next_back(&mut self) -> Option<Self::Item> {
         self.iter.next_back().map(FourierPolynomial)
+    }
+    fn nth_back(&mut self, n: usize) -> Option<Self::Item> {
+        self.iter.nth_back(n).map(FourierPolynomial)
     }
 }
 impl core::iter::ExactSizeIterator for FourierPolynomialIter<'_> {}
@@ -84,10 +96,22 @@ impl<'a> Iterator for FourierPolynomialIterMut<'a> {
     fn size_hint(&self) -> (usize, Option<usize>) {
         self.iter.size_hint()
     }
+    fn count(self) -> usize {
+        self.iter.len()
+    }
+    fn nth(&mut self, n: usize) -> Option<Self::Item> {
+        self.iter.nth(n).map(FourierPolynomial)
+    }
+    fn last(mut self) -> Option<Self::Item> {
+        self.next_back()
+    }
 }
 impl core::iter::DoubleEndedIterator for FourierPolynomialIterMut<'_> {
     fn next_back(&mut self) -> Option<Self::Item> {
         self.iter.next_back().map(FourierPolynomial)
+    }
+    fn nth_back(&mut self, n: usize) -> Option<Self::Item> {
+        self.iter.nth_back(n).map(FourierPolynomial)
     }
 }
 impl core::iter::ExactSizeIterator for FourierPolynomialIterMut<'_> {}
@@ -98,6 +122,14 @@ impl<S: RawData<Elem = Complex64>> FourierPolynomial<S> {
     #[must_use]
     pub fn new(values: S) -> Self {
         Self(values)
+    }
+
+    /// Consumes the wrapper and returns its storage without copying.
+    /// Borrowed storage remains borrowed; this does not create an owned buffer.
+    #[must_use]
+    #[inline]
+    pub fn into_inner(self) -> S {
+        self.0
     }
 }
 impl<S: DataOwned<Elem = Complex64>> FourierPolynomial<S> {
@@ -110,11 +142,6 @@ impl<S: DataOwned<Elem = Complex64>> FourierPolynomial<S> {
     #[must_use]
     pub fn from_slice(data: &[Complex64]) -> Self {
         Self(S::from_slice(data))
-    }
-    /// Returns the underlying owned storage.
-    #[must_use]
-    pub fn into_owned(self) -> S {
-        self.0
     }
 }
 impl<S: Data<Elem = Complex64>> FourierPolynomial<S> {
@@ -161,5 +188,51 @@ impl<S: Data<Elem = Complex64>> AsRef<[Complex64]> for FourierPolynomial<S> {
 impl<S: DataMut<Elem = Complex64>> AsMut<[Complex64]> for FourierPolynomial<S> {
     fn as_mut(&mut self) -> &mut [Complex64] {
         self.as_mut_slice()
+    }
+}
+
+impl<S> FourierPolynomial<S>
+where
+    S: Data<Elem = Complex64>,
+{
+    /// Borrows the complete storage as a shared view of the same representation.
+    /// No elements are copied or transformed, and no layout is validated.
+    #[must_use]
+    #[inline]
+    pub fn as_view(&self) -> FourierPolynomial<&[Complex64]> {
+        FourierPolynomial(self.0.as_slice())
+    }
+}
+
+impl<'a, S> From<&'a FourierPolynomial<S>> for FourierPolynomial<&'a [Complex64]>
+where
+    S: Data<Elem = Complex64>,
+{
+    #[inline]
+    fn from(value: &'a FourierPolynomial<S>) -> Self {
+        value.as_view()
+    }
+}
+
+impl<S> FourierPolynomial<S>
+where
+    S: DataMut<Elem = Complex64>,
+{
+    /// Borrows the complete storage as an exclusive view of the same representation.
+    /// No elements are copied or transformed, and no layout is validated.
+    #[must_use]
+    #[inline]
+    pub fn as_mut_view(&mut self) -> FourierPolynomial<&mut [Complex64]> {
+        FourierPolynomial(self.0.as_mut_slice())
+    }
+}
+
+impl<'a, S> From<&'a mut FourierPolynomial<S>> for FourierPolynomial<&'a mut [Complex64]>
+where
+    S: DataMut<Elem = Complex64>,
+{
+    #[inline]
+    fn from(value: &'a mut FourierPolynomial<S>) -> Self {
+        value.as_mut_view()
     }
 }
