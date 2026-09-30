@@ -43,6 +43,10 @@ harness = false
 name = "encryption"
 harness = false
 
+[[bench]]
+name = "lwe_return"
+harness = false
+
 [features]
 default = []
 simd = [

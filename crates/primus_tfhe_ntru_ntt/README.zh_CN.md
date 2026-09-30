@@ -28,7 +28,7 @@ cargo run -p primus_tfhe_ntru_ntt --release --example ntru_ntt_basic
 | One-hot CBS → CMux | [one_hot](examples/ntru_ntt_one_hot.rs) |
 | 高精度查表 | [lookup](../primus_tfhe_ntru_lut/examples/ntt_lookup.rs) |
 
-ManyLUT 通过交错共享一次盲旋转；分解式 MVB 通过公共因子生成多输出，是不同的求值接口。 NTRU sparse 当前只支持普通/交错 PBS，不支持 CBS、one-hot 或分解式 MVB。
+ManyLUT 通过交错共享一次盲旋转，多输出返回还共享一次 Q→q 转换并分块进行 LWE key switch；分解式 MVB 通过公共因子生成多输出，是不同的求值接口。 NTRU sparse 当前只支持普通/交错 PBS，不支持 CBS、one-hot 或分解式 MVB。
 
 ## 参数与表示
 

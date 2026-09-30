@@ -3,11 +3,15 @@
 use primus_data::{Data, DataMut};
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_integer::{FheUint, SignedInteger};
-use primus_lattice::lwe::Lwe;
+use primus_lattice::lwe::{Lwe, LweIter, LweIterMut};
 use primus_lwe::{LweKeySwitchingKey, LweParameters, LweSecretKey, LweSecretKeyRef};
 use primus_reduce::{Modulus, ModulusSwitch, RingContext};
 
 use crate::{NtruCiphertext, NtruSecretKey};
+
+// Match the LWE key-switch kernel's small tile without retaining all extracted
+// samples. This bounds scratch independently of the caller's output count.
+const RETURN_BATCH_SIZE: usize = 8;
 
 /// Switches a coefficient of `f*c` at modulus Q to an independent LWE key at q.
 ///
@@ -177,8 +181,148 @@ impl<T: FheUint> NtruLweKeySwitchingKey<T> {
             "target LWE modulus mismatch"
         );
 
+        self.key_switch_coefficient(
+            input.as_view(),
+            index,
+            output.as_mut_view(),
+            modulus,
+            workspace.extracted.as_mut_view(),
+        );
+    }
+
+    /// Switches several coefficients of the same NTRU phase into separate LWEs.
+    ///
+    /// `indices` and `outputs` have equal counts; order and repeated indices are
+    /// preserved. The iterator is cloned to validate all indices before writing.
+    /// Empty batches leave output and scratch untouched. One output uses the
+    /// direct scalar path. Larger batches convert the complete input from Q to q
+    /// once, then extract and key-switch bounded tiles in reusable scratch.
+    /// The converted coefficients remain live until every tile is returned.
+    /// Results equal repeated [`Self::key_switch_at_to`] calls, without allocation.
+    ///
+    /// # Correctness
+    /// The canonical coefficient, key and noise requirements of
+    /// [`Self::key_switch_at_to`] apply. Conversion precedes extraction signs,
+    /// including at rounding ties. Shared input noise remains correlated across
+    /// outputs; batching introduces no new rounding or decomposition step.
+    ///
+    /// # Panics
+    /// Panics before modifying output or scratch if input/workspace dimensions,
+    /// output count or lengths, any index, or the target modulus is incompatible.
+    /// An iterator that panics or changes its sequence when cloned may leave
+    /// partial writes after validation.
+    pub fn key_switch_many_at_to<M, A, B>(
+        &self,
+        input: &NtruCiphertext<A>,
+        indices: impl ExactSizeIterator<Item = usize> + Clone,
+        outputs: &mut [Lwe<B>],
+        modulus: M,
+        workspace: &mut NtruLweKeySwitchingBatchWorkspace<T>,
+    ) where
+        M: RingContext<T>,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
+    {
+        let n = self.poly_length();
+        let output_len = self.output_dimension() + 1;
+        assert_eq!(input.as_ref().len(), n, "NTRU input length mismatch");
+        assert_eq!(
+            indices.len(),
+            outputs.len(),
+            "NTRU extraction count mismatch"
+        );
+        assert!(
+            indices.clone().all(|index| index < n),
+            "NTRU extraction index is out of range"
+        );
+        assert!(
+            outputs
+                .iter()
+                .all(|output| output.as_ref().len() == output_len),
+            "target LWE ciphertext length mismatch"
+        );
+        assert_eq!(
+            workspace.poly_length(),
+            n,
+            "NTRU to LWE workspace length mismatch"
+        );
+        assert_eq!(
+            workspace.output_dimension(),
+            self.output_dimension(),
+            "NTRU to LWE workspace output dimension mismatch"
+        );
+        assert_eq!(
+            modulus.explicit_value(),
+            self.basis().modulus(),
+            "target LWE modulus mismatch"
+        );
+        let mut indices = indices;
+        if outputs.is_empty() {
+            return;
+        }
+        if outputs.len() == 1 {
+            self.key_switch_coefficient(
+                input.as_view(),
+                indices.next().expect("NTRU extraction index missing"),
+                outputs[0].as_mut_view(),
+                modulus,
+                Lwe::new(&mut workspace.extracted[..n + 1]),
+            );
+            return;
+        }
+
+        self.modulus_switch.switch_map(
+            input
+                .as_ref()
+                .iter()
+                .copied()
+                .zip(workspace.converted.iter_mut()),
+            |value, out| *out = value,
+        );
+        for outputs in outputs.chunks_mut(RETURN_BATCH_SIZE) {
+            let extracted = &mut workspace.extracted[..outputs.len() * (n + 1)];
+            for mut sample in LweIterMut::new(extracted, n + 1) {
+                let index = indices.next().expect("NTRU extraction index missing");
+                let (mask, body) = sample.a_b_mut();
+                *body = T::ZERO;
+                let (negative, wrapped) = mask.split_at_mut(index + 1);
+                // Apply signs to the already rounded canonical q coefficients.
+                for (out, &value) in negative
+                    .iter_mut()
+                    .zip(workspace.converted[..=index].iter().rev())
+                {
+                    *out = modulus.reduce_neg(value);
+                }
+                for (out, &value) in wrapped
+                    .iter_mut()
+                    .zip(workspace.converted[index + 1..].iter().rev())
+                {
+                    *out = value;
+                }
+            }
+            let switched = &mut workspace.switched[..outputs.len() * output_len];
+            self.key_switch
+                .key_switch_batch_to(extracted, switched, modulus);
+            // The LWE batch kernel owns the contiguous layout contract. Copy its
+            // small output tile into the caller's independently allocated LWEs.
+            for (output, sample) in outputs.iter_mut().zip(LweIter::new(switched, output_len)) {
+                output.as_mut().copy_from_slice(sample.as_ref());
+            }
+        }
+    }
+
+    /// The public boundary established dimensions/index/modulus. Fuse conversion
+    /// and signed extraction into one intermediate LWE for a single return.
+    fn key_switch_coefficient<M: RingContext<T>>(
+        &self,
+        input: NtruCiphertext<&[T]>,
+        index: usize,
+        mut output: Lwe<&mut [T]>,
+        modulus: M,
+        mut extracted: Lwe<&mut [T]>,
+    ) {
         let coefficients = input.as_ref();
-        let (mask, body) = workspace.extracted.a_b_mut();
+        let (mask, body) = extracted.a_b_mut();
         *body = T::ZERO;
         let (negative, wrapped) = mask.split_at_mut(index + 1);
         // Switch unsigned coefficients before applying the extraction sign.
@@ -191,7 +335,58 @@ impl<T: FheUint> NtruLweKeySwitchingKey<T> {
             |value, out| *out = value,
         );
         self.key_switch
-            .key_switch_to(&workspace.extracted, output, modulus);
+            .key_switch_to(&extracted, &mut output, modulus);
+    }
+}
+
+/// Reusable scratch for returning many coefficients of one NTRU ciphertext.
+///
+/// Retains N converted coefficients and two tiles of eight LWEs: dimensions N
+/// before key switching and `output_dimension` afterward. Storage is bounded
+/// independently of the number of requested coefficients. It holds ciphertext
+/// data only and need not be cleared between calls.
+pub struct NtruLweKeySwitchingBatchWorkspace<T: FheUint> {
+    converted: Box<[T]>,
+    extracted: Box<[T]>,
+    switched: Box<[T]>,
+    output_dimension: usize,
+}
+
+impl<T: FheUint> NtruLweKeySwitchingBatchWorkspace<T> {
+    /// Allocates the converted polynomial and fixed input/output LWE tiles.
+    ///
+    /// # Panics
+    /// Panics if either dimension is zero or a tile storage length overflows.
+    #[must_use]
+    pub fn new(poly_length: usize, output_dimension: usize) -> Self {
+        assert!(poly_length > 0, "NTRU polynomial length must be nonzero");
+        assert!(output_dimension > 0, "target LWE dimension must be nonzero");
+        let tile_len = |dimension: usize| {
+            dimension
+                .checked_add(1)
+                .and_then(|len| len.checked_mul(RETURN_BATCH_SIZE))
+                .expect("NTRU to LWE batch workspace length overflow")
+        };
+        let extracted_len = tile_len(poly_length);
+        let switched_len = tile_len(output_dimension);
+        Self {
+            converted: vec![T::ZERO; poly_length].into_boxed_slice(),
+            extracted: vec![T::ZERO; extracted_len].into_boxed_slice(),
+            switched: vec![T::ZERO; switched_len].into_boxed_slice(),
+            output_dimension,
+        }
+    }
+
+    /// Returns the input NTRU polynomial length supported by this workspace.
+    #[must_use]
+    pub fn poly_length(&self) -> usize {
+        self.converted.len()
+    }
+
+    /// Returns the target LWE dimension supported by this workspace.
+    #[must_use]
+    pub fn output_dimension(&self) -> usize {
+        self.output_dimension
     }
 }
 

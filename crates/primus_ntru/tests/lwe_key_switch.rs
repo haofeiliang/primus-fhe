@@ -7,8 +7,8 @@ use primus_integer::{AsInto, FheUint};
 use primus_lwe::{LweCiphertext, LweParameters, LweSecretKey};
 use primus_modulus::{BarrettModulus, NativeModulus, PowOf2Modulus, UintModulus};
 use primus_ntru::{
-    NtruCiphertext, NtruLweKeySwitchingKey, NtruLweKeySwitchingWorkspace, NtruSecretKey,
-    SecretKeyDistr,
+    NtruCiphertext, NtruLweKeySwitchingBatchWorkspace, NtruLweKeySwitchingKey,
+    NtruLweKeySwitchingWorkspace, NtruSecretKey, SecretKeyDistr,
 };
 use primus_reduce::{Modulus, RingContext};
 use primus_test_allocations::{CountingAllocator, measure};
@@ -76,6 +76,9 @@ fn check<T: FheUint, Q: Modulus<ValueT = T>, M: RingContext<T>>(source: Q, targe
         LweParameters::new(S.len(), T::TWO, target, SecretKeyDistr::UniformTernary, 0.7);
     let mut workspace = NtruLweKeySwitchingWorkspace::new(F.len());
     let mut output = LweCiphertext::<T>::new(vec![T::ONE; S.len() + 1]);
+    let mut batch_workspace = NtruLweKeySwitchingBatchWorkspace::new(F.len(), S.len());
+    let mut batch_outputs = vec![output.clone(); 17];
+    let mut individual_outputs = vec![output.clone(); F.len()];
     for level_count in [None, Some(2)] {
         let basis = ApproxSignedBasis::new(target.explicit_value(), 4, level_count);
         let mut rng = StdRng::seed_from_u64(0x4e5452554c5745);
@@ -181,6 +184,9 @@ fn check<T: FheUint, Q: Modulus<ValueT = T>, M: RingContext<T>>(source: Q, targe
                 assert_eq!(allocations.count, 0);
                 let actual: Vec<u128> = output.as_ref().iter().map(|&v| v.as_into()).collect();
                 assert_eq!(actual, expected);
+                individual_outputs[index]
+                    .as_mut()
+                    .copy_from_slice(output.as_ref());
                 assert!(actual.iter().all(|&v| v < q));
                 assert_eq!(
                     lwe_phase(&actual, q),
@@ -189,6 +195,25 @@ fn check<T: FheUint, Q: Modulus<ValueT = T>, M: RingContext<T>>(source: Q, targe
                 assert!(center(lwe_phase(&actual, q) - input_phase, q as i128).abs() <= bound);
                 // This fixed fixture's observed-entry bound is nonvacuous, not a tail estimate.
                 assert!(bound < q as i128 / 8);
+            }
+            // Two full tiles and a tail share one conversion. Nonmonotonic,
+            // repeated indices check ordering; singleton/empty calls reuse dirty
+            // buffers. The individual results above already have an integer oracle.
+            for count in [17, 1, 0] {
+                let indices = (0..count).map(|i| (3 * i + 1) % F.len());
+                let (_, allocations) = measure(|| {
+                    key.key_switch_many_at_to(
+                        &input,
+                        indices.clone(),
+                        &mut batch_outputs[..count],
+                        target,
+                        &mut batch_workspace,
+                    );
+                });
+                assert_eq!(allocations.count, 0);
+                for (output, index) in batch_outputs[..count].iter().zip(indices) {
+                    assert_eq!(output, &individual_outputs[index]);
+                }
             }
         }
     }
@@ -266,6 +291,37 @@ fn validation_precedes_output_writes_and_key_sampling() {
         );
         assert_eq!(output.as_ref(), before);
     }
+    // Reject the complete batch before touching its first output, even when
+    // the invalid index or ciphertext is last. Other rows isolate each binding.
+    for (input_len, indices, output_lens, scratch_n, scratch_dimension, q) in [
+        (4, [0, 4], vec![4, 4], 4, 3, 65537),
+        (4, [0, 1], vec![4], 4, 3, 65537),
+        (4, [0, 1], vec![4, 4, 4], 4, 3, 65537),
+        (4, [0, 1], vec![4, 3], 4, 3, 65537),
+        (3, [0, 1], vec![4, 4], 4, 3, 65537),
+        (4, [0, 1], vec![4, 4], 3, 3, 65537),
+        (4, [0, 1], vec![4, 4], 4, 2, 65537),
+        (4, [0, 1], vec![4, 4], 4, 3, 65539),
+    ] {
+        let input = NtruCiphertext::new(vec![9u32; input_len]);
+        let mut outputs: Vec<_> = output_lens
+            .into_iter()
+            .map(|len| LweCiphertext::new(vec![17u32; len]))
+            .collect();
+        let before = outputs.clone();
+        let mut workspace = NtruLweKeySwitchingBatchWorkspace::new(scratch_n, scratch_dimension);
+        assert!(
+            catch_unwind(AssertUnwindSafe(|| key.key_switch_many_at_to(
+                &input,
+                indices.into_iter(),
+                &mut outputs,
+                BarrettModulus::new(q),
+                &mut workspace,
+            )))
+            .is_err()
+        );
+        assert_eq!(outputs, before);
+    }
     for (f, dimension, basis_q, source_q) in [
         (65537, 3, 65537, 97),
         (-65537, 3, 65537, 97),
@@ -295,6 +351,11 @@ fn validation_precedes_output_writes_and_key_sampling() {
     }
     assert!(catch_unwind(|| NtruLweKeySwitchingWorkspace::<u32>::new(0)).is_err());
     assert!(catch_unwind(|| NtruLweKeySwitchingWorkspace::<u32>::new(usize::MAX)).is_err());
+    for (n, dimension) in [(0, 3), (4, 0), (usize::MAX, 3), (4, usize::MAX / 8)] {
+        assert!(
+            catch_unwind(|| NtruLweKeySwitchingBatchWorkspace::<u32>::new(n, dimension)).is_err()
+        );
+    }
 }
 
 fn check_encrypted_return<T: FheUint, Q: Modulus<ValueT = T>>(

@@ -33,6 +33,8 @@
 //! [`NtruLweKeySwitchingKey`] converts coefficient NTRU at Q to an independent
 //! LWE secret at q, reusing exact modulus rounding, sample extraction and LWE
 //! key switching. [`NtruLweKeySwitchingWorkspace`] owns one reusable LWE buffer.
+//! [`NtruLweKeySwitchingBatchWorkspace`] shares one conversion across multiple
+//! coefficient returns, with bounded scratch for batched LWE key switching.
 //! Source and target use the same coefficient type; no FFT/NTT table is needed.
 //!
 //! Same-secret automorphism, trace/reverse trace, coefficient projection and
@@ -63,8 +65,8 @@ pub use ciphertext::{
 };
 pub use error::NtruError;
 pub use key_switch::{
-    FourierNtruKeySwitchingKey, NtruLweKeySwitchingKey, NtruLweKeySwitchingWorkspace,
-    NttNtruKeySwitchingKey,
+    FourierNtruKeySwitchingKey, NtruLweKeySwitchingBatchWorkspace, NtruLweKeySwitchingKey,
+    NtruLweKeySwitchingWorkspace, NttNtruKeySwitchingKey,
 };
 pub use parameter::{NlevParameterError, NlevParameters, NtruParameterError, NtruParameters};
 pub use primus_distr::SecretKeyDistr;

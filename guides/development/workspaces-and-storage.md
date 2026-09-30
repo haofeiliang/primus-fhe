@@ -29,6 +29,25 @@ A fixed-length container is an ownership choice, not a speed claim. The migrated
 
 A cache-aligned base pointer does not align every subview. Polynomial strides in the measured N=1024 workload preserve alignment; an LWE entry has n+1 coefficients and generally does not. Public arithmetic still accepts normally aligned slices, including offset inputs. Keys or workspaces must not add padding without a separate layout design.
 
+## Batched NTRU-to-LWE return
+
+`NtruLweKeySwitchingBatchWorkspace` keeps one canonical Q→q polynomial and fixed
+tiles for extracted and switched LWEs. Eight samples feed the existing LWE batch
+key-switch kernel; a bounded copy delivers each output tile to the caller's
+separate ciphertext objects. The allocation is `N + 8*(N+1) + 8*(n+1)` elements
+for ring length N and target dimension n, independent of total output count.
+No online allocation or output-count-sized intermediate buffer is needed.
+
+NTT/Fourier PBS evaluators retain this workspace alongside the small scalar
+return workspace. Interleaved ManyLUT shares the conversion across outputs,
+including sparse PBS; ordinary and single-output interleaved PBS keep the direct
+path. At N1024/n728, the extra requested heap is 60,224 bytes for u32 or 120,448
+bytes for u64, excluding object/allocator overhead. Ownership conversions to
+CBS/MVB retain these buffers even when that operation does not use batch return.
+The [return benchmark](../../crates/primus_ntru/benches/lwe_return.rs) measures
+conversion, extraction, key switching and tile-copy costs together; the backend
+`mvb` benchmarks measure complete interleaved requests.
+
 ## Serial reuse in high-precision lookup
 
 One-hot CBS already reuses PBS's external-product workspace for BR, trace and scheme switching. Table selection and encrypted rotation now borrow that same workspace between one-hot calls. The NTT entry point is `OneHotCircuitBootstrapEvaluator::external_product_workspace`; Fourier's `external_product_workspaces` returns the FFT engine and external-product buffers together. Borrowers retain polynomial lengths and the FFT table identity. Every subsequent one-hot call overwrites its scratch before reading it.

@@ -22,6 +22,7 @@ where
     pub(crate) fft: FftEngine<'a, Table>,
     pub(crate) blind_rotation: BlindRotationWorkspace<'a, T>,
     return_workspace: primus_ntru::NtruLweKeySwitchingWorkspace<T>,
+    batch_return_workspace: primus_ntru::NtruLweKeySwitchingBatchWorkspace<T>,
 }
 
 impl<'a, T, Table, LM> Evaluator<'a, T, Table, LM>
@@ -44,6 +45,10 @@ where
             return Err(TfheEvaluationError::IncompatibleServerKey);
         }
         Ok(Self {
+            batch_return_workspace: primus_ntru::NtruLweKeySwitchingBatchWorkspace::new(
+                context.parameters().poly_length(),
+                context.parameters().external_lwe_dimension(),
+            ),
             return_workspace: primus_ntru::NtruLweKeySwitchingWorkspace::new(
                 context.parameters().poly_length(),
             ),
@@ -116,7 +121,7 @@ where
 
     /// Applies all interleaved lookup tables and allocates one ciphertext per output.
     ///
-    /// Shares one blind rotation; each output uses an LWE key switch at q.
+    /// Shares one blind rotation and Q→q conversion, then batches LWE key switches.
     ///
     /// Inherits [`ProgrammableBootstrapInterleaved::apply_interleaved_lookup_table_to`]'s input encoding,
     /// key, noise and output-scale requirements.
@@ -140,7 +145,7 @@ where
 
     /// Applies all interleaved tables into reusable output allocations.
     ///
-    /// Shares one blind rotation; each output uses an LWE key switch at q.
+    /// Shares one blind rotation and Q→q conversion, then batches LWE key switches.
     ///
     /// Inherits [`ProgrammableBootstrapInterleaved::apply_interleaved_lookup_table_to`]'s input encoding,
     /// key, noise and output-scale requirements.
@@ -188,8 +193,18 @@ where
             lookup_table.polynomial(),
             lookup_table.padded_output_count(),
         );
-        for (index, output) in outputs.iter_mut().enumerate() {
-            self.return_accumulator_at_to(index, output);
+        // A single result keeps the direct extraction path; ManyLUT reuses the
+        // converted polynomial across all requested coefficients and KS tiles.
+        if outputs.len() == 1 {
+            self.return_accumulator_at_to(0, &mut outputs[0]);
+        } else {
+            self.server_key.key_switching_key().key_switch_many_at_to(
+                &self.blind_rotation.current,
+                0..outputs.len(),
+                outputs,
+                self.context.parameters().external_lwe().cipher_modulus(),
+                &mut self.batch_return_workspace,
+            );
         }
     }
 

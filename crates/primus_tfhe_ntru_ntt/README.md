@@ -28,7 +28,7 @@ Examples separate client encryption, server evaluation and client decryption; se
 | One-hot CBS → CMux | [one_hot](examples/ntru_ntt_one_hot.rs) |
 | High-precision lookup | [lookup](../primus_tfhe_ntru_lut/examples/ntt_lookup.rs) |
 
-ManyLUT interleaves outputs within one blind rotation; factorized MVB uses public factors and a different evaluation interface. NTRU sparse supports ordinary/interleaved PBS, but not CBS, one-hot or factorized MVB.
+ManyLUT interleaves outputs within one blind rotation, shares one Q→q conversion across multiple outputs, and batches their LWE key switches; factorized MVB uses public factors and a different evaluation interface. NTRU sparse supports ordinary/interleaved PBS, but not CBS, one-hot or factorized MVB.
 
 ## Parameters and representation
 
