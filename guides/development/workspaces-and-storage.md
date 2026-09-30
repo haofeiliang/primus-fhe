@@ -48,8 +48,10 @@ The [return benchmark](../../crates/primus_ntru/benches/lwe_return.rs) measures
 conversion, extraction, key switching and tile-copy costs together; the backend
 `mvb` benchmarks measure complete interleaved and factorized requests.
 
-Factorized MVB streams each different product through
-`modulus_switch_extract_at_to` into `extracted_slot_mut(slot)`, then calls
+Factorized MVB asks its bound PBS evaluator to prepare each different product
+and return each filled tile. The evaluator keeps both return workspaces private
+and supplies the matching return key and modulus. Internally it uses
+`modulus_switch_extract_at_to` into `extracted_slot_mut(slot)`, followed by
 `key_switch_extracted_batch_to` on the filled output prefix. Each polynomial
 gets its own Q→q conversion, but only extracted LWEs survive until a tile is
 returned. The existing batch workspace is reused, adding no retained heap.
@@ -69,7 +71,23 @@ keep those shared buffers. Embedded one-hot scratch is retained. See the
 
 One-hot CBS already reuses PBS's external-product workspace for BR, trace and scheme switching. Table selection and encrypted rotation now borrow that same workspace between one-hot calls. The NTT entry point is `OneHotCircuitBootstrapEvaluator::external_product_workspace`; Fourier's `external_product_workspaces` returns the FFT engine and external-product buffers together. Borrowers retain polynomial lengths and the FFT table identity. Every subsequent one-hot call overwrites its scratch before reading it.
 
-The high-precision evaluator therefore owns no second external-product workspace or FFT engine. Each evaluator still has independent mutable state, and borrowing excludes concurrent mutation. Existing one-hot/PBS conversion and recovery retain their ownership contracts. The Fourier `OneHotCircuitBootstrapEvaluator::lwe_return_batch_workspace` also lends PBS's existing return buffers to the outer lookup stage. Each output is converted/extracted immediately, and table selection/rotation leave those LWE slots intact until batch key switching. Removing the outer Fourier scalar return buffer saves N+1 elements (4,100 bytes for u32 or 8,200 for u64 at N1024); no new batch scratch is allocated. The accessor exposes this workspace alone. NTT lookup retains its separate scalar return buffer: batching did not provide consistent gains across its measured word widths, whereas Fourier lookup and both factorized MVB backends benefited. The unchanged `pipeline` and `mvb` fixtures can be used to revisit this scheduling choice.
+The high-precision evaluator therefore owns no second external-product workspace or FFT engine. Each evaluator still has independent mutable state, and borrowing excludes concurrent mutation. Existing one-hot/PBS conversion and recovery retain their ownership contracts.
+
+Fourier one-hot provides `lwe_return_batch_capacity`, `prepare_lwe_return_at` and
+`return_lwe_batch_to` for the outer lookup stage. These delegate to the bound PBS
+evaluator without exposing mutable return storage. Each output is converted and
+extracted immediately; table selection, rotation and one-hot generation leave
+those LWE slots intact until batch key switching. Callers fill every consumed
+slot for each batch; there is no filled-slot counter. A partial final tile reads
+only `0..outputs.len()`. Finish pending returns before borrowing ordinary PBS
+operations: interleaved PBS can overwrite the prepared samples.
+
+Reusing PBS's buffers instead of an outer Fourier scalar return buffer saves N+1
+elements (4,100 bytes for u32 or 8,200 for u64 at N1024); no new batch scratch is
+allocated. NTT lookup retains its separate scalar return buffer: batching did not
+provide consistent gains across its measured word widths, whereas Fourier lookup
+and both factorized MVB backends benefited. The unchanged `pipeline` and `mvb`
+fixtures can be used to revisit this scheduling choice.
 
 Existing size/domain boundaries and semantic polynomial/ciphertext iterators describe batches. Table groups contain M polynomials; ciphertext iterators traverse one complete object at a time. Candidate compaction remains indexed because a group must be consumed before its result overwrites the prefix. No additional generic batch abstraction is needed.
 

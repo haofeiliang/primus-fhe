@@ -22,7 +22,7 @@ where
     pub(crate) server_key: &'a ServerKey<T>,
     pub(crate) blind_rotation: BlindRotationWorkspace<'a, T>,
     return_workspace: primus_ntru::NtruLweKeySwitchingWorkspace<T>,
-    pub(crate) batch_return_workspace: primus_ntru::NtruLweKeySwitchingBatchWorkspace<T>,
+    batch_return_workspace: primus_ntru::NtruLweKeySwitchingBatchWorkspace<T>,
 }
 
 impl<'a, T, Table, LM> Evaluator<'a, T, Table, LM>
@@ -191,19 +191,7 @@ where
             lookup_table.polynomial(),
             lookup_table.padded_output_count(),
         );
-        // A single result keeps the direct extraction path; ManyLUT reuses the
-        // converted polynomial across all requested coefficients and KS tiles.
-        if outputs.len() == 1 {
-            self.return_accumulator_at_to(0, &mut outputs[0]);
-        } else {
-            self.server_key.key_switching_key().key_switch_many_at_to(
-                &self.blind_rotation.current,
-                0..outputs.len(),
-                outputs,
-                self.context.parameters().external_lwe().cipher_modulus(),
-                &mut self.batch_return_workspace,
-            );
-        }
+        self.return_accumulator_prefix_to(outputs);
     }
 
     /// Writes the coefficient-domain BR result under the accumulator secret to
@@ -238,6 +226,55 @@ where
             self.context.parameters().external_lwe().cipher_modulus(),
             &mut self.return_workspace,
         );
+    }
+
+    /// Returns the interleaved prefix of the current accumulator. Keep the scalar
+    /// path for one output; larger requests share conversion across all KS tiles.
+    fn return_accumulator_prefix_to(&mut self, outputs: &mut [LweCiphertext<T>]) {
+        if outputs.len() == 1 {
+            self.return_accumulator_at_to(0, &mut outputs[0]);
+        } else {
+            self.server_key.key_switching_key().key_switch_many_at_to(
+                &self.blind_rotation.current,
+                0..outputs.len(),
+                outputs,
+                self.context.parameters().external_lwe().cipher_modulus(),
+                &mut self.batch_return_workspace,
+            );
+        }
+    }
+
+    /// Maximum number of prepared samples retained before a streamed return.
+    #[must_use]
+    pub(crate) fn lwe_return_batch_capacity(&self) -> usize {
+        self.batch_return_workspace.batch_capacity()
+    }
+
+    /// Converts/extracts one coefficient of `current` into a return slot.
+    /// The accumulator must be in coefficient form under the bound ring secret;
+    /// after extraction the next factor may overwrite it without losing the sample.
+    pub(crate) fn prepare_accumulator_return_at(&mut self, index: usize, slot: usize) {
+        self.server_key
+            .key_switching_key()
+            .modulus_switch_extract_at_to(
+                self.blind_rotation.current.as_view(),
+                index,
+                self.batch_return_workspace.extracted_slot_mut(slot),
+                self.context.parameters().external_lwe().cipher_modulus(),
+            );
+    }
+
+    /// Returns exactly the prepared prefix `0..outputs.len()` under the external
+    /// LWE secret. Callers fill every consumed slot for this tile; this leaves the
+    /// samples intact and overwrites only outputs and the switched-output scratch.
+    pub(crate) fn return_lwe_batch_to(&mut self, outputs: &mut [LweCiphertext<T>]) {
+        self.server_key
+            .key_switching_key()
+            .key_switch_extracted_batch_to(
+                outputs,
+                self.context.parameters().external_lwe().cipher_modulus(),
+                &mut self.batch_return_workspace,
+            );
     }
 }
 

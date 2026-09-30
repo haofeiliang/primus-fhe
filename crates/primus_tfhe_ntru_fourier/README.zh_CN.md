@@ -89,6 +89,12 @@ let mut evaluator = context.evaluator(&server)?;
 
 完整 chunk 加密与查表工作流见 [fourier_lookup.rs](../primus_tfhe_ntru_lut/examples/fourier_lookup.rs)。
 
+自行组合流程时，one-hot 的 `lwe_return_batch_capacity()`、
+`prepare_lwe_return_at()` 和 `return_lwe_batch_to()` 使用已绑定的密钥和模数，
+复用 PBS 内部的返回缓冲。每次返回前须准备 `0..outputs.len()` 的全部槽位；
+接口不记录已填充数量。One-hot 生成和外积不会改写这些槽位，但借用普通 PBS
+执行求值前应先完成当前批次。
+
 ## 底层组合
 
 Rustdoc 按职责组织 `key`（服务端材料）、`circuit_bootstrap`（CBS）、 `factorized`（MVB 程序和执行）与 `sparse`（桶材料）；常用工作流类型仍从 crate 根导入。

@@ -214,35 +214,21 @@ where
             self.context.parameters().external_lwe_dimension(),
         );
         self.prepare_selectors(input);
-        let key = self.server_key.key_switching_key();
-        let modulus = self.context.parameters().external_lwe().cipher_modulus();
-        let batch_size = self.one_hot.lwe_return_batch_workspace().batch_capacity();
+        let batch_size = self.one_hot.lwe_return_batch_capacity();
         for (tile_index, outputs) in output.chunks_mut(batch_size).enumerate() {
             self.prepare_output_returns(tile_index * batch_size, outputs.len());
-            key.key_switch_extracted_batch_to(
-                outputs,
-                modulus,
-                self.one_hot.lwe_return_batch_workspace(),
-            );
+            self.one_hot.return_lwe_batch_to(outputs);
         }
     }
 
     /// Prepare one tile in output-chunk order. Selection and rotation reuse the
     /// polynomial buffers but leave filled return slots intact until batch KS.
     fn prepare_output_returns(&mut self, first_output: usize, count: usize) {
-        let key = self.server_key.key_switching_key();
-        let modulus = self.context.parameters().external_lwe().cipher_modulus();
         for slot in 0..count {
             self.select_table(first_output + slot);
             self.rotate_selected_table();
-            key.modulus_switch_extract_at_to(
-                self.current.as_view(),
-                0,
-                self.one_hot
-                    .lwe_return_batch_workspace()
-                    .extracted_slot_mut(slot),
-                modulus,
-            );
+            self.one_hot
+                .prepare_lwe_return_at(self.current.as_view(), 0, slot);
         }
     }
 

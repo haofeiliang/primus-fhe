@@ -47,11 +47,11 @@ evaluate_to
       otherwise: select_public_table_groups, then select_encrypted_table_layer
     rotate_selected_table
     NTT: key_switch_to (independent Q -> q, extraction and LWE key switch)
-    Fourier: modulus_switch_extract_at_to (independent Q -> q, extraction into a tile slot)
-      key_switch_extracted_batch_to when eight slots or the last output are ready
+    Fourier: one_hot.prepare_lwe_return_at (independent Q -> q, extraction into a tile slot)
+      one_hot.return_lwe_batch_to when the tile capacity or the last output is reached
 ```
 
-The Fourier evaluator groups selection, rotation and extraction for one tile in `prepare_output_returns`; `evaluate_to` validates the full request, prepares selectors, then prepares and key-switches each tile. The helper leaves completed LWE slots intact while reusing polynomial scratch for later outputs.
+The Fourier evaluator groups selection, rotation and extraction for one tile in `prepare_output_returns`; `evaluate_to` validates the full request, prepares selectors, then prepares and key-switches each tile. The helper leaves completed LWE slots intact while reusing polynomial scratch for later outputs. One-hot delegates return operations to its PBS evaluator, which owns the buffers and binds the return key and modulus; the lookup stage only queries the capacity and supplies samples and outputs.
 
 The logical high-chunk count h always means c-d. `needs_table_selection()` is a
 separate decision derived from the output variants: it is true when any output

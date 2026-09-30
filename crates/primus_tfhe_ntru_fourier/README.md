@@ -87,6 +87,13 @@ See the [family one-hot contract](../primus_tfhe_ntru/README.md#one-hot-cbs) for
 
 A complete chunk-encryption and lookup workflow is in [fourier_lookup.rs](../primus_tfhe_ntru_lut/examples/fourier_lookup.rs).
 
+For custom composition, one-hot's `lwe_return_batch_capacity()`,
+`prepare_lwe_return_at()` and `return_lwe_batch_to()` reuse PBS's private return
+buffers with its bound key and modulus. Prepare every slot in `0..outputs.len()`
+before returning a batch; no filled-slot count is tracked. One-hot generation and
+external products preserve those slots, but complete the batch before borrowing
+ordinary PBS operations.
+
 ## Lower-level composition
 
 Rustdoc groups server material in `key`, CBS in `circuit_bootstrap`, MVB programs/execution in `factorized`, and bucket material in `sparse`. Common workflow types remain root imports.

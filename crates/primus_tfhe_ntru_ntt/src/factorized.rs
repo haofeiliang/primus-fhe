@@ -206,21 +206,14 @@ where
         self.check_io(input, lookup_table, outputs);
         self.prepare_shared_rotation(input, &lookup_table.common_polynomial);
 
-        let parameters = self.evaluator.context.parameters();
-        let key = self.evaluator.server_key.key_switching_key();
-        let modulus = parameters.external_lwe().cipher_modulus();
-        let n = parameters.poly_length();
-        let batch_size = self.evaluator.batch_return_workspace.batch_capacity();
+        let n = self.evaluator.context.parameters().poly_length();
+        let batch_size = self.evaluator.lwe_return_batch_capacity();
         let mut factors = NttPolynomialIter::new(&lookup_table.factors, n);
         for outputs in outputs.chunks_mut(batch_size) {
             for (slot, factor) in factors.by_ref().take(outputs.len()).enumerate() {
                 self.prepare_factor_return(factor, slot);
             }
-            key.key_switch_extracted_batch_to(
-                outputs,
-                modulus,
-                &mut self.evaluator.batch_return_workspace,
-            );
+            self.evaluator.return_lwe_batch_to(outputs);
         }
     }
 
@@ -274,12 +267,6 @@ where
             parameters.accumulator_ntru().cipher_modulus(),
         );
         product.into_coeff_form(evaluator.context.table());
-        let key = evaluator.server_key.key_switching_key();
-        key.modulus_switch_extract_at_to(
-            evaluator.blind_rotation.current.as_view(),
-            0,
-            evaluator.batch_return_workspace.extracted_slot_mut(slot),
-            parameters.external_lwe().cipher_modulus(),
-        );
+        evaluator.prepare_accumulator_return_at(0, slot);
     }
 }

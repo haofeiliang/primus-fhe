@@ -251,6 +251,37 @@ fn selectors<Table: FftTable>(distr: SecretKeyDistr) {
         );
         assert!(ngsw.iter().all(|&v| v == Complex64::new(7.0, 0.0)));
     }
+
+    // Bound returns use this evaluator's key and q. Preparing out of order and
+    // running one-hot CBS before returning must preserve the three slot values.
+    let indices = [0, N / 2, N - 1];
+    let mut expected = indices.map(|_| context.allocate_lwe_ciphertext());
+    let mut returned = expected.clone();
+    let mut scalar_return = primus_ntru::NtruLweKeySwitchingWorkspace::new(N);
+    for (slot, (&index, output)) in indices.iter().zip(&mut expected).enumerate() {
+        server.key_switching_key().key_switch_at_to(
+            &choices[slot % choices.len()],
+            index,
+            output,
+            context.parameters().external_lwe().cipher_modulus(),
+            &mut scalar_return,
+        );
+    }
+    assert!(evaluator.lwe_return_batch_capacity() >= returned.len());
+    let (_, allocation) = allocations::measure(|| {
+        for slot in [2, 0, 1] {
+            evaluator.prepare_lwe_return_at(
+                choices[slot % choices.len()].as_view(),
+                indices[slot],
+                slot,
+            );
+        }
+        evaluator.one_hot_ngsw_to(&input, &mut ngsw);
+        evaluator.return_lwe_batch_to(&mut returned);
+    });
+    assert_eq!(allocation.count, 0);
+    assert_eq!(returned, expected);
+
     // Recovery and rebinding preserve the PBS/ordinary-CBS workflow.
     let mut ordinary =
         CircuitBootstrapEvaluator::try_from_bootstrapper(evaluator.into_bootstrapper()).unwrap();

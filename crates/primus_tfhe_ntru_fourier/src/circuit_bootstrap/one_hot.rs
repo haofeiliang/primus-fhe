@@ -1,7 +1,7 @@
 //! Packed one-hot selectors from one fused blind rotation.
 
 use primus_fft::{Complex64, FftTable, TorusFftValue};
-use primus_ntru::{FourierNgswCiphertext, NlevCiphertext};
+use primus_ntru::{FourierNgswCiphertext, NlevCiphertext, NtruCiphertext};
 use primus_tfhe::LweCiphertext;
 pub use primus_tfhe_ntru::{OneHotBootstrapError, OneHotLookupTable};
 
@@ -90,15 +90,51 @@ where
         &self.lookup_table
     }
 
-    /// Borrows PBS's existing workspace for returning streamed NTRU outputs.
-    /// One-hot generation does not use these buffers. Complete each filled tile
-    /// before calling ordinary/interleaved PBS, which may overwrite its samples.
-    /// Dimensions match this evaluator's NTRU and external LWE parameters.
+    /// Maximum number of NTRU samples prepared before returning one LWE batch.
+    /// The bound PBS evaluator owns the buffers; callers cannot replace them.
     #[must_use]
-    pub fn lwe_return_batch_workspace(
+    pub fn lwe_return_batch_capacity(&self) -> usize {
+        self.pbs.lwe_return_batch_capacity()
+    }
+
+    /// Converts/extracts coefficient `index` into return slot `slot`, without allocation.
+    /// The input buffer can be overwritten immediately afterward. One-hot generation
+    /// and external products leave prepared slots intact; interleaved PBS may overwrite
+    /// them, so finish a pending batch before borrowing ordinary PBS operations.
+    ///
+    /// # Correctness
+    /// Input must be a canonical coefficient NTRU under this evaluator's ring secret
+    /// at Q. The key and noise requirements of
+    /// [`NtruLweKeySwitchingKey::modulus_switch_extract_at_to`](primus_ntru::NtruLweKeySwitchingKey::modulus_switch_extract_at_to)
+    /// apply. This binds the return key and q; it does not check source secret identity.
+    ///
+    /// # Panics
+    /// Rejects an invalid input length, coefficient index or slot before slot writes.
+    pub fn prepare_lwe_return_at(
         &mut self,
-    ) -> &mut primus_ntru::NtruLweKeySwitchingBatchWorkspace<T> {
-        &mut self.pbs.batch_return_workspace
+        input: NtruCiphertext<&[T]>,
+        index: usize,
+        slot: usize,
+    ) {
+        self.pbs.prepare_lwe_return_at(input, index, slot);
+    }
+
+    /// Returns prepared slots `0..outputs.len()` in order under the external LWE secret.
+    /// Reuses PBS's buffers without allocation or clearing. Slots remain intact;
+    /// a short final batch ignores later slots, and an empty batch writes nothing.
+    ///
+    /// # Correctness
+    /// Prepare every consumed slot through [`Self::prepare_lwe_return_at`] for the
+    /// current batch. No filled-slot count is tracked; fresh or stale storage does
+    /// not establish a valid sample. The return noise requirements of
+    /// [`NtruLweKeySwitchingKey::key_switch_extracted_batch_to`](primus_ntru::NtruLweKeySwitchingKey::key_switch_extracted_batch_to)
+    /// apply.
+    ///
+    /// # Panics
+    /// Rejects a count above [`Self::lwe_return_batch_capacity`] or any incompatible
+    /// output dimension before output/scratch writes.
+    pub fn return_lwe_batch_to(&mut self, outputs: &mut [LweCiphertext<T>]) {
+        self.pbs.return_lwe_batch_to(outputs);
     }
 
     /// Returns the shared CBS bases and accumulator layouts.
