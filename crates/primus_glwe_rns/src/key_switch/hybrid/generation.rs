@@ -15,9 +15,11 @@ impl<T: FheUint> HybridRnsGlweKeySwitchingKey<T> {
     ///
     /// # Panics
     ///
-    /// Panics if the polynomial lengths or Q modulus count are incompatible,
-    /// if key sizes overflow, or if the input noise magnitude bound is not
-    /// strictly less than every QP modulus.
+    /// Panics if the input secret's dimension or polynomial length differs
+    /// from `input_parameters`, if the other polynomial lengths or Q modulus
+    /// count are incompatible, if key sizes overflow, or if the input noise
+    /// magnitude bound is not strictly less than every QP modulus.
+    /// These checks precede random sampling.
     pub fn generate<R, M, QpTable>(
         input_secret_key: &GlweSecretKey<T>,
         input_parameters: &CrtGlweParameters<T, M>,
@@ -38,7 +40,13 @@ impl<T: FheUint> HybridRnsGlweKeySwitchingKey<T> {
         let hybrid_rns = domain.hybrid_rns();
         let qp_table = domain.table();
 
-        assert_eq!(input_size.glwe_size(), input_parameters.glwe_size());
+        // Validate the complete input layout before zip can truncate a key row
+        // or its coefficients, and before consuming randomness.
+        assert_eq!(
+            input_secret_key.glwe_size(),
+            input_size.glwe_size(),
+            "hybrid input secret key layout mismatch"
+        );
         assert_eq!(q_moduli_count, hybrid_rns.q_moduli_count());
         assert_eq!(output_secret_key.poly_length(), poly_length);
         assert_eq!(qp_table.poly_length(), poly_length);

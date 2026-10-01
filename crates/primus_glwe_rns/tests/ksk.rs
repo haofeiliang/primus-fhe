@@ -5,11 +5,63 @@ use primus_glwe_rns::{
     DcrtGlweSecretKey, GlweSecretKey, HybridRnsGlweKeySwitchingKey,
     HybridRnsGlweKeySwitchingWorkspace, HybridRnsKeySwitchDomain, SecretKeyDistr,
 };
-use primus_lattice::glwe::DcrtGlwe;
+use primus_lattice::{GlweSize, glwe::DcrtGlwe};
 use primus_modulus::BarrettModulus;
 use primus_ntt::UintDcrtTable;
 use primus_poly::Polynomial;
 use rand::{SeedableRng, rngs::StdRng};
+
+/// Layout rejection must precede sampling, rather than silently truncating zip.
+#[test]
+fn hybrid_generation_rejects_input_secret_layout_before_sampling() {
+    let q = [97u64].map(BarrettModulus::new);
+    let p = [113u64].map(BarrettModulus::new);
+    let table = UintDcrtTable::new(3, &[q[0], p[0]]).unwrap();
+    let hybrid = primus_rns::HybridRNS::new(&q, &p, 1).unwrap();
+    let domain = HybridRnsKeySwitchDomain::try_new(&hybrid, &table).unwrap();
+    let parameters = CrtGlweParameters::new(
+        2,
+        8,
+        BarrettModulus::new(3),
+        BarrettModulus::new(101),
+        &q,
+        SecretKeyDistr::UniformBinary,
+        1.0,
+    );
+    let output_size = GlweSize::new(1, 8);
+    let output_secret = GlweSecretKey::<u64>::new(
+        vec![1; output_size.mask_len()],
+        output_size,
+        SecretKeyDistr::UniformBinary,
+    );
+
+    // Missing/extra mask polynomials and shorter/longer ring polynomials.
+    for (dimension, poly_length) in [(1, 8), (3, 8), (2, 4), (2, 16)] {
+        let input_size = GlweSize::new(dimension, poly_length);
+        let input_secret = GlweSecretKey::<u64>::new(
+            vec![1; input_size.mask_len()],
+            input_size,
+            SecretKeyDistr::UniformBinary,
+        );
+        let mut rng = StdRng::seed_from_u64(17);
+        let mut expected_rng = StdRng::seed_from_u64(17);
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            HybridRnsGlweKeySwitchingKey::generate(
+                &input_secret,
+                &parameters,
+                &output_secret,
+                &domain,
+                &mut rng,
+            )
+        }));
+        assert!(result.is_err(), "accepted input layout {input_size:?}");
+        assert_eq!(
+            rand::Rng::next_u64(&mut rng),
+            rand::Rng::next_u64(&mut expected_rng),
+            "sampled before rejecting input layout {input_size:?}"
+        );
+    }
+}
 
 #[test]
 fn hybrid_noise_support_must_fit_auxiliary_moduli() {
