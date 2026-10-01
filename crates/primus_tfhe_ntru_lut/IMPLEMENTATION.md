@@ -2,88 +2,141 @@
 
 User-facing encoding and evaluation contracts are in the [README](README.md). This document records the internal storage and measurement boundaries shared by the [NTT evaluator](src/ntt.rs) and [Fourier evaluator](src/fourier.rs).
 
-## Public table storage
+## Public table storage and compiled choices
 
-[`lookup_table.rs`](src/lookup_table.rs) owns logical geometry and immutable table
-access. Its private [`compile` module](src/lookup_table/compile.rs) enumerates every
-callback pair in the documented order, encodes one N-coefficient scratch
-polynomial at a time, and interns it. The construction-only pool owns the fixed
-polynomial stride, hashing and full coefficient comparisons. Hash matches alone
-never establish identity.
+[`lookup_table.rs`](src/lookup_table.rs) owns validated logical geometry and
+immutable table access. Its private [`compile` module](src/lookup_table/compile.rs)
+enumerates every callback pair in the documented order and interns encoded,
+zero-padded polynomials. Hashes narrow the search; complete coefficient equality
+establishes identity. Construction checks worst-case storage before callbacks;
+sharing never skips a callback or changes its error position.
 
-The table stores a flat boxed coefficient pool and one `OutputTable` per output:
-`Direct(id)` refers to one polynomial for every high-chunk prefix, while
-`Select(ids)` owns P prefix-ordered references. Direct outputs retain no repeated
-prefix array. `polynomial(j,p)` resolves logical entries without exposing IDs or
-pool order. `polynomial_groups` gives evaluators M-polynomial groups as exact-size
-view iterators, so backend code never handles IDs or gathers copied polynomials.
-Construction still validates worst-case dense storage before callbacks without
-reserving that size. No construction hash map or scratch survives compilation.
+The table retains a flat boxed coefficient pool and a
+[`selection plan`](src/lookup_table/selection.rs). Its private
+[`graph compiler`](src/lookup_table/selection/compile.rs) groups M branches
+in ascending input-chunk order, removing a choice when every branch has the same
+source. Remaining operations have three distinct forms:
 
-A direct output uses the initializer's **BR basis** to
-lift its polynomial. Equality of prefixes does not imply a constant polynomial:
-all d low-chunk rotations remain necessary. This covers h=0 as well. Mixed tables
-retain every high-chunk selector for unresolved outputs; if all outputs bypass
-selection, both backends omit high-chunk CBS, public/encrypted table-selector
-buffers and candidates. Embedded one-hot scratch and the binding's CBS key
-requirements remain unchanged. No partial subtree sharing is performed.
+| Operation | Operand domain | Control and basis |
+| --- | --- | --- |
+| `Lift` | One public polynomial | Server initializer, BR basis |
+| `SelectPublic` | M public polynomials | Full NLEV one-hot, CBS output basis |
+| `SelectEncrypted` | M coefficient-form NTRUs under f | Nonzero NGSW one-hot, CBS output basis |
+
+An operation's identity includes its form, input chunk, ordered polynomial/child
+IDs and the table's ring/encoding contract. Identical operations share a node
+across outputs. Removing a first or middle layer can move a public choice to a
+higher chunk. A group containing any encrypted source lifts its remaining public
+leaves before using NGSW; NLEV never selects encrypted operands.
+`polynomial(j,p)` traverses the reduced choices using the digits of prefix p and
+returns a borrowed polynomial. No additional full prefix map is retained.
+Construction hash maps, source arrays and liveness counters do not survive.
+`PolynomialId` names an entry in the unique polynomial pool; `TableNodeId`
+names an interned operation. Both are opaque internal wrappers over `usize`,
+distinct from logical table prefixes, chunk positions and reusable result slots.
+The pool's `PolynomialHashValue(u64)` only selects a candidate bucket; full
+coefficient comparison still establishes equality. No integer `Deref` or blanket
+conversion erases these distinctions.
+The immutable plan contains only operations, execution order, output actions,
+selector batches and result slots. [`evaluation.rs`](src/evaluation.rs) owns
+completed-LWE copying and borrowed ciphertext views; the plan does not mutate
+ciphertexts or know backend representations.
 
 ## Stage and buffer layout
 
-Let M be the chunk radix, c the input chunk count, d the coefficient chunk count, o the output chunk count and h=c-d the table chunk count. Each output has P=M^h logical public polynomials, each storing K=M^d entries in N coefficients. L is the CBS output gadget level count. One transformed polynomial has R=N elements for NTT and R=N/2 complex elements for Fourier.
+Let M be the per-chunk value count (the radix), c the input chunk count, d the coefficient chunk count, o the
+output count and h=c-d. There are P=M^h logical polynomials per output, with
+K=M^d meaningful entries in N coefficients. L is the CBS output gadget level
+count; transformed row length R is N for NTT and N/2 for Fourier.
 
 ```text
 try_new
-  validate binding and lengths; allocate workspace
+  validate binding and lengths; allocate compiled workspace
   prepare_rotation_constants
 evaluate_to
-  validate every input/output shape before writing
-  prepare_selectors
-    prepare_rotation_controls: low d chunks
-    prepare_table_selectors: high h chunks, only if some output needs selection
-  for each output chunk
-    select_table
-      direct output (including h=0): lift_public_polynomial with the BR basis
-      otherwise: select_public_table_groups, then select_encrypted_table_layer
+  validate all input/output shapes before writes
+  prepare_rotation_controls for low d chunks
+  prepare_table_selectors for surviving high-chunk choices
+  for each output in ascending order
+    if its root matches an earlier output: copy that completed LWE
+    otherwise execute its newly needed selection nodes in compiled order
+    copy the selected root to current
     rotate_selected_table
-    NTT: key_switch_to (independent Q -> q, extraction and LWE key switch)
-    Fourier: one_hot.prepare_lwe_return_at (independent Q -> q, extraction into a tile slot)
-      one_hot.return_lwe_batch_to when the tile capacity or the last output is reached
+    NTT: key_switch_to
+    Fourier: prepare_lwe_return_at, then return_lwe_batch_to per bounded tile
 ```
 
-The Fourier evaluator groups selection, rotation and extraction for one tile in `prepare_output_returns`; `evaluate_to` validates the full request, prepares selectors, then prepares and key-switches each tile. The helper leaves completed LWE slots intact while reusing polynomial scratch for later outputs. One-hot delegates return operations to its PBS evaluator, which owns the buffers and binds the return key and modulus; the lookup stage only queries the capacity and supplies samples and outputs.
+Selector requirements are the union of surviving public/encrypted choices.
+Each high chunk needs full NLEV, nonzero NGSW, both, or no CBS. Both representations
+use `one_hot_nlev_and_nonzero_ngsw_to`, sharing one BR and coefficient projection
+per branch; zero is projected for NLEV but not scheme-switched. Each selector
+batch is generated once and reused by every node needing that chunk. Fourier
+uses one reusable coefficient NLEV batch before storing transformed batches.
+`SelectorBatches::{Unused,Nlev,Ngsw,Both}` makes those four cases explicit.
+NLEV and NGSW batch indices belong to independent packed buffers; global input
+chunk indices are converted by the table's `selector_batches_for_chunk` accessor. Each
+backend retains its concrete coefficient-to-NTT/Fourier transformation.
 
-The logical high-chunk count h always means c-d. `needs_table_selection()` is a
-separate decision derived from the output variants: it is true when any output
-is `Select`. Every table-selection buffer is zero-length when it is false; the
-following selection-buffer counts apply only when it is true.
-Lengths below count array elements, not bytes or ciphertexts. Transformed storage uses T for NTT and Complex64 for Fourier; candidates always use coefficient-domain T values.
-
-| Quantity | Element count | Role |
+| Buffer | Element count | Role |
 | --- | --- | --- |
-| `selector_len` | L*R | One NLEV/NGSW selector or aggregated rotation control |
-| `one_hot_len` | M*L*R | Complete selector batch for one input chunk |
-| `nonzero_one_hot_len` | (M-1)*L*R | Nonzero selectors; slot r-1 corresponds to branch r |
-| `encrypted_table_selectors_len` | max(h-1,0)*(M-1)*L*R | Nonzero NGSWs for all later table layers |
-| `rotation_controls_len` | d*L*R | One aggregate for each low chunk |
-| `rotation_factors_len` | d*(M-1)*R | Public monomial differences, without gadget levels |
-| `candidates_len` | (P/M)*N | First-layer results and subsequent in-place compaction |
+| `public_table_selectors` | A*M*L*R | A high chunks needing full NLEV |
+| `encrypted_table_selectors` | B*(M-1)*L*R | B high chunks needing nonzero NGSW |
+| `rotation_controls` | d*L*R | One aggregate per low chunk |
+| `rotation_factors` | d*(M-1)*R | Integer-scale monomial differences |
+| `selected_tables` | S*N | S compiled live-result slots, coefficient domain |
 
-`public_table_selectors` holds one complete batch only when table selection is needed. Fourier additionally retains its coefficient form in `public_selector_coefficients`. `nonzero_selectors` holds one reusable scratch batch only when d>0. These counts exclude the embedded one-hot evaluator (including shared external-product, FFT and return workspaces), the NTT evaluator's separate scalar return buffer, current/product ciphertexts and Fourier gadget constants; they are not a total heap estimate.
+A and B may overlap in chunk identity. These counts exclude the embedded one-hot
+workspace, current/product ciphertexts, the NTT scalar return workspace and
+Fourier gadget constants. `nonzero_selectors` is one scratch batch when d>0.
 
-The public first layer computes `sum_k T_k odot NLEV[delta_k]`, including k=0. Later encrypted layers compute `c_0 + sum_{k>0}(c_k-c_0) otimes NGSW[delta_k]`. For an output with equal prefixes, the server's BR-basis `NLEV[1]` lifts the shared public polynomial, even when h>0.
+The compiler schedules children before parents using depth-first traversal in
+output order. A shared node executes once. Reference counts include every branch
+occurrence and output root; a slot is reusable only after its last consumer.
+A parent may reuse a dying child's slot because the kernel reads every branch
+into separate `current`/external-product scratch before copying its result to
+the destination. Runtime evaluation performs no reference counting, hashing or
+allocation. `node_order` contains each node once; each output's `node_range`
+selects the nodes first needed there. `result_slot` names its coefficient buffer
+destination, independently of node ID or execution order. Every call replays
+the complete schedule.
 
-Each group sums all products in the transform domain and inverse-transforms once. The public layer uses `NLEV.external_product_sum_to`; encrypted layers use `NGSW.cmux_k_to` with semantic candidate/control iterators. CMux uses `current` for each difference and the shared workspace for the sum, keeping `c_0` unchanged. A separate coefficient difference buffer is unnecessary; `product` remains the ping-pong buffer for rotations.
+`OutputAction::Evaluate` still rotates and returns a root when its node range is
+empty: an earlier output may have computed that root as a child. Only
+`CopyFrom(previous)` reuses an already completed output LWE. Fourier's
+`evaluation_tile` bounds a consecutive Evaluate range by return capacity and
+stops before CopyFrom, so the source LWE is complete before copying it.
 
-Each low chunk i produces `C_i=G+sum_{k>0}(X^(-k*M^i)-1)*NGSW[delta_k]`, targeting `NGSW[X^(-m_i*M^i)]`. The factors are prepared at construction. Fourier factors use integer transforms, while G and ciphertexts use torus transforms. Only C_i is retained for that chunk; the next chunk overwrites the scratch selectors. All table selectors and rotation controls are reused across o outputs, with only one output's candidate tree live at a time.
+Public choices compute `sum_k T_k odot NLEV[delta_k]`, including k=0. Encrypted
+choices compute `c_0 + sum_{k>0}(c_k-c_0) otimes NGSW[delta_k]`. Semantic polynomial
+and ciphertext view iterators consume the ordered branches, which can occupy
+noncontiguous pool slots. Each choice sums products in the transform domain and
+inverse-transforms once. CMux uses `current` for differences; no separate
+coefficient difference buffer is needed.
 
-Each encrypted layer consumes consecutive groups of M candidates. Group g starts at coefficient g*M*N; its result is written at g*N only after the whole group has been read. Writes therefore stay within consumed storage, leaving unread groups intact. The active candidate count is divided by M after each layer. Explicit group indices express this in-place dependency; polynomial and ciphertext iterators traverse the individual mathematical objects within each group.
+Every distinct output root copies its unrotated result to `current`, leaving shared results
+intact, and applies all d rotations. A repeated root copies the earlier completed LWE,
+because encoding, rotation controls and return key are identical in one binding. Low chunk i supplies
+`C_i=G+sum_{k>0}(X^(-k*M^i)-1)*NGSW[delta_k]`, targeting `NGSW[X^(-m_i*M^i)]`.
+Monomial factors are prepared at binding; Fourier factors use integer transforms
+and G uses torus scale. `product` is the rotation ping-pong buffer.
 
-If any output needs selection, each call projects M+(c-1)*(M-1) selectors. Otherwise it projects d*(M-1). Each unresolved output uses P+P/M-1 table-selection external products; each direct output uses one public lift. All outputs still add d rotation products and one return operation.
+Shared nodes reuse exactly the same ciphertext and error. Consumers therefore
+have correlated errors, and identical roots followed by identical operations can
+reuse the complete output ciphertext. Pruning changes the error path: budget BR-
+basis lifts, CBS-basis public products, subsequent encrypted choices, rotations
+and returns for the surviving path. Fewer operations alone do not certify a
+noise bound. Fourier transform-domain summation can differ in rounding from
+separately converted products; NTT summation is exact.
 
-For each unresolved output, selection performs `(P-1)/(M-1)` inverse transforms per output: 21 for M=4/P=64, versus 79 separately inverted products. NTT summation is exact; Fourier sums before torus conversion, so its rounding can differ from separately converted products. These are operation counts, not runtime or noise estimates. CBS, approximate decomposition, selector errors, Fourier rounding and the return path still require a decoding budget.
-
-Table products borrow one-hot CBS's external-product workspace; Fourier transforms also borrow its FFT engine. These stages execute serially and overwrite scratch before reuse. NTT returns each completed polynomial through its scalar return buffer. Fourier immediately converts and extracts it into the embedded PBS return workspace. Selection and rotation leave the filled LWE slots intact; at most eight samples are retained before key switching, including a partial last tile. The outer Fourier evaluator needs no separate return buffer. A singleton tile writes directly to the caller output; larger tiles copy their switched LWEs from scratch into the separate output objects. This regrouping preserves each scalar return exactly, including Q→q rounding before extraction signs. Storage choices and the measured memory/latency tradeoff are recorded in [workspaces and storage](../../guides/development/workspaces-and-storage.md).
+NTT returns each output through its scalar workspace. Fourier groups selection,
+rotation and extraction in `prepare_output_returns`, then key-switches consecutive newly evaluated outputs up to
+its fixed tile capacity (eight LWEs), including a partial last tile. Tiles stop before a repeated output, which takes
+no return slot and copies its earlier completed LWE. One-hot/PBS
+owns and binds that return workspace. Selection and rotation preserve filled LWE
+slots; conversion and extraction remain independent for each source polynomial.
+Q→q still precedes extraction signs. A singleton tile writes directly to output;
+larger tiles copy switched LWEs from scratch. The outer Fourier evaluator owns
+no additional return buffer. See [workspaces and storage](../../guides/development/workspaces-and-storage.md).
 
 ## Benchmark fixture
 
@@ -111,14 +164,26 @@ workloads retain the same geometry, keys, input and measurement boundaries.
 The polynomial's distinct public-polynomial counts per output are
 `1,1,1,1,1,4,16,64`; the dense mapping has 64 distinct polynomials in each output.
 The polynomial fixture stores 89 unique polynomials instead of 512, reducing
-retained LUT heap by about 82% (including logical indices). The dense fixture
-still stores 512 polynomials and pays only the additional index/metadata storage.
-Hashing and deduplication add construction work; creation and online evaluation
+retained coefficient storage by about 83%; compiled plan metadata adds a small overhead. The dense fixture
+still stores 512 polynomials plus compiled node/branch metadata.
+Hashing and deduplication add construction work; creation (including plan compilation) and online evaluation
 are measured separately, and fewer products do not imply proportional speedup.
-The polynomial fixture therefore bypasses selection for its first five outputs,
-while retaining all high-chunk CBS for the remaining three. This pair distinguishes
+The polynomial fixture bypasses selection for its first five outputs. Its
+remaining outputs require 1, 5 and 21 choices instead of 21 each: 27 choice nodes
+instead of 63, and 102 selector products instead of 237. Five initializer lifts
+remain. The dense fixture requires 168 choices and 632 selector products. Both
+fixtures still need all three high-chunk CBS calls and all low rotations.
+Depth-first scheduling requires ten result slots instead of the old sixteen
+candidates in these fixtures. This pair distinguishes
 gains from repeated subtables from general evaluation costs. Creation includes
-computing the selected public function, hashing and deduplication.
+computing the selected public function, hashing, deduplication and selection-plan compilation.
+
+The `/shared_middle_chunk/` diagnostic mapping returns `(m_0+m_6) mod 4` in every
+output. Four polynomials, one public choice on chunk 6 and one result slot suffice;
+chunks 5 and 7 require no CBS. All eight outputs share the complete result, so
+only one set of low rotations and one return remain. This deliberately repetitive
+function isolates cross-output sharing and a moved public layer. Its oracle and
+zero-allocation checks run outside timing like those of the other fixtures.
 
 For these mixed/dense fixtures, one `evaluate` iteration generates selectors for eight input chunks, selects or lifts,
 rotates and returns all eight output ciphertexts. Keys, public LUT compilation,

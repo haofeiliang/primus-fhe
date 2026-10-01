@@ -20,21 +20,24 @@ pub const CONFIG: LookupTableConfig = LookupTableConfig {
 };
 pub const INPUT: usize = 0b10_10_10_11_11_00_11_01;
 
-/// Two public functions with identical geometry but different subtable reuse.
+/// Public functions with identical geometry but different selection structure.
 #[derive(Clone, Copy)]
 pub enum Workload {
     /// The teaching example has repeated low-output polynomials.
     Polynomial,
     /// A fixed seed defines a dense mapping independently of key-generation RNG.
     Dense,
+    /// All outputs share one choice on chunk 6; high chunks 5 and 7 are irrelevant.
+    Shared,
 }
 
 impl Workload {
-    // Keeps the structured-workload ID unchanged and distinguishes the dense workload.
+    // Keep the teaching-example ID unchanged; label the two diagnostic mappings.
     pub fn suffix(self) -> &'static str {
         match self {
             Self::Polynomial => "",
             Self::Dense => "/dense_seed42",
+            Self::Shared => "/shared_middle_chunk",
         }
     }
 
@@ -45,6 +48,12 @@ impl Workload {
         let x = x as u64;
         let value = match self {
             Self::Polynomial => x * x + 3 * x + 7,
+            Self::Shared => {
+                // Identical output digits expose sharing and a public choice
+                // moved past the omitted first layer. Low rotations still
+                // select m_0; m_6 supplies the high-chunk addition.
+                return T::as_from(((x & 3) + ((x >> 12) & 3)) & 3);
+            }
             Self::Dense => {
                 let mut z = x.wrapping_add(42).wrapping_add(0x9e37_79b9_7f4a_7c15);
                 z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
@@ -62,6 +71,7 @@ pub fn check_repetition<T: FheUint>(table: &HighPrecisionLookupTable<T>, workloa
     let expected = match workload {
         Workload::Polynomial => [1, 1, 1, 1, 1, 4, 16, 64],
         Workload::Dense => [64; 8],
+        Workload::Shared => [4; 8],
     };
     for (output, count) in expected.into_iter().enumerate() {
         let mut unique = Vec::new();

@@ -2,7 +2,6 @@ use primus_integer::FheUint;
 use primus_lattice::{
     ngsw::{NttNgswIter, NttNgswIterMut},
     nlev::{NttNlev, NttNlevIter},
-    ntru::{NtruIter, NtruIterMut},
 };
 use primus_modulus::BarrettModulus;
 use primus_ntru::{NtruCiphertext, NtruLweKeySwitchingWorkspace, NttNgswCiphertext};
@@ -13,16 +12,23 @@ use primus_tfhe::LweCiphertext;
 use primus_tfhe_ntru::CircuitBootstrapParameters;
 use primus_tfhe_ntru_ntt::{OneHotCircuitBootstrapEvaluator, ServerKey, TfheContext};
 
-use crate::{HighPrecisionLookupTable, LookupTableError, lookup_table::checked_allocation_len};
+use crate::{
+    HighPrecisionLookupTable, LookupTableError,
+    evaluation::{copy_completed_output_to, selected_ciphertext},
+    lookup_table::{
+        PolynomialId, checked_allocation_len,
+        selection::{OutputAction, SelectorBatches, TableNodeId, TableOperation},
+    },
+};
 
 /// Exact-NTT high-precision lookup bound to one public table and CBS-enabled key.
 ///
-/// Generates required input selectors once per evaluation and shares them across
-/// all outputs. Outputs with equal prefixes use a direct lift and low-chunk
-/// rotations; high-chunk selectors are omitted only when all outputs qualify.
-/// Only the first table-selection chunk retains NLEV; later table
-/// chunks retain only r=1..M-1 NGSWs. Coefficient chunks retain aggregated
-/// rotation controls.
+/// Generates the surviving choices' NLEV/NGSW selectors once per evaluation.
+/// Repeated subtrees share encrypted results; equal branches omit the choice.
+/// Public choices lift with NLEV; encrypted choices use nonzero NGSW, including
+/// chunks that require both representations. Low chunks retain aggregated
+/// rotation controls. Shared results and their noise are correlated across
+/// outputs; no independence of output errors is promised.
 /// Public monomial factors and all online workspaces are allocated at binding.
 /// Table products reuse one-hot CBS's external-product workspace between calls.
 pub struct NttLookupTableEvaluator<'a, T, Table, LM = BarrettModulus<T>>
@@ -35,9 +41,9 @@ where
     server_key: &'a ServerKey<T>,
     lookup_table: &'a HighPrecisionLookupTable<T>,
     one_hot: OneHotCircuitBootstrapEvaluator<'a, T, Table, LM>,
-    // [branch][level][NTT value]: M NLEVs for the first public table layer.
+    // [NLEV batch][branch][level][NTT value]: full selectors for public choices.
     public_table_selectors: Box<[T]>,
-    // [encrypted layer][r-1][level][NTT value]: M-1 NGSWs per later layer.
+    // [NGSW batch][r-1][level][NTT value]: nonzero selectors for encrypted choices.
     encrypted_table_selectors: Box<[T]>,
     // [low chunk][level][NTT value]: one NGSW[X^(-m_i*M^i)] per low chunk.
     rotation_controls: Box<[T]>,
@@ -45,8 +51,8 @@ where
     nonzero_selectors: Box<[T]>,
     // [low chunk i][nonzero digit k][NTT value] of X^(-k*M^i)-1.
     rotation_factors: Box<[T]>,
-    // [candidate][coefficient], holding at most P/M encrypted polynomials.
-    candidates: Box<[T]>,
+    // [compiled scratch slot][coefficient], shared nodes survive until their last use.
+    selected_tables: Box<[T]>,
     current: NtruCiphertext<Box<[T]>>,
     product: NtruCiphertext<Box<[T]>>,
     return_workspace: NtruLweKeySwitchingWorkspace<T>,
@@ -76,26 +82,16 @@ where
         let layout = lookup_table.layout;
         let n = layout.polynomial_length;
         let coefficient_chunk_count = layout.config.coefficient_chunk_count;
-        let needs_table_selection = lookup_table.needs_table_selection();
+        let selection = &lookup_table.selection;
         // Lengths count T values: one selector has L*N, one-hot has M*L*N.
         let selector_len = one_hot.ngsw_selector_len();
         let one_hot_len = one_hot.ngsw_batch_len();
         let nonzero_one_hot_len = one_hot_len - selector_len;
-        // One decision controls every table-selection buffer. h always retains
-        // its logical meaning c-d, even when all outputs bypass the tree.
-        let (public_table_selectors_len, encrypted_table_selectors_len, candidates_len) =
-            if needs_table_selection {
-                (
-                    one_hot_len,
-                    checked_allocation_len::<T>(&[
-                        layout.table_chunk_count() - 1,
-                        nonzero_one_hot_len,
-                    ])?,
-                    checked_allocation_len::<T>(&[layout.candidate_count(), n])?,
-                )
-            } else {
-                (0, 0, 0)
-            };
+        let public_table_selectors_len =
+            checked_allocation_len::<T>(&[selection.nlev_batch_count, one_hot_len])?;
+        let encrypted_table_selectors_len =
+            checked_allocation_len::<T>(&[selection.ngsw_batch_count, nonzero_one_hot_len])?;
+        let selected_tables_len = checked_allocation_len::<T>(&[selection.result_slot_count, n])?;
         let rotation_controls_len =
             checked_allocation_len::<T>(&[coefficient_chunk_count, selector_len])?;
         let rotation_factors_len =
@@ -116,7 +112,7 @@ where
             rotation_controls: vec![T::ZERO; rotation_controls_len].into_boxed_slice(),
             nonzero_selectors: vec![T::ZERO; nonzero_selectors_len].into_boxed_slice(),
             rotation_factors: vec![T::ZERO; rotation_factors_len].into_boxed_slice(),
-            candidates: vec![T::ZERO; candidates_len].into_boxed_slice(),
+            selected_tables: vec![T::ZERO; selected_tables_len].into_boxed_slice(),
             current: NtruCiphertext::zero(n),
             product: NtruCiphertext::zero(n),
             return_workspace: NtruLweKeySwitchingWorkspace::new(n),
@@ -142,9 +138,10 @@ where
             .enumerate()
         {
             let chunk_place_value = 1usize << (i * layout.chunk_bits); // M^i
-            for (digit, mut factor) in (1..layout.radix).zip(NttPolynomialIterMut::new(factors, n))
+            for (chunk_value, mut factor) in
+                (1..layout.radix).zip(NttPolynomialIterMut::new(factors, n))
             {
-                let exponent = digit * chunk_place_value;
+                let exponent = chunk_value * chunk_place_value;
                 // M^d<=N gives 0<exponent<N. Negacyclic monomials have period 2N,
                 // so 2N-exponent represents the required negative rotation.
                 self.context
@@ -174,6 +171,8 @@ where
     /// Inherits one-hot CBS's key, canonical-input and quantized-phase guard
     /// requirements. Budget table products, rotations and Q-to-q/key-switch error
     /// in addition to CBS noise; parameter checks do not prove a decoding margin.
+    /// Pruning changes products and error correlations. Shared subtrees reuse
+    /// the same ciphertext, including its error, across their consumers.
     ///
     /// # Panics
     /// Rejects wrong chunk counts or any LWE dimension before writing outputs or scratch.
@@ -185,15 +184,22 @@ where
             self.context.parameters().external_lwe_dimension(),
         );
         self.prepare_selectors(input);
-        for (index, output) in output.iter_mut().enumerate() {
-            self.select_table(index);
-            self.rotate_selected_table();
-            self.server_key.key_switching_key().key_switch_to(
-                &self.current,
-                output,
-                self.context.parameters().external_lwe().cipher_modulus(),
-                &mut self.return_workspace,
-            );
+        for index in 0..output.len() {
+            match self.lookup_table.selection.output_action(index) {
+                OutputAction::CopyFrom(previous) => {
+                    copy_completed_output_to(previous, index, output)
+                }
+                OutputAction::Evaluate => {
+                    self.select_table(index);
+                    self.rotate_selected_table();
+                    self.server_key.key_switching_key().key_switch_to(
+                        &self.current,
+                        &mut output[index],
+                        self.context.parameters().external_lwe().cipher_modulus(),
+                        &mut self.return_workspace,
+                    );
+                }
+            }
         }
     }
 
@@ -204,11 +210,7 @@ where
         let (coefficient_chunks, table_chunks) =
             input.split_at(self.lookup_table.config().coefficient_chunk_count);
         self.prepare_rotation_controls(coefficient_chunks);
-        // A mixed table still needs all high-chunk selectors for its unresolved
-        // outputs. Only a globally independent table can omit their CBS calls.
-        if self.lookup_table.needs_table_selection() {
-            self.prepare_table_selectors(table_chunks);
-        }
+        self.prepare_table_selectors(table_chunks);
     }
 
     /// Overwrites one `NGSW[X^(-m_i*M^i)]` control per low input chunk.
@@ -247,31 +249,47 @@ where
         }
     }
 
-    /// Prepares selectors for the high chunks, starting with input chunk d.
-    /// The first chunk uses all M NLEVs to select and lift public polynomials;
-    /// remaining chunks need only r=1..M-1 NGSWs because c_0 supplies the default
-    /// branch. Empty input means d=c.
+    /// Generates only the representations needed by surviving choices. A chunk
+    /// may select both public and encrypted operands after local pruning; its
+    /// NLEV and nonzero NGSW then share one BR and projection pass.
     fn prepare_table_selectors(&mut self, input: &[LweCiphertext<T>]) {
-        let Some((first, remaining)) = input.split_first() else {
-            return;
-        };
-        let n = self.lookup_table.layout.polynomial_length;
-        let selector_len = self.one_hot.ngsw_selector_len();
-        let nonzero_one_hot_len = (self.lookup_table.layout.radix - 1) * selector_len;
-
-        // one_hot_nlev_to returns coefficient-form rows; public-polynomial
-        // external products require each row in this context's NTT representation.
-        self.one_hot
-            .one_hot_nlev_to(first, &mut self.public_table_selectors);
-        for row in PolynomialIterMut::new(&mut self.public_table_selectors, n) {
-            self.context.table().transform_slice(row.0);
+        let full_len = self.one_hot.ngsw_batch_len();
+        let nonzero_len = full_len - self.one_hot.ngsw_selector_len();
+        for (input, &batches) in input.iter().zip(&self.lookup_table.selection.selectors) {
+            match batches {
+                SelectorBatches::Unused => {}
+                SelectorBatches::Ngsw(_) => {
+                    self.one_hot.one_hot_nonzero_ngsw_to(
+                        input,
+                        &mut self.encrypted_table_selectors[batches.ngsw_range(nonzero_len)],
+                    );
+                }
+                SelectorBatches::Nlev(_) => {
+                    self.one_hot.one_hot_nlev_to(
+                        input,
+                        &mut self.public_table_selectors[batches.nlev_range(full_len)],
+                    );
+                    self.transform_public_selectors(batches);
+                }
+                SelectorBatches::Both { .. } => {
+                    self.one_hot.one_hot_nlev_and_nonzero_ngsw_to(
+                        input,
+                        &mut self.public_table_selectors[batches.nlev_range(full_len)],
+                        &mut self.encrypted_table_selectors[batches.ngsw_range(nonzero_len)],
+                    );
+                    self.transform_public_selectors(batches);
+                }
+            }
         }
+    }
 
-        for (input, selectors) in remaining.iter().zip(
-            self.encrypted_table_selectors
-                .chunks_exact_mut(nonzero_one_hot_len),
-        ) {
-            self.one_hot.one_hot_nonzero_ngsw_to(input, selectors);
+    /// NLEV projection writes coefficients; public products consume NTT rows.
+    /// Both request forms transform the same full batch exactly once.
+    fn transform_public_selectors(&mut self, batches: SelectorBatches) {
+        let nlev =
+            &mut self.public_table_selectors[batches.nlev_range(self.one_hot.ngsw_batch_len())];
+        for row in PolynomialIterMut::new(nlev, self.lookup_table.layout.polynomial_length) {
+            self.context.table().transform_slice(row.0);
         }
     }
 
@@ -301,29 +319,34 @@ where
         }
     }
 
-    /// Overwrites `current` with the selected LUT polynomial encrypted under f.
-    /// Selectors must already correspond to the input, and `output_chunk` must
-    /// index a configured output. Candidate storage is reused across outputs;
-    /// coefficient selection is performed separately by `rotate_selected_table`.
+    /// Executes this output's newly needed nodes, then copies its unrotated root.
+    /// All output chunks must be consumed in order on every evaluation. Shared
+    /// roots stay unmodified in their compiled slots while `current` is rotated.
     fn select_table(&mut self, output_chunk: usize) {
-        let layout = self.lookup_table.layout;
-        let n = layout.polynomial_length;
-        let table_chunk_count = layout.table_chunk_count();
-
-        if let Some(polynomial) = self.lookup_table.direct_polynomial(output_chunk) {
-            self.lift_public_polynomial(&polynomial);
-            return;
+        let table = self.lookup_table;
+        let plan = &table.selection;
+        let n = table.layout.polynomial_length;
+        for node in plan.scheduled_nodes(output_chunk) {
+            match &node.operation {
+                TableOperation::Lift(polynomial_id) => {
+                    self.lift_public_polynomial(&table.polynomial_by_id(*polynomial_id))
+                }
+                TableOperation::SelectPublic {
+                    chunk_index,
+                    polynomial_ids,
+                } => self.select_public_table(*chunk_index, polynomial_ids),
+                TableOperation::SelectEncrypted {
+                    chunk_index,
+                    children,
+                } => self.select_encrypted_table(*chunk_index, children),
+            }
+            // A destination may reuse a child's last-use slot: every operand
+            // has been read into `current` before this write touches the pool.
+            self.selected_tables[node.result_range(n)].copy_from_slice(self.current.as_ref());
         }
-
-        self.select_public_table_groups(output_chunk);
-        let mut candidate_count = layout.candidate_count();
-        // The public layer consumed chunk d. Each remaining layer consumes
-        // the next higher chunk and reduces the live candidate count by M.
-        for layer in 0..table_chunk_count - 1 {
-            candidate_count = self.select_encrypted_table_layer(layer, candidate_count);
-        }
-        debug_assert_eq!(candidate_count, 1);
-        self.current.as_mut().copy_from_slice(&self.candidates[..n]);
+        self.current
+            .as_mut()
+            .copy_from_slice(&self.selected_tables[plan.root_node(output_chunk).result_range(n)]);
     }
 
     /// Lifts a public polynomial under f using the initializer's BR basis.
@@ -344,92 +367,60 @@ where
         );
     }
 
-    /// Evaluates the public first layer: `sum_k T_k odot NLEV[delta_k]`.
-    /// Each group of M borrowed polynomials writes one NTRU to `candidates`,
-    /// overwriting all P/M slots. The default branch also participates in lifting.
-    fn select_public_table_groups(&mut self, output_chunk: usize) {
-        let layout = self.lookup_table.layout;
-        let n = layout.polynomial_length;
+    /// Selects M public polynomials with full NLEV, including the default branch.
+    /// Pruning can move this lift to any high chunk; the CBS output basis applies.
+    fn select_public_table(&mut self, chunk_index: usize, polynomial_ids: &[PolynomialId]) {
+        let table = self.lookup_table;
+        let selector_batches = table.selector_batches_for_chunk(chunk_index);
+        let selectors = &self.public_table_selectors
+            [selector_batches.nlev_range(self.one_hot.ngsw_batch_len())];
+        let basis = self.one_hot.parameters().output_basis();
+        let selector_len = self.one_hot.ngsw_selector_len();
         let modulus = self
             .context
             .parameters()
             .accumulator_ntru()
             .cipher_modulus();
-        let basis = self.one_hot.parameters().output_basis();
-        let selector_len = self.one_hot.ngsw_selector_len();
-
-        // Consecutive polynomials vary in the lowest unresolved table chunk;
-        // each group fixes all higher chunks and shares this layer's selectors.
-        for (group, candidate) in self
-            .lookup_table
-            .polynomial_groups(output_chunk)
-            .zip(NtruIterMut::new(&mut self.candidates, n))
-        {
-            // Include delta_0 in the lift and clear the transform accumulator
-            // once per group; only the full sum is inverse-transformed.
-            NttNlev::external_product_sum_to(
-                NttNlevIter::new(&self.public_table_selectors, selector_len),
-                group,
-                candidate,
-                basis,
-                modulus,
-                self.context.table(),
-                self.one_hot.external_product_workspace(),
-            );
-        }
+        NttNlev::external_product_sum_to(
+            NttNlevIter::new(selectors, selector_len),
+            table.polynomials(polynomial_ids),
+            self.current.as_mut_view(),
+            basis,
+            modulus,
+            self.context.table(),
+            self.one_hot.external_product_workspace(),
+        );
     }
 
-    /// Reduces an encrypted layer by `c_0 + sum_{k>0}(c_k-c_0) otimes NGSW[delta_k]`.
-    /// `layer` indexes only encrypted layers: zero uses input chunk d+1.
-    /// On entry, `input_candidate_count` live NTRUs occupy the candidate prefix,
-    /// and their count is divisible by M. Results overwrite that prefix; the
-    /// returned count is the number of live NTRUs for the next layer.
-    fn select_encrypted_table_layer(
-        &mut self,
-        layer: usize,
-        input_candidate_count: usize,
-    ) -> usize {
-        let layout = self.lookup_table.layout;
-        let n = layout.polynomial_length;
+    /// Chooses among already encrypted children using the nonzero NGSW branches.
+    /// Children occupy compiled, possibly noncontiguous slots. The kernel keeps
+    /// c_0 intact and performs one inverse transform after summing all products.
+    fn select_encrypted_table(&mut self, chunk_index: usize, children: &[TableNodeId]) {
+        let table = self.lookup_table;
+        let plan = &table.selection;
+        let n = table.layout.polynomial_length;
+        let selector_len = self.one_hot.ngsw_selector_len();
+        let nonzero_len = self.one_hot.ngsw_batch_len() - selector_len;
+        let selector_batches = table.selector_batches_for_chunk(chunk_index);
+        let selectors = &self.encrypted_table_selectors[selector_batches.ngsw_range(nonzero_len)];
+        let ciphertext =
+            |node_id| selected_ciphertext(plan.node(node_id), &self.selected_tables, n);
+        let basis = self.one_hot.parameters().output_basis();
         let modulus = self
             .context
             .parameters()
             .accumulator_ntru()
             .cipher_modulus();
-        let basis = self.one_hot.parameters().output_basis();
-        let selector_len = self.one_hot.ngsw_selector_len();
-        let nonzero_one_hot_len = (layout.radix - 1) * selector_len;
-
-        let selectors = &self.encrypted_table_selectors
-            [layer * nonzero_one_hot_len..(layer + 1) * nonzero_one_hot_len];
-        let group_len = layout.radix * n;
-        let output_candidate_count = input_candidate_count / layout.radix;
-
-        for output_index in 0..output_candidate_count {
-            let group_start = output_index * group_len;
-            let group = &self.candidates[group_start..group_start + group_len];
-
-            let (default, alternatives) = group.split_at(n);
-            let default = NtruCiphertext::new(default);
-
-            // CMux keeps c_0 unchanged, uses `current` for each difference,
-            // and sums the products in its workspace before one inverse transform.
-            NttNgswCiphertext::cmux_k_to(
-                NttNgswIter::new(selectors, selector_len),
-                default,
-                NtruIter::new(alternatives, n),
-                self.current.as_mut_view(),
-                basis,
-                modulus,
-                self.context.table(),
-                self.one_hot.external_product_workspace(),
-            );
-            // Read the entire group before compacting its result. The destination
-            // is within the consumed prefix, before every unread input group.
-            self.candidates[output_index * n..(output_index + 1) * n]
-                .copy_from_slice(self.current.as_ref());
-        }
-        output_candidate_count
+        NttNgswCiphertext::cmux_k_to(
+            NttNgswIter::new(selectors, selector_len),
+            ciphertext(children[0]),
+            children[1..].iter().map(|&node_id| ciphertext(node_id)),
+            self.current.as_mut_view(),
+            basis,
+            modulus,
+            self.context.table(),
+            self.one_hot.external_product_workspace(),
+        );
     }
 }
 

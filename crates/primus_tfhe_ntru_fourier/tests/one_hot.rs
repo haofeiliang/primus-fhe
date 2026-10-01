@@ -95,6 +95,8 @@ fn selectors<Table: FftTable>(distr: SecretKeyDistr) {
     let mut nlev_only = nlev.clone();
     let mut ngsw_only = ngsw.clone();
     let mut nonzero_ngsw = evaluator.allocate_nonzero_ngsw_output();
+    let mut joint_nonzero_ngsw = nonzero_ngsw.clone();
+    let mut joint_nlev = nlev.clone();
     let selector_len = L * (N / 2);
     assert_eq!(evaluator.ngsw_selector_len(), selector_len);
     assert_eq!(evaluator.ngsw_batch_len(), M * selector_len);
@@ -130,6 +132,11 @@ fn selectors<Table: FftTable>(distr: SecretKeyDistr) {
             evaluator.one_hot_nlev_to(&input, &mut nlev_only);
             evaluator.one_hot_ngsw_to(&input, &mut ngsw_only);
             evaluator.one_hot_nonzero_ngsw_to(&input, &mut nonzero_ngsw);
+            evaluator.one_hot_nlev_and_nonzero_ngsw_to(
+                &input,
+                &mut joint_nlev,
+                &mut joint_nonzero_ngsw,
+            );
         });
         assert_eq!(allocation.count, 0);
         assert_eq!(nlev, nlev_only);
@@ -137,6 +144,9 @@ fn selectors<Table: FftTable>(distr: SecretKeyDistr) {
         // Compact slot r - 1 must preserve the full-mode selector r, including
         // the all-zero target bits for message 0 and repeated workspace reuse.
         assert_eq!(nonzero_ngsw, ngsw[selector_len..]);
+        // Joint generation reuses projections, preserving both representations.
+        assert_eq!(joint_nlev, nlev);
+        assert_eq!(joint_nonzero_ngsw, nonzero_ngsw);
         assert_eq!(
             context
                 .decryptor(&client)
@@ -217,22 +227,32 @@ fn selectors<Table: FftTable>(distr: SecretKeyDistr) {
     let input = encryptor.encrypt_padded(1u64, &mut rng).unwrap();
     let invalid = primus_tfhe::LweCiphertext::zero(3);
     let nlev_len = nlev.len();
-    let ngsw_len = ngsw.len();
-    for case in 0..3 {
-        nlev.fill(7);
-        ngsw.fill(Complex64::new(7.0, 0.0));
-        assert!(
-            catch_unwind(AssertUnwindSafe(|| {
-                evaluator.one_hot_to(
-                    if case == 0 { &invalid } else { &input },
-                    &mut nlev[..if case == 1 { nlev_len - 1 } else { nlev_len }],
-                    &mut ngsw[..if case == 2 { ngsw_len - 1 } else { ngsw_len }],
-                );
-            }))
-            .is_err()
-        );
-        assert!(nlev.iter().all(|&v| v == 7));
-        assert!(ngsw.iter().all(|&v| v == Complex64::new(7.0, 0.0)));
+    // Both joint layouts reject bad shapes before touching either output.
+    for compact in [false, true] {
+        let ngsw_len = if compact {
+            nonzero_ngsw.len()
+        } else {
+            ngsw.len()
+        };
+        for case in 0..3 {
+            nlev.fill(7);
+            ngsw.fill(Complex64::new(7.0, 0.0));
+            assert!(
+                catch_unwind(AssertUnwindSafe(|| {
+                    let input = if case == 0 { &invalid } else { &input };
+                    let nlev_output = &mut nlev[..if case == 1 { nlev_len - 1 } else { nlev_len }];
+                    let ngsw_output = &mut ngsw[..if case == 2 { ngsw_len - 1 } else { ngsw_len }];
+                    if compact {
+                        evaluator.one_hot_nlev_and_nonzero_ngsw_to(input, nlev_output, ngsw_output);
+                    } else {
+                        evaluator.one_hot_to(input, nlev_output, ngsw_output);
+                    }
+                }))
+                .is_err()
+            );
+            assert!(nlev.iter().all(|&v| v == 7));
+            assert!(ngsw.iter().all(|&v| v == Complex64::new(7.0, 0.0)));
+        }
     }
     // Compact mode validates its own exact shape before writing. A full batch
     // is oversized here; accepting it would silently change the slot mapping.

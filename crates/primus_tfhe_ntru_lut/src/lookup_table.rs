@@ -5,6 +5,9 @@ use primus_tfhe::LweCiphertext;
 use primus_tfhe_ntru::{OneHotBootstrapError, TfheParameters};
 
 mod compile;
+pub(crate) mod selection;
+
+use selection::SelectionPlan;
 
 /// Chunk counts and the split between table selection and coefficient selection.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -52,6 +55,20 @@ pub enum LookupTableError {
     /// The context/server material cannot provide the required one-hot CBS.
     #[error(transparent)]
     OneHot(#[from] OneHotBootstrapError),
+}
+
+/// Stable index of one full polynomial in this table's append-only pool.
+/// Logical table prefixes and selection nodes use separate numbering domains.
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
+#[repr(transparent)]
+pub(crate) struct PolynomialId(usize);
+
+impl PolynomialId {
+    #[must_use]
+    fn coefficient_range(self, polynomial_length: usize) -> std::ops::Range<usize> {
+        let first = self.0 * polynomial_length;
+        first..first + polynomial_length
+    }
 }
 
 /// Validated logical geometry, independent of polynomial sharing or selection pruning.
@@ -125,12 +142,6 @@ impl Layout {
         self.config.input_chunk_count - self.config.coefficient_chunk_count
     }
 
-    /// Number P/M of ciphertext candidates after the first public selection layer.
-    /// Returns zero when c=d; selection pruning does not change this logical count.
-    pub fn candidate_count(self) -> usize {
-        self.polynomials_per_output / self.radix
-    }
-
     /// Checks all chunk counts and LWE dimensions before evaluation writes any data.
     /// Panics on a shape mismatch; key identity, encoding and noise are not checked here.
     pub fn check_io<T: FheUint>(
@@ -149,12 +160,13 @@ impl Layout {
             self.config.output_chunk_count,
             "lookup output chunk count mismatch"
         );
+        let len = dimension + 1;
         assert!(
-            input.iter().all(|c| c.dimension() == dimension),
+            input.iter().all(|c| c.lwe_len() == len),
             "lookup input LWE dimension mismatch"
         );
         assert!(
-            output.iter().all(|c| c.dimension() == dimension),
+            output.iter().all(|c| c.lwe_len() == len),
             "lookup output LWE dimension mismatch"
         );
     }
@@ -178,6 +190,8 @@ pub(crate) fn checked_allocation_len<T>(factors: &[usize]) -> Result<usize, Look
 /// z for output chunk j. Each polynomial has N coefficients; its unused
 /// coefficients K..N are zero. Identical polynomials share physical storage;
 /// logical `(output chunk, table prefix)` indices resolve through [`Self::polynomial`].
+/// Equal branches are collapsed and identical ordered choices share computation.
+/// Chunk identity is part of each choice; shared ciphertext errors are correlated.
 /// All exponents are nonnegative.
 /// The evaluator selects polynomial p, rotates by X^(-z), then returns its
 /// constant coefficient at q under the external LWE secret.
@@ -188,19 +202,10 @@ pub(crate) fn checked_allocation_len<T>(factors: &[usize]) -> Result<usize, Look
 pub struct HighPrecisionLookupTable<T: FheUint> {
     pub(crate) layout: Layout,
     coefficients: Box<[T]>,
-    outputs: Box<[OutputTable]>,
+    pub(crate) selection: SelectionPlan,
     plaintext_modulus: T,
     input_modulus: Option<T>,
     ring_modulus: Option<T>,
-}
-
-/// One output either ignores all high chunks or selects among their prefixes.
-/// Direct still needs a BR-basis lift and every low-chunk rotation.
-enum OutputTable {
-    /// One physical polynomial ID shared by every logical prefix of this output.
-    Direct(usize),
-    /// Exactly P physical IDs in ascending prefix order; some may still be equal.
-    Select(Box<[usize]>),
 }
 
 impl<T: FheUint> HighPrecisionLookupTable<T> {
@@ -252,7 +257,9 @@ impl<T: FheUint> HighPrecisionLookupTable<T> {
         self.layout.input_value_count
     }
 
-    /// Returns the logical number of public polynomials per output chunk, before deduplication.
+    /// Returns the logical polynomial count per output chunk, P=M^(c-d).
+    /// This equals the number of high-chunk value combinations; shared storage
+    /// and pruned choices do not change this count.
     #[must_use]
     pub fn polynomials_per_output(&self) -> usize {
         self.layout.polynomials_per_output
@@ -286,50 +293,37 @@ impl<T: FheUint> HighPrecisionLookupTable<T> {
             table_prefix < self.polynomials_per_output(),
             "lookup table prefix out of range"
         );
-        let id = match &self.outputs[output_chunk] {
-            OutputTable::Direct(id) => *id,
-            OutputTable::Select(ids) => ids[table_prefix],
-        };
-        self.polynomial_by_id(id)
+        let polynomial_id =
+            self.selection
+                .resolve_polynomial_id(self.layout, output_chunk, table_prefix);
+        self.polynomial_by_id(polynomial_id)
     }
 
     /// Borrows all N coefficients for a physical ID produced by the compiler.
     /// Callers use retained pool IDs, not logical table-prefix indices.
-    fn polynomial_by_id(&self, id: usize) -> Polynomial<&[T]> {
-        let n = self.layout.polynomial_length;
-        Polynomial::new(&self.coefficients[id * n..(id + 1) * n])
+    pub(crate) fn polynomial_by_id(&self, polynomial_id: PolynomialId) -> Polynomial<&[T]> {
+        Polynomial::new(
+            &self.coefficients[polynomial_id.coefficient_range(self.layout.polynomial_length)],
+        )
     }
 
-    /// Groups public operands by the lowest unresolved high chunk, in prefix order.
-    /// Each group has M polynomial views; direct outputs have no selection groups.
-    /// IDs and physical pool layout stay inside the table, with no copying or allocation.
-    pub(crate) fn polynomial_groups(
+    /// Converts a compiled global input-chunk index to its selector batches.
+    /// Low chunks belong to rotation controls and never appear in table choices.
+    pub(crate) fn selector_batches_for_chunk(
         &self,
-        output: usize,
-    ) -> impl ExactSizeIterator<Item = impl ExactSizeIterator<Item = Polynomial<&[T]>>> {
-        let ids = match &self.outputs[output] {
-            OutputTable::Direct(_) => &[][..],
-            OutputTable::Select(ids) => ids.as_ref(),
-        };
-        ids.chunks_exact(self.layout.radix)
-            .map(|group| group.iter().map(|&id| self.polynomial_by_id(id)))
+        chunk_index: usize,
+    ) -> selection::SelectorBatches {
+        self.selection.selectors[chunk_index - self.config().coefficient_chunk_count]
     }
 
-    /// Equal prefixes bypass the entire selection tree, but still require lifting
-    /// and low-chunk rotations. This also covers the single-prefix case h=0.
-    pub(crate) fn direct_polynomial(&self, output: usize) -> Option<Polynomial<&[T]>> {
-        match self.outputs[output] {
-            OutputTable::Direct(id) => Some(self.polynomial_by_id(id)),
-            OutputTable::Select(_) => None,
-        }
-    }
-
-    /// Selectors are shared by all outputs: one unresolved output keeps all high
-    /// chunks active. No local subtree pruning is implied by deduplication.
-    pub(crate) fn needs_table_selection(&self) -> bool {
-        self.outputs
+    /// Borrows ordered public branches from compiled physical IDs, without copying.
+    pub(crate) fn polynomials<'a>(
+        &'a self,
+        polynomial_ids: &'a [PolynomialId],
+    ) -> impl ExactSizeIterator<Item = Polynomial<&'a [T]>> {
+        polynomial_ids
             .iter()
-            .any(|output| matches!(output, OutputTable::Select(_)))
+            .map(|&polynomial_id| self.polynomial_by_id(polynomial_id))
     }
 
     /// Checks N, t, q and Q; key identity and noise margins are not table properties.

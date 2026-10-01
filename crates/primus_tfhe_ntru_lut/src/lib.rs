@@ -22,6 +22,7 @@
 
 #![deny(missing_docs)]
 
+mod evaluation;
 mod fourier;
 mod lookup_table;
 mod ntt;

@@ -58,7 +58,7 @@ Let `c=input_chunk_count`, `d=coefficient_chunk_count` and `o=output_chunk_count
 | `chunk_bits()` = tau | Common bit width of each input/output chunk |
 | `input_value_count()` = M^c | Number of possible complete input values |
 | `entries_per_polynomial()` = K = M^d | Number of LUT entries occupying coefficients in each polynomial |
-| `polynomials_per_output()` = P = M^(c-d) | Logical polynomial count for each output chunk |
+| `polynomials_per_output()` = P = M^(c-d) | Logical polynomial count per output chunk, before storage sharing |
 | `unique_polynomial_count()` = U | Physically stored polynomials, shared across outputs |
 | N | Allocated coefficient count of every polynomial, including zero padding |
 
@@ -66,7 +66,7 @@ Split an input as `x=p*K+z`. For output chunk j, polynomial p has coefficient `E
 
 For example, `M=4, c=3, d=1, N=64` gives 64 inputs, 16 polynomials per output and 4 entries per polynomial. Polynomial 0 stores inputs 0..3, polynomial 1 stores inputs 4..7, and so on. Input 6 selects polynomial 1, coefficient 2. Each polynomial's remaining 60 coefficients are zero.
 
-`polynomial(j,p)` returns the N coefficients for logical output j and prefix p. Identical encoded polynomials share storage across all outputs; `unique_polynomial_count()` reports their physical count. Storage uses U*N coefficients plus prefix metadata; outputs independent of the high chunks need only one polynomial reference. Physical pool order and indices are internal details.
+`polynomial(j,p)` returns the N coefficients for logical output j and prefix p. Identical encoded polynomials share storage across all outputs; `unique_polynomial_count()` reports their physical count. Storage uses U*N coefficients plus a compiled selection plan. Equal branches are removed; identical ordered choices for the same input chunk share a node across outputs. Physical pool order and node indices are internal details.
 
 The input value count itself must fit in `usize`, requiring `tau*c < usize::BITS`; this is an indexing limit of full enumeration, not a paper constraint. Construction still checks worst-case `o*P*N` storage and index lengths before invoking the callback, but allocates the pool incrementally. These checks do not guarantee enough physical memory for an exponential table.
 
@@ -76,7 +76,9 @@ For fixed N, M and c, start with `d=min(c, floor(log2(N)/tau))`, making M^d as c
 
 ## Evaluation and workspace
 
-Each call performs one-hot CBS for the low chunks and, if any output needs table selection, for all high chunks. If every prefix of an output refers to the same polynomial, that output uses the server initializer to lift it directly, followed by the usual low-chunk rotations. Only when all outputs qualify are high-chunk CBS and table-selection buffers omitted. Mixed outputs keep all required selectors. High chunks select the LUT polynomial; low chunks locate its coefficient. All outputs reuse these selectors and rotation controls and return LWEs under the independent external secret in output-chunk order. Selection, rotation and return formulas live in the [implementation notes](IMPLEMENTATION.md#stage-and-buffer-layout).
+Each call performs one-hot CBS for the low chunks and only for high chunks used by the compiled selection plan. Equal branches omit a choice, and repeated subtrees are computed once. A public choice uses full NLEV selectors and lifts the polynomial; an encrypted choice uses nonzero NGSW selectors. A chunk requiring both representations shares its BR and projections. An output independent of all high chunks uses the initializer's BR-basis lift. Each distinct root still requires low-chunk rotations and return; repeated roots copy the earlier completed output because these subsequent operations are identical in one bound evaluator.
+
+Shared nodes reuse the same ciphertext and error across consumers; output errors are correlated, and identical roots reuse the complete output ciphertext when subsequent operations match. Pruning preserves the cleartext mapping but changes the error path. Full selection, rotation and return formulas are in the [implementation notes](IMPLEMENTATION.md#stage-and-buffer-layout).
 
 Each selection group accumulates products in the transform domain before one inverse transform. Fourier rounding can therefore differ from evaluating and converting each product separately; the encoded function is unchanged, and results still require an adequate decoding margin.
 
@@ -104,3 +106,5 @@ cargo bench -p primus_tfhe_ntru_lut --bench pipeline -- '/evaluate$'
 Creation includes allocation, coefficient filling and destruction. Evaluation excludes key generation, public LUT creation, input encryption and workspace allocation. See the [benchmark fixture](IMPLEMENTATION.md#benchmark-fixture) for workloads and resource measurements.
 
 Original IDs use the polynomial example; IDs containing `/dense_seed42/` use a fixed dense mapping with the same parameters. Filter by `dense_seed42` to run only that workload, or by `c8_d5_o8/evaluate$` to evaluate only the polynomial example.
+
+The `/shared_middle_chunk/` diagnostic mapping sets every output digit to `(m_0+m_6) mod 4`. It isolates a public choice moved past chunk 5, omission of high-chunk CBS for chunks 5 and 7, and reuse of the identical final outputs. It deliberately differs from a full-width arithmetic function.

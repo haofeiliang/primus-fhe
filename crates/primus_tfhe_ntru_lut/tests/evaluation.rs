@@ -80,6 +80,8 @@ enum Mapping {
     Repeated,
     Mixed,
     Distinct,
+    Shared,
+    ReturnTile,
 }
 
 impl Mapping {
@@ -87,6 +89,11 @@ impl Mapping {
     fn digit(self, x: usize, output: usize, radix: usize) -> u64 {
         match self {
             Self::Carries => digit(x, output, radix),
+            // Nine distinct truth tables retain a complete eight-LWE tile
+            // and a one-LWE tail even when equal output roots are deduplicated.
+            Self::ReturnTile => {
+                ([0x00u16, 0xff, 0x55, 0xaa, 0x33, 0xcc, 0x0f, 0xf0, 0x81][output] >> x & 1) as u64
+            }
             Self::Constant => output as u64 % radix as u64,
             // Both outputs ignore the high chunks; the first still needs rotation.
             Self::Repeated => {
@@ -105,6 +112,29 @@ impl Mapping {
             }
             // For M=2,d=1,c=3, the two coefficients spell the two-bit prefix.
             Self::Distinct => ((x / 2) >> (x % 2) & 1) as u64,
+            // Radix two, c=4,d=1: shared subtrees, equal roots and skipped
+            // middle chunks. Chunk 2 needs both public and encrypted choices.
+            // Return a parent first: its later child outputs have no new nodes,
+            // but still require their own rotations and LWE returns.
+            Self::Shared => {
+                let low = x & 1;
+                let a = x >> 1 & 1;
+                let b = x >> 2 & 1;
+                let c = x >> 3 & 1;
+                (low ^ match output {
+                    0 | 4 => {
+                        if c == 0 {
+                            a
+                        } else {
+                            b
+                        }
+                    }
+                    1 => a,
+                    2 => b,
+                    3 => a & b,
+                    _ => a ^ c,
+                }) as u64
+            }
         }
     }
 }
@@ -129,7 +159,11 @@ fn cases(radix: usize) -> Vec<(LookupTableConfig, Mapping)> {
                         output_chunk_count,
                         coefficient_chunk_count,
                     },
-                    Mapping::Carries,
+                    if radix == 2 && output_chunk_count == 9 {
+                        Mapping::ReturnTile
+                    } else {
+                        Mapping::Carries
+                    },
                 )
             },
         )
@@ -150,6 +184,16 @@ fn cases(radix: usize) -> Vec<(LookupTableConfig, Mapping)> {
                 mapping,
             ));
         }
+    }
+    if radix == 2 {
+        cases.push((
+            LookupTableConfig {
+                input_chunk_count: 4,
+                output_chunk_count: 6,
+                coefficient_chunk_count: 1,
+            },
+            Mapping::Shared,
+        ));
     }
     cases
 }
@@ -211,7 +255,7 @@ fn exercise<T: FheUint>(
     let bits = table.chunk_bits();
     let radix = 1 << bits;
     let config = table.config();
-    // Descending inputs require overwriting selectors, candidates and outputs.
+    // Descending inputs require overwriting selectors, live result slots and outputs.
     for x in inputs(radix, config) {
         let input: Vec<_> = (0..config.input_chunk_count)
             .map(|i| encrypt(T::as_from((x >> (bits * i)) & (radix - 1))))
@@ -221,6 +265,10 @@ fn exercise<T: FheUint>(
             allocation.count, 0,
             "{case}, radix={radix}, config={config:?}"
         );
+        if matches!(mapping, Mapping::Shared) {
+            // Equal roots reuse the completed LWE, including the same noise.
+            assert_eq!(output[0], output[4]);
+        }
         for (i, result) in output.iter().enumerate() {
             assert_phase(
                 decrypt_phase(result),

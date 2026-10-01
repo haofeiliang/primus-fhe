@@ -13,9 +13,9 @@ use primus_tfhe_ntru_lut::{FourierLookupTableEvaluator, HighPrecisionLookupTable
 use primus_tfhe_test_support::parameters::ntru;
 use rand::{SeedableRng, rngs::StdRng};
 
-// Registers structured and dense LUT workloads for this backend and word width.
+// Registers repeated, dense and cross-output shared LUT workloads for this backend and word width.
 pub fn benchmark<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str) {
-    for workload in [Workload::Polynomial, Workload::Dense] {
+    for workload in [Workload::Polynomial, Workload::Dense, Workload::Shared] {
         benchmark_workload::<T, Table>(c, backend, workload);
     }
 }

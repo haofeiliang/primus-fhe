@@ -211,13 +211,30 @@ where
         self.evaluate(input, 0, Some(nlev_output), Some(ngsw_output));
     }
 
-    /// Evaluates either the complete selector set (first_selector=0) or its
-    /// nonzero branches (first_selector=1). Output slots start at zero in both
-    /// modes; extraction rotations always use the actual branch index r.
+    /// Writes all M coefficient NLEVs and only the r=1..M-1 transformed NGSWs.
+    /// Shares one blind rotation and each coefficient projection; branch zero
+    /// is projected for NLEV but never scheme-switched. Buffer layouts and
+    /// correctness requirements are those of [`Self::one_hot_nlev_to`] and
+    /// [`Self::one_hot_nonzero_ngsw_to`].
+    ///
+    /// # Panics
+    /// Rejects input dimension and exact output lengths before any writes.
+    pub fn one_hot_nlev_and_nonzero_ngsw_to(
+        &mut self,
+        input: &LweCiphertext<T>,
+        nlev_output: &mut [T],
+        ngsw_output: &mut [T],
+    ) {
+        self.evaluate(input, 1, Some(nlev_output), Some(ngsw_output));
+    }
+
+    /// NLEV, when requested, always contains every branch. NGSW may omit zero;
+    /// its compact slot is r-first_ngsw_selector. Project each needed branch
+    /// once and retain no extra full NLEV batch for NGSW-only calls.
     fn evaluate(
         &mut self,
         input: &LweCiphertext<T>,
-        first_selector: usize,
+        first_ngsw_selector: usize,
         mut nlev_output: Option<&mut [T]>,
         mut ngsw_output: Option<&mut [T]>,
     ) {
@@ -231,7 +248,7 @@ where
 
         let nlev_len = parameters.output_nlev_len();
         let ngsw_len = self.ngsw_selector_len();
-        let selector_count = self.lookup_table.selector_count() - first_selector;
+        let selector_count = self.lookup_table.selector_count();
         if let Some(output) = &nlev_output {
             assert_eq!(
                 output.len(),
@@ -242,7 +259,7 @@ where
         if let Some(output) = &ngsw_output {
             assert_eq!(
                 output.len(),
-                selector_count * ngsw_len,
+                (selector_count - first_ngsw_selector) * ngsw_len,
                 "one-hot NGSW output length mismatch"
             );
         }
@@ -257,11 +274,13 @@ where
             self.pbs.context.table(),
         );
 
-        // Each requested selector is extracted independently from the same BR.
-        // Skipping branch zero therefore skips its projection and conversion too.
-        for (output_index, selector) in
-            (first_selector..self.lookup_table.selector_count()).enumerate()
-        {
+        // Without NLEV, omit branch zero before projection as well as conversion.
+        let first_selector = if nlev_output.is_some() {
+            0
+        } else {
+            first_ngsw_selector
+        };
+        for selector in first_selector..selector_count {
             // Negative BR places selector r at -r*S+l, including its negacyclic
             // sign. Rotate by +r*S first; prefix projection then shifts by -l.
             // General BR tails are nonzero: prefix expansion is not valid here.
@@ -271,7 +290,7 @@ where
                 tfhe.accumulator_ntru().cipher_modulus(),
             );
             let projected = match nlev_output.as_deref_mut() {
-                Some(output) => &mut output[output_index * nlev_len..(output_index + 1) * nlev_len],
+                Some(output) => &mut output[selector * nlev_len..(selector + 1) * nlev_len],
                 None => self.projected.as_mut(),
             };
             self.circuit_key
@@ -285,7 +304,11 @@ where
                     &mut self.trace_scratch,
                     self.pbs.blind_rotation.rotation.external_product(),
                 );
-            if let Some(output) = ngsw_output.as_deref_mut() {
+            if let Some(output) = ngsw_output
+                .as_deref_mut()
+                .filter(|_| selector >= first_ngsw_selector)
+            {
+                let output_index = selector - first_ngsw_selector;
                 self.circuit_key.scheme_switch_key().apply_to(
                     &NlevCiphertext::new(&*projected),
                     &mut NttNgswCiphertext::new(

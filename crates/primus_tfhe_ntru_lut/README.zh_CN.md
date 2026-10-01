@@ -58,7 +58,7 @@ cargo run --release -p primus_tfhe_ntru_lut --example fourier_lookup
 | `chunk_bits()` = tau | 每个输入/输出 chunk 的统一位宽 |
 | `input_value_count()` = M^c | 完整输入可能的取值总数 |
 | `entries_per_polynomial()` = K = M^d | 每个多项式中用于存放 LUT 表项的系数个数 |
-| `polynomials_per_output()` = P = M^(c-d) | 每个输出 chunk 的逻辑多项式数量 |
+| `polynomials_per_output()` = P = M^(c-d) | 每个输出 chunk 的逻辑多项式数量，不受存储去重影响 |
 | `unique_polynomial_count()` = U | 跨输出共享的实际存储多项式数量 |
 | N | 每个多项式实际分配的系数个数，包括补零区域 |
 
@@ -66,7 +66,7 @@ cargo run --release -p primus_tfhe_ntru_lut --example fourier_lookup
 
 例如 `M=4, c=3, d=1, N=64` 时，有 64 种输入，每个输出对应 16 个多项式，每个多项式放 4 个表项。多项式 0 存放输入 0..3，多项式 1 存放输入 4..7，以此类推。输入 6 选择多项式 1 的系数 2。每个多项式其余 60 个系数均为零。
 
-`polynomial(j,p)` 返回逻辑输出 j、前缀 p 对应的 N 个系数。相同编码多项式跨输出共享存储，`unique_polynomial_count()` 返回其实际数量。存储包含 U*N 个系数和前缀元数据；不依赖高位 chunks 的输出只需一个多项式引用。物理池顺序和索引属于内部实现。
+`polynomial(j,p)` 返回逻辑输出 j、前缀 p 对应的 N 个系数。相同编码多项式跨输出共享存储，`unique_polynomial_count()` 返回其实际数量。存储包含 U*N 个系数与编译后的选择计划。全等分支删除选择；相同输入 chunk 的相同有序选择可跨输出共享节点。物理池顺序和节点索引属于内部实现。
 
 输入取值总数本身必须能用 `usize` 表示，即 `tau*c < usize::BITS`；这是完整枚举的索引限制，并非论文约束。调用回调前仍检查最坏情况 `o*P*N` 存储及索引长度，但多项式池按需增长。这些检查不保证指数级表一定有足够物理内存可分配。
 
@@ -76,7 +76,9 @@ cargo run --release -p primus_tfhe_ntru_lut --example fourier_lookup
 
 ## 求值与工作区
 
-每次调用对低位 chunks 执行 one-hot CBS；只要有一个输出需要选表，仍为所有高位 chunks 生成 selectors。若某个输出的所有前缀都对应同一多项式，就通过服务端 initializer 直接提升，再执行原有的低位旋转。仅当所有输出都满足该条件时，才省去高位 CBS 和选表缓冲；混合输出保留所需的全部 selectors。高 chunks 选择 LUT 多项式，低 chunks 在所选多项式内定位系数。所有输出复用这些 selectors 和旋转控制，按输出 chunk 顺序返回独立外部秘密下的 LWE。完整选择、旋转及返回公式见[实现说明](IMPLEMENTATION.md#stage-and-buffer-layout)。
+每次调用对低位 chunks 及编译计划实际使用的高位 chunks 执行 one-hot CBS。全等分支省去选择，重复子树只计算一次。公开选择用完整 NLEV selectors 同时提升多项式，加密选择用非零 NGSW selectors；同一 chunk 需要两种表示时共享 BR 与投影。完全不依赖高位的输出用 initializer 的 BR basis 直接提升。每个不同的根仍需低位旋转与返回；重复根在同一 evaluator 内的后续操作完全相同，直接复制已完成的输出。
+
+共享节点复用同一密文及其误差，输出误差存在相关性；根相同且后续操作相同时，复用完整输出密文。剪枝保持明文映射，但改变误差传播路径。完整选择、旋转及返回公式见[实现说明](IMPLEMENTATION.md#stage-and-buffer-layout)。
 
 每组选表在变换域累加所有乘积后只逆变换一次。Fourier 的舍入结果可能与逐个乘积分别转换后求和不同；编码函数保持不变，结果仍需留出足够的解码余量。
 
@@ -104,3 +106,5 @@ cargo bench -p primus_tfhe_ntru_lut --bench pipeline -- '/evaluate$'
 创建计时包含分配、系数填充和释放；求值计时不包含密钥生成、公开 LUT 创建、输入加密和工作区分配。工作负载与资源统计见[基准说明](IMPLEMENTATION.md#benchmark-fixture)。
 
 原有 ID 使用多项式示例；包含 `/dense_seed42/` 的 ID 使用相同参数下的固定稠密映射。用 `dense_seed42` 过滤可只运行该负载，用 `c8_d5_o8/evaluate$` 可只测多项式示例的同态求值。
+
+`/shared_middle_chunk/` 诊断映射把每个输出 digit 都设为 `(m_0+m_6) mod 4`，用于隔离越过 chunk 5 的公开选择、省略 chunks 5 和 7 的高位 CBS，以及相同最终输出的复用。它是专门的共享负载，与完整位宽的算术函数不同。

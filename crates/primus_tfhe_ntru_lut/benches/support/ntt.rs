@@ -14,9 +14,9 @@ use primus_tfhe_test_support::parameters::ntru;
 use primus_tfhe_test_support::parameters::ntt_circuit_modulus;
 use rand::{SeedableRng, rngs::StdRng};
 
-// Registers structured and dense LUT workloads for this backend and word width.
+// Registers repeated, dense and cross-output shared LUT workloads for this backend and word width.
 pub fn benchmark<T: FheUint, Table: MonomialNttTable<ValueT = T>>(c: &mut Criterion) {
-    for workload in [Workload::Polynomial, Workload::Dense] {
+    for workload in [Workload::Polynomial, Workload::Dense, Workload::Shared] {
         benchmark_workload::<T, Table>(c, workload);
     }
 }

@@ -38,8 +38,9 @@ The lookup pipeline now uses public APIs instead of production-source includes.
 | `primus_tfhe_ntru_ntt/sparse_pbs` | 12 | 8 |
 
 This table and the full-suite smoke timings below describe the cleanup snapshot.
-The lookup pipeline subsequently added ten `dense_seed42` IDs, bringing that
-target to 20 IDs; the historical 382-case smoke does not cover those additions.
+The lookup pipeline subsequently added ten `dense_seed42` and ten
+`shared_middle_chunk` IDs, bringing that target to 30 IDs. The historical
+382-case smoke does not cover those additions or later algorithm changes.
 Their mapping and timing boundaries are documented in the
 [lookup fixture](../../crates/primus_tfhe_ntru_lut/IMPLEMENTATION.md#benchmark-fixture).
 
