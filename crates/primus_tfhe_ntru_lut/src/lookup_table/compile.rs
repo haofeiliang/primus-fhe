@@ -46,6 +46,15 @@ impl<T: FheUint> HighPrecisionLookupTable<T> {
             parameters.accumulator_ntru().cipher_modulus(),
         );
         let radix = parameters.plain_modulus_value() >> 1u32;
+        let chunk_encodings = precompute_chunk_encodings(&codec, layout);
+        // Both paths receive only validated digits from the filling helper.
+        let encode_chunk = |chunk_value: T| match &chunk_encodings {
+            Some(encodings) => {
+                let index: usize = chunk_value.as_into();
+                encodings[index]
+            }
+            None => codec.encode_value(chunk_value, PlaintextEmbedding::Unsigned),
+        };
         let mut pool = PolynomialPool::new(layout.polynomial_length);
         let mut polynomial = vec![T::ZERO; layout.polynomial_length];
         let mut selection = SelectionCompiler::new(layout);
@@ -58,7 +67,7 @@ impl<T: FheUint> HighPrecisionLookupTable<T> {
                     output_chunk,
                     radix,
                     &mut function,
-                    &codec,
+                    &encode_chunk,
                     &mut polynomial[..layout.entries_per_polynomial],
                 )?;
                 polynomial_ids.push(pool.get_or_insert_polynomial(&polynomial));
@@ -76,14 +85,34 @@ impl<T: FheUint> HighPrecisionLookupTable<T> {
     }
 }
 
+/// Prepares all M legal unsigned encodings only when they can be reused.
+/// The cap bounds temporary storage to 2 KiB at u64; large radices and a single
+/// M-entry output keep direct encoding. Nothing is retained by the compiled LUT.
+fn precompute_chunk_encodings<T: FheUint, M: RingContext<T>>(
+    codec: &RoundedCodec<T, M>,
+    layout: Layout,
+) -> Option<Vec<T>> {
+    const MAX_PRECOMPUTED_RADIX: usize = 256;
+    if layout.radix > MAX_PRECOMPUTED_RADIX
+        || (layout.input_value_count == layout.radix && layout.config.output_chunk_count == 1)
+    {
+        return None;
+    }
+    // Layout validation proves every host index 0..M fits T. Batch encoding
+    // selects the rounded modulus-switch kernel once for the entire small table.
+    let mut encodings: Vec<_> = (0..layout.radix).map(T::as_from).collect();
+    codec.encode_slice_assign(&mut encodings, PlaintextEmbedding::Unsigned);
+    Some(encodings)
+}
+
 /// Fills the K meaningful coefficients in ascending input order. An invalid digit
 /// stops at its original (input, output) pair; the caller owns the zero-padded tail.
-fn encode_output_chunk_coefficients<T: FheUint, M: RingContext<T>>(
+fn encode_output_chunk_coefficients<T: FheUint>(
     first_input: usize,
     output_chunk: usize,
     radix: T,
     function: &mut impl FnMut(usize, usize) -> T,
-    codec: &RoundedCodec<T, M>,
+    encode_chunk: &impl Fn(T) -> T,
     coefficients: &mut [T],
 ) -> Result<(), LookupTableError> {
     for (offset, coefficient) in coefficients.iter_mut().enumerate() {
@@ -95,7 +124,9 @@ fn encode_output_chunk_coefficients<T: FheUint, M: RingContext<T>>(
                 output: output_chunk,
             });
         }
-        *coefficient = codec.encode_value(chunk_value, PlaintextEmbedding::Unsigned);
+        // Check before indexing the precomputed encodings. Since M fits usize,
+        // a valid chunk value also converts to its host index without truncation.
+        *coefficient = encode_chunk(chunk_value);
     }
     Ok(())
 }

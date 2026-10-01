@@ -11,6 +11,16 @@ zero-padded polynomials. Hashes narrow the search; complete coefficient equality
 establishes identity. Construction checks worst-case storage before callbacks;
 sharing never skips a callback or changes its error position.
 
+For radices up to 256, compilation precomputes the M unsigned rounded digit
+encodings with `RoundedCodec::encode_slice_assign`, then reuses them while
+filling coefficients. A single M-entry output keeps direct encoding because
+the preparation pass would be as large as the entire coefficient fill. Larger
+radices also keep direct encoding, bounding the temporary cache to 2 KiB at u64.
+Each callback result is checked against M before indexing the cache; callbacks
+still run once per logical pair, including repeated polynomials. The cache is
+construction scratch and is discarded with the codec, not retained by the LUT
+or its evaluators. Both paths use the same rounded encoding and zero padding.
+
 The table retains a flat boxed coefficient pool and a
 [`selection plan`](src/lookup_table/selection.rs). Its private
 [`graph compiler`](src/lookup_table/selection/compile.rs) groups M branches

@@ -93,11 +93,40 @@ fn geometry<M: RingContext<u64>>(modulus: M, q: u128) {
     }
 }
 
+// Covers every legal digit with direct encoding, the largest precomputed radix,
+// and the first radix above the temporary-cache cap. Check the zero tail too.
+fn chunk_encoding_boundaries<M: RingContext<u64>>(modulus: M, q: u128) {
+    for (radix, output_chunk_count) in [(4, 1), (256, 2), (512, 2)] {
+        let parameters = parameters(modulus, 2 * radix as u64);
+        let lut = HighPrecisionLookupTable::try_new(
+            &parameters,
+            LookupTableConfig {
+                input_chunk_count: 1,
+                output_chunk_count,
+                coefficient_chunk_count: 0,
+            },
+            |x, output| ((x + output) % radix) as u64,
+        )
+        .unwrap();
+        for output in 0..output_chunk_count {
+            for x in 0..radix {
+                let polynomial = lut.polynomial(output, x);
+                let digit = (x + output) % radix;
+                let expected = (q * digit as u128 + radix as u128) / (2 * radix as u128);
+                assert_eq!(polynomial.as_ref()[0], expected as u64);
+                assert!(polynomial.as_ref()[1..].iter().all(|&value| value == 0));
+            }
+        }
+    }
+}
+
 // Exercises prime and native moduli across every coefficient/table partition.
 #[test]
 fn table_partition_and_chunk_encoding_match_integer_oracle() {
     geometry(BarrettModulus::new(65_537), 65_537);
     geometry(NativeModulus::new(), 1u128 << 64);
+    chunk_encoding_boundaries(BarrettModulus::new(65_537), 65_537);
+    chunk_encoding_boundaries(NativeModulus::new(), 1u128 << 64);
 }
 
 // Invalid geometry must fail before callbacks; invalid digits report their exact pair.
@@ -135,18 +164,23 @@ fn compilation_rejects_invalid_domains_before_callbacks() {
         assert_eq!(result.err(), Some(expected));
     }
     let config = LookupTableConfig {
-        input_chunk_count: 1,
-        output_chunk_count: 1,
-        coefficient_chunk_count: 0,
+        input_chunk_count: 2,
+        output_chunk_count: 2,
+        coefficient_chunk_count: 1,
     };
-    let result = HighPrecisionLookupTable::try_new(&parameters, config, |x, _| x as u64 + 1);
+    let mut calls = Vec::new();
+    let result = HighPrecisionLookupTable::try_new(&parameters, config, |x, output| {
+        calls.push((x, output));
+        if (x, output) == (1, 1) { u64::MAX } else { 0 }
+    });
     assert_eq!(
         result.err(),
         Some(LookupTableError::OutputChunkOutOfRange {
             input: 1,
-            output: 0
+            output: 1
         })
     );
+    assert_eq!(calls, [(0, 0), (1, 0), (2, 0), (3, 0), (0, 1), (1, 1)]);
     for t in [2, 6] {
         let parameters = self::parameters(BarrettModulus::new(65_537), t);
         assert_eq!(
