@@ -9,6 +9,7 @@ use primus_tfhe::{
 use crate::{
     ServerKey, TfheContext,
     blind_rotation::{BlindRotationWorkspace, blind_rotate_lookup_table_to},
+    lwe_return::LweReturnEngine,
 };
 
 /// Allocation-free online evaluator for exact NTT NTRU programmable bootstrapping.
@@ -21,8 +22,7 @@ where
     pub(crate) context: &'a TfheContext<T, Table, LM>,
     pub(crate) server_key: &'a ServerKey<T>,
     pub(crate) blind_rotation: BlindRotationWorkspace<'a, T>,
-    return_workspace: primus_ntru::NtruLweKeySwitchingWorkspace<T>,
-    batch_return_workspace: primus_ntru::NtruLweKeySwitchingBatchWorkspace<T>,
+    pub(crate) lwe_return: LweReturnEngine<'a, T, LM>,
 }
 
 impl<'a, T, Table, LM> Evaluator<'a, T, Table, LM>
@@ -44,12 +44,10 @@ where
             return Err(TfheEvaluationError::IncompatibleServerKey);
         }
         Ok(Self {
-            batch_return_workspace: primus_ntru::NtruLweKeySwitchingBatchWorkspace::new(
+            lwe_return: LweReturnEngine::new(
+                server_key.key_switching_key(),
                 context.parameters().poly_length(),
-                context.parameters().external_lwe_dimension(),
-            ),
-            return_workspace: primus_ntru::NtruLweKeySwitchingWorkspace::new(
-                context.parameters().poly_length(),
+                context.parameters().external_lwe().cipher_modulus(),
             ),
             context,
             server_key,
@@ -92,6 +90,7 @@ where
         lookup_table: &LookupTable<T>,
         output: &mut LweCiphertext<T>,
     ) {
+        self.lwe_return.check_idle();
         let parameters = self.context.parameters();
         assert!(
             lookup_table.is_compatible(
@@ -159,6 +158,7 @@ where
         lookup_table: &InterleavedLookupTable<T>,
         outputs: &mut [LweCiphertext<T>],
     ) {
+        self.lwe_return.check_idle();
         let parameters = self.context.parameters();
         assert!(
             lookup_table.is_compatible(
@@ -217,65 +217,16 @@ where
         );
     }
 
-    /// Rescales Q to q, extracts one coefficient and switches f to external LWE s.
-    /// CBS consumes `current` directly and bypasses this return path.
+    /// CBS consumes `current` directly; ordinary PBS returns its phase coefficient.
     pub(crate) fn return_accumulator_at_to(&mut self, index: usize, output: &mut LweCiphertext<T>) {
-        self.server_key.key_switching_key().key_switch_at_to(
-            &self.blind_rotation.current,
-            index,
-            output,
-            self.context.parameters().external_lwe().cipher_modulus(),
-            &mut self.return_workspace,
-        );
+        self.lwe_return
+            .return_at_to(self.blind_rotation.current.as_view(), index, output);
     }
 
-    /// Returns the interleaved prefix of the current accumulator. Keep the scalar
-    /// path for one output; larger requests share conversion across all KS tiles.
+    /// Share Q→q across the interleaved prefix, keeping a scalar path for one output.
     fn return_accumulator_prefix_to(&mut self, outputs: &mut [LweCiphertext<T>]) {
-        if outputs.len() == 1 {
-            self.return_accumulator_at_to(0, &mut outputs[0]);
-        } else {
-            self.server_key.key_switching_key().key_switch_many_at_to(
-                &self.blind_rotation.current,
-                0..outputs.len(),
-                outputs,
-                self.context.parameters().external_lwe().cipher_modulus(),
-                &mut self.batch_return_workspace,
-            );
-        }
-    }
-
-    /// Maximum number of prepared samples retained before a streamed return.
-    #[must_use]
-    pub(crate) fn lwe_return_batch_capacity(&self) -> usize {
-        self.batch_return_workspace.batch_capacity()
-    }
-
-    /// Converts/extracts one coefficient of `current` into a return slot.
-    /// The accumulator must be in coefficient form under the bound ring secret;
-    /// after extraction the next factor may overwrite it without losing the sample.
-    pub(crate) fn prepare_accumulator_return_at(&mut self, index: usize, slot: usize) {
-        self.server_key
-            .key_switching_key()
-            .modulus_switch_extract_at_to(
-                self.blind_rotation.current.as_view(),
-                index,
-                self.batch_return_workspace.extracted_slot_mut(slot),
-                self.context.parameters().external_lwe().cipher_modulus(),
-            );
-    }
-
-    /// Returns exactly the prepared prefix `0..outputs.len()` under the external
-    /// LWE secret. Callers fill every consumed slot for this tile; this leaves the
-    /// samples intact and overwrites only outputs and the switched-output scratch.
-    pub(crate) fn return_lwe_batch_to(&mut self, outputs: &mut [LweCiphertext<T>]) {
-        self.server_key
-            .key_switching_key()
-            .key_switch_extracted_batch_to(
-                outputs,
-                self.context.parameters().external_lwe().cipher_modulus(),
-                &mut self.batch_return_workspace,
-            );
+        self.lwe_return
+            .return_prefix_to(self.blind_rotation.current.as_view(), outputs);
     }
 }
 

@@ -49,6 +49,7 @@ mod error;
 mod evaluator;
 pub mod factorized;
 pub mod key;
+mod lwe_return;
 pub mod sparse;
 
 pub use accumulator::AccumulatorClient;

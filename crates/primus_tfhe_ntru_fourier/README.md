@@ -85,16 +85,18 @@ See the [family one-hot contract](../primus_tfhe_ntru/README.md#one-hot-cbs) for
 
 ## High-precision lookup
 
-[primus_tfhe_ntru_lut](../primus_tfhe_ntru_lut/README.md) composes one-hot CBS with table selection, aggregated negative rotations and the independent LWE return. It supports uniform input/output chunk widths and independently chosen counts. For lower-level composition, `ServerKey::initializer()` exposes the classic NLEV[1] under the context's BR basis; `key_switching_key()` exposes the Q→q, f→s return key.
+[primus_tfhe_ntru_lut](../primus_tfhe_ntru_lut/README.md) composes one-hot CBS with table selection, aggregated negative rotations and the independent LWE return. It supports uniform input/output chunk widths and independently chosen counts. For lower-level composition, `server_key.classic_controls().unwrap().initializer()` exposes the classic NLEV[1] under the context's BR basis; `key_switching_key()` exposes the Q→q, f→s return key.
 
 A complete chunk-encryption and lookup workflow is in [fourier_lookup.rs](../primus_tfhe_ntru_lut/examples/fourier_lookup.rs).
 
-For custom composition, one-hot's `lwe_return_batch_capacity()`,
-`prepare_lwe_return_at()` and `return_lwe_batch_to()` reuse PBS's private return
-buffers with its bound key and modulus. Prepare every slot in `0..outputs.len()`
-before returning a batch; no filled-slot count is tracked. One-hot generation and
-external products preserve those slots, but complete the batch before borrowing
-ordinary PBS operations.
+For custom composition, start with `begin_lwe_return_batch()`, append successive
+samples with `append_lwe_return_at(input, index)`, then call
+`return_lwe_batch_to(outputs)`. The output count must equal the number appended,
+up to `lwe_return_batch_capacity()`. Each successful submission ends the batch;
+`discard_lwe_return_batch()` cancels it, and starting again discards its old prefix.
+One-hot generation and external products may run between appends. Ordinary PBS
+rejects an active batch; conversion with `into_bootstrapper()` discards it.
+The protocol reuses the bound key, modulus and buffers without allocation.
 
 ## Lower-level composition
 

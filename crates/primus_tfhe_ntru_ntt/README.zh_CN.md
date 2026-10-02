@@ -83,9 +83,13 @@ let mut evaluator = context.evaluator(&server)?;
 
 ## 高精度查表
 
-[primus_tfhe_ntru_lut](../primus_tfhe_ntru_lut/README.zh_CN.md) 组合 one-hot CBS、表选择、聚合负向旋转和独立 LWE 返回，支持统一输入/输出 chunk 位宽及独立数量。底层组合可通过 `ServerKey::initializer()` 取得 context 的 BR basis 下的 classic NLEV[1]，通过 `key_switching_key()` 取得 Q→q、f→s 返回密钥。
+[primus_tfhe_ntru_lut](../primus_tfhe_ntru_lut/README.zh_CN.md) 组合 one-hot CBS、表选择、聚合负向旋转和独立 LWE 返回，支持统一输入/输出 chunk 位宽及独立数量。底层组合可通过 `server_key.classic_controls().unwrap().initializer()` 取得 context 的 BR basis 下的 classic NLEV[1]，通过 `key_switching_key()` 取得 Q→q、f→s 返回密钥。
 
 完整 chunk 加密与查表工作流见 [ntt_lookup.rs](../primus_tfhe_ntru_lut/examples/ntt_lookup.rs)。
+
+自行组合流程时，`one_hot.return_lwe_at_to(input, index, output)` 通过已绑定的
+Q→q、f→s 密钥复用 PBS 的 scalar 返回资源。输入须为对应环秘密下的系数域 NTRU；
+接口不验证源秘密身份或噪声预算。
 
 ## 底层组合
 

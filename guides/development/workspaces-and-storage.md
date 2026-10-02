@@ -67,27 +67,36 @@ Construction hash buckets are temporary. Equal prefixes allow a BR-basis lift
 followed by the usual low-chunk rotations; when all outputs qualify, the evaluator
 omits table selectors and candidates as well as high-chunk CBS. Mixed tables
 keep those shared buffers. Embedded one-hot scratch is retained. See the
-[table layout](../../crates/primus_tfhe_ntru_lut/IMPLEMENTATION.md#public-table-storage).
+[table layout](../../crates/primus_tfhe_ntru_lut/IMPLEMENTATION.md#public-table-storage-and-compiled-choices).
 
 One-hot CBS already reuses PBS's external-product workspace for BR, trace and scheme switching. Table selection and encrypted rotation now borrow that same workspace between one-hot calls. The NTT entry point is `OneHotCircuitBootstrapEvaluator::external_product_workspace`; Fourier's `external_product_workspaces` returns the FFT engine and external-product buffers together. Borrowers retain polynomial lengths and the FFT table identity. Every subsequent one-hot call overwrites its scratch before reading it.
 
 The high-precision evaluator therefore owns no second external-product workspace or FFT engine. Each evaluator still has independent mutable state, and borrowing excludes concurrent mutation. Existing one-hot/PBS conversion and recovery retain their ownership contracts.
 
-Fourier one-hot provides `lwe_return_batch_capacity`, `prepare_lwe_return_at` and
-`return_lwe_batch_to` for the outer lookup stage. These delegate to the bound PBS
-evaluator without exposing mutable return storage. Each output is converted and
-extracted immediately; table selection, rotation and one-hot generation leave
-those LWE slots intact until batch key switching. Callers fill every consumed
-slot for each batch; there is no filled-slot counter. A partial final tile reads
-only `0..outputs.len()`. Finish pending returns before borrowing ordinary PBS
-operations: interleaved PBS can overwrite the prepared samples.
+Each NTRU backend keeps its bound return key, q, scalar/batch scratch and stream
+state in a private `LweReturnEngine`, separate from BR/FFT buffers. Shared-input
+interleaved returns still reuse one Q→q conversion; streams independently round
+each source and retain only its extracted LWE.
 
-Reusing PBS's buffers instead of an outer Fourier scalar return buffer saves N+1
-elements (4,100 bytes for u32 or 8,200 for u64 at N1024); no new batch scratch is
-allocated. NTT lookup retains its separate scalar return buffer: batching did not
-provide consistent gains across its measured word widths, whereas Fourier lookup
-and both factorized MVB backends benefited. The unchanged `pipeline` and `mvb`
-fixtures can be used to revisit this scheduling choice.
+Fourier one-hot starts a stream with `begin_lwe_return_batch`, appends samples in
+order with `append_lwe_return_at`, then submits exactly that prefix through
+`return_lwe_batch_to`. The recorded count prevents fresh or stale slot reads,
+including empty and partial batches. Successful submission ends the batch;
+`discard_lwe_return_batch` cancels it, and restarting discards the old prefix.
+Input/index and output-count/dimension rejection leave the valid prefix intact.
+One-hot generation and table/FFT products can run between appends: no source or
+whole-evaluator borrow survives an append. Ordinary/interleaved PBS rejects an
+active stream before scratch or output writes. Converting one-hot back to PBS
+discards the stream. These state checks belong to the stream boundary, not the
+coefficient kernels.
+
+Both lookup backends reuse the embedded PBS return buffers and own no additional
+return scratch. NTT lookup uses one-hot's `return_lwe_at_to` to keep its measured
+scalar schedule; Fourier lookup and both factorized MVB backends retain bounded
+streamed tiles. This removes the former extra NTT scalar buffer of N+1 elements
+without changing the arithmetic or tile size. The unchanged `pipeline` and `mvb`
+fixtures can revisit scheduling choices; this ownership refactoring makes no new
+latency claim.
 
 Existing size/domain boundaries and semantic polynomial/ciphertext iterators describe batches. Table groups contain M polynomials; ciphertext iterators traverse one complete object at a time. Candidate compaction remains indexed because a group must be consumed before its result overwrites the prefix. No additional generic batch abstraction is needed.
 

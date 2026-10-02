@@ -165,8 +165,10 @@ impl<'a, T: TorusFftValue, Table: FftTable, LM: primus_reduce::RingContext<T>>
     }
 
     /// Releases the extra MVB buffers and recovers the original PBS workspace without allocation.
+    /// Discards any unfinished return tile left by an interrupted evaluation.
     #[must_use]
-    pub fn into_bootstrapper(self) -> Evaluator<'a, T, Table, LM> {
+    pub fn into_bootstrapper(mut self) -> Evaluator<'a, T, Table, LM> {
+        self.evaluator.lwe_return.discard_batch();
         self.evaluator
     }
 
@@ -216,13 +218,14 @@ impl<'a, T: TorusFftValue, Table: FftTable, LM: primus_reduce::RingContext<T>>
         self.prepare_shared_rotation(input, &lookup_table.common_polynomial);
 
         let n = self.evaluator.context.parameters().poly_length().get();
-        let batch_size = self.evaluator.lwe_return_batch_capacity();
+        let batch_size = self.evaluator.lwe_return.batch_capacity();
         let mut factors = FourierPolynomialIter::new(&lookup_table.factors, n / 2);
         for outputs in outputs.chunks_mut(batch_size) {
-            for (slot, factor) in factors.by_ref().take(outputs.len()).enumerate() {
-                self.prepare_factor_return(factor, slot);
+            self.evaluator.lwe_return.begin_batch();
+            for factor in factors.by_ref().take(outputs.len()) {
+                self.prepare_factor_return(factor);
             }
-            self.evaluator.return_lwe_batch_to(outputs);
+            self.evaluator.lwe_return.return_batch_to(outputs);
         }
     }
 
@@ -270,13 +273,15 @@ impl<'a, T: TorusFftValue, Table: FftTable, LM: primus_reduce::RingContext<T>>
 
     /// Multiply one factor and extract its independently rounded q-domain sample.
     /// Only the LWE slot survives; the next factor may overwrite the product buffers.
-    fn prepare_factor_return(&mut self, factor: FourierPolynomial<&[Complex64]>, slot: usize) {
+    fn prepare_factor_return(&mut self, factor: FourierPolynomial<&[Complex64]>) {
         let evaluator = &mut self.evaluator;
         self.shared_rotation
             .mul_fourier_polynomial_to(&factor, &mut self.product);
         self.product
             .write_torus_form(&mut evaluator.blind_rotation.current, &mut evaluator.fft);
-        evaluator.prepare_accumulator_return_at(0, slot);
+        evaluator
+            .lwe_return
+            .append_at(evaluator.blind_rotation.current.as_view(), 0);
     }
 }
 

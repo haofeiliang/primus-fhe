@@ -94,51 +94,59 @@ where
         &self.lookup_table
     }
 
-    /// Maximum number of NTRU samples prepared before returning one LWE batch.
-    /// The bound PBS evaluator owns the buffers; callers cannot replace them.
+    /// Maximum number of NTRU samples retained in one streamed return batch.
     #[must_use]
     pub fn lwe_return_batch_capacity(&self) -> usize {
-        self.pbs.lwe_return_batch_capacity()
+        self.pbs.lwe_return.batch_capacity()
     }
 
-    /// Converts/extracts coefficient `index` into return slot `slot`, without allocation.
-    /// The input buffer can be overwritten immediately afterward. One-hot generation
-    /// and external products leave prepared slots intact; interleaved PBS may overwrite
-    /// them, so finish a pending batch before borrowing ordinary PBS operations.
+    /// Starts an empty return batch, discarding any previous pending samples.
+    /// No buffers are cleared or allocated. Appends form a consecutive prefix;
+    /// one-hot, FFT and external-product operations may run between appends.
+    /// Ordinary PBS cannot use the return resources until submission or discard.
+    pub fn begin_lwe_return_batch(&mut self) {
+        self.pbs.lwe_return.begin_batch();
+    }
+
+    /// Converts/extracts coefficient `index` and appends it to the active batch.
+    /// No source borrow is retained; the input can be overwritten afterward.
     ///
     /// # Correctness
     /// Input must be a canonical coefficient NTRU under this evaluator's ring secret
-    /// at Q. The key and noise requirements of
-    /// [`NtruLweKeySwitchingKey::modulus_switch_extract_at_to`](primus_ntru::NtruLweKeySwitchingKey::modulus_switch_extract_at_to)
-    /// apply. This binds the return key and q; it does not check source secret identity.
+    /// at Q. Inherits
+    /// [`NtruLweKeySwitchingKey::modulus_switch_extract_at_to`](primus_ntru::NtruLweKeySwitchingKey::modulus_switch_extract_at_to)'s
+    /// key and noise requirements. Conversion to q precedes the extraction sign;
+    /// source secret identity is not checked.
     ///
     /// # Panics
-    /// Rejects an invalid input length, coefficient index or slot before slot writes.
-    pub fn prepare_lwe_return_at(
-        &mut self,
-        input: NtruCiphertext<&[T]>,
-        index: usize,
-        slot: usize,
-    ) {
-        self.pbs.prepare_lwe_return_at(input, index, slot);
+    /// Rejects an inactive/full batch, invalid input length or coefficient index
+    /// before sample writes. A rejected append does not advance the valid prefix.
+    pub fn append_lwe_return_at(&mut self, input: NtruCiphertext<&[T]>, index: usize) {
+        self.pbs.lwe_return.append_at(input, index);
     }
 
-    /// Returns prepared slots `0..outputs.len()` in order under the external LWE secret.
-    /// Reuses PBS's buffers without allocation or clearing. Slots remain intact;
-    /// a short final batch ignores later slots, and an empty batch writes nothing.
+    /// Returns all appended samples in order and ends the active batch.
+    /// Outputs must match the current prefix exactly, including for an empty or
+    /// short final batch. Successful submission invalidates the prefix; old slot
+    /// contents cannot be submitted again. No allocation or clearing is required.
     ///
     /// # Correctness
-    /// Prepare every consumed slot through [`Self::prepare_lwe_return_at`] for the
-    /// current batch. No filled-slot count is tracked; fresh or stale storage does
-    /// not establish a valid sample. The return noise requirements of
-    /// [`NtruLweKeySwitchingKey::key_switch_extracted_batch_to`](primus_ntru::NtruLweKeySwitchingKey::key_switch_extracted_batch_to)
-    /// apply.
+    /// Inherits
+    /// [`NtruLweKeySwitchingKey::key_switch_extracted_batch_to`](primus_ntru::NtruLweKeySwitchingKey::key_switch_extracted_batch_to)'s
+    /// return noise requirements.
     ///
     /// # Panics
-    /// Rejects a count above [`Self::lwe_return_batch_capacity`] or any incompatible
-    /// output dimension before output/scratch writes.
+    /// Rejects an inactive batch, a count unequal to the appended prefix or any
+    /// incompatible output dimension before output/scratch writes. Failed
+    /// validation leaves the batch active for retry or discard.
     pub fn return_lwe_batch_to(&mut self, outputs: &mut [LweCiphertext<T>]) {
-        self.pbs.return_lwe_batch_to(outputs);
+        self.pbs.lwe_return.return_batch_to(outputs);
+    }
+
+    /// Discards pending samples and permits ordinary PBS again, without clearing buffers.
+    /// Does nothing if no batch is active. Dropping this evaluator also drops the batch.
+    pub fn discard_lwe_return_batch(&mut self) {
+        self.pbs.lwe_return.discard_batch();
     }
 
     /// Returns the shared CBS bases and accumulator layouts.
@@ -202,6 +210,7 @@ where
     }
 
     /// Borrows ordinary PBS operations without allocation or changing the bound resources.
+    /// Their evaluation calls reject an active return batch; submit or discard it first.
     #[must_use]
     pub fn bootstrapper_mut(
         &mut self,
@@ -212,8 +221,10 @@ where
     }
 
     /// Releases one-hot buffers and recovers the PBS workspace without allocation.
+    /// Any pending streamed return batch is discarded.
     #[must_use]
-    pub fn into_bootstrapper(self) -> Evaluator<'a, T, Table, LM> {
+    pub fn into_bootstrapper(mut self) -> Evaluator<'a, T, Table, LM> {
+        self.discard_lwe_return_batch();
         self.pbs
     }
 

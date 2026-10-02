@@ -227,6 +227,7 @@ where
                 }
                 OutputAction::Evaluate => {
                     let tile = plan.evaluation_tile(first, capacity);
+                    self.one_hot.begin_lwe_return_batch();
                     self.prepare_output_returns(tile.clone());
                     first = tile.end;
                     self.one_hot.return_lwe_batch_to(&mut output[tile]);
@@ -238,11 +239,10 @@ where
     /// Prepares a consecutive tile of newly evaluated outputs. Selection and
     /// rotation reuse polynomial scratch but preserve filled return slots.
     fn prepare_output_returns(&mut self, outputs: Range<usize>) {
-        for (slot, output) in outputs.enumerate() {
+        for output in outputs {
             self.select_table(output);
             self.rotate_selected_table();
-            self.one_hot
-                .prepare_lwe_return_at(self.current.as_view(), 0, slot);
+            self.one_hot.append_lwe_return_at(self.current.as_view(), 0);
         }
     }
 

@@ -9,7 +9,7 @@ use primus_ntru::{
 };
 use primus_poly::PolyLength;
 use primus_test_allocations as allocations;
-use primus_tfhe::ProgrammableBootstrap as _;
+use primus_tfhe::{ProgrammableBootstrap as _, ProgrammableBootstrapInterleaved as _};
 use primus_tfhe_ntru_fourier::{
     CircuitBootstrapConfig, CircuitBootstrapEvaluator, DecompositionConfig,
     OneHotCircuitBootstrapEvaluator, TfheContext, TfheParameters,
@@ -281,39 +281,21 @@ fn selectors<Table: FftTable>(distr: SecretKeyDistr) {
         assert!(ngsw.iter().all(|&v| v == Complex64::new(7.0, 0.0)));
     }
 
-    // Bound returns use this evaluator's key and q. Preparing out of order and
-    // running one-hot CBS before returning must preserve the three slot values.
-    let indices = [0, N / 2, N - 1];
-    let mut expected = indices.map(|_| context.allocate_lwe_ciphertext());
-    let mut returned = expected.clone();
-    let mut scalar_return = primus_ntru::NtruLweKeySwitchingWorkspace::new(PolyLength::new(N));
-    for (slot, (&index, output)) in indices.iter().zip(&mut expected).enumerate() {
-        server.key_switching_key().key_switch_at_to(
-            &choices[slot % choices.len()],
-            index,
-            output,
-            context.parameters().external_lwe().cipher_modulus(),
-            &mut scalar_return,
-        );
-    }
-    assert!(evaluator.lwe_return_batch_capacity() >= returned.len());
-    let (_, allocation) = allocations::measure(|| {
-        for slot in [2, 0, 1] {
-            evaluator.prepare_lwe_return_at(
-                choices[slot % choices.len()].as_view(),
-                indices[slot],
-                slot,
-            );
-        }
-        evaluator.one_hot_ngsw_to(&input, &mut ngsw);
-        evaluator.return_lwe_batch_to(&mut returned);
-    });
-    assert_eq!(allocation.count, 0);
-    assert_eq!(returned, expected);
+    check_return_batches(
+        &mut evaluator,
+        &context,
+        &server,
+        &choices,
+        &input,
+        &mut ngsw,
+    );
 
     // Recovery and rebinding preserve the PBS/ordinary-CBS workflow.
     let mut ordinary =
         CircuitBootstrapEvaluator::try_from_bootstrapper(evaluator.into_bootstrapper()).unwrap();
+    ordinary
+        .bootstrapper_mut()
+        .apply_lookup_table_to(&input, &identity, &mut lwe_output);
     let mut control = ordinary.allocate_output();
     ordinary.circuit_bootstrap_to(&input, &mut control);
     ordinary.cmux_to(&control, &choices[0], &choices[1], &mut selected);
@@ -323,6 +305,128 @@ fn selectors<Table: FftTable>(distr: SecretKeyDistr) {
         OneHotCircuitBootstrapEvaluator::try_from_bootstrapper(ordinary.into_bootstrapper())
             .unwrap();
     evaluator.one_hot_to(&input, &mut nlev, &mut ngsw);
+}
+
+// Compare every streamed sample with the scalar return oracle, then check that
+// batch state protects those samples while one-hot and ordinary PBS share buffers.
+fn check_return_batches<Table: FftTable>(
+    evaluator: &mut OneHotCircuitBootstrapEvaluator<'_, u64, Table, PowOf2Modulus<u64>>,
+    context: &TfheContext<u64, Table, PowOf2Modulus<u64>>,
+    server: &primus_tfhe_ntru_fourier::ServerKey<u64>,
+    choices: &[NtruCiphertext<Vec<u64>>],
+    input: &primus_tfhe::LweCiphertext<u64>,
+    ngsw: &mut [Complex64],
+) {
+    let capacity = evaluator.lwe_return_batch_capacity();
+    let indices = [0, N / 2, N - 1];
+    let mut expected = (0..capacity)
+        .map(|_| context.allocate_lwe_ciphertext())
+        .collect::<Vec<_>>();
+    let mut scalar_return = primus_ntru::NtruLweKeySwitchingWorkspace::new(PolyLength::new(N));
+    for (i, output) in expected.iter_mut().enumerate() {
+        server.key_switching_key().key_switch_at_to(
+            &choices[i % choices.len()],
+            indices[i % indices.len()],
+            output,
+            context.parameters().external_lwe().cipher_modulus(),
+            &mut scalar_return,
+        );
+    }
+    let mut returned = expected.clone();
+    for output in &mut returned {
+        output.as_mut().fill(7);
+    }
+    let untouched = returned.clone();
+
+    // Neither inactive storage nor a freshly started empty prefix is a sample.
+    assert_rejected(|| evaluator.return_lwe_batch_to(&mut returned));
+    assert_rejected(|| evaluator.append_lwe_return_at(choices[0].as_view(), 0));
+    evaluator.begin_lwe_return_batch();
+    assert_rejected(|| evaluator.return_lwe_batch_to(&mut returned));
+    assert_eq!(returned, untouched);
+    evaluator.return_lwe_batch_to(&mut []);
+
+    // Fill a full tile in order. One-hot can reuse BR/FFT between appends without
+    // changing the return prefix; only ciphertext samples survive each append.
+    let (_, allocation) = allocations::measure(|| {
+        evaluator.begin_lwe_return_batch();
+        for i in 0..capacity {
+            evaluator.append_lwe_return_at(
+                choices[i % choices.len()].as_view(),
+                indices[i % indices.len()],
+            );
+            if i == 0 {
+                evaluator.one_hot_ngsw_to(input, ngsw);
+            }
+        }
+    });
+    assert_eq!(allocation.count, 0);
+    assert_rejected(|| evaluator.append_lwe_return_at(choices[0].as_view(), 0));
+    assert_rejected(|| evaluator.return_lwe_batch_to(&mut returned[..capacity - 1]));
+    assert_eq!(returned, untouched);
+
+    // Reject every output dimension before writing the first valid output.
+    let last = returned.pop().unwrap();
+    returned.push(primus_tfhe::LweCiphertext::zero(1));
+    let malformed = returned.clone();
+    assert_rejected(|| evaluator.return_lwe_batch_to(&mut returned));
+    assert_eq!(returned, malformed);
+    *returned.last_mut().unwrap() = last;
+
+    // Both ordinary PBS paths must refuse to overwrite pending samples. The
+    // batch remains valid after rejection and can still be submitted exactly.
+    let identity = context
+        .parameters()
+        .compile_lookup_table_fn(|m| m as u64)
+        .unwrap();
+    let many = context
+        .parameters()
+        .compile_interleaved_lookup_table_fn(2, |m, _| m as u64)
+        .unwrap();
+    assert_rejected(|| {
+        evaluator
+            .bootstrapper_mut()
+            .apply_lookup_table_to(input, &identity, &mut returned[0])
+    });
+    assert_rejected(|| {
+        evaluator
+            .bootstrapper_mut()
+            .apply_interleaved_lookup_table_to(input, &many, &mut returned[..2])
+    });
+    assert_eq!(returned, untouched);
+    let (_, allocation) = allocations::measure(|| evaluator.return_lwe_batch_to(&mut returned));
+    assert_eq!(allocation.count, 0);
+    assert_eq!(returned, expected);
+    assert_rejected(|| evaluator.return_lwe_batch_to(&mut returned));
+    assert_eq!(returned, expected);
+
+    // Restart invalidates the old prefix, then a singleton overwrites only its
+    // output. Invalid source/index appends do not advance the new prefix.
+    evaluator.begin_lwe_return_batch();
+    evaluator.append_lwe_return_at(choices[0].as_view(), 0);
+    evaluator.begin_lwe_return_batch();
+    assert_rejected(|| evaluator.return_lwe_batch_to(&mut returned[..1]));
+    assert_rejected(|| evaluator.append_lwe_return_at(NtruCiphertext::new(&[0u64][..]), 0));
+    assert_rejected(|| evaluator.append_lwe_return_at(choices[0].as_view(), N));
+    evaluator.append_lwe_return_at(choices[1].as_view(), indices[1]);
+    evaluator.return_lwe_batch_to(&mut returned[..1]);
+    assert_eq!(returned[0], expected[1]);
+    assert_eq!(returned[1..], expected[1..]);
+
+    // Discard explicitly releases the protocol; conversion to ordinary PBS
+    // also discards a pending batch as documented by into_bootstrapper.
+    evaluator.begin_lwe_return_batch();
+    evaluator.append_lwe_return_at(choices[0].as_view(), 0);
+    evaluator.discard_lwe_return_batch();
+    evaluator
+        .bootstrapper_mut()
+        .apply_lookup_table_to(input, &identity, &mut returned[0]);
+    evaluator.begin_lwe_return_batch();
+    evaluator.append_lwe_return_at(choices[0].as_view(), 0);
+}
+
+fn assert_rejected(operation: impl FnOnce()) {
+    assert!(catch_unwind(AssertUnwindSafe(operation)).is_err());
 }
 
 #[test]

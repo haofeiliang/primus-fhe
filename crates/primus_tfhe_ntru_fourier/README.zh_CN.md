@@ -87,15 +87,16 @@ let mut evaluator = context.evaluator(&server)?;
 
 ## 高精度查表
 
-[primus_tfhe_ntru_lut](../primus_tfhe_ntru_lut/README.zh_CN.md) 组合 one-hot CBS、表选择、聚合负向旋转和独立 LWE 返回，支持统一输入/输出 chunk 位宽及独立数量。底层组合可通过 `ServerKey::initializer()` 取得 context 的 BR basis 下的 classic NLEV[1]，通过 `key_switching_key()` 取得 Q→q、f→s 返回密钥。
+[primus_tfhe_ntru_lut](../primus_tfhe_ntru_lut/README.zh_CN.md) 组合 one-hot CBS、表选择、聚合负向旋转和独立 LWE 返回，支持统一输入/输出 chunk 位宽及独立数量。底层组合可通过 `server_key.classic_controls().unwrap().initializer()` 取得 context 的 BR basis 下的 classic NLEV[1]，通过 `key_switching_key()` 取得 Q→q、f→s 返回密钥。
 
 完整 chunk 加密与查表工作流见 [fourier_lookup.rs](../primus_tfhe_ntru_lut/examples/fourier_lookup.rs)。
 
-自行组合流程时，one-hot 的 `lwe_return_batch_capacity()`、
-`prepare_lwe_return_at()` 和 `return_lwe_batch_to()` 使用已绑定的密钥和模数，
-复用 PBS 内部的返回缓冲。每次返回前须准备 `0..outputs.len()` 的全部槽位；
-接口不记录已填充数量。One-hot 生成和外积不会改写这些槽位，但借用普通 PBS
-执行求值前应先完成当前批次。
+自行组合流程时，先用 `begin_lwe_return_batch()` 开始批次，通过
+`append_lwe_return_at(input, index)` 顺序追加，再用 `return_lwe_batch_to(outputs)`
+提交。输出数必须等于已追加数量，上限为 `lwe_return_batch_capacity()`。
+成功提交结束批次；`discard_lwe_return_batch()` 取消批次，重新开始会丢弃旧前缀。
+追加之间可以执行 one-hot 和外积；普通 PBS 拒绝尚未结束的批次，
+`into_bootstrapper()` 转换会丢弃批次。整个协议复用已绑定的密钥、模数和缓冲，不分配。
 
 ## 底层组合
 

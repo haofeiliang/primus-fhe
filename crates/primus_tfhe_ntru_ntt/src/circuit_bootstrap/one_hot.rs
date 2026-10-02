@@ -1,7 +1,7 @@
 //! Packed one-hot selectors from one fused blind rotation.
 
 use primus_integer::FheUint;
-use primus_ntru::{NlevCiphertext, NttNgswCiphertext};
+use primus_ntru::{NlevCiphertext, NtruCiphertext, NttNgswCiphertext};
 use primus_ntt::MonomialNttTable;
 use primus_tfhe::LweCiphertext;
 pub use primus_tfhe_ntru::{OneHotBootstrapError, OneHotLookupTable};
@@ -95,6 +95,26 @@ where
     #[must_use]
     pub fn parameters(&self) -> &'a CircuitBootstrapParameters<T> {
         self.circuit.parameters
+    }
+
+    /// Returns coefficient `index` of an NTRU phase under the external LWE secret.
+    /// Reuses ordinary PBS's scalar return workspace without allocation.
+    ///
+    /// # Correctness
+    /// Inherits
+    /// [`NtruLweKeySwitchingKey::key_switch_at_to`](primus_ntru::NtruLweKeySwitchingKey::key_switch_at_to)'s
+    /// coefficient representation, source secret and noise requirements. This
+    /// binds the return key and q, but does not check source secret identity.
+    ///
+    /// # Panics
+    /// Rejects incompatible input/output lengths or coefficient index before writes.
+    pub fn return_lwe_at_to(
+        &mut self,
+        input: NtruCiphertext<&[T]>,
+        index: usize,
+        output: &mut LweCiphertext<T>,
+    ) {
+        self.pbs.lwe_return.return_at_to(input, index, output);
     }
 
     /// Borrows the external-product workspace already used by one-hot CBS.

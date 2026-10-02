@@ -58,6 +58,12 @@ CBS 的可选材料仍使用 `Option` 表示。私有绑定集中可用材料与
 
 入口：NTRU [NTT 控制视图](../../crates/primus_tfhe_ntru_ntt/src/key/classic.rs) / [Fourier 控制视图](../../crates/primus_tfhe_ntru_fourier/src/key/classic.rs)，各后端 `circuit_bootstrap/key.rs` 的私有绑定与 `circuit_bootstrap/evaluator.rs` 的公开构造器。高精度 LUT 从已绑定 one-hot 取得 initializer；返回调度和工作区协议仍由各后端管理。
 
+## NTRU 返回资源与批次
+
+具体后端的私有 `LweReturnEngine` 绑定返回 key、q 和 scalar/batch scratch，独立于 BR/FFT 资源。单项直接转换并提取；共享输入的 interleaved 返回只转换 Q→q 一次；MVB 与 Fourier LUT 流式返回对每个源分别转换，保留的仅是提取后的 LWE。转换始终先于提取符号。
+
+Fourier one-hot 的公开协议为 `begin_lwe_return_batch` → 顺序 `append_lwe_return_at` → `return_lwe_batch_to`；记录当前有效前缀，提交数必须完全匹配，成功后前缀失效。可以显式 `discard_lwe_return_batch`，也可以重新开始来丢弃旧前缀。追加不保留源或整个 evaluator 的长期借用，one-hot/外积/FFT 可以穿插执行；普通及 interleaved PBS 在写入前拒绝活跃批次。转换回普通 PBS 会丢弃批次。NTT LUT 通过 one-hot 的 `return_lwe_at_to` 复用 scalar scratch，继续逐项返回。
+
 ## CBS、CMux、MVB 与高精度查表
 
 | 工作流 | 从输入到消费者 | 独立约束及检查归属 |

@@ -156,8 +156,10 @@ where
     }
 
     /// Releases the extra MVB buffers and recovers the original PBS workspace without allocation.
+    /// Discards any unfinished return tile left by an interrupted evaluation.
     #[must_use]
-    pub fn into_bootstrapper(self) -> Evaluator<'a, T, Table, LM> {
+    pub fn into_bootstrapper(mut self) -> Evaluator<'a, T, Table, LM> {
+        self.evaluator.lwe_return.discard_batch();
         self.evaluator
     }
 
@@ -209,13 +211,14 @@ where
         self.prepare_shared_rotation(input, &lookup_table.common_polynomial);
 
         let n = self.evaluator.context.parameters().poly_length().get();
-        let batch_size = self.evaluator.lwe_return_batch_capacity();
+        let batch_size = self.evaluator.lwe_return.batch_capacity();
         let mut factors = NttPolynomialIter::new(&lookup_table.factors, n);
         for outputs in outputs.chunks_mut(batch_size) {
-            for (slot, factor) in factors.by_ref().take(outputs.len()).enumerate() {
-                self.prepare_factor_return(factor, slot);
+            self.evaluator.lwe_return.begin_batch();
+            for factor in factors.by_ref().take(outputs.len()) {
+                self.prepare_factor_return(factor);
             }
-            self.evaluator.return_lwe_batch_to(outputs);
+            self.evaluator.lwe_return.return_batch_to(outputs);
         }
     }
 
@@ -265,7 +268,7 @@ where
 
     /// Multiply one factor and extract its independently rounded q-domain sample.
     /// Only the LWE slot survives; the next factor may overwrite the product buffers.
-    fn prepare_factor_return(&mut self, factor: NttPolynomial<&[T]>, slot: usize) {
+    fn prepare_factor_return(&mut self, factor: NttPolynomial<&[T]>) {
         let evaluator = &mut self.evaluator;
         let parameters = evaluator.context.parameters();
         let mut product = NttNtru::new(evaluator.blind_rotation.current.as_mut());
@@ -275,7 +278,9 @@ where
             parameters.accumulator_ntru().cipher_modulus(),
         );
         product.into_coeff_form(evaluator.context.table());
-        evaluator.prepare_accumulator_return_at(0, slot);
+        evaluator
+            .lwe_return
+            .append_at(evaluator.blind_rotation.current.as_view(), 0);
     }
 }
 

@@ -4,7 +4,7 @@ use primus_lattice::{
     nlev::{NttNlev, NttNlevIter},
 };
 use primus_modulus::BarrettModulus;
-use primus_ntru::{NtruCiphertext, NtruLweKeySwitchingWorkspace, NttNgswCiphertext};
+use primus_ntru::{NtruCiphertext, NttNgswCiphertext};
 use primus_ntt::MonomialNttTable;
 use primus_poly::{NttPolynomialIter, NttPolynomialIterMut, Polynomial, PolynomialIterMut};
 use primus_reduce::{ReduceSub, RingContext};
@@ -38,7 +38,6 @@ where
     LM: RingContext<T>,
 {
     context: &'a TfheContext<T, Table, LM>,
-    server_key: &'a ServerKey<T>,
     lookup_table: &'a HighPrecisionLookupTable<T>,
     one_hot: OneHotCircuitBootstrapEvaluator<'a, T, Table, LM>,
     // [NLEV batch][branch][level][NTT value]: full selectors for public choices.
@@ -55,7 +54,6 @@ where
     selected_tables: Box<[T]>,
     current: NtruCiphertext<Box<[T]>>,
     product: NtruCiphertext<Box<[T]>>,
-    return_workspace: NtruLweKeySwitchingWorkspace<T>,
 }
 
 impl<'a, T, Table, LM> NttLookupTableEvaluator<'a, T, Table, LM>
@@ -103,7 +101,6 @@ where
         };
         let mut evaluator = Self {
             context,
-            server_key,
             lookup_table,
             one_hot,
             public_table_selectors: vec![T::ZERO; public_table_selectors_len].into_boxed_slice(),
@@ -115,7 +112,6 @@ where
             selected_tables: vec![T::ZERO; selected_tables_len].into_boxed_slice(),
             current: NtruCiphertext::zero(n),
             product: NtruCiphertext::zero(n),
-            return_workspace: NtruLweKeySwitchingWorkspace::new(context.parameters().poly_length()),
         };
         evaluator.prepare_rotation_constants();
         Ok(evaluator)
@@ -192,12 +188,8 @@ where
                 OutputAction::Evaluate => {
                     self.select_table(index);
                     self.rotate_selected_table();
-                    self.server_key.key_switching_key().key_switch_to(
-                        &self.current,
-                        &mut output[index],
-                        self.context.parameters().external_lwe().cipher_modulus(),
-                        &mut self.return_workspace,
-                    );
+                    self.one_hot
+                        .return_lwe_at_to(self.current.as_view(), 0, &mut output[index]);
                 }
             }
         }
