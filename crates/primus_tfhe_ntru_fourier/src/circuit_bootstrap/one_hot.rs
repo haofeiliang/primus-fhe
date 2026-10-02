@@ -5,9 +5,11 @@ use primus_ntru::{FourierNgswCiphertext, NlevCiphertext, NtruCiphertext};
 use primus_tfhe::LweCiphertext;
 pub use primus_tfhe_ntru::{OneHotBootstrapError, OneHotLookupTable};
 
+use super::key::CircuitBootstrapBinding;
+
 use crate::{
-    CircuitBootstrapKey, CircuitBootstrapParameters, Evaluator, ServerKey, TfheContext,
-    TfheEvaluationError, blind_rotation::blind_rotate_lookup_table_to,
+    CircuitBootstrapParameters, Evaluator, ServerKey, TfheContext,
+    blind_rotation::blind_rotate_lookup_table_to,
 };
 
 /// One-hot extension of CBS for classic binary/ternary LWE secrets.
@@ -28,7 +30,7 @@ where
     LM: primus_reduce::RingContext<T>,
 {
     pbs: Evaluator<'a, T, Table, LM>,
-    circuit_key: &'a CircuitBootstrapKey<T>,
+    circuit: CircuitBootstrapBinding<'a, T>,
     lookup_table: OneHotLookupTable<T>,
     trace_scratch: Vec<T>,
     projected: NlevCiphertext<Vec<T>>,
@@ -51,9 +53,6 @@ where
         context: &'a TfheContext<T, Table, LM>,
         server_key: &'a ServerKey<T>,
     ) -> Result<Self, OneHotBootstrapError> {
-        if server_key.sparse_bootstrapping_key().is_some() {
-            return Err(TfheEvaluationError::UnsupportedSparseBootstrapping.into());
-        }
         Self::try_from_bootstrapper(Evaluator::try_new(context, server_key)?)
     }
 
@@ -62,26 +61,31 @@ where
     pub fn try_from_bootstrapper(
         pbs: Evaluator<'a, T, Table, LM>,
     ) -> Result<Self, OneHotBootstrapError> {
-        if pbs.server_key.sparse_bootstrapping_key().is_some() {
-            return Err(TfheEvaluationError::UnsupportedSparseBootstrapping.into());
-        }
-        let circuit_key = pbs
-            .server_key
-            .circuit_bootstrap_key()
-            .ok_or(TfheEvaluationError::MissingCircuitBootstrapKey)?;
+        let circuit = CircuitBootstrapBinding::try_new(
+            pbs.context.parameters(),
+            pbs.blind_rotation.rotation.classic_controls(),
+            pbs.server_key.circuit_bootstrap_key(),
+        )?;
         let lookup_table =
-            OneHotLookupTable::try_new(pbs.context.parameters(), circuit_key.parameters())?;
+            OneHotLookupTable::try_new(pbs.context.parameters(), circuit.parameters)?;
         if lookup_table.output_nlev_len() / 2 > isize::MAX as usize / size_of::<Complex64>() {
             return Err(OneHotBootstrapError::StorageSizeOverflow);
         }
         let n = pbs.context.parameters().poly_length().get();
+        let projected = NlevCiphertext::zero(circuit.parameters.output_nlev_len());
         Ok(Self {
             pbs,
-            circuit_key,
+            circuit,
             lookup_table,
             trace_scratch: vec![T::ZERO; 2 * n],
-            projected: NlevCiphertext::zero(circuit_key.parameters().output_nlev_len()),
+            projected,
         })
+    }
+
+    /// Borrows the classic BR initializer and controls established at construction.
+    #[must_use]
+    pub fn classic_controls(&self) -> crate::ClassicControls<'a> {
+        self.circuit.classic_controls
     }
 
     /// Returns the packed LUT geometry, including selector count, stride and guard radius.
@@ -140,7 +144,7 @@ where
     /// Returns the shared CBS bases and accumulator layouts.
     #[must_use]
     pub fn parameters(&self) -> &'a CircuitBootstrapParameters<T> {
-        self.circuit_key.parameters()
+        self.circuit.parameters
     }
 
     /// Borrows the FFT engine and external-product workspace already used by one-hot CBS.
@@ -295,7 +299,7 @@ where
         mut ngsw_output: Option<&mut [Complex64]>,
     ) {
         let tfhe = self.pbs.context.parameters();
-        let parameters = self.circuit_key.parameters();
+        let parameters = self.circuit.parameters;
         assert_eq!(
             input.dimension(),
             tfhe.external_lwe_dimension().get(),
@@ -349,7 +353,8 @@ where
                 Some(output) => &mut output[selector * nlev_len..(selector + 1) * nlev_len],
                 None => self.projected.as_mut(),
             };
-            self.circuit_key
+            self.circuit
+                .key
                 .trace_key()
                 .project_prefix_coefficients_with_scratch_to(
                     &self.pbs.blind_rotation.scratch,
@@ -364,7 +369,7 @@ where
                 .filter(|_| selector >= first_ngsw_selector)
             {
                 let output_index = selector - first_ngsw_selector;
-                self.circuit_key.scheme_switch_key().apply_to(
+                self.circuit.key.scheme_switch_key().apply_to(
                     &NlevCiphertext::new(&*projected),
                     &mut FourierNgswCiphertext::new(
                         &mut output[output_index * ngsw_len..(output_index + 1) * ngsw_len],

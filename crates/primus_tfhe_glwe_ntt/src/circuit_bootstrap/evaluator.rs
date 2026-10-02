@@ -10,6 +10,8 @@ use primus_ntt::MonomialNttTable;
 use primus_reduce::ReduceMul;
 use primus_tfhe::{InterleavedLookupTable, LookupTableError};
 
+use super::key::CircuitBootstrapBinding;
+
 use crate::{
     CircuitBootstrapKey, CircuitBootstrapParameters, Evaluator, ServerKey, TfheContext,
     TfheEvaluationError,
@@ -28,8 +30,7 @@ where
     Table: MonomialNttTable<ValueT = T>,
 {
     pbs: Evaluator<'a, T, Table>,
-    parameters: &'a CircuitBootstrapParameters<T>,
-    circuit_key: &'a CircuitBootstrapKey<T>,
+    circuit: CircuitBootstrapBinding<'a, T>,
     lookup_table: InterleavedLookupTable<T>,
     trace: NttGlweTraceWorkspace<T>,
     traced: GlevCiphertext<Vec<T>>,
@@ -127,12 +128,7 @@ where
     ) -> Result<Self, TfheEvaluationError> {
         let context = pbs.context;
         let tfhe = context.parameters();
-        if !parameters.is_compatible(tfhe) {
-            return Err(TfheEvaluationError::IncompatibleCircuitBootstrapParameters);
-        }
-        if !circuit_key.is_compatible(parameters) {
-            return Err(TfheEvaluationError::IncompatibleCircuitBootstrapKey);
-        }
+        let circuit = CircuitBootstrapBinding::try_new(tfhe, parameters, circuit_key)?;
 
         let glwe = tfhe.accumulator_glwe();
         let modulus = glwe.cipher_modulus();
@@ -159,8 +155,7 @@ where
 
         Ok(Self {
             pbs,
-            parameters,
-            circuit_key,
+            circuit,
             lookup_table,
             trace: NttGlweTraceWorkspace::new(glwe_size),
             traced: GlevCiphertext::zero(parameters.output_size().glev_len()),
@@ -171,7 +166,7 @@ where
     /// Allocate once and reuse it with [`Self::circuit_bootstrap_to`].
     #[must_use]
     pub fn allocate_output(&self) -> NttGgsw<Vec<T>> {
-        NttGgsw::zero(self.parameters.output_size().ggsw_len())
+        NttGgsw::zero(self.circuit.parameters.output_size().ggsw_len())
     }
 
     /// Selects `lhs` for an encrypted zero and `rhs` for an encrypted one.
@@ -198,8 +193,9 @@ where
         C: Data<Elem = T>,
         D: DataMut<Elem = T>,
     {
+        let parameters = self.circuit.parameters;
         let context = self.pbs.context;
-        let ring_len = self.parameters.output_size().glwe_size().glwe_len();
+        let ring_len = parameters.output_size().glwe_size().glwe_len();
         assert_eq!(
             (
                 control.as_ref().len(),
@@ -208,7 +204,7 @@ where
                 output.as_ref().len()
             ),
             (
-                self.parameters.output_size().ggsw_len(),
+                parameters.output_size().ggsw_len(),
                 ring_len,
                 ring_len,
                 ring_len
@@ -216,12 +212,12 @@ where
             "CMUX ciphertext layout mismatch"
         );
         self.pbs
-            .with_external_product(self.parameters.output_size(), |scratch| {
+            .with_external_product(parameters.output_size(), |scratch| {
                 control.cmux_to(
                     lhs,
                     rhs,
                     output,
-                    self.parameters.output_basis(),
+                    parameters.output_basis(),
                     context.parameters().accumulator_glwe().cipher_modulus(),
                     context.table(),
                     scratch,
@@ -249,23 +245,24 @@ where
         B: Data<Elem = T>,
         C: DataMut<Elem = T>,
     {
+        let parameters = self.circuit.parameters;
         let context = self.pbs.context;
-        let ring_len = self.parameters.output_size().glwe_size().glwe_len();
+        let ring_len = parameters.output_size().glwe_size().glwe_len();
         assert_eq!(
             (
                 control.as_ref().len(),
                 input.as_ref().len(),
                 output.as_ref().len()
             ),
-            (self.parameters.output_size().ggsw_len(), ring_len, ring_len),
+            (parameters.output_size().ggsw_len(), ring_len, ring_len),
             "external-product ciphertext layout mismatch"
         );
         self.pbs
-            .with_external_product(self.parameters.output_size(), |scratch| {
+            .with_external_product(parameters.output_size(), |scratch| {
                 control.external_product_to(
                     input,
                     output,
-                    self.parameters.output_basis(),
+                    parameters.output_basis(),
                     context.parameters().accumulator_glwe().cipher_modulus(),
                     context.table(),
                     scratch,
@@ -319,6 +316,8 @@ where
     where
         S: DataMut<Elem = T>,
     {
+        let parameters = self.circuit.parameters;
+        let circuit_key = self.circuit.key;
         let context = self.pbs.context;
         let tfhe = context.parameters();
         assert_eq!(
@@ -328,7 +327,7 @@ where
         );
         assert_eq!(
             output.as_ref().len(),
-            self.parameters.output_size().ggsw_len(),
+            parameters.output_size().ggsw_len(),
             "circuit-bootstrap output GGSW layout mismatch"
         );
 
@@ -338,9 +337,9 @@ where
             self.lookup_table.padded_output_count(),
         );
 
-        self.circuit_key.trace_key().project_prefix_coefficients_to(
+        circuit_key.trace_key().project_prefix_coefficients_to(
             accumulator,
-            self.parameters.output_basis().decompose_length().get(),
+            parameters.output_basis().decompose_length().get(),
             self.traced.as_mut(),
             context.parameters().accumulator_glwe().cipher_modulus(),
             context.table(),
@@ -348,8 +347,8 @@ where
         );
         // CMUX can bind the same buffers to a different output decomposition.
         self.pbs
-            .with_external_product(self.parameters.scheme_switch().size(), |scratch| {
-                self.circuit_key.scheme_switch_key().apply_to(
+            .with_external_product(parameters.scheme_switch().size(), |scratch| {
+                circuit_key.scheme_switch_key().apply_to(
                     &self.traced,
                     output,
                     context.parameters().accumulator_glwe().cipher_modulus(),

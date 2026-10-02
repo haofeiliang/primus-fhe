@@ -40,7 +40,6 @@ where
     LM: RingContext<T>,
 {
     context: &'a TfheContext<T, Table, LM>,
-    server_key: &'a ServerKey<T>,
     lookup_table: &'a HighPrecisionLookupTable<T>,
     one_hot: OneHotCircuitBootstrapEvaluator<'a, T, Table, LM>,
     // [NLEV batch][branch][level][Fourier value]: full selectors for public choices.
@@ -123,7 +122,6 @@ where
         };
         let mut evaluator = Self {
             context,
-            server_key,
             lookup_table,
             one_hot,
             public_table_selectors: vec![Complex64::default(); public_table_selectors_len]
@@ -396,8 +394,9 @@ where
     /// Lifts a public polynomial under f using the initializer's BR basis.
     /// Selection-tree products instead use the one-hot CBS output basis.
     fn lift_public_polynomial(&mut self, polynomial: &Polynomial<&[T]>) {
+        let initializer = self.one_hot.classic_controls().initializer();
         let (fft, external_product) = self.one_hot.external_product_workspaces();
-        self.server_key.initializer().external_product_to(
+        initializer.external_product_to(
             polynomial,
             &mut self.current,
             self.context.parameters().blind_rotation().basis(),

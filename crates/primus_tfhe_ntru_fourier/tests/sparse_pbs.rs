@@ -123,6 +123,7 @@ fn check_complete<T: TorusFftValue, Table: FftTable>(weight: usize) {
         let server = generator
             .try_generate_sparse_server_key(&client, copies, buckets, &mut key_rng)
             .unwrap();
+        assert!(server.classic_controls().is_none());
         assert_eq!(
             context.factorized_evaluator(&server).err(),
             Some(TfheEvaluationError::UnsupportedSparseBootstrapping)

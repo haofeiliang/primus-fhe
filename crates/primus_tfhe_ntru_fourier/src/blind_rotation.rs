@@ -1,10 +1,12 @@
+use crate::key::BootstrappingControls;
+
 use primus_fft::{FftEngine, FftTable, TorusFftValue};
 use primus_lattice::{lwe::Lwe, ntru::Ntru};
 use primus_modulus::NativeModulus;
 use primus_poly::Polynomial;
 use primus_tfhe::rotation::RotationQuantizer;
 
-use crate::{ServerKey, TfheParameters};
+use crate::{ClassicControls, ServerKey, TfheParameters};
 
 /// Coefficient buffers and Fourier external-product scratch reused online.
 pub(crate) struct BlindRotationWorkspace<'a, T: TorusFftValue> {
@@ -25,28 +27,21 @@ impl<'a, T: TorusFftValue> BlindRotationWorkspace<'a, T> {
         Self {
             current: Ntru::zero(poly_length.get()),
             scratch: Ntru::zero(poly_length.get()),
-            rotation: if let Some(key) = server_key.sparse_bootstrapping_key() {
-                RotationState::Sparse {
+            rotation: match server_key.bootstrapping_controls() {
+                BootstrappingControls::Sparse(key) => RotationState::Sparse {
                     key,
                     scratch: crate::sparse::SparseWorkspace::new(parameters),
-                }
-            } else if parameters.external_lwe().secret_key_distr().is_binary() {
-                RotationState::Binary {
-                    first: server_key.classic_controls().0,
-                    controls: server_key.classic_controls().1,
-                    scratch: primus_ntru::FourierNtruCmuxWorkspace::new(
+                },
+                BootstrappingControls::Classic(controls) => {
+                    let scratch = primus_ntru::FourierNtruCmuxWorkspace::new(
                         poly_length,
                         parameters.blind_rotation().decompose_length(),
-                    ),
-                }
-            } else {
-                RotationState::Ternary {
-                    first: server_key.classic_controls().0,
-                    controls: server_key.classic_controls().1,
-                    scratch: primus_ntru::FourierNtruCmuxWorkspace::new(
-                        poly_length,
-                        parameters.blind_rotation().decompose_length(),
-                    ),
+                    );
+                    if controls.is_binary() {
+                        RotationState::Binary { controls, scratch }
+                    } else {
+                        RotationState::Ternary { controls, scratch }
+                    }
                 }
             },
         }
@@ -60,18 +55,24 @@ pub(crate) enum RotationState<'a, T: TorusFftValue> {
         scratch: crate::sparse::SparseWorkspace<T>,
     },
     Binary {
-        first: &'a [primus_fft::Complex64],
-        controls: &'a [primus_fft::Complex64],
+        controls: ClassicControls<'a>,
         scratch: primus_ntru::FourierNtruCmuxWorkspace<T>,
     },
     Ternary {
-        first: &'a [primus_fft::Complex64],
-        controls: &'a [primus_fft::Complex64],
+        controls: ClassicControls<'a>,
         scratch: primus_ntru::FourierNtruCmuxWorkspace<T>,
     },
 }
 
-impl<T: TorusFftValue> RotationState<'_, T> {
+impl<'a, T: TorusFftValue> RotationState<'a, T> {
+    /// Borrows the classic material already selected with this BR workspace.
+    pub(crate) fn classic_controls(&self) -> Option<ClassicControls<'a>> {
+        match self {
+            Self::Sparse { .. } => None,
+            Self::Binary { controls, .. } | Self::Ternary { controls, .. } => Some(*controls),
+        }
+    }
+
     pub(crate) fn external_product(
         &mut self,
     ) -> &mut primus_ntru::FourierNtruExternalProductWorkspace<T> {
@@ -117,7 +118,6 @@ pub(crate) fn blind_rotate_lookup_table_to<T, Table, LM: primus_reduce::RingCont
         NativeModulus::new(),
     );
     let basis = server_key.blind_rotation_basis();
-    let control_len = parameters.blind_rotation().fourier_nlev_len();
     // One public layout dispatch per BR; the coordinate loop stays specialized.
     match &mut workspace.rotation {
         RotationState::Sparse { key, scratch } => {
@@ -132,14 +132,13 @@ pub(crate) fn blind_rotate_lookup_table_to<T, Table, LM: primus_reduce::RingCont
             );
         }
         RotationState::Binary {
-            first,
             controls,
             scratch: product,
         } => {
-            let positive = primus_lattice::nlev::FourierNlev::new(*first);
-            server_key.initializer().lift_monomial_to(
+            let (positive, negative) = controls.first_controls();
+            controls.initializer().lift_monomial_to(
                 &positive,
-                None,
+                negative.as_ref(),
                 &Polynomial(workspace.scratch.as_ref()),
                 exponent_of(input.a()[0]),
                 &mut workspace.current,
@@ -149,9 +148,7 @@ pub(crate) fn blind_rotate_lookup_table_to<T, Table, LM: primus_reduce::RingCont
             );
             rotate_controls(
                 &input.a()[1..],
-                controls
-                    .chunks_exact(control_len)
-                    .map(primus_lattice::ngsw::FourierNgsw::new),
+                controls.remaining_controls(),
                 &mut workspace.current,
                 &mut workspace.scratch,
                 exponent_of,
@@ -168,16 +165,13 @@ pub(crate) fn blind_rotate_lookup_table_to<T, Table, LM: primus_reduce::RingCont
             );
         }
         RotationState::Ternary {
-            first,
             controls,
             scratch: product,
         } => {
-            let (positive, negative) = first.split_at(control_len);
-            let positive = primus_lattice::nlev::FourierNlev::new(positive);
-            let negative = primus_lattice::nlev::FourierNlev::new(negative);
-            server_key.initializer().lift_monomial_to(
+            let (positive, negative) = controls.first_controls();
+            controls.initializer().lift_monomial_to(
                 &positive,
-                Some(&negative),
+                negative.as_ref(),
                 &Polynomial(workspace.scratch.as_ref()),
                 exponent_of(input.a()[0]),
                 &mut workspace.current,
@@ -187,13 +181,7 @@ pub(crate) fn blind_rotate_lookup_table_to<T, Table, LM: primus_reduce::RingCont
             );
             rotate_controls(
                 &input.a()[1..],
-                controls.chunks_exact(2 * control_len).map(|pair| {
-                    let (positive, negative) = pair.split_at(control_len);
-                    (
-                        primus_lattice::ngsw::FourierNgsw::new(positive),
-                        primus_lattice::ngsw::FourierNgsw::new(negative),
-                    )
-                }),
+                controls.ternary_controls(),
                 &mut workspace.current,
                 &mut workspace.scratch,
                 exponent_of,

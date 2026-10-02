@@ -66,7 +66,7 @@ pub use evaluator::Evaluator;
 #[doc(inline)]
 pub use factorized::{FactorizedEvaluator, FourierFactorizedLookupTable};
 #[doc(inline)]
-pub use key::{KeyGenerator, ServerKey};
+pub use key::{ClassicControls, KeyGenerator, ServerKey};
 #[doc(no_inline)]
 pub use sparse::SparseNtruBootstrappingKey;
 

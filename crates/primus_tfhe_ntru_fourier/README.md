@@ -38,6 +38,8 @@ The Fourier ring supports only `NativeModulus`; `PowOf2Modulus` rings are unsupp
 
 Both `RustFftTable` and `TfheFftTable` support u32/u64. Keys, values and evaluators must use the same FFT table instance; equal length does not prove representation identity.
 
+`server_key.classic_controls()` returns a borrowed `ClassicControls` view, or `None` for sparse material. Its `initializer()` lifts public polynomials; coordinate zero uses NLEV bits and later coordinates use NGSW bits, with positive/negative pairs for ternary secrets. CBS, one-hot and MVB check their required capabilities at construction. The optional `circuit_bootstrap_key()` remains available for inspecting or composing CBS material.
+
 ## Reusing evaluators
 
 Ordinary/interleaved `Evaluator` `_to` calls reuse workspace and caller outputs. See the [resource reuse guide](../primus_tfhe/README.md#reusing-evaluators) for PBS/MVB/CBS ownership conversions. NTRU conversions retain the ordinary PBS return workspace.

@@ -7,6 +7,8 @@ use primus_ntru::{FourierNgswCiphertext, NlevCiphertext};
 use primus_reduce::ReduceMul;
 use primus_tfhe::{InterleavedLookupTable, LookupTableError, LweCiphertext};
 
+use super::key::CircuitBootstrapBinding;
+
 use crate::{
     CircuitBootstrapKey, Evaluator, ServerKey, TfheContext, TfheEvaluationError,
     blind_rotation::blind_rotate_lookup_table_to,
@@ -21,7 +23,7 @@ where
     LM: primus_reduce::RingContext<T>,
 {
     pbs: Evaluator<'a, T, Table, LM>,
-    circuit_key: &'a CircuitBootstrapKey<T>,
+    circuit: CircuitBootstrapBinding<'a, T>,
     lookup_table: InterleavedLookupTable<T>,
     trace_scratch: Vec<T>,
     projected: NlevCiphertext<Vec<T>>,
@@ -44,13 +46,7 @@ where
         context: &'a TfheContext<T, Table, LM>,
         server_key: &'a ServerKey<T>,
     ) -> Result<Self, TfheEvaluationError> {
-        if server_key.sparse_bootstrapping_key().is_some() {
-            return Err(TfheEvaluationError::UnsupportedSparseBootstrapping);
-        }
-        let key = server_key
-            .circuit_bootstrap_key()
-            .ok_or(TfheEvaluationError::MissingCircuitBootstrapKey)?;
-        Self::try_from_parts(context, server_key, key)
+        Self::try_from_bootstrapper(Evaluator::try_new(context, server_key)?)
     }
 
     /// Binds resources and compiles gadget-scaled identity outputs once.
@@ -65,10 +61,7 @@ where
         server_key: &'a ServerKey<T>,
         circuit_key: &'a CircuitBootstrapKey<T>,
     ) -> Result<Self, TfheEvaluationError> {
-        if server_key.sparse_bootstrapping_key().is_some() {
-            return Err(TfheEvaluationError::UnsupportedSparseBootstrapping);
-        }
-        Self::from_bootstrapper_and_key(Evaluator::try_new(context, server_key)?, circuit_key)
+        Self::from_bootstrapper_and_key(Evaluator::try_new(context, server_key)?, Some(circuit_key))
     }
 
     /// Consumes ordinary PBS workspace and allocates only the additional CBS buffers.
@@ -76,13 +69,7 @@ where
     pub fn try_from_bootstrapper(
         pbs: Evaluator<'a, T, Table, LM>,
     ) -> Result<Self, TfheEvaluationError> {
-        if pbs.server_key.sparse_bootstrapping_key().is_some() {
-            return Err(TfheEvaluationError::UnsupportedSparseBootstrapping);
-        }
-        let key = pbs
-            .server_key
-            .circuit_bootstrap_key()
-            .ok_or(TfheEvaluationError::MissingCircuitBootstrapKey)?;
+        let key = pbs.server_key.circuit_bootstrap_key();
         Self::from_bootstrapper_and_key(pbs, key)
     }
 
@@ -104,14 +91,16 @@ where
 
     fn from_bootstrapper_and_key(
         pbs: Evaluator<'a, T, Table, LM>,
-        circuit_key: &'a CircuitBootstrapKey<T>,
+        circuit_key: Option<&'a CircuitBootstrapKey<T>>,
     ) -> Result<Self, TfheEvaluationError> {
         let context = pbs.context;
-        let parameters = circuit_key.parameters();
         let tfhe = context.parameters();
-        if !parameters.is_compatible(tfhe) {
-            return Err(TfheEvaluationError::IncompatibleCircuitBootstrapParameters);
-        }
+        let circuit = CircuitBootstrapBinding::try_new(
+            tfhe,
+            pbs.blind_rotation.rotation.classic_controls(),
+            circuit_key,
+        )?;
+        let parameters = circuit.parameters;
         let poly_length = tfhe.poly_length();
         let n = poly_length.get();
         let modulus = tfhe.accumulator_ntru().cipher_modulus();
@@ -134,7 +123,7 @@ where
         )?;
         Ok(Self {
             pbs,
-            circuit_key,
+            circuit,
             lookup_table,
             trace_scratch: vec![T::ZERO; 2 * n],
             projected: NlevCiphertext::zero(parameters.output_nlev_len()),
@@ -145,7 +134,7 @@ where
     /// Allocate once and reuse it with [`Self::circuit_bootstrap_to`].
     #[must_use]
     pub fn allocate_output(&self) -> FourierNgswCiphertext<Vec<Complex64>> {
-        FourierNgswCiphertext::zero(self.circuit_key.parameters().output_fourier_nlev_len())
+        FourierNgswCiphertext::zero(self.circuit.parameters.output_fourier_nlev_len())
     }
 
     /// Selects `lhs` for an encrypted zero and `rhs` for an encrypted one.
@@ -172,6 +161,7 @@ where
         C: Data<Elem = T>,
         D: DataMut<Elem = T>,
     {
+        let parameters = self.circuit.parameters;
         let ring_len = self.pbs.context.parameters().poly_length().get();
         assert_eq!(
             (
@@ -181,7 +171,7 @@ where
                 output.as_ref().len()
             ),
             (
-                self.circuit_key.parameters().output_fourier_nlev_len(),
+                parameters.output_fourier_nlev_len(),
                 ring_len,
                 ring_len,
                 ring_len
@@ -192,7 +182,7 @@ where
             lhs,
             rhs,
             output,
-            self.circuit_key.parameters().output_basis(),
+            parameters.output_basis(),
             &mut self.pbs.fft,
             self.pbs.blind_rotation.rotation.external_product(),
         );
@@ -218,6 +208,7 @@ where
         B: Data<Elem = T>,
         C: DataMut<Elem = T>,
     {
+        let parameters = self.circuit.parameters;
         let ring_len = self.pbs.context.parameters().poly_length().get();
         assert_eq!(
             (
@@ -225,17 +216,13 @@ where
                 input.as_ref().len(),
                 output.as_ref().len()
             ),
-            (
-                self.circuit_key.parameters().output_fourier_nlev_len(),
-                ring_len,
-                ring_len
-            ),
+            (parameters.output_fourier_nlev_len(), ring_len, ring_len),
             "external-product ciphertext layout mismatch"
         );
         control.external_product_to(
             input,
             output,
-            self.circuit_key.parameters().output_basis(),
+            parameters.output_basis(),
             &mut self.pbs.fft,
             self.pbs.blind_rotation.rotation.external_product(),
         );
@@ -272,6 +259,8 @@ where
         input: &LweCiphertext<T>,
         output: &mut FourierNgswCiphertext<S>,
     ) {
+        let parameters = self.circuit.parameters;
+        let circuit_key = self.circuit.key;
         let tfhe = self.pbs.context.parameters();
         assert_eq!(
             input.dimension(),
@@ -280,7 +269,7 @@ where
         );
         assert_eq!(
             output.as_ref().len(),
-            self.circuit_key.parameters().output_fourier_nlev_len(),
+            parameters.output_fourier_nlev_len(),
             "circuit-bootstrap NGSW output length mismatch"
         );
         blind_rotate_lookup_table_to(
@@ -294,21 +283,17 @@ where
         );
         // A general ManyLUT accumulator does not have a zero message tail.
         // Reverse-trace projection is valid here; prefix expansion is not.
-        self.circuit_key
+        circuit_key
             .trace_key()
             .project_prefix_coefficients_with_scratch_to(
                 &self.pbs.blind_rotation.current,
-                self.circuit_key
-                    .parameters()
-                    .output_basis()
-                    .decompose_length()
-                    .get(),
+                parameters.output_basis().decompose_length().get(),
                 self.projected.as_mut(),
                 &mut self.pbs.fft,
                 &mut self.trace_scratch,
                 self.pbs.blind_rotation.rotation.external_product(),
             );
-        self.circuit_key.scheme_switch_key().apply_to(
+        circuit_key.scheme_switch_key().apply_to(
             &self.projected,
             output,
             &mut self.pbs.fft,

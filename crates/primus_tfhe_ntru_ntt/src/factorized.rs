@@ -132,9 +132,11 @@ where
     pub fn try_from_bootstrapper(
         evaluator: Evaluator<'a, T, Table, LM>,
     ) -> Result<Self, TfheEvaluationError> {
-        if evaluator.server_key.sparse_bootstrapping_key().is_some() {
-            return Err(TfheEvaluationError::UnsupportedSparseBootstrapping);
-        }
+        evaluator
+            .blind_rotation
+            .rotation
+            .classic_controls()
+            .ok_or(TfheEvaluationError::UnsupportedSparseBootstrapping)?;
         let context = evaluator.context;
         Ok(Self {
             evaluator,

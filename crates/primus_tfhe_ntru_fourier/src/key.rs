@@ -1,5 +1,8 @@
 //! Server evaluation material and paired or component key generation.
 
+mod classic;
+pub use classic::ClassicControls;
+
 use num_traits::{ConstOne, ConstZero};
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{Complex64, FftEngine, FftTable, TorusFftValue};
@@ -37,6 +40,12 @@ enum Controls<T: TorusFftValue> {
     Sparse(crate::SparseNtruBootstrappingKey<T>),
 }
 
+// Select a borrowed algorithm once, together with the material it requires.
+pub(crate) enum BootstrappingControls<'a, T: TorusFftValue> {
+    Classic(ClassicControls<'a>),
+    Sparse(&'a crate::SparseNtruBootstrappingKey<T>),
+}
+
 impl<T: TorusFftValue> ServerKey<T> {
     /// Returns coefficient-domain bucket selections when this is a sparse server key.
     #[must_use]
@@ -47,19 +56,23 @@ impl<T: TorusFftValue> ServerKey<T> {
         }
     }
 
-    /// Borrows first-coordinate NLEV bits and the remaining NGSW bits.
-    pub(crate) fn classic_controls(&self) -> (&[Complex64], &[Complex64]) {
+    /// Borrows the classic initializer and binary/ternary control layout.
+    /// Returns `None` for sparse keys, whose first bucket performs lifting.
+    #[must_use]
+    pub fn classic_controls(&self) -> Option<ClassicControls<'_>> {
+        match self.bootstrapping_controls() {
+            BootstrappingControls::Classic(controls) => Some(controls),
+            BootstrappingControls::Sparse(_) => None,
+        }
+    }
+
+    /// Pairs the chosen BR algorithm with its complete borrowed material.
+    pub(crate) fn bootstrapping_controls(&self) -> BootstrappingControls<'_, T> {
         match &self.controls {
-            Controls::Classic { initializer, data } => {
-                let first_len = initializer.as_ref().len()
-                    * if self.input_distribution.is_binary() {
-                        1
-                    } else {
-                        2
-                    };
-                data.split_at(first_len)
-            }
-            Controls::Sparse(_) => panic!("classic control iterator requires a classic key"),
+            Controls::Classic { initializer, data } => BootstrappingControls::Classic(
+                ClassicControls::new(initializer, data, self.input_distribution.is_binary()),
+            ),
+            Controls::Sparse(key) => BootstrappingControls::Sparse(key),
         }
     }
 
@@ -87,20 +100,6 @@ impl<T: TorusFftValue> ServerKey<T> {
     #[must_use]
     pub fn circuit_bootstrap_key(&self) -> Option<&CircuitBootstrapKey<T>> {
         self.circuit_bootstrap.as_deref()
-    }
-
-    /// Returns the classic Fourier NLEV encryption of one, using the context's BR basis.
-    /// This can lift public polynomials into the accumulator's NTRU domain.
-    ///
-    /// # Panics
-    /// Panics for sparse keys, which have no standalone initializer.
-    #[must_use]
-    #[inline]
-    pub fn initializer(&self) -> &FourierNlev<Vec<Complex64>> {
-        match &self.controls {
-            Controls::Classic { initializer, .. } => initializer,
-            Controls::Sparse(_) => panic!("classic initializer requires a classic key"),
-        }
     }
 
     /// Returns the common initializer/control decomposition basis.

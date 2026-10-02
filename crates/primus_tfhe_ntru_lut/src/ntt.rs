@@ -357,14 +357,17 @@ where
             .parameters()
             .accumulator_ntru()
             .cipher_modulus();
-        self.server_key.initializer().external_product_to(
-            polynomial,
-            &mut self.current,
-            self.context.parameters().blind_rotation().basis(),
-            modulus,
-            self.context.table(),
-            self.one_hot.external_product_workspace(),
-        );
+        self.one_hot
+            .classic_controls()
+            .initializer()
+            .external_product_to(
+                polynomial,
+                &mut self.current,
+                self.context.parameters().blind_rotation().basis(),
+                modulus,
+                self.context.table(),
+                self.one_hot.external_product_workspace(),
+            );
     }
 
     /// Selects M public polynomials with full NLEV, including the default branch.

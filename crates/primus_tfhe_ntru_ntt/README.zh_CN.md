@@ -36,6 +36,8 @@ ManyLUT 通过交错共享一次盲旋转，多输出返回还共享一次 Q→q
 
 NTT 表需要实现 `MonomialNttTable`，内置表均支持。Context 检查长度和模数； 所有变换域密钥及数据须遵循该表的表示约定。
 
+`server_key.classic_controls()` 返回借用的 `ClassicControls` 视图，稀疏材料返回 `None`。视图的 `initializer()` 用于提升公开多项式；首坐标使用 NLEV bit，后续坐标使用 NGSW bit，ternary 秘密按正/负 bit 配对。CBS、one-hot 和 MVB 在构造时检查所需能力。可选的 `circuit_bootstrap_key()` 仍可用于查看或组合 CBS 材料。
+
 ## 复用 evaluator
 
 `Evaluator` 的普通/交错 `_to` 调用复用工作区和已有输出。PBS、MVB 与 CBS 之间的所有权转换见[资源复用指南](../primus_tfhe/README.zh_CN.md#复用-evaluator)。

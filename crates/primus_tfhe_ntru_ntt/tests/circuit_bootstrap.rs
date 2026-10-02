@@ -71,6 +71,17 @@ fn circuit_bootstrap(distr: SecretKeyDistr) {
         .unwrap();
     let circuit_key = server.circuit_bootstrap_key().unwrap();
     let parameters = circuit_key.parameters();
+    // Public capability layout: the first coordinate is separate from the
+    // remaining NGSW bits; ternary coordinates have positive/negative pairs.
+    let controls = server.classic_controls().unwrap();
+    assert_eq!(controls.is_binary(), distr.is_binary());
+    assert_eq!(controls.first_controls().1.is_none(), distr.is_binary());
+    assert_eq!(
+        controls.remaining_controls().len(),
+        (context.parameters().external_lwe_dimension().get() - 1)
+            * if distr.is_binary() { 1 } else { 2 },
+    );
+
     let key = NttNtruSecretKey::try_from_coeff_secret_key(
         client.accumulator_ntru_secret_key(),
         modulus,

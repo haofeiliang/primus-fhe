@@ -18,6 +18,31 @@ pub struct CircuitBootstrapKey<T: FheUint> {
     scheme_switch: NttGlweSchemeSwitchKey<T>,
 }
 
+// A checked pair of CBS material and the chosen output parameters. The key
+// binds output layout; a compatible alternate output basis remains valid.
+pub(super) struct CircuitBootstrapBinding<'a, T: FheUint> {
+    pub(super) key: &'a CircuitBootstrapKey<T>,
+    pub(super) parameters: &'a CircuitBootstrapParameters<T>,
+}
+
+impl<'a, T: FheUint> CircuitBootstrapBinding<'a, T> {
+    // Check caller-supplied parts before LUT/workspace preparation. Unlike NTRU,
+    // GLWE can reuse scheme-switch material with another compatible output basis.
+    pub(super) fn try_new(
+        tfhe: &crate::TfheParameters<T>,
+        parameters: &'a CircuitBootstrapParameters<T>,
+        key: &'a CircuitBootstrapKey<T>,
+    ) -> Result<Self, crate::TfheEvaluationError> {
+        if !parameters.is_compatible(tfhe) {
+            return Err(crate::TfheEvaluationError::IncompatibleCircuitBootstrapParameters);
+        }
+        if !key.is_compatible(parameters) {
+            return Err(crate::TfheEvaluationError::IncompatibleCircuitBootstrapKey);
+        }
+        Ok(Self { key, parameters })
+    }
+}
+
 impl<T: FheUint> CircuitBootstrapKey<T> {
     /// Returns the CBS parameters selected when this material was generated.
     #[must_use]

@@ -50,6 +50,14 @@
 
 客户端输入使用 Rounded 编码。Ordinary LUT 编译器按输入编码设置窗口，输出 codec 可独立指定；NTRU LUT 在 Q 编码，返回到 q 后须按对应 q 域输出 codec 解码并预算两次舍入误差。底层 GLWE/NTRU 参数保存的 Scaled codec 用于其普通加密，不决定 PBS 的 LUT 输出编码。
 
+## Classic 与 CBS 能力绑定
+
+NTRU 服务端密钥保持 classic/sparse 的所有权枚举；`ServerKey::classic_controls()` 返回借用的 `ClassicControls`，sparse 返回 `None`。视图集中 NLEV initializer、首坐标 NLEV 的正/可选负 bit，以及后续 NGSW bit 的语义迭代器。BR 构造时选择 binary/ternary/sparse 及其 scratch，在线提升不再重新分派服务端密钥或调用可能在 sparse 下 panic 的 initializer。
+
+CBS 的可选材料仍使用 `Option` 表示。私有绑定集中可用材料与所选 output parameters；NTRU CBS/one-hot 要求 classic，并始终使用 circuit key 的完整 output basis。GLWE CBS 支持 classic 与 sparse，独立 `try_from_parts` 验证调用方提供的参数、trace basis 和 scheme-switch layout，可复用兼容的独立 output basis。构造后保存借用的绑定，在线操作不再取得可选材料。布局及 basis 一致仍不证明秘密或变换表示身份。
+
+入口：NTRU [NTT 控制视图](../../crates/primus_tfhe_ntru_ntt/src/key/classic.rs) / [Fourier 控制视图](../../crates/primus_tfhe_ntru_fourier/src/key/classic.rs)，各后端 `circuit_bootstrap/key.rs` 的私有绑定与 `circuit_bootstrap/evaluator.rs` 的公开构造器。高精度 LUT 从已绑定 one-hot 取得 initializer；返回调度和工作区协议仍由各后端管理。
+
 ## CBS、CMux、MVB 与高精度查表
 
 | 工作流 | 从输入到消费者 | 独立约束及检查归属 |
