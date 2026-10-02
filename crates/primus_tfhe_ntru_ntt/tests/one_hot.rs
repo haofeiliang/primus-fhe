@@ -119,7 +119,8 @@ fn selectors(distr: SecretKeyDistr) {
     let encryptor = context.encryptor(&client).unwrap();
     let identity = context
         .parameters()
-        .compile_lookup_table_fn(|m| m as u64)
+        .lookup_table_compiler()
+        .compile_fn(|m| m as u64)
         .unwrap();
     let mut lwe_output = primus_tfhe::LweCiphertext::zero(4);
     let mut accumulator = context.accumulator_client(&client).unwrap();

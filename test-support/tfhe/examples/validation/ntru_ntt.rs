@@ -320,11 +320,11 @@ fn pbs<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
     let mut margin = ErrorMargin::new(name, seed);
 
     // Server: compile the public functions and allocate local evaluation storage.
-    let lut = context.parameters().compile_lookup_table_fn(value).unwrap();
+    let compiler = context.parameters().lookup_table_compiler();
+    let lut = compiler.compile_fn(value).unwrap();
     // Three outputs force padding to four interleaved lanes.
-    let many = context
-        .parameters()
-        .compile_interleaved_lookup_table_fn(3, |m, i| T::as_from((m + 2 * i) % domain))
+    let many = compiler
+        .compile_interleaved_fn(3, |m, i| T::as_from((m + 2 * i) % domain))
         .unwrap();
     let mut evaluator = context.evaluator(&server_key).unwrap();
     let mut output = context.allocate_lwe_ciphertext();

@@ -14,7 +14,7 @@ pub(crate) fn automorphism_map(
     let n = poly_length.get();
     let two_n = 2 * n;
     assert!(
-        degree < two_n && degree % 2 == 1,
+        degree < two_n && degree & 1 == 1,
         "FFT automorphism degree must be odd and less than 2N"
     );
     let mask = two_n - 1;
@@ -23,7 +23,7 @@ pub(crate) fn automorphism_map(
         // Wrapping arithmetic is exact modulo the power-of-two 2N.
         let root = 1usize.wrapping_sub(4usize.wrapping_mul(j));
         let mut mapped = degree.wrapping_mul(root) & mask;
-        let conjugate = mapped % 4 == 3;
+        let conjugate = mapped & 3 == 3;
         if conjugate {
             mapped = mapped.wrapping_neg() & mask;
         }

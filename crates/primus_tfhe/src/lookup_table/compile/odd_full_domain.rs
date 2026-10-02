@@ -6,7 +6,7 @@ use primus_poly::{PolyLength, PolynomialOwned};
 use primus_reduce::{PrepareModulusSwitch, ReduceAdd, RingContext};
 
 use super::{fill_negated_tail, upper_midpoint, validate_input_encoding};
-use crate::{LookupTableError, rotation::RotationQuantizer};
+use crate::{LookupTableError, rotation::RotationModulusSwitch};
 
 /// Compiles all t messages; the returned domain length is the validated usize t.
 /// Upper-half centers carry negated values so negacyclic extraction restores them.
@@ -43,7 +43,7 @@ where
     }
 
     let input_codec = RoundedCodec::new(input_plaintext_modulus, input_ciphertext_modulus);
-    let quantizer = RotationQuantizer::new(input_ciphertext_modulus, poly_length * 2, 1);
+    let modulus_switch = RotationModulusSwitch::new(input_ciphertext_modulus, poly_length * 2, 1);
     // For odd t, multiplying the ideal folded index by 2^{-1} mod t
     // interleaves the lower and upper message halves in increasing order.
     // Odd indices are upper-half inputs and carry a negative stored value.
@@ -57,7 +57,8 @@ where
     };
     let folded_center_at = |input| {
         let encoded = input_codec.encode_value(T::as_from(input), PlaintextEmbedding::Unsigned);
-        quantizer.exponent(encoded) % poly_length
+        // Fold the exponent in [0, 2N) into a coefficient index in [0, N).
+        modulus_switch.exponent(encoded) & (poly_length - 1)
     };
     let mut polynomial = PolynomialOwned::zero(poly_length);
     let coefficients = polynomial.as_mut();

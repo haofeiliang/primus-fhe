@@ -96,10 +96,12 @@ where
         T::as_from(8u32),
         context.parameters().external_lwe().cipher_modulus(),
     );
-    let single = context
+    let compiler = context
         .parameters()
-        .compile_lookup_table_with_codec_fn(&output_codec, |input| value(input, 0))
+        .lookup_table_compiler()
+        .try_with_output_codec(&output_codec)
         .unwrap();
+    let single = compiler.compile_fn(|input| value(input, 0)).unwrap();
     let mut output = LweCiphertext::zero(context.parameters().external_lwe_dimension().get());
     // Noise-free masks exercise first fusion, leading zero and remaining CMUX parity.
     // Reuse the same evaluator across all paths to check the final buffer role.
@@ -151,9 +153,8 @@ where
         let flat: Vec<_> = (0..8)
             .flat_map(|input| (0..output_count).map(move |output| value(input, output)))
             .collect();
-        let lut = context
-            .parameters()
-            .compile_interleaved_lookup_table_with_codec_slice(&output_codec, output_count, &flat)
+        let lut = compiler
+            .compile_interleaved_slice(output_count, &flat)
             .unwrap();
         let mut outputs =
             vec![
@@ -207,10 +208,7 @@ where
     let input = encryptor
         .encrypt_padded(T::as_from(3u32), &mut rng)
         .unwrap();
-    let good = context
-        .parameters()
-        .compile_interleaved_lookup_table_with_codec_fn(&output_codec, 3, value)
-        .unwrap();
+    let good = compiler.compile_interleaved_fn(3, value).unwrap();
     let mut outputs = vec![input.clone(); 3];
     // Isolate each piece of LUT metadata, including equal-length wrong-domain tables.
     let mut mismatched_tables = Vec::new();
@@ -379,10 +377,7 @@ where
     // Reuse this odd-modulus fixture for the full domain, including the upper
     // half. Keep a distinct output scale and a function with f(0) != 0.
     let values: Vec<_> = (0..15).map(|m| T::as_from((m * m + 3) % 8)).collect();
-    let full = context
-        .parameters()
-        .compile_odd_full_domain_lookup_table_with_codec_slice(&output_codec, &values)
-        .unwrap();
+    let full = compiler.compile_odd_full_domain_slice(&values).unwrap();
     // The shared LUT oracle covers all rotations. Encrypted evaluations keep
     // both sides of the fold, the final message and zero after dirty reuse.
     for message in [0, 1, 7, 8, 14, 0] {
@@ -485,7 +480,8 @@ fn check_first_controls<T: TorusFftValue, Table: FftTable>(context: TfheContext<
         let mut evaluator = context.evaluator(&server).unwrap();
         let decryptor = context.decryptor(&client).unwrap();
         let lut = parameters
-            .compile_lookup_table_fn(|m| T::as_from((m + 1) % 8))
+            .lookup_table_compiler()
+            .compile_fn(|m| T::as_from((m + 1) % 8))
             .unwrap();
         let modulus = parameters.external_lwe().cipher_modulus();
         let mut input = LweCiphertext::zero(dimension);

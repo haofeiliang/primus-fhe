@@ -6,11 +6,13 @@
 //! 2. Create a [`TfheContext`] and paired [`ClientKey`]/[`ServerKey`] with
 //!    [`TfheContext::try_generate_keys`]; `None` selects ordinary PBS material.
 //! 3. Bind [`Encryptor`], [`Decryptor`] and [`Evaluator`] from that context.
-//! 4. Compile through [`TfheParameters::compile_lookup_table_fn`], then reuse
-//!    [`Evaluator::apply_lookup_table_to`] with caller-owned LWE output storage.
-//!    Outputs use the parameter codec and [`Decryptor::decrypt`] by default.
-//!    Use [`TfheParameters::compile_lookup_table_with_codec_fn`] for a different output
-//!    encoding, then decode [`Decryptor::decrypt_phase`] with that codec.
+//! 4. Create a compiler with [`TfheParameters::lookup_table_compiler`] and call
+//!    [`LookupTableCompiler::compile_fn`]. Reuse [`Evaluator::apply_lookup_table_to`]
+//!    with caller-owned LWE output storage. Default outputs retain the parameter
+//!    plaintext modulus and use [`Decryptor::decrypt`].
+//!    [`LookupTableCompiler::try_with_output_codec`] selects another output encoding.
+//!    Compile at accumulator Q; decode [`Decryptor::decrypt_phase`] with a codec
+//!    at external q and the same output plaintext modulus.
 //!
 //! # Other operations
 //!
@@ -74,7 +76,8 @@ pub use sparse::SparseNtruBootstrappingKey;
 
 pub use primus_tfhe::{
     BivariateLookupTable, CircuitBootstrapConfig, ClientError, DecompositionConfig,
-    FactorizedLookupTable, InterleavedLookupTable, LookupTable, LweCiphertext, LweSecretKeyRef,
+    FactorizedLookupTable, InterleavedLookupTable, LookupTable, LookupTableCompiler, LweCiphertext,
+    LweSecretKeyRef,
 };
 pub use primus_tfhe_ntru::{ClientKey, EncryptionKey, LwePublicKey, LweReturnEvaluator};
 

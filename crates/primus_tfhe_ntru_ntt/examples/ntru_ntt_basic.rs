@@ -73,11 +73,9 @@ fn main() {
     let mut input = context.allocate_lwe_ciphertext();
 
     // Server: compile the public function and allocate reusable evaluation state.
-    // Outputs use the same t=32 codec, so the client's ordinary decrypt decodes them.
-    let lut = context
-        .parameters()
-        .compile_lookup_table_fn(|x| (x % 4) as Word)
-        .unwrap();
+    // Outputs keep t=32; ordinary decrypt uses the returned ciphertext's q codec.
+    let compiler = context.parameters().lookup_table_compiler();
+    let lut = compiler.compile_fn(|x| (x % 4) as Word).unwrap();
     let mut evaluator = context.evaluator(&server_key).unwrap();
     let mut output = context.allocate_lwe_ciphertext();
 

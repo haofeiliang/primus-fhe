@@ -91,16 +91,15 @@ fn sparse_pbs_preserves_external_secret_and_interleaved_outputs_in_both_orders()
         let decryptor = context.decryptor(&client).unwrap();
         // A distinct output scale exercises P2.1 through both dispatch branches.
         let codec = RoundedCodec::new(16, BarrettModulus::new(Q));
+        let compiler = context
+            .parameters()
+            .lookup_table_compiler()
+            .try_with_output_codec(&codec)
+            .unwrap();
         let function = |m: usize| (3 * m as u32 + 1) % 16;
         let functions = |m: usize, i: usize| (m + 2 * i) as u32;
-        let single = context
-            .parameters()
-            .compile_lookup_table_with_codec_fn(&codec, function)
-            .unwrap();
-        let many = context
-            .parameters()
-            .compile_interleaved_lookup_table_with_codec_fn(&codec, 3, functions)
-            .unwrap();
+        let single = compiler.compile_fn(function).unwrap();
+        let many = compiler.compile_interleaved_fn(3, functions).unwrap();
         assert_eq!(many.padded_output_count(), 4);
         let mut outputs = vec![LweCiphertext::zero(dimension); 3];
         let check = |output: &LweCiphertext<u32>, message: u32| {
@@ -257,7 +256,10 @@ fn sparse_bivariate_and_odd_full_domain_respect_input_margins_in_both_orders() {
         let full_value = |m: usize| ((m * m + 3) % 8) as u32;
         let full = context
             .parameters()
-            .compile_odd_full_domain_lookup_table_with_codec_fn(&output_codec, full_value)
+            .lookup_table_compiler()
+            .try_with_output_codec(&output_codec)
+            .unwrap()
+            .compile_odd_full_domain_fn(full_value)
             .unwrap();
         let dimension = context.parameters().external_lwe_dimension().get();
         let mut packed = LweCiphertext::zero(dimension);

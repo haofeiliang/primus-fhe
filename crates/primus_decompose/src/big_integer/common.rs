@@ -57,7 +57,8 @@ impl<T: FheUint> ValueMask<T> {
     #[inline]
     pub fn new(mask: T, drop_bits: u32) -> Self {
         let index = (drop_bits / T::BITS) as usize;
-        let shr_bits = drop_bits % T::BITS;
+        // FheUint limbs have a power-of-two bit width (16, 32, or 64).
+        let shr_bits = drop_bits & (T::BITS - 1);
 
         // The window crosses a limb boundary iff the highest set bit of `mask`,
         // left-shifted by `shr_bits`, would exceed the first limb.

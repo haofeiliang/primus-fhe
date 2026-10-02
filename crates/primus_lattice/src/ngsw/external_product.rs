@@ -133,7 +133,7 @@ where
         C: DataMut<Elem = T>,
     {
         let poly_length = workspace.poly_length().get();
-        debug_assert_eq!(input.as_ref().len() % poly_length, 0);
+        debug_assert_eq!(input.as_ref().len() & (poly_length - 1), 0);
         debug_assert_eq!(output.as_ref().len(), input.as_ref().len());
 
         let mut workspace = workspace.as_mut();
@@ -295,7 +295,7 @@ where
         S: Data<Elem = T>,
     {
         let poly_length = workspace.poly_length().get();
-        debug_assert_eq!(input.as_ref().len() % poly_length, 0);
+        debug_assert_eq!(input.as_ref().len() & (poly_length - 1), 0);
         debug_assert_eq!(output.as_ref().len(), input.as_ref().len());
 
         for (input_level, mut output_level) in input

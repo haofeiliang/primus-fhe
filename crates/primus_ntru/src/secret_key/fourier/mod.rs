@@ -77,13 +77,12 @@ impl FourierNtruSecretKey {
     /// For N = 2^k, X^N + 1 = (X + 1)^N over F_2. Thus f is a unit
     /// modulo 2^BITS exactly when f(1), the coefficient sum, is odd.
     fn is_unit_mod_two<T: TorusFftValue>(secret_key: &NtruSecretKey<T>) -> bool {
-        secret_key
+        let odd_coefficient_count = secret_key
             .as_slice()
             .iter()
             .filter(|&&coefficient| (coefficient.cast_to_unsigned() & T::ONE) == T::ONE)
-            .count()
-            % 2
-            == 1
+            .count();
+        odd_coefficient_count & 1 == 1
     }
 
     /// Returns the coefficient polynomial length.
@@ -289,7 +288,7 @@ impl FourierNtruSecretKey {
             nonzero_weight <= active_length,
             "NTRU nonzero weight must not exceed the active length"
         );
-        if nonzero_weight % 2 == 0 {
+        if nonzero_weight & 1 == 0 {
             return Err(NtruError::NonInvertibleSecretKey);
         }
         Ok(())

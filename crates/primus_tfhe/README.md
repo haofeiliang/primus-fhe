@@ -130,7 +130,15 @@ Backends accept named `TfheConfig` choices and derive shared ring parameters; `T
 
 The front-half unary function or slice compiler programs `0..ceil(t_in/2)` with outputs in `0..t_out`, as selected by the output codec. Its remaining inputs are not independently programmed. Odd full-domain compilation is a separate entry point described below. For an interleaved LUT (ManyLUT), the effective output count `k` is positive and the padded output count is `s = next_power_of_two(k)`, with `ceil(t/2) <= N/s`. The callback receives `(input, output_index)` once per effective pair, in input-major order; slices contain `D*k` values in the same order. With `k=3`, three outputs occupy four slots: the compiler zeros the fourth slot without calling the callback, and the evaluator returns exactly three ciphertexts. All outputs share one blind rotation (BR). GLWE shares a ring key switch with separate extraction; NTRU returns and LWE-key-switches each output separately. More outputs reduce rotation resolution and the available input-noise margin. This is one input evaluated by multiple functions, not batching independent ciphertexts.
 
-For direct shared-layer use, `LookupTable` / `InterleavedLookupTable` provide `try_from_fn` and `try_from_slice`, taking the input codec, accumulator modulus and output codec for unsigned Rounded encoding and validation. Odd full domains use `LookupTable::try_from_odd_full_domain_fn` / `_slice`; family compilation methods use these shared constructors.
+Create a reusable `LookupTableCompiler` with `parameters.lookup_table_compiler()`. For direct shared-layer use, `LookupTableCompiler::try_new(poly_length, &input_codec, accumulator_modulus, &output_codec)` binds the same encoding environment. It copies only the needed encoding state, without allocation or a borrow of the parameters/context. Its methods are:
+
+| Program | Function input | Slice input |
+| --- | --- | --- |
+| Front-half, one output | `compile_fn(function)` | `compile_slice(values)` |
+| Front-half, multiple outputs | `compile_interleaved_fn(k, function)` | `compile_interleaved_slice(k, values)` |
+| Odd full domain, one output | `compile_odd_full_domain_fn(function)` | `compile_odd_full_domain_slice(values)` |
+
+Compiler construction checks the output codec's modulus. Compilation checks each program's capacity and slice length before filling, preserving callback order and stopping at the first invalid output or colliding center.
 
 All shared LUT constructors and `BooleanEvaluator::try_new` take `PolyLength`, re-exported from `primus_poly`. Pass the checked length from the ring parameters, or construct it once with `PolyLength::try_new(N)`. The type centrally checks the power-of-two range `32..=2^17`; compilation still checks rotation-domain representability in the coefficient word, encoding, output capacity and values.
 
@@ -150,20 +158,25 @@ Client `decrypt` uses the parameter codec and returns a canonical representative
 
 Raw `LweCiphertext` does not track its secret, encoding or noise. Callers must use paired keys, canonical explicit-modulus coefficients and an adequate noise margin. LUT and dimension checks happen before output writes; they cannot verify secret identity. Fourier keys and evaluators must use the same FFT table instance.
 
-The minimal traits are `ProgrammableBootstrap` and `ProgrammableBootstrapInterleaved`. Ordinary applications use parameter compilation methods, which validate and encode plaintext outputs. `LookupTable::try_new` and `InterleavedLookupTable::try_new` accept already encoded outputs and an explicit programmed prefix length; Boolean and CBS paths use these constructors for their distinct output scales. Compatibility checks bind polynomial length and encoding moduli; callers remain responsible for keeping the input within the table's programmed prefix. `rotation` owns the quantization contract shared by LUT compilation and blind rotation.
+The minimal traits are `ProgrammableBootstrap` and `ProgrammableBootstrapInterleaved`. Ordinary applications use the compiler returned by the parameters, which validates and encodes plaintext outputs. `LookupTable::try_new` and `InterleavedLookupTable::try_new` accept already encoded outputs and an explicit programmed prefix length; Boolean and CBS paths use these constructors for their distinct output scales. Compatibility checks bind polynomial length and encoding moduli; callers remain responsible for keeping the input within the table's programmed prefix. `rotation::RotationModulusSwitch` prepares the coefficient modulus switching shared by LUT compilation and blind rotation, including the rotation-step alignment used by ManyLUT and CBS.
 
 ### Choosing the output encoding
 
-Ordinary, interleaved and odd full-domain parameter compilers have two forms:
+Choose the compiler's output encoding once, then use any of its function or slice methods:
 
-| Output encoding | Function / slice entry points | Decoding |
+| Output encoding | Compiler construction | Decoding |
 | --- | --- | --- |
-| Default: parameter plaintext modulus, encoded at the accumulator modulus | `compile_lookup_table_fn(function)` / `compile_lookup_table_slice(values)` | `decryptor.decrypt(output)` |
-| Explicit output codec | `compile_lookup_table_with_codec_fn(codec, function)` / `compile_lookup_table_with_codec_slice(codec, values)` | Decode `decrypt_phase(output)` with a codec at the return modulus |
+| Default: parameter plaintext modulus, encoded at the accumulator modulus | `parameters.lookup_table_compiler()` | `decryptor.decrypt(output)` |
+| Explicit output codec | `compiler.try_with_output_codec(&codec)?` | Decode `decrypt_phase(output)` with a codec at the return modulus |
 
-Interleaved and odd full-domain compilers follow the same naming rule. Default compilation reuses the parameter codecs; NTRU compiles at Q and decodes after returning to q. The function's output range can be smaller than the plaintext modulus: `x % 4` can still use `t=32` encoding. Basic examples use this default workflow.
+The function's output range can be smaller than the plaintext modulus: `x % 4` can still use `t=32` encoding. Basic examples use this default workflow:
 
-Explicit variants take `&RoundedCodec<T, M>` first. Input parameters still determine rotation centers and the input domain; the output codec sets `t_out`, validates `0..t_out` values and encodes them unsigned. Interleaved columns share one codec. Only that LUT's output encoding changes; parameters/context remain unchanged. The codec's ciphertext modulus must match the accumulator or compilation returns `OutputModulusMismatch`. GLWE uses the same input, accumulator and return modulus. NTRU supports Q→q: decode with a codec at q and the same `t_out`, budgeting scaling-rounding and return errors. MVB continues to require an explicit unsigned `ScaledCodec`.
+```rust,ignore
+let compiler = context.parameters().lookup_table_compiler();
+let lut = compiler.compile_fn(|x| (x % 4) as u32)?;
+```
+
+`try_with_output_codec` returns a compiler with a copied `RoundedCodec`, leaving the input domain and accumulator modulus unchanged. The output codec sets `t_out`, validates `0..t_out` values and encodes them unsigned; interleaved columns share one codec. A mismatched ciphertext modulus returns `OutputModulusMismatch` when binding the codec, before compilation. GLWE uses the same input, accumulator and return modulus. NTRU compiles at Q and returns to q: decode with a codec at q and the same `t_out`, budgeting scaling-rounding and return errors. MVB continues to require an explicit unsigned `ScaledCodec`.
 
 For an NTRU context with `t_in=16`, compute `x % 4` with `t_out=4`. This fragment reuses an existing context, clients and evaluator:
 
@@ -172,7 +185,9 @@ use primus_encoding::RoundedCodec;
 
 let table_codec = RoundedCodec::new(4u32, context.parameters().accumulator_ntru().cipher_modulus());
 let output_codec = RoundedCodec::new(4u32, context.parameters().external_lwe().cipher_modulus());
-let lut = context.parameters().compile_lookup_table_with_codec_fn(&table_codec, |x| (x % 4) as u32).unwrap();
+let compiler = context.parameters().lookup_table_compiler()
+    .try_with_output_codec(&table_codec).unwrap();
+let lut = compiler.compile_fn(|x| (x % 4) as u32).unwrap();
 let input = encryptor.encrypt_padded(7u32, &mut rng).unwrap();
 let output = evaluator.apply_lookup_table(&input, &lut);
 let message = output_codec.decode_value(decryptor.decrypt_phase(&output).unwrap());
@@ -185,12 +200,12 @@ For GLWE use `context.parameters().accumulator_glwe().cipher_modulus()` to const
 
 ## Odd full-domain PBS
 
-Use `compile_odd_full_domain_lookup_table_fn(function)` or its `_slice` form; choose the `*_with_codec_*` variant for a different output encoding. These methods program **all of `0..t_in`**, with odd `t_in >= 3` and `t_in <= N`. Slices contain exactly `t_in` outputs in input order. Encrypt with ordinary `encrypt`, then use the existing `apply_lookup_table_to`. Decode with `decrypt` for the default encoding, or with the explicit output codec. For example, with a common input/accumulator modulus, `t_in=15` and an output codec for `t_out=8`:
+Use `compiler.compile_odd_full_domain_fn(function)` or its `_slice` form; configure a different output encoding with `try_with_output_codec` when needed. These methods program **all of `0..t_in`**, with odd `t_in >= 3` and `t_in <= N`. Slices contain exactly `t_in` outputs in input order. Encrypt with ordinary `encrypt`, then use the existing `apply_lookup_table_to`. Decode with `decrypt` for the default encoding, or with the explicit output codec. For example, with a common input/accumulator modulus, `t_in=15` and an output codec for `t_out=8`:
 
 ```rust,ignore
-let lut = context.parameters().compile_odd_full_domain_lookup_table_with_codec_fn(
-    &output_codec, |x| ((x * x + 3) % 8) as u32,
-).unwrap();
+let compiler = context.parameters().lookup_table_compiler()
+    .try_with_output_codec(&output_codec).unwrap();
+let lut = compiler.compile_odd_full_domain_fn(|x| ((x * x + 3) % 8) as u32).unwrap();
 let input = encryptor.encrypt(14u32, &mut rng).unwrap();
 evaluator.apply_lookup_table_to(&input, &lut, &mut output);
 let message = output_codec.decode_value(decryptor.decrypt_phase(&output).unwrap());

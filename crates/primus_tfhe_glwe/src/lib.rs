@@ -7,11 +7,11 @@
 //! # Role in the backend workflow
 //!
 //! [`TfheConfig`] names mathematical choices; [`TfheParameters`] validates them and
-//! compiles Rounded LUTs. [`ClientKey`], [`Encryptor`] and [`Decryptor`] bind client
-//! secrets and encoding. Choose the NTT/Fourier backend for transform tables,
-//! server material and evaluators. [`KeyGenerationError`] and [`TfheClientError`]
-//! report key generation and family client construction; operations return
-//! shared [`ClientError`] or [`BooleanError`].
+//! provides a [`LookupTableCompiler`] for Rounded LUTs. [`ClientKey`], [`Encryptor`]
+//! and [`Decryptor`] bind client secrets and encoding. Choose the NTT/Fourier
+//! backend for transform tables, server material and evaluators.
+//! [`KeyGenerationError`] and [`TfheClientError`] report key generation and family
+//! client construction; operations return shared [`ClientError`] or [`BooleanError`].
 //!
 //! # Public-key clients
 //!
@@ -60,9 +60,9 @@ pub use parameters::{PbsOrder, TfheConfig, TfheParameters};
 pub use primus_tfhe::{
     BOOLEAN_PLAINTEXT_BITS, BivariateLookupTable, BooleanDecryptor, BooleanEncryptor, BooleanError,
     BooleanEvaluator, BooleanGate, CircuitBootstrapConfig, ClientError, DecompositionConfig,
-    Decryptor, EncryptionKey, Encryptor, InterleavedLookupTable, LookupTable, LookupTableError,
-    LweCiphertext, LweSecretKeyRef, ProgrammableBootstrap, ProgrammableBootstrapInterleaved,
-    TfheEvaluationError,
+    Decryptor, EncryptionKey, Encryptor, InterleavedLookupTable, LookupTable, LookupTableCompiler,
+    LookupTableError, LweCiphertext, LweSecretKeyRef, ProgrammableBootstrap,
+    ProgrammableBootstrapInterleaved, TfheEvaluationError,
 };
 
 pub use primus_glwe::SecretKeyDistr;

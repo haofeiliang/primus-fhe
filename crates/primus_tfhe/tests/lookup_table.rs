@@ -10,8 +10,8 @@ use primus_reduce::RingContext;
 use primus_poly::PolyLength;
 use primus_test_allocations as allocations;
 use primus_tfhe::{
-    BivariateLookupTable, InterleavedLookupTable, LookupTable, LookupTableError, LweCiphertext,
-    rotation::RotationQuantizer,
+    BivariateLookupTable, InterleavedLookupTable, LookupTable, LookupTableCompiler,
+    LookupTableError, LweCiphertext, rotation::RotationModulusSwitch,
 };
 
 #[global_allocator]
@@ -140,13 +140,18 @@ fn rounded_outputs_share_raw_geometry_and_preserve_callback_order() {
     fn check<M: RingContext<u32>>(modulus: M) {
         // Different input/output ciphertext moduli remain supported by shared LUTs.
         let output = RoundedCodec::new(8, modulus);
+        let poly_length = PolyLength::new(64);
         for t in [3u32, 4, 5] {
             let input = RoundedCodec::new(t, PowOf2Modulus::new(1 << 16));
+            let (compiler, allocation) = allocations::measure(|| {
+                LookupTableCompiler::try_new(poly_length, &input, modulus, &output).unwrap()
+            });
+            assert_eq!(allocation.count, 0);
             let d = t.div_ceil(2) as usize;
             let values: Vec<_> = (0..d as u32).map(|m| 7 - m).collect();
             let raw = LookupTable::try_new(
                 d,
-                PolyLength::new(64),
+                poly_length,
                 t,
                 input.ciphertext_modulus(),
                 modulus,
@@ -156,51 +161,40 @@ fn rounded_outputs_share_raw_geometry_and_preserve_callback_order() {
                 },
             )
             .unwrap();
-            let (single, allocation) = allocations::measure(|| {
-                LookupTable::try_from_slice(PolyLength::new(64), &input, modulus, &output, &values)
+            let (single, allocation) =
+                allocations::measure(|| compiler.compile_slice(&values).unwrap());
+            assert_eq!(allocation.count, 1);
+            assert_eq!(single.polynomial(), raw.polynomial());
+            let next = Cell::new(0);
+            let from_fn = compiler
+                .compile_fn(|m| {
+                    assert_eq!(m, next.replace(next.get() + 1));
+                    values[m]
+                })
+                .unwrap();
+            assert_eq!(next.get(), d);
+            assert_eq!(single.polynomial(), from_fn.polynomial());
+
+            let outputs: Vec<_> = values.iter().flat_map(|&m| [m, 0, 1]).collect();
+            let many = compiler.compile_interleaved_slice(3, &outputs).unwrap();
+            next.set(0);
+            let (from_fn, allocation) = allocations::measure(|| {
+                compiler
+                    .compile_interleaved_fn(3, |m, j| {
+                        assert_eq!(m * 3 + j, next.replace(next.get() + 1));
+                        outputs[m * 3 + j]
+                    })
                     .unwrap()
             });
             assert_eq!(allocation.count, 1);
-            assert_eq!(single.polynomial(), raw.polynomial());
-            assert_eq!(
-                single.polynomial(),
-                LookupTable::try_from_fn(PolyLength::new(64), &input, modulus, &output, |m| values
-                    [m])
-                .unwrap()
-                .polynomial()
-            );
-            let outputs: Vec<_> = values.iter().flat_map(|&m| [m, 0, 1]).collect();
-            let many = InterleavedLookupTable::try_from_slice(
-                PolyLength::new(64),
-                &input,
-                modulus,
-                &output,
-                3,
-                &outputs,
-            )
-            .unwrap();
-            let (from_fn, allocation) = allocations::measure(|| {
-                InterleavedLookupTable::try_from_fn(
-                    PolyLength::new(64),
-                    &input,
-                    modulus,
-                    &output,
-                    3,
-                    |m, j| outputs[m * 3 + j],
-                )
-                .unwrap()
-            });
-            assert_eq!(allocation.count, 1);
+            assert_eq!(next.get(), outputs.len());
             assert_eq!(many.polynomial(), from_fn.polynomial());
+
             if t % 2 == 1 {
-                let next = Cell::new(0usize);
+                next.set(0);
                 let (full, allocation) = allocations::measure(|| {
-                    LookupTable::try_from_odd_full_domain_fn(
-                        PolyLength::new(64),
-                        &input,
-                        modulus,
-                        &output,
-                        |m| {
+                    compiler
+                        .compile_odd_full_domain_fn(|m| {
                             let index = next.get();
                             assert_eq!(
                                 m,
@@ -212,24 +206,18 @@ fn rounded_outputs_share_raw_geometry_and_preserve_callback_order() {
                             );
                             next.set(index + 1);
                             m as u32
-                        },
-                    )
-                    .unwrap()
+                        })
+                        .unwrap()
                 });
                 assert_eq!(allocation.count, 1);
                 assert_eq!(next.get(), t as usize);
                 let outputs: Vec<_> = (0..t).collect();
                 assert_eq!(
                     full.polynomial(),
-                    LookupTable::try_from_odd_full_domain_slice(
-                        PolyLength::new(64),
-                        &input,
-                        modulus,
-                        &output,
-                        &outputs
-                    )
-                    .unwrap()
-                    .polynomial()
+                    compiler
+                        .compile_odd_full_domain_slice(&outputs)
+                        .unwrap()
+                        .polynomial()
                 );
             }
         }
@@ -241,122 +229,99 @@ fn rounded_outputs_share_raw_geometry_and_preserve_callback_order() {
 #[test]
 fn rounded_output_boundaries_reject_before_encoding() {
     let modulus = NativeModulus::<u32>::new();
+    let poly_length = PolyLength::new(32);
     let output = RoundedCodec::new(8, modulus);
     let wrong = RoundedCodec::new(8, PowOf2Modulus::new(1 << 16));
+    // Codec pairing is checked once when constructing or changing the compiler,
+    // independently of any program's slice length, capacity or callback.
+    assert_eq!(
+        LookupTableCompiler::try_new(poly_length, &output, modulus, &wrong).unwrap_err(),
+        LookupTableError::OutputModulusMismatch
+    );
     for t in [3u32, 4, 5] {
         let input = RoundedCodec::new(t, modulus);
-        let d = t.div_ceil(2) as usize;
+        let compiler = LookupTableCompiler::try_new(poly_length, &input, modulus, &output).unwrap();
         assert_eq!(
-            LookupTable::try_from_slice(PolyLength::new(32), &input, modulus, &wrong, &[])
-                .unwrap_err(),
+            compiler.try_with_output_codec(&wrong).unwrap_err(),
+            LookupTableError::OutputModulusMismatch
+        );
+        assert_eq!(
+            compiler.compile_slice(&[]).unwrap_err(),
             LookupTableError::DomainLengthMismatch {
-                expected: d,
+                expected: t.div_ceil(2) as usize,
                 actual: 0
             }
         );
         assert_eq!(
-            LookupTable::try_from_fn(PolyLength::new(32), &input, modulus, &wrong, |_| panic!(
-                "must reject before callback"
-            ))
-            .unwrap_err(),
-            LookupTableError::OutputModulusMismatch
-        );
-        assert_eq!(
-            InterleavedLookupTable::try_from_fn(
-                PolyLength::new(32),
-                &input,
-                modulus,
-                &wrong,
-                1,
-                |_, _| panic!("must reject before callback")
-            )
-            .unwrap_err(),
-            LookupTableError::OutputModulusMismatch
-        );
-        assert_eq!(
-            LookupTable::try_from_fn(PolyLength::new(32), &input, modulus, &output, |_| 8)
+            compiler
+                .compile_interleaved_slice(usize::MAX, &[])
                 .unwrap_err(),
-            LookupTableError::OutputOutOfRange { input: 0 }
-        );
-        assert_eq!(
-            InterleavedLookupTable::try_from_slice(
-                PolyLength::new(32),
-                &input,
-                modulus,
-                &output,
-                usize::MAX,
-                &[]
-            )
-            .unwrap_err(),
             LookupTableError::TableLengthOverflow
         );
         assert_eq!(
-            LookupTable::try_from_odd_full_domain_slice(
-                PolyLength::new(32),
-                &input,
-                modulus,
-                &wrong,
-                &[]
-            )
-            .unwrap_err(),
+            compiler.compile_odd_full_domain_slice(&[]).unwrap_err(),
             LookupTableError::DomainLengthMismatch {
                 expected: t as usize,
                 actual: 0
             }
         );
+
+        // Stop at the first invalid output in each geometry's visitation order.
+        let calls = Cell::new(0);
         assert_eq!(
-            LookupTable::try_from_odd_full_domain_fn(
-                PolyLength::new(32),
-                &input,
-                modulus,
-                &wrong,
-                |_| panic!("must reject before callback")
-            )
-            .unwrap_err(),
-            LookupTableError::OutputModulusMismatch
+            compiler
+                .compile_fn(|m| {
+                    assert!(calls.get() < 2);
+                    calls.set(calls.get() + 1);
+                    if m == 0 { 0 } else { 8 }
+                })
+                .unwrap_err(),
+            LookupTableError::OutputOutOfRange { input: 1 }
         );
+        assert_eq!(calls.get(), 2);
+        calls.set(0);
         assert_eq!(
-            LookupTable::try_from_odd_full_domain_fn(
-                PolyLength::new(32),
-                &input,
-                modulus,
-                &output,
-                |_| 8
-            )
-            .unwrap_err(),
+            compiler
+                .compile_interleaved_fn(3, |m, j| {
+                    assert_eq!(m, 0);
+                    assert!(calls.get() < 2);
+                    calls.set(calls.get() + 1);
+                    if j == 0 { 0 } else { 8 }
+                })
+                .unwrap_err(),
+            LookupTableError::OutputOutOfRange { input: 0 }
+        );
+        assert_eq!(calls.get(), 2);
+        calls.set(0);
+        assert_eq!(
+            compiler
+                .compile_odd_full_domain_fn(|m| {
+                    assert!(calls.get() < 2);
+                    calls.set(calls.get() + 1);
+                    if m == 0 { 0 } else { 8 }
+                })
+                .unwrap_err(),
             if t % 2 == 1 {
-                LookupTableError::OutputOutOfRange { input: 0 }
+                LookupTableError::OutputOutOfRange {
+                    input: t.div_ceil(2) as usize,
+                }
             } else {
                 LookupTableError::EvenPlaintextModulus
             }
         );
+        assert_eq!(calls.get(), if t % 2 == 1 { 2 } else { 0 });
     }
     let input = RoundedCodec::new(4, modulus);
+    let compiler = LookupTableCompiler::try_new(poly_length, &input, modulus, &output).unwrap();
     assert_eq!(
-        InterleavedLookupTable::try_from_slice(
-            PolyLength::new(32),
-            &input,
-            modulus,
-            &output,
-            3,
-            &[0; 8]
-        )
-        .unwrap_err(),
+        compiler.compile_interleaved_slice(3, &[0; 8]).unwrap_err(),
         LookupTableError::DomainLengthMismatch {
             expected: 6,
             actual: 8
         }
     );
     assert_eq!(
-        InterleavedLookupTable::try_from_slice(
-            PolyLength::new(32),
-            &input,
-            modulus,
-            &output,
-            1,
-            &[0, 8]
-        )
-        .unwrap_err(),
+        compiler.compile_interleaved_slice(1, &[0, 8]).unwrap_err(),
         LookupTableError::OutputOutOfRange { input: 1 }
     );
 }
@@ -658,14 +623,14 @@ fn rotation_center_collisions_are_rejected() {
 }
 
 #[test]
-fn quantizer_and_lut_reject_unrepresentable_rotation_domains() {
+fn rotation_modulus_switch_and_lut_reject_unrepresentable_rotation_domains() {
     let modulus = NativeModulus::<u16>::new();
     for two_n in [1 << 16, 1 << 17] {
         // A smaller quantization target must not bypass the 2N boundary.
         for rotation_step in [1, 2] {
             assert!(
                 std::panic::catch_unwind(|| {
-                    RotationQuantizer::new(modulus, two_n, rotation_step)
+                    RotationModulusSwitch::new(modulus, two_n, rotation_step)
                 })
                 .is_err()
             );
@@ -699,16 +664,16 @@ mod rotation {
             let input = T::try_from(value).unwrap();
             with_modulus!(modulus, modulus, {
                 for rotation_step in [1, length / 2] {
-                    let quantizer = RotationQuantizer::new(modulus, length, rotation_step);
+                    let modulus_switch = RotationModulusSwitch::new(modulus, length, rotation_step);
                     let expected = |value: T| {
                         round_ratio(value.into() * (length / rotation_step) as u128, q) as usize
                             % (length / rotation_step)
                             * rotation_step
                     };
-                    assert_eq!(quantizer.exponent(input), expected(input));
+                    assert_eq!(modulus_switch.exponent(input), expected(input));
                     let inputs = [T::ZERO, input, T::try_from(q - 1).unwrap()];
                     let mut outputs = [usize::MAX; 3];
-                    quantizer.exponent_slice_to(&inputs, &mut outputs);
+                    modulus_switch.exponent_slice_to(&inputs, &mut outputs);
                     for (value, actual) in inputs.into_iter().zip(outputs) {
                         assert_eq!(actual, expected(value));
                     }
@@ -746,14 +711,17 @@ mod rotation {
         check_quantization::<u64>();
         // Rounding in the smaller domain differs from clearing low bits afterward.
         let modulus = PowOf2Modulus::new(16u32);
-        assert_eq!(RotationQuantizer::new(modulus, 16, 4).exponent(2), 4);
-        assert_eq!(RotationQuantizer::new(modulus, 16, 1).exponent(2) & !3, 0);
+        assert_eq!(RotationModulusSwitch::new(modulus, 16, 4).exponent(2), 4);
+        assert_eq!(
+            RotationModulusSwitch::new(modulus, 16, 1).exponent(2) & !3,
+            0
+        );
 
-        let quantizer = RotationQuantizer::new(NativeModulus::<u32>::new(), 512, 1);
+        let modulus_switch = RotationModulusSwitch::new(NativeModulus::<u32>::new(), 512, 1);
         let mut output = [7; 2];
         assert!(
             std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                quantizer.exponent_slice_to(&[0], &mut output);
+                modulus_switch.exponent_slice_to(&[0], &mut output);
             }))
             .is_err()
         );

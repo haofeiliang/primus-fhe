@@ -1,4 +1,4 @@
-//! Rotation quantization shared by LUT compilation and blind rotation.
+//! Modulus switching to rotation exponents for LUT compilation and blind rotation.
 //!
 //! Compilation and execution use the same rounding and rotation-step rules.
 //! These operations act on public ciphertext coefficients; the blind-rotation
@@ -16,20 +16,25 @@ use primus_integer::FheUint;
 use primus_modulus::PowOf2Modulus;
 use primus_reduce::{ModulusSwitch, PrepareModulusSwitch};
 
-/// Prepared coefficient quantization for ordinary and interleaved PBS.
-/// The input modulus and target width are fixed before processing coefficients.
+/// Prepared modulus switching from input coefficients to rotation exponents.
+///
+/// Combines [`ModulusSwitch`] with a power-of-two rotation step and `usize`
+/// outputs. Ordinary PBS and factorized MVB use step one. Interleaved PBS uses
+/// the padded output count; CBS and one-hot use their padded gadget width.
+/// LUT compilation uses the same rounding to place the encoded output intervals.
 #[derive(Clone, Copy, Debug)]
-pub struct RotationQuantizer<T: FheUint> {
+pub struct RotationModulusSwitch<T: FheUint> {
     switch: ModulusSwitch<T>,
     rotation_step: usize,
 }
 
-impl<T: FheUint> RotationQuantizer<T> {
-    /// Prepares `rotation_step * R(value, q, two_n/rotation_step)`.
+impl<T: FheUint> RotationModulusSwitch<T> {
+    /// Creates a [`RotationModulusSwitch`] for
+    /// `rotation_step * R(value, q, two_n/rotation_step)`.
     /// Rounding in the smaller domain preserves interleaved LUT residue classes.
-    /// Execution uses `two_n = 2N` and the LUT's padded output count `s` as the
-    /// step. Compilation uses `two_n = 2N/s` and step one to obtain centers in
-    /// per-output coefficient coordinates.
+    /// ManyLUT execution uses `two_n = 2N` and the LUT's padded output count `s`
+    /// as the step. Compilation uses `two_n = 2N/s` and step one to obtain
+    /// centers in per-output coefficient coordinates.
     ///
     /// # Panics
     /// Panics unless `two_n >= 2` and `rotation_step` are powers of two,
@@ -57,7 +62,8 @@ impl<T: FheUint> RotationQuantizer<T> {
         }
     }
 
-    /// Quantizes one canonical input coefficient into `[0,two_n)`.
+    /// Modulus-switches one canonical input coefficient to a rotation exponent
+    /// in `[0,two_n)`, aligned to `rotation_step`.
     ///
     /// # Correctness
     /// `value` must be canonical under the input modulus used at construction.
@@ -68,7 +74,7 @@ impl<T: FheUint> RotationQuantizer<T> {
         exponent * self.rotation_step
     }
 
-    /// Quantizes coefficients into an equally sized slice of rotation exponents.
+    /// Modulus-switches coefficients into an equally sized slice of rotation exponents.
     /// Fuses conversion to `usize`, rotation-step scaling and output writes with
     /// the prepared switch's batch operation, without intermediate allocation.
     ///

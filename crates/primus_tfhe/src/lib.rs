@@ -4,6 +4,7 @@
 //! Rounded outputs, [`FactorizedLookupTable`] for Scaled MVB programs, or
 //! [`BivariateLookupTable`] to pack bounded inputs. Backends prepare tables/keys and
 //! execute these programs; this crate does not own a transform context or server key.
+//! [`LookupTableCompiler`] shares the encoding environment for ordinary Rounded LUTs.
 //! [`BooleanEvaluator`] composes the small PBS traits for Boolean gate evaluation.
 //!
 //! [`Encryptor`], [`Decryptor`] and their Boolean wrappers share external LWE
@@ -36,7 +37,7 @@ pub use client::{
 pub use error::{LookupTableError, TfheEvaluationError};
 pub use lookup_table::{
     BivariateLookupTable, FactorizedLookupTable, InterleavedLookupTable, LookupTable,
-    front_half_domain_len,
+    LookupTableCompiler, front_half_domain_len,
 };
 pub use parameters::CircuitBootstrapConfig;
 pub use primus_decompose::{DecompositionBaseLog, DecompositionConfig, DecompositionLevelCount};

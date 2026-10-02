@@ -12,7 +12,7 @@ Online rotation quantizes every ciphertext coefficient as R_s(x)=s*R(x,q_in,2N/s
 
 For odd full domains t=2h+1, fold centers at N and negate upper-half outputs. The sorted input order is 0,h+1,1,h+2,...,h; the compiler rejects collisions of the actual rounded centers. Append center N with -f(0), with interval boundaries ceil((left+right)/2). Typical spacing N/t is half the front-half spacing; t<=N alone does not prove margin. See [front-half compilation](src/lookup_table/compile/front_half.rs) and [odd full-domain compilation](src/lookup_table/compile/odd_full_domain.rs).
 
-`rotation::RotationQuantizer::new(input_modulus, two_n, rotation_step)` prepares this fixed modulus-pair conversion; `exponent(value)` executes it without allocation. The target `two_n/rotation_step` is an explicit power of two even for Native inputs. Interleaved rotation quantizes into that smaller domain before multiplying by the padded output count.
+`rotation::RotationModulusSwitch::new(input_modulus, two_n, rotation_step)` prepares modulus switching into the rotation domain; `exponent(value)` executes it without allocation. The target `two_n/rotation_step` is an explicit power of two even for Native inputs. Interleaved rotation switches into that smaller domain before multiplying by the padded output count. CBS and one-hot use the same rule with their padded gadget width; ordinary PBS and factorized MVB use step one.
 
 ## Ternary and sparse rotation
 

@@ -11,7 +11,7 @@ use primus_lattice::{
 use primus_lwe::{LweParameters, LweSecretKey};
 use primus_modulus::NativeModulus;
 use primus_reduce::{Modulus, RingContext};
-use primus_tfhe::rotation::RotationQuantizer;
+use primus_tfhe::rotation::RotationModulusSwitch;
 use primus_tfhe_glwe::SecretKeyDistr;
 use zeroize::Zeroizing;
 
@@ -24,7 +24,7 @@ pub struct FourierGlweBootstrappingKey<T: TorusFftValue, LM: Modulus<ValueT = T>
     input_dimension: LweDimension,
     input_distribution: SecretKeyDistr,
     input_modulus: LM,
-    input_quantizer: RotationQuantizer<T>,
+    rotation_modulus_switch: RotationModulusSwitch<T>,
     size: GadgetSize,
     basis: ApproxSignedBasis<T>,
 }
@@ -51,8 +51,8 @@ impl<T: TorusFftValue, LM: Modulus<ValueT = T>> FourierGlweBootstrappingKey<T, L
     }
 
     #[inline]
-    pub(crate) fn input_quantizer(&self) -> RotationQuantizer<T> {
-        self.input_quantizer
+    pub(crate) fn rotation_modulus_switch(&self) -> RotationModulusSwitch<T> {
+        self.rotation_modulus_switch
     }
 
     /// Returns the GGSW/GLWE layout bound to this key.
@@ -156,7 +156,7 @@ impl<T: TorusFftValue, LM: Modulus<ValueT = T>> FourierGlweBootstrappingKey<T, L
             }
             selectors.as_slice()
         };
-        let input_quantizer = RotationQuantizer::new(
+        let rotation_modulus_switch = RotationModulusSwitch::new(
             input_parameters.cipher_modulus(),
             parameters.size().glwe_size().poly_length().get() * 2,
             1,
@@ -174,7 +174,7 @@ impl<T: TorusFftValue, LM: Modulus<ValueT = T>> FourierGlweBootstrappingKey<T, L
             input_dimension,
             input_distribution,
             input_modulus: input_parameters.cipher_modulus(),
-            input_quantizer,
+            rotation_modulus_switch,
             size: parameters.size(),
             basis: parameters.basis().clone(),
         }

@@ -154,7 +154,8 @@ fn split_keys_support_both_pbs_orders() {
             .unwrap();
         let lookup_table = context
             .parameters()
-            .compile_lookup_table_slice(&[1u32, 0])
+            .lookup_table_compiler()
+            .compile_slice(&[1u32, 0])
             .unwrap();
         let public = client
             .try_generate_public_key(context.parameters(), &mut rng)

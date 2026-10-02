@@ -11,7 +11,7 @@ use primus_lattice::{
 use primus_lwe::{LweParameters, LweSecretKey};
 use primus_ntt::NttTable;
 use primus_reduce::{FieldContext, Modulus, RingContext};
-use primus_tfhe::rotation::RotationQuantizer;
+use primus_tfhe::rotation::RotationModulusSwitch;
 use primus_tfhe_glwe::SecretKeyDistr;
 use zeroize::Zeroizing;
 
@@ -24,7 +24,7 @@ pub struct NttGlweBootstrappingKey<T: FheUint, LM: Modulus<ValueT = T>> {
     input_dimension: LweDimension,
     input_distribution: SecretKeyDistr,
     input_modulus: LM,
-    input_quantizer: RotationQuantizer<T>,
+    rotation_modulus_switch: RotationModulusSwitch<T>,
     size: GadgetSize,
     cipher_modulus: T,
     basis: ApproxSignedBasis<T>,
@@ -52,8 +52,8 @@ impl<T: FheUint, LM: Modulus<ValueT = T>> NttGlweBootstrappingKey<T, LM> {
     }
 
     #[inline]
-    pub(crate) fn input_quantizer(&self) -> RotationQuantizer<T> {
-        self.input_quantizer
+    pub(crate) fn rotation_modulus_switch(&self) -> RotationModulusSwitch<T> {
+        self.rotation_modulus_switch
     }
 
     /// Returns the GGSW/GLWE layout bound to this key.
@@ -156,7 +156,7 @@ impl<T: FheUint, LM: Modulus<ValueT = T>> NttGlweBootstrappingKey<T, LM> {
             }
             selectors.as_slice()
         };
-        let input_quantizer = RotationQuantizer::new(
+        let rotation_modulus_switch = RotationModulusSwitch::new(
             input_parameters.cipher_modulus(),
             parameters.size().glwe_size().poly_length().get() * 2,
             1,
@@ -174,7 +174,7 @@ impl<T: FheUint, LM: Modulus<ValueT = T>> NttGlweBootstrappingKey<T, LM> {
             input_dimension,
             input_distribution,
             input_modulus: input_parameters.cipher_modulus(),
-            input_quantizer,
+            rotation_modulus_switch,
             size: parameters.size(),
             cipher_modulus: parameters.cipher_modulus().value(),
             basis: parameters.basis().clone(),

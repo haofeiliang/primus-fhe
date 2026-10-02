@@ -31,15 +31,15 @@ pub fn one_hot_guard<T: FheUint>(
     name: &str,
     seed: u64,
 ) {
-    let quantizer =
-        primus_tfhe::rotation::RotationQuantizer::new(modulus, 2 * poly_length, rotation_step);
-    let mut phase = quantizer.exponent(input.b()) as i128;
+    let modulus_switch =
+        primus_tfhe::rotation::RotationModulusSwitch::new(modulus, 2 * poly_length, rotation_step);
+    let mut phase = modulus_switch.exponent(input.b()) as i128;
     let q: i128 = modulus.value().as_into();
     for (&a, &s) in input.a().iter().zip(secret) {
         // External ternary keys encode -1 as q-1; rotation exponents use signed s.
         let s: i128 = s.as_into();
         let s = if s > q / 2 { s - q } else { s };
-        phase -= quantizer.exponent(a) as i128 * s;
+        phase -= modulus_switch.exponent(a) as i128 * s;
     }
     // Message m is centered at m*N/M in the 2N rotation domain. The LUT cells
     // include their left edge and exclude their right edge: -N/(2M) <= e < N/(2M).

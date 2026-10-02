@@ -9,15 +9,16 @@
 
 mod bivariate;
 mod compile;
+mod compiler;
 mod factorized;
 mod interleaved;
-mod rounded;
 mod single;
 
 use primus_integer::FheUint;
 
 pub use bivariate::BivariateLookupTable;
 pub use compile::front_half_domain_len;
+pub use compiler::LookupTableCompiler;
 pub use factorized::FactorizedLookupTable;
 pub use interleaved::InterleavedLookupTable;
 pub use single::LookupTable;

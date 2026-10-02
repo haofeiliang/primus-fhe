@@ -39,7 +39,7 @@ pub fn add_mul_monomial_pair_assign<T, M>(
     debug_assert!(n.is_power_of_two(), "invalid polynomial length");
     debug_assert_eq!(acc.len(), first.len(), "coefficient batch length mismatch");
     debug_assert_eq!(acc.len(), second.len(), "coefficient batch length mismatch");
-    debug_assert_eq!(acc.len() % n, 0, "incomplete coefficient polynomial");
+    debug_assert_eq!(acc.len() & (n - 1), 0, "incomplete coefficient polynomial");
     debug_assert!(
         first_exponent < 2 * n && second_exponent < 2 * n,
         "monomial exponent must be less than 2N"

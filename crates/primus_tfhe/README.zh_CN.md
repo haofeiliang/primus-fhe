@@ -130,7 +130,15 @@ Context 保存不可变参数和变换表，ServerKey 保存求值材料；Evalu
 
 前半区单函数或切片编译器为 `0..ceil(t_in/2)` 输入域编程，输出属于输出 codec 指定的 `0..t_out`。 其余输入不独立编程；奇数全域使用下文的独立入口。交错 LUT（ManyLUT）的有效输出数 `k` 为正， 补齐后的输出数为 `s = next_power_of_two(k)`，满足 `ceil(t/2) <= N/s`。callback 按输入优先 顺序接收 `(input, output_index)`，每个有效组合调用一次；切片包含相同顺序的 `D*k` 个值。 例如 `k=3` 时三个输出占用四个槽：编译器将第四槽置零，不调用 callback；求值端只返回三个密文。 所有输出共享一次盲旋转（BR）。GLWE 共享环 key switch 后分别提取；NTRU 每个输出分别返回并执行 LWE key switch。 输出越多，旋转分辨率与输入噪声余量越低。这是一个输入求多个函数，不是独立密文批处理。
 
-直接使用共享层时，`LookupTable` / `InterleavedLookupTable` 的 `try_from_fn`、`try_from_slice` 接收输入 codec、累加器模数和输出 codec，负责 unsigned Rounded 编码与检查。 奇数全域使用 `LookupTable::try_from_odd_full_domain_fn` / `_slice`；family 编译入口复用这些方法。
+通过 `parameters.lookup_table_compiler()` 创建可复用的 `LookupTableCompiler`。直接使用共享层时，`LookupTableCompiler::try_new(poly_length, &input_codec, accumulator_modulus, &output_codec)` 绑定相同的编码环境。它只复制所需编码状态，不分配内存，也不借用 parameters/context。方法如下：
+
+| 程序 | 函数输入 | 切片输入 |
+| --- | --- | --- |
+| 前半区，单输出 | `compile_fn(function)` | `compile_slice(values)` |
+| 前半区，多输出 | `compile_interleaved_fn(k, function)` | `compile_interleaved_slice(k, values)` |
+| 奇数全域，单输出 | `compile_odd_full_domain_fn(function)` | `compile_odd_full_domain_slice(values)` |
+
+构造编译器时检查输出 codec 的模数。编译时在填表前检查各程序的容量与切片长度，保持回调顺序，并在首个非法输出或旋转中心碰撞处停止。
 
 共享 LUT 构造器和 `BooleanEvaluator::try_new` 都接收从 `primus_poly` 重新导出的 `PolyLength`。直接传入环参数返回的已验证长度，或用 `PolyLength::try_new(N)` 构造一次。该类型集中检查 `32..=2^17` 内的二次幂；编译仍检查旋转域能否由系数字宽表示、编码、输出容量与数值范围。
 
@@ -150,20 +158,25 @@ Raw 构造器 `LookupTable::try_new` / `InterleavedLookupTable::try_new` 显式�
 
 原始 `LweCiphertext` 不记录秘密、编码或噪声。调用方必须使用配套密钥、显式模数下的 规范系数，并保证噪声余量。LUT 与维数错误在写入输出前拒绝，但这些检查不能验证实际 秘密一致性。Fourier 密钥和 evaluator 必须使用同一 FFT table 实例。
 
-最小 trait 为 `ProgrammableBootstrap` 和 `ProgrammableBootstrapInterleaved`。 普通应用使用参数编译入口，由其检查并编码明文输出。 `LookupTable::try_new` 与 `InterleavedLookupTable::try_new` 接收已编码输出和显式的 编程前缀长度，Boolean 与 CBS 通过它们使用各自的输出尺度。 兼容性检查绑定多项式长度与编码模数；输入位于已编程前缀内仍由调用方保证。 `rotation` 集中 LUT 编译与 BR 执行共用的旋转量化契约。
+最小 trait 为 `ProgrammableBootstrap` 和 `ProgrammableBootstrapInterleaved`。 普通应用使用参数返回的编译器，由其检查并编码明文输出。 `LookupTable::try_new` 与 `InterleavedLookupTable::try_new` 接收已编码输出和显式的 编程前缀长度，Boolean 与 CBS 通过它们使用各自的输出尺度。 兼容性检查绑定多项式长度与编码模数；输入位于已编程前缀内仍由调用方保证。 `rotation::RotationModulusSwitch` 准备 LUT 编译与盲旋转共用的逐系数模数切换，包括 ManyLUT 和 CBS 所需的旋转步长对齐。
 
 ### 选择输出编码
 
-两族参数的普通、交错和奇数全域编译器均提供两种形式：
+先选择编译器的输出编码，再使用它的函数或切片入口：
 
-| 输出编码 | 函数 / 切片入口 | 解码 |
+| 输出编码 | 编译器构造 | 解码 |
 | --- | --- | --- |
-| 默认：参数的明文模数，LUT 在 accumulator 模数下编码 | `compile_lookup_table_fn(function)` / `compile_lookup_table_slice(values)` | `decryptor.decrypt(output)` |
-| 显式指定输出 codec | `compile_lookup_table_with_codec_fn(codec, function)` / `compile_lookup_table_with_codec_slice(codec, values)` | 用返回模数下的 codec 解码 `decrypt_phase(output)` |
+| 默认：参数的明文模数，在 accumulator 模数下编码 | `parameters.lookup_table_compiler()` | `decryptor.decrypt(output)` |
+| 显式指定输出 codec | `compiler.try_with_output_codec(&codec)?` | 用返回模数下的 codec 解码 `decrypt_phase(output)` |
 
-交错和奇数全域方法采用同一命名规则。默认入口复用参数中的 codec；NTRU 在 Q 下编译、返回 q 后解码。 函数输出范围可以小于明文模数，例如 `x % 4` 仍可采用 `t=32` 编码；basic 示例使用这个默认流程。
+函数输出范围可以小于明文模数，例如 `x % 4` 仍可采用 `t=32` 编码。Basic 示例使用这个默认流程：
 
-显式版本以 `&RoundedCodec<T, M>` 为第一个参数。输入参数仍决定旋转中心与输入域； 输出 codec 决定 `t_out`，检查输出位于 `0..t_out`，并按 unsigned embedding 编码。 交错 LUT 的各列共用这个 codec；它只改变本次 LUT 的输出编码，不修改 parameters/context。 其密文模数必须与 accumulator 一致，否则返回 `OutputModulusMismatch`。 GLWE 输入、accumulator 和返回使用同一模数；NTRU 支持 Q→q，解码 codec 使用 q 和同一个 `t_out`，须预算缩放舍入及返回误差。MVB 继续显式使用 unsigned `ScaledCodec`。
+```rust,ignore
+let compiler = context.parameters().lookup_table_compiler();
+let lut = compiler.compile_fn(|x| (x % 4) as u32)?;
+```
+
+`try_with_output_codec` 返回持有新 `RoundedCodec` 副本的编译器，保持输入域与累加器模数。输出 codec 决定 `t_out`，检查输出位于 `0..t_out`，并按 unsigned embedding 编码；交错 LUT 的各列共用这个 codec。密文模数不匹配时，在绑定 codec 阶段、编译之前返回 `OutputModulusMismatch`。GLWE 输入、accumulator 和返回使用同一模数；NTRU 在 Q 下编译、返回 q，解码 codec 使用 q 和同一个 `t_out`，须预算缩放舍入及返回误差。MVB 继续显式使用 unsigned `ScaledCodec`。
 
 例如，在 `t_in=16` 的 NTRU context 中，用 `t_out=4` 编码 `x % 4`。片段沿用已创建的 context、客户端和 evaluator：
 
@@ -172,7 +185,9 @@ use primus_encoding::RoundedCodec;
 
 let table_codec = RoundedCodec::new(4u32, context.parameters().accumulator_ntru().cipher_modulus());
 let output_codec = RoundedCodec::new(4u32, context.parameters().external_lwe().cipher_modulus());
-let lut = context.parameters().compile_lookup_table_with_codec_fn(&table_codec, |x| (x % 4) as u32).unwrap();
+let compiler = context.parameters().lookup_table_compiler()
+    .try_with_output_codec(&table_codec).unwrap();
+let lut = compiler.compile_fn(|x| (x % 4) as u32).unwrap();
 let input = encryptor.encrypt_padded(7u32, &mut rng).unwrap();
 let output = evaluator.apply_lookup_table(&input, &lut);
 let message = output_codec.decode_value(decryptor.decrypt_phase(&output).unwrap());
@@ -185,12 +200,12 @@ GLWE 用 `context.parameters().accumulator_glwe().cipher_modulus()` 构造输出
 
 ## 奇数全域 PBS
 
-使用 `compile_odd_full_domain_lookup_table_fn(function)` 或其 `_slice` 形式； 需要不同输出编码时选择 `*_with_codec_*` 变体。这些方法编程整个 **`0..t_in`**。要求奇数 `t_in >= 3`、`t_in <= N`；切片按输入顺序包含 恰好 `t_in` 个输出。输入用普通 `encrypt`，随后复用 `apply_lookup_table_to`。 默认编码用 `decrypt` 解码；显式指定输出编码时使用对应 codec。 例如，输入与 accumulator 共用密文模数、`t_in=15`，输出 codec 配置 `t_out=8`：
+使用 `compiler.compile_odd_full_domain_fn(function)` 或其 `_slice` 形式；需要不同输出编码时通过 `try_with_output_codec` 配置。这些方法编程整个 **`0..t_in`**。要求奇数 `t_in >= 3`、`t_in <= N`；切片按输入顺序包含 恰好 `t_in` 个输出。输入用普通 `encrypt`，随后复用 `apply_lookup_table_to`。 默认编码用 `decrypt` 解码；显式指定输出编码时使用对应 codec。 例如，输入与 accumulator 共用密文模数、`t_in=15`，输出 codec 配置 `t_out=8`：
 
 ```rust,ignore
-let lut = context.parameters().compile_odd_full_domain_lookup_table_with_codec_fn(
-    &output_codec, |x| ((x * x + 3) % 8) as u32,
-).unwrap();
+let compiler = context.parameters().lookup_table_compiler()
+    .try_with_output_codec(&output_codec).unwrap();
+let lut = compiler.compile_odd_full_domain_fn(|x| ((x * x + 3) % 8) as u32).unwrap();
 let input = encryptor.encrypt(14u32, &mut rng).unwrap();
 evaluator.apply_lookup_table_to(&input, &lut, &mut output);
 let message = output_codec.decode_value(decryptor.decrypt_phase(&output).unwrap());

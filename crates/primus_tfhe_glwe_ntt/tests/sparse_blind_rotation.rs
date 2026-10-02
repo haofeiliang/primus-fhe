@@ -23,7 +23,7 @@ static ALLOCATOR: allocations::CountingAllocator = allocations::CountingAllocato
 const Q: u32 = 132_120_577;
 const T: u32 = 8;
 
-// Integer arithmetic independent of RotationQuantizer and polynomial rotation kernels.
+// Integer arithmetic independent of RotationModulusSwitch and polynomial rotation kernels.
 fn quantize(value: u32, two_n: usize) -> usize {
     ((u64::from(value) * two_n as u64 + u64::from(Q / 2)) / u64::from(Q)) as usize % two_n
 }
@@ -189,7 +189,10 @@ fn sparse_rotation_matches_direct_phase_and_classic_with_reused_scratch() {
             let function = |m: usize| (3 * m as u32 + 1) % T;
             let lut = context
                 .parameters()
-                .compile_lookup_table_with_codec_fn(&codec, function)
+                .lookup_table_compiler()
+                .try_with_output_codec(&codec)
+                .unwrap()
+                .compile_fn(function)
                 .unwrap();
             for message in 0..T / 2 {
                 let input = client.small_lwe_secret_key().encrypt(

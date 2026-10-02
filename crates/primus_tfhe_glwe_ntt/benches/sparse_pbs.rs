@@ -60,7 +60,8 @@ fn backend<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
                 .unwrap();
             let lut = context
                 .parameters()
-                .compile_lookup_table_fn(|m| T::as_from((m + 1) % 4))
+                .lookup_table_compiler()
+                .compile_fn(|m| T::as_from((m + 1) % 4))
                 .unwrap();
             let mut evaluator = context.evaluator(server).unwrap();
             let mut output = context.allocate_lwe_ciphertext();

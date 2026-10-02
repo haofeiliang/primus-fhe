@@ -28,7 +28,7 @@ use primus_poly::{PolyLength, PolynomialOwned};
 use primus_reduce::{PrepareModulusSwitch, ReduceAdd, RingContext};
 
 use super::{fill_negated_tail, repeat_output_group, upper_midpoint, validate_input_encoding};
-use crate::{LookupTableError, rotation::RotationQuantizer};
+use crate::{LookupTableError, rotation::RotationModulusSwitch};
 
 /// Returns the independently programmable front-half plaintext-domain length.
 #[doc(hidden)]
@@ -152,12 +152,12 @@ where
     let coefficients_per_output = coefficients.len() / padded_output_count;
 
     let input_codec = RoundedCodec::new(input_plaintext_modulus, input_ciphertext_modulus);
-    let center_quantizer =
-        RotationQuantizer::new(input_ciphertext_modulus, coefficients_per_output * 2, 1);
+    let center_modulus_switch =
+        RotationModulusSwitch::new(input_ciphertext_modulus, coefficients_per_output * 2, 1);
     let center_position_at = |input| {
         // The validated front-half domain guarantees input <= D < t, so it fits T.
         let encoded = input_codec.encode_value(T::as_from(input), PlaintextEmbedding::Unsigned);
-        center_quantizer.exponent(encoded)
+        center_modulus_switch.exponent(encoded)
     };
     let coefficient_modulus_value = coefficient_modulus.explicit_value();
 

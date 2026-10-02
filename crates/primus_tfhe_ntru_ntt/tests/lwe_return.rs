@@ -68,20 +68,20 @@ fn check<T: FheUint, Table: MonomialNttTable<ValueT = T>>(ring_q: T) {
             T::as_from(8u32),
             context.parameters().accumulator_ntru().cipher_modulus(),
         );
-        let decode_codec = RoundedCodec::new(T::as_from(8u32), external_modulus);
-        let single = context
+        let compiler = context
             .parameters()
-            .compile_lookup_table_with_codec_fn(&output_codec, |m| T::as_from(m + 3))
+            .lookup_table_compiler()
+            .try_with_output_codec(&output_codec)
             .unwrap();
-        let many = context
-            .parameters()
-            .compile_interleaved_lookup_table_with_codec_fn(&output_codec, 3, |m, i| {
-                T::as_from(m + i + 1)
-            })
+        let decode_codec = RoundedCodec::new(T::as_from(8u32), external_modulus);
+        let single = compiler.compile_fn(|m| T::as_from(m + 3)).unwrap();
+        let many = compiler
+            .compile_interleaved_fn(3, |m, i| T::as_from(m + i + 1))
             .unwrap();
         let default = context
             .parameters()
-            .compile_lookup_table_fn(|m| T::as_from(1 - m))
+            .lookup_table_compiler()
+            .compile_fn(|m| T::as_from(1 - m))
             .unwrap();
         let public = client
             .try_generate_public_key(context.parameters(), &mut rng)

@@ -92,7 +92,8 @@ fn circuit_bootstrap(distr: SecretKeyDistr) {
     // The same CBS-enabled server key also supports ordinary PBS.
     let identity = context
         .parameters()
-        .compile_lookup_table_fn(|message| message as u64)
+        .lookup_table_compiler()
+        .compile_fn(|message| message as u64)
         .unwrap();
     let input = encryptor.encrypt_padded(1u64, &mut rng).unwrap();
     let mut output = context

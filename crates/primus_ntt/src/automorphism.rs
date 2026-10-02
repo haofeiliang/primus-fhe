@@ -28,7 +28,7 @@ impl NttAutomorphismPermutation {
         // The shared FHE bound makes both 2N and the stored u32 indices fit.
         let twice_n = 2 * n;
         assert!(
-            degree < twice_n && degree % 2 == 1,
+            degree < twice_n && degree & 1 == 1,
             "automorphism degree must be odd and less than 2N"
         );
         let log_n = poly_length.log_n();

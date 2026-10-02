@@ -7,7 +7,7 @@ use primus_lattice::{
 };
 use primus_ntt::NttTable;
 use primus_poly::Polynomial;
-use primus_tfhe::rotation::RotationQuantizer;
+use primus_tfhe::rotation::RotationModulusSwitch;
 
 use super::SparseGlweBootstrappingKey;
 
@@ -109,13 +109,14 @@ impl<T: FheUint> SparseGlweBootstrappingKey<T> {
             scratch,
             external_product,
         } = context;
-        let quantizer = if rotation_step == 1 {
-            self.input_quantizer()
+        let modulus_switch = if rotation_step == 1 {
+            self.rotation_modulus_switch()
         } else {
-            RotationQuantizer::new(modulus, 2 * poly_length, rotation_step)
+            RotationModulusSwitch::new(modulus, 2 * poly_length, rotation_step)
         };
-        quantizer.exponent_slice_to(input.a(), input_exponents);
-        let initial_exponent = quantizer.exponent(input.b()).wrapping_neg() & (2 * poly_length - 1);
+        modulus_switch.exponent_slice_to(input.a(), input_exponents);
+        let initial_exponent =
+            modulus_switch.exponent(input.b()).wrapping_neg() & (2 * poly_length - 1);
         let (mask, body) = output.a_b_mut_slices(poly_length);
         mask.fill(T::ZERO);
         lookup_table.mul_monomial_to(initial_exponent, &mut Polynomial(body), modulus);

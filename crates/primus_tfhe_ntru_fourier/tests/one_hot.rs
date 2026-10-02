@@ -119,7 +119,8 @@ fn selectors<Table: FftTable>(distr: SecretKeyDistr) {
     let encryptor = context.encryptor(&client).unwrap();
     let identity = context
         .parameters()
-        .compile_lookup_table_fn(|m| m as u64)
+        .lookup_table_compiler()
+        .compile_fn(|m| m as u64)
         .unwrap();
     let mut lwe_output = primus_tfhe::LweCiphertext::zero(4);
     let mut accumulator = context.accumulator_client(&client).unwrap();
@@ -404,11 +405,13 @@ fn check_return_batches<Table: FftTable>(
     assert_eq!(returned, untouched);
     let identity = context
         .parameters()
-        .compile_lookup_table_fn(|m| m as u64)
+        .lookup_table_compiler()
+        .compile_fn(|m| m as u64)
         .unwrap();
     let many = context
         .parameters()
-        .compile_interleaved_lookup_table_fn(2, |m, _| m as u64)
+        .lookup_table_compiler()
+        .compile_interleaved_fn(2, |m, _| m as u64)
         .unwrap();
     let (_, allocation) = allocations::measure(|| {
         evaluator.bootstrapper_mut().unwrap().apply_lookup_table_to(

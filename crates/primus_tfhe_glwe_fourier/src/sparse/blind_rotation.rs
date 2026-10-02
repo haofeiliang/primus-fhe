@@ -9,7 +9,7 @@ use primus_lattice::{
     workspace::FourierGlweExternalProductWorkspace,
 };
 use primus_poly::Polynomial;
-use primus_tfhe::rotation::RotationQuantizer;
+use primus_tfhe::rotation::RotationModulusSwitch;
 
 use super::SparseGlweBootstrappingKey;
 
@@ -81,7 +81,7 @@ impl<T: TorusFftValue> SparseGlweBootstrappingKey<T> {
         let size = self.size();
         let poly_length = size.glwe_size().poly_length().get();
         assert!(
-            rotation_step.is_power_of_two() && poly_length.is_multiple_of(rotation_step),
+            rotation_step.is_power_of_two() && rotation_step <= poly_length,
             "PBSManyLUT rotation step must be a non-zero power-of-two divisor of N"
         );
         assert_eq!(
@@ -139,13 +139,14 @@ impl<T: TorusFftValue> SparseGlweBootstrappingKey<T> {
             scratch,
             external_product,
         } = context;
-        let quantizer = if rotation_step == 1 {
-            self.input_quantizer()
+        let modulus_switch = if rotation_step == 1 {
+            self.rotation_modulus_switch()
         } else {
-            RotationQuantizer::new(modulus, 2 * poly_length, rotation_step)
+            RotationModulusSwitch::new(modulus, 2 * poly_length, rotation_step)
         };
-        quantizer.exponent_slice_to(input.a(), input_exponents);
-        let initial_exponent = quantizer.exponent(input.b()).wrapping_neg() & (2 * poly_length - 1);
+        modulus_switch.exponent_slice_to(input.a(), input_exponents);
+        let initial_exponent =
+            modulus_switch.exponent(input.b()).wrapping_neg() & (2 * poly_length - 1);
         let (mask, body) = output.a_b_mut_slices(poly_length);
         mask.fill(T::ZERO);
         lookup_table.mul_monomial_to(initial_exponent, &mut Polynomial(body), modulus);

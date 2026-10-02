@@ -59,7 +59,8 @@ fn padded_inputs_and_lut_output_codecs_use_independent_domains() {
         let decryptor = parameters.decryptor(&key).unwrap();
         let domain_len = t.div_ceil(2);
         let default = parameters
-            .compile_lookup_table_slice(&vec![t - 1; domain_len as usize])
+            .lookup_table_compiler()
+            .compile_slice(&vec![t - 1; domain_len as usize])
             .unwrap();
         assert_eq!(
             parameters
@@ -74,21 +75,21 @@ fn padded_inputs_and_lut_output_codecs_use_independent_domains() {
             ClientError::MessageOutsidePaddedDomain
         );
         let output_codec = RoundedCodec::new(8, NativeModulus::new());
-        let values: Vec<_> = (0..domain_len).map(|m| 7 - m).collect();
-        let single = parameters
-            .compile_lookup_table_with_codec_slice(&output_codec, &values)
+        let compiler = parameters
+            .lookup_table_compiler()
+            .try_with_output_codec(&output_codec)
             .unwrap();
-        let many = parameters
-            .compile_interleaved_lookup_table_with_codec_fn(&output_codec, 1, |m, _| values[m])
+        let values: Vec<_> = (0..domain_len).map(|m| 7 - m).collect();
+        let single = compiler.compile_slice(&values).unwrap();
+        let many = compiler
+            .compile_interleaved_fn(1, |m, _| values[m])
             .unwrap();
         assert_eq!(single.input_domain_len(), domain_len as usize);
         assert_eq!(single.polynomial(), many.polynomial());
         assert_eq!(single.polynomial().as_ref()[0], 7u32 << 29);
         if t % 2 == 1 {
             let values: Vec<_> = (0..t).collect();
-            let full = parameters
-                .compile_odd_full_domain_lookup_table_with_codec_slice(&output_codec, &values)
-                .unwrap();
+            let full = compiler.compile_odd_full_domain_slice(&values).unwrap();
             assert_eq!(full.input_domain_len(), t as usize);
         }
     }

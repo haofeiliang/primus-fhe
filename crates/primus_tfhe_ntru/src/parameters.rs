@@ -6,7 +6,7 @@ use primus_lwe::LweParameters;
 use primus_ntru::{NlevParameters, NtruParameters, SecretKeyDistr};
 use primus_poly::PolyLength;
 use primus_reduce::RingContext;
-use primus_tfhe::rotation::RotationQuantizer;
+use primus_tfhe::rotation::RotationModulusSwitch;
 
 use crate::TfheParameterError;
 /// NTRU-TFHE choices with independent accumulator Q and external LWE q domains.
@@ -45,7 +45,7 @@ where
     blind_rotation: NlevParameters<T, M>,
     key_switching_lwe: LweParameters<T, LM>,
     key_switching_basis: ApproxSignedBasis<T>,
-    rotation_quantizer: RotationQuantizer<T>,
+    rotation_modulus_switch: RotationModulusSwitch<T>,
 }
 
 impl<T, M, LM> TfheParameters<T, M, LM>
@@ -112,21 +112,22 @@ where
             key_switching_noise_standard_deviation,
         )
         .map_err(TfheParameterError::KeySwitchingEncryption)?;
-        let rotation_quantizer = RotationQuantizer::new(external_lwe.cipher_modulus(), two_n, 1);
+        let rotation_modulus_switch =
+            RotationModulusSwitch::new(external_lwe.cipher_modulus(), two_n, 1);
         Ok(Self {
             external_lwe,
             blind_rotation,
             key_switching_lwe,
             key_switching_basis,
-            rotation_quantizer,
+            rotation_modulus_switch,
         })
     }
 
-    /// Returns the ordinary-PBS quantizer prepared with these parameters.
+    /// Returns the rotation modulus switch prepared for ordinary PBS.
     #[doc(hidden)]
     #[must_use]
-    pub fn rotation_quantizer(&self) -> RotationQuantizer<T> {
-        self.rotation_quantizer
+    pub fn rotation_modulus_switch(&self) -> RotationModulusSwitch<T> {
+        self.rotation_modulus_switch
     }
 
     /// Returns the externally visible LWE parameters.

@@ -55,7 +55,7 @@ pub fn check_arguments(n: usize, modulus: u64) {
         "modulus should be less than 2^{} got {modulus}",
         crate::U64_NTT_MAX_MODULUS_BITS,
     );
-    debug_assert!(modulus % (2 * n as u64) == 1, "modulus mod 2n != 1",);
+    debug_assert!(modulus & (2 * n as u64 - 1) == 1, "modulus mod 2n != 1");
     // FIXME: verifying primality at table construction time would catch
     // invalid moduli early, but is currently deferred to the caller.
 }

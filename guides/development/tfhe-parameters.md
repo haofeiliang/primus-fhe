@@ -89,7 +89,7 @@ BR, trace and scheme-switch use full-length base 2^2 for u32 and base 2^8 for u6
 
 The standalone parameter diagnostic uses M=4, c=7 input chunks, d=5 coefficient chunks, o=3 output chunks. Thus M^d=N=1024 and the 14-bit input selects among 16 public polynomials per output. This exercises public lifting, a further encrypted CMux layer, five aggregate rotations, and Q→q24 return. Output width is independent of input width. The evaluator has no new algorithmic restrictions; these are the dimensions that were numerically validated.
 
-For one-hot, L=4 (u32) or 3 (u64), so W=4 and A=N/(2MW)=32. With R_W the existing coefficient quantizer, validation computes
+For one-hot, L=4 (u32) or 3 (u64), so W=4 and A=N/(2MW)=32. With R_W the prepared rotation modulus switch, validation computes
 
 `e = centered(R_W(b) − Σ R_W(a_i)s_i − m·N/M) / W`
 

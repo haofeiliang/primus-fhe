@@ -10,7 +10,7 @@ use primus_modulus::BarrettModulus;
 use primus_ntru::{NlevParameters, NtruParameters, SecretKeyDistr};
 use primus_ntt::{MonomialNttTable, U32NttTable, U64NttTable};
 use primus_test_allocations::{CountingAllocator, measure};
-use primus_tfhe::rotation::RotationQuantizer;
+use primus_tfhe::rotation::RotationModulusSwitch;
 use primus_tfhe_ntru_ntt::{KeyGenerator, TfheContext, TfheEvaluationError, TfheParameters};
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -98,15 +98,14 @@ fn check_complete<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T, weight:
     let modulus = context.parameters().external_lwe().cipher_modulus();
     let q_wide: i128 = q.as_into();
     let codec = RoundedCodec::new(T::as_from(8usize), modulus);
+    let compiler = context
+        .parameters()
+        .lookup_table_compiler()
+        .try_with_output_codec(&codec)
+        .unwrap();
     let value = |m: usize, i: usize| T::as_from((m + 2 * i) % 8);
-    let single = context
-        .parameters()
-        .compile_lookup_table_with_codec_fn(&codec, |m| value(m, 0))
-        .unwrap();
-    let many = context
-        .parameters()
-        .compile_interleaved_lookup_table_with_codec_fn(&codec, 3, value)
-        .unwrap();
+    let single = compiler.compile_fn(|m| value(m, 0)).unwrap();
+    let many = compiler.compile_interleaved_fn(3, value).unwrap();
     let mut output = LweCiphertext::zero(DIM);
     let mut reference = output.clone();
     let mut outputs = vec![output.clone(); 3];
@@ -198,17 +197,18 @@ fn check_complete<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T, weight:
                 measure(|| sparse.apply_interleaved_lookup_table_to(&input, &many, &mut outputs));
             assert_eq!(allocation.count, 0);
             // Derive the complete public rotation from quantized mask/body and original secret.
-            let quantizer = RotationQuantizer::new(modulus, 2 * N, many.padded_output_count());
+            let modulus_switch =
+                RotationModulusSwitch::new(modulus, 2 * N, many.padded_output_count());
             let exponent = client
                 .external_lwe_secret_key()
                 .as_ref()
                 .iter()
                 .zip(input.a())
                 .fold(
-                    (2 * N - quantizer.exponent(input.b())) % (2 * N),
+                    (2 * N - modulus_switch.exponent(input.b())) % (2 * N),
                     |e, (&s, &a)| {
                         if s == T::ONE {
-                            (e + quantizer.exponent(a)) % (2 * N)
+                            (e + modulus_switch.exponent(a)) % (2 * N)
                         } else {
                             e
                         }

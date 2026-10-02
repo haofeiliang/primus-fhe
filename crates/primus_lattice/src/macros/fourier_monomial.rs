@@ -50,7 +50,7 @@ macro_rules! impl_fourier_monomial {
                 debug_assert!(exponent < 2 * poly_length);
                 debug_assert_eq!(self.as_ref().len(), rhs.as_ref().len());
                 debug_assert_eq!(self.as_ref().len(), output.as_ref().len());
-                debug_assert_eq!(self.as_ref().len() % fourier_length, 0);
+                debug_assert_eq!(self.as_ref().len() & (fourier_length - 1), 0);
 
                 coefficient_scratch.fill(T::ZERO);
                 // X^(N+j) = -X^j; integer conversion interprets T::MAX as -1.

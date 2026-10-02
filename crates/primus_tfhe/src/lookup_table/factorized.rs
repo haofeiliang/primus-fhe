@@ -69,9 +69,9 @@ impl<T: FheUint> FactorizedLookupTable<T> {
         // Solve 2A = delta only for the noiseless common polynomial. Native
         // has no inverse of two; truncating an odd scale would change the LUT.
         let half_scale = match modulus.explicit_value() {
-            Some(q) if q % T::TWO == T::ONE => modulus.reduce_mul(delta, q / T::TWO + T::ONE),
+            Some(q) if q & T::ONE == T::ONE => modulus.reduce_mul(delta, q / T::TWO + T::ONE),
             Some(_) => return Err(LookupTableError::UnsupportedFactorizationModulus),
-            None if delta % T::TWO == T::ZERO => delta / T::TWO,
+            None if delta & T::ONE == T::ZERO => delta / T::TWO,
             None => return Err(LookupTableError::OddFactorizationScale),
         };
         validate_front_half(

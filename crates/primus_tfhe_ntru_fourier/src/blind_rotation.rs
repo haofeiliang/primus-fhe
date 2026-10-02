@@ -4,7 +4,7 @@ use primus_fft::{FftEngine, FftTable, TorusFftValue};
 use primus_lattice::{lwe::Lwe, ntru::Ntru};
 use primus_modulus::NativeModulus;
 use primus_poly::Polynomial;
-use primus_tfhe::rotation::RotationQuantizer;
+use primus_tfhe::rotation::RotationModulusSwitch;
 
 use crate::{ClassicControls, ServerKey, TfheParameters};
 
@@ -105,12 +105,12 @@ pub(crate) fn blind_rotate_lookup_table_to<T, Table, LM: primus_reduce::RingCont
     let poly_length = parameters.poly_length().get();
     let two_n = poly_length * 2;
     let input_modulus = parameters.external_lwe().cipher_modulus();
-    let quantizer = if rotation_step == 1 {
-        parameters.rotation_quantizer()
+    let modulus_switch = if rotation_step == 1 {
+        parameters.rotation_modulus_switch()
     } else {
-        RotationQuantizer::new(input_modulus, two_n, rotation_step)
+        RotationModulusSwitch::new(input_modulus, two_n, rotation_step)
     };
-    let exponent_of = |value| quantizer.exponent(value);
+    let exponent_of = |value| modulus_switch.exponent(value);
     let initial_exponent = exponent_of(input.b()).wrapping_neg() & (two_n - 1);
     lookup_table.mul_monomial_to(
         initial_exponent,
@@ -121,7 +121,7 @@ pub(crate) fn blind_rotate_lookup_table_to<T, Table, LM: primus_reduce::RingCont
     // One public layout dispatch per BR; the coordinate loop stays specialized.
     match &mut workspace.rotation {
         RotationState::Sparse { key, scratch } => {
-            quantizer.exponent_slice_to(input.a(), &mut scratch.exponents);
+            modulus_switch.exponent_slice_to(input.a(), &mut scratch.exponents);
             crate::sparse::rotate_buckets(
                 key,
                 scratch,

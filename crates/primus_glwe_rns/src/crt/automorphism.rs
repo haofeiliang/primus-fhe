@@ -211,7 +211,7 @@ impl<T: FheUint> CrtGlweAutoKey<T> {
         let params = domain.parameters();
         let poly_length = params.poly_length().get();
         assert!(
-            degree < poly_length * 2 && degree % 2 == 1,
+            degree < poly_length * 2 && degree & 1 == 1,
             "automorphism degree must be odd and less than twice the polynomial length"
         );
         let auto_helper = CoeffAutoHelper::new(degree, poly_length);

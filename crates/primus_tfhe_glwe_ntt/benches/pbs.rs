@@ -69,7 +69,8 @@ fn backend<T, Table>(
             let domain = workload.plaintext_modulus as usize / 2;
             let lut = context
                 .parameters()
-                .compile_lookup_table_fn(|x| T::as_from((x + domain - 1) % domain))
+                .lookup_table_compiler()
+                .compile_fn(|x| T::as_from((x + domain - 1) % domain))
                 .unwrap();
             (context, client, server, input, lut)
         });
@@ -152,7 +153,8 @@ fn stages<T: FheUint, Table: MonomialNttTable<ValueT = T>>(c: &mut Criterion, ba
                     .encrypt_padded(T::ONE, &mut rng)
                     .unwrap();
                 let lookup_table = parameters
-                    .compile_lookup_table_fn(|m| T::as_from(m ^ 1))
+                    .lookup_table_compiler()
+                    .compile_fn(|m| T::as_from(m ^ 1))
                     .unwrap();
                 let BootstrappingKey::Classic(bootstrapping_key) = server_key.bootstrapping_key()
                 else {

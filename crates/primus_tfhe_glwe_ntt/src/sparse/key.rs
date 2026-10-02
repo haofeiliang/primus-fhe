@@ -7,7 +7,7 @@ use primus_integer::FheUint;
 use primus_lattice::{GadgetSize, ggsw::GgswIter};
 use primus_modulus::BarrettModulus;
 use primus_ntt::MonomialNttTable;
-use primus_tfhe::{rotation::RotationQuantizer, sparse::BucketMap};
+use primus_tfhe::{rotation::RotationModulusSwitch, sparse::BucketMap};
 use zeroize::Zeroizing;
 
 use crate::{ClientKey, KeyGenerationError, KeyGenerator, SparseBootstrappingKeyError};
@@ -36,7 +36,7 @@ pub struct SparseGlweBootstrappingKey<T: FheUint> {
     hamming_weight: usize,
     copy_count: usize,
     modulus: BarrettModulus<T>,
-    input_quantizer: RotationQuantizer<T>,
+    rotation_modulus_switch: RotationModulusSwitch<T>,
     size: GadgetSize,
     basis: ApproxSignedBasis<T>,
 }
@@ -72,8 +72,8 @@ impl<T: FheUint> SparseGlweBootstrappingKey<T> {
         self.modulus
     }
 
-    pub(super) fn input_quantizer(&self) -> RotationQuantizer<T> {
-        self.input_quantizer
+    pub(super) fn rotation_modulus_switch(&self) -> RotationModulusSwitch<T> {
+        self.rotation_modulus_switch
     }
 
     /// Returns the explicit accumulator modulus.
@@ -262,7 +262,7 @@ where
             hamming_weight,
             copy_count,
             modulus: parameters.small_lwe().cipher_modulus(),
-            input_quantizer: RotationQuantizer::new(
+            rotation_modulus_switch: RotationModulusSwitch::new(
                 parameters.small_lwe().cipher_modulus(),
                 2 * size.glwe_size().poly_length().get(),
                 1,

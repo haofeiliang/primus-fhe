@@ -11,7 +11,7 @@ use primus_lattice::{
 use primus_modulus::NativeModulus;
 use primus_poly::Polynomial;
 use primus_reduce::{Modulus, PrepareModulusSwitch};
-use primus_tfhe::rotation::RotationQuantizer;
+use primus_tfhe::rotation::RotationModulusSwitch;
 
 use crate::FourierGlweBootstrappingKey;
 
@@ -47,14 +47,14 @@ where
         B: Data<Elem = T>,
         C: DataMut<Elem = T>,
     {
-        let quantizer = self.input_quantizer();
+        let modulus_switch = self.rotation_modulus_switch();
         self.blind_rotate_with(
             input.as_view(),
             accumulator.as_view(),
             output.as_mut_view(),
             fft,
             context,
-            |x| quantizer.exponent(x),
+            |x| modulus_switch.exponent(x),
         );
     }
 
@@ -148,7 +148,7 @@ where
     {
         let poly_length = self.size().glwe_size().poly_length().get();
         assert!(
-            rotation_step.is_power_of_two() && poly_length.is_multiple_of(rotation_step),
+            rotation_step.is_power_of_two() && rotation_step <= poly_length,
             "PBSManyLUT rotation step must be a non-zero power-of-two divisor of N"
         );
         assert_eq!(
@@ -191,7 +191,7 @@ where
         let poly_length = self.size().glwe_size().poly_length().get();
         let two_n = poly_length * 2;
         debug_assert!(
-            rotation_step.is_power_of_two() && poly_length.is_multiple_of(rotation_step),
+            rotation_step.is_power_of_two() && rotation_step <= poly_length,
             "PBSManyLUT rotation step must be a non-zero power-of-two divisor of N"
         );
         debug_assert_eq!(
@@ -209,12 +209,12 @@ where
         );
 
         let input_modulus = self.input_modulus();
-        let quantizer = if rotation_step == 1 {
-            self.input_quantizer()
+        let modulus_switch = if rotation_step == 1 {
+            self.rotation_modulus_switch()
         } else {
-            RotationQuantizer::new(input_modulus, two_n, rotation_step)
+            RotationModulusSwitch::new(input_modulus, two_n, rotation_step)
         };
-        let exponent_of = |value| quantizer.exponent(value);
+        let exponent_of = |value| modulus_switch.exponent(value);
         let initial_exponent = exponent_of(input.b()).wrapping_neg() & (two_n - 1);
         let (mask, body) = output.a_b_mut_slices(poly_length);
         mask.fill(T::ZERO);

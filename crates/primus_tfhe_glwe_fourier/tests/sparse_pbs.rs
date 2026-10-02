@@ -86,18 +86,17 @@ fn check_pbs<Table: FftTable>() {
         let encryptor = context.encryptor(&client).unwrap();
         let decryptor = context.decryptor(&client).unwrap();
         // Non-power-of-two input centers and a different output scale exercise
-        // the exact prepared quantizer through both complete PBS orders.
+        // the exact prepared rotation modulus switch through both complete PBS orders.
         let codec = RoundedCodec::new(16, NativeModulus::new());
+        let compiler = context
+            .parameters()
+            .lookup_table_compiler()
+            .try_with_output_codec(&codec)
+            .unwrap();
         let function = |m: usize| (3 * m as u64 + 1) % 16;
         let functions = |m: usize, i: usize| (m + 2 * i) as u64;
-        let single = context
-            .parameters()
-            .compile_lookup_table_with_codec_fn(&codec, function)
-            .unwrap();
-        let many = context
-            .parameters()
-            .compile_interleaved_lookup_table_with_codec_fn(&codec, 3, functions)
-            .unwrap();
+        let single = compiler.compile_fn(function).unwrap();
+        let many = compiler.compile_interleaved_fn(3, functions).unwrap();
         assert_eq!(many.padded_output_count(), 4);
         let mut outputs = vec![LweCiphertext::zero(dimension); 3];
         let check = |output: &LweCiphertext<u64>, message| {
