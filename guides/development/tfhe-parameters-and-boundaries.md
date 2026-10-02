@@ -6,6 +6,8 @@
 
 以 q 表示外部 LWE 模数、Q 表示累加环模数，n 表示盲旋转控制秘密的 LWE 维数，N 表示环长度，k 表示 GLWE 秘密多项式数。
 
+已验证的参数、size 和工作区沿调用链传递 `LweDimension`、`GlweDimension`、`primus_poly::PolyLength`；分解参数使用 `DecompositionBaseLog` 和 `DecompositionLevelCount`。组合长度由拥有布局的构造边界检查。Raw 存储和数值内核使用整数，不从存储长度推断模数、秘密或表示身份。
+
 | 对象 | 独立选择 | 派生或绑定内容 |
 | --- | --- | --- |
 | `LweParameters` | n、t、q、秘密分布、系数噪声标准差 | n+1 密文长度可表示；Rounded codec、秘密/噪声 sampler；t 从 codec 读取 |
@@ -56,7 +58,7 @@ NTRU 服务端密钥保持 classic/sparse 的所有权枚举；`ServerKey::class
 
 CBS 的可选材料仍使用 `Option` 表示。私有绑定集中可用材料与所选 output parameters；NTRU CBS/one-hot 要求 classic，并始终使用 circuit key 的完整 output basis。GLWE CBS 支持 classic 与 sparse，独立 `try_from_parts` 验证调用方提供的参数、trace basis 和 scheme-switch layout，可复用兼容的独立 output basis。构造后保存借用的绑定，在线操作不再取得可选材料。布局及 basis 一致仍不证明秘密或变换表示身份。
 
-入口：NTRU [NTT 控制视图](../../crates/primus_tfhe_ntru_ntt/src/key/classic.rs) / [Fourier 控制视图](../../crates/primus_tfhe_ntru_fourier/src/key/classic.rs)，各后端 `circuit_bootstrap/key.rs` 的私有绑定与 `circuit_bootstrap/evaluator.rs` 的公开构造器。高精度 LUT 从已绑定 one-hot 取得 initializer；返回调度和工作区协议仍由各后端管理。
+入口：NTRU [NTT 控制视图](../../crates/primus_tfhe_ntru_ntt/src/key/classic.rs) / [Fourier 控制视图](../../crates/primus_tfhe_ntru_fourier/src/key/classic.rs)，各后端 `circuit_bootstrap/key.rs` 的私有绑定与 `circuit_bootstrap/evaluator.rs` 的公开构造器。高精度 LUT 从已绑定 one-hot 取得 initializer；返回缓冲和批次协议由家族 `LweReturnEvaluator` 拥有，NTT/Fourier evaluator 各自选择返回调度。
 
 ## NTRU 返回资源与批次
 
@@ -107,7 +109,9 @@ NTT 与 native Fourier 的 reverse trace 归一化契约不同：前者使用模
 
 底层 `new` 是在相同校验错误下主动 panic 的便捷形式，适合已知有效的常量配置；其实现复用 `try_new`，没有第二套校验。`GlweParametersInner` 不持有布局，固定重量检查由外层 `GlweParameters` 或实际采样入口完成。公开 sampler 接受不同输出长度时仍需检查实际长度。
 
-RNS GLWE 参数仍使用原有的 panicking 构造器；秘密模数适配复用 `validate_modulus`，逐个检查有序 RNS 基的各 limb，并在失败时报告索引。噪声的 signed Gaussian 支持界由 RNS 参数另行逐 limb 检查。单模数的 `maximum_magnitude <= modulus_minus_one` 与显式 RNS 的 `maximum_magnitude < q_i` 等价；校验发生在构造阶段，在线采样不重复执行。
+RNS GLWE 提供 `CrtGlweParameters::try_new`，其 `new` 是调用同一校验的 panicking 便捷形式。`CrtGlweParametersError` 保留布局、RNS 基、BFV 编码与秘密/噪声错误。构造时检查有序 RNS 基的每个 limb 能表示秘密和噪声的完整支持集，并用 `BfvRnsCodec::validate_noise_bound` 验证新鲜私钥明文加密的恢复条件；这不保证公钥加密或同态运算后的噪声余量。
+
+`CrtGlevParameters::try_with_glwe_params` 复用已验证的布局/采样状态，另行检查多 limb 分解、centered lift 和 gadget 组合长度，通过 `CrtGlevParametersError` 保留原因。在线采样不重复这些参数检查。
 
 参数角色与底层失败原因分开表达。例如 CBS 的 trace 噪声错误沿 `CircuitBootstrapParameterError::EncryptionParameters { role, source }` → `NtruParameterError::Noise` → `GaussianError` 传播；`KeyGenerationError` 透明转发 CBS 错误。带上下文的 `Display` 只描述当前层，通过标准 `Error::source()` 逐层取得原因；透明包装同时委托显示及 source，不增加重复的报告层。只打印最外层 `Display` 会省略底层细节，报告器应遍历原因链；LWE/GLWE/NTRU 加密参数的 panicking 构造器通过 `expect` 保留嵌套采样错误的 Debug 信息。
 

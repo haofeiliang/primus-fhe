@@ -42,15 +42,17 @@ NTT/Fourier PBS evaluators retain this workspace alongside the small scalar
 return workspace. Interleaved ManyLUT shares the conversion across outputs,
 including sparse PBS; ordinary and single-output interleaved PBS keep the direct
 path. At N1024/n728, the extra requested heap is 60,224 bytes for u32 or 120,448
-bytes for u64, excluding object/allocator overhead. Ownership conversions to
-CBS/MVB retain these buffers even when that operation does not use batch return.
+bytes for u64, excluding object/allocator overhead. Conversion from a complete
+PBS to CBS/MVB retains these buffers. Standalone CBS/one-hot omits ordinary-return buffers and allocates them only when explicitly
+converted into a complete PBS; see the ownership table below.
 The [return benchmark](../../crates/primus_ntru/benches/lwe_return.rs) measures
 conversion, extraction, key switching and tile-copy costs together; the backend
 `mvb` benchmarks measure complete interleaved and factorized requests.
 
-Factorized MVB asks its bound PBS evaluator to prepare each different product
-and return each filled tile. The evaluator keeps both return workspaces private
-and supplies the matching return key and modulus. Internally it uses
+Factorized MVB submits each different product through its bound PBS
+evaluator's private `LweReturnEvaluator`. That family-level return object owns
+the stream protocol and both workspaces, with the matching return key and
+modulus. Internally it uses
 `modulus_switch_extract_at_to` into `extracted_slot_mut(slot)`, followed by
 `key_switch_extracted_batch_to` on the filled output prefix. Each polynomial
 gets its own Q→q conversion, but only extracted LWEs survive until a tile is

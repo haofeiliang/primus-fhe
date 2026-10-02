@@ -86,19 +86,9 @@ cargo nextest list --binaries-metadata /tmp/primus-test-binaries.json \
 
 审查 JSON 时同时检查：`rust-suites` 的 `kind` 仅为 `lib`、`proc-macro`、`test`；`testcases` 没有 Criterion `::bench/` 名称；`test-count` 与实际执行结果一致。若将来增加需要运行的 binary/example 自测，须明确其测试归属并更新选择范围，不能因为 `--lib --tests` 已存在就静默漏掉。
 
-2026-09-28 的全库验收清单如下。用例数指命名测试函数，其中可能包含多个参数/消息，不表示独立数学边界的数量，也不设为必须维持的阈值。
+用例数指命名测试函数，其中可能包含多个参数/消息，不表示独立数学边界的数量，也不设为必须维持的阈值。以当次 metadata 和 nextest 清单为准；bench targets、Criterion 工作负载、examples 与普通测试分别计数，不相加。`test-support` 参数诊断始终按需显式执行。
 
-| 项目 | stable 默认 | nightly 全 features |
-| --- | ---: | ---: |
-| Library/proc-macro targets | 29 | 29 |
-| 可用的 integration targets | 138 | 139 |
-| 含实际用例的测试 binaries | 143 | 146 |
-| 普通测试用例 | 370 | 381 |
-| Criterion binaries/条目进入普通测试 | 0 | 0 |
-
-整个 workspace 声明 65 个 bench targets、28 个 examples；其中 TFHE 产品 crate 有 18 个 bench targets、22 个 examples，最近全量验收在默认/SIMD 下各执行过 382 个 Criterion 工作负载和 22 个示例；这不是每次 CI 的负载。这些 target/工作负载数不能与普通测试用例相加。`test-support` 参数诊断属于剩余六个 examples 之一，始终按需显式执行。
-
-入口分离时（2026-09-27）普通测试为 374/387 项；当时有 67 个 bench targets、21 个 examples，TFHE 产品部分为 20/16。后续整理既删除重复 setup/循环，也迁移测试并补齐错误边界和字宽。保留/替代关系见以下各层索引；净用例数只作辅助记录，不把合并循环当作工作量下降。
+以下索引保存契约和主要 setup 的归属。每次验收的用例数、耗时、失败和环境限制记入本地记录；历史结果不替代当前验证，也不作为持续维护的固定规模。
 
 ## Feature 与字宽范围
 
@@ -286,23 +276,5 @@ cargo run --release -p primus_tfhe_test_support --example validate_parameters --
 ## 成本记录方法
 
 分别记录构建、枚举、运行和 smoke，不把一次带编译运行与另一轮缓存运行直接比较。可用 `/usr/bin/time` 记录 wall time 与进程 RSS，用 nextest 汇总观察执行阶段及慢用例；其进程 RSS 不是所有并行子进程的内存总峰值。缓存记录区分 `target/debug`、`target/release`、Criterion 数据和剩余磁盘空间。
-
-在同一台 Ryzen 9 9955HX3D（32 个逻辑 CPU）、相同 `target-cpu=native`、stable 1.98.0 / nightly 1.100.0、nextest 0.9.143 下复测。两次都使用 opt-level=1、debug assertions/overflow checks 开启、`CARGO_INCREMENTAL=0`、默认自动并发、不绑核。2026-09-27 的 profile 由环境设置，2026-09-28 初次验收时写入 Cargo.toml；随后只保留 opt-level=1，本地 incremental 恢复默认开启。下表保留的是禁用 incremental 时的历史测量，不能直接代表当前本地配置。运行前单独生成 binaries-only 清单；以下每个值都是单轮观察，不是统计基准。
-
-| 阶段 | 9/27 默认 | 9/28 默认 | 9/27 全 features | 9/28 全 features |
-| --- | ---: | ---: | ---: | ---: |
-| 生成 binaries-only 清单（含构建） | 49.56 s | 31.17 s | 49.14 s | 30.22 s |
-| 枚举已构建的二进制 | 0.15 s | 0.19 s | 0.15 s | 0.14 s |
-| 缓存就绪的普通测试命令 | 1.67 s | 2.24 s | 1.64 s | 2.20 s |
-| nextest 汇总的执行阶段 | 1.347 s | 1.908 s | 1.339 s | 1.902 s |
-| 构建命令 max RSS（KiB） | 1,316,140 | 946,332 | 1,388,092 | 922,140 |
-| 枚举命令 max RSS（KiB） | 53,652 | 53,176 | 48,192 | 46,980 |
-| 测试命令 max RSS（KiB） | 63,688 | 65,464 | 53,732 | 53,468 |
-
-这不是冷构建对比：依赖和历史产物的缓存状态不同，构建时间/资源下降不能直接归因于精简。缓存测试执行并未整体变快；最长的 TFHE-FFT 高精度用例由约 1.12 s 变为 1.74 s，同期增加了 u32 完整求值覆盖，具体输入和 setup 也已变化。保留独立契约，不能为了回到旧数字删除字宽或放宽阈值。各层重复尺寸/setup 的减少与整个 workspace 的总时间分开解释；没有重跑旧的含 Criterion 普通入口来制造夸大对比。
-
-收缩 CI 前的同次本机全量验收中，原两个 full 命令分别 11.27 / 12.55 s；22 个示例分别 20.99 / 22.68 s，382 条 Criterion smoke 分别 136.97 / 137.44 s，均包含当次缓存状态下的 Cargo 检查/构建。两种配置普通测试全部通过，doctest 各 21 passed、2 个既有 ignored；smoke 通过不表示测过所有可切换的示例源码配置。该全量入口及批量脚本已删除，以上 smoke 成本不再计入每次 CI。
-
-收缩后的入口于同机重新验证：`just ci` / `just ci-nightly` 分别 39.27 / 39.45 s，包含恢复本地 incremental 后约 32.73 / 31.67 s 的测试重编译；普通测试分别 370/381 项通过，执行阶段约 1.90/1.92 s。它们不运行示例/基准，GitHub 分为两个 job。这些本机数据没有模拟 GitHub 的 CPU、缓存或编译 flags，不能直接与此前预编译后的 full 时间比较。
 
 维护时按上面的清单命令将 JSON 和 `/usr/bin/time` 结果存放在本地临时目录，记录实际工具版本、profile、CPU、并发、缓存和执行范围。普通测试用例数、基准数量和代码行数都是辅助指标，不能替代成本及覆盖内容。GitHub runner、其他架构和 CPU 分派路径必须以各自实际运行结果为准。

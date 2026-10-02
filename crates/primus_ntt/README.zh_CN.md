@@ -42,7 +42,7 @@ assert_eq!(values, expected);
 
 Table 的构造应放在重复变换路径之外，并复用构造结果。Table 不可变并实现 `Send + Sync`，因此可以在线程间共享。
 
-`NttAutomorphismPermutation::new(degree, N)` 缓存 table 的 bit-reversed 顺序下 的 `X -> X^degree` 映射。它要求 `degree` 为 `[1, 2N)` 内的奇数，`N >= 32` 为 2 次幂。`apply_to` 只置换点值并保留其 residue 范围；同态使用仍需方案层的 key switching。
+`NttAutomorphismPermutation::new(degree, poly_length)` 接收 table 已检查的 `PolyLength`，缓存 bit-reversed 顺序下的 `X -> X^degree` 映射。它要求 `degree` 为 `[1, 2N)` 内的奇数，其中 `N = poly_length.get()`。`apply_to` 只置换点值并保留其 residue 范围；同态使用仍需方案层的 key switching。
 
 ## 表示与取值范围
 
