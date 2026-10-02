@@ -1,40 +1,17 @@
 mod boolean;
 mod encryption_key;
 mod error;
+mod parameters;
 
 pub use boolean::{BooleanDecryptor, BooleanEncryptor};
 pub use encryption_key::EncryptionKey;
 pub use error::{BooleanError, ClientError};
+pub use parameters::LweClientParameters;
 
-use primus_distr::DiscreteGaussian;
 use primus_encoding::{PlaintextEmbedding, RoundedCodec};
 use primus_integer::FheUint;
-use primus_lattice::LweDimension;
 use primus_lwe::{LweCiphertext, LweSecretKeyRef};
 use primus_reduce::RingContext;
-use rand::distr::Uniform;
-
-/// Borrowed parameters for rounded messages in one external LWE domain.
-///
-/// Family constructors select the dimension and samplers before creating this
-/// view; it contains no family key, PBS order or transform-specific state.
-///
-/// # Correctness
-///
-/// Both samplers must use the codec's ciphertext modulus. Secret coefficients
-/// inherit [`LweSecretKeyRef`]'s range contracts; noise must fit the message and
-/// programmable-bootstrap input budgets.
-#[derive(Clone, Copy)]
-pub struct LweClientParameters<'a, T: FheUint, M: RingContext<T>> {
-    /// External LWE dimension.
-    pub dimension: LweDimension,
-    /// Input message encoding and ciphertext modulus.
-    pub codec: &'a RoundedCodec<T, M>,
-    /// Prepared uniform sampler for ciphertext masks.
-    pub uniform: Uniform<T>,
-    /// Prepared encryption noise sampler.
-    pub noise: &'a DiscreteGaussian<T>,
-}
 
 /// Encrypts rounded TFHE messages into external LWE ciphertexts.
 ///
@@ -162,7 +139,7 @@ impl<'a, T: FheUint, M: RingContext<T>, Key: EncryptionKey<T, M>> Encryptor<'a, 
     where
         R: rand::Rng + rand::CryptoRng,
     {
-        let plaintext = self.parameters.codec.encode_value(message, embedding);
+        let plaintext = self.parameters.codec().encode_value(message, embedding);
         self.key.encrypt_encoded(plaintext, &self.parameters, rng)
     }
 
@@ -176,7 +153,7 @@ impl<'a, T: FheUint, M: RingContext<T>, Key: EncryptionKey<T, M>> Encryptor<'a, 
     where
         R: rand::Rng + rand::CryptoRng,
     {
-        let expected = self.parameters.dimension;
+        let expected = self.parameters.dimension();
         let actual = output.dimension();
         if actual != expected.get() {
             return Err(ClientError::CiphertextDimensionMismatch {
@@ -184,7 +161,7 @@ impl<'a, T: FheUint, M: RingContext<T>, Key: EncryptionKey<T, M>> Encryptor<'a, 
                 actual,
             });
         }
-        let plaintext = self.parameters.codec.encode_value(message, embedding);
+        let plaintext = self.parameters.codec().encode_value(message, embedding);
         self.key
             .encrypt_encoded_to(plaintext, output, &self.parameters, rng);
         Ok(())
@@ -192,7 +169,7 @@ impl<'a, T: FheUint, M: RingContext<T>, Key: EncryptionKey<T, M>> Encryptor<'a, 
 
     #[inline]
     fn check_padded_message(&self, message: T) -> Result<(), ClientError> {
-        let modulus = self.parameters.codec.plaintext_modulus();
+        let modulus = self.parameters.codec().plaintext_modulus();
         if message >= modulus - (modulus >> 1u32) {
             return Err(if message >= modulus {
                 ClientError::MessageOutOfRange
@@ -205,7 +182,7 @@ impl<'a, T: FheUint, M: RingContext<T>, Key: EncryptionKey<T, M>> Encryptor<'a, 
 
     #[inline]
     fn check_message(&self, message: T) -> Result<(), ClientError> {
-        if message >= self.parameters.codec.plaintext_modulus() {
+        if message >= self.parameters.codec().plaintext_modulus() {
             return Err(ClientError::MessageOutOfRange);
         }
         Ok(())

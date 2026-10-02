@@ -3,7 +3,7 @@
 use primus_fft::{FftTable, TorusFftValue};
 use primus_ntru::{FourierNtruSchemeSwitchKey, FourierNtruSecretKey, FourierNtruTraceKey};
 
-use crate::{CircuitBootstrapParameters, ClientKey, KeyGenerationError, KeyGenerator};
+use crate::{CircuitBootstrapParameters, ClientKey, KeyGenerationError, KeyGenerator, TfheContext};
 
 /// Additional keys for NTRU CBS; ordinary BR material remains in [`crate::ServerKey`].
 /// Both keys use the accumulator secret, not the post-PBS client secret.
@@ -106,5 +106,23 @@ where
             trace,
             scheme_switch,
         }
+    }
+}
+
+impl<T, Table, LM> TfheContext<T, Table, LM>
+where
+    T: TorusFftValue,
+    Table: FftTable,
+    LM: primus_reduce::RingContext<T>,
+{
+    /// Generates optional CBS material under this client's accumulator secret.
+    /// Inherits [`KeyGenerator::try_generate_circuit_bootstrap_key`]'s contracts.
+    pub fn try_generate_circuit_bootstrap_key<R: rand::Rng + rand::CryptoRng>(
+        &self,
+        client_key: &ClientKey<T>,
+        parameters: crate::CircuitBootstrapParameters<T>,
+        rng: &mut R,
+    ) -> Result<crate::CircuitBootstrapKey<T>, crate::KeyGenerationError> {
+        KeyGenerator::new(self).try_generate_circuit_bootstrap_key(client_key, parameters, rng)
     }
 }

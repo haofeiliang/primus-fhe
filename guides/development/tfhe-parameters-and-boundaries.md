@@ -21,6 +21,21 @@
 
 所有这些配置的噪声标准差均以对应模数下的**系数单位**表示；Fourier 内部将环系数转为归一化 torus，不改变配置输入的单位。BR、返回 KS、trace、scheme switch 的误差来源不同。GLWE 普通 BR/KS 当前继承 accumulator 噪声；NTRU 的返回 KS 单独选择 q 下的噪声。CBS 的 trace 和 scheme-switch 噪声独立于普通 PBS。
 
+## 配置、绑定与工作区的职责
+
+| 角色 | 保存或执行的内容 |
+| --- | --- |
+| `Config` | 调用方的独立选择；不保证组合已经有效 |
+| `Parameters` | 已验证的数学域、派生布局、codec、basis 和 sampler |
+| `Context` | 绑定家族参数与不可变 NTT/FFT 表；保留便捷工厂及公开布局的输出分配入口 |
+| `Workspace` | 特定算法可复用的临时存储；不拥有客户端秘密或自行选择参数 |
+| `KeyGenerator` / `AccumulatorClient` | 绑定 context，准备密钥生成或环客户端所需的表示和 scratch |
+| `Evaluator` | 绑定 context、服务端密钥和对应算法工作区，执行在线同态运算 |
+
+四个后端的 `TfheContext` 工厂仍可从同一入口调用，其 inherent impl 按职责放在 client、accumulator、key、sparse/key、CBS、factorized 或 boolean 模块。`context.rs` 保留参数/表绑定、访问器及公共布局分配，避免混入各功能的实现依赖。NTT/Fourier 和 GLWE/NTRU 的数值契约仍各自独立。
+
+[共享客户端参数](../../crates/primus_tfhe/src/client/parameters.rs)从已验证的 `LweParameters` 构造，字段私有，mask 采样器从 codec 的密文模数派生。GLWE KS→BR 显式选取 `kN` 维数及 accumulator fresh-noise，并在客户端构造时核对噪声模数。没有在逐次加密或逐系数操作中重复核对采样器；预算与秘密身份仍由调用方负责。
+
 ## Ordinary PBS 的三个返回链路
 
 | 家族 / order | 外部域及完整路径 | 参数和检查入口 |

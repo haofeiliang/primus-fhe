@@ -12,6 +12,9 @@ pub enum ClientError {
     /// The public key uses another ciphertext modulus.
     #[error("public-key ciphertext modulus mismatch")]
     PublicKeyModulusMismatch,
+    /// The alternate fresh-encryption noise uses another ciphertext modulus.
+    #[error("encryption noise ciphertext modulus mismatch")]
+    NoiseModulusMismatch,
     /// The message is outside `[0, t)`.
     #[error("message is outside the plaintext domain")]
     MessageOutOfRange,

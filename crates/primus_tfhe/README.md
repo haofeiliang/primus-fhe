@@ -45,7 +45,9 @@ Sparse mode requires explicit key generation; sparse ternary is unsupported. NTR
 
 ## Client and server roles
 
-`Encryptor`, `Decryptor` and their Boolean wrappers share encoding, range checks and allocation-free `*_to` operations. `LweClientParameters` is a concrete borrowed view of the external dimension, rounded codec and prepared samplers. Family constructors validate their keys and select the active LWE secret and noise once. The shared layer accepts `LweSecretKeyRef` or `&LwePublicKey`; its only client trait, `EncryptionKey<T, M>`, selects the encryption kernel without family parameter or error types. Raw operations return `ClientError`; Boolean operations return `BooleanError`.
+`Encryptor`, `Decryptor` and their Boolean wrappers share encoding, range checks and allocation-free `*_to` operations. `LweClientParameters::new(&lwe_parameters)` borrows a validated LWE domain, including its dimension, rounded codec and noise, and derives the mask sampler from the codec modulus. Its fields are private and available through accessors. Family constructors validate their keys and select the active LWE secret and noise once; GLWE KS→BR uses `try_with_dimension_and_noise` for the extracted dimension and accumulator noise, rejecting a different noise modulus. These checks do not establish a noise or security budget.
+
+The shared layer accepts `LweSecretKeyRef` or `&LwePublicKey`; its only client trait, `EncryptionKey<T, M>`, selects the encryption kernel without family parameter or error types. Raw operations return `ClientError`; Boolean operations return `BooleanError`.
 
 The client generates paired keys, keeps `ClientKey` and encryption/decryption helpers, and gives `ServerKey` to the server. The server needs only public context, evaluation keys, LUTs/programs and input ciphertexts; it returns encrypted results to the client. Examples show these stages in one process, with parameter construction kept separate. Input and output encodings are public agreements between the two sides.
 

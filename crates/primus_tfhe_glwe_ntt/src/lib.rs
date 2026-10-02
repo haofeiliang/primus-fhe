@@ -42,6 +42,7 @@ mod accumulator;
 pub mod blind_rotation;
 pub mod bootstrapping_key;
 pub mod circuit_bootstrap;
+mod client;
 mod context;
 mod error;
 mod evaluator;

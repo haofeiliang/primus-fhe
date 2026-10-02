@@ -1,13 +1,13 @@
 //! Prepared factorized MVB programs and their reusable evaluator.
 
+use primus_encoding::ScaledCodec;
 use primus_fft::{Complex64, FftTable, TorusFftValue};
 use primus_lattice::ntru::FourierNtru;
 use primus_modulus::NativeModulus;
 use primus_poly::{FourierPolynomial, FourierPolynomialIter, PolynomialIter, PolynomialOwned};
 use primus_tfhe::{FactorizedLookupTable, LweCiphertext};
 
-use crate::Evaluator;
-use crate::{ServerKey, TfheContext, TfheEvaluationError};
+use crate::{Evaluator, LookupTableError, ServerKey, TfheContext, TfheEvaluationError};
 
 /// Native even-scale MVB program prepared for one borrowed Fourier context.
 ///
@@ -275,5 +275,59 @@ impl<'a, T: TorusFftValue, Table: FftTable, LM: primus_reduce::RingContext<T>>
         self.product
             .write_torus_form(&mut evaluator.blind_rotation.current, &mut evaluator.fft);
         evaluator.prepare_accumulator_return_at(0, slot);
+    }
+}
+
+impl<T, Table, LM> TfheContext<T, Table, LM>
+where
+    T: TorusFftValue,
+    Table: FftTable,
+    LM: primus_reduce::RingContext<T>,
+{
+    /// Creates NTRU MVB workspace. Inherits
+    /// [`FactorizedEvaluator::try_new`]'s key and Fourier table requirements.
+    pub fn factorized_evaluator<'a>(
+        &'a self,
+        server_key: &'a ServerKey<T>,
+    ) -> Result<FactorizedEvaluator<'a, T, Table, LM>, TfheEvaluationError> {
+        FactorizedEvaluator::try_new(self, server_key)
+    }
+
+    /// Compiles and Fourier-prepares a Native even-scale MVB program.
+    ///
+    /// `input_domain_len` selects a nonempty prefix of the parameter codec's
+    /// front half; `output_count` is positive and unpadded. The output codec
+    /// must use Native and have an even scale, including for nonbinary plaintext
+    /// moduli. Callback order follows [`FactorizedLookupTable::try_new`].
+    /// The result is bound to this context; factor amplification and FFT error
+    /// must satisfy [`FactorizedEvaluator::apply_lookup_table_to`]'s noise budget.
+    ///
+    /// # Panics
+    /// Panics for coefficient types other than u32/u64.
+    pub fn compile_factorized_lookup_table_fn<OM, F>(
+        &self,
+        output_codec: &ScaledCodec<T, OM>,
+        input_domain_len: usize,
+        output_count: usize,
+        function: F,
+    ) -> Result<FourierFactorizedLookupTable<'_, T, Table, LM>, LookupTableError>
+    where
+        OM: primus_reduce::RingContext<T>,
+        F: Fn(usize, usize) -> T,
+    {
+        if output_codec.ciphertext_modulus().explicit_value()
+            != self.parameters().accumulator_ntru().cipher_modulus_value()
+        {
+            return Err(LookupTableError::OutputModulusMismatch);
+        }
+        let lookup_table = FactorizedLookupTable::try_new(
+            input_domain_len,
+            self.parameters().accumulator_ntru().poly_length(),
+            output_count,
+            self.parameters().input_plaintext_codec(),
+            output_codec,
+            function,
+        )?;
+        Ok(FourierFactorizedLookupTable::new(self, lookup_table))
     }
 }

@@ -1,6 +1,5 @@
 //! Client-side coefficient-ring encryption and decryption under the accumulator secret.
 
-use crate::{ClientKey, TfheClientError, TfheContext};
 use primus_data::{Data, DataMut};
 use primus_fft::{Complex64, FftEngine, FftTable, TorusFftValue};
 use primus_ntru::{
@@ -8,6 +7,8 @@ use primus_ntru::{
     FourierNtruSecretKey, NtruCiphertext,
 };
 use primus_poly::Polynomial;
+
+use crate::{ClientKey, TfheClientError, TfheContext};
 
 /// Prepared private-key client for the accumulator NTRU domain.
 ///
@@ -141,5 +142,21 @@ where
             &mut self.fft,
             &mut self.decrypt,
         );
+    }
+}
+
+impl<T, Table, LM> TfheContext<T, Table, LM>
+where
+    T: TorusFftValue,
+    Table: FftTable,
+    LM: primus_reduce::RingContext<T>,
+{
+    /// Prepares private-key encryption/decryption in the accumulator ring domain.
+    /// Inherits [`crate::AccumulatorClient::try_new`]'s contracts and errors.
+    pub fn accumulator_client(
+        &self,
+        client_key: &ClientKey<T>,
+    ) -> Result<crate::AccumulatorClient<'_, T, Table, LM>, TfheClientError> {
+        crate::AccumulatorClient::try_new(self, client_key)
     }
 }

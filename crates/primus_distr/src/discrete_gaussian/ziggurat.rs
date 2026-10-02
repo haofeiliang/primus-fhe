@@ -39,6 +39,13 @@ impl<T: FheUint> DiscreteZiggurat<T> {
     pub fn std_dev(&self) -> f64 {
         self.core.standard_deviation()
     }
+
+    /// Returns the modulus minus one used to encode negative samples.
+    #[must_use]
+    #[inline]
+    pub fn modulus_minus_one(&self) -> T {
+        self.modulus_minus_one
+    }
 }
 
 impl<T: FheUint> Distribution<T> for DiscreteZiggurat<T> {

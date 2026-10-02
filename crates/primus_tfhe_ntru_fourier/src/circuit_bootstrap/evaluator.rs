@@ -316,3 +316,23 @@ where
         );
     }
 }
+
+impl<T, Table, LM> TfheContext<T, Table, LM>
+where
+    T: TorusFftValue,
+    Table: FftTable,
+    LM: primus_reduce::RingContext<T>,
+{
+    /// Binds the server key's optional CBS material to reusable workspace.
+    /// Returns an error if the capability is absent or incompatible.
+    ///
+    /// # Correctness
+    /// Inherits [`crate::CircuitBootstrapEvaluator::try_new`]'s transform requirements.
+    pub fn circuit_bootstrap_evaluator<'a>(
+        &'a self,
+        server_key: &'a ServerKey<T>,
+    ) -> Result<crate::CircuitBootstrapEvaluator<'a, T, Table, LM>, crate::TfheEvaluationError>
+    {
+        crate::CircuitBootstrapEvaluator::try_new(self, server_key)
+    }
+}

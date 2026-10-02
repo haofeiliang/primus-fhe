@@ -444,3 +444,19 @@ where
         &ks.switched
     }
 }
+
+impl<T, Table> TfheContext<T, Table>
+where
+    T: TorusFftValue,
+    Table: FftTable,
+{
+    /// Creates a programmable-bootstrap evaluator with reusable FFT workspace.
+    ///
+    /// Inherits [`Evaluator::try_new`]'s Fourier table identity requirement.
+    pub fn evaluator<'a>(
+        &'a self,
+        server_key: &'a ServerKey<T>,
+    ) -> Result<Evaluator<'a, T, Table>, TfheEvaluationError> {
+        Evaluator::try_new(self, server_key)
+    }
+}

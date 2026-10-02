@@ -439,3 +439,17 @@ where
         &ks.switched
     }
 }
+
+impl<T, Table> TfheContext<T, Table>
+where
+    T: FheUint,
+    Table: MonomialNttTable<ValueT = T>,
+{
+    /// Creates a programmable-bootstrap evaluator with reusable NTT workspace.
+    pub fn evaluator<'a>(
+        &'a self,
+        server_key: &'a ServerKey<T>,
+    ) -> Result<Evaluator<'a, T, Table>, TfheEvaluationError> {
+        Evaluator::try_new(self, server_key)
+    }
+}

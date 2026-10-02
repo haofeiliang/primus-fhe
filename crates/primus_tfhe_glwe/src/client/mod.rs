@@ -13,7 +13,7 @@ impl<T: FheUint, M: RingContext<T>> TfheParameters<T, M> {
     ) -> Result<Encryptor<'a, T, M>, TfheClientError> {
         key.check_compatible(self)?;
         Ok(Encryptor::try_new(
-            self.client_parameters(),
+            self.client_parameters()?,
             key.external_lwe_secret_key(),
         )?)
     }
@@ -24,7 +24,7 @@ impl<T: FheUint, M: RingContext<T>> TfheParameters<T, M> {
         &'a self,
         key: &'a LwePublicKey<T>,
     ) -> Result<Encryptor<'a, T, M, &'a LwePublicKey<T>>, ClientError> {
-        Encryptor::try_new(self.client_parameters(), key)
+        Encryptor::try_new(self.client_parameters()?, key)
     }
 
     /// Validates the family key and borrows its active secret and input codec.
@@ -39,15 +39,18 @@ impl<T: FheUint, M: RingContext<T>> TfheParameters<T, M> {
         ))
     }
 
-    fn client_parameters(&self) -> LweClientParameters<'_, T, M> {
-        LweClientParameters {
-            dimension: self.external_lwe_dimension(),
-            codec: self.input_plaintext_codec(),
-            uniform: self.small_lwe().cipher_modulus_uniform_distr(),
-            noise: match self.pbs_order() {
-                crate::PbsOrder::BootstrapKeyswitch => self.small_lwe().noise_distribution(),
-                crate::PbsOrder::KeyswitchBootstrap => self.accumulator_glwe().noise_distribution(),
-            },
+    // KS→BR exposes the extracted accumulator secret. Its fresh noise must
+    // remain the accumulator's sampler, even though the Rounded codec is shared.
+    fn client_parameters(&self) -> Result<LweClientParameters<'_, T, M>, ClientError> {
+        match self.pbs_order() {
+            crate::PbsOrder::BootstrapKeyswitch => Ok(LweClientParameters::new(self.small_lwe())),
+            crate::PbsOrder::KeyswitchBootstrap => {
+                LweClientParameters::try_with_dimension_and_noise(
+                    self.small_lwe(),
+                    self.external_lwe_dimension(),
+                    self.accumulator_glwe().noise_distribution(),
+                )
+            }
         }
     }
 }

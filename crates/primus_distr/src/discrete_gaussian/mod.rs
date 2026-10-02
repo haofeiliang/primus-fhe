@@ -68,6 +68,16 @@ impl<T: FheUint> DiscreteGaussian<T> {
         }
     }
 
+    /// Returns the modulus minus one used to encode negative samples.
+    #[must_use]
+    #[inline]
+    pub fn modulus_minus_one(&self) -> T {
+        match self {
+            Self::Cdt(sampler) => sampler.modulus_minus_one(),
+            Self::Ziggurat(sampler) => sampler.modulus_minus_one(),
+        }
+    }
+
     /// Samples `length` canonical residues into a newly allocated vector.
     /// Selects the backend once and initializes the vector directly from samples.
     /// Produces the same samples and consumes the same randomness as repeated

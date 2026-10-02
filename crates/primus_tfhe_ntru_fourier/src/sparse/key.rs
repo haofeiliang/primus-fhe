@@ -1,19 +1,21 @@
 //! Coefficient-domain bucket selections for experimental sparse NTRU PBS.
 
-use primus_lattice::LweDimension;
-use std::alloc::Layout;
-
 use num_traits::{ConstOne, ConstZero};
 use primus_fft::{Complex64, FftTable, TorusFftValue};
+use primus_lattice::LweDimension;
 use primus_lattice::{
     ngsw::NgswIter,
     nlev::{FourierNlev, Nlev, NlevIter},
 };
 use primus_ntru::{FourierNtruSecretKey, NtruLweKeySwitchingKey, SecretKeyDistr};
 use primus_tfhe::sparse::BucketMap;
+use std::alloc::Layout;
 use zeroize::Zeroizing;
 
-use crate::{ClientKey, KeyGenerationError, KeyGenerator, ServerKey, SparseBootstrappingKeyError};
+use crate::{
+    ClientKey, KeyGenerationError, KeyGenerator, ServerKey, SparseBootstrappingKeyError,
+    TfheContext,
+};
 
 /// Coefficient selectors and public buckets for a fixed-weight binary client.
 /// Bucket zero uses NLEV bits for public-LUT lifting; later buckets use NGSW bits.
@@ -252,5 +254,30 @@ where
             controls,
             key_switching_key,
         ))
+    }
+}
+
+impl<T, Table, LM> TfheContext<T, Table, LM>
+where
+    T: TorusFftValue,
+    Table: FftTable,
+    LM: primus_reduce::RingContext<T>,
+{
+    /// Generates experimental sparse PBS material for a fixed-weight binary client.
+    /// Inherits [`KeyGenerator::try_generate_sparse_server_key`]'s sampling, errors
+    /// and noise contracts. Reuses the ordinary evaluator; CBS/MVB are unsupported.
+    pub fn try_generate_sparse_server_key<R: rand::Rng + rand::CryptoRng>(
+        &self,
+        client_key: &ClientKey<T>,
+        copy_count: usize,
+        bucket_count: usize,
+        rng: &mut R,
+    ) -> Result<ServerKey<T>, KeyGenerationError> {
+        KeyGenerator::new(self).try_generate_sparse_server_key(
+            client_key,
+            copy_count,
+            bucket_count,
+            rng,
+        )
     }
 }

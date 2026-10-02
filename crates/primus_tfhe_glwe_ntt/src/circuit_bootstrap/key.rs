@@ -4,7 +4,7 @@ use primus_glwe::{NttGlweSchemeSwitchKey, NttGlweSecretKey, NttGlweTraceKey};
 use primus_integer::FheUint;
 use primus_ntt::MonomialNttTable;
 
-use crate::{CircuitBootstrapParameters, ClientKey, KeyGenerationError, KeyGenerator};
+use crate::{CircuitBootstrapParameters, ClientKey, KeyGenerationError, KeyGenerator, TfheContext};
 
 /// Trace-projection and scheme-switching keys used after PBSManyLUT.
 ///
@@ -130,5 +130,30 @@ where
             trace,
             scheme_switch,
         }
+    }
+}
+
+impl<T, Table> TfheContext<T, Table>
+where
+    T: FheUint,
+    Table: MonomialNttTable<ValueT = T>,
+{
+    /// Generates the optional trace-projection and scheme-switching key material.
+    ///
+    /// # Correctness
+    ///
+    /// Inherits [`KeyGenerator::try_generate_circuit_bootstrap_key`]'s paired
+    /// client-secret and NTT representation requirements. Compatibility checks
+    /// do not establish that the ordinary server key uses the same secrets.
+    pub fn try_generate_circuit_bootstrap_key<R>(
+        &self,
+        client_key: &ClientKey<T>,
+        parameters: CircuitBootstrapParameters<T>,
+        rng: &mut R,
+    ) -> Result<CircuitBootstrapKey<T>, KeyGenerationError>
+    where
+        R: rand::Rng + rand::CryptoRng,
+    {
+        KeyGenerator::new(self).try_generate_circuit_bootstrap_key(client_key, parameters, rng)
     }
 }

@@ -1,12 +1,13 @@
 //! Client-side coefficient-ring encryption and decryption under the accumulator secret.
 
-use crate::{ClientKey, TfheContext, TfheKeyError};
 use primus_data::{Data, DataMut};
 use primus_glwe::{GlweCiphertext, NttGlweSecretKey};
 use primus_integer::FheUint;
 use primus_ntt::MonomialNttTable;
 use primus_poly::Polynomial;
 use zeroize::Zeroizing;
+
+use crate::{ClientKey, TfheContext, TfheKeyError};
 
 /// Prepared private-key client for the accumulator GLWE domain.
 ///
@@ -118,5 +119,20 @@ where
             self.context.table(),
             &mut self.scratch,
         );
+    }
+}
+
+impl<T, Table> TfheContext<T, Table>
+where
+    T: FheUint,
+    Table: MonomialNttTable<ValueT = T>,
+{
+    /// Prepares private-key encryption/decryption in the accumulator ring domain.
+    /// Inherits [`crate::AccumulatorClient::try_new`]'s contracts and errors.
+    pub fn accumulator_client(
+        &self,
+        client_key: &ClientKey<T>,
+    ) -> Result<crate::AccumulatorClient<'_, T, Table>, crate::TfheKeyError> {
+        crate::AccumulatorClient::try_new(self, client_key)
     }
 }

@@ -2,7 +2,6 @@ use primus_data::{Data, DataMut};
 use primus_fft::{Complex64, FftTable, TorusFftValue};
 use primus_glwe::GlweCiphertext;
 use primus_glwe::{FourierGlweTraceWorkspace, GlevCiphertext};
-use primus_lattice::LweDimension;
 use primus_lattice::ggsw::FourierGgsw;
 use primus_lwe::LweCiphertext;
 use primus_reduce::ReduceMul;
@@ -26,7 +25,6 @@ where
     pbs: Evaluator<'a, T, Table>,
     parameters: &'a CircuitBootstrapParameters<T>,
     circuit_key: &'a CircuitBootstrapKey<T>,
-    input_dimension: LweDimension,
     lookup_table: InterleavedLookupTable<T>,
     trace: FourierGlweTraceWorkspace<T>,
     projected: GlevCiphertext<Vec<T>>,
@@ -148,7 +146,6 @@ where
             pbs,
             parameters,
             circuit_key,
-            input_dimension: tfhe.external_lwe_dimension(),
             lookup_table,
             trace: FourierGlweTraceWorkspace::new(glwe.size()),
             projected: GlevCiphertext::zero(parameters.output_size().glev_len()),
@@ -297,7 +294,7 @@ where
     ) {
         assert_eq!(
             input.dimension(),
-            self.input_dimension.get(),
+            self.pbs.context.parameters().external_lwe_dimension().get(),
             "circuit-bootstrap input dimension mismatch"
         );
         assert_eq!(
@@ -330,5 +327,23 @@ where
                     scratch,
                 );
             });
+    }
+}
+
+impl<T, Table> TfheContext<T, Table>
+where
+    T: TorusFftValue,
+    Table: FftTable,
+{
+    /// Binds the server key's optional CBS material to reusable workspace.
+    /// Returns an error if the capability is absent or incompatible.
+    ///
+    /// # Correctness
+    /// Inherits [`CircuitBootstrapEvaluator::try_new`]'s transform requirements.
+    pub fn circuit_bootstrap_evaluator<'a>(
+        &'a self,
+        server_key: &'a ServerKey<T>,
+    ) -> Result<CircuitBootstrapEvaluator<'a, T, Table>, TfheEvaluationError> {
+        CircuitBootstrapEvaluator::try_new(self, server_key)
     }
 }

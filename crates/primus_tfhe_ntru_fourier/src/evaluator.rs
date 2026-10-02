@@ -332,3 +332,20 @@ where
         Self::apply_interleaved_lookup_table_to(self, input, lookup_table, outputs);
     }
 }
+
+impl<T, Table, LM> TfheContext<T, Table, LM>
+where
+    T: TorusFftValue,
+    Table: FftTable,
+    LM: primus_reduce::RingContext<T>,
+{
+    /// Creates an evaluator with reusable FFT and coefficient workspaces.
+    /// The key must use this context's FFT table instance; see
+    /// [`Evaluator::try_new`]'s correctness requirements.
+    pub fn evaluator<'a>(
+        &'a self,
+        server_key: &'a ServerKey<T>,
+    ) -> Result<Evaluator<'a, T, Table, LM>, TfheEvaluationError> {
+        Evaluator::try_new(self, server_key)
+    }
+}

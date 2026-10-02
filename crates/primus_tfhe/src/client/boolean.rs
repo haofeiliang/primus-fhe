@@ -14,7 +14,7 @@ impl<'a, T: FheUint, M: RingContext<T>, Key: EncryptionKey<T, M>> BooleanEncrypt
     /// Creates a Boolean encryptor and validates the required plaintext
     /// modulus.
     pub fn try_new(inner: Encryptor<'a, T, M, Key>) -> Result<Self, BooleanError> {
-        validate_boolean_modulus(inner.parameters.codec.plaintext_modulus())?;
+        validate_boolean_modulus(inner.parameters.codec().plaintext_modulus())?;
         Ok(Self { inner })
     }
 

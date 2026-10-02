@@ -58,7 +58,7 @@ impl<T: FheUint, M: RingContext<T>> EncryptionKey<T, M> for LweSecretKeyRef<'_, 
         &self,
         parameters: &LweClientParameters<'_, T, M>,
     ) -> Result<(), ClientError> {
-        check_dimension(parameters.dimension.get(), self.dimension())
+        check_dimension(parameters.dimension().get(), self.dimension())
     }
 
     fn encrypt_encoded<R: rand::Rng + rand::CryptoRng>(
@@ -70,9 +70,9 @@ impl<T: FheUint, M: RingContext<T>> EncryptionKey<T, M> for LweSecretKeyRef<'_, 
         // Keep the secret-key path's direct initialization of spare capacity.
         (*self).encrypt_encoded(
             plaintext,
-            parameters.codec.ciphertext_modulus(),
-            parameters.uniform,
-            parameters.noise,
+            parameters.codec().ciphertext_modulus(),
+            parameters.uniform(),
+            parameters.noise(),
             rng,
         )
     }
@@ -87,9 +87,9 @@ impl<T: FheUint, M: RingContext<T>> EncryptionKey<T, M> for LweSecretKeyRef<'_, 
         (*self).encrypt_encoded_to(
             plaintext,
             output,
-            parameters.codec.ciphertext_modulus(),
-            parameters.uniform,
-            parameters.noise,
+            parameters.codec().ciphertext_modulus(),
+            parameters.uniform(),
+            parameters.noise(),
             rng,
         );
     }
@@ -100,8 +100,8 @@ impl<T: FheUint, M: RingContext<T>> EncryptionKey<T, M> for &LwePublicKey<T> {
         &self,
         parameters: &LweClientParameters<'_, T, M>,
     ) -> Result<(), ClientError> {
-        check_dimension(parameters.dimension.get(), self.dimension().get())?;
-        if self.cipher_modulus_minus_one() != parameters.codec.ciphertext_modulus().minus_one() {
+        check_dimension(parameters.dimension().get(), self.dimension().get())?;
+        if self.cipher_modulus_minus_one() != parameters.codec().ciphertext_modulus().minus_one() {
             return Err(ClientError::PublicKeyModulusMismatch);
         }
         Ok(())
@@ -116,8 +116,8 @@ impl<T: FheUint, M: RingContext<T>> EncryptionKey<T, M> for &LwePublicKey<T> {
         LwePublicKey::encrypt_encoded(
             self,
             plaintext,
-            parameters.codec.ciphertext_modulus(),
-            parameters.noise,
+            parameters.codec().ciphertext_modulus(),
+            parameters.noise(),
             rng,
         )
     }
@@ -133,8 +133,8 @@ impl<T: FheUint, M: RingContext<T>> EncryptionKey<T, M> for &LwePublicKey<T> {
             self,
             plaintext,
             output,
-            parameters.codec.ciphertext_modulus(),
-            parameters.noise,
+            parameters.codec().ciphertext_modulus(),
+            parameters.noise(),
             rng,
         );
     }

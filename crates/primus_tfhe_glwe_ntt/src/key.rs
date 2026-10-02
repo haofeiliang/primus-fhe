@@ -342,3 +342,25 @@ where
             .map_err(Into::into)
     }
 }
+
+impl<T, Table> TfheContext<T, Table>
+where
+    T: FheUint,
+    Table: MonomialNttTable<ValueT = T>,
+{
+    /// Generates a fresh client/server pair; `None` selects PBS only and
+    /// `Some(config)` also generates the configured CBS material.
+    /// Inherits [`KeyGenerator::try_generate`]'s CBS requirements.
+    ///
+    /// Distribution and fixed-weight validity is established by parameter construction.
+    pub fn try_generate_keys<R>(
+        &self,
+        circuit_bootstrap: Option<CircuitBootstrapConfig>,
+        rng: &mut R,
+    ) -> Result<(ClientKey<T>, ServerKey<T>), KeyGenerationError>
+    where
+        R: rand::Rng + rand::CryptoRng,
+    {
+        KeyGenerator::new(self).try_generate(circuit_bootstrap, rng)
+    }
+}

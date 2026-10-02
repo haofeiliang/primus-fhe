@@ -43,6 +43,7 @@ mod accumulator;
 mod blind_rotation;
 pub mod boolean;
 pub mod circuit_bootstrap;
+mod client;
 mod context;
 mod error;
 mod evaluator;

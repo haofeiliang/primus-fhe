@@ -1,13 +1,13 @@
 //! Prepared factorized MVB programs and their reusable evaluator.
 
+use primus_encoding::ScaledCodec;
 use primus_integer::FheUint;
 use primus_lattice::ntru::NttNtru;
 use primus_ntt::MonomialNttTable;
 use primus_poly::{NttPolynomial, NttPolynomialIter, PolynomialIterMut, PolynomialOwned};
 use primus_tfhe::{FactorizedLookupTable, LweCiphertext};
 
-use crate::Evaluator;
-use crate::{ServerKey, TfheContext, TfheEvaluationError};
+use crate::{Evaluator, LookupTableError, ServerKey, TfheContext, TfheEvaluationError};
 
 /// A factorized MVB program prepared for one borrowed NTT context.
 ///
@@ -274,5 +274,56 @@ where
         );
         product.into_coeff_form(evaluator.context.table());
         evaluator.prepare_accumulator_return_at(0, slot);
+    }
+}
+
+impl<T, Table, LM> TfheContext<T, Table, LM>
+where
+    T: FheUint,
+    Table: MonomialNttTable<ValueT = T>,
+    LM: primus_reduce::RingContext<T>,
+{
+    /// Creates reusable MVB workspace. See [`FactorizedEvaluator::try_new`] for
+    /// the server-key secret and NTT representation requirements.
+    pub fn factorized_evaluator<'a>(
+        &'a self,
+        server_key: &'a ServerKey<T>,
+    ) -> Result<FactorizedEvaluator<'a, T, Table, LM>, TfheEvaluationError> {
+        FactorizedEvaluator::try_new(self, server_key)
+    }
+
+    /// Compiles and NTT-prepares a fixed-scale MVB program for this context.
+    ///
+    /// `input_domain_len` selects a nonempty prefix of the parameter codec's
+    /// front half; `output_count` is positive and unpadded. Outputs must lie in
+    /// the supplied Scaled codec's domain, and its ciphertext modulus must match
+    /// the accumulator. Callback order and noise requirements follow
+    /// [`FactorizedLookupTable::try_new`]. The result borrows this context and
+    /// may only be evaluated by its [`FactorizedEvaluator`].
+    pub fn compile_factorized_lookup_table_fn<OM, F>(
+        &self,
+        output_codec: &ScaledCodec<T, OM>,
+        input_domain_len: usize,
+        output_count: usize,
+        function: F,
+    ) -> Result<NttFactorizedLookupTable<'_, T, Table, LM>, LookupTableError>
+    where
+        OM: primus_reduce::RingContext<T>,
+        F: Fn(usize, usize) -> T,
+    {
+        if output_codec.ciphertext_modulus().explicit_value()
+            != self.parameters().accumulator_ntru().cipher_modulus_value()
+        {
+            return Err(LookupTableError::OutputModulusMismatch);
+        }
+        let lookup_table = FactorizedLookupTable::try_new(
+            input_domain_len,
+            self.parameters().poly_length(),
+            output_count,
+            self.parameters().input_plaintext_codec(),
+            output_codec,
+            function,
+        )?;
+        Ok(NttFactorizedLookupTable::new(self, lookup_table))
     }
 }

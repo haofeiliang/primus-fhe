@@ -27,7 +27,6 @@ where
     T: FheUint,
     Table: MonomialNttTable<ValueT = T>,
 {
-    context: &'a TfheContext<T, Table>,
     pbs: Evaluator<'a, T, Table>,
     parameters: &'a CircuitBootstrapParameters<T>,
     circuit_key: &'a CircuitBootstrapKey<T>,
@@ -159,7 +158,6 @@ where
         let glwe_size = glwe.size();
 
         Ok(Self {
-            context,
             pbs,
             parameters,
             circuit_key,
@@ -200,6 +198,7 @@ where
         C: Data<Elem = T>,
         D: DataMut<Elem = T>,
     {
+        let context = self.pbs.context;
         let ring_len = self.parameters.output_size().glwe_size().glwe_len();
         assert_eq!(
             (
@@ -223,11 +222,8 @@ where
                     rhs,
                     output,
                     self.parameters.output_basis(),
-                    self.context
-                        .parameters()
-                        .accumulator_glwe()
-                        .cipher_modulus(),
-                    self.context.table(),
+                    context.parameters().accumulator_glwe().cipher_modulus(),
+                    context.table(),
                     scratch,
                 );
             });
@@ -253,6 +249,7 @@ where
         B: Data<Elem = T>,
         C: DataMut<Elem = T>,
     {
+        let context = self.pbs.context;
         let ring_len = self.parameters.output_size().glwe_size().glwe_len();
         assert_eq!(
             (
@@ -269,11 +266,8 @@ where
                     input,
                     output,
                     self.parameters.output_basis(),
-                    self.context
-                        .parameters()
-                        .accumulator_glwe()
-                        .cipher_modulus(),
-                    self.context.table(),
+                    context.parameters().accumulator_glwe().cipher_modulus(),
+                    context.table(),
                     scratch,
                 );
             });
@@ -325,7 +319,8 @@ where
     where
         S: DataMut<Elem = T>,
     {
-        let tfhe = self.context.parameters();
+        let context = self.pbs.context;
+        let tfhe = context.parameters();
         assert_eq!(
             input.dimension(),
             tfhe.external_lwe_dimension().get(),
@@ -347,11 +342,8 @@ where
             accumulator,
             self.parameters.output_basis().decompose_length().get(),
             self.traced.as_mut(),
-            self.context
-                .parameters()
-                .accumulator_glwe()
-                .cipher_modulus(),
-            self.context.table(),
+            context.parameters().accumulator_glwe().cipher_modulus(),
+            context.table(),
             &mut self.trace,
         );
         // CMUX can bind the same buffers to a different output decomposition.
@@ -360,13 +352,28 @@ where
                 self.circuit_key.scheme_switch_key().apply_to(
                     &self.traced,
                     output,
-                    self.context
-                        .parameters()
-                        .accumulator_glwe()
-                        .cipher_modulus(),
-                    self.context.table(),
+                    context.parameters().accumulator_glwe().cipher_modulus(),
+                    context.table(),
                     scratch,
                 );
             });
+    }
+}
+
+impl<T, Table> TfheContext<T, Table>
+where
+    T: FheUint,
+    Table: MonomialNttTable<ValueT = T>,
+{
+    /// Binds the server key's optional CBS material to reusable workspace.
+    /// Returns an error if the capability is absent or incompatible.
+    ///
+    /// # Correctness
+    /// Inherits [`CircuitBootstrapEvaluator::try_new`]'s transform requirements.
+    pub fn circuit_bootstrap_evaluator<'a>(
+        &'a self,
+        server_key: &'a ServerKey<T>,
+    ) -> Result<CircuitBootstrapEvaluator<'a, T, Table>, TfheEvaluationError> {
+        CircuitBootstrapEvaluator::try_new(self, server_key)
     }
 }

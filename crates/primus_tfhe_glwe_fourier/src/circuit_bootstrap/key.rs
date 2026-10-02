@@ -1,7 +1,7 @@
 use primus_fft::{FftTable, TorusFftValue};
 use primus_glwe::{FourierGlweSchemeSwitchKey, FourierGlweSecretKey, FourierGlweTraceKey};
 
-use crate::{CircuitBootstrapParameters, ClientKey, KeyGenerationError, KeyGenerator};
+use crate::{CircuitBootstrapParameters, ClientKey, KeyGenerationError, KeyGenerator, TfheContext};
 
 /// Optional trace-projection and GLev-to-Fourier-GGSW scheme-switch keys.
 ///
@@ -126,5 +126,28 @@ where
             trace,
             scheme_switch,
         }
+    }
+}
+
+impl<T, Table> TfheContext<T, Table>
+where
+    T: TorusFftValue,
+    Table: FftTable,
+{
+    /// Generates optional CBS trace-projection and scheme-switch keys.
+    ///
+    /// Inherits [`KeyGenerator::try_generate_circuit_bootstrap_key`]'s secret
+    /// and FFT table requirements. Reuse a [`KeyGenerator`] when generating
+    /// multiple standalone CBS keys. For paired generation, use [`Self::try_generate_keys`].
+    pub fn try_generate_circuit_bootstrap_key<R>(
+        &self,
+        client_key: &ClientKey<T>,
+        parameters: CircuitBootstrapParameters<T>,
+        rng: &mut R,
+    ) -> Result<CircuitBootstrapKey<T>, KeyGenerationError>
+    where
+        R: rand::Rng + rand::CryptoRng,
+    {
+        KeyGenerator::new(self).try_generate_circuit_bootstrap_key(client_key, parameters, rng)
     }
 }

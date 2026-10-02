@@ -40,11 +40,6 @@ impl<T: FheUint, M: RingContext<T>, LM: RingContext<T>> TfheParameters<T, M, LM>
     }
 
     fn client_parameters(&self) -> LweClientParameters<'_, T, LM> {
-        LweClientParameters {
-            dimension: self.external_lwe_dimension(),
-            codec: self.input_plaintext_codec(),
-            uniform: self.external_lwe().cipher_modulus_uniform_distr(),
-            noise: self.external_lwe().noise_distribution(),
-        }
+        LweClientParameters::new(self.external_lwe())
     }
 }
