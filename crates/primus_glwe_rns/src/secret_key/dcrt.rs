@@ -15,10 +15,12 @@ use primus_rns::Residues;
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 use crate::{
-    CrtGlevParameters, CrtGlweParameters, DcrtGadgetDomain, DcrtGlweCiphertext, SecretKeyDistr,
+    CrtGlevParameters, CrtGlweParameters, DcrtGadgetDomain, DcrtGlweCiphertext, RnsDomainError,
+    SecretKeyDistr,
 };
 
 use super::{GlweSecretKey, encode_secret_polynomial_to};
+use crate::parameter::{validate_dcrt_table, validate_glwe_size, validate_moduli};
 
 /// A GLWE secret key represented in NTT form for every ordered RNS modulus.
 /// Key storage is securely erased on drop.
@@ -27,6 +29,7 @@ pub struct DcrtGlweSecretKey<T: FheUint> {
     pub(crate) key: Vec<T>,
     pub(crate) distr: SecretKeyDistr,
     pub(crate) size: RnsGlweSize,
+    moduli: Vec<T>,
 }
 
 impl<T: FheUint> Zeroize for DcrtGlweSecretKey<T> {
@@ -99,6 +102,7 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
             key: vec![T::ZERO; size.rns_mask_len()],
             distr: secret_key.distr(),
             size,
+            moduli: table.iter().map(NttTable::modulus).collect(),
         };
 
         for (coefficients, mut dcrt_secret) in secret_key.iter().zip(DcrtPolynomialIterMut::new(
@@ -117,121 +121,71 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
         key
     }
 
+    /// Binds this key to ordinary parameters and their ordered DCRT table.
+    ///
+    /// Checks numerical domains and key layout once. Matching moduli do not
+    /// prove that a different table uses the same NTT representation.
+    ///
+    /// # Errors
+    /// Returns [`RnsDomainError`] for an incompatible layout or ordered basis.
+    pub fn try_bind<'a, M, Table>(
+        &'a self,
+        parameters: &'a CrtGlweParameters<T, M>,
+        table: &'a DcrtTable<Table>,
+    ) -> Result<DcrtGlweSecretKeyContext<'a, T, M, Table>, RnsDomainError<T>>
+    where
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+    {
+        validate_dcrt_table(parameters.poly_length(), parameters.cipher_moduli(), table)?;
+        self.validate_parameters(parameters.size(), parameters.cipher_moduli())?;
+        Ok(DcrtGlweSecretKeyContext {
+            key: self,
+            parameters,
+            table,
+        })
+    }
+
+    /// Binds this key to a checked gadget domain before encrypting GLev entries.
+    ///
+    /// # Errors
+    /// Returns [`RnsDomainError`] for an incompatible layout or ordered basis.
+    pub fn try_bind_gadget<'a, M, Table>(
+        &'a self,
+        domain: &'a DcrtGadgetDomain<'a, T, M, Table>,
+    ) -> Result<DcrtGlevEncryptor<'a, T, M, Table>, RnsDomainError<T>>
+    where
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+    {
+        self.validate_parameters(
+            domain.size().rns_glwe_size(),
+            domain.parameters().cipher_moduli(),
+        )?;
+        Ok(DcrtGlevEncryptor { key: self, domain })
+    }
+
+    /// Checks the owned key geometry and modulus order at resource binding.
+    pub(crate) fn validate_parameters<M: FieldContext<T>>(
+        &self,
+        size: RnsGlweSize,
+        moduli: &[M],
+    ) -> Result<(), RnsDomainError<T>> {
+        validate_glwe_size(size, self.size)?;
+        validate_moduli(
+            self.moduli.iter().copied(),
+            moduli.iter().map(|m| m.value()),
+        )
+    }
+
     // -------------------------------------------------------------------------
     // Encryption
     // -------------------------------------------------------------------------
 
-    /// Encrypts an already-decomposed CRT plaintext polynomial.
-    ///
-    /// The message contains unscaled plaintext lifts reduced into each `[0, q_i)`,
-    /// in coefficient-domain CRT layout. This method applies `floor(Q/t)` scaling;
-    /// passing the already-scaled output of [`crate::BfvRnsCodec::encode_coeffs_to`]
-    /// would apply the scale twice.
-    pub fn encrypt_inplace<R, M, Table, A, B>(
-        &self,
-        msg: &CrtPolynomial<A>,
-        result: &mut DcrtGlweCiphertext<B>,
-        params: &CrtGlweParameters<T, M>,
-        table: &DcrtTable<Table>,
-        rng: &mut R,
-    ) where
-        R: rand::Rng + rand::CryptoRng,
-        M: FieldContext<T>,
-        Table: NttTable<ValueT = T>,
-        A: Data<Elem = T>,
-        B: DataMut<Elem = T>,
-    {
-        self.encrypt_kernel_to(
-            DcrtEncryptionMessage::Crt(msg.as_view()),
-            result.as_mut_view(),
-            params,
-            table,
-            rng,
-        );
-    }
-
-    /// Encrypts a raw plaintext polynomial using unsigned embedding.
-    pub fn encrypt_plaintext_inplace<R, M, Table, A, B>(
-        &self,
-        msg: &Polynomial<A>,
-        result: &mut DcrtGlweCiphertext<B>,
-        params: &CrtGlweParameters<T, M>,
-        table: &DcrtTable<Table>,
-        rng: &mut R,
-    ) where
-        R: rand::Rng + rand::CryptoRng,
-        M: FieldContext<T>,
-        Table: NttTable<ValueT = T>,
-        A: Data<Elem = T>,
-        B: DataMut<Elem = T>,
-    {
-        self.encrypt_kernel_to(
-            DcrtEncryptionMessage::Plaintext {
-                polynomial: msg.as_view(),
-                embedding: PlaintextEmbedding::Unsigned,
-            },
-            result.as_mut_view(),
-            params,
-            table,
-            rng,
-        );
-    }
-
-    /// Encrypts a raw plaintext polynomial using centered embedding.
-    pub fn encrypt_centered_plaintext_inplace<R, M, Table, A, B>(
-        &self,
-        msg: &Polynomial<A>,
-        result: &mut DcrtGlweCiphertext<B>,
-        params: &CrtGlweParameters<T, M>,
-        table: &DcrtTable<Table>,
-        rng: &mut R,
-    ) where
-        R: rand::Rng + rand::CryptoRng,
-        M: FieldContext<T>,
-        Table: NttTable<ValueT = T>,
-        A: Data<Elem = T>,
-        B: DataMut<Elem = T>,
-    {
-        self.encrypt_kernel_to(
-            DcrtEncryptionMessage::Plaintext {
-                polynomial: msg.as_view(),
-                embedding: PlaintextEmbedding::Centered,
-            },
-            result.as_mut_view(),
-            params,
-            table,
-            rng,
-        );
-    }
-
-    /// Encrypts zero into an existing DCRT GLWE allocation.
-    ///
-    /// The result is overwritten and must match `params` and `table`.
-    pub fn encrypt_zeros_inplace<R, M, Table, A>(
-        &self,
-        result: &mut DcrtGlweCiphertext<A>,
-        params: &CrtGlweParameters<T, M>,
-        table: &DcrtTable<Table>,
-        rng: &mut R,
-    ) where
-        R: rand::Rng + rand::CryptoRng,
-        M: FieldContext<T>,
-        Table: NttTable<ValueT = T>,
-        A: DataMut<Elem = T>,
-    {
-        self.encrypt_kernel_to(
-            DcrtEncryptionMessage::Zero,
-            result.as_mut_view(),
-            params,
-            table,
-            rng,
-        );
-    }
-
     /// Samples coefficient noise, injects the BFV message, then transforms the body.
     /// Uniform masks are sampled in DCRT form afterward, in secret-component order.
-    /// The caller maintains complete key/message/output layouts and the matching
-    /// ordered parameter/table domain; views do not validate these preconditions.
+    /// The context has bound the key/parameters/table numerical domain. Message
+    /// and output layouts and NTT identity remain caller contracts.
     fn encrypt_kernel_to<R, M, Table>(
         &self,
         message: DcrtEncryptionMessage<'_, T>,
@@ -339,31 +293,9 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
         });
     }
 
-    /// Encrypts a DCRT plaintext polynomial into an existing DCRT GLev allocation.
-    ///
-    /// The plaintext, result, parameters, and table must share the same ordered
-    /// RNS basis and polynomial length.
-    pub fn encrypt_dcrt_msg_to_dcrt_glev_inplace<R, M, Table, A, B>(
-        &self,
-        dcrt_msg: &DcrtPolynomial<A>,
-        result: &mut DcrtGlev<B>,
-        domain: &DcrtGadgetDomain<'_, T, M, Table>,
-        rng: &mut R,
-    ) where
-        R: rand::Rng + rand::CryptoRng,
-        M: FieldContext<T>,
-        Table: NttTable<ValueT = T>,
-        A: Data<Elem = T>,
-        B: DataMut<Elem = T>,
-    {
-        let params = domain.parameters();
-        assert_eq!(result.as_ref().len(), params.rns_glev_len());
-        self.encrypt_dcrt_glev_kernel_to(dcrt_msg.as_view(), result.as_mut_view(), domain, rng);
-    }
-
     /// Reuses the DCRT message at every gadget level, adding it after the noise
-    /// transform. Output length has been checked; secret/message/domain layouts
-    /// and representations remain caller-maintained preconditions.
+    /// transform. The encryptor establishes the key/domain numerical binding;
+    /// message/output layouts and representations remain caller contracts.
     fn encrypt_dcrt_glev_kernel_to<R, M, Table>(
         &self,
         dcrt_msg: DcrtPolynomial<&[T]>,
@@ -437,30 +369,9 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
         });
     }
 
-    /// Encrypts a CRT plaintext polynomial into an existing DCRT GLev allocation.
-    ///
-    /// The result is overwritten and must match the domain's gadget layout.
-    pub fn encrypt_crt_msg_to_dcrt_glev_inplace<R, M, Table, A, B>(
-        &self,
-        crt_msg: &CrtPolynomial<A>,
-        result: &mut DcrtGlev<B>,
-        domain: &DcrtGadgetDomain<'_, T, M, Table>,
-        rng: &mut R,
-    ) where
-        R: rand::Rng + rand::CryptoRng,
-        M: FieldContext<T>,
-        Table: NttTable<ValueT = T>,
-        A: Data<Elem = T>,
-        B: DataMut<Elem = T>,
-    {
-        let params = domain.parameters();
-        assert_eq!(result.as_ref().len(), params.rns_glev_len());
-        self.encrypt_crt_glev_kernel_to(crt_msg.as_view(), result.as_mut_view(), domain, rng);
-    }
-
     /// Reuses the CRT message at every gadget level, adding it before the body
-    /// transform. Output length has been checked; secret/message/domain layouts
-    /// and representations remain caller-maintained preconditions.
+    /// transform. The encryptor establishes the key/domain numerical binding;
+    /// message/output layouts and representations remain caller contracts.
     fn encrypt_crt_glev_kernel_to<R, M, Table>(
         &self,
         crt_msg: CrtPolynomial<&[T]>,
@@ -493,20 +404,6 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
     // Phase / Decryption
     // -------------------------------------------------------------------------
 
-    /// Performs `b - ∑ a*s`.
-    pub fn phase_inplace<M, A, B>(
-        &self,
-        ciphertext: &DcrtGlweCiphertext<A>,
-        msg_mod_q: &mut DcrtPolynomial<B>,
-        params: &CrtGlweParameters<T, M>,
-    ) where
-        M: FieldContext<T>,
-        A: Data<Elem = T>,
-        B: DataMut<Elem = T>,
-    {
-        self.phase_kernel_to(ciphertext.as_view(), msg_mod_q.as_mut_view(), params);
-    }
-
     /// Computes the DCRT phase with complete, matching layouts in parameter basis order.
     fn phase_kernel_to<M>(
         &self,
@@ -530,53 +427,8 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
         b.sub_rev_assign(&mut msg_mod_q, poly_length, moduli);
     }
 
-    /// Decrypts a DCRT GLWE ciphertext into a newly allocated plaintext polynomial.
-    pub fn decrypt<M, Table, A>(
-        &self,
-        ciphertext: &DcrtGlweCiphertext<A>,
-        params: &CrtGlweParameters<T, M>,
-        table: &DcrtTable<Table>,
-        workspace: &mut DcrtGlweDecryptWorkspace<T>,
-    ) -> PolynomialOwned<T>
-    where
-        M: FieldContext<T>,
-        Table: NttTable<ValueT = T>,
-        A: Data<Elem = T>,
-    {
-        let mut msg = PolynomialOwned::zero(params.poly_length().get());
-        self.decrypt_inplace(ciphertext, &mut msg, params, table, workspace);
-        msg
-    }
-
-    /// Decrypts a DCRT GLWE ciphertext into `msg` using reusable workspace.
-    ///
-    /// The ciphertext, output, parameters, table, and workspace must share the
-    /// same polynomial length and ordered RNS basis.
-    pub fn decrypt_inplace<M, Table, A, B>(
-        &self,
-        ciphertext: &DcrtGlweCiphertext<A>,
-        msg: &mut Polynomial<B>,
-        params: &CrtGlweParameters<T, M>,
-        table: &DcrtTable<Table>,
-        workspace: &mut DcrtGlweDecryptWorkspace<T>,
-    ) where
-        M: FieldContext<T>,
-        Table: NttTable<ValueT = T>,
-        A: Data<Elem = T>,
-        B: DataMut<Elem = T>,
-    {
-        assert_eq!(workspace.size(), params.size());
-        self.decrypt_kernel_to(
-            ciphertext.as_view(),
-            msg.as_mut_view(),
-            params,
-            table,
-            workspace,
-        );
-    }
-
-    /// Uses a layout-checked erasing workspace. All other operands and the table
-    /// must share the parameter basis and transform representation. Phase extraction
+    /// Uses an erasing workspace whose shape matches the bound parameters.
+    /// Operand layouts and transform identity remain caller contracts. Phase extraction
     /// overwrites scratch before inverse transformation and BFV decoding.
     fn decrypt_kernel_to<M, Table>(
         &self,
@@ -603,6 +455,246 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
             &mut msg,
             fast_convert_buffer,
         );
+    }
+}
+
+/// A read-only binding of a DCRT secret key, ordinary parameters and table.
+///
+/// Numerical compatibility is checked by [`DcrtGlweSecretKey::try_bind`].
+/// Ciphertext/message layouts, canonical residues and NTT identity remain
+/// caller contracts; the binding does not identify the secret of an input ciphertext.
+pub struct DcrtGlweSecretKeyContext<'a, T, M, Table>
+where
+    T: FheUint,
+    M: FieldContext<T>,
+    Table: NttTable<ValueT = T>,
+{
+    key: &'a DcrtGlweSecretKey<T>,
+    parameters: &'a CrtGlweParameters<T, M>,
+    table: &'a DcrtTable<Table>,
+}
+
+impl<T, M, Table> DcrtGlweSecretKeyContext<'_, T, M, Table>
+where
+    T: FheUint,
+    M: FieldContext<T>,
+    Table: NttTable<ValueT = T>,
+{
+    /// Encrypts an already-decomposed CRT plaintext polynomial.
+    ///
+    /// The message contains unscaled plaintext lifts reduced into each `[0, q_i)`,
+    /// in coefficient-domain CRT layout. This method applies `floor(Q/t)` scaling;
+    /// passing the already-scaled output of [`crate::BfvRnsCodec::encode_coeffs_to`]
+    /// would apply the scale twice.
+    pub fn encrypt_inplace<R, A, B>(
+        &self,
+        msg: &CrtPolynomial<A>,
+        result: &mut DcrtGlweCiphertext<B>,
+        rng: &mut R,
+    ) where
+        R: rand::Rng + rand::CryptoRng,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
+    {
+        let params = self.parameters;
+        let table = self.table;
+        self.key.encrypt_kernel_to(
+            DcrtEncryptionMessage::Crt(msg.as_view()),
+            result.as_mut_view(),
+            params,
+            table,
+            rng,
+        );
+    }
+
+    /// Encrypts N canonical plaintext values in `[0,t)` using unsigned embedding.
+    /// Overwrites a complete GLWE output in the bound RNS layout.
+    pub fn encrypt_plaintext_inplace<R, A, B>(
+        &self,
+        msg: &Polynomial<A>,
+        result: &mut DcrtGlweCiphertext<B>,
+        rng: &mut R,
+    ) where
+        R: rand::Rng + rand::CryptoRng,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
+    {
+        let params = self.parameters;
+        let table = self.table;
+        self.key.encrypt_kernel_to(
+            DcrtEncryptionMessage::Plaintext {
+                polynomial: msg.as_view(),
+                embedding: PlaintextEmbedding::Unsigned,
+            },
+            result.as_mut_view(),
+            params,
+            table,
+            rng,
+        );
+    }
+
+    /// Encrypts N canonical plaintext values in `[0,t)` using centered embedding.
+    /// Overwrites a complete GLWE output in the bound RNS layout.
+    pub fn encrypt_centered_plaintext_inplace<R, A, B>(
+        &self,
+        msg: &Polynomial<A>,
+        result: &mut DcrtGlweCiphertext<B>,
+        rng: &mut R,
+    ) where
+        R: rand::Rng + rand::CryptoRng,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
+    {
+        let params = self.parameters;
+        let table = self.table;
+        self.key.encrypt_kernel_to(
+            DcrtEncryptionMessage::Plaintext {
+                polynomial: msg.as_view(),
+                embedding: PlaintextEmbedding::Centered,
+            },
+            result.as_mut_view(),
+            params,
+            table,
+            rng,
+        );
+    }
+
+    /// Encrypts zero into an existing DCRT GLWE allocation.
+    ///
+    /// The result is overwritten and uses the bound parameters' full GLWE layout.
+    pub fn encrypt_zeros_inplace<R, A>(&self, result: &mut DcrtGlweCiphertext<A>, rng: &mut R)
+    where
+        R: rand::Rng + rand::CryptoRng,
+        A: DataMut<Elem = T>,
+    {
+        let params = self.parameters;
+        let table = self.table;
+        self.key.encrypt_kernel_to(
+            DcrtEncryptionMessage::Zero,
+            result.as_mut_view(),
+            params,
+            table,
+            rng,
+        );
+    }
+
+    /// Performs `b - ∑ a*s` from a complete bound-layout GLWE ciphertext.
+    /// Overwrites one complete DCRT polynomial in `msg_mod_q`.
+    pub fn phase_inplace<A, B>(
+        &self,
+        ciphertext: &DcrtGlweCiphertext<A>,
+        msg_mod_q: &mut DcrtPolynomial<B>,
+    ) where
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
+    {
+        let params = self.parameters;
+        self.key
+            .phase_kernel_to(ciphertext.as_view(), msg_mod_q.as_mut_view(), params);
+    }
+
+    /// Decrypts a DCRT GLWE ciphertext into a newly allocated plaintext polynomial.
+    #[must_use]
+    pub fn decrypt<A>(
+        &self,
+        ciphertext: &DcrtGlweCiphertext<A>,
+        workspace: &mut DcrtGlweDecryptWorkspace<T>,
+    ) -> PolynomialOwned<T>
+    where
+        A: Data<Elem = T>,
+    {
+        let params = self.parameters;
+        let mut msg = PolynomialOwned::zero(params.poly_length().get());
+        self.decrypt_inplace(ciphertext, &mut msg, workspace);
+        msg
+    }
+
+    /// Decrypts a DCRT GLWE ciphertext into `msg` using reusable workspace.
+    ///
+    /// The ciphertext and workspace use the bound parameters' GLWE layout;
+    /// `msg` has N coefficients. The ciphertext must use this key and NTT representation.
+    pub fn decrypt_inplace<A, B>(
+        &self,
+        ciphertext: &DcrtGlweCiphertext<A>,
+        msg: &mut Polynomial<B>,
+        workspace: &mut DcrtGlweDecryptWorkspace<T>,
+    ) where
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
+    {
+        let params = self.parameters;
+        let table = self.table;
+        debug_assert_eq!(workspace.size(), params.size());
+        self.key.decrypt_kernel_to(
+            ciphertext.as_view(),
+            msg.as_mut_view(),
+            params,
+            table,
+            workspace,
+        );
+    }
+}
+
+/// A secret key bound to one checked GLev encryption domain.
+///
+/// Construct with [`DcrtGlweSecretKey::try_bind_gadget`] and reuse across
+/// key rows. Full input/output layouts and transform identity remain caller contracts.
+pub struct DcrtGlevEncryptor<'a, T, M, Table>
+where
+    T: FheUint,
+    M: FieldContext<T>,
+    Table: NttTable<ValueT = T>,
+{
+    key: &'a DcrtGlweSecretKey<T>,
+    domain: &'a DcrtGadgetDomain<'a, T, M, Table>,
+}
+
+impl<T, M, Table> DcrtGlevEncryptor<'_, T, M, Table>
+where
+    T: FheUint,
+    M: FieldContext<T>,
+    Table: NttTable<ValueT = T>,
+{
+    /// Encrypts a DCRT plaintext polynomial into an existing DCRT GLev allocation.
+    ///
+    /// The plaintext has one complete RNS polynomial; the result has the bound
+    /// GLev layout. Both use the bound ordered basis and NTT representation.
+    pub fn encrypt_dcrt_msg_to_dcrt_glev_inplace<R, A, B>(
+        &self,
+        dcrt_msg: &DcrtPolynomial<A>,
+        result: &mut DcrtGlev<B>,
+        rng: &mut R,
+    ) where
+        R: rand::Rng + rand::CryptoRng,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
+    {
+        let domain = self.domain;
+        let params = domain.parameters();
+        debug_assert_eq!(result.as_ref().len(), params.rns_glev_len());
+        self.key
+            .encrypt_dcrt_glev_kernel_to(dcrt_msg.as_view(), result.as_mut_view(), domain, rng);
+    }
+
+    /// Encrypts a CRT plaintext polynomial into an existing DCRT GLev allocation.
+    ///
+    /// The message has one complete coefficient-domain RNS polynomial; the
+    /// result is overwritten using the bound GLev layout.
+    pub fn encrypt_crt_msg_to_dcrt_glev_inplace<R, A, B>(
+        &self,
+        crt_msg: &CrtPolynomial<A>,
+        result: &mut DcrtGlev<B>,
+        rng: &mut R,
+    ) where
+        R: rand::Rng + rand::CryptoRng,
+        A: Data<Elem = T>,
+        B: DataMut<Elem = T>,
+    {
+        let domain = self.domain;
+        let params = domain.parameters();
+        debug_assert_eq!(result.as_ref().len(), params.rns_glev_len());
+        self.key
+            .encrypt_crt_glev_kernel_to(crt_msg.as_view(), result.as_mut_view(), domain, rng);
     }
 }
 

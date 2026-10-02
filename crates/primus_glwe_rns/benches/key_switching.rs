@@ -8,9 +8,9 @@ use std::hint::black_box;
 use criterion::{BenchmarkId, Criterion, Throughput, criterion_group, criterion_main};
 use primus_glwe_rns::{
     CrtGlevParameters, CrtGlweParameters, DcrtGadgetDomain, DcrtGlweCiphertext,
-    DcrtGlweDecryptWorkspace, DcrtGlweKeySwitchingKey, DcrtGlweKeySwitchingWorkspace,
-    DcrtGlweSecretKey, GlweSecretKey, HybridRnsGlweKeySwitchingKey,
-    HybridRnsGlweKeySwitchingWorkspace, HybridRnsKeySwitchDomain, SecretKeyDistr,
+    DcrtGlweDecryptWorkspace, DcrtGlweKeySwitchEvaluator, DcrtGlweKeySwitchingKey,
+    DcrtGlweSecretKey, GlweSecretKey, HybridRnsGlweKeySwitchEvaluator,
+    HybridRnsGlweKeySwitchingKey, HybridRnsKeySwitchDomain, SecretKeyDistr,
 };
 use primus_lattice::glwe::DcrtGlwe;
 use primus_modulus::BarrettModulus;
@@ -85,28 +85,18 @@ fn bench_key_switching(c: &mut Criterion) {
         let rns_glwe_len = glwe_params.rns_glwe_len();
         let input: Polynomial<Vec<Value>> = Polynomial::random(poly_length.get(), mod_t, &mut rng);
         let mut input_ciphertext: DcrtGlwe<Vec<Value>> = DcrtGlweCiphertext::zero(rns_glwe_len);
-        input_dcrt_sk.encrypt_plaintext_inplace(
-            &input,
-            &mut input_ciphertext,
-            &glwe_params,
-            &q_table,
-            &mut rng,
-        );
+        let input_dcrt_sk_context = input_dcrt_sk.try_bind(&glwe_params, &q_table).unwrap();
+        input_dcrt_sk_context.encrypt_plaintext_inplace(&input, &mut input_ciphertext, &mut rng);
         let input_coeff = input_ciphertext.clone().into_coeff_form(&q_table);
 
         let mut crt_output: DcrtGlwe<Vec<Value>> = DcrtGlweCiphertext::zero(rns_glwe_len);
-        let mut crt_workspace =
-            DcrtGlweKeySwitchingWorkspace::new(&dcrt_domain, glwe_params.size());
+        let mut crt_evaluator = DcrtGlweKeySwitchEvaluator::new(&crt_ksk, &dcrt_domain);
         // Validate the CRT path before measuring it.
-        crt_ksk.key_switch_to(
-            &input_coeff,
-            &mut crt_output,
-            &dcrt_domain,
-            &mut crt_workspace,
-        );
+        crt_evaluator.key_switch_to(&input_coeff, &mut crt_output);
         let mut decrypt_workspace = DcrtGlweDecryptWorkspace::new(glwe_params.size());
+        let output_dcrt_sk_context = output_dcrt_sk.try_bind(&glwe_params, &q_table).unwrap();
         assert_eq!(
-            output_dcrt_sk.decrypt(&crt_output, &glwe_params, &q_table, &mut decrypt_workspace),
+            output_dcrt_sk_context.decrypt(&crt_output, &mut decrypt_workspace),
             input,
         );
         group.throughput(Throughput::Elements(poly_length.get() as u64));
@@ -114,12 +104,7 @@ fn bench_key_switching(c: &mut Criterion) {
 
         group.bench_function(BenchmarkId::new("CRT-bit-decomposition", &n_label), |b| {
             b.iter(|| {
-                crt_ksk.key_switch_to(
-                    black_box(&input_coeff),
-                    black_box(&mut crt_output),
-                    black_box(&dcrt_domain),
-                    black_box(&mut crt_workspace),
-                );
+                crt_evaluator.key_switch_to(black_box(&input_coeff), black_box(&mut crt_output));
             });
         });
 
@@ -134,22 +119,12 @@ fn bench_key_switching(c: &mut Criterion) {
                 &mut rng,
             );
             let mut hybrid_output: DcrtGlwe<Vec<Value>> = DcrtGlweCiphertext::zero(rns_glwe_len);
-            let mut hybrid_workspace =
-                HybridRnsGlweKeySwitchingWorkspace::new(&hybrid_ksk, &hybrid_domain);
+            let mut hybrid_evaluator =
+                HybridRnsGlweKeySwitchEvaluator::new(&hybrid_ksk, &hybrid_domain);
 
-            hybrid_ksk.key_switch_to(
-                &input_ciphertext,
-                &mut hybrid_output,
-                &hybrid_domain,
-                &mut hybrid_workspace,
-            );
+            hybrid_evaluator.key_switch_to(&input_ciphertext, &mut hybrid_output);
             assert_eq!(
-                output_dcrt_sk.decrypt(
-                    &hybrid_output,
-                    &glwe_params,
-                    &q_table,
-                    &mut decrypt_workspace,
-                ),
+                output_dcrt_sk_context.decrypt(&hybrid_output, &mut decrypt_workspace),
                 input,
             );
 
@@ -157,11 +132,9 @@ fn bench_key_switching(c: &mut Criterion) {
                 BenchmarkId::new(format!("Hybrid-RNS-{partition_label}"), &n_label),
                 |b| {
                     b.iter(|| {
-                        hybrid_ksk.key_switch_to(
+                        hybrid_evaluator.key_switch_to(
                             black_box(&input_ciphertext),
                             black_box(&mut hybrid_output),
-                            black_box(&hybrid_domain),
-                            black_box(&mut hybrid_workspace),
                         );
                     });
                 },

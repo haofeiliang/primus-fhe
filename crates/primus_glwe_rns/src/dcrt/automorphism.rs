@@ -173,6 +173,9 @@ where
     let params = domain.parameters();
     let rns_poly_len = params.rns_poly_len();
     let dcrt_glev_len = params.rns_glev_len();
+    let encryptor = dcrt_sk
+        .try_bind_gadget(domain)
+        .expect("automorphism secret key and gadget domain are incompatible");
 
     let mut key = vec![T::ZERO; params.dimension().get() * dcrt_glev_len];
     let mut auto_buffer = Zeroizing::new(vec![T::ZERO; rns_poly_len]);
@@ -186,7 +189,7 @@ where
         .for_each(|(si, mut dcrt_glev)| {
             dcrt_poly_ntt_auto_to(si.0, auto_si.as_mut(), ntt_auto_helper);
 
-            dcrt_sk.encrypt_dcrt_msg_to_dcrt_glev_inplace(&auto_si, &mut dcrt_glev, domain, rng);
+            encryptor.encrypt_dcrt_msg_to_dcrt_glev_inplace(&auto_si, &mut dcrt_glev, rng);
         });
 
     key
@@ -236,7 +239,6 @@ impl<T: FheUint> DcrtGlweAutoKey<T> {
         Table: NttTable<ValueT = T>,
     {
         let params = domain.parameters();
-        assert_eq!(dcrt_sk.rns_glwe_size(), params.size().rns_glwe_size());
 
         let poly_length = params.poly_length().get();
         assert!(

@@ -2,7 +2,7 @@ use primus_decompose::ApproxSignedBasisError;
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_glwe_rns::{
     CrtGlevParameters, CrtGlevParametersError, CrtGlweParameters, CrtGlweParametersError,
-    DcrtGadgetDomain, GadgetDomainError, SecretKeyDistr,
+    DcrtGadgetDomain, RnsDomainError, SecretKeyDistr,
 };
 use primus_lattice::{GlweDimension, GlweSizeError};
 use primus_modulus::BarrettModulus;
@@ -359,6 +359,6 @@ fn domain_rejects_modulus_order_mismatch() {
     let wrong_order_table = UintDcrtTable::new(PolyLength::new(32), &reversed).unwrap();
     assert!(matches!(
         DcrtGadgetDomain::try_new(&crt_gadget, &wrong_order_table),
-        Err(GadgetDomainError::ModulusOrderMismatch { index: 0, .. })
+        Err(RnsDomainError::ModulusOrderMismatch { index: 0, .. })
     ));
 }

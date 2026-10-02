@@ -1,40 +1,73 @@
 use primus_decompose::big_integer::BigUintApproxSignedBasis;
 use primus_integer::FheUint;
-use primus_lattice::RnsGadgetSize;
+use primus_lattice::{RnsGadgetSize, RnsGlweSize};
 use primus_ntt::{DcrtTable, NttTable};
+use primus_poly::PolyLength;
 use primus_reduce::FieldContext;
 use primus_rns::{HybridRNS, RNSBase};
 
 use super::CrtGlevParameters;
 
-/// An incompatibility between RNS parameters and a transform table.
+/// An incompatibility between RNS parameters, keys, layouts or transform tables.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum GadgetDomainError<T: FheUint> {
-    /// The table and parameters use different polynomial lengths.
+pub enum RnsDomainError<T: FheUint> {
+    /// Bound resources use different polynomial lengths.
     #[error("polynomial length mismatch: expected {expected}, got {actual}")]
     PolynomialLengthMismatch {
-        /// Polynomial length required by the parameters.
+        /// Required polynomial length.
         expected: usize,
-        /// Polynomial length supplied by the table.
+        /// Supplied polynomial length.
         actual: usize,
     },
-    /// A DCRT table has the wrong number of modulus limbs.
+    /// Bound resources use different numbers of modulus limbs.
     #[error("RNS modulus count mismatch: expected {expected}, got {actual}")]
     ModuliCountMismatch {
-        /// Modulus count required by the parameters.
+        /// Required modulus count.
         expected: usize,
-        /// Modulus count supplied by the table.
+        /// Supplied modulus count.
         actual: usize,
     },
-    /// A DCRT table limb uses the wrong modulus or modulus order.
+    /// Ordered bases differ at a modulus limb.
     #[error("RNS modulus mismatch at index {index}: expected {expected:?}, got {actual:?}")]
     ModulusOrderMismatch {
         /// Index of the mismatching modulus.
         index: usize,
-        /// Modulus required by the parameters.
+        /// Required modulus.
         expected: T,
-        /// Modulus supplied by the table.
+        /// Supplied modulus.
         actual: T,
+    },
+    /// A key and its bound parameters use different GLWE mask dimensions.
+    #[error("GLWE dimension mismatch: expected {expected}, got {actual}")]
+    DimensionMismatch {
+        /// Required mask-polynomial count.
+        expected: usize,
+        /// Supplied mask-polynomial count.
+        actual: usize,
+    },
+    /// A key and its domain retain different numbers of gadget levels.
+    #[error("decomposition level count mismatch: expected {expected}, got {actual}")]
+    DecompositionLevelCountMismatch {
+        /// Retained count used at key generation.
+        expected: usize,
+        /// Retained count supplied by the domain.
+        actual: usize,
+    },
+    /// A key and its domain use different signed-decomposition radices.
+    #[error("decomposition base log mismatch: expected {expected}, got {actual}")]
+    DecompositionBaseLogMismatch {
+        /// Base log used at key generation.
+        expected: u32,
+        /// Base log supplied by the domain.
+        actual: u32,
+    },
+    /// A hybrid key and its domain partition Q differently.
+    #[error("hybrid partition width mismatch: expected {expected}, got {actual}")]
+    PartitionWidthMismatch {
+        /// Maximum Q moduli per partition used at key generation.
+        expected: usize,
+        /// Maximum Q moduli per partition supplied by the domain.
+        actual: usize,
     },
 }
 
@@ -56,38 +89,14 @@ where
     Table: NttTable<ValueT = T>,
 {
     /// Binds compatible RNS gadget parameters and a DCRT table.
+    ///
+    /// # Errors
+    /// Returns [`RnsDomainError`] for a polynomial-length, modulus-count or order mismatch.
     pub fn try_new(
         parameters: &'a CrtGlevParameters<T, M>,
         table: &'a DcrtTable<Table>,
-    ) -> Result<Self, GadgetDomainError<T>> {
-        let expected = parameters.poly_length().get();
-        let actual = table.poly_length().get();
-        if actual != expected {
-            return Err(GadgetDomainError::PolynomialLengthMismatch { expected, actual });
-        }
-
-        let expected = parameters.cipher_moduli_count();
-        let actual = table.moduli_count();
-        if actual != expected {
-            return Err(GadgetDomainError::ModuliCountMismatch { expected, actual });
-        }
-
-        for (index, (expected, ntt_table)) in parameters
-            .cipher_moduli_value()
-            .iter()
-            .copied()
-            .zip(table.ntt_tables())
-            .enumerate()
-        {
-            let actual = ntt_table.modulus();
-            if actual != expected {
-                return Err(GadgetDomainError::ModulusOrderMismatch {
-                    index,
-                    expected,
-                    actual,
-                });
-            }
-        }
+    ) -> Result<Self, RnsDomainError<T>> {
+        validate_dcrt_table(parameters.poly_length(), parameters.cipher_moduli(), table)?;
 
         Ok(Self { parameters, table })
     }
@@ -146,37 +155,19 @@ where
     Table: NttTable<ValueT = T>,
 {
     /// Binds a complete ordered `Q/P` basis to a matching DCRT table.
+    ///
+    /// # Errors
+    /// Returns [`RnsDomainError`] for a modulus-count or order mismatch.
     pub fn try_new(
         hybrid_rns: &'a HybridRNS<T, M>,
         table: &'a DcrtTable<Table>,
-    ) -> Result<Self, GadgetDomainError<T>> {
-        let expected = hybrid_rns.qp_moduli_count();
-        let actual = table.moduli_count();
-        if actual != expected {
-            return Err(GadgetDomainError::ModuliCountMismatch { expected, actual });
-        }
-        for (index, (modulus, ntt_table)) in hybrid_rns
-            .qp_base()
-            .moduli()
-            .iter()
-            .zip(table.ntt_tables())
-            .enumerate()
-        {
-            let expected = modulus.value();
-            let actual = ntt_table.modulus();
-            if actual != expected {
-                return Err(GadgetDomainError::ModulusOrderMismatch {
-                    index,
-                    expected,
-                    actual,
-                });
-            }
-            let expected = table.poly_length().get();
-            let actual = ntt_table.poly_length().get();
-            if actual != expected {
-                return Err(GadgetDomainError::PolynomialLengthMismatch { expected, actual });
-            }
-        }
+    ) -> Result<Self, RnsDomainError<T>> {
+        // DcrtTable construction establishes one shared N. The evaluator later
+        // compares it with the key's N; this binding owns the ordered QP basis.
+        validate_moduli(
+            hybrid_rns.qp_base().moduli().iter().map(|m| m.value()),
+            table.iter().map(NttTable::modulus),
+        )?;
         Ok(Self { hybrid_rns, table })
     }
 
@@ -214,4 +205,75 @@ where
     pub fn qp_base(&self) -> &'a RNSBase<T, M> {
         self.hybrid_rns.qp_base()
     }
+}
+
+/// Validates the numerical table binding once; transform identity remains a caller contract.
+pub(crate) fn validate_dcrt_table<T, M, Table>(
+    poly_length: PolyLength,
+    moduli: &[M],
+    table: &DcrtTable<Table>,
+) -> Result<(), RnsDomainError<T>>
+where
+    T: FheUint,
+    M: FieldContext<T>,
+    Table: NttTable<ValueT = T>,
+{
+    let expected = poly_length.get();
+    let actual = table.poly_length().get();
+    if actual != expected {
+        return Err(RnsDomainError::PolynomialLengthMismatch { expected, actual });
+    }
+    validate_moduli(
+        moduli.iter().map(|m| m.value()),
+        table.ntt_tables().iter().map(NttTable::modulus),
+    )
+}
+
+/// Compares complete ordered bases at construction/binding, before zip can truncate.
+pub(crate) fn validate_moduli<T: FheUint>(
+    expected: impl ExactSizeIterator<Item = T>,
+    actual: impl ExactSizeIterator<Item = T>,
+) -> Result<(), RnsDomainError<T>> {
+    if expected.len() != actual.len() {
+        return Err(RnsDomainError::ModuliCountMismatch {
+            expected: expected.len(),
+            actual: actual.len(),
+        });
+    }
+    for (index, (expected, actual)) in expected.zip(actual).enumerate() {
+        if expected != actual {
+            return Err(RnsDomainError::ModulusOrderMismatch {
+                index,
+                expected,
+                actual,
+            });
+        }
+    }
+    Ok(())
+}
+
+/// Checks a secret or ciphertext key's owned layout against its parameter binding.
+pub(crate) fn validate_glwe_size<T: FheUint>(
+    expected: RnsGlweSize,
+    actual: RnsGlweSize,
+) -> Result<(), RnsDomainError<T>> {
+    if expected.poly_length() != actual.poly_length() {
+        return Err(RnsDomainError::PolynomialLengthMismatch {
+            expected: expected.poly_length().get(),
+            actual: actual.poly_length().get(),
+        });
+    }
+    if expected.moduli_count() != actual.moduli_count() {
+        return Err(RnsDomainError::ModuliCountMismatch {
+            expected: expected.moduli_count(),
+            actual: actual.moduli_count(),
+        });
+    }
+    if expected.dimension() != actual.dimension() {
+        return Err(RnsDomainError::DimensionMismatch {
+            expected: expected.dimension().get(),
+            actual: actual.dimension().get(),
+        });
+    }
+    Ok(())
 }

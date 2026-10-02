@@ -3,5 +3,5 @@
 mod dcrt;
 mod hybrid;
 
-pub use dcrt::{DcrtGlweKeySwitchingKey, DcrtGlweKeySwitchingWorkspace};
-pub use hybrid::{HybridRnsGlweKeySwitchingKey, HybridRnsGlweKeySwitchingWorkspace};
+pub use dcrt::{DcrtGlweKeySwitchEvaluator, DcrtGlweKeySwitchingKey};
+pub use hybrid::{HybridRnsGlweKeySwitchEvaluator, HybridRnsGlweKeySwitchingKey};

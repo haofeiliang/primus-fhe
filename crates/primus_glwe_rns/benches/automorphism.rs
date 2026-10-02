@@ -73,7 +73,8 @@ fn bench_automorphism(c: &mut Criterion) {
         let mut c_ntt: DcrtGlwe<Vec<V>> = DcrtGlweCiphertext::zero(rns_glwe_len);
 
         base_q.wrapping_decompose_small_polynomial_to(&input, &mut msg, t);
-        dcrt_sk.encrypt_inplace(&msg, &mut c_ntt, &glwe_params, table_ref, &mut rng);
+        let dcrt_sk_context = dcrt_sk.try_bind(&glwe_params, table_ref).unwrap();
+        dcrt_sk_context.encrypt_inplace(&msg, &mut c_ntt, &mut rng);
 
         let c_coeff: CrtGlwe<Vec<V>> = {
             let tmp = DcrtGlweCiphertext::new(c_ntt.as_ref().to_vec());

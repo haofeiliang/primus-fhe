@@ -156,6 +156,9 @@ where
     let poly_length = params.poly_length().get();
     let rns_poly_len = params.rns_poly_len();
     let dcrt_glev_len = params.rns_glev_len();
+    let encryptor = dcrt_sk
+        .try_bind_gadget(domain)
+        .expect("automorphism secret key and gadget domain are incompatible");
     assert_eq!(sk.glwe_size(), params.size().rns_glwe_size().glwe_size());
 
     let mut key = vec![T::ZERO; params.dimension().get() * dcrt_glev_len];
@@ -173,7 +176,7 @@ where
             params.cipher_moduli_value(),
         );
 
-        dcrt_sk.encrypt_crt_msg_to_dcrt_glev_inplace(&auto_si, &mut dcrt_glev, domain, rng);
+        encryptor.encrypt_crt_msg_to_dcrt_glev_inplace(&auto_si, &mut dcrt_glev, rng);
     });
 
     key

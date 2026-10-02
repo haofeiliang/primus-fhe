@@ -79,7 +79,8 @@ fn crt_expansion_matches_parallel_and_plaintext() {
     let mut decrypt_workspace = DcrtGlweDecryptWorkspace::new(glwe_params.size());
     let mut transformed = DcrtGlweCiphertext::<Vec<ValueT>>::zero(rns_glwe_len);
 
-    dcrt_sk.encrypt_plaintext_inplace(&input1, &mut c1, &glwe_params, &table, &mut rng);
+    let dcrt_sk_context = dcrt_sk.try_bind(&glwe_params, &table).unwrap();
+    dcrt_sk_context.encrypt_plaintext_inplace(&input1, &mut c1, &mut rng);
 
     // Requires conversion to coefficient domain first.
     let c1 = c1.into_coeff_form(&table);
@@ -100,7 +101,7 @@ fn crt_expansion_matches_parallel_and_plaintext() {
     // Each output decrypts to (m_i, 0, …, 0)
     for (cipher, &input) in c_expand.iter().zip(input1.iter()) {
         cipher.write_ntt_form(&mut transformed, &table);
-        let m_dec = dcrt_sk.decrypt(&transformed, &glwe_params, &table, &mut decrypt_workspace);
+        let m_dec = dcrt_sk_context.decrypt(&transformed, &mut decrypt_workspace);
         assert_eq!(input, m_dec[0]);
         assert!(m_dec[1..].iter().all(|&v| v == 0));
     }
@@ -113,7 +114,7 @@ fn crt_expansion_matches_parallel_and_plaintext() {
     let retained = poly_length / 2;
     input1[retained..].fill(0);
 
-    dcrt_sk.encrypt_plaintext_inplace(&input1, &mut c1, &glwe_params, &table, &mut rng);
+    dcrt_sk_context.encrypt_plaintext_inplace(&input1, &mut c1, &mut rng);
 
     let c1 = c1.into_coeff_form(&table);
 
@@ -140,7 +141,7 @@ fn crt_expansion_matches_parallel_and_plaintext() {
 
     for (cipher, &input) in c_expand.iter().zip(input1.iter()) {
         cipher.write_ntt_form(&mut transformed, &table);
-        let m_dec = dcrt_sk.decrypt(&transformed, &glwe_params, &table, &mut decrypt_workspace);
+        let m_dec = dcrt_sk_context.decrypt(&transformed, &mut decrypt_workspace);
         assert_eq!(input, m_dec[0]);
         assert!(m_dec[1..].iter().all(|&v| v == 0));
     }
@@ -210,7 +211,8 @@ fn dcrt_expansion_matches_parallel_and_plaintext() {
         .unwrap();
     let mut decrypt_workspace = DcrtGlweDecryptWorkspace::new(glwe_params.size());
 
-    dcrt_sk.encrypt_plaintext_inplace(&input1, &mut c1, &glwe_params, &table, &mut rng);
+    let dcrt_sk_context = dcrt_sk.try_bind(&glwe_params, &table).unwrap();
+    dcrt_sk_context.encrypt_plaintext_inplace(&input1, &mut c1, &mut rng);
 
     expand_key.expand_coefficients_inplace(&c1, &mut c_expand, &domain, &mut expand_workspace);
     workers.install(|| {
@@ -227,7 +229,7 @@ fn dcrt_expansion_matches_parallel_and_plaintext() {
 
     // Results are already in NTT domain — decrypt directly.
     for (cipher, &input) in c_expand.iter().zip(input1.iter()) {
-        let m_dec = dcrt_sk.decrypt(cipher, &glwe_params, &table, &mut decrypt_workspace);
+        let m_dec = dcrt_sk_context.decrypt(cipher, &mut decrypt_workspace);
         assert_eq!(input, m_dec[0]);
         assert!(m_dec[1..].iter().all(|&v| v == 0));
     }
@@ -237,7 +239,7 @@ fn dcrt_expansion_matches_parallel_and_plaintext() {
     let retained = poly_length / 2;
     input1[retained..].fill(0);
 
-    dcrt_sk.encrypt_plaintext_inplace(&input1, &mut c1, &glwe_params, &table, &mut rng);
+    dcrt_sk_context.encrypt_plaintext_inplace(&input1, &mut c1, &mut rng);
 
     c_expand.truncate(retained);
     parallel_output.truncate(retained);
@@ -261,7 +263,7 @@ fn dcrt_expansion_matches_parallel_and_plaintext() {
     }
 
     for (cipher, &input) in c_expand.iter().zip(input1.iter()) {
-        let m_dec = dcrt_sk.decrypt(cipher, &glwe_params, &table, &mut decrypt_workspace);
+        let m_dec = dcrt_sk_context.decrypt(cipher, &mut decrypt_workspace);
         assert_eq!(input, m_dec[0]);
         assert!(m_dec[1..].iter().all(|&v| v == 0));
     }

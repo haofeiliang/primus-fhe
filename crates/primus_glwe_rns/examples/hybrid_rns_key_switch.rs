@@ -2,7 +2,7 @@
 
 use primus_glwe_rns::{
     CrtGlweParameters, DcrtGlweCiphertext, DcrtGlweDecryptWorkspace, DcrtGlweSecretKey,
-    GlweSecretKey, HybridRnsGlweKeySwitchingKey, HybridRnsGlweKeySwitchingWorkspace,
+    GlweSecretKey, HybridRnsGlweKeySwitchEvaluator, HybridRnsGlweKeySwitchingKey,
     HybridRnsKeySwitchDomain, SecretKeyDistr,
 };
 use primus_lattice::GlweDimension;
@@ -38,6 +38,7 @@ fn main() {
     let hybrid_rns = HybridRNS::new(&q_moduli, &p_moduli, 2).unwrap();
     let domain = HybridRnsKeySwitchDomain::try_new(&hybrid_rns, &qp_table).unwrap();
 
+    // Client: generate both secrets and the switching key supplied to the server.
     let mut rng = StdRng::seed_from_u64(0x4859_4252_4944_524e);
     let input_key = GlweSecretKey::generate(
         glwe_parameters.size().glwe_size(),
@@ -63,20 +64,18 @@ fn main() {
         Polynomial::random(poly_length, plaintext_modulus, &mut rng);
     let mut input: DcrtGlwe<Vec<Value>> = DcrtGlweCiphertext::zero(glwe_parameters.rns_glwe_len());
     let mut output: DcrtGlwe<Vec<Value>> = DcrtGlweCiphertext::zero(glwe_parameters.rns_glwe_len());
-    input_dcrt_key.encrypt_plaintext_inplace(
-        &plaintext,
-        &mut input,
-        &glwe_parameters,
-        &q_table,
-        &mut rng,
-    );
+    let input_dcrt_key_context = input_dcrt_key.try_bind(&glwe_parameters, &q_table).unwrap();
+    input_dcrt_key_context.encrypt_plaintext_inplace(&plaintext, &mut input, &mut rng);
 
-    // The workspace owns all reusable workspace needed by online key switching.
-    let mut key_switch_workspace = HybridRnsGlweKeySwitchingWorkspace::new(&switching_key, &domain);
-    switching_key.key_switch_to(&input, &mut output, &domain, &mut key_switch_workspace);
+    // Server: bind the evaluation key and domain once, allocating its reusable scratch.
+    let mut key_switch_evaluator = HybridRnsGlweKeySwitchEvaluator::new(&switching_key, &domain);
+    key_switch_evaluator.key_switch_to(&input, &mut output);
 
+    // Client: decrypt under the output secret using its bound parameters and table.
     let mut decrypt_workspace = DcrtGlweDecryptWorkspace::new(glwe_parameters.size());
-    let decrypted =
-        output_dcrt_key.decrypt(&output, &glwe_parameters, &q_table, &mut decrypt_workspace);
+    let output_dcrt_key_context = output_dcrt_key
+        .try_bind(&glwe_parameters, &q_table)
+        .unwrap();
+    let decrypted = output_dcrt_key_context.decrypt(&output, &mut decrypt_workspace);
     assert_eq!(decrypted, plaintext);
 }

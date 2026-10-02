@@ -144,6 +144,8 @@ NTRU 将外部 LWE 的秘密/模数/维数与累加 NTRU 环的秘密/模数/长
 
 对加密 chunk 计算高精度函数，使用 [primus_tfhe_ntru_lut](../../crates/primus_tfhe_ntru_lut/README.zh_CN.md)。One-hot CBS 位于 NTRU 后端，表分区、选择和旋转位于查表库。其 evaluator 借用 context、server key 和编译后的 LUT，拥有可复用缓冲。输出只分配一次并复用 `evaluate_to`，在线循环内不重新构造密钥或表。
 
+RNS GLWE 的普通秘密/公钥使用 `try_bind(parameters, table)`，gadget 加密使用 `try_bind_gadget(domain)`；这些 context 借用已检查的资源。普通与 hybrid 密钥切换 evaluator 借用密钥/domain，拥有 workspace，在在线调用前一次性检查有序基及分解/分区兼容性。见 [RNS GLWE 流程](../../crates/primus_glwe_rns/README.zh_CN.md#求值资源)。
+
 ## 保留错误角色与原因
 
 按公开操作及其契约定义错误类型，保留有助于调用方定位或处理的具体失败原因；有真实消费者收益时才拆分或合并。共享相同的底层检查，同时保留各方案的几何与表示要求。

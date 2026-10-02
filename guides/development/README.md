@@ -144,6 +144,8 @@ NTRU separates the external LWE secret/modulus/dimension from the accumulator's 
 
 For high-precision functions over encrypted chunks, use [primus_tfhe_ntru_lut](../../crates/primus_tfhe_ntru_lut/README.md). One-hot CBS belongs to the NTRU backends; table partitioning, selection and rotation belong to the lookup crate. Its evaluator borrows context, server key and compiled LUT and owns reusable buffers. Allocate outputs once and reuse `evaluate_to`; do not reconstruct keys or tables inside the online loop.
 
+For RNS GLWE, ordinary secret/public keys use `try_bind(parameters, table)` and gadget encryption uses `try_bind_gadget(domain)`. These contexts borrow checked resources. Classic and hybrid key-switch evaluators borrow a key/domain and own workspace, checking ordered bases and decomposition/partition compatibility once before online calls. See the [RNS GLWE workflow](../../crates/primus_glwe_rns/README.md#evaluation-resources).
+
 ## Preserve error roles and causes
 
 Define error types around public operations and their contracts. Retain distinct causes that help callers diagnose or handle a failure; split or merge types only when real consumers benefit. Share identical lower-level checks while preserving each scheme's geometry and representation requirements.

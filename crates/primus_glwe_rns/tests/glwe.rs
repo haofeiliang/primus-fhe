@@ -80,15 +80,14 @@ fn assert_dcrt_glwe_secret_key_enc_dec(secret_key_distr: SecretKeyDistr, plain_m
 
     let mut ciphertext: DcrtGlwe<Vec<ValueT>> = DcrtGlweCiphertext::zero(params.rns_glwe_len());
 
-    secret_key.encrypt_plaintext_inplace(
+    let secret_key_context = secret_key.try_bind(&params, &table).unwrap();
+    secret_key_context.encrypt_plaintext_inplace(
         &message.as_view(),
         &mut ciphertext.as_mut_view(),
-        &params,
-        &table,
         &mut rng,
     );
 
-    let decrypted = secret_key.decrypt(&ciphertext, &params, &table, &mut decrypt_workspace);
+    let decrypted = secret_key_context.decrypt(&ciphertext, &mut decrypt_workspace);
     assert_eq!(decrypted.as_ref(), message.as_ref());
 
     // Centered codec injection and explicit CRT lifts must use the same coins
@@ -96,43 +95,37 @@ fn assert_dcrt_glwe_secret_key_enc_dec(secret_key_distr: SecretKeyDistr, plain_m
     let centered_seed = rng.next_u64();
     let mut centered_rng = StdRng::seed_from_u64(centered_seed);
     let mut crt_rng = StdRng::seed_from_u64(centered_seed);
-    secret_key.encrypt_centered_plaintext_inplace(
+    secret_key_context.encrypt_centered_plaintext_inplace(
         &message,
         &mut ciphertext,
-        &params,
-        &table,
         &mut centered_rng,
     );
 
-    let decrypted = secret_key.decrypt(&ciphertext, &params, &table, &mut decrypt_workspace);
+    let decrypted = secret_key_context.decrypt(&ciphertext, &mut decrypt_workspace);
     assert_eq!(decrypted.as_ref(), message.as_ref());
     let centered_ciphertext = ciphertext.clone();
 
     // Reuse the same ciphertext storage through centered, CRT and zero inputs.
     let decomposed_message = decompose_message(&message, &params);
-    secret_key.encrypt_inplace(
+    secret_key_context.encrypt_inplace(
         &decomposed_message.as_view(),
         &mut ciphertext.as_mut_view(),
-        &params,
-        &table,
         &mut crt_rng,
     );
     assert_eq!(ciphertext.as_ref(), centered_ciphertext.as_ref());
     assert_eq!(centered_rng.next_u64(), crt_rng.next_u64());
 
     let mut decrypted = Polynomial::<Vec<ValueT>>::zero(POLY_LENGTH);
-    secret_key.decrypt_inplace(
+    secret_key_context.decrypt_inplace(
         &ciphertext.as_view(),
         &mut decrypted.as_mut_view(),
-        &params,
-        &table,
         &mut decrypt_workspace,
     );
     assert_eq!(decrypted.as_ref(), message.as_ref());
 
-    secret_key.encrypt_zeros_inplace(&mut ciphertext, &params, &table, &mut rng);
+    secret_key_context.encrypt_zeros_inplace(&mut ciphertext, &mut rng);
 
-    let decrypted = secret_key.decrypt(&ciphertext, &params, &table, &mut decrypt_workspace);
+    let decrypted = secret_key_context.decrypt(&ciphertext, &mut decrypt_workspace);
     assert_eq!(decrypted.as_ref(), vec![0; POLY_LENGTH]);
 }
 
@@ -180,18 +173,14 @@ fn public_encrypt_accepts_unscaled_crt_plaintexts() {
                 .collect::<Vec<_>>(),
         );
         let lifted = decompose_message(&message, &params);
-        let ciphertext = public.encrypt(&lifted.as_view(), &params, &table, &mut rng);
-        assert_eq!(
-            secret.decrypt(&ciphertext, &params, &table, &mut workspace),
-            message
-        );
+        let public_context = public.try_bind(&params, &table).unwrap();
+        let ciphertext = public_context.encrypt(&lifted.as_view(), &mut rng);
+        let secret_context = secret.try_bind(&params, &table).unwrap();
+        assert_eq!(secret_context.decrypt(&ciphertext, &mut workspace), message);
 
         // Explicit erasure must leave the reusable workspace usable.
         zeroize::Zeroize::zeroize(&mut workspace);
-        assert_eq!(
-            secret.decrypt(&ciphertext, &params, &table, &mut workspace),
-            message
-        );
+        assert_eq!(secret_context.decrypt(&ciphertext, &mut workspace), message);
 
         // Length validation is independent of t and the decoding path.
         if count == 2 {
@@ -205,7 +194,7 @@ fn public_encrypt_accepts_unscaled_crt_plaintexts() {
                 let mut rng = StdRng::seed_from_u64(17);
                 let mut expected_rng = StdRng::seed_from_u64(17);
                 let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    public.encrypt(&invalid, &params, &table, &mut rng)
+                    public_context.encrypt(&invalid, &mut rng)
                 }));
                 assert!(result.is_err(), "accepted CRT plaintext length {len}");
                 assert_eq!(
@@ -253,11 +242,12 @@ fn dcrt_polynomial_product_preserves_bfv_scaling() {
     let mut input: DcrtGlwe<Vec<ValueT>> = DcrtGlweCiphertext::zero(rns_glwe_len);
     let mut output: DcrtGlwe<Vec<ValueT>> = DcrtGlweCiphertext::zero(rns_glwe_len);
 
-    secret_key.encrypt_plaintext_inplace(&message, &mut input, &params, &table, &mut rng);
+    let secret_key_context = secret_key.try_bind(&params, &table).unwrap();
+    secret_key_context.encrypt_plaintext_inplace(&message, &mut input, &mut rng);
     input.mul_dcrt_polynomial_to(&lifted_multiplier, &mut output, POLY_LENGTH, &moduli);
 
     let mut expected: Polynomial<Vec<ValueT>> = Polynomial::zero(POLY_LENGTH);
     message.naive_mul_to(&multiplier, &mut expected, mod_t);
-    let decrypted = secret_key.decrypt(&output, &params, &table, &mut decrypt_workspace);
+    let decrypted = secret_key_context.decrypt(&output, &mut decrypt_workspace);
     assert_eq!(expected, decrypted);
 }

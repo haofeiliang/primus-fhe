@@ -26,15 +26,17 @@ pub use dcrt::{
     DcrtGlweTraceWorkspace,
 };
 pub use key_switch::{
-    DcrtGlweKeySwitchingKey, DcrtGlweKeySwitchingWorkspace, HybridRnsGlweKeySwitchingKey,
-    HybridRnsGlweKeySwitchingWorkspace,
+    DcrtGlweKeySwitchEvaluator, DcrtGlweKeySwitchingKey, HybridRnsGlweKeySwitchEvaluator,
+    HybridRnsGlweKeySwitchingKey,
 };
 pub use parameter::{
     CrtGgswParameters, CrtGlevParameters, CrtGlevParametersError, CrtGlweParameters,
-    CrtGlweParametersError, DcrtGadgetDomain, GadgetDomainError, HybridRnsKeySwitchDomain,
+    CrtGlweParametersError, DcrtGadgetDomain, HybridRnsKeySwitchDomain, RnsDomainError,
 };
 pub use primus_encoding::BfvRnsCodec;
 pub use primus_glwe::{GlweSecretKey, SecretKeyDistr};
 pub use primus_lattice::{RnsGadgetSize, RnsGlweSize};
-pub use public_key::DcrtGlwePublicKey;
-pub use secret_key::{DcrtGlweDecryptWorkspace, DcrtGlweSecretKey};
+pub use public_key::{DcrtGgswEncryptor, DcrtGlwePublicKey, DcrtGlwePublicKeyContext};
+pub use secret_key::{
+    DcrtGlevEncryptor, DcrtGlweDecryptWorkspace, DcrtGlweSecretKey, DcrtGlweSecretKeyContext,
+};

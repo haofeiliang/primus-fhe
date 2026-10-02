@@ -8,7 +8,9 @@ use primus_reduce::EncodeSigned;
 
 use crate::GlweSecretKey;
 
-pub use dcrt::{DcrtGlweDecryptWorkspace, DcrtGlweSecretKey};
+pub use dcrt::{
+    DcrtGlevEncryptor, DcrtGlweDecryptWorkspace, DcrtGlweSecretKey, DcrtGlweSecretKeyContext,
+};
 
 /// Encodes one signed secret polynomial without scaling or general reduction.
 /// Its supported magnitudes are established by parameter/key construction.

@@ -7,6 +7,7 @@ use primus_reduce::FieldContext;
 use rand::distr::Uniform;
 
 use super::HybridRnsGlweKeySwitchingKey;
+use crate::parameter::validate_moduli;
 use crate::{CrtGlweParameters, DcrtGlweSecretKey, GlweSecretKey, HybridRnsKeySwitchDomain};
 
 impl<T: FheUint> HybridRnsGlweKeySwitchingKey<T> {
@@ -15,10 +16,14 @@ impl<T: FheUint> HybridRnsGlweKeySwitchingKey<T> {
     /// # Panics
     ///
     /// Panics if the input secret's dimension or polynomial length differs
-    /// from `input_parameters`, if the other polynomial lengths or Q modulus
-    /// count are incompatible, if key sizes overflow, or if the input noise
+    /// from `input_parameters`, if polynomial lengths or ordered Q moduli
+    /// are incompatible, if key sizes overflow, or if the input noise
     /// magnitude bound is not strictly less than every QP modulus.
     /// These checks precede random sampling.
+    ///
+    /// # Correctness
+    /// Both signed secrets' magnitudes must fit below every QP modulus,
+    /// following [`DcrtGlweSecretKey::from_coeff_secret_key`]'s bounded-lift contract.
     pub fn generate<R, M, QpTable>(
         input_secret_key: &GlweSecretKey<T>,
         input_parameters: &CrtGlweParameters<T, M>,
@@ -46,7 +51,11 @@ impl<T: FheUint> HybridRnsGlweKeySwitchingKey<T> {
             input_size.glwe_size(),
             "hybrid input secret key layout mismatch"
         );
-        assert_eq!(q_moduli_count, hybrid_rns.q_moduli_count());
+        validate_moduli(
+            input_parameters.cipher_moduli_value().iter().copied(),
+            hybrid_rns.q_base().moduli().iter().map(|m| m.value()),
+        )
+        .expect("hybrid input parameters and Q basis are incompatible");
         assert_eq!(output_secret_key.poly_length(), poly_length);
         assert_eq!(qp_table.poly_length().get(), poly_length);
 
@@ -144,7 +153,9 @@ impl<T: FheUint> HybridRnsGlweKeySwitchingKey<T> {
             input_size,
             output_size,
             qp_size,
-            partition_count,
+            partition_moduli_count: hybrid_rns.partition_moduli_count(),
+            qp_moduli: qp_moduli_values,
+            qp_gadget_len,
         }
     }
 }

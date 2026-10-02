@@ -1,8 +1,8 @@
 //! Public GGSW encryption and external product across two wide CRT limbs.
 use primus_decompose::DecompositionBaseLog;
 use primus_glwe_rns::{
-    CrtGlevParameters, CrtGlweParameters, DcrtGlweCiphertext, DcrtGlweDecryptWorkspace,
-    DcrtGlwePublicKey, DcrtGlweSecretKey, GlweSecretKey, SecretKeyDistr,
+    CrtGlevParameters, CrtGlweParameters, DcrtGadgetDomain, DcrtGlweCiphertext,
+    DcrtGlweDecryptWorkspace, DcrtGlwePublicKey, DcrtGlweSecretKey, GlweSecretKey, SecretKeyDistr,
 };
 use primus_lattice::GlweDimension;
 use primus_lattice::{glwe::DcrtGlwe, workspace::DcrtGlevMulWorkspace};
@@ -70,15 +70,18 @@ fn test_external_product() {
     let mut glev_workspace = DcrtGlevMulWorkspace::new(glev_params.size(), glev_params.base_q());
     let mut decrypt_workspace = DcrtGlweDecryptWorkspace::new(glwe_params.size());
 
-    dcrt_sk.encrypt_plaintext_inplace(&input, &mut c1, &glwe_params, &table, &mut rng);
+    let dcrt_sk_context = dcrt_sk.try_bind(&glwe_params, &table).unwrap();
+    dcrt_sk_context.encrypt_plaintext_inplace(&input, &mut c1, &mut rng);
 
     // Requires coefficient-domain input.
     let c1 = c1.into_coeff_form(&table);
 
+    let gadget_domain = DcrtGadgetDomain::try_new(&glev_params, &table).unwrap();
+    let ggsw_encryptor = pk.try_bind_gadget(&gadget_domain).unwrap();
+
     // Identity, one-position shift and sign-wrapping boundary.
     for degree in [0, 1, poly_length - 1] {
-        let ggsw =
-            pk.encrypt_monomial_ggsw(&Residues([1, 1]), degree, &glev_params, &table, &mut rng);
+        let ggsw = ggsw_encryptor.encrypt_monomial_ggsw(&Residues([1, 1]), degree, &mut rng);
 
         c1.mul_dcrt_ggsw_to(
             &ggsw,
@@ -93,7 +96,7 @@ fn test_external_product() {
         input_rt.as_mut_slice().rotate_right(degree);
         mod_t.reduce_neg_slice_assign(&mut input_rt.as_mut_slice()[..degree]);
 
-        let output = dcrt_sk.decrypt(&c2, &glwe_params, &table, &mut decrypt_workspace);
+        let output = dcrt_sk_context.decrypt(&c2, &mut decrypt_workspace);
 
         assert_eq!(input_rt.as_ref(), output.as_ref());
     }

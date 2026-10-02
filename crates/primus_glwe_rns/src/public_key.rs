@@ -1,28 +1,38 @@
 use itertools::izip;
 use primus_data::{Data, DataMut};
 use primus_integer::FheUint;
-use primus_lattice::{ggsw::DcrtGgsw, glev::DcrtGlev, glwe::DcrtGlwe};
+use primus_lattice::{RnsGlweSize, ggsw::DcrtGgsw, glev::DcrtGlev, glwe::DcrtGlwe};
 use primus_ntt::{DcrtTable, NttTable};
 use primus_poly::{CrtPolynomial, DcrtPolynomial};
 use primus_reduce::FieldContext;
 use primus_rns::Residues;
 
-use crate::{CrtGgswParameters, CrtGlevParameters, CrtGlweParameters, DcrtGlweSecretKey};
+use crate::parameter::{validate_dcrt_table, validate_glwe_size, validate_moduli};
+use crate::{
+    CrtGgswParameters, CrtGlevParameters, CrtGlweParameters, DcrtGadgetDomain, DcrtGlweSecretKey,
+    RnsDomainError,
+};
 
 #[derive(Clone)]
 /// A public GLWE encryption key stored in DCRT form.
 pub struct DcrtGlwePublicKey<T: FheUint> {
     key: DcrtGlwe<Vec<T>>,
+    size: RnsGlweSize,
+    moduli: Vec<T>,
 }
 
 impl<T: FheUint> DcrtGlwePublicKey<T> {
-    /// Creates a new [`DcrtGlwePublicKey<T>`] from bytes `data`.
+    /// Replaces the public ciphertext data from bytes, retaining its domain metadata.
+    ///
+    /// # Correctness
+    /// The bytes must encode a public key in this key's ordered basis and NTT representation;
+    /// the payload does not contain or validate that metadata.
     #[inline]
     pub fn read_bytes(&mut self, data: &[u8]) {
         self.key.read_bytes(data);
     }
 
-    /// Converts [`DcrtGlwePublicKey<T>`] into bytes, stored in `data`.
+    /// Writes this public key's ciphertext data to `data`, excluding domain metadata.
     #[inline]
     pub fn write_bytes(&self, data: &mut [u8]) {
         self.key.write_bytes(data);
@@ -35,6 +45,13 @@ impl<T: FheUint> DcrtGlwePublicKey<T> {
     }
 
     /// Generates a public key for `secret_key` using the supplied DCRT table.
+    ///
+    /// # Panics
+    /// Panics if the parameters/table/key layouts or ordered moduli differ,
+    /// before consuming randomness.
+    ///
+    /// # Correctness
+    /// The secret key and table must use the same NTT representation.
     pub fn new<Table, R, M>(
         secret_key: &DcrtGlweSecretKey<T>,
         params: &CrtGlweParameters<T, M>,
@@ -46,6 +63,11 @@ impl<T: FheUint> DcrtGlwePublicKey<T> {
         R: rand::Rng + rand::CryptoRng,
         M: FieldContext<T>,
     {
+        validate_dcrt_table(params.poly_length(), params.cipher_moduli(), table)
+            .expect("public-key parameters and table are incompatible");
+        secret_key
+            .validate_parameters(params.size(), params.cipher_moduli())
+            .expect("public-key secret and parameters are incompatible");
         let poly_length = params.poly_length().get();
         let dcrt_glwe_len = params.rns_glwe_len();
 
@@ -72,44 +94,69 @@ impl<T: FheUint> DcrtGlwePublicKey<T> {
             b.add_mul_assign(&ai, &si, poly_length, moduli);
         });
 
-        Self { key: data }
+        Self {
+            key: data,
+            size: params.size(),
+            moduli: params.cipher_moduli_value().to_vec(),
+        }
     }
 
-    /// Encrypts one CRT plaintext polynomial into a newly allocated ciphertext.
+    /// Binds this public key to ordinary parameters and a matching table.
     ///
-    /// Like [`DcrtGlweSecretKey::encrypt_inplace`], this accepts unscaled
-    /// plaintext lifts reduced into each `[0, q_i)` in coefficient-domain CRT
-    /// layout and applies `floor(Q/t)` scaling. Passing the already-scaled output
-    /// of [`crate::BfvRnsCodec::encode_coeffs_to`] would apply the scale twice.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `message` does not contain exactly `params.rns_poly_len()`
-    /// coefficients. This is checked before consuming randomness.
-    pub fn encrypt<R, M, Table, A>(
-        &self,
-        message: &CrtPolynomial<A>,
-        params: &CrtGlweParameters<T, M>,
-        table: &DcrtTable<Table>,
-        rng: &mut R,
-    ) -> DcrtGlwe<Vec<T>>
+    /// # Errors
+    /// Returns [`RnsDomainError`] for an incompatible layout or ordered basis.
+    pub fn try_bind<'a, M, Table>(
+        &'a self,
+        parameters: &'a CrtGlweParameters<T, M>,
+        table: &'a DcrtTable<Table>,
+    ) -> Result<DcrtGlwePublicKeyContext<'a, T, M, Table>, RnsDomainError<T>>
     where
-        R: rand::Rng + rand::CryptoRng,
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: Data<Elem = T>,
     {
-        let rns_poly_len = params.rns_poly_len();
-        assert_eq!(
-            message.as_ref().len(),
-            rns_poly_len,
-            "CRT plaintext length must match the RNS polynomial layout"
-        );
-        self.encrypt_crt_kernel(message.as_view(), params, table, rng)
+        validate_dcrt_table(parameters.poly_length(), parameters.cipher_moduli(), table)?;
+        self.validate_parameters(parameters.size(), parameters.cipher_moduli())?;
+        Ok(DcrtGlwePublicKeyContext {
+            key: self,
+            parameters,
+            table,
+        })
     }
 
-    /// The public entry checked message length; key/parameter/table compatibility
-    /// remains a caller contract. Samples one ephemeral polynomial, then each
+    /// Binds this public key to a checked monomial GGSW encryption domain.
+    ///
+    /// # Errors
+    /// Returns [`RnsDomainError`] for an incompatible layout or ordered basis.
+    pub fn try_bind_gadget<'a, M, Table>(
+        &'a self,
+        domain: &'a DcrtGadgetDomain<'a, T, M, Table>,
+    ) -> Result<DcrtGgswEncryptor<'a, T, M, Table>, RnsDomainError<T>>
+    where
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+    {
+        self.validate_parameters(
+            domain.size().rns_glwe_size(),
+            domain.parameters().cipher_moduli(),
+        )?;
+        Ok(DcrtGgswEncryptor { key: self, domain })
+    }
+
+    /// Checks the public key's owned layout and numerical basis at binding.
+    fn validate_parameters<M: FieldContext<T>>(
+        &self,
+        size: RnsGlweSize,
+        moduli: &[M],
+    ) -> Result<(), RnsDomainError<T>> {
+        validate_glwe_size(size, self.size)?;
+        validate_moduli(
+            self.moduli.iter().copied(),
+            moduli.iter().map(|m| m.value()),
+        )
+    }
+
+    /// The context has bound key/parameters/table and the entry checked message length.
+    /// NTT identity remains a caller contract. Samples one ephemeral polynomial, then each
     /// noisy GLWE component, adding the scaled message only to the body.
     fn encrypt_crt_kernel<R, M, Table>(
         &self,
@@ -246,56 +293,6 @@ impl<T: FheUint> DcrtGlwePublicKey<T> {
             });
     }
 
-    /// Generate a [`DcrtGgsw`] ciphertext which encrypted `coeff*X^degree`.
-    pub fn encrypt_monomial_ggsw<R, Table, M>(
-        &self,
-        coeff_residues: &Residues<impl Data<Elem = T>>,
-        degree: usize,
-        params: &CrtGgswParameters<T, M>,
-        table: &DcrtTable<Table>,
-        rng: &mut R,
-    ) -> DcrtGgsw<Vec<T>>
-    where
-        R: rand::Rng + rand::CryptoRng,
-        Table: NttTable<ValueT = T>,
-        M: FieldContext<T>,
-    {
-        let dcrt_ggsw_len = params.rns_ggsw_len();
-
-        let mut result: DcrtGgsw<Vec<T>> = DcrtGgsw::zero(dcrt_ggsw_len);
-
-        self.encrypt_monomial_ggsw_inplace(coeff_residues, degree, &mut result, params, table, rng);
-
-        result
-    }
-
-    /// Generate a [`DcrtGgsw`] ciphertext which encrypted `coeff*X^degree`.
-    pub fn encrypt_monomial_ggsw_inplace<R, Table, M, A>(
-        &self,
-        coeff_residues: &Residues<impl Data<Elem = T>>,
-        degree: usize,
-        result: &mut DcrtGgsw<A>,
-        params: &CrtGgswParameters<T, M>,
-        table: &DcrtTable<Table>,
-        rng: &mut R,
-    ) where
-        R: rand::Rng + rand::CryptoRng,
-        Table: NttTable<ValueT = T>,
-        M: FieldContext<T>,
-        A: DataMut<Elem = T>,
-    {
-        assert_eq!(result.as_ref().len(), params.rns_ggsw_len());
-        assert!(degree < params.poly_length().get());
-        self.encrypt_monomial_ggsw_kernel_to(
-            coeff_residues.view(),
-            degree,
-            result.as_mut_view(),
-            params,
-            table,
-            rng,
-        );
-    }
-
     /// Adds the gadget monomial to one GLWE component per GGSW row, reusing
     /// one ephemeral buffer across rows and levels. The entry checked output/degree;
     /// residues, key and parameters must share the complete ordered RNS domain.
@@ -332,5 +329,131 @@ impl<T: FheUint> DcrtGlwePublicKey<T> {
                     rng,
                 );
             });
+    }
+}
+
+/// A public key bound to ordinary parameters and their DCRT table.
+///
+/// Ciphertexts use the key's secret and table representation. Numerical checks
+/// do not prove NTT identity or a public-encryption noise margin.
+pub struct DcrtGlwePublicKeyContext<'a, T, M, Table>
+where
+    T: FheUint,
+    M: FieldContext<T>,
+    Table: NttTable<ValueT = T>,
+{
+    key: &'a DcrtGlwePublicKey<T>,
+    parameters: &'a CrtGlweParameters<T, M>,
+    table: &'a DcrtTable<Table>,
+}
+
+impl<T, M, Table> DcrtGlwePublicKeyContext<'_, T, M, Table>
+where
+    T: FheUint,
+    M: FieldContext<T>,
+    Table: NttTable<ValueT = T>,
+{
+    /// Encrypts one CRT plaintext polynomial into a newly allocated ciphertext.
+    ///
+    /// Like [`crate::DcrtGlweSecretKeyContext::encrypt_inplace`], this accepts unscaled
+    /// plaintext lifts reduced into each `[0, q_i)` in coefficient-domain CRT
+    /// layout and applies `floor(Q/t)` scaling. Passing the already-scaled output
+    /// of [`crate::BfvRnsCodec::encode_coeffs_to`] would apply the scale twice.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the CRT plaintext length differs from the bound parameters'
+    /// [`CrtGlweParameters::rns_poly_len`]. This is checked before consuming randomness.
+    #[must_use]
+    pub fn encrypt<R, A>(&self, message: &CrtPolynomial<A>, rng: &mut R) -> DcrtGlwe<Vec<T>>
+    where
+        R: rand::Rng + rand::CryptoRng,
+        A: Data<Elem = T>,
+    {
+        let params = self.parameters;
+        let table = self.table;
+        let rns_poly_len = params.rns_poly_len();
+        assert_eq!(
+            message.as_ref().len(),
+            rns_poly_len,
+            "CRT plaintext length must match the RNS polynomial layout"
+        );
+        self.key
+            .encrypt_crt_kernel(message.as_view(), params, table, rng)
+    }
+}
+
+/// A public key bound to one checked monomial GGSW encryption domain.
+///
+/// Construct with [`DcrtGlwePublicKey::try_bind_gadget`] and reuse its parameters,
+/// table and key binding across rows and levels.
+pub struct DcrtGgswEncryptor<'a, T, M, Table>
+where
+    T: FheUint,
+    M: FieldContext<T>,
+    Table: NttTable<ValueT = T>,
+{
+    key: &'a DcrtGlwePublicKey<T>,
+    domain: &'a DcrtGadgetDomain<'a, T, M, Table>,
+}
+
+impl<T, M, Table> DcrtGgswEncryptor<'_, T, M, Table>
+where
+    T: FheUint,
+    M: FieldContext<T>,
+    Table: NttTable<ValueT = T>,
+{
+    /// Encrypts `coeff*X^degree` into a DCRT GGSW ciphertext.
+    /// `coeff_residues` has one canonical residue per bound modulus.
+    ///
+    /// # Panics
+    /// Panics if `degree` is not below N.
+    #[must_use]
+    pub fn encrypt_monomial_ggsw<R>(
+        &self,
+        coeff_residues: &Residues<impl Data<Elem = T>>,
+        degree: usize,
+        rng: &mut R,
+    ) -> DcrtGgsw<Vec<T>>
+    where
+        R: rand::Rng + rand::CryptoRng,
+    {
+        let params = self.domain.parameters();
+        let dcrt_ggsw_len = params.rns_ggsw_len();
+
+        let mut result: DcrtGgsw<Vec<T>> = DcrtGgsw::zero(dcrt_ggsw_len);
+
+        self.encrypt_monomial_ggsw_inplace(coeff_residues, degree, &mut result, rng);
+
+        result
+    }
+
+    /// Encrypts `coeff*X^degree` into a DCRT GGSW ciphertext.
+    /// `coeff_residues` has one canonical residue per bound modulus.
+    ///
+    /// # Panics
+    /// Panics if `degree` is not below N.
+    pub fn encrypt_monomial_ggsw_inplace<R, A>(
+        &self,
+        coeff_residues: &Residues<impl Data<Elem = T>>,
+        degree: usize,
+        result: &mut DcrtGgsw<A>,
+        rng: &mut R,
+    ) where
+        R: rand::Rng + rand::CryptoRng,
+        A: DataMut<Elem = T>,
+    {
+        let params = self.domain.parameters();
+        let table = self.domain.table();
+        debug_assert_eq!(result.as_ref().len(), params.rns_ggsw_len());
+        assert!(degree < params.poly_length().get());
+        self.key.encrypt_monomial_ggsw_kernel_to(
+            coeff_residues.view(),
+            degree,
+            result.as_mut_view(),
+            params,
+            table,
+            rng,
+        );
     }
 }

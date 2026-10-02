@@ -91,7 +91,8 @@ fn test_crt_glwe_auto() {
     let mut auto_workspace = CrtGlweAutomorphismWorkspace::new(&domain);
     let mut decrypt_workspace = DcrtGlweDecryptWorkspace::new(glwe_params.size());
 
-    dcrt_sk.encrypt_plaintext_inplace(&input1, &mut c1, &glwe_params, &table, &mut rng);
+    let dcrt_sk_context = dcrt_sk.try_bind(&glwe_params, &table).unwrap();
+    dcrt_sk_context.encrypt_plaintext_inplace(&input1, &mut c1, &mut rng);
 
     let c1 = c1.into_coeff_form(&table);
 
@@ -104,7 +105,7 @@ fn test_crt_glwe_auto() {
 
     let c2 = c2.into_ntt_form(&table);
 
-    let auto_msg_2 = dcrt_sk.decrypt(&c2, &glwe_params, &table, &mut decrypt_workspace);
+    let auto_msg_2 = dcrt_sk_context.decrypt(&c2, &mut decrypt_workspace);
 
     let expected = coefficient_automorphism(input1.as_ref(), auto_degree, mod_t);
     assert_eq!(auto_msg_2.as_ref(), expected);
@@ -165,7 +166,8 @@ fn test_dcrt_glwe_auto() {
     let mut auto_workspace = CrtGlweAutomorphismWorkspace::new(&domain);
     let mut decrypt_workspace = DcrtGlweDecryptWorkspace::new(glwe_params.size());
 
-    dcrt_sk.encrypt_plaintext_inplace(&input1, &mut c1, &glwe_params, &table, &mut rng);
+    let dcrt_sk_context = dcrt_sk.try_bind(&glwe_params, &table).unwrap();
+    dcrt_sk_context.encrypt_plaintext_inplace(&input1, &mut c1, &mut rng);
 
     auto_key.automorphism_to(
         &c1.as_view(),
@@ -174,7 +176,7 @@ fn test_dcrt_glwe_auto() {
         &mut auto_workspace,
     );
 
-    let auto_msg_2 = dcrt_sk.decrypt(&c2, &glwe_params, &table, &mut decrypt_workspace);
+    let auto_msg_2 = dcrt_sk_context.decrypt(&c2, &mut decrypt_workspace);
 
     let expected = coefficient_automorphism(input1.as_ref(), auto_degree, mod_t);
     assert_eq!(auto_msg_2.as_ref(), expected);
