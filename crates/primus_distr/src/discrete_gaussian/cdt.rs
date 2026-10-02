@@ -3,7 +3,7 @@ use rand::distr::Distribution;
 
 use crate::{
     GaussianError,
-    gaussian_core::{CDT_MAX_MAGNITUDE, GaussianParameters, build_cdt},
+    gaussian_core::{CDT_MAX_MAGNITUDE, GaussianParameters, build_cdt, encode_modular},
     utils::cdt_index_by,
 };
 
@@ -62,14 +62,6 @@ impl<T: FheUint> Distribution<T> for CDTSampler<T> {
         let index = cdt_index_by(&self.cdt, &random, Ord::cmp);
         let value: T = index.as_into();
 
-        if value.is_zero() {
-            return T::ZERO;
-        }
-
-        if positive {
-            value
-        } else {
-            self.modulus_minus_one - value + T::ONE
-        }
+        encode_modular(positive, value, self.modulus_minus_one)
     }
 }

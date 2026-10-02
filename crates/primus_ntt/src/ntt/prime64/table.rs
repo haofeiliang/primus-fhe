@@ -12,12 +12,7 @@ use crate::{
     root::PrimitiveRoot,
 };
 
-#[cfg(target_arch = "x86_64")]
-use super::avx2::precompute::build_avx2_roots_u64;
-#[cfg(target_arch = "x86_64")]
-use super::avx512::internal::{IFMA_SHIFT_BITS, MAX_DQ32_MODULUS, MAX_IFMA_MODULUS};
-use super::precompute::build_barrett_vector;
-
+use super::precompute::U64Backend;
 /// Backend-specific constants for the fused final inverse stage.
 #[derive(Clone, Copy)]
 pub(super) struct InverseFinalScale {
@@ -25,51 +20,6 @@ pub(super) struct InverseFinalScale {
     pub(super) inv_n_precon: u64,
     pub(super) inv_n_w: u64,
     pub(super) inv_n_w_precon: u64,
-}
-
-/// Exact transform kernel selected for `U64NttTable`.
-#[cfg(target_arch = "x86_64")]
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum U64Backend {
-    Scalar32,
-    Scalar64,
-    /// AVX2 backend using 64-bit Barrett multiplication.
-    Avx2,
-    /// AVX-512 DQ backend using 32-bit Barrett multiplication.
-    Avx512Dq32,
-    /// AVX-512 DQ backend using 64-bit Barrett multiplication.
-    Avx512Dq64,
-    /// AVX-512 IFMA backend using 52-bit Barrett multiplication.
-    Avx512Ifma52,
-}
-
-#[cfg(target_arch = "x86_64")]
-/// Selects one kernel that is valid for both forward and inverse transforms.
-fn select_u64_backend(
-    q: u64,
-    has_avx512_ifma: bool,
-    has_avx512_dq: bool,
-    has_avx2: bool,
-) -> U64Backend {
-    let low_q = q < (1u64 << 30);
-
-    // IFMA and all DQ fallbacks require AVX-512DQ. A narrow Barrett width is
-    // selected only when both transform directions support its modulus range.
-    if has_avx512_ifma && has_avx512_dq && q < MAX_IFMA_MODULUS {
-        U64Backend::Avx512Ifma52
-    } else if has_avx512_dq {
-        if q < MAX_DQ32_MODULUS {
-            U64Backend::Avx512Dq32
-        } else {
-            U64Backend::Avx512Dq64
-        }
-    } else if has_avx2 && !low_q {
-        U64Backend::Avx2
-    } else if low_q {
-        U64Backend::Scalar32
-    } else {
-        U64Backend::Scalar64
-    }
 }
 
 /// Specialized NTT table for `u64` coefficients.
@@ -93,50 +43,8 @@ pub struct U64NttTable {
 
     /// Forward roots in bit-reversed order (size `n`).
     pub(super) roots: AVec<u64>,
-    /// Barrett-32 preconditioners for `roots` (scalar-32 path; empty otherwise).
-    pub(super) roots_precon32: AVec<u64>,
-    /// Barrett-64 preconditioners for `roots` (scalar-64/AVX2; empty otherwise).
-    pub(super) roots_precon64: AVec<u64>,
     /// Inverse roots in bit-reversed order (size `n`).
     pub(super) inv_roots: AVec<u64>,
-    /// Barrett-64 preconditioners for `inv_roots` (64-bit paths; empty otherwise).
-    pub(super) inv_roots_precon64: AVec<u64>,
-
-    // ── AVX2 pre-expanded tables ───────────────────────────────────────
-    /// AVX2 forward roots pre-expanded for T2/T1 vector loads (size ≈ n).
-    #[cfg(target_arch = "x86_64")]
-    pub(super) avx2_roots: AVec<u64>,
-    /// AVX2 forward precon pre-expanded for T2/T1 vector loads.
-    #[cfg(target_arch = "x86_64")]
-    pub(super) avx2_roots_precon: AVec<u64>,
-    /// AVX2 inverse roots pre-expanded for T2/T1 vector loads.
-    #[cfg(target_arch = "x86_64")]
-    pub(super) avx2_inv_roots: AVec<u64>,
-    /// AVX2 inverse precon pre-expanded for T2/T1 vector loads.
-    #[cfg(target_arch = "x86_64")]
-    pub(super) avx2_inv_roots_precon: AVec<u64>,
-
-    // ── AVX-512 pre-expanded tables (hexl-compatible layout) ───────────
-    /// AVX-512 forward roots (T8/T4/T2/T1 layout, size ≈ 13n/8).
-    #[cfg(target_arch = "x86_64")]
-    avx512_roots: AVec<u64>,
-    /// Barrett-32 preconditioners for `avx512_roots` (DQ-32 forward).
-    #[cfg(target_arch = "x86_64")]
-    avx512_roots_precon32: AVec<u64>,
-    /// Barrett-52 preconditioners for `avx512_roots` (IFMA forward).
-    #[cfg(target_arch = "x86_64")]
-    avx512_roots_precon52: AVec<u64>,
-    /// Barrett-64 preconditioners for `avx512_roots` (DQ-64 forward).
-    #[cfg(target_arch = "x86_64")]
-    avx512_roots_precon64: AVec<u64>,
-
-    /// Barrett-32 preconditioners for `inv_roots` (32-bit paths; empty otherwise).
-    pub(super) inv_roots_precon32: AVec<u64>,
-    /// Barrett-52 preconditioners for `inv_roots` (IFMA inverse).
-    #[cfg(target_arch = "x86_64")]
-    inv_roots_precon52: AVec<u64>,
-
-    #[cfg(target_arch = "x86_64")]
     backend: U64Backend,
 }
 
@@ -186,70 +94,74 @@ impl U64NttTable {
         assert_ntt_length(values.len(), self.poly_length.get());
 
         #[cfg(target_arch = "x86_64")]
-        {
-            use super::avx512::transform::forward_transform_to_bit_reverse_avx512;
-
-            match self.backend {
-                U64Backend::Scalar32 => unsafe {
-                    self.scalar_forward_transform_unchecked::<32>(values, output_mod_factor);
-                },
-                U64Backend::Scalar64 => unsafe {
-                    self.scalar_forward_transform_unchecked::<64>(values, output_mod_factor);
-                },
-                U64Backend::Avx2 => unsafe {
-                    self.avx2_forward_transform(values, output_mod_factor);
-                },
-                U64Backend::Avx512Dq32 => unsafe {
-                    forward_transform_to_bit_reverse_avx512::<32>(
-                        values,
-                        self.q,
-                        &self.avx512_roots,
-                        &self.avx512_roots_precon32,
-                        input_mod_factor as u64,
-                        output_mod_factor as u64,
-                        0,
-                        0,
-                    );
-                },
-                U64Backend::Avx512Dq64 => unsafe {
-                    forward_transform_to_bit_reverse_avx512::<64>(
-                        values,
-                        self.q,
-                        &self.avx512_roots,
-                        &self.avx512_roots_precon64,
-                        input_mod_factor as u64,
-                        output_mod_factor as u64,
-                        0,
-                        0,
-                    );
-                },
-                U64Backend::Avx512Ifma52 => unsafe {
-                    forward_transform_to_bit_reverse_avx512::<{ IFMA_SHIFT_BITS }>(
-                        values,
-                        self.q,
-                        &self.avx512_roots,
-                        &self.avx512_roots_precon52,
-                        input_mod_factor as u64,
-                        output_mod_factor as u64,
-                        0,
-                        0,
-                    );
-                },
-            }
-        }
-
+        use super::avx512::{
+            internal::IFMA_SHIFT_BITS, transform::forward_transform_to_bit_reverse_avx512,
+        };
         #[cfg(not(target_arch = "x86_64"))]
-        {
-            let _ = input_mod_factor;
-            if self.q < (1u64 << 30) {
-                unsafe {
-                    self.scalar_forward_transform_unchecked::<32>(values, output_mod_factor);
-                }
-            } else {
-                unsafe {
-                    self.scalar_forward_transform_unchecked::<64>(values, output_mod_factor);
-                }
-            }
+        let _ = input_mod_factor;
+
+        // SAFETY: construction binds each precomputation to this table's roots,
+        // modulus and width, and selects SIMD only when the CPU supports it.
+        // Length is checked above. Wrappers fix the factors and rely on the
+        // caller upholding NttTable's coefficient-range contract.
+        match &self.backend {
+            U64Backend::Scalar32(precomputation) => unsafe {
+                self.scalar_forward_transform_unchecked::<32>(
+                    values,
+                    output_mod_factor,
+                    precomputation,
+                );
+            },
+            U64Backend::Scalar64(precomputation) => unsafe {
+                self.scalar_forward_transform_unchecked::<64>(
+                    values,
+                    output_mod_factor,
+                    precomputation,
+                );
+            },
+            #[cfg(target_arch = "x86_64")]
+            U64Backend::Avx2(precomputation) => unsafe {
+                self.avx2_forward_transform(values, output_mod_factor, precomputation);
+            },
+            #[cfg(target_arch = "x86_64")]
+            U64Backend::Avx512Dq32(precomputation) => unsafe {
+                forward_transform_to_bit_reverse_avx512::<32>(
+                    values,
+                    self.q,
+                    &precomputation.roots,
+                    &precomputation.roots_precon,
+                    input_mod_factor as u64,
+                    output_mod_factor as u64,
+                    0,
+                    0,
+                );
+            },
+            #[cfg(target_arch = "x86_64")]
+            U64Backend::Avx512Dq64(precomputation) => unsafe {
+                forward_transform_to_bit_reverse_avx512::<64>(
+                    values,
+                    self.q,
+                    &precomputation.roots,
+                    &precomputation.roots_precon,
+                    input_mod_factor as u64,
+                    output_mod_factor as u64,
+                    0,
+                    0,
+                );
+            },
+            #[cfg(target_arch = "x86_64")]
+            U64Backend::Avx512Ifma52(precomputation) => unsafe {
+                forward_transform_to_bit_reverse_avx512::<{ IFMA_SHIFT_BITS }>(
+                    values,
+                    self.q,
+                    &precomputation.roots,
+                    &precomputation.roots_precon,
+                    input_mod_factor as u64,
+                    output_mod_factor as u64,
+                    0,
+                    0,
+                );
+            },
         }
     }
 
@@ -258,73 +170,77 @@ impl U64NttTable {
         assert_ntt_length(values.len(), self.poly_length.get());
 
         #[cfg(target_arch = "x86_64")]
-        {
-            use super::avx512::transform::inverse_transform_from_bit_reverse_avx512;
-
-            match self.backend {
-                U64Backend::Scalar32 => unsafe {
-                    self.scalar_inverse_transform_unchecked::<32>(values, output_mod_factor);
-                },
-                U64Backend::Scalar64 => unsafe {
-                    self.scalar_inverse_transform_unchecked::<64>(values, output_mod_factor);
-                },
-                U64Backend::Avx2 => unsafe {
-                    self.avx2_inverse_transform(values, output_mod_factor);
-                },
-                U64Backend::Avx512Dq32 => unsafe {
-                    inverse_transform_from_bit_reverse_avx512::<32>(
-                        values,
-                        self.q,
-                        &self.inverse_final_scale,
-                        &self.inv_roots,
-                        &self.inv_roots_precon32,
-                        input_mod_factor as u64,
-                        output_mod_factor as u64,
-                        0,
-                        0,
-                    );
-                },
-                U64Backend::Avx512Dq64 => unsafe {
-                    inverse_transform_from_bit_reverse_avx512::<64>(
-                        values,
-                        self.q,
-                        &self.inverse_final_scale,
-                        &self.inv_roots,
-                        &self.inv_roots_precon64,
-                        input_mod_factor as u64,
-                        output_mod_factor as u64,
-                        0,
-                        0,
-                    );
-                },
-                U64Backend::Avx512Ifma52 => unsafe {
-                    inverse_transform_from_bit_reverse_avx512::<{ IFMA_SHIFT_BITS }>(
-                        values,
-                        self.q,
-                        &self.inverse_final_scale,
-                        &self.inv_roots,
-                        &self.inv_roots_precon52,
-                        input_mod_factor as u64,
-                        output_mod_factor as u64,
-                        0,
-                        0,
-                    );
-                },
-            }
-        }
-
+        use super::avx512::{
+            internal::IFMA_SHIFT_BITS, transform::inverse_transform_from_bit_reverse_avx512,
+        };
         #[cfg(not(target_arch = "x86_64"))]
-        {
-            let _ = input_mod_factor;
-            if self.q < (1u64 << 30) {
-                unsafe {
-                    self.scalar_inverse_transform_unchecked::<32>(values, output_mod_factor);
-                }
-            } else {
-                unsafe {
-                    self.scalar_inverse_transform_unchecked::<64>(values, output_mod_factor);
-                }
-            }
+        let _ = input_mod_factor;
+
+        // SAFETY: construction binds each precomputation to this table's roots,
+        // modulus and width, and selects SIMD only when the CPU supports it.
+        // Length is checked above. Wrappers fix the factors and rely on the
+        // caller upholding NttTable's coefficient-range contract.
+        match &self.backend {
+            U64Backend::Scalar32(precomputation) => unsafe {
+                self.scalar_inverse_transform_unchecked::<32>(
+                    values,
+                    output_mod_factor,
+                    precomputation,
+                );
+            },
+            U64Backend::Scalar64(precomputation) => unsafe {
+                self.scalar_inverse_transform_unchecked::<64>(
+                    values,
+                    output_mod_factor,
+                    precomputation,
+                );
+            },
+            #[cfg(target_arch = "x86_64")]
+            U64Backend::Avx2(precomputation) => unsafe {
+                self.avx2_inverse_transform(values, output_mod_factor, precomputation);
+            },
+            #[cfg(target_arch = "x86_64")]
+            U64Backend::Avx512Dq32(precomputation) => unsafe {
+                inverse_transform_from_bit_reverse_avx512::<32>(
+                    values,
+                    self.q,
+                    &self.inverse_final_scale,
+                    &self.inv_roots,
+                    &precomputation.inv_roots_precon,
+                    input_mod_factor as u64,
+                    output_mod_factor as u64,
+                    0,
+                    0,
+                );
+            },
+            #[cfg(target_arch = "x86_64")]
+            U64Backend::Avx512Dq64(precomputation) => unsafe {
+                inverse_transform_from_bit_reverse_avx512::<64>(
+                    values,
+                    self.q,
+                    &self.inverse_final_scale,
+                    &self.inv_roots,
+                    &precomputation.inv_roots_precon,
+                    input_mod_factor as u64,
+                    output_mod_factor as u64,
+                    0,
+                    0,
+                );
+            },
+            #[cfg(target_arch = "x86_64")]
+            U64Backend::Avx512Ifma52(precomputation) => unsafe {
+                inverse_transform_from_bit_reverse_avx512::<{ IFMA_SHIFT_BITS }>(
+                    values,
+                    self.q,
+                    &self.inverse_final_scale,
+                    &self.inv_roots,
+                    &precomputation.inv_roots_precon,
+                    input_mod_factor as u64,
+                    output_mod_factor as u64,
+                    0,
+                    0,
+                );
+            },
         }
     }
 }
@@ -350,41 +266,6 @@ impl NttTable for U64NttTable {
 
         let n = poly_length.get();
         let two_q = q << 1;
-        #[cfg(not(target_arch = "x86_64"))]
-        let low_q = q < (1u64 << 30);
-
-        #[cfg(target_arch = "x86_64")]
-        let backend = select_u64_backend(
-            q,
-            is_x86_feature_detected!("avx512ifma"),
-            is_x86_feature_detected!("avx512dq"),
-            is_x86_feature_detected!("avx2"),
-        );
-
-        #[cfg(target_arch = "x86_64")]
-        let use_roots_precon32 = matches!(backend, U64Backend::Scalar32);
-        #[cfg(not(target_arch = "x86_64"))]
-        let use_roots_precon32 = low_q;
-
-        #[cfg(target_arch = "x86_64")]
-        let use_roots_precon64 = matches!(backend, U64Backend::Scalar64 | U64Backend::Avx2);
-        #[cfg(not(target_arch = "x86_64"))]
-        let use_roots_precon64 = !low_q;
-
-        #[cfg(target_arch = "x86_64")]
-        let use_inv_roots_precon32 =
-            matches!(backend, U64Backend::Scalar32 | U64Backend::Avx512Dq32);
-        #[cfg(not(target_arch = "x86_64"))]
-        let use_inv_roots_precon32 = low_q;
-
-        #[cfg(target_arch = "x86_64")]
-        let use_inv_roots_precon64 = matches!(
-            backend,
-            U64Backend::Scalar64 | U64Backend::Avx2 | U64Backend::Avx512Dq64
-        );
-        #[cfg(not(target_arch = "x86_64"))]
-        let use_inv_roots_precon64 = !low_q;
-
         let inv_root = mod_inv(root, q);
         debug_assert_eq!(modulus.reduce_mul(root, inv_root), 1);
 
@@ -407,48 +288,10 @@ impl NttTable for U64NttTable {
             inv_power = inv_root_sf.factor_mul_modulo(inv_power, q);
         }
 
-        // --- backend-selected Shoup preconditioners ---
-        let roots_precon32 = if use_roots_precon32 {
-            build_barrett_vector(&roots, 32, q)
-        } else {
-            AVec::with_capacity(64, 0)
-        };
-        let roots_precon64 = if use_roots_precon64 {
-            AVec::from_iter(
-                64,
-                roots
-                    .iter()
-                    .map(|&w| ShoupFactor::<u64>::quotient_for(w, q)),
-            )
-        } else {
-            AVec::with_capacity(64, 0)
-        };
-        let inv_roots_precon32 = if use_inv_roots_precon32 {
-            build_barrett_vector(&inv_roots, 32, q)
-        } else {
-            AVec::with_capacity(64, 0)
-        };
-        let inv_roots_precon64 = if use_inv_roots_precon64 {
-            AVec::from_iter(
-                64,
-                inv_roots
-                    .iter()
-                    .map(|&w| ShoupFactor::<u64>::quotient_for(w, q)),
-            )
-        } else {
-            AVec::with_capacity(64, 0)
-        };
+        let backend = U64Backend::new(q, &roots, &inv_roots);
+        let inverse_bit_shift = backend.bit_shift();
 
-        // --- constants for the backend's fused final inverse stage ---
-        #[cfg(target_arch = "x86_64")]
-        let inverse_bit_shift = match backend {
-            U64Backend::Scalar32 | U64Backend::Avx512Dq32 => 32,
-            U64Backend::Avx512Ifma52 => IFMA_SHIFT_BITS,
-            U64Backend::Scalar64 | U64Backend::Avx2 | U64Backend::Avx512Dq64 => 64,
-        };
-        #[cfg(not(target_arch = "x86_64"))]
-        let inverse_bit_shift = if low_q { 32 } else { 64 };
-
+        // Constants for the backend's fused final inverse stage.
         let inv_n = mod_inv(n as u64, q);
         let last_w = unsafe { *inv_roots.get_unchecked(n - 1) };
         let inv_n_w = modulus.reduce_mul(inv_n, last_w);
@@ -459,62 +302,6 @@ impl NttTable for U64NttTable {
             inv_n_w_precon: MultiplyFactor::new(inv_n_w, inverse_bit_shift, q).quotient(),
         };
 
-        // --- backend-specific pre-expanded root tables ---
-        #[cfg(target_arch = "x86_64")]
-        let use_avx2 = matches!(backend, U64Backend::Avx2);
-        #[cfg(target_arch = "x86_64")]
-        let (avx2_roots, avx2_roots_precon, avx2_inv_roots, avx2_inv_roots_precon) = if use_avx2 {
-            (
-                build_avx2_roots_u64(n, &roots, false),
-                build_avx2_roots_u64(n, &roots_precon64, false),
-                build_avx2_roots_u64(n, &inv_roots, true),
-                build_avx2_roots_u64(n, &inv_roots_precon64, true),
-            )
-        } else {
-            (
-                AVec::with_capacity(64, 0),
-                AVec::with_capacity(64, 0),
-                AVec::with_capacity(64, 0),
-                AVec::with_capacity(64, 0),
-            )
-        };
-
-        #[cfg(target_arch = "x86_64")]
-        let use_avx512 = matches!(
-            backend,
-            U64Backend::Avx512Dq32 | U64Backend::Avx512Dq64 | U64Backend::Avx512Ifma52
-        );
-        #[cfg(target_arch = "x86_64")]
-        let avx512_roots = if use_avx512 {
-            super::avx512::precompute::build_avx512_root_powers(n, &roots)
-        } else {
-            AVec::with_capacity(64, 0)
-        };
-        #[cfg(target_arch = "x86_64")]
-        let avx512_roots_precon32 = if matches!(backend, U64Backend::Avx512Dq32) {
-            build_barrett_vector(&avx512_roots, 32, q)
-        } else {
-            AVec::with_capacity(64, 0)
-        };
-        #[cfg(target_arch = "x86_64")]
-        let avx512_roots_precon52 = if matches!(backend, U64Backend::Avx512Ifma52) {
-            build_barrett_vector(&avx512_roots, 52, q)
-        } else {
-            AVec::with_capacity(64, 0)
-        };
-        #[cfg(target_arch = "x86_64")]
-        let avx512_roots_precon64 = if matches!(backend, U64Backend::Avx512Dq64) {
-            build_barrett_vector(&avx512_roots, 64, q)
-        } else {
-            AVec::with_capacity(64, 0)
-        };
-        #[cfg(target_arch = "x86_64")]
-        let inv_roots_precon52 = if matches!(backend, U64Backend::Avx512Ifma52) {
-            build_barrett_vector(&inv_roots, 52, q)
-        } else {
-            AVec::with_capacity(64, 0)
-        };
-
         Ok(Self {
             poly_length,
             q,
@@ -523,30 +310,7 @@ impl NttTable for U64NttTable {
             inv_root,
             inverse_final_scale,
             roots,
-            roots_precon32,
-            roots_precon64,
             inv_roots,
-            inv_roots_precon64,
-            #[cfg(target_arch = "x86_64")]
-            avx2_roots,
-            #[cfg(target_arch = "x86_64")]
-            avx2_roots_precon,
-            #[cfg(target_arch = "x86_64")]
-            avx2_inv_roots,
-            #[cfg(target_arch = "x86_64")]
-            avx2_inv_roots_precon,
-            #[cfg(target_arch = "x86_64")]
-            avx512_roots,
-            #[cfg(target_arch = "x86_64")]
-            avx512_roots_precon32,
-            #[cfg(target_arch = "x86_64")]
-            avx512_roots_precon52,
-            #[cfg(target_arch = "x86_64")]
-            avx512_roots_precon64,
-            inv_roots_precon32,
-            #[cfg(target_arch = "x86_64")]
-            inv_roots_precon52,
-            #[cfg(target_arch = "x86_64")]
             backend,
         })
     }
@@ -614,29 +378,22 @@ impl MonomialNttTable for U64NttTable {
 
 #[cfg(test)]
 mod tests {
+    use super::super::precompute::ScalarPrecomputation;
     use super::*;
     use crate::UintNttTable;
     use primus_modulus::BarrettModulus;
 
-    // Tables retain only the selected backend's preconditioners. Populate the
-    // scalar representation explicitly so this check is independent of host SIMD.
-    fn check_scalar_kernel<const BITS: u32>(q: u64) {
-        let modulus = BarrettModulus::new(q);
-        let length = PolyLength::new(32);
-        let mut table = U64NttTable::new(length, modulus).unwrap();
-        let reference = UintNttTable::<u64>::new(length, modulus).unwrap();
-        let roots = build_barrett_vector(&table.roots, BITS, q);
-        let inv_roots = build_barrett_vector(&table.inv_roots, BITS, q);
-        if BITS == 32 {
-            table.roots_precon32 = roots;
-            table.inv_roots_precon32 = inv_roots;
-        } else {
-            table.roots_precon64 = roots;
-            table.inv_roots_precon64 = inv_roots;
-        }
+    // Exercise an explicit backend independently of automatic host selection,
+    // comparing lazy range boundaries against the generic canonical transform.
+    fn check_kernel(table: &mut U64NttTable, backend: U64Backend) {
+        let q = table.q;
+        let length = table.poly_length;
+        let reference = UintNttTable::<u64>::new(length, BarrettModulus::new(q)).unwrap();
+        let bits = backend.bit_shift();
         let scale = &mut table.inverse_final_scale;
-        scale.inv_n_precon = MultiplyFactor::new(scale.inv_n, BITS, q).quotient();
-        scale.inv_n_w_precon = MultiplyFactor::new(scale.inv_n_w, BITS, q).quotient();
+        scale.inv_n_precon = MultiplyFactor::new(scale.inv_n, bits, q).quotient();
+        scale.inv_n_w_precon = MultiplyFactor::new(scale.inv_n_w, bits, q).quotient();
+        table.backend = backend;
 
         for (inverse, output_factor) in [(false, 1), (false, 4), (true, 1), (true, 2)] {
             let bound = if inverse { 2 * q } else { 4 * q };
@@ -644,14 +401,10 @@ mod tests {
                 .map(|i| [0, q - 1, q, bound - 1 - i as u64][i % 4])
                 .collect();
             let mut expected: Vec<_> = actual.iter().map(|&value| value % q).collect();
-            // SAFETY: the input has exactly N coefficients in the kernel's lazy
-            // range; the root and inverse-scale preconditioners use BITS above.
-            unsafe {
-                if inverse {
-                    table.scalar_inverse_transform_unchecked::<BITS>(&mut actual, output_factor);
-                } else {
-                    table.scalar_forward_transform_unchecked::<BITS>(&mut actual, output_factor);
-                }
+            if inverse {
+                table.dispatch_inverse(&mut actual, 2, output_factor);
+            } else {
+                table.dispatch_forward(&mut actual, 4, output_factor);
             }
             if inverse {
                 reference.inverse_transform_slice(&mut expected);
@@ -672,7 +425,69 @@ mod tests {
 
     #[test]
     fn scalar_kernels_match_generic_at_the_supported_minimum() {
-        check_scalar_kernel::<32>(1_073_692_673);
-        check_scalar_kernel::<64>(1_152_921_504_606_830_593);
+        for (q, bits) in [(1_073_692_673, 32), (1_152_921_504_606_830_593, 64)] {
+            let mut table = U64NttTable::new(PolyLength::new(32), BarrettModulus::new(q)).unwrap();
+            let backend = if bits == 32 {
+                U64Backend::Scalar32(ScalarPrecomputation::new::<32>(
+                    q,
+                    &table.roots,
+                    &table.inv_roots,
+                ))
+            } else {
+                U64Backend::Scalar64(ScalarPrecomputation::new::<64>(
+                    q,
+                    &table.roots,
+                    &table.inv_roots,
+                ))
+            };
+            check_kernel(&mut table, backend);
+        }
+    }
+
+    // Automatic selection can hide DQ32 or AVX2 behind IFMA on the same host.
+    // Verify every eligible precomputation/dispatch pair at the minimum length.
+    #[cfg(target_arch = "x86_64")]
+    #[test]
+    fn native_backends_match_generic_at_the_supported_minimum() {
+        use super::super::avx512::internal::IFMA_SHIFT_BITS;
+        use super::super::precompute::{Avx2Precomputation, Avx512Precomputation};
+
+        let mut small =
+            U64NttTable::new(PolyLength::new(32), BarrettModulus::new(1_073_692_673)).unwrap();
+        let mut large = U64NttTable::new(
+            PolyLength::new(32),
+            BarrettModulus::new(1_152_921_504_606_830_593),
+        )
+        .unwrap();
+        if is_x86_feature_detected!("avx2") {
+            let backend = U64Backend::Avx2(Avx2Precomputation::new(
+                large.q,
+                &large.roots,
+                &large.inv_roots,
+            ));
+            check_kernel(&mut large, backend);
+        }
+        if is_x86_feature_detected!("avx512dq") {
+            let backend = U64Backend::Avx512Dq32(Avx512Precomputation::new::<32>(
+                small.q,
+                &small.roots,
+                &small.inv_roots,
+            ));
+            check_kernel(&mut small, backend);
+            let backend = U64Backend::Avx512Dq64(Avx512Precomputation::new::<64>(
+                large.q,
+                &large.roots,
+                &large.inv_roots,
+            ));
+            check_kernel(&mut large, backend);
+            if is_x86_feature_detected!("avx512ifma") {
+                let backend = U64Backend::Avx512Ifma52(Avx512Precomputation::new::<
+                    { IFMA_SHIFT_BITS },
+                >(
+                    small.q, &small.roots, &small.inv_roots
+                ));
+                check_kernel(&mut small, backend);
+            }
+        }
     }
 }

@@ -19,7 +19,7 @@
 | `DcrtTable<Ntt>` | 为每个 CRT 模数保存一个相同长度的 NTT table |
 | `U32DcrtTable`、`U64DcrtTable`、`UintDcrtTable<T>` | 常用 DCRT 别名 |
 
-专用 table 拥有 root power 和预计算 backend 布局。变换会调度到有效的 scalar 或指令集专用 kernel，原地执行，并且每次调用不需要 scratch 分配。
+专用 table 拥有 root power 和预计算 backend 布局。`U64NttTable` 只保留所选后端的预条件数和展开根表。变换会调度到有效的 scalar 或指令集专用 kernel，原地执行，并且每次调用不需要 scratch 分配。
 
 ## 示例
 

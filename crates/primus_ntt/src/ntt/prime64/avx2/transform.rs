@@ -1,6 +1,6 @@
 use core::arch::x86_64::*;
 
-use super::super::U64NttTable;
+use super::super::{U64NttTable, precompute::Avx2Precomputation};
 use super::arithmetic::{mul_mod_lazy_u64x4, reduce_once_u64x4, reduce_twice_u64x4};
 use super::butterfly::{fwd_butterfly_u64x4, inv_butterfly_u64x4};
 use super::permute::{t1_load_xy, t1_store_xy, t2_load_xy, t2_store_xy};
@@ -30,11 +30,17 @@ impl U64NttTable {
     ///
     /// # Preconditions (caller MUST uphold; not checked)
     ///
-    /// - `values.len()` is a power of two and ≥ 16.
-    /// - `roots.len() == values.len()` and `roots_precon.len() == values.len()`.
-    /// - `q < 2^62`.
+    /// - `values.len() == self.poly_length.get()`.
+    /// - `precomputation` was prepared from this table's roots and modulus.
+    /// - `q < 2^62`; coefficients are in `[0, 4q)`.
+    /// - `output_mod_factor` is 1 or 4.
     #[target_feature(enable = "avx2")]
-    pub(crate) unsafe fn avx2_forward_transform(&self, values: &mut [u64], output_mod_factor: u32) {
+    pub(in crate::ntt::prime64) unsafe fn avx2_forward_transform(
+        &self,
+        values: &mut [u64],
+        output_mod_factor: u32,
+        precomputation: &Avx2Precomputation,
+    ) {
         debug_assert!(
             output_mod_factor == 1 || output_mod_factor == 4,
             "output_mod_factor must be 1 or 4; got {output_mod_factor}"
@@ -45,9 +51,9 @@ impl U64NttTable {
         let two_q = self.two_q;
 
         let roots = self.roots.as_slice();
-        let roots_precon = self.roots_precon64.as_slice();
-        let avx2_roots = self.avx2_roots.as_slice();
-        let avx2_roots_precon = self.avx2_roots_precon.as_slice();
+        let roots_precon = precomputation.scalar.roots_precon.as_slice();
+        let avx2_roots = precomputation.roots.as_slice();
+        let avx2_roots_precon = precomputation.roots_precon.as_slice();
 
         let v_q = _mm256_set1_epi64x(q as i64);
         let v_two_q = _mm256_set1_epi64x(two_q as i64);
@@ -151,11 +157,18 @@ impl U64NttTable {
     ///
     /// # Preconditions (caller MUST uphold; not checked)
     ///
-    /// - `values.len()` is a power of two.
-    /// - `inv_roots.len() == values.len()` and `inv_roots_precon.len() == values.len()`.
-    /// - `q < 2^62`.
+    /// - `values.len() == self.poly_length.get()`.
+    /// - `precomputation` was prepared from this table's roots and modulus,
+    ///   and `self.inverse_final_scale` uses 64-bit preconditioners.
+    /// - `q < 2^62`; coefficients are in `[0, 2q)`.
+    /// - `output_mod_factor` is 1 or 2.
     #[target_feature(enable = "avx2")]
-    pub(crate) unsafe fn avx2_inverse_transform(&self, values: &mut [u64], output_mod_factor: u32) {
+    pub(in crate::ntt::prime64) unsafe fn avx2_inverse_transform(
+        &self,
+        values: &mut [u64],
+        output_mod_factor: u32,
+        precomputation: &Avx2Precomputation,
+    ) {
         debug_assert!(
             output_mod_factor == 1 || output_mod_factor == 2,
             "output_mod_factor must be 1 or 2; got {output_mod_factor}"
@@ -170,9 +183,9 @@ impl U64NttTable {
         let inv_n_w = self.inverse_final_scale.inv_n_w;
         let inv_n_w_precon = self.inverse_final_scale.inv_n_w_precon;
         let inv_roots = self.inv_roots.as_slice();
-        let inv_roots_precon = self.inv_roots_precon64.as_slice();
-        let avx2_inv_roots = self.avx2_inv_roots.as_slice();
-        let avx2_inv_roots_precon = self.avx2_inv_roots_precon.as_slice();
+        let inv_roots_precon = precomputation.scalar.inv_roots_precon.as_slice();
+        let avx2_inv_roots = precomputation.inv_roots.as_slice();
+        let avx2_inv_roots_precon = precomputation.inv_roots_precon.as_slice();
 
         let v_q = _mm256_set1_epi64x(q as i64);
         let v_two_q = _mm256_set1_epi64x(two_q as i64);

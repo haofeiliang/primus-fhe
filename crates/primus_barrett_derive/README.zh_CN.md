@@ -58,7 +58,7 @@ pub struct CiphertextModulus;
 
 ## SIMD
 
-生成的 context 自动使用受支持的原生内核；同时启用 `primus_modulus` 的 `derive` 和 `simd` features，可使用需要 nightly 的 portable-SIMD 路径。具体硬件资格和常量模数回退见[实现说明](../primus_modulus/IMPLEMENTATION.md)。
+`simd` feature 在宏展开时选择 scalar 或 portable-SIMD slice 转发路径。生成的 context 还会在运行时自动使用受支持的原生内核；同时启用 `primus_modulus` 的 `derive` 和 `simd` features，可使用需要 nightly 的 portable-SIMD 路径。具体硬件资格和常量模数回退见[实现说明](../primus_modulus/IMPLEMENTATION.md)。
 
 标量与 SIMD 展开遵循同样的 `BarrettModulus` 契约：调用方保证切片尺寸，惰性结果位于 `[0, 2*modulus)`，逆元操作要求输入可逆；编译期常量模数不保证素性。
 

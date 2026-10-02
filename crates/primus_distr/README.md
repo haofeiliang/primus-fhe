@@ -91,7 +91,7 @@ CRT batches use modulus-major layout. For polynomial length `N` and component mo
  ...]
 ```
 
-`sample_crt_uniform_binary_values*`, `sample_crt_sparse_ternary_values*`, and `sample_crt_gaussian_values*` draw one logical coefficient and encode that same coefficient in every component. `sample_crt_uniform_values*` instead uses one independent `rand::distr::Uniform` distribution per component.
+`sample_crt_uniform_binary_values*`, `sample_crt_sparse_ternary_values*`, and `sample_crt_gaussian_values*` draw one logical coefficient and encode that same coefficient in every component. `sample_crt_uniform_values*` instead uses one independent `rand::distr::Uniform` distribution per component. Use `sample_crt_uniform_values_to(output, poly_length, distributions, rng)` to fill contiguous modulus-major storage.
 
 Callers must provide a nonzero polynomial length for nonempty CRT batches and an output whose length exactly matches the polynomial length times the component count. Repeated low-level paths use debug-only shape diagnostics; release callers must establish the layout at the owning parameter or scheme boundary.
 

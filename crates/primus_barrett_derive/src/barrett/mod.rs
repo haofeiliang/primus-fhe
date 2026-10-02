@@ -11,6 +11,7 @@ mod basic;
 mod lazy_ops;
 mod lazy_slice_ops;
 mod ops;
+mod slice_kernels;
 mod slice_ops;
 
 /// Validate the type and reciprocal range before computing constants or emitting arithmetic.

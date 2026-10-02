@@ -91,7 +91,7 @@ CRT batch 使用 modulus-major 布局。对于多项式长度 `N` 和分量模�
  ...]
 ```
 
-`sample_crt_uniform_binary_values*`、`sample_crt_sparse_ternary_values*` 和 `sample_crt_gaussian_values*` 每次生成一个逻辑系数，并在所有分量中编码同一个系数。 `sample_crt_uniform_values*` 则为每个分量使用一个独立的 `rand::distr::Uniform` 分布。
+`sample_crt_uniform_binary_values*`、`sample_crt_sparse_ternary_values*` 和 `sample_crt_gaussian_values*` 每次生成一个逻辑系数，并在所有分量中编码同一个系数。 `sample_crt_uniform_values*` 则为每个分量使用一个独立的 `rand::distr::Uniform` 分布。使用 `sample_crt_uniform_values_to(output, poly_length, distributions, rng)` 填充连续的 modulus-major 存储。
 
 对于非空 CRT batch，调用方必须提供非零多项式长度，并保证输出长度严格等于多项式 长度乘以分量数。重复执行的底层路径使用 debug-only shape 诊断；release 调用方必须在 拥有相应契约的参数或 scheme 边界建立布局不变量。
 

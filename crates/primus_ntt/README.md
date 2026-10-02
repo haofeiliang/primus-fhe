@@ -19,7 +19,7 @@ English | [简体中文](README.zh_CN.md)
 | `DcrtTable<Ntt>` | One same-length NTT table per CRT modulus |
 | `U32DcrtTable`, `U64DcrtTable`, `UintDcrtTable<T>` | Common DCRT aliases |
 
-The specialized tables own their root powers and precomputed backend layouts. Transforms dispatch to a valid scalar or instruction-set-specific kernel, run in place, and require no per-call scratch allocation.
+The specialized tables own their root powers and precomputed backend layouts. `U64NttTable` retains only the selected backend's preconditioners and packed root layout. Transforms dispatch to a valid scalar or instruction-set-specific kernel, run in place, and require no per-call scratch allocation.
 
 ## Example
 

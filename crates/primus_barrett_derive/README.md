@@ -58,7 +58,7 @@ Do not derive those standard traits separately on the same struct, because the g
 
 ## SIMD
 
-Generated contexts automatically select supported native kernels. Enable both `derive` and `simd` on `primus_modulus` for portable-SIMD paths, which require nightly. Hardware eligibility and constant-modulus fallbacks are described in the [implementation notes](../primus_modulus/IMPLEMENTATION.md).
+The `simd` feature chooses scalar or portable-SIMD slice forwarding during macro expansion. Generated contexts also automatically select supported native kernels at runtime. Enable both `derive` and `simd` on `primus_modulus` for portable-SIMD paths, which require nightly. Hardware eligibility and constant-modulus fallbacks are described in the [implementation notes](../primus_modulus/IMPLEMENTATION.md).
 
 Scalar and SIMD expansions share `BarrettModulus` contracts: callers preserve slice dimensions, lazy results lie in `[0, 2*modulus)`, and inversion requires an invertible input. A compile-time constant modulus is not necessarily prime.
 
