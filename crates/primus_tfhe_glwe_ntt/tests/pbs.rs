@@ -3,11 +3,11 @@ use primus_decompose::primitive::ApproxSignedBasis;
 use primus_encoding::RoundedCodec;
 use primus_glwe::{GlweParameters, SecretKeyDistr};
 use primus_integer::FheUint;
-use primus_lattice::PolyLength;
 use primus_lattice::{GlweDimension, LweDimension};
 use primus_lwe::{LweCiphertext, LweParameters};
 use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, U32NttTable, U64NttTable};
+use primus_poly::PolyLength;
 use primus_test_allocations as allocations;
 use primus_tfhe::{
     BivariateLookupTable, InterleavedLookupTable, LookupTable, ProgrammableBootstrapInterleaved,
@@ -341,7 +341,7 @@ where
 fn pbs_u32_preserves_outputs_and_validates_domains() {
     let q = 132_120_577u32;
     for case in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
-        let table = U32NttTable::new(N.trailing_zeros(), BarrettModulus::new(q)).unwrap();
+        let table = U32NttTable::new(PolyLength::new(N), BarrettModulus::new(q)).unwrap();
         check_context(TfheContext::try_new(parameters(q, case), table).unwrap());
     }
 }
@@ -350,7 +350,7 @@ fn pbs_u32_preserves_outputs_and_validates_domains() {
 fn pbs_u64_preserves_outputs_and_validates_domains() {
     let q = 1_125_899_906_826_241u64;
     for case in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
-        let table = U64NttTable::new(N.trailing_zeros(), BarrettModulus::new(q)).unwrap();
+        let table = U64NttTable::new(PolyLength::new(N), BarrettModulus::new(q)).unwrap();
         check_context(TfheContext::try_new(parameters(q, case), table).unwrap());
     }
 }

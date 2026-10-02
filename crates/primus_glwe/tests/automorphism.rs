@@ -9,18 +9,17 @@ use primus_glwe::{
     NttGlweGadgetEncryptWorkspace, NttGlweSecretKey, SecretKeyDistr,
 };
 use primus_lattice::GlweDimension;
-use primus_lattice::PolyLength;
 use primus_lattice::glwe::{Glwe, NttGlwe};
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntt::{NttTable, U64NttTable};
-use primus_poly::Polynomial;
+use primus_poly::{PolyLength, Polynomial};
 use rand::{SeedableRng, rngs::StdRng};
 
 mod common;
 use common::{K, N, assert_phase, encrypt, message, secret};
 
 // Functional ring size; keep the original word widths, moduli and decomposition.
-const POLY_LENGTH: usize = 32;
+const POLY_LENGTH: usize = 64;
 const DIMENSION: usize = 2;
 const PLAINTEXT_MODULUS: u64 = 16;
 const MODULUS: u64 = 1_125_899_906_826_241;
@@ -41,7 +40,7 @@ fn automorphism_plaintext(input: &[u64], degree: usize) -> Vec<u64> {
 #[test]
 fn ntt_and_coefficient_inputs_reuse_the_automorphism_key() {
     let modulus = BarrettModulus::new(MODULUS);
-    let ntt = U64NttTable::new(POLY_LENGTH.trailing_zeros(), modulus).unwrap();
+    let ntt = U64NttTable::new(PolyLength::new(POLY_LENGTH), modulus).unwrap();
     let glwe_parameters = GlweParameters::new(
         GlweDimension::new(DIMENSION),
         POLY_LENGTH,
@@ -133,7 +132,7 @@ fn ntt_and_coefficient_inputs_reuse_the_automorphism_key() {
 fn fourier_automorphism_input<Table: FftTable>() {
     use primus_fft::Complex64;
     use primus_lattice::glwe::FourierGlwe;
-    let table = Table::new(N.trailing_zeros()).unwrap();
+    let table = Table::new(PolyLength::new(N));
     let mut fft = FftEngine::new(&table);
     let size = GlweSize::new(GlweDimension::new(K), PolyLength::new(N));
     let params = GlweParameters::new(
@@ -194,7 +193,7 @@ fn fourier_automorphism_input<Table: FftTable>() {
         // A different N with the same total storage must fail before output writes.
         let mut wrong_workspace = FourierGlweAutomorphismWorkspace::new(GlweSize::new(
             GlweDimension::new(5),
-            PolyLength::new(N / 2),
+            PolyLength::new(N * 2),
         ));
         fourier_output.as_mut().fill(Complex64::new(7.0, 0.0));
         assert!(

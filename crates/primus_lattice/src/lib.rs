@@ -51,11 +51,9 @@ mod macros;
 
 mod dimension;
 mod gadget;
-mod poly_length;
 mod size;
 
 pub use dimension::{GlweDimension, GlweDimensionError, LweDimension, LweDimensionError};
-pub use poly_length::{MAX_POLY_LENGTH, MIN_POLY_LENGTH, PolyLength, PolyLengthError};
 pub use size::{GadgetSize, GlweSize, GlweSizeError, RnsGadgetSize, RnsGlweSize};
 
 /// GGSW matrix ciphertexts.

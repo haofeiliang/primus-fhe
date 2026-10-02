@@ -56,7 +56,7 @@ impl<T: TorusFftValue> FourierGlweKeySwitchingKey<T> {
         let output = parameters;
         assert_eq!(input_secret_key.poly_length(), output.poly_length().get());
         assert_eq!(output_secret_key.glwe_size(), output.glwe_size());
-        assert_eq!(fft.poly_length(), output.poly_length().get());
+        assert_eq!(fft.poly_length().get(), output.poly_length().get());
 
         let input_size = input_secret_key.glwe_size();
         let output_size = output.size();
@@ -180,7 +180,7 @@ impl<T: TorusFftValue> FourierGlweKeySwitchingKey<T> {
     ) {
         let poly_length = self.input_size.poly_length().get();
         assert_eq!(
-            fft.poly_length(),
+            fft.poly_length().get(),
             poly_length,
             "FFT polynomial length mismatch"
         );

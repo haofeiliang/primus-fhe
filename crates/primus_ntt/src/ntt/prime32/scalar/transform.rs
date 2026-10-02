@@ -12,7 +12,7 @@ impl U32NttTable {
     /// - `1`: output in `[0, q)` (canonical)
     /// # Safety
     ///
-    /// `values` must contain exactly `self.n` coefficients.
+    /// `values` must contain exactly `self.poly_length.get()` coefficients.
     pub(in crate::ntt::prime32) unsafe fn scalar_forward_transform_unchecked(
         &self,
         values: &mut [u32],
@@ -23,7 +23,7 @@ impl U32NttTable {
             "output_mod_factor must be 1 or 4; got {output_mod_factor}"
         );
 
-        let n = self.n;
+        let n = self.poly_length.get();
         let q = self.q;
         let two_q = self.two_q;
 
@@ -153,7 +153,7 @@ impl U32NttTable {
     /// - `1`: output in `[0, q)` (canonical)
     /// # Safety
     ///
-    /// `values` must contain exactly `self.n` coefficients.
+    /// `values` must contain exactly `self.poly_length.get()` coefficients.
     pub(in crate::ntt::prime32) unsafe fn scalar_inverse_transform_unchecked(
         &self,
         values: &mut [u32],
@@ -164,7 +164,7 @@ impl U32NttTable {
             "output_mod_factor must be 1 or 2; got {output_mod_factor}"
         );
 
-        let n = self.n;
+        let n = self.poly_length.get();
         let q = self.q;
         let two_q = self.two_q;
 

@@ -5,11 +5,11 @@ use primus_decompose::primitive::ApproxSignedBasis;
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_encoding::{PlaintextEmbedding, RoundedCodec};
 use primus_glwe::{GlweParameters, SecretKeyDistr};
-use primus_lattice::PolyLength;
 use primus_lattice::{GlweDimension, LweDimension};
 use primus_lwe::{LweCiphertext, LweParameters};
 use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, U32NttTable};
+use primus_poly::PolyLength;
 use primus_test_allocations as allocations;
 use primus_tfhe::{BivariateLookupTable, ProgrammableBootstrap, ProgrammableBootstrapInterleaved};
 use primus_tfhe_glwe_ntt::{
@@ -58,7 +58,7 @@ fn context(
     .unwrap();
     TfheContext::try_new(
         parameters,
-        U32NttTable::new(N.trailing_zeros(), modulus).unwrap(),
+        U32NttTable::new(PolyLength::new(N), modulus).unwrap(),
     )
     .unwrap()
 }

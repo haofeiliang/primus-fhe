@@ -1,6 +1,6 @@
 use primus_encoding::{PlaintextEmbedding, RoundedCodec};
 use primus_integer::FheUint;
-use primus_lattice::PolyLength;
+use primus_poly::PolyLength;
 use primus_reduce::{Modulus, PrepareModulusSwitch, ReduceAdd, RingContext};
 
 use super::{InterleavedLookupTable, LookupTable, front_half_domain_len};

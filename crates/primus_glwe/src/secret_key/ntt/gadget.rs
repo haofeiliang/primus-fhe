@@ -212,7 +212,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
             "GLWE parameter layout mismatch"
         );
         assert_eq!(
-            ntt.poly_length(),
+            ntt.poly_length().get(),
             self.poly_length(),
             "NTT polynomial length mismatch"
         );

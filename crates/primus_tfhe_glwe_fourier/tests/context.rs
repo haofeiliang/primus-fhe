@@ -8,12 +8,11 @@ use primus_glwe::{GadgetSize, GlweCiphertext, GlweParameters, SecretKeyDistr};
 use primus_lattice::{GlweDimension, LweDimension};
 use primus_lwe::{LweCiphertext, LweParameters};
 use primus_modulus::NativeModulus;
-use primus_poly::Polynomial;
+use primus_poly::{PolyLength, Polynomial};
 use primus_tfhe_glwe_fourier::{
     BootstrappingKey, ClientKey, FourierGlweBlindRotationWorkspace, KeyGenerator, PbsOrder,
     TfheContext, TfheContextError, TfheEvaluationError, TfheParameters,
 };
-use std::error::Error;
 
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -65,7 +64,7 @@ fn parameters_with_bases(
 
 #[test]
 fn rejects_a_fourier_table_with_the_wrong_length() {
-    let table = RustFftTable::new((POLY_LENGTH * 2).trailing_zeros()).unwrap();
+    let table = RustFftTable::new(PolyLength::new(POLY_LENGTH * 2));
     let error = TfheContext::try_new(parameters(PbsOrder::BootstrapKeyswitch), table)
         .err()
         .expect("the mismatched table must be rejected");
@@ -74,38 +73,12 @@ fn rejects_a_fourier_table_with_the_wrong_length() {
         TfheContextError::PolynomialLengthMismatch { expected: POLY_LENGTH, actual }
         if actual == POLY_LENGTH * 2
     ));
-    // N=2 is a valid ring shape, but this FFT backend requires N >= 4.
-    let tfhe = parameters(PbsOrder::BootstrapKeyswitch);
-    let tiny_ring = GlweParameters::new(
-        GlweDimension::new(2),
-        2,
-        4,
-        NativeModulus::new(),
-        SecretKeyDistr::UniformBinary,
-        0.7,
-    );
-    let tiny = TfheParameters::try_new(
-        tfhe.small_lwe().clone(),
-        tiny_ring,
-        tfhe.blind_rotation_ggsw().basis().clone(),
-        tfhe.glwe_key_switching().output().basis().clone(),
-        PbsOrder::BootstrapKeyswitch,
-    )
-    .unwrap();
-    let error = TfheContext::<_, RustFftTable>::try_from_parameters(tiny)
-        .err()
-        .unwrap();
-    assert!(matches!(
-        &error,
-        TfheContextError::TransformTable(primus_fft::FftError::InvalidLogN { log_n: 1, .. })
-    ));
-    assert!(error.source().unwrap().is::<primus_fft::FftError>());
 }
 
 #[test]
 fn split_keys_support_both_pbs_orders() {
     for order in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
-        let table = RustFftTable::new(POLY_LENGTH.trailing_zeros()).unwrap();
+        let table = RustFftTable::new(PolyLength::new(POLY_LENGTH));
         let context = TfheContext::try_new(
             parameters_with_bases(
                 order,
@@ -160,7 +133,7 @@ fn split_keys_support_both_pbs_orders() {
 fn server_keys_are_bound_to_both_decomposition_bases() {
     let source = TfheContext::try_new(
         parameters(PbsOrder::BootstrapKeyswitch),
-        RustFftTable::new(POLY_LENGTH.trailing_zeros()).unwrap(),
+        RustFftTable::new(PolyLength::new(POLY_LENGTH)),
     )
     .unwrap();
     let mut rng = StdRng::seed_from_u64(42);
@@ -182,7 +155,7 @@ fn server_keys_are_bound_to_both_decomposition_bases() {
                 key_switching_log_basis,
                 distribution,
             ),
-            RustFftTable::new(POLY_LENGTH.trailing_zeros()).unwrap(),
+            RustFftTable::new(PolyLength::new(POLY_LENGTH)),
         )
         .unwrap();
         assert!(matches!(
@@ -196,7 +169,7 @@ fn server_keys_are_bound_to_both_decomposition_bases() {
 fn public_blind_rotation_rejects_mismatches_before_output_writes() {
     let context = TfheContext::try_new(
         parameters(PbsOrder::BootstrapKeyswitch),
-        RustFftTable::new(POLY_LENGTH.trailing_zeros()).unwrap(),
+        RustFftTable::new(PolyLength::new(POLY_LENGTH)),
     )
     .unwrap();
     let mut rng = StdRng::seed_from_u64(42);
@@ -287,7 +260,7 @@ fn public_blind_rotation_rejects_mismatches_before_output_writes() {
         assert_eq!(output.as_ref(), before);
     }
 
-    let wrong_table = RustFftTable::new((POLY_LENGTH * 2).trailing_zeros()).unwrap();
+    let wrong_table = RustFftTable::new(PolyLength::new(POLY_LENGTH * 2));
     let mut wrong_fft = primus_fft::FftEngine::new(&wrong_table);
     let mut wrong_scratch = FourierGlweBlindRotationWorkspace::new(key);
     wrong_scratch.resize(GadgetSize::new(

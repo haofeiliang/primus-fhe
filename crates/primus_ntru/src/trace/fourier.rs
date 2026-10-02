@@ -3,8 +3,8 @@
 use primus_data::{Data, DataMut};
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{FftEngine, FftTable, TorusFftValue};
-use primus_lattice::PolyLength;
 use primus_modulus::{NativeModulus, PowOf2Modulus};
+use primus_poly::PolyLength;
 use primus_reduce::ReduceNeg;
 
 use super::kernels;

@@ -1,5 +1,6 @@
 //! Precomputed coefficient permutations for negacyclic automorphisms.
 
+use crate::PolyLength;
 use primus_integer::{FheUint, WrappingNeg};
 use primus_modulus::PowOf2Modulus;
 use primus_reduce::{ReduceMul, RingContext};
@@ -17,6 +18,7 @@ struct CoefficientSource {
 /// not perform the key switch needed for homomorphic automorphism.
 #[derive(Clone)]
 pub struct CoeffAutomorphismPermutation {
+    poly_length: PolyLength,
     sources: Vec<CoefficientSource>,
 }
 
@@ -24,22 +26,12 @@ impl CoeffAutomorphismPermutation {
     /// Constructs the permutation for an odd degree in `[1, 2N)`.
     ///
     /// # Panics
-    /// Panics unless `N = poly_length` is a power of two of at least two,
-    /// every coefficient index fits in `u32`, `2N` fits in `usize`, and the
-    /// degree is odd and less than `2N`.
+    /// Panics unless the degree is odd and less than `2N`.
     #[must_use]
-    pub fn new(degree: usize, poly_length: usize) -> Self {
-        assert!(
-            poly_length >= 2 && poly_length.is_power_of_two(),
-            "automorphism polynomial length must be a power of two of at least two"
-        );
-        assert!(
-            u32::try_from(poly_length - 1).is_ok(),
-            "automorphism coefficient index exceeds u32"
-        );
-        let twice_n = poly_length
-            .checked_mul(2)
-            .expect("automorphism 2N overflows usize");
+    pub fn new(degree: usize, poly_length: PolyLength) -> Self {
+        let n = poly_length.get();
+        // The shared FHE bound makes both 2N and the stored u32 indices fit.
+        let twice_n = 2 * n;
         assert!(
             degree < twice_n && degree % 2 == 1,
             "automorphism degree must be odd and less than 2N"
@@ -50,25 +42,28 @@ impl CoeffAutomorphismPermutation {
                 index: 0,
                 negate: false
             };
-            poly_length
+            n
         ];
-        for source in 0..poly_length {
+        for source in 0..n {
             let mapped = modulus.reduce_mul(source, degree);
-            let negate = mapped >= poly_length;
-            let destination = if negate { mapped - poly_length } else { mapped };
+            let negate = mapped >= n;
+            let destination = if negate { mapped - n } else { mapped };
             sources[destination] = CoefficientSource {
                 index: source as u32,
                 negate,
             };
         }
-        Self { sources }
+        Self {
+            poly_length,
+            sources,
+        }
     }
 
     /// Returns the number of coefficient positions in this permutation.
     #[inline]
     #[must_use]
-    pub fn poly_length(&self) -> usize {
-        self.sources.len()
+    pub fn poly_length(&self) -> PolyLength {
+        self.poly_length
     }
 
     /// Writes the automorphism of small signed integer coefficients.
@@ -84,8 +79,8 @@ impl CoeffAutomorphismPermutation {
         input: &[T::SignedInteger],
         output: &mut [T::SignedInteger],
     ) {
-        debug_assert_eq!(input.len(), self.poly_length());
-        debug_assert_eq!(output.len(), self.poly_length());
+        debug_assert_eq!(input.len(), self.poly_length().get());
+        debug_assert_eq!(output.len(), self.poly_length().get());
         for (output, source) in output.iter_mut().zip(&self.sources) {
             let value = input[source.index as usize];
             *output = if source.negate {
@@ -107,8 +102,8 @@ impl CoeffAutomorphismPermutation {
         T: FheUint,
         M: RingContext<T>,
     {
-        debug_assert_eq!(input.len(), self.poly_length());
-        debug_assert_eq!(output.len(), self.poly_length());
+        debug_assert_eq!(input.len(), self.poly_length().get());
+        debug_assert_eq!(output.len(), self.poly_length().get());
         for (output, source) in output.iter_mut().zip(&self.sources) {
             let value = input[source.index as usize];
             *output = if source.negate {

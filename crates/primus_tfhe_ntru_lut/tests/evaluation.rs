@@ -398,11 +398,9 @@ fn fourier<T: TorusFftValue, Table: FftTable>() {
         SecretKeyDistr::UniformTernary,
     ] {
         for radix in [2, 4] {
-            let context =
-                primus_tfhe_ntru_fourier::TfheContext::<_, Table, _>::try_from_parameters(
-                    parameters(NativeModulus::new(), radix, distr, 2),
-                )
-                .unwrap();
+            let context = primus_tfhe_ntru_fourier::TfheContext::<_, Table, _>::from_parameters(
+                parameters(NativeModulus::new(), radix, distr, 2),
+            );
             let mut rng = StdRng::seed_from_u64(0x48504c5554 + radix as u64);
             let (client, server) = context
                 .try_generate_keys(Some(cbs::<T>()), &mut rng)
@@ -433,10 +431,9 @@ fn fourier<T: TorusFftValue, Table: FftTable>() {
                 );
             }
             let config = cases(radix)[0].0;
-            let other = primus_tfhe_ntru_fourier::TfheContext::<_, Table, _>::try_from_parameters(
+            let other = primus_tfhe_ntru_fourier::TfheContext::<_, Table, _>::from_parameters(
                 parameters(NativeModulus::new(), radix, distr, 3),
-            )
-            .unwrap();
+            );
             let table =
                 HighPrecisionLookupTable::try_new(other.parameters(), config, |_, _| T::ZERO)
                     .unwrap();

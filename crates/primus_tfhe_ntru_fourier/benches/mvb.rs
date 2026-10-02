@@ -46,11 +46,9 @@ fn backend<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str) 
                 let mut verified = false;
                 group.bench_function(path, |b| {
                     let (context, client, server, input) = fixture.get_or_insert_with(|| {
-                        let context =
-                            TfheContext::<T, Table, PowOf2Modulus<T>>::try_from_parameters(
-                                parameters.clone(),
-                            )
-                            .unwrap();
+                        let context = TfheContext::<T, Table, PowOf2Modulus<T>>::from_parameters(
+                            parameters.clone(),
+                        );
                         let mut rng = StdRng::seed_from_u64(42);
                         let mut generator = KeyGenerator::new(&context);
                         let client = generator.try_generate_client_key(&mut rng).unwrap();

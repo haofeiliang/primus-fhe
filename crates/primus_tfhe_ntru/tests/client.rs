@@ -16,7 +16,7 @@ static ALLOCATOR: allocations::CountingAllocator = allocations::CountingAllocato
 
 fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
     let ring = NtruParameters::new(
-        8,
+        32,
         plain_modulus,
         modulus,
         SecretKeyDistr::UniformBinary,
@@ -38,15 +38,11 @@ fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
         ring.noise_distribution().standard_deviation(),
     )
     .unwrap();
+    let mut accumulator = vec![0; ring.poly_length().get()];
+    accumulator[0] = 1;
     let client = ClientKey::new(
-        primus_lwe::LweSecretKey::new(
-            (vec![1, 0, 1, 1, 0, 0, 0, 0])[..4]
-                .iter()
-                .map(|&s| primus_integer::SignedInteger::cast_to_unsigned(s))
-                .collect(),
-            SecretKeyDistr::UniformBinary,
-        ),
-        NtruSecretKey::new(vec![1, 0, 0, 0, 0, 0, 0, 0], SecretKeyDistr::UniformBinary),
+        primus_lwe::LweSecretKey::new(vec![1, 0, 1, 1], SecretKeyDistr::UniformBinary),
+        NtruSecretKey::new(accumulator, SecretKeyDistr::UniformBinary),
     );
     let mut rng = StdRng::seed_from_u64(0x4e54_5255_504b);
     let public = client.try_generate_public_key(&params, &mut rng).unwrap();
@@ -134,7 +130,14 @@ fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
                 .collect(),
             SecretKeyDistr::UniformBinary,
         ),
-        NtruSecretKey::new(vec![1, 0, 0, 0, 0, 0, 0, 0], SecretKeyDistr::UniformBinary),
+        NtruSecretKey::new(
+            vec![1, 0, 0, 0, 0, 0, 0, 0]
+                .into_iter()
+                .chain(std::iter::repeat(0))
+                .take(32)
+                .collect(),
+            SecretKeyDistr::UniformBinary,
+        ),
     );
     let seed = rng.next_u64();
     let mut rng = StdRng::seed_from_u64(seed);

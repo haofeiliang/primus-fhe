@@ -169,7 +169,7 @@ cargo +nightly nextest run "${packages[@]}" --lib --tests --all-features
 | 范围 | 保留的独立验证与尺寸理由 |
 | --- | --- |
 | 多项式 | [配对旋转](../../crates/primus_poly/tests/monomial.rs) 使用逐系数散射 oracle：短环穷举指数、长区间验证三个分量顺序，空批次单独调用一次；[Fourier 算术](../../crates/primus_poly/tests/fourier.rs) 使用手算复数结果，不重复测试消费自身后转发到 assign 的包装；[CRT 采样](../../crates/primus_poly/tests/crt_random.rs) 从同一组 signed 样本独立计算各 limb，并核对 RNG 消耗 |
-| NTT | [ntt.rs](../../crates/primus_ntt/tests/ntt.rs) 用 N=2/8、q=17 的直接多项式求值固定根选择、bit-reversed 排列和逆归一化；U32 保留 16/32/64 的 scalar/SIMD 分派、偏移切片和 lazy 范围；U64 保留三种模数位宽和 8/16/64，另以 2048/4096/8192 覆盖 AVX-512 基例及两层递归，不能统一缩成小环 |
+| NTT | [ntt.rs](../../crates/primus_ntt/tests/ntt.rs) 用 N=32/64、q=257 的直接多项式求值固定根选择、bit-reversed 排列和逆归一化；U32/U64 用 32/64 检查运行时分派、偏移切片和 lazy 范围；私有 kernel 测试直接调用 scalar，覆盖 U32 及 U64 两种乘法位宽，不依赖宿主 CPU；U64 保留三种模数位宽，另以 2048/4096/8192 覆盖 AVX-512 基例及两层递归，不能统一缩成小环 |
 | 两个 FFT 后端 | [负循环卷积](../../crates/primus_fft/tests/negacyclic.rs) 用有符号整数 O(N²) oracle 验证 packing 和乘积归一化；短环验证 offset 切片与并发独立 workspace；[擦除](../../crates/primus_fft/tests/zeroize.rs) 保留短缓冲区和 N=1024 的后端工作存储；TFHE-FFT 私有测试强制不同 plan base size，避免依赖自动 planner 恰好选中某种谱排列 |
 | torus 转换 | [roundtrip.rs](../../crates/primus_fft/tests/roundtrip.rs) 对 u32/u64 使用浮点 round、饱和有符号转换和 unsigned wrapping 作为独立 oracle；保留所有浮点指数、代表性尾数和正负舍入/饱和边界，不再追加十万次随机比特扫描 |
 | 分解 | [primitive oracle](../../crates/primus_decompose/tests/primitive_approx_signed_basis_oracle.rs) 保留小模数穷举、native 半步舍入、digit 范围及层序；[多 limb 分解](../../crates/primus_decompose/tests/big_uint.rs) 保留跨 limb、drop/carry 边界、固定 stride 1/2/4 和 fallback 3 的批次差分，边界之外仅少量固定 seed 输入 |

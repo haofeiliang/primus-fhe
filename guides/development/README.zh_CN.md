@@ -29,15 +29,9 @@
 
 Raw 多项式/密文构造器不建立模数、秘密身份、表示或完整布局。`Polynomial<S>` 不另存环长度：包装 `batch_count*N` 个元素，不会自动把单多项式运算变成批量运算。只有接口契约明确接受批次时才直接传入；否则先迭代出完整对象。
 
-[PolyLength](../../crates/primus_lattice/src/poly_length.rs) 检查 GLWE/NTRU 支持的 `2..=2^17`
-二次幂范围；
-`get()`、`log_n()`、`fourier_poly_len()` 分别返回 `N`、`log2(N)` 和 `N/2` 个复数元素。
-`GlweSize` 与 `NtruParameters` 保存这个不变量，`poly_length()` 返回 `PolyLength`，
-直接用于工作区构造。公共 TFHE LUT 构造器也直接接收该类型。多项式长度配置仍接收整数 `N`；数值内核、存储或 FFT/NTT 边界再用 `.get()`
-提取整数。
-该范围也保证 `2N` 可用 `usize` 表示；变换构造器继续拥有各自的支持范围和数值要求。
-Raw 缓冲区长度仍用整数，另行检查其完整布局。FFT/NTT 保留整数构造入口，
-避免反向依赖更高层的 lattice。
+[PolyLength](../../crates/primus_poly/src/poly_length.rs) 属于 `primus_poly`，集中检查 FHE 共用的 `32..=2^17` 二次幂范围。`get()`、`log_n()`、`fourier_poly_len()` 分别返回 `N`、`log2(N)` 和 `N/2` 个复数元素。GLWE/NTRU 参数、checked size、工作区、公共 TFHE LUT 和 NTT/FFT 表直接传递同一个类型，不重复检查上界。
+
+该范围保证 `2N` 可由 `usize` 表示；组合存储长度仍由拥有布局的边界检查。FFT 构造直接接受该支持范围；NTT 保留模数、单位根和 degree 的条件。顶层配置仍可接收整数 `N`；raw 缓冲区、批次数量及数值内核使用整数，并保留完整布局检查。
 
 lattice 的 `LweDimension` 和 `GlweDimension` 检查正的 mask 计数及可表示的含 body 计数；`ciphertext_len()` 返回 `n+1`，`component_count()` 返回 `k+1`。`GlweSize` 保存 GLWE 几何尺寸和扁平长度，通过 `LweDimension::from(glwe_size)` 显式派生经过验证的 `kN`；NTRU 提取使用 `LweDimension::from(poly_length)`。原始切片保留整数维数，允许零维。
 
@@ -101,10 +95,11 @@ assert_eq!(output, [252, 1, 2, 3, 248, 5, 6, 7]);
 以下片段依赖 `primus_lattice`，遍历一个 GGSW 的行和层，再分开每个 GLWE 的 mask/body。零缓冲区只展示布局访问，没有采样加密；子对象均为借用视图，遍历过程不分配。
 
 ```rust
-use primus_lattice::{GadgetSize, GlweDimension, GlweSize, PolyLength, ggsw::Ggsw};
+use primus_lattice::{GadgetSize, GlweDimension, GlweSize, ggsw::Ggsw};
+use primus_poly::PolyLength;
 use primus_decompose::DecompositionLevelCount;
 
-let poly_length = PolyLength::new(8);
+let poly_length = PolyLength::new(32);
 let glwe_size = GlweSize::new(GlweDimension::new(2), poly_length);
 let gadget_size = GadgetSize::new(glwe_size, DecompositionLevelCount::new(3));
 let storage = vec![0u32; gadget_size.ggsw_len()];

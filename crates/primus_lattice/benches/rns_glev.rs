@@ -6,12 +6,12 @@ mod support;
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use primus_decompose::{DecompositionBaseLog, big_integer::BigUintApproxSignedBasis};
 use primus_lattice::{
-    GlweDimension, GlweSize, PolyLength, RnsGadgetSize, RnsGlweSize, glev::CrtGlev, glwe::DcrtGlwe,
+    GlweDimension, GlweSize, RnsGadgetSize, RnsGlweSize, glev::CrtGlev, glwe::DcrtGlwe,
     workspace::DcrtGlevMulWorkspace,
 };
 use primus_modulus::BarrettModulus;
 use primus_ntt::U64DcrtTable;
-use primus_poly::{BigUintPolynomial, CrtPolynomial};
+use primus_poly::{BigUintPolynomial, CrtPolynomial, PolyLength};
 use primus_rns::RNSBase;
 
 fn benchmarks(c: &mut Criterion) {
@@ -20,7 +20,7 @@ fn benchmarks(c: &mut Criterion) {
         let qs = &support::MODULI[..count];
         let moduli: Vec<_> = qs.iter().copied().map(BarrettModulus::new).collect();
         let base = RNSBase::new(&moduli).unwrap();
-        let table = U64DcrtTable::new(log_n, &moduli).unwrap();
+        let table = U64DcrtTable::new(PolyLength::new(1usize << log_n), &moduli).unwrap();
         let basis = BigUintApproxSignedBasis::new(
             base.moduli_product(),
             DecompositionBaseLog::new(log_b),

@@ -4,7 +4,7 @@
 //! SIMD comparison: cargo +nightly bench -p primus_ntru --bench ternary_cmux --features simd
 
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
-use primus_lattice::PolyLength;
+use primus_poly::PolyLength;
 use std::{hint::black_box, time::Duration};
 
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
@@ -29,7 +29,7 @@ static ALLOCATOR: CountingAllocator = CountingAllocator;
 fn ntt<T: FheUint + PrimitiveRoot>(c: &mut Criterion, q: T, levels: usize) {
     const N: usize = 1024;
     let modulus = BarrettModulus::new(q);
-    let table = UintNttTable::new(N.trailing_zeros(), modulus).unwrap();
+    let table = UintNttTable::new(PolyLength::new(N), modulus).unwrap();
     let params = NtruParameters::new(
         N,
         T::try_from(16).unwrap(),
@@ -147,7 +147,7 @@ fn native_phase<T: TorusFftValue>(cipher: &[T], secret: &[T::SignedInteger]) -> 
 
 fn fourier<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str, levels: usize) {
     const N: usize = 1024;
-    let table = Table::new(N.trailing_zeros()).unwrap();
+    let table = Table::new(PolyLength::new(N));
     let mut fft = FftEngine::new(&table);
     let params = NtruParameters::new(
         N,

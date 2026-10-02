@@ -39,6 +39,12 @@ lhs.mul_monomial_assign(1, modulus);
 assert_eq!(lhs.as_slice(), &[84, 13, 21, 4]);
 ```
 
+## Ring polynomial length
+
+`PolyLength` is a checked coefficient count `N`: a power of two in `MIN_POLY_LENGTH..=MAX_POLY_LENGTH` (currently `32..=2^17`). FHE layouts and transform libraries share this supported range, checked once by the type's constructor. Use `PolyLength::try_new(N)` or `PolyLength::new(N)`; `PolyLengthError` retains the rejected length.
+
+`get()`, `log_n()` and `fourier_poly_len()` return `N`, `log2(N)` and `N/2` complex elements. GLWE/NTRU layouts, NTT/FFT tables and workspaces pass this type directly without repeating the upper-bound check. The range guarantees that `2N` fits in `usize`; combined storage lengths and transform numerical conditions remain checked at their owning boundaries. Raw polynomial wrappers and batch storage do not carry a separate ring length; their actual element counts remain `usize`.
+
 ## Storage and ownership
 
 Most polynomial types are generic over a backing store `S` implementing the contiguous-storage traits from [`primus_data`](../primus_data/README.md). Owned `Vec` aliases and borrowed slice aliases are available for the common coefficient, NTT, Fourier, and array forms. CRT, DCRT, and multi-limb wrappers can likewise be constructed over owned or borrowed storage through their generic types.
@@ -69,7 +75,7 @@ Many shape checks in repeated arithmetic paths are `debug_assert*!` diagnostics.
 
 `Polynomial::add_mul_monomial_pair_assign` accumulates two rotated inputs in one output traversal without allocation. `add_mul_monomial_pair_assign` also accepts a flat batch of complete polynomials, computing rotation offsets once and dispatching each interval outside the polynomial loop for 64-bit words. Each contribution is reduced in order; both APIs require equally sized power-of-two polynomials, canonical residues, and exponents in `[0, 2N)`.
 
-`CoeffAutomorphismPermutation` caches the coefficient substitution `X -> X^d` modulo `X^N + 1`. Construct it for a power-of-two `N >= 2` and odd `d` in `[1, 2N)`, then reuse `apply_to` on canonical residues. `apply_signed_to` is for small signed coefficients whose required negations are representable. The map does not perform cryptographic key switching. Its NTT counterpart lives in `primus_ntt`.
+`CoeffAutomorphismPermutation` caches the coefficient substitution `X -> X^d` modulo `X^N + 1`. Construct it for a power-of-two `N >= 32` and odd `d` in `[1, 2N)`, then reuse `apply_to` on canonical residues. `apply_signed_to` is for small signed coefficients whose required negations are representable. The map does not perform cryptographic key switching. Its NTT counterpart lives in `primus_ntt`.
 
 ## Random sampling
 

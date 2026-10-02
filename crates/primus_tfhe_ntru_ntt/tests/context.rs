@@ -4,11 +4,12 @@ use primus_lwe::LweParameters;
 use primus_modulus::BarrettModulus;
 use primus_ntru::{NlevParameters, NtruParameters, SecretKeyDistr};
 use primus_ntt::{NttTable, U32NttTable};
+use primus_poly::PolyLength;
 use primus_tfhe_ntru_ntt::{TfheContext, TfheEvaluationError, TfheParameters};
 use rand::{SeedableRng, rngs::StdRng};
 use std::error::Error;
 
-const POLY_LENGTH: usize = 16;
+const POLY_LENGTH: usize = 32;
 const LWE_DIMENSION: usize = 4;
 const PLAIN_MODULUS: u32 = 4;
 const CIPHER_MODULUS: u32 = 132_120_577;
@@ -54,7 +55,7 @@ fn parameters(
 fn rejects_server_keys_with_same_layout_but_different_bases_or_modulus() {
     let original = parameters(CIPHER_MODULUS, 9, 9);
     let table = U32NttTable::new(
-        POLY_LENGTH.trailing_zeros(),
+        PolyLength::new(POLY_LENGTH),
         original.accumulator_ntru().cipher_modulus(),
     )
     .unwrap();
@@ -99,7 +100,7 @@ fn rejects_server_keys_with_same_layout_but_different_bases_or_modulus() {
                 .get()
         );
         let table = U32NttTable::new(
-            POLY_LENGTH.trailing_zeros(),
+            PolyLength::new(POLY_LENGTH),
             candidate.accumulator_ntru().cipher_modulus(),
         )
         .unwrap();

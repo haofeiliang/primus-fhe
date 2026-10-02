@@ -57,7 +57,7 @@ fn backend<T, Table>(
     let mut verified = false;
     c.bench_function(&format!("{name}/complete"), |b| {
         let (context, client, server, input, lut) = fixture.get_or_insert_with(|| {
-            let context = TfheContext::<T, Table>::try_from_parameters(parameters.clone()).unwrap();
+            let context = TfheContext::<T, Table>::from_parameters(parameters.clone());
             let mut rng = StdRng::seed_from_u64(42);
             let (client, server) = context.try_generate_keys(None, &mut rng).unwrap();
             let input = context
@@ -102,7 +102,7 @@ fn backend<T, Table>(
     let mut fixture = None;
     c.bench_function(&format!("{name}/server_keygen"), |b| {
         let (context, client) = fixture.get_or_insert_with(|| {
-            let context = TfheContext::<T, Table>::try_from_parameters(parameters.clone()).unwrap();
+            let context = TfheContext::<T, Table>::from_parameters(parameters.clone());
             let mut rng = StdRng::seed_from_u64(42);
             let client = ClientKey::generate(context.parameters(), &mut rng);
             (context, client)
@@ -132,11 +132,10 @@ fn stages<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str) {
             &format!("glwe/{backend}/u{}/stages/n800_N1024/{stage}", T::BITS),
             |b| {
                 let (context, client, server_key) = fixture.get_or_insert_with(|| {
-                    let context = TfheContext::<T, Table>::try_from_parameters(glwe::fourier_pbs(
+                    let context = TfheContext::<T, Table>::from_parameters(glwe::fourier_pbs(
                         PbsOrder::BootstrapKeyswitch,
                         PBS_WORKLOADS[0],
-                    ))
-                    .unwrap();
+                    ));
                     let mut rng = StdRng::seed_from_u64(42);
                     let (client, server) = context.try_generate_keys(None, &mut rng).unwrap();
                     (context, client, server)

@@ -56,7 +56,7 @@ fn context<Table: FftTable>(
         order,
     )
     .unwrap();
-    TfheContext::try_from_parameters(parameters).unwrap()
+    TfheContext::from_parameters(parameters)
 }
 
 fn check_pbs<Table: FftTable>() {

@@ -247,7 +247,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
     {
         assert_eq!(self.size, params.size(), "GLWE parameter layout mismatch");
         assert_eq!(
-            ntt_table.poly_length(),
+            ntt_table.poly_length().get(),
             self.poly_length(),
             "NTT polynomial length mismatch"
         );
@@ -281,7 +281,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         B: DataMut<Elem = T>,
     {
         let poly_length = self.size.poly_length().get();
-        debug_assert_eq!(ntt_table.poly_length(), poly_length);
+        debug_assert_eq!(ntt_table.poly_length().get(), poly_length);
         debug_assert_eq!(output.as_ref().len(), self.size.glwe_len());
 
         let modulus = params.cipher_modulus();

@@ -7,6 +7,7 @@ use primus_glwe::{GlweParameters, SecretKeyDistr};
 use primus_lattice::{GlweDimension, LweDimension};
 use primus_lwe::LweParameters;
 use primus_modulus::NativeModulus;
+use primus_poly::PolyLength;
 use primus_tfhe_glwe_fourier::{
     BooleanError, BooleanGate, LweCiphertext, PbsOrder, TfheContext, TfheParameters,
 };
@@ -56,7 +57,7 @@ fn parameters(pbs_order: PbsOrder) -> TfheParameters<u32> {
 #[test]
 fn boolean_factories_support_truth_tables_and_reused_output_in_both_orders() {
     for order in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
-        let table = RustFftTable::new(POLY_LENGTH.trailing_zeros()).unwrap();
+        let table = RustFftTable::new(PolyLength::new(POLY_LENGTH));
         let context = TfheContext::try_new(parameters(order), table).unwrap();
         let mut rng = StdRng::seed_from_u64(42);
         let (client_key, server_key) = context.try_generate_keys(None, &mut rng).unwrap();

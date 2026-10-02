@@ -61,7 +61,7 @@ fn parameters() -> TfheParameters<Word, PowOf2Modulus<Word>> {
 
 fn main() {
     let parameters = parameters();
-    let context = TfheContext::<Word, Table, _>::try_from_parameters(parameters).unwrap();
+    let context = TfheContext::<Word, Table, _>::from_parameters(parameters);
     let thresholds: Vec<_> = (1..=OUTPUTS).map(|i| i * DOMAIN / (OUTPUTS + 1)).collect();
     // MVB compiles at Q and returns at q=2^24: retain one Scaled codec for each.
     let table_codec = ScaledCodec::new(2, context.parameters().accumulator_ntru().cipher_modulus());

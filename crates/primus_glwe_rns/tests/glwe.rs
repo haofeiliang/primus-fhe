@@ -8,7 +8,7 @@ use primus_lattice::GlweDimension;
 use primus_lattice::glwe::DcrtGlwe;
 use primus_modulus::BarrettModulus;
 use primus_ntt::UintDcrtTable;
-use primus_poly::{CrtPolynomial, Polynomial};
+use primus_poly::{CrtPolynomial, PolyLength, Polynomial};
 use primus_reduce::FieldContext;
 use rand::distr::Uniform;
 use rand::{SeedableRng, rngs::StdRng};
@@ -55,7 +55,7 @@ fn assert_dcrt_glwe_secret_key_enc_dec(secret_key_distr: SecretKeyDistr, plain_m
     let mod_t = BarrettModulus::new(plain_modulus);
     let mod_gamma = BarrettModulus::new(GAMMA_MODULUS);
     let moduli = CIPHER_MODULI.map(BarrettModulus::new);
-    let table = UintDcrtTable::new(POLY_LENGTH.trailing_zeros(), &moduli).unwrap();
+    let table = UintDcrtTable::new(PolyLength::new(POLY_LENGTH), &moduli).unwrap();
     let mut rng = StdRng::seed_from_u64(42);
 
     let params = CrtGlweParameters::new(
@@ -138,7 +138,7 @@ fn public_encrypt_accepts_unscaled_crt_plaintexts() {
     // repeating the codec's full parameter matrix through public encryption.
     for (count, t) in [(1, 254), (2, 257)] {
         let moduli = &moduli[..count];
-        let table = UintDcrtTable::new(POLY_LENGTH.trailing_zeros(), moduli).unwrap();
+        let table = UintDcrtTable::new(PolyLength::new(POLY_LENGTH), moduli).unwrap();
         let params = CrtGlweParameters::new(
             GlweDimension::new(DIMENSION),
             POLY_LENGTH,
@@ -204,7 +204,7 @@ fn dcrt_polynomial_product_preserves_bfv_scaling() {
     let mod_t = BarrettModulus::new(plain_modulus);
     let mod_gamma = BarrettModulus::new(GAMMA_MODULUS);
     let moduli = CIPHER_MODULI.map(BarrettModulus::new);
-    let table = UintDcrtTable::new(POLY_LENGTH.trailing_zeros(), &moduli).unwrap();
+    let table = UintDcrtTable::new(PolyLength::new(POLY_LENGTH), &moduli).unwrap();
     let mut rng = StdRng::seed_from_u64(42);
 
     let params = CrtGlweParameters::new(

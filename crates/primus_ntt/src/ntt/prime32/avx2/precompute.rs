@@ -31,9 +31,8 @@ pub(in crate::ntt::prime32) fn build_avx2_roots_u32(
     roots: &[u32],
     inverse: bool,
 ) -> AVec<u32> {
-    if n < 32 {
-        return AVec::with_capacity(32, 0);
-    }
+    // The caller derives n from the shared checked polynomial length.
+    debug_assert!(n >= 32);
     debug_assert_eq!(roots.len(), n);
 
     let mut out = AVec::with_capacity(32, 3 * n / 2);

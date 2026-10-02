@@ -23,12 +23,13 @@
 
 ```rust
 use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable};
+use primus_poly::PolyLength;
 
-let table = RustFftTable::new(3).unwrap(); // N = 8
+let table = RustFftTable::new(PolyLength::new(32)); // N = 32
 let mut fft = FftEngine::new(&table);
-let input: Vec<u32> = (0..fft.poly_length()).map(|value| value as u32).collect();
+let input: Vec<u32> = (0..fft.poly_length().get()).map(|value| value as u32).collect();
 let mut fourier = vec![Complex64::default(); fft.fourier_length()];
-let mut output = vec![0u32; fft.poly_length()];
+let mut output = vec![0u32; fft.poly_length().get()];
 
 fft.forward_as_torus(&input, &mut fourier);
 fft.backward_as_torus(&fourier, &mut output);
@@ -57,8 +58,8 @@ Table 不可变并实现 `Send + Sync`，因此可以在线程间共享。每个
 
 输入和输出长度必须精确匹配：
 
-- 系数 slice 包含 `poly_length()` 个值；
-- Fourier slice 包含 `fourier_length() == poly_length() / 2` 个值；
+- 系数 slice 包含 `poly_length().get()` 个值；
+- Fourier slice 包含 `fourier_length() == poly_length().fourier_poly_len()` 个值；
 - 直接传给 `FftTable` 方法的 scratch 必须由同一个 table 实例分配。
 
 长度错误或 workspace 不兼容会触发 panic。
@@ -69,7 +70,7 @@ Table 不可变并实现 `Send + Sync`，因此可以在线程间共享。每个
 
 ## 长度与精度
 
-`FftTable::new(log_n)` 接受 `2 <= log_n <= usize::BITS - 1`，因此支持的最小 多项式长度为四。Table 构造包含后端 planning 和内存分配，不应放在重复变换路径 中。
+`FftTable::new(poly_length)` 接收检查了 FHE 共用 `32..=2^17` 范围的 `primus_poly::PolyLength`；构造直接返回表，无需额外的尺寸检查。表和 engine 的 `poly_length()` 返回同一类型，`fourier_length()` 返回复数元素数量。Table 构造包含后端 planning 和内存分配，不应放在重复变换路径中。
 
 变换使用 `f64`，因而是近似计算。Fourier 运算能否正确舍入回预期 torus 值， 取决于累积浮点误差和整数操作数的大小；上层算法负责维持合适的精度预算。
 

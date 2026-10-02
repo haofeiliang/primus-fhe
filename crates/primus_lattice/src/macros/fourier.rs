@@ -378,7 +378,7 @@ macro_rules! impl_fourier_conversion {
             ///
             /// # Correctness
             ///
-            /// Coefficient storage must consist of complete `fft.poly_length()` blocks;
+            /// Coefficient storage must consist of complete `fft.poly_length().get()` blocks;
             /// Fourier storage must consist of complete `fft.fourier_length()` blocks,
             /// with the same number and order of polynomials on both sides. The table,
             /// packing, and normalized torus scale must agree. Conversion can incur
@@ -395,7 +395,7 @@ macro_rules! impl_fourier_conversion {
             {
                 for (coeff, fourier) in self
                     .as_ref()
-                    .chunks_exact(fft.poly_length())
+                    .chunks_exact(fft.poly_length().get())
                     .zip(output.as_mut().chunks_exact_mut(fft.fourier_length()))
                 {
                     fft.forward_as_torus(coeff, fourier);
@@ -410,7 +410,7 @@ macro_rules! impl_fourier_conversion {
             ///
             /// # Correctness
             ///
-            /// Coefficient storage must consist of complete `fft.poly_length()` blocks;
+            /// Coefficient storage must consist of complete `fft.poly_length().get()` blocks;
             /// Fourier storage must consist of complete `fft.fourier_length()` blocks,
             /// with the same number and order of polynomials on both sides. The table,
             /// packing, and normalized torus scale must agree. Conversion can incur
@@ -429,7 +429,7 @@ macro_rules! impl_fourier_conversion {
                 for (fourier, coeff) in self
                     .as_ref()
                     .chunks_exact(fft.fourier_length())
-                    .zip(output.as_mut().chunks_exact_mut(fft.poly_length()))
+                    .zip(output.as_mut().chunks_exact_mut(fft.poly_length().get()))
                 {
                     fft.backward_as_torus(fourier, coeff);
                 }

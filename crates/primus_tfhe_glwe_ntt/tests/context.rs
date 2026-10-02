@@ -8,6 +8,7 @@ use primus_lattice::{GlweDimension, LweDimension};
 use primus_lwe::LweParameters;
 use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, U32NttTable};
+use primus_poly::PolyLength;
 use primus_tfhe_glwe_ntt::{
     ClientKey, KeyGenerator, PbsOrder, TfheContext, TfheContextError, TfheEvaluationError,
     TfheParameters,
@@ -59,7 +60,7 @@ fn parameters_with_bases(
 #[test]
 fn server_keys_are_bound_to_their_decomposition_bases() {
     let modulus = BarrettModulus::new(MODULUS);
-    let source_table = U32NttTable::new(POLY_LENGTH.trailing_zeros(), modulus).unwrap();
+    let source_table = U32NttTable::new(PolyLength::new(POLY_LENGTH), modulus).unwrap();
     let source =
         TfheContext::try_new(parameters(PbsOrder::BootstrapKeyswitch), source_table).unwrap();
     let mut rng = StdRng::seed_from_u64(0x4241_5349_534b_4559);
@@ -90,7 +91,7 @@ fn server_keys_are_bound_to_their_decomposition_bases() {
             SecretKeyDistr::UniformTernary,
         ),
     ] {
-        let table = U32NttTable::new(POLY_LENGTH.trailing_zeros(), modulus).unwrap();
+        let table = U32NttTable::new(PolyLength::new(POLY_LENGTH), modulus).unwrap();
         let context = TfheContext::try_new(incompatible, table).unwrap();
         assert!(matches!(
             context.evaluator(&server_key),
@@ -102,7 +103,7 @@ fn server_keys_are_bound_to_their_decomposition_bases() {
 #[test]
 fn rejects_incompatible_ntt_tables() {
     let modulus = BarrettModulus::new(MODULUS);
-    let wrong_length = U32NttTable::new((POLY_LENGTH * 2).trailing_zeros(), modulus).unwrap();
+    let wrong_length = U32NttTable::new(PolyLength::new(POLY_LENGTH * 2), modulus).unwrap();
     let error = TfheContext::try_new(parameters(PbsOrder::BootstrapKeyswitch), wrong_length)
         .err()
         .expect("the length mismatch must be rejected");
@@ -113,7 +114,7 @@ fn rejects_incompatible_ntt_tables() {
 
     const OTHER_MODULUS: u32 = 998_244_353;
     let wrong_modulus = U32NttTable::new(
-        POLY_LENGTH.trailing_zeros(),
+        PolyLength::new(POLY_LENGTH),
         BarrettModulus::new(OTHER_MODULUS),
     )
     .unwrap();
@@ -133,7 +134,7 @@ fn rejects_incompatible_ntt_tables() {
 fn split_keys_support_both_pbs_orders() {
     for order in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
         let modulus = BarrettModulus::new(MODULUS);
-        let table = U32NttTable::new(POLY_LENGTH.trailing_zeros(), modulus).unwrap();
+        let table = U32NttTable::new(PolyLength::new(POLY_LENGTH), modulus).unwrap();
         let context = TfheContext::try_new(
             parameters_with_bases(
                 order,

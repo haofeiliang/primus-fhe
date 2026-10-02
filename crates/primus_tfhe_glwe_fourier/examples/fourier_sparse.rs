@@ -61,7 +61,7 @@ fn parameters() -> TfheParameters<Word> {
 
 fn main() {
     let parameters = parameters();
-    let context = TfheContext::<Word, Table>::try_from_parameters(parameters).unwrap();
+    let context = TfheContext::<Word, Table>::from_parameters(parameters);
     // The input uses padded t=16; all three outputs use t=8 at the same modulus.
     let output_codec = RoundedCodec::new(8, context.parameters().small_lwe().cipher_modulus());
 

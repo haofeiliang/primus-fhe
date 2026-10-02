@@ -2,7 +2,7 @@
 
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_lattice::GlweDimension;
-use primus_lattice::PolyLength;
+use primus_poly::PolyLength;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable};
@@ -19,7 +19,7 @@ use primus_ntt::{NttTable, UintNttTable};
 use primus_poly::Polynomial;
 use rand::{Rng, SeedableRng, rngs::StdRng};
 
-const N: usize = 16;
+const N: usize = 64;
 
 #[test]
 fn key_switch_parameters_check_input_layout_at_construction() {
@@ -75,31 +75,31 @@ fn fallible_parameters_check_layout_codec_and_samplers() {
             noise,
         )
     };
-    for (k, n) in [(1, 3), (usize::MAX - 1, 8)] {
+    for (k, n) in [(1, 3), (usize::MAX - 1, 32)] {
         assert!(matches!(
             make(k, n, 4, SecretKeyDistr::UniformBinary, 0.7),
             Err(Error::Layout(_))
         ));
     }
     assert!(matches!(
-        make(1, 8, 1, SecretKeyDistr::UniformBinary, 0.7),
+        make(1, 32, 1, SecretKeyDistr::UniformBinary, 0.7),
         Err(Error::Encoding(_))
     ));
     assert!(matches!(
-        make(1, 8, 4, SecretKeyDistr::UniformBinary, f64::NAN),
+        make(1, 32, 4, SecretKeyDistr::UniformBinary, f64::NAN),
         Err(Error::Noise(_))
     ));
     // A fixed weight applies to the complete kN key, not to each polynomial.
-    let distr = SecretKeyDistr::FixedHammingWeightBinary { hamming_weight: 9 };
-    assert!(make(2, 8, 4, distr, 0.7).is_ok());
+    let distr = SecretKeyDistr::FixedHammingWeightBinary { hamming_weight: 33 };
+    assert!(make(2, 32, 4, distr, 0.7).is_ok());
     assert!(matches!(
-        make(1, 8, 4, distr, 0.7),
+        make(1, 32, 4, distr, 0.7),
         Err(Error::SecretKey(_))
     ));
     assert!(matches!(
         GlweParameters::try_new(
             GlweDimension::new(1),
-            8,
+            32,
             12,
             BarrettModulus::new(17u32),
             SecretKeyDistr::UniformBinary,
@@ -123,8 +123,8 @@ fn secret_generation_rejects_incompatible_tables_before_sampling() {
         0.7,
     );
     for table in [
-        UintNttTable::new(N.trailing_zeros(), BarrettModulus::new(769u32)).unwrap(),
-        UintNttTable::new((N * 2).trailing_zeros(), modulus).unwrap(),
+        UintNttTable::new(PolyLength::new(N), BarrettModulus::new(769u32)).unwrap(),
+        UintNttTable::new(PolyLength::new(N * 2), modulus).unwrap(),
     ] {
         let mut rng = StdRng::seed_from_u64(42);
         let mut expected_rng = StdRng::seed_from_u64(42);
@@ -145,7 +145,7 @@ fn secret_generation_rejects_incompatible_tables_before_sampling() {
         SecretKeyDistr::UniformBinary,
         0.7,
     );
-    let table = RustFftTable::new((N * 2).trailing_zeros()).unwrap();
+    let table = RustFftTable::new(PolyLength::new(N * 2));
     let mut fft = FftEngine::new(&table);
     let mut rng = StdRng::seed_from_u64(42);
     let mut expected_rng = StdRng::seed_from_u64(42);
@@ -185,7 +185,7 @@ fn fourier_encryption_rejects_incomplete_and_excess_masks_before_writes() {
         SecretKeyDistr::UniformBinary,
         0.7,
     );
-    let table = RustFftTable::new(N.trailing_zeros()).unwrap();
+    let table = RustFftTable::new(PolyLength::new(N));
     let mut fft = FftEngine::new(&table);
     let mut rng = StdRng::seed_from_u64(42);
     let (_, key) = FourierGlweSecretKey::generate_pair(&params, &mut fft, &mut rng);
@@ -225,9 +225,9 @@ fn ntt_operations_reject_incompatible_domains_and_workspace_before_writes() {
         SecretKeyDistr::UniformBinary,
         0.7,
     );
-    let table = UintNttTable::new(N.trailing_zeros(), modulus).unwrap();
-    let wrong_table = UintNttTable::new(N.trailing_zeros(), BarrettModulus::new(769u32)).unwrap();
-    let wrong_length_table = UintNttTable::new((N * 2).trailing_zeros(), modulus).unwrap();
+    let table = UintNttTable::new(PolyLength::new(N), modulus).unwrap();
+    let wrong_table = UintNttTable::new(PolyLength::new(N), BarrettModulus::new(769u32)).unwrap();
+    let wrong_length_table = UintNttTable::new(PolyLength::new(N * 2), modulus).unwrap();
     let gadget = GlevParameters::with_glwe_params(&params, DecompositionBaseLog::new(4), None);
     let mut rng = StdRng::seed_from_u64(42);
     let (_, key) = NttGlweSecretKey::generate_pair(&params, &table, &mut rng);
@@ -432,8 +432,8 @@ fn only_ggsw_requires_matching_workspace_levels_in_both_domains() {
         DecompositionBaseLog::new(8),
         Some(DecompositionLevelCount::new(3)),
     );
-    let ntt = UintNttTable::new(N.trailing_zeros(), modulus).unwrap();
-    let table = RustFftTable::new(N.trailing_zeros()).unwrap();
+    let ntt = UintNttTable::new(PolyLength::new(N), modulus).unwrap();
+    let table = RustFftTable::new(PolyLength::new(N));
     let mut fft = FftEngine::new(&table);
     let (_, ntt_key) = NttGlweSecretKey::generate_pair(&ntt_params, &ntt, &mut rng);
     let (_, fourier_key) = FourierGlweSecretKey::generate_pair(&fourier_params, &mut fft, &mut rng);

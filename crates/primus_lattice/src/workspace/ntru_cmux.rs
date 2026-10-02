@@ -1,7 +1,7 @@
-use crate::PolyLength;
 use primus_decompose::DecompositionLevelCount;
 use primus_fft::{Complex64, TorusFftValue};
 use primus_integer::FheUint;
+use primus_poly::PolyLength;
 
 use super::{FourierNtruExternalProductWorkspace, NttNtruExternalProductWorkspace};
 

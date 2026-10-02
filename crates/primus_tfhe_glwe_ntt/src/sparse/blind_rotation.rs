@@ -66,7 +66,7 @@ impl<T: FheUint> SparseGlweBootstrappingKey<T> {
             "sparse blind-rotation workspace layout mismatch"
         );
         assert_eq!(
-            ntt.poly_length(),
+            ntt.poly_length().get(),
             poly_length,
             "sparse blind-rotation NTT length mismatch"
         );

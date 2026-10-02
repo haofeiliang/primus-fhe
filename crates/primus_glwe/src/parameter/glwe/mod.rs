@@ -6,7 +6,7 @@
 
 mod single;
 
-pub use primus_lattice::{GadgetSize, GlweSize, GlweSizeError, PolyLength};
+pub use primus_lattice::{GadgetSize, GlweSize, GlweSizeError};
 pub use single::{
     GgswParameters, GlevParameterError, GlevParameters, GlweKeySwitchingParameters,
     GlweParameterError, GlweParameters, GlweParametersInner,

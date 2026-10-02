@@ -162,7 +162,7 @@ impl<T: FheUint> NttGlweSchemeSwitchKey<T> {
             "scheme-switch output GGSW layout mismatch"
         );
         assert_eq!(
-            ntt.poly_length(),
+            ntt.poly_length().get(),
             self.key_size.glwe_size().poly_length().get(),
             "scheme-switch NTT polynomial length mismatch"
         );

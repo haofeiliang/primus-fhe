@@ -34,7 +34,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
     {
         let poly_length = self.size.poly_length().get();
         assert_eq!(
-            ntt_table.poly_length(),
+            ntt_table.poly_length().get(),
             poly_length,
             "NTT polynomial length mismatch"
         );

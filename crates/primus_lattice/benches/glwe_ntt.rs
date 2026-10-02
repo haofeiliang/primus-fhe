@@ -6,13 +6,14 @@ use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_integer::FheUint;
 use primus_lattice::{
-    GadgetSize, GlweSize, PolyLength,
+    GadgetSize, GlweSize,
     ggsw::Ggsw,
     glwe::{Glwe, NttGlwe},
     workspace::{NttGlweExternalProductWorkspace, NttGlweTernaryCmuxWorkspace},
 };
 use primus_modulus::BarrettModulus;
 use primus_ntt::{MonomialNttTable, U32NttTable, U64NttTable};
+use primus_poly::PolyLength;
 
 fn ntt<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
     c: &mut Criterion,
@@ -23,18 +24,15 @@ fn ntt<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
     dimension: usize,
 ) {
     let modulus = BarrettModulus::new(q);
-    let table = Table::new(log_n, modulus).unwrap();
-    let exponent = table.poly_length() / 3;
+    let table = Table::new(PolyLength::new(1usize << log_n), modulus).unwrap();
+    let exponent = table.poly_length().get() / 3;
     let basis = ApproxSignedBasis::new(
         Some(q),
         DecompositionBaseLog::new(log_b),
         Some(DecompositionLevelCount::new(levels)),
     );
     let size = GadgetSize::new(
-        GlweSize::new(
-            GlweDimension::new(dimension),
-            PolyLength::new(table.poly_length()),
-        ),
+        GlweSize::new(GlweDimension::new(dimension), table.poly_length()),
         DecompositionLevelCount::new(levels),
     );
     let glwe_len = size.glwe_size().glwe_len();
@@ -64,7 +62,7 @@ fn ntt<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
     let mut group = c.benchmark_group(format!(
         "glwe/ntt/u{}/q{q}/n{}/k{dimension}/logb{log_b}/l{levels}",
         T::BITS,
-        table.poly_length()
+        table.poly_length().get()
     ));
     group.throughput(Throughput::Elements(glwe_len as u64));
     group.bench_function("external_product_coeff", |b| {
@@ -120,7 +118,7 @@ fn ntt<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
             );
             black_box(&negative_key).cmux_monomial_to(
                 black_box(&intermediate),
-                black_box(2 * table.poly_length() - exponent),
+                black_box(2 * table.poly_length().get() - exponent),
                 black_box(&mut output),
                 black_box(&basis),
                 black_box(modulus),

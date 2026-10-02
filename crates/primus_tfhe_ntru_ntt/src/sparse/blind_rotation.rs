@@ -42,7 +42,7 @@ pub(crate) fn rotate_buckets<T: FheUint, Table: MonomialNttTable<ValueT = T>>(
     modulus: BarrettModulus<T>,
     ntt: &Table,
 ) {
-    let n = ntt.poly_length();
+    let n = ntt.poly_length().get();
     // Start with public P in current. Bucket 0 uses NLEV[H_0] to lift P;
     // buckets >= 1 actually hold NGSW[H_j] = NLEV[f*H_j] and act on ciphertexts.
     // NLEV and NGSW external products have identical arithmetic, so all buckets

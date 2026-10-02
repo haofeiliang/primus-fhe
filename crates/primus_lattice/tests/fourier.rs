@@ -1,5 +1,7 @@
 //! Complex arithmetic and torus/integer scaling across both FFT backends.
 
+use primus_poly::PolyLength;
+
 use primus_decompose::DecompositionLevelCount;
 use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable, TfheFftTable};
 use primus_lattice::GlweDimension;
@@ -44,10 +46,10 @@ fn fourier_arithmetic_overwrites_borrowed_storage_and_matches_in_place() {
 fn polynomial_products<Table: FftTable>() {
     use primus_lattice::ggsw::{FourierGgsw, Ggsw};
     use primus_poly::FourierPolynomial;
-    // N=8 already crosses the negacyclic boundary for this dense multiplier.
-    let table = Table::new(3).unwrap();
+    // The minimum supported ring already exercises negacyclic wrap for this dense multiplier.
+    let table = Table::new(PolyLength::new(32));
     let mut fft = FftEngine::new(&table);
-    let n = fft.poly_length();
+    let n = fft.poly_length().get();
     let multiplier: Vec<u32> = (0..n).map(|i| (i % 5) as u32).collect();
     let mut transformed = vec![Default::default(); fft.fourier_length()];
     fft.forward_as_integer(&multiplier, &mut transformed);
@@ -100,12 +102,12 @@ fn fourier_polynomial_products_preserve_torus_scale() {
 // Verify that sign and Fourier normalization with a coefficient scatter oracle.
 fn sub_mul_monomial<Table: FftTable>() {
     use primus_lattice::{
-        GadgetSize, GlweSize, PolyLength,
+        GadgetSize, GlweSize,
         ggsw::{FourierGgsw, Ggsw},
     };
-    let table = Table::new(4).unwrap();
+    let table = Table::new(PolyLength::new(32));
     let mut fft = FftEngine::new(&table);
-    let n = fft.poly_length();
+    let n = fft.poly_length().get();
     let size = GadgetSize::new(
         GlweSize::new(GlweDimension::new(2), PolyLength::new(n)),
         DecompositionLevelCount::new(2),

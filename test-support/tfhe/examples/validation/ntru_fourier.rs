@@ -4,10 +4,10 @@
 use super::metrics::ErrorMargin;
 use primus_encoding::{PlaintextEmbedding, RoundedCodec, ScaledCodec};
 use primus_fft::{FftTable, TorusFftValue};
-use primus_glwe::PolyLength;
 use primus_glwe::SecretKeyDistr;
 use primus_integer::AsInto;
 use primus_modulus::{NativeModulus, PowOf2Modulus};
+use primus_poly::PolyLength;
 use primus_tfhe_ntru_fourier::{ClientKey, KeyGenerator, ServerKey, TfheContext};
 use primus_tfhe_ntru_lut::{
     FourierLookupTableEvaluator, HighPrecisionLookupTable, LookupTableConfig,
@@ -37,25 +37,22 @@ fn validate_secret<T: TorusFftValue, Table: FftTable>(
 ) {
     let name = &format!("{name}/{secret:?}");
     for workload in PBS_WORKLOADS {
-        let context = TfheContext::<T, Table, PowOf2Modulus<T>>::try_from_parameters(ntru::pbs(
+        let context = TfheContext::<T, Table, PowOf2Modulus<T>>::from_parameters(ntru::pbs(
             modulus, workload, secret,
-        ))
-        .unwrap();
+        ));
         pbs(&context, seed, &format!("{name}/{}", workload.name), false);
     }
     // Fixed-weight keys have their own binary distribution. Run them once,
     // instead of repeating identical diagnostics in the ternary branch.
     if secret == SecretKeyDistr::UniformBinary {
-        let context = TfheContext::<T, Table, PowOf2Modulus<T>>::try_from_parameters(
-            ntru::diagnostic(modulus, 16),
-        )
-        .unwrap();
+        let context = TfheContext::<T, Table, PowOf2Modulus<T>>::from_parameters(ntru::diagnostic(
+            modulus, 16,
+        ));
         pbs(&context, seed, &format!("{name}/fixed_weight"), false);
         pbs(&context, seed, &format!("{name}/sparse"), true);
-        let context = TfheContext::<T, Table, PowOf2Modulus<T>>::try_from_parameters(
-            ntru::diagnostic(modulus, 128),
-        )
-        .unwrap();
+        let context = TfheContext::<T, Table, PowOf2Modulus<T>>::from_parameters(ntru::diagnostic(
+            modulus, 128,
+        ));
         thresholds(&context, seed, &format!("{name}/mvb"));
     }
     circuit::<T, Table>(modulus, seed, secret, &format!("{name}/cbs"));
@@ -72,8 +69,7 @@ fn one_hot_and_lookup<T: TorusFftValue, Table: FftTable>(
 ) {
     // Public setup: both checks use the same t=8 parameters and transform table.
     let parameters = ntru::circuit(modulus, 8, secret);
-    let context =
-        TfheContext::<T, Table, PowOf2Modulus<T>>::try_from_parameters(parameters).unwrap();
+    let context = TfheContext::<T, Table, PowOf2Modulus<T>>::from_parameters(parameters);
 
     // Client: generate both keys once; keep the secret key and RNG local.
     let mut rng = StdRng::seed_from_u64(seed);
@@ -459,10 +455,9 @@ fn circuit<T: TorusFftValue, Table: FftTable>(
     name: &str,
 ) {
     // Public setup: ordinary CBS uses t=4; one-hot uses a separate t=8 profile.
-    let context = TfheContext::<T, Table, PowOf2Modulus<T>>::try_from_parameters(ntru::circuit(
+    let context = TfheContext::<T, Table, PowOf2Modulus<T>>::from_parameters(ntru::circuit(
         modulus, 4, secret,
-    ))
-    .unwrap();
+    ));
 
     // Client: generate both keys; give only the evaluation key to the server.
     let mut rng = StdRng::seed_from_u64(seed);

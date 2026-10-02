@@ -29,16 +29,9 @@ Choose the modulus before choosing a transform or decomposition basis. The imple
 
 Raw polynomial/ciphertext constructors do not establish modulus, key identity, representation or full layout. `Polynomial<S>` does not carry an independent ring length: wrapping `batch_count*N` elements does not automatically turn single-polynomial operations into batch operations. Only pass such storage to an API whose contract explicitly accepts a batch; otherwise iterate over complete objects.
 
-[PolyLength](../../crates/primus_lattice/src/poly_length.rs) checks the supported
-GLWE/NTRU power-of-two range `2..=2^17`, with `get()`, `log_n()` and `fourier_poly_len()` returning
-`N`, `log2(N)` and `N/2` complex elements. `GlweSize` and `NtruParameters` store
-this invariant, and `poly_length()` returns `PolyLength` for workspace construction. Shared TFHE LUT constructors also consume it directly.
-Polynomial-length configuration still accepts integer `N`; extract `.get()` at
-scalar kernel, storage or FFT/NTT boundaries.
-This bound also ensures `2N` fits in `usize`; transforms retain their own
-supported ranges and numerical requirements. Raw buffer lengths
-remain integers and need their own layout checks. FFT/NTT retain integer
-construction interfaces rather than depending on the higher lattice layer.
+[PolyLength](../../crates/primus_poly/src/poly_length.rs) belongs to `primus_poly` and centrally checks the shared FHE power-of-two range `32..=2^17`. `get()`, `log_n()` and `fourier_poly_len()` return `N`, `log2(N)` and `N/2` complex elements. GLWE/NTRU parameters, checked sizes, workspaces, shared TFHE LUTs and NTT/FFT tables pass the same type directly without repeating the upper-bound check.
+
+This range guarantees that `2N` fits in `usize`; combined storage lengths remain checked by the boundary owning the layout. FFT construction directly accepts the supported range; NTT retains its modulus, root and degree conditions. Top-level configuration may still accept integer `N`; raw buffers, batch counts and numerical kernels use integers and retain complete layout checks.
 
 `LweDimension` and `GlweDimension` from lattice check positive mask counts and representable body-inclusive counts; `ciphertext_len()` gives `n+1` and `component_count()` gives `k+1`. `GlweSize` stores GLWE geometry and flattened lengths; `LweDimension::from(glwe_size)` explicitly derives checked `kN`. NTRU extraction uses `LweDimension::from(poly_length)`. Raw slices keep integer dimensions and may have dimension zero.
 
@@ -102,10 +95,11 @@ assert_eq!(output, [252, 1, 2, 3, 248, 5, 6, 7]);
 This fragment needs `primus_lattice`. It walks the rows and levels of one GGSW and separates each GLWE's mask/body. The zero buffer demonstrates layout access; it does not sample an encryption. Each child is a borrowed view, with no allocation in the traversal.
 
 ```rust
-use primus_lattice::{GadgetSize, GlweDimension, GlweSize, PolyLength, ggsw::Ggsw};
+use primus_lattice::{GadgetSize, GlweDimension, GlweSize, ggsw::Ggsw};
+use primus_poly::PolyLength;
 use primus_decompose::DecompositionLevelCount;
 
-let poly_length = PolyLength::new(8);
+let poly_length = PolyLength::new(32);
 let glwe_size = GlweSize::new(GlweDimension::new(2), poly_length);
 let gadget_size = GadgetSize::new(glwe_size, DecompositionLevelCount::new(3));
 let storage = vec![0u32; gadget_size.ggsw_len()];

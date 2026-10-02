@@ -2,8 +2,8 @@
 
 use primus_fft::Complex64;
 use primus_integer::FheUint;
-use primus_lattice::{GadgetSize, PolyLength};
-use primus_poly::{FourierPolynomialOwned, PolynomialOwned};
+use primus_lattice::GadgetSize;
+use primus_poly::{FourierPolynomialOwned, PolyLength, PolynomialOwned};
 use zeroize::{Zeroize, ZeroizeOnDrop};
 
 /// Reusable coefficient-domain workspace for Fourier GLWE encryption.

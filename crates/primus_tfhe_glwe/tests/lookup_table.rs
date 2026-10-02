@@ -1,8 +1,8 @@
 use primus_decompose::DecompositionBaseLog;
 use primus_encoding::RoundedCodec;
-use primus_lattice::PolyLength;
 use primus_lattice::{GlweDimension, LweDimension};
 use primus_modulus::NativeModulus;
+use primus_poly::PolyLength;
 
 #[test]
 fn padded_inputs_and_lut_output_codecs_use_independent_domains() {
@@ -24,7 +24,7 @@ fn padded_inputs_and_lut_output_codecs_use_independent_domains() {
         );
         let glwe = GlweParameters::new(
             GlweDimension::new(1),
-            8,
+            32,
             t,
             modulus,
             SecretKeyDistr::UniformBinary,
@@ -46,8 +46,8 @@ fn padded_inputs_and_lut_output_codecs_use_independent_domains() {
         let key = ClientKey::new(
             LweSecretKey::new(vec![1, 0, 1, 1], SecretKeyDistr::UniformBinary),
             GlweSecretKey::new(
-                vec![1; 8],
-                GlweSize::new(GlweDimension::new(1), PolyLength::new(8)),
+                vec![1; 32],
+                GlweSize::new(GlweDimension::new(1), PolyLength::new(32)),
                 SecretKeyDistr::UniformBinary,
             ),
             PbsOrder::BootstrapKeyswitch,

@@ -30,10 +30,12 @@ mod fourier;
 mod monomial;
 mod ntt;
 mod poly;
+mod poly_length;
 
 pub use array::{Array, ArrayBase, ArrayMut, ArrayRef};
 pub use automorphism::CoeffAutomorphismPermutation;
 pub use monomial::add_mul_monomial_pair_assign;
+pub use poly_length::{MAX_POLY_LENGTH, MIN_POLY_LENGTH, PolyLength, PolyLengthError};
 
 pub use big_uint_poly::{BigUintPolynomial, BigUintPolynomialIter, BigUintPolynomialIterMut};
 

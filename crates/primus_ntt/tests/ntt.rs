@@ -1,4 +1,5 @@
 use core::fmt::Debug;
+use primus_poly::PolyLength;
 
 use num_traits::{ConstOne, ConstZero};
 use primus_integer::{AsFrom, FheUint};
@@ -7,7 +8,6 @@ use primus_ntt::{MonomialNttTable, NttTable, U32NttTable, U64NttTable, UintNttTa
 use primus_reduce::FieldContext;
 
 const N: usize = 64;
-const LOG_N: u32 = N.trailing_zeros();
 
 // Small direct evaluation fixes root choice and bit-reversed output order
 // independently of both NTT implementations. All arithmetic fits ordinary u64.
@@ -17,17 +17,13 @@ fn constructors_and_small_transforms_match_polynomial_evaluation() {
     where
         Table::ValueT: Into<u64>,
     {
-        assert!(matches!(
-            Table::new(0, modulus),
-            Err(primus_ntt::NttError::PolynomialLengthTooSmall)
-        ));
-        let pow = |base: u64, exponent: usize| (0..exponent).fold(1, |value, _| value * base % 17);
-        for log_n in [1, 3] {
-            let table = Table::new(log_n, modulus).unwrap();
-            let n = table.poly_length();
+        let pow = |base: u64, exponent: usize| (0..exponent).fold(1, |value, _| value * base % 257);
+        for log_n in [5, 6] {
+            let table = Table::new(PolyLength::new(1usize << log_n), modulus).unwrap();
+            let n = table.poly_length().get();
             // For power-of-two N, root^N = -1 establishes order exactly 2N.
-            let root = (2..17).find(|&root| pow(root, n) == 16).unwrap();
-            let input: Vec<_> = (0..n).map(|i| (3 * i as u64 + 1) % 17).collect();
+            let root = (2..257).find(|&root| pow(root, n) == 256).unwrap();
+            let input: Vec<_> = (0..n).map(|i| (3 * i as u64 + 1) % 257).collect();
             let expected: Vec<_> = (0..n)
                 .map(|i| {
                     let reversed = i.reverse_bits() >> (usize::BITS - log_n);
@@ -35,7 +31,7 @@ fn constructors_and_small_transforms_match_polynomial_evaluation() {
                     input
                         .iter()
                         .rev()
-                        .fold(0, |value, &coefficient| (value * point + coefficient) % 17)
+                        .fold(0, |value, &coefficient| (value * point + coefficient) % 257)
                 })
                 .collect();
             let mut actual: Vec<_> = input.iter().map(|&x| Table::ValueT::as_from(x)).collect();
@@ -57,10 +53,10 @@ fn constructors_and_small_transforms_match_polynomial_evaluation() {
             );
         }
     }
-    check::<U32NttTable>(BarrettModulus::new(17u32));
-    check::<UintNttTable<u32>>(BarrettModulus::new(17u32));
-    check::<U64NttTable>(BarrettModulus::new(17u64));
-    check::<UintNttTable<u64>>(BarrettModulus::new(17u64));
+    check::<U32NttTable>(BarrettModulus::new(257u32));
+    check::<UintNttTable<u32>>(BarrettModulus::new(257u32));
+    check::<U64NttTable>(BarrettModulus::new(257u64));
+    check::<UintNttTable<u64>>(BarrettModulus::new(257u64));
 }
 
 // Nonconstant coefficients expose root/permutation errors; callers also insert q-1.
@@ -113,7 +109,7 @@ where
     Table: MonomialNttTable,
     Table::ValueT: Debug,
 {
-    let n = table.poly_length();
+    let n = table.poly_length().get();
     let modulus = table.modulus();
     let reduced_degree = degree & (2 * n - 1);
     let reduced_coeff = if reduced_degree < n || coeff == Table::ValueT::ZERO {
@@ -137,7 +133,7 @@ where
     Table: MonomialNttTable,
     Table::ValueT: Debug,
 {
-    let n = table.poly_length();
+    let n = table.poly_length().get();
     let coefficients = [
         Table::ValueT::ZERO,
         Table::ValueT::ONE,
@@ -153,7 +149,7 @@ where
     }
 
     // Both power-of-two fast paths: roots for 2^s and inverse roots for 2N - 2^s.
-    for shift in 0..table.poly_length().trailing_zeros() {
+    for shift in 0..table.poly_length().get().trailing_zeros() {
         for degree in [1usize << shift, 2 * n - (1usize << shift)] {
             for &coeff in &coefficients {
                 assert_monomial(table, coeff, degree);
@@ -162,18 +158,19 @@ where
     }
 }
 
-// U32 has one modulus-width kernel. Keep scalar fallback, the SIMD threshold,
-// and multiple vector blocks, using q near the lazy 4q word limit.
+// U32 has one modulus-width kernel. Check the minimum SIMD block and a larger
+// buffer, using q near the lazy 4q word limit.
 const U32_Q: u32 = 1_073_692_673;
-const U32_LENGTHS: [usize; 3] = [16, 32, 64];
+const U32_LENGTHS: [usize; 2] = [32, 64];
 
 #[test]
 fn u32_transform_matches_generic_reference() {
     let q = U32_Q;
     let modulus = BarrettModulus::new(q);
     for n in U32_LENGTHS {
-        let table = U32NttTable::new(n.trailing_zeros(), modulus).unwrap();
-        let reference = UintNttTable::<u32>::new(n.trailing_zeros(), modulus).unwrap();
+        let poly_length = PolyLength::new(n);
+        let table = U32NttTable::new(poly_length, modulus).unwrap();
+        let reference = UintNttTable::<u32>::new(poly_length, modulus).unwrap();
         let mut input = deterministic_u32_input(n, q);
         for (i, value) in input.iter_mut().enumerate().step_by(3) {
             *value = q - 1 - i as u32;
@@ -196,8 +193,9 @@ fn u32_lazy_transforms_match_generic_reference() {
     let q = U32_Q;
     let modulus = BarrettModulus::new(q);
     for n in U32_LENGTHS {
-        let table = U32NttTable::new(n.trailing_zeros(), modulus).unwrap();
-        let reference = UintNttTable::<u32>::new(n.trailing_zeros(), modulus).unwrap();
+        let poly_length = PolyLength::new(n);
+        let table = U32NttTable::new(poly_length, modulus).unwrap();
+        let reference = UintNttTable::<u32>::new(poly_length, modulus).unwrap();
         for inverse in [false, true] {
             let bound = if inverse { 2 * q } else { 4 * q };
             let mut guarded = vec![u32::MAX; n + 2];
@@ -236,11 +234,11 @@ fn u64_transform_matches_generic_reference_across_modulus_ranges() {
     for q in [536813569u64, 562949953392641, 1152921504606830593] {
         let modulus = BarrettModulus::new(q);
 
-        // N<16 forces scalar32/scalar64 even on hosts with AVX-512.
-        for n in [8, 16, N] {
-            let log_n = n.trailing_zeros();
-            let table = U64NttTable::new(log_n, modulus).unwrap();
-            let reference = UintNttTable::<u64>::new(log_n, modulus).unwrap();
+        // Minimum and larger buffers share the same runtime backend selection.
+        for n in [32, N] {
+            let poly_length = PolyLength::new(n);
+            let table = U64NttTable::new(poly_length, modulus).unwrap();
+            let reference = UintNttTable::<u64>::new(poly_length, modulus).unwrap();
 
             assert_transform_matches_reference(&table, &reference, &deterministic_u64_input(n, q));
         }
@@ -259,8 +257,9 @@ fn u64_transform_matches_generic_at_recursive_sizes() {
     ] {
         let modulus = BarrettModulus::new(q);
         for &n in lengths {
-            let table = U64NttTable::new(n.trailing_zeros(), modulus).unwrap();
-            let reference = UintNttTable::<u64>::new(n.trailing_zeros(), modulus).unwrap();
+            let poly_length = PolyLength::new(n);
+            let table = U64NttTable::new(poly_length, modulus).unwrap();
+            let reference = UintNttTable::<u64>::new(poly_length, modulus).unwrap();
             let mut input = deterministic_u64_input(n, q);
             // Include near-modulus values to stress the reduction paths too.
             for (i, value) in input.iter_mut().enumerate().step_by(3) {
@@ -275,8 +274,9 @@ fn u64_transform_matches_generic_at_recursive_sizes() {
 fn u64_lazy_transforms_match_generic_reference_across_modulus_ranges() {
     for q in [536813569u64, 562949953392641, 1152921504606830593] {
         let modulus = BarrettModulus::new(q);
-        let table = U64NttTable::new(LOG_N, modulus).unwrap();
-        let reference = UintNttTable::<u64>::new(LOG_N, modulus).unwrap();
+        let poly_length = PolyLength::new(N);
+        let table = U64NttTable::new(poly_length, modulus).unwrap();
+        let reference = UintNttTable::<u64>::new(poly_length, modulus).unwrap();
 
         let mut actual = vec![4 * q - 1; N];
         let mut expected = vec![q - 1; N];
@@ -306,19 +306,20 @@ fn u64_lazy_transforms_match_generic_reference_across_modulus_ranges() {
 
 #[test]
 fn monomial_transform_matches_full_ntt() {
+    let poly_length = PolyLength::new(N);
     let q32 = 268369921u32;
     let modulus32 = BarrettModulus::new(q32);
-    assert_monomial_suite(&U32NttTable::new(LOG_N, modulus32).unwrap(), q32 / 3);
+    assert_monomial_suite(&U32NttTable::new(poly_length, modulus32).unwrap(), q32 / 3);
     assert_monomial_suite(
-        &UintNttTable::<u32>::new(LOG_N, modulus32).unwrap(),
+        &UintNttTable::<u32>::new(poly_length, modulus32).unwrap(),
         q32 / 3,
     );
 
     let q64 = 562949953392641u64;
     let modulus64 = BarrettModulus::new(q64);
-    assert_monomial_suite(&U64NttTable::new(LOG_N, modulus64).unwrap(), q64 / 3);
+    assert_monomial_suite(&U64NttTable::new(poly_length, modulus64).unwrap(), q64 / 3);
     assert_monomial_suite(
-        &UintNttTable::<u64>::new(LOG_N, modulus64).unwrap(),
+        &UintNttTable::<u64>::new(poly_length, modulus64).unwrap(),
         q64 / 3,
     );
 }

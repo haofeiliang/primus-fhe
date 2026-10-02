@@ -7,7 +7,7 @@ use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable, TfheFftTable};
 use primus_lattice::GlweDimension;
 use primus_lattice::{
-    GadgetSize, GlweSize, PolyLength,
+    GadgetSize, GlweSize,
     ggsw::{FourierGgswOwned, Ggsw},
     glwe::Glwe,
     ngsw::{FourierNgswOwned, Ngsw},
@@ -20,16 +20,16 @@ use primus_lattice::{
 };
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntt::{NttTable, UintNttTable};
-use primus_poly::Polynomial;
+use primus_poly::{PolyLength, Polynomial};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 // A diagonal gadget for one is an identity external product. Applying a zero
 // gadget afterwards must clear both a nonzero output and the reused accumulator.
 fn fourier_ggsw_workspace_reuse<Table: FftTable>() {
-    let fft = Table::new(4).unwrap();
+    let fft = Table::new(PolyLength::new(32));
     let mut engine = FftEngine::new(&fft);
     let components = 3;
-    let n = fft.poly_length();
+    let n = fft.poly_length().get();
     let basis = ApproxSignedBasis::<u32>::new(None, DecompositionBaseLog::new(8), None);
     let levels = basis.decompose_length().get();
     let mut gadget = Ggsw::new(vec![0u32; components * levels * components * n]);
@@ -64,17 +64,20 @@ fn fourier_ggsw_products_overwrite_dirty_output_and_workspace() {
 
 #[test]
 fn ntt_ntru_gadget_products_match_negacyclic_product() {
-    const LOG_N: u32 = 4;
+    const LOG_N: u32 = 5;
     const N: usize = 1 << LOG_N;
     const Q: u32 = 257;
 
     let modulus = BarrettModulus::new(Q);
-    let ntt = UintNttTable::<u32>::new(LOG_N, modulus).unwrap();
+    let ntt = UintNttTable::<u32>::new(PolyLength::new(1usize << LOG_N), modulus).unwrap();
     let basis = ApproxSignedBasis::new(Some(Q), DecompositionBaseLog::new(3), None);
 
-    let alpha = Polynomial::<Vec<u32>>::new(vec![
-        0, 1, 8, 63, 64, 127, 128, 192, 255, 256, 17, 33, 65, 129, 193, 241,
-    ]);
+    let alpha = Polynomial::<Vec<u32>>::new(
+        vec![
+            0, 1, 8, 63, 64, 127, 128, 192, 255, 256, 17, 33, 65, 129, 193, 241,
+        ]
+        .repeat(N / 16),
+    );
     let mut beta = Polynomial::<Vec<u32>>::zero(N);
 
     let make_nlev = |message: &Polynomial<Vec<u32>>, basis: &ApproxSignedBasis<u32>| {
@@ -201,32 +204,35 @@ fn ntt_ntru_gadget_products_match_negacyclic_product() {
 // NLev levels intentionally differ in both directions, preventing accidental
 // use of the control basis to traverse the output ciphertext.
 fn fourier_ntru_gadget_products<Table: FftTable>() {
-    const LOG_N: u32 = 4;
+    const LOG_N: u32 = 5;
     const N: usize = 1 << LOG_N;
 
     let modulus = NativeModulus::<u32>::new();
     let basis = ApproxSignedBasis::<u32>::new(None, DecompositionBaseLog::new(8), None);
-    let fft = Table::new(LOG_N).unwrap();
+    let fft = Table::new(PolyLength::new(1usize << LOG_N));
     let mut engine = FftEngine::new(&fft);
 
-    let alpha = Polynomial::<Vec<u32>>::new(vec![
-        0x0123_4567,
-        0x89ab_cdef,
-        0xfedc_ba98,
-        0x7654_3210,
-        0x1357_9bdf,
-        0x2468_ace0,
-        0xffff_ffff,
-        0x8000_0000,
-        0x7fff_ffff,
-        0xdead_beef,
-        0xcafe_babe,
-        0x1020_3040,
-        0x5566_7788,
-        0xaabb_ccdd,
-        0x3141_5926,
-        0x2718_2818,
-    ]);
+    let alpha = Polynomial::<Vec<u32>>::new(
+        vec![
+            0x0123_4567,
+            0x89ab_cdef,
+            0xfedc_ba98,
+            0x7654_3210,
+            0x1357_9bdf,
+            0x2468_ace0,
+            0xffff_ffff,
+            0x8000_0000,
+            0x7fff_ffff,
+            0xdead_beef,
+            0xcafe_babe,
+            0x1020_3040,
+            0x5566_7788,
+            0xaabb_ccdd,
+            0x3141_5926,
+            0x2718_2818,
+        ]
+        .repeat(N / 16),
+    );
     let mut beta = Polynomial::<Vec<u32>>::zero(N);
 
     let make_nlev = |message: &Polynomial<Vec<u32>>, basis: &ApproxSignedBasis<u32>| {

@@ -215,7 +215,7 @@ impl FourierGlweSecretKey {
             "GLWE parameter layout mismatch"
         );
         assert_eq!(
-            fft.poly_length(),
+            fft.poly_length().get(),
             self.poly_length(),
             "FFT polynomial length mismatch"
         );

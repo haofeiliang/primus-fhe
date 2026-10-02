@@ -2,7 +2,7 @@ use primus_data::DataMut;
 use primus_factor::{FactorMul, LazyFactorMul, ShoupFactor};
 use primus_integer::FheUint;
 use primus_modulus::common::compact;
-use primus_poly::{NttPolynomial, Polynomial};
+use primus_poly::{NttPolynomial, PolyLength, Polynomial};
 use primus_reduce::FieldContext;
 
 use crate::{NttError, reverse::ReverseLsbs, root::PrimitiveRoot};
@@ -41,8 +41,7 @@ pub struct UintNttTable<T: FheUint> {
     root: T,
     inv_root: T,
     modulus: T,
-    log_n: u32,
-    n: usize,
+    poly_length: PolyLength,
     inv_n: ShoupFactor<T>,
     /// `inv_n * inv_root_powers[n-1] mod q` — precomputed for the inverse final stage.
     inv_n_r: ShoupFactor<T>,
@@ -74,13 +73,13 @@ impl<T: FheUint> UintNttTable<T> {
     /// Returns the log n of this [`UintNttTable<T>`].
     #[inline]
     pub fn log_n(&self) -> u32 {
-        self.log_n
+        self.poly_length.log_n()
     }
 
     /// Returns the n of this [`UintNttTable<T>`].
     #[inline]
     pub fn n(&self) -> usize {
-        self.n
+        self.poly_length.get()
     }
 
     /// Returns the inverse element of the n of this [`UintNttTable<T>`].
@@ -124,13 +123,11 @@ impl<T: FheUint> NttTable for UintNttTable<T> {
     type ValueT = T;
 
     #[inline]
-    fn new<M>(log_n: u32, modulus: M) -> Result<Self, NttError<Self::ValueT>>
+    fn new<M>(poly_length: PolyLength, modulus: M) -> Result<Self, NttError<Self::ValueT>>
     where
         M: FieldContext<Self::ValueT>,
     {
-        if log_n == 0 {
-            return Err(NttError::PolynomialLengthTooSmall);
-        }
+        let log_n = poly_length.log_n();
         let modulus_value = modulus.value();
         let max_bits = T::BITS - crate::NTT_LAZY_REDUCTION_HEADROOM_BITS;
         if modulus_value >= T::ONE << max_bits {
@@ -143,7 +140,7 @@ impl<T: FheUint> NttTable for UintNttTable<T> {
         let root = <T as PrimitiveRoot>::try_minimal_primitive_root(log_n + 1, modulus)?;
         let modulus = modulus_value;
 
-        let n = 1usize << log_n;
+        let n = poly_length.get();
         let to_root_type = |x| -> ShoupFactor<T> { <ShoupFactor<T>>::new(x, modulus) };
 
         let root_factor = to_root_type(root);
@@ -195,8 +192,7 @@ impl<T: FheUint> NttTable for UintNttTable<T> {
             root,
             inv_root,
             modulus,
-            log_n,
-            n,
+            poly_length,
             inv_n,
             inv_n_r,
             root_powers,
@@ -207,8 +203,8 @@ impl<T: FheUint> NttTable for UintNttTable<T> {
     }
 
     #[inline(always)]
-    fn poly_length(&self) -> usize {
-        self.n
+    fn poly_length(&self) -> PolyLength {
+        self.poly_length
     }
 
     #[inline]
@@ -236,7 +232,7 @@ impl<T: FheUint> NttTable for UintNttTable<T> {
 
     #[inline]
     fn lazy_transform_slice(&self, poly: &mut [<Self as NttTable>::ValueT]) {
-        assert_ntt_length(poly.len(), self.n);
+        assert_ntt_length(poly.len(), self.poly_length.get());
 
         let modulus = self.modulus();
         let twice_modulus = modulus << 1u32;
@@ -245,7 +241,7 @@ impl<T: FheUint> NttTable for UintNttTable<T> {
         let roots_precon = self.root_powers_precon();
         let mut root_index = 1usize;
 
-        for gap in (0..self.log_n).rev().map(|x| 1usize << x) {
+        for gap in (0..self.poly_length.log_n()).rev().map(|x| 1usize << x) {
             for vc in poly.chunks_exact_mut(gap << 1) {
                 // The transform consumes roots 1..N exactly once.
                 let root = unsafe {
@@ -277,9 +273,9 @@ impl<T: FheUint> NttTable for UintNttTable<T> {
     }
 
     fn lazy_inverse_transform_slice(&self, values: &mut [<Self as NttTable>::ValueT]) {
-        assert_ntt_length(values.len(), self.n);
+        assert_ntt_length(values.len(), self.poly_length.get());
 
-        let log_n = self.log_n;
+        let log_n = self.poly_length.log_n();
 
         let modulus = self.modulus();
         let twice_modulus = modulus << 1u32;

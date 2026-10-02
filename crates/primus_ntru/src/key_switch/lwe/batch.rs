@@ -3,8 +3,8 @@
 use primus_data::{Data, DataMut};
 use primus_integer::FheUint;
 use primus_lattice::LweDimension;
-use primus_lattice::PolyLength;
 use primus_lattice::lwe::{Lwe, LweIter, LweIterMut};
+use primus_poly::PolyLength;
 use primus_reduce::RingContext;
 
 use super::NtruLweKeySwitchingKey;

@@ -4,11 +4,10 @@
 use super::metrics::ErrorMargin;
 use primus_encoding::{PlaintextEmbedding, RoundedCodec, ScaledCodec};
 use primus_fft::{FftTable, TorusFftValue};
-use primus_glwe::PolyLength;
 use primus_glwe::SecretKeyDistr;
 use primus_integer::AsInto;
 use primus_modulus::NativeModulus;
-use primus_poly::Polynomial;
+use primus_poly::{PolyLength, Polynomial};
 use primus_tfhe_glwe::PbsOrder;
 use primus_tfhe_glwe_fourier::{ClientKey, KeyGenerator, TfheContext};
 use primus_tfhe_test_support::{
@@ -28,7 +27,7 @@ where
     for order in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
         for workload in PBS_WORKLOADS {
             let parameters = glwe::fourier_pbs(order, workload);
-            let context = TfheContext::<T, Table>::try_from_parameters(parameters).unwrap();
+            let context = TfheContext::<T, Table>::from_parameters(parameters);
             pbs(
                 &context,
                 seed,
@@ -41,8 +40,7 @@ where
             SecretKeyDistr::UniformTernary,
         ] {
             let context =
-                TfheContext::<T, Table>::try_from_parameters(glwe::circuit(modulus, order, secret))
-                    .unwrap();
+                TfheContext::<T, Table>::from_parameters(glwe::circuit(modulus, order, secret));
             pbs(
                 &context,
                 seed,
@@ -56,9 +54,7 @@ where
                 false,
             );
         }
-        let context =
-            TfheContext::<T, Table>::try_from_parameters(glwe::diagnostic(modulus, order, 8))
-                .unwrap();
+        let context = TfheContext::<T, Table>::from_parameters(glwe::diagnostic(modulus, order, 8));
         pbs(
             &context,
             seed,
@@ -66,9 +62,7 @@ where
             false,
         );
         pbs(&context, seed, &format!("{name}/{order:?}/sparse"), true);
-        let context =
-            TfheContext::<T, Table>::try_from_parameters(glwe::diagnostic(modulus, order, 4))
-                .unwrap();
+        let context = TfheContext::<T, Table>::from_parameters(glwe::diagnostic(modulus, order, 4));
         circuit(
             &context,
             seed,
@@ -76,8 +70,7 @@ where
             true,
         );
         let context =
-            TfheContext::<T, Table>::try_from_parameters(glwe::diagnostic(modulus, order, 128))
-                .unwrap();
+            TfheContext::<T, Table>::from_parameters(glwe::diagnostic(modulus, order, 128));
         thresholds(&context, seed, &format!("{name}/{order:?}/mvb"));
     }
 }

@@ -20,10 +20,9 @@ use primus_glwe::{
     NttGlweSecretKey, SecretKeyDistr,
 };
 use primus_lattice::GlweDimension;
-use primus_lattice::PolyLength;
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntt::{NttTable, UintNttTable};
-use primus_poly::Polynomial;
+use primus_poly::{PolyLength, Polynomial};
 use rand::{SeedableRng, rngs::StdRng};
 use std::{hint::black_box, time::Duration};
 use zeroize::Zeroizing;
@@ -46,7 +45,7 @@ fn ntt_encryption(c: &mut Criterion) {
             SecretKeyDistr::UniformBinary,
             3.2,
         );
-        let ntt = UintNttTable::new(n.trailing_zeros(), modulus).unwrap();
+        let ntt = UintNttTable::new(PolyLength::new(n), modulus).unwrap();
         let (_, sk) = NttGlweSecretKey::generate_pair(&params, &ntt, &mut rng);
         let pk = NttGlwePublicKey::generate(&sk, &params, &ntt, &mut rng);
         let mut public_workspace = NttGlwePublicEncryptWorkspace::new(PolyLength::new(n));
@@ -210,7 +209,7 @@ fn fourier_encryption(c: &mut Criterion) {
             SecretKeyDistr::UniformBinary,
             3.2,
         );
-        let table = RustFftTable::new(n.trailing_zeros()).unwrap();
+        let table = RustFftTable::new(PolyLength::new(n));
         let mut fft = FftEngine::new(&table);
         let (_, sk) = FourierGlweSecretKey::generate_pair(&params, &mut fft, &mut rng);
         let mut encrypt_workspace = FourierGlweEncryptWorkspace::new(PolyLength::new(n));

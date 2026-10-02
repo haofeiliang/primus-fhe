@@ -102,7 +102,7 @@ impl<T: TorusFftValue> SparseGlweBootstrappingKey<T> {
             "sparse blind-rotation workspace layout mismatch"
         );
         assert_eq!(
-            fft.poly_length(),
+            fft.poly_length().get(),
             poly_length,
             "sparse blind-rotation FFT length mismatch"
         );

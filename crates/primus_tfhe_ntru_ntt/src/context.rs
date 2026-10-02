@@ -37,10 +37,7 @@ where
         parameters: TfheParameters<T, LM>,
     ) -> Result<Self, TfheContextError<T>> {
         let accumulator = parameters.accumulator_ntru();
-        let table = Table::new(
-            accumulator.poly_length().log_n(),
-            accumulator.cipher_modulus(),
-        )?;
+        let table = Table::new(accumulator.poly_length(), accumulator.cipher_modulus())?;
         Ok(Self { parameters, table })
     }
 
@@ -50,7 +47,7 @@ where
         table: Table,
     ) -> Result<Self, TfheContextError<T>> {
         let expected = parameters.poly_length().get();
-        let actual = table.poly_length();
+        let actual = table.poly_length().get();
         if actual != expected {
             return Err(TfheContextError::PolynomialLengthMismatch { expected, actual });
         }

@@ -1,6 +1,6 @@
 use primus_decompose::DecompositionBaseLog;
-use primus_lattice::PolyLength;
 use primus_lattice::{GlweDimension, LweDimension};
+use primus_poly::PolyLength;
 use primus_tfhe::ProgrammableBootstrap as _;
 use primus_tfhe::ProgrammableBootstrapInterleaved as _;
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -45,7 +45,7 @@ fn context(order: PbsOrder, distribution: SecretKeyDistr) -> TfheContext<u32, U3
     .unwrap();
     TfheContext::try_new(
         parameters,
-        U32NttTable::new(N.trailing_zeros(), modulus).unwrap(),
+        U32NttTable::new(PolyLength::new(N), modulus).unwrap(),
     )
     .unwrap()
 }

@@ -1,6 +1,6 @@
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
-use primus_lattice::PolyLength;
 use primus_lattice::{GlweDimension, LweDimension};
+use primus_poly::PolyLength;
 use primus_tfhe::ProgrammableBootstrap as _;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
@@ -35,7 +35,7 @@ fn context<T: TorusFftValue, Table: FftTable>(
     } else {
         SecretKeyDistr::fixed_hamming_weight_binary(DIM, 4)
     };
-    TfheContext::try_from_parameters(
+    TfheContext::from_parameters(
         TfheParameters::try_new(
             LweParameters::new(LweDimension::new(DIM), t, modulus, distribution, 0.7),
             // Multiple masks and a different KS output dimension protect component reuse.
@@ -61,7 +61,6 @@ fn context<T: TorusFftValue, Table: FftTable>(
         )
         .unwrap(),
     )
-    .unwrap()
 }
 
 fn value(m: usize, i: usize) -> usize {

@@ -42,7 +42,7 @@ fn context<Table: FftTable>(distribution: SecretKeyDistr) -> TfheContext<u64, Ta
         PbsOrder::KeyswitchBootstrap,
     )
     .unwrap();
-    TfheContext::try_from_parameters(parameters).unwrap()
+    TfheContext::from_parameters(parameters)
 }
 
 fn check_selectors<Table: FftTable>() {

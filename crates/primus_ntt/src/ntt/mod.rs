@@ -1,7 +1,7 @@
 use num_traits::{ConstOne, ConstZero};
 use primus_data::DataMut;
 use primus_factor::{FactorMul, ShoupFactor};
-use primus_poly::{NttPolynomial, Polynomial};
+use primus_poly::{NttPolynomial, PolyLength, Polynomial};
 use primus_reduce::FieldContext;
 
 use crate::{NttError, reverse::ReverseLsbs, root::PrimitiveRoot};
@@ -28,28 +28,29 @@ pub trait NttTable: Sized + Send + Sync {
 
     /// Creates a new [`NttTable`].
     ///
-    /// Built-in tables reject `log_n == 0` with
-    /// [`NttError::PolynomialLengthTooSmall`]. Other construction errors report
-    /// unsupported modulus ranges, degrees or failure to find a primitive root.
+    /// The checked length establishes power-of-two geometry. Construction
+    /// errors report unsupported modulus ranges, degrees or failure to find a
+    /// primitive root.
     ///
     /// # Correctness
     ///
     /// The modulus must be prime and admit a primitive `2N`-th root, where
-    /// `N = 2^log_n`. [`FieldContext`] supplies arithmetic but does not establish
-    /// primality; root search does not validate it either. Transform values from
+    /// `N = poly_length.get()`. [`FieldContext`] supplies arithmetic but does
+    /// not establish primality; root search does not validate it either. Transform values from
     /// different tables are interchangeable only when their roots, ordering and
     /// normalization agree, not merely their lengths and moduli.
     ///
     /// # Panics
     ///
     /// Built-in constructors inherit [`PrimitiveRoot::try_primitive_root`]'s
-    /// degree limits; `log_n + 1` and `2^log_n` must also fit `u32` and `usize`.
-    fn new<M>(log_n: u32, modulus: M) -> Result<Self, NttError<Self::ValueT>>
+    /// degree limits for `log_degree = poly_length.log_n() + 1`.
+    fn new<M>(poly_length: PolyLength, modulus: M) -> Result<Self, NttError<Self::ValueT>>
     where
         M: FieldContext<Self::ValueT>;
 
-    /// Get the polynomial length.
-    fn poly_length(&self) -> usize;
+    /// Returns the checked coefficient count `N`.
+    #[must_use]
+    fn poly_length(&self) -> PolyLength;
 
     /// Returns the coefficient modulus used to build this table.
     fn modulus(&self) -> Self::ValueT;
@@ -147,7 +148,7 @@ pub trait MonomialNttTable: NttTable {
     /// is, it must lie in `[0, self.modulus())`. This method does not reduce
     /// `coeff` before using it.
     fn transform_monomial(&self, coeff: Self::ValueT, degree: usize, values: &mut [Self::ValueT]) {
-        let n = self.poly_length();
+        let n = self.poly_length().get();
         assert_ntt_length(values.len(), n);
 
         if coeff == Self::ValueT::ZERO {
@@ -155,7 +156,7 @@ pub trait MonomialNttTable: NttTable {
             return;
         }
 
-        let twice_n = n.checked_mul(2).expect("NTT polynomial length overflow");
+        let twice_n = 2 * n;
         let degree = degree & (twice_n - 1);
 
         if degree == 0 {

@@ -72,11 +72,12 @@ pub use key_switch::{
 };
 pub use parameter::{NlevParameterError, NlevParameters, NtruParameterError, NtruParameters};
 pub use primus_distr::SecretKeyDistr;
+pub use primus_lattice::LweDimension;
 pub use primus_lattice::workspace::{
     FourierNtruCmuxWorkspace, FourierNtruExternalProductWorkspace, NttNtruCmuxWorkspace,
     NttNtruExternalProductWorkspace,
 };
-pub use primus_lattice::{LweDimension, PolyLength};
+pub use primus_poly::PolyLength;
 pub use scheme_switch::{FourierNtruSchemeSwitchKey, NttNtruSchemeSwitchKey};
 pub use secret_key::{
     FourierNtruDecryptWorkspace, FourierNtruEncryptWorkspace, FourierNtruGadgetEncryptWorkspace,

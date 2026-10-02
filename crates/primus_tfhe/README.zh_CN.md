@@ -130,7 +130,7 @@ Context 保存不可变参数和变换表，ServerKey 保存求值材料；Evalu
 
 直接使用共享层时，`LookupTable` / `InterleavedLookupTable` 的 `try_from_fn`、`try_from_slice` 接收输入 codec、累加器模数和输出 codec，负责 unsigned Rounded 编码与检查。 奇数全域使用 `LookupTable::try_from_odd_full_domain_fn` / `_slice`；family 编译入口复用这些方法。
 
-共享 LUT 构造器和 `BooleanEvaluator::try_new` 都接收从 `primus_lattice` 重新导出的 `PolyLength`。直接传入环参数返回的已验证长度，或用 `PolyLength::try_new(N)` 构造一次。支持范围为 `2..=2^17` 内的二次幂；编译仍检查旋转域能否由系数字宽表示、编码、输出容量与数值范围。
+共享 LUT 构造器和 `BooleanEvaluator::try_new` 都接收从 `primus_poly` 重新导出的 `PolyLength`。直接传入环参数返回的已验证长度，或用 `PolyLength::try_new(N)` 构造一次。该类型集中检查 `32..=2^17` 内的二次幂；编译仍检查旋转域能否由系数字宽表示、编码、输出容量与数值范围。
 
 Raw 构造器 `LookupTable::try_new` / `InterleavedLookupTable::try_new` 显式接收 编程前缀长度 `D` 和已编码输出。`input_ciphertext_modulus` 描述输入量化模数， `coefficient_modulus` 描述 LUT/累加器模数，raw 输出必须是后者下的规范值。 `k` 和明文模数都不必是二次幂；补齐数量 `s` 必须与容量、实际中心分离和噪声余量相容。 构造失败不会返回部分表。输出槽、重复区间与舍入规则见[旋转几何](IMPLEMENTATION.md#rotation-geometry)。
 

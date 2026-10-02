@@ -1,11 +1,11 @@
 use primus_decompose::DecompositionBaseLog;
 use primus_encoding::{PlaintextEmbedding, RoundedCodec, ScaledCodec};
 use primus_lattice::LweDimension;
-use primus_lattice::PolyLength;
 use primus_lwe::LweParameters;
 use primus_modulus::BarrettModulus;
 use primus_ntru::SecretKeyDistr;
 use primus_ntt::U32NttTable;
+use primus_poly::PolyLength;
 use primus_test_allocations as allocations;
 use primus_tfhe::ProgrammableBootstrap as _;
 use primus_tfhe_ntru_ntt::{

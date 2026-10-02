@@ -4,7 +4,7 @@ use crate::{LookupTable, LweCiphertext, ProgrammableBootstrap, TfheEvaluationErr
 use primus_encoding::{PlaintextEmbedding, RoundedCodec};
 use primus_integer::FheUint;
 use primus_lattice::LweDimension;
-use primus_lattice::PolyLength;
+use primus_poly::PolyLength;
 use primus_reduce::RingContext;
 
 /// The number of bits in the external Boolean plaintext modulus: `t = 2^2 = 4`.

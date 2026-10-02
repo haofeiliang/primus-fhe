@@ -9,7 +9,6 @@ use primus_glwe::{
 };
 use primus_lattice::GlweDimension;
 use primus_lattice::{
-    PolyLength,
     ggsw::{FourierGgswOwned, NttGgsw},
     glev::{FourierGlevOwned, NttGlev},
     glwe::{FourierGlweOwned, Glwe, NttGlwe, TorusGlwe},
@@ -17,7 +16,7 @@ use primus_lattice::{
 };
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntt::{NttTable, UintNttTable};
-use primus_poly::{Polynomial, PolynomialOwned};
+use primus_poly::{PolyLength, Polynomial, PolynomialOwned};
 use rand::{SeedableRng, rngs::StdRng};
 
 const DIMENSION: usize = 2;
@@ -58,7 +57,7 @@ fn explicit_distance(lhs: u32, rhs: u32, modulus: u32) -> u32 {
 
 #[test]
 fn fourier_gadget_phases_and_external_product() {
-    let table = RustFftTable::new(POLY_LENGTH.trailing_zeros()).unwrap();
+    let table = RustFftTable::new(PolyLength::new(POLY_LENGTH));
     let mut fft = FftEngine::new(&table);
     let mut rng = StdRng::seed_from_u64(42);
     let glwe_params = GlweParameters::new(
@@ -201,7 +200,7 @@ fn ntt_gadget_phases_and_external_product() {
     const MODULUS: u32 = 132_120_577;
 
     let modulus = BarrettModulus::new(MODULUS);
-    let ntt = UintNttTable::new(POLY_LENGTH.trailing_zeros(), modulus).unwrap();
+    let ntt = UintNttTable::new(PolyLength::new(POLY_LENGTH), modulus).unwrap();
     let mut rng = StdRng::seed_from_u64(42);
     let glwe_params = GlweParameters::new(
         GlweDimension::new(DIMENSION),

@@ -36,7 +36,7 @@ impl<T: FheUint> NttNtruSecretKey<T> {
         B: DataMut<Elem = T>,
     {
         assert_eq!(
-            ntt_table.poly_length(),
+            ntt_table.poly_length().get(),
             self.poly_length(),
             "NTT polynomial length mismatch"
         );

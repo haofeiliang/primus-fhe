@@ -1,13 +1,14 @@
 use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable, TfheFftTable};
+use primus_poly::PolyLength;
 
 fn check_automorphism<Table: FftTable>() {
     // Check coefficient signs and packed conjugation. The private TFHE-FFT
     // test forces recursive layouts; a large auto-planned transform cannot
     // guarantee that the planner selects any particular layout.
-    for log_n in [2, 5] {
-        let table = Table::new(log_n).unwrap();
+    for log_n in [5, 6] {
+        let table = Table::new(PolyLength::new(1usize << log_n));
         let mut fft = FftEngine::new(&table);
-        let n = table.poly_length();
+        let n = table.poly_length().get();
         let input: Vec<u32> = (0..n)
             .map(|i| (i as u32).wrapping_mul(2_654_435_761))
             .collect();

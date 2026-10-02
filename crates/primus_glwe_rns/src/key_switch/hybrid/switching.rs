@@ -308,7 +308,8 @@ impl<T: FheUint> HybridRnsGlweKeySwitchingWorkspace<T> {
         let hybrid_rns = domain.hybrid_rns();
         assert!(
             key_switching_key.partition_count == hybrid_rns.partition_count()
-                && key_switching_key.input_size.poly_length().get() == domain.table().poly_length()
+                && key_switching_key.input_size.poly_length().get()
+                    == domain.table().poly_length().get()
                 && key_switching_key.input_size.moduli_count() == hybrid_rns.q_moduli_count()
                 && key_switching_key.output_size.moduli_count() == hybrid_rns.q_moduli_count()
                 && key_switching_key.qp_size.moduli_count() == hybrid_rns.qp_moduli_count(),
@@ -334,7 +335,7 @@ mod tests {
     use primus_lattice::glwe::DcrtGlwe;
     use primus_modulus::BarrettModulus;
     use primus_ntt::UintDcrtTable;
-    use primus_poly::Polynomial;
+    use primus_poly::{PolyLength, Polynomial};
     use rand::{SeedableRng, rngs::StdRng};
 
     use super::*;
@@ -348,19 +349,18 @@ mod tests {
 
         let dimension = 2;
         // Small ring; three Q limbs retain wide arithmetic and an uneven partition.
-        let poly_length: usize = 32;
-        let log_n = poly_length.trailing_zeros();
+        let poly_length = PolyLength::new(32);
         let plaintext_modulus = BarrettModulus::new(12289);
         let gamma = BarrettModulus::new(2305843009213554689);
         let q_moduli =
             [1125899906826241, 1125899906629633, 1125899906031617].map(BarrettModulus::new);
         let p_moduli = [1125899905036289].map(BarrettModulus::new);
         let qp_moduli: Vec<_> = q_moduli.iter().chain(&p_moduli).copied().collect();
-        let q_table = UintDcrtTable::new(log_n, &q_moduli).unwrap();
-        let qp_table = UintDcrtTable::new(log_n, &qp_moduli).unwrap();
+        let q_table = UintDcrtTable::new(poly_length, &q_moduli).unwrap();
+        let qp_table = UintDcrtTable::new(poly_length, &qp_moduli).unwrap();
         let parameters = CrtGlweParameters::new(
             GlweDimension::new(dimension),
-            poly_length,
+            poly_length.get(),
             plaintext_modulus,
             gamma,
             &q_moduli,
@@ -390,7 +390,7 @@ mod tests {
         );
 
         let plaintext: Polynomial<Vec<Value>> =
-            Polynomial::random(poly_length, plaintext_modulus, &mut rng);
+            Polynomial::random(poly_length.get(), plaintext_modulus, &mut rng);
         let mut input: DcrtGlwe<Vec<Value>> = DcrtGlweCiphertext::zero(parameters.rns_glwe_len());
         input_dcrt_key.encrypt_plaintext_inplace(
             &plaintext,

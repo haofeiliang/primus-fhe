@@ -6,7 +6,7 @@ use primus_modulus::NativeModulus;
 use primus_ntru::{NlevParameters, NtruParameters, NtruSecretKey, SecretKeyDistr};
 use primus_tfhe_ntru::{ClientError, ClientKey, TfheParameters};
 
-const N: usize = 8;
+const N: usize = 32;
 const LWE_DIMENSION: usize = 4;
 
 fn parameters_with_plaintext(t: u32) -> TfheParameters<u32, NativeModulus<u32>> {
@@ -31,13 +31,14 @@ fn parameters_with_plaintext(t: u32) -> TfheParameters<u32, NativeModulus<u32>> 
     .unwrap()
 }
 
-fn imported_key(client: [i32; N]) -> ClientKey<u32> {
+fn imported_key(client: [i32; LWE_DIMENSION]) -> ClientKey<u32> {
     // General NTRU secrets and the accumulator retain nonbinary coefficients.
-    let accumulator =
-        NtruSecretKey::new(vec![2, 1, 0, 0, 0, 0, 0, 0], SecretKeyDistr::gaussian(3.2));
+    let mut accumulator = vec![0; N];
+    accumulator[..2].copy_from_slice(&[2, 1]);
+    let accumulator = NtruSecretKey::new(accumulator, SecretKeyDistr::gaussian(3.2));
     ClientKey::new(
         primus_lwe::LweSecretKey::new(
-            (client.to_vec())[..LWE_DIMENSION]
+            client
                 .iter()
                 .map(|&s| primus_integer::SignedInteger::cast_to_unsigned(s))
                 .collect(),
@@ -51,7 +52,7 @@ fn imported_key(client: [i32; N]) -> ClientKey<u32> {
 fn padded_inputs_and_lut_output_codecs_use_independent_domains() {
     use rand::{SeedableRng, rngs::StdRng};
     let mut rng = StdRng::seed_from_u64(0x5041_4444_4544);
-    let key = imported_key([1, 0, 1, 1, 0, 0, 0, 0]);
+    let key = imported_key([1, 0, 1, 1]);
     for t in [3u32, 4, 5] {
         let parameters = parameters_with_plaintext(t);
         let encryptor = parameters.encryptor(&key).unwrap();

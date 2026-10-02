@@ -55,19 +55,20 @@ pub(super) fn approx_mod_down_ntt<T, M, Table>(
 mod tests {
     use primus_modulus::BarrettModulus;
     use primus_ntt::{NttTable, UintDcrtTable};
+    use primus_poly::PolyLength;
 
     use super::*;
 
     #[test]
     fn mixed_domain_mod_down_matches_coefficient_reference() {
-        const POLY_LENGTH: usize = 4;
-        let q_values = [17_u64, 41, 73];
-        let p_values = [89_u64, 97];
+        const POLY_LENGTH: usize = 32;
+        let q_values = [193_u64, 257, 449];
+        let p_values = [577_u64, 641];
         let q_moduli = q_values.map(BarrettModulus::new);
         let p_moduli = p_values.map(BarrettModulus::new);
         let qp_moduli: Vec<_> = q_moduli.iter().chain(&p_moduli).copied().collect();
         let hybrid_rns = HybridRNS::new(&q_moduli, &p_moduli, 2).unwrap();
-        let table = UintDcrtTable::new(POLY_LENGTH.trailing_zeros(), &qp_moduli).unwrap();
+        let table = UintDcrtTable::new(PolyLength::new(POLY_LENGTH), &qp_moduli).unwrap();
 
         let coefficient_qp: Vec<_> = q_values
             .iter()

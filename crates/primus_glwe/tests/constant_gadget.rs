@@ -9,12 +9,12 @@ use primus_glwe::{
 use primus_integer::FheUint;
 use primus_lattice::GlweDimension;
 use primus_lattice::{
-    GadgetSize, GlweSize, PolyLength,
+    GadgetSize, GlweSize,
     ggsw::{Ggsw, NttGgsw},
 };
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntt::{NttTable, U32NttTable, U64NttTable, UintNttTable};
-use primus_poly::PolynomialOwned;
+use primus_poly::{PolyLength, PolynomialOwned};
 use rand::{Rng, SeedableRng, rngs::StdRng};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
@@ -27,7 +27,7 @@ fn ntt_constant_ggsw_batch_matches_individual_encryptions() {
 }
 
 fn check_ntt_batch<T: FheUint, Table: NttTable<ValueT = T>>() {
-    let n = 16usize;
+    let n = 32usize;
     let modulus = BarrettModulus::new(T::try_from(257usize).unwrap());
     let glwe = GlweParameters::new(
         GlweDimension::new(2),
@@ -38,7 +38,7 @@ fn check_ntt_batch<T: FheUint, Table: NttTable<ValueT = T>>() {
         0.7,
     );
     let params = GlevParameters::with_glwe_params(&glwe, DecompositionBaseLog::new(4), None);
-    let table = Table::new(n.trailing_zeros(), modulus).unwrap();
+    let table = Table::new(PolyLength::new(n), modulus).unwrap();
     let mut rng = StdRng::seed_from_u64(42);
     let (_, key) = NttGlweSecretKey::generate_pair(&glwe, &table, &mut rng);
     let mut workspace = NttGlweGadgetEncryptWorkspace::new(params.size());
@@ -157,7 +157,7 @@ fn fourier_constant_ggsw_batches_match_individual_encryptions() {
 }
 
 fn check_fourier_batch<T: TorusFftValue, Table: FftTable>() {
-    let n = 16usize;
+    let n = 32usize;
     let glwe = GlweParameters::new(
         GlweDimension::new(2),
         n,
@@ -171,7 +171,7 @@ fn check_fourier_batch<T: TorusFftValue, Table: FftTable>() {
         DecompositionBaseLog::new(3),
         Some(DecompositionLevelCount::new(3)),
     );
-    let table = Table::new(n.trailing_zeros()).unwrap();
+    let table = Table::new(PolyLength::new(n));
     let mut fft = FftEngine::new(&table);
     let mut rng = StdRng::seed_from_u64(42);
     let (_, key) = FourierGlweSecretKey::generate_pair(&glwe, &mut fft, &mut rng);

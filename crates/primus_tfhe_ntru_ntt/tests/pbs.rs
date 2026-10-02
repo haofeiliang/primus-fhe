@@ -2,11 +2,11 @@ use primus_decompose::DecompositionBaseLog;
 use primus_encoding::{PlaintextEmbedding, RoundedCodec};
 use primus_integer::FheUint;
 use primus_lattice::LweDimension;
-use primus_lattice::PolyLength;
 use primus_lwe::{LweCiphertext, LweParameters};
 use primus_modulus::BarrettModulus;
 use primus_ntru::{NlevParameters, NtruParameters, SecretKeyDistr};
 use primus_ntt::{MonomialNttTable, NttTable, U32NttTable, U64NttTable};
+use primus_poly::PolyLength;
 use primus_reduce::{ReduceAdd, ReduceSub};
 use primus_test_allocations as allocations;
 use primus_tfhe::{
@@ -413,7 +413,7 @@ fn pbs_u32_preserves_outputs_and_validates_domains() {
         SecretKeyDistr::UniformBinary,
         SecretKeyDistr::fixed_composition_ternary(4, 1, 2),
     ] {
-        let table = U32NttTable::new(N.trailing_zeros(), BarrettModulus::new(q)).unwrap();
+        let table = U32NttTable::new(PolyLength::new(N), BarrettModulus::new(q)).unwrap();
         check_context(TfheContext::try_new(parameters(q, case, 4), table).unwrap());
     }
 }
@@ -425,7 +425,7 @@ fn pbs_u64_preserves_outputs_and_validates_domains() {
         SecretKeyDistr::UniformBinary,
         SecretKeyDistr::fixed_composition_ternary(4, 1, 2),
     ] {
-        let table = U64NttTable::new(N.trailing_zeros(), BarrettModulus::new(q)).unwrap();
+        let table = U64NttTable::new(PolyLength::new(N), BarrettModulus::new(q)).unwrap();
         check_context(TfheContext::try_new(parameters(q, case, 4), table).unwrap());
     }
 }

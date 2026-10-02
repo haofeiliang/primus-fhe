@@ -15,7 +15,7 @@ macro_rules! impl_ntt_monomial {
             ///
             /// # Correctness
             ///
-            /// Let `N = ntt.poly_length()`. Storage must contain complete
+            /// Let `N = ntt.poly_length().get()`. Storage must contain complete
             /// polynomials in that table's evaluation order, with canonical
             /// residues under the same modulus as `modulus` and `ntt`.
             /// Require `exponent < 2 * N`. The result remains canonical.
@@ -35,7 +35,7 @@ macro_rules! impl_ntt_monomial {
                 M: primus_reduce::FieldContext<T>,
                 Table: primus_ntt::MonomialNttTable<ValueT = T>,
             {
-                debug_assert!(exponent < 2 * ntt.poly_length());
+                debug_assert!(exponent < 2 * ntt.poly_length().get());
                 ntt.transform_coeff_one_monomial(exponent, scratch);
                 self.mul_ntt_polynomial_assign(&primus_poly::NttPolynomial(&*scratch), modulus);
             }
@@ -65,7 +65,7 @@ macro_rules! impl_ntt_monomial {
                 Table: primus_ntt::MonomialNttTable<ValueT = T>,
                 A: primus_data::Data<Elem = T>,
             {
-                debug_assert!(exponent < 2 * ntt.poly_length());
+                debug_assert!(exponent < 2 * ntt.poly_length().get());
                 ntt.transform_coeff_one_monomial(exponent, scratch);
                 self.add_mul_ntt_polynomial_assign(
                     rhs,
@@ -104,7 +104,7 @@ macro_rules! impl_ntt_monomial {
                 Table: primus_ntt::MonomialNttTable<ValueT = T>,
                 A: primus_data::DataMut<Elem = T>,
             {
-                debug_assert!(exponent < 2 * ntt.poly_length());
+                debug_assert!(exponent < 2 * ntt.poly_length().get());
                 ntt.transform_coeff_one_monomial(exponent, scratch);
                 self.mul_ntt_polynomial_to(&primus_poly::NttPolynomial(&*scratch), output, modulus);
             }
@@ -139,7 +139,7 @@ macro_rules! impl_ntt_monomial {
                 A: primus_data::Data<Elem = T>,
                 B: primus_data::DataMut<Elem = T>,
             {
-                let poly_length = ntt.poly_length();
+                let poly_length = ntt.poly_length().get();
                 debug_assert!(exponent < 2 * poly_length);
                 debug_assert_eq!(
                     self.as_ref().len(),

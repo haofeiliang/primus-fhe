@@ -189,7 +189,11 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         assert_eq!(polynomial_len, n, "GLWE polynomial length mismatch");
         assert_eq!(ciphertext_len, self.size.glwe_len(), "GLWE layout mismatch");
         assert_eq!(scratch_len, n, "GLWE coefficient scratch length mismatch");
-        assert_eq!(ntt_table.poly_length(), n, "NTT polynomial length mismatch");
+        assert_eq!(
+            ntt_table.poly_length().get(),
+            n,
+            "NTT polynomial length mismatch"
+        );
         assert_eq!(
             ntt_table.modulus(),
             modulus.value(),

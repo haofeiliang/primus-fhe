@@ -1,4 +1,5 @@
 use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable, TfheFftTable};
+use primus_poly::PolyLength;
 
 // Independent O(N^2) convolution applies X^N = -1 with exact signed arithmetic.
 fn negacyclic_reference(torus: &[u32], integer: &[u32]) -> Vec<u32> {
@@ -21,18 +22,19 @@ fn negacyclic_reference(torus: &[u32], integer: &[u32]) -> Vec<u32> {
 fn convolution<Table: FftTable>() {
     // Torus * integer has exactly one torus scale and one inverse normalization;
     // a round-trip cannot detect a normalization error in spectral products.
-    let fft = Table::new(4).unwrap();
+    let fft = Table::new(PolyLength::new(32));
+    let n = fft.poly_length().get();
     let mut engine = FftEngine::new(&fft);
-    let torus: Vec<u32> = (0..16).map(|i| (1000i32 - 31 * i) as u32).collect();
-    let integer: Vec<u32> = (0..16).map(|i| (i % 5 - 2) as u32).collect();
-    let mut lhs = vec![Complex64::default(); 8];
-    let mut rhs = vec![Complex64::default(); 8];
+    let torus: Vec<u32> = (0..n).map(|i| (1000i32 - 31 * i as i32) as u32).collect();
+    let integer: Vec<u32> = (0..n).map(|i| (i as i32 % 5 - 2) as u32).collect();
+    let mut lhs = vec![Complex64::default(); n / 2];
+    let mut rhs = vec![Complex64::default(); n / 2];
     engine.forward_as_torus(&torus, &mut lhs);
     engine.forward_as_integer(&integer, &mut rhs);
     for (x, y) in lhs.iter_mut().zip(rhs) {
         *x *= y;
     }
-    let mut output = vec![0u32; 16];
+    let mut output = vec![0u32; n];
     engine.backward_as_torus(&lhs, &mut output);
     assert_eq!(output, negacyclic_reference(&torus, &integer));
 }

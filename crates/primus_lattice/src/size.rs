@@ -4,8 +4,9 @@
 //! range, and flattened-length overflow. They do not establish transform-table
 //! availability, modulus suitability, gadget weights, or encryption security.
 
-use crate::{GlweDimension, MAX_POLY_LENGTH, MIN_POLY_LENGTH, PolyLength};
+use crate::GlweDimension;
 use primus_decompose::DecompositionLevelCount;
+use primus_poly::{MAX_POLY_LENGTH, MIN_POLY_LENGTH, PolyLength};
 
 /// An error produced while constructing a checked GLWE-family size.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]

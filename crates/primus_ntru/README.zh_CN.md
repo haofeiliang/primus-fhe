@@ -21,11 +21,7 @@ NLev 与 NGSW 存储的行数相同，但数学角色不同。`NLev[1]` 可通�
 
 ## 私钥与推荐流程
 
-构造仍传入整数 `N`。验证后的参数保存共享的
-[PolyLength](../primus_lattice/README.zh_CN.md#存储与布局)，
-`params.poly_length()` 返回经过检查的值，直接传给工作区构造器；
-数值内核或变换构造器需要 `usize` 时再调用 `.get()`。
-`PolyLength` 集中检查 `N` 为 `2..=2^17` 内的二次幂。
+构造仍传入整数 `N`。验证后的参数保存共享的 [primus_poly::PolyLength](../primus_poly/README.zh_CN.md#环多项式长度)；`params.poly_length()` 返回经过检查的值，直接传给工作区和 NTT/FFT 表构造器，raw 存储或数值内核处才调用 `.get()`。`PolyLength` 集中检查 FHE 共用的 `32..=2^17` 二次幂范围，NTRU 参数不重复检查上界。
 
 `NtruParameters::try_new` 对环长度、固定尺度编码、秘密支持集/重量和噪声采样错误返回 `NtruParameterError`，固定重量不得超过 N；`new` 在相同错误下 panic。这些检查不证明采样秘密可逆、变换可用或噪声/安全预算成立。 `NtruParameterError::SecretKey` 以 `SecretKeySamplerError` 保留采样配置、重量或模数适配的具体原因；`Noise` 保留 `GaussianError`。
 

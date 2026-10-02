@@ -3,9 +3,9 @@
 use primus_data::{Data, DataMut};
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{Complex64, FftEngine, FftTable, TorusFftValue};
-use primus_lattice::{PolyLength, nlev::FourierNlev};
+use primus_lattice::nlev::FourierNlev;
 use primus_modulus::NativeModulus;
-use primus_poly::{CoeffAutomorphismPermutation, Polynomial};
+use primus_poly::{CoeffAutomorphismPermutation, PolyLength, Polynomial};
 use primus_reduce::EncodeSigned;
 use zeroize::Zeroizing;
 
@@ -80,8 +80,12 @@ impl<T: TorusFftValue> FourierNtruAutomorphismKey<T> {
             n,
             "automorphism secret length mismatch"
         );
-        assert_eq!(fft.poly_length(), n, "automorphism FFT length mismatch");
-        let coeff_permutation = CoeffAutomorphismPermutation::new(degree, n);
+        assert_eq!(
+            fft.poly_length().get(),
+            n,
+            "automorphism FFT length mismatch"
+        );
+        let coeff_permutation = CoeffAutomorphismPermutation::new(degree, parameters.poly_length());
         let fourier_permutation = fft.table().automorphism_map(degree);
         let modulus = NativeModulus::new();
         let mut encoded = Zeroizing::new(vec![T::ZERO; n]);

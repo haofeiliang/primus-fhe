@@ -16,6 +16,7 @@ rand = { workspace = true }
 itertools = { workspace = true }
 pastey = { workspace = true }
 num-complex = { workspace = true }
+thiserror = { workspace = true }
 
 [features]
 default = []

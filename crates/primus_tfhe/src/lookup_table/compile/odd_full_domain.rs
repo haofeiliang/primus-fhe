@@ -2,8 +2,7 @@
 
 use primus_encoding::{PlaintextEmbedding, RoundedCodec};
 use primus_integer::FheUint;
-use primus_lattice::PolyLength;
-use primus_poly::PolynomialOwned;
+use primus_poly::{PolyLength, PolynomialOwned};
 use primus_reduce::{PrepareModulusSwitch, ReduceAdd, RingContext};
 
 use super::{fill_negated_tail, upper_midpoint, validate_input_encoding};

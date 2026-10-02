@@ -7,7 +7,7 @@ use primus_integer::FheUint;
 use primus_lattice::GlweDimension;
 use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, PrimitiveRoot, UintNttTable};
-use primus_poly::{Polynomial, PolynomialOwned};
+use primus_poly::{PolyLength, Polynomial, PolynomialOwned};
 use primus_reduce::ReduceAdd;
 use rand::{Rng, SeedableRng, rngs::StdRng};
 use zeroize::Zeroizing;
@@ -22,7 +22,7 @@ where
     T: FheUint + PrimitiveRoot,
 {
     let modulus = BarrettModulus::new(cipher_modulus);
-    let ntt = UintNttTable::new(POLY_LENGTH.trailing_zeros(), modulus).unwrap();
+    let ntt = UintNttTable::new(PolyLength::new(POLY_LENGTH), modulus).unwrap();
     let mut rng = StdRng::seed_from_u64(42);
     let messages: Vec<T> = (0..POLY_LENGTH)
         .map(|index| T::try_from(index % PLAIN_MODULUS).unwrap())
@@ -128,7 +128,7 @@ fn noise_diagnostics_report_signed_phase_distance() {
         SecretKeyDistr::UniformBinary,
         0.7,
     );
-    let table = UintNttTable::new(POLY_LENGTH.trailing_zeros(), modulus).unwrap();
+    let table = UintNttTable::new(PolyLength::new(POLY_LENGTH), modulus).unwrap();
     let secret_key = NttGlweSecretKey::new(
         vec![0; params.secret_key_len()],
         params.size(),
@@ -168,7 +168,7 @@ fn truncated_decryption_returns_only_retained_coefficients() {
         SecretKeyDistr::UniformBinary,
         0.7,
     );
-    let table = UintNttTable::new(POLY_LENGTH.trailing_zeros(), modulus).unwrap();
+    let table = UintNttTable::new(PolyLength::new(POLY_LENGTH), modulus).unwrap();
     let mut rng = StdRng::seed_from_u64(42);
     let (_, secret_key) = NttGlweSecretKey::generate_pair(&params, &table, &mut rng);
     for count in [0, 3, POLY_LENGTH] {

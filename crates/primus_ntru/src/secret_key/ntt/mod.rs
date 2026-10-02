@@ -90,7 +90,7 @@ impl<T: FheUint> NttNtruSecretKey<T> {
         Table: NttTable<ValueT = T>,
     {
         let poly_length = secret_key.poly_length();
-        assert_eq!(ntt_table.poly_length(), poly_length);
+        assert_eq!(ntt_table.poly_length().get(), poly_length);
         assert_eq!(ntt_table.modulus(), modulus.value());
 
         // Establish drop protection before encoding or inversion can fail.
@@ -211,7 +211,7 @@ impl<T: FheUint> NttNtruSecretKey<T> {
             (1..=params.poly_length().get()).contains(&active_length),
             "NTRU active length must belong to 1..=N"
         );
-        assert_eq!(ntt_table.poly_length(), params.poly_length().get());
+        assert_eq!(ntt_table.poly_length().get(), params.poly_length().get());
         assert_eq!(ntt_table.modulus(), params.cipher_modulus().value());
 
         let mut coefficient_key =
@@ -239,7 +239,7 @@ impl<T: FheUint> NttNtruSecretKey<T> {
         Table: NttTable<ValueT = T>,
     {
         assert_eq!(params.poly_length().get(), self.poly_length());
-        assert_eq!(ntt_table.poly_length(), self.poly_length());
+        assert_eq!(ntt_table.poly_length().get(), self.poly_length());
         assert_eq!(ntt_table.modulus(), params.cipher_modulus().value());
     }
 }

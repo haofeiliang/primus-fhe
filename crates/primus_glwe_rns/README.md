@@ -23,10 +23,10 @@ use primus_glwe_rns::{
 };
 use primus_modulus::BarrettModulus;
 use primus_ntt::UintDcrtTable;
-use primus_poly::Polynomial;
+use primus_poly::{PolyLength, Polynomial};
 
 let moduli = [998_244_353u32, 1_004_535_809].map(BarrettModulus::new);
-let table = UintDcrtTable::new(5, &moduli).unwrap();
+let table = UintDcrtTable::new(PolyLength::new(32), &moduli).unwrap();
 let parameters = CrtGlweParameters::new(
     primus_lattice::GlweDimension::new(2), 32, BarrettModulus::new(17), BarrettModulus::new(65_537),
     &moduli, SecretKeyDistr::UniformBinary, 3.2,
@@ -38,7 +38,7 @@ let coefficient_key = GlweSecretKey::generate(
 let key = DcrtGlweSecretKey::from_coeff_secret_key(&coefficient_key, &table);
 let mut ciphertext = DcrtGlweCiphertext::<Vec<u32>>::zero(parameters.rns_glwe_len());
 let mut workspace = DcrtGlweDecryptWorkspace::new(parameters.size());
-let message = Polynomial::new(vec![3u32; parameters.poly_length()]);
+let message = Polynomial::new(vec![3u32; parameters.poly_length().get()]);
 
 key.encrypt_plaintext_inplace(&message, &mut ciphertext, &parameters, &table, &mut rng);
 let decoded = key.decrypt(&ciphertext, &parameters, &table, &mut workspace);

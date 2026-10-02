@@ -2,10 +2,10 @@ use primus_decompose::DecompositionBaseLog;
 use primus_encoding::{PlaintextEmbedding, RoundedCodec};
 use primus_fft::{FftTable, RustFftTable, TfheFftTable, TorusFftValue};
 use primus_lattice::LweDimension;
-use primus_lattice::PolyLength;
 use primus_lwe::{LweCiphertext, LweParameters};
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntru::{NlevParameters, NtruParameters, SecretKeyDistr};
+use primus_poly::PolyLength;
 use primus_reduce::{ReduceAdd, ReduceSub};
 use primus_test_allocations as allocations;
 use primus_tfhe::{
@@ -74,8 +74,7 @@ where
     } else {
         SecretKeyDistr::UniformBinary
     };
-    let incompatible =
-        TfheContext::<_, TABLE>::try_from_parameters(parameters(other_distribution, 4)).unwrap();
+    let incompatible = TfheContext::<_, TABLE>::from_parameters(parameters(other_distribution, 4));
     assert_eq!(
         incompatible.evaluator(&server_key).err(),
         Some(primus_tfhe::TfheEvaluationError::IncompatibleServerKey)
@@ -409,14 +408,14 @@ fn pbs_u32_preserves_outputs_and_validates_domains() {
         check_context(
             TfheContext::try_new(
                 parameters::<u32>(case, 4),
-                RustFftTable::new(N.trailing_zeros()).unwrap(),
+                RustFftTable::new(PolyLength::new(N)),
             )
             .unwrap(),
         );
         check_context(
             TfheContext::try_new(
                 parameters::<u32>(case, 4),
-                TfheFftTable::new(N.trailing_zeros()).unwrap(),
+                TfheFftTable::new(PolyLength::new(N)),
             )
             .unwrap(),
         );
@@ -432,14 +431,14 @@ fn pbs_u64_preserves_outputs_and_validates_domains() {
         check_context(
             TfheContext::try_new(
                 parameters::<u64>(case, 4),
-                RustFftTable::new(N.trailing_zeros()).unwrap(),
+                RustFftTable::new(PolyLength::new(N)),
             )
             .unwrap(),
         );
         check_context(
             TfheContext::try_new(
                 parameters::<u64>(case, 4),
-                TfheFftTable::new(N.trailing_zeros()).unwrap(),
+                TfheFftTable::new(PolyLength::new(N)),
             )
             .unwrap(),
         );
@@ -533,14 +532,12 @@ fn first_controls_cover_secret_values_and_single_coordinate_keys() {
             SecretKeyDistr::UniformBinary,
             SecretKeyDistr::UniformTernary,
         ] {
-            check_first_controls(
-                TfheContext::<u32, RustFftTable>::try_from_parameters(parameters(distr, dimension))
-                    .unwrap(),
-            );
-            check_first_controls(
-                TfheContext::<u32, TfheFftTable>::try_from_parameters(parameters(distr, dimension))
-                    .unwrap(),
-            );
+            check_first_controls(TfheContext::<u32, RustFftTable>::from_parameters(
+                parameters(distr, dimension),
+            ));
+            check_first_controls(TfheContext::<u32, TfheFftTable>::from_parameters(
+                parameters(distr, dimension),
+            ));
         }
     }
 }

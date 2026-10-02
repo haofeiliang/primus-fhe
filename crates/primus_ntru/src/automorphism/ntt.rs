@@ -3,9 +3,9 @@
 use primus_data::{Data, DataMut};
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_integer::FheUint;
-use primus_lattice::{PolyLength, nlev::NttNlev};
+use primus_lattice::nlev::NttNlev;
 use primus_ntt::{NttAutomorphismPermutation, NttTable};
-use primus_poly::{CoeffAutomorphismPermutation, Polynomial};
+use primus_poly::{CoeffAutomorphismPermutation, PolyLength, Polynomial};
 use primus_reduce::FieldContext;
 use zeroize::Zeroizing;
 
@@ -81,8 +81,8 @@ impl<T: FheUint> NttNtruAutomorphismKey<T> {
             n,
             "automorphism secret length mismatch"
         );
-        let coeff_permutation = CoeffAutomorphismPermutation::new(degree, n);
-        let ntt_permutation = NttAutomorphismPermutation::new(degree, n);
+        let coeff_permutation = CoeffAutomorphismPermutation::new(degree, parameters.poly_length());
+        let ntt_permutation = NttAutomorphismPermutation::new(degree, parameters.poly_length());
         let modulus = parameters.ntru().cipher_modulus();
         let mut encoded = Zeroizing::new(vec![T::ZERO; n]);
         let mut permuted = Zeroizing::new(vec![T::ZERO; n]);

@@ -15,7 +15,7 @@ macro_rules! impl_ntt {
             ///
             /// # Correctness
             ///
-            /// Storage must contain complete polynomials of `ntt_table.poly_length()`
+            /// Storage must contain complete polynomials of `ntt_table.poly_length().get()`
             /// elements. The NTT table must match the
             /// ciphertext modulus and transform convention, and values must satisfy
             /// the corresponding transform's input range. Inverse transforms require
@@ -26,7 +26,7 @@ macro_rules! impl_ntt {
             where
                 Table: NttTable<ValueT = T>,
             {
-                let poly_length = ntt_table.poly_length();
+                let poly_length = ntt_table.poly_length().get();
                 self.0.chunks_exact_mut(poly_length).for_each(|poly| {
                     ntt_table.transform_slice(poly);
                 });
@@ -43,7 +43,7 @@ macro_rules! impl_ntt {
             ///
             /// # Correctness
             ///
-            /// Storage must contain complete polynomials of `ntt_table.poly_length()`
+            /// Storage must contain complete polynomials of `ntt_table.poly_length().get()`
             /// elements. The NTT table must match the
             /// ciphertext modulus and transform convention, and values must satisfy
             /// the corresponding transform's input range. Inverse transforms require
@@ -60,7 +60,7 @@ macro_rules! impl_ntt {
                 A: DataMut<Elem = T>,
                 Table: NttTable<ValueT = T>,
             {
-                let poly_length = ntt_table.poly_length();
+                let poly_length = ntt_table.poly_length().get();
                 output.0.copy_from_slice(self.as_ref());
                 output.0.chunks_exact_mut(poly_length).for_each(|poly| {
                     ntt_table.transform_slice(poly);
@@ -81,7 +81,7 @@ macro_rules! impl_intt {
             ///
             /// # Correctness
             ///
-            /// Storage must contain complete polynomials of `ntt_table.poly_length()`
+            /// Storage must contain complete polynomials of `ntt_table.poly_length().get()`
             /// elements. The NTT table must match the
             /// ciphertext modulus and transform convention, and values must satisfy
             /// the corresponding transform's input range. Inverse transforms require
@@ -92,7 +92,7 @@ macro_rules! impl_intt {
             where
                 Table: NttTable<ValueT = T>,
             {
-                let poly_length = ntt_table.poly_length();
+                let poly_length = ntt_table.poly_length().get();
                 self.0.chunks_exact_mut(poly_length).for_each(|poly| {
                     ntt_table.inverse_transform_slice(poly);
                 });
@@ -109,7 +109,7 @@ macro_rules! impl_intt {
             ///
             /// # Correctness
             ///
-            /// Storage must contain complete polynomials of `ntt_table.poly_length()`
+            /// Storage must contain complete polynomials of `ntt_table.poly_length().get()`
             /// elements. The NTT table must match the
             /// ciphertext modulus and transform convention, and values must satisfy
             /// the corresponding transform's input range. Inverse transforms require
@@ -126,7 +126,7 @@ macro_rules! impl_intt {
                 A: DataMut<Elem = T>,
                 Table: NttTable<ValueT = T>,
             {
-                let poly_length = ntt_table.poly_length();
+                let poly_length = ntt_table.poly_length().get();
                 output.0.copy_from_slice(self.as_ref());
                 output.0.chunks_exact_mut(poly_length).for_each(|values| {
                     ntt_table.inverse_transform_slice(values);

@@ -23,12 +23,13 @@ For `N = 2^log_n`, each table transforms `N` coefficients into `N / 2` complex v
 
 ```rust
 use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable};
+use primus_poly::PolyLength;
 
-let table = RustFftTable::new(3).unwrap(); // N = 8
+let table = RustFftTable::new(PolyLength::new(32)); // N = 32
 let mut fft = FftEngine::new(&table);
-let input: Vec<u32> = (0..fft.poly_length()).map(|value| value as u32).collect();
+let input: Vec<u32> = (0..fft.poly_length().get()).map(|value| value as u32).collect();
 let mut fourier = vec![Complex64::default(); fft.fourier_length()];
-let mut output = vec![0u32; fft.poly_length()];
+let mut output = vec![0u32; fft.poly_length().get()];
 
 fft.forward_as_torus(&input, &mut fourier);
 fft.backward_as_torus(&fourier, &mut output);
@@ -57,8 +58,8 @@ The built-in scratch types securely erase their full buffers on drop. After proc
 
 Input and output lengths are exact:
 
-- coefficient slices contain `poly_length()` values;
-- Fourier slices contain `fourier_length() == poly_length() / 2` values;
+- coefficient slices contain `poly_length().get()` values;
+- Fourier slices contain `fourier_length() == poly_length().fourier_poly_len()` values;
 - scratch passed directly to `FftTable` methods must have been allocated by that table instance.
 
 Incorrect lengths or incompatible workspace cause a panic.
@@ -69,7 +70,7 @@ Build and cache the map during evaluation-key construction, and reuse the origin
 
 ## Length and precision
 
-`FftTable::new(log_n)` accepts `2 <= log_n <= usize::BITS - 1`, so the minimum supported polynomial length is four. Table construction performs backend planning and allocation; it should stay outside repeated transform paths.
+`FftTable::new(poly_length)` takes `primus_poly::PolyLength`, which checks the shared FHE range `32..=2^17`; construction directly returns the table without an additional size check. Table and engine `poly_length()` accessors return the same type; `fourier_length()` returns the complex element count. Table construction performs backend planning and allocation; it should stay outside repeated transform paths.
 
 The transform uses `f64` and is approximate. Whether a Fourier computation can be rounded back to the intended torus value depends on the accumulated floating-point error and the magnitude of the integer operands; higher-level algorithms are responsible for maintaining a suitable precision budget.
 

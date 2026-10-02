@@ -61,7 +61,7 @@ where
         table: &'a DcrtTable<Table>,
     ) -> Result<Self, GadgetDomainError<T>> {
         let expected = parameters.poly_length().get();
-        let actual = table.poly_length();
+        let actual = table.poly_length().get();
         if actual != expected {
             return Err(GadgetDomainError::PolynomialLengthMismatch { expected, actual });
         }
@@ -171,8 +171,8 @@ where
                     actual,
                 });
             }
-            let expected = table.poly_length();
-            let actual = ntt_table.poly_length();
+            let expected = table.poly_length().get();
+            let actual = ntt_table.poly_length().get();
             if actual != expected {
                 return Err(GadgetDomainError::PolynomialLengthMismatch { expected, actual });
             }

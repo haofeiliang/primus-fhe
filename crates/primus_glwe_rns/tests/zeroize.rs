@@ -1,7 +1,7 @@
 //! Observe partially converted secrets before their allocation is released.
 
 use primus_lattice::GlweDimension;
-use primus_lattice::PolyLength;
+use primus_poly::PolyLength;
 use std::{
     alloc::{GlobalAlloc, Layout, System},
     panic::catch_unwind,
@@ -59,11 +59,14 @@ struct InterruptedTable(U64NttTable);
 impl NttTable for InterruptedTable {
     type ValueT = u64;
 
-    fn new<M: FieldContext<u64>>(log_n: u32, modulus: M) -> Result<Self, NttError<u64>> {
-        U64NttTable::new(log_n, modulus).map(Self)
+    fn new<M: FieldContext<u64>>(
+        poly_length: PolyLength,
+        modulus: M,
+    ) -> Result<Self, NttError<u64>> {
+        U64NttTable::new(poly_length, modulus).map(Self)
     }
 
-    fn poly_length(&self) -> usize {
+    fn poly_length(&self) -> PolyLength {
         self.0.poly_length()
     }
 
@@ -88,13 +91,13 @@ impl NttTable for InterruptedTable {
 
     fn transform_slice(&self, poly: &mut [u64]) {
         assert!(poly.iter().any(|&coefficient| coefficient != 0));
-        if self.modulus() == 97 {
+        if self.modulus() == 193 {
             // The first limb starts at the allocation's base. Watch the whole
             // initialized key, including the not-yet-converted components.
             WATCHED.store(poly.as_mut_ptr().cast(), Ordering::SeqCst);
             self.0.transform_slice(poly);
         } else {
-            assert_eq!(self.modulus(), 113);
+            assert_eq!(self.modulus(), 257);
             panic!("secret transform interrupted");
         }
     }
@@ -110,14 +113,14 @@ impl NttTable for InterruptedTable {
 
 #[test]
 fn partial_dcrt_secret_is_erased_on_transform_unwind() {
-    let size = GlweSize::new(GlweDimension::new(2), PolyLength::new(8));
+    let size = GlweSize::new(GlweDimension::new(2), PolyLength::new(32));
     let secret = GlweSecretKey::<u64>::new(
         vec![1; size.mask_len()],
         size,
         SecretKeyDistr::UniformBinary,
     );
-    let moduli = [97u64, 113].map(BarrettModulus::new);
-    let table = DcrtTable::<InterruptedTable>::new(3, &moduli).unwrap();
+    let moduli = [193u64, 257].map(BarrettModulus::new);
+    let table = DcrtTable::<InterruptedTable>::new(size.poly_length(), &moduli).unwrap();
     LENGTH.store(
         size.mask_len() * moduli.len() * size_of::<u64>(),
         Ordering::SeqCst,

@@ -3,7 +3,6 @@
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_integer::{AsInto, FheUint};
 use primus_lattice::LweDimension;
-use primus_lattice::PolyLength;
 use primus_lwe::LweParameters;
 use primus_modulus::BarrettModulus;
 use primus_ntru::{
@@ -12,7 +11,7 @@ use primus_ntru::{
     NttNtruSecretKey, SecretKeyDistr,
 };
 use primus_ntt::{MonomialNttTable, U32NttTable, U64NttTable};
-use primus_poly::Polynomial;
+use primus_poly::{PolyLength, Polynomial};
 use primus_test_allocations::{CountingAllocator, measure};
 use primus_tfhe_ntru_ntt::{ClientKey, KeyGenerator, TfheContext, TfheParameters};
 use rand::{SeedableRng, rngs::StdRng};
@@ -71,7 +70,7 @@ fn check_bucket<T: FheUint, Table: MonomialNttTable<ValueT = T>>(q: T, level_cou
     const WEIGHT: usize = 4;
     let q_wide: i128 = q.as_into();
     let modulus = BarrettModulus::new(q);
-    let ntt = Table::new(N.trailing_zeros(), modulus).unwrap();
+    let ntt = Table::new(PolyLength::new(N), modulus).unwrap();
     let client_params = LweParameters::new(
         LweDimension::new(DIM),
         T::as_from(16usize),

@@ -64,7 +64,7 @@ fn parameters() -> TfheParameters<Word> {
 
 fn main() {
     let parameters = parameters();
-    let context = TfheContext::<Word, Table>::try_from_parameters(parameters).unwrap();
+    let context = TfheContext::<Word, Table>::from_parameters(parameters);
     let thresholds: Vec<_> = (1..=OUTPUTS).map(|i| i * DOMAIN / (OUTPUTS + 1)).collect();
     // Numeric 0/1 flags use Scaled encoding, distinct from the Boolean gate codec.
     let output_codec = ScaledCodec::new(2, context.parameters().small_lwe().cipher_modulus());

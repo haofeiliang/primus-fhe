@@ -46,7 +46,7 @@ where
     ///
     /// # Correctness
     ///
-    /// Storage must contain exactly one polynomial of `ntt_table.poly_length()`
+    /// Storage must contain exactly one polynomial of `ntt_table.poly_length().get()`
     /// values, satisfying the selected transform's input range. The table
     /// modulus must match the ciphertext; inverse input must use that table's
     /// evaluation order and normalization. Output has the same length and is
@@ -99,7 +99,7 @@ where
     ///
     /// # Correctness
     ///
-    /// Storage must contain exactly one polynomial of `ntt_table.poly_length()`
+    /// Storage must contain exactly one polynomial of `ntt_table.poly_length().get()`
     /// values, satisfying the selected transform's input range. The table
     /// modulus must match the ciphertext; inverse input must use that table's
     /// evaluation order and normalization.

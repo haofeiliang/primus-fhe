@@ -7,10 +7,11 @@ use primus_integer::FheUint;
 use primus_modulus::{BarrettModulus, NativeModulus, PowOf2Modulus, UintModulus};
 use primus_reduce::RingContext;
 
+use primus_poly::PolyLength;
 use primus_test_allocations as allocations;
 use primus_tfhe::{
     BivariateLookupTable, InterleavedLookupTable, LookupTable, LookupTableError, LweCiphertext,
-    PolyLength, rotation::RotationQuantizer,
+    rotation::RotationQuantizer,
 };
 
 #[global_allocator]
@@ -246,7 +247,7 @@ fn rounded_output_boundaries_reject_before_encoding() {
         let input = RoundedCodec::new(t, modulus);
         let d = t.div_ceil(2) as usize;
         assert_eq!(
-            LookupTable::try_from_slice(PolyLength::new(8), &input, modulus, &wrong, &[])
+            LookupTable::try_from_slice(PolyLength::new(32), &input, modulus, &wrong, &[])
                 .unwrap_err(),
             LookupTableError::DomainLengthMismatch {
                 expected: d,
@@ -254,7 +255,7 @@ fn rounded_output_boundaries_reject_before_encoding() {
             }
         );
         assert_eq!(
-            LookupTable::try_from_fn(PolyLength::new(8), &input, modulus, &wrong, |_| panic!(
+            LookupTable::try_from_fn(PolyLength::new(32), &input, modulus, &wrong, |_| panic!(
                 "must reject before callback"
             ))
             .unwrap_err(),
@@ -262,7 +263,7 @@ fn rounded_output_boundaries_reject_before_encoding() {
         );
         assert_eq!(
             InterleavedLookupTable::try_from_fn(
-                PolyLength::new(8),
+                PolyLength::new(32),
                 &input,
                 modulus,
                 &wrong,
@@ -273,13 +274,13 @@ fn rounded_output_boundaries_reject_before_encoding() {
             LookupTableError::OutputModulusMismatch
         );
         assert_eq!(
-            LookupTable::try_from_fn(PolyLength::new(8), &input, modulus, &output, |_| 8)
+            LookupTable::try_from_fn(PolyLength::new(32), &input, modulus, &output, |_| 8)
                 .unwrap_err(),
             LookupTableError::OutputOutOfRange { input: 0 }
         );
         assert_eq!(
             InterleavedLookupTable::try_from_slice(
-                PolyLength::new(8),
+                PolyLength::new(32),
                 &input,
                 modulus,
                 &output,
@@ -291,7 +292,7 @@ fn rounded_output_boundaries_reject_before_encoding() {
         );
         assert_eq!(
             LookupTable::try_from_odd_full_domain_slice(
-                PolyLength::new(8),
+                PolyLength::new(32),
                 &input,
                 modulus,
                 &wrong,
@@ -305,7 +306,7 @@ fn rounded_output_boundaries_reject_before_encoding() {
         );
         assert_eq!(
             LookupTable::try_from_odd_full_domain_fn(
-                PolyLength::new(8),
+                PolyLength::new(32),
                 &input,
                 modulus,
                 &wrong,
@@ -316,7 +317,7 @@ fn rounded_output_boundaries_reject_before_encoding() {
         );
         assert_eq!(
             LookupTable::try_from_odd_full_domain_fn(
-                PolyLength::new(8),
+                PolyLength::new(32),
                 &input,
                 modulus,
                 &output,
@@ -333,7 +334,7 @@ fn rounded_output_boundaries_reject_before_encoding() {
     let input = RoundedCodec::new(4, modulus);
     assert_eq!(
         InterleavedLookupTable::try_from_slice(
-            PolyLength::new(8),
+            PolyLength::new(32),
             &input,
             modulus,
             &output,
@@ -348,7 +349,7 @@ fn rounded_output_boundaries_reject_before_encoding() {
     );
     assert_eq!(
         InterleavedLookupTable::try_from_slice(
-            PolyLength::new(8),
+            PolyLength::new(32),
             &input,
             modulus,
             &output,
@@ -595,21 +596,21 @@ fn compiled_luts_match_independent_negacyclic_oracle() {
     check_word_layouts::<u32>();
     check_word_layouts::<u64>();
     // A layout with one coefficient per output has no stored terminating plateau.
-    for count in [2, 4] {
+    for count in [32, 64] {
         check_layout(count, 2, 1, count, None::<u32>, NativeModulus::new());
     }
-    // Double rounding gives center 13, whereas round(32/3) would give 11.
+    // Double rounding gives center 26, whereas round(64/3) would give 21.
     // Here that difference moves the actual plateau boundaries as well.
-    check_layout(16, 3, 2, 1, Some(5u32), BarrettModulus::new(97));
+    check_layout(32, 3, 2, 1, Some(5u32), BarrettModulus::new(97));
 }
 
 #[test]
 fn rotation_center_collisions_are_rejected() {
     for (n, t, q, expected) in [
         (
-            4,
-            6u32,
-            10,
+            32,
+            48u32,
+            80,
             LookupTableError::RotationCenterCollision {
                 first_input: 1,
                 second_input: 2,
@@ -617,9 +618,9 @@ fn rotation_center_collisions_are_rejected() {
             },
         ),
         (
-            2,
-            3,
-            5,
+            32,
+            47,
+            80,
             LookupTableError::RotationCenterCollision {
                 first_input: 1,
                 second_input: 2,
@@ -895,7 +896,7 @@ fn bivariate_boundaries_reject_before_callbacks_or_output_writes() {
             BivariateLookupTable::try_new(
                 lhs,
                 rhs,
-                PolyLength::new(16),
+                PolyLength::new(32),
                 &input_codec,
                 &output_codec,
                 |_, _| panic!("invalid domain must precede callback")
@@ -909,7 +910,7 @@ fn bivariate_boundaries_reject_before_callbacks_or_output_writes() {
         BivariateLookupTable::try_new(
             3,
             2,
-            PolyLength::new(16),
+            PolyLength::new(32),
             &input_codec,
             &wrong_codec,
             |_, _| panic!("wrong modulus must precede callback")
@@ -921,7 +922,7 @@ fn bivariate_boundaries_reject_before_callbacks_or_output_writes() {
         BivariateLookupTable::try_new(
             3,
             2,
-            PolyLength::new(16),
+            PolyLength::new(32),
             &input_codec,
             &output_codec,
             |_, _| 8
@@ -932,7 +933,7 @@ fn bivariate_boundaries_reject_before_callbacks_or_output_writes() {
     let lut = BivariateLookupTable::try_new(
         3,
         2,
-        PolyLength::new(16),
+        PolyLength::new(32),
         &input_codec,
         &output_codec,
         |x, y| (x + y) as u32,
@@ -1054,8 +1055,8 @@ fn odd_full_domain_matches_signed_integer_oracle() {
                 Some((1u128 << T::BITS) - 1),
             ] {
                 let q = q.map(|q| T::try_from(q).unwrap());
-                check_odd_full_domain(16, t, q, NativeModulus::new());
-                check_odd_full_domain(16, t, q, BarrettModulus::new(T::try_from(97u128).unwrap()));
+                check_odd_full_domain(32, t, q, NativeModulus::new());
+                check_odd_full_domain(32, t, q, BarrettModulus::new(T::try_from(97u128).unwrap()));
             }
         }
     }
@@ -1067,16 +1068,16 @@ fn odd_full_domain_matches_signed_integer_oracle() {
 #[test]
 fn odd_full_domain_rejects_invalid_domains_and_outputs() {
     for (n, t, q, expected) in [
-        (8, 1, 97, LookupTableError::InvalidInputEncoding),
-        (8, 3, 3, LookupTableError::InvalidInputEncoding),
-        (8, 4, 97, LookupTableError::EvenPlaintextModulus),
+        (32, 1, 97, LookupTableError::InvalidInputEncoding),
+        (32, 3, 3, LookupTableError::InvalidInputEncoding),
+        (32, 4, 97, LookupTableError::EvenPlaintextModulus),
         (
-            8,
-            9,
+            32,
+            33,
             97,
             LookupTableError::PlaintextDomainTooLarge {
-                domain_len: 9,
-                coefficients_per_output: 8,
+                domain_len: 33,
+                coefficients_per_output: 32,
             },
         ),
     ] {
@@ -1099,7 +1100,7 @@ fn odd_full_domain_rejects_invalid_domains_and_outputs() {
     ] {
         let calls = Cell::new(0);
         let result =
-            LookupTable::try_new_odd_full_domain(PolyLength::new(16), 5, modulus, modulus, |m| {
+            LookupTable::try_new_odd_full_domain(PolyLength::new(32), 5, modulus, modulus, |m| {
                 calls.set(calls.get() + 1);
                 match m {
                     0 => Ok(1),

@@ -1,7 +1,7 @@
 //! Automorphism under the original NTRU secret in NTT and Fourier representations.
 
 use primus_decompose::DecompositionBaseLog;
-use primus_lattice::PolyLength;
+use primus_poly::PolyLength;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable, TfheFftTable};
@@ -18,7 +18,7 @@ use primus_ntt::{NttTable, UintNttTable};
 use primus_poly::Polynomial;
 use rand::{Rng, SeedableRng, rngs::StdRng};
 
-const N: usize = 32;
+const N: usize = 64;
 const Q: u32 = 132_120_577;
 const P: u32 = 16;
 
@@ -36,7 +36,7 @@ fn substitute(input: &[u32], degree: usize) -> Vec<u32> {
 }
 
 fn fourier_automorphism<Table: FftTable>() {
-    let table = Table::new(N.trailing_zeros()).unwrap();
+    let table = Table::new(PolyLength::new(N));
     let mut fft = FftEngine::new(&table);
     let parameters = NtruParameters::new(
         N,
@@ -110,8 +110,8 @@ fn fourier_automorphism_preserves_the_original_nonbinary_secret() {
 #[test]
 fn fourier_automorphism_rejects_incompatible_resources_before_writes() {
     // Boundary checks run before any backend work; both FFT layouts are covered above.
-    let table = RustFftTable::new(N.trailing_zeros()).unwrap();
-    let short_table = RustFftTable::new((N / 2).trailing_zeros()).unwrap();
+    let table = RustFftTable::new(PolyLength::new(N));
+    let short_table = RustFftTable::new(PolyLength::new(N / 2));
     let mut fft = FftEngine::new(&table);
     let parameters = NtruParameters::new(
         N,
@@ -196,7 +196,7 @@ fn fourier_automorphism_rejects_incompatible_resources_before_writes() {
 #[test]
 fn ntt_automorphism_preserves_the_original_nonbinary_secret() {
     let modulus = BarrettModulus::new(Q);
-    let table = UintNttTable::new(N.trailing_zeros(), modulus).unwrap();
+    let table = UintNttTable::new(PolyLength::new(N), modulus).unwrap();
     let parameters = NtruParameters::new(N, P, modulus, SecretKeyDistr::SparseTernary, 0.7);
     let mut rng = StdRng::seed_from_u64(0x6175_746f_4e54_5452);
     let (secret, key) = NttNtruSecretKey::generate_pair(&parameters, &table, &mut rng).unwrap();
@@ -261,9 +261,9 @@ fn ntt_automorphism_preserves_the_original_nonbinary_secret() {
 fn ntt_automorphism_rejects_incompatible_resources_before_writes() {
     let modulus = BarrettModulus::new(Q);
     let other_modulus = BarrettModulus::new(998_244_353);
-    let table = UintNttTable::new(N.trailing_zeros(), modulus).unwrap();
-    let short_table = UintNttTable::new((N / 2).trailing_zeros(), modulus).unwrap();
-    let other_table = UintNttTable::new(N.trailing_zeros(), other_modulus).unwrap();
+    let table = UintNttTable::new(PolyLength::new(N), modulus).unwrap();
+    let short_table = UintNttTable::new(PolyLength::new(N / 2), modulus).unwrap();
+    let other_table = UintNttTable::new(PolyLength::new(N), other_modulus).unwrap();
     let parameters = NtruParameters::new(N, P, modulus, SecretKeyDistr::SparseTernary, 0.7);
     let gadget = NlevParameters::with_ntru_params(&parameters, DecompositionBaseLog::new(3), None);
     let mut rng = StdRng::seed_from_u64(0x6175_746f_626f_756e);

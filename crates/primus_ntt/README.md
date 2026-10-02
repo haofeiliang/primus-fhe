@@ -26,10 +26,11 @@ The specialized tables own their root powers and precomputed backend layouts. Tr
 ```rust
 use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, U32NttTable};
+use primus_poly::PolyLength;
 
-let modulus = BarrettModulus::new(97_u32);
-let table = U32NttTable::new(3, modulus).unwrap(); // N = 8; 2N divides 97 - 1
-let expected = vec![3, 1, 4, 1, 5, 9, 2, 6];
+let modulus = BarrettModulus::new(193_u32);
+let table = U32NttTable::new(PolyLength::new(32), modulus).unwrap(); // N = 32; 2N divides 193 - 1
+let expected: Vec<u32> = (0..table.poly_length().get()).map(|i| i as u32).collect();
 let mut values = expected.clone();
 
 table.transform_slice(&mut values);
@@ -41,13 +42,13 @@ assert_eq!(values, expected);
 
 Construct and reuse a table outside repeated transform paths. The table is immutable and implements `Send + Sync`, so it may be shared across threads.
 
-`NttAutomorphismPermutation::new(degree, N)` caches `X -> X^degree` in the table's bit-reversed order. It requires odd `degree` in `[1, 2N)` and a power-of-two `N >= 2`. `apply_to` only permutes evaluations, preserving their residue range; homomorphic use still requires a scheme-specific key switch.
+`NttAutomorphismPermutation::new(degree, N)` caches `X -> X^degree` in the table's bit-reversed order. It requires odd `degree` in `[1, 2N)` and a power-of-two `N >= 32`. `apply_to` only permutes evaluations, preserving their residue range; homomorphic use still requires a scheme-specific key switch.
 
 ## Representation and ranges
 
 For `N = 2^log_n`, the forward transform consumes coefficients in ascending-power order and produces evaluations in bit-reversed order. The inverse transform consumes that bit-reversed representation and restores ascending-power coefficient order.
 
-Every single-modulus input or output slice must contain exactly `table.poly_length()` values. `NttTable` implementations enforce this before entering their unchecked kernels.
+Every single-modulus input or output slice must contain exactly `table.poly_length().get()` values. `NttTable` implementations enforce this before entering their unchecked kernels.
 
 | Operation | Input range | Output range |
 | --- | --- | --- |
@@ -62,9 +63,9 @@ The consuming `transform_inplace` and `inverse_transform_inplace` methods use th
 
 ## Construction constraints
 
-`NttError` distinguishes geometry, modulus headroom and missing roots. `DegreeNotRepresentable` reports a degree that cannot fit the table coefficient type.
+`PolyLengthError` reports invalid ring geometry; `NttError` reports composite-length overflow, modulus headroom and missing roots. `DegreeNotRepresentable` reports a degree that cannot fit the table coefficient type.
 
-- The supported contract uses `log_n >= 1`, so `N >= 2`. `N = 1` is rejected with `NttError::PolynomialLengthTooSmall`.
+- Constructors take `primus_poly::PolyLength`, which centrally checks the shared FHE power-of-two range `32..=2^17`; `poly_length()` returns the same type.
 - The modulus must be prime and admit a primitive `2N`-th root of unity, requiring `2N` to divide `q - 1`. Primality is a caller precondition, not a runtime check.
 - `U32NttTable` and `UintNttTable<u32>` require `q < 2^30`; `U64NttTable` and `UintNttTable<u64>` require `q < 2^62`. The two spare high bits make every lazy value below `4q` representable.
 - The generic table additionally requires `N < q` and reports a construction error if `N` cannot be represented by its coefficient type.
@@ -79,7 +80,7 @@ The consuming `transform_inplace` and `inverse_transform_inplace` methods use th
 
 ## DCRT layout
 
-`DcrtTable` stores one NTT table for each modulus, all with the same `N`. Coefficient and transform slices are modulus-major and have length `moduli_count * N`:
+`DcrtTable` stores one NTT table for each modulus, all with the same checked `PolyLength`. Construction checks that `moduli_count * N` fits in `usize` before building component tables. Coefficient and transform slices are modulus-major and have length `moduli_count * N`:
 
 ```text
 [a_0 mod q_0, ..., a_(N-1) mod q_0,

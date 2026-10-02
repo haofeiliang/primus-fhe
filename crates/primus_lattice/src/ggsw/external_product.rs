@@ -133,7 +133,7 @@ where
         let fourier_glwe_len = glwe_size.fourier_glwe_len();
         let fourier_glev_len = size.fourier_glev_len();
 
-        debug_assert_eq!(fft.poly_length(), poly_len);
+        debug_assert_eq!(fft.poly_length().get(), poly_len);
         debug_assert_eq!(fft.fourier_length(), fourier_poly_len);
         debug_assert_eq!(basis.modulus(), None);
         debug_assert_eq!(
@@ -287,7 +287,7 @@ where
         let glwe_len = glwe_size.glwe_len();
         let glev_len = size.glev_len();
 
-        debug_assert_eq!(ntt.poly_length(), poly_len);
+        debug_assert_eq!(ntt.poly_length().get(), poly_len);
         debug_assert_eq!(basis.modulus(), Some(modulus.value()));
         debug_assert_eq!(
             basis.decompose_length().get(),
@@ -333,7 +333,7 @@ where
     /// `basis` must match the ordered `rns_base`, and its radix must be
     /// smaller than every RNS modulus for the fast centered digit lift.
     ///
-    /// Let `size = workspace.size()`, `N = table.poly_length()`,
+    /// Let `size = workspace.size()`, `N = table.poly_length().get()`,
     /// `m = rns_base.moduli_count()`, and `w = rns_base.big_uint_value_len()`.
     /// The bound size must match `N`, `m`, the GLWE dimension, and
     /// `basis.decompose_length().get()`; `workspace.is_compatible(size, rns_base)`

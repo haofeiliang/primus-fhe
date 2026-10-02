@@ -11,7 +11,7 @@ use primus_lattice::GlweDimension;
 use primus_lattice::glwe::CrtGlwe;
 use primus_modulus::BarrettModulus;
 use primus_ntt::UintDcrtTable;
-use primus_poly::Polynomial;
+use primus_poly::{PolyLength, Polynomial};
 use rand::{SeedableRng, rngs::StdRng};
 
 /// Test coefficient expansion in the coefficient (CRT) domain.
@@ -35,7 +35,7 @@ fn crt_expansion_matches_parallel_and_plaintext() {
 
     let moduli_values: [ValueT; _] = [1125899906826241, 1125899906629633];
     let moduli = moduli_values.map(<BarrettModulus<ValueT>>::new);
-    let table = UintDcrtTable::new(log_n, &moduli).unwrap();
+    let table = UintDcrtTable::new(PolyLength::new(1usize << log_n), &moduli).unwrap();
 
     let mut rng = StdRng::seed_from_u64(42);
 
@@ -166,7 +166,7 @@ fn dcrt_expansion_matches_parallel_and_plaintext() {
 
     let moduli_values: [ValueT; _] = [1125899906826241, 1125899906629633];
     let moduli = moduli_values.map(<BarrettModulus<ValueT>>::new);
-    let table = UintDcrtTable::new(log_n, &moduli).unwrap();
+    let table = UintDcrtTable::new(PolyLength::new(1usize << log_n), &moduli).unwrap();
 
     let mut rng = StdRng::seed_from_u64(42);
 

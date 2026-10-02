@@ -6,18 +6,17 @@ use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{FftEngine, FftTable, RustFftTable, TfheFftTable, TorusFftValue};
 use primus_integer::FheUint;
 use primus_lattice::{
-    PolyLength,
     nlev::{FourierNlev, FourierNlevOwned, Nlev, NttNlev},
     ntru::Ntru,
     workspace::{FourierNtruExternalProductWorkspace, NttNtruExternalProductWorkspace},
 };
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntt::{NttTable, U32NttTable, U64NttTable};
-use primus_poly::{Polynomial, PolynomialIter};
+use primus_poly::{PolyLength, Polynomial, PolynomialIter};
 use primus_reduce::{Reduce, RingContext};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
-const N: usize = 16;
+const N: usize = 32;
 
 // Noiseless f=1 gadgets and the independent plaintext polynomial operands.
 struct SumFixture<T: FheUint> {
@@ -183,11 +182,11 @@ fn ntt<T: FheUint, Table: NttTable<ValueT = T>>(q: T, table: Table) {
 fn ntt_sum_matches_separate_products_and_polynomial_oracle() {
     ntt(
         257u32,
-        U32NttTable::new(4, BarrettModulus::new(257u32)).unwrap(),
+        U32NttTable::new(PolyLength::new(32), BarrettModulus::new(257u32)).unwrap(),
     );
     ntt(
         998_244_353u64,
-        U64NttTable::new(4, BarrettModulus::new(998_244_353u64)).unwrap(),
+        U64NttTable::new(PolyLength::new(32), BarrettModulus::new(998_244_353u64)).unwrap(),
     );
 }
 
@@ -197,7 +196,7 @@ fn ntt_sum_matches_separate_products_and_polynomial_oracle() {
 fn fourier<T: TorusFftValue, Table: FftTable>() {
     let modulus = NativeModulus::<T>::new();
     let basis = ApproxSignedBasis::new(None, DecompositionBaseLog::new(8), None);
-    let table = Table::new(4).unwrap();
+    let table = Table::new(PolyLength::new(32));
     let mut fft = FftEngine::new(&table);
     let values = (0..3 * N)
         .map(|i| T::as_from((i as u64 + 1).wrapping_mul(0x9e37_79b9_7f4a_7c15)))

@@ -7,7 +7,7 @@ use primus_lattice::GlweDimension;
 use primus_lattice::{glev::DcrtGlev, glwe::DcrtGlwe, workspace::DcrtGlevMulWorkspace};
 use primus_modulus::BarrettModulus;
 use primus_ntt::UintDcrtTable;
-use primus_poly::{BigUintPolynomial, CrtPolynomial, Polynomial};
+use primus_poly::{BigUintPolynomial, CrtPolynomial, PolyLength, Polynomial};
 use rand::{SeedableRng, rngs::StdRng};
 
 /// Test GLev–BigUint multiplication correctness.
@@ -34,7 +34,7 @@ fn test_rns_glev() {
 
     let moduli_values: [ValueT; 2] = [1125899906826241, 1125899906629633];
     let moduli = moduli_values.map(<BarrettModulus<ValueT>>::new);
-    let table = UintDcrtTable::new(log_n, &moduli).unwrap();
+    let table = UintDcrtTable::new(PolyLength::new(1usize << log_n), &moduli).unwrap();
 
     let mut rng = StdRng::seed_from_u64(42);
 

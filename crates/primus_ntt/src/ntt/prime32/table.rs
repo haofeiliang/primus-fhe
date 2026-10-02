@@ -2,7 +2,7 @@ use aligned_vec::{AVec, avec};
 use primus_data::DataMut;
 use primus_factor::{FactorMul, ShoupFactor};
 use primus_gcd::Xgcd;
-use primus_poly::{NttPolynomial, Polynomial};
+use primus_poly::{NttPolynomial, PolyLength, Polynomial};
 use primus_reduce::FieldContext;
 
 use crate::{
@@ -37,8 +37,7 @@ enum U32Backend {
 /// - `q < 2^30` — ensures lazy ranges `[0, 4q)` fit in `u32`.
 #[derive(Clone)]
 pub struct U32NttTable {
-    pub(super) n: usize,
-    pub(super) log_n: u32,
+    pub(super) poly_length: PolyLength,
     pub(super) q: u32,
     pub(super) two_q: u32,
     pub(super) root: u32,
@@ -102,13 +101,13 @@ impl U32NttTable {
     /// Returns `log2(N)`.
     #[inline]
     pub fn log_n(&self) -> u32 {
-        self.log_n
+        self.poly_length.log_n()
     }
 
     /// Returns the polynomial length `N`.
     #[inline]
     pub fn n(&self) -> usize {
-        self.n
+        self.poly_length.get()
     }
 
     /// Returns the primitive `2N`-th root of unity.
@@ -131,22 +130,20 @@ impl U32NttTable {
 
     /// Dispatch forward transform to the selected backend.
     ///
-    /// SIMD paths require `n >= 32`; smaller transforms go directly to scalar.
+    /// `PolyLength` guarantees a complete SIMD block for every supported size.
     #[inline]
     fn dispatch_forward(&self, values: &mut [u32], output_mod_factor: u32) {
-        assert_ntt_length(values.len(), self.n);
+        assert_ntt_length(values.len(), self.poly_length.get());
 
         #[cfg(target_arch = "x86_64")]
-        if self.n >= 32 {
-            match self.backend {
-                U32Backend::Avx2 => unsafe {
-                    return self.avx2_forward_transform(values, output_mod_factor);
-                },
-                U32Backend::Avx512 => unsafe {
-                    return self.avx512_forward_transform(values, output_mod_factor);
-                },
-                U32Backend::Scalar => {}
-            }
+        match self.backend {
+            U32Backend::Avx2 => unsafe {
+                return self.avx2_forward_transform(values, output_mod_factor);
+            },
+            U32Backend::Avx512 => unsafe {
+                return self.avx512_forward_transform(values, output_mod_factor);
+            },
+            U32Backend::Scalar => {}
         }
         unsafe {
             self.scalar_forward_transform_unchecked(values, output_mod_factor);
@@ -156,19 +153,17 @@ impl U32NttTable {
     /// Dispatch inverse transform to the selected backend.
     #[inline]
     fn dispatch_inverse(&self, values: &mut [u32], output_mod_factor: u32) {
-        assert_ntt_length(values.len(), self.n);
+        assert_ntt_length(values.len(), self.poly_length.get());
 
         #[cfg(target_arch = "x86_64")]
-        if self.n >= 32 {
-            match self.backend {
-                U32Backend::Avx2 => unsafe {
-                    return self.avx2_inverse_transform(values, output_mod_factor);
-                },
-                U32Backend::Avx512 => unsafe {
-                    return self.avx512_inverse_transform(values, output_mod_factor);
-                },
-                U32Backend::Scalar => {}
-            }
+        match self.backend {
+            U32Backend::Avx2 => unsafe {
+                return self.avx2_inverse_transform(values, output_mod_factor);
+            },
+            U32Backend::Avx512 => unsafe {
+                return self.avx512_inverse_transform(values, output_mod_factor);
+            },
+            U32Backend::Scalar => {}
         }
         unsafe {
             self.scalar_inverse_transform_unchecked(values, output_mod_factor);
@@ -179,13 +174,11 @@ impl U32NttTable {
 impl NttTable for U32NttTable {
     type ValueT = u32;
 
-    fn new<M>(log_n: u32, modulus: M) -> Result<Self, NttError<Self::ValueT>>
+    fn new<M>(poly_length: PolyLength, modulus: M) -> Result<Self, NttError<Self::ValueT>>
     where
         M: FieldContext<Self::ValueT>,
     {
-        if log_n == 0 {
-            return Err(NttError::PolynomialLengthTooSmall);
-        }
+        let log_n = poly_length.log_n();
         let root = <u32 as PrimitiveRoot>::try_minimal_primitive_root(log_n + 1, modulus)?;
         let q = modulus.value();
 
@@ -197,7 +190,7 @@ impl NttTable for U32NttTable {
             });
         }
 
-        let n = 1usize << log_n;
+        let n = poly_length.get();
         let two_q = q << 1;
 
         let inv_root = mod_inv(root, q);
@@ -293,8 +286,7 @@ impl NttTable for U32NttTable {
             };
 
         Ok(Self {
-            n,
-            log_n,
+            poly_length,
             q,
             two_q,
             root,
@@ -329,8 +321,8 @@ impl NttTable for U32NttTable {
     }
 
     #[inline]
-    fn poly_length(&self) -> usize {
-        self.n
+    fn poly_length(&self) -> PolyLength {
+        self.poly_length
     }
 
     #[inline]
@@ -382,5 +374,50 @@ impl MonomialNttTable for U32NttTable {
     #[inline]
     fn inv_root_powers(&self) -> &[Self::ValueT] {
         &self.inv_roots
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::UintNttTable;
+    use primus_modulus::BarrettModulus;
+
+    #[test]
+    fn scalar_kernel_matches_generic_at_the_supported_minimum() {
+        let modulus = BarrettModulus::new(1_073_692_673u32);
+        let length = PolyLength::new(32);
+        let table = U32NttTable::new(length, modulus).unwrap();
+        let reference = UintNttTable::<u32>::new(length, modulus).unwrap();
+        for (inverse, output_factor) in [(false, 1), (false, 4), (true, 1), (true, 2)] {
+            let bound = if inverse { 2 * table.q } else { 4 * table.q };
+            let mut actual: Vec<_> = (0..length.get())
+                .map(|i| [0, table.q - 1, table.q, bound - 1 - i as u32][i % 4])
+                .collect();
+            let mut expected: Vec<_> = actual.iter().map(|&value| value % table.q).collect();
+            // Call scalar directly: runtime dispatch may always select SIMD on
+            // the test host. The checked table owns all scalar preconditioners.
+            // SAFETY: the input has exactly N coefficients in the kernel's lazy range.
+            unsafe {
+                if inverse {
+                    table.scalar_inverse_transform_unchecked(&mut actual, output_factor);
+                } else {
+                    table.scalar_forward_transform_unchecked(&mut actual, output_factor);
+                }
+            }
+            if inverse {
+                reference.inverse_transform_slice(&mut expected);
+            } else {
+                reference.transform_slice(&mut expected);
+            }
+            assert!(actual.iter().all(|&value| value < output_factor * table.q));
+            assert_eq!(
+                actual
+                    .iter()
+                    .map(|value| value % table.q)
+                    .collect::<Vec<_>>(),
+                expected
+            );
+        }
     }
 }

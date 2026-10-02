@@ -2,12 +2,13 @@
 
 use primus_lattice::GlweDimension;
 use primus_lattice::{
-    GlweSize, PolyLength,
+    GlweSize,
     glwe::{Glwe, TruncatedGlwe},
     lwe::{Lwe, MultiMsgLwe},
     ntru::Ntru,
 };
 use primus_modulus::{BarrettModulus, NativeModulus};
+use primus_poly::PolyLength;
 use primus_reduce::{ReduceDotProduct, ReduceSub};
 
 #[test]
@@ -143,7 +144,7 @@ fn packed_extraction_rejects_multiple_glwe_masks() {
     let ciphertext = TruncatedGlwe::new(vec![1u32, 2, 3, 4, 5, 6, 7, 8, 10, 20]);
     let _ = ciphertext.into_multi_msg_lwe(
         2,
-        GlweSize::new(GlweDimension::new(2), PolyLength::new(4)),
+        GlweSize::new(GlweDimension::new(2), PolyLength::new(32)),
         NativeModulus::new(),
     );
 }
@@ -151,22 +152,22 @@ fn packed_extraction_rejects_multiple_glwe_masks() {
 #[test]
 fn packed_and_consuming_extraction_match_individual_samples() {
     let modulus = BarrettModulus::new(97u32);
-    let ciphertext = Glwe(vec![1u32, 2, 3, 4, 11, 12, 13, 14]);
-    let size = GlweSize::new(GlweDimension::new(1), PolyLength::new(4));
+    let ciphertext = Glwe((1..=64u32).collect::<Vec<_>>());
+    let size = GlweSize::new(GlweDimension::new(1), PolyLength::new(32));
     let mut sample = Lwe::zero(size.mask_len());
     ciphertext.extract_lwe_to(&mut sample, size.poly_length().get(), modulus);
-    let truncated = TruncatedGlwe(ciphertext.as_ref()[..6].to_vec());
+    let truncated = TruncatedGlwe(ciphertext.as_ref()[..size.mask_len() + 2].to_vec());
     assert_eq!(truncated.clone().into_lwe(size, modulus), sample);
 
     // Empty, one, truncated-body capacity and full-body capacity; consuming
     // packing must reuse the original allocation for every supported count.
-    for count in [0, 1, 2, 4] {
+    for count in [0, 1, 2, size.poly_length().get()] {
         let owned = TruncatedGlwe(ciphertext.as_ref().to_vec());
         let allocation = owned.as_ref().as_ptr();
         let packed = owned.into_multi_msg_lwe(count, size, modulus);
         assert_eq!(packed.as_ref().as_ptr(), allocation);
         assert_eq!(packed.as_ref().len(), size.mask_len() + count);
-        assert_eq!(&packed.as_ref()[..4], &[1, 93, 94, 95]);
+        assert_eq!(&packed.as_ref()[..4], &[1, 65, 66, 67]);
         if count <= 2 {
             assert_eq!(
                 truncated.clone().into_multi_msg_lwe(count, size, modulus),
@@ -180,7 +181,10 @@ fn packed_and_consuming_extraction_match_individual_samples() {
             for (index, extracted) in all.iter().enumerate() {
                 ciphertext.extract_lwe_at_to(index, &mut sample, size.poly_length().get(), modulus);
                 assert_eq!(*extracted, sample);
-                assert_eq!(borrowed.extract_lwe_at(index, 4, modulus), sample);
+                assert_eq!(
+                    borrowed.extract_lwe_at(index, size.mask_len(), modulus),
+                    sample
+                );
             }
         }
     }

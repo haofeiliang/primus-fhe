@@ -125,7 +125,7 @@ impl FourierGlweSecretKey {
         Table: FftTable,
     {
         let size = secret_key.glwe_size();
-        assert_eq!(size.poly_length().get(), fft.poly_length());
+        assert_eq!(size.poly_length().get(), fft.poly_length().get());
 
         let fourier_length = fft.fourier_length();
         let mut key = Self::new(
@@ -171,7 +171,7 @@ impl FourierGlweSecretKey {
         T: TorusFftValue,
     {
         assert_eq!(
-            fft.poly_length(),
+            fft.poly_length().get(),
             params.poly_length().get(),
             "FFT polynomial length mismatch"
         );

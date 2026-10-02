@@ -9,6 +9,7 @@ use primus_lattice::ggsw::{FourierGgsw, Ggsw};
 use primus_lattice::{GlweDimension, LweDimension};
 use primus_lwe::{LweCiphertext, LweParameters};
 use primus_modulus::NativeModulus;
+use primus_poly::PolyLength;
 use primus_test_allocations as allocations;
 use primus_tfhe::ProgrammableBootstrap as _;
 use primus_tfhe_glwe_fourier::{
@@ -123,10 +124,13 @@ fn phase(ciphertext: &[u64], secret: &[i64]) -> Vec<u64> {
 
 // Reuse one evaluator across controls, then consume its gadget ciphertexts.
 fn circuit_bootstrap<Table: FftTable>(order: PbsOrder, distribution: SecretKeyDistr, sparse: bool) {
-    let context = TfheContext::<_, Table>::try_from_parameters(
-        parameters_with_order_and_distribution(DIMENSION, POLY_LENGTH, 4, order, distribution),
-    )
-    .unwrap();
+    let context = TfheContext::<_, Table>::from_parameters(parameters_with_order_and_distribution(
+        DIMENSION,
+        POLY_LENGTH,
+        4,
+        order,
+        distribution,
+    ));
     let mut rng = StdRng::seed_from_u64(0x4342_534b_4559 ^ order as u64);
     let client = ClientKey::generate(context.parameters(), &mut rng);
     let mut generator = KeyGenerator::new(&context);
@@ -334,7 +338,7 @@ fn evaluator_rejects_resource_mismatches_and_checks_shapes_before_writes() {
     use TfheEvaluationError as Error;
     let context = TfheContext::try_new(
         parameters(DIMENSION, POLY_LENGTH, 4),
-        RustFftTable::new(POLY_LENGTH.trailing_zeros()).unwrap(),
+        RustFftTable::new(PolyLength::new(POLY_LENGTH)),
     )
     .unwrap();
     let mut rng = StdRng::seed_from_u64(42);
@@ -395,7 +399,7 @@ fn evaluator_rejects_resource_mismatches_and_checks_shapes_before_writes() {
     );
     let foreign_context = TfheContext::try_new(
         foreign_tfhe,
-        RustFftTable::new(POLY_LENGTH.trailing_zeros()).unwrap(),
+        RustFftTable::new(PolyLength::new(POLY_LENGTH)),
     )
     .unwrap();
     assert!(matches!(
@@ -439,7 +443,7 @@ fn evaluator_rejects_resource_mismatches_and_checks_shapes_before_writes() {
 fn incompatible_parameters_and_client_keys_are_rejected_before_sampling() {
     let context = TfheContext::try_new(
         parameters(DIMENSION, POLY_LENGTH, 4),
-        RustFftTable::new(POLY_LENGTH.trailing_zeros()).unwrap(),
+        RustFftTable::new(PolyLength::new(POLY_LENGTH)),
     )
     .unwrap();
     let mut rng = StdRng::seed_from_u64(42);

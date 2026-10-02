@@ -186,7 +186,7 @@ impl<T: FheUint> NttLwePackingKeySwitchingKey<T> {
             "packing NTT modulus mismatch"
         );
         assert_eq!(
-            ntt.poly_length(),
+            ntt.poly_length().get(),
             poly_length,
             "packing NTT polynomial length mismatch"
         );

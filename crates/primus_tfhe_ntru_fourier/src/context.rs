@@ -31,13 +31,12 @@ where
 {
     /// Builds the selected FFT table using the accumulator polynomial length.
     ///
-    /// Preserves table-construction failures in [`TfheContextError`]. Use [`Self::try_new`] to inject
-    /// an existing table instead; all transformed keys must use the bound table.
-    pub fn try_from_parameters(
-        parameters: TfheParameters<T, LM>,
-    ) -> Result<Self, TfheContextError> {
-        let table = Table::new(parameters.accumulator_ntru().poly_length().log_n())?;
-        Ok(Self { parameters, table })
+    /// Use [`Self::try_new`] to inject an existing table instead; all transformed
+    /// keys must use the bound table. The parameters already establish its length.
+    #[must_use]
+    pub fn from_parameters(parameters: TfheParameters<T, LM>) -> Self {
+        let table = Table::new(parameters.accumulator_ntru().poly_length());
+        Self { parameters, table }
     }
 
     /// Binds parameters to a Fourier table with the same ring length.
@@ -46,7 +45,7 @@ where
         table: Table,
     ) -> Result<Self, TfheContextError> {
         let expected = parameters.poly_length().get();
-        let actual = table.poly_length();
+        let actual = table.poly_length().get();
         if actual != expected {
             return Err(TfheContextError::PolynomialLengthMismatch { expected, actual });
         }

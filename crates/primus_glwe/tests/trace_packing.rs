@@ -7,9 +7,10 @@ use primus_glwe::{
     NttGlweTraceKey, NttGlweTraceWorkspace, SecretKeyDistr,
 };
 use primus_lattice::GlweDimension;
-use primus_lattice::{PolyLength, glwe::Glwe, lwe::Lwe};
+use primus_lattice::{glwe::Glwe, lwe::Lwe};
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntt::{NttTable, U64NttTable};
+use primus_poly::PolyLength;
 use rand::{RngExt, SeedableRng, rngs::StdRng};
 
 mod common;
@@ -125,7 +126,7 @@ fn lwe_batch(count: usize, secret: &[i64], q: u128, rng: &mut StdRng) -> Vec<u64
 #[test]
 fn ntt_trace_projection_and_packing() {
     let modulus = BarrettModulus::new(Q);
-    let ntt = U64NttTable::new(N.trailing_zeros(), modulus).unwrap();
+    let ntt = U64NttTable::new(PolyLength::new(N), modulus).unwrap();
     let size = GlweSize::new(GlweDimension::new(K), PolyLength::new(N));
     let params = GlweParameters::new(
         GlweDimension::new(K),
@@ -263,7 +264,7 @@ fn ntt_trace_projection_and_packing() {
         assert!(output.as_ref().iter().all(|&v| v == 7));
     }
     let mut wrong_workspace =
-        NttGlweTraceWorkspace::new(GlweSize::new(GlweDimension::new(5), PolyLength::new(N / 2)));
+        NttGlweTraceWorkspace::new(GlweSize::new(GlweDimension::new(5), PolyLength::new(N * 2)));
     assert!(
         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             key.apply_reverse_to(&input, &mut output, modulus, &ntt, &mut wrong_workspace);
@@ -307,7 +308,7 @@ fn fourier_trace_projection_and_packing() {
 fn fourier_trace_projection_and_packing_backend<Table: FftTable>() {
     let q = 1u128 << 64;
     let modulus = NativeModulus::<u64>::new();
-    let table = Table::new(N.trailing_zeros()).unwrap();
+    let table = Table::new(PolyLength::new(N));
     let mut fft = FftEngine::new(&table);
     let size = GlweSize::new(GlweDimension::new(K), PolyLength::new(N));
     let params = GlweParameters::new(
@@ -419,7 +420,7 @@ fn fourier_trace_projection_and_packing_backend<Table: FftTable>() {
     }
     let mut wrong_workspace = FourierGlweTraceWorkspace::new(GlweSize::new(
         GlweDimension::new(5),
-        PolyLength::new(N / 2),
+        PolyLength::new(N * 2),
     ));
     assert!(
         std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {

@@ -9,7 +9,7 @@ use primus_lattice::{ggsw::NttGgsw, glwe::NttGlwe, workspace::NttGlweExternalPro
 use primus_lwe::{LweParameters, LweSecretKey};
 use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, U32NttTable};
-use primus_poly::PolynomialOwned;
+use primus_poly::{PolyLength, PolynomialOwned};
 use primus_tfhe::sparse::BucketMapError;
 use primus_tfhe_glwe_ntt::{
     ClientKey, KeyGenerator, PbsOrder, SparseBootstrappingKeyError as Error, TfheContext,
@@ -40,7 +40,7 @@ fn context(distribution: SecretKeyDistr) -> TfheContext<u32, U32NttTable> {
         PbsOrder::KeyswitchBootstrap,
     )
     .unwrap();
-    let ntt = U32NttTable::new(N.trailing_zeros(), modulus).unwrap();
+    let ntt = U32NttTable::new(PolyLength::new(N), modulus).unwrap();
     TfheContext::try_new(parameters, ntt).unwrap()
 }
 

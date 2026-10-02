@@ -1,16 +1,19 @@
-//! Checked polynomial lengths for GLWE/NTRU layouts.
+//! Checked power-of-two polynomial lengths.
 //!
-//! [`PolyLength`] describes `Z_q[X]/(X^N + 1)` with `N >= 2`. It does not
+//! [`PolyLength`] describes `Z_q[X]/(X^N + 1)` with `N >= 32`. It does not
 //! establish a modulus, transform convention, buffer layout or security level.
-//! Transform constructors retain their own supported-size bounds.
+//! Transform constructors retain their own numerical requirements.
 
-/// Smallest supported polynomial length for GLWE/NTRU layouts.
-pub const MIN_POLY_LENGTH: usize = 2;
+/// Smallest supported FHE polynomial length.
+///
+/// The shared range starts at a full SIMD transform block (32 coefficients),
+/// while remaining small enough for focused arithmetic tests.
+pub const MIN_POLY_LENGTH: usize = 32;
 
-/// Largest supported polynomial length for GLWE/NTRU layouts.
+/// Largest supported FHE polynomial length.
 pub const MAX_POLY_LENGTH: usize = 1 << 17;
 
-/// A polynomial length outside the supported power-of-two range.
+/// A coefficient count outside the supported power-of-two range.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 #[error(
     "polynomial length must be a power of two in {MIN_POLY_LENGTH}..={MAX_POLY_LENGTH}, got {poly_length}"
@@ -23,29 +26,29 @@ pub struct PolyLengthError {
 /// Checked coefficient count `N` for a ring modulo `X^N + 1`.
 ///
 /// Accepts powers of two in [`MIN_POLY_LENGTH`]..=[`MAX_POLY_LENGTH`], the
-/// supported GLWE/NTRU layout range. This bound also ensures `2N` fits in
-/// `usize`; allocating a buffer or constructing a transform requires its own
-/// checks.
+/// shared supported range for FHE layouts and transform tables. This bound
+/// ensures `2N` fits in `usize`; allocation sizes, products with other counts
+/// and transform availability still require their own checks.
 ///
 /// ```
-/// use primus_lattice::PolyLength;
+/// use primus_poly::PolyLength;
 ///
 /// let length = PolyLength::try_new(1024)?;
 /// assert_eq!(length.get(), 1024);
 /// assert_eq!(length.log_n(), 10);
 /// assert_eq!(length.fourier_poly_len(), 512);
-/// # Ok::<(), primus_lattice::PolyLengthError>(())
+/// # Ok::<(), primus_poly::PolyLengthError>(())
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct PolyLength(usize);
 
 impl PolyLength {
-    /// Checks the supported polynomial length and power-of-two requirement.
+    /// Checks the supported range and power-of-two requirement.
     ///
     /// # Errors
     ///
-    /// Returns [`PolyLengthError`] if the length is outside
-    /// [`MIN_POLY_LENGTH`]..=[`MAX_POLY_LENGTH`] or not a power of two.
+    /// Returns [`PolyLengthError`] if the count is outside the supported range
+    /// or not a power of two.
     pub const fn try_new(poly_length: usize) -> Result<Self, PolyLengthError> {
         if poly_length >= MIN_POLY_LENGTH
             && poly_length <= MAX_POLY_LENGTH

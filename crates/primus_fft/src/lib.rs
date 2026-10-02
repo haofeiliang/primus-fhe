@@ -2,13 +2,11 @@
 //! Negacyclic FFT wrappers for `Z[X] / (X^N + 1)`.
 
 mod automorphism;
-mod error;
 mod table;
 mod torus;
 
 mod backend;
 
-pub use error::FftError;
 pub use num_complex::Complex64;
 pub use table::{FftEngine, FftTable};
 pub use torus::TorusFftValue;

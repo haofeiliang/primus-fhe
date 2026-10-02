@@ -5,9 +5,9 @@ use thiserror::Error;
 /// Invalid NTT table geometry, coefficient range or root of unity.
 #[derive(Error, Debug)]
 pub enum NttError<T> {
-    /// NTT tables require at least two polynomial coefficients.
-    #[error("NTT polynomial length must be at least two (log_n >= 1)")]
-    PolynomialLengthTooSmall,
+    /// The combined coefficient count for a DCRT table does not fit `usize`.
+    #[error("DCRT polynomial length overflow")]
+    CrtPolynomialLengthOverflow,
     /// Error that occurs when the given modulus has no primitive root with the given degree.
     #[error("no primitive root of degree {degree:?} exists modulo {modulus:?}")]
     NoPrimitiveRoot {

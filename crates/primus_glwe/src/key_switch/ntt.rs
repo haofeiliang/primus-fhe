@@ -303,7 +303,7 @@ impl<T: FheUint> NttGlweKeySwitchingKey<T> {
         Table: NttTable<ValueT = T>,
     {
         assert_eq!(
-            ntt.poly_length(),
+            ntt.poly_length().get(),
             self.poly_length(),
             "key-switch NTT polynomial length mismatch"
         );

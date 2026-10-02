@@ -1,7 +1,7 @@
 //! Observe sensitive allocations before deallocation, without reading freed memory.
 
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
-use primus_lattice::PolyLength;
+use primus_poly::PolyLength;
 use std::{
     alloc::{GlobalAlloc, Layout, System},
     cell::Cell,
@@ -135,13 +135,13 @@ fn secret_buffers_are_reused_and_erased() {
     coefficients[1] = 1;
     let mut coefficient_key = NtruSecretKey::<u32>::new(coefficients, distr);
     let modulus = BarrettModulus::new(132_120_577u32);
-    let ntt = UintNttTable::new(N.trailing_zeros(), modulus).unwrap();
+    let ntt = UintNttTable::new(PolyLength::new(N), modulus).unwrap();
     assert_erased(
         2,
         || NttNtruSecretKey::try_from_coeff_secret_key(&coefficient_key, modulus, &ntt).unwrap(),
         |_| {},
     );
-    let table = RustFftTable::new(N.trailing_zeros()).unwrap();
+    let table = RustFftTable::new(PolyLength::new(N));
     let mut fft = FftEngine::new(&table);
     assert_erased(
         3,

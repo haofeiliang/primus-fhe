@@ -18,11 +18,10 @@ use primus_glwe::{
     NttGlweTraceWorkspace, SecretKeyDistr,
 };
 use primus_lattice::GlweDimension;
-use primus_lattice::PolyLength;
 use primus_lattice::glwe::Glwe;
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntt::{NttTable, U64NttTable};
-use primus_poly::Polynomial;
+use primus_poly::{PolyLength, Polynomial};
 use primus_reduce::ReduceAdd;
 use rand::{RngExt, SeedableRng, rngs::StdRng};
 use std::{hint::black_box, time::Duration};
@@ -33,7 +32,7 @@ fn ntt_primitives(c: &mut Criterion) {
     for (k, n) in SIZES {
         let mut rng = StdRng::seed_from_u64(42);
         let modulus = BarrettModulus::new(1_125_899_906_826_241u64);
-        let table = U64NttTable::new(n.trailing_zeros(), modulus).unwrap();
+        let table = U64NttTable::new(PolyLength::new(n), modulus).unwrap();
         let params = GlweParameters::new(
             GlweDimension::new(k),
             n,
@@ -165,7 +164,7 @@ fn fourier_primitives(c: &mut Criterion) {
     for (k, n) in SIZES {
         let mut rng = StdRng::seed_from_u64(42);
         let modulus = NativeModulus::<u64>::new();
-        let table = RustFftTable::new(n.trailing_zeros()).unwrap();
+        let table = RustFftTable::new(PolyLength::new(n));
         let mut fft = FftEngine::new(&table);
         let params = GlweParameters::new(
             GlweDimension::new(k),
@@ -290,7 +289,7 @@ fn fourier_primitives(c: &mut Criterion) {
 
 fn fourier_automorphism_backend<Table: FftTable>(c: &mut Criterion, backend: &str) {
     for (k, n) in SIZES {
-        let table = Table::new(n.trailing_zeros()).unwrap();
+        let table = Table::new(PolyLength::new(n));
         let mut fft = FftEngine::new(&table);
         let mut rng = StdRng::seed_from_u64(42);
         let params = GlweParameters::new(

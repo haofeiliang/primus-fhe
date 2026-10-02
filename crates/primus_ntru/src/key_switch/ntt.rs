@@ -187,7 +187,7 @@ impl<T: FheUint> NttNtruKeySwitchingKey<T> {
             "key-switch workspace length mismatch"
         );
         assert_eq!(
-            ntt.poly_length(),
+            ntt.poly_length().get(),
             self.poly_length,
             "key-switch NTT length mismatch"
         );

@@ -87,7 +87,7 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
     where
         Table: NttTable<ValueT = T>,
     {
-        assert_eq!(secret_key.poly_length(), table.poly_length());
+        assert_eq!(secret_key.poly_length(), table.poly_length().get());
 
         let size = RnsGlweSize::new(secret_key.glwe_size(), table.moduli_count());
         let poly_length = size.poly_length().get();
@@ -615,13 +615,13 @@ mod tests {
     use super::*;
     use primus_lattice::GlweDimension;
     use primus_lattice::GlweSize;
-    use primus_lattice::PolyLength;
+    use primus_poly::PolyLength;
 
     #[test]
     fn decrypt_workspace_erases_both_buffers_without_changing_layout() {
         for count in [1, 2] {
             let size = RnsGlweSize::new(
-                GlweSize::new(GlweDimension::new(1), PolyLength::new(8)),
+                GlweSize::new(GlweDimension::new(1), PolyLength::new(32)),
                 count,
             );
             let mut workspace = DcrtGlweDecryptWorkspace::<u64>::new(size);

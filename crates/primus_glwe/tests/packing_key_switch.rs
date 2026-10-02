@@ -7,10 +7,11 @@ use primus_glwe::{
     NttLwePackingKeySwitchingKey, SecretKeyDistr,
 };
 use primus_lattice::GlweDimension;
-use primus_lattice::{PolyLength, glwe::Glwe, lwe::Lwe};
+use primus_lattice::{glwe::Glwe, lwe::Lwe};
 use primus_lwe::LweSecretKeyRef;
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntt::{NttTable, U64NttTable};
+use primus_poly::PolyLength;
 use rand::{RngExt, SeedableRng, rngs::StdRng};
 
 #[allow(dead_code)]
@@ -81,7 +82,7 @@ fn check_packing(q: u128, batch: &[u64], mut pack: impl FnMut(&[u64], &mut Glwe<
 
 fn ntt_packing(log_basis: u32, levels: usize) {
     let modulus = BarrettModulus::new(Q);
-    let ntt = U64NttTable::new(N.trailing_zeros(), modulus).unwrap();
+    let ntt = U64NttTable::new(PolyLength::new(N), modulus).unwrap();
     let params = GlweParameters::new(
         GlweDimension::new(K),
         N,
@@ -120,8 +121,8 @@ fn ntt_packing(log_basis: u32, levels: usize) {
         }
     });
     let wrong_modulus = BarrettModulus::new(132_120_577u64);
-    let wrong_table = U64NttTable::new(N.trailing_zeros(), wrong_modulus).unwrap();
-    let wrong_length = U64NttTable::new((N * 2).trailing_zeros(), modulus).unwrap();
+    let wrong_table = U64NttTable::new(PolyLength::new(N), wrong_modulus).unwrap();
+    let wrong_length = U64NttTable::new(PolyLength::new(N * 2), modulus).unwrap();
     for (modulus, table, size) in [
         (wrong_modulus, &ntt, params.size()),
         (modulus, &wrong_table, params.size()),
@@ -158,7 +159,7 @@ fn ntt_packing_switches_an_independent_signed_lwe_secret() {
 }
 
 fn fourier_packing<Table: FftTable>(log_basis: u32, levels: usize) {
-    let table = Table::new(N.trailing_zeros()).unwrap();
+    let table = Table::new(PolyLength::new(N));
     let mut fft = FftEngine::new(&table);
     let params = GlweParameters::new(
         GlweDimension::new(K),
@@ -198,7 +199,7 @@ fn fourier_packing<Table: FftTable>(log_basis: u32, levels: usize) {
             key.pack_lwes_to(input, output, &mut fft, &mut workspace);
         }
     });
-    let wrong_table = Table::new((2 * N).trailing_zeros()).unwrap();
+    let wrong_table = Table::new(PolyLength::new(2 * N));
     let mut wrong_fft = FftEngine::new(&wrong_table);
     for (fft, size) in [
         (&mut wrong_fft, params.size()),

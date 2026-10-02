@@ -7,7 +7,6 @@ use primus_glwe::{
 };
 use primus_lattice::GlweDimension;
 use primus_lattice::{
-    PolyLength,
     ggsw::NttGgsw,
     glev::NttGlev,
     glwe::{Glwe, NttGlwe},
@@ -15,7 +14,7 @@ use primus_lattice::{
 };
 use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, U64NttTable};
-use primus_poly::Polynomial;
+use primus_poly::{PolyLength, Polynomial};
 use rand::{SeedableRng, rngs::StdRng};
 
 mod common;
@@ -29,7 +28,7 @@ const MODULUS: u64 = 1_125_899_906_826_241;
 #[test]
 fn ntt_scheme_switch_produces_an_external_product_control() {
     let modulus = BarrettModulus::new(MODULUS);
-    let ntt = U64NttTable::new(POLY_LENGTH.trailing_zeros(), modulus).unwrap();
+    let ntt = U64NttTable::new(PolyLength::new(POLY_LENGTH), modulus).unwrap();
     let glwe_parameters = GlweParameters::new(
         GlweDimension::new(DIMENSION),
         POLY_LENGTH,
@@ -113,8 +112,8 @@ fn ntt_scheme_switch_produces_an_external_product_control() {
 
     // Reject mismatched modulus/table pairs before copying any row.
     let wrong_modulus = BarrettModulus::new(132_120_577u64);
-    let wrong_table = U64NttTable::new(POLY_LENGTH.trailing_zeros(), wrong_modulus).unwrap();
-    let wrong_length_table = U64NttTable::new((POLY_LENGTH * 2).trailing_zeros(), modulus).unwrap();
+    let wrong_table = U64NttTable::new(PolyLength::new(POLY_LENGTH), wrong_modulus).unwrap();
+    let wrong_length_table = U64NttTable::new(PolyLength::new(POLY_LENGTH * 2), modulus).unwrap();
     for (modulus, table) in [
         (modulus, &wrong_table),
         (wrong_modulus, &wrong_table),
@@ -151,7 +150,7 @@ fn fourier_scheme_switch<Table: primus_fft::FftTable>() {
     };
     use primus_modulus::NativeModulus;
 
-    let table = Table::new(N.trailing_zeros()).unwrap();
+    let table = Table::new(PolyLength::new(N));
     let mut fft = FftEngine::new(&table);
     let params = GlweParameters::new(
         GlweDimension::new(K),
@@ -242,7 +241,7 @@ fn fourier_scheme_switch<Table: primus_fft::FftTable>() {
     }
     assert_phase(product.as_ref(), &expected, &secret(), 1u128 << 64);
 
-    let wrong_table = Table::new((N * 2).trailing_zeros()).unwrap();
+    let wrong_table = Table::new(PolyLength::new(N * 2));
     let mut wrong_fft = FftEngine::new(&wrong_table);
     let wrong_size = primus_lattice::GadgetSize::new(
         GlweSize::new(GlweDimension::new(K + 1), PolyLength::new(N)),

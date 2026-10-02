@@ -6,10 +6,9 @@ use primus_glwe::{
     NttGlweSecretKey, SecretKeyDistr,
 };
 use primus_lattice::GlweDimension;
-use primus_lattice::PolyLength;
 use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, UintNttTable};
-use primus_poly::Polynomial;
+use primus_poly::{PolyLength, Polynomial};
 use rand::{Rng, SeedableRng, rngs::StdRng};
 
 const DIMENSION: usize = 2;
@@ -29,7 +28,7 @@ fn public_key_encoding_modes_reuse_workspace() {
         SecretKeyDistr::UniformBinary,
         0.7,
     );
-    let table = UintNttTable::new(POLY_LENGTH.trailing_zeros(), modulus).unwrap();
+    let table = UintNttTable::new(PolyLength::new(POLY_LENGTH), modulus).unwrap();
     let mut rng = StdRng::seed_from_u64(42);
     let (_, secret_key) = NttGlweSecretKey::generate_pair(&params, &table, &mut rng);
     let public_key = NttGlwePublicKey::generate(&secret_key, &params, &table, &mut rng);

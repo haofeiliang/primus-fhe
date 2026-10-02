@@ -2,10 +2,10 @@
 
 use primus_decompose::DecompositionLevelCount;
 use primus_lattice::{
-    GadgetSize, GlweDimension, GlweSize, GlweSizeError, MAX_POLY_LENGTH, MIN_POLY_LENGTH,
-    PolyLength, RnsGadgetSize, RnsGlweSize,
+    GadgetSize, GlweDimension, GlweSize, GlweSizeError, RnsGadgetSize, RnsGlweSize,
 };
 use primus_modulus::{BarrettModulus, NativeModulus};
+use primus_poly::{MAX_POLY_LENGTH, MIN_POLY_LENGTH, PolyLength};
 
 #[test]
 fn dimensions_validate_body_counts_and_derive_extracted_lwe_layouts() {
@@ -23,7 +23,7 @@ fn dimensions_validate_body_counts_and_derive_extracted_lwe_layouts() {
         GlweDimension::new(usize::MAX - 1).component_count(),
         usize::MAX
     );
-    for (k, n) in [(1, 2), (3, 8), (usize::MAX / 2 - 1, 2)] {
+    for (k, n) in [(1, 32), (3, 64), (usize::MAX / 32 - 1, 32)] {
         let size = GlweSize::new(GlweDimension::new(k), PolyLength::new(n));
         let extracted_dimension = LweDimension::from(size);
         assert_eq!(size.mask_len(), k * n);
@@ -39,13 +39,13 @@ fn checked_sizes_reject_empty_and_overflowing_layouts() {
     assert!(GlweSize::try_new(GlweDimension::new(1), PolyLength::new(MIN_POLY_LENGTH)).is_ok());
     assert!(GlweSize::try_new(GlweDimension::new(1), PolyLength::new(MAX_POLY_LENGTH)).is_ok());
 
-    let glwe = GlweSize::new(GlweDimension::new(1), PolyLength::new(2));
+    let glwe = GlweSize::new(GlweDimension::new(1), PolyLength::new(32));
     assert_eq!(
         RnsGlweSize::try_new(glwe, 0),
         Err(GlweSizeError::ZeroModuliCount)
     );
     assert!(matches!(
-        GlweSize::try_new(GlweDimension::new(usize::MAX - 1), PolyLength::new(2)),
+        GlweSize::try_new(GlweDimension::new(usize::MAX - 1), PolyLength::new(32)),
         Err(GlweSizeError::LengthOverflow(_))
     ));
     assert!(matches!(
@@ -78,7 +78,7 @@ fn dcrt_workspace_reuse_depends_on_layout_and_limb_width() {
     use primus_lattice::workspace::DcrtGlevMulWorkspace;
     use primus_rns::RNSBase;
     let size = RnsGadgetSize::new(
-        RnsGlweSize::new(GlweSize::new(GlweDimension::new(1), PolyLength::new(8)), 2),
+        RnsGlweSize::new(GlweSize::new(GlweDimension::new(1), PolyLength::new(32)), 2),
         DecompositionLevelCount::new(3),
     );
     let small = RNSBase::new(&[17u32, 97].map(BarrettModulus::new)).unwrap();
@@ -92,7 +92,7 @@ fn dcrt_workspace_reuse_depends_on_layout_and_limb_width() {
     assert!(workspace.is_compatible(size, &other_small));
     assert!(!workspace.is_compatible(size, &large));
     let other_size = RnsGadgetSize::new(
-        RnsGlweSize::new(GlweSize::new(GlweDimension::new(1), PolyLength::new(16)), 2),
+        RnsGlweSize::new(GlweSize::new(GlweDimension::new(1), PolyLength::new(64)), 2),
         DecompositionLevelCount::new(3),
     );
     assert!(!workspace.is_compatible(other_size, &small));
@@ -105,7 +105,7 @@ fn serial_external_product_restores_ternary_layout_on_unwind() {
 
     // Rebinding changes the serial consumer's level count, never its GLWE
     // geometry. An unwinding consumer must not leave that temporary binding.
-    const N: usize = 16;
+    const N: usize = 32;
     let original = GadgetSize::new(
         GlweSize::new(GlweDimension::new(1), PolyLength::new(N)),
         DecompositionLevelCount::new(3),
@@ -187,18 +187,4 @@ fn consuming_negation_reuses_aligned_and_borrowed_storage() {
     let ciphertext = view.neg(BarrettModulus::new(97));
     assert_eq!(ciphertext.as_ref(), &[0, 1, 52]);
     assert_eq!(storage, [99, 0, 1, 52, 99]);
-}
-
-#[test]
-fn polynomial_length_checks_supported_geometry() {
-    for log_n in MIN_POLY_LENGTH.trailing_zeros()..=MAX_POLY_LENGTH.trailing_zeros() {
-        let n = 1usize << log_n;
-        let length = PolyLength::try_new(n).unwrap();
-        assert_eq!(length.get(), n);
-        assert_eq!(length.log_n(), log_n);
-        assert_eq!(length.fourier_poly_len(), n / 2);
-    }
-    for n in [0, 1, 3, 6, MAX_POLY_LENGTH << 1, usize::MAX] {
-        assert_eq!(PolyLength::try_new(n).unwrap_err().poly_length, n);
-    }
 }

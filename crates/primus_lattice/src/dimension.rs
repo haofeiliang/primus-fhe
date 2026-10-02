@@ -147,10 +147,11 @@ impl From<GlweDimension> for usize {
 }
 
 /// A polynomial sample has one LWE mask coefficient per ring coefficient.
-/// PolyLength's supported range proves that the dimension and its body fit.
-impl From<crate::PolyLength> for LweDimension {
+/// A representable power of two is strictly smaller than `usize::MAX`, so
+/// the dimension and its body-inclusive count fit without another check.
+impl From<primus_poly::PolyLength> for LweDimension {
     #[inline]
-    fn from(poly_length: crate::PolyLength) -> Self {
+    fn from(poly_length: primus_poly::PolyLength) -> Self {
         Self(poly_length.get())
     }
 }

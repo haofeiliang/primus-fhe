@@ -13,6 +13,7 @@ use criterion::{BatchSize, BenchmarkGroup, BenchmarkId, Criterion, measurement::
 use primus_integer::FheUint;
 use primus_modulus::BarrettModulus;
 use primus_ntt::{MonomialNttTable, NttTable, U32NttTable, U64NttTable, UintNttTable};
+use primus_poly::PolyLength;
 use primus_reduce::FieldContext;
 use rand::{
     SeedableRng,
@@ -341,17 +342,19 @@ fn bench_construction_case<Value, Specialized, Generic, Modulus>(
     Generic: NttTable<ValueT = Value>,
     Modulus: Copy + FieldContext<Value>,
 {
-    let log_n = n.trailing_zeros();
+    let poly_length = PolyLength::new(n);
     let case = format!("{value_type}/q={modulus}/n={n}");
     let mut group = criterion.benchmark_group(format!("construction/{case}"));
     group.bench_function("specialized", |b| {
         b.iter(|| {
-            black_box(Specialized::new(log_n, black_box(modulus_context)).unwrap());
+            black_box(
+                Specialized::new(black_box(poly_length), black_box(modulus_context)).unwrap(),
+            );
         })
     });
     group.bench_function("generic", |b| {
         b.iter(|| {
-            black_box(Generic::new(log_n, black_box(modulus_context)).unwrap());
+            black_box(Generic::new(black_box(poly_length), black_box(modulus_context)).unwrap());
         })
     });
     group.finish();
@@ -362,22 +365,22 @@ fn bench_u32(criterion: &mut Criterion) {
         assert!((q - 1).is_multiple_of(2 * n as u32));
 
         let modulus = BarrettModulus::new(q);
-        let log_n = n.trailing_zeros();
+        let poly_length = PolyLength::new(n);
         let distribution = Uniform::new(0, q).unwrap();
         let input_pool = generate_input_pool(&distribution, n);
-        let specialized = U32NttTable::new(log_n, modulus).unwrap();
-        let generic = UintNttTable::<u32>::new(log_n, modulus).unwrap();
+        let specialized = U32NttTable::new(poly_length, modulus).unwrap();
+        let generic = UintNttTable::<u32>::new(poly_length, modulus).unwrap();
 
         bench_ntt_case(criterion, "u32", q, n, &specialized, &generic, &input_pool);
     }
 
     for &(q, n) in U32_AUXILIARY_CASES {
         let modulus = BarrettModulus::new(q);
-        let log_n = n.trailing_zeros();
+        let poly_length = PolyLength::new(n);
         let distribution = Uniform::new(0, q).unwrap();
         let input_pool = generate_input_pool(&distribution, n);
-        let specialized = U32NttTable::new(log_n, modulus).unwrap();
-        let generic = UintNttTable::<u32>::new(log_n, modulus).unwrap();
+        let specialized = U32NttTable::new(poly_length, modulus).unwrap();
+        let generic = UintNttTable::<u32>::new(poly_length, modulus).unwrap();
 
         bench_construction_case::<u32, U32NttTable, UintNttTable<u32>, _>(
             criterion, "u32", q, n, modulus,
@@ -402,22 +405,22 @@ fn bench_u64(criterion: &mut Criterion) {
         assert!((q - 1).is_multiple_of(2 * n as u64));
 
         let modulus = BarrettModulus::new(q);
-        let log_n = n.trailing_zeros();
+        let poly_length = PolyLength::new(n);
         let distribution = Uniform::new(0, q).unwrap();
         let input_pool = generate_input_pool(&distribution, n);
-        let specialized = U64NttTable::new(log_n, modulus).unwrap();
-        let generic = UintNttTable::<u64>::new(log_n, modulus).unwrap();
+        let specialized = U64NttTable::new(poly_length, modulus).unwrap();
+        let generic = UintNttTable::<u64>::new(poly_length, modulus).unwrap();
 
         bench_ntt_case(criterion, "u64", q, n, &specialized, &generic, &input_pool);
     }
 
     for &(q, n) in U64_AUXILIARY_CASES {
         let modulus = BarrettModulus::new(q);
-        let log_n = n.trailing_zeros();
+        let poly_length = PolyLength::new(n);
         let distribution = Uniform::new(0, q).unwrap();
         let input_pool = generate_input_pool(&distribution, n);
-        let specialized = U64NttTable::new(log_n, modulus).unwrap();
-        let generic = UintNttTable::<u64>::new(log_n, modulus).unwrap();
+        let specialized = U64NttTable::new(poly_length, modulus).unwrap();
+        let generic = UintNttTable::<u64>::new(poly_length, modulus).unwrap();
 
         bench_construction_case::<u64, U64NttTable, UintNttTable<u64>, _>(
             criterion, "u64", q, n, modulus,

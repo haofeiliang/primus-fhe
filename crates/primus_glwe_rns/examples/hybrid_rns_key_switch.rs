@@ -9,7 +9,7 @@ use primus_lattice::GlweDimension;
 use primus_lattice::glwe::DcrtGlwe;
 use primus_modulus::BarrettModulus;
 use primus_ntt::UintDcrtTable;
-use primus_poly::Polynomial;
+use primus_poly::{PolyLength, Polynomial};
 use primus_rns::HybridRNS;
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -23,8 +23,8 @@ fn main() {
     let q_moduli = [1125899906826241, 1125899906629633, 1125899906031617].map(BarrettModulus::new);
     let p_moduli = [1125899905036289].map(BarrettModulus::new);
     let qp_moduli: Vec<_> = q_moduli.iter().chain(&p_moduli).copied().collect();
-    let q_table = UintDcrtTable::new(poly_length.trailing_zeros(), &q_moduli).unwrap();
-    let qp_table = UintDcrtTable::new(poly_length.trailing_zeros(), &qp_moduli).unwrap();
+    let q_table = UintDcrtTable::new(PolyLength::new(poly_length), &q_moduli).unwrap();
+    let qp_table = UintDcrtTable::new(PolyLength::new(poly_length), &qp_moduli).unwrap();
 
     let glwe_parameters = CrtGlweParameters::new(
         GlweDimension::new(dimension),

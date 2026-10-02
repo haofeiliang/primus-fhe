@@ -114,7 +114,7 @@ impl FourierNtruSecretKey {
         Table: FftTable,
     {
         let poly_length = secret_key.poly_length();
-        assert_eq!(fft.poly_length(), poly_length);
+        assert_eq!(fft.poly_length().get(), poly_length);
 
         if !Self::is_unit_mod_two(secret_key) {
             return Err(NtruError::NonInvertibleSecretKey);
@@ -240,7 +240,7 @@ impl FourierNtruSecretKey {
             (1..=params.poly_length().get()).contains(&active_length),
             "NTRU active length must belong to 1..=N"
         );
-        assert_eq!(fft.poly_length(), params.poly_length().get());
+        assert_eq!(fft.poly_length().get(), params.poly_length().get());
 
         Self::check_fixed_weight_parity(params.secret_key_distr(), active_length)?;
 
@@ -304,6 +304,6 @@ impl FourierNtruSecretKey {
         Table: FftTable,
     {
         assert_eq!(params.poly_length().get(), self.poly_length());
-        assert_eq!(fft.poly_length(), self.poly_length());
+        assert_eq!(fft.poly_length().get(), self.poly_length());
     }
 }

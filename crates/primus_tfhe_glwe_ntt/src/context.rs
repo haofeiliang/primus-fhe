@@ -36,10 +36,7 @@ where
     /// root or unsupported modulus. Use [`Self::try_new`] to inject an existing table.
     pub fn try_from_parameters(parameters: TfheParameters<T>) -> Result<Self, TfheContextError<T>> {
         let accumulator = parameters.accumulator_glwe();
-        let table = Table::new(
-            accumulator.poly_length().log_n(),
-            accumulator.cipher_modulus(),
-        )?;
+        let table = Table::new(accumulator.poly_length(), accumulator.cipher_modulus())?;
         Ok(Self { parameters, table })
     }
 
@@ -49,7 +46,7 @@ where
         table: Table,
     ) -> Result<Self, TfheContextError<T>> {
         let expected = parameters.accumulator_glwe().poly_length().get();
-        let actual = table.poly_length();
+        let actual = table.poly_length().get();
         if actual != expected {
             return Err(TfheContextError::PolynomialLengthMismatch { expected, actual });
         }

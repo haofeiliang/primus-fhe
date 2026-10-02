@@ -1,3 +1,4 @@
+use primus_poly::PolyLength;
 // cargo bench -p primus_glwe_rns --bench key_switching
 
 use primus_decompose::DecompositionBaseLog;
@@ -40,13 +41,13 @@ fn bench_key_switching(c: &mut Criterion) {
     group.sample_size(10);
 
     for log_n in [10u32, 11, 12] {
-        let poly_length = 1usize << log_n;
-        let q_table = U64DcrtTable::new(log_n, &q_moduli).unwrap();
-        let qp_table = U64DcrtTable::new(log_n, &qp_moduli).unwrap();
+        let poly_length = PolyLength::new(1usize << log_n);
+        let q_table = U64DcrtTable::new(poly_length, &q_moduli).unwrap();
+        let qp_table = U64DcrtTable::new(poly_length, &qp_moduli).unwrap();
 
         let glwe_params = CrtGlweParameters::new(
             GlweDimension::new(DIMENSION),
-            poly_length,
+            poly_length.get(),
             mod_t,
             mod_gamma,
             &q_moduli,
@@ -82,7 +83,7 @@ fn bench_key_switching(c: &mut Criterion) {
             &mut rng,
         );
         let rns_glwe_len = glwe_params.rns_glwe_len();
-        let input: Polynomial<Vec<Value>> = Polynomial::random(poly_length, mod_t, &mut rng);
+        let input: Polynomial<Vec<Value>> = Polynomial::random(poly_length.get(), mod_t, &mut rng);
         let mut input_ciphertext: DcrtGlwe<Vec<Value>> = DcrtGlweCiphertext::zero(rns_glwe_len);
         input_dcrt_sk.encrypt_plaintext_inplace(
             &input,
@@ -108,8 +109,8 @@ fn bench_key_switching(c: &mut Criterion) {
             output_dcrt_sk.decrypt(&crt_output, &glwe_params, &q_table, &mut decrypt_workspace),
             input,
         );
-        group.throughput(Throughput::Elements(poly_length as u64));
-        let n_label = format!("N={poly_length}");
+        group.throughput(Throughput::Elements(poly_length.get() as u64));
+        let n_label = format!("N={}", poly_length.get());
 
         group.bench_function(BenchmarkId::new("CRT-bit-decomposition", &n_label), |b| {
             b.iter(|| {

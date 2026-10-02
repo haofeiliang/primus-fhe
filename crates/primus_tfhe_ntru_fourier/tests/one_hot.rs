@@ -1,13 +1,13 @@
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_fft::{Complex64, FftTable, RustFftTable, TfheFftTable};
 use primus_lattice::LweDimension;
-use primus_lattice::PolyLength;
 use primus_lwe::LweParameters;
 use primus_modulus::PowOf2Modulus;
 use primus_ntru::{
     FourierNgswCiphertext, FourierNtruExternalProductWorkspace, NlevParameters, NtruCiphertext,
     NtruParameters, SecretKeyDistr,
 };
+use primus_poly::PolyLength;
 use primus_test_allocations as allocations;
 use primus_tfhe::ProgrammableBootstrap as _;
 use primus_tfhe_ntru_fourier::{
@@ -74,7 +74,7 @@ fn selectors<Table: FftTable>(distr: SecretKeyDistr) {
         0.7,
     )
     .unwrap();
-    let context = TfheContext::<_, Table, _>::try_from_parameters(tfhe).unwrap();
+    let context = TfheContext::<_, Table, _>::from_parameters(tfhe);
     let mut rng = StdRng::seed_from_u64(0x4f48434253);
     let (client, server) = context
         .try_generate_keys(

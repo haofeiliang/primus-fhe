@@ -1,21 +1,21 @@
 use primus_modulus::{BarrettModulus, NativeModulus};
-use primus_poly::CoeffAutomorphismPermutation;
+use primus_poly::{CoeffAutomorphismPermutation, PolyLength};
 
 #[test]
 fn coefficient_permutation_matches_monomial_substitution() {
     const Q: u32 = 257;
     let modulus = BarrettModulus::new(Q);
     // The gather has no size-dependent dispatch; exhaust all odd degrees at
-    // the minimum size and at a size with several index bits.
-    for n in [2, 16] {
+    // the minimum size and with an additional index bit.
+    for n in [32, 64] {
         let input: Vec<i32> = (0..n).map(|i| i as i32 - n as i32 / 2).collect();
         let residues: Vec<u32> = input
             .iter()
             .map(|&x| x.rem_euclid(Q as i32) as u32)
             .collect();
         for degree in (1..2 * n).step_by(2) {
-            let permutation = CoeffAutomorphismPermutation::new(degree, n);
-            assert_eq!(permutation.poly_length(), n);
+            let permutation = CoeffAutomorphismPermutation::new(degree, PolyLength::new(n));
+            assert_eq!(permutation.poly_length().get(), n);
             let mut expected = vec![0i32; n];
             // Independent scatter oracle in the coefficient ring.
             for (i, &value) in input.iter().enumerate() {
@@ -33,20 +33,20 @@ fn coefficient_permutation_matches_monomial_substitution() {
         }
     }
     // Full-width bit patterns use modular negation, not signed-key negation.
-    let permutation = CoeffAutomorphismPermutation::new(3, 2);
-    let mut output = [0; 2];
-    permutation.apply_to(&[0u32, i32::MIN as u32], &mut output, NativeModulus::new());
-    assert_eq!(output, [0, i32::MIN as u32]);
+    let permutation = CoeffAutomorphismPermutation::new(3, PolyLength::new(32));
+    let mut input = [0u32; 32];
+    input[16] = i32::MIN as u32;
+    let mut output = [0; 32];
+    permutation.apply_to(&input, &mut output, NativeModulus::new());
+    assert_eq!(output, input);
 
-    for (degree, n) in [
-        (1, 0),
-        (1, 1),
-        (1, 3),
-        (0, 16),
-        (2, 16),
-        (33, 16),
-        (1, 1usize << (usize::BITS - 1)),
-    ] {
-        assert!(std::panic::catch_unwind(|| CoeffAutomorphismPermutation::new(degree, n)).is_err());
+    for (degree, n) in [(0, 32), (2, 32), (65, 32)] {
+        assert!(
+            std::panic::catch_unwind(|| CoeffAutomorphismPermutation::new(
+                degree,
+                PolyLength::new(n)
+            ))
+            .is_err()
+        );
     }
 }

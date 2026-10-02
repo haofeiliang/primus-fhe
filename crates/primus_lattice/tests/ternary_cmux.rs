@@ -5,13 +5,13 @@ use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_fft::{FftEngine, FftTable, RustFftTable, TfheFftTable, TorusFftValue};
 use primus_lattice::GlweDimension;
 use primus_lattice::{
-    GadgetSize, GlweSize, PolyLength, ggsw::Ggsw, glwe::Glwe,
-    workspace::NttGlweTernaryCmuxWorkspace,
+    GadgetSize, GlweSize, ggsw::Ggsw, glwe::Glwe, workspace::NttGlweTernaryCmuxWorkspace,
 };
 use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, UintNttTable};
+use primus_poly::PolyLength;
 
-const N: usize = 16;
+const N: usize = 32;
 const Q: u32 = 132_120_577;
 // Zero is last so it must copy over the preceding nontrivial result. Both
 // half-ring signs, split boundaries and an interior rotation are represented.
@@ -42,7 +42,7 @@ fn rotate(input: &[u32], exponent: isize) -> Vec<u32> {
 // Keep both word widths and FFT backends: they have distinct torus conversions.
 fn check_fourier_rotation<T: TorusFftValue, Table: FftTable>() {
     use primus_lattice::{ggsw::FourierGgswOwned, workspace::FourierGlweTernaryCmuxWorkspace};
-    let table = Table::new(N.trailing_zeros()).unwrap();
+    let table = Table::new(PolyLength::new(N));
     let mut fft = FftEngine::new(&table);
     let glwe_size = GlweSize::new(GlweDimension::new(2), PolyLength::new(N));
     let stride = T::MAX / T::try_from(37usize).unwrap();
@@ -129,7 +129,7 @@ fn fourier_ternary_rotation_preserves_integer_scale_and_bounds_rounding_error() 
 #[test]
 fn ternary_rotation_matches_negacyclic_oracle_with_bounded_decomposition_error() {
     let modulus = BarrettModulus::new(Q);
-    let ntt = UintNttTable::new(N.trailing_zeros(), modulus).unwrap();
+    let ntt = UintNttTable::new(PolyLength::new(N), modulus).unwrap();
     let glwe_size = GlweSize::new(GlweDimension::new(2), PolyLength::new(N));
     let input = Glwe::new(
         (0..glwe_size.glwe_len())
@@ -193,7 +193,7 @@ fn ternary_rotation_matches_negacyclic_oracle_with_bounded_decomposition_error()
 fn ngsw_ternary_rotation_matches_negacyclic_oracle() {
     use primus_lattice::{ngsw::Ngsw, ntru::Ntru, workspace::NttNtruCmuxWorkspace};
     let modulus = BarrettModulus::new(Q);
-    let ntt = UintNttTable::new(N.trailing_zeros(), modulus).unwrap();
+    let ntt = UintNttTable::new(PolyLength::new(N), modulus).unwrap();
     let input = Ntru::new(
         (0..N)
             .map(|i| ((i as u64 * 0x9e37_79b9 + 1) % u64::from(Q)) as u32)

@@ -9,13 +9,12 @@ use primus_glwe::{
 };
 use primus_lattice::{GlweDimension, LweDimension};
 use primus_lattice::{
-    PolyLength,
     glwe::{FourierGlweOwned, TorusGlwe},
     lwe::Lwe,
 };
 use primus_lwe::{LweParameters, LweSecretKey};
 use primus_modulus::{NativeModulus, PowOf2Modulus};
-use primus_poly::Polynomial;
+use primus_poly::{PolyLength, Polynomial};
 use primus_tfhe_glwe_fourier::{FourierGlweBlindRotationWorkspace, FourierGlweBootstrappingKey};
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -51,7 +50,7 @@ fn rotate_plaintext(input: &[u32], exponent: usize) -> Vec<u32> {
 
 #[test]
 fn functional_bootstrapping_key_blind_rotates() {
-    let table = RustFftTable::new(POLY_LENGTH.trailing_zeros()).unwrap();
+    let table = RustFftTable::new(PolyLength::new(POLY_LENGTH));
     let mut fft = FftEngine::new(&table);
     let mut rng = StdRng::seed_from_u64(42);
     // Input quantization uses a different modulus from the accumulator.

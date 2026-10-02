@@ -7,6 +7,7 @@ use primus_glwe_rns::{
 use primus_lattice::{GlweDimension, GlweSizeError};
 use primus_modulus::BarrettModulus;
 use primus_ntt::UintDcrtTable;
+use primus_poly::PolyLength;
 
 #[test]
 fn noise_support_must_fit_every_rns_modulus() {
@@ -22,7 +23,7 @@ fn noise_support_must_fit_every_rns_modulus() {
         let result = std::panic::catch_unwind(|| {
             CrtGlweParameters::new(
                 GlweDimension::new(1),
-                8,
+                32,
                 BarrettModulus::new(3),
                 BarrettModulus::new(101),
                 &moduli,
@@ -41,7 +42,7 @@ fn secret_support_must_fit_every_rns_modulus() {
         let result = std::panic::catch_unwind(|| {
             CrtGlweParameters::new(
                 GlweDimension::new(1),
-                8,
+                32,
                 BarrettModulus::new(3),
                 BarrettModulus::new(101),
                 &moduli,
@@ -59,7 +60,7 @@ fn gadget_parameters_check_basis_and_composed_lengths() {
     let moduli = [97u64, 17].map(BarrettModulus::new);
     let glwe = CrtGlweParameters::new(
         GlweDimension::new(1),
-        8,
+        32,
         BarrettModulus::new(3),
         BarrettModulus::new(101),
         &moduli,
@@ -86,8 +87,8 @@ fn gadget_parameters_check_basis_and_composed_lengths() {
     // Parameters store sizes without allocating ciphertexts. This ordinary
     // RNS layout fits, while its two-level gadget storage does not.
     let large_layout = CrtGlweParameters::new(
-        GlweDimension::new(usize::MAX / 16 - 1),
-        8,
+        GlweDimension::new(usize::MAX / 64 - 1),
+        32,
         BarrettModulus::new(3),
         BarrettModulus::new(101),
         &moduli,
@@ -108,7 +109,7 @@ fn cached_weights_and_centered_digits_follow_rns_order() {
     let q: u64 = moduli.iter().map(|&modulus| u64::from(modulus)).product();
     let glwe = CrtGlweParameters::new(
         GlweDimension::new(1),
-        8,
+        32,
         BarrettModulus::new(3),
         BarrettModulus::new(101),
         &moduli.map(BarrettModulus::new),
@@ -189,7 +190,7 @@ fn domain_rejects_modulus_order_mismatch() {
     let crt_gadget =
         CrtGlevParameters::with_glwe_params(&crt_glwe, DecompositionBaseLog::new(20), None);
     let reversed = [moduli[1], moduli[0]];
-    let wrong_order_table = UintDcrtTable::new(5, &reversed).unwrap();
+    let wrong_order_table = UintDcrtTable::new(PolyLength::new(32), &reversed).unwrap();
     assert!(matches!(
         DcrtGadgetDomain::try_new(&crt_gadget, &wrong_order_table),
         Err(GadgetDomainError::ModulusOrderMismatch { index: 0, .. })

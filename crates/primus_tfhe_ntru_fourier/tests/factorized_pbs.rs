@@ -1,6 +1,6 @@
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_lattice::LweDimension;
-use primus_lattice::PolyLength;
+use primus_poly::PolyLength;
 use primus_tfhe::ProgrammableBootstrap as _;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
@@ -47,7 +47,7 @@ fn context<T: TorusFftValue, Table: FftTable>(distr: SecretKeyDistr) -> TfheCont
         key_switching_noise_standard_deviation: 0.7,
     })
     .unwrap();
-    TfheContext::try_from_parameters(parameters).unwrap()
+    TfheContext::from_parameters(parameters)
 }
 
 fn value(m: usize, i: usize) -> usize {

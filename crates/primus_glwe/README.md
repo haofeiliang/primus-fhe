@@ -78,9 +78,9 @@ the complete input GLWE layout at construction, returning `GlweSizeError` on
 input-layout or combined key-storage overflow. `new` panics on the same errors. Input and
 output share the ring geometry from `output`; `input_size()` returns the stored
 layout. Ordinary and gadget parameters retain the checked
-[PolyLength](../primus_lattice/README.md#storage-and-layout) through `GlweSize`;
+[PolyLength](../primus_poly/README.md#ring-polynomial-length) through `GlweSize`;
 their `poly_length()` accessors return this checked value. Pass it directly to
-workspace constructors, and use `.get()` at scalar kernel/transform boundaries.
+workspace and NTT/FFT table constructors, and use `.get()` at raw storage or scalar kernels. The shared FHE power-of-two range `32..=2^17` is checked centrally by `PolyLength`.
 Dimension arguments and accessors use `GlweDimension`, re-exported from `primus_lattice`; `.get()` returns `k`. `primus_lattice::LweDimension::from(glwe_size)` explicitly derives the checked extracted LWE dimension `kN` from a GLWE size. Gadget constructors use `DecompositionBaseLog` and `Option<DecompositionLevelCount>` from `primus_decompose`. The top-level encryption parameter constructors still accept an integer `N`.
 
 Evaluation keys own their layouts and decomposition bases. NTT evaluation takes `input, output, modulus, ntt, workspace`; Fourier evaluation omits `modulus`. Workspaces are reusable workspaces. Preserve the key's transform representation: matching lengths and moduli alone do not prove compatibility.

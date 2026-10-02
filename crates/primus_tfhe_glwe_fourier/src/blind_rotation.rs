@@ -297,7 +297,7 @@ where
         context: &FourierGlweBlindRotationWorkspace<T>,
     ) {
         assert_eq!(
-            fft.poly_length(),
+            fft.poly_length().get(),
             self.size().glwe_size().poly_length().get(),
             "blind-rotation FFT polynomial length mismatch"
         );

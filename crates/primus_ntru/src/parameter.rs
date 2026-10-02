@@ -5,7 +5,7 @@ use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_distr::{DiscreteGaussian, SecretKeySampler};
 use primus_encoding::ScaledCodec;
 use primus_integer::FheUint;
-use primus_lattice::PolyLength;
+use primus_poly::PolyLength;
 use primus_reduce::RingContext;
 
 use crate::SecretKeyDistr;
@@ -36,7 +36,7 @@ pub enum NtruParameterError {
 /// The ciphertext modulus may be an explicit NTT-friendly field or the native
 /// wrapping modulus used by the Fourier backend.  In either case plaintexts
 /// use the codec scale `Delta = round(q / t)`.
-/// The stored [`PolyLength`] checks the supported power-of-two range.
+/// The stored [`PolyLength`] checks the shared FHE power-of-two range.
 #[derive(Clone)]
 pub struct NtruParameters<T, M>
 where

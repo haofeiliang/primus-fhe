@@ -6,7 +6,6 @@ use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable, TfheFftTable, TorusFftValue};
 use primus_integer::SignedInteger;
 use primus_lattice::LweDimension;
-use primus_lattice::PolyLength;
 use primus_lwe::LweParameters;
 use primus_modulus::NativeModulus;
 use primus_ntru::{
@@ -14,7 +13,7 @@ use primus_ntru::{
     FourierNtruGadgetEncryptWorkspace, FourierNtruSecretKey, NgswCiphertext, NlevCiphertext,
     NlevParameters, NtruCiphertext, NtruParameters, SecretKeyDistr,
 };
-use primus_poly::Polynomial;
+use primus_poly::{PolyLength, Polynomial};
 use primus_test_allocations::{CountingAllocator, measure};
 use primus_tfhe_ntru_fourier::{ClientKey, KeyGenerator, TfheContext, TfheParameters};
 use rand::{SeedableRng, rngs::StdRng};
@@ -84,7 +83,7 @@ fn exact_external<T: TorusFftValue>(
 }
 
 fn check<T: TorusFftValue, Table: FftTable>(level_count: Option<usize>) {
-    let table = Table::new(N.trailing_zeros()).unwrap();
+    let table = Table::new(PolyLength::new(N));
     let mut fft = FftEngine::new(&table);
     let modulus = NativeModulus::<T>::new();
     let client_params = LweParameters::new(

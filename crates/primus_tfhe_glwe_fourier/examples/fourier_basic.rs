@@ -60,7 +60,7 @@ fn parameters() -> TfheParameters<Word> {
 
 fn main() {
     let parameters = parameters();
-    let context = TfheContext::<Word, Table>::try_from_parameters(parameters).unwrap();
+    let context = TfheContext::<Word, Table>::from_parameters(parameters);
 
     // Client: keep client_key secret; send only server_key to the server.
     let mut rng = StdRng::seed_from_u64(42);

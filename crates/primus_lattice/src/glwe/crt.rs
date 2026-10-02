@@ -153,7 +153,7 @@ where
         A: Data<Elem = T>,
         B: DataMut<Elem = T>,
     {
-        let poly_length = table.poly_length();
+        let poly_length = table.poly_length().get();
         let dcrt_poly_len = table.crt_poly_length();
 
         output.0.copy_from_slice(self.as_ref());

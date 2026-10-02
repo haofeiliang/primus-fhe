@@ -48,10 +48,9 @@ fn check<T: TorusFftValue, Table: FftTable>() {
             key_switching: decomposition,
             key_switching_noise_standard_deviation: 0.7,
         };
-        let context = TfheContext::<_, Table, _>::try_from_parameters(
+        let context = TfheContext::<_, Table, _>::from_parameters(
             TfheParameters::try_from_config(config.clone()).unwrap(),
-        )
-        .unwrap();
+        );
         let mut rng = StdRng::seed_from_u64(0x513251);
         let (client, server) = context.try_generate_keys(None, &mut rng).unwrap();
         // Both distributions have even support and cannot form an invertible native NTRU key.
@@ -167,10 +166,9 @@ fn check<T: TorusFftValue, Table: FftTable>() {
             distr,
             0.7,
         );
-        let wrong = TfheContext::<_, Table, _>::try_from_parameters(
+        let wrong = TfheContext::<_, Table, _>::from_parameters(
             TfheParameters::try_from_config(wrong).unwrap(),
-        )
-        .unwrap();
+        );
         assert_eq!(
             wrong.evaluator(&server).err(),
             Some(TfheEvaluationError::IncompatibleServerKey)

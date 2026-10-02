@@ -40,5 +40,5 @@ pub use lookup_table::{
 };
 pub use parameters::CircuitBootstrapConfig;
 pub use primus_decompose::{DecompositionBaseLog, DecompositionConfig, DecompositionLevelCount};
-pub use primus_lattice::PolyLength;
 pub use primus_lwe::{LweCiphertext, LweSecretKeyRef};
+pub use primus_poly::PolyLength;

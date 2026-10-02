@@ -34,17 +34,18 @@ where
 {
     /// Builds the selected FFT table using the accumulator polynomial length.
     ///
-    /// Preserves table-construction failures in [`TfheContextError`]. Use [`Self::try_new`] to inject
-    /// an existing table instead; all transformed keys must use the bound table.
-    pub fn try_from_parameters(parameters: TfheParameters<T>) -> Result<Self, TfheContextError> {
-        let table = Table::new(parameters.accumulator_glwe().poly_length().log_n())?;
-        Ok(Self { parameters, table })
+    /// Use [`Self::try_new`] to inject an existing table instead; all transformed
+    /// keys must use the bound table. The parameters already establish its length.
+    #[must_use]
+    pub fn from_parameters(parameters: TfheParameters<T>) -> Self {
+        let table = Table::new(parameters.accumulator_glwe().poly_length());
+        Self { parameters, table }
     }
 
     /// Binds TFHE parameters to a compatible Fourier table.
     pub fn try_new(parameters: TfheParameters<T>, table: Table) -> Result<Self, TfheContextError> {
         let expected = parameters.accumulator_glwe().poly_length().get();
-        let actual = table.poly_length();
+        let actual = table.poly_length().get();
         if actual != expected {
             return Err(TfheContextError::PolynomialLengthMismatch { expected, actual });
         }

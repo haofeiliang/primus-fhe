@@ -1,17 +1,18 @@
 //! Maps odd-root evaluations through a backend's Fourier storage order.
 
+use primus_poly::PolyLength;
+
 /// Both bundled backends evaluate at exp(i*pi*(1-4*j)/N), j=0..N/2.
 /// An odd exponent maps these roots either to stored roots or their conjugates.
-/// The caller supplies a supported power-of-two `n` and a bijection from
-/// standard frequency indices to storage indices in `0..n/2`.
+/// The table supplies a checked length with N >= 32 and a bijection from
+/// standard frequency indices to storage indices in `0..N/2`.
 pub(crate) fn automorphism_map(
-    n: usize,
+    poly_length: PolyLength,
     degree: usize,
     storage_index: impl Fn(usize) -> usize,
 ) -> Vec<(usize, bool)> {
-    let two_n = n
-        .checked_mul(2)
-        .expect("FFT automorphism ring length overflow");
+    let n = poly_length.get();
+    let two_n = 2 * n;
     assert!(
         degree < two_n && degree % 2 == 1,
         "FFT automorphism degree must be odd and less than 2N"

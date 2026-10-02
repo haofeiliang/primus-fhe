@@ -39,7 +39,7 @@ pub(crate) fn accumulate_fourier_gadget_product<T, Table>(
     let poly_length = workspace.poly_length();
     let fourier_length = fft.fourier_length();
 
-    debug_assert_eq!(fft.poly_length(), poly_length);
+    debug_assert_eq!(fft.poly_length().get(), poly_length);
     debug_assert_eq!(fourier_length, poly_length / 2);
     debug_assert_eq!(basis.modulus(), None);
     debug_assert_eq!(input.len(), poly_length);
@@ -91,7 +91,7 @@ pub(crate) fn accumulate_ntt_gadget_product<T, M, Table>(
 {
     let poly_length = workspace.poly_length();
 
-    debug_assert_eq!(ntt.poly_length(), poly_length);
+    debug_assert_eq!(ntt.poly_length().get(), poly_length);
     debug_assert_eq!(ntt.modulus(), modulus.value());
     debug_assert_eq!(basis.modulus(), Some(modulus.value()));
     debug_assert_eq!(input.len(), poly_length);

@@ -5,13 +5,13 @@ use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_integer::FheUint;
 use primus_lattice::{
-    PolyLength,
     ngsw::Ngsw,
     ntru::{Ntru, NttNtru},
     workspace::NttNtruExternalProductWorkspace,
 };
 use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, U32NttTable, U64NttTable};
+use primus_poly::PolyLength;
 
 fn ntt<T: FheUint, Table: NttTable<ValueT = T>>(
     c: &mut Criterion,
@@ -21,14 +21,14 @@ fn ntt<T: FheUint, Table: NttTable<ValueT = T>>(
     levels: usize,
 ) {
     let modulus = BarrettModulus::new(q);
-    let table = Table::new(log_n, modulus).unwrap();
-    let exponent = table.poly_length() / 3;
+    let table = Table::new(PolyLength::new(1usize << log_n), modulus).unwrap();
+    let exponent = table.poly_length().get() / 3;
     let basis = ApproxSignedBasis::new(
         Some(q),
         DecompositionBaseLog::new(log_b),
         Some(DecompositionLevelCount::new(levels)),
     );
-    let poly_length = table.poly_length();
+    let poly_length = table.poly_length().get();
     let input = Ntru::new(
         (0..poly_length)
             .map(|i| T::as_from(i as u64 * 0x9e37_79b9 + 1) % q)
@@ -47,7 +47,7 @@ fn ntt<T: FheUint, Table: NttTable<ValueT = T>>(
     let mut group = c.benchmark_group(format!(
         "ntru/ntt/u{}/q{q}/n{}/logb{log_b}/l{levels}",
         T::BITS,
-        table.poly_length()
+        table.poly_length().get()
     ));
     group.throughput(Throughput::Elements(poly_length as u64));
     group.bench_function("external_product_coeff", |b| {

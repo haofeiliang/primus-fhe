@@ -111,7 +111,7 @@ where
     ///
     /// # Correctness
     ///
-    /// Storage must contain exactly one polynomial of `ntt_table.poly_length()`
+    /// Storage must contain exactly one polynomial of `ntt_table.poly_length().get()`
     /// values, satisfying the selected transform's input range. The table
     /// modulus must match the ciphertext; inverse input must use that table's
     /// evaluation order and normalization. Output has the same length and is
@@ -136,7 +136,7 @@ where
     ///
     /// # Correctness
     ///
-    /// Each coefficient polynomial must have `ntt_table.poly_length()` entries;
+    /// Each coefficient polynomial must have `ntt_table.poly_length().get()` entries;
     /// `ntt_poly` must have exactly that length in the table's NTT order.
     /// The table, ciphertext, polynomial, and `modulus` must use the same
     /// modulus, and input values must be canonical residues. Output has the
@@ -175,7 +175,7 @@ where
     ///
     /// # Correctness
     ///
-    /// Storage must contain exactly one polynomial of `ntt_table.poly_length()`
+    /// Storage must contain exactly one polynomial of `ntt_table.poly_length().get()`
     /// values, satisfying the selected transform's input range. The table
     /// modulus must match the ciphertext; inverse input must use that table's
     /// evaluation order and normalization.

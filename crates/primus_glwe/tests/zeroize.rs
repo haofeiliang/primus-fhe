@@ -1,7 +1,7 @@
 //! Observe secret storage immediately before its allocator releases it.
 
 use primus_lattice::GlweDimension;
-use primus_lattice::PolyLength;
+use primus_poly::PolyLength;
 use std::{
     alloc::{GlobalAlloc, Layout, System},
     cell::Cell,
@@ -106,7 +106,7 @@ fn assert_erased_on_drop<K>(key: K, data: *const u8, len: usize) {
 // Keep allocator observations serial: all cases share the watched allocation.
 #[test]
 fn secret_storage_is_erased_on_drop_and_sampling_unwind() {
-    let size = GlweSize::new(GlweDimension::new(1), PolyLength::new(16));
+    let size = GlweSize::new(GlweDimension::new(1), PolyLength::new(32));
     let mut coefficients = vec![1i32; 2 * size.mask_len()];
     let data = coefficients.as_ptr().cast();
     let len = size_of_val(coefficients.as_slice());

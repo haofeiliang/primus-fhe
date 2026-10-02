@@ -1,9 +1,9 @@
 //! Public LUT-construction checks without keys, encryption or transform tables.
 //! An explicit power-of-two modulus here checks the compiler, not FFT support.
 
-use primus_glwe::PolyLength;
 use primus_integer::FheUint;
 use primus_modulus::{NativeModulus, PowOf2Modulus};
+use primus_poly::PolyLength;
 use primus_reduce::RingContext;
 use primus_tfhe::{InterleavedLookupTable, LookupTable};
 use primus_tfhe_test_support::parameters::ntt_modulus;

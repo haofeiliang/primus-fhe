@@ -45,7 +45,7 @@ pub(crate) fn rotate_buckets<T: TorusFftValue, Table: FftTable>(
     basis: &ApproxSignedBasis<T>,
     fft: &mut FftEngine<'_, Table>,
 ) {
-    let n = fft.poly_length();
+    let n = fft.poly_length().get();
     let modulus = NativeModulus::new();
     // Start with public P in current. Bucket 0 uses NLEV[H_0] to lift P;
     // buckets >= 1 actually hold NGSW[H_j] = NLEV[f*H_j] and act on ciphertexts.

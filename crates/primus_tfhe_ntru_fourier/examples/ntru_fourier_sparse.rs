@@ -63,7 +63,7 @@ fn parameters() -> TfheParameters<Word, PowOf2Modulus<Word>> {
 
 fn main() {
     let parameters = parameters();
-    let context = TfheContext::<Word, Table, _>::try_from_parameters(parameters).unwrap();
+    let context = TfheContext::<Word, Table, _>::from_parameters(parameters);
     // The input uses padded t=16. Compile t=8 outputs at Q and decode at q.
     let table_codec =
         RoundedCodec::new(8, context.parameters().accumulator_ntru().cipher_modulus());

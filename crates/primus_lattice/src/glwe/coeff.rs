@@ -159,7 +159,7 @@ where
     ///
     /// # Correctness
     ///
-    /// Each coefficient polynomial must have `ntt_table.poly_length()` entries;
+    /// Each coefficient polynomial must have `ntt_table.poly_length().get()` entries;
     /// `ntt_poly` must have exactly that length in the table's NTT order.
     /// The table, ciphertext, polynomial, and `modulus` must use the same
     /// modulus, and input values must be canonical residues. Output has the
@@ -182,7 +182,7 @@ where
         A: Data<Elem = T>,
         B: DataMut<Elem = T>,
     {
-        let ntt_poly_len = ntt_table.poly_length();
+        let ntt_poly_len = ntt_table.poly_length().get();
 
         output.0.copy_from_slice(self.as_ref());
 

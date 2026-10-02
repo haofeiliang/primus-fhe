@@ -8,7 +8,7 @@
 
 use primus_decompose::DecompositionBaseLog;
 use primus_lattice::LweDimension;
-use primus_lattice::PolyLength;
+use primus_poly::PolyLength;
 use std::hint::black_box;
 
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};

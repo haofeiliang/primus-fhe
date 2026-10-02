@@ -7,7 +7,7 @@ use primus_lattice::{GlweDimension, LweDimension};
 use primus_lattice::{glwe::TorusGlwe, lwe::Lwe};
 use primus_lwe::LweParameters;
 use primus_modulus::NativeModulus;
-use primus_poly::Polynomial;
+use primus_poly::{PolyLength, Polynomial};
 use primus_test_allocations as allocations;
 use primus_tfhe_glwe_fourier::{
     BootstrappingKey, ClientKey, FourierGlweBlindRotationWorkspace, KeyGenerator, PbsOrder,
@@ -19,7 +19,7 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 #[global_allocator]
 static ALLOCATOR: allocations::CountingAllocator = allocations::CountingAllocator;
 
-const N: usize = 16;
+const N: usize = 32;
 const TWO_N: usize = 2 * N;
 
 // Independent integer oracle for per-coefficient quantization and negacyclic rotation.
@@ -104,7 +104,7 @@ fn check_raw<Table: FftTable>() {
             PbsOrder::BootstrapKeyswitch,
         )
         .unwrap();
-        let context = TfheContext::<u32, Table>::try_from_parameters(parameters).unwrap();
+        let context = TfheContext::<u32, Table>::from_parameters(parameters);
         let mut rng = StdRng::seed_from_u64(0x4234_3252 + dimension as u64);
         let client = ClientKey::generate(context.parameters(), &mut rng);
         let mut generator = KeyGenerator::new(&context);
@@ -209,7 +209,7 @@ fn check_raw<Table: FftTable>() {
         if dimension != 1 {
             continue;
         }
-        let wrong_table = Table::new((N / 2).trailing_zeros()).unwrap();
+        let wrong_table = Table::new(PolyLength::new(N * 2));
         let mut wrong_fft = FftEngine::new(&wrong_table);
         for (step, input_len, lut_len, output_len, bad_fft) in [
             (0, 17, N, sparse.size().glwe_len(), false),

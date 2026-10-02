@@ -1,4 +1,5 @@
 //! Observe owned workspace allocations while live and immediately before release.
+use primus_poly::PolyLength;
 use std::{
     alloc::{GlobalAlloc, Layout, System},
     cell::Cell,
@@ -72,7 +73,7 @@ fn check_backend<Table: FftTable>(log_n: u32)
 where
     Table::Workspace: Zeroize,
 {
-    let table = Table::new(log_n).unwrap();
+    let table = Table::new(PolyLength::new(1usize << log_n));
     ALLOCATIONS.store(0, Ordering::SeqCst);
     RELEASED.store(0, Ordering::SeqCst);
     ERASED.store(true, Ordering::SeqCst);
@@ -106,11 +107,11 @@ where
     }
 
     let mut fft = FftEngine::from_workspace(&table, workspace);
-    let input: Vec<u32> = (0..table.poly_length())
+    let input: Vec<u32> = (0..table.poly_length().get())
         .map(|i| (i as u32).wrapping_mul(0x12345))
         .collect();
     let mut fourier = vec![Complex64::default(); table.fourier_length()];
-    let mut output = vec![0u32; table.poly_length()];
+    let mut output = vec![0u32; table.poly_length().get()];
     for _ in 0..2 {
         fft.zeroize_workspace();
         fft.forward_as_torus(&input, &mut fourier);
@@ -130,7 +131,7 @@ where
 #[test]
 fn scratch_is_erased_and_reusable() {
     // Retain sub-alignment buffers and a plan with backend work storage.
-    for log_n in [2, 10] {
+    for log_n in [5, 10] {
         check_backend::<RustFftTable>(log_n);
         check_backend::<TfheFftTable>(log_n);
     }

@@ -1,7 +1,8 @@
 use num_complex::Complex64;
+use primus_poly::PolyLength;
 use zeroize::Zeroize;
 
-use crate::{FftError, TorusFftValue};
+use crate::TorusFftValue;
 
 /// Negacyclic FFT wrapper for polynomials modulo `X^N + 1`.
 ///
@@ -13,17 +14,16 @@ pub trait FftTable: Send + Sync {
     /// Backend-specific reusable transform workspace bound to one table.
     type Workspace;
 
-    /// Creates a table for `N = 2^log_n` coefficients.
+    /// Creates a table for the checked coefficient count `N`.
     ///
-    /// # Errors
-    ///
-    /// Returns [`FftError::InvalidLogN`] unless
-    /// `2 <= log_n <= usize::BITS - 1`.
-    fn new(log_n: u32) -> Result<Self, FftError>
+    /// Implementations support the full range established by [`PolyLength`].
+    #[must_use]
+    fn new(poly_length: PolyLength) -> Self
     where
         Self: Sized;
     /// Returns the coefficient polynomial length `N`.
-    fn poly_length(&self) -> usize;
+    #[must_use]
+    fn poly_length(&self) -> PolyLength;
     /// Returns the number of complex Fourier values, `N / 2`.
     fn fourier_length(&self) -> usize;
     /// Builds the frequency permutation for the negacyclic automorphism `X -> X^degree`.
@@ -35,7 +35,7 @@ pub trait FftTable: Send + Sync {
     /// Allocate this map during evaluation-key construction and reuse it.
     ///
     /// # Panics
-    /// Panics unless degree is odd and in `1..2N`, or 2N overflows usize.
+    /// Panics unless degree is odd and in `1..2N`.
     #[must_use]
     fn automorphism_map(&self, degree: usize) -> Vec<(usize, bool)>;
 
@@ -165,8 +165,9 @@ impl<'a, Table: FftTable + ?Sized> FftEngine<'a, Table> {
     }
 
     /// Returns the coefficient polynomial length.
+    #[must_use]
     #[inline]
-    pub fn poly_length(&self) -> usize {
+    pub fn poly_length(&self) -> PolyLength {
         self.table.poly_length()
     }
 

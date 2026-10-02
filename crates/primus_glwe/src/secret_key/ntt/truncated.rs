@@ -36,7 +36,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         let poly_length = size.poly_length().get();
         assert_eq!(self.size, size, "GLWE parameter layout mismatch");
         assert_eq!(
-            ntt_table.poly_length(),
+            ntt_table.poly_length().get(),
             poly_length,
             "NTT polynomial length mismatch"
         );
@@ -115,7 +115,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         let size = self.size;
         let poly_length = size.poly_length().get();
         assert_eq!(
-            ntt_table.poly_length(),
+            ntt_table.poly_length().get(),
             poly_length,
             "NTT polynomial length mismatch"
         );

@@ -5,7 +5,8 @@ use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_distr::{DiscreteGaussian, SecretKeySampler};
 use primus_integer::FheUint;
 use primus_lattice::GlweDimension;
-use primus_lattice::{GadgetSize, GlweSize, GlweSizeError, PolyLength};
+use primus_lattice::{GadgetSize, GlweSize, GlweSizeError};
+use primus_poly::PolyLength;
 use primus_reduce::RingContext;
 use rand::distr::Uniform;
 

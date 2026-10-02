@@ -9,7 +9,7 @@ use primus_lattice::{glwe::Glwe, lwe::Lwe};
 use primus_lwe::LweParameters;
 use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, U32NttTable};
-use primus_poly::Polynomial;
+use primus_poly::{PolyLength, Polynomial};
 use primus_test_allocations as allocations;
 use primus_tfhe_glwe_ntt::{
     ClientKey, KeyGenerator, NttGlweBlindRotationWorkspace, NttGlweBootstrappingKey, PbsOrder,
@@ -56,7 +56,7 @@ fn sparse_rotation_matches_direct_phase_and_classic_with_reused_scratch() {
     // guarantee a publicly empty bucket (16 entries in 17 buckets). k=2 covers
     // aggregation across every GGSW row. The larger k=2 ring uses encrypted LWE
     // inputs and spans multiple aggregation tiles, including a short final tile.
-    for (n, k, copies, buckets) in [(16usize, 1, 3, 8), (16, 2, 1, 17), (256, 2, 3, 8)] {
+    for (n, k, copies, buckets) in [(32usize, 1, 3, 8), (32, 2, 1, 17), (256, 2, 3, 8)] {
         let modulus = BarrettModulus::new(Q);
         let lwe = LweParameters::new(
             LweDimension::new(16),
@@ -75,7 +75,7 @@ fn sparse_rotation_matches_direct_phase_and_classic_with_reused_scratch() {
         );
         // The small rings use exact decomposition; the encrypted-input case
         // also exercises the truncated basis used by the cost profile.
-        let basis = if n == 16 {
+        let basis = if n == 32 {
             ApproxSignedBasis::new(Some(Q), DecompositionBaseLog::new(9), None)
         } else {
             ApproxSignedBasis::new(
@@ -92,7 +92,7 @@ fn sparse_rotation_matches_direct_phase_and_classic_with_reused_scratch() {
             PbsOrder::KeyswitchBootstrap,
         )
         .unwrap();
-        let ntt = U32NttTable::new(n.trailing_zeros(), modulus).unwrap();
+        let ntt = U32NttTable::new(PolyLength::new(n), modulus).unwrap();
         let context = TfheContext::try_new(parameters, ntt).unwrap();
         let parameters = context.parameters();
         let ntt = context.table();
@@ -160,7 +160,7 @@ fn sparse_rotation_matches_direct_phase_and_classic_with_reused_scratch() {
             codec.decode_value(expected[0])
         };
 
-        if n == 16 {
+        if n == 32 {
             let lut = Polynomial::new(
                 (0..n)
                     .map(|i| {
@@ -206,7 +206,7 @@ fn sparse_rotation_matches_direct_phase_and_classic_with_reused_scratch() {
         }
         // A rejected raw call must leave the caller's accumulator untouched.
         let wrong_modulus = BarrettModulus::new(998_244_353u32);
-        let wrong_table = U32NttTable::new(n.trailing_zeros(), wrong_modulus).unwrap();
+        let wrong_table = U32NttTable::new(PolyLength::new(n), wrong_modulus).unwrap();
         for (input_len, lut_len, output_len, table) in [
             (16, n, size.glwe_len(), ntt),
             (17, n - 1, size.glwe_len(), ntt),

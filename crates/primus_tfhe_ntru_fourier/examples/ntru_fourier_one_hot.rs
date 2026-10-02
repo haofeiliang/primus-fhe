@@ -91,7 +91,7 @@ fn circuit_config() -> CircuitBootstrapConfig {
 }
 
 fn main() {
-    let context = TfheContext::<Word, Table, _>::try_from_parameters(parameters()).unwrap();
+    let context = TfheContext::<Word, Table, _>::from_parameters(parameters());
 
     // Client: independent LWE/NTRU secrets; send evaluation material and both encrypted choices.
     let mut rng = StdRng::seed_from_u64(42);

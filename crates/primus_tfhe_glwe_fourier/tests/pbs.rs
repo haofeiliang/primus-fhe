@@ -3,10 +3,10 @@ use primus_decompose::primitive::ApproxSignedBasis;
 use primus_encoding::RoundedCodec;
 use primus_fft::{FftTable, RustFftTable, TfheFftTable, TorusFftValue};
 use primus_glwe::{GlweParameters, SecretKeyDistr};
-use primus_lattice::PolyLength;
 use primus_lattice::{GlweDimension, LweDimension};
 use primus_lwe::{LweCiphertext, LweParameters};
 use primus_modulus::{BarrettModulus, NativeModulus};
+use primus_poly::PolyLength;
 use primus_test_allocations as allocations;
 use primus_tfhe::{
     BivariateLookupTable, InterleavedLookupTable, LookupTable, ProgrammableBootstrapInterleaved,
@@ -337,14 +337,14 @@ fn pbs_u32_preserves_outputs_and_validates_domains() {
         check_context(
             TfheContext::try_new(
                 parameters::<u32>(case),
-                RustFftTable::new(N.trailing_zeros()).unwrap(),
+                RustFftTable::new(PolyLength::new(N)),
             )
             .unwrap(),
         );
         check_context(
             TfheContext::try_new(
                 parameters::<u32>(case),
-                TfheFftTable::new(N.trailing_zeros()).unwrap(),
+                TfheFftTable::new(PolyLength::new(N)),
             )
             .unwrap(),
         );
@@ -357,14 +357,14 @@ fn pbs_u64_preserves_outputs_and_validates_domains() {
         check_context(
             TfheContext::try_new(
                 parameters::<u64>(case),
-                RustFftTable::new(N.trailing_zeros()).unwrap(),
+                RustFftTable::new(PolyLength::new(N)),
             )
             .unwrap(),
         );
         check_context(
             TfheContext::try_new(
                 parameters::<u64>(case),
-                TfheFftTable::new(N.trailing_zeros()).unwrap(),
+                TfheFftTable::new(PolyLength::new(N)),
             )
             .unwrap(),
         );

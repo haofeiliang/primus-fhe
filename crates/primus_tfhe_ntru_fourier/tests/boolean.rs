@@ -36,7 +36,7 @@ fn check_context<Table: FftTable>(distr: SecretKeyDistr) {
         key_switching_noise_standard_deviation: 0.7,
     })
     .unwrap();
-    let context = TfheContext::<_, Table>::try_from_parameters(parameters).unwrap();
+    let context = TfheContext::<_, Table>::from_parameters(parameters);
     let mut rng = StdRng::seed_from_u64(0xB201);
     let (client, server) = context.try_generate_keys(None, &mut rng).unwrap();
     let public = client

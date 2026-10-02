@@ -34,8 +34,7 @@ fn ordinary<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str)
     c.bench_function(&name, |b| {
         let (context, client, server, input, lhs, rhs) = fixture.get_or_insert_with(|| {
             let context =
-                TfheContext::<T, Table, PowOf2Modulus<T>>::try_from_parameters(parameters.clone())
-                    .unwrap();
+                TfheContext::<T, Table, PowOf2Modulus<T>>::from_parameters(parameters.clone());
             let mut rng = StdRng::seed_from_u64(42);
             let (client, server) = context
                 .try_generate_keys(Some(ntru::cbs::<T>()), &mut rng)
@@ -81,8 +80,7 @@ fn one_hot<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str) 
                 let parameters =
                     ntru::circuit(NativeModulus::<T>::new(), 8, SecretKeyDistr::UniformBinary);
                 let context =
-                    TfheContext::<T, Table, PowOf2Modulus<T>>::try_from_parameters(parameters)
-                        .unwrap();
+                    TfheContext::<T, Table, PowOf2Modulus<T>>::from_parameters(parameters);
                 let mut rng = StdRng::seed_from_u64(42);
                 let (client, server) = context
                     .try_generate_keys(Some(ntru::cbs::<T>()), &mut rng)

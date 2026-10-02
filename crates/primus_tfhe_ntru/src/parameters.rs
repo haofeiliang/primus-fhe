@@ -3,7 +3,8 @@ use primus_encoding::RoundedCodec;
 use primus_integer::FheUint;
 use primus_lwe::LweDimension;
 use primus_lwe::LweParameters;
-use primus_ntru::{NlevParameters, NtruParameters, PolyLength, SecretKeyDistr};
+use primus_ntru::{NlevParameters, NtruParameters, SecretKeyDistr};
+use primus_poly::PolyLength;
 use primus_reduce::RingContext;
 use primus_tfhe::rotation::RotationQuantizer;
 

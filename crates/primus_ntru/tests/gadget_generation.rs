@@ -3,7 +3,6 @@
 use primus_decompose::DecompositionBaseLog;
 use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable};
 use primus_lattice::{
-    PolyLength,
     ngsw::{FourierNgswIter, NttNgswIter},
     ntru::{FourierNtruOwned, Ntru, NttNtru},
 };
@@ -16,7 +15,7 @@ use primus_ntru::{
     NttNtruGadgetEncryptWorkspace, NttNtruSecretKey, SecretKeyDistr,
 };
 use primus_ntt::{NttTable, UintNttTable};
-use primus_poly::{Polynomial, PolynomialOwned};
+use primus_poly::{PolyLength, Polynomial, PolynomialOwned};
 use rand::{SeedableRng, rngs::StdRng};
 
 // Functional ring size; keep the original word widths, moduli and decomposition.
@@ -78,7 +77,7 @@ fn decrypt_fourier_output(
 #[test]
 fn ntt_nlev_generation_and_ngsw_cmux() {
     let modulus = BarrettModulus::new(EXPLICIT_MODULUS);
-    let ntt = UintNttTable::new(POLY_LENGTH.trailing_zeros(), modulus).unwrap();
+    let ntt = UintNttTable::new(PolyLength::new(POLY_LENGTH), modulus).unwrap();
     let params = NtruParameters::new(
         POLY_LENGTH,
         PLAINTEXT_MODULUS,
@@ -221,7 +220,7 @@ fn ntt_nlev_generation_and_ngsw_cmux() {
 
 #[test]
 fn fourier_nlev_generation_and_ngsw_cmux() {
-    let table = RustFftTable::new(POLY_LENGTH.trailing_zeros()).unwrap();
+    let table = RustFftTable::new(PolyLength::new(POLY_LENGTH));
     let mut fft = FftEngine::new(&table);
     let params = NtruParameters::new(
         POLY_LENGTH,

@@ -1,5 +1,5 @@
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
-use primus_lattice::PolyLength;
+use primus_poly::PolyLength;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable, TfheFftTable};
@@ -165,7 +165,7 @@ fn check_operations(
 #[test]
 fn ntt_trace_projection_and_expansion_match_ring_phases() {
     let modulus = BarrettModulus::new(Q);
-    let table = U64NttTable::new(N.trailing_zeros(), modulus).unwrap();
+    let table = U64NttTable::new(PolyLength::new(N), modulus).unwrap();
     let parameters = NtruParameters::new(N, 64, modulus, SecretKeyDistr::SparseTernary, 0.7);
     let gadget = NlevParameters::with_ntru_params(&parameters, DecompositionBaseLog::new(10), None);
     let secret = secret();
@@ -283,7 +283,7 @@ fn ntt_trace_projection_and_expansion_match_ring_phases() {
 
 fn fourier_trace<Table: FftTable>() {
     let q = 1u128 << 64;
-    let table = Table::new(N.trailing_zeros()).unwrap();
+    let table = Table::new(PolyLength::new(N));
     let mut fft = FftEngine::new(&table);
     let parameters = NtruParameters::new(
         N,
@@ -427,10 +427,12 @@ impl TryCryptoRng for ZeroRng {}
 
 #[test]
 fn reverse_trace_preserves_the_distinct_modular_and_native_halving_paths() {
-    const N: usize = 4;
-    let secret = NtruSecretKey::<u32>::new(vec![1, 0, 0, 0], SecretKeyDistr::UniformBinary);
+    const N: usize = 32;
+    let mut secret = vec![0; N];
+    secret[0] = 1;
+    let secret = NtruSecretKey::<u32>::new(secret, SecretKeyDistr::UniformBinary);
     let modulus = BarrettModulus::new(257u32);
-    let table = primus_ntt::UintNttTable::new(N.trailing_zeros(), modulus).unwrap();
+    let table = primus_ntt::UintNttTable::new(PolyLength::new(N), modulus).unwrap();
     let params = NtruParameters::new(N, 4, modulus, SecretKeyDistr::UniformBinary, 0.7);
     let params = NlevParameters::with_ntru_params(&params, DecompositionBaseLog::new(3), None);
     let key = NttNtruSecretKey::try_from_coeff_secret_key(&secret, modulus, &table).unwrap();
@@ -442,11 +444,15 @@ fn reverse_trace_preserves_the_distinct_modular_and_native_halving_paths() {
         &mut ZeroRng,
         &mut NttNtruGadgetEncryptWorkspace::new(PolyLength::new(N)),
     );
-    let input = NtruCiphertext::new(vec![1u32, 2, 256, 255]);
+    let mut input = NtruCiphertext::<Vec<u32>>::zero(N);
+    input.as_mut()[..4].copy_from_slice(&[1, 2, 256, 255]);
     let mut output = NtruCiphertext::new(vec![7; N]);
     let mut workspace = NttNtruTraceWorkspace::new(PolyLength::new(N));
-    trace.apply_reverse_partial_to(&input, 2, &mut output, modulus, &table, &mut workspace);
-    assert_eq!(output.as_ref(), &[1, 0, 256, 0]);
+    trace.apply_reverse_partial_to(&input, N / 2, &mut output, modulus, &table, &mut workspace);
+    let mut expected = vec![0; N];
+    expected[0] = 1;
+    expected[2] = 256;
+    assert_eq!(output.as_ref(), expected);
     let mut wrong = NttNtruTraceWorkspace::new(PolyLength::new(2 * N));
     output.as_mut().fill(7);
     assert!(
@@ -457,7 +463,7 @@ fn reverse_trace_preserves_the_distinct_modular_and_native_halving_paths() {
     );
     assert_eq!(output.as_ref(), &[7; N]);
 
-    let table = RustFftTable::new(N.trailing_zeros()).unwrap();
+    let table = RustFftTable::new(PolyLength::new(N));
     let mut fft = FftEngine::new(&table);
     let params = NtruParameters::new(
         N,
@@ -476,11 +482,15 @@ fn reverse_trace_preserves_the_distinct_modular_and_native_halving_paths() {
         &mut ZeroRng,
         &mut FourierNtruGadgetEncryptWorkspace::new(PolyLength::new(N)),
     );
-    let input = NtruCiphertext::new(vec![1u32, 0, u32::MAX, 0]);
+    input.as_mut().fill(0);
+    input.as_mut()[0] = 1;
+    input.as_mut()[2] = u32::MAX;
     let mut workspace = FourierNtruTraceWorkspace::new(PolyLength::new(N));
-    trace.apply_reverse_partial_to(&input, 2, &mut output, &mut fft, &mut workspace);
+    trace.apply_reverse_partial_to(&input, N / 2, &mut output, &mut fft, &mut workspace);
     // floor(1/2) and floor((2^32-1)/2), then the even projection doubles them.
-    assert_eq!(output.as_ref(), &[0, 0, u32::MAX - 1, 0]);
+    expected[0] = 0;
+    expected[2] = u32::MAX - 1;
+    assert_eq!(output.as_ref(), expected);
     let mut wrong = FourierNtruTraceWorkspace::new(PolyLength::new(2 * N));
     output.as_mut().fill(7);
     assert!(

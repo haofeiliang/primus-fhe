@@ -38,7 +38,7 @@ fn context<T: TorusFftValue, Table: FftTable>(distr: SecretKeyDistr) -> TfheCont
         SecretKeyDistr::SparseTernary,
         0.7,
     );
-    TfheContext::try_from_parameters(
+    TfheContext::from_parameters(
         TfheParameters::try_new(
             lwe,
             NlevParameters::with_ntru_params(&acc, DecompositionBaseLog::new(8), None),
@@ -50,7 +50,6 @@ fn context<T: TorusFftValue, Table: FftTable>(distr: SecretKeyDistr) -> TfheCont
         )
         .unwrap(),
     )
-    .unwrap()
 }
 
 // Independent LWE phase under the binary external secret; no backend decryption.

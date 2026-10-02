@@ -5,7 +5,7 @@
 //! Setup is excluded; these parameters do not establish cryptographic security.
 
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
-use primus_lattice::PolyLength;
+use primus_poly::PolyLength;
 use std::{hint::black_box, time::Duration};
 
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
@@ -32,7 +32,7 @@ fn ntt(c: &mut Criterion, n: usize) {
     let mut rng = StdRng::seed_from_u64(42);
     let modulus = BarrettModulus::new(1_125_899_906_826_241u64);
     let parameters = NtruParameters::new(n, 16, modulus, SecretKeyDistr::SparseTernary, 3.2);
-    let table = UintNttTable::new(n.trailing_zeros(), modulus).unwrap();
+    let table = UintNttTable::new(PolyLength::new(n), modulus).unwrap();
     let (coeff_key, key) = NttNtruSecretKey::generate_pair(&parameters, &table, &mut rng).unwrap();
     let message = Polynomial::new(
         (0..n)
@@ -224,7 +224,7 @@ fn fourier<Table: FftTable>(c: &mut Criterion, n: usize, backend: &str) {
         SecretKeyDistr::SparseTernary,
         3.2,
     );
-    let table = Table::new(n.trailing_zeros()).unwrap();
+    let table = Table::new(PolyLength::new(n));
     let mut fft = FftEngine::new(&table);
     let (coeff_key, key) =
         FourierNtruSecretKey::generate_pair(&parameters, &mut fft, &mut rng).unwrap();

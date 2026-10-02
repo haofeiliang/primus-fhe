@@ -5,18 +5,17 @@ use primus_distr::sample_gaussian_values_to;
 use primus_encoding::PlaintextEmbedding;
 use primus_fft::{FftEngine, FftTable, RustFftTable, TorusFftValue};
 use primus_integer::FheUint;
-use primus_lattice::PolyLength;
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntru::{
     FourierNtruDecryptWorkspace, FourierNtruEncryptWorkspace, FourierNtruSecretKey, NtruError,
     NtruParameters, NtruSecretKey, NttNtruSecretKey, SecretKeyDistr,
 };
 use primus_ntt::{NttTable, PrimitiveRoot, UintNttTable};
-use primus_poly::Polynomial;
+use primus_poly::{PolyLength, Polynomial};
 use rand::{Rng, SeedableRng, rngs::StdRng};
 
 // Small functional ring; both word widths retain their original moduli and noise.
-const POLY_LENGTH: usize = 32;
+const POLY_LENGTH: usize = 64;
 const PLAIN_MODULUS: usize = 16;
 
 // Include both sides of the centered encoding boundary.
@@ -32,7 +31,7 @@ where
     T: FheUint + PrimitiveRoot,
 {
     let modulus = BarrettModulus::new(cipher_modulus);
-    let ntt = UintNttTable::new(POLY_LENGTH.trailing_zeros(), modulus).unwrap();
+    let ntt = UintNttTable::new(PolyLength::new(POLY_LENGTH), modulus).unwrap();
     let params = NtruParameters::new(
         POLY_LENGTH,
         T::try_from(PLAIN_MODULUS).unwrap(),
@@ -109,7 +108,7 @@ fn assert_fourier_roundtrip<T>()
 where
     T: FheUint + TorusFftValue,
 {
-    let table = RustFftTable::new(POLY_LENGTH.trailing_zeros()).unwrap();
+    let table = RustFftTable::new(PolyLength::new(POLY_LENGTH));
     let mut fft = FftEngine::new(&table);
     let params = NtruParameters::new(
         POLY_LENGTH,
@@ -204,13 +203,13 @@ fn transform_backends_reject_the_zero_key() {
     );
 
     let modulus = BarrettModulus::new(132_120_577u32);
-    let ntt = UintNttTable::new(POLY_LENGTH.trailing_zeros(), modulus).unwrap();
+    let ntt = UintNttTable::new(PolyLength::new(POLY_LENGTH), modulus).unwrap();
     assert!(matches!(
         NttNtruSecretKey::try_from_coeff_secret_key(&zero_key, modulus, &ntt),
         Err(NtruError::NonInvertibleSecretKey)
     ));
 
-    let table = RustFftTable::new(POLY_LENGTH.trailing_zeros()).unwrap();
+    let table = RustFftTable::new(PolyLength::new(POLY_LENGTH));
     let mut fft = FftEngine::new(&table);
     assert!(matches!(
         FourierNtruSecretKey::try_from_coeff_secret_key(&zero_key, &mut fft),
@@ -222,8 +221,8 @@ fn transform_backends_reject_the_zero_key() {
 fn key_generation_supports_small_coefficient_distributions() {
     let mut rng = StdRng::seed_from_u64(42);
     let modulus = BarrettModulus::new(132_120_577u32);
-    let ntt = UintNttTable::new(POLY_LENGTH.trailing_zeros(), modulus).unwrap();
-    let fft_table = RustFftTable::new(POLY_LENGTH.trailing_zeros()).unwrap();
+    let ntt = UintNttTable::new(PolyLength::new(POLY_LENGTH), modulus).unwrap();
+    let fft_table = RustFftTable::new(PolyLength::new(POLY_LENGTH));
     let mut fft = FftEngine::new(&fft_table);
 
     for distribution in [
@@ -308,31 +307,31 @@ fn fallible_parameters_check_ring_codec_and_samplers() {
     let make = |n, t, distr, noise| {
         NtruParameters::try_new(n, t, NativeModulus::<u32>::new(), distr, noise)
     };
-    for n in [0, 1, 3, primus_lattice::MAX_POLY_LENGTH << 1, usize::MAX] {
+    for n in [0, 1, 3, primus_poly::MAX_POLY_LENGTH << 1, usize::MAX] {
         assert_eq!(
             make(n, 4, SecretKeyDistr::UniformBinary, 0.7).err(),
             Some(Error::InvalidPolynomialLength)
         );
     }
-    for n in [2, primus_lattice::MAX_POLY_LENGTH] {
+    for n in [primus_poly::MIN_POLY_LENGTH, primus_poly::MAX_POLY_LENGTH] {
         let parameters = make(n, 4, SecretKeyDistr::UniformBinary, 0.7).unwrap();
         assert_eq!(parameters.poly_length(), PolyLength::new(n));
     }
     assert!(matches!(
-        make(8, 1, SecretKeyDistr::UniformBinary, 0.7),
+        make(32, 1, SecretKeyDistr::UniformBinary, 0.7),
         Err(Error::Encoding(_))
     ));
     assert!(matches!(
-        make(8, 4, SecretKeyDistr::UniformBinary, f64::INFINITY),
+        make(32, 4, SecretKeyDistr::UniformBinary, f64::INFINITY),
         Err(Error::Noise(_))
     ));
     assert!(matches!(
         make(
-            8,
+            32,
             4,
             SecretKeyDistr::FixedCompositionTernary {
-                negative_one_weight: 4,
-                one_weight: 5
+                negative_one_weight: 16,
+                one_weight: 17
             },
             0.7
         ),
@@ -340,7 +339,7 @@ fn fallible_parameters_check_ring_codec_and_samplers() {
     ));
     assert!(matches!(
         NtruParameters::try_new(
-            8,
+            32,
             12,
             BarrettModulus::new(17u32),
             SecretKeyDistr::UniformBinary,
@@ -357,7 +356,7 @@ fn ordinary_operations_validate_before_sampling_or_writing() {
     use std::panic::{AssertUnwindSafe, catch_unwind};
     let mut rng = StdRng::seed_from_u64(73);
     let modulus = BarrettModulus::new(132_120_577u32);
-    let ntt = UintNttTable::new(POLY_LENGTH.trailing_zeros(), modulus).unwrap();
+    let ntt = UintNttTable::new(PolyLength::new(POLY_LENGTH), modulus).unwrap();
     let params = NtruParameters::new(POLY_LENGTH, 16, modulus, SecretKeyDistr::UniformBinary, 0.7);
     let short_params = NtruParameters::new(
         POLY_LENGTH / 2,
@@ -394,7 +393,7 @@ fn ordinary_operations_validate_before_sampling_or_writing() {
     assert_eq!(rng.next_u64(), expected_rng.next_u64());
     assert!(wrong_output.as_ref().iter().all(|&value| value == 7));
 
-    let table = RustFftTable::new(POLY_LENGTH.trailing_zeros()).unwrap();
+    let table = RustFftTable::new(PolyLength::new(POLY_LENGTH));
     let mut fft = FftEngine::new(&table);
     let params = NtruParameters::new(
         POLY_LENGTH,

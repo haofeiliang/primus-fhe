@@ -328,7 +328,7 @@ impl<T: FheUint, LM: PrepareModulusSwitch<ValueT = T>> NttGlweBootstrappingKey<T
         Table: MonomialNttTable<ValueT = T>,
     {
         assert_eq!(
-            ntt.poly_length(),
+            ntt.poly_length().get(),
             self.size().glwe_size().poly_length().get(),
             "blind-rotation NTT polynomial length mismatch"
         );

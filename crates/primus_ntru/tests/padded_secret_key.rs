@@ -3,14 +3,13 @@
 use primus_distr::sample_gaussian_values_to;
 use primus_encoding::PlaintextEmbedding;
 use primus_fft::{FftEngine, FftTable, RustFftTable, TfheFftTable};
-use primus_lattice::PolyLength;
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntru::{
     FourierNtruDecryptWorkspace, FourierNtruEncryptWorkspace, FourierNtruSecretKey, NtruError,
     NtruParameters, NtruSecretKey, NttNtruSecretKey, SecretKeyDistr,
 };
 use primus_ntt::{NttTable, UintNttTable};
-use primus_poly::Polynomial;
+use primus_poly::{PolyLength, Polynomial};
 use primus_reduce::{ReduceAdd, ReduceSub};
 use rand::{Rng, SeedableRng, rngs::StdRng};
 
@@ -61,7 +60,7 @@ fn assert_prefix(key: &NtruSecretKey<u64>, distribution: SecretKeyDistr) {
 #[test]
 fn ntt_padded_ternary_has_exact_coefficient_phase() {
     let modulus = BarrettModulus::new(1_125_899_906_826_241u64);
-    let table = UintNttTable::new(N.trailing_zeros(), modulus).unwrap();
+    let table = UintNttTable::new(PolyLength::new(N), modulus).unwrap();
     let message = Polynomial::new((0..N as u64).map(|i| i % 16).collect::<Vec<_>>());
     let mut rng = StdRng::seed_from_u64(0xB701);
     // Even total weight is admissible over the NTT field; Native rejects it.
@@ -141,13 +140,13 @@ fn assert_fourier_prefix<Table: FftTable>(table: &Table) {
 
 #[test]
 fn fourier_padded_ternary_preserves_prefix_and_key_identity() {
-    assert_fourier_prefix(&RustFftTable::new(N.trailing_zeros()).unwrap());
-    assert_fourier_prefix(&TfheFftTable::new(N.trailing_zeros()).unwrap());
+    assert_fourier_prefix(&RustFftTable::new(PolyLength::new(N)));
+    assert_fourier_prefix(&TfheFftTable::new(PolyLength::new(N)));
 }
 
 #[test]
 fn native_fixed_even_weights_fail_without_sampling() {
-    let table = RustFftTable::new(N.trailing_zeros()).unwrap();
+    let table = RustFftTable::new(PolyLength::new(N));
     let mut fft = FftEngine::new(&table);
     for distribution in [
         SecretKeyDistr::FixedHammingWeightBinary { hamming_weight: 2 },
@@ -206,6 +205,6 @@ fn native_invertibility_does_not_imply_fourier_stability() {
     }
     assert_eq!(coefficients.iter().sum::<i64>(), 1);
     let coeff = NtruSecretKey::<u64>::new(coefficients, SecretKeyDistr::gaussian(3.2));
-    assert_unstable_inverse(&RustFftTable::new(N.trailing_zeros()).unwrap(), &coeff);
-    assert_unstable_inverse(&TfheFftTable::new(N.trailing_zeros()).unwrap(), &coeff);
+    assert_unstable_inverse(&RustFftTable::new(PolyLength::new(N)), &coeff);
+    assert_unstable_inverse(&TfheFftTable::new(PolyLength::new(N)), &coeff);
 }

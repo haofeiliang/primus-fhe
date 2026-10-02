@@ -1,7 +1,7 @@
 //! Independent NTRU key switching and validation before output mutation.
 
 use primus_decompose::DecompositionBaseLog;
-use primus_lattice::PolyLength;
+use primus_poly::PolyLength;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use primus_fft::{FftEngine, FftTable, RustFftTable, TfheFftTable};
@@ -18,7 +18,7 @@ use primus_poly::Polynomial;
 use rand::{SeedableRng, rngs::StdRng};
 
 // Functional ring size; keep the original word widths, moduli and decomposition.
-const POLY_LENGTH: usize = 32;
+const POLY_LENGTH: usize = 64;
 const PLAIN_MODULUS: u32 = 16;
 const EXPLICIT_MODULUS: u32 = 132_120_577;
 
@@ -32,7 +32,7 @@ fn message() -> Vec<u32> {
 fn ntt_key_switch_preserves_plaintext() {
     let mut rng = StdRng::seed_from_u64(0x4e54_5452_554b_534b);
     let modulus = BarrettModulus::new(EXPLICIT_MODULUS);
-    let ntt = UintNttTable::new(POLY_LENGTH.trailing_zeros(), modulus).unwrap();
+    let ntt = UintNttTable::new(PolyLength::new(POLY_LENGTH), modulus).unwrap();
     let parameters = NtruParameters::new(
         POLY_LENGTH,
         PLAIN_MODULUS,
@@ -88,7 +88,7 @@ fn fourier_key_switch_preserves_plaintext() {
 
 fn check_fourier_key_switch<Table: FftTable>() {
     let mut rng = StdRng::seed_from_u64(0x464f_5552_4b53_574b);
-    let table = Table::new(POLY_LENGTH.trailing_zeros()).unwrap();
+    let table = Table::new(PolyLength::new(POLY_LENGTH));
     let mut fft = FftEngine::new(&table);
     let parameters = NtruParameters::new(
         POLY_LENGTH,
@@ -156,9 +156,9 @@ fn unit_key() -> NtruSecretKey<u32> {
 fn ntt_key_switch_rejects_mismatched_resources_before_writing() {
     let modulus = BarrettModulus::new(EXPLICIT_MODULUS);
     let other_modulus = BarrettModulus::new(998_244_353);
-    let ntt = UintNttTable::new(POLY_LENGTH.trailing_zeros(), modulus).unwrap();
-    let short_ntt = UintNttTable::new((POLY_LENGTH / 2).trailing_zeros(), modulus).unwrap();
-    let other_ntt = UintNttTable::new(POLY_LENGTH.trailing_zeros(), other_modulus).unwrap();
+    let ntt = UintNttTable::new(PolyLength::new(POLY_LENGTH), modulus).unwrap();
+    let short_ntt = UintNttTable::new(PolyLength::new(POLY_LENGTH / 2), modulus).unwrap();
+    let other_ntt = UintNttTable::new(PolyLength::new(POLY_LENGTH), other_modulus).unwrap();
     let params = NtruParameters::new(
         POLY_LENGTH,
         PLAIN_MODULUS,
@@ -246,8 +246,8 @@ fn ntt_key_switch_rejects_mismatched_resources_before_writing() {
 #[test]
 fn fourier_key_switch_rejects_mismatched_resources_before_writing() {
     // Shape validation precedes FFT dispatch; numerical tests above cover both backends.
-    let table = RustFftTable::new(POLY_LENGTH.trailing_zeros()).unwrap();
-    let short_table = RustFftTable::new((POLY_LENGTH / 2).trailing_zeros()).unwrap();
+    let table = RustFftTable::new(PolyLength::new(POLY_LENGTH));
+    let short_table = RustFftTable::new(PolyLength::new(POLY_LENGTH / 2));
     let mut fft = FftEngine::new(&table);
     let params = NtruParameters::new(
         POLY_LENGTH,

@@ -8,7 +8,6 @@
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use primus_decompose::DecompositionBaseLog;
 use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable};
-use primus_lattice::PolyLength;
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntru::{
     FourierNlevCiphertext, FourierNtruGadgetEncryptWorkspace, FourierNtruSecretKey, NlevParameters,
@@ -16,6 +15,7 @@ use primus_ntru::{
     SecretKeyDistr,
 };
 use primus_ntt::{NttTable, UintNttTable};
+use primus_poly::PolyLength;
 use rand::{SeedableRng, rngs::StdRng};
 use std::{hint::black_box, time::Duration};
 
@@ -26,7 +26,7 @@ fn ntt(c: &mut Criterion) {
         let mut rng = StdRng::seed_from_u64(42);
         let modulus = BarrettModulus::new(1_125_899_906_826_241u64);
         let params = NtruParameters::new(n, 16, modulus, SecretKeyDistr::SparseTernary, 3.2);
-        let table = UintNttTable::new(n.trailing_zeros(), modulus).unwrap();
+        let table = UintNttTable::new(PolyLength::new(n), modulus).unwrap();
         let (_, key) = NttNtruSecretKey::generate_pair(&params, &table, &mut rng).unwrap();
         let mut workspace = NttNtruGadgetEncryptWorkspace::new(PolyLength::new(n));
         for log_basis in [3, 10] {
@@ -80,7 +80,7 @@ fn fourier(c: &mut Criterion) {
             SecretKeyDistr::SparseTernary,
             3.2,
         );
-        let table = RustFftTable::new(n.trailing_zeros()).unwrap();
+        let table = RustFftTable::new(PolyLength::new(n));
         let mut fft = FftEngine::new(&table);
         let (_, key) = FourierNtruSecretKey::generate_pair(&params, &mut fft, &mut rng).unwrap();
         let mut workspace = FourierNtruGadgetEncryptWorkspace::new(PolyLength::new(n));

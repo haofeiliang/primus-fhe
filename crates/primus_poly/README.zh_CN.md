@@ -39,6 +39,12 @@ lhs.mul_monomial_assign(1, modulus);
 assert_eq!(lhs.as_slice(), &[84, 13, 21, 4]);
 ```
 
+## 环多项式长度
+
+`PolyLength` 表示经过检查的系数数量 `N`：必须是 `MIN_POLY_LENGTH..=MAX_POLY_LENGTH`（目前为 `32..=2^17`）内的二次幂。这是 FHE 布局和变换库共用的支持范围，只在此类型构造时检查一次。使用 `PolyLength::try_new(N)` 或 `PolyLength::new(N)` 构造；`PolyLengthError` 保留被拒绝的长度。
+
+`get()`、`log_n()`、`fourier_poly_len()` 分别返回 `N`、`log2(N)` 和 `N/2` 个复数元素。GLWE/NTRU 布局、NTT/FFT 表和工作区直接传递这个类型，不再重复检查上界。该范围保证 `2N` 可由 `usize` 表示；组合存储长度和变换的数值条件仍在各自边界检查。原始多项式 wrapper 和批量存储不另存环长度，其实际元素数量仍为 `usize`。
+
 ## 存储与所有权
 
 大多数多项式类型都对 backing store `S` 泛型化；`S` 实现 [`primus_data`](../primus_data/README.zh_CN.md) 提供的连续存储 trait。常用的系数、NTT、Fourier 和数组表示提供了 `Vec` owned 别名与 slice borrowed 别名。CRT、DCRT 和多 limb wrapper 同样可以通过泛型类型构造在 owned 或 borrowed 存储之上。
@@ -69,7 +75,7 @@ assert_eq!(lhs.as_slice(), &[84, 13, 21, 4]);
 
 `Polynomial::add_mul_monomial_pair_assign` 在一次输出遍历中累加两个旋转输入，不分配临时空间。自由函数 `add_mul_monomial_pair_assign` 还可处理包含完整多项式的连续批量存储，每批只计算一次旋转偏移，64 位整数的每个分段符号分派位于多项式循环外。两个贡献按顺序分别约简；两种接口都要求多项式长度为相同的 2 次幂、输入与累加器为规范余数，指数在 `[0, 2N)` 内。
 
-`CoeffAutomorphismPermutation` 缓存模 `X^N + 1` 的系数代换 `X -> X^d`。为 2 次幂 `N >= 2` 和 `[1, 2N)` 内的奇数 `d` 构造后，使用 `apply_to` 处理规范 residue。`apply_signed_to` 用于所需取负均可表示的小有符号系数。置换本身不执行 密码学 key switching；对应的 NTT 置换位于 `primus_ntt`。
+`CoeffAutomorphismPermutation` 缓存模 `X^N + 1` 的系数代换 `X -> X^d`。为 2 次幂 `N >= 32` 和 `[1, 2N)` 内的奇数 `d` 构造后，使用 `apply_to` 处理规范 residue。`apply_signed_to` 用于所需取负均可表示的小有符号系数。置换本身不执行 密码学 key switching；对应的 NTT 置换位于 `primus_ntt`。
 
 ## 随机采样
 

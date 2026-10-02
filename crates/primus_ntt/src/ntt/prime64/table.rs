@@ -2,7 +2,7 @@ use aligned_vec::{AVec, avec};
 use primus_data::DataMut;
 use primus_factor::{FactorMul, MultiplyFactor, ShoupFactor};
 use primus_gcd::Xgcd;
-use primus_poly::{NttPolynomial, Polynomial};
+use primus_poly::{NttPolynomial, PolyLength, Polynomial};
 use primus_reduce::FieldContext;
 
 use crate::{
@@ -46,21 +46,12 @@ enum U64Backend {
 #[cfg(target_arch = "x86_64")]
 /// Selects one kernel that is valid for both forward and inverse transforms.
 fn select_u64_backend(
-    n: usize,
     q: u64,
     has_avx512_ifma: bool,
     has_avx512_dq: bool,
     has_avx2: bool,
 ) -> U64Backend {
     let low_q = q < (1u64 << 30);
-
-    if n < 16 {
-        return if low_q {
-            U64Backend::Scalar32
-        } else {
-            U64Backend::Scalar64
-        };
-    }
 
     // IFMA and all DQ fallbacks require AVX-512DQ. A narrow Barrett width is
     // selected only when both transform directions support its modulus range.
@@ -92,8 +83,7 @@ fn select_u64_backend(
 /// - `q < 2^62` — ensures lazy ranges `[0, 4q)` fit in `u64`.
 #[derive(Clone)]
 pub struct U64NttTable {
-    pub(super) n: usize,
-    log_n: u32,
+    pub(super) poly_length: PolyLength,
     pub(super) q: u64,
     pub(super) two_q: u64,
     root: u64,
@@ -164,13 +154,13 @@ impl U64NttTable {
     /// Returns `log2(N)`.
     #[inline]
     pub fn log_n(&self) -> u32 {
-        self.log_n
+        self.poly_length.log_n()
     }
 
     /// Returns the polynomial length `N`.
     #[inline]
     pub fn n(&self) -> usize {
-        self.n
+        self.poly_length.get()
     }
 
     /// Returns the primitive `2N`-th root of unity.
@@ -193,7 +183,7 @@ impl U64NttTable {
 
     /// Dispatch forward transform to the selected backend.
     fn dispatch_forward(&self, values: &mut [u64], input_mod_factor: u32, output_mod_factor: u32) {
-        assert_ntt_length(values.len(), self.n);
+        assert_ntt_length(values.len(), self.poly_length.get());
 
         #[cfg(target_arch = "x86_64")]
         {
@@ -265,7 +255,7 @@ impl U64NttTable {
 
     /// Dispatch inverse transform to the selected backend.
     fn dispatch_inverse(&self, values: &mut [u64], input_mod_factor: u32, output_mod_factor: u32) {
-        assert_ntt_length(values.len(), self.n);
+        assert_ntt_length(values.len(), self.poly_length.get());
 
         #[cfg(target_arch = "x86_64")]
         {
@@ -342,13 +332,11 @@ impl U64NttTable {
 impl NttTable for U64NttTable {
     type ValueT = u64;
 
-    fn new<M>(log_n: u32, modulus: M) -> Result<Self, NttError<Self::ValueT>>
+    fn new<M>(poly_length: PolyLength, modulus: M) -> Result<Self, NttError<Self::ValueT>>
     where
         M: FieldContext<Self::ValueT>,
     {
-        if log_n == 0 {
-            return Err(NttError::PolynomialLengthTooSmall);
-        }
+        let log_n = poly_length.log_n();
         let root = <u64 as PrimitiveRoot>::try_minimal_primitive_root(log_n + 1, modulus)?;
         let q = modulus.value();
 
@@ -360,14 +348,13 @@ impl NttTable for U64NttTable {
             });
         }
 
-        let n = 1usize << log_n;
+        let n = poly_length.get();
         let two_q = q << 1;
         #[cfg(not(target_arch = "x86_64"))]
         let low_q = q < (1u64 << 30);
 
         #[cfg(target_arch = "x86_64")]
         let backend = select_u64_backend(
-            n,
             q,
             is_x86_feature_detected!("avx512ifma"),
             is_x86_feature_detected!("avx512dq"),
@@ -529,8 +516,7 @@ impl NttTable for U64NttTable {
         };
 
         Ok(Self {
-            n,
-            log_n,
+            poly_length,
             q,
             two_q,
             root,
@@ -566,8 +552,8 @@ impl NttTable for U64NttTable {
     }
 
     #[inline]
-    fn poly_length(&self) -> usize {
-        self.n
+    fn poly_length(&self) -> PolyLength {
+        self.poly_length
     }
 
     #[inline]
@@ -623,5 +609,70 @@ impl MonomialNttTable for U64NttTable {
     #[inline]
     fn inv_root_powers(&self) -> &[Self::ValueT] {
         &self.inv_roots
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::UintNttTable;
+    use primus_modulus::BarrettModulus;
+
+    // Tables retain only the selected backend's preconditioners. Populate the
+    // scalar representation explicitly so this check is independent of host SIMD.
+    fn check_scalar_kernel<const BITS: u32>(q: u64) {
+        let modulus = BarrettModulus::new(q);
+        let length = PolyLength::new(32);
+        let mut table = U64NttTable::new(length, modulus).unwrap();
+        let reference = UintNttTable::<u64>::new(length, modulus).unwrap();
+        let roots = build_barrett_vector(&table.roots, BITS, q);
+        let inv_roots = build_barrett_vector(&table.inv_roots, BITS, q);
+        if BITS == 32 {
+            table.roots_precon32 = roots;
+            table.inv_roots_precon32 = inv_roots;
+        } else {
+            table.roots_precon64 = roots;
+            table.inv_roots_precon64 = inv_roots;
+        }
+        let scale = &mut table.inverse_final_scale;
+        scale.inv_n_precon = MultiplyFactor::new(scale.inv_n, BITS, q).quotient();
+        scale.inv_n_w_precon = MultiplyFactor::new(scale.inv_n_w, BITS, q).quotient();
+
+        for (inverse, output_factor) in [(false, 1), (false, 4), (true, 1), (true, 2)] {
+            let bound = if inverse { 2 * q } else { 4 * q };
+            let mut actual: Vec<_> = (0..length.get())
+                .map(|i| [0, q - 1, q, bound - 1 - i as u64][i % 4])
+                .collect();
+            let mut expected: Vec<_> = actual.iter().map(|&value| value % q).collect();
+            // SAFETY: the input has exactly N coefficients in the kernel's lazy
+            // range; the root and inverse-scale preconditioners use BITS above.
+            unsafe {
+                if inverse {
+                    table.scalar_inverse_transform_unchecked::<BITS>(&mut actual, output_factor);
+                } else {
+                    table.scalar_forward_transform_unchecked::<BITS>(&mut actual, output_factor);
+                }
+            }
+            if inverse {
+                reference.inverse_transform_slice(&mut expected);
+            } else {
+                reference.transform_slice(&mut expected);
+            }
+            assert!(
+                actual
+                    .iter()
+                    .all(|&value| value < u64::from(output_factor) * q)
+            );
+            assert_eq!(
+                actual.iter().map(|value| value % q).collect::<Vec<_>>(),
+                expected
+            );
+        }
+    }
+
+    #[test]
+    fn scalar_kernels_match_generic_at_the_supported_minimum() {
+        check_scalar_kernel::<32>(1_073_692_673);
+        check_scalar_kernel::<64>(1_152_921_504_606_830_593);
     }
 }

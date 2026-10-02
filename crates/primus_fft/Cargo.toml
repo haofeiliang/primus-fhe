@@ -5,10 +5,10 @@ edition = "2024"
 
 [dependencies]
 primus_integer = { path = "../primus_integer" }
+primus_poly = { path = "../primus_poly" }
 aligned-vec = "0.6.4"
 num-complex = { workspace = true }
 rustfft = { workspace = true }
-thiserror = { workspace = true }
 tfhe-fft = "0.10.1"
 dyn-stack = "0.13.2"
 zeroize = { workspace = true }

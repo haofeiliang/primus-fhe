@@ -6,7 +6,7 @@ use primus_lattice::{
 };
 use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, UintNttTable};
-use primus_poly::PolynomialIterMut;
+use primus_poly::{PolyLength, PolynomialIterMut};
 
 // Independent coefficient oracle, including sign changes after one or two wraps.
 fn expected(acc: &[u32], rhs: &[u32], exponent: usize, n: usize, qs: &[u32]) -> Vec<u32> {
@@ -33,7 +33,7 @@ fn coefficient_and_ntt_monomials_match_negacyclic_oracle() {
     const N: usize = 32;
     const Q: u32 = 193;
     let modulus = BarrettModulus::new(Q);
-    let table = UintNttTable::<u32>::new(5, modulus).unwrap();
+    let table = UintNttTable::<u32>::new(PolyLength::new(32), modulus).unwrap();
     macro_rules! check {
         ($coeff:ident, $ntt:ident, $components:expr $(, $length:expr)?) => {{
             let rhs: Vec<_> = (0..N * $components)

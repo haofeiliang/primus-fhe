@@ -1,5 +1,6 @@
 use primus_decompose::DecompositionBaseLog;
 use primus_lattice::GlweDimension;
+use primus_poly::PolyLength;
 use rand::{SeedableRng, rngs::StdRng};
 use std::hint::black_box;
 
@@ -35,7 +36,7 @@ fn bench_expand_coeff(c: &mut Criterion) {
 
     for log_n in [10u32, 11, 12] {
         let poly_length = 1usize << log_n;
-        let table = U64DcrtTable::new(log_n, &moduli).unwrap();
+        let table = U64DcrtTable::new(PolyLength::new(1usize << log_n), &moduli).unwrap();
 
         let glwe_params = CrtGlweParameters::new(
             GlweDimension::new(dimension),

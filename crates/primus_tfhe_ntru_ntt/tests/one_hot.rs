@@ -1,6 +1,5 @@
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_lattice::LweDimension;
-use primus_lattice::PolyLength;
 use primus_lwe::LweParameters;
 use primus_modulus::{BarrettModulus, PowOf2Modulus};
 use primus_ntru::{
@@ -8,6 +7,7 @@ use primus_ntru::{
     NttNtruExternalProductWorkspace, SecretKeyDistr,
 };
 use primus_ntt::U64NttTable;
+use primus_poly::PolyLength;
 use primus_test_allocations as allocations;
 use primus_tfhe::ProgrammableBootstrap as _;
 use primus_tfhe_ntru_ntt::{

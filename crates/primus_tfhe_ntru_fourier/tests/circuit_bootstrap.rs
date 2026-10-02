@@ -4,13 +4,12 @@
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_fft::{Complex64, FftTable, RustFftTable, TfheFftTable};
 use primus_lattice::LweDimension;
-use primus_lattice::PolyLength;
 use primus_lwe::LweParameters;
 use primus_modulus::NativeModulus;
 use primus_ntru::{
     FourierNgswCiphertext, FourierNtruSecretKey, NlevParameters, NtruParameters, SecretKeyDistr,
 };
-use primus_poly::Polynomial;
+use primus_poly::{PolyLength, Polynomial};
 use primus_test_allocations as allocations;
 use primus_tfhe::ProgrammableBootstrap as _;
 use primus_tfhe_ntru_fourier::{
@@ -46,7 +45,7 @@ fn circuit_bootstrap<Table: FftTable>(distr: SecretKeyDistr) {
         0.7,
     )
     .unwrap();
-    let context = TfheContext::<_, Table, _>::try_from_parameters(tfhe).unwrap();
+    let context = TfheContext::<_, Table, _>::from_parameters(tfhe);
     let mut rng = StdRng::seed_from_u64(0x004e_5454_5f43_4253);
     // Three gadget levels exercise multiple scales and an internal padding slot.
     let levels = 3;

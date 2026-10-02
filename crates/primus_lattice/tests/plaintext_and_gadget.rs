@@ -4,9 +4,9 @@
 
 use primus_decompose::DecompositionLevelCount;
 use primus_lattice::GlweDimension;
-use primus_lattice::{GadgetSize, GlweSize, PolyLength, ggsw::Ggsw, glwe::Glwe, lwe::Lwe};
+use primus_lattice::{GadgetSize, GlweSize, ggsw::Ggsw, glwe::Glwe, lwe::Lwe};
 use primus_modulus::BarrettModulus;
-use primus_poly::Polynomial;
+use primus_poly::{PolyLength, Polynomial};
 
 #[test]
 fn encoded_plaintext_operations_preserve_masks_and_trivial_overwrites_them() {
@@ -68,10 +68,10 @@ fn diagonal_oracle(
 
 #[test]
 fn gadget_injection_changes_only_the_selected_diagonal_level() {
-    const N: usize = 4;
+    const N: usize = 32;
     const LEVELS: usize = 3;
     let modulus = BarrettModulus::new(193u32);
-    let plaintext = Polynomial::new([0, 1, 96, 192]);
+    let plaintext = Polynomial::new([0, 1, 96, 192].repeat(N / 4));
     let size = GadgetSize::new(
         GlweSize::new(GlweDimension::new(2), PolyLength::new(N)),
         DecompositionLevelCount::new(LEVELS),
@@ -96,7 +96,7 @@ fn rns_plaintext_and_gadget_operations_preserve_the_basis_layout() {
     use primus_lattice::{RnsGadgetSize, RnsGlweSize, ggsw::DcrtGgsw, glwe::CrtGlwe};
     use primus_poly::{CrtPolynomial, DcrtPolynomial};
 
-    const N: usize = 4;
+    const N: usize = 32;
     const LEVELS: usize = 3;
     let qs = [193u32, 257];
     let moduli = qs.map(BarrettModulus::new);
@@ -154,7 +154,7 @@ fn fourier_body_and_gadget_operations_preserve_complex_entries() {
     use primus_poly::FourierPolynomial;
 
     // N counts complex entries here; the corresponding ring has 2*N coefficients.
-    const N: usize = 4;
+    const N: usize = 16;
     let plaintext: Vec<_> = (0..N)
         .map(|i| Complex64::new(i as f64, -(i as f64)))
         .collect();

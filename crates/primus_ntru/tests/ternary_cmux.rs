@@ -2,7 +2,6 @@ use num_traits::{ConstOne, ConstZero};
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable, TfheFftTable, TorusFftValue};
 use primus_integer::SignedInteger;
-use primus_lattice::PolyLength;
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntru::{
     FourierNgswCiphertext, FourierNtruCmuxWorkspace, FourierNtruEncryptWorkspace,
@@ -11,7 +10,7 @@ use primus_ntru::{
     NttNtruCmuxWorkspace, NttNtruExternalProductWorkspace, NttNtruSecretKey, SecretKeyDistr,
 };
 use primus_ntt::{NttTable, UintNttTable};
-use primus_poly::Polynomial;
+use primus_poly::{PolyLength, Polynomial};
 use primus_test_allocations::{CountingAllocator, measure};
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -61,7 +60,7 @@ fn distance(lhs: u64, rhs: u64) -> u64 {
 #[test]
 fn encrypted_ternary_step_matches_phase_oracle_and_two_binary_cmuxes_without_allocation() {
     let modulus = BarrettModulus::new(Q);
-    let ntt = UintNttTable::new(N.trailing_zeros(), modulus).unwrap();
+    let ntt = UintNttTable::new(PolyLength::new(N), modulus).unwrap();
     let params = NtruParameters::new(N, 16, modulus, SecretKeyDistr::SparseTernary, 0.7);
     let gadget = NlevParameters::with_ntru_params(
         &params,
@@ -195,7 +194,7 @@ fn native_distance<T: TorusFftValue>(lhs: T, rhs: T) -> T {
 }
 
 fn check_fourier_step<T: TorusFftValue, Table: FftTable>() {
-    let table = Table::new(N.trailing_zeros()).unwrap();
+    let table = Table::new(PolyLength::new(N));
     let mut fft = FftEngine::new(&table);
     let params = NtruParameters::new(
         N,

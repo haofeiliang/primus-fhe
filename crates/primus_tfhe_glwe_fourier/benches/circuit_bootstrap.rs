@@ -42,7 +42,7 @@ where
     let mut verified = false;
     c.bench_function(&name, |b| {
         let (context, client, server, input, lhs, rhs) = fixture.get_or_insert_with(|| {
-            let context = TfheContext::<T, Table>::try_from_parameters(parameters.clone()).unwrap();
+            let context = TfheContext::<T, Table>::from_parameters(parameters.clone());
             let mut rng = StdRng::seed_from_u64(42);
             let mut generator = KeyGenerator::new(&context);
             let client = ClientKey::generate(context.parameters(), &mut rng);

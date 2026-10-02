@@ -7,6 +7,7 @@ use primus_lattice::{GlweDimension, LweDimension};
 use primus_lwe::LweParameters;
 use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, U32NttTable};
+use primus_poly::PolyLength;
 use primus_tfhe_glwe_ntt::{
     BooleanError, BooleanGate, LweCiphertext, PbsOrder, TfheContext, TfheParameters,
 };
@@ -59,7 +60,7 @@ fn parameters(pbs_order: PbsOrder) -> TfheParameters<u32> {
 fn boolean_factories_support_truth_tables_and_reused_output_in_both_orders() {
     for order in [PbsOrder::BootstrapKeyswitch, PbsOrder::KeyswitchBootstrap] {
         let modulus = BarrettModulus::new(MODULUS);
-        let table = U32NttTable::new(POLY_LENGTH.trailing_zeros(), modulus).unwrap();
+        let table = U32NttTable::new(PolyLength::new(POLY_LENGTH), modulus).unwrap();
         let context = TfheContext::try_new(parameters(order), table).unwrap();
         let mut rng = StdRng::seed_from_u64(42);
         let (client_key, server_key) = context.try_generate_keys(None, &mut rng).unwrap();

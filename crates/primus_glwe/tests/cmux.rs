@@ -9,14 +9,13 @@ use primus_glwe::{
 };
 use primus_lattice::GlweDimension;
 use primus_lattice::{
-    PolyLength,
     ggsw::{FourierGgsw, NttGgsw, NttGgswIter},
     glwe::{FourierGlweOwned, Glwe, NttGlwe, TorusGlwe},
     workspace::{FourierGlweExternalProductWorkspace, NttGlweExternalProductWorkspace},
 };
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntt::{NttTable, UintNttTable};
-use primus_poly::Polynomial;
+use primus_poly::{PolyLength, Polynomial};
 use rand::{SeedableRng, rngs::StdRng};
 
 mod common;
@@ -34,7 +33,7 @@ fn plaintext(offset: u32) -> Vec<u32> {
 
 #[test]
 fn fourier_cmux_selects_requested_glwe() {
-    let table = RustFftTable::new(POLY_LENGTH.trailing_zeros()).unwrap();
+    let table = RustFftTable::new(PolyLength::new(POLY_LENGTH));
     let mut fft = FftEngine::new(&table);
     let mut rng = StdRng::seed_from_u64(42);
     let glwe_params = GlweParameters::new(
@@ -125,7 +124,7 @@ fn ntt_cmux_selects_requested_glwe() {
     const MODULUS: u32 = 132_120_577;
 
     let modulus = BarrettModulus::new(MODULUS);
-    let ntt = UintNttTable::new(POLY_LENGTH.trailing_zeros(), modulus).unwrap();
+    let ntt = UintNttTable::new(PolyLength::new(POLY_LENGTH), modulus).unwrap();
     let mut rng = StdRng::seed_from_u64(42);
     let glwe_params = GlweParameters::new(
         GlweDimension::new(DIMENSION),
@@ -209,7 +208,7 @@ fn ntt_ternary_cmux_rotates_phase_with_encrypted_controls() {
 
     const Q: u64 = 132_120_577;
     let modulus = BarrettModulus::new(Q);
-    let ntt = UintNttTable::new(N.trailing_zeros(), modulus).unwrap();
+    let ntt = UintNttTable::new(PolyLength::new(N), modulus).unwrap();
     let glwe = GlweParameters::new(
         GlweDimension::new(K),
         N,
@@ -292,7 +291,7 @@ fn check_fourier_ternary_cmux<Table: FftTable>() {
     use primus_lattice::workspace::FourierGlweTernaryCmuxWorkspace;
 
     const Q: u128 = 1 << 64;
-    let table = Table::new(N.trailing_zeros()).unwrap();
+    let table = Table::new(PolyLength::new(N));
     let mut fft = FftEngine::new(&table);
     let glwe = GlweParameters::new(
         GlweDimension::new(K),

@@ -108,8 +108,8 @@ impl<T: FheUint> NttGlweAutomorphismKey<T> {
         let size = secret_key.glwe_size();
         let poly_len = size.poly_length().get();
 
-        let coeff_permutation = CoeffAutomorphismPermutation::new(degree, poly_len);
-        let ntt_permutation = NttAutomorphismPermutation::new(degree, poly_len);
+        let coeff_permutation = CoeffAutomorphismPermutation::new(degree, size.poly_length());
+        let ntt_permutation = NttAutomorphismPermutation::new(degree, size.poly_length());
 
         let mut transformed_secret = vec![T::SignedInteger::ZERO; size.mask_len()];
 

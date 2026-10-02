@@ -2,7 +2,8 @@ use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_lwe::LweDimension;
 use primus_lwe::LweParameters;
 use primus_modulus::{BarrettModulus, NativeModulus};
-use primus_ntru::{NlevParameters, NtruParameters, PolyLength, SecretKeyDistr};
+use primus_ntru::{NlevParameters, NtruParameters, SecretKeyDistr};
+use primus_poly::PolyLength;
 use primus_tfhe_ntru::{DecompositionConfig, TfheConfig, TfheParameterError, TfheParameters};
 use std::error::Error;
 
@@ -198,7 +199,7 @@ fn configs_return_accumulator_return_key_and_cbs_errors() {
             0.7,
         ),
         accumulator_modulus: BarrettModulus::new(257),
-        poly_length: 8,
+        poly_length: 32,
         accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,
         accumulator_noise_standard_deviation: 0.7,
         blind_rotation: basis,
@@ -232,7 +233,7 @@ fn configs_return_accumulator_return_key_and_cbs_errors() {
     ));
     let mut invalid = config.clone();
     invalid.accumulator_secret_key_distr =
-        SecretKeyDistr::FixedHammingWeightBinary { hamming_weight: 9 };
+        SecretKeyDistr::FixedHammingWeightBinary { hamming_weight: 33 };
     assert!(matches!(
         TfheParameters::try_from_config(invalid),
         Err(TfheParameterError::AccumulatorParameters(

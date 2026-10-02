@@ -1,3 +1,4 @@
+use primus_poly::PolyLength;
 use std::hint::black_box;
 
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
@@ -6,14 +7,14 @@ use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable, TfheFftTable, Tor
 fn bench_forward<Table: FftTable>(c: &mut Criterion, name: &str) {
     let mut group = c.benchmark_group(name);
     for log_n in [9, 10, 11, 12] {
-        let fft = Table::new(log_n).unwrap();
+        let fft = Table::new(PolyLength::new(1usize << log_n));
         let mut engine = FftEngine::new(&fft);
-        let input = (0..fft.poly_length())
+        let input = (0..fft.poly_length().get())
             .map(|i| (i as u64).wrapping_mul(0x9e3779b97f4a7c15))
             .collect::<Vec<_>>();
         let mut output = vec![Complex64::default(); fft.fourier_length()];
         group.bench_with_input(
-            BenchmarkId::from_parameter(fft.poly_length()),
+            BenchmarkId::from_parameter(fft.poly_length().get()),
             &log_n,
             |b, _| {
                 b.iter(|| engine.forward_as_torus(black_box(&input), black_box(&mut output)));
@@ -26,16 +27,16 @@ fn bench_forward<Table: FftTable>(c: &mut Criterion, name: &str) {
 fn bench_inverse<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, name: &str) {
     let mut group = c.benchmark_group(name);
     for log_n in [9, 10, 11, 12] {
-        let fft = Table::new(log_n).unwrap();
+        let fft = Table::new(PolyLength::new(1usize << log_n));
         let mut engine = FftEngine::new(&fft);
-        let input = (0..fft.poly_length())
+        let input = (0..fft.poly_length().get())
             .map(|i| T::as_from((i as u64).wrapping_mul(0x9e3779b97f4a7c15)))
             .collect::<Vec<_>>();
         let mut fourier = vec![Complex64::default(); fft.fourier_length()];
-        let mut output = vec![T::ZERO; fft.poly_length()];
+        let mut output = vec![T::ZERO; fft.poly_length().get()];
         engine.forward_as_torus(&input, &mut fourier);
         group.bench_with_input(
-            BenchmarkId::from_parameter(fft.poly_length()),
+            BenchmarkId::from_parameter(fft.poly_length().get()),
             &log_n,
             |b, _| {
                 b.iter(|| engine.backward_as_torus(black_box(&fourier), black_box(&mut output)));

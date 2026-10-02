@@ -26,10 +26,11 @@
 ```rust
 use primus_modulus::BarrettModulus;
 use primus_ntt::{NttTable, U32NttTable};
+use primus_poly::PolyLength;
 
-let modulus = BarrettModulus::new(97_u32);
-let table = U32NttTable::new(3, modulus).unwrap(); // N = 8；2N 整除 97 - 1
-let expected = vec![3, 1, 4, 1, 5, 9, 2, 6];
+let modulus = BarrettModulus::new(193_u32);
+let table = U32NttTable::new(PolyLength::new(32), modulus).unwrap(); // N = 32；2N 整除 193 - 1
+let expected: Vec<u32> = (0..table.poly_length().get()).map(|i| i as u32).collect();
 let mut values = expected.clone();
 
 table.transform_slice(&mut values);
@@ -41,13 +42,13 @@ assert_eq!(values, expected);
 
 Table 的构造应放在重复变换路径之外，并复用构造结果。Table 不可变并实现 `Send + Sync`，因此可以在线程间共享。
 
-`NttAutomorphismPermutation::new(degree, N)` 缓存 table 的 bit-reversed 顺序下 的 `X -> X^degree` 映射。它要求 `degree` 为 `[1, 2N)` 内的奇数，`N >= 2` 为 2 次幂。`apply_to` 只置换点值并保留其 residue 范围；同态使用仍需方案层的 key switching。
+`NttAutomorphismPermutation::new(degree, N)` 缓存 table 的 bit-reversed 顺序下 的 `X -> X^degree` 映射。它要求 `degree` 为 `[1, 2N)` 内的奇数，`N >= 32` 为 2 次幂。`apply_to` 只置换点值并保留其 residue 范围；同态使用仍需方案层的 key switching。
 
 ## 表示与取值范围
 
 对于 `N = 2^log_n`，正向变换读取按幂次升序排列的系数，生成 bit-reversed 顺序的 求值；逆向变换读取这种 bit-reversed 表示，并恢复按幂次升序排列的系数。
 
-每个单模数输入或输出 slice 都必须恰好包含 `table.poly_length()` 个值。 `NttTable` 实现在进入 unchecked kernel 前强制执行这项检查。
+每个单模数输入或输出 slice 都必须恰好包含 `table.poly_length().get()` 个值。 `NttTable` 实现在进入 unchecked kernel 前强制执行这项检查。
 
 | 操作 | 输入范围 | 输出范围 |
 | --- | --- | --- |
@@ -64,7 +65,7 @@ Lazy 值表示模 `q` 的剩余类，但其更宽的整数范围属于调用契�
 
 `NttError` 区分几何、模数余量和单位根错误；`DegreeNotRepresentable` 表示所需 degree 无法由 table 的系数类型表示。
 
-- 支持的契约要求 `log_n >= 1`，即 `N >= 2`；`N = 1` 会返回 `NttError::PolynomialLengthTooSmall`。
+- 构造器接收 `primus_poly::PolyLength`，它集中检查 FHE 共用的 `32..=2^17` 二次幂范围；`poly_length()` 返回同一类型。
 - 模数必须是素数且存在本原 `2N` 次单位根，即要求 `2N` 整除 `q - 1`。素性是调用方前提，不进行运行时检查。
 - `U32NttTable` 和 `UintNttTable<u32>` 要求 `q < 2^30`；`U64NttTable` 和 `UintNttTable<u64>` 要求 `q < 2^62`。预留的两个高位保证所有小于 `4q` 的 lazy 值均可表示。
 - 通用 table 还要求 `N < q`；如果 `N` 无法由其系数类型表示，也会返回构造错误。
@@ -79,7 +80,7 @@ Lazy 值表示模 `q` 的剩余类，但其更宽的整数范围属于调用契�
 
 ## DCRT 布局
 
-`DcrtTable` 为每个模数保存一个 NTT table，并让它们共享同一个 `N`。系数和变换 slice 都采用 modulus-major 布局，总长度为 `moduli_count * N`：
+`DcrtTable` 为每个模数保存一个 NTT table，并让它们共享同一个 `PolyLength`；构造时在建立单模数表前检查 `moduli_count * N` 是否能由 `usize` 表示。系数和变换 slice 都采用 modulus-major 布局，总长度为 `moduli_count * N`：
 
 ```text
 [a_0 mod q_0, ..., a_(N-1) mod q_0,

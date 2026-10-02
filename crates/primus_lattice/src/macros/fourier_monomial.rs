@@ -18,7 +18,7 @@ macro_rules! impl_fourier_monomial {
             /// keys and gadget bases. They must use the engine's exact table instance,
             /// evaluation order and normalized torus scale. Each polynomial occupies
             /// `fft.fourier_length()` complex values. `exponent` must be in `0..2N`,
-            /// where `N = fft.poly_length()`.
+            /// where `N = fft.poly_length().get()`.
             ///
             /// `coefficient_scratch` holds `N` signed-integer bit patterns and
             /// `fourier_scratch` holds `N/2` complex values. Both are overwritten before
@@ -45,7 +45,7 @@ macro_rules! impl_fourier_monomial {
                 A: primus_data::Data<Elem = primus_fft::Complex64>,
                 B: primus_data::DataMut<Elem = primus_fft::Complex64>,
             {
-                let poly_length = fft.poly_length();
+                let poly_length = fft.poly_length().get();
                 let fourier_length = fft.fourier_length();
                 debug_assert!(exponent < 2 * poly_length);
                 debug_assert_eq!(self.as_ref().len(), rhs.as_ref().len());

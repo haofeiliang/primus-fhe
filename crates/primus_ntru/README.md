@@ -21,11 +21,7 @@ NLev and NGSW have the same number of stored rows but different mathematical rol
 
 ## Keys and recommended workflow
 
-Construction still takes an integer `N`. Validated parameters store the shared
-[PolyLength](../primus_lattice/README.md#storage-and-layout);
-`params.poly_length()` returns the checked value for workspace constructors;
-use `.get()` when a scalar kernel or transform constructor needs `usize`. `PolyLength`
-centrally checks the supported range of powers of two in `2..=2^17`.
+Construction still takes an integer `N`. Validated parameters store the shared [primus_poly::PolyLength](../primus_poly/README.md#ring-polynomial-length); `params.poly_length()` returns the checked value for workspace and NTT/FFT table constructors. Extract `.get()` at raw storage or scalar kernels. `PolyLength` centrally checks the shared FHE power-of-two range `32..=2^17`; NTRU parameters do not repeat the upper-bound check.
 
 `NtruParameters::try_new` returns `NtruParameterError` for ring length, fixed-scale encoding, secret support/weight and noise-sampler errors; fixed weights must fit N. `new` panics on the same errors. These checks do not establish invertibility of a sampled secret, transform availability or a noise/security budget. `NtruParameterError::SecretKey` preserves the sampling/weight/modulus cause as `SecretKeySamplerError`; `Noise` preserves `GaussianError`.
 

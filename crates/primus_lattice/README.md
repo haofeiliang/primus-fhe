@@ -62,15 +62,9 @@ For NLev sums and NGSW multi-way CMux, pass `output.as_mut_view()` as output, an
 
 `GlweSize`, `GadgetSize`, `RnsGlweSize`, and `RnsGadgetSize` compute checked lengths from `GlweDimension`, `PolyLength` and the `primus_decompose::DecompositionLevelCount` for gadgets. They check RNS modulus counts and flattened-length overflow. `GlweSize` stores GLWE geometry and flattened lengths. `LweDimension::from(glwe_size)` explicitly derives the extracted dimension `kN`, including the guarantee that `kN+1` fits. They do not validate backing buffers, transform availability, modulus suitability, or security. Use their length accessors when allocating rather than repeating layout formulas.
 
-`PolyLength` checks that `N` is a power of two in `MIN_POLY_LENGTH..=MAX_POLY_LENGTH`
-(currently `2..=2^17`). Its `get()`, `log_n()`
-and `fourier_poly_len()` return `N`, `log2(N)` and `N/2` complex elements.
-This range also ensures `2N` fits in `usize`. Use `new`, `try_new`
-or `TryFrom<usize>` to construct it. `PolyLengthError` retains the rejected length.
-`GlweSize` stores it, and gadget/RNS layouts
-compose the same invariant through their nested GLWE size. Layout constructors consume `PolyLength`, and `poly_length()` accessors
-return it directly; extract `usize` with `.get()` at raw storage/kernel boundaries. Transform constructors
-retain their own supported ranges and numerical requirements.
+[`primus_poly::PolyLength`](../primus_poly/README.md#ring-polynomial-length) centrally checks a power-of-two `N` in `32..=2^17`. `get()`, `log_n()` and `fourier_poly_len()` return `N`, `log2(N)` and `N/2` complex elements; the range also guarantees that `2N` fits in `usize`.
+
+`GlweSize` stores this type, and gadget/RNS layouts inherit its size contract through their GLWE size without repeating the upper-bound check. Layout, workspace and NTT/FFT table constructors take `PolyLength`, and `poly_length()` returns it. Extract integers with `.get()` only at raw storage or numerical kernels. Combined storage lengths and transform numerical conditions remain checked at their owning construction boundaries.
 
 ## Operations and ownership
 
@@ -123,22 +117,23 @@ Overwriting external products initialize their accumulator, and other scratch is
 Borrow storage, add an already encoded polynomial to the body, then extract its second coefficient under an explicit modulus:
 
 ```rust
-use primus_lattice::{GlweDimension, GlweSize, PolyLength, glwe::Glwe, lwe::Lwe};
+use primus_lattice::{GlweDimension, GlweSize, glwe::Glwe, lwe::Lwe};
+use primus_poly::PolyLength;
 use primus_modulus::BarrettModulus;
 use primus_poly::Polynomial;
 
-let size = GlweSize::new(GlweDimension::new(2), PolyLength::new(4));
+let size = GlweSize::new(GlweDimension::new(2), PolyLength::new(32));
 let modulus = BarrettModulus::new(97u32);
-let mut storage = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+let mut storage: Vec<u32> = (1..=size.glwe_len()).map(|i| i as u32).collect();
 assert_eq!(storage.len(), size.glwe_len());
 let mut ciphertext = Glwe::new(storage.as_mut_slice());
-let plaintext = Polynomial::new([10, 20, 30, 40]);
+let plaintext = Polynomial::new(vec![10; size.poly_length().get()]);
 ciphertext.add_plaintext_assign(&plaintext, modulus);
 
 let mut sample: Lwe<Vec<u32>> = Lwe::zero(size.mask_len());
 ciphertext.extract_lwe_at_to(1, &mut sample, size.poly_length().get(), modulus);
-assert_eq!(sample.a(), &[2, 1, 93, 94, 6, 5, 89, 90]);
-assert_eq!(sample.b(), 30);
+assert_eq!(&sample.a()[..2], &[2, 1]);
+assert_eq!(sample.b(), 76);
 ```
 
 This illustrates layout and arithmetic, not randomized encryption or secure parameter selection.

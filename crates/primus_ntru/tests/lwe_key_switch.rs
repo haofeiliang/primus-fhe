@@ -2,7 +2,7 @@
 
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_lattice::LweDimension;
-use primus_lattice::PolyLength;
+use primus_poly::PolyLength;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use primus_decompose::primitive::ApproxSignedBasis;
@@ -21,7 +21,16 @@ use rand::{Rng, SeedableRng, rngs::StdRng};
 #[global_allocator]
 static ALLOCATOR: CountingAllocator = CountingAllocator;
 
-const F: [i128; 8] = [1, -1, 0, 1, 0, 0, -1, 1];
+const N: usize = 32;
+const F: [i128; N] = {
+    let mut secret = [0; N];
+    secret[0] = 1;
+    secret[1] = -1;
+    secret[3] = 1;
+    secret[6] = -1;
+    secret[7] = 1;
+    secret
+};
 // Even signed sum: this target cannot be padded into an invertible native NTRU key.
 const S: [i128; 5] = [1, -1, 0, 1, -1];
 
@@ -404,16 +413,16 @@ fn coefficient_rounding_extraction_and_independent_lwe_key_switch() {
 // Invalid scalar inputs leave the caller's output unchanged.
 fn check_scalar_errors(key: &NtruLweKeySwitchingKey<u32>) {
     for (input_len, index, output_len, scratch_len, q) in [
-        (0, 0, 4, 4, 65537),
-        (3, 0, 4, 4, 65537),
-        (5, 0, 4, 4, 65537),
-        (4, 4, 4, 4, 65537),
-        (4, usize::MAX, 4, 4, 65537),
-        (4, 0, 0, 4, 65537),
-        (4, 0, 3, 4, 65537),
-        (4, 0, 5, 4, 65537),
-        (4, 0, 4, 2, 65537),
-        (4, 0, 4, 4, 65539),
+        (0, 0, 4, N, 65537),
+        (N - 1, 0, 4, N, 65537),
+        (N + 1, 0, 4, N, 65537),
+        (N, N, 4, N, 65537),
+        (N, usize::MAX, 4, N, 65537),
+        (N, 0, 0, N, 65537),
+        (N, 0, 3, N, 65537),
+        (N, 0, 5, N, 65537),
+        (N, 0, 4, 2 * N, 65537),
+        (N, 0, 4, N, 65539),
     ] {
         let input = NtruCiphertext::new(vec![9u32; input_len]);
         let mut output = LweCiphertext::new(vec![17u32; output_len]);
@@ -440,14 +449,14 @@ fn check_shared_input_errors(key: &NtruLweKeySwitchingKey<u32>) {
     // Reject the complete batch before touching its first output, even when
     // the invalid index or ciphertext is last. Other rows isolate each binding.
     for (input_len, indices, output_lens, scratch_n, scratch_dimension, q) in [
-        (4, [0, 4], vec![4, 4], 4, 3, 65537),
-        (4, [0, 1], vec![4], 4, 3, 65537),
-        (4, [0, 1], vec![4, 4, 4], 4, 3, 65537),
-        (4, [0, 1], vec![4, 3], 4, 3, 65537),
-        (3, [0, 1], vec![4, 4], 4, 3, 65537),
-        (4, [0, 1], vec![4, 4], 2, 3, 65537),
-        (4, [0, 1], vec![4, 4], 4, 2, 65537),
-        (4, [0, 1], vec![4, 4], 4, 3, 65539),
+        (N, [0, N], vec![4, 4], N, 3, 65537),
+        (N, [0, 1], vec![4], N, 3, 65537),
+        (N, [0, 1], vec![4, 4, 4], N, 3, 65537),
+        (N, [0, 1], vec![4, 3], N, 3, 65537),
+        (N - 1, [0, 1], vec![4, 4], N, 3, 65537),
+        (N, [0, 1], vec![4, 4], 2 * N, 3, 65537),
+        (N, [0, 1], vec![4, 4], N, 2, 65537),
+        (N, [0, 1], vec![4, 4], N, 3, 65539),
     ] {
         let input = NtruCiphertext::new(vec![9u32; input_len]);
         let mut outputs: Vec<_> = output_lens
@@ -476,10 +485,10 @@ fn check_shared_input_errors(key: &NtruLweKeySwitchingKey<u32>) {
 // Check extraction, filled-prefix bounds and slot access as separate boundaries.
 fn check_streamed_errors(key: &NtruLweKeySwitchingKey<u32>) {
     for (input_len, index, output_len, q) in [
-        (3, 0, 5, 65537),
-        (4, 4, 5, 65537),
-        (4, 0, 4, 65537),
-        (4, 0, 5, 65539),
+        (N - 1, 0, N + 1, 65537),
+        (N, N, N + 1, 65537),
+        (N, 0, N, 65537),
+        (N, 0, N + 1, 65539),
     ] {
         let input = NtruCiphertext::new(vec![9u32; input_len]);
         let mut extracted = LweCiphertext::new(vec![17u32; output_len]);
@@ -496,11 +505,11 @@ fn check_streamed_errors(key: &NtruLweKeySwitchingKey<u32>) {
         assert_eq!(extracted, before);
     }
     for (count, last_len, scratch_n, scratch_dimension, q) in [
-        (9, 4, 4, 3, 65537),
-        (2, 3, 4, 3, 65537),
-        (2, 4, 2, 3, 65537),
-        (2, 4, 4, 2, 65537),
-        (2, 4, 4, 3, 65539),
+        (9, 4, N, 3, 65537),
+        (2, 3, N, 3, 65537),
+        (2, 4, 2 * N, 3, 65537),
+        (2, 4, N, 2, 65537),
+        (2, 4, N, 3, 65539),
     ] {
         let mut outputs = vec![LweCiphertext::new(vec![17u32; 4]); count];
         *outputs.last_mut().unwrap() = LweCiphertext::new(vec![17; last_len]);
@@ -520,7 +529,7 @@ fn check_streamed_errors(key: &NtruLweKeySwitchingKey<u32>) {
         assert_eq!(outputs, before);
     }
     let mut workspace =
-        NtruLweKeySwitchingBatchWorkspace::<u32>::new(PolyLength::new(4), LweDimension::new(3));
+        NtruLweKeySwitchingBatchWorkspace::<u32>::new(PolyLength::new(32), LweDimension::new(3));
     assert!(
         catch_unwind(AssertUnwindSafe(|| {
             let _ = workspace.extracted_slot_mut(workspace.batch_capacity());
@@ -541,7 +550,7 @@ fn check_generation_errors(params: &LweParameters<u32, BarrettModulus<u32>>) {
     ] {
         let mut rng = StdRng::seed_from_u64(11);
         let mut untouched = StdRng::seed_from_u64(11);
-        let secret = NtruSecretKey::new(vec![f; 4], SecretKeyDistr::UniformTernary);
+        let secret = NtruSecretKey::new(vec![f; N], SecretKeyDistr::UniformTernary);
         let output_key = LweSecretKey::new(vec![1; dimension], SecretKeyDistr::UniformBinary);
         assert!(
             catch_unwind(AssertUnwindSafe(|| {
@@ -564,7 +573,7 @@ fn check_generation_errors(params: &LweParameters<u32, BarrettModulus<u32>>) {
 fn check_workspace_errors() {
     assert!(
         catch_unwind(|| NtruLweKeySwitchingBatchWorkspace::<u32>::new(
-            PolyLength::new(4),
+            PolyLength::new(32),
             LweDimension::new(usize::MAX / 8)
         ))
         .is_err()
@@ -582,7 +591,10 @@ fn validation_precedes_output_writes_and_key_sampling() {
         SecretKeyDistr::UniformBinary,
         0.7,
     );
-    let secret = NtruSecretKey::new(vec![1i32, -1, 0, 1], SecretKeyDistr::UniformTernary);
+    let secret = NtruSecretKey::new(
+        F.iter().map(|&value| value as i32).collect(),
+        SecretKeyDistr::UniformTernary,
+    );
     let target = LweSecretKey::new(vec![1u32, 0, 1], SecretKeyDistr::UniformBinary);
     let basis = ApproxSignedBasis::new(Some(65537), DecompositionBaseLog::new(4), None);
     let mut rng = StdRng::seed_from_u64(10);
@@ -643,7 +655,7 @@ fn check_ntt_encryption<T: FheUint, Table: primus_ntt::MonomialNttTable<ValueT =
     use primus_ntru::{NtruParameters, NttNtruSecretKey};
     use primus_poly::Polynomial;
     let modulus = BarrettModulus::new(q);
-    let ntt = Table::new(5, modulus).unwrap();
+    let ntt = Table::new(PolyLength::new(32), modulus).unwrap();
     let params = NtruParameters::new(
         32,
         T::as_from(16u32),
@@ -669,7 +681,7 @@ fn check_fourier_encryption<T: primus_fft::TorusFftValue, Table: primus_fft::Fft
     use primus_fft::FftEngine;
     use primus_ntru::{FourierNtruEncryptWorkspace, FourierNtruSecretKey, NtruParameters};
     use primus_poly::Polynomial;
-    let table = Table::new(5).unwrap();
+    let table = Table::new(PolyLength::new(32));
     let mut fft = FftEngine::new(&table);
     let modulus = NativeModulus::<T>::new();
     let params = NtruParameters::new(

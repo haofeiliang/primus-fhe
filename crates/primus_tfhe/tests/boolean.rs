@@ -3,8 +3,9 @@
 use primus_encoding::RoundedCodec;
 use primus_lattice::LweDimension;
 use primus_modulus::{BarrettModulus, NativeModulus};
+use primus_poly::PolyLength;
 use primus_tfhe::{
-    BooleanEvaluator, BooleanGate, LookupTable, LweCiphertext, PolyLength, ProgrammableBootstrap,
+    BooleanEvaluator, BooleanGate, LookupTable, LweCiphertext, ProgrammableBootstrap,
     TfheEvaluationError,
 };
 use std::panic::{AssertUnwindSafe, catch_unwind};
@@ -31,7 +32,7 @@ fn boolean_constructor_checks_both_encoding_scales() {
         assert_eq!(
             BooleanEvaluator::try_new(
                 LweDimension::new(3),
-                PolyLength::new(16),
+                PolyLength::new(32),
                 &codec,
                 BarrettModulus::new(accumulator_q),
                 UnusedBootstrap
@@ -81,7 +82,7 @@ fn boolean_dimension_checks_preserve_output_at_each_stage() {
     let codec = RoundedCodec::new(4, modulus);
     let mut evaluator = BooleanEvaluator::try_new(
         LweDimension::new(DIMENSION),
-        PolyLength::new(16),
+        PolyLength::new(32),
         &codec,
         modulus,
         RecordingBootstrap::default(),

@@ -4,9 +4,9 @@ use primus_data::{Data, DataMut};
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_integer::{FheUint, SignedInteger};
 use primus_lattice::LweDimension;
-use primus_lattice::PolyLength;
 use primus_lattice::lwe::Lwe;
 use primus_lwe::{LweKeySwitchingKey, LweParameters, LweSecretKey, LweSecretKeyRef};
+use primus_poly::PolyLength;
 use primus_reduce::{Modulus, ModulusSwitch, RingContext};
 
 use crate::{NtruCiphertext, NtruSecretKey};

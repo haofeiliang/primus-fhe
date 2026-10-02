@@ -225,7 +225,7 @@ where
             "GLWE output layout mismatch"
         );
         assert_eq!(
-            ntt.poly_length(),
+            ntt.poly_length().get(),
             poly_length,
             "NTT polynomial length mismatch"
         );

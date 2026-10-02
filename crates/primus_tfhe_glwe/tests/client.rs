@@ -1,10 +1,10 @@
 use primus_decompose::DecompositionBaseLog;
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_glwe::{GlweParameters, GlweSecretKey, GlweSize, SecretKeyDistr};
-use primus_lattice::PolyLength;
 use primus_lattice::{GlweDimension, LweDimension};
 use primus_lwe::{LweCiphertext, LweParameters, LwePublicKey, LweSecretKey, LweSecretKeyRef};
 use primus_modulus::{BarrettModulus, NativeModulus};
+use primus_poly::PolyLength;
 use primus_reduce::RingContext;
 use primus_test_allocations as allocations;
 use primus_tfhe_glwe::{
@@ -28,7 +28,7 @@ fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
         );
         let glwe = GlweParameters::new(
             GlweDimension::new(2),
-            8,
+            32,
             plain_modulus,
             modulus,
             SecretKeyDistr::UniformTernary,
@@ -50,8 +50,8 @@ fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
         let client = ClientKey::new(
             LweSecretKey::new(vec![1, 0, 1, 1], SecretKeyDistr::UniformBinary),
             GlweSecretKey::new(
-                vec![1, -1, 0, 1, 0, -1, 0, 1, 1, 0, -1, 0, 1, 0, 0, -1],
-                GlweSize::new(GlweDimension::new(2), PolyLength::new(8)),
+                vec![1, -1, 0, 1, 0, -1, 0, 1, 1, 0, -1, 0, 1, 0, 0, -1].repeat(4),
+                GlweSize::new(GlweDimension::new(2), PolyLength::new(32)),
                 SecretKeyDistr::UniformTernary,
             ),
             order,
@@ -63,7 +63,7 @@ fn check<M: RingContext<u32>>(modulus: M, plain_modulus: u32) {
             LweDimension::new(if order == PbsOrder::BootstrapKeyswitch {
                 4
             } else {
-                16
+                64
             })
         );
         // Independent raw-LWE calls pin the key and noise selected by each PBS order.
@@ -193,7 +193,7 @@ fn boolean_clients_reject_other_plaintext_moduli() {
             ),
             GlweParameters::new(
                 GlweDimension::new(1),
-                8,
+                32,
                 t,
                 modulus,
                 SecretKeyDistr::UniformTernary,
@@ -227,7 +227,7 @@ fn binding_checks_small_secret_coefficients_without_restricting_gaussian_accumul
         ] {
             let parameters = TfheParameters::try_new(
                 LweParameters::new(LweDimension::new(4), 4, modulus, distr, 0.7),
-                GlweParameters::new(GlweDimension::new(1), 8, 4, modulus, gaussian, 0.7),
+                GlweParameters::new(GlweDimension::new(1), 32, 4, modulus, gaussian, 0.7),
                 ApproxSignedBasis::new(
                     modulus.explicit_value(),
                     DecompositionBaseLog::new(8),
@@ -246,8 +246,8 @@ fn binding_checks_small_secret_coefficients_without_restricting_gaussian_accumul
                 let client = ClientKey::new(
                     LweSecretKey::new(vec![0, 1, 0, coefficient], distr),
                     GlweSecretKey::new(
-                        vec![2; 8],
-                        GlweSize::new(GlweDimension::new(1), PolyLength::new(8)),
+                        vec![2; 32],
+                        GlweSize::new(GlweDimension::new(1), PolyLength::new(32)),
                         gaussian,
                     ),
                     PbsOrder::BootstrapKeyswitch,

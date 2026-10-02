@@ -77,8 +77,8 @@ NTT 的 `encrypt_truncated_zeros`、`phase_truncated` 和 `decrypt_truncated` �
 完整的输入 GLWE 布局，输入布局或组合密钥存储长度溢出时返回 `GlweSizeError`；`new` 在相同错误下
 panic。输入与输出共用 `output` 的环几何，`input_size()` 返回保存的布局。
 普通与 gadget 参数通过 `GlweSize` 保存经过检查的
-[PolyLength](../primus_lattice/README.zh_CN.md#存储与布局)，`poly_length()` 访问器返回经过检查的值，直接传给
-工作区构造器，在数值内核/变换边界再用 `.get()` 提取整数。
+[PolyLength](../primus_poly/README.zh_CN.md#环多项式长度)，`poly_length()` 访问器返回经过检查的值，直接传给
+工作区和 NTT/FFT 表构造器，在 raw 存储或数值内核处再用 `.get()` 提取整数。FHE 共用的 `32..=2^17` 二次幂范围由 `PolyLength` 集中检查。
 维数入参与访问器使用从 `primus_lattice` 重新导出的 `GlweDimension`，`.get()` 返回 `k`。`primus_lattice::LweDimension::from(glwe_size)` 从 GLWE size 显式派生经过验证的提取 LWE 维数 `kN`。Gadget 构造器接收 `primus_decompose` 的 `DecompositionBaseLog` 和 `Option<DecompositionLevelCount>`。顶层加密参数构造器仍接受整数 `N`。
 
 求值密钥保存自己的布局和分解基。NTT 求值参数为 `input, output, modulus, ntt, workspace`；Fourier 求值省略 `modulus`。Workspace 是可复用的工作区。必须保持密钥的变换表示，仅长度和模数匹配不能证明表示兼容。

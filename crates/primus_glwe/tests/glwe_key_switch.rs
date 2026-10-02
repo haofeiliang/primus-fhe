@@ -10,11 +10,10 @@ use primus_glwe::{
     NttGlweSecretKey, SecretKeyDistr,
 };
 use primus_lattice::GlweDimension;
-use primus_lattice::PolyLength;
 use primus_lattice::glwe::{FourierGlweOwned, Glwe, NttGlwe};
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntt::{NttTable, UintNttTable};
-use primus_poly::Polynomial;
+use primus_poly::{PolyLength, Polynomial};
 use rand::{SeedableRng, rngs::StdRng};
 
 const INPUT_DIMENSION: usize = 2;
@@ -33,7 +32,7 @@ fn ntt_glwe_key_switches_for_equal_and_smaller_output_dimensions() {
     const MODULUS: u32 = 132_120_577;
 
     let modulus = BarrettModulus::new(MODULUS);
-    let ntt = UintNttTable::new(POLY_LENGTH.trailing_zeros(), modulus).unwrap();
+    let ntt = UintNttTable::new(PolyLength::new(POLY_LENGTH), modulus).unwrap();
     let mut rng = StdRng::seed_from_u64(42);
     let input_params = GlweParameters::new(
         GlweDimension::new(INPUT_DIMENSION),
@@ -105,7 +104,7 @@ fn ntt_glwe_key_switches_for_equal_and_smaller_output_dimensions() {
 
 #[test]
 fn fourier_glwe_key_switches_for_equal_and_smaller_output_dimensions() {
-    let table = RustFftTable::new(POLY_LENGTH.trailing_zeros()).unwrap();
+    let table = RustFftTable::new(PolyLength::new(POLY_LENGTH));
     let mut fft = FftEngine::new(&table);
     let mut rng = StdRng::seed_from_u64(42);
     let input_params = GlweParameters::new(

@@ -2,11 +2,9 @@ use aligned_vec::{ABox, avec};
 use primus_data::DataMut;
 use primus_fft::{Complex64, TorusFftValue};
 use primus_integer::FheUint;
+use primus_poly::PolyLength;
 
-use crate::{
-    PolyLength,
-    ntru::{FourierNtru, NttNtru},
-};
+use crate::ntru::{FourierNtru, NttNtru};
 
 /// Pre-allocated scratch buffers for native-torus Fourier NTRU gadget products.
 /// Owned Fourier buffers use cache-line alignment for repeated FFT and product passes.
@@ -62,7 +60,7 @@ impl<T: TorusFftValue> FourierNtruExternalProductWorkspace<T> {
     ///
     /// The transform table used by subsequent operations must support
     /// `poly_length`. Construction does not bind or validate a table;
-    /// [`PolyLength`] already establishes the supported layout range.
+    /// [`PolyLength`] already establishes the supported FHE geometry.
     #[inline]
     #[must_use]
     pub fn new(poly_length: PolyLength) -> Self {
@@ -170,7 +168,7 @@ impl<T: FheUint> NttNtruExternalProductWorkspace<T> {
     ///
     /// The transform table used by subsequent operations must support
     /// `poly_length`. Construction does not bind or validate a table;
-    /// [`PolyLength`] already establishes the supported layout range.
+    /// [`PolyLength`] already establishes the supported FHE geometry.
     #[inline]
     #[must_use]
     pub fn new(poly_length: PolyLength) -> Self {

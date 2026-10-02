@@ -4,12 +4,9 @@ pub use primus_tfhe_ntru::{
     TfheClientError, TfheKeyError, TfheParameterError,
 };
 
-/// Failure to construct a Fourier table or bind it to NTRU TFHE parameters.
+/// Failure to bind a Fourier table to NTRU TFHE parameters.
 #[derive(Debug, thiserror::Error)]
 pub enum TfheContextError {
-    /// The selected transform table could not be constructed.
-    #[error("failed to construct transform table")]
-    TransformTable(#[from] primus_fft::FftError),
     /// The Fourier table uses another polynomial length.
     #[error("Fourier polynomial length mismatch: expected {expected}, got {actual}")]
     PolynomialLengthMismatch {

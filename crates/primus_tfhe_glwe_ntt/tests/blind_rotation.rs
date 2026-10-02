@@ -14,7 +14,7 @@ use primus_lattice::{
 use primus_lwe::{LweParameters, LweSecretKey};
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntt::{NttTable, UintNttTable};
-use primus_poly::Polynomial;
+use primus_poly::{PolyLength, Polynomial};
 use primus_tfhe_glwe_ntt::{NttGlweBlindRotationWorkspace, NttGlweBootstrappingKey};
 use rand::{SeedableRng, rngs::StdRng};
 
@@ -53,7 +53,7 @@ fn functional_bootstrapping_key_blind_rotates() {
     const MODULUS: u32 = 132_120_577;
 
     let modulus = BarrettModulus::new(MODULUS);
-    let ntt = UintNttTable::new(POLY_LENGTH.trailing_zeros(), modulus).unwrap();
+    let ntt = UintNttTable::new(PolyLength::new(POLY_LENGTH), modulus).unwrap();
     let mut rng = StdRng::seed_from_u64(42);
     // Input quantization uses a different modulus from the accumulator.
     let lwe_params = LweParameters::new(
@@ -162,9 +162,8 @@ fn functional_bootstrapping_key_blind_rotates() {
     // Resource validation must precede accumulator initialization, including LUT paths.
     let wrong_modulus = BarrettModulus::new(998_244_353u32);
     let wrong_modulus_table =
-        UintNttTable::new(POLY_LENGTH.trailing_zeros(), wrong_modulus).unwrap();
-    let wrong_length_table =
-        UintNttTable::new((POLY_LENGTH * 2).trailing_zeros(), modulus).unwrap();
+        UintNttTable::new(PolyLength::new(POLY_LENGTH), wrong_modulus).unwrap();
+    let wrong_length_table = UintNttTable::new(PolyLength::new(POLY_LENGTH * 2), modulus).unwrap();
     let lookup_table = Polynomial::new(message.as_slice());
     for (modulus, table, size) in [
         (modulus, &wrong_modulus_table, ggsw_params.size()),

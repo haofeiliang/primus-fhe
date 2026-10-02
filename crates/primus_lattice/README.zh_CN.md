@@ -60,13 +60,9 @@ NLev 批量求和与 NGSW 多路 CMux 使用 `output.as_mut_view()` 作为输出
 
 `GlweSize`、`GadgetSize`、`RnsGlweSize` 和 `RnsGadgetSize` 从 `GlweDimension`、`PolyLength` 以及 gadget 的 `primus_decompose::DecompositionLevelCount` 计算经过检查的长度。它们检查 RNS 模数数量和扁平长度溢出。`GlweSize` 保存 GLWE 几何尺寸和扁平长度；通过 `LweDimension::from(glwe_size)` 显式派生提取维数 `kN`，同时保证 `kN+1` 可表示。它们不验证实际缓冲区、变换表是否可用、模数是否适合或参数是否安全。分配时应优先使用这些类型的长度访问器，避免重复书写布局公式。
 
-`PolyLength` 检查 `N` 是 `MIN_POLY_LENGTH..=MAX_POLY_LENGTH`（目前为 `2..=2^17`）
-内的二次幂；`get()`、`log_n()`、`fourier_poly_len()` 分别返回 `N`、`log2(N)` 和
-`N/2` 个复数元素，该范围也保证 `2N` 可用 `usize` 表示。
-使用 `new`、`try_new` 或 `TryFrom<usize>` 构造，`PolyLengthError` 保留被拒绝的长度。
-`GlweSize` 保存它，
-gadget/RNS 布局通过内含的 GLWE size 组合这个不变量。布局构造器接收 `PolyLength`，`poly_length()`
-访问器直接返回它；进入 raw 存储/数值内核时再用 `.get()` 提取整数。变换构造器继续检查各自的支持范围和数值要求。
+[`primus_poly::PolyLength`](../primus_poly/README.zh_CN.md#环多项式长度) 集中检查 `N` 为 `32..=2^17` 内的二次幂；`get()`、`log_n()`、`fourier_poly_len()` 返回 `N`、`log2(N)` 和 `N/2` 个复数元素，支持范围同时保证 `2N` 可由 `usize` 表示。
+
+`GlweSize` 保存该类型，gadget/RNS 布局通过内含的 GLWE size 继承尺寸契约，不重复检查上界。布局、工作区和 NTT/FFT 表构造器接收 `PolyLength`，`poly_length()` 返回它；仅在 raw 存储或数值内核处用 `.get()` 提取整数。组合存储长度和变换的数值条件仍在各自构造边界检查。
 
 ## 运算与所有权
 
@@ -119,22 +115,23 @@ Workspace 提供可复用 scratch，不是已经验证的 basis/table/modulus do
 借用存储，把已经编码的多项式加到 body，再在显式模数下抽取第二个系数：
 
 ```rust
-use primus_lattice::{GlweDimension, GlweSize, PolyLength, glwe::Glwe, lwe::Lwe};
+use primus_lattice::{GlweDimension, GlweSize, glwe::Glwe, lwe::Lwe};
+use primus_poly::PolyLength;
 use primus_modulus::BarrettModulus;
 use primus_poly::Polynomial;
 
-let size = GlweSize::new(GlweDimension::new(2), PolyLength::new(4));
+let size = GlweSize::new(GlweDimension::new(2), PolyLength::new(32));
 let modulus = BarrettModulus::new(97u32);
-let mut storage = vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12];
+let mut storage: Vec<u32> = (1..=size.glwe_len()).map(|i| i as u32).collect();
 assert_eq!(storage.len(), size.glwe_len());
 let mut ciphertext = Glwe::new(storage.as_mut_slice());
-let plaintext = Polynomial::new([10, 20, 30, 40]);
+let plaintext = Polynomial::new(vec![10; size.poly_length().get()]);
 ciphertext.add_plaintext_assign(&plaintext, modulus);
 
 let mut sample: Lwe<Vec<u32>> = Lwe::zero(size.mask_len());
 ciphertext.extract_lwe_at_to(1, &mut sample, size.poly_length().get(), modulus);
-assert_eq!(sample.a(), &[2, 1, 93, 94, 6, 5, 89, 90]);
-assert_eq!(sample.b(), 30);
+assert_eq!(&sample.a()[..2], &[2, 1]);
+assert_eq!(sample.b(), 76);
 ```
 
 此示例展示布局和算术，不执行随机加密，也不提供安全参数选择。

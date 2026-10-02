@@ -29,7 +29,7 @@ where
     /// width; the table must match its polynomial length and ordered RNS base.
     /// The output is overwritten; scratch does not require a manual reset.
     ///
-    /// Let `size = workspace.size()`, `N = table.poly_length()`,
+    /// Let `size = workspace.size()`, `N = table.poly_length().get()`,
     /// `m = rns_base.moduli_count()`, and `w = rns_base.big_uint_value_len()`.
     /// The bound size must match `N`, `m`, the GLWE dimension, and
     /// `basis.decompose_length().get()`; `workspace.is_compatible(size, rns_base)`
@@ -75,7 +75,7 @@ where
     /// width; the table must match its polynomial length and ordered RNS base.
     /// The output is overwritten; scratch does not require a manual reset.
     ///
-    /// Let `size = workspace.size()`, `N = table.poly_length()`,
+    /// Let `size = workspace.size()`, `N = table.poly_length().get()`,
     /// `m = rns_base.moduli_count()`, and `w = rns_base.big_uint_value_len()`.
     /// The bound size must match `N`, `m`, the GLWE dimension, and
     /// `basis.decompose_length().get()`; `workspace.is_compatible(size, rns_base)`
@@ -145,7 +145,7 @@ where
         A: Data<Elem = T>,
         B: Data<Elem = T>,
     {
-        let poly_length = table.poly_length();
+        let poly_length = table.poly_length().get();
         let dcrt_glwe_len = self.0.len();
 
         let size = workspace.size();
@@ -200,7 +200,7 @@ where
         A: Data<Elem = T>,
         B: Data<Elem = T>,
     {
-        let poly_length = table.poly_length();
+        let poly_length = table.poly_length().get();
         let big_uint_value_len = rns_base.big_uint_value_len();
         let big_uint_poly_len = big_uint_poly.len();
 
@@ -253,7 +253,7 @@ where
         Table: NttTable<ValueT = T>,
         A: Data<Elem = T>,
     {
-        let poly_length = table.poly_length();
+        let poly_length = table.poly_length().get();
         let dcrt_glwe_len = self.as_ref().len();
         let basis_value = basis.basis_value();
         let moduli = rns_base.moduli();

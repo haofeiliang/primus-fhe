@@ -6,11 +6,12 @@ use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{FftEngine, FftTable, RustFftTable, TfheFftTable, TorusFftValue};
 use primus_lattice::{
-    GadgetSize, GlweSize, PolyLength,
+    GadgetSize, GlweSize,
     ggsw::{FourierGgswOwned, Ggsw},
     glwe::Glwe,
     workspace::{FourierGlweExternalProductWorkspace, FourierGlweTernaryCmuxWorkspace},
 };
+use primus_poly::PolyLength;
 
 fn fourier<T: TorusFftValue>(
     c: &mut Criterion,
@@ -21,17 +22,14 @@ fn fourier<T: TorusFftValue>(
     dimension: usize,
 ) {
     let mut fft = FftEngine::new(&table);
-    let exponent = fft.poly_length() / 3;
+    let exponent = fft.poly_length().get() / 3;
     let basis = ApproxSignedBasis::<T>::new(
         None,
         DecompositionBaseLog::new(log_b),
         Some(DecompositionLevelCount::new(levels)),
     );
     let size = GadgetSize::new(
-        GlweSize::new(
-            GlweDimension::new(dimension),
-            PolyLength::new(fft.poly_length()),
-        ),
+        GlweSize::new(GlweDimension::new(dimension), fft.poly_length()),
         DecompositionLevelCount::new(levels),
     );
     let glwe_len = size.glwe_size().glwe_len();
@@ -82,7 +80,7 @@ fn fourier<T: TorusFftValue>(
     let mut group = c.benchmark_group(format!(
         "glwe/fourier/{backend}/u{}/native/n{}/k{dimension}/logb{log_b}/l{levels}",
         T::BITS,
-        fft.poly_length()
+        fft.poly_length().get()
     ));
     group.throughput(Throughput::Elements(glwe_len as u64));
     group.bench_function("external_product_coeff", |b| {
@@ -122,7 +120,7 @@ fn fourier<T: TorusFftValue>(
             );
             black_box(&negative_key).cmux_monomial_to(
                 black_box(&intermediate),
-                black_box(2 * table.poly_length() - exponent),
+                black_box(2 * table.poly_length().get() - exponent),
                 black_box(&mut output),
                 black_box(&basis),
                 black_box(&mut fft),
@@ -148,12 +146,13 @@ fn fourier<T: TorusFftValue>(
 
 fn benchmarks(c: &mut Criterion) {
     for log_n in [10, 11] {
-        fourier::<u32>(c, "rustfft", RustFftTable::new(log_n).unwrap(), 8, 3, 1);
-        fourier::<u64>(c, "rustfft", RustFftTable::new(log_n).unwrap(), 23, 1, 1);
-        fourier::<u32>(c, "tfhe", TfheFftTable::new(log_n).unwrap(), 8, 3, 1);
-        fourier::<u64>(c, "tfhe", TfheFftTable::new(log_n).unwrap(), 23, 1, 1);
+        let poly_length = PolyLength::new(1usize << log_n);
+        fourier::<u32>(c, "rustfft", RustFftTable::new(poly_length), 8, 3, 1);
+        fourier::<u64>(c, "rustfft", RustFftTable::new(poly_length), 23, 1, 1);
+        fourier::<u32>(c, "tfhe", TfheFftTable::new(poly_length), 8, 3, 1);
+        fourier::<u64>(c, "tfhe", TfheFftTable::new(poly_length), 23, 1, 1);
     }
-    fourier::<u64>(c, "tfhe", TfheFftTable::new(10).unwrap(), 8, 3, 2);
+    fourier::<u64>(c, "tfhe", TfheFftTable::new(PolyLength::new(1024)), 8, 3, 2);
 }
 criterion_group! { name = benches; config = Criterion::default().sample_size(20).warm_up_time(std::time::Duration::from_secs(1)).measurement_time(std::time::Duration::from_secs(5)); targets = benchmarks }
 criterion_main!(benches);

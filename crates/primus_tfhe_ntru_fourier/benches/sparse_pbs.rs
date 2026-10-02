@@ -26,10 +26,8 @@ fn backend<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str) 
         let mut verified = false;
         c.bench_function(&format!("{name}/{kind}/complete"), |b| {
             let (context, client) = fixture.get_or_insert_with(|| {
-                let context = TfheContext::<T, Table, PowOf2Modulus<T>>::try_from_parameters(
-                    parameters.clone(),
-                )
-                .unwrap();
+                let context =
+                    TfheContext::<T, Table, PowOf2Modulus<T>>::from_parameters(parameters.clone());
                 let mut rng = StdRng::seed_from_u64(42);
                 let client = KeyGenerator::new(&context)
                     .try_generate_client_key(&mut rng)
@@ -81,10 +79,8 @@ fn backend<T: TorusFftValue, Table: FftTable>(c: &mut Criterion, backend: &str) 
         drop(server);
         c.bench_function(&format!("{name}/{kind}/server_keygen"), |b| {
             let (context, client) = fixture.get_or_insert_with(|| {
-                let context = TfheContext::<T, Table, PowOf2Modulus<T>>::try_from_parameters(
-                    parameters.clone(),
-                )
-                .unwrap();
+                let context =
+                    TfheContext::<T, Table, PowOf2Modulus<T>>::from_parameters(parameters.clone());
                 let mut rng = StdRng::seed_from_u64(42);
                 let client = KeyGenerator::new(&context)
                     .try_generate_client_key(&mut rng)

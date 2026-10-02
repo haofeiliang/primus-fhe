@@ -8,9 +8,8 @@ use primus_glwe::{
 };
 use primus_integer::FheUint;
 use primus_lattice::GlweDimension;
-use primus_lattice::PolyLength;
 use primus_modulus::NativeModulus;
-use primus_poly::Polynomial;
+use primus_poly::{PolyLength, Polynomial};
 use rand::{SeedableRng, rngs::StdRng};
 
 const DIMENSION: usize = 2;
@@ -22,7 +21,7 @@ fn assert_roundtrip<T>()
 where
     T: FheUint + TorusFftValue,
 {
-    let table = RustFftTable::new(POLY_LENGTH.trailing_zeros()).unwrap();
+    let table = RustFftTable::new(PolyLength::new(POLY_LENGTH));
     let mut fft = FftEngine::new(&table);
     let mut rng = StdRng::seed_from_u64(42);
     let messages: Vec<T> = (0..POLY_LENGTH)

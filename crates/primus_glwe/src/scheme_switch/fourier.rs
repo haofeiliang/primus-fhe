@@ -160,7 +160,7 @@ impl<T: TorusFftValue> FourierGlweSchemeSwitchKey<T> {
             "scheme-switch output GGSW layout mismatch"
         );
         assert_eq!(
-            fft.poly_length(),
+            fft.poly_length().get(),
             self.key_size.glwe_size().poly_length().get(),
             "scheme-switch FFT polynomial length mismatch"
         );

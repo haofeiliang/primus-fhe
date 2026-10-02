@@ -71,7 +71,7 @@ impl<T: TorusFftValue> FourierGlweAutomorphismKey<T> {
             size,
             "automorphism output key layout mismatch"
         );
-        let permutation = CoeffAutomorphismPermutation::new(degree, size.poly_length().get());
+        let permutation = CoeffAutomorphismPermutation::new(degree, size.poly_length());
         let mut transformed = vec![T::SignedInteger::ZERO; size.mask_len()];
         for (input, output) in secret
             .iter()
@@ -170,7 +170,7 @@ impl<T: TorusFftValue> FourierGlweAutomorphismKey<T> {
         );
         self.assert_compatible(fft, workspace);
         let h = fft.fourier_length();
-        let n = fft.poly_length();
+        let n = fft.poly_length().get();
         let (input_mask, input_body) = input.a_b_slices(h);
         let (transformed_mask, _) = workspace.transformed.a_b_mut_slices(n);
         for (input, coeff) in input_mask

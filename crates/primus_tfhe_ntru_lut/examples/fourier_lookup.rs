@@ -115,7 +115,7 @@ fn main() {
     println!("Input: {INPUT_BITS} bits; output: {OUTPUT_BITS} bits");
 
     let parameters = parameters();
-    let context = TfheContext::<Word, Table, _>::try_from_parameters(parameters).unwrap();
+    let context = TfheContext::<Word, Table, _>::from_parameters(parameters);
 
     // Client: generate independent LWE/NTRU secrets plus CBS-enabled server material.
     let mut rng = StdRng::seed_from_u64(42);

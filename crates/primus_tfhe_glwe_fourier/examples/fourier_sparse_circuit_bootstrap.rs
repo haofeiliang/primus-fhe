@@ -88,7 +88,7 @@ fn circuit_config() -> CircuitBootstrapConfig {
 
 fn main() {
     let parameters = parameters();
-    let context = TfheContext::<Word, Table>::try_from_parameters(parameters).unwrap();
+    let context = TfheContext::<Word, Table>::from_parameters(parameters);
 
     // Client: generate CBS material with the paired keys; send server_key only.
     let mut rng = StdRng::seed_from_u64(42);

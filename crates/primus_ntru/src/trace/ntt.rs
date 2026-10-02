@@ -4,9 +4,9 @@ use primus_data::{Data, DataMut};
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_factor::{FactorSliceOps, ShoupFactor};
 use primus_integer::FheUint;
-use primus_lattice::PolyLength;
 use primus_modulus::PowOf2Modulus;
 use primus_ntt::NttTable;
+use primus_poly::PolyLength;
 use primus_reduce::{FieldContext, ReduceNeg};
 
 use super::kernels;

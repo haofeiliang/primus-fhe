@@ -4,10 +4,11 @@ use primus_lattice::LweDimension;
 use primus_lwe::LweParameters;
 use primus_modulus::NativeModulus;
 use primus_ntru::{NlevParameters, NtruParameters, SecretKeyDistr};
+use primus_poly::PolyLength;
 use primus_tfhe_ntru_fourier::{TfheContext, TfheEvaluationError, TfheParameters};
 use rand::{SeedableRng, rngs::StdRng};
 
-const POLY_LENGTH: usize = 16;
+const POLY_LENGTH: usize = 32;
 const LWE_DIMENSION: usize = 4;
 const PLAIN_MODULUS: u32 = 4;
 
@@ -46,7 +47,7 @@ fn parameters(bootstrapping_log_basis: u32, key_switching_log_basis: u32) -> Tfh
 
 #[test]
 fn rejects_server_keys_with_same_layout_but_different_bases() {
-    let table = RustFftTable::new(POLY_LENGTH.trailing_zeros()).unwrap();
+    let table = RustFftTable::new(PolyLength::new(POLY_LENGTH));
     let context = TfheContext::try_new(parameters(8, 8), table).unwrap();
     let mut rng = StdRng::seed_from_u64(0x464f_5552_4241_5349);
     let (_, server_key) = context.try_generate_keys(None, &mut rng).unwrap();
@@ -78,7 +79,7 @@ fn rejects_server_keys_with_same_layout_but_different_bases() {
                 .decompose_length()
                 .get()
         );
-        let table = RustFftTable::new(POLY_LENGTH.trailing_zeros()).unwrap();
+        let table = RustFftTable::new(PolyLength::new(POLY_LENGTH));
         let incompatible = TfheContext::try_new(candidate, table).unwrap();
         assert_eq!(
             incompatible.evaluator(&server_key).err(),

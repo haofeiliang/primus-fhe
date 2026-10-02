@@ -12,7 +12,7 @@ impl U64NttTable {
     /// `BIT_SHIFT` selects the Barrett width: 32 for `q < 2^30`, 64 otherwise.
     /// # Safety
     ///
-    /// `values` must contain exactly `self.n` coefficients, and `BIT_SHIFT`
+    /// `values` must contain exactly `self.poly_length.get()` coefficients, and `BIT_SHIFT`
     /// must select a populated preconditioner table compatible with `self.q`.
     pub(in crate::ntt::prime64) unsafe fn scalar_forward_transform_unchecked<
         const BIT_SHIFT: u32,
@@ -26,7 +26,7 @@ impl U64NttTable {
             "output_mod_factor must be 1 or 4; got {output_mod_factor}"
         );
 
-        let n = self.n;
+        let n = self.poly_length.get();
         let q = self.q;
         let two_q = self.two_q;
 
@@ -156,7 +156,7 @@ impl U64NttTable {
     /// `BIT_SHIFT` selects Barrett-32 (32) or Barrett-64 (64) throughout.
     /// # Safety
     ///
-    /// `values` must contain exactly `self.n` coefficients, and `BIT_SHIFT`
+    /// `values` must contain exactly `self.poly_length.get()` coefficients, and `BIT_SHIFT`
     /// must select populated preconditioner values compatible with `self.q`.
     pub(in crate::ntt::prime64) unsafe fn scalar_inverse_transform_unchecked<
         const BIT_SHIFT: u32,
@@ -170,7 +170,7 @@ impl U64NttTable {
             "output_mod_factor must be 1 or 2; got {output_mod_factor}"
         );
 
-        let n = self.n;
+        let n = self.poly_length.get();
         let q = self.q;
         let two_q = self.two_q;
 

@@ -10,8 +10,9 @@ use std::hint::black_box;
 use criterion::{BenchmarkId, Criterion, criterion_group, criterion_main};
 use primus_integer::FheUint;
 use primus_modulus::{BarrettModulus, NativeModulus, PowOf2Modulus};
+use primus_poly::PolyLength;
 use primus_reduce::RingContext;
-use primus_tfhe::{InterleavedLookupTable, LookupTable, PolyLength};
+use primus_tfhe::{InterleavedLookupTable, LookupTable};
 
 fn compile<T, M>(c: &mut Criterion, name: &str, modulus: M)
 where

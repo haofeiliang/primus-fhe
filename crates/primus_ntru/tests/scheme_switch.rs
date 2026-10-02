@@ -1,5 +1,5 @@
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
-use primus_lattice::PolyLength;
+use primus_poly::PolyLength;
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 use primus_fft::{Complex64, FftEngine, FftTable, RustFftTable, TfheFftTable};
@@ -72,7 +72,7 @@ fn messages(q: u128) -> [Polynomial<Vec<u64>>; 2] {
 #[test]
 fn ntt_scheme_switch_has_independent_bases_and_produces_cmux_controls() {
     let modulus = BarrettModulus::new(Q);
-    let table = U64NttTable::new(N.trailing_zeros(), modulus).unwrap();
+    let table = U64NttTable::new(PolyLength::new(N), modulus).unwrap();
     let parameters = NtruParameters::new(N, 16, modulus, SecretKeyDistr::SparseTernary, 0.7);
     let secret = secret();
     let key = NttNtruSecretKey::try_from_coeff_secret_key(&secret, modulus, &table).unwrap();
@@ -218,7 +218,7 @@ fn ntt_scheme_switch_has_independent_bases_and_produces_cmux_controls() {
 
 fn fourier<Table: FftTable>() {
     let q = 1u128 << 64;
-    let table = Table::new(N.trailing_zeros()).unwrap();
+    let table = Table::new(PolyLength::new(N));
     let mut fft = FftEngine::new(&table);
     let parameters = NtruParameters::new(
         N,

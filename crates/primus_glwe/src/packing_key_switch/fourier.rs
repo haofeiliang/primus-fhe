@@ -171,7 +171,7 @@ impl<T: TorusFftValue> FourierLwePackingKeySwitchingKey<T> {
             "packing output GLWE layout mismatch"
         );
         assert_eq!(
-            fft.poly_length(),
+            fft.poly_length().get(),
             poly_length,
             "packing FFT polynomial length mismatch"
         );

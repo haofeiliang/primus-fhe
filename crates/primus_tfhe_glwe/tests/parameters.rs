@@ -1,10 +1,10 @@
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_glwe::{GlweParameters, SecretKeyDistr};
-use primus_lattice::PolyLength;
 use primus_lattice::{GlweDimension, LweDimension};
 use primus_lwe::LweParameters;
 use primus_modulus::NativeModulus;
+use primus_poly::PolyLength;
 use primus_tfhe_glwe::{DecompositionConfig, PbsOrder, TfheConfig, TfheParameters};
 use std::error::Error;
 
@@ -212,10 +212,10 @@ fn check_ternary_padding<M: primus_reduce::RingContext<u32>>(modulus: M) {
     use primus_lwe::LweSecretKey;
     use primus_tfhe_glwe::{ClientKey, TfheParameterError};
 
-    // Five LWE coefficients occupy two length-four GLWE components.
+    // A 33-dimensional LWE secret crosses two length-32 GLWE components.
     let glwe = GlweParameters::new(
         GlweDimension::new(2),
-        4,
+        32,
         2,
         modulus,
         SecretKeyDistr::UniformBinary,
@@ -227,12 +227,12 @@ fn check_ternary_padding<M: primus_reduce::RingContext<u32>>(modulus: M) {
         SecretKeyDistr::SparseTernary,
         SecretKeyDistr::UniformTernary,
         SecretKeyDistr::ternary(0.2, 0.5),
-        SecretKeyDistr::fixed_hamming_weight_ternary(5, 4),
-        SecretKeyDistr::fixed_composition_ternary(5, 2, 2),
+        SecretKeyDistr::fixed_hamming_weight_ternary(33, 4),
+        SecretKeyDistr::fixed_composition_ternary(33, 2, 2),
         SecretKeyDistr::gaussian(0.7),
     ] {
         let result = TfheParameters::try_new(
-            LweParameters::new(LweDimension::new(5), 2, modulus, distribution, 0.7),
+            LweParameters::new(LweDimension::new(33), 2, modulus, distribution, 0.7),
             glwe.clone(),
             basis.clone(),
             basis.clone(),
@@ -246,17 +246,24 @@ fn check_ternary_padding<M: primus_reduce::RingContext<u32>>(modulus: M) {
             continue;
         }
         let parameters = result.unwrap();
+        let mut coefficients = vec![0; 33];
+        coefficients[..4].copy_from_slice(&[0, 1, modulus.minus_one(), modulus.minus_one()]);
+        coefficients[32] = 1;
         let client = ClientKey::new(
-            LweSecretKey::new(
-                vec![0, 1, modulus.minus_one(), modulus.minus_one(), 1],
-                distribution,
+            LweSecretKey::new(coefficients, distribution),
+            GlweSecretKey::<u32>::new(
+                vec![0; glwe.size().mask_len()],
+                glwe.size(),
+                glwe.secret_key_distr(),
             ),
-            GlweSecretKey::<u32>::new(vec![0; 8], glwe.size(), glwe.secret_key_distr()),
             parameters.pbs_order(),
         );
         client.check_compatible(&parameters).unwrap();
         let padded = client.padded_small_glwe_secret_key(&parameters);
-        assert_eq!(padded.as_slice(), &[0, 1, -1, -1, 1, 0, 0, 0]);
+        let mut expected = vec![0; glwe.size().mask_len()];
+        expected[..4].copy_from_slice(&[0, 1, -1, -1]);
+        expected[32] = 1;
+        assert_eq!(padded.as_slice(), expected);
         assert_eq!(padded.distr(), distribution);
     }
 }
@@ -443,7 +450,7 @@ fn configs_return_accumulator_and_cbs_construction_errors() {
             0.7,
         ),
         accumulator_dimension: GlweDimension::new(1),
-        poly_length: 8,
+        poly_length: 32,
         accumulator_secret_key_distr: SecretKeyDistr::SparseTernary,
         accumulator_noise_standard_deviation: 0.7,
         blind_rotation: basis,

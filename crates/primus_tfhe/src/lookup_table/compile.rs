@@ -6,7 +6,7 @@ mod front_half;
 mod odd_full_domain;
 
 use primus_integer::FheUint;
-use primus_lattice::PolyLength;
+use primus_poly::PolyLength;
 use primus_reduce::RingContext;
 
 use crate::LookupTableError;

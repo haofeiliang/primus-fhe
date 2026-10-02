@@ -49,7 +49,7 @@ impl<T: FheUint> HybridRnsGlweKeySwitchingKey<T> {
         );
         assert_eq!(q_moduli_count, hybrid_rns.q_moduli_count());
         assert_eq!(output_secret_key.poly_length(), poly_length);
-        assert_eq!(qp_table.poly_length(), poly_length);
+        assert_eq!(qp_table.poly_length().get(), poly_length);
 
         let qp_moduli = hybrid_rns.qp_base().moduli();
         let noise_distribution = input_parameters.noise_distribution();

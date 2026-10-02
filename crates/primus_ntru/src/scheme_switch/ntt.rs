@@ -166,7 +166,7 @@ impl<T: FheUint> NttNtruSchemeSwitchKey<T> {
             "scheme-switch workspace length mismatch"
         );
         assert_eq!(
-            ntt.poly_length(),
+            ntt.poly_length().get(),
             self.poly_length,
             "scheme-switch NTT length mismatch"
         );

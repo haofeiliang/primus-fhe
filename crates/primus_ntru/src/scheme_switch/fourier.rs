@@ -159,7 +159,7 @@ impl<T: TorusFftValue> FourierNtruSchemeSwitchKey<T> {
             "scheme-switch workspace length mismatch"
         );
         assert_eq!(
-            fft.poly_length(),
+            fft.poly_length().get(),
             self.poly_length,
             "scheme-switch FFT length mismatch"
         );

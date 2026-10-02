@@ -4,7 +4,6 @@
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_fft::{FftEngine, FftTable, RustFftTable, TfheFftTable};
-use primus_lattice::PolyLength;
 use primus_modulus::{BarrettModulus, NativeModulus};
 use primus_ntru::{
     FourierNtruGadgetEncryptWorkspace, FourierNtruSecretKey, FourierNtruTraceKey,
@@ -13,17 +12,29 @@ use primus_ntru::{
     NttNtruSecretKey, NttNtruTraceKey, NttNtruTraceWorkspace, SecretKeyDistr,
 };
 use primus_ntt::{NttTable, UintNttTable};
-use primus_poly::Polynomial;
+use primus_poly::{PolyLength, Polynomial};
 use primus_test_allocations as allocations;
 
 #[global_allocator]
 static ALLOCATOR: allocations::CountingAllocator = allocations::CountingAllocator;
 use rand::{TryCryptoRng, TryRng};
 
-const N: usize = 8;
+const N: usize = 32;
 type Poly = [i128; N];
-const ONE: Poly = [1, 0, 0, 0, 0, 0, 0, 0];
-const SECRET: Poly = [1, 1, 0, -1, 0, 0, 0, 0];
+
+// Embed the eight-coefficient oracle fixtures via X -> X^(N/8).
+// This preserves their algebraic identities, including the rational inverse denominator.
+const fn embedded_fixture(coefficients: &[i128; 8]) -> Poly {
+    let mut result = [0; N];
+    let mut i = 0;
+    while i < coefficients.len() {
+        result[i * (N / 8)] = coefficients[i];
+        i += 1;
+    }
+    result
+}
+const ONE: Poly = embedded_fixture(&[1, 0, 0, 0, 0, 0, 0, 0]);
+const SECRET: Poly = embedded_fixture(&[1, 1, 0, -1, 0, 0, 0, 0]);
 
 #[derive(Clone, Copy)]
 struct Ring(i128);
@@ -159,12 +170,12 @@ fn digits(ring: Ring, input: Poly, basis: &ApproxSignedBasis<u32>) -> Vec<Poly> 
 fn fused_public_initialization_has_the_predicted_decomposition_residual() {
     let ring = Ring(257);
     let modulus = BarrettModulus::new(257u32);
-    let ntt = UintNttTable::new(N.trailing_zeros(), modulus).unwrap();
+    let ntt = UintNttTable::new(PolyLength::new(N), modulus).unwrap();
     let inverse = ring.inverse(SECRET);
     // These are deliberately small signed phase errors, not sampled security parameters.
-    let e_init = [1, -1, 0, 1, 0, 0, 0, 0];
-    let e_plus = [0, 1, 0, -1, 0, 0, 0, 0];
-    let e_minus = [-1, 0, 1, 0, 0, 0, 0, 0];
+    let e_init = embedded_fixture(&[1, -1, 0, 1, 0, 0, 0, 0]);
+    let e_plus = embedded_fixture(&[0, 1, 0, -1, 0, 0, 0, 0]);
+    let e_minus = embedded_fixture(&[-1, 0, 1, 0, 0, 0, 0, 0]);
     for levels in [2, 3] {
         let basis = ApproxSignedBasis::new(
             Some(257u32),
@@ -178,8 +189,8 @@ fn fused_public_initialization_has_the_predicted_decomposition_residual() {
         );
         let mut output = NtruCiphertext::<Vec<u32>>::zero(N);
         for input in [
-            [0, 1, 3, 4, 7, 8, 219, 256],
-            [8, 16, 24, 32, 0, 248, 249, 1],
+            embedded_fixture(&[0, 1, 3, 4, 7, 8, 219, 256]),
+            embedded_fixture(&[8, 16, 24, 32, 0, 248, 249, 1]),
         ] {
             let decomposed = digits(ring, input, &basis);
             let reconstructed = decomposed
@@ -309,10 +320,10 @@ fn fused_public_initialization_has_the_predicted_decomposition_residual() {
 
 fn check_native_lift<Table: FftTable>() {
     let ring = Ring(1i128 << 32);
-    let numerator = [7, -2, 3, 4, -6, 9, -5, -1];
+    let numerator = embedded_fixture(&[7, -2, 3, 4, -6, 9, -5, -1]);
     const DENOMINATOR: i128 = 17;
     assert_eq!(integer_mul(SECRET, numerator), ONE.map(|x| x * DENOMINATOR));
-    let table = Table::new(N.trailing_zeros()).unwrap();
+    let table = Table::new(PolyLength::new(N));
     let mut fft = FftEngine::new(&table);
     let secret = NtruSecretKey::<u32>::new(
         SECRET.map(|x| x as i32).to_vec(),
@@ -369,8 +380,8 @@ fn check_native_lift<Table: FftTable>() {
                 &mut encryption,
             );
             for input in [
-                [0, 1, 127, 128, 257, ring.0 - 1, ring.0 / 2, ring.0 / 2 + 1],
-                [256, 512, 768, 1024, 0, ring.0 - 256, ring.0 - 512, 1],
+                embedded_fixture(&[0, 1, 127, 128, 257, ring.0 - 1, ring.0 / 2, ring.0 / 2 + 1]),
+                embedded_fixture(&[256, 512, 768, 1024, 0, ring.0 - 256, ring.0 - 512, 1]),
             ] {
                 let decomposed = digits(ring, input, basis);
                 let reconstructed: Poly = std::array::from_fn(|i| {
@@ -452,7 +463,7 @@ fn modular_trace(ring: Ring, input: Poly, retained: usize) -> Poly {
 // inverse. With zero sampled noise, model that inverse and final torus
 // rounding as exact rationals, so an FFT error cannot hide in a loose bound.
 fn native_trace(ring: Ring, input: Poly, retained: usize) -> Poly {
-    let numerator = [7, -2, 3, 4, -6, 9, -5, -1];
+    let numerator = embedded_fixture(&[7, -2, 3, 4, -6, 9, -5, -1]);
     const DENOMINATOR: i128 = 17;
     assert_eq!(integer_mul(SECRET, numerator), ONE.map(|x| x * DENOMINATOR));
     let basis = ApproxSignedBasis::<u32>::new(None, DecompositionBaseLog::new(8), None);
@@ -529,7 +540,7 @@ impl TryCryptoRng for ZeroRng {}
 
 fn trace_inputs(ring: Ring) -> [Poly; 3] {
     [
-        [
+        embedded_fixture(&[
             0,
             1,
             2,
@@ -538,9 +549,9 @@ fn trace_inputs(ring: Ring) -> [Poly; 3] {
             ring.0 - 2,
             ring.0 / 2,
             ring.0 / 2 + 1,
-        ],
-        [1, 3, 5, 7, 9, 11, 13, 15],
-        [0, 2, 4, 6, 8, 10, 12, 14],
+        ]),
+        embedded_fixture(&[1, 3, 5, 7, 9, 11, 13, 15]),
+        embedded_fixture(&[0, 2, 4, 6, 8, 10, 12, 14]),
     ]
 }
 
@@ -548,7 +559,7 @@ fn trace_inputs(ring: Ring) -> [Poly; 3] {
 fn ntt_reverse_trace_matches_exact_same_secret_oracle() {
     let ring = Ring(257);
     let modulus = BarrettModulus::new(257u32);
-    let table = UintNttTable::new(N.trailing_zeros(), modulus).unwrap();
+    let table = UintNttTable::new(PolyLength::new(N), modulus).unwrap();
     let secret = NtruSecretKey::new(
         SECRET.map(|x| x as i32).to_vec(),
         SecretKeyDistr::SparseTernary,
@@ -587,7 +598,7 @@ fn ntt_reverse_trace_matches_exact_same_secret_oracle() {
 
 fn check_native_trace<Table: FftTable>() {
     let ring = Ring(1i128 << 32);
-    let table = Table::new(N.trailing_zeros()).unwrap();
+    let table = Table::new(PolyLength::new(N));
     let mut fft = FftEngine::new(&table);
     let secret = NtruSecretKey::new(
         SECRET.map(|x| x as i32).to_vec(),
@@ -611,12 +622,13 @@ fn check_native_trace<Table: FftTable>() {
         &mut FourierNtruGadgetEncryptWorkspace::new(PolyLength::new(N)),
     );
     let mut workspace = FourierNtruTraceWorkspace::new(PolyLength::new(N));
-    // Exhaust parity patterns at three ranges, plus explicit boundary cases.
+    // Repeat all eight-bit parity masks across the ring at three ranges.
+    // The number of cases stays fixed when the supported ring length increases.
     let parity_inputs = [0, ring.0 / 2 - 2, ring.0 - 2]
         .into_iter()
         .flat_map(|base| {
-            (0..1usize << N)
-                .map(move |bits| std::array::from_fn(|i| base + ((bits >> i) & 1) as i128))
+            (0..1usize << 8)
+                .map(move |bits| std::array::from_fn(|i| base + ((bits >> (i % 8)) & 1) as i128))
         });
     for input in trace_inputs(ring).into_iter().chain(parity_inputs) {
         for retained in [1, 2, 4, N] {

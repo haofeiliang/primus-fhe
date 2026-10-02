@@ -4,7 +4,7 @@ use primus_decompose::primitive::ApproxSignedBasis;
 use primus_integer::FheUint;
 use primus_modulus::NativeModulus;
 use primus_ntru::NlevParameters;
-use primus_ntru::PolyLength;
+use primus_poly::PolyLength;
 use primus_reduce::RingContext;
 
 use crate::{CircuitBootstrapConfig, CircuitBootstrapParameterError, TfheParameters};
