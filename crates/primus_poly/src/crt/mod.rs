@@ -8,14 +8,12 @@ mod neg;
 mod random;
 mod sub;
 
-/// This structure is used to store polynomials with large integer coefficients.
+/// Raw modulus-major coefficient storage for a CRT polynomial.
 ///
-/// By the Chinese remainder theorem,
-/// a large integer can be decomposed into several remainders.
-///
-/// If all the coefficients of a polynomial are decomposed in the same way,
-/// several polynomials with relatively small coefficients can be obtained,
-/// and the latter has better performance in addition and subtraction computation.
+/// A complete RNS polynomial contains one contiguous `N`-coefficient block per
+/// modulus, in the base's order. This wrapper stores neither `N` nor the base:
+/// empty, arbitrary-length and packed storage are allowed, and [`Self::len`]
+/// counts all stored residues. The owning boundary establishes the full layout.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CrtPolynomial<S>(pub S)
 where
@@ -31,7 +29,7 @@ where
     S: RawData<Elem = T>,
     T: FheUint,
 {
-    /// Creates a new [`CrtPolynomial<T>`].
+    /// Creates a new [`CrtPolynomial<S>`] from CRT coefficient storage.
     #[must_use]
     #[inline]
     pub fn new(polys: S) -> Self {
@@ -44,11 +42,11 @@ where
     S: DataOwned<Elem = T>,
     T: FheUint,
 {
-    /// Creates a [`CrtPolynomial<T>`] with all coefficients equal to zero.
+    /// Creates a [`CrtPolynomial<S>`] with `len` zero residues.
     #[must_use]
     #[inline]
-    pub fn zero(crt_poly_len: usize) -> Self {
-        Self(S::from_vec(vec![T::ZERO; crt_poly_len]))
+    pub fn zero(len: usize) -> Self {
+        Self(S::from_vec(vec![T::ZERO; len]))
     }
 }
 
@@ -65,7 +63,13 @@ where
         self.0.as_mut_slice()
     }
 
-    /// Returns an iterator that allows modifying each value or coefficient of the polynomial.
+    /// Returns complete mutable modulus blocks of `poly_length` coefficients.
+    ///
+    /// Any incomplete trailing block is omitted. Callers must establish the
+    /// total length and modulus count/order before using these blocks.
+    ///
+    /// # Panics
+    /// Panics if `poly_length` is zero.
     #[inline]
     pub fn iter_each_modulus_mut(
         &mut self,
@@ -103,7 +107,13 @@ where
         self.0.as_slice()
     }
 
-    /// Returns an iterator that allows reading each value or coefficient of the polynomial.
+    /// Returns complete modulus blocks of `poly_length` coefficients.
+    ///
+    /// Any incomplete trailing block is omitted. Callers must establish the
+    /// total length and modulus count/order before using these blocks.
+    ///
+    /// # Panics
+    /// Panics if `poly_length` is zero.
     #[inline]
     pub fn iter_each_modulus(&self, poly_length: usize) -> std::slice::ChunksExact<'_, T> {
         self.0.chunks_exact(poly_length)
@@ -116,9 +126,17 @@ where
     }
 
     /// Returns the number of elements in the backing storage.
+    #[must_use]
     #[inline]
-    pub fn crt_poly_length(&self) -> usize {
+    pub fn len(&self) -> usize {
         self.0.len()
+    }
+
+    /// Returns whether the backing storage contains no CRT residues.
+    #[must_use]
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
     }
 }
 

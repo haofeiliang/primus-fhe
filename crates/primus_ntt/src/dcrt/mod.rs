@@ -6,13 +6,21 @@ use crate::{MonomialNttTable, NttError, NttTable, U32NttTable, U64NttTable, Uint
 
 /// A collection of NTT tables sharing the same polynomial length.
 ///
-/// Each contained table operates on one CRT modulus. The number of moduli is
-/// fixed after construction because the table slice is not exposed mutably.
+/// Each contained table operates on one CRT modulus. The nonzero number of
+/// moduli is fixed after construction because the table slice is not exposed
+/// mutably. [`Self::poly_length`] is the checked ring length `N`, whereas
+/// [`Self::rns_poly_len`] is the total `moduli_count * N` element count.
+///
+/// Transform inputs and outputs contain exactly one complete RNS polynomial in
+/// modulus-major order, matching the order of [`Self::ntt_tables`]. The caller
+/// maintains the complete layout; length checks are debug diagnostics only.
+/// Coefficient ranges, root choice, NTT order and normalization follow the
+/// component [`NttTable`] contract.
 #[derive(Clone)]
 pub struct DcrtTable<Ntt> {
     ntt_tables: Vec<Ntt>,
     poly_length: PolyLength,
-    crt_poly_length: usize,
+    rns_poly_len: usize,
 }
 
 /// DCRT table using the generic unsigned-integer NTT implementation.
@@ -31,6 +39,7 @@ where
     /// Creates one NTT table for every CRT modulus.
     ///
     /// # Errors
+    /// Returns [`NttError::EmptyModuli`] if the modulus list is empty.
     /// Returns [`NttError::CrtPolynomialLengthOverflow`] if the combined
     /// coefficient count overflows, before constructing any component table.
     /// Otherwise propagates the component table's construction errors.
@@ -38,7 +47,10 @@ where
     where
         M: FieldContext<Ntt::ValueT>,
     {
-        let crt_poly_length = poly_length
+        if moduli.is_empty() {
+            return Err(NttError::EmptyModuli);
+        }
+        let rns_poly_len = poly_length
             .get()
             .checked_mul(moduli.len())
             .ok_or(NttError::CrtPolynomialLengthOverflow)?;
@@ -50,7 +62,7 @@ where
         Ok(Self {
             ntt_tables,
             poly_length,
-            crt_poly_length,
+            rns_poly_len,
         })
     }
 
@@ -74,84 +86,106 @@ where
     }
 
     /// Returns the number of CRT moduli.
+    #[must_use]
     #[inline]
     pub fn moduli_count(&self) -> usize {
         self.ntt_tables.len()
     }
 
-    /// Returns the total number of coefficients across all CRT moduli.
+    /// Returns the total stored element count `moduli_count * N` for one RNS polynomial.
+    ///
+    /// This count applies to both coefficient and NTT representations.
+    #[must_use]
     #[inline]
-    pub fn crt_poly_length(&self) -> usize {
-        self.crt_poly_length
+    pub fn rns_poly_len(&self) -> usize {
+        self.rns_poly_len
     }
 
     /// Transforms a CRT polynomial in place into a DCRT polynomial.
+    ///
+    /// # Correctness
+    /// Storage must have exactly [`Self::rns_poly_len`] elements in the table's
+    /// modulus-major order. Inherits [`NttTable::transform_slice`]'s input range and
+    /// representation requirements; complete storage is assumed in release.
     #[inline]
     pub fn transform_inplace<S>(&self, mut crt_poly: CrtPolynomial<S>) -> DcrtPolynomial<S>
     where
         S: DataMut<Elem = Ntt::ValueT>,
     {
-        let poly_length = self.poly_length().get();
-        debug_assert_eq!(self.crt_poly_length(), crt_poly.crt_poly_length());
-
-        self.iter()
-            .zip(crt_poly.iter_each_modulus_mut(poly_length))
-            .for_each(|(table, poly)| table.transform_slice(poly));
-
+        self.transform_slice(crt_poly.as_mut());
         DcrtPolynomial::new(crt_poly.0)
     }
 
     /// Inversely transforms a DCRT polynomial in place into a CRT polynomial.
+    ///
+    /// # Correctness
+    /// Storage must have exactly [`Self::rns_poly_len`] elements in the table's
+    /// modulus-major order. Inherits [`NttTable::inverse_transform_slice`]'s input range and
+    /// representation requirements; complete storage is assumed in release.
     #[inline]
     pub fn inverse_transform_inplace<S>(&self, mut dcrt_poly: DcrtPolynomial<S>) -> CrtPolynomial<S>
     where
         S: DataMut<Elem = Ntt::ValueT>,
     {
-        let poly_length = self.poly_length().get();
-        debug_assert_eq!(self.crt_poly_length(), dcrt_poly.dcrt_poly_length());
-
-        self.iter()
-            .zip(dcrt_poly.iter_each_modulus_mut(poly_length))
-            .for_each(|(table, poly)| table.inverse_transform_slice(poly));
-
+        self.inverse_transform_slice(dcrt_poly.as_mut());
         CrtPolynomial::new(dcrt_poly.0)
     }
 
     /// Lazily transforms every CRT limb in place.
+    ///
+    /// # Correctness
+    /// Storage must have exactly [`Self::rns_poly_len`] elements in the table's
+    /// modulus-major order. Inherits [`NttTable::lazy_transform_slice`]'s input range and
+    /// representation requirements; complete storage is assumed in release.
     #[inline]
     pub fn lazy_transform_slice(&self, poly: &mut [Ntt::ValueT]) {
         let poly_length = self.poly_length().get();
-        debug_assert_eq!(self.crt_poly_length(), poly.len());
+        debug_assert_eq!(self.rns_poly_len(), poly.len());
         self.iter()
             .zip(poly.chunks_exact_mut(poly_length))
             .for_each(|(table, poly)| table.lazy_transform_slice(poly));
     }
 
     /// Transforms every CRT limb in place.
+    ///
+    /// # Correctness
+    /// Storage must have exactly [`Self::rns_poly_len`] elements in the table's
+    /// modulus-major order. Inherits [`NttTable::transform_slice`]'s input range and
+    /// representation requirements; complete storage is assumed in release.
     #[inline]
     pub fn transform_slice(&self, poly: &mut [Ntt::ValueT]) {
         let poly_length = self.poly_length().get();
-        debug_assert_eq!(self.crt_poly_length(), poly.len());
+        debug_assert_eq!(self.rns_poly_len(), poly.len());
         self.iter()
             .zip(poly.chunks_exact_mut(poly_length))
             .for_each(|(table, poly)| table.transform_slice(poly));
     }
 
     /// Lazily inversely transforms every DCRT limb in place.
+    ///
+    /// # Correctness
+    /// Storage must have exactly [`Self::rns_poly_len`] elements in the table's
+    /// modulus-major order. Inherits [`NttTable::lazy_inverse_transform_slice`]'s input range and
+    /// representation requirements; complete storage is assumed in release.
     #[inline]
     pub fn lazy_inverse_transform_slice(&self, poly: &mut [Ntt::ValueT]) {
         let poly_length = self.poly_length().get();
-        debug_assert_eq!(self.crt_poly_length(), poly.len());
+        debug_assert_eq!(self.rns_poly_len(), poly.len());
         self.iter()
             .zip(poly.chunks_exact_mut(poly_length))
             .for_each(|(table, values)| table.lazy_inverse_transform_slice(values));
     }
 
     /// Inversely transforms every DCRT limb in place.
+    ///
+    /// # Correctness
+    /// Storage must have exactly [`Self::rns_poly_len`] elements in the table's
+    /// modulus-major order. Inherits [`NttTable::inverse_transform_slice`]'s input range and
+    /// representation requirements; complete storage is assumed in release.
     #[inline]
     pub fn inverse_transform_slice(&self, poly: &mut [Ntt::ValueT]) {
         let poly_length = self.poly_length().get();
-        debug_assert_eq!(self.crt_poly_length(), poly.len());
+        debug_assert_eq!(self.rns_poly_len(), poly.len());
         self.iter()
             .zip(poly.chunks_exact_mut(poly_length))
             .for_each(|(table, values)| table.inverse_transform_slice(values));
@@ -169,6 +203,8 @@ where
     /// `coeff` must be a canonical residue for every CRT modulus, that is,
     /// `coeff < table.modulus()` for every table in `self`. This method does
     /// not reduce `coeff` separately for each CRT limb.
+    /// `values` must contain exactly [`Self::rns_poly_len`] elements in the
+    /// table's modulus-major order; complete storage is assumed in release.
     pub fn transform_monomial(
         &self,
         coeff: Ntt::ValueT,
@@ -176,25 +212,33 @@ where
         values: &mut [Ntt::ValueT],
     ) {
         let poly_length = self.poly_length().get();
-        debug_assert_eq!(self.crt_poly_length(), values.len());
+        debug_assert_eq!(self.rns_poly_len(), values.len());
         self.iter()
             .zip(values.chunks_exact_mut(poly_length))
             .for_each(|(table, values)| table.transform_monomial(coeff, degree, values));
     }
 
     /// Transforms `X^degree` for every CRT modulus.
+    ///
+    /// # Correctness
+    /// `values` must contain exactly [`Self::rns_poly_len`] elements in the
+    /// table's modulus-major order; complete storage is assumed in release.
     pub fn transform_coeff_one_monomial(&self, degree: usize, values: &mut [Ntt::ValueT]) {
         let poly_length = self.poly_length().get();
-        debug_assert_eq!(self.crt_poly_length(), values.len());
+        debug_assert_eq!(self.rns_poly_len(), values.len());
         self.iter()
             .zip(values.chunks_exact_mut(poly_length))
             .for_each(|(table, values)| table.transform_coeff_one_monomial(degree, values));
     }
 
     /// Transforms `-X^degree` for every CRT modulus.
+    ///
+    /// # Correctness
+    /// `values` must contain exactly [`Self::rns_poly_len`] elements in the
+    /// table's modulus-major order; complete storage is assumed in release.
     pub fn transform_coeff_minus_one_monomial(&self, degree: usize, values: &mut [Ntt::ValueT]) {
         let poly_length = self.poly_length().get();
-        debug_assert_eq!(self.crt_poly_length(), values.len());
+        debug_assert_eq!(self.rns_poly_len(), values.len());
         self.iter()
             .zip(values.chunks_exact_mut(poly_length))
             .for_each(|(table, values)| table.transform_coeff_minus_one_monomial(degree, values));

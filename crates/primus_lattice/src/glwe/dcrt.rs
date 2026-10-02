@@ -53,16 +53,16 @@ where
     /// # Correctness
     ///
     /// Storage must contain at least one mask polynomial and one body polynomial,
-    /// each with `dcrt_poly_len` elements. The caller must maintain this layout
+    /// each with `rns_poly_len` elements. The caller must maintain this layout
     /// and provide a nonzero polynomial length.
     ///
     /// # Panics
     ///
     /// Panics if the supplied polynomial storage length exceeds the ciphertext length.
     #[inline]
-    pub fn a_b_mut_slices(&mut self, dcrt_poly_len: usize) -> (&mut [T], &mut [T]) {
+    pub fn a_b_mut_slices(&mut self, rns_poly_len: usize) -> (&mut [T], &mut [T]) {
         let glwe_len = self.as_ref().len();
-        self.as_mut().split_at_mut(glwe_len - dcrt_poly_len)
+        self.as_mut().split_at_mut(glwe_len - rns_poly_len)
     }
 
     /// Splits this GLWE into its mutable mask polynomials and body polynomial.
@@ -77,11 +77,11 @@ where
     #[inline]
     pub fn a_b_mut(
         &mut self,
-        dcrt_poly_len: usize,
+        rns_poly_len: usize,
     ) -> (DcrtPolynomialIterMut<'_, T>, DcrtPolynomial<&mut [T]>) {
-        let (mask, body) = self.a_b_mut_slices(dcrt_poly_len);
+        let (mask, body) = self.a_b_mut_slices(rns_poly_len);
         (
-            DcrtPolynomialIterMut::new(mask, dcrt_poly_len),
+            DcrtPolynomialIterMut::new(mask, rns_poly_len),
             DcrtPolynomial(body),
         )
     }
@@ -115,10 +115,10 @@ where
         B: Data<Elem = T>,
         C: DataMut<Elem = T>,
     {
-        let dcrt_poly_len = dcrt_poly.dcrt_poly_length();
-        self.iter_dcrt_poly_mut(dcrt_poly_len)
-            .zip(rhs.iter_dcrt_poly(dcrt_poly_len))
-            .zip(output.iter_dcrt_poly_mut(dcrt_poly_len))
+        let rns_poly_len = dcrt_poly.len();
+        self.iter_dcrt_poly_mut(rns_poly_len)
+            .zip(rhs.iter_dcrt_poly(rns_poly_len))
+            .zip(output.iter_dcrt_poly_mut(rns_poly_len))
             .for_each(|((mut a, s), mut b)| {
                 a.butterfly_mul_to(&s, dcrt_poly, &mut b, poly_length, moduli);
             });
@@ -154,10 +154,10 @@ where
         A: Data<Elem = T>,
         C: DataMut<Elem = T>,
     {
-        let dcrt_poly_len = factor_poly.len();
-        self.iter_dcrt_poly_mut(dcrt_poly_len)
-            .zip(rhs.iter_dcrt_poly(dcrt_poly_len))
-            .zip(output.iter_dcrt_poly_mut(dcrt_poly_len))
+        let rns_poly_len = factor_poly.len();
+        self.iter_dcrt_poly_mut(rns_poly_len)
+            .zip(rhs.iter_dcrt_poly(rns_poly_len))
+            .zip(output.iter_dcrt_poly_mut(rns_poly_len))
             .for_each(|((mut a, s), mut b)| {
                 a.butterfly_mul_factor_to(&s, factor_poly, &mut b, poly_length, moduli);
             });
@@ -174,16 +174,16 @@ where
     /// # Correctness
     ///
     /// Storage must contain at least one mask polynomial and one body polynomial,
-    /// each with `dcrt_poly_len` elements. The caller must maintain this layout
+    /// each with `rns_poly_len` elements. The caller must maintain this layout
     /// and provide a nonzero polynomial length.
     ///
     /// # Panics
     ///
     /// Panics if the supplied polynomial storage length exceeds the ciphertext length.
     #[inline]
-    pub fn a_b_slices(&self, dcrt_poly_len: usize) -> (&[T], &[T]) {
+    pub fn a_b_slices(&self, rns_poly_len: usize) -> (&[T], &[T]) {
         let glwe_len = self.as_ref().len();
-        self.as_ref().split_at(glwe_len - dcrt_poly_len)
+        self.as_ref().split_at(glwe_len - rns_poly_len)
     }
 
     /// Splits this GLWE into its mask polynomials and body polynomial.
@@ -196,10 +196,10 @@ where
     ///
     /// Panics if the supplied polynomial storage length exceeds the ciphertext length. Also panics if it is zero.
     #[inline]
-    pub fn a_b(&self, dcrt_poly_len: usize) -> (DcrtPolynomialIter<'_, T>, DcrtPolynomial<&[T]>) {
-        let (mask, body) = self.a_b_slices(dcrt_poly_len);
+    pub fn a_b(&self, rns_poly_len: usize) -> (DcrtPolynomialIter<'_, T>, DcrtPolynomial<&[T]>) {
+        let (mask, body) = self.a_b_slices(rns_poly_len);
         (
-            DcrtPolynomialIter::new(mask, dcrt_poly_len),
+            DcrtPolynomialIter::new(mask, rns_poly_len),
             DcrtPolynomial(body),
         )
     }

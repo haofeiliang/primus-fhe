@@ -80,7 +80,7 @@ Lazy 值表示模 `q` 的剩余类，但其更宽的整数范围属于调用契�
 
 ## DCRT 布局
 
-`DcrtTable` 为每个模数保存一个 NTT table，并让它们共享同一个 `PolyLength`；构造时在建立单模数表前检查 `moduli_count * N` 是否能由 `usize` 表示。系数和变换 slice 都采用 modulus-major 布局，总长度为 `moduli_count * N`：
+`DcrtTable` 为每个模数保存一个 NTT table，并让它们共享同一个 `PolyLength`；构造时以 `NttError::EmptyModuli` 拒绝空模数列表，并在建立单模数表前检查 `moduli_count * N` 是否能由 `usize` 表示。`poly_length()` 返回环长度，`rns_poly_len()` 返回一个完整 RNS 多项式的元素数。系数和变换 slice 都采用 modulus-major 布局，总长度为 `moduli_count * N`：
 
 ```text
 [a_0 mod q_0, ..., a_(N-1) mod q_0,
@@ -88,7 +88,7 @@ Lazy 值表示模 `q` 的剩余类，但其更宽的整数范围属于调用契�
  ...]
 ```
 
-这与 [`primus_poly`](../primus_poly/README.zh_CN.md) 中 `CrtPolynomial` 和 `DcrtPolynomial` 的布局一致。重复 DCRT 路径中的形状检查只是 debug 诊断； release 调用方必须保证总长度严格匹配并维持 modulus-major 顺序。
+这与 [`primus_poly`](../primus_poly/README.zh_CN.md) 中 `CrtPolynomial` 和 `DcrtPolynomial` 的布局一致；它们的 `len()` 统计全部 residue。DCRT 变换假设调用方维持精确总长度与 modulus-major 顺序，长度检查仅作 debug 诊断。系数范围与变换身份同样属于调用方契约。
 
 对于 `DcrtTable::transform_monomial`，传入的单个 `coeff` 必须对每个分量模数都是 canonical 的；该方法不会针对每个 limb 分别约简系数。
 

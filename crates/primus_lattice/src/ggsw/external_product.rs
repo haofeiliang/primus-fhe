@@ -372,14 +372,14 @@ where
         A: Data<Elem = T>,
         B: DataMut<Elem = T>,
     {
-        let crt_poly_len = table.crt_poly_length();
+        let rns_poly_len = table.rns_poly_len();
         let dcrt_glev_len = basis.decompose_length().get() * self.as_ref().len();
 
         output.set_zero();
 
         dcrt_ggsw
             .iter_dcrt_glev(dcrt_glev_len)
-            .zip(self.iter_crt_poly(crt_poly_len))
+            .zip(self.iter_crt_poly(rns_poly_len))
             .for_each(|(dcrt_glev, crt_poly)| {
                 output.add_dcrt_glev_mul_crt_polynomial_assign(
                     &dcrt_glev, &crt_poly, basis, table, rns_base, workspace,

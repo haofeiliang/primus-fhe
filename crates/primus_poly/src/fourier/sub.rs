@@ -54,7 +54,7 @@ where
 
 #[inline]
 fn sub_assign_kernel(mut acc: FourierPolynomialMut<'_>, rhs: FourierPolynomialRef<'_>) {
-    debug_assert_eq!(acc.fourier_length(), rhs.fourier_length());
+    debug_assert_eq!(acc.len(), rhs.len());
     for (value, rhs) in acc.iter_mut().zip(rhs.iter()) {
         *value -= *rhs;
     }
@@ -62,7 +62,7 @@ fn sub_assign_kernel(mut acc: FourierPolynomialMut<'_>, rhs: FourierPolynomialRe
 
 #[inline]
 fn sub_rev_assign_kernel(lhs: FourierPolynomialRef<'_>, mut rhs: FourierPolynomialMut<'_>) {
-    debug_assert_eq!(lhs.fourier_length(), rhs.fourier_length());
+    debug_assert_eq!(lhs.len(), rhs.len());
     for (rhs, lhs) in rhs.iter_mut().zip(lhs.iter()) {
         *rhs = *lhs - *rhs;
     }
@@ -74,8 +74,8 @@ fn sub_to_kernel(
     rhs: FourierPolynomialRef<'_>,
     mut output: FourierPolynomialMut<'_>,
 ) {
-    debug_assert_eq!(lhs.fourier_length(), rhs.fourier_length());
-    debug_assert_eq!(lhs.fourier_length(), output.fourier_length());
+    debug_assert_eq!(lhs.len(), rhs.len());
+    debug_assert_eq!(lhs.len(), output.len());
     for ((output, lhs), rhs) in output.iter_mut().zip(lhs.iter()).zip(rhs.iter()) {
         *output = *lhs - *rhs;
     }

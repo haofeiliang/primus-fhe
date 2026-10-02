@@ -78,7 +78,7 @@ where
 
 #[inline]
 fn mul_assign_kernel(mut acc: FourierPolynomialMut<'_>, rhs: FourierPolynomialRef<'_>) {
-    debug_assert_eq!(acc.fourier_length(), rhs.fourier_length());
+    debug_assert_eq!(acc.len(), rhs.len());
     for (value, rhs) in acc.iter_mut().zip(rhs.iter()) {
         *value *= *rhs;
     }
@@ -99,8 +99,8 @@ fn add_mul_assign_kernel(
     lhs: FourierPolynomialRef<'_>,
     rhs: FourierPolynomialRef<'_>,
 ) {
-    debug_assert_eq!(acc.fourier_length(), lhs.fourier_length());
-    debug_assert_eq!(acc.fourier_length(), rhs.fourier_length());
+    debug_assert_eq!(acc.len(), lhs.len());
+    debug_assert_eq!(acc.len(), rhs.len());
     for ((value, lhs), rhs) in acc.iter_mut().zip(lhs.iter()).zip(rhs.iter()) {
         *value += *lhs * *rhs;
     }
@@ -112,8 +112,8 @@ fn mul_to_kernel(
     rhs: FourierPolynomialRef<'_>,
     mut output: FourierPolynomialMut<'_>,
 ) {
-    debug_assert_eq!(lhs.fourier_length(), rhs.fourier_length());
-    debug_assert_eq!(lhs.fourier_length(), output.fourier_length());
+    debug_assert_eq!(lhs.len(), rhs.len());
+    debug_assert_eq!(lhs.len(), output.len());
     for ((output, lhs), rhs) in output.iter_mut().zip(lhs.iter()).zip(rhs.iter()) {
         *output = *lhs * *rhs;
     }
@@ -125,7 +125,7 @@ fn mul_scalar_to_kernel(
     scalar: f64,
     mut output: FourierPolynomialMut<'_>,
 ) {
-    debug_assert_eq!(input.fourier_length(), output.fourier_length());
+    debug_assert_eq!(input.len(), output.len());
     for (output, value) in output.iter_mut().zip(input.iter()) {
         *output = *value * scalar;
     }

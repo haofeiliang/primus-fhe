@@ -31,7 +31,7 @@ macro_rules! impl_dcrt_polynomial_mul {
                 M: primus_reduce::FieldContext<T>,
                 A: primus_data::Data<Elem = T>,
             {
-                let component_len = poly.dcrt_poly_length();
+                let component_len = poly.len();
                 for values in self.as_mut().chunks_exact_mut(component_len) {
                     primus_poly::DcrtPolynomial(values).mul_assign(poly, poly_length, moduli);
                 }
@@ -66,7 +66,7 @@ macro_rules! impl_dcrt_polynomial_mul {
                 A: primus_data::Data<Elem = T>,
                 B: primus_data::Data<Elem = T>,
             {
-                let component_len = poly.dcrt_poly_length();
+                let component_len = poly.len();
                 debug_assert_eq!(
                     self.as_ref().len(),
                     rhs.as_ref().len(),
@@ -116,7 +116,7 @@ macro_rules! impl_dcrt_polynomial_mul {
                 A: primus_data::Data<Elem = T>,
                 B: primus_data::DataMut<Elem = T>,
             {
-                let component_len = poly.dcrt_poly_length();
+                let component_len = poly.len();
                 debug_assert_eq!(
                     self.as_ref().len(),
                     output.as_ref().len(),

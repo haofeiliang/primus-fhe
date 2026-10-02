@@ -33,7 +33,7 @@ fn check_single_monomial<T: FheUint + Into<u64>, M: RingContext<T>>(
     q: u128,
     modulus: M,
 ) {
-    let n = first.poly_length();
+    let n = first.len();
     let mut output = Polynomial::new(vec![T::as_from(7u64); n]);
     first
         .as_view()

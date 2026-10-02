@@ -10,6 +10,13 @@ use crate::TorusFftValue;
 /// Fourier values produced by one table must be consumed by that same table
 /// instance; independently constructed tables are not interchangeable, even
 /// when they use the same backend and polynomial length.
+/// Table identity is a caller contract: workspace length or capacity checks
+/// cannot establish where a workspace or Fourier values originated.
+///
+/// # Correctness
+/// Every transform workspace must originate from the exact receiving table
+/// instance. Fourier inputs must also use that table's ordering and scale.
+/// These identity requirements are not guaranteed to be checked at runtime.
 pub trait FftTable: Send + Sync {
     /// Backend-specific reusable transform workspace bound to one table.
     type Workspace;
@@ -25,6 +32,7 @@ pub trait FftTable: Send + Sync {
     #[must_use]
     fn poly_length(&self) -> PolyLength;
     /// Returns the number of complex Fourier values, `N / 2`.
+    #[must_use]
     fn fourier_length(&self) -> usize;
     /// Builds the frequency permutation for the negacyclic automorphism `X -> X^degree`.
     /// Entry j is `(source, conjugate)`: `output[j]` is `input[source]`, conjugated
@@ -40,6 +48,7 @@ pub trait FftTable: Send + Sync {
     fn automorphism_map(&self, degree: usize) -> Vec<(usize, bool)>;
 
     /// Allocates a workspace compatible with this table instance.
+    #[must_use]
     fn new_workspace(&self) -> Self::Workspace;
     /// Transforms torus coefficients, scaled by `2^-BITS`, to this table's
     /// Fourier form and completely overwrites `output`.
@@ -50,8 +59,8 @@ pub trait FftTable: Send + Sync {
     ///
     /// # Panics
     ///
-    /// Panics when either slice has the wrong length or the workspace is not
-    /// compatible with this table.
+    /// Panics when either slice has the wrong length. Backend workspace-capacity
+    /// checks may also panic; they do not validate table identity.
     fn forward_as_torus<T: TorusFftValue>(
         &self,
         input: &[T],
@@ -67,8 +76,8 @@ pub trait FftTable: Send + Sync {
     ///
     /// # Panics
     ///
-    /// Panics when either slice has the wrong length or the workspace is not
-    /// compatible with this table.
+    /// Panics when either slice has the wrong length. Backend workspace-capacity
+    /// checks may also panic; they do not validate table identity.
     fn forward_as_integer<T: TorusFftValue>(
         &self,
         input: &[T],
@@ -84,8 +93,8 @@ pub trait FftTable: Send + Sync {
     ///
     /// # Panics
     ///
-    /// Panics when either slice has the wrong length or the workspace is not
-    /// compatible with this table.
+    /// Panics when either slice has the wrong length. Backend workspace-capacity
+    /// checks may also panic; they do not validate table identity.
     fn forward_integer_f64(
         &self,
         input: &[f64],
@@ -101,8 +110,8 @@ pub trait FftTable: Send + Sync {
     ///
     /// # Panics
     ///
-    /// Panics when either slice has the wrong length or the workspace is not
-    /// compatible with this table.
+    /// Panics when either slice has the wrong length. Backend workspace-capacity
+    /// checks may also panic; they do not validate table identity.
     fn backward_as_torus<T: TorusFftValue>(
         &self,
         input: &[Complex64],
@@ -141,6 +150,7 @@ where
 
 impl<'a, Table: FftTable + ?Sized> FftEngine<'a, Table> {
     /// Creates an engine with a fresh backend workspace.
+    #[must_use]
     #[inline]
     pub fn new(table: &'a Table) -> Self {
         Self {
@@ -151,14 +161,21 @@ impl<'a, Table: FftTable + ?Sized> FftEngine<'a, Table> {
 
     /// Creates an engine from a workspace allocated by `table`.
     ///
-    /// Passing a workspace from another table instance is unsupported and may
-    /// cause later transform calls to panic.
+    /// Reuses the allocation without copying, including a workspace recovered
+    /// through [`Self::into_parts`]. This constructor performs no compatibility check.
+    ///
+    /// # Correctness
+    /// `workspace` must originate from this exact `table` instance. A matching
+    /// length or capacity does not prove that requirement; using another table's
+    /// workspace is unsupported, even if later transforms do not panic.
+    #[must_use]
     #[inline]
     pub fn from_workspace(table: &'a Table, workspace: Table::Workspace) -> Self {
         Self { table, workspace }
     }
 
     /// Returns the shared immutable table.
+    #[must_use]
     #[inline]
     pub fn table(&self) -> &'a Table {
         self.table
@@ -172,6 +189,7 @@ impl<'a, Table: FftTable + ?Sized> FftEngine<'a, Table> {
     }
 
     /// Returns the number of complex Fourier values.
+    #[must_use]
     #[inline]
     pub fn fourier_length(&self) -> usize {
         self.table.fourier_length()
@@ -238,6 +256,10 @@ impl<'a, Table: FftTable + ?Sized> FftEngine<'a, Table> {
     }
 
     /// Splits the engine into its table reference and reusable workspace.
+    ///
+    /// Keep these parts together: [`Self::from_workspace`] can rebind them
+    /// without allocating, while the workspace remains specific to that table.
+    #[must_use]
     #[inline]
     pub fn into_parts(self) -> (&'a Table, Table::Workspace) {
         (self.table, self.workspace)

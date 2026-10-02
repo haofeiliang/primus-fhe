@@ -18,7 +18,11 @@ pub type PolynomialRef<'a, T> = Polynomial<&'a [T]>;
 /// Mutably borrowed [`Polynomial`] backed by a mutable slice.
 pub type PolynomialMut<'a, T> = Polynomial<&'a mut [T]>;
 
-/// Represents a polynomial where coefficients are elements of a specified unsigned integer `T`.
+/// Raw coefficient storage in ascending-power order under one modulus.
+///
+/// This wrapper stores no ring length or modulus. Empty, arbitrary-length and
+/// packed storage are allowed; [`Self::len`] counts all stored coefficients.
+/// Callers establish the single-polynomial or batch layout before arithmetic.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Polynomial<S>(pub S)
 where
@@ -34,7 +38,7 @@ where
     S: RawData<Elem = T>,
     T: FheUint,
 {
-    /// Creates a new [`Polynomial<T>`].
+    /// Creates a new [`Polynomial<S>`] from coefficient storage.
     #[must_use]
     #[inline]
     pub fn new(poly: S) -> Self {
@@ -47,11 +51,11 @@ where
     S: DataOwned<Elem = T>,
     T: FheUint,
 {
-    /// Creates a [`Polynomial<T>`] with all coefficients equal to zero.
+    /// Creates a [`Polynomial<S>`] with `len` zero coefficients.
     #[must_use]
     #[inline]
-    pub fn zero(poly_length: usize) -> Self {
-        Self(S::from_vec(vec![T::ZERO; poly_length]))
+    pub fn zero(len: usize) -> Self {
+        Self(S::from_vec(vec![T::ZERO; len]))
     }
 
     /// Constructs a new polynomial from a slice.
@@ -99,10 +103,18 @@ where
     S: Data<Elem = T>,
     T: FheUint,
 {
-    /// Get the coefficient counts of polynomial.
+    /// Returns the total number of stored coefficients, without validating a ring length.
+    #[must_use]
     #[inline]
-    pub fn poly_length(&self) -> usize {
+    pub fn len(&self) -> usize {
         self.0.len()
+    }
+
+    /// Returns whether the backing storage contains no coefficients.
+    #[must_use]
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
     }
 
     /// Extracts a slice containing the entire vector.

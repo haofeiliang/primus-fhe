@@ -13,7 +13,7 @@ where
     ///
     /// # Correctness
     ///
-    /// - `output.poly_length()` equals `self.poly_length()`
+    /// - `output.len()` equals `self.len()`
     /// - Every input value is less than `modulus`
     ///
     /// # Panics
@@ -32,7 +32,7 @@ where
     ///
     /// # Correctness
     ///
-    /// - `output.poly_length()` equals `self.poly_length()`
+    /// - `output.len()` equals `self.len()`
     /// - Every input value is less than `modulus`
     ///
     /// # Errors

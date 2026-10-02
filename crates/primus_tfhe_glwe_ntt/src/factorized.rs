@@ -54,7 +54,7 @@ where
         let input_domain_len = lookup_table.input_domain_len();
         let output_plaintext_modulus = lookup_table.output_plaintext_modulus();
         let (common_polynomial, mut factors) = lookup_table.into_polynomials();
-        for mut factor in PolynomialIterMut::new(&mut factors, common_polynomial.poly_length()) {
+        for mut factor in PolynomialIterMut::new(&mut factors, common_polynomial.len()) {
             context.table().transform_slice(factor.as_mut());
         }
         Self {
@@ -75,7 +75,7 @@ where
     /// Returns the exact output count, without interleaved padding.
     #[must_use]
     pub fn output_count(&self) -> usize {
-        self.factors.len() / self.common_polynomial.poly_length()
+        self.factors.len() / self.common_polynomial.len()
     }
 
     /// Returns the plaintext modulus of the unsigned Scaled output encoding.

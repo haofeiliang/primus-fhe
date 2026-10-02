@@ -31,6 +31,8 @@ When implementing a long algorithm, keep container flexibility at the public bou
 
 Raw polynomial/ciphertext constructors do not establish modulus, key identity, representation or full layout. `Polynomial<S>` does not carry an independent ring length: wrapping `batch_count*N` elements does not automatically turn single-polynomial operations into batch operations. Only pass such storage to an API whose contract explicitly accepts a batch; otherwise iterate over complete objects.
 
+Raw coefficient, NTT, Fourier and CRT/DCRT polynomials expose `len()` / `is_empty()` for their storage elements. Those counts are distinct from a checked table or size's `poly_length()` (`N`), Fourier table `fourier_length()` (`N/2`), and DCRT table `rns_poly_len()` (`moduli_count*N`). DCRT transforms require a nonempty modulus list and reject incorrect total lengths before any write; raw wrappers themselves still allow empty and packed storage.
+
 [PolyLength](../../crates/primus_poly/src/poly_length.rs) belongs to `primus_poly` and centrally checks the shared FHE power-of-two range `32..=2^17`. `get()`, `log_n()` and `fourier_poly_len()` return `N`, `log2(N)` and `N/2` complex elements. GLWE/NTRU parameters, checked sizes, workspaces, shared TFHE LUTs and NTT/FFT tables pass the same type directly without repeating the upper-bound check.
 
 This range guarantees that `2N` fits in `usize`; combined storage lengths remain checked by the boundary owning the layout. FFT construction directly accepts the supported range; NTT retains its modulus, root and degree conditions. Top-level configuration may still accept integer `N`; raw buffers, batch counts and numerical kernels use integers and retain complete layout checks.
@@ -113,7 +115,7 @@ for row in ggsw.iter_glev(gadget_size.glev_len()) {
     for level in row.iter_glwe(glwe_size.glwe_len()) {
         let (mask, body) = level.a_b(glwe_size.poly_length().get());
         assert_eq!(mask.len(), glwe_size.dimension().get());
-        assert_eq!(body.poly_length(), glwe_size.poly_length().get());
+        assert_eq!(body.len(), glwe_size.poly_length().get());
         level_count += 1;
     }
 }

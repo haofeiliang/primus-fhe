@@ -61,7 +61,7 @@ where
         A: Data<Elem = T>,
         B: Data<Elem = T>,
     {
-        let n = self.poly_length();
+        let n = self.len();
         crate::add_mul_monomial_pair_assign(
             self.as_mut(),
             first.as_ref(),
@@ -225,9 +225,9 @@ fn add_mul_monomial_assign_kernel<T, M>(
     T: FheUint,
     M: Copy + ReduceAddSlice<T> + ReduceSubSlice<T>,
 {
-    let n = acc.poly_length();
+    let n = acc.len();
     debug_assert!(n > 0 && n.is_power_of_two(), "invalid polynomial length");
-    debug_assert_eq!(rhs.poly_length(), n, "polynomial length mismatch");
+    debug_assert_eq!(rhs.len(), n, "polynomial length mismatch");
     debug_assert!(exponent / n < 2, "monomial exponent must be less than 2N");
     let negate = exponent >= n;
     let shift = if negate { exponent - n } else { exponent };
@@ -250,7 +250,7 @@ where
     T: FheUint,
     M: Copy + ReduceNegSlice<T>,
 {
-    let poly_length = polynomial.poly_length();
+    let poly_length = polynomial.len();
     let coefficients = polynomial.as_mut();
 
     if r < poly_length {

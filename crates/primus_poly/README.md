@@ -45,6 +45,17 @@ assert_eq!(lhs.as_slice(), &[84, 13, 21, 4]);
 
 `get()`, `log_n()` and `fourier_poly_len()` return `N`, `log2(N)` and `N/2` complex elements. GLWE/NTRU layouts, NTT/FFT tables and workspaces pass this type directly without repeating the upper-bound check. The range guarantees that `2N` fits in `usize`; combined storage lengths and transform numerical conditions remain checked at their owning boundaries. Raw polynomial wrappers and batch storage do not carry a separate ring length; their actual element counts remain `usize`.
 
+The raw wrappers use `len()` / `is_empty()` to inspect their complete storage:
+
+| Wrapper | What `len()` counts | One complete polynomial |
+| --- | --- | --- |
+| `Polynomial` | Coefficients | `N` |
+| `NttPolynomial` | NTT evaluations | `N` |
+| `FourierPolynomial` | Complex values | `N/2` |
+| `CrtPolynomial`, `DcrtPolynomial` | Residues across all moduli | `moduli_count * N` |
+
+These accessors do not validate geometry or layout. Empty, arbitrary-length and packed storage remain representable; an operation's contract determines which layouts it accepts. Checked table and size `poly_length()` accessors return the ring's `PolyLength`, while `DcrtTable::rns_poly_len()` returns the complete RNS polynomial's storage count.
+
 ## Storage and ownership
 
 Most polynomial types are generic over a backing store `S` implementing the contiguous-storage traits from [`primus_data`](../primus_data/README.md). Owned `Vec` aliases and borrowed slice aliases are available for the common coefficient, NTT, Fourier, and array forms. CRT, DCRT, and multi-limb wrappers can likewise be constructed over owned or borrowed storage through their generic types.

@@ -134,7 +134,7 @@ impl<T: FheUint> FactorizedLookupTable<T> {
     /// Returns the number of factors and extracted outputs, without padding.
     #[must_use]
     pub fn output_count(&self) -> usize {
-        self.factors.len() / self.common_polynomial.poly_length()
+        self.factors.len() / self.common_polynomial.len()
     }
 
     /// Returns the plaintext modulus of the shared unsigned Scaled output codec.
@@ -172,7 +172,7 @@ impl<T: FheUint> FactorizedLookupTable<T> {
     /// Use their small signed integer lifts when computing noise amplification.
     #[must_use]
     pub fn factors(&self) -> PolynomialIter<'_, T> {
-        PolynomialIter::new(&self.factors, self.common_polynomial.poly_length())
+        PolynomialIter::new(&self.factors, self.common_polynomial.len())
     }
 
     /// Consumes this table for backend preparation, returning V and contiguous W_i.

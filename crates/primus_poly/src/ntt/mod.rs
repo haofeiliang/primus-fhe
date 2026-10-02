@@ -19,8 +19,11 @@ pub type NttPolynomialRef<'a, T> = NttPolynomial<&'a [T]>;
 /// Mutably borrowed [`NttPolynomial`] backed by a mutable slice.
 pub type NttPolynomialMut<'a, T> = NttPolynomial<&'a mut [T]>;
 
-/// Represents a ntt polynomial where values are elements of a specified numeric `T`.
-/// It stores the values of the polynomial at some particular points.
+/// Raw NTT evaluations under one modulus, in the originating table's order.
+///
+/// This wrapper stores no ring length, modulus or transform identity. Empty,
+/// arbitrary-length and packed storage are allowed; [`Self::len`] counts all
+/// stored evaluations. Callers establish the complete layout before arithmetic.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NttPolynomial<S>(pub S)
 where
@@ -36,7 +39,7 @@ where
     S: RawData<Elem = T>,
     T: FheUint,
 {
-    /// Creates a new [`NttPolynomial<T>`].
+    /// Creates a new [`NttPolynomial<S>`] from NTT evaluation storage.
     #[must_use]
     #[inline]
     pub fn new(values: S) -> Self {
@@ -49,11 +52,11 @@ where
     S: DataOwned<Elem = T>,
     T: FheUint,
 {
-    /// Creates a [`NttPolynomial<T>`] with all NTT values equal to zero.
+    /// Creates a [`NttPolynomial<S>`] with `len` zero NTT evaluations.
     #[must_use]
     #[inline]
-    pub fn zero(poly_length: usize) -> Self {
-        Self(S::from_vec(vec![T::ZERO; poly_length]))
+    pub fn zero(len: usize) -> Self {
+        Self(S::from_vec(vec![T::ZERO; len]))
     }
 
     /// Constructs a new ntt polynomial from a slice.
@@ -124,10 +127,18 @@ where
         self.0.as_slice()
     }
 
-    /// Returns the number of NTT values, equal to the polynomial length.
+    /// Returns the total number of stored NTT evaluations, without validating a ring length.
+    #[must_use]
     #[inline]
-    pub fn poly_length(&self) -> usize {
+    pub fn len(&self) -> usize {
         self.0.len()
+    }
+
+    /// Returns whether the backing storage contains no NTT evaluations.
+    #[must_use]
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
     }
 
     /// Returns an iterator over NTT values.

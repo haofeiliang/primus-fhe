@@ -62,7 +62,9 @@ Input and output lengths are exact:
 - Fourier slices contain `fourier_length() == poly_length().fourier_poly_len()` values;
 - scratch passed directly to `FftTable` methods must have been allocated by that table instance.
 
-Incorrect lengths or incompatible workspace cause a panic.
+Incorrect input/output lengths cause a panic. Backend workspace-capacity checks may also panic, but do not establish table identity. The requirement to use workspace and Fourier values from the same table remains the caller's responsibility.
+
+`FftEngine::from_workspace(table, workspace)` reuses an existing allocation without checking its provenance. `into_parts()` returns the originating table reference and workspace so they can be rebound together without allocation; keep that pair together. Use `FftEngine::new(table)` when no workspace needs to be recovered.
 
 `FftTable::automorphism_map(degree)` allocates the Fourier map for `X -> X^degree`, where `degree` is odd and in `[1, 2N)`. Entry `j` gives `(source, conjugate)` for output `j`.
 

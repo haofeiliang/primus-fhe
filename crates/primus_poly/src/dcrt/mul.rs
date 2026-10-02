@@ -212,11 +212,11 @@ where
         B: DataMut<Elem = T>,
     {
         debug_assert!(poly_length > 0);
-        let dcrt_poly_length = self.dcrt_poly_length();
-        debug_assert_eq!(dcrt_poly_length, rhs.dcrt_poly_length());
-        debug_assert_eq!(dcrt_poly_length, w.len());
-        debug_assert_eq!(dcrt_poly_length, output.dcrt_poly_length());
-        debug_assert_eq!(dcrt_poly_length, moduli.len() * poly_length);
+        let rns_poly_len = self.len();
+        debug_assert_eq!(rns_poly_len, rhs.len());
+        debug_assert_eq!(rns_poly_len, w.len());
+        debug_assert_eq!(rns_poly_len, output.len());
+        debug_assert_eq!(rns_poly_len, moduli.len() * poly_length);
         butterfly_mul_factor_to_kernel(
             self.as_mut_view(),
             rhs.as_view(),

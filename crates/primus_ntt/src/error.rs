@@ -5,6 +5,9 @@ use thiserror::Error;
 /// Invalid NTT table geometry, coefficient range or root of unity.
 #[derive(Error, Debug)]
 pub enum NttError<T> {
+    /// A DCRT transform was requested without any component modulus.
+    #[error("DCRT modulus list must be non-empty")]
+    EmptyModuli,
     /// The combined coefficient count for a DCRT table does not fit `usize`.
     #[error("DCRT polynomial length overflow")]
     CrtPolynomialLengthOverflow,

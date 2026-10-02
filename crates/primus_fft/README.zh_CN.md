@@ -62,7 +62,9 @@ Table 不可变并实现 `Send + Sync`，因此可以在线程间共享。每个
 - Fourier slice 包含 `fourier_length() == poly_length().fourier_poly_len()` 个值；
 - 直接传给 `FftTable` 方法的 scratch 必须由同一个 table 实例分配。
 
-长度错误或 workspace 不兼容会触发 panic。
+输入/输出长度错误会触发 panic。后端的 workspace 容量检查也可能 panic，但不能证明 table 身份；工作区与 Fourier 值来自同一个表实例仍由调用方保证。
+
+`FftEngine::from_workspace(table, workspace)` 不检查来源，直接复用已有分配。`into_parts()` 返回原表引用和工作区，可以将这两个部分一起重新绑定而无需分配；应保留这对资源。无需恢复已有工作区时，使用 `FftEngine::new(table)`。
 
 `FftTable::automorphism_map(degree)` 为 `X -> X^degree` 分配 Fourier 映射，其中 `degree` 是 `[1, 2N)` 内的奇数。第 `j` 项给出输出 `j` 对应的 `(source, conjugate)`。
 

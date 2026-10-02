@@ -117,6 +117,10 @@ where
         fft.forward_as_torus(&input, &mut fourier);
         fft.backward_as_torus(&fourier, &mut output);
         assert_eq!(input, output);
+        // Rebind the recovered workspace to its original table, retaining the
+        // same live allocations and their eventual erasing owner.
+        let (table, workspace) = fft.into_parts();
+        fft = FftEngine::from_workspace(table, workspace);
     }
     // Inverse FFT has just repopulated workspace with nonzero phase data.
     drop(fft);

@@ -15,6 +15,10 @@ pub type FourierPolynomialMut<'a> = FourierPolynomial<&'a mut [Complex64]>;
 
 /// A polynomial represented by its independent complex evaluations.
 ///
+/// This raw wrapper stores no ring length or transform identity. Empty,
+/// arbitrary-length and packed storage are allowed. [`Self::len`] counts all
+/// complex values; only a complete single-polynomial layout has `N/2` values.
+///
 /// Arithmetic requires operands and outputs with equal numbers of values from
 /// compatible Fourier transforms. It preserves their normalization and performs
 /// no transform. Shape checks are debug diagnostics; callers must establish the
@@ -124,7 +128,7 @@ impl core::iter::ExactSizeIterator for FourierPolynomialIterMut<'_> {}
 impl core::iter::FusedIterator for FourierPolynomialIterMut<'_> {}
 
 impl<S: RawData<Elem = Complex64>> FourierPolynomial<S> {
-    /// Creates a Fourier polynomial.
+    /// Creates a new [`FourierPolynomial<S>`] from Fourier evaluation storage.
     #[must_use]
     pub fn new(values: S) -> Self {
         Self(values)
@@ -139,10 +143,10 @@ impl<S: RawData<Elem = Complex64>> FourierPolynomial<S> {
     }
 }
 impl<S: DataOwned<Elem = Complex64>> FourierPolynomial<S> {
-    /// Creates a zero polynomial.
+    /// Creates a [`FourierPolynomial<S>`] with `len` zero complex values.
     #[must_use]
-    pub fn zero(fourier_length: usize) -> Self {
-        Self(S::from_vec(vec![Complex64::default(); fourier_length]))
+    pub fn zero(len: usize) -> Self {
+        Self(S::from_vec(vec![Complex64::default(); len]))
     }
     /// Clones a Fourier polynomial from a slice.
     #[must_use]
@@ -155,9 +159,15 @@ impl<S: Data<Elem = Complex64>> FourierPolynomial<S> {
     pub fn as_slice(&self) -> &[Complex64] {
         self.0.as_slice()
     }
-    /// Returns the number of Fourier values.
-    pub fn fourier_length(&self) -> usize {
+    /// Returns the total number of stored complex values, without validating a ring length.
+    #[must_use]
+    pub fn len(&self) -> usize {
         self.0.len()
+    }
+    /// Returns whether the backing storage contains no complex values.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
     }
     /// Returns an iterator over Fourier values.
     pub fn iter(&self) -> core::slice::Iter<'_, Complex64> {

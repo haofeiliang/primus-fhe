@@ -169,7 +169,7 @@ macro_rules! impl_fourier_polynomial {
             ) where
                 A: primus_data::Data<Elem = num_complex::Complex64>,
             {
-                let n = poly.fourier_length();
+                let n = poly.len();
                 for output in self.as_mut().chunks_exact_mut(n) {
                     primus_poly::FourierPolynomial(output).mul_assign(poly);
                 }
@@ -198,7 +198,7 @@ macro_rules! impl_fourier_polynomial {
                 A: primus_data::Data<Elem = num_complex::Complex64>,
                 B: primus_data::Data<Elem = num_complex::Complex64>,
             {
-                let n = poly.fourier_length();
+                let n = poly.len();
                 debug_assert_eq!(
                     self.as_ref().len(),
                     rhs.as_ref().len(),
@@ -241,7 +241,7 @@ macro_rules! impl_fourier_polynomial {
                 A: primus_data::Data<Elem = num_complex::Complex64>,
                 B: primus_data::DataMut<Elem = num_complex::Complex64>,
             {
-                let n = poly.fourier_length();
+                let n = poly.len();
                 debug_assert_eq!(
                     self.as_ref().len(),
                     output.as_ref().len(),

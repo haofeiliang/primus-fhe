@@ -45,6 +45,17 @@ assert_eq!(lhs.as_slice(), &[84, 13, 21, 4]);
 
 `get()`、`log_n()`、`fourier_poly_len()` 分别返回 `N`、`log2(N)` 和 `N/2` 个复数元素。GLWE/NTRU 布局、NTT/FFT 表和工作区直接传递这个类型，不再重复检查上界。该范围保证 `2N` 可由 `usize` 表示；组合存储长度和变换的数值条件仍在各自边界检查。原始多项式 wrapper 和批量存储不另存环长度，其实际元素数量仍为 `usize`。
 
+Raw wrapper 使用 `len()` / `is_empty()` 查看完整存储：
+
+| Wrapper | `len()` 统计的元素 | 一个完整多项式 |
+| --- | --- | --- |
+| `Polynomial` | 系数 | `N` |
+| `NttPolynomial` | NTT 求值 | `N` |
+| `FourierPolynomial` | 复数值 | `N/2` |
+| `CrtPolynomial`、`DcrtPolynomial` | 全部模数下的 residue | `moduli_count * N` |
+
+这些访问器不验证几何或布局。空、任意长度和 packed 存储仍可表示；具体运算的契约决定其接受哪些布局。Checked table 和 size 的 `poly_length()` 返回环的 `PolyLength`，而 `DcrtTable::rns_poly_len()` 返回一个完整 RNS 多项式的存储元素数。
+
 ## 存储与所有权
 
 大多数多项式类型都对 backing store `S` 泛型化；`S` 实现 [`primus_data`](../primus_data/README.zh_CN.md) 提供的连续存储 trait。常用的系数、NTT、Fourier 和数组表示提供了 `Vec` owned 别名与 slice borrowed 别名。CRT、DCRT 和多 limb wrapper 同样可以通过泛型类型构造在 owned 或 borrowed 存储之上。

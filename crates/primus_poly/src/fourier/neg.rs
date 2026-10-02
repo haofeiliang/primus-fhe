@@ -45,7 +45,7 @@ fn neg_assign_kernel(mut acc: FourierPolynomialMut<'_>) {
 
 #[inline]
 fn neg_to_kernel(input: FourierPolynomialRef<'_>, mut output: FourierPolynomialMut<'_>) {
-    debug_assert_eq!(input.fourier_length(), output.fourier_length());
+    debug_assert_eq!(input.len(), output.len());
     for (output, value) in output.iter_mut().zip(input.iter()) {
         *output = -*value;
     }

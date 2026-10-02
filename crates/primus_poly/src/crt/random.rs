@@ -167,7 +167,7 @@ where
     {
         debug_assert!(poly_length > 0, "CRT polynomial length must be nonzero");
         debug_assert_eq!(
-            self.crt_poly_length(),
+            self.len(),
             poly_length * moduli.len(),
             "CRT polynomial storage length must equal polynomial length times the modulus count"
         );

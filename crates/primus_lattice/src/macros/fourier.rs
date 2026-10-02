@@ -383,8 +383,8 @@ macro_rules! impl_fourier_conversion {
             /// with the same number and order of polynomials on both sides. The table,
             /// packing, and normalized torus scale must agree. Conversion can incur
             /// floating-point rounding error. Output is overwritten for each paired
-            /// polynomial; mismatched counts or incomplete blocks are not validated
-            /// and can leave part of the input or output unprocessed.
+            /// polynomial. Complete blocks and equal counts are assumed; incomplete
+            /// or unmatched blocks can remain unprocessed. Empty paired batches are valid.
             pub fn write_fourier_form<Table, A>(
                 &self,
                 output: &mut $fourier<A>,
@@ -393,12 +393,14 @@ macro_rules! impl_fourier_conversion {
                 Table: primus_fft::FftTable,
                 A: primus_data::RawData<Elem = num_complex::Complex64> + primus_data::DataMut,
             {
-                for (coeff, fourier) in self
-                    .as_ref()
-                    .chunks_exact(fft.poly_length().get())
-                    .zip(output.as_mut().chunks_exact_mut(fft.fourier_length()))
+                let poly_length = fft.poly_length().get();
+                let fourier_length = fft.fourier_length();
+                for (coeff, mut fourier) in
+                    primus_poly::PolynomialIter::new(self.as_ref(), poly_length).zip(
+                        primus_poly::FourierPolynomialIterMut::new(output.as_mut(), fourier_length),
+                    )
                 {
-                    fft.forward_as_torus(coeff, fourier);
+                    fft.forward_as_torus(coeff.as_ref(), fourier.as_mut());
                 }
             }
         }
@@ -415,8 +417,8 @@ macro_rules! impl_fourier_conversion {
             /// with the same number and order of polynomials on both sides. The table,
             /// packing, and normalized torus scale must agree. Conversion can incur
             /// floating-point rounding error. Output is overwritten for each paired
-            /// polynomial; mismatched counts or incomplete blocks are not validated
-            /// and can leave part of the input or output unprocessed.
+            /// polynomial. Complete blocks and equal counts are assumed; incomplete
+            /// or unmatched blocks can remain unprocessed. Empty paired batches are valid.
             pub fn write_torus_form<Table, A, T>(
                 &self,
                 output: &mut $coeff<A>,
@@ -426,12 +428,14 @@ macro_rules! impl_fourier_conversion {
                 A: primus_data::RawData<Elem = T> + primus_data::DataMut,
                 T: primus_fft::TorusFftValue,
             {
-                for (fourier, coeff) in self
-                    .as_ref()
-                    .chunks_exact(fft.fourier_length())
-                    .zip(output.as_mut().chunks_exact_mut(fft.poly_length().get()))
+                let poly_length = fft.poly_length().get();
+                let fourier_length = fft.fourier_length();
+                for (fourier, mut coeff) in
+                    primus_poly::FourierPolynomialIter::new(self.as_ref(), fourier_length).zip(
+                        primus_poly::PolynomialIterMut::new(output.as_mut(), poly_length),
+                    )
                 {
-                    fft.backward_as_torus(fourier, coeff);
+                    fft.backward_as_torus(fourier.as_ref(), coeff.as_mut());
                 }
             }
         }

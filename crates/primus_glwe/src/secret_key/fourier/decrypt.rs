@@ -52,7 +52,7 @@ impl FourierGlweSecretKey {
         let (mut mask, body) = input.a_b(fourier_length);
 
         assert_eq!(
-            workspace.phase.fourier_length(),
+            workspace.phase.len(),
             fourier_length,
             "Fourier phase workspace length mismatch"
         );

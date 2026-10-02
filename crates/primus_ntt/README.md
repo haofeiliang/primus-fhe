@@ -80,7 +80,7 @@ The consuming `transform_inplace` and `inverse_transform_inplace` methods use th
 
 ## DCRT layout
 
-`DcrtTable` stores one NTT table for each modulus, all with the same checked `PolyLength`. Construction checks that `moduli_count * N` fits in `usize` before building component tables. Coefficient and transform slices are modulus-major and have length `moduli_count * N`:
+`DcrtTable` stores one NTT table for each modulus, all with the same checked `PolyLength`. Construction rejects an empty modulus list with `NttError::EmptyModuli` and checks that `moduli_count * N` fits in `usize` before building component tables. `poly_length()` returns the ring length; `rns_poly_len()` returns the complete RNS polynomial's element count. Coefficient and transform slices are modulus-major and have length `moduli_count * N`:
 
 ```text
 [a_0 mod q_0, ..., a_(N-1) mod q_0,
@@ -88,7 +88,7 @@ The consuming `transform_inplace` and `inverse_transform_inplace` methods use th
  ...]
 ```
 
-This matches the `CrtPolynomial` and `DcrtPolynomial` layout from [`primus_poly`](../primus_poly/README.md). Shape checks in repeated DCRT paths are debug diagnostics; release callers must preserve the exact total length and modulus-major ordering.
+This matches the `CrtPolynomial` and `DcrtPolynomial` layout from [`primus_poly`](../primus_poly/README.md); their `len()` counts all stored residues. DCRT transforms assume the caller maintains the exact total length and modulus-major order; length checks are debug diagnostics only. Coefficient ranges and transform identity are also caller contracts.
 
 For `DcrtTable::transform_monomial`, the single supplied `coeff` must be canonical for every component modulus. The method does not reduce it separately for each limb.
 

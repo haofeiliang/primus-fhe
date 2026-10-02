@@ -30,8 +30,8 @@ where
         A: DataMut<Elem = T>,
     {
         debug_assert!(poly_length > 0);
-        debug_assert_eq!(self.dcrt_poly_length(), output.dcrt_poly_length());
-        debug_assert_eq!(self.dcrt_poly_length(), moduli.len() * poly_length);
+        debug_assert_eq!(self.len(), output.len());
+        debug_assert_eq!(self.len(), moduli.len() * poly_length);
 
         izip!(
             self.iter_each_modulus(poly_length),
@@ -68,8 +68,8 @@ where
         A: DataMut<Elem = T>,
     {
         debug_assert!(poly_length > 0);
-        debug_assert_eq!(self.dcrt_poly_length(), output.dcrt_poly_length());
-        debug_assert_eq!(self.dcrt_poly_length(), moduli.len() * poly_length);
+        debug_assert_eq!(self.len(), output.len());
+        debug_assert_eq!(self.len(), moduli.len() * poly_length);
 
         for (poly, out, &modulus) in izip!(
             self.iter_each_modulus(poly_length),
