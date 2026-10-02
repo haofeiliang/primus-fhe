@@ -80,14 +80,14 @@ fn crt_expansion_matches_parallel_and_plaintext() {
     let mut transformed = DcrtGlweCiphertext::<Vec<ValueT>>::zero(rns_glwe_len);
 
     let dcrt_sk_context = dcrt_sk.try_bind(&glwe_params, &table).unwrap();
-    dcrt_sk_context.encrypt_plaintext_inplace(&input1, &mut c1, &mut rng);
+    dcrt_sk_context.encrypt_to(&input1, &mut c1, &mut rng);
 
     // Requires conversion to coefficient domain first.
     let c1 = c1.into_coeff_form(&table);
 
-    expand_key.expand_coefficients_inplace(&c1, &mut c_expand, &domain, &mut expand_workspace);
+    expand_key.expand_coefficients_to(&c1, &mut c_expand, &domain, &mut expand_workspace);
     workers.install(|| {
-        expand_key.expand_coefficients_inplace_parallel(
+        expand_key.expand_coefficients_parallel_to(
             &c1,
             &mut parallel_output,
             &domain,
@@ -114,21 +114,16 @@ fn crt_expansion_matches_parallel_and_plaintext() {
     let retained = poly_length / 2;
     input1[retained..].fill(0);
 
-    dcrt_sk_context.encrypt_plaintext_inplace(&input1, &mut c1, &mut rng);
+    dcrt_sk_context.encrypt_to(&input1, &mut c1, &mut rng);
 
     let c1 = c1.into_coeff_form(&table);
 
     c_expand.truncate(retained);
     parallel_output.truncate(retained);
 
-    expand_key.expand_partial_coefficients_inplace(
-        &c1,
-        &mut c_expand,
-        &domain,
-        &mut expand_workspace,
-    );
+    expand_key.expand_partial_coefficients_to(&c1, &mut c_expand, &domain, &mut expand_workspace);
     workers.install(|| {
-        expand_key.expand_partial_coefficients_inplace_parallel(
+        expand_key.expand_partial_coefficients_parallel_to(
             &c1,
             &mut parallel_output,
             &domain,
@@ -212,11 +207,11 @@ fn dcrt_expansion_matches_parallel_and_plaintext() {
     let mut decrypt_workspace = DcrtGlweDecryptWorkspace::new(glwe_params.size());
 
     let dcrt_sk_context = dcrt_sk.try_bind(&glwe_params, &table).unwrap();
-    dcrt_sk_context.encrypt_plaintext_inplace(&input1, &mut c1, &mut rng);
+    dcrt_sk_context.encrypt_to(&input1, &mut c1, &mut rng);
 
-    expand_key.expand_coefficients_inplace(&c1, &mut c_expand, &domain, &mut expand_workspace);
+    expand_key.expand_coefficients_to(&c1, &mut c_expand, &domain, &mut expand_workspace);
     workers.install(|| {
-        expand_key.expand_coefficients_inplace_parallel(
+        expand_key.expand_coefficients_parallel_to(
             &c1,
             &mut parallel_output,
             &domain,
@@ -239,19 +234,14 @@ fn dcrt_expansion_matches_parallel_and_plaintext() {
     let retained = poly_length / 2;
     input1[retained..].fill(0);
 
-    dcrt_sk_context.encrypt_plaintext_inplace(&input1, &mut c1, &mut rng);
+    dcrt_sk_context.encrypt_to(&input1, &mut c1, &mut rng);
 
     c_expand.truncate(retained);
     parallel_output.truncate(retained);
 
-    expand_key.expand_partial_coefficients_inplace(
-        &c1,
-        &mut c_expand,
-        &domain,
-        &mut expand_workspace,
-    );
+    expand_key.expand_partial_coefficients_to(&c1, &mut c_expand, &domain, &mut expand_workspace);
     workers.install(|| {
-        expand_key.expand_partial_coefficients_inplace_parallel(
+        expand_key.expand_partial_coefficients_parallel_to(
             &c1,
             &mut parallel_output,
             &domain,

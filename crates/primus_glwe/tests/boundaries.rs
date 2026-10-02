@@ -523,15 +523,18 @@ fn glev_construction_reuses_basis_and_rejects_incompatible_domains_or_layouts() 
     );
     assert_eq!(native.cipher_modulus_value(), None);
     assert_eq!(explicit.cipher_modulus_value(), Some(257));
+    let native_clone = native.clone();
     for levels in [None, Some(2)] {
         let basis = ApproxSignedBasis::new(
             None,
             DecompositionBaseLog::new(3),
             levels.map(DecompositionLevelCount::new),
         );
-        let params = GlevParameters::try_with_basis(&native, basis.clone()).unwrap();
+        let params = GlevParameters::try_with_basis(&native_clone, basis.clone()).unwrap();
         assert_eq!(params.basis(), &basis);
         assert_eq!(params.glwe_size(), native.size());
+        // Derivation and both outer parameter clones retain the prepared samplers.
+        assert!(std::ptr::eq(params.clone().inner(), native.inner()));
         let basis = ApproxSignedBasis::new(
             Some(257),
             DecompositionBaseLog::new(3),
@@ -540,6 +543,7 @@ fn glev_construction_reuses_basis_and_rejects_incompatible_domains_or_layouts() 
         let params = GlevParameters::try_with_basis(&explicit, basis.clone()).unwrap();
         assert_eq!(params.basis(), &basis);
         assert_eq!(params.glwe_size(), explicit.size());
+        assert!(std::ptr::eq(params.inner(), explicit.inner()));
     }
     for modulus in [Some(257), Some(769)] {
         assert!(matches!(

@@ -1,11 +1,11 @@
-use std::sync::Mutex;
+//! CRT expansion layouts with shared pool ownership.
 
 use primus_integer::FheUint;
-use primus_lattice::glwe::CrtGlwe;
 use primus_ntt::NttTable;
 use primus_reduce::FieldContext;
 
-use crate::{CrtGlweAutomorphismWorkspace, CrtGlweTraceWorkspace, DcrtGadgetDomain};
+use crate::workspace_pool::{WorkspaceGuard, WorkspacePool};
+use crate::{CrtGlweTraceWorkspace, DcrtGadgetDomain};
 
 /// Reusable workspace for serial CRT coefficient expansion.
 pub type CrtGlweExpandCoeffWorkspace<T> = CrtGlweTraceWorkspace<T>;
@@ -18,11 +18,12 @@ pub type CrtGlweExpandCoeffWorkspace<T> = CrtGlweTraceWorkspace<T>;
 /// big-integer limb width when running expansion; acquiring a workspace does
 /// not rebind or validate it.
 pub struct CrtGlweExpandCoeffSyncPool<T: FheUint> {
-    workspaces: Mutex<Vec<CrtGlweExpandCoeffWorkspace<T>>>,
+    workspaces: WorkspacePool<CrtGlweExpandCoeffWorkspace<T>>,
 }
 
 impl<T: FheUint> CrtGlweExpandCoeffSyncPool<T> {
-    /// Creates a pool sized for the current Rayon thread count.
+    /// Creates a new [`CrtGlweExpandCoeffSyncPool`] sized for the current Rayon thread count.
+    #[must_use]
     pub fn new<M, Table>(domain: &DcrtGadgetDomain<'_, T, M, Table>) -> Self
     where
         M: FieldContext<T>,
@@ -35,6 +36,7 @@ impl<T: FheUint> CrtGlweExpandCoeffSyncPool<T> {
     ///
     /// `capacity` must cover the number of workers that can run concurrently.
     /// Prefer [`Self::new`] unless a custom Rayon pool has a known smaller size.
+    #[must_use]
     pub fn with_capacity<M, Table>(
         capacity: usize,
         domain: &DcrtGadgetDomain<'_, T, M, Table>,
@@ -48,47 +50,11 @@ impl<T: FheUint> CrtGlweExpandCoeffSyncPool<T> {
             .map(|_| CrtGlweExpandCoeffWorkspace::from_parameters(parameters))
             .collect();
         Self {
-            workspaces: Mutex::new(workspaces),
+            workspaces: WorkspacePool::new(workspaces),
         }
     }
 
-    fn acquire(&self) -> CrtGlweExpandCoeffWorkspace<T> {
-        self.workspaces
-            .lock()
-            .unwrap()
-            .pop()
-            .expect("CRT expansion workspace pool capacity is smaller than its parallel demand")
-    }
-
-    fn release(&self, workspace: CrtGlweExpandCoeffWorkspace<T>) {
-        self.workspaces.lock().unwrap().push(workspace);
-    }
-
-    pub(super) fn acquire_guard(&self) -> CrtPoolGuard<'_, T> {
-        CrtPoolGuard {
-            workspace: Some(self.acquire()),
-            pool: self,
-        }
-    }
-}
-
-pub(super) struct CrtPoolGuard<'a, T: FheUint> {
-    workspace: Option<CrtGlweExpandCoeffWorkspace<T>>,
-    pool: &'a CrtGlweExpandCoeffSyncPool<T>,
-}
-
-impl<T: FheUint> CrtPoolGuard<'_, T> {
-    pub(super) fn as_mut(
-        &mut self,
-    ) -> (&mut CrtGlwe<Vec<T>>, &mut CrtGlweAutomorphismWorkspace<T>) {
-        self.workspace.as_mut().unwrap().as_mut()
-    }
-}
-
-impl<T: FheUint> Drop for CrtPoolGuard<'_, T> {
-    fn drop(&mut self) {
-        if let Some(workspace) = self.workspace.take() {
-            self.pool.release(workspace);
-        }
+    pub(super) fn acquire_guard(&self) -> WorkspaceGuard<'_, CrtGlweExpandCoeffWorkspace<T>> {
+        self.workspaces.acquire()
     }
 }

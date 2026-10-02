@@ -63,6 +63,8 @@ NTT 域私钥运算无需 workspace。Fourier 运算使用 `FourierGlweEncryptWo
 
 已有分解基时，使用 `GlevParameters::try_with_basis(&glwe_params, basis)` 直接转移其所有权，复用预计算，并检查模数和 gadget 布局。`try_with_glwe_params` 则根据基的对数和 level 数构造分解基；两个入口均返回 `GlevParameterError`。
 
+派生的 gadget 参数及参数 clone 与源 GLWE 参数共享不可变的模数/采样预计算。`inner()` 仍返回借用的 `GlweParametersInner`；布局、明文编码和 gadget basis 继续分别拥有。
+
 `encrypt_ggsw_constant_batch_to` 将环常数切片加密为连续的 GGSW，仅做一次批量检查，不分配临时缓冲区。NTT 接收规范剩余类，直接填充各层常数，输出长度为 `input.len() * params.ggsw_len()`；Fourier 接收原生环值，输出包含 `input.len() * params.fourier_ggsw_len()` 个复数。Fourier 保留逐 level 原生环缩放后再 FFT 的数值路径；批内相邻相同常数复用这些变换，因此准备耗时依赖输入序列。空批次仍检查共享资源，但不消耗随机数。
 
 `NttGlweSecretKey::encrypt_ggsw_constant_batch_coeff_to` 直接输出系数域 GGSW，密文和 RNG 消费与 NTT 加密后逆变换完全一致，同时省去每个采样 body 的正向 NTT。Gadget workspace 只需多项式长度匹配，不使用其 level 数量。输出长度为 `input.len() * params.ggsw_len()`。

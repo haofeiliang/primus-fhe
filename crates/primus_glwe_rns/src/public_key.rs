@@ -221,7 +221,7 @@ impl<T: FheUint> DcrtGlwePublicKey<T> {
     /// to the selected component before transforming that component. The caller
     /// supplies complete row/residue/scratch layouts in the parameter/table order.
     #[allow(clippy::too_many_arguments)]
-    fn encrypt_monomial_in_dcrt_glev_inplace<R, Table, M>(
+    fn encrypt_monomial_dcrt_glev_to<R, Table, M>(
         &self,
         index: usize,
         coeff_residues: Residues<&[T]>,
@@ -318,7 +318,7 @@ impl<T: FheUint> DcrtGlwePublicKey<T> {
             .iter_dcrt_glev_mut(dcrt_glev_len)
             .enumerate()
             .for_each(|(i, dcrt_glev)| {
-                self.encrypt_monomial_in_dcrt_glev_inplace(
+                self.encrypt_monomial_dcrt_glev_to(
                     i,
                     coeff_residues,
                     degree,
@@ -355,7 +355,7 @@ where
 {
     /// Encrypts one CRT plaintext polynomial into a newly allocated ciphertext.
     ///
-    /// Like [`crate::DcrtGlweSecretKeyContext::encrypt_inplace`], this accepts unscaled
+    /// Like [`crate::DcrtGlweSecretKeyContext::encrypt_crt_to`], this accepts unscaled
     /// plaintext lifts reduced into each `[0, q_i)` in coefficient-domain CRT
     /// layout and applies `floor(Q/t)` scaling. Passing the already-scaled output
     /// of [`crate::BfvRnsCodec::encode_coeffs_to`] would apply the scale twice.
@@ -423,7 +423,7 @@ where
 
         let mut result: DcrtGgsw<Vec<T>> = DcrtGgsw::zero(dcrt_ggsw_len);
 
-        self.encrypt_monomial_ggsw_inplace(coeff_residues, degree, &mut result, rng);
+        self.encrypt_monomial_ggsw_to(coeff_residues, degree, &mut result, rng);
 
         result
     }
@@ -433,7 +433,7 @@ where
     ///
     /// # Panics
     /// Panics if `degree` is not below N.
-    pub fn encrypt_monomial_ggsw_inplace<R, A>(
+    pub fn encrypt_monomial_ggsw_to<R, A>(
         &self,
         coeff_residues: &Residues<impl Data<Elem = T>>,
         degree: usize,

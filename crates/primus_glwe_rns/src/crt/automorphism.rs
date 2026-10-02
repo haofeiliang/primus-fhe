@@ -176,7 +176,7 @@ where
             params.cipher_moduli_value(),
         );
 
-        encryptor.encrypt_crt_msg_to_dcrt_glev_inplace(&auto_si, &mut dcrt_glev, rng);
+        encryptor.encrypt_crt_to(&auto_si, &mut dcrt_glev, rng);
     });
 
     key

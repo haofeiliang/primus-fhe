@@ -146,6 +146,8 @@ NTRU 将外部 LWE 的秘密/模数/维数与累加 NTRU 环的秘密/模数/长
 
 RNS GLWE 的普通秘密/公钥使用 `try_bind(parameters, table)`，gadget 加密使用 `try_bind_gadget(domain)`；这些 context 借用已检查的资源。普通与 hybrid 密钥切换 evaluator 借用密钥/domain，拥有 workspace，在在线调用前一次性检查有序基及分解/分区兼容性。见 [RNS GLWE 流程](../../crates/primus_glwe_rns/README.zh_CN.md#求值资源)。
 
+GLWE 参数分别由[共享模数/采样状态](../../crates/primus_glwe/src/parameter/core.rs)、[普通布局/编码](../../crates/primus_glwe/src/parameter/ordinary.rs)、[gadget basis](../../crates/primus_glwe/src/parameter/gadget.rs) 和 [key-switch 布局](../../crates/primus_glwe/src/parameter/key_switch.rs) 模块拥有；[RNS 参数](../../crates/primus_glwe_rns/src/parameter/mod.rs) 使用同样的职责划分，保留 RNS 专有契约。[DCRT 秘密模块](../../crates/primus_glwe_rns/src/secret_key/dcrt/mod.rs) 区分所有权/绑定、有符号转换、普通加密、gadget 加密、解密和擦除工作区。私有数值 helper 与拥有资源绑定的操作放在一起，公开类型仍从 crate 根导出。
+
 ## 保留错误角色与原因
 
 按公开操作及其契约定义错误类型，保留有助于调用方定位或处理的具体失败原因；有真实消费者收益时才拆分或合并。共享相同的底层检查，同时保留各方案的几何与表示要求。

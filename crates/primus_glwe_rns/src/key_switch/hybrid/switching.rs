@@ -447,7 +447,7 @@ mod tests {
             Polynomial::random(poly_length.get(), plaintext_modulus, &mut rng);
         let mut input: DcrtGlwe<Vec<Value>> = DcrtGlweCiphertext::zero(parameters.rns_glwe_len());
         let input_dcrt_key_context = input_dcrt_key.try_bind(&parameters, &q_table).unwrap();
-        input_dcrt_key_context.encrypt_plaintext_inplace(&plaintext, &mut input, &mut rng);
+        input_dcrt_key_context.encrypt_to(&plaintext, &mut input, &mut rng);
         let input_coeff = input.clone().into_coeff_form(&q_table);
         let mut from_ntt: DcrtGlwe<Vec<Value>> =
             DcrtGlweCiphertext::zero(parameters.rns_glwe_len());

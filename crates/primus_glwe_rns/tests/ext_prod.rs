@@ -71,7 +71,7 @@ fn test_external_product() {
     let mut decrypt_workspace = DcrtGlweDecryptWorkspace::new(glwe_params.size());
 
     let dcrt_sk_context = dcrt_sk.try_bind(&glwe_params, &table).unwrap();
-    dcrt_sk_context.encrypt_plaintext_inplace(&input, &mut c1, &mut rng);
+    dcrt_sk_context.encrypt_to(&input, &mut c1, &mut rng);
 
     // Requires coefficient-domain input.
     let c1 = c1.into_coeff_form(&table);

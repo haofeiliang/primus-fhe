@@ -27,7 +27,7 @@ fn message_polynomial(plain_modulus: ValueT, rng: &mut StdRng) -> Polynomial<Vec
 }
 
 /// Manually decompose a polynomial into CRT form (centered lifting, no delta scaling).
-/// Used to test the low-level `encrypt_inplace` API directly.
+/// Used to test the low-level `encrypt_crt_to` API directly.
 fn decompose_message<M>(
     message: &Polynomial<Vec<ValueT>>,
     params: &CrtGlweParameters<ValueT, M>,
@@ -47,10 +47,10 @@ where
 /// Parametric correctness test: encrypt → decrypt round-trip for all embedding modes.
 ///
 /// Tests four encryption paths:
-/// 1. `encrypt_plaintext_inplace` — unsigned encoding (codec-managed)
-/// 2. `encrypt_centered_plaintext_inplace` — centered encoding (codec-managed)
-/// 3. `encrypt_inplace` with manual `decompose_message` — low-level API
-/// 4. `encrypt_zeros_inplace` — zero plaintext
+/// 1. `encrypt_to` — unsigned encoding (codec-managed)
+/// 2. `encrypt_centered_to` — centered encoding (codec-managed)
+/// 3. `encrypt_crt_to` with manual `decompose_message` — low-level API
+/// 4. `encrypt_zeros_to` — zero plaintext
 fn assert_dcrt_glwe_secret_key_enc_dec(secret_key_distr: SecretKeyDistr, plain_modulus: ValueT) {
     let mod_t = BarrettModulus::new(plain_modulus);
     let mod_gamma = BarrettModulus::new(GAMMA_MODULUS);
@@ -81,11 +81,7 @@ fn assert_dcrt_glwe_secret_key_enc_dec(secret_key_distr: SecretKeyDistr, plain_m
     let mut ciphertext: DcrtGlwe<Vec<ValueT>> = DcrtGlweCiphertext::zero(params.rns_glwe_len());
 
     let secret_key_context = secret_key.try_bind(&params, &table).unwrap();
-    secret_key_context.encrypt_plaintext_inplace(
-        &message.as_view(),
-        &mut ciphertext.as_mut_view(),
-        &mut rng,
-    );
+    secret_key_context.encrypt_to(&message.as_view(), &mut ciphertext.as_mut_view(), &mut rng);
 
     let decrypted = secret_key_context.decrypt(&ciphertext, &mut decrypt_workspace);
     assert_eq!(decrypted.as_ref(), message.as_ref());
@@ -95,11 +91,7 @@ fn assert_dcrt_glwe_secret_key_enc_dec(secret_key_distr: SecretKeyDistr, plain_m
     let centered_seed = rng.next_u64();
     let mut centered_rng = StdRng::seed_from_u64(centered_seed);
     let mut crt_rng = StdRng::seed_from_u64(centered_seed);
-    secret_key_context.encrypt_centered_plaintext_inplace(
-        &message,
-        &mut ciphertext,
-        &mut centered_rng,
-    );
+    secret_key_context.encrypt_centered_to(&message, &mut ciphertext, &mut centered_rng);
 
     let decrypted = secret_key_context.decrypt(&ciphertext, &mut decrypt_workspace);
     assert_eq!(decrypted.as_ref(), message.as_ref());
@@ -107,7 +99,7 @@ fn assert_dcrt_glwe_secret_key_enc_dec(secret_key_distr: SecretKeyDistr, plain_m
 
     // Reuse the same ciphertext storage through centered, CRT and zero inputs.
     let decomposed_message = decompose_message(&message, &params);
-    secret_key_context.encrypt_inplace(
+    secret_key_context.encrypt_crt_to(
         &decomposed_message.as_view(),
         &mut ciphertext.as_mut_view(),
         &mut crt_rng,
@@ -116,14 +108,14 @@ fn assert_dcrt_glwe_secret_key_enc_dec(secret_key_distr: SecretKeyDistr, plain_m
     assert_eq!(centered_rng.next_u64(), crt_rng.next_u64());
 
     let mut decrypted = Polynomial::<Vec<ValueT>>::zero(POLY_LENGTH);
-    secret_key_context.decrypt_inplace(
+    secret_key_context.decrypt_to(
         &ciphertext.as_view(),
         &mut decrypted.as_mut_view(),
         &mut decrypt_workspace,
     );
     assert_eq!(decrypted.as_ref(), message.as_ref());
 
-    secret_key_context.encrypt_zeros_inplace(&mut ciphertext, &mut rng);
+    secret_key_context.encrypt_zeros_to(&mut ciphertext, &mut rng);
 
     let decrypted = secret_key_context.decrypt(&ciphertext, &mut decrypt_workspace);
     assert_eq!(decrypted.as_ref(), vec![0; POLY_LENGTH]);
@@ -243,7 +235,7 @@ fn dcrt_polynomial_product_preserves_bfv_scaling() {
     let mut output: DcrtGlwe<Vec<ValueT>> = DcrtGlweCiphertext::zero(rns_glwe_len);
 
     let secret_key_context = secret_key.try_bind(&params, &table).unwrap();
-    secret_key_context.encrypt_plaintext_inplace(&message, &mut input, &mut rng);
+    secret_key_context.encrypt_to(&message, &mut input, &mut rng);
     input.mul_dcrt_polynomial_to(&lifted_multiplier, &mut output, POLY_LENGTH, &moduli);
 
     let mut expected: Polynomial<Vec<ValueT>> = Polynomial::zero(POLY_LENGTH);

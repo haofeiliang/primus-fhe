@@ -86,7 +86,7 @@ fn bench_key_switching(c: &mut Criterion) {
         let input: Polynomial<Vec<Value>> = Polynomial::random(poly_length.get(), mod_t, &mut rng);
         let mut input_ciphertext: DcrtGlwe<Vec<Value>> = DcrtGlweCiphertext::zero(rns_glwe_len);
         let input_dcrt_sk_context = input_dcrt_sk.try_bind(&glwe_params, &q_table).unwrap();
-        input_dcrt_sk_context.encrypt_plaintext_inplace(&input, &mut input_ciphertext, &mut rng);
+        input_dcrt_sk_context.encrypt_to(&input, &mut input_ciphertext, &mut rng);
         let input_coeff = input_ciphertext.clone().into_coeff_form(&q_table);
 
         let mut crt_output: DcrtGlwe<Vec<Value>> = DcrtGlweCiphertext::zero(rns_glwe_len);

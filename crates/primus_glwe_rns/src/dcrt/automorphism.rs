@@ -189,7 +189,7 @@ where
         .for_each(|(si, mut dcrt_glev)| {
             dcrt_poly_ntt_auto_to(si.0, auto_si.as_mut(), ntt_auto_helper);
 
-            encryptor.encrypt_dcrt_msg_to_dcrt_glev_inplace(&auto_si, &mut dcrt_glev, rng);
+            encryptor.encrypt_dcrt_to(&auto_si, &mut dcrt_glev, rng);
         });
 
     key

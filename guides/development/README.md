@@ -146,6 +146,8 @@ For high-precision functions over encrypted chunks, use [primus_tfhe_ntru_lut](.
 
 For RNS GLWE, ordinary secret/public keys use `try_bind(parameters, table)` and gadget encryption uses `try_bind_gadget(domain)`. These contexts borrow checked resources. Classic and hybrid key-switch evaluators borrow a key/domain and own workspace, checking ordered bases and decomposition/partition compatibility once before online calls. See the [RNS GLWE workflow](../../crates/primus_glwe_rns/README.md#evaluation-resources).
 
+GLWE parameters separate [shared modulus/sampling state](../../crates/primus_glwe/src/parameter/core.rs), [ordinary layout/encoding](../../crates/primus_glwe/src/parameter/ordinary.rs), [gadget basis](../../crates/primus_glwe/src/parameter/gadget.rs) and [key-switch layouts](../../crates/primus_glwe/src/parameter/key_switch.rs). [RNS parameters](../../crates/primus_glwe_rns/src/parameter/mod.rs) use the same roles while retaining RNS-specific contracts. The [DCRT secret modules](../../crates/primus_glwe_rns/src/secret_key/dcrt/mod.rs) separate ownership/binding, signed conversion, ordinary encryption, gadget encryption, decryption and erasing scratch. Private numerical helpers live with their bound operation; public types remain exported at the crate root.
+
 ## Preserve error roles and causes
 
 Define error types around public operations and their contracts. Retain distinct causes that help callers diagnose or handle a failure; split or merge types only when real consumers benefit. Share identical lower-level checks while preserving each scheme's geometry and representation requirements.

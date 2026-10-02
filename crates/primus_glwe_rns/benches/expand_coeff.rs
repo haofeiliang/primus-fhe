@@ -78,7 +78,7 @@ fn bench_expand_coeff(c: &mut Criterion) {
 
         base_q.wrapping_decompose_small_polynomial_to(&input, &mut msg, t);
         let dcrt_sk_context = dcrt_sk.try_bind(&glwe_params, table_ref).unwrap();
-        dcrt_sk_context.encrypt_inplace(&msg, &mut c_ntt, &mut rng);
+        dcrt_sk_context.encrypt_crt_to(&msg, &mut c_ntt, &mut rng);
 
         let c_coeff: CrtGlwe<Vec<V>> = {
             let tmp = DcrtGlweCiphertext::new(c_ntt.as_ref().to_vec());
@@ -101,7 +101,7 @@ fn bench_expand_coeff(c: &mut Criterion) {
         // ---- Single-threaded ----
         group.bench_function(BenchmarkId::new("CRT/single", &n_label), |b| {
             b.iter(|| {
-                crt_expand_key.expand_coefficients_inplace(
+                crt_expand_key.expand_coefficients_to(
                     black_box(&c_coeff),
                     black_box(&mut crt_result),
                     &domain,
@@ -112,7 +112,7 @@ fn bench_expand_coeff(c: &mut Criterion) {
 
         group.bench_function(BenchmarkId::new("DCRT/single", &n_label), |b| {
             b.iter(|| {
-                dcrt_expand_key.expand_coefficients_inplace(
+                dcrt_expand_key.expand_coefficients_to(
                     black_box(&c_ntt),
                     black_box(&mut dcrt_result),
                     &domain,
@@ -124,7 +124,7 @@ fn bench_expand_coeff(c: &mut Criterion) {
         // ---- Multi-threaded ----
         group.bench_function(BenchmarkId::new("CRT/parallel", &n_label), |b| {
             b.iter(|| {
-                crt_expand_key.expand_coefficients_inplace_parallel(
+                crt_expand_key.expand_coefficients_parallel_to(
                     black_box(&c_coeff),
                     black_box(&mut crt_result),
                     &domain,
@@ -135,7 +135,7 @@ fn bench_expand_coeff(c: &mut Criterion) {
 
         group.bench_function(BenchmarkId::new("DCRT/parallel", &n_label), |b| {
             b.iter(|| {
-                dcrt_expand_key.expand_coefficients_inplace_parallel(
+                dcrt_expand_key.expand_coefficients_parallel_to(
                     black_box(&c_ntt),
                     black_box(&mut dcrt_result),
                     &domain,

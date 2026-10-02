@@ -85,7 +85,7 @@ impl<T: FheUint> DcrtGlweKeySwitchingKey<T> {
                     secret_mod_q.as_mut(),
                     input_params.cipher_moduli_value(),
                 );
-                encryptor.encrypt_crt_msg_to_dcrt_glev_inplace(&secret_mod_q, &mut dcrt_glev, rng);
+                encryptor.encrypt_crt_to(&secret_mod_q, &mut dcrt_glev, rng);
             });
 
         Self {

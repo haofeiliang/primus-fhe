@@ -65,7 +65,7 @@ fn main() {
     let mut input: DcrtGlwe<Vec<Value>> = DcrtGlweCiphertext::zero(glwe_parameters.rns_glwe_len());
     let mut output: DcrtGlwe<Vec<Value>> = DcrtGlweCiphertext::zero(glwe_parameters.rns_glwe_len());
     let input_dcrt_key_context = input_dcrt_key.try_bind(&glwe_parameters, &q_table).unwrap();
-    input_dcrt_key_context.encrypt_plaintext_inplace(&plaintext, &mut input, &mut rng);
+    input_dcrt_key_context.encrypt_to(&plaintext, &mut input, &mut rng);
 
     // Server: bind the evaluation key and domain once, allocating its reusable scratch.
     let mut key_switch_evaluator = HybridRnsGlweKeySwitchEvaluator::new(&switching_key, &domain);

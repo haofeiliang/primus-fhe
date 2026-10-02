@@ -92,7 +92,7 @@ fn test_crt_glwe_auto() {
     let mut decrypt_workspace = DcrtGlweDecryptWorkspace::new(glwe_params.size());
 
     let dcrt_sk_context = dcrt_sk.try_bind(&glwe_params, &table).unwrap();
-    dcrt_sk_context.encrypt_plaintext_inplace(&input1, &mut c1, &mut rng);
+    dcrt_sk_context.encrypt_to(&input1, &mut c1, &mut rng);
 
     let c1 = c1.into_coeff_form(&table);
 
@@ -167,7 +167,7 @@ fn test_dcrt_glwe_auto() {
     let mut decrypt_workspace = DcrtGlweDecryptWorkspace::new(glwe_params.size());
 
     let dcrt_sk_context = dcrt_sk.try_bind(&glwe_params, &table).unwrap();
-    dcrt_sk_context.encrypt_plaintext_inplace(&input1, &mut c1, &mut rng);
+    dcrt_sk_context.encrypt_to(&input1, &mut c1, &mut rng);
 
     auto_key.automorphism_to(
         &c1.as_view(),

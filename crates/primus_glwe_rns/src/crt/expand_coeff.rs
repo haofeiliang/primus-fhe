@@ -69,7 +69,7 @@ impl<T: FheUint> CrtGlweExpandCoeffKey<T> {
     ///
     /// Expands all `poly_length` coefficients.
     /// (Alg. 1)<https://eprint.iacr.org/2024/266.pdf>
-    pub fn expand_coefficients_inplace<M, Table, A, B>(
+    pub fn expand_coefficients_to<M, Table, A, B>(
         &self,
         ciphertext: &CrtGlweCiphertext<A>,
         result: &mut [CrtGlweCiphertext<B>],
@@ -82,13 +82,13 @@ impl<T: FheUint> CrtGlweExpandCoeffKey<T> {
         B: DataMut<Elem = T>,
     {
         assert_eq!(result.len(), domain.parameters().poly_length().get());
-        self.expand_partial_coefficients_inplace(ciphertext, result, domain, workspace)
+        self.expand_partial_coefficients_to(ciphertext, result, domain, workspace)
     }
 
     /// Coefficient Expansion Algorithm.
     ///
     /// (Alg. 1)<https://eprint.iacr.org/2024/266.pdf>
-    pub fn expand_partial_coefficients_inplace<M, Table, A, B>(
+    pub fn expand_partial_coefficients_to<M, Table, A, B>(
         &self,
         ciphertext: &CrtGlweCiphertext<A>,
         result: &mut [CrtGlweCiphertext<B>],
@@ -141,7 +141,7 @@ impl<T: FheUint> CrtGlweExpandCoeffKey<T> {
     ///
     /// Expands all `poly_length` coefficients using rayon parallelism.
     /// (Alg. 1)<https://eprint.iacr.org/2024/266.pdf>
-    pub fn expand_coefficients_inplace_parallel<M, Table, A, B>(
+    pub fn expand_coefficients_parallel_to<M, Table, A, B>(
         &self,
         ciphertext: &CrtGlweCiphertext<A>,
         result: &mut [CrtGlweCiphertext<B>],
@@ -154,18 +154,13 @@ impl<T: FheUint> CrtGlweExpandCoeffKey<T> {
         Table: NttTable<ValueT = T>,
     {
         assert_eq!(result.len(), domain.parameters().poly_length().get());
-        self.expand_partial_coefficients_inplace_parallel(
-            ciphertext,
-            result,
-            domain,
-            workspace_pool,
-        )
+        self.expand_partial_coefficients_parallel_to(ciphertext, result, domain, workspace_pool)
     }
 
     /// Parallel Coefficient Expansion Algorithm.
     ///
     /// (Alg. 1)<https://eprint.iacr.org/2024/266.pdf>
-    pub fn expand_partial_coefficients_inplace_parallel<M, Table, A, B>(
+    pub fn expand_partial_coefficients_parallel_to<M, Table, A, B>(
         &self,
         ciphertext: &CrtGlweCiphertext<A>,
         result: &mut [CrtGlweCiphertext<B>],
@@ -202,7 +197,7 @@ impl<T: FheUint> CrtGlweExpandCoeffKey<T> {
             x.par_iter_mut().zip(y.par_iter_mut()).for_each_init(
                 || workspace_pool.acquire_guard(),
                 |guard, (a_0, b_0)| {
-                    let (crt_glwe, auto_workspace) = guard.as_mut();
+                    let (crt_glwe, auto_workspace) = guard.workspace_mut().as_mut();
                     Self::expand_pair_kernel(
                         a_0.as_mut_view(),
                         b_0.as_mut_view(),

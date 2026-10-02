@@ -75,7 +75,7 @@ fn test_crt_glwe_trace() {
     let mut decrypt_workspace = DcrtGlweDecryptWorkspace::new(glwe_params.size());
 
     let dcrt_sk_context = dcrt_sk.try_bind(&glwe_params, &table).unwrap();
-    dcrt_sk_context.encrypt_plaintext_inplace(&input1, &mut c1, &mut rng);
+    dcrt_sk_context.encrypt_to(&input1, &mut c1, &mut rng);
 
     let mut c1 = c1.into_coeff_form(&table);
 
@@ -186,7 +186,7 @@ fn test_dcrt_glwe_trace() {
     let mut decrypt_workspace = DcrtGlweDecryptWorkspace::new(glwe_params.size());
 
     let dcrt_sk_context = dcrt_sk.try_bind(&glwe_params, &table).unwrap();
-    dcrt_sk_context.encrypt_plaintext_inplace(&input1, &mut c1, &mut rng);
+    dcrt_sk_context.encrypt_to(&input1, &mut c1, &mut rng);
 
     trace_key.trace_inplace(
         &c1.as_view(),
@@ -281,7 +281,7 @@ fn test_dcrt_glwe_rev_trace() {
     let mut decrypt_workspace = DcrtGlweDecryptWorkspace::new(glwe_params.size());
 
     let dcrt_sk_context = dcrt_sk.try_bind(&glwe_params, &table).unwrap();
-    dcrt_sk_context.encrypt_plaintext_inplace(&input1, &mut c1, &mut rng);
+    dcrt_sk_context.encrypt_to(&input1, &mut c1, &mut rng);
 
     rev_trace_key.trace_inplace(
         &c1.as_view(),

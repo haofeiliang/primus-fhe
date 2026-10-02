@@ -8,6 +8,7 @@ mod key_switch;
 mod parameter;
 mod public_key;
 mod secret_key;
+mod workspace_pool;
 
 /// Coefficient-domain GLWE ciphertext over an ordered RNS basis.
 pub type CrtGlweCiphertext<T> = primus_lattice::glwe::CrtGlwe<T>;

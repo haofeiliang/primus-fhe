@@ -63,6 +63,8 @@ For coefficient ciphertexts, `NttGlweSecretKey` provides `encrypt_coeff_to`, `ph
 
 Use `GlevParameters::try_with_basis(&glwe_params, basis)` to reuse an existing decomposition basis. It takes ownership without rebuilding the basis and checks the modulus and gadget layout. `try_with_glwe_params` constructs a basis from its logarithm and level count instead; both return `GlevParameterError`.
 
+Derived gadget parameters and parameter clones share immutable modulus/sampling precomputation with the source GLWE parameters. `inner()` continues to return a borrowed `GlweParametersInner`; layouts, plaintext encoding and gadget bases retain their separate ownership.
+
 `encrypt_ggsw_constant_batch_to` encrypts a slice of ring constants into consecutive GGSWs, with one batch validation and no temporary allocation. NTT takes canonical residues, prepares each constant level by direct broadcast, and writes `input.len() * params.ggsw_len()` values; Fourier takes native-ring values and writes `input.len() * params.fourier_ggsw_len()` complex values. Fourier preserves native-ring scaling followed by the FFT for each level; adjacent equal constants reuse those transforms within the batch. Preparation time therefore depends on the input sequence. Empty batches still validate shared resources and consume no randomness.
 
 `NttGlweSecretKey::encrypt_ggsw_constant_batch_coeff_to` writes coefficient GGSWs directly. It preserves the exact ciphertext and RNG consumption of NTT encryption followed by inverse transforms, while avoiding a forward NTT of each sampled body. Only the gadget workspace's polynomial length must match; its level count is unused. Output has `input.len() * params.ggsw_len()` values.

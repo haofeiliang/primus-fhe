@@ -6,8 +6,6 @@ use primus_integer::FheUint;
 use primus_modulus::UintModulus;
 use primus_reduce::EncodeSigned;
 
-use crate::GlweSecretKey;
-
 pub use dcrt::{
     DcrtGlevEncryptor, DcrtGlweDecryptWorkspace, DcrtGlweSecretKey, DcrtGlweSecretKeyContext,
 };

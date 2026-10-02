@@ -165,7 +165,7 @@ fn test_rns_glwe_ksk() {
     let mut decrypt_workspace = DcrtGlweDecryptWorkspace::new(glwe_params.size());
 
     let dcrt_sk_1_context = dcrt_sk_1.try_bind(&glwe_params, &table).unwrap();
-    dcrt_sk_1_context.encrypt_plaintext_inplace(&input, &mut c1, &mut rng);
+    dcrt_sk_1_context.encrypt_to(&input, &mut c1, &mut rng);
 
     // Requires conversion to coefficient domain first.
     let c1 = c1.into_coeff_form(&table);
@@ -252,7 +252,7 @@ fn test_rns_glwe_ksk_hybrid() {
     let mut decrypt_workspace = DcrtGlweDecryptWorkspace::new(glwe_params.size());
 
     let dcrt_sk_1_context = dcrt_sk_1.try_bind(&glwe_params, &q_table).unwrap();
-    dcrt_sk_1_context.encrypt_plaintext_inplace(&input, &mut c1, &mut rng);
+    dcrt_sk_1_context.encrypt_to(&input, &mut c1, &mut rng);
 
     let mut hybrid_evaluator =
         HybridRnsGlweKeySwitchEvaluator::new(&key_switching_key, &hybrid_domain);
