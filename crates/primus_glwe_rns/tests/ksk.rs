@@ -68,7 +68,8 @@ fn hybrid_generation_rejects_input_secret_layout_before_sampling() {
 
 #[test]
 fn hybrid_noise_support_must_fit_auxiliary_moduli() {
-    let q = [769u64].map(BarrettModulus::new);
+    // Q accommodates fresh plaintext recovery; P isolates the support boundary.
+    let q = [3329u64].map(BarrettModulus::new);
     let p = [257u64].map(BarrettModulus::new);
     let qp = [q[0], p[0]];
     let table = UintDcrtTable::new(PolyLength::new(32), &qp).unwrap();

@@ -31,6 +31,10 @@ TFHE 普通 LUT 的输出 `RoundedCodec` 使用 accumulator 模数，明文模�
 
 `BfvRnsCodec` 使用有序密文模数的乘积 `Q`。除 rustdoc 中记录的模数范围与 互素条件外，构造器检查保守的恢复充分条件：`Q > 4*(Q % t)*(t-1)` 和 `gamma > 4*k`，其中 `k` 为模数数量。对于相位 `delta*m+e`，解码的充分条件为 `abs(t*e-(Q % t)*m)/Q + k/gamma < 1/2`。 当密文基包含多个模数时，目标模数 `t` 和 `gamma` 的实现还必须满足 `BaseConverter::fast_convert` 文档中的额外点积输入要求；`FieldContext` 本身 不保证这一点。
 
+`BfvRnsCodec::try_new` 在模数或恢复条件无效时返回 `BfvRnsCodecError<T>`；`new` 委托它构造，失败时 panic。传入的 `RNSBase` 已验证密文基非空且两两互素。这些检查在构造时完成，不建立加密的噪声或安全预算。
+
+给定完整相位噪声幅度上界 `E`，在准备参数时调用一次 `validate_noise_bound(E, embedding)`。它用精确多 limb 整数运算检查 `(t*E + (Q % t)*A)/Q + k/gamma < 1/2`，其中 unsigned 的 `A=t-1`，centered 的 `A=floor(t/2)`。失败返回 `InsufficientNoiseRecovery`；这是充分条件，可能拒绝实际仍能解码的情形。调用方须在 `E` 中计入加密与求值的全部噪声贡献。
+
 RNS 编码输出系数域 `CrtPolynomial`，调用方单独执行 NTT 转换。 `decode_coeffs_to` 会覆盖系数域输入，并要求工作区恰好包含 `decode_scratch_len(output.len())` 个元素。单模数基不需要工作区，其他基需要 一个 RNS 多项式大小的工作区。该编码器是 BFV 的组成部分， 并非完整 BFV 方案。
 
 单模数切片方法使用 `_to` 表示独立输出，`_assign` 表示原地更新。RNS 使用 `encode_coeffs_to`、`add_encode_coeffs_assign` 和 `decode_coeffs_to`，从明文 切片推导多项式长度。批量编码在写入前检查消息范围和精确长度。 编码输入与解码输出统一使用系数类型 `T`，值为 `[0,t)` 内的规范剩余类。标量输入为 `T`，切片为 `[T]`；整数类型或语义消息类型的转换由应用在边界处理。

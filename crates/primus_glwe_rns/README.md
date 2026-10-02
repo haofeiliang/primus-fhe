@@ -10,7 +10,7 @@ GLWE encryption and evaluation over an ordered RNS basis, with CRT coefficient a
 ## Recommended workflow
 
 1. Choose ordered, pairwise-coprime NTT primes and construct one `DcrtTable`. Each prime must satisfy the [NTT constraints](../primus_ntt/README.md#construction-constraints).
-2. Construct `CrtGlweParameters` with dimension k, polynomial length N, plaintext modulus t, auxiliary decoding modulus gamma, ordered ciphertext moduli, secret distribution and noise. Its [`BfvRnsCodec`](../primus_encoding/README.md#encoding-contracts) supplies scaling and recovery checks.
+2. Construct `CrtGlweParameters` with dimension k, polynomial length N, plaintext modulus t, auxiliary decoding modulus gamma, ordered ciphertext moduli, secret distribution and noise. Use `try_new` to handle invalid parameters or `new` for known valid configurations. Its [`BfvRnsCodec`](../primus_encoding/README.md#encoding-contracts) supplies scaling and recovery checks.
 3. Generate a signed coefficient `GlweSecretKey` and convert it with `DcrtGlweSecretKey::from_coeff_secret_key`. Keep that table and modulus order for subsequent operations.
 4. Allocate ciphertexts through parameter length accessors. Reuse encryption output and `DcrtGlweDecryptWorkspace`; `decrypt_inplace` also reuses caller plaintext output.
 
@@ -54,6 +54,10 @@ For m moduli, ordinary storage contains `(k+1)*m*N` elements in `[component][mod
 ## Evaluation resources
 
 `CrtGlweParameters` takes `GlweDimension`, and gadget construction takes `DecompositionBaseLog` and `Option<DecompositionLevelCount>`. Parameter accessors return these checked units; use `.get()` at raw storage or numerical boundaries.
+
+`CrtGlweParameters::try_new` reports layout, RNS base, encoding, secret sampling and noise errors through `CrtGlweParametersError<T>`, preserving their causes. Fixed secret weights apply to the complete kN signed key, before replication across RNS moduli. Secret and noise support must fit below every ciphertext modulus. Ordinary and gadget parameters share prepared sampling state; ordinary parameters retain the BFV codec/scaling, while gadget parameters own the decomposition basis and cached weights.
+
+Construction also passes the noise sampler's maximum magnitude to `BfvRnsCodec::validate_noise_bound` with unsigned lifting, covering both plaintext embeddings for fresh private-key encryption. An insufficient margin returns `CrtGlweParametersError::Encoding`. Public-key encryption and homomorphic evaluation require bounds on their complete phase noise; parameter construction does not cover those additional contributions.
 
 `CrtGlevParameters::try_with_glwe_params` prepares gadget decomposition over the product Q and checks the composed gadget lengths before allocation. `CrtGlevParametersError::Layout` reports length overflow. `DcrtGadgetDomain::try_new` binds parameters and a table, checking polynomial length and ordered moduli. Ordinary DCRT key switching uses this domain. Hybrid switching instead binds the complete Q/P basis with `HybridRnsKeySwitchDomain::try_new`; partitioning and ModUp/ModDown contracts live in [`primus_rns`](../primus_rns/README.md#hybrid-rns).
 

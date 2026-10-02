@@ -1,8 +1,8 @@
 use primus_decompose::ApproxSignedBasisError;
 use primus_decompose::{DecompositionBaseLog, DecompositionLevelCount};
 use primus_glwe_rns::{
-    CrtGlevParameters, CrtGlevParametersError, CrtGlweParameters, DcrtGadgetDomain,
-    GadgetDomainError, SecretKeyDistr,
+    CrtGlevParameters, CrtGlevParametersError, CrtGlweParameters, CrtGlweParametersError,
+    DcrtGadgetDomain, GadgetDomainError, SecretKeyDistr,
 };
 use primus_lattice::{GlweDimension, GlweSizeError};
 use primus_modulus::BarrettModulus;
@@ -20,18 +20,22 @@ fn noise_support_must_fit_every_rns_modulus() {
                 .maximum_magnitude(),
             magnitude
         );
-        let result = std::panic::catch_unwind(|| {
-            CrtGlweParameters::new(
-                GlweDimension::new(1),
-                32,
-                BarrettModulus::new(3),
-                BarrettModulus::new(101),
-                &moduli,
-                SecretKeyDistr::UniformBinary,
-                sigma,
-            )
-        });
-        assert_eq!(result.is_ok(), valid);
+        let result = CrtGlweParameters::try_new(
+            GlweDimension::new(1),
+            32,
+            BarrettModulus::new(3),
+            BarrettModulus::new(101),
+            &moduli,
+            SecretKeyDistr::UniformBinary,
+            sigma,
+        );
+        if valid {
+            assert!(result.is_ok());
+        } else {
+            assert!(matches!(result, Err(CrtGlweParametersError::Noise(
+                primus_distr::GaussianError::ModulusTooSmall { maximum_magnitude, modulus_minus_one: 16 }
+            )) if maximum_magnitude == magnitude));
+        }
     }
 }
 
@@ -39,19 +43,181 @@ fn noise_support_must_fit_every_rns_modulus() {
 fn secret_support_must_fit_every_rns_modulus() {
     let moduli = [97u64, 17].map(BarrettModulus::new);
     for (sigma, valid) in [(1.0, true), (1.5, false)] {
-        let result = std::panic::catch_unwind(|| {
-            CrtGlweParameters::new(
-                GlweDimension::new(1),
-                32,
-                BarrettModulus::new(3),
-                BarrettModulus::new(101),
-                &moduli,
-                SecretKeyDistr::gaussian(sigma),
-                0.7,
-            )
-        });
-        assert_eq!(result.is_ok(), valid);
+        let result = CrtGlweParameters::try_new(
+            GlweDimension::new(1),
+            32,
+            BarrettModulus::new(3),
+            BarrettModulus::new(101),
+            &moduli,
+            SecretKeyDistr::gaussian(sigma),
+            0.7,
+        );
+        if valid {
+            assert!(result.is_ok());
+        } else {
+            assert!(matches!(
+                result,
+                Err(CrtGlweParametersError::SecretKey(
+                    primus_distr::SecretKeySamplerError::ModulusTooSmall {
+                        modulus_minus_one: 16,
+                        ..
+                    }
+                ))
+            ));
+        }
     }
+}
+
+// Every noise support fits q=97; only the joint BFV recovery margin varies.
+#[test]
+fn fresh_private_key_recovery_uses_complete_noise_support() {
+    use primus_encoding::{BfvRnsCodecError, PlaintextEmbedding};
+    let moduli = [97u32].map(BarrettModulus::new);
+    for (gamma, sigma, magnitude, valid) in [
+        (13, 1.0, 12, true),
+        (13, 1.25, 15, false),
+        (101, 1.25, 15, true),
+        (101, 1.375, 16, false),
+    ] {
+        assert_eq!(
+            primus_distr::SignedDiscreteGaussian::<i32>::new(sigma)
+                .unwrap()
+                .maximum_magnitude(),
+            u64::from(magnitude)
+        );
+        let result = CrtGlweParameters::try_new(
+            GlweDimension::new(1),
+            32,
+            BarrettModulus::new(3),
+            BarrettModulus::new(gamma),
+            &moduli,
+            SecretKeyDistr::UniformBinary,
+            sigma,
+        );
+        if valid {
+            assert!(result.is_ok());
+        } else {
+            assert!(matches!(
+                result,
+                Err(CrtGlweParametersError::Encoding(
+                    BfvRnsCodecError::InsufficientNoiseRecovery {
+                        maximum_noise_magnitude,
+                        embedding: PlaintextEmbedding::Unsigned,
+                    }
+                )) if maximum_noise_magnitude == magnitude
+            ));
+        }
+    }
+}
+
+// The logical key has kN=64 coefficients, despite 128 stored RNS residues.
+#[test]
+fn fixed_secret_weights_are_checked_against_the_complete_logical_key() {
+    let moduli = [97u32, 17].map(BarrettModulus::new);
+    for (distribution, valid) in [
+        (
+            SecretKeyDistr::FixedHammingWeightBinary { hamming_weight: 64 },
+            true,
+        ),
+        (
+            SecretKeyDistr::FixedHammingWeightBinary { hamming_weight: 65 },
+            false,
+        ),
+        (
+            SecretKeyDistr::FixedHammingWeightTernary { hamming_weight: 64 },
+            true,
+        ),
+        (
+            SecretKeyDistr::FixedHammingWeightTernary { hamming_weight: 65 },
+            false,
+        ),
+        (
+            SecretKeyDistr::FixedCompositionTernary {
+                negative_one_weight: 32,
+                one_weight: 32,
+            },
+            true,
+        ),
+        (
+            SecretKeyDistr::FixedCompositionTernary {
+                negative_one_weight: 33,
+                one_weight: 32,
+            },
+            false,
+        ),
+        (
+            SecretKeyDistr::FixedCompositionTernary {
+                negative_one_weight: usize::MAX,
+                one_weight: 1,
+            },
+            false,
+        ),
+    ] {
+        let result = CrtGlweParameters::try_new(
+            GlweDimension::new(2),
+            32,
+            BarrettModulus::new(3),
+            BarrettModulus::new(101),
+            &moduli,
+            distribution,
+            1.0,
+        );
+        if valid {
+            assert!(result.is_ok());
+        } else {
+            assert!(matches!(
+                result,
+                Err(CrtGlweParametersError::SecretKey(
+                    primus_distr::SecretKeySamplerError::InvalidWeight { length: 64 }
+                ))
+            ));
+        }
+    }
+}
+
+// Geometry, RNS construction and BFV preparation retain their own error roles.
+// Secret/noise sources are covered by the two support-bound tests above.
+#[test]
+fn ordinary_parameters_report_layout_base_and_encoding_errors() {
+    use primus_encoding::BfvRnsCodecError;
+    use primus_rns::RnsError;
+    let moduli = [97u64, 17].map(BarrettModulus::new);
+    let construct = |n, gamma, moduli: &[BarrettModulus<u64>]| {
+        CrtGlweParameters::try_new(
+            GlweDimension::new(1),
+            n,
+            BarrettModulus::new(3),
+            BarrettModulus::new(gamma),
+            moduli,
+            SecretKeyDistr::UniformBinary,
+            1.0,
+        )
+    };
+    for n in [16, 33] {
+        assert!(matches!(
+            construct(n, 101, &moduli),
+            Err(CrtGlweParametersError::Layout(
+                GlweSizeError::InvalidPolynomialLength
+            ))
+        ));
+    }
+    assert!(matches!(
+        construct(32, 101, &[]),
+        Err(CrtGlweParametersError::RnsBase(RnsError::EmptyBase))
+    ));
+    assert!(matches!(
+        construct(32, 101, &[moduli[0]; 2]),
+        Err(CrtGlweParametersError::RnsBase(RnsError::NonCoprimeModuli))
+    ));
+    assert!(matches!(
+        construct(32, 7, &moduli),
+        Err(CrtGlweParametersError::Encoding(
+            BfvRnsCodecError::AuxiliaryModulusTooSmall {
+                gamma: 7,
+                lower_bound: 8
+            }
+        ))
+    ));
 }
 
 #[test]

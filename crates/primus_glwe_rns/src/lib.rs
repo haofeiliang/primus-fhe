@@ -31,7 +31,7 @@ pub use key_switch::{
 };
 pub use parameter::{
     CrtGgswParameters, CrtGlevParameters, CrtGlevParametersError, CrtGlweParameters,
-    DcrtGadgetDomain, GadgetDomainError, HybridRnsKeySwitchDomain,
+    CrtGlweParametersError, DcrtGadgetDomain, GadgetDomainError, HybridRnsKeySwitchDomain,
 };
 pub use primus_encoding::BfvRnsCodec;
 pub use primus_glwe::{GlweSecretKey, SecretKeyDistr};

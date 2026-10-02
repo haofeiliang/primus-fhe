@@ -31,11 +31,11 @@
 
 Raw 多项式/密文构造器不建立模数、秘密身份、表示或完整布局。`Polynomial<S>` 不另存环长度：包装 `batch_count*N` 个元素，不会自动把单多项式运算变成批量运算。只有接口契约明确接受批次时才直接传入；否则先迭代出完整对象。
 
-Raw 系数、NTT、Fourier 和 CRT/DCRT 多项式的 `len()` / `is_empty()` 统计其存储元素。这些计数与 checked table/size 的 `poly_length()`（`N`）、Fourier 表的 `fourier_length()`（`N/2`）以及 DCRT 表的 `rns_poly_len()`（`moduli_count*N`）不同。DCRT 变换要求非空模数列表，并在写入前拒绝错误总长度；raw wrapper 自身仍允许空和 packed 存储。
+Raw 系数、NTT、Fourier 和 CRT/DCRT 多项式的 `len()` / `is_empty()` 统计其存储元素。这些计数与 checked table/size 的 `poly_length()`（`N`）、Fourier 表的 `fourier_length()`（`N/2`）以及 DCRT 表的 `rns_poly_len()`（`moduli_count*N`）不同。DCRT 表在构造时拒绝空模数列表。变换调用方须按表的模数顺序提供完整布局；原有 debug 诊断不构成 release 拒绝保证。Raw wrapper 仍允许空和 packed 存储。
 
 [PolyLength](../../crates/primus_poly/src/poly_length.rs) 属于 `primus_poly`，集中检查 FHE 共用的 `32..=2^17` 二次幂范围。`get()`、`log_n()`、`fourier_poly_len()` 分别返回 `N`、`log2(N)` 和 `N/2` 个复数元素。GLWE/NTRU 参数、checked size、工作区、公共 TFHE LUT 和 NTT/FFT 表直接传递同一个类型，不重复检查上界。
 
-该范围保证 `2N` 可由 `usize` 表示；组合存储长度仍由拥有布局的边界检查。FFT 构造直接接受该支持范围；NTT 保留模数、单位根和 degree 的条件。顶层配置仍可接收整数 `N`；raw 缓冲区、批次数量及数值内核使用整数，并保留完整布局检查。
+该范围保证 `2N` 可由 `usize` 表示；组合存储长度仍由拥有布局的边界检查。FFT 构造直接接受该支持范围；NTT 保留模数、单位根和 degree 的条件。顶层配置仍可接收整数 `N`；raw 缓冲区、批次数量及数值内核使用整数，依赖调用方满足布局契约。
 
 lattice 的 `LweDimension` 和 `GlweDimension` 检查正的 mask 计数及可表示的含 body 计数；`ciphertext_len()` 返回 `n+1`，`component_count()` 返回 `k+1`。`GlweSize` 保存 GLWE 几何尺寸和扁平长度，通过 `LweDimension::from(glwe_size)` 显式派生经过验证的 `kN`；NTRU 提取使用 `LweDimension::from(poly_length)`。原始切片保留整数维数，允许零维。
 
@@ -50,7 +50,7 @@ GLWE 布局优先使用已有的 [size 类型](../../crates/primus_lattice/src/s
 | `RnsGlweSize` | 带有明确 RNS 模数数量的 GLWE |
 | `RnsGadgetSize` | 该 RNS 布局上的 gadget 层与行 |
 
-这些类型检查组合长度及展平长度溢出，不检查实际存储，也不验证 basis、表或噪声。拥有契约的公开边界须将完整缓冲长度与派生长度比较。NTRU 中一个 Ntru 占 N 个值，一个 Nlev/Ngsw 占 L*N 个值；使用运算参数/basis，并检查批次长度。Nlev 与 Ngsw 虽然布局相同，但加密相位和合法乘积不同。
+这些类型检查组合长度及展平长度溢出，不检查实际存储，也不验证 basis、表或噪声。各资源的布局在拥有它的构造或绑定边界建立；数值内核依赖调用方提供正确的几何尺寸和表示。NTRU 中一个 Ntru 占 N 个值，一个 Nlev/Ngsw 占 L*N 个值；使用运算参数/basis，在准备存储时建立批次长度。Nlev 与 Ngsw 虽然布局相同，但加密相位和合法乘积不同。
 
 ## 遍历数学对象
 

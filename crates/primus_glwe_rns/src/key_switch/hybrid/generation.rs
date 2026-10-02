@@ -7,7 +7,6 @@ use primus_reduce::FieldContext;
 use rand::distr::Uniform;
 
 use super::HybridRnsGlweKeySwitchingKey;
-use crate::secret_key::encode_secret_coefficient;
 use crate::{CrtGlweParameters, DcrtGlweSecretKey, GlweSecretKey, HybridRnsKeySwitchDomain};
 
 impl<T: FheUint> HybridRnsGlweKeySwitchingKey<T> {
@@ -107,12 +106,10 @@ impl<T: FheUint> HybridRnsGlweKeySwitchingKey<T> {
                     .zip(&qp_moduli[q_range])
                     .zip(&p_mod_q[q_range])
                 {
-                    let modulus_value = modulus.value();
                     for (body_coefficient, &secret_coefficient) in
                         body_limb.iter_mut().zip(secret_polynomial)
                     {
-                        let secret_residue =
-                            encode_secret_coefficient::<T>(secret_coefficient, modulus_value);
+                        let secret_residue = modulus.encode_signed(secret_coefficient);
                         *body_coefficient = modulus.reduce_add(
                             *body_coefficient,
                             modulus.reduce_mul(scalar, secret_residue),

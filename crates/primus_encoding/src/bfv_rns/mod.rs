@@ -2,6 +2,9 @@
 
 mod decode;
 mod encode;
+mod error;
+
+pub use error::BfvRnsCodecError;
 
 use primus_factor::{FactorMul, ShoupFactor};
 use primus_integer::{BigUint, DivRemScalar, FheUint, multiply_many_values};
@@ -45,7 +48,7 @@ where
     T: FheUint,
     M: FieldContext<T>,
 {
-    /// Builds a BFV-style RNS codec.
+    /// Creates a new [`BfvRnsCodec<T, M>`].
     ///
     /// Establishes conservative noiseless-recovery bounds:
     /// `Q > 4*(Q % t)*(t-1)` and `gamma > 4*k` for `k` ciphertext moduli.
@@ -54,17 +57,40 @@ where
     ///
     /// # Panics
     ///
-    /// Panics unless `t >= 2`, `t < gamma <= T::MAX/2`, each `t < q_i <= T::MAX/2`,
-    /// `gcd(t,gamma) = 1`, and each `q_i` is coprime with both `t` and `gamma`.
-    /// Also panics if either recovery bound above fails.
+    /// Panics if [`Self::try_new`] rejects the moduli or recovery bounds.
     #[must_use]
     pub fn new(t_modulus: M, base_q: RNSBase<T, M>, gamma_modulus: M) -> Self {
+        Self::try_new(t_modulus, base_q, gamma_modulus)
+            .unwrap_or_else(|error| panic!("failed to construct BFV RNS codec: {error}"))
+    }
+
+    /// Creates a [`BfvRnsCodec<T, M>`] with checked modulus and recovery conditions.
+    ///
+    /// The supplied [`RNSBase`] owns the nonempty, pairwise-coprime ciphertext
+    /// basis. This constructor checks `t >= 2`, `t < gamma <= T::MAX/2`,
+    /// `t < q_i <= T::MAX/2`, and coprimality of `t`, `gamma` and each `q_i`.
+    /// It also checks the sufficient recovery bounds documented by [`Self::new`].
+    ///
+    /// # Correctness
+    ///
+    /// Modular arithmetic inherits the supplied contexts' numerical contracts.
+    /// Multiple ciphertext moduli also require the destination contexts to meet
+    /// [`BaseConverter::fast_convert`]'s dot-product input requirements.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BfvRnsCodecError`] if a modulus or recovery condition is invalid.
+    pub fn try_new(
+        t_modulus: M,
+        base_q: RNSBase<T, M>,
+        gamma_modulus: M,
+    ) -> Result<Self, BfvRnsCodecError<T>> {
         let t = t_modulus.value();
         let gamma = gamma_modulus.value();
 
         let moduli_values: Vec<T> = base_q.moduli().iter().map(|m| m.value()).collect();
 
-        Self::validate_moduli(t, &moduli_values, gamma);
+        Self::validate_moduli(t, &moduli_values, gamma)?;
 
         let cipher_modulus = base_q.moduli_product();
 
@@ -74,17 +100,14 @@ where
         // Bound the unsigned encoding drift by 1/4 of a decoding cell.
         // Combined with k/gamma < 1/4 this guarantees noiseless recovery.
         let mut drift_bound = multiply_many_values(&[(T::TWO + T::TWO), rem, t - T::ONE]);
-        assert!(
-            {
-                let fits = drift_bound
-                    .digits()
-                    .get(cipher_modulus.len()..)
-                    .is_none_or(|high| high.iter().all(|&x| x == T::ZERO));
-                drift_bound.0.resize(cipher_modulus.len(), T::ZERO);
-                fits && cipher_modulus.cmp(&drift_bound).is_gt()
-            },
-            "BFV modulus product too small for the plaintext scaling error"
-        );
+        let fits = drift_bound
+            .digits()
+            .get(cipher_modulus.len()..)
+            .is_none_or(|high| high.iter().all(|&x| x == T::ZERO));
+        drift_bound.0.resize(cipher_modulus.len(), T::ZERO);
+        if !fits || !cipher_modulus.cmp(&drift_bound).is_gt() {
+            return Err(BfvRnsCodecError::InsufficientScaleRecovery);
+        }
 
         let delta_factor_mod_q = base_q.decompose_factors(delta.view());
 
@@ -107,7 +130,7 @@ where
 
         let converter_q_to_t_gamma = BaseConverter::from_owned_bases(base_q.clone(), base_t_gamma);
 
-        Self {
+        Ok(Self {
             t,
             base_q,
             moduli_values,
@@ -119,57 +142,66 @@ where
             decode_factor_mod_t_gamma,
             inv_gamma_mod_t,
             converter_q_to_t_gamma,
-        }
+        })
     }
 
-    fn validate_moduli(plain_modulus_value: T, cipher_moduli_value: &[T], gamma: T) {
+    /// Validates the inverse and Shoup domains before preparing scaling factors.
+    /// The caller passes the nonempty modulus list of an existing RNSBase.
+    fn validate_moduli(
+        plain_modulus_value: T,
+        cipher_moduli_value: &[T],
+        gamma: T,
+    ) -> Result<(), BfvRnsCodecError<T>> {
         let limbs = T::try_from(cipher_moduli_value.len())
             .ok()
             .and_then(|k| k.checked_mul(T::TWO + T::TWO))
-            .expect("RNS modulus count is too large");
-        assert!(
-            !cipher_moduli_value.is_empty(),
-            "RNS basis must not be empty"
-        );
-        assert!(
-            gamma > limbs,
-            "gamma must exceed four times the RNS modulus count"
-        );
-        assert!(
-            plain_modulus_value >= T::TWO,
-            "plain modulus must be at least 2"
-        );
-        assert!(
-            gamma > plain_modulus_value,
-            "gamma modulus must be greater than the plain modulus for HPS decoding"
-        );
-        assert!(
-            plain_modulus_value.is_coprime(gamma),
-            "plain modulus and gamma modulus must be coprime"
-        );
-        assert!(
-            gamma <= T::MAX / T::TWO,
-            "gamma too large for Shoup arithmetic"
-        );
-
-        for &qi in cipher_moduli_value {
-            assert!(
-                qi <= T::MAX / T::TWO,
-                "cipher modulus too large for Shoup arithmetic"
-            );
-            assert!(
-                qi.is_coprime(plain_modulus_value),
-                "cipher moduli must be coprime with the plain modulus"
-            );
-            assert!(
-                qi > plain_modulus_value,
-                "each RNS ciphertext modulus must be greater than the plain modulus for centered coefficient lifting"
-            );
-            assert!(
-                qi.is_coprime(gamma),
-                "cipher moduli must be coprime with the gamma modulus"
-            );
+            .ok_or(BfvRnsCodecError::RnsModulusCountTooLarge {
+                count: cipher_moduli_value.len(),
+            })?;
+        if plain_modulus_value < T::TWO {
+            return Err(BfvRnsCodecError::InvalidPlaintextModulus {
+                modulus: plain_modulus_value,
+            });
         }
+        let lower_bound = limbs.max(plain_modulus_value);
+        if gamma <= lower_bound {
+            return Err(BfvRnsCodecError::AuxiliaryModulusTooSmall { gamma, lower_bound });
+        }
+        let maximum = T::MAX / T::TWO;
+        if gamma > maximum {
+            return Err(BfvRnsCodecError::ModulusTooLarge {
+                modulus: gamma,
+                maximum,
+            });
+        }
+        if !plain_modulus_value.is_coprime(gamma) {
+            return Err(BfvRnsCodecError::NonCoprimeModuli {
+                lhs: plain_modulus_value,
+                rhs: gamma,
+            });
+        }
+
+        for (index, &qi) in cipher_moduli_value.iter().enumerate() {
+            if qi > maximum {
+                return Err(BfvRnsCodecError::ModulusTooLarge {
+                    modulus: qi,
+                    maximum,
+                });
+            }
+            if qi <= plain_modulus_value {
+                return Err(BfvRnsCodecError::CiphertextModulusTooSmall {
+                    modulus: qi,
+                    plain_modulus: plain_modulus_value,
+                    index,
+                });
+            }
+            for rhs in [plain_modulus_value, gamma] {
+                if !qi.is_coprime(rhs) {
+                    return Err(BfvRnsCodecError::NonCoprimeModuli { lhs: qi, rhs });
+                }
+            }
+        }
+        Ok(())
     }
 
     /// Returns the plaintext modulus `t`.

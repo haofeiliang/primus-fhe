@@ -36,7 +36,7 @@ pub enum CodecError {
 #[cfg(feature = "rns")]
 mod bfv_rns;
 #[cfg(feature = "rns")]
-pub use bfv_rns::BfvRnsCodec;
+pub use bfv_rns::{BfvRnsCodec, BfvRnsCodecError};
 
 /// Plaintext embedding used when lifting residues from `Z_t` into the ciphertext modulus.
 /// Both variants accept messages as canonical residues in `[0,t)`.

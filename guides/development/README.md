@@ -31,11 +31,11 @@ When implementing a long algorithm, keep container flexibility at the public bou
 
 Raw polynomial/ciphertext constructors do not establish modulus, key identity, representation or full layout. `Polynomial<S>` does not carry an independent ring length: wrapping `batch_count*N` elements does not automatically turn single-polynomial operations into batch operations. Only pass such storage to an API whose contract explicitly accepts a batch; otherwise iterate over complete objects.
 
-Raw coefficient, NTT, Fourier and CRT/DCRT polynomials expose `len()` / `is_empty()` for their storage elements. Those counts are distinct from a checked table or size's `poly_length()` (`N`), Fourier table `fourier_length()` (`N/2`), and DCRT table `rns_poly_len()` (`moduli_count*N`). DCRT transforms require a nonempty modulus list and reject incorrect total lengths before any write; raw wrappers themselves still allow empty and packed storage.
+Raw coefficient, NTT, Fourier and CRT/DCRT polynomials expose `len()` / `is_empty()` for their storage elements. Those counts are distinct from a checked table or size's `poly_length()` (`N`), Fourier table `fourier_length()` (`N/2`), and DCRT table `rns_poly_len()` (`moduli_count*N`). DCRT table construction rejects empty modulus lists. Transform callers must supply the complete layout in the table's modulus order; existing debug diagnostics do not establish a release rejection guarantee. Raw wrappers still allow empty and packed storage.
 
 [PolyLength](../../crates/primus_poly/src/poly_length.rs) belongs to `primus_poly` and centrally checks the shared FHE power-of-two range `32..=2^17`. `get()`, `log_n()` and `fourier_poly_len()` return `N`, `log2(N)` and `N/2` complex elements. GLWE/NTRU parameters, checked sizes, workspaces, shared TFHE LUTs and NTT/FFT tables pass the same type directly without repeating the upper-bound check.
 
-This range guarantees that `2N` fits in `usize`; combined storage lengths remain checked by the boundary owning the layout. FFT construction directly accepts the supported range; NTT retains its modulus, root and degree conditions. Top-level configuration may still accept integer `N`; raw buffers, batch counts and numerical kernels use integers and retain complete layout checks.
+This range guarantees that `2N` fits in `usize`; combined storage lengths remain checked by the boundary owning the layout. FFT construction directly accepts the supported range; NTT retains its modulus, root and degree conditions. Top-level configuration may still accept integer `N`; raw buffers, batch counts and numerical kernels use integers and rely on their caller layout contracts.
 
 `LweDimension` and `GlweDimension` from lattice check positive mask counts and representable body-inclusive counts; `ciphertext_len()` gives `n+1` and `component_count()` gives `k+1`. `GlweSize` stores GLWE geometry and flattened lengths; `LweDimension::from(glwe_size)` explicitly derives checked `kN`. NTRU extraction uses `LweDimension::from(poly_length)`. Raw slices keep integer dimensions and may have dimension zero.
 
@@ -50,7 +50,7 @@ Use the existing [size descriptors](../../crates/primus_lattice/src/size.rs) for
 | `RnsGlweSize` | GLWE with an explicit RNS modulus count |
 | `RnsGadgetSize` | Gadget levels and rows over that RNS layout |
 
-Descriptors check composed lengths and flattened-length overflow. They do not inspect storage or validate basis, tables or noise. Compare the complete buffer length with the derived length at the owning public boundary. For NTRU, one Ntru occupies N values and one Nlev/Ngsw occupies L*N; use the operation's parameters/basis and checked batch lengths. Nlev and Ngsw have the same flat shape but different encrypted phases and valid products.
+Descriptors check composed lengths and flattened-length overflow. They do not inspect storage or validate basis, tables or noise. Establish each resource's layout at its owning construction or binding boundary; numerical kernels rely on caller geometry and representation. For NTRU, one Ntru occupies N values and one Nlev/Ngsw occupies L*N; use the operation's parameters/basis and establish batch lengths where storage is prepared. Nlev and Ngsw have the same flat shape but different encrypted phases and valid products.
 
 ## Traverse mathematical objects
 

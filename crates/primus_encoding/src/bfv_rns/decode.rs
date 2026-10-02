@@ -1,16 +1,81 @@
 use primus_data::DataMut;
 use primus_factor::FactorMul;
-use primus_integer::FheUint;
+use primus_integer::{BigUint, FheUint, multiply_many_values};
 use primus_poly::{CrtPolynomial, Polynomial};
 use primus_reduce::FieldContext;
 
-use super::BfvRnsCodec;
+use super::{BfvRnsCodec, BfvRnsCodecError};
+use crate::PlaintextEmbedding;
 
 impl<T, M> BfvRnsCodec<T, M>
 where
     T: FheUint,
     M: FieldContext<T>,
 {
+    /// Checks a sufficient recovery bound for all messages with the given embedding.
+    ///
+    /// For phase `c = floor(Q/t)*m + e (mod Q)`, let `E` be
+    /// `maximum_noise_magnitude`, `r = Q % t` and `k = moduli_count()`.
+    /// This checks `(t*E + r*A)/Q + k/gamma < 1/2`, where `A = t-1`
+    /// for unsigned lifting and `A = floor(t/2)` for centered lifting.
+    /// Uses exact integer arithmetic and rejects equality at the boundary.
+    ///
+    /// The bound is conservative: failure does not prove a particular ciphertext
+    /// will fail to decrypt. The caller supplies a bound on the complete phase
+    /// noise, including any public-key or homomorphic-operation contributions.
+    /// This does not inspect a ciphertext or establish a security level.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`BfvRnsCodecError::InsufficientNoiseRecovery`] when the sufficient
+    /// bound is not strictly satisfied.
+    pub fn validate_noise_bound(
+        &self,
+        maximum_noise_magnitude: T,
+        embedding: PlaintextEmbedding,
+    ) -> Result<(), BfvRnsCodecError<T>> {
+        let modulus_product = self.base_q.moduli_product();
+        let remainder = self.t_modulus.reduce(modulus_product.digits());
+        let maximum_lift_magnitude = match embedding {
+            PlaintextEmbedding::Unsigned => self.t - T::ONE,
+            PlaintextEmbedding::Centered => self.t >> 1u32,
+        };
+        // Constructor validation ensures 4*k fits in T and gamma > 4*k.
+        let moduli_count = T::try_from(self.moduli_count())
+            .expect("validated RNS modulus count fits in the coefficient type");
+
+        // Cross-multiply the bound: 2*gamma*(t*E + r*A) < (gamma-2*k)*Q.
+        // All products stay multi-limb, including when E occupies the full word.
+        let mut scaled_noise =
+            multiply_many_values(&[T::TWO, self.gamma, self.t, maximum_noise_magnitude]);
+        let mut scaled_drift =
+            multiply_many_values(&[T::TWO, self.gamma, remainder, maximum_lift_magnitude]);
+        let mut recovery_capacity = BigUint(modulus_product.digits().to_vec());
+        let carry = recovery_capacity.mul_value_assign(self.gamma - T::TWO * moduli_count);
+        recovery_capacity.0.push(carry);
+
+        // BigUint addition/comparison requires matching widths. One extra limb
+        // holds the sum even if both scaled terms fill their individual widths.
+        let limb_count = scaled_noise
+            .len()
+            .max(scaled_drift.len())
+            .max(recovery_capacity.len())
+            + 1;
+        scaled_noise.0.resize(limb_count, T::ZERO);
+        scaled_drift.0.resize(limb_count, T::ZERO);
+        recovery_capacity.0.resize(limb_count, T::ZERO);
+        let carry = scaled_noise.add_assign(&scaled_drift);
+        debug_assert!(!carry);
+        if scaled_noise.cmp(&recovery_capacity).is_lt() {
+            Ok(())
+        } else {
+            Err(BfvRnsCodecError::InsufficientNoiseRecovery {
+                maximum_noise_magnitude,
+                embedding,
+            })
+        }
+    }
+
     /// Exact scratch length for decoding `poly_length` coefficients.
     /// Returns zero for a single-modulus basis, otherwise
     /// `poly_length * moduli_count()` elements.

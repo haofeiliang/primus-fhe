@@ -2,42 +2,26 @@
 
 mod dcrt;
 
-use num_traits::Signed;
-use primus_integer::{FheUint, SignedInteger};
+use primus_integer::FheUint;
+use primus_modulus::UintModulus;
+use primus_reduce::EncodeSigned;
 
 use crate::GlweSecretKey;
 
 pub use dcrt::{DcrtGlweDecryptWorkspace, DcrtGlweSecretKey};
 
-#[inline]
-pub(crate) fn encode_secret_coefficient<T: FheUint>(
-    coefficient: T::SignedInteger,
-    modulus: T,
-) -> T {
-    if coefficient.is_negative() {
-        debug_assert!(coefficient.unsigned_abs() < modulus);
-        modulus.wrapping_add_signed(coefficient)
-    } else {
-        let coefficient = coefficient.cast_to_unsigned();
-        debug_assert!(coefficient < modulus);
-        coefficient
-    }
-}
-
+/// Encodes one signed secret polynomial without scaling or general reduction.
+/// Its supported magnitudes are established by parameter/key construction.
 fn encode_secret_polynomial_to<T: FheUint>(
     coefficients: &[T::SignedInteger],
     output: &mut [T],
     modulus: T,
 ) {
-    assert_eq!(output.len(), coefficients.len());
-    output
-        .iter_mut()
-        .zip(coefficients)
-        .for_each(|(output, &coefficient)| {
-            *output = encode_secret_coefficient::<T>(coefficient, modulus);
-        });
+    UintModulus(modulus).encode_signed_slice_to(coefficients, output);
 }
 
+/// Copies the same signed polynomial into every ordered modulus block.
+/// This keeps modulus-major traversal and delegates each bounded lift to reduce.
 pub(crate) fn encode_secret_polynomial_to_rns<T: FheUint>(
     coefficients: &[T::SignedInteger],
     output: &mut [T],
