@@ -11,7 +11,7 @@ use primus_ntt::UintDcrtTable;
 use primus_poly::{CrtPolynomial, PolyLength, Polynomial};
 use primus_reduce::FieldContext;
 use rand::distr::Uniform;
-use rand::{SeedableRng, rngs::StdRng};
+use rand::{Rng, SeedableRng, rngs::StdRng};
 
 type ValueT = u64;
 
@@ -80,33 +80,54 @@ fn assert_dcrt_glwe_secret_key_enc_dec(secret_key_distr: SecretKeyDistr, plain_m
 
     let mut ciphertext: DcrtGlwe<Vec<ValueT>> = DcrtGlweCiphertext::zero(params.rns_glwe_len());
 
-    secret_key.encrypt_plaintext_inplace(&message, &mut ciphertext, &params, &table, &mut rng);
+    secret_key.encrypt_plaintext_inplace(
+        &message.as_view(),
+        &mut ciphertext.as_mut_view(),
+        &params,
+        &table,
+        &mut rng,
+    );
 
     let decrypted = secret_key.decrypt(&ciphertext, &params, &table, &mut decrypt_workspace);
     assert_eq!(decrypted.as_ref(), message.as_ref());
 
+    // Centered codec injection and explicit CRT lifts must use the same coins
+    // and produce identical ciphertexts through owned and borrowed storage.
+    let centered_seed = rng.next_u64();
+    let mut centered_rng = StdRng::seed_from_u64(centered_seed);
+    let mut crt_rng = StdRng::seed_from_u64(centered_seed);
     secret_key.encrypt_centered_plaintext_inplace(
         &message,
         &mut ciphertext,
         &params,
         &table,
-        &mut rng,
+        &mut centered_rng,
     );
 
     let decrypted = secret_key.decrypt(&ciphertext, &params, &table, &mut decrypt_workspace);
     assert_eq!(decrypted.as_ref(), message.as_ref());
+    let centered_ciphertext = ciphertext.clone();
 
     // Reuse the same ciphertext storage through centered, CRT and zero inputs.
     let decomposed_message = decompose_message(&message, &params);
     secret_key.encrypt_inplace(
-        &decomposed_message,
-        &mut ciphertext,
+        &decomposed_message.as_view(),
+        &mut ciphertext.as_mut_view(),
         &params,
         &table,
-        &mut rng,
+        &mut crt_rng,
     );
+    assert_eq!(ciphertext.as_ref(), centered_ciphertext.as_ref());
+    assert_eq!(centered_rng.next_u64(), crt_rng.next_u64());
 
-    let decrypted = secret_key.decrypt(&ciphertext, &params, &table, &mut decrypt_workspace);
+    let mut decrypted = Polynomial::<Vec<ValueT>>::zero(POLY_LENGTH);
+    secret_key.decrypt_inplace(
+        &ciphertext.as_view(),
+        &mut decrypted.as_mut_view(),
+        &params,
+        &table,
+        &mut decrypt_workspace,
+    );
     assert_eq!(decrypted.as_ref(), message.as_ref());
 
     secret_key.encrypt_zeros_inplace(&mut ciphertext, &params, &table, &mut rng);
@@ -159,7 +180,7 @@ fn public_encrypt_accepts_unscaled_crt_plaintexts() {
                 .collect::<Vec<_>>(),
         );
         let lifted = decompose_message(&message, &params);
-        let ciphertext = public.encrypt(&lifted, &params, &table, &mut rng);
+        let ciphertext = public.encrypt(&lifted.as_view(), &params, &table, &mut rng);
         assert_eq!(
             secret.decrypt(&ciphertext, &params, &table, &mut workspace),
             message

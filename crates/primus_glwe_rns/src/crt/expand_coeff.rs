@@ -7,7 +7,8 @@ use primus_rns::ResidueFactors;
 use rayon::prelude::*;
 
 use crate::{
-    CrtGlweAutoKey, CrtGlweCiphertext, DcrtGadgetDomain, DcrtGlweSecretKey, GlweSecretKey,
+    CrtGlweAutoKey, CrtGlweAutomorphismWorkspace, CrtGlweCiphertext, DcrtGadgetDomain,
+    DcrtGlweSecretKey, GlweSecretKey,
 };
 
 use super::{CrtGlweExpandCoeffSyncPool, CrtGlweExpandCoeffWorkspace};
@@ -103,10 +104,10 @@ impl<T: FheUint> CrtGlweExpandCoeffKey<T> {
         let poly_length = params.poly_length().get();
         let count = result.len();
         assert!(count.is_power_of_two() && count <= poly_length);
+        let ciphertext = ciphertext.as_view();
 
         let log_d = count.trailing_zeros() as usize;
         let rns_poly_len = params.rns_poly_len();
-        let moduli = params.cipher_moduli();
 
         ciphertext.mul_factor_to(
             &self.inv_count_residues_by_level[log_d],
@@ -123,10 +124,15 @@ impl<T: FheUint> CrtGlweExpandCoeffKey<T> {
             let monomial_degree = poly_length * 2 - level_len;
 
             x.iter_mut().zip(y).for_each(|(a_0, b_0)| {
-                auto_key.automorphism_kernel(a_0, crt_glwe, domain, auto_workspace);
-                a_0.sub_to(crt_glwe, b_0, poly_length, rns_poly_len, moduli);
-                b_0.mul_monomial_assign(monomial_degree, poly_length, rns_poly_len, moduli);
-                a_0.add_assign(crt_glwe, poly_length, rns_poly_len, moduli);
+                Self::expand_pair_kernel(
+                    a_0.as_mut_view(),
+                    b_0.as_mut_view(),
+                    auto_key,
+                    monomial_degree,
+                    domain,
+                    crt_glwe.as_mut_view(),
+                    auto_workspace,
+                );
             });
         }
     }
@@ -175,10 +181,10 @@ impl<T: FheUint> CrtGlweExpandCoeffKey<T> {
         let poly_length = params.poly_length().get();
         let count = result.len();
         assert!(count.is_power_of_two() && count <= poly_length);
+        let ciphertext = ciphertext.as_view();
 
         let log_d = count.trailing_zeros() as usize;
         let rns_poly_len = params.rns_poly_len();
-        let moduli = params.cipher_moduli();
 
         ciphertext.mul_factor_to(
             &self.inv_count_residues_by_level[log_d],
@@ -197,12 +203,45 @@ impl<T: FheUint> CrtGlweExpandCoeffKey<T> {
                 || workspace_pool.acquire_guard(),
                 |guard, (a_0, b_0)| {
                     let (crt_glwe, auto_workspace) = guard.as_mut();
-                    auto_key.automorphism_kernel(a_0, crt_glwe, domain, auto_workspace);
-                    a_0.sub_to(crt_glwe, b_0, poly_length, rns_poly_len, moduli);
-                    b_0.mul_monomial_assign(monomial_degree, poly_length, rns_poly_len, moduli);
-                    a_0.add_assign(crt_glwe, poly_length, rns_poly_len, moduli);
+                    Self::expand_pair_kernel(
+                        a_0.as_mut_view(),
+                        b_0.as_mut_view(),
+                        auto_key,
+                        monomial_degree,
+                        domain,
+                        crt_glwe.as_mut_view(),
+                        auto_workspace,
+                    );
                 },
             );
         }
+    }
+
+    /// Splits the original node `c` into `lhs = c + auto(c)` and
+    /// `rhs = X^degree * (c - auto(c))`.
+    /// Serial and parallel traversal borrow each output separately, avoiding an
+    /// allocated collection of views. Operands and scratch must have the complete
+    /// domain layout; `scratch` and the automorphism workspace are overwritten.
+    fn expand_pair_kernel<M, Table>(
+        mut lhs: CrtGlweCiphertext<&mut [T]>,
+        mut rhs: CrtGlweCiphertext<&mut [T]>,
+        auto_key: &CrtGlweAutoKey<T>,
+        monomial_degree: usize,
+        domain: &DcrtGadgetDomain<'_, T, M, Table>,
+        mut scratch: CrtGlweCiphertext<&mut [T]>,
+        auto_workspace: &mut CrtGlweAutomorphismWorkspace<T>,
+    ) where
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+    {
+        let params = domain.parameters();
+        let poly_length = params.poly_length().get();
+        let rns_poly_len = params.rns_poly_len();
+        let moduli = params.cipher_moduli();
+
+        auto_key.automorphism_kernel(lhs.as_view(), scratch.as_mut_view(), domain, auto_workspace);
+        lhs.sub_to(&scratch, &mut rhs, poly_length, rns_poly_len, moduli);
+        rhs.mul_monomial_assign(monomial_degree, poly_length, rns_poly_len, moduli);
+        lhs.add_assign(&scratch, poly_length, rns_poly_len, moduli);
     }
 }

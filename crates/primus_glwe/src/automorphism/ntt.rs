@@ -6,7 +6,7 @@ use primus_decompose::primitive::ApproxSignedBasis;
 use primus_integer::FheUint;
 use primus_lattice::glwe::{Glwe, NttGlwe};
 use primus_ntt::{NttAutomorphismPermutation, NttTable};
-use primus_poly::{CoeffAutomorphismPermutation, NttPolynomial};
+use primus_poly::{CoeffAutomorphismPermutation, NttPolynomial, PolynomialIterMut};
 use primus_reduce::FieldContext;
 
 use crate::{
@@ -189,23 +189,27 @@ impl<T: FheUint> NttGlweAutomorphismKey<T> {
         );
         self.assert_compatible(modulus, ntt, workspace);
 
-        self.apply_kernel_to(input, output, modulus, ntt, workspace);
+        self.apply_kernel_to(
+            input.as_view(),
+            output.as_mut_view(),
+            modulus,
+            ntt,
+            workspace,
+        );
     }
 
     /// Applies the automorphism after the caller has validated the modulus, NTT table,
     /// ciphertext layouts, and workspace.
-    pub(crate) fn apply_kernel_to<M, Table, A, B>(
+    pub(crate) fn apply_kernel_to<M, Table>(
         &self,
-        input: &Glwe<A>,
-        output: &mut Glwe<B>,
+        input: Glwe<&[T]>,
+        mut output: Glwe<&mut [T]>,
         modulus: M,
         ntt: &Table,
         workspace: &mut NttGlweAutomorphismWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: Data<Elem = T>,
-        B: DataMut<Elem = T>,
     {
         let poly_length = self.key_switching.poly_length();
         debug_assert_eq!(
@@ -221,18 +225,17 @@ impl<T: FheUint> NttGlweAutomorphismKey<T> {
             self.key_switching.input_size().glwe_len()
         );
 
-        for (input_poly, output_poly) in input
-            .as_ref()
-            .chunks_exact(poly_length)
-            .zip(workspace.transformed.as_mut().chunks_exact_mut(poly_length))
+        for (input_poly, mut output_poly) in input
+            .iter_poly(poly_length)
+            .zip(workspace.transformed.iter_poly_mut(poly_length))
         {
             self.coeff_permutation
-                .apply_to(input_poly, output_poly, modulus);
+                .apply_to(input_poly.as_ref(), output_poly.as_mut(), modulus);
         }
 
         self.key_switching.key_switch_kernel_to(
             &workspace.transformed,
-            output,
+            &mut output,
             modulus,
             ntt,
             &mut workspace.key_switching,
@@ -272,23 +275,27 @@ impl<T: FheUint> NttGlweAutomorphismKey<T> {
         );
         self.assert_compatible(modulus, ntt, workspace);
 
-        self.apply_ntt_kernel_to(input, output, modulus, ntt, workspace);
+        self.apply_ntt_kernel_to(
+            input.as_view(),
+            output.as_mut_view(),
+            modulus,
+            ntt,
+            workspace,
+        );
     }
 
     /// Applies the NTT automorphism after the caller has validated the modulus, NTT table,
     /// ciphertext layouts, and workspace.
-    fn apply_ntt_kernel_to<M, Table, A, B>(
+    fn apply_ntt_kernel_to<M, Table>(
         &self,
-        input: &NttGlwe<A>,
-        output: &mut NttGlwe<B>,
+        input: NttGlwe<&[T]>,
+        mut output: NttGlwe<&mut [T]>,
         modulus: M,
         ntt: &Table,
         workspace: &mut NttGlweAutomorphismWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: Data<Elem = T>,
-        B: DataMut<Elem = T>,
     {
         let poly_length = self.key_switching.poly_length();
         debug_assert_eq!(
@@ -301,7 +308,7 @@ impl<T: FheUint> NttGlweAutomorphismKey<T> {
         );
         debug_assert_eq!(workspace.permuted_ntt.len(), poly_length);
 
-        let (input_mask, input_body) = input.a_b_slices(poly_length);
+        let (input_mask, input_body) = input.a_b(poly_length);
         let NttGlweAutomorphismWorkspace {
             transformed,
             permuted_ntt,
@@ -309,20 +316,21 @@ impl<T: FheUint> NttGlweAutomorphismKey<T> {
         } = workspace;
 
         let (transformed_mask, _) = transformed.a_b_mut_slices(poly_length);
-        for (input_poly, output_poly) in input_mask
-            .chunks_exact(poly_length)
-            .zip(transformed_mask.chunks_exact_mut(poly_length))
+        for (input_poly, mut output_poly) in
+            input_mask.zip(PolynomialIterMut::new(transformed_mask, poly_length))
         {
-            self.ntt_permutation.apply_to(input_poly, permuted_ntt);
+            self.ntt_permutation
+                .apply_to(input_poly.as_ref(), permuted_ntt);
             ntt.inverse_transform_slice(permuted_ntt);
-            output_poly.copy_from_slice(permuted_ntt);
+            output_poly.as_mut().copy_from_slice(permuted_ntt);
         }
 
-        self.ntt_permutation.apply_to(input_body, permuted_ntt);
+        self.ntt_permutation
+            .apply_to(input_body.as_ref(), permuted_ntt);
         self.key_switching.key_switch_ntt_kernel_to(
             transformed_mask,
             &NttPolynomial::new(permuted_ntt.as_slice()),
-            output,
+            &mut output,
             modulus,
             ntt,
             key_switching,

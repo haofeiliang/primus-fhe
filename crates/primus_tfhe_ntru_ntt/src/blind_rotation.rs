@@ -1,9 +1,8 @@
-use primus_data::{Data, RawData};
 use primus_integer::FheUint;
 use primus_lattice::{lwe::Lwe, ngsw::NttNgsw, ntru::Ntru};
 use primus_ntru::{NttNtruCmuxWorkspace, NttNtruExternalProductWorkspace};
 use primus_ntt::MonomialNttTable;
-use primus_poly::{Polynomial, PolynomialOwned};
+use primus_poly::Polynomial;
 use primus_tfhe::rotation::RotationQuantizer;
 
 use crate::{
@@ -92,10 +91,10 @@ impl<T: FheUint> RotationState<'_, T> {
 /// under `f_acc`, reusing `workspace.scratch` as temporary storage. The caller
 /// established input/LUT compatibility; `rotation_step` is the LUT's padded
 /// output count (one for ordinary PBS).
-pub(crate) fn blind_rotate_lookup_table_to<T, Table, A, LM: primus_reduce::RingContext<T>>(
+pub(crate) fn blind_rotate_lookup_table_to<T, Table, LM: primus_reduce::RingContext<T>>(
     server_key: &ServerKey<T>,
-    input: &Lwe<A>,
-    lookup_table: &PolynomialOwned<T>,
+    input: Lwe<&[T]>,
+    lookup_table: Polynomial<&[T]>,
     rotation_step: usize,
     workspace: &mut BlindRotationWorkspace<'_, T>,
     parameters: &TfheParameters<T, LM>,
@@ -103,7 +102,6 @@ pub(crate) fn blind_rotate_lookup_table_to<T, Table, A, LM: primus_reduce::RingC
 ) where
     T: FheUint,
     Table: MonomialNttTable<ValueT = T>,
-    A: RawData<Elem = T> + Data,
 {
     let poly_length = parameters.poly_length().get();
     let two_n = poly_length * 2;

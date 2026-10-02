@@ -1,7 +1,7 @@
 use num_complex::Complex64;
 use primus_data::{Data, DataMut};
 
-use super::FourierPolynomial;
+use super::{FourierPolynomial, FourierPolynomialMut, FourierPolynomialRef};
 
 impl<S> FourierPolynomial<S>
 where
@@ -13,10 +13,7 @@ where
     where
         A: Data<Elem = Complex64>,
     {
-        debug_assert_eq!(self.0.len(), rhs.0.len());
-        for (value, rhs) in self.0.iter_mut().zip(rhs.0.iter()) {
-            *value *= *rhs;
-        }
+        mul_assign_kernel(self.as_mut_view(), rhs.as_view());
     }
 
     /// Multiplies pointwise by `rhs` and returns this Fourier polynomial.
@@ -33,9 +30,7 @@ where
     /// Multiplies every Fourier value by the real scalar `scalar` in place.
     #[inline]
     pub fn mul_scalar_assign(&mut self, scalar: f64) {
-        for value in self.0.iter_mut() {
-            *value *= scalar;
-        }
+        mul_scalar_assign_kernel(self.as_mut_view(), scalar);
     }
 
     /// Multiplies every Fourier value by the real scalar `scalar` and returns
@@ -53,11 +48,7 @@ where
         A: Data<Elem = Complex64>,
         B: Data<Elem = Complex64>,
     {
-        debug_assert_eq!(self.0.len(), lhs.0.len());
-        debug_assert_eq!(self.0.len(), rhs.0.len());
-        for ((value, lhs), rhs) in self.0.iter_mut().zip(lhs.0.iter()).zip(rhs.0.iter()) {
-            *value += *lhs * *rhs;
-        }
+        add_mul_assign_kernel(self.as_mut_view(), lhs.as_view(), rhs.as_view());
     }
 }
 
@@ -72,11 +63,7 @@ where
         A: Data<Elem = Complex64>,
         B: DataMut<Elem = Complex64>,
     {
-        debug_assert_eq!(self.0.len(), rhs.0.len());
-        debug_assert_eq!(self.0.len(), output.0.len());
-        for ((output, lhs), rhs) in output.0.iter_mut().zip(self.0.iter()).zip(rhs.0.iter()) {
-            *output = *lhs * *rhs;
-        }
+        mul_to_kernel(self.as_view(), rhs.as_view(), output.as_mut_view());
     }
 
     /// Writes the real scalar product `self * scalar` to `output`.
@@ -85,9 +72,61 @@ where
     where
         A: DataMut<Elem = Complex64>,
     {
-        debug_assert_eq!(self.0.len(), output.0.len());
-        for (output, value) in output.0.iter_mut().zip(self.0.iter()) {
-            *output = *value * scalar;
-        }
+        mul_scalar_to_kernel(self.as_view(), scalar, output.as_mut_view());
+    }
+}
+
+#[inline]
+fn mul_assign_kernel(mut acc: FourierPolynomialMut<'_>, rhs: FourierPolynomialRef<'_>) {
+    debug_assert_eq!(acc.fourier_length(), rhs.fourier_length());
+    for (value, rhs) in acc.iter_mut().zip(rhs.iter()) {
+        *value *= *rhs;
+    }
+}
+
+#[inline]
+fn mul_scalar_assign_kernel(mut acc: FourierPolynomialMut<'_>, scalar: f64) {
+    for value in acc.iter_mut() {
+        *value *= scalar;
+    }
+}
+
+// Preserve the order of complex multiplication followed by accumulation.
+// Values are already in the Fourier domain and need no additional normalization.
+#[inline]
+fn add_mul_assign_kernel(
+    mut acc: FourierPolynomialMut<'_>,
+    lhs: FourierPolynomialRef<'_>,
+    rhs: FourierPolynomialRef<'_>,
+) {
+    debug_assert_eq!(acc.fourier_length(), lhs.fourier_length());
+    debug_assert_eq!(acc.fourier_length(), rhs.fourier_length());
+    for ((value, lhs), rhs) in acc.iter_mut().zip(lhs.iter()).zip(rhs.iter()) {
+        *value += *lhs * *rhs;
+    }
+}
+
+#[inline]
+fn mul_to_kernel(
+    lhs: FourierPolynomialRef<'_>,
+    rhs: FourierPolynomialRef<'_>,
+    mut output: FourierPolynomialMut<'_>,
+) {
+    debug_assert_eq!(lhs.fourier_length(), rhs.fourier_length());
+    debug_assert_eq!(lhs.fourier_length(), output.fourier_length());
+    for ((output, lhs), rhs) in output.iter_mut().zip(lhs.iter()).zip(rhs.iter()) {
+        *output = *lhs * *rhs;
+    }
+}
+
+#[inline]
+fn mul_scalar_to_kernel(
+    input: FourierPolynomialRef<'_>,
+    scalar: f64,
+    mut output: FourierPolynomialMut<'_>,
+) {
+    debug_assert_eq!(input.fourier_length(), output.fourier_length());
+    for (output, value) in output.iter_mut().zip(input.iter()) {
+        *output = *value * scalar;
     }
 }

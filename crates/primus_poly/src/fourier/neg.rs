@@ -1,7 +1,7 @@
 use num_complex::Complex64;
 use primus_data::{Data, DataMut};
 
-use super::FourierPolynomial;
+use super::{FourierPolynomial, FourierPolynomialMut, FourierPolynomialRef};
 
 impl<S> FourierPolynomial<S>
 where
@@ -10,9 +10,7 @@ where
     /// Negates every value in this Fourier polynomial.
     #[inline]
     pub fn neg_assign(&mut self) {
-        for value in self.0.iter_mut() {
-            *value = -*value;
-        }
+        neg_assign_kernel(self.as_mut_view());
     }
 
     /// Negates every value and returns this Fourier polynomial.
@@ -34,9 +32,21 @@ where
     where
         A: DataMut<Elem = Complex64>,
     {
-        debug_assert_eq!(self.0.len(), output.0.len());
-        for (output, value) in output.0.iter_mut().zip(self.0.iter()) {
-            *output = -*value;
-        }
+        neg_to_kernel(self.as_view(), output.as_mut_view());
+    }
+}
+
+#[inline]
+fn neg_assign_kernel(mut acc: FourierPolynomialMut<'_>) {
+    for value in acc.iter_mut() {
+        *value = -*value;
+    }
+}
+
+#[inline]
+fn neg_to_kernel(input: FourierPolynomialRef<'_>, mut output: FourierPolynomialMut<'_>) {
+    debug_assert_eq!(input.fourier_length(), output.fourier_length());
+    for (output, value) in output.iter_mut().zip(input.iter()) {
+        *output = -*value;
     }
 }

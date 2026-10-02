@@ -77,10 +77,10 @@ impl<T: FheUint> SparseGlweBootstrappingKey<T> {
         );
 
         self.ntt_blind_rotate_interleaved_lookup_table_kernel_to(
-            input,
-            lookup_table,
+            input.as_view(),
+            lookup_table.as_view(),
             1,
-            output,
+            output.as_mut_view(),
             ntt,
             context,
         );
@@ -89,19 +89,16 @@ impl<T: FheUint> SparseGlweBootstrappingKey<T> {
     /// The public raw wrapper or evaluator has checked layouts, table and LUT.
     /// The rotation step is the compiled LUT's padded output count; every mask
     /// and body coefficient must use this same step to preserve output slots.
-    pub(crate) fn ntt_blind_rotate_interleaved_lookup_table_kernel_to<Table, A, B, C>(
+    pub(crate) fn ntt_blind_rotate_interleaved_lookup_table_kernel_to<Table>(
         &self,
-        input: &Lwe<A>,
-        lookup_table: &Polynomial<B>,
+        input: Lwe<&[T]>,
+        lookup_table: Polynomial<&[T]>,
         rotation_step: usize,
-        output: &mut Glwe<C>,
+        mut output: Glwe<&mut [T]>,
         ntt: &Table,
         context: &mut SparseGlweBlindRotationWorkspace<T>,
     ) where
         Table: NttTable<ValueT = T>,
-        A: Data<Elem = T>,
-        B: Data<Elem = T>,
-        C: DataMut<Elem = T>,
     {
         let size = self.size();
         let poly_length = size.glwe_size().poly_length().get();
@@ -192,7 +189,7 @@ impl<T: FheUint> SparseGlweBootstrappingKey<T> {
             let aggregate_ntt = Ggsw::new(aggregate.as_mut_slice()).into_ntt_form(ntt);
             if output_is_current {
                 aggregate_ntt.external_product_to(
-                    output,
+                    &output,
                     scratch,
                     self.basis(),
                     modulus,
@@ -202,7 +199,7 @@ impl<T: FheUint> SparseGlweBootstrappingKey<T> {
             } else {
                 aggregate_ntt.external_product_to(
                     scratch,
-                    output,
+                    &mut output,
                     self.basis(),
                     modulus,
                     ntt,

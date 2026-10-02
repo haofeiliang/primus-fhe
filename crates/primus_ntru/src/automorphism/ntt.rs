@@ -150,22 +150,26 @@ impl<T: FheUint> NttNtruAutomorphismKey<T> {
         self.assert_lengths(input.as_ref().len(), output.as_ref().len());
         self.key_switching
             .assert_compatible(modulus, ntt, &workspace.external_product);
-        self.apply_kernel_to(input, output, modulus, ntt, workspace);
+        self.apply_kernel_to(
+            input.as_view(),
+            output.as_mut_view(),
+            modulus,
+            ntt,
+            workspace,
+        );
     }
 
     /// Requires validated operand lengths and matching key/table/workspace resources.
-    pub(crate) fn apply_kernel_to<M, Table, A, B>(
+    pub(crate) fn apply_kernel_to<M, Table>(
         &self,
-        input: &NtruCiphertext<A>,
-        output: &mut NtruCiphertext<B>,
+        input: NtruCiphertext<&[T]>,
+        output: NtruCiphertext<&mut [T]>,
         modulus: M,
         ntt: &Table,
         workspace: &mut NttNtruAutomorphismWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: Data<Elem = T>,
-        B: DataMut<Elem = T>,
     {
         self.apply_with_scratch_kernel_to(
             input,
@@ -179,10 +183,10 @@ impl<T: FheUint> NttNtruAutomorphismKey<T> {
 
     /// Coefficient-only kernel for serial scratch reuse. The caller validates N coefficients
     /// in input, output and permutation scratch, plus matching key/table/product resources.
-    pub(crate) fn apply_with_scratch_kernel_to<M, Table, A, B>(
+    pub(crate) fn apply_with_scratch_kernel_to<M, Table>(
         &self,
-        input: &NtruCiphertext<A>,
-        output: &mut NtruCiphertext<B>,
+        input: NtruCiphertext<&[T]>,
+        mut output: NtruCiphertext<&mut [T]>,
         modulus: M,
         ntt: &Table,
         coefficients: &mut [T],
@@ -190,14 +194,12 @@ impl<T: FheUint> NttNtruAutomorphismKey<T> {
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: Data<Elem = T>,
-        B: DataMut<Elem = T>,
     {
         self.coeff_permutation
             .apply_to(input.as_ref(), coefficients, modulus);
         self.key_switching.key_switch_kernel_to(
             &NtruCiphertext::new(&*coefficients),
-            output,
+            &mut output,
             modulus,
             ntt,
             external_product,
@@ -231,12 +233,34 @@ impl<T: FheUint> NttNtruAutomorphismKey<T> {
         self.assert_lengths(input.as_ref().len(), output.as_ref().len());
         self.key_switching
             .assert_compatible(modulus, ntt, &workspace.external_product);
+        self.apply_ntt_kernel_to(
+            input.as_view(),
+            output.as_mut_view(),
+            modulus,
+            ntt,
+            workspace,
+        );
+    }
+
+    /// Requires validated N-coefficient NTT operands and matching key/table/workspace resources.
+    /// Recover only the permuted input for decomposition; keep the product in NTT form.
+    fn apply_ntt_kernel_to<M, Table>(
+        &self,
+        input: NttNtruCiphertext<&[T]>,
+        mut output: NttNtruCiphertext<&mut [T]>,
+        modulus: M,
+        ntt: &Table,
+        workspace: &mut NttNtruAutomorphismWorkspace<T>,
+    ) where
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+    {
         self.ntt_permutation
             .apply_to(input.as_ref(), workspace.coefficients.as_mut());
         ntt.inverse_transform_slice(workspace.coefficients.as_mut());
         NttNlev::new(self.key_switching.as_slice()).external_product_ntt_to(
             &Polynomial(workspace.coefficients.as_ref()),
-            output,
+            &mut output,
             self.basis(),
             modulus,
             ntt,

@@ -45,13 +45,15 @@ where
             params.poly_length().get(),
             "GLWE message length mismatch"
         );
-        self.encrypt_kernel_to(output, params, ntt, rng, workspace, |body| {
-            params.plaintext_codec().add_encode_slice_assign(
-                body,
-                input.as_ref(),
-                PlaintextEmbedding::Unsigned,
-            );
-        });
+        NttGlwePublicKey::from(self.key.as_view()).encrypt_plaintext_kernel_to(
+            input.as_view(),
+            output.as_mut_view(),
+            params,
+            ntt,
+            rng,
+            workspace,
+            PlaintextEmbedding::Unsigned,
+        );
     }
 
     /// Encrypts a polynomial using centered plaintext embedding into `output`.
@@ -79,13 +81,15 @@ where
             params.poly_length().get(),
             "GLWE message length mismatch"
         );
-        self.encrypt_kernel_to(output, params, ntt, rng, workspace, |body| {
-            params.plaintext_codec().add_encode_slice_assign(
-                body,
-                input.as_ref(),
-                PlaintextEmbedding::Centered,
-            );
-        });
+        NttGlwePublicKey::from(self.key.as_view()).encrypt_plaintext_kernel_to(
+            input.as_view(),
+            output.as_mut_view(),
+            params,
+            ntt,
+            rng,
+            workspace,
+            PlaintextEmbedding::Centered,
+        );
     }
 
     /// Encrypts an already encoded coefficient polynomial without plaintext scaling.
@@ -119,9 +123,14 @@ where
             params.poly_length().get(),
             "GLWE message length mismatch"
         );
-        self.encrypt_kernel_to(output, params, ntt, rng, workspace, |body| {
-            Polynomial::new(body).add_assign(input, params.cipher_modulus());
-        });
+        NttGlwePublicKey::from(self.key.as_view()).encrypt_encoded_kernel_to(
+            input.as_view(),
+            output.as_mut_view(),
+            params,
+            ntt,
+            rng,
+            workspace,
+        );
     }
 
     /// Encrypts a polynomial into a newly allocated NTT-domain ciphertext.
@@ -168,7 +177,13 @@ where
         R: rand::Rng + rand::CryptoRng,
         B: DataMut<Elem = T>,
     {
-        self.encrypt_kernel_to(output, params, ntt, rng, workspace, |_| {});
+        NttGlwePublicKey::from(self.key.as_view()).encrypt_zeros_kernel_to(
+            output.as_mut_view(),
+            params,
+            ntt,
+            rng,
+            workspace,
+        );
     }
 
     /// Encrypts zero into a newly allocated NTT-domain ciphertext.
@@ -194,13 +209,77 @@ where
         self.encrypt_zeros_to(&mut output, params, ntt, rng, workspace);
         output
     }
+}
+
+impl<T: FheUint> NttGlwePublicKey<&[T]> {
+    /// Input length was checked at the public entry. The shared kernel checks
+    /// key/output/backend/workspace layouts before sampling; the codec runs afterward.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "explicit message embedding and encryption resources"
+    )]
+    fn encrypt_plaintext_kernel_to<M, Table, R>(
+        &self,
+        input: Polynomial<&[T]>,
+        output: NttGlweCiphertext<&mut [T]>,
+        params: &GlweParameters<T, M>,
+        ntt: &Table,
+        rng: &mut R,
+        workspace: &mut NttGlwePublicEncryptWorkspace<T>,
+        embedding: PlaintextEmbedding,
+    ) where
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+        R: rand::Rng + rand::CryptoRng,
+    {
+        self.encrypt_kernel_to(output, params, ntt, rng, workspace, |body| {
+            params
+                .plaintext_codec()
+                .add_encode_slice_assign(body, input.as_ref(), embedding);
+        });
+    }
+
+    /// Input length was checked at the public entry; resource checks precede sampling.
+    /// Add encoded coefficients without plaintext scaling after body noise sampling.
+    fn encrypt_encoded_kernel_to<M, Table, R>(
+        &self,
+        input: Polynomial<&[T]>,
+        output: NttGlweCiphertext<&mut [T]>,
+        params: &GlweParameters<T, M>,
+        ntt: &Table,
+        rng: &mut R,
+        workspace: &mut NttGlwePublicEncryptWorkspace<T>,
+    ) where
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+        R: rand::Rng + rand::CryptoRng,
+    {
+        self.encrypt_kernel_to(output, params, ntt, rng, workspace, |body| {
+            Polynomial::new(body).add_assign(&input, params.cipher_modulus());
+        });
+    }
+
+    fn encrypt_zeros_kernel_to<M, Table, R>(
+        &self,
+        output: NttGlweCiphertext<&mut [T]>,
+        params: &GlweParameters<T, M>,
+        ntt: &Table,
+        rng: &mut R,
+        workspace: &mut NttGlwePublicEncryptWorkspace<T>,
+    ) where
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+        R: rand::Rng + rand::CryptoRng,
+    {
+        self.encrypt_kernel_to(output, params, ntt, rng, workspace, |_| {});
+    }
 
     /// Validates layouts, then encrypts using a statically dispatched body addition.
     /// The owning boundary must check the input length. `add_message` runs once
     /// after body noise sampling and before its forward transform.
-    fn encrypt_kernel_to<M, Table, R, B>(
+    fn encrypt_kernel_to<M, Table, R>(
         &self,
-        output: &mut NttGlweCiphertext<B>,
+        mut output: NttGlweCiphertext<&mut [T]>,
         params: &GlweParameters<T, M>,
         ntt: &Table,
         rng: &mut R,
@@ -210,7 +289,6 @@ where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
         R: rand::Rng + rand::CryptoRng,
-        B: DataMut<Elem = T>,
     {
         let size = params.size();
         let poly_length = size.poly_length().get();

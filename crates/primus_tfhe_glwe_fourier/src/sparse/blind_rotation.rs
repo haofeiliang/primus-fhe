@@ -107,10 +107,10 @@ impl<T: TorusFftValue> SparseGlweBootstrappingKey<T> {
             "sparse blind-rotation FFT length mismatch"
         );
         self.fourier_blind_rotate_interleaved_lookup_table_kernel_to(
-            input,
-            lookup_table,
+            input.as_view(),
+            lookup_table.as_view(),
             rotation_step,
-            output,
+            output.as_mut_view(),
             fft,
             context,
         );
@@ -118,19 +118,16 @@ impl<T: TorusFftValue> SparseGlweBootstrappingKey<T> {
 
     /// The public raw wrapper or evaluator has checked layouts, FFT and LUT.
     /// Mask and body use the same step so every rotation preserves output slots.
-    pub(crate) fn fourier_blind_rotate_interleaved_lookup_table_kernel_to<Table, A, B, C>(
+    pub(crate) fn fourier_blind_rotate_interleaved_lookup_table_kernel_to<Table>(
         &self,
-        input: &Lwe<A>,
-        lookup_table: &Polynomial<B>,
+        input: Lwe<&[T]>,
+        lookup_table: Polynomial<&[T]>,
         rotation_step: usize,
-        output: &mut TorusGlwe<C>,
+        mut output: TorusGlwe<&mut [T]>,
         fft: &mut FftEngine<'_, Table>,
         context: &mut SparseGlweBlindRotationWorkspace<T>,
     ) where
         Table: FftTable,
-        A: Data<Elem = T>,
-        B: Data<Elem = T>,
-        C: DataMut<Elem = T>,
     {
         let size = self.size();
         let poly_length = size.glwe_size().poly_length().get();
@@ -195,7 +192,7 @@ impl<T: TorusFftValue> SparseGlweBootstrappingKey<T> {
             aggregate.write_fourier_form(transformed, fft);
             if output_is_current {
                 transformed.external_product_to(
-                    output,
+                    &output,
                     scratch,
                     self.basis(),
                     fft,
@@ -204,7 +201,7 @@ impl<T: TorusFftValue> SparseGlweBootstrappingKey<T> {
             } else {
                 transformed.external_product_to(
                     scratch,
-                    output,
+                    &mut output,
                     self.basis(),
                     fft,
                     external_product,

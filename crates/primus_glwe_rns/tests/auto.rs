@@ -95,7 +95,12 @@ fn test_crt_glwe_auto() {
 
     let c1 = c1.into_coeff_form(&table);
 
-    auto_key.automorphism_to(&c1, &mut c2, &domain, &mut auto_workspace);
+    auto_key.automorphism_to(
+        &c1.as_view(),
+        &mut c2.as_mut_view(),
+        &domain,
+        &mut auto_workspace,
+    );
 
     let c2 = c2.into_ntt_form(&table);
 
@@ -162,7 +167,12 @@ fn test_dcrt_glwe_auto() {
 
     dcrt_sk.encrypt_plaintext_inplace(&input1, &mut c1, &glwe_params, &table, &mut rng);
 
-    auto_key.automorphism_to(&c1, &mut c2, &domain, &mut auto_workspace);
+    auto_key.automorphism_to(
+        &c1.as_view(),
+        &mut c2.as_mut_view(),
+        &domain,
+        &mut auto_workspace,
+    );
 
     let auto_msg_2 = dcrt_sk.decrypt(&c2, &glwe_params, &table, &mut decrypt_workspace);
 

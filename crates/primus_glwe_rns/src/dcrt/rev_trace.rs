@@ -82,6 +82,27 @@ impl<T: FheUint> DcrtGlweRevTraceKey<T> {
         A: Data<Elem = T>,
         B: DataMut<Elem = T>,
     {
+        self.trace_kernel_to(
+            ciphertext.as_view(),
+            result.as_mut_view(),
+            domain,
+            workspace,
+        );
+    }
+
+    /// Applies the reversed automorphism order, halving modulo each q_i before
+    /// computing both operands of each sum. The caller maintains matching complete
+    /// key/domain/workspace resources; scratch is overwritten and reborrowed.
+    fn trace_kernel_to<M, Table>(
+        &self,
+        ciphertext: DcrtGlweCiphertext<&[T]>,
+        mut result: DcrtGlweCiphertext<&mut [T]>,
+        domain: &DcrtGadgetDomain<'_, T, M, Table>,
+        workspace: &mut DcrtGlweRevTraceWorkspace<T>,
+    ) where
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+    {
         let params = domain.parameters();
         let poly_length = params.poly_length().get();
         let rns_poly_len = params.rns_poly_len();
@@ -102,7 +123,12 @@ impl<T: FheUint> DcrtGlweRevTraceKey<T> {
             );
 
             // Automorphism on the halved ciphertext
-            auto_key.automorphism_kernel(result, dcrt_glwe, domain, auto_workspace);
+            auto_key.automorphism_kernel(
+                result.as_view(),
+                dcrt_glwe.as_mut_view(),
+                domain,
+                auto_workspace,
+            );
 
             // result = result + auto(result)  [both already halved]
             result.add_assign(dcrt_glwe, poly_length, rns_poly_len, moduli);

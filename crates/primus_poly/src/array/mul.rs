@@ -80,7 +80,13 @@ where
         modulus.reduce_mul_slice_assign(self.as_mut(), rhs.as_ref());
     }
 
-    /// Inverse butterfly: `(self[i], result[i]) = (self[i] + rhs[i], (self[i] - rhs[i]) * w[i])`
+    /// Inverse butterfly: `(self[i], output[i]) = (self[i] + rhs[i], (self_orig[i] - rhs[i]) * w[i])`.
+    ///
+    /// # Correctness
+    ///
+    /// All four arrays have equal lengths; empty arrays are allowed. Inputs
+    /// satisfy the selected modulus operations' input ranges. The difference
+    /// uses the original `self` value, and every output element is overwritten.
     #[inline]
     pub fn butterfly_mul_element_wise_to<M, A, B, C>(
         &mut self,
@@ -94,14 +100,13 @@ where
         B: Data<Elem = T>,
         C: DataMut<Elem = T>,
     {
-        debug_assert_eq!(self.len(), rhs.len());
-        debug_assert_eq!(self.len(), w.len());
-        debug_assert_eq!(self.len(), output.len());
-        izip!(self, rhs, w, output).for_each(|(a, &s, &w, b)| {
-            let a_orig = *a;
-            *a = modulus.reduce_add(a_orig, s);
-            *b = modulus.reduce_mul(modulus.reduce_sub(a_orig, s), w);
-        });
+        butterfly_mul_element_wise_to_kernel(
+            self.as_mut(),
+            rhs.as_ref(),
+            w.as_ref(),
+            output.as_mut(),
+            modulus,
+        );
     }
 }
 
@@ -144,4 +149,27 @@ where
     {
         factor.factor_mul_slice_to(self.as_ref(), output.as_mut(), modulus);
     }
+}
+
+// Both results depend on the original lhs. Save it before updating the sum,
+// then overwrite output with the weighted difference; no scratch is required.
+#[inline]
+fn butterfly_mul_element_wise_to_kernel<T, M>(
+    lhs: &mut [T],
+    rhs: &[T],
+    w: &[T],
+    output: &mut [T],
+    modulus: M,
+) where
+    T: FheUint,
+    M: Copy + ReduceAdd<T, Output = T> + ReduceSub<T, Output = T> + ReduceMul<T, Output = T>,
+{
+    debug_assert_eq!(lhs.len(), rhs.len());
+    debug_assert_eq!(lhs.len(), w.len());
+    debug_assert_eq!(lhs.len(), output.len());
+    izip!(lhs, rhs, w, output).for_each(|(a, &s, &w, b)| {
+        let a_orig = *a;
+        *a = modulus.reduce_add(a_orig, s);
+        *b = modulus.reduce_mul(modulus.reduce_sub(a_orig, s), w);
+    });
 }

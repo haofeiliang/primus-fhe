@@ -28,22 +28,7 @@ where
         M: Copy + ReduceAddSlice<T> + ReduceSubSlice<T>,
         A: Data<Elem = T>,
     {
-        let n = self.poly_length();
-        debug_assert!(n > 0 && n.is_power_of_two(), "invalid polynomial length");
-        debug_assert_eq!(rhs.poly_length(), n, "polynomial length mismatch");
-        debug_assert!(exponent / n < 2, "monomial exponent must be less than 2N");
-        let negate = exponent >= n;
-        let shift = if negate { exponent - n } else { exponent };
-        let (head, tail) = rhs.as_ref().split_at(n - shift);
-        let (wrapped, rest) = self.as_mut().split_at_mut(shift);
-        // X^N = -1: the wrapped tail and the remaining head have opposite signs.
-        if negate {
-            modulus.reduce_add_slice_assign(wrapped, tail);
-            modulus.reduce_sub_slice_assign(rest, head);
-        } else {
-            modulus.reduce_sub_slice_assign(wrapped, tail);
-            modulus.reduce_add_slice_assign(rest, head);
-        }
+        add_mul_monomial_assign_kernel(self.as_mut_view(), rhs.as_view(), exponent, modulus);
     }
 
     /// Accumulates `self += first * X^first_exponent + second * X^second_exponent` modulo `X^N + 1`.
@@ -153,26 +138,7 @@ where
     where
         M: Copy + ReduceNegSlice<T>,
     {
-        let poly_length = self.poly_length();
-
-        if r < poly_length {
-            let rotate = |poly: &mut [T], modulus: M| {
-                poly.rotate_right(r);
-                modulus.reduce_neg_slice_assign(&mut poly[0..r]);
-            };
-
-            rotate(self.as_mut_slice(), modulus)
-        } else {
-            debug_assert!(r < poly_length * 2);
-            let r = r - poly_length;
-
-            let rotate = |poly: &mut [T], modulus: M| {
-                poly.rotate_right(r);
-                modulus.reduce_neg_slice_assign(&mut poly[r..]);
-            };
-
-            rotate(self.as_mut_slice(), modulus)
-        }
+        mul_monomial_assign_kernel(self.as_mut_view(), r, modulus);
     }
 }
 
@@ -190,7 +156,7 @@ where
         M: RingContext<T>,
         A: DataMut<Elem = T>,
     {
-        self.monomial_to::<false, M, A>(exponent, output, modulus);
+        monomial_to::<false, _, _>(self.as_view(), exponent, output.as_mut_view(), modulus);
     }
 
     /// Computes `output = self * (X^exponent - 1)` in `Z_q[X]/(X^N + 1)`.
@@ -207,102 +173,24 @@ where
         M: RingContext<T>,
         A: DataMut<Elem = T>,
     {
-        self.monomial_to::<true, M, A>(exponent, output, modulus);
-    }
-
-    // Split the rotation at its wrap point: crossing X^N changes the sign.
-    // For (X^exponent - 1), subtract the unrotated coefficient while writing
-    // each destination, so no intermediate rotated polynomial is needed.
-    #[inline]
-    fn monomial_to<const SUBTRACT_SELF: bool, M, A>(
-        &self,
-        exponent: usize,
-        output: &mut Polynomial<A>,
-        modulus: M,
-    ) where
-        M: RingContext<T>,
-        A: DataMut<Elem = T>,
-    {
-        let input = self.as_ref();
-        let output = output.as_mut();
-        let poly_length = input.len();
-
-        debug_assert!(poly_length > 0 && poly_length.is_power_of_two());
-        debug_assert!(exponent < 2 * poly_length);
-        debug_assert_eq!(output.len(), poly_length);
-
-        let shift = exponent & (poly_length - 1);
-        let negate_rotation = exponent >= poly_length;
-        let tail_len = poly_length - shift;
-
-        if SUBTRACT_SELF {
-            if negate_rotation {
-                for destination in 0..shift {
-                    output[destination] =
-                        modulus.reduce_sub(input[tail_len + destination], input[destination]);
-                }
-                for destination in shift..poly_length {
-                    output[destination] = modulus.reduce_sub(
-                        modulus.reduce_neg(input[destination - shift]),
-                        input[destination],
-                    );
-                }
-            } else {
-                for destination in 0..shift {
-                    output[destination] = modulus.reduce_sub(
-                        modulus.reduce_neg(input[tail_len + destination]),
-                        input[destination],
-                    );
-                }
-                for destination in shift..poly_length {
-                    output[destination] =
-                        modulus.reduce_sub(input[destination - shift], input[destination]);
-                }
-            }
-        } else {
-            output[..shift].copy_from_slice(&input[tail_len..]);
-            output[shift..].copy_from_slice(&input[..tail_len]);
-            if negate_rotation {
-                modulus.reduce_neg_slice_assign(&mut output[shift..]);
-            } else {
-                modulus.reduce_neg_slice_assign(&mut output[..shift]);
-            }
-        }
+        monomial_to::<true, _, _>(self.as_view(), exponent, output.as_mut_view(), modulus);
     }
 
     /// Performs a naive negacyclic multiplication and overwrites `output`.
+    ///
+    /// # Correctness
+    ///
+    /// All three polynomials have the same coefficient count `N`; arbitrary
+    /// lengths are supported, and empty inputs are a no-op. Coefficients satisfy
+    /// the selected modulus operations' input ranges. The product is reduced
+    /// modulo `X^N + 1`, with no transform or scratch allocation.
     pub fn naive_mul_to<M, A, B>(&self, rhs: &Polynomial<A>, output: &mut Polynomial<B>, modulus: M)
     where
         M: Copy + ReduceSubAssign<T> + ReduceMul<T, Output = T> + ReduceMulAdd<T, Output = T>,
         A: Data<Elem = T>,
         B: DataMut<Elem = T>,
     {
-        let a: &[T] = self.as_ref();
-        let b: &[T] = rhs.as_ref();
-        let c: &mut [T] = output.as_mut();
-
-        let coeff_count = a.len();
-        debug_assert_eq!(coeff_count, b.len());
-        debug_assert_eq!(coeff_count, c.len());
-
-        if coeff_count == 0 {
-            return;
-        }
-
-        for i in 0..coeff_count {
-            c[i] = modulus.reduce_mul(a[0], b[i]);
-            for j in 1..=i {
-                c[i] = modulus.reduce_mul_add(a[j], b[i - j], c[i]);
-            }
-        }
-
-        // mod (x^n + 1)
-        for i in coeff_count..coeff_count * 2 - 1 {
-            let k = i - coeff_count;
-            for j in i - coeff_count + 1..coeff_count {
-                modulus.reduce_sub_assign(&mut c[k], modulus.reduce_mul(a[j], b[i - j]));
-            }
-        }
+        naive_mul_to_kernel(self.as_view(), rhs.as_view(), output.as_mut_view(), modulus);
     }
 
     /// Performs `result = self * scalar` according to `modulus`.
@@ -323,5 +211,153 @@ where
         A: DataMut<Elem = T>,
     {
         factor.factor_mul_slice_to(self.as_ref(), output.as_mut(), modulus);
+    }
+}
+
+// X^N = -1 gives opposite signs to the wrapped tail and the remaining head.
+#[inline]
+fn add_mul_monomial_assign_kernel<T, M>(
+    mut acc: Polynomial<&mut [T]>,
+    rhs: Polynomial<&[T]>,
+    exponent: usize,
+    modulus: M,
+) where
+    T: FheUint,
+    M: Copy + ReduceAddSlice<T> + ReduceSubSlice<T>,
+{
+    let n = acc.poly_length();
+    debug_assert!(n > 0 && n.is_power_of_two(), "invalid polynomial length");
+    debug_assert_eq!(rhs.poly_length(), n, "polynomial length mismatch");
+    debug_assert!(exponent / n < 2, "monomial exponent must be less than 2N");
+    let negate = exponent >= n;
+    let shift = if negate { exponent - n } else { exponent };
+    let (head, tail) = rhs.as_ref().split_at(n - shift);
+    let (wrapped, rest) = acc.as_mut().split_at_mut(shift);
+    if negate {
+        modulus.reduce_add_slice_assign(wrapped, tail);
+        modulus.reduce_sub_slice_assign(rest, head);
+    } else {
+        modulus.reduce_sub_slice_assign(wrapped, tail);
+        modulus.reduce_add_slice_assign(rest, head);
+    }
+}
+
+// Rotation moves the wrapped coefficients to the front. A global X^N factor
+// swaps which contiguous interval must be negated.
+#[inline]
+fn mul_monomial_assign_kernel<T, M>(mut polynomial: Polynomial<&mut [T]>, r: usize, modulus: M)
+where
+    T: FheUint,
+    M: Copy + ReduceNegSlice<T>,
+{
+    let poly_length = polynomial.poly_length();
+    let coefficients = polynomial.as_mut();
+
+    if r < poly_length {
+        coefficients.rotate_right(r);
+        modulus.reduce_neg_slice_assign(&mut coefficients[..r]);
+    } else {
+        debug_assert!(r < poly_length * 2);
+        let r = r - poly_length;
+        coefficients.rotate_right(r);
+        modulus.reduce_neg_slice_assign(&mut coefficients[r..]);
+    }
+}
+
+// Split the rotation at its wrap point: crossing X^N changes the sign.
+// Subtract the unrotated coefficient in the same pass for (X^exponent - 1).
+#[inline]
+fn monomial_to<const SUBTRACT_SELF: bool, T, M>(
+    input: Polynomial<&[T]>,
+    exponent: usize,
+    mut output: Polynomial<&mut [T]>,
+    modulus: M,
+) where
+    T: FheUint,
+    M: RingContext<T>,
+{
+    let input = input.as_ref();
+    let output = output.as_mut();
+    let poly_length = input.len();
+
+    debug_assert!(poly_length > 0 && poly_length.is_power_of_two());
+    debug_assert!(exponent < 2 * poly_length);
+    debug_assert_eq!(output.len(), poly_length);
+
+    let shift = exponent & (poly_length - 1);
+    let negate_rotation = exponent >= poly_length;
+    let tail_len = poly_length - shift;
+
+    if SUBTRACT_SELF {
+        if negate_rotation {
+            for destination in 0..shift {
+                output[destination] =
+                    modulus.reduce_sub(input[tail_len + destination], input[destination]);
+            }
+            for destination in shift..poly_length {
+                output[destination] = modulus.reduce_sub(
+                    modulus.reduce_neg(input[destination - shift]),
+                    input[destination],
+                );
+            }
+        } else {
+            for destination in 0..shift {
+                output[destination] = modulus.reduce_sub(
+                    modulus.reduce_neg(input[tail_len + destination]),
+                    input[destination],
+                );
+            }
+            for destination in shift..poly_length {
+                output[destination] =
+                    modulus.reduce_sub(input[destination - shift], input[destination]);
+            }
+        }
+    } else {
+        output[..shift].copy_from_slice(&input[tail_len..]);
+        output[shift..].copy_from_slice(&input[..tail_len]);
+        if negate_rotation {
+            modulus.reduce_neg_slice_assign(&mut output[shift..]);
+        } else {
+            modulus.reduce_neg_slice_assign(&mut output[..shift]);
+        }
+    }
+}
+
+// Compute degrees below N first, then subtract higher-degree products because
+// X^N = -1. Keep the reduction order and the empty-input no-op unchanged.
+fn naive_mul_to_kernel<T, M>(
+    lhs: Polynomial<&[T]>,
+    rhs: Polynomial<&[T]>,
+    mut output: Polynomial<&mut [T]>,
+    modulus: M,
+) where
+    T: FheUint,
+    M: Copy + ReduceSubAssign<T> + ReduceMul<T, Output = T> + ReduceMulAdd<T, Output = T>,
+{
+    let a: &[T] = lhs.as_ref();
+    let b: &[T] = rhs.as_ref();
+    let c: &mut [T] = output.as_mut();
+
+    let coeff_count = a.len();
+    debug_assert_eq!(coeff_count, b.len());
+    debug_assert_eq!(coeff_count, c.len());
+
+    if coeff_count == 0 {
+        return;
+    }
+
+    for i in 0..coeff_count {
+        c[i] = modulus.reduce_mul(a[0], b[i]);
+        for j in 1..=i {
+            c[i] = modulus.reduce_mul_add(a[j], b[i - j], c[i]);
+        }
+    }
+
+    // mod (x^n + 1)
+    for i in coeff_count..coeff_count * 2 - 1 {
+        let k = i - coeff_count;
+        for j in i - coeff_count + 1..coeff_count {
+            modulus.reduce_sub_assign(&mut c[k], modulus.reduce_mul(a[j], b[i - j]));
+        }
     }
 }

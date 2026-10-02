@@ -274,23 +274,26 @@ impl<T: FheUint> DcrtGlweAutoKey<T> {
         A: Data<Elem = T>,
         B: DataMut<Elem = T>,
     {
-        self.automorphism_kernel(ciphertext, result, domain, workspace);
+        self.automorphism_kernel(
+            ciphertext.as_view(),
+            result.as_mut_view(),
+            domain,
+            workspace,
+        );
     }
 
     /// Internal kernel used by composed operations.
     /// Callers must ensure workspace compatibility and input/output layouts
     /// before invoking this kernel; it performs no boundary validation.
-    pub(crate) fn automorphism_kernel<M, Table, A, B>(
+    pub(crate) fn automorphism_kernel<M, Table>(
         &self,
-        ciphertext: &DcrtGlweCiphertext<A>,
-        result: &mut DcrtGlweCiphertext<B>,
+        ciphertext: DcrtGlweCiphertext<&[T]>,
+        mut result: DcrtGlweCiphertext<&mut [T]>,
         domain: &DcrtGadgetDomain<'_, T, M, Table>,
         workspace: &mut CrtGlweAutomorphismWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: Data<Elem = T>,
-        B: DataMut<Elem = T>,
     {
         let params = domain.parameters();
         let table = domain.table();
@@ -310,7 +313,11 @@ impl<T: FheUint> DcrtGlweAutoKey<T> {
             .zip(a_in)
             .for_each(|(auto_key_i, in_dcrt_poly)| {
                 // 1. NTT-domain permutation (evaluation-point reordering)
-                dcrt_poly_ntt_auto_to(in_dcrt_poly.0, auto_dcrt_poly.as_mut(), &self.auto_helper);
+                dcrt_poly_ntt_auto_to(
+                    in_dcrt_poly.as_ref(),
+                    auto_dcrt_poly.as_mut(),
+                    &self.auto_helper,
+                );
 
                 // 2. INTT → coefficient domain (required for key-switch decomposition)
                 table.inverse_transform_slice(auto_dcrt_poly.as_mut());
@@ -327,7 +334,7 @@ impl<T: FheUint> DcrtGlweAutoKey<T> {
             });
 
         // ----- Process b polynomial: NTT permutation only (no transform needed) -----
-        dcrt_poly_ntt_auto_to(b_in.0, auto_dcrt_poly.as_mut(), &self.auto_helper);
+        dcrt_poly_ntt_auto_to(b_in.as_ref(), auto_dcrt_poly.as_mut(), &self.auto_helper);
 
         // ----- Combine: result = (−a', σ(b) − b') -----
         let (a_out, mut b_out) = result.a_b_mut(rns_poly_len);

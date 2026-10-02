@@ -81,7 +81,12 @@ fn test_rns_glev() {
     let mut msg1: CrtPolynomial<Vec<ValueT>> = CrtPolynomial::zero(rns_poly_len);
     base_q.wrapping_decompose_small_polynomial_to(&input1, &mut msg1, t);
 
-    dcrt_sk.encrypt_crt_msg_to_dcrt_glev_inplace(&msg1, &mut dcrt_glev, &domain, &mut rng);
+    dcrt_sk.encrypt_crt_msg_to_dcrt_glev_inplace(
+        &msg1.as_view(),
+        &mut dcrt_glev.as_mut_view(),
+        &domain,
+        &mut rng,
+    );
 
     // m₂ is decomposed into CRT, then scaled by δ (so it represents
     // δ·m₂ mod Q in the RNS basis), then composed into BigUint form.

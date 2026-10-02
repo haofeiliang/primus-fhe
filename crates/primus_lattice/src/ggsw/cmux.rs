@@ -57,7 +57,12 @@ where
 
         ct1.sub_to(ct0, output, NativeModulus::new());
         workspace.fourier_accumulator.set_zero();
-        self.accumulate_external_product(output, basis, fft, &mut workspace.as_mut());
+        self.as_view().accumulate_external_product(
+            output.as_view(),
+            basis,
+            fft,
+            &mut workspace.as_mut(),
+        );
         workspace.fourier_accumulator.write_torus_form(output, fft);
         output.add_assign(ct0, NativeModulus::new());
     }
@@ -127,7 +132,12 @@ where
         for (control, candidate) in controls.zip(candidates) {
             candidate.sub_to(default, output, NativeModulus::new());
             let control: &Self = control.borrow();
-            control.accumulate_external_product(output, basis, fft, &mut workspace.as_mut());
+            control.as_view().accumulate_external_product(
+                output.as_view(),
+                basis,
+                fft,
+                &mut workspace.as_mut(),
+            );
         }
         workspace.fourier_accumulator.write_torus_form(output, fft);
         output.add_assign(default, NativeModulus::new());
@@ -163,7 +173,12 @@ where
 
         input.mul_monomial_sub_one_to(exponent, output, poly_length, NativeModulus::new());
         workspace.fourier_accumulator.set_zero();
-        self.accumulate_external_product(output, basis, fft, &mut workspace.as_mut());
+        self.as_view().accumulate_external_product(
+            output.as_view(),
+            basis,
+            fft,
+            &mut workspace.as_mut(),
+        );
         workspace.fourier_accumulator.write_torus_form(output, fft);
         output.add_assign(input, NativeModulus::new());
     }
@@ -218,7 +233,13 @@ where
         ct1.sub_to(ct0, output, modulus);
         let mut workspace = workspace.as_mut();
         workspace.ntt_accumulator.set_zero();
-        self.accumulate_external_product(output, basis, modulus, ntt, &mut workspace);
+        self.as_view().accumulate_external_product(
+            output.as_view(),
+            basis,
+            modulus,
+            ntt,
+            &mut workspace,
+        );
         workspace.ntt_accumulator.write_coeff_form(output, ntt);
         output.add_assign(ct0, modulus);
     }
@@ -296,7 +317,13 @@ where
         for (control, candidate) in controls.zip(candidates) {
             candidate.sub_to(default, output, modulus);
             let control: &Self = control.borrow();
-            control.accumulate_external_product(output, basis, modulus, ntt, &mut workspace);
+            control.as_view().accumulate_external_product(
+                output.as_view(),
+                basis,
+                modulus,
+                ntt,
+                &mut workspace,
+            );
         }
         workspace.ntt_accumulator.write_coeff_form(output, ntt);
         output.add_assign(default, modulus);
@@ -340,7 +367,13 @@ where
         input.mul_monomial_sub_one_to(exponent, output, poly_length, modulus);
         let mut workspace = workspace.as_mut();
         workspace.ntt_accumulator.set_zero();
-        self.accumulate_external_product(output, basis, modulus, ntt, &mut workspace);
+        self.as_view().accumulate_external_product(
+            output.as_view(),
+            basis,
+            modulus,
+            ntt,
+            &mut workspace,
+        );
         workspace.ntt_accumulator.write_coeff_form(output, ntt);
         output.add_assign(input, modulus);
     }

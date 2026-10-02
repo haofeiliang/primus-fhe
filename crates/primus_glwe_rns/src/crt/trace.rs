@@ -95,6 +95,27 @@ impl<T: FheUint> CrtGlweTraceKey<T> {
         A: Data<Elem = T>,
         B: DataMut<Elem = T>,
     {
+        self.trace_kernel_to(
+            ciphertext.as_view(),
+            result.as_mut_view(),
+            domain,
+            workspace,
+        );
+    }
+
+    /// Copies the complete input before applying the ordered automorphisms.
+    /// The caller maintains matching key/domain/workspace resources; scratch is
+    /// overwritten and reborrowed for each step, with no ownership transfer.
+    fn trace_kernel_to<M, Table>(
+        &self,
+        ciphertext: CrtGlweCiphertext<&[T]>,
+        mut result: CrtGlweCiphertext<&mut [T]>,
+        domain: &DcrtGadgetDomain<'_, T, M, Table>,
+        workspace: &mut CrtGlweTraceWorkspace<T>,
+    ) where
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+    {
         let params = domain.parameters();
         let poly_length = params.poly_length().get();
         let crt_poly_length = params.rns_poly_len();
@@ -105,7 +126,12 @@ impl<T: FheUint> CrtGlweTraceKey<T> {
         result.as_mut().copy_from_slice(ciphertext.as_ref());
 
         for auto_key in self.auto_keys.iter() {
-            auto_key.automorphism_kernel(result, crt_glwe, domain, auto_workspace);
+            auto_key.automorphism_kernel(
+                result.as_view(),
+                crt_glwe.as_mut_view(),
+                domain,
+                auto_workspace,
+            );
             result.add_assign(crt_glwe, poly_length, crt_poly_length, moduli);
         }
     }

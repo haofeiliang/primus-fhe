@@ -2,6 +2,7 @@
 //! encryption/decryption and GLev encryption.
 
 use primus_data::{Data, DataMut};
+use primus_encoding::PlaintextEmbedding;
 use primus_integer::FheUint;
 use primus_lattice::{RnsGlweSize, glev::DcrtGlev};
 use primus_ntt::{DcrtTable, NttTable};
@@ -140,34 +141,13 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
         A: Data<Elem = T>,
         B: DataMut<Elem = T>,
     {
-        let poly_length = params.poly_length().get();
-        let rns_poly_len = params.rns_poly_len();
-        let moduli = params.cipher_moduli();
-        let uniform_distrs = params.cipher_moduli_uniform_distr();
-
-        let (a, mut b) = result.a_b_mut(rns_poly_len);
-
-        primus_distr::sample_crt_gaussian_values_to(
-            b.0,
-            poly_length,
-            params.cipher_moduli_value(),
-            params.noise_distribution(),
+        self.encrypt_kernel_to(
+            DcrtEncryptionMessage::Crt(msg.as_view()),
+            result.as_mut_view(),
+            params,
+            table,
             rng,
         );
-
-        let mut b_crt_poly = CrtPolynomial(&mut *b.0);
-        b_crt_poly.add_mul_factor_assign(
-            msg,
-            params.delta_factor_mod_q().as_ref(),
-            poly_length,
-            params.cipher_moduli_value(),
-        );
-        table.transform_slice(b.0);
-
-        self.iter_dcrt_poly().zip(a).for_each(|(si, ai)| {
-            primus_distr::sample_crt_uniform_values_to(ai.0, poly_length, uniform_distrs, rng);
-            b.add_mul_assign(&ai, &si, poly_length, moduli);
-        });
     }
 
     /// Encrypts a raw plaintext polynomial using unsigned embedding.
@@ -185,33 +165,16 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
         A: Data<Elem = T>,
         B: DataMut<Elem = T>,
     {
-        let poly_length = params.poly_length().get();
-        let rns_poly_len = params.rns_poly_len();
-        let moduli = params.cipher_moduli();
-        let uniform_distrs = params.cipher_moduli_uniform_distr();
-
-        let (a, mut b) = result.a_b_mut(rns_poly_len);
-
-        primus_distr::sample_crt_gaussian_values_to(
-            b.0,
-            poly_length,
-            params.cipher_moduli_value(),
-            params.noise_distribution(),
+        self.encrypt_kernel_to(
+            DcrtEncryptionMessage::Plaintext {
+                polynomial: msg.as_view(),
+                embedding: PlaintextEmbedding::Unsigned,
+            },
+            result.as_mut_view(),
+            params,
+            table,
             rng,
         );
-
-        params.codec().add_encode_coeffs_assign(
-            msg,
-            &mut CrtPolynomial(&mut *b.0),
-            primus_encoding::PlaintextEmbedding::Unsigned,
-        );
-
-        table.transform_slice(b.0);
-
-        self.iter_dcrt_poly().zip(a).for_each(|(si, ai)| {
-            primus_distr::sample_crt_uniform_values_to(ai.0, poly_length, uniform_distrs, rng);
-            b.add_mul_assign(&ai, &si, poly_length, moduli);
-        });
     }
 
     /// Encrypts a raw plaintext polynomial using centered embedding.
@@ -229,33 +192,16 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
         A: Data<Elem = T>,
         B: DataMut<Elem = T>,
     {
-        let poly_length = params.poly_length().get();
-        let rns_poly_len = params.rns_poly_len();
-        let moduli = params.cipher_moduli();
-        let uniform_distrs = params.cipher_moduli_uniform_distr();
-
-        let (a, mut b) = result.a_b_mut(rns_poly_len);
-
-        primus_distr::sample_crt_gaussian_values_to(
-            b.0,
-            poly_length,
-            params.cipher_moduli_value(),
-            params.noise_distribution(),
+        self.encrypt_kernel_to(
+            DcrtEncryptionMessage::Plaintext {
+                polynomial: msg.as_view(),
+                embedding: PlaintextEmbedding::Centered,
+            },
+            result.as_mut_view(),
+            params,
+            table,
             rng,
         );
-
-        params.codec().add_encode_coeffs_assign(
-            msg,
-            &mut CrtPolynomial(&mut *b.0),
-            primus_encoding::PlaintextEmbedding::Centered,
-        );
-
-        table.transform_slice(b.0);
-
-        self.iter_dcrt_poly().zip(a).for_each(|(si, ai)| {
-            primus_distr::sample_crt_uniform_values_to(ai.0, poly_length, uniform_distrs, rng);
-            b.add_mul_assign(&ai, &si, poly_length, moduli);
-        });
     }
 
     /// Encrypts zero into an existing DCRT GLWE allocation.
@@ -273,25 +219,74 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
         Table: NttTable<ValueT = T>,
         A: DataMut<Elem = T>,
     {
+        self.encrypt_kernel_to(
+            DcrtEncryptionMessage::Zero,
+            result.as_mut_view(),
+            params,
+            table,
+            rng,
+        );
+    }
+
+    /// Samples coefficient noise, injects the BFV message, then transforms the body.
+    /// Uniform masks are sampled in DCRT form afterward, in secret-component order.
+    /// The caller maintains complete key/message/output layouts and the matching
+    /// ordered parameter/table domain; views do not validate these preconditions.
+    fn encrypt_kernel_to<R, M, Table>(
+        &self,
+        message: DcrtEncryptionMessage<'_, T>,
+        mut result: DcrtGlweCiphertext<&mut [T]>,
+        params: &CrtGlweParameters<T, M>,
+        table: &DcrtTable<Table>,
+        rng: &mut R,
+    ) where
+        R: rand::Rng + rand::CryptoRng,
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+    {
         let poly_length = params.poly_length().get();
         let rns_poly_len = params.rns_poly_len();
         let moduli = params.cipher_moduli();
         let uniform_distrs = params.cipher_moduli_uniform_distr();
-
         let (a, mut b) = result.a_b_mut(rns_poly_len);
 
         primus_distr::sample_crt_gaussian_values_to(
-            b.0,
+            b.as_mut(),
             poly_length,
             params.cipher_moduli_value(),
             params.noise_distribution(),
             rng,
         );
+        match message {
+            DcrtEncryptionMessage::Crt(message) => {
+                CrtPolynomial(b.as_mut()).add_mul_factor_assign(
+                    &message,
+                    params.delta_factor_mod_q().as_ref(),
+                    poly_length,
+                    params.cipher_moduli_value(),
+                );
+            }
+            DcrtEncryptionMessage::Plaintext {
+                polynomial,
+                embedding,
+            } => {
+                params.codec().add_encode_coeffs_assign(
+                    &polynomial,
+                    &mut CrtPolynomial(b.as_mut()),
+                    embedding,
+                );
+            }
+            DcrtEncryptionMessage::Zero => {}
+        }
+        table.transform_slice(b.as_mut());
 
-        table.transform_slice(b.0);
-
-        self.iter_dcrt_poly().zip(a).for_each(|(si, ai)| {
-            primus_distr::sample_crt_uniform_values_to(ai.0, poly_length, uniform_distrs, rng);
+        self.iter_dcrt_poly().zip(a).for_each(|(si, mut ai)| {
+            primus_distr::sample_crt_uniform_values_to(
+                ai.as_mut(),
+                poly_length,
+                uniform_distrs,
+                rng,
+            );
             b.add_mul_assign(&ai, &si, poly_length, moduli);
         });
     }
@@ -300,11 +295,14 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
     // GLev encryption helpers (for key-switching key generation)
     // -------------------------------------------------------------------------
 
-    fn encrypt_dcrt_msg_to_dcrt_glwe_inplace_with_custom_delta<R, M, Table, A, B>(
+    /// Transforms coefficient noise before adding the scaled evaluation-domain message.
+    /// Operands and residues must use complete layouts in the parameter/table basis order.
+    /// The caller owns these preconditions; this helper performs no boundary validation.
+    fn encrypt_dcrt_msg_to_dcrt_glwe_inplace_with_custom_delta<R, M, Table>(
         &self,
-        dcrt_msg: &DcrtPolynomial<A>,
-        delta_residues: &Residues<impl Data<Elem = T>>,
-        result: &mut DcrtGlweCiphertext<B>,
+        dcrt_msg: DcrtPolynomial<&[T]>,
+        delta_residues: Residues<&[T]>,
+        mut result: DcrtGlweCiphertext<&mut [T]>,
         params: &CrtGlevParameters<T, M>,
         table: &DcrtTable<Table>,
         rng: &mut R,
@@ -312,8 +310,6 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
         R: rand::Rng + rand::CryptoRng,
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: Data<Elem = T>,
-        B: DataMut<Elem = T>,
     {
         let poly_length = params.poly_length().get();
         let moduli = params.cipher_moduli();
@@ -322,19 +318,19 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
         let (a, mut b) = result.a_b_mut(params.rns_poly_len());
 
         primus_distr::sample_crt_gaussian_values_to(
-            b.0,
+            b.as_mut(),
             poly_length,
             params.cipher_moduli_value(),
             params.noise_distribution(),
             &mut *rng,
         );
 
-        table.transform_slice(b.0);
-        b.add_mul_scalar_assign(dcrt_msg, delta_residues.as_ref(), poly_length, moduli);
+        table.transform_slice(b.as_mut());
+        b.add_mul_scalar_assign(&dcrt_msg, delta_residues.as_ref(), poly_length, moduli);
 
-        self.iter_dcrt_poly().zip(a).for_each(|(si, ai)| {
+        self.iter_dcrt_poly().zip(a).for_each(|(si, mut ai)| {
             primus_distr::sample_crt_uniform_values_to(
-                ai.0,
+                ai.as_mut(),
                 poly_length,
                 uniform_distrs,
                 &mut *rng,
@@ -361,16 +357,34 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
         B: DataMut<Elem = T>,
     {
         let params = domain.parameters();
-        let table = domain.table();
         assert_eq!(result.as_ref().len(), params.rns_glev_len());
+        self.encrypt_dcrt_glev_kernel_to(dcrt_msg.as_view(), result.as_mut_view(), domain, rng);
+    }
+
+    /// Reuses the DCRT message at every gadget level, adding it after the noise
+    /// transform. Output length has been checked; secret/message/domain layouts
+    /// and representations remain caller-maintained preconditions.
+    fn encrypt_dcrt_glev_kernel_to<R, M, Table>(
+        &self,
+        dcrt_msg: DcrtPolynomial<&[T]>,
+        mut result: DcrtGlev<&mut [T]>,
+        domain: &DcrtGadgetDomain<'_, T, M, Table>,
+        rng: &mut R,
+    ) where
+        R: rand::Rng + rand::CryptoRng,
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+    {
+        let params = domain.parameters();
+        let table = domain.table();
         result
             .iter_dcrt_glwe_mut(params.rns_glwe_len())
             .zip(params.scalar_residue_iter())
-            .for_each(|(mut dcrt_glwe, scalar_residues)| {
+            .for_each(|(dcrt_glwe, scalar_residues)| {
                 self.encrypt_dcrt_msg_to_dcrt_glwe_inplace_with_custom_delta(
-                    dcrt_msg,
-                    &scalar_residues,
-                    &mut dcrt_glwe,
+                    dcrt_msg.as_view(),
+                    scalar_residues.view(),
+                    dcrt_glwe,
                     params,
                     table,
                     rng,
@@ -378,11 +392,14 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
             });
     }
 
-    fn encrypt_crt_msg_to_dcrt_glwe_inplace_with_custom_delta<R, M, Table, A, B>(
+    /// Scales the message in coefficient form before the body transform.
+    /// Operands and residues must use complete layouts in the parameter/table basis order.
+    /// The caller owns these preconditions; this helper performs no boundary validation.
+    fn encrypt_crt_msg_to_dcrt_glwe_inplace_with_custom_delta<R, M, Table>(
         &self,
-        crt_msg: &CrtPolynomial<A>,
-        delta_residues: &Residues<impl Data<Elem = T>>,
-        result: &mut DcrtGlweCiphertext<B>,
+        crt_msg: CrtPolynomial<&[T]>,
+        delta_residues: Residues<&[T]>,
+        mut result: DcrtGlweCiphertext<&mut [T]>,
         params: &CrtGlevParameters<T, M>,
         table: &DcrtTable<Table>,
         rng: &mut R,
@@ -390,8 +407,6 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
         R: rand::Rng + rand::CryptoRng,
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: Data<Elem = T>,
-        B: DataMut<Elem = T>,
     {
         let poly_length = params.poly_length().get();
         let moduli = params.cipher_moduli();
@@ -400,20 +415,20 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
         let (a, mut b) = result.a_b_mut(params.rns_poly_len());
 
         primus_distr::sample_crt_gaussian_values_to(
-            b.0,
+            b.as_mut(),
             poly_length,
             params.cipher_moduli_value(),
             params.noise_distribution(),
             &mut *rng,
         );
 
-        let mut b_crt_poly = CrtPolynomial(&mut *b.0);
-        b_crt_poly.add_mul_scalar_assign(crt_msg, delta_residues.as_ref(), poly_length, moduli);
-        table.transform_slice(b.0);
+        let mut b_crt_poly = CrtPolynomial(b.as_mut());
+        b_crt_poly.add_mul_scalar_assign(&crt_msg, delta_residues.as_ref(), poly_length, moduli);
+        table.transform_slice(b.as_mut());
 
-        self.iter_dcrt_poly().zip(a).for_each(|(si, ai)| {
+        self.iter_dcrt_poly().zip(a).for_each(|(si, mut ai)| {
             primus_distr::sample_crt_uniform_values_to(
-                ai.0,
+                ai.as_mut(),
                 poly_length,
                 uniform_distrs,
                 &mut *rng,
@@ -439,16 +454,34 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
         B: DataMut<Elem = T>,
     {
         let params = domain.parameters();
-        let table = domain.table();
         assert_eq!(result.as_ref().len(), params.rns_glev_len());
+        self.encrypt_crt_glev_kernel_to(crt_msg.as_view(), result.as_mut_view(), domain, rng);
+    }
+
+    /// Reuses the CRT message at every gadget level, adding it before the body
+    /// transform. Output length has been checked; secret/message/domain layouts
+    /// and representations remain caller-maintained preconditions.
+    fn encrypt_crt_glev_kernel_to<R, M, Table>(
+        &self,
+        crt_msg: CrtPolynomial<&[T]>,
+        mut result: DcrtGlev<&mut [T]>,
+        domain: &DcrtGadgetDomain<'_, T, M, Table>,
+        rng: &mut R,
+    ) where
+        R: rand::Rng + rand::CryptoRng,
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+    {
+        let params = domain.parameters();
+        let table = domain.table();
         result
             .iter_dcrt_glwe_mut(params.rns_glwe_len())
             .zip(params.scalar_residue_iter())
-            .for_each(|(mut dcrt_glwe, scalar_residues)| {
+            .for_each(|(dcrt_glwe, scalar_residues)| {
                 self.encrypt_crt_msg_to_dcrt_glwe_inplace_with_custom_delta(
-                    crt_msg,
-                    &scalar_residues,
-                    &mut dcrt_glwe,
+                    crt_msg.as_view(),
+                    scalar_residues.view(),
+                    dcrt_glwe,
                     params,
                     table,
                     rng,
@@ -471,6 +504,18 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
         A: Data<Elem = T>,
         B: DataMut<Elem = T>,
     {
+        self.phase_kernel_to(ciphertext.as_view(), msg_mod_q.as_mut_view(), params);
+    }
+
+    /// Computes the DCRT phase with complete, matching layouts in parameter basis order.
+    fn phase_kernel_to<M>(
+        &self,
+        ciphertext: DcrtGlweCiphertext<&[T]>,
+        mut msg_mod_q: DcrtPolynomial<&mut [T]>,
+        params: &CrtGlweParameters<T, M>,
+    ) where
+        M: FieldContext<T>,
+    {
         let poly_length = params.poly_length().get();
         let moduli = params.cipher_moduli();
 
@@ -482,7 +527,7 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
             msg_mod_q.add_mul_assign(&ai, &si, poly_length, moduli);
         });
 
-        b.sub_rev_assign(msg_mod_q, poly_length, moduli);
+        b.sub_rev_assign(&mut msg_mod_q, poly_length, moduli);
     }
 
     /// Decrypts a DCRT GLWE ciphertext into a newly allocated plaintext polynomial.
@@ -521,22 +566,56 @@ impl<T: FheUint> DcrtGlweSecretKey<T> {
         B: DataMut<Elem = T>,
     {
         assert_eq!(workspace.size(), params.size());
+        self.decrypt_kernel_to(
+            ciphertext.as_view(),
+            msg.as_mut_view(),
+            params,
+            table,
+            workspace,
+        );
+    }
 
+    /// Uses a layout-checked erasing workspace. All other operands and the table
+    /// must share the parameter basis and transform representation. Phase extraction
+    /// overwrites scratch before inverse transformation and BFV decoding.
+    fn decrypt_kernel_to<M, Table>(
+        &self,
+        ciphertext: DcrtGlweCiphertext<&[T]>,
+        mut msg: Polynomial<&mut [T]>,
+        params: &CrtGlweParameters<T, M>,
+        table: &DcrtTable<Table>,
+        workspace: &mut DcrtGlweDecryptWorkspace<T>,
+    ) where
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+    {
         let DcrtGlweDecryptWorkspaceRefMut {
             msg_mod_q,
             fast_convert_buffer,
         } = workspace.as_mut();
 
-        self.phase_inplace(ciphertext, msg_mod_q, params);
+        self.phase_kernel_to(ciphertext, msg_mod_q.as_mut_view(), params);
 
         table.inverse_transform_slice(msg_mod_q.as_mut());
 
         params.codec().decode_coeffs_to(
             &mut CrtPolynomial(msg_mod_q.as_mut()),
-            msg,
+            &mut msg,
             fast_convert_buffer,
         );
     }
+}
+
+/// Borrowed message modes for the coefficient body of ordinary DCRT encryption.
+/// CRT input contains unscaled plaintext lifts; raw plaintext uses the requested
+/// embedding. Both receive BFV scaling before the forward transform.
+enum DcrtEncryptionMessage<'a, T: FheUint> {
+    Crt(CrtPolynomial<&'a [T]>),
+    Plaintext {
+        polynomial: Polynomial<&'a [T]>,
+        embedding: PlaintextEmbedding,
+    },
+    Zero,
 }
 
 // ---------------------------------------------------------------------------

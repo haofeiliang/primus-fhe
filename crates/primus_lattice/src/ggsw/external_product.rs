@@ -74,7 +74,8 @@ where
         );
         let mut workspace = workspace.as_mut();
         workspace.fourier_accumulator.set_zero();
-        self.accumulate_external_product(input, basis, fft, &mut workspace);
+        self.as_view()
+            .accumulate_external_product(input.as_view(), basis, fft, &mut workspace);
         workspace.fourier_accumulator.write_torus_form(output, fft);
     }
 
@@ -104,9 +105,12 @@ where
         );
         let mut workspace = workspace.as_mut_with_accumulator(output);
         workspace.fourier_accumulator.set_zero();
-        self.accumulate_external_product(input, basis, fft, &mut workspace);
+        self.as_view()
+            .accumulate_external_product(input.as_view(), basis, fft, &mut workspace);
     }
+}
 
+impl FourierGgsw<&[Complex64]> {
     /// Adds `self external_product input` to the existing Fourier accumulator.
     /// This does not clear the accumulator; the caller must initialize it first.
     ///
@@ -115,16 +119,15 @@ where
     /// The input, gadget, basis, table, and workspace must satisfy
     /// [`Self::external_product_to`]. The workspace accumulator takes the role
     /// of output and must have the corresponding transform-domain layout.
-    pub(super) fn accumulate_external_product<T, Table, A>(
+    pub(super) fn accumulate_external_product<T, Table>(
         &self,
-        input: &TorusGlwe<A>,
+        input: TorusGlwe<&[T]>,
         basis: &ApproxSignedBasis<T>,
         fft: &mut FftEngine<'_, Table>,
         workspace: &mut FourierGlweExternalProductWorkspaceRefMut<'_, T>,
     ) where
         T: TorusFftValue,
         Table: FftTable,
-        A: Data<Elem = T>,
     {
         let size = workspace.size();
         let glwe_size = size.glwe_size();
@@ -216,7 +219,13 @@ where
         );
         let mut workspace = workspace.as_mut();
         workspace.ntt_accumulator.set_zero();
-        self.accumulate_external_product(input, basis, modulus, ntt, &mut workspace);
+        self.as_view().accumulate_external_product(
+            input.as_view(),
+            basis,
+            modulus,
+            ntt,
+            &mut workspace,
+        );
         workspace.ntt_accumulator.write_coeff_form(output, ntt);
     }
 
@@ -256,9 +265,17 @@ where
         );
         let mut workspace = workspace.as_mut_with_accumulator(output);
         workspace.ntt_accumulator.set_zero();
-        self.accumulate_external_product(input, basis, modulus, ntt, &mut workspace);
+        self.as_view().accumulate_external_product(
+            input.as_view(),
+            basis,
+            modulus,
+            ntt,
+            &mut workspace,
+        );
     }
+}
 
+impl<T: FheUint> NttGgsw<&[T]> {
     /// Adds `self external_product input` to the existing NTT accumulator.
     /// This does not clear the accumulator; the caller must initialize it first.
     ///
@@ -267,19 +284,16 @@ where
     /// The input, gadget, basis, table, and workspace must satisfy
     /// [`Self::external_product_to`]. The workspace accumulator takes the role
     /// of output and must have the corresponding transform-domain layout.
-    pub(super) fn accumulate_external_product<T, M, Table, A>(
+    pub(super) fn accumulate_external_product<M, Table>(
         &self,
-        input: &Glwe<A>,
+        input: Glwe<&[T]>,
         basis: &ApproxSignedBasis<T>,
         modulus: M,
         ntt: &Table,
         workspace: &mut NttGlweExternalProductWorkspaceRefMut<'_, T>,
     ) where
-        T: FheUint,
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: Data<Elem = T>,
-        S: Data<Elem = T>,
     {
         let size = workspace.size();
         let glwe_size = size.glwe_size();

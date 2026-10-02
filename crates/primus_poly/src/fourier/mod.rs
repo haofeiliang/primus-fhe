@@ -14,6 +14,12 @@ pub type FourierPolynomialRef<'a> = FourierPolynomial<&'a [Complex64]>;
 pub type FourierPolynomialMut<'a> = FourierPolynomial<&'a mut [Complex64]>;
 
 /// A polynomial represented by its independent complex evaluations.
+///
+/// Arithmetic requires operands and outputs with equal numbers of values from
+/// compatible Fourier transforms. It preserves their normalization and performs
+/// no transform. Shape checks are debug diagnostics; callers must establish the
+/// complete layout before arithmetic, since zipped loops consume only the common
+/// prefix of mismatched slices.
 #[derive(Debug, Clone, PartialEq)]
 pub struct FourierPolynomial<S>(pub S)
 where

@@ -285,8 +285,8 @@ where
         );
         blind_rotate_lookup_table_to(
             self.pbs.server_key,
-            input,
-            self.lookup_table.polynomial(),
+            input.as_view(),
+            self.lookup_table.polynomial().as_view(),
             self.lookup_table.padded_output_count(),
             &mut self.pbs.blind_rotation,
             tfhe,

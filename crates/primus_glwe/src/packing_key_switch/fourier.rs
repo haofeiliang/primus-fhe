@@ -66,8 +66,8 @@ impl<T: TorusFftValue> FourierLwePackingKeySwitchingKey<T> {
         super::for_each_secret(input_secret_key, params.cipher_modulus(), |secret| {
             message[0] = secret;
             output_secret_key.encrypt_glev_kernel_to(
-                &Polynomial::new(message.as_slice()),
-                &mut FourierGlev::new(entries.next().expect("one GLev per secret coefficient")),
+                Polynomial::new(message.as_slice()),
+                FourierGlev::new(entries.next().expect("one GLev per secret coefficient")),
                 params,
                 fft,
                 rng,

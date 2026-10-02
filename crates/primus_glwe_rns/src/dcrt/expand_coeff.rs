@@ -7,7 +7,8 @@ use primus_rns::{RNSBase, ResidueFactors};
 use rayon::prelude::*;
 
 use crate::{
-    CrtGlevParameters, DcrtGadgetDomain, DcrtGlweAutoKey, DcrtGlweCiphertext, DcrtGlweSecretKey,
+    CrtGlevParameters, CrtGlweAutomorphismWorkspace, DcrtGadgetDomain, DcrtGlweAutoKey,
+    DcrtGlweCiphertext, DcrtGlweSecretKey,
 };
 
 use super::{DcrtGlweExpandCoeffSyncPool, DcrtGlweExpandCoeffWorkspace};
@@ -149,6 +150,7 @@ impl<T: FheUint> DcrtGlweExpandCoeffKey<T> {
         let poly_length = params.poly_length().get();
         let count = result.len();
         assert!(count.is_power_of_two() && count <= poly_length);
+        let ciphertext = ciphertext.as_view();
 
         let log_d = count.trailing_zeros() as usize;
         let moduli_value = params.cipher_moduli_value();
@@ -173,8 +175,15 @@ impl<T: FheUint> DcrtGlweExpandCoeffKey<T> {
             let (x, y) = result[..level_len * 2].split_at_mut(level_len);
 
             x.iter_mut().zip(y).for_each(|(a_0, b_0)| {
-                auto_key.automorphism_kernel(a_0, dcrt_glwe, domain, auto_workspace);
-                a_0.butterfly_mul_factor_to(dcrt_glwe, factors, b_0, poly_length, moduli_value);
+                Self::expand_pair_kernel(
+                    a_0.as_mut_view(),
+                    b_0.as_mut_view(),
+                    auto_key,
+                    factors,
+                    domain,
+                    dcrt_glwe.as_mut_view(),
+                    auto_workspace,
+                );
             });
         }
     }
@@ -223,6 +232,7 @@ impl<T: FheUint> DcrtGlweExpandCoeffKey<T> {
         let poly_length = params.poly_length().get();
         let count = result.len();
         assert!(count.is_power_of_two() && count <= poly_length);
+        let ciphertext = ciphertext.as_view();
 
         let log_d = count.trailing_zeros() as usize;
         let moduli_value = params.cipher_moduli_value();
@@ -249,10 +259,46 @@ impl<T: FheUint> DcrtGlweExpandCoeffKey<T> {
                 || workspace_pool.acquire_guard(),
                 |guard, (a_0, b_0)| {
                     let (dcrt_glwe, auto_workspace) = guard.as_mut();
-                    auto_key.automorphism_kernel(a_0, dcrt_glwe, domain, auto_workspace);
-                    a_0.butterfly_mul_factor_to(dcrt_glwe, factors, b_0, poly_length, moduli_value);
+                    Self::expand_pair_kernel(
+                        a_0.as_mut_view(),
+                        b_0.as_mut_view(),
+                        auto_key,
+                        factors,
+                        domain,
+                        dcrt_glwe.as_mut_view(),
+                        auto_workspace,
+                    );
                 },
             );
         }
+    }
+
+    /// Splits one node with the automorphism and its precomputed NTT monomial.
+    /// The butterfly updates `lhs` and overwrites `rhs` directly in the NTT domain.
+    /// Serial and parallel traversal borrow nodes individually;
+    /// operands, factors and scratch must match the complete domain layout/order.
+    fn expand_pair_kernel<M, Table>(
+        mut lhs: DcrtGlweCiphertext<&mut [T]>,
+        mut rhs: DcrtGlweCiphertext<&mut [T]>,
+        auto_key: &DcrtGlweAutoKey<T>,
+        factors: &[ShoupFactor<T>],
+        domain: &DcrtGadgetDomain<'_, T, M, Table>,
+        mut scratch: DcrtGlweCiphertext<&mut [T]>,
+        auto_workspace: &mut CrtGlweAutomorphismWorkspace<T>,
+    ) where
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+    {
+        let params = domain.parameters();
+        let poly_length = params.poly_length().get();
+
+        auto_key.automorphism_kernel(lhs.as_view(), scratch.as_mut_view(), domain, auto_workspace);
+        lhs.butterfly_mul_factor_to(
+            &scratch,
+            factors,
+            &mut rhs,
+            poly_length,
+            params.cipher_moduli_value(),
+        );
     }
 }

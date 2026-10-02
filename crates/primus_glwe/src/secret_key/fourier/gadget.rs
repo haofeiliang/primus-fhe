@@ -48,14 +48,21 @@ impl FourierGlweSecretKey {
             "Fourier GLev output layout mismatch"
         );
         workspace.assert_glev_compatible(params.size());
-        self.encrypt_glev_kernel_to(input, output, params, fft, rng, workspace);
+        self.encrypt_glev_kernel_to(
+            input.as_view(),
+            output.as_mut_view(),
+            params,
+            fft,
+            rng,
+            workspace,
+        );
     }
 
     /// Encrypts after the caller validates key, input/output, FFT and workspace.
-    pub(crate) fn encrypt_glev_kernel_to<T, Table, R, A, B>(
+    pub(crate) fn encrypt_glev_kernel_to<T, Table, R>(
         &self,
-        input: &Polynomial<A>,
-        output: &mut FourierGlevCiphertext<B>,
+        input: Polynomial<&[T]>,
+        mut output: FourierGlevCiphertext<&mut [Complex64]>,
         params: &GlevParameters<T, NativeModulus<T>>,
         fft: &mut FftEngine<'_, Table>,
         rng: &mut R,
@@ -64,21 +71,19 @@ impl FourierGlweSecretKey {
         T: TorusFftValue,
         Table: FftTable,
         R: rand::Rng + rand::CryptoRng,
-        A: Data<Elem = T>,
-        B: DataMut<Elem = Complex64>,
     {
         let modulus = params.cipher_modulus();
         let fourier_glwe_len = params.fourier_glwe_len();
 
-        for (scalar, mut glwe) in params
+        for (scalar, glwe) in params
             .basis()
             .scalar_iter()
             .zip(output.iter_glwe_mut(fourier_glwe_len))
         {
             input.mul_scalar_to(scalar, &mut workspace.encoded, modulus);
             self.encrypt_encoded_kernel_to(
-                &workspace.encoded,
-                &mut glwe,
+                workspace.encoded.as_view(),
+                glwe,
                 params.inner(),
                 fft,
                 rng,
@@ -126,14 +131,21 @@ impl FourierGlweSecretKey {
             "Fourier GGSW output layout mismatch"
         );
         workspace.assert_ggsw_compatible(params.size());
-        self.encrypt_ggsw_kernel_to(input, output, params, fft, rng, workspace);
+        self.encrypt_ggsw_kernel_to(
+            input.as_view(),
+            output.as_mut_view(),
+            params,
+            fft,
+            rng,
+            workspace,
+        );
     }
 
     /// Encrypts after the caller validates key, input/output, FFT and workspace.
-    pub(crate) fn encrypt_ggsw_kernel_to<T, Table, R, A, B>(
+    pub(crate) fn encrypt_ggsw_kernel_to<T, Table, R>(
         &self,
-        input: &Polynomial<A>,
-        output: &mut FourierGgswCiphertext<B>,
+        input: Polynomial<&[T]>,
+        output: FourierGgswCiphertext<&mut [Complex64]>,
         params: &GlevParameters<T, NativeModulus<T>>,
         fft: &mut FftEngine<'_, Table>,
         rng: &mut R,
@@ -142,8 +154,6 @@ impl FourierGlweSecretKey {
         T: TorusFftValue,
         Table: FftTable,
         R: rand::Rng + rand::CryptoRng,
-        A: Data<Elem = T>,
-        B: DataMut<Elem = Complex64>,
     {
         let fourier_length = fft.fourier_length();
         let modulus = params.cipher_modulus();
@@ -163,9 +173,9 @@ impl FourierGlweSecretKey {
 
     /// Encrypts using the complete, prepared level transforms in `workspace`.
     /// The caller establishes matching key, output, table and workspace layouts.
-    pub(super) fn encrypt_ggsw_from_levels_to<T, Table, R, B>(
+    pub(super) fn encrypt_ggsw_from_levels_to<T, Table, R>(
         &self,
-        output: &mut FourierGgswCiphertext<B>,
+        mut output: FourierGgswCiphertext<&mut [Complex64]>,
         params: &GlevParameters<T, NativeModulus<T>>,
         fft: &mut FftEngine<'_, Table>,
         rng: &mut R,
@@ -174,7 +184,6 @@ impl FourierGlweSecretKey {
         T: TorusFftValue,
         Table: FftTable,
         R: rand::Rng + rand::CryptoRng,
-        B: DataMut<Elem = Complex64>,
     {
         let fourier_length = fft.fourier_length();
         let fourier_glwe_len = params.fourier_glwe_len();
@@ -189,7 +198,7 @@ impl FourierGlweSecretKey {
                 .zip(workspace.level_transforms.chunks_exact(fourier_length))
             {
                 self.encrypt_zeros_kernel_to(
-                    &mut glwe,
+                    glwe.as_mut_view(),
                     params.inner(),
                     fft,
                     rng,

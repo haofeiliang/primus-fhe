@@ -4,7 +4,11 @@ use super::{FourierGlweTraceKey, FourierGlweTraceWorkspace, kernels};
 use primus_data::{Data, DataMut};
 use primus_fft::{FftEngine, FftTable, TorusFftValue};
 use primus_integer::DivRem;
-use primus_lattice::{GlweSize, glwe::Glwe, lwe::Lwe};
+use primus_lattice::{
+    GlweSize,
+    glwe::{Glwe, GlweIterMut},
+    lwe::Lwe,
+};
 use primus_modulus::{NativeModulus, PowOf2Modulus};
 use primus_reduce::ReduceNeg;
 
@@ -223,8 +227,8 @@ impl<T: TorusFftValue> FourierGlweTraceKey<T> {
             },
             |index, input, output| {
                 self.automorphism_keys[index].apply_kernel_to(
-                    &Glwe::new(input),
-                    &mut Glwe::new(output),
+                    Glwe::new(input),
+                    Glwe::new(output),
                     fft,
                     automorphism,
                 );
@@ -272,7 +276,13 @@ impl<T: TorusFftValue> FourierGlweTraceKey<T> {
                 .all(|&index| index < self.glwe_size.poly_length().get()),
             "projection index outside polynomial"
         );
-        self.project_indices_to(input, indices.iter().copied(), output, fft, workspace);
+        self.project_indices_to(
+            input.as_view(),
+            indices.iter().copied(),
+            output,
+            fft,
+            workspace,
+        );
     }
 
     /// Projects coefficients `0..count` into consecutive constant-message GLWEs.
@@ -300,21 +310,20 @@ impl<T: TorusFftValue> FourierGlweTraceKey<T> {
             count <= self.glwe_size.poly_length().get(),
             "projection prefix exceeds polynomial length"
         );
-        self.project_indices_to(input, 0..count, output, fft, workspace);
+        self.project_indices_to(input.as_view(), 0..count, output, fft, workspace);
     }
 
     // Public callers validate the index range. Check the remaining layouts
     // once, then use the same arithmetic for a slice iterator or a prefix range.
-    fn project_indices_to<Table, A>(
+    fn project_indices_to<Table>(
         &self,
-        input: &Glwe<A>,
+        input: Glwe<&[T]>,
         indices: impl ExactSizeIterator<Item = usize>,
         output: &mut [T],
         fft: &mut FftEngine<'_, Table>,
         workspace: &mut FourierGlweTraceWorkspace<T>,
     ) where
         Table: FftTable,
-        A: Data<Elem = T>,
     {
         let glwe_len = self.glwe_size.glwe_len();
         let poly_length = self.glwe_size.poly_length().get();
@@ -334,14 +343,19 @@ impl<T: TorusFftValue> FourierGlweTraceKey<T> {
         self.assert_compatible(fft, workspace);
         let modulus = NativeModulus::new();
         let exponent_modulus = PowOf2Modulus::new(2 * poly_length);
-        for (index, output) in indices.zip(output.chunks_exact_mut(glwe_len)) {
+        for (index, mut output) in indices.zip(GlweIterMut::new(output, glwe_len)) {
             input.mul_monomial_to(
                 exponent_modulus.reduce_neg(index),
-                &mut Glwe::new(&mut *output),
+                &mut output,
                 poly_length,
                 modulus,
             );
-            self.trace_kernel_assign::<_, true>(output, self.automorphism_count(), fft, workspace);
+            self.trace_kernel_assign::<_, true>(
+                output.as_mut(),
+                self.automorphism_count(),
+                fft,
+                workspace,
+            );
         }
     }
 
@@ -438,8 +452,8 @@ impl<T: TorusFftValue> FourierGlweTraceKey<T> {
             },
             |index, input, output| {
                 self.automorphism_keys[index].apply_kernel_to(
-                    &Glwe::new(input),
-                    &mut Glwe::new(output),
+                    Glwe::new(input),
+                    Glwe::new(output),
                     fft,
                     automorphism,
                 );
@@ -518,8 +532,8 @@ impl<T: TorusFftValue> FourierGlweTraceKey<T> {
             },
             |index, input, output| {
                 self.automorphism_keys[index].apply_kernel_to(
-                    &Glwe::new(input),
-                    &mut Glwe::new(output),
+                    Glwe::new(input),
+                    Glwe::new(output),
                     fft,
                     automorphism,
                 );

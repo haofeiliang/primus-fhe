@@ -1,7 +1,7 @@
 use num_complex::Complex64;
 use primus_data::{Data, DataMut};
 
-use super::FourierPolynomial;
+use super::{FourierPolynomial, FourierPolynomialMut, FourierPolynomialRef};
 
 impl<S> FourierPolynomial<S>
 where
@@ -13,10 +13,7 @@ where
     where
         A: Data<Elem = Complex64>,
     {
-        debug_assert_eq!(self.0.len(), rhs.0.len());
-        for (value, rhs) in self.0.iter_mut().zip(rhs.0.iter()) {
-            *value += *rhs;
-        }
+        add_assign_kernel(self.as_mut_view(), rhs.as_view());
     }
 
     /// Adds `rhs` pointwise and returns this Fourier polynomial.
@@ -42,10 +39,27 @@ where
         A: Data<Elem = Complex64>,
         B: DataMut<Elem = Complex64>,
     {
-        debug_assert_eq!(self.0.len(), rhs.0.len());
-        debug_assert_eq!(self.0.len(), output.0.len());
-        for ((output, lhs), rhs) in output.0.iter_mut().zip(self.0.iter()).zip(rhs.0.iter()) {
-            *output = *lhs + *rhs;
-        }
+        add_to_kernel(self.as_view(), rhs.as_view(), output.as_mut_view());
+    }
+}
+
+#[inline]
+fn add_assign_kernel(mut acc: FourierPolynomialMut<'_>, rhs: FourierPolynomialRef<'_>) {
+    debug_assert_eq!(acc.fourier_length(), rhs.fourier_length());
+    for (value, rhs) in acc.iter_mut().zip(rhs.iter()) {
+        *value += *rhs;
+    }
+}
+
+#[inline]
+fn add_to_kernel(
+    lhs: FourierPolynomialRef<'_>,
+    rhs: FourierPolynomialRef<'_>,
+    mut output: FourierPolynomialMut<'_>,
+) {
+    debug_assert_eq!(lhs.fourier_length(), rhs.fourier_length());
+    debug_assert_eq!(lhs.fourier_length(), output.fourier_length());
+    for ((output, lhs), rhs) in output.iter_mut().zip(lhs.iter()).zip(rhs.iter()) {
+        *output = *lhs + *rhs;
     }
 }

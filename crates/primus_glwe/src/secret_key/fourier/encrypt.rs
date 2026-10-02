@@ -58,19 +58,21 @@ impl FourierGlweSecretKey {
         B: DataMut<Elem = Complex64>,
         T: TorusFftValue,
     {
-        self.assert_encrypt_compatible(output, params, fft, workspace);
+        self.assert_encrypt_compatible(output.as_ref().len(), params, fft, workspace);
         assert_eq!(
             input.as_ref().len(),
             self.poly_length(),
             "GLWE message length mismatch"
         );
-        self.encrypt_kernel_to(output, params.inner(), fft, rng, workspace, |body| {
-            params.plaintext_codec().add_encode_slice_assign(
-                body,
-                input.as_ref(),
-                PlaintextEmbedding::Unsigned,
-            );
-        });
+        self.encrypt_plaintext_kernel_to(
+            input.as_view(),
+            output.as_mut_view(),
+            params,
+            fft,
+            rng,
+            workspace,
+            PlaintextEmbedding::Unsigned,
+        );
     }
 
     /// Encrypts a polynomial using centered plaintext embedding.
@@ -94,19 +96,21 @@ impl FourierGlweSecretKey {
         B: DataMut<Elem = Complex64>,
         T: TorusFftValue,
     {
-        self.assert_encrypt_compatible(output, params, fft, workspace);
+        self.assert_encrypt_compatible(output.as_ref().len(), params, fft, workspace);
         assert_eq!(
             input.as_ref().len(),
             self.poly_length(),
             "GLWE message length mismatch"
         );
-        self.encrypt_kernel_to(output, params.inner(), fft, rng, workspace, |body| {
-            params.plaintext_codec().add_encode_slice_assign(
-                body,
-                input.as_ref(),
-                PlaintextEmbedding::Centered,
-            );
-        });
+        self.encrypt_plaintext_kernel_to(
+            input.as_view(),
+            output.as_mut_view(),
+            params,
+            fft,
+            rng,
+            workspace,
+            PlaintextEmbedding::Centered,
+        );
     }
 
     /// Encrypts a polynomial whose coefficients are already encoded in the
@@ -131,13 +135,20 @@ impl FourierGlweSecretKey {
         B: DataMut<Elem = Complex64>,
         T: TorusFftValue,
     {
-        self.assert_encrypt_compatible(output, params, fft, workspace);
+        self.assert_encrypt_compatible(output.as_ref().len(), params, fft, workspace);
         assert_eq!(
             input.as_ref().len(),
             self.poly_length(),
             "GLWE message length mismatch"
         );
-        self.encrypt_encoded_kernel_to(input, output, params.inner(), fft, rng, workspace);
+        self.encrypt_encoded_kernel_to(
+            input.as_view(),
+            output.as_mut_view(),
+            params.inner(),
+            fft,
+            rng,
+            workspace,
+        );
     }
 
     /// Encrypts zero into a native-torus Fourier-domain GLWE ciphertext.
@@ -183,8 +194,36 @@ impl FourierGlweSecretKey {
         B: DataMut<Elem = Complex64>,
         T: TorusFftValue,
     {
-        self.assert_encrypt_compatible(output, params, fft, workspace);
-        self.encrypt_zeros_kernel_to(output, params.inner(), fft, rng, workspace);
+        self.assert_encrypt_compatible(output.as_ref().len(), params, fft, workspace);
+        self.encrypt_zeros_kernel_to(output.as_mut_view(), params.inner(), fft, rng, workspace);
+    }
+
+    /// Builds the plaintext body addition after storage has been normalized to views.
+    /// The caller has validated all layouts/resources; plaintext range checks still
+    /// run in the codec after noise sampling, preserving partial-write/RNG behavior.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "explicit message embedding and encryption resources"
+    )]
+    fn encrypt_plaintext_kernel_to<T, Table, R>(
+        &self,
+        input: Polynomial<&[T]>,
+        output: FourierGlweCiphertext<&mut [Complex64]>,
+        params: &GlweParameters<T, NativeModulus<T>>,
+        fft: &mut FftEngine<'_, Table>,
+        rng: &mut R,
+        workspace: &mut FourierGlweEncryptWorkspace<T>,
+        embedding: PlaintextEmbedding,
+    ) where
+        T: TorusFftValue,
+        Table: FftTable,
+        R: rand::Rng + rand::CryptoRng,
+    {
+        self.encrypt_kernel_to(output, params.inner(), fft, rng, workspace, |body| {
+            params
+                .plaintext_codec()
+                .add_encode_slice_assign(body, input.as_ref(), embedding);
+        });
     }
 
     /// Encrypts an encoded coefficient polynomial without repeating boundary checks.
@@ -194,10 +233,10 @@ impl FourierGlweSecretKey {
     /// Input length must equal the key's polynomial length; coefficients must be
     /// canonical in the ciphertext ring. No plaintext or gadget scaling is applied.
     #[inline]
-    pub(super) fn encrypt_encoded_kernel_to<T, Table, R, A, B>(
+    pub(super) fn encrypt_encoded_kernel_to<T, Table, R>(
         &self,
-        input: &Polynomial<A>,
-        output: &mut FourierGlweCiphertext<B>,
+        input: Polynomial<&[T]>,
+        output: FourierGlweCiphertext<&mut [Complex64]>,
         params: &GlweParametersInner<T, NativeModulus<T>>,
         fft: &mut FftEngine<'_, Table>,
         rng: &mut R,
@@ -205,12 +244,10 @@ impl FourierGlweSecretKey {
     ) where
         Table: FftTable,
         R: rand::Rng + rand::CryptoRng,
-        A: Data<Elem = T>,
-        B: DataMut<Elem = Complex64>,
         T: TorusFftValue,
     {
         self.encrypt_kernel_to(output, params, fft, rng, workspace, |body| {
-            Polynomial::new(body).add_assign(input, NativeModulus::new());
+            Polynomial::new(body).add_assign(&input, NativeModulus::new());
         });
     }
 
@@ -219,9 +256,9 @@ impl FourierGlweSecretKey {
     /// The caller must validate key/output layouts and matching parameter/transform
     /// domains before entering this kernel; the workspace must also match the key.
     #[inline]
-    pub(super) fn encrypt_zeros_kernel_to<T, Table, R, B>(
+    pub(super) fn encrypt_zeros_kernel_to<T, Table, R>(
         &self,
-        output: &mut FourierGlweCiphertext<B>,
+        output: FourierGlweCiphertext<&mut [Complex64]>,
         params: &GlweParametersInner<T, NativeModulus<T>>,
         fft: &mut FftEngine<'_, Table>,
         rng: &mut R,
@@ -229,7 +266,6 @@ impl FourierGlweSecretKey {
     ) where
         Table: FftTable,
         R: rand::Rng + rand::CryptoRng,
-        B: DataMut<Elem = Complex64>,
         T: TorusFftValue,
     {
         self.encrypt_kernel_to(output, params, fft, rng, workspace, |_| {});
@@ -237,15 +273,14 @@ impl FourierGlweSecretKey {
 
     /// Validates layout and transform compatibility before sampling or writing output.
     #[inline]
-    fn assert_encrypt_compatible<T, Table, B>(
+    fn assert_encrypt_compatible<T, Table>(
         &self,
-        output: &FourierGlweCiphertext<B>,
+        output_len: usize,
         params: &GlweParameters<T, NativeModulus<T>>,
         fft: &FftEngine<'_, Table>,
         workspace: &FourierGlweEncryptWorkspace<T>,
     ) where
         Table: FftTable,
-        B: Data<Elem = Complex64>,
         T: TorusFftValue,
     {
         assert_eq!(self.size, params.size(), "GLWE parameter layout mismatch");
@@ -255,7 +290,7 @@ impl FourierGlweSecretKey {
             "FFT polynomial length mismatch"
         );
         assert_eq!(
-            output.as_ref().len(),
+            output_len,
             self.size.fourier_glwe_len(),
             "Fourier GLWE output layout mismatch"
         );
@@ -266,9 +301,9 @@ impl FourierGlweSecretKey {
     /// Calls `add_message` once on the sampled coefficient noise, before transforming
     /// the body. Its concrete closure type specializes plaintext/encoded/zero paths
     /// without dynamic dispatch or an intermediate message buffer.
-    fn encrypt_kernel_to<T, Table, R, B>(
+    fn encrypt_kernel_to<T, Table, R>(
         &self,
-        output: &mut FourierGlweCiphertext<B>,
+        mut output: FourierGlweCiphertext<&mut [Complex64]>,
         params: &GlweParametersInner<T, NativeModulus<T>>,
         fft: &mut FftEngine<'_, Table>,
         rng: &mut R,
@@ -277,7 +312,6 @@ impl FourierGlweSecretKey {
     ) where
         Table: FftTable,
         R: rand::Rng + rand::CryptoRng,
-        B: DataMut<Elem = Complex64>,
         T: TorusFftValue,
     {
         let poly_length = self.size.poly_length().get();

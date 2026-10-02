@@ -37,18 +37,44 @@ impl<T: FheUint> NttNtruSecretKey<T> {
             "gadget output length mismatch"
         );
 
+        self.encrypt_nlev_kernel_to(
+            message.as_view(),
+            result.as_mut_view(),
+            params,
+            ntt,
+            rng,
+            workspace,
+        );
+    }
+
+    /// Adds each scaled message before multiplication by the inverse secret, giving
+    /// NLev phase `g_l * message + e_l`. The caller validates complete operands,
+    /// the key/parameter/table domain and polynomial scratch.
+    fn encrypt_nlev_kernel_to<M, Table, R>(
+        &self,
+        message: Polynomial<&[T]>,
+        mut result: NttNlevCiphertext<&mut [T]>,
+        params: &NlevParameters<T, M>,
+        ntt: &Table,
+        rng: &mut R,
+        workspace: &mut NttNtruGadgetEncryptWorkspace<T>,
+    ) where
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+        R: rand::Rng + rand::CryptoRng,
+    {
         let poly_length = self.poly_length();
         let ntru_params = params.ntru();
         let modulus = ntru_params.cipher_modulus();
-        for (scalar, mut level) in params
+        for (scalar, level) in params
             .basis()
             .scalar_iter()
             .zip(result.iter_ntt_ntru_mut(poly_length))
         {
             message.mul_scalar_to(scalar, &mut workspace.encoded, modulus);
             self.encrypt_encoded_to_unchecked(
-                &workspace.encoded,
-                &mut level,
+                workspace.encoded.as_view(),
+                level,
                 ntru_params,
                 ntt,
                 rng,
@@ -94,16 +120,42 @@ impl<T: FheUint> NttNtruSecretKey<T> {
             input < modulus.value(),
             "NLev constant must be a canonical residue"
         );
+        self.encrypt_nlev_constant_kernel_to(
+            input,
+            output.as_mut_view(),
+            params,
+            ntt,
+            rng,
+            workspace,
+        );
+    }
+
+    /// Encrypts a validated canonical constant after the caller checks resources and output.
+    /// Clears the coefficient scratch once, then changes only its constant term per level.
+    fn encrypt_nlev_constant_kernel_to<M, Table, R>(
+        &self,
+        input: T,
+        mut output: NttNlevCiphertext<&mut [T]>,
+        params: &NlevParameters<T, M>,
+        ntt: &Table,
+        rng: &mut R,
+        workspace: &mut NttNtruGadgetEncryptWorkspace<T>,
+    ) where
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+        R: rand::Rng + rand::CryptoRng,
+    {
+        let modulus = params.ntru().cipher_modulus();
         workspace.encoded.as_mut().fill(T::ZERO);
-        for (scalar, mut level) in params
+        for (scalar, level) in params
             .basis()
             .scalar_iter()
             .zip(output.iter_ntt_ntru_mut(self.poly_length()))
         {
             workspace.encoded.as_mut()[0] = modulus.reduce_mul(input, scalar);
             self.encrypt_encoded_to_unchecked(
-                &workspace.encoded,
-                &mut level,
+                workspace.encoded.as_view(),
+                level,
                 params.ntru(),
                 ntt,
                 rng,
@@ -139,6 +191,32 @@ impl<T: FheUint> NttNtruSecretKey<T> {
             "gadget output length mismatch"
         );
 
+        self.encrypt_ngsw_kernel_to(
+            message.as_view(),
+            result.as_mut_view(),
+            params,
+            ntt,
+            rng,
+            workspace,
+        );
+    }
+
+    /// Adds the scaled message in NTT form after encrypting zero, giving NGSW phase
+    /// `f * g_l * message + e_l`. The caller validates complete operands,
+    /// the key/parameter/table domain and polynomial scratch.
+    fn encrypt_ngsw_kernel_to<M, Table, R>(
+        &self,
+        message: Polynomial<&[T]>,
+        mut result: NttNgswCiphertext<&mut [T]>,
+        params: &NlevParameters<T, M>,
+        ntt: &Table,
+        rng: &mut R,
+        workspace: &mut NttNtruGadgetEncryptWorkspace<T>,
+    ) where
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+        R: rand::Rng + rand::CryptoRng,
+    {
         let poly_length = self.poly_length();
         let ntru_params = params.ntru();
         let modulus = ntru_params.cipher_modulus();
@@ -149,7 +227,7 @@ impl<T: FheUint> NttNtruSecretKey<T> {
         {
             message.mul_scalar_to(scalar, &mut workspace.encoded, modulus);
             ntt.transform_slice(workspace.encoded.as_mut());
-            self.encrypt_zeros_to_unchecked(&mut level, ntru_params, ntt, rng);
+            self.encrypt_zeros_to_unchecked(level.as_mut_view(), ntru_params, ntt, rng);
             NttPolynomial(level.as_mut())
                 .add_assign(&NttPolynomial(workspace.encoded.as_ref()), modulus);
         }
@@ -207,7 +285,7 @@ impl<T: FheUint> NttNtruSecretKey<T> {
                 .zip(block.chunks_exact_mut(self.poly_length()))
             {
                 let mut level = NttNtruCiphertext::new(level);
-                self.encrypt_zeros_to_unchecked(&mut level, params.ntru(), ntt, rng);
+                self.encrypt_zeros_to_unchecked(level.as_mut_view(), params.ntru(), ntt, rng);
                 let diagonal = modulus.reduce_mul(constant, scalar);
                 for coefficient in level.as_mut() {
                     *coefficient = modulus.reduce_add(*coefficient, diagonal);

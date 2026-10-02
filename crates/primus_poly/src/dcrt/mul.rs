@@ -217,21 +217,14 @@ where
         debug_assert_eq!(dcrt_poly_length, w.len());
         debug_assert_eq!(dcrt_poly_length, output.dcrt_poly_length());
         debug_assert_eq!(dcrt_poly_length, moduli.len() * poly_length);
-
-        izip!(
-            self.iter_each_modulus_mut(poly_length),
-            rhs.iter_each_modulus(poly_length),
-            w.chunks_exact(poly_length),
-            output.iter_each_modulus_mut(poly_length),
-            moduli
-        )
-        .for_each(|(a, s, w, b, &modulus)| {
-            #[cfg(not(feature = "simd"))]
-            slice_butterfly(a, s, w, b, modulus);
-
-            #[cfg(feature = "simd")]
-            simd_butterfly(a, s, w, b, modulus);
-        })
+        butterfly_mul_factor_to_kernel(
+            self.as_mut_view(),
+            rhs.as_view(),
+            w,
+            output.as_mut_view(),
+            poly_length,
+            moduli,
+        );
     }
 }
 
@@ -307,4 +300,35 @@ where
             f.factor_mul_slice_to(in_poly, out_poly, modulus)
         })
     }
+}
+
+// The caller supplies complete modulus-major blocks; the public entry retains
+// the shape diagnostics. Each limb uses its own scalar or SIMD butterfly and
+// corresponding factor block.
+#[inline]
+fn butterfly_mul_factor_to_kernel<T, F>(
+    mut lhs: DcrtPolynomial<&mut [T]>,
+    rhs: DcrtPolynomial<&[T]>,
+    w: &[F],
+    mut output: DcrtPolynomial<&mut [T]>,
+    poly_length: usize,
+    moduli: &[T],
+) where
+    T: FheUint,
+    F: Factor<T>,
+{
+    izip!(
+        lhs.iter_each_modulus_mut(poly_length),
+        rhs.iter_each_modulus(poly_length),
+        w.chunks_exact(poly_length),
+        output.iter_each_modulus_mut(poly_length),
+        moduli
+    )
+    .for_each(|(a, s, w, b, &modulus)| {
+        #[cfg(not(feature = "simd"))]
+        slice_butterfly(a, s, w, b, modulus);
+
+        #[cfg(feature = "simd")]
+        simd_butterfly(a, s, w, b, modulus);
+    })
 }

@@ -92,7 +92,8 @@ where
         product.fourier_accumulator.set_zero();
         workspace
             .combined_control
-            .accumulate_external_product(output, basis, fft, &mut product);
+            .as_view()
+            .accumulate_external_product(output.as_view(), basis, fft, &mut product);
         product.fourier_accumulator.write_torus_form(output, fft);
         output.add_assign(input, NativeModulus::new());
     }
@@ -175,13 +176,10 @@ where
         input.mul_monomial_sub_one_to(exponent, output, poly_length, modulus);
         let mut product = workspace.external_product.as_mut();
         product.ntt_accumulator.set_zero();
-        workspace.combined_control.accumulate_external_product(
-            output,
-            basis,
-            modulus,
-            ntt,
-            &mut product,
-        );
+        workspace
+            .combined_control
+            .as_view()
+            .accumulate_external_product(output.as_view(), basis, modulus, ntt, &mut product);
         product.ntt_accumulator.write_coeff_form(output, ntt);
         output.add_assign(input, modulus);
     }

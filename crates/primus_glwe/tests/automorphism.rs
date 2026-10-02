@@ -97,9 +97,11 @@ fn ntt_and_coefficient_inputs_reuse_the_automorphism_key() {
     );
 
     let mut automated_ntt: NttGlwe<Vec<u64>> = NttGlwe::zero(glwe_parameters.glwe_len());
+    // Coefficient evaluation above uses owned containers; transformed evaluation
+    // borrows views of the same buffers through the public entry point.
     automorphism_key.apply_ntt_to(
-        &encrypted,
-        &mut automated_ntt,
+        &encrypted.as_view(),
+        &mut automated_ntt.as_mut_view(),
         modulus,
         &ntt,
         &mut automorphism_workspace,
@@ -183,8 +185,8 @@ fn fourier_automorphism_input<Table: FftTable>() {
         key.apply_to(&input, &mut output, &mut fft, &mut workspace);
         assert_phase(output.as_ref(), &expected, &s, q);
         key.apply_fourier_to(
-            &fourier_input,
-            &mut fourier_output,
+            &fourier_input.as_view(),
+            &mut fourier_output.as_mut_view(),
             &mut fft,
             &mut workspace,
         );

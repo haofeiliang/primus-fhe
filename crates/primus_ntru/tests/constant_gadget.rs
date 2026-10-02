@@ -40,8 +40,8 @@ fn constant_nlev_matches_polynomial_encryption() {
         let mut reference_rng = StdRng::seed_from_u64(83);
         let mut actual_rng = StdRng::seed_from_u64(83);
         key.encrypt_nlev_to(
-            &message,
-            &mut expected,
+            &message.as_view(),
+            &mut expected.as_mut_view(),
             &gadget,
             &ntt,
             &mut reference_rng,
@@ -110,8 +110,8 @@ fn check_fourier_constant_nlev<Table: FftTable>() {
         let mut reference_rng = StdRng::seed_from_u64(83);
         let mut actual_rng = StdRng::seed_from_u64(83);
         key.encrypt_nlev_to(
-            &message,
-            &mut expected,
+            &message.as_view(),
+            &mut expected.as_mut_view(),
             &gadget,
             &mut fft,
             &mut reference_rng,
@@ -171,7 +171,7 @@ fn signed_ngsw_batches_match_polynomial_encryption() {
                 constant as u32
             };
             key.encrypt_ngsw_to(
-                &message,
+                &message.as_view(),
                 &mut NttNgswCiphertext::new(block),
                 &gadget,
                 &ntt,
@@ -241,7 +241,7 @@ fn check_fourier_ngsw_batch<Table: FftTable>() {
             let mut message = Polynomial::new(vec![0; POLY_LENGTH]);
             message.as_mut()[0] = constant as u32;
             key.encrypt_ngsw_to(
-                &message,
+                &message.as_view(),
                 &mut FourierNgswCiphertext::new(block),
                 &gadget,
                 &mut fft,

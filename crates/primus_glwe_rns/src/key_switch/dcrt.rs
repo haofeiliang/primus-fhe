@@ -131,7 +131,22 @@ impl<T: FheUint> DcrtGlweKeySwitchingKey<T> {
             workspace.input_size == self.input_size && workspace.output_size == self.output_size,
             "DCRT key-switching key and workspace use incompatible layouts"
         );
+        self.key_switch_kernel_to(input.as_view(), output.as_mut_view(), domain, workspace);
+    }
 
+    /// Consumes complete input/output and workspace layouts checked by the public entry.
+    /// The domain must retain the key generation basis, representation and workspace
+    /// compatibility; layout checks alone do not establish those numerical contracts.
+    fn key_switch_kernel_to<M, Table>(
+        &self,
+        input: CrtGlweCiphertext<&[T]>,
+        mut output: DcrtGlweCiphertext<&mut [T]>,
+        domain: &DcrtGadgetDomain<'_, T, M, Table>,
+        workspace: &mut DcrtGlweKeySwitchingWorkspace<T>,
+    ) where
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+    {
         let parameters = domain.parameters();
         let table = domain.table();
         let rns_base = domain.rns_base();

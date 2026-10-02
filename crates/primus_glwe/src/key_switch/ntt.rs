@@ -108,8 +108,8 @@ impl<T: FheUint> NttGlweKeySwitchingKey<T> {
                 .cipher_modulus()
                 .encode_signed_slice_to(secret_poly, encoded_secret.as_mut_slice());
             output_secret_key.encrypt_glev_kernel_to(
-                &Polynomial::new(encoded_secret.as_slice()),
-                &mut NttGlev::new(entry),
+                Polynomial::new(encoded_secret.as_slice()),
+                NttGlev::new(entry),
                 params,
                 ntt,
                 rng,

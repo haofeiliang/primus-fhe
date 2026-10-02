@@ -3,6 +3,7 @@
 use primus_data::{Data, DataMut};
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{FftEngine, FftTable, TorusFftValue};
+use primus_lattice::ntru::NtruIterMut;
 use primus_modulus::{NativeModulus, PowOf2Modulus};
 use primus_poly::PolyLength;
 use primus_reduce::ReduceNeg;
@@ -248,7 +249,13 @@ impl<T: TorusFftValue> FourierNtruTraceKey<T> {
             indices.iter().all(|&index| index < self.poly_length()),
             "projection index outside polynomial"
         );
-        self.project_indices_to(input, indices.iter().copied(), output, fft, workspace);
+        self.project_indices_to(
+            input.as_view(),
+            indices.iter().copied(),
+            output,
+            fft,
+            workspace,
+        );
     }
 
     /// Projects coefficients `0..count` into consecutive constant-message NTRUs.
@@ -276,7 +283,7 @@ impl<T: TorusFftValue> FourierNtruTraceKey<T> {
             count <= self.poly_length(),
             "projection prefix exceeds polynomial length"
         );
-        self.project_indices_to(input, 0..count, output, fft, workspace);
+        self.project_indices_to(input.as_view(), 0..count, output, fft, workspace);
     }
 
     /// Projects `0..count` with caller-owned coefficient and external-product scratch.
@@ -315,16 +322,37 @@ impl<T: TorusFftValue> FourierNtruTraceKey<T> {
             "trace coefficient scratch length mismatch"
         );
         self.automorphism_keys[0].assert_external_product_compatible(fft, external_product);
+        self.project_prefix_with_scratch_kernel_to(
+            input.as_view(),
+            output,
+            fft,
+            scratch,
+            external_product,
+        );
+    }
+
+    /// The public boundary validated N input coefficients, complete output blocks,
+    /// exactly 2N scratch coefficients and matching backend resources. Reuse the two
+    /// scratch halves serially across the projections; each is overwritten before use.
+    fn project_prefix_with_scratch_kernel_to<Table: FftTable>(
+        &self,
+        input: NtruCiphertext<&[T]>,
+        output: &mut [T],
+        fft: &mut FftEngine<'_, Table>,
+        scratch: &mut [T],
+        external_product: &mut crate::FourierNtruExternalProductWorkspace<T>,
+    ) {
+        let n = self.poly_length();
         let (automorphism_output, coefficients) = scratch.split_at_mut(n);
         let exponents = PowOf2Modulus::new(2 * n);
-        for (index, output) in output.chunks_exact_mut(n).enumerate() {
+        for (index, mut output) in NtruIterMut::new(output, n).enumerate() {
             input.mul_monomial_to(
                 exponents.reduce_neg(index),
-                &mut NtruCiphertext::new(&mut *output),
+                &mut output,
                 NativeModulus::new(),
             );
             kernels::trace_assign::<_, _, _, _, true>(
-                output,
+                output.as_mut(),
                 self.automorphism_count(),
                 automorphism_output,
                 NativeModulus::new(),
@@ -335,8 +363,8 @@ impl<T: TorusFftValue> FourierNtruTraceKey<T> {
                 },
                 |index, input, output| {
                     self.automorphism_keys[index].apply_with_scratch_kernel_to(
-                        &NtruCiphertext::new(input),
-                        &mut NtruCiphertext::new(output),
+                        NtruCiphertext::new(input),
+                        NtruCiphertext::new(output),
                         fft,
                         coefficients,
                         external_product,
@@ -348,28 +376,28 @@ impl<T: TorusFftValue> FourierNtruTraceKey<T> {
 
     // Public callers validate the index range. Check the remaining layouts
     // once, then use the same arithmetic for a slice iterator or a prefix range.
-    fn project_indices_to<Table, A>(
+    fn project_indices_to<Table>(
         &self,
-        input: &NtruCiphertext<A>,
+        input: NtruCiphertext<&[T]>,
         indices: impl ExactSizeIterator<Item = usize>,
         output: &mut [T],
         fft: &mut FftEngine<'_, Table>,
         workspace: &mut FourierNtruTraceWorkspace<T>,
     ) where
         Table: FftTable,
-        A: Data<Elem = T>,
     {
         self.check_batch(input.as_ref(), indices.len(), output, fft, workspace);
         let n = self.poly_length();
         let modulus = NativeModulus::new();
         let exponents = PowOf2Modulus::new(2 * n);
-        for (index, output) in indices.zip(output.chunks_exact_mut(n)) {
-            input.mul_monomial_to(
-                exponents.reduce_neg(index),
-                &mut NtruCiphertext::new(&mut *output),
-                modulus,
+        for (index, mut output) in indices.zip(NtruIterMut::new(output, n)) {
+            input.mul_monomial_to(exponents.reduce_neg(index), &mut output, modulus);
+            self.trace_kernel_assign::<_, true>(
+                output.as_mut(),
+                self.automorphism_count(),
+                fft,
+                workspace,
             );
-            self.trace_kernel_assign::<_, true>(output, self.automorphism_count(), fft, workspace);
         }
     }
 
@@ -440,8 +468,8 @@ impl<T: TorusFftValue> FourierNtruTraceKey<T> {
             },
             |index, input, output| {
                 self.automorphism_keys[index].apply_kernel_to(
-                    &NtruCiphertext::new(input),
-                    &mut NtruCiphertext::new(output),
+                    NtruCiphertext::new(input),
+                    NtruCiphertext::new(output),
                     fft,
                     automorphism,
                 )
@@ -496,8 +524,8 @@ impl<T: TorusFftValue> FourierNtruTraceKey<T> {
             },
             |index, input, output| {
                 self.automorphism_keys[index].apply_kernel_to(
-                    &NtruCiphertext::new(input),
-                    &mut NtruCiphertext::new(output),
+                    NtruCiphertext::new(input),
+                    NtruCiphertext::new(output),
                     fft,
                     automorphism,
                 )

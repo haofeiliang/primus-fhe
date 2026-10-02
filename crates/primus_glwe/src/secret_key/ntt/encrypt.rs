@@ -57,19 +57,20 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         A: Data<Elem = T>,
         B: DataMut<Elem = T>,
     {
-        self.assert_encrypt_compatible(output, params, ntt_table);
+        self.assert_encrypt_compatible(output.as_ref().len(), params, ntt_table);
         assert_eq!(
             input.as_ref().len(),
             self.poly_length(),
             "GLWE message length mismatch"
         );
-        self.encrypt_kernel_to(output, params.inner(), ntt_table, rng, |body| {
-            params.plaintext_codec().add_encode_slice_assign(
-                body,
-                input.as_ref(),
-                PlaintextEmbedding::Unsigned,
-            );
-        });
+        self.encrypt_plaintext_kernel_to(
+            input.as_view(),
+            output.as_mut_view(),
+            params,
+            ntt_table,
+            rng,
+            PlaintextEmbedding::Unsigned,
+        );
     }
 
     /// Encrypts a polynomial using centered plaintext embedding.
@@ -92,19 +93,20 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         A: Data<Elem = T>,
         B: DataMut<Elem = T>,
     {
-        self.assert_encrypt_compatible(output, params, ntt_table);
+        self.assert_encrypt_compatible(output.as_ref().len(), params, ntt_table);
         assert_eq!(
             input.as_ref().len(),
             self.poly_length(),
             "GLWE message length mismatch"
         );
-        self.encrypt_kernel_to(output, params.inner(), ntt_table, rng, |body| {
-            params.plaintext_codec().add_encode_slice_assign(
-                body,
-                input.as_ref(),
-                PlaintextEmbedding::Centered,
-            );
-        });
+        self.encrypt_plaintext_kernel_to(
+            input.as_view(),
+            output.as_mut_view(),
+            params,
+            ntt_table,
+            rng,
+            PlaintextEmbedding::Centered,
+        );
     }
 
     /// Encrypts a polynomial whose coefficients are already encoded in
@@ -133,13 +135,19 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         A: Data<Elem = T>,
         B: DataMut<Elem = T>,
     {
-        self.assert_encrypt_compatible(output, params, ntt_table);
+        self.assert_encrypt_compatible(output.as_ref().len(), params, ntt_table);
         assert_eq!(
             input.as_ref().len(),
             self.poly_length(),
             "GLWE message length mismatch"
         );
-        self.encrypt_encoded_kernel_to(input, output, params.inner(), ntt_table, rng);
+        self.encrypt_encoded_kernel_to(
+            input.as_view(),
+            output.as_mut_view(),
+            params.inner(),
+            ntt_table,
+            rng,
+        );
     }
 
     /// Encrypts zeros (randomized encryption of zero).
@@ -183,8 +191,31 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         R: rand::Rng + rand::CryptoRng,
         A: DataMut<Elem = T>,
     {
-        self.assert_encrypt_compatible(output, params, ntt_table);
-        self.encrypt_zeros_kernel_to(output, params.inner(), ntt_table, rng);
+        self.assert_encrypt_compatible(output.as_ref().len(), params, ntt_table);
+        self.encrypt_zeros_kernel_to(output.as_mut_view(), params.inner(), ntt_table, rng);
+    }
+
+    /// Builds the plaintext body addition after storage has been normalized to views.
+    /// The caller has validated all layouts/resources; plaintext range checks still
+    /// run in the codec after noise sampling, preserving partial-write/RNG behavior.
+    fn encrypt_plaintext_kernel_to<M, Table, R>(
+        &self,
+        input: Polynomial<&[T]>,
+        output: NttGlweCiphertext<&mut [T]>,
+        params: &GlweParameters<T, M>,
+        ntt_table: &Table,
+        rng: &mut R,
+        embedding: PlaintextEmbedding,
+    ) where
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+        R: rand::Rng + rand::CryptoRng,
+    {
+        self.encrypt_kernel_to(output, params.inner(), ntt_table, rng, |body| {
+            params
+                .plaintext_codec()
+                .add_encode_slice_assign(body, input.as_ref(), embedding);
+        });
     }
 
     /// Encrypts an encoded coefficient polynomial without repeating boundary checks.
@@ -194,10 +225,10 @@ impl<T: FheUint> NttGlweSecretKey<T> {
     /// Input length must equal the key's polynomial length; coefficients must be
     /// canonical in the ciphertext ring. No plaintext or gadget scaling is applied.
     #[inline]
-    pub(super) fn encrypt_encoded_kernel_to<M, Table, R, A, B>(
+    pub(super) fn encrypt_encoded_kernel_to<M, Table, R>(
         &self,
-        input: &Polynomial<A>,
-        output: &mut NttGlweCiphertext<B>,
+        input: Polynomial<&[T]>,
+        output: NttGlweCiphertext<&mut [T]>,
         params: &GlweParametersInner<T, M>,
         ntt_table: &Table,
         rng: &mut R,
@@ -205,11 +236,9 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
         R: rand::Rng + rand::CryptoRng,
-        A: Data<Elem = T>,
-        B: DataMut<Elem = T>,
     {
         self.encrypt_kernel_to(output, params, ntt_table, rng, |body| {
-            Polynomial::new(body).add_assign(input, params.cipher_modulus());
+            Polynomial::new(body).add_assign(&input, params.cipher_modulus());
         });
     }
 
@@ -218,9 +247,9 @@ impl<T: FheUint> NttGlweSecretKey<T> {
     /// The caller must validate key/output layouts and matching parameter/transform
     /// domains before entering this kernel.
     #[inline]
-    pub(super) fn encrypt_zeros_kernel_to<M, Table, R, A>(
+    pub(super) fn encrypt_zeros_kernel_to<M, Table, R>(
         &self,
-        output: &mut NttGlweCiphertext<A>,
+        output: NttGlweCiphertext<&mut [T]>,
         params: &GlweParametersInner<T, M>,
         ntt_table: &Table,
         rng: &mut R,
@@ -228,22 +257,20 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
         R: rand::Rng + rand::CryptoRng,
-        A: DataMut<Elem = T>,
     {
         self.encrypt_kernel_to(output, params, ntt_table, rng, |_| {});
     }
 
     /// Validates layout and transform compatibility before sampling or writing output.
     #[inline]
-    fn assert_encrypt_compatible<M, Table, B>(
+    fn assert_encrypt_compatible<M, Table>(
         &self,
-        output: &NttGlweCiphertext<B>,
+        output_len: usize,
         params: &GlweParameters<T, M>,
         ntt_table: &Table,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        B: Data<Elem = T>,
     {
         assert_eq!(self.size, params.size(), "GLWE parameter layout mismatch");
         assert_eq!(
@@ -257,7 +284,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
             "NTT ciphertext modulus mismatch"
         );
         assert_eq!(
-            output.as_ref().len(),
+            output_len,
             self.size.glwe_len(),
             "GLWE output layout mismatch"
         );
@@ -267,9 +294,9 @@ impl<T: FheUint> NttGlweSecretKey<T> {
     /// Calls `add_message` once on the sampled coefficient noise, before transforming
     /// the body. Its concrete closure type specializes plaintext/encoded/zero paths
     /// without dynamic dispatch or an intermediate message buffer.
-    fn encrypt_kernel_to<M, Table, R, B>(
+    fn encrypt_kernel_to<M, Table, R>(
         &self,
-        output: &mut NttGlweCiphertext<B>,
+        mut output: NttGlweCiphertext<&mut [T]>,
         params: &GlweParametersInner<T, M>,
         ntt_table: &Table,
         rng: &mut R,
@@ -278,7 +305,6 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
         R: rand::Rng + rand::CryptoRng,
-        B: DataMut<Elem = T>,
     {
         let poly_length = self.size.poly_length().get();
         debug_assert_eq!(ntt_table.poly_length().get(), poly_length);

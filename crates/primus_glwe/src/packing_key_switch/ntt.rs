@@ -67,8 +67,8 @@ impl<T: FheUint> NttLwePackingKeySwitchingKey<T> {
         super::for_each_secret(input_secret_key, params.cipher_modulus(), |secret| {
             message[0] = secret;
             output_secret_key.encrypt_glev_kernel_to(
-                &Polynomial::new(message.as_slice()),
-                &mut NttGlev::new(entries.next().expect("one GLev per secret coefficient")),
+                Polynomial::new(message.as_slice()),
+                NttGlev::new(entries.next().expect("one GLev per secret coefficient")),
                 params,
                 ntt,
                 rng,

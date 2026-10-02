@@ -175,7 +175,13 @@ where
 
         basis.init_value_carry_slice_assign(scratch.adjust_big_uint_values, scratch.carries);
 
-        self.add_decomposed_glev_product_assign(dcrt_glev, basis, table, rns_base, scratch);
+        self.as_mut_view().add_decomposed_glev_product_assign(
+            dcrt_glev.as_view(),
+            basis,
+            table,
+            rns_base,
+            scratch,
+        );
     }
 
     /// Accumulates `self += dcrt_glev * big_uint_poly` without clearing `self`.
@@ -232,18 +238,26 @@ where
             scratch.carries,
         );
 
-        self.add_decomposed_glev_product_assign(dcrt_glev, basis, table, rns_base, scratch);
+        self.as_mut_view().add_decomposed_glev_product_assign(
+            dcrt_glev.as_view(),
+            basis,
+            table,
+            rns_base,
+            scratch,
+        );
     }
+}
 
+impl<T: FheUint> DcrtGlwe<&mut [T]> {
     /// Accumulates gadget levels after the input polynomial has been adjusted.
     ///
     /// The caller initializes `scratch.adjust_big_uint_values` and `scratch.carries`
     /// with `basis`. Layout, modulus order, digit-lift bounds, and the initialized
     /// output satisfy the public product contract. Other scratch is overwritten;
     /// this kernel neither clears the output nor repeats boundary checks.
-    fn add_decomposed_glev_product_assign<M, Table, A>(
+    fn add_decomposed_glev_product_assign<M, Table>(
         &mut self,
-        dcrt_glev: &DcrtGlev<A>,
+        dcrt_glev: DcrtGlev<&[T]>,
         basis: &BigUintApproxSignedBasis<T>,
         table: &DcrtTable<Table>,
         rns_base: &RNSBase<T, M>,
@@ -251,7 +265,6 @@ where
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: Data<Elem = T>,
     {
         let poly_length = table.poly_length().get();
         let dcrt_glwe_len = self.as_ref().len();

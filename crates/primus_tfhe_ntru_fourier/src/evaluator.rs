@@ -210,8 +210,8 @@ where
         let parameters = self.context.parameters();
         blind_rotate_lookup_table_to(
             self.server_key,
-            input,
-            lookup_table,
+            input.as_view(),
+            lookup_table.as_view(),
             rotation_step,
             &mut self.blind_rotation,
             parameters,

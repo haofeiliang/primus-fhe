@@ -404,19 +404,19 @@ where
         match &mut self.blind_rotation {
             BlindRotation::Classic { key, scratch } => key
                 .fourier_blind_rotate_interleaved_lookup_table_kernel_to(
-                    small_lwe,
-                    lookup_table,
+                    small_lwe.as_view(),
+                    lookup_table.as_view(),
                     rotation_step,
-                    &mut self.main_glwe,
+                    self.main_glwe.as_mut_view(),
                     &mut self.fft,
                     scratch,
                 ),
             BlindRotation::Sparse { key, scratch } => key
                 .fourier_blind_rotate_interleaved_lookup_table_kernel_to(
-                    small_lwe,
-                    lookup_table,
+                    small_lwe.as_view(),
+                    lookup_table.as_view(),
                     rotation_step,
-                    &mut self.main_glwe,
+                    self.main_glwe.as_mut_view(),
                     &mut self.fft,
                     scratch,
                 ),

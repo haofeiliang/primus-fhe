@@ -48,9 +48,14 @@ where
         C: DataMut<Elem = T>,
     {
         let quantizer = self.input_quantizer();
-        self.blind_rotate_with(input, accumulator, output, fft, context, |x| {
-            quantizer.exponent(x)
-        });
+        self.blind_rotate_with(
+            input.as_view(),
+            accumulator.as_view(),
+            output.as_mut_view(),
+            fft,
+            context,
+            |x| quantizer.exponent(x),
+        );
     }
 
     /// Blind-rotates an encoded lookup-table polynomial as a trivial GLWE
@@ -87,23 +92,26 @@ where
             "blind-rotation input, lookup table or output layout mismatch"
         );
         self.assert_compatible(fft, context);
-        self.fourier_blind_rotate_lookup_table_kernel_to(input, lookup_table, output, fft, context);
+        self.fourier_blind_rotate_lookup_table_kernel_to(
+            input.as_view(),
+            lookup_table.as_view(),
+            output.as_mut_view(),
+            fft,
+            context,
+        );
     }
 
     /// Requires resources and per-call layouts validated by the public BR/PBS
     /// entry, or fixed by circuit-bootstrap construction. No release rechecks.
-    pub(crate) fn fourier_blind_rotate_lookup_table_kernel_to<Table, A, B, C>(
+    pub(crate) fn fourier_blind_rotate_lookup_table_kernel_to<Table>(
         &self,
-        input: &Lwe<A>,
-        lookup_table: &Polynomial<B>,
-        output: &mut TorusGlwe<C>,
+        input: Lwe<&[T]>,
+        lookup_table: Polynomial<&[T]>,
+        output: TorusGlwe<&mut [T]>,
         fft: &mut FftEngine<'_, Table>,
         context: &mut FourierGlweBlindRotationWorkspace<T>,
     ) where
         Table: FftTable,
-        A: Data<Elem = T>,
-        B: Data<Elem = T>,
-        C: DataMut<Elem = T>,
     {
         self.fourier_blind_rotate_interleaved_lookup_table_kernel_to(
             input,
@@ -158,10 +166,10 @@ where
         );
         self.assert_compatible(fft, context);
         self.fourier_blind_rotate_interleaved_lookup_table_kernel_to(
-            input,
-            lookup_table,
+            input.as_view(),
+            lookup_table.as_view(),
             rotation_step,
-            output,
+            output.as_mut_view(),
             fft,
             context,
         );
@@ -169,19 +177,16 @@ where
 
     /// Requires resources and per-call layouts validated by the public BR/PBS
     /// entry, or fixed by circuit-bootstrap construction.
-    pub(crate) fn fourier_blind_rotate_interleaved_lookup_table_kernel_to<Table, A, B, C>(
+    pub(crate) fn fourier_blind_rotate_interleaved_lookup_table_kernel_to<Table>(
         &self,
-        input: &Lwe<A>,
-        lookup_table: &Polynomial<B>,
+        input: Lwe<&[T]>,
+        lookup_table: Polynomial<&[T]>,
         rotation_step: usize,
-        output: &mut TorusGlwe<C>,
+        mut output: TorusGlwe<&mut [T]>,
         fft: &mut FftEngine<'_, Table>,
         context: &mut FourierGlweBlindRotationWorkspace<T>,
     ) where
         Table: FftTable,
-        A: Data<Elem = T>,
-        B: Data<Elem = T>,
-        C: DataMut<Elem = T>,
     {
         let poly_length = self.size().glwe_size().poly_length().get();
         let two_n = poly_length * 2;
@@ -244,28 +249,32 @@ where
         C: DataMut<Elem = T>,
     {
         let two_n = 2 * self.size().glwe_size().poly_length().get();
-        self.blind_rotate_with(input, accumulator, output, fft, context, |x| {
-            // This entry already receives exponents; do not quantize them again.
-            let exponent = x.try_into().unwrap();
-            debug_assert!(exponent < two_n);
-            exponent
-        });
+        self.blind_rotate_with(
+            input.as_view(),
+            accumulator.as_view(),
+            output.as_mut_view(),
+            fft,
+            context,
+            |x| {
+                // This entry already receives exponents; do not quantize them again.
+                let exponent = x.try_into().unwrap();
+                debug_assert!(exponent < two_n);
+                exponent
+            },
+        );
     }
 
     /// Validates resources and rotates the initial accumulator before the CMUX loop.
-    fn blind_rotate_with<Table, A, B, C, F>(
+    fn blind_rotate_with<Table, F>(
         &self,
-        input: &Lwe<A>,
-        accumulator: &TorusGlwe<B>,
-        output: &mut TorusGlwe<C>,
+        input: Lwe<&[T]>,
+        accumulator: TorusGlwe<&[T]>,
+        mut output: TorusGlwe<&mut [T]>,
         fft: &mut FftEngine<'_, Table>,
         context: &mut FourierGlweBlindRotationWorkspace<T>,
         exponent_of: F,
     ) where
         Table: FftTable,
-        A: Data<Elem = T>,
-        B: Data<Elem = T>,
-        C: DataMut<Elem = T>,
         F: Fn(T) -> usize,
     {
         let poly_length = self.size().glwe_size().poly_length().get();
@@ -286,7 +295,12 @@ where
 
         self.assert_compatible(fft, context);
         let initial_exponent = exponent_of(input.b()).wrapping_neg() & (two_n - 1);
-        accumulator.mul_monomial_to(initial_exponent, output, poly_length, NativeModulus::new());
+        accumulator.mul_monomial_to(
+            initial_exponent,
+            &mut output,
+            poly_length,
+            NativeModulus::new(),
+        );
         self.blind_rotate_initialized(input, output, fft, context, exponent_of);
     }
 
@@ -319,17 +333,15 @@ where
     }
 
     /// Rotates an initialized accumulator after layouts and resources have been checked.
-    fn blind_rotate_initialized<Table, A, C, F>(
+    fn blind_rotate_initialized<Table, F>(
         &self,
-        input: &Lwe<A>,
-        output: &mut TorusGlwe<C>,
+        input: Lwe<&[T]>,
+        mut output: TorusGlwe<&mut [T]>,
         fft: &mut FftEngine<'_, Table>,
         context: &mut FourierGlweBlindRotationWorkspace<T>,
         exponent_of: F,
     ) where
         Table: FftTable,
-        A: Data<Elem = T>,
-        C: DataMut<Elem = T>,
         F: Fn(T) -> usize,
     {
         let FourierGlweBlindRotationWorkspace { scratch, cmux } = context;

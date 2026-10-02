@@ -51,6 +51,31 @@ impl<T: FheUint> NttGlweSecretKey<T> {
             modulus,
             ntt_table,
         );
+        self.encrypt_coeff_plaintext_kernel_to(
+            input.as_view(),
+            output.as_mut_view(),
+            params,
+            ntt_table,
+            rng,
+            scratch,
+        );
+    }
+
+    /// Constructs the unsigned-message closure with concrete views after the public
+    /// boundary validates key/table/layouts and the exact N-coefficient scratch.
+    fn encrypt_coeff_plaintext_kernel_to<M, Table, R>(
+        &self,
+        input: Polynomial<&[T]>,
+        output: GlweCiphertext<&mut [T]>,
+        params: &GlweParameters<T, M>,
+        ntt_table: &Table,
+        rng: &mut R,
+        scratch: &mut [T],
+    ) where
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+        R: rand::Rng + rand::CryptoRng,
+    {
         self.encrypt_coeff_kernel_to(output, params.inner(), ntt_table, rng, scratch, |body| {
             params.plaintext_codec().add_encode_slice_assign(
                 body,
@@ -62,9 +87,9 @@ impl<T: FheUint> NttGlweSecretKey<T> {
 
     /// Encrypts after layout/table/scratch validation. Message and noise stay in
     /// coefficient form; the closure adds a message to the sampled body noise.
-    pub(super) fn encrypt_coeff_kernel_to<M, Table, R, B>(
+    pub(super) fn encrypt_coeff_kernel_to<M, Table, R>(
         &self,
-        output: &mut GlweCiphertext<B>,
+        mut output: GlweCiphertext<&mut [T]>,
         params: &GlweParametersInner<T, M>,
         ntt_table: &Table,
         rng: &mut R,
@@ -74,7 +99,6 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
         R: rand::Rng + rand::CryptoRng,
-        B: DataMut<Elem = T>,
     {
         let modulus = params.cipher_modulus();
         let (masks, mut body) = output.a_b_mut(self.poly_length());

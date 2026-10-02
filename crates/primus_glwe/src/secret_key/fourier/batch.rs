@@ -60,7 +60,7 @@ impl FourierGlweSecretKey {
                 previous = Some(constant);
             }
             self.encrypt_ggsw_from_levels_to(
-                &mut FourierGgswCiphertext::new(block),
+                FourierGgswCiphertext::new(block),
                 params,
                 fft,
                 rng,
@@ -131,7 +131,13 @@ impl FourierGlweSecretKey {
                 prepare_constant_levels(constant, params, fft, workspace);
                 previous = Some(constant);
             }
-            self.encrypt_ggsw_from_levels_to(&mut transformed, params, fft, rng, workspace);
+            self.encrypt_ggsw_from_levels_to(
+                transformed.as_mut_view(),
+                params,
+                fft,
+                rng,
+                workspace,
+            );
             transformed.write_torus_form(&mut Ggsw::new(block), fft);
         }
     }

@@ -397,20 +397,20 @@ where
         match &mut self.blind_rotation {
             BlindRotation::Classic { key, scratch } => key
                 .ntt_blind_rotate_interleaved_lookup_table_kernel_to(
-                    small_lwe,
-                    lookup_table,
+                    small_lwe.as_view(),
+                    lookup_table.as_view(),
                     rotation_step,
-                    &mut self.main_glwe,
+                    self.main_glwe.as_mut_view(),
                     parameters.accumulator_glwe().cipher_modulus(),
                     self.context.table(),
                     scratch,
                 ),
             BlindRotation::Sparse { key, scratch } => key
                 .ntt_blind_rotate_interleaved_lookup_table_kernel_to(
-                    small_lwe,
-                    lookup_table,
+                    small_lwe.as_view(),
+                    lookup_table.as_view(),
                     rotation_step,
-                    &mut self.main_glwe,
+                    self.main_glwe.as_mut_view(),
                     self.context.table(),
                     scratch,
                 ),

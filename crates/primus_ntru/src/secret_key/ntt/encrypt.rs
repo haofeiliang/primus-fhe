@@ -62,7 +62,7 @@ impl<T: FheUint> NttNtruSecretKey<T> {
                 values: message.as_ref(),
                 embedding: PlaintextEmbedding::Unsigned,
             },
-            result,
+            result.as_mut_view(),
             params,
             ntt_table,
             rng,
@@ -90,7 +90,7 @@ impl<T: FheUint> NttNtruSecretKey<T> {
                 values: message.as_ref(),
                 embedding: PlaintextEmbedding::Centered,
             },
-            result,
+            result.as_mut_view(),
             params,
             ntt_table,
             rng,
@@ -121,7 +121,13 @@ impl<T: FheUint> NttNtruSecretKey<T> {
         self.assert_domain(params, ntt_table);
         assert_eq!(encoded.as_ref().len(), self.poly_length());
         assert_eq!(result.as_ref().len(), self.poly_length());
-        self.encrypt_encoded_to_unchecked(encoded, result, params, ntt_table, rng);
+        self.encrypt_encoded_to_unchecked(
+            encoded.as_view(),
+            result.as_mut_view(),
+            params,
+            ntt_table,
+            rng,
+        );
     }
 
     /// Encrypts zero into a freshly allocated NTT ciphertext.
@@ -142,10 +148,12 @@ impl<T: FheUint> NttNtruSecretKey<T> {
         result
     }
 
-    fn encrypt_to_with_message<M, Table, R, B>(
+    /// Validates the complete input/output and backend domain before any sampling.
+    /// Message value validation remains in the codec, after coefficient noise sampling.
+    fn encrypt_to_with_message<M, Table, R>(
         &self,
         message: NttEncryptionMessage<'_, T>,
-        result: &mut NttNtruCiphertext<B>,
+        result: NttNtruCiphertext<&mut [T]>,
         params: &NtruParameters<T, M>,
         ntt_table: &Table,
         rng: &mut R,
@@ -153,7 +161,6 @@ impl<T: FheUint> NttNtruSecretKey<T> {
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
         R: rand::Rng + rand::CryptoRng,
-        B: DataMut<Elem = T>,
     {
         self.assert_domain(params, ntt_table);
         assert_eq!(result.as_ref().len(), self.poly_length());
@@ -164,10 +171,10 @@ impl<T: FheUint> NttNtruSecretKey<T> {
         self.encrypt_to_with_message_unchecked(message, result, params, ntt_table, rng);
     }
 
-    pub(super) fn encrypt_encoded_to_unchecked<M, Table, R, A, B>(
+    pub(super) fn encrypt_encoded_to_unchecked<M, Table, R>(
         &self,
-        encoded: &Polynomial<A>,
-        result: &mut NttNtruCiphertext<B>,
+        encoded: Polynomial<&[T]>,
+        result: NttNtruCiphertext<&mut [T]>,
         params: &NtruParameters<T, M>,
         ntt_table: &Table,
         rng: &mut R,
@@ -175,8 +182,6 @@ impl<T: FheUint> NttNtruSecretKey<T> {
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
         R: rand::Rng + rand::CryptoRng,
-        A: Data<Elem = T>,
-        B: DataMut<Elem = T>,
     {
         debug_assert_eq!(encoded.as_ref().len(), self.poly_length());
         debug_assert_eq!(result.as_ref().len(), self.poly_length());
@@ -211,12 +216,18 @@ impl<T: FheUint> NttNtruSecretKey<T> {
         R: rand::Rng + rand::CryptoRng,
         B: DataMut<Elem = T>,
     {
-        self.encrypt_to_with_message(NttEncryptionMessage::Zero, result, params, ntt_table, rng);
+        self.encrypt_to_with_message(
+            NttEncryptionMessage::Zero,
+            result.as_mut_view(),
+            params,
+            ntt_table,
+            rng,
+        );
     }
 
-    pub(super) fn encrypt_zeros_to_unchecked<M, Table, R, B>(
+    pub(super) fn encrypt_zeros_to_unchecked<M, Table, R>(
         &self,
-        result: &mut NttNtruCiphertext<B>,
+        result: NttNtruCiphertext<&mut [T]>,
         params: &NtruParameters<T, M>,
         ntt_table: &Table,
         rng: &mut R,
@@ -224,7 +235,6 @@ impl<T: FheUint> NttNtruSecretKey<T> {
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
         R: rand::Rng + rand::CryptoRng,
-        B: DataMut<Elem = T>,
     {
         debug_assert_eq!(result.as_ref().len(), self.poly_length());
         self.encrypt_to_with_message_unchecked(
@@ -236,10 +246,13 @@ impl<T: FheUint> NttNtruSecretKey<T> {
         );
     }
 
-    fn encrypt_to_with_message_unchecked<M, Table, R, B>(
+    /// Requires the public or gadget boundary to validate complete operands and resources.
+    /// Sample noise, inject the message, then transform and multiply by the inverse secret;
+    /// this order preserves codec failures and RNG consumption across all message modes.
+    fn encrypt_to_with_message_unchecked<M, Table, R>(
         &self,
         message: NttEncryptionMessage<'_, T>,
-        result: &mut NttNtruCiphertext<B>,
+        mut result: NttNtruCiphertext<&mut [T]>,
         params: &NtruParameters<T, M>,
         ntt_table: &Table,
         rng: &mut R,
@@ -247,7 +260,6 @@ impl<T: FheUint> NttNtruSecretKey<T> {
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
         R: rand::Rng + rand::CryptoRng,
-        B: DataMut<Elem = T>,
     {
         let coefficients = result.as_mut();
         primus_distr::sample_gaussian_values_to(coefficients, params.noise_distribution(), rng);
@@ -265,6 +277,7 @@ impl<T: FheUint> NttNtruSecretKey<T> {
     }
 }
 
+/// Borrowed message injection: plaintext codec, raw encoded coefficients, or zero.
 enum NttEncryptionMessage<'a, T: FheUint> {
     Zero,
     Plaintext {

@@ -3,7 +3,11 @@
 use primus_data::{Data, DataMut};
 use primus_factor::FactorSliceOps;
 use primus_integer::{DivRem, FheUint};
-use primus_lattice::{GlweSize, glwe::Glwe, lwe::Lwe};
+use primus_lattice::{
+    GlweSize,
+    glwe::{Glwe, GlweIterMut},
+    lwe::Lwe,
+};
 use primus_modulus::PowOf2Modulus;
 use primus_ntt::NttTable;
 use primus_reduce::{FieldContext, ReduceNeg};
@@ -211,8 +215,8 @@ impl<T: FheUint> NttGlweTraceKey<T> {
             |values| self.halve_assign(values),
             |index, input, output| {
                 self.automorphism_keys[index].apply_kernel_to(
-                    &Glwe::new(input),
-                    &mut Glwe::new(output),
+                    Glwe::new(input),
+                    Glwe::new(output),
                     modulus,
                     ntt,
                     automorphism,
@@ -266,7 +270,7 @@ impl<T: FheUint> NttGlweTraceKey<T> {
             "projection index outside polynomial"
         );
         self.project_indices_to(
-            input,
+            input.as_view(),
             indices.iter().copied(),
             output,
             modulus,
@@ -302,14 +306,14 @@ impl<T: FheUint> NttGlweTraceKey<T> {
             count <= self.glwe_size.poly_length().get(),
             "projection prefix exceeds polynomial length"
         );
-        self.project_indices_to(input, 0..count, output, modulus, ntt, workspace);
+        self.project_indices_to(input.as_view(), 0..count, output, modulus, ntt, workspace);
     }
 
     // Public callers validate the index range. Check the remaining layouts
     // once, then use the same arithmetic for a slice iterator or a prefix range.
-    fn project_indices_to<M, Table, A>(
+    fn project_indices_to<M, Table>(
         &self,
-        input: &Glwe<A>,
+        input: Glwe<&[T]>,
         indices: impl ExactSizeIterator<Item = usize>,
         output: &mut [T],
         modulus: M,
@@ -318,7 +322,6 @@ impl<T: FheUint> NttGlweTraceKey<T> {
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: Data<Elem = T>,
     {
         let glwe_len = self.glwe_size.glwe_len();
         let poly_length = self.glwe_size.poly_length().get();
@@ -338,15 +341,15 @@ impl<T: FheUint> NttGlweTraceKey<T> {
         self.assert_compatible(modulus, ntt, workspace);
 
         let exponent_modulus = PowOf2Modulus::new(2 * poly_length);
-        for (index, output) in indices.zip(output.chunks_exact_mut(glwe_len)) {
+        for (index, mut output) in indices.zip(GlweIterMut::new(output, glwe_len)) {
             input.mul_monomial_to(
                 exponent_modulus.reduce_neg(index),
-                &mut Glwe::new(&mut *output),
+                &mut output,
                 poly_length,
                 modulus,
             );
             self.trace_kernel_assign::<_, _, true>(
-                output,
+                output.as_mut(),
                 self.automorphism_count(),
                 modulus,
                 ntt,
@@ -452,8 +455,8 @@ impl<T: FheUint> NttGlweTraceKey<T> {
             },
             |index, input, output| {
                 self.automorphism_keys[index].apply_kernel_to(
-                    &Glwe::new(input),
-                    &mut Glwe::new(output),
+                    Glwe::new(input),
+                    Glwe::new(output),
                     modulus,
                     ntt,
                     automorphism,
@@ -532,8 +535,8 @@ impl<T: FheUint> NttGlweTraceKey<T> {
             |values| self.halve_assign(values),
             |index, input, output| {
                 self.automorphism_keys[index].apply_kernel_to(
-                    &Glwe::new(input),
-                    &mut Glwe::new(output),
+                    Glwe::new(input),
+                    Glwe::new(output),
                     modulus,
                     ntt,
                     automorphism,

@@ -47,9 +47,15 @@ impl<T: FheUint, LM: PrepareModulusSwitch<ValueT = T>> NttGlweBootstrappingKey<T
         C: DataMut<Elem = T>,
     {
         let quantizer = self.input_quantizer();
-        self.blind_rotate_with(input, accumulator, output, modulus, ntt, context, |x| {
-            quantizer.exponent(x)
-        });
+        self.blind_rotate_with(
+            input.as_view(),
+            accumulator.as_view(),
+            output.as_mut_view(),
+            modulus,
+            ntt,
+            context,
+            |x| quantizer.exponent(x),
+        );
     }
 
     /// Blind-rotates an encoded lookup-table polynomial as a trivial GLWE
@@ -89,9 +95,9 @@ impl<T: FheUint, LM: PrepareModulusSwitch<ValueT = T>> NttGlweBootstrappingKey<T
         );
         self.assert_compatible(modulus, ntt, context);
         self.ntt_blind_rotate_lookup_table_kernel_to(
-            input,
-            lookup_table,
-            output,
+            input.as_view(),
+            lookup_table.as_view(),
+            output.as_mut_view(),
             modulus,
             ntt,
             context,
@@ -100,20 +106,17 @@ impl<T: FheUint, LM: PrepareModulusSwitch<ValueT = T>> NttGlweBootstrappingKey<T
 
     /// Requires resources and per-call layouts validated by the public BR/PBS
     /// entry, or fixed by circuit-bootstrap construction. No release rechecks.
-    pub(crate) fn ntt_blind_rotate_lookup_table_kernel_to<M, Table, A, B, C>(
+    pub(crate) fn ntt_blind_rotate_lookup_table_kernel_to<M, Table>(
         &self,
-        input: &Lwe<A>,
-        lookup_table: &Polynomial<B>,
-        output: &mut Glwe<C>,
+        input: Lwe<&[T]>,
+        lookup_table: Polynomial<&[T]>,
+        output: Glwe<&mut [T]>,
         modulus: M,
         ntt: &Table,
         context: &mut NttGlweBlindRotationWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: MonomialNttTable<ValueT = T>,
-        A: Data<Elem = T>,
-        B: Data<Elem = T>,
-        C: DataMut<Elem = T>,
     {
         self.ntt_blind_rotate_interleaved_lookup_table_kernel_to(
             input,
@@ -175,10 +178,10 @@ impl<T: FheUint, LM: PrepareModulusSwitch<ValueT = T>> NttGlweBootstrappingKey<T
         );
         self.assert_compatible(modulus, ntt, context);
         self.ntt_blind_rotate_interleaved_lookup_table_kernel_to(
-            input,
-            lookup_table,
+            input.as_view(),
+            lookup_table.as_view(),
             rotation_step,
-            output,
+            output.as_mut_view(),
             modulus,
             ntt,
             context,
@@ -191,21 +194,18 @@ impl<T: FheUint, LM: PrepareModulusSwitch<ValueT = T>> NttGlweBootstrappingKey<T
         clippy::too_many_arguments,
         reason = "keep modulus, transform and workspace roles explicit"
     )]
-    pub(crate) fn ntt_blind_rotate_interleaved_lookup_table_kernel_to<M, Table, A, B, C>(
+    pub(crate) fn ntt_blind_rotate_interleaved_lookup_table_kernel_to<M, Table>(
         &self,
-        input: &Lwe<A>,
-        lookup_table: &Polynomial<B>,
+        input: Lwe<&[T]>,
+        lookup_table: Polynomial<&[T]>,
         rotation_step: usize,
-        output: &mut Glwe<C>,
+        mut output: Glwe<&mut [T]>,
         modulus: M,
         ntt: &Table,
         context: &mut NttGlweBlindRotationWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: MonomialNttTable<ValueT = T>,
-        A: Data<Elem = T>,
-        B: Data<Elem = T>,
-        C: DataMut<Elem = T>,
     {
         let poly_length = self.size().glwe_size().poly_length().get();
         let two_n = poly_length * 2;
@@ -265,12 +265,20 @@ impl<T: FheUint, LM: PrepareModulusSwitch<ValueT = T>> NttGlweBootstrappingKey<T
         C: DataMut<Elem = T>,
     {
         let two_n = 2 * self.size().glwe_size().poly_length().get();
-        self.blind_rotate_with(input, accumulator, output, modulus, ntt, context, |x| {
-            // This entry already receives exponents; do not quantize them again.
-            let exponent = x.try_into().unwrap();
-            debug_assert!(exponent < two_n);
-            exponent
-        });
+        self.blind_rotate_with(
+            input.as_view(),
+            accumulator.as_view(),
+            output.as_mut_view(),
+            modulus,
+            ntt,
+            context,
+            |x| {
+                // This entry already receives exponents; do not quantize them again.
+                let exponent = x.try_into().unwrap();
+                debug_assert!(exponent < two_n);
+                exponent
+            },
+        );
     }
 
     /// Validates resources and rotates the initial accumulator before the CMUX loop.
@@ -278,11 +286,11 @@ impl<T: FheUint, LM: PrepareModulusSwitch<ValueT = T>> NttGlweBootstrappingKey<T
         clippy::too_many_arguments,
         reason = "keep modulus, transform and workspace roles explicit"
     )]
-    fn blind_rotate_with<M, Table, A, B, C, F>(
+    fn blind_rotate_with<M, Table, F>(
         &self,
-        input: &Lwe<A>,
-        accumulator: &Glwe<B>,
-        output: &mut Glwe<C>,
+        input: Lwe<&[T]>,
+        accumulator: Glwe<&[T]>,
+        mut output: Glwe<&mut [T]>,
         modulus: M,
         ntt: &Table,
         context: &mut NttGlweBlindRotationWorkspace<T>,
@@ -290,9 +298,6 @@ impl<T: FheUint, LM: PrepareModulusSwitch<ValueT = T>> NttGlweBootstrappingKey<T
     ) where
         M: FieldContext<T>,
         Table: MonomialNttTable<ValueT = T>,
-        A: Data<Elem = T>,
-        B: Data<Elem = T>,
-        C: DataMut<Elem = T>,
         F: Fn(T) -> usize,
     {
         let poly_length = self.size().glwe_size().poly_length().get();
@@ -313,7 +318,7 @@ impl<T: FheUint, LM: PrepareModulusSwitch<ValueT = T>> NttGlweBootstrappingKey<T
 
         self.assert_compatible(modulus, ntt, context);
         let initial_exponent = exponent_of(input.b()).wrapping_neg() & (two_n - 1);
-        accumulator.mul_monomial_to(initial_exponent, output, poly_length, modulus);
+        accumulator.mul_monomial_to(initial_exponent, &mut output, poly_length, modulus);
         self.blind_rotate_initialized(input, output, modulus, ntt, context, exponent_of);
     }
 
@@ -360,10 +365,10 @@ impl<T: FheUint, LM: PrepareModulusSwitch<ValueT = T>> NttGlweBootstrappingKey<T
     }
 
     /// Rotates an initialized accumulator after layouts and resources have been checked.
-    fn blind_rotate_initialized<M, Table, A, C, F>(
+    fn blind_rotate_initialized<M, Table, F>(
         &self,
-        input: &Lwe<A>,
-        output: &mut Glwe<C>,
+        input: Lwe<&[T]>,
+        mut output: Glwe<&mut [T]>,
         modulus: M,
         ntt: &Table,
         context: &mut NttGlweBlindRotationWorkspace<T>,
@@ -371,8 +376,6 @@ impl<T: FheUint, LM: PrepareModulusSwitch<ValueT = T>> NttGlweBootstrappingKey<T
     ) where
         M: FieldContext<T>,
         Table: MonomialNttTable<ValueT = T>,
-        A: Data<Elem = T>,
-        C: DataMut<Elem = T>,
         F: Fn(T) -> usize,
     {
         let NttGlweBlindRotationWorkspace { scratch, cmux } = context;

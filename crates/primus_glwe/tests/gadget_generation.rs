@@ -79,8 +79,8 @@ fn fourier_gadget_phases_and_external_product() {
     let raw_message = Polynomial::new(raw_message);
     let mut glev = FourierGlevOwned::zero(params.fourier_glev_len());
     secret_key.encrypt_glev_to(
-        &raw_message,
-        &mut glev,
+        &raw_message.as_view(),
+        &mut glev.as_mut_view(),
         &params,
         &mut fft,
         &mut rng,
@@ -109,8 +109,8 @@ fn fourier_gadget_phases_and_external_product() {
             .collect::<Vec<_>>(),
     );
     secret_key.encrypt_ggsw_to(
-        &ring_message,
-        &mut ggsw,
+        &ring_message.as_view(),
+        &mut ggsw.as_mut_view(),
         &params,
         &mut fft,
         &mut rng,
@@ -220,8 +220,8 @@ fn ntt_gadget_phases_and_external_product() {
     let raw_message = Polynomial::new(raw_message);
     let mut glev: NttGlev<Vec<u32>> = NttGlev::zero(params.glev_len());
     secret_key.encrypt_glev_to(
-        &raw_message,
-        &mut glev,
+        &raw_message.as_view(),
+        &mut glev.as_mut_view(),
         &params,
         &ntt,
         &mut rng,
@@ -250,8 +250,8 @@ fn ntt_gadget_phases_and_external_product() {
             .collect::<Vec<_>>(),
     );
     secret_key.encrypt_ggsw_to(
-        &ring_message,
-        &mut ggsw,
+        &ring_message.as_view(),
+        &mut ggsw.as_mut_view(),
         &params,
         &ntt,
         &mut rng,

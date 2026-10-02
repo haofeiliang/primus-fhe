@@ -4,6 +4,7 @@ use primus_data::{Data, DataMut};
 use primus_decompose::primitive::ApproxSignedBasis;
 use primus_factor::{FactorSliceOps, ShoupFactor};
 use primus_integer::FheUint;
+use primus_lattice::ntru::NtruIterMut;
 use primus_modulus::PowOf2Modulus;
 use primus_ntt::NttTable;
 use primus_poly::PolyLength;
@@ -280,7 +281,7 @@ impl<T: FheUint> NttNtruTraceKey<T> {
             "projection index outside polynomial"
         );
         self.project_indices_to(
-            input,
+            input.as_view(),
             indices.iter().copied(),
             output,
             modulus,
@@ -316,7 +317,7 @@ impl<T: FheUint> NttNtruTraceKey<T> {
             count <= self.poly_length(),
             "projection prefix exceeds polynomial length"
         );
-        self.project_indices_to(input, 0..count, output, modulus, ntt, workspace);
+        self.project_indices_to(input.as_view(), 0..count, output, modulus, ntt, workspace);
     }
 
     /// Projects `0..count` with caller-owned coefficient and external-product scratch.
@@ -365,16 +366,38 @@ impl<T: FheUint> NttNtruTraceKey<T> {
             ntt,
             external_product,
         );
+        self.project_prefix_with_scratch_kernel_to(
+            input.as_view(),
+            output,
+            modulus,
+            ntt,
+            scratch,
+            external_product,
+        );
+    }
+
+    /// The public boundary validated N input coefficients, complete output blocks,
+    /// exactly 2N scratch coefficients and matching backend resources. Reuse the two
+    /// scratch halves serially across the projections; each is overwritten before use.
+    fn project_prefix_with_scratch_kernel_to<M, Table>(
+        &self,
+        input: NtruCiphertext<&[T]>,
+        output: &mut [T],
+        modulus: M,
+        ntt: &Table,
+        scratch: &mut [T],
+        external_product: &mut crate::NttNtruExternalProductWorkspace<T>,
+    ) where
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+    {
+        let n = self.poly_length();
         let (automorphism_output, coefficients) = scratch.split_at_mut(n);
         let exponents = PowOf2Modulus::new(2 * n);
-        for (index, output) in output.chunks_exact_mut(n).enumerate() {
-            input.mul_monomial_to(
-                exponents.reduce_neg(index),
-                &mut NtruCiphertext::new(&mut *output),
-                modulus,
-            );
+        for (index, mut output) in NtruIterMut::new(output, n).enumerate() {
+            input.mul_monomial_to(exponents.reduce_neg(index), &mut output, modulus);
             kernels::trace_assign::<_, _, _, _, true>(
-                output,
+                output.as_mut(),
                 self.automorphism_count(),
                 automorphism_output,
                 modulus,
@@ -385,8 +408,8 @@ impl<T: FheUint> NttNtruTraceKey<T> {
                 },
                 |index, input, output| {
                     self.automorphism_keys[index].apply_with_scratch_kernel_to(
-                        &NtruCiphertext::new(input),
-                        &mut NtruCiphertext::new(output),
+                        NtruCiphertext::new(input),
+                        NtruCiphertext::new(output),
                         modulus,
                         ntt,
                         coefficients,
@@ -399,9 +422,9 @@ impl<T: FheUint> NttNtruTraceKey<T> {
 
     // Public callers validate the index range. Check the remaining layouts
     // once, then use the same arithmetic for a slice iterator or a prefix range.
-    fn project_indices_to<M, Table, A>(
+    fn project_indices_to<M, Table>(
         &self,
-        input: &NtruCiphertext<A>,
+        input: NtruCiphertext<&[T]>,
         indices: impl ExactSizeIterator<Item = usize>,
         output: &mut [T],
         modulus: M,
@@ -410,7 +433,6 @@ impl<T: FheUint> NttNtruTraceKey<T> {
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: Data<Elem = T>,
     {
         self.check_batch(
             input.as_ref(),
@@ -422,14 +444,10 @@ impl<T: FheUint> NttNtruTraceKey<T> {
         );
         let n = self.poly_length();
         let exponents = PowOf2Modulus::new(2 * n);
-        for (index, output) in indices.zip(output.chunks_exact_mut(n)) {
-            input.mul_monomial_to(
-                exponents.reduce_neg(index),
-                &mut NtruCiphertext::new(&mut *output),
-                modulus,
-            );
+        for (index, mut output) in indices.zip(NtruIterMut::new(output, n)) {
+            input.mul_monomial_to(exponents.reduce_neg(index), &mut output, modulus);
             self.trace_kernel_assign::<_, _, true>(
-                output,
+                output.as_mut(),
                 self.automorphism_count(),
                 modulus,
                 ntt,
@@ -511,8 +529,8 @@ impl<T: FheUint> NttNtruTraceKey<T> {
             |values| factor.factor_mul_slice_assign(values, modulus.value()),
             |index, input, output| {
                 self.automorphism_keys[index].apply_kernel_to(
-                    &NtruCiphertext::new(input),
-                    &mut NtruCiphertext::new(output),
+                    NtruCiphertext::new(input),
+                    NtruCiphertext::new(output),
                     modulus,
                     ntt,
                     automorphism,
@@ -583,8 +601,8 @@ impl<T: FheUint> NttNtruTraceKey<T> {
             },
             |index, input, output| {
                 self.automorphism_keys[index].apply_kernel_to(
-                    &NtruCiphertext::new(input),
-                    &mut NtruCiphertext::new(output),
+                    NtruCiphertext::new(input),
+                    NtruCiphertext::new(output),
                     modulus,
                     ntt,
                     automorphism,

@@ -17,10 +17,10 @@ fn pointwise_arithmetic_matches_complex_oracle() {
     // Assign and out-of-place kernels have separate write/aliasing contracts;
     // consuming wrappers that just call assign need no duplicate checks.
     let mut inplace = lhs.clone();
-    inplace.add_assign(&rhs);
+    inplace.as_mut_view().add_assign(&rhs.as_view());
     assert_eq!(inplace.as_slice(), sum);
     inplace.copy_from(&lhs);
-    inplace.sub_assign(&rhs);
+    inplace.as_mut_view().sub_assign(&rhs);
     assert_eq!(inplace.as_slice(), difference);
     inplace.copy_from(&lhs);
     inplace.mul_assign(&rhs);
@@ -28,7 +28,7 @@ fn pointwise_arithmetic_matches_complex_oracle() {
 
     // A nonzero accumulator distinguishes += lhs*rhs from an overwrite.
     inplace.copy_from(&lhs);
-    inplace.add_mul_assign(&lhs, &rhs);
+    inplace.add_mul_assign(&lhs.as_view(), &rhs.as_view());
     assert_eq!(
         inplace.as_slice(),
         [Complex64::new(5.0, 5.0), Complex64::new(-6.5, -4.5)]
@@ -45,11 +45,11 @@ fn pointwise_arithmetic_matches_complex_oracle() {
     let rhs_view: FourierPolynomial<&[Complex64]> = (&rhs).into();
     lhs.as_view().add_to(&rhs_view, &mut output.as_mut_view());
     assert_eq!(output.as_slice(), sum);
-    lhs.sub_to(&rhs, &mut output);
+    lhs.sub_to(&rhs_view, &mut output.as_mut_view());
     assert_eq!(output.as_slice(), difference);
     lhs.sub_rev_assign(&mut output);
     assert_eq!(output, rhs);
-    lhs.mul_to(&rhs, &mut output);
+    lhs.as_view().mul_to(&rhs, &mut output.as_mut_view());
     assert_eq!(output.as_slice(), product);
     lhs.mul_scalar_to(-2.5, &mut output);
     assert_eq!(output.as_slice(), scaled);

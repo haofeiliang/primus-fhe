@@ -67,7 +67,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
                 transformed.fill(modulus.reduce_mul(constant, scalar));
             }
             self.encrypt_ggsw_from_levels_to(
-                &mut NttGgswCiphertext::new(output),
+                NttGgswCiphertext::new(output),
                 params,
                 ntt,
                 rng,
@@ -135,7 +135,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
                     .zip(glev.iter_glwe_mut(params.glwe_len()))
                 {
                     self.encrypt_coeff_kernel_to(
-                        &mut glwe,
+                        glwe.as_mut_view(),
                         params.inner(),
                         ntt,
                         rng,

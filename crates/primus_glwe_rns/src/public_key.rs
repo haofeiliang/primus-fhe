@@ -99,15 +99,34 @@ impl<T: FheUint> DcrtGlwePublicKey<T> {
         Table: NttTable<ValueT = T>,
         A: Data<Elem = T>,
     {
-        let dimension = params.dimension();
-        let poly_length = params.poly_length().get();
         let rns_poly_len = params.rns_poly_len();
-        let dcrt_glwe_len = params.rns_glwe_len();
         assert_eq!(
             message.as_ref().len(),
             rns_poly_len,
             "CRT plaintext length must match the RNS polynomial layout"
         );
+        self.encrypt_crt_kernel(message.as_view(), params, table, rng)
+    }
+
+    /// The public entry checked message length; key/parameter/table compatibility
+    /// remains a caller contract. Samples one ephemeral polynomial, then each
+    /// noisy GLWE component, adding the scaled message only to the body.
+    fn encrypt_crt_kernel<R, M, Table>(
+        &self,
+        message: CrtPolynomial<&[T]>,
+        params: &CrtGlweParameters<T, M>,
+        table: &DcrtTable<Table>,
+        rng: &mut R,
+    ) -> DcrtGlwe<Vec<T>>
+    where
+        R: rand::Rng + rand::CryptoRng,
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+    {
+        let dimension = params.dimension();
+        let poly_length = params.poly_length().get();
+        let rns_poly_len = params.rns_poly_len();
+        let dcrt_glwe_len = params.rns_glwe_len();
 
         let moduli = params.cipher_moduli();
 
@@ -138,7 +157,7 @@ impl<T: FheUint> DcrtGlwePublicKey<T> {
 
                 if i == dimension.get() {
                     CrtPolynomial(&mut *ai.0).add_mul_factor_assign(
-                        message,
+                        &message,
                         params.delta_factor_mod_q().as_ref(),
                         poly_length,
                         params.cipher_moduli_value(),
@@ -151,13 +170,16 @@ impl<T: FheUint> DcrtGlwePublicKey<T> {
         result
     }
 
+    /// Samples each gadget level independently and adds its scaled monomial
+    /// to the selected component before transforming that component. The caller
+    /// supplies complete row/residue/scratch layouts in the parameter/table order.
     #[allow(clippy::too_many_arguments)]
     fn encrypt_monomial_in_dcrt_glev_inplace<R, Table, M>(
         &self,
         index: usize,
-        coeff_residues: &Residues<impl Data<Elem = T>>,
+        coeff_residues: Residues<&[T]>,
         degree: usize,
-        dcrt_glev: &mut DcrtGlev<&mut [T]>,
+        mut dcrt_glev: DcrtGlev<&mut [T]>,
         params: &CrtGlevParameters<T, M>,
         table: &DcrtTable<Table>,
         v: &mut [T],
@@ -262,23 +284,48 @@ impl<T: FheUint> DcrtGlwePublicKey<T> {
         M: FieldContext<T>,
         A: DataMut<Elem = T>,
     {
-        let rns_poly_len = params.rns_poly_len();
-        let dcrt_glev_len = params.rns_glev_len();
-
         assert_eq!(result.as_ref().len(), params.rns_ggsw_len());
         assert!(degree < params.poly_length().get());
+        self.encrypt_monomial_ggsw_kernel_to(
+            coeff_residues.view(),
+            degree,
+            result.as_mut_view(),
+            params,
+            table,
+            rng,
+        );
+    }
+
+    /// Adds the gadget monomial to one GLWE component per GGSW row, reusing
+    /// one ephemeral buffer across rows and levels. The entry checked output/degree;
+    /// residues, key and parameters must share the complete ordered RNS domain.
+    fn encrypt_monomial_ggsw_kernel_to<R, Table, M>(
+        &self,
+        coeff_residues: Residues<&[T]>,
+        degree: usize,
+        mut result: DcrtGgsw<&mut [T]>,
+        params: &CrtGgswParameters<T, M>,
+        table: &DcrtTable<Table>,
+        rng: &mut R,
+    ) where
+        R: rand::Rng + rand::CryptoRng,
+        Table: NttTable<ValueT = T>,
+        M: FieldContext<T>,
+    {
+        let rns_poly_len = params.rns_poly_len();
+        let dcrt_glev_len = params.rns_glev_len();
 
         let mut v = vec![T::ZERO; rns_poly_len];
 
         result
             .iter_dcrt_glev_mut(dcrt_glev_len)
             .enumerate()
-            .for_each(|(i, mut dcrt_glev)| {
+            .for_each(|(i, dcrt_glev)| {
                 self.encrypt_monomial_in_dcrt_glev_inplace(
                     i,
                     coeff_residues,
                     degree,
-                    &mut dcrt_glev,
+                    dcrt_glev,
                     params,
                     table,
                     &mut v,

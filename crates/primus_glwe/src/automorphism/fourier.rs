@@ -11,7 +11,7 @@ use primus_decompose::primitive::ApproxSignedBasis;
 use primus_fft::{Complex64, FftEngine, FftTable, TorusFftValue};
 use primus_lattice::glwe::{FourierGlwe, Glwe};
 use primus_modulus::NativeModulus;
-use primus_poly::{CoeffAutomorphismPermutation, FourierPolynomial};
+use primus_poly::{CoeffAutomorphismPermutation, FourierPolynomial, PolynomialIterMut};
 
 /// Reusable workspace for coefficient- and Fourier-domain automorphisms.
 pub struct FourierGlweAutomorphismWorkspace<T: TorusFftValue> {
@@ -128,7 +128,7 @@ impl<T: TorusFftValue> FourierGlweAutomorphismKey<T> {
             "automorphism output layout mismatch"
         );
         self.assert_compatible(fft, workspace);
-        self.apply_kernel_to(input, output, fft, workspace);
+        self.apply_kernel_to(input.as_view(), output.as_mut_view(), fft, workspace);
     }
     /// Applies the automorphism to a Fourier-domain torus GLWE, returning a
     /// Fourier GLWE under the original secret. Only masks are inverse-transformed
@@ -169,22 +169,31 @@ impl<T: TorusFftValue> FourierGlweAutomorphismKey<T> {
             "Fourier automorphism output layout mismatch"
         );
         self.assert_compatible(fft, workspace);
+        self.apply_fourier_kernel_to(input.as_view(), output.as_mut_view(), fft, workspace);
+    }
+
+    /// Requires validated ciphertext layouts and matching FFT/key/workspace resources.
+    /// Only masks return to coefficients for decomposition; the body stays in Fourier form.
+    fn apply_fourier_kernel_to<Table: FftTable>(
+        &self,
+        input: FourierGlwe<&[Complex64]>,
+        mut output: FourierGlwe<&mut [Complex64]>,
+        fft: &mut FftEngine<'_, Table>,
+        workspace: &mut FourierGlweAutomorphismWorkspace<T>,
+    ) {
         let h = fft.fourier_length();
         let n = fft.poly_length().get();
-        let (input_mask, input_body) = input.a_b_slices(h);
+        let (input_mask, input_body) = input.a_b(h);
         let (transformed_mask, _) = workspace.transformed.a_b_mut_slices(n);
-        for (input, coeff) in input_mask
-            .chunks_exact(h)
-            .zip(transformed_mask.chunks_exact_mut(n))
-        {
-            self.permute_fourier_to(input, &mut workspace.permuted_fourier);
-            fft.backward_as_torus(&workspace.permuted_fourier, coeff);
+        for (input, mut coeff) in input_mask.zip(PolynomialIterMut::new(transformed_mask, n)) {
+            self.permute_fourier_to(input.as_ref(), &mut workspace.permuted_fourier);
+            fft.backward_as_torus(&workspace.permuted_fourier, coeff.as_mut());
         }
-        self.permute_fourier_to(input_body, &mut workspace.permuted_fourier);
+        self.permute_fourier_to(input_body.as_ref(), &mut workspace.permuted_fourier);
         self.key_switching.key_switch_fourier_kernel_to(
             transformed_mask,
             &FourierPolynomial::new(workspace.permuted_fourier.as_slice()),
-            output,
+            &mut output,
             fft,
             &mut workspace.key_switching,
         );
@@ -207,25 +216,24 @@ impl<T: TorusFftValue> FourierGlweAutomorphismKey<T> {
             .assert_compatible(fft, &workspace.key_switching);
     }
     /// Applies after the owning boundary validates ciphertexts, FFT and workspace.
-    pub(crate) fn apply_kernel_to<Table: FftTable, A: Data<Elem = T>, B: DataMut<Elem = T>>(
+    pub(crate) fn apply_kernel_to<Table: FftTable>(
         &self,
-        input: &Glwe<A>,
-        output: &mut Glwe<B>,
+        input: Glwe<&[T]>,
+        mut output: Glwe<&mut [T]>,
         fft: &mut FftEngine<'_, Table>,
         workspace: &mut FourierGlweAutomorphismWorkspace<T>,
     ) {
         let n = self.key_switching.poly_length();
-        for (input, output) in input
-            .as_ref()
-            .chunks_exact(n)
-            .zip(workspace.transformed.as_mut().chunks_exact_mut(n))
+        for (input, mut output) in input
+            .iter_poly(n)
+            .zip(workspace.transformed.iter_poly_mut(n))
         {
             self.permutation
-                .apply_to(input, output, NativeModulus::new());
+                .apply_to(input.as_ref(), output.as_mut(), NativeModulus::new());
         }
         self.key_switching.key_switch_kernel_to(
             &workspace.transformed,
-            output,
+            &mut output,
             fft,
             &mut workspace.key_switching,
         );

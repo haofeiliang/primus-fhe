@@ -156,20 +156,18 @@ impl<T: TorusFftValue> FourierNtruAutomorphismKey<T> {
         );
         self.key_switching
             .assert_compatible(fft, &workspace.external_product);
-        self.apply_kernel_to(input, output, fft, workspace);
+        self.apply_kernel_to(input.as_view(), output.as_mut_view(), fft, workspace);
     }
 
     /// Requires validated operand lengths and matching key/table/workspace resources.
-    pub(crate) fn apply_kernel_to<Table, A, B>(
+    pub(crate) fn apply_kernel_to<Table>(
         &self,
-        input: &NtruCiphertext<A>,
-        output: &mut NtruCiphertext<B>,
+        input: NtruCiphertext<&[T]>,
+        output: NtruCiphertext<&mut [T]>,
         fft: &mut FftEngine<'_, Table>,
         workspace: &mut FourierNtruAutomorphismWorkspace<T>,
     ) where
         Table: FftTable,
-        A: Data<Elem = T>,
-        B: DataMut<Elem = T>,
     {
         self.apply_with_scratch_kernel_to(
             input,
@@ -182,23 +180,21 @@ impl<T: TorusFftValue> FourierNtruAutomorphismKey<T> {
 
     /// Coefficient-only kernel for serial scratch reuse. The caller validates N coefficients
     /// in input, output and permutation scratch, plus matching key/table/product resources.
-    pub(crate) fn apply_with_scratch_kernel_to<Table, A, B>(
+    pub(crate) fn apply_with_scratch_kernel_to<Table>(
         &self,
-        input: &NtruCiphertext<A>,
-        output: &mut NtruCiphertext<B>,
+        input: NtruCiphertext<&[T]>,
+        mut output: NtruCiphertext<&mut [T]>,
         fft: &mut FftEngine<'_, Table>,
         coefficients: &mut [T],
         external_product: &mut FourierNtruExternalProductWorkspace<T>,
     ) where
         Table: FftTable,
-        A: Data<Elem = T>,
-        B: DataMut<Elem = T>,
     {
         self.coeff_permutation
             .apply_to(input.as_ref(), coefficients, NativeModulus::new());
         self.key_switching.key_switch_kernel_to(
             &NtruCiphertext::new(&*coefficients),
-            output,
+            &mut output,
             fft,
             external_product,
         );
@@ -235,6 +231,18 @@ impl<T: TorusFftValue> FourierNtruAutomorphismKey<T> {
         );
         self.key_switching
             .assert_compatible(fft, &workspace.external_product);
+        self.apply_fourier_kernel_to(input.as_view(), output.as_mut_view(), fft, workspace);
+    }
+
+    /// Requires validated N/2-complex operands and matching FFT/key/workspace resources.
+    /// Recover the permuted torus coefficients for decomposition without rounding the output.
+    fn apply_fourier_kernel_to<Table: FftTable>(
+        &self,
+        input: FourierNtruCiphertext<&[Complex64]>,
+        mut output: FourierNtruCiphertext<&mut [Complex64]>,
+        fft: &mut FftEngine<'_, Table>,
+        workspace: &mut FourierNtruAutomorphismWorkspace<T>,
+    ) {
         for (output, &(source, conjugate)) in
             workspace.permuted.iter_mut().zip(&self.fourier_permutation)
         {
@@ -244,7 +252,7 @@ impl<T: TorusFftValue> FourierNtruAutomorphismKey<T> {
         fft.backward_as_torus(&workspace.permuted, workspace.coefficients.as_mut());
         FourierNlev::new(self.key_switching.as_slice()).external_product_fourier_to(
             &Polynomial(workspace.coefficients.as_ref()),
-            output,
+            &mut output,
             self.basis(),
             fft,
             &mut workspace.external_product,

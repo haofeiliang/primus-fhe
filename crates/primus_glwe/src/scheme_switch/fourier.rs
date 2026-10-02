@@ -85,8 +85,8 @@ impl<T: TorusFftValue> FourierGlweSchemeSwitchKey<T> {
                 *output = value.cast_to_unsigned().wrapping_neg();
             }
             fourier_secret_key.encrypt_ggsw_kernel_to(
-                &Polynomial::new(negated_secret.as_slice()),
-                &mut FourierGgsw::new(entry),
+                Polynomial::new(negated_secret.as_slice()),
+                FourierGgsw::new(entry),
                 key_parameters,
                 fft,
                 rng,

@@ -84,8 +84,8 @@ impl<T: FheUint> NttGlweSchemeSwitchKey<T> {
             modulus.encode_signed_slice_to(secret_polynomial, negated_secret.as_mut_slice());
             modulus.reduce_neg_slice_assign(negated_secret.as_mut_slice());
             ntt_secret_key.encrypt_ggsw_kernel_to(
-                &Polynomial::new(negated_secret.as_slice()),
-                &mut NttGgsw::new(key_ciphertext),
+                Polynomial::new(negated_secret.as_slice()),
+                NttGgsw::new(key_ciphertext),
                 key_parameters,
                 ntt,
                 rng,

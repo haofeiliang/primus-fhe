@@ -51,14 +51,21 @@ impl<T: FheUint> NttGlweSecretKey<T> {
             "NTT GLev output layout mismatch"
         );
 
-        self.encrypt_glev_kernel_to(input, output, params, ntt, rng, workspace);
+        self.encrypt_glev_kernel_to(
+            input.as_view(),
+            output.as_mut_view(),
+            params,
+            ntt,
+            rng,
+            workspace,
+        );
     }
 
     /// Encrypts a GLev after the caller validates key, input/output, table and workspace.
-    pub(crate) fn encrypt_glev_kernel_to<M, Table, R, A, B>(
+    pub(crate) fn encrypt_glev_kernel_to<M, Table, R>(
         &self,
-        input: &Polynomial<A>,
-        output: &mut NttGlevCiphertext<B>,
+        input: Polynomial<&[T]>,
+        mut output: NttGlevCiphertext<&mut [T]>,
         params: &GlevParameters<T, M>,
         ntt: &Table,
         rng: &mut R,
@@ -67,17 +74,21 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
         R: rand::Rng + rand::CryptoRng,
-        A: Data<Elem = T>,
-        B: DataMut<Elem = T>,
     {
         let modulus = params.cipher_modulus();
-        for (scalar, mut glwe) in params
+        for (scalar, glwe) in params
             .basis()
             .scalar_iter()
             .zip(output.iter_ntt_glwe_mut(params.glwe_len()))
         {
             input.mul_scalar_to(scalar, &mut workspace.encoded, modulus);
-            self.encrypt_encoded_kernel_to(&workspace.encoded, &mut glwe, params.inner(), ntt, rng);
+            self.encrypt_encoded_kernel_to(
+                workspace.encoded.as_view(),
+                glwe,
+                params.inner(),
+                ntt,
+                rng,
+            );
         }
     }
 
@@ -123,14 +134,21 @@ impl<T: FheUint> NttGlweSecretKey<T> {
             "NTT GGSW output layout mismatch"
         );
 
-        self.encrypt_ggsw_kernel_to(input, output, params, ntt, rng, workspace);
+        self.encrypt_ggsw_kernel_to(
+            input.as_view(),
+            output.as_mut_view(),
+            params,
+            ntt,
+            rng,
+            workspace,
+        );
     }
 
     /// Encrypts a GGSW after the caller validates key, input/output, table and workspace.
-    pub(crate) fn encrypt_ggsw_kernel_to<M, Table, R, A, B>(
+    pub(crate) fn encrypt_ggsw_kernel_to<M, Table, R>(
         &self,
-        input: &Polynomial<A>,
-        output: &mut NttGgswCiphertext<B>,
+        input: Polynomial<&[T]>,
+        output: NttGgswCiphertext<&mut [T]>,
         params: &GlevParameters<T, M>,
         ntt: &Table,
         rng: &mut R,
@@ -139,8 +157,6 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
         R: rand::Rng + rand::CryptoRng,
-        A: Data<Elem = T>,
-        B: DataMut<Elem = T>,
     {
         workspace.encoded.as_mut().copy_from_slice(input.as_ref());
         let poly_length = self.poly_length();
@@ -162,9 +178,9 @@ impl<T: FheUint> NttGlweSecretKey<T> {
     }
 
     /// Encrypts the prepared NTT levels after the caller validates all layouts.
-    pub(super) fn encrypt_ggsw_from_levels_to<M, Table, R, B>(
+    pub(super) fn encrypt_ggsw_from_levels_to<M, Table, R>(
         &self,
-        output: &mut NttGgswCiphertext<B>,
+        mut output: NttGgswCiphertext<&mut [T]>,
         params: &GlevParameters<T, M>,
         ntt: &Table,
         rng: &mut R,
@@ -173,7 +189,6 @@ impl<T: FheUint> NttGlweSecretKey<T> {
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
         R: rand::Rng + rand::CryptoRng,
-        B: DataMut<Elem = T>,
     {
         let poly_length = self.poly_length();
         let modulus = params.cipher_modulus();
@@ -188,7 +203,7 @@ impl<T: FheUint> NttGlweSecretKey<T> {
                 .iter_ntt_glwe_mut(glwe_len)
                 .zip(workspace.level_transforms.chunks_exact(poly_length))
             {
-                self.encrypt_zeros_kernel_to(&mut glwe, params.inner(), ntt, rng);
+                self.encrypt_zeros_kernel_to(glwe.as_mut_view(), params.inner(), ntt, rng);
                 NttPolynomial::new(
                     &mut glwe.as_mut()[diagonal_start..diagonal_start + poly_length],
                 )

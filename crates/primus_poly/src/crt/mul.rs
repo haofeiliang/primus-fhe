@@ -105,28 +105,7 @@ where
     where
         M: Copy + ReduceNegSlice<T>,
     {
-        if r < poly_length {
-            let rotate = |poly: &mut [T], modulus: M| {
-                poly.rotate_right(r);
-                modulus.reduce_neg_slice_assign(&mut poly[0..r]);
-            };
-
-            self.iter_each_modulus_mut(poly_length)
-                .zip(moduli)
-                .for_each(|(poly, &modulus)| rotate(poly, modulus));
-        } else {
-            debug_assert!(r < poly_length * 2);
-            let r = r - poly_length;
-
-            let rotate = |poly: &mut [T], modulus: M| {
-                poly.rotate_right(r);
-                modulus.reduce_neg_slice_assign(&mut poly[r..]);
-            };
-
-            self.iter_each_modulus_mut(poly_length)
-                .zip(moduli)
-                .for_each(|(poly, &modulus)| rotate(poly, modulus));
-        }
+        mul_monomial_assign_kernel(self.as_mut_view(), r, poly_length, moduli);
     }
 }
 
@@ -179,5 +158,42 @@ where
         .for_each(|(in_poly, out_poly, &factor, &modulus)| {
             factor.factor_mul_slice_to(in_poly, out_poly, modulus);
         })
+    }
+}
+
+// Select the negated interval once for the entire modulus-major polynomial;
+// each component uses its own modulus with the same coefficient rotation.
+fn mul_monomial_assign_kernel<T, M>(
+    mut polynomial: CrtPolynomial<&mut [T]>,
+    r: usize,
+    poly_length: usize,
+    moduli: &[M],
+) where
+    T: FheUint,
+    M: Copy + ReduceNegSlice<T>,
+{
+    if r < poly_length {
+        let rotate = |poly: &mut [T], modulus: M| {
+            poly.rotate_right(r);
+            modulus.reduce_neg_slice_assign(&mut poly[0..r]);
+        };
+
+        polynomial
+            .iter_each_modulus_mut(poly_length)
+            .zip(moduli)
+            .for_each(|(poly, &modulus)| rotate(poly, modulus));
+    } else {
+        debug_assert!(r < poly_length * 2);
+        let r = r - poly_length;
+
+        let rotate = |poly: &mut [T], modulus: M| {
+            poly.rotate_right(r);
+            modulus.reduce_neg_slice_assign(&mut poly[r..]);
+        };
+
+        polynomial
+            .iter_each_modulus_mut(poly_length)
+            .zip(moduli)
+            .for_each(|(poly, &modulus)| rotate(poly, modulus));
     }
 }

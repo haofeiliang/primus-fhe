@@ -85,7 +85,14 @@ fn fourier_automorphism<Table: FftTable>() {
             assert_eq!(auto.poly_length(), N);
             assert_eq!(auto.basis(), gadget.basis());
             auto.apply_to(&coefficients, &mut output, &mut fft, &mut workspace);
-            auto.apply_fourier_to(&input, &mut transformed_output, &mut fft, &mut workspace);
+            // Exercise borrowed transformed operands alongside the owned
+            // coefficient buffers, using the same key and phase oracle.
+            auto.apply_fourier_to(
+                &input.as_view(),
+                &mut transformed_output.as_mut_view(),
+                &mut fft,
+                &mut workspace,
+            );
             output.write_fourier_form(&mut transformed_coeff_output, &mut fft);
             // Different representative/rounding paths need not be bit-identical.
             // Both must decrypt the independently substituted target message.

@@ -32,6 +32,7 @@ fn public_key_encoding_modes_reuse_workspace() {
     let mut rng = StdRng::seed_from_u64(42);
     let (_, secret_key) = NttGlweSecretKey::generate_pair(&params, &table, &mut rng);
     let public_key = NttGlwePublicKey::generate(&secret_key, &params, &table, &mut rng);
+    let public_key_view = NttGlwePublicKey::from(NttGlweCiphertext::new(public_key.as_ref()));
     // Keep the centered sign boundary and endpoints even when N is smaller than t.
     let message = Polynomial::new(
         (0..POLY_LENGTH)
@@ -84,9 +85,10 @@ fn public_key_encoding_modes_reuse_workspace() {
         );
         let mut ciphertext: NttGlweCiphertext<Vec<u64>> =
             NttGlweCiphertext::zero(params.glwe_len());
-        public_key.encrypt_encoded_to(
-            &encoded,
-            &mut ciphertext,
+        // Borrowed key/message/output follow the same encoding and RNG oracle.
+        public_key_view.encrypt_encoded_to(
+            &encoded.as_view(),
+            &mut ciphertext.as_mut_view(),
             &params,
             &table,
             &mut actual_rng,

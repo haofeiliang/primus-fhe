@@ -247,23 +247,26 @@ impl<T: FheUint> CrtGlweAutoKey<T> {
         assert_eq!(ciphertext.as_ref().len(), rns_glwe_len);
         assert_eq!(result.as_ref().len(), rns_glwe_len);
 
-        self.automorphism_kernel(ciphertext, result, domain, workspace);
+        self.automorphism_kernel(
+            ciphertext.as_view(),
+            result.as_mut_view(),
+            domain,
+            workspace,
+        );
     }
 
     /// Internal kernel used by composed operations.
     /// Callers must ensure workspace compatibility and input/output layouts
     /// before invoking this kernel; it performs no boundary validation.
-    pub(crate) fn automorphism_kernel<M, Table, A, B>(
+    pub(crate) fn automorphism_kernel<M, Table>(
         &self,
-        ciphertext: &CrtGlweCiphertext<A>,
-        result: &mut CrtGlweCiphertext<B>,
+        ciphertext: CrtGlweCiphertext<&[T]>,
+        mut result: CrtGlweCiphertext<&mut [T]>,
         domain: &DcrtGadgetDomain<'_, T, M, Table>,
         workspace: &mut CrtGlweAutomorphismWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: Data<Elem = T>,
-        B: DataMut<Elem = T>,
     {
         let params = domain.parameters();
         let table = domain.table();
@@ -284,7 +287,12 @@ impl<T: FheUint> CrtGlweAutoKey<T> {
         self.iter_dcrt_glev()
             .zip(a_in)
             .for_each(|(auto_key_i, in_crt_poly)| {
-                crt_poly_auto_inplace(in_crt_poly.0, auto_crt_poly.as_mut(), auto_helper, moduli);
+                crt_poly_auto_inplace(
+                    in_crt_poly.as_ref(),
+                    auto_crt_poly.as_mut(),
+                    auto_helper,
+                    moduli,
+                );
 
                 temp.add_dcrt_glev_mul_crt_polynomial_assign(
                     &auto_key_i,
@@ -296,7 +304,7 @@ impl<T: FheUint> CrtGlweAutoKey<T> {
                 );
             });
 
-        crt_poly_auto_inplace(b_in.0, auto_crt_poly.as_mut(), auto_helper, moduli);
+        crt_poly_auto_inplace(b_in.as_ref(), auto_crt_poly.as_mut(), auto_helper, moduli);
 
         let _ = temp.into_coeff_form(table);
 

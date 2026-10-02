@@ -27,6 +27,8 @@
 
 `Polynomial::new(storage)` 移动容器。对于已有多项式或密文，使用 `as_view()` / `as_mut_view()` 借用其存储并保留表示类型，也可使用对应的 `From` 转换。`into_inner()` 不复制地返回原容器或借用。这些操作不执行变换或验证元素。消费一个可变 view 的算术方法仍可能修改调用方存储；需要明确体现原地修改时用 `*_assign`，写入可复用输出时用 `*_to`。
 
+实现长算法时，公开入口通过 `Data` / `DataMut` 接受不同容器，再将 `Glwe<&[T]>`、`Glwe<&mut [T]>` 等借用视图传入内部内核。密钥接收者若也带存储泛型，同样通过 `as_view()` 转换。这样使算法与拥有型容器无关，同时保留特化所需的数值类型、模数和变换泛型。负责持有或交换复用缓冲区的代码继续使用这些所有者。
+
 Raw 多项式/密文构造器不建立模数、秘密身份、表示或完整布局。`Polynomial<S>` 不另存环长度：包装 `batch_count*N` 个元素，不会自动把单多项式运算变成批量运算。只有接口契约明确接受批次时才直接传入；否则先迭代出完整对象。
 
 [PolyLength](../../crates/primus_poly/src/poly_length.rs) 属于 `primus_poly`，集中检查 FHE 共用的 `32..=2^17` 二次幂范围。`get()`、`log_n()`、`fourier_poly_len()` 分别返回 `N`、`log2(N)` 和 `N/2` 个复数元素。GLWE/NTRU 参数、checked size、工作区、公共 TFHE LUT 和 NTT/FFT 表直接传递同一个类型，不重复检查上界。

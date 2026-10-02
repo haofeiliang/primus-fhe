@@ -80,16 +80,18 @@ impl<T: FheUint> HybridRnsGlweKeySwitchingKey<T> {
         }
     }
 
-    fn mod_down_and_write_negated_accumulator<M, Table, B>(
+    /// Reduces each QP accumulator polynomial in place, copies its Q limbs to
+    /// the complete output, then negates it. All key/domain/workspace layouts and
+    /// numerical representations have been established by the caller.
+    fn mod_down_and_write_negated_accumulator<M, Table>(
         &self,
-        c_out: &mut DcrtGlweCiphertext<B>,
+        mut c_out: DcrtGlweCiphertext<&mut [T]>,
         hybrid_rns: &HybridRNS<T, M>,
         table: &DcrtTable<Table>,
         workspace: &mut HybridRnsGlweKeySwitchingWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        B: DataMut<Elem = T>,
     {
         let poly_length = self.input_size.poly_length().get();
         let qp_poly_len = self.qp_size.rns_poly_len();
@@ -148,6 +150,22 @@ impl<T: FheUint> HybridRnsGlweKeySwitchingKey<T> {
             workspace.input_size == self.input_size && workspace.output_size == self.output_size,
             "hybrid key-switching key and workspace use incompatible layouts"
         );
+        self.key_switch_kernel_to(c_in.as_view(), c_out.as_mut_view(), domain, workspace);
+    }
+
+    /// Consumes complete input/output and workspace layouts checked by the public entry.
+    /// The domain must retain the key generation basis, representation and workspace
+    /// compatibility; layout checks alone do not establish those numerical contracts.
+    fn key_switch_kernel_to<M, Table>(
+        &self,
+        c_in: DcrtGlweCiphertext<&[T]>,
+        mut c_out: DcrtGlweCiphertext<&mut [T]>,
+        domain: &HybridRnsKeySwitchDomain<'_, T, M, Table>,
+        workspace: &mut HybridRnsGlweKeySwitchingWorkspace<T>,
+    ) where
+        M: FieldContext<T>,
+        Table: NttTable<ValueT = T>,
+    {
         let hybrid_rns = domain.hybrid_rns();
         let table = domain.table();
         let qp_gadget_len = self
@@ -167,7 +185,12 @@ impl<T: FheUint> HybridRnsGlweKeySwitchingKey<T> {
             );
         }
 
-        self.mod_down_and_write_negated_accumulator(c_out, hybrid_rns, table, workspace);
+        self.mod_down_and_write_negated_accumulator(
+            c_out.as_mut_view(),
+            hybrid_rns,
+            table,
+            workspace,
+        );
         let (_, b_out) = c_out.a_b_mut_slices(self.output_size.rns_poly_len());
         DcrtPolynomial(b_out).add_assign(
             &body_in,
@@ -176,18 +199,18 @@ impl<T: FheUint> HybridRnsGlweKeySwitchingKey<T> {
         );
     }
 
+    /// Coefficient-domain oracle retaining full ModUp and message transforms.
+    /// Consumes test operands with the same complete key/domain/workspace layouts.
     #[cfg(test)]
-    fn key_switch_coeff_reference_to<M, Table, A, B>(
+    fn key_switch_coeff_reference_to<M, Table>(
         &self,
-        c_in: &CrtGlweCiphertext<A>,
-        c_out: &mut DcrtGlweCiphertext<B>,
+        c_in: CrtGlweCiphertext<&[T]>,
+        mut c_out: DcrtGlweCiphertext<&mut [T]>,
         domain: &HybridRnsKeySwitchDomain<'_, T, M, Table>,
         workspace: &mut HybridRnsGlweKeySwitchingWorkspace<T>,
     ) where
         M: FieldContext<T>,
         Table: NttTable<ValueT = T>,
-        A: Data<Elem = T>,
-        B: DataMut<Elem = T>,
     {
         let hybrid_rns = domain.hybrid_rns();
         let table = domain.table();
@@ -233,7 +256,12 @@ impl<T: FheUint> HybridRnsGlweKeySwitchingKey<T> {
             }
         }
 
-        self.mod_down_and_write_negated_accumulator(c_out, hybrid_rns, table, workspace);
+        self.mod_down_and_write_negated_accumulator(
+            c_out.as_mut_view(),
+            hybrid_rns,
+            table,
+            workspace,
+        );
         workspace.q_scratch.copy_from_slice(body_in.as_slice());
         table.ntt_tables()[..self.input_size.moduli_count()]
             .iter()
@@ -409,8 +437,8 @@ mod tests {
 
         switching_key.key_switch_to(&input, &mut from_ntt, &domain, &mut ntt_workspace);
         switching_key.key_switch_coeff_reference_to(
-            &input_coeff,
-            &mut from_coeff,
+            input_coeff.as_view(),
+            from_coeff.as_mut_view(),
             &domain,
             &mut coeff_workspace,
         );
