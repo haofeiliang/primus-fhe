@@ -286,15 +286,30 @@ where
 
     /// Returns the effective bit width of the represented value.
     ///
-    /// Leading zero limbs are ignored.
+    /// Leading zero limbs are ignored; empty and all-zero storage have width zero.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the effective bit width exceeds `u32::MAX`.
     #[must_use]
     #[inline]
     pub fn bit_width(&self) -> u32 {
-        self.iter()
-            .enumerate()
-            .rev()
-            .find(|(_, v)| !v.is_zero())
-            .map_or(0, |(i, v)| T::BITS * i as u32 + v.bit_width())
+        self.checked_bit_width()
+            .expect("BigUint bit width exceeds u32::MAX")
+    }
+
+    /// Returns the effective bit width, or `None` if it exceeds `u32::MAX`.
+    ///
+    /// Leading zero limbs are ignored; empty and all-zero storage return `Some(0)`.
+    /// Parameter constructors can use this to validate the width once before
+    /// preparing bit offsets and decomposition storage.
+    #[must_use]
+    #[inline]
+    pub fn checked_bit_width(&self) -> Option<u32> {
+        let Some((index, &high)) = self.iter().enumerate().rev().find(|(_, v)| !v.is_zero()) else {
+            return Some(0);
+        };
+        checked_bit_width_from_high_limb(index, high)
     }
 
     /// Borrows the same value as an immutable slice-backed [`BigUint`].
@@ -800,6 +815,16 @@ where
     }
 }
 
+/// Computes the width from the highest nonzero limb without narrowing its index.
+/// Limb indices use `usize`, while the effective width and bit offsets use `u32`.
+#[inline]
+fn checked_bit_width_from_high_limb<T: UnsignedInteger>(index: usize, high: T) -> Option<u32> {
+    u32::try_from(index)
+        .ok()?
+        .checked_mul(T::BITS)?
+        .checked_add(high.bit_width())
+}
+
 /// Multiplies the values and returns their product as an owned [`BigUint`].
 ///
 /// # Panics
@@ -817,4 +842,36 @@ pub fn multiply_many_values<T: UnsignedInteger>(values: &[T]) -> BigUint<Vec<T>>
         }
     }
     result
+}
+
+#[cfg(test)]
+mod tests {
+    use super::checked_bit_width_from_high_limb;
+    use crate::UnsignedInteger;
+
+    /// A wide integer oracle checks the u32 limit using virtual limb indices.
+    #[test]
+    fn bit_width_range_does_not_truncate_limb_indices() {
+        fn check<T: UnsignedInteger>() {
+            let last_index = (u32::MAX / T::BITS) as usize;
+            for index in [
+                0,
+                last_index - 1,
+                last_index,
+                last_index + 1,
+                u32::MAX as usize,
+                usize::MAX,
+            ] {
+                for high in [T::ONE, T::ONE << (T::BITS - 2), T::MAX] {
+                    let width = index as u128 * u128::from(T::BITS) + u128::from(high.bit_width());
+                    assert_eq!(
+                        checked_bit_width_from_high_limb(index, high),
+                        u32::try_from(width).ok(),
+                    );
+                }
+            }
+        }
+        check::<u32>();
+        check::<u64>();
+    }
 }

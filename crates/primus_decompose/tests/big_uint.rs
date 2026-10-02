@@ -117,12 +117,13 @@ fn retained_levels_match_modular_oracle() {
     }
     // 49-bit product: start the retained levels before, at, and beyond bit 32.
     let moduli = [65_537u32, 65_539, 65_543];
-    for (log_basis, retained) in [(3, 6), (17, 1), (4, 4), (4, 1)] {
+    for (log_basis, retained) in [(3, 6), (17, 1), (4, 4), (4, 1), (31, 1)] {
         assert_contract(&moduli, log_basis, Some(retained));
     }
     // 100-bit product exercises the same boundaries for 64-bit limbs.
     let moduli = [1_125_899_906_826_241u64, 1_125_899_906_629_633];
-    for (log_basis, retained) in [(4, 10), (3, 12), (4, 8)] {
+    // logB=BITS-1 also exercises the highest carry bit in a crossing window.
+    for (log_basis, retained) in [(4, 10), (3, 12), (4, 8), (63, 1)] {
         assert_contract(&moduli, log_basis, Some(retained));
     }
 }

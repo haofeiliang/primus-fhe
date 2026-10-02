@@ -20,6 +20,19 @@ pub enum ApproxSignedBasisError {
     /// A multi-limb modulus is empty or has a zero most-significant limb.
     #[error("modulus must be nonempty with a nonzero most-significant limb")]
     InvalidModulusRepresentation,
+    /// The effective multi-limb modulus width does not fit the bit-index type.
+    #[error("modulus bit width exceeds u32::MAX")]
+    ModulusBitWidthTooLarge,
+    /// The packed reconstruction weights have an unrepresentable element count.
+    #[error(
+        "scalar storage length overflows usize for {limb_count} limbs and {level_count} levels"
+    )]
+    ScalarStorageLengthOverflow {
+        /// Number of limbs in each reconstruction weight.
+        limb_count: usize,
+        /// Number of retained reconstruction weights.
+        level_count: usize,
+    },
     /// The logarithm of the decomposition basis is outside the supported range.
     #[error("log_basis must satisfy 2 <= log_basis < {limb_bits}, got {log_basis}")]
     InvalidLogBasis {

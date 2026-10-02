@@ -39,6 +39,8 @@ assert_eq!(value.bit_width(), 65);
 
 The limbs are stored in little-endian order. The limb count and leading zero limbs are part of the representation and equality: for example, `BigUint([1u64])` and `BigUint([1u64, 0])` are different representations.
 
+Effective bit widths use `u32`; limb counts and storage lengths use `usize`. `checked_bit_width()` ignores leading zero limbs and returns `Some(0)` for empty or zero values, or `None` when the width exceeds `u32::MAX`. `bit_width()` returns the same width and panics on overflow. Parameter constructors can use the checked result to establish bit-index ranges once.
+
 Higher-level parameter constructors and public operation boundaries are responsible for validating dimensions and buffer layouts once. The low-level arithmetic kernels deliberately avoid repeating these checks in release builds. Callers must maintain the following contracts:
 
 - every input, output, accumulator, and modulus participating in one operation has the same limb count;

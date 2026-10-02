@@ -29,6 +29,7 @@ fn representation_and_product_contracts() {
 
     assert_eq!(compose_u32(product.digits()), expected);
     assert_eq!(product.bit_width(), expected.bit_width());
+    assert_eq!(product.checked_bit_width(), Some(expected.bit_width()));
     assert!(!product.is_zero());
 
     assert_eq!(BigUint(&[1u32, 2][..]), BigUint(vec![1u32, 2]));
@@ -36,10 +37,21 @@ fn representation_and_product_contracts() {
     let padded = BigUint(&[1u32, 0][..]);
     assert_ne!(BigUint(&[1u32][..]), padded);
     assert_eq!(padded.bit_width(), 1);
+    assert_eq!(padded.checked_bit_width(), Some(1));
 
     let zero = BigUint(&[0u32; 2][..]);
     assert!(zero.is_zero());
     assert_eq!(zero.bit_width(), 0);
+    assert_eq!(zero.checked_bit_width(), Some(0));
+
+    let empty = BigUint(&[] as &[u64]);
+    assert_eq!(empty.bit_width(), 0);
+    assert_eq!(empty.checked_bit_width(), Some(0));
+    // Ignore a padded high limb, while counting a significant bit beyond bit 64.
+    let wide = BigUint(&[0u64, 1u64 << 62, 0][..]);
+    let expected_width = (1u128 << 126).bit_width();
+    assert_eq!(wide.bit_width(), expected_width);
+    assert_eq!(wide.checked_bit_width(), Some(expected_width));
 
     assert!(std::panic::catch_unwind(|| multiply_many_values::<u32>(&[])).is_err());
 }

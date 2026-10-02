@@ -65,6 +65,8 @@ reconstructed = sum(digit_i * weight_i) mod modulus
 
 BigUint 模数必须是非空、little-endian 的 limb slice，最高 limb 不能为零。Basis 拥有模数的一份副本。每个输入都必须使用与模数相同的 limb 数，即使输入值较小，也要 保留高位的零 limb。
 
+BigUint basis 构造时检查有效模数位宽可由 `u32` 表示、扁平 scalar 元素数可由 `usize` 表示，否则返回 `ModulusBitWidthTooLarge` 或 `ScalarStorageLengthOverflow`。这些范围保证各保留层的位窗口均落在模数存储内；分解直接复用预计算偏移，不重复检查范围。
+
 ## Primitive 工作流
 
 对一批输入初始化一次，然后让同一份 adjusted values 和不断更新的 carry 缓冲区依次 经过所有层。每层输出会被下一层覆盖，应先消费当前结果：

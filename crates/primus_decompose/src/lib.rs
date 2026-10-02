@@ -40,6 +40,8 @@ fn decomposition_length_and_drop_bits(
             full_length,
         });
     }
+    // length <= value_bits/log_basis, so narrowing the retained count is
+    // lossless and its product with log_basis cannot exceed value_bits.
     Ok((
         DecompositionLevelCount::new(length),
         value_bits - length as u32 * log_basis,

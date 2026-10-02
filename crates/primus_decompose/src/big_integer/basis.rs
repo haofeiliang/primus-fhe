@@ -71,6 +71,9 @@ impl<T: FheUint> BigUintApproxSignedBasis<T> {
     /// range `1..=full_decomposition_length`; positivity is already checked.
     /// It retains the highest levels; iteration still proceeds from the
     /// lowest retained level to the highest.
+    /// The modulus bit width and offsets use `u32`; the packed scalar
+    /// element count must fit `usize`. These ranges are checked here,
+    /// before allocating the precomputed basis storage.
     ///
     /// # Errors
     ///
@@ -93,7 +96,9 @@ impl<T: FheUint> BigUintApproxSignedBasis<T> {
             Some(high) if !high.is_zero() => high.leading_zeros(),
             _ => return Err(ApproxSignedBasisError::InvalidModulusRepresentation),
         };
-        let modulus_bits_count = T::BITS * (big_uint_value_len as u32) - unused_bits;
+        let modulus_bits_count = modulus
+            .checked_bit_width()
+            .ok_or(ApproxSignedBasisError::ModulusBitWidthTooLarge)?;
         if modulus_bits_count <= log_basis.get() {
             return Err(ApproxSignedBasisError::BasisExceedsModulus);
         }
@@ -109,6 +114,12 @@ impl<T: FheUint> BigUintApproxSignedBasis<T> {
         )?;
         let checked_decompose_length = decompose_length;
         let decompose_length = decompose_length.get();
+        let scalar_storage_len = big_uint_value_len.checked_mul(decompose_length).ok_or(
+            ApproxSignedBasisError::ScalarStorageLengthOverflow {
+                limb_count: big_uint_value_len,
+                level_count: decompose_length,
+            },
+        )?;
 
         let init_carry_mask = if drop_bits > 0 {
             let bits = drop_bits - 1;
@@ -125,7 +136,7 @@ impl<T: FheUint> BigUintApproxSignedBasis<T> {
 
         let mut modulus_sub_basis = BigUint(modulus.0.to_vec());
         let borrow = modulus_sub_basis.sub_value_assign(basis);
-        assert!(!borrow);
+        debug_assert!(!borrow);
 
         // (2^m - 1) - Q + 1 avoids representing 2^m or allocating Q - 1.
         let mut add = BigUint(vec![T::MAX; big_uint_value_len]);
@@ -135,18 +146,19 @@ impl<T: FheUint> BigUintApproxSignedBasis<T> {
         let carry = add.add_value_assign(T::ONE);
         debug_assert!(!carry);
 
-        let mut scalars = vec![T::ZERO; big_uint_value_len * decompose_length];
+        let mut scalars = vec![T::ZERO; scalar_storage_len];
+        let mut value_masks = Vec::with_capacity(decompose_length);
         // Each reconstruction weight is a single bit, including when the
-        // lowest retained level starts beyond the first limb.
+        // lowest retained level starts beyond the first limb. With m the
+        // checked modulus width and d=m-L*log_basis, every offset satisfies
+        // d+i*log_basis <= m-log_basis. Thus the offset fits u32 and the
+        // whole extraction window lies within the modulus's limb storage.
         for (level, scalar) in scalars.chunks_exact_mut(big_uint_value_len).enumerate() {
             let bit = drop_bits + level as u32 * log_basis;
             let (index, shift) = bit.div_rem(T::BITS);
             scalar[index as usize] = T::ONE << shift;
+            value_masks.push(ValueMask::new(basis_minus_one, bit));
         }
-
-        let value_masks = (0..decompose_length)
-            .map(|level| ValueMask::new(basis_minus_one, drop_bits + level as u32 * log_basis))
-            .collect();
 
         // Every valid BigUint modulus has a negative region to adjust.
         // Only the presence of an initial rounding carry varies.

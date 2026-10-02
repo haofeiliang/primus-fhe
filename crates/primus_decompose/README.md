@@ -65,6 +65,8 @@ The full level count is `floor(m / log_basis)`. The constructor argument named `
 
 A BigUint modulus must have a nonempty little-endian limb slice with a nonzero most-significant limb. The basis owns a copy. Inputs use exactly that same limb count, including leading zero limbs when the input value is small.
 
+BigUint basis construction checks that the effective modulus width fits `u32` and the packed scalar element count fits `usize`, returning `ModulusBitWidthTooLarge` or `ScalarStorageLengthOverflow` otherwise. These bounds ensure that every retained bit window fits the modulus storage; decomposition reuses the precomputed offsets without repeating the range checks.
+
 ## Primitive workflow
 
 Initialize a batch once, then pass the same adjusted values and advancing carry buffer through every level. Consume each level before overwriting its output:
